@@ -2,9 +2,9 @@
 
 ## Current State
 
-**Last Updated:** 2026-08-17 01:45（并行开发批次：S2-04 ASR 接口先行 + S2-05 CI/D7 文档）
-**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合完成（双基准）**；**Part 2 RAG 管线骨架 + 百炼接入层完成**；**SetFit 训练中（S2-03，另一 Agent）**
-**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1 完成 ✅ / **M1 Part 2 RAG 开发中（待 DASHSCOPE key 解锁 LLM 路径/图片塔）** / **S2-04 ASR 接口先行完成（feature/m1-asr-guardrail）**
+**Last Updated:** 2026-08-17 02:10（并行开发批次完成：S2-04 ASR + S2-05 CI/D7；SetFit Part 3 已合并 develop）
+**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合完成（双基准）**；**Part 2 RAG 管线骨架 + 百炼接入层完成**；**Part 3 SetFit 分类服务完成（667dbb1）**
+**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1/2/3 完成 ✅ / **S2-04 ASR 接口先行完成（feature/m1-asr-guardrail）** / **S2-05 CI + D7 文档完成（feature/s2-05-ci-d7）**
 
 > ⚠️ 团队结构变更（2026-08-16 用户拍板）：**用户同时承担 T1（后端）+ T2（客户端核心）**，与 Agent 一起完成 Sprint 1 内 T1/T2 全部任务；T3/T4/P1/P2/P3 另行安排。
 
@@ -12,9 +12,11 @@
 
 ### What's Done
 
-- [x] **并行批次 · S2-04 ASR 双通道接口 + 护栏先行（feature/m1-asr-guardrail）**：services/external/asr.py（FunASR paraformer-v2 + SenseVoice sensevoice-v1 双通道，共用 DASHSCOPE key，失败自动降级，mock 兜底确定性输出）+ api/asr.py（POST /asr/transcribe multipart 上传 + 护栏集成；POST /guard/check）+ schemas/asr.py（含 emotion 声学情绪映射）；test_asr.py 11 项全过；OpenAPI 契约更新至 14 路径；review_agent 全绿待确认；真实转写待 key 零代码切换
+- [x] **M1 Part 3 SetFit 分类服务（F2）**：BGE-M3 底座全参数微调（AMP，50 条种子样本 5 类），评估集 100%（10/10，门禁 ≥75%）；POST /api/v1/classify 推理 API；test_setfit.py 4 项全过；模型 2.3GB 不入库（scripts/train_setfit.py 可再生）
+- [x] **并行批次 · S2-04 ASR 双通道接口 + 护栏先行（feature/m1-asr-guardrail）**：services/external/asr.py（FunASR paraformer-v2 + SenseVoice sensevoice-v1 双通道，共用 DASHSCOPE key，失败自动降级，mock 兜底确定性输出）+ api/asr.py（POST /asr/transcribe multipart 上传 + 护栏集成；POST /guard/check）+ schemas/asr.py（含 emotion 声学情绪映射）；test_asr.py 11 项全过；OpenAPI 契约更新至 14 路径；review_agent 全绿；真实转写待 key 零代码切换
 - [x] **并行批次 · S2-05 CI（GitHub Actions）**：.github/workflows/ci.yml（postgres + redis 服务容器，初始化 yishu 隔离库 + schema，直接跑 review_agent 作为质量门禁，与本地提交门禁同源；触发 develop/main + PR）
 - [x] **并行批次 · S2-05 D7 正式结论文档**：docs/D7_POC结论.md（POC 五测全部 PASS → 结论 GO，证据链 + 风险 + 后续动作）
+- [x] **S1-03 百炼接入层**：services/external/dashscope.py（qwen-flash 改写/路由 + Qwen3-VL 图片塔 + 护栏 fail-safe），5 项 mock 测试全过，拿 key 零代码切换（commit 3fa24f4）
 - [x] **M1 Part 1 真实数据基准（场景15）**：500 张真实截图（C:\Users\ghf\Pictures\Screenshots，3078 张按月分层抽样）替代合成生成器；全量进日卡片/时间窗聚类 65 簇/折叠与 ground truth 一致/46ms/增量旧簇保留（已合并 develop 6966f13）
 - [x] **M1 Part 2 RAG 管线骨架**：BGE-M3 dense+sparse（手动 sparse_linear 实现，ST 3.x 无 sparse 模块）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兑底）+ 溯源 + 降级；test_rag.py 6 项集成测试全过（真实 Qdrant + 本地 BGE-M3）
 - [x] **Sprint 2（M1）规划产出**：忆述光华_Sprint2规划.md（P0=聚合正式原型+RAG+收尾）+ AI 开发成本估算（三档，推荐混合档 500-1500 元/月）

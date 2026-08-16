@@ -27,8 +27,8 @@
       "dependencies": [
         "M0"
       ],
-      "status": "not-started",
-      "evidence": "",
+      "status": "in-progress",
+      "evidence": "SetFit 5 类分类服务完成（M1 Part 3）：BGE-M3 底座全参数微调（AMP，50 条种子样本），评估集 10/10 准确率 100%（门禁 ≥75%）；推理 API POST /api/v1/classify + 溯源结构；test_setfit.py 4 项全过。待：三层裁决（个人规则 correction_log + 共性回流微调，B5-c）",
       "gate": "分类准确率 ≥75%（M1）→ ≥80%（M2）"
     },
     {
