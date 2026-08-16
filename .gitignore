@@ -1,0 +1,40 @@
+# --- Node / npm ---
+node_modules/
+*.log
+npm-debug.log*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- Build / dist ---
+dist/
+build/
+out/
+*.apk
+*.wgt
+*.exe
+*.dmg
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- AI coding agent scratch ---
+.cowork-temp/
+
+# --- Misc ---
+*.tmp
