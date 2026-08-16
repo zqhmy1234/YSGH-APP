@@ -12,6 +12,7 @@
 
 ### What's Done
 
+- [x] **M1 Part 3 SetFit 分类服务（F2）**：BGE-M3 底座全参数微调（AMP，50 条种子样本 5 类），评估集 100%（10/10，门禁 ≥75%）；POST /api/v1/classify 推理 API；test_setfit.py 4 项全过；模型 2.3GB 不入库（scripts/train_setfit.py 可再生）
 - [x] **S1-03 百炼接入层**：services/external/dashscope.py（qwen-flash 改写/路由 + Qwen3-VL 图片塔 + 护栏 fail-safe），5 项 mock 测试全过，拿 key 零代码切换（commit 3fa24f4）
 - [x] **M1 Part 1 真实数据基准（场景15）**：500 张真实截图（C:\Users\ghf\Pictures\Screenshots，3078 张按月分层抽样）替代合成生成器；全量进日卡片/时间窗聚类 65 簇/折叠与 ground truth 一致/46ms/增量旧簇保留（已合并 develop 6966f13）
 - [x] **M1 Part 2 RAG 管线骨架**：BGE-M3 dense+sparse（手动 sparse_linear 实现，ST 3.x 无 sparse 模块）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兑底）+ 溯源 + 降级；test_rag.py 6 项集成测试全过（真实 Qdrant + 本地 BGE-M3）

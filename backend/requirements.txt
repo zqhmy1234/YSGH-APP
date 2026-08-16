@@ -39,3 +39,6 @@ datasketch>=1.6          # 去重（MinHash）
 # --- RAG（B2：Qdrant + BGE-M3，M1 Part 2）---
 qdrant-client>=1.19
 sentence-transformers>=3.4
+
+# --- SetFit 分类（M1 Part 3 / F2）---
+setfit>=1.1
