@@ -19,18 +19,18 @@
 
 ### What's In Progress
 
-- [ ] S1-02（T1）：28 表 schema DDL + OpenAPI 契约 + mock server + 账号体系
-- [ ] S1-01（T2）：POC 五测（真机部分待用户，Agent 准备测试脚本/清单）
-- [ ] S1-13（T2）：事件聚合算法原型（Python ST-DBSCAN，500 张测试照基线）
-- [ ] S1-08（T1）：RQ 队列 + Redis AOF + CI + 备份脚本（S1-02 后）
+- [x] S1-02（T1）部分：FastAPI 骨架 + 28 表 DDL + OpenAPI 契约 + mock server（auth/contents/events/search 路由，mock 联调通过）
+  - 待办：接入 PG（models/session 已就绪）、微信 code2session 真实接入、STS 真实签名、RQ worker
+- [x] S1-13（T2）：事件聚合原型完成（ST-DBSCAN + 四层管线 + 150 张测试 + 10 项验证全过，500 张 3ms）
+- [ ] S1-01（T2）：POC 五测（相册监听/前台录音/attribution tag/SQLCipher 需真机，Agent 待出测试清单与脚本）
+- [ ] S1-08（T1）：RQ 队列 + Redis AOF + CI + 备份脚本
 
 ### What's Next
 
-1. backend/ 工程骨架 + 28 表 DDL
-2. FastAPI 主程序 + OpenAPI 契约文档
-3. mock server（契约消费方可调用）
-4. 事件聚合 spike（Python 原型）
-5. D7（8/23）POC 五测结论
+1. POC 五测准备：真机测试清单 + 可执行脚本（Agent 负责产出，用户真机执行）
+2. RQ worker + 队列任务编排（API-016/017）
+3. OpenAPI 契约文档导出（openapi.json 提交仓库）
+4. 接入 PG：本地 PostgreSQL 环境搭建 + schema 迁移
 
 ## Blockers / Risks
 
