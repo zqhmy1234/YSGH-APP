@@ -5,8 +5,8 @@
       "name": "M0 工程地基（W1-2）",
       "description": "POC 五测（相册监听/前台录音/attribution tag/SQLCipher/聚合 spike）+ 28 表 schema + OpenAPI 契约与 mock + 四端工程骨架 + 企微认证/备案/软著申请提交",
       "dependencies": [],
-      "status": "not-started",
-      "evidence": "",
+      "status": "in-progress",
+      "evidence": "POC 五测全部 PASS → D7 结论 GO（docs/D7_POC结论.md，2026-08-17 正式化）；OpenAPI 契约 14 路径 + mock；CI 接入（.github/workflows/ci.yml，S2-05）；合规三申请待提交",
       "gate": "POC 五测 D7 结论 + 契约发布 + 合规申请提交（全局 Gate，失败→切原生 Kotlin/Flutter）"
     },
     {

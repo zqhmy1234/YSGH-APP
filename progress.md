@@ -2,9 +2,9 @@
 
 ## Current State
 
-**Last Updated:** 2026-08-17 00:55
-**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合完成（双基准）**；**Part 2 RAG 管线骨架 + 百炼接入层完成**
-**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1 完成 ✅ / **M1 Part 2 RAG 开发中（待 DASHSCOPE key 解锁 LLM 路径/图片塔）**
+**Last Updated:** 2026-08-17 01:45（并行开发批次：S2-04 ASR 接口先行 + S2-05 CI/D7 文档）
+**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合完成（双基准）**；**Part 2 RAG 管线骨架 + 百炼接入层完成**；**SetFit 训练中（S2-03，另一 Agent）**
+**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1 完成 ✅ / **M1 Part 2 RAG 开发中（待 DASHSCOPE key 解锁 LLM 路径/图片塔）** / **S2-04 ASR 接口先行完成（feature/m1-asr-guardrail）**
 
 > ⚠️ 团队结构变更（2026-08-16 用户拍板）：**用户同时承担 T1（后端）+ T2（客户端核心）**，与 Agent 一起完成 Sprint 1 内 T1/T2 全部任务；T3/T4/P1/P2/P3 另行安排。
 
@@ -12,7 +12,9 @@
 
 ### What's Done
 
-- [x] **S1-03 百炼接入层**：services/external/dashscope.py（qwen-flash 改写/路由 + Qwen3-VL 图片塔 + 护栏 fail-safe），5 项 mock 测试全过，拿 key 零代码切换（commit 3fa24f4）
+- [x] **并行批次 · S2-04 ASR 双通道接口 + 护栏先行（feature/m1-asr-guardrail）**：services/external/asr.py（FunASR paraformer-v2 + SenseVoice sensevoice-v1 双通道，共用 DASHSCOPE key，失败自动降级，mock 兜底确定性输出）+ api/asr.py（POST /asr/transcribe multipart 上传 + 护栏集成；POST /guard/check）+ schemas/asr.py（含 emotion 声学情绪映射）；test_asr.py 11 项全过；OpenAPI 契约更新至 14 路径；review_agent 全绿待确认；真实转写待 key 零代码切换
+- [x] **并行批次 · S2-05 CI（GitHub Actions）**：.github/workflows/ci.yml（postgres + redis 服务容器，初始化 yishu 隔离库 + schema，直接跑 review_agent 作为质量门禁，与本地提交门禁同源；触发 develop/main + PR）
+- [x] **并行批次 · S2-05 D7 正式结论文档**：docs/D7_POC结论.md（POC 五测全部 PASS → 结论 GO，证据链 + 风险 + 后续动作）
 - [x] **M1 Part 1 真实数据基准（场景15）**：500 张真实截图（C:\Users\ghf\Pictures\Screenshots，3078 张按月分层抽样）替代合成生成器；全量进日卡片/时间窗聚类 65 簇/折叠与 ground truth 一致/46ms/增量旧簇保留（已合并 develop 6966f13）
 - [x] **M1 Part 2 RAG 管线骨架**：BGE-M3 dense+sparse（手动 sparse_linear 实现，ST 3.x 无 sparse 模块）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兑底）+ 溯源 + 降级；test_rag.py 6 项集成测试全过（真实 Qdrant + 本地 BGE-M3）
 - [x] **Sprint 2（M1）规划产出**：忆述光华_Sprint2规划.md（P0=聚合正式原型+RAG+收尾）+ AI 开发成本估算（三档，推荐混合档 500-1500 元/月）
@@ -34,13 +36,16 @@
 - [ ] 微信 code2session 真实接入（待 appid/secret）
 - [ ] COS STS 真实签名（待腾讯云密钥）
 - [ ] RAG 图片塔（Qwen3-VL）+ 500 张截图图片基准 + 双层 Rerank（待 DASHSCOPE key）
+- [ ] ASR 真实转写验证（S2-04 接口已就绪，拿 DASHSCOPE key 后跑 paraformer-v2/sensevoice-v1 实测 + 情绪映射校准）
 
 ### What's Next
 
-1. M1 Part 2 RAG 收尾：500 张截图图片基准（Screenshots 已有 3078 张）+ 图片塔（拿 DASHSCOPE key 后）
-2. 微信 code2session / COS STS 真实密钥接入（拿到 key 后）
-3. CI 配置（GitHub Actions）
-4. 2026-08-23 D7 结论正式产出（证据已齐）
+1. SetFit 训练完成（另一 Agent，S2-03）→ 分类 API 联调 + 分类 ≥75% 基准
+2. M1 Part 2 RAG 收尾：500 张截图图片基准（Screenshots 已有 3078 张）+ 图片塔（拿 DASHSCOPE key 后）
+3. ASR 真实转写验证（S2-04，拿 key 后）
+4. 微信 code2session / COS STS 真实密钥接入（拿到 key 后）
+5. CI 推仓库后对接 GitHub Actions 跑通（.github/workflows/ci.yml 已就绪）
+6. 2026-08-23 D7 结论正式评审（docs/D7_POC结论.md 已产出）
 
 ## Blockers / Risks
 

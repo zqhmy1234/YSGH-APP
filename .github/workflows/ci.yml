@@ -1,0 +1,86 @@
+# 忆述光华 · CI（S2-05 收尾项，对齐 S1-04「CI 接入（lint+单测+构建检查，main 保护）」）
+# 策略：CI = 与本地提交门禁同源 —— 直接跑 scripts/review_agent.py（语法/lint/测试/密钥扫描/TODO）。
+# 服务：postgres（yishu 隔离库）+ redis（RQ 队列），与 backend/.env 本地口径一致。
+# 触发：develop/main 推送 + PR → develop/main（main 受保护，只接受 develop 合并）。
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    name: Backend Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-cov httpx ruff
+
+      - name: Init PostgreSQL (yishu 隔离库 + schema)
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+          PGPASSWORD=admin psql -h localhost -U postgres -f scripts/setup_pg.sql
+          PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -f backend/sql/schema.sql
+          PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
+
+      - name: Run quality gate (review_agent)
+        env:
+          DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
+          REDIS_URL: redis://localhost:6379/0
+          MOCK_EXTERNAL_AI: "true"
+          # 本地 embedding.py 默认 HF_HUB_OFFLINE=1（防国内网络 HEAD 超时挂起）；
+          # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
+          HF_HUB_OFFLINE: "0"
+          PYTHONPATH: .
+        run: python scripts/review_agent.py
+
+      - name: Upload pytest coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: .cowork-temp/
+          if-no-files-found: ignore
