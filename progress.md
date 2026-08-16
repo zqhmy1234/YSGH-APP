@@ -2,9 +2,9 @@
 
 ## Current State
 
-**Last Updated:** 2026-08-16
-**Active Feature:** M0 工程地基（Sprint 1，2026-08-17 ~ 08-30）
-**阶段：** 规划完成 ✅ / **开工中：T1 后端 + T2 客户端核心（用户双角色 + Agent 协作）**
+**Last Updated:** 2026-08-16 21:15
+**Active Feature:** M0 工程地基（Sprint 1，2026-08-17 ~ 08-30）→ **POC 五测全过，D7 Gate 达成（提前 7 天）**
+**阶段：** 规划完成 ✅ / POC 完成 ✅ / **T1 主线开发中（认证真实接入 DB）**
 
 > ⚠️ 团队结构变更（2026-08-16 用户拍板）：**用户同时承担 T1（后端）+ T2（客户端核心）**，与 Agent 一起完成 Sprint 1 内 T1/T2 全部任务；T3/T4/P1/P2/P3 另行安排。
 
@@ -19,21 +19,24 @@
 
 ### What's In Progress
 
-- [x] S1-02（T1）：FastAPI 骨架 + 28 表 DDL + OpenAPI 契约 + mock server + PG 隔离库（31 表）+ RQ 队列
-- [x] S1-08（T1）：RQ 队列（Docker Redis AOF + high/low 双队列 + Windows SimpleWorker）+ 队列测试 3 项
+- [x] S1-02（T1）部分：FastAPI 骨架 + 28 表 DDL + OpenAPI 契约 + mock server + PG 隔离库（31 表）
+- [x] S1-08（T1）：RQ 队列（Docker Redis AOF + high/low 双队列 + Windows SimpleWorker）
 - [x] S1-13（T2）：事件聚合原型（10 项验证全过）
 - [x] Pre-Commit 审核 Agent + 测试 Agent（pytest 25 项 92% 覆盖率，hook 强制）
-- [x] **S1-01（T2）POC 五测真机完成（2026-08-16）**：POC-01 相册监听 PASS / POC-02 前台录音 PASS（灭屏 9822ms）/ POC-03 部分（DEV-007 过，DEV-006 待 Android 16）/ POC-04 SQLCipher PASS / POC-05 聚合 PASS → **结论预判 GO**
-- [ ] 待补：Android 16 模拟器验证 attribution（DEV-006）
-- [ ] 微信 code2session 真实接入、COS STS 真实签名（mock 已可联调）
+- [x] **S1-01（T2）POC 五测全部 PASS（2026-08-16）→ 结论 GO，D7 Gate 提前达成**
+  - POC-01 相册监听 PASS（nova 11）｜POC-02 前台录音 PASS（灭屏 9822ms）｜POC-03 attribution 完整 PASS（Android 16 模拟器 DEV-006）｜POC-04 SQLCipher PASS｜POC-05 聚合 PASS
+- [x] Android 16 模拟器（yishu_api36，D:\Android）搭好，可复用为 M1 开发环境
+- [ ] **S1-02 剩余（T1 主线）：认证真实接入 DB（users/devices/sms_codes 替换 mock）**
+- [ ] OpenAPI 契约导出（openapi.json）
+- [ ] 备份脚本（pg_dump/WAL，DR-001~006）
 
 ### What's Next
 
-1. 2026-08-23 D7 结论正式产出（POC 证据已备齐）
-2. OpenAPI 契约文档导出（openapi.json）
-3. 备份脚本（pg_dump/WAL）+ CI 配置
-4. 认证真实接入 DB（users 表 CRUD 替换 mock）
-5. 事件聚合 Python 正式原型（W3-4，500 张测试照）
+1. 认证真实接入 DB：users 表 CRUD + devices refresh 吊销 + sms_codes（AUTH-003/005/006）
+2. contents 真实入库（替换 mock 列表）
+3. OpenAPI 契约导出（openapi.json 提交仓库）
+4. 备份脚本（pg_dump/WAL）+ CI 配置
+5. 2026-08-23 D7 结论正式产出（证据已齐）
 
 ## Blockers / Risks
 

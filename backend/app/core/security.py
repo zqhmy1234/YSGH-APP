@@ -1,4 +1,5 @@
 """JWT 认证（决策 #8：access 2h + refresh 30d，自建）"""
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -14,9 +15,10 @@ def _now() -> datetime:
 
 
 def create_access_token(user_id: str, device_id: str | None = None) -> str:
-    """access token：2 小时有效，承载用户身份"""
+    """access token：2 小时有效，承载用户身份（jti 防重放）"""
     expire = _now() + timedelta(minutes=settings.jwt_access_ttl_minutes)
     payload = {
+        "jti": uuid.uuid4().hex,
         "sub": user_id,
         "type": "access",
         "exp": expire,
@@ -28,9 +30,10 @@ def create_access_token(user_id: str, device_id: str | None = None) -> str:
 
 
 def create_refresh_token(user_id: str, device_id: str) -> str:
-    """refresh token：30 天有效，绑定设备（devices 表可吊销）"""
+    """refresh token：30 天有效，绑定设备（devices 表可吊销）；jti 保证轮换后必不同"""
     expire = _now() + timedelta(days=settings.jwt_refresh_ttl_days)
     payload = {
+        "jti": uuid.uuid4().hex,
         "sub": user_id,
         "device_id": device_id,
         "type": "refresh",

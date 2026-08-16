@@ -42,16 +42,23 @@ def test_wechat_login_empty_code(client):
 
 def test_phone_login_wrong_code(client):
     """手机号登录错误验证码 → 401（AUTH-003）"""
-    r = client.post("/api/v1/auth/phone", json={"phone": "13800138000", "code": "111111"})
+    import time
+
+    phone = f"137{int(time.time()) % 100000000:08d}"
+    r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": "111111"})
     assert r.status_code == 401
     assert r.json()["code"] == "AUTH_003"
 
 
 def test_sms_send_mock(client):
-    """短信发送 mock：返回 mock_code（联调用）"""
-    r = client.post("/api/v1/auth/sms/send", json={"phone": "13800138000"})
+    """短信发送 mock：返回 6 位随机验证码（真实入库，联调用）"""
+    import time
+
+    phone = f"138{int(time.time()) % 100000000:08d}"  # 随机号码，避免 60s 防刷窗口冲突
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
     assert r.status_code == 200
-    assert r.json()["data"]["mock_code"] == "000000"
+    code = r.json()["data"]["mock_code"]
+    assert len(code) == 6 and code.isdigit()
 
 
 def test_refresh_invalid_token(client):
