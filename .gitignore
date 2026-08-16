@@ -42,3 +42,7 @@ Thumbs.db
 # PG 备份产物（脚本入库存，dump 不入库）
 backups/*.dump
 backups/*.sha256
+
+# --- ML 模型产物（可训练再生，不入库）---
+backend/models/
+*.safetensors
