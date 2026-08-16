@@ -1,13 +1,21 @@
 """忆述光华 backend · 应用配置（pydantic-settings）"""
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env 固定位于 backend/ 下（无论从仓库根还是 backend/ 启动都能加载）
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
     """统一配置中心，读取 backend/.env（参考 .env.example）"""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_BACKEND_DIR / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # 环境
     app_env: str = "development"

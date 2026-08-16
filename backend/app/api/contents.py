@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
+from app.core.queue import enqueue_low
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.content import (
@@ -13,6 +14,7 @@ from app.schemas.content import (
     ContentUploadResult,
     CosPresign,
 )
+from app.workers.worker import process_content
 
 router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
 
@@ -40,6 +42,10 @@ def create_content(req: ContentCreate, db: Session = Depends(get_db)):
         "created_at": datetime.now(timezone.utc),
     }
     _MOCK_CONTENTS.append(record)
+
+    # 入队异步 AI 管线（API-016：收件→转写→分类→聚类；API 立即返回不阻塞）
+    enqueue_low(process_content, record["id"])
+
     return ApiResponse(data=ContentOut(**record))
 
 

@@ -56,7 +56,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     cmd = [
         sys.executable, "-m", "pytest", "backend/tests",
         "-q", "--tb=short",
-        "--cov=backend/app", "--cov=backend/tests",
+        "--cov=backend/app",
         "--cov-report=term-missing",
         f"--cov-fail-under={cov_threshold}",
     ]
