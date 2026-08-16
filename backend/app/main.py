@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, contents, events, search
+from app.api import asr, auth, contents, events, search
 from app.core.config import settings
 from app.core.errors import install_error_handlers
 from app.core.middleware import RequestIDMiddleware
@@ -51,6 +51,7 @@ app.include_router(auth.router)
 app.include_router(contents.router)
 app.include_router(events.router)
 app.include_router(search.router)
+app.include_router(asr.router)
 
 
 @app.get("/healthz", tags=["meta"])

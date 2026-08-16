@@ -492,7 +492,7 @@
           "search"
         ],
         "summary": "Search",
-        "description": "描述性搜索主链路（API-003）：\nquery → LLM 改写/路由 → 多路召回（Qdrant dense+sparse RRF）→ payload filter\n→ bge-reranker 粗排 → qwen-flash 精排 → 溯源。\n\nMock：返回确定性占位结果，契约消费方可走通搜索页 UI 流程。\n验收：Top3≥70% + P95<3s（M1 门禁，RET-014/RET-018）。",
+        "description": "描述性搜索主链路（API-003）：\nquery → LLM 改写/路由 → 多路召回（Qdrant dense+sparse RRF）→ payload filter\n→ bge-reranker 粗排 → qwen-flash 精排 → 溯源。\n\n验收：Top3≥70% + P95<3s（M1 门禁，RET-014/RET-018）。",
         "operationId": "search_api_v1_search_post",
         "requestBody": {
           "content": {
@@ -528,6 +528,113 @@
         }
       }
     },
+    "/api/v1/asr/transcribe": {
+      "post": {
+        "tags": [
+          "asr"
+        ],
+        "summary": "Transcribe Audio",
+        "description": "语音转写（API-004 主链路：上传 → 双通道转写 → 护栏审核）\n\n护栏（B5b）：转写结果先过 dashscope.moderate 再返回；\n拦截时 text 仍返回（供端侧展示），但 passed=false 提示不可下发。\n情绪（B5-c）：SenseVoice 通道产出 emotion，供情绪关怀分层触发。",
+        "operationId": "transcribe_audio_api_v1_asr_transcribe_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "preferred",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(auto|funasr|sensevoice|mock)$",
+              "default": "auto",
+              "title": "Preferred"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_transcribe_audio_api_v1_asr_transcribe_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AsrTranscribeResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guard/check": {
+      "post": {
+        "tags": [
+          "asr"
+        ],
+        "summary": "Guard Check",
+        "description": "内容安全护栏（B5b）：发布/入库前文本审核，fail-safe 默认拦截（决策 #12）",
+        "operationId": "guard_check_api_v1_guard_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_GuardCheckResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -551,6 +658,37 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_AsrTranscribeResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AsrTranscribeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AsrTranscribeResponse]"
+      },
       "ApiResponse_ContentOut_": {
         "properties": {
           "code": {
@@ -643,6 +781,37 @@
         },
         "type": "object",
         "title": "ApiResponse[EventOut]"
+      },
+      "ApiResponse_GuardCheckResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuardCheckResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[GuardCheckResponse]"
       },
       "ApiResponse_Page_ContentOut__": {
         "properties": {
@@ -804,6 +973,79 @@
         },
         "type": "object",
         "title": "ApiResponse[list[EventOut]]"
+      },
+      "AsrTranscribeResponse": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "转写文本"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "funasr",
+              "sensevoice",
+              "mock"
+            ],
+            "title": "Channel",
+            "description": "实际使用通道"
+          },
+          "emotion": {
+            "type": "string",
+            "title": "Emotion",
+            "description": "声学情绪标签（SenseVoice 通道产出）",
+            "default": "平静"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "识别置信度",
+            "default": 0.0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "description": "音频时长（ms，wav 头解析）",
+            "default": 0
+          },
+          "mock": {
+            "type": "boolean",
+            "title": "Mock",
+            "description": "是否 mock 兜底",
+            "default": false
+          },
+          "guardrail": {
+            "$ref": "#/components/schemas/GuardrailVerdict",
+            "description": "护栏审核结论（B5b）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "channel",
+          "guardrail"
+        ],
+        "title": "AsrTranscribeResponse",
+        "description": "转写结果（mock 与真实同构）\n\n- channel: funasr（语义）/ sensevoice（声学情绪）/ mock（未配 key 兜底）\n- emotion: 声学情绪（开心/难过/生气/惊讶/恐惧/厌恶/平静），B5-c 情绪关怀分层触发依据\n- guardrail: 内容安全审核结论（fail-safe：真实模式下不可用默认拦截）"
+      },
+      "Body_transcribe_audio_api_v1_asr_transcribe_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "wav 音频（16kHz 16bit 单声道，≤8MB）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_transcribe_audio_api_v1_asr_transcribe_post"
       },
       "ContentCreate": {
         "properties": {
@@ -1311,6 +1553,61 @@
         ],
         "title": "EventSplitRequest",
         "description": "用户手动拆分事件"
+      },
+      "GuardCheckRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "description": "待审核文本（发布/入库前调用）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "GuardCheckRequest"
+      },
+      "GuardCheckResponse": {
+        "properties": {
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "passed"
+        ],
+        "title": "GuardCheckResponse"
+      },
+      "GuardrailVerdict": {
+        "properties": {
+          "passed": {
+            "type": "boolean",
+            "title": "Passed",
+            "description": "true=放行；false=拦截（fail-safe 默认拦截）"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "拦截原因（放行时为空串）",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "passed"
+        ],
+        "title": "GuardrailVerdict",
+        "description": "护栏结论（对齐 dashscope.moderate 输出）"
       },
       "HTTPValidationError": {
         "properties": {

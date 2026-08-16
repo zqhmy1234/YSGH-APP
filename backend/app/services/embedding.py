@@ -14,6 +14,10 @@ from functools import lru_cache
 # 限制线程数（必须在 torch import 前设置）
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 os.environ.setdefault("TORCH_NUM_THREADS", "4")
+# 离线加载（模型已本地缓存）：sentence_transformers 加载前会 HEAD huggingface.co 校验，
+# 国内网络 connect 超时 → 每次测试/启动挂 2 分钟+（实测 10s×5 重试退避）。
+# 缓存完整时离线加载零差异；CI/新机器需下载时显式设 HF_HUB_OFFLINE=0（见 .github/workflows/ci.yml）。
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import torch  # noqa: E402
 from sentence_transformers import SentenceTransformer  # noqa: E402

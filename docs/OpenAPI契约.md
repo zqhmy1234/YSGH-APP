@@ -14,7 +14,7 @@ cd backend
 python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import json; json.dump(app.openapi(), open('../docs/openapi.json','w',encoding='utf-8'), ensure_ascii=False, indent=2)"
 ```
 
-## 当前接口（12 路径）
+## 当前接口（14 路径）
 
 ### 认证（/api/v1/auth）
 | 方法 | 路径 | 说明 | 状态 |
@@ -41,6 +41,15 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
 | POST | / | 描述性搜索（B2 RAG）| ⚠️ mock（M1 实现）|
+
+### ASR 与护栏（/api/v1，需 Bearer token）
+| 方法 | 路径 | 说明 | 状态 |
+|---|---|---|---|
+| POST | /asr/transcribe | 语音转写（双通道 FunASR/SenseVoice + 情绪 + 护栏，F3）| ✅ mock（拿 key 零切换）|
+| POST | /guard/check | 内容安全护栏（B5b，fail-safe 默认拦截）| ✅ mock（真实模式拦拦截语义已测）|
+
+> ASR 入参：multipart `file`（wav 16kHz 16bit 单声道，≤8MB）+ `preferred`（auto/funasr/sensevoice/mock）。
+> 响应含 `channel`（funasr/sensevoice/mock）、`emotion`（开心/难过/生气/惊讶/恐惧/厌恶/平静）、`guardrail.passed`（false=拦截不可下发）。
 
 ### 元
 | 方法 | 路径 | 说明 |
