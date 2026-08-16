@@ -20,17 +20,20 @@
 ### What's In Progress
 
 - [x] S1-02（T1）部分：FastAPI 骨架 + 28 表 DDL + OpenAPI 契约 + mock server（auth/contents/events/search 路由，mock 联调通过）
-  - 待办：接入 PG（models/session 已就绪）、微信 code2session 真实接入、STS 真实签名、RQ worker
+  - 待办：接入 PG（密码待用户提供）、微信 code2session 真实接入、STS 真实签名、RQ worker
 - [x] S1-13（T2）：事件聚合原型完成（ST-DBSCAN + 四层管线 + 150 张测试 + 10 项验证全过，500 张 3ms）
-- [ ] S1-01（T2）：POC 五测（相册监听/前台录音/attribution tag/SQLCipher 需真机，Agent 待出测试清单与脚本）
+- [x] **Pre-Commit 代码质量审核 Agent**：scripts/review_agent.py + ruff.toml + .githooks/pre-commit（已写入 AGENTS.md 强制流程，commit 自动触发）
+- [x] **POC 测试包（S1-01）**：POC五测测试包.md（用例/通过标准/D7 模板）+ POC-04 SQLCipher 桌面验证 PASS
+- [ ] S1-01（T2）：POC-01/02/03 真机验证（缺 JDK/ADB/Android SDK/HBuilderX + 真机）
 - [ ] S1-08（T1）：RQ 队列 + Redis AOF + CI + 备份脚本
+- [ ] PG 隔离建库（scripts/setup_pg.sql 已备，待 postgres 密码）
 
 ### What's Next
 
-1. POC 五测准备：真机测试清单 + 可执行脚本（Agent 负责产出，用户真机执行）
-2. RQ worker + 队列任务编排（API-016/017）
-3. OpenAPI 契约文档导出（openapi.json 提交仓库）
-4. 接入 PG：本地 PostgreSQL 环境搭建 + schema 迁移
+1. 用户提供 postgres 超级用户密码 → 建 yishu 库 + yishu_app 角色 → 执行 schema.sql
+2. POC 真机环境补齐（JDK 17 / Android SDK / ADB / HBuilderX）
+3. RQ worker + 队列任务编排（API-016/017）
+4. OpenAPI 契约文档导出（openapi.json 提交仓库）
 
 ## Blockers / Risks
 
