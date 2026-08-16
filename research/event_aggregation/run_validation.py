@@ -128,13 +128,85 @@ def main() -> None:
     print(f"\n聚合耗时（{result.stats['raw']} 张）: {agg_ms}ms")
     _check(failures, "聚合耗时 <2s（B3-6 端侧预算）", agg_ms < 2000, f"{agg_ms}ms")
 
+    # --- 场景 15：真实数据基准（500 张真实截图，用户指令：不用合成生成器）---
+    validate_real_data(failures)
+
     print("=" * 60)
     if failures:
         print(f"❌ {len(failures)} 项未通过:")
         for f in failures:
             print("  -", f)
         raise SystemExit(1)
-    print("✅ 全部验证通过（13 项）")
+    print("✅ 全部验证通过（15 项场景）")
+
+
+def validate_real_data(failures: list[str]) -> None:
+    """场景 15：真实数据基准 —— 500 张真实截图（无 GPS，B3 #6 路径）
+
+    来源：C:\\Users\\ghf\\Pictures\\Screenshots（命名编码真实时间戳）
+    验证点：加载可用 / 全量进日卡片无孤儿 / 时间窗聚类真实触发 /
+            连拍折叠真实生效 / 增量聚合旧簇保留 / 性能预算
+    """
+    print("\n" + "=" * 60)
+    print("场景 15：真实数据基准（500 张截图，无 GPS）")
+    try:
+        from .load_real_photos import load_screenshots, sample_500
+
+        real = sample_500(load_screenshots())
+    except Exception as exc:  # noqa: BLE001
+        _check(failures, "场景15: 截图加载可用", False, f"{type(exc).__name__}: {exc}")
+        return
+
+    _check(failures, "场景15: 500 张真实截图加载", len(real) == 500, f"实际={len(real)}")
+    distinct_days = len({p.ts.date().isoformat() for p in real})
+
+    t0 = time.perf_counter()
+    r = aggregate(real)
+    real_ms = int((time.perf_counter() - t0) * 1000)
+    print(
+        f"真实数据聚合: {r.stats['raw']} 张 → 预处理 {r.stats['preprocessed']} | "
+        f"L0 簇 {r.stats['l0_clusters']} | L1 日卡片 {r.stats['l1_days']} | "
+        f"散片并入 {r.stats['noise_to_l1']} | {real_ms}ms"
+    )
+
+    in_days = sum(len(d["photos"]) for d in r.l1_days)
+    _check(failures, "场景15: 全量进日卡片无孤儿", in_days == 500, f"进卡片={in_days}/500")
+    _check(failures, "场景15: 日卡片数合理", 0 < r.stats["l1_days"] <= distinct_days,
+            f"日卡片={r.stats['l1_days']} 覆盖天数={distinct_days}")
+    # 真实截图常 60 分钟内 ≥3 张（成簇）→ 时间窗聚类应真实触发
+    _check(failures, "场景15: 时间窗聚类真实触发", r.stats["l0_clusters"] >= 1,
+            f"L0 簇={r.stats['l0_clusters']}")
+    # 截图 <5s 连拍稀少（全量 3078 张仅 4 对）→ 折叠数应与 ground truth 一致（不误伤）
+    # ground truth：按管线同规则（与前一张间隔 <5s 即并入上一组）计算
+    def _gt_fold_count(ps: list) -> int:
+        folded_photos = 0
+        prev_ts = None
+        for p in ps:
+            if prev_ts is not None and (p.ts - prev_ts).total_seconds() < 5.0:
+                folded_photos += 1
+            prev_ts = p.ts
+        return folded_photos
+
+    folded = r.stats["raw"] - r.stats["preprocessed"]
+    gt_folded = _gt_fold_count(real)
+    _check(failures, "场景15: 连拍折叠与 ground truth 一致", folded == gt_folded,
+            f"管线折叠={folded} 期望={gt_folded}")
+    _check(failures, "场景15: 性能 <2s（B3-6 预算）", real_ms < 2000, f"{real_ms}ms")
+
+    # 增量聚合（AGG-015）：按时间切两批 → 旧簇结构保留
+    mid = real[len(real) // 2].ts
+    batch_a = [p for p in real if p.ts < mid]
+    batch_b = [p for p in real if p.ts >= mid]
+    base = aggregate(batch_a)
+    incr = incremental_aggregate(base, batch_b)
+    old_ids = {frozenset(p.id for p in cl) for cl in base.l0_clusters}
+    new_ids = {frozenset(p.id for p in cl) for cl in incr.l0_clusters}
+    _check(failures, "场景15: 增量聚合旧簇保留（AGG-015）", old_ids.issubset(new_ids),
+            f"旧簇{len(old_ids)}→保留{len(new_ids)}")
+    _check(failures, "场景15: 增量新照片入结果",
+            sum(1 for cl in incr.l0_clusters for p in cl if p.id in {x.id for x in batch_b}) > 0,
+            "新批照片已入")
+
 
 
 def _check(failures: list[str], name: str, ok: bool, detail: str = "") -> None:
