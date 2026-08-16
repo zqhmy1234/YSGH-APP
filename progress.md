@@ -19,22 +19,21 @@
 
 ### What's In Progress
 
-- [x] S1-02（T1）：FastAPI 骨架 + 28 表 DDL + OpenAPI 契约 + mock server（auth/contents/events/search）
-- [x] S1-02 真实 DB 接入：yishu 隔离库建成（31 表 + vector 扩展 + yishu_app 角色，不碰 ugsim 等其他库）+ DB 集成测试 4 项
-- [x] S1-08（T1）：RQ 队列（Docker Redis AOF + high/low 双队列 + Windows SimpleWorker）+ 队列测试 3 项 + contents 真实入队
-- [x] S1-13（T2）：事件聚合原型完成（10 项验证全过）
-- [x] Pre-Commit 审核 Agent + 测试 Agent（pytest 25 项 92% 覆盖率 + API 冒烟 + 原型验证，hook 强制）
-- [x] POC 测试包 + POC-04 SQLCipher 桌面验证 PASS
-- [ ] S1-01（T2）：POC-01/02/03 真机验证（nova 11 可用；缺 JDK/ADB/Android SDK/HBuilderX）
-- [ ] 微信 code2session 真实接入（mock 已可联调）
-- [ ] COS STS 真实签名（mock 已可联调）
+- [x] S1-02（T1）：FastAPI 骨架 + 28 表 DDL + OpenAPI 契约 + mock server + PG 隔离库（31 表）+ RQ 队列
+- [x] S1-08（T1）：RQ 队列（Docker Redis AOF + high/low 双队列 + Windows SimpleWorker）+ 队列测试 3 项
+- [x] S1-13（T2）：事件聚合原型（10 项验证全过）
+- [x] Pre-Commit 审核 Agent + 测试 Agent（pytest 25 项 92% 覆盖率，hook 强制）
+- [x] **S1-01（T2）POC 五测真机完成（2026-08-16）**：POC-01 相册监听 PASS / POC-02 前台录音 PASS（灭屏 9822ms）/ POC-03 部分（DEV-007 过，DEV-006 待 Android 16）/ POC-04 SQLCipher PASS / POC-05 聚合 PASS → **结论预判 GO**
+- [ ] 待补：Android 16 模拟器验证 attribution（DEV-006）
+- [ ] 微信 code2session 真实接入、COS STS 真实签名（mock 已可联调）
 
 ### What's Next
 
-1. OpenAPI 契约文档导出（openapi.json 提交仓库）
-2. POC 真机环境补齐：JDK 17 + Android SDK platform-tools（nova 11 USB 直连可测 POC-01/02/04）
+1. 2026-08-23 D7 结论正式产出（POC 证据已备齐）
+2. OpenAPI 契约文档导出（openapi.json）
 3. 备份脚本（pg_dump/WAL）+ CI 配置
 4. 认证真实接入 DB（users 表 CRUD 替换 mock）
+5. 事件聚合 Python 正式原型（W3-4，500 张测试照）
 
 ## Blockers / Risks
 
