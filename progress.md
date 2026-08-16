@@ -3,8 +3,8 @@
 ## Current State
 
 **Last Updated:** 2026-08-16
-**Active Feature:** 无（规划阶段 — 待路线图 + Sprint 规划）
-**阶段：** 交付文档收口完成 ✅ / 代码未开工 / Git + Harness 初始化完成
+**Active Feature:** 无（规划完成 — 待开工）
+**阶段：** 交付文档收口完成 ✅ / 路线图 + Sprint 1 规划完成 ✅ / 代码未开工 / Git + Harness 初始化完成
 
 ## Status
 
@@ -17,14 +17,15 @@
 
 ### What's In Progress
 
-- [ ] 路线图详细规划（roadmap-update 技能）— 等待用户确认项目理解
-- [ ] Sprint 规划（sprint-planning 技能）— 等待路线图完成
+- [x] 用户确认项目理解无误
+- [x] 路线图详细规划（roadmap-update 技能）→ 《忆述光华_开发路线图.md》（Now/Next/Later + 依赖映射 + 容量 + 门禁）
+- [x] Sprint 1 规划（sprint-planning 技能）→ 《忆述光华_Sprint1规划.md》（2026-08-17 ~ 08-30，对齐 M0）
 
 ### What's Next
 
-1. 用户审核确认"项目理解"无误
-2. 用 roadmap-update 技能产出 Now/Next/Later 路线图
-3. 用 sprint-planning 技能规划首个 Sprint（Sprint 1 = M0 内容）
+1. 用户审阅路线图 + Sprint 1 规划
+2. 确认 Sprint 1 范围/假设（2 周制、75% 容量、POC D7 门禁）
+3. 开工：T4 企微认证第一天申请；T2 POC 五测启动
 
 ## Blockers / Risks
 
