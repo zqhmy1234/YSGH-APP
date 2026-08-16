@@ -2,9 +2,9 @@
 
 ## Current State
 
-**Last Updated:** 2026-08-16 21:15
-**Active Feature:** M0 工程地基（Sprint 1，2026-08-17 ~ 08-30）→ **POC 五测全过，D7 Gate 达成（提前 7 天）**
-**阶段：** 规划完成 ✅ / POC 完成 ✅ / **T1 主线开发中（认证真实接入 DB）**
+**Last Updated:** 2026-08-17 00:55
+**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合完成（双基准）**；**Part 2 RAG 管线骨架 + 百炼接入层完成**
+**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1 完成 ✅ / **M1 Part 2 RAG 开发中（待 DASHSCOPE key 解锁 LLM 路径/图片塔）**
 
 > ⚠️ 团队结构变更（2026-08-16 用户拍板）：**用户同时承担 T1（后端）+ T2（客户端核心）**，与 Agent 一起完成 Sprint 1 内 T1/T2 全部任务；T3/T4/P1/P2/P3 另行安排。
 
@@ -12,6 +12,10 @@
 
 ### What's Done
 
+- [x] **S1-03 百炼接入层**：services/external/dashscope.py（qwen-flash 改写/路由 + Qwen3-VL 图片塔 + 护栏 fail-safe），5 项 mock 测试全过，拿 key 零代码切换（commit 3fa24f4）
+- [x] **M1 Part 1 真实数据基准（场景15）**：500 张真实截图（C:\Users\ghf\Pictures\Screenshots，3078 张按月分层抽样）替代合成生成器；全量进日卡片/时间窗聚类 65 簇/折叠与 ground truth 一致/46ms/增量旧簇保留（已合并 develop 6966f13）
+- [x] **M1 Part 2 RAG 管线骨架**：BGE-M3 dense+sparse（手动 sparse_linear 实现，ST 3.x 无 sparse 模块）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兑底）+ 溯源 + 降级；test_rag.py 6 项集成测试全过（真实 Qdrant + 本地 BGE-M3）
+- [x] **Sprint 2（M1）规划产出**：忆述光华_Sprint2规划.md（P0=聚合正式原型+RAG+收尾）+ AI 开发成本估算（三档，推荐混合档 500-1500 元/月）
 - [x] Git 仓库初始化（D:\GuangH-App，git init 2026-08-16）
 - [x] Harness 初始化（AGENTS.md / feature_list.json / progress.md / init.sh / session-handoff.md，按项目定制）
 - [x] 通读全部交付文档（18 份：开工总结 / MVP v3 / 开发决策 32 项 / 开发规划 7 人版 / 测试清单 140 项 / Schema 28 表 / 外部 API / 转达稿 / 深度设计 01-05e 共 9 份）
@@ -29,11 +33,11 @@
 - [x] **S1-01（T2）POC 五测全部 PASS → 结论 GO，D7 Gate 提前达成**
 - [ ] 微信 code2session 真实接入（待 appid/secret）
 - [ ] COS STS 真实签名（待腾讯云密钥）
-- [ ] 事件聚合 Python 正式原型（W3-4）
+- [ ] RAG 图片塔（Qwen3-VL）+ 500 张截图图片基准 + 双层 Rerank（待 DASHSCOPE key）
 
 ### What's Next
 
-1. （等 W3）事件聚合正式原型 + RAG 管线（M1 主线）
+1. M1 Part 2 RAG 收尾：500 张截图图片基准（Screenshots 已有 3078 张）+ 图片塔（拿 DASHSCOPE key 后）
 2. 微信 code2session / COS STS 真实密钥接入（拿到 key 后）
 3. CI 配置（GitHub Actions）
 4. 2026-08-23 D7 结论正式产出（证据已齐）
