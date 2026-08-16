@@ -2,9 +2,9 @@
 
 ## Current State
 
-**Last Updated:** 2026-08-17 00:26
-**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合正式原型完成（497 合成 + 500 真实截图双基准）**；**Part 2 RAG 管线骨架完成（集成测试全过）**
-**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1 完成 ✅（真实数据基准已合并）/ **M1 Part 2 RAG 开发中**
+**Last Updated:** 2026-08-17 00:55
+**Active Feature:** M1 主线（Sprint 2）→ **Part 1 事件聚合完成（双基准）**；**Part 2 RAG 管线骨架 + 百炼接入层完成**
+**阶段：** Sprint 1 T1/T2 全部完成 ✅ / M1 Part 1 完成 ✅ / **M1 Part 2 RAG 开发中（待 DASHSCOPE key 解锁 LLM 路径/图片塔）**
 
 > ⚠️ 团队结构变更（2026-08-16 用户拍板）：**用户同时承担 T1（后端）+ T2（客户端核心）**，与 Agent 一起完成 Sprint 1 内 T1/T2 全部任务；T3/T4/P1/P2/P3 另行安排。
 
@@ -12,6 +12,7 @@
 
 ### What's Done
 
+- [x] **S1-03 百炼接入层**：services/external/dashscope.py（qwen-flash 改写/路由 + Qwen3-VL 图片塔 + 护栏 fail-safe），5 项 mock 测试全过，拿 key 零代码切换（commit 3fa24f4）
 - [x] **M1 Part 1 真实数据基准（场景15）**：500 张真实截图（C:\Users\ghf\Pictures\Screenshots，3078 张按月分层抽样）替代合成生成器；全量进日卡片/时间窗聚类 65 簇/折叠与 ground truth 一致/46ms/增量旧簇保留（已合并 develop 6966f13）
 - [x] **M1 Part 2 RAG 管线骨架**：BGE-M3 dense+sparse（手动 sparse_linear 实现，ST 3.x 无 sparse 模块）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兑底）+ 溯源 + 降级；test_rag.py 6 项集成测试全过（真实 Qdrant + 本地 BGE-M3）
 - [x] **Sprint 2（M1）规划产出**：忆述光华_Sprint2规划.md（P0=聚合正式原型+RAG+收尾）+ AI 开发成本估算（三档，推荐混合档 500-1500 元/月）
