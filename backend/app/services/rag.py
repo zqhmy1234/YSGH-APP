@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.schemas.search import SearchHit, SearchQuery, SearchResult
 from app.services.embedding import encode_query
+from app.services.external import rewrite_query, route_query
 from app.services.vector_store import get_store
 
 logger = logging.getLogger("yishu.rag")
@@ -58,6 +59,14 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict]:
             rewritten = pattern.sub("", q.q).strip()
             break
 
+    # LLM 改写（S1-03 百炼接入：配置 key 后启用；未配置/失败 → 规则结果兜底）
+    try:
+        llm_q = rewrite_query(q.q)
+        if llm_q:
+            rewritten = llm_q
+    except RuntimeError:
+        pass
+
     if q.content_types:
         filters["content_types"] = q.content_types
     if q.time_from:
@@ -73,8 +82,12 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict]:
 
 
 def _route_query(q: str) -> str:
-    """查询路由（B2：文本/图片/混合意图；无 LLM 时规则兜底）"""
-    # 图片意图关键词（"照片里""拍的""这张图"）
+    """查询路由（B2：文本/图片/混合意图；LLM 优先，未配置时规则兜底）"""
+    try:
+        return route_query(q)
+    except RuntimeError:
+        pass
+    # 规则兜底：图片意图关键词（"照片里""拍的""这张图"）
     image_hints = ["照片", "图片", "拍的", "截图", "这张", "图里"]
     if any(h in q for h in image_hints):
         return "image"
