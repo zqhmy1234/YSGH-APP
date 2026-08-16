@@ -1,0 +1,49 @@
+"""内容契约（contents 表：照片/文字/语音/文章统一入库）"""
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class ContentCreate(BaseModel):
+    content_type: str = Field(..., pattern=r"^(photo|text|voice|article)$")
+    text: str | None = None               # OCR 结果/转写/原文
+    taken_at: datetime | None = None
+    gps_lat: float | None = Field(None, ge=-90, le=90)
+    gps_lng: float | None = Field(None, ge=-180, le=180)
+    perceptual_hash: str | None = None    # 去重（Q16）
+    cos_key: str | None = None            # 照片原件（STS 直传后回调）
+    thumbnail_key: str | None = None
+    extra: dict[str, Any] | None = None   # EXIF/时长/尺寸
+    source: str = Field("app", pattern=r"^(app|windows|wechat|import)$")
+
+
+class ContentOut(BaseModel):
+    id: str
+    content_type: str
+    content_class: str | None
+    text: str | None
+    taken_at: datetime | None
+    place: str | None
+    emotion: dict | None
+    tags: list[str] = []
+    status: str
+    created_at: datetime
+
+
+class ContentUploadResult(BaseModel):
+    """上传结果：直传 COS 场景返回 STS 凭证 + 回调参数"""
+
+    content_id: str
+    status: str
+    cos_presign: "CosPresign | None" = None
+
+
+class CosPresign(BaseModel):
+    """STS 临时密钥 + 上传路径（决策 #10：30 秒有效）"""
+
+    tmp_secret_id: str
+    tmp_secret_key: str
+    session_token: str
+    expired_at: datetime
+    cos_key: str

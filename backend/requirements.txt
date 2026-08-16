@@ -1,0 +1,37 @@
+# 忆述光华 backend · Python 依赖
+# Python 3.11 / FastAPI + RQ + PostgreSQL（开发决策清单 #3/#9 已拍板）
+
+# --- Web 框架 ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+python-multipart>=0.0.9
+
+# --- 数据库 ---
+sqlalchemy>=2.0
+psycopg[binary]>=3.2
+alembic>=1.13
+pgvector>=0.3
+
+# --- 队列（RQ，决策 #9）---
+rq>=1.16
+redis>=5.0
+
+# --- 认证（决策 #8：JWT 自建）---
+pyjwt>=2.9
+passlib[bcrypt]>=1.7
+bcrypt>=4.1
+
+# --- 外部 API / AI ---
+httpx>=0.27
+dashscope>=1.20          # 阿里云百炼（qwen/护栏）
+openai>=1.40             # 兼容端点备选
+
+# --- 可观测（决策 #12：Sentry 云版）---
+sentry-sdk[fastapi]>=2.13
+
+# --- 工具 ---
+python-dotenv>=1.0
+slowapi>=0.1.9           # 限流（决策 #30）
+datasketch>=1.6          # 去重（MinHash）

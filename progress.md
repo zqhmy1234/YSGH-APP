@@ -3,8 +3,10 @@
 ## Current State
 
 **Last Updated:** 2026-08-16
-**Active Feature:** 无（规划完成 — 待开工）
-**阶段：** 交付文档收口完成 ✅ / 路线图 + Sprint 1 规划完成 ✅ / 代码未开工 / Git + Harness 初始化完成
+**Active Feature:** M0 工程地基（Sprint 1，2026-08-17 ~ 08-30）
+**阶段：** 规划完成 ✅ / **开工中：T1 后端 + T2 客户端核心（用户双角色 + Agent 协作）**
+
+> ⚠️ 团队结构变更（2026-08-16 用户拍板）：**用户同时承担 T1（后端）+ T2（客户端核心）**，与 Agent 一起完成 Sprint 1 内 T1/T2 全部任务；T3/T4/P1/P2/P3 另行安排。
 
 ## Status
 
@@ -17,15 +19,18 @@
 
 ### What's In Progress
 
-- [x] 用户确认项目理解无误
-- [x] 路线图详细规划（roadmap-update 技能）→ 《忆述光华_开发路线图.md》（Now/Next/Later + 依赖映射 + 容量 + 门禁）
-- [x] Sprint 1 规划（sprint-planning 技能）→ 《忆述光华_Sprint1规划.md》（2026-08-17 ~ 08-30，对齐 M0）
+- [ ] S1-02（T1）：28 表 schema DDL + OpenAPI 契约 + mock server + 账号体系
+- [ ] S1-01（T2）：POC 五测（真机部分待用户，Agent 准备测试脚本/清单）
+- [ ] S1-13（T2）：事件聚合算法原型（Python ST-DBSCAN，500 张测试照基线）
+- [ ] S1-08（T1）：RQ 队列 + Redis AOF + CI + 备份脚本（S1-02 后）
 
 ### What's Next
 
-1. 用户审阅路线图 + Sprint 1 规划
-2. 确认 Sprint 1 范围/假设（2 周制、75% 容量、POC D7 门禁）
-3. 开工：T4 企微认证第一天申请；T2 POC 五测启动
+1. backend/ 工程骨架 + 28 表 DDL
+2. FastAPI 主程序 + OpenAPI 契约文档
+3. mock server（契约消费方可调用）
+4. 事件聚合 spike（Python 原型）
+5. D7（8/23）POC 五测结论
 
 ## Blockers / Risks
 
