@@ -1,4 +1,4 @@
-"""测试照片生成器：500 张模拟照片，覆盖 B3 十类分布矩阵
+"""测试照片生成器：500 张模拟照片，覆盖 B3 十类分布矩阵 + 边界用例
 
 分布（B3 §4）：
   1  短时单事件（一顿饭）          2  短时多事件（咖啡馆→公园）
@@ -6,6 +6,9 @@
   5  并行长事件（备考+日常）       6  无 GPS（截图/微信图）
   7  高密度连拍                    8  稀疏记录（一天 1-2 张）
   9  低质/重复                     10 时间错乱（不覆盖，接受限制）
+边界用例（B3-3/AGG-009/010/016）：
+  11 GPS 单点漂移（跳出事件簇）   12 GPS 系统性偏移（整批偏）
+  13 端云阈值一致性（同批数据双跑）
 """
 from __future__ import annotations
 
@@ -75,7 +78,7 @@ def generate() -> list[RawPhoto]:
     for i in range(5):
         photos.append(RawPhoto(id=f"p6-{i}", ts=_ts(t, i * 20), lat=None, lng=None, tags=["截图"], ocr_text="会议纪要"))
 
-    # --- 7. 高密度连拍：1 分钟内 20 张（间隔 3s < 5s 折叠阈值，应折叠为 1 个时间点）---
+    # --- 7. 高密度连拍：1 分钟内 20 张（间隔 3s < 5s 折叠阈值）---
     t = base + timedelta(days=10, hours=8)
     for i in range(20):
         photos.append(RawPhoto(id=f"p7-{i}", ts=_ts(t, i * 0.05), lat=HZ[0], lng=HZ[1], tags=["风景"]))
@@ -98,5 +101,48 @@ def generate() -> list[RawPhoto]:
     # --- 10. 时间错乱（不覆盖，接受限制；仅测试不崩溃）---
     t = base + timedelta(days=15)
     photos.append(RawPhoto(id="p10-0", ts=_ts(t, 0), lat=HZ[0], lng=HZ[1], tags=["存疑"]))
+
+    # --- 11. GPS 单点漂移：一顿饭 8 张中 2 张跳出 3km（应拉回/标存疑，不产生新簇）---
+    t = base + timedelta(days=16)
+    for i in range(8):
+        if i in (3, 4):
+            photos.append(RawPhoto(
+                id=f"p11-{i}", ts=_ts(t, i * 5),
+                lat=HZ[0] + 0.03, lng=HZ[1] + 0.03,  # ~3km 漂移
+                tags=["聚餐"],
+            ))
+        else:
+            photos.append(RawPhoto(id=f"p11-{i}", ts=_ts(t, i * 5), lat=HZ[0], lng=HZ[1], tags=["聚餐"]))
+
+    # --- 12. GPS 系统性偏移：整批 8 张偏移 2km（不纠正，逆编码降级）---
+    t = base + timedelta(days=17)
+    for i in range(8):
+        photos.append(RawPhoto(
+            id=f"p12-{i}", ts=_ts(t, i * 6),
+            lat=HZ[0] + 0.02, lng=HZ[1] + 0.02,  # 整批偏移
+            tags=["家庭聚会"],
+        ))
+
+    # --- 13. 端云阈值一致性：同一批 12 张用同参跑（AGG-016 素材）---
+    t = base + timedelta(days=18)
+    for i in range(12):
+        photos.append(RawPhoto(id=f"p13-{i}", ts=_ts(t, i * 4), lat=HZ[0], lng=HZ[1], tags=["生日"]))
+
+    # --- 14. 批量扩充至 500 张基准：三个月日常照片（B3 十类之外的常态分布）---
+    # 模拟：每天 3-5 张（家庭/工作/通勤标签），共 ~320 张 → 总规模 ~500
+    seq = 0
+    for day in range(80):  # 80 天
+        day_t = base + timedelta(days=30 + day)
+        count = 3 + (day % 3)  # 3-5 张/天
+        for i in range(count):
+            lat = HZ[0] + ((day + i) % 5) * 0.004
+            lng = HZ[1] + ((day + i * 3) % 4) * 0.003
+            photos.append(RawPhoto(
+                id=f"p14-{seq:04d}",
+                ts=_ts(day_t, 8 + (i * 90) % 600),  # 白天分布
+                lat=lat, lng=lng,
+                tags=["家庭", "工作", "通勤"][(day + i) % 3],
+            ))
+            seq += 1
 
     return photos
