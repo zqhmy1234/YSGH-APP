@@ -35,3 +35,7 @@ sentry-sdk[fastapi]>=2.13
 python-dotenv>=1.0
 slowapi>=0.1.9           # 限流（决策 #30）
 datasketch>=1.6          # 去重（MinHash）
+
+# --- RAG（B2：Qdrant + BGE-M3，M1 Part 2）---
+qdrant-client>=1.19
+sentence-transformers>=3.4

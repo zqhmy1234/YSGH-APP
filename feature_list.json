@@ -13,7 +13,9 @@
       "id": "F1",
       "name": "F1 照片自动读取分类（P0）",
       "description": "相册监听（ContentObserver）+ 四层事件模型：端侧 L0 瞬间（ST-DBSCAN 60min/500m/min_pts3）+ L1 日卡片，云侧 L2 LLM 语义归并 + L3 主题流；photo↔event 多对多",
-      "dependencies": ["M0"],
+      "dependencies": [
+        "M0"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "30s 首批事件（≥50 张）+ L1/L2 正确率验收"
@@ -22,7 +24,9 @@
       "id": "F2",
       "name": "F2 文字碎片输入（P0）",
       "description": "SetFit 全局 5 类分类（待办/灵感/情绪/引用/混合）+ B5-c 三层裁决纠错（个人规则→全局→共性微调）",
-      "dependencies": ["M0"],
+      "dependencies": [
+        "M0"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "分类准确率 ≥75%（M1）→ ≥80%（M2）"
@@ -31,7 +35,9 @@
       "id": "F3",
       "name": "F3 语音输入 + AI 提炼（P0）",
       "description": "FunASR/SenseVoice 双通道（声学情绪+语义内容）+ 长录音 VAD 分段 + 录音中断状态机 + 情绪关怀分层触发",
-      "dependencies": ["M0"],
+      "dependencies": [
+        "M0"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "转写 WER 达标 + 情绪触发映射正确"
@@ -40,7 +46,9 @@
       "id": "F4",
       "name": "F4 AI 分类纠错（P0）",
       "description": "correction_log 向量匹配（余弦>0.8+类型约束）+ 个人规则优先 + 共性纠错 ≥50 条触发 SetFit 微调 + 三道噪音闸门",
-      "dependencies": ["F2"],
+      "dependencies": [
+        "F2"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "纠错后 7 天同类准确率提升 ≥10%（可测）"
@@ -49,16 +57,20 @@
       "id": "F5",
       "name": "F5 描述性搜索（P0）",
       "description": "Qdrant + BGE-M3（dense+sparse RRF 0.7/0.3 k=60）+ Qwen3-VL 图片塔 + LLM 查询路由/改写 + bge-reranker 粗排 + qwen-flash 精排 + 溯源",
-      "dependencies": ["M0"],
-      "status": "not-started",
-      "evidence": "",
+      "dependencies": [
+        "M0"
+      ],
+      "status": "in-progress",
+      "evidence": "RAG 管线骨架完成（M1 Part 2）：BGE-M3 dense+sparse 真实编码（手动 sparse_linear 实现）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兜底）+ 溯源 + 降级；backend/tests/test_rag.py 6 项集成测试全过（-m rag，Qdrant 容器 + 本地 BGE-M3）。待：Qwen3-VL 图片塔（需 DASHSCOPE key）+ 500 张截图图片基准 + rerank 双层",
       "gate": "Top3≥70% + P95<3s（M1/M2 门禁）"
     },
     {
       "id": "F7",
       "name": "F7 AI 访谈式冷启动（P0 优先玩法）",
       "description": "产品部三问 → L0 关系核心/人生大事/价值观 + L1 兴趣稀疏 + L2 留白；枚举化画像维度 + 三层披露 + 对话式管理",
-      "dependencies": ["F2"],
+      "dependencies": [
+        "F2"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "画像标注映射完整 + 格式容错（PRF-001/002）"
@@ -67,7 +79,9 @@
       "id": "F8",
       "name": "F8 时间轴展示（P0 优先玩法）",
       "description": "L1 日卡片 + L2 主题事件 + L3 主题流展示；稀疏记录并入日卡片（'8月14日 · 2张'）",
-      "dependencies": ["F1"],
+      "dependencies": [
+        "F1"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "时间轴流畅 + 事件结构正确"
@@ -76,7 +90,10 @@
       "id": "F6",
       "name": "F6 微信入口·收+找（P1）",
       "description": "企业微信「微信客服」+ UnionID 绑定 + 消息回调幂等（msg_id）+ 只收找不编辑 + 敏感排除",
-      "dependencies": ["M0", "F5"],
+      "dependencies": [
+        "M0",
+        "F5"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "收+找 10s/3s；不丢消息 99.9%（M3 门禁）"
@@ -85,7 +102,9 @@
       "id": "F9",
       "name": "F9 Windows 桌面端（P1）",
       "description": "Electron + Python sidecar（JSON-RPC 2.0 v1）+ PP-OCRv5 mobile（20MB）+ 批量导入分批 200/断点续传 + 三档离线降级 + AI 引擎适配器（云端默认/Ollama 可选）+ 删除告知",
-      "dependencies": ["M0"],
+      "dependencies": [
+        "M0"
+      ],
       "status": "not-started",
       "evidence": "",
       "gate": "OCR 置信度门控 + 断电续传正确（M4 联调）"
@@ -94,7 +113,10 @@
       "id": "P2-ECHO",
       "name": "回响机制·去年今日（P2）",
       "description": "B5-b 双查（画像 L1 敏感校验 + 百炼检测）+ 模板骨架池 30-50 + 30 天不重复；追问洞察（P2）",
-      "dependencies": ["F1", "F7"],
+      "dependencies": [
+        "F1",
+        "F7"
+      ],
       "status": "not-started",
       "evidence": ""
     },
