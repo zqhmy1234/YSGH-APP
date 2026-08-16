@@ -20,19 +20,19 @@
 
 ---
 
-## 一、环境准备（未就绪，需补齐）
+## 一、环境准备（部分就绪）
 
 | 项 | 要求 | 当前状态 |
 |---|---|---|
-| Android 真机 | Android 8~16 任一台（验证矩阵 COMP-002 后续覆盖）；**优先 Android 14+ 验证 attribution** | ❌ 待确认 |
-| ADB | `adb devices` 可识别真机（USB 调试开启） | ❌ 未安装 |
-| JDK | Java 17（Android Gradle 插件要求） | ❌ 未安装 |
-| Android SDK | platform-tools + build-tools + platform-35 | ❌ 未安装 |
+| Android 真机 | Android 8~16 任一台（验证矩阵 COMP-002 后续覆盖）；**优先 Android 14+ 验证 attribution** | ✅ **nova 11（FOA-AL00）已连接**：Android 12 / EMUI 14.2 / SDK 31，adb 已识别（DKS9K23526028855） |
+| ADB | `adb devices` 可识别真机（USB 调试开启） | ✅ 37.0.1（platform-tools，PATH 已配） |
+| JDK | Java 17（Android Gradle 插件要求） | ✅ Temurin 17.0.20 已装 |
+| Android SDK | platform-tools + build-tools + platform-35 | ⏳ 仅 platform-tools；cmdline-tools/build-tools/platform 待装 |
 | HBuilderX | uni-app x 自定义基座打包（UTS 插件必须） | ❌ 未安装 |
-| 真机调试开关 | 开发者选项 → USB 调试；小米/华为需关 MIUI/Harmony 优化 | ❌ 待真机 |
+| 真机调试开关 | 开发者选项 → USB 调试；小米/华为需关 MIUI/Harmony 优化 | ✅ 已完成（device 状态非 unauthorized） |
 
-> 决策 #4 已定：APP 打包走 HBuilderX 手动云打包，需 Windows 上的 HBuilderX。
-> 若真机/工具链 2-3 天内无法就绪，D7 结论将基于"模拟器 + 静态验证"降级产出，风险标记为高。
+> ⚠️ nova 11 为 Android 12（SDK 31）：POC-01/02/04 可完整真机验证；
+> POC-03 attribution 仅能验证 DEV-007（低版本不崩溃），DEV-006（Android 16 归因标识）需模拟器或更高版本设备。
 
 ---
 
@@ -137,7 +137,8 @@
 ## 五、当前进度
 
 - [x] POC-05 事件聚合 spike（Python 原型全过）
-- [ ] 环境补齐：JDK 17 / Android SDK / ADB / HBuilderX（或原生 Kotlin 最小工程）
-- [ ] 真机确认：1 台 Android 8~16 设备
+- [x] 真机确认：nova 11（Android 12）已连接，USB 调试授权完成
+- [x] 环境部分：JDK 17 + ADB 37.0.1 已装；SDK cmdline-tools/build-tools/platform 待装；HBuilderX 待定
+- [ ] 测试 APK 准备（原生 Kotlin 最小工程 或 HBuilderX 自定义基座）
 - [ ] POC-01/02/03/04 真机执行 + 证据收集
 - [ ] 2026-08-23 D7 结论产出
