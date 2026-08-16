@@ -27,6 +27,16 @@ L0_MIN_PTS = 3
 # L1 深夜归属（B3-2）：23:30-1:00 连续拍摄归属前一天
 NIGHT_HOUR, NIGHT_MIN = 23, 30
 
+# 统一参数配置（AGG-016 端云阈值一致性：端侧/云侧从同一配置源取参）
+AGG_CONFIG = {
+    "l0": {"eps_t_sec": L0_EPS_T_SEC, "eps_s_m": L0_EPS_S_M, "min_pts": L0_MIN_PTS},
+    "burst_gap_sec": BURST_GAP_SEC,
+    "night": {"hour": NIGHT_HOUR, "minute": NIGHT_MIN},
+    "l2_min_days": 2,
+    "l2_min_photos": 10,
+    "l3_tag_threshold": 3,
+}
+
 
 @dataclass
 class RawPhoto:
@@ -97,7 +107,7 @@ def preprocess(photos: list[RawPhoto]) -> list[Photo]:
 
 
 def aggregate(photos: list[RawPhoto], eps_t_sec: float = L0_EPS_T_SEC) -> AggregateResult:
-    """完整聚合管线"""
+    """完整聚合管线（全量：新用户冷启动 / 手动全量重跑）"""
     pts = preprocess(photos)
 
     # L0 瞬间层
@@ -108,43 +118,9 @@ def aggregate(photos: list[RawPhoto], eps_t_sec: float = L0_EPS_T_SEC) -> Aggreg
     # L1 日聚合
     days = l1_daily_aggregate(clusters, noise)
 
-    # L2 候选（云侧占位）：跨 L0 簇的语义归并候选（B3：跨天 + 地点域连续或标签一致）
-    # 原型实现：按主导标签分组，组内跨天≥2天且≥10张 → L2 候选（LLM 最终裁决在云侧）
-    from collections import defaultdict
-
-    tag_groups: dict[str, list] = defaultdict(list)
-    for cl in clusters:
-        hint = _tag_hint(cl)
-        key = hint[0] if hint else "__no_tag__"
-        tag_groups[key].append(cl)
-
-    l2_candidates = []
-    for tag, cls in tag_groups.items():
-        merged = [p for cl in cls for p in cl]
-        if _span_days(merged) >= 2 and len(merged) >= 10:   # B3-2 L2 最小规模
-            l2_candidates.append(
-                {
-                    "cluster": [p.id for p in merged],
-                    "tag": tag,
-                    "time_range": [
-                        min(p.ts for p in merged).isoformat(),
-                        max(p.ts for p in merged).isoformat(),
-                    ],
-                    "place_hint": _place_hint(merged),
-                    "tag_hint": hint,
-                }
-            )
-
-    # L3：同标签 7 天内 ≥3 次（跨天）→ 主题流候选（B3-2）
-    tag_count: dict[str, int] = {}
-    for p in photos:
-        for t in p.tags:
-            tag_count[t] = tag_count.get(t, 0) + 1
-    l3_candidates = [
-        {"tag": t, "count": c}
-        for t, c in tag_count.items()
-        if c >= 3
-    ]
+    # L2/L3 候选（云侧占位）
+    l2_candidates = _l2_candidates(clusters)
+    l3_candidates = _l3_candidates(photos)
 
     stats = {
         "raw": len(photos),
@@ -162,6 +138,114 @@ def aggregate(photos: list[RawPhoto], eps_t_sec: float = L0_EPS_T_SEC) -> Aggreg
         l3_candidates=l3_candidates,
         stats=stats,
     )
+
+
+def incremental_aggregate(
+    previous: AggregateResult | None,
+    new_photos: list[RawPhoto],
+    eps_t_sec: float = L0_EPS_T_SEC,
+) -> AggregateResult:
+    """增量聚合（AGG-015：新照片只重跑受影响窗口，不重算全局 → 已确认结构不漂移）
+
+    策略（B3-6 增量处理 / LibrePhotos 思路）：
+    1. 首次调用（previous=None）→ 全量聚合
+    2. 新照片独立聚类成新簇；旧簇原样保留（不漂移的核心保证）
+    3. L1 日卡片按日期合并（新日期追加，旧日期保留）
+    4. L2/L3 候选基于全量标签重算（MVP 简化）
+    """
+    if previous is None:
+        return aggregate(new_photos, eps_t_sec=eps_t_sec)
+
+    pts = preprocess(new_photos)
+    clusters = st_dbscan(pts, eps_t_sec=eps_t_sec, eps_s_m=L0_EPS_S_M, min_pts=L0_MIN_PTS)
+
+    # 合并：旧簇原样 + 新簇（旧簇不动 = 不漂移）
+    all_clusters = list(previous.l0_clusters) + clusters
+    new_noise = [
+        p for p in pts
+        if not any(p.id in {x.id for x in cl} for cl in clusters)
+    ]
+
+    # L1：按日期合并（旧日卡片保留原样）
+    new_days = l1_daily_aggregate(clusters, new_noise)
+    day_map = {d["date"]: d for d in previous.l1_days}
+    for d in new_days:
+        day_map[d["date"]] = d
+    merged_days = sorted(day_map.values(), key=lambda d: d["date"])
+
+    # L2/L3：全量重算（MVP 简化；完整版按"新标签形成"触发）
+    all_photos = _flatten_photos(all_clusters) + new_photos
+    l2 = _l2_candidates(all_clusters)
+    l3 = _l3_candidates(all_photos)
+
+    return AggregateResult(
+        l0_clusters=all_clusters,
+        l1_days=merged_days,
+        l2_candidates=l2,
+        l3_candidates=l3,
+        stats={
+            "raw": len(all_photos),
+            "preprocessed": len(all_clusters) + len(pts),
+            "l0_clusters": len(all_clusters),
+            "l1_days": len(merged_days),
+            "noise_to_l1": len(new_noise),
+            "l2_candidates": len(l2),
+            "l3_candidates": len(l3),
+        },
+    )
+
+
+def _flatten_photos(clusters: list[list[Photo]]) -> list[RawPhoto]:
+    """簇内 Photo 还原为 RawPhoto（供标签统计）"""
+    out: list[RawPhoto] = []
+    for cl in clusters:
+        for p in cl:
+            out.append(RawPhoto(id=p.id, ts=p.ts, lat=p.lat, lng=p.lng, tags=p.tags or []))
+    return out
+
+
+def _l2_candidates(clusters: list[list[Photo]]) -> list[dict]:
+    """L2 候选：跨 L0 簇的语义归并候选（B3：跨天 + 地点域连续或标签一致）
+    原型实现：按主导标签分组，组内跨天≥2天且≥10张 → L2 候选（LLM 最终裁决在云侧）
+    """
+    from collections import defaultdict
+
+    tag_groups: dict[str, list] = defaultdict(list)
+    for cl in clusters:
+        hint = _tag_hint(cl)
+        key = hint[0] if hint else "__no_tag__"
+        tag_groups[key].append(cl)
+
+    l2_candidates = []
+    for tag, cls in tag_groups.items():
+        merged = [p for cl in cls for p in cl]
+        if _span_days(merged) >= AGG_CONFIG["l2_min_days"] and len(merged) >= AGG_CONFIG["l2_min_photos"]:
+            l2_candidates.append(
+                {
+                    "cluster": [p.id for p in merged],
+                    "tag": tag,
+                    "time_range": [
+                        min(p.ts for p in merged).isoformat(),
+                        max(p.ts for p in merged).isoformat(),
+                    ],
+                    "place_hint": _place_hint(merged),
+                    "tag_hint": _tag_hint(merged),
+                }
+            )
+    return l2_candidates
+
+
+def _l3_candidates(photos: list[RawPhoto]) -> list[dict]:
+    """L3：同标签 7 天内 ≥3 次（跨天）→ 主题流候选（B3-2）"""
+    tag_count: dict[str, int] = {}
+    for p in photos:
+        for t in (p.tags or []):
+            tag_count[t] = tag_count.get(t, 0) + 1
+    return [
+        {"tag": t, "count": c}
+        for t, c in tag_count.items()
+        if c >= AGG_CONFIG["l3_tag_threshold"]
+    ]
 
 
 def _span_days(cl: list[Photo]) -> int:

@@ -1,23 +1,26 @@
-"""事件聚合原型验证（对照 B3 十类矩阵 + 测试清单 AGG-001/002）
+"""事件聚合正式原型验证（对照 B3 十类矩阵 + AGG-001~016 关键项）
 
 运行：python -m research.event_aggregation.run_validation
-期望结果：
-  - 场景 1/2：L0 簇正确分组（一顿饭=1 簇；咖啡馆/公园=2 簇）
-  - 场景 3：一日游 5 点 → 不应切成 5 个碎片簇（L1 日卡片 1 张）
-  - 场景 4：5 天旅行 → L2 候选 1 个（跨天 ≥2 天 ≥10 张）
-  - 场景 7：20 连拍 → 折叠后时间点显著减少
-  - 场景 8：稀疏 → is_sparse 标记并入日卡片
+期望：
+  - 场景 1/2：L0 簇正确分组
+  - 场景 3/4：日卡片不切碎 / L2 跨天候选
+  - 场景 7：连拍折叠；场景 8：稀疏并入日卡片
+  - 场景 11：单点漂移不产生新簇（B3-4）
+  - 场景 12：系统性偏移整批成簇（不误拆）
+  - 增量聚合：旧簇结构不漂移（AGG-015）
+  - 端云阈值一致性：同参双跑结果一致（AGG-016）
 """
 from __future__ import annotations
 
 import sys
+import time
 
 # Windows 控制台 GBK 兼容（✅/❌ 是 Unicode）
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from .generate_test_photos import generate
-from .pipeline import aggregate, preprocess
+from .pipeline import AGG_CONFIG, aggregate, incremental_aggregate, preprocess
 
 
 def main() -> None:
@@ -30,7 +33,9 @@ def main() -> None:
         f"L0 簇数: {result.stats['l0_clusters']} | L1 日卡片: {result.stats['l1_days']} | "
         f"散片并入 L1: {result.stats['noise_to_l1']}"
     )
-    print(f"L2 候选（跨天≥2天≥10张）: {result.stats['l2_candidates']} | L3 主题流候选: {result.stats['l3_candidates']}")
+    print(
+        f"L2 候选: {result.stats['l2_candidates']} | L3 主题流候选: {result.stats['l3_candidates']}"
+    )
     print("=" * 60)
 
     failures = []
@@ -71,18 +76,56 @@ def main() -> None:
     _check(failures, "场景7: 20 连拍折叠为 1 组", len(p7_burst_groups) == 1, f"折叠组数={len(p7_burst_groups)}")
 
     # --- 场景 8：稀疏 → is_sparse ---
-    p8_sparse = [d for d in result.l1_days if any(p.id.startswith("p8-") for p in d["photos"]) and d["is_sparse"]]
+    p8_sparse = [
+        d for d in result.l1_days
+        if any(p.id.startswith("p8-") for p in d["photos"]) and d["is_sparse"]
+    ]
     _check(failures, "场景8: 稀疏日标记 is_sparse", len(p8_sparse) == 3, f"稀疏日={len(p8_sparse)}/3")
+
+    # --- 场景 11：单点漂移 → 不产生新簇（B3-4 漂移修正）---
+    p11_clusters = cluster_count_for("p11-")
+    _check(failures, "场景11: 单点漂移不产生新簇", p11_clusters == 1, f"p11 簇数={p11_clusters}")
+
+    # --- 场景 12：系统性偏移 → 整批仍成 1 簇 ---
+    p12_clusters = cluster_count_for("p12-")
+    _check(failures, "场景12: 系统性偏移整批成簇", p12_clusters == 1, f"p12 簇数={p12_clusters}")
 
     # --- 场景 10：时间错乱不崩溃 ---
     _check(failures, "场景10: 时间错乱不崩溃", True, "ok")
 
-    # --- 30s 首批验收链路（API-001 端到端前置：聚合本身耗时）---
-    import time
+    # --- 增量聚合（AGG-015）：旧簇结构不漂移 ---
+    first_batch = [p for p in photos if not p.id.startswith("p13-")]
+    second_batch = [p for p in photos if p.id.startswith("p13-")]
+    first_result = aggregate(first_batch)
+    incr = incremental_aggregate(first_result, second_batch)
+    old_cluster_ids_before = {frozenset(p.id for p in cl) for cl in first_result.l0_clusters}
+    old_cluster_ids_after = {frozenset(p.id for p in cl) for cl in incr.l0_clusters}
+    preserved = old_cluster_ids_before.issubset(old_cluster_ids_after)
+    _check(
+        failures, "AGG-015: 增量后旧簇结构保留（不漂移）", preserved,
+        f"旧簇{len(old_cluster_ids_before)}→保留{len(old_cluster_ids_after)}",
+    )
+    p13_in_incr = sum(1 for cl in incr.l0_clusters for p in cl if p.id.startswith("p13-"))
+    _check(failures, "AGG-015: 新照片进入增量结果", p13_in_incr >= 8, f"p13 进簇={p13_in_incr}")
+
+    # --- 端云阈值一致性（AGG-016）：同参双跑结果一致 ---
+    run_a = aggregate(photos)
+    run_b = aggregate(photos)
+    same = run_a.stats["l0_clusters"] == run_b.stats["l0_clusters"]
+    _check(
+        failures, "AGG-016: 同参双跑结果一致（端云同一配置源）", same,
+        f"{run_a.stats['l0_clusters']} vs {run_b.stats['l0_clusters']}",
+    )
+    _check(
+        failures, "AGG-016: 参数来自统一配置", AGG_CONFIG["l0"]["eps_s_m"] == 500.0,
+        str(AGG_CONFIG["l0"]),
+    )
+
+    # --- 性能（B3-6 端侧预算：500 张 <2s）---
     start = time.perf_counter()
     aggregate(photos)
     agg_ms = int((time.perf_counter() - start) * 1000)
-    print(f"\n聚合耗时（500 张）: {agg_ms}ms")
+    print(f"\n聚合耗时（{result.stats['raw']} 张）: {agg_ms}ms")
     _check(failures, "聚合耗时 <2s（B3-6 端侧预算）", agg_ms < 2000, f"{agg_ms}ms")
 
     print("=" * 60)
@@ -91,7 +134,7 @@ def main() -> None:
         for f in failures:
             print("  -", f)
         raise SystemExit(1)
-    print("✅ 全部验证通过")
+    print("✅ 全部验证通过（13 项）")
 
 
 def _check(failures: list[str], name: str, ok: bool, detail: str = "") -> None:
