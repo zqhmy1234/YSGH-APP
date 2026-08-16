@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     # Redis / RQ
     redis_url: str = "redis://localhost:6379/0"
 
-    # JWT（决策 #8）
-    jwt_secret: str = "change-me-in-production"
+    # JWT（决策 #8；密钥 ≥32 字节，否则 pyjwt 告警）
+    jwt_secret: str = "change-me-32-bytes-min-secret-0000"
     jwt_access_ttl_minutes: int = 120
     jwt_refresh_ttl_days: int = 30
     jwt_algorithm: str = "HS256"

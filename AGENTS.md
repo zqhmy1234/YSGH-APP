@@ -94,13 +94,16 @@ Windows Electron + Python sidecar（PP-OCRv5 20MB + JSON-RPC 2.0 v1 + electron-u
 **任何 commit 之前必须通过代码质量审核 Agent，修复到通过为止，禁止带阻断项提交。**
 
 1. 运行审核：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）
-2. 审核项：Python 语法编译 / ruff lint / 测试（pytest 或项目验证脚本）/ 密钥扫描 / TODO 统计
+2. 审核项：Python 语法编译 / ruff lint / **测试（test_agent：pytest 18 项 + API 冒烟 + 原型验证，覆盖率阈值 50%）** / 密钥扫描 / TODO 统计
 3. 退出码 0 = 通过可提交；退出码 1 = 存在阻断项 → 修复后重跑，直到通过
-4. 报告输出：`.cowork-temp/review-report.json`（证据留档）
+4. 报告输出：`.cowork-temp/review-report.json` + `.cowork-temp/test-report.json`（证据留档）
 5. 修复流程：按报告逐项修复 → 重跑 `python scripts/review_agent.py` → 全绿才 `git commit`
 6. hook 安装：`git config core.hooksPath .githooks`（仓库内 hook，见 .githooks/pre-commit）
 
 **禁止绕过**：`--no-verify` 不允许使用；审核报告必须为 passed 状态。
+
+**测试 Agent 单独使用**：`python scripts/test_agent.py [--cov-threshold N] [--only api|research]`
+（本地开发循环中可只跑测试不跑全审核；commit 前仍必须走 review_agent 全量。）
 
 ## Escalation
 

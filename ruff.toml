@@ -13,5 +13,6 @@ ignore = [
 [lint.per-file-ignores]
 "research/**" = ["DTZ001", "DTZ901"]
 "scripts/**" = ["S112", "S603"]  # 脚本读文件/调子进程是审核器本职
+"backend/tests/**" = ["S101"]  # pytest 测试天然用 assert 断言
 "backend/app/api/contents.py" = ["S106"]  # presign mock 凭证是契约占位，非真实密钥
 "backend/app/core/config.py" = ["S105", "S104"]  # 默认值占位（.env 覆盖），非真实密钥

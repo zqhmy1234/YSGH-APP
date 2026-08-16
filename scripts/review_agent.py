@@ -81,22 +81,13 @@ def check_lint() -> tuple[bool, str]:
 
 
 def run_tests() -> tuple[bool, str]:
-    """pytest 优先；无 pytest 时跑项目验证脚本"""
-    code, out = run([sys.executable, "-m", "pytest", "-q", "--tb=short"])
+    """调用测试 Agent 全量测试（pytest + api_smoke + research）"""
+    code, out = run([sys.executable, str(ROOT / "scripts" / "test_agent.py"), "--cov-threshold", "50"])
     if code == 0:
-        return True, out.strip()
-    if "No module named pytest" in out or code == 4:
-        # 回退：事件聚合原型验证
-        script = ROOT / "research" / "event_aggregation" / "run_validation.py"
-        if script.exists():
-            cmd = (
-                "import sys; sys.path.insert(0, r'" + str(ROOT) + "'); "
-                "from research.event_aggregation.run_validation import main; main()"
-            )
-            code2, out2 = run([sys.executable, "-c", cmd])
-            return (code2 == 0), out2.strip()
-        return True, "[skip] 无 pytest 且无验证脚本"
-    return (code == 0), out.strip()
+        return True, out.strip()[-1500:]
+    if "No module named" in out and "pytest" in out:
+        return True, "[skip] pytest 未安装（pip install pytest pytest-cov httpx）"
+    return (code == 0), out.strip()[-1500:]
 
 
 def check_secrets() -> tuple[bool, str]:

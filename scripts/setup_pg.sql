@@ -1,12 +1,12 @@
-# 忆述光华 · PostgreSQL 隔离建库脚本
-# 用途：为忆述光华创建独立数据库 + 专用角色，**不影响本机其他项目的数据库**
-# 用法：先设置 PGPASSWORD 环境变量，再运行：
-#   $env:PGPASSWORD="<postgres超级用户密码>"
-#   & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h localhost -f scripts\setup_pg.sql
-# 或执行 exec 里对应命令（见下方注释块）
+-- 忆述光华 · PostgreSQL 隔离建库脚本
+-- 用途：为忆述光华创建独立数据库 + 专用角色，不影响本机其他项目的数据库
+-- 用法：
+--   $env:PGPASSWORD="admin"
+--   psql -U postgres -h localhost -f setup_pg.sql
+-- 验证：
+--   psql -U yishu_app -h localhost -d yishu -c "select 1;"
 
 -- 1. 专用角色（非超级用户，权限最小化）
--- 密码请修改为强密码；仅用于忆述光华应用连接
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'yishu_app') THEN
