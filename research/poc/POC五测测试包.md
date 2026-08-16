@@ -110,11 +110,11 @@
 
 | 测试项 | 结果 | 证据（日志/截图/复现步骤） |
 |---|---|---|
-| POC-01 相册监听 | ✅/❌ | |
-| POC-02 前台录音 | ✅/❌ | |
-| POC-03 attribution | ✅/❌ | |
-| POC-04 SQLCipher | ✅/❌ | |
-| POC-05 聚合 spike | ✅ | research/event_aggregation/run_validation.py |
+| POC-01 相册监听 | ✅ | ContentObserver 注册后 push 测试图+媒体扫描 → 9s 内回调 #1/#2/#3（logcat POC:I 20:16:05-14） |
+| POC-02 前台录音 | ✅ | 灭屏 13s 录音完整：9822ms（目标≥8s）；通知栏前台服务；logcat POC02-Recording 20:19:14-26 |
+| POC-03 attribution | ⚠️ 部分 | Android 12 验证 DEV-007 低版本兼容 ✅（无归因 API 不崩溃）；DEV-006 需 Android 16 模拟器/设备补测 |
+| POC-04 SQLCipher | ✅ | 真机三项全过：密文无明文泄漏 / 错误密钥拒绝 / 正确密钥重读；logcat POC:I 20:15:39 |
+| POC-05 聚合 spike | ✅ | research/event_aggregation/run_validation.py 10 项验证全过 |
 
 **结论：GO（铺开 UTS 双轨）/ NO-GO（切原生 Kotlin 单端 / Flutter）**
 
@@ -123,6 +123,19 @@
 - 任一不过 → NO-GO，走决策清单 #2 升级路径（同周启动切换评审）
 - POC-04 失败可降级为"DAO 层替代方案"（不阻塞架构决策，但 M1 前必须解决）
 ```
+
+## 三·b、真机执行记录（2026-08-16，nova 11 / FOA-AL00 / Android 12）
+
+| 测试项 | 结果 | 证据 |
+|---|---|---|
+| POC-04 SQLCipher | ✅ PASS | 密文无明文 ✓ 错误密钥拒绝 ✓ 正确密钥重读 "敏感记忆内容-真机" ✓ |
+| POC-01 相册监听 | ✅ PASS | push 测试图 + MEDIA_SCANNER 广播 → 9s 内新照片事件 #1/#2/#3 |
+| POC-02 前台录音 | ✅ PASS | 灭屏 13s 录制 9822ms 完整文件（目标≥8s），前台服务通知常驻 |
+| POC-03 attribution | ⚠️ 部分 | Android 12（SDK 31）：DEV-007 低版本兼容 ✅；DEV-006 待 Android 16 补 |
+| POC-05 聚合 spike | ✅ PASS | Python 原型 10 项验证全过（此前完成） |
+
+**结论预判：GO**（01/02/04 全过 + 03 低版本兼容过；DEV-006 为 Android 16 新特性，可后续模拟器补测，不阻塞架构决策）
+**待补**：Android 16 模拟器验证 attribution 归因标识（DEV-006）
 
 ---
 
@@ -138,7 +151,9 @@
 
 - [x] POC-05 事件聚合 spike（Python 原型全过）
 - [x] 真机确认：nova 11（Android 12）已连接，USB 调试授权完成
-- [x] 环境部分：JDK 17 + ADB 37.0.1 已装；SDK cmdline-tools/build-tools/platform 待装；HBuilderX 待定
-- [ ] 测试 APK 准备（原生 Kotlin 最小工程 或 HBuilderX 自定义基座）
-- [ ] POC-01/02/03/04 真机执行 + 证据收集
-- [ ] 2026-08-23 D7 结论产出
+- [x] 环境：JDK 17 + ADB 37.0.1 + SDK（build-tools 34 / platform 34）+ Gradle 8.7 全就绪
+- [x] 原生 Kotlin 最小工程构建成功（24MB APK，research/poc/android/）
+- [x] **POC-01/02/04 真机 PASS + POC-03 部分验证（2026-08-16 实测）**
+- [x] 结论预判：GO
+- [ ] 待补：Android 16 模拟器验证 attribution（DEV-006）
+- [ ] 2026-08-23 D7 结论正式产出
