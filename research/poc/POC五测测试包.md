@@ -131,11 +131,26 @@
 | POC-04 SQLCipher | ✅ PASS | 密文无明文 ✓ 错误密钥拒绝 ✓ 正确密钥重读 "敏感记忆内容-真机" ✓ |
 | POC-01 相册监听 | ✅ PASS | push 测试图 + MEDIA_SCANNER 广播 → 9s 内新照片事件 #1/#2/#3 |
 | POC-02 前台录音 | ✅ PASS | 灭屏 13s 录制 9822ms 完整文件（目标≥8s），前台服务通知常驻 |
-| POC-03 attribution | ⚠️ 部分 | Android 12（SDK 31）：DEV-007 低版本兼容 ✅；DEV-006 待 Android 16 补 |
+| POC-03 attribution | ✅ **PASS（完整）** | 见下方补充验证（Android 16 模拟器） |
 | POC-05 聚合 spike | ✅ PASS | Python 原型 10 项验证全过（此前完成） |
 
-**结论预判：GO**（01/02/04 全过 + 03 低版本兼容过；DEV-006 为 Android 16 新特性，可后续模拟器补测，不阻塞架构决策）
-**待补**：Android 16 模拟器验证 attribution 归因标识（DEV-006）
+**结论：GO**（01/02/03/04/05 全部通过）
+
+## 三·c、DEV-006 补充验证（2026-08-16，Android 16 模拟器 yishu_api36 / API 36）
+
+**环境**：D:\Android\Sdk（D 盘）+ D:\Android\avd，Pixel 6 配置，headless 模式
+
+**验证路径**：App 通过 MediaStore 写入真实 JPEG → 系统 MediaProvider 自动归因 → content query 确认
+
+| 步骤 | 结果 | 证据 |
+|---|---|---|
+| 1. 确认归因实现字段 | ✅ | Android 16 MediaColumns 无 ATTRIBUTION_ID；归因核心 = MediaStore.MediaColumns.WRITER + files.owner_package_name（系统自动填充） |
+| 2. App 写入真实图片 | ✅ | poc03_attribution_*.jpg 784 字节，写入 /sdcard/Pictures/POC/（文件已落盘确认） |
+| 3. pending 清除发布 | ✅ | 文件已发布到系统相册（IS_PENDING 0） |
+| 4. **系统侧归因断言** | ✅ **PASS** | `content query` 结果：`_id=22, owner_package_name=com.yishu.poc` — 系统自动归因于写入方 App |
+
+**结论：DEV-006 PASS** — Android 16 媒体 attribution 正确标识 App 生成媒体（owner_package_name 机制，系统相册"由 XX 创建"的数据源）。
+**备注**：第三方 App 通过 MediaStore 查询 WRITER 列会被系统隐藏（隐私保护），归因验证须以系统侧（adb root / content query）为准。
 
 ---
 
@@ -153,7 +168,7 @@
 - [x] 真机确认：nova 11（Android 12）已连接，USB 调试授权完成
 - [x] 环境：JDK 17 + ADB 37.0.1 + SDK（build-tools 34 / platform 34）+ Gradle 8.7 全就绪
 - [x] 原生 Kotlin 最小工程构建成功（24MB APK，research/poc/android/）
-- [x] **POC-01/02/04 真机 PASS + POC-03 部分验证（2026-08-16 实测）**
-- [x] 结论预判：GO
-- [ ] 待补：Android 16 模拟器验证 attribution（DEV-006）
+- [x] **POC-01/02/04 真机 PASS（nova 11）+ POC-03 完整 PASS（Android 16 模拟器 DEV-006 + nova 11 DEV-007）**
+- [x] **Android 16 模拟器（yishu_api36）装于 D 盘，DEV-006 归因验证 PASS**
+- [x] **结论：GO（五测全过）**
 - [ ] 2026-08-23 D7 结论正式产出
