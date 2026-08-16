@@ -38,3 +38,7 @@ Thumbs.db
 
 # --- Misc ---
 *.tmp
+
+# PG 备份产物（脚本入库存，dump 不入库）
+backups/*.dump
+backups/*.sha256
