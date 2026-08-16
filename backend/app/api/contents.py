@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
-from app.schemas.content import ContentCreate, ContentOut, ContentUploadResult, CosPresign
+from app.schemas.content import (
+    ContentCreate,
+    ContentOut,
+    ContentUploadResult,
+    CosPresign,
+)
 
 router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
 

@@ -1,0 +1,17 @@
+# ruff 配置（忆述光华 backend + research）
+# 规则集：bug 检测 + 未使用代码 + 安全 + 格式
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "DTZ", "BLE", "PLW"]
+ignore = [
+    "B008",   # FastAPI 依赖注入标准模式：Depends() 作默认值（官方推荐写法）
+    "BLE001", # 顶层捕获 Exception：路由/脚本入口统一处理，内部已有错误码封装
+]
+
+# 时区规则仅 backend 严格（API 必须 tz-aware）；research 原型用 naive datetime 模拟测试数据
+[lint.per-file-ignores]
+"research/**" = ["DTZ001", "DTZ901"]
+"scripts/**" = ["S112", "S603"]  # 脚本读文件/调子进程是审核器本职
+"backend/app/api/contents.py" = ["S106"]  # presign mock 凭证是契约占位，非真实密钥
+"backend/app/core/config.py" = ["S105", "S104"]  # 默认值占位（.env 覆盖），非真实密钥

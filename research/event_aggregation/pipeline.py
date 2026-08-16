@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from .st_dbscan import Photo, l1_daily_aggregate, st_dbscan
 
@@ -167,7 +167,7 @@ def aggregate(photos: list[RawPhoto], eps_t_sec: float = L0_EPS_T_SEC) -> Aggreg
 def _span_days(cl: list[Photo]) -> int:
     if not cl:
         return 0
-    days = max((p.ts.date() for p in cl)) - min((p.ts.date() for p in cl))
+    days = max(p.ts.date() for p in cl) - min(p.ts.date() for p in cl)
     return days.days + 1
 
 

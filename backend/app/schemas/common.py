@@ -1,5 +1,5 @@
 """API 响应统一封装（对齐测试清单 API-007）"""
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 

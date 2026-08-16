@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import sys
-from collections import Counter
 
 # Windows 控制台 GBK 兼容（✅/❌ 是 Unicode）
 if hasattr(sys.stdout, "reconfigure"):
@@ -27,18 +26,28 @@ def main() -> None:
 
     print("=" * 60)
     print(f"输入 {result.stats['raw']} 张 → 预处理 {result.stats['preprocessed']} 个时间点")
-    print(f"L0 簇数: {result.stats['l0_clusters']} | L1 日卡片: {result.stats['l1_days']} | 散片并入 L1: {result.stats['noise_to_l1']}")
+    print(
+        f"L0 簇数: {result.stats['l0_clusters']} | L1 日卡片: {result.stats['l1_days']} | "
+        f"散片并入 L1: {result.stats['noise_to_l1']}"
+    )
     print(f"L2 候选（跨天≥2天≥10张）: {result.stats['l2_candidates']} | L3 主题流候选: {result.stats['l3_candidates']}")
     print("=" * 60)
 
     failures = []
 
+    def cluster_count_for(prefix: str) -> int:
+        """统计包含指定前缀照片的 L0 簇数"""
+        return sum(1 for cl in result.l0_clusters if any(p.id.startswith(prefix) for p in cl))
+
+    def cluster_size_for(prefix: str) -> int:
+        """统计指定前缀照片进入 L0 簇的总数"""
+        return sum(1 for cl in result.l0_clusters for p in cl if p.id.startswith(prefix))
+
     # --- 场景 1/2：L0 分组正确性 ---
-    p1_ids = [p.id for cl in result.l0_clusters for p in cl if p.id.startswith("p1-")]
-    p2a_ids = [p.id for cl in result.l0_clusters for p in cl if p.id.startswith("p2a-")]
-    p2b_ids = [p.id for cl in result.l0_clusters for p in cl if p.id.startswith("p2b-")]
-    _check(failures, "场景1: 一顿饭聚为 1 簇", len({cl_idx for cl_idx, cl in enumerate(result.l0_clusters) if any(p.id.startswith("p1-") for p in cl)}) == 1, f"簇数={len({cl_idx for cl_idx, cl in enumerate(result.l0_clusters) if any(p.id.startswith('p1-') for p in cl)})}")
-    _check(failures, "场景2: 咖啡馆/公园分离为 2 簇", bool(p2a_ids) and bool(p2b_ids), f"p2a={len(p2a_ids)} p2b={len(p2b_ids)}")
+    p2a_ids = cluster_size_for("p2a-")
+    p2b_ids = cluster_size_for("p2b-")
+    _check(failures, "场景1: 一顿饭聚为 1 簇", cluster_count_for("p1-") == 1, f"簇数={cluster_count_for('p1-')}")
+    _check(failures, "场景2: 咖啡馆/公园分离为 2 簇", bool(p2a_ids) and bool(p2b_ids), f"p2a={p2a_ids} p2b={p2b_ids}")
 
     # --- 场景 3：单日多地点 → L1 归 1 日卡片 ---
     p3_days = [d for d in result.l1_days if any(p.id.startswith("p3-") for p in d["photos"])]

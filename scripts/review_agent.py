@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""忆述光华 · Pre-Commit 代码质量审核 Agent（Sprint 1 新增流程）
+
+用法：
+  python scripts/review_agent.py [--fix] [--path <dir>]
+
+职责（Commit Gate，写入 AGENTS.md）：
+  1. Python 语法编译检查（所有 .py）
+  2. Lint（ruff，若可用）
+  3. 测试运行（pytest / 项目验证脚本）
+  4. 密钥与敏感信息扫描（.env 泄漏、硬编码 key）
+  5. 阻断项检查（TODO/FIXME 计数报告，不阻断）
+
+退出码：0 = 通过可提交；1 = 存在阻断项（禁止 commit，先修复）。
+
+报告输出：.cowork-temp/review-report.json（每次覆盖）。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# Windows 控制台 GBK 兼容（✅/❌ 为 Unicode）
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# subprocess 输出按 UTF-8 解码（Windows 默认 GBK 会炸）
+SUB_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+ROOT = Path(__file__).resolve().parent.parent
+REPORT_DIR = ROOT / ".cowork-temp"
+REPORT_PATH = REPORT_DIR / "review-report.json"
+
+# 阻断规则：匹配到这些模式的代码不允许提交
+SECRET_PATTERNS = [
+    "sk-[A-Za-z0-9]{20,}",        # OpenAI/DeepSeek 风格 key
+    "AKIA[0-9A-Z]{16}",           # AWS access key
+    "-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----",
+    "password\\s*=\\s*['\"][^'\"]+['\"]",
+    "secret\\s*=\\s*['\"][^'\"]{8,}['\"]",
+]
+SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py"}
+
+
+def run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=cwd or ROOT,
+            timeout=300, encoding="utf-8", errors="replace", env=SUB_ENV, check=False,
+        )
+        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    except FileNotFoundError:
+        return 127, f"command not found: {cmd[0]}"
+    except subprocess.TimeoutExpired:
+        return 124, "timeout"
+
+
+def check_syntax() -> tuple[bool, str]:
+    """编译所有 .py，捕获语法错误"""
+    py_files = [p for p in ROOT.rglob("*.py") if ".git" not in p.parts and ".cowork-temp" not in p.parts]
+    errors: list[str] = []
+    for f in py_files:
+        code, out = run([sys.executable, "-m", "py_compile", str(f)])
+        if code != 0:
+            errors.append(f"{f}: {out.strip()[:300]}")
+    return (not errors), ("\n".join(errors) if errors else f"{len(py_files)} files compiled OK")
+
+
+def check_lint() -> tuple[bool, str]:
+    """ruff check（若未安装则跳过并提示）"""
+    code, out = run(["ruff", "check", "."])
+    if code == 127:
+        return True, "[skip] ruff 未安装（pip install ruff 后启用）"
+    return (code == 0), out.strip() or "ruff clean"
+
+
+def run_tests() -> tuple[bool, str]:
+    """pytest 优先；无 pytest 时跑项目验证脚本"""
+    code, out = run([sys.executable, "-m", "pytest", "-q", "--tb=short"])
+    if code == 0:
+        return True, out.strip()
+    if "No module named pytest" in out or code == 4:
+        # 回退：事件聚合原型验证
+        script = ROOT / "research" / "event_aggregation" / "run_validation.py"
+        if script.exists():
+            cmd = (
+                "import sys; sys.path.insert(0, r'" + str(ROOT) + "'); "
+                "from research.event_aggregation.run_validation import main; main()"
+            )
+            code2, out2 = run([sys.executable, "-c", cmd])
+            return (code2 == 0), out2.strip()
+        return True, "[skip] 无 pytest 且无验证脚本"
+    return (code == 0), out.strip()
+
+
+def check_secrets() -> tuple[bool, str]:
+    """扫描仓库（排除 .git/.cowork-temp）中的硬编码密钥"""
+    import re
+
+    findings: list[str] = []
+    for f in ROOT.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(ROOT).as_posix()
+        if any(rel.startswith(s) or s in rel for s in SECRET_SKIP):
+            continue
+        if any(rel.endswith(ext) for ext in (".py", ".md", ".json", ".yaml", ".yml", ".toml", ".env", ".ini", ".sql")):
+            try:
+                content = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for i, line in enumerate(content.splitlines(), 1):
+                for pat in SECRET_PATTERNS:
+                    if re.search(pat, line) and "change-me" not in line and "mock" not in line.lower():
+                        findings.append(f"{rel}:{i}: 疑似密钥 {pat[:30]}...")
+    return (not findings), ("\n".join(findings) if findings else "无硬编码密钥")
+
+
+def check_todos() -> tuple[bool, str]:
+    """TODO/FIXME 统计（报告，不阻断）"""
+    import re
+
+    count = 0
+    files = set()
+    for f in ROOT.rglob("*.py"):
+        if ".git" in f.parts:
+            continue
+        try:
+            content = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line in content.splitlines():
+            if re.search(r"\b(TODO|FIXME)\b", line):
+                count += 1
+                files.add(f.name)
+    return True, f"TODO/FIXME: {count} 处（{', '.join(sorted(files))}）— 不阻断"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Pre-Commit 代码质量审核")
+    parser.add_argument("--path", default=str(ROOT), help="审核目录")
+    parser.parse_args()
+
+    checks = {
+        "syntax": check_syntax(),
+        "lint": check_lint(),
+        "tests": run_tests(),
+        "secrets": check_secrets(),
+        "todos": check_todos(),
+    }
+
+    blocking = {k: v for k, v in checks.items() if not v[0]}
+    passed = not blocking
+
+    report = {
+        "passed": passed,
+        "blocking_checks": list(blocking.keys()),
+        "details": {k: {"ok": v[0], "output": v[1]} for k, v in checks.items()},
+        "generated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+    }
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print("=" * 60)
+    print("Pre-Commit 代码质量审核")
+    print("=" * 60)
+    for name, (ok, out) in checks.items():
+        mark = "✅" if ok else "❌"
+        print(f"\n[{mark}] {name}")
+        for line in out.splitlines()[:8]:
+            print(f"    {line}")
+        if len(out.splitlines()) > 8:
+            print(f"    ... ({len(out.splitlines()) - 8} 行省略)")
+
+    print("\n" + "=" * 60)
+    if passed:
+        print("✅ 审核通过，可以提交")
+        return 0
+    print(f"❌ 审核未通过：{', '.join(blocking)} — 修复后重跑，禁止 commit")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

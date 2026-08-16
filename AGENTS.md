@@ -89,6 +89,19 @@ Windows Electron + Python sidecar（PP-OCRv5 20MB + JSON-RPC 2.0 v1 + electron-u
 
 当前阶段（纯文档仓库）验证 = 交付文档完整性 + git 状态干净；进入代码阶段后替换为真实测试命令。
 
+## Pre-Commit Review Gate（提交前审核，强制）
+
+**任何 commit 之前必须通过代码质量审核 Agent，修复到通过为止，禁止带阻断项提交。**
+
+1. 运行审核：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）
+2. 审核项：Python 语法编译 / ruff lint / 测试（pytest 或项目验证脚本）/ 密钥扫描 / TODO 统计
+3. 退出码 0 = 通过可提交；退出码 1 = 存在阻断项 → 修复后重跑，直到通过
+4. 报告输出：`.cowork-temp/review-report.json`（证据留档）
+5. 修复流程：按报告逐项修复 → 重跑 `python scripts/review_agent.py` → 全绿才 `git commit`
+6. hook 安装：`git config core.hooksPath .githooks`（仓库内 hook，见 .githooks/pre-commit）
+
+**禁止绕过**：`--no-verify` 不允许使用；审核报告必须为 passed 状态。
+
 ## Escalation
 
 - **架构决策**：查交付文档（开发决策清单已收敛 32 项），否则问用户

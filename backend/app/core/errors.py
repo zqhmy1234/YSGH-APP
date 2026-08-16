@@ -1,5 +1,5 @@
 """统一错误码（对齐测试清单 API-007：业务码 + 可读消息 + request_id）"""
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 

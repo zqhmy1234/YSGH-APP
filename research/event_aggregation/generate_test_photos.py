@@ -90,7 +90,10 @@ def generate() -> list[RawPhoto]:
     # --- 9. 低质/重复：同哈希重复 3 张（去重由预处理感知哈希处理，原型标记）---
     t = base + timedelta(days=14)
     for i in range(3):
-        photos.append(RawPhoto(id=f"p9-{i}", ts=_ts(t, i * 10), lat=HZ[0], lng=HZ[1], tags=["重复"], ocr_text="DUP-HASH-001"))
+        photos.append(RawPhoto(
+            id=f"p9-{i}", ts=_ts(t, i * 10), lat=HZ[0], lng=HZ[1],
+            tags=["重复"], ocr_text="DUP-HASH-001",
+        ))
 
     # --- 10. 时间错乱（不覆盖，接受限制；仅测试不崩溃）---
     t = base + timedelta(days=15)

@@ -1,7 +1,6 @@
 """认证契约（决策 #8：微信 unionid 为主 + 手机号验证码备用 + JWT 自建）"""
 from pydantic import BaseModel, Field
 
-
 # ---------- 请求 ----------
 
 class WechatLoginRequest(BaseModel):

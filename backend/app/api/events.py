@@ -1,5 +1,5 @@
 """事件路由：四层事件模型（B3）+ 时间轴（F8）+ 用户手动操作（B3-5）"""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
-from app.schemas.event import EventConfirmRequest, EventMergeRequest, EventOut, EventSplitRequest
+from app.schemas.event import (
+    EventConfirmRequest,
+    EventMergeRequest,
+    EventOut,
+    EventSplitRequest,
+)
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
 
@@ -18,7 +23,7 @@ _MOCK_EVENTS: list[dict] = []
 def timeline(level: int | None = None, db: Session = Depends(get_db)):
     """时间轴（F8）：L1 日卡片 + L2 主题事件 + L3 主题流；按 start_time 排序"""
     items = [EventOut(**e) for e in _MOCK_EVENTS if level is None or e["level"] == level]
-    items.sort(key=lambda e: e.start_time or datetime.min, reverse=True)
+    items.sort(key=lambda e: e.start_time or datetime(1970, 1, 1, tzinfo=timezone.utc), reverse=True)
     return ApiResponse(data=items)
 
 

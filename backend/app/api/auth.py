@@ -66,7 +66,7 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     try:
         payload = decode_token(req.refresh_token)
     except Exception:
-        raise ApiError("AUTH_005", "refresh token 无效或过期", http=401)
+        raise ApiError("AUTH_005", "refresh token 无效或过期", http=401) from None
 
     if payload.get("type") != "refresh":
         raise ApiError("AUTH_005", "token 类型错误", http=401)
