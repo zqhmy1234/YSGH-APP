@@ -1,10 +1,11 @@
 # Session Handoff — 忆述光华
 
-## Current Objective
+## Current Status
 
-- Goal: Sprint 2（M1 核心管线）推进 —— 事件聚合 ✅ / RAG 骨架 ✅ / **SetFit 训练中（S2-03，另一 Agent）** / ASR 接口先行 ✅ / CI+D7 收尾 ✅
-- Current status: 并行开发批次完成（feature/m1-asr-guardrail + feature/s2-05-ci-d7 已提交，待合并 develop）
-- Branch: 主树 `feature/m1-setfit`（另一 Agent 工作区，勿动）｜并行分支见下
+- Goal: Sprint 2（M1 核心管线）推进 —— 事件聚合 ✅ / RAG 骨架 ✅ / **SetFit 分类服务 ✅（667dbb1 已合并 develop）** / ASR 接口先行 ✅ / CI+D7 收尾 ✅
+- 并行开发批次完成：`feature/m1-asr-guardrail` + `feature/s2-05-ci-d7` 已提交且已集成最新 develop（组合树 review_agent 全绿），**待合并 develop**
+- 主树：develop @ 667dbb1，另一 Agent 工作区（其 main.py classify 注册未提交，见 Blockers）
+- 并行分支（git worktree）：`D:\GuangH-App-wt-asr` / `D:\GuangH-App-wt-ci`
 
 ## Completed This Session（并行开发批次 2026-08-17 01:2x-02:0x）
 
@@ -41,10 +42,11 @@
 
 ## Blockers / Risks
 
-- [ ] 两个并行分支待合并 develop（合并时 progress.md 可能与其他 Agent 的 SetFit 记录冲突，需手工合并）
-- [ ] SetFit 训练中（500 对 / 63 batch / BGE-M3 CPU）—— 训练结束后需重跑一次全量 review_agent（本会话已排除 BGE-M3 网络问题，缓存完整）
+- [ ] ⚠️ **SetFit Agent 的 main.py（classify 路由注册）尚未提交**（主树工作区 ` M backend/app/main.py`）——合并我的分支到 develop 前，先让其提交 main.py，避免覆盖冲突
+- [ ] 两个并行分支已集成 develop 并全绿，待合并 develop（`git -C D:\GuangH-App-wt-asr merge` 前先 checkout develop；progress.md 冲突已手工合并过一次，后续冲突按同法处理）
 - [ ] 外部 key 未到：DASHSCOPE（RAG 图片塔 + ASR 真实转写）、微信 appid/secret、腾讯云（COS STS）
-- [ ] huggingface.co 本机不可达：任何新模型下载需走 hf-mirror.com 或离线包
+- [ ] huggingface.co 本机不可达：任何新模型下载需走 hf-mirror.com 或离线包（embedding.py 已默认 HF_HUB_OFFLINE=1）
+- [ ] CI 首次运行需下载 BGE-M3（~2.2GB），建议后续加 HF 缓存 action
 
 ## Next Session Startup
 
