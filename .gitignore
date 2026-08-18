@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+uploads/
+milvus_data/
+photo_pipeline.db
+eval_data/
+test_images/
+models/
+baidu.env
+models/models/
+baidu.env
