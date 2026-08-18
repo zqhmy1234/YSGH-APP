@@ -22,7 +22,7 @@
 |---|---|---|---|
 | Python | 3.10 ~ 3.12 | 3.14.4 | 依赖已装好且可导入，先用；若装新依赖失败，再退回 3.12 |
 | pymilvus | 2.4 ~ 2.5 | 3.0.1 | `create_collection` 等签名兼容；Windows 仍不支持 Milvus Lite，**用 numpy 后端** |
-| transformers | 4.x | 5.15.0 | CLIP 代码兼容；若报 "remote code" 相关错误，去掉 `trust_remote_code=True` |
+  | transformers | 4.x | 5.15.0 | 中文 CLIP 须用内置 `ChineseCLIPModel`/`ChineseCLIPProcessor` 加载（见 3.2） |
 | torch | ≥ 2.2 | 2.13.0+cpu | CPU 版，够用；有 NVIDIA 卡可重装 CUDA 版 |
 
 ### 0.1 激活虚拟环境（后续所有命令都依赖它）
@@ -253,7 +253,7 @@ python scripts/test_ocr.py test_images\sample.jpg
 - `openai/clip-vit-base-patch32`：英文图文模型，512 维。
 - `OFA-Sys/chinese-clip-vit-base-patch16`：中文图文模型（Chinese-CLIP），512 维，**中文场景推荐**。
 
-首次加载会自动从 HuggingFace 下载约 600MB，需要联网。
+首次加载模型约 718MB；默认从本地 `models/chinese-clip-vit-base-patch16` 加载，不联网。
 
 ### 3.2 `clip_service.py`
 
@@ -267,20 +267,23 @@ from PIL import Image
 
 load_dotenv()
 
-MODEL_NAME = os.getenv("CLIP_MODEL", "openai/clip-vit-base-patch32")
+MODEL_NAME = os.getenv(
+    "CLIP_MODEL",
+    "OFA-Sys/chinese-clip-vit-base-patch16"
+)
 
 _model = None
 _processor = None
 
 
 def _get_model():
-    """懒加载：只有第一次调用时才真正加载模型（约 600MB，只加载一次）。"""
+    """懒加载：只有第一次调用时才真正加载模型（约 718MB，只加载一次）。"""
     global _model, _processor
     if _model is None:
-        from transformers import CLIPModel, CLIPProcessor
+        from transformers import ChineseCLIPModel, ChineseCLIPProcessor
 
-        _model = CLIPModel.from_pretrained(MODEL_NAME, trust_remote_code=True)
-        _processor = CLIPProcessor.from_pretrained(MODEL_NAME, trust_remote_code=True)
+        _model = ChineseCLIPModel.from_pretrained(MODEL_NAME)
+        _processor = ChineseCLIPProcessor.from_pretrained(MODEL_NAME)
         _model.eval()
     return _model, _processor
 
@@ -295,7 +298,8 @@ def embed_image(image_bytes: bytes) -> list:
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
-        feats = _normalize(model.get_image_features(**inputs))
+        outputs = model.get_image_features(**inputs)
+        feats = _normalize(outputs.pooler_output)
     return feats[0].tolist()
 
 
@@ -304,13 +308,14 @@ def embed_text(text: str) -> list:
     model, processor = _get_model()
     inputs = processor(text=text, return_tensors="pt")
     with torch.no_grad():
-        feats = _normalize(model.get_text_features(**inputs))
+        outputs = model.get_text_features(**inputs)
+        feats = _normalize(outputs.pooler_output)
     return feats[0].tolist()
 ```
 
 说明：
 - 向量先归一化，余弦相似度与内积等价，Milvus 选 `COSINE` 或 `IP` 都行。
-- `trust_remote_code=True` 是中文 CLIP 仓库要求；新版 transformers 若报"不需要 remote code"，去掉该参数。
+- `OFA-Sys/chinese-clip-*` 的 config 声明 `ChineseCLIPModel` 架构，必须用内置的 `ChineseCLIPModel`/`ChineseCLIPProcessor` 加载；`get_image_features`/`get_text_features` 返回带 `pooler_output` 的输出对象。若换 OpenAI 英文模型 `openai/clip-vit-base-patch32`，则改回 `CLIPModel`/`CLIPProcessor` 并直接用返回值归一化。
 
 ### 3.3 `scripts/test_clip.py` + 验证
 
@@ -1003,4 +1008,4 @@ pip install -r requirements.txt
 | OCR 报 `216200` | token 失效或密钥错误 | 检查 `.env` 密钥 |
 | 模型下载卡住/失败 | 网络问题 | `$env:HF_ENDPOINT="https://hf-mirror.com"` |
 | 启动报端口被占用 | 8000 已在使用 | `run.py` 里端口改成 8001 |
-| 中文 CLIP 加载报错 | transformers 版本太旧/remote code 提示 | `pip install -U transformers` 或去掉 `trust_remote_code=True` |
+  | 中文 CLIP 加载报错 | 用了 `CLIPModel`，认不出 `ChineseCLIPModel` 配置 | 改用 `ChineseCLIPModel`/`ChineseCLIPProcessor`（见 3.2） |

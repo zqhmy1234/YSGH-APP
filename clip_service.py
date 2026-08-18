@@ -11,18 +11,18 @@ MODEL_NAME = os.getenv(
     "CLIP_MODEL",
     "OFA-Sys/chinese-clip-vit-base-patch16"
 )
-_model =None
+_model = None
 _processor = None
 
 def _get_model():
-    """懒加载：只有第一次调用时才真正加载模型（约 600MB，只加载一次）。"""
+    """懒加载：只有第一次调用时才真正加载模型（约 718MB，只加载一次）。"""
     global _model, _processor
     if _model is None:
-      from transformers import ChineseCLIPModel, ChineseCLIPProcessor
+        from transformers import ChineseCLIPModel, ChineseCLIPProcessor
 
-    _model = ChineseCLIPModel.from_pretrained(MODEL_NAME)
-    _processor = ChineseCLIPProcessor.from_pretrained(MODEL_NAME)  
-    _model.eval()
+        _model = ChineseCLIPModel.from_pretrained(MODEL_NAME)
+        _processor = ChineseCLIPProcessor.from_pretrained(MODEL_NAME)
+        _model.eval()
     return _model, _processor
 
 
