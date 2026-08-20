@@ -5,6 +5,7 @@ __pycache__/
 .env
 uploads/
 milvus_data/
+thumbnails/
 photo_pipeline.db
 eval_data/
 test_images/

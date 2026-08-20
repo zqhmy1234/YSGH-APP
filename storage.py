@@ -1,15 +1,27 @@
 import datetime
+import io
 import os
 import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
 STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "uploads"))
+THUMB_DIR = Path(os.getenv("THUMB_DIR", "thumbnails"))
 MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "10"))
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def validate(data: bytes, filename: str):
+    """只校验格式与大小，不写盘（用于入库前快速过滤）。"""
+    ext = Path(filename or "upload.jpg").suffix.lower()
+    if ext not in ALLOWED_EXT:
+        raise ValueError(f"不支持的图片格式: {ext}")
+    if len(data) > MAX_FILE_MB * 1024 * 1024:
+        raise ValueError(f"图片超过 {MAX_FILE_MB}MB 上限")
 
 
 def save_image(data: bytes, filename: str) -> str:
@@ -28,6 +40,25 @@ def save_image(data: bytes, filename: str) -> str:
     path = folder / new_name
     path.write_bytes(data)
     return path.as_posix()  # 统一用 / 分隔，跨平台一致
+
+
+def save_thumbnail(data: bytes) -> str:
+    """原图 → 512px JPEG 缩略图，返回相对路径（KEEP_ORIGINAL=false 时用于检索/展示）。"""
+    max_size = int(os.getenv("THUMB_MAX_SIZE", "512"))
+    quality = int(os.getenv("THUMB_QUALITY", "85"))
+
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    img.thumbnail((max_size, max_size))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+
+    today = datetime.date.today()
+    folder = THUMB_DIR / f"{today.year:04d}" / f"{today.month:02d}" / f"{today.day:02d}"
+    folder.mkdir(parents=True, exist_ok=True)
+
+    path = folder / (uuid.uuid4().hex + ".jpg")
+    path.write_bytes(buf.getvalue())
+    return path.as_posix()
 
 
 def delete_image(relative_path: str):
