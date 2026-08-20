@@ -1,0 +1,112 @@
+{
+  "_meta": {
+    "version": 2,
+    "note": "RAG 全分布测评"
+  },
+  "corpora": {
+    "mixed": {
+      "size": 117,
+      "index_ms": 201663,
+      "layers": {
+        "descriptive": {
+          "recall@1": 0.0448,
+          "recall@3": 0.1174,
+          "recall@5": 0.2052,
+          "recall@10": 0.3191,
+          "hit_rate@1": 0.75,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 0.75,
+          "precision@3": 0.6667,
+          "precision@5": 0.7,
+          "precision@10": 0.55,
+          "mrr": 0.875,
+          "ndcg@3": 0.7067,
+          "n_queries": 4
+        },
+        "keyword": {
+          "recall@1": 0.0519,
+          "recall@3": 0.1019,
+          "recall@5": 0.1019,
+          "recall@10": 0.1685,
+          "hit_rate@1": 1.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 1.0,
+          "precision@3": 0.6667,
+          "precision@5": 0.4,
+          "precision@10": 0.3333,
+          "mrr": 1.0,
+          "ndcg@3": 0.7244,
+          "n_queries": 3
+        },
+        "typo": {
+          "recall@1": 0.025,
+          "recall@3": 0.025,
+          "recall@5": 0.075,
+          "recall@10": 0.075,
+          "hit_rate@1": 0.5,
+          "hit_rate@3": 0.5,
+          "hit_rate@5": 0.5,
+          "hit_rate@10": 0.5,
+          "precision@1": 0.5,
+          "precision@3": 0.1667,
+          "precision@5": 0.3,
+          "precision@10": 0.15,
+          "mrr": 0.5,
+          "ndcg@3": 0.2346,
+          "n_queries": 2
+        },
+        "temporal": {
+          "behavior_acc": 1.0,
+          "n": 2
+        },
+        "route": {
+          "behavior_acc": 1.0,
+          "n": 2
+        },
+        "length": {
+          "recall@1": 0.025,
+          "recall@3": 0.025,
+          "recall@5": 0.025,
+          "recall@10": 0.125,
+          "hit_rate@1": 0.5,
+          "hit_rate@3": 0.5,
+          "hit_rate@5": 0.5,
+          "hit_rate@10": 0.5,
+          "precision@1": 0.5,
+          "precision@3": 0.1667,
+          "precision@5": 0.1,
+          "precision@10": 0.25,
+          "mrr": 0.5,
+          "ndcg@3": 0.2346,
+          "n_queries": 2
+        }
+      },
+      "gates": {
+        "temporal_acc": true,
+        "route_acc": true
+      },
+      "overall": {
+        "recall@1": 0.0395,
+        "recall@3": 0.0841,
+        "recall@5": 0.116,
+        "recall@10": 0.212,
+        "hit_rate@1": 0.7273,
+        "hit_rate@3": 0.8182,
+        "hit_rate@5": 0.8182,
+        "hit_rate@10": 0.8182,
+        "precision@1": 0.7273,
+        "precision@3": 0.5152,
+        "precision@5": 0.4182,
+        "precision@10": 0.3909,
+        "mrr": 0.7727,
+        "ndcg@3": 0.5668,
+        "n_queries": 11
+      }
+    }
+  },
+  "overall_pass": true
+}

@@ -1,0 +1,194 @@
+"""分片上传状态机测试（S5-03 · WP-C）
+
+覆盖：
+  - init 幂等（同 client_upload_id 复用任务）
+  - 分片上传：正常 / 幂等重复（duplicate）/ 同 index 异 hash 拒绝 / index 越界 / hash 不匹配
+  - 断点续传：缺片列表正确，补传后 complete 成功
+  - complete：分片未齐拒绝 / 合并大小校验 / 幂等重复 complete / staging 清理
+  - 存储后端：默认 fake（内存）
+前置：PG yishu 库
+"""
+import uuid
+
+import pytest
+from app.core.config import settings
+from app.db.models import UploadChunk, UploadTask, User
+from app.db.session import SessionLocal
+from app.services import upload as upload_svc
+from sqlalchemy import delete as sa_delete
+
+pytestmark = pytest.mark.integration
+
+CHUNK = 1024  # 1KB 分片便于测试
+
+
+@pytest.fixture()
+def db_user():
+    db = SessionLocal()
+    user = User(phone=f"upload-test-{uuid.uuid4().hex[:8]}", status=1)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    yield db, user
+    # 清理
+    task_ids = db.scalars(
+        sa_delete(UploadTask).where(UploadTask.user_id == user.id).returning(UploadTask.id)
+    ).all()
+    if task_ids:
+        db.execute(sa_delete(UploadChunk).where(UploadChunk.upload_id.in_(task_ids)))
+    db.delete(user)
+    db.commit()
+    db.close()
+
+
+def _make_task(db, user, client_upload_id=None, data: bytes | None = None, chunk_size=CHUNK):
+    data = data if data is not None else b"a" * 2500
+    task = upload_svc.init_upload(
+        db,
+        user.id,
+        client_upload_id or f"cid-{uuid.uuid4().hex[:10]}",
+        "test.jpg",
+        len(data),
+        chunk_size,
+    )
+    return task, data
+
+
+def test_init_idempotent(db_user):
+    db, user = db_user
+    t1, data = _make_task(db, user)
+    t2 = upload_svc.init_upload(db, user.id, t1.client_upload_id, "test.jpg", len(data), CHUNK)
+    assert t1.id == t2.id
+    assert t2.chunk_count == 3  # 2500 / 1024 → 3
+
+
+def test_upload_and_complete(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    chunk_count = task.chunk_count
+    for i in range(chunk_count):
+        part = data[i * CHUNK : (i + 1) * CHUNK]
+        result = upload_svc.upload_chunk(db, task.id, i, part)
+        assert result["status"] == "uploaded"
+    result = upload_svc.complete_upload(db, task.id)
+    assert result["status"] == "completed"
+    # 最终对象存在且内容一致（fake 后端）
+    from app.services.external.storage import get_storage_backend
+
+    backend = get_storage_backend("fake")
+    assert backend.get_object(result["file_key"]) == data
+    # staging 已清理
+    assert not backend.object_exists(f"uploads/{task.id}/0.part")
+
+
+def test_chunk_duplicate_idempotent(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    part = data[:CHUNK]
+    upload_svc.upload_chunk(db, task.id, 0, part)
+    r2 = upload_svc.upload_chunk(db, task.id, 0, part)
+    assert r2["status"] == "duplicate"
+
+
+def test_chunk_same_index_diff_hash_rejected(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    upload_svc.upload_chunk(db, task.id, 0, b"x" * CHUNK)
+    with pytest.raises(ValueError):
+        upload_svc.upload_chunk(db, task.id, 0, b"y" * CHUNK)
+
+
+def test_chunk_hash_mismatch_rejected(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    with pytest.raises(ValueError):
+        upload_svc.upload_chunk(db, task.id, 0, b"abc", chunk_hash="deadbeef")
+
+
+def test_chunk_index_out_of_range(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    with pytest.raises(ValueError):
+        upload_svc.upload_chunk(db, task.id, 99, b"x")
+
+
+def test_resume_missing_chunks(db_user):
+    """断电续传：只传 0、2 片 → 缺失 [1] → 补传后 complete"""
+    db, user = db_user
+    task, data = _make_task(db, user)
+    for i in (0, 2):
+        part = data[i * CHUNK : (i + 1) * CHUNK]
+        upload_svc.upload_chunk(db, task.id, i, part)
+    status = upload_svc.get_status(db, task.id)
+    assert status["missing_chunks"] == [1]
+    part1 = data[CHUNK : 2 * CHUNK]
+    upload_svc.upload_chunk(db, task.id, 1, part1)
+    result = upload_svc.complete_upload(db, task.id)
+    assert result["status"] == "completed"
+
+
+def test_complete_with_missing_chunks_rejected(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    upload_svc.upload_chunk(db, task.id, 0, data[:CHUNK])
+    with pytest.raises(ValueError):
+        upload_svc.complete_upload(db, task.id)
+
+
+def test_complete_idempotent(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+    upload_svc.complete_upload(db, task.id)
+    r2 = upload_svc.complete_upload(db, task.id)
+    assert r2["status"] == "completed"
+
+
+def test_default_backend_is_fake():
+    assert settings.storage_backend == "fake"
+
+
+def test_chunk_larger_than_declared_rejected(db_user):
+    """审查修复(P1-02)：单片超过声明分片大小 → 拒绝（防内存/存储滥用）"""
+    db, user = db_user
+    task, data = _make_task(db, user, chunk_size=1024)
+    # 传 2KB 单片（声明 1KB）
+    with pytest.raises(ValueError):
+        upload_svc.upload_chunk(db, task.id, 0, b"x" * 2048)
+    # 正常大小不受影响
+    r = upload_svc.upload_chunk(db, task.id, 0, b"x" * 1024)
+    assert r["status"] == "uploaded"
+
+
+def test_cross_user_access_denied(db_user):
+    """审查 CRITICAL 修复（IDOR）：用户 B 无法操作用户 A 的上传任务
+
+    upload_chunk / get_status / complete_upload 三个入口均需归属校验，
+    他人任务一律视为不存在（KeyError → 404）。
+    """
+    db, user_a = db_user
+    # 用户 B（攻击者）
+    user_b = User(phone=f"upload-attacker-{uuid.uuid4().hex[:8]}", status=1)
+    db.add(user_b)
+    db.commit()
+    db.refresh(user_b)
+    try:
+        task, data = _make_task(db, user_a)
+        # ① 越权传分片
+        with pytest.raises(KeyError):
+            upload_svc.upload_chunk(db, task.id, 0, data[:CHUNK], user_id=user_b.id)
+        # ② 越权查状态
+        with pytest.raises(KeyError):
+            upload_svc.get_status(db, task.id, user_id=user_b.id)
+        # ③ 越权 complete
+        with pytest.raises(KeyError):
+            upload_svc.complete_upload(db, task.id, user_id=user_b.id)
+        # ④ 本人仍可正常操作（未误伤）
+        upload_svc.upload_chunk(db, task.id, 0, data[:CHUNK], user_id=user_a.id)
+        assert upload_svc.get_status(db, task.id, user_id=user_a.id)["uploaded_chunks"] == [0]
+    finally:
+        # 清理 B 用户（A 的清理走 db_user fixture）
+        db.execute(sa_delete(UploadTask).where(UploadTask.user_id == user_b.id))
+        db.delete(user_b)
+        db.commit()

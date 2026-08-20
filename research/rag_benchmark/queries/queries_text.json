@@ -1,0 +1,77 @@
+{
+  "queries": [
+    {
+      "query": "记得要去办的事情",
+      "expected_label": "todo",
+      "layer": "descriptive"
+    },
+    {
+      "query": "关于做产品的想法",
+      "expected_label": "idea",
+      "layer": "descriptive"
+    },
+    {
+      "query": "让我难过的记录",
+      "expected_label": "emotion",
+      "layer": "descriptive"
+    },
+    {
+      "query": "人生感悟和道理",
+      "expected_label": "quote",
+      "layer": "descriptive"
+    },
+    {
+      "query": "买牛奶",
+      "expected_label": "todo",
+      "layer": "keyword"
+    },
+    {
+      "query": "马拉松",
+      "expected_label": "emotion",
+      "layer": "keyword"
+    },
+    {
+      "query": "收房租",
+      "expected_label": "todo",
+      "layer": "keyword"
+    },
+    {
+      "query": "买牛乃",
+      "expected_label": "todo",
+      "layer": "typo"
+    },
+    {
+      "query": "松鼠桂鱼",
+      "expected_label": "__none__",
+      "layer": "typo"
+    },
+    {
+      "query": "去年去的地方",
+      "layer": "temporal"
+    },
+    {
+      "query": "上个月的照片",
+      "layer": "temporal"
+    },
+    {
+      "query": "照片里的猫",
+      "expected_label": "__none__",
+      "layer": "route"
+    },
+    {
+      "query": "给领导交季度总结",
+      "expected_label": "todo",
+      "layer": "route"
+    },
+    {
+      "query": "购物",
+      "expected_label": "todo",
+      "layer": "length"
+    },
+    {
+      "query": "记得明天下午之前把上个月的工作总结报告交给领导",
+      "expected_label": "todo",
+      "layer": "length"
+    }
+  ]
+}

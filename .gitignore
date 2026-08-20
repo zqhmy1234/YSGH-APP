@@ -1,0 +1,102 @@
+# ============================================================
+# 忆述光华 · .gitignore（2026-08-20 系统化重写）
+# 原则：只上传 生产代码/测试代码/harness文档/设计文档；
+#       本地隐私（API key、个人路径、构建缓存、语料数据）一律不上传。
+# ============================================================
+
+# --- 密钥与隐私（最高优先级，绝不入库）---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+local.properties
+**/local.properties
+*.local
+secrets/
+credentials/
+
+# --- 语言构建缓存 ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json.tmp
+
+# Gradle / Android 构建（research/poc 用）
+.gradle/
+build/
+*.apk
+*.aab
+*.wgt
+*.hprof
+.kotlin/
+
+# --- 构建产物 ---
+dist/
+out/
+*.exe
+*.dmg
+*.o
+*.so
+*.dll.bak
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- AI agent 工作区（本机会话产物，不入库）---
+.cowork-temp/
+*.log
+last-failure.json
+
+# --- 数据库 / 备份 ---
+*.dump
+*.sha256
+backups/*.dump
+backups/*.sha256
+*.sql.bak
+
+# --- ML 模型与语料（可下载/可再生，不入库）---
+backend/models/
+*.safetensors
+backend/checkpoints/
+research/rag_benchmark/corpus.json
+research/asr_bench/wav/
+research/asr_bench/*.wav
+*.onnx
+*.pt
+*.pth
+
+# --- 个人截图/照片语料（隐私，绝不上传）---
+research/**/Screenshots/
+research/**/Pictures/
+research/**/photos/
+research/**/screenshots/
+*.png.bak
+*.jpg.bak
+
+# --- 临时文件 ---
+*.tmp
+*.temp
+*~
+
+# --- 归档与本地 CLI 关联（2026-08-21 安全加固：含 workspaceId，不入库）---
+backups/
+.infisical.json

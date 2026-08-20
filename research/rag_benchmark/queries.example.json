@@ -1,0 +1,11 @@
+"""RAG 图片基准 · 评估查询模板
+
+queries.json 格式：{"queries": [{"query": "自然语言查询", "expected": "期望命中的 image id"}]}
+
+期望 id 需在图片塔打描述后人工/LLM 生成（根据截图内容），
+示例（截图含会议纪要/代码/聊天等场景，待补充真实映射）：
+"""
+QUERIES_TEMPLATE = {
+    "_note": "图片塔打描述后，按截图内容生成 query→expected 映射（≥20 条）",
+    "queries": [],
+}

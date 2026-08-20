@@ -1,0 +1,45 @@
+# 忆述光华 backend · Python 依赖
+# Python 3.11 / FastAPI + RQ + PostgreSQL（开发决策清单 #3/#9 已拍板）
+
+# --- Web 框架 ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+python-multipart>=0.0.9
+
+# --- 数据库 ---
+sqlalchemy>=2.0
+psycopg[binary]>=3.2
+alembic>=1.13        # P2-05 迁移（ORM 唯一权威）
+pgvector>=0.3         # 仅测试引用（dev）
+
+# --- 队列（RQ，决策 #9）---
+rq>=1.16
+redis>=5.0
+
+# --- 认证（决策 #8：JWT 自建，无密码哈希）---
+pyjwt>=2.9
+
+# --- 外部 API / AI ---
+httpx>=0.27          # 仅 scripts/wecom_sandbox.py 使用（可降 dev）
+dashscope>=1.20          # 阿里云百炼（qwen/护栏）
+
+# --- 可观测（决策 #12：Sentry 云版）---
+sentry-sdk[fastapi]>=2.13
+
+# --- 工具 ---
+
+# --- RAG（B2：Qdrant + BGE-M3，M1 Part 2）---
+qdrant-client>=1.19
+sentence-transformers>=3.4
+
+# --- SetFit 分类（M1 Part 3 / F2）---
+setfit>=1.1
+
+# --- 对象存储（S5-03 COS 分片/断电续传；MinIO 本地模拟）---
+cos-python-sdk-v5>=1.9.33
+minio>=7.2.0
+
+# --- 长录音 VAD 分段（B5a-2 · P1-16）---
+webrtcvad-wheels>=2.0.10

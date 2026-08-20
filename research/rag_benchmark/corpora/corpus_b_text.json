@@ -1,0 +1,513 @@
+{
+  "_meta": {
+    "version": 1,
+    "note": "文字碎片 5 类分布",
+    "count": 84
+  },
+  "items": [
+    {
+      "id": "b-todo-00",
+      "text": "明天记得取快递",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-01",
+      "text": "下午三点给妈妈打电话",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-02",
+      "text": "别忘了交房租",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-03",
+      "text": "周末去银行办卡",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-04",
+      "text": "买牛奶和鸡蛋",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-05",
+      "text": "周三前把报告发给领导",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-06",
+      "text": "晚上八点约了牙医",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-07",
+      "text": "修阳台门锁",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-08",
+      "text": "回王老师邮件",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-09",
+      "text": "周一开会带笔记本",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-10",
+      "text": "该给车加油了",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-11",
+      "text": "预约体检",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-12",
+      "text": "月底前完成季度总结",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-13",
+      "text": "给猫咪预约绝育手术",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-14",
+      "text": "退掉不合适的衣服",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-15",
+      "text": "充值地铁卡",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-16",
+      "text": "给外婆买助听器电池",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-17",
+      "text": "清理手机相册",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-18",
+      "text": "更新身份证有效期",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-todo-19",
+      "text": "给朋友寄生日礼物",
+      "content_type": "text",
+      "label": "todo"
+    },
+    {
+      "id": "b-idea-00",
+      "text": "想做一个记录植物生长的app",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-01",
+      "text": "把老照片做成时光胶囊",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-02",
+      "text": "书店创业点子",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-03",
+      "text": "给每个城市画气味地图",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-04",
+      "text": "童年玩具改蓝牙音箱",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-05",
+      "text": "写巷口修鞋匠的小说",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-06",
+      "text": "用声音记录心情",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-07",
+      "text": "极简桌面收纳方案",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-08",
+      "text": "把梦境画下来",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-09",
+      "text": "交换闲置种子的社区",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-10",
+      "text": "爷爷手写信做成有声书",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-11",
+      "text": "阳台改造成小菜园",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-12",
+      "text": "宠物日记自动生成插画",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-13",
+      "text": "用旧牛仔裤做环保袋",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-14",
+      "text": "社区共享工具箱",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-idea-15",
+      "text": "把旅行照片做成地图墙",
+      "content_type": "text",
+      "label": "idea"
+    },
+    {
+      "id": "b-emotion-00",
+      "text": "今天好累,什么都不想做",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-01",
+      "text": "看到夕阳突然有点想哭",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-02",
+      "text": "好久没这么开心了",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-03",
+      "text": "感觉被大家遗忘了",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-04",
+      "text": "妈妈做的菜让我很安心",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-05",
+      "text": "被老板表扬了,开心",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-06",
+      "text": "有点焦虑,睡不着",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-07",
+      "text": "和老友重逢,百感交集",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-08",
+      "text": "一个人过节有点孤独",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-09",
+      "text": "看到小猫被收养,暖暖的",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-10",
+      "text": "今天有点烦躁,什么都不顺",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-11",
+      "text": "想起外婆,心里酸酸的",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-12",
+      "text": "加班到深夜,突然很委屈",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-13",
+      "text": "收到老同学消息,眼眶一热",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-14",
+      "text": "跑完五公里,痛快",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-15",
+      "text": "孩子第一次叫爸爸,想哭",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-16",
+      "text": "面试失败了,有点沮丧",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-emotion-17",
+      "text": "今天被陌生人暖心帮助",
+      "content_type": "text",
+      "label": "emotion"
+    },
+    {
+      "id": "b-quote-00",
+      "text": "人生如逆旅,我亦是行人",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-01",
+      "text": "知人者智,自知者明",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-02",
+      "text": "生活不止眼前的苟且",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-03",
+      "text": "凡是过往,皆为序章",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-04",
+      "text": "夜色难免黑凉,前行必有曙光",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-05",
+      "text": "世界以痛吻我,要我报之以歌",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-06",
+      "text": "纵有疾风起,人生不言弃",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-07",
+      "text": "你若盛开,蝴蝶自来",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-08",
+      "text": "路漫漫其修远兮,吾将上下而求索",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-09",
+      "text": "长风破浪会有时,直挂云帆济沧海",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-10",
+      "text": "己所不欲,勿施于人",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-11",
+      "text": "时间会治愈一切",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-12",
+      "text": "不忘初心,方得始终",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-13",
+      "text": "道阻且长,行则将至",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-quote-14",
+      "text": "此心安处是吾乡",
+      "content_type": "text",
+      "label": "quote"
+    },
+    {
+      "id": "b-mixed-00",
+      "text": "今天天气不错,适合出门走走",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-01",
+      "text": "楼下新开的咖啡店味道还行",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-02",
+      "text": "视频里那个猫挺有意思",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-03",
+      "text": "听说地铁三号线要延长了",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-04",
+      "text": "群里有人分享了新出的电影",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-05",
+      "text": "这个月电费比上个月贵",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-06",
+      "text": "手机又提示存储空间不足",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-07",
+      "text": "邻居家的狗每天早上叫",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-08",
+      "text": "今天买菜花了五十块",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-09",
+      "text": "淘宝上买的小夜灯到了",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-10",
+      "text": "地铁上看到一个有趣的广告",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-11",
+      "text": "天气转凉,记得加衣服",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-12",
+      "text": "小区门口新开了水果店",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-13",
+      "text": "今天通勤路况出奇的好",
+      "content_type": "text",
+      "label": "mixed"
+    },
+    {
+      "id": "b-mixed-14",
+      "text": "楼下的桂花开了",
+      "content_type": "text",
+      "label": "mixed"
+    }
+  ]
+}
