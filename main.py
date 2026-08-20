@@ -2,15 +2,22 @@ import hashlib
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from pydantic import BaseModel
 
 import db_milvus
 import db_mysql
+import event_service
 import sensitive_guard
 import storage
 from clip_service import embed_image, embed_text
 from ocr_service import ocr_image
+
+
+class CheckRequest(BaseModel):
+    hashes: list[str]
 
 
 @asynccontextmanager
@@ -24,7 +31,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Photo Pipeline MVP", lifespan=lifespan)
 
 
-def process_image(data: bytes, filename: str, user_id: str, user_consent: bool) -> dict:
+def _resolve_original_time(data: bytes, photo_time: str | None) -> str:
+    exif = storage.get_exif_datetime(data)
+    if exif:
+        return exif
+    if photo_time:
+        return photo_time
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def process_image(
+    data: bytes,
+    filename: str,
+    user_id: str,
+    user_consent: bool,
+    photo_time: str | None = None,
+) -> dict:
     """单张图片完整流程：校验 → 去重 → 向量化 → 敏感拦截 → OCR → 缩略图 → 入库。"""
     try:
         storage.validate(data, filename)
@@ -32,6 +54,7 @@ def process_image(data: bytes, filename: str, user_id: str, user_consent: bool) 
         raise HTTPException(status_code=400, detail=str(e))
 
     content_hash = hashlib.sha256(data).hexdigest()
+    original_time = _resolve_original_time(data, photo_time)
 
     # 去重（阶段二）：重复图片不重复 OCR / 不重复入库
     existing = db_mysql.find_asset_by_hash(content_hash)
@@ -112,7 +135,13 @@ def process_image(data: bytes, filename: str, user_id: str, user_consent: bool) 
     # 元数据 + 向量入库
     try:
         asset_id = db_mysql.save_asset(
-            user_id, stored_path, text, content_hash, thumb_path, int(is_sensitive)
+            user_id,
+            stored_path,
+            text,
+            content_hash,
+            thumb_path,
+            int(is_sensitive),
+            original_time,
         )
         db_milvus.insert_embedding(asset_id, vector)
     except Exception as e:
@@ -128,6 +157,7 @@ def process_image(data: bytes, filename: str, user_id: str, user_consent: bool) 
         "content_hash": content_hash,
         "duplicate": False,
         "is_sensitive": is_sensitive,
+        "original_time": original_time,
     }
 
 
@@ -141,9 +171,10 @@ def upload(
     file: UploadFile = File(...),
     user_id: str = "default",
     user_consent: bool = False,
+    photo_time: str | None = None,
 ):
     data = file.file.read()
-    return process_image(data, file.filename or "upload.jpg", user_id, user_consent)
+    return process_image(data, file.filename or "upload.jpg", user_id, user_consent, photo_time)
 
 
 @app.post("/upload/batch")
@@ -151,13 +182,14 @@ def upload_batch(
     files: list[UploadFile] = File(...),
     user_id: str = "default",
     user_consent: bool = False,
+    photo_time: str | None = None,
 ):
     """批量上传：逐张独立处理，单张失败不影响其他张，同步返回结果数组。"""
     results = []
     for f in files:
         data = f.file.read()
         try:
-            r = process_image(data, f.filename or "upload.jpg", user_id, user_consent)
+            r = process_image(data, f.filename or "upload.jpg", user_id, user_consent, photo_time)
             results.append({"filename": f.filename, "status": "success", **r})
         except HTTPException as e:
             results.append(
@@ -177,6 +209,67 @@ def upload_batch(
         "results": results,
         "success": sum(1 for r in results if r["status"] == "success"),
         "failed": sum(1 for r in results if r["status"] == "error"),
+    }
+
+
+@app.post("/assets/check")
+def assets_check(req: CheckRequest):
+    """批量查重：客户端上传前先确认哪些图片已存在（增量同步用）。"""
+    found = db_mysql.find_assets_by_hashes(req.hashes)
+    return {
+        "results": [
+            {
+                "hash": h,
+                "exists": h in found,
+                "asset_id": found[h]["id"] if h in found else None,
+            }
+            for h in req.hashes
+        ]
+    }
+
+
+@app.post("/events/rebuild")
+def events_rebuild(user_id: str = "default"):
+    """全量重算事件分组（幂等）。"""
+    return event_service.rebuild_events(user_id)
+
+
+@app.get("/events")
+def events_list(user_id: str = "default", limit: int = 50, offset: int = 0):
+    rows = db_mysql.list_events(user_id, limit, offset)
+    out = []
+    for r in rows:
+        cover = db_mysql.get_asset(r["cover_asset_id"]) if r["cover_asset_id"] else None
+        out.append(
+            {
+                "event_id": r["id"],
+                "start_time": r["start_time"],
+                "end_time": r["end_time"],
+                "photo_count": r["photo_count"],
+                "cover_thumb": (cover or {}).get("thumb_path") or "",
+            }
+        )
+    return {"events": out, "total": len(out)}
+
+
+@app.get("/events/{event_id}")
+def event_detail(event_id: int):
+    ev = db_mysql.get_event(event_id)
+    if not ev:
+        raise HTTPException(status_code=404, detail="事件不存在")
+    assets = db_mysql.get_event_assets(event_id)
+    return {
+        "event": ev,
+        "assets": [
+            {
+                "asset_id": a["id"],
+                "thumb_path": a["thumb_path"] or "",
+                "original_time": a["original_time"] or "",
+                "ocr_text": a["ocr_text"] or "",
+                "is_sensitive": bool(a["is_sensitive"]),
+            }
+            for a in assets
+        ],
     }
 
 

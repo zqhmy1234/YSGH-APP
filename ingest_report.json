@@ -1,0 +1,17 @@
+{
+  "total": 205,
+  "success": 195,
+  "failed": 0,
+  "blocked_sensitive": 10,
+  "duplicates": 19,
+  "success_rate": 1.0,
+  "failure_reasons": {},
+  "total_seconds": 302.51,
+  "p50_seconds": 1.554,
+  "p95_seconds": 1.998,
+  "events": {
+    "event_count": 39,
+    "avg_photos_per_event": 5.03,
+    "isolated_events": 19
+  }
+}

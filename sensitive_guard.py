@@ -16,7 +16,9 @@ from clip_service import embed_text
 
 load_dotenv()
 
-THRESHOLD = float(os.getenv("SENSITIVE_THRESHOLD", "0.24"))
+THRESHOLD = float(os.getenv("SENSITIVE_THRESHOLD", "0.40"))
+# 相对"普通类"最高分的差距要求：证件类必须显著高于普通类才拦截（降低误报）
+MARGIN = float(os.getenv("SENSITIVE_MARGIN", "0.03"))
 
 SENSITIVE_PROMPTS = [
     "中国居民身份证照片",
@@ -76,7 +78,7 @@ def check_sensitive(image_vec: list) -> dict:
     s_max = float(s_scores.max())
     n_max = float(n_scores.max()) if len(n_scores) else 0.0
     matched = SENSITIVE_PROMPTS[int(s_scores.argmax())]
-    is_sensitive = s_max >= THRESHOLD and s_max >= n_max
+    is_sensitive = s_max >= THRESHOLD and s_max >= n_max + MARGIN
     return {
         "is_sensitive": bool(is_sensitive),
         "score": round(s_max, 4),

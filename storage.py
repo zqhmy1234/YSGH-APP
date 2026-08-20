@@ -24,6 +24,28 @@ def validate(data: bytes, filename: str):
         raise ValueError(f"图片超过 {MAX_FILE_MB}MB 上限")
 
 
+def get_exif_datetime(data: bytes):
+    """从图片 EXIF 提取拍摄时间（DateTimeOriginal → DateTime → DateTimeDigitized），无则返回 None。"""
+    try:
+        from PIL import ExifTags
+
+        img = Image.open(io.BytesIO(data))
+        exif = img.getexif()
+        if exif:
+            wanted = {"DateTimeOriginal", "DateTime", "DateTimeDigitized"}
+            values = {}
+            for tag, value in exif.items():
+                name = ExifTags.TAGS.get(tag)
+                if name in wanted and value:
+                    values[name] = str(value)
+            for name in ("DateTimeOriginal", "DateTime", "DateTimeDigitized"):
+                if name in values:
+                    return values[name].replace(":", "-", 2)
+    except Exception:
+        pass
+    return None
+
+
 def save_image(data: bytes, filename: str) -> str:
     """保存图片到 uploads/年/月/日/uuid.扩展名，返回相对路径。"""
     ext = Path(filename or "upload.jpg").suffix.lower()

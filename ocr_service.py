@@ -1,9 +1,11 @@
 import base64
+import io
 import os
 import time
 
 import requests
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
@@ -13,6 +15,7 @@ OCR_LANGUAGE = os.getenv("BAIDU_OCR_LANGUAGE_TYPE", "CHN_ENG")
 OCR_DETECT_DIRECTION = os.getenv("BAIDU_OCR_DETECT_DIRECTION", "true").lower() == "true"
 
 _token_cache = {"token": None, "expire_at": 0}
+MAX_OCR_SIDE = int(os.getenv("BAIDU_OCR_MAX_SIDE", "2000"))
 
 
 def get_access_token() -> str:
@@ -43,6 +46,7 @@ def get_access_token() -> str:
 
 def ocr_image(image_bytes: bytes) -> str:
     """传入图片字节，返回识别出的文字（按行拼接）。"""
+    image_bytes = _prepare_for_ocr(image_bytes)
     params = {"access_token": get_access_token()}
     payload = {
         "image": base64.b64encode(image_bytes).decode("utf-8"),
@@ -61,3 +65,14 @@ def ocr_image(image_bytes: bytes) -> str:
 
     words = [item["words"] for item in data.get("words_result", [])]
     return "\n".join(words)
+
+
+def _prepare_for_ocr(data: bytes) -> bytes:
+    """百度 OCR 对图片大小有限制（过大报 216205 input oversize）：
+    先转 RGB、最长边压到 MAX_OCR_SIDE、存为 JPEG，再送识别。"""
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    if max(img.size) > MAX_OCR_SIDE:
+        img.thumbnail((MAX_OCR_SIDE, MAX_OCR_SIDE))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()

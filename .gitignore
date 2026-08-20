@@ -9,6 +9,9 @@ thumbnails/
 photo_pipeline.db
 eval_data/
 test_images/
+test_album/
+sync_album/
+sync_state.json
 models/
 baidu.env
 models/models/
