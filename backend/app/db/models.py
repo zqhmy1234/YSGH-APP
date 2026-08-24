@@ -437,6 +437,24 @@ class UploadChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class GeoCache(Base):
+    """geo_cache 表（高德逆地理缓存 · 外部API清单 #5）
+
+    geohash 精度 6（≈1.2km 格子）作缓存键，同格复用一次逆编码调用；
+    高德合规：逆地理结果不可缓存超 30 天（service 层读取时校验 updated_at 年龄）。
+    """
+
+    __tablename__ = "geo_cache"
+
+    geohash: Mapped[str] = mapped_column(String, primary_key=True)  # 精度 6
+    place: Mapped[str | None] = mapped_column(String, nullable=True)
+    city: Mapped[str | None] = mapped_column(String, nullable=True)
+    province: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class FinetuneJob(Base):
     """finetune_jobs 表（B5-c 共性纠错微调任务记录；P2-05 纳入 ORM 受管，
     原为 reflow_global.py 裸 SQL 直写——现纳入 Alembic 权威，避免漂移）"""

@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-24 17:43 · commit 0ef0ace · ts=1787589788
+- **错误**：PowerShell 改 client/config.ts 导致 UTF-8 中文乱码 + 插入错位（编译 Expression expected）
+- **根因**：Windows PowerShell 5.1 Get-Content/Set-Content 默认非 UTF-8 无 BOM 读写，-replace 插块位置错误；中文被读成 ANSI 后写回变乱码
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-24 16:47 · commit 0750c87 · ts=1787586479
 - **错误**：review_agent tests 段失败：test_correction 加载 SetFit 模型报 OSError 页面文件太小 (os error 1455)
 - **根因**：本机内存/页面文件不足：worker 进程 + review_agent research 段（4.5GB）+ pytest 同时跑模型推理，物理内存耗尽

@@ -7,6 +7,9 @@
  */
 export const ENV: string = 'dev' // 'dev' | 'prod'
 
+/** Sentry DSN（可观测双通道·客户端侧；DSN 为公开标识，Sentry 官方允许客户端明文内嵌——非机密） */
+export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o4511955023888384.ingest.us.sentry.io/4511958507388928'
+
 /** 真机联调后端地址：
  *  - 'localhost'：经 adb reverse USB 隧道访问本机（最稳，绕开 WiFi 段/防火墙；需 adb reverse tcp:8000 tcp:8000）
  *  - 局域网 IP：直接 WiFi 访问（依赖同网段 + 本机防火墙放行 8000）

@@ -1,13 +1,19 @@
 <script lang="uts">
 	import { ensureLogin } from './utils/auth'
+	import { initSentry, captureException } from './utils/sentry'
 
 	export default {
 		onLaunch() {
 			console.log('[yishu] client launch, env=' + 'dev')
+			// Sentry 初始化（决策 #12 双通道·客户端侧；无 DSN 时静默禁用）
+			initSentry()
 			// 静默登录预热 token（B-CL-3：mock wechat login；失败不阻断启动，页面请求时再补）
 			ensureLogin().then((ok: boolean) => {
 				console.log('[yishu] ensureLogin -> ' + ok)
 			})
+		},
+		onError(err: any) {
+			captureException('' + err, 'app.onError', null)
 		}
 	}
 </script>

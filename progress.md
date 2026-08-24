@@ -1,4 +1,34 @@
 
+## 🔧 2026-08-25 · RAG 测试体系核实修复 + AMAP 逆地理落地 + Sentry 客户端接线
+
+**状态**：全量 pytest 247 passed（+9 test_amap）｜pytest -m rag 14/14 通过（修复后）｜client 编译成功｜review_agent 待跑
+
+### RAG 测试体系核实（第四问答复依据）
+1. **指标体系全貌**：research/rag_benchmark/metrics.py 实现 recall@k / hit_rate@k / precision@k / mrr / ndcg@3（k=1/3/5/10），分层（descriptive/keyword/typo/length）+ 行为层（temporal_acc/route_acc）+ overall 全量输出在 evaluation_report.json（hit_rate@3=0.8182 / mrr=0.7727 / ndcg@3=0.5668 / recall@3=0.0841 / route_acc=1.0 / temporal_acc=1.0 / overall_pass=true，11 查询，B+C 混合库 117 条）。门禁只取 hit_rate@3≥0.70（产品口径 Top3≥70%）+ route_acc/temporal_acc + P95<3s
+2. **完整测试套件答案**：默认 pytest 套件 238 项 addopts `-m "not rag"` **排除 RAG 重测试**；RAG 集成测试（test_rag.py/test_image_search.py）需单独 `pytest -m rag`（前置 Docker Qdrant + BGE-M3）
+3. **实测发现回归**：`pytest -m rag` 1 failed（test_dense_search_recall）——test_rag.py 与生产 yishu_contents 共用 collection，生产库有真实数据（08-24 真机 E2E）后测试点被挤出 Top-k → **修复**：改用独立 collection yishu_test_rag（与基准评测同隔离策略），修复后 14/14 通过
+4. **F5 缺口项核实**：①Qwen3-VL 图片塔已真实接线（image_caption + search_by_image + pipeline 写 image_vec）——feature_list 旧 evidence 过时；②corpus-A 500 张截图基准已完成（image_search_report.json：15 查询 hit_rate@3=1.0）——已存在；③双层 Rerank 第一层 bge-reranker 粗排已接线，**第二层 qwen-flash LLM 精排未实现=真实缺口**；④**新发现缺口**：以图搜图延迟 P95=7629ms 超 3s 门禁（未列入 feature_list）
+
+### AMAP 逆地理（高德 Key 落地）
+5. **services/external/amap.py**：geohash 精度 6 纯函数（与 geohash2 独立库交叉验证）+ regeo（httpx + with_retry 3 次退避）+ get_place（geo_cache 缓存优先 ≤30 天合规，mock 生产拒落库）
+6. **GeoCache 模型 + 迁移**：alembic 4d00dfec7b46 add_geo_cache 已应用，check 零漂移
+7. **pipeline._process_photo 接线**：photo GPS → contents.place（失败静默）
+8. **config 别名**：amap_api_key AliasChoices（AMAP_API_KEY / AMAP_WEB_API_KEY——Infisical 存量名）
+9. **验证**：test_amap 9 项全过；真实调用（MOCK_EXTERNAL_AI=false + infisical run）：外滩坐标 31.2304,121.4737 → 上海市黄浦区南京东路街道（免费额度内）
+
+### Sentry 客户端接线（SENTRY_DSN 落地）
+10. **Infisical 核实**：SENTRY_DSN（dev，命名无 _DEV/_PROD 后缀，us.sentry.io；DSN 为公开标识按 Sentry 官方惯例内嵌 client）——后端 main.py 生产环境 sentry_sdk 初始化已有；**客户端缺失** → 补齐
+11. **utils/sentry.ts**：轻量 Envelope 协议上报（uni.request POST /api/<project>/envelope/，零三方依赖、标准基座可用；@sentry/vue 因 uni-app x App 端无 DOM 不可用）；captureException/captureMessage/addBreadcrumb（环形缓冲 10 条）
+12. **接线**：App.uvue onLaunch initSentry + onError（UTS error17：生命周期参数须声明 any）；api.ts 5xx + 网络失败上报（4xx 不打扰）
+13. **编译**：HBuilderX CLI 编译通过（config.ts 曾被 PowerShell 编码破坏重写——教训：改 client 配置勿用 PS 写 UTF-8，用 write 工具）
+
+### 遗留/待办
+- 以图搜图延迟优化（P95 7.6s→<3s：图片塔降采样/缓存/并行）——列入 F5 真实缺口
+- 双层 Rerank 第二层 qwen-flash 精排——待延迟预算评估后接
+- 客户端第二波遗留（XView/S-ST-1/S-MO-1/S-EM-1/离线 op_log）与真值数据规格 grill-me 讨论进行中
+
+---
+
 ## 🚀 客户端第三波（2026-08-24 晚 · T-NA/T-TX/T-AU/T-SR/T-PL 多入口+玩法层）
 
 **状态**：✅ 全部真机验证通过（nova 11，提交 e6398cc）｜review_agent 全绿｜pytest 238 passed

@@ -10,6 +10,7 @@
  */
 import { getBaseUrl } from './config'
 import { getToken, refreshToken, clearToken } from './auth'
+import { captureException } from './sentry'
 
 export class ApiError extends Error {
 	code: string
@@ -60,6 +61,10 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 					resolve(res.data as UTSJSONObject)
 					return
 				}
+				// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
+				if (res.statusCode >= 500) {
+					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				}
 				const body = res.data as UTSJSONObject
 				const err = new ApiError(
 					body.getString('code') ?? 'UNKNOWN',
@@ -85,6 +90,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 				}
 			},
 			fail: () => {
+				captureException('network fail: ' + path, 'api.network', null)
 				showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
 				resolve(null)
 			}

@@ -198,6 +198,18 @@ def _process_photo(db: Session, content: Content) -> None:
                     content.extra = extra
         except Exception as exc:  # noqa: BLE001
             logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
+
+        # 3. 逆地理编码（高德 GPS→地名，geohash 缓存≤30 天；失败静默）
+        #    contents.place 供事件聚合/搜索地点过滤/展示用元数据。
+        if content.gps_lat is not None and content.gps_lng is not None and not content.place:
+            try:
+                from app.services.external.amap import get_place
+
+                place = get_place(db, content.gps_lat, content.gps_lng)
+                if place:
+                    content.place = place
+            except Exception as exc:  # noqa: BLE001 —— 逆地理失败不影响照片浏览
+                logger.warning("逆地理失败 content=%s: %s", content.id, exc)
     finally:
         if tmp_file is not None:
             try:

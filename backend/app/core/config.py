@@ -70,7 +70,11 @@ class Settings(BaseSettings):
     minio_bucket: str = "yishu-photos"
     baidu_api_key: str = ""
     baidu_secret_key: str = ""
-    amap_api_key: str = ""
+    # 高德逆地理（外部API清单 #5）：别名读取——优先 AMAP_API_KEY（.env 惯例），
+    # 回退 AMAP_WEB_API_KEY（Infisical 存量名，2026-08-25 已存）
+    amap_api_key: str = Field(
+        "", validation_alias=AliasChoices("AMAP_API_KEY", "AMAP_WEB_API_KEY")
+    )
 
     # 可观测
     sentry_dsn: str = ""
