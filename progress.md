@@ -1,4 +1,26 @@
 
+## 🚀 客户端第三波（2026-08-24 晚 · T-NA/T-TX/T-AU/T-SR/T-PL 多入口+玩法层）
+
+**状态**：✅ 全部真机验证通过（nova 11，提交 e6398cc）｜review_agent 全绿｜pytest 238 passed
+
+### 交付（15 任务 10 项真机验证 PASS）
+1. **T-NA-1 四宫格导航**（components/yishu-tabbar）：时间轴/记录/搜索/我的，reLaunch 切换，选中态锈红
+2. **T-TX-1/2 文字入口**（pages/record + utils/text_recorder.ts）：POST /contents(text) → 分类异步 job 轮询 → 标签展示 → 点标签三层裁决纠错（correction_log 回写）
+3. **T-AU-1/2/3 语音入口**（utils/voice.ts）：uni.getRecorderManager 录 wav → /asr/transcribe 转写 → 可编辑+情绪标签 → voice 入库
+4. **T-SR-1/2/3/4 搜索**（pages/search + utils/search_api.ts）：混合结果卡片 + trace 溯源（召回：语义+关键词 · 语义分） + uni.chooseMedia 以图搜图 + degraded 降级黄条
+5. **T-PL-1 回响卡片**（首页）：去年今日 GET /echo/today + dismiss 划掉（角贴+泛黄）
+6. **T-PL-2 冷启动访谈**（pages/interview）：三层披露 → 三问 → 复述确认 → 可跳过；画像 cold_start_done 生效
+7. **T-PL-3 消息中心**（pages/messages）：未读/全部过滤 + 单条已读 + 全部标为已读
+
+### 本波教训（docs/lessons.md +5）
+1. uni-app x App 端无 uni.chooseImage，用 uni.chooseMedia
+2. UTS setTimeout 自引用箭头函数不可用，轮询用模块级 function+done 回调
+3. /interview/questions data 是裸数组；/messages status 仅 unread/read/archived；搜索 trace 结构是 {matched,dense_score,...}
+4. uiautomator dump 对 uni-app x 自绘 UI 不可靠，真机定位用截图像素分析（#B05A3A）+ image 坐标交叉验证
+5. am start 启动会"未检测到应用资源"，必须 HBuilderX CLI launch；大进程并发（worker+review_agent+pytest）内存不足需先释放
+
+---
+
 ## 🚀 客户端第二波 · 第二批（2026-08-24 晚 · S-AG-3/S-SY-4 客户端闭环）
 
 **状态**：客户端代码完成 ✅ 编译通过 ✅；真机 E2E 验证被环境阻塞（HBuilderX 弹窗 → 已解决；设备 USB offline → 待峰宝拔插）

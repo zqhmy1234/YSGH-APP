@@ -28,7 +28,7 @@
         "M0"
       ],
       "status": "in-progress",
-      "evidence": "SetFit 5 类分类服务完成（M1 Part 3）：BGE-M3 底座全参数微调（AMP，50 条种子样本），评估集 10/10 准确率 100%（门禁 ≥75%）；推理 API POST /api/v1/classify + 溯源结构；test_setfit.py 4 项全过。三层裁决完成（B5-c）：①个人规则层（correction_log 向量相似>0.8 同类型，Qdrant corrections 集合 + BGE-M3）②全局 SetFit ③共性纠错标记（≥2 用户一致→is_global_candidate，≥50 触发微调）；POST /corrections + /classify/arbitrate；test_correction.py 6 项全过。审查修复：reflow 微调不再直接覆盖生产模型（训练前备份 + staging + 评估集门禁≥75% 才换入），mark_global_candidates 触发已补（扫描前先标记）",
+      "evidence": "SetFit 5 类分类服务完成（M1 Part 3）：BGE-M3 底座全参数微调（AMP，50 条种子样本），评估集 10/10 准确率 100%（门禁 ≥75%）；推理 API POST /api/v1/classify + 溯源结构；test_setfit.py 4 项全过。三层裁决完成（B5-c）：①个人规则层（correction_log 向量相似>0.8 同类型，Qdrant corrections 集合 + BGE-M3）②全局 SetFit ③共性纠错标记（≥2 用户一致→is_global_candidate，≥50 触发微调）；POST /corrections + /classify/arbitrate；test_correction.py 6 项全过。审查修复：reflow 微调不再直接覆盖生产模型（训练前备份 + staging + 评估集门禁≥75% 才换入），mark_global_candidates 触发已补（扫描前先标记） | 客户端第三波（2026-08-24）：文字入口页（pages/record）——POST /contents(text) 落库 + 分类异步 job 轮询展示标签 + 点标签三层裁决纠错（correction_log 回写），真机全链路验证通过",
       "gate": "分类准确率 ≥75%（M1）→ ≥80%（M2）"
     },
     {
@@ -39,7 +39,7 @@
         "M0"
       ],
       "status": "in-progress",
-      "evidence": "ASR 双通道接口已建（paraformer-v2 + sensevoice-v1 + 护栏，11 测试）；情绪关怀分策略已确认（SAD 分原因追问/ANGRY 陪伴/深夜轻量/频次递减），关怀文案库待产品部提供",
+      "evidence": "ASR 双通道接口已建（paraformer-v2 + sensevoice-v1 + 护栏，11 测试）；情绪关怀分策略已确认（SAD 分原因追问/ANGRY 陪伴/深夜轻量/频次递减），关怀文案库待产品部提供 | 客户端第三波（2026-08-24）：语音入口页——uni.getRecorderManager 录 wav（16kHz 单声道 ≤3.5min）→ POST /asr/transcribe 转写 → 可编辑 + 情绪标签 → voice 入库，真机验证通过（mock 通道）",
       "gate": "转写 WER 达标 + 情绪触发映射正确"
     },
     {
@@ -61,7 +61,7 @@
         "M0"
       ],
       "status": "in-progress",
-      "evidence": "RAG 管线骨架完成（M1 Part 2）：BGE-M3 dense+sparse 真实编码（手动 sparse_linear 实现）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兜底）+ 溯源 + 降级；backend/tests/test_rag.py 6 项集成测试全过（-m rag，Qdrant 容器 + 本地 BGE-M3）。RAG 全分布测评体系（9b38721）：corpus-B 文字 84 条 / corpus-C 语音 33 条 / corpus-E 规模 1 万条 + 分层查询 15 条 + 行业标准指标（recall/hit_rate/MRR/nDCG）；审查修复：基准语料索引独立 collection yishu_benchmark（不再污染生产检索）。待：Qwen3-VL 图片塔（需 DASHSCOPE key）+ 500 张截图图片基准 + rerank 双层",
+      "evidence": "RAG 管线骨架完成（M1 Part 2）：BGE-M3 dense+sparse 真实编码（手动 sparse_linear 实现）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兜底）+ 溯源 + 降级；backend/tests/test_rag.py 6 项集成测试全过（-m rag，Qdrant 容器 + 本地 BGE-M3）。RAG 全分布测评体系（9b38721）：corpus-B 文字 84 条 / corpus-C 语音 33 条 / corpus-E 规模 1 万条 + 分层查询 15 条 + 行业标准指标（recall/hit_rate/MRR/nDCG）；审查修复：基准语料索引独立 collection yishu_benchmark（不再污染生产检索）。待：Qwen3-VL 图片塔（需 DASHSCOPE key）+ 500 张截图图片基准 + rerank 双层 | 客户端第三波（2026-08-24）：搜索页（pages/search）——POST /search 混合结果卡片 + trace 溯源展示（召回通道/分数）+ uni.chooseMedia 以图搜图 + degraded 降级态黄条，真机验证通过",
       "gate": "Top3≥70% + P95<3s（M1/M2 门禁）"
     },
     {
@@ -72,7 +72,7 @@
         "F2"
       ],
       "status": "in-progress",
-      "evidence": "三问 → 维度激活完成（Sprint 3）：规则枚举映射 + 复述确认 + 画像落库；审查修复：未命中枚举进 profile_dimension_pending 扩展队列（B1 闭集约束，不再写'其他'）+ 历史值写入侧裁剪最近 10 条；4+2 测试全过",
+      "evidence": "三问 → 维度激活完成（Sprint 3）：规则枚举映射 + 复述确认 + 画像落库；审查修复：未命中枚举进 profile_dimension_pending 扩展队列（B1 闭集约束，不再写'其他'）+ 历史值写入侧裁剪最近 10 条；4+2 测试全过 | 客户端第三波（2026-08-24）：冷启动访谈页（pages/interview）——三层披露 + 三问作答 + 复述确认 + 可跳过；画像 cold_start_done 生效（profile 页状态联动），真机验证通过",
       "gate": "画像标注映射完整 + 格式容错（PRF-001/002）"
     },
     {
@@ -83,7 +83,7 @@
         "F1"
       ],
       "status": "in-progress",
-      "evidence": "客户端第一波（2026-08-24）：F8 时间轴页（pages/index/index.uvue）交付——L1 日卡片 + L2 主题分组只读渲染、下拉刷新、空状态（空白相纸插画/文案/引导授权）、上传进度浮层；GET /api/v1/events/timeline 对接 + ISO 解析 + 日期分组（utils/timeline.ts）；视觉规范 v1 三色铁律落地；真机 nova 11 截屏验证：空状态 + 上传进度 + L1 日卡片渲染（40/10 张照片卡片），配色/留白/撕边卡片符合规范（自审 ≥75 分）",
+      "evidence": "客户端第一波（2026-08-24）：F8 时间轴页（pages/index/index.uvue）交付——L1 日卡片 + L2 主题分组只读渲染、下拉刷新、空状态（空白相纸插画/文案/引导授权）、上传进度浮层；GET /api/v1/events/timeline 对接 + ISO 解析 + 日期分组（utils/timeline.ts）；视觉规范 v1 三色铁律落地；真机 nova 11 截屏验证：空状态 + 上传进度 + L1 日卡片渲染（40/10 张照片卡片），配色/留白/撕边卡片符合规范（自审 ≥75 分） | 客户端第三波（2026-08-24）：首页新增去年今日回响卡片（GET /echo/today + dismiss 划掉）+ 底部四宫格 Tab 导航（时间轴/记录/搜索/我的），真机验证通过",
       "gate": "时间轴流畅 + 事件结构正确"
     },
     {
