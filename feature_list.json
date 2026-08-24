@@ -16,8 +16,8 @@
       "dependencies": [
         "M0"
       ],
-      "status": "not-started",
-      "evidence": "",
+      "status": "in-progress",
+      "evidence": "客户端第一波（2026-08-24）：后端 multipart 端点 POST /api/v1/contents/upload（B-BE-1/2）交付 + 9 项新 pytest 全过 + curl 冒烟；50 张测试照片全链路单进程验证 PASS（upload→storage→process_content→aggregate→timeline，L1 日卡片 3 张与生成集真值 20/15/15 完全一致）；client/ uni-app x 工程骨架 + UTS 插件（PhotoObserver 平移/游标去重/静默窗口攒批/EncryptedSharedPreferences）+ 上传链路（并发≤3/重试2）+ F8 时间轴 UI 代码就绪；真机部署/30s 计时/L2 语义归并待设备授权与真实数据（B-VA-2/3 阻塞：nova 11 adb unauthorized）",
       "gate": "30s 首批事件（≥50 张）+ L1/L2 正确率验收"
     },
     {
@@ -82,8 +82,8 @@
       "dependencies": [
         "F1"
       ],
-      "status": "not-started",
-      "evidence": "",
+      "status": "in-progress",
+      "evidence": "客户端第一波（2026-08-24）：F8 时间轴页（pages/index/index.uvue）交付——L1 日卡片 + L2 主题分组只读渲染、下拉刷新、空状态（空白相纸插画/文案/引导授权）、上传进度浮层；GET /api/v1/events/timeline 对接 + ISO 解析 + 日期分组（utils/timeline.ts）；视觉规范 v1 三色铁律落地（相纸白/墨褐/锈红 + 衬线标题 + 撕边卡片 + 底部投影）；真机截图自审待设备（B-F8-4，nova 11 需授权）",
       "gate": "时间轴流畅 + 事件结构正确"
     },
     {

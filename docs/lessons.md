@@ -8,6 +8,33 @@
 
 ---
 
+### 2026-08-24 08:20 · commit f8ef2bd · ts=1787556035
+- **错误**：review_agent 首次门禁 tests 段失败，重跑即全绿（224 passed）
+- **根因**：门禁 pytest 运行期间并发执行了 ruff --fix 改写测试文件 import 段，pytest 读到文件中间态；非代码缺陷
+- **修复**：门禁运行期间不并发改动被测试导入的文件；失败先重跑确认是否瞬时
+- **相关文件**：scripts/review_agent.py
+- **教训**：review_agent 运行中禁止并发编辑/格式化被测文件
+
+---
+
+### 2026-08-24 08:14 · commit f8ef2bd · ts=1787555660
+- **错误**：本地 E2E 管线图片下载失败（object not found）
+- **根因**：fake 存储为进程内单例：uvicorn 与独立 RQ worker 进程各自持有空/非共享内存，跨进程读不到原件
+- **修复**：本地全链路验证用单进程 TestClient + 直调 process_content；真实 dev/prod 用 minio/cos 共享存储
+- **相关文件**：backend/app/services/external/storage.py
+- **教训**：fake 后端仅限单进程测试；跨进程 E2E 需 minio/cos
+
+---
+
+### 2026-08-24 08:14 · commit f8ef2bd · ts=1787555660
+- **错误**：python -m app.workers.worker 报 No module named 'app'（本机 LobsterAI runtime python 不加载 cwd/PYTHONPATH）
+- **根因**：自定义 python 发行版 sys.path 不含 cwd 与 PYTHONPATH（-c/-m 均如此）；uvicorn 因自身插入 cwd 而幸免
+- **修复**：python -c "import sys; sys.path.insert(0, r'D:\GuangH-App\backend'); from app.workers.worker import main; main()" high low
+- **相关文件**：backend/app/workers/worker.py
+- **教训**：本机启动 RQ worker 必须显式注入 backend 路径，不能依赖 cwd/PYTHONPATH
+
+---
+
 ### 2026-08-24 14:38 · commit 3869111 · ts=1787553539
 - **错误**：review_agent 用 managed python(3.13.12) 跑时 lint/tests 显示 [skip]（ruff/pytest 未安装），用系统/LobsterAI python 才有依赖；全量 pytest 18 failed 为 redis ConnectionError
 - **根因**：项目依赖（fastapi/sqlalchemy/redis 等）装在 LobsterAI runtime site-packages，不在 managed python 环境；yishu-redis 容器依赖 Docker Desktop 引擎，引擎未启动时连接失败

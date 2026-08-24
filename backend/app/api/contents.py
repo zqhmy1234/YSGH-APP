@@ -4,10 +4,17 @@
 - contents 表入库 + perceptual_hash 去重（Q16，同用户唯一）
 - RQ 入队异步 AI 管线（API-016：收件→转写→分类→聚类；API 立即返回）
 - 分页游标（API-006）
-"""
-from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+客户端第一波（2026-08-24，B-BE-1/2）：
+- POST /api/v1/contents/upload：照片 multipart 中转上传（客户端→后端→storage→contents→管线）
+- 复用 create_content 的去重（409）/护栏（moderate）/类型白名单语义
+"""
+import json
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -22,6 +29,136 @@ from app.schemas.content import ContentCreate, ContentOut, ContentUploadResult, 
 from app.services.pipeline import process_content
 
 router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
+
+# 客户端第一波照片中转上传限制（B-BE-1）
+MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB
+ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+_PHOTO_SOURCES = ("app", "windows", "wechat", "import")
+
+
+@router.post("/upload", response_model=ApiResponse[ContentOut])
+def upload_photo(
+    file: UploadFile = File(...),
+    meta: str = Form("{}"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """照片中转上传（客户端第一波 B3/B4：multipart → storage → contents → 管线）
+
+    multipart 表单：
+      file: 照片文件（jpg/jpeg/png/webp/heic/heif，≤20MB）
+      meta: JSON 字符串 {taken_at, gps_lat, gps_lng, perceptual_hash, source, extra}
+
+    语义与 create_content 对齐：perceptual_hash 409 去重 / moderate 护栏 /
+    source 白名单；照片原件落 storage（cos_key），随后 enqueue_high(process_content)。
+    """
+    # 1. meta JSON 解析
+    try:
+        meta_obj = json.loads(meta) if meta.strip() else {}
+        if not isinstance(meta_obj, dict):
+            raise ValueError("meta 必须是 JSON 对象")
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ApiError("CONTENT_005", "meta 必须为合法 JSON 对象", http=422) from exc
+
+    # 2. 文件校验（类型白名单 + 非空 + 大小上限）
+    ext = Path(file.filename or "").suffix.lower()
+    content_type = (file.content_type or "").lower()
+    if ext not in ALLOWED_PHOTO_EXTS and not content_type.startswith("image/"):
+        raise ApiError("CONTENT_006", "仅支持照片文件（jpg/png/webp/heic）", http=422)
+    data = file.file.read()
+    if not data:
+        raise ApiError("CONTENT_006", "文件为空", http=422)
+    if len(data) > MAX_PHOTO_BYTES:
+        raise ApiError(
+            "CONTENT_007",
+            f"照片超过大小上限（{MAX_PHOTO_BYTES // 1024 // 1024}MB）",
+            http=413,
+        )
+
+    # 3. 元数据字段解析与边界校验
+    taken_at = None
+    if meta_obj.get("taken_at"):
+        try:
+            taken_at = datetime.fromisoformat(str(meta_obj["taken_at"]).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ApiError("CONTENT_005", "taken_at 格式无效（ISO8601）", http=422) from exc
+    gps_lat = meta_obj.get("gps_lat")
+    gps_lng = meta_obj.get("gps_lng")
+    try:
+        gps_lat = float(gps_lat) if gps_lat is not None else None
+        gps_lng = float(gps_lng) if gps_lng is not None else None
+    except (TypeError, ValueError) as exc:
+        raise ApiError("CONTENT_005", "gps_lat/gps_lng 必须为数值", http=422) from exc
+    if gps_lat is not None and not (-90 <= gps_lat <= 90):
+        raise ApiError("CONTENT_005", "gps_lat 越界（-90~90）", http=422)
+    if gps_lng is not None and not (-180 <= gps_lng <= 180):
+        raise ApiError("CONTENT_005", "gps_lng 越界（-180~180）", http=422)
+    source = meta_obj.get("source", "app")
+    if source not in _PHOTO_SOURCES:
+        raise ApiError("CONTENT_005", f"source 非法（可选 {_PHOTO_SOURCES}）", http=422)
+    perceptual_hash = meta_obj.get("perceptual_hash") or None
+    extra = meta_obj.get("extra") if isinstance(meta_obj.get("extra"), dict) else None
+
+    # 4. 去重（Q16）：同用户 perceptual_hash 唯一（含软删过滤，语义与 create_content 一致）
+    if perceptual_hash:
+        dup = db.execute(
+            select(Content).where(
+                Content.user_id == user.id,
+                Content.perceptual_hash == perceptual_hash,
+                Content.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if dup is not None:
+            raise ApiError("CONTENT_002", "重复内容（感知哈希已存在）", http=409)
+
+    # 5. 护栏（B5b）：meta.text 若提供则复用 moderate（照片本体由管线 _process_photo 检测）
+    from app.services.external.dashscope import moderate
+
+    check_text = (meta_obj.get("text") or "").strip()
+    if check_text:
+        verdict = moderate(check_text)
+        if verdict.get("action") == "reject":
+            raise ApiError("CONTENT_003", f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
+
+    # 6. 原件落 storage（cos_key），随后建 contents 记录 + 入队
+    from app.services.external.storage import get_storage_backend
+
+    ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
+    cos_key = f"photos/{user.id}/{uuid.uuid4().hex}{ext_safe}"
+    get_storage_backend().put_object(cos_key, data)
+
+    record = Content(
+        user_id=user.id,
+        content_type="photo",
+        taken_at=taken_at,
+        gps_lat=gps_lat,
+        gps_lng=gps_lng,
+        perceptual_hash=perceptual_hash,
+        cos_key=cos_key,
+        extra=extra,
+        source=source,
+        status="processing",
+    )
+    db.add(record)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409（与 create_content 一致）
+        db.rollback()
+        dup = db.execute(
+            select(Content).where(
+                Content.user_id == user.id,
+                Content.perceptual_hash == perceptual_hash,
+                Content.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if dup is not None:
+            raise ApiError("CONTENT_002", "重复内容（感知哈希已存在）", http=409) from None
+        raise
+    db.refresh(record)
+
+    enqueue_high(process_content, str(record.id))
+    return ApiResponse(data=_to_out(record))
 
 
 @router.post("", response_model=ApiResponse[ContentOut])

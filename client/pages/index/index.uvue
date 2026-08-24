@@ -1,0 +1,384 @@
+<template>
+	<view class="page">
+		<!-- 顶栏：干净，不做旧（视觉规范：导航/按钮保持干净） -->
+		<view class="header">
+			<text class="header-title serif">忆述光华</text>
+			<text class="header-sub">翻看记忆，去年今日</text>
+		</view>
+
+		<scroll-view class="scroll" scroll-y refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+			<!-- 加载中 -->
+			<view v-if="!loaded" class="center-box">
+				<text class="muted">正在翻找相纸…</text>
+			</view>
+
+			<!-- 空状态：空白相纸插画 + 文案 + 引导（B-F8-3） -->
+			<view v-else-if="days.length === 0" class="center-box">
+				<image class="empty-img" src="/static/empty-photo.svg" mode="aspectFit" />
+				<text class="empty-title serif">相册还空着</text>
+				<text class="empty-desc">授权相册后，照片会自动整理成一天的记忆卡片</text>
+				<view class="cta" @tap="onGrantAndStart">
+					<text class="cta-text">授权相册 · 开始整理</text>
+				</view>
+			</view>
+
+			<!-- 时间轴：L1 日卡片 + L2 主题两级（B-F8-1） -->
+			<view v-else class="feed">
+				<view v-for="day in days" :key="day.key" class="day-block">
+					<text class="day-title serif">{{ day.label }}</text>
+					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'">
+						<text class="card-title serif" :class="ev.level === 1 ? 'title-l1' : 'title-l2'">{{ ev.title }}</text>
+						<view class="card-meta">
+							<text v-if="ev.place != ''" class="meta-item">{{ ev.place }}</text>
+							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+						</view>
+						<view v-if="ev.level === 1 && ev.children.length > 0" class="l2-list">
+							<view v-for="child in ev.children" :key="child.id" class="l2-chip">
+								<text class="l2-chip-title">{{ child.title }}</text>
+								<text class="l2-chip-count rust">{{ child.photoCount }}张</text>
+							</view>
+						</view>
+					</view>
+				</view>
+				<view class="feed-foot">
+					<text class="muted">—— 记忆在此 ——</text>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 上传进度浮层（B-UP-1 进度回调） -->
+		<view v-if="uploading" class="upload-bar">
+			<text class="upload-text">上传中 {{ uploadDone }}/{{ uploadTotal }}{{ uploadFailed > 0 ? '（失败' + uploadFailed + '）' : '' }}</text>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchTimeline, dayKey, friendlyDay, TimelineEvent } from '@/utils/timeline'
+	import { uploadBatch, UploadProgress } from '@/utils/uploader'
+	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+	import { showErrorToast } from '@/utils/api'
+
+	interface DayGroup {
+		key: string
+		label: string
+		events: Array<TimelineEvent>
+	}
+
+	export default {
+		data() {
+			return {
+				loaded: false,
+				refreshing: false,
+				days: [] as Array<DayGroup>,
+				uploading: false,
+				uploadDone: 0,
+				uploadTotal: 0,
+				uploadFailed: 0
+			}
+		},
+		onLoad() {
+			ensureLogin().then((ok: boolean) => {
+				this.reload()
+			}).catch((err: Error | null) => {
+				console.error('[yishu] login failed: ' + (err != null ? err.message : ''))
+				this.loaded = true
+			})
+		},
+		onShow() {
+			// 切前台刷新（第一波数据新鲜度最低要求）
+			if (this.loaded) {
+				this.reload()
+			}
+		},
+		methods: {
+			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下） */
+			reload(): void {
+				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+					this.days = this.groupDays(events)
+					this.loaded = true
+					this.refreshing = false
+				}).catch((err: Error | null) => {
+					showErrorToast(err)
+					this.loaded = true
+					this.refreshing = false
+				})
+			},
+			groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
+				// L1 按日建组；L2 挂到同日 L1 的 children；无 L1 的日子用 L2 建组
+				const l1: Array<TimelineEvent> = []
+				const l2: Array<TimelineEvent> = []
+				for (let i = 0; i < events.length; i++) {
+					const ev = events[i]
+					if (ev.level === 1) {
+						l1.push(ev)
+					} else if (ev.level === 2) {
+						l2.push(ev)
+					}
+				}
+				l1.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+				l2.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+
+				const groups: Array<DayGroup> = []
+				const l1ByDay: Map<string, number> = new Map<string, number>()
+				for (let i = 0; i < l1.length; i++) {
+					const ev = l1[i]
+					const k = dayKey(ev.startTime)
+					const copy: TimelineEvent = {
+						id: ev.id,
+						level: ev.level,
+						title: ev.title,
+						titleSource: ev.titleSource,
+						startTime: ev.startTime,
+						endTime: ev.endTime,
+						place: ev.place,
+						emotion: ev.emotion,
+						photoCount: ev.photoCount,
+						contentCount: ev.contentCount,
+						children: []
+					}
+					groups.push({ key: k, label: friendlyDay(ev.startTime), events: [copy] })
+					l1ByDay.set(k, groups.length - 1)
+				}
+				for (let j = 0; j < l2.length; j++) {
+					const ev = l2[j]
+					const k = dayKey(ev.startTime)
+					const idx = l1ByDay.get(k)
+					if (idx != null && groups[idx].events.length > 0) {
+						groups[idx].events[0].children.push(ev)
+					} else {
+						groups.push({ key: k, label: friendlyDay(ev.startTime), events: [ev] })
+						l1ByDay.set(k, groups.length - 1)
+					}
+				}
+				return groups
+			},
+			onRefresh(): void {
+				this.refreshing = true
+				this.reload()
+			},
+			/** 授权相册 → 启动监听（B-UT-5 前置） */
+			onGrantAndStart(): void {
+				uni.authorize({
+					scope: 'scope.album',
+					success: () => {
+						this.startWatch()
+					},
+					fail: () => {
+						uni.showToast({ title: '需要相册权限才能整理照片', icon: 'none' })
+					}
+				})
+			},
+			/** 启动 PhotoObserver 监听（幂等） */
+			startWatch(): void {
+				const watch = createPhotoWatch()
+				watch.start((items: Array<PhotoItem>) => {
+					if (items.length === 0) {
+						return
+					}
+					this.handleBatch(items)
+				})
+				uni.showToast({ title: '已开始监听相册', icon: 'none' })
+			},
+			/** 攒批 → 上传（并发≤3）→ 完成拉 timeline 刷新（B-UP-2） */
+			handleBatch(items: Array<PhotoItem>): void {
+				this.uploading = true
+				this.uploadDone = 0
+				this.uploadTotal = items.length
+				this.uploadFailed = 0
+				uploadBatch(items, (p: UploadProgress) => {
+					this.uploadDone = p.done
+					this.uploadTotal = p.total
+					this.uploadFailed = p.failed
+				}).then((p: UploadProgress) => {
+					this.uploading = false
+					if (p.failed > 0) {
+						uni.showToast({ title: '有 ' + p.failed + ' 张上传失败', icon: 'none' })
+					}
+					this.reload()
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	/* 视觉规范 v1：相纸白底 / 墨褐文字 / 锈红强调；标题衬线；卡片撕边+底部投影；≥30% 留白 */
+	.page {
+		flex: 1;
+		background-color: #F6F1E7;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 88rpx;
+	}
+
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+
+	.header {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.header-title {
+		font-size: 52rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		letter-spacing: 6rpx;
+	}
+	.header-sub {
+		display: block;
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	.scroll {
+		flex: 1;
+	}
+
+	.center-box {
+		padding-top: 140rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.empty-img {
+		width: 320rpx;
+		height: 266rpx;
+	}
+	.empty-title {
+		margin-top: 40rpx;
+		font-size: 40rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.empty-desc {
+		margin-top: 16rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+		text-align: center;
+		line-height: 40rpx;
+	}
+	.cta {
+		margin-top: 56rpx;
+		padding-left: 64rpx;
+		padding-right: 64rpx;
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+	}
+	.cta-text {
+		color: #F6F1E7;
+		font-size: 30rpx;
+	}
+
+	.muted {
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+
+	.feed {
+		padding-bottom: 80rpx;
+	}
+	.day-block {
+		margin-top: 40rpx;
+	}
+	.day-title {
+		font-size: 34rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		margin-bottom: 20rpx;
+		padding-left: 8rpx;
+	}
+
+	/* 卡片：小圆角相纸感 + 右下撕边（border-radius 切角）+ 底部投影，不描边 */
+	.card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+		border-bottom-left-radius: 2rpx;
+	}
+	.card-l1 {
+		border-top-right-radius: 2rpx;
+	}
+	.card-l2 {
+		margin-left: 32rpx;
+		margin-right: 8rpx;
+		border-top-right-radius: 2rpx;
+	}
+	.card-title {
+		color: #3A2E25;
+	}
+	.title-l1 {
+		font-size: 36rpx;
+		font-weight: bold;
+	}
+	.title-l2 {
+		font-size: 30rpx;
+		font-weight: bold;
+	}
+	.card-meta {
+		margin-top: 16rpx;
+		display: flex;
+		flex-direction: row;
+	}
+	.meta-item {
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-right: 24rpx;
+	}
+	.rust {
+		color: #B05A3A;
+	}
+
+	.l2-list {
+		margin-top: 20rpx;
+		border-top-width: 1rpx;
+		border-top-color: rgba(58, 46, 37, 0.15);
+		padding-top: 20rpx;
+	}
+	.l2-chip {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-top: 12rpx;
+		padding-bottom: 12rpx;
+	}
+	.l2-chip-title {
+		font-size: 28rpx;
+		color: #3A2E25;
+	}
+	.l2-chip-count {
+		font-size: 24rpx;
+	}
+
+	.feed-foot {
+		margin-top: 60rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+	}
+
+	.upload-bar {
+		position: fixed;
+		left: 32rpx;
+		right: 32rpx;
+		bottom: 48rpx;
+		background-color: #3A2E25;
+		border-radius: 12rpx;
+		padding: 20rpx 28rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.upload-text {
+		color: #F6F1E7;
+		font-size: 26rpx;
+	}
+</style>

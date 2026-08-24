@@ -1,0 +1,22 @@
+<script lang="uts">
+	import { ensureLogin } from './utils/auth'
+
+	export default {
+		onLaunch() {
+			console.log('[yishu] client launch, env=' + 'dev')
+			// 静默登录预热 token（B-CL-3：mock wechat login；失败不阻断启动，页面请求时再补）
+			ensureLogin().then((ok: boolean) => {
+				console.log('[yishu] ensureLogin -> ' + ok)
+			}).catch((err: Error | null) => {
+				console.error('[yishu] ensureLogin failed: ' + (err ? err.message : 'unknown'))
+			})
+		}
+	}
+</script>
+
+<style>
+	/* 全局基底：相纸白（视觉规范 v1 三色铁律） */
+	page {
+		background-color: #F6F1E7;
+	}
+</style>

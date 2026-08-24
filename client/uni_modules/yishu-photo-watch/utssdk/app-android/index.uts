@@ -1,0 +1,129 @@
+/**
+ * 忆述光华 · 相册监听与安全存储插件 Android 实现（Hybrid Mode · B-UT-1/2/3/4）
+ *
+ * Kotlin 原生类（本目录 .kt）经 UTS 编译器并入应用模块，按包名直接 import。
+ * 桥接约定：
+ *  - PhotoObserver → PhotoChangeListener（Kotlin 接口，UTS 实现）接收攒批 JSON
+ *  - SecurePrefs（EncryptedSharedPreferences）→ setSecureString/getSecureString
+ */
+export * from '../interface.uts'
+
+import { PhotoObserver, PhotoChangeListener } from 'com.yishu.photowatch.PhotoObserver'
+import { SecurePrefs } from 'com.yishu.photowatch.SecurePrefs'
+import { PhotoItem, PhotoBatchCallback, PhotoWatch } from '../interface.uts'
+import { UTSAndroid } from 'UTSAndroid'
+
+/** 静默窗口：4s 无新照片变更 → 触发攒批回调（B-UT-4，3-5s 区间） */
+const DEBOUNCE_MS: number = 4000
+
+let _appContext: Context | null = null
+function appContext(): Context {
+	const ctx = _appContext
+	if (ctx == null) {
+		const created = UTSAndroid.getAppContext()
+		_appContext = created
+		return created
+	}
+	return ctx
+}
+
+/** 攒批监听器：Kotlin 回调 → 解析 JSON → 转 PhotoItem[] → 抛给 uvue 层 */
+class PhotoChangeListenerImpl implements PhotoChangeListener {
+	callback: PhotoBatchCallback | null = null
+
+	constructor(callback: PhotoBatchCallback) {
+		this.callback = callback
+	}
+
+	override onNewPhotos(json: string): void {
+		const cb = this.callback
+		if (cb == null) {
+			return
+		}
+		const obj = JSON.parse<UTSJSON>(json)
+		const arr = obj.getArray('items') as Array<UTSJSON>
+		const result: Array<PhotoItem> = []
+		for (let i = 0; i < arr.length; i++) {
+			const item = arr[i]
+			const p: PhotoItem = {
+				id: item.getNumber('id') as number,
+				path: item.getString('path') as string,
+				takenAt: item.getNumber('takenAt') as number,
+				width: item.getNumber('width') as number,
+				height: item.getNumber('height') as number
+			}
+			result.push(p)
+		}
+		cb(result)
+	}
+}
+
+class PhotoWatchImpl implements PhotoWatch {
+	observer: PhotoObserver | null = null
+	listener: PhotoChangeListenerImpl | null = null
+
+	start(callback: PhotoBatchCallback): void {
+		if (this.observer == null) {
+			this.listener = new PhotoChangeListenerImpl(callback)
+			this.observer = new PhotoObserver(appContext(), DEBOUNCE_MS, this.listener)
+		} else {
+			// 幂等重启：仅替换回调，不重复注册
+			if (this.listener != null) {
+				this.listener.callback = callback
+			}
+		}
+		this.observer.register()
+	}
+
+	stop(): void {
+		if (this.observer != null) {
+			this.observer.unregister()
+		}
+	}
+
+	getLastSeenId(): number {
+		const o = this.observer
+		if (o == null) {
+			return 0
+		}
+		return o.getLastSeenId()
+	}
+}
+
+let _watch: PhotoWatchImpl | null = null
+
+export function createPhotoWatch(): PhotoWatch {
+	const w = _watch
+	if (w == null) {
+		const created = new PhotoWatchImpl()
+		_watch = created
+		return created
+	}
+	return w
+}
+
+// ---------- 安全存储（B-CL-3：token 加密落盘） ----------
+
+let _secure: SecurePrefs | null = null
+
+function secure(): SecurePrefs {
+	const s = _secure
+	if (s == null) {
+		const created = new SecurePrefs(appContext())
+		_secure = created
+		return created
+	}
+	return s
+}
+
+export function setSecureString(key: string, value: string): void {
+	secure().set(key, value)
+}
+
+export function getSecureString(key: string): string {
+	return secure().get(key)
+}
+
+export function removeSecureString(key: string): void {
+	secure().remove(key)
+}

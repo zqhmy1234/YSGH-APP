@@ -28,6 +28,7 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
 | POST | / | 内容入库（四类素材）+ RQ 入队 + 感知哈希去重 | ✅ 真实 DB |
+| POST | /upload | 照片 multipart 中转上传（客户端第一波 B-BE-1：file + meta JSON → storage 存原件 → contents 落库 → 管线入队；复用 409 去重/护栏/类型白名单）| ✅ 真实 DB（2026-08-24）|
 | POST | /presign | COS STS 预签名（决策 #10）| ⚠️ mock |
 | GET | / | 游标分页列表 | ✅ 真实 DB |
 

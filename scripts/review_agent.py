@@ -61,9 +61,14 @@ def run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
         return 124, "timeout"
 
 
+def _skip_path(parts: tuple[str, ...]) -> bool:
+    """harness 工具链扫描排除（B2 决策：client/ 为 uni-app x，非 Python 工具链）"""
+    return ".git" in parts or ".cowork-temp" in parts or "client" in parts
+
+
 def check_syntax() -> tuple[bool, str]:
     """编译所有 .py，捕获语法错误"""
-    py_files = [p for p in ROOT.rglob("*.py") if ".git" not in p.parts and ".cowork-temp" not in p.parts]
+    py_files = [p for p in ROOT.rglob("*.py") if not _skip_path(p.parts)]
     errors: list[str] = []
     for f in py_files:
         code, out = run([sys.executable, "-m", "py_compile", str(f)])
@@ -101,6 +106,8 @@ def check_secrets() -> tuple[bool, str]:
         rel = f.relative_to(ROOT).as_posix()
         if any(rel.startswith(s) or s in rel for s in SECRET_SKIP):
             continue
+        if _skip_path(f.parts):
+            continue
         if any(rel.endswith(ext) for ext in (".py", ".md", ".json", ".yaml", ".yml", ".toml", ".env", ".ini", ".sql")):
             try:
                 content = f.read_text(encoding="utf-8", errors="ignore")
@@ -120,7 +127,7 @@ def check_todos() -> tuple[bool, str]:
     count = 0
     files = set()
     for f in ROOT.rglob("*.py"):
-        if ".git" in f.parts:
+        if _skip_path(f.parts):
             continue
         try:
             content = f.read_text(encoding="utf-8", errors="ignore")
