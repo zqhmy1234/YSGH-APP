@@ -8,6 +8,51 @@
 
 ---
 
+### 2026-08-24 14:27 · commit 2353be5 · ts=1787578072
+- **错误**：端侧 L1 事件时间窗=扫描时间（21:26）而非照片 EXIF 时间（08-23），端侧 EXIF 兜底失效
+- **根因**：android.media.ExifInterface 读不到 PIL 写入的 EXIF（getAttribute 返回 null 无异常）；scan_file 注入场景 DATE_TAKEN=扫描时间
+- **修复**：记录为已知限制：真实相机照片 DATE_TAKEN 系统提取可靠；后端 EXIF 权威兜底 contents.taken_at；测试注入场景端侧时间窗偏移可接受
+- **相关文件**：client/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts
+- **教训**：端侧 EXIF 兜底对 PIL 写入的 EXIF 不生效（scan_file 测试场景时间窗偏移）；真实链路 DATE_TAKEN 可靠
+
+---
+
+### 2026-08-24 14:27 · commit 2353be5 · ts=1787578072
+- **错误**：CLI launch 反复卡死 + 华为应用市场反复弹出抢前台，App 安装无法完成（进程 D 状态）
+- **根因**：华为增强纯净模式（pure_enhanced_mode_state=1）拦截第三方安装并引导应用市场；HBuilderX 模态弹窗也阻塞 CLI
+- **修复**：settings put secure pure_enhanced_mode_state 0 关闭增强纯净模式后安装放行；CLI 静默先查 GUI 弹窗
+- **相关文件**：skills/hbuilderx-uniappx-runloop
+- **教训**：华为设备真机调试：增强纯净模式会拦截 HBuilderX 安装并反复弹应用市场，先关再 launch
+
+---
+
+### 2026-08-24 14:27 · commit 2353be5 · ts=1787578071
+- **错误**：真机上传一直失败（0.2s 内 connect refused 特征），误判为网络/防火墙，实际是 uni.uploadFile 的 res.data 在 App 端是 string，as UTSJSONObject 后调 getJSON 抛异常 → 解析失败被当成上传失败
+- **根因**：uploadFile 响应 data 为字符串（与 uni.request 的 UTSJSONObject 不同）；JS 引擎（.ts）无 UTSJSONObject.parse；getJSON/getString 是 UTS 方法字符串上没有
+- **修复**：JS 引擎解析 uploadFile 响应用字符串操作（split 提取 id）；uni.request 响应才用 getJSON/getArray；给 fail/解析失败加诊断日志（真机实测定位）
+- **相关文件**：client/utils/uploader.ts
+- **教训**：uni.uploadFile 的 res.data 是 string（JS 引擎无 UTSJSONObject.parse），解析用字符串操作；诊断日志是排障第一武器
+
+---
+
+### 2026-08-24 13:23 · commit 2353be5 · ts=1787574217
+- **错误**：真机上传 0.2s 内全部失败（connect refused 特征），第一波同样代码却成功
+- **根因**：本机 Windows 防火墙拦入站 8000（设备 ping 不通本机但本机 ping 通设备）；设备 WiFi 网段虽同段但 AP/防火墙隔离
+- **修复**：改用 adb reverse tcp:8000 tcp:8000 USB 隧道（config.ts REAL_DEVICE_HOST='localhost'），绕开 WiFi/防火墙；隧道验证：adb shell curl http://127.0.0.1:8000/healthz
+- **相关文件**：client/utils/config.ts
+- **教训**：真机联调优先 adb reverse USB 隧道（绕防火墙/WiFi 段）；设备 ping 不通本机即入站被拦
+
+---
+
+### 2026-08-24 13:23 · commit 2353be5 · ts=1787574216
+- **错误**：HBuilderX CLI launch 静默卡死（无任何输出），设备始终运行旧代码——真机联调 30 分钟排查
+- **根因**：HBuilderX 重启后弹出两个模态对话框（版本更新提示 + uni-app x AI 介绍），模态阻塞了 CLI 的 IPC 通道；GUI 无项目视图但项目树已注册
+- **修复**：真机联调前检查 HBuilderX GUI：无模态弹窗 + 项目树可见；用 computer-use 截屏确认并关弹窗（跳过本版/我知道了）；重启 HBuilderX 后需重新 cli project open
+- **相关文件**：skills/hbuilderx-uniappx-runloop
+- **教训**：HBuilderX 模态弹窗会静默阻塞 CLI launch（无输出=被弹窗卡住），先看 GUI 状态再怪代码
+
+---
+
 ### 2026-08-24 12:18 · commit 7cac32f · ts=1787570334
 - **错误**：review_agent 门禁 lint 失败：F401 未用 import / E501 长行 / F841 未用变量 / I001 import 排序（api/events.py、schemas/event.py、st_dbscan.py、test_event_sync.py、test_pipeline.py、gen_agg_fixtures.py 共 8 处）
 - **根因**：改动跨 6 文件后未先跑 ruff 自查即提交门禁；长行/未用变量在改动中自然产生

@@ -7,8 +7,12 @@
  */
 export const ENV: string = 'dev' // 'dev' | 'prod'
 
-/** 真机联调：本机后端局域网 IP（留空则走模拟器地址）——nova 11 联调 2026-08-24 */
-export const REAL_DEVICE_HOST: string = '192.168.31.165'
+/** 真机联调后端地址：
+ *  - 'localhost'：经 adb reverse USB 隧道访问本机（最稳，绕开 WiFi 段/防火墙；需 adb reverse tcp:8000 tcp:8000）
+ *  - 局域网 IP：直接 WiFi 访问（依赖同网段 + 本机防火墙放行 8000）
+ *  - 留空：走模拟器地址 10.0.2.2
+ */
+export const REAL_DEVICE_HOST: string = 'localhost'
 
 const DEV_BASE_URL: string = 'http://10.0.2.2:8000'
 const PROD_BASE_URL: string = 'https://api.yishuguanghua.example.com'
@@ -22,6 +26,10 @@ export const AGG_CHECK_ON_DEVICE: boolean = false
 export function getBaseUrl(): string {
 	if (ENV === 'prod') {
 		return PROD_BASE_URL
+	}
+	if (REAL_DEVICE_HOST == 'localhost') {
+		// adb reverse USB 隧道（真机联调最稳路径）
+		return 'http://127.0.0.1:8000'
 	}
 	if (REAL_DEVICE_HOST != '') {
 		return 'http://' + REAL_DEVICE_HOST + ':8000'

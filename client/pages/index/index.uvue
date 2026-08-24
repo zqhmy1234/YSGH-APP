@@ -56,9 +56,11 @@
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchTimeline, dayKey, friendlyDay, TimelineEvent } from '@/utils/timeline'
-	import { uploadBatch, UploadProgress } from '@/utils/uploader'
+	import { uploadBatch, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
 	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
 	import { showErrorToast } from '@/utils/api'
+	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
+	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 
 	class DayGroup {
 		key: string
@@ -88,6 +90,11 @@
 			ensureLogin().then((ok: boolean) => {
 				this.reload()
 			})
+			// S-SY-5 三路触发 · 前台启动：已授权过则自动恢复监听（App 重启后 ContentObserver 丢失）
+			const watch = createPhotoWatch()
+			if (watch.isReadPermissionGranted()) {
+				this.startWatch()
+			}
 		},
 		onShow() {
 			// 切前台刷新（第一波数据新鲜度最低要求）
@@ -178,7 +185,7 @@
 				console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
 				uni.showToast({ title: '已开始监听相册', icon: 'none' })
 			},
-			/** 攒批 → 上传（并发≤3）→ 完成拉 timeline 刷新（B-UP-2） */
+			/** 攒批 → 上传（并发≤3）→ 端侧聚合 L1 → 事件上云 → 拉 timeline 刷新（B-UP-2 + S-AG-3/4） */
 			handleBatch(items: Array<PhotoItem>): void {
 				this.uploading = true
 				this.uploadDone = 0
@@ -188,10 +195,39 @@
 					this.uploadDone = p.done
 					this.uploadTotal = p.total
 					this.uploadFailed = p.failed
-				}).then((p: UploadProgress) => {
+				}).then((uploaded: Array<UploadedPhoto>) => {
 					this.uploading = false
-					if (p.failed > 0) {
-						uni.showToast({ title: '有 ' + p.failed + ' 张上传失败', icon: 'none' })
+					if (this.uploadFailed > 0) {
+						uni.showToast({ title: '有 ' + this.uploadFailed + ' 张上传失败', icon: 'none' })
+					}
+					// 端侧聚合：上传成功照片 → L1 日卡片事件（B3-6 端侧 L0/L1 真值）
+					if (uploaded.length > 0) {
+						const tz = -new Date().getTimezoneOffset()
+						const agg = aggregateToEvents(uploaded, tz)
+						const events: Array<UTSJSONObject> = []
+						for (let i = 0; i < agg.events.length; i++) {
+							const ev = agg.events[i]
+							const obj: UTSJSONObject = {
+								client_event_id: ev.clientEventId,
+								title: ev.title,
+								start_time: isoString(ev.startTime),
+								end_time: isoString(ev.endTime),
+								photo_ids: ev.photoIds
+							}
+							events.push(obj)
+						}
+						if (events.length > 0) {
+							syncClientEvents(events).then((out: SyncOutcome | null) => {
+								if (out != null) {
+									console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
+								} else {
+									console.error('[yishu] 事件上云失败（重试耗尽）')
+									uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
+								}
+								this.reload()
+							})
+							return
+						}
 					}
 					this.reload()
 				})

@@ -18,19 +18,25 @@ export class PhotoItem {
 	id: number
 	/** 文件绝对路径（DATA） */
 	path: string
-	/** 拍摄时间 epoch 毫秒（DATE_TAKEN，缺失回退 DATE_ADDED*1000） */
+	/** 拍摄时间 epoch 毫秒（EXIF → DATE_TAKEN → DATE_ADDED 优先级） */
 	takenAt: number
 	/** 宽（WIDTH，API 29+ 有值） */
 	width: number
 	/** 高（HEIGHT，API 29+ 有值） */
 	height: number
+	/** 纬度（LATITUDE，无 GPS = null；端侧 L0 聚类输入） */
+	lat: number | null
+	/** 经度（LONGITUDE，无 GPS = null） */
+	lng: number | null
 
-	constructor(id: number, path: string, takenAt: number, width: number, height: number) {
+	constructor(id: number, path: string, takenAt: number, width: number, height: number, lat: number | null, lng: number | null) {
 		this.id = id
 		this.path = path
 		this.takenAt = takenAt
 		this.width = width
 		this.height = height
+		this.lat = lat
+		this.lng = lng
 	}
 }
 

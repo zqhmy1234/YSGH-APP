@@ -74,7 +74,8 @@ function readExifTaken(path: string): Long {
 			}
 		}
 	} catch (e: Error) {
-		// 读 EXIF 失败忽略，走 DATE_TAKEN/DATE_ADDED 回退
+		// 读 EXIF 失败忽略，走 DATE_TAKEN/DATE_ADDED 回退（2026-08-24 真机：加日志定位端侧时间偏移根因）
+		console.error('[yishu] EXIF 读取失败 ' + path + ': ' + (e != null && e.message != null ? e.message : 'unknown'))
 	}
 	return ZERO_LONG
 }
@@ -142,12 +143,23 @@ class PhotoObserver extends ContentObserver {
 					if (taken <= 0) {
 						taken = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)) * 1000
 					}
+					// GPS（LATITUDE/LONGITUDE，API 29+ 才有列；无 GPS 为 null → 端侧按时间窗归组）
+					const latCol = cursor.getColumnIndex(MediaStore.Images.Media.LATITUDE)
+					const lngCol = cursor.getColumnIndex(MediaStore.Images.Media.LONGITUDE)
+					let lat: number | null = null
+					let lng: number | null = null
+					if (latCol >= 0 && lngCol >= 0 && !cursor.isNull(latCol) && !cursor.isNull(lngCol)) {
+						lat = cursor.getDouble(latCol)
+						lng = cursor.getDouble(lngCol)
+					}
 					items.push(new PhotoItem(
 						id,
 						path,
 						taken,
 						0,
-						0
+						0,
+						lat,
+						lng
 					))
 				}
 				cursor.close()
