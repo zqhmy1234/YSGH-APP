@@ -76,7 +76,8 @@ def case_auth_security(client: TestClient) -> None:
 
 def case_text_journey(client: TestClient, headers: dict) -> str:
     """F2：文字创建 → 管线 → done + 分类 → 搜索命中（真实检索链路）"""
-    text = f"冒烟真实用例-{uuid.uuid4().hex[:6]}-明天记得买咖啡豆"
+    token = uuid.uuid4().hex[:8]
+    text = f"冒烟真实用例-{token}-明天记得买咖啡豆"
     r = client.post(
         "/api/v1/contents",
         json={"content_type": "text", "text": text, "source": "app"},
@@ -100,10 +101,18 @@ def case_text_journey(client: TestClient, headers: dict) -> str:
     assert mine["content_class"], f"分类未回写: {mine}"
 
     # 搜索真实命中（BGE-M3 + Qdrant 真实检索，用户隔离）
-    r = client.post("/api/v1/search", json={"q": "买咖啡豆"}, headers=headers)
+    # 查询词含唯一 token（sparse 精确命中）+ limit 放大召回窗口：
+    # 避免 Qdrant 累积历史数据后新内容被挤出 top-k（2026-08-24 门禁 flaky）
+    r = client.post(
+        "/api/v1/search",
+        json={"q": f"买咖啡豆 {token}", "limit": 20},
+        headers=headers,
+    )
     assert r.status_code == 200, r.text
     hits = r.json()["data"].get("hits", [])
-    assert any(hit.get("content_id") == cid or hit.get("id") == cid for hit in hits), f"搜索未命中新内容: {hits}"
+    assert any(hit.get("content_id") == cid or hit.get("id") == cid for hit in hits), (
+        f"搜索未命中新内容: {hits}"
+    )
     return cid
 
 

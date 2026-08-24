@@ -16,6 +16,8 @@
   - `忆述光华_深度开发设计/01-05e` — 9 份深度设计定稿（B1 画像 / B2+02b RAG / B3 事件聚合 / B4 同步 / B5a-e 语音·护栏·纠错·后台·Windows）
 - `AGENTS.md` / `feature_list.json` / `progress.md` / `init.sh` / `session-handoff.md` — harness 文件
 - `skills/infisical-secrets/SKILL.md` — Infisical 密钥链路 skill（所有外部 API Key 统一从这里取，2026-08-19 打通）
+- `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查；**改 client/ 代码前先读**，2026-08-24 沉淀）
+- `skills/android-media-e2e/SKILL.md` — 真机相册 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位；F1 链路真机验收流程，2026-08-24 沉淀）
 - `DSH插件选型与安装方案.md` — 本机 DSH 环境文档（与产品无关）
 
 ## 技术栈（已拍板，勿重开决策）
@@ -43,6 +45,7 @@ Windows Electron + Python sidecar（PP-OCRv5 20MB + JSON-RPC 2.0 v1 + electron-u
 5. 读 `feature_list.json` 看当前特性状态
 6. `git log --oneline -5` 看最近提交
 7. 需要外部 Key 时按 `skills/infisical-secrets/SKILL.md` 操作：`infisical secrets --env=dev`（列名）/ `infisical secrets get <NAME> --plain --silent`（取单条）/ `infisical run --env=dev -- <命令>`（注入运行）
+8. **客户端开发（client/）**：先读 `skills/hbuilderx-uniappx-runloop/SKILL.md`（编译/真机/UTS 避坑）；真机相册链路验收按 `skills/android-media-e2e/SKILL.md`（测试照片注入/权限/验证）
 
 基线验证失败必须先修复，再开新范围。
 

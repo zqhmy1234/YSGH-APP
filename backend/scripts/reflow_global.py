@@ -46,6 +46,11 @@ def _backup_model(model_dir: Path, backup_root: Path, keep: int = KEEP_BACKUPS) 
     # 微秒时间戳：同秒多次调用不碰撞（备份名可排序，用于 keep 裁剪）
     stamp = _datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     dest = backup_root / f"setfit-classifier-{stamp}"
+    # 防同微秒重复调用碰撞（2026-08-24 门禁 flaky：测试内两次备份同微秒 → FileExistsError）
+    suffix = 1
+    while dest.exists():
+        dest = backup_root / f"setfit-classifier-{stamp}-{suffix}"
+        suffix += 1
     shutil.copytree(model_dir, dest)
     olds = sorted(backup_root.glob("setfit-classifier-*"), key=lambda p: p.name, reverse=True)
     for old in olds[keep:]:

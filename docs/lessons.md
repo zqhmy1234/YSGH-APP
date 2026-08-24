@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-24 10:34 · commit 56c605b · ts=1787564055
+- **错误**：门禁 flaky 两处：test_reflow 备份目录 FileExistsError（同微秒两次备份）；api_smoke text-journey 搜索未命中新内容
+- **根因**：① _backup_model 微秒时间戳在同一次测试内两次调用时碰撞（概率性）；② 冒烟搜索 q=买咖啡豆 靠语义召回，Qdrant 累积历史数据后新内容被挤出 top-k
+- **修复**：① 备份目录存在时自增后缀（-1/-2...，保持可排序）；② 冒烟查询词含唯一 token（sparse 精确命中）+ limit=20 放大召回窗口
+- **相关文件**：backend/scripts/reflow_global.py
+- **教训**：门禁用例必须与累积数据/时间戳无关：唯一 token 精确匹配 + 防碰撞命名，避免 flaky 阻断提交
+
+---
+
 ### 2026-08-24 10:17 · commit 625cb10 · ts=1787563077
 - **错误**：review_agent 门禁 tests 段失败：test_queue::test_queue_failure_goes_to_dead 断言 Job.is_failed 为 False
 - **根因**：本地调试时启动的后台 RQ worker（python -c ... worker）仍在消费 high/low 队列，抢跑了测试自己入队的 job，破坏 test_queue 的隔离预期
