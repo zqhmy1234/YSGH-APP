@@ -41,9 +41,13 @@
 
 			<!-- 时间轴：L1 日卡片 + L2 主题两级（B-F8-1） -->
 			<view v-else class="feed">
-				<view v-for="day in days" :key="day.key" class="day-block">
+				<view v-for="(day, dayIdx) in days" :key="day.key" class="day-block">
 					<text class="day-title serif">{{ day.label }}</text>
 					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'">
+						<!-- S-MO-1 操作入口（确认/合并；用户操作优先，算法不再覆盖） -->
+						<view class="card-ops" @tap="onCardOps(ev, dayIdx)">
+							<text class="card-ops-text">⋯</text>
+						</view>
 						<text class="card-title serif" :class="ev.level === 1 ? 'title-l1' : 'title-l2'">{{ ev.title }}</text>
 						<view class="card-meta">
 							<text v-if="ev.place != ''" class="meta-item">{{ ev.place }}</text>
@@ -82,6 +86,7 @@
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play'
+	import { confirmEvent, mergeEvent } from '@/utils/event_ops'
 
 	class DayGroup {
 		key: string
@@ -135,6 +140,70 @@
 				// T-PL-1：同时拉今日回响（每天≤1 条，无则不显示）
 				fetchTodayEcho().then((card: EchoCard | null) => {
 					this.echo = card
+				})
+			},
+			/** S-MO-1：卡片操作菜单（L1：确认/合并到上一张；L2：确认主题） */
+			onCardOps(ev: TimelineEvent, dayIdx: number): void {
+				if (ev.level === 1) {
+					const items: Array<string> = ['确认这张卡', '合并到上一张', '取消']
+					uni.showActionSheet({
+						itemList: items,
+						success: (res) => {
+							if (res.tapIndex === 0) {
+								this.doConfirm(ev)
+							} else if (res.tapIndex === 1) {
+								this.doMerge(ev, dayIdx)
+							}
+						},
+						fail: () => {}
+					})
+				} else {
+					const items2: Array<string> = ['确认这个主题', '取消']
+					uni.showActionSheet({
+						itemList: items2,
+						success: (res) => {
+							if (res.tapIndex === 0) {
+								this.doConfirm(ev)
+							}
+						},
+						fail: () => {}
+					})
+				}
+			},
+			/** 确认转正（用户背书后算法不再改动） */
+			doConfirm(ev: TimelineEvent): void {
+				confirmEvent(ev.id).then((ok: boolean) => {
+					if (ok) {
+						uni.showToast({ title: '已确认', icon: 'none' })
+						this.reload()
+					} else {
+						uni.showToast({ title: '确认失败', icon: 'none' })
+					}
+				})
+			},
+			/** 找当前卡片之前的最近一张 L1（合并目标；跳过 L2 组） */
+			getPrevL1Id(dayIdx: number): string {
+				for (let i = dayIdx - 1; i >= 0; i--) {
+					if (this.days[i].events.length > 0 && this.days[i].events[0].level === 1) {
+						return this.days[i].events[0].id
+					}
+				}
+				return ''
+			},
+			/** 合并到上一张 L1（source=当前，target=上一张；target 置 confirmed） */
+			doMerge(ev: TimelineEvent, dayIdx: number): void {
+				const targetId = this.getPrevL1Id(dayIdx)
+				if (targetId == '') {
+					uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
+					return
+				}
+				mergeEvent(ev.id, targetId).then((ok: boolean) => {
+					if (ok) {
+						uni.showToast({ title: '已合并', icon: 'none' })
+						this.reload()
+					} else {
+						uni.showToast({ title: '合并失败', icon: 'none' })
+					}
 				})
 			},
 			/** T-PL-1：划掉回响（dismiss 不再出现） */
@@ -373,6 +442,22 @@
 		margin-bottom: 24rpx;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
 		border-bottom-left-radius: 2rpx;
+		position: relative;
+	}
+	/* S-MO-1 操作入口：右上角 · 干净按钮（视觉规范：按钮不做旧） */
+	.card-ops {
+		position: absolute;
+		top: 8rpx;
+		right: 16rpx;
+		padding-left: 20rpx;
+		padding-right: 20rpx;
+		padding-top: 6rpx;
+		padding-bottom: 6rpx;
+	}
+	.card-ops-text {
+		font-size: 40rpx;
+		color: #B05A3A;
+		line-height: 40rpx;
 	}
 	.card-l1 {
 		border-top-right-radius: 2rpx;

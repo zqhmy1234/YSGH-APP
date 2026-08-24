@@ -34,6 +34,23 @@
 17. **分片粒度=单块**（chunk_size=file_size）：UTS 无可靠 ArrayBuffer 切片，MVP 照片 ≤20MB，>8MB 真分片留 Windows 波次（后端已支持任意 chunk_size）
 18. **验证**：test_upload 13 项全过（+2 集成测试）；全量 pytest 248 passed；HBuilderX 编译通过（200s）；OpenAPI 重导出 41 路径；真机 E2E（注入→init→chunk→complete→管线→时间轴）待峰宝 nova 11
 
+### S-MO-1 手动操作 UI（2026-08-25 续 · confirm + merge）
+22. **客户端 event_ops.ts**：confirmEvent（POST /events/confirm）+ mergeEvent（POST /events/merge，source→target）；后端已就绪（test_event_ops 7 项）
+23. **时间轴页集成**：L1/L2 卡片右上角 ⋯ 菜单（showActionSheet）——L1：确认这张卡/合并到上一张；L2：确认这个主题；确认后 reload；合并 target=相邻上一张 L1（getPrevL1Id 跳过 L2 组）；用户操作优先语义由后端保证（算法不覆盖）
+24. **split 后置**：客户端 timeline 无事件内容列表（EventOut 无 content_ids）→ 需后端补 GET /events/{id}/items 后做选片拆分 UI
+25. **编译**：HBuilderX 编译通过（47s 增量）；真机验证待峰宝（操作菜单点按 → 确认/合并 → 时间轴刷新）
+
+### review_agent 内存优化（2026-08-25 续）
+26. **根源**：smoke 单进程 SetFit fp32 2.2GB + BGE-M3 fp16 1.7GB + reranker fp32 ~1GB ≈ 5.5-6GB 峰值；可用内存 0.9GB 时 commit 被 SIGKILL
+27. **修复**：SetFit/reranker 改 fp16（实测 SetFit 加载 2.2GB→596MB，预测峰值~1.75GB；rerank ~1GB→~0.5GB；-m rag 85s→27s）；smoke 跳过 reranker（RERANKER_MODEL=__disabled__）；test_agent 内存探测 + OOM 友好提示（returncode<0 识别）+ 可用内存 <4GB 警告；教训登记（commit 前确保可用内存 ≥4GB；编译后清理 HBuilderX 残留）
+
+### 遗留/待办
+- 以图搜图延迟优化（P95 7.6s→<3s）——F5 真实缺口
+- 双层 Rerank 第二层 qwen-flash 精排——F5 真实缺口
+- S-MO-1 split 拆分 UI（需后端 GET /events/{id}/items）
+- S-XV XView（等自定义基座波次）、S-EM-1 模拟器、离线 op_log、EXIF 兼容性排查
+- 真值数据技术侧可选辅助：export 初稿脚本 / 人脸打码脚本 / 评测 --real 模式
+
 ---
 
 ## 🚀 客户端第三波（2026-08-24 晚 · T-NA/T-TX/T-AU/T-SR/T-PL 多入口+玩法层）
