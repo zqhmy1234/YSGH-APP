@@ -1,0 +1,390 @@
+<template>
+	<view class="page">
+		<view class="header">
+			<text class="header-title serif">搜索</text>
+			<text class="header-sub">找回一段记忆</text>
+		</view>
+
+		<!-- 搜索框 + 提交（T-SR-1） -->
+		<view class="search-bar">
+			<input
+				class="search-input"
+				v-model="query"
+				placeholder="试着描述：上周和妈妈吃饭…"
+				confirm-type="search"
+				@confirm="doSearch"
+			/>
+			<view class="search-btn" @tap="doSearch">
+				<text class="search-btn-text">搜索</text>
+			</view>
+		</view>
+
+		<!-- 以图搜图入口（T-SR-3） -->
+		<view class="image-row">
+			<text class="muted">以图搜图：</text>
+			<view class="image-btn" @tap="pickImage">
+				<text class="image-btn-text">选择照片</text>
+			</view>
+			<image v-if="queryImage != ''" class="query-thumb" :src="queryImage" mode="aspectFill" />
+		</view>
+
+		<!-- 降级提示（T-SR-4） -->
+		<view v-if="degraded" class="degraded-bar">
+			<text class="degraded-text">检索服务降级中，结果可能不完整</text>
+		</view>
+
+		<!-- 加载态 -->
+		<view v-if="loading" class="center-box">
+			<text class="muted">正在翻找…</text>
+		</view>
+
+		<!-- 空结果 -->
+		<view v-else-if="searched && outcome != null && outcome.hits.length === 0" class="center-box">
+			<text class="empty-title serif">没有找到</text>
+			<text class="empty-desc">换个说法试试，或选一张照片搜索</text>
+		</view>
+
+		<!-- 结果列表（T-SR-2 混合卡片 + 溯源） -->
+		<view v-else-if="outcome != null" class="result-list">
+			<view v-if="outcome.rewrittenQuery != '' && outcome.rewrittenQuery != outcome.query" class="rewrite-line">
+				<text class="muted">理解为你说的：{{ outcome.rewrittenQuery }}</text>
+			</view>
+			<view v-for="hit in outcome.hits" :key="hit.contentId" class="hit-card">
+				<view class="hit-head">
+					<text class="hit-type">{{ contentTypeCn(hit.contentType) }}</text>
+					<text v-if="hit.eventTitle != ''" class="hit-event">{{ hit.eventTitle }}</text>
+					<text class="hit-score">{{ scorePct(hit.score) }}%</text>
+				</view>
+				<text v-if="hit.text != ''" class="hit-text">{{ hit.text }}</text>
+				<view class="hit-meta">
+					<text v-if="hit.place != ''" class="meta-item">{{ hit.place }}</text>
+					<text v-if="hit.takenAt != ''" class="meta-item">{{ shortDate(hit.takenAt) }}</text>
+				</view>
+				<!-- 溯源（信任底线） -->
+				<view v-if="hit.trace != ''" class="trace-box">
+					<text class="trace-label">命中依据</text>
+					<text class="trace-text">{{ hit.trace }}</text>
+				</view>
+			</view>
+			<view class="result-foot">
+				<text class="muted">共 {{ outcome.total }} 条 · {{ outcome.latencyMs }}ms</text>
+			</view>
+		</view>
+
+		<!-- 底部 Tab -->
+		<yishu-tabbar current="search" />
+	</view>
+</template>
+
+<script lang="uts">
+	import { ensureLogin } from '@/utils/auth'
+	import { searchText, searchByImage, SearchOutcome, SearchHitItem } from '@/utils/search_api'
+	import { showErrorToast } from '@/utils/api'
+
+	export default {
+		data() {
+			return {
+				query: '',
+				queryImage: '',
+				loading: false,
+				searched: false,
+				degraded: false,
+				outcome: null as SearchOutcome | null
+			}
+		},
+		onLoad() {
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					showErrorToast(new Error('登录失败，请重试'))
+				}
+			})
+		},
+		methods: {
+			/** 得分百分比（模板内不能直接调全局 Math） */
+			scorePct(score: number): number {
+				return Math.round(score * 100)
+			},
+			/** 内容类型中文名（模板直接调用限制：需挂 methods） */
+			contentTypeCn(t: string): string {
+				if (t == 'photo') {
+					return '照片'
+				}
+				if (t == 'voice') {
+					return '语音'
+				}
+				if (t == 'article') {
+					return '文章'
+				}
+				return '文字'
+			},
+			/** T-SR-1：提交搜索 */
+			doSearch(): void {
+				const q = this.query.trim()
+				if (q == '' && this.queryImage == '') {
+					showErrorToast(new Error('输入想找的内容'))
+					return
+				}
+				this.loading = true
+				this.searched = false
+				this.degraded = false
+				searchText(q, 10).then((out: SearchOutcome | null) => {
+					this.loading = false
+					this.searched = true
+					if (out != null) {
+						this.outcome = out
+						this.degraded = out.degraded
+					} else {
+						this.outcome = null
+					}
+				})
+			},
+			/** T-SR-3：以图搜图（uni-app x App 端用 uni.chooseMedia 选图） */
+			pickImage(): void {
+				uni.chooseMedia({
+					count: 1,
+					mediaType: ['image'],
+					sourceType: ['album'],
+					success: (res) => {
+						const files = res.tempFiles
+						if (files.length === 0) {
+							return
+						}
+						const path = files[0].tempFilePath
+						this.queryImage = path
+						this.loading = true
+						this.searched = false
+						this.degraded = false
+						searchByImage(path, 10).then((out: SearchOutcome | null) => {
+							this.loading = false
+							this.searched = true
+							if (out != null) {
+								this.outcome = out
+								this.degraded = out.degraded
+							} else {
+								this.outcome = null
+							}
+						})
+					},
+					fail: () => {
+						// 用户取消选择：静默
+					}
+				})
+			},
+			/** ISO → 短日期（yyyy-mm-dd → mm月dd日） */
+			shortDate(iso: string): string {
+				const tIdx = iso.indexOf('T')
+				const datePart = tIdx >= 0 ? iso.substring(0, tIdx) : iso
+				const parts = datePart.split('-')
+				if (parts.length !== 3) {
+					return datePart
+				}
+				return parseInt(parts[1]) + '月' + parseInt(parts[2]) + '日'
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #F6F1E7;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 88rpx;
+		padding-bottom: 140rpx;
+	}
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+	.header {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.header-title {
+		font-size: 52rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		letter-spacing: 6rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 搜索框 */
+	.search-bar {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+	.search-input {
+		flex: 1;
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		height: 76rpx;
+		font-size: 28rpx;
+		color: #3A2E25;
+		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
+	}
+	.search-btn {
+		margin-left: 16rpx;
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		height: 76rpx;
+		align-items: center;
+		justify-content: center;
+		display: flex;
+	}
+	.search-btn-text {
+		color: #F6F1E7;
+		font-size: 28rpx;
+	}
+
+	/* 以图搜图 */
+	.image-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 24rpx;
+	}
+	.muted {
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+	.image-btn {
+		margin-left: 16rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
+		background-color: #EBE3D4;
+		border-radius: 24rpx;
+	}
+	.image-btn-text {
+		font-size: 24rpx;
+		color: #3A2E25;
+	}
+	.query-thumb {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 8rpx;
+		margin-left: 16rpx;
+	}
+
+	/* 降级提示（T-SR-4） */
+	.degraded-bar {
+		background-color: #F3E8DC;
+		border-radius: 8rpx;
+		padding: 16rpx 24rpx;
+		margin-bottom: 20rpx;
+	}
+	.degraded-text {
+		font-size: 24rpx;
+		color: #B05A3A;
+	}
+
+	.center-box {
+		padding-top: 120rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.empty-title {
+		font-size: 36rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.empty-desc {
+		margin-top: 12rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 结果卡片 */
+	.result-list {
+		display: flex;
+		flex-direction: column;
+	}
+	.rewrite-line {
+		margin-bottom: 16rpx;
+	}
+	.hit-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 24rpx;
+		margin-bottom: 20rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.hit-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.hit-type {
+		font-size: 22rpx;
+		color: #B05A3A;
+		background-color: #F3E8DC;
+		padding-left: 14rpx;
+		padding-right: 14rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 16rpx;
+	}
+	.hit-event {
+		margin-left: 16rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		flex: 1;
+	}
+	.hit-score {
+		font-size: 24rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.hit-text {
+		margin-top: 14rpx;
+		font-size: 28rpx;
+		color: #3A2E25;
+		line-height: 40rpx;
+	}
+	.hit-meta {
+		margin-top: 10rpx;
+		display: flex;
+		flex-direction: row;
+	}
+	.meta-item {
+		font-size: 22rpx;
+		color: #b3a696;
+		margin-right: 20rpx;
+	}
+	.trace-box {
+		margin-top: 16rpx;
+		border-top-width: 1rpx;
+		border-top-color: rgba(58, 46, 37, 0.12);
+		padding-top: 14rpx;
+		display: flex;
+		flex-direction: column;
+	}
+	.trace-label {
+		font-size: 20rpx;
+		color: #B05A3A;
+	}
+	.trace-text {
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+		line-height: 32rpx;
+	}
+	.result-foot {
+		margin-top: 20rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+	}
+</style>

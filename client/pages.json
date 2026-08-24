@@ -9,6 +9,46 @@
       }
     },
     {
+      "path": "pages/record/record",
+      "style": {
+        "navigationBarTitleText": "记录",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/search/search",
+      "style": {
+        "navigationBarTitleText": "搜索",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "我的",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/interview/interview",
+      "style": {
+        "navigationBarTitleText": "冷启动访谈",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/messages/messages",
+      "style": {
+        "navigationBarTitleText": "消息中心",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
       "path": "pages/debug/agg-check/agg-check",
       "style": {
         "navigationBarTitleText": "AGG-016 自检"

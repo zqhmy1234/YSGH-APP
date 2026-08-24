@@ -1,0 +1,237 @@
+<template>
+	<view class="page">
+		<view class="header">
+			<text class="header-title serif">我的</text>
+			<text class="header-sub">记忆与偏好</text>
+		</view>
+
+		<!-- 画像卡（冷启动状态 T-PL-2） -->
+		<view class="profile-card">
+			<view class="profile-head">
+				<text class="profile-title serif">我的画像</text>
+				<text v-if="profileReady" class="profile-badge">已建立</text>
+				<text v-else class="profile-badge">待完善</text>
+			</view>
+			<text v-if="profileReady" class="profile-desc">已完成冷启动访谈，画像维度已激活</text>
+			<text v-else class="profile-desc">回答三个问题，让记忆整理更懂你</text>
+			<view class="profile-btn" @tap="goInterview">
+				<text class="profile-btn-text">{{ profileReady ? '查看/完善画像' : '开始冷启动访谈' }}</text>
+			</view>
+		</view>
+
+		<!-- 消息中心入口（T-PL-3） -->
+		<view class="menu-card" @tap="goMessages">
+			<view class="menu-row">
+				<text class="menu-icon">✉️</text>
+				<text class="menu-title">消息中心</text>
+				<text v-if="unreadCount > 0" class="menu-badge">{{ unreadCount }} 未读</text>
+				<text class="menu-arrow">›</text>
+			</view>
+		</view>
+
+		<!-- 关于 -->
+		<view class="about-card">
+			<text class="about-text">忆述光华 · v0.1.0</text>
+			<text class="about-sub">翻看记忆，去年今日</text>
+		</view>
+
+		<!-- 底部 Tab -->
+		<yishu-tabbar current="profile" />
+	</view>
+</template>
+
+<script lang="uts">
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchInterviewProfile } from '@/utils/play'
+	import { fetchMessages } from '@/utils/play'
+	import { showErrorToast } from '@/utils/api'
+
+	export default {
+		data() {
+			return {
+				profileReady: false,
+				unreadCount: 0
+			}
+		},
+		onLoad() {
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					showErrorToast(new Error('登录失败，请重试'))
+					return
+				}
+				this.loadProfile()
+				this.loadUnread()
+			})
+		},
+		onShow() {
+			// 切前台刷新未读数（消息/访谈状态可能变化）
+			if (this.profileReady || this.unreadCount >= 0) {
+				this.loadUnread()
+			}
+		},
+		methods: {
+			loadProfile(): void {
+				fetchInterviewProfile().then((d: UTSJSONObject | null) => {
+					if (d == null) {
+						return
+					}
+					// 后端画像：{dimensions: {}, version, cold_start_done}——dimensions 是 dict
+					const done = d.getBoolean('cold_start_done') ?? false
+					if (done) {
+						this.profileReady = true
+						return
+					}
+					const dims = d.getJSON('dimensions')
+					if (dims != null && dims.toJSONString().length > 2) {
+						this.profileReady = true
+					}
+				})
+			},
+			loadUnread(): void {
+				fetchMessages('unread').then((list) => {
+					this.unreadCount = list.length
+				})
+			},
+			goInterview(): void {
+				uni.navigateTo({ url: '/pages/interview/interview' })
+			},
+			goMessages(): void {
+				uni.navigateTo({ url: '/pages/messages/messages' })
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #F6F1E7;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 88rpx;
+		padding-bottom: 140rpx;
+	}
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+	.header {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.header-title {
+		font-size: 52rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		letter-spacing: 6rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 画像卡 */
+	.profile-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.profile-head {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.profile-title {
+		font-size: 34rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.profile-badge {
+		font-size: 22rpx;
+		color: #B05A3A;
+		background-color: #F3E8DC;
+		padding-left: 16rpx;
+		padding-right: 16rpx;
+		padding-top: 6rpx;
+		padding-bottom: 6rpx;
+		border-radius: 20rpx;
+	}
+	.profile-desc {
+		margin-top: 16rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+		line-height: 38rpx;
+	}
+	.profile-btn {
+		margin-top: 28rpx;
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+		padding-top: 18rpx;
+		padding-bottom: 18rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+	}
+	.profile-btn-text {
+		color: #F6F1E7;
+		font-size: 28rpx;
+	}
+
+	/* 菜单 */
+	.menu-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.menu-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.menu-icon {
+		font-size: 36rpx;
+		margin-right: 20rpx;
+	}
+	.menu-title {
+		flex: 1;
+		font-size: 30rpx;
+		color: #3A2E25;
+	}
+	.menu-badge {
+		font-size: 22rpx;
+		color: #F6F1E7;
+		background-color: #B05A3A;
+		padding-left: 14rpx;
+		padding-right: 14rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 18rpx;
+		margin-right: 12rpx;
+	}
+	.menu-arrow {
+		font-size: 36rpx;
+		color: #b3a696;
+	}
+
+	/* 关于 */
+	.about-card {
+		margin-top: 48rpx;
+		align-items: center;
+		display: flex;
+		flex-direction: column;
+	}
+	.about-text {
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+	.about-sub {
+		margin-top: 6rpx;
+		font-size: 22rpx;
+		color: #c9beb0;
+	}
+</style>

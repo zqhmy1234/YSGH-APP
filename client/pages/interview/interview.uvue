@@ -1,0 +1,251 @@
+<template>
+	<view class="page">
+		<view class="header">
+			<text class="header-title serif">冷启动访谈</text>
+			<text class="header-sub">回答三个问题，让记忆整理更懂你</text>
+		</view>
+
+		<!-- 三层披露（T-PL-2）：先披露再作答 -->
+		<view v-if="step === 'disclose'" class="disclose-card">
+			<text class="disclose-title serif">关于你的回答</text>
+			<text class="disclose-item">1. 仅用于记忆整理与个性化回顾，不会对外分享</text>
+			<text class="disclose-item">2. 可以随时修改或清空你的画像</text>
+			<text class="disclose-item">3. 未命中的回答不会写入画像（闭集约束）</text>
+			<view class="disclose-actions">
+				<view class="btn ghost" @tap="skipInterview">
+					<text class="btn-text ghost-text">跳过</text>
+				</view>
+				<view class="btn" @tap="beginInterview">
+					<text class="btn-text">知道了，开始</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 三问作答 -->
+		<view v-else-if="step === 'ask'" class="ask-card">
+			<view v-for="(q, qi) in questions" :key="q.key" class="q-block">
+				<text class="q-title serif">{{ qi + 1 }}. {{ q.question }}</text>
+				<textarea class="q-input serif" v-model="answers[q.key]" :maxlength="500" placeholder="说点什么…" />
+			</view>
+			<view class="ask-actions">
+				<view class="btn ghost" @tap="skipInterview">
+					<text class="btn-text ghost-text">跳过</text>
+				</view>
+				<view class="btn" @tap="submitAnswers">
+					<text class="btn-text">{{ submitting ? '提交中…' : '提交' }}</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 复述确认（B1-6 档案确认闭环） -->
+		<view v-else-if="step === 'done'" class="done-card">
+			<text class="done-title serif">谢谢你的分享</text>
+			<text class="done-confirm">{{ confirmation }}</text>
+			<view class="btn" @tap="finishInterview">
+				<text class="btn-text">完成</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play'
+	import { showErrorToast } from '@/utils/api'
+
+	export default {
+		data() {
+			return {
+				step: 'disclose' as string, // disclose → ask → done
+				questions: [] as Array<InterviewQuestion>,
+				answers: {} as UTSJSONObject,
+				submitting: false,
+				confirmation: ''
+			}
+		},
+		onLoad() {
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					showErrorToast(new Error('登录失败，请重试'))
+					return
+				}
+				fetchInterviewQuestions().then((qs: Array<InterviewQuestion>) => {
+					if (qs.length > 0) {
+						this.questions = qs
+						// 预置 answers 结构（UTSJSONObject set 注入）
+						for (let i = 0; i < qs.length; i++) {
+							this.answers.set(qs[i].key, '')
+						}
+						this.step = 'disclose'
+					} else {
+						showErrorToast(new Error('访谈问题加载失败'))
+					}
+				})
+			})
+		},
+		methods: {
+			beginInterview(): void {
+				this.step = 'ask'
+			},
+			submitAnswers(): void {
+				// 至少答一题
+				let filled = 0
+				const keys = this.questions
+				for (let i = 0; i < keys.length; i++) {
+					const v = this.answers.getString(keys[i].key) ?? ''
+					if (v.trim() != '') {
+						filled++
+					}
+				}
+				if (filled === 0) {
+					showErrorToast(new Error('至少回答一个问题'))
+					return
+				}
+				this.submitting = true
+				submitInterviewAnswers(this.answers).then((res: InterviewResult | null) => {
+					this.submitting = false
+					if (res != null) {
+						this.confirmation = res.confirmation
+						this.step = 'done'
+					} else {
+						showErrorToast(new Error('提交失败，请重试'))
+					}
+				})
+			},
+			skipInterview(): void {
+				uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
+				setTimeout(() => {
+					uni.navigateBack({})
+				}, 800)
+			},
+			finishInterview(): void {
+				uni.navigateBack({})
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #F6F1E7;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 88rpx;
+	}
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+	.header {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.header-title {
+		font-size: 52rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		letter-spacing: 6rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 披露 */
+	.disclose-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 32rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.disclose-title {
+		font-size: 34rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		margin-bottom: 20rpx;
+	}
+	.disclose-item {
+		font-size: 26rpx;
+		color: #5a4c40;
+		line-height: 44rpx;
+	}
+	.disclose-actions {
+		margin-top: 36rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+
+	/* 三问 */
+	.ask-card {
+		display: flex;
+		flex-direction: column;
+	}
+	.q-block {
+		margin-bottom: 28rpx;
+	}
+	.q-title {
+		font-size: 30rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		margin-bottom: 12rpx;
+	}
+	.q-input {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 20rpx;
+		min-height: 140rpx;
+		font-size: 28rpx;
+		color: #3A2E25;
+		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
+	}
+	.ask-actions {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+
+	/* 复述确认 */
+	.done-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 32rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.done-title {
+		font-size: 36rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.done-confirm {
+		margin-top: 16rpx;
+		font-size: 28rpx;
+		color: #5a4c40;
+		line-height: 44rpx;
+	}
+
+	/* 按钮 */
+	.btn {
+		margin-left: 20rpx;
+		padding-left: 44rpx;
+		padding-right: 44rpx;
+		padding-top: 16rpx;
+		padding-bottom: 16rpx;
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+	}
+	.btn-text {
+		color: #F6F1E7;
+		font-size: 28rpx;
+	}
+	.ghost {
+		background-color: transparent;
+		border-width: 1rpx;
+		border-color: #B05A3A;
+	}
+	.ghost-text {
+		color: #B05A3A;
+	}
+</style>

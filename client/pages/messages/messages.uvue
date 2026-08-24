@@ -1,0 +1,264 @@
+<template>
+	<view class="page">
+		<view class="header">
+			<text class="header-title serif">消息中心</text>
+			<text class="header-sub">复盘与回响</text>
+		</view>
+
+		<!-- 过滤切换 -->
+		<view class="seg">
+			<view class="seg-item" :class="filter === 'unread' ? 'seg-active' : ''" @tap="switchFilter('unread')">
+				<text class="seg-text" :class="filter === 'unread' ? 'seg-text-active' : ''">未读</text>
+			</view>
+			<view class="seg-item" :class="filter === 'all' ? 'seg-active' : ''" @tap="switchFilter('all')">
+				<text class="seg-text" :class="filter === 'all' ? 'seg-text-active' : ''">全部</text>
+			</view>
+		</view>
+
+		<!-- 加载中 -->
+		<view v-if="loading" class="center-box">
+			<text class="muted">加载中…</text>
+		</view>
+
+		<!-- 空态 -->
+		<view v-else-if="messages.length === 0" class="center-box">
+			<text class="empty-title serif">暂无消息</text>
+			<text class="empty-desc">复盘推送和回响会出现在这里</text>
+		</view>
+
+		<!-- 消息列表 -->
+		<view v-else class="msg-list">
+			<view v-for="m in messages" :key="m.id" class="msg-card" :class="m.status === 'unread' ? 'msg-unread' : ''" @tap="onMsgTap(m)">
+				<view class="msg-head">
+					<text class="msg-title serif">{{ m.title }}</text>
+					<text v-if="m.status === 'unread'" class="msg-dot">●</text>
+				</view>
+				<text class="msg-body">{{ m.body }}</text>
+				<text class="msg-time">{{ shortTime(m.sentAt) }}</text>
+			</view>
+			<view v-if="filter === 'unread' && messages.length > 0" class="read-all-btn" @tap="readAll">
+				<text class="read-all-text">全部标为已读</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchMessages, markMessageRead, markAllRead, AppMessage } from '@/utils/play'
+	import { showErrorToast } from '@/utils/api'
+
+	export default {
+		data() {
+			return {
+				filter: 'unread' as string,
+				loading: false,
+				loadedOnce: false,
+				messages: [] as Array<AppMessage>
+			}
+		},
+		onLoad() {
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					showErrorToast(new Error('登录失败，请重试'))
+					return
+				}
+				this.reload()
+			})
+		},
+		onShow() {
+			// 切前台刷新（T-PL-3：打开/切前台刷新）
+			if (this.loadedOnce) {
+				this.reload()
+			}
+		},
+		methods: {
+			reload(): void {
+				this.loading = true
+				fetchMessages(this.filter).then((list: Array<AppMessage>) => {
+					this.messages = list
+					this.loading = false
+					this.loadedOnce = true
+				})
+			},
+			switchFilter(f: string): void {
+				if (this.filter === f) {
+					return
+				}
+				this.filter = f
+				this.reload()
+			},
+			onMsgTap(m: AppMessage): void {
+				if (m.status === 'unread') {
+					markMessageRead(m.id).then((ok: boolean) => {
+						if (ok) {
+							this.reload()
+						}
+					})
+				}
+			},
+			readAll(): void {
+				markAllRead().then((ok: boolean) => {
+					if (ok) {
+						uni.showToast({ title: '已全部标为已读', icon: 'none' })
+						this.reload()
+					}
+				})
+			},
+			/** ISO → 短时间（MM-dd HH:mm） */
+			shortTime(iso: string): string {
+				const tIdx = iso.indexOf('T')
+				if (tIdx < 0) {
+					return iso
+				}
+				const datePart = iso.substring(0, tIdx)
+				const timePart = iso.substring(tIdx + 1)
+				const d = datePart.split('-')
+				const t = timePart.split(':')
+				if (d.length !== 3) {
+					return iso
+				}
+				const hh = t.length > 0 ? t[0] : '00'
+				const mm = t.length > 1 ? t[1] : '00'
+				return parseInt(d[1]) + '-' + parseInt(d[2]) + ' ' + hh + ':' + mm
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #F6F1E7;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 88rpx;
+	}
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+	.header {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.header-title {
+		font-size: 52rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		letter-spacing: 6rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 分段 */
+	.seg {
+		display: flex;
+		flex-direction: row;
+		background-color: #EBE3D4;
+		border-radius: 10rpx;
+		padding: 6rpx;
+		margin-bottom: 28rpx;
+	}
+	.seg-item {
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		padding-top: 14rpx;
+		padding-bottom: 14rpx;
+		border-radius: 8rpx;
+	}
+	.seg-active {
+		background-color: #FBF7EF;
+	}
+	.seg-text {
+		font-size: 28rpx;
+		color: #8a7a6a;
+	}
+	.seg-text-active {
+		color: #3A2E25;
+		font-weight: bold;
+	}
+
+	.center-box {
+		padding-top: 140rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.muted {
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+	.empty-title {
+		font-size: 36rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.empty-desc {
+		margin-top: 12rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 消息卡 */
+	.msg-list {
+		display: flex;
+		flex-direction: column;
+		padding-bottom: 60rpx;
+	}
+	.msg-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 24rpx;
+		margin-bottom: 20rpx;
+		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
+	}
+	.msg-unread {
+		border-left-width: 6rpx;
+		border-left-color: #B05A3A;
+	}
+	.msg-head {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.msg-title {
+		font-size: 30rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.msg-dot {
+		font-size: 20rpx;
+		color: #B05A3A;
+	}
+	.msg-body {
+		margin-top: 10rpx;
+		font-size: 26rpx;
+		color: #5a4c40;
+		line-height: 38rpx;
+	}
+	.msg-time {
+		margin-top: 12rpx;
+		font-size: 22rpx;
+		color: #b3a696;
+	}
+	.read-all-btn {
+		margin-top: 24rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+		padding-top: 18rpx;
+		padding-bottom: 18rpx;
+		border-width: 1rpx;
+		border-color: #B05A3A;
+		border-radius: 8rpx;
+	}
+	.read-all-text {
+		color: #B05A3A;
+		font-size: 26rpx;
+	}
+</style>

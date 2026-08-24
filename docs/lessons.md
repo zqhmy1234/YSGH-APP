@@ -8,6 +8,42 @@
 
 ---
 
+### 2026-08-24 16:47 · commit 0750c87 · ts=1787586479
+- **错误**：review_agent tests 段失败：test_correction 加载 SetFit 模型报 OSError 页面文件太小 (os error 1455)
+- **根因**：本机内存/页面文件不足：worker 进程 + review_agent research 段（4.5GB）+ pytest 同时跑模型推理，物理内存耗尽
+- **修复**：跑门禁前先停 worker（Get-CimInstance 查 workers.worker 进程 Stop-Process）；pytest 单独跑释放内存后全绿 238 passed
+- **相关文件**：scripts/review_agent.py
+- **教训**：（无）
+
+---
+
+### 2026-08-24 16:26 · commit 0750c87 · ts=1787585169
+- **错误**：消息中心'全部'tab 显示空态（后端实际有 2 条已读消息）
+- **根因**：客户端 'all' 拼成 status=all 传后端，后端 status 仅接受 unread/read/archived → 422 空数组
+- **修复**：fetchMessages 对 'all'/'' 不传 status 参数（视同全部）；仅 unread/read 才拼 status
+- **相关文件**：client/utils/play.ts
+- **教训**：（无）
+
+---
+
+### 2026-08-24 16:12 · commit 0750c87 · ts=1787584335
+- **错误**：访谈三问不渲染（问题区空白），onLoad 后 questions 数组为空
+- **根因**：dataObj(res) 用 getJSON('data') 取对象；后端 /interview/questions 的 data 是裸数组，getJSON 返回 null → 走 resolve([]) 分支；qArr 回退分支永不执行
+- **修复**：数组 data 直接用 res.getArray('data') 优先解析，{questions:[...]} 形态回退；不用 dataObj 前置拦截
+- **相关文件**：client/utils/play.ts
+- **教训**：（无）
+
+---
+
+### 2026-08-24 16:06 · commit 0750c87 · ts=1787584005
+- **错误**：uni-app x App 端 uni.chooseImage 不存在（编译过但运行无回调，选择菜单弹出后消失）
+- **根因**：uni-app x 的 App 平台只有 uni.chooseMedia（mediaType/sourceType），chooseImage 是 uni-app Vue 版 API 未移植
+- **修复**：改用 uni.chooseMedia({count:1, mediaType:['image'], sourceType:['album']})；tempFiles[0].tempFilePath 取路径
+- **相关文件**：client/pages/search/search.uvue
+- **教训**：（无）
+
+---
+
 ### 2026-08-24 14:27 · commit 2353be5 · ts=1787578072
 - **错误**：端侧 L1 事件时间窗=扫描时间（21:26）而非照片 EXIF 时间（08-23），端侧 EXIF 兜底失效
 - **根因**：android.media.ExifInterface 读不到 PIL 写入的 EXIF（getAttribute 返回 null 无异常）；scan_file 注入场景 DATE_TAKEN=扫描时间

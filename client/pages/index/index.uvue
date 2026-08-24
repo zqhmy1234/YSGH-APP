@@ -7,6 +7,23 @@
 		</view>
 
 		<scroll-view class="scroll" scroll-y refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+			<!-- 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄；划掉 dismiss） -->
+			<view v-if="echo != null" class="echo-card">
+				<view class="echo-corner">
+					<text class="echo-corner-text">去年今日</text>
+				</view>
+				<text class="echo-date muted">{{ echo.echoDate }}</text>
+				<text class="echo-text serif">{{ echo.text }}</text>
+				<view v-if="echo.place != ''" class="echo-meta">
+					<text class="meta-item">{{ echo.place }}</text>
+				</view>
+				<view class="echo-actions">
+					<view class="echo-dismiss" @tap="dismissEchoCard">
+						<text class="echo-dismiss-text">划掉</text>
+					</view>
+				</view>
+			</view>
+
 			<!-- 加载中 -->
 			<view v-if="!loaded" class="center-box">
 				<text class="muted">正在翻找相纸…</text>
@@ -50,6 +67,9 @@
 		<view v-if="uploading" class="upload-bar">
 			<text class="upload-text">上传中 {{ uploadDone }}/{{ uploadTotal }}{{ uploadFailed > 0 ? '（失败' + uploadFailed + '）' : '' }}</text>
 		</view>
+
+		<!-- 底部 Tab（T-NA-1） -->
+		<yishu-tabbar current="home" />
 	</view>
 </template>
 
@@ -61,6 +81,7 @@
 	import { showErrorToast } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
+	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play'
 
 	class DayGroup {
 		key: string
@@ -83,7 +104,8 @@
 				uploading: false,
 				uploadDone: 0,
 				uploadTotal: 0,
-				uploadFailed: 0
+				uploadFailed: 0,
+				echo: null as EchoCard | null
 			}
 		},
 		onLoad() {
@@ -109,6 +131,23 @@
 					this.days = this.groupDays(events)
 					this.loaded = true
 					this.refreshing = false
+				})
+				// T-PL-1：同时拉今日回响（每天≤1 条，无则不显示）
+				fetchTodayEcho().then((card: EchoCard | null) => {
+					this.echo = card
+				})
+			},
+			/** T-PL-1：划掉回响（dismiss 不再出现） */
+			dismissEchoCard(): void {
+				const card = this.echo
+				if (card == null) {
+					return
+				}
+				dismissEcho(card.contentId).then((ok: boolean) => {
+					this.echo = null
+					if (ok) {
+						uni.showToast({ title: '已划掉', icon: 'none' })
+					}
 				})
 			},
 			groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
@@ -395,6 +434,67 @@
 		align-items: center;
 		display: flex;
 		justify-content: center;
+	}
+
+	/* 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄） */
+	.echo-card {
+		margin-top: 24rpx;
+		background-color: #F1E8D8;
+		border-radius: 8rpx;
+		padding: 28rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+		position: relative;
+		overflow: hidden;
+	}
+	.echo-corner {
+		position: absolute;
+		top: 0;
+		right: 0;
+		background-color: #B05A3A;
+		padding-left: 28rpx;
+		padding-right: 28rpx;
+		padding-top: 8rpx;
+		padding-bottom: 8rpx;
+		border-bottom-left-radius: 12rpx;
+	}
+	.echo-corner-text {
+		color: #F6F1E7;
+		font-size: 22rpx;
+		font-weight: bold;
+	}
+	.echo-date {
+		font-size: 22rpx;
+		color: #b3a696;
+	}
+	.echo-text {
+		margin-top: 12rpx;
+		font-size: 30rpx;
+		color: #3A2E25;
+		line-height: 44rpx;
+	}
+	.echo-meta {
+		margin-top: 12rpx;
+		display: flex;
+		flex-direction: row;
+	}
+	.echo-actions {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.echo-dismiss {
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
+		border-width: 1rpx;
+		border-color: rgba(176, 90, 58, 0.6);
+		border-radius: 24rpx;
+	}
+	.echo-dismiss-text {
+		color: #B05A3A;
+		font-size: 24rpx;
 	}
 
 	.upload-bar {
