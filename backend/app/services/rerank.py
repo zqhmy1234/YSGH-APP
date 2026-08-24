@@ -31,8 +31,13 @@ def _load_model():
         import torch
 
         # 2026-08-25 内存优化：fp16（bge-reranker fp32 ~1GB → fp16 ~0.5GB）
+        # 修复（2026-08-25 RAG 审查）：sentence-transformers 3.4.1 的 CrossEncoder
+        # 不接受 model_kwargs（旧版 API）→ 加载必抛 TypeError → 被 except 吞掉静默降级，
+        # rerank 从未真正生效。3.x 用 automodel_args 透传 torch_dtype。
         return CrossEncoder(
-            str(model_path), max_length=512, model_kwargs={"torch_dtype": torch.float16}
+            str(model_path),
+            max_length=512,
+            automodel_args={"torch_dtype": torch.float16},
         )
     except Exception as exc:  # noqa: BLE001 —— 模型加载失败降级为不重排
         logger.warning("reranker 加载失败，跳过重排: %s", exc)

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.event import (
     EventConfirmRequest,
+    EventItemOut,
     EventMergeRequest,
     EventOut,
     EventSplitRequest,
@@ -106,6 +107,26 @@ def sync_events(
         [e.model_dump() for e in req.events],
     )
     return ApiResponse(data=EventSyncResult(**result))
+
+
+@router.get("/{event_id}/items", response_model=ApiResponse[list[EventItemOut]])
+def event_items(
+    event_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """事件成员明细（2026-08-25 · split UI 前置）
+
+    返回事件内内容列表（照片/文字/语音，title 可直接展示），
+    客户端据此做选片拆分；归属校验（他人事件 404）。
+    """
+    from app.services.events import get_event_items as _items
+
+    try:
+        items = _items(db, str(user.id), event_id)
+    except ValueError as exc:
+        raise ApiError("EVENT_004", str(exc), http=404) from exc
+    return ApiResponse(data=items)
 
 
 @router.post("/merge", response_model=ApiResponse[EventOut])

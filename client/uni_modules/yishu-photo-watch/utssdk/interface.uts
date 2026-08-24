@@ -28,8 +28,10 @@ export class PhotoItem {
 	lat: number | null
 	/** 经度（LONGITUDE，无 GPS = null） */
 	lng: number | null
+	/** 文件字节数（SIZE 列；2026-08-25 真机修复：uni.getFileSystemManager().getFileInfo 在 uni-app x 沙箱读不了 MediaStore 绝对路径） */
+	size: number
 
-	constructor(id: number, path: string, takenAt: number, width: number, height: number, lat: number | null, lng: number | null) {
+	constructor(id: number, path: string, takenAt: number, width: number, height: number, lat: number | null, lng: number | null, size: number) {
 		this.id = id
 		this.path = path
 		this.takenAt = takenAt
@@ -37,6 +39,7 @@ export class PhotoItem {
 		this.height = height
 		this.lat = lat
 		this.lng = lng
+		this.size = size
 	}
 }
 

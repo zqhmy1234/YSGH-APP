@@ -101,3 +101,6 @@ research/**/screenshots/
 # --- 归档与本地 CLI 关联（2026-08-21 安全加固：含 workspaceId，不入库）---
 backups/
 .infisical.json
+
+# 本地文件系统存储后端（STORAGE_BACKEND=fs）
+backend/data/storage/

@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     tencent_sts_role_arn: str = ""
     # 对象存储后端（S5-03）：fake=内存（默认/测试）/ minio=本地模拟 / cos=生产
     storage_backend: str = "fake"
+    # 本地文件系统后端根目录（相对 backend/ 解析；2026-08-25 新增，跨进程共享）
+    fs_storage_root: str = "data/storage"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
@@ -93,6 +95,13 @@ class Settings(BaseSettings):
     reranker_model: str = "bge-reranker-v2-m3"  # 2026-08-20: 设计指定版（base 留档可回退）
     # 重排低相关过滤阈值（0=不过滤；bge-reranker sigmoid 分数，实测定标）
     rerank_min_score: float = 0.0
+    # 2026-08-25 RAG 审查：rerank 默认关闭。实测 CPU 上 bge-reranker-v2-m3
+    # 单对 ~850ms——50 候选一次搜索 ~40s，远超 P95<3s 门禁；且 rerank 只重排
+    # 候选集内文档，救不了未进 top-50 的相关文档（描述性查询失效根因在召回层）。
+    # GPU 部署 / 延迟预算允许时置 true 启用（候选数受 rerank_max_candidates 限制）。
+    rerank_enabled: bool = False
+    # 重排候选上限（防 CPU 延迟爆表；默认 20 → ~17s，仍超门禁，仅建议 GPU 用）
+    rerank_max_candidates: int = 20
 
 
 @lru_cache

@@ -1,3 +1,26 @@
+## 🔧 2026-08-25 · 第二波遗留全清 + 真机/模拟器验证 + RAG 管线审查
+
+**状态**：全量 pytest 254 passed（+2 回归测试）｜client 编译通过 + 模拟器/真机验证｜review_agent 待跑
+
+### 第二波遗留收尾（nova11 + 模拟器双端验证）
+1. **S-ST-1 分片上传真机链路打通**：修复 `uni.getFileSystemManager().getFileInfo` 在 uni-app x 沙箱读不了 MediaStore 绝对路径（真机实测报"读取文件信息失败"）→ 文件大小改从 MediaStore SIZE 列注入 PhotoItem；修复后 上传→端侧聚合→L1 事件上云 accepted 全通
+2. **S-MO-1 菜单真机验证**：菜单弹出确认（确认/合并/拆分/取消）；发现 ⋯ 被标题文本 z-order 覆盖（点下半部无效）→ card-ops 加 z-index + 标题右 padding；**双"取消"bug**（itemList 手动加"取消" + showActionSheet 原生自带 → 重复）→ 移除 itemList 里的"取消"
+3. **split UI 全链路**（后端 GET /events/{id}/items + 客户端选片面板 + POST split）：模拟器实测通过（items→split 200→timeline 刷新）
+4. **split/merge 时间窗 bug（autoflush=False）**：db.add(EventItem) 未落库时 _refresh_event_window 查不到新成员 → 拆出新事件 start_time=None → 时间轴分组到"1月1日" → merge/split 前加 db.flush()；+2 回归测试
+5. **EXIF 排查实锤**：MediaStore scan_file 提取 DateTimeOriginal（datetaken 正确）但**丢弃 GPSInfo**（latitude/longitude=NULL）→ 注入测试链路无 GPS；真实相机照片（相机直写 MediaStore）GPS 可用
+6. **AMAP 后端全链路 E2E**：login→init→chunk→complete(meta GPS)→worker→place=上海市浦东新区陆家嘴街道东方明珠广播电视塔（真实逆地理）
+7. **fs 存储后端新增**（FilesystemStorageBackend）：fake 是进程内单例，uvicorn/worker 跨进程读不到（复盘坑 24）→ 本地文件系统后端跨进程共享；.env STORAGE_BACKEND=fs
+8. **S-EM-1 模拟器**：Android 35 x86_64 system-image + AVD yishu_test 创建并启动成功（备用验证设备）
+9. **S-XV XView**：仍等自定义基座（SQLCipher 需云打包/本地打包）
+
+### RAG 管线系统性审查（docs/RAG管线审查报告_20260825.md）
+1. **recall@3=0.0841 低的根因**：指标分母=expected_label 类全集（15-20 条），Top-3 上限 3/类 ≈ 0.15-0.20，实测已达上限 50-70%——不是检索坏了（hit_rate@3=0.82 / precision@3=0.52 / mrr=0.77）
+2. **修复 3 个真 bug**：①rerank 自 8-24 起从未生效（CrossEncoder model_kwargs 参数在 ST 3.4.1 已移除 → 静默降级）→ automodel_args；②时间正则误伤（句中"上个月"被当过滤意图 → length 层空结果）→ 仅句首触发；③关键词精确命中被稠密噪声稀释 → _boost_exact_matches（词元全命中 ×1.8）
+3. **rerank 默认关闭**（rerank_enabled=false）：CPU 实测 ~850ms/对，50 候选 ≈ 40s 远超 P95<3s 门禁；GPU 部署时开启
+4. **修复后基准**：hit_rate@3=0.7273（门禁 PASS）｜length 层 0.5→1.0｜mrr 0.66
+5. **架构级短板**：描述性/释义查询召回不足（双编码器语义鸿沟，需 LLM 改写或 SetFit 类目路由）；评测集结构性缺陷（label 全集作分母 + 无 taken_at payload）
+
+---
 
 ## 🔧 2026-08-25 · RAG 测试体系核实修复 + AMAP 逆地理落地 + Sentry 客户端接线
 

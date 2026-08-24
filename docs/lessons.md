@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-24 21:43 · commit 365a386 · ts=1787604224
+- **错误**：review_agent 全量门禁失败：lint（storage.py Path 未导入到模块级 + rag.py 超长行）+ tests（test_amap/test_asr mock 断言失败）
+- **根因**：①FilesystemStorageBackend 的 from pathlib import Path 写在 __init__ 内，_safe_path 用不到模块级 → ruff F821；②rag.py rerank 候选行超 120 字符 → E501；③.env 配了 MOCK_EXTERNAL_AI=false + STORAGE_BACKEND=fs（本地真实服务），测试套件按 mock+fake 断言 → 未覆盖 env 时 test_amap/test_asr 全挂
+- **修复**：①Path 提到模块级导入 ②候选列表拆变量换行 ③test_agent.py run_pytest 强制 MOCK_EXTERNAL_AI=true + STORAGE_BACKEND=fake（测试环境封闭，不随 .env 漂移）
+- **相关文件**：backend/app/services/external/storage.py,backend/app/services/rag.py,scripts/test_agent.py
+- **教训**：（无）
+
+---
+
+### 2026-08-24 21:38 · commit 365a386 · ts=1787603920
+- **错误**：真机/模拟器实测暴露 4 个客户端+后端 bug
+- **根因**：①uni.getFileSystemManager().getFileInfo 在 uni-app x 沙箱读不了 MediaStore 绝对路径（/storage/emulated/0/...）必失败——上传链路 init 前就断；②卡片 ⋯ 按钮在模板里排在标题前，标题文本节点渲染在 ⋯ 之上（z-order），下半部点击命中标题；③showActionSheet itemList 手动加'取消' + 原生自带取消按钮 → 两个取消；④SessionLocal autoflush=False，split/merge 中 db.add(EventItem) 未落库时 _refresh_event_window 查不到新成员 → 新事件 start_time=None → 时间轴分组到 1970/1月1日
+- **修复**：①文件大小改从 MediaStore SIZE 列读（PhotoItem 加 size 字段）②card-ops 加 z-index:5 + 标题 padding-right ③移除 itemList 里的'取消' ④merge/split 成员变更后 db.flush() 再刷新窗口
+- **相关文件**：client/utils/uploader.ts,client/pages/index/index.uvue,backend/app/services/events.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-24 18:54 · commit a2993d2 · ts=1787594057
 - **错误**：review_agent/api_smoke 峰值内存 ~4-6GB：可用内存 0.9GB 时 git commit 被 SIGKILL（pre-commit hook 跑 review_agent）
 - **根因**：smoke 单进程同时加载 SetFit（fp32 2.2GB）+ BGE-M3 fp16（1.7GB）+ reranker（fp32 ~1GB）≈5.5-6GB；本机 TRAE/WorkBuddy/WSL 常驻吃内存；HBuilderX 编译残留 30+ node 进程累积；被 kill 的 commit 留下孤儿 smoke 进程继续占 3GB

@@ -152,6 +152,12 @@ class PhotoObserver extends ContentObserver {
 						lat = cursor.getDouble(latCol)
 						lng = cursor.getDouble(lngCol)
 					}
+					// 文件大小（SIZE 列；2026-08-25 真机修复：getFileSystemManager().getFileInfo 沙箱读不了绝对路径）
+					let size: number = 0
+					const sizeCol = cursor.getColumnIndex(MediaStore.Images.Media.SIZE)
+					if (sizeCol >= 0 && !cursor.isNull(sizeCol)) {
+						size = cursor.getLong(sizeCol)
+					}
 					items.push(new PhotoItem(
 						id,
 						path,
@@ -159,7 +165,8 @@ class PhotoObserver extends ContentObserver {
 						0,
 						0,
 						lat,
-						lng
+						lng,
+						size
 					))
 				}
 				cursor.close()

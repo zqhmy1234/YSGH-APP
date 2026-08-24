@@ -53,8 +53,15 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
     rewritten = q.q
     now = datetime.now(timezone.utc).astimezone()
 
+    # 修复（2026-08-25 RAG 审查）：时间表达只在【句首】才算时间过滤意图。
+    # 此前 pattern.search 任意位置命中即加 time 过滤并删词——"记得明天下午之前把
+    # 上个月的工作总结报告交给领导" 中"上个月"是名词修饰语，不是查询意图，
+    # 误加过滤 + 语料无 taken_at → 检索空结果（length 层 hit_rate 0.5 根因）。
+    # 规则：时间词在句首（"去年去的地方"/"上个月的照片"）→ 时间意图，过滤+删词；
+    # 句中/句尾（"我们去年去了苏州"/"把上个月的总结交了"）→ 描述性提及，不过滤。
     for pattern, kind in _TIME_PATTERNS:
-        if pattern.search(q.q):
+        m = pattern.search(q.q)
+        if m and m.start() == 0:
             if kind == "last_year":
                 filters["time_from"] = now.replace(year=now.year - 1, month=1, day=1)
                 filters["time_to"] = now.replace(year=now.year - 1, month=12, day=31)
@@ -136,6 +143,33 @@ def _merge_recalls(recalls: list[list[dict]], limit: int = 50) -> list[dict]:
             if cid not in merged or hit["score"] > merged[cid]["score"]:
                 merged[cid] = hit
     return sorted(merged.values(), key=lambda x: x["score"], reverse=True)[:limit]
+
+
+def _boost_exact_matches(query: str, raw_hits: list[dict]) -> list[dict]:
+    """关键词精确命中提升（2026-08-25 RAG 审查新增）
+
+    问题（探针实锤）："马拉松""收房租"等字面关键词查询，RRF 里 dense 路权重 0.7，
+    语义近邻（todo/quote 等无关键词文档）排名压过 sparse 精确命中文档 →
+    字面命中被稠密噪声稀释（probe：马拉松 top3 里精确命中的 emotion 文档排第 3）。
+
+    规则：rewritten 的全部词元（长度≥2，按标点/空白切分）都出现在文档原文 →
+    精确命中，score ×1.8 后重排。描述性查询（"关于做产品的想法"）无文档能全词命中
+    → 不触发，零副作用；单 token 查询（"马拉松"/"买牛奶"）同样受益。
+    """
+    if not raw_hits or not query:
+        return raw_hits
+    tokens = [t for t in re.split(r"[\s,，。.！!？?、；;：:（）()「」『』【】\"'‘’]", query) if len(t) >= 2]
+    if not tokens:
+        return raw_hits
+    # 拷贝后修改（2026-08-25 测试暴露：原地改 score 会污染调用方复用的列表）
+    out: list[dict] = []
+    for h in raw_hits:
+        nh = dict(h)
+        text = nh.get("text") or ""
+        if text and all(t in text for t in tokens):
+            nh["score"] = round(float(nh["score"]) * 1.8, 4)
+        out.append(nh)
+    return sorted(out, key=lambda x: float(x["score"]), reverse=True)
 
 
 def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) -> list[SearchHit]:
@@ -242,6 +276,9 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         degraded = True
         raw_hits = []
 
+    # 3.5 精确命中提升（词元全命中 → 提到稠密噪声之上；描述性查询不受影响）
+    raw_hits = _boost_exact_matches(rewritten, raw_hits)
+
     # 4. 溯源组装（RET-016：每条结果可解释命中字段）
     hits = _assemble_hits(raw_hits, q.limit, db, user_id)
 
@@ -249,12 +286,15 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
 
     # 4.5 双层 Rerank 第一层（bge-reranker 粗排 + 低相关过滤；
     #      候选无 text/模型未就绪 → 原序）
-    if hits:
-        hits = [c["hit"] for c in rerank(
-            rewritten,
-            [{"id": h.content_id, "text": h.text or "", "score": h.score, "hit": h} for h in hits],
-            min_score=settings.rerank_min_score,
-        )][: q.limit]
+    # 2026-08-25 RAG 审查：默认关闭（CPU ~850ms/对，50 候选 ~40s 超 P95<3s 门禁；
+    # 且只重排候选集内文档，描述性查询失效根因在召回层）。GPU 部署时置
+    # settings.rerank_enabled=true 启用，候选数限制在 rerank_max_candidates 内。
+    if settings.rerank_enabled and hits:
+        cands = [
+            {"id": h.content_id, "text": h.text or "", "score": h.score, "hit": h}
+            for h in hits[: settings.rerank_max_candidates]
+        ]
+        hits = [c["hit"] for c in rerank(rewritten, cands, min_score=settings.rerank_min_score)][: q.limit]
 
     return SearchResult(
         query=q.q,

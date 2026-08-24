@@ -136,6 +136,42 @@ def test_query_rewrite_time_filter():
     assert ner_filters == {}
 
 
+def test_query_rewrite_time_modifier_mid_query():
+    """2026-08-25 RAG 审查修复：句中时间词是名词修饰语，不是过滤意图
+
+    回归："记得明天下午之前把上个月的工作总结报告交给领导" 此前误加 time 过滤
+    → 语料无 taken_at 时检索空结果（benchmark length 层 hit_rate 0.5 根因）。
+    现在句中"上个月"不再触发过滤，也不删词。
+    """
+    q = SearchQuery(q="记得明天下午之前把上个月的工作总结报告交给领导")
+    rewritten, filters, ner_filters = _rewrite_query(q)
+    assert "time_from" not in filters
+    assert "time_to" not in filters
+    assert rewritten == q.q
+    assert ner_filters == {}
+
+
+def test_boost_exact_matches():
+    """2026-08-25 RAG 审查新增：词元全命中文档提升到稠密噪声之上
+
+    用贴近 RRF 的密集分数（0.0115 vs 0.0111，真实 RRF 分数差距极小）——
+    ×1.8 提升足够把精确命中文档顶到首位。
+    """
+    from app.services.rag import _boost_exact_matches
+
+    hits = [
+        {"content_id": "a", "text": "今天跑了马拉松，配速五分", "score": 0.0111},
+        {"content_id": "b", "text": "周末计划和朋友吃饭", "score": 0.0115},
+    ]
+    boosted = _boost_exact_matches("马拉松", hits)
+    assert boosted[0]["content_id"] == "a"
+    assert boosted[0]["score"] > boosted[1]["score"]
+    # 描述性查询无全词命中 → 原序
+    hits2 = [dict(h) for h in hits]
+    boosted2 = _boost_exact_matches("关于做产品的想法", hits2)
+    assert [h["content_id"] for h in boosted2] == ["b", "a"]
+
+
 def test_rewrite_ner_place_extraction():
     """B2-2 NER：查询含地名 → place 过滤 + ner_filters 标记（可回退）"""
     q = SearchQuery(q="苏州的美食")

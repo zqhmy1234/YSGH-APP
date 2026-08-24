@@ -451,6 +451,31 @@ def _get_event(db: Session, user_id: str, event_id: str) -> Event:
     return ev
 
 
+def get_event_items(db: Session, user_id: str, event_id: str) -> list[dict]:
+    """事件成员明细（2026-08-25 · S-MO split UI 前置）
+
+    按 taken_at 升序返回成员（照片/文字/语音统一为 title 展示字段），
+    供客户端勾选拆分成新事件。归属校验同 _get_event（他人事件 404）。
+    """
+    _get_event(db, user_id, event_id)
+    rows = db.execute(
+        select(Content)
+        .join(EventItem, EventItem.content_id == Content.id)
+        .where(EventItem.event_id == event_id)
+        .order_by(Content.taken_at.asc().nulls_last(), Content.created_at.asc())
+    ).scalars().all()
+    return [
+        {
+            "content_id": str(c.id),
+            "content_type": c.content_type,
+            "title": (c.text or "")[:80] if c.text else None,
+            "taken_at": c.taken_at,
+            "place": c.place,
+        }
+        for c in rows
+    ]
+
+
 def _log_edit(db: Session, user_id: str, event_id: str, action: str, detail: dict | None = None) -> None:
     """记录用户手动操作痕迹（B3-5；审计/回滚依据）"""
     db.add(EventEditLog(user_id=user_id, event_id=event_id, action=action, detail=detail))
@@ -488,6 +513,9 @@ def merge_events(db: Session, user_id: str, target_id: str, source_ids: list[str
         src.deleted_by = user_id
     # 更新时间窗覆盖合并范围
     if moved:
+        # 2026-08-25 修复：autoflush=False，新增 EventItem 未落库时 _refresh_event_window
+        # 查不到新成员 → 窗口/标题条数漏算（真机拆分子验证暴露同型 bug）。先 flush。
+        db.flush()
         _refresh_event_window(db, target)
     target.status = "confirmed"  # 用户背书：不再被算法改动
     _log_edit(db, user_id, str(target.id), "merge", {"sources": source_ids, "moved": moved})
@@ -529,6 +557,9 @@ def split_event(db: Session, user_id: str, event_id: str, content_ids: list[str]
             )
         )
         db.add(EventItem(content_id=cid, event_id=new_ev.id))
+    # 2026-08-25 修复：autoflush=False，先落库成员变更，_refresh_event_window 才能
+    # 读到新成员（此前新事件 start_time=None → 时间轴分组到 1970/1月1日）
+    db.flush()
     _refresh_event_window(db, ev)
     _refresh_event_window(db, new_ev)
     _log_edit(db, user_id, str(new_ev.id), "split", {"source_event": event_id, "contents": content_ids})

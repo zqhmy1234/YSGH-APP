@@ -307,51 +307,45 @@ function completeUpload(uploadId: string, item: PhotoItem): Promise<string> {
 
 function uploadOne(item: PhotoItem, attempt: number): Promise<string> {
 	return new Promise<string>((resolve, reject) => {
-		// 0. 文件大小（init 必填）——uni.getFileInfo 在 uni-app x 不可用，用 FileSystemManager
-		uni.getFileSystemManager().getFileInfo({
-			filePath: item.path,
-			success: (info) => {
-				const fileSize = info.size as number
-				if (fileSize <= 0) {
-					reject(new Error('文件大小为 0'))
-					return
-				}
-				// 1. 断点：已有 upload_id 直接复用，否则 init
-				const existing = findPending(item.path)
-				if (existing != '') {
-					statusMissing(existing).then((missing: boolean) => {
-						if (!missing) {
-							// 分片已齐（上次 complete 前中断）→ 直接 complete
-							completeUpload(existing, item).then((cid: string) => {
-								if (cid != '') {
-									clearPending(item.path)
-									resolve(cid)
-								} else {
-									reject(new Error('complete 失败'))
-								}
-							})
+		// 0. 文件大小（init 必填）——2026-08-25 真机修复：不再用 getFileSystemManager()
+		// .getFileInfo（uni-app x 沙箱读不了 MediaStore 绝对路径，必失败），改用
+		// MediaStore SIZE 列（emitIncremental 已注入 PhotoItem.size）。
+		const fileSize = item.size
+		if (fileSize <= 0) {
+			reject(new Error('文件大小为 0'))
+			return
+		}
+		// 1. 断点：已有 upload_id 直接复用，否则 init
+		const existing = findPending(item.path)
+		if (existing != '') {
+			statusMissing(existing).then((missing: boolean) => {
+				if (!missing) {
+					// 分片已齐（上次 complete 前中断）→ 直接 complete
+					completeUpload(existing, item).then((cid: string) => {
+						if (cid != '') {
+							clearPending(item.path)
+							resolve(cid)
 						} else {
-							putChunk(existing, item).then((ok: boolean) => {
-								finishUpload(existing, ok, item, resolve, reject)
-							})
+							reject(new Error('complete 失败'))
 						}
 					})
-					return
-				}
-				initUpload(item, fileSize).then((uploadId: string) => {
-					if (uploadId == '') {
-						reject(new Error('init 失败'))
-						return
-					}
-					savePending(item.path, uploadId)
-					putChunk(uploadId, item).then((ok: boolean) => {
-						finishUpload(uploadId, ok, item, resolve, reject)
+				} else {
+					putChunk(existing, item).then((ok: boolean) => {
+						finishUpload(existing, ok, item, resolve, reject)
 					})
-				})
-			},
-			fail: () => {
-				reject(new Error('读取文件信息失败'))
+				}
+			})
+			return
+		}
+		initUpload(item, fileSize).then((uploadId: string) => {
+			if (uploadId == '') {
+				reject(new Error('init 失败'))
+				return
 			}
+			savePending(item.path, uploadId)
+			putChunk(uploadId, item).then((ok: boolean) => {
+				finishUpload(uploadId, ok, item, resolve, reject)
+			})
 		})
 	})
 }

@@ -44,6 +44,20 @@ class EventConfirmRequest(BaseModel):
     title: str | None = None
 
 
+class EventItemOut(BaseModel):
+    """事件成员明细（2026-08-25 新增 · S-MO split UI 前置）
+
+    供客户端做选片拆分：显示成员列表（照片/文字/语音），勾选后调 split。
+    title = 照片 caption / 文字原文 / 语音转写（截断），客户端直接展示。
+    """
+
+    content_id: str
+    content_type: str
+    title: str | None = None
+    taken_at: datetime | None = None
+    place: str | None = None
+
+
 class ClientEventItem(BaseModel):
     """端侧 L1 事件（S-SY-1：client_event_id 幂等键）
 

@@ -79,6 +79,29 @@ class TestMerge:
         logs = db.execute(select(EventEditLog).where(EventEditLog.action == "merge")).scalars().all()
         assert len(logs) == 1
 
+    def test_merge_window_covers_merged_content(self, db_user):
+        """2026-08-25 修复回归：合并后 target 时间窗必须覆盖并入内容
+
+        此前 autoflush=False 导致 _refresh_event_window 查不到新转移的成员 →
+        窗口漏算并入内容（标题条数也不更新）。
+        """
+        from app.services.events import merge_events
+
+        db, user = db_user
+        t = _event(db, user.id)
+        s = _event(db, user.id)
+        base = datetime.now(timezone.utc) - timedelta(hours=3)
+        tc = _content(db, user.id, t, ts=base)
+        sc = _content(db, user.id, s, ts=base + timedelta(hours=2))
+        t.title_source = "template"  # 触发 _refresh_event_window 重算标题
+        db.commit()
+
+        result = merge_events(db, str(user.id), str(t.id), [str(s.id)])
+        db.refresh(result)
+        assert result.start_time == tc.taken_at
+        assert result.end_time == sc.taken_at
+        assert result.title.endswith("2条")
+
     def test_merge_idempotent_duplicate(self, db_user):
         from app.services.events import merge_events
 
@@ -128,6 +151,35 @@ class TestSplit:
         new_items = db.execute(select(EventItem).where(EventItem.event_id == new_ev.id)).scalars().all()
         assert [str(i.content_id) for i in new_items] == [str(c2.id)]
 
+    def test_split_new_event_window_from_moved_content(self, db_user):
+        """2026-08-25 修复回归：拆出新事件的时间窗必须来自拆出内容
+
+        此前 autoflush=False 导致 _refresh_event_window 查不到新成员 →
+        start_time=None → 时间轴分组到 1970/1月1日（真机拆分子验证暴露）。
+        """
+        from app.services.events import split_event
+
+        db, user = db_user
+        ev = _event(db, user.id)
+        base = datetime.now(timezone.utc) - timedelta(hours=3)
+        c1 = _content(db, user.id, ev, ts=base)
+        c2 = _content(db, user.id, ev, ts=base + timedelta(hours=1))
+        c3 = _content(db, user.id, ev, ts=base + timedelta(hours=2))
+        ev.title_source = "template"  # 触发 _refresh_event_window 重算标题
+        db.commit()
+
+        new_ev = split_event(db, str(user.id), str(ev.id), [str(c2.id), str(c3.id)])
+        db.refresh(new_ev)
+        # 修复回归：新事件时间窗来自拆出内容（此前 autoflush=False → start_time=None）
+        assert new_ev.start_time == c2.taken_at
+        assert new_ev.end_time == c3.taken_at
+        # 原事件窗口收窄为剩余成员 + 模板标题条数更新
+        db.refresh(ev)
+        assert ev.start_time == c1.taken_at
+        assert ev.end_time == c1.taken_at
+        assert ev.title.endswith("1条")
+        # 新事件 title_source=user（用户拆分保留标题），不参与模板重算
+
     def test_split_foreign_content_rejected(self, db_user):
         from app.services.events import split_event
 
@@ -169,6 +221,36 @@ class TestConfirm:
         foreign = _event(db, str(other.id))
         with pytest.raises(ValueError):
             confirm_event(db, str(user.id), str(foreign.id))
+        db.execute(sa_delete(Event).where(Event.user_id == str(other.id)))
+        db.delete(other)
+        db.commit()
+
+class TestEventItems:
+    def test_items_ordered_by_taken_at(self, db_user):
+        from app.services.events import get_event_items
+
+        db, user = db_user
+        ev = _event(db, user.id)
+        c1 = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=2))
+        c2 = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=1))
+        c1.text = "第一张照片的caption"
+        c2.text = "第二张照片的caption"
+        db.commit()
+        items = get_event_items(db, str(user.id), str(ev.id))
+        assert [i["content_id"] for i in items] == [str(c1.id), str(c2.id)]
+        assert items[0]["title"] == "第一张照片的caption"
+        assert items[0]["content_type"] == "photo"
+
+    def test_items_foreign_event_rejected(self, db_user):
+        from app.services.events import get_event_items
+
+        db, user = db_user
+        other = User(phone=f"evt-{uuid.uuid4().hex[:8]}", status=1)
+        db.add(other)
+        db.commit()
+        foreign = _event(db, str(other.id))
+        with pytest.raises(ValueError):
+            get_event_items(db, str(user.id), str(foreign.id))
         db.execute(sa_delete(Event).where(Event.user_id == str(other.id)))
         db.delete(other)
         db.commit()

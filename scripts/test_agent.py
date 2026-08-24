@@ -86,7 +86,12 @@ def _free_memory_gb() -> float:
 
 
 def run_pytest(cov_threshold: int) -> tuple[bool, str]:
-    """pytest 全量 + 覆盖率"""
+    """pytest 全量 + 覆盖率（2026-08-25：测试环境封闭——覆盖 MOCK/STORAGE_BACKEND
+
+    .env 可能配真实服务（MOCK_EXTERNAL_AI=false / STORAGE_BACKEND=fs），
+    测试套件按 mock+fake 断言；不覆盖会因 .env 状态导致 test_amap/test_asr
+    等 mock 断言失败（review_agent 全量门禁暴露）。
+    """
     cmd = [
         sys.executable, "-m", "pytest", "backend/tests",
         "-q", "--tb=short",
@@ -94,7 +99,12 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
         "--cov-report=term-missing",
         f"--cov-fail-under={cov_threshold}",
     ]
-    code, out = run(cmd)
+    env = {
+        **dict(__import__("os").environ),
+        "MOCK_EXTERNAL_AI": "true",
+        "STORAGE_BACKEND": "fake",
+    }
+    code, out = run(cmd, env=env)
     if "No module named pytest" in out or "No module named pytest-cov" in out:
         return True, f"[skip] 缺依赖：{out.strip().splitlines()[-1] if out.strip() else 'pytest'}"
     return (code == 0), out.strip()[-2500:]

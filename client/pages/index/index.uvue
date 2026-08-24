@@ -67,6 +67,39 @@
 			</view>
 		</scroll-view>
 
+		<!-- 拆分选片面板（S-MO-1 split UI · 2026-08-25） -->
+		<view v-if="showSplitPanel" class="split-mask" @tap="cancelSplit">
+			<view class="split-panel" @tap.stop>
+				<text class="split-title serif">拆分这张卡</text>
+				<text class="split-sub muted">勾选要拆出的内容，剩余留在原卡</text>
+				<scroll-view class="split-list" scroll-y>
+					<view v-if="splitLoading" class="split-empty">
+						<text class="muted">正在加载成员…</text>
+					</view>
+					<view v-else-if="splitItems.length === 0" class="split-empty">
+						<text class="muted">没有可拆分的成员</text>
+					</view>
+					<view v-for="(item, idx) in splitItems" :key="item.contentId" class="split-row" @tap="toggleSplitItem(idx)">
+						<view class="split-check" :class="item.selected ? 'split-check-on' : ''">
+							<text v-if="item.selected" class="split-check-mark">✓</text>
+						</view>
+						<view class="split-row-main">
+							<text class="split-row-title">{{ item.title == '' ? '（无文字）' : item.title }}</text>
+							<text class="split-row-meta muted">{{ item.contentType }} · {{ splitTimeText(item.takenAt) }}</text>
+						</view>
+					</view>
+				</scroll-view>
+				<view class="split-actions">
+					<view class="split-btn split-btn-ghost" @tap="cancelSplit">
+						<text class="split-btn-text">取消</text>
+					</view>
+					<view class="split-btn split-btn-solid" @tap="confirmSplit">
+						<text class="split-btn-text">确认拆分</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
 		<!-- 上传进度浮层（B-UP-1 进度回调） -->
 		<view v-if="uploading" class="upload-bar">
 			<text class="upload-text">上传中 {{ uploadDone }}/{{ uploadTotal }}{{ uploadFailed > 0 ? '（失败' + uploadFailed + '）' : '' }}</text>
@@ -86,7 +119,7 @@
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play'
-	import { confirmEvent, mergeEvent } from '@/utils/event_ops'
+	import { confirmEvent, mergeEvent, fetchEventItems, splitEvent, SplitItem, flushOpQueue } from '@/utils/event_ops'
 
 	class DayGroup {
 		key: string
@@ -110,7 +143,11 @@
 				uploadDone: 0,
 				uploadTotal: 0,
 				uploadFailed: 0,
-				echo: null as EchoCard | null
+				echo: null as EchoCard | null,
+				showSplitPanel: false,
+				splitEventId: '',
+				splitItems: [] as Array<SplitItem>,
+				splitLoading: false
 			}
 		},
 		onLoad() {
@@ -132,6 +169,12 @@
 		methods: {
 			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下） */
 			reload(): void {
+				// 2026-08-25 离线 op_log：联网后先补发离线操作，再刷新（顺序执行）
+				flushOpQueue().then((_remain: number) => {
+					this.fetchAll()
+				})
+			},
+			fetchAll(): void {
 				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
 					this.days = this.groupDays(events)
 					this.loaded = true
@@ -142,10 +185,12 @@
 					this.echo = card
 				})
 			},
-			/** S-MO-1：卡片操作菜单（L1：确认/合并到上一张；L2：确认主题） */
+			/** S-MO-1：卡片操作菜单（L1：确认/合并到上一张/拆分；L2：确认主题）
+			 * 2026-08-25 修复：itemList 不再手动加"取消"——showActionSheet 原生自带底部取消按钮，
+			 * 手动加会重复（nova11 实测出现两个"取消"）。取消由原生按钮/fail 回调处理。 */
 			onCardOps(ev: TimelineEvent, dayIdx: number): void {
 				if (ev.level === 1) {
-					const items: Array<string> = ['确认这张卡', '合并到上一张', '取消']
+					const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
 					uni.showActionSheet({
 						itemList: items,
 						success: (res) => {
@@ -153,12 +198,14 @@
 								this.doConfirm(ev)
 							} else if (res.tapIndex === 1) {
 								this.doMerge(ev, dayIdx)
+							} else if (res.tapIndex === 2) {
+								this.doSplit(ev)
 							}
 						},
 						fail: () => {}
 					})
 				} else {
-					const items2: Array<string> = ['确认这个主题', '取消']
+					const items2: Array<string> = ['确认这个主题']
 					uni.showActionSheet({
 						itemList: items2,
 						success: (res) => {
@@ -205,6 +252,73 @@
 						uni.showToast({ title: '合并失败', icon: 'none' })
 					}
 				})
+			},
+			/** 拆分：拉成员列表 → 选片面板（2026-08-25 S-MO-1 split UI） */
+			doSplit(ev: TimelineEvent): void {
+				this.splitLoading = true
+				this.showSplitPanel = true
+				this.splitEventId = ev.id
+				this.splitItems = []
+				fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
+					this.splitLoading = false
+					this.splitItems = items
+					if (items.length < 2) {
+						uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
+					}
+				})
+			},
+			toggleSplitItem(idx: number): void {
+				const items = this.splitItems
+				if (idx < 0 || idx >= items.length) {
+					return
+				}
+				const it = items[idx]
+				it.selected = !it.selected
+				items[idx] = it
+				this.splitItems = items
+			},
+			/** 确认拆分：至少选 1 条且不全选（拆出建新事件） */
+			confirmSplit(): void {
+				const items = this.splitItems
+				const ids: Array<string> = []
+				for (let i = 0; i < items.length; i++) {
+					if (items[i].selected) {
+						ids.push(items[i].contentId)
+					}
+				}
+				if (ids.length == 0) {
+					uni.showToast({ title: '至少选择一条', icon: 'none' })
+					return
+				}
+				if (ids.length >= items.length) {
+					uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
+					return
+				}
+				splitEvent(this.splitEventId, ids).then((ok: boolean) => {
+					this.showSplitPanel = false
+					if (ok) {
+						uni.showToast({ title: '已拆分', icon: 'none' })
+					} else {
+						uni.showToast({ title: '拆分失败', icon: 'none' })
+					}
+					this.reload()
+				})
+			},
+			cancelSplit(): void {
+				this.showSplitPanel = false
+				this.splitItems = []
+			},
+			/** 拆分面板时间文案（epoch ms → MM-DD HH:mm；0=未知） */
+			splitTimeText(ts: number): string {
+				if (ts <= 0) {
+					return '时间未知'
+				}
+				const d = new Date(ts)
+				const mm = (d.getMonth() + 1).toString()
+				const dd = d.getDate().toString()
+				const hh = d.getHours().toString()
+				const mi = d.getMinutes().toString()
+				return (mm.length < 2 ? '0' + mm : mm) + '-' + (dd.length < 2 ? '0' + dd : dd) + ' ' + (hh.length < 2 ? '0' + hh : hh) + ':' + (mi.length < 2 ? '0' + mi : mi)
 			},
 			/** T-PL-1：划掉回响（dismiss 不再出现） */
 			dismissEchoCard(): void {
@@ -444,7 +558,9 @@
 		border-bottom-left-radius: 2rpx;
 		position: relative;
 	}
-	/* S-MO-1 操作入口：右上角 · 干净按钮（视觉规范：按钮不做旧） */
+	/* S-MO-1 操作入口：右上角 · 干净按钮（视觉规范：按钮不做旧）
+	z-index: 5 —— 2026-08-25 真机修复：标题文本节点覆盖 ⋯ 下半部（点击命中层），
+	加 z-index 保证整颗 ⋯ 可点 */
 	.card-ops {
 		position: absolute;
 		top: 8rpx;
@@ -453,6 +569,7 @@
 		padding-right: 20rpx;
 		padding-top: 6rpx;
 		padding-bottom: 6rpx;
+		z-index: 5;
 	}
 	.card-ops-text {
 		font-size: 40rpx;
@@ -469,6 +586,7 @@
 	}
 	.card-title {
 		color: #3A2E25;
+		padding-right: 96rpx; /* 2026-08-25 真机修复：避免标题文字压到右上角 ⋯ */
 	}
 	.title-l1 {
 		font-size: 36rpx;
@@ -597,5 +715,110 @@
 	.upload-text {
 		color: #F6F1E7;
 		font-size: 26rpx;
+	}
+
+	/* S-MO-1 拆分选片面板（2026-08-25） */
+	.split-mask {
+		position: fixed;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.45);
+		display: flex;
+		align-items: flex-end;
+		z-index: 100;
+	}
+	.split-panel {
+		width: 100%;
+		background-color: #F6F1E7;
+		border-top-left-radius: 28rpx;
+		border-top-right-radius: 28rpx;
+		padding: 32rpx 32rpx 40rpx 32rpx;
+	}
+	.split-title {
+		font-size: 34rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.split-sub {
+		font-size: 24rpx;
+		margin-top: 8rpx;
+	}
+	.split-list {
+		margin-top: 24rpx;
+		max-height: 560rpx;
+	}
+	.split-empty {
+		padding: 40rpx 0;
+		display: flex;
+		justify-content: center;
+	}
+	.split-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: rgba(58, 46, 37, 0.08);
+	}
+	.split-check {
+		width: 40rpx;
+		height: 40rpx;
+		border-radius: 20rpx;
+		border-width: 2rpx;
+		border-color: #B05A3A;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+	.split-check-on {
+		background-color: #B05A3A;
+	}
+	.split-check-mark {
+		color: #F6F1E7;
+		font-size: 26rpx;
+	}
+	.split-row-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+	.split-row-title {
+		font-size: 28rpx;
+		color: #3A2E25;
+	}
+	.split-row-meta {
+		font-size: 22rpx;
+		margin-top: 4rpx;
+	}
+	.split-actions {
+		margin-top: 32rpx;
+		display: flex;
+		flex-direction: row;
+	}
+	.split-btn {
+		flex: 1;
+		height: 80rpx;
+		border-radius: 40rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.split-btn-ghost {
+		border-width: 2rpx;
+		border-color: #B05A3A;
+		margin-right: 20rpx;
+	}
+	.split-btn-solid {
+		background-color: #B05A3A;
+	}
+	.split-btn-text {
+		font-size: 28rpx;
+		color: #3A2E25;
+	}
+	.split-btn-solid .split-btn-text {
+		color: #F6F1E7;
 	}
 </style>

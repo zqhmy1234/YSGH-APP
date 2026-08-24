@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from app.core.config import settings
 
@@ -116,6 +117,48 @@ class MinioStorageBackend(StorageBackend):
             return False
 
 
+class FilesystemStorageBackend(StorageBackend):
+    """本地文件系统后端（2026-08-25 · 跨进程共享）
+
+    背景：fake 是进程内单例，uvicorn 上传写完后 worker（另一进程）读不到对象
+    （复盘坑 24 "fake 存储进程内单例"）——设备上传链路因此断在 worker 下载照片。
+    本地开发/单机部署用 fs 后端：对象落在磁盘目录，多进程共享，零外部依赖。
+    路径安全：key 为服务端生成的相对键，拒绝 `..`/绝对路径/反斜杠。
+    """
+
+    def __init__(self, root: str | None = None) -> None:
+        base = root or settings.fs_storage_root
+        p = Path(base)
+        if not p.is_absolute():
+            p = Path(__file__).resolve().parent.parent.parent.parent / base
+        self._root = p
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def _safe_path(self, key: str) -> Path:
+        if not key or key.startswith("/") or "\\" in key or ".." in key.split("/"):
+            raise ValueError(f"非法对象键: {key}")
+        return self._root / key
+
+    def put_object(self, key: str, data: bytes) -> None:
+        p = self._safe_path(key)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+
+    def get_object(self, key: str) -> bytes:
+        p = self._safe_path(key)
+        if not p.is_file():
+            raise KeyError(f"object not found: {key}")
+        return p.read_bytes()
+
+    def delete_object(self, key: str) -> None:
+        p = self._safe_path(key)
+        if p.is_file():
+            p.unlink()
+
+    def object_exists(self, key: str) -> bool:
+        return self._safe_path(key).is_file()
+
+
 class CosStorageBackend(StorageBackend):
     """腾讯云 COS（生产；cos-python-sdk-v5）"""
 
@@ -185,6 +228,7 @@ class CosStorageBackend(StorageBackend):
 
 _BACKENDS: dict[str, type[StorageBackend]] = {
     "fake": FakeStorageBackend,
+    "fs": FilesystemStorageBackend,
     "minio": MinioStorageBackend,
     "cos": CosStorageBackend,
 }
