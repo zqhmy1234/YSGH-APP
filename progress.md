@@ -22,10 +22,10 @@
 12. **接线**：App.uvue onLaunch initSentry + onError（UTS error17：生命周期参数须声明 any）；api.ts 5xx + 网络失败上报（4xx 不打扰）
 13. **编译**：HBuilderX CLI 编译通过（config.ts 曾被 PowerShell 编码破坏重写——教训：改 client 配置勿用 PS 写 UTF-8，用 write 工具）
 
-### 遗留/待办
-- 以图搜图延迟优化（P95 7.6s→<3s：图片塔降采样/缓存/并行）——列入 F5 真实缺口
-- 双层 Rerank 第二层 qwen-flash 精排——待延迟预算评估后接
-- 客户端第二波遗留（XView/S-MO-1/S-EM-1/离线 op_log）与真值数据规格 grill-me 讨论进行中
+### 真值数据规格 v1（2026-08-25 续 · 峰宝 grill-me 拍板）
+19. **四个决策**：①数据来源=真实用户（beta W18 起采集，非团队自造）→ M1/M2 门禁在 beta 前仍以合成基准为准，真实数据成为 beta 期校准/上线验证层 ②搜索期望结果 expected_ids+expected_label 双轨 ③人脸打码+录音只收自述片段 ④JSON 交付
+20. **交付物**：docs/真值数据规格标准_v1.md（5 批字段级规格：A 搜索查询 50 条 / B 碎片 100-200 条 / C 语音 20-50 段 / D 照片事件真值 50-100 张 / E 纠错 10-20 条，含枚举/分布/命名/一致性/验收口径）+ research/truth-data/ 模板（templates/*.example.json）+ scripts/validate_truth_data.py 校验器（必填/枚举/隐私铁律/consensus≥2/3/双轨互斥，全绿可入 manifest；a_v1.json 为模板冒烟副本）
+21. **技术侧待办（beta 前完成）**：search_log 表+埋点（A 批采集管道，点击=隐式相关信号）/ export_truth_data.py（correction_log/contents/voice→B/C/E 导出）/ 照片打码导出管线（腾讯 CI 人脸检测+模糊）/ 语音自述二次确认 UI / run_eval --real 模式
 
 ### S-ST-1 分片上传 + 断点续传（2026-08-25 续）
 14. **后端集成（关键：否则分片链路与内容管线断裂）**：/upload/complete 接 meta → services/upload.py register_photo_content 建 contents 记录（cos_key）+ enqueue_high(process_content)，语义与 /contents/upload 对齐（taken_at ISO / gps 边界 / source 白名单）；返回 content_id

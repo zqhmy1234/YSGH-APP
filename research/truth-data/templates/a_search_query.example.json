@@ -1,0 +1,24 @@
+[
+  {
+    "query_id": "q-0001",
+    "query": "去年生日那天的照片",
+    "layer": "temporal",
+    "expected_ids": ["a1b2c3d4-0000-0000-0000-000000000001"],
+    "expected_label": null,
+    "user_id_hashed": "sha256:examplehash0001",
+    "source": "beta-user",
+    "collected_at": "2026-09-01T10:00:00+08:00",
+    "note": "用户原话，含时间表达"
+  },
+  {
+    "query_id": "q-0002",
+    "query": "考研笔记",
+    "layer": "keyword",
+    "expected_ids": [],
+    "expected_label": "备考相关的文字碎片",
+    "user_id_hashed": "sha256:examplehash0002",
+    "source": "annotation",
+    "collected_at": "2026-09-02T14:30:00+08:00",
+    "note": "产品部补标：类别级相关"
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "correction_id": "c-0001",
+    "text": "周末想去看展",
+    "predicted": "灵感",
+    "corrected": "待办",
+    "context": "user-manual",
+    "user_id_hashed": "sha256:examplehash0001",
+    "collected_at": "2026-09-01T10:00:00+08:00"
+  }
+]
