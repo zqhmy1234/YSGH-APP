@@ -14,6 +14,8 @@ from app.schemas.event import (
     EventMergeRequest,
     EventOut,
     EventSplitRequest,
+    EventSyncRequest,
+    EventSyncResult,
 )
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
@@ -81,6 +83,29 @@ def _to_out(e, counts: dict | None = None) -> EventOut:
         content_count=c["content_count"],
         photo_count=c["photo_count"],
     )
+
+
+@router.post("/sync", response_model=ApiResponse[EventSyncResult])
+def sync_events(
+    req: EventSyncRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """端侧 L1 事件批量提交（S-SY-1 · B3-6 端侧 L0/L1 真值）
+
+    client_event_id 幂等（网络重试只落一次）；照片归属校验（越权拒绝）；
+    落库后云侧只跑 L2/L3 候选（caption/CI 打标保留 _process_photo）。
+    变更写入 offline_queue → 其他端增量拉取可见（M4 端间同步一致）。
+    """
+    from app.services.events import sync_client_events_safe
+
+    result = sync_client_events_safe(
+        db,
+        str(user.id),
+        req.device_id,
+        [e.model_dump() for e in req.events],
+    )
+    return ApiResponse(data=EventSyncResult(**result))
 
 
 @router.post("/merge", response_model=ApiResponse[EventOut])

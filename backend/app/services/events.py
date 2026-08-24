@@ -16,7 +16,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Content, Event, EventEditLog, EventItem
+from app.db.models import Content, Event, EventEditLog, EventItem, OfflineQueue
+from app.services.event_aggregation.pipeline import RawPhoto
 
 logger = logging.getLogger("yishu.events")
 
@@ -36,61 +37,93 @@ def _to_raw_photo(c: Content) -> dict:
     }
 
 
-def aggregate_user(db: Session, user_id: str, since: datetime | None = None) -> dict:
-    """对用户未聚合内容跑完整管线，写 L1 日卡片 events + event_items。
+def aggregate_user(
+    db: Session,
+    user_id: str,
+    since: datetime | None = None,
+    mode: str = "l2l3",
+) -> dict:
+    """云侧事件聚合（B3-6 分置重构 · S-SY-2）
+
+    模式：
+      mode="l2l3"（默认）：端侧 L0/L1 真值后，云侧只跑 L2/L3 候选
+        （caption/CI 打标仍在 _process_photo；L1 日卡片由端侧 POST /events/sync 提交）
+      mode="full"：第一波全量管线（L0+L1+L2/L3），仅用于基线迁移/遗留路径
 
     since：增量游标（None = 首次全量）。返回统计 dict。
-    （P2-03 重构：管线已移入 backend 包 app.services.event_aggregation，
-    删除原运行时 sys.path hack + 对仓库根 research/ 的反向依赖）
     """
-    from app.services.event_aggregation.pipeline import RawPhoto, aggregate
-
-    # 1. 查候选内容（未删除即可——不限于 done：process_content 回写 done 前
-    #    先聚合，自身 status=processing 也要能入事件，否则增量触发错位（2026-08-20 实测））
+    # 1. 查候选照片（未删除；跳过已产生 level>=2 候选的，幂等）
+    linked_l2 = (
+        select(EventItem.content_id)
+        .join(Event, Event.id == EventItem.event_id)
+        .where(
+            Event.user_id == user_id,
+            Event.level >= 2,
+            Event.deleted_at.is_(None),
+        )
+    )
     stmt = (
         select(Content)
         .where(
             Content.user_id == user_id,
             Content.deleted_at.is_(None),
+            Content.id.not_in(linked_l2),
         )
         .order_by(Content.created_at)
-        .limit(_AGG_BATCH)
+        .limit(_AGG_BATCH * 2)
     )
     if since is not None:
         stmt = stmt.where(Content.created_at > since)
     contents = db.execute(stmt).scalars().all()
     if not contents:
-        return {"l0": 0, "l1": 0, "items": 0, "skipped": 0}
+        return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0}
 
-    # 2. 跳过已聚合
-    cids = [c.id for c in contents]
-    linked = set(
-        db.execute(
-            select(EventItem.content_id).where(EventItem.content_id.in_(cids))
-        ).scalars().all()
-    )
-    todo = [c for c in contents if str(c.id) not in linked]
-    skipped = len(contents) - len(todo)
-    if not todo:
-        return {"l0": 0, "l1": 0, "items": 0, "skipped": skipped}
+    photos = [RawPhoto(**_to_raw_photo(c)) for c in contents]
 
-    # 3. 跑完整管线
+    if mode == "full":
+        # 第一波全量管线（基线迁移/遗留）：L0+L1+L2/L3 全跑
+        from app.services.event_aggregation.pipeline import aggregate
+
+        # 保留第一波语义：跳过已关联任意事件的内容（防 EventItem 复合主键重复）
+        linked_any = select(EventItem.content_id)
+        stmt = stmt.where(Content.id.not_in(linked_any))
+        contents = db.execute(stmt).scalars().all()
+        if not contents:
+            return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0}
+        photos = [RawPhoto(**_to_raw_photo(c)) for c in contents]
+        try:
+            result = aggregate(photos)
+        except Exception as exc:  # noqa: BLE001 —— 聚合失败静默（用户无感知）
+            logger.warning("聚合失败 user=%s: %s", user_id, exc)
+            return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0, "error": str(exc)}
+
+        items = _write_l1_days(db, user_id, result.l1_days)
+        upper_items = _write_upper_candidates(db, user_id, result.l2_candidates, result.l3_candidates)
+        db.commit()
+        return {
+            "l0": len(result.l0_clusters), "l1": len(result.l1_days),
+            "items": items, "skipped": 0, "upper_items": upper_items,
+        }
+
+    # 2. mode="l2l3"：只跑 L2/L3 候选（B3-6；L1 由端侧提交）
     try:
-        result = aggregate([RawPhoto(**_to_raw_photo(c)) for c in todo])
-    except Exception as exc:  # noqa: BLE001 —— 聚合失败静默（用户无感知）
-        logger.warning("聚合失败 user=%s: %s", user_id, exc)
-        return {"l0": 0, "l1": 0, "items": 0, "skipped": skipped, "error": str(exc)}
+        l2, l3 = _l2l3_candidates_from_photos(photos)
+    except Exception as exc:  # noqa: BLE001 —— 失败静默
+        logger.warning("L2/L3 候选失败 user=%s: %s", user_id, exc)
+        return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0, "error": str(exc)}
+    upper_items = _write_upper_candidates(db, user_id, l2, l3)
+    db.commit()
+    return {"l0": 0, "l1": 0, "items": 0, "upper_items": upper_items, "skipped": 0}
 
-    # 4. 写 L1 日卡片（产品口径：稀疏并入日卡片，B3 #8）
-    #    同日去重：当天已有 L1 事件则并入（追加 event_items + 更新时间窗），
-    #    不重复建（2026-08-20 E2E 实测：增量触发导致同日拆成多个事件）
+
+def _write_l1_days(db: Session, user_id: str, l1_days: list[dict]) -> int:
+    """写 L1 日卡片（全量管线路径；同日去重并入，不重复建）"""
     items = 0
-    for day in result.l1_days:
+    for day in l1_days:
         members = [p.id for p in day.get("photos", [])]
         if not members:
             continue
         day_key = day.get("date", "")
-        # 从成员照片推导时间窗（pipeline day dict 无 start/end 字段，2026-08-20 实测）
         _ts = [p.ts for p in day.get("photos", []) if getattr(p, "ts", None)]
         start_ts = min(_ts) if _ts else None
         end_ts = max(_ts) if _ts else None
@@ -111,7 +144,6 @@ def aggregate_user(db: Session, user_id: str, since: datetime | None = None) -> 
                     ).order_by(Event.created_at.desc())
                 ).scalars().first()
         if existing is not None:
-            # 并入：更新时间窗 + 追加成员
             if start_ts and (existing.start_time is None or start_ts < existing.start_time):
                 existing.start_time = start_ts
             if end_ts and (existing.end_time is None or end_ts > existing.end_time):
@@ -137,34 +169,36 @@ def aggregate_user(db: Session, user_id: str, since: datetime | None = None) -> 
         for mid in members:
             db.add(EventItem(content_id=mid, event_id=ev.id))
             items += 1
-
-    # 5. L2/L3 候选落库（P2-07：此前只落 L1，L2/L3 明标"原型占位"无数据）
-    #    候选级 draft 事件（标题模板；LLM 语义归并待真实数据到位后替换为云侧裁决）
-    upper_items = _write_upper_events(db, user_id, result)
-    db.commit()
-    return {
-        "l0": len(result.l0_clusters), "l1": len(result.l1_days),
-        "items": items, "skipped": skipped, "upper_items": upper_items,
-    }
+    return items
 
 
-def _write_upper_events(db: Session, user_id: str, result) -> int:
-    """L2/L3 候选落库为 draft 事件（P2-07；幂等：同成员已关联则跳过）
+def _write_upper_candidates(
+    db: Session,
+    user_id: str,
+    l2_candidates: list[dict],
+    l3_candidates: list[dict],
+) -> int:
+    """L2/L3 候选落库为 draft 事件（B3-6；幂等：成员已关联 level>=2 则跳过）
 
-    L2：跨天 ≥2 天 ≥10 张的标签归并候选 → level=2 事件
-    L3：同标签 7 天 ≥3 次 → level=3 主题流事件
-    返回新增 upper 事件成员数。
+    修复（S-SY-2）：原 _write_upper_events 按"已关联任意事件"跳过——
+    端侧 L0/L1 真值后照片普遍已挂 L1 日卡片，会误跳 L2/L3；
+    改为只查 level>=2 事件（L1 关联不再拦截候选生成）。
     """
-    from datetime import datetime as _dt
-
     added = 0
-    for cand in result.l2_candidates:
+    for cand in l2_candidates:
         members = cand.get("cluster") or []
         if not members:
             continue
         linked = set(
             db.execute(
-                select(EventItem.content_id).where(EventItem.content_id.in_(members))
+                select(EventItem.content_id)
+                .join(Event, Event.id == EventItem.event_id)
+                .where(
+                    EventItem.content_id.in_(members),
+                    Event.user_id == user_id,
+                    Event.level >= 2,
+                    Event.deleted_at.is_(None),
+                )
             ).scalars().all()
         )
         todo = [m for m in members if str(m) not in linked]
@@ -172,8 +206,8 @@ def _write_upper_events(db: Session, user_id: str, result) -> int:
             continue
         tr = cand.get("time_range") or []
         try:
-            start_ts = _dt.fromisoformat(tr[0]) if tr and tr[0] else None
-            end_ts = _dt.fromisoformat(tr[1]) if len(tr) > 1 and tr[1] else None
+            start_ts = datetime.fromisoformat(tr[0]) if tr and tr[0] else None
+            end_ts = datetime.fromisoformat(tr[1]) if len(tr) > 1 and tr[1] else None
         except ValueError:
             start_ts = end_ts = None
         tag = cand.get("tag") or cand.get("tag_hint") or "未命名主题"
@@ -185,9 +219,9 @@ def _write_upper_events(db: Session, user_id: str, result) -> int:
             start_time=start_ts,
             end_time=end_ts,
             place=cand.get("place_hint"),
-            confidence=0.6,  # 候选级置信度（LLM 裁决后提升）
+            confidence=0.6,
             status="draft",
-            generated_by="cloud-proto",  # 候选落库（非最终 LLM 归并）
+            generated_by="cloud-proto",
         )
         db.add(ev)
         db.flush()
@@ -195,12 +229,11 @@ def _write_upper_events(db: Session, user_id: str, result) -> int:
             db.add(EventItem(content_id=mid, event_id=ev.id))
             added += 1
 
-    for cand in result.l3_candidates:
+    for cand in l3_candidates:
         tag = cand.get("tag")
         count = cand.get("count", 0)
         if not tag:
             continue
-        # L3 主题流：不绑定具体内容（标签级事件，跨天多次出现）
         exists = db.execute(
             select(Event.id).where(
                 Event.user_id == user_id,
@@ -224,6 +257,176 @@ def _write_upper_events(db: Session, user_id: str, result) -> int:
         )
         added += count
     return added
+
+
+def _l2l3_candidates_from_photos(photos: list[RawPhoto]) -> tuple[list[dict], list[dict]]:
+    """云侧 L2/L3 候选（B3-6：端侧 L0/L1 后云侧只跑 L2/L3）
+
+    L2：按自然日分组建伪簇 → pipeline.l2_candidates（跨天 ≥2 天 ≥10 张标签归并）
+    L3：标签 7 天 ≥3 次（pipeline.l3_candidates）
+    """
+    from app.services.event_aggregation import pipeline as _pl
+    from app.services.event_aggregation.st_dbscan import Photo as _P
+
+    by_day: dict[str, list[_P]] = {}
+    for p in photos:
+        ts = p.ts
+        day_key = ts.date().isoformat()
+        by_day.setdefault(day_key, []).append(_P(id=p.id, ts=ts, lat=p.lat, lng=p.lng, tags=p.tags or []))
+    clusters = [by_day[k] for k in sorted(by_day)]
+    return _pl.l2_candidates(clusters), _pl.l3_candidates(photos)
+
+
+def _refresh_upper_candidates(db: Session, user_id: str, photo_ids: list[str]) -> int:
+    """受影响照片的 L2/L3 候选重算（S-SY-1：端侧事件提交后云侧补 L2/L3）"""
+    if not photo_ids:
+        return 0
+    rows = db.execute(
+        select(Content).where(
+            Content.id.in_(photo_ids),
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    if not rows:
+        return 0
+    l2, l3 = _l2l3_candidates_from_photos([RawPhoto(**_to_raw_photo(c)) for c in rows])
+    return _write_upper_candidates(db, user_id, l2, l3)
+
+
+def sync_client_events(
+    db: Session,
+    user_id: str,
+    device_id: str,
+    events: list[dict],
+) -> dict:
+    """端侧 L1 事件批量提交（S-SY-1 · B3-6 端侧 L0/L1 真值）
+
+    - 幂等：client_event_id（同用户）已存在 → duplicates，不重复落库（网络重试只落一次）
+    - 归属校验：photo_ids 必须存在且属于当前用户；非法 → 整条 rejected
+    - 落库：L1 事件（generated_by="device"）+ event_items + 变更日志（供其他端增量拉取）
+    - 云侧只跑 L2/L3：受影响照片重算候选（caption/CI 打标在 _process_photo）
+    """
+    accepted: list[dict] = []
+    duplicates: list[str] = []
+    rejected: list[dict] = []
+    affected: list[str] = []
+
+    for item in events:
+        cid = item.get("client_event_id")
+        exists = db.execute(
+            select(Event.id).where(
+                Event.user_id == user_id,
+                Event.client_event_id == cid,
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            duplicates.append(cid)
+            continue
+
+        photo_ids = item.get("photo_ids") or []
+        if not photo_ids:
+            rejected.append({"client_event_id": cid, "reason": "photo_ids 为空"})
+            continue
+        rows = db.execute(
+            select(Content.id).where(
+                Content.id.in_(photo_ids),
+                Content.user_id == user_id,
+                Content.deleted_at.is_(None),
+            )
+        ).scalars().all()
+        valid = {str(r) for r in rows}
+        invalid = [p for p in photo_ids if p not in valid]
+        if invalid:
+            rejected.append(
+                {"client_event_id": cid, "reason": f"照片不存在或不属于当前用户: {invalid[:5]}"}
+            )
+            continue
+
+        start_ts = item.get("start_time")
+        if isinstance(start_ts, str):
+            start_ts = datetime.fromisoformat(start_ts)
+        if start_ts is not None and start_ts.tzinfo is None:
+            start_ts = start_ts.replace(tzinfo=timezone.utc)  # 客户端未带时区 → 按 UTC 归一
+        end_ts = item.get("end_time")
+        if isinstance(end_ts, str):
+            end_ts = datetime.fromisoformat(end_ts)
+        day_key = start_ts.astimezone().strftime("%Y-%m-%d") if start_ts else ""
+        ev = Event(
+            user_id=user_id,
+            level=1,
+            title=item.get("title") or (f"{day_key} · {len(valid)}条" if day_key else f"{len(valid)}条"),
+            title_source="user" if item.get("title") else "template",
+            start_time=start_ts,
+            end_time=end_ts,
+            place=item.get("place"),
+            confidence=0.9,
+            status="draft",
+            generated_by="device",
+            client_event_id=cid,
+        )
+        db.add(ev)
+        db.flush()
+        for pid in valid:
+            db.add(EventItem(content_id=pid, event_id=ev.id))
+        # 变更日志（B4：offline_queue 为增量拉取源，其他端可拉到该事件 → M4 端间一致）
+        db.add(
+            OfflineQueue(
+                op_id=f"ev-{cid}",
+                user_id=user_id,
+                device_id=device_id,
+                op_type="upsert_event",
+                payload={
+                    "op_type": "upsert_event",
+                    "entity_type": "event",
+                    "entity_id": str(ev.id),
+                    "field": None,
+                    "value": {
+                        "client_event_id": cid,
+                        "title": ev.title,
+                        "title_source": ev.title_source,
+                        "start_time": ev.start_time.isoformat() if ev.start_time else None,
+                        "end_time": ev.end_time.isoformat() if ev.end_time else None,
+                        "place": ev.place,
+                        "photo_ids": list(valid),
+                    },
+                    "updated_at": ev.created_at.isoformat() if ev.created_at else None,
+                },
+                status="done",
+            )
+        )
+        accepted.append({"client_event_id": cid, "event_id": str(ev.id), "photo_count": len(valid)})
+        affected.extend(valid)
+
+    upper_items = 0
+    if affected:
+        upper_items = _refresh_upper_candidates(db, user_id, affected)
+    db.commit()
+    return {
+        "accepted": accepted,
+        "duplicates": duplicates,
+        "rejected": rejected,
+        "upper_items": upper_items,
+    }
+
+
+def sync_client_events_safe(db: Session, user_id: str, device_id: str, events: list[dict]) -> dict:
+    """sync_client_events 并发安全包装（同 client_event_id 并发 → 唯一索引冲突 → 重试幂等）"""
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        return sync_client_events(db, user_id, device_id, events)
+    except IntegrityError:
+        db.rollback()
+        return sync_client_events(db, user_id, device_id, events)
+
+
+def _write_upper_events(db: Session, user_id: str, result) -> int:
+    """L2/L3 候选落库（全量管线路径兼容封装，委托 _write_upper_candidates）
+
+    注意（S-SY-2）：委托实现按 level>=2 幂等检查（照片已挂 L1 不拦截 L2/L3）。
+    """
+    return _write_upper_candidates(db, user_id, result.l2_candidates, result.l3_candidates)
 
 
 def get_timeline(db: Session, user_id: str, level: int | None = None) -> list[Event]:

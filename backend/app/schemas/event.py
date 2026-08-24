@@ -42,3 +42,38 @@ class EventConfirmRequest(BaseModel):
 
     event_id: str
     title: str | None = None
+
+
+class ClientEventItem(BaseModel):
+    """端侧 L1 事件（S-SY-1：client_event_id 幂等键）
+
+    端侧 ST-DBSCAN（B3-6 端侧 L0/L1 真值）产出的日卡片事件；
+    云侧只做归属校验 + 落库 + L2/L3 候选（caption/CI 打标已在 _process_photo）。
+    """
+
+    client_event_id: str = Field(
+        ..., min_length=1, max_length=64, description="客户端生成事件 ID（幂等键，同用户唯一）"
+    )
+    title: str | None = Field(None, max_length=100, description="模板标题（空则服务端按日期生成）")
+    start_time: datetime = Field(..., description="事件窗起点（ISO8601）")
+    end_time: datetime | None = None
+    place: str | None = Field(None, max_length=100)
+    photo_ids: list[str] = Field(
+        default_factory=list, min_length=1, max_length=500, description="成员照片 content_id 列表"
+    )
+
+
+class EventSyncRequest(BaseModel):
+    """端侧事件批量提交（S-SY-1）"""
+
+    device_id: str = Field(..., min_length=1, max_length=64)
+    events: list[ClientEventItem] = Field(..., min_length=1, max_length=100)
+
+
+class EventSyncResult(BaseModel):
+    """端侧事件提交结果（幂等 + 越权拒绝明细）"""
+
+    accepted: list[dict] = []      # [{client_event_id, event_id, photo_count}]
+    duplicates: list[str] = []     # 已存在的 client_event_id（网络重试幂等命中）
+    rejected: list[dict] = []      # [{client_event_id, reason}]（越权/非法被拒）
+    upper_items: int = 0           # 云侧 L2/L3 候选新增成员数

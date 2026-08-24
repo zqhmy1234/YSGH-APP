@@ -1,0 +1,12 @@
+/**
+ * 聚合参数单一来源（AGG-016：端侧/云侧同参双跑）
+ *
+ * 与 backend/app/services/event_aggregation/pipeline.py 的 AGG_CONFIG 对齐。
+ * 改参数必须两端同步改（端侧此处 / 云侧 pipeline.py），AGG-016 双跑测试兜底。
+ */
+export const L0_EPS_T_SEC: number = 3600.0   // L0 时间窗：60min（30min 保守开关）
+export const L0_EPS_S_M: number = 500.0      // L0 空间窗：500m
+export const L0_MIN_PTS: number = 3          // min_pts：<3 张散片进 L1 日卡片
+export const BURST_GAP_SEC: number = 5.0     // 连拍折叠：<5s 折叠为 1 个时间点
+export const WALK_SPEED_MS: number = 6000.0 / 3600.0   // 步行 6km/h（速度校验下限）
+export const DRIVE_SPEED_MS: number = 120000.0 / 3600.0 // 驾车 120km/h（漂移上限）

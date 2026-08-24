@@ -83,11 +83,18 @@ def st_dbscan(
     return clusters
 
 
-def l1_daily_aggregate(clusters: list[list[Photo]], noise: list[Photo]) -> list[dict]:
+def l1_daily_aggregate(
+    clusters: list[list[Photo]],
+    noise: list[Photo],
+    tz_offset_minutes: int = 0,
+) -> list[dict]:
     """L1 日聚合：簇 + 散片 → 自然日卡片
 
     规则（B3-2）：自然日 0-24 时；深夜 23:30-1:00 连续拍摄归属前一天。
     输出：[{date, photos: [...], is_sparse}]，稀疏（1-2 张）标记并入日卡片（B3 #8）。
+
+    tz_offset_minutes（AGG-016 双跑）：日界按本地时区偏移计算（端侧传设备偏移）；
+    默认 0 = UTC（保持第一波口径，向后兼容）。
     """
     def bucket_day(ts: datetime) -> str:
         """自然日分桶；深夜 23:30-1:00 归属前一天（B3-2）
@@ -95,9 +102,15 @@ def l1_daily_aggregate(clusters: list[list[Photo]], noise: list[Photo]) -> list[
         修复：原实现 ts.replace(hour=0).date() 仍是当天日期，规则完全失效（审查 CRITICAL）；
         00:00-00:59 也缺失处理。统一：23:30-23:59 / 00:00-00:59 / 01:00 整点 → 前一天。
         """
-        if (ts.hour == 23 and ts.minute >= 30) or ts.hour == 0 or (ts.hour == 1 and ts.minute == 0):
-            return (ts - timedelta(days=1)).date().isoformat()
-        return ts.date().isoformat()
+        shifted = ts + timedelta(minutes=tz_offset_minutes) if tz_offset_minutes else ts
+        night_rule = (
+            (shifted.hour == 23 and shifted.minute >= 30)
+            or shifted.hour == 0
+            or (shifted.hour == 1 and shifted.minute == 0)
+        )
+        if night_rule:
+            return (shifted - timedelta(days=1)).date().isoformat()
+        return shifted.date().isoformat()
 
     days: dict[str, list[Photo]] = {}
     for cl in clusters:

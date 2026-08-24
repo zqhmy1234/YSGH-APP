@@ -16,6 +16,9 @@ const PROD_BASE_URL: string = 'https://api.yishuguanghua.example.com'
 /** 外部 AI mock 开关（与后端 MOCK_EXTERNAL_AI 对齐；生产必须 false） */
 export const MOCK_EXTERNAL_AI: boolean = true
 
+/** 调试：启动后自动进入 AGG-016 一致性自检页（仅 dev；验证完置回 false） */
+export const AGG_CHECK_ON_DEVICE: boolean = false
+
 export function getBaseUrl(): string {
 	if (ENV === 'prod') {
 		return PROD_BASE_URL

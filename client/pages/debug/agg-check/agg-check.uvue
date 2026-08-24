@@ -1,0 +1,107 @@
+<template>
+	<view class="page">
+		<view class="header">
+			<text class="title">AGG-016 一致性自检</text>
+			<text class="sub">UTS ST-DBSCAN vs Python 同参双跑（{{summaryText}}）</text>
+		</view>
+		<scroll-view class="list" scroll-y="true">
+			<view v-for="(r, i) in results" :key="i" class="row" :class="r.pass ? 'row-pass' : 'row-fail'">
+				<text class="badge">{{ r.pass ? 'PASS' : 'FAIL' }}</text>
+				<view class="cell">
+					<text class="name">{{ r.name }}</text>
+					<text v-if="!r.pass" class="detail">{{ r.detail }}</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script>
+import { AGG_FIXTURES } from '@/utils/agg/fixtures.uts'
+import { CaseResult, runAllCases } from '@/utils/agg/agg_check.uts'
+
+export default {
+	data() {
+		return {
+			summaryText: '运行中…',
+			results: [] as CaseResult[],
+		}
+	},
+	onLoad() {
+		// AGG-016：端侧 UTS 算法 vs Python 期望（同参 tz=480 上海）
+		const summary = runAllCases(AGG_FIXTURES)
+		this.summaryText = `${summary.passed}/${summary.total} 通过`
+		this.results = summary.results
+		for (let i = 0; i < summary.results.length; i++) {
+			const r = summary.results[i]
+			console.log(`[yishu-agg] ${r.name}: ${r.pass ? 'PASS' : 'FAIL'} ${r.detail}`)
+		}
+	},
+}
+</script>
+
+<style>
+.page {
+	display: flex;
+	flex-direction: column;
+	background-color: #F6F1E7;
+	padding: 24rpx;
+}
+.header {
+	padding: 24rpx 8rpx;
+}
+.title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #3A2E25;
+}
+.sub {
+	margin-top: 8rpx;
+	font-size: 24rpx;
+	color: #8a7a6a;
+}
+.list {
+	flex: 1;
+}
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	padding: 20rpx;
+	margin-bottom: 16rpx;
+	border-radius: 12rpx;
+}
+.row-pass {
+	background-color: #EAF3E3;
+}
+.row-fail {
+	background-color: #F7E3DF;
+}
+.badge {
+	font-size: 22rpx;
+	font-weight: bold;
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+	margin-right: 16rpx;
+	color: #FFFFFF;
+	background-color: #7C9A6D;
+}
+.row-fail .badge {
+	background-color: #B05A3A;
+}
+.cell {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+}
+.name {
+	font-size: 28rpx;
+	color: #3A2E25;
+}
+.detail {
+	margin-top: 6rpx;
+	font-size: 22rpx;
+	color: #B05A3A;
+	word-break: break-all;
+}
+</style>

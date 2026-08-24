@@ -195,8 +195,8 @@ class TestPhotoPipeline:
 
 
 class TestEventAggregation:
-    def test_done_content_creates_l1_event(self, db_user, monkeypatch):
-        """管线完成后触发聚合 → events 表有 L1 日卡片 + event_items"""
+    def test_process_content_cloud_only_l2l3(self, db_user, monkeypatch):
+        """S-SY-2（B3-6 分置）：管线完成后云侧只跑 L2/L3，不再自动建 L1（L1 由端侧提交）"""
         from datetime import datetime, timedelta, timezone
 
         from app.services.external.storage import get_storage_backend
@@ -208,7 +208,6 @@ class TestEventAggregation:
         ts = datetime.now(timezone.utc) - timedelta(hours=3)
         c1 = _content(db, user.id, "photo", cos_key="photos/u/a.jpg", taken_at=ts)
         c2 = _content(db, user.id, "photo", cos_key="photos/u/b.jpg", taken_at=ts + timedelta(minutes=10))
-        # mock 分类 + caption（避免外部调用）
         monkeypatch.setattr(
             "app.services.pipeline._get_classifier",
             lambda: lambda t: {"label": "mixed", "label_cn": "混合", "confidence": 0.7},
@@ -221,10 +220,25 @@ class TestEventAggregation:
         for c in (c1, c2):
             process_content(str(c.id))
 
-        # 事件聚合：两照片同天 → 至少 1 个 L1 事件
+        # 云侧不再自动创建 L1 日卡片（2 张不足以成 L2/L3 候选 → events 为空）
         events = db.execute(select(Event).where(Event.user_id == user.id)).scalars().all()
-        assert len(events) >= 1
-        ev = events[0]
-        assert ev.level == 1
+        assert all(e.level != 1 for e in events), "S-SY-2：云侧不应再自动建 L1"
+
+    def test_aggregate_user_full_mode_creates_l1_baseline(self, db_user):
+        """full 模式（基线迁移/遗留路径）仍产生 L1 日卡片（第一波行为不删）"""
+        from datetime import datetime, timedelta, timezone
+
+        from app.services.events import aggregate_user
+
+        db, user = db_user
+        ts = datetime.now(timezone.utc) - timedelta(hours=3)
+        _content(db, user.id, "photo", taken_at=ts)
+        _content(db, user.id, "photo", taken_at=ts + timedelta(minutes=10))
+        r = aggregate_user(db, user.id, mode="full")
+        assert r["l1"] >= 1
+        ev = db.execute(
+            select(Event).where(Event.user_id == user.id, Event.level == 1)
+        ).scalars().first()
+        assert ev is not None and ev.generated_by == "cloud"
         items = db.execute(select(EventItem).where(EventItem.event_id == ev.id)).scalars().all()
         assert len(items) >= 1

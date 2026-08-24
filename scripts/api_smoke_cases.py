@@ -116,12 +116,14 @@ def case_text_journey(client: TestClient, headers: dict) -> str:
     return cid
 
 
-def case_photo_journey(client: TestClient, headers: dict) -> None:
-    """F1 第一波：multipart 上传 → 管线 → done（B-BE-1 真实链路）"""
+def case_photo_journey(client: TestClient, headers: dict) -> list[tuple[str, str]]:
+    """F1 第一波：multipart 上传 → 管线 → done（B-BE-1 真实链路）；返回 [(cid, taken_at)]"""
     assert TEST_PHOTOS, "缺少测试照片（先跑 scripts/generate_test_photos.py）"
-    cids: list[str] = []
+    out: list[tuple[str, str]] = []
     for f in TEST_PHOTOS:
-        taken = f.name.split("_")[2] + "T" + f.name.split("_")[3][:6] + "+08:00"
+        # 文件名形如 photo_xxx_20260822_080000_... → 规范 ISO（pydantic 需 '-' 分隔）
+        ymd, hms = f.name.split("_")[2], f.name.split("_")[3][:6]
+        taken = f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}T{hms[:2]}:{hms[2:4]}:{hms[4:6]}+08:00"
         meta = json.dumps({"taken_at": taken, "source": "app"})
         r = client.post(
             "/api/v1/contents/upload",
@@ -131,22 +133,53 @@ def case_photo_journey(client: TestClient, headers: dict) -> None:
         )
         assert r.status_code == 200, r.text
         assert r.json()["data"]["content_type"] == "photo", r.text
-        cids.append(r.json()["data"]["id"])
-    for cid in cids:
+        out.append((r.json()["data"]["id"], taken))
+    for cid, _ in out:
         result = process_content(cid)
         assert result["status"] == "done", result
+    return out
 
 
-def case_timeline_structure(client: TestClient, headers: dict) -> None:
-    """F8：L1 日卡片结构（level/title/photo_count/content_count）"""
+def case_timeline_structure(client: TestClient, headers: dict, photos: list[tuple[str, str]]) -> None:
+    """F8 新契约（S-SY-2/B3-6）：云侧不再自动建 L1；端侧提交 L1 事件 → 时间轴结构"""
+    # 1. 契约：上传+管线后云侧不自动生成 L1（端侧 L0/L1 真值分置）
+    r = client.get("/api/v1/events/timeline", headers=headers)
+    assert r.status_code == 200, r.text
+    l1_before = [e for e in r.json()["data"] if e["level"] == 1]
+    assert not l1_before, f"S-SY-2：云侧不应再自动创建 L1: {l1_before}"
+
+    # 2. 端侧 L1 事件提交（/events/sync，client_event_id 幂等）
+    cids = [cid for cid, _ in photos]
+    start = min(t for _, t in photos)
+    end = max(t for _, t in photos)
+    r = client.post(
+        "/api/v1/events/sync",
+        json={
+            "device_id": "smoke-dev",
+            "events": [
+                {
+                    "client_event_id": f"smoke-ev-{uuid.uuid4().hex[:8]}",
+                    "title": "冒烟日卡片",
+                    "start_time": start,
+                    "end_time": end,
+                    "photo_ids": cids,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["data"]["accepted"]) == 1, r.json()
+
+    # 3. 时间轴结构：L1 日卡片含全部照片
     r = client.get("/api/v1/events/timeline", headers=headers)
     assert r.status_code == 200, r.text
     events = r.json()["data"]
     l1 = [e for e in events if e["level"] == 1]
-    assert l1, f"照片上传后应至少 1 张 L1 日卡片: {events}"
-    # 照片旅程的 3 张照片应聚入当日卡片（同日并入语义）；同日也可能含文字内容
+    assert l1, f"端侧提交后时间轴应有 L1 日卡片: {events}"
     photo_cards = [e for e in l1 if e["photo_count"] > 0]
     assert photo_cards, f"应存在含照片的 L1 日卡片: {l1}"
+    assert photo_cards[0]["photo_count"] == len(cids), photo_cards[0]
     for e in l1:
         assert e["title"], e
         assert e["content_count"] > 0, e
@@ -177,17 +210,28 @@ def main() -> int:
         ("auth-security", case_auth_security, (client,)),
         ("text-journey", case_text_journey, (client, headers)),
         ("photo-journey", case_photo_journey, (client, headers)),
-        ("timeline-structure", case_timeline_structure, (client, headers)),
         ("dedup-409", case_dedup_semantics, (client, headers)),
     ]
+    photos: list[tuple[str, str]] = []
     for name, fn, args in cases:
         try:
-            fn(*args)
+            result = fn(*args)
+            if name == "photo-journey":
+                photos = result
             checks.append((name, True, ""))
         except AssertionError as exc:
             checks.append((name, False, str(exc)[:300]))
         except Exception as exc:  # noqa: BLE001 —— 用例失败需继续跑后续用例
             checks.append((name, False, f"{type(exc).__name__}: {exc}")[:300])
+
+    # 时间轴用例依赖照片旅程产物（端侧 L1 提交 → 结构校验）
+    try:
+        case_timeline_structure(client, headers, photos)
+        checks.append(("timeline-structure", True, ""))
+    except AssertionError as exc:
+        checks.append(("timeline-structure", False, str(exc)[:300]))
+    except Exception as exc:  # noqa: BLE001
+        checks.append(("timeline-structure", False, f"{type(exc).__name__}: {exc}")[:300])
 
     print("真实用例冒烟:")
     for name, ok, err in checks:

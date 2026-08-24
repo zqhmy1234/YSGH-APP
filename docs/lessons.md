@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-24 12:18 · commit 7cac32f · ts=1787570334
+- **错误**：review_agent 门禁 lint 失败：F401 未用 import / E501 长行 / F841 未用变量 / I001 import 排序（api/events.py、schemas/event.py、st_dbscan.py、test_event_sync.py、test_pipeline.py、gen_agg_fixtures.py 共 8 处）
+- **根因**：改动跨 6 文件后未先跑 ruff 自查即提交门禁；长行/未用变量在改动中自然产生
+- **修复**：提交前先跑 python scripts/review_agent.py 自查；ruff 能自动修的用 --fix；函数内 import 按字母序单块无空行
+- **相关文件**：backend/app/api/events.py 等
+- **教训**：跨文件改动后先本地跑 ruff/review_agent 再提交，别等 pre-commit 兜底
+
+---
+
+### 2026-08-24 12:05 · commit 7cac32f · ts=1787569503
+- **错误**：AGG-016 参考端测试：手写期望断言 3 处错误（深夜归属 23:40 应归前一天而非当天；UTC 23:40 仍触发深夜规则；连拍折叠后仅 2 张不足 min_pts 不成簇）
+- **根因**：期望值语义想当然，未先跑参考实现确认行为；夹具本身（Python 实算）始终正确
+- **修复**：测试断言改为只锁关键语义，且先以参考实现输出为准再写断言；夹具期望永远由 gen_agg_fixtures.py 实算，不手写
+- **相关文件**：backend/tests/test_agg_reference.py
+- **教训**：AGG-016 双跑测试：期望值由参考端实算生成，测试断言不得手写期望（先跑后写）
+
+---
+
 ### 2026-08-24 10:34 · commit 56c605b · ts=1787564055
 - **错误**：门禁 flaky 两处：test_reflow 备份目录 FileExistsError（同微秒两次备份）；api_smoke text-journey 搜索未命中新内容
 - **根因**：① _backup_model 微秒时间戳在同一次测试内两次调用时碰撞（概率性）；② 冒烟搜索 q=买咖啡豆 靠语义召回，Qdrant 累积历史数据后新内容被挤出 top-k

@@ -1,0 +1,61 @@
+/**
+ * AGG-016 一致性测试类型（Python 生成 fixtures.uts 使用）
+ *
+ * 用例结构：输入照片集 + 期望输出（Python 同参双跑计算，见 scripts/gen_agg_fixtures.py）
+ */
+
+/** 用例输入照片 */
+export class AggPhoto {
+	id: string
+	ts: number          // epoch ms (UTC)
+	lat: number | null
+	lng: number | null
+	tags: string[]
+
+	constructor(id: string, ts: number, lat: number | null, lng: number | null, tags: string[]) {
+		this.id = id
+		this.ts = ts
+		this.lat = lat
+		this.lng = lng
+		this.tags = tags
+	}
+}
+
+/** 期望日卡片 */
+export class AggExpectedDay {
+	date: string
+	ids: string[]       // 按 ts 升序的照片 id
+	isSparse: boolean
+
+	constructor(date: string, ids: string[], isSparse: boolean) {
+		this.date = date
+		this.ids = ids
+		this.isSparse = isSparse
+	}
+}
+
+/** 期望输出 */
+export class AggExpected {
+	clusters: string[][]     // 簇成员（簇内无序，簇间无序）
+	days: AggExpectedDay[]   // 日卡片列表
+
+	constructor(clusters: string[][], days: AggExpectedDay[]) {
+		this.clusters = clusters
+		this.days = days
+	}
+}
+
+/** 一致性用例 */
+export class AggCase {
+	name: string
+	tzOffsetMin: number      // 日界时区偏移（分钟）；双跑同参
+	photos: AggPhoto[]
+	expected: AggExpected
+
+	constructor(name: string, tzOffsetMin: number, photos: AggPhoto[], expected: AggExpected) {
+		this.name = name
+		this.tzOffsetMin = tzOffsetMin
+		this.photos = photos
+		this.expected = expected
+	}
+}

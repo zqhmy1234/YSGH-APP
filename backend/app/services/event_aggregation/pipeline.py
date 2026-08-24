@@ -210,6 +210,16 @@ def incremental_aggregate(
     )
 
 
+def l2_candidates(clusters: list[list[Photo]]) -> list[dict]:
+    """L2 候选公共入口（B3-6 云侧只跑 L2/L3；端侧 L0/L1 真值后供云侧调用）"""
+    return _l2_candidates(clusters)
+
+
+def l3_candidates(photos: list[RawPhoto]) -> list[dict]:
+    """L3 候选公共入口（B3-6）"""
+    return _l3_candidates(photos)
+
+
 def _flatten_photos(clusters: list[list[Photo]]) -> list[RawPhoto]:
     """簇内 Photo 还原为 RawPhoto（供标签统计）
 

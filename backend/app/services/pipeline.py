@@ -229,12 +229,12 @@ def process_content(content_id: str) -> dict:
             handler(db, content)
             processed.append(content.content_type)
 
-        # 事件聚合（B3：photo/text 触发；失败静默，用户无感知）
+        # 事件聚合（B3-6 分置：端侧 L0/L1 真值后，云侧只跑 L2/L3 候选；失败静默）
         try:
             from app.services.events import aggregate_user
 
-            agg = aggregate_user(db, str(content.user_id))
-            if agg.get("items"):
+            agg = aggregate_user(db, str(content.user_id), mode="l2l3")
+            if agg.get("upper_items") or agg.get("items"):
                 processed.append("events")
         except Exception as exc:  # noqa: BLE001
             logger.warning("事件聚合失败 content=%s: %s", content.id, exc)

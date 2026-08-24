@@ -1,0 +1,149 @@
+/**
+ * AGG-016 一致性校验引擎（UTS 侧）
+ *
+ * 跑同一组用例（fixtures.uts）：端侧 UTS 算法输出 vs Python 同参双跑期望，
+ * 比较 簇成员（集合语义）+ 日卡片（date → 按 ts 排序的 id 列表）。
+ * 调试页 pages/debug/agg-check 直接展示结果；logcat 前缀 [yishu-agg]。
+ */
+import { L0_EPS_S_M, L0_EPS_T_SEC, L0_MIN_PTS } from './agg_config.uts'
+import { preprocess, RawPhoto } from './pipeline.uts'
+import { DayCard, Photo, l1DailyAggregate, stDbscan } from './st_dbscan.uts'
+import { AggCase, AggExpectedDay } from './agg_types.uts'
+
+/** 单用例结果 */
+export class CaseResult {
+	name: string
+	pass: boolean
+	detail: string
+
+	constructor(name: string, pass: boolean, detail: string) {
+		this.name = name
+		this.pass = pass
+		this.detail = detail
+	}
+}
+
+function sortedIds(ids: string[]): string[] {
+	const out: string[] = []
+	for (let i = 0; i < ids.length; i++) {
+		out.push(ids[i])
+	}
+	out.sort((a: string, b: string): number => {
+		return a < b ? -1 : (a > b ? 1 : 0)
+	})
+	return out
+}
+
+/** 簇集合语义归一：簇内排序 + 簇间按首元素排序 */
+function normalizeClusters(clusters: string[][]): string[] {
+	const parts: string[] = []
+	for (let i = 0; i < clusters.length; i++) {
+		const s = sortedIds(clusters[i])
+		parts.push(s.join(','))
+	}
+	parts.sort((a: string, b: string): number => {
+		return a < b ? -1 : (a > b ? 1 : 0)
+	})
+	return parts
+}
+
+function dayKey(d: DayCard): string {
+	return d.date + '|' + sortedIds(d.photos.map((p: Photo): string => p.id)).join(',') + '|' + (d.isSparse ? '1' : '0')
+}
+
+function expectedDayKey(d: AggExpectedDay): string {
+	return d.date + '|' + sortedIds(d.ids).join(',') + '|' + (d.isSparse ? '1' : '0')
+}
+
+/** 跑单个用例：UTS 算法 vs Python 期望 */
+export function runCase(c: AggCase): CaseResult {
+	const raws: RawPhoto[] = []
+	for (let i = 0; i < c.photos.length; i++) {
+		const p = c.photos[i]
+		raws.push(new RawPhoto(p.id, p.ts, p.lat, p.lng, p.tags))
+	}
+	const pts = preprocess(raws)
+	const clusters = stDbscan(pts, L0_EPS_T_SEC, L0_EPS_S_M, L0_MIN_PTS)
+
+	// 散片（未入簇）→ L1 日聚合
+	const clustered: Set<string> = new Set<string>()
+	for (let i = 0; i < clusters.length; i++) {
+		const cl = clusters[i]
+		for (let j = 0; j < cl.length; j++) {
+			clustered.add(cl[j].id)
+		}
+	}
+	const noise: Photo[] = []
+	for (let i = 0; i < pts.length; i++) {
+		if (!clustered.has(pts[i].id)) {
+			noise.push(pts[i])
+		}
+	}
+	const days = l1DailyAggregate(clusters, noise, c.tzOffsetMin)
+
+	// 簇比较（集合语义）
+	const actualClusters: string[][] = []
+	for (let i = 0; i < clusters.length; i++) {
+		const ids: string[] = []
+		for (let j = 0; j < clusters[i].length; j++) {
+			ids.push(clusters[i][j].id)
+		}
+		actualClusters.push(ids)
+	}
+	const actC = normalizeClusters(actualClusters)
+	const expC = normalizeClusters(c.expected.clusters)
+	const clusterOk = actC.length == expC.length && actC.join(';') == expC.join(';')
+
+	// 日卡片比较（date → 排序 id 列表 + 稀疏标记）
+	const actDays: string[] = []
+	for (let i = 0; i < days.length; i++) {
+		actDays.push(dayKey(days[i]))
+	}
+	actDays.sort((a: string, b: string): number => {
+		return a < b ? -1 : (a > b ? 1 : 0)
+	})
+	const expDays: string[] = []
+	for (let i = 0; i < c.expected.days.length; i++) {
+		expDays.push(expectedDayKey(c.expected.days[i]))
+	}
+	expDays.sort((a: string, b: string): number => {
+		return a < b ? -1 : (a > b ? 1 : 0)
+	})
+	const dayOk = actDays.length == expDays.length && actDays.join(';') == expDays.join(';')
+
+	const pass = clusterOk && dayOk
+	let detail = ''
+	if (!clusterOk) {
+		detail += '簇不一致: 期望=' + expC.join(';') + ' 实际=' + actC.join(';') + ' '
+	}
+	if (!dayOk) {
+		detail += '日卡片不一致: 期望=' + expDays.join(';') + ' 实际=' + actDays.join(';')
+	}
+	return new CaseResult(c.name, pass, detail)
+}
+
+/** 跑全部用例，返回结果列表 + 通过数 */
+export class AggRunSummary {
+	total: number
+	passed: number
+	results: CaseResult[]
+
+	constructor(total: number, passed: number, results: CaseResult[]) {
+		this.total = total
+		this.passed = passed
+		this.results = results
+	}
+}
+
+export function runAllCases(cases: AggCase[]): AggRunSummary {
+	const results: CaseResult[] = []
+	let passed = 0
+	for (let i = 0; i < cases.length; i++) {
+		const r = runCase(cases[i])
+		results.push(r)
+		if (r.pass) {
+			passed++
+		}
+	}
+	return new AggRunSummary(cases.length, passed, results)
+}

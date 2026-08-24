@@ -1,0 +1,134 @@
+/**
+ * AGG-016 一致性夹具（自动生成 · 勿手改）
+ * 来源：python scripts/gen_agg_fixtures.py（Python 同参双跑期望值）
+ */
+import { AggCase, AggExpected, AggExpectedDay, AggPhoto } from './agg_types.uts'
+
+export const AGG_FIXTURES: AggCase[] = [
+	new AggCase('burst-fold-single-cluster', 480, [
+		new AggPhoto('p1', 1787536800000, 31.2304, 121.4737, ['food']),
+		new AggPhoto('p2', 1787536802000, 31.2304, 121.4737, ['food']),
+		new AggPhoto('p3', 1787536804000, 31.2304, 121.4737, ['food']),
+		new AggPhoto('p4', 1787536810000, 31.2304, 121.4737, ['food']),
+	], new AggExpected([
+	], [
+		new AggExpectedDay('2026-08-24', ['p1', 'p4'], true),
+	])),
+	new AggCase('two-clusters-two-days', 480, [
+		new AggPhoto('p1', 1787536800000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787537100000, 31.2304, 121.4737, []),
+		new AggPhoto('p3', 1787537400000, 31.2304, 121.4737, []),
+		new AggPhoto('p4', 1787623200000, 31.2304, 121.4737, []),
+		new AggPhoto('p5', 1787623500000, 31.2304, 121.4737, []),
+		new AggPhoto('p6', 1787623800000, 31.2304, 121.4737, []),
+	], new AggExpected([
+		['p1', 'p3', 'p2'],
+		['p4', 'p6', 'p5'],
+	], [
+		new AggExpectedDay('2026-08-24', ['p1', 'p2', 'p3'], false),
+		new AggExpectedDay('2026-08-25', ['p4', 'p5', 'p6'], false),
+	])),
+	new AggCase('noise-to-sparse-day', 480, [
+		new AggPhoto('p1', 1787533200000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787533500000, 31.3, 121.5, []),
+	], new AggExpected([
+	], [
+		new AggExpectedDay('2026-08-24', ['p1', 'p2'], true),
+	])),
+	new AggCase('no-gps-time-window', 480, [
+		new AggPhoto('p1', 1787551200000, null, null, ['food']),
+		new AggPhoto('p2', 1787551800000, null, null, ['food']),
+		new AggPhoto('p3', 1787552400000, null, null, ['food']),
+		new AggPhoto('p4', 1787553000000, null, null, ['food']),
+	], new AggExpected([
+		['p1', 'p4', 'p3', 'p2'],
+	], [
+		new AggExpectedDay('2026-08-24', ['p1', 'p2', 'p3', 'p4'], false),
+	])),
+	new AggCase('night-boundary-prev-day', 480, [
+		new AggPhoto('p1', 1787586000000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787586600000, 31.2304, 121.4737, []),
+		new AggPhoto('p3', 1787588400000, 31.2304, 121.4737, []),
+		new AggPhoto('p4', 1787589000000, 31.2304, 121.4737, []),
+		new AggPhoto('p5', 1787590860000, 31.2304, 121.4737, []),
+	], new AggExpected([
+		['p1', 'p4', 'p5', 'p3', 'p2'],
+	], [
+		new AggExpectedDay('2026-08-23', ['p1', 'p2'], true),
+		new AggExpectedDay('2026-08-24', ['p3', 'p4'], true),
+		new AggExpectedDay('2026-08-25', ['p5'], true),
+	])),
+	new AggCase('gps-drift-corrected', 480, [
+		new AggPhoto('p1', 1787558400000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787558410000, 31.9, 122.1, []),
+		new AggPhoto('p3', 1787558420000, 31.2306, 121.474, []),
+	], new AggExpected([
+		['p1', 'p3', 'p2'],
+	], [
+		new AggExpectedDay('2026-08-24', ['p1', 'p2', 'p3'], false),
+	])),
+	new AggCase('sparse-multi-day', 480, [
+		new AggPhoto('p1', 1787529600000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787616000000, 31.2304, 121.4737, []),
+	], new AggExpected([
+	], [
+		new AggExpectedDay('2026-08-24', ['p1'], true),
+		new AggExpectedDay('2026-08-25', ['p2'], true),
+	])),
+	new AggCase('single-photo', 480, [
+		new AggPhoto('p1', 1787544000000, 31.2304, 121.4737, []),
+	], new AggExpected([
+	], [
+		new AggExpectedDay('2026-08-24', ['p1'], true),
+	])),
+	new AggCase('utc-bucket-no-shift', 0, [
+		new AggPhoto('p1', 1787614800000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787615400000, 31.2304, 121.4737, []),
+		new AggPhoto('p3', 1787616000000, 31.2304, 121.4737, []),
+	], new AggExpected([
+		['p1', 'p3', 'p2'],
+	], [
+		new AggExpectedDay('2026-08-23', ['p1', 'p2'], true),
+		new AggExpectedDay('2026-08-24', ['p3'], true),
+	])),
+	new AggCase('scale-30-photos-3days', 480, [
+		new AggPhoto('p1', 1787536800000, 31.2304, 121.4737, []),
+		new AggPhoto('p2', 1787536920000, 31.2304, 121.4737, []),
+		new AggPhoto('p3', 1787537040000, 31.2304, 121.4737, []),
+		new AggPhoto('p4', 1787540400000, 31.2306, 121.474, []),
+		new AggPhoto('p5', 1787540520000, 31.2306, 121.474, []),
+		new AggPhoto('p6', 1787540640000, 31.2306, 121.474, []),
+		new AggPhoto('p7', 1787544000000, 31.3, 121.5, []),
+		new AggPhoto('p8', 1787544120000, 31.3, 121.5, []),
+		new AggPhoto('p9', 1787544240000, 31.3, 121.5, []),
+		new AggPhoto('p10', 1787623200000, 31.2304, 121.4737, ['travel']),
+		new AggPhoto('p11', 1787623320000, 31.2304, 121.4737, ['travel']),
+		new AggPhoto('p12', 1787623440000, 31.2304, 121.4737, ['travel']),
+		new AggPhoto('p13', 1787626800000, 31.2306, 121.474, ['travel']),
+		new AggPhoto('p14', 1787626920000, 31.2306, 121.474, ['travel']),
+		new AggPhoto('p15', 1787627040000, 31.2306, 121.474, ['travel']),
+		new AggPhoto('p16', 1787630400000, 31.3, 121.5, ['travel']),
+		new AggPhoto('p17', 1787630520000, 31.3, 121.5, ['travel']),
+		new AggPhoto('p18', 1787630640000, 31.3, 121.5, ['travel']),
+		new AggPhoto('p19', 1787709600000, 31.2304, 121.4737, []),
+		new AggPhoto('p20', 1787709720000, 31.2304, 121.4737, []),
+		new AggPhoto('p21', 1787709840000, 31.2304, 121.4737, []),
+		new AggPhoto('p22', 1787713200000, 31.2306, 121.474, []),
+		new AggPhoto('p23', 1787713320000, 31.2306, 121.474, []),
+		new AggPhoto('p24', 1787713440000, 31.2306, 121.474, []),
+		new AggPhoto('p25', 1787716800000, 31.3, 121.5, []),
+		new AggPhoto('p26', 1787716920000, 31.3, 121.5, []),
+		new AggPhoto('p27', 1787717040000, 31.3, 121.5, []),
+	], new AggExpected([
+		['p1', 'p4', 'p6', 'p5', 'p3', 'p2'],
+		['p7', 'p9', 'p8'],
+		['p10', 'p13', 'p15', 'p14', 'p12', 'p11'],
+		['p16', 'p18', 'p17'],
+		['p19', 'p22', 'p24', 'p23', 'p21', 'p20'],
+		['p25', 'p27', 'p26'],
+	], [
+		new AggExpectedDay('2026-08-24', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9'], false),
+		new AggExpectedDay('2026-08-25', ['p10', 'p11', 'p12', 'p13', 'p14', 'p15', 'p16', 'p17', 'p18'], false),
+		new AggExpectedDay('2026-08-26', ['p19', 'p20', 'p21', 'p22', 'p23', 'p24', 'p25', 'p26', 'p27'], false),
+	])),
+]
