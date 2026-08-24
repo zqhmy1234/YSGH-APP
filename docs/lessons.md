@@ -8,6 +8,42 @@
 
 ---
 
+### 2026-08-24 10:17 · commit 625cb10 · ts=1787563077
+- **错误**：review_agent 门禁 tests 段失败：test_queue::test_queue_failure_goes_to_dead 断言 Job.is_failed 为 False
+- **根因**：本地调试时启动的后台 RQ worker（python -c ... worker）仍在消费 high/low 队列，抢跑了测试自己入队的 job，破坏 test_queue 的隔离预期
+- **修复**：跑 review_agent/全量 pytest 前先确保无外部 RQ worker 运行（查 Win32_Process CommandLine 含 worker 的 python 进程并 kill）
+- **相关文件**：scripts/test_agent.py
+- **教训**：pytest 前必须清理后台 RQ worker，否则队列类测试（test_queue）会被外部消费者干扰
+
+---
+
+### 2026-08-24 10:11 · commit 625cb10 · ts=1787562667
+- **错误**：HBuilderX CLI 运行到真机：标准基座下 App 权限与自建 manifest 不一致
+- **根因**：标准调试基座使用基座自身 manifest（含 READ_MEDIA_IMAGES/READ_EXTERNAL_STORAGE），项目 manifest.json 权限不生效；pm grant 需按设备 SDK 选权限名（SDK31 无 READ_MEDIA_IMAGES）
+- **修复**：插件按 Build.VERSION.SDK_INT 选择 READ_MEDIA_IMAGES(33+)/READ_EXTERNAL_STORAGE(32-)；pm grant 授权验证
+- **相关文件**：client/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts
+- **教训**：标准基座调试时以基座权限为准，运行时权限按 SDK 版本选择权限名
+
+---
+
+### 2026-08-24 10:11 · commit 625cb10 · ts=1787562667
+- **错误**：真机测试照片 taken_at 全是扫描时间而非 EXIF 拍摄时间
+- **根因**：MediaProvider content call scan_file 不提取 EXIF，DATE_TAKEN 写为扫描时间；客户端拿不到相机时间
+- **修复**：后端 upload_photo 用 PIL 从文件字节提取 EXIF DateTimeOriginal 并优先于客户端 taken_at（+08 显式解释）；客户端 UTS ExifInterface 读取为兜底
+- **相关文件**：backend/app/api/contents.py
+- **教训**：照片拍摄时间以服务端 EXIF 解析为准（相机真值），客户端时间不可信
+
+---
+
+### 2026-08-24 10:11 · commit 625cb10 · ts=1787562667
+- **错误**：真机首波 E2E：App 首扫把设备全部 9319 张真实照片当新照片全量上传（已强制止损+清库）
+- **根因**：游标 last_seen 初始为 0，首扫查询 id>0 命中整个相册；fake 存储 512MB 容量防护随后拦截（防护生效）
+- **修复**：emitIncremental 首次启动时游标初始化为当前最大照片 id（只监听后续新增，不导入存量相册）
+- **相关文件**：client/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts
+- **教训**：相册监听游标必须初始化到当前 max(id)，禁止首扫导入存量相册（隐私红线）
+
+---
+
 ### 2026-08-24 08:20 · commit f8ef2bd · ts=1787556035
 - **错误**：review_agent 首次门禁 tests 段失败，重跑即全绿（224 passed）
 - **根因**：门禁 pytest 运行期间并发执行了 ruff --fix 改写测试文件 import 段，pytest 读到文件中间态；非代码缺陷

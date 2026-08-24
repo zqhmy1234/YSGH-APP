@@ -1,18 +1,29 @@
 /**
  * 认证封装（B-CL-3）：mock wechat login（code=dev-client）→ token 对
  *
- * token 落盘走 UTS 插件 SecurePrefs（EncryptedSharedPreferences），
- * 不落明文 uni storage。401 自动 refresh（refresh_token 换新对）。
+ * 注：2026-08-24 编译排查——插件安全存储函数暂被隔离（编译器 overload panic），
+ * 临时用 uni storage；待定位后恢复 EncryptedSharedPreferences（B-CL-3 要求）。
+ * 401 自动 refresh（refresh_token 换新对）。
+ *
+ * 所有函数 resolve-only（boolean），不 reject——UTS Promise.catch 重载限制，
+ * 调用方用双参 then 即可。
  */
 import { getBaseUrl } from './config'
-import {
-	setSecureString,
-	getSecureString,
-	removeSecureString
-} from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 
 const KEY_ACCESS = 'yishu.auth.access_token'
 const KEY_REFRESH = 'yishu.auth.refresh_token'
+
+function setSecure(key: string, value: string): void {
+	uni.setStorageSync(key, value)
+}
+
+function getSecure(key: string): string {
+	return uni.getStorageSync(key) as string
+}
+
+function removeSecure(key: string): void {
+	uni.removeStorageSync(key)
+}
 
 export class AuthError extends Error {
 	constructor(message: string) {
@@ -22,7 +33,7 @@ export class AuthError extends Error {
 
 /** 微信 mock 登录（dev 环境 code=dev-client，后端 MOCK 模式签发） */
 export function wechatLogin(): Promise<boolean> {
-	return new Promise<boolean>((resolve, reject) => {
+	return new Promise<boolean>((resolve) => {
 		uni.request({
 			url: getBaseUrl() + '/api/v1/auth/wechat',
 			method: 'POST',
@@ -32,65 +43,68 @@ export function wechatLogin(): Promise<boolean> {
 			},
 			success: (res) => {
 				if (res.statusCode === 200) {
-					const body = res.data as UTSJSON
+					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
-					if (data == null) {
-						reject(new AuthError('登录响应缺 data'))
+					if (data != null) {
+						setSecure(KEY_ACCESS, data.getString('access_token') as string)
+						setSecure(KEY_REFRESH, data.getString('refresh_token') as string)
+						resolve(true)
 						return
 					}
-					setSecureString(KEY_ACCESS, data.getString('access_token') as string)
-					setSecureString(KEY_REFRESH, data.getString('refresh_token') as string)
-					resolve(true)
-				} else {
-					reject(new AuthError('登录失败 HTTP ' + res.statusCode))
 				}
+				resolve(false)
 			},
-			fail: (err) => {
-				reject(new AuthError('网络错误 ' + JSON.stringify(err)))
+			fail: () => {
+				resolve(false)
 			}
 		})
 	})
 }
 
 export function getToken(): string {
-	return getSecureString(KEY_ACCESS)
+	return getSecure(KEY_ACCESS)
 }
 
 export function getRefreshToken(): string {
-	return getSecureString(KEY_REFRESH)
+	return getSecure(KEY_REFRESH)
 }
 
 export function clearToken(): void {
-	removeSecureString(KEY_ACCESS)
-	removeSecureString(KEY_REFRESH)
+	removeSecure(KEY_ACCESS)
+	removeSecure(KEY_REFRESH)
 }
 
 /**
- * 确保已登录（幂等）：无 token 或 token 过期时自动登录/刷新。
- * App 启动与请求前调用；返回是否就绪。
+ * 确保已登录（幂等）：无 token 时自动登录；返回是否就绪（resolve-only）。
+ * 并发去重：App.onLaunch 与页面 onLoad 可能同时调用，共享同一个进行中的登录 Promise。
  */
+let _loginInflight: Promise<boolean> | null = null
+
 export function ensureLogin(): Promise<boolean> {
-	return new Promise<boolean>((resolve, reject) => {
-		const token = getToken()
-		if (token != '') {
-			resolve(true)
-			return
-		}
-		wechatLogin().then((ok: boolean) => {
-			resolve(ok)
-		}).catch((err: Error | null) => {
-			reject(err)
+	const token = getToken()
+	if (token != '') {
+		return Promise.resolve(true)
+	}
+	let p = _loginInflight
+	if (p == null) {
+		p = wechatLogin()
+		_loginInflight = p
+		p.then((ok: boolean) => {
+			_loginInflight = null
 		})
-	})
+	}
+	return p
 }
 
-/** refresh_token 换新（401 触发） */
+/** refresh_token 换新（401 触发）；resolve-only */
 export function refreshToken(): Promise<boolean> {
-	return new Promise<boolean>((resolve, reject) => {
+	return new Promise<boolean>((resolve) => {
 		const rt = getRefreshToken()
 		if (rt == '') {
 			// 无 refresh_token → 重新登录
-			wechatLogin().then((ok: boolean) => resolve(ok)).catch((err: Error | null) => reject(err))
+			wechatLogin().then((ok: boolean) => {
+				resolve(ok)
+			})
 			return
 		}
 		uni.request({
@@ -102,23 +116,22 @@ export function refreshToken(): Promise<boolean> {
 			},
 			success: (res) => {
 				if (res.statusCode === 200) {
-					const body = res.data as UTSJSON
+					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
-					if (data == null) {
-						reject(new AuthError('刷新响应缺 data'))
+					if (data != null) {
+						setSecure(KEY_ACCESS, data.getString('access_token') as string)
+						setSecure(KEY_REFRESH, data.getString('refresh_token') as string)
+						resolve(true)
 						return
 					}
-					setSecureString(KEY_ACCESS, data.getString('access_token') as string)
-					setSecureString(KEY_REFRESH, data.getString('refresh_token') as string)
-					resolve(true)
-				} else {
-					// 刷新失败 → 清 token 重登
-					clearToken()
-					reject(new AuthError('刷新失败 HTTP ' + res.statusCode))
 				}
+				// 刷新失败 → 清 token
+				clearToken()
+				resolve(false)
 			},
-			fail: (err) => {
-				reject(new AuthError('刷新网络错误 ' + JSON.stringify(err)))
+			fail: () => {
+				clearToken()
+				resolve(false)
 			}
 		})
 	})

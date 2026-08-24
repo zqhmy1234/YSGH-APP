@@ -5,9 +5,9 @@
  * 客户端按 L1/L2 分组渲染 + 增量渲染（数量大时分批 append，保证首屏流畅）。
  * 服务端游标分页列入第二波（进度文档已记录）。
  */
-import { get, dataArr, dataObj } from './api'
+import { get, dataArr } from './api'
 
-export interface TimelineEvent {
+export class TimelineEvent {
 	id: string
 	level: number
 	title: string
@@ -20,6 +20,31 @@ export interface TimelineEvent {
 	contentCount: number
 	/** L1 卡片下的 L2 主题（客户端分组填充；接口层恒为空数组） */
 	children: Array<TimelineEvent>
+
+	constructor(
+		id: string,
+		level: number,
+		title: string,
+		titleSource: string,
+		startTime: number,
+		endTime: number,
+		place: string,
+		emotion: string,
+		photoCount: number,
+		contentCount: number
+	) {
+		this.id = id
+		this.level = level
+		this.title = title
+		this.titleSource = titleSource
+		this.startTime = startTime
+		this.endTime = endTime
+		this.place = place
+		this.emotion = emotion
+		this.photoCount = photoCount
+		this.contentCount = contentCount
+		this.children = []
+	}
 }
 
 /** ISO8601 → epoch ms（UTS Date 字符串解析不可靠，手动拆解；兼容 Z 与 +08:00 偏移） */
@@ -86,32 +111,34 @@ export function parseIsoToMs(iso: string): number {
 	return utc - offsetMs
 }
 
-/** 拉取时间轴（level 过滤：null=全部 / 1=L1 / 2=L2） */
+/** 拉取时间轴（level 过滤：null=全部 / 1=L1 / 2=L2）；失败返回空数组（永不 reject） */
 export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent>> {
 	const path = level == null ? '/api/v1/events/timeline' : '/api/v1/events/timeline?level=' + level
-	return new Promise<Array<TimelineEvent>>((resolve, reject) => {
-		get(path).then((body: UTSJSON) => {
+	return new Promise<Array<TimelineEvent>>((resolve) => {
+		get(path).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve([])
+				return
+			}
 			const arr = dataArr(body)
 			const result: Array<TimelineEvent> = []
 			for (let i = 0; i < arr.length; i++) {
 				const item = arr[i]
-				result.push({
-					id: item.getString('id') as string,
-					level: item.getNumber('level') as number,
-					title: item.getString('title') ?? '',
-					titleSource: item.getString('title_source') ?? '',
-					startTime: parseIsoToMs(item.getString('start_time') ?? ''),
-					endTime: parseIsoToMs(item.getString('end_time') ?? ''),
-					place: item.getString('place') ?? '',
-					emotion: item.getString('emotion') ?? '',
-					photoCount: item.getNumber('photo_count') as number,
-					contentCount: item.getNumber('content_count') as number,
-					children: []
-				})
+				const ev = new TimelineEvent(
+					item.getString('id') as string,
+					item.getNumber('level') as number,
+					item.getString('title') ?? '',
+					item.getString('title_source') ?? '',
+					parseIsoToMs(item.getString('start_time') ?? ''),
+					parseIsoToMs(item.getString('end_time') ?? ''),
+					item.getString('place') ?? '',
+					item.getString('emotion') ?? '',
+					item.getNumber('photo_count') as number,
+					item.getNumber('content_count') as number
+				)
+				result.push(ev)
 			}
 			resolve(result)
-		}).catch((err: Error | null) => {
-			reject(err)
 		})
 	})
 }

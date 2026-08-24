@@ -9,6 +9,7 @@
 - POST /api/v1/contents/upload：照片 multipart 中转上传（客户端→后端→storage→contents→管线）
 - 复用 create_content 的去重（409）/护栏（moderate）/类型白名单语义
 """
+import io as _io
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -34,6 +35,28 @@ router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
 MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB
 ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 _PHOTO_SOURCES = ("app", "windows", "wechat", "import")
+
+
+def _extract_exif_datetime(data: bytes) -> datetime | None:
+    """从照片字节提取 EXIF DateTimeOriginal（相机拍摄时间真值）
+
+    客户端 DATE_TAKEN 可能被 MediaProvider 写成扫描时间（2026-08-24 真机实测），
+    故以后端 EXIF 解析为准：EXIF 无时区=相机本地时间（本设备 +08），
+    显式按 UTC+08:00 解释，与客户端 isoString(+08:00) 一致。
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(_io.BytesIO(data))
+        exif = img.getexif()
+        raw = exif.get(36867)  # DateTimeOriginal
+        if raw:
+            return datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S").replace(
+                tzinfo=timezone(timedelta(hours=8))
+            )
+    except Exception:  # noqa: BLE001 —— 非 JPEG/无 EXIF 静默降级
+        return None
+    return None
 
 
 @router.post("/upload", response_model=ApiResponse[ContentOut])
@@ -119,6 +142,11 @@ def upload_photo(
         verdict = moderate(check_text)
         if verdict.get("action") == "reject":
             raise ApiError("CONTENT_003", f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
+
+    # 5.1 EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）
+    exif_taken = _extract_exif_datetime(data)
+    if exif_taken is not None:
+        taken_at = exif_taken
 
     # 6. 原件落 storage（cos_key），随后建 contents 记录 + 入队
     from app.services.external.storage import get_storage_backend

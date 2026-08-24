@@ -13,10 +13,16 @@ import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 export const MAX_CONCURRENCY: number = 3
 export const MAX_RETRY: number = 2
 
-export interface UploadProgress {
+export class UploadProgress {
 	done: number
 	total: number
 	failed: number
+
+	constructor(done: number, total: number, failed: number) {
+		this.done = done
+		this.total = total
+		this.failed = failed
+	}
 }
 
 /** epoch ms → ISO8601 本地时间（UTS Date 无 toISOString，手动拼接） */
@@ -31,7 +37,7 @@ export function isoString(ms: number): string {
 
 function uploadOne(item: PhotoItem, attempt: number): Promise<boolean> {
 	return new Promise<boolean>((resolve, reject) => {
-		const meta: UTSJSON = {
+		const meta: UTSJSONObject = {
 			taken_at: isoString(item.takenAt),
 			source: 'app',
 			extra: {
@@ -39,7 +45,7 @@ function uploadOne(item: PhotoItem, attempt: number): Promise<boolean> {
 				height: item.height
 			}
 		}
-		const header: UTSJSON = {}
+		const header: UTSJSONObject = {}
 		const token = getToken()
 		if (token != '') {
 			header.set('Authorization', 'Bearer ' + token)
@@ -67,66 +73,92 @@ function uploadOne(item: PhotoItem, attempt: number): Promise<boolean> {
 	})
 }
 
-function uploadWithRetry(item: PhotoItem): Promise<boolean> {
-	return new Promise<boolean>((resolve) => {
-		let attempt = 0
-		const tryOnce = (): void => {
-			attempt++
-			uploadOne(item, attempt).then((ok: boolean) => {
-				resolve(ok)
-			}).catch((err: Error | null) => {
-				if (attempt <= MAX_RETRY) {
-					tryOnce()
-				} else {
-					console.error('[yishu] 上传失败（重试耗尽）: ' + (err != null ? err.message : ''))
-					resolve(false)
-				}
-			})
+/** 单张重试（模块级递归，避免 UTS 自引用箭头函数限制） */
+function retryOnce(item: PhotoItem, attempt: number, resolve: (ok: boolean) => void): void {
+	uploadOne(item, attempt).then((ok: boolean) => {
+		resolve(ok)
+	}, () => {
+		if (attempt <= MAX_RETRY) {
+			retryOnce(item, attempt + 1, resolve)
+		} else {
+			console.error('[yishu] 上传失败（重试耗尽）')
+			resolve(false)
 		}
-		tryOnce()
 	})
 }
 
-/** 并发 ≤3 的批量上传；返回最终进度 */
+function uploadWithRetry(item: PhotoItem): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		retryOnce(item, 1, resolve)
+	})
+}
+
+/** 并发池（游标式分配，天然实现 ≤3 并发） */
+class UploadPool {
+	items: Array<PhotoItem>
+	onProgress: (p: UploadProgress) => void
+	resolve: (p: UploadProgress) => void
+	index: number = 0
+	done: number = 0
+	failed: number = 0
+	total: number
+
+	constructor(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (p: UploadProgress) => void) {
+		this.items = items
+		this.onProgress = onProgress
+		this.resolve = resolve
+		this.total = items.length
+	}
+
+	start(): void {
+		const slots = this.total < MAX_CONCURRENCY ? this.total : MAX_CONCURRENCY
+		for (let s = 0; s < slots; s++) {
+			this.next()
+		}
+	}
+
+	next(): void {
+		const i = this.index
+		this.index++
+		if (i >= this.total) {
+			return
+		}
+		uploadWithRetry(this.items[i]).then((ok: boolean) => {
+			if (ok) {
+				this.done++
+			} else {
+				this.failed++
+			}
+			const p = new UploadProgress(this.done, this.total, this.failed)
+			this.onProgress(p)
+			if (this.done + this.failed === this.total) {
+				this.resolve(p)
+			} else {
+				this.next()
+			}
+		})
+	}
+}
+
+/** 并发 ≤3 的批量上传；返回最终进度（上传前确保已登录，token 失效自动重登） */
 export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) => void): Promise<UploadProgress> {
 	return new Promise<UploadProgress>((resolve) => {
 		if (items.length === 0) {
-			const empty: UploadProgress = { done: 0, total: 0, failed: 0 }
+			const empty = new UploadProgress(0, 0, 0)
 			onProgress(empty)
 			resolve(empty)
 			return
 		}
-		let index = 0
-		let done = 0
-		let failed = 0
-		const total = items.length
-
-		const worker = (): void => {
-			// 从队列取下一张（游标式分配，天然实现 ≤3 并发）
-			const i = index
-			index++
-			if (i >= total) {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				console.error('[yishu] 上传前登录失败')
+				const fail = new UploadProgress(0, items.length, items.length)
+				onProgress(fail)
+				resolve(fail)
 				return
 			}
-			uploadWithRetry(items[i]).then((ok: boolean) => {
-				if (ok) {
-					done++
-				} else {
-					failed++
-				}
-				const p: UploadProgress = { done: done, total: total, failed: failed }
-				onProgress(p)
-				if (done + failed === total) {
-					resolve(p)
-				} else {
-					worker()
-				}
-			})
-		}
-
-		const slots = total < MAX_CONCURRENCY ? total : MAX_CONCURRENCY
-		for (let s = 0; s < slots; s++) {
-			worker()
-		}
+			const pool = new UploadPool(items, onProgress, resolve)
+			pool.start()
+		})
 	})
 }

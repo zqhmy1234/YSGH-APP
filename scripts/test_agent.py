@@ -67,29 +67,12 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
 
 
 def run_api_smoke() -> tuple[bool, str]:
-    """FastAPI TestClient 冒烟（不依赖外部服务，mock 模式）"""
-    script = (
-        "import sys; "
-        "sys.path.insert(0, r'" + str(ROOT) + "'); "
-        "sys.path.insert(0, r'" + str(ROOT / "backend") + "'); "
-        "from fastapi.testclient import TestClient; "
-        "from app.main import app; "
-        "c = TestClient(app); "
-        "checks = []; "
-        "r = c.get('/healthz'); checks.append(('healthz', r.status_code == 200)); "
-        "r = c.post('/api/v1/auth/wechat', json={'code':'t1','device_id':'d1'}); "
-        "checks.append(('auth-wechat', r.status_code == 200 and 'access_token' in r.json().get('data', {}))); "
-        "token = r.json().get('data', {}).get('access_token', ''); "
-        "h = {'Authorization': 'Bearer ' + token} if token else {}; "
-        "r = c.post('/api/v1/contents', json={'content_type':'text','text':'hello','source':'app'}, headers=h); "
-        "checks.append(('content-create', r.status_code == 200)); "
-        "r = c.post('/api/v1/search', json={'q':'杭州'}, headers=h); "
-        "checks.append(('search', r.status_code == 200 and len(r.json().get('data', {}).get('hits', [])) > 0)); "
-        "failed = [n for n, ok in checks if not ok]; "
-        "print('SMOKE:', {n: ('PASS' if ok else 'FAIL') for n, ok in checks}); "
-        "sys.exit(1 if failed else 0)"
-    )
-    code, out = run([sys.executable, "-c", script])
+    """API 真实用例冒烟（2026-08-24 用户拍板：替代原最小冒烟）
+
+    真实用户旅程：认证安全 / 文字全链路（创建→管线→分类→搜索命中）/
+    照片 multipart 上传链路 / 时间轴结构 / 去重 409。详见 scripts/api_smoke_cases.py。
+    """
+    code, out = run([sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")])
     return (code == 0), out.strip()[-1500:]
 
 

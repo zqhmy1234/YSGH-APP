@@ -2,10 +2,11 @@
  * 网络层封装（B-CL-4）：统一请求（超时/错误码/全局 toast/ApiError 映射）
  *
  * 约定：
- *  - 后端响应信封 {code, message, data}；data 可为对象或数组
+ *  - 后端响应信封 {code, message, data}；data 可为对象或数组（UTSJSONObject 字段访问）
  *  - 401 → 自动 refresh（refresh_token 轮换）→ 重放一次；仍失败清 token
- *  - 网络/超时/业务错误统一抛 ApiError，UI 层可选择性 toast
- *  - 解析辅助：dataObj() 取对象 data；dataArr() 取数组 data（UTSJSON 数组根不可靠，信封字段安全）
+ *  - 错误处理：resolve(null) + 全局 toast（UTS Promise 无可靠 catch/onRejected 重载，
+ *    本模块永不 reject，调用方判空即可）
+ *  - 解析辅助：dataObj() 取对象 data；dataArr() 取数组 data
  */
 import { getBaseUrl } from './config'
 import { getToken, refreshToken, clearToken } from './auth'
@@ -35,8 +36,8 @@ export function showErrorToast(err: Error | null): void {
 	})
 }
 
-function buildHeader(): UTSJSON {
-	const header: UTSJSON = {
+function buildHeader(): UTSJSONObject {
+	const header: UTSJSONObject = {
 		'Content-Type': 'application/json'
 	}
 	const token = getToken()
@@ -46,8 +47,8 @@ function buildHeader(): UTSJSON {
 	return header
 }
 
-function doRequest(path: string, method: Method, data: UTSJSON | null): Promise<UTSJSON> {
-	return new Promise<UTSJSON>((resolve, reject) => {
+function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
 		uni.request({
 			url: getBaseUrl() + path,
 			method: method,
@@ -55,66 +56,65 @@ function doRequest(path: string, method: Method, data: UTSJSON | null): Promise<
 			header: buildHeader(),
 			timeout: REQUEST_TIMEOUT_MS,
 			success: (res) => {
-				const body = res.data as UTSJSON
 				if (res.statusCode === 200) {
-					resolve(body)
+					resolve(res.data as UTSJSONObject)
 					return
 				}
-				const code = body.getString('code') ?? 'UNKNOWN'
-				const message = body.getString('message') ?? ('HTTP ' + res.statusCode)
-				reject(new ApiError(code, message, res.statusCode))
+				const body = res.data as UTSJSONObject
+				const err = new ApiError(
+					body.getString('code') ?? 'UNKNOWN',
+					body.getString('message') ?? ('HTTP ' + res.statusCode),
+					res.statusCode
+				)
+				// 401 → refresh 一次后重放；refresh 失败清 token
+				if (res.statusCode === 401 && !retried) {
+					refreshToken().then((ok: boolean) => {
+						if (ok) {
+							doRequest(path, method, data, true).then((b: UTSJSONObject | null) => {
+								resolve(b)
+							})
+						} else {
+							clearToken()
+							showErrorToast(err)
+							resolve(null)
+						}
+					})
+				} else {
+					showErrorToast(err)
+					resolve(null)
+				}
 			},
-			fail: (err) => {
-				reject(new ApiError('NETWORK', '网络异常：' + JSON.stringify(err), 0))
+			fail: () => {
+				showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
+				resolve(null)
 			}
 		})
 	})
 }
 
-/** 带 401 自动刷新重放的统一请求；resolve 完整信封（解析辅助见 dataObj/dataArr） */
-export function request(path: string, method: Method, data: UTSJSON | null, retried: boolean = false): Promise<UTSJSON> {
-	return new Promise<UTSJSON>((resolve, reject) => {
-		doRequest(path, method, data).then((body: UTSJSON) => {
-			resolve(body)
-		}).catch((err: Error | null) => {
-			const apiErr = err as ApiError
-			if (apiErr.httpStatus === 401 && !retried) {
-				refreshToken().then((ok: boolean) => {
-					if (ok) {
-						request(path, method, data, true).then((b: UTSJSON) => resolve(b)).catch((e: Error | null) => reject(e))
-					} else {
-						clearToken()
-						reject(err)
-					}
-				}).catch((e: Error | null) => {
-					clearToken()
-					reject(e)
-				})
-			} else {
-				reject(err)
-			}
-		})
-	})
+/** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject */
+export function request(path: string, method: Method, data: UTSJSONObject | null): Promise<UTSJSONObject | null> {
+	return doRequest(path, method, data, false)
 }
 
-export function get(path: string): Promise<UTSJSON> {
-	return request(path, 'GET', null, false)
+export function get(path: string): Promise<UTSJSONObject | null> {
+	return request(path, 'GET', null)
 }
 
-export function post(path: string, data: UTSJSON): Promise<UTSJSON> {
-	return request(path, 'POST', data, false)
+export function post(path: string, data: UTSJSONObject): Promise<UTSJSONObject | null> {
+	return request(path, 'POST', data)
 }
 
-/** 取信封 data 字段（对象） */
-export function dataObj(body: UTSJSON): UTSJSON | null {
+/** 取信封 data 字段（对象）；body 为空返回 null */
+export function dataObj(body: UTSJSONObject): UTSJSONObject | null {
 	return body.getJSON('data')
 }
 
-/** 取信封 data 字段（数组） */
-export function dataArr(body: UTSJSON): Array<UTSJSON> {
+/** 取信封 data 字段（数组）；无则空数组 */
+export function dataArr(body: UTSJSONObject): Array<UTSJSONObject> {
 	const arr = body.getArray('data')
 	if (arr == null) {
 		return []
 	}
-	return arr as Array<UTSJSON>
+	return arr as Array<UTSJSONObject>
 }

@@ -1,5 +1,31 @@
 # Session Progress Log — 忆述光华
 
+## 📱 真机 E2E 全链路验收（2026-08-24 下午 · nova 11 FOA-AL00）
+
+**链路已全通**：相册监听（ContentObserver）→ 游标去重 → 4s 静默窗口攒批 → multipart 上传 → 后端 EXIF → 云侧聚合 → F8 时间轴渲染 ✅
+
+### 验收证据（B-UT/B-UP/B-F8/B-VA）
+1. **编译**：HBuilderX 5.15 CLI 全量编译通过（纯 UTS 插件 + utils + 页面，~30s/轮，多轮迭代修复）
+2. **运行**：标准调试基座安装→同步→启动成功（onLaunch 3s，页面渲染 234ms）
+3. **空状态**（B-F8-3）：截屏验证——标题/副标题/插画/文案/CTA 按钮，配色符合视觉规范 ✅
+4. **真实上传**：50 张测试照片 → 观察者分批发现（found 4/1/...）→ 上传 200 OK → 自动刷新时间轴 ✅
+5. **EXIF 真值**：后端 PIL 提取 DateTimeOriginal 覆盖客户端时间 → contents taken_at = 08-22(40)/08-23(10) ✅（曾实测 scan_file 污染 DATE_TAKEN → 后端 EXIF 修复）
+6. **时间轴渲染**（B-F8-1）：截屏验证 L1 日卡片（“2026-08-22 · 1条 / 40 张照片”等）双卡片结构正确、视觉规范落地 ✅
+7. **隐私防护**：首扫游标初始化到 max(id)（不导入存量相册）——事故教训已修复并验证（只收新照片）
+
+### 真机暴露问题（已修 + 教训登记）
+1. 首扫全量上传 9319 张存量相册（隐私红线）→ 游标初始化修复
+2. scan_file 不提取 EXIF → 后端 EXIF 权威解析（新增 pytest：EXIF 覆盖客户端时间）
+3. 并发双 ensureLogin 撞 devices 唯一约束（后端 500）→ _issue_tokens IntegrityError 兜底 + 客户端单飞
+4. fake 存储 512MB 容量上限触发（防护生效，误伤后续上传）→ 重启进程即恢复；真实联调用 minio/cos
+5. 标准基座权限以基座 manifest 为准；SDK31 用 READ_EXTERNAL_STORAGE（pm grant 验证）
+
+### 遗留说明
+- 手机时钟/时区错乱（设备显示 08-25 05:00）→ 日标签偏移一天；设备时间正常后自愈（非代码缺陷）
+- L2 语义归并待真实数据（P2-07 已知）；L2 候选结构在 50 张全链路验证中已存在
+- 30s 门禁：服务端链路 4.2s 上传 + 5.6s 管线（单进程验证）；设备侧受 WiFi/扫描节奏影响，观察者分批触发（4s 窗口）
+- 设备上测试照片目录已清理；后端 dev-client 测试用户数据已清
+
 ## 🚀 客户端第一波（2026-08-24 · W3）
 
 **状态**：后端交付完成 ✅ / 客户端代码全部就绪（待 HBuilderX 编译 + 真机验收）
@@ -23,10 +49,11 @@
 - feature_list.json：F1/F8 置 in-progress + 证据更新
 
 ### ⛔ 阻塞/待办（需峰宝/设备）
-1. **nova 11 adb unauthorized**：需在手机上允许 USB 调试授权（B-UT-5 自定义基座 / B-VA-1 push / B-VA-2 30s 计时 / B-F8-4 截图自审 全被卡）
-2. HBuilderX 编译验证：打开 client/ → 编译 UTS 插件（重点核对 index.uts↔Kotlin 桥接与 UTSJSON 解析）
+1. ~~nova 11 adb unauthorized~~ ✅ 已授权（2026-08-24 下午真机 E2E 全链路验收完成）
+2. HBuilderX 编译验证：✅ 已通过（纯 UTS 插件 + 标准基座，多轮编译修复）
 3. L2 语义归并：待 50 张真实照片 + 事件真值（团队）
 4. DASHSCOPE/TENCENT/COS/AMAP/SENTRY key 在 Infisical（本地 .env 为空，mock 模式开发）；真实联调按 skills/infisical-secrets/SKILL.md 注入
+5. EncryptedSharedPreferences（SecurePrefs）随自定义基座波次恢复（当前 uni storage 临时）
 
 ### 📌 环境经验（2026-08-24）
 - 本机 LobsterAI python 不加载 cwd/PYTHONPATH：`python -m app.workers.worker` 报 No module named 'app' → 需 `python -c "import sys; sys.path.insert(0, r'D:\GuangH-App\backend'); from app.workers.worker import main; main()" high low` 启动

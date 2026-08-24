@@ -17,6 +17,7 @@ ignore = [
 "research/**" = ["DTZ001", "DTZ901"]
 "backend/migrations/**" = ["E501", "W291", "I001", "UP"]  # Alembic 自动生成文件：模板风格非手写，格式豁免
 "scripts/**" = ["S112", "S603", "S607", "S311", "DTZ001", "DTZ002"]  # 脚本读文件/调子进程/调 git 是审核器本职；生成测试数据用本地壁钟时间与种子随机（均有意义）
+"scripts/api_smoke_cases.py" = ["S101"]  # 真实用例冒烟本身就是测试运行器（断言是本职）
 "backend/tests/**" = ["S101"]  # pytest 测试天然用 assert 断言
 "backend/tests/test_wechat.py" = ["S105"]  # 官方测试凭证（path/90931，非真实密钥）
 "backend/tests/test_config_alias.py" = ["S105", "S106"]  # 密钥名测试占位值（old-key/ci-key 非真实）

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -214,7 +215,21 @@ def _issue_tokens(db: Session, user: User, device_id: str, platform: str = "andr
         db.add(device)
     device.refresh_token = refresh
     device.last_active_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发同设备登录（客户端双 ensureLogin 竞态，2026-08-24 真机实测）：
+        # 唯一约束 uq_devices_user_device 冲突 → 回滚重查复用已有行
+        db.rollback()
+        existing = db.execute(
+            select(Device).where(Device.user_id == user.id, Device.device_id == device_id)
+        ).scalar_one_or_none()
+        if existing is None:
+            raise
+        existing.refresh_token = refresh
+        existing.last_active_at = datetime.now(timezone.utc)
+        db.commit()
+        device = existing
 
     return TokenPair(
         access_token=access,

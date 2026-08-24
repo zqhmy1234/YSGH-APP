@@ -57,13 +57,19 @@
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchTimeline, dayKey, friendlyDay, TimelineEvent } from '@/utils/timeline'
 	import { uploadBatch, UploadProgress } from '@/utils/uploader'
-	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
 	import { showErrorToast } from '@/utils/api'
 
-	interface DayGroup {
+	class DayGroup {
 		key: string
 		label: string
 		events: Array<TimelineEvent>
+
+		constructor(key: string, label: string, events: Array<TimelineEvent>) {
+			this.key = key
+			this.label = label
+			this.events = events
+		}
 	}
 
 	export default {
@@ -81,9 +87,6 @@
 		onLoad() {
 			ensureLogin().then((ok: boolean) => {
 				this.reload()
-			}).catch((err: Error | null) => {
-				console.error('[yishu] login failed: ' + (err != null ? err.message : ''))
-				this.loaded = true
 			})
 		},
 		onShow() {
@@ -97,10 +100,6 @@
 			reload(): void {
 				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
 					this.days = this.groupDays(events)
-					this.loaded = true
-					this.refreshing = false
-				}).catch((err: Error | null) => {
-					showErrorToast(err)
 					this.loaded = true
 					this.refreshing = false
 				})
@@ -125,20 +124,19 @@
 				for (let i = 0; i < l1.length; i++) {
 					const ev = l1[i]
 					const k = dayKey(ev.startTime)
-					const copy: TimelineEvent = {
-						id: ev.id,
-						level: ev.level,
-						title: ev.title,
-						titleSource: ev.titleSource,
-						startTime: ev.startTime,
-						endTime: ev.endTime,
-						place: ev.place,
-						emotion: ev.emotion,
-						photoCount: ev.photoCount,
-						contentCount: ev.contentCount,
-						children: []
-					}
-					groups.push({ key: k, label: friendlyDay(ev.startTime), events: [copy] })
+					const copy = new TimelineEvent(
+						ev.id,
+						ev.level,
+						ev.title,
+						ev.titleSource,
+						ev.startTime,
+						ev.endTime,
+						ev.place,
+						ev.emotion,
+						ev.photoCount,
+						ev.contentCount
+					)
+					groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
 					l1ByDay.set(k, groups.length - 1)
 				}
 				for (let j = 0; j < l2.length; j++) {
@@ -148,7 +146,7 @@
 					if (idx != null && groups[idx].events.length > 0) {
 						groups[idx].events[0].children.push(ev)
 					} else {
-						groups.push({ key: k, label: friendlyDay(ev.startTime), events: [ev] })
+						groups.push(new DayGroup(k, friendlyDay(ev.startTime), [ev]))
 						l1ByDay.set(k, groups.length - 1)
 					}
 				}
@@ -158,27 +156,26 @@
 				this.refreshing = true
 				this.reload()
 			},
-			/** 授权相册 → 启动监听（B-UT-5 前置） */
+			/** 授权相册 → 启动监听（B-UT-5 前置；权限请求由插件原生实现） */
 			onGrantAndStart(): void {
-				uni.authorize({
-					scope: 'scope.album',
-					success: () => {
-						this.startWatch()
-					},
-					fail: () => {
-						uni.showToast({ title: '需要相册权限才能整理照片', icon: 'none' })
-					}
-				})
+				console.log('[yishu] CTA tapped')
+				const watch = createPhotoWatch()
+				console.log('[yishu] permission granted? ' + watch.isReadPermissionGranted())
+				watch.requestReadPermission()
+				this.startWatch()
 			},
 			/** 启动 PhotoObserver 监听（幂等） */
 			startWatch(): void {
+				console.log('[yishu] startWatch begin')
 				const watch = createPhotoWatch()
 				watch.start((items: Array<PhotoItem>) => {
+					console.log('[yishu] batch received: ' + items.length)
 					if (items.length === 0) {
 						return
 					}
 					this.handleBatch(items)
 				})
+				console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
 				uni.showToast({ title: '已开始监听相册', icon: 'none' })
 			},
 			/** 攒批 → 上传（并发≤3）→ 完成拉 timeline 刷新（B-UP-2） */
@@ -228,7 +225,6 @@
 		letter-spacing: 6rpx;
 	}
 	.header-sub {
-		display: block;
 		margin-top: 8rpx;
 		font-size: 26rpx;
 		color: #8a7a6a;

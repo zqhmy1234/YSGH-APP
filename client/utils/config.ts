@@ -7,8 +7,8 @@
  */
 export const ENV: string = 'dev' // 'dev' | 'prod'
 
-/** 真机联调：本机后端局域网 IP（留空则走模拟器地址） */
-export const REAL_DEVICE_HOST: string = ''
+/** 真机联调：本机后端局域网 IP（留空则走模拟器地址）——nova 11 联调 2026-08-24 */
+export const REAL_DEVICE_HOST: string = '192.168.31.165'
 
 const DEV_BASE_URL: string = 'http://10.0.2.2:8000'
 const PROD_BASE_URL: string = 'https://api.yishuguanghua.example.com'

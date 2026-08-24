@@ -1,18 +1,19 @@
 /**
  * 忆述光华 · 相册监听与安全存储插件接口（B-UT-1）
  *
- * 系统能力层（UTS 插件）：
- *  1. 相册监听（PhotoObserver.kt，Hybrid Mode 平移自 research/poc/android）
- *     - ContentObserver + MediaScanner 兼容（POC-01 已验证）
+ * 系统能力层（UTS 插件，纯 UTS 实现——标准基座可运行，无需自定义基座）：
+ *  1. 相册监听：ContentObserver（UTS 继承原生类）+ MediaScanner 兼容（POC-01 已验证）
  *     - 游标去重：SharedPreferences last_seen（照片 _id），已处理跳过（B-UT-3）
  *     - 静默窗口攒批：3-5s 无新照片 → 回调 uvue 层（B-UT-4）
- *  2. 安全存储（SecurePrefs.kt）：EncryptedSharedPreferences（token 等敏感值，B-CL-3）
+ *  2. 权限：READ_MEDIA_IMAGES（Android 13+）运行时请求 + 状态查询
  *
- * 接口文件只声明；实现位于 app-android/index.uts（函数声明由平台目录实现）。
+ * 注（2026-08-24 决策调整）：原 Hybrid Mode（Kotlin PhotoObserver/SecurePrefs）需自定义基座，
+ * 且 EncryptedSharedPreferences 依赖 androidx.security 三方库；第一波改为纯 UTS 实现跑标准基座，
+ * 安全存储（EncryptedSharedPreferences）随自定义基座波次恢复。
  */
 
-/** 单张新照片元数据（跨 UTS/Kotlin 以 JSON 桥接，字段与 MediaStore 游标一一对应） */
-export interface PhotoItem {
+/** 单张新照片元数据（字段与 MediaStore 游标一一对应） */
+export class PhotoItem {
 	/** MediaStore _id */
 	id: number
 	/** 文件绝对路径（DATA） */
@@ -23,6 +24,14 @@ export interface PhotoItem {
 	width: number
 	/** 高（HEIGHT，API 29+ 有值） */
 	height: number
+
+	constructor(id: number, path: string, takenAt: number, width: number, height: number) {
+		this.id = id
+		this.path = path
+		this.takenAt = takenAt
+		this.width = width
+		this.height = height
+	}
 }
 
 /** 攒批回调：一批新照片（已按静默窗口去重） */
@@ -36,12 +45,11 @@ export interface PhotoWatch {
 	stop(): void
 	/** 读取当前游标（last_seen photo _id，用于 UI 展示状态） */
 	getLastSeenId(): number
+	/** 请求相册读取权限（Android 13+ READ_MEDIA_IMAGES；弹系统框） */
+	requestReadPermission(): void
+	/** 相册读取权限是否已授予 */
+	isReadPermissionGranted(): boolean
 }
 
 /** 创建相册监听器实例（跨端工厂，平台目录实现） */
 export function createPhotoWatch(): PhotoWatch
-
-/** 安全存储（EncryptedSharedPreferences，token/敏感值专用） */
-export function setSecureString(key: string, value: string): void
-export function getSecureString(key: string): string
-export function removeSecureString(key: string): void

@@ -3,6 +3,7 @@
 覆盖：成功链路（落库+storage+管线入队）/ 去重 409 / 护栏 422 / 未授权 401 /
       文件校验（类型白名单/空文件/超限 413）/ meta 边界（坏 JSON/越界 GPS/非法 source）
 """
+import io as _io
 import json
 import uuid
 
@@ -134,3 +135,22 @@ def test_upload_heic_ext_ok(client, auth_headers):
     """HEIC 扩展名白名单放行（客户端常见格式）"""
     r = _upload(client, auth_headers, filename="photo.heic", content=b"heic-bytes")
     assert r.status_code == 200
+
+
+def test_upload_exif_overrides_client_taken_at(client, auth_headers):
+    """EXIF DateTimeOriginal 优先于客户端 taken_at（2026-08-24 真机实测：
+    MediaProvider 扫描时间污染客户端时间 → 后端以 EXIF 相机时间为准）"""
+    from PIL import Image
+
+    buf = _io.BytesIO()
+    img = Image.new("RGB", (64, 64), (120, 150, 90))
+    exif = Image.Exif()
+    exif[36867] = "2026:08:22 08:00:00"
+    img.save(buf, "JPEG", exif=exif.tobytes())
+    content = buf.getvalue()
+
+    meta = {"taken_at": "2026-08-24T10:00:00+08:00", "source": "app"}
+    r = _upload(client, auth_headers, content=content, meta=meta)
+    assert r.status_code == 200, r.text
+    taken = r.json()["data"]["taken_at"]
+    assert taken.startswith("2026-08-22"), f"EXIF 时间应覆盖客户端时间: {taken}"
