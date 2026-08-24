@@ -3,10 +3,10 @@
 > 交接文档（2026-08-20 维护重写）。目标：**任何 Agent/成员接手后 15 分钟内能上手**。
 > 完整状态见 [progress.md](progress.md)（状态卡 + 完成/待办）；本文件只留"下一步怎么办"。
 
-## 当前状态（2026-08-20）
+## 当前状态（2026-08-24 更新）
 
-- **仓库**：D:\GuangH-App（develop 分支，工作区干净）；将上传团队 GitHub
-- **门禁**：pytest 203 全过 + ruff 全绿 + review_agent 全绿（pre-commit 强制）
+- **仓库**：D:\GuangH-App（develop 分支）；团队 GitHub（zqhmy1234/YSGH-APP）main 分支已上传 = 本地 3869111 单快照，**与远程一致、无他人新提交**；本地 feature/m1-* 分支与 tag v0.1.0-sprint1 未推送
+- **门禁**：pytest 215 passed（14 deselected，覆盖率 75.20%）+ ruff 全绿 + review_agent 全绿（pre-commit 强制；2026-08-24 已修 research 段旧模块路径）
 - **教训登记**：`scripts/lessons.py` + review_agent 集成（失败未登记教训 → 阻断 commit，程序化强制）
 - **测试基础设施**：PG（本地服务）/ Redis / Qdrant（docker 容器）——**Docker 重启后容器会 Exited，需手动 `docker start yishu-redis yishu-qdrant`**
 

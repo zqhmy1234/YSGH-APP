@@ -97,8 +97,8 @@ def run_research_validation() -> tuple[bool, str]:
     """事件聚合原型验证（POC-05）"""
     cmd = (
         "import sys; "
-        "sys.path.insert(0, r'" + str(ROOT) + "'); "
-        "from research.event_aggregation.run_validation import main; main()"
+        "sys.path.insert(0, r'" + str(ROOT / "backend") + "'); "
+        "from app.services.event_aggregation.run_validation import main; main()"
     )
     code, out = run([sys.executable, "-c", cmd])
     return (code == 0), out.strip()[-1500:]

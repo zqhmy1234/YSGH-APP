@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-24 14:38 · commit 3869111 · ts=1787553539
+- **错误**：review_agent 用 managed python(3.13.12) 跑时 lint/tests 显示 [skip]（ruff/pytest 未安装），用系统/LobsterAI python 才有依赖；全量 pytest 18 failed 为 redis ConnectionError
+- **根因**：项目依赖（fastapi/sqlalchemy/redis 等）装在 LobsterAI runtime site-packages，不在 managed python 环境；yishu-redis 容器依赖 Docker Desktop 引擎，引擎未启动时连接失败
+- **修复**：review_agent/test_agent 统一用 LobsterAI runtime python（C:/Users/ghf/AppData/Roaming/LobsterAI/runtimes/python-win/python.exe）执行；跑测试前先 docker ps 确认引擎+容器，引擎未起先启动 Docker Desktop
+- **相关文件**：scripts/review_agent.py
+- **教训**：（无）
+
+---
+
+### 2026-08-24 11:29 · commit 3869111 · ts=1787542161
+- **错误**：review_agent research 段 ModuleNotFoundError: No module named 'research.event_aggregation'（原型验证失败，test-report.json passed=false 但文档仍写'全绿'）
+- **根因**：P2-02 重构将 event_aggregation 从 research/ 迁入 backend/app/services/ 后，scripts/test_agent.py run_research_validation 仍用旧 import 路径 research.event_aggregation.run_validation；review_agent 非绿状态未同步到 progress/session-handoff
+- **修复**：run_research_validation 改 sys.path.insert(0, ROOT/backend) + from app.services.event_aggregation.run_validation import main；--only research 实测全过（497 张基准）
+- **相关文件**：scripts/test_agent.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-20 17:31 · commit d98d3c8 · ts=1787243472
 - **错误**：git commit 被 pre-commit 阻断（lint: migrations 目录 E501/W291）
 - **根因**：Alembic 自动生成的迁移文件行超长/尾随空格，ruff 未对 migrations/ 豁免；且 review_agent 未在首次 commit 前完整执行
@@ -138,9 +156,6 @@
 
 > 本专区是"踩坑清单"唯一权威来源（AGENTS.md 只保留一行引用）。
 > 新坑必登记：`python scripts/lessons.py add --error ... --root-cause ...`（程序化强制）。
-
-### 本机运行时（Windows + LobsterAI python）
-## 环境陷阱与经验（2026-08-19 起，多轮实战积累）
 
 ### 本机运行时（Windows + LobsterAI python）
 1. **python 是 LobsterAI runtime shim**：`sys.path` 不含 cwd/脚本目录（-c 和文件模式都如此）→ 任何脚本开头 `sys.path.insert(0, <backend|repo>)`；`python -m` 模块方式同样需要
