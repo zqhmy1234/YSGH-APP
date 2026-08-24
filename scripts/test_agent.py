@@ -38,17 +38,51 @@ SUB_ENV = {
 }
 
 
-def run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+def run(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
+    sub_env = {**SUB_ENV, **(env or {})}
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, cwd=cwd or ROOT,
-            timeout=600, encoding="utf-8", errors="replace", env=SUB_ENV, check=False,
+            timeout=600, encoding="utf-8", errors="replace", env=sub_env, check=False,
         )
+        if proc.returncode < 0:
+            return proc.returncode, (
+                f"进程被杀（returncode={proc.returncode}，疑似内存不足 OOM）\n"
+                "  处理：释放内存（关 HBuilderX 编译残留/其他大进程）后重跑；"
+                "或 python scripts/test_agent.py --only research 分段验证"
+            )
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
     except FileNotFoundError:
         return 127, f"command not found: {cmd[0]}"
     except subprocess.TimeoutExpired:
         return 124, "timeout"
+
+
+def _free_memory_gb() -> float:
+    """可用物理内存 GB（Windows GlobalMemoryStatusEx）；探测失败返回 -1"""
+    try:
+        import ctypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            return stat.ullAvailPhys / (1024**3)
+    except Exception:  # noqa: BLE001 —— 探测失败不阻断（无可用内存信息）
+        return -1.0
+    return -1.0
 
 
 def run_pytest(cov_threshold: int) -> tuple[bool, str]:
@@ -71,8 +105,13 @@ def run_api_smoke() -> tuple[bool, str]:
 
     真实用户旅程：认证安全 / 文字全链路（创建→管线→分类→搜索命中）/
     照片 multipart 上传链路 / 时间轴结构 / 去重 409。详见 scripts/api_smoke_cases.py。
+    2026-08-25 内存优化：smoke 进程跳过 reranker 加载（RERANKER_MODEL=__disabled__，
+    命中存在性检查即降级原序）——rerank 覆盖在 pytest -m rag；smoke 峰值降 ~0.5-1GB。
     """
-    code, out = run([sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")])
+    code, out = run(
+        [sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")],
+        env={"RERANKER_MODEL": "__disabled__"},
+    )
     return (code == 0), out.strip()[-1500:]
 
 
@@ -92,6 +131,15 @@ def main() -> int:
     parser.add_argument("--cov-threshold", type=int, default=60, help="覆盖率阈值（默认 60）")
     parser.add_argument("--only", choices=["api", "research"], help="只跑部分")
     args = parser.parse_args()
+
+    free = _free_memory_gb()
+    if free >= 0:
+        print(f"可用物理内存: {free:.1f}GB")
+        if args.only is None and free < 4.0:
+            print(
+                "⚠ 可用内存 <4GB：重模型阶段（api_smoke 峰值 ~2.5GB）有 OOM 风险——"
+                "建议先关闭 HBuilderX 编译残留/TRAE/WorkBuddy 等大进程"
+            )
 
     sections = {
         "pytest": run_pytest(args.cov_threshold) if args.only is None or args.only == "api" else (True, "[skip]"),

@@ -34,10 +34,15 @@ LABEL_CN_MAP = dict(zip(DEFAULT_CLASSES, DEFAULT_CLASSES_CN, strict=True))
 
 @lru_cache(maxsize=1)
 def _load() -> tuple[object, list[str], list[str]]:
-    """加载模型 + 标签映射（进程内单例）"""
+    """加载模型 + 标签映射（进程内单例）
+
+    2026-08-25 内存优化：model_kwargs torch_dtype=float16（SetFit 底座=BGE-M3 全参微调，
+    fp32 实测 2.2GB → fp16 约 1.2GB；CPU 推理可用，test_setfit 回归覆盖）。
+    """
+    import torch
     from setfit import SetFitModel
 
-    model = SetFitModel.from_pretrained(_MODEL_DIR)
+    model = SetFitModel.from_pretrained(_MODEL_DIR, model_kwargs={"torch_dtype": torch.float16})
     labels_path = _MODEL_DIR / "labels.json"
     if labels_path.exists():
         meta = json.loads(labels_path.read_text(encoding="utf-8"))

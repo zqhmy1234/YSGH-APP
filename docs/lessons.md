@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-24 18:54 · commit a2993d2 · ts=1787594057
+- **错误**：review_agent/api_smoke 峰值内存 ~4-6GB：可用内存 0.9GB 时 git commit 被 SIGKILL（pre-commit hook 跑 review_agent）
+- **根因**：smoke 单进程同时加载 SetFit（fp32 2.2GB）+ BGE-M3 fp16（1.7GB）+ reranker（fp32 ~1GB）≈5.5-6GB；本机 TRAE/WorkBuddy/WSL 常驻吃内存；HBuilderX 编译残留 30+ node 进程累积；被 kill 的 commit 留下孤儿 smoke 进程继续占 3GB
+- **修复**：①SetFit/reranker 改 fp16（峰值降 ~2GB，测试全过且更快）②smoke 跳过 reranker（RERANKER_MODEL=__disabled__，rerank 由 -m rag 覆盖）③test_agent 加内存探测 + OOM 友好提示（returncode<0 识别）④编译后清理 HBuilderX 残留进程⑤commit 前确认可用内存 ≥4GB
+- **相关文件**：backend/app/services/classifier.py, backend/app/services/rerank.py, scripts/test_agent.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-24 18:18 · commit 3c20c80 · ts=1787591895
 - **错误**：review_agent lint 失败：services/upload.py f-string 无占位符（F541）
 - **根因**：register_photo_content 的 ValueError 消息写成 f'...' 但无 {} 占位符；lint 阻断 + lessons 门禁要求先登记教训

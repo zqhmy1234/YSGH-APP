@@ -28,7 +28,12 @@ def _load_model():
     if not (model_path / "config.json").exists():
         return None
     try:
-        return CrossEncoder(str(model_path), max_length=512)
+        import torch
+
+        # 2026-08-25 内存优化：fp16（bge-reranker fp32 ~1GB → fp16 ~0.5GB）
+        return CrossEncoder(
+            str(model_path), max_length=512, model_kwargs={"torch_dtype": torch.float16}
+        )
     except Exception as exc:  # noqa: BLE001 —— 模型加载失败降级为不重排
         logger.warning("reranker 加载失败，跳过重排: %s", exc)
         return None
