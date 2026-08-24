@@ -25,7 +25,14 @@
 ### 遗留/待办
 - 以图搜图延迟优化（P95 7.6s→<3s：图片塔降采样/缓存/并行）——列入 F5 真实缺口
 - 双层 Rerank 第二层 qwen-flash 精排——待延迟预算评估后接
-- 客户端第二波遗留（XView/S-ST-1/S-MO-1/S-EM-1/离线 op_log）与真值数据规格 grill-me 讨论进行中
+- 客户端第二波遗留（XView/S-MO-1/S-EM-1/离线 op_log）与真值数据规格 grill-me 讨论进行中
+
+### S-ST-1 分片上传 + 断点续传（2026-08-25 续）
+14. **后端集成（关键：否则分片链路与内容管线断裂）**：/upload/complete 接 meta → services/upload.py register_photo_content 建 contents 记录（cos_key）+ enqueue_high(process_content)，语义与 /contents/upload 对齐（taken_at ISO / gps 边界 / source 白名单）；返回 content_id
+15. **/upload/chunk 加 POST 别名**：uni-app x uni.uploadFile 不支持 PUT method（编译实测 No parameter named 'method'）——POST 语义与 PUT 一致（幂等+校验）
+16. **客户端 uploader.ts v2**：分片协议 init→chunk→complete + 断点续传（upload_id 持久化 uni storage 'yishu_pending_uploads' + GET /status 补缺片）+ GPS 入 meta（PhotoItem.lat/lng，联动 AMAP 逆地理）+ FileSystemManager.getFileInfo 取尺寸（uni.getFileInfo 在 uni-app x 不可用）；urlencoded 表单（后端 Form 字段，uni.request 发 UTSJSONObject 会变 JSON 不匹配）
+17. **分片粒度=单块**（chunk_size=file_size）：UTS 无可靠 ArrayBuffer 切片，MVP 照片 ≤20MB，>8MB 真分片留 Windows 波次（后端已支持任意 chunk_size）
+18. **验证**：test_upload 13 项全过（+2 集成测试）；全量 pytest 248 passed；HBuilderX 编译通过（200s）；OpenAPI 重导出 41 路径；真机 E2E（注入→init→chunk→complete→管线→时间轴）待峰宝 nova 11
 
 ---
 

@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 from app.core.config import settings
-from app.db.models import UploadChunk, UploadTask, User
+from app.db.models import Content, UploadChunk, UploadTask, User
 from app.db.session import SessionLocal
 from app.services import upload as upload_svc
 from sqlalchemy import delete as sa_delete
@@ -31,6 +31,7 @@ def db_user():
     db.refresh(user)
     yield db, user
     # 清理
+    db.execute(sa_delete(Content).where(Content.user_id == user.id))
     task_ids = db.scalars(
         sa_delete(UploadTask).where(UploadTask.user_id == user.id).returning(UploadTask.id)
     ).all()
@@ -62,7 +63,42 @@ def test_init_idempotent(db_user):
     assert t2.chunk_count == 3  # 2500 / 1024 → 3
 
 
-def test_upload_and_complete(db_user):
+def test_complete_creates_content(db_user):
+    """S-ST-1 集成：complete 后 register_photo_content 建 contents 记录并返回 content_id"""
+    db, user = db_user
+    task, data = _make_task(db, user)
+    for i in range(task.chunk_count):
+        part = data[i * CHUNK : (i + 1) * CHUNK]
+        upload_svc.upload_chunk(db, task.id, i, part)
+    result = upload_svc.complete_upload(db, task.id)
+
+    content_id = upload_svc.register_photo_content(
+        db,
+        user.id,
+        result["file_key"],
+        '{"taken_at":"2026-08-24T12:00:00+08:00","gps_lat":31.2304,"gps_lng":121.4737,"source":"app"}',
+    )
+    record = db.get(Content, content_id)
+    assert record is not None
+    assert record.content_type == "photo"
+    assert record.cos_key == result["file_key"]
+    assert record.status == "processing"
+    assert record.gps_lat == 31.2304
+    assert record.gps_lng == 121.4737
+
+
+def test_register_photo_content_bad_meta(db_user):
+    """meta 非法（坏 JSON / gps 越界 / source 白名单外）→ ValueError"""
+    db, user = db_user
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(db, user.id, "photos/x.jpg", "{not-json")
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(db, user.id, "photos/x.jpg", '{"gps_lat": 999}')
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(db, user.id, "photos/x.jpg", '{"source": "hacker"}')
+
+
+
     db, user = db_user
     task, data = _make_task(db, user)
     chunk_count = task.chunk_count

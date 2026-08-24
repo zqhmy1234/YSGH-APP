@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-24 18:18 · commit 3c20c80 · ts=1787591895
+- **错误**：review_agent lint 失败：services/upload.py f-string 无占位符（F541）
+- **根因**：register_photo_content 的 ValueError 消息写成 f'...' 但无 {} 占位符；lint 阻断 + lessons 门禁要求先登记教训
+- **修复**：去掉 f 前缀；lessons 门禁：失败后必须先登记教训再重跑
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-24 17:43 · commit 0ef0ace · ts=1787589788
 - **错误**：PowerShell 改 client/config.ts 导致 UTF-8 中文乱码 + 插入错位（编译 Expression expected）
 - **根因**：Windows PowerShell 5.1 Get-Content/Set-Content 默认非 UTF-8 无 BOM 读写，-replace 插块位置错误；中文被读成 ANSI 后写回变乱码

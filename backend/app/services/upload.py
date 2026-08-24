@@ -8,6 +8,7 @@ complete 时按序合并写最终对象（MVP 照片 ≤3MB-20MB，内存合并�
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -15,8 +16,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import UploadChunk, UploadTask
+from app.core.queue import enqueue_high
+from app.db.models import Content, UploadChunk, UploadTask
 from app.services.external.storage import get_storage_backend
+from app.services.pipeline import process_content
 
 # 后端中转合并上限（超限建议客户端直传，MVP 照片远低于此）
 MAX_INLINE_MERGE_BYTES = 200 * 1024 * 1024
@@ -165,6 +168,60 @@ def get_status(db: Session, upload_id: str, user_id: str | None = None) -> dict:
         "uploaded_chunks": uploaded,
         "missing_chunks": missing,
     }
+
+
+def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -> str:
+    """分片上传集成（S-ST-1 · 2026-08-25）：合并落对象后建 contents 记录 + 入队管线
+
+    语义与 api/contents.py upload_photo 对齐（meta 字段/taken_at ISO/gps 边界/source 白名单），
+    否则分片链路与内容管线断裂（对象在存储里但永不进 AI 管线/时间轴）。
+    无 perceptual_hash（客户端不计算）→ 不做 409 去重；护栏由管线 CI 审核覆盖。
+    """
+    try:
+        meta_obj = json.loads(meta) if meta.strip() else {}
+        if not isinstance(meta_obj, dict):
+            raise ValueError("meta 必须是 JSON 对象")
+    except json.JSONDecodeError as exc:
+        raise ValueError("meta 必须为合法 JSON 对象") from exc
+
+    taken_at = None
+    if meta_obj.get("taken_at"):
+        try:
+            taken_at = datetime.fromisoformat(str(meta_obj["taken_at"]).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("taken_at 格式无效（ISO8601）") from exc
+    gps_lat = meta_obj.get("gps_lat")
+    gps_lng = meta_obj.get("gps_lng")
+    try:
+        gps_lat = float(gps_lat) if gps_lat is not None else None
+        gps_lng = float(gps_lng) if gps_lng is not None else None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("gps_lat/gps_lng 必须为数值") from exc
+    if gps_lat is not None and not (-90 <= gps_lat <= 90):
+        raise ValueError("gps_lat 越界（-90~90）")
+    if gps_lng is not None and not (-180 <= gps_lng <= 180):
+        raise ValueError("gps_lng 越界（-180~180）")
+    source = meta_obj.get("source", "app")
+    if source not in ("app", "windows", "wechat", "import"):
+        raise ValueError("source 非法（可选 app/windows/wechat/import）")
+    extra = meta_obj.get("extra") if isinstance(meta_obj.get("extra"), dict) else None
+
+    record = Content(
+        user_id=user_id,
+        content_type="photo",
+        taken_at=taken_at,
+        gps_lat=gps_lat,
+        gps_lng=gps_lng,
+        cos_key=cos_key,
+        extra=extra,
+        source=source,
+        status="processing",
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    enqueue_high(process_content, str(record.id))
+    return str(record.id)
 
 
 def complete_upload(db: Session, upload_id: str, user_id: str | None = None) -> dict:

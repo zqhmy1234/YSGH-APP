@@ -58,6 +58,31 @@ def upload_chunk(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    return _upload_chunk_impl(upload_id, chunk_index, file, chunk_hash, db, user)
+
+
+@router.post("/chunk", response_model=ApiResponse[dict])
+def upload_chunk_post(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(...),
+    file: UploadFile = File(...),
+    chunk_hash: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """POST 别名（S-ST-1 · 2026-08-25）：uni-app x uni.uploadFile 不支持 PUT method，
+    客户端分片上传只能 POST multipart；语义与 PUT 完全一致（幂等+校验）。"""
+    return _upload_chunk_impl(upload_id, chunk_index, file, chunk_hash, db, user)
+
+
+def _upload_chunk_impl(
+    upload_id: str,
+    chunk_index: int,
+    file: UploadFile,
+    chunk_hash: str | None,
+    db: Session,
+    user: User,
+):
     data = file.file.read()
     try:
         result = upload_svc.upload_chunk(db, upload_id, chunk_index, data, chunk_hash, user_id=user.id)
@@ -71,11 +96,19 @@ def upload_chunk(
 @router.post("/complete", response_model=ApiResponse[dict])
 def complete_upload(
     upload_id: str = Form(...),
+    meta: str = Form("{}"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """合并分片 → 落最终对象 → 建 contents 记录 + 入队管线（S-ST-1 集成）
+
+    meta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra}，语义与 /contents/upload 对齐。
+    """
     try:
         result = upload_svc.complete_upload(db, upload_id, user_id=user.id)
+        # 集成：对象已在存储 → 建 contents 记录（cos_key）+ 入队 process_content
+        content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
+        result["content_id"] = content_id
     except KeyError as exc:
         raise ApiError("UPLOAD_002", str(exc), http=404) from exc
     except ValueError as exc:
