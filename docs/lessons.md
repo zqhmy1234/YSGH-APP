@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 07:23 · commit 5fdb43e · ts=1787700216
+- **错误**：SessionLocal autoflush=False：db.add() 后立即 select 查不到新行（profile_annotator 同事务多次 get_or_create_profile 重复插 UserProfile 撞唯一约束；pool/history 行写入后 select 返回 0）
+- **根因**：backend/app/db/session.py:16 sessionmaker(autoflush=False)——写入后必须先 flush()/commit() 再读；先 add 后查询需显式 flush，否则 identity map 外查不到
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-25 23:16 · commit fe1b376 · ts=1787696184
 - **错误**：集成接线 bug：incremental_aggregate 入口未解析 eps_t_sec=None，_can_absorb 里 timedelta(seconds=None) 抛 TypeError（全量门禁 tests+research 双红）
 - **根因**：保守开关接线时只在 aggregate() 入口解析 None，incremental_aggregate() 直接透传 None 给 _can_absorb/st_dbscan；定向单测（test_agg_reference 11 项）与 run_validation 18 场景跑绿后才暴露——定向测试未覆盖 None 路径
