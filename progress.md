@@ -317,3 +317,25 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 **验证**：pytest 173 全过 + ruff 全绿 + review_agent 全绿。
 **待办**：①外部 API 统一重试封装（dashscope/CI/OCR）②events merge/split/confirm 用户手动操作 ③语音 COS 下载接存储层 ④photo 生产 caption 真实调用（现 mock）⑤corpus-A 61 张 caption 补齐
 
+
+## 2026-08-25 · RAG 指标提升落地（4 PR）+ LLM 改写调研修复 + 测评报告
+
+**状态**：commit 4d6fca3（前一轮）+ 本轮待提交｜门禁 PASS｜17 项相关测试 + ruff 全绿
+
+### RAG 提升落地（commit 4d6fca3）
+1. **P1-A 类目路由**（规则词表 → content_class 过滤 + 空结果回退）：descriptive 层 hit_rate@3 0.5→1.0
+2. **P0-B 显式相关口径**：evaluate_retrieval_explicit + 6 条查询补显式 id → 产品口径 recall@3=0.9167
+3. **P0-D 命中梯度**：≥50% 词元 ×1.3 / 全命中 ×1.8 → keyword precision@3 0.44→0.78
+4. **P1-B2 外部测试集**：T2Ranking 抽取 70 查询/88 段（≥60 达标），run_eval --external
+5. **指标**：B+C hit_rate@3 0.7273→0.9091、mrr 0.66→0.85、ndcg 0.42→0.84；EXT recall@3=0.8857、hit_rate@3=0.9143
+
+### LLM 改写调研与修复（本轮，待提交）
+- **现象**：替换式改写伤害（EXT recall 0.886→0.75，9/10 短查询被无谓改写）
+- **调研结论**：改写应是【有门控 + 加性】不是替代；双路召回首个实现有接线 bug（原查询路误用回退前 filters → 恒空）
+- **修复**：①prompt v2 门控（短关键词原样返回，只改错字/口语/描述性）②双路用 eff_filters（最后一次成功搜索的过滤器）③类目路由跑原始查询④路由固定规则版（LLM 路由误判"灯"为 image）⑤llm_rewrite_enabled 默认开
+- **验证（探针，未跑全量）**：EXT 8 查询 LLM 模式 7/8 = 规则基线；合成集 6 条全 HIT；买牛乃→买牛奶纠错生效
+- **附带修复**：dashscope 403（User 环境变量残留旧 key 覆盖 .env + SDK 不读 settings → _ensure_api_key）
+
+### 交付
+- docs/RAG测评报告_20260825.md（测评全流程/数据构成/结果/发现）
+- docs/README.md 文档索引（第一轮整理）；refactor-plan/review-report 归位 docs/

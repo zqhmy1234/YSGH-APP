@@ -104,3 +104,12 @@ backups/
 
 # 本地文件系统存储后端（STORAGE_BACKEND=fs）
 backend/data/storage/
+# --- 数据库文件 / 本地语料下载（2026-08-25 整理追加）---
+*.db
+*.sqlite
+*.sqlite3
+*.sql3
+research/rag_benchmark/external/
+
+# --- 会话与临时产物 ---
+session-memory-*.md

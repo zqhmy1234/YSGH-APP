@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.db.models import Content
 from app.schemas.search import SearchHit, SearchQuery, SearchResult
 from app.services.embedding import encode_query
-from app.services.external import rewrite_query, route_query
+from app.services.external import rewrite_query
 from app.services.ner import extract_entities
 from app.services.rerank import rerank
 from app.services.vector_store import get_store
@@ -151,16 +151,12 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
 
 
 def _route_query(q: str) -> str:
-    """查询路由（B2：文本/图片/混合意图；LLM 优先，未配置时规则兜底）
+    """查询路由（B2：文本/图片/混合意图；规则词表，确定性零延迟）
 
-    2026-08-25：LLM 路由与改写同受 llm_rewrite_enabled 控制（默认关）——
-    实测 LLM 路由对 route_acc 无增益且增延迟；规则词表覆盖常见图片表达。
+    2026-08-25 调研：LLM 路由实测有害——"货车保险杠前面加装的灯叫什么"被
+    误判为 image 意图 → 过滤全部 text 文档 → 空结果（探针复现）。规则词表
+    覆盖常见图片表达且 route_acc=1.0（PASS），路由保持规则版。
     """
-    if settings.llm_rewrite_enabled:
-        try:
-            return route_query(q)
-        except RuntimeError:
-            pass
     # 规则兜底：图片意图关键词（B2 路由；词表增强 WP-F：扩充到常见图片表达）
     image_hints = [
         "照片", "图片", "拍的", "截图", "这张", "图里", "壁纸", "表情包",
@@ -291,9 +287,11 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 2.5 P1-A 类目路由（2026-08-25）：text 意图 + 规则给出主导类别 → content_class
     # 过滤，把干扰类文档挡在召回路外（修复 descriptive 层召回缺口）；
     # 无主导类别/非 text 意图 → 不过滤；空结果在下方自动回退全量。
+    # 修复（2026-08-25 调研）：类目判定跑【原始查询】而非改写结果——
+    # 类别是用户意图属性，不应随改写漂移（改写版含"发酸"会误判 todo）。
     class_filter: str | None = None
     if settings.class_routing_enabled and intent == "text":
-        class_filter = _classify_query_intent(rewritten)
+        class_filter = _classify_query_intent(q.q)
         if class_filter:
             filters["content_class"] = class_filter
 
@@ -301,6 +299,10 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     try:
         dense, sparse = encode_query(rewritten)
         store = get_store()
+        # eff_filters：最后一次成功产生 raw_hits 的过滤器（含回退后的），
+        # 供双路召回的原查询路使用——此前直接复用 filters 会把回退前的
+        # content_class 过滤带去原查询路，外部语料无该字段 → 原路恒空（2026-08-25 调研修复）。
+        eff_filters = filters
         if intent == "mixed":
             # B2 mixed 双路融合（2026-08-19）：image 路 + 全量路并行召回 → 去重合并
             image_filters = {**filters, "content_types": ["image"]}
@@ -323,6 +325,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
                 ], limit=50)
             else:
                 raw_hits = store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection)
+            eff_filters = retry_filters
         # 空结果回退（P1-A 2026-08-25）：类目过滤导致空结果 → 去掉 content_class 重试
         # （旧数据/外部语料无 content_class 字段时防误过滤；显式参数仍是硬约束）
         if not raw_hits and class_filter:
@@ -336,14 +339,15 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
                 ], limit=50)
             else:
                 raw_hits = store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection)
-        # 3.3 P0-A 双路召回（2026-08-25 实测修复）：LLM 改写对短关键词查询有"改写伤害"
-        # （T2Ranking 外部集 recall 0.886→0.75："过年要给父母红包吗"→"过年是否要给
-        # 父母红包"，embedding 偏移致相关段落跌出 Top-3）。原查询路永远保留，
-        # 改写路只增不减——纠错/扩写生效时加召回，改写有害时原路兜底。
+            eff_filters = retry_filters
+        # 3.3 P0-A 双路召回（2026-08-25 调研后重写）：LLM 改写是【加性】不是替代——
+        # 原查询路永远保留（用 eff_filters，与主路同口径），改写路只增不减：
+        # 纠错/扩写生效时加召回，改写有害时原路兜底。此前实测 EXT recall 0.886→0.75
+        # 的根因：①原路误用回退前 filters 恒空；②prompt 无差别改写短关键词。
         if rewritten != q.q and (q.q or "").strip():
             try:
                 orig_dense, orig_sparse = encode_query(q.q)
-                orig_hits = store.search(orig_dense, orig_sparse, filters=filters, limit=50, collection=collection)
+                orig_hits = store.search(orig_dense, orig_sparse, filters=eff_filters, limit=50, collection=collection)
                 if orig_hits:
                     raw_hits = _merge_recalls([raw_hits, orig_hits], limit=50)
             except Exception:  # noqa: BLE001 —— 原查询路失败不影响改写主路

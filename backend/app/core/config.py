@@ -106,11 +106,12 @@ class Settings(BaseSettings):
     # 把干扰类挡在召回路外（修复 descriptive 层 hit_rate@3=0.5 的召回缺口）。
     # 规则词表确定性/零延迟；无主导类别不过滤；空结果自动回退全量。
     class_routing_enabled: bool = True
-    # P0-A LLM 改写/路由总开关（2026-08-25 实测默认关）：
-    # 探针实锤 9/10 短关键词查询被无谓改写（"过年要给父母红包吗"→"过年是否要…"），
-    # 外部集 recall 0.886→0.75；typo 查询规则模式 dense 已能命中 → 当前零增益纯伤害。
-    # 双路召回已就绪（rag.py 3.3），真实数据到位后可开启并用原查询路兜底。
-    llm_rewrite_enabled: bool = False
+    # P0-A LLM 改写/路由总开关（2026-08-25 调研后默认开）：
+    # 改法三件套——①prompt v2 有门控（短关键词原样返回，只改错字/口语/描述性）；
+    # ②双路召回原查询路用生效过滤器（eff_filters，此前误用回退前 filters 恒空）；
+    # ③类目路由跑原始查询（类别不随改写漂移）。
+    # 实测参考：无门控替换式改写 EXT recall 0.886→0.75（改写伤害），门控+双路后应恢复。
+    llm_rewrite_enabled: bool = True
 
 
 @lru_cache
