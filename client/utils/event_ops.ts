@@ -259,12 +259,17 @@ export function splitEvent(eventId: string, contentIds: Array<string>): Promise<
 	})
 }
 
-/** 入离线队列（payload 为 UTSJSONObject；行分隔 JSON 串存储） */
+/** 入离线队列（payload 为 UTSJSONObject；行分隔 JSON 串存储）
+ *  2026-08-26 Wave3 H：队列补齐六字段契约（op_id/op_type/payload/status/created_at/retry_count），
+ *  与 sync_client 后端 offline_queue 六字段对齐（audit_B4_sync §4）。 */
 export function enqueueOp(opType: string, payload: UTSJSONObject): void {
 	const entry: UTSJSONObject = {
 		op_id: 'op_' + Date.now().toString(),
 		op_type: opType,
-		payload: payload
+		payload: payload,
+		status: 'pending',
+		created_at: isoNow(),
+		retry_count: 0
 	}
 	const raw = uni.getStorageSync(OP_LOG_KEY) as string
 	let lines: Array<string> = []
@@ -274,6 +279,16 @@ export function enqueueOp(opType: string, payload: UTSJSONObject): void {
 	lines.push(JSON.stringify(entry))
 	uni.setStorageSync(OP_LOG_KEY, lines.join('\n'))
 	uni.showToast({ title: '已离线排队，联网后自动同步', icon: 'none' })
+}
+
+/** epoch ms → ISO8601 本地时间（与 uploader.isoString 同款；本地一份避免循环依赖） */
+function isoNow(): string {
+	const d = new Date()
+	const pad = (n: number): string => (n < 10 ? '0' + n : '' + n)
+	return (
+		d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+		'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '+08:00'
+	)
 }
 
 /** 待同步队列条数 */
@@ -301,6 +316,21 @@ export function flushOpQueue(): Promise<number> {
 			flushNext(raw.split('\n'), [], 0, 0, resolve)
 		})
 	})
+}
+
+/** 失败保留时 retry_count +1（六字段契约使用方；解析失败原样保留） */
+function bumpRetry(line: string): string {
+	try {
+		const e = JSON.parse(line) as UTSJSONObject
+		if (e != null) {
+			const cur = e.getNumber('retry_count') as number
+			e.set('retry_count', (cur != null ? cur : 0) + 1)
+			return JSON.stringify(e)
+		}
+	} catch (e) {
+		// 脏行原样保留
+	}
+	return line
 }
 
 /** 单条处理（模块级函数：UTS 箭头函数不可自引用，递归必须用具名函数声明） */
@@ -339,7 +369,7 @@ function flushNext(lines: Array<string>, remain: Array<string>, flushed: number,
 			// 失败后重新探测网络：仍断 → 保留该条及其后全部；在线 → 业务失败丢弃
 			checkNet((online: boolean) => {
 				if (!online) {
-					remain.push(line)
+					remain.push(bumpRetry(line))
 					for (let j = idx + 1; j < lines.length; j++) {
 						if (lines[j] != '') {
 							remain.push(lines[j])

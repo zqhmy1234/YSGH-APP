@@ -1,6 +1,7 @@
 <script lang="uts">
 	import { ensureLogin } from './utils/auth'
 	import { initSentry, captureException } from './utils/sentry'
+	import { initSync } from './utils/sync_client'
 
 	export default {
 		onLaunch() {
@@ -11,6 +12,9 @@
 			ensureLogin().then((ok: boolean) => {
 				console.log('[yishu] ensureLogin -> ' + ok)
 			})
+			// B4 同步三路触发 · ① 前台主动：2h setInterval 定时兜底 + 网络恢复即补推
+			// （Wave3 H；后台 WorkManager 定时登记给 Wave 4 K，见 sync_client.registerBackgroundSync）
+			initSync()
 		},
 		onError(err: any) {
 			captureException('' + err, 'app.onError', null)
