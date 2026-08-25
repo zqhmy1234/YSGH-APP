@@ -52,7 +52,8 @@
 2. `cd D:\GuangH-App && git fetch origin && git pull origin develop` 确认主干最新。
 3. `git worktree add D:\GuangH-App\.wt\waveN-agentX -b waveN-agentX develop`（若已存在则 `git worktree prune` 后重建）。
 4. 在 worktree 内开发；每完成一个 TODO 项：跑该域测试 → commit。
-5. 全部完成：更新自己域的 audit 记录（docs/parallel-dev/ 或 .cowork-temp/）→ **显式呼叫集成 Agent**（在完成消息里列出：改了哪些文件、新增了哪些端点/表需求、哪些测试通过/失败、哪些待 key 验证）。**禁止静默完成。**
+5. **提交门禁（快/全量拆分，2026-08-26）**：commit 时 pre-commit 自动跑**快速门禁**（秒级，只查本次提交文件）；**完成声明前必须跑全量门禁 `python scripts/review_agent.py --full`**（仓库级 + 全量测试），集成 Agent 与 CI 也以此验收。
+6. 全部完成：更新自己域的 audit 记录（docs/parallel-dev/ 或 .cowork-temp/）→ **显式呼叫集成 Agent**（在完成消息里列出：改了哪些文件、新增了哪些端点/表需求、哪些测试通过/失败、哪些待 key 验证）。**禁止静默完成。**
 
 ## 5. 完成定义（DoD，每 Agent 通用）
 

@@ -1,5 +1,7 @@
 # 忆述光华 · CI（S2-05 收尾项，对齐 S1-04「CI 接入（lint+单测+构建检查，main 保护）」）
-# 策略：CI = 与本地提交门禁同源 —— 直接跑 scripts/review_agent.py（语法/lint/测试/密钥扫描/TODO）。
+# 策略：CI = 全量门禁（2026-08-26 拆分后）——本地 commit 只跑快速门禁（秒级），
+# 全量门禁（仓库级语法/lint/密钥扫描 + 全量测试）由 CI 与集成验收承担。
+# 命令：python scripts/review_agent.py --full
 # 服务：postgres（yishu 隔离库）+ redis（RQ 队列），与 backend/.env 本地口径一致。
 # 触发：develop/main 推送 + PR → develop/main（main 受保护，只接受 develop 合并）。
 name: CI
@@ -75,7 +77,7 @@ jobs:
           # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
           HF_HUB_OFFLINE: "0"
           PYTHONPATH: .
-        run: python scripts/review_agent.py
+        run: python scripts/review_agent.py --full
 
       - name: Upload pytest coverage
         if: always()

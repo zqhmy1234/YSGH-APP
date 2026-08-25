@@ -104,8 +104,10 @@ infisical secrets --env=dev --silent
 
 **任何 commit 之前必须通过代码质量审核 Agent，修复到通过为止，禁止带阻断项提交。**
 
-1. 运行审核：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）
-2. 审核项：Python 语法编译 / ruff lint / **测试（test_agent：pytest 18 项 + API 冒烟 + 原型验证，覆盖率阈值 50%）** / 密钥扫描 / TODO 统计
+**快/全量拆分（2026-08-26，用户拍板——原每次 commit 全量跑 5 分钟）**：
+
+1. **快速门禁（commit 时，秒级）**：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）——只检查本次提交涉及的文件：Python 语法编译 / ruff lint / 密钥扫描 / TODO 统计 / lessons 强制登记。
+2. **全量门禁（完成验收 / 集成 / CI 前必跑）**：`python scripts/review_agent.py --full`——仓库级语法/lint/密钥扫描 + 全量测试（test_agent：pytest + API 冒烟 + 原型验证，覆盖率阈值 50%）。**每个 Agent 完成声明 DoD 前、以及集成 Agent merge 后，必须跑一次 `--full`。**
 3. 退出码 0 = 通过可提交；退出码 1 = 存在阻断项 → 修复后重跑，直到通过
 4. 报告输出：`.cowork-temp/review-report.json` + `.cowork-temp/test-report.json`（证据留档）
 5. 修复流程：按报告逐项修复 → 重跑 `python scripts/review_agent.py` → 全绿才 `git commit`
@@ -114,7 +116,7 @@ infisical secrets --env=dev --silent
 **禁止绕过**：`--no-verify` 不允许使用；审核报告必须为 passed 状态。
 
 **测试 Agent 单独使用**：`python scripts/test_agent.py [--cov-threshold N] [--only api|research]`
-（本地开发循环中可只跑测试不跑全审核；commit 前仍必须走 review_agent 全量。）
+（本地开发循环中可只跑测试不跑全审核；commit 前仍必须走 review_agent 快速门禁，完成前走全量门禁。）
 
 ## 环境陷阱与经验
 
