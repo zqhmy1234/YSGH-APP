@@ -5,7 +5,7 @@
  * → L1 日卡片事件（client_event_id 幂等键）→ 供 POST /events/sync 上云。
  * 与云侧 AGG-016 同参同逻辑（agg_config 单一来源）。
  */
-import { L0_EPS_S_M, L0_EPS_T_SEC, L0_MIN_PTS } from '@/utils/agg/agg_config.uts'
+import { L0_EPS_S_M, L0_MIN_PTS, l0EpsTsec } from '@/utils/agg/agg_config.uts'
 import { preprocess, RawPhoto } from '@/utils/agg/pipeline.uts'
 import { DayCard, Photo, l1DailyAggregate, stDbscan } from '@/utils/agg/st_dbscan.uts'
 import { UploadedPhoto } from '@/utils/uploader'
@@ -43,21 +43,38 @@ function genClientEventId(): string {
 }
 
 /**
+ * 照片去重键（djb2 → hex；同文件重扫/重复注入取同键）
+ *
+ * MVP 感知哈希占位：UTS 无像素解码 API，以「文件路径 + 字节数」做内容身份键，
+ * 与云端 contents.perceptual_hash 语义对齐（同用户同哈希只保留一条）——
+ * 真实像素级感知哈希由后端 CI 管线计算（本键仅做端侧预处理去重用）。
+ */
+function photoHashOf(u: UploadedPhoto): string {
+	const s = u.item.path + '|' + u.item.size
+	let h = 5381
+	for (let i = 0; i < s.length; i++) {
+		const c = s.charCodeAt(i) ?? 0
+		h = ((h << 5) + h + c) & 0x7fffffff
+	}
+	return h.toString(16)
+}
+
+/**
  * 端侧聚合：上传成功照片 → L0（ST-DBSCAN）→ L1 日卡片事件
  * @param uploads 上传成功结果（本地元数据 + content_id）
  * @param tzOffsetMin 设备本地时区偏移（分钟；日界按本地自然日）
  */
 export function aggregateToEvents(uploads: Array<UploadedPhoto>, tzOffsetMin: number): AggRunResult {
-	// 1. 组装算法层输入（photo id = content_id；ts = 本地拍摄时间）
+	// 1. 组装算法层输入（photo id = content_id；ts = 本地拍摄时间；phash = 文件身份键）
 	const raws: RawPhoto[] = []
 	for (let i = 0; i < uploads.length; i++) {
 		const u = uploads[i]
-		raws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, []))
+		raws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, [], photoHashOf(u)))
 	}
 
-	// 2. 预处理 → L0 → L1（与 AGG-016 同参）
+	// 2. 预处理（含去重） → L0 → L1（与 AGG-016 同参；时间窗取生效配置）
 	const pts = preprocess(raws)
-	const clusters = stDbscan(pts, L0_EPS_T_SEC, L0_EPS_S_M, L0_MIN_PTS)
+	const clusters = stDbscan(pts, l0EpsTsec(), L0_EPS_S_M, L0_MIN_PTS)
 	const clustered: Set<string> = new Set<string>()
 	for (let i = 0; i < clusters.length; i++) {
 		const cl = clusters[i]

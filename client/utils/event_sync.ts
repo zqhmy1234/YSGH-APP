@@ -13,11 +13,15 @@ export class SyncOutcome {
 	accepted: number
 	duplicates: number
 	rejected: number
+	/** accepted 明细 [{client_event_id, event_id, photo_count}]（2026-08-26 Wave2 E：
+	 *  照片条/封面需要 服务端 event_id → 成员照片 映射，靠 accepted 明细建立） */
+	acceptedEvents: Array<UTSJSONObject>
 
-	constructor(accepted: number, duplicates: number, rejected: number) {
+	constructor(accepted: number, duplicates: number, rejected: number, acceptedEvents: Array<UTSJSONObject>) {
 		this.accepted = accepted
 		this.duplicates = duplicates
 		this.rejected = rejected
+		this.acceptedEvents = acceptedEvents
 	}
 }
 
@@ -42,18 +46,24 @@ function postOnce(events: Array<UTSJSONObject>, token: string, resolve: (r: Sync
 				let accepted = 0
 				let duplicates = 0
 				let rejected = 0
+				const acceptedEvents: Array<UTSJSONObject> = []
 				if (d != null) {
-					const acc = d.getArray('accepted')
+					const acc = d.getArray('accepted') as Array<UTSJSONObject> | null
 					const dup = d.getArray('duplicates')
 					const rej = d.getArray('rejected')
 					accepted = acc != null ? acc.length : 0
 					duplicates = dup != null ? dup.length : 0
 					rejected = rej != null ? rej.length : 0
+					if (acc != null) {
+						for (let i = 0; i < acc.length; i++) {
+							acceptedEvents.push(acc[i])
+						}
+					}
 				}
-				resolve(new SyncOutcome(accepted, duplicates, rejected))
+				resolve(new SyncOutcome(accepted, duplicates, rejected, acceptedEvents))
 			} else if (res.statusCode >= 400 && res.statusCode < 500) {
 				console.error('[yishu] 事件同步 4xx=' + res.statusCode + ' ' + JSON.stringify(res.data))
-				resolve(new SyncOutcome(0, 0, events.length)) // 4xx 不可重试
+				resolve(new SyncOutcome(0, 0, events.length, [])) // 4xx 不可重试
 			} else {
 				resolve(null) // 5xx/其他 → 重试
 			}
@@ -83,7 +93,7 @@ function retryLoop(events: Array<UTSJSONObject>, token: string, attempt: number,
 export function syncClientEvents(events: Array<UTSJSONObject>): Promise<SyncOutcome | null> {
 	return new Promise<SyncOutcome | null>((resolve) => {
 		if (events.length === 0) {
-			resolve(new SyncOutcome(0, 0, 0))
+			resolve(new SyncOutcome(0, 0, 0, []))
 			return
 		}
 		ensureLogin().then((ok: boolean) => {

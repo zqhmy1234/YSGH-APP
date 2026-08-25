@@ -2,6 +2,8 @@
  * AGG-016 一致性测试类型（Python 生成 fixtures.uts 使用）
  *
  * 用例结构：输入照片集 + 期望输出（Python 同参双跑计算，见 scripts/gen_agg_fixtures.py）
+ * 2026-08-26 Wave2 AgentE：AggPhoto 加 phash（感知哈希去重用例）；
+ * AggCase 加 conservative（30min 保守模式用例，eps_t_sec=1800）。
  */
 
 /** 用例输入照片 */
@@ -11,13 +13,15 @@ export class AggPhoto {
 	lat: number | null
 	lng: number | null
 	tags: string[]
+	phash: string       // 感知哈希（空=不参与去重）
 
-	constructor(id: string, ts: number, lat: number | null, lng: number | null, tags: string[]) {
+	constructor(id: string, ts: number, lat: number | null, lng: number | null, tags: string[], phash: string) {
 		this.id = id
 		this.ts = ts
 		this.lat = lat
 		this.lng = lng
 		this.tags = tags
+		this.phash = phash
 	}
 }
 
@@ -51,11 +55,13 @@ export class AggCase {
 	tzOffsetMin: number      // 日界时区偏移（分钟）；双跑同参
 	photos: AggPhoto[]
 	expected: AggExpected
+	conservative: boolean    // true=L0 30min 保守模式（eps_t_sec=1800）
 
-	constructor(name: string, tzOffsetMin: number, photos: AggPhoto[], expected: AggExpected) {
+	constructor(name: string, tzOffsetMin: number, photos: AggPhoto[], expected: AggExpected, conservative: boolean) {
 		this.name = name
 		this.tzOffsetMin = tzOffsetMin
 		this.photos = photos
 		this.expected = expected
+		this.conservative = conservative
 	}
 }

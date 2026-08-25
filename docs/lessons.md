@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-26 05:35 · commit ab11507 · ts=1787693746
+- **错误**：review_agent lint 阻断：test_event_items.py 两处 I001 Import block 未排序
+- **根因**：函数内 import 块含 blank 行分组，ruff 默认 case-sensitive 排序（app.* 在 fastapi.* 前）；ruff --fix 可自动排序，无需手改
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-26 05:12 · commit ab11507 · ts=1787692342
+- **错误**：review_agent tests 失败：test_correction 2 项 HFValidationError，本地路径 backend/models/setfit-classifier 不存在
+- **根因**：gitignore 模型目录只跟踪 README.md，worktree 全新检出缺 setfit-classifier；测试加载本地模型路径失败。与 .env/test_photos 同类：worktree 需从主仓库复制 gitignore 运行资产
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-25 19:58 · commit 1f96b1f · ts=1787684290（Agent A 登记）
 - **错误**：review_agent 门禁失败：test_correction 报 HFValidationError（setfit 模型路径被当 HF repo id）+ api_smoke photo-journey/timeline-structure 失败（缺测试照片）
 - **根因**：git worktree 检出不含 gitignore 的本地运行资产：backend/.env（PG 凭据）、backend/models/（setfit/bge-reranker 已下载模型）、.cowork-temp/test_photos（api_smoke 测试照片）——门禁在 worktree 内跑全量测试时模型缺失走 HF hub 兜底报错、照片缺失致 smoke 空转
