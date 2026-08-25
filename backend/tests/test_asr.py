@@ -1,9 +1,9 @@
-"""ASR 双通道 + 护栏 API 测试（S2-04 · 接口先行，mock 模式零费用）
+"""ASR 多格式 + 状态语义 + 护栏 API 测试（无真实 Key、零费用）。
 
 覆盖：
-  - 服务层：mock 兜底确定性输出（未配 key）；通道降级链路记录；文件缺失报错
-  - 通道逻辑：preferred 通道真实模式下失败 → 降级（monkeypatch 不联网）
-  - API 层：transcribe 上传校验（空/非 wav/超限）；认证保护；护栏集成
+  - 服务层：开发 mock；真实模式失败不伪造完成；数字静音 no_speech
+  - Fun-ASR Flash：M4A payload、供应商响应、重试分类（monkeypatch 不联网）
+  - API 层：M4A/WAV 上传校验、认证保护、明确错误与护栏集成
   - 护栏：guard/check 放行 + fail-safe 拦截语义
 """
 import io
@@ -12,17 +12,18 @@ from pathlib import Path
 
 import pytest
 from app.core.config import settings
-from app.services.external.asr import _llm_available, transcribe
+from app.services.external.asr import AsrError, AsrResult, transcribe
 from app.services.external.dashscope import moderate
 
 
 # 生成 0.5s 16kHz 16bit 单声道 wav（测试音频夹具）
-def _make_wav(path: Path, seconds: float = 0.5) -> Path:
+def _make_wav(path: Path, seconds: float = 0.5, *, silence: bool = False) -> Path:
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(16000)
-        wf.writeframes(b"\x00\x00" * int(16000 * seconds))
+        sample = b"\x00\x00" if silence else b"\xe8\x03"
+        wf.writeframes(sample * int(16000 * seconds))
     return path
 
 
@@ -59,14 +60,106 @@ def test_mock_preferred(wav_file: Path):
     assert r.mock is True
 
 
+def test_production_rejects_global_mock_mode(wav_file: Path, monkeypatch):
+    """生产环境即使误开全局 mock，也必须显式失败而非返回假转写。"""
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "mock_external_ai", True)
+
+    with pytest.raises(AsrError) as raised:
+        transcribe(wav_file)
+
+    assert raised.value.code == "MOCK_DISABLED"
+    assert raised.value.outcome == "failed_final"
+
+
+def test_workspace_base_url_uses_configured_region(monkeypatch):
+    from app.services.external.asr import _dashscope_base_url
+
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.setattr(settings, "dashscope_workspace_id", "ws-example")
+    monkeypatch.setattr(settings, "dashscope_region", "cn-shanghai")
+    assert _dashscope_base_url() == (
+        "https://ws-example.cn-shanghai.maas.aliyuncs.com/api/v1"
+    )
+
+
+def test_explicit_dashscope_base_url_overrides_region(monkeypatch):
+    from app.services.external.asr import _dashscope_base_url
+
+    monkeypatch.setenv("DASHSCOPE_BASE_URL", "https://custom.example/api/v1/")
+    monkeypatch.setattr(settings, "dashscope_workspace_id", "ws-example")
+    monkeypatch.setattr(settings, "dashscope_region", "cn-shanghai")
+    assert _dashscope_base_url() == "https://custom.example/api/v1"
+
+
+def test_production_requires_preloaded_sensevoice(monkeypatch):
+    from app.services.external.asr import _sensevoice_model_dir
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "sensevoice_model_dir", "")
+    with pytest.raises(AsrError) as raised:
+        _sensevoice_model_dir()
+    assert raised.value.code == "SENSEVOICE_MODEL_NOT_PRELOADED"
+
+
+def test_prepare_sensevoice_assets_downloads_and_validates(tmp_path):
+    from app.services.external import asr as asr_mod
+
+    target = tmp_path / "sensevoice"
+    tokenizer_dir = tmp_path / "tokenizer"
+
+    def fake_snapshot(model_id, **kwargs):
+        if model_id == asr_mod.MODEL_SENSEVOICE:
+            model_dir = Path(kwargs["local_dir"])
+            model_dir.mkdir(parents=True, exist_ok=True)
+            (model_dir / "model_quant.onnx").write_bytes(b"onnx")
+            return str(model_dir)
+        tokenizer_dir.mkdir(parents=True, exist_ok=True)
+        (tokenizer_dir / asr_mod._SENSEVOICE_TOKENIZER_NAME).write_bytes(b"spm")
+        return str(tokenizer_dir)
+
+    resolved = asr_mod.prepare_sensevoice_assets(
+        target,
+        snapshot_download_fn=fake_snapshot,
+    )
+    assert resolved == target.resolve()
+    assert (resolved / "model_quant.onnx").is_file()
+    assert (resolved / asr_mod._SENSEVOICE_TOKENIZER_NAME).is_file()
+
+
+def test_primary_emotion_skips_local_enhancement(monkeypatch):
+    from app.services.external import asr as asr_mod
+
+    result = AsrResult(
+        text="主通道已返回情绪",
+        channel="funasr",
+        emotion="开心",
+        emotion_confidence=0.8,
+        emotion_source="funasr",
+    )
+
+    def should_not_run(path):
+        raise AssertionError("不应调用本地模型")
+
+    monkeypatch.setattr(asr_mod, "_infer_sensevoice", should_not_run)
+    enhanced = asr_mod._enhance_with_local_emotion(
+        result,
+        Path("unused.wav"),
+        mode="auto",
+    )
+    assert enhanced is result
+    assert enhanced.emotion_source == "funasr"
+
+
 def test_transcribe_missing_file():
-    """音频文件不存在 → FileNotFoundError（不静默）"""
-    with pytest.raises(FileNotFoundError):
+    """音频文件不存在 → 结构化 ASR 错误（不静默）"""
+    with pytest.raises(AsrError) as raised:
         transcribe(Path("C:/nonexistent/not_here.wav"))
+    assert raised.value.code == "AUDIO_NOT_FOUND"
 
 
 def test_channel_fallback_on_real_failure(wav_file: Path, monkeypatch):
-    """真实模式（配 key）下 funasr 失败 → 自动降级 sensevoice → 再失败 → mock"""
+    """真实模式双通道均失败 → 显式失败，绝不返回 mock 假文本。"""
     monkeypatch.setattr(settings, "mock_external_ai", False)
     monkeypatch.setattr(settings, "dashscope_api_key", "test-key")
 
@@ -86,11 +179,159 @@ def test_channel_fallback_on_real_failure(wav_file: Path, monkeypatch):
     monkeypatch.setitem(asr_mod._CHANNELS, "funasr", fake_funasr)
     monkeypatch.setitem(asr_mod._CHANNELS, "sensevoice", fake_sensevoice)
 
-    r = transcribe(wav_file, preferred="auto")
-    assert r.channel == "mock"
-    assert r.mock is True
+    with pytest.raises(AsrError) as raised:
+        transcribe(wav_file, preferred="auto")
+    assert raised.value.code == "ASR_UNAVAILABLE"
+    assert raised.value.retryable is True
     assert calls == ["funasr", "sensevoice"]  # 降级顺序正确
-    assert len(r.errors) == 2
+    assert len(raised.value.errors) == 2
+
+
+def test_real_mode_missing_key_is_explicit_failure(wav_file: Path, monkeypatch):
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "dashscope_api_key", "")
+    with pytest.raises(AsrError) as raised:
+        transcribe(wav_file)
+    assert raised.value.code == "MISSING_API_KEY"
+    assert raised.value.outcome == "failed_final"
+
+
+def test_real_mode_digital_silence_is_no_speech(tmp_path: Path, monkeypatch):
+    silent = _make_wav(tmp_path / "silent.wav", silence=True)
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "dashscope_api_key", "")
+    result = transcribe(silent)
+    assert result.outcome == "no_speech"
+    assert result.channel == "local_vad"
+    assert result.text == ""
+
+
+def test_mock_mode_digital_silence_does_not_create_fake_text(tmp_path: Path):
+    silent = _make_wav(tmp_path / "silent-mock.wav", silence=True)
+    result = transcribe(silent)
+    assert result.outcome == "no_speech"
+    assert result.mock is False
+    assert result.text == ""
+
+
+def test_funasr_flash_accepts_m4a_and_keeps_audit_fields(tmp_path: Path, monkeypatch):
+    from app.services.external import asr as asr_mod
+    from app.services.external.asr import SenseVoiceResult
+
+    m4a = tmp_path / "phone.m4a"
+    m4a.write_bytes(b"\x00\x00\x00\x18ftypM4A " + b"audio-data")
+    captured = {}
+
+    def fake_post(url, api_key, payload, timeout_seconds=180.0):
+        captured.update({"url": url, "api_key": api_key, "payload": payload})
+        return 200, {
+            "request_id": "req-test-1",
+            "output": {"text": "真实格式测试", "sentence": {"confidence": 0.91}},
+            "usage": {"duration": 1.25},
+        }
+
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "dashscope_api_key", "test-key")
+    monkeypatch.setattr(asr_mod, "_http_post_json", fake_post)
+    monkeypatch.setattr(asr_mod, "_call_with_retry", lambda call: call())
+    monkeypatch.setattr(
+        asr_mod,
+        "_infer_sensevoice",
+        lambda path: SenseVoiceResult(
+            text="本地辅助文本",
+            emotion="开心",
+            emotion_confidence=0.86,
+            raw_emotion="<|HAPPY|>",
+        ),
+    )
+
+    result = transcribe(m4a)
+    assert result.outcome == "succeeded"
+    assert result.text == "真实格式测试"
+    assert result.audio_format == "m4a"
+    assert result.model == "fun-asr-flash-2026-06-15"
+    assert result.emotion == "开心"
+    assert result.emotion_confidence == 0.86
+    assert result.emotion_source == "sensevoice_local"
+    assert result.emotion_model == "iic/SenseVoiceSmall-onnx"
+    assert result.provider_request_id == "req-test-1"
+    assert result.source_audio_sha256
+    assert captured["payload"]["parameters"]["format"] == "m4a"
+    audio_data = captured["payload"]["input"]["messages"][0]["content"][0]["input_audio"]["data"]
+    assert audio_data.startswith("data:audio/mp4;base64,")
+
+
+def test_local_emotion_failure_keeps_successful_cloud_transcript(tmp_path: Path, monkeypatch):
+    from app.services.external import asr as asr_mod
+
+    m4a = tmp_path / "phone.m4a"
+    m4a.write_bytes(b"\x00\x00\x00\x18ftypM4A " + b"audio-data")
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "dashscope_api_key", "test-key")
+    monkeypatch.setattr(
+        asr_mod,
+        "_http_post_json",
+        lambda *args, **kwargs: (200, {"output": {"text": "云端已成功"}}),
+    )
+    monkeypatch.setattr(asr_mod, "_call_with_retry", lambda call: call())
+
+    def fail_emotion(path):
+        raise AsrError("SENSEVOICE_INFERENCE_FAILED", "model failed")
+
+    monkeypatch.setattr(asr_mod, "_infer_sensevoice", fail_emotion)
+
+    result = transcribe(m4a)
+    assert result.outcome == "succeeded"
+    assert result.text == "云端已成功"
+    assert result.emotion_source == "none"
+    assert "sensevoice_emotion:SENSEVOICE_INFERENCE_FAILED" in result.errors
+
+
+def test_sensevoice_emotion_confidence_uses_emotion_logits():
+    import numpy as np
+    from app.services.external import asr as asr_mod
+
+    tags = [
+        *asr_mod.SENSEVOICE_EMOTION_TAGS,
+        asr_mod.SENSEVOICE_UNKNOWN_EMOTION_TAG,
+    ]
+    token_ids = {tag: index for index, tag in enumerate(tags)}
+
+    class FakeSentencePiece:
+        @staticmethod
+        def PieceToId(tag):
+            return token_ids[tag]
+
+    model = type(
+        "Model",
+        (),
+        {"tokenizer": type("Tokenizer", (), {"sp": FakeSentencePiece()})()},
+    )()
+    logits = np.zeros((2, len(tags)), dtype=np.float32)
+    logits[1, token_ids["<|HAPPY|>"]] = 2.0
+
+    confidence = asr_mod._sensevoice_emotion_confidence(
+        model,
+        logits,
+        "<|HAPPY|>",
+    )
+    assert confidence == pytest.approx(0.513519, rel=1e-5)
+
+
+def test_retry_only_for_retryable_provider_error(monkeypatch):
+    from app.services.external.asr import _call_with_retry
+
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise AsrError("NETWORK_ERROR", "timeout", retryable=True)
+        return 200, {"output": {"text": "ok"}}
+
+    code, _ = _call_with_retry(flaky, retries=2, sleep=lambda _: None)
+    assert code == 200
+    assert len(calls) == 3
 
 
 def test_parse_sentences_shapes():
@@ -122,14 +363,6 @@ def test_parse_sentences_shapes():
     assert _parse_sentences(RespEmpty()) == []
 
 
-def test_llm_available_flag(monkeypatch):
-    """_llm_available：mock 模式 False；真实模式+key True"""
-    assert _llm_available() is False
-    monkeypatch.setattr(settings, "mock_external_ai", False)
-    monkeypatch.setattr(settings, "dashscope_api_key", "test-key")
-    assert _llm_available() is True
-
-
 # ---------- API 层 ----------
 
 @pytest.fixture()
@@ -159,10 +392,25 @@ def test_transcribe_api_mock(wav_file: Path, client):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert data["channel"] == "mock"
+    assert data["outcome"] == "mock"
     assert data["mock"] is True
     assert data["text"] == "这是一段本地模拟转写文本。"
     assert data["emotion"] == "平静"
     assert data["guardrail"]["passed"] is True  # mock 护栏放行
+
+
+def test_transcribe_api_accepts_m4a_in_mock_mode(client):
+    headers = _auth_headers(client)
+    payload = b"\x00\x00\x00\x18ftypM4A " + b"audio-data"
+    r = client.post(
+        "/api/v1/asr/transcribe",
+        files={"file": ("phone.m4a", io.BytesIO(payload), "audio/mp4")},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["audio_format"] == "m4a"
+    assert data["outcome"] == "mock"
 
 
 def test_transcribe_api_requires_auth(client):
@@ -174,8 +422,8 @@ def test_transcribe_api_requires_auth(client):
     assert r.status_code == 401
 
 
-def test_transcribe_api_rejects_non_wav(client):
-    """非 wav 魔数 → ASR_001 拒绝"""
+def test_transcribe_api_rejects_non_audio(client):
+    """不支持的扩展名/魔数 → ASR_001 拒绝。"""
     headers = _auth_headers(client)
     r = client.post(
         "/api/v1/asr/transcribe",
@@ -185,7 +433,7 @@ def test_transcribe_api_rejects_non_wav(client):
     assert r.status_code == 422  # 审查修复(P1-08)：错误不再伪装 200，统一 4xx ApiError
     body = r.json()
     assert body["code"] == "ASR_001"
-    assert "wav" in body["message"]
+    assert "不支持" in body["message"]
 
 
 def test_transcribe_api_rejects_empty(client):
@@ -198,6 +446,48 @@ def test_transcribe_api_rejects_empty(client):
     )
     assert r.status_code == 422  # 审查修复(P1-08)：错误不再伪装 200
     assert r.json()["code"] == "ASR_001"
+
+
+def test_transcribe_api_provider_failure_is_503(wav_file: Path, client, monkeypatch):
+    headers = _auth_headers(client)
+
+    def unavailable(*args, **kwargs):
+        raise AsrError("NETWORK_ERROR", "语音服务暂不可用", retryable=True)
+
+    monkeypatch.setattr("app.api.asr.transcribe", unavailable)
+    with wav_file.open("rb") as stream:
+        r = client.post(
+            "/api/v1/asr/transcribe",
+            files={"file": ("sample.wav", stream, "audio/wav")},
+            headers=headers,
+        )
+    assert r.status_code == 503
+    assert r.json()["details"]["outcome"] == "failed_retryable"
+
+
+def test_transcribe_api_no_speech_is_explicit(wav_file: Path, client, monkeypatch):
+    headers = _auth_headers(client)
+    result = AsrResult(
+        text="",
+        channel="local_vad",
+        outcome="no_speech",
+        model="digital-silence-v1",
+        provider="local",
+        audio_format="wav",
+        source_audio_sha256="abc",
+    )
+    monkeypatch.setattr("app.api.asr.transcribe", lambda *args, **kwargs: result)
+    with wav_file.open("rb") as stream:
+        r = client.post(
+            "/api/v1/asr/transcribe",
+            files={"file": ("sample.wav", stream, "audio/wav")},
+            headers=headers,
+        )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["outcome"] == "no_speech"
+    assert data["text"] == ""
+    assert data["guardrail"] == {"passed": True, "reason": "no-speech"}
 
 
 def test_guard_check_api(client):
@@ -257,19 +547,19 @@ def _make_long_wav(path: Path, seconds: float, with_speech: bool = True) -> Path
 
 
 def test_vad_segments_splits_long_audio(tmp_path):
-    """>5min 长录音 → 产生分段（含语音段）"""
+    """>4min 长录音 → 产生分段（含语音段）"""
     from app.services.external.asr import _segments_for
 
     wav = _make_long_wav(tmp_path / "long.wav", seconds=360)
     segs = _segments_for(wav)
     assert segs, "6 分钟含语音音频应产生分段"
-    # 每段时长在合理范围（≤5min 上限）
+    # 每段时长在合理范围（≤4min 上限）
     for start_ms, end_ms in segs:
-        assert end_ms - start_ms <= 301_500, f"段超长: {end_ms - start_ms}ms"
+        assert end_ms - start_ms <= 241_500, f"段超长: {end_ms - start_ms}ms"
 
 
 def test_vad_no_segments_for_short_audio(tmp_path):
-    """≤5min 音频不分段（整段转写）"""
+    """≤4min 音频不分段（整段转写）"""
     from app.services.external.asr import _segments_for
 
     wav = _make_long_wav(tmp_path / "short.wav", seconds=120)
@@ -277,11 +567,11 @@ def test_vad_no_segments_for_short_audio(tmp_path):
 
 
 def test_vad_all_silence_no_segments(tmp_path):
-    """全静音音频 → 无有效分段（返回 None，走整段 mock 兜底）"""
+    """长静音音频 → 明确返回空分段，由入口映射为 no_speech。"""
     from app.services.external.asr import _segments_for
 
     wav = _make_long_wav(tmp_path / "silence.wav", seconds=360, with_speech=False)
-    assert _segments_for(wav) is None
+    assert _segments_for(wav) == []
 
 
 def test_transcribe_long_audio_merges_segments(tmp_path, monkeypatch):
@@ -289,7 +579,6 @@ def test_transcribe_long_audio_merges_segments(tmp_path, monkeypatch):
     from app.services.external.asr import transcribe
 
     wav = _make_long_wav(tmp_path / "long2.wav", seconds=360)
-    monkeypatch.setattr("app.services.external.asr._llm_available", lambda: False)
     result = transcribe(str(wav), preferred="auto")
     assert result.text  # 非空（mock 文本拼接）
     assert result.mock is True

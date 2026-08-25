@@ -28,6 +28,7 @@ class ContentOut(BaseModel):
     emotion: dict | None
     tags: list[str] = []
     status: str
+    audio_processing: dict[str, Any] | None = None
     created_at: datetime
 
 

@@ -1,33 +1,67 @@
-"""ASR 双通道接入层（S2-04 · 接口先行 + 护栏先行）
+"""ASR 统一接入层（Fun-ASR Flash + SenseVoice + 本地 VAD）。
 
-M1 门禁项「转写可用 + 护栏可用」按砍单策略先交付接口层：
-  双通道（决策清单：声学情绪 + 语义内容）：
-    A. FunASR 通道（百炼 paraformer-v2）—— 语义内容为主，中文普通话转写
-    B. SenseVoice 通道（百炼 sensevoice-v1）—— 声学情绪标签 + 内容
-  两者共用 DASHSCOPE_API_KEY，无需额外申请（阿里云 NLS 接入可在后续零成本替换本层实现）。
-
-策略：preferred 通道失败 → 自动降级另一通道 → 都不可用（未配 key / mock 模式）→ mock 兜底。
-Mock 模式（MOCK_EXTERNAL_AI=true 或未配 key）：确定性输出、零费用，响应与真实同构，拿 key 零代码切换。
-
-护栏：转写结果下发/入库前必须过 dashscope.moderate（fail-safe：真实模式下百炼不可用默认拦截，决策 #12）。
+开发/测试模式可显式使用 mock；真实模式绝不把 mock 当成成功结果。手机常见
+M4A/MP3/AAC 等格式由已完成真实验收的 Fun-ASR Flash 通道直接处理，WAV
+额外保留 SenseVoice 降级和长录音 VAD 分段能力。
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import logging
+import math
+import os
+import re
+import shutil
+import subprocess
+import threading
+import time
 import wave
+from array import array
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+from urllib import error, request
 
 from app.core.config import settings
 
 logger = logging.getLogger("yishu.asr")
 
-# 百炼 ASR 模型（2026-08-19 实测：本 workspace 仅 paraformer-realtime-v2 可用，
-# fun-asr / sensevoice-v1 / qwen3-asr-flash / paraformer-v2 均返回 Model not found(44)）
-MODEL_FUNASR = "paraformer-realtime-v2"  # 录音/实时文件识别（语义内容，实测 200 OK）
-MODEL_SENSEVOICE = "sensevoice-v1"        # SenseVoice：声学情绪 + 内容（当前账号不可用，降级链路保留）
+MODEL_FUNASR = "fun-asr-flash-2026-06-15"
+MODEL_SENSEVOICE = "iic/SenseVoiceSmall-onnx"
+MODEL_SENSEVOICE_TOKENIZER = "iic/SenseVoiceSmall"
+DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
+EMOTION_ACTION_THRESHOLD = 0.7
 
-# SenseVoice 情绪标签 → 产品语义（B5-c 情绪关怀映射）
+FORMAT_BY_SUFFIX = {
+    ".aac": "aac",
+    ".amr": "amr",
+    ".flac": "flac",
+    ".m4a": "m4a",
+    ".mp3": "mp3",
+    ".ogg": "ogg",
+    ".opus": "opus",
+    ".wav": "wav",
+    ".webm": "webm",
+    ".wma": "wma",
+}
+SUFFIX_BY_FORMAT = {value: key for key, value in FORMAT_BY_SUFFIX.items()}
+MIME_BY_FORMAT = {
+    "aac": "audio/aac",
+    "amr": "audio/amr",
+    "flac": "audio/flac",
+    "m4a": "audio/mp4",
+    "mp3": "audio/mpeg",
+    "ogg": "audio/ogg",
+    "opus": "audio/opus",
+    "wav": "audio/wav",
+    "webm": "audio/webm",
+    "wma": "audio/x-ms-wma",
+}
+
 EMOTION_MAP = {
     "happy": "开心",
     "sad": "难过",
@@ -37,238 +71,688 @@ EMOTION_MAP = {
     "fear": "恐惧",
     "disgust": "厌恶",
 }
-
+SENSEVOICE_EMOTION_TAGS = {
+    "<|HAPPY|>": "开心",
+    "<|SAD|>": "难过",
+    "<|ANGRY|>": "生气",
+    "<|NEUTRAL|>": "平静",
+    "<|FEARFUL|>": "恐惧",
+    "<|DISGUSTED|>": "厌恶",
+    "<|SURPRISED|>": "惊讶",
+}
+SENSEVOICE_UNKNOWN_EMOTION_TAG = "<|EMO_UNKNOWN|>"
 ASR_CHANNELS = ("funasr", "sensevoice")
 
+_sensevoice_state: dict[str, Any | None] = {"model": None}
+_sensevoice_model_lock = threading.Lock()
 
-def _parse_sentences(resp) -> list[dict]:
-    """兼容两种响应形态：get_sentence() 返回 list[dict]，或带 .sentence 属性的对象。
 
-    2026-08-19 实测（dashscope 1.26.7 / paraformer-realtime-v2）：
-      resp.get_sentence() 直接返回 [{sentence_id, begin_time, end_time, text, ...}]
-    旧代码按 obj.sentence 属性取 → 恒为空 → 误判"空转写"。
-    """
-    raw = resp.get_sentence()
-    if isinstance(raw, list):
-        return [s for s in raw if isinstance(s, dict)]
-    return getattr(raw, "sentence", None) or []
+class AsrError(RuntimeError):
+    """可安全传给 API/任务状态层的 ASR 错误。"""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        errors: list[str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+        self.errors = list(errors or [])
+
+    @property
+    def outcome(self) -> str:
+        return "failed_retryable" if self.retryable else "failed_final"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "outcome": self.outcome,
+            "code": self.code,
+            "message": self.message,
+            "retryable": self.retryable,
+            "errors": self.errors,
+        }
+
+
+@dataclass(frozen=True)
+class AudioInfo:
+    path: Path
+    size_bytes: int
+    sha256: str
+    audio_format: str
+    mime_type: str
+    duration_ms: int
 
 
 @dataclass
 class AsrResult:
-    """转写结果（mock 与真实同构）"""
+    """与具体供应商解耦的转写结果。"""
 
     text: str
-    channel: str                       # funasr / sensevoice / mock
-    emotion: str = "平静"               # 声学情绪（SenseVoice 通道产出；默认平静）
+    channel: str
+    outcome: str = "succeeded"
+    emotion: str = "平静"
+    emotion_confidence: float = 0.0
+    emotion_source: str = "none"
+    emotion_model: str | None = None
     confidence: float = 0.0
     duration_ms: int = 0
     mock: bool = False
-    errors: list[str] = field(default_factory=list)  # 失败链路记录（降级依据）
+    retryable: bool = False
+    model: str = MODEL_FUNASR
+    provider: str = "aliyun_model_studio"
+    provider_request_id: str | None = None
+    audio_format: str = ""
+    source_audio_sha256: str = ""
+    segments: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+
+    def audit_dict(self) -> dict[str, Any]:
+        return {
+            "outcome": self.outcome,
+            "retryable": self.retryable,
+            "channel": self.channel,
+            "provider": self.provider,
+            "model": self.model,
+            "provider_request_id": self.provider_request_id,
+            "audio_format": self.audio_format,
+            "source_audio_sha256": self.source_audio_sha256,
+            "duration_ms": self.duration_ms,
+            "emotion": self.emotion,
+            "emotion_confidence": self.emotion_confidence,
+            "emotion_source": self.emotion_source,
+            "emotion_model": self.emotion_model,
+            "emotion_actionable": (
+                self.emotion != "平静"
+                and self.emotion_confidence >= EMOTION_ACTION_THRESHOLD
+            ),
+            "confidence": self.confidence,
+            "mock": self.mock,
+            "segments": self.segments,
+            "usage": self.usage,
+            "errors": self.errors,
+        }
 
 
-def _llm_available() -> bool:
-    """百炼可用判定：非 mock 且已配 key"""
-    return not settings.mock_external_ai and bool(settings.dashscope_api_key)
+@dataclass(frozen=True)
+class SenseVoiceResult:
+    """SenseVoice 本地推理结果；置信度只针对声学情绪标签。"""
+
+    text: str
+    emotion: str
+    emotion_confidence: float
+    raw_emotion: str
+
+
+def _matches_magic(audio_format: str, data: bytes) -> bool:
+    if audio_format == "wav":
+        return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WAVE"
+    if audio_format == "m4a":
+        return len(data) >= 12 and data[4:8] == b"ftyp"
+    if audio_format == "mp3":
+        return data.startswith(b"ID3") or (
+            len(data) >= 2 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0
+        )
+    if audio_format == "aac":
+        return len(data) >= 2 and data[0] == 0xFF and data[1] & 0xF6 == 0xF0
+    if audio_format == "flac":
+        return data.startswith(b"fLaC")
+    if audio_format in {"ogg", "opus"}:
+        return data.startswith(b"OggS")
+    if audio_format == "amr":
+        return data.startswith((b"#!AMR\n", b"#!AMR-WB\n"))
+    if audio_format == "webm":
+        return data.startswith(b"\x1aE\xdf\xa3")
+    if audio_format == "wma":
+        return data.startswith(b"0&\xb2u\x8ef\xcf\x11\xa6\xd9\x00\xaa\x00b\xcel")
+    return False
+
+
+def validate_audio_bytes(
+    data: bytes,
+    filename: str | None = None,
+    *,
+    max_bytes: int | None = MAX_AUDIO_BYTES,
+) -> str:
+    """校验上传音频并返回供应商格式名。"""
+    if not data:
+        raise AsrError("EMPTY_AUDIO", "音频文件为空")
+    if max_bytes is not None and len(data) > max_bytes:
+        max_mb = max_bytes / (1024 * 1024)
+        raise AsrError("AUDIO_TOO_LARGE", f"音频超过 {max_mb:g}MB 上限")
+
+    suffix = Path(filename or "").suffix.lower()
+    audio_format = FORMAT_BY_SUFFIX.get(suffix)
+    if not audio_format:
+        supported = ", ".join(sorted(FORMAT_BY_SUFFIX))
+        raise AsrError(
+            "UNSUPPORTED_FORMAT",
+            f"不支持的音频格式 {suffix or '无扩展名'}；支持：{supported}",
+        )
+    if not _matches_magic(audio_format, data[:64]):
+        raise AsrError("INVALID_AUDIO", "文件内容与音频扩展名不一致或文件已损坏")
+    return audio_format
+
+
+def temporary_suffix(audio_format: str) -> str:
+    return SUFFIX_BY_FORMAT.get(audio_format, ".bin")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _parse_wav_duration(path: Path) -> int:
-    """读取 wav 头得到时长（ms）；失败返回 0（不阻断）"""
     try:
         with wave.open(str(path), "rb") as wf:
             frames = wf.getnframes()
             rate = wf.getframerate() or 1
             return int(frames / rate * 1000)
-    except Exception:  # noqa: BLE001 —— 非 wav/损坏文件不影响转写
+    except Exception:  # noqa: BLE001
         return 0
 
 
-# ---- 长录音 VAD 分段（B5a-2 三档策略 · 审查修复 P1-16）----
-# 策略：≤60s 整段；60s-5min 整段；>5min VAD 分段 2-5min（逐段转写合并）。
-# webrtcvad 为 10ms 帧级检测；本实现按帧检测语音/静音，按静音间隙切分，
-# 段长目标 [MIN_SEG_S, MAX_SEG_S]。
-VAD_FRAME_MS = 10
-MIN_SEG_S = 120   # 2min
-MAX_SEG_S = 300   # 5min
-SILENCE_JOIN_S = 1.5  # 静音 ≥1.5s 视为切分点
+def inspect_audio(path: str | Path, *, max_bytes: int | None = None) -> AudioInfo:
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise AsrError("AUDIO_NOT_FOUND", f"音频文件不存在: {resolved}")
+    data = resolved.read_bytes()
+    audio_format = validate_audio_bytes(data, resolved.name, max_bytes=max_bytes)
+    return AudioInfo(
+        path=resolved,
+        size_bytes=len(data),
+        sha256=_sha256_file(resolved),
+        audio_format=audio_format,
+        mime_type=MIME_BY_FORMAT[audio_format],
+        duration_ms=_parse_wav_duration(resolved) if audio_format == "wav" else 0,
+    )
 
 
-def _vad_frame_marks(pcm: bytes, rate: int) -> list[bool]:
-    """逐 10ms 帧 VAD 检测 → [is_speech]（webrtcvad 仅支持 8k/16k/32k/48k 采样）"""
-    import webrtcvad
-
-    vad = webrtcvad.Vad(2)  # 聚合度 2（平衡误报/漏报）
-    frame_bytes = int(rate * VAD_FRAME_MS / 1000) * 2  # 16bit 单声道
-    marks: list[bool] = []
-    for i in range(0, len(pcm) - frame_bytes + 1, frame_bytes):
-        frame = pcm[i : i + frame_bytes]
-        try:
-            marks.append(vad.is_speech(frame, rate))
-        except Exception:  # noqa: BLE001 —— 异常帧按静音处理
-            marks.append(False)
-    return marks
-
-
-def _split_marks_to_segments(marks: list[bool], rate: int) -> list[tuple[int, int]]:
-    """语音帧标记 → 分段 (start_ms, end_ms)
-
-    规则：静音 ≥SILENCE_JOIN_S 切分；段长超 MAX_SEG_S 时在静音处强制切；
-    段长不足 MIN_SEG_S 时并入前段（避免碎片）。返回空表 = 无有效语音。
-    """
-    if not marks or not any(marks):
-        return []
-    # 1. 找语音区间（连续语音帧，静音间隙 < JOIN 的合并）
-    join_frames = int(SILENCE_JOIN_S * 1000 / VAD_FRAME_MS)
-    max_frames = int(MAX_SEG_S * 1000 / VAD_FRAME_MS)
-    min_frames = int(MIN_SEG_S * 1000 / VAD_FRAME_MS)
-
-    spans: list[tuple[int, int]] = []  # (start_frame, end_frame)
-    cur_start: int | None = None
-    silence_run = 0
-    for i, speech in enumerate(marks):
-        if speech:
-            if cur_start is None:
-                cur_start = i
-            silence_run = 0
-        else:
-            if cur_start is not None:
-                silence_run += 1
-                if silence_run >= join_frames:
-                    spans.append((cur_start, i - silence_run + 1))
-                    cur_start = None
-                    silence_run = 0
-    if cur_start is not None:
-        spans.append((cur_start, len(marks)))
-
-    # 2. 超长段强制切分（在段内静音处切；无静音则均分）
-    final: list[tuple[int, int]] = []
-    for span_start, span_end in spans:
-        seg_start = span_start
-        while span_end - seg_start > max_frames:
-            # 简单策略：均分点切（段长上限保证，静音切分优化留待真实数据校准）
-            cut = seg_start + max_frames
-            final.append((seg_start, cut))
-            seg_start = cut
-        final.append((seg_start, span_end))
-
-    # 3. 短段并入前段（避免碎片段）
-    merged: list[tuple[int, int]] = []
-    for start, end in final:
-        if merged and end - merged[-1][1] < min_frames and (end - merged[-1][0]) <= max_frames:
-            merged[-1] = (merged[-1][0], end)
-        else:
-            merged.append((start, end))
-
-    ms_per_frame = VAD_FRAME_MS
-    return [(s * ms_per_frame, e * ms_per_frame) for s, e in merged]
+def _dashscope_base_url() -> str:
+    explicit = (
+        os.getenv("DASHSCOPE_BASE_URL", "").strip()
+        or settings.dashscope_base_url.strip()
+    )
+    if explicit:
+        return explicit.rstrip("/")
+    workspace_id = settings.dashscope_workspace_id.strip()
+    if workspace_id:
+        return (
+            f"https://{workspace_id}.{settings.dashscope_region}.maas.aliyuncs.com/api/v1"
+        )
+    return DEFAULT_DASHSCOPE_BASE_URL
 
 
-def _extract_segment_pcm(path: Path, start_ms: int, end_ms: int) -> bytes:
-    """从 wav 切出 [start_ms, end_ms) 的 PCM 数据（16bit 单声道）"""
-    with wave.open(str(path), "rb") as wf:
-        rate = wf.getframerate()
-        wf.setpos(int(start_ms * rate / 1000))
-        n = int((end_ms - start_ms) * rate / 1000)
-        return wf.readframes(n)
+def _build_flash_payload(audio: AudioInfo) -> dict[str, Any]:
+    encoded = base64.b64encode(audio.path.read_bytes()).decode("ascii")
+    return {
+        "model": MODEL_FUNASR,
+        "input": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": f"data:{audio.mime_type};base64,{encoded}",
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+        "parameters": {"format": audio.audio_format, "language_hints": ["zh"]},
+    }
 
 
-def _segments_for(path: Path) -> list[tuple[int, int]] | None:
-    """长录音 VAD 分段入口：>MAX_SEG_S 才分段；返回 [(start_ms, end_ms)] 或 None（不分段）"""
-    duration_ms = _parse_wav_duration(path)
-    if duration_ms <= MAX_SEG_S * 1000:
-        return None
+def _http_post_json(
+    url: str,
+    api_key: str,
+    payload: dict[str, Any],
+    timeout_seconds: float = 180.0,
+) -> tuple[int, dict[str, Any]]:
+    if not url.startswith("https://"):
+        raise AsrError("INVALID_ENDPOINT", "ASR 服务地址必须使用 HTTPS")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = request.Request(  # noqa: S310 -- URL 已在上方限制为 HTTPS
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-SSE": "disable",
+        },
+    )
     try:
-        import wave
+        with request.urlopen(req, timeout=timeout_seconds) as response:  # noqa: S310
+            raw = response.read().decode("utf-8")
+            return response.status, json.loads(raw)
+    except error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            detail = json.loads(raw)
+            message = detail.get("message") or detail.get("code") or raw
+        except json.JSONDecodeError:
+            message = raw
+        retryable = exc.code == 429 or 500 <= exc.code <= 599
+        raise AsrError(
+            f"HTTP_{exc.code}",
+            str(message)[:500],
+            retryable=retryable,
+        ) from exc
+    except (error.URLError, TimeoutError, OSError) as exc:
+        raise AsrError("NETWORK_ERROR", f"ASR 网络请求失败: {exc}", retryable=True) from exc
+    except json.JSONDecodeError as exc:
+        raise AsrError("INVALID_PROVIDER_JSON", "ASR 返回了无法解析的数据", retryable=True) from exc
 
-        with wave.open(str(path), "rb") as wf:
-            rate = wf.getframerate()
-            if rate not in (8000, 16000, 32000, 48000):
-                logger.warning("VAD 仅支持 8k/16k/32k/48k，跳过分段（采样率 %s）", rate)
-                return None
-            pcm = wf.readframes(wf.getnframes())
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("VAD 读取失败，跳过分段: %s", exc)
-        return None
-    marks = _vad_frame_marks(pcm, rate)
-    segs = _split_marks_to_segments(marks, rate)
-    if not segs:
-        return None
-    return segs
+
+def _call_with_retry(
+    call: Callable[[], tuple[int, dict[str, Any]]],
+    retries: int = 2,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[int, dict[str, Any]]:
+    attempt = 0
+    while True:
+        try:
+            return call()
+        except AsrError as exc:
+            if not exc.retryable or attempt >= retries:
+                raise
+            sleep(min(2**attempt, 8))
+            attempt += 1
+
+
+def _normalise_segments(output: dict[str, Any]) -> list[dict[str, Any]]:
+    sentence = output.get("sentence")
+    if isinstance(sentence, dict):
+        return [sentence]
+    if isinstance(sentence, list):
+        return [item for item in sentence if isinstance(item, dict)]
+    return []
+
+
+def _transcribe_funasr(path: Path) -> AsrResult:
+    """主通道：Fun-ASR Flash，多格式 Data URI 调用。"""
+    audio = inspect_audio(path)
+    endpoint = f"{_dashscope_base_url()}/services/aigc/multimodal-generation/generation"
+    _, response = _call_with_retry(
+        lambda: _http_post_json(
+            endpoint,
+            settings.dashscope_api_key,
+            _build_flash_payload(audio),
+        )
+    )
+    output = response.get("output")
+    if not isinstance(output, dict) or not isinstance(output.get("text"), str):
+        raise AsrError(
+            "INVALID_PROVIDER_RESPONSE",
+            "ASR 响应缺少 output.text",
+            retryable=True,
+        )
+    text = output["text"].strip()
+    segments = _normalise_segments(output)
+    confidence = 0.0
+    if segments and isinstance(segments[0].get("confidence"), (int, float)):
+        confidence = float(segments[0]["confidence"])
+    usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+    duration_ms = audio.duration_ms
+    if not duration_ms and isinstance(usage.get("duration"), (int, float)):
+        duration_ms = int(float(usage["duration"]) * 1000)
+    return AsrResult(
+        text=text,
+        channel="funasr",
+        outcome="succeeded" if text else "no_speech",
+        confidence=confidence,
+        duration_ms=duration_ms,
+        model=MODEL_FUNASR,
+        provider_request_id=response.get("request_id"),
+        audio_format=audio.audio_format,
+        source_audio_sha256=audio.sha256,
+        segments=segments,
+        usage=usage,
+    )
+
+
+def _parse_sentences(resp) -> list[dict[str, Any]]:
+    """兼容旧 DashScope 实时转写响应；保留给历史调用与回归测试。"""
+    raw = resp.get_sentence()
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+    return getattr(raw, "sentence", None) or []
 
 
 def _emotion_label(raw: str | None) -> str:
-    """SenseVoice emotion 字段 → 中文标签（未识别/缺失 → 平静）"""
     if not raw:
         return "平静"
     return EMOTION_MAP.get(raw.strip().lower(), "平静")
 
 
-def _transcribe_funasr(path: Path) -> AsrResult:
-    """通道 A：FunASR（paraformer-v2）语义转写"""
-    from dashscope.audio.asr import Recognition
+_SENSEVOICE_TOKENIZER_NAME = "chn_jpn_yue_eng_ko_spectok.bpe.model"
 
-    rec = Recognition(
-        model=MODEL_FUNASR,
-        format="wav",
-        sample_rate=16000,
-        callback=None,
-        workspace=settings.dashscope_workspace_id or None,
+
+def _validate_sensevoice_assets(model_dir: Path) -> Path:
+    """确认部署目录包含 ONNX 权重和 funasr-onnx 所需分词文件。"""
+    resolved = model_dir.expanduser().resolve()
+    if not resolved.is_dir() or not any(resolved.glob("*.onnx")):
+        raise AsrError(
+            "SENSEVOICE_MODEL_NOT_PRELOADED",
+            f"SenseVoice 目录缺少 ONNX 权重: {resolved}",
+        )
+    if not (resolved / _SENSEVOICE_TOKENIZER_NAME).is_file():
+        raise AsrError(
+            "SENSEVOICE_MODEL_NOT_PRELOADED",
+            f"SenseVoice 目录缺少分词文件: {resolved}",
+        )
+    return resolved
+
+
+def prepare_sensevoice_assets(
+    target_dir: str | Path | None = None,
+    *,
+    snapshot_download_fn: Callable[..., str] | None = None,
+) -> Path:
+    """部署/开发预置 SenseVoice 资产；生产请求路径不负责联网下载。"""
+    if snapshot_download_fn is None:
+        from modelscope import snapshot_download as snapshot_download_fn
+
+    target = Path(target_dir).expanduser().resolve() if target_dir else None
+    download_kwargs: dict[str, Any] = {}
+    if target is not None:
+        target.mkdir(parents=True, exist_ok=True)
+        download_kwargs["local_dir"] = str(target)
+
+    model_dir = Path(snapshot_download_fn(MODEL_SENSEVOICE, **download_kwargs))
+    tokenizer_path = model_dir / _SENSEVOICE_TOKENIZER_NAME
+    if not tokenizer_path.exists():
+        tokenizer_dir = Path(
+            snapshot_download_fn(
+                MODEL_SENSEVOICE_TOKENIZER,
+                allow_patterns=[_SENSEVOICE_TOKENIZER_NAME],
+            )
+        )
+        shutil.copy2(tokenizer_dir / _SENSEVOICE_TOKENIZER_NAME, tokenizer_path)
+    return _validate_sensevoice_assets(model_dir)
+
+
+def _sensevoice_model_dir() -> Path:
+    configured = settings.sensevoice_model_dir.strip()
+    if configured:
+        model_dir = Path(configured).expanduser()
+        if not model_dir.is_absolute():
+            model_dir = Path(__file__).resolve().parents[3] / model_dir
+        return _validate_sensevoice_assets(model_dir)
+    if settings.app_env == "production":
+        raise AsrError(
+            "SENSEVOICE_MODEL_NOT_PRELOADED",
+            "生产环境必须先运行 scripts/prepare_sensevoice.py 并配置 SENSEVOICE_MODEL_DIR",
+        )
+    return prepare_sensevoice_assets()
+
+
+def _get_sensevoice_model():
+    """加载已预置的量化 ONNX 模型；开发环境仍允许使用 ModelScope 缓存。"""
+    if _sensevoice_state["model"] is not None:
+        return _sensevoice_state["model"]
+
+    with _sensevoice_model_lock:
+        if _sensevoice_state["model"] is not None:
+            return _sensevoice_state["model"]
+
+        from funasr_onnx import SenseVoiceSmall
+
+        _sensevoice_state["model"] = SenseVoiceSmall(
+            _sensevoice_model_dir(),
+            batch_size=1,
+            quantize=True,
+            intra_op_num_threads=4,
+        )
+        return _sensevoice_state["model"]
+
+
+def _decode_audio_mono_16k(path: Path):
+    """使用随应用安装的 FFmpeg，把常见手机音频统一解码为 float32 PCM。"""
+    import numpy as np
+    from imageio_ffmpeg import get_ffmpeg_exe
+
+    try:
+        completed = subprocess.run(  # noqa: S603 -- 参数列表固定且不经过 shell
+            [
+                get_ffmpeg_exe(),
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-i",
+                str(path),
+                "-f",
+                "f32le",
+                "-acodec",
+                "pcm_f32le",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "pipe:1",
+            ],
+            capture_output=True,
+            check=False,
+            timeout=90,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise AsrError(
+            "AUDIO_DECODE_FAILED",
+            f"本地情绪检测无法解码音频: {type(exc).__name__}",
+        ) from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise AsrError(
+            "AUDIO_DECODE_FAILED",
+            f"本地情绪检测无法解码音频: {detail[-300:]}",
+        )
+    waveform = np.frombuffer(completed.stdout, dtype="<f4").copy()
+    if waveform.size == 0:
+        raise AsrError("NO_SPEECH", "本地情绪检测未读取到有效声音")
+    return waveform
+
+
+def _decode_sensevoice_ctc(model, logits, length: int) -> str:
+    import numpy as np
+
+    sequence = np.argmax(logits[:length], axis=-1)
+    if sequence.size:
+        sequence = sequence[np.concatenate(([True], np.diff(sequence) != 0))]
+    token_ids = sequence[sequence != model.blank_id].tolist()
+    return model.tokenizer.decode(token_ids)
+
+
+def _sensevoice_emotion_confidence(model, logits, raw_emotion: str) -> float:
+    """从第二个富转写查询位计算 7 类情绪的归一化置信度。"""
+    import numpy as np
+
+    if raw_emotion not in SENSEVOICE_EMOTION_TAGS or logits.shape[0] < 2:
+        return 0.0
+    tags = [*SENSEVOICE_EMOTION_TAGS, SENSEVOICE_UNKNOWN_EMOTION_TAG]
+    token_ids = [model.tokenizer.sp.PieceToId(tag) for tag in tags]
+    if any(token_id < 0 for token_id in token_ids):
+        return 0.0
+    scores = np.asarray(logits[1, token_ids], dtype=np.float64)
+    scores -= float(scores.max())
+    probabilities = np.exp(scores)
+    denominator = float(probabilities.sum())
+    if not math.isfinite(denominator) or denominator <= 0:
+        return 0.0
+    confidence = float(probabilities[tags.index(raw_emotion)] / denominator)
+    return max(0.0, min(confidence, 1.0))
+
+
+def _infer_sensevoice(path: Path) -> SenseVoiceResult:
+    """在 CPU 上运行 SenseVoiceSmall，一次得到本地文本和声学情绪。"""
+    import numpy as np
+
+    inspect_audio(path)
+    waveform = _decode_audio_mono_16k(path)
+    model = _get_sensevoice_model()
+    try:
+        features, feature_lengths = model.extract_feat([waveform])
+        language, textnorm = model.read_tags("auto", "withitn")
+        logits, output_lengths = model.infer(
+            features,
+            feature_lengths,
+            np.asarray(language, dtype=np.int32),
+            np.asarray(textnorm, dtype=np.int32),
+        )
+        length = int(output_lengths[0])
+        sample_logits = logits[0, :length, :]
+        raw_text = _decode_sensevoice_ctc(model, sample_logits, length)
+    except Exception as exc:  # noqa: BLE001 -- 三方模型错误统一成安全错误码
+        raise AsrError(
+            "SENSEVOICE_INFERENCE_FAILED",
+            f"本地情绪检测失败: {type(exc).__name__}",
+        ) from exc
+
+    raw_emotion = next(
+        (tag for tag in SENSEVOICE_EMOTION_TAGS if tag in raw_text),
+        SENSEVOICE_UNKNOWN_EMOTION_TAG,
     )
-    resp = rec.call(file=str(path))
-    if resp.status_code != 200:
-        raise RuntimeError(f"funasr 调用失败: {resp.status_code} {resp.message}")
-    sentences = _parse_sentences(resp)
-    text = "".join(s.get("text", "") for s in sentences).strip()
-    if not text:
-        raise RuntimeError("funasr 返回空转写")
-    return AsrResult(
-        text=text,
-        channel="funasr",
-        emotion="平静",
-        confidence=float(sentences[0].get("confidence", 0.0)) if sentences else 0.0,
-        duration_ms=_parse_wav_duration(path),
+    clean_text = re.sub(r"<\|[^|]+\|>", "", raw_text).strip()
+    return SenseVoiceResult(
+        text=clean_text,
+        emotion=SENSEVOICE_EMOTION_TAGS.get(raw_emotion, "平静"),
+        emotion_confidence=_sensevoice_emotion_confidence(
+            model,
+            sample_logits,
+            raw_emotion,
+        ),
+        raw_emotion=raw_emotion,
     )
+
+
+def infer_local_emotion(audio_path: str | Path) -> SenseVoiceResult:
+    """供独立 RQ 情绪任务调用的稳定入口。"""
+    return _infer_sensevoice(Path(audio_path))
 
 
 def _transcribe_sensevoice(path: Path) -> AsrResult:
-    """通道 B：SenseVoice（sensevoice-v1）声学情绪 + 内容"""
-    from dashscope.audio.asr import Recognition
-
-    rec = Recognition(
-        model=MODEL_SENSEVOICE,
-        format="wav",
-        sample_rate=16000,
-        callback=None,
-        workspace=settings.dashscope_workspace_id or None,
-    )
-    resp = rec.call(file=str(path))
-    if resp.status_code != 200:
-        raise RuntimeError(f"sensevoice 调用失败: {resp.status_code} {resp.message}")
-    sentences = _parse_sentences(resp)
-    text = "".join(s.get("text", "") for s in sentences).strip()
-    if not text:
-        raise RuntimeError("sensevoice 返回空转写")
-    # 声学情绪：取非平静情绪优先，否则平静
-    emotions = [_emotion_label(s.get("emotion")) for s in sentences]
-    emotion = next((e for e in emotions if e != "平静"), "平静")
+    """本地 CPU 降级通道：SenseVoiceSmall 转写 + 声学情绪。"""
+    audio = inspect_audio(path)
+    local = _infer_sensevoice(path)
     return AsrResult(
-        text=text,
+        text=local.text,
         channel="sensevoice",
-        emotion=emotion,
-        confidence=float(sentences[0].get("confidence", 0.0)) if sentences else 0.0,
-        duration_ms=_parse_wav_duration(path),
+        outcome="succeeded" if local.text else "no_speech",
+        emotion=local.emotion,
+        emotion_confidence=local.emotion_confidence,
+        emotion_source="sensevoice_local",
+        emotion_model=MODEL_SENSEVOICE,
+        duration_ms=audio.duration_ms,
+        model=MODEL_SENSEVOICE,
+        provider="local",
+        audio_format=audio.audio_format,
+        source_audio_sha256=audio.sha256,
     )
 
 
-def _transcribe_mock(path: Path) -> AsrResult:
-    """mock 兜底：确定性输出（与真实响应同构，契约消费方本地联调用）"""
+def should_enhance_with_local_emotion(
+    result: AsrResult,
+    *,
+    mode: str | None = None,
+) -> bool:
+    """按策略决定是否需要本地情绪；auto 会尊重未来主通道的情绪结果。"""
+    selected = mode or settings.asr_local_emotion_mode
+    if result.outcome != "succeeded" or not result.text.strip():
+        return False
+    if selected == "off":
+        return False
+    if selected == "always":
+        return True
+    return result.emotion_source in {"", "none"}
+
+
+def _enhance_with_local_emotion(
+    result: AsrResult,
+    path: Path,
+    *,
+    mode: str | None = None,
+) -> AsrResult:
+    """云端转写成功后可选本地情绪；情绪失败不抹掉真实文本。"""
+    if not should_enhance_with_local_emotion(result, mode=mode):
+        return result
+    try:
+        local = _infer_sensevoice(path)
+    except AsrError as exc:
+        result.errors.append(f"sensevoice_emotion:{exc.code}")
+        logger.warning("SenseVoice 情绪增强失败: %s", exc.code)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        result.errors.append("sensevoice_emotion:INFERENCE_ERROR")
+        logger.warning("SenseVoice 情绪增强异常: %s", type(exc).__name__)
+        return result
+    result.emotion = local.emotion
+    result.emotion_confidence = local.emotion_confidence
+    result.emotion_source = "sensevoice_local"
+    result.emotion_model = MODEL_SENSEVOICE
+    return result
+
+
+def _transcribe_mock(path: Path, errors: list[str] | None = None) -> AsrResult:
+    audio = inspect_audio(path)
     return AsrResult(
         text="这是一段本地模拟转写文本。",
         channel="mock",
+        outcome="mock",
         emotion="平静",
         confidence=0.5,
-        duration_ms=_parse_wav_duration(path),
+        duration_ms=audio.duration_ms,
         mock=True,
+        model="mock",
+        provider="local",
+        audio_format=audio.audio_format,
+        source_audio_sha256=audio.sha256,
+        errors=list(errors or ["mock mode enabled"]),
+    )
+
+
+def _wav_is_digital_silence(path: Path) -> bool:
+    """识别全零/近全零 PCM；不把普通低音量录音误判为空白。"""
+    try:
+        with wave.open(str(path), "rb") as wf:
+            if wf.getsampwidth() != 2 or wf.getnchannels() != 1:
+                return False
+            saw_sample = False
+            while True:
+                chunk = wf.readframes(4096)
+                if not chunk:
+                    break
+                samples = array("h")
+                samples.frombytes(chunk)
+                saw_sample = saw_sample or bool(samples)
+                if any(abs(sample) > 4 for sample in samples):
+                    return False
+            return saw_sample
+    except (OSError, EOFError, wave.Error):
+        return False
+
+
+def _no_speech_result(audio: AudioInfo) -> AsrResult:
+    return AsrResult(
+        text="",
+        channel="local_vad",
+        outcome="no_speech",
+        model="digital-silence-v1",
+        provider="local",
+        duration_ms=audio.duration_ms,
+        audio_format=audio.audio_format,
+        source_audio_sha256=audio.sha256,
     )
 
 
@@ -278,102 +762,245 @@ _CHANNELS = {
 }
 
 
-def _transcribe_one(path: Path, preferred: str, errors: list[str]) -> AsrResult:
-    """单段转写：preferred 通道优先，失败自动降级，最终 mock 兜底。
+def _transcribe_one(
+    path: Path,
+    preferred: str,
+    errors: list[str],
+    *,
+    enhance_emotion: bool | None = None,
+) -> AsrResult:
+    if preferred == "mock":
+        if settings.app_env == "production":
+            raise AsrError("MOCK_DISABLED", "生产环境禁止使用 mock 转写")
+        return _transcribe_mock(path, errors)
+    if settings.mock_external_ai:
+        if settings.app_env == "production":
+            raise AsrError("MOCK_DISABLED", "生产环境禁止使用 mock 转写")
+        return _transcribe_mock(path, errors)
+    if not settings.dashscope_api_key:
+        raise AsrError("MISSING_API_KEY", "ASR 服务未配置 DASHSCOPE_API_KEY")
 
-    preferred: auto（funasr→sensevoice）/ funasr / sensevoice / mock
-    """
     order = list(ASR_CHANNELS) if preferred == "auto" else [preferred] + [
-        c for c in ASR_CHANNELS if c != preferred
+        item for item in ASR_CHANNELS if item != preferred
     ]
+    retryable = False
     for name in order:
-        if name == "mock":
-            result = _transcribe_mock(path)
-            result.errors = errors
-            logger.info("ASR mock 兜底（%s）", errors or "未配置 key")
-            return result
-        if not _llm_available():
-            errors.append(f"{name}: 未配置（MOCK 或缺 DASHSCOPE_API_KEY）")
-            continue
         try:
             result = _CHANNELS[name](path)
-            result.errors = errors
+            result.errors = list(errors)
+            if name == "funasr":
+                mode = (
+                    "always"
+                    if enhance_emotion is True
+                    else "off"
+                    if enhance_emotion is False
+                    else None
+                )
+                result = _enhance_with_local_emotion(result, path, mode=mode)
             return result
-        except Exception as exc:  # noqa: BLE001 —— 通道失败走降级
-            errors.append(f"{name}: {exc}")
-            logger.warning("ASR 通道 %s 失败，降级: %s", name, exc)
-            continue
-    # 理论不可达（mock 恒兜底），防御性返回
-    result = _transcribe_mock(path)
-    result.errors = errors
-    return result
+        except AsrError as exc:
+            retryable = retryable or exc.retryable
+            errors.append(f"{name}:{exc.code}")
+            logger.warning("ASR 通道 %s 失败，降级: %s", name, exc.code)
+        except Exception as exc:  # noqa: BLE001
+            retryable = True
+            errors.append(f"{name}:PROVIDER_ERROR")
+            logger.warning("ASR 通道 %s 异常，降级: %s", name, type(exc).__name__)
+    raise AsrError(
+        "ASR_UNAVAILABLE",
+        "语音转写暂不可用",
+        retryable=retryable,
+        errors=errors,
+    )
 
 
-def transcribe(audio_path: str | Path, preferred: str = "auto") -> AsrResult:
-    """转写主入口：≤5min 整段转写；>5min VAD 分段逐段转写合并（审查修复 P1-16）。
+# ---- 长录音 VAD 分段（仅 WAV 16bit 单声道）----
+VAD_FRAME_MS = 10
+MIN_SEG_S = 120
+MAX_SEG_S = 240
+SILENCE_JOIN_S = 1.5
 
-    preferred: auto（funasr→sensevoice）/ funasr / sensevoice / mock
-    """
+
+def _vad_frame_marks(pcm: bytes, rate: int) -> list[bool]:
+    import webrtcvad
+
+    vad = webrtcvad.Vad(2)
+    frame_bytes = int(rate * VAD_FRAME_MS / 1000) * 2
+    marks: list[bool] = []
+    for index in range(0, len(pcm) - frame_bytes + 1, frame_bytes):
+        try:
+            marks.append(vad.is_speech(pcm[index : index + frame_bytes], rate))
+        except Exception:  # noqa: BLE001
+            marks.append(False)
+    return marks
+
+
+def _split_marks_to_segments(marks: list[bool]) -> list[tuple[int, int]]:
+    if not marks or not any(marks):
+        return []
+    join_frames = int(SILENCE_JOIN_S * 1000 / VAD_FRAME_MS)
+    max_frames = int(MAX_SEG_S * 1000 / VAD_FRAME_MS)
+    min_frames = int(MIN_SEG_S * 1000 / VAD_FRAME_MS)
+    spans: list[tuple[int, int]] = []
+    cur_start: int | None = None
+    silence_run = 0
+    for index, speech in enumerate(marks):
+        if speech:
+            if cur_start is None:
+                cur_start = index
+            silence_run = 0
+        elif cur_start is not None:
+            silence_run += 1
+            if silence_run >= join_frames:
+                spans.append((cur_start, index - silence_run + 1))
+                cur_start = None
+                silence_run = 0
+    if cur_start is not None:
+        spans.append((cur_start, len(marks)))
+
+    final: list[tuple[int, int]] = []
+    for span_start, span_end in spans:
+        seg_start = span_start
+        while span_end - seg_start > max_frames:
+            cut = seg_start + max_frames
+            final.append((seg_start, cut))
+            seg_start = cut
+        final.append((seg_start, span_end))
+
+    merged: list[tuple[int, int]] = []
+    for start, end in final:
+        if merged and end - merged[-1][1] < min_frames and end - merged[-1][0] <= max_frames:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return [(start * VAD_FRAME_MS, end * VAD_FRAME_MS) for start, end in merged]
+
+
+def _segments_for(path: Path) -> list[tuple[int, int]] | None:
+    duration_ms = _parse_wav_duration(path)
+    if duration_ms <= MAX_SEG_S * 1000:
+        return None
+    try:
+        with wave.open(str(path), "rb") as wf:
+            rate = wf.getframerate()
+            if (
+                rate not in (8000, 16000, 32000, 48000)
+                or wf.getsampwidth() != 2
+                or wf.getnchannels() != 1
+            ):
+                raise AsrError(
+                    "LONG_WAV_UNSUPPORTED",
+                    "长 WAV 分段仅支持 8k/16k/32k/48k、16bit、单声道",
+                )
+            pcm = wf.readframes(wf.getnframes())
+    except AsrError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise AsrError("INVALID_AUDIO", "长 WAV 无法读取或文件已损坏") from exc
+    return _split_marks_to_segments(_vad_frame_marks(pcm, rate))
+
+
+def _extract_segment_pcm(path: Path, start_ms: int, end_ms: int) -> tuple[bytes, int]:
+    with wave.open(str(path), "rb") as wf:
+        rate = wf.getframerate()
+        wf.setpos(int(start_ms * rate / 1000))
+        frame_count = int((end_ms - start_ms) * rate / 1000)
+        return wf.readframes(frame_count), rate
+
+
+def transcribe(
+    audio_path: str | Path,
+    preferred: str = "auto",
+    *,
+    enhance_emotion: bool | None = None,
+) -> AsrResult:
+    """统一入口：多格式短音频直传；长 WAV 经 VAD 分段后合并。"""
     path = Path(audio_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"音频文件不存在: {path}")
+    audio = inspect_audio(path)
+    if audio.audio_format != "wav" and audio.size_bytes > MAX_AUDIO_BYTES:
+        raise AsrError(
+            "AUDIO_TOO_LARGE",
+            "超过 8MB 的压缩音频暂不支持本地分段，请先切分或转为 WAV",
+        )
+    if audio.audio_format == "wav" and _wav_is_digital_silence(path):
+        return _no_speech_result(audio)
 
-    errors: list[str] = []
-    segs = _segments_for(path)
-    if not segs:
-        return _transcribe_one(path, preferred, errors)
+    segments = _segments_for(path) if audio.audio_format == "wav" else None
+    if segments == []:
+        return _no_speech_result(audio)
+    if segments is None:
+        return _transcribe_one(
+            path,
+            preferred,
+            [],
+            enhance_emotion=enhance_emotion,
+        )
 
-    # 长录音：分段转写合并（B5a-2 三档策略；失败段重试一次）
     import tempfile
 
-    logger.info("长录音 VAD 分段 %d 段（总时长 >%ds）", len(segs), MAX_SEG_S)
     texts: list[str] = []
-    emotions: list[str] = []
-    total_ms = 0
-    mock_used = False
-    for idx, (start_ms, end_ms) in enumerate(segs, 1):
-        seg_path = None
+    results: list[AsrResult] = []
+    failures: list[AsrError] = []
+    for index, (start_ms, end_ms) in enumerate(segments, 1):
+        seg_path: Path | None = None
         try:
-            pcm = _extract_segment_pcm(path, start_ms, end_ms)
+            pcm, rate = _extract_segment_pcm(path, start_ms, end_ms)
             if not pcm:
                 continue
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 with wave.open(tmp, "wb") as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)
-                    wf.setframerate(16000)
+                    wf.setframerate(rate)
                     wf.writeframes(pcm)
                 seg_path = Path(tmp.name)
-            result = _transcribe_one(seg_path, preferred, errors)
-            total_ms += end_ms - start_ms
+            result = _transcribe_one(
+                seg_path,
+                preferred,
+                [],
+                enhance_emotion=enhance_emotion,
+            )
+            results.append(result)
             if result.text:
                 texts.append(result.text)
-                emotions.append(result.emotion)
-            if result.mock:
-                mock_used = True
-        except Exception as exc:  # noqa: BLE001 —— 单段失败不阻断整段合并
-            errors.append(f"seg{idx}: {exc}")
-            logger.warning("分段 %d 转写失败: %s", idx, exc)
+        except AsrError as exc:
+            failures.append(exc)
+            logger.warning("ASR 分段 %d 失败: %s", index, exc.code)
         finally:
             if seg_path is not None:
-                try:
-                    seg_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                seg_path.unlink(missing_ok=True)
 
-    if not texts:
-        # 全段失败 → mock 兜底（保持契约同构）
-        return AsrResult(
-            text="", channel="mock", mock=True,
-            errors=errors or ["全部分段转写失败"], duration_ms=total_ms,
+    if failures:
+        raise AsrError(
+            "ASR_PARTIAL_FAILURE",
+            "长录音存在未成功转写的分段",
+            retryable=any(item.retryable for item in failures),
+            errors=[item.code for item in failures],
         )
-    # 合并：文本拼接；情绪取非平静优先（与单段一致）
-    emotion = next((e for e in emotions if e != "平静"), "平静")
+    if not texts:
+        return _no_speech_result(audio)
+
+    first = results[0]
+    text_results = [item for item in results if item.text]
+    strongest_emotion = max(text_results, key=lambda item: item.emotion_confidence)
+    mock_used = any(item.mock for item in results)
     return AsrResult(
         text="".join(texts),
-        channel="funasr" if not mock_used else "mock",
-        emotion=emotion,
-        duration_ms=total_ms,
+        channel="mock" if mock_used else first.channel,
+        outcome="mock" if mock_used else "succeeded",
+        emotion=strongest_emotion.emotion,
+        emotion_confidence=strongest_emotion.emotion_confidence,
+        emotion_source=strongest_emotion.emotion_source,
+        emotion_model=strongest_emotion.emotion_model,
+        confidence=sum(item.confidence for item in results) / len(results),
+        duration_ms=audio.duration_ms,
         mock=mock_used,
-        errors=errors,
+        model=first.model,
+        provider=first.provider,
+        provider_request_id=first.provider_request_id,
+        audio_format=audio.audio_format,
+        source_audio_sha256=audio.sha256,
+        segments=[segment for item in results for segment in item.segments],
+        usage={"segments": [item.usage for item in results if item.usage]},
+        errors=[error for item in results for error in item.errors],
     )

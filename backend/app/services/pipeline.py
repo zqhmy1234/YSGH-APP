@@ -1,13 +1,13 @@
 """内容 AI 管线（P2-02 重构：从 workers/worker.py 下沉，worker 只留进程入口）
 
 process_content(content_id)：按 content_type 分流处理，全部异步在 RQ worker 执行。
-设计（与用户 2026-08-20 拍板）：
-- 用户无感知：每步独立 try/except，失败不抛错不回滚，记录 extra.error
+设计：
+- 非关键增强步骤失败可静默降级；ASR 主步骤失败必须显式回写 failed
 - text  → SetFit 分类 → 写 content_class/class_source/model_version → 索引
-- voice → ASR 转写（真实/mock 兜底）→ 转写文本入 text → 分类 → 索引
+- voice → ASR 转写 → succeeded/no_speech/failed_* → 分类 → 索引
 - photo → image_caption（Qwen3-VL）写 caption 入索引 + CI 打标（失败静默）
 - 全部 → 事件聚合（aggregate_user，失败静默）
-- 状态机：processing → done（部分失败也算 done，失败明细在 extra.error）
+- 状态机：processing → done/failed；空白语音以 done + audio_processing.no_speech 表达
 
 依赖方向：api → services.pipeline → services.*（单向，不再反向 import worker）。
 """
@@ -84,53 +84,231 @@ def _process_text(db: Session, content: Content) -> None:
         _index_content(db, content, content.text)
 
 
-def _process_voice(db: Session, content: Content) -> None:
-    """语音：ASR 转写（真实/mock 兜底）→ 转写文本回写 + 分类 + 索引"""
+def _set_audio_processing(content: Content, payload: dict) -> None:
+    extra = dict(content.extra or {})
+    extra["audio_processing"] = payload
+    if payload.get("outcome") in {"succeeded", "no_speech", "mock"}:
+        extra.pop("error", None)
+    content.extra = extra
+
+
+def _materialize_voice_audio(content: Content) -> tuple[Path, Path | None]:
+    """把 COS 音频下载为临时文件；本地测试路径直接复用。"""
     import tempfile
 
-    from app.services.external.asr import transcribe
+    from app.services.external.asr import (
+        AsrError,
+        temporary_suffix,
+        validate_audio_bytes,
+    )
 
-    # 取 COS 音频（cos_key）或本地路径（extra.audio_path，测试用）
-    audio_path = None
-    tmp_file = None
     if content.cos_key:
-        # 生产：COS 读回二进制写系统临时文件（失败静默；用后清理）
+        from app.services.external.storage import get_storage_backend
+
         try:
-            from app.services.external.storage import get_storage_backend
-
-            storage = get_storage_backend()
-            data = storage.get_object(content.cos_key)
-            tmp_file = Path(tempfile.gettempdir()) / f"yishu_voice_{content.id}.wav"
-            tmp_file.write_bytes(data)
-            audio_path = tmp_file
+            data = get_storage_backend().get_object(content.cos_key)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("语音下载失败 content=%s: %s", content.id, exc)
-    elif content.extra and content.extra.get("audio_path"):
-        audio_path = Path(content.extra["audio_path"])
+            raise AsrError(
+                "AUDIO_DOWNLOAD_FAILED",
+                "语音文件下载失败",
+                retryable=True,
+            ) from exc
+        filename = str((content.extra or {}).get("file_name") or content.cos_key)
+        # 内部对象存储允许长 WAV 进入 VAD 分段；API 直传仍保持 8MB 上限。
+        audio_format = validate_audio_bytes(data, filename, max_bytes=None)
+        with tempfile.NamedTemporaryFile(
+            suffix=temporary_suffix(audio_format), delete=False
+        ) as tmp:
+            tmp.write(data)
+            tmp_file = Path(tmp.name)
+        return tmp_file, tmp_file
 
-    if audio_path is None:
+    if content.extra and content.extra.get("audio_path"):
+        return Path(content.extra["audio_path"]), None
+    raise AsrError("AUDIO_NOT_FOUND", "语音内容缺少可处理的音频文件")
+
+
+def _cleanup_temporary_audio(tmp_file: Path | None) -> None:
+    if tmp_file is None:
         return
-
     try:
-        result = transcribe(str(audio_path))
-        # 审查 CRITICAL 修复：mock 转写是本地兜底假文本，生产环境拒绝入库/入索引，
-        # 防止假文本污染真实记忆库（此前 mock 文本会被无条件回写并向量化）。
+        tmp_file.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _set_emotion_enrichment(
+    content: Content,
+    status: str,
+    *,
+    error: dict | None = None,
+) -> None:
+    extra = dict(content.extra or {})
+    detail = dict(extra.get("audio_processing") or {})
+    detail["emotion_enrichment"] = status
+    if error is None:
+        detail.pop("emotion_error", None)
+    else:
+        detail["emotion_error"] = error
+    extra["audio_processing"] = detail
+    content.extra = extra
+
+
+def _process_voice(db: Session, content: Content) -> str:
+    """语音主步骤：先完成转写；本地情绪由独立低优先级任务增强。"""
+
+    from app.services.external.asr import (
+        EMOTION_ACTION_THRESHOLD,
+        AsrError,
+        should_enhance_with_local_emotion,
+        transcribe,
+    )
+
+    tmp_file: Path | None = None
+    try:
+        audio_path, tmp_file = _materialize_voice_audio(content)
+        result = transcribe(str(audio_path), enhance_emotion=False)
         if result.mock and settings.app_env == "production":
-            logger.warning("生产环境拒绝 mock 转写入库 content=%s（通道: %s）", content.id, result.channel)
-            return
-        if result.text:
-            content.text = result.text
-            content.emotion = {"emotion": result.emotion, "confidence": result.confidence, "channel": result.channel}
-            _classify_content(db, content, result.text)
+            raise AsrError("MOCK_RESULT_IN_PRODUCTION", "生产环境禁止保存 mock 转写")
+
+        audit = result.audit_dict()
+        needs_local_emotion = (
+            not result.mock and should_enhance_with_local_emotion(result)
+        )
+        audit["emotion_enrichment"] = (
+            "pending" if needs_local_emotion else "not_needed"
+        )
+        _set_audio_processing(content, audit)
+        if result.outcome == "no_speech":
+            return "no_speech"
+        if not result.text.strip():
+            raise AsrError(
+                "EMPTY_TRANSCRIPT",
+                "ASR 返回空文本但未标记为空白语音",
+                retryable=True,
+            )
+
+        content.text = result.text
+        content.emotion = {
+            "emotion": result.emotion,
+            "confidence": result.emotion_confidence,
+            "source": result.emotion_source,
+            "model": result.emotion_model,
+            "actionable": (
+                result.emotion != "平静"
+                and result.emotion_confidence >= EMOTION_ACTION_THRESHOLD
+            ),
+        }
+        _classify_content(db, content, result.text)
+        try:
             _index_content(db, content, result.text)
-    except Exception as exc:  # noqa: BLE001 —— 转写失败静默
-        logger.warning("转写失败 content=%s: %s", content.id, exc)
+        except Exception as exc:  # noqa: BLE001 -- 索引失败不否定已完成的真实转写
+            logger.warning("语音索引失败 content=%s: %s", content.id, exc)
+            extra = dict(content.extra or {})
+            extra["index_error"] = type(exc).__name__
+            content.extra = extra
+        return result.outcome
     finally:
-        if tmp_file is not None:
-            try:
-                tmp_file.unlink(missing_ok=True)
-            except OSError:
-                pass
+        _cleanup_temporary_audio(tmp_file)
+
+
+def enrich_content_emotion(content_id: str) -> dict:
+    """低优先级 RQ 任务：只增强情绪，不改变已完成的转写状态。"""
+    from app.services.external.asr import (
+        EMOTION_ACTION_THRESHOLD,
+        MODEL_SENSEVOICE,
+        AsrError,
+        infer_local_emotion,
+    )
+
+    db: Session = SessionLocal()
+    content: Content | None = None
+    tmp_file: Path | None = None
+    try:
+        content = db.get(Content, content_id)
+        if content is None:
+            return {"content_id": content_id, "status": "not-found"}
+        if content.content_type != "voice" or not (content.text or "").strip():
+            _set_emotion_enrichment(content, "skipped")
+            db.commit()
+            return {"content_id": content_id, "status": "skipped"}
+
+        current_source = str((content.emotion or {}).get("source") or "none")
+        mode = settings.asr_local_emotion_mode
+        if mode == "off" or (
+            mode == "auto" and current_source not in {"", "none"}
+        ):
+            _set_emotion_enrichment(content, "skipped")
+            db.commit()
+            return {
+                "content_id": content_id,
+                "status": "skipped",
+                "reason": "disabled" if mode == "off" else "primary-emotion-present",
+            }
+
+        _set_emotion_enrichment(content, "processing")
+        db.commit()
+        audio_path, tmp_file = _materialize_voice_audio(content)
+        local = infer_local_emotion(audio_path)
+        actionable = (
+            local.emotion != "平静"
+            and local.emotion_confidence >= EMOTION_ACTION_THRESHOLD
+        )
+        content.emotion = {
+            "emotion": local.emotion,
+            "confidence": local.emotion_confidence,
+            "source": "sensevoice_local",
+            "model": MODEL_SENSEVOICE,
+            "actionable": actionable,
+        }
+        extra = dict(content.extra or {})
+        detail = dict(extra.get("audio_processing") or {})
+        detail.update(
+            {
+                "emotion": local.emotion,
+                "emotion_confidence": local.emotion_confidence,
+                "emotion_source": "sensevoice_local",
+                "emotion_model": MODEL_SENSEVOICE,
+                "emotion_actionable": actionable,
+                "emotion_enrichment": "succeeded",
+            }
+        )
+        detail.pop("emotion_error", None)
+        extra["audio_processing"] = detail
+        content.extra = extra
+        db.commit()
+        return {"content_id": content_id, "status": "succeeded"}
+    except AsrError as exc:
+        db.rollback()
+        target = db.get(Content, content_id)
+        if target is not None:
+            _set_emotion_enrichment(
+                target,
+                "failed",
+                error={"code": exc.code, "retryable": exc.retryable},
+            )
+            db.commit()
+        logger.warning("本地情绪增强失败 content=%s: %s", content_id, exc.code)
+        return {"content_id": content_id, "status": "failed", "error": exc.code}
+    except Exception as exc:  # noqa: BLE001 -- 情绪失败不回滚主转写
+        db.rollback()
+        target = db.get(Content, content_id)
+        if target is not None:
+            _set_emotion_enrichment(
+                target,
+                "failed",
+                error={"code": "LOCAL_EMOTION_PIPELINE_ERROR", "retryable": True},
+            )
+            db.commit()
+        logger.warning("本地情绪增强异常 content=%s: %s", content_id, type(exc).__name__)
+        return {
+            "content_id": content_id,
+            "status": "failed",
+            "error": "LOCAL_EMOTION_PIPELINE_ERROR",
+        }
+    finally:
+        _cleanup_temporary_audio(tmp_file)
+        db.close()
 
 
 def _process_photo(db: Session, content: Content) -> None:
@@ -223,7 +401,10 @@ def process_content(content_id: str) -> dict:
 
     返回：{"content_id", "status", "processed": [步骤], "error": 可选}
     """
+    from app.services.external.asr import AsrError
+
     db: Session = SessionLocal()
+    content: Content | None = None
     try:
         content = db.execute(
             select(Content).where(Content.id == content_id)
@@ -237,32 +418,108 @@ def process_content(content_id: str) -> dict:
             "voice": _process_voice,
             "photo": _process_photo,
         }.get(content.content_type)
+        processing_outcome = None
         if handler:
-            handler(db, content)
+            processing_outcome = handler(db, content)
             processed.append(content.content_type)
 
-        # 事件聚合（B3-6 分置：端侧 L0/L1 真值后，云侧只跑 L2/L3 候选；失败静默）
-        try:
-            from app.services.events import aggregate_user
+        # 空白语音不形成记忆事件；端侧 L0/L1 真值后，云侧只跑 L2/L3 候选。
+        if processing_outcome != "no_speech":
+            try:
+                from app.services.events import aggregate_user
 
-            agg = aggregate_user(db, str(content.user_id), mode="l2l3")
-            if agg.get("upper_items") or agg.get("items"):
-                processed.append("events")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("事件聚合失败 content=%s: %s", content.id, exc)
+                agg = aggregate_user(db, str(content.user_id), mode="l2l3")
+                if agg.get("upper_items") or agg.get("items"):
+                    processed.append("events")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("事件聚合失败 content=%s: %s", content.id, exc)
 
         # 回写状态（部分步骤失败也算 done；失败明细在 extra.error）
         errors = (content.extra or {}).get("error")
+        audio_processing = (content.extra or {}).get("audio_processing") or {}
+        emotion_pending = (
+            content.content_type == "voice"
+            and audio_processing.get("emotion_enrichment") == "pending"
+        )
         content.status = "done"
         db.commit()
+
+        # 主转写先完成；本地情绪作为低优先级任务追加，不阻塞内容可用性。
+        emotion_job_status = None
+        if emotion_pending:
+            try:
+                from app.core.queue import enqueue_low
+
+                enqueue_low(enrich_content_emotion, content_id)
+                emotion_job_status = "queued"
+                processed.append("emotion_queued")
+            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主转写
+                logger.warning(
+                    "本地情绪任务入队失败 content=%s: %s",
+                    content_id,
+                    type(exc).__name__,
+                )
+                target = db.get(Content, content_id)
+                if target is not None:
+                    _set_emotion_enrichment(
+                        target,
+                        "enqueue_failed",
+                        error={"code": "EMOTION_ENQUEUE_FAILED", "retryable": True},
+                    )
+                    db.commit()
+                emotion_job_status = "enqueue_failed"
         return {
             "content_id": content_id,
             "status": "done",
             "processed": processed,
+            "outcome": processing_outcome,
+            "emotion_job": emotion_job_status,
             "error": errors,
         }
+    except AsrError as exc:
+        db.rollback()
+        target = db.get(Content, content_id)
+        if target is not None:
+            extra = dict(target.extra or {})
+            detail = exc.to_dict()
+            extra["audio_processing"] = detail
+            extra["error"] = detail
+            target.extra = extra
+            target.status = "failed"
+            db.commit()
+        logger.warning("process_content %s ASR 失败: %s", content_id, exc.code)
+        return {
+            "content_id": content_id,
+            "status": "failed",
+            "outcome": exc.outcome,
+            "retryable": exc.retryable,
+            "error": exc.code,
+        }
     except Exception as exc:  # noqa: BLE001 —— 边界兜底：不伪造 done
+        db.rollback()
+        target = db.get(Content, content_id)
+        if target is not None and target.content_type == "voice":
+            detail = {
+                "outcome": "failed_retryable",
+                "code": "ASR_PIPELINE_ERROR",
+                "message": "语音处理发生未分类异常",
+                "retryable": True,
+                "errors": [type(exc).__name__],
+            }
+            extra = dict(target.extra or {})
+            extra["audio_processing"] = detail
+            extra["error"] = detail
+            target.extra = extra
+            target.status = "failed"
+            db.commit()
         logger.error("process_content %s 失败: %s", content_id, exc)
-        return {"content_id": content_id, "status": "failed", "error": str(exc)}
+        is_voice = target is not None and target.content_type == "voice"
+        return {
+            "content_id": content_id,
+            "status": "failed",
+            "outcome": "failed_retryable" if is_voice else None,
+            "retryable": is_voice,
+            "error": "ASR_PIPELINE_ERROR" if is_voice else type(exc).__name__,
+        }
     finally:
         db.close()

@@ -257,7 +257,21 @@
 - **修复**：run_research_validation 改 sys.path.insert(0, ROOT/backend) + from app.services.event_aggregation.run_validation import main；--only research 实测全过（497 张基准）
 - **相关文件**：scripts/test_agent.py
 - **教训**：（无）
+### 2026-08-25 11:37 · commit 3869111 · ts=1787629059
+- **错误**：push 前完整门禁被未修改的 test_reflow.py 导入顺序阻断
+- **根因**：Ruff 0.12 与 0.16 对顶层 `scripts` 包的一方/三方归类不一致，导致相反的 I001 排序结果
+- **修复**：经用户授权，在 ruff.toml 显式将 `scripts` 声明为 first-party，并按统一分组修正 test_reflow.py；两版 Ruff 均通过
+- **相关文件**：ruff.toml + backend/tests/test_reflow.py
+- **教训**：提交前必须跑全仓门禁；遇到范围外基线失败要先隔离并取得授权，再用版本无关的显式配置修复，不能绕过
 
+---
+
+### 2026-08-24 15:17 · commit 3869111 · ts=1787555833
+- **错误**：全新团队仓库副本的提交门禁无法全绿，且 review_agent 将真实失败误报成“pytest 未安装”跳过
+- **根因**：全量测试依赖未纳入仓库的 BGE-M3/SetFit 本地模型，数据库初始化未包含上传迁移，research 验证仍引用已迁移的旧包路径；同时 review_agent 仅凭输出同时出现“No module named”和“pytest”就误判为缺 pytest
+- **修复**：用隔离 PG/Redis/Qdrant 与上传迁移完成本特性验证，ASR/语音入库/内容接口定向测试全绿；保留全量门禁阻断并明确记录，未下载数 GB 模型、未绕过 hook 提交
+- **相关文件**：scripts/review_agent.py + scripts/test_agent.py + .github/workflows/ci.yml
+- **教训**：提交门禁必须在干净副本中可复现；模型、迁移和验证入口都要显式初始化，依赖缺失的 skip 判定必须匹配精确错误，不能扫描整段 pytest 输出
 ---
 
 ### 2026-08-20 17:31 · commit d98d3c8 · ts=1787243472
@@ -407,7 +421,7 @@
 
 ### 外部 API 集成
 11. **腾讯云 SDK 用法以源码/官方文档为准**：`ci_auditing_image_batch` 的 DetectType 要 `CiDetectType.PORN | ...` 位掩码（int），传字符串 TypeError
-12. **dashscope SDK**：workspace 只能显式传参（`Generation.call(workspace=...)` / `Recognition(model=..., callback=None, workspace=...).call(file=...)`，Recognition 是实例方法）；旧模型名 paraformer-v2/sensevoice-v1 已下线，百炼 2026 清单：fun-asr / qwen3-asr-flash-filetrans
+12. **DashScope ASR 要按当前官方接口核对响应**：Fun-ASR Flash 使用多模态 Data URI 接口并读取 `output.text`；旧 `Recognition + sensevoice-v1` 方案已经不能代表本地 SenseVoice 情绪通道
 13. **批量外部调用必须加重试+指数退避**：500 张 caption 第一轮 121 张 ConnectionError（10053），无重试只靠重跑，浪费两轮时间；大流量任务不要与下载并发
 14. **探测要覆盖每个服务，别用单模型泛化**：qwen-flash 可用 ≠ 百炼全服务可用；ASR 报 Model not found 时先排查 key 类型/API 路径差异（sk-ws- workspace key 与 ASR 服务鉴权是否兼容待验证——用户已确认 ASR 无需单独开通，根因未定，别下结论），再考虑外部因素
 15. **不下无证据结论**：区分"我的调用问题"与"外部需操作"；两轮验证不过再定性，避免把推断当事实汇报
@@ -422,4 +436,5 @@
 20. **后台任务杀进程要杀 python 子进程不是 exec session**：exec 的 PID 是管道进程，`Stop-Process` 子 python 后要 `Get-Process python` 确认无残留（否则 3 进程并发抢 CPU 互相拖垮，实测）；后台跑模型任务用 `*>` 重定向日志到文件 + 定期看日志判断进度，不要用管道缓冲（看不到实时输出）
 21. **模型资产清单（backend/models/README.md）是防重复下载的第一道闸**：新模型落地前先查清单 + 本地缓存，登记模型名/版本 hash/下载源/加载代码位置/可删性；不要凭记忆判断"有没有下载过"
 22. **C 盘清理前先自审**：模型分三类——在用（refs 指向/代码引用）、旧版本残留（可删）、中断残留 `.incomplete`（可删）；删后必须重跑加载测试验证（如 `pytest -m rag`）
+23. **模型运行包与模型仓要做首次加载实测**：`funasr-onnx 0.4.x` 仍需要 SentencePiece 文件，但新版 `SenseVoiceSmall-onnx` 仓只带 `tokens.json`；应从同一官方主模型仓自动补齐分词资产，不能把“权重下载成功”当作“模型可运行”
 

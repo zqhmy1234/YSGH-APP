@@ -39,7 +39,7 @@
         "M0"
       ],
       "status": "in-progress",
-      "evidence": "ASR 双通道接口已建（paraformer-v2 + sensevoice-v1 + 护栏，11 测试）；情绪关怀分策略已确认（SAD 分原因追问/ANGRY 陪伴/深夜轻量/频次递减），关怀文案库待产品部提供 | 客户端第三波（2026-08-24）：语音入口页——uni.getRecorderManager 录 wav（16kHz 单声道 ≤3.5min）→ POST /asr/transcribe 转写 → 可编辑 + 情绪标签 → voice 入库，真机验证通过（mock 通道）",
+      "evidence": "ASR 主通道为 Fun-ASR Flash（fun-asr-flash-2026-06-15，AAC/AMR/FLAC/M4A/MP3/OGG/OPUS/WAV/WebM/WMA Data URI）；云端转写后由本地 CPU iic/SenseVoiceSmall-onnx 独立执行声学情绪，常见格式经内置 FFmpeg 解码，不再限 WAV。情绪置信度从模型情绪 logits 计算，独立保存 emotion_confidence/source/model/actionable（<0.7 只记录）；情绪失败不抹掉真实转写，生产入口拒绝 mock。2026-08-25 同一条 5 秒 M4A 已分别完成真实 FunASR 云端转写与本地 SenseVoice 推理（平静，约 0.8741）；ASR/API、语音管线、内容接口 40 项通过。多样本 WER/情绪准确率正式校准仍待 20-50 段标注录音。客户端第三波（2026-08-24）已完成语音入口页：uni.getRecorderManager 录 WAV（16kHz 单声道 ≤3.5min）→ POST /asr/transcribe → 可编辑 + 情绪标签 → voice 入库，真机 mock 链路验证通过。情绪关怀分策略已确认（SAD 分原因追问/ANGRY 陪伴/深夜轻量/频次递减），关怀文案库待产品部提供",
       "gate": "转写 WER 达标 + 情绪触发映射正确"
     },
     {
