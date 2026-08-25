@@ -32,6 +32,7 @@ models.py/migrations/（profile 表已齐：user_profile/dimension_history/dimen
 - Wave 0 表（annotation_pool/l2_evidence 已建）
 
 ## DoD
+0. **门禁（2026-08-26 快/全量拆分新规）**：commit 时 pre-commit 自动跑快速门禁（秒级）；**完成声明前必须跑 `python scripts/review_agent.py --full` 全绿**（仓库级 + 全量测试，集成 Agent 与 CI 同口径验收）。
 1. 新测试全过（annotator：阈值/池/节流/查重/历史裁剪）。
 2. 枚举集 JSON 校验通过（补全后自检：维度数/枚举值/引用完整性）。
 3. 更新 .cowork-temp/audit_B1_profile.md 状态列。

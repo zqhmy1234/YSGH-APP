@@ -30,6 +30,7 @@ pipeline.py（缩略图生成如需接管线 → 登记需求或经 pipeline_ext
 - 微信 media 下载需 WECHAT 凭证（代码先行，mock 沙箱测）
 
 ## DoD
+0. **门禁（2026-08-26 快/全量拆分新规）**：commit 时 pre-commit 自动跑快速门禁（秒级）；**完成声明前必须跑 `python scripts/review_agent.py --full` 全绿**（仓库级 + 全量测试，集成 Agent 与 CI 同口径验收）。
 1. 新增测试全过（thumbnails/cleanup/wechat media 用 fake 后端）。
 2. 更新 .cowork-temp/audit_B4_sync.md 状态列。
 3. 完成消息：文件清单 + 测试 + 表需求（如有）+ 待 key 项。

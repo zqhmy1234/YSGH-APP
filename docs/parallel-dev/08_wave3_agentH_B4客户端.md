@@ -33,6 +33,7 @@
 - 真机 nova 11（流量约束/后台行为验证）
 
 ## DoD
+0. **门禁（2026-08-26 快/全量拆分新规）**：commit 时 pre-commit 自动跑快速门禁（秒级）；**完成声明前必须跑 `python scripts/review_agent.py --full` 全绿**（仓库级 + 全量测试，集成 Agent 与 CI 同口径验收）。
 1. HBuilderX 编译通过；模拟器冒烟（同步链路、暂停恢复）。
 2. 更新 .cowork-temp/audit_B4_sync.md 状态列。
 3. 完成消息：文件清单 + 测试 + 需集成 Agent 接线项（index.uvue 一行）+ 真机验证状态。
