@@ -24,7 +24,7 @@ from app.schemas.search import SearchHit, SearchQuery, SearchResult
 from app.services.embedding import encode_query
 from app.services.external import rewrite_query
 from app.services.ner import extract_entities
-from app.services.rerank import rerank
+from app.services.rerank import rerank, rerank_auto_enabled
 from app.services.vector_store import CONTENT_TYPE_PHOTO, get_store
 
 logger = logging.getLogger("yishu.rag")
@@ -509,14 +509,37 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 4.5 双层 Rerank 第一层（bge-reranker 粗排 + 低相关过滤；
     #      候选无 text/模型未就绪 → 原序）
     # 2026-08-25 RAG 审查：默认关闭（CPU ~850ms/对，50 候选 ~40s 超 P95<3s 门禁；
-    # 且只重排候选集内文档，描述性查询失效根因在召回层）。GPU 部署时置
-    # settings.rerank_enabled=true 启用，候选数限制在 rerank_max_candidates 内。
-    if settings.rerank_enabled and hits:
+    # 且只重排候选集内文档，描述性查询失效根因在召回层）。
+    # Wave2-F（2026-08-26）：rerank_auto_enable=True 且 GPU/模型就绪 → 自动启用
+    # （rerank_auto_enabled() 内已含 settings.rerank_enabled 显式优先）。
+    if rerank_auto_enabled() and hits:
         cands = [
             {"id": h.content_id, "text": h.text or "", "score": h.score, "hit": h}
             for h in hits[: settings.rerank_max_candidates]
         ]
         hits = [c["hit"] for c in rerank(rewritten, cands, min_score=settings.rerank_min_score)][: q.limit]
+
+    # 4.5b 双层 Rerank 第二层（LLM 精排，Wave2-F 2026-08-26，B2-1 Ilya 方案）：
+    #   bge 粗排 top-50→top-10（rerank_llm_candidates）→ qwen-flash 判"能否回答"
+    #   → top-5（rerank_llm_top_k）。
+    #   门禁：llm_rerank 内部自门控——无 key / mock / 开关关 / 解析失败 → 原序返回，
+    #   精排只改变 top 顺序、绝不增删候选（防把召回有效结果挡掉）。
+    #   精排判定经 base.chat_text（qwen-flash），走 llm_ops 包，不直接触碰 dashscope。
+    if hits:
+        from app.services.llm_ops.rerank import llm_rerank
+
+        llm_cands = [
+            {"id": h.content_id, "text": h.text or "", "score": h.score, "hit": h}
+            for h in hits[: settings.rerank_llm_candidates]
+        ]
+        llm_reranked = llm_rerank(rewritten, llm_cands, top_k=settings.rerank_llm_top_k)
+        # 仅当 LLM 真实判定过（带 rerank_reason）才替换排序；mock/无 key 原序不动候选集
+        judged = {c["id"]: c.get("rerank_reason") for c in llm_reranked if "rerank_reason" in c}
+        if judged and llm_reranked:
+            hits = [c["hit"] for c in llm_reranked][: q.limit]
+            for h in hits:
+                if h.content_id in judged:
+                    h.trace["llm_rerank_reason"] = judged[h.content_id]
 
     # 4.6 规则级敏感过滤（B5b-1 🟢：摘要/搜索规则级，不过模型；Wave1 AgentC 转交）
     #     命中 reject 类硬规则词的结果直接排除（转述用户内容的最小兜底）。

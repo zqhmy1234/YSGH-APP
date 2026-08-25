@@ -29,5 +29,19 @@ def route_query(q: str) -> str:
 
 
 def moderate(text: str) -> dict[str, Any]:
-    """护栏检测（规则预检 + qwen-flash 双保险；生产未配 key → fail-safe 拒发）"""
-    return dashscope.moderate(text)
+    """护栏检测（Wave2-F 2026-08-26 起：百炼托管优先、chat 兜底）
+
+    策略（B5b-1 定稿）：托管护栏可用（qwen_response_check，X-DashScope-DataInspection
+    header，见 guard_managed.py）→ 托管判定；托管不可用/异常 → dashscope.moderate
+    （规则预检 + qwen-flash chat 双保险；生产未配 key → fail-safe 拒发）。
+    mock 模式：托管不可用 → 走 dashscope.moderate 的 mock 契约（规则命中即拦截，
+    否则放行），保持本地联调确定性。
+    """
+    from app.services.llm_ops.guard_managed import qwen_response_check
+
+    try:
+        return qwen_response_check(text)
+    except RuntimeError as exc:
+        logger = __import__("logging").getLogger("yishu.llm_ops")
+        logger.info("托管护栏不可用，chat 兜底: %s", exc)
+        return dashscope.moderate(text)

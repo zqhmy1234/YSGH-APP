@@ -108,8 +108,25 @@ class Settings(BaseSettings):
     # 候选集内文档，救不了未进 top-50 的相关文档（描述性查询失效根因在召回层）。
     # GPU 部署 / 延迟预算允许时置 true 启用（候选数受 rerank_max_candidates 限制）。
     rerank_enabled: bool = False
+    # Wave2-F（2026-08-26）：第一层 reranker 自动启用策略。
+    # rerank_auto_enable=True 时运行时自检：torch.cuda（GPU）可用 且 reranker 模型
+    # 就绪 → 等效 rerank_enabled=True；CPU / 模型缺失 → 保持关闭（实测 CPU 单对
+    # ~850ms × 20 候选 ≈ 17s 超 P95<3s 门禁）。rerank_enabled 显式置 true 时忽略
+    # 此开关（显式优先）。
+    # 门禁文档化：启用前提 = 部署机 P95<3s 探针通过（GPU 推理 + 候选数受限时可满足）；
+    # 未过探针的机器必须保持关闭，以防搜索延迟突破 M1 门禁。
+    rerank_auto_enable: bool = False
     # 重排候选上限（防 CPU 延迟爆表；默认 20 → ~17s，仍超门禁，仅建议 GPU 用）
     rerank_max_candidates: int = 20
+    # 第二层 LLM 精排（Wave2-F 2026-08-26，B2-1 Ilya 方案）：
+    # 总开关默认开，运行时再按 llm_available（无 key / mock → 原序返回）自门控。
+    # 管线：bge 粗排 top-50→top-10（rerank_llm_candidates）→ qwen-flash 判"能否
+    # 回答" → top-5（rerank_llm_top_k）。
+    # 门禁文档化：LLM 精排 = 一次 qwen-flash 往返（10 候选一个 batch，实测 ~1-2s），
+    # 延迟预算紧张时置 false；真实 key 联调期建议先人工验证 P95<3s 再默认开。
+    rerank_llm_enabled: bool = True
+    rerank_llm_candidates: int = 10
+    rerank_llm_top_k: int = 5
     # P1-A 类目路由（2026-08-25）：描述性查询按规则词表分类 → content_class 过滤，
     # 把干扰类挡在召回路外（修复 descriptive 层 hit_rate@3=0.5 的召回缺口）。
     # 规则词表确定性/零延迟；无主导类别不过滤；空结果自动回退全量。
