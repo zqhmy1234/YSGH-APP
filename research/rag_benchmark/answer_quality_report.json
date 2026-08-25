@@ -1,0 +1,741 @@
+{
+  "_meta": {
+    "version": 1,
+    "note": "答案质量三指标基线（检索代理口径）"
+  },
+  "records": [
+    {
+      "query_id": "tq-0001",
+      "query": "让我难过的记录",
+      "layer": "descriptive",
+      "answer": "加班到深夜,突然很委屈",
+      "rewritten_answer": "根据我的记忆，加班到深夜,突然很委哈。",
+      "contexts": [
+        {
+          "text": "加班到深夜,突然很委屈",
+          "is_relevant": true
+        },
+        {
+          "text": "看到夕阳突然有点想哭",
+          "is_relevant": true
+        },
+        {
+          "text": "感觉被大家遗忘了",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0002",
+      "query": "关于做产品的想法",
+      "layer": "descriptive",
+      "answer": "用旧牛仔裤做环保袋",
+      "rewritten_answer": "根据我的记忆，用旧牛仔裤做环保哈。",
+      "contexts": [
+        {
+          "text": "用旧牛仔裤做环保袋",
+          "is_relevant": true
+        },
+        {
+          "text": "把梦境画下来",
+          "is_relevant": true
+        },
+        {
+          "text": "用声音记录心情",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0003",
+      "query": "记得要去办的事情",
+      "layer": "descriptive",
+      "answer": "明天记得取快递",
+      "rewritten_answer": "根据我的记忆，明天记得取快哈。",
+      "contexts": [
+        {
+          "text": "明天记得取快递",
+          "is_relevant": true
+        },
+        {
+          "text": "月底前完成季度总结",
+          "is_relevant": true
+        },
+        {
+          "text": "别忘了交房租",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 0.1429,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0004",
+      "query": "人生感悟和道理",
+      "layer": "descriptive",
+      "answer": "人生如逆旅,我亦是行人",
+      "rewritten_answer": "根据我的记忆，人生如逆旅,我亦是行哈。",
+      "contexts": [
+        {
+          "text": "人生如逆旅,我亦是行人",
+          "is_relevant": true
+        },
+        {
+          "text": "知人者智,自知者明",
+          "is_relevant": true
+        },
+        {
+          "text": "纵有疾风起,人生不言弃",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.1667,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0005",
+      "query": "开心的时候的记录",
+      "layer": "descriptive",
+      "answer": "好久没这么开心了",
+      "rewritten_answer": "根据我的记忆，好久没这么开心哈。",
+      "contexts": [
+        {
+          "text": "好久没这么开心了",
+          "is_relevant": true
+        },
+        {
+          "text": "被老板表扬了,开心",
+          "is_relevant": true
+        },
+        {
+          "text": "妈妈做的菜让我很安心",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.1429,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0006",
+      "query": "创业的一些点子",
+      "layer": "descriptive",
+      "answer": "书店创业点子",
+      "rewritten_answer": "根据我的记忆，书店创业点哈。",
+      "contexts": [
+        {
+          "text": "书店创业点子",
+          "is_relevant": true
+        },
+        {
+          "text": "极简桌面收纳方案",
+          "is_relevant": true
+        },
+        {
+          "text": "把梦境画下来",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 0.3333,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0007",
+      "query": "很累想休息的记录",
+      "layer": "descriptive",
+      "answer": "今天好累,什么都不想做",
+      "rewritten_answer": "根据我的记忆，今天好累,什么都不想哈。",
+      "contexts": [
+        {
+          "text": "今天好累,什么都不想做",
+          "is_relevant": true
+        },
+        {
+          "text": "我靠今天加班到十点累死了",
+          "is_relevant": true
+        },
+        {
+          "text": "用声音记录心情",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0008",
+      "query": "让我感动的瞬间",
+      "layer": "descriptive",
+      "answer": "好久没这么开心了",
+      "rewritten_answer": "根据我的记忆，好久没这么开心哈。",
+      "contexts": [
+        {
+          "text": "好久没这么开心了",
+          "is_relevant": true
+        },
+        {
+          "text": "看到小猫被收养,暖暖的",
+          "is_relevant": true
+        },
+        {
+          "text": "今天被陌生人暖心帮助",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0009",
+      "query": "有道理的话想记住",
+      "layer": "descriptive",
+      "answer": "知人者智,自知者明",
+      "rewritten_answer": "根据我的记忆，知人者智,自知者哈。",
+      "contexts": [
+        {
+          "text": "知人者智,自知者明",
+          "is_relevant": true
+        },
+        {
+          "text": "夜色难免黑凉,前行必有曙光",
+          "is_relevant": true
+        },
+        {
+          "text": "不忘初心,方得始终",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0011",
+      "query": "买牛奶",
+      "layer": "keyword",
+      "answer": "买牛奶和鸡蛋",
+      "rewritten_answer": "根据我的记忆，买牛奶和鸡哈。",
+      "contexts": [
+        {
+          "text": "买牛奶和鸡蛋",
+          "is_relevant": true
+        },
+        {
+          "text": "给外婆买助听器电池",
+          "is_relevant": true
+        },
+        {
+          "text": "明天记得取快递",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 1.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0012",
+      "query": "马拉松",
+      "layer": "keyword",
+      "answer": "该给车加油了",
+      "rewritten_answer": "根据我的记忆，该给车加油哈。",
+      "contexts": [
+        {
+          "text": "该给车加油了",
+          "is_relevant": true
+        },
+        {
+          "text": "路漫漫其修远兮,吾将上下而求索",
+          "is_relevant": true
+        },
+        {
+          "text": "跑完五公里,痛快",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0013",
+      "query": "交房租",
+      "layer": "keyword",
+      "answer": "别忘了交房租",
+      "rewritten_answer": "根据我的记忆，别忘了交房哈。",
+      "contexts": [
+        {
+          "text": "别忘了交房租",
+          "is_relevant": true
+        },
+        {
+          "text": "周末去银行办卡",
+          "is_relevant": true
+        },
+        {
+          "text": "充值地铁卡",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 1.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0014",
+      "query": "预约体检",
+      "layer": "keyword",
+      "answer": "预约体检",
+      "rewritten_answer": "根据我的记忆，预约体哈。",
+      "contexts": [
+        {
+          "text": "预约体检",
+          "is_relevant": true
+        },
+        {
+          "text": "给猫咪预约绝育手术",
+          "is_relevant": true
+        },
+        {
+          "text": "晚上八点约了牙医",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 1.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0015",
+      "query": "川菜馆的毛血旺",
+      "layer": "keyword",
+      "answer": "那家川菜馆的毛血旺绝了",
+      "rewritten_answer": "根据我的记忆，那家川菜馆的毛血旺绝哈。",
+      "contexts": [
+        {
+          "text": "那家川菜馆的毛血旺绝了",
+          "is_relevant": true
+        },
+        {
+          "text": "今天买菜花了五十块",
+          "is_relevant": true
+        },
+        {
+          "text": "菜市场的青菜便宜了",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 1.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0016",
+      "query": "买牛乃",
+      "layer": "keyword",
+      "answer": "买牛奶和鸡蛋",
+      "rewritten_answer": "根据我的记忆，买牛奶和鸡哈。",
+      "contexts": [
+        {
+          "text": "买牛奶和鸡蛋",
+          "is_relevant": true
+        },
+        {
+          "text": "该给车加油了",
+          "is_relevant": true
+        },
+        {
+          "text": "给外婆买助听器电池",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 0.5,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0017",
+      "query": "回老家的机票",
+      "layer": "keyword",
+      "answer": "下午三点给妈妈打电话",
+      "rewritten_answer": "根据我的记忆，下午三点给妈妈打电哈。",
+      "contexts": [
+        {
+          "text": "下午三点给妈妈打电话",
+          "is_relevant": true
+        },
+        {
+          "text": "更新身份证有效期",
+          "is_relevant": true
+        },
+        {
+          "text": "明天记得取快递",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0027",
+      "query": "上海外滩的回忆",
+      "layer": "place",
+      "answer": "下午三点给妈妈打电话",
+      "rewritten_answer": "根据我的记忆，下午三点给妈妈打电哈。",
+      "contexts": [
+        {
+          "text": "下午三点给妈妈打电话",
+          "is_relevant": true
+        },
+        {
+          "text": "别忘了交房租",
+          "is_relevant": true
+        },
+        {
+          "text": "周末去银行办卡",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0028",
+      "query": "在西湖边玩的日子",
+      "layer": "place",
+      "answer": "好久没这么开心了",
+      "rewritten_answer": "根据我的记忆，好久没这么开心哈。",
+      "contexts": [
+        {
+          "text": "好久没这么开心了",
+          "is_relevant": true
+        },
+        {
+          "text": "今天天气不错,适合出门走走",
+          "is_relevant": true
+        },
+        {
+          "text": "今天通勤路况出奇的好",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0029",
+      "query": "北京出差的记录",
+      "layer": "place",
+      "answer": "记录一下今天跑完十公里",
+      "rewritten_answer": "根据我的记忆，记录一下今天跑完十公哈。",
+      "contexts": [
+        {
+          "text": "记录一下今天跑完十公里",
+          "is_relevant": true
+        },
+        {
+          "text": "订了周五的机票回老家",
+          "is_relevant": true
+        },
+        {
+          "text": "用声音记录心情",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.1667,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0030",
+      "query": "云南旅游的攻略",
+      "layer": "place",
+      "answer": "下个月要去云南旅游了准备攻略",
+      "rewritten_answer": "根据我的记忆，下个月要去云南旅游了准备攻哈。",
+      "contexts": [
+        {
+          "text": "下个月要去云南旅游了准备攻略",
+          "is_relevant": true
+        },
+        {
+          "text": "订了周五的机票回老家",
+          "is_relevant": true
+        },
+        {
+          "text": "把旅行照片做成地图墙",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.6667,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0032",
+      "query": "和妈妈有关的记录",
+      "layer": "person",
+      "answer": "下午三点给妈妈打电话",
+      "rewritten_answer": "根据我的记忆，下午三点给妈妈打电哈。",
+      "contexts": [
+        {
+          "text": "下午三点给妈妈打电话",
+          "is_relevant": true
+        },
+        {
+          "text": "妈妈做的菜让我很安心",
+          "is_relevant": true
+        },
+        {
+          "text": "记录一下今天跑完十公里",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.1429,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0033",
+      "query": "跟朋友一起的回忆",
+      "layer": "person",
+      "answer": "给朋友寄生日礼物",
+      "rewritten_answer": "根据我的记忆，给朋友寄生日礼哈。",
+      "contexts": [
+        {
+          "text": "给朋友寄生日礼物",
+          "is_relevant": true
+        },
+        {
+          "text": "下午三点给妈妈打电话",
+          "is_relevant": true
+        },
+        {
+          "text": "晚上八点约了牙医",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.1429,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0035",
+      "query": "和老同学聚会的记录",
+      "layer": "person",
+      "answer": "收到老同学消息,眼眶一热",
+      "rewritten_answer": "根据我的记忆，收到老同学消息,眼眶一哈。",
+      "contexts": [
+        {
+          "text": "收到老同学消息,眼眶一热",
+          "is_relevant": true
+        },
+        {
+          "text": "和老友重逢,百感交集",
+          "is_relevant": true
+        },
+        {
+          "text": "用声音记录心情",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.25,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0036",
+      "query": "外婆做菜的记录",
+      "layer": "person",
+      "answer": "妈妈做的菜让我很安心",
+      "rewritten_answer": "根据我的记忆，妈妈做的菜让我很安哈。",
+      "contexts": [
+        {
+          "text": "妈妈做的菜让我很安心",
+          "is_relevant": true
+        },
+        {
+          "text": "想起外婆,心里酸酸的",
+          "is_relevant": true
+        },
+        {
+          "text": "给外婆买助听器电池",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0044",
+      "query": "苏州美食的记录",
+      "layer": "route",
+      "answer": "记录一下今天跑完十公里",
+      "rewritten_answer": "根据我的记忆，记录一下今天跑完十公哈。",
+      "contexts": [
+        {
+          "text": "记录一下今天跑完十公里",
+          "is_relevant": true
+        },
+        {
+          "text": "用声音记录心情",
+          "is_relevant": true
+        },
+        {
+          "text": "想做一个记录植物生长的app",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.1667,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0045",
+      "query": "记录一下今天跑完十公里",
+      "layer": "route",
+      "answer": "记录一下今天跑完十公里",
+      "rewritten_answer": "根据我的记忆，记录一下今天跑完十公哈。",
+      "contexts": [
+        {
+          "text": "记录一下今天跑完十公里",
+          "is_relevant": true
+        },
+        {
+          "text": "跑完五公里,痛快",
+          "is_relevant": true
+        },
+        {
+          "text": "我靠今天加班到十点累死了",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 1.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0046",
+      "query": "给妈妈打电话的提醒",
+      "layer": "route",
+      "answer": "下午三点给妈妈打电话",
+      "rewritten_answer": "根据我的记忆，下午三点给妈妈打电哈。",
+      "contexts": [
+        {
+          "text": "下午三点给妈妈打电话",
+          "is_relevant": true
+        },
+        {
+          "text": "周三前把报告发给领导",
+          "is_relevant": true
+        },
+        {
+          "text": "该给车加油了",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.625,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0048",
+      "query": "考研还剩一百天",
+      "layer": "route",
+      "answer": "月底前完成季度总结",
+      "rewritten_answer": "根据我的记忆，月底前完成季度总哈。",
+      "contexts": [
+        {
+          "text": "月底前完成季度总结",
+          "is_relevant": true
+        },
+        {
+          "text": "周三前把报告发给领导",
+          "is_relevant": true
+        },
+        {
+          "text": "该给车加油了",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 1.0,
+      "relevancy": 0.0,
+      "context_precision": 1.0
+    },
+    {
+      "query_id": "tq-0049",
+      "query": "记得给猫买猫粮",
+      "layer": "route",
+      "answer": "明天记得取快递",
+      "rewritten_answer": "根据我的记忆，明天记得取快哈。",
+      "contexts": [
+        {
+          "text": "明天记得取快递",
+          "is_relevant": true
+        },
+        {
+          "text": "给猫咪预约绝育手术",
+          "is_relevant": true
+        },
+        {
+          "text": "买牛奶和鸡蛋",
+          "is_relevant": true
+        }
+      ],
+      "faithfulness": 1.0,
+      "rewritten_faithfulness": 0.0,
+      "relevancy": 0.1667,
+      "context_precision": 1.0
+    }
+  ],
+  "aggregate": {
+    "faithfulness": 1.0,
+    "relevancy": 0.297,
+    "context_precision": 1.0,
+    "n": 29,
+    "rewritten_faithfulness": 0.6897,
+    "note": "answer=top1 检索片段（自持口径）；真实生成答案待 qwen-flash 摘要接线后替换"
+  }
+}
