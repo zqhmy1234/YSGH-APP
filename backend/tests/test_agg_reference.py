@@ -220,3 +220,21 @@ def test_incremental_match_first_then_split():
     all_ids = {p.id for cl in r3.l0_clusters for p in cl}
     assert old_ids.issubset(all_ids), "旧照片全部保留（不漂移/不丢失）"
 
+
+def test_llm_metadata_prompt_no_tag_candidate():
+    """真实 LLM 元数据 prompt：无标签候选不崩溃（回归：join([None]) TypeError）"""
+    from app.services.llm_ops.event_merge import _metadata_prompt
+
+    c = {
+        "tag": None, "tag_hint": [], "cluster": ["a", "b"],
+        "time_range": ["2026-08-01T10:00:00+00:00", "2026-08-02T10:00:00+00:00"],
+        "place_hint": "杭州市西湖区", "ocr_summary": None,
+    }
+    out = _metadata_prompt(c)
+    assert "标签: （无）" in out, "无标签候选应渲染为（无），不抛 TypeError"
+    assert "时间范围: 2026-08-01T10:00:00+00:00" in out
+    # 混合：tag + tag_hint 去重并集
+    c2 = {**c, "tag": "美食", "tag_hint": ["美食", "探店"]}
+    out2 = _metadata_prompt(c2)
+    assert "标签: 美食、探店" in out2, "tag 与 tag_hint 应合并展示"
+

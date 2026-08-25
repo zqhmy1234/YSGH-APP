@@ -100,7 +100,13 @@ def _metadata_prompt(candidate: dict) -> str:
             span_days = 0
     cluster = candidate.get("cluster") or []
     place = candidate.get("place_hint") or "（无地点/降级）"
-    tags = "、".join(candidate.get("tag_hint") or [candidate.get("tag")] or [])
+    tag = candidate.get("tag")
+    tag_hint = candidate.get("tag_hint") or []
+    seen: list[str] = []
+    for x in [*tag_hint, tag]:
+        if x and x not in seen:
+            seen.append(x)
+    tags = "、".join(seen) or "（无）"
     ocr = candidate.get("ocr_summary") or "（无 OCR）"
     return (
         f"时间范围: {tr[0] if tr else '未知'} ~ {tr[1] if len(tr) > 1 else '未知'}（跨度 {span_days} 天）\n"
