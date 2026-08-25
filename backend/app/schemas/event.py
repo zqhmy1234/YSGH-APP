@@ -17,10 +17,18 @@ class EventOut(BaseModel):
     emotion: dict | None
     sensitivity: str | None
     confidence: float | None
-    status: str                         # draft / confirmed / rejected
-    generated_by: str                   # device / cloud
+    status: str                         # draft（待确认/候选）/ confirmed（转正或用户背书）/ rejected
+    generated_by: str                   # device / cloud / cloud-llm / cloud-proto / user
     content_count: int = 0
     photo_count: int = 0
+    # L3 生命周期（B3-2 活跃 30 天→静默→归档；读取时派生，MVP 不落库）
+    lifecycle: dict | None = None       # {"state": active|silent|archived, idle_days, active_days}
+
+
+class EventCoverRequest(BaseModel):
+    """用户手动换封面（B3-4：封面可编辑；cover_content_id 必须是事件成员）"""
+
+    cover_content_id: str | None = None
 
 
 class EventMergeRequest(BaseModel):

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, Event, EventEditLog, EventItem, OfflineQueue
@@ -25,14 +25,21 @@ _AGG_BATCH = 200
 
 
 def _to_raw_photo(c: Content) -> dict:
-    """Content → pipeline RawPhoto 兼容 dict"""
+    """Content → pipeline RawPhoto 兼容 dict
+
+    B3 #6 OCR 内容维：优先取 extra.ocr_text（腾讯 CI OCR），回退 caption text。
+    B3-4 封面：extra.quality_score / extra.face_count（腾讯 CI 人脸标签，缺省 None）。
+    """
+    extra = c.extra or {}
     return {
         "id": str(c.id),
         "ts": c.taken_at or c.created_at,
         "lat": c.gps_lat,
         "lng": c.gps_lng,
-        "tags": [c.content_class] if c.content_class else [],
-        "ocr_text": c.text or None,
+        "tags": [c.content_class] if c.content_class else (extra.get("ci_tags") or []),
+        "ocr_text": extra.get("ocr_text") or c.text or None,
+        "quality": extra.get("quality_score"),
+        "face_count": extra.get("face_count"),
         "source": c.source or "app",
     }
 
@@ -144,6 +151,10 @@ def _write_l1_days(db: Session, user_id: str, l1_days: list[dict]) -> int:
                     ).order_by(Event.created_at.desc())
                 ).scalars().first()
         if existing is not None:
+            # B3-5 confirmed 保护：用户已背书（confirmed + title_source=user）的 L1
+            # 不再被算法追加成员/更新时间窗（用户操作优先，自动算法永不覆盖用户决定）
+            if existing.status == "confirmed" and existing.title_source == "user":
+                continue
             if start_ts and (existing.start_time is None or start_ts < existing.start_time):
                 existing.start_time = start_ts
             if end_ts and (existing.end_time is None or end_ts > existing.end_time):
@@ -178,12 +189,21 @@ def _write_upper_candidates(
     l2_candidates: list[dict],
     l3_candidates: list[dict],
 ) -> int:
-    """L2/L3 候选落库为 draft 事件（B3-6；幂等：成员已关联 level>=2 则跳过）
+    """L2/L3 候选落库（B3-6；幂等：成员已关联 level>=2 则跳过）
+
+    Wave2-AgentD：
+      - L2 经 llm_ops/event_merge.merge_verdict 裁决（只看元数据）：
+        confidence ≥0.7 转正（status=confirmed + title_source=llm），<0.7 保持 draft 进待确认
+      - L2/L3 封面 cover_content_id 赋值（B3-4）
+      - L3 主题流携带 7 天窗成员（cluster）→ 真实挂 event_items（生命周期/封面可派生）
+      - B3-5 confirmed 保护：用户已确认/改名的同标签 L3 不重建；成员已挂用户背书事件不重建
 
     修复（S-SY-2）：原 _write_upper_events 按"已关联任意事件"跳过——
     端侧 L0/L1 真值后照片普遍已挂 L1 日卡片，会误跳 L2/L3；
     改为只查 level>=2 事件（L1 关联不再拦截候选生成）。
     """
+    from app.services.llm_ops.event_merge import merge_verdict
+
     added = 0
     for cand in l2_candidates:
         members = cand.get("cluster") or []
@@ -210,18 +230,25 @@ def _write_upper_candidates(
             end_ts = datetime.fromisoformat(tr[1]) if len(tr) > 1 and tr[1] else None
         except ValueError:
             start_ts = end_ts = None
-        tag = cand.get("tag") or cand.get("tag_hint") or "未命名主题"
+        tag = cand.get("tag") or (cand.get("tag_hint") or [None])[0] or "未命名主题"
+        # LLM 归并裁决（B3-2：只看元数据；mock 通道确定性兜底）
+        verdict = merge_verdict(cand)
+        confidence = max(0.0, min(1.0, verdict.get("confidence", 0.6)))
+        status = "confirmed" if confidence >= 0.7 else "draft"   # ≥0.7 转正 / <0.7 待确认
+        title_source = "llm" if verdict.get("llm") == "real" else "template"
+        title = verdict.get("title") or f"主题 · {tag}（{len(todo)} 条）"
         ev = Event(
             user_id=user_id,
             level=2,
-            title=f"主题 · {tag}（{len(todo)} 条）",
-            title_source="template",
+            title=title,
+            title_source=title_source,
             start_time=start_ts,
             end_time=end_ts,
             place=cand.get("place_hint"),
-            confidence=0.6,
-            status="draft",
-            generated_by="cloud-proto",
+            cover_content_id=cand.get("cover_content_id"),   # B3-4 封面（人脸+质量分+时间居中）
+            confidence=confidence,
+            status=status,
+            generated_by="cloud-llm" if verdict.get("llm") == "real" else "cloud-proto",
         )
         db.add(ev)
         db.flush()
@@ -231,8 +258,10 @@ def _write_upper_candidates(
 
     for cand in l3_candidates:
         tag = cand.get("tag")
-        count = cand.get("count", 0)
         if not tag:
+            continue
+        # B3-5 confirmed 保护：用户已确认/改名的同标签主题流不重建（含成员重叠）
+        if _l3_confirmed_exists(db, user_id, tag, cand.get("cluster") or []):
             continue
         exists = db.execute(
             select(Event.id).where(
@@ -244,19 +273,93 @@ def _write_upper_candidates(
         ).scalar_one_or_none()
         if exists is not None:
             continue
-        db.add(
-            Event(
-                user_id=user_id,
-                level=3,
-                title=f"标签 · {tag}",
-                title_source="template",
-                confidence=0.6,
-                status="draft",
-                generated_by="cloud-proto",
-            )
+        cluster = cand.get("cluster") or []
+        tr = cand.get("time_range") or []
+        try:
+            start_ts = datetime.fromisoformat(tr[0]) if tr and tr[0] else None
+            end_ts = datetime.fromisoformat(tr[1]) if len(tr) > 1 and tr[1] else None
+        except ValueError:
+            start_ts = end_ts = None
+        ev = Event(
+            user_id=user_id,
+            level=3,
+            title=f"标签 · {tag}",
+            title_source="template",
+            start_time=start_ts,
+            end_time=end_ts,
+            cover_content_id=cand.get("cover_content_id"),   # B3-4 L3 独立封面（不居中）
+            confidence=_l3_confidence(cand),
+            status="draft",
+            generated_by="cloud-proto",
         )
-        added += count
+        db.add(ev)
+        db.flush()
+        # L3 主题流真实挂成员（B3：照片↔事件多对多；生命周期/封面据此派生）
+        linked_l3 = set(
+            db.execute(
+                select(EventItem.content_id)
+                .join(Event, Event.id == EventItem.event_id)
+                .where(
+                    EventItem.content_id.in_(cluster),
+                    Event.user_id == user_id,
+                    Event.level >= 2,
+                    Event.deleted_at.is_(None),
+                )
+            ).scalars().all()
+        )
+        # 归属校验：只挂当前用户的内容（候选源自用户照片，防御性校验）
+        owned_l3 = set(
+            str(r) for r in db.execute(
+                select(Content.id).where(Content.id.in_(cluster), Content.user_id == user_id)
+            ).scalars().all()
+        )
+        for mid in cluster:
+            if str(mid) not in owned_l3 or str(mid) in linked_l3:
+                continue
+            db.add(EventItem(content_id=mid, event_id=ev.id))
+            added += 1
     return added
+
+
+def _l3_confirmed_exists(db: Session, user_id: str, tag: str, cluster: list[str]) -> bool:
+    """B3-5 confirmed 保护：用户已背书事件与候选主题流冲突则跳过重建
+
+    ① 存在用户已确认（confirmed + title_source=user）的 L2/L3 事件标题含该标签
+       （用户改名后标题变化 → 防算法按"标签 · {tag}"重建同名流）
+    ② 候选窗口成员已挂到用户已确认的 level>=2 事件
+    """
+    titles = db.execute(
+        select(Event.title).where(
+            Event.user_id == user_id,
+            Event.deleted_at.is_(None),
+            Event.level >= 2,
+            Event.status == "confirmed",
+            Event.title_source == "user",
+        )
+    ).scalars().all()
+    if any(tag in (t or "") for t in titles):
+        return True
+    if cluster:
+        linked = db.execute(
+            select(Event.id)
+            .join(EventItem, EventItem.event_id == Event.id)
+            .where(
+                EventItem.content_id.in_(cluster),
+                Event.user_id == user_id,
+                Event.level >= 2,
+                Event.status == "confirmed",
+                Event.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if linked is not None:
+            return True
+    return False
+
+
+def _l3_confidence(cand: dict) -> float:
+    """L3 置信度（B3-5：标签强度——7 天窗内次数；弱流已被 7 天窗 ≥3 次过滤）"""
+    count = cand.get("count", 0)
+    return min(0.95, 0.5 + count * 0.05)
 
 
 def _l2l3_candidates_from_photos(photos: list[RawPhoto]) -> tuple[list[dict], list[dict]]:
@@ -272,7 +375,12 @@ def _l2l3_candidates_from_photos(photos: list[RawPhoto]) -> tuple[list[dict], li
     for p in photos:
         ts = p.ts
         day_key = ts.date().isoformat()
-        by_day.setdefault(day_key, []).append(_P(id=p.id, ts=ts, lat=p.lat, lng=p.lng, tags=p.tags or []))
+        by_day.setdefault(day_key, []).append(
+            _P(
+                id=p.id, ts=ts, lat=p.lat, lng=p.lng, tags=p.tags or [],
+                ocr_text=p.ocr_text, quality=p.quality, face_count=p.face_count,
+            )
+        )
     clusters = [by_day[k] for k in sorted(by_day)]
     return _pl.l2_candidates(clusters), _pl.l3_candidates(photos)
 
@@ -429,8 +537,18 @@ def _write_upper_events(db: Session, user_id: str, result) -> int:
     return _write_upper_candidates(db, user_id, result.l2_candidates, result.l3_candidates)
 
 
-def get_timeline(db: Session, user_id: str, level: int | None = None) -> list[Event]:
-    """时间轴（F8）：用户事件列表，按 start_time 倒序"""
+def get_timeline(
+    db: Session,
+    user_id: str,
+    level: int | None = None,
+    status: str | None = None,
+    pending: bool = False,
+) -> list[Event]:
+    """时间轴（F8）：用户事件列表，按 start_time 倒序
+
+    Wave2-AgentD：支持 L2 待确认区筛选——
+      pending=True → level>=2 且 status=draft 且 confidence<0.7（B3-5 <0.7 进待确认）
+    """
     stmt = (
         select(Event)
         .where(Event.user_id == user_id, Event.deleted_at.is_(None))
@@ -438,6 +556,14 @@ def get_timeline(db: Session, user_id: str, level: int | None = None) -> list[Ev
     )
     if level is not None:
         stmt = stmt.where(Event.level == level)
+    if status is not None:
+        stmt = stmt.where(Event.status == status)
+    if pending:
+        stmt = stmt.where(
+            Event.level >= 2,
+            Event.status == "draft",
+            or_(Event.confidence.is_(None), Event.confidence < 0.7),
+        )
     return db.execute(stmt).scalars().all()
 
 
@@ -578,6 +704,41 @@ def confirm_event(db: Session, user_id: str, event_id: str, title: str | None = 
     _log_edit(db, user_id, str(ev.id), "confirm", {"title": title})
     db.commit()
     return ev
+
+
+def set_event_cover(db: Session, user_id: str, event_id: str, cover_content_id: str | None) -> Event:
+    """用户手动换封面（B3-4：封面可编辑；cover_content_id 必须是事件成员）"""
+    ev = _get_event(db, user_id, event_id)
+    if cover_content_id:
+        owned = {
+            str(x) for x in db.execute(
+                select(EventItem.content_id).where(EventItem.event_id == ev.id)
+            ).scalars().all()
+        }
+        if str(cover_content_id) not in owned:
+            raise ValueError("封面内容不属于该事件")
+        ev.cover_content_id = cover_content_id
+    else:
+        ev.cover_content_id = None
+    _log_edit(db, user_id, str(ev.id), "set_cover", {"cover_content_id": cover_content_id})
+    db.commit()
+    return ev
+
+
+def get_event_last_activity(db: Session, user_id: str, event_ids: list[str]) -> dict[str, datetime]:
+    """批量取事件最近活动时间（成员 taken_at 最大值；无成员回退 start_time）
+
+    供 L3 生命周期状态机（活跃→静默→归档）在读取时派生（MVP 不落库）。
+    """
+    if not event_ids:
+        return {}
+    rows = db.execute(
+        select(EventItem.event_id, func.max(Content.taken_at))
+        .join(Content, Content.id == EventItem.content_id)
+        .where(EventItem.event_id.in_(event_ids))
+        .group_by(EventItem.event_id)
+    ).all()
+    return {str(r[0]): r[1] for r in rows}
 
 
 def _refresh_event_window(db: Session, ev: Event) -> None:

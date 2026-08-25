@@ -13,7 +13,15 @@ from datetime import datetime, timedelta
 
 @dataclass
 class Photo:
-    """照片时间点（预处理后）"""
+    """照片时间点（预处理后）
+
+    B3-3 GPS 状态（gps_state，预处理填充）：
+      ok       坐标可信
+      corrected 单点漂移经众数纠正拉回（坐标≈事件众数位置）
+      approx   步行阈值以上（移动中/车辆），坐标保留但精确 POI 存疑
+      degraded 系统性漂移降级（不猜精确 POI，逆编码"附近/某区"粒度）
+      none     无 GPS（仅时间维参与）
+    """
 
     id: str
     ts: datetime
@@ -21,6 +29,10 @@ class Photo:
     lng: float | None = None
     burst_group: int | None = None   # 连拍折叠组（预处理填充）
     tags: list[str] = None           # 标签（预处理透传，L2/L3 归并用）
+    ocr_text: str | None = None      # OCR 摘要（L2 内容维/LLM 归并元数据，B3 #6）
+    quality: float | None = None     # 画面质量分 0-1（封面选择，B3-4）
+    face_count: int | None = None    # 人脸数（腾讯 CI 人脸标签，封面"人脸优先"）
+    gps_state: str = "ok"            # 见上（B3-3 漂移状态）
 
 
 def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
