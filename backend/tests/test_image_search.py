@@ -60,6 +60,62 @@ def test_search_image_recall(image_indexed):
 
 @pytest.mark.rag
 @pytest.mark.integration
+def test_search_image_photo_points_hit(image_indexed):
+    """FIX-1 回归：生产 photo 点（payload content_type="photo"）可被以图搜图命中
+
+    过滤端规范值 "photo" 展开为 MatchAny([photo, image])——photo 新点与遗留
+    image 旧点同时命中；此前 "image" 过滤在生产 photo 点下恒空结果。
+    """
+    store = image_indexed
+    # 生产语义点：content_type="photo"
+    vec_photo = encode_dense(["会议室的课程表截图"])[0]
+    store.upsert_image_vec(
+        content_id="img-010", vec=vec_photo,
+        payload={"content_type": "photo", "text": "会议室的课程表截图", "label": "screenshot"},
+        collection="yishu_benchmark",
+    )
+    time.sleep(0.5)
+
+    # 以图搜图（生产过滤口径 content_types=["photo"]）→ photo 点命中
+    query_vec = encode_dense(["课程表截图"])[0]
+    hits = store.search_image(query_vec, filters={"content_types": ["photo"]}, limit=5, collection="yishu_benchmark")
+    ids = [h["content_id"] for h in hits]
+    assert "img-010" in ids, f"photo 点应以图搜图命中, got {ids}"
+    # 遗留 image 点（img-003 课程表截图）同过滤口径仍命中（旧数据不丢）
+    assert "img-003" in ids, f"遗留 image 点应仍命中, got {ids}"
+
+
+@pytest.mark.rag
+@pytest.mark.integration
+def test_search_by_image_caption_cache(image_indexed, monkeypatch, tmp_path):
+    """P95 优化（audit #8）：同图重复查询命中 caption 缓存，跳过 VL 往返
+
+    第一次调用真实调 image_caption；第二次（同字节内容）走缓存——
+    qwen3-vl-plus 单次 2-4.4s 是 P95 超门禁主因，缓存命中后只剩编码+检索。
+    """
+    from app.services.rag import _caption_cache
+
+    _caption_cache.clear()
+    import app.services.external.dashscope as ds_mod
+
+    calls = {"n": 0}
+
+    def fake_caption(path):
+        calls["n"] += 1
+        return "西湖边的荷花盛开，游船在湖面上"
+
+    monkeypatch.setattr(ds_mod, "image_caption", fake_caption)
+    img = tmp_path / "q.jpg"
+    img.write_bytes(b"fake-image-bytes-20260826")
+    search_by_image(str(img), SearchQuery(q="[image]"), collection="yishu_benchmark")
+    search_by_image(str(img), SearchQuery(q="[image]"), collection="yishu_benchmark")
+    assert calls["n"] == 1, f"同图第二次查询应命中缓存, caption 调用次数={calls['n']}"
+    assert len(_caption_cache) == 1
+    _caption_cache.clear()
+
+
+@pytest.mark.rag
+@pytest.mark.integration
 def test_search_by_image_service(image_indexed, monkeypatch):
     """服务层：图片 → caption（注入）→ image_vec 检索 → 同构结果"""
     import app.services.external.dashscope as ds_mod

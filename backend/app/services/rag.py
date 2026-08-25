@@ -19,13 +19,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.db.models import Content
+from app.db.models import Content, Event, EventItem
 from app.schemas.search import SearchHit, SearchQuery, SearchResult
 from app.services.embedding import encode_query
 from app.services.external import rewrite_query
 from app.services.ner import extract_entities
 from app.services.rerank import rerank
-from app.services.vector_store import get_store
+from app.services.vector_store import CONTENT_TYPE_PHOTO, get_store
 
 logger = logging.getLogger("yishu.rag")
 
@@ -35,10 +35,19 @@ SEARCH_CONCURRENCY = 4
 _search_semaphore = threading.BoundedSemaphore(SEARCH_CONCURRENCY)
 
 # 时间表达规则（"去年夏天" → 时间范围；MVP 简化）
+# 2026-08-26（audit #17）扩充：去年夏天/上上周/三年前/前年/上周/前天。
+# 顺序 = 优先级：长模式在前（"去年夏天" 必须先于 "去年" 匹配，break 语义下
+# 首个 pos==0 命中生效）；重叠模式按最长优先排列。
 _TIME_PATTERNS = [
+    (re.compile(r"去年夏天"), "last_summer"),
+    (re.compile(r"上上周"), "two_weeks_ago"),
+    (re.compile(r"三年前"), "three_years_ago"),
+    (re.compile(r"前年"), "year_before_last"),
     (re.compile(r"去年"), "last_year"),
     (re.compile(r"今年"), "this_year"),
     (re.compile(r"上个月"), "last_month"),
+    (re.compile(r"上周"), "last_week"),
+    (re.compile(r"前天"), "day_before_yesterday"),
     (re.compile(r"昨天"), "yesterday"),
 ]
 
@@ -91,7 +100,32 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
     for pattern, kind in _TIME_PATTERNS:
         m = pattern.search(q.q)
         if m and m.start() == 0:
-            if kind == "last_year":
+            if kind == "last_summer":
+                # 去年夏天：去年 6/1 - 8/31（自然季窗口）
+                filters["time_from"] = now.replace(year=now.year - 1, month=6, day=1)
+                filters["time_to"] = now.replace(year=now.year - 1, month=8, day=31, hour=23, minute=59, second=59)
+            elif kind == "two_weeks_ago":
+                # 上上周：前 14 天 00:00 → 前 7 天 23:59:59（简化窗口）
+                lo = (now - timedelta(days=14)).replace(hour=0, minute=0, second=0)
+                hi = (now - timedelta(days=7)).replace(hour=23, minute=59, second=59)
+                filters["time_from"] = lo
+                filters["time_to"] = hi
+            elif kind == "three_years_ago":
+                filters["time_from"] = now.replace(year=now.year - 3, month=1, day=1)
+                filters["time_to"] = now.replace(year=now.year - 3, month=12, day=31, hour=23, minute=59, second=59)
+            elif kind == "year_before_last":
+                filters["time_from"] = now.replace(year=now.year - 2, month=1, day=1)
+                filters["time_to"] = now.replace(year=now.year - 2, month=12, day=31, hour=23, minute=59, second=59)
+            elif kind == "last_week":
+                lo = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0)
+                hi = (now - timedelta(days=1)).replace(hour=23, minute=59, second=59)
+                filters["time_from"] = lo
+                filters["time_to"] = hi
+            elif kind == "day_before_yesterday":
+                d = now - timedelta(days=2)
+                filters["time_from"] = d.replace(hour=0, minute=0, second=0)
+                filters["time_to"] = d.replace(hour=23, minute=59, second=59)
+            elif kind == "last_year":
                 filters["time_from"] = now.replace(year=now.year - 1, month=1, day=1)
                 filters["time_to"] = now.replace(year=now.year - 1, month=12, day=31)
             elif kind == "this_year":
@@ -212,12 +246,17 @@ def _boost_exact_matches(query: str, raw_hits: list[dict]) -> list[dict]:
 
 
 def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) -> list[SearchHit]:
-    """溯源组装（RET-016：每条结果可解释命中字段；按用户隔离回填真实内容）"""
+    """溯源组装（RET-016：每条结果可解释命中字段；按用户隔离回填真实内容）
+
+    audit #15（2026-08-26）：事件级归因——回填 event_id/event_title（B3 事件
+    聚合已落库 events/event_items；未关联事件的内容两字段保持 None）。
+    """
     hits: list[SearchHit] = []
     if not raw_hits:
         return hits
     content_ids = [rh["content_id"] for rh in raw_hits[:limit]]
     content_map: dict[str, Content] = {}
+    event_map: dict[str, dict] = {}
     if db is not None and user_id is not None:
         # 过滤非 UUID 格式 id（UUID 列无法匹配 rag-001 类测试点，防 PG 报错）
         _uuid_re = re.compile(
@@ -232,21 +271,42 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
                 )
             ).scalars().all()
             content_map = {str(c.id): c for c in rows}
+            # 事件级归因：content → event_items → events（用户隔离 + 软删过滤）
+            try:
+                ev_rows = db.execute(
+                    select(EventItem.content_id, Event.id, Event.title)
+                    .join(Event, Event.id == EventItem.event_id)
+                    .where(
+                        EventItem.content_id.in_(valid_ids),
+                        Event.user_id == user_id,
+                        Event.deleted_at.is_(None),
+                    )
+                ).all()
+                event_map = {
+                    str(r.content_id): {"id": str(r.id), "title": r.title}
+                    for r in ev_rows
+                }
+            except Exception:  # noqa: BLE001 —— 事件归因失败不影响溯源主链路
+                logger.warning("事件归因回填失败", exc_info=True)
     for rh in raw_hits[:limit]:
         c = content_map.get(rh["content_id"])
         matched = []
-        if rh["dense_score"] > 0:
-            matched.append("dense")
-        if rh["sparse_score"] > 0:
-            matched.append("sparse")
+        if rh.get("pg"):
+            matched.append("pg")
+        else:
+            if rh["dense_score"] > 0:
+                matched.append("dense")
+            if rh["sparse_score"] > 0:
+                matched.append("sparse")
+        ev = event_map.get(rh["content_id"])
         hits.append(SearchHit(
             content_id=rh["content_id"],
             content_type=c.content_type if c else "text",
             text=(c.text if c else None) or rh.get("text"),
             taken_at=c.taken_at if c else None,
             place=c.place if c else None,
-            event_id=None,
-            event_title=None,
+            event_id=ev["id"] if ev else None,
+            event_title=ev["title"] if ev else None,
             score=rh["score"],
             trace={
                 "matched": matched or ["dense"],
@@ -256,6 +316,77 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
             },
         ))
     return hits
+
+
+def _pg_fallback_search(
+    q: SearchQuery,
+    rewritten: str,
+    filters: dict,
+    db,
+    user_id: str | None,
+    limit: int,
+) -> list[dict]:
+    """Qdrant 降级 → PG 全文检索兜底（audit #16，API-009 降级不再空结果）
+
+    中文无内置 tsvector parser（PG 默认分词按空格），用 ILIKE 多词 OR + 命中
+    词元数排序（确定性、零依赖、mock 可用）。支持 content_type/时间/place/
+    tag(ci_tags jsonb) 过滤与用户隔离；db/user_id 缺失（纯逻辑测试）返回 []。
+    返回结构与向量检索 hit 同构（多带 "pg" 标记，trace 显示真实通道）。
+    """
+    if db is None or user_id is None:
+        return []
+    tokens = [
+        t for t in re.split(r"[\s,，。.！!？?、；;:：（）()「」『』【】\"'‘’]", rewritten or "")
+        if len(t) >= 2
+    ]
+    if not tokens:
+        return []
+    from sqlalchemy import or_
+
+    stmt = select(Content).where(
+        Content.user_id == user_id,
+        Content.deleted_at.is_(None),
+    )
+    cts = filters.get("content_types")
+    if cts:
+        # FIX-1 同口径："image" 别名 → 规范 "photo"（生产 photo 点即 "photo"）
+        from app.services.vector_store import CONTENT_TYPE_ALIASES
+
+        stmt = stmt.where(Content.content_type.in_([CONTENT_TYPE_ALIASES.get(c, c) for c in cts]))
+    if filters.get("content_class"):
+        stmt = stmt.where(Content.content_class == filters["content_class"])
+    if filters.get("time_from"):
+        stmt = stmt.where(Content.taken_at >= filters["time_from"])
+    if filters.get("time_to"):
+        stmt = stmt.where(Content.taken_at <= filters["time_to"])
+    if filters.get("place"):
+        stmt = stmt.where(Content.place == filters["place"])
+    if filters.get("tag"):
+        # ci_tags 为 JSONB list[str]：cast to text 后 ILIKE（近似包含匹配）
+        stmt = stmt.where(Content.extra["ci_tags"].astext.ilike(f"%{filters['tag']}%"))
+    stmt = stmt.where(or_(*[Content.text.ilike(f"%{t}%") for t in tokens]))
+    try:
+        rows = db.execute(stmt).scalars().all()
+    except Exception:  # noqa: BLE001 —— PG 兜底自身失败 → 空结果（不再抛）
+        logger.warning("PG 兜底检索失败", exc_info=True)
+        return []
+
+    def _rank(c: Content) -> tuple[int, datetime]:
+        text = c.text or ""
+        return (sum(1 for t in tokens if t in text), c.taken_at or datetime.min.replace(tzinfo=timezone.utc))
+
+    rows.sort(key=_rank, reverse=True)
+    out = []
+    for i, c in enumerate(rows[:limit]):
+        out.append({
+            "content_id": str(c.id),
+            "score": round(max(0.0, 1.0 - i * 0.01), 4),
+            "dense_score": 0.0,
+            "sparse_score": 0.0,
+            "text": c.text,
+            "pg": True,
+        })
+    return out
 
 
 def search(q: SearchQuery, db=None, user_id: str | None = None, collection: str | None = None) -> SearchResult:
@@ -287,7 +418,10 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 2. 路由（B2：路由决定检索范围——image 意图只搜图片 caption，文字搜图）
     intent = _route_query(rewritten)
     if intent == "image":
-        filters.setdefault("content_types", ["image"])
+        # FIX-1（2026-08-26）：过滤值用规范 "photo"（与生产 payload 一致；
+        # 遗留 "image" 由 _to_filter 别名展开兼容）——此前 "image" 过滤
+        # 在生产库恒不命中 photo 点，文字搜图/以图搜图空结果。
+        filters.setdefault("content_types", [CONTENT_TYPE_PHOTO])
 
     # 2.5 P1-A 类目路由（2026-08-25）：text 意图 + 规则给出主导类别 → content_class
     # 过滤，把干扰类文档挡在召回路外（修复 descriptive 层召回缺口）；
@@ -310,7 +444,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         eff_filters = filters
         if intent == "mixed":
             # B2 mixed 双路融合（2026-08-19）：image 路 + 全量路并行召回 → 去重合并
-            image_filters = {**filters, "content_types": ["image"]}
+            image_filters = {**filters, "content_types": [CONTENT_TYPE_PHOTO]}
             raw_hits = _merge_recalls([
                 store.search(dense, sparse, filters=image_filters, limit=50, collection=collection),
                 store.search(dense, sparse, filters=filters, limit=50, collection=collection),
@@ -323,7 +457,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             retry_filters = {k: v for k, v in filters.items() if k not in ner_filters}
             logger.info("NER 过滤空结果，回退重试（去掉 %s）", list(ner_filters))
             if intent == "mixed":
-                image_filters = {**retry_filters, "content_types": ["image"]}
+                image_filters = {**retry_filters, "content_types": [CONTENT_TYPE_PHOTO]}
                 raw_hits = _merge_recalls([
                     store.search(dense, sparse, filters=image_filters, limit=50, collection=collection),
                     store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection),
@@ -337,7 +471,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             retry_filters = {k: v for k, v in filters.items() if k != "content_class"}
             logger.info("类目过滤空结果，回退重试（去掉 content_class=%s）", class_filter)
             if intent == "mixed":
-                image_filters = {**retry_filters, "content_types": ["image"]}
+                image_filters = {**retry_filters, "content_types": [CONTENT_TYPE_PHOTO]}
                 raw_hits = _merge_recalls([
                     store.search(dense, sparse, filters=image_filters, limit=50, collection=collection),
                     store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection),
@@ -360,7 +494,9 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     except Exception as exc:  # noqa: BLE001 —— Qdrant 不可用降级（API-009）
         logger.warning("Qdrant 检索降级: %s", exc)
         degraded = True
-        raw_hits = []
+        # audit #16：降级不再返回空结果——改走 PG 全文检索兜底（ILIKE 多词 OR +
+        # 命中数排序，tsvector 中文无内置 parser，ILIKE 为确定性零依赖方案）。
+        raw_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, q.limit)
 
     # 3.5 精确命中提升（词元全命中 → 提到稠密噪声之上；描述性查询不受影响）
     raw_hits = _boost_exact_matches(rewritten, raw_hits)
@@ -419,17 +555,25 @@ def _search_by_image_impl(
 
     caption 向量化方案（B2-4 允许的替代路径；tongyi-embedding-vision-plus 开通后可替换）。
     返回结构同描述性搜索（intent=image）。
+
+    P95 优化（audit #8 · 2026-08-26）：按图片字节 sha256 缓存 caption（进程内
+    TTL 24h），重复同图查询跳过 qwen3-vl-plus 往返（单次 2-4.4s）→ 缓存命中时
+    只剩编码+检索（~1s）。换 Qwen3-VL-Embedding（tongyi-embedding-vision-plus）
+    属 B2-4 需求，需 key，登记不阻塞。
     """
     from app.services.embedding import encode_dense
-    from app.services.external.dashscope import image_caption
 
     start = time.perf_counter()
     degraded = False
+    caption = ""
     try:
-        caption = image_caption(image_path)
+        caption = _cached_image_caption(image_path)
+        if not caption:
+            raise RuntimeError("图片 caption 为空")
         vec = encode_dense([caption])[0]
         store = get_store()
-        filters: dict = {"content_types": ["image"]}
+        # FIX-1：过滤值用规范 "photo"（遗留 "image" 由 _to_filter 别名兼容）
+        filters: dict = {"content_types": [CONTENT_TYPE_PHOTO]}
         if user_id:
             filters["user_id"] = str(user_id)
         raw_hits = store.search_image(vec, filters=filters, limit=50, collection=collection)
@@ -450,3 +594,43 @@ def _search_by_image_impl(
         latency_ms=latency_ms,
         degraded=degraded,
     )
+
+
+# ---- 以图搜图 caption 缓存（P95 优化；进程内 LRU + TTL，零依赖） ----
+_CAPTION_CACHE_MAX = 256
+_CAPTION_CACHE_TTL_SECONDS = 24 * 3600
+_caption_cache: dict[str, tuple[float, str]] = {}
+_caption_cache_lock = threading.Lock()
+
+
+def _cached_image_caption(image_path: str) -> str:
+    """图片 → caption（按字节 sha256 缓存；重复查询跳过 VL 往返）
+
+    缓存未命中 → 调 image_caption（qwen3-vl-plus）；失败抛异常由调用方降级。
+    缓存在进程内共享（get_store 同生命周期），超 TTL/超上限自动淘汰。
+    """
+    import hashlib
+
+    try:
+        with open(image_path, "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        # 路径不可读（含测试注入的假路径）→ 跳过缓存，直接透传（保持原契约）
+        from app.services.external.dashscope import image_caption as _vl_caption
+
+        return _vl_caption(image_path).strip()
+    now = time.time()
+    with _caption_cache_lock:
+        hit = _caption_cache.get(digest)
+        if hit and now - hit[0] < _CAPTION_CACHE_TTL_SECONDS:
+            return hit[1]
+    from app.services.external.dashscope import image_caption as _vl_caption
+
+    caption = _vl_caption(image_path).strip()
+    with _caption_cache_lock:
+        if len(_caption_cache) >= _CAPTION_CACHE_MAX:
+            # 简单淘汰：清掉最早一半（零依赖，够用）
+            for k in sorted(_caption_cache, key=lambda x: _caption_cache[x][0])[: _CAPTION_CACHE_MAX // 2]:
+                _caption_cache.pop(k, None)
+        _caption_cache[digest] = (now, caption)
+    return caption

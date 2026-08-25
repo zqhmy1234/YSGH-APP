@@ -1,7 +1,10 @@
 """corpus-A 图片塔索引（B2-4 文字搜图 · 2026-08-19）
 
-流程：corpus.json（500 张截图）→ Qwen3-VL caption（缓存断点续跑）→ BGE-M3 编码
-→ upsert yishu_benchmark（content_type=image, text=caption）→ 生成 corpus-A 查询。
+流程：corpus.json（500 张截图）→ Qwen3-VL caption（缓存断点续跑 + 单张重试）→ BGE-M3 编码
+→ upsert yishu_benchmark（content_type=photo, text=caption）→ 生成 corpus-A 查询。
+
+FIX-1（2026-08-26）：索引 content_type 由 "image" 改为规范值 "photo"（与生产
+pipeline payload 一致）；检索过滤端双向兼容遗留 "image" 点。
 
 费用：qwen3-vl-plus ≈0.003 元/张 × 500 ≈ 1.5 元（用户已授权推进）。
 用法：
@@ -11,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -46,20 +50,31 @@ def main() -> int:
 
     fails = 0
     for i, it in enumerate(todo, 1):
-        try:
-            cap = image_caption(it["path"], prompt=CAPTION_PROMPT)
+        # audit #14：单张网络失败重试（3 次，间隔 5s；仍失败跳过，断点续跑）
+        cap = None
+        last_err = None
+        for attempt in range(3):
+            try:
+                cap = image_caption(it["path"], prompt=CAPTION_PROMPT)
+                break
+            except Exception as exc:  # noqa: BLE001 —— 单张失败重试
+                last_err = exc
+                if attempt < 2:
+                    print(f"  [RETRY {attempt + 1}] {it['id']}: {type(exc).__name__} {str(exc)[:60]}", flush=True)
+                    time.sleep(5)
+        if cap:
             cache[it["id"]] = {"caption": cap, "path": it["path"], "taken_at": it.get("taken_at")}
             if i % 25 == 0 or i == len(todo):
                 print(f"  [{i}/{len(todo)}] {it['id']}: {cap[:40]}", flush=True)
-        except Exception as exc:  # noqa: BLE001 —— 单张失败跳过，断点续跑
+        else:
             fails += 1
-            print(f"  [FAIL] {it['id']}: {type(exc).__name__} {str(exc)[:80]}", flush=True)
+            print(f"  [FAIL] {it['id']}: {type(last_err).__name__} {str(last_err)[:80]}", flush=True)
         if i % 50 == 0:
             CACHE.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
     CACHE.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"caption 完成: {len(cache)}/{len(items)}（失败 {fails}，重跑自动跳过已缓存）", flush=True)
 
-    # 索引 yishu_benchmark（content_type=image）：text_vec + text_sparse + image_vec
+    # 索引 yishu_benchmark（content_type=photo）：text_vec + text_sparse + image_vec
     from app.services.embedding import encode_dense, encode_sparse
     from app.services.vector_store import get_store
 
@@ -73,7 +88,7 @@ def main() -> int:
         dense = encode_dense([caption])[0]
         sparse = encode_sparse([caption])[0]
         payload = {
-            "content_type": "image",
+            "content_type": "photo",  # FIX-1：规范值（原 "image"，检索端兼容旧点）
             "label": "screenshot",
             "benchmark": "rag-distribution",
             "text": caption,

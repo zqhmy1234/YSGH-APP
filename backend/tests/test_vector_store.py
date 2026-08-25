@@ -132,3 +132,31 @@ def test_to_filter_user_id_isolation():
     assert "user_id" in conds
     assert conds["user_id"].match.value == "u-123"
     assert "content_type" in conds
+
+
+def test_to_filter_content_type_photo_expands_legacy():
+    """FIX-1（2026-08-26）：content_type 过滤归一——"photo" 展开为 MatchAny([photo, image])
+
+    回归：生产 photo 点 payload="photo"，旧基准点 payload="image"。过滤端
+    请求规范值 "photo" 时必须同时匹配遗留 "image" 点，两端数据都不丢。
+    """
+    s = VectorStore()
+    f = s._to_filter({"content_types": ["photo"]})
+    conds = {c.key: c for c in f.must}
+    assert conds["content_type"].match.any == ["photo", "image"]
+
+
+def test_to_filter_content_type_image_alias_maps_to_photo():
+    """FIX-1：遗留 "image" 请求值归一为规范 "photo"（旧调用方兼容）"""
+    s = VectorStore()
+    f = s._to_filter({"content_types": ["image"]})
+    conds = {c.key: c for c in f.must}
+    assert conds["content_type"].match.any == ["photo", "image"]
+
+
+def test_to_filter_content_type_text_untouched():
+    """非 photo 类型不受归一影响"""
+    s = VectorStore()
+    f = s._to_filter({"content_types": ["text", "voice"]})
+    conds = {c.key: c for c in f.must}
+    assert conds["content_type"].match.any == ["text", "voice"]

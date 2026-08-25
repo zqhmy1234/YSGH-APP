@@ -23,6 +23,16 @@ DENSE_VEC_NAME = "text_vec"
 IMAGE_VEC_NAME = "image_vec"
 VECTOR_SIZE = 1024  # BGE-M3 dense 维度
 
+# FIX-1 content_type 归一（2026-08-26）：生产 photo 点 payload 统一为 "photo"
+# （pipeline.py:184/upload.py:211/contents.py:160 均写 "photo"）；历史/基准数据
+# 曾用 "image"（build_image_index.py 旧版）。规范值 = "photo"，"image" 视为
+# 旧别名——过滤端展开为 MatchAny(["photo", "image"])，两端兼容不丢点。
+CONTENT_TYPE_PHOTO = "photo"
+CONTENT_TYPE_IMAGE_LEGACY = "image"
+CONTENT_TYPE_ALIASES: dict[str, str] = {
+    CONTENT_TYPE_IMAGE_LEGACY: CONTENT_TYPE_PHOTO,
+}
+
 
 def point_id_for(content_id: str) -> str:
     """内容 ID → Qdrant 点 ID（UUID5 稳定映射）
@@ -258,9 +268,19 @@ class VectorStore:
         must: list = []
         for key, value in filters.items():
             if key == "content_types" and value:
+                # FIX-1（2026-08-26）：过滤值归一——"image" 别名映射为规范值 "photo"，
+                # 且请求 "photo" 时同时匹配遗留 "image" 点（旧数据不丢），
+                # 生产 photo 点（payload "photo"）与基准旧点（payload "image"）均可命中。
+                any_vals: list[str] = []
+                for v in value:
+                    norm = CONTENT_TYPE_ALIASES.get(v, v)
+                    if norm not in any_vals:
+                        any_vals.append(norm)
+                    if norm == CONTENT_TYPE_PHOTO and CONTENT_TYPE_IMAGE_LEGACY not in any_vals:
+                        any_vals.append(CONTENT_TYPE_IMAGE_LEGACY)
                 must.append(models.FieldCondition(
                     key="content_type",
-                    match=models.MatchAny(any=value),
+                    match=models.MatchAny(any=any_vals),
                 ))
             elif key == "time_from" and value:
                 must.append(models.FieldCondition(
