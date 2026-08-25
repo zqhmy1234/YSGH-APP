@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-25 19:58 · commit 1f96b1f · ts=1787684290
+- **错误**：review_agent 门禁失败：test_correction 报 HFValidationError（setfit 模型路径被当 HF repo id）+ api_smoke photo-journey/timeline-structure 失败（缺测试照片）
+- **根因**：git worktree 检出不含 gitignore 的本地运行资产：backend/.env（PG 凭据）、backend/models/（setfit/bge-reranker 已下载模型）、.cowork-temp/test_photos（api_smoke 测试照片）——门禁在 worktree 内跑全量测试时模型缺失走 HF hub 兜底报错、照片缺失致 smoke 空转
+- **修复**：worktree 建好后从主仓复制 backend/.env + backend/models/ 三个模型目录 + .cowork-temp/test_photos 到 worktree 对应路径（均为 gitignore 不入库）；模型/照片/凭据补齐后全量 296 passed + api_smoke 6/6 通过
+- **相关文件**：D:\GuangH-App\.wt\wave1-agentA\backend\models
+- **教训**：（无）
+
+---
+
 ### 2026-08-25 19:20 · commit 80f17aa · ts=1787682027
 - **错误**：pre-commit hook 被本地环境卡住（Redis/Qdrant 容器未启动、.env STORAGE_BACKEND=fs）
 - **根因**：环境依赖未文档化 + review_agent 无条件跑全量；修复：test_agent 端口自检 deselect + 容器信息补进 harness
