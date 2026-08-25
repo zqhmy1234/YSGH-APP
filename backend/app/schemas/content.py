@@ -40,6 +40,31 @@ class ContentUploadResult(BaseModel):
     cos_presign: "CosPresign | None" = None
 
 
+class ProfileSensitiveCreate(BaseModel):
+    """画像级敏感增/改（B1-6 对话式：POST /api/v1/profile/sensitive）"""
+
+    topic: str = Field(..., min_length=1, max_length=64, description="敏感话题（用户原话/短语）")
+    disposition: str = Field(
+        "forbid",
+        pattern=r"^(allow|mention|caution|review|forbid)$",
+        description="处置级别：allow/mention/caution/review/forbid",
+    )
+    evidence: list[str] | None = Field(None, description="证据（用户原话等）")
+    locked: bool = Field(False, description="用户显式标记（永不过期语义强化）")
+
+
+class ProfileSensitiveOut(BaseModel):
+    """画像级敏感输出（B1-6：GET /api/v1/profile/sensitive）"""
+
+    id: int
+    topic: str
+    disposition: str
+    evidence: list
+    locked: bool
+    added_at: datetime
+    updated_at: datetime
+
+
 class CosPresign(BaseModel):
     """STS 临时密钥 + 上传路径（决策 #10：30 秒有效）"""
 

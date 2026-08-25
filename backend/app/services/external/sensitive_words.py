@@ -54,6 +54,39 @@ _CATEGORY_ACTION = {
     "违规网址": "mask",  # 违规域名打码（保留文本主体；用户 2026-08-20 拍板先接入）
 }
 
+# ---------------------------------------------------------------------------
+# 事件级敏感类别（B5b 事件级分类器规则层：5-8 类，设计清单 分手/离世/健康/
+# 金钱/家庭矛盾 先行，补齐 法律纠纷/意外创伤；词表文件在 backend/data/sensitive/）
+# 与硬规则词表（reject/mask）不同：事件级敏感是"软"敏感（话题级，不影响入库，
+# 只影响回响/追问等主动提及路径），因此独立成表、独立判定入口。
+_EVENT_CATEGORY_FILES = {
+    "事件类_分手.txt": "分手",
+    "事件类_离世.txt": "离世",
+    "事件类_健康.txt": "健康",
+    "事件类_金钱.txt": "金钱",
+    "事件类_家庭矛盾.txt": "家庭矛盾",
+    "事件类_法律纠纷.txt": "法律纠纷",
+    "事件类_意外创伤.txt": "意外创伤",
+}
+
+# 事件类别内置兜底词（文件缺失时用；与 _FALLBACK_WORDS 同理）
+_EVENT_FALLBACK_WORDS = {
+    "分手": ["分手", "离婚", "前任", "劈腿", "出轨", "别联系了"],
+    "离世": ["去世", "离世", "过世", "逝世", "葬礼", "忌日"],
+    "健康": ["癌症", "肿瘤", "住院", "手术", "抑郁症", "自杀"],
+    "金钱": ["欠债", "破产", "失业", "借钱", "网贷", "高利贷"],
+    "家庭矛盾": ["家暴", "吵架", "冷战", "婆媳", "断绝关系"],
+    "法律纠纷": ["官司", "坐牢", "拘留", "起诉", "判刑"],
+    "意外创伤": ["车祸", "火灾", "溺水", "性侵", "绑架"],
+}
+
+# 违规词回流（B5b）：运行时热加入的词汇（检测违规 → 入规则表；进程内即刻生效，
+# 持久化在 sensitive_words 表 level=3，由调用方负责写库）。
+# 归入独立类别"回流词"，避免污染文件词表的类别语义。
+_EVENT_REFLUX_WORDS: set[str] = set()
+_REFLUX_CATEGORY = "回流词"
+
+
 # 网址黑名单：1.5 万域名，禁止子串匹配（太慢）→ 提取域名后集合 O(1) 查询
 _RE_URL_DOMAIN = re.compile(
     r"(?i)(?:https?://|www\.)?([a-z0-9][a-z0-9-]*\.(?:com|cn|net|org|cc|top|xyz|vip|club|site|online|wang|work|info|biz|me|tv|io|app|dev|pro)(?:\.[a-z]{2})?)"
@@ -90,6 +123,71 @@ def _load_words() -> dict[str, set[str]]:
         # 合并内置补充词（开源词库缺的高频词，2026-08-20 实测）
         result[cat] |= set(_FALLBACK_WORDS.get(cat, []))
     return result
+
+
+@lru_cache(maxsize=1)
+def _load_event_words() -> dict[str, set[str]]:
+    """加载事件级敏感类别词表（缓存；文件缺失回退内置词）"""
+    result: dict[str, set[str]] = {}
+    for fname, cat in _EVENT_CATEGORY_FILES.items():
+        p = _DATA_DIR / fname
+        words = _load_word_file(p) if p.exists() else set()
+        words |= set(_EVENT_FALLBACK_WORDS.get(cat, []))
+        result[cat] = words
+    return result
+
+
+def add_violation_word(word: str, category: str | None = None) -> None:
+    """违规词热加入（B5b 回流）：进程内立即进入事件级规则判定。
+
+    category 给定时同时并入对应事件类别（如 LLM 判"分手"类敏感），
+    否则归入"回流词"独立类别。持久化由调用方写 sensitive_words(level=3)。
+    """
+    w = (word or "").strip()
+    if not w:
+        return
+    if category and category in _load_event_words():
+        _load_event_words()[category].add(w)
+    else:
+        _EVENT_REFLUX_WORDS.add(w)
+
+
+def check_event_sensitive(text: str) -> dict:
+    """事件级敏感分类（规则层，B5b）：返回 {"categories", "matched", "pass"}
+
+    只做"话题级"软敏感判定（分手/离世/健康/金钱/家庭矛盾/法律纠纷/意外创伤），
+    与 check_sensitive（硬规则 reject/mask）互不干扰：
+    - 硬规则命中 → 内容在入库前已被 moderate 拦截/打码，不会走到这里
+    - 事件级命中 → 内容正常入库，仅打 sensitive_tags 供主动提及路径规避
+    """
+    if not text or not text.strip():
+        return {"categories": [], "matched": [], "pass": True}
+    normalized = _normalize(text)
+    words = _load_event_words()
+    categories: list[str] = []
+    matched: list[str] = []
+    for cat, wset in words.items():
+        for w in wset:
+            if w and w in normalized:
+                categories.append(cat)
+                matched.append(w)
+                break  # 每类记一个即可
+    # 运行时回流词（独立类别）
+    for w in sorted(_EVENT_REFLUX_WORDS):
+        if w and w in normalized and "回流词" not in categories:
+            categories.append(_REFLUX_CATEGORY)
+            matched.append(w)
+            break
+    return {"categories": categories, "matched": matched, "pass": not categories}
+
+
+def filter_sensitive_rule(text: str) -> bool:
+    """搜索/摘要规则级敏感过滤（B5b-1 🟢 规则级，不过模型）：True = 命中硬规则
+    敏感词（reject 类），调用方应排除该结果/摘要。
+
+    供 Agent A 在 rag.py 搜索结果/摘要路径显式调用；仅规则词表，零模型开销。
+    """
+    return check_sensitive(text).get("action") == "reject"
 
 
 def _load_url_domains() -> set[str] | None:

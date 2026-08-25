@@ -6,6 +6,9 @@
 - 敏感排除（SAF-006/007 双查）：contents.sensitive_status ≠ 正常 跳过 +
   画像级敏感（profile_sensitive）命中跳过
 - 指纹：内容 id 稳定派生（跨端同一条）
+
+画像级敏感（B5b FIX-4）：本模块同时提供 profile_sensitive 表的服务函数
+（回响 L1 校验 + B1-6 对话式增删查），供 /api/v1/profile/sensitive 使用。
 """
 from __future__ import annotations
 
@@ -17,11 +20,15 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Content, EchoHistory
+from app.db.models import Content, EchoHistory, ProfileSensitive
 
 logger = logging.getLogger("yishu.echo")
 
 ECHO_DAILY_LIMIT = 1
+
+# 画像 L1 校验：命中这些处置级别 → 回响跳过不重提（产品口径；allow/mention 放行）
+PROFILE_BLOCK_DISPOSITIONS = {"forbid", "caution", "review"}
+PROFILE_DISPOSITIONS = {"allow", "mention", "caution", "review", "forbid"}
 
 
 def _fingerprint(content_id: str) -> str:
@@ -34,19 +41,103 @@ def _local_now() -> datetime:
     return datetime.now().astimezone()
 
 
-def _is_sensitive(content: Content) -> bool:
+def profile_sensitive_blocked(db: Session, user_id: str, text: str) -> bool:
+    """画像 L1 校验（B5b FIX-4）：查 profile_sensitive，命中 topic 且处置级别 ∈
+    {forbid, caution, review} → 跳过不重提（allow/mention 放行）。
+
+    画像级敏感永不过期（locked 显式标记/默认 forbid 均无有效期逻辑）——
+    与事件级（≥3 次提及降级）不同，画像行不存在降级路径。
+    """
+    if not text or not text.strip():
+        return False
+    rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    ).scalars().all()
+    for row in rows:
+        topic = (row.topic or "").strip()
+        if not topic:
+            continue
+        if topic in text and row.disposition in PROFILE_BLOCK_DISPOSITIONS:
+            return True
+    return False
+
+
+def upsert_profile_sensitive(
+    db: Session,
+    user_id: str,
+    topic: str,
+    disposition: str = "forbid",
+    evidence: list | None = None,
+    locked: bool = False,
+) -> ProfileSensitive:
+    """画像敏感增/改（B1-6 对话式）：(user_id, topic) 存在则更新，否则插入。
+
+    locked=True 为用户显式标记（永不过期语义强化）；返回值即最新行。
+    """
+    if disposition not in PROFILE_DISPOSITIONS:
+        raise ValueError(f"disposition 非法：{disposition}（可选 {sorted(PROFILE_DISPOSITIONS)}）")
+    topic = topic.strip()
+    if not topic:
+        raise ValueError("topic 不能为空")
+    row = db.execute(
+        select(ProfileSensitive).where(
+            ProfileSensitive.user_id == user_id, ProfileSensitive.topic == topic
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = ProfileSensitive(user_id=user_id, topic=topic)
+        db.add(row)
+    row.disposition = disposition
+    row.evidence = list(evidence) if evidence else []
+    row.locked = locked
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_profile_sensitive(db: Session, user_id: str, topic: str) -> bool:
+    """画像敏感删（B1-6）：删除该用户该话题；不存在返回 False"""
+    row = db.execute(
+        select(ProfileSensitive).where(
+            ProfileSensitive.user_id == user_id, ProfileSensitive.topic == topic
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def list_profile_sensitive(
+    db: Session, user_id: str, disposition: str | None = None
+) -> list[ProfileSensitive]:
+    """画像敏感查（B1-6）：列出该用户全部话题（可按处置级别过滤），按更新时间倒序"""
+    q = select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    if disposition:
+        if disposition not in PROFILE_DISPOSITIONS:
+            raise ValueError(f"disposition 非法：{disposition}")
+        q = q.where(ProfileSensitive.disposition == disposition)
+    q = q.order_by(ProfileSensitive.updated_at.desc())
+    return db.execute(q).scalars().all()
+
+
+def _is_sensitive(db: Session, content: Content) -> bool:
     """敏感双查（SAF-006/007；用户 2026-08-20 拍板：已有敏感标记 + LLM 检测）
 
+    第零查（B5b FIX-4 前置画像 L1 校验）：profile_sensitive 命中 forbid/caution/review
+    → 跳过不重提（画像级永不过期，无降级路径）
     第一查：内容入库时的敏感标记（contents.sensitive_status ≠ 正常）
-    第二查：出包前 LLM 检测（dashscope.moderate：规则预检 + 百炼护栏，fail-safe）
-    画像级敏感维度（B5b §2 更前置的画像校验）待画像敏感字段落地后接入（见 refactor-plan P1-06 后续）。
+    第二查：出包前 LLM 检测（llm_ops.base.moderate：规则预检 + 百炼护栏，fail-safe）
     """
+    if profile_sensitive_blocked(db, str(content.user_id), content.text or ""):
+        return True
     if content.sensitive_status and content.sensitive_status != "正常":
         return True
     # 第二查：LLM 检测（对内容文本；mock 模式规则预检仍生效，fail-safe 拒发）
     text = content.text or ""
     if text.strip():
-        from app.services.external.dashscope import moderate
+        from app.services.llm_ops.base import moderate
 
         verdict = moderate(text)
         if not verdict.get("pass", True):
@@ -105,7 +196,7 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
     )
 
     for content in row:
-        if _is_sensitive(content):
+        if _is_sensitive(db, content):
             continue
         fp = _fingerprint(content.id)
         if fp in dismissed:

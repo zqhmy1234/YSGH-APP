@@ -8,12 +8,19 @@
 
 ---
 
-### 2026-08-25 19:58 · commit 1f96b1f · ts=1787684290
+### 2026-08-25 19:58 · commit 1f96b1f · ts=1787684290（Agent A 登记）
 - **错误**：review_agent 门禁失败：test_correction 报 HFValidationError（setfit 模型路径被当 HF repo id）+ api_smoke photo-journey/timeline-structure 失败（缺测试照片）
 - **根因**：git worktree 检出不含 gitignore 的本地运行资产：backend/.env（PG 凭据）、backend/models/（setfit/bge-reranker 已下载模型）、.cowork-temp/test_photos（api_smoke 测试照片）——门禁在 worktree 内跑全量测试时模型缺失走 HF hub 兜底报错、照片缺失致 smoke 空转
 - **修复**：worktree 建好后从主仓复制 backend/.env + backend/models/ 三个模型目录 + .cowork-temp/test_photos 到 worktree 对应路径（均为 gitignore 不入库）；模型/照片/凭据补齐后全量 296 passed + api_smoke 6/6 通过
 - **相关文件**：D:\GuangH-App\.wt\wave1-agentA\backend\models
 - **教训**：（无）
+
+### 2026-08-25 19:57 · commit a11ecc8 · ts=1787684235（Agent C 登记）
+- **错误**：review_agent tests 超时(timeout)导致 commit gate 失败
+- **根因**：git worktree 是全新检出：gitignore 的 backend/.env（DATABASE_URL）、models/setfit-classifier（2.2GB）、.cowork-temp/test_photos 均未同步，pytest 连不上 PG/加载不了 SetFit/api_smoke 缺照片 → 全量测试卡死/失败
+- **修复**：worktree 开发前补齐本地 gitignore 环境：复制 backend/.env + junction models/setfit-classifier + 拷贝 .cowork-temp/test_photos；测试跑 MOCK_EXTERNAL_AI=true STORAGE_BACKEND=fake
+- **相关文件**：scripts/review_agent.py
+- **教训**：git worktree 不携带 gitignore 文件：pre-commit 全量门禁前先补齐 .env/模型/测试照片等本地资产
 
 ---
 
