@@ -261,3 +261,92 @@ def test_sync_concurrent_same_client_event_id(db_user):
         select(Event).where(Event.user_id == user.id, Event.client_event_id == "ev-race")
     ).scalars().all()
     assert len(rows) == 1
+
+
+# --- Wave2-AgentD：L2 LLM 归并裁决（mock 通道）/ 待确认区 / L3 主题流成员 / 生命周期 ---
+
+def test_sync_l2_mock_verdict_promotes_tag_consistent(db_user):
+    """L2 mock 裁决：标签一致候选 → confidence 0.8 → 转正（confirmed）+ 封面赋值（B3-4）"""
+    from app.services.events import sync_client_events
+
+    db, user = db_user
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    pids = [_photo(db, user.id, base + timedelta(days=d, minutes=i * 5), tags=["美食"])
+            for d in range(2) for i in range(6)]
+    r = sync_client_events(db, user.id, DEVICE, [_client_event("ev-promote", pids, base.isoformat())])
+    assert r["upper_items"] >= 10
+    l2 = db.execute(select(Event).where(Event.user_id == user.id, Event.level == 2)).scalars().all()
+    assert len(l2) == 1
+    assert l2[0].status == "confirmed", "≥0.7 转正"
+    assert l2[0].confidence == 0.8
+    assert l2[0].title_source == "template"   # mock → 模板标题（真实 LLM 为 llm）
+    assert l2[0].cover_content_id is not None, "B3-4 封面应赋值"
+
+
+def test_sync_l2_nontag_stays_pending(db_user):
+    """L2 待确认区：无标签候选 → confidence 0.6 → draft；timeline pending=true 可见"""
+    from app.services.events import get_timeline, sync_client_events
+
+    db, user = db_user
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    pids = [_photo(db, user.id, base + timedelta(days=d, minutes=i * 5))
+            for d in range(2) for i in range(6)]   # 无标签无 GPS → 内容维/时间维候选
+    r = sync_client_events(db, user.id, DEVICE, [_client_event("ev-pending", pids, base.isoformat())])
+    assert r["upper_items"] >= 10
+    l2 = db.execute(select(Event).where(Event.user_id == user.id, Event.level == 2)).scalars().all()
+    assert len(l2) == 1
+    assert l2[0].status == "draft" and l2[0].confidence == 0.6, "<0.7 保持 draft 进待确认"
+    pending = get_timeline(db, str(user.id), pending=True)
+    assert any(e.id == l2[0].id for e in pending)
+    assert not any(e.id == l2[0].id for e in get_timeline(db, str(user.id), pending=True, status="confirmed"))
+
+
+def test_sync_creates_l3_stream_with_members(db_user):
+    """L3 7 天窗：同标签 7 天内 ≥3 次（跨天）→ 主题流落库并真实挂成员"""
+    from app.services.events import get_event_last_activity, sync_client_events
+
+    db, user = db_user
+    base = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
+    pids = [_photo(db, user.id, base + timedelta(days=d), tags=["备考"]) for d in range(3)]
+    r = sync_client_events(db, user.id, DEVICE, [_client_event("ev-l3", pids, base.isoformat())])
+    assert r["upper_items"] >= 3
+    l3 = db.execute(select(Event).where(Event.user_id == user.id, Event.level == 3)).scalars().all()
+    assert len(l3) == 1
+    assert l3[0].title == "标签 · 备考"
+    assert l3[0].start_time is not None
+    assert l3[0].cover_content_id is not None, "L3 独立封面"
+    items = db.execute(select(EventItem.content_id).where(EventItem.event_id == l3[0].id)).scalars().all()
+    assert sorted(str(i) for i in items) == sorted(pids), "L3 主题流真实挂成员（生命周期可派生）"
+    last = get_event_last_activity(db, str(user.id), [str(l3[0].id)])
+    assert str(l3[0].id) in last and last[str(l3[0].id)] is not None
+
+
+def test_l3_lifecycle_via_timeline_api(db_user):
+    """L3 生命周期：归档流（成员 200 天前）经 timeline API 派生输出 archived"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    client = TestClient(app)
+    code = f"api-life-{uuid.uuid4().hex[:8]}"
+    r = client.post("/api/v1/auth/wechat", json={"code": code, "device_id": DEVICE})
+    assert r.status_code == 200, r.text
+    token = r.json()["data"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    api_user = db.execute(select(User).where(User.unionid == f"mock-unionid-{code}")).scalar_one()
+    old = datetime(2024, 1, 1, 9, 0, tzinfo=timezone.utc)
+    pids = [_photo(db, str(api_user.id), old + timedelta(days=d), tags=["旧流"]) for d in range(3)]
+    ev = Event(
+        user_id=api_user.id, level=3, title="标签 · 旧流", title_source="template",
+        start_time=old, end_time=old + timedelta(days=2), status="draft", generated_by="cloud-proto",
+    )
+    db.add(ev)
+    db.flush()
+    for pid in pids:
+        db.add(EventItem(content_id=pid, event_id=ev.id))
+    db.commit()
+    r = client.get("/api/v1/events/timeline?level=3", headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    ev_out = next(e for e in data if e["id"] == str(ev.id))
+    assert ev_out["lifecycle"]["state"] == "archived", f"归档流应 archived，实际 {ev_out['lifecycle']}"

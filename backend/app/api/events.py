@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.event import (
     EventConfirmRequest,
+    EventCoverRequest,
     EventItemOut,
     EventMergeRequest,
     EventOut,
@@ -25,21 +26,33 @@ router = APIRouter(prefix="/api/v1/events", tags=["events"])
 @router.get("/timeline", response_model=ApiResponse[list[EventOut]])
 def timeline(
     level: int | None = None,
+    status: str | None = None,
+    pending: bool | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """时间轴（F8）：L1 日卡片 + L2 主题事件 + L3 主题流；按 start_time 排序
 
-    2026-08-20：事件聚合服务已接线（services/events.py），返回真实 events 数据；
-    手动操作（merge/split/confirm）仍 501（用户操作优先原则，后续实现）。
+    Wave2-AgentD：L2 待确认区筛选——
+      pending=true → level≥2 且 status=draft 且 confidence<0.7（B3-5 <0.7 进待确认）
+      status=draft / level=2 组合亦可（客户端自行组合）
+    L3 事件附加 lifecycle（活跃 30 天→静默→归档，读取时派生）。
     安全：需登录。
     """
-    from app.services.events import get_timeline
+    from app.services.event_aggregation.pipeline import l3_lifecycle
+    from app.services.events import get_event_last_activity, get_timeline
 
-    events = get_timeline(db, str(user.id), level=level)
+    events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
     # 审查修复(P1-11)：一次 GROUP BY 批量取计数，消除 N+1（原逐事件 count 查询）
     counts = _batch_counts(db, [e.id for e in events])
-    return ApiResponse(data=[_to_out(e, counts) for e in events])
+    # L3 生命周期：批量取最近活动 → 派生状态（读取时计算，MVP 不落库）
+    last_act = get_event_last_activity(db, str(user.id), [e.id for e in events])
+    lifecycles = {
+        str(e.id): l3_lifecycle(e.start_time, last_act.get(str(e.id)))
+        for e in events
+        if e.level >= 3
+    }
+    return ApiResponse(data=[_to_out(e, counts, lifecycles.get(str(e.id))) for e in events])
 
 
 def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
@@ -63,8 +76,8 @@ def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
     return {str(r.event_id): {"content_count": int(r.total), "photo_count": int(r.photos)} for r in rows}
 
 
-def _to_out(e, counts: dict | None = None) -> EventOut:
-    """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1）"""
+def _to_out(e, counts: dict | None = None, lifecycle: dict | None = None) -> EventOut:
+    """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1；L3 附生命周期）"""
     counts = counts or {}
     c = counts.get(str(e.id), {"content_count": 0, "photo_count": 0})
     return EventOut(
@@ -83,6 +96,7 @@ def _to_out(e, counts: dict | None = None) -> EventOut:
         generated_by=e.generated_by,
         content_count=c["content_count"],
         photo_count=c["photo_count"],
+        lifecycle=lifecycle,
     )
 
 
@@ -163,6 +177,23 @@ def confirm_event(req: EventConfirmRequest, db: Session = Depends(get_db), user:
 
     try:
         ev = _confirm(db, str(user.id), req.event_id, title=req.title)
+    except ValueError as exc:
+        raise ApiError("EVENT_004", str(exc), http=404) from exc
+    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
+
+
+@router.put("/{event_id}/cover", response_model=ApiResponse[EventOut])
+def set_cover(
+    event_id: str,
+    req: EventCoverRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """用户手动换封面（B3-4：人脸优先+质量分自动选，用户可覆盖；cover 必须是事件成员）"""
+    from app.services.events import set_event_cover as _set_cover
+
+    try:
+        ev = _set_cover(db, str(user.id), event_id, req.cover_content_id)
     except ValueError as exc:
         raise ApiError("EVENT_004", str(exc), http=404) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
