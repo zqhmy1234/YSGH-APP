@@ -31,9 +31,24 @@ def init_upload(
     file_size: int = Form(...),
     chunk_size: int = Form(upload_svc.DEFAULT_CHUNK_SIZE),
     storage: str | None = Form(None),
+    upload_mode: str = Form("original"),
+    on_wifi: bool | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """建上传任务（client_upload_id 幂等）
+
+    流量约束（B4 §6，Wave3 AgentG）：
+      upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）
+      on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）
+    两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。
+    """
+    if upload_mode not in upload_svc.VALID_UPLOAD_MODES:
+        raise ApiError(
+            "UPLOAD_007",
+            f"upload_mode 非法（可选 {'/'.join(upload_svc.VALID_UPLOAD_MODES)}）",
+            http=422,
+        )
     try:
         task = upload_svc.init_upload(
             db, user.id, client_upload_id, file_name, file_size, chunk_size, storage
@@ -46,6 +61,8 @@ def init_upload(
         "chunk_count": task.chunk_count,
         "file_key": task.file_key,
         "status": task.status,
+        "upload_mode": upload_mode,
+        "on_wifi": on_wifi,
     })
 
 
@@ -100,9 +117,16 @@ def complete_upload(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """合并分片 → 落最终对象 → 建 contents 记录 + 入队管线（S-ST-1 集成）
+    """合并分片 → 落最终对象 → 建/更新 contents 记录 + 入队管线（S-ST-1 集成）
 
-    meta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra}，语义与 /contents/upload 对齐。
+    meta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra,
+                        upload_mode, on_wifi, content_id?}，语义与 /contents/upload 对齐。
+
+    Wave3 AgentG（流量约束 B4 §6）：
+      - upload_mode="thumbnail_meta"（蜂窝）：上传物即缩略图 → 只落 thumbnail_key
+        占位内容（original_pending），不进管线；WiFi 后再用本端点补传原件。
+      - upload_mode="original" + content_id=<占位 id>：手动立即上传原图——
+        复用 complete 流程，把原件挂到既有占位内容并触发完整管线（与 photo 同链路）。
     """
     try:
         result = upload_svc.complete_upload(db, upload_id, user_id=user.id)

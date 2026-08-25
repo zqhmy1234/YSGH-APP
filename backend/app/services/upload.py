@@ -20,6 +20,10 @@ from app.core.queue import enqueue_high
 from app.db.models import Content, UploadChunk, UploadTask
 from app.services.external.storage import get_storage_backend
 from app.services.pipeline import process_content
+from app.services.thumbnails import derive_thumbnail_key, generate_thumbnail_job, resize_to_jpeg
+
+# 流量约束（B4 §6，Wave3 AgentG）：上传模式白名单
+VALID_UPLOAD_MODES = ("original", "thumbnail_meta")
 
 # 后端中转合并上限（超限建议客户端直传，MVP 照片远低于此）
 MAX_INLINE_MERGE_BYTES = 200 * 1024 * 1024
@@ -176,6 +180,15 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     语义与 api/contents.py upload_photo 对齐（meta 字段/taken_at ISO/gps 边界/source 白名单），
     否则分片链路与内容管线断裂（对象在存储里但永不进 AI 管线/时间轴）。
     无 perceptual_hash（客户端不计算）→ 不做 409 去重；护栏由管线 CI 审核覆盖。
+
+    Wave3 AgentG 扩展（流量约束 B4 §6）：
+      meta.upload_mode ∈ {original, thumbnail_meta}：
+        - original（默认）：完整原件，建/更新 contents + 入队管线 + 缩略图预生成
+        - thumbnail_meta（蜂窝路径）：上传物即缩略图 → 只落 thumbnail_key 占位内容
+          （extra.original_pending=true，status=done，不进管线）；WiFi 后由
+          "手动上传原图"（同一 complete 端点 + meta.content_id）补传原件
+      meta.content_id：original 模式下若提供 → 更新既有占位内容（补传原件），不新建
+      meta.on_wifi：客户端 WiFi 标记（记录到 extra，供流量策略可观测）
     """
     try:
         meta_obj = json.loads(meta) if meta.strip() else {}
@@ -183,6 +196,13 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
             raise ValueError("meta 必须是 JSON 对象")
     except json.JSONDecodeError as exc:
         raise ValueError("meta 必须为合法 JSON 对象") from exc
+
+    upload_mode = meta_obj.get("upload_mode", "original")
+    if upload_mode not in VALID_UPLOAD_MODES:
+        raise ValueError(f"upload_mode 非法（可选 {'/'.join(VALID_UPLOAD_MODES)}）")
+    on_wifi = meta_obj.get("on_wifi")
+    if on_wifi is not None and not isinstance(on_wifi, bool):
+        raise ValueError("on_wifi 必须为布尔值")
 
     taken_at = None
     if meta_obj.get("taken_at"):
@@ -204,7 +224,49 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     source = meta_obj.get("source", "app")
     if source not in ("app", "windows", "wechat", "import"):
         raise ValueError("source 非法（可选 app/windows/wechat/import）")
-    extra = meta_obj.get("extra") if isinstance(meta_obj.get("extra"), dict) else None
+    extra = dict(meta_obj.get("extra")) if isinstance(meta_obj.get("extra"), dict) else {}
+    extra["upload_mode"] = upload_mode
+    if on_wifi is not None:
+        extra["on_wifi"] = on_wifi
+
+    # 蜂窝路径：上传物是缩略图 → 只落缩略图 + 占位内容（等 WiFi 补传原件）
+    if upload_mode == "thumbnail_meta":
+        thumbnail_key = derive_thumbnail_key(cos_key)
+        backend = get_storage_backend()
+        data = backend.get_object(cos_key)
+        backend.put_object(thumbnail_key, resize_to_jpeg(data))
+        extra["original_pending"] = True
+        record = Content(
+            user_id=user_id,
+            content_type="photo",
+            taken_at=taken_at,
+            gps_lat=gps_lat,
+            gps_lng=gps_lng,
+            cos_key=cos_key,
+            thumbnail_key=thumbnail_key,
+            extra=extra,
+            source=source,
+            status="done",  # 占位即可浏览（缩略图）；原件补传后转 processing 走管线
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return str(record.id)
+
+    # 手动补传原件（复用 complete）：content_id 指向 thumbnail_meta 占位内容
+    content_id = meta_obj.get("content_id")
+    if content_id:
+        existing = db.get(Content, content_id)
+        if existing is None or str(existing.user_id) != str(user_id):
+            raise ValueError("content_id 不存在或不属于当前用户")
+        existing.cos_key = cos_key
+        existing.status = "processing"
+        existing.extra = extra
+        existing.extra.pop("original_pending", None)
+        db.commit()
+        enqueue_high(process_content, str(existing.id))
+        enqueue_high(generate_thumbnail_job, str(existing.id))
+        return str(existing.id)
 
     record = Content(
         user_id=user_id,
@@ -221,6 +283,7 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     db.commit()
     db.refresh(record)
     enqueue_high(process_content, str(record.id))
+    enqueue_high(generate_thumbnail_job, str(record.id))
     return str(record.id)
 
 
