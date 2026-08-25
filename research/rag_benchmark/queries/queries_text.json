@@ -23,21 +23,25 @@
     {
       "query": "买牛奶",
       "expected_label": "todo",
+      "expected": ["b-todo-04"],
       "layer": "keyword"
     },
     {
       "query": "马拉松",
       "expected_label": "emotion",
+      "expected": ["b-emotion-14"],
       "layer": "keyword"
     },
     {
       "query": "收房租",
       "expected_label": "todo",
+      "expected": ["b-todo-02"],
       "layer": "keyword"
     },
     {
       "query": "买牛乃",
       "expected_label": "todo",
+      "expected": ["b-todo-04"],
       "layer": "typo"
     },
     {
@@ -61,16 +65,19 @@
     {
       "query": "给领导交季度总结",
       "expected_label": "todo",
+      "expected": ["b-todo-05", "b-todo-12"],
       "layer": "route"
     },
     {
       "query": "购物",
       "expected_label": "todo",
+      "expected": ["b-todo-14", "b-todo-04"],
       "layer": "length"
     },
     {
       "query": "记得明天下午之前把上个月的工作总结报告交给领导",
       "expected_label": "todo",
+      "expected": ["b-todo-05", "b-todo-12"],
       "layer": "length"
     }
   ]

@@ -98,3 +98,39 @@ def evaluate_retrieval(
             agg[key] = round(agg[key] / n, 4)
     agg["n_queries"] = n
     return agg
+
+
+def evaluate_retrieval_explicit(
+    queries: Iterable[dict],
+    ranker,  # 函数：query → [(id, score), ...]
+    ks: tuple[int, ...] = (1, 3, 5, 10),
+) -> dict:
+    """显式相关口径批量评估（2026-08-25 P0-B 新增，诊断指标，不进 M1 门禁）
+
+    只统计带显式 expected id 的查询，相关集 = 显式 id（单条检索口径）。
+    背景：recall@k 若用 label 全集做分母，Top-3 理论上限仅 3/15~3/20≈0.2，
+    指标失真（审查报告第一节）。产品口径 = 找一条相关记录 → recall 分母 = 显式相关条数。
+    返回 {recall@k, hit_rate@k, mrr, ndcg@3, n_queries}（n_queries=显式查询数）。
+    """
+    agg = {f"recall@{k}": 0.0 for k in ks}
+    agg.update({f"hit_rate@{k}": 0.0 for k in ks})
+    agg["mrr"] = 0.0
+    agg["ndcg@3"] = 0.0
+    n = 0
+    for q in queries:
+        expected = q.get("expected") or []
+        if not expected:
+            continue
+        ranked = [rid for rid, _score in ranker(q["query"])]
+        relevant = set(expected)
+        for k in ks:
+            agg[f"recall@{k}"] += recall_at_k(relevant, ranked, k)
+            agg[f"hit_rate@{k}"] += hit_rate_at_k(relevant, ranked, k)
+        agg["mrr"] += mrr(relevant, ranked)
+        agg["ndcg@3"] += ndcg_at_k(relevant, ranked, 3)
+        n += 1
+    if n:
+        for key in agg:
+            agg[key] = round(agg[key] / n, 4)
+    agg["n_queries"] = n
+    return agg

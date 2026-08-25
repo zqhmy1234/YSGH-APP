@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-25 06:00 · commit 24b205f · ts=1787634007
+- **错误**：dashscope 403 Workspace access denied：LLM 改写/路由/图片塔全链路静默降级到规则，eval 成绩被误归因于 LLM
+- **根因**：①机器 User 环境变量残留旧格式 DASHSCOPE_API_KEY（sk-4980...）覆盖 backend/.env 的 sk-ws- 新 key（pydantic env 优先于 dotenv）；②dashscope SDK 只认 env/全局 api_key，代码从未把 settings.dashscope_api_key 同步给 SDK——双重坑导致 5:48 eval 的 LLM 改写实际未生效（except RuntimeError 静默吞掉）
+- **修复**：①删除 User 级旧 DASHSCOPE_API_KEY（skill 早已记录该残留为已知隐患）；②dashscope.py 新增 _ensure_api_key()，_chat_text/image_caption 调用前同步 settings→dashscope.api_key；③真实模式验证（买牛乃→买牛奶、收房祖→收房租）成功
+- **相关文件**：backend/app/services/external/dashscope.py
+- **教训**：静默降级是最大的坑：外部服务异常被 except 吞掉会让 eval 成绩失真；真实模式跑评测前必须先探针验证 LLM 链路真的活着（非 mock 非规则兜底）。环境变量残留（旧 key）会覆盖 .env 新值，SDK 不读项目 settings 时需显式同步。
+
+---
+
+### 2026-08-25 06:00 · commit 24b205f · ts=1787634002
+- **错误**：dashscope 403 Workspace access denied：LLM 改写/路由/图片塔全链路静默降级到规则，eval 成绩被误归因于 LLM
+- **根因**：①机器 User 环境变量残留旧格式 DASHSCOPE_API_KEY（sk-4980...）覆盖 backend/.env 的 sk-ws- 新 key（pydantic env 优先于 dotenv）；②dashscope SDK 只认 env/全局 api_key，代码从未把 settings.dashscope_api_key 同步给 SDK——双重坑导致 5:48 eval 的 LLM 改写实际未生效（except RuntimeError 静默吞掉）
+- **修复**：①删除 User 级旧 DASHSCOPE_API_KEY（skill 早已记录该残留为已知隐患）；②dashscope.py 新增 _ensure_api_key()，_chat_text/image_caption 调用前同步 settings→dashscope.api_key；③真实模式验证（买牛乃→买牛奶、收房祖→收房租）成功
+- **相关文件**：backend/app/services/external/dashscope.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-24 21:43 · commit 365a386 · ts=1787604224
 - **错误**：review_agent 全量门禁失败：lint（storage.py Path 未导入到模块级 + rag.py 超长行）+ tests（test_amap/test_asr mock 断言失败）
 - **根因**：①FilesystemStorageBackend 的 from pathlib import Path 写在 __init__ 内，_safe_path 用不到模块级 → ruff F821；②rag.py rerank 候选行超 120 字符 → E501；③.env 配了 MOCK_EXTERNAL_AI=false + STORAGE_BACKEND=fs（本地真实服务），测试套件按 mock+fake 断言 → 未覆盖 env 时 test_amap/test_asr 全挂

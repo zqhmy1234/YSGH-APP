@@ -30,7 +30,8 @@ _BLOCK_MARKERS = ("block", "refuse", "拒", "不合法", "违规", "有害")
 
 _REWRITE_SYSTEM = (
     "你是记忆整理 App 的查询改写器。将用户的自然语言查询改写为适合向量检索的"
-    "简洁中文查询（去掉口语、保留核心实体与意图），并识别时间表达。"
+    "简洁中文查询（去掉口语、保留核心实体与意图），并纠正错别字"
+    "（尤其拼音/近音错字：'买牛乃'→'买牛奶'、'收房祖'→'收房租'）。"
     "只输出改写后的查询，不要任何解释。"
 )
 
@@ -50,6 +51,20 @@ def _llm_available() -> bool:
     return not settings.mock_external_ai and bool(settings.dashscope_api_key)
 
 
+def _ensure_api_key() -> None:
+    """同步 settings 到 dashscope SDK 全局 api_key（2026-08-25 排查修复）
+
+    dashscope SDK 只认 env/全局 api_key，不读本项目 settings：
+    机器遗留旧格式 DASHSCOPE_API_KEY（sk-4980...）会覆盖 .env 的 sk-ws- 值，
+    导致 403 Workspace access denied（旧 key + workspace 头不匹配）。
+    settings 本身 env 优先、.env 兜底，这里显式同步即可根治。
+    """
+    import dashscope
+
+    if settings.dashscope_api_key and dashscope.api_key != settings.dashscope_api_key:
+        dashscope.api_key = settings.dashscope_api_key
+
+
 @with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
 def _chat_text(system: str, user: str, model: str = QWEN_FLASH) -> str:
     """调 qwen-flash 文本对话（同步），失败抛异常由调用方降级
@@ -58,6 +73,7 @@ def _chat_text(system: str, user: str, model: str = QWEN_FLASH) -> str:
     """
     from dashscope import Generation
 
+    _ensure_api_key()
     resp = Generation.call(
         model=model,
         messages=[
@@ -100,6 +116,7 @@ def image_caption(image_path: str, prompt: str = "用一句话中文描述这张
         raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
     from dashscope import MultiModalConversation
 
+    _ensure_api_key()
     resp = MultiModalConversation.call(
         model=QWEN_VL,
         messages=[

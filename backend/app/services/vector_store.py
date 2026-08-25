@@ -282,6 +282,13 @@ class VectorStore:
                     key="tags",
                     match=models.MatchValue(value=value),
                 ))
+            elif key == "content_class" and value:
+                # P1-A 类目路由（2026-08-25）：按类别过滤（生产 payload 字段
+                # content_class；基准 collection 的 _index 同步写入同名字段）。
+                must.append(models.FieldCondition(
+                    key="content_class",
+                    match=models.MatchValue(value=value),
+                ))
         return models.Filter(must=must) if must else None
 
 

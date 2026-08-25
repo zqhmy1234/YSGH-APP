@@ -102,6 +102,15 @@ class Settings(BaseSettings):
     rerank_enabled: bool = False
     # 重排候选上限（防 CPU 延迟爆表；默认 20 → ~17s，仍超门禁，仅建议 GPU 用）
     rerank_max_candidates: int = 20
+    # P1-A 类目路由（2026-08-25）：描述性查询按规则词表分类 → content_class 过滤，
+    # 把干扰类挡在召回路外（修复 descriptive 层 hit_rate@3=0.5 的召回缺口）。
+    # 规则词表确定性/零延迟；无主导类别不过滤；空结果自动回退全量。
+    class_routing_enabled: bool = True
+    # P0-A LLM 改写/路由总开关（2026-08-25 实测默认关）：
+    # 探针实锤 9/10 短关键词查询被无谓改写（"过年要给父母红包吗"→"过年是否要…"），
+    # 外部集 recall 0.886→0.75；typo 查询规则模式 dense 已能命中 → 当前零增益纯伤害。
+    # 双路召回已就绪（rag.py 3.3），真实数据到位后可开启并用原查询路兜底。
+    llm_rewrite_enabled: bool = False
 
 
 @lru_cache

@@ -263,3 +263,54 @@ def test_search_empty_query_rejected():
 
     with pytest.raises(ValidationError):
         SearchQuery(q="")
+
+def test_boost_exact_matches_partial():
+    """P0-D（2026-08-25）：部分词元命中梯度 —— ≥50% 词元命中 ×1.3
+
+    全命中仍 ×1.8；3 词元中 2 个命中 → ×1.3；1/4 命中 → 不提升。
+    （中文无空格，词元按标点切分——查询用标点分隔多词元。）
+    """
+    from app.services.rag import _boost_exact_matches
+
+    hits = [
+        {"content_id": "a", "text": "季度总结报告", "score": 0.0111},
+        {"content_id": "b", "text": "提交平台", "score": 0.0115},
+        {"content_id": "c", "text": "完全无关内容", "score": 0.0110},
+    ]
+    # 3 词元（季度/总结/提交）：a 命中 2/3 ≥50% → ×1.3 顶到首位；b 1/3 → 不提升
+    boosted = _boost_exact_matches("季度、总结、提交", hits)
+    assert boosted[0]["content_id"] == "a"
+    assert boosted[0]["score"] == round(0.0111 * 1.3, 4)
+    # 4 词元：b 只命中 1/4 <50% → 原分不动
+    boosted2 = _boost_exact_matches("季度、总结、提交、审核", hits)
+    b = next(h for h in boosted2 if h["content_id"] == "b")
+    assert b["score"] == 0.0115
+    # 全命中仍 ×1.8（单 token 查询不受影响）
+    hits3 = [{"content_id": "c", "text": "买牛奶和鸡蛋", "score": 0.01}]
+    boosted3 = _boost_exact_matches("买牛奶", hits3)
+    assert boosted3[0]["score"] == round(0.01 * 1.8, 4)
+
+
+def test_classify_query_intent_descriptive():
+    """P1-A（2026-08-25）：描述性查询 → 规则词表主导类别（修复 descriptive 召回缺口）"""
+    from app.services.rag import _classify_query_intent
+
+    assert _classify_query_intent("关于做产品的想法") == "idea"
+    assert _classify_query_intent("让我难过的记录") == "emotion"
+    assert _classify_query_intent("记得要去办的事情") == "todo"
+    assert _classify_query_intent("人生感悟和道理") == "quote"
+    assert _classify_query_intent("买牛奶") == "todo"
+    assert _classify_query_intent("收房租") == "todo"
+    assert _classify_query_intent("买牛乃") == "todo"  # 错字不阻断（"买"命中）
+
+
+def test_classify_query_intent_no_class():
+    """P1-A：无主导类别/并列 → None（不过滤，防误过滤）"""
+    from app.services.rag import _classify_query_intent
+
+    # 无词表命中：关键词/实体查询不过滤（马拉松靠语义召回）
+    assert _classify_query_intent("马拉松") is None
+    assert _classify_query_intent("松鼠桂鱼") is None
+    assert _classify_query_intent("") is None
+    # 并列命中（两类各 1 次）→ None
+    assert _classify_query_intent("难过的事情记得处理") is None

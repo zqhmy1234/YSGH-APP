@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "backend"
 
 BENCH_DIR = Path(__file__).resolve().parent
 
-from research.rag_benchmark.metrics import evaluate_retrieval  # noqa: E402
+from research.rag_benchmark.metrics import evaluate_retrieval, evaluate_retrieval_explicit  # noqa: E402
 
 # 修复（审查 MAJOR）：基准语料索引进生产 collection yishu_contents 会污染真实
 # 检索空间（payload 带 benchmark 标记但搜索不排除）。改用独立 collection
@@ -35,6 +35,8 @@ BENCH_COLLECTION = "yishu_benchmark"
 # 文字语料评测用独立 collection（2026-08-20：corpus-A 图片 498 点已入 yishu_benchmark，
 # 混同会让 text/route 查询命中图片点 → hit_rate/route_acc 虚低；文字评测隔离）
 TEXT_BENCH_COLLECTION = "yishu_benchmark_text"
+# 外部评测集独立 collection（P1-B2 2026-08-25：T2Ranking 抽取用例，与合成库隔离）
+EXT_COLLECTION = "yishu_benchmark_ext"
 
 GATE = {
     "hit_rate@3": 0.70,     # M1 门禁（Top3≥70%，与产品口径一致）
@@ -48,13 +50,18 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _index(db, items: list[dict], content_type: str) -> None:
-    """语料 → Qdrant yishu_benchmark（独立基准库，幂等：同 id 覆盖）"""
+def _index(db, items: list[dict], content_type: str, collection: str | None = None) -> None:
+    """语料 → Qdrant 基准 collection（幂等：同 id 覆盖）
+
+    collection=None → 默认文字基准库 TEXT_BENCH_COLLECTION；
+    外部评测集（--external）传 EXT_COLLECTION 隔离。
+    """
     from app.services.embedding import encode_dense, encode_sparse
     from app.services.vector_store import get_store
 
+    col = collection or TEXT_BENCH_COLLECTION
     store = get_store()
-    store.ensure_collection(TEXT_BENCH_COLLECTION)
+    store.ensure_collection(col)
     texts = [it["text"] for it in items]
     denses = encode_dense(texts)
     sparses = encode_sparse(texts)
@@ -67,23 +74,28 @@ def _index(db, items: list[dict], content_type: str) -> None:
             payload={
                 "content_type": content_type,
                 "label": it.get("label"),
+                # P1-A（2026-08-25）：类目路由按 content_class 过滤（与生产 payload
+                # 字段一致；label 保留兼容旧逻辑）
+                "content_class": it.get("label"),
                 "benchmark": "rag-distribution",
                 "text": it["text"],
             },
-            collection=TEXT_BENCH_COLLECTION,
+            collection=col,
         )
 
 
-def _make_ranker(content_type: str | None = None):
+def _make_ranker(content_type: str | None = None, collection: str | None = None):
     """构造 ranker：query → [(id, score)]（可按类型过滤测路由/过滤）"""
     from app.schemas.search import SearchQuery
     from app.services.rag import search
+
+    col = collection or TEXT_BENCH_COLLECTION
 
     def ranker(q: str):
         req = SearchQuery(q=q, limit=10)
         if content_type:
             req.content_types = [content_type]
-        result = search(req, collection=TEXT_BENCH_COLLECTION)
+        result = search(req, collection=col)
         return [(h.content_id, h.score) for h in result.hits]
 
     return ranker
@@ -128,6 +140,9 @@ def _eval_corpus(queries: list[dict], ranker, corpus_labels: dict[str, set[str]]
         else:
             eval_qs = [{**q, "expected": sorted(_resolve_relevant(q, corpus_labels))} for q in qs]
             metric = evaluate_retrieval(eval_qs, ranker)
+            # P0-B（2026-08-25）：显式相关口径诊断——相关集 = 显式 expected id，
+            # 不被 label 全集稀释；只统计带显式 id 的查询（n_queries 为其数量）。
+            metric["explicit"] = evaluate_retrieval_explicit(qs, ranker)
             report[layer] = metric
     return report, gates
 
@@ -135,6 +150,8 @@ def _eval_corpus(queries: list[dict], ranker, corpus_labels: dict[str, set[str]]
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scale-eval", type=int, default=0, help=">0 时跑规模压力（N 条）")
+    parser.add_argument("--external", action="store_true",
+                        help="额外评测外部测试集（T2Ranking 抽取用例，P1-B2；不进门禁）")
     args = parser.parse_args()
 
     report: dict = {"_meta": {"version": 2, "note": "RAG 全分布测评"}, "corpora": {}}
@@ -193,13 +210,43 @@ def main() -> None:
             for q in queries if q.get("layer") not in ("temporal", "route")
         ]
         all_metrics = evaluate_retrieval(retrieval_qs, ranker)
+        # P0-B：显式口径诊断（用原始查询的显式 id，避免 label 全集误当显式相关）
+        retrieval_raw = [q for q in queries if q.get("layer") not in ("temporal", "route")]
+        all_metrics["explicit"] = evaluate_retrieval_explicit(retrieval_raw, ranker)
         report["corpora"]["mixed"]["overall"] = all_metrics
         gate_hit = all_metrics["hit_rate@3"] >= GATE["hit_rate@3"]
         overall_ok &= gate_hit and all(gates.values())
         print(f"[B+C] 检索层整体 hit_rate@3={all_metrics['hit_rate@3']}（门禁 ≥{GATE['hit_rate@3']}）"
               f" recall@3={all_metrics['recall@3']} mrr={all_metrics['mrr']} ndcg@3={all_metrics['ndcg@3']}")
+        ex = all_metrics["explicit"]
+        print(f"[B+C] 显式口径诊断（n={ex['n_queries']}）: recall@3={ex.get('recall@3')} "
+              f"hit_rate@3={ex.get('hit_rate@3')} mrr={ex.get('mrr')}")
         for layer, m in corpora_report.items():
             print(f"  layer[{layer}] {m}")
+
+        # P1-B2（2026-08-25）：外部测试集（T2Ranking 抽取，见 build_external_corpus.py）
+        # 独立 collection 隔离评测；所有查询带显式 expected id → recall 即显式口径；
+        # 仅诊断/回归哨兵，不进 M1 门禁。
+        if args.external:
+            ext_items = _load_json(BENCH_DIR / "corpora" / "corpus_ext_t2r.json")["items"]
+            ext_queries = _load_json(BENCH_DIR / "queries" / "queries_ext.json")["queries"]
+            print(f"[EXT] 索引外部语料 {len(ext_items)} 条 → {EXT_COLLECTION} ...")
+            t0 = time.perf_counter()
+            _index(None, ext_items, "text", collection=EXT_COLLECTION)
+            ext_ms = int((time.perf_counter() - t0) * 1000)
+            ext_ranker = _make_ranker(collection=EXT_COLLECTION)
+            ext_metrics = evaluate_retrieval(ext_queries, ext_ranker)
+            ext_metrics["explicit"] = evaluate_retrieval_explicit(ext_queries, ext_ranker)
+            report["corpora"]["external"] = {
+                "size": len(ext_items),
+                "n_queries": len(ext_queries),
+                "index_ms": ext_ms,
+                "metrics": ext_metrics,
+                "gate": False,
+            }
+            print(f"[EXT] {len(ext_queries)} 查询: hit_rate@3={ext_metrics['hit_rate@3']} "
+                  f"recall@3={ext_metrics['recall@3']} mrr={ext_metrics['mrr']} "
+                  f"precision@3={ext_metrics['precision@3']} ndcg@3={ext_metrics['ndcg@3']}")
 
     report["overall_pass"] = overall_ok
     out = BENCH_DIR / "evaluation_report.json"
