@@ -261,7 +261,8 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
             raise ValueError("content_id 不存在或不属于当前用户")
         existing.cos_key = cos_key
         existing.status = "processing"
-        existing.extra = extra
+        # 合并（不覆盖占位期既有 extra，如 wechat 追溯/元数据）
+        existing.extra = {**(existing.extra or {}), **extra}
         existing.extra.pop("original_pending", None)
         db.commit()
         enqueue_high(process_content, str(existing.id))
