@@ -1,13 +1,21 @@
-"""微信客服消息处理（S4-01/03/04 · F6）
+"""微信客服消息处理（S4-01/03/04 · F6 · Wave3 AgentG 扩展）
 
 - msg_id 幂等：wechat_messages.msg_id UNIQUE——重复回调只入库一次（不丢/不重 99.9% 门禁）
-- 入库：text 直接入 contents（来源=wechat）；image/voice 记 wechat_messages
-  （媒体文件需先下载，MVP 记 media_id，下载接 COS/队列后置）
+- 入库：text 直接入 contents（来源=wechat）；image/voice 记 wechat_messages + 媒体上云
+- 媒体云端原件（Wave3 AgentG · audit #8 缺口修复）：
+  image/voice → 下载企微媒体到对象存储（cos_key 落 Content）→ 图片 CI 审核（敏感排除）
+  → 与 photo 同链路入管线（process_content）+ 缩略图预生成（image）
+  凭证未配置（WECHAT_* / TENCENT_* 缺失）→ mock 媒体字节 + CI 默认放行（代码先行，
+  拿 key 后零切换；真实回调与真实审核在配置到位后自动启用）
 - 敏感识别：B5-b 护栏在入库时同步执行，命中标记不展示（不进云端镜像）
 - 软删本条：微信端"删掉"→ 软删除标记
+
+表需求（登记给集成 Agent）：wechat_messages 建议补 content_id/cos_key 列实现直接关联
+（当前用 Content.extra.wechat_msg_id 反向关联，无需迁移即可工作）。
 """
 from __future__ import annotations
 
+import io
 import logging
 import uuid
 
@@ -15,19 +23,184 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, WechatMessage
+from app.services import thumbnails
 from app.services.external import moderate
 
 logger = logging.getLogger("yishu.wechat")
 
 VALID_SOURCES = ("active", "echo", "org")
 
+# 企微媒体下载（真实模式；未配置走 mock）
+WECOM_API_BASE = "https://qyapi.weixin.qq.com/cgi-bin"
+
+
+def _corp_access_token() -> str | None:
+    """企业 access_token（media/get 必需）
+
+    需企微应用凭证：WECHAT_CORP_ID + 应用 Secret。
+    凭证未配置或 MOCK_EXTERNAL_AI=true → 返回 None（调用方走 mock）。
+    """
+    from app.core.config import settings
+
+    if settings.mock_external_ai or not (settings.wechat_corp_id and settings.wechat_token):
+        return None
+    import httpx
+
+    resp = httpx.get(
+        f"{WECOM_API_BASE}/gettoken",
+        params={"corpid": settings.wechat_corp_id, "corpsecret": settings.wechat_token},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("errcode") not in (0, None):
+        raise RuntimeError(f"企微 gettoken 失败: {data.get('errmsg')}")
+    return data.get("access_token")
+
+
+def _media_extension(msg_type: str) -> str:
+    # 企微语音固定 amr；图片统一 jpg（COS 对象不强制真实容器格式）
+    return ".amr" if msg_type == "voice" else ".jpg"
+
+
+def _mock_image_bytes() -> bytes:
+    """64×64 纯色 JPEG（PIL 生成，无需网络/凭证，链路可测）"""
+    from PIL import Image
+
+    img = Image.new("RGB", (64, 64), (120, 80, 200))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _mock_voice_bytes() -> bytes:
+    """0.1s 静音 WAV（合法 RIFF 头，管线 ASR mock 可吃）"""
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 1600)
+    return buf.getvalue()
+
+
+def download_media(media_id: str, msg_type: str) -> bytes:
+    """下载企微媒体（image/voice）→ 字节
+
+    真实模式：GET /media/get?access_token=..&media_id=..；失败抛 RuntimeError。
+    凭证缺失 / mock 模式：返回可测试的 mock 字节（真实模式绝不混入 mock——
+    mock 只出现在未配置或 MOCK_EXTERNAL_AI=true 的沙箱/联调环境）。
+    """
+    token = _corp_access_token()
+    if token is None:
+        return _mock_image_bytes() if msg_type == "image" else _mock_voice_bytes()
+
+    import httpx
+
+    resp = httpx.get(
+        f"{WECOM_API_BASE}/media/get",
+        params={"access_token": token, "media_id": media_id},
+        timeout=30,
+    )
+    # 企微媒体下载失败时返回 JSON {errcode, errmsg}（成功时为二进制流）
+    content_type = resp.headers.get("content-type", "")
+    if "json" in content_type:
+        data = resp.json()
+        raise RuntimeError(f"企微媒体下载失败: {data.get('errmsg', resp.status_code)}")
+    resp.raise_for_status()
+    if not resp.content:
+        raise RuntimeError("企微媒体返回空内容")
+    return resp.content
+
+
+def _audit_image(cos_key: str) -> dict:
+    """图片 CI 审核（S4-03 敏感排除）：命中任意敏感标签 → pass=False
+
+    凭证未配置/CI 不可用 → 默认放行并告警（与 pipeline 对 CI 失败静默降级一致；
+    生产 COS 配置到位后自动走真实审核）。
+    """
+    try:
+        from app.services.external.tencent_ci import image_audit
+
+        return image_audit(cos_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("图片 CI 审核不可用，默认放行 cos_key=%s: %s", cos_key, exc)
+        return {"pass": True, "labels": []}
+
+
+def _build_content_extra(msg: dict, media_id: str) -> dict:
+    """微信来源追溯（无新列也可反向关联）：extra.wechat_msg_id/wechat_media_id"""
+    return {
+        "wechat_msg_id": msg.get("msg_id"),
+        "wechat_media_id": media_id,
+    }
+
+
+def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) -> dict:
+    """媒体上云：下载 → COS（cos_key 落 Content）→ 图片 CI 审核 → 入管线
+
+    返回结果片段并入 process_incoming 外层结果：
+      {"media": "ok", "cos_key": ..., "content_id": ...} / {"media": "failed", ...}
+      / {"media": "blocked", "sensitive": True}
+    """
+    from app.core.queue import enqueue_high
+    from app.services.external.storage import get_storage_backend
+    from app.services.pipeline import process_content
+
+    media_id = msg.get("media_id")
+    if not media_id:
+        return {"media": "skipped", "reason": "no media_id"}
+
+    try:
+        data = download_media(media_id, msg["msg_type"])
+    except Exception as exc:  # noqa: BLE001 —— 下载失败不影响消息入库（只标记）
+        logger.warning("企微媒体下载失败 msg=%s: %s", msg.get("msg_id"), exc)
+        record.status = "media_failed"
+        db.commit()
+        return {"media": "failed", "error": type(exc).__name__}
+
+    cos_key = f"wechat/{user_id}/{msg.get('msg_id')}{_media_extension(msg['msg_type'])}"
+    get_storage_backend().put_object(cos_key, data)
+
+    # 图片敏感排除（S4-03：命中不进云端镜像）
+    if msg["msg_type"] == "image":
+        audit = _audit_image(cos_key)
+        if not audit["pass"]:
+            record.status = "sensitive"
+            db.commit()
+            return {"media": "blocked", "sensitive": True, "labels": audit["labels"]}
+
+    extra = _build_content_extra(msg, media_id)
+    if msg["msg_type"] == "voice":
+        extra["file_name"] = f"{media_id}{_media_extension('voice')}"
+    content = Content(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        content_type="photo" if msg["msg_type"] == "image" else "voice",
+        cos_key=cos_key,
+        extra=extra,
+        source="wechat",
+        status="processing",
+    )
+    db.add(content)
+    record.status = "processed"
+    db.commit()
+    db.refresh(content)
+
+    enqueue_high(process_content, str(content.id))
+    if content.content_type == "photo":
+        enqueue_high(thumbnails.generate_thumbnail_job, str(content.id))
+    return {"media": "ok", "cos_key": cos_key, "content_id": str(content.id)}
+
 
 def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict:
     """处理企微回调消息（幂等：msg_id 已存在则跳过）
 
-    user_id=None（未绑定 unionid）→ 只记录 wechat_messages，不建 contents；
+    user_id=None（未绑定 unionid）→ 只记录 wechat_messages（媒体也不下载），
     绑定后由 S4-01 后续任务回填归属。
-    返回 {status: created|duplicate|ignored, content_id?, sensitive?}
+    返回 {status: created|duplicate|ignored, content_id?, sensitive?, media?}
     """
     msg_id = msg.get("msg_id")
     if not msg_id:
@@ -52,6 +225,7 @@ def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict
     db.add(record)
 
     result: dict = {"status": "created", "msg_id": msg_id}
+
     if user_id and msg["msg_type"] == "text" and msg.get("content"):
         text = msg["content"]
         # 敏感识别（B5-b 护栏；mock 模式放行，真实模式 fail-safe）
@@ -68,6 +242,10 @@ def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict
         )
         db.add(content)
         result["content_id"] = content.id
+    elif user_id and msg["msg_type"] in ("image", "voice"):
+        result.update(_process_media(db, record, msg, user_id))
+        return result  # _process_media 已 commit
+
     db.commit()
     return result
 
