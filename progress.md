@@ -379,3 +379,12 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 ### 交付
 - docs/RAG测评报告_20260825.md（测评全流程/数据构成/结果/发现）
 - docs/README.md 文档索引（第一轮整理）；refactor-plan/review-report 归位 docs/
+
+## Wave 1 集成完成（2026-08-26 03:20）
+
+- 两个并行 worktree（wave1-agentA / wave1-agentC）开发完成并经 review_agent 门禁（各自域内 62/68 passed）
+- 集成 Agent merge：786f134（A B2 搜索）+ 23b55f4（C B5b 护栏，lessons 冲突保留两边）
+- 集成接线：main.py 注册 profile_sensitive_router；photo 首入库 payload 后补刷新（vector_store.update_payload + pipeline_ext.payload.build_payload + pipeline.py 逆地理后一行）；搜索/以图搜图规则级敏感过滤（filter_sensitive_rule，B5b-1 🟢 转交项闭环）
+- 集成后全量：312 passed（基线 281 + 新增 31）+ 14/17 deselected（rag 重测试）+ api_smoke 6/6 + review_agent 全绿
+- 真实 bug 修复（A 发现）：检索阶段用户隔离缺失（_to_filter 无 user_id → 全库召回跨用户污染）——已修复并加回归测试
+- 待 key/环境：corpus-A 2 张 0 字节/审查拒绝；Qwen3-VL-Embedding 图片塔待开通（现 caption 路径 + 缓存）；NER LLM 兜底默认关

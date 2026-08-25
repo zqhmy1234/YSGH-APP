@@ -412,6 +412,16 @@ def _process_photo(db: Session, content: Content) -> None:
                     content.place = place
             except Exception as exc:  # noqa: BLE001 —— 逆地理失败不影响照片浏览
                 logger.warning("逆地理失败 content=%s: %s", content.id, exc)
+
+        # 4. 刷新 Qdrant payload（集成备注：photo 首入库时 place/ci_tags 此刻才就绪，
+        #    用轻量 set_payload 补全，避免重新编码 embedding）
+        try:
+            from app.services.pipeline_ext.payload import build_payload
+            from app.services.vector_store import get_store
+
+            get_store().update_payload(str(content.id), build_payload(content))
+        except Exception as exc:  # noqa: BLE001 —— payload 刷新失败不影响浏览
+            logger.warning("payload 刷新失败 content=%s: %s", content.id, exc)
     finally:
         if tmp_file is not None:
             try:

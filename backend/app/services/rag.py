@@ -518,6 +518,16 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         ]
         hits = [c["hit"] for c in rerank(rewritten, cands, min_score=settings.rerank_min_score)][: q.limit]
 
+    # 4.6 规则级敏感过滤（B5b-1 🟢：摘要/搜索规则级，不过模型；Wave1 AgentC 转交）
+    #     命中 reject 类硬规则词的结果直接排除（转述用户内容的最小兜底）。
+    if hits:
+        try:
+            from app.services.external.sensitive_words import filter_sensitive_rule
+
+            hits = [h for h in hits if not (h.text and filter_sensitive_rule(h.text))]
+        except Exception:  # noqa: BLE001 —— 敏感过滤失败不阻断搜索
+            logger.warning("规则级敏感过滤异常，跳过")
+
     return SearchResult(
         query=q.q,
         rewritten_query=rewritten if rewritten != q.q else None,
@@ -585,6 +595,16 @@ def _search_by_image_impl(
 
     hits = _assemble_hits(raw_hits, q.limit, db, user_id)
     latency_ms = int((time.perf_counter() - start) * 1000)
+
+    # 规则级敏感过滤（B5b-1 🟢，与文本搜索同款；Wave1 AgentC 转交）
+    if hits:
+        try:
+            from app.services.external.sensitive_words import filter_sensitive_rule
+
+            hits = [h for h in hits if not (h.text and filter_sensitive_rule(h.text))]
+        except Exception:  # noqa: BLE001
+            logger.warning("规则级敏感过滤异常，跳过")
+
     return SearchResult(
         query=q.q,
         rewritten_query=caption or None,

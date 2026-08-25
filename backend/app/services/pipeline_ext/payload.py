@@ -61,3 +61,19 @@ def extend_payload(content: Content, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
     return payload
+
+
+def build_payload(content: Content) -> dict[str, Any]:
+    """构造完整 Qdrant payload（集成用：入库与重处理共用）
+
+    taken_at 转 epoch 秒（与 _to_filter Range 数值过滤一致）；
+    place/tags 由 extend_payload 按 content 当前状态补全。
+    """
+    taken_ts = int(content.taken_at.timestamp()) if content.taken_at else None
+    base = {
+        "content_type": content.content_type,
+        "content_class": content.content_class,
+        "taken_at": taken_ts,
+        "user_id": str(content.user_id),
+    }
+    return extend_payload(content, base)

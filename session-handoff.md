@@ -117,3 +117,11 @@ init.ps1：通过
 3. 全仓门禁的搜索/分类/数据库基线不属于当前用户范围；继续使用上文 ASR 范围门禁，不要声称全仓全绿
 4. 后续修改仍先跑音频范围门禁，再更新现有 PR
 5. 多样本验收不是本轮快速跑通条件；后续正式校准再收集 20-50 段标注录音评估 WER 与情绪准确率
+
+## Wave 1 集成完成（2026-08-26 03:20）——下一步 Wave 2
+
+- develop HEAD：23b55f4（merge A+C）+ 待提交集成 commit
+- Wave 1 完成：B2 搜索域（FIX-1 content_type 归一/payload place·tags/事件归因/PG 兜底/caption 缓存/P95 2013ms）+ B5b 护栏域（FIX-4 画像敏感接线/事件级敏感分类器/违规回流/检测器抽象）+ 集成接线（router 注册/photo payload 后补/搜索规则级敏感过滤）
+- 基线：312 passed + api_smoke 6/6 + review_agent 全绿
+- 下一步：Wave 2（Agent D B3 云侧 / Agent E B3 端侧+UI / Agent F M1 补遗），任务卡 docs/parallel-dev/04/05/06；共享文件规则不变（pipeline.py 钩子/llm_ops 只读）
+- 注意：worktree 开发需补本地 gitignore 资产（.env/models/测试照片，见 lessons.md 两 Agent 踩坑记录）

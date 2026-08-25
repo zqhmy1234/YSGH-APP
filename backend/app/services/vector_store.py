@@ -101,6 +101,25 @@ class VectorStore:
             points=[models.PointStruct(id=pid, vector=merged_vectors, payload=merged_payload)],
         )
 
+    def update_payload(
+        self,
+        content_id: str,
+        payload: dict,
+        collection: str | None = None,
+    ) -> None:
+        """轻量更新 payload（不触碰向量；2026-08-26 集成）
+
+        用途：photo 首入库时 place/ci_tags 在索引后补全（pipeline.py 逆地理/CI
+        打标之后刷新一次），避免重新编码 embedding。点不存在时 Qdrant 静默忽略。
+        """
+        col = collection or COLLECTION
+        self.ensure_collection(col)
+        self.client.set_payload(
+            collection_name=col,
+            payload=payload,
+            points=[point_id_for(content_id)],
+        )
+
     def upsert_content(
         self,
         content_id: str,
