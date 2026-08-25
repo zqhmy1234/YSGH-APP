@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-25 19:57 · commit a11ecc8 · ts=1787684235
+- **错误**：review_agent tests 超时(timeout)导致 commit gate 失败
+- **根因**：git worktree 是全新检出：gitignore 的 backend/.env（DATABASE_URL）、models/setfit-classifier（2.2GB）、.cowork-temp/test_photos 均未同步，pytest 连不上 PG/加载不了 SetFit/api_smoke 缺照片 → 全量测试卡死/失败
+- **修复**：worktree 开发前补齐本地 gitignore 环境：复制 backend/.env + junction models/setfit-classifier + 拷贝 .cowork-temp/test_photos；测试跑 MOCK_EXTERNAL_AI=true STORAGE_BACKEND=fake
+- **相关文件**：scripts/review_agent.py
+- **教训**：git worktree 不携带 gitignore 文件：pre-commit 全量门禁前先补齐 .env/模型/测试照片等本地资产
+
+---
+
 ### 2026-08-25 19:20 · commit 80f17aa · ts=1787682027
 - **错误**：pre-commit hook 被本地环境卡住（Redis/Qdrant 容器未启动、.env STORAGE_BACKEND=fs）
 - **根因**：环境依赖未文档化 + review_agent 无条件跑全量；修复：test_agent 端口自检 deselect + 容器信息补进 harness

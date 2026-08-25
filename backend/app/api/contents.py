@@ -11,6 +11,7 @@
 """
 import io as _io
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,13 +24,26 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.errors import ApiError
 from app.core.queue import enqueue_high, enqueue_low
-from app.db.models import Content, User
+from app.db.models import Content, ProfileSensitive, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse, Page
-from app.schemas.content import ContentCreate, ContentOut, ContentUploadResult, CosPresign
+from app.schemas.content import (
+    ContentCreate,
+    ContentOut,
+    ContentUploadResult,
+    CosPresign,
+    ProfileSensitiveCreate,
+    ProfileSensitiveOut,
+)
 from app.services.pipeline import process_content
 
+logger = logging.getLogger("yishu.contents")
+
 router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
+
+# 画像级敏感对话式增删查（B1-6 / B5b FIX-4）：独立 router（prefix /api/v1/profile），
+# 需集成 Agent 在 main.py 注册：app.include_router(profile_sensitive_router)。
+profile_sensitive_router = APIRouter(prefix="/api/v1/profile", tags=["profile-sensitive"])
 
 # 客户端第一波照片中转上传限制（B-BE-1）
 MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB
@@ -141,6 +155,7 @@ def upload_photo(
     if check_text:
         verdict = moderate(check_text)
         if verdict.get("action") == "reject":
+            _reflow_violation(db, verdict)
             raise ApiError("CONTENT_003", f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
 
     # 5.1 EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）
@@ -219,6 +234,7 @@ def create_content(
     if check_text.strip():
         verdict = moderate(check_text)
         if verdict.get("action") == "reject":
+            _reflow_violation(db, verdict)
             raise ApiError("CONTENT_003", f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
         if verdict.get("action") == "mask" and verdict.get("masked_text"):
             req.text = verdict["masked_text"]
@@ -347,6 +363,80 @@ def list_contents(
             has_more=has_more,
         )
     )
+
+
+def _reflow_violation(db: Session, verdict: dict) -> None:
+    """违规词回流（B5b）：moderate 命中（reject）→ 命中词写 SensitiveWord(level=3)
+    自动入规则表（幂等；失败仅记录，不阻断用户请求）"""
+    try:
+        from app.services.llm_ops.guard import reflow_violation_words
+
+        reflow_violation_words(db, verdict.get("matched") or [])
+    except Exception:  # noqa: BLE001
+        logger.warning("违规词回流失败（不阻断请求）", exc_info=True)
+
+
+def _profile_sensitive_out(row: ProfileSensitive) -> ProfileSensitiveOut:
+    return ProfileSensitiveOut(
+        id=row.id,
+        topic=row.topic,
+        disposition=row.disposition,
+        evidence=row.evidence or [],
+        locked=row.locked,
+        added_at=row.added_at,
+        updated_at=row.updated_at,
+    )
+
+
+@profile_sensitive_router.post("/sensitive", response_model=ApiResponse[ProfileSensitiveOut])
+def profile_sensitive_add(
+    req: ProfileSensitiveCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """画像级敏感增/改（B1-6 对话式："别跟我提 X" → 记录话题+处置；幂等 upsert）"""
+    from app.services.echo import upsert_profile_sensitive
+
+    try:
+        row = upsert_profile_sensitive(
+            db, user.id, req.topic, req.disposition, req.evidence, req.locked
+        )
+    except ValueError as exc:
+        raise ApiError("PROFILE_SENSITIVE_001", str(exc), http=422) from exc
+    return ApiResponse(data=_profile_sensitive_out(row))
+
+
+@profile_sensitive_router.delete("/sensitive", response_model=ApiResponse)
+def profile_sensitive_delete(
+    topic: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """画像级敏感删（B1-6）：DELETE /api/v1/profile/sensitive?topic=xxx"""
+    from app.services.echo import delete_profile_sensitive
+
+    if not topic.strip():
+        raise ApiError("PROFILE_SENSITIVE_002", "topic 不能为空", http=422)
+    deleted = delete_profile_sensitive(db, user.id, topic.strip())
+    if not deleted:
+        raise ApiError("PROFILE_SENSITIVE_003", f"话题不存在：{topic}", http=404)
+    return ApiResponse(data={"deleted": True, "topic": topic.strip()})
+
+
+@profile_sensitive_router.get("/sensitive", response_model=ApiResponse[list[ProfileSensitiveOut]])
+def profile_sensitive_list(
+    disposition: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """画像级敏感查（B1-6）：列出全部话题（可按处置级别过滤），按更新时间倒序"""
+    from app.services.echo import list_profile_sensitive
+
+    try:
+        rows = list_profile_sensitive(db, user.id, disposition)
+    except ValueError as exc:
+        raise ApiError("PROFILE_SENSITIVE_001", str(exc), http=422) from exc
+    return ApiResponse(data=[_profile_sensitive_out(r) for r in rows])
 
 
 def _to_out(c: Content) -> ContentOut:

@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from app.db.models import Content, EchoHistory, User
+from app.db.models import Content, EchoHistory, ProfileSensitive, User
 from app.db.session import SessionLocal
 from app.services import echo as echo_svc
 from app.services.echo import dismiss_echo, get_today_echo
@@ -34,6 +34,7 @@ def db_user():
     yield db, user
     db.execute(sa_delete(EchoHistory).where(EchoHistory.user_id == user.id))
     db.execute(sa_delete(Content).where(Content.user_id == user.id))
+    db.execute(sa_delete(ProfileSensitive).where(ProfileSensitive.user_id == user.id))
     db.delete(user)
     db.commit()
     db.close()
@@ -173,6 +174,99 @@ def test_echo_llm_check_blocks_unmarked_sensitive(db_user):
     _last_year_content(db, user.id, "支持法轮功的言论", sensitive="正常")
     result = get_today_echo(db, user.id)
     assert result is None
+
+
+def _profile_row(db, user_id: str, topic: str, disposition: str) -> ProfileSensitive:
+    row = ProfileSensitive(user_id=user_id, topic=topic, disposition=disposition)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_echo_skips_profile_forbid(db_user):
+    """画像 L1 校验（B5b FIX-4）：profile_sensitive forbid 命中 → 跳过不重提"""
+    db, user = db_user
+    _profile_row(db, user.id, "前女友", "forbid")
+    _last_year_content(db, user.id, "那天在前女友楼下等她")
+    assert get_today_echo(db, user.id) is None
+
+
+@pytest.mark.parametrize("disposition", ["caution", "review"])
+def test_echo_skips_profile_caution_review(db_user, disposition):
+    """画像 L1 校验：caution/review 同样跳过不重提（产品口径）"""
+    db, user = db_user
+    _profile_row(db, user.id, "爸爸", disposition)
+    _last_year_content(db, user.id, "爸爸带我去看海")
+    assert get_today_echo(db, user.id) is None
+
+
+def test_echo_profile_allow_passes(db_user):
+    """画像 L1 校验：allow/mention 放行（不阻断回响）"""
+    db, user = db_user
+    _profile_row(db, user.id, "前女友", "allow")
+    c = _last_year_content(db, user.id, "那天在前女友楼下等她")
+    result = get_today_echo(db, user.id)
+    assert result is not None and result["content_id"] == c.id
+
+
+def test_profile_sensitive_crud(db_user):
+    """画像敏感对话式增删查（B1-6）：upsert → 更新 → 查 → 删 → 幂等"""
+    from app.services.echo import (
+        delete_profile_sensitive,
+        list_profile_sensitive,
+        upsert_profile_sensitive,
+    )
+
+    db, user = db_user
+    row = upsert_profile_sensitive(db, user.id, "前女友", "forbid", ["用户原话"], locked=True)
+    assert row.disposition == "forbid" and row.locked is True
+    row2 = upsert_profile_sensitive(db, user.id, "前女友", "caution")
+    assert row2.id == row.id and row2.disposition == "caution"  # 同话题更新
+    rows = list_profile_sensitive(db, user.id)
+    assert len(rows) == 1 and rows[0].topic == "前女友"
+    assert [r.topic for r in list_profile_sensitive(db, user.id, "forbid")] == []
+    assert [r.topic for r in list_profile_sensitive(db, user.id, "caution")] == ["前女友"]
+    assert delete_profile_sensitive(db, user.id, "前女友") is True
+    assert delete_profile_sensitive(db, user.id, "前女友") is False
+    assert list_profile_sensitive(db, user.id) == []
+
+
+def test_profile_sensitive_api_smoke(db_user):
+    """API 冒烟（B1-6）：POST/DELETE/GET /api/v1/profile/sensitive（隔离 app 挂载 router）"""
+    from app.api import deps
+    from app.api.contents import profile_sensitive_router
+    from app.core.errors import install_error_handlers
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(profile_sensitive_router)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    client = TestClient(app)
+    try:
+        r = client.post(
+            "/api/v1/profile/sensitive",
+            json={"topic": "前女友", "disposition": "forbid", "locked": True},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["topic"] == "前女友"
+        r = client.get("/api/v1/profile/sensitive")
+        assert r.status_code == 200 and len(r.json()["data"]) == 1
+        r = client.get("/api/v1/profile/sensitive", params={"disposition": "allow"})
+        assert r.json()["data"] == []
+        r = client.delete("/api/v1/profile/sensitive", params={"topic": "前女友"})
+        assert r.status_code == 200 and r.json()["data"]["deleted"] is True
+        r = client.delete("/api/v1/profile/sensitive", params={"topic": "前女友"})
+        assert r.status_code == 404
+        r = client.post(
+            "/api/v1/profile/sensitive",
+            json={"topic": "bad", "disposition": "ban"},
+        )
+        assert r.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_echo_api_smoke(db_user):
