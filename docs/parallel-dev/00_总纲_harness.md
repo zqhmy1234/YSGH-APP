@@ -17,7 +17,7 @@
    - **`backend/app/services/pipeline_ext/` 钩子包**（payload/sensitive/profile/emotion 四模块，每域 Agent 独占一个文件）
    - **`backend/app/services/llm_ops/` 聚合包**（base.py 转发 dashscope，rerank/event_merge/annotate/guard 每域一个文件）
    - `pipeline.py` 已插入 4 个钩子调用点（extend_payload / mark_sensitive_on_ingest / annotate_on_ingest / consume_emotion）
-5. **环境依赖**：本地 PG 5432 在跑（yishu 库）；Redis 未装（涉及 RQ 的测试本地会红，CI 有）；Qdrant/Docker 未启动（test_pipeline/test_rag 等本地会红，CI 需确认 qdrant service）。**判定测试失败前先区分环境 vs 代码**：看错误是连接拒绝（WinError 10061 / redis.exceptions）还是断言逻辑。
+5. **环境依赖（2026-08-26 核实）**：本地依赖 **Docker Desktop** 提供 `yishu-redis`(6379) / `yishu-qdrant`(6333-6334) 容器（未启动时 test_queue/test_pipeline 等红；test_agent 已做端口自检 deselect）；PG 5432（yishu 库，迁移已到 head）；本地 .env 的 STORAGE_BACKEND=fs 会被 test_agent 覆盖为 fake。**判定测试失败前先区分环境 vs 代码**：看错误是连接拒绝（WinError 10061 / redis.exceptions）还是断言逻辑。
 
 ## 2. 并行开发模式（多窗口互不干扰）
 
