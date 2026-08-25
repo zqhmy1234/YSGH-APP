@@ -20,7 +20,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from .generate_test_photos import generate
-from .pipeline import AGG_CONFIG, aggregate, incremental_aggregate, preprocess
+from .pipeline import (
+    AGG_CONFIG,
+    RawPhoto,
+    aggregate,
+    incremental_aggregate,
+    l3_candidates,
+    preprocess,
+)
 
 
 def main() -> None:
@@ -121,6 +128,52 @@ def main() -> None:
         str(AGG_CONFIG["l0"]),
     )
 
+    # --- 场景 16：L3 7 天窗（B3-2：同标签 7 天内 ≥3 次（跨天）才成流）---
+    from datetime import datetime, timedelta
+    from datetime import timezone as _tz
+
+    _base16 = datetime(2026, 7, 1, 9, 0, tzinfo=_tz.utc)
+    _within = [RawPhoto(id=f"w{i}", ts=_base16 + timedelta(days=i), tags=["研途"]) for i in range(3)]
+    _spread = [RawPhoto(id=f"s{i}", ts=_base16 + timedelta(days=i * 10), tags=["散记"]) for i in range(3)]
+    _l3_tags = {c["tag"] for c in l3_candidates(_within + _spread)}
+    _check(
+        failures, "场景16: L3 7 天窗成流（7 天内 3 次成流 / 跨 30 天不成流）",
+        "研途" in _l3_tags and "散记" not in _l3_tags, f"候选标签={sorted(_l3_tags)}",
+    )
+
+    # --- 场景 17：GPS 单点众数纠正（B3-3：众数拉回，不产生新簇）---
+    _t17 = datetime(2026, 7, 10, 12, 0, tzinfo=_tz.utc)
+    _gz = [
+        RawPhoto(id=f"g{i}", ts=_t17 + timedelta(minutes=i * 2), lat=30.25, lng=120.16)
+        for i in range(6)
+    ]
+    _gz.append(RawPhoto(id="g-drift", ts=_t17 + timedelta(seconds=10), lat=31.9, lng=122.1))
+    _gpts = preprocess(_gz)
+    _gdrift = next(p for p in _gpts if p.id == "g-drift")
+    _check(
+        failures, "场景17: GPS 单点众数拉回（corrected，进事件簇）",
+        _gdrift.gps_state == "corrected" and _gdrift.lat == 30.25,
+        f"state={_gdrift.gps_state} lat={_gdrift.lat}",
+    )
+
+    # --- 场景 18：增量"先匹配后分裂"（B3-6：邻近并入现有簇 / 远处超限才分裂）---
+    _t18 = datetime(2026, 7, 20, 12, 0, tzinfo=_tz.utc)
+    _base18 = [
+        RawPhoto(id=f"b{i}", ts=_t18 + timedelta(minutes=i * 10), lat=30.25, lng=120.16)
+        for i in range(3)
+    ]
+    _r18a = aggregate(_base18)
+    _r18b = incremental_aggregate(
+        _r18a,
+        [RawPhoto(id="near", ts=_t18 + timedelta(minutes=50), lat=30.2501, lng=120.1601)],
+    )
+    _matched = sum(1 for cl in _r18b.l0_clusters if any(p.id == "near" for p in cl))
+    _check(
+        failures, "场景18: 增量先匹配（邻近新照片并入旧簇，不分裂）",
+        len(_r18b.l0_clusters) == 1 and _matched == 1,
+        f"簇数={len(_r18b.l0_clusters)}",
+    )
+
     # --- 性能（B3-6 端侧预算：500 张 <2s）---
     start = time.perf_counter()
     aggregate(photos)
@@ -137,7 +190,7 @@ def main() -> None:
         for f in failures:
             print("  -", f)
         raise SystemExit(1)
-    print("✅ 全部验证通过（15 项场景）")
+    print("✅ 全部验证通过（18 项场景）")
 
 
 def validate_real_data(failures: list[str]) -> None:

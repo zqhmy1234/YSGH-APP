@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 04:52 · commit ab11507 · ts=1787691132
+- **错误**：worktree 环境下 review_agent 门禁 tests 失败：缺 dashscope/webrtcvad/setfit/cos-python-sdk/minio，且 backend/models/ 下模型权重未随 worktree 复制导致 classifier 测试抛 huggingface_hub.HFValidationError
+- **根因**：并行开发 worktree 只复制了代码与 backend/.env，gitignored 的大体积模型权重（setfit-classifier/bge-reranker）与 requirements.txt 中非核心依赖未随工作树到位；SetFitModel.from_pretrained 对不存在本地目录的 Windows 绝对路径走 hub repo_id 校验而报错
+- **修复**：从主仓库复制 backend/models/{setfit-classifier,bge-reranker-base,bge-reranker-v2-m3} 到 worktree；pip install dashscope webrtcvad-wheels setfit cos-python-sdk-v5 minio
+- **相关文件**：backend/models/、scripts/review_agent.py、docs/lessons.md
+- **教训**：新建 git worktree 后先补齐模型权重与 requirements.txt 全依赖再跑提交门禁，避免预存环境失败阻塞 commit
+
+---
+
 ### 2026-08-25 19:58 · commit 1f96b1f · ts=1787684290（Agent A 登记）
 - **错误**：review_agent 门禁失败：test_correction 报 HFValidationError（setfit 模型路径被当 HF repo id）+ api_smoke photo-journey/timeline-structure 失败（缺测试照片）
 - **根因**：git worktree 检出不含 gitignore 的本地运行资产：backend/.env（PG 凭据）、backend/models/（setfit/bge-reranker 已下载模型）、.cowork-temp/test_photos（api_smoke 测试照片）——门禁在 worktree 内跑全量测试时模型缺失走 HF hub 兜底报错、照片缺失致 smoke 空转
