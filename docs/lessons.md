@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-25 23:04 · commit ae801a7 · ts=1787695480
+- **错误**：集成 lint 拦截：event_aggregation/pipeline.py zip() 缺 strict= 参数（ruff B905）
+- **根因**：Agent D 提交门禁为旧版 ruff（无 B905 规则）或旧门禁漏检；集成 Agent 在最新 ruff 下全量 lint 暴露——并行 worktree 的 ruff 版本与主仓漂移
+- **修复**：zip(seq, seq[1:], strict=False)（重叠对遍历，长度不同 strict=True 会误报）
+- **相关文件**：backend/app/services/event_aggregation/pipeline.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-26 04:52 · commit ab11507 · ts=1787691132（Agent D 登记）
 - **错误**：worktree 环境下 review_agent 门禁 tests 失败：缺 dashscope/webrtcvad/setfit/cos-python-sdk/minio，且 backend/models/ 下模型权重未随 worktree 复制导致 classifier 测试抛 huggingface_hub.HFValidationError
 - **根因**：并行开发 worktree 只复制了代码与 backend/.env，gitignored 的大体积模型权重（setfit-classifier/bge-reranker）与 requirements.txt 中非核心依赖未随工作树到位；SetFitModel.from_pretrained 对不存在本地目录的 Windows 绝对路径走 hub repo_id 校验而报错

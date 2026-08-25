@@ -45,7 +45,9 @@ L3_SILENT_DAYS = 90      # 静默 90 天无活动 → 归档
 BURST_GAP_SEC = 5.0
 
 # L0 参数（B3-2 已收敛）
-L0_EPS_T_SEC = 3600.0    # 60min 默认；30min 为保守模式开关
+L0_EPS_T_SEC = 3600.0    # 60min 默认
+L0_EPS_T_SEC_CONSERVATIVE = 1800.0  # 30min 保守模式（对齐端侧 agg_config.uts）
+CONSERVATIVE_MODE = False           # 产品验收口径 L0 可调参数（与端侧 CONSERVATIVE_MODE 对齐）
 L0_EPS_S_M = 500.0
 L0_MIN_PTS = 3
 
@@ -54,7 +56,12 @@ NIGHT_HOUR, NIGHT_MIN = 23, 30
 
 # 统一参数配置（AGG-016 端云阈值一致性：端侧/云侧从同一配置源取参）
 AGG_CONFIG = {
-    "l0": {"eps_t_sec": L0_EPS_T_SEC, "eps_s_m": L0_EPS_S_M, "min_pts": L0_MIN_PTS},
+    "l0": {
+        "eps_t_sec": L0_EPS_T_SEC,
+        "eps_s_m": L0_EPS_S_M,
+        "min_pts": L0_MIN_PTS,
+        "conservative_mode": CONSERVATIVE_MODE,  # 2026-08-26 集成接线：对齐端侧 agg_config.uts（AGG-016 双跑覆盖）
+    },
     "burst_gap_sec": BURST_GAP_SEC,
     "night": {"hour": NIGHT_HOUR, "minute": NIGHT_MIN},
     "l2_min_days": 2,
@@ -165,8 +172,19 @@ def preprocess(photos: list[RawPhoto]) -> list[Photo]:
     return corrected
 
 
-def aggregate(photos: list[RawPhoto], eps_t_sec: float = L0_EPS_T_SEC) -> AggregateResult:
-    """完整聚合管线（全量：新用户冷启动 / 手动全量重跑）"""
+def l0_eps_t_sec() -> float:
+    """L0 时间窗取值：保守模式 1800s / 默认 3600s（对齐端侧 agg_config.uts l0EpsTsec()）"""
+    return L0_EPS_T_SEC_CONSERVATIVE if AGG_CONFIG["l0"].get("conservative_mode") else L0_EPS_T_SEC
+
+
+def aggregate(photos: list[RawPhoto], eps_t_sec: float | None = None) -> AggregateResult:
+    """完整聚合管线（全量：新用户冷启动 / 手动全量重跑）
+
+    eps_t_sec 默认按 AGG_CONFIG["l0"]["conservative_mode"] 取（3600/1800），
+    显式传参（测试/双跑）不覆盖。
+    """
+    if eps_t_sec is None:
+        eps_t_sec = l0_eps_t_sec()
     pts = preprocess(photos)
 
     # L0 瞬间层
@@ -202,7 +220,7 @@ def aggregate(photos: list[RawPhoto], eps_t_sec: float = L0_EPS_T_SEC) -> Aggreg
 def incremental_aggregate(
     previous: AggregateResult | None,
     new_photos: list[RawPhoto],
-    eps_t_sec: float = L0_EPS_T_SEC,
+    eps_t_sec: float | None = None,
 ) -> AggregateResult:
     """增量聚合（B3-6：先匹配后分裂；AGG-015 已确认结构不漂移）
 
@@ -449,7 +467,7 @@ def _place_continuous_groups(photos: list[Photo]) -> list[list[Photo]]:
     seq = sorted(photos, key=lambda p: p.ts)
     groups: list[list[Photo]] = []
     cur: list[Photo] = []
-    for a, b in zip(seq, seq[1:]):
+    for a, b in zip(seq, seq[1:], strict=False):
         cur.append(a)
         dt = (b.ts - a.ts).total_seconds()
         if 0 < dt <= L2_MAX_GAP_HOURS * 3600 and _gps_reliable(a) and _gps_reliable(b):
