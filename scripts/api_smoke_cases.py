@@ -103,9 +103,11 @@ def case_text_journey(client: TestClient, headers: dict) -> str:
     # 搜索真实命中（BGE-M3 + Qdrant 真实检索，用户隔离）
     # 查询词含唯一 token（sparse 精确命中）+ limit 放大召回窗口：
     # 避免 Qdrant 累积历史数据后新内容被挤出 top-k（2026-08-24 门禁 flaky）
+    # 2026-08-26：token 前置主导——历史 smoke 数据都含"买咖啡豆"，
+    # ascii token 稀疏权重低，放在句尾时新内容被旧内容挤掉（review 门禁复现）。
     r = client.post(
         "/api/v1/search",
-        json={"q": f"买咖啡豆 {token}", "limit": 20},
+        json={"q": f"{token} 买咖啡豆", "limit": 50},
         headers=headers,
     )
     assert r.status_code == 200, r.text

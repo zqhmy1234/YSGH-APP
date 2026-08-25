@@ -278,6 +278,11 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
 
     # 1. Query 改写 → 过滤条件（返回 NER 派生过滤，供空结果回退）
     rewritten, filters, ner_filters = _rewrite_query(q)
+    # 用户隔离（2026-08-26 修复）：检索阶段即按 user_id 过滤（配合 vector_store._to_filter
+    # 的 user_id 分支），此前仅溯源回填隔离——跨用户内容挤占召回窗口，
+    # 数据多时新用户内容被挤出 top-k（api_smoke 门禁暴露）。
+    if user_id:
+        filters["user_id"] = str(user_id)
 
     # 2. 路由（B2：路由决定检索范围——image 意图只搜图片 caption，文字搜图）
     intent = _route_query(rewritten)
@@ -424,7 +429,10 @@ def _search_by_image_impl(
         caption = image_caption(image_path)
         vec = encode_dense([caption])[0]
         store = get_store()
-        raw_hits = store.search_image(vec, filters={"content_types": ["image"]}, limit=50, collection=collection)
+        filters: dict = {"content_types": ["image"]}
+        if user_id:
+            filters["user_id"] = str(user_id)
+        raw_hits = store.search_image(vec, filters=filters, limit=50, collection=collection)
     except Exception as exc:  # noqa: BLE001 —— 图片塔/向量库不可用降级
         logger.warning("以图搜图降级: %s", exc)
         degraded = True

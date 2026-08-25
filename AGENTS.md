@@ -15,6 +15,7 @@
   - `忆述光华_产品部验收标准更新转达稿.md` — 产品部确认项
   - `忆述光华_深度开发设计/01-05e` — 9 份深度设计定稿（B1 画像 / B2+02b RAG / B3 事件聚合 / B4 同步 / B5a-e 语音·护栏·纠错·后台·Windows）
 - `AGENTS.md` / `feature_list.json` / `progress.md` / `init.sh` / `session-handoff.md` — harness 文件
+- `docs/parallel-dev/` — **并行开发总纲与任务卡（2026-08-26 起，多窗口并行开发的唯一入口）**：`00_总纲_harness.md`（新 Agent 必读：仓库现状/文件域所有权/波次/完成定义）→ 各波次任务卡 `02`-`12` → `13_集成规则与冲突回退` → `_B5a_B5d修正后待办.md`。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
 - `skills/infisical-secrets/SKILL.md` — Infisical 密钥链路 skill（所有外部 API Key 统一从这里取，2026-08-19 打通）
 - `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查；**改 client/ 代码前先读**，2026-08-24 沉淀）
 - `skills/android-media-e2e/SKILL.md` — 真机相册 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位；F1 链路真机验收流程，2026-08-24 沉淀）

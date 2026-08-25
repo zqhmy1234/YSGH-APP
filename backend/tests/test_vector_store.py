@@ -117,3 +117,18 @@ def test_upsert_merged_keeps_existing_vectors(monkeypatch):
     assert upserted["payload"]["content_type"] == "image"  # 新 payload 覆盖存量字段
     # 存量 payload 其他字段保留
     assert upserted["payload"]["old_field"] == "keep"
+
+
+def test_to_filter_user_id_isolation():
+    """用户隔离（2026-08-26 修复）：_to_filter 必须处理 user_id（召回阶段隔离）
+
+    回归：此前 _to_filter 忽略 user_id → 检索全库，跨用户内容挤占召回窗口，
+    api_smoke text-journey 门禁暴露（新用户内容被挤出 top-k）。
+    """
+    s = VectorStore()
+    f = s._to_filter({"user_id": "u-123", "content_types": ["image"]})
+    assert f is not None
+    conds = {c.key: c for c in f.must}
+    assert "user_id" in conds
+    assert conds["user_id"].match.value == "u-123"
+    assert "content_type" in conds

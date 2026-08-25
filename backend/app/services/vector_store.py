@@ -289,6 +289,14 @@ class VectorStore:
                     key="content_class",
                     match=models.MatchValue(value=value),
                 ))
+            elif key == "user_id" and value:
+                # 用户隔离（2026-08-26 修复）：检索阶段即按 user_id 过滤，
+                # 防跨用户内容挤占召回窗口（此前仅溯源回填隔离，
+                # 数据多时新用户内容被挤出 top-k，api_smoke 门禁暴露）。
+                must.append(models.FieldCondition(
+                    key="user_id",
+                    match=models.MatchValue(value=str(value)),
+                ))
         return models.Filter(must=must) if must else None
 
 

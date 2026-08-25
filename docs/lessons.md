@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-25 19:20 · commit 80f17aa · ts=1787682027
+- **错误**：pre-commit hook 被本地环境卡住（Redis/Qdrant 容器未启动、.env STORAGE_BACKEND=fs）
+- **根因**：环境依赖未文档化 + review_agent 无条件跑全量；修复：test_agent 端口自检 deselect + 容器信息补进 harness
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-25 19:20 · commit 80f17aa · ts=1787682027
+- **错误**：api_smoke text-journey 搜索未命中（review 门禁 flaky，2026-08-24 起）
+- **根因**：vector_store._to_filter 不处理 user_id → 检索阶段全库召回，跨用户内容挤占召回窗口，新用户内容被挤出 top-k；溯源回填隔离掩盖了召回污染
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-25 06:00 · commit 24b205f · ts=1787634007
 - **错误**：dashscope 403 Workspace access denied：LLM 改写/路由/图片塔全链路静默降级到规则，eval 成绩被误归因于 LLM
 - **根因**：①机器 User 环境变量残留旧格式 DASHSCOPE_API_KEY（sk-4980...）覆盖 backend/.env 的 sk-ws- 新 key（pydantic env 优先于 dotenv）；②dashscope SDK 只认 env/全局 api_key，代码从未把 settings.dashscope_api_key 同步给 SDK——双重坑导致 5:48 eval 的 LLM 改写实际未生效（except RuntimeError 静默吞掉）

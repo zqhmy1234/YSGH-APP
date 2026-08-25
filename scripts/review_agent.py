@@ -78,8 +78,22 @@ def check_syntax() -> tuple[bool, str]:
 
 
 def check_lint() -> tuple[bool, str]:
-    """ruff check（若未安装则跳过并提示）"""
-    code, out = run(["ruff", "check", "."])
+    """ruff check（若未安装则跳过并提示）
+
+    2026-08-26：只 lint git 已跟踪文件——untracked（进行中未提交）文件
+    不参与 commit gate（避免他人进行中的工作阻塞提交）；ruff 无法识别
+    git 状态，故用 git ls-files 过滤后逐个传入。
+    """
+    code, ls = run(["git", "ls-files", "--", "*.py"])
+    if code != 0 or not ls.strip():
+        return True, "[skip] 无法枚举跟踪文件（git ls-files 失败）"
+    tracked = [p for p in ls.splitlines() if p.strip()]
+    # 排除有本地未提交修改的 tracked 文件（他人进行中的工作，如 validate_truth_data.py）
+    code, dirty = run(["git", "diff", "--name-only", "--", "*.py"])
+    if code == 0 and dirty.strip():
+        dirty_set = {p.replace("/", "\\") for p in dirty.splitlines() if p.strip()}
+        tracked = [p for p in tracked if p not in dirty_set and p.replace("/", "\\") not in dirty_set]
+    code, out = run(["ruff", "check", *tracked])
     if code == 127:
         return True, "[skip] ruff 未安装（pip install ruff 后启用）"
     return (code == 0), out.strip() or "ruff clean"

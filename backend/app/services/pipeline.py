@@ -14,6 +14,7 @@ process_content(content_id)：按 content_type 分流处理，全部异步在 RQ
 from __future__ import annotations
 
 import logging
+import uuid
 from functools import lru_cache
 from pathlib import Path
 
@@ -53,17 +54,24 @@ def _index_content(db: Session, content: Content, text: str | None = None) -> No
     # 审查 CRITICAL 修复：taken_at 转 epoch 秒（int）落 payload，与 _to_filter 的
     # Range 数值过滤一致——此前存 ISO 字符串导致时间过滤在生产库静默不命中。
     taken_ts = int(content.taken_at.timestamp()) if content.taken_at else None
-    store.upsert_content(
-        content_id=str(content.id),
-        text=payload_text,
-        dense=dense,
-        sparse=sparse,
-        payload={
+    # Wave0 钩子：B2 域扩展 payload（place/tags/content_type 归一）——冻结 pipeline.py 后唯一扩展入口
+    from app.services.pipeline_ext import extend_payload
+
+    payload = extend_payload(
+        content,
+        {
             "content_type": content.content_type,
             "content_class": content.content_class,
             "taken_at": taken_ts,
             "user_id": str(content.user_id),
         },
+    )
+    store.upsert_content(
+        content_id=str(content.id),
+        text=payload_text,
+        dense=dense,
+        sparse=sparse,
+        payload=payload,
     )
 
 
@@ -82,6 +90,11 @@ def _process_text(db: Session, content: Content) -> None:
     if content.text:
         _classify_content(db, content, content.text)
         _index_content(db, content, content.text)
+        # Wave0 钩子：B5b 敏感标记 + B1 画像标注
+        from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
+
+        mark_sensitive_on_ingest(db, content)
+        annotate_on_ingest(db, content)
 
 
 def _set_audio_processing(content: Content, payload: dict) -> None:
@@ -200,6 +213,11 @@ def _process_voice(db: Session, content: Content) -> str:
             ),
         }
         _classify_content(db, content, result.text)
+        # Wave0 钩子：B1 画像标注（语音语义内容）+ B5a 情绪消费
+        from app.services.pipeline_ext import annotate_on_ingest, consume_emotion
+
+        annotate_on_ingest(db, content)
+        consume_emotion(db, content)
         try:
             _index_content(db, content, result.text)
         except Exception as exc:  # noqa: BLE001 -- 索引失败不否定已完成的真实转写
@@ -377,6 +395,12 @@ def _process_photo(db: Session, content: Content) -> None:
         except Exception as exc:  # noqa: BLE001
             logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
 
+        # Wave0 钩子：B5b 事件级敏感标记 + B1 画像标注（照片 caption/标签）
+        from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
+
+        mark_sensitive_on_ingest(db, content)
+        annotate_on_ingest(db, content)
+
         # 3. 逆地理编码（高德 GPS→地名，geohash 缓存≤30 天；失败静默）
         #    contents.place 供事件聚合/搜索地点过滤/展示用元数据。
         if content.gps_lat is not None and content.gps_lng is not None and not content.place:
@@ -402,6 +426,13 @@ def process_content(content_id: str) -> dict:
     返回：{"content_id", "status", "processed": [步骤], "error": 可选}
     """
     from app.services.external.asr import AsrError
+
+    # 边界校验：content_id 必须是合法 uuid（worker 队列可能收到脏 id），
+    # 否则后续 select/db.get 会抛 PG InvalidTextRepresentation（PR#1 回归修复）
+    try:
+        uuid.UUID(content_id)
+    except (ValueError, TypeError):
+        return {"content_id": content_id, "status": "not-found"}
 
     db: Session = SessionLocal()
     content: Content | None = None

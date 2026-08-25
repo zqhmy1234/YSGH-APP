@@ -157,10 +157,12 @@ CREATE TABLE events (                          -- 四层模型 L0-L3
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
     deleted_at     timestamptz,
-    deleted_by     uuid
+    deleted_by     uuid,
+    client_event_id varchar(64)           -- 端侧事件幂等键（S-SY-1，同步迁移 a1b2c3d4e5f6）
 );
 CREATE INDEX idx_events_user_level ON events(user_id, level);
 CREATE INDEX idx_events_user_start ON events(user_id, start_time);
+CREATE UNIQUE INDEX uq_events_user_client_event ON events(user_id, client_event_id) WHERE client_event_id IS NOT NULL;
 
 CREATE TABLE event_items (                     -- photo_event 泛化（分歧 A）；层级 JOIN events.level（v3 F2）
     content_id   uuid NOT NULL REFERENCES contents(id),
@@ -219,13 +221,16 @@ CREATE TABLE profile_dimension_pending (       -- B1 维度扩展队列：枚举
     CONSTRAINT uq_pdp_user_dim_raw UNIQUE (user_id, dimension, raw_answer)
 );
 
-CREATE TABLE profile_sensitive (               -- 画像级敏感，永不过期
+CREATE TABLE profile_sensitive (               -- 画像级敏感，永不过期（v1.1 修订：话题×处置 5 级）
     id          bigserial PRIMARY KEY,
     user_id     uuid NOT NULL REFERENCES users(id),
     topic       text NOT NULL,
     topic_hash  text,                          -- HMAC 盲索引（v3 D2：B1-6 加密检索预留）
+    disposition text NOT NULL DEFAULT 'forbid',-- allow/mention/caution/review/forbid（5 级处置）
+    evidence    jsonb NOT NULL DEFAULT '[]',
     locked      bool NOT NULL DEFAULT false,   -- 用户显式标记
     added_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (user_id, topic)
 );
 
@@ -374,10 +379,41 @@ CREATE TABLE wechat_messages (
 
 -- ========== 10. 基础设施域（4 表） ==========
 
+CREATE TABLE upload_tasks (                   -- S5-03 分片上传任务（CI 快照补同步，对齐 models.UploadTask）
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        uuid NOT NULL,
+    client_upload_id text NOT NULL,           -- 客户端幂等键（重传复用）
+    file_name      text NOT NULL,
+    file_size      bigint NOT NULL,
+    chunk_size     bigint NOT NULL,
+    chunk_count    bigint NOT NULL,
+    file_key       text NOT NULL,
+    storage        text NOT NULL DEFAULT 'fake',
+    status         text NOT NULL DEFAULT 'pending',  -- pending/uploading/completed/failed
+    completed_at   timestamptz,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (user_id, client_upload_id)
+);
+CREATE INDEX idx_upload_tasks_user ON upload_tasks(user_id);
+
+CREATE TABLE upload_chunks (                  -- S5-03 分片状态（断电续传依据，对齐 models.UploadChunk）
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_id    uuid NOT NULL,
+    chunk_index  bigint NOT NULL,
+    chunk_hash   text NOT NULL,
+    size         bigint NOT NULL,
+    status       text NOT NULL DEFAULT 'uploaded',
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (upload_id, chunk_index)
+);
+CREATE INDEX idx_upload_chunks_upload ON upload_chunks(upload_id);
+
 CREATE TABLE geo_cache (                       -- B3-3 逆编码缓存（高德合规：≤30 天）
     geohash     text PRIMARY KEY,              -- 精度 6（≈1.2km）
     place       text,
     city        text,
+    province    text,                          -- 对齐迁移 4d00dfec7b46（province 列）
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 

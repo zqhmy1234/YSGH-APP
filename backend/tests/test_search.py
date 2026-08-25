@@ -33,11 +33,32 @@ def test_search_requires_auth(client):
 
 
 def test_search_basic(client, auth_headers):
-    """描述性搜索主链路（API-003）"""
-    r = client.post("/api/v1/search", json={"q": "杭州旅行"}, headers=auth_headers)
+    """描述性搜索主链路（API-003）——用户隔离：先给本用户造一条内容再搜索
+
+    2026-08-26：检索阶段按 user_id 过滤（召回隔离修复），
+    新用户无数据时 hits 为空是正确行为；测试需先造数。
+    """
+    from app.services.pipeline import process_content
+
+    text = f"杭州旅行记录-{uuid.uuid4().hex[:6]}-西湖边散步"
+    r = client.post(
+        "/api/v1/contents",
+        json={"content_type": "text", "text": text, "source": "app"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    cid = r.json()["data"]["id"]
+    res = process_content(cid)
+    assert res["status"] == "done", res
+
+    r = client.post(
+        "/api/v1/search",
+        json={"q": "杭州旅行", "limit": 20},
+        headers=auth_headers,
+    )
     assert r.status_code == 200
     data = r.json()["data"]
-    assert data["hits"]
+    assert data["hits"], f"搜索未命中本用户内容: {data}"
     assert data["total"] > 0
     assert data["intent"] in ("text", "image", "mixed")
 
