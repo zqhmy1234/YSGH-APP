@@ -12,6 +12,9 @@ ignore = [
     "BLE001", # 顶层捕获 Exception：路由/脚本入口统一处理，内部已有错误码封装
 ]
 
+[lint.isort]
+known-first-party = ["scripts"]
+
 # 时区规则仅 backend 严格（API 必须 tz-aware）；research 原型用 naive datetime 模拟测试数据
 [lint.per-file-ignores]
 "research/**" = ["DTZ001", "DTZ901"]

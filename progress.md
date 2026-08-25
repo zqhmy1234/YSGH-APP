@@ -247,7 +247,7 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 | 功能 | 状态 | 说明 |
 |---|---|---|
 | F2 文字碎片输入 | ✅ 后端 | SetFit 5 类分类（classify_batch）+ 内容入库管线 |
-| F3 语音输入 | ✅ 后端 | ASR 双通道真实转写（WER 9.69%）+ 情绪映射 + 入库管线 |
+| F3 语音输入 | ✅ 后端 | FunASR 云端真实转写 + 本地 CPU SenseVoiceSmall 声学情绪 + 多格式解码 + 入库管线 |
 | F4 分类纠错 | ✅ 后端 | 三层裁决 + 共性纠错微调流水线（≥50 触发） |
 | F5 描述性搜索 | ✅ 后端 | BGE-M3+Qdrant RRF + NER + mixed 融合 + 以图搜图 + reranker-v2-m3；RAG 门禁 hit_rate@3=0.8182 / route_acc=1.0 / temporal_acc=1.0；文字搜图 hit_rate@3=1.0 |
 | F7 冷启动访谈 | ✅ 后端 | interview API + 画像扩展队列 |
@@ -291,6 +291,34 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 3. **文档台账清理**：pytest 数字统一为 215 passed（210/203/145 均为过期值）；去除 progress.md 重复标题；lessons.md 重复标题清理；feature_list/session-handoff 同步
 
 **发现并记录**：.cowork-temp/test-report.json（8-21 00:42）显示 review_agent 上次实际 passed=false（research 段 blocking），与文档"全绿"表述不符——本次已修复根因。
+## 2026-08-25 · 本地声学情绪检测完成
+
+**已完成**：
+1. **真实情绪通道**：移除过时的云端 `sensevoice-v1` WAV 降级实现，接入官方 `iic/SenseVoiceSmall-onnx` 量化模型，本地 CPU 4 线程懒加载；FunASR 云端转写成功后独立执行情绪增强，云端失败时 SenseVoice 仍可作为本地转写降级。
+2. **常见格式统一输入**：使用随依赖安装的 FFmpeg，将 M4A/MP3/AAC/WAV 等统一解码为 16kHz 单声道 float32 PCM，不再只有 WAV 能进入情绪检测。
+3. **可信置信度与落库**：从 SenseVoice 富转写第二个情绪查询位的 7 类 logits 计算情绪置信度；独立保存 `emotion_confidence/source/model/actionable`，不再把 ASR 文本置信度误存为情绪置信度；低于 0.7 只记录、不标记为可触发。
+4. **降级边界**：情绪模型失败会留下 `sensevoice_emotion:*` 审计错误，但不会抹掉已成功的云端真实转写；数字静音仍直接返回 `no_speech`，不产生情绪。
+5. **生产 mock 护栏**：生产环境即使误开全局 mock，也会返回 `MOCK_DISABLED`，不会生成或保存假转写。
+
+**真实验证**：同一条 5 秒 M4A 已分别完成 FunASR 云端转写和 SenseVoiceSmall 本地 CPU 推理；本地判定为“平静”，情绪置信度约 `0.8741`。个人 Key 仅通过临时进程环境使用，未写入工作区或持久环境。
+
+**回归**：ASR/API + 语音入库 + 内容接口定向测试 `40 passed`；相关文件 ruff、py_compile 全绿。模型缓存与兼容分词资产已登记到 `backend/models/README.md`。
+
+**提交状态**：音频范围验证与提交准备已完成；提交状态以 `git log/status` 为准，尚未 push。
+
+## 2026-08-24 · ASR 多格式与入库状态收口
+
+**已完成**：
+1. **主通道升级**：接入 Fun-ASR Flash（`fun-asr-flash-2026-06-15`）Data URI 调用，支持 AAC/AMR/FLAC/M4A/MP3/OGG/OPUS/WAV/WebM/WMA；保留 WAV 的 SenseVoice 情绪降级通道。
+2. **输入与长录音**：API 上传保留 8MB 上限；内部对象存储的长 WAV 允许进入 VAD 分段，单段最长 4 分钟；超过 8MB 的压缩音频明确要求切分或转 WAV，不再误走长录音逻辑。
+3. **状态语义修复**：正常文本为 `succeeded`；数字静音或供应商明确空文本为 `no_speech`；缺 Key、网络/限流/供应商异常为 `failed_retryable` 或 `failed_final`。失败会写入 `content.status=failed` 和审计信息，不再出现“无转写文本但 done”的假完成。
+4. **可审计与安全**：保留模型、通道、供应商 request id、音频格式、源文件 SHA-256、usage/segments/errors；生产模式不再降级为 mock 假文本；API Key 仍只从环境读取，本次未填写或落盘。
+
+**验证**：ASR 服务/API 23 项通过；语音入库管线 5 项通过；内容 API 8 项通过；相关文件 ruff + py_compile 全绿。所有供应商交互均使用 monkeypatch，**本次未配置 DASHSCOPE_API_KEY，未执行真实线上转写回归**。
+
+**待验收**：配置临时 Key 后，用真实 M4A/WAV/MP3、空白录音、限流/断网场景做线上验收；真实 WER 仍需团队提供 20-50 段标注录音校准。
+
+**提交状态**：尚未 commit、尚未 push。仓库强制全量门禁的本次报告为 15 failed / 1 error（非 ASR 基线：缺 BGE-M3/SetFit 本地模型、PG 缺 pgvector、research 旧导入入口、同步测试清理残留等），且 review_agent 的缺 pytest 判断把真实失败误标为 skip。为避免绕过门禁，本次 ASR 改动保留在独立分支，需先单独修复团队门禁或补齐其数 GB 模型环境后再提交。
 
 ## 2026-08-20 02:5x · 教训强制 Hook + 生产兜底待办开发
 

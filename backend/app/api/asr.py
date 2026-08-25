@@ -16,31 +16,26 @@ from app.schemas.asr import (
     GuardrailVerdict,
 )
 from app.schemas.common import ApiResponse
-from app.services.external.asr import transcribe
+from app.services.external.asr import (
+    AsrError,
+    temporary_suffix,
+    transcribe,
+    validate_audio_bytes,
+)
 from app.services.external.dashscope import moderate
 
 router = APIRouter(prefix="/api/v1/asr", tags=["asr"])
 # 护栏独立域（P2-06 前缀统一：guard/check 不属于 ASR 域，独立 /api/v1/guard）
 guard_router = APIRouter(prefix="/api/v1/guard", tags=["guard"])
 
-# 上传上限：长录音 VAD 分段后单段 ≤ 60s（16kHz 16bit 单声道 ≈ 2MB）
-_MAX_AUDIO_BYTES = 8 * 1024 * 1024
-
-
-def _verify_audio(data: bytes) -> bytes:
-    """大小/魔数校验（仅接受 wav/pcm；返回原数据）"""
-    if len(data) == 0:
-        raise ValueError("空音频文件")
-    if len(data) > _MAX_AUDIO_BYTES:
-        raise ValueError(f"音频超过 {_MAX_AUDIO_BYTES // 1024 // 1024}MB 上限")
-    if not (data.startswith(b"RIFF") and data[8:12] == b"WAVE"):
-        raise ValueError("仅支持 wav 格式（FunASR/SenseVoice 均要求 wav 16kHz 16bit）")
-    return data
+def _verify_audio(data: bytes, filename: str | None) -> tuple[bytes, str]:
+    """校验大小、扩展名与音频魔数，返回原数据和规范格式。"""
+    return data, validate_audio_bytes(data, filename)
 
 
 @router.post("/transcribe", response_model=ApiResponse[AsrTranscribeResponse])
 def transcribe_audio(
-    file: UploadFile = File(..., description="wav 音频（16kHz 16bit 单声道，≤8MB）"),
+    file: UploadFile = File(..., description="M4A/WAV/MP3/AAC 等音频（≤8MB）"),
     preferred: str = Query("auto", pattern="^(auto|funasr|sensevoice|mock)$"),
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -52,27 +47,61 @@ def transcribe_audio(
     情绪（B5-c）：SenseVoice 通道产出 emotion，供情绪关怀分层触发。
     """
     try:
-        data = _verify_audio(file.file.read())
-    except ValueError as exc:
-        # 审查修复(P1-08)：错误不再伪装成 HTTP 200 + code 字段，统一 4xx ApiError
-        raise ApiError("ASR_001", str(exc), http=422) from exc
+        data, audio_format = _verify_audio(file.file.read(), file.filename)
+    except AsrError as exc:
+        raise ApiError(
+            "ASR_001",
+            exc.message,
+            http=422,
+            details={"error_code": exc.code, "retryable": False},
+        ) from exc
 
-    # 临时文件落盘（双通道 SDK 均要求本地路径）
+    # 临时文件保留真实扩展名，Fun-ASR Flash 依此构造 format 与 MIME。
     tmp_path: Path | None = None
     try:
-        with NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        with NamedTemporaryFile(suffix=temporary_suffix(audio_format), delete=False) as tmp:
             tmp.write(data)
             tmp_path = Path(tmp.name)
-        result = transcribe(tmp_path, preferred=preferred)
-        verdict = moderate(result.text)
+        try:
+            result = transcribe(tmp_path, preferred=preferred)
+        except AsrError as exc:
+            validation_codes = {
+                "AUDIO_NOT_FOUND",
+                "AUDIO_TOO_LARGE",
+                "EMPTY_AUDIO",
+                "INVALID_AUDIO",
+                "UNSUPPORTED_FORMAT",
+            }
+            is_validation = exc.code in validation_codes
+            raise ApiError(
+                "ASR_001" if is_validation else "ASR_002",
+                exc.message,
+                http=422 if is_validation else 503,
+                details=exc.to_dict(),
+            ) from exc
+
+        if result.outcome == "no_speech":
+            verdict = {"pass": True, "reason": "no-speech"}
+        else:
+            verdict = moderate(result.text)
         return ApiResponse(
             data=AsrTranscribeResponse(
                 text=result.text,
+                outcome=result.outcome,  # type: ignore[arg-type]
                 channel=result.channel,  # type: ignore[arg-type]
                 emotion=result.emotion,
+                emotion_confidence=result.emotion_confidence,
+                emotion_source=result.emotion_source,
+                emotion_model=result.emotion_model,
                 confidence=result.confidence,
                 duration_ms=result.duration_ms,
                 mock=result.mock,
+                retryable=result.retryable,
+                model=result.model,
+                provider_request_id=result.provider_request_id,
+                audio_format=result.audio_format,
+                source_audio_sha256=result.source_audio_sha256,
+                errors=result.errors,
                 guardrail=GuardrailVerdict(passed=verdict["pass"], reason=verdict["reason"]),
             )
         )

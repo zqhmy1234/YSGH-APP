@@ -360,5 +360,6 @@ def _to_out(c: Content) -> ContentOut:
         emotion=c.emotion,
         tags=[],
         status=c.status,
+        audio_processing=(c.extra or {}).get("audio_processing"),
         created_at=c.created_at,
     )

@@ -1,8 +1,8 @@
-# 模型资产清单（backend/models + HF 缓存）— 2026-08-20 首版
+# 模型资产清单（backend/models + 本机模型缓存）— 2026-08-25 更新
 
 > 用途：防重复下载 / 快速判断可删性 / 新 Agent 上岗速查。
 > 维护规则：新增模型必须登记（名称/版本/下载源/大小/加载代码/可删性）；下载前先查本清单 + 本地缓存。
-> 更新：2026-08-20（清理后核对），核对人：Agent + 用户确认。
+> 更新：2026-08-25（新增 SenseVoiceSmall-ONNX），核对人：Agent。
 
 ---
 
@@ -47,11 +47,23 @@
 | 用途 | 文字碎片 5 类分类（F2）+ 纠错三层裁决第②层 |
 | 可删性 | ❌ 不可删（可重建：`backend/scripts/train_setfit.py` 种子 50 条再训） |
 
+### 5. SenseVoiceSmall-ONNX（本地 CPU 声学情绪）
+
+| 项 | 值 |
+|---|---|
+| 位置 | ModelScope 缓存 `~/.cache/modelscope/models/iic--SenseVoiceSmall-onnx/snapshots/master/` |
+| 在用版本 | `master` 量化 ONNX（`model_quant.onnx`，约 241MB） |
+| 补充资产 | 主模型仓 `iic/SenseVoiceSmall` 的 SentencePiece 文件（约 377KB，加载时自动补齐到 ONNX 缓存） |
+| 下载源 | ModelScope 官方 `iic/SenseVoiceSmall-onnx` + `iic/SenseVoiceSmall` |
+| 加载代码 | `backend/app/services/external/asr.py`（`funasr-onnx`，CPU 4 线程，懒加载） |
+| 用途 | FunASR 云端转写后的声学情绪识别；支持 M4A/MP3/AAC/WAV 等先经本地 FFmpeg 解码 |
+| 可删性 | ❌ 在用；删除后首次情绪检测会自动重新下载 |
+
 ---
 
 ## 二、可删模型（历史残留，代码零引用）
 
-### 5. grounding-dino-base（HF 缓存 1.8GB）——**建议删**
+### 6. grounding-dino-base（HF 缓存 1.8GB）——**建议删**
 
 | 项 | 值 |
 |---|---|
@@ -59,7 +71,7 @@
 | 引用 | 代码/文档零引用（历史试验：疑似早期图像定位尝试，未落地） |
 | 可删性 | 🗑️ 已删（2026-08-20，释放 1.8GB） |
 
-### 6. bert-base-uncased（HF 缓存 841MB）——**建议删**
+### 7. bert-base-uncased（HF 缓存 841MB）——**建议删**
 
 | 项 | 值 |
 |---|---|
@@ -67,7 +79,7 @@
 | 引用 | 零引用（SetFit 底座实为 bge-m3，非 bert；疑似早期实验） |
 | 可删性 | 🗑️ 已删（2026-08-20，释放 841MB） |
 
-### 7. Qwen2.5-1.5B-Instruct / GGUF（HF 缓存 0MB）——**可删（空壳）**
+### 8. Qwen2.5-1.5B-Instruct / GGUF（HF 缓存 0MB）——**可删（空壳）**
 
 | 项 | 值 |
 |---|---|
@@ -76,7 +88,7 @@
 | 引用 | 零引用（Windows 桌面端 Ollama 备选未来才需要，届时重新下载） |
 | 可删性 | 🗑️ 已删（2026-08-20，空壳目录） |
 
-### 8. bge-reranker-base（HF 缓存空壳 0MB）——**可删（空壳）**
+### 9. bge-reranker-base（HF 缓存空壳 0MB）——**可删（空壳）**
 
 | 项 | 值 |
 |---|---|

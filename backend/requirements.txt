@@ -24,6 +24,9 @@ pyjwt>=2.9
 # --- 外部 API / AI ---
 httpx>=0.27          # 仅 scripts/wecom_sandbox.py 使用（可降 dev）
 dashscope>=1.20          # 阿里云百炼（qwen/护栏）
+funasr-onnx>=0.4.2       # SenseVoiceSmall 本地 CPU 情绪识别
+modelscope>=1.20         # SenseVoiceSmall-ONNX 模型下载与缓存
+imageio-ffmpeg>=0.6      # M4A/MP3/AAC 等统一解码为 16kHz 单声道
 
 # --- 可观测（决策 #12：Sentry 云版）---
 sentry-sdk[fastapi]>=2.13
