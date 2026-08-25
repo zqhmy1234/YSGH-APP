@@ -278,12 +278,17 @@ def inspect_audio(path: str | Path, *, max_bytes: int | None = None) -> AudioInf
 
 
 def _dashscope_base_url() -> str:
-    explicit = os.getenv("DASHSCOPE_BASE_URL", "").strip()
+    explicit = (
+        os.getenv("DASHSCOPE_BASE_URL", "").strip()
+        or settings.dashscope_base_url.strip()
+    )
     if explicit:
         return explicit.rstrip("/")
     workspace_id = settings.dashscope_workspace_id.strip()
     if workspace_id:
-        return f"https://{workspace_id}.cn-beijing.maas.aliyuncs.com/api/v1"
+        return (
+            f"https://{workspace_id}.{settings.dashscope_region}.maas.aliyuncs.com/api/v1"
+        )
     return DEFAULT_DASHSCOPE_BASE_URL
 
 
@@ -433,8 +438,70 @@ def _emotion_label(raw: str | None) -> str:
     return EMOTION_MAP.get(raw.strip().lower(), "平静")
 
 
+_SENSEVOICE_TOKENIZER_NAME = "chn_jpn_yue_eng_ko_spectok.bpe.model"
+
+
+def _validate_sensevoice_assets(model_dir: Path) -> Path:
+    """确认部署目录包含 ONNX 权重和 funasr-onnx 所需分词文件。"""
+    resolved = model_dir.expanduser().resolve()
+    if not resolved.is_dir() or not any(resolved.glob("*.onnx")):
+        raise AsrError(
+            "SENSEVOICE_MODEL_NOT_PRELOADED",
+            f"SenseVoice 目录缺少 ONNX 权重: {resolved}",
+        )
+    if not (resolved / _SENSEVOICE_TOKENIZER_NAME).is_file():
+        raise AsrError(
+            "SENSEVOICE_MODEL_NOT_PRELOADED",
+            f"SenseVoice 目录缺少分词文件: {resolved}",
+        )
+    return resolved
+
+
+def prepare_sensevoice_assets(
+    target_dir: str | Path | None = None,
+    *,
+    snapshot_download_fn: Callable[..., str] | None = None,
+) -> Path:
+    """部署/开发预置 SenseVoice 资产；生产请求路径不负责联网下载。"""
+    if snapshot_download_fn is None:
+        from modelscope import snapshot_download as snapshot_download_fn
+
+    target = Path(target_dir).expanduser().resolve() if target_dir else None
+    download_kwargs: dict[str, Any] = {}
+    if target is not None:
+        target.mkdir(parents=True, exist_ok=True)
+        download_kwargs["local_dir"] = str(target)
+
+    model_dir = Path(snapshot_download_fn(MODEL_SENSEVOICE, **download_kwargs))
+    tokenizer_path = model_dir / _SENSEVOICE_TOKENIZER_NAME
+    if not tokenizer_path.exists():
+        tokenizer_dir = Path(
+            snapshot_download_fn(
+                MODEL_SENSEVOICE_TOKENIZER,
+                allow_patterns=[_SENSEVOICE_TOKENIZER_NAME],
+            )
+        )
+        shutil.copy2(tokenizer_dir / _SENSEVOICE_TOKENIZER_NAME, tokenizer_path)
+    return _validate_sensevoice_assets(model_dir)
+
+
+def _sensevoice_model_dir() -> Path:
+    configured = settings.sensevoice_model_dir.strip()
+    if configured:
+        model_dir = Path(configured).expanduser()
+        if not model_dir.is_absolute():
+            model_dir = Path(__file__).resolve().parents[3] / model_dir
+        return _validate_sensevoice_assets(model_dir)
+    if settings.app_env == "production":
+        raise AsrError(
+            "SENSEVOICE_MODEL_NOT_PRELOADED",
+            "生产环境必须先运行 scripts/prepare_sensevoice.py 并配置 SENSEVOICE_MODEL_DIR",
+        )
+    return prepare_sensevoice_assets()
+
+
 def _get_sensevoice_model():
-    """懒加载量化 ONNX 模型；首次运行下载，之后复用本机缓存。"""
+    """加载已预置的量化 ONNX 模型；开发环境仍允许使用 ModelScope 缓存。"""
     if _sensevoice_state["model"] is not None:
         return _sensevoice_state["model"]
 
@@ -443,24 +510,9 @@ def _get_sensevoice_model():
             return _sensevoice_state["model"]
 
         from funasr_onnx import SenseVoiceSmall
-        from modelscope import snapshot_download
-
-        model_dir = Path(snapshot_download(MODEL_SENSEVOICE))
-        tokenizer_name = "chn_jpn_yue_eng_ko_spectok.bpe.model"
-        tokenizer_path = model_dir / tokenizer_name
-        if not tokenizer_path.exists():
-            # funasr-onnx 0.4.x 仍读取 SentencePiece；新版 ONNX 仓仅带
-            # tokens.json，因此从同一官方主模型仓补齐分词资产。
-            tokenizer_dir = Path(
-                snapshot_download(
-                    MODEL_SENSEVOICE_TOKENIZER,
-                    allow_patterns=[tokenizer_name],
-                )
-            )
-            shutil.copy2(tokenizer_dir / tokenizer_name, tokenizer_path)
 
         _sensevoice_state["model"] = SenseVoiceSmall(
-            model_dir,
+            _sensevoice_model_dir(),
             batch_size=1,
             quantize=True,
             intra_op_num_threads=4,
@@ -585,6 +637,11 @@ def _infer_sensevoice(path: Path) -> SenseVoiceResult:
     )
 
 
+def infer_local_emotion(audio_path: str | Path) -> SenseVoiceResult:
+    """供独立 RQ 情绪任务调用的稳定入口。"""
+    return _infer_sensevoice(Path(audio_path))
+
+
 def _transcribe_sensevoice(path: Path) -> AsrResult:
     """本地 CPU 降级通道：SenseVoiceSmall 转写 + 声学情绪。"""
     audio = inspect_audio(path)
@@ -605,9 +662,30 @@ def _transcribe_sensevoice(path: Path) -> AsrResult:
     )
 
 
-def _enhance_with_local_emotion(result: AsrResult, path: Path) -> AsrResult:
-    """云端转写成功后追加本地情绪；情绪失败不抹掉已成功的真实文本。"""
+def should_enhance_with_local_emotion(
+    result: AsrResult,
+    *,
+    mode: str | None = None,
+) -> bool:
+    """按策略决定是否需要本地情绪；auto 会尊重未来主通道的情绪结果。"""
+    selected = mode or settings.asr_local_emotion_mode
     if result.outcome != "succeeded" or not result.text.strip():
+        return False
+    if selected == "off":
+        return False
+    if selected == "always":
+        return True
+    return result.emotion_source in {"", "none"}
+
+
+def _enhance_with_local_emotion(
+    result: AsrResult,
+    path: Path,
+    *,
+    mode: str | None = None,
+) -> AsrResult:
+    """云端转写成功后可选本地情绪；情绪失败不抹掉真实文本。"""
+    if not should_enhance_with_local_emotion(result, mode=mode):
         return result
     try:
         local = _infer_sensevoice(path)
@@ -684,7 +762,13 @@ _CHANNELS = {
 }
 
 
-def _transcribe_one(path: Path, preferred: str, errors: list[str]) -> AsrResult:
+def _transcribe_one(
+    path: Path,
+    preferred: str,
+    errors: list[str],
+    *,
+    enhance_emotion: bool | None = None,
+) -> AsrResult:
     if preferred == "mock":
         if settings.app_env == "production":
             raise AsrError("MOCK_DISABLED", "生产环境禁止使用 mock 转写")
@@ -705,7 +789,14 @@ def _transcribe_one(path: Path, preferred: str, errors: list[str]) -> AsrResult:
             result = _CHANNELS[name](path)
             result.errors = list(errors)
             if name == "funasr":
-                result = _enhance_with_local_emotion(result, path)
+                mode = (
+                    "always"
+                    if enhance_emotion is True
+                    else "off"
+                    if enhance_emotion is False
+                    else None
+                )
+                result = _enhance_with_local_emotion(result, path, mode=mode)
             return result
         except AsrError as exc:
             retryable = retryable or exc.retryable
@@ -817,7 +908,12 @@ def _extract_segment_pcm(path: Path, start_ms: int, end_ms: int) -> tuple[bytes,
         return wf.readframes(frame_count), rate
 
 
-def transcribe(audio_path: str | Path, preferred: str = "auto") -> AsrResult:
+def transcribe(
+    audio_path: str | Path,
+    preferred: str = "auto",
+    *,
+    enhance_emotion: bool | None = None,
+) -> AsrResult:
     """统一入口：多格式短音频直传；长 WAV 经 VAD 分段后合并。"""
     path = Path(audio_path)
     audio = inspect_audio(path)
@@ -833,7 +929,12 @@ def transcribe(audio_path: str | Path, preferred: str = "auto") -> AsrResult:
     if segments == []:
         return _no_speech_result(audio)
     if segments is None:
-        return _transcribe_one(path, preferred, [])
+        return _transcribe_one(
+            path,
+            preferred,
+            [],
+            enhance_emotion=enhance_emotion,
+        )
 
     import tempfile
 
@@ -853,7 +954,12 @@ def transcribe(audio_path: str | Path, preferred: str = "auto") -> AsrResult:
                     wf.setframerate(rate)
                     wf.writeframes(pcm)
                 seg_path = Path(tmp.name)
-            result = _transcribe_one(seg_path, preferred, [])
+            result = _transcribe_one(
+                seg_path,
+                preferred,
+                [],
+                enhance_emotion=enhance_emotion,
+            )
             results.append(result)
             if result.text:
                 texts.append(result.text)

@@ -1,3 +1,15 @@
+## 2026-08-25 · PR 评论 5 项修复并更新现有 PR
+
+**状态**：分支已对齐 `origin/develop`｜PR base=`develop`｜音频范围 `49 passed`｜ruff/py_compile 通过
+
+1. 分支已 rebase 到 `develop`，冲突合并后保留音频改动和团队最新管线；现有 PR base 改为 `develop`。
+2. `numpy>=1.26` 已显式加入 requirements。
+3. 新增 SenseVoice 部署预置脚本与资产校验；生产缺少 `SENSEVOICE_MODEL_DIR` 时显式失败，禁止首个请求下载模型。
+4. 阿里云 workspace Host 按 `DASHSCOPE_REGION` 拼接，并保留 `DASHSCOPE_BASE_URL` 覆盖。
+5. 主转写与本地情绪拆成两个 RQ 阶段；情绪失败/入队失败不影响真实转写，`auto` 模式在主通道已有情绪时跳过本地推理。
+
+**下一步**：等待团队下一轮审查；生产发布时执行 SenseVoice 模型预置步骤。
+
 ## 🔧 2026-08-25 · 第二波遗留全清 + 真机/模拟器验证 + RAG 管线审查
 
 **状态**：全量 pytest 254 passed（+2 回归测试）｜client 编译通过 + 模拟器/真机验证｜review_agent 待跑

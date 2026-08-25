@@ -118,7 +118,7 @@ class TestVoicePipeline:
         c = _content(db, user.id, "voice", extra={"audio_path": str(wav)})
         monkeypatch.setattr(
             "app.services.external.asr.transcribe",
-            lambda path: AsrResult(
+            lambda path, **kwargs: AsrResult(
                 text="今天心情很好",
                 channel="funasr",
                 emotion="开心",
@@ -149,6 +149,165 @@ class TestVoicePipeline:
             "model": "iic/SenseVoiceSmall-onnx",
             "actionable": True,
         }
+
+    def test_voice_queues_local_emotion_after_transcript(
+        self, db_user, monkeypatch, tmp_path
+    ):
+        """主转写先 done，本地情绪只进入低优先级队列。"""
+        from app.services.external.asr import AsrResult
+
+        db, user = db_user
+        wav = tmp_path / "async-emotion.wav"
+        wav.write_bytes(b"RIFF....WAVEfmt ")
+        c = _content(db, user.id, "voice", extra={"audio_path": str(wav)})
+        calls = []
+
+        def fake_transcribe(path, **kwargs):
+            calls.append(kwargs)
+            return AsrResult(
+                text="云端转写先完成",
+                channel="funasr",
+                emotion_source="none",
+                audio_format="wav",
+                source_audio_sha256="abc",
+            )
+
+        queued = []
+        monkeypatch.setattr("app.services.external.asr.transcribe", fake_transcribe)
+        monkeypatch.setattr("app.services.pipeline._index_content", lambda *args: None)
+        monkeypatch.setattr("app.services.pipeline._classify_content", lambda *args: None)
+        monkeypatch.setattr(
+            "app.core.queue.enqueue_low",
+            lambda func, content_id: queued.append((func, content_id)),
+        )
+        from app.services.pipeline import enrich_content_emotion, process_content
+
+        response = process_content(str(c.id))
+        assert response["status"] == "done"
+        assert response["emotion_job"] == "queued"
+        assert calls == [{"enhance_emotion": False}]
+        assert queued == [(enrich_content_emotion, str(c.id))]
+        db.refresh(c)
+        assert c.status == "done"
+        assert c.text == "云端转写先完成"
+        assert c.extra["audio_processing"]["emotion_enrichment"] == "pending"
+
+    def test_async_emotion_job_persists_result(self, db_user, monkeypatch, tmp_path):
+        """独立情绪任务只补情绪字段，不改写已经完成的转写。"""
+        from app.services.external.asr import SenseVoiceResult
+
+        db, user = db_user
+        wav = tmp_path / "emotion-job.wav"
+        wav.write_bytes(b"RIFF....WAVEfmt ")
+        c = _content(
+            db,
+            user.id,
+            "voice",
+            text="已经完成的云端转写",
+            extra={
+                "audio_path": str(wav),
+                "audio_processing": {"emotion_enrichment": "pending"},
+            },
+        )
+        c.status = "done"
+        c.emotion = {"emotion": "平静", "confidence": 0.0, "source": "none"}
+        db.commit()
+        monkeypatch.setattr(
+            "app.services.external.asr.infer_local_emotion",
+            lambda path: SenseVoiceResult(
+                text="",
+                emotion="开心",
+                emotion_confidence=0.91,
+                raw_emotion="<|HAPPY|>",
+            ),
+        )
+        from app.services.pipeline import enrich_content_emotion
+
+        response = enrich_content_emotion(str(c.id))
+        assert response["status"] == "succeeded"
+        db.refresh(c)
+        assert c.status == "done"
+        assert c.text == "已经完成的云端转写"
+        assert c.emotion["source"] == "sensevoice_local"
+        assert c.emotion["emotion"] == "开心"
+        assert c.emotion["actionable"] is True
+        assert c.extra["audio_processing"]["emotion_enrichment"] == "succeeded"
+
+    def test_primary_emotion_skips_local_job(self, db_user, monkeypatch, tmp_path):
+        """主通道已有情绪时，auto 策略不再调用 SenseVoice。"""
+        db, user = db_user
+        wav = tmp_path / "provider-emotion.wav"
+        wav.write_bytes(b"RIFF....WAVEfmt ")
+        c = _content(
+            db,
+            user.id,
+            "voice",
+            text="主通道已有情绪",
+            extra={
+                "audio_path": str(wav),
+                "audio_processing": {"emotion_enrichment": "pending"},
+            },
+        )
+        c.status = "done"
+        c.emotion = {"emotion": "开心", "confidence": 0.82, "source": "funasr"}
+        db.commit()
+
+        def should_not_run(path):
+            raise AssertionError("不应调用本地模型")
+
+        monkeypatch.setattr(
+            "app.services.external.asr.infer_local_emotion", should_not_run
+        )
+        from app.services.pipeline import enrich_content_emotion
+
+        response = enrich_content_emotion(str(c.id))
+        assert response == {
+            "content_id": str(c.id),
+            "status": "skipped",
+            "reason": "primary-emotion-present",
+        }
+        db.refresh(c)
+        assert c.emotion["source"] == "funasr"
+        assert c.extra["audio_processing"]["emotion_enrichment"] == "skipped"
+
+    def test_emotion_enqueue_failure_keeps_transcript_done(
+        self, db_user, monkeypatch, tmp_path
+    ):
+        """情绪任务入队失败也不能把真实转写标成 failed。"""
+        from app.services.external.asr import AsrResult
+
+        db, user = db_user
+        wav = tmp_path / "enqueue-failure.wav"
+        wav.write_bytes(b"RIFF....WAVEfmt ")
+        c = _content(db, user.id, "voice", extra={"audio_path": str(wav)})
+        monkeypatch.setattr(
+            "app.services.external.asr.transcribe",
+            lambda path, **kwargs: AsrResult(
+                text="转写仍然成功",
+                channel="funasr",
+                emotion_source="none",
+                audio_format="wav",
+                source_audio_sha256="abc",
+            ),
+        )
+        monkeypatch.setattr("app.services.pipeline._index_content", lambda *args: None)
+        monkeypatch.setattr("app.services.pipeline._classify_content", lambda *args: None)
+
+        def fail_enqueue(*args, **kwargs):
+            raise RuntimeError("redis unavailable")
+
+        monkeypatch.setattr("app.core.queue.enqueue_low", fail_enqueue)
+        from app.services.pipeline import process_content
+
+        response = process_content(str(c.id))
+        assert response["status"] == "done"
+        assert response["emotion_job"] == "enqueue_failed"
+        db.refresh(c)
+        assert c.status == "done"
+        assert c.text == "转写仍然成功"
+        detail = c.extra["audio_processing"]
+        assert detail["emotion_enrichment"] == "enqueue_failed"
+        assert detail["emotion_error"]["code"] == "EMOTION_ENQUEUE_FAILED"
 
     def test_voice_missing_audio_fails(self, db_user, monkeypatch):
         """无音频路径 → failed_final，不能伪装 done。"""

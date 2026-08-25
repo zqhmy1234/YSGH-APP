@@ -1,6 +1,7 @@
 """忆述光华 backend · 应用配置（pydantic-settings）"""
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,6 +49,13 @@ class Settings(BaseSettings):
     dashscope_api_key: str = ""
     # 百炼业务空间 ID（sk-ws- 工作空间级 key 必须带 X-DashScope-WorkSpace，SDK 无环境变量兜底）
     dashscope_workspace_id: str = ""
+    # workspace 专属 Host 的地域；完整地址仍可用 DASHSCOPE_BASE_URL 覆盖。
+    dashscope_region: str = Field("cn-beijing", pattern=r"^[a-z0-9-]+$")
+    dashscope_base_url: str = ""
+    # auto=主通道已有情绪则跳过本地；always=强制本地覆盖；off=关闭本地增强。
+    asr_local_emotion_mode: Literal["auto", "always", "off"] = "auto"
+    # 生产必须指向部署阶段预置的 SenseVoice 目录，避免首个请求联网下载。
+    sensevoice_model_dir: str = ""
     # 腾讯云子账号密钥：别名读取（2026-08-19 对齐 Infisical 命名）——
     # 优先 TENCENT_SECRET_ID/TENCENT_SECRET_KEY（backend/.env 现状），
     # 回退 TENCENT_CI_SECRET_ID/TENCENT_GUANHAIFENG_CI_SECRET_KEY（Infisical 存量名）。

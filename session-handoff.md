@@ -6,15 +6,23 @@
 ## 当前状态（2026-08-25，ASR + 声学情绪开发会话）
 
 - **仓库副本**：`D:\360MoveData\Users\Eason\Desktop\formal development\YSGH-APP-validation`
-- **分支**：`codex/asr-pipeline-hardening`；基于团队提交 `3869111b51ec9729e0a248298dbcafa23f537bfb`
-- **Git 状态**：ASR 改动已完成音频范围门禁与提交准备；以 `git log/status` 为准，**尚未 push**
+- **分支**：`codex/asr-pipeline-hardening`；本地已 rebase 到 `origin/develop`（`ce62b33`）
+- **Git 状态**：PR 评论的 5 项修复已纳入 `codex/asr-pipeline-hardening`，现有 PR 以 `develop` 为 base；具体提交以 `git log` 和 PR 页面为准
 - **用户范围**：用户只负责音频处理；不接手机 App，不应擅自修搜索/分类等无关模块
 - **用户决定**：个人 API Key 只允许临时验证；任何 push 必须等用户最终明确确认
 - **密钥状态**：个人 Key 仅注入一次性进程环境完成真实 FunASR 验证，未写入工作区/持久环境；不要从聊天或日志复制进代码
-- **相关验证**：ASR/语音入库/内容接口共 `40 passed`；ruff、py_compile 通过；真实 M4A 的云端转写与本地情绪推理均已验证
+- **相关验证**：ASR/语音入库/内容接口共 `49 passed`；ruff、py_compile 通过；真实 M4A 的云端转写与本地情绪推理均已验证
 - **仓库总门禁**：非 ASR 基线仍有 `15 failed / 1 error`，详见下文；不要把它误解为 ASR 未通过，也不要绕过后声称全绿
 - **测试基础设施**：隔离容器 `ysgh-validation-postgres` / `ysgh-validation-redis` / `ysgh-validation-qdrant`
-- **develop 基线**：已包含团队后续 17 个提交；此前记录为 pytest 215 passed（14 deselected）+ research 验证入口修复，本轮音频变更需在该基线上重新验证
+- **develop 基线**：团队后续 17 个提交已纳入本地分支，本轮 49 项音频范围测试已在该基线上重跑通过
+
+## PR 评论 5 项修复
+
+1. 分支已 rebase 到 `develop`，现有 PR 的 base 已改为 `develop`。
+2. `numpy>=1.26` 已作为直接依赖写入 `backend/requirements.txt`。
+3. 新增 `backend/scripts/prepare_sensevoice.py`；生产环境必须预置模型并配置 `SENSEVOICE_MODEL_DIR`，首次请求不再下载权重。
+4. workspace 专属地址改由 `DASHSCOPE_REGION` 拼接，仍支持 `DASHSCOPE_BASE_URL` 完整覆盖。
+5. 云端转写先完成，本地情绪改由低优先级 RQ 任务异步增强；`ASR_LOCAL_EMOTION_MODE=auto` 时，主通道已有情绪便跳过本地模型。
 
 ## 本轮 ASR 已开发内容
 
@@ -22,7 +30,7 @@
 
 - `backend/app/services/external/asr.py` 主通道升级为 Fun-ASR Flash：`fun-asr-flash-2026-06-15`
 - 使用 Base64 Data URI 请求，支持 AAC/AMR/FLAC/M4A/MP3/OGG/OPUS/WAV/WebM/WMA
-- 云端转写成功后，本地 CPU `iic/SenseVoiceSmall-onnx` 独立执行声学情绪增强；云端失败时也可作为本地转写降级
+- 云端转写成功后，本地 CPU `iic/SenseVoiceSmall-onnx` 由低优先级任务异步执行声学情绪增强；云端失败时仍可作为本地转写降级
 - M4A/MP3/AAC/WAV 等常见格式由内置 FFmpeg 统一解码为 16kHz 单声道后进入情绪模型，不再只有 WAV
 - API 上传仍限制 8MB；内部对象存储的长 WAV 可进入 VAD，单段最长 4 分钟
 - 超过 8MB 的压缩音频明确失败，提示切分或转 WAV，不会误走本地 WAV 分段
@@ -58,7 +66,7 @@
 
 ```text
 pytest backend/tests/test_asr.py backend/tests/test_pipeline.py::TestVoicePipeline backend/tests/test_contents.py
-结果：40 passed，1 个 Starlette/httpx 弃用 warning
+结果：49 passed，1 个 Starlette/httpx 弃用 warning
 
 ruff（全部本轮 Python 文件）：通过
 py_compile（全部本轮 Python 文件）：通过
@@ -104,8 +112,8 @@ init.ps1：通过
 
 ## 下一步（仅 ASR 范围）
 
-1. 先向用户复述：情绪检测已完成，代码尚未 push；展示上述 `40 passed` 与真实 M4A 证据
-2. 下一项仅在音频范围内推进：补“录音中断/恢复”状态机真机联调，或等待用户指定优先项
+1. 等待团队对现有 PR 的下一轮审查；如有新的音频范围评论，再做定向修复
+2. 生产发布时运行 SenseVoice 预置脚本并配置 `SENSEVOICE_MODEL_DIR`
 3. 全仓门禁的搜索/分类/数据库基线不属于当前用户范围；继续使用上文 ASR 范围门禁，不要声称全仓全绿
-4. 本地 commit 后仍不要 push；必须再次获得用户明确的最终确认才可推到团队仓库
+4. 后续修改仍先跑音频范围门禁，再更新现有 PR
 5. 多样本验收不是本轮快速跑通条件；后续正式校准再收集 20-50 段标注录音评估 WER 与情绪准确率

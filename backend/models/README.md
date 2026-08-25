@@ -51,13 +51,14 @@
 
 | 项 | 值 |
 |---|---|
-| 位置 | ModelScope 缓存 `~/.cache/modelscope/models/iic--SenseVoiceSmall-onnx/snapshots/master/` |
+| 位置 | 开发缓存可用；生产由 `python scripts/prepare_sensevoice.py --target models/SenseVoiceSmall-onnx` 预置 |
 | 在用版本 | `master` 量化 ONNX（`model_quant.onnx`，约 241MB） |
-| 补充资产 | 主模型仓 `iic/SenseVoiceSmall` 的 SentencePiece 文件（约 377KB，加载时自动补齐到 ONNX 缓存） |
+| 补充资产 | 主模型仓 `iic/SenseVoiceSmall` 的 SentencePiece 文件（约 377KB，预置脚本自动补齐） |
 | 下载源 | ModelScope 官方 `iic/SenseVoiceSmall-onnx` + `iic/SenseVoiceSmall` |
-| 加载代码 | `backend/app/services/external/asr.py`（`funasr-onnx`，CPU 4 线程，懒加载） |
-| 用途 | FunASR 云端转写后的声学情绪识别；支持 M4A/MP3/AAC/WAV 等先经本地 FFmpeg 解码 |
-| 可删性 | ❌ 在用；删除后首次情绪检测会自动重新下载 |
+| 加载代码 | `backend/app/services/external/asr.py`（`funasr-onnx`，CPU 4 线程） |
+| 用途 | FunASR 云端转写完成后的异步声学情绪增强；支持 M4A/MP3/AAC/WAV 等先经本地 FFmpeg 解码 |
+| 生产要求 | 构建/发布阶段运行预置脚本，并设置 `SENSEVOICE_MODEL_DIR`；请求期间禁止首次下载 |
+| 可删性 | ❌ 在用；开发环境删除后会重新下载，生产环境缺失会显式报错 |
 
 ---
 

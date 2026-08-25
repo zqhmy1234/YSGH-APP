@@ -72,6 +72,85 @@ def test_production_rejects_global_mock_mode(wav_file: Path, monkeypatch):
     assert raised.value.outcome == "failed_final"
 
 
+def test_workspace_base_url_uses_configured_region(monkeypatch):
+    from app.services.external.asr import _dashscope_base_url
+
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.setattr(settings, "dashscope_workspace_id", "ws-example")
+    monkeypatch.setattr(settings, "dashscope_region", "cn-shanghai")
+    assert _dashscope_base_url() == (
+        "https://ws-example.cn-shanghai.maas.aliyuncs.com/api/v1"
+    )
+
+
+def test_explicit_dashscope_base_url_overrides_region(monkeypatch):
+    from app.services.external.asr import _dashscope_base_url
+
+    monkeypatch.setenv("DASHSCOPE_BASE_URL", "https://custom.example/api/v1/")
+    monkeypatch.setattr(settings, "dashscope_workspace_id", "ws-example")
+    monkeypatch.setattr(settings, "dashscope_region", "cn-shanghai")
+    assert _dashscope_base_url() == "https://custom.example/api/v1"
+
+
+def test_production_requires_preloaded_sensevoice(monkeypatch):
+    from app.services.external.asr import _sensevoice_model_dir
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "sensevoice_model_dir", "")
+    with pytest.raises(AsrError) as raised:
+        _sensevoice_model_dir()
+    assert raised.value.code == "SENSEVOICE_MODEL_NOT_PRELOADED"
+
+
+def test_prepare_sensevoice_assets_downloads_and_validates(tmp_path):
+    from app.services.external import asr as asr_mod
+
+    target = tmp_path / "sensevoice"
+    tokenizer_dir = tmp_path / "tokenizer"
+
+    def fake_snapshot(model_id, **kwargs):
+        if model_id == asr_mod.MODEL_SENSEVOICE:
+            model_dir = Path(kwargs["local_dir"])
+            model_dir.mkdir(parents=True, exist_ok=True)
+            (model_dir / "model_quant.onnx").write_bytes(b"onnx")
+            return str(model_dir)
+        tokenizer_dir.mkdir(parents=True, exist_ok=True)
+        (tokenizer_dir / asr_mod._SENSEVOICE_TOKENIZER_NAME).write_bytes(b"spm")
+        return str(tokenizer_dir)
+
+    resolved = asr_mod.prepare_sensevoice_assets(
+        target,
+        snapshot_download_fn=fake_snapshot,
+    )
+    assert resolved == target.resolve()
+    assert (resolved / "model_quant.onnx").is_file()
+    assert (resolved / asr_mod._SENSEVOICE_TOKENIZER_NAME).is_file()
+
+
+def test_primary_emotion_skips_local_enhancement(monkeypatch):
+    from app.services.external import asr as asr_mod
+
+    result = AsrResult(
+        text="主通道已返回情绪",
+        channel="funasr",
+        emotion="开心",
+        emotion_confidence=0.8,
+        emotion_source="funasr",
+    )
+
+    def should_not_run(path):
+        raise AssertionError("不应调用本地模型")
+
+    monkeypatch.setattr(asr_mod, "_infer_sensevoice", should_not_run)
+    enhanced = asr_mod._enhance_with_local_emotion(
+        result,
+        Path("unused.wav"),
+        mode="auto",
+    )
+    assert enhanced is result
+    assert enhanced.emotion_source == "funasr"
+
+
 def test_transcribe_missing_file():
     """音频文件不存在 → 结构化 ASR 错误（不静默）"""
     with pytest.raises(AsrError) as raised:
