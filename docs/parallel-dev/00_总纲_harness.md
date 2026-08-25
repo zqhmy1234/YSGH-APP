@@ -2,6 +2,7 @@
 
 > 生成：2026-08-26（Wave 0）｜维护者：集成 Agent（主窗口）
 > 配套：`docs/parallel-dev/` 下各波次任务卡（02-12）+ 集成规则（13）+ B5a/B5d 修正后待办（_B5a_B5d修正后待办.md）
+> 进度：Wave 1（A/C）✅、Wave 2（D/E）✅ 已集成（2026-08-26，全量 341 passed）；Wave 2 F 开发中；Wave 3（G/H/I）可启动
 
 ---
 
@@ -32,13 +33,13 @@
 
 ## 3. 波次总览
 
-| 波次 | Agent | 域 | 关键项数 | 依赖 |
-|---|---|---|---|---|
-| Wave 1 | A（B2 搜索） | rag/vector_store/payload 钩子/评测 | 8 | llm_ops（已备） |
-| Wave 1 | C（B5b 护栏） | echo/sensitive/guard 钩子/pipeline_ext.sensitive | 6 | Wave 0 表（已建） |
-| Wave 2 | D（B3 云侧） | event_aggregation/events/llm_ops.event_merge | 8 | llm_ops |
-| Wave 2 | E（B3 端侧+UI） | client/utils/agg、index.uvue、反向入口新 API | 7 | D 的 API 契约 |
-| Wave 2 | F（M1 补遗） | llm_ops.rerank/评测集/护栏托管/测量脚本 | 6 | DASHSCOPE key |
+| 波次 | Agent | 域 | 关键项数 | 依赖 | 状态 |
+|---|---|---|---|---|---|
+| Wave 1 | A（B2 搜索） | rag/vector_store/payload 钩子/评测 | 8 | llm_ops（已备） | ✅ 已集成 |
+| Wave 1 | C（B5b 护栏） | echo/sensitive/guard 钩子/pipeline_ext.sensitive | 6 | Wave 0 表（已建） | ✅ 已集成 |
+| Wave 2 | D（B3 云侧） | event_aggregation/events/llm_ops.event_merge | 8 | llm_ops | ✅ 已集成 |
+| Wave 2 | E（B3 端侧+UI） | client/utils/agg、index.uvue、反向入口新 API | 7 | D 的 API 契约 | ✅ 已集成 |
+| Wave 2 | F（M1 补遗） | llm_ops.rerank/评测集/护栏托管/测量脚本 | 6 | DASHSCOPE key | 🚧 开发中（不阻塞 Wave 3） |
 | Wave 3 | G（B4 后端） | storage/upload/sync/wechat 媒体/清理 job | 5 | COS key（代码先行） |
 | Wave 3 | H（B4 客户端） | sync_client 接线/流量约束/定时/状态 UI | 6 | G 的 API（已就绪） |
 | Wave 3 | I（B1 画像） | interview/标注钩子/枚举集接线 | 6 | llm_ops.annotate |

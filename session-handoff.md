@@ -125,3 +125,12 @@ init.ps1：通过
 - 基线：312 passed + api_smoke 6/6 + review_agent 全绿
 - 下一步：Wave 2（Agent D B3 云侧 / Agent E B3 端侧+UI / Agent F M1 补遗），任务卡 docs/parallel-dev/04/05/06；共享文件规则不变（pipeline.py 钩子/llm_ops 只读）
 - 注意：worktree 开发需补本地 gitignore 资产（.env/models/测试照片，见 lessons.md 两 Agent 踩坑记录）
+
+## Wave 2 集成完成（2026-08-26 06:30）——下一步 Wave 3
+
+- develop HEAD：fe1b376（Wave 2 集成接线）+ ae801a7（merge E）+ 7e8c142（merge D）
+- Wave 2 完成：Agent D（B3 云侧：L2 地点域连续+LLM 归并裁决（真实 qwen 验证）/L3 7 天窗+生命周期/封面选择/GPS 漂移完善/confirmed 保护/增量先匹配后分裂/OCR 内容维）+ Agent E（B3 端侧+UI：30min 保守开关/预处理去重/L2 待确认区/封面+反向入口 GET /api/v1/contents/{id}/events/30s 验收埋点/AGG 双跑 14 用例）
+- 集成接线：云侧 AGG_CONFIG conservative_mode 对齐端侧（l0_eps_t_sec()）；修复 D 合并代码 B905 lint；lessons 冲突保留两边
+- 基线：341 passed（fullgate-wave2.log 为准）+ review_agent --full 全绿
+- 下一步：Wave 3（Agent G B4 后端 / Agent H B4 客户端 / Agent I B1 画像），任务卡 docs/parallel-dev/07/08/09；Agent F（M1 补遗）仍在开发，merge 后接入
+- 待办登记：Content.extra quality_score/face_count 无写入方（腾讯 CI 人脸标签未接线）；托管护栏 guard_managed 待 F

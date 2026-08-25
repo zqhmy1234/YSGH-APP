@@ -224,6 +224,8 @@ def incremental_aggregate(
 ) -> AggregateResult:
     """增量聚合（B3-6：先匹配后分裂；AGG-015 已确认结构不漂移）
 
+    eps_t_sec 默认按 AGG_CONFIG["l0"]["conservative_mode"] 取（3600/1800）。
+
     策略（B3-6 增量处理 / LibrePhotos 思路）：
     1. 首次调用（previous=None）→ 全量聚合
     2. **先匹配**：新照片先尝试并入现有簇（时间窗 ±ε_t + 地点邻近），旧簇结构保持超集
@@ -231,6 +233,8 @@ def incremental_aggregate(
     4. L1 日卡片按日期合并（新日期追加，旧日期保留）
     5. L2/L3 候选基于全量标签重算（MVP 简化）
     """
+    if eps_t_sec is None:
+        eps_t_sec = l0_eps_t_sec()
     if previous is None:
         return aggregate(new_photos, eps_t_sec=eps_t_sec)
 

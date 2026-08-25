@@ -388,3 +388,11 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - 集成后全量：312 passed（基线 281 + 新增 31）+ 14/17 deselected（rag 重测试）+ api_smoke 6/6 + review_agent 全绿
 - 真实 bug 修复（A 发现）：检索阶段用户隔离缺失（_to_filter 无 user_id → 全库召回跨用户污染）——已修复并加回归测试
 - 待 key/环境：corpus-A 2 张 0 字节/审查拒绝；Qwen3-VL-Embedding 图片塔待开通（现 caption 路径 + 缓存）；NER LLM 兜底默认关
+
+## Wave 2 集成完成（2026-08-26 06:30）
+
+- 两个并行 worktree（wave2-agentD B3 云侧 / wave2-agentE B3 端侧+UI）开发完成并验收；Agent F（M1 补遗）仍在开发中（wave2-agentF worktree，基线 ab11507，与 D/E 文件域零重叠，不阻塞本次集成）
+- 集成 Agent merge：7e8c142（D：L2 地点域连续 5km/12hr + LLM 归并裁决（qwen 真实通道验证通过）+ L3 7 天窗/生命周期 + 封面选择（人脸→质量→时间）+ GPS 漂移完善 + confirmed 保护 + 增量先匹配后分裂 + OCR 内容维 + 15 新测试）+ ae801a7（E：30min 保守开关 + 预处理去重 + L2 待确认区 UI + 封面/反向入口 + 30s 验收埋点 + AGG 双跑 14 用例 + 8 API 测试；lessons 冲突保留两边三条记录）
+- 集成接线（fe1b376）：云侧 AGG_CONFIG 对齐端侧 30min 保守开关（conservative_mode → l0_eps_t_sec()，显式传参不受影响）；main.py 已含 event_items_router（E 在分支内注册，merge 保留）；修复 D 合并代码 B905 zip strict= lint（ruff 版本漂移，登记教训）
+- 集成后全量：341 passed 基线（见 fullgate-wave2.log）
+- 待办：Content.extra quality_score/face_count 无写入方（内容管线未接腾讯 CI 人脸标签，封面选择回退时间居中）——记录待后续；DASHSCOPE key 已配置，L2 归并真实 qwen 通道验证通过；托管护栏 llm_ops/guard_managed 待 Wave 2 F 实现

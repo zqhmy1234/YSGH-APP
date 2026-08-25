@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-25 23:16 · commit fe1b376 · ts=1787696184
+- **错误**：集成接线 bug：incremental_aggregate 入口未解析 eps_t_sec=None，_can_absorb 里 timedelta(seconds=None) 抛 TypeError（全量门禁 tests+research 双红）
+- **根因**：保守开关接线时只在 aggregate() 入口解析 None，incremental_aggregate() 直接透传 None 给 _can_absorb/st_dbscan；定向单测（test_agg_reference 11 项）与 run_validation 18 场景跑绿后才暴露——定向测试未覆盖 None 路径
+- **修复**：incremental_aggregate 顶部 if eps_t_sec is None: eps_t_sec = l0_eps_t_sec()（与 aggregate 同法）；回归：test_agg_reference 11 passed + run_validation 18/18
+- **相关文件**：backend/app/services/event_aggregation/pipeline.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-25 23:04 · commit ae801a7 · ts=1787695480
 - **错误**：集成 lint 拦截：event_aggregation/pipeline.py zip() 缺 strict= 参数（ruff B905）
 - **根因**：Agent D 提交门禁为旧版 ruff（无 B905 规则）或旧门禁漏检；集成 Agent 在最新 ruff 下全量 lint 暴露——并行 worktree 的 ruff 版本与主仓漂移

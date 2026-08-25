@@ -1,5 +1,7 @@
 # Wave 2 · Agent E（B3 端侧+UI 域）任务卡——docs/parallel-dev/05
 
+> ✅ 已完成并集成（2026-08-26，merge ae801a7）
+
 ## Mission
 完成 B3 端侧/UI 7 项：30min 保守模式开关、聚合预处理去重、照片→事件反向入口（API+UI）、L2 待确认区 UI、30s 验收计时埋点、事件卡片封面展示、端云参数单一来源优化（AGG 双跑维护）。
 

@@ -1,5 +1,7 @@
 # Wave 2 · Agent D（B3 云侧域）任务卡——docs/parallel-dev/04
 
+> ✅ 已完成并集成（2026-08-26，merge 7e8c142 + 接线 fe1b376）
+
 ## Mission
 完成 B3 云侧 8 项：L2 LLM 语义归并+地点域连续、L3 生命周期+7 天窗、封面图选择、GPS 漂移完善、confirmed 保护、增量"先匹配后分裂"、OCR 内容维接入、L2 待确认区（API 侧）。
 
