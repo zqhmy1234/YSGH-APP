@@ -3,6 +3,7 @@
 		<view class="header">
 			<text class="title">AGG-016 一致性自检</text>
 			<text class="sub">UTS ST-DBSCAN vs Python 同参双跑（{{summaryText}}）</text>
+			<text class="sub">30s 验收：{{ timing }}</text>
 		</view>
 		<scroll-view class="list" scroll-y="true">
 			<view v-for="(r, i) in results" :key="i" class="row" :class="r.pass ? 'row-pass' : 'row-fail'">
@@ -19,18 +20,21 @@
 <script>
 import { AGG_FIXTURES } from '@/utils/agg/fixtures.uts'
 import { CaseResult, runAllCases } from '@/utils/agg/agg_check.uts'
+import { timingText } from '@/utils/agg/perf_timing.uts'
 
 export default {
 	data() {
 		return {
 			summaryText: '运行中…',
+			timing: '',
 			results: [] as CaseResult[],
 		}
 	},
 	onLoad() {
-		// AGG-016：端侧 UTS 算法 vs Python 期望（同参 tz=480 上海）
+		// AGG-016：端侧 UTS 算法 vs Python 期望（同参 tz=480 上海；含 30min 保守/去重用例）
 		const summary = runAllCases(AGG_FIXTURES)
 		this.summaryText = `${summary.passed}/${summary.total} 通过`
+		this.timing = timingText()
 		this.results = summary.results
 		for (let i = 0; i < summary.results.length; i++) {
 			const r = summary.results[i]

@@ -4,6 +4,11 @@
 同一组用例：Python（backend event_aggregation，同参）计算期望输出
 （L0 簇成员 + L1 日卡片），生成 client/utils/agg/fixtures.uts 供端侧双跑比对。
 
+2026-08-26 Wave2 AgentE 扩展：
+  - 30min 保守模式场景（conservative=True → eps_t_sec=1800）——与 agg_config.uts
+    CONSERVATIVE_MODE 开关、云侧 pipeline.py AGG_CONFIG 对齐（Agent D）
+  - 预处理感知哈希去重场景（phash 重复 → 只保留首张）——与云端 uq_contents_user_hash 对齐
+
 用法：
     python scripts/gen_agg_fixtures.py [--out client/utils/agg/fixtures.uts]
 
@@ -32,6 +37,12 @@ DEFAULT_OUT = ROOT / "client" / "utils" / "agg" / "fixtures.uts"
 
 TZ_OFFSET_MIN = 480  # 上海（双跑同参）
 
+# L0 参数（与 agg_config.uts / pipeline.py AGG_CONFIG 对齐；AGG-016 双跑同参）
+EPS_T_DEFAULT = 3600.0     # 60min 宽窗（CONSERVATIVE_MODE=false）
+EPS_T_CONSERVATIVE = 1800.0  # 30min 保守模式（CONSERVATIVE_MODE=true）
+EPS_S_M = 500.0
+MIN_PTS = 3
+
 
 def local_ms(y: int, m: int, d: int, hh: int, mm: int, ss: int = 0) -> int:
     """本地墙钟（UTC+8 语义）→ epoch ms。fixture 时间按上海本地日界构造。"""
@@ -43,10 +54,31 @@ def _p(pid: str, ms: int, lat: float | None, lng: float | None, tags: list[str] 
     return RawPhoto(id=pid, ts=datetime.fromtimestamp(ms / 1000, tz=timezone.utc), lat=lat, lng=lng, tags=tags or [])
 
 
-def _expected(photos: list[RawPhoto], tz: int = TZ_OFFSET_MIN) -> dict:
-    """Python 同参双跑：preprocess → st_dbscan → l1_daily_aggregate"""
-    pts = preprocess(photos)
-    clusters = st_dbscan(pts, eps_t_sec=3600.0, eps_s_m=500.0, min_pts=3)
+def _dedup(photos: list[RawPhoto], phash: dict[str, str]) -> list[RawPhoto]:
+    """① 感知哈希去重参考实现（与 UTS pipeline.dedup 同语义，AGG-016 双跑）
+
+    key = phash 非空 ? phash : id；同 key 只保留首张。
+    （云端 uq_contents_user_hash 语义：同用户同感知哈希只入库一次）
+    """
+    seen: set[str] = set()
+    kept: list[RawPhoto] = []
+    for p in photos:
+        key = phash.get(p.id) or p.id
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(p)
+    return kept
+
+
+def _expected(photos: list[RawPhoto], tz: int = TZ_OFFSET_MIN,
+              conservative: bool = False, phash: dict[str, str | None] | None = None) -> dict:
+    """Python 同参双跑：去重 → preprocess → st_dbscan → l1_daily_aggregate"""
+    phash = phash or {}
+    depped = _dedup(photos, phash)  # type: ignore[arg-type]
+    pts = preprocess(depped)
+    eps_t = EPS_T_CONSERVATIVE if conservative else EPS_T_DEFAULT
+    clusters = st_dbscan(pts, eps_t_sec=eps_t, eps_s_m=EPS_S_M, min_pts=MIN_PTS)
     clustered_ids = {p.id for cl in clusters for p in cl}
     noise = [p for p in pts if p.id not in clustered_ids]
     days = l1_daily_aggregate(clusters, noise, tz_offset_minutes=tz)
@@ -165,7 +197,59 @@ def build_cases() -> list[dict]:
                 )
     cases.append({
         "name": "scale-30-photos-3days", "tz": TZ_OFFSET_MIN,
-        "photos": photos, "expected": _expected(photos),
+        "photos": photos, "phash": {}, "conservative": False,
+        "expected": _expected(photos),
+    })
+
+    # 11. 30min 保守模式开关（B3-2 · 2026-08-26 Wave2 AgentE）
+    #     同地点两拨照片：10:00 3 张 + 10:45 3 张（间隔 45min）
+    #     默认 60min 宽窗 → 1 簇 6 张；保守 30min → 2 簇 × 3 张
+    t0 = local_ms(2026, 8, 24, 10, 0)
+    photos = [
+        _p("p1", t0, *A), _p("p2", t0 + 60000, *A), _p("p3", t0 + 120000, *A),
+        _p("p4", t0 + 2700000, *A), _p("p5", t0 + 2760000, *A), _p("p6", t0 + 2820000, *A),
+    ]
+    cases.append({
+        "name": "conservative-30min-split", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "phash": {}, "conservative": True,
+        "expected": _expected(photos, conservative=True),
+    })
+    # 双跑兜底：同一输入默认模式（60min）必须是 1 簇——确认开关确实改变行为
+    cases.append({
+        "name": "default-60min-merge", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "phash": {}, "conservative": False,
+        "expected": _expected(photos, conservative=False),
+    })
+
+    # 12. 预处理去重（感知哈希 · Q16，与云端 uq_contents_user_hash 对齐）
+    #     p1/p2 同哈希、p3/p4 同哈希 → 去重保留 p1、p3 → 2 张散片 → 稀疏日卡片
+    photos = [
+        _p("p1", local_ms(2026, 8, 24, 12, 0), *A, ["food"]),
+        _p("p2", local_ms(2026, 8, 24, 12, 5), *A, ["food"]),
+        _p("p3", local_ms(2026, 8, 24, 12, 10), *A, ["food"]),
+        _p("p4", local_ms(2026, 8, 24, 12, 15), *A, ["food"]),
+    ]
+    phash = {"p1": "a1b2c3d4", "p2": "a1b2c3d4", "p3": "e5f6a7b8", "p4": "e5f6a7b8"}
+    cases.append({
+        "name": "dedup-phash-duplicate", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "phash": phash, "conservative": False,
+        "expected": _expected(photos, phash=phash),
+    })
+
+    # 13. 去重 + 连拍折叠组合：重复首张 + 间隔 100s 的第二组（跨出 5s 折叠窗）
+    #     去重后 p1、p3 存活；100s 间隔不折叠 → 2 张散片 → 稀疏日卡片
+    t0 = local_ms(2026, 8, 24, 13, 0)
+    photos = [
+        _p("p1", t0, *A),
+        _p("p2", t0 + 2000, *A),
+        _p("p3", t0 + 100000, *A),
+        _p("p4", t0 + 102000, *A),
+    ]
+    phash = {"p1": "x1", "p2": "x1", "p3": "y2", "p4": "y2"}
+    cases.append({
+        "name": "dedup-burst-keep-first", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "phash": phash, "conservative": False,
+        "expected": _expected(photos, phash=phash),
     })
 
     return cases
@@ -189,12 +273,15 @@ def render_uts(cases: list[dict]) -> str:
     lines.append("")
     lines.append("export const AGG_FIXTURES: AggCase[] = [")
     for c in cases:
+        phash = c.get("phash", {}) or {}
+        conservative = bool(c.get("conservative", False))
         lines.append(f"\tnew AggCase('{c['name']}', {c['tz']}, [")
         for p in c["photos"]:
             tags = _fmt_tags(p.tags or [])
+            ph = phash.get(p.id) or ""
             lines.append(
                 f"\t\tnew AggPhoto('{p.id}', {int(p.ts.timestamp() * 1000)}, "
-                f"{_fmt_float(p.lat)}, {_fmt_float(p.lng)}, {tags}),"
+                f"{_fmt_float(p.lat)}, {_fmt_float(p.lng)}, {tags}, '{ph}'),"
             )
         lines.append("\t], new AggExpected([")
         for cl in c["expected"]["clusters"]:
@@ -203,7 +290,7 @@ def render_uts(cases: list[dict]) -> str:
         for d in c["expected"]["days"]:
             ids = ", ".join(f"'{x}'" for x in d["ids"])
             lines.append(f"\t\tnew AggExpectedDay('{d['date']}', [{ids}], {'true' if d['is_sparse'] else 'false'}),")
-        lines.append("\t])),")
+        lines.append(f"\t]), {str(conservative).lower()}),")
     lines.append("]")
     return "\n".join(lines) + "\n"
 

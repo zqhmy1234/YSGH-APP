@@ -5,7 +5,7 @@
  * 比较 簇成员（集合语义）+ 日卡片（date → 按 ts 排序的 id 列表）。
  * 调试页 pages/debug/agg-check 直接展示结果；logcat 前缀 [yishu-agg]。
  */
-import { L0_EPS_S_M, L0_EPS_T_SEC, L0_MIN_PTS } from './agg_config.uts'
+import { L0_EPS_S_M, L0_EPS_T_SEC_CONSERVATIVE, L0_EPS_T_SEC_DEFAULT, L0_MIN_PTS } from './agg_config.uts'
 import { preprocess, RawPhoto } from './pipeline.uts'
 import { DayCard, Photo, l1DailyAggregate, stDbscan } from './st_dbscan.uts'
 import { AggCase, AggExpectedDay } from './agg_types.uts'
@@ -55,15 +55,16 @@ function expectedDayKey(d: AggExpectedDay): string {
 	return d.date + '|' + sortedIds(d.ids).join(',') + '|' + (d.isSparse ? '1' : '0')
 }
 
-/** 跑单个用例：UTS 算法 vs Python 期望 */
+/** 跑单个用例：UTS 算法 vs Python 期望（30min 保守用例取 eps=1800） */
 export function runCase(c: AggCase): CaseResult {
 	const raws: RawPhoto[] = []
 	for (let i = 0; i < c.photos.length; i++) {
 		const p = c.photos[i]
-		raws.push(new RawPhoto(p.id, p.ts, p.lat, p.lng, p.tags))
+		raws.push(new RawPhoto(p.id, p.ts, p.lat, p.lng, p.tags, p.phash))
 	}
+	const epsT = c.conservative ? L0_EPS_T_SEC_CONSERVATIVE : L0_EPS_T_SEC_DEFAULT
 	const pts = preprocess(raws)
-	const clusters = stDbscan(pts, L0_EPS_T_SEC, L0_EPS_S_M, L0_MIN_PTS)
+	const clusters = stDbscan(pts, epsT, L0_EPS_S_M, L0_MIN_PTS)
 
 	// 散片（未入簇）→ L1 日聚合
 	const clustered: Set<string> = new Set<string>()

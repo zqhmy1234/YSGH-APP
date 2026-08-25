@@ -25,6 +25,7 @@ from app.api import (  # noqa: E501
     wechat,
 )
 from app.api.contents import profile_sensitive_router
+from app.api.event_items import router as event_items_router
 from app.core.config import settings
 from app.core.errors import install_error_handlers
 from app.core.middleware import RequestIDMiddleware
@@ -75,6 +76,7 @@ install_error_handlers(app)
 app.include_router(auth.router)
 app.include_router(contents.router)
 app.include_router(profile_sensitive_router)  # B5b FIX-4：画像级敏感增删查（Wave1 AgentC 提供，集成接线）
+app.include_router(event_items_router)  # B3-4 照片→事件反向入口（Wave2 AgentE 提供）
 app.include_router(events.router)
 app.include_router(search.router)
 app.include_router(classify.router)

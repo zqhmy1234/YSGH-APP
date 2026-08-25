@@ -8,12 +8,30 @@
 
 ---
 
-### 2026-08-26 04:52 · commit ab11507 · ts=1787691132
+### 2026-08-26 04:52 · commit ab11507 · ts=1787691132（Agent D 登记）
 - **错误**：worktree 环境下 review_agent 门禁 tests 失败：缺 dashscope/webrtcvad/setfit/cos-python-sdk/minio，且 backend/models/ 下模型权重未随 worktree 复制导致 classifier 测试抛 huggingface_hub.HFValidationError
 - **根因**：并行开发 worktree 只复制了代码与 backend/.env，gitignored 的大体积模型权重（setfit-classifier/bge-reranker）与 requirements.txt 中非核心依赖未随工作树到位；SetFitModel.from_pretrained 对不存在本地目录的 Windows 绝对路径走 hub repo_id 校验而报错
 - **修复**：从主仓库复制 backend/models/{setfit-classifier,bge-reranker-base,bge-reranker-v2-m3} 到 worktree；pip install dashscope webrtcvad-wheels setfit cos-python-sdk-v5 minio
 - **相关文件**：backend/models/、scripts/review_agent.py、docs/lessons.md
 - **教训**：新建 git worktree 后先补齐模型权重与 requirements.txt 全依赖再跑提交门禁，避免预存环境失败阻塞 commit
+
+---
+
+### 2026-08-26 05:35 · commit ab11507 · ts=1787693746（Agent E 登记）
+- **错误**：review_agent lint 阻断：test_event_items.py 两处 I001 Import block 未排序
+- **根因**：函数内 import 块含 blank 行分组，ruff 默认 case-sensitive 排序（app.* 在 fastapi.* 前）；ruff --fix 可自动排序，无需手改
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-26 05:12 · commit ab11507 · ts=1787692342（Agent E 登记）
+- **错误**：review_agent tests 失败：test_correction 2 项 HFValidationError，本地路径 backend/models/setfit-classifier 不存在
+- **根因**：gitignore 模型目录只跟踪 README.md，worktree 全新检出缺 setfit-classifier；测试加载本地模型路径失败。与 .env/test_photos 同类：worktree 需从主仓库复制 gitignore 运行资产
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
 
 ---
 

@@ -18,8 +18,18 @@ export class TimelineEvent {
 	emotion: string
 	photoCount: number
 	contentCount: number
+	/** draft / confirmed / rejected（B3-5；L2 待确认区按 status+confidence 分组） */
+	status: string
+	/** 置信度：<0.7 进"待确认"区（B3-5 阈值，与 B1 0.7 一致）；0 = 未知 */
+	confidence: number
+	/** 封面 content_id（无则首图回退，B3-4 封面展示） */
+	coverContentId: string
 	/** L1 卡片下的 L2 主题（客户端分组填充；接口层恒为空数组） */
 	children: Array<TimelineEvent>
+	/** 卡片照片条 content_id 列表（客户端会话填充：端侧聚合成员，按拍摄顺序） */
+	photoIds: Array<string>
+	/** 封面本地路径（cover_content_id 优先，无则首图回退；无本地映射则空串） */
+	coverPath: string
 
 	constructor(
 		id: string,
@@ -31,7 +41,10 @@ export class TimelineEvent {
 		place: string,
 		emotion: string,
 		photoCount: number,
-		contentCount: number
+		contentCount: number,
+		status: string,
+		confidence: number,
+		coverContentId: string
 	) {
 		this.id = id
 		this.level = level
@@ -43,7 +56,12 @@ export class TimelineEvent {
 		this.emotion = emotion
 		this.photoCount = photoCount
 		this.contentCount = contentCount
+		this.status = status
+		this.confidence = confidence
+		this.coverContentId = coverContentId
 		this.children = []
+		this.photoIds = []
+		this.coverPath = ''
 	}
 }
 
@@ -134,7 +152,10 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 					item.getString('place') ?? '',
 					item.getString('emotion') ?? '',
 					item.getNumber('photo_count') as number,
-					item.getNumber('content_count') as number
+					item.getNumber('content_count') as number,
+					item.getString('status') ?? 'draft',
+					item.getNumber('confidence') as number,
+					item.getString('cover_content_id') ?? ''
 				)
 				result.push(ev)
 			}

@@ -3,10 +3,25 @@
  *
  * 与 backend/app/services/event_aggregation/pipeline.py 的 AGG_CONFIG 对齐。
  * 改参数必须两端同步改（端侧此处 / 云侧 pipeline.py），AGG-016 双跑测试兜底。
+ *
+ * 30min 保守模式（B3-2 · 2026-08-26 Wave2 AgentE 正式开关）：
+ *  - 产品部验收口径为 L0 层可调参数，不硬编码：CONSERVATIVE_MODE=false 时
+ *    时间窗 60min（默认宽窗）；true 时 30min（保守模式，跨 30min 的事件拆开）。
+ *  - 云侧对应 pipeline.py AGG_CONFIG["l0"]["conservative_mode"] 由 Agent D 对齐；
+ *    AGG-016 双跑 fixtures 同时覆盖两种模式（保守用例 eps_t_sec=1800）。
  */
-export const L0_EPS_T_SEC: number = 3600.0   // L0 时间窗：60min（30min 保守开关）
-export const L0_EPS_S_M: number = 500.0      // L0 空间窗：500m
-export const L0_MIN_PTS: number = 3          // min_pts：<3 张散片进 L1 日卡片
-export const BURST_GAP_SEC: number = 5.0     // 连拍折叠：<5s 折叠为 1 个时间点
-export const WALK_SPEED_MS: number = 6000.0 / 3600.0   // 步行 6km/h（速度校验下限）
-export const DRIVE_SPEED_MS: number = 120000.0 / 3600.0 // 驾车 120km/h（漂移上限）
+export const L0_EPS_T_SEC_DEFAULT: number = 3600.0       // L0 时间窗默认：60min
+export const L0_EPS_T_SEC_CONSERVATIVE: number = 1800.0  // L0 保守模式：30min
+export const L0_EPS_S_M: number = 500.0                  // L0 空间窗：500m
+export const L0_MIN_PTS: number = 3                      // min_pts：<3 张散片进 L1 日卡片
+export const BURST_GAP_SEC: number = 5.0                 // 连拍折叠：<5s 折叠为 1 个时间点
+export const WALK_SPEED_MS: number = 6000.0 / 3600.0     // 步行 6km/h（速度校验下限）
+export const DRIVE_SPEED_MS: number = 120000.0 / 3600.0  // 驾车 120km/h（漂移上限）
+
+/** 30min 保守模式开关（false=60min 宽窗默认；true=30min 保守） */
+export const CONSERVATIVE_MODE: boolean = false
+
+/** 生效的 L0 时间窗（聚合运行器取此值；agg-check 按用例独立取参） */
+export function l0EpsTsec(): number {
+	return CONSERVATIVE_MODE ? L0_EPS_T_SEC_CONSERVATIVE : L0_EPS_T_SEC_DEFAULT
+}

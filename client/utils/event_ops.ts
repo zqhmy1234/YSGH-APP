@@ -5,6 +5,12 @@
  * test_event_ops 9 项全过）。MVP UI 范围：confirm（转正）+ merge（合并到相邻
  * 上一张）+ split（选片拆分，2026-08-25 后端补 items 端点后启用）。
  *
+ * 2026-08-26 Wave2 AgentE 新增：
+ *  - fetchContentEvents：照片→事件反向入口（GET /api/v1/contents/{id}/events，
+ *    新文件 api/event_items.py 提供；照片详情"属于"列表）
+ *  - ignoreEventLocally/isIgnoredEvent：L2 待确认区"忽略"——MVP 本地忽略
+ *    （后端无 reject 端点，Agent D 域；本地隐藏 + 可被未来 reject API 取代）
+ *
  * 离线 op_log（2026-08-25 · 第二波遗留）：网络不可用时操作不丢失——
  * 入本地队列（uni storage，JSON 行分隔串），联网后 flushOpQueue 按序补发。
  * 后端 merge/split/confirm 非幂等（无 op_id），队列顺序执行 + 网络恢复后
@@ -15,10 +21,12 @@
  *  - POST /api/v1/events/confirm {event_id}   → EventOut（status=confirmed）
  *  - POST /api/v1/events/merge {target_event_id, source_event_ids:[>=1]}
  *  - POST /api/v1/events/split {event_id, content_ids:[>=1]}
+ *  - GET  /api/v1/contents/{id}/events        → 照片所属事件列表（反向入口）
  */
 import { post, get, dataObj, dataArr } from './api'
 
 const OP_LOG_KEY = 'yishu_op_log'
+const IGNORE_KEY = 'yishu_ignored_events'
 
 /** 拆分选片条目（GET /events/{id}/items 解析） */
 export class SplitItem {
@@ -35,6 +43,85 @@ export class SplitItem {
 		this.takenAt = takenAt
 		this.selected = false
 	}
+}
+
+/** 照片所属事件（反向入口 GET /contents/{id}/events 解析；照片详情"属于"列表） */
+export class ContentEventRef {
+	id: string
+	level: number
+	title: string
+	coverContentId: string
+	status: string
+	confidence: number
+	photoCount: number
+
+	constructor(id: string, level: number, title: string, coverContentId: string, status: string, confidence: number, photoCount: number) {
+		this.id = id
+		this.level = level
+		this.title = title
+		this.coverContentId = coverContentId
+		this.status = status
+		this.confidence = confidence
+		this.photoCount = photoCount
+	}
+}
+
+/** 照片→事件反向查询（B3-4：照片详情"属于：事件列表"）；失败/无归属 → 空数组 */
+export function fetchContentEvents(contentId: string): Promise<Array<ContentEventRef>> {
+	return new Promise<Array<ContentEventRef>>((resolve) => {
+		get('/api/v1/contents/' + contentId + '/events').then((resp: UTSJSONObject | null) => {
+			if (resp == null) {
+				resolve([])
+				return
+			}
+			const arr = dataArr(resp)
+			const out: Array<ContentEventRef> = []
+			for (let i = 0; i < arr.length; i++) {
+				const it = arr[i]
+				out.push(new ContentEventRef(
+					it.getString('id') ?? '',
+					it.getNumber('level') as number,
+					it.getString('title') ?? '',
+					it.getString('cover_content_id') ?? '',
+					it.getString('status') ?? 'draft',
+					it.getNumber('confidence') as number,
+					it.getNumber('photo_count') as number
+				))
+			}
+			resolve(out)
+		})
+	})
+}
+
+/** L2 待确认区"忽略"（MVP 本地隐藏；后端 reject 端点由 Agent D 域，后续可替换） */
+export function ignoreEventLocally(eventId: string): void {
+	const raw = uni.getStorageSync(IGNORE_KEY) as string
+	let ids: Array<string> = []
+	if (raw != '') {
+		ids = raw.split('\n')
+	}
+	for (let i = 0; i < ids.length; i++) {
+		if (ids[i] == eventId) {
+			return
+		}
+	}
+	ids.push(eventId)
+	uni.setStorageSync(IGNORE_KEY, ids.join('\n'))
+}
+
+/** 事件是否被本地忽略（待确认区过滤） */
+export function isIgnoredEvent(eventId: string): boolean {
+	const raw = uni.getStorageSync(IGNORE_KEY) as string
+	if (raw == '') {
+		return false
+	}
+	const ids = raw.split('\n')
+	for (let i = 0; i < ids.length; i++) {
+		if (ids[i] == eventId) {
+			return true
+		}
+	}
+	return false
 }
 
 /** 网络检查（uni-app x getNetworkType 为回调式；none/未知视为离线） */

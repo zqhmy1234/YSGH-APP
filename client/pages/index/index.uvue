@@ -30,7 +30,7 @@
 			</view>
 
 			<!-- 空状态：空白相纸插画 + 文案 + 引导（B-F8-3） -->
-			<view v-else-if="days.length === 0" class="center-box">
+			<view v-else-if="days.length === 0 && pendingEvents.length === 0" class="center-box">
 				<image class="empty-img" src="/static/empty-photo.svg" mode="aspectFit" />
 				<text class="empty-title serif">相册还空着</text>
 				<text class="empty-desc">授权相册后，照片会自动整理成一天的记忆卡片</text>
@@ -39,8 +39,35 @@
 				</view>
 			</view>
 
-			<!-- 时间轴：L1 日卡片 + L2 主题两级（B-F8-1） -->
+			<!-- 时间轴：L1 日卡片 + L2 主题两级 + L2 待确认区（B-F8-1 · B3-5） -->
 			<view v-else class="feed">
+				<!-- L2 待确认区（B3-5：confidence<0.7 的 draft 独立分组；确认/忽略） -->
+				<view v-if="pendingEvents.length > 0" class="pending-block">
+					<text class="day-title serif">待确认</text>
+					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
+					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2">
+						<view v-if="ev.coverPath != ''" class="cover-wrap">
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
+						</view>
+						<text class="card-title serif title-l2">{{ ev.title }}</text>
+						<view class="card-meta">
+							<text class="meta-item">{{ levelText(ev.level) }}</text>
+							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+						</view>
+						<view v-if="ev.photoIds.length > 0" class="photo-strip">
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+						</view>
+						<view class="pending-actions">
+							<view class="pending-btn pending-btn-ghost" @tap="ignorePending(ev)">
+								<text class="pending-btn-text">忽略</text>
+							</view>
+							<view class="pending-btn pending-btn-solid" @tap="confirmPending(ev)">
+								<text class="pending-btn-text">确认</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
 				<view v-for="(day, dayIdx) in days" :key="day.key" class="day-block">
 					<text class="day-title serif">{{ day.label }}</text>
 					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'">
@@ -48,10 +75,18 @@
 						<view class="card-ops" @tap="onCardOps(ev, dayIdx)">
 							<text class="card-ops-text">⋯</text>
 						</view>
+						<!-- 封面展示（B3-4：cover_content_id 有值显示，无则首图回退） -->
+						<view v-if="ev.coverPath != ''" class="cover-wrap">
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
+						</view>
 						<text class="card-title serif" :class="ev.level === 1 ? 'title-l1' : 'title-l2'">{{ ev.title }}</text>
 						<view class="card-meta">
 							<text v-if="ev.place != ''" class="meta-item">{{ ev.place }}</text>
 							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+						</view>
+						<!-- 照片条（会话照片；点开 → 反向入口"属于"列表） -->
+						<view v-if="ev.photoIds.length > 0" class="photo-strip">
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
 						</view>
 						<view v-if="ev.level === 1 && ev.children.length > 0" class="l2-list">
 							<view v-for="child in ev.children" :key="child.id" class="l2-chip">
@@ -100,6 +135,39 @@
 			</view>
 		</view>
 
+		<!-- 照片详情：反向入口"属于：事件列表"（B3-4 · 2026-08-26 Wave2 E） -->
+		<view v-if="showPhotoDetail" class="split-mask" @tap="closePhotoDetail">
+			<view class="split-panel" @tap.stop>
+				<text class="split-title serif">照片属于</text>
+				<text class="split-sub muted">这张照片属于 {{ photoDetailEvents.length }} 个事件（多对多）</text>
+				<view v-if="photoDetailPath != ''" class="photo-detail-img-wrap">
+					<image class="photo-detail-img" :src="photoDetailPath" mode="aspectFit" />
+				</view>
+				<scroll-view class="split-list" scroll-y>
+					<view v-if="photoDetailLoading" class="split-empty">
+						<text class="muted">正在查询…</text>
+					</view>
+					<view v-else-if="photoDetailEvents.length === 0" class="split-empty">
+						<text class="muted">尚未归属任何事件</text>
+					</view>
+					<view v-for="(ref, idx) in photoDetailEvents" :key="ref.id" class="belongs-row" @tap="jumpFromPhoto(idx)">
+						<view class="belongs-badge" :class="ref.level === 1 ? 'belongs-badge-l1' : 'belongs-badge-l2'">
+							<text class="belongs-badge-text">{{ levelTag(ref.level) }}</text>
+						</view>
+						<view class="belongs-main">
+							<text class="belongs-title">{{ ref.title }}</text>
+							<text class="belongs-meta muted">{{ belongsMeta(ref) }}</text>
+						</view>
+					</view>
+				</scroll-view>
+				<view class="split-actions">
+					<view class="split-btn split-btn-ghost" @tap="closePhotoDetail">
+						<text class="split-btn-text">关闭</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
 		<!-- 上传进度浮层（B-UP-1 进度回调） -->
 		<view v-if="uploading" class="upload-bar">
 			<text class="upload-text">上传中 {{ uploadDone }}/{{ uploadTotal }}{{ uploadFailed > 0 ? '（失败' + uploadFailed + '）' : '' }}</text>
@@ -119,7 +187,19 @@
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play'
-	import { confirmEvent, mergeEvent, fetchEventItems, splitEvent, SplitItem, flushOpQueue } from '@/utils/event_ops'
+	import {
+		confirmEvent,
+		mergeEvent,
+		fetchEventItems,
+		splitEvent,
+		SplitItem,
+		flushOpQueue,
+		fetchContentEvents,
+		ContentEventRef,
+		ignoreEventLocally,
+		isIgnoredEvent
+	} from '@/utils/event_ops'
+	import { recordGrantTime, recordFirstDayRender } from '@/utils/agg/perf_timing.uts'
 
 	class DayGroup {
 		key: string
@@ -133,12 +213,35 @@
 		}
 	}
 
+	/** 会话照片映射项：content_id → 本地路径（封面/照片条/反向入口显示用） */
+	class PhotoPathEntry {
+		contentId: string
+		path: string
+
+		constructor(contentId: string, path: string) {
+			this.contentId = contentId
+			this.path = path
+		}
+	}
+
+	/** 事件成员照片映射项：event_id → content_id[]（端侧聚合成员） */
+	class EventPhotoEntry {
+		eventId: string
+		contentIds: Array<string>
+
+		constructor(eventId: string, contentIds: Array<string>) {
+			this.eventId = eventId
+			this.contentIds = contentIds
+		}
+	}
+
 	export default {
 		data() {
 			return {
 				loaded: false,
 				refreshing: false,
 				days: [] as Array<DayGroup>,
+				pendingEvents: [] as Array<TimelineEvent>,
 				uploading: false,
 				uploadDone: 0,
 				uploadTotal: 0,
@@ -147,7 +250,15 @@
 				showSplitPanel: false,
 				splitEventId: '',
 				splitItems: [] as Array<SplitItem>,
-				splitLoading: false
+				splitLoading: false,
+				// 照片→事件反向入口（B3-4）
+				showPhotoDetail: false,
+				photoDetailPath: '',
+				photoDetailEvents: [] as Array<ContentEventRef>,
+				photoDetailLoading: false,
+				// 会话照片/事件映射（封面、照片条）
+				localPhotoPath: [] as Array<PhotoPathEntry>,
+				eventPhotoIds: [] as Array<EventPhotoEntry>
 			}
 		},
 		onLoad() {
@@ -167,7 +278,7 @@
 			}
 		},
 		methods: {
-			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下） */
+			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下；draft<0.7 进待确认） */
 			reload(): void {
 				// 2026-08-25 离线 op_log：联网后先补发离线操作，再刷新（顺序执行）
 				flushOpQueue().then((_remain: number) => {
@@ -177,8 +288,13 @@
 			fetchAll(): void {
 				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
 					this.days = this.groupDays(events)
+					this.attachPhotos()
 					this.loaded = true
 					this.refreshing = false
+					// 30s 验收（B3-6）：首批日卡片渲染完成埋点（幂等）
+					if (this.days.length > 0 || this.pendingEvents.length > 0) {
+						recordFirstDayRender()
+					}
 				})
 				// T-PL-1：同时拉今日回响（每天≤1 条，无则不显示）
 				fetchTodayEcho().then((card: EchoCard | null) => {
@@ -222,10 +338,10 @@
 				confirmEvent(ev.id).then((ok: boolean) => {
 					if (ok) {
 						uni.showToast({ title: '已确认', icon: 'none' })
-						this.reload()
 					} else {
 						uni.showToast({ title: '确认失败', icon: 'none' })
 					}
+					this.reload()
 				})
 			},
 			/** 找当前卡片之前的最近一张 L1（合并目标；跳过 L2 组） */
@@ -247,10 +363,10 @@
 				mergeEvent(ev.id, targetId).then((ok: boolean) => {
 					if (ok) {
 						uni.showToast({ title: '已合并', icon: 'none' })
-						this.reload()
 					} else {
 						uni.showToast({ title: '合并失败', icon: 'none' })
 					}
+					this.reload()
 				})
 			},
 			/** 拆分：拉成员列表 → 选片面板（2026-08-25 S-MO-1 split UI） */
@@ -333,18 +449,29 @@
 					}
 				})
 			},
+			/** 按日分组：draft & confidence<0.7 → 待确认区；忽略的事件过滤；L2 挂同日 L1 */
 			groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
-				// L1 按日建组；L2 挂到同日 L1 的 children；无 L1 的日子用 L2 建组
+				const pending: Array<TimelineEvent> = []
 				const l1: Array<TimelineEvent> = []
 				const l2: Array<TimelineEvent> = []
 				for (let i = 0; i < events.length; i++) {
 					const ev = events[i]
+					if (isIgnoredEvent(ev.id)) {
+						continue // B3-5 忽略（本地隐藏）
+					}
+					const isPending = ev.status == 'draft' && ev.confidence > 0 && ev.confidence < 0.7
+					if (isPending) {
+						pending.push(ev)
+						continue
+					}
 					if (ev.level === 1) {
 						l1.push(ev)
 					} else if (ev.level === 2) {
 						l2.push(ev)
 					}
 				}
+				pending.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+				this.pendingEvents = pending
 				l1.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
 				l2.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
 
@@ -363,7 +490,10 @@
 						ev.place,
 						ev.emotion,
 						ev.photoCount,
-						ev.contentCount
+						ev.contentCount,
+						ev.status,
+						ev.confidence,
+						ev.coverContentId
 					)
 					groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
 					l1ByDay.set(k, groups.length - 1)
@@ -381,6 +511,124 @@
 				}
 				return groups
 			},
+			/** content_id → 本地路径（会话映射；空=无） */
+			photoPathOf(contentId: string): string {
+				for (let i = 0; i < this.localPhotoPath.length; i++) {
+					if (this.localPhotoPath[i].contentId == contentId) {
+						return this.localPhotoPath[i].path
+					}
+				}
+				return ''
+			},
+			/** event_id → 成员照片 content_id 列表（端侧聚合成员；无=空） */
+			lookupEventPhotos(eventId: string): Array<string> {
+				for (let i = 0; i < this.eventPhotoIds.length; i++) {
+					if (this.eventPhotoIds[i].eventId == eventId) {
+						return this.eventPhotoIds[i].contentIds
+					}
+				}
+				return []
+			},
+			/** 逐卡填充 photoIds + coverPath（封面：cover_content_id 优先，无则首图回退） */
+			attachPhotos(): void {
+				let strips = 0
+				let covers = 0
+				for (let i = 0; i < this.days.length; i++) {
+					const g = this.days[i]
+					for (let j = 0; j < g.events.length; j++) {
+						const ev = g.events[j]
+						ev.photoIds = this.lookupEventPhotos(ev.id)
+						let cover = this.photoPathOf(ev.coverContentId)
+						if (cover == '' && ev.photoIds.length > 0) {
+							cover = this.photoPathOf(ev.photoIds[0])
+						}
+						ev.coverPath = cover
+						if (ev.photoIds.length > 0) {
+							strips++
+						}
+						if (ev.coverPath != '') {
+							covers++
+						}
+					}
+				}
+				for (let j = 0; j < this.pendingEvents.length; j++) {
+					const ev = this.pendingEvents[j]
+					ev.photoIds = this.lookupEventPhotos(ev.id)
+					let cover = this.photoPathOf(ev.coverContentId)
+					if (cover == '' && ev.photoIds.length > 0) {
+						cover = this.photoPathOf(ev.photoIds[0])
+					}
+					ev.coverPath = cover
+					if (ev.photoIds.length > 0) {
+						strips++
+					}
+					if (ev.coverPath != '') {
+						covers++
+					}
+				}
+				console.log('[yishu] attachPhotos: days=' + this.days.length + ' pending=' + this.pendingEvents.length + ' localPaths=' + this.localPhotoPath.length + ' eventPhotoIds=' + this.eventPhotoIds.length + ' strips=' + strips + ' covers=' + covers)
+			},
+			/** 照片点开 → 反向入口"属于：事件列表"（B3-4） */
+			onPhotoTap(contentId: string): void {
+				this.showPhotoDetail = true
+				this.photoDetailLoading = true
+				this.photoDetailPath = this.photoPathOf(contentId)
+				this.photoDetailEvents = []
+				fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
+					this.photoDetailLoading = false
+					this.photoDetailEvents = evs
+				})
+			},
+			closePhotoDetail(): void {
+				this.showPhotoDetail = false
+				this.photoDetailEvents = []
+			},
+			/** "跳转"：MVP 无独立事件详情页，时间轴即跳转目标 → 关闭浮层即可看到该事件 */
+			jumpFromPhoto(_idx: number): void {
+				this.closePhotoDetail()
+			},
+			/** 待确认区：确认转正（调 confirm API） */
+			confirmPending(ev: TimelineEvent): void {
+				confirmEvent(ev.id).then((ok: boolean) => {
+					if (ok) {
+						uni.showToast({ title: '已确认', icon: 'none' })
+					} else {
+						uni.showToast({ title: '确认失败', icon: 'none' })
+					}
+					this.reload()
+				})
+			},
+			/** 待确认区：忽略（MVP 本地隐藏；后端 reject 端点由 Agent D 域） */
+			ignorePending(ev: TimelineEvent): void {
+				ignoreEventLocally(ev.id)
+				uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
+				this.reload()
+			},
+			/** 事件层级标签（待确认区/反向入口） */
+			levelText(level: number): string {
+				if (level === 1) {
+					return '日卡片'
+				} else if (level === 2) {
+					return '主题'
+				} else if (level === 3) {
+					return '主题流'
+				}
+				return '瞬间'
+			},
+			levelTag(level: number): string {
+				if (level === 1) {
+					return '日卡'
+				} else if (level === 2) {
+					return '主题'
+				} else if (level === 3) {
+					return '主题流'
+				}
+				return '瞬间'
+			},
+			belongsMeta(ref: ContentEventRef): string {
+				const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
+				return ref.photoCount.toFixed(0) + '张 · ' + st
+			},
 			onRefresh(): void {
 				this.refreshing = true
 				this.reload()
@@ -396,6 +644,8 @@
 			/** 启动 PhotoObserver 监听（幂等） */
 			startWatch(): void {
 				console.log('[yishu] startWatch begin')
+				// 30s 验收（B3-6）：授权/监听启动 = 计时起点（幂等）
+				recordGrantTime()
 				const watch = createPhotoWatch()
 				watch.start((items: Array<PhotoItem>) => {
 					console.log('[yishu] batch received: ' + items.length)
@@ -424,6 +674,10 @@
 					}
 					// 端侧聚合：上传成功照片 → L1 日卡片事件（B3-6 端侧 L0/L1 真值）
 					if (uploaded.length > 0) {
+						// 会话照片映射：content_id → 本地路径（封面/照片条显示）
+						for (let i = 0; i < uploaded.length; i++) {
+							this.localPhotoPath.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
+						}
 						const tz = -new Date().getTimezoneOffset()
 						const agg = aggregateToEvents(uploaded, tz)
 						const events: Array<UTSJSONObject> = []
@@ -442,6 +696,8 @@
 							syncClientEvents(events).then((out: SyncOutcome | null) => {
 								if (out != null) {
 									console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
+									// 服务端 event_id → 成员照片映射（照片条/封面按云端 id 关联）
+									this.buildEventPhotoIds(events, out.acceptedEvents)
 								} else {
 									console.error('[yishu] 事件上云失败（重试耗尽）')
 									uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
@@ -453,6 +709,32 @@
 					}
 					this.reload()
 				})
+			},
+			/** 通过 sync accepted 明细建立 服务端事件 id → 成员照片 映射（端侧聚合的 client_event_id 与云端 id 不同） */
+			buildEventPhotoIds(clientEvents: Array<UTSJSONObject>, accepted: Array<UTSJSONObject>): void {
+				const clientMap: Array<EventPhotoEntry> = []
+				for (let k = 0; k < clientEvents.length; k++) {
+					const cid = clientEvents[k].getString('client_event_id') ?? ''
+					const pids = clientEvents[k].getArray('photo_ids') as Array<string> | null
+					if (cid != '' && pids != null) {
+						clientMap.push(new EventPhotoEntry(cid, pids))
+					}
+				}
+				for (let a = 0; a < accepted.length; a++) {
+					const it = accepted[a]
+					const serverId = it.getString('event_id') ?? ''
+					const clientId = it.getString('client_event_id') ?? ''
+					if (serverId == '' || clientId == '') {
+						continue
+					}
+					for (let k = 0; k < clientMap.length; k++) {
+						if (clientMap[k].eventId == clientId) {
+							this.eventPhotoIds.push(new EventPhotoEntry(serverId, clientMap[k].contentIds))
+							break
+						}
+					}
+				}
+				console.log('[yishu] photoMap: clientEvents=' + clientEvents.length + ' accepted=' + accepted.length + ' mappedServerEvents=' + this.eventPhotoIds.length)
 			}
 		}
 	}
@@ -546,6 +828,73 @@
 		font-weight: bold;
 		margin-bottom: 20rpx;
 		padding-left: 8rpx;
+	}
+
+	/* 待确认区（B3-5 · 2026-08-26 Wave2 E） */
+	.pending-block {
+		margin-top: 24rpx;
+	}
+	.pending-sub {
+		margin-bottom: 20rpx;
+		padding-left: 8rpx;
+	}
+	.pending-actions {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.pending-btn {
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-top: 14rpx;
+		padding-bottom: 14rpx;
+		border-radius: 32rpx;
+		display: flex;
+		align-items: center;
+	}
+	.pending-btn-ghost {
+		border-width: 2rpx;
+		border-color: #B05A3A;
+		margin-right: 20rpx;
+	}
+	.pending-btn-solid {
+		background-color: #B05A3A;
+	}
+	.pending-btn-text {
+		font-size: 26rpx;
+		color: #3A2E25;
+	}
+	.pending-btn-solid .pending-btn-text {
+		color: #F6F1E7;
+	}
+
+	/* 封面展示（B3-4 · 2026-08-26 Wave2 E） */
+	.cover-wrap {
+		margin-bottom: 20rpx;
+		border-radius: 8rpx;
+		overflow: hidden;
+	}
+	.cover-img {
+		width: 100%;
+		height: 280rpx;
+		background-color: #EDE5D5;
+	}
+
+	/* 照片条（会话照片；点开 → 反向入口） */
+	.photo-strip {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.strip-img {
+		width: 152rpx;
+		height: 152rpx;
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		border-radius: 8rpx;
+		background-color: #EDE5D5;
 	}
 
 	/* 卡片：小圆角相纸感 + 右下撕边（border-radius 切角）+ 底部投影，不描边 */
@@ -820,5 +1169,59 @@
 	}
 	.split-btn-solid .split-btn-text {
 		color: #F6F1E7;
+	}
+
+	/* 照片详情：反向入口"属于"列表（B3-4 · 2026-08-26 Wave2 E） */
+	.photo-detail-img-wrap {
+		margin-top: 24rpx;
+		display: flex;
+		justify-content: center;
+	}
+	.photo-detail-img {
+		width: 100%;
+		height: 360rpx;
+		border-radius: 12rpx;
+		background-color: #EDE5D5;
+	}
+	.belongs-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: rgba(58, 46, 37, 0.08);
+	}
+	.belongs-badge {
+		width: 72rpx;
+		height: 44rpx;
+		border-radius: 22rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+	.belongs-badge-l1 {
+		background-color: #C8B394;
+	}
+	.belongs-badge-l2 {
+		background-color: #B05A3A;
+	}
+	.belongs-badge-text {
+		color: #F6F1E7;
+		font-size: 22rpx;
+		font-weight: bold;
+	}
+	.belongs-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+	.belongs-title {
+		font-size: 28rpx;
+		color: #3A2E25;
+	}
+	.belongs-meta {
+		font-size: 22rpx;
+		margin-top: 4rpx;
 	}
 </style>
