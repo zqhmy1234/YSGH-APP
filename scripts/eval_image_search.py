@@ -28,13 +28,18 @@ def main() -> int:
     queries = json.loads((BENCH / "queries" / "queries_image.json").read_text(encoding="utf-8"))["queries"]
     print(f"{len(queries)} 条文字搜图查询", flush=True)
 
+    # 预热：首个查询的 BGE-M3 冷加载（~5-8s）不应计入 P95 稳态口径
+    from app.services.embedding import encode_query
+
+    encode_query("预热")
+
     hit3 = 0
     latencies = []
     rows = []
     for q in queries:
         t0 = time.perf_counter()
         result = search(
-            SearchQuery(q=q["query"], limit=5, content_types=["image"]),
+            SearchQuery(q=q["query"], limit=5, content_types=["photo"]),  # FIX-1：规范值
             collection="yishu_benchmark",
         )
         ms = int((time.perf_counter() - t0) * 1000)
