@@ -105,8 +105,8 @@ def _classify_content(db: Session, content: Content, text: str) -> None:
 def _process_text(db: Session, content: Content) -> None:
     if content.text:
         _classify_content(db, content, content.text)
-        _index_content(db, content, content.text)
         # Wave0 钩子：B5b 敏感标记 + B1 画像标注
+        # （Qdrant 索引 R2#1 后置到主提交之后，见 _index_after_commit）
         from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
 
         mark_sensitive_on_ingest(db, content)
@@ -230,11 +230,8 @@ def _process_voice(db: Session, content: Content) -> str:
 
         annotate_on_ingest(db, content)
         consume_emotion(db, content)
-        try:
-            _index_content(db, content, result.text)
-        except Exception as exc:  # noqa: BLE001 -- 索引失败不否定已完成的真实转写
-            logger.warning("语音索引失败 content=%s: %s", content.id, exc)
-            patch_extra(content, index_error=type(exc).__name__)
+        # Qdrant 索引 R2#1 后置到主提交之后（_index_after_commit）——索引失败
+        # 不再回写 index_error（仅日志），内容已提交 done，不影响可搜索性兜底
         return result.outcome
     finally:
         _cleanup_temporary_audio(tmp_file)
@@ -372,6 +369,8 @@ def _process_photo(db: Session, content: Content) -> None:
 
     try:
         # 1. caption（图片塔；失败不影响照片浏览，仅不可搜）
+        #    Qdrant 索引（text_vec/image_vec）+ payload 补全 R2#1 后置到主提交
+        #    之后（_index_after_commit，此时 place/ci_tags 已就绪，无需 update_payload）
         caption = None
         if image_path is not None:
             try:
@@ -380,21 +379,6 @@ def _process_photo(db: Session, content: Content) -> None:
                 logger.warning("图片 caption 失败 content=%s: %s", content.id, exc)
         if caption:
             content.text = caption
-            _index_content(db, content, caption)
-            # 以图搜图生产接线（P2-07）：caption 向量写入 image_vec 命名向量，
-            # 供 POST /search/image 检索（此前生产 image_vec 恒空，以图搜图恒空结果）
-            try:
-                from app.services.embedding import encode_dense
-                from app.services.vector_store import get_store
-
-                img_vec = encode_dense([caption])[0]
-                get_store().upsert_image_vec(
-                    str(content.id),
-                    img_vec,
-                    payload={"text": caption, "content_type": "photo"},
-                )
-            except Exception as exc:  # noqa: BLE001 —— 图片向量失败不影响浏览
-                logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
 
         # 2. CI 打标（F1 L2 场景标签 / 搜索标签增强）
         # 2026-08-26 真实 key 验证修复：CI 打标要求图片在 COS（image_key=COS key），
@@ -431,16 +415,6 @@ def _process_photo(db: Session, content: Content) -> None:
                     content.place = place
             except Exception as exc:  # noqa: BLE001 —— 逆地理失败不影响照片浏览
                 logger.warning("逆地理失败 content=%s: %s", content.id, exc)
-
-        # 4. 刷新 Qdrant payload（集成备注：photo 首入库时 place/ci_tags 此刻才就绪，
-        #    用轻量 set_payload 补全，避免重新编码 embedding）
-        try:
-            from app.services.pipeline_ext.payload import build_payload
-            from app.services.vector_store import get_store
-
-            get_store().update_payload(str(content.id), build_payload(content))
-        except Exception as exc:  # noqa: BLE001 —— payload 刷新失败不影响浏览
-            logger.warning("payload 刷新失败 content=%s: %s", content.id, exc)
     finally:
         if tmp_file is not None:
             try:
@@ -449,10 +423,51 @@ def _process_photo(db: Session, content: Content) -> None:
                 pass
 
 
+def _index_after_commit(db: Session, content: Content) -> None:
+    """主提交后的 Qdrant 索引（R2#1：Qdrant 写后置到 DB 提交之后）
+
+    全部向量写入移到主 commit 之后——DB 是内容状态真值，Qdrant 是事后
+    尽力而为的检索增强：主提交失败则根本不写向量（无孤儿向量）；索引失败
+    只影响可搜索性，不否定已提交的 done 状态。upsert 按 content_id 幂等
+    （UUID5 稳定同点 + 整点替换），RQ 重投/超龄重扫重跑安全。
+    photo 附带 image_vec（以图搜图）写入；place/ci_tags 此时已就绪，
+    由 extend_payload 直接进 payload（不再需要 update_payload 补全）。
+    """
+    text = content.text
+    if not text:
+        return
+    _index_content(db, content, text)
+    if content.content_type != "photo":
+        return
+    try:
+        from app.services.embedding import encode_dense
+        from app.services.vector_store import get_store
+
+        img_vec = encode_dense([text])[0]
+        get_store().upsert_image_vec(
+            str(content.id),
+            img_vec,
+            payload={"text": text, "content_type": "photo"},
+        )
+    except Exception as exc:  # noqa: BLE001 —— 图片向量失败不影响浏览
+        logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
+
+
 def process_content(content_id: str) -> dict:
     """内容处理主入口（RQ worker 消费；API-016 队列编排）
 
     返回：{"content_id", "status", "processed": [步骤], "error": 可选}
+
+    R2#1（分阶段提交，重构侦察 R2-P1#1）：
+      - 阶段 0：加载后先提交"processing"状态位（结束当前事务）——COS 下载 /
+        ASR 转写 / dashscope / 腾讯 CI / 高德等分钟级外部调用全部在事务外进行，
+        contents 行锁/连接不再横跨整个管线（ASR/LLM 调用移出行锁窗口）
+      - 阶段 1：处理器（外调 + 内存变更）包 begin_nested（SAVEPOINT）失败隔离
+      - 阶段 2：事件聚合（DB 写入，与状态位同事务）
+      - 阶段 3：主提交 status=done + 全部 DB 状态变更一次落库
+      - 阶段 4：Qdrant 索引后置到主提交之后（DB 是真值，Qdrant 事后幂等增强；
+        主提交失败则无向量写入，无孤儿向量；重投重跑按 content_id 幂等）
+      - 阶段 5：本地情绪低优先级任务入队（不阻塞内容可用性）
     """
     from app.services.external.asr import AsrError
 
@@ -472,6 +487,12 @@ def process_content(content_id: str) -> dict:
         if content is None:
             return {"content_id": content_id, "status": "not-found"}
 
+        # 阶段 0：外部调用前提交状态位（分阶段提交）——"processing"先落库并
+        # 结束当前事务，后续分钟级外部调用不持有 contents 行锁/数据库连接
+        if content.status != "processing":
+            content.status = "processing"
+        db.commit()
+
         processed = []
         handler = {
             "text": _process_text,
@@ -480,7 +501,10 @@ def process_content(content_id: str) -> dict:
         }.get(content.content_type)
         processing_outcome = None
         if handler:
-            processing_outcome = handler(db, content)
+            # 阶段 1：处理器（SAVEPOINT 失败隔离——处理器部分 DB 变更失败仅回滚
+            # 到本保存点，由外层统一回写 failed / re-raise，不外泄部分写入）
+            with db.begin_nested():
+                processing_outcome = handler(db, content)
             processed.append(content.content_type)
 
         # 空白语音不形成记忆事件；端侧 L0/L1 真值后，云侧只跑 L2/L3 候选。
@@ -511,7 +535,14 @@ def process_content(content_id: str) -> dict:
             and audio_processing.get("emotion_enrichment") == "pending"
         )
         content.status = "done"
+        # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
         db.commit()
+
+        # 阶段 4：Qdrant 后置索引（失败只影响可搜索性，不否定已提交的处理）
+        try:
+            _index_after_commit(db, content)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("后置索引失败 content=%s: %s", content.id, exc)
 
         # 主转写先完成；本地情绪作为低优先级任务追加，不阻塞内容可用性。
         emotion_job_status = None

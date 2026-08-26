@@ -531,6 +531,96 @@ class TestEventAggregation:
         items = db.execute(select(EventItem).where(EventItem.event_id == ev.id)).scalars().all()
         assert len(items) >= 1
 
+class TestR2StagedCommit:
+    """R2#1（分阶段提交，重构侦察 R2-P1#1）：事务边界重构行为验证
+
+    - 阶段 0：外部调用前提交 processing 状态位（处理器内独立会话可见）
+    - Qdrant 后置到主提交之后（索引时独立会话已见 status=done）
+    - 主提交失败 → 后置索引不执行 → 无 Qdrant 孤儿向量
+    """
+
+    def test_processing_status_committed_before_handler(self, db_user, monkeypatch):
+        """处理器运行时，processing 状态位已被阶段 0 提交（独立会话可见）。"""
+        db, user = db_user
+        c = _content(db, user.id, "text", "测试内容")
+        observed: dict = {}
+
+        def probing_process(db, content):
+            other = SessionLocal()
+            try:
+                row = other.execute(
+                    select(Content).where(Content.id == content.id)
+                ).scalar_one()
+                observed["status_in_handler"] = row.status
+            finally:
+                other.close()
+            content.content_class = "todo"
+
+        monkeypatch.setattr("app.services.pipeline._process_text", probing_process)
+        monkeypatch.setattr("app.services.pipeline._index_content", lambda *args: None)
+        from app.services.pipeline import process_content
+
+        r = process_content(str(c.id))
+        assert r["status"] == "done"
+        assert observed.get("status_in_handler") == "processing", (
+            "阶段 0 应在处理器前提交 processing 状态位（外部调用移出行锁窗口）"
+        )
+
+    def test_qdrant_index_happens_after_done_commit(self, db_user, monkeypatch):
+        """Qdrant 索引后置到主提交之后：索引时独立会话已可见 status=done。"""
+        db, user = db_user
+        c = _content(db, user.id, "text", "测试内容")
+        observed: dict = {}
+
+        def recording_index(db, content, text=None):
+            other = SessionLocal()
+            try:
+                row = other.execute(
+                    select(Content).where(Content.id == content.id)
+                ).scalar_one()
+                observed["status_at_index"] = row.status
+            finally:
+                other.close()
+
+        monkeypatch.setattr("app.services.pipeline._index_content", recording_index)
+        from app.services.pipeline import process_content
+
+        r = process_content(str(c.id))
+        assert r["status"] == "done"
+        assert observed.get("status_at_index") == "done", (
+            "Qdrant 索引应后置到主提交（done）之后"
+        )
+
+    def test_main_commit_failure_leaves_no_orphan_vector(self, db_user, monkeypatch):
+        """主提交失败 → 后置索引不执行 → 无 Qdrant 孤儿向量。
+
+        handler 写入文本后抛异常（未分类 → 回写 failed + re-raise）；
+        向量库不应出现该内容点（此前 Qdrant 写发生在事务内，提交失败留孤儿）。
+        """
+        from app.services.vector_store import get_store, point_id_for
+
+        db, user = db_user
+        c = _content(db, user.id, "text", "测试内容")
+
+        def boom_after_mutation(db, content):
+            content.text = "本该索引的文本"
+            raise RuntimeError("post-mutation failure")
+
+        monkeypatch.setattr("app.services.pipeline._process_text", boom_after_mutation)
+        from app.services.pipeline import process_content
+
+        with pytest.raises(RuntimeError):
+            process_content(str(c.id))
+        db.refresh(c)
+        assert c.status == "failed"
+        points = get_store().client.retrieve(
+            collection_name="yishu_contents",
+            ids=[point_id_for(str(c.id))],
+            with_vectors=True,
+        )
+        assert not points, "主提交失败不应留下 Qdrant 孤儿向量"
+
+
 class TestP0FailureWriteback:
     """P0-4（审查 H-4）：非 voice 失败同样回写 failed + extra.error（对齐 voice 先例）
 
