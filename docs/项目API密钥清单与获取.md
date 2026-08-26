@@ -37,8 +37,8 @@
 | `WECHAT_ENCODING_AES_KEY` | — | 回调消息加解密 | 企微后台 → 接收消息设置 | ⏳ 未配置 |
 | `WECHAT_APPID` | — | 微信开放平台 AppID（code2session 登录，决策 #8；Wave4-L 代码就绪——配置后自动走真实登录，未配置 dev/test mock、生产 501） | 微信开放平台/小程序 → 开发管理 → 开发设置 → AppID/AppSecret | ⏳ 未配置（M3 里程碑待申请；mock 测试保持） |
 | `WECHAT_SECRET` | — | 同上（AppSecret；code2session 用） | 同上 | ⏳ 未配置 |
-| `ALIYUN_ACCESS_KEY_ID` | `ALIYUN_AK_ID` | 阿里云内容安全（Green 增强版）AccessKey——⚠️ **非百炼 DashScope key**，需阿里云账号 AccessKey + 开通「内容安全」服务（Wave4-L 适配器代码就绪：TextModeration/ImageBatchModeration） | 阿里云控制台 → AccessKey 管理 + 开通「内容安全」 | ⏳ 未配置（上架前启用；当前腾讯 CI 顶替） |
-| `ALIYUN_ACCESS_KEY_SECRET` | `ALIYUN_AK_SECRET` | 同上 | 同上 | ⏳ 未配置 |
+| `ALIYUN_ACCESS_KEY_ID` | `ALIYUN_AK_ID` | 阿里云内容安全（Green 增强版）AccessKey——⚠️ **非百炼 DashScope key**，需阿里云账号 AccessKey + 开通「内容安全」服务（Wave4-L 适配器代码就绪：TextModeration/ImageBatchModeration） | 阿里云控制台 → AccessKey 管理 + 开通「内容安全」 | ⏳ 未配置（**上架前可选加固，无需现在申请**——当前 DASHSCOPE moderate + 腾讯 CI image_audit 双覆盖已够用；等团队阿里云 AccessKey 到位再接） |
+| `ALIYUN_ACCESS_KEY_SECRET` | `ALIYUN_AK_SECRET` | 同上 | 同上 | ⏳ 未配置（同上） |
 | `JWT_SECRET` | — | 登录令牌签名（≥32 字节；**生产必须改默认值**，否则启动即抛错） | 自行生成（`openssl rand -hex 32`） | ⚠️ dev 默认，生产必改 |
 
 ## 2. 本地基础设施（非密钥但必备）
