@@ -83,11 +83,17 @@ class BgTaskWorker(context: Context, params: WorkerParameters) : Worker(context,
         Log.i("yishu", "WorkManager 唤醒 taskType=$taskType tag=$attributionTag")
 
         // 记 pending：应用层启动/前台/注册 handler 时 drain 执行
+        // 同类型去重（与 UTS recordPending / ExistingWorkPolicy.KEEP 语义对齐）：
+        // 周期任务每 2h 唤醒写一次 "sync"，不去重则 SharedPreferences 无限增长
         val lines = (prefs.getString(BgTaskPrefs.PENDING_KEY, "") ?: "")
             .split("\n").filter { it.isNotEmpty() }.toMutableList()
-        lines.add(taskType)
-        prefs.edit().putString(BgTaskPrefs.PENDING_KEY, lines.joinToString("\n")).apply()
-        Log.i("yishu", "后台任务 pending 记录: $taskType")
+        if (lines.contains(taskType)) {
+            Log.i("yishu", "后台任务 pending 已存在同类型，跳过重复: $taskType")
+        } else {
+            lines.add(taskType)
+            prefs.edit().putString(BgTaskPrefs.PENDING_KEY, lines.joinToString("\n")).apply()
+            Log.i("yishu", "后台任务 pending 记录: $taskType")
+        }
 
         return ListenableWorker.Result.success()
     }

@@ -144,6 +144,14 @@ function writePendingLines(lines: Array<string>): void {
 
 function recordPending(taskType: string): void {
 	const lines = readPendingLines()
+	// 同类型去重（与 WorkManager ExistingWorkPolicy.KEEP 语义对齐）：
+	// 周期唤醒每 2h 写一次 'sync'，不去重则 SharedPreferences 无限增长
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] == taskType) {
+			console.log('[yishu] 后台任务 pending 已存在同类型，跳过重复记录: ' + taskType)
+			return
+		}
+	}
 	lines.push(taskType)
 	writePendingLines(lines)
 	console.log('[yishu] 后台任务 pending 记录: ' + taskType + '（应用层启动/前台后 drain 执行）')
@@ -201,13 +209,14 @@ export function initBackgroundTasks(hours: number): void {
 }
 
 /**
- * 注册任务执行回调（应用层接线）：drainPendingTask 取回的 taskType 派发到此回调（主线程调用）。
- * 传 null 清除。集成接线示例见 interface.uts 头注。
+ * 注册任务执行回调（应用层接线）：drain 取回的 taskType 派发到此回调（主线程调用）。
+ * 注册成功即 drain 一次积压（WorkManager 在应用死亡期间写入的 pending）。
+ * 传 null 清除（清除后不再派发，队列保留不丢）。集成接线示例见 interface.uts 头注。
  */
 export function setBackgroundTaskHandler(cb: BackgroundTaskHandler | null): void {
 	_taskHandler = cb
 	console.log('[yishu] 后台任务 handler ' + (cb != null ? '已注册' : '已清除') + '，pending=' + pendingTaskCount())
-	drainAllPending()
+	drainPendingTasks()
 }
 
 /**
@@ -252,18 +261,27 @@ export function lastWakeupAt(): string {
 	return v != null ? v : ''
 }
 
-/** 消费全部 pending：逐个取出 → 有 handler 则派发执行（主线程） */
-function drainAllPending(): void {
+/**
+ * 消费全部 pending（App 启动/onShow 调用）：逐条取出 → 派发 handler。
+ * 逐条 setTimeout(0) 让出主线程，避免长队列 while 同步派发阻塞 UI（掉帧/ANR 风险）。
+ * handler 未注册时不清队列（避免丢任务）；队列空则自然停止。
+ */
+export function drainPendingTasks(): void {
+	drainOneStep()
+}
+
+function drainOneStep(): void {
 	const handler = _taskHandler
 	if (handler == null) {
 		return
 	}
-	while (true) {
-		const taskType = drainPendingTask()
-		if (taskType == '') {
-			break
-		}
-		console.log('[yishu] drain 派发执行: ' + taskType)
-		handler(taskType)
+	const taskType = drainPendingTask()
+	if (taskType == '') {
+		return
 	}
+	console.log('[yishu] drain 派发执行: ' + taskType)
+	handler(taskType)
+	setTimeout(() => {
+		drainOneStep()
+	}, 0)
 }

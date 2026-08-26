@@ -8,9 +8,10 @@
 |---|---|
 | `isWorkManagerAvailable(): boolean` | `ClassLoader.getResource('androidx/work/WorkManager.class')` 探测；标准基座返回 false |
 | `initBackgroundTasks(hours: number): void` | 注册 hours 小时周期任务（自定义基座走 PeriodicWork；标准基座退化 setInterval 兜底）。幂等 |
-| `setBackgroundTaskHandler(cb: (taskType: string) => void): void` | 设置任务回调（含周期到点与 pending 队列 drain） |
+| `setBackgroundTaskHandler(cb: (taskType: string) => void): void` | 设置任务回调（含周期到点与 pending 队列 drain；注册即 drain 一次积压） |
 | `enqueueTask(taskType: string): void` | 入队。类型映射：`voice_transcribe`→P0、`sync_photo`→P1、`event_aggregate`→P2、`profile_fetch`→P3、`batch_import`→P4 |
-| `drainPendingTask(): void` | 取出最早一条 pending 交给 handler（建议 app 启动/前台时消费） |
+| `drainPendingTask(): string` | 取出并清除最早一条 pending（返回 taskType；无则返回 ''）。单条原语，由内部 drain 循环使用 |
+| `drainPendingTasks(): void` | 消费全部 pending：逐条取出 → 派发 handler（逐条 setTimeout(0) 让出主线程，长队列不阻塞 UI；handler 未注册时保留队列不丢） |
 | `pendingTaskCount(): number` | pending 队列长度 |
 | `lastWakeupAt(): string` | 最近一次任务触发时间（ISO） |
 
@@ -27,28 +28,27 @@
 
 指数退避：P0 30s、其余 60s（WorkManager 标准退避），`existingWorkPolicy=KEEP` 去重。
 
-## 与 Agent H 的接口契约（集成 Agent 接线用）
+## 与 Agent H 的接口契约（已接线 · P0-3 收口）
 
-H 在 `client/utils/sync_client.ts:683-685` `registerBackgroundSync()` 中接线（原注释写的 "yishu-bg-sync" 已过时，插件名为 **yishu-background-tasks**）：
+H 已在 `client/utils/sync_client.ts` `registerBackgroundSync()` 中完成真接线（原注释写的 "yishu-bg-sync" 已过时，插件名为 **yishu-background-tasks**）：
 
 ```ts
-import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTask } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
+// sync_client.ts（registerBackgroundSync 内）
+import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 
 initBackgroundTasks(2) // 2h 周期（photo-watch.start() 已引导，幂等可重复调）
 setBackgroundTaskHandler((taskType: string) => {
-  if (taskType == 'sync' || taskType == 'voice_transcribe') {
-    runSyncChain()
-  } else if (taskType == 'sync_photo') {
-    runSyncChain()
-    continuePendingUploads(() => {}) // uploader.ts
-  }
+  // 统一走 B4 完整同步链路（sync 周期 / voice_transcribe / sync_photo / 聚合 / 拉取等类型）
+  runSyncChain()
 })
-// app 启动/onShow 时：drainPendingTask()
+// App.onShow → sync_client.drainBackgroundTasks() → drainPendingTasks() 消费积压
 ```
 
-- 自定义基座：WorkManager Worker 写 SharedPreferences pending（key `yishu_bg_tasks`），UTS `drainPendingTask()` 消费 → 两段式，杀进程不丢任务。
-- 标准基座：`enqueueTask` 直接写 pending，setInterval 每 30s 检查 → 页面级兜底。
-- `photo-watch.start()` 已自动调 `initBackgroundTasks(2)`；`setBackgroundTaskHandler` 只需 H 注册一次。
+- 自定义基座：WorkManager Worker 写 SharedPreferences pending（key `yishu_bg_tasks`），注册 handler 时 drain + App.onShow 再 drain → 两段式，杀进程不丢任务。
+- 标准基座：`enqueueTask` 直接写 pending（同类型去重）；周期兜底由 `sync_client` 的 2h setInterval 完成（App 存活期）。
+- 去重：`recordPending`（UTS）与 `BgTaskWorker`（Kotlin）均按 taskType 同类型去重，与 `ExistingWorkPolicy.KEEP` 语义对齐，SharedPreferences 不会无限增长。
+- `photo-watch.start()` 已自动调 `initBackgroundTasks(2)`；`setBackgroundTaskHandler` 由 H 注册一次即可。
+- sync_photo 的照片续传由 uploader 自身 `onNetworkRestored` 钩子负责（uploader 已依赖 sync_client，此处静态引用会成环，故 handler 不接 continuePendingUploads）。
 
 ## 构建说明
 

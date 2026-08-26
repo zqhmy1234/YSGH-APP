@@ -20,7 +20,8 @@
  *   ① 前台主动：initSync() 在 App.onLaunch 启动 2h setInterval 定时兜底 +
  *      onNetworkStatusChange 网络恢复即补推（App 存活期间）
  *   ② 相册监听 ContentObserver（Wave 2 已接，本文件不重复）
- *   ③ 后台 WorkManager 定时 → registerBackgroundSync() 钩子（登记给 Wave 4 Agent K）
+ *   ③ 后台 WorkManager 定时 → registerBackgroundSync() 真接线（B5d：周期唤醒写 pending，
+ *      应用层注册 handler 时 drain + App.onShow drain 消费，两段式不丢任务）
  */
 import { getBaseUrl } from './config'
 import { getToken, ensureLogin, refreshToken } from './auth'
@@ -28,6 +29,8 @@ import { getToken, ensureLogin, refreshToken } from './auth'
 // 此处保留导出别名（BACKOFF_MS/isoNow）兼容现有引用
 import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
 import { isoLocal } from './time'
+// B5d 后台任务插件（Wave 4 K）：WorkManager 周期唤醒写 pending → 应用层 drain 消费（两段式）
+import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 
 export const DEVICE_ID: string = 'yishu-android-dev'
 export const MAX_BATCH_FAILURES: number = 10
@@ -659,7 +662,7 @@ export function runSyncChain(): Promise<SyncChainResult> {
 	})
 }
 
-// ---------- 2h 定时兜底（App 存活期间 setInterval；后台 WorkManager 登记给 Wave 4 K） ----------
+// ---------- 2h 定时兜底（App 存活期间 setInterval；后台 WorkManager 两段式：唤醒写 pending → 前台 drain 消费） ----------
 
 let _syncTimer: number | null = null
 
@@ -684,11 +687,29 @@ export function stopPeriodicSync(): void {
 	}
 }
 
-/** 后台 WorkManager 定时同步挂接点（Wave 4 Agent K）：自定义基座就绪后，
- *  在此调 yishu-bg-sync UTS 插件注册 2h 周期 WorkManager，到点回调 runSyncChain()。
- *  当前标准基座无后台能力，App 存活期由 startPeriodicSync 兜底。 */
+/**
+ * 后台任务接线（B5d · P0-3 真接线，取代原纯日志 stub）：
+ *   - initBackgroundTasks(2)：注册 2h 周期 PeriodicWork（photo-watch.start() 亦引导，幂等可重复调；
+ *     标准基座无 androidx.work → 内部降级 pending 记录，App 存活期由上方 setInterval 兜底）
+ *   - setBackgroundTaskHandler：注册任务回调（注册即 drain 一次积压）；
+ *     WorkManager 到点/标准基座 enqueueTask 写入的 pending 由此派发执行
+ *   - 派发逻辑：统一 runSyncChain()（sync 周期 / voice_transcribe / sync_photo / 聚合 / 拉取等类型）；
+ *     照片续传由 uploader 自身 onNetworkRestored 钩子负责——uploader 已依赖本文件（pauseSync 等），
+ *     此处静态引用 uploader 会成环，故不在此接 continuePendingUploads
+ *   - App.onShow 消费积压：drainBackgroundTasks()（本文件导出，内部逐条让出主线程）
+ */
 export function registerBackgroundSync(): void {
-	console.log('[yishu] sync_client: 后台 WorkManager 定时同步登记给 Wave 4 K（当前 setInterval 兜底）')
+	initBackgroundTasks(2)
+	setBackgroundTaskHandler((taskType: string) => {
+		console.log('[yishu] sync_client 后台任务派发: ' + taskType)
+		runSyncChain()
+	})
+	console.log('[yishu] sync_client: 后台任务接线完成（WorkManager 周期 + pending drain 消费）')
+}
+
+/** 前台消费积压后台任务（App.onShow 调用；幂等空跑无害） */
+export function drainBackgroundTasks(): void {
+	drainPendingTasks()
 }
 
 /** 网络恢复钩子（uploader 注册：WiFi 恢复自动补传暂缓原图；与 sync_client 无循环依赖） */
