@@ -11,7 +11,7 @@
  *
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
-import { post, get, dataObj, showErrorToast } from './api'
+import { post, get, dataObj } from './api'
 
 export class ClassifyResult {
 	label: string
@@ -244,10 +244,4 @@ function pollArbitrateTick(
 			pollArbitrateTick(jobId, tries, intervalMs, next, done)
 		}, intervalMs)
 	})
-}
-
-/** 兜底：无法轮询时静默（不 toast 业务噪音由调用方控制） */
-export function silentFail(): void {
-	// 空实现：调用方自行提示
-	showErrorToast(null)
 }

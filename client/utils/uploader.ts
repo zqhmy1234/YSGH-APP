@@ -15,7 +15,7 @@
  *  - 流量约束（B4 §5）：uni.getNetworkType 判断——WiFi/有线传原图，蜂窝只传
  *    缩略图+元数据（调用 Agent G 的 upload_mode 参数；G 未完成前按契约 mock：
  *    蜂窝自动=暂缓原图入 held 队列，等 WiFi 或"立即上传原图"手动入口）；
- *    "立即上传原图" = uploadNowOriginal() / continuePendingUploads() 手动入口。
+ *    "立即上传原图" = continuePendingUploads() 手动入口。
  *  - 指数退避重试：2s→4s→8s→8s→8s（5 次上限，复用 event_sync 模式）；
  *    4xx 停该条（参数/归属错误重试无意义）。
  *  - 批量失败暂停恢复：连续失败 ≥10 → pauseSync() 暂停剩余（保留队列）→
@@ -44,8 +44,6 @@ import { isoLocal } from './time'
 import { retryAsync } from './retry'
 
 export const MAX_CONCURRENCY: number = 3
-/** 退避次数上限（与 retry.ts BACKOFF_MS 对齐：2s→4s→8s→8s→8s） */
-export const MAX_RETRY: number = 5
 
 /** 断点续传：path|uploadId 逐行存 uni storage（UTS 无可靠 JSON.parse，用分隔串） */
 const PENDING_KEY: string = 'yishu_pending_uploads'
@@ -677,12 +675,7 @@ export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) 
 	})
 }
 
-/** "立即上传原图"手动入口（B4 §5：无视网络类型强制原图） */
-export function uploadNowOriginal(items: PhotoItem[], onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
-	return uploadBatch(items, onProgress, new UploadOptions('original'))
-}
-
-/** 一键继续：解除暂停 + 上传 held/failed 全部待处理照片（原图模式） */
+/** 一键继续：解除暂停 + 上传 held/failed 全部待处理照片（原图模式；B4 §5"立即上传原图"手动入口） */
 export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
 	return new Promise<Array<UploadedPhoto>>((resolve) => {
 		resumeSync()
