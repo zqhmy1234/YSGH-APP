@@ -582,3 +582,191 @@ def test_transcribe_long_audio_merges_segments(tmp_path, monkeypatch):
     result = transcribe(str(wav), preferred="auto")
     assert result.text  # 非空（mock 文本拼接）
     assert result.mock is True
+    # J-3：合并结构存在（mock 段情绪同构，dominant==peak==平静）
+    assert result.emotion_merge is not None
+    assert result.emotion_merge["strategy"] == "longest_dominant_peak"
+    assert result.emotion == result.emotion_merge["dominant"]["emotion"]
+    assert len(result.emotion_merge["segments"]) >= 1
+
+
+# ---------- B5a Wave4 AgentJ：音频事件 / 噪音降权 / 段级情绪合并 ----------
+
+
+def test_audio_events_parse_three_classes():
+    """J-1：SenseVoice 富文本标签 → 音频事件 3 类（笑声/静音/键盘环境音）"""
+    from app.services.external.asr import (
+        AUDIO_EVENT_ENVIRONMENT,
+        AUDIO_EVENT_LAUGHTER,
+        AUDIO_EVENT_SILENCE,
+        _parse_audio_events,
+    )
+
+    # 正常语音标签不消费
+    assert _parse_audio_events("<|NEUTRAL|><|Speech|>") == []
+    assert _parse_audio_events("<|EMO_UNKNOWN|>") == []
+    # 笑声
+    assert _parse_audio_events("<|LAUGHTER|>") == [AUDIO_EVENT_LAUGHTER]
+    # 大小写不敏感
+    assert _parse_audio_events("<|giggle|>") == [AUDIO_EVENT_LAUGHTER]
+    # 环境音（BGM/键盘/噪声）
+    events = _parse_audio_events("<|LAUGHTER|><|BGM|><|NOISE|>")
+    assert AUDIO_EVENT_LAUGHTER in events
+    assert AUDIO_EVENT_ENVIRONMENT in events
+    # 静音
+    assert _parse_audio_events("<|SILENCE|>") == [AUDIO_EVENT_SILENCE]
+    # 去重
+    assert _parse_audio_events("<|LAUGHTER|><|Laughter|>") == [AUDIO_EVENT_LAUGHTER]
+
+
+def test_audio_event_effects_laughter_bonus():
+    """J-1：笑声 → 情绪加分（平静→开心）；不覆盖强负向情绪"""
+    from app.services.external.asr import (
+        AUDIO_EVENT_LAUGHTER,
+        AsrResult,
+        apply_audio_event_effects,
+    )
+
+    r = AsrResult(text="哈", channel="mock", emotion="平静", emotion_confidence=0.3, mock=True)
+    r.audio_events = [AUDIO_EVENT_LAUGHTER]
+    apply_audio_event_effects(r)
+    assert r.emotion_bonus is True
+    assert r.emotion == "开心"
+    assert r.emotion_confidence >= 0.6
+    assert r.emotion_source == "audio_event_laughter"
+
+    # 哭着说没事：笑声不覆盖难过
+    r2 = AsrResult(text="没事", channel="mock", emotion="难过", emotion_confidence=0.9, mock=True)
+    r2.audio_events = [AUDIO_EVENT_LAUGHTER]
+    apply_audio_event_effects(r2)
+    assert r2.emotion == "难过"
+    assert r2.emotion_bonus is True
+
+
+def test_audio_event_effects_silence_and_environment():
+    """J-1：静音→提示空段；键盘/环境音→疑似非口述"""
+    from app.services.external.asr import (
+        AUDIO_EVENT_ENVIRONMENT,
+        AUDIO_EVENT_SILENCE,
+        AsrResult,
+        apply_audio_event_effects,
+    )
+
+    r = AsrResult(text="", channel="mock", emotion="平静", mock=True)
+    r.audio_events = [AUDIO_EVENT_SILENCE]
+    apply_audio_event_effects(r)
+    assert r.silence_hint is True
+    assert r.not_oral is False
+
+    r2 = AsrResult(text="哒哒哒", channel="mock", emotion="平静", mock=True)
+    r2.audio_events = [AUDIO_EVENT_ENVIRONMENT]
+    apply_audio_event_effects(r2)
+    assert r2.not_oral is True
+    assert r2.silence_hint is False
+
+
+def test_sensevoice_transcribe_propagates_audio_events(tmp_path, monkeypatch):
+    """J-1：SenseVoice 通道把本地推理的音频事件传播到 AsrResult"""
+    from app.services.external import asr as asr_mod
+    from app.services.external.asr import SenseVoiceResult
+
+    wav = _make_wav(tmp_path / "sv.wav")
+    monkeypatch.setattr(
+        asr_mod,
+        "_infer_sensevoice",
+        lambda path: SenseVoiceResult(
+            text="哈",
+            emotion="平静",
+            emotion_confidence=0.2,
+            raw_emotion="<|NEUTRAL|>",
+            audio_events=["laughter", "environment"],
+        ),
+    )
+    result = asr_mod._transcribe_sensevoice(wav)
+    assert result.audio_events == ["laughter", "environment"]
+    # 消费：笑声加分 → 开心；环境音 → 疑似非口述
+    assert result.emotion_bonus is True
+    assert result.emotion == "开心"
+    assert result.not_oral is True
+
+
+def test_estimate_snr_clean_vs_noisy(tmp_path):
+    """J-2：轻量 SNR —— 干净语音（有静音间隙）→ 高 SNR；白噪声 → 低 SNR（降权）"""
+    import wave
+
+    from app.services.external.asr import (
+        NOISE_SNR_THRESHOLD_DB,
+        _noise_weight,
+        estimate_snr,
+    )
+
+    # 干净语音：语音帧 + 大量静音 → 底噪低 → SNR 高
+    clean = _make_long_wav(tmp_path / "clean.wav", seconds=60)
+    snr_clean = estimate_snr(clean)
+    assert snr_clean is not None
+    assert snr_clean >= NOISE_SNR_THRESHOLD_DB
+    assert _noise_weight(snr_clean) == "high"
+
+    # 白噪声（环境音主导）→ 底噪≈信号 → SNR 低 → 声学权重降为持平
+    import numpy as np
+
+    rate = 16000
+    frames = int(rate * 30)
+    noise_samples = np.random.default_rng(42).integers(
+        -3000, 3000, size=frames, dtype=np.int16
+    )
+    noisy = tmp_path / "noisy.wav"
+    with wave.open(str(noisy), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(rate)
+        wf.writeframes(noise_samples.tobytes())
+    snr_noisy = estimate_snr(noisy)
+    assert snr_noisy is not None
+    assert snr_noisy < NOISE_SNR_THRESHOLD_DB
+    assert _noise_weight(snr_noisy) == "equal"
+
+    # 非 16bit 单声道 / 全零 → None（不参与降权）
+    assert estimate_snr(_make_wav(tmp_path / "s.wav", silence=True)) is None
+
+
+def test_merge_segment_emotion_dominant_longest_peak_max():
+    """J-3：段级合并 —— 主导=时长最长段；峰值=置信度最高段（保留标记）"""
+    from app.services.external.asr import AsrResult, merge_segment_emotion
+
+    results = [
+        AsrResult(text="a", channel="mock", emotion="平静", emotion_confidence=0.2, duration_ms=120_000, mock=True),
+        AsrResult(text="b", channel="mock", emotion="难过", emotion_confidence=0.9, duration_ms=30_000, mock=True),
+        AsrResult(text="c", channel="mock", emotion="开心", emotion_confidence=0.6, duration_ms=60_000, mock=True),
+    ]
+    m = merge_segment_emotion(results, noise_weight="equal")
+    assert m["strategy"] == "longest_dominant_peak"
+    assert m["dominant"]["emotion"] == "平静"      # 时长最长段（120s）
+    assert m["dominant"]["segment_index"] == 1
+    assert m["dominant"]["duration_ms"] == 120_000
+    assert m["peak"]["emotion"] == "难过"          # 峰值（conf 0.9）
+    assert m["peak"]["segment_index"] == 2
+    assert m["noise_weight"] == "equal"
+    assert len(m["segments"]) == 3
+    # 峰值保留：4 分钟平静 + 30 秒哽咽 → 主导平静 + 峰值哽咽（B5a §3 示例）
+    m2 = merge_segment_emotion(
+        [
+            AsrResult(text="x", channel="mock", emotion="平静", emotion_confidence=0.4, duration_ms=240_000, mock=True),
+            AsrResult(text="y", channel="mock", emotion="难过", emotion_confidence=0.95, duration_ms=30_000, mock=True),
+        ],
+        noise_weight="high",
+    )
+    assert m2["dominant"]["emotion"] == "平静"
+    assert m2["peak"]["emotion"] == "难过"
+
+
+def test_single_segment_emotion_merge():
+    """J-3：非分段路径 —— dominant == peak == 自身"""
+    from app.services.external.asr import AsrResult, single_segment_emotion_merge
+
+    r = AsrResult(text="t", channel="mock", emotion="难过", emotion_confidence=0.8, duration_ms=60_000, mock=True)
+    m = single_segment_emotion_merge(r, noise_weight="high")
+    assert m["strategy"] == "single_segment"
+    assert m["dominant"]["emotion"] == "难过"
+    assert m["peak"]["emotion"] == "难过"
+    assert m["dominant"]["segment_index"] == 1
+    assert m["noise_weight"] == "high"

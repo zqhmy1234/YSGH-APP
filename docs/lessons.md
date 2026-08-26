@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 16:04 · commit b6b9db7 · ts=1787731445
+- **错误**：pre-commit lint: F401 unused import / S311 pseudo-random / E501 line too long in tests
+- **根因**：新增测试未预跑 ruff：test_asr 引入未用 import wave、random.Random 触发 bandit S311、test_notify 长行超 120；Message 模型列是 sent_at 非 created_at
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-26 14:01 · commit 4ae3632 · ts=1787724101
 - **错误**：项目所需 API key 清单/获取方式未文档化：各 Agent 开发时反复猜测 key 来源（DASHSCOPE 控制台/腾讯云 CAM/COS 存储桶/高德开放平台/Sentry 项目/企微后台），api_smoke 报'腾讯云未配置'、托管护栏/精排真实通道待 key 验证等多次受阻
 - **根因**：外部凭证分散在 backend/.env 与各控制台，无单一权威文档说明'有哪些 key、在哪申请、怎么配'；config.py 有字段但无获取指引
