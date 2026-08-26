@@ -12,6 +12,7 @@ from app.main import app
 from fastapi.testclient import TestClient
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
 
 def _hash(token: str) -> str:
@@ -195,6 +196,59 @@ def test_refresh_rotation_atomic_single_use(db):
         db.execute(sa_delete(Device).where(Device.user_id == user.id))
         db.execute(sa_delete(User).where(User.phone == "13900000123"))
         db.commit()
+
+@pytest.mark.integration
+def test_phone_code_atomic_consume_single_use(db):
+    """R2#8 竞态修复：验证码原子消费——两会话读同一未用码，仅一个 UPDATE 命中
+
+    模拟并发同码双登录：两会话都 SELECT 到同一未用码（校验均通过），随后各自
+    UPDATE sms_codes SET used_at=now() WHERE id=:id AND used_at IS NULL——
+    先提交者 rowcount=1 消费成功，后者 rowcount=0（该码已被消费 → 401 语义）。
+    """
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+
+    phone = "13900000124"
+    code = "654321"
+    sms = SmsCode(
+        phone=phone,
+        code=hashlib.sha256(code.encode("utf-8")).hexdigest(),
+        expire_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db.add(sms)
+    db.commit()
+    db.refresh(sms)
+
+    s1 = SessionLocal()
+    s2 = SessionLocal()
+    try:
+        # 两请求都读到未用码（校验均通过）
+        r1 = s1.execute(select(SmsCode).where(SmsCode.id == sms.id)).scalar_one()
+        r2 = s2.execute(select(SmsCode).where(SmsCode.id == sms.id)).scalar_one()
+        assert r1.used_at is None and r2.used_at is None
+
+        now = datetime.now(timezone.utc)
+        n1 = s1.execute(
+            sa_update(SmsCode)
+            .where(SmsCode.id == sms.id, SmsCode.used_at.is_(None))
+            .values(used_at=now)
+        ).rowcount
+        s1.commit()
+        # 请求2 原子消费 → 已被请求1置位 → rowcount=0
+        n2 = s2.execute(
+            sa_update(SmsCode)
+            .where(SmsCode.id == sms.id, SmsCode.used_at.is_(None))
+            .values(used_at=now)
+        ).rowcount
+        s2.commit()
+        assert n1 == 1 and n2 == 0, "同码并发消费只有第一个命中"
+    finally:
+        s1.close()
+        s2.close()
+        db.execute(sa_delete(SmsCode).where(SmsCode.phone == phone))
+        db.execute(sa_delete(User).where(User.phone == phone))
+        db.commit()
+
 
 @pytest.mark.integration
 def test_send_sms_production_blocked(client, db, monkeypatch):

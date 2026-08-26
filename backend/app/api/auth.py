@@ -177,7 +177,19 @@ def phone_login(
         raise ApiError(ERR_AUTH_003, "验证码错误或已过期", http=401)
 
     _otp_reset(req.phone)
-    record.used_at = now
+    # R2#8 竞态修复：验证码原子消费——并发同码双登录仅一个成功。
+    # 原实现：SELECT 未用码 → 校验 → record.used_at 置位 + commit，存在竞态窗口
+    # （两会话都读到未用码、都校验通过 → 同码双登录）。
+    # 现改 UPDATE sms_codes SET used_at=now() WHERE id=:id AND used_at IS NULL：
+    # rowcount=0 → 该码已被并发请求消费/作废 → 401。
+    consumed = db.execute(
+        update(SmsCode)
+        .where(SmsCode.id == record.id, SmsCode.used_at.is_(None))
+        .values(used_at=now)
+    )
+    if consumed.rowcount == 0:
+        db.rollback()
+        raise ApiError(ERR_AUTH_003, "验证码已失效，请重新获取", http=401)
     db.commit()
 
     user = _get_or_create_user(db, phone=req.phone)
