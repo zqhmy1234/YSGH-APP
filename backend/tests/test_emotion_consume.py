@@ -11,32 +11,11 @@ import uuid
 from datetime import datetime
 
 import pytest
-from app.db.models import Content, Event, EventItem, Message, User
-from app.db.session import SessionLocal
+from app.db.models import Content, Event, EventItem, Message
 from app.services.notify import REVIEW_TZ
 from app.services.pipeline_ext.emotion import consume_emotion
-from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"emo-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(Message).where(Message.user_id == user.id))
-    db.execute(sa_delete(EventItem).where(EventItem.content_id.in_(
-        db.query(Content.id).filter(Content.user_id == user.id)
-    )))
-    db.execute(sa_delete(Event).where(Event.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _voice(db, user_id: str, emotion: str, confidence: float, text: str) -> Content:

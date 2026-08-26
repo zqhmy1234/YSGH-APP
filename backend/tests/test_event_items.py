@@ -13,31 +13,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from app.db.models import Content, Event, EventEditLog, EventItem, User
-from app.db.session import SessionLocal
-from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from app.db.models import Content, Event, EventItem, User
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"evit-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(EventEditLog).where(EventEditLog.user_id == user.id))
-    db.execute(sa_delete(EventItem).where(EventItem.event_id.in_(
-        select(Event.id).where(Event.user_id == user.id)
-    )))
-    db.execute(sa_delete(Event).where(Event.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _content(db, user_id: str, ts=None, content_type: str = "photo") -> Content:
@@ -112,7 +90,7 @@ class TestContentEventsService:
         assert len(out) == 1
         assert out[0]["photo_count"] == 2
 
-    def test_foreign_content_rejected(self, db_user):
+    def test_foreign_content_rejected(self, db_user, cleanup_user):
         """归属校验：他人内容 → ValueError（API 层 404）"""
         from app.api.event_items import get_content_events
 
@@ -126,7 +104,8 @@ class TestContentEventsService:
             with pytest.raises(ValueError):
                 get_content_events(db, str(user.id), c.id)
         finally:
-            db.execute(sa_delete(Content).where(Content.user_id == other.id))
+            # R8#2：统一 cleanup_user_data（other 用户全链删）
+            cleanup_user(db, other.id)
             db.delete(other)
             db.commit()
 
@@ -166,7 +145,7 @@ class TestContentEventsService:
 
 
 class TestContentEventsApi:
-    def test_api_returns_events_and_404s(self, db_user):
+    def test_api_returns_events_and_404s(self, db_user, cleanup_user):
         """API 冒烟：mini-app（event_items router）→ 200 列表；他人内容/非法 ID → 404"""
         from app.api.event_items import router as event_items_router
         from app.core.errors import install_error_handlers
@@ -206,7 +185,8 @@ class TestContentEventsApi:
             assert r2.status_code == 404
             assert r2.json()["code"] == "EVENT_005"
         finally:
-            db.execute(sa_delete(Content).where(Content.user_id == other.id))
+            # R8#2：统一 cleanup_user_data（other 用户全链删）
+            cleanup_user(db, other.id)
             db.delete(other)
             db.commit()
 

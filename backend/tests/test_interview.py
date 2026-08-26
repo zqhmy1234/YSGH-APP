@@ -10,33 +10,13 @@
   - API 冒烟（questions / answers / profile）
 前置：PG yishu 库 + MOCK_EXTERNAL_AI=true
 """
-import uuid
-
 import pytest
-from app.db.models import ProfileDimensionHistory, ProfileDimensionPending, User, UserProfile
-from app.db.session import SessionLocal
+from app.db.models import ProfileDimensionHistory, ProfileDimensionPending, UserProfile
 from app.services.interview import HISTORY_LIMIT, QUESTIONS, get_profile, submit_answers
 from app.services.profile_annotator import display_dimensions
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"iv-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(ProfileDimensionPending).where(ProfileDimensionPending.user_id == user.id))
-    db.execute(sa_delete(ProfileDimensionHistory).where(ProfileDimensionHistory.user_id == user.id))
-    db.execute(sa_delete(UserProfile).where(UserProfile.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _flat(profile: UserProfile) -> dict[str, list[str]]:

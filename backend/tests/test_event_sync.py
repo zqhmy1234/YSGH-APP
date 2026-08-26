@@ -15,32 +15,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.db.models import Content, Event, EventItem, OfflineQueue, User
-from app.db.session import SessionLocal
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
 DEVICE = "test-device-eventsync"
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"evsync-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(EventItem).where(EventItem.event_id.in_(
-        select(Event.id).where(Event.user_id == user.id)
-    )))
-    db.execute(sa_delete(Event).where(Event.user_id == user.id))
-    db.execute(sa_delete(OfflineQueue).where(OfflineQueue.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _photo(db, user_id: str, taken_at: datetime, tags: list[str] | None = None) -> str:
@@ -92,7 +71,7 @@ def test_sync_idempotent_by_client_event_id(db_user):
     assert len(count) == 1
 
 
-def test_sync_rejects_foreign_photo(db_user):
+def test_sync_rejects_foreign_photo(db_user, cleanup_user):
     """归属校验：他人照片 → 整条 rejected"""
     from app.services.events import sync_client_events
 
@@ -111,7 +90,8 @@ def test_sync_rejects_foreign_photo(db_user):
             select(Event).where(Event.user_id == user.id, Event.level == 1)
         ).scalars().all() == []
     finally:
-        db.execute(sa_delete(Content).where(Content.user_id == other.id))
+        # R8#2：统一 cleanup_user_data（other 用户全链删）
+        cleanup_user(db, other.id)
         db.delete(other)
         db.commit()
 

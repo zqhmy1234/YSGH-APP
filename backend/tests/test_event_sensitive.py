@@ -18,25 +18,28 @@ from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
 
+# 本文件测试写入的全局敏感词（sensitive_words.user_id IS NULL，level 2/3）：
+# teardown 定向删除，不全清全局行（防连带清掉他人/其他模块的全局词，同 R8#13 原则）。
+_TEST_GLOBAL_WORDS = {"分手", "绝交", "法轮功", "裸聊"}
+
 
 @pytest.fixture()
-def db_user():
+def db_user(cleanup_user):
     db = SessionLocal()
     user = User(phone=f"evt-sens-{uuid.uuid4().hex[:8]}", status=1)
     db.add(user)
     db.commit()
     db.refresh(user)
     yield db, user
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.execute(sa_delete(SensitiveWord).where(SensitiveWord.user_id == user.id))
-    db.execute(sa_delete(SensitiveWord).where(SensitiveWord.user_id.is_(None)))
+    # R8#2：统一 cleanup_user_data（Content + user 级 sensitive_words 等 30+ 表）
+    cleanup_user(db, user.id)
+    # 本文件写的全局回流词（user_id IS NULL）定向删除（进程内热词由 conftest R8#12 autouse 兜底）
+    db.execute(sa_delete(SensitiveWord).where(
+        SensitiveWord.user_id.is_(None), SensitiveWord.word.in_(_TEST_GLOBAL_WORDS)
+    ))
     db.delete(user)
     db.commit()
     db.close()
-    # 清理进程内热加入的回收词，避免跨用例污染
-    from app.services.external.sensitive_words import _EVENT_REFLUX_WORDS
-
-    _EVENT_REFLUX_WORDS.clear()
 
 
 def _content(db, user_id: str, text: str) -> Content:

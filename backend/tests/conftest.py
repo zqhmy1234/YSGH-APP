@@ -8,6 +8,8 @@
                            含 messages / upload_tasks+upload_chunks / 画像域等）
   - vector_collection   —— 把默认 Qdrant collection 指到 test_* 隔离库
                            （测试不再写生产 yishu_contents）
+  - db_user             —— 公共测试用户（R8#2：存量手写 db_user 迁移至此，
+                           teardown 统一走 cleanup_user_data）
   - _sensitive_words_state —— R8#12：敏感词模块全局热词状态 autouse 快照/恢复
                            （唯一 autouse，防顺序敏感 flaky，为并行化铺路）
 
@@ -182,6 +184,36 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
 def cleanup_user():
     """返回统一清理函数 cleanup_user_data（供 teardown 调用）"""
     return cleanup_user_data
+
+
+# ---------------------------------------------------------------------------
+# 公共测试用户（R8#2：存量 ~15 份手写 db_user fixture 迁移至本公共版本）
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def db_user(cleanup_user):
+    """公共测试用户：建用户 + 返回 (db, user)，teardown 统一 cleanup_user_data。
+
+    原各测试文件手写 db_user 的 teardown 逐表 sa_delete，每加一张子表都要手工同步
+    （漏一张就 FK 报错或残留）；R8#2 迁移到本公共版本——teardown 先丢弃未提交写
+    （failed 事务/pending ORM 行，防与清理冲突），再 cleanup_user_data 按 user_id
+    全链删（30+ 表），最后删用户行。各文件删除本地副本。
+    """
+    from app.db.models import User
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    user = User(phone=f"dbu-{uuid.uuid4().hex[:8]}", status=1)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    yield db, user
+    db.rollback()  # 丢弃用例未提交的写，避免与清理冲突（如 IntegrityError 后 failed 事务）
+    cleanup_user(db, user.id)
+    db.delete(user)
+    db.commit()
+    db.close()
 
 
 # ---------------------------------------------------------------------------

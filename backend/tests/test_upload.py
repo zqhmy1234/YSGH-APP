@@ -12,36 +12,14 @@ import uuid
 
 import pytest
 from app.core.config import settings
-from app.db.models import Content, UploadChunk, UploadTask, User
-from app.db.session import SessionLocal
+from app.db.models import Content, UploadChunk, User
 from app.services import upload as upload_svc
 from app.services.external.storage import get_storage_backend
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
 CHUNK = 1024  # 1KB 分片便于测试
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"upload-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    # 清理
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    task_ids = db.scalars(
-        sa_delete(UploadTask).where(UploadTask.user_id == user.id).returning(UploadTask.id)
-    ).all()
-    if task_ids:
-        db.execute(sa_delete(UploadChunk).where(UploadChunk.upload_id.in_(task_ids)))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _make_task(db, user, client_upload_id=None, data: bytes | None = None, chunk_size=CHUNK):
@@ -235,7 +213,7 @@ def test_chunk_larger_than_declared_rejected(db_user):
     assert r["status"] == "uploaded"
 
 
-def test_cross_user_access_denied(db_user):
+def test_cross_user_access_denied(db_user, cleanup_user):
     """审查 CRITICAL 修复（IDOR）：用户 B 无法操作用户 A 的上传任务
 
     upload_chunk / get_status / complete_upload 三个入口均需归属校验，
@@ -262,8 +240,8 @@ def test_cross_user_access_denied(db_user):
         upload_svc.upload_chunk(db, task.id, 0, data[:CHUNK], user_id=user_a.id)
         assert upload_svc.get_status(db, task.id, user_id=user_a.id)["uploaded_chunks"] == [0]
     finally:
-        # 清理 B 用户（A 的清理走 db_user fixture）
-        db.execute(sa_delete(UploadTask).where(UploadTask.user_id == user_b.id))
+        # 清理 B 用户（A 的清理走公共 db_user fixture；R8#2：统一 cleanup_user_data）
+        cleanup_user(db, user_b.id)
         db.delete(user_b)
         db.commit()
 
@@ -352,7 +330,7 @@ def test_register_photo_content_manual_original_links_placeholder(db_user):
     assert record.status == "processing"  # 走完整管线
 
 
-def test_register_photo_content_content_id_ownership(db_user):
+def test_register_photo_content_content_id_ownership(db_user, cleanup_user):
     """content_id 归属校验：他人内容 → ValueError（防 IDOR）"""
     db, user_a = db_user
     user_b = User(phone=f"upload-lnk-{uuid.uuid4().hex[:8]}", status=1)
@@ -378,8 +356,8 @@ def test_register_photo_content_content_id_ownership(db_user):
         # B 自己的占位不受影响
         assert db.get(Content, placeholder_b).cos_key == key_b
     finally:
-        db.execute(sa_delete(UploadTask).where(UploadTask.user_id == user_b.id))
-        db.execute(sa_delete(Content).where(Content.user_id == user_b.id))
+        # R8#2：统一 cleanup_user_data（upload_tasks+chunks / contents 全链删）
+        cleanup_user(db, user_b.id)
         db.delete(user_b)
         db.commit()
 

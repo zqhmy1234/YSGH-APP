@@ -14,31 +14,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from app.db.models import Content, EchoHistory, ProfileSensitive, User
-from app.db.session import SessionLocal
+from app.db.models import Content, EchoHistory, ProfileSensitive
 from app.services import echo as echo_svc
 from app.services.echo import dismiss_echo, get_today_echo
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"echo-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(EchoHistory).where(EchoHistory.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.execute(sa_delete(ProfileSensitive).where(ProfileSensitive.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _last_year_content(db, user_id: str, text: str = "去年的今天", sensitive: str = "正常") -> Content:

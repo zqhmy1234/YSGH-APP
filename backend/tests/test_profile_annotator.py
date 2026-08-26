@@ -12,11 +12,8 @@
   - pipeline_ext 钩子 annotate_on_ingest（fail-safe）
 前置：PG yishu 库 + MOCK_EXTERNAL_AI=true
 """
-import uuid
-
 import pytest
-from app.db.models import Content, ProfileAnnotationPool, ProfileDimensionHistory, User, UserProfile
-from app.db.session import SessionLocal
+from app.db.models import Content, ProfileAnnotationPool, UserProfile
 from app.services.llm_ops.annotate import annotate
 from app.services.profile_annotator import (
     HISTORY_LIMIT,
@@ -25,33 +22,9 @@ from app.services.profile_annotator import (
     record_hits,
 )
 from app.services.profile_schema import get_schema
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import select, text
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"pa-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    # 先丢弃测试内未提交的写（pending ORM 行），避免与下方删除冲突（FK）
-    db.rollback()
-    db.execute(sa_delete(ProfileDimensionHistory).where(ProfileDimensionHistory.user_id == user.id))
-    db.execute(sa_delete(ProfileAnnotationPool).where(ProfileAnnotationPool.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.execute(
-        text("DELETE FROM profile_l2_evidence WHERE user_id = :uid"),
-        {"uid": user.id},
-    )
-    db.execute(sa_delete(UserProfile).where(UserProfile.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _profile(db, user_id) -> dict:

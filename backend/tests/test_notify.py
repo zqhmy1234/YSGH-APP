@@ -43,21 +43,6 @@ def _patch_daytime(monkeypatch) -> None:
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"msg-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(Message).where(Message.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
-
-
 def _content(db, user_id: str, ctype: str = "text", ts: datetime | None = None) -> Content:
     c = Content(
         id=str(uuid.uuid4()),
@@ -159,7 +144,7 @@ def test_voice_done_notify(db_user):
     assert msg.payload["content_id"] == "v-1"
 
 
-def test_messages_api_list_read(db_user):
+def test_messages_api_list_read(db_user, cleanup_user):
     """API：列表分页 + status 过滤 + 单条已读 + 全部已读 + 越权 404"""
     from app.api import deps
     from app.main import app
@@ -215,7 +200,8 @@ def test_messages_api_list_read(db_user):
         assert r8.json()["data"]["items"] == []
     finally:
         app.dependency_overrides.clear()
-        db.execute(sa_delete(Message).where(Message.user_id == other.id))
+        # R8#2：统一 cleanup_user_data（other 用户全链删）
+        cleanup_user(db, other.id)
         db.delete(other)
         db.commit()
 

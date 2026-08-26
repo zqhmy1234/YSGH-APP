@@ -12,28 +12,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from app.db.models import Content, DeletedLog, SyncFieldVersion, User
-from app.db.session import SessionLocal
+from app.db.models import Content, DeletedLog, SyncFieldVersion
 from app.services.external.storage import get_storage_backend
 from app.workers.cleanup_job import run_cleanup
-from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"cleanup-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(SyncFieldVersion).where(SyncFieldVersion.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _due_tombstone(db, user, days_ago: int = 40):
