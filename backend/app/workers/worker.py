@@ -8,6 +8,11 @@
 
 任务函数路径：app.services.pipeline.process_content（RQ pickle 依赖模块路径，
 存量队列中旧路径 job 需在低峰期清空/重投，见 refactor-plan P2-02 风险控制）。
+
+A2（P0-2）：启动 with_scheduler=True——RQ Retry 重投的任务先进入
+ScheduledJobRegistry，只有 RQ Scheduler 会把到期任务搬回队列；不起 scheduler
+则 retry 永不真正重投（配合 pipeline 的 re-raise 语义，缺一不可）。多 worker
+部署时按队列 Redis 锁互斥，仅一个进程持有 scheduler 锁，其余自动跳过。
 """
 from __future__ import annotations
 
@@ -44,7 +49,9 @@ def main() -> None:
         connection=redis,
     )
     logger.info("RQ worker 启动，监听队列: %s", queues)
-    worker.work()
+    # A2（P0-2）：with_scheduler=True —— Retry 重投任务先进 ScheduledJobRegistry，
+    # 需 RQ Scheduler 搬回队列才真正重投（此前吞异常 + 无 scheduler = 双重失效）。
+    worker.work(with_scheduler=True)
 
 
 if __name__ == "__main__":

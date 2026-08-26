@@ -3,6 +3,9 @@
 process_content(content_id)：按 content_type 分流处理，全部异步在 RQ worker 执行。
 设计：
 - 非关键增强步骤失败可静默降级；ASR 主步骤失败必须显式回写 failed
+- A2（P0-2）：retryable 失败（网络抖动等）先落审计再 re-raise → RQ Retry(3)
+  真正重投；非 retryable（终态）才吞掉返回 failed。RQ 重投耗尽仍失败 →
+  workers/requeue_job.py 超龄重扫兜底（含 P0-4 遗留的 processing 卡死）
 - text  → SetFit 分类 → 写 content_class/class_source/model_version → 索引
 - voice → ASR 转写 → succeeded/no_speech/failed_* → 分类 → 索引
 - photo → image_caption（Qwen3-VL）写 caption 入索引 + CI 打标（失败静默）
@@ -492,6 +495,15 @@ def process_content(content_id: str) -> dict:
                 logger.warning("事件聚合失败 content=%s: %s", content.id, exc)
 
         # 回写状态（部分步骤失败也算 done；失败明细在 extra.error）
+        # A2（P0-2）：本轮全成功则清掉上一轮失败残留的 error 标记——retryable
+        # 失败 re-raise 重投成功后 status 由 failed → done，陈旧 error 会让 done
+        # 内容误显示失败（error 仅由顶层失败处理器写入，此处可安全清除）。
+        # 注意：JSONB 列必须整体重赋（content.extra = new）才能被 ORM 追踪，
+        # 原地 pop 不会触发 dirty 检测、commit 不会落库。
+        if content.extra and "error" in content.extra:
+            extra = dict(content.extra)
+            extra.pop("error", None)
+            content.extra = extra
         errors = extra_get(content, "error")
         audio_processing = extra_get(content, "audio_processing") or {}
         emotion_pending = (
@@ -542,6 +554,12 @@ def process_content(content_id: str) -> dict:
             target.status = "failed"
             db.commit()
         logger.warning("process_content %s ASR 失败: %s", content_id, exc.code)
+        if exc.retryable:
+            # A2（P0-2）：retryable 错误先落审计（failed + 明细）再 re-raise，
+            # 由 RQ Retry(3) 真正重投（10s→30s→90s 指数退避）。此前吞掉正常
+            # 返回 → RQ 视为成功不重试，网络抖动后内容永久 failed，语音静默
+            # 丢失。RQ 重投耗尽仍失败 → requeue_job 超龄重扫兜底。
+            raise
         return {
             "content_id": content_id,
             "status": "failed",
@@ -554,8 +572,9 @@ def process_content(content_id: str) -> dict:
         target = db.get(Content, content_id)
         # P0-4（审查 H-4）：text/photo 同样回写 failed + extra.error——此前仅 voice
         # 回写，其余类型意外异常后永久卡 processing（RQ 视为成功不重试，静默坏死）。
-        # 遗留登记：超龄 processing 重扫任务——历史卡死记录（本修复上线前产生）需
-        # 定时扫描 processing 超龄内容重新入队或置 failed（待集成 Agent 排期）。
+        # A2（P0-2）：回写审计后 re-raise → RQ Retry(3) 真正重投（10s→30s→90s）；
+        # RQ 重投耗尽仍失败 → workers/requeue_job.py 超龄重扫兜底（P0-4 遗留闭环：
+        # 修复上线前产生的历史 failed/processing 卡死记录由该 job 统一重投/置终态）。
         if target is not None:
             is_voice = target.content_type == "voice"
             detail = {
@@ -575,13 +594,8 @@ def process_content(content_id: str) -> dict:
             target.status = "failed"
             db.commit()
         logger.error("process_content %s 失败: %s", content_id, exc)
-        is_voice = target is not None and target.content_type == "voice"
-        return {
-            "content_id": content_id,
-            "status": "failed",
-            "outcome": "failed_retryable" if is_voice else None,
-            "retryable": True,
-            "error": "ASR_PIPELINE_ERROR" if is_voice else "PIPELINE_ERROR",
-        }
+        # A2（P0-2）：审计已落库，re-raise 交 RQ Retry(3) 重投——此前吞掉
+        # 正常返回导致 RQ 视为成功，未分类异常内容静默卡 failed/processing。
+        raise
     finally:
         db.close()

@@ -359,8 +359,14 @@ class TestVoicePipeline:
         assert c.text is None
         assert c.extra["audio_processing"]["outcome"] == "no_speech"
 
-    def test_voice_retryable_failure_is_persisted(self, db_user, monkeypatch, tmp_path):
-        """供应商临时失败 → failed_retryable，可供任务层重新入队。"""
+    def test_voice_retryable_failure_reraises_for_rq_retry(
+        self, db_user, monkeypatch, tmp_path
+    ):
+        """A2（P0-2）：retryable 失败先落审计再 re-raise——RQ Retry(3) 真正重投。
+
+        （此前吞掉正常返回 → RQ 视为成功不重试，网络抖动后内容永久 failed，
+        用户语音静默丢失；现在异常冒泡，审计已回写供 requeue_job 兜底识别）
+        """
         from app.services.external.asr import AsrError
 
         db, user = db_user
@@ -374,15 +380,18 @@ class TestVoicePipeline:
         monkeypatch.setattr("app.services.external.asr.transcribe", unavailable)
         from app.services.pipeline import process_content
 
-        response = process_content(str(c.id))
-        assert response["status"] == "failed"
-        assert response["retryable"] is True
+        with pytest.raises(AsrError) as raised:
+            process_content(str(c.id))
+        assert raised.value.code == "NETWORK_ERROR"
+        assert raised.value.retryable is True
         db.refresh(c)
         assert c.status == "failed"
         assert c.extra["audio_processing"]["outcome"] == "failed_retryable"
 
-    def test_voice_unclassified_failure_is_persisted(self, db_user, monkeypatch, tmp_path):
-        """未分类异常也必须落库，不能让内容一直停在 processing。"""
+    def test_voice_unclassified_failure_reraises_after_audit(
+        self, db_user, monkeypatch, tmp_path
+    ):
+        """未分类异常先落审计（failed + retryable）再 re-raise，交 RQ 重投。"""
         db, user = db_user
         wav = tmp_path / "voice.wav"
         wav.write_bytes(b"RIFF....WAVEfmt ")
@@ -394,12 +403,12 @@ class TestVoicePipeline:
         monkeypatch.setattr("app.services.external.asr.transcribe", boom)
         from app.services.pipeline import process_content
 
-        response = process_content(str(c.id))
-        assert response["status"] == "failed"
-        assert response["retryable"] is True
+        with pytest.raises(RuntimeError):
+            process_content(str(c.id))
         db.refresh(c)
         assert c.status == "failed"
         assert c.extra["audio_processing"]["code"] == "ASR_PIPELINE_ERROR"
+        assert c.extra["error"]["retryable"] is True
 
 
 class TestPhotoPipeline:
@@ -525,10 +534,12 @@ class TestEventAggregation:
 class TestP0FailureWriteback:
     """P0-4（审查 H-4）：非 voice 失败同样回写 failed + extra.error（对齐 voice 先例）
 
-    此前 text/photo 意外异常只记日志，内容永久卡 processing（RQ 视为成功不重试）。
+    A2（P0-2）：回写后 re-raise → RQ Retry(3) 真正重投（此前吞掉返回，RQ 视为
+    成功不重试，text/photo 意外异常静默坏死）。
     """
 
-    def test_text_unclassified_failure_writes_failed(self, db_user, monkeypatch):
+    def test_text_unclassified_failure_reraises_after_audit(self, db_user, monkeypatch):
+        """text 未分类异常：先落审计（failed + retryable）再 re-raise。"""
         db, user = db_user
         c = _content(db, user.id, "text", "测试内容")
 
@@ -538,14 +549,15 @@ class TestP0FailureWriteback:
         monkeypatch.setattr("app.services.pipeline._process_text", boom)
         from app.services.pipeline import process_content
 
-        r = process_content(str(c.id))
-        assert r["status"] == "failed"
+        with pytest.raises(RuntimeError):
+            process_content(str(c.id))
         db.refresh(c)
         assert c.status == "failed"
         assert c.extra["error"]["code"] == "PIPELINE_ERROR"
         assert c.extra["error"]["retryable"] is True
 
-    def test_photo_unclassified_failure_writes_failed(self, db_user, monkeypatch):
+    def test_photo_unclassified_failure_reraises_after_audit(self, db_user, monkeypatch):
+        """photo 未分类异常：先落审计（failed + retryable）再 re-raise。"""
         db, user = db_user
         c = _content(db, user.id, "photo", cos_key="photos/p0/x.jpg")
 
@@ -555,9 +567,36 @@ class TestP0FailureWriteback:
         monkeypatch.setattr("app.services.pipeline._process_photo", boom)
         from app.services.pipeline import process_content
 
-        r = process_content(str(c.id))
-        assert r["status"] == "failed"
+        with pytest.raises(RuntimeError):
+            process_content(str(c.id))
         db.refresh(c)
         assert c.status == "failed"
         assert c.extra["error"]["code"] == "PIPELINE_ERROR"
         assert c.extra["error"]["retryable"] is True
+
+    def test_retry_success_clears_stale_error(self, db_user, monkeypatch):
+        """A2：text 重投成功后 status→done 且清掉上一轮失败残留的 extra.error。"""
+        db, user = db_user
+        c = _content(db, user.id, "text", "测试内容")
+        calls = {"n": 0}
+
+        def flaky_process(db, content):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            content.text = content.text or "测试内容"
+            content.content_class = "todo"
+
+        monkeypatch.setattr("app.services.pipeline._process_text", flaky_process)
+        from app.services.pipeline import process_content
+
+        with pytest.raises(RuntimeError):
+            process_content(str(c.id))  # 第 1 次：未分类异常 → 审计 + re-raise
+        db.refresh(c)
+        assert c.status == "failed"
+        assert "error" in (c.extra or {})
+        response = process_content(str(c.id))  # 第 2 次：重投成功
+        assert response["status"] == "done"
+        db.refresh(c)
+        assert c.status == "done"
+        assert "error" not in (c.extra or {})
