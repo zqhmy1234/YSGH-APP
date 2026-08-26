@@ -23,6 +23,8 @@ from app.services.vector_store import get_store
 from qdrant_client.http import models  # noqa: F401
 from sqlalchemy import delete as sa_delete
 
+from tests.polling import polling_until  # backend/tests/polling.py（R8#9 轮询工具）
+
 # 测试专用隔离 collection（2026-08-25 修复：原与生产 yishu_contents 共用，
 # 生产库有真实数据后测试点被挤出 Top-k 导致 flaky——与基准评测同样隔离）
 TEST_COLLECTION = "yishu_test_rag"
@@ -112,8 +114,15 @@ def indexed_store():
             },
             collection=TEST_COLLECTION,
         )
-    # R8#14：索引最终一致性（R8#9 批次将改轮询，见后续提交）
-    time.sleep(0.5)
+    # R8#9：轮询等 Qdrant 索引最终一致性（条件提前满足即返回，不浪费固定 sleep）
+    dense_q, sparse_q = encode_query("杭州旅行荷花")
+    polling_until(
+        lambda: any(
+            h["content_id"] == "rag-001"
+            for h in store.search(dense_q, sparse_q, limit=5, collection=TEST_COLLECTION)
+        ),
+        timeout=5, interval=0.2, message="Qdrant 索引最终一致性（rag-001）",
+    )
     return store
 
 
@@ -443,8 +452,13 @@ def test_image_intent_hits_photo_points():
             payload={"content_type": d["ct"], "text": d["text"], "benchmark": BENCH_MARK},
             collection=TEST_COLLECTION,
         )
-    # R8#14：索引最终一致性（R8#9 批次将改轮询，见后续提交）
-    time.sleep(0.5)
+    # R8#9：轮询等索引最终一致性（photo 点可被图片意图命中）
+    polling_until(
+        lambda: "fix1-photo" in [
+            h.content_id for h in search(SearchQuery(q="照片里的猫", limit=20), collection=TEST_COLLECTION).hits
+        ],
+        timeout=5, interval=0.2, message="fix1-photo 索引就绪（image 意图）",
+    )
 
     # image 意图：应命中 photo 点（生产语义），不命中 text 点
     r = search(SearchQuery(q="照片里的猫", limit=20), collection=TEST_COLLECTION)

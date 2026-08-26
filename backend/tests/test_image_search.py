@@ -6,14 +6,14 @@
   - mixed 路由双路召回合并（_merge_recalls）
 前置：Docker Qdrant（yishu-qdrant）+ BGE-M3 已下载（同 test_rag）。
 """
-import time
-
 import pytest
 from app.schemas.search import SearchQuery
 from app.services.embedding import encode_dense
 from app.services.rag import _merge_recalls, search_by_image
 from app.services.vector_store import get_store, point_id_for
 from qdrant_client.http import models  # noqa: F401
+
+from tests.polling import polling_until  # backend/tests/polling.py（R8#9 轮询工具）
 
 # 图片语料（caption 即图片语义描述）
 IMAGE_CORPUS = [
@@ -43,7 +43,20 @@ def image_indexed():
             "text": doc["caption"],
         }
         store.upsert_image_vec(content_id=doc["id"], vec=vec, payload=payload, collection="yishu_benchmark")
-    time.sleep(0.5)
+    # R8#9（2026-08-27）：固定 sleep 改轮询等 Qdrant 索引最终一致性
+    query_vec = encode_dense(["荷花游船西湖"])[0]
+    polling_until(
+        lambda: "img-001" in [
+            h["content_id"]
+            for h in store.search_image(
+                query_vec,
+                filters={"content_types": ["image"]},
+                limit=5,
+                collection="yishu_benchmark",
+            )
+        ],
+        timeout=5, interval=0.2, message="img-001 索引就绪",
+    )
     return store
 
 
@@ -74,7 +87,20 @@ def test_search_image_photo_points_hit(image_indexed):
         payload={"content_type": "photo", "text": "会议室的课程表截图", "label": "screenshot"},
         collection="yishu_benchmark",
     )
-    time.sleep(0.5)
+    # R8#9：轮询等 photo 点索引就绪（不再固定 sleep 0.5s）
+    query_vec = encode_dense(["课程表截图"])[0]
+    polling_until(
+        lambda: "img-010" in [
+            h["content_id"]
+            for h in store.search_image(
+                query_vec,
+                filters={"content_types": ["photo"]},
+                limit=5,
+                collection="yishu_benchmark",
+            )
+        ],
+        timeout=5, interval=0.2, message="img-010 索引就绪",
+    )
 
     # 以图搜图（生产过滤口径 content_types=["photo"]）→ photo 点命中
     query_vec = encode_dense(["课程表截图"])[0]

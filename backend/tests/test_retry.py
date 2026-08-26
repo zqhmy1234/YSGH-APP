@@ -90,12 +90,13 @@ class TestWithRetry:
         assert my_func.__doc__ == "文档字符串"
 
     def test_timeout_parameter(self):
-        @with_retry(retries=1, timeout=1)
+        # R8#9（2026-08-27）：固定 3s sleep + 1s 超时缩为 0.5s + 0.2s（用例提速 10 倍）
+        @with_retry(retries=1, timeout=0.2)
         def slow():
-            time.sleep(3)
+            time.sleep(0.5)
             return "too late"
 
         t0 = time.perf_counter()
         with pytest.raises(RetryExhaustedError):
             slow()
-        assert time.perf_counter() - t0 < 3  # 1s 超时触发，没等 3s
+        assert time.perf_counter() - t0 < 0.45  # 0.2s 超时触发，没等满 0.5s
