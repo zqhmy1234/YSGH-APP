@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 19:36 · commit 8b60078 · ts=1787744182
+- **错误**：上轮遗留交付物归位提交时 lint 失败：validate_truth_data.py E501 行长（2 处）+ _expand/_merge 脚本 UP009/E401/F401/E501/S101/F841
+- **根因**：上轮会话遗留的 truth-data 校验器与一次性脚本未过 ruff（行长/import 排序/assert 风格）；交付物归位时才暴露
+- **修复**：validate_truth_data.py 拆分长字符串修复 E501（ruff clean）；一次性 _ 前缀脚本撤出暂存（产物已在 docs/ 权威清单落地，脚本留本地复现用）
+- **相关文件**：scripts/validate_truth_data.py
+- **教训**：遗留工作产物归位前必须先过 ruff：提交被 lint 拦截的反复往返成本高；一次性脚本（_前缀）默认不入库，产物以权威文档形式落地
+
+---
+
 ### 2026-08-26 19:32 · commit bf95ddf · ts=1787743954
 - **错误**：系统性审查发现设计偏移：本地 yishu 库仅 26 业务表/4 FK（缺 ai_request_logs、tags、voice_segments 等 12 表），与 schema.sql 38 表/38 FK 严重不符；本地 .env 为生产模式（MOCK_EXTERNAL_AI=false/STORAGE_BACKEND=fs），手动跑 pytest 会真实调用外部 API
 - **根因**：本地库是旧版 schema.sql 建的 + alembic 只 stamp 未执行建表（alembic_version=head 但表缺失）；后续表设计更新只维护了 schema.sql/迁移链，本地库从未重建对齐；test_agent 的 env 覆盖只保护经它跑的测试，手动 pytest 裸奔

@@ -1,0 +1,43 @@
+[
+  {
+    "profile_case_id": "pf-0001",
+    "input_text": "项目延期了，感觉被掏空",
+    "expected_updates": [
+      { "dimension": "emotional_state", "enum_value": "焦虑", "confidence": 0.82, "should_update": true },
+      { "dimension": "stress_level", "enum_value": "高", "confidence": 0.75, "should_update": true }
+    ],
+    "user_id_hashed": "sha256:examplehash0001",
+    "collected_at": "2026-09-01T10:00:00+08:00",
+    "note": "多维度命中：情绪+压力；维度/枚举值对照 docs/画像维度枚举集清单_v1.md"
+  },
+  {
+    "profile_case_id": "pf-0002",
+    "input_text": "明天记得买咖啡豆，试试耶加雪菲",
+    "expected_updates": [
+      { "dimension": "interest_food", "enum_value": "咖啡/茶饮", "confidence": 0.95, "should_update": true },
+      { "dimension": "habit_todo_lists", "enum_value": "重度清单", "confidence": 0.9, "should_update": true }
+    ],
+    "user_id_hashed": "sha256:examplehash0001",
+    "collected_at": "2026-09-01T10:05:00+08:00",
+    "note": "一句命中多维度：饮食偏好+清单习惯"
+  },
+  {
+    "profile_case_id": "pf-0003",
+    "input_text": "他以后别联系我了，真的不想再见到他",
+    "expected_updates": [
+      { "dimension": "sensitive_topic", "enum_value": "前任", "disposal": "forbid", "confidence": 0.9, "should_update": true },
+      { "dimension": "emotional_state", "enum_value": "低落", "confidence": 0.8, "should_update": true }
+    ],
+    "user_id_hashed": "sha256:examplehash0002",
+    "collected_at": "2026-09-01T10:10:00+08:00",
+    "note": "敏感话题标注：前任=forbid（用户显式表达不想提）；红线级内容走 G 批不标入画像"
+  },
+  {
+    "profile_case_id": "pf-0004",
+    "input_text": "今天天气不错",
+    "expected_updates": [],
+    "user_id_hashed": "sha256:examplehash0003",
+    "collected_at": "2026-09-01T10:15:00+08:00",
+    "note": "反例：无画像维度信息，不应更新任何维度（验证不臆造）"
+  }
+]

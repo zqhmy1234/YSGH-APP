@@ -113,3 +113,9 @@ research/rag_benchmark/external/
 
 # --- 会话与临时产物 ---
 session-memory-*.md
+# uni-app x / HBuilderX Android 构建残留（2026-08-26 系统性审查）
+AndroidManifest.xml
+R.txt
+classes.jar
+annotations.zip
+aidl/

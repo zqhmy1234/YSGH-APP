@@ -2,23 +2,38 @@
   {
     "query_id": "q-0001",
     "query": "去年生日那天的照片",
-    "layer": "temporal",
-    "expected_ids": ["a1b2c3d4-0000-0000-0000-000000000001"],
+    "layer": "time",
+    "expected": ["p-0001/003.jpg"],
     "expected_label": null,
+    "expect_empty": false,
     "user_id_hashed": "sha256:examplehash0001",
     "source": "beta-user",
     "collected_at": "2026-09-01T10:00:00+08:00",
-    "note": "用户原话，含时间表达"
+    "note": "示例条目：expected 引用 B/C/D 语料采集 id（非占位 uuid）"
   },
   {
     "query_id": "q-0002",
     "query": "考研笔记",
     "layer": "keyword",
-    "expected_ids": [],
-    "expected_label": "备考相关的文字碎片",
+    "expected": [],
+    "expected_label": "todo",
+    "expect_empty": false,
     "user_id_hashed": "sha256:examplehash0002",
     "source": "annotation",
     "collected_at": "2026-09-02T14:30:00+08:00",
-    "note": "产品部补标：类别级相关"
+    "note": "示例条目：类别级相关，expected_label 用英文码"
+  },
+  {
+    "query_id": "q-0042",
+    "query": "去年生日那天的照片",
+    "layer": "time",
+    "expected": [],
+    "expected_label": "__none__",
+    "expect_empty": true,
+    "negative_kind": "real",
+    "user_id_hashed": "sha256:examplehash0003",
+    "source": "beta-user",
+    "collected_at": "2026-09-10T14:30:00+08:00",
+    "note": "示例条目：真实负样本（用户真搜过但去年生日没拍照）"
   }
 ]

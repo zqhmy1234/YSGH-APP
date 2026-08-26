@@ -2,7 +2,7 @@
   {
     "fragment_id": "f-0001",
     "text": "明天记得带身份证去体检",
-    "label": "待办",
+    "label": "todo",
     "label_confidence": "confirmed",
     "source": "beta-user",
     "user_id_hashed": "sha256:examplehash0001",
@@ -12,7 +12,7 @@
   {
     "fragment_id": "f-0002",
     "text": "要是能把每天的心情画下来就好了",
-    "label": "灵感",
+    "label": "idea",
     "label_confidence": "ai-assisted",
     "source": "beta-user",
     "user_id_hashed": "sha256:examplehash0002",
