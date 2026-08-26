@@ -7,7 +7,7 @@
  *  - 4xx 停该批（参数/越权错误重试无意义）
  */
 import { getBaseUrl } from './config'
-import { getToken, ensureLogin } from './auth'
+import { getToken, ensureLogin, DEVICE_ID } from './auth'
 
 export class SyncOutcome {
 	accepted: number
@@ -31,7 +31,7 @@ function postOnce(events: Array<UTSJSONObject>, token: string, resolve: (r: Sync
 		url: getBaseUrl() + '/api/v1/events/sync',
 		method: 'POST',
 		data: {
-			device_id: 'nova11',
+			device_id: DEVICE_ID,
 			events: events
 		},
 		header: {

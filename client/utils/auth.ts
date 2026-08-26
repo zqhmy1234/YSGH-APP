@@ -13,6 +13,13 @@ import { getBaseUrl } from './config'
 const KEY_ACCESS = 'yishu.auth.access_token'
 const KEY_REFRESH = 'yishu.auth.refresh_token'
 
+/**
+ * 设备标识单例（P1-A 对齐）：auth/event_sync/sync_client 统一引用同一常量，
+ * 消除 device_id 分裂（'yishu-android-dev' vs 'nova11' 被当成两台设备）。
+ * 注意：与 sync_client.ts 的 DEVICE_ID 保持同值；后续统一收敛到单一来源。
+ */
+export const DEVICE_ID: string = 'yishu-android-dev'
+
 function setSecure(key: string, value: string): void {
 	uni.setStorageSync(key, value)
 }
@@ -39,7 +46,7 @@ export function wechatLogin(): Promise<boolean> {
 			method: 'POST',
 			data: {
 				code: 'dev-client',
-				device_id: 'yishu-android-dev'
+				device_id: DEVICE_ID
 			},
 			success: (res) => {
 				if (res.statusCode === 200) {
@@ -112,7 +119,7 @@ export function refreshToken(): Promise<boolean> {
 			method: 'POST',
 			data: {
 				refresh_token: rt,
-				device_id: 'yishu-android-dev'
+				device_id: DEVICE_ID
 			},
 			success: (res) => {
 				if (res.statusCode === 200) {

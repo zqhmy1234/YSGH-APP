@@ -15,7 +15,8 @@ export class TimelineEvent {
 	startTime: number // epoch ms
 	endTime: number
 	place: string
-	emotion: string
+	/** 情绪（后端契约是 dict|null，如 {label, confidence}；P1-A 对齐改 getJSON） */
+	emotion: UTSJSONObject | null
 	photoCount: number
 	contentCount: number
 	/** draft / confirmed / rejected（B3-5；L2 待确认区按 status+confidence 分组） */
@@ -39,7 +40,7 @@ export class TimelineEvent {
 		startTime: number,
 		endTime: number,
 		place: string,
-		emotion: string,
+		emotion: UTSJSONObject | null,
 		photoCount: number,
 		contentCount: number,
 		status: string,
@@ -150,7 +151,7 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 					parseIsoToMs(item.getString('start_time') ?? ''),
 					parseIsoToMs(item.getString('end_time') ?? ''),
 					item.getString('place') ?? '',
-					item.getString('emotion') ?? '',
+					item.getJSON('emotion'),
 					item.getNumber('photo_count') as number,
 					item.getNumber('content_count') as number,
 					item.getString('status') ?? 'draft',

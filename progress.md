@@ -1,3 +1,18 @@
+## 2026-08-26 23:10 · 技术债 TD-P1B 性能与索引批次完成
+
+- **S6-1 aggregate_user 增量游标化（最大性能债）**：l2l3 只扫 30 天增量窗口内未成候选内容（不再全量重扫 400 条远古内容）；接线 `incremental_aggregate`（以"已落库 level>=2 候选"重建 previous 状态，新内容先匹配并入，失败回退本批候选不丢）；`_write_upper_candidates` 批量预载 + 已存在候选（成员组合相同）跳过 LLM 裁决与重查 → 批量导入 O(N²)（反复 LLM）→ 近线性
+- **S6-2 N+1 上提循环外**：`_l3_confirmed_exists` 预载合并进 `_write_upper_candidates`（用户标题/确认事件/成员一次查）；L3 linked/owned 检查合并 IN(cluster) 单条；`sync_client_events` 幂等 `client_event_id IN (...)` 批量 + photo_ids 归属按批合并
+- **S6-3 sync.push_ops 批量预取**：op_id 幂等查 / content 归属查 / SyncFieldVersion 按 (entity_type,entity_id) 组合 IN 预取（逐 op 冲突判定语义保留）
+- **S6-4/S6-6 4 个缺失索引**：`deleted_logs(cleanup_status,deleted_at)` / `offline_queue(user_id,id)` / `messages(user_id,id)` / `profile_l2_evidence(user_id,dimension)`（schema.sql + 迁移 a7b8c9d0e1f2，本地库 upgrade 后 `\d deleted_logs` 确认索引存在）
+- **S6-5 reconcile O(N×M)→O(N)**：client_items 先建 set(entity_id)；`_cloud_entities` 投影列只取所需（不再整行 ORM）
+- **S6-6 profile_annotator**：`get_or_create_profile` 提循环外（懒加载共享实例，批内只查/建一次）；`_trim_history` 合并单条 DELETE（子查询 LIMIT）；L2 evidence 索引
+- **S6-7 echo**：画像敏感一次加载复用（逐候选 N 次 → 每调用 1 次）；LLM 检测仅首候选（20 次 → ≤1 次）
+- **S6-8 correction.mark_global_candidates**：全表载入 → 单条 SQL 聚合（GROUP BY+HAVING COUNT(DISTINCT user_id)≥2）+ 批量 UPDATE
+- **S6-9 wechat `_corp_access_token` 进程内缓存**（TTL 7200s−200s 余量；40014/42001 失效清缓存重取一次）
+- **S6-10 storage cos/minio 进程级单例**（同 fake 模式，懒加载；reset 同步清空）
+- 验证：test_event_ops/test_event_sync/test_sync/test_reconcile/test_echo/test_profile_annotator/test_correction/test_pipeline/test_rag/test_wechat*/test_upload/test_cleanup_job/test_notify 等全绿（累计 82+110+62 passed）+ review_agent 快速门禁全绿
+- **遗留登记（明确不做）**：upload.py 流式合并（COS copy_object/append 依赖后端能力，P2 批次或另排）；pipeline.py patch_extra 样板收敛（P2B，文件域与 P1B 冲突，P1B 合入后再做）
+- 提交：7324e19 perf(techdebt-p1b)（pre-commit 快速门禁通过；提交同时带入了其他 Agent 已暂存的 CI/conftest/test-infra 文件（ci.yml/vector_store/conftest/test_event_ops/pytest.ini/api_smoke/test_agent），已在全量门禁覆盖内，无数据丢失；harness 文件 progress/feature_list 留待集成）
 ## 2026-08-26 22:20 · Wave4 AgentK（B5d 后台域）集成 + J/H 代劳 + 决策落地
 
 - merge wave4-agentK（B5d 后台域：WorkManager 单队列 P0-P4 + dataSync 前台服务短命化 + attribution tag + 标准基座降级 pending/setInterval，nova 11 真机验证；自定义基座项待验）——client/uni_modules/yishu-background-tasks/ 新插件 19 文件 + yishu-photo-watch 3 文件

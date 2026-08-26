@@ -22,16 +22,16 @@
 | `DASHSCOPE_WORKSPACE_ID` | — | 百炼业务空间 ID。**`sk-ws-` 工作空间级 key 必须配**（SDK 无环境变量兜底，缺失会 403 Workspace access denied） | 同一控制台 → 工作空间管理 | ✅ 已配置 |
 | `DASHSCOPE_REGION` | — | workspace 专属 Host 地域（默认 cn-beijing；完整地址可用 `DASHSCOPE_BASE_URL` 覆盖） | 公开参数 | ✅ 默认值 |
 | `DASHSCOPE_BASE_URL` | — | 可选：直接覆盖完整 API Host（优先级最高） | — | 可选 |
-| `TENCENT_SECRET_ID` | `TENCENT_CI_SECRET_ID` | 腾讯云子账号密钥：内容安全 CI 审核（图片敏感/人脸标签）+ COS 签名 | 腾讯云控制台 → 访问管理 CAM → 用户 → API 密钥 | ⏳ 未配置（api_smoke 报"腾讯云未配置"） |
-| `TENCENT_SECRET_KEY` | `TENCENT_GUANHAIFENG_CI_SECRET_KEY` | 同上 | 同上 | ⏳ 未配置 |
-| `COS_BUCKET` | `TENCENT_COS_BUCKET` | 对象存储桶名（照片原件/缩略图/微信媒体） | 腾讯云控制台 → 对象存储 COS → 创建存储桶 | ⏳ 未配置（生产 fake/fs，开通步骤见 docs/COS开通与验证.md） |
-| `COS_REGION` | `TENCENT_COS_REGION` | 存储桶地域（如 ap-shanghai） | 同上 | ⏳ 未配置 |
-| `TENCENT_APPID` | — | 腾讯云业务标识（非敏感公开参数） | 腾讯云控制台 → 账号信息 | ⏳ 未配置 |
-| `TENCENT_STS_ROLE_ARN` | — | 可选：客户端直传 STS 角色（未配自动降级后端中转） | 腾讯云 CAM → 角色 | 可选 |
-| `BAIDU_API_KEY` | — | 百度 OCR（图片塔/OCR 备用通道） | 百度智能云控制台 → OCR 服务 | ⏳ 未配置（当前走 Qwen3-VL caption + 本地 OCR） |
-| `BAIDU_SECRET_KEY` | — | 同上 | 同上 | ⏳ 未配置 |
-| `AMAP_API_KEY` | `AMAP_WEB_API_KEY` | 高德逆地理编码（B3-3，5000 次/日免费） | 高德开放平台 → 应用管理 → 创建应用 → Web 服务 key | ✅ 已配置（逆地理 E2E 验证过） |
-| `SENTRY_DSN` | — | 错误监控上报 | Sentry 控制台 → 项目 → 客户端 DSN | ⏳ 未配置 |
+| `TENCENT_SECRET_ID` | `TENCENT_CI_SECRET_ID` | 腾讯云子账号密钥：内容安全 CI 审核（图片敏感/人脸标签）+ COS 签名 | 腾讯云控制台 → 访问管理 CAM → 用户 → API 密钥 | ✅ 已配置（backend/.env 用别名 `TENCENT_CI_SECRET_ID` 存） |
+| `TENCENT_SECRET_KEY` | `TENCENT_GUANHAIFENG_CI_SECRET_KEY` | 同上 | 同上 | ✅ 已配置（别名 `TENCENT_GUANHAIFENG_CI_SECRET_KEY` 存） |
+| `COS_BUCKET` | `TENCENT_COS_BUCKET` | 对象存储桶名（照片原件/缩略图/微信媒体） | 腾讯云控制台 → 对象存储 COS → 创建存储桶 | ✅ 已配置（`TENCENT_COS_BUCKET=yishu-photos-*`，STS 开通步骤见 docs/COS开通与验证.md） |
+| `COS_REGION` | `TENCENT_COS_REGION` | 存储桶地域（如 ap-shanghai） | 同上 | ✅ 已配置（ap-shanghai） |
+| `TENCENT_APPID` | — | 腾讯云业务标识（非敏感公开参数） | 腾讯云控制台 → 账号信息 | ✅ 已配置 |
+| `TENCENT_STS_ROLE_ARN` | — | 客户端直传 STS 角色（未配自动降级后端中转） | 腾讯云 CAM → 角色 | ✅ 已配置（`qcs::cam::uin/...`，未配则后端中转兜底） |
+| `BAIDU_API_KEY` | `BAIDU_OCR_API_KEY` | 百度 OCR（图片塔/OCR 备用通道） | 百度智能云控制台 → OCR 服务 | ✅ 已配置（别名 `BAIDU_OCR_API_KEY` 存；OCR 备用通道） |
+| `BAIDU_SECRET_KEY` | `BAIDU_OCR_SECRET_KEY` | 同上 | 同上 | ✅ 已配置（别名 `BAIDU_OCR_SECRET_KEY` 存） |
+| `AMAP_API_KEY` | `AMAP_WEB_API_KEY` | 高德逆地理编码（B3-3，5000 次/日免费） | 高德开放平台 → 应用管理 → 创建应用 → Web 服务 key | ✅ 已配置（两个名字都存，逆地理 E2E 验证过） |
+| `SENTRY_DSN` | — | 错误监控上报 | Sentry 控制台 → 项目 → 客户端 DSN | ✅ 已配置（生产启动自动 init） |
 | `WECHAT_CORP_ID` | — | 企微回调验签 + 微信图媒体下载（gettoken 的 corpid；`WECHAT_TOKEN` 兼作应用 Secret 传 corpsecret） | 企业微信管理后台 → 我的企业 → 企业 ID；应用 Secret 在 应用管理 → 自建应用 | ⏳ 未配置（沙箱测试凭证见 scripts/wecom_sandbox.py） |
 | `WECHAT_TOKEN` | — | 回调签名 Token + 应用 Secret（corpsecret） | 同上 | ⏳ 未配置 |
 | `WECHAT_ENCODING_AES_KEY` | — | 回调消息加解密 | 企微后台 → 接收消息设置 | ⏳ 未配置 |
@@ -50,7 +50,7 @@
 | Qdrant | `QDRANT_URL`（Docker 容器 `yishu-qdrant` 6333/6334） | 向量库（BGE-M3 混合检索）；未启动时 test_pipeline 部分 deselect |
 | 模型资产 | `backend/models/`（setfit-classifier / bge-reranker-* / BGE-M3 缓存） | gitignore 不入库，worktree 需从主仓复制（教训：漏复制 → HFValidationError） |
 | 测试照片 | `.cowork-temp/test_photos/`（100 张） | api_smoke 相册链路必需，同样需 worktree 复制 |
-| 存储后端 | `STORAGE_BACKEND`（fake/fs/minio/cos） | 生产默认 fake 直到 COS key 到位；测试用 fake 覆盖 |
+| 存储后端 | `STORAGE_BACKEND`（fake/fs/minio/cos） | backend/.env 实况=fs（本地跨进程共享，根目录 `FS_STORAGE_ROOT`）；COS key 已配齐，上生产切 cos；测试 conftest 强制 fake |
 
 ## 3. 常见问题
 

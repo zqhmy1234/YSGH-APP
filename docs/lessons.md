@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 22:49 · commit bda641d · ts=1787755771
+- **错误**：pytest.ini 文件被占用致编辑/写入工具报 ReplaceFileW EIO (Win32 1175)
+- **根因**：Windows 上其他进程（防病毒/短暂句柄）占用文件时，编辑器原子替换（ReplaceFileW）失败；直接 .NET WriteAllText 成功
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-26 22:18 · commit a188229 · ts=1787753921
 - **错误**：Wave4 K 集成全量门禁被 lessons 强制登记检查阻断：上次失败（K 跑全量时 J 域 test_notify 3 个 care 模板断言失败）未登记教训；且 test_notify 夜间跑必挂——22:00-05:00 深夜时段 _is_late_night 返回 True，SAD 走 late_night 分支，白天才走 sad_ask
 - **根因**：① 测试依赖墙钟：test_care_sad_* 未控制时间，22:00-05:00 运行时断言与深夜分支冲突（K 21:54 后跑即暴露）；② _care_streak_days 查询上界 sent_at<=now 用客户端注入时间对比 DB 真实 now()，时间被 patch 时永远不成立，streak 恒 0

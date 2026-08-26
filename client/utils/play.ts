@@ -133,6 +133,26 @@ export function fetchInterviewQuestions(): Promise<Array<InterviewQuestion>> {
 	})
 }
 
+/** 展平 {dim: [当前值]} → "relation_role：家人、伴侣；..." 摘要（P1-A 对齐：dimensions 是 dict） */
+function flattenDimensions(dim: UTSJSONObject | null): string {
+	if (dim == null) {
+		return ''
+	}
+	const keys = UTSJSONObject.keys(dim)
+	let summary = ''
+	for (let i = 0; i < keys.length; i++) {
+		const k = keys[i] as string
+		const vals = dim.getArray(k) as Array<string> | null
+		if (vals != null && vals.length > 0) {
+			if (summary != '') {
+				summary += '；'
+			}
+			summary += k + '：' + vals.join('、')
+		}
+	}
+	return summary
+}
+
 /** POST /interview/answers：提交三问答案；返回复述确认或 null */
 export function submitInterviewAnswers(answers: UTSJSONObject): Promise<InterviewResult | null> {
 	const body: UTSJSONObject = {
@@ -149,7 +169,12 @@ export function submitInterviewAnswers(answers: UTSJSONObject): Promise<Intervie
 				resolve(null)
 				return
 			}
-			resolve(new InterviewResult(d.getString('dimensions') ?? '', d.getString('confirmation') ?? ''))
+			resolve(
+				new InterviewResult(
+					flattenDimensions(d.getJSON('dimensions')),
+					d.getString('confirmation') ?? ''
+				)
+			)
 		})
 	})
 }

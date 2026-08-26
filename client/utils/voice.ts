@@ -4,8 +4,8 @@
  * 链路（后端契约）：
  *  uni.getRecorderManager()  → 录 wav（uni-app x App 端支持 wav 格式，16kHz 16bit 单声道）
  *  POST /api/v1/asr/transcribe（≤8MB 直传）→ AsrTranscribeResponse
- *    {text, channel, emotion, emotion_confidence, emotion_merge, audio_events,
- *     not_oral, silence_hint, snr_db, noise_weight, duration_ms, mock, guardrail}
+ *    {text, channel, emotion, emotion_confidence, emotion_source, emotion_bonus, emotion_merge,
+ *     audio_events, not_oral, silence_hint, snr_db, noise_weight, duration_ms, mock, guardrail}
  *  POST /api/v1/upload/init|chunk|complete（长录音 >8MB 分片持久化 → 音频落对象存储）
  *  POST /api/v1/contents（content_type=voice + cos_key → 管线 VAD 分段转写；>5min 进 VAD）
  *
@@ -39,6 +39,8 @@ export class AsrResult {
 	emotion: string
 	emotionConfidence: number
 	emotionSource: string
+	/** 笑声等正向音频事件带来的情绪加分（B5a J-3；P1-A 对齐：消费后端 emotion_bonus） */
+	emotionBonus: boolean
 	emotionMerge: UTSJSONObject | null
 	audioEvents: Array<string>
 	notOral: boolean
@@ -57,6 +59,7 @@ export class AsrResult {
 		emotion: string,
 		emotionConfidence: number,
 		emotionSource: string,
+		emotionBonus: boolean,
 		emotionMerge: UTSJSONObject | null,
 		audioEvents: Array<string>,
 		notOral: boolean,
@@ -74,6 +77,7 @@ export class AsrResult {
 		this.emotion = emotion
 		this.emotionConfidence = emotionConfidence
 		this.emotionSource = emotionSource
+		this.emotionBonus = emotionBonus
 		this.emotionMerge = emotionMerge
 		this.audioEvents = audioEvents
 		this.notOral = notOral
@@ -184,6 +188,7 @@ export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 							d.getString('emotion') ?? '平静',
 							(d.getNumber('emotion_confidence') as number) ?? 0,
 							d.getString('emotion_source') ?? 'none',
+							d.getBoolean('emotion_bonus') ?? false,
 							merge,
 							ae != null ? ae : [],
 							d.getBoolean('not_oral') ?? false,

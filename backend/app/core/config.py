@@ -70,8 +70,9 @@ class Settings(BaseSettings):
     # 腾讯云业务标识（非敏感，公开参数）
     tencent_appid: str = ""
     tencent_sts_role_arn: str = ""
-    # 对象存储后端（S5-03）：fake=内存（默认/测试）/ minio=本地模拟 / cos=生产
-    storage_backend: str = "fake"
+    # 对象存储后端（S5-03）：fake=内存（默认/测试）/ fs=本地文件系统（跨进程共享，
+    # 根目录 FS_STORAGE_ROOT）/ minio=本地模拟 / cos=生产（腾讯云 COS）
+    storage_backend: Literal["fake", "fs", "minio", "cos"] = "fake"
     # 本地文件系统后端根目录（相对 backend/ 解析；2026-08-25 新增，跨进程共享）
     fs_storage_root: str = "data/storage"
     minio_endpoint: str = "localhost:9000"
@@ -118,8 +119,11 @@ class Settings(BaseSettings):
     )
     aliyun_content_safety_region: str = "cn-beijing"
 
-    # Mock 开关：true 时外部 AI 全部走本地 mock（零费用，契约消费方联调用）
-    mock_external_ai: bool = True
+    # Mock 开关：true 时外部 AI 全部走本地 mock（零费用，契约消费方联调用）。
+    # 2026-08-26（P1-A 配置对齐）：生产安全默认改 false（fail-closed——漏配环境变量的
+    # 新部署若沿用默认 true，短信验证码 mock 直返会造成任意手机号账户接管）。
+    # dev/CI 联调可显式 MOCK_EXTERNAL_AI=true 覆盖；测试套件由 conftest autouse 强制 true。
+    mock_external_ai: bool = False
 
     # 双层 Rerank 第一层：bge-reranker 本地模型路径（WP-F；目录不存在则跳过重排）
     # 审查修复(P1-10)：存纯文件名（相对 backend/models），加载侧用 __file__ 解析绝对路径，
