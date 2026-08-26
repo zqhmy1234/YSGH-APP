@@ -29,6 +29,12 @@
 ### 2026-08-26 07:36 · commit 4ae3632 · ts=1787700960
 - **错误**：UTS 可选参数(?:)在调用点不可省略实参：startPeriodicSync()/uploadBatch(items,cb) 编译报 'No value passed for parameter'
 - **根因**：uni-app x UTS 编译器对 param?: Type 的可选参数仍要求调用处传参；省略会编译失败
+
+---
+
+### 2026-08-26 07:23 · commit 5fdb43e · ts=1787700216
+- **错误**：SessionLocal autoflush=False：db.add() 后立即 select 查不到新行（profile_annotator 同事务多次 get_or_create_profile 重复插 UserProfile 撞唯一约束；pool/history 行写入后 select 返回 0）
+- **根因**：backend/app/db/session.py:16 sessionmaker(autoflush=False)——写入后必须先 flush()/commit() 再读；先 add 后查询需显式 flush，否则 identity map 外查不到
 - **修复**：见代码
 - **相关文件**：-
 - **教训**：（无）
