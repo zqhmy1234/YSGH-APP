@@ -3,8 +3,13 @@
 任务归属：Wave 1 Agent C（B5b 护栏域）独占本文件。
 
 内容：
-1. 可插拔检测器抽象（B5b-7）：规则 / 百炼托管 / 自部署三实现轻量接口，
-   不引入重框架（无注册表/无 DI 容器），工厂函数 + 列表即可换实现。
+1. 可插拔检测器抽象（B5b-7）：规则 / 百炼托管两实现轻量接口，不引入重框架
+   （无注册表/无 DI 容器），需要时工厂函数 + 列表即可换实现。
+   【B5b 选型结论（2026-08-14 调研，见 05b_安全护栏_B5b.md §调研结论）】
+   自部署护栏（NeMo Guardrails / Qwen3Guard 8B Q4）淘汰：CPU 自部署 5-10s/次
+   灾难且已有百炼托管可用；MVP 挂百炼托管（qwen_response_check，按 token 计费，
+   零部署零 GPU），flash 自检降为托管不可用时的兜底；可插拔接口保留，未来私有化
+   可再加回自部署实现。
 2. detect_event_sensitive：事件级敏感 LLM 补漏（规则未命中 → qwen-flash 分类，
    抓\"他说以后别联系了\"类表达；mock/未配 key → []，静默降级）。
 3. reflow_violation_words：违规词回流（检测违规 → sensitive_words level=3，
@@ -50,7 +55,7 @@ _CATEGORY_SEED_WORDS = {
 class DetectionResult:
     """检测结果（跨实现统一结构）"""
 
-    detector: str          # 实现名：rule / managed / self_hosted
+    detector: str          # 实现名：rule / managed
     pass_: bool            # True = 未命中敏感（放行）
     categories: list[str] = field(default_factory=list)
     matched: list[str] = field(default_factory=list)
@@ -117,26 +122,6 @@ class ManagedDetector(SensitiveDetector):
         except Exception as exc:  # noqa: BLE001 —— 补漏失败静默降级（不阻断入库）
             logger.warning("事件敏感 LLM 补漏失败，降级放行: %s", exc)
             return DetectionResult(detector=self.name, pass_=True, detail=f"error:{exc}")
-
-
-class SelfHostedDetector(SensitiveDetector):
-    """实现③：自部署护栏（预留——NeMo Guardrails 等；B5b 定稿未选型，仅占位）"""
-
-    name = "self_hosted"
-
-    def available(self) -> bool:
-        return False
-
-    def detect(self, text: str) -> DetectionResult:
-        return DetectionResult(detector=self.name, pass_=True, detail="not-wired")
-
-
-def get_detectors() -> list[SensitiveDetector]:
-    """当前接线：规则 + 托管（llm_ops.guard 补漏）。自部署预留。
-
-    换实现/调顺序即改此函数，调用方无感——轻量抽象的落点。
-    """
-    return [RuleDetector(), ManagedDetector(), SelfHostedDetector()]
 
 
 def _parse_categories(answer: str) -> list[str]:

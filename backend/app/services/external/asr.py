@@ -62,15 +62,6 @@ MIME_BY_FORMAT = {
     "wma": "audio/x-ms-wma",
 }
 
-EMOTION_MAP = {
-    "happy": "开心",
-    "sad": "难过",
-    "angry": "生气",
-    "neutral": "平静",
-    "surprise": "惊讶",
-    "fear": "恐惧",
-    "disgust": "厌恶",
-}
 SENSEVOICE_EMOTION_TAGS = {
     "<|HAPPY|>": "开心",
     "<|SAD|>": "难过",
@@ -468,20 +459,6 @@ def _transcribe_funasr(path: Path) -> AsrResult:
         segments=segments,
         usage=usage,
     )
-
-
-def _parse_sentences(resp) -> list[dict[str, Any]]:
-    """兼容旧 DashScope 实时转写响应；保留给历史调用与回归测试。"""
-    raw = resp.get_sentence()
-    if isinstance(raw, list):
-        return [item for item in raw if isinstance(item, dict)]
-    return getattr(raw, "sentence", None) or []
-
-
-def _emotion_label(raw: str | None) -> str:
-    if not raw:
-        return "平静"
-    return EMOTION_MAP.get(raw.strip().lower(), "平静")
 
 
 # ---- B5a · Wave4 AgentJ：音频事件 / 噪音降权 / 段级情绪合并 ----

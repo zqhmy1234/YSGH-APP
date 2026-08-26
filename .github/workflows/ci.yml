@@ -113,6 +113,43 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pytest pytest-cov httpx ruff
 
+      - name: Dependency vulnerability scan (pip-audit, non-blocking annotation)
+        # TD-P2A（2026-08-26）：依赖扫描入 CI（技术债清理计划 P3-60）。
+        # pip-audit 对解析后的依赖树做 CVE 核验（OSV 库）；失败仅 annotation 标注不阻断
+        # （continue-on-error）——OSV 网络抖动/误报需人工判读，避免假阳性卡死主流水线。
+        # 报告落 .cowork-temp/pip-audit.json 随 test-reports artifact 存档。
+        continue-on-error: true
+        run: |
+          mkdir -p .cowork-temp
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --format=json > .cowork-temp/pip-audit.json 2>.cowork-temp/pip-audit.err || echo "pip-audit 非零退出（不阻断，见 annotation）"
+          python - <<'EOF'
+          import json, pathlib
+          report = pathlib.Path('.cowork-temp/pip-audit.json')
+          err = pathlib.Path('.cowork-temp/pip-audit.err')
+          if not report.exists() or report.stat().st_size == 0:
+              print('::warning file=backend/requirements.txt::pip-audit 未产出报告（离线/网络失败），请人工核验依赖安全')
+              if err.exists():
+                  print('::warning::pip-audit stderr: ' + err.read_text(errors='replace')[-400:])
+              raise SystemExit(0)
+          try:
+              data = json.loads(report.read_text(encoding='utf-8'))
+          except json.JSONDecodeError as exc:
+              print(f'::warning::pip-audit 输出解析失败: {exc}')
+              raise SystemExit(0)
+          vulns = data.get('vulnerabilities', [])
+          if not vulns:
+              print('::notice::pip-audit 未发现已知漏洞')
+          else:
+              items = []
+              for v in vulns[:20]:
+                  name = v.get('name', '?')
+                  version = v.get('version', '?')
+                  vid = (v.get('vuln') or {}).get('id', '?')
+                  items.append(f'{name} {version} -> {vid}')
+              print(f"::warning file=backend/requirements.txt::{len(vulns)} 个已知漏洞: {'; '.join(items)}")
+          EOF
+
       - name: Init PostgreSQL (yishu 隔离库 + schema)
         # 2026-08-26 结论链：
         #   #8  postgres 容器就绪竞态（psql 连接被拒 exit 2）→ 重试循环（下方 for 循环）

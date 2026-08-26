@@ -167,22 +167,14 @@ def test_reflow_violation_words_idempotent(db_user):
 
 
 def test_detector_abstraction(db_user):
-    """检测器接口抽象：规则/托管/自部署三实现；当前接线 = 规则 + llm_ops.guard"""
-    from app.services.llm_ops.guard import (
-        ManagedDetector,
-        RuleDetector,
-        SelfHostedDetector,
-        get_detectors,
-    )
+    """检测器接口抽象：规则 + 托管两实现（自部署经 B5b 调研淘汰，2026-08-26 删）"""
+    from app.services.llm_ops.guard import ManagedDetector, RuleDetector
 
-    detectors = get_detectors()
-    assert [d.name for d in detectors] == ["rule", "managed", "self_hosted"]
     r = RuleDetector().detect("去年我们分手了")
     assert r.pass_ is False and "分手" in r.categories
     assert RuleDetector().available() is True
-    # mock 模式：托管护栏不可用（未配 key），自部署未接线
+    # mock 模式：托管护栏不可用（未配 key）
     assert ManagedDetector().available() is False
-    assert SelfHostedDetector().available() is False
 
 
 def test_hook_no_text_noop(db_user):

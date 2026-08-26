@@ -22,12 +22,3 @@ class CorrectionOut(BaseModel):
 class ArbitrateRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
     content_type: str = Field("text", description="photo/text/voice")
-
-
-class ArbitrateResult(BaseModel):
-    label: str
-    label_cn: str
-    layer: str                    # personal / global
-    confidence: float | None = None
-    similarity: float | None = None
-    source: str | None = None

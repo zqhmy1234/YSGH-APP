@@ -26,12 +26,6 @@ class SyncPushResult(BaseModel):
     server_version: int
 
 
-class SyncPullRequest(BaseModel):
-    device_id: str = Field(..., min_length=1, max_length=64)
-    since: int = Field(0, ge=0)
-    limit: int = Field(200, ge=1, le=1000)
-
-
 class SyncPullResult(BaseModel):
     changes: list[dict]
     cursor: int

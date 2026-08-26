@@ -12,7 +12,8 @@ python-multipart>=0.0.18  # CVE-2024-53981 需 >=0.0.18（2026-08-26 决策升�
 sqlalchemy>=2.0
 psycopg[binary]>=3.2
 alembic>=1.13        # P2-05 迁移（ORM 唯一权威）
-pgvector>=0.3         # 仅测试引用（dev）
+# pgvector 已移出：全仓无 Python import（vector 为服务端扩展，由 pgvector/pgvector:pg16
+# 镜像 + schema.sql CREATE EXTENSION vector 提供；test_vector_extension 仅查扩展存在性）
 
 # --- 队列（RQ，决策 #9）---
 rq>=1.16

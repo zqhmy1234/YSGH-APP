@@ -334,35 +334,6 @@ def test_retry_only_for_retryable_provider_error(monkeypatch):
     assert len(calls) == 3
 
 
-def test_parse_sentences_shapes():
-    """_parse_sentences 兼容两种响应形态（2026-08-19 实测回归）
-
-    dashscope 1.26.7 paraformer-realtime-v2 的 get_sentence() 返回 list[dict]；
-    旧代码按 .sentence 属性取恒为空 → 误判"空转写"。两种形态都必须解析出文本。
-    """
-    from app.services.external.asr import _parse_sentences
-
-    class RespList:
-        """实测形态：get_sentence() 直接返回 list"""
-        def get_sentence(self):
-            return [{"sentence_id": 1, "text": "今天天气不错", "begin_time": 0, "end_time": 1000}]
-
-    class RespObj:
-        """旧文档形态：get_sentence() 返回带 .sentence 属性的对象"""
-        def get_sentence(self):
-            return type("S", (), {"sentence": [{"sentence_id": 1, "text": "明天会更好"}]})()
-
-    class RespEmpty:
-        def get_sentence(self):
-            return None
-
-    assert _parse_sentences(RespList()) == [
-        {"sentence_id": 1, "text": "今天天气不错", "begin_time": 0, "end_time": 1000}
-    ]
-    assert _parse_sentences(RespObj()) == [{"sentence_id": 1, "text": "明天会更好"}]
-    assert _parse_sentences(RespEmpty()) == []
-
-
 # ---------- API 层 ----------
 
 @pytest.fixture()
