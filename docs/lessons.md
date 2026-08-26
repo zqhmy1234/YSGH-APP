@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 19:32 · commit bf95ddf · ts=1787743954
+- **错误**：系统性审查发现设计偏移：本地 yishu 库仅 26 业务表/4 FK（缺 ai_request_logs、tags、voice_segments 等 12 表），与 schema.sql 38 表/38 FK 严重不符；本地 .env 为生产模式（MOCK_EXTERNAL_AI=false/STORAGE_BACKEND=fs），手动跑 pytest 会真实调用外部 API
+- **根因**：本地库是旧版 schema.sql 建的 + alembic 只 stamp 未执行建表（alembic_version=head 但表缺失）；后续表设计更新只维护了 schema.sql/迁移链，本地库从未重建对齐；test_agent 的 env 覆盖只保护经它跑的测试，手动 pytest 裸奔
+- **修复**：本地库重建为 CI 同款流程（DROP→CREATE→vector→schema.sql→alembic stamp head）：39 表/38 FK/vector 扩展全对齐；conftest autouse fixture 强化（mock_external_ai=true + storage_backend=fake），与 test_agent 双保险，手动 pytest 不再走真实通道；重建后 review_agent --full 全绿验证
+- **相关文件**：backend/conftest.py, backend/sql/schema.sql
+- **教训**：本地库必须与 CI 建库源（schema.sql）保持一致：alembic stamp 不等于建表，旧库会掩盖缺表缺 FK 的真实问题；测试隔离要 autouse 固化到 conftest（env 覆盖只保护特定入口）
+
+---
+
 ### 2026-08-26 18:46 · commit 60a8050 · ts=1787741177
 - **错误**：CI #19 quality gate 失败：5 个 pipeline 测试 status=failed（test_text_classified_and_done 等断言 done 实际 failed）+ api_smoke payload 404（Qdrant 无 point）
 - **根因**：CI HF 缓存 cache miss（0 秒）后测试时现场下载 BGE-M3 2.2GB——下载失败/超时 → encode_dense 抛异常 → _index_content 失败 → process_content 外层 except 兜底 status=failed；本地模型缓存完整（2.16GB）故本地 419 passed 掩盖；qdrant 版本修复（#17/#18）后 #19 暴露此第二层问题
