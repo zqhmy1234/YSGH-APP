@@ -28,15 +28,17 @@
 import { getBaseUrl } from './config'
 import { getToken, ensureLogin } from './auth'
 import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+// F9/R1#10 职责分离：暂停控制器（pauseSync/resumeSync/连续失败阈值）消费共享 pause_controller.ts；
+// 网络恢复钩子 onNetworkRestored 仍由 sync_client 提供（同步链路补推用）
 import {
 	pauseSync,
 	resumeSync,
 	isSyncPaused,
 	registerConsecutiveFailure,
 	resetConsecutiveFailures,
-	MAX_BATCH_FAILURES,
-	onNetworkRestored
-} from './sync_client'
+	MAX_BATCH_FAILURES
+} from './pause_controller'
+import { onNetworkRestored } from './sync_client'
 // TD-P2B（S1-H3/H4/M3）：分片协议收口 upload_protocol.ts、ISO 时间收口 time.ts、
 // 退避重试收口 retry.ts——本文件只保留业务编排（断点续传队列/流量约束/暂停控制器）
 import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
