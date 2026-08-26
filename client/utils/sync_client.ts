@@ -133,8 +133,6 @@ export function pendingSyncCount(): number {
 
 // ---------- 暂停控制器（F9 职责分离：实现移至 pause_controller.ts，此处仅再导出兼容既有引用） ----------
 
-export type { SyncStatusListener } from './pause_controller'
-
 export const MAX_BATCH_FAILURES: number = SHARED_MAX_BATCH_FAILURES
 export function subscribeSyncStatus(cb: SyncStatusListener): void {
 	sharedSubscribeSyncStatus(cb)
