@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-27 06:40 · commit 1a60fe2 · ts=1787784005
+- **错误**：enqueue_unique 入队抛 ValueError: Job ID must only contain letters, numbers, underscores and dashes
+- **根因**：RQ 2.x validate_job_id 限制 job_id 只允许字母/数字/下划线/连字符；enqueue_unique 首版用 func:key 冒号拼接，冒号触发 ValueError
+- **修复**：job_id 改用下划线拼接（func_key）；同文件 enqueue_idempotent 的冒号 job_id 存在同一潜在不兼容，登记待归口处理
+- **相关文件**：backend/app/core/queue.py
+- **教训**：RQ 2.x job_id 只允许字母/数字/下划线/连字符；写队列 job_id 生成器避免冒号等分隔符
+
+---
+
+### 2026-08-27 06:09 · commit aec735d · ts=1787782183
+- **错误**：拆包 rag/__init__.py 重导出 import 块未按 isort 字母序，快速门禁 lint I001 阻断
+- **根因**：手写 import 时把 app.services.rerank / vector_store 放在 app.services.rag.* 子包 import 之前，违反 ruff isort 对 first-party 模块的字母序排序
+- **修复**：ruff check backend/app/services/rag --fix 自动排序（rag 子包 < rerank < vector_store），重跑门禁通过
+- **相关文件**：backend/app/services/rag/__init__.py
+- **教训**：新增包 __init__ 重导出多块 import 时，先跑 ruff --fix 再提交，避免 I001 阻断门禁
+
+---
+
 ### 2026-08-27 03:52 · commit 5b47f3d · ts=1787773945
 - **错误**：test_event_aggregation_scripts.py/test_image_search.py lint 失败（I001 + E501 长行 + DTZ001）
 - **根因**：轮询 lambda 内 search_image 调用单行 127 列；新文件 import 未排序；naive datetime 无时区

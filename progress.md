@@ -1,3 +1,22 @@
+## 2026-08-27 07:20 · 重构批次 F 第一波集成（6 Agent）+ 遗留 bug 修复
+
+- **merge（4 个 --no-ff）**：F-Auth（d47684c）/F-Rag（284fd2b）/F-Asr（1a60fe2）/F-ClientA（0f64c73）/F-ClientB（5 commits）/F-Content（9f0b2f4）全部合入 develop；共享工作区导致的链式 SHA（auth→clientb#1→rag→asr/content/clientb#2-5）git 自动去重，index.uvue（clienta+clientb 双收口）ort 策略无冲突自动合并
+- **代码质量审核**：10 个 commit 逐条文件域复核零跨域；契约快照（openapi 45 路径/78 schemas）零 diff；tsc EXIT=0；快速门禁 EXIT=0；受影响域精准 227 passed
+- **O6 落实确认**（用户点名）：F-ClientB 4ca9fbf 完整落地——queue_store.ts 单 key（yishu_offline_queue）承载六字段契约，sync_client（批推）与 event_ops（confirm/merge/split 顺序）共享存储、路由差异保留在各消费方 flush；旧双 key 一次性迁移（仅读+删，升级不丢操作）；event_ops flush 统一走 retry.ts retryAsync 退避
+- **遗留 bug 修复**：`enqueue_idempotent`（R4#4）与 `enqueue_unique`（F4）的 job_id 拼接含非法字符（冒号/空格/中文）会在 RQ 2.x validate_job_id 抛 ValueError（真实 client_request_id 入队即炸）——新增 `_safe_job_id_part` 净化器统一处理 + 2 个回归测试（test_photo_content）
+- 契约快照 diff：docs/openapi.json、core/errors.py ERROR_REGISTRY 零消失
+
+## 2026-08-27 06:50 · 重构批次 F-Content（F1 照片双轨收口 + F4 process_content job 级去重）
+
+- **F1/P0-6 照片注册双轨收口**：抽 `services/photo_content.py` 唯一注册编排，参数化 `dedup_key`（perceptual_hash 409 / cos_key 幂等）/ `moderate` / `mode`（original/thumbnail_meta/update）；`api/contents.py::upload_photo` 与 `services/upload.py::register_photo_content` 只做协议适配，两套幂等键都保留；`_reflow_violation`/`_require_photo_bytes` 下沉 photo_content 单源
+- **F4/R5-4#5 job 级去重**：`core/queue.py` 新增 `enqueue_unique(func, key)`（job_id 下划线拼接 + Redis SETNX 原子预占位；同键不重复入队、既有 job failed 重建；queue_name/job_timeout 可覆盖），收敛 contents/upload/wechat/pipeline 的 process_content/thumbnail/emotion 入队点
+- **pipeline.py 尾段先入队后提交**：情绪任务在 done 主提交前入队（消除 commit→enqueue 间隙崩溃丢任务；同 content 键不重复入队；入队失败回写 enqueue_failed 审计标记 + requeue_job 兜底）
+- **测试**：新增 `tests/test_photo_content.py`（双幂等键各锚定 + enqueue_unique 同键不重复入队/失败重建/队列透传 4 单测 + original/thumbnail_meta/update/moderate 模式）；test_pipeline/test_upload 随入队机制下沉更新 monkeypatch 目标
+- **契约**：openapi.json `/contents/upload` 路径与字段不变（仅 docstring 注释级）；errors.py 幂等错误码无消失（CONTENT_002/UPLOAD_* 全在）
+- **验证**：受影响域精准测试 149 passed（test_upload/content_upload/contents/techdebt_p0/queue/sync/pipeline/wechat*/requeue_job/thumbnails/photo_content）+ 快速门禁 EXIT=0（首次 lint I001 修复 + RQ job_id 字符集教训已登记 lessons.md）
+- **遗留登记**：`enqueue_idempotent`（R4#4，classify/corrections 域）的冒号 job_id 在 RQ 2.x validate_job_id 下存在同一潜在不兼容（真实 client_request_id 入队会 ValueError），不在 F-Content 文件域，登记待归口（F-Auth/集成 Agent）
+- 提交：9f0b2f4 `refactor(content)`（分支 techdebt/f-content，未 push；报告文件留集成 Agent 统一提交）
+
 ## 2026-08-27 04:40 · 重构批次 CDE 三批集成 + 遗留项处理
 
 - **批次 C（客户端收敛 R3）**：C1 网络层统一（api.ts rawRequest 401 重放+5xx Sentry、event_sync 401 不静默丢批、O4/O5/O9）+ C2 收口与死代码（time.ts 消费切换/parseIsoMs 统一/标签单源/死导出清理，O1/O2/O7/O8/O10/O11/O12/O13）——全 client 域
