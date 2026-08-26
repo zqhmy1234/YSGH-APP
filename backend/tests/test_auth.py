@@ -1,4 +1,9 @@
-"""认证 API 测试（对齐测试清单 AUTH-001/003/005）"""
+"""认证 API 测试（对齐测试清单 AUTH-001/003/005）
+
+Wave4-L（M3 微信域）新增：code2session 真实接入（mock 微信响应）——
+配置 WECHAT_APPID/SECRET 后走真实 jscode2session；未配置保持 mock/501 语义。
+"""
+import httpx
 import pytest
 from app.main import app
 from fastapi.testclient import TestClient
@@ -67,3 +72,100 @@ def test_phone_invalid_format(client):
     """手机号格式校验（pattern 1\\d{10}）"""
     r = client.post("/api/v1/auth/phone", json={"phone": "123", "code": "000000"})
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Wave4-L：code2session 真实接入（mock 微信响应；未配置保持 mock/501 语义）
+# ---------------------------------------------------------------------------
+
+
+class _WxResp:
+    def __init__(self, payload: dict, status_code: int = 200):
+        self.payload = payload
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self.payload
+
+
+def _enable_wechat(monkeypatch):
+    """配置微信开放平台 appid/secret → 触发真实 code2session 分支"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "wechat_appid", "wx-test-appid")
+    monkeypatch.setattr(settings, "wechat_secret", "wx-test-secret")
+
+
+def test_wechat_login_real_code2session(client, monkeypatch):
+    """配置 appid/secret 后：code → jscode2session → unionid 登录（AUTH-001）"""
+    _enable_wechat(monkeypatch)
+    captured: dict = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return _WxResp({"openid": "o-wx-1", "session_key": "sk", "unionid": "u-wx-1"})
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    r = client.post("/api/v1/auth/wechat", json={"code": "code-1", "device_id": "dev-1"})
+    assert r.status_code == 200
+    assert captured["url"] == "https://api.weixin.qq.com/sns/jscode2session"
+    assert captured["params"]["appid"] == "wx-test-appid"
+    assert captured["params"]["secret"] == "wx-test-secret"
+    assert captured["params"]["js_code"] == "code-1"
+    assert captured["params"]["grant_type"] == "authorization_code"
+    assert r.json()["data"]["user"]["id"]
+
+
+def test_wechat_login_fallback_openid(client, monkeypatch):
+    """未绑定微信开放平台（无 unionid）→ 回退 openid 作稳定主键（同 code 同用户）"""
+    _enable_wechat(monkeypatch)
+    monkeypatch.setattr(
+        "httpx.get", lambda *a, **k: _WxResp({"openid": "o-wx-only", "session_key": "sk"})
+    )
+    r1 = client.post("/api/v1/auth/wechat", json={"code": "code-2", "device_id": "dev-2"})
+    assert r1.status_code == 200
+    r2 = client.post("/api/v1/auth/wechat", json={"code": "code-2", "device_id": "dev-2b"})
+    assert r2.status_code == 200
+    assert r2.json()["data"]["user"]["id"] == r1.json()["data"]["user"]["id"]
+
+
+def test_wechat_code2session_errcode_rejected(client, monkeypatch):
+    """微信业务错误（errcode≠0，code 失效）→ 401 AUTH_001，不降级 mock"""
+    _enable_wechat(monkeypatch)
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *a, **k: _WxResp({"errcode": 40029, "errmsg": "invalid code"}),
+    )
+    r = client.post("/api/v1/auth/wechat", json={"code": "bad", "device_id": "dev-3"})
+    assert r.status_code == 401
+    assert r.json()["code"] == "AUTH_001"
+
+
+def test_wechat_code2session_upstream_error(client, monkeypatch):
+    """微信服务不可用（网络异常）→ 502 AUTH_099，不静默降级 mock"""
+    _enable_wechat(monkeypatch)
+
+    def fake_get(url, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    r = client.post("/api/v1/auth/wechat", json={"code": "code-3", "device_id": "dev-4"})
+    assert r.status_code == 502
+    assert r.json()["code"] == "AUTH_099"
+
+
+def test_wechat_login_production_not_configured_501(client, monkeypatch):
+    """生产环境未配置微信 → 501 AUTH_099（禁止 mock 登录）"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "wechat_appid", "")
+    monkeypatch.setattr(settings, "wechat_secret", "")
+    monkeypatch.setattr(settings, "app_env", "production")
+    r = client.post("/api/v1/auth/wechat", json={"code": "whatever", "device_id": "dev-p"})
+    assert r.status_code == 501
+    assert r.json()["code"] == "AUTH_099"

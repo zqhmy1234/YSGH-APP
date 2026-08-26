@@ -97,6 +97,26 @@ class Settings(BaseSettings):
     wechat_corp_id: str = ""
     wechat_token: str = ""
     wechat_encoding_aes_key: str = ""
+    # 微信开放平台 code2session 登录（决策 #8；Wave4-L 接入，替换 mock unionid）——
+    # 未配置时 dev/test 走 mock、production 保持 501（不静默降级 mock 登录）。
+    wechat_appid: str = ""
+    wechat_secret: str = ""
+
+    # 用户内容安全审核（B5b #8 · Wave4-L）：适配器开关
+    #   tencent_ci = 当前顶替（文本=规则预检+护栏 / 图片=CI image_audit）
+    #   aliyun     = 上架前启用（阿里云内容安全增强版，需 AccessKey + 开通「内容安全」服务）
+    #   off        = 不调外部审核（文本仅本地规则、图片默认放行；调用方自行决定）
+    content_safety_provider: Literal["tencent_ci", "aliyun", "off"] = "tencent_ci"
+    # 阿里云内容安全（Green）AccessKey——⚠️ 不是百炼 DashScope key，需阿里云账号
+    # AccessKey + 开通「内容安全」服务（2026-08-26 监控确认：百炼 key ≠ 内容安全 key）。
+    # 别名读取兼容 Infisical 存量名。
+    aliyun_access_key_id: str = Field(
+        "", validation_alias=AliasChoices("ALIYUN_ACCESS_KEY_ID", "ALIYUN_AK_ID")
+    )
+    aliyun_access_key_secret: str = Field(
+        "", validation_alias=AliasChoices("ALIYUN_ACCESS_KEY_SECRET", "ALIYUN_AK_SECRET")
+    )
+    aliyun_content_safety_region: str = "cn-beijing"
 
     # Mock 开关：true 时外部 AI 全部走本地 mock（零费用，契约消费方联调用）
     mock_external_ai: bool = True

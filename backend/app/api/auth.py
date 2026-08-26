@@ -5,7 +5,9 @@
 - devices：refresh_token 记录 + 吊销校验（AUTH-005/006）
 - sms_codes：验证码生成/校验/防刷（AUTH-003/004）
 
-微信 code2session 仍未接入真实密钥时走 mock（MOCK_EXTERNAL_AI 或未配微信密钥）。
+微信 code2session（Wave4-L）：配置 WECHAT_APPID/WECHAT_SECRET 后走真实
+jscode2session（优先 unionid、回退 openid）；未配置时 dev/test 走 mock、production
+保持 501（不静默降级 mock 登录）。
 """
 import secrets
 import uuid
@@ -149,15 +151,52 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
 
 # ---------- helpers ----------
 
+# 微信开放平台 jscode2session（决策 #8 微信登录；Wave4-L 接入，替换 mock unionid）
+# 文档：https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-login/code2Session.html
+WECHAT_CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
+
+
 def _wechat_configured() -> bool:
-    """微信登录配置就绪判定（appid/secret 未配置时走 mock）"""
-    # TODO(T1): 配置 WECHAT_APPID/WECHAT_SECRET 后走真实 code2session
-    return False
+    """微信登录配置就绪判定（appid/secret 齐全才走真实 code2session）"""
+    return bool(settings.wechat_appid and settings.wechat_secret)
 
 
 def _wechat_code2session(code: str) -> str:
-    """TODO(T1): 调微信接口 https://api.weixin.qq.com/sns/jscode2session 换 openid/unionid"""
-    raise ApiError("AUTH_099", "微信登录未接入", http=501)
+    """调微信开放平台 code2session 换 openid/unionid（AUTH-001 unionid 三端一致）
+
+    GET {url}?appid=..&secret=..&js_code=..&grant_type=authorization_code
+    成功：{openid, session_key, [unionid]}——已绑定微信开放平台才返回 unionid，
+    优先用 unionid（三端一致主键），未绑定回退 openid（保证登录可用）。
+    失败语义（不静默降级 mock）：
+      - 业务错误（errcode≠0，如 40029 code 无效/已过期、40163 已使用）→ 401 AUTH_001
+      - 上游网络/HTTP 异常 → 502 AUTH_099
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(
+            WECHAT_CODE2SESSION_URL,
+            params={
+                "appid": settings.wechat_appid,
+                "secret": settings.wechat_secret,
+                "js_code": code,
+                "grant_type": "authorization_code",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as exc:
+        raise ApiError("AUTH_099", "微信登录服务不可用", http=502) from exc
+
+    if data.get("errcode"):
+        raise ApiError(
+            "AUTH_001", f"微信 code 无效或已过期: {data.get('errmsg')}", http=401
+        )
+    unionid = data.get("unionid") or data.get("openid")
+    if not unionid:
+        raise ApiError("AUTH_099", "微信登录响应缺少 openid/unionid", http=502)
+    return str(unionid)
 
 
 def _get_or_create_user(db: Session, unionid: str | None = None, phone: str | None = None) -> User:
