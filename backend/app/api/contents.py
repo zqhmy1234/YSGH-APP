@@ -11,7 +11,6 @@
 """
 import io as _io
 import logging
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -35,7 +34,11 @@ from app.core.errors import (
     ERR_PROFILE_SENSITIVE_003,
     ApiError,
 )
-from app.core.queue import enqueue_high, enqueue_low
+from app.core.queue import (
+    DEFAULT_JOB_TIMEOUT,
+    QUEUE_LOW,
+    enqueue_unique,
+)
 from app.db.models import Content, ProfileSensitive, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse, Page
@@ -46,6 +49,14 @@ from app.schemas.content import (
     ProfileSensitiveOut,
 )
 from app.services.file_magic import is_photo_bytes
+from app.services.photo_content import (
+    DuplicateError,
+    ModerateRejectError,
+    reflow_violation,
+)
+from app.services.photo_content import (
+    register_photo_content as photo_register,
+)
 from app.services.pipeline import process_content
 from app.services.sync_common import parse_ts
 from app.services.upload_meta import (
@@ -136,7 +147,9 @@ def upload_photo(
       meta: JSON 字符串 {taken_at, gps_lat, gps_lng, perceptual_hash, source, extra}
 
     语义与 create_content 对齐：perceptual_hash 409 去重 / moderate 护栏 /
-    source 白名单；照片原件落 storage（cos_key），随后 enqueue_high(process_content)。
+    source 白名单；照片原件落 storage（cos_key），随后入队 process_content。
+    F1/P0-6 双轨收口：去重/护栏/建记录/入队统一委托 services/photo_content.py
+    （dedup_key="perceptual_hash" + moderate=True），本函数只做协议适配。
     """
     # 1+3. meta 解析与字段校验（TD-P2B · S1-H2 收口：与分片链路 register_photo_content
     #      同一契约——taken_at ISO/gps 边界/source 白名单统一走 upload_meta.parse_photo_meta；
@@ -146,10 +159,6 @@ def upload_photo(
     except MetaValidationError as exc:
         raise ApiError(ERR_CONTENT_005, str(exc), http=422) from exc
     meta_obj = photo_meta.raw
-    taken_at = photo_meta.taken_at
-    gps_lat = photo_meta.gps_lat
-    gps_lng = photo_meta.gps_lng
-    source = photo_meta.source
 
     # 2. 文件校验（类型白名单 + 非空 + 大小上限 + 魔数嗅探）
     ext = Path(file.filename or "").suffix.lower()
@@ -175,73 +184,33 @@ def upload_photo(
     perceptual_hash = meta_obj.get("perceptual_hash") or None
     extra = meta_obj.get("extra") if isinstance(meta_obj.get("extra"), dict) else None
 
-    # 4. 去重（Q16）：同用户 perceptual_hash 唯一（含软删过滤，语义与 create_content 一致）
-    if perceptual_hash:
-        dup = db.execute(
-            select(Content).where(
-                Content.user_id == user.id,
-                Content.perceptual_hash == perceptual_hash,
-                Content.deleted_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        if dup is not None:
-            raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409)
-
-    # 5. 护栏（B5b）：meta.text 若提供则复用 moderate（照片本体由管线 _process_photo 检测）
-    from app.services.external.dashscope import moderate
-
-    check_text = (meta_obj.get("text") or "").strip()
-    if check_text:
-        verdict = moderate(check_text)
-        if verdict.get("action") == "reject":
-            _reflow_violation(db, verdict)
-            raise ApiError(ERR_CONTENT_003, f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
-
-    # 5.1 EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）
+    # 3+4+5. 照片注册唯一编排（F1/P0-6 双轨收口）：去重（perceptual_hash 409）→
+    #       moderate 护栏 → 原件落 storage → 建记录 → enqueue_unique 入队，
+    #       统一委托 services/photo_content.py（参数化 dedup_key/moderate/mode）。
+    #       EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）。
     exif_taken = _extract_exif_datetime(data)
-    if exif_taken is not None:
-        taken_at = exif_taken
-
-    # 6. 原件落 storage（cos_key），随后建 contents 记录 + 入队
-    from app.services.external.storage import best_effort_delete, get_storage_backend
-
     ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
-    cos_key = f"photos/{user.id}/{uuid.uuid4().hex}{ext_safe}"
-    get_storage_backend().put_object(cos_key, data)
-
-    record = Content(
-        user_id=user.id,
-        content_type="photo",
-        taken_at=taken_at,
-        gps_lat=gps_lat,
-        gps_lng=gps_lng,
-        perceptual_hash=perceptual_hash,
-        cos_key=cos_key,
-        extra=extra,
-        source=source,
-        status="processing",
-    )
-    db.add(record)
     try:
-        db.commit()
-    except IntegrityError:
-        # 并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409（与 create_content 一致）
-        db.rollback()
-        # P0-6（审查 H-3）：对象已落存储但 DB 无记录 → 尽力删除防孤儿对象
-        best_effort_delete(cos_key)
-        dup = db.execute(
-            select(Content).where(
-                Content.user_id == user.id,
-                Content.perceptual_hash == perceptual_hash,
-                Content.deleted_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        if dup is not None:
-            raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409) from None
-        raise
-    db.refresh(record)
-
-    enqueue_high(process_content, str(record.id))
+        content_id = photo_register(
+            db,
+            user.id,
+            dedup_key="perceptual_hash",
+            moderate=True,
+            mode="original",
+            meta_obj=photo_meta.raw,
+            photo_meta=photo_meta,
+            perceptual_hash=perceptual_hash,
+            data=data,
+            ext=ext_safe,
+            exif_taken_at=exif_taken,
+            extra=extra,
+            enqueue_thumbnail=False,
+        )
+    except DuplicateError as exc:
+        raise ApiError(ERR_CONTENT_002, exc.message, http=409) from exc
+    except ModerateRejectError as exc:
+        raise ApiError(ERR_CONTENT_003, exc.message, http=422) from exc
+    record = db.get(Content, content_id)
     return ApiResponse(data=_to_out(record))
 
 
@@ -293,7 +262,7 @@ def create_content(
     if check_text.strip():
         verdict = moderate(check_text)
         if verdict.get("action") == "reject":
-            _reflow_violation(db, verdict)
+            reflow_violation(db, verdict)
             raise ApiError(ERR_CONTENT_003, f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
         if verdict.get("action") == "mask" and verdict.get("masked_text"):
             req.text = verdict["masked_text"]
@@ -358,10 +327,16 @@ def create_content(
 
     # 入队异步 AI 管线（API-016；API 立即返回不阻塞）
     # 审查修复(P1-12)：voice/photo 用户等待 → 高优队列；text/article 低优
+    # F4/R5-4#5：enqueue_unique 同 content 键不重复入队（job 级去重）
     if req.content_type in ("voice", "photo"):
-        enqueue_high(process_content, str(record.id))
+        enqueue_unique(process_content, str(record.id))
     else:
-        enqueue_low(process_content, str(record.id))
+        enqueue_unique(
+            process_content,
+            str(record.id),
+            queue_name=QUEUE_LOW,
+            job_timeout=DEFAULT_JOB_TIMEOUT,
+        )
 
     return ApiResponse(data=_to_out(record))
 
@@ -420,17 +395,6 @@ def list_contents(
             has_more=has_more,
         )
     )
-
-
-def _reflow_violation(db: Session, verdict: dict) -> None:
-    """违规词回流（B5b）：moderate 命中（reject）→ 命中词写 SensitiveWord(level=3)
-    自动入规则表（幂等；失败仅记录，不阻断用户请求）"""
-    try:
-        from app.services.llm_ops.guard import reflow_violation_words
-
-        reflow_violation_words(db, verdict.get("matched") or [])
-    except Exception:  # noqa: BLE001
-        logger.warning("违规词回流失败（不阻断请求）", exc_info=True)
 
 
 def _profile_sensitive_out(row: ProfileSensitive) -> ProfileSensitiveOut:

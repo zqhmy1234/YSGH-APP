@@ -79,6 +79,51 @@ def get_job(job_id: str):
         return None
 
 
+def enqueue_unique(
+    func,
+    key: str,
+    *args,
+    queue_name: str = QUEUE_HIGH,
+    job_timeout: int = ASR_JOB_TIMEOUT,
+    **kwargs,
+):
+    """job 级去重入队（F4/R5-4#5）：同 key 不重复入队
+
+    确定性 job_id = "<func.__name__>_<key>" + Redis SETNX 原子预占位：
+      - 首次：占位成功 → 入队，返回 job
+      - 重复/并发同 key：占位失败 → 返回既有 job（不重复入队，防同一 content
+        双任务双 ASR/embedding 计费、双聚合竞态、情绪增强双跑双副作用）
+      - 既有 job 已 failed / 已过期 → 重建（RQ 同 job_id 覆盖）
+    幂等键 TTL 7 天（与 RETRY_FAILURE_TTL 对齐，防键无限膨胀）。
+    queue_name/job_timeout 可覆盖（情绪增强/文本类低优任务传 QUEUE_LOW + 300）。
+    注意：job_id 用下划线拼接（RQ 2.x validate_job_id 只允许字母/数字/下划线/连字符，
+    冒号会 ValueError——enqueue_idempotent 的冒号 job_id 存在同一潜在问题，待归口处理）。
+    """
+    name = getattr(func, "__name__", None)
+    if name is None:
+        name = func if isinstance(func, str) else type(func).__name__
+    job_id = f"{name}_{key}"
+    idem_key = f"yishu:uq:{job_id}"
+
+    def _enqueue() -> object:
+        return get_queue(queue_name).enqueue(
+            func,
+            *args,
+            job_id=job_id,
+            job_timeout=job_timeout,
+            retry=RETRY_POLICY,
+            failure_ttl=RETRY_FAILURE_TTL,
+            **kwargs,
+        )
+
+    if redis.set(idem_key, "1", nx=True, ex=RETRY_FAILURE_TTL):
+        return _enqueue()
+    existing = get_job(job_id)
+    if existing is not None and existing.get_status() != "failed":
+        return existing
+    return _enqueue()
+
+
 def enqueue_idempotent(
     prefix: str,
     user_id: str,

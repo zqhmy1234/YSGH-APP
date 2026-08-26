@@ -447,7 +447,11 @@ def test_register_photo_content_idempotent_thumbnail_meta(db_user):
 
 
 def test_register_photo_content_enqueue_failure_still_returns(db_user, monkeypatch):
-    """P0-5：enqueue 异常时捕获并返回成功（内容已建，管线可异步补投）"""
+    """P0-5：enqueue 异常时捕获并返回成功（内容已建，管线可异步补投）
+
+    F1/P0-6 双轨收口后入队统一在 services/photo_content（safe_enqueue_unique →
+    enqueue_unique），monkeypatch 目标随之下沉到 photo_content。
+    """
     db, user = db_user
     jpeg = _jpeg_bytes()
     key = f"photos/{user.id}/202608/enq_{uuid.uuid4().hex[:8]}.jpg"
@@ -456,7 +460,7 @@ def test_register_photo_content_enqueue_failure_still_returns(db_user, monkeypat
     def boom(*args, **kwargs):
         raise RuntimeError("redis unavailable")
 
-    monkeypatch.setattr(upload_svc, "enqueue_high", boom)
+    monkeypatch.setattr("app.services.photo_content.enqueue_unique", boom)
     cid = upload_svc.register_photo_content(
         db, user.id, key, '{"source":"app","upload_mode":"original"}'
     )
