@@ -23,6 +23,47 @@ from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
+# R8#7（2026-08-27）：真 BGE-M3 编码降为定长 1024 维 mock（文件合计省 ~7s）。
+# 契约：mock 维度必须保持 1024（BGE-M3 dense）——否则掩盖向量链路回归。
+# 真实编码冒烟保留在 test_real_encode_dimension_smoke（rag 组，CI 单独跑）。
+MOCK_DENSE_VEC = [0.1] * 1024
+
+
+@pytest.fixture()
+def mock_encode(monkeypatch):
+    """把 correction.encode_dense 替换为定长 1024 维 mock 向量（R8#7）
+
+    record_correction/apply_personal_rule 消费的向量值不影响被测逻辑
+    （相似检索走 mock 向量内部一致；维度契约由断言兜底）。
+    """
+    import app.services.correction as corr_mod
+
+    def _fake_encode(texts):
+        return [list(MOCK_DENSE_VEC)] * len(texts)
+
+    monkeypatch.setattr(corr_mod, "encode_dense", _fake_encode)
+    return _fake_encode
+
+
+def test_mock_encode_dimension_contract(mock_encode):
+    """R8#7：mock 向量维度契约 = 1024（BGE-M3 dense），防止"假绿"掩盖向量链路"""
+    assert len(MOCK_DENSE_VEC) == 1024
+    vec = mock_encode(["任意文本"])[0]
+    assert len(vec) == 1024
+
+
+@pytest.mark.rag
+def test_real_encode_dimension_smoke():
+    """R8#7：真实 BGE-M3 编码冒烟（保留 1 个真编码，防 mock 假绿）
+
+    与 test_rag.test_embedding_dimension 同属 rag 组（默认套件排除，
+    CI full-gate 的 `-m rag` 步骤单独跑）。
+    """
+    import app.services.correction as corr_mod
+
+    dense = corr_mod.encode_dense(["测试"])[0]
+    assert len(dense) == 1024
+
 
 def _make_content(db, user_id: str, cid: str, text: str = "测试内容") -> None:
     """建真实 contents 行（correction_log.content_id 外键约束）"""
@@ -60,7 +101,7 @@ def db_user():
     db.close()
 
 
-def test_record_correction_dual_write(db_user):
+def test_record_correction_dual_write(db_user, mock_encode):
     """记录纠错：Qdrant + correction_log 双写"""
     db, user = db_user
     cid = _new_cid()
@@ -78,7 +119,7 @@ def test_record_correction_dual_write(db_user):
     assert got.user_id == user.id
 
 
-def test_personal_rule_hit(db_user):
+def test_personal_rule_hit(db_user, mock_encode):
     """第①层：相似文本命中个人纠错 → personal 层生效"""
     db, user = db_user
     cid = _new_cid()
@@ -93,7 +134,7 @@ def test_personal_rule_hit(db_user):
     assert result["similarity"] >= 0.8
 
 
-def test_personal_rule_miss_falls_to_global(db_user):
+def test_personal_rule_miss_falls_to_global(db_user, mock_encode):
     """未命中个人规则 → 第②层全局 SetFit"""
     db, user = db_user
     result = arbitrate(db, user.id, "知人者智,自知者明", "text")
@@ -101,7 +142,7 @@ def test_personal_rule_miss_falls_to_global(db_user):
     assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed"}
 
 
-def test_last_correction_wins(db_user):
+def test_last_correction_wins(db_user, mock_encode):
     """同内容多次纠错以最后一次为准"""
     db, user = db_user
     cid = _new_cid()
@@ -112,7 +153,7 @@ def test_last_correction_wins(db_user):
     assert result["label"] == "quote"
 
 
-def test_passive_correction_needs_3_consistent(db_user):
+def test_passive_correction_needs_3_consistent(db_user, mock_encode):
     """审查修复(P1-07，B5-c-5 闸门①)：被动确认（echo/org）纠错需 ≥3 次一致才生效
 
     1 次被动纠错 → 不生效（回落全局）；补足 3 次 → 生效。
@@ -142,7 +183,7 @@ def test_passive_correction_needs_3_consistent(db_user):
     assert result2["label"] == "todo"
 
 
-def test_global_candidate_marking(db_user):
+def test_global_candidate_marking(db_user, mock_encode):
     """第③层：同一 (old→new) 纠错 ≥2 用户 → is_global_candidate"""
     db, user = db_user
     cid1 = _new_cid()
