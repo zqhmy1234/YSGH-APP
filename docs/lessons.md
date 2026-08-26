@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 01:18 · commit cf9d480 · ts=1787764709
+- **错误**：test_moderate_selector.py 引入未使用的 import pytest 且 import 分组排序不符 isort（ruff I001/F401）→ review_agent 快速门禁 lint 失败
+- **根因**：提交前未先本地跑 ruff check；模块级 import 从模板带入但最终未用到 pytest，注释块与 import 分组破坏 isort 排序
+- **修复**：删除未用 import，重排 import 分组，重跑 review_agent 通过
+- **相关文件**：backend/tests/test_moderate_selector.py
+- **教训**：新增 .py 提交前先 ruff check --fix --diff 自检，勿等 pre-commit 门禁拦截
+
+---
+
 ### 2026-08-27 00:55 · commit cb0a903 · ts=1787763313
 - **错误**：TD-P3 安全加固 create_content 加 cos_key 前缀/存在性校验后，API 冒烟用例 dedup-409 与单测占位 cos_key（photos/smoke.jpg）被 422 拒绝，全量门禁 tests 红灯
 - **根因**：新增安全校验（M4）改变了 create_content 对 cos_key 的契约（此前任意 key 可入库）；测试/冒烟脚本中大量使用占位 cos_key，未随校验更新
