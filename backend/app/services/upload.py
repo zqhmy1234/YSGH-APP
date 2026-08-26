@@ -8,7 +8,6 @@ complete 时按序合并写最终对象（MVP 照片 ≤3MB-20MB，内存合并�
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +22,7 @@ from app.services.external.storage import best_effort_delete, get_storage_backen
 from app.services.file_magic import is_photo_bytes
 from app.services.pipeline import process_content
 from app.services.thumbnails import derive_thumbnail_key, generate_thumbnail_job, resize_to_jpeg
+from app.services.upload_meta import MetaValidationError, parse_photo_meta
 
 logger = logging.getLogger("yishu.upload")
 
@@ -222,12 +222,18 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
       meta.content_id：original 模式下若提供 → 更新既有占位内容（补传原件），不新建
       meta.on_wifi：客户端 WiFi 标记（记录到 extra，供流量策略可观测）
     """
+    # 共享 meta 校验（TD-P2B · S1-H2 收口）：taken_at ISO/gps 边界/source 白名单统一走
+    # upload_meta.parse_photo_meta，与 api/contents.py upload_photo 同一契约（此前双份
+    # 复制靠注释"对齐"，已出现 except 分支/常量漂移）；异常统一转 ValueError。
     try:
-        meta_obj = json.loads(meta) if meta.strip() else {}
-        if not isinstance(meta_obj, dict):
-            raise ValueError("meta 必须是 JSON 对象")
-    except json.JSONDecodeError as exc:
-        raise ValueError("meta 必须为合法 JSON 对象") from exc
+        photo_meta = parse_photo_meta(meta)
+    except MetaValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    meta_obj = photo_meta.raw
+    taken_at = photo_meta.taken_at
+    gps_lat = photo_meta.gps_lat
+    gps_lng = photo_meta.gps_lng
+    source = photo_meta.source
 
     upload_mode = meta_obj.get("upload_mode", "original")
     if upload_mode not in VALID_UPLOAD_MODES:
@@ -235,27 +241,6 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     on_wifi = meta_obj.get("on_wifi")
     if on_wifi is not None and not isinstance(on_wifi, bool):
         raise ValueError("on_wifi 必须为布尔值")
-
-    taken_at = None
-    if meta_obj.get("taken_at"):
-        try:
-            taken_at = datetime.fromisoformat(str(meta_obj["taken_at"]).replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("taken_at 格式无效（ISO8601）") from exc
-    gps_lat = meta_obj.get("gps_lat")
-    gps_lng = meta_obj.get("gps_lng")
-    try:
-        gps_lat = float(gps_lat) if gps_lat is not None else None
-        gps_lng = float(gps_lng) if gps_lng is not None else None
-    except (TypeError, ValueError) as exc:
-        raise ValueError("gps_lat/gps_lng 必须为数值") from exc
-    if gps_lat is not None and not (-90 <= gps_lat <= 90):
-        raise ValueError("gps_lat 越界（-90~90）")
-    if gps_lng is not None and not (-180 <= gps_lng <= 180):
-        raise ValueError("gps_lng 越界（-180~180）")
-    source = meta_obj.get("source", "app")
-    if source not in ("app", "windows", "wechat", "import"):
-        raise ValueError("source 非法（可选 app/windows/wechat/import）")
     extra = dict(meta_obj.get("extra")) if isinstance(meta_obj.get("extra"), dict) else {}
     extra["upload_mode"] = upload_mode
     if on_wifi is not None:

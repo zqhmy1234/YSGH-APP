@@ -10,7 +10,6 @@
 - 复用 create_content 的去重（409）/护栏（moderate）/类型白名单语义
 """
 import io as _io
-import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -47,6 +46,13 @@ from app.schemas.content import (
 )
 from app.services.file_magic import is_photo_bytes
 from app.services.pipeline import process_content
+from app.services.sync_common import parse_ts
+from app.services.upload_meta import (
+    ALLOWED_PHOTO_EXTS,
+    MAX_PHOTO_BYTES,
+    MetaValidationError,
+    parse_photo_meta,
+)
 
 logger = logging.getLogger("yishu.contents")
 
@@ -56,12 +62,11 @@ router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
 # 需集成 Agent 在 main.py 注册：app.include_router(profile_sensitive_router)。
 profile_sensitive_router = APIRouter(prefix="/api/v1/profile", tags=["profile-sensitive"])
 
-# 客户端第一波照片中转上传限制（B-BE-1）
-MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB
+# 照片上传共享常量（TD-P2B · S1-H2 收口：MAX_PHOTO_BYTES/ALLOWED_PHOTO_EXTS 收敛到
+# services/upload_meta.py，与分片链路 register_photo_content 同源；此处保留模块级名字
+# 供 upload_photo 引用与测试 monkeypatch（test_content_upload 缩小上限用））
 # PIL 解压炸弹防护（P0-3 · 审查 H3）：40MP 上限（超限拒绝解码）
 _MAX_IMAGE_PIXELS = 40_000_000
-ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
-_PHOTO_SOURCES = ("app", "windows", "wechat", "import")
 
 
 def _extract_exif_datetime(data: bytes) -> datetime | None:
@@ -105,13 +110,18 @@ def upload_photo(
     语义与 create_content 对齐：perceptual_hash 409 去重 / moderate 护栏 /
     source 白名单；照片原件落 storage（cos_key），随后 enqueue_high(process_content)。
     """
-    # 1. meta JSON 解析
+    # 1+3. meta 解析与字段校验（TD-P2B · S1-H2 收口：与分片链路 register_photo_content
+    #      同一契约——taken_at ISO/gps 边界/source 白名单统一走 upload_meta.parse_photo_meta；
+    #      字段契约错误优先返回 CONTENT_005）
     try:
-        meta_obj = json.loads(meta) if meta.strip() else {}
-        if not isinstance(meta_obj, dict):
-            raise ValueError("meta 必须是 JSON 对象")
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise ApiError(ERR_CONTENT_005, "meta 必须为合法 JSON 对象", http=422) from exc
+        photo_meta = parse_photo_meta(meta)
+    except MetaValidationError as exc:
+        raise ApiError(ERR_CONTENT_005, str(exc), http=422) from exc
+    meta_obj = photo_meta.raw
+    taken_at = photo_meta.taken_at
+    gps_lat = photo_meta.gps_lat
+    gps_lng = photo_meta.gps_lng
+    source = photo_meta.source
 
     # 2. 文件校验（类型白名单 + 非空 + 大小上限 + 魔数嗅探）
     ext = Path(file.filename or "").suffix.lower()
@@ -134,27 +144,6 @@ def upload_photo(
             ERR_CONTENT_006, "文件内容与照片格式不符（魔数校验失败）", http=422
         )
 
-    # 3. 元数据字段解析与边界校验
-    taken_at = None
-    if meta_obj.get("taken_at"):
-        try:
-            taken_at = datetime.fromisoformat(str(meta_obj["taken_at"]).replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ApiError(ERR_CONTENT_005, "taken_at 格式无效（ISO8601）", http=422) from exc
-    gps_lat = meta_obj.get("gps_lat")
-    gps_lng = meta_obj.get("gps_lng")
-    try:
-        gps_lat = float(gps_lat) if gps_lat is not None else None
-        gps_lng = float(gps_lng) if gps_lng is not None else None
-    except (TypeError, ValueError) as exc:
-        raise ApiError(ERR_CONTENT_005, "gps_lat/gps_lng 必须为数值", http=422) from exc
-    if gps_lat is not None and not (-90 <= gps_lat <= 90):
-        raise ApiError(ERR_CONTENT_005, "gps_lat 越界（-90~90）", http=422)
-    if gps_lng is not None and not (-180 <= gps_lng <= 180):
-        raise ApiError(ERR_CONTENT_005, "gps_lng 越界（-180~180）", http=422)
-    source = meta_obj.get("source", "app")
-    if source not in _PHOTO_SOURCES:
-        raise ApiError(ERR_CONTENT_005, f"source 非法（可选 {_PHOTO_SOURCES}）", http=422)
     perceptual_hash = meta_obj.get("perceptual_hash") or None
     extra = meta_obj.get("extra") if isinstance(meta_obj.get("extra"), dict) else None
 
@@ -338,14 +327,16 @@ def list_contents(
     ).order_by(Content.created_at.desc(), Content.id.desc())
 
     if cursor:
-        from datetime import datetime as dt
-
         try:
             cursor_ts_raw, cursor_id = cursor.split("|", 1)
         except ValueError:
             # P0-7：游标错误从 CONTENT_003（敏感 422）拆分为独立码 CONTENT_008
             raise ApiError(ERR_CONTENT_008, "游标格式无效", http=422) from None
-        cursor_dt = dt.fromisoformat(cursor_ts_raw.replace("Z", "+00:00"))
+        # S1-M1 收口：统一走 sync_common.parse_ts（naive 视为 UTC；此前 fromisoformat
+        # 裸调，非法游标会 500 且无 naive 处理）
+        cursor_dt = parse_ts(cursor_ts_raw)
+        if cursor_dt is None:
+            raise ApiError(ERR_CONTENT_008, "游标格式无效", http=422)
         # 复合条件：(created_at, id) < (cursor_dt, cursor_id) 元组语义
         query = query.where(
             (Content.created_at < cursor_dt)
