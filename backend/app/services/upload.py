@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.queue import enqueue_high
 from app.db.models import Content, UploadChunk, UploadTask
-from app.services.external.storage import get_storage_backend
+from app.services.external.storage import best_effort_delete, get_storage_backend
+from app.services.file_magic import is_photo_bytes
 from app.services.pipeline import process_content
 from app.services.thumbnails import derive_thumbnail_key, generate_thumbnail_job, resize_to_jpeg
 
@@ -31,6 +32,34 @@ VALID_UPLOAD_MODES = ("original", "thumbnail_meta")
 # 后端中转合并上限（超限建议客户端直传，MVP 照片远低于此）
 MAX_INLINE_MERGE_BYTES = 200 * 1024 * 1024
 DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024  # 8MB（对齐微信图片 3MB 与通用分片习惯）
+
+
+def _safe_enqueue_high(func, *args, **kwargs) -> None:
+    """入队失败不阻断（P0-5）：内容已建，管线可异步补投——失败仅记日志"""
+    try:
+        enqueue_high(func, *args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 —— Redis 故障不否定已落库内容
+        logger.warning(
+            "内容入队失败 func=%s content 已建（管线可异步补投）: %s",
+            getattr(func, "__name__", func),
+            exc,
+        )
+
+
+def _require_photo_bytes(cos_key: str) -> None:
+    """照片原件魔数校验（P0-3 · 审查 H3）：分片 complete 路径此前完全不校验文件类型
+
+    伪装文件（`.jpg` 扩展名 + 任意字节）→ ValueError（API 层 422），并尽力删除
+    刚落的对象防孤儿；对象缺失 → ValueError。
+    """
+    backend = get_storage_backend()
+    try:
+        data = backend.get_object(cos_key)
+    except KeyError:
+        raise ValueError("对象存储中未找到已上传文件") from None
+    if not is_photo_bytes(data):
+        best_effort_delete(cos_key, backend)
+        raise ValueError("文件内容与照片格式不符（魔数校验失败）")
 
 
 def _sha256(data: bytes) -> str:
@@ -242,11 +271,28 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
             db, user_id, cos_key, meta_obj, extra, taken_at, gps_lat, gps_lng, source
         )
 
+    # P0-5（审查 H-5）：photo 分支幂等——同用户+同 cos_key+未删除 → 返回既有记录，
+    # 对齐 voice 分支（complete 幂等后客户端重试不会再产生第二条重复内容）。
+    # content_id 模式（手动补传原件）除外：按 id 更新占位内容。
+    if not meta_obj.get("content_id"):
+        existing_photo = db.scalar(
+            select(Content).where(
+                Content.user_id == user_id,
+                Content.cos_key == cos_key,
+                Content.deleted_at.is_(None),
+            )
+        )
+        if existing_photo is not None:
+            return str(existing_photo.id)
+
     # 蜂窝路径：上传物是缩略图 → 只落缩略图 + 占位内容（等 WiFi 补传原件）
     if upload_mode == "thumbnail_meta":
         thumbnail_key = derive_thumbnail_key(cos_key)
         backend = get_storage_backend()
         data = backend.get_object(cos_key)
+        # P0-3（审查 H3）：resize_to_jpeg 解码即校验（魔数+维度上限，DecompressionBombError
+        # 捕获为 ValueError → 422），thumbnail_meta 分支保持同步解码但受限；
+        # 遗留登记：完整解码移 worker（与 original 分支一致入 generate_thumbnail_job）。
         backend.put_object(thumbnail_key, resize_to_jpeg(data))
         extra["original_pending"] = True
         record = Content(
@@ -262,7 +308,12 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
             status="done",  # 占位即可浏览（缩略图）；原件补传后转 processing 走管线
         )
         db.add(record)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001 —— P0-6：提交失败尽力删缩略图防孤儿
+            db.rollback()
+            best_effort_delete(thumbnail_key, backend)
+            raise
         db.refresh(record)
         return str(record.id)
 
@@ -272,16 +323,23 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
         existing = db.get(Content, content_id)
         if existing is None or str(existing.user_id) != str(user_id):
             raise ValueError("content_id 不存在或不属于当前用户")
+        _require_photo_bytes(cos_key)  # P0-3：补传原件同样魔数校验
         existing.cos_key = cos_key
         existing.status = "processing"
         # 合并（不覆盖占位期既有 extra，如 wechat 追溯/元数据）
         existing.extra = {**(existing.extra or {}), **extra}
         existing.extra.pop("original_pending", None)
-        db.commit()
-        enqueue_high(process_content, str(existing.id))
-        enqueue_high(generate_thumbnail_job, str(existing.id))
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001 —— P0-6：提交失败尽力删原件防孤儿
+            db.rollback()
+            best_effort_delete(cos_key)
+            raise
+        _safe_enqueue_high(process_content, str(existing.id))
+        _safe_enqueue_high(generate_thumbnail_job, str(existing.id))
         return str(existing.id)
 
+    _require_photo_bytes(cos_key)  # P0-3：original 新建路径魔数校验
     record = Content(
         user_id=user_id,
         content_type="photo",
@@ -294,10 +352,15 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
         status="processing",
     )
     db.add(record)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001 —— P0-6：提交失败尽力删原件防孤儿
+        db.rollback()
+        best_effort_delete(cos_key)
+        raise
     db.refresh(record)
-    enqueue_high(process_content, str(record.id))
-    enqueue_high(generate_thumbnail_job, str(record.id))
+    _safe_enqueue_high(process_content, str(record.id))
+    _safe_enqueue_high(generate_thumbnail_job, str(record.id))
     return str(record.id)
 
 
@@ -367,9 +430,14 @@ def _register_voice_content(
         status="processing",
     )
     db.add(record)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001 —— P0-6：提交失败尽力删新键防孤儿
+        db.rollback()
+        best_effort_delete(voice_key, backend)
+        raise
     db.refresh(record)
-    enqueue_high(process_content, str(record.id))
+    _safe_enqueue_high(process_content, str(record.id))
     return str(record.id)
 
 
@@ -404,5 +472,11 @@ def complete_upload(db: Session, upload_id: str, user_id: str | None = None) -> 
 
     task.status = "completed"
     task.completed_at = func.now()
-    db.commit()
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001 —— P0-6（审查 H-3）：对象已落但 DB 未提交
+        # → 尽力删除最终对象防孤儿（staging 分片已删，任务留 pending 可重试）
+        db.rollback()
+        best_effort_delete(task.file_key, backend)
+        raise
     return {"status": "completed", "file_key": task.file_key, "upload_id": upload_id}

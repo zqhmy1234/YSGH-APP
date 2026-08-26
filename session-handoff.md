@@ -177,3 +177,13 @@ init.ps1：通过
 - **基线**：pytest **467 passed / 19 deselected**（420 基线 + J 19 + L 26 + 集成新增 3）+ review_agent --full exit 0 全绿（syntax 183 文件/lint/secrets/tests 覆盖率≥50%/research 场景全过）
 - **待 key 项**：WECHAT_APPID/WECHAT_SECRET（code2session 生产启用）、企微三件套 WECHAT_CORP_ID/TOKEN/ENCODING_AES_KEY（回调）、ALIYUN_ACCESS_KEY_ID/SECRET（内容安全，上架前可选加固，当前腾讯 CI 顶替）；阿里云 Green 实现未实网验证（签名按官方文档，待 key 校准）
 - **遗留**：Agent K（B5d Android 后台录音）完成后二次集成；J 真机录音中断（来电模拟）/30min 自动结束人工实测待办（已登记 audit_B5a_B5d_voice.md）；关怀文案库正式文案待产品部
+
+
+## 技术债清理 P0 完成（2026-08-26 21:40）——下一步 P1
+
+- 侦察：8 个并行 subagent（S1-S8 各一角度）→ docs/技术债审查报告_20260826.md（高危 16/中 37/低 41）+ 计划 docs/技术债清理计划_20260826.md
+- P0 执行（8 项安全/正确性）：短信 mock 生产 501 门控 + 验证码哈希、COS STS 路径级 policy + 端点门控、上传魔数 + PIL 炸弹防护、process 非 voice 失败回写、complete photo 幂等、StorageError + 孤儿对象兜底、错误码登记表（40+3 码）、RQ 超时/重试
+- 基线：502 passed / 19 deselected + review_agent --full 全绿；36 个新测试
+- 遗留：STS root ARN 降级、thumbnail_meta 移 worker、processing 重扫、孤儿扫描、分队列 worker（代码注释登记）
+- 待用户决策：FinetuneJob 删/补、presign 删/留、短信通道 501 冻结、依赖升版
+- 下一步：P1-A 配置/契约（.env.example 对齐/信封统一/OpenAPI契约.md 生成式）+ P1-B 性能（aggregate_user 增量游标/N+1/索引）+ 测试（Qdrant 隔离/RAG 进 CI）→ P2 死代码/重复收敛

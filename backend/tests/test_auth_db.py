@@ -132,3 +132,24 @@ def test_invalid_refresh_rejected(client):
     """伪造 refresh → 401"""
     r = client.post("/api/v1/auth/refresh", json={"refresh_token": "forged.token.value"})
     assert r.status_code == 401
+
+@pytest.mark.integration
+def test_send_sms_production_blocked(client, db, monkeypatch):
+    """P0-1（审查 H1）：生产环境禁止 mock 验证码直返——任意手机号接管账户的认证绕过
+
+    与 wechat_login 的"生产未接入 → 501"对齐：production + mock_external_ai=true
+    也必须 501（mock 验证码仅限非生产；get_settings 启动期已强制生产 mock=False，
+    此处双保险验证运行时误配同样拦截）。
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "mock_external_ai", True)  # 模拟生产误配
+    r = client.post("/api/v1/auth/sms/send", json={"phone": "13900000099"})
+    assert r.status_code == 501
+    assert r.json()["code"] == "AUTH_099"
+    # 未生成验证码记录（防刷表无残留）
+    rows = db.execute(
+        select(SmsCode).where(SmsCode.phone == "13900000099")
+    ).scalars().all()
+    assert rows == []

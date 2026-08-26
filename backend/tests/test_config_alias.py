@@ -63,3 +63,35 @@ def test_dashscope_workspace_id(monkeypatch):
 
 def test_settings_is_basesettings():
     assert issubclass(Settings, BaseSettings)
+
+
+# ---------- P0-1（审查 H1/S4）：生产环境安全兜底 ----------
+
+def test_production_forces_mock_external_ai_false(monkeypatch):
+    """生产环境启动期强制 mock_external_ai=False（漏配即 fail-closed，防验证码 mock 直返）"""
+    from app.core.config import _apply_production_safety
+
+    s = Settings(
+        _env_file=None, app_env="production", mock_external_ai=True, jwt_secret="s" * 40
+    )
+    _apply_production_safety(s)
+    assert s.mock_external_ai is False
+
+
+def test_development_keeps_mock_flag(monkeypatch):
+    """非生产环境不强制（dev/test 联调仍可用 mock）"""
+    from app.core.config import _apply_production_safety
+
+    s = Settings(_env_file=None, app_env="development", mock_external_ai=True)
+    _apply_production_safety(s)
+    assert s.mock_external_ai is True
+
+
+def test_production_default_jwt_secret_raises(monkeypatch):
+    """生产环境默认 JWT 密钥 → RuntimeError（既有 CRITICAL 门禁回归）"""
+    import pytest
+    from app.core.config import _apply_production_safety
+
+    s = Settings(_env_file=None, app_env="production", jwt_secret="change-me-32-bytes-min-secret-0000")
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        _apply_production_safety(s)

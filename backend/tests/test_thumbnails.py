@@ -200,3 +200,58 @@ def test_thumbnail_api_endpoint(db_user):
             for route in app.routes
             if not getattr(route, "path", "").startswith("/api/v1/thumbnails")
         ]
+
+# ---------- P0-3（审查 H3）：解压炸弹防护 ----------
+
+def _png_bytes(width: int, height: int) -> bytes:
+    """构造指定尺寸 PNG 头（无 IDAT；Image.open 只读头即可触发尺寸检查）"""
+    import struct
+    import zlib
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        body = typ + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IEND", b"")
+
+
+def test_resize_to_jpeg_rejects_decompression_bomb():
+    """P0-3：100k×100k 炸弹图（1e10 像素 >> 2×40MP）→ Image.open 抛
+    DecompressionBombError → 包装为 ValueError，不崩溃不 OOM"""
+    bomb = _png_bytes(100000, 100000)
+    with pytest.raises(ValueError, match="解压炸弹"):
+        thumbnails.resize_to_jpeg(bomb)
+
+
+def test_resize_to_jpeg_rejects_oversized_dimensions():
+    """P0-3：维度超 40MP 上限（MAX 与 2×MAX 之间只告警不抛）→ 显式校验拒绝"""
+    big = _png_bytes(7000, 7000)  # 49MP > 40MP
+    with pytest.raises(ValueError, match="图片尺寸超限"):
+        thumbnails.resize_to_jpeg(big)
+
+
+def test_resize_to_jpeg_normal_image_still_ok():
+    """P0-3 防护不误伤：正常尺寸 JPEG 照常缩放"""
+    original = _jpeg_bytes(1200, 900)
+    thumb = thumbnails.resize_to_jpeg(original)
+    img = Image.open(io.BytesIO(thumb))
+    assert img.format == "JPEG"
+    assert img.size == (480, 360)
+
+
+def test_thumbnail_meta_bomb_rejected_cleanly(db_user):
+    """P0-3：thumbnail_meta 分支同步解码——炸弹缩略图抛 ValueError（API 层 422），
+    不炸请求线程（完整解码移 worker 为遗留登记项）"""
+    db, user = db_user
+    from app.services import upload as upload_svc
+
+    bomb = _png_bytes(100000, 100000)
+    key = f"photos/{user.id}/202608/bomb_{uuid.uuid4().hex[:8]}.jpg"
+    get_storage_backend().put_object(key, bomb)
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(
+            db, user.id, key, '{"upload_mode":"thumbnail_meta","source":"app"}'
+        )

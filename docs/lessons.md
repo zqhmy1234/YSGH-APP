@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 21:40 · commit 3b1bc06 · ts=1787751621
+- **错误**：P0 批次批量编辑测试文件时踩坑：①edit 工具对重复 oldText 原子性失败（CONTENT_002 出现 4 次需补唯一上下文）；②Add-Content 追加测试用到了未 import 的 select（test_upload.py NameError）；③生产安全兜底单测漏传自定义 JWT_SECRET，被先行的 JWT 门禁 RuntimeError 拦截
+- **根因**：批量编辑多文件时未先核对目标文件的既有 import 与重复文本；生产安全函数的多道门禁顺序（JWT 先于 mock 强制）在单测构造参数时未考虑
+- **修复**：①编辑前 grep 确认 oldText 唯一性，重复块带相邻行上下文；②追加测试后立即 py_compile/pytest 冒烟；③单测构造生产 Settings 时必须同时传 jwt_secret 绕过 JWT 门禁
+- **相关文件**：backend/tests/test_upload.py, backend/app/core/config.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-26 19:36 · commit 8b60078 · ts=1787744182
 - **错误**：上轮遗留交付物归位提交时 lint 失败：validate_truth_data.py E501 行长（2 处）+ _expand/_merge 脚本 UP009/E401/F401/E501/S101/F841
 - **根因**：上轮会话遗留的 truth-data 校验器与一次性脚本未过 ruff（行长/import 排序/assert 风格）；交付物归位时才暴露

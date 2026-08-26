@@ -163,17 +163,34 @@ class Settings(BaseSettings):
     llm_rewrite_enabled: bool = True
 
 
-@lru_cache
-def get_settings() -> Settings:
-    settings = Settings()
-    # 安全修复（审查 CRITICAL）：生产环境禁止使用默认 JWT 密钥（公开字符串，
-    # 任何人都可伪造 token）。dev/test 保留默认值保证本地可跑。
-    if settings.app_env == "production" and settings.jwt_secret == "change-me-32-bytes-min-secret-0000":
+def _apply_production_safety(settings: Settings) -> Settings:
+    """生产环境安全兜底（P0-1，审查 H1/S4-四-3）：
+
+    1. JWT：禁止默认密钥（公开字符串，任何人都可伪造 token）——dev/test 保留默认值。
+    2. Mock：强制 mock_external_ai=False——漏配环境变量的新部署若沿用默认 True，
+       短信验证码 mock 直返会造成任意手机号账户接管（认证绕过），必须 fail-closed。
+    """
+    import logging
+
+    if settings.app_env != "production":
+        return settings
+    if settings.jwt_secret == "change-me-32-bytes-min-secret-0000":
         raise RuntimeError(
             "生产环境必须配置 JWT_SECRET（当前为默认值，存在伪造 token 风险）——"
             "请在 backend/.env 设置强随机密钥（≥32 字节）"
         )
+    if settings.mock_external_ai:
+        logging.getLogger("yishu.config").warning(
+            "生产环境强制关闭 mock_external_ai（防 mock 验证码/假凭证直返）——"
+            "请在 backend/.env 显式设置 MOCK_EXTERNAL_AI=false"
+        )
+        settings.mock_external_ai = False
     return settings
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return _apply_production_safety(Settings())
 
 
 settings = get_settings()

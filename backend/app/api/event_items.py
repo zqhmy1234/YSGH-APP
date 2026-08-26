@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import ERR_EVENT_005, ApiError
 from app.db.models import Content, Event, EventItem, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -125,5 +125,6 @@ def content_events(
     try:
         events = get_content_events(db, str(user.id), content_id)
     except ValueError as exc:
-        raise ApiError("CONTENT_007", str(exc), http=404) from exc
+        # P0-7：内容不存在从 CONTENT_007（413 超限语义）拆分为 EVENT_005（404）
+        raise ApiError(ERR_EVENT_005, str(exc), http=404) from exc
     return ApiResponse(data=events)

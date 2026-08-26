@@ -12,7 +12,18 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.config import settings
+from app.core.errors import (
+    ERR_UPLOAD_001,
+    ERR_UPLOAD_002,
+    ERR_UPLOAD_003,
+    ERR_UPLOAD_004,
+    ERR_UPLOAD_005,
+    ERR_UPLOAD_006,
+    ERR_UPLOAD_007,
+    ERR_UPLOAD_008,
+    ApiError,
+)
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -45,7 +56,7 @@ def init_upload(
     """
     if upload_mode not in upload_svc.VALID_UPLOAD_MODES:
         raise ApiError(
-            "UPLOAD_007",
+            ERR_UPLOAD_007,
             f"upload_mode 非法（可选 {'/'.join(upload_svc.VALID_UPLOAD_MODES)}）",
             http=422,
         )
@@ -54,7 +65,7 @@ def init_upload(
             db, user.id, client_upload_id, file_name, file_size, chunk_size, storage
         )
     except ValueError as exc:
-        raise ApiError("UPLOAD_001", str(exc), http=422) from exc
+        raise ApiError(ERR_UPLOAD_001, str(exc), http=422) from exc
     return ApiResponse(data={
         "upload_id": task.id,
         "chunk_size": task.chunk_size,
@@ -104,9 +115,9 @@ def _upload_chunk_impl(
     try:
         result = upload_svc.upload_chunk(db, upload_id, chunk_index, data, chunk_hash, user_id=user.id)
     except KeyError as exc:
-        raise ApiError("UPLOAD_002", str(exc), http=404) from exc
+        raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
     except ValueError as exc:
-        raise ApiError("UPLOAD_003", str(exc), http=422) from exc
+        raise ApiError(ERR_UPLOAD_003, str(exc), http=422) from exc
     return ApiResponse(data=result)
 
 
@@ -134,9 +145,9 @@ def complete_upload(
         content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
         result["content_id"] = content_id
     except KeyError as exc:
-        raise ApiError("UPLOAD_002", str(exc), http=404) from exc
+        raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
     except ValueError as exc:
-        raise ApiError("UPLOAD_004", str(exc), http=422) from exc
+        raise ApiError(ERR_UPLOAD_004, str(exc), http=422) from exc
     return ApiResponse(data=result)
 
 
@@ -149,7 +160,7 @@ def upload_status(
     try:
         return ApiResponse(data=upload_svc.get_status(db, upload_id, user_id=user.id))
     except KeyError as exc:
-        raise ApiError("UPLOAD_002", str(exc), http=404) from exc
+        raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
 
 
 @router.get("/sts", response_model=ApiResponse[dict])
@@ -157,14 +168,42 @@ def upload_sts(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """客户端直传临时凭证（仅 cos 后端；STS 角色未就绪时给出降级提示）"""
+    """客户端直传临时凭证（仅 cos 后端；STS 角色未就绪时给出降级提示）
+
+    P0-2（审查 H2/S4-四-2）：
+      - 生产环境 COS/STS 未配置 → 501（不返回假凭证；mock 凭证仅限非生产，
+        get_settings 已强制生产 mock_external_ai=False 双保险）
+      - 凭证按当前用户前缀签发（photos/voice/thumbnails/{user_id}/*），
+        不再整桶通配
+    """
+    # 生产门控：COS/STS 未真配 → 501 显式告知走后端中转（防误配出假凭证）
+    if settings.app_env == "production" and not _cos_sts_configured():
+        raise ApiError(
+            ERR_UPLOAD_008,
+            "STS 直传未接入（生产未配置 COS/STS），请走后端中转上传",
+            http=501,
+        )
     backend = get_storage_backend()
     try:
-        creds = backend.get_sts_credentials()
+        creds = backend.get_sts_credentials(user_id=str(user.id))
+    except ValueError as exc:
+        raise ApiError(ERR_UPLOAD_008, str(exc), http=501) from exc
     except NotImplementedError as exc:
-        raise ApiError("UPLOAD_005", str(exc), http=501) from exc
+        raise ApiError(ERR_UPLOAD_005, str(exc), http=501) from exc
     except Exception as exc:  # noqa: BLE001 —— STS 失败降级为后端中转
         # 审查修复(P1-03)：错误消息不泄漏内部异常类型（信息泄露面收敛）
         logger.warning("STS 获取失败: %s", exc)
-        raise ApiError("UPLOAD_006", "STS 暂不可用，请走后端中转上传", http=503) from exc
+        raise ApiError(ERR_UPLOAD_006, "STS 暂不可用，请走后端中转上传", http=503) from exc
     return ApiResponse(data=creds)
+
+
+def _cos_sts_configured() -> bool:
+    """COS/STS 直传配置就绪判定（生产门控用）：密钥/桶/地域/APPID/角色 ARN 齐全"""
+    return bool(
+        settings.tencent_secret_id
+        and settings.tencent_secret_key
+        and settings.cos_bucket
+        and settings.cos_region
+        and settings.tencent_appid
+        and settings.tencent_sts_role_arn
+    )

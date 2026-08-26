@@ -1,3 +1,11 @@
+## 2026-08-26 21:40 · 技术债清理 P0 批次完成（安全/正确性 8 项）
+
+- 技术债全面侦察（8 个并行 subagent，报告 docs/技术债审查报告_20260826.md + 计划 docs/技术债清理计划_20260826.md）后启动 P0 执行批次
+- P0-1 短信 mock 生产门控（production→501 + 验证码 SHA-256 哈希）；P0-2 COS STS 路径级白名单 policy（photos/voice/thumbnails/{user_id}/*，防前缀逃逸）+ /upload/sts 生产门控；P0-3 上传魔数嗅探（file_magic.py）+ Image.MAX_IMAGE_PIXELS 40MP 炸弹防护；P0-4 process_content 非 voice 失败回写 failed+extra.error；P0-5 complete 建内容 photo 幂等对齐 voice + enqueue 失败不 500；P0-6 StorageError(code,retryable) 包装 + commit 失败 best-effort delete + 孤儿扫描登记；P0-7 错误码登记表（40+3 码唯一真源 + ERR_* 常量 + CONTENT_008/EVENT_005/UPLOAD_008 拆分）；P0-8 RQ job_timeout（ASR 600s）+ Retry(3,[10,30,90])
+- 新增 36 个测试（test_techdebt_p0.py 17 + 各套件补齐）；基线 pytest 502 passed / 19 deselected + review_agent --full 全绿
+- 遗留登记：STS root ARN 降级待子账号 role、thumbnail_meta 移 worker、超龄 processing 重扫、孤儿对象扫描、分队列 worker 部署（均入代码注释）
+- 下一步：P1（配置契约 + 性能测试 2 个并行批次）→ P2（死代码 + 重复收敛）
+
 ## 2026-08-26 20:20 · Wave 4 集成（J/L，K 未完成）
 
 - merge wave4-agentJ（ab6d447：ASR 消费域 J-1~J-8）+ wave4-agentL（a0fe630：M3 微信域）→ 集成接线 deb6e24

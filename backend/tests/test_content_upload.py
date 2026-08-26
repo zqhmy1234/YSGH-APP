@@ -5,7 +5,9 @@
 """
 import io as _io
 import json
+import struct
 import uuid
+import zlib
 
 import pytest
 from app.api import contents as contents_api
@@ -30,7 +32,30 @@ def auth_headers(client):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _upload(client, headers, *, filename="photo.jpg", content=b"fake-jpeg-bytes", meta=None):
+def _jpeg_bytes(width: int = 600, height: int = 400) -> bytes:
+    """PIL 生成有效 JPEG（P0-3 魔数校验后测试必须用真实照片字节）"""
+    from PIL import Image
+
+    img = Image.new("RGB", (width, height), (10, 120, 200))
+    buf = _io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _png_bytes(width: int, height: int) -> bytes:
+    """构造指定尺寸的 PNG 头（无 IDAT；Image.open 只读头即可）"""
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        body = typ + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IEND", b"")
+
+
+def _upload(client, headers, *, filename="photo.jpg", content=None, meta=None):
+    content = content if content is not None else _jpeg_bytes()
     files = {"file": (filename, content, "image/jpeg")}
     data = {"meta": json.dumps(meta or {}, ensure_ascii=False)}
     return client.post("/api/v1/contents/upload", files=files, data=data, headers=headers)
@@ -46,7 +71,8 @@ def test_upload_photo_success(client, auth_headers):
         "source": "app",
         "extra": {"width": 3024, "height": 4032},
     }
-    r = _upload(client, auth_headers, meta=meta)
+    content = _jpeg_bytes()
+    r = _upload(client, auth_headers, content=content, meta=meta)
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert data["content_type"] == "photo"
@@ -57,7 +83,7 @@ def test_upload_photo_success(client, auth_headers):
     assert isinstance(backend, FakeStorageBackend)
     keys = [k for k in backend._store if k.startswith("photos/")]
     assert keys, "storage 未收到原件"
-    assert backend._store[keys[0]] == b"fake-jpeg-bytes"
+    assert backend._store[keys[0]] == content
 
 
 def test_upload_duplicate_hash_rejected(client, auth_headers):
@@ -132,9 +158,47 @@ def test_upload_guardrail_reject(client, auth_headers):
 
 
 def test_upload_heic_ext_ok(client, auth_headers):
-    """HEIC 扩展名白名单放行（客户端常见格式）"""
-    r = _upload(client, auth_headers, filename="photo.heic", content=b"heic-bytes")
-    assert r.status_code == 200
+    """HEIC 扩展名白名单放行（客户端常见格式；魔数 ftyp 校验通过）"""
+    heic = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00heicmif1" + b"\x00" * 8
+    r = _upload(client, auth_headers, filename="photo.heic", content=heic)
+    assert r.status_code == 200, r.text
+
+
+def test_upload_disguised_file_rejected(client, auth_headers):
+    """P0-3（审查 H3）：伪装文件——`.jpg` 扩展名 + HTML 字节 → 422 CONTENT_006
+
+    扩展名/content_type 头均不可信，魔数嗅探必须拦截（防内容投毒/存储型 XSS）。
+    """
+    html = b"<html><script>alert(1)</script></html>"
+    r = _upload(client, auth_headers, filename="photo.jpg", content=html)
+    assert r.status_code == 422
+    assert r.json()["code"] == "CONTENT_006"
+
+    # 魔数校验通过但含脚本尾随的合法 JPEG 不拦截（容器格式即照片本体）
+    jpeg = _jpeg_bytes() + b"<script>alert(1)</script>"
+    r2 = _upload(client, auth_headers, filename="photo.jpg", content=jpeg)
+    assert r2.status_code == 200, r2.text
+
+
+def test_upload_png_and_webp_accepted(client, auth_headers):
+    """P0-3：PNG/WebP 魔数放行（ALLOWED_PHOTO_EXTS 全格式覆盖）"""
+    png = _png_bytes(64, 64)
+    r = _upload(client, auth_headers, filename="a.png", content=png)
+    assert r.status_code == 200, r.text
+    webp = b"RIFF\x00\x00\x00\x00WEBPVP8 "
+    r2 = _upload(client, auth_headers, filename="a.webp", content=webp)
+    assert r2.status_code == 200, r2.text
+
+
+def test_upload_oversized_pixels_rejected_cleanly(client, auth_headers):
+    """P0-3（审查 H3）：高像素炸弹图不炸进程——EXIF 阶段即被尺寸上限拦截
+
+    100k×100k（1e10 像素 >> 2×40MP）PNG 头会在 Image.open 抛 DecompressionBombError，
+    _extract_exif_datetime 静默降级（不 500、不 OOM）；随后魔数通过正常入库。
+    """
+    bomb = _png_bytes(100000, 100000)
+    r = _upload(client, auth_headers, filename="bomb.png", content=bomb)
+    assert r.status_code == 200, r.text
 
 
 def test_upload_exif_overrides_client_taken_at(client, auth_headers):

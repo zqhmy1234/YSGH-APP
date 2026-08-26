@@ -5,9 +5,13 @@
   - MinioStorageBackend：MinIO（本地模拟断点续传，S3 兼容，docker 起 minio/minio）
   - CosStorageBackend：腾讯云 COS（生产，cos-python-sdk-v5）
 
-配置：settings.storage_backend ∈ {fake, minio, cos}（默认 fake）
+配置：settings.storage_backend ∈ {fake, fs, minio, cos}（默认 fake）
 MinIO 连接参数：settings.minio_endpoint / minio_access_key / minio_secret_key / minio_bucket
 COS 连接参数：复用 TENCENT_SECRET_ID/SECRET_KEY + COS_BUCKET/COS_REGION（config.py 别名读取已对齐）
+
+P0-6（审查 H-3）：外部存储异常统一包装为 StorageError(code, retryable)，
+调用方据此分类映射错误码；写对象后 DB commit 失败用 best_effort_delete 兜底。
+P0-2（审查 H2）：STS 凭证按用户前缀签发（见 _build_sts_policy），禁止整桶通配。
 """
 from __future__ import annotations
 
@@ -18,6 +22,31 @@ from pathlib import Path
 from app.core.config import settings
 
 logger = logging.getLogger("yishu.storage")
+
+
+class StorageError(RuntimeError):
+    """对象存储统一异常（P0-6 · 审查 H-3）：外部存储故障不再裸抛 500
+
+    仿 AsrError 模式：code 机器可读；retryable 表示网络/5xx 类可重试错误。
+    调用方（API 层/管线）按 code 分类映射错误码，避免无码 500。
+    """
+
+    def __init__(self, code: str, message: str, retryable: bool = False):
+        self.code = code
+        self.retryable = retryable
+        super().__init__(message)
+
+
+def best_effort_delete(key: str, backend=None) -> None:
+    """尽力删除对象（P0-6）：写对象后 DB commit 失败的调用点兜底，防孤儿对象
+
+    删除失败仅记日志（孤儿对象由 cleanup_job 的孤儿扫描登记项兜底，见
+    workers/cleanup_job.py 头注）。
+    """
+    try:
+        (backend or get_storage_backend()).delete_object(key)
+    except Exception:  # noqa: BLE001 —— 尽力而为，不阻断主流程
+        logger.warning("best-effort 删除失败（孤儿对象待 cleanup 扫描）key=%s", key)
 
 
 class StorageBackend(ABC):
@@ -39,8 +68,11 @@ class StorageBackend(ABC):
     def object_exists(self, key: str) -> bool:
         """对象是否存在"""
 
-    def get_sts_credentials(self) -> dict:
-        """客户端直传临时凭证；不支持的实现抛 NotImplementedError"""
+    def get_sts_credentials(self, user_id: str | None = None) -> dict:
+        """客户端直传临时凭证；不支持的实现抛 NotImplementedError
+
+        P0-2（审查 H2）：user_id 必传——policy 按用户前缀签发，禁止整桶通配。
+        """
         raise NotImplementedError("该存储后端不支持 STS 临时凭证")
 
 
@@ -89,7 +121,9 @@ class MinioStorageBackend(StorageBackend):
                 self._bucket, key, __import__("io").BytesIO(data), len(data)
             )
         except S3Error as exc:
-            raise RuntimeError(f"minio put_object 失败: {exc}") from exc
+            raise StorageError(
+                "MINIO_PUT_FAILED", f"minio put_object 失败: {exc}", retryable=True
+            ) from exc
 
     def get_object(self, key: str) -> bytes:
         from minio import S3Error
@@ -103,9 +137,18 @@ class MinioStorageBackend(StorageBackend):
                 resp.release_conn()
         except S3Error as exc:
             raise KeyError(f"minio object not found: {key}") from exc
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "MINIO_GET_FAILED", f"minio get_object 失败: {type(exc).__name__}", retryable=True
+            ) from exc
 
     def delete_object(self, key: str) -> None:
-        self._client.remove_object(self._bucket, key)
+        try:
+            self._client.remove_object(self._bucket, key)
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "MINIO_DELETE_FAILED", f"minio delete_object 失败: {type(exc).__name__}", retryable=True
+            ) from exc
 
     def object_exists(self, key: str) -> bool:
         from minio import S3Error
@@ -115,6 +158,10 @@ class MinioStorageBackend(StorageBackend):
             return True
         except S3Error:
             return False
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "MINIO_STAT_FAILED", f"minio object_exists 失败: {type(exc).__name__}", retryable=True
+            ) from exc
 
 
 class FilesystemStorageBackend(StorageBackend):
@@ -142,21 +189,50 @@ class FilesystemStorageBackend(StorageBackend):
     def put_object(self, key: str, data: bytes) -> None:
         p = self._safe_path(key)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(data)
+        try:
+            p.write_bytes(data)
+        except OSError as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "FS_PUT_FAILED", f"fs put_object 失败: {type(exc).__name__}", retryable=False
+            ) from exc
 
     def get_object(self, key: str) -> bytes:
         p = self._safe_path(key)
         if not p.is_file():
             raise KeyError(f"object not found: {key}")
-        return p.read_bytes()
+        try:
+            return p.read_bytes()
+        except OSError as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "FS_GET_FAILED", f"fs get_object 失败: {type(exc).__name__}", retryable=False
+            ) from exc
 
     def delete_object(self, key: str) -> None:
         p = self._safe_path(key)
         if p.is_file():
-            p.unlink()
+            try:
+                p.unlink()
+            except OSError as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+                raise StorageError(
+                    "FS_DELETE_FAILED", f"fs delete_object 失败: {type(exc).__name__}", retryable=False
+                ) from exc
 
     def object_exists(self, key: str) -> bool:
         return self._safe_path(key).is_file()
+
+
+def _cos_retryable(exc: Exception) -> bool:
+    """COS 异常可重试性分类（P0-6）：网络类(CosClientError)/5xx 可重试"""
+    try:
+        from qcloud_cos.cos_exception import CosClientError, CosServiceError
+    except ImportError:
+        return True
+    if isinstance(exc, CosClientError):
+        return True
+    if isinstance(exc, CosServiceError):
+        status = exc.get_status_code()
+        return status is None or status >= 500
+    return True
 
 
 class CosStorageBackend(StorageBackend):
@@ -178,52 +254,101 @@ class CosStorageBackend(StorageBackend):
         self._bucket = settings.cos_bucket
 
     def put_object(self, key: str, data: bytes) -> None:
-        self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
+        try:
+            self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "COS_PUT_FAILED", f"COS put_object 失败: {type(exc).__name__}",
+                retryable=_cos_retryable(exc),
+            ) from exc
 
     def get_object(self, key: str) -> bytes:
-        resp = self._client.get_object(Bucket=self._bucket, Key=key)
-        return resp["Body"].get_raw_stream().read()
+        try:
+            resp = self._client.get_object(Bucket=self._bucket, Key=key)
+            return resp["Body"].get_raw_stream().read()
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "COS_GET_FAILED", f"COS get_object 失败: {type(exc).__name__}",
+                retryable=_cos_retryable(exc),
+            ) from exc
 
     def delete_object(self, key: str) -> None:
-        self._client.delete_object(Bucket=self._bucket, Key=key)
+        try:
+            self._client.delete_object(Bucket=self._bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "COS_DELETE_FAILED", f"COS delete_object 失败: {type(exc).__name__}",
+                retryable=_cos_retryable(exc),
+            ) from exc
 
     def object_exists(self, key: str) -> bool:
-        return self._client.object_exists(Bucket=self._bucket, Key=key)
+        try:
+            return self._client.object_exists(Bucket=self._bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "COS_STAT_FAILED", f"COS object_exists 失败: {type(exc).__name__}",
+                retryable=_cos_retryable(exc),
+            ) from exc
 
-    def get_sts_credentials(self) -> dict:
-        """STS 临时凭证（客户端直传）——role_arn 现为 root ARN（优化已搁置），
-        若 AssumeRole 失败由调用方降级为后端中转"""
+    def get_sts_credentials(self, user_id: str | None = None) -> dict:
+        """STS 临时凭证（客户端直传）——路径级白名单（P0-2 · 审查 H2）
+
+        安全修复：policy resource 从整桶通配 `{bucket}/*` 收紧为当前用户前缀
+        `photos|voice|thumbnails/{user_id}/*`，任一登录用户只能写自己前缀，
+        防跨用户覆盖/灌入。user_id 缺失直接拒绝（不允许签发整桶凭证）。
+
+        遗留登记：role_arn 仍为 root ARN（腾讯云子账号 role 需独立申请，
+        见技术债清理计划 P0-2「root ARN 降级登记」）；若 AssumeRole 失败由调用方
+        降级为后端中转。
+        """
         from qcloud_cos.sts import Credential
 
+        policy = _build_sts_policy(user_id)
         cred = Credential(
             secret_id=settings.tencent_secret_id,
             secret_key=settings.tencent_secret_key,
             duration_seconds=1800,
-            policy={
-                "version": "2.0",
-                "statement": [
-                    {
-                        "action": [
-                            "name/cos:PutObject",
-                            "name/cos:PostObject",
-                            "name/cos:InitiateMultipartUpload",
-                            "name/cos:ListMultipartUploads",
-                            "name/cos:ListParts",
-                            "name/cos:UploadPart",
-                            "name/cos:CompleteMultipartUpload",
-                        ],
-                        "effect": "allow",
-                        "resource": [
-                            f"qcs::cos:{settings.cos_region}:uid/{settings.tencent_appid}:{settings.cos_bucket}/*"
-                        ],
-                    }
-                ],
-            },
+            policy=policy,
         )
         return cred.get_credential(
             region=settings.cos_region,
             role_arn=settings.tencent_sts_role_arn,
         )
+
+
+def _build_sts_policy(user_id: str | None) -> dict:
+    """构建路径级白名单 STS policy（P0-2；纯函数，单测直测）
+
+    仅允许当前用户前缀 photos/voice/thumbnails/{user_id}/*；
+    拒绝缺失 user_id 或含路径分隔符的 user_id（防前缀逃逸）。
+    """
+    if not user_id:
+        raise ValueError("缺少用户标识，无法签发路径级 STS 凭证（禁止整桶通配）")
+    if any(sep in user_id for sep in ("/", "\\", "..")):
+        raise ValueError(f"非法用户标识，拒绝签发 STS 凭证: {user_id!r}")
+    resource = [
+        f"qcs::cos:{settings.cos_region}:uid/{settings.tencent_appid}:"
+        f"{settings.cos_bucket}/{prefix}/{user_id}/*"
+        for prefix in ("photos", "voice", "thumbnails")
+    ]
+    return {
+        "version": "2.0",
+        "statement": [
+            {
+                "action": [
+                    "name/cos:PutObject",
+                    "name/cos:PostObject",
+                    "name/cos:InitiateMultipartUpload",
+                    "name/cos:ListMultipartUploads",
+                    "name/cos:ListParts",
+                    "name/cos:UploadPart",
+                    "name/cos:CompleteMultipartUpload",
+                ],
+                "effect": "allow",
+                "resource": resource,
+            }
+        ],
+    }
 
 
 _BACKENDS: dict[str, type[StorageBackend]] = {

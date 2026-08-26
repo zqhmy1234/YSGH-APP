@@ -33,6 +33,9 @@ logger = logging.getLogger("yishu.thumbnails")
 THUMBNAIL_MAX_EDGE = 480
 THUMBNAIL_QUALITY = 80
 THUMBNAIL_CONTENT_TYPE = "image/jpeg"
+# PIL 解压炸弹防护（P0-3 · 审查 H3）：40MP 维度上限——
+# 超限图片在 Image.open/load 前拒绝，防请求路径/worker 内存耗尽 DoS
+THUMBNAIL_MAX_PIXELS = 40_000_000
 
 # 非照片/无原件的跳过原因（测试与日志断言用）
 SKIP_NOT_PHOTO = "not-photo"
@@ -55,14 +58,27 @@ def derive_thumbnail_key(cos_key: str) -> str:
 def resize_to_jpeg(data: bytes, max_edge: int = THUMBNAIL_MAX_EDGE) -> bytes:
     """PIL 缩放 → JPEG 字节（保持宽高比，居中裁剪不做，简单缩边）
 
-    失败（非图片/损坏/PIL 不可用）抛 ValueError——调用方决定降级策略。
+    P0-3（审查 H3）：Image.open 前设 Image.MAX_IMAGE_PIXELS 并显式校验维度，
+    DecompressionBombError/超限统一抛 ValueError（调用方决定降级策略，防内存 DoS）。
+    失败（非图片/损坏/超尺寸/PIL 不可用）抛 ValueError。
     """
     from PIL import Image
 
+    Image.MAX_IMAGE_PIXELS = THUMBNAIL_MAX_PIXELS
     try:
         img = Image.open(io.BytesIO(data))
-        img.load()
+    except Image.DecompressionBombError as exc:
+        raise ValueError(f"图片尺寸超限（解压炸弹）: {THUMBNAIL_MAX_PIXELS} 像素上限") from exc
     except Exception as exc:  # noqa: BLE001 —— 不可解码的图片字节
+        raise ValueError(f"图片解码失败: {type(exc).__name__}") from exc
+    # 显式维度校验（MAX_IMAGE_PIXELS 与 2× 之间只告警不抛，这里一刀切）
+    if img.width * img.height > THUMBNAIL_MAX_PIXELS:
+        raise ValueError(
+            f"图片尺寸超限: {img.width}x{img.height} > {THUMBNAIL_MAX_PIXELS} 像素"
+        )
+    try:
+        img.load()
+    except Exception as exc:  # noqa: BLE001 —— 解码失败
         raise ValueError(f"图片解码失败: {type(exc).__name__}") from exc
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -116,7 +132,14 @@ def generate_thumbnail(
 
     if content.thumbnail_key != thumbnail_key:
         content.thumbnail_key = thumbnail_key
-        db.commit()
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001 —— P0-6：提交失败尽力删缩略图防孤儿
+            db.rollback()
+            from app.services.external.storage import best_effort_delete
+
+            best_effort_delete(thumbnail_key, storage)
+            raise
     return {"status": "created", "thumbnail_key": thumbnail_key}
 
 

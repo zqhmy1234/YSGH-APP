@@ -201,7 +201,15 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
     )
     db.add(content)
     record.status = "processed"
-    db.commit()
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001 —— P0-6（审查 H-3）：对象已落但 DB 无记录
+        # → 尽力删除防孤儿对象（企微会重推回调，msg_id 幂等兜底）
+        from app.services.external.storage import best_effort_delete
+
+        db.rollback()
+        best_effort_delete(cos_key)
+        raise
     db.refresh(content)
 
     enqueue_high(process_content, str(content.id))

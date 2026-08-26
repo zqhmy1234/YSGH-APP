@@ -12,6 +12,12 @@
 失败安全：单行失败保留 pending 并记日志（下次运行重试），不中断整批；
 job 可重复运行（幂等：done 行跳过，对象已删则静默）。
 
+TODO(遗留登记·P0-6)：孤儿对象扫描——当前仅清理软删墓碑关联对象；
+写后提交失败（best_effort_delete 也失败）/上传中止/审核拦截产生的无 contents
+引用的对象（uploads/staging 分片、未注册 cos_key、wechat 敏感拦截对象）需按
+"超龄 + 无 contents 引用"扫描清理（list_objects 按前缀对比 contents.cos_key，
+建议与本 job 同调度，待集成 Agent 排期）。
+
 调度（登记给集成 Agent）：
   RQ 无内置 cron —— 需集成 Agent 在部署侧挂定时（rq-scheduler / APScheduler /
   系统 cron / Windows 计划任务），建议每天低峰一次：

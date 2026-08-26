@@ -194,7 +194,8 @@ class TestContentEventsApi:
         assert data[0]["level"] == 2
         assert data[0]["confidence"] == 0.6
 
-        # 他人内容 → 404
+        # 他人内容 → 404（P0-7：码从 CONTENT_007 拆分为 EVENT_005——
+        # CONTENT_007 已保留给 upload_photo 的 413 超限语义）
         other = User(phone=f"evit-a-{uuid.uuid4().hex[:8]}", status=1)
         db.add(other)
         db.commit()
@@ -203,7 +204,7 @@ class TestContentEventsApi:
             oc = _content(db, str(other.id))
             r2 = client.get(f"/api/v1/contents/{oc.id}/events", headers=headers)
             assert r2.status_code == 404
-            assert r2.json()["code"] == "CONTENT_007"
+            assert r2.json()["code"] == "EVENT_005"
         finally:
             db.execute(sa_delete(Content).where(Content.user_id == other.id))
             db.delete(other)

@@ -22,7 +22,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import (
+    ERR_CONTENT_001,
+    ERR_CONTENT_002,
+    ERR_CONTENT_003,
+    ERR_CONTENT_004,
+    ERR_CONTENT_005,
+    ERR_CONTENT_006,
+    ERR_CONTENT_007,
+    ERR_CONTENT_008,
+    ERR_PROFILE_SENSITIVE_001,
+    ERR_PROFILE_SENSITIVE_002,
+    ERR_PROFILE_SENSITIVE_003,
+    ApiError,
+)
 from app.core.queue import enqueue_high, enqueue_low
 from app.db.models import Content, ProfileSensitive, User
 from app.db.session import get_db
@@ -35,6 +48,7 @@ from app.schemas.content import (
     ProfileSensitiveCreate,
     ProfileSensitiveOut,
 )
+from app.services.file_magic import is_photo_bytes
 from app.services.pipeline import process_content
 
 logger = logging.getLogger("yishu.contents")
@@ -47,6 +61,8 @@ profile_sensitive_router = APIRouter(prefix="/api/v1/profile", tags=["profile-se
 
 # 客户端第一波照片中转上传限制（B-BE-1）
 MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB
+# PIL 解压炸弹防护（P0-3 · 审查 H3）：40MP 上限（超限拒绝解码）
+_MAX_IMAGE_PIXELS = 40_000_000
 ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 _PHOTO_SOURCES = ("app", "windows", "wechat", "import")
 
@@ -57,10 +73,13 @@ def _extract_exif_datetime(data: bytes) -> datetime | None:
     客户端 DATE_TAKEN 可能被 MediaProvider 写成扫描时间（2026-08-24 真机实测），
     故以后端 EXIF 解析为准：EXIF 无时区=相机本地时间（本设备 +08），
     显式按 UTC+08:00 解释，与客户端 isoString(+08:00) 一致。
+    P0-3（审查 H3）：Image.open 前设 MAX_IMAGE_PIXELS 防解压炸弹（getexif 虽不
+    解码像素，但 open 阶段的尺寸检查会触发 DecompressionBombError）。
     """
     try:
         from PIL import Image
 
+        Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
         img = Image.open(_io.BytesIO(data))
         exif = img.getexif()
         raw = exif.get(36867)  # DateTimeOriginal
@@ -95,21 +114,27 @@ def upload_photo(
         if not isinstance(meta_obj, dict):
             raise ValueError("meta 必须是 JSON 对象")
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ApiError("CONTENT_005", "meta 必须为合法 JSON 对象", http=422) from exc
+        raise ApiError(ERR_CONTENT_005, "meta 必须为合法 JSON 对象", http=422) from exc
 
-    # 2. 文件校验（类型白名单 + 非空 + 大小上限）
+    # 2. 文件校验（类型白名单 + 非空 + 大小上限 + 魔数嗅探）
     ext = Path(file.filename or "").suffix.lower()
     content_type = (file.content_type or "").lower()
     if ext not in ALLOWED_PHOTO_EXTS and not content_type.startswith("image/"):
-        raise ApiError("CONTENT_006", "仅支持照片文件（jpg/png/webp/heic）", http=422)
+        raise ApiError(ERR_CONTENT_006, "仅支持照片文件（jpg/png/webp/heic）", http=422)
     data = file.file.read()
     if not data:
-        raise ApiError("CONTENT_006", "文件为空", http=422)
+        raise ApiError(ERR_CONTENT_006, "文件为空", http=422)
     if len(data) > MAX_PHOTO_BYTES:
         raise ApiError(
-            "CONTENT_007",
+            ERR_CONTENT_007,
             f"照片超过大小上限（{MAX_PHOTO_BYTES // 1024 // 1024}MB）",
             http=413,
+        )
+    # P0-3（审查 H3）：魔数校验——扩展名/content_type 头均不可信，
+    # `.jpg` 文件名 + 任意字节（HTML/脚本）必须拒（防内容投毒）
+    if not is_photo_bytes(data):
+        raise ApiError(
+            ERR_CONTENT_006, "文件内容与照片格式不符（魔数校验失败）", http=422
         )
 
     # 3. 元数据字段解析与边界校验
@@ -118,21 +143,21 @@ def upload_photo(
         try:
             taken_at = datetime.fromisoformat(str(meta_obj["taken_at"]).replace("Z", "+00:00"))
         except ValueError as exc:
-            raise ApiError("CONTENT_005", "taken_at 格式无效（ISO8601）", http=422) from exc
+            raise ApiError(ERR_CONTENT_005, "taken_at 格式无效（ISO8601）", http=422) from exc
     gps_lat = meta_obj.get("gps_lat")
     gps_lng = meta_obj.get("gps_lng")
     try:
         gps_lat = float(gps_lat) if gps_lat is not None else None
         gps_lng = float(gps_lng) if gps_lng is not None else None
     except (TypeError, ValueError) as exc:
-        raise ApiError("CONTENT_005", "gps_lat/gps_lng 必须为数值", http=422) from exc
+        raise ApiError(ERR_CONTENT_005, "gps_lat/gps_lng 必须为数值", http=422) from exc
     if gps_lat is not None and not (-90 <= gps_lat <= 90):
-        raise ApiError("CONTENT_005", "gps_lat 越界（-90~90）", http=422)
+        raise ApiError(ERR_CONTENT_005, "gps_lat 越界（-90~90）", http=422)
     if gps_lng is not None and not (-180 <= gps_lng <= 180):
-        raise ApiError("CONTENT_005", "gps_lng 越界（-180~180）", http=422)
+        raise ApiError(ERR_CONTENT_005, "gps_lng 越界（-180~180）", http=422)
     source = meta_obj.get("source", "app")
     if source not in _PHOTO_SOURCES:
-        raise ApiError("CONTENT_005", f"source 非法（可选 {_PHOTO_SOURCES}）", http=422)
+        raise ApiError(ERR_CONTENT_005, f"source 非法（可选 {_PHOTO_SOURCES}）", http=422)
     perceptual_hash = meta_obj.get("perceptual_hash") or None
     extra = meta_obj.get("extra") if isinstance(meta_obj.get("extra"), dict) else None
 
@@ -146,7 +171,7 @@ def upload_photo(
             )
         ).scalar_one_or_none()
         if dup is not None:
-            raise ApiError("CONTENT_002", "重复内容（感知哈希已存在）", http=409)
+            raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409)
 
     # 5. 护栏（B5b）：meta.text 若提供则复用 moderate（照片本体由管线 _process_photo 检测）
     from app.services.external.dashscope import moderate
@@ -156,7 +181,7 @@ def upload_photo(
         verdict = moderate(check_text)
         if verdict.get("action") == "reject":
             _reflow_violation(db, verdict)
-            raise ApiError("CONTENT_003", f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
+            raise ApiError(ERR_CONTENT_003, f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
 
     # 5.1 EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）
     exif_taken = _extract_exif_datetime(data)
@@ -164,7 +189,7 @@ def upload_photo(
         taken_at = exif_taken
 
     # 6. 原件落 storage（cos_key），随后建 contents 记录 + 入队
-    from app.services.external.storage import get_storage_backend
+    from app.services.external.storage import best_effort_delete, get_storage_backend
 
     ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
     cos_key = f"photos/{user.id}/{uuid.uuid4().hex}{ext_safe}"
@@ -188,6 +213,8 @@ def upload_photo(
     except IntegrityError:
         # 并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409（与 create_content 一致）
         db.rollback()
+        # P0-6（审查 H-3）：对象已落存储但 DB 无记录 → 尽力删除防孤儿对象
+        best_effort_delete(cos_key)
         dup = db.execute(
             select(Content).where(
                 Content.user_id == user.id,
@@ -196,7 +223,7 @@ def upload_photo(
             )
         ).scalar_one_or_none()
         if dup is not None:
-            raise ApiError("CONTENT_002", "重复内容（感知哈希已存在）", http=409) from None
+            raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409) from None
         raise
     db.refresh(record)
 
@@ -212,7 +239,7 @@ def create_content(
 ):
     """内容入库：POST → contents 表 → 异步 AI 管线（RQ）→ 状态回写（API-002/API-016）"""
     if req.content_type not in ("photo", "text", "voice", "article"):
-        raise ApiError("CONTENT_001", "不支持的 content_type", http=422)
+        raise ApiError(ERR_CONTENT_001, "不支持的 content_type", http=422)
 
     # 去重（Q16）：同用户 perceptual_hash 唯一（仅照片类有哈希；软删记录不参与，
     # 修复：原实现未过滤 deleted_at → 删除后重传同照片被 409 永久拒绝）
@@ -225,7 +252,7 @@ def create_content(
             )
         ).scalar_one_or_none()
         if dup is not None:
-            raise ApiError("CONTENT_002", "重复内容（感知哈希已存在）", http=409)
+            raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409)
 
     # 护栏检测（B5b · 2026-08-20 接入普通入库）：reject → 拒绝入库；mask → 打码后入库
     from app.services.external.dashscope import moderate
@@ -235,7 +262,7 @@ def create_content(
         verdict = moderate(check_text)
         if verdict.get("action") == "reject":
             _reflow_violation(db, verdict)
-            raise ApiError("CONTENT_003", f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
+            raise ApiError(ERR_CONTENT_003, f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
         if verdict.get("action") == "mask" and verdict.get("masked_text"):
             req.text = verdict["masked_text"]
 
@@ -280,7 +307,7 @@ def create_content(
             )
         ).scalar_one_or_none()
         if dup is not None:
-            raise ApiError("CONTENT_002", "重复内容（感知哈希已存在）", http=409) from None
+            raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409) from None
         raise
     db.refresh(record)
 
@@ -307,7 +334,7 @@ def presign_upload(
     from app.core.config import settings as _settings
 
     if _settings.app_env == "production" and not _settings.mock_external_ai:
-        raise ApiError("CONTENT_004", "STS 直传未接入（生产待实现），请走后端中转上传", http=501)
+        raise ApiError(ERR_CONTENT_004, "STS 直传未接入（生产待实现），请走后端中转上传", http=501)
     # TODO(T1): 腾讯云 STS 接口；M1 验证 STS 最短有效期限制（当前 mock）
     expire = datetime.now(timezone.utc) + timedelta(seconds=30)
     return ApiResponse(
@@ -350,7 +377,8 @@ def list_contents(
         try:
             cursor_ts_raw, cursor_id = cursor.split("|", 1)
         except ValueError:
-            raise ApiError("CONTENT_003", "游标格式无效", http=422) from None
+            # P0-7：游标错误从 CONTENT_003（敏感 422）拆分为独立码 CONTENT_008
+            raise ApiError(ERR_CONTENT_008, "游标格式无效", http=422) from None
         cursor_dt = dt.fromisoformat(cursor_ts_raw.replace("Z", "+00:00"))
         # 复合条件：(created_at, id) < (cursor_dt, cursor_id) 元组语义
         query = query.where(
@@ -415,7 +443,7 @@ def profile_sensitive_add(
             db, user.id, req.topic, req.disposition, req.evidence, req.locked
         )
     except ValueError as exc:
-        raise ApiError("PROFILE_SENSITIVE_001", str(exc), http=422) from exc
+        raise ApiError(ERR_PROFILE_SENSITIVE_001, str(exc), http=422) from exc
     return ApiResponse(data=_profile_sensitive_out(row))
 
 
@@ -429,10 +457,10 @@ def profile_sensitive_delete(
     from app.services.echo import delete_profile_sensitive
 
     if not topic.strip():
-        raise ApiError("PROFILE_SENSITIVE_002", "topic 不能为空", http=422)
+        raise ApiError(ERR_PROFILE_SENSITIVE_002, "topic 不能为空", http=422)
     deleted = delete_profile_sensitive(db, user.id, topic.strip())
     if not deleted:
-        raise ApiError("PROFILE_SENSITIVE_003", f"话题不存在：{topic}", http=404)
+        raise ApiError(ERR_PROFILE_SENSITIVE_003, f"话题不存在：{topic}", http=404)
     return ApiResponse(data={"deleted": True, "topic": topic.strip()})
 
 
@@ -448,7 +476,7 @@ def profile_sensitive_list(
     try:
         rows = list_profile_sensitive(db, user.id, disposition)
     except ValueError as exc:
-        raise ApiError("PROFILE_SENSITIVE_001", str(exc), http=422) from exc
+        raise ApiError(ERR_PROFILE_SENSITIVE_001, str(exc), http=422) from exc
     return ApiResponse(data=[_profile_sensitive_out(r) for r in rows])
 
 

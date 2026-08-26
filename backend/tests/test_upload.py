@@ -67,7 +67,7 @@ def test_init_idempotent(db_user):
 def test_complete_creates_content(db_user):
     """S-ST-1 集成：complete 后 register_photo_content 建 contents 记录并返回 content_id"""
     db, user = db_user
-    task, data = _make_task(db, user)
+    task, data = _make_task(db, user, data=_jpeg_bytes())
     for i in range(task.chunk_count):
         part = data[i * CHUNK : (i + 1) * CHUNK]
         upload_svc.upload_chunk(db, task.id, i, part)
@@ -298,7 +298,7 @@ def test_register_photo_content_manual_original_links_placeholder(db_user):
 
     # WiFi 后补传原件：走完整分片链路，meta 带 content_id
     original_key = f"photos/{user.id}/202608/original_{uuid.uuid4().hex[:8]}.jpg"
-    backend.put_object(original_key, b"real-original-bytes")
+    backend.put_object(original_key, _jpeg_bytes())  # P0-3：原件需过魔数校验
     content_id = upload_svc.register_photo_content(
         db,
         user.id,
@@ -387,3 +387,97 @@ def test_complete_voice_rejects_bad_duration(db_user):
             result["file_key"],
             '{"content_type":"voice","duration_ms":"abc","source":"app"}',
         )
+
+# ---------- P0 批次（2026-08-26）：幂等 / 魔数 / 存储兜底 ----------
+
+def test_register_photo_content_idempotent(db_user):
+    """P0-5（审查 H-5）：photo 分支幂等——同用户+同 cos_key → 返回既有记录（对齐 voice）
+
+    complete 幂等 + 客户端重试 complete 后二次 register 不得产生重复内容。
+    """
+    db, user = db_user
+    jpeg = _jpeg_bytes()
+    key = f"photos/{user.id}/202608/dup_{uuid.uuid4().hex[:8]}.jpg"
+    get_storage_backend().put_object(key, jpeg)
+    cid1 = upload_svc.register_photo_content(
+        db, user.id, key, '{"source":"app","upload_mode":"original"}'
+    )
+    cid2 = upload_svc.register_photo_content(
+        db, user.id, key, '{"source":"app","upload_mode":"original"}'
+    )
+    assert cid1 == cid2
+    records = db.query(Content).filter(
+        Content.user_id == user.id, Content.cos_key == key
+    ).all()
+    assert len(records) == 1
+
+
+def test_register_photo_content_idempotent_thumbnail_meta(db_user):
+    """P0-5：thumbnail_meta 占位重试同样幂等（不重复建占位内容）"""
+    db, user = db_user
+    jpeg = _jpeg_bytes()
+    key = f"photos/{user.id}/202608/th_dup_{uuid.uuid4().hex[:8]}.jpg"
+    get_storage_backend().put_object(key, jpeg)
+    cid1 = upload_svc.register_photo_content(
+        db, user.id, key, '{"upload_mode":"thumbnail_meta","source":"app"}'
+    )
+    cid2 = upload_svc.register_photo_content(
+        db, user.id, key, '{"upload_mode":"thumbnail_meta","source":"app"}'
+    )
+    assert cid1 == cid2
+    records = db.query(Content).filter(
+        Content.user_id == user.id, Content.cos_key == key
+    ).all()
+    assert len(records) == 1
+
+
+def test_register_photo_content_enqueue_failure_still_returns(db_user, monkeypatch):
+    """P0-5：enqueue 异常时捕获并返回成功（内容已建，管线可异步补投）"""
+    db, user = db_user
+    jpeg = _jpeg_bytes()
+    key = f"photos/{user.id}/202608/enq_{uuid.uuid4().hex[:8]}.jpg"
+    get_storage_backend().put_object(key, jpeg)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("redis unavailable")
+
+    monkeypatch.setattr(upload_svc, "enqueue_high", boom)
+    cid = upload_svc.register_photo_content(
+        db, user.id, key, '{"source":"app","upload_mode":"original"}'
+    )
+    record = db.get(Content, cid)
+    assert record is not None
+    assert record.status == "processing"
+    assert record.cos_key == key
+
+
+def test_register_photo_content_rejects_disguised_photo(db_user):
+    """P0-3（审查 H3）：分片 complete 路径补魔数——伪装照片 → ValueError 且对象被清理"""
+    db, user = db_user
+    key = f"photos/{user.id}/202608/fake_{uuid.uuid4().hex[:8]}.jpg"
+    get_storage_backend().put_object(key, b"<html>not-a-photo</html>")
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(
+            db, user.id, key, '{"source":"app","upload_mode":"original"}'
+        )
+    # best-effort 删除防孤儿（P0-3/P0-6）
+    assert not get_storage_backend().object_exists(key)
+
+
+def test_complete_upload_commit_failure_best_effort_delete(db_user, monkeypatch):
+    """P0-6：complete 落对象后 commit 失败 → 尽力删除最终对象（防孤儿）"""
+    db, user = db_user
+    task, data = _make_task(db, user, data=_jpeg_bytes())
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+
+    real_commit = db.commit
+
+    def failing_commit():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(db, "commit", failing_commit)
+    with pytest.raises(RuntimeError):
+        upload_svc.complete_upload(db, task.id)
+    monkeypatch.setattr(db, "commit", real_commit)
+    assert not get_storage_backend().object_exists(task.file_key)

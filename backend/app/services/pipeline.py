@@ -552,16 +552,25 @@ def process_content(content_id: str) -> dict:
     except Exception as exc:  # noqa: BLE001 —— 边界兜底：不伪造 done
         db.rollback()
         target = db.get(Content, content_id)
-        if target is not None and target.content_type == "voice":
+        # P0-4（审查 H-4）：text/photo 同样回写 failed + extra.error——此前仅 voice
+        # 回写，其余类型意外异常后永久卡 processing（RQ 视为成功不重试，静默坏死）。
+        # 遗留登记：超龄 processing 重扫任务——历史卡死记录（本修复上线前产生）需
+        # 定时扫描 processing 超龄内容重新入队或置 failed（待集成 Agent 排期）。
+        if target is not None:
+            is_voice = target.content_type == "voice"
             detail = {
                 "outcome": "failed_retryable",
-                "code": "ASR_PIPELINE_ERROR",
-                "message": "语音处理发生未分类异常",
+                "code": "ASR_PIPELINE_ERROR" if is_voice else "PIPELINE_ERROR",
+                "message": (
+                    "语音处理发生未分类异常" if is_voice
+                    else f"{target.content_type} 处理发生未分类异常"
+                ),
                 "retryable": True,
                 "errors": [type(exc).__name__],
             }
             extra = dict(target.extra or {})
-            extra["audio_processing"] = detail
+            if is_voice:
+                extra["audio_processing"] = detail
             extra["error"] = detail
             target.extra = extra
             target.status = "failed"
@@ -572,8 +581,8 @@ def process_content(content_id: str) -> dict:
             "content_id": content_id,
             "status": "failed",
             "outcome": "failed_retryable" if is_voice else None,
-            "retryable": is_voice,
-            "error": "ASR_PIPELINE_ERROR" if is_voice else type(exc).__name__,
+            "retryable": True,
+            "error": "ASR_PIPELINE_ERROR" if is_voice else "PIPELINE_ERROR",
         }
     finally:
         db.close()

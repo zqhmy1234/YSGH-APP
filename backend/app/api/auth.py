@@ -19,7 +19,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.errors import ApiError
+from app.core.errors import (
+    ERR_AUTH_001,
+    ERR_AUTH_003,
+    ERR_AUTH_004,
+    ERR_AUTH_005,
+    ERR_AUTH_099,
+    ApiError,
+)
 from app.core.security import create_access_token, create_refresh_token, decode_token
 from app.db.models import Device, SmsCode, User
 from app.db.session import get_db
@@ -40,14 +47,14 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 def wechat_login(req: WechatLoginRequest, db: Session = Depends(get_db)):
     """微信登录：code 换 unionid → 建立/获取用户 → 签发 token 对（真实 DB）"""
     if not req.code:
-        raise ApiError("AUTH_001", "code 不能为空", http=400)
+        raise ApiError(ERR_AUTH_001, "code 不能为空", http=400)
 
     if _wechat_configured():
         unionid = _wechat_code2session(req.code)
     elif settings.app_env == "production":
         # 安全修复（审查 CRITICAL）：生产环境未接入微信时拒绝登录，
         # 不允许任意 code 创建 mock 用户（认证形同虚设）
-        raise ApiError("AUTH_099", "微信登录未接入", http=501)
+        raise ApiError(ERR_AUTH_099, "微信登录未接入", http=501)
     else:
         # 仅开发/测试环境允许 mock（联调用）
         unionid = f"mock-unionid-{req.code}"
@@ -71,7 +78,7 @@ def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
 
     # 哈希比较（secrets.compare_digest 防时序攻击；修复：原明文比较）
     if record is None or not secrets.compare_digest(_hash_code(req.code), record.code or ""):
-        raise ApiError("AUTH_003", "验证码错误或已过期", http=401)
+        raise ApiError(ERR_AUTH_003, "验证码错误或已过期", http=401)
 
     record.used_at = now
     db.commit()
@@ -83,8 +90,17 @@ def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/sms/send", response_model=ApiResponse[dict])
 def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
-    """发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）"""
+    """发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）
+
+    P0-1（审查 H1）：生产环境禁止 mock 验证码直返（任意手机号可接管账户）——
+    与 wechat_login 的"生产未接入 → 501"对齐；真实短信通道（TODO T1）接入前
+    生产 phone 登录整体不可用。get_settings 已强制生产 mock_external_ai=False，
+    此处显式门控双保险（防运行时误改/测试泄漏）。
+    """
     now = datetime.now(timezone.utc)
+
+    if settings.app_env == "production":
+        raise ApiError(ERR_AUTH_099, "短信服务未接入（生产环境），请使用微信登录", http=501)
 
     # 防刷（AUTH-004）：同一手机号 60s 内已有未使用验证码 → 拒绝重发
     recent = db.execute(
@@ -95,7 +111,7 @@ def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
         ).limit(1)
     ).scalar_one_or_none()
     if recent is not None:
-        raise ApiError("AUTH_004", "验证码发送过于频繁，请稍后再试", http=429)
+        raise ApiError(ERR_AUTH_004, "验证码发送过于频繁，请稍后再试", http=429)
 
     # 每日上限（安全修复：防短信轰炸，10 条/日）
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -106,7 +122,7 @@ def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
         )
     ) or 0
     if today_count >= 10:
-        raise ApiError("AUTH_004", "今日验证码发送次数已达上限", http=429)
+        raise ApiError(ERR_AUTH_004, "今日验证码发送次数已达上限", http=429)
 
     code = _gen_sms_code()
     # 安全修复：验证码只存 SHA-256 哈希（DB 泄漏不可直接登录）
@@ -117,7 +133,7 @@ def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
         # mock 模式：直接返回验证码供联调（生产走阿里云短信 0.045 元/条）
         return ApiResponse(data={"mock_code": code})
     # TODO(T1): 接入阿里云短信发送
-    raise ApiError("AUTH_099", "短信服务未接入", http=501)
+    raise ApiError(ERR_AUTH_099, "短信服务未接入", http=501)
 
 
 @router.post("/refresh", response_model=ApiResponse[TokenPair])
@@ -126,10 +142,10 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     try:
         payload = decode_token(req.refresh_token)
     except Exception:
-        raise ApiError("AUTH_005", "refresh token 无效或过期", http=401) from None
+        raise ApiError(ERR_AUTH_005, "refresh token 无效或过期", http=401) from None
 
     if payload.get("type") != "refresh":
-        raise ApiError("AUTH_005", "token 类型错误", http=401)
+        raise ApiError(ERR_AUTH_005, "token 类型错误", http=401)
 
     user_id = payload.get("sub")
     device_id = payload.get("device_id", "")
@@ -139,11 +155,11 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
         select(Device).where(Device.user_id == user_id, Device.device_id == device_id)
     ).scalar_one_or_none()
     if device is None or device.refresh_token != req.refresh_token:
-        raise ApiError("AUTH_005", "refresh token 已吊销", http=401)
+        raise ApiError(ERR_AUTH_005, "refresh token 已吊销", http=401)
 
     user = db.get(User, user_id)
     if user is None or user.status != 1:
-        raise ApiError("AUTH_001", "用户不存在或已冻结", http=401)
+        raise ApiError(ERR_AUTH_001, "用户不存在或已冻结", http=401)
 
     tokens = _issue_tokens(db, user, device_id)
     return ApiResponse(data=tokens)
@@ -187,15 +203,15 @@ def _wechat_code2session(code: str) -> str:
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPError as exc:
-        raise ApiError("AUTH_099", "微信登录服务不可用", http=502) from exc
+        raise ApiError(ERR_AUTH_099, "微信登录服务不可用", http=502) from exc
 
     if data.get("errcode"):
         raise ApiError(
-            "AUTH_001", f"微信 code 无效或已过期: {data.get('errmsg')}", http=401
+            ERR_AUTH_001, f"微信 code 无效或已过期: {data.get('errmsg')}", http=401
         )
     unionid = data.get("unionid") or data.get("openid")
     if not unionid:
-        raise ApiError("AUTH_099", "微信登录响应缺少 openid/unionid", http=502)
+        raise ApiError(ERR_AUTH_099, "微信登录响应缺少 openid/unionid", http=502)
     return str(unionid)
 
 

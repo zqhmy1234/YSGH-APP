@@ -521,3 +521,43 @@ class TestEventAggregation:
         assert ev is not None and ev.generated_by == "cloud"
         items = db.execute(select(EventItem).where(EventItem.event_id == ev.id)).scalars().all()
         assert len(items) >= 1
+
+class TestP0FailureWriteback:
+    """P0-4（审查 H-4）：非 voice 失败同样回写 failed + extra.error（对齐 voice 先例）
+
+    此前 text/photo 意外异常只记日志，内容永久卡 processing（RQ 视为成功不重试）。
+    """
+
+    def test_text_unclassified_failure_writes_failed(self, db_user, monkeypatch):
+        db, user = db_user
+        c = _content(db, user.id, "text", "测试内容")
+
+        def boom(db, content):
+            raise RuntimeError("unexpected text pipeline error")
+
+        monkeypatch.setattr("app.services.pipeline._process_text", boom)
+        from app.services.pipeline import process_content
+
+        r = process_content(str(c.id))
+        assert r["status"] == "failed"
+        db.refresh(c)
+        assert c.status == "failed"
+        assert c.extra["error"]["code"] == "PIPELINE_ERROR"
+        assert c.extra["error"]["retryable"] is True
+
+    def test_photo_unclassified_failure_writes_failed(self, db_user, monkeypatch):
+        db, user = db_user
+        c = _content(db, user.id, "photo", cos_key="photos/p0/x.jpg")
+
+        def boom(db, content):
+            raise RuntimeError("unexpected photo pipeline error")
+
+        monkeypatch.setattr("app.services.pipeline._process_photo", boom)
+        from app.services.pipeline import process_content
+
+        r = process_content(str(c.id))
+        assert r["status"] == "failed"
+        db.refresh(c)
+        assert c.status == "failed"
+        assert c.extra["error"]["code"] == "PIPELINE_ERROR"
+        assert c.extra["error"]["retryable"] is True
