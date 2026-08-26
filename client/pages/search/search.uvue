@@ -78,7 +78,7 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { searchText, searchByImage, SearchOutcome, SearchHitItem } from '@/utils/search_api'
+	import { searchText, searchByImage, SearchOutcome } from '@/utils/search_api'
 	import { showErrorToast } from '@/utils/api'
 	import { shortDate as formatShortDate } from '@/utils/time'
 

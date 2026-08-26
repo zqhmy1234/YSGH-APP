@@ -91,15 +91,12 @@
 	import {
 		startRecord,
 		stopRecord,
-		pauseRecord,
 		resumeRecord,
 		setShouldResume,
 		recorderState,
 		transcribeWav,
 		saveVoiceContent,
 		uploadVoicePersistent,
-		MAX_RECORD_MS,
-		REC_STATE_INTERRUPTED,
 		REC_STATE_PAUSED
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
@@ -287,12 +284,6 @@
 				resumeRecord()
 				this.recState = recorderState()
 				this.recordHint = this.recState == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
-			},
-			/** J-7：手动暂停（保留 RECORDING→PAUSED；toggle 仍走停止） */
-			pauseRecordNow(): void {
-				pauseRecord()
-				this.recState = recorderState()
-				this.recordHint = '已暂停'
 			},
 			stopRecordNow(): void {
 				stopRecord()
