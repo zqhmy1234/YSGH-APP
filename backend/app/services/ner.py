@@ -95,14 +95,15 @@ def extract_entities(query: str, enable_llm: bool = False) -> dict:
 
 
 def _extract_llm(query: str) -> dict:
-    """qwen-flash 兜底抽取（真实模式；失败抛异常由调用方处理）"""
-    from app.services.external.dashscope import _chat_text
+    """qwen-flash 兜底抽取（真实模式；失败抛异常由调用方处理）
 
-    answer = _chat_text(_LLM_EXTRACT_SYSTEM, query).strip()
-    import json
+    S1-H1/L7 收口：统一走 llm_ops.base.chat_text（此前直接 import dashscope._chat_text，
+    绕过统一入口的日志/降级策略）+ llm_ops.parsing.extract_json_object（此前内联
+    find("{")/rfind("}") 切片解析、无围栏剥离）。
+    """
+    from app.services.llm_ops.base import chat_text
+    from app.services.llm_ops.parsing import extract_json_object
 
-    start, end = answer.find("{"), answer.rfind("}")
-    if start < 0 or end < 0:
-        return {}
-    data = json.loads(answer[start : end + 1])
+    answer = chat_text(_LLM_EXTRACT_SYSTEM, query).strip()
+    data = extract_json_object(answer)
     return {k: (v or "").strip() for k, v in data.items() if isinstance(v, str)}
