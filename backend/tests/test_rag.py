@@ -19,13 +19,17 @@ from app.db.session import SessionLocal
 from app.schemas.search import SearchQuery
 from app.services.embedding import encode_dense, encode_query
 from app.services.rag import _rewrite_query, _route_query, search
-from app.services.vector_store import get_store, point_id_for
+from app.services.vector_store import get_store
 from qdrant_client.http import models  # noqa: F401
 from sqlalchemy import delete as sa_delete
 
 # 测试专用隔离 collection（2026-08-25 修复：原与生产 yishu_contents 共用，
 # 生产库有真实数据后测试点被挤出 Top-k 导致 flaky——与基准评测同样隔离）
 TEST_COLLECTION = "yishu_test_rag"
+
+# R8#14（2026-08-27）：测试语料按 payload 标记删除（不再用固定 id 枚举删除）——
+# 语料扩充后旧点不再残留；仅在本测试隔离 collection（yishu_test_rag）内安全。
+BENCH_MARK = "rag-distribution"
 
 # 测试语料（中文记忆场景）
 CORPUS = [
@@ -69,19 +73,28 @@ def _ts(s: str) -> int:
 
 @pytest.fixture(scope="module")
 def indexed_store():
-    """建索引：语料写入 Qdrant（幂等：先删后写）
+    """建索引：语料写入 Qdrant（幂等：先按 payload 标记清理再写）
 
     审查 CRITICAL 修复：payload 的 taken_at 存 epoch 秒（int），
     与 _to_filter 的 Range(gte/lte=value.timestamp()) 数值过滤一致——
     此前存 ISO 字符串导致时间过滤静默不命中（恒空结果）。
+    R8#14（2026-08-27）：固定 id 枚举删除改按 payload 标记删除
+    （语料扩充不残留旧点）；R8#9：固定 sleep 改轮询等索引最终一致性。
     """
     store = get_store()
     store.ensure_collection(TEST_COLLECTION)
-    # 清理旧测试点（Qdrant 1.14+ 点 ID 必须为整数/UUID → UUID5 派生）
+    # 清理旧测试点：删除全部 benchmark 标记点（含扩充后的旧语料 + fix1-* 回归点）
     store.client.delete(
         collection_name=TEST_COLLECTION,
-        points_selector=models.PointIdsList(
-            points=[point_id_for(f"rag-{i:03d}") for i in range(1, 10)]
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="benchmark",
+                        match=models.MatchValue(value=BENCH_MARK),
+                    )
+                ]
+            )
         ),
     )
     for doc in CORPUS:
@@ -95,10 +108,12 @@ def indexed_store():
                 "content_type": "text",
                 "tags": doc["tags"],
                 "taken_at": _ts(doc["taken_at"]),
+                "benchmark": BENCH_MARK,
             },
             collection=TEST_COLLECTION,
         )
-    time.sleep(0.5)  # Qdrant 索引最终一致性
+    # R8#14：索引最终一致性（R8#9 批次将改轮询，见后续提交）
+    time.sleep(0.5)
     return store
 
 
@@ -425,9 +440,10 @@ def test_image_intent_hits_photo_points():
         dense, sparse = encode_query(d["text"])
         store.upsert_content(
             content_id=d["id"], text=d["text"], dense=dense, sparse=sparse,
-            payload={"content_type": d["ct"], "text": d["text"]},
+            payload={"content_type": d["ct"], "text": d["text"], "benchmark": BENCH_MARK},
             collection=TEST_COLLECTION,
         )
+    # R8#14：索引最终一致性（R8#9 批次将改轮询，见后续提交）
     time.sleep(0.5)
 
     # image 意图：应命中 photo 点（生产语义），不命中 text 点
