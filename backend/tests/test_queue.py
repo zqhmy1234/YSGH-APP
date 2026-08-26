@@ -12,8 +12,15 @@ from redis import Redis
 
 @pytest.fixture(scope="module")
 def redis_client():
-    r = Redis.from_url(settings.redis_url, decode_responses=False)  # RQ 需二进制连接
-    r.flushdb()
+    from urllib.parse import urlsplit, urlunsplit
+
+    # R8#3：默认 redis_url 指向共享 /0 库——flushdb() 会清空他人/生产 RQ/缓存数据
+    # （破坏性，与 P1C 已解决的 Qdrant collection 隔离同类）。改连独立测试库 /15：
+    # flushdb 只清本文件写入的 key，不影响共享 Redis。
+    parts = urlsplit(settings.redis_url)
+    test_url = urlunsplit((parts.scheme, parts.netloc, "/15", parts.query, parts.fragment))
+    r = Redis.from_url(test_url, decode_responses=False)  # RQ 需二进制连接
+    r.flushdb()  # 只清独立测试库
     yield r
     r.flushdb()
 
