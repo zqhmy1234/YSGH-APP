@@ -8,8 +8,11 @@
                            含 messages / upload_tasks+upload_chunks / 画像域等）
   - vector_collection   —— 把默认 Qdrant collection 指到 test_* 隔离库
                            （测试不再写生产 yishu_contents）
+  - _sensitive_words_state —— R8#12：敏感词模块全局热词状态 autouse 快照/恢复
+                           （唯一 autouse，防顺序敏感 flaky，为并行化铺路）
 
-注意：所有 fixture 均为显式请求（无 autouse），避免影响存量测试行为。
+注意：除 _sensitive_words_state（R8#12 明确要求 autouse 隔离进程内全局状态）外，
+所有 fixture 均为显式请求（无 autouse），避免影响存量测试行为。
 """
 from __future__ import annotations
 
@@ -179,6 +182,43 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
 def cleanup_user():
     """返回统一清理函数 cleanup_user_data（供 teardown 调用）"""
     return cleanup_user_data
+
+
+# ---------------------------------------------------------------------------
+# 敏感词模块全局状态隔离（R8#12）
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _sensitive_words_state(monkeypatch):
+    """R8#12：敏感词模块全局热词状态快照/恢复（消除顺序敏感 flaky）。
+
+    背景（侦察实测）：add_violation_word 会原地变异 lru_cache 内的事件词集合
+    （_load_event_words()）与进程级 _EVENT_REFLUX_WORDS；不恢复则跨用例残留，
+    test_sensitive_words 顺序/选择敏感（test_hard_rule_independent 首跑失败），
+    pytest-xdist 并行会放大随机失败。
+    方案：monkeypatch 把进程级回流词集合换成全新 set（用后自动还原原集合）；
+    事件词表缓存内容在 teardown 原地重建为快照（lru_cache 引用不变）。
+    autouse 幂等无害：不碰敏感词状态的用例零影响。
+    """
+    import app.services.external.sensitive_words as sw
+
+    # 快照：事件词表缓存内容（add_violation_word 会原地变异其 set）
+    event_words = sw._load_event_words()
+    event_snapshot = {cat: set(words) for cat, words in event_words.items()}
+    # 进程级回流词集合替换为全新 set：monkeypatch 用例结束后自动还原原集合
+    monkeypatch.setattr(sw, "_EVENT_REFLUX_WORDS", set())
+
+    yield
+
+    # 事件词表缓存原地重建（保留 lru_cache 引用；删掉快照外的多余类别）
+    for cat in list(event_words.keys()):
+        if cat not in event_snapshot:
+            del event_words[cat]
+    for cat, words in event_snapshot.items():
+        cur = event_words.setdefault(cat, set())
+        cur.clear()
+        cur.update(words)
 
 
 # ---------------------------------------------------------------------------
