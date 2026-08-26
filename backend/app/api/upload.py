@@ -22,17 +22,25 @@ from app.core.errors import (
     ERR_UPLOAD_006,
     ERR_UPLOAD_007,
     ERR_UPLOAD_008,
+    ERR_UPLOAD_009,
+    ERR_UPLOAD_010,
     ApiError,
 )
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.services import upload as upload_svc
+from app.services.errors import ConflictError, NotFoundError, TooLargeError
 from app.services.external.storage import get_storage_backend
 
 logger = logging.getLogger("yishu.upload")
 
 router = APIRouter(prefix="/api/v1/upload", tags=["upload"])
+
+
+def _exc_msg(exc: Exception) -> str:
+    """异常消息统一取法：typed ServiceError 用 .message（规避 KeyError 引号 str），其余回退 str()"""
+    return getattr(exc, "message", None) or str(exc)
 
 
 @router.post("/init", response_model=ApiResponse[dict])
@@ -79,7 +87,8 @@ def init_upload(
             db, user.id, client_upload_id, file_name, file_size, chunk_size, storage
         )
     except ValueError as exc:
-        raise ApiError(ERR_UPLOAD_001, str(exc), http=422) from exc
+        msg = _exc_msg(exc)
+        raise ApiError(ERR_UPLOAD_001, msg, http=422) from exc
     return ApiResponse(data={
         "upload_id": task.id,
         "chunk_size": task.chunk_size,
@@ -128,10 +137,12 @@ def _upload_chunk_impl(
     data = file.file.read()
     try:
         result = upload_svc.upload_chunk(db, upload_id, chunk_index, data, chunk_hash, user_id=user.id)
-    except KeyError as exc:
-        raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
+    except NotFoundError as exc:
+        raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_UPLOAD_009, exc.message, http=409) from exc
     except ValueError as exc:
-        raise ApiError(ERR_UPLOAD_003, str(exc), http=422) from exc
+        raise ApiError(ERR_UPLOAD_003, _exc_msg(exc), http=422) from exc
     return ApiResponse(data=result)
 
 
@@ -158,10 +169,18 @@ def complete_upload(
         # 集成：对象已在存储 → 建 contents 记录（cos_key）+ 入队 process_content
         content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
         result["content_id"] = content_id
-    except KeyError as exc:
-        raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
+    except NotFoundError as exc:
+        # 任务不存在/越权 → 404；content_id 不存在或非本人 → 404（不再误报 422 UPLOAD_004）
+        raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
+    except ConflictError as exc:
+        # 分片未齐 → 409（此前误报 422 UPLOAD_004）
+        raise ApiError(ERR_UPLOAD_009, exc.message, http=409) from exc
+    except TooLargeError as exc:
+        # >200MB 走客户端直传 → 413（此前误报 422）
+        raise ApiError(ERR_UPLOAD_010, exc.message, http=413) from exc
     except ValueError as exc:
-        raise ApiError(ERR_UPLOAD_004, str(exc), http=422) from exc
+        # 建内容参数校验（ValidationError 及防御性兜底原始 ValueError）→ 422 UPLOAD_004
+        raise ApiError(ERR_UPLOAD_004, _exc_msg(exc), http=422) from exc
     return ApiResponse(data=result)
 
 
@@ -173,11 +192,11 @@ def upload_status(
 ):
     try:
         return ApiResponse(data=upload_svc.get_status(db, upload_id, user_id=user.id))
-    except KeyError as exc:
-        raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
+    except NotFoundError as exc:
+        raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
     except ValueError as exc:
         # TD-P3 M1：任务分片数异常（遗留恶意行）→ 422 而非 500/OOM
-        raise ApiError(ERR_UPLOAD_003, str(exc), http=422) from exc
+        raise ApiError(ERR_UPLOAD_003, _exc_msg(exc), http=422) from exc
 
 
 @router.get("/sts", response_model=ApiResponse[dict])

@@ -61,6 +61,8 @@ _ERROR_SPECS: list[ErrorSpec] = [
     # 事件域
     ErrorSpec("EVENT_004", "事件不存在或不属于当前用户", 404),
     ErrorSpec("EVENT_005", "内容不存在或不属于当前用户", 404),
+    ErrorSpec("EVENT_006", "事件操作冲突（内容不属于该事件 / 封面不是事件成员）", 409),
+    ErrorSpec("EVENT_007", "事件参数非法（拆分内容列表为空等）", 422),
     # 消息域
     ErrorSpec("MSG_001", "status 参数非法", 422),
     ErrorSpec("MSG_002", "消息不存在", 404),
@@ -82,6 +84,8 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("UPLOAD_006", "STS 暂不可用，请走后端中转上传", 503, retryable=True),
     ErrorSpec("UPLOAD_007", "upload_mode 非法", 422),
     ErrorSpec("UPLOAD_008", "STS 直传未接入（生产未配置 COS/STS）", 501),
+    ErrorSpec("UPLOAD_009", "上传分片状态冲突（分片未齐 / 同片内容不一致）", 409),
+    ErrorSpec("UPLOAD_010", "文件超过后端中转大小上限（>200MB 请走客户端直传）", 413),
     # 微信域
     ErrorSpec("WECHAT_001", "企微 URL 验证失败", 403),
     ErrorSpec("WECHAT_002", "企微回调处理失败", 403),
@@ -118,6 +122,8 @@ ERR_CORR_003 = "CORR_003"
 ERR_CORR_004 = "CORR_004"
 ERR_EVENT_004 = "EVENT_004"
 ERR_EVENT_005 = "EVENT_005"
+ERR_EVENT_006 = "EVENT_006"
+ERR_EVENT_007 = "EVENT_007"
 ERR_MSG_001 = "MSG_001"
 ERR_MSG_002 = "MSG_002"
 ERR_PROFILE_SENSITIVE_001 = "PROFILE_SENSITIVE_001"
@@ -134,6 +140,8 @@ ERR_UPLOAD_005 = "UPLOAD_005"
 ERR_UPLOAD_006 = "UPLOAD_006"
 ERR_UPLOAD_007 = "UPLOAD_007"
 ERR_UPLOAD_008 = "UPLOAD_008"
+ERR_UPLOAD_009 = "UPLOAD_009"
+ERR_UPLOAD_010 = "UPLOAD_010"
 ERR_WECHAT_001 = "WECHAT_001"
 ERR_WECHAT_002 = "WECHAT_002"
 ERR_WECHAT_003 = "WECHAT_003"

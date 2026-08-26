@@ -18,6 +18,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, Event, EventEditLog, EventItem, OfflineQueue
+from app.services.errors import ConflictError, NotFoundError, ValidationError
 from app.services.event_aggregation.pipeline import RawPhoto
 
 logger = logging.getLogger("yishu.events")
@@ -667,12 +668,12 @@ def get_timeline(
 
 
 def _get_event(db: Session, user_id: str, event_id: str) -> Event:
-    """取事件并校验归属（不存在/非本人 → 抛 ValueError）"""
+    """取事件并校验归属（不存在/非本人 → 抛 NotFoundError，api 层映射 404）"""
     ev = db.execute(
         select(Event).where(Event.id == event_id, Event.deleted_at.is_(None))
     ).scalar_one_or_none()
     if ev is None or str(ev.user_id) != user_id:
-        raise ValueError(f"事件不存在或不属于当前用户: {event_id}")
+        raise NotFoundError(f"事件不存在或不属于当前用户: {event_id}")
     return ev
 
 
@@ -752,7 +753,7 @@ def split_event(db: Session, user_id: str, event_id: str, content_ids: list[str]
     """用户手动拆分（B3-5）：从事件中拆出指定内容 → 新建独立事件。"""
     ev = _get_event(db, user_id, event_id)
     if not content_ids:
-        raise ValueError("拆分内容列表不能为空")
+        raise ValidationError("拆分内容列表不能为空")
     # 校验内容确实属于该事件
     owned = set(
         db.execute(
@@ -761,7 +762,7 @@ def split_event(db: Session, user_id: str, event_id: str, content_ids: list[str]
     )
     invalid = [c for c in content_ids if c not in owned]
     if invalid:
-        raise ValueError(f"内容不属于该事件: {invalid}")
+        raise ConflictError(f"内容不属于该事件: {invalid}")
     # 新建独立事件（level 同源；时间窗取拆出内容）
     new_ev = Event(
         user_id=user_id,
@@ -815,7 +816,7 @@ def set_event_cover(db: Session, user_id: str, event_id: str, cover_content_id: 
             ).scalars().all()
         }
         if str(cover_content_id) not in owned:
-            raise ValueError("封面内容不属于该事件")
+            raise ConflictError("封面内容不属于该事件")
         ev.cover_content_id = cover_content_id
     else:
         ev.cover_content_id = None

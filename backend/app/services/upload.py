@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.queue import enqueue_high
 from app.db.models import Content, UploadChunk, UploadTask
+from app.services.errors import ConflictError, NotFoundError, TooLargeError, ValidationError
 from app.services.external.storage import best_effort_delete, get_storage_backend
 from app.services.file_magic import is_photo_bytes
 from app.services.pipeline import process_content
@@ -59,17 +60,17 @@ def _safe_enqueue_high(func, *args, **kwargs) -> None:
 def _require_photo_bytes(cos_key: str) -> None:
     """照片原件魔数校验（P0-3 · 审查 H3）：分片 complete 路径此前完全不校验文件类型
 
-    伪装文件（`.jpg` 扩展名 + 任意字节）→ ValueError（API 层 422），并尽力删除
-    刚落的对象防孤儿；对象缺失 → ValueError。
+    伪装文件（`.jpg` 扩展名 + 任意字节）→ ValidationError（API 层 422），并尽力删除
+    刚落的对象防孤儿；对象缺失 → NotFoundError（API 层 404）。
     """
     backend = get_storage_backend()
     try:
         data = backend.get_object(cos_key)
     except KeyError:
-        raise ValueError("对象存储中未找到已上传文件") from None
+        raise NotFoundError("对象存储中未找到已上传文件") from None
     if not is_photo_bytes(data):
         best_effort_delete(cos_key, backend)
-        raise ValueError("文件内容与照片格式不符（魔数校验失败）")
+        raise ValidationError("文件内容与照片格式不符（魔数校验失败）")
 
 
 def _sha256(data: bytes) -> str:
@@ -97,13 +98,13 @@ def init_upload(
 ) -> UploadTask:
     """创建/复用上传任务（client_upload_id 幂等）"""
     if file_size <= 0:
-        raise ValueError("file_size 必须 > 0")
+        raise ValidationError("file_size 必须 > 0")
     if file_size > MAX_UPLOAD_FILE_SIZE:
-        raise ValueError(f"file_size 超过上限（{MAX_UPLOAD_FILE_SIZE // (1024 * 1024)}MB）")
+        raise ValidationError(f"file_size 超过上限（{MAX_UPLOAD_FILE_SIZE // (1024 * 1024)}MB）")
     if chunk_size <= 0:
-        raise ValueError("chunk_size 必须 > 0")
+        raise ValidationError("chunk_size 必须 > 0")
     if chunk_size < MIN_CHUNK_SIZE:
-        raise ValueError(f"chunk_size 过小（最小 {MIN_CHUNK_SIZE} 字节）")
+        raise ValidationError(f"chunk_size 过小（最小 {MIN_CHUNK_SIZE} 字节）")
 
     existing = db.scalar(
         select(UploadTask).where(
@@ -136,7 +137,7 @@ def init_upload(
 def _assert_owner(task: UploadTask, user_id: str) -> None:
     """归属校验（审查 CRITICAL 修复）：任务必须属于当前用户，否则按不存在处理"""
     if str(task.user_id) != str(user_id):
-        raise KeyError(f"上传任务不存在: {task.id}")
+        raise NotFoundError(f"上传任务不存在: {task.id}")
 
 
 def upload_chunk(
@@ -150,7 +151,7 @@ def upload_chunk(
     """上传单片（幂等：同 index 同 hash 返回 duplicate；同 index 异 hash 拒绝）"""
     task = db.get(UploadTask, upload_id)
     if task is None:
-        raise KeyError(f"上传任务不存在: {upload_id}")
+        raise NotFoundError(f"上传任务不存在: {upload_id}")
     if user_id is not None:
         _assert_owner(task, user_id)
     if task.status == "completed":
@@ -159,13 +160,13 @@ def upload_chunk(
     # 审查修复(P1-02)：分片大小校验——客户端自报 chunk_size 不可信，
     # 单片超限直接拒绝（此前无校验，可单片传超大块吃满内存/存储）。
     if len(data) > task.chunk_size:
-        raise ValueError(f"分片过大: {len(data)} > 声明分片大小 {task.chunk_size}")
+        raise ValidationError(f"分片过大: {len(data)} > 声明分片大小 {task.chunk_size}")
 
     actual_hash = _sha256(data)
     if chunk_hash and chunk_hash != actual_hash:
-        raise ValueError(f"分片哈希不匹配: 期望 {chunk_hash} 实际 {actual_hash[:16]}…")
+        raise ValidationError(f"分片哈希不匹配: 期望 {chunk_hash} 实际 {actual_hash[:16]}…")
     if not (0 <= chunk_index < task.chunk_count):
-        raise ValueError(f"chunk_index 越界: {chunk_index} (0..{task.chunk_count - 1})")
+        raise ValidationError(f"chunk_index 越界: {chunk_index} (0..{task.chunk_count - 1})")
 
     existing = db.scalar(
         select(UploadChunk).where(
@@ -176,7 +177,7 @@ def upload_chunk(
     if existing:
         if existing.chunk_hash == actual_hash:
             return {"status": "duplicate", "chunk_index": chunk_index}
-        raise ValueError("同 index 已存在不同内容的片（客户端状态异常）")
+        raise ConflictError("同 index 已存在不同内容的片（客户端状态异常）")
 
     backend = get_storage_backend(task.storage)
     backend.put_object(_staging_key(upload_id, chunk_index), data)
@@ -210,7 +211,7 @@ def upload_chunk(
         )
         if winner is not None and winner.chunk_hash == actual_hash:
             return {"status": "duplicate", "chunk_index": chunk_index}
-        raise ValueError("同 index 已存在不同内容的片（客户端状态异常）")
+        raise ConflictError("同 index 已存在不同内容的片（客户端状态异常）")
 
     if task.status == "pending":
         task.status = "uploading"
@@ -222,12 +223,12 @@ def get_status(db: Session, upload_id: str, user_id: str | None = None) -> dict:
     """断点续传状态：已传分片列表 + 缺失分片列表"""
     task = db.get(UploadTask, upload_id)
     if task is None:
-        raise KeyError(f"上传任务不存在: {upload_id}")
+        raise NotFoundError(f"上传任务不存在: {upload_id}")
     if user_id is not None:
         _assert_owner(task, user_id)
     # TD-P3 M1 守卫：分片数异常（迁移前恶意任务行）直接拒绝，不物化巨型缺失列表
     if task.chunk_count > MAX_CHUNK_COUNT:
-        raise ValueError(f"任务分片数异常（{task.chunk_count}），请重新上传")
+        raise ValidationError(f"任务分片数异常（{task.chunk_count}），请重新上传")
     chunks = db.scalars(
         select(UploadChunk.chunk_index)
         .where(UploadChunk.upload_id == upload_id)
@@ -266,7 +267,7 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     try:
         photo_meta = parse_photo_meta(meta)
     except MetaValidationError as exc:
-        raise ValueError(str(exc)) from exc
+        raise ValidationError(str(exc)) from exc
     meta_obj = photo_meta.raw
     taken_at = photo_meta.taken_at
     gps_lat = photo_meta.gps_lat
@@ -275,10 +276,10 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
 
     upload_mode = meta_obj.get("upload_mode", "original")
     if upload_mode not in VALID_UPLOAD_MODES:
-        raise ValueError(f"upload_mode 非法（可选 {'/'.join(VALID_UPLOAD_MODES)}）")
+        raise ValidationError(f"upload_mode 非法（可选 {'/'.join(VALID_UPLOAD_MODES)}）")
     on_wifi = meta_obj.get("on_wifi")
     if on_wifi is not None and not isinstance(on_wifi, bool):
-        raise ValueError("on_wifi 必须为布尔值")
+        raise ValidationError("on_wifi 必须为布尔值")
     extra = dict(meta_obj.get("extra")) if isinstance(meta_obj.get("extra"), dict) else {}
     extra["upload_mode"] = upload_mode
     if on_wifi is not None:
@@ -288,7 +289,7 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     # 契约：meta.content_type=voice + duration_ms + source + extra.file_name）
     content_type = meta_obj.get("content_type", "photo")
     if content_type not in ("photo", "voice"):
-        raise ValueError("content_type 非法（可选 photo/voice）")
+        raise ValidationError("content_type 非法（可选 photo/voice）")
     if content_type == "voice":
         return _register_voice_content(
             db, user_id, cos_key, meta_obj, extra, taken_at, gps_lat, gps_lng, source
@@ -314,9 +315,13 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
         backend = get_storage_backend()
         data = backend.get_object(cos_key)
         # P0-3（审查 H3）：resize_to_jpeg 解码即校验（魔数+维度上限，DecompressionBombError
-        # 捕获为 ValueError → 422），thumbnail_meta 分支保持同步解码但受限；
+        # 捕获为 ValidationError → 422），thumbnail_meta 分支保持同步解码但受限；
         # 遗留登记：完整解码移 worker（与 original 分支一致入 generate_thumbnail_job）。
-        backend.put_object(thumbnail_key, resize_to_jpeg(data))
+        try:
+            thumb = resize_to_jpeg(data)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        backend.put_object(thumbnail_key, thumb)
         extra["original_pending"] = True
         record = Content(
             user_id=user_id,
@@ -345,7 +350,7 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     if content_id:
         existing = db.get(Content, content_id)
         if existing is None or str(existing.user_id) != str(user_id):
-            raise ValueError("content_id 不存在或不属于当前用户")
+            raise NotFoundError("content_id 不存在或不属于当前用户")
         _require_photo_bytes(cos_key)  # P0-3：补传原件同样魔数校验
         existing.cos_key = cos_key
         existing.status = "processing"
@@ -421,7 +426,7 @@ def _register_voice_content(
     except KeyError:
         data = None
     if not data:
-        raise ValueError("对象存储中未找到已上传文件")
+        raise NotFoundError("对象存储中未找到已上传文件")
     raw_extra = meta.get("extra")
     file_name = raw_extra.get("file_name", "audio") if isinstance(raw_extra, dict) else "audio"
     safe = "".join(c for c in str(file_name) if c.isalnum() or c in "._-") or "audio"
@@ -439,7 +444,7 @@ def _register_voice_content(
         try:
             voice_extra["duration_ms"] = int(duration_ms)
         except (TypeError, ValueError):
-            raise ValueError("duration_ms 必须为整数（毫秒）") from None
+            raise ValidationError("duration_ms 必须为整数（毫秒）") from None
 
     record = Content(
         user_id=user_id,
@@ -468,7 +473,7 @@ def complete_upload(db: Session, upload_id: str, user_id: str | None = None) -> 
     """合并分片 → 落最终对象（幂等：已完成直接返回）"""
     task = db.get(UploadTask, upload_id)
     if task is None:
-        raise KeyError(f"上传任务不存在: {upload_id}")
+        raise NotFoundError(f"上传任务不存在: {upload_id}")
     if user_id is not None:
         _assert_owner(task, user_id)
     if task.status == "completed":
@@ -476,10 +481,10 @@ def complete_upload(db: Session, upload_id: str, user_id: str | None = None) -> 
 
     status = get_status(db, upload_id)
     if status["missing_chunks"]:
-        raise ValueError(f"分片未齐: 缺 {status['missing_chunks']}")
+        raise ConflictError(f"分片未齐: 缺 {status['missing_chunks']}")
 
     if task.file_size > MAX_INLINE_MERGE_BYTES:
-        raise ValueError("文件过大，请走客户端直传（>200MB）")
+        raise TooLargeError("文件过大，请走客户端直传（>200MB）")
 
     backend = get_storage_backend(task.storage)
     buf = bytearray()
@@ -487,7 +492,7 @@ def complete_upload(db: Session, upload_id: str, user_id: str | None = None) -> 
         buf.extend(backend.get_object(_staging_key(upload_id, i)))
     merged = bytes(buf)
     if len(merged) != task.file_size:
-        raise ValueError(f"合并后大小不符: 期望 {task.file_size} 实际 {len(merged)}")
+        raise ValidationError(f"合并后大小不符: 期望 {task.file_size} 实际 {len(merged)}")
 
     backend.put_object(task.file_key, merged)
     for i in range(task.chunk_count):

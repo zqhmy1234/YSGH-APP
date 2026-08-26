@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 03:27 · commit 88cfb63 · ts=1787772467
+- **错误**：ruff I001 import block un-sorted in services/upload.py
+- **根因**：手插 app.services.errors 导入未按字母序（errors < external < file_magic < pipeline < thumbnails < upload_meta），fast gate lint 阻断
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 02:36 · commit 499e06c · ts=1787769416
 - **错误**：upsert_profile_sensitive 改 ON CONFLICT 后 test_profile_sensitive_crud 失败：第二次 upsert(caution) 返回的 row2.disposition 仍是 forbid（旧值）
 - **根因**：SessionLocal expire_on_commit=False：Core pg_insert/update 直接执行不会更新 ORM identity-map 缓存对象；同一会话先 SELECT 缓存了旧行，提交后重查 select() 命中缓存返回旧对象（disposition 未刷新）
