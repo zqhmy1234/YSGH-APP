@@ -45,5 +45,8 @@ setfit>=1.1
 cos-python-sdk-v5>=1.9.33
 minio>=7.2.0
 
+# --- 缩略图管线（B4 后端：PIL 生成，Wave3 AgentG；generate_test_photos 亦依赖）---
+Pillow>=10.0.0
+
 # --- 长录音 VAD 分段（B5a-2 · P1-16）---
 webrtcvad-wheels>=2.0.10

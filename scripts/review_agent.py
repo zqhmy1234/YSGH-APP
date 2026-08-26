@@ -4,6 +4,7 @@
 用法：
   python scripts/review_agent.py          # 快速门禁（默认，秒级）：只查本次提交涉及的文件
   python scripts/review_agent.py --full   # 全量门禁：仓库级语法/lint/密钥扫描 + 全量测试（集成/CI 前跑）
+  python scripts/review_agent.py --full --skip-tests  # 静态全仓门禁（CI 快速层：语法/lint/密钥，不跑测试）
   python scripts/review_agent.py --path <dir>   # （兼容占位，忽略）
 
 职责（Commit Gate，写入 AGENTS.md）：
@@ -71,8 +72,17 @@ def run(cmd: list[str], cwd: Path | None = None, timeout: int = 300) -> tuple[in
 
 
 def _skip_path(parts: tuple[str, ...]) -> bool:
-    """harness 工具链扫描排除（B2 决策：client/ 为 uni-app x，非 Python 工具链）"""
-    return ".git" in parts or ".cowork-temp" in parts or "client" in parts
+    """harness 工具链扫描排除（B2 决策：client/ 为 uni-app x，非 Python 工具链）
+
+    2026-08-26：加 .wt/（并行开发 worktree 副本——每个都是完整仓库，
+    全量模式会重复扫 5 份 backend，静态门禁 150s→~30s）。
+    """
+    return (
+        ".git" in parts
+        or ".cowork-temp" in parts
+        or "client" in parts
+        or (".wt" in parts or (len(parts) > 0 and parts[0] == ".wt"))
+    )
 
 
 def _git_files(cached: bool) -> list[str]:
@@ -134,12 +144,19 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
 
 
 def check_syntax(files: list[str]) -> tuple[bool, str]:
-    """编译指定 .py，捕获语法错误"""
+    """编译指定 .py，捕获语法错误
+
+    2026-08-26 性能修复：原实现逐个 spawn `python -m py_compile`（950 文件 ≈ 5 分钟）
+    → 改进程内 py_compile.compile（同进程编译，<10s）。
+    """
+    import py_compile
+
     errors: list[str] = []
     for f in files:
-        code, out = run([sys.executable, "-m", "py_compile", str(ROOT / f)])
-        if code != 0:
-            errors.append(f"{f}: {out.strip()[:300]}")
+        try:
+            py_compile.compile(str(ROOT / f), doraise=True)
+        except py_compile.PyCompileError as exc:
+            errors.append(f"{f}: {exc.msg or exc}")
     return (not errors), ("\n".join(errors) if errors else f"{len(files)} files compiled OK")
 
 
@@ -240,6 +257,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Pre-Commit 代码质量审核")
     parser.add_argument("--path", default=str(ROOT), help="审核目录（兼容占位）")
     parser.add_argument("--full", action="store_true", help="全量门禁（仓库级扫描 + 全量测试）")
+    parser.add_argument("--skip-tests", action="store_true", help="--full 时跳过全量测试（CI 快速静态层用）")
     args = parser.parse_args()
 
     mode = "full" if args.full else "fast"
@@ -251,7 +269,7 @@ def main() -> int:
         "secrets": check_secrets(secret_files),
         "todos": check_todos(secret_files),
     }
-    if args.full:
+    if args.full and not args.skip_tests:
         checks["tests"] = run_tests()
 
     blocking = {k: v for k, v in checks.items() if not v[0]}
@@ -293,6 +311,8 @@ def main() -> int:
             print(f"    ... ({len(out.splitlines()) - 8} 行省略)")
     if not args.full:
         print("\n💡 全量门禁（含全量测试，完成/集成前跑）：python scripts/review_agent.py --full")
+    elif args.skip_tests:
+        print("\n💡 静态门禁完成（已跳过全量测试）；全量验证：python scripts/review_agent.py --full")
 
     print("\n" + "=" * 60)
     if passed:

@@ -1,9 +1,12 @@
 # 忆述光华 · CI（S2-05 收尾项，对齐 S1-04「CI 接入（lint+单测+构建检查，main 保护）」）
-# 策略：CI = 全量门禁（2026-08-26 拆分后）——本地 commit 只跑快速门禁（秒级），
-# 全量门禁（仓库级语法/lint/密钥扫描 + 全量测试）由 CI 与集成验收承担。
-# 命令：python scripts/review_agent.py --full
-# 服务：postgres（yishu 隔离库）+ redis（RQ 队列），与 backend/.env 本地口径一致。
-# 触发：develop/main 推送 + PR → develop/main（main 受保护，只接受 develop 合并）。
+# 策略（2026-08-26 重构：快 + 拦截 + 高质量）：
+#   双层并行：
+#     - fast-gate：静态全仓门禁（语法/lint/密钥/TODO，~30s）——PR/推送即时反馈
+#     - full-gate：全量门禁（pytest 全量 + api_smoke + research + 覆盖率）——最终把关
+#   服务：postgres（yishu 隔离库）+ redis（RQ 队列）+ qdrant（向量库，全量覆盖不 deselect）
+#   缓存：HF 模型缓存（BGE-M3 ~2.2GB 免重复下载，首次冷缓存后大幅提速）
+#   触发：develop/main 推送 + PR → develop/main（main 受保护，只接受 develop 合并；
+#         建议 develop 也开 branch protection 要求两 job 通过，见 docs/项目API密钥清单与获取.md 同批讨论）
 name: CI
 
 on:
@@ -17,10 +20,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend-quality:
-    name: Backend Quality Gate
+  fast-gate:
+    name: Fast Gate（静态语法/lint/密钥）
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run static gate (syntax/lint/secrets/todos, no tests)
+        run: python scripts/review_agent.py --full --skip-tests
+
+  full-gate:
+    name: Full Gate（全量 pytest + api_smoke + research）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -45,6 +67,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      qdrant:
+        image: qdrant/qdrant:v1.9.7
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/healthz || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -56,6 +87,14 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: HF model cache (BGE-M3 ~2.2GB 免重复下载)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-${{ runner.os }}-${{ hashFiles('backend/app/services/embedding.py', 'backend/app/services/rerank.py', 'backend/app/services/classifier.py') }}
+          restore-keys: |
+            hf-models-${{ runner.os }}-
+
       - name: Install dependencies
         run: |
           pip install -r backend/requirements.txt
@@ -65,17 +104,17 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
           PGPASSWORD=admin psql -h localhost -U postgres -f scripts/setup_pg.sql
-          PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -f backend/sql/schema.sql
-          PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
+          PGPASSWORD=admin psql -h localhost -U yishu_app -d yishu -f backend/sql/schema.sql
+          PGPASSWORD=admin psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
 
       - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
         run: python scripts/generate_test_photos.py
 
-
-      - name: Run quality gate (review_agent)
+      - name: Run quality gate (review_agent --full)
         env:
           DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
           REDIS_URL: redis://localhost:6379/0
+          QDRANT_URL: http://localhost:6333
           MOCK_EXTERNAL_AI: "true"
           # 本地 embedding.py 默认 HF_HUB_OFFLINE=1（防国内网络 HEAD 超时挂起）；
           # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
