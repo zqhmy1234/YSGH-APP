@@ -33,16 +33,22 @@ LABEL_CN_MAP = dict(zip(DEFAULT_CLASSES, DEFAULT_CLASSES_CN, strict=True))
 
 
 @lru_cache(maxsize=1)
-def _load() -> tuple[object, list[str], list[str]]:
+def _load() -> tuple[object | None, list[str], list[str]]:
     """加载模型 + 标签映射（进程内单例）
 
     2026-08-25 内存优化：model_kwargs torch_dtype=float16（SetFit 底座=BGE-M3 全参微调，
     fp32 实测 2.2GB → fp16 约 1.2GB；CPU 推理可用，test_setfit 回归覆盖）。
+    2026-08-26 降级：模型目录缺失/加载失败（CI 全新检出无 gitignore 权重、生产未预置）
+    → 返回 None，classify/classify_batch 走确定性降级（mixed），不崩溃（与 rerank/caption 降级同模式）。
     """
-    import torch
-    from setfit import SetFitModel
+    try:
+        import torch
+        from setfit import SetFitModel
 
-    model = SetFitModel.from_pretrained(_MODEL_DIR, model_kwargs={"torch_dtype": torch.float16})
+        model = SetFitModel.from_pretrained(_MODEL_DIR, model_kwargs={"torch_dtype": torch.float16})
+    except Exception as exc:  # noqa: BLE001 —— 模型不可用降级（不阻断分类/纠错链路）
+        logger.warning("SetFit 模型不可用（%s），分类降级为 mixed 规则结果: %s", _MODEL_DIR, exc)
+        return None, DEFAULT_CLASSES, DEFAULT_CLASSES_CN
     labels_path = _MODEL_DIR / "labels.json"
     if labels_path.exists():
         meta = json.loads(labels_path.read_text(encoding="utf-8"))
@@ -53,6 +59,16 @@ def _load() -> tuple[object, list[str], list[str]]:
     return model, classes, classes_cn
 
 
+def _fallback_result(text: str, classes: list[str], classes_cn: list[str]) -> dict:
+    """模型不可用时确定性降级：mixed（不猜具体类，避免错误分类污染纠错/画像）"""
+    return {
+        "label": "mixed",
+        "label_cn": "混合",
+        "confidence": 0.0,
+        "scores": [{"label": c, "label_cn": cn, "score": 0.0} for c, cn in zip(classes, classes_cn, strict=True)],
+    }
+
+
 def classify(text: str) -> dict:
     """单条分类 → {label, label_cn, confidence, scores}
 
@@ -61,6 +77,8 @@ def classify(text: str) -> dict:
     if not text or not text.strip():
         raise ValueError("text 不能为空")
     model, classes, classes_cn = _load()
+    if model is None:
+        return _fallback_result(text, classes, classes_cn)
     probs = model.predict_proba([text])[0]
     idx = int(probs.argmax())
     return {
@@ -83,6 +101,8 @@ def classify_batch(texts: list[str]) -> list[dict]:
     if not texts:
         return []
     model, classes, classes_cn = _load()
+    if model is None:
+        return [_fallback_result(t, classes, classes_cn) for t in texts]
     probs = model.predict_proba(list(texts))
     results = []
     for p in probs:

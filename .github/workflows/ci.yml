@@ -68,6 +68,10 @@ jobs:
           PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -f backend/sql/schema.sql
           PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
 
+      - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
+        run: python scripts/generate_test_photos.py
+
+
       - name: Run quality gate (review_agent)
         env:
           DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
