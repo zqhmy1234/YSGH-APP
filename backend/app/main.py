@@ -26,6 +26,7 @@ from app.api import (  # noqa: E501
 )
 from app.api.contents import profile_sensitive_router
 from app.api.event_items import router as event_items_router
+from app.api.thumbnails import router as thumbnails_router  # B4 缩略图（Wave3 AgentG 提供，集成接线）
 from app.core.config import settings
 from app.core.errors import install_error_handlers
 from app.core.middleware import RequestIDMiddleware
@@ -77,6 +78,7 @@ app.include_router(auth.router)
 app.include_router(contents.router)
 app.include_router(profile_sensitive_router)  # B5b FIX-4：画像级敏感增删查（Wave1 AgentC 提供，集成接线）
 app.include_router(event_items_router)  # B3-4 照片→事件反向入口（Wave2 AgentE 提供）
+app.include_router(thumbnails_router)  # B4 缩略图 GET /api/v1/thumbnails/{content_id}（Wave3 AgentG 提供）
 app.include_router(events.router)
 app.include_router(search.router)
 app.include_router(classify.router)

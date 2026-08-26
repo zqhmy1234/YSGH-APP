@@ -237,7 +237,7 @@ CREATE TABLE profile_sensitive (               -- 画像级敏感，永不过期
 CREATE TABLE profile_l2_evidence (             -- L2 维度证据
     id          bigserial PRIMARY KEY,
     dimension   text NOT NULL,
-    user_id     uuid NOT NULL REFERENCES users(id),
+    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     evidence_content_ids jsonb NOT NULL DEFAULT '[]',
     created_at  timestamptz NOT NULL DEFAULT now()
 );

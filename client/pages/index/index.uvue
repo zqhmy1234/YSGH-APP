@@ -6,6 +6,9 @@
 			<text class="header-sub">翻看记忆，去年今日</text>
 		</view>
 
+		<!-- 同步状态横幅（B4 客户端：Wave3 AgentH 组件，集成 Agent 接线一行） -->
+		<UploadStatusBanner />
+
 		<scroll-view class="scroll" scroll-y refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
 			<!-- 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄；划掉 dismiss） -->
 			<view v-if="echo != null" class="echo-card">
