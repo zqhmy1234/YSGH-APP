@@ -187,3 +187,11 @@ init.ps1：通过
 - 遗留：STS root ARN 降级、thumbnail_meta 移 worker、processing 重扫、孤儿扫描、分队列 worker（代码注释登记）
 - 待用户决策：FinetuneJob 删/补、presign 删/留、短信通道 501 冻结、依赖升版
 - 下一步：P1-A 配置/契约（.env.example 对齐/信封统一/OpenAPI契约.md 生成式）+ P1-B 性能（aggregate_user 增量游标/N+1/索引）+ 测试（Qdrant 隔离/RAG 进 CI）→ P2 死代码/重复收敛
+
+
+## Wave4 AgentK 集成 + 决策落地（2026-08-26 22:20）
+
+- merge wave4-agentK：B5d 后台域（yishu-background-tasks 插件：BgTaskWorker 单队列 P0-P4/UNMETERED/指数退避/unique KEEP/2h PeriodicWork/4 类 attribution tag + dataSync 前台服务 30min 自停 + 标准基座降级 pending+setInterval）；接口契约 initBackgroundTasks(2)/setBackgroundTaskHandler/drainPendingTask，H 在 registerBackgroundSync() 接线（sync/voice_transcribe/sync_photo/event_aggregate/profile_fetch 映射见插件 README）；自定义基座真验项待办
+- 代劳 J 遗留：test_notify 3 失败根因=时间依赖测试+streak 上界陷阱（已修，14 passed）；代劳 H 建议：api.ts/sync_client.ts res.data 守卫（防主线程 FATAL 复发）
+- 决策落地（均按推荐）：FinetuneJob 模型删（链占位迁移保留）；presign 接口删（STS 归口 /upload/sts，OpenAPI 45 路径）；短信 501 冻结确认；依赖升版 multipart 0.0.32/httpx 0.28.1/Pillow 12.3.0（CVE 修复，502 passed 回归通过）
+- K-2 排期：asr.py 每通道 max_duration 从 settings 注入 + _CHANNELS 适配器工厂（Hy ASR/讯飞预留）

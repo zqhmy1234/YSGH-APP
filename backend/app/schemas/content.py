@@ -32,14 +32,6 @@ class ContentOut(BaseModel):
     created_at: datetime
 
 
-class ContentUploadResult(BaseModel):
-    """上传结果：直传 COS 场景返回 STS 凭证 + 回调参数"""
-
-    content_id: str
-    status: str
-    cos_presign: "CosPresign | None" = None
-
-
 class ProfileSensitiveCreate(BaseModel):
     """画像级敏感增/改（B1-6 对话式：POST /api/v1/profile/sensitive）"""
 

@@ -25,6 +25,21 @@ from app.services.notify import (
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
+
+class _FakeDaytime(datetime):
+    """固定非深夜时段（15:00），避免 22:00-05:00 夜间跑测试时
+    maybe_send_emotion_care 走 late_night 分支导致断言必挂（2026-08-26 集成修复）"""
+
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 8, 26, 15, 0, 0, tzinfo=REVIEW_TZ)
+
+
+def _patch_daytime(monkeypatch) -> None:
+    import app.services.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "datetime", _FakeDaytime)
+
 pytestmark = pytest.mark.integration
 
 
@@ -200,8 +215,9 @@ def test_care_gate_below_threshold_not_triggered(db_user):
     assert maybe_send_emotion_care(db, c2) is None
 
 
-def test_care_sad_without_reason_asks(db_user):
+def test_care_sad_without_reason_asks(db_user, monkeypatch):
     """J-6：SAD + 未说明原因 → 关怀追问"""
+    _patch_daytime(monkeypatch)  # 固定非深夜时段（22:00-05:00 会走 late_night，夜间跑必挂）
     db, user = db_user
     c = _voice_content(db, user.id, "难过", 0.9, "唉")
     msg = maybe_send_emotion_care(db, c)
@@ -212,8 +228,9 @@ def test_care_sad_without_reason_asks(db_user):
     assert "怎么啦" in msg.body
 
 
-def test_care_sad_with_reason_responds(db_user):
+def test_care_sad_with_reason_responds(db_user, monkeypatch):
     """J-6：SAD + 已说明原因 → 回应内容而非追问（再问是废话）"""
+    _patch_daytime(monkeypatch)
     db, user = db_user
     c = _voice_content(db, user.id, "难过", 0.9, "今天工作太忙太累了")
     msg = maybe_send_emotion_care(db, c)
@@ -249,8 +266,9 @@ def test_care_late_night_lightweight(db_user, monkeypatch):
     assert msg.payload["template"] == "late_night"
 
 
-def test_care_frequency_decay(db_user):
+def test_care_frequency_decay(db_user, monkeypatch):
     """J-6：连续多日负面 → 频次递减（第 1 天问 → 第 2 天好些了吗 → 第 3 天只陪伴）"""
+    _patch_daytime(monkeypatch)
     db, user = db_user
     c = _voice_content(db, user.id, "难过", 0.9, "唉")
 

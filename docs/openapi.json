@@ -96,7 +96,7 @@
           "auth"
         ],
         "summary": "Send Sms",
-        "description": "发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）",
+        "description": "发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）\n\nP0-1（审查 H1）：生产环境禁止 mock 验证码直返（任意手机号可接管账户）——\n与 wechat_login 的\"生产未接入 → 501\"对齐；真实短信通道（TODO T1）接入前\n生产 phone 登录整体不可用。get_settings 已强制生产 mock_external_ai=False，\n此处显式门控双保险（防运行时误改/测试泄漏）。",
         "operationId": "send_sms_api_v1_auth_sms_send_post",
         "requestBody": {
           "content": {
@@ -329,33 +329,6 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/contents/presign": {
-      "post": {
-        "tags": [
-          "contents"
-        ],
-        "summary": "Presign Upload",
-        "description": "照片直传：后端签 STS 临时密钥（30 秒有效）→ 客户端直传 COS（决策 #10/SYNC-013）\n\n审查修复(P1-03)：当前为 mock 实现（TODO T1），生产环境不得返回假凭证——\n客户端拿到 mock-secret-id 直传必然失败。生产未实现 → 501 显式告知。",
-        "operationId": "presign_upload_api_v1_contents_presign_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ContentUploadResult_"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
       }
     },
     "/api/v1/profile/sensitive": {
@@ -2370,7 +2343,7 @@
           "upload"
         ],
         "summary": "Upload Sts",
-        "description": "客户端直传临时凭证（仅 cos 后端；STS 角色未就绪时给出降级提示）",
+        "description": "客户端直传临时凭证（仅 cos 后端；STS 角色未就绪时给出降级提示）\n\nP0-2（审查 H2/S4-四-2）：\n  - 生产环境 COS/STS 未配置 → 501（不返回假凭证；mock 凭证仅限非生产，\n    get_settings 已强制生产 mock_external_ai=False 双保险）\n  - 凭证按当前用户前缀签发（photos/voice/thumbnails/{user_id}/*），\n    不再整桶通配",
         "operationId": "upload_sts_api_v1_upload_sts_get",
         "responses": {
           "200": {
@@ -2537,37 +2510,6 @@
         },
         "type": "object",
         "title": "ApiResponse[ContentOut]"
-      },
-      "ApiResponse_ContentUploadResult_": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code",
-            "default": "OK"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "default": "success"
-          },
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ContentUploadResult"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "request_id": {
-            "type": "string",
-            "title": "Request Id",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "ApiResponse[ContentUploadResult]"
       },
       "ApiResponse_CorrectionOut_": {
         "properties": {
@@ -4070,35 +4012,6 @@
         ],
         "title": "ContentOut"
       },
-      "ContentUploadResult": {
-        "properties": {
-          "content_id": {
-            "type": "string",
-            "title": "Content Id"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "cos_presign": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CosPresign"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "content_id",
-          "status"
-        ],
-        "title": "ContentUploadResult",
-        "description": "上传结果：直传 COS 场景返回 STS 凭证 + 回调参数"
-      },
       "CorrectionCreate": {
         "properties": {
           "content_id": {
@@ -4197,41 +4110,6 @@
           "source"
         ],
         "title": "CorrectionOut"
-      },
-      "CosPresign": {
-        "properties": {
-          "tmp_secret_id": {
-            "type": "string",
-            "title": "Tmp Secret Id"
-          },
-          "tmp_secret_key": {
-            "type": "string",
-            "title": "Tmp Secret Key"
-          },
-          "session_token": {
-            "type": "string",
-            "title": "Session Token"
-          },
-          "expired_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Expired At"
-          },
-          "cos_key": {
-            "type": "string",
-            "title": "Cos Key"
-          }
-        },
-        "type": "object",
-        "required": [
-          "tmp_secret_id",
-          "tmp_secret_key",
-          "session_token",
-          "expired_at",
-          "cos_key"
-        ],
-        "title": "CosPresign",
-        "description": "STS 临时密钥 + 上传路径（决策 #10：30 秒有效）"
       },
       "EventConfirmRequest": {
         "properties": {

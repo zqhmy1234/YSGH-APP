@@ -60,13 +60,10 @@ def test_create_invalid_type(client, auth_headers):
     assert r.status_code == 422
 
 
-def test_presign_upload(client, auth_headers):
-    """COS STS 预签名（决策 #10/SYNC-013）"""
+def test_presign_removed(client, auth_headers):
+    """2026-08-26 决策：presign 删除（无消费方 + 与 /upload/sts 重叠），STS 直传归口 /upload/sts"""
     r = client.post("/api/v1/contents/presign", json={}, headers=auth_headers)
-    assert r.status_code == 200
-    data = r.json()["data"]
-    assert data["cos_presign"]["tmp_secret_id"]
-    assert data["cos_presign"]["session_token"]
+    assert r.status_code == 404
 
 
 def test_list_contents(client, auth_headers):

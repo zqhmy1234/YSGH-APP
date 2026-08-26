@@ -43,8 +43,6 @@ from app.schemas.common import ApiResponse, Page
 from app.schemas.content import (
     ContentCreate,
     ContentOut,
-    ContentUploadResult,
-    CosPresign,
     ProfileSensitiveCreate,
     ProfileSensitiveOut,
 )
@@ -319,37 +317,6 @@ def create_content(
         enqueue_low(process_content, str(record.id))
 
     return ApiResponse(data=_to_out(record))
-
-
-@router.post("/presign", response_model=ApiResponse[ContentUploadResult])
-def presign_upload(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """照片直传：后端签 STS 临时密钥（30 秒有效）→ 客户端直传 COS（决策 #10/SYNC-013）
-
-    审查修复(P1-03)：当前为 mock 实现（TODO T1），生产环境不得返回假凭证——
-    客户端拿到 mock-secret-id 直传必然失败。生产未实现 → 501 显式告知。
-    """
-    from app.core.config import settings as _settings
-
-    if _settings.app_env == "production" and not _settings.mock_external_ai:
-        raise ApiError(ERR_CONTENT_004, "STS 直传未接入（生产待实现），请走后端中转上传", http=501)
-    # TODO(T1): 腾讯云 STS 接口；M1 验证 STS 最短有效期限制（当前 mock）
-    expire = datetime.now(timezone.utc) + timedelta(seconds=30)
-    return ApiResponse(
-        data=ContentUploadResult(
-            content_id="mock-content-presign",
-            status="ready",
-            cos_presign=CosPresign(
-                tmp_secret_id="mock-secret-id",
-                tmp_secret_key="mock-secret-key",
-                session_token="mock-session-token",
-                expired_at=expire,
-                cos_key=f"photos/{user.id}/{expire.timestamp():.0f}.jpg",
-            ),
-        )
-    )
 
 
 @router.get("", response_model=ApiResponse[Page[ContentOut]])

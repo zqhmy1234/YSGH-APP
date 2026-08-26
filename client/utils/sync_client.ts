@@ -318,7 +318,7 @@ function syncHttp(path: string, method: string, data: UTSJSONObject | null, retr
 				})
 				return
 			}
-			resolve(new HttpResult(res.statusCode, res.data as UTSJSONObject))
+			resolve(new HttpResult(res.statusCode, (res.data != null && typeof res.data == 'object') ? (res.data as UTSJSONObject) : null))
 		},
 		fail: () => {
 			resolve(new HttpResult(0, null))

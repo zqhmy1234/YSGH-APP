@@ -58,14 +58,22 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			timeout: REQUEST_TIMEOUT_MS,
 			success: (res) => {
 				if (res.statusCode === 200) {
-					resolve(res.data as UTSJSONObject)
+					// 2026-08-26（H 建议，集成代劳）：后端不可达/网关返回裸值时 res.data 非对象，
+					// 直接强转 UTSJSONObject 会在主线程 FATAL（app 启动崩溃根因）——先守卫再转换
+					if (res.data != null && typeof res.data == 'object') {
+						resolve(res.data as UTSJSONObject)
+					} else {
+						resolve(null)
+					}
 					return
 				}
 				// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
 				if (res.statusCode >= 500) {
 					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
 				}
-				const body = res.data as UTSJSONObject
+				const body = (res.data != null && typeof res.data == 'object')
+					? (res.data as UTSJSONObject)
+					: ({} as UTSJSONObject)
 				const err = new ApiError(
 					body.getString('code') ?? 'UNKNOWN',
 					body.getString('message') ?? ('HTTP ' + res.statusCode),

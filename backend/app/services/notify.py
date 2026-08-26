@@ -96,7 +96,11 @@ def _is_late_night(now: datetime | None = None) -> bool:
 
 
 def _care_streak_days(db: Session, user_id: str, now: datetime | None = None) -> int:
-    """近 N 天已触发的关怀消息数（频次递减输入；同日多条算多条，保守节流）。"""
+    """近 N 天已触发的关怀消息数（频次递减输入；同日多条算多条，保守节流）。
+
+    只取下界（lookback 窗口）：上界 sent_at <= now 依赖客户端时间与 DB 时钟一致，
+    测试/时钟偏差场景会漏计数（2026-08-26 集成修复）；未来时间消息不应参与节流。
+    """
     current = now or datetime.now(REVIEW_TZ)
     start = current - timedelta(days=CARE_STREAK_LOOKBACK_DAYS)
     return int(
@@ -107,7 +111,6 @@ def _care_streak_days(db: Session, user_id: str, now: datetime | None = None) ->
                 Message.user_id == user_id,
                 Message.msg_type == "care_followup",
                 Message.sent_at >= start,
-                Message.sent_at <= current,
             )
         )
         or 0

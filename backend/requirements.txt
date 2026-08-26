@@ -6,7 +6,7 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.8
 pydantic-settings>=2.4
-python-multipart>=0.0.9
+python-multipart>=0.0.18  # CVE-2024-53981 需 >=0.0.18（2026-08-26 决策升版）
 
 # --- 数据库 ---
 sqlalchemy>=2.0
@@ -22,7 +22,7 @@ redis>=5.0
 pyjwt>=2.9
 
 # --- 外部 API / AI ---
-httpx>=0.27          # 仅 scripts/wecom_sandbox.py 使用（可降 dev）
+httpx>=0.27.2        # CVE-2024-40635 需 >=0.27.2；核心依赖（code2session/amap/content_safety/guard/wechat 均在用）
 dashscope>=1.20          # 阿里云百炼（qwen/护栏）
 numpy>=1.26              # 音频 PCM 解码与 SenseVoice logits 后处理（直接依赖）
 funasr-onnx>=0.4.2       # SenseVoiceSmall 本地 CPU 情绪识别
@@ -46,7 +46,7 @@ cos-python-sdk-v5>=1.9.33
 minio>=7.2.0
 
 # --- 缩略图管线（B4 后端：PIL 生成，Wave3 AgentG；generate_test_photos 亦依赖）---
-Pillow>=10.0.0
+Pillow>=11.0.0        # EpsImagePlugin 系列 CVE 需 >=11；本服务处理用户上传图片（2026-08-26 决策升版）
 
 # --- 长录音 VAD 分段（B5a-2 · P1-16）---
 webrtcvad-wheels>=2.0.10

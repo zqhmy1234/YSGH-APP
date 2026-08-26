@@ -1,3 +1,12 @@
+## 2026-08-26 22:20 · Wave4 AgentK（B5d 后台域）集成 + J/H 代劳 + 决策落地
+
+- merge wave4-agentK（B5d 后台域：WorkManager 单队列 P0-P4 + dataSync 前台服务短命化 + attribution tag + 标准基座降级 pending/setInterval，nova 11 真机验证；自定义基座项待验）——client/uni_modules/yishu-background-tasks/ 新插件 19 文件 + yishu-photo-watch 3 文件
+- 代劳 J 遗留：test_notify 3 个 care 断言失败根因 = 测试依赖墙钟（22:00-05:00 深夜时段走 late_night）+ _care_streak_days 上界 sent_at<=now 的时钟一致性陷阱 → 测试固定非深夜时段 + 查询去掉上界（14 passed）
+- 代劳 H 建议：client api.ts/sync_client.ts 三处 res.data 强转加 typeof object 守卫（后端不可达裸值不再主线程 FATAL）
+- 4 决策项全部按推荐落地：① FinetuneJob 删 ORM 模型（表由基线迁移+schema.sql 建、reflow_global 裸 SQL 写，链占位迁移保留并说明）② presign 删除（STS 归口 /upload/sts；ContentUploadResult/CosPresign schema 一并删；OpenAPI 重导 45 路径）③ 短信 501 冻结（P0-1 已生效，确认登记）④ 依赖升版：python-multipart 0.0.18+/httpx 0.27.2+/Pillow 11+（实装 0.0.32/0.28.1/12.3.0）
+- 基线：502 passed / 19 deselected（升版后重跑）+ review_agent --full 全绿
+- K 遗留待验：自定义基座云打包验证 FGS/WorkManager 真实执行/attribution panel；K-2 后端 asr.py 每通道 max_duration 注入 + _CHANNELS 适配器工厂（排期）
+
 ## 2026-08-26 21:40 · 技术债清理 P0 批次完成（安全/正确性 8 项）
 
 - 技术债全面侦察（8 个并行 subagent，报告 docs/技术债审查报告_20260826.md + 计划 docs/技术债清理计划_20260826.md）后启动 P0 执行批次

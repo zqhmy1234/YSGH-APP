@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 22:18 · commit a188229 · ts=1787753921
+- **错误**：Wave4 K 集成全量门禁被 lessons 强制登记检查阻断：上次失败（K 跑全量时 J 域 test_notify 3 个 care 模板断言失败）未登记教训；且 test_notify 夜间跑必挂——22:00-05:00 深夜时段 _is_late_night 返回 True，SAD 走 late_night 分支，白天才走 sad_ask
+- **根因**：① 测试依赖墙钟：test_care_sad_* 未控制时间，22:00-05:00 运行时断言与深夜分支冲突（K 21:54 后跑即暴露）；② _care_streak_days 查询上界 sent_at<=now 用客户端注入时间对比 DB 真实 now()，时间被 patch 时永远不成立，streak 恒 0
+- **修复**：测试统一 _patch_daytime 固定 15:00（复用 FakeDatetime monkeypatch 模式）；_care_streak_days 去掉上界 sent_at<=now（下界 lookback 足够，未来消息不应参与节流）——14 passed；另代劳 H 建议：api.ts/sync_client.ts 三处 res.data 强转加 typeof object 守卫
+- **相关文件**：backend/tests/test_notify.py, backend/app/services/notify.py, client/utils/api.ts, client/utils/sync_client.ts
+- **教训**：时间相关测试必须固定时间源；跨客户端/DB 的时间比较不能依赖两套时钟一致；门禁失败（含他域）要立即登记教训否则阻断后续提交
+
+---
+
 ### 2026-08-26 21:40 · commit 3b1bc06 · ts=1787751621
 - **错误**：P0 批次批量编辑测试文件时踩坑：①edit 工具对重复 oldText 原子性失败（CONTENT_002 出现 4 次需补唯一上下文）；②Add-Content 追加测试用到了未 import 的 select（test_upload.py NameError）；③生产安全兜底单测漏传自定义 JWT_SECRET，被先行的 JWT 门禁 RuntimeError 拦截
 - **根因**：批量编辑多文件时未先核对目标文件的既有 import 与重复文本；生产安全函数的多道门禁顺序（JWT 先于 mock 强制）在单测构造参数时未考虑

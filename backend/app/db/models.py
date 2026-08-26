@@ -519,16 +519,3 @@ class GeoCache(Base):
     )
 
 
-class FinetuneJob(Base):
-    """finetune_jobs 表（B5-c 共性纠错微调任务记录；P2-05 纳入 ORM 受管，
-    原为 reflow_global.py 裸 SQL 直写——现纳入 Alembic 权威，避免漂移）"""
-
-    __tablename__ = "finetune_jobs"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    trigger: Mapped[str] = mapped_column(Text)  # reflow_global / manual
-    dataset_count: Mapped[int] = mapped_column(Integer, default=0)
-    model: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(Text, default="pending")  # pending/running/done/failed
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
