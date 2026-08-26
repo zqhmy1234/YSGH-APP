@@ -3,9 +3,11 @@
  *
  * 此前 uploader.isoString / event_ops.isoNow / sync_client.isoNow（+08:00 本地，逐字
  * 一致）与 sentry.isoNow（UTC 毫秒变体）各写一份；显示层日期（timeline.dayKey/
- * friendlyDay、search.shortDate）各自为政。UTS Date 无 toISOString/toLocaleString，
- * 本模块集中实现，零依赖纯函数——event_ops/sync_client 的"本地一份避免循环依赖"
- * 从此不再需要。
+ * friendlyDay、search.shortDate、index.splitTimeText、messages.shortTime）各自为政。
+ * UTS Date 无 toISOString/toLocaleString，本模块集中实现，零依赖纯函数——
+ * event_ops/sync_client 的"本地一份避免循环依赖"从此不再需要。
+ * 2026-08-27 批次 C2：dayKey/friendlyDay/shortDate 切换消费方 + 新增
+ * parseIsoMs（ISO→ms 唯一实现）、formatMonthDay / formatIsoShortTime（显示格式化收口）。
  *
  * 注：isoLocal 沿用既有硬编码 +08:00 后缀语义（真机时区非 +08 的偏差是历史行为，
  * 收敛后单点可改）；sentry 用 UTC 变体 isoUtc。
@@ -52,6 +54,12 @@ export function friendlyDay(ms: number): string {
 	return (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + weeks[d.getDay()]
 }
 
+/** epoch ms → 月日时刻（MM-DD HH:mm，补零；同原 index.uvue splitTimeText 格式化部分） */
+export function formatMonthDay(ms: number): string {
+	const d = new Date(ms)
+	return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+}
+
 /** ISO 串 → 短日期（yyyy-mm-dd → mm月dd日；同原 search.uvue shortDate） */
 export function shortDate(iso: string): string {
 	const tIdx = iso.indexOf('T')
@@ -61,4 +69,23 @@ export function shortDate(iso: string): string {
 		return datePart
 	}
 	return parseInt(parts[1]) + '月' + parseInt(parts[2]) + '日'
+}
+
+/** ISO 串 → 短时间（MM-dd HH:mm，月/日不补零、时间原样；同原 messages.uvue shortTime——
+ *  messages.uvue 不在本批次文件域，此处先落纯函数供集成方接线） */
+export function formatIsoShortTime(iso: string): string {
+	const tIdx = iso.indexOf('T')
+	if (tIdx < 0) {
+		return iso
+	}
+	const datePart = iso.substring(0, tIdx)
+	const timePart = iso.substring(tIdx + 1)
+	const d = datePart.split('-')
+	const t = timePart.split(':')
+	if (d.length !== 3) {
+		return iso
+	}
+	const hh = t.length > 0 ? t[0] : '00'
+	const mm = t.length > 1 ? t[1] : '00'
+	return parseInt(d[1]) + '-' + parseInt(d[2]) + ' ' + hh + ':' + mm
 }

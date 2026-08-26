@@ -80,6 +80,7 @@
 	import { ensureLogin } from '@/utils/auth'
 	import { searchText, searchByImage, SearchOutcome, SearchHitItem } from '@/utils/search_api'
 	import { showErrorToast } from '@/utils/api'
+	import { shortDate as formatShortDate } from '@/utils/time'
 
 	export default {
 		data() {
@@ -170,15 +171,9 @@
 					}
 				})
 			},
-			/** ISO → 短日期（yyyy-mm-dd → mm月dd日） */
+			/** ISO → 短日期（yyyy-mm-dd → mm月dd日；UTS 模板不能直调模块函数，methods 壳委托 time.ts） */
 			shortDate(iso: string): string {
-				const tIdx = iso.indexOf('T')
-				const datePart = tIdx >= 0 ? iso.substring(0, tIdx) : iso
-				const parts = datePart.split('-')
-				if (parts.length !== 3) {
-					return datePart
-				}
-				return parseInt(parts[1]) + '月' + parseInt(parts[2]) + '日'
+				return formatShortDate(iso)
 			}
 		}
 	}

@@ -164,17 +164,3 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 		})
 	})
 }
-
-/** 日期分组键：epoch ms → yyyy-mm-dd（本地时区） */
-export function dayKey(ms: number): string {
-	const d = new Date(ms)
-	const pad = (n: number): string => (n < 10 ? '0' + n : '' + n)
-	return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-}
-
-/** 友好日期标题：8月24日 · 周一（本地时区） */
-export function friendlyDay(ms: number): string {
-	const d = new Date(ms)
-	const weeks: Array<string> = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-	return (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + weeks[d.getDay()]
-}

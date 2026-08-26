@@ -183,7 +183,8 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchTimeline, dayKey, friendlyDay, TimelineEvent } from '@/utils/timeline'
+	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { dayKey, friendlyDay, formatMonthDay } from '@/utils/time'
 	import { uploadBatch, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
 	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
 	import { showErrorToast } from '@/utils/api'
@@ -427,17 +428,12 @@
 				this.showSplitPanel = false
 				this.splitItems = []
 			},
-			/** 拆分面板时间文案（epoch ms → MM-DD HH:mm；0=未知） */
+			/** 拆分面板时间文案（epoch ms → MM-DD HH:mm；0=未知；格式化委托 time.ts） */
 			splitTimeText(ts: number): string {
 				if (ts <= 0) {
 					return '时间未知'
 				}
-				const d = new Date(ts)
-				const mm = (d.getMonth() + 1).toString()
-				const dd = d.getDate().toString()
-				const hh = d.getHours().toString()
-				const mi = d.getMinutes().toString()
-				return (mm.length < 2 ? '0' + mm : mm) + '-' + (dd.length < 2 ? '0' + dd : dd) + ' ' + (hh.length < 2 ? '0' + hh : hh) + ':' + (mi.length < 2 ? '0' + mi : mi)
+				return formatMonthDay(ts)
 			},
 			/** T-PL-1：划掉回响（dismiss 不再出现） */
 			dismissEchoCard(): void {
