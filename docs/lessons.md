@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 16:14 · commit bd754af · ts=1787732092
+- **错误**：CI #15 quality gate 失败 exit 1：test_profile_annotator 访问 profile_annotation_pool 表报 relation does not exist
+- **根因**：schema.sql 与迁移链漂移：profile_annotation_pool（B1 低置信度事件池，迁移 b0b1c2d3e4f5 建）未同步进 schema.sql；本地库是 alembic upgrade head 建的（有表）故 420 passed 全绿，CI 用 schema.sql 从空库建（缺表）必挂——同一 drift 类问题，与 issue #2 同源
+- **修复**：schema.sql 补 profile_annotation_pool 表（bigserial PK / user_id FK users / raw_text NOT NULL / confidence DEFAULT 0 / status DEFAULT pending + ix_profile_annotation_pool_user 索引），本地临时库全链路验证（38 表 + 插入 + 索引 OK）
+- **相关文件**：backend/sql/schema.sql
+- **教训**：schema.sql（CI 建库源）与 alembic 迁移链必须定期 diff 对齐：新增表/列只进迁移不进 schema.sql，CI 空库建库必挂而本地（alembic 建）全绿；跑一次 python 提取两边 CREATE TABLE 对比即可防漂移
+
+---
+
 ### 2026-08-26 16:00 · commit 43b97a7 · ts=1787731238
 - **错误**：CI #13 Init PostgreSQL 失败 exit 2：schema.sql 建库步骤 psql -U yishu_app 认证失败
 - **根因**：为'避免日志明文'把 PGPASSWORD 从每条命令内联改为步骤级 env（单一密码 admin），导致 -U yishu_app 用错密码；本地 PG 复现确认 admin 连 yishu_app 认证失败 exit 2（#13 与 #6 差异仅在密码传递方式）

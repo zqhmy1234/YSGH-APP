@@ -242,6 +242,19 @@ CREATE TABLE profile_l2_evidence (             -- L2 维度证据
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE profile_annotation_pool (         -- B1 低置信度事件池（设计 2.3，迁移 b0b1c2d3e4f5）
+    id               bigserial PRIMARY KEY,
+    user_id          uuid NOT NULL REFERENCES users(id),
+    event_id         text,
+    raw_text         text NOT NULL,
+    dimension        text,
+    candidate_value  text,
+    confidence       double precision NOT NULL DEFAULT 0,
+    status           text NOT NULL DEFAULT 'pending',  -- pending / reviewed / confirmed / discarded
+    created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_profile_annotation_pool_user ON profile_annotation_pool(user_id, status);
+
 -- ========== 5. 纠错域（2 表） ==========
 
 CREATE TABLE correction_log (
