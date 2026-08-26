@@ -6,6 +6,7 @@
  * 服务端游标分页列入第二波（进度文档已记录）。
  */
 import { get, dataArr } from './api'
+import { parseIsoMs } from './time'
 
 export class TimelineEvent {
 	id: string
@@ -66,70 +67,6 @@ export class TimelineEvent {
 	}
 }
 
-/** ISO8601 → epoch ms（UTS Date 字符串解析不可靠，手动拆解；兼容 Z 与 +08:00 偏移） */
-export function parseIsoToMs(iso: string): number {
-	const tIdx = iso.indexOf('T')
-	if (tIdx < 0) {
-		return 0
-	}
-	const datePart = iso.substring(0, tIdx)
-	const rest = iso.substring(tIdx + 1)
-	const d = datePart.split('-')
-	if (d.length !== 3) {
-		return 0
-	}
-	const year = parseInt(d[0])
-	const month = parseInt(d[1])
-	const day = parseInt(d[2])
-	// 时间与偏移分离
-	let timePart = rest
-	let offsetMs = 0
-	const zIdx = timePart.indexOf('Z')
-	if (zIdx >= 0) {
-		timePart = timePart.substring(0, zIdx)
-	} else {
-		// +08:00 / -05:30 尾偏移
-		let signIdx = -1
-		const plusIdx = timePart.lastIndexOf('+')
-		const minusIdx = timePart.lastIndexOf('-')
-		if (plusIdx > 8) {
-			signIdx = plusIdx
-		} else if (minusIdx > 8) {
-			signIdx = minusIdx
-		}
-		if (signIdx >= 0) {
-			const off = timePart.substring(signIdx)
-			timePart = timePart.substring(0, signIdx)
-			const neg = off.startsWith('-')
-			const parts = off.substring(1).split(':')
-			const oh = parseInt(parts[0])
-			const om = parts.length > 1 ? parseInt(parts[1]) : 0
-			const offTotal = (oh * 3600 + om * 60) * 1000
-			offsetMs = neg ? -offTotal : offTotal
-		}
-	}
-	const t = timePart.split(':')
-	const hour = parseInt(t[0])
-	const minute = t.length > 1 ? parseInt(t[1]) : 0
-	let second = 0
-	let milli = 0
-	if (t.length > 2) {
-		const secPart = t[2]
-		const dotIdx = secPart.indexOf('.')
-		if (dotIdx >= 0) {
-			second = parseInt(secPart.substring(0, dotIdx))
-			const frac = secPart.substring(dotIdx + 1)
-			if (frac.length > 0) {
-				milli = parseInt(frac.substring(0, 3))
-			}
-		} else {
-			second = parseInt(secPart)
-		}
-	}
-	const utc = Date.UTC(year, month - 1, day, hour, minute, second, milli)
-	return utc - offsetMs
-}
-
 /** 拉取时间轴（level 过滤：null=全部 / 1=L1 / 2=L2）；失败返回空数组（永不 reject） */
 export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent>> {
 	const path = level == null ? '/api/v1/events/timeline' : '/api/v1/events/timeline?level=' + level
@@ -148,8 +85,8 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 					item.getNumber('level') as number,
 					item.getString('title') ?? '',
 					item.getString('title_source') ?? '',
-					parseIsoToMs(item.getString('start_time') ?? ''),
-					parseIsoToMs(item.getString('end_time') ?? ''),
+					parseIsoMs(item.getString('start_time') ?? ''),
+					parseIsoMs(item.getString('end_time') ?? ''),
 					item.getString('place') ?? '',
 					item.getJSON('emotion'),
 					item.getNumber('photo_count') as number,

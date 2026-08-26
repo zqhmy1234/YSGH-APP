@@ -24,7 +24,7 @@
  *  - GET  /api/v1/contents/{id}/events        → 照片所属事件列表（反向入口）
  */
 import { post, get, dataObj, dataArr } from './api'
-import { isoLocal } from './time'
+import { isoLocal, parseIsoMs } from './time'
 
 const OP_LOG_KEY = 'yishu_op_log'
 const IGNORE_KEY = 'yishu_ignored_events'
@@ -219,7 +219,7 @@ export function fetchEventItems(eventId: string): Promise<Array<SplitItem>> {
 					it.getString('content_id') ?? '',
 					it.getString('content_type') ?? 'text',
 					it.getString('title') ?? '',
-					parseTimeMs(it.getString('taken_at') ?? '')
+					parseIsoMs(it.getString('taken_at') ?? '')
 				))
 			}
 			resolve(out)
@@ -401,27 +401,4 @@ function doOp(opType: string, payload: UTSJSONObject): Promise<boolean> {
 		return splitEvent(eventId, ids)
 	}
 	return Promise.resolve(false)
-}
-
-/** ISO8601 → epoch ms（复用 timeline 同款解析；空返回 0） */
-function parseTimeMs(iso: string): number {
-	if (iso == '') {
-		return 0
-	}
-	const tIdx = iso.indexOf('T')
-	if (tIdx < 0) {
-		return 0
-	}
-	const d = iso.substring(0, tIdx).split('-')
-	if (d.length !== 3) {
-		return 0
-	}
-	const rest = iso.substring(tIdx + 1)
-	const t = rest.split('+')[0].split('.')[0]
-	const hms = t.split(':')
-	if (hms.length < 3) {
-		return 0
-	}
-	const date = new Date(parseInt(d[0]), parseInt(d[1]) - 1, parseInt(d[2]), parseInt(hms[0]), parseInt(hms[1]), parseInt(hms[2]))
-	return date.getTime()
 }

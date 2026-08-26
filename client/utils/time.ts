@@ -41,6 +41,72 @@ export function isoUtc(ms: number): string {
 		'.' + pad3(d.getUTCMilliseconds()) + 'Z'
 }
 
+/** ISO8601 → epoch ms（UTS Date 字符串解析不可靠，手动拆解；兼容 Z 与 ±HH:MM 偏移、小数秒）。
+ *  以原 timeline.parseIsoToMs 为基准收口——event_ops 旧 parseTimeMs 把 Z/偏移当本地时间，
+ *  本实现统一按 UTC 换算（修复 Z 时间线下 split 面板时差 8h 隐患）；空串/非法返回 0。 */
+export function parseIsoMs(iso: string): number {
+	const tIdx = iso.indexOf('T')
+	if (tIdx < 0) {
+		return 0
+	}
+	const datePart = iso.substring(0, tIdx)
+	const rest = iso.substring(tIdx + 1)
+	const d = datePart.split('-')
+	if (d.length !== 3) {
+		return 0
+	}
+	const year = parseInt(d[0])
+	const month = parseInt(d[1])
+	const day = parseInt(d[2])
+	// 时间与偏移分离
+	let timePart = rest
+	let offsetMs = 0
+	const zIdx = timePart.indexOf('Z')
+	if (zIdx >= 0) {
+		timePart = timePart.substring(0, zIdx)
+	} else {
+		// +08:00 / -05:30 尾偏移
+		let signIdx = -1
+		const plusIdx = timePart.lastIndexOf('+')
+		const minusIdx = timePart.lastIndexOf('-')
+		if (plusIdx > 8) {
+			signIdx = plusIdx
+		} else if (minusIdx > 8) {
+			signIdx = minusIdx
+		}
+		if (signIdx >= 0) {
+			const off = timePart.substring(signIdx)
+			timePart = timePart.substring(0, signIdx)
+			const neg = off.startsWith('-')
+			const parts = off.substring(1).split(':')
+			const oh = parseInt(parts[0])
+			const om = parts.length > 1 ? parseInt(parts[1]) : 0
+			const offTotal = (oh * 3600 + om * 60) * 1000
+			offsetMs = neg ? -offTotal : offTotal
+		}
+	}
+	const t = timePart.split(':')
+	const hour = parseInt(t[0])
+	const minute = t.length > 1 ? parseInt(t[1]) : 0
+	let second = 0
+	let milli = 0
+	if (t.length > 2) {
+		const secPart = t[2]
+		const dotIdx = secPart.indexOf('.')
+		if (dotIdx >= 0) {
+			second = parseInt(secPart.substring(0, dotIdx))
+			const frac = secPart.substring(dotIdx + 1)
+			if (frac.length > 0) {
+				milli = parseInt(frac.substring(0, 3))
+			}
+		} else {
+			second = parseInt(secPart)
+		}
+	}
+	const utc = Date.UTC(year, month - 1, day, hour, minute, second, milli)
+	return utc - offsetMs
+}
+
 /** 日期分组键：epoch ms → yyyy-mm-dd（本地时区；同原 timeline.dayKey） */
 export function dayKey(ms: number): string {
 	const d = new Date(ms)
