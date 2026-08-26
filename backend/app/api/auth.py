@@ -17,7 +17,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -277,7 +277,9 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     if user is None or user.status != 1:
         raise ApiError(ERR_AUTH_001, "用户不存在或已冻结", http=401)
 
-    tokens = _issue_tokens(db, user, device_id)
+    # R2#7 竞态修复：轮换改条件 UPDATE（原子 single-use），不再 _issue_tokens 读-改-写——
+    # 并发双 refresh 携同一旧 token 只有第一个成功，第二个 rowcount=0 → 401（重放窗口消除）
+    tokens = _rotate_refresh_token(db, user, device, device_id, req.refresh_token)
     return ApiResponse(data=tokens)
 
 
@@ -400,6 +402,68 @@ def _issue_tokens(db: Session, user: User, device_id: str, platform: str = "andr
         db.commit()
         device = existing
 
+    return TokenPair(
+        access_token=access,
+        refresh_token=refresh,
+        user=UserBrief(
+            id=user.id,
+            nickname=user.nickname,
+            avatar=user.avatar,
+            is_new_user=False,
+        ),
+    )
+
+
+def _rotate_refresh_token(
+    db: Session,
+    user: User,
+    device: Device,
+    device_id: str,
+    old_refresh: str,
+) -> TokenPair:
+    """refresh token 轮换（R2#7 竞态修复）：条件 UPDATE 原子 single-use
+
+    原实现 SELECT 校验 → _issue_tokens 读-改-写：并发双 refresh 携同一旧 token
+    都在校验后读旧值写新值 → 旧 token 出现重放窗口、双会话并存。
+    现改为条件 UPDATE（WHERE 命中旧 token 才写新值）：
+      - 第一个请求 rowcount=1 轮换成功
+      - 第二个请求 WHERE 已不命中（旧 token 已被换掉）→ rowcount=0 → 401 已吊销
+    迁移期兼容（TD-P3 M6）：refresh_token_hash 为空的行按明文比对（WHERE 命中明文）；
+    IntegrityError 路径保留（并发同设备写竞态兜底，语义同 _issue_tokens）。
+    """
+    access = create_access_token(user.id, device_id)
+    refresh = create_refresh_token(user.id, device_id)
+    now = datetime.now(timezone.utc)
+    new_hash = _hash_refresh_token(refresh)
+
+    if device.refresh_token_hash:
+        old_clause = Device.refresh_token_hash == _hash_refresh_token(old_refresh)
+    else:
+        # 迁移期明文行：WHERE 命中明文才轮换（哈希化后由上一分支接管）
+        old_clause = (Device.refresh_token == old_refresh) & (
+            Device.refresh_token.isnot(None)
+        )
+
+    stmt = (
+        update(Device)
+        .where(Device.user_id == user.id, Device.device_id == device_id, old_clause)
+        .values(
+            refresh_token_hash=new_hash,
+            refresh_token=None,
+            refresh_rotated_at=now,
+            last_active_at=now,
+        )
+    )
+    try:
+        result = db.execute(stmt)
+        if result.rowcount == 0:
+            db.rollback()
+            raise ApiError(ERR_AUTH_005, "refresh token 已吊销", http=401)
+        db.commit()
+    except IntegrityError:
+        # 并发同设备写竞态（保留原 _issue_tokens 的 IntegrityError 路径语义）
+        db.rollback()
+        raise
     return TokenPair(
         access_token=access,
         refresh_token=refresh,

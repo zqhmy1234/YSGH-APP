@@ -10,6 +10,7 @@ from app.db.models import Device, SmsCode, User
 from app.db.session import SessionLocal
 from app.main import app
 from fastapi.testclient import TestClient
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
 
@@ -141,6 +142,59 @@ def test_invalid_refresh_rejected(client):
     """伪造 refresh → 401"""
     r = client.post("/api/v1/auth/refresh", json={"refresh_token": "forged.token.value"})
     assert r.status_code == 401
+
+
+@pytest.mark.integration
+def test_refresh_rotation_atomic_single_use(db):
+    """R2#7 竞态修复：refresh 轮换条件 UPDATE 原子 single-use
+
+    两会话同时读到同一旧 token 的设备行（校验均通过），随后各自条件 UPDATE：
+    先提交者 rowcount=1 轮换成功；后者 WHERE 旧 token 已不命中 → rowcount=0 → 401。
+    """
+    from app.api.auth import _hash_refresh_token, _rotate_refresh_token
+    from app.core.errors import ApiError
+    from app.core.security import create_refresh_token
+
+    user = User(phone="13900000123", status=1)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    old_refresh = create_refresh_token(user.id, "race-dev")
+    dev = Device(
+        user_id=user.id, device_id="race-dev", platform="android",
+        refresh_token_hash=_hash_refresh_token(old_refresh), refresh_token=None,
+    )
+    db.add(dev)
+    db.commit()
+
+    s1 = SessionLocal()
+    s2 = SessionLocal()
+    try:
+        d1 = s1.execute(
+            select(Device).where(Device.user_id == user.id, Device.device_id == "race-dev")
+        ).scalar_one()
+        d2 = s2.execute(
+            select(Device).where(Device.user_id == user.id, Device.device_id == "race-dev")
+        ).scalar_one()
+        # 两请求都读到旧 token（校验均通过）
+        assert d1.refresh_token_hash == _hash_refresh_token(old_refresh)
+        assert d2.refresh_token_hash == _hash_refresh_token(old_refresh)
+
+        # 请求1 轮换成功
+        t1 = _rotate_refresh_token(s1, user, d1, "race-dev", old_refresh)
+        assert t1.refresh_token != old_refresh
+
+        # 请求2 携同一旧 token → WHERE 已不命中 → rowcount=0 → 401 已吊销
+        with pytest.raises(ApiError) as ei:
+            _rotate_refresh_token(s2, user, d2, "race-dev", old_refresh)
+        assert ei.value.http == 401
+        assert ei.value.code == "AUTH_005"
+    finally:
+        s1.close()
+        s2.close()
+        db.execute(sa_delete(Device).where(Device.user_id == user.id))
+        db.execute(sa_delete(User).where(User.phone == "13900000123"))
+        db.commit()
 
 @pytest.mark.integration
 def test_send_sms_production_blocked(client, db, monkeypatch):
