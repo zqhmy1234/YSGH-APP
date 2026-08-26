@@ -7,8 +7,12 @@
   → 与 photo 同链路入管线（process_content）+ 缩略图预生成（image）
   凭证未配置（WECHAT_* / TENCENT_* 缺失）→ mock 媒体字节 + CI 默认放行（代码先行，
   拿 key 后零切换；真实回调与真实审核在配置到位后自动启用）
-- 敏感识别：B5-b 护栏在入库时同步执行，命中标记不展示（不进云端镜像）
+- 敏感识别（B5-b 护栏 · Wave4-L）：入库时经 content_safety 适配器（provider 可切换，
+  见 external/content_safety.py）同步执行——文本=规则+护栏/阿里云，图片=CI/阿里云；
+  命中 → sensitive_status 标记 + 不进云端镜像（与现有敏感排除合并）
 - 软删本条：微信端"删掉"→ 软删除标记
+- 内容安全 fail-safe：审核服务故障只告警 + 默认放行，不因审核不可用丢消息
+  （微信收消息可靠性优先，M3 门禁 99.9%）
 
 表需求（登记给集成 Agent）：wechat_messages 建议补 content_id/cos_key 列实现直接关联
 （当前用 Content.extra.wechat_msg_id 反向关联，无需迁移即可工作）。
@@ -24,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Content, WechatMessage
 from app.services import thumbnails
-from app.services.external import moderate
+from app.services.external.content_safety import get_content_safety
 
 logger = logging.getLogger("yishu.wechat")
 
@@ -116,17 +120,16 @@ def download_media(media_id: str, msg_type: str) -> bytes:
 
 
 def _audit_image(cos_key: str) -> dict:
-    """图片 CI 审核（S4-03 敏感排除）：命中任意敏感标签 → pass=False
+    """图片内容审核（S4-03 敏感排除）：经 content_safety 适配器（provider 可切换）
 
-    凭证未配置/CI 不可用 → 默认放行并告警（与 pipeline 对 CI 失败静默降级一致；
-    生产 COS 配置到位后自动走真实审核）。
+    命中任意敏感标签 → pass=False。适配器按 provider 处理降级（当前默认 tencent_ci：
+    CI 不可用 → 默认放行并告警，与 pipeline 对 CI 失败静默降级一致；微信收消息链路
+    不因审核故障丢消息）。
     """
     try:
-        from app.services.external.tencent_ci import image_audit
-
-        return image_audit(cos_key)
+        return get_content_safety().check_image(cos_key)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("图片 CI 审核不可用，默认放行 cos_key=%s: %s", cos_key, exc)
+        logger.warning("图片内容安全不可用，默认放行 cos_key=%s: %s", cos_key, exc)
         return {"pass": True, "labels": []}
 
 
@@ -136,6 +139,18 @@ def _build_content_extra(msg: dict, media_id: str) -> dict:
         "wechat_msg_id": msg.get("msg_id"),
         "wechat_media_id": media_id,
     }
+
+
+def _check_text_safe(text: str) -> dict:
+    """文本内容审核（B5-b 护栏 · Wave4-L）：content_safety 适配器，fail-safe 放行
+
+    审核服务异常（如显式配置 aliyun 但缺 key）→ 告警 + 默认放行，不丢消息。
+    """
+    try:
+        return get_content_safety().check_text(text)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("文本内容安全不可用，默认放行: %s", exc)
+        return {"pass": True, "labels": []}
 
 
 def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) -> dict:
@@ -228,8 +243,9 @@ def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict
 
     if user_id and msg["msg_type"] == "text" and msg.get("content"):
         text = msg["content"]
-        # 敏感识别（B5-b 护栏；mock 模式放行，真实模式 fail-safe）
-        guard = moderate(text)
+        # 敏感识别（B5-b 护栏 · Wave4-L）：content_safety 适配器（provider 可切换；
+        # 默认 tencent_ci = 规则+护栏；aliyun 上架前启用）。审核不可用 → 放行不丢消息。
+        guard = _check_text_safe(text)
         result["sensitive"] = not guard["pass"]
         content = Content(
             id=str(uuid.uuid4()),
