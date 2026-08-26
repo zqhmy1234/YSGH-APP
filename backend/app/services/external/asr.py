@@ -83,6 +83,36 @@ SENSEVOICE_EMOTION_TAGS = {
 SENSEVOICE_UNKNOWN_EMOTION_TAG = "<|EMO_UNKNOWN|>"
 ASR_CHANNELS = ("funasr", "sensevoice")
 
+# 音频事件（B5a · Wave4 AgentJ：SenseVoice 12 类取 3 消费，其余 9 类 MVP 不消费）
+AUDIO_EVENT_LAUGHTER = "laughter"        # 笑声 → 情绪加分
+AUDIO_EVENT_SILENCE = "silence"          # 静音 → 提示空段
+AUDIO_EVENT_ENVIRONMENT = "environment"  # 键盘/环境音 → 疑似非口述
+AUDIO_EVENT_NONE = "none"
+# SenseVoice 富文本事件标签 → 消费类目（None = 不消费）
+_SENSEVOICE_AUDIO_EVENT_TAGS = {
+    "laughter": AUDIO_EVENT_LAUGHTER,
+    "giggle": AUDIO_EVENT_LAUGHTER,
+    "chuckle": AUDIO_EVENT_LAUGHTER,
+    "silence": AUDIO_EVENT_SILENCE,
+    "bgm": AUDIO_EVENT_ENVIRONMENT,
+    "music": AUDIO_EVENT_ENVIRONMENT,
+    "applause": AUDIO_EVENT_ENVIRONMENT,
+    "noise": AUDIO_EVENT_ENVIRONMENT,
+    "keyboard": AUDIO_EVENT_ENVIRONMENT,
+    "typing": AUDIO_EVENT_ENVIRONMENT,
+    "speech": None,
+    "breath": None,
+    "cough": None,
+    "sneeze": None,
+    "scream": None,
+}
+
+# 噪音降权（J-2）：轻量 SNR 检测；低于阈值 → 声学情绪权重降为与语义持平
+NOISE_SNR_THRESHOLD_DB = 15.0
+NOISE_FLOOR_PERCENTILE = 10.0
+SIGNAL_PERCENTILE = 90.0
+SNR_FRAME_MS = 20
+
 _sensevoice_state: dict[str, Any | None] = {"model": None}
 _sensevoice_model_lock = threading.Lock()
 
@@ -151,6 +181,14 @@ class AsrResult:
     segments: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    # ---- B5a · Wave4 AgentJ 新增（J-1/J-2/J-3 音频事件/噪音/段级合并）----
+    audio_events: list[str] = field(default_factory=list)
+    emotion_bonus: bool = False
+    silence_hint: bool = False
+    not_oral: bool = False
+    snr_db: float | None = None
+    noise_weight: str = "high"  # high=声学权重大；equal=噪音大时与语义持平
+    emotion_merge: dict[str, Any] | None = None  # dominant/peak 段级合并结构
 
     def audit_dict(self) -> dict[str, Any]:
         return {
@@ -171,6 +209,13 @@ class AsrResult:
                 self.emotion != "平静"
                 and self.emotion_confidence >= EMOTION_ACTION_THRESHOLD
             ),
+            "emotion_merge": self.emotion_merge,
+            "audio_events": self.audio_events,
+            "emotion_bonus": self.emotion_bonus,
+            "silence_hint": self.silence_hint,
+            "not_oral": self.not_oral,
+            "snr_db": self.snr_db,
+            "noise_weight": self.noise_weight,
             "confidence": self.confidence,
             "mock": self.mock,
             "segments": self.segments,
@@ -187,6 +232,7 @@ class SenseVoiceResult:
     emotion: str
     emotion_confidence: float
     raw_emotion: str
+    audio_events: list[str] = field(default_factory=list)
 
 
 def _matches_magic(audio_format: str, data: bytes) -> bool:
@@ -438,6 +484,153 @@ def _emotion_label(raw: str | None) -> str:
     return EMOTION_MAP.get(raw.strip().lower(), "平静")
 
 
+# ---- B5a · Wave4 AgentJ：音频事件 / 噪音降权 / 段级情绪合并 ----
+
+def _parse_audio_events(raw_text: str) -> list[str]:
+    """从 SenseVoice 富文本标签解析音频事件（12 类取 3 消费，其余忽略）。"""
+    events: list[str] = []
+    for tag in re.findall(r"<\|([^|]+)\|>", raw_text):
+        event = _SENSEVOICE_AUDIO_EVENT_TAGS.get(tag.strip().lower())
+        if event and event not in events:
+            events.append(event)
+    return events
+
+
+def apply_audio_event_effects(result: AsrResult) -> None:
+    """消费音频事件 3 类：笑声→情绪加分；静音→提示空段；键盘/环境音→疑似非口述。"""
+    events = set(result.audio_events)
+    if AUDIO_EVENT_LAUGHTER in events:
+        # 笑声 = 正向情绪信号（B5a §2 情绪加分）：中性/低置信时提为"开心"，
+        # 不覆盖已存在的强负向情绪（哭着笑由语义侧兜底）。
+        result.emotion_bonus = True
+        if result.emotion == "平静" or result.emotion_confidence < EMOTION_ACTION_THRESHOLD:
+            if result.emotion == "平静":
+                result.emotion = "开心"
+                result.emotion_confidence = max(result.emotion_confidence, 0.6)
+                if result.emotion_source in {"", "none"}:
+                    result.emotion_source = "audio_event_laughter"
+    if AUDIO_EVENT_SILENCE in events:
+        result.silence_hint = True
+    if AUDIO_EVENT_ENVIRONMENT in events:
+        result.not_oral = True
+
+
+def estimate_snr(path: str | Path) -> float | None:
+    """轻量信噪比估计（仅 16bit 单声道 WAV）：分帧能量 → 底噪=低分位/信号=高分位。
+
+    返回 dB 值；非 16bit 单声道 WAV 或读取失败返回 None（不参与降权）。
+    """
+    import numpy as np
+
+    try:
+        with wave.open(str(path), "rb") as wf:
+            if wf.getsampwidth() != 2 or wf.getnchannels() != 1:
+                return None
+            rate = wf.getframerate() or 16000
+            pcm = wf.readframes(wf.getnframes())
+    except (OSError, EOFError, wave.Error):
+        return None
+    if not pcm:
+        return None
+    samples = np.frombuffer(pcm, dtype="<i2").astype(np.float64)
+    if samples.size == 0:
+        return None
+    frame_len = max(1, int(rate * SNR_FRAME_MS / 1000))
+    usable = samples.size - samples.size % frame_len
+    if usable < frame_len:
+        usable = samples.size
+        frame_len = samples.size
+    frames = samples[:usable].reshape(-1, frame_len)
+    energies = (frames * frames).mean(axis=1)
+    if energies.size == 0 or float(energies.max()) <= 0.0:
+        return None
+    noise = float(np.percentile(energies, NOISE_FLOOR_PERCENTILE))
+    signal = float(np.percentile(energies, SIGNAL_PERCENTILE))
+    noise = max(noise, 1e-12)
+    snr_db = 10.0 * math.log10(max(signal, noise) / noise)
+    return round(float(snr_db), 1)
+
+
+def _noise_weight(snr_db: float | None) -> str:
+    """噪音大（SNR 低于阈值）→ 声学情绪权重降为与语义持平（B5a §2 输入分布兜底）。"""
+    if snr_db is None or snr_db >= NOISE_SNR_THRESHOLD_DB:
+        return "high"
+    return "equal"
+
+
+def merge_segment_emotion(
+    results: list[AsrResult],
+    *,
+    noise_weight: str = "high",
+) -> dict[str, Any] | None:
+    """段级情绪合并（J-3，对齐 B5a §3 设计）：主导 = 时长最长段；峰值保留为标记。
+
+    输出结构：
+      dominant: {emotion, confidence, segment_index, duration_ms}   主导段（时长最长）
+      peak:     {emotion, confidence, segment_index}                峰值段（置信度最高）
+      segments: 每段 {index, emotion, confidence, duration_ms}
+      strategy: longest_dominant_peak | single_segment
+      noise_weight: high | equal（J-2 噪音降权登记）
+    """
+    if not results:
+        return None
+    metas = []
+    for index, item in enumerate(results, 1):
+        metas.append(
+            {
+                "index": index,
+                "emotion": item.emotion,
+                "confidence": item.emotion_confidence,
+                "duration_ms": item.duration_ms,
+            }
+        )
+    dominant = max(metas, key=lambda m: m["duration_ms"])
+    peak = max(metas, key=lambda m: m["confidence"])
+    return {
+        "dominant": {
+            "emotion": dominant["emotion"],
+            "confidence": dominant["confidence"],
+            "segment_index": dominant["index"],
+            "duration_ms": dominant["duration_ms"],
+        },
+        "peak": {
+            "emotion": peak["emotion"],
+            "confidence": peak["confidence"],
+            "segment_index": peak["index"],
+        },
+        "segments": metas,
+        "strategy": "longest_dominant_peak",
+        "noise_weight": noise_weight,
+    }
+
+
+def single_segment_emotion_merge(result: AsrResult, *, noise_weight: str) -> dict[str, Any]:
+    """非分段路径的合并结构（单段：dominant == peak == 自身）。"""
+    return {
+        "dominant": {
+            "emotion": result.emotion,
+            "confidence": result.emotion_confidence,
+            "segment_index": 1,
+            "duration_ms": result.duration_ms,
+        },
+        "peak": {
+            "emotion": result.emotion,
+            "confidence": result.emotion_confidence,
+            "segment_index": 1,
+        },
+        "segments": [
+            {
+                "index": 1,
+                "emotion": result.emotion,
+                "confidence": result.emotion_confidence,
+                "duration_ms": result.duration_ms,
+            }
+        ],
+        "strategy": "single_segment",
+        "noise_weight": noise_weight,
+    }
+
+
 _SENSEVOICE_TOKENIZER_NAME = "chn_jpn_yue_eng_ko_spectok.bpe.model"
 
 
@@ -634,6 +827,7 @@ def _infer_sensevoice(path: Path) -> SenseVoiceResult:
             raw_emotion,
         ),
         raw_emotion=raw_emotion,
+        audio_events=_parse_audio_events(raw_text),
     )
 
 
@@ -646,7 +840,7 @@ def _transcribe_sensevoice(path: Path) -> AsrResult:
     """本地 CPU 降级通道：SenseVoiceSmall 转写 + 声学情绪。"""
     audio = inspect_audio(path)
     local = _infer_sensevoice(path)
-    return AsrResult(
+    result = AsrResult(
         text=local.text,
         channel="sensevoice",
         outcome="succeeded" if local.text else "no_speech",
@@ -659,7 +853,11 @@ def _transcribe_sensevoice(path: Path) -> AsrResult:
         provider="local",
         audio_format=audio.audio_format,
         source_audio_sha256=audio.sha256,
+        audio_events=list(local.audio_events),
     )
+    if result.outcome == "succeeded":
+        apply_audio_event_effects(result)
+    return result
 
 
 def should_enhance_with_local_emotion(
@@ -701,6 +899,8 @@ def _enhance_with_local_emotion(
     result.emotion_confidence = local.emotion_confidence
     result.emotion_source = "sensevoice_local"
     result.emotion_model = MODEL_SENSEVOICE
+    result.audio_events = list(local.audio_events)
+    apply_audio_event_effects(result)
     return result
 
 
@@ -925,16 +1125,26 @@ def transcribe(
     if audio.audio_format == "wav" and _wav_is_digital_silence(path):
         return _no_speech_result(audio)
 
+    # J-2 噪音降权：WAV 才能算 SNR（压缩格式不参与降权，维持默认 high）
+    snr_db = estimate_snr(path) if audio.audio_format == "wav" else None
+    noise_weight = _noise_weight(snr_db)
+
     segments = _segments_for(path) if audio.audio_format == "wav" else None
     if segments == []:
         return _no_speech_result(audio)
     if segments is None:
-        return _transcribe_one(
+        result = _transcribe_one(
             path,
             preferred,
             [],
             enhance_emotion=enhance_emotion,
         )
+        result.snr_db = snr_db
+        result.noise_weight = noise_weight
+        result.emotion_merge = single_segment_emotion_merge(
+            result, noise_weight=noise_weight
+        )
+        return result
 
     import tempfile
 
@@ -981,17 +1191,19 @@ def transcribe(
         return _no_speech_result(audio)
 
     first = results[0]
-    text_results = [item for item in results if item.text]
-    strongest_emotion = max(text_results, key=lambda item: item.emotion_confidence)
     mock_used = any(item.mock for item in results)
+
+    # J-3 段级情绪合并（对齐 B5a §3）：主导 = 时长最长段；峰值保留为标记
+    dominant = max(results, key=lambda item: item.duration_ms)
+    merge = merge_segment_emotion(results, noise_weight=noise_weight)
     return AsrResult(
         text="".join(texts),
         channel="mock" if mock_used else first.channel,
         outcome="mock" if mock_used else "succeeded",
-        emotion=strongest_emotion.emotion,
-        emotion_confidence=strongest_emotion.emotion_confidence,
-        emotion_source=strongest_emotion.emotion_source,
-        emotion_model=strongest_emotion.emotion_model,
+        emotion=dominant.emotion,
+        emotion_confidence=dominant.emotion_confidence,
+        emotion_source=dominant.emotion_source,
+        emotion_model=dominant.emotion_model,
         confidence=sum(item.confidence for item in results) / len(results),
         duration_ms=audio.duration_ms,
         mock=mock_used,
@@ -1000,6 +1212,18 @@ def transcribe(
         provider_request_id=first.provider_request_id,
         audio_format=audio.audio_format,
         source_audio_sha256=audio.sha256,
+        # J-1 音频事件跨段合并（去重并集）＋ J-2 SNR/权重 + J-3 合并结构
+        audio_events=list(
+            dict.fromkeys(
+                event for item in results for event in item.audio_events
+            )
+        ),
+        emotion_bonus=any(item.emotion_bonus for item in results),
+        silence_hint=any(item.silence_hint for item in results),
+        not_oral=any(item.not_oral for item in results),
+        snr_db=snr_db,
+        noise_weight=noise_weight,
+        emotion_merge=merge,
         segments=[segment for item in results for segment in item.segments],
         usage={"segments": [item.usage for item in results if item.usage]},
         errors=[error for item in results for error in item.errors],

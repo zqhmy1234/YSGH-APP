@@ -62,6 +62,15 @@
 
 ---
 
+### 2026-08-26 16:04 · commit b6b9db7 · ts=1787731445
+- **错误**：pre-commit lint: F401 unused import / S311 pseudo-random / E501 line too long in tests
+- **根因**：新增测试未预跑 ruff：test_asr 引入未用 import wave、random.Random 触发 bandit S311、test_notify 长行超 120；Message 模型列是 sent_at 非 created_at
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-26 16:00 · commit 43b97a7 · ts=1787731238
 - **错误**：CI #13 Init PostgreSQL 失败 exit 2：schema.sql 建库步骤 psql -U yishu_app 认证失败
 - **根因**：为'避免日志明文'把 PGPASSWORD 从每条命令内联改为步骤级 env（单一密码 admin），导致 -U yishu_app 用错密码；本地 PG 复现确认 admin 连 yishu_app 认证失败 exit 2（#13 与 #6 差异仅在密码传递方式）

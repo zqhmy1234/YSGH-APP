@@ -102,6 +102,14 @@ def transcribe_audio(
                 audio_format=result.audio_format,
                 source_audio_sha256=result.source_audio_sha256,
                 errors=result.errors,
+                # B5a Wave4 AgentJ：音频事件/噪音/段级合并（J-1/J-2/J-3）
+                audio_events=result.audio_events,
+                emotion_bonus=result.emotion_bonus,
+                silence_hint=result.silence_hint,
+                not_oral=result.not_oral,
+                snr_db=result.snr_db,
+                noise_weight=result.noise_weight,
+                emotion_merge=result.emotion_merge,
                 guardrail=GuardrailVerdict(passed=verdict["pass"], reason=verdict["reason"]),
             )
         )

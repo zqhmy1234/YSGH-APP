@@ -34,6 +34,22 @@ class AsrTranscribeResponse(BaseModel):
     source_audio_sha256: str = Field(..., description="原音频 SHA-256 指纹")
     errors: list[str] = Field(default_factory=list, description="通道降级记录（不含密钥）")
     guardrail: "GuardrailVerdict" = Field(..., description="护栏审核结论（B5b）")
+    # ---- B5a Wave4 AgentJ 新增（J-1/J-2/J-3，可选向后兼容）----
+    audio_events: list[str] = Field(
+        default_factory=list,
+        description="音频事件 3 类消费（laughter/silence/environment，MVP 只消费这 3 类）",
+    )
+    emotion_bonus: bool = Field(False, description="笑声等正向音频事件带来的情绪加分")
+    silence_hint: bool = Field(False, description="检测到静音空段（提示可删除）")
+    not_oral: bool = Field(False, description="疑似非口述内容（键盘/环境音主导）")
+    snr_db: float | None = Field(None, description="轻量信噪比（dB，仅 WAV；非 16bit 单声道为 null）")
+    noise_weight: str = Field(
+        "high", description="声学情绪权重：high=权重大；equal=噪音大时与语义持平"
+    )
+    emotion_merge: dict | None = Field(
+        None,
+        description="段级情绪合并结构（dominant=时长最长段 + peak=峰值，对齐 B5a §3）",
+    )
 
 
 class GuardrailVerdict(BaseModel):

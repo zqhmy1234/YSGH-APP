@@ -13,7 +13,7 @@
 | # | 测试项 | 验证内容 | 结果 | 证据 |
 |---|---|---|---|---|
 | POC-01 | 相册监听（ContentObserver） | 新照片 ≤10s 触发导入；杀进程重启自动重挂；撤销权限恢复不崩溃 | ✅ **PASS** | nova 11 真机：push 测试图 + MEDIA_SCANNER 广播 → 9s 内回调 #1/#2/#3（logcat POC:I 20:16:05-14） |
-| POC-02 | 前台录音（microphone 前台服务） | 灭屏/切后台录音不中断；中断状态机；文件完整 | ✅ **PASS** | nova 11 真机：灭屏 13s 录制 9822ms 完整文件（目标 ≥8s），前台服务通知常驻（logcat POC02-Recording 20:19:14-26） |
+| POC-02 | 前台录音（microphone 前台服务） | 灭屏/切后台录音不中断；文件完整 | ✅ **PASS（部分）** | nova 11 真机：灭屏 13s 录制 9822ms 完整文件（目标 ≥8s），前台服务通知常驻（logcat POC02-Recording 20:19:14-26）。**中断状态机原 POC 未实现**——`RecordingService.kt` 已按 wav 16k 契约重做（AudioRecord + 中断状态机 + 30min 自动结束），真机验证转 Wave4 AgentJ 客户端 UTS 集成（J-7） |
 | POC-03 | attribution tag（Android 16 媒体归因） | DEV-006 归因标识正确；DEV-007 低版本不崩溃 | ✅ **PASS（完整）** | DEV-006：Android 16 模拟器（yishu_api36，API 36）content query 断言 `_id=22, owner_package_name=com.yishu.poc`，系统自动归因于写入方 App；DEV-007：nova 11（Android 12）无归因 API 不崩溃 |
 | POC-04 | SQLCipher 加密 | 密文无明文泄漏；错误密钥拒绝；轮换不丢数据 | ✅ **PASS** | nova 11 真机：密文无明文 ✓ 错误密钥拒绝 ✓ 正确密钥重读"敏感记忆内容-真机" ✓（logcat POC:I 20:15:39） |
 | POC-05 | 事件聚合 spike | ST-DBSCAN 四层聚合算法可行性 | ✅ **PASS** | research/event_aggregation/run_validation.py：10 项验证全过（150 张→500 张 3ms，预算 2s），后续已升级为 M1 Part 1 正式原型（497 张真实截图基准 15 项验证全过，6966f13） |
