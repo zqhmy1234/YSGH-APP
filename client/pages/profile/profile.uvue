@@ -5,6 +5,9 @@
 			<text class="header-sub">记忆与偏好</text>
 		</view>
 
+		<!-- 同步状态横幅（B4 §7 · Wave3 H）：待上传/失败标红/暂停/继续上传；自包含组件 -->
+		<UploadStatusBanner />
+
 		<!-- 画像卡（冷启动状态 T-PL-2） -->
 		<view class="profile-card">
 			<view class="profile-head">

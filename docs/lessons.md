@@ -17,6 +17,24 @@
 
 ---
 
+### 2026-08-26 07:36 · commit 4ae3632 · ts=1787700960
+- **错误**：UTS 模块级函数引用直接传参报 '参数类型不匹配 实际 Unit 预期 Function0<Unit>'：onNetworkRestored(maybeUploadHeldOnWifi)
+- **根因**：UTS 回调形参需 lambda 包装：onNetworkRestored(() => { maybeUploadHeldOnWifi() })；不能直接传具名函数引用
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-26 07:36 · commit 4ae3632 · ts=1787700960
+- **错误**：UTS 可选参数(?:)在调用点不可省略实参：startPeriodicSync()/uploadBatch(items,cb) 编译报 'No value passed for parameter'
+- **根因**：uni-app x UTS 编译器对 param?: Type 的可选参数仍要求调用处传参；省略会编译失败
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-25 23:16 · commit fe1b376 · ts=1787696184
 - **错误**：集成接线 bug：incremental_aggregate 入口未解析 eps_t_sec=None，_can_absorb 里 timedelta(seconds=None) 抛 TypeError（全量门禁 tests+research 双红）
 - **根因**：保守开关接线时只在 aggregate() 入口解析 None，incremental_aggregate() 直接透传 None 给 _can_absorb/st_dbscan；定向单测（test_agg_reference 11 项）与 run_validation 18 场景跑绿后才暴露——定向测试未覆盖 None 路径
