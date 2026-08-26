@@ -126,7 +126,15 @@ def create_message(
     body: str,
     payload: dict | None = None,
 ) -> Message:
-    """统一消息入库（in-app 与 push 同表）；push 消息经 mock 通道发送"""
+    """统一消息入库（in-app 与 push 同表）；push 消息经 mock 通道发送
+
+    R2#2（事务边界）：本函数**不 commit**——只 db.flush([msg]) 取得消息 id
+    （供 mock 推送日志），落库由最外层编排者统一 commit：
+      管线 process_content / 情绪任务 enrich_content_emotion / 复盘 generate_daily_review。
+    此前 create_message 内 db.commit() 被管线事务调用（consume_emotion →
+    maybe_send_emotion_care）时嵌套 commit，破坏主事务原子性（重构侦察 R2-P1#2）。
+    用 flush([msg]) 仅刷本条消息，不触发会话整体 flush（不把内容行变更提前落库）。
+    """
     msg = Message(
         user_id=user_id,
         channel=channel,
@@ -136,8 +144,7 @@ def create_message(
         payload=payload or {},
     )
     db.add(msg)
-    db.commit()
-    db.refresh(msg)
+    db.flush([msg])
 
     if channel == "push":
         # 推送厂商凭证未配置 → mock 通道（S4-07：交付调度+消息生成+消息中心；
@@ -170,7 +177,12 @@ def _today_stats(db: Session, user_id: str, day: date) -> dict[str, int]:
 
 
 def generate_daily_review(db: Session, user_id: str, day: date | None = None) -> Message | None:
-    """每日复盘（22:00 push）：汇总今日内容；无内容返回 None（防打扰）"""
+    """每日复盘（22:00 push）：汇总今日内容；无内容返回 None（防打扰）
+
+    R2#2（事务边界）：本函数是每日复盘独立流程的最外层编排者（daily_review.py
+    每用户调用一次，不再依赖 create_message 内部 commit）——生成消息后统一
+    commit 落库。只在独立脚本流程调用，不会被嵌入其它事务。
+    """
     day = day or datetime.now(REVIEW_TZ).date()
     stats = _today_stats(db, user_id, day)
     if not stats:
@@ -179,7 +191,7 @@ def generate_daily_review(db: Session, user_id: str, day: date | None = None) ->
 
     total = sum(stats.values())
     parts = "、".join(f"{_TYPE_CN.get(t, t)} {n} 条" for t, n in sorted(stats.items()))
-    return create_message(
+    msg = create_message(
         db,
         user_id,
         channel="push",
@@ -188,6 +200,8 @@ def generate_daily_review(db: Session, user_id: str, day: date | None = None) ->
         body=f"今天记下了 {total} 条记忆（{parts}）。睡前花一分钟看看，让日子被记住。",
         payload={"day": day.isoformat(), "stats": stats, "template": "mock"},
     )
+    db.commit()
+    return msg
 
 
 def notify_voice_done(db: Session, user_id: str, content_id: str) -> Message:

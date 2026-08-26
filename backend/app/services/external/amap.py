@@ -156,16 +156,27 @@ def get_place(db, lat: float, lng: float) -> str | None:
     if info.get("mock"):
         return info["place"]
 
-    # 真实结果 → 写缓存（合并 upsert，幂等）
+    # 真实结果 → 写缓存（R2#2 事务边界：缓存必须**中途落库**，且不得在调用方
+    # 管线事务内嵌套 commit——显式用独立 Session 写（独立事务），外层事务回滚
+    # 不影响缓存；缓存写冲突只回滚本次写入，不影响调用方事务）
+    from app.db.session import SessionLocal
+
     try:
-        db.merge(GeoCache(
-            geohash=gh,
-            place=info["place"],
-            city=info.get("city") or "",
-            province=info.get("province") or "",
-        ))
-        db.commit()
-    except Exception as exc:  # noqa: BLE001 —— 缓存写失败不影响返回
-        db.rollback()
-        logger.warning("geo_cache 写入失败 %s: %s", gh, exc)
+        cache_db = SessionLocal()
+        try:
+            with cache_db.begin_nested():  # SAVEPOINT：本次缓存写失败只回滚本写入
+                cache_db.merge(GeoCache(
+                    geohash=gh,
+                    place=info["place"],
+                    city=info.get("city") or "",
+                    province=info.get("province") or "",
+                ))
+            cache_db.commit()
+        except Exception as exc:  # noqa: BLE001 —— 缓存写失败不影响返回
+            cache_db.rollback()
+            logger.warning("geo_cache 写入失败 %s: %s", gh, exc)
+        finally:
+            cache_db.close()
+    except Exception as exc:  # noqa: BLE001 —— 独立会话异常同样不影响返回
+        logger.warning("geo_cache 会话异常 %s: %s", gh, exc)
     return info["place"]

@@ -83,6 +83,9 @@ def test_consume_emotion_writes_events_dominant_peak(db_user):
     ev = _link_event(db, user.id, c.id)
 
     consume_emotion(db, c)
+    # R2#2（事务边界）：consume_emotion 全链不再 commit，events.emotion 为内存
+    # 变更——显式 commit 后 refresh 才能读到（落库由最外层编排者统一 commit）
+    db.commit()
     db.refresh(ev)
 
     assert ev.emotion is not None

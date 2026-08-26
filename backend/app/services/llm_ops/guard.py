@@ -157,29 +157,44 @@ def reflow_violation_words(
     - LLM 判敏感且规则未覆盖 → 该类别种子词回流（防重复调 LLM）
     已存在 (word, user_id) 的行跳过（唯一约束幂等）；进程内热加入立即生效。
     返回实际插入条数。
+
+    R2#2（事务边界）：回流词必须**中途落库**（规则词不受外层管线事务回滚影响），
+    因此显式用独立 Session 写（独立事务），不在调用方事务内嵌套 commit；
+    每词包 begin_nested（SAVEPOINT）失败隔离——单词约束冲突只回滚该词，
+    不连带丢弃同批其它回流词。`db` 参数仅保留签名兼容（调用方已传），不参与写入。
     """
     from sqlalchemy import select
 
-    inserted = 0
-    for raw in words:
-        word = (raw or "").strip()
-        if not word:
-            continue
-        exists = db.execute(
-            select(SensitiveWord.id).where(
-                SensitiveWord.word == word,
-                SensitiveWord.user_id == user_id,
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
-            continue
-        db.add(SensitiveWord(word=word, level=3, user_id=user_id))
-        from app.services.external.sensitive_words import add_violation_word
+    from app.db.session import SessionLocal
 
-        add_violation_word(word, category)
-        inserted += 1
-    if inserted:
-        db.commit()
+    local = SessionLocal()
+    inserted = 0
+    try:
+        for raw in words:
+            word = (raw or "").strip()
+            if not word:
+                continue
+            exists = local.execute(
+                select(SensitiveWord.id).where(
+                    SensitiveWord.word == word,
+                    SensitiveWord.user_id == user_id,
+                )
+            ).scalar_one_or_none()
+            if exists is not None:
+                continue
+            try:
+                with local.begin_nested():
+                    local.add(SensitiveWord(word=word, level=3, user_id=user_id))
+            except Exception as exc:  # noqa: BLE001 —— 单词回流失败隔离（SAVEPOINT）
+                logger.warning("回流词写入失败 %r: %s", word, exc)
+                continue
+            from app.services.external.sensitive_words import add_violation_word
+
+            add_violation_word(word, category)
+            inserted += 1
+        local.commit()
+    finally:
+        local.close()
     return inserted
 
 

@@ -86,6 +86,35 @@ def test_create_message_in_app_and_push(db_user):
     assert len(rows) == 2
 
 
+def test_create_message_does_not_commit(db_user):
+    """R2#2（事务边界）：create_message 只 flush 不 commit——独立会话在调用方
+    commit 前不可见；落库由最外层编排者统一 commit（不嵌套提交管线事务）。"""
+    db, user = db_user
+    create_message(db, user.id, "in_app", "care_followup", "未提交标题", "正文")
+
+    other = SessionLocal()
+    try:
+        seen = other.execute(
+            select(Message).where(
+                Message.user_id == user.id, Message.title == "未提交标题"
+            )
+        ).scalar_one_or_none()
+        assert seen is None, "create_message 不应 commit（未提交消息独立会话不可见）"
+    finally:
+        other.close()
+
+    db.commit()  # 调用方 commit 后独立会话可见
+    other = SessionLocal()
+    try:
+        assert other.execute(
+            select(Message).where(
+                Message.user_id == user.id, Message.title == "未提交标题"
+            )
+        ).scalar_one() is not None
+    finally:
+        other.close()
+
+
 def test_daily_review_generates_with_content(db_user):
     """22:00 复盘：有内容 → push 消息，按类型统计"""
     db, user = db_user
@@ -143,6 +172,9 @@ def test_messages_api_list_read(db_user):
     db.add(other)
     db.commit()
     create_message(db, other.id, "in_app", "care_followup", "别人的", "别人的消息")
+    # R2#2（事务边界）：create_message 不再 commit（只 flush 取 id）——API 走独立
+    # 会话，须显式 commit 后 TestClient 才能读到已入库消息
+    db.commit()
 
     client = TestClient(app)
     app.dependency_overrides[deps.get_current_user] = lambda: user

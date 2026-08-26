@@ -6,15 +6,15 @@
 - events.emotion 写入（模型字段已存在，现零写入）：主导+峰值结构（对齐 B5a §3）
 - 情绪关怀触发所需的情绪事件投递（触发逻辑在 notify.py，本钩子负责接线）
 
-接线说明（2026-08-26 集成 Agent 需要补一行，pipeline.py 冻结不可改）：
-  enrich_content_emotion（pipeline.py:233）完成本地情绪增强后，目前不会重新调用
-  本钩子 → 初始处理时 funasr 通道 emotion 恒"平静"（enrich 才产出真情绪），
-  关怀触发/事件层联动会滞后。集成 Agent 在 enrich_content_emotion 的 content.emotion
-  赋值后（约 pipeline.py:297 db.commit() 前）补：
-      from app.services.pipeline_ext import consume_emotion
-      consume_emotion(db, content)
-  本钩子幂等安全（重复调用只刷新 events.emotion；关怀/voice_done 由 msg_type
-  幂等键控制），补行后无需改本文件。
+接线说明（R2#2 事务边界修订）：enrich_content_emotion（pipeline.py）完成本地情绪
+增强后已调用本钩子（pipeline.py 内 consume_emotion(db, content)），初始 funasr
+通道 emotion 恒"平静"（enrich 才产出真情绪）的联动缺口已闭环。
+**本钩子（consume_emotion 全链）不 commit**：notify.create_message 已在 R2#2 改为
+只 db.flush([msg]) 不 commit（此前其在 create_message 内 db.commit() 被管线事务
+调用时嵌套 commit，破坏主事务原子性，与本文件"不提交"头注不符）；events.emotion
+联动与消息落库统一由最外层编排者 commit（管线 process_content 主提交 /
+情绪任务 enrich_content_emotion 自身 commit）。本钩子幂等安全（重复调用只刷新
+events.emotion；关怀/voice_done 由 msg_type 幂等键控制）。
 """
 from __future__ import annotations
 
