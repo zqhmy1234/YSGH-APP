@@ -255,6 +255,20 @@ def create_content(
     if req.content_type not in ("photo", "text", "voice", "article"):
         raise ApiError(ERR_CONTENT_001, "不支持的 content_type", http=422)
 
+    # R4#4（创建端点幂等键）：同用户 client_generated_id 已存在 → 幂等返回既有记录
+    # （双击/网络重试不重复入库；photo/voice 既有幂等——perceptual_hash 409 / cos_key——
+    #  保留为兜底，见下方去重与 voice 分支）
+    if req.client_generated_id:
+        existing = db.scalar(
+            select(Content).where(
+                Content.user_id == user.id,
+                Content.client_generated_id == req.client_generated_id,
+                Content.deleted_at.is_(None),
+            )
+        )
+        if existing is not None:
+            return ApiResponse(data=_to_out(existing))
+
     # TD-P3 M4（审查中危）：自供 cos_key 归属/前缀/存在性校验（防跨租户对象拉取）
     if req.cos_key:
         _validate_cos_key(db, user.id, req.cos_key)
@@ -305,6 +319,7 @@ def create_content(
         gps_lat=req.gps_lat,
         gps_lng=req.gps_lng,
         perceptual_hash=req.perceptual_hash,
+        client_generated_id=req.client_generated_id,
         cos_key=req.cos_key,
         thumbnail_key=req.thumbnail_key,
         extra=req.extra,
@@ -315,8 +330,20 @@ def create_content(
     try:
         db.commit()
     except IntegrityError:
-        # 审查修复(P1-04)：并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409
+        # 并发冲突（client_generated_id 幂等键 / perceptual_hash 去重）→ 回滚重查
         db.rollback()
+        # R4#4：并发同 client_generated_id → 唯一约束冲突 → 幂等返回既有记录
+        if req.client_generated_id:
+            dup = db.execute(
+                select(Content).where(
+                    Content.user_id == user.id,
+                    Content.client_generated_id == req.client_generated_id,
+                    Content.deleted_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if dup is not None:
+                return ApiResponse(data=_to_out(dup))
+        # 审查修复(P1-04)：并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409
         dup = db.execute(
             select(Content).where(
                 Content.user_id == user.id,

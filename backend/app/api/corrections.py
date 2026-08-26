@@ -60,14 +60,21 @@ def arbitrate_text(
     user: User = Depends(get_current_user),
 ):
     """三层裁决分类（P2-01 推理移 worker：SetFit ~27s 入队异步，返回 job_id 供轮询）"""
-    from app.core.queue import enqueue_high
+    from app.core.queue import enqueue_high, enqueue_idempotent
     from app.services.correction import arbitrate_job
 
     # TD-P3 M3（审查中危）：job.meta 写入 user_id —— 查询侧归属校验（防越权轮询他人结果）
-    job = enqueue_high(
-        arbitrate_job, str(user.id), req.text, req.content_type,
-        meta={"user_id": str(user.id)},
-    )
+    meta = {"user_id": str(user.id)}
+    if req.client_request_id:
+        # R4#4（提交端点幂等）：同 key 重复/并发提交返回同一 job，不重复入队
+        job = enqueue_idempotent(
+            "arbitrate", str(user.id), req.client_request_id,
+            arbitrate_job, str(user.id), req.text, req.content_type, meta=meta,
+        )
+    else:
+        job = enqueue_high(
+            arbitrate_job, str(user.id), req.text, req.content_type, meta=meta,
+        )
     return ApiResponse(data={"job_id": job.id, "status": "queued"})
 
 

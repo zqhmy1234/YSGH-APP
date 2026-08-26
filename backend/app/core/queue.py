@@ -77,3 +77,42 @@ def get_job(job_id: str):
         return Job.fetch(job_id, connection=redis)
     except Exception:  # noqa: BLE001 —— job 不存在/已过期
         return None
+
+
+def enqueue_idempotent(
+    prefix: str,
+    user_id: str,
+    client_request_id: str,
+    func,
+    *args,
+    job_timeout: int = ASR_JOB_TIMEOUT,
+    **kwargs,
+):
+    """幂等入队（R4#4：classify/corrections 提交端点重试安全）
+
+    确定性 job_id = "{prefix}:{user_id}:{client_request_id}" + Redis 原子预占位：
+      - 首次提交：占位成功 → 入队，返回 job
+      - 重复/并发提交：占位失败 → 返回既有 job（不重复入队，防双入队双执行）；
+        既有 job 已失败/过期 → 重建（RQ 同 job_id 覆盖）。
+    幂等键 TTL 7 天（与 RETRY_FAILURE_TTL 对齐，防键无限膨胀）。
+    """
+    job_id = f"{prefix}:{user_id}:{client_request_id}"
+    idem_key = f"yishu:idem:{job_id}"
+
+    def _enqueue() -> object:
+        return get_queue(QUEUE_HIGH).enqueue(
+            func,
+            *args,
+            job_id=job_id,
+            job_timeout=job_timeout,
+            retry=RETRY_POLICY,
+            failure_ttl=RETRY_FAILURE_TTL,
+            **kwargs,
+        )
+
+    if redis.set(idem_key, "1", nx=True, ex=RETRY_FAILURE_TTL):
+        return _enqueue()
+    existing = get_job(job_id)
+    if existing is not None and existing.get_status() != "failed":
+        return existing
+    return _enqueue()

@@ -77,11 +77,22 @@ class Content(Base):
 
     去重（Q16）：同用户 perceptual_hash 唯一（PG 多 NULL 不冲突，
     text/voice 无哈希不受约束）；修复：ORM 补唯一约束防并发双写（审查 MAJOR）。
+
+    R4#4（创建端点幂等键）：client_generated_id 为客户端生成的幂等键，
+    (user_id, client_generated_id) 部分唯一索引（PG 多 NULL 不冲突 → 仅非空参与），
+    photo/voice 既有幂等（perceptual_hash 409 / cos_key）保留为兜底。
     """
 
     __tablename__ = "contents"
     __table_args__ = (
         UniqueConstraint("user_id", "perceptual_hash", name="uq_contents_user_hash"),
+        Index(
+            "uq_contents_user_client_generated_id",
+            "user_id",
+            "client_generated_id",
+            unique=True,
+            postgresql_where=sa_text("client_generated_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
@@ -96,6 +107,9 @@ class Content(Base):
     gps_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     place: Mapped[str | None] = mapped_column(String, nullable=True)
     perceptual_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    client_generated_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=False
+    )  # R4#4 幂等键（客户端生成，同用户唯一）
     emotion: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     sensitive_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     sensitive_status: Mapped[str] = mapped_column(String, default="正常")

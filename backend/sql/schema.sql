@@ -93,6 +93,7 @@ CREATE TABLE contents (                        -- 核心表
     gps_lng         double precision,
     place           text,                      -- 逆编码地名（geo_cache）
     perceptual_hash text,                      -- 感知哈希去重（同用户唯一）
+    client_generated_id varchar(64),           -- 创建幂等键（R4#4，客户端生成，同用户唯一）
     emotion         jsonb,                     -- {value, confidence, source}（B5-a）
     sensitive_tags  jsonb,                     -- 敏感话题标签（B5-b 内容级）
     sensitive_status text NOT NULL DEFAULT '正常',  -- 正常/待复核/已遮蔽/已解除
@@ -109,6 +110,7 @@ CREATE TABLE contents (                        -- 核心表
     deleted_by      uuid,
     CONSTRAINT uq_contents_user_hash UNIQUE (user_id, perceptual_hash)
 );
+CREATE UNIQUE INDEX uq_contents_user_client_generated_id ON contents(user_id, client_generated_id) WHERE client_generated_id IS NOT NULL;
 CREATE INDEX idx_contents_user_created ON contents(user_id, created_at);
 CREATE INDEX idx_contents_user_type ON contents(user_id, content_type);
 CREATE INDEX idx_contents_taken_at ON contents(user_id, taken_at);

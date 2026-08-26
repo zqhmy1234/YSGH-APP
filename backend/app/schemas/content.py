@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field
 
 class ContentCreate(BaseModel):
     content_type: str = Field(..., pattern=r"^(photo|text|voice|article)$")
+    client_generated_id: str | None = Field(
+        None, min_length=1, max_length=64,
+        description="客户端生成的幂等键（R4#4：同用户唯一，双击/重试不重复入库）",
+    )
     text: str | None = None               # OCR 结果/转写/原文
     taken_at: datetime | None = None
     gps_lat: float | None = Field(None, ge=-90, le=90)

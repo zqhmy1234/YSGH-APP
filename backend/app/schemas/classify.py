@@ -4,6 +4,10 @@ from pydantic import BaseModel, Field
 
 class ClassifyRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000, description="文字碎片内容")
+    client_request_id: str | None = Field(
+        None, min_length=1, max_length=64,
+        description="客户端请求幂等键（R4#4：重复提交返回同一 job，不重复入队）",
+    )
 
 
 class ClassScore(BaseModel):

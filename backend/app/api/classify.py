@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.api.deps import get_current_user
 from app.core.errors import ERR_CLASSIFY_002, ERR_CLASSIFY_003, ApiError
-from app.core.queue import enqueue_high, get_job
+from app.core.queue import enqueue_high, enqueue_idempotent, get_job
 from app.db.models import User
 from app.schemas.classify import ClassifyRequest, ClassifyResult
 from app.schemas.common import ApiResponse
@@ -34,7 +34,14 @@ def classify_text(
 ):
     """文字碎片分类：入队异步执行（P2-01 推理移 worker），返回 job_id 供轮询"""
     # TD-P3 M3（审查中危）：job.meta 写入 user_id —— 查询侧据此做归属校验（防越权轮询他人结果）
-    job = enqueue_high(classify_job, req.text, meta={"user_id": str(user.id)})
+    if req.client_request_id:
+        # R4#4（提交端点幂等）：同 key 重复/并发提交返回同一 job，不重复入队
+        job = enqueue_idempotent(
+            "classify", str(user.id), req.client_request_id,
+            classify_job, req.text, meta={"user_id": str(user.id)},
+        )
+    else:
+        job = enqueue_high(classify_job, req.text, meta={"user_id": str(user.id)})
     return ApiResponse(data={"job_id": job.id, "status": "queued"})
 
 
