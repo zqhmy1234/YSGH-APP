@@ -383,17 +383,24 @@ def _process_photo(db: Session, content: Content) -> None:
                 logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
 
         # 2. CI 打标（F1 L2 场景标签 / 搜索标签增强）
-        try:
-            from app.services.external.tencent_ci import image_detect_label
+        # 2026-08-26 真实 key 验证修复：CI 打标要求图片在 COS（image_key=COS key），
+        # fs 真实模式的本地路径不是 COS key → NoSuchKey 静默失效。
+        # 条件：cos 后端（真实打标）或 mock 模式（测试/沙箱，monkeypatch 或 mock 契约）才调用；
+        # fs 真实模式跳过（放行+日志），STORAGE_BACKEND=cos 上线后自动启用。
+        if settings.storage_backend == "cos" or settings.mock_external_ai:
+            try:
+                from app.services.external.tencent_ci import image_detect_label
 
-            if image_path is not None:
-                tags = image_detect_label(str(image_path))
-                if tags:
-                    extra = dict(content.extra or {})
-                    extra["ci_tags"] = tags
-                    content.extra = extra
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
+                if image_path is not None:
+                    tags = image_detect_label(str(image_path))
+                    if tags:
+                        extra = dict(content.extra or {})
+                        extra["ci_tags"] = tags
+                        content.extra = extra
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
+        elif image_path is not None:
+            logger.info("CI 打标跳过（STORAGE_BACKEND=%s 且非 mock，图片不在 COS）", settings.storage_backend)
 
         # Wave0 钩子：B5b 事件级敏感标记 + B1 画像标注（照片 caption/标签）
         from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest

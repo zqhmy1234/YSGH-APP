@@ -78,8 +78,12 @@ class Settings(BaseSettings):
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "yishu-photos"
-    baidu_api_key: str = ""
-    baidu_secret_key: str = ""
+    baidu_api_key: str = Field(
+        "", validation_alias=AliasChoices("BAIDU_API_KEY", "BAIDU_OCR_API_KEY")
+    )
+    baidu_secret_key: str = Field(
+        "", validation_alias=AliasChoices("BAIDU_SECRET_KEY", "BAIDU_OCR_SECRET_KEY")
+    )
     # 高德逆地理（外部API清单 #5）：别名读取——优先 AMAP_API_KEY（.env 惯例），
     # 回退 AMAP_WEB_API_KEY（Infisical 存量名，2026-08-25 已存）
     amap_api_key: str = Field(
