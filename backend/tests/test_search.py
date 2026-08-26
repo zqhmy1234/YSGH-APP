@@ -27,9 +27,10 @@ def auth_headers(client):
 
 
 def test_search_requires_auth(client):
-    """安全修复：未登录 → 401"""
+    """安全修复：未登录 → 401（AUTH_005：未提供认证凭据）"""
     r = client.post("/api/v1/search", json={"q": "杭州旅行"})
     assert r.status_code == 401
+    assert r.json()["code"] == "AUTH_005"
 
 
 def test_search_basic(client, auth_headers):
@@ -47,6 +48,7 @@ def test_search_basic(client, auth_headers):
         headers=auth_headers,
     )
     assert r.status_code == 200, r.text
+    assert r.json()["code"] == "OK"
     cid = r.json()["data"]["id"]
     res = process_content(cid)
     assert res["status"] == "done", res
@@ -57,7 +59,9 @@ def test_search_basic(client, auth_headers):
         headers=auth_headers,
     )
     assert r.status_code == 200
-    data = r.json()["data"]
+    body = r.json()
+    assert body["code"] == "OK"
+    data = body["data"]
     assert data["hits"], f"搜索未命中本用户内容: {data}"
     assert data["total"] > 0
     assert data["intent"] in ("text", "image", "mixed")
@@ -66,34 +70,48 @@ def test_search_basic(client, auth_headers):
 def test_search_trace_present(client, auth_headers):
     """溯源字段（RET-016：每条结果可解释命中）"""
     r = client.post("/api/v1/search", json={"q": "杭州"}, headers=auth_headers)
+    assert r.json()["code"] == "OK"
     data = r.json()["data"]
     for hit in data["hits"]:
         assert hit["trace"], "搜索命中必须带溯源解释"
 
 
 def test_search_latency_metric(client, auth_headers):
-    """延迟指标字段（RET-018 验收前置）"""
+    """延迟指标字段（RET-018 验收前置）——恒真断言补强：类型 + 非负 + 信封"""
     r = client.post("/api/v1/search", json={"q": "吃饭"}, headers=auth_headers)
-    assert r.json()["data"]["latency_ms"] >= 0
+    body = r.json()
+    assert body["code"] == "OK"
+    latency_ms = body["data"]["latency_ms"]
+    assert isinstance(latency_ms, (int, float)), f"latency_ms 应为数值, got {type(latency_ms)}"
+    assert latency_ms >= 0
 
 
 def test_search_limit(client, auth_headers):
     """limit 截断（RET-006）"""
     r = client.post("/api/v1/search", json={"q": "x", "limit": 1}, headers=auth_headers)
-    assert len(r.json()["data"]["hits"]) <= 1
+    body = r.json()
+    assert body["code"] == "OK"
+    assert len(body["data"]["hits"]) <= 1
 
 
 def test_search_empty_query(client, auth_headers):
     """空查询 → 422（需登录后校验 body；认证先于 body 校验）"""
     r = client.post("/api/v1/search", json={"q": ""}, headers=auth_headers)
     assert r.status_code == 422
+    assert r.json()["code"] == "VALIDATION_ERROR"
 
 
 def test_search_filters(client, auth_headers):
-    """payload filter 参数（时间/类型，B2 过滤层）"""
+    """payload filter 参数（时间/类型，B2 过滤层）——补强：信封 + 结构断言"""
     r = client.post(
         "/api/v1/search",
         json={"q": "旅行", "content_types": ["photo"], "limit": 5},
         headers=auth_headers,
     )
     assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == "OK"
+    data = body["data"]
+    assert "hits" in data
+    assert "total" in data
+    assert all(h["content_type"] != "text" for h in data["hits"])
