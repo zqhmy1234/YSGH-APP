@@ -8,8 +8,9 @@
  *
  * 本地操作日志队列（六字段契约：op_id/op_type/payload/status/created_at/retry_count）：
  *   - uni storage 行分隔 JSON 兜底（XView/SQLCipher 自定义基座未就绪，progress.md:14 注记；
- *     后端 offline_queue 六字段已就绪）。队列读写集中在 OpQueue 内聚函数 —— 自定义基座落地后
- *     只需替换 readQueue/writeQueue 的实现为 SQLite DAO，外部调用不变。
+ *     后端 offline_queue 六字段已就绪）。F9/O6 后读写统一走 queue_store.ts 共享存储
+ *     （与 event_ops 合并单 key）——自定义基座落地后只需替换 queue_store 实现为 SQLite DAO，
+ *     外部调用不变；本文件保留 sync push 批推路由（op_type: upsert_field/delete）。
  *   - op_id 幂等：push 返回 applied/conflicts/rejected（服务端按 (user_id,op_id) 去重），
  *     一次成功响应即整批出队（含服务端幂等跳过的 op_id）；conflicts 提示"已保留云端版本"；
  *     rejected 丢弃并记录；网络/5xx 指数退避重试（2s→4s→8s→8s→8s）；4xx 停整批。
@@ -56,7 +57,12 @@ export const BACKOFF_MS: number[] = SHARED_BACKOFF_MS
 const PUSH_BATCH_SIZE: number = 100
 const DEFAULT_SYNC_INTERVAL_MS: number = 2 * 60 * 60 * 1000 // 2 小时定时兜底
 
-const OP_QUEUE_KEY: string = 'yishu_sync_op_queue'
+// O6 双离线队列合并：队列存储单源 queue_store（sync/event 共用 yishu_offline_queue），
+// 路由差异保留在本文件 flush（sync push 批推）与 event_ops flush（confirm/merge/split 顺序）
+import { enqueueEntry, countPendingOfTypes, nextBatchOfTypes, removeByIds } from './queue_store'
+
+/** 同步类型操作（与 event_ops confirm/merge/split 区分，同队列按 op_type 路由） */
+const SYNC_TYPES: Array<string> = ['upsert_field', 'delete']
 const CURSOR_KEY: string = 'yishu_sync_cursor'
 const MIRROR_KEY: string = 'yishu_sync_mirror'
 
@@ -74,28 +80,9 @@ function nextOpId(): string {
 	return 'sync_' + Date.now().toString() + '_' + _opSeq.toString()
 }
 
-// ---------- 队列存储（uni storage 行分隔 JSON；XView/SQLCipher 落地后替换实现） ----------
+// ---------- 队列存储（F9/O6 合并：读写统一走 queue_store.ts 共享存储，本文件只留入队/批推路由） ----------
 
-function readQueue(): Array<string> {
-	const raw = uni.getStorageSync(OP_QUEUE_KEY) as string
-	if (raw == null || raw == '') {
-		return []
-	}
-	const lines = raw.split('\n')
-	const out: Array<string> = []
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i] != '') {
-			out.push(lines[i])
-		}
-	}
-	return out
-}
-
-function writeQueue(lines: Array<string>): void {
-	uni.setStorageSync(OP_QUEUE_KEY, lines.join('\n'))
-}
-
-/** 入队一条操作（六字段契约） */
+/** 入队一条操作（六字段契约；存储共享 queue_store，行为与原 readQueue/writeQueue 等价） */
 function pushOp(opType: string, payload: UTSJSONObject): void {
 	const entry: UTSJSONObject = {
 		op_id: nextOpId(),
@@ -105,10 +92,8 @@ function pushOp(opType: string, payload: UTSJSONObject): void {
 		created_at: isoNow(),
 		retry_count: 0
 	}
-	const lines = readQueue()
-	lines.push(JSON.stringify(entry))
-	writeQueue(lines)
-	console.log('[yishu] sync enqueue ' + opType + ' queue=' + lines.length)
+	enqueueEntry(entry)
+	console.log('[yishu] sync enqueue ' + opType + ' queue=' + countPendingOfTypes(SYNC_TYPES))
 	sharedBroadcastStatus()
 }
 
@@ -141,21 +126,9 @@ export function enqueueDeleteOp(entityType: string, entityId: string, updatedAt:
 	pushOp('delete', payload)
 }
 
-/** 待同步操作条数（pending） */
+/** 待同步操作条数（pending，仅 sync 类型——共享队列按 op_type 过滤） */
 export function pendingSyncCount(): number {
-	const lines = readQueue()
-	let n = 0
-	for (let i = 0; i < lines.length; i++) {
-		try {
-			const e = JSON.parse(lines[i]) as UTSJSONObject
-			if (e != null && e.getString('status') == 'pending') {
-				n++
-			}
-		} catch (e) {
-			// 脏行不计
-		}
-	}
-	return n
+	return countPendingOfTypes(SYNC_TYPES)
 }
 
 // ---------- 暂停控制器（F9 职责分离：实现移至 pause_controller.ts，此处仅再导出兼容既有引用） ----------
@@ -363,50 +336,18 @@ function postBatch(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
 	})
 }
 
-/** 从队列移除一批 op（push 成功响应后整批出队——服务端已按 op_id 幂等去重） */
+/** 从队列移除一批 op（push 成功响应后整批出队——服务端已按 op_id 幂等去重；存储共享 queue_store） */
 function dropBatchFromQueue(ops: Array<UTSJSONObject>): void {
 	const dropIds: Array<string> = []
 	for (let i = 0; i < ops.length; i++) {
 		dropIds.push(ops[i].getString('op_id') ?? '')
 	}
-	const lines = readQueue()
-	const kept: Array<string> = []
-	for (let i = 0; i < lines.length; i++) {
-		let drop = false
-		try {
-			const e = JSON.parse(lines[i]) as UTSJSONObject
-			const id = e != null ? e.getString('op_id') ?? '' : ''
-			for (let j = 0; j < dropIds.length; j++) {
-				if (dropIds[j] != '' && dropIds[j] == id) {
-					drop = true
-					break
-				}
-			}
-		} catch (e) {
-			// 脏行保留
-		}
-		if (!drop) {
-			kept.push(lines[i])
-		}
-	}
-	writeQueue(kept)
+	removeByIds(dropIds)
 }
 
-/** 取下一批待 push 的 op（≤PUSH_BATCH_SIZE） */
+/** 取下一批待 push 的 op（≤PUSH_BATCH_SIZE，仅 sync 类型——共享队列按 op_type 过滤） */
 function nextBatch(): Array<UTSJSONObject> {
-	const lines = readQueue()
-	const out: Array<UTSJSONObject> = []
-	for (let i = 0; i < lines.length && out.length < PUSH_BATCH_SIZE; i++) {
-		try {
-			const e = JSON.parse(lines[i]) as UTSJSONObject
-			if (e != null && e.getString('status') == 'pending') {
-				out.push(e)
-			}
-		} catch (e) {
-			// 脏行跳过
-		}
-	}
-	return out
+	return nextBatchOfTypes(SYNC_TYPES, PUSH_BATCH_SIZE)
 }
 
 /** 清空整批（4xx 不可重试：整批丢弃并记录） */
