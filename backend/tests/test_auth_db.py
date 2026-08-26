@@ -2,14 +2,19 @@
 
 前置：本地 PostgreSQL yishu 隔离库（scripts/setup_pg.sql + schema.sql 已执行）
 运行：pytest backend/tests/test_auth_db.py -v
+
+R8#1（2026-08-27）：跨运行污染修复
+  - 登录 code / 手机号 uuid 化（复用 conftest auth_headers(prefix) 模式）——
+    固定 code = 固定 unionid/phone，中断运行的残留行被下次复用（实测 4 连败 flaky）。
+  - teardown 迁移 conftest cleanup_user_data（devices/user_wechat_bindings 等 30+
+    表全链删）；sms_codes 无 user_id，按本文件 phone 前缀单独清。
 """
 import hashlib
+import uuid
 
 import pytest
 from app.db.models import Device, SmsCode, User
 from app.db.session import SessionLocal
-from app.main import app
-from fastapi.testclient import TestClient
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
@@ -19,25 +24,35 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-@pytest.fixture()
-def client():
-    return TestClient(app)
+def _code(prefix: str) -> str:
+    """唯一登录 code（uuid 化，仿 conftest auth_headers）：跨运行不撞身份。
+
+    mock 微信登录下 unionid = mock-unionid-{code}，uuid code → 每次全新用户。
+    """
+    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+def _phone() -> str:
+    """唯一 11 位数字手机号（139 + 8 位随机数字，schema ^1\\d{10}$）：
+    避免固定号跨运行污染防刷表/验证码表。"""
+    digits = str(uuid.uuid4().int)[-8:]  # uuid.hex 含 a-f，手机号必须纯数字
+    return f"139{digits}"
 
 
 @pytest.fixture()
-def db():
+def db(cleanup_user):
     session = SessionLocal()
     yield session
-    # 清理测试数据（先子后父，避免外键冲突；只删本测试产生的记录）
+    # R8#1：teardown 改 conftest cleanup_user_data（devices 等 30+ 表按 user 全链删，
+    # 不再只按 unionid/phone LIKE 删 user 自身）；sms_codes 无 user_id 单独按 phone 清。
     test_users = session.query(User).filter(
-        (User.unionid.like("mock-unionid-itest-%")) | (User.phone.like("139000000%"))
+        (User.unionid.like("mock-unionid-itest-%")) | (User.phone.like("139%"))
     ).all()
-    test_user_ids = [u.id for u in test_users]
-    if test_user_ids:
-        session.query(Device).filter(Device.user_id.in_(test_user_ids)).delete(synchronize_session=False)
-    session.query(SmsCode).filter(SmsCode.phone.like("139000000%")).delete(synchronize_session=False)
+    for u in test_users:
+        cleanup_user(session, u.id)
+    session.query(SmsCode).filter(SmsCode.phone.like("139%")).delete(synchronize_session=False)
     session.query(User).filter(
-        (User.unionid.like("mock-unionid-itest-%")) | (User.phone.like("139000000%"))
+        (User.unionid.like("mock-unionid-itest-%")) | (User.phone.like("139%"))
     ).delete(synchronize_session=False)
     session.commit()
     session.close()
@@ -46,19 +61,24 @@ def db():
 @pytest.mark.integration
 def test_wechat_login_creates_user(client, db):
     """微信登录：新 unionid → 自动建用户 + 返回 token（AUTH-001 前置）"""
-    r = client.post("/api/v1/auth/wechat", json={"code": "itest-1", "device_id": "itest-dev"})
+    code = _code("itest")
+    r = client.post("/api/v1/auth/wechat", json={"code": code, "device_id": "itest-dev"})
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["access_token"]
     assert data["refresh_token"]
 
     # DB 验证：用户已创建 + devices 记录 refresh
-    user = db.execute(select(User).where(User.unionid == "mock-unionid-itest-1")).scalar_one_or_none()
-    assert user is not None, "unionid 用户应已创建"
-    device = db.execute(
-        select(Device).where(Device.user_id == user.id, Device.device_id == "itest-dev")
+    user = db.execute(
+        select(User).where(User.unionid == f"mock-unionid-{code}")
     ).scalar_one_or_none()
-    assert device is not None
+    assert user is not None, "unionid 用户应已创建"
+    devices = db.execute(select(Device).where(Device.user_id == user.id)).scalars().all()
+    # R8#1：固定 code 时代，中断运行的残留 device 行（refresh_token_hash=NULL）会被
+    # 复用致连败；uuid code → 每次全新用户 → 必须恰好 1 行 device（无跨运行残留）。
+    assert len(devices) == 1, "登录应只产生 1 行 device（无跨运行残留）"
+    device = devices[0]
+    assert device.device_id == "itest-dev"
     # TD-P3 M6：devices 表不再存明文 refresh —— 只存哈希（DB 泄漏不可直接复用 30 天会话）
     assert device.refresh_token is None, "devices 表不应存明文 refresh"
     assert device.refresh_token_hash == _hash(data["refresh_token"])
@@ -68,10 +88,11 @@ def test_wechat_login_creates_user(client, db):
 @pytest.mark.integration
 def test_wechat_login_idempotent(client, db):
     """同 unionid 重复登录 → 不重复建用户"""
-    client.post("/api/v1/auth/wechat", json={"code": "itest-2", "device_id": "itest-dev"})
-    client.post("/api/v1/auth/wechat", json={"code": "itest-2", "device_id": "itest-dev"})
+    code = _code("itest")
+    client.post("/api/v1/auth/wechat", json={"code": code, "device_id": "itest-dev"})
+    client.post("/api/v1/auth/wechat", json={"code": code, "device_id": "itest-dev"})
     count = db.execute(
-        select(User).where(User.unionid == "mock-unionid-itest-2")
+        select(User).where(User.unionid == f"mock-unionid-{code}")
     ).scalars().all()
     assert len(count) == 1
 
@@ -79,33 +100,35 @@ def test_wechat_login_idempotent(client, db):
 @pytest.mark.integration
 def test_phone_login_flow(client, db):
     """手机号验证码全链路：发码 → 登录 → DB 校验（AUTH-003）"""
+    phone = _phone()
     # 1. 发码
-    r = client.post("/api/v1/auth/sms/send", json={"phone": "13900000000"})
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
     assert r.status_code == 200
     code = r.json()["data"]["mock_code"]
 
     # 2. 错误验证码 → 401
-    r = client.post("/api/v1/auth/phone", json={"phone": "13900000000", "code": "000000"})
+    r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": "000000"})
     assert r.status_code == 401
     assert r.json()["code"] == "AUTH_003"
 
     # 3. 正确验证码 → 200 + 用户创建
-    r = client.post("/api/v1/auth/phone", json={"phone": "13900000000", "code": code})
+    r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": code})
     assert r.status_code == 200
     assert r.json()["data"]["access_token"]
 
     # 4. DB 验证：验证码已用（used_at 非空）
     used = db.execute(
-        select(SmsCode).where(SmsCode.phone == "13900000000", SmsCode.used_at.isnot(None))
+        select(SmsCode).where(SmsCode.phone == phone, SmsCode.used_at.isnot(None))
     ).scalars().all()
     assert len(used) >= 1
 
 
 @pytest.mark.integration
-def test_sms_rate_limit(client):
+def test_sms_rate_limit(client, db):
     """验证码 60s 防刷（AUTH-004）"""
-    client.post("/api/v1/auth/sms/send", json={"phone": "13900000001"})
-    r = client.post("/api/v1/auth/sms/send", json={"phone": "13900000001"})
+    phone = _phone()
+    client.post("/api/v1/auth/sms/send", json={"phone": phone})
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
     assert r.status_code == 429
     assert r.json()["code"] == "AUTH_004"
 
@@ -114,7 +137,8 @@ def test_sms_rate_limit(client):
 def test_refresh_rotation_and_revoke(client, db):
     """refresh 轮换 + 吊销（AUTH-005/006）"""
     # 登录拿 token 对
-    r = client.post("/api/v1/auth/wechat", json={"code": "itest-3", "device_id": "itest-dev"})
+    code = _code("itest")
+    r = client.post("/api/v1/auth/wechat", json={"code": code, "device_id": "itest-dev"})
     tokens = r.json()["data"]
     old_refresh = tokens["refresh_token"]
 
@@ -124,7 +148,9 @@ def test_refresh_rotation_and_revoke(client, db):
     new_refresh = r.json()["data"]["refresh_token"]
     assert new_refresh != old_refresh
 
-    user = db.execute(select(User).where(User.unionid == "mock-unionid-itest-3")).scalar_one()
+    user = db.execute(
+        select(User).where(User.unionid == f"mock-unionid-{code}")
+    ).scalar_one()
     device = db.execute(
         select(Device).where(Device.user_id == user.id, Device.device_id == "itest-dev")
     ).scalar_one()
@@ -156,7 +182,7 @@ def test_refresh_rotation_atomic_single_use(db):
     from app.core.errors import ApiError
     from app.core.security import create_refresh_token
 
-    user = User(phone="13900000123", status=1)
+    user = User(phone=_phone(), status=1)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -194,7 +220,7 @@ def test_refresh_rotation_atomic_single_use(db):
         s1.close()
         s2.close()
         db.execute(sa_delete(Device).where(Device.user_id == user.id))
-        db.execute(sa_delete(User).where(User.phone == "13900000123"))
+        db.execute(sa_delete(User).where(User.phone == user.phone))
         db.commit()
 
 @pytest.mark.integration
@@ -208,7 +234,7 @@ def test_phone_code_atomic_consume_single_use(db):
     import hashlib
     from datetime import datetime, timedelta, timezone
 
-    phone = "13900000124"
+    phone = _phone()
     code = "654321"
     sms = SmsCode(
         phone=phone,
@@ -262,11 +288,12 @@ def test_send_sms_production_blocked(client, db, monkeypatch):
 
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "mock_external_ai", True)  # 模拟生产误配
-    r = client.post("/api/v1/auth/sms/send", json={"phone": "13900000099"})
+    phone = _phone()
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
     assert r.status_code == 501
     assert r.json()["code"] == "AUTH_099"
     # 未生成验证码记录（防刷表无残留）
     rows = db.execute(
-        select(SmsCode).where(SmsCode.phone == "13900000099")
+        select(SmsCode).where(SmsCode.phone == phone)
     ).scalars().all()
     assert rows == []
