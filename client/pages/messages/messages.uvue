@@ -47,6 +47,7 @@
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchMessages, markMessageRead, markAllRead, AppMessage } from '@/utils/play'
 	import { showErrorToast } from '@/utils/api'
+	import { formatIsoShortTime } from '@/utils/time'
 
 	export default {
 		data() {
@@ -105,22 +106,9 @@
 					}
 				})
 			},
-			/** ISO → 短时间（MM-dd HH:mm） */
+			/** ISO → 短时间（MM-dd HH:mm，委托 time.ts formatIsoShortTime 单源） */
 			shortTime(iso: string): string {
-				const tIdx = iso.indexOf('T')
-				if (tIdx < 0) {
-					return iso
-				}
-				const datePart = iso.substring(0, tIdx)
-				const timePart = iso.substring(tIdx + 1)
-				const d = datePart.split('-')
-				const t = timePart.split(':')
-				if (d.length !== 3) {
-					return iso
-				}
-				const hh = t.length > 0 ? t[0] : '00'
-				const mm = t.length > 1 ? t[1] : '00'
-				return parseInt(d[1]) + '-' + parseInt(d[2]) + ' ' + hh + ':' + mm
+				return formatIsoShortTime(iso)
 			}
 		}
 	}
