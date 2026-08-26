@@ -12,12 +12,11 @@
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
 
 from app.core.config import settings
 from app.services.llm_ops.base import chat_text, llm_available
+from app.services.llm_ops.parsing import extract_json_array
 
 logger = logging.getLogger("yishu.llm_rerank")
 
@@ -47,28 +46,12 @@ def _build_prompt(query: str, candidates: list[dict]) -> str:
 
 
 def _extract_json_array(answer: str) -> list[dict]:
-    """容错解析 LLM 输出 → 判定数组
+    """容错解析 LLM 输出 → 判定数组（字段级清洗保留在 rerank）
 
-    qwen-flash 偶发输出 Markdown 代码围栏 / 前后缀文字；按序剥：
-    1. 剥 ```json ... ``` 围栏
-    2. 剥首个 [ 前的所有字符、末尾 ] 后的所有字符
-    3. json.loads；失败返回 []
+    解析部分（```json 围栏剥离 / 首个 [ 前剥噪 / 末尾 ] 后剥噪 / 类型校验）统一走
+    llm_ops.parsing.extract_json_array（S1-H1 收口）；此处只做 i/ans/reason 字段清洗。
     """
-    if not answer:
-        return []
-    text = answer.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    if fence:
-        text = fence.group(1).strip()
-    start, end = text.find("["), text.rfind("]")
-    if start == -1 or end <= start:
-        return []
-    try:
-        data = json.loads(text[start : end + 1])
-    except (json.JSONDecodeError, TypeError):
-        return []
-    if not isinstance(data, list):
-        return []
+    data = extract_json_array(answer)
     out = []
     for item in data:
         if isinstance(item, dict) and isinstance(item.get("i"), int):

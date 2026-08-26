@@ -8,6 +8,7 @@
  */
 import { getBaseUrl } from './config'
 import { getToken, ensureLogin, DEVICE_ID } from './auth'
+import { retryAsync } from './retry'
 
 export class SyncOutcome {
 	accepted: number
@@ -74,21 +75,6 @@ function postOnce(events: Array<UTSJSONObject>, token: string, resolve: (r: Sync
 	})
 }
 
-const BACKOFF_MS: number[] = [2000, 4000, 8000, 8000, 8000]
-
-/** 指数退避重试（模块级递归，规避自引用限制） */
-function retryLoop(events: Array<UTSJSONObject>, token: string, attempt: number, resolve: (r: SyncOutcome | null) => void): void {
-	postOnce(events, token, (r: SyncOutcome | null) => {
-		if (r != null || attempt >= BACKOFF_MS.length) {
-			resolve(r)
-			return
-		}
-		setTimeout(() => {
-			retryLoop(events, token, attempt + 1, resolve)
-		}, BACKOFF_MS[attempt])
-	})
-}
-
 /** 提交端侧 L1 事件（带退避重试）；全失败返回 null */
 export function syncClientEvents(events: Array<UTSJSONObject>): Promise<SyncOutcome | null> {
 	return new Promise<SyncOutcome | null>((resolve) => {
@@ -102,8 +88,22 @@ export function syncClientEvents(events: Array<UTSJSONObject>): Promise<SyncOutc
 				resolve(null)
 				return
 			}
-			retryLoop(events, getToken(), 0, resolve)
+			const token = getToken()
+			retryAsync<SyncOutcome>(
+				() => postOncePromise(events, token),
+				(): boolean => false,
+				(): boolean => false
+			).then((r: SyncOutcome | null) => {
+				resolve(r)
+			})
 		})
+	})
+}
+
+/** 单次提交 Promise 化（null = 网络/5xx 可重试；SyncOutcome = 服务端已处理，含 4xx 停批语义） */
+function postOncePromise(events: Array<UTSJSONObject>, token: string): Promise<SyncOutcome | null> {
+	return new Promise<SyncOutcome | null>((resolve) => {
+		postOnce(events, token, resolve)
 	})
 }
 

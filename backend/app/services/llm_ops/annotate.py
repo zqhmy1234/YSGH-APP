@@ -11,16 +11,13 @@
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
 
 from app.services.llm_ops.base import chat_text, llm_available
+from app.services.llm_ops.parsing import extract_json_object
 from app.services.profile_schema import DimensionSpec, EnumSchema, get_schema
 
 logger = logging.getLogger("yishu.annotate")
-
-_JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 # 单次标注最多命中维度数（防 LLM 满屏幻觉）
 _MAX_HITS = 5
@@ -74,7 +71,7 @@ def _pool_for(schema: EnumSchema, dimension_hint: list[str] | None) -> list[Dime
 # ---------------------------------------------------------------- 真实 LLM 通道
 def _llm_annotate(text: str, pool: list[DimensionSpec]) -> list[dict]:
     raw = chat_text(_ANNOTATE_SYSTEM, _build_user_prompt(text, pool)).strip()
-    data = _parse_json(raw)
+    data = extract_json_object(raw)
     hits = data.get("dimension_hits") if isinstance(data, dict) else None
     return _normalize_hits(hits, pool)
 
@@ -85,26 +82,6 @@ def _build_user_prompt(text: str, pool: list[DimensionSpec]) -> str:
         values = "、".join(spec.values[:12])
         lines.append(f"- {spec.id}（{spec.label}）：{values}")
     return f"用户的话：\n{text}\n\n可标注维度清单：\n" + "\n".join(lines)
-
-
-def _parse_json(raw: str) -> dict:
-    """容错解析 LLM 输出为 dict（围栏/前后噪声剥离）"""
-    if not raw:
-        return {}
-    m = _JSON_FENCE.search(raw)
-    body = m.group(1) if m else raw
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        obj = re.search(r"\{.*\}", body, re.S)
-        if obj:
-            try:
-                data = json.loads(obj.group(0))
-            except json.JSONDecodeError:
-                data = {}
-        else:
-            data = {}
-    return data if isinstance(data, dict) else {}
 
 
 def _normalize_hits(hits, pool: list[DimensionSpec]) -> list[dict]:

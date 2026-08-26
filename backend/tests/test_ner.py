@@ -79,17 +79,19 @@ class TestExtractEntities:
 
 class TestLLMExtract:
     def test_json_parse(self, monkeypatch):
-        import app.services.external.dashscope as ds_mod
+        # TD-P2B（S1-L7）收口：ner 已统一走 llm_ops.base.chat_text（此前直接
+        # import dashscope._chat_text）→ 打桩目标同步到 base.chat_text
+        import app.services.llm_ops.base as base_mod
 
         monkeypatch.setattr(
-            ds_mod,
-            "_chat_text",
+            base_mod,
+            "chat_text",
             lambda system, user: '{"place": "苏州", "person": "小张"}',
         )
         assert _extract_llm("任意") == {"place": "苏州", "person": "小张"}
 
     def test_bad_json_returns_empty(self, monkeypatch):
-        import app.services.external.dashscope as ds_mod
+        import app.services.llm_ops.base as base_mod
 
-        monkeypatch.setattr(ds_mod, "_chat_text", lambda system, user: "不是JSON")
+        monkeypatch.setattr(base_mod, "chat_text", lambda system, user: "不是JSON")
         assert _extract_llm("任意") == {}

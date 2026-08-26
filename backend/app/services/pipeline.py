@@ -28,6 +28,19 @@ from app.db.session import SessionLocal
 logger = logging.getLogger("yishu.pipeline")
 
 
+def patch_extra(content: Content, **updates) -> None:
+    """extra JSON 列拷贝-合并-回写样板收敛（TD-P2B · S1-M6：原 7 处内联
+    `extra = dict(content.extra or {}); extra[...] = ...; content.extra = extra`）"""
+    extra = dict(content.extra or {})
+    extra.update(updates)
+    content.extra = extra
+
+
+def extra_get(content: Content, key: str, default=None):
+    """读取侧样板收敛：`(content.extra or {}).get(key, default)`"""
+    return (content.extra or {}).get(key, default)
+
+
 @lru_cache(maxsize=1)
 def _classifier_fn():
     """SetFit classify 函数（进程内单例）"""
@@ -98,11 +111,9 @@ def _process_text(db: Session, content: Content) -> None:
 
 
 def _set_audio_processing(content: Content, payload: dict) -> None:
-    extra = dict(content.extra or {})
-    extra["audio_processing"] = payload
+    patch_extra(content, audio_processing=payload)
     if payload.get("outcome") in {"succeeded", "no_speech", "mock"}:
-        extra.pop("error", None)
-    content.extra = extra
+        content.extra.pop("error", None)
 
 
 def _materialize_voice_audio(content: Content) -> tuple[Path, Path | None]:
@@ -126,7 +137,7 @@ def _materialize_voice_audio(content: Content) -> tuple[Path, Path | None]:
                 "语音文件下载失败",
                 retryable=True,
             ) from exc
-        filename = str((content.extra or {}).get("file_name") or content.cos_key)
+        filename = str(extra_get(content, "file_name") or content.cos_key)
         # 内部对象存储允许长 WAV 进入 VAD 分段；API 直传仍保持 8MB 上限。
         audio_format = validate_audio_bytes(data, filename, max_bytes=None)
         with tempfile.NamedTemporaryFile(
@@ -136,7 +147,7 @@ def _materialize_voice_audio(content: Content) -> tuple[Path, Path | None]:
             tmp_file = Path(tmp.name)
         return tmp_file, tmp_file
 
-    if content.extra and content.extra.get("audio_path"):
+    if extra_get(content, "audio_path"):
         return Path(content.extra["audio_path"]), None
     raise AsrError("AUDIO_NOT_FOUND", "语音内容缺少可处理的音频文件")
 
@@ -156,15 +167,13 @@ def _set_emotion_enrichment(
     *,
     error: dict | None = None,
 ) -> None:
-    extra = dict(content.extra or {})
-    detail = dict(extra.get("audio_processing") or {})
+    detail = dict(extra_get(content, "audio_processing") or {})
     detail["emotion_enrichment"] = status
     if error is None:
         detail.pop("emotion_error", None)
     else:
         detail["emotion_error"] = error
-    extra["audio_processing"] = detail
-    content.extra = extra
+    patch_extra(content, audio_processing=detail)
 
 
 def _process_voice(db: Session, content: Content) -> str:
@@ -222,9 +231,7 @@ def _process_voice(db: Session, content: Content) -> str:
             _index_content(db, content, result.text)
         except Exception as exc:  # noqa: BLE001 -- 索引失败不否定已完成的真实转写
             logger.warning("语音索引失败 content=%s: %s", content.id, exc)
-            extra = dict(content.extra or {})
-            extra["index_error"] = type(exc).__name__
-            content.extra = extra
+            patch_extra(content, index_error=type(exc).__name__)
         return result.outcome
     finally:
         _cleanup_temporary_audio(tmp_file)
@@ -279,8 +286,7 @@ def enrich_content_emotion(content_id: str) -> dict:
             "model": MODEL_SENSEVOICE,
             "actionable": actionable,
         }
-        extra = dict(content.extra or {})
-        detail = dict(extra.get("audio_processing") or {})
+        detail = dict(extra_get(content, "audio_processing") or {})
         detail.update(
             {
                 "emotion": local.emotion,
@@ -292,8 +298,7 @@ def enrich_content_emotion(content_id: str) -> dict:
             }
         )
         detail.pop("emotion_error", None)
-        extra["audio_processing"] = detail
-        content.extra = extra
+        patch_extra(content, audio_processing=detail)
         # B5a 集成（Wave4 AgentJ 需求 4）：本地情绪增强产出真情绪后，补触发
         # 事件层联动（events.emotion）与关怀/voice_done 接线——否则初始 funasr
         # 通道恒"平静"，enrich 才产出的真情绪不会联动（幂等安全，见 emotion.py 头注）
@@ -359,7 +364,7 @@ def _process_photo(db: Session, content: Content) -> None:
             image_path = tmp_file
         except Exception as exc:  # noqa: BLE001
             logger.warning("图片下载失败 content=%s: %s", content.id, exc)
-    elif content.extra and content.extra.get("image_path"):
+    elif extra_get(content, "image_path"):
         image_path = Path(content.extra["image_path"])
 
     try:
@@ -400,9 +405,7 @@ def _process_photo(db: Session, content: Content) -> None:
                 if image_path is not None:
                     tags = image_detect_label(str(image_path))
                     if tags:
-                        extra = dict(content.extra or {})
-                        extra["ci_tags"] = tags
-                        content.extra = extra
+                        patch_extra(content, ci_tags=tags)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
         elif image_path is not None:
@@ -489,8 +492,8 @@ def process_content(content_id: str) -> dict:
                 logger.warning("事件聚合失败 content=%s: %s", content.id, exc)
 
         # 回写状态（部分步骤失败也算 done；失败明细在 extra.error）
-        errors = (content.extra or {}).get("error")
-        audio_processing = (content.extra or {}).get("audio_processing") or {}
+        errors = extra_get(content, "error")
+        audio_processing = extra_get(content, "audio_processing") or {}
         emotion_pending = (
             content.content_type == "voice"
             and audio_processing.get("emotion_enrichment") == "pending"
@@ -534,11 +537,8 @@ def process_content(content_id: str) -> dict:
         db.rollback()
         target = db.get(Content, content_id)
         if target is not None:
-            extra = dict(target.extra or {})
             detail = exc.to_dict()
-            extra["audio_processing"] = detail
-            extra["error"] = detail
-            target.extra = extra
+            patch_extra(target, audio_processing=detail, error=detail)
             target.status = "failed"
             db.commit()
         logger.warning("process_content %s ASR 失败: %s", content_id, exc.code)
@@ -568,11 +568,10 @@ def process_content(content_id: str) -> dict:
                 "retryable": True,
                 "errors": [type(exc).__name__],
             }
-            extra = dict(target.extra or {})
             if is_voice:
-                extra["audio_processing"] = detail
-            extra["error"] = detail
-            target.extra = extra
+                patch_extra(target, audio_processing=detail, error=detail)
+            else:
+                patch_extra(target, error=detail)
             target.status = "failed"
             db.commit()
         logger.error("process_content %s 失败: %s", content_id, exc)

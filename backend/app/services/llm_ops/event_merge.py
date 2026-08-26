@@ -11,11 +11,10 @@ Mock 通道（无 DASHSCOPE key / MOCK_EXTERNAL_AI=true）：
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
 
 from app.services.llm_ops.base import chat_text, llm_available
+from app.services.llm_ops.parsing import extract_json_object
 
 logger = logging.getLogger("yishu.event_merge")
 
@@ -27,9 +26,6 @@ _MERGE_SYSTEM = (
     "规则：时间连续且地点/主题一致 → merge（confidence 0.7 以上可转正）；"
     "地点跨度大且主题不相关 → split。标题 4-12 字概括（如\"7月云南之旅\"）。只输出 JSON。"
 )
-
-# LLM 输出提取（容错：可能带 ```json 围栏/前后解释）
-_JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
 def merge_verdict(candidate: dict) -> dict:
@@ -53,7 +49,7 @@ def _llm_verdict(candidate: dict) -> dict:
     """真实 qwen-flash 裁决（元数据 prompt → JSON 解析）"""
     user = _metadata_prompt(candidate)
     raw = chat_text(_MERGE_SYSTEM, user).strip()
-    data = _parse_json(raw)
+    data = extract_json_object(raw)
     verdict = str(data.get("verdict", "merge")).lower()
     try:
         confidence = float(data.get("confidence", 0.6))
@@ -115,23 +111,6 @@ def _metadata_prompt(candidate: dict) -> str:
         f"标签: {tags or '（无）'}\n"
         f"OCR 摘要: {ocr}"
     )
-
-
-def _parse_json(raw: str) -> dict:
-    """容错解析 LLM 输出为 dict（围栏/前后噪声剥离）"""
-    if not raw:
-        return {}
-    m = _JSON_FENCE.search(raw)
-    body = m.group(1) if m else raw
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        obj = re.search(r"\{.*\}", body, re.S)
-        if obj:
-            data = json.loads(obj.group(0))
-        else:
-            data = {}
-    return data if isinstance(data, dict) else {}
 
 
 def _fallback_title(candidate: dict) -> str:
