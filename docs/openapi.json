@@ -54,7 +54,7 @@
           "auth"
         ],
         "summary": "Phone Login",
-        "description": "手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）",
+        "description": "手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）\n\nTD-P3 M2（审查中危）：验证码爆破防护\n  - IP+phone 双层滑动窗口限流（超限 429）\n  - 每 phone 每窗口失败 ≥5 次 → 作废当前验证码（used_at 置位）+ 冷却 10 分钟",
         "operationId": "phone_login_api_v1_auth_phone_post",
         "requestBody": {
           "content": {
@@ -96,7 +96,7 @@
           "auth"
         ],
         "summary": "Send Sms",
-        "description": "发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）\n\nP0-1（审查 H1）：生产环境禁止 mock 验证码直返（任意手机号可接管账户）——\n与 wechat_login 的\"生产未接入 → 501\"对齐；真实短信通道（TODO T1）接入前\n生产 phone 登录整体不可用。get_settings 已强制生产 mock_external_ai=False，\n此处显式门控双保险（防运行时误改/测试泄漏）。",
+        "description": "发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）\n\nTD-P3 M2（审查中危）：send 侧 IP+phone 双层限流（防短信轰炸洪泛）。",
         "operationId": "send_sms_api_v1_auth_sms_send_post",
         "requestBody": {
           "content": {
@@ -1113,7 +1113,7 @@
           "classify"
         ],
         "summary": "Classify Job Status",
-        "description": "查询分类任务状态与结果（轮询；finished 时携带 result）",
+        "description": "查询分类任务状态与结果（轮询；finished 时携带 result）\n\nTD-P3 M3：归属校验——job.meta.user_id 必须等于当前用户，否则 403；\n失败仅回传脱敏错误（不再直出 exc_info 末行，防内部路径/堆栈泄漏）。",
         "operationId": "classify_job_status_api_v1_classify_jobs__job_id__get",
         "security": [
           {
@@ -1254,7 +1254,7 @@
           "corrections"
         ],
         "summary": "Arbitrate Job Status",
-        "description": "查询三层裁决任务状态与结果（轮询）",
+        "description": "查询三层裁决任务状态与结果（轮询）\n\nTD-P3 M3：归属校验——job.meta.user_id 必须等于当前用户，否则 403；\n失败仅回传脱敏错误（不再直出 exc_info 末行）。",
         "operationId": "arbitrate_job_status_api_v1_classify_arbitrate_jobs__job_id__get",
         "security": [
           {
@@ -1642,6 +1642,7 @@
           "interview"
         ],
         "summary": "Interview Questions",
+        "description": "三问（静态文案）——TD-P3 L1（审查低危）：补鉴权，与全站鉴权约定一致\n\n内容为静态三问（信息面极小），但公开端点与全站鉴权约定不一致；客户端\napi.ts 已自动携带 Bearer（无 token 时 401 → 自动登录重放），补鉴权无兼容影响。",
         "operationId": "interview_questions_api_v1_interview_questions_get",
         "responses": {
           "200": {
@@ -1654,7 +1655,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/interview/answers": {
@@ -3100,6 +3106,20 @@
             "title": "Content Type",
             "description": "photo/text/voice",
             "default": "text"
+          },
+          "client_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Request Id",
+            "description": "客户端请求幂等键（R4#4：重复提交返回同一 job，不重复入队）"
           }
         },
         "type": "object",
@@ -3327,10 +3347,14 @@
         "properties": {
           "client_upload_id": {
             "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Client Upload Id"
           },
           "file_name": {
             "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
             "title": "File Name"
           },
           "file_size": {
@@ -3567,6 +3591,20 @@
             "minLength": 1,
             "title": "Text",
             "description": "文字碎片内容"
+          },
+          "client_request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Request Id",
+            "description": "客户端请求幂等键（R4#4：重复提交返回同一 job，不重复入队）"
           }
         },
         "type": "object",
@@ -3684,16 +3722,32 @@
             "pattern": "^(photo|text|voice|article)$",
             "title": "Content Type"
           },
-          "text": {
+          "client_generated_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Text"
+            "title": "Client Generated Id",
+            "description": "客户端生成的幂等键（R4#4：同用户唯一，双击/重试不重复入库）"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text",
+            "description": "OCR 结果/转写/原文（≤64KB）"
           },
           "taken_at": {
             "anyOf": [
@@ -3747,24 +3801,28 @@
           "cos_key": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(photos|voice|thumbnails)/"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Cos Key"
+            "title": "Cos Key",
+            "description": "照片原件（STS 直传后回调；仅 photos/voice/thumbnails/ 前缀）"
           },
           "thumbnail_key": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(photos|voice|thumbnails)/"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Thumbnail Key"
+            "title": "Thumbnail Key",
+            "description": "缩略图键（thumbnails/ 前缀）"
           },
           "extra": {
             "anyOf": [
@@ -5125,6 +5183,7 @@
           },
           "entity_id": {
             "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "title": "Entity Id",
             "description": "实体 ID（uuid）"
           },
@@ -5285,6 +5344,7 @@
         "properties": {
           "entity_id": {
             "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "title": "Entity Id",
             "description": "实体 ID（uuid）"
           },
@@ -5509,11 +5569,14 @@
         "properties": {
           "code": {
             "type": "string",
+            "maxLength": 128,
             "title": "Code",
             "description": "微信登录 code（wx.login 获取）"
           },
           "device_id": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Device Id",
             "description": "客户端设备唯一 ID"
           }
