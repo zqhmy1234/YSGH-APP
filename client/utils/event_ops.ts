@@ -132,6 +132,46 @@ export function isIgnoredEvent(eventId: string): boolean {
 	return false
 }
 
+/** 事件成员照片映射项：event_id → content_id[]（端侧聚合成员；F10 余项从 index.uvue 迁入） */
+export class EventPhotoEntry {
+	eventId: string
+	contentIds: Array<string>
+
+	constructor(eventId: string, contentIds: Array<string>) {
+		this.eventId = eventId
+		this.contentIds = contentIds
+	}
+}
+
+/** 通过 sync accepted 明细建立 服务端事件 id → 成员照片 映射（端侧聚合的 client_event_id 与云端 id 不同；
+ *  F10 余项：从 index.uvue buildEventPhotoIds 迁入的纯函数，行为等价；返回新映射，不直接改调用方状态） */
+export function mapAcceptedToClientIds(clientEvents: Array<UTSJSONObject>, accepted: Array<UTSJSONObject>): Array<EventPhotoEntry> {
+	const clientMap: Array<EventPhotoEntry> = []
+	for (let k = 0; k < clientEvents.length; k++) {
+		const cid = clientEvents[k].getString('client_event_id') ?? ''
+		const pids = clientEvents[k].getArray('photo_ids') as Array<string> | null
+		if (cid != '' && pids != null) {
+			clientMap.push(new EventPhotoEntry(cid, pids))
+		}
+	}
+	const out: Array<EventPhotoEntry> = []
+	for (let a = 0; a < accepted.length; a++) {
+		const it = accepted[a]
+		const serverId = it.getString('event_id') ?? ''
+		const clientId = it.getString('client_event_id') ?? ''
+		if (serverId == '' || clientId == '') {
+			continue
+		}
+		for (let k = 0; k < clientMap.length; k++) {
+			if (clientMap[k].eventId == clientId) {
+				out.push(new EventPhotoEntry(serverId, clientMap[k].contentIds))
+				break
+			}
+		}
+	}
+	return out
+}
+
 /** 确认事件（转正；title 可空=保持原标题）→ 成功 true（离线则入队返回 true） */
 export function confirmEvent(eventId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {

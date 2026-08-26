@@ -201,7 +201,9 @@
 		fetchContentEvents,
 		ContentEventRef,
 		ignoreEventLocally,
-		isIgnoredEvent
+		isIgnoredEvent,
+		EventPhotoEntry,
+		mapAcceptedToClientIds
 	} from '@/utils/event_ops'
 	import { recordGrantTime, recordFirstDayRender } from '@/utils/agg/perf_timing.uts'
 
@@ -225,17 +227,6 @@
 		constructor(contentId: string, path: string) {
 			this.contentId = contentId
 			this.path = path
-		}
-	}
-
-	/** 事件成员照片映射项：event_id → content_id[]（端侧聚合成员） */
-	class EventPhotoEntry {
-		eventId: string
-		contentIds: Array<string>
-
-		constructor(eventId: string, contentIds: Array<string>) {
-			this.eventId = eventId
-			this.contentIds = contentIds
 		}
 	}
 
@@ -695,8 +686,12 @@
 							syncClientEvents(events).then((out: SyncOutcome | null) => {
 								if (out != null) {
 									console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
-									// 服务端 event_id → 成员照片映射（照片条/封面按云端 id 关联）
-									this.buildEventPhotoIds(events, out.acceptedEvents)
+									// 服务端 event_id → 成员照片映射（照片条/封面按云端 id 关联；F10 委托 event_ops 纯函数）
+									const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
+									for (let m = 0; m < mapped.length; m++) {
+										this.eventPhotoIds.push(mapped[m])
+									}
+									console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + this.eventPhotoIds.length)
 								} else {
 									console.error('[yishu] 事件上云失败（重试耗尽）')
 									uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
@@ -708,32 +703,6 @@
 					}
 					this.reload()
 				})
-			},
-			/** 通过 sync accepted 明细建立 服务端事件 id → 成员照片 映射（端侧聚合的 client_event_id 与云端 id 不同） */
-			buildEventPhotoIds(clientEvents: Array<UTSJSONObject>, accepted: Array<UTSJSONObject>): void {
-				const clientMap: Array<EventPhotoEntry> = []
-				for (let k = 0; k < clientEvents.length; k++) {
-					const cid = clientEvents[k].getString('client_event_id') ?? ''
-					const pids = clientEvents[k].getArray('photo_ids') as Array<string> | null
-					if (cid != '' && pids != null) {
-						clientMap.push(new EventPhotoEntry(cid, pids))
-					}
-				}
-				for (let a = 0; a < accepted.length; a++) {
-					const it = accepted[a]
-					const serverId = it.getString('event_id') ?? ''
-					const clientId = it.getString('client_event_id') ?? ''
-					if (serverId == '' || clientId == '') {
-						continue
-					}
-					for (let k = 0; k < clientMap.length; k++) {
-						if (clientMap[k].eventId == clientId) {
-							this.eventPhotoIds.push(new EventPhotoEntry(serverId, clientMap[k].contentIds))
-							break
-						}
-					}
-				}
-				console.log('[yishu] photoMap: clientEvents=' + clientEvents.length + ' accepted=' + accepted.length + ' mappedServerEvents=' + this.eventPhotoIds.length)
 			}
 		}
 	}
