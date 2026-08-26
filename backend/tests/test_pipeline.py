@@ -457,7 +457,11 @@ class TestPhotoPipeline:
 
 class TestEventAggregation:
     def test_process_content_cloud_only_l2l3(self, db_user, monkeypatch):
-        """S-SY-2（B3-6 分置）：管线完成后云侧只跑 L2/L3，不再自动建 L1（L1 由端侧提交）"""
+        """S-SY-2（B3-6 分置）：管线完成后云侧只跑 L2/L3，不再自动建 L1（L1 由端侧提交）。
+
+        F3/R5-3：聚合已从 process_content 拆为独立 per-user RQ 任务——管线只负责
+        按 user 级 key 入队（enqueue_unique 去重合并），不再同步跑聚合写库。
+        """
         from datetime import datetime, timedelta, timezone
 
         from app.services.external.storage import get_storage_backend
@@ -476,14 +480,25 @@ class TestEventAggregation:
         from app.services.external import dashscope as ds_mod
 
         monkeypatch.setattr(ds_mod, "image_caption", lambda k: "测试照片")
+        calls: list[tuple] = []
+
+        def fake_enqueue(func, key, *a, **kw):
+            calls.append((func, key, a, kw))
+            return {"job_id": "x"}
+
+        monkeypatch.setattr("app.core.queue.enqueue_unique", fake_enqueue)
         from app.services.pipeline import process_content
 
         for c in (c1, c2):
             process_content(str(c.id))
 
-        # 云侧不再自动创建 L1 日卡片（2 张不足以成 L2/L3 候选 → events 为空）
+        # 云侧不再自动创建 L1 日卡片（聚合独立任务；2 张不足以成 L2/L3 候选）
         events = db.execute(select(Event).where(Event.user_id == user.id)).scalars().all()
         assert all(e.level != 1 for e in events), "S-SY-2：云侧不应再自动建 L1"
+        # F3：每个内容按 user 级 key 入队聚合（同用户并发由 enqueue_unique SETNX 去重合并）
+        assert len(calls) == 2, f"每内容应入队一次聚合，实际 {len(calls)}"
+        assert all(k == f"user:{user.id}" for _, k, _, _ in calls)
+        assert all(f.__name__ == "run_user_aggregation" for f, _, _, _ in calls)
 
     def test_aggregate_user_full_mode_creates_l1_baseline(self, db_user):
         """full 模式（基线迁移/遗留路径）仍产生 L1 日卡片（第一波行为不删）"""
