@@ -87,7 +87,7 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate } from '@/utils/text_recorder'
+	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS } from '@/utils/text_recorder'
 	import {
 		startRecord,
 		stopRecord,
@@ -104,16 +104,6 @@
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 
-	class LabelItem {
-		key: string
-		cn: string
-
-		constructor(key: string, cn: string) {
-			this.key = key
-			this.cn = cn
-		}
-	}
-
 	export default {
 		data() {
 			return {
@@ -125,13 +115,8 @@
 				currentLabel: '',      // 当前分类英文键
 				lastContentId: '',
 				lastText: '',
-				allLabels: [
-					new LabelItem('todo', '待办'),
-					new LabelItem('idea', '灵感'),
-					new LabelItem('emotion', '情绪'),
-					new LabelItem('quote', '引用'),
-					new LabelItem('mixed', '混合')
-				] as Array<LabelItem>,
+				// 分类标签条（O10 收口：data 引用 text_recorder.ALL_LABELS，不再页面硬编码）
+				allLabels: ALL_LABELS,
 				// 语音
 				recording: false,
 				recordSeconds: 0,

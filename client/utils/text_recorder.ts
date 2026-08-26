@@ -47,6 +47,26 @@ LABEL_CN.set('emotion', '情绪')
 LABEL_CN.set('quote', '引用')
 LABEL_CN.set('mixed', '混合')
 
+/** 标签选项（key 英文键 / cn 中文名；record.uvue 分类纠错标签条数据源） */
+export class LabelOption {
+	key: string
+	cn: string
+
+	constructor(key: string, cn: string) {
+		this.key = key
+		this.cn = cn
+	}
+}
+
+/** 5 类标签全量选项（与后端 VALID_CLASSES 对齐；O10 标签双源收口——record.uvue data 引用之，不再页面硬编码） */
+export const ALL_LABELS: Array<LabelOption> = [
+	new LabelOption('todo', '待办'),
+	new LabelOption('idea', '灵感'),
+	new LabelOption('emotion', '情绪'),
+	new LabelOption('quote', '引用'),
+	new LabelOption('mixed', '混合')
+]
+
 export function labelCn(label: string): string {
 	const v = LABEL_CN.get(label)
 	return v != null ? v : label
