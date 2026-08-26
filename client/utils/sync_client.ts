@@ -24,11 +24,15 @@
  */
 import { getBaseUrl } from './config'
 import { getToken, ensureLogin, refreshToken } from './auth'
+// TD-P2B（S1-M3/M4 收口）：退避表 + 重试统一走 retry.ts、ISO 时间统一走 time.ts；
+// 此处保留导出别名（BACKOFF_MS/isoNow）兼容现有引用
+import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
+import { isoLocal } from './time'
 
 export const DEVICE_ID: string = 'yishu-android-dev'
 export const MAX_BATCH_FAILURES: number = 10
-/** 指数退避（与 event_sync 事件上云同款：2s→4s→8s→8s→8s，5 次上限） */
-export const BACKOFF_MS: number[] = [2000, 4000, 8000, 8000, 8000]
+/** 指数退避（S1-M3 收口：与 event_sync/uploader 共享 retry.ts：2s→4s→8s→8s→8s，5 次上限） */
+export const BACKOFF_MS: number[] = SHARED_BACKOFF_MS
 const PUSH_BATCH_SIZE: number = 100
 const DEFAULT_SYNC_INTERVAL_MS: number = 2 * 60 * 60 * 1000 // 2 小时定时兜底
 
@@ -39,14 +43,9 @@ const PAUSED_KEY: string = 'yishu_sync_paused'
 
 // ---------- 工具 ----------
 
-/** epoch ms → ISO8601 本地时间（与 uploader.isoString 同款；避免循环依赖本地一份） */
+/** epoch ms → ISO8601 本地时间（S1-M4 收口：统一走 time.isoLocal；保留导出名兼容现有引用） */
 export function isoNow(): string {
-	const d = new Date()
-	const pad = (n: number): string => (n < 10 ? '0' + n : '' + n)
-	return (
-		d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-		'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '+08:00'
-	)
+	return isoLocal(Date.now())
 }
 
 /** op_id 唯一后缀（同毫秒并发防碰撞） */
@@ -472,9 +471,28 @@ function dropAll(ops: Array<UTSJSONObject>): void {
 	dropBatchFromQueue(ops)
 }
 
-/** 队列主循环：逐批 push，网络/5xx 指数退避，4xx 停批，连续失败≥N 暂停 */
+/** 单批提交 + 退避重试（TD-P2B S1-M3 收口：统一走 retry.ts retryAsync）
+ *  网络/5xx → 重试（onFail 计数连续失败、暂停则中断）；4xx → isFatal 停批 */
+function postBatchWithRetry(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
+	return retryAsync<PushBatchResult>(
+		() => postBatch(ops).then((r: PushBatchResult): PushBatchResult | null => {
+			return r.ok || r.is4xx ? r : null
+		}),
+		(r: PushBatchResult | null): boolean => r != null && r.is4xx,
+		(_r: PushBatchResult | null, _attempt: number): boolean => {
+			registerConsecutiveFailure()
+			return isSyncPaused()
+		}
+	).then((r: PushBatchResult | null): PushBatchResult => {
+		if (r == null) {
+			return new PushBatchResult(false, 0, 0, 0, false)
+		}
+		return r
+	})
+}
+
+/** 队列主循环：逐批 push（每批内部退避重试），4xx 停批，连续失败≥N 暂停 */
 function flushQueueLoop(
-	attempt: number,
 	applyAcc: number,
 	conflictAcc: number,
 	rejectAcc: number,
@@ -485,7 +503,7 @@ function flushQueueLoop(
 		resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
 		return
 	}
-	postBatch(ops).then((r: PushBatchResult) => {
+	postBatchWithRetry(ops).then((r: PushBatchResult) => {
 		if (r.ok) {
 			resetConsecutiveFailures()
 			dropBatchFromQueue(ops)
@@ -495,29 +513,18 @@ function flushQueueLoop(
 			if (r.rejected > 0) {
 				console.warn('[yishu] sync push rejected=' + r.rejected + '（已丢弃）')
 			}
-			flushQueueLoop(0, applyAcc + r.applied, conflictAcc + r.conflicts, rejectAcc + r.rejected, resolve)
+			flushQueueLoop(applyAcc + r.applied, conflictAcc + r.conflicts, rejectAcc + r.rejected, resolve)
 			return
 		}
 		if (r.is4xx) {
 			console.error('[yishu] sync push 4xx 停整批（不可重试）')
 			dropAll(ops)
-			flushQueueLoop(0, applyAcc, conflictAcc, rejectAcc + ops.length, resolve)
+			flushQueueLoop(applyAcc, conflictAcc, rejectAcc + ops.length, resolve)
 			return
 		}
-		// 网络/5xx：退避重试；连续失败计数；暂停则退出（保留队列等一键继续）
-		registerConsecutiveFailure()
-		if (isSyncPaused()) {
-			resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
-			return
-		}
-		if (attempt >= BACKOFF_MS.length) {
-			console.error('[yishu] sync push 退避耗尽，剩余 ' + pendingSyncCount() + ' 条待下轮')
-			resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
-			return
-		}
-		setTimeout(() => {
-			flushQueueLoop(attempt + 1, applyAcc, conflictAcc, rejectAcc, resolve)
-		}, BACKOFF_MS[attempt])
+		// 网络/5xx：退避耗尽或暂停中断 → 保留队列待下轮（连续失败计数/暂停判定在 retryAsync.onFail）
+		console.error('[yishu] sync push 退避耗尽/暂停，剩余 ' + pendingSyncCount() + ' 条待下轮')
+		resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
 	})
 }
 
@@ -534,7 +541,7 @@ export function pushPendingOps(): Promise<PushOutcome> {
 				resolve(new PushOutcome(0, 0, 0, pendingSyncCount()))
 				return
 			}
-			flushQueueLoop(0, 0, 0, 0, resolve)
+			flushQueueLoop(0, 0, 0, resolve)
 		})
 	})
 }

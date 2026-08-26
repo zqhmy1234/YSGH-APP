@@ -9,6 +9,7 @@
  *       本模块只上报错误/面包屑，绝不携带任何密钥。
  */
 import { ENV, SENTRY_DSN } from './config'
+import { isoUtc } from './time'
 
 class SentryConfig {
 	host: string
@@ -91,26 +92,9 @@ function randomHex(len: number): string {
 	return s
 }
 
-function pad2(n: number): string {
-	return n < 10 ? '0' + n : '' + n
-}
-
-function pad3(n: number): string {
-	if (n < 10) {
-		return '00' + n
-	}
-	if (n < 100) {
-		return '0' + n
-	}
-	return '' + n
-}
-
-/** ISO8601 UTC（UTS Date 无可靠 toISOString，手动拼） */
+/** ISO8601 UTC（S1-M4 收口：统一走 time.isoUtc；Sentry Envelope sent_at 用） */
 function isoNow(): string {
-	const d = new Date()
-	return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
-		'T' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) +
-		'.' + pad3(d.getUTCMilliseconds()) + 'Z'
+	return isoUtc(Date.now())
 }
 
 /** 面包屑（本地环形缓冲，随下一个事件上报；超上限丢最旧） */

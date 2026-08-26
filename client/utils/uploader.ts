@@ -37,11 +37,15 @@ import {
 	MAX_BATCH_FAILURES,
 	onNetworkRestored
 } from './sync_client'
+// TD-P2B（S1-H3/H4/M3）：分片协议收口 upload_protocol.ts、ISO 时间收口 time.ts、
+// 退避重试收口 retry.ts——本文件只保留业务编排（断点续传队列/流量约束/暂停控制器）
+import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
+import { isoLocal } from './time'
+import { retryAsync } from './retry'
 
 export const MAX_CONCURRENCY: number = 3
-/** 退避次数上限（与 event_sync BACKOFF_MS 对齐：2s→4s→8s→8s→8s） */
+/** 退避次数上限（与 retry.ts BACKOFF_MS 对齐：2s→4s→8s→8s→8s） */
 export const MAX_RETRY: number = 5
-const BACKOFF_MS: number[] = [2000, 4000, 8000, 8000, 8000]
 
 /** 断点续传：path|uploadId 逐行存 uni storage（UTS 无可靠 JSON.parse，用分隔串） */
 const PENDING_KEY: string = 'yishu_pending_uploads'
@@ -102,14 +106,9 @@ function is4xx(e: Error): boolean {
 	return false
 }
 
-/** epoch ms → ISO8601 本地时间（UTS Date 无 toISOString，手动拼接） */
+/** epoch ms → ISO8601 本地时间（S1-M4 收口：统一走 time.isoLocal；保留导出名兼容 index.uvue 引用） */
 export function isoString(ms: number): string {
-	const d = new Date(ms)
-	const pad = (n: number): string => (n < 10 ? '0' + n : '' + n)
-	return (
-		d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-		'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '+08:00'
-	)
+	return isoLocal(ms)
 }
 
 // ---------- 断点续传持久化 ----------
@@ -337,7 +336,8 @@ function removeFailed(path: string): void {
 	removeEntry(FAILED_KEY, path)
 }
 
-// ---------- 协议请求 ----------
+// ---------- 协议请求（TD-P2B 收口：底层协议统一走 upload_protocol.ts，此处只保留
+//          业务编排封装——错误语义 4xx 停条 / 网络·5xx 可重试） ----------
 
 function authHeader(): UTSJSONObject {
 	const header: UTSJSONObject = {}
@@ -348,98 +348,12 @@ function authHeader(): UTSJSONObject {
 	return header
 }
 
-/** URL 编码最小集（路径/file_name/upload_id/meta 均为 ASCII 可控字符；中文文件名后续补全） */
-function urlEncode(s: string): string {
-	let out = ''
-	for (let i = 0; i < s.length; i++) {
-		const c = s.charAt(i)
-		if (c == '&') {
-			out += '%26'
-		} else if (c == '=') {
-			out += '%3D'
-		} else if (c == '%') {
-			out += '%25'
-		} else if (c == '+') {
-			out += '%2B'
-		} else if (c == ' ') {
-			out += '%20'
-		} else {
-			out += c
-		}
-	}
-	return out
-}
-
-/** 表单响应：status（0=网络失败） + raw（响应 JSON 字符串） */
-class HttpResp {
-	status: number
-	raw: string
-
-	constructor(status: number, raw: string) {
-		this.status = status
-		this.raw = raw
-	}
-}
-
-/** POST 表单（application/x-www-form-urlencoded；后端 Form 字段）→ HttpResp */
-function formPost(path: string, body: string): Promise<HttpResp> {
-	return new Promise<HttpResp>((resolve) => {
-		const header: UTSJSONObject = {
-			'Content-Type': 'application/x-www-form-urlencoded'
-		}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
-		uni.request({
-			url: getBaseUrl() + path,
-			method: 'POST',
-			data: body,
-			header: header,
-			timeout: 30000,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					resolve(new HttpResp(200, JSON.stringify(res.data)))
-				} else {
-					console.error('[yishu] upload form ' + res.statusCode + ' ' + path)
-					resolve(new HttpResp(res.statusCode, JSON.stringify(res.data)))
-				}
-			},
-			fail: () => {
-				console.error('[yishu] upload form NETWORK ' + path)
-				resolve(new HttpResp(0, ''))
-			}
-		})
-	})
-}
-
-/** 取响应 JSON 字符串里某字段值（"key":"value" 或 "key":value；value 不含引号时原样返回） */
-function fieldOf(raw: string, key: string): string {
-	const needle = '"' + key + '":'
-	const idx = raw.indexOf(needle)
-	if (idx < 0) {
-		return ''
-	}
-	const rest = raw.substring(idx + needle.length)
-	if (rest.startsWith('"')) {
-		return rest.substring(1).split('"')[0]
-	}
-	const end = rest.indexOf(',')
-	return end >= 0 ? rest.substring(0, end) : rest
-}
-
-/** 建任务（client_upload_id=path 幂等；upload_mode 透传 Agent G 契约参数）；
- *  成功返回 upload_id，HTTP 错误 reject UploadHttpError（4xx 停条） */
-function initUpload(item: PhotoItem, fileSize: number, uploadMode: string): Promise<string> {
+/** 建任务（client_upload_id=path 幂等；upload_mode 透传 Agent G 契约参数）→ upload_id；4xx reject UploadHttpError 停条 */
+function initUploadTask(item: PhotoItem, fileSize: number, uploadMode: string): Promise<string> {
 	return new Promise<string>((resolve, reject) => {
 		const slashIdx = item.path.lastIndexOf('/')
 		const fileName = slashIdx >= 0 ? item.path.substring(slashIdx + 1) : item.path
-		let body = 'client_upload_id=' + urlEncode(item.path) +
-			'&file_name=' + urlEncode(fileName) +
-			'&file_size=' + fileSize +
-			'&chunk_size=' + fileSize +
-			'&upload_mode=' + uploadMode
-		formPost('/api/v1/upload/init', body).then((resp: HttpResp) => {
+		initUpload(item.path, fileName, fileSize, uploadMode).then((resp: UploadResp) => {
 			if (resp.status === 200) {
 				const uploadId = fieldOf(resp.raw, 'upload_id')
 				if (uploadId == '') {
@@ -478,37 +392,24 @@ function statusMissing(uploadId: string): Promise<boolean> {
 }
 
 /** 传单片（POST multipart；后端幂等 + 大小校验）；4xx reject UploadHttpError 停条 */
-function putChunk(uploadId: string, item: PhotoItem): Promise<boolean> {
+function putChunkFor(uploadId: string, item: PhotoItem): Promise<boolean> {
 	return new Promise<boolean>((resolve, reject) => {
-		const form: UTSJSONObject = {
-			upload_id: uploadId,
-			chunk_index: '0'
-		}
-		uni.uploadFile({
-			url: getBaseUrl() + '/api/v1/upload/chunk',
-			filePath: item.path,
-			name: 'file',
-			formData: form,
-			header: authHeader(),
-			timeout: 60000,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					resolve(true)
-				} else {
-					console.error('[yishu] chunk HTTP ' + res.statusCode)
-					reject(new UploadHttpError(res.statusCode, 'chunk HTTP ' + res.statusCode))
-				}
-			},
-			fail: () => {
-				console.error('[yishu] chunk NETWORK')
-				reject(new Error('chunk 网络失败'))
+		putChunk(uploadId, item.path, 60000).then((status: number) => {
+			if (status === 200) {
+				resolve(true)
+				return
 			}
+			if (status >= 400 && status < 500) {
+				reject(new UploadHttpError(status, 'chunk HTTP ' + status))
+				return
+			}
+			reject(new Error('chunk 网络失败'))
 		})
 	})
 }
 
 /** 完成 + 建内容记录（meta 与 /contents/upload 对齐，含 GPS）→ content_id；4xx 停条 */
-function completeUpload(uploadId: string, item: PhotoItem): Promise<string> {
+function completeUploadFor(uploadId: string, item: PhotoItem): Promise<string> {
 	return new Promise<string>((resolve, reject) => {
 		const meta: UTSJSONObject = {
 			taken_at: isoString(item.takenAt),
@@ -522,8 +423,7 @@ function completeUpload(uploadId: string, item: PhotoItem): Promise<string> {
 			meta.set('gps_lat', '' + item.lat)
 			meta.set('gps_lng', '' + item.lng)
 		}
-		const body = 'upload_id=' + urlEncode(uploadId) + '&meta=' + urlEncode(JSON.stringify(meta))
-		formPost('/api/v1/upload/complete', body).then((resp: HttpResp) => {
+		completeUpload(uploadId, meta).then((resp: UploadResp) => {
 			if (resp.status === 200) {
 				const cid = fieldOf(resp.raw, 'content_id')
 				if (cid == '') {
@@ -556,14 +456,14 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 		if (existing != '') {
 			statusMissing(existing).then((missing: boolean) => {
 				if (!missing) {
-					completeUpload(existing, item).then((cid: string) => {
+					completeUploadFor(existing, item).then((cid: string) => {
 						clearPending(item.path)
 						resolve(cid)
 					}, (e: Error) => {
 						reject(e)
 					})
 				} else {
-					putChunk(existing, item).then((ok: boolean) => {
+					putChunkFor(existing, item).then((ok: boolean) => {
 						finishUpload(existing, ok, item, resolve, reject)
 					}, (e: Error) => {
 						reject(e)
@@ -572,9 +472,9 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 			})
 			return
 		}
-		initUpload(item, fileSize, uploadMode).then((uploadId: string) => {
+		initUploadTask(item, fileSize, uploadMode).then((uploadId: string) => {
 			savePending(item.path, uploadId)
-			putChunk(uploadId, item).then((ok: boolean) => {
+			putChunkFor(uploadId, item).then((ok: boolean) => {
 				finishUpload(uploadId, ok, item, resolve, reject)
 			}, (e: Error) => {
 				reject(e)
@@ -596,7 +496,7 @@ function finishUpload(
 		reject(new Error('分片上传失败'))
 		return
 	}
-	completeUpload(uploadId, item).then((cid: string) => {
+	completeUploadFor(uploadId, item).then((cid: string) => {
 		clearPending(item.path)
 		resolve(cid)
 	}, (e: Error) => {
@@ -604,32 +504,50 @@ function finishUpload(
 	})
 }
 
-/** 指数退避重试（2s→4s→8s→8s→8s，5 次上限）；4xx 立即停该条 */
-function retryBackoff(item: PhotoItem, uploadMode: string, attempt: number, ok: (cid: string) => void, fail: () => void): void {
-	uploadOne(item, uploadMode).then((cid: string) => {
-		ok(cid)
-	}, (e: Error) => {
-		const msg = e != null && e.message != null ? e.message : 'unknown'
-		console.error('[yishu] upload ERR attempt=' + attempt + ' path=' + item.path + ' msg=' + msg)
-		if (is4xx(e)) {
-			console.error('[yishu] 4xx 停该条（' + item.path + '）')
-			fail()
-			return
-		}
-		if (attempt >= BACKOFF_MS.length) {
-			console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
-			fail()
-			return
-		}
-		setTimeout(() => {
-			retryBackoff(item, uploadMode, attempt + 1, ok, fail)
-		}, BACKOFF_MS[attempt])
+/** 单次上传结果：ok=true+cid 成功 / ok=false 4xx 不可重试 / null 网络·5xx 可重试 */
+class UploadAttempt {
+	ok: boolean
+	cid: string
+
+	constructor(ok: boolean, cid: string) {
+		this.ok = ok
+		this.cid = cid
+	}
+}
+
+/** 单次上传（无重试）；4xx 停条由 retryAsync 的 isFatal 判定（TD-P2B 收口：统一走 retry.ts） */
+function uploadOnceResult(item: PhotoItem, uploadMode: string): Promise<UploadAttempt | null> {
+	return new Promise<UploadAttempt | null>((resolve) => {
+		uploadOne(item, uploadMode).then((cid: string) => {
+			resolve(new UploadAttempt(true, cid))
+		}, (e: Error) => {
+			const msg = e != null && e.message != null ? e.message : 'unknown'
+			console.error('[yishu] upload ERR path=' + item.path + ' msg=' + msg)
+			if (is4xx(e)) {
+				console.error('[yishu] 4xx 停该条（' + item.path + '）')
+				resolve(new UploadAttempt(false, ''))
+				return
+			}
+			resolve(null)
+		})
 	})
 }
 
+/** 指数退避重试（2s→4s→8s→8s→8s，5 次上限）；4xx 立即停该条 */
 function uploadWithRetry(item: PhotoItem, uploadMode: string): Promise<string | null> {
-	return new Promise<string | null>((resolve) => {
-		retryBackoff(item, uploadMode, 0, (cid: string) => resolve(cid), () => resolve(null))
+	return retryAsync<UploadAttempt>(
+		() => uploadOnceResult(item, uploadMode),
+		(r: UploadAttempt | null): boolean => r != null && !r.ok,
+		(_r: UploadAttempt | null, attempt: number): boolean => {
+			console.error('[yishu] upload retry attempt=' + attempt + ' path=' + item.path)
+			return false
+		}
+	).then((r: UploadAttempt | null) => {
+		if (r != null && r.ok) {
+			return r.cid
+		}
+		console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
+		return null
 	})
 }
 

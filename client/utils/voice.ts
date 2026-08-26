@@ -19,7 +19,10 @@
  */
 import { post, dataObj, showErrorToast } from './api'
 import { getBaseUrl } from './config'
-import { getToken as getTokenForUpload, getToken } from './auth'
+import { getToken as getTokenForUpload } from './auth'
+// TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
+// 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
+import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
 import { createRecorder, RecorderController } from '@/uni_modules/yishu-recorder/utssdk/app-android/index.uts'
 
 /** 录音上限（J-4 放开 3.5min → 30min；后端 duration 到达自动 onStop 分段保存） */
@@ -289,79 +292,7 @@ function fileNameOf(path: string): string {
 }
 
 // ---- J-4 长录音分片持久化上传（复用 /upload 分片协议；单块 = 整文件） ----
-
-/** URL 编码最小集（复用 uploader 约定；字段均为 ASCII 可控字符） */
-function urlEncode(s: string): string {
-	let out = ''
-	for (let i = 0; i < s.length; i++) {
-		const c = s.charAt(i)
-		if (c == '&') {
-			out += '%26'
-		} else if (c == '=') {
-			out += '%3D'
-		} else if (c == '%') {
-			out += '%25'
-		} else if (c == '+') {
-			out += '%2B'
-		} else if (c == ' ') {
-			out += '%20'
-		} else {
-			out += c
-		}
-	}
-	return out
-}
-
-class VoiceHttpResp {
-	status: number
-	raw: string
-
-	constructor(status: number, raw: string) {
-		this.status = status
-		this.raw = raw
-	}
-}
-
-/** POST 表单（application/x-www-form-urlencoded；后端 Form 字段）→ VoiceHttpResp */
-function formPost(path: string, body: string): Promise<VoiceHttpResp> {
-	return new Promise<VoiceHttpResp>((resolve) => {
-		const header: UTSJSONObject = {
-			'Content-Type': 'application/x-www-form-urlencoded'
-		}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
-		uni.request({
-			url: getBaseUrl() + path,
-			method: 'POST',
-			data: body,
-			header: header,
-			timeout: 30000,
-			success: (res) => {
-				resolve(new VoiceHttpResp(res.statusCode, JSON.stringify(res.data)))
-			},
-			fail: () => {
-				resolve(new VoiceHttpResp(0, ''))
-			}
-		})
-	})
-}
-
-/** 取响应 JSON 字符串里某字段值（"key":"value" 或 "key":value） */
-function fieldOf(raw: string, key: string): string {
-	const needle = '"' + key + '":'
-	const idx = raw.indexOf(needle)
-	if (idx < 0) {
-		return ''
-	}
-	const rest = raw.substring(idx + needle.length)
-	if (rest.startsWith('"')) {
-		return rest.substring(1).split('"')[0]
-	}
-	const end = rest.indexOf(',')
-	return end >= 0 ? rest.substring(0, end) : rest
-}
+// 协议请求（init/chunk/complete + urlEncode/formPost/fieldOf）统一走 upload_protocol.ts（TD-P2B S1-H3）
 
 /**
  * J-4 长录音上传：wav 文件 → 分片协议落对象存储（file_key）→ 建 voice 内容（cos_key）→ 管线转写。
@@ -387,12 +318,7 @@ export function uploadVoicePersistent(
 					return
 				}
 				// 1. init（单块协议：chunk_size = file_size，同 uploader v2 约定）
-				const initBody = 'client_upload_id=' + urlEncode(clientUploadId) +
-					'&file_name=' + urlEncode(fileName) +
-					'&file_size=' + fileSize +
-					'&chunk_size=' + fileSize +
-					'&upload_mode=original'
-				formPost('/api/v1/upload/init', initBody).then((initResp: VoiceHttpResp) => {
+				initUpload(clientUploadId, fileName, fileSize, 'original').then((initResp: UploadResp) => {
 					if (initResp.status !== 200) {
 						showErrorToast(new Error('长录音上传初始化失败'))
 						resolve(null)
@@ -405,70 +331,52 @@ export function uploadVoicePersistent(
 						return
 					}
 					// 2. chunk（POST multipart 单块）
-					const form: UTSJSONObject = {
-						upload_id: uploadId,
-						chunk_index: '0'
-					}
-					uni.uploadFile({
-						url: getBaseUrl() + '/api/v1/upload/chunk',
-						filePath: filePath,
-						name: 'file',
-						formData: form,
-						header: { 'Authorization': 'Bearer ' + getToken() },
-						timeout: 120000,
-						success: (chunkRes) => {
-							if (chunkRes.statusCode !== 200) {
-								showErrorToast(new Error('长录音分片上传失败'))
+					putChunk(uploadId, filePath, 120000).then((status: number) => {
+						if (status !== 200) {
+							showErrorToast(new Error('长录音分片上传失败'))
+							resolve(null)
+							return
+						}
+						// 3. complete（meta 带 content_type=voice，集成后后端直接建 voice 内容）
+						const meta: UTSJSONObject = {
+							content_type: 'voice',
+							duration_ms: durationMs,
+							source: 'app',
+							extra: { file_name: fileName }
+						}
+						completeUpload(uploadId, meta).then((resp: UploadResp) => {
+							if (resp.status !== 200) {
+								showErrorToast(new Error('长录音上传完成失败'))
 								resolve(null)
 								return
 							}
-							// 3. complete（meta 带 content_type=voice，集成后后端直接建 voice 内容）
-							const meta: UTSJSONObject = {
-								content_type: 'voice',
-								duration_ms: durationMs,
-								source: 'app',
-								extra: { file_name: fileName }
+							const fileKey = fieldOf(resp.raw, 'file_key')
+							// 4. 建 voice 内容：集成后 complete 直接返回 voice content_id（后端 voice 分支已建库+入队）
+							//    旧后端无 content_id → 回退二次建内容请求（/contents 带 cos_key，后端按 cos_key 幂等去重）
+							const voiceContentId = fieldOf(resp.raw, 'content_id')
+							if (voiceContentId != '') {
+								const out: UTSJSONObject = {
+									content_id: voiceContentId,
+									file_key: fileKey,
+									long_audio: true
+								}
+								resolve(out)
+								return
 							}
-							const completeBody = 'upload_id=' + urlEncode(uploadId) +
-								'&meta=' + urlEncode(JSON.stringify(meta))
-							formPost('/api/v1/upload/complete', completeBody).then((resp: VoiceHttpResp) => {
-								if (resp.status !== 200) {
-									showErrorToast(new Error('长录音上传完成失败'))
+							saveVoiceContent('', durationMs, '', fileKey, filePath).then((contentId: string | null) => {
+								if (contentId == null) {
+									showErrorToast(new Error('长录音内容入库失败'))
 									resolve(null)
 									return
 								}
-								const fileKey = fieldOf(resp.raw, 'file_key')
-								// 4. 建 voice 内容：集成后 complete 直接返回 voice content_id（后端 voice 分支已建库+入队）
-								//    旧后端无 content_id → 回退二次建内容请求（/contents 带 cos_key，后端按 cos_key 幂等去重）
-								const voiceContentId = fieldOf(resp.raw, 'content_id')
-								if (voiceContentId != '') {
-									const out: UTSJSONObject = {
-										content_id: voiceContentId,
-										file_key: fileKey,
-										long_audio: true
-									}
-									resolve(out)
-									return
+								const out: UTSJSONObject = {
+									content_id: contentId,
+									file_key: fileKey,
+									long_audio: true
 								}
-								saveVoiceContent('', durationMs, '', fileKey, filePath).then((contentId: string | null) => {
-									if (contentId == null) {
-										showErrorToast(new Error('长录音内容入库失败'))
-										resolve(null)
-										return
-									}
-									const out: UTSJSONObject = {
-										content_id: contentId,
-										file_key: fileKey,
-										long_audio: true
-									}
-									resolve(out)
-								})
+								resolve(out)
 							})
-						},
-						fail: () => {
-							showErrorToast(new Error('长录音上传网络失败'))
-							resolve(null)
-						}
+						})
 					})
 				})
 			},

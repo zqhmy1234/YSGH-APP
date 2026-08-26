@@ -24,6 +24,7 @@
  *  - GET  /api/v1/contents/{id}/events        → 照片所属事件列表（反向入口）
  */
 import { post, get, dataObj, dataArr } from './api'
+import { isoLocal } from './time'
 
 const OP_LOG_KEY = 'yishu_op_log'
 const IGNORE_KEY = 'yishu_ignored_events'
@@ -281,14 +282,9 @@ export function enqueueOp(opType: string, payload: UTSJSONObject): void {
 	uni.showToast({ title: '已离线排队，联网后自动同步', icon: 'none' })
 }
 
-/** epoch ms → ISO8601 本地时间（与 uploader.isoString 同款；本地一份避免循环依赖） */
+/** epoch ms → ISO8601 本地时间（S1-M4 收口：统一走 time.isoLocal，不再本地拼一份） */
 function isoNow(): string {
-	const d = new Date()
-	const pad = (n: number): string => (n < 10 ? '0' + n : '' + n)
-	return (
-		d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-		'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '+08:00'
-	)
+	return isoLocal(Date.now())
 }
 
 /** 待同步队列条数 */
