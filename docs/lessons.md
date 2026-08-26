@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 18:46 · commit 60a8050 · ts=1787741177
+- **错误**：CI #19 quality gate 失败：5 个 pipeline 测试 status=failed（test_text_classified_and_done 等断言 done 实际 failed）+ api_smoke payload 404（Qdrant 无 point）
+- **根因**：CI HF 缓存 cache miss（0 秒）后测试时现场下载 BGE-M3 2.2GB——下载失败/超时 → encode_dense 抛异常 → _index_content 失败 → process_content 外层 except 兜底 status=failed；本地模型缓存完整（2.16GB）故本地 419 passed 掩盖；qdrant 版本修复（#17/#18）后 #19 暴露此第二层问题
+- **修复**：CI 加 Warm HF models 步骤（quality gate 前显式下载 BGE-M3，失败即明确报错而非 5 个测试模糊失败）+ 失败详情 annotation 输出加长（3500 字符）；待 #20 验证模型下载是否成功
+- **相关文件**：.github/workflows/ci.yml, scripts/warm_hf_models.py
+- **教训**：依赖大模型（BGE-M3 2.2GB）的测试必须保证模型就绪：CI 全新缓存需预热下载，否则测试中加载失败会以多个 status=failed 的模糊形式呈现，排查成本高；预热步骤让失败显式化
+
+---
+
 ### 2026-08-26 18:31 · commit 3030b57 · ts=1787740296
 - **错误**：CI #17/#18 quality gate 失败：api_smoke payload 刷新 404（No point with id found）
 - **根因**：qdrant service 镜像 v1.9.7 与 requirements qdrant-client>=1.19（pip 装 1.19.0）版本不兼容（client 1.19.0 vs server 1.9.7，Major versions should match）——annotation 诊断暴露；本地 yishu-qdrant 容器是 1.19.0 故本地复现通过

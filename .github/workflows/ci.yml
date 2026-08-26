@@ -139,6 +139,12 @@ jobs:
       - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
         run: python scripts/generate_test_photos.py
 
+      - name: Warm HF models (BGE-M3 预下载，避免测试中现场下载 2.2GB 超时/失败致 5 个 pipeline 测试 status=failed)
+        # 2026-08-26：cache miss 时模型下载失败会以 5 个测试模糊失败呈现；预热步骤显式下载，失败即明确报错
+        env:
+          HF_HUB_OFFLINE: "0"
+        run: python scripts/warm_hf_models.py
+
       - name: Run quality gate (review_agent --full)
         # env 继承 job 级（DATABASE_URL/REDIS_URL/QDRANT_URL/MOCK_EXTERNAL_AI/HF_HUB_OFFLINE/PYTHONPATH）
         run: python scripts/review_agent.py --full
@@ -154,10 +160,10 @@ jobs:
               if p.exists():
                   data = json.loads(p.read_text(encoding='utf-8'))
                   if f.endswith('test-report.json'):
-                      out = {k: {'ok': v['ok'], 'tail': v['output'][-800:]} for k, v in data.get('details', {}).items()}
+                      out = {k: {'ok': v['ok'], 'tail': v['output'][-1800:]} for k, v in data.get('details', {}).items()}
                   else:
-                      out = {'blocking': data.get('blocking_checks'), 'details': {k: {'ok': v['ok'], 'tail': v['output'][-500:]} for k, v in data.get('details', {}).items()}}
-                  msg = json.dumps(out, ensure_ascii=False)[:1800]
+                      out = {'blocking': data.get('blocking_checks'), 'details': {k: {'ok': v['ok'], 'tail': v['output'][-1200:]} for k, v in data.get('details', {}).items()}}
+                  msg = json.dumps(out, ensure_ascii=False)[:3500]
                   print(f'::error file={f}::{msg}')
               else:
                   print(f'::warning file={f}::{f} not found')
