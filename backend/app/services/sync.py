@@ -147,6 +147,10 @@ def push_ops(
                     entity_type=entity_type, entity_id=entity_id, field=TOMBSTONE_FIELD, user_id=user_id
                 )
                 db.add(row)
+                # R2#6：批内新行立即登记回映射——后续同实体 op 直接命中刚建的行，
+                # 防同键双插 PK 冲突（sfv_by_key 只含批前预取行 → 批内同键重复 op 500）
+                sfv_by_key[(entity_type, entity_id, TOMBSTONE_FIELD)] = row
+                sfv_by_entity[(entity_type, entity_id)].append(row)
             row.deleted = True
             row.updated_at = client_ts
             db.add(DeletedLog(content_id=entity_id, deleted_by=user_id))
@@ -177,6 +181,9 @@ def push_ops(
                         entity_type=entity_type, entity_id=entity_id, field=field, user_id=user_id
                     )
                     db.add(row)
+                    # R2#6：批内新行立即登记回映射（同上，防同键双插 PK 冲突）
+                    sfv_by_key[(entity_type, entity_id, field)] = row
+                    sfv_by_entity[(entity_type, entity_id)].append(row)
                 row.value = value
                 row.updated_at = client_ts
                 row.deleted = False
@@ -210,10 +217,11 @@ def push_ops(
 
 
 def push_ops_safe(db: Session, user_id: str, device_id: str, ops: list[dict]) -> dict:
-    """push_ops 并发安全包装（审查修复 P1-04）
+    """push_ops 并发安全包装（审查修复 P1-04 + R2#6 增强）
 
     并发同 op_id 重试 → 唯一约束冲突（uq_offline_queue_user_op）→ 回滚后
-    重试一次（幂等检查会跳过已提交的 op）。仍失败则抛错（不吞）。
+    重试一次（幂等检查会跳过已提交的 op）。仍失败 → 定位冲突 op 逐条隔离
+    应用：冲突单条降级 rejected（不再整批 500），其余照常落库。
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -221,7 +229,40 @@ def push_ops_safe(db: Session, user_id: str, device_id: str, ops: list[dict]) ->
         return push_ops(db, user_id, device_id, ops)
     except IntegrityError:
         db.rollback()
-        return push_ops(db, user_id, device_id, ops)
+        try:
+            return push_ops(db, user_id, device_id, ops)
+        except IntegrityError:
+            db.rollback()
+            return _push_ops_per_op(db, user_id, device_id, ops)
+
+
+def _push_ops_per_op(db: Session, user_id: str, device_id: str, ops: list[dict]) -> dict:
+    """整批两次失败后的逐条隔离兜底（R2#6）：冲突单条 rejected，其余照常应用。
+
+    每次单条 push_ops 独立 commit：失败条目回滚并记 rejected，不拖垮整批；
+    applied/conflicts/rejected 语义与整批一致，客户端可观测定位到具体 op。
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    merged: dict = {"applied": [], "conflicts": [], "rejected": [], "server_version": 0}
+    for op in ops:
+        try:
+            result = push_ops(db, user_id, device_id, [op])
+        except IntegrityError:
+            db.rollback()
+            merged["rejected"].append(
+                {
+                    "op_id": op.get("op_id"),
+                    "entity_id": str(op.get("entity_id") or ""),
+                    "reason": "并发冲突（op 幂等键/字段行无法落库）",
+                }
+            )
+            continue
+        merged["applied"].extend(result["applied"])
+        merged["conflicts"].extend(result["conflicts"])
+        merged["rejected"].extend(result["rejected"])
+        merged["server_version"] = max(merged["server_version"], result["server_version"])
+    return merged
 
 
 def pull_changes(

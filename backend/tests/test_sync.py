@@ -17,6 +17,7 @@ from app.db.models import DeletedLog, OfflineQueue, SyncFieldVersion, SyncState,
 from app.db.session import SessionLocal
 from app.services.sync import pull_changes, push_ops
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
@@ -236,6 +237,75 @@ def test_op_id_idempotent_scoped_per_user(db_user):
         db.execute(sa_delete(DeletedLog).where(DeletedLog.deleted_by == user_b.id))
         db.delete(user_b)
         db.commit()
+
+
+def test_push_same_key_in_batch_no_500(db_user):
+    """R2#6：批内同键重复 op（同 entity+field 多条）→ 不再 IntegrityError
+
+    同批两条 op 写同一 (entity_type, entity_id, field)：首条新建行立即登记回映射，
+    第二条命中刚建的行按 LWW 合并——终值 = 较新 op，整批提交成功。
+    """
+    db, user = db_user
+    eid = _eid(10)
+    r = push_ops(db, user.id, DEVICE, [
+        {"op_id": f"k1-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+         "entity_id": eid, "field": "title", "value": "先", "updated_at": _ts()},
+        {"op_id": f"k2-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+         "entity_id": eid, "field": "title", "value": "后", "updated_at": _ts(hours=1)},
+    ])
+    assert len(r["applied"]) == 2, r
+    row = db.execute(
+        select(SyncFieldVersion).where(
+            SyncFieldVersion.entity_id == eid, SyncFieldVersion.field == "title"
+        )
+    ).scalar_one()
+    assert row.value == "后", "LWW：较新的 op 胜出"
+
+
+def test_push_delete_delete_in_batch(db_user):
+    """R2#6：批内同实体两条 delete（实体已存在）→ 墓碑行登记回映射，不再 IntegrityError"""
+    db, user = db_user
+    eid = _eid(11)
+    r = push_ops(db, user.id, DEVICE, [
+        {"op_id": f"u1-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+         "entity_id": eid, "field": "title", "value": "先有实体", "updated_at": _ts()},
+        {"op_id": f"d1-{uuid.uuid4().hex[:8]}", "op_type": "delete",
+         "entity_id": eid, "updated_at": _ts(hours=1)},
+        {"op_id": f"d2-{uuid.uuid4().hex[:8]}", "op_type": "delete",
+         "entity_id": eid, "updated_at": _ts(hours=2)},
+    ])
+    assert len(r["applied"]) == 3, r
+    rows = db.execute(
+        select(SyncFieldVersion).where(
+            SyncFieldVersion.entity_id == eid, SyncFieldVersion.field == "*"
+        )
+    ).scalars().all()
+    assert len(rows) == 1, "同实体墓碑只应有一行"
+
+
+def test_push_ops_safe_per_op_fallback(db_user, monkeypatch):
+    """R2#6：整批两次重试仍 IntegrityError → 逐条隔离，冲突单条 rejected 不拖垮整批"""
+    import app.services.sync as sync_mod
+    from sqlalchemy.exc import IntegrityError
+
+    db, user = db_user
+    bad_op = {"op_id": "conflict-op", "op_type": "upsert_field",
+              "entity_id": _eid(12), "field": "title", "value": "冲突", "updated_at": _ts()}
+    good_op = {"op_id": f"good-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+               "entity_id": _eid(13), "field": "title", "value": "正常", "updated_at": _ts()}
+
+    real = sync_mod.push_ops
+
+    def fake_push(dbs, uid, did, ops):
+        if ops and ops[0].get("op_id") == "conflict-op":
+            raise IntegrityError("mock conflict", {}, Exception("dup"))
+        return real(dbs, uid, did, ops)
+
+    monkeypatch.setattr(sync_mod, "push_ops", fake_push)
+    result = sync_mod._push_ops_per_op(db, user.id, DEVICE, [bad_op, good_op])
+    assert result["rejected"] == [{"op_id": "conflict-op", "entity_id": _eid(12),
+                                   "reason": "并发冲突（op 幂等键/字段行无法落库）"}]
+    assert [a["op_id"] for a in result["applied"]] == [good_op["op_id"]], "正常 op 照常应用"
 
 
 def test_sync_api_smoke(db_user):
