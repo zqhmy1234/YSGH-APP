@@ -27,6 +27,13 @@ def db_user():
     db.commit()
     db.refresh(user)
     yield db, user
+    # 清理（顺序：先子表；2026-08-26：补 UserProfile——管线 B1 标注会写 user_profile，
+    # 完整 FK schema 下删 user 被 user_profile_user_id_fkey 拦，本地旧库无 FK 掩盖）
+    from app.db.models import ProfileAnnotationPool, ProfileDimensionHistory, UserProfile
+
+    db.execute(sa_delete(ProfileDimensionHistory).where(ProfileDimensionHistory.user_id == user.id))
+    db.execute(sa_delete(ProfileAnnotationPool).where(ProfileAnnotationPool.user_id == user.id))
+    db.execute(sa_delete(UserProfile).where(UserProfile.user_id == user.id))
     db.execute(sa_delete(EventItem).where(EventItem.event_id.in_(
         select(Event.id).where(Event.user_id == user.id)
     )))

@@ -229,6 +229,9 @@ def test_op_id_idempotent_scoped_per_user(db_user):
         }])
         assert len(r2["applied"]) == 1, "跨用户 op_id 不应幂等跳过"
     finally:
+        # 清理 user_b（2026-08-26：补 SyncFieldVersion——push_ops 会写 sync_field_versions，
+        # 完整 FK schema 下删 user 被 sync_field_versions_user_id_fkey 拦，本地旧库无 FK 掩盖）
+        db.execute(sa_delete(SyncFieldVersion).where(SyncFieldVersion.user_id == user_b.id))
         db.execute(sa_delete(OfflineQueue).where(OfflineQueue.user_id == user_b.id))
         db.execute(sa_delete(DeletedLog).where(DeletedLog.deleted_by == user_b.id))
         db.delete(user_b)

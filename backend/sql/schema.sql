@@ -1,5 +1,5 @@
 -- ============================================================
--- 忆述光华 MVP · PostgreSQL Schema v3（35 表 11 域）
+-- 忆述光华 MVP · PostgreSQL Schema v3（38 表 11 域）
 -- 依据：《忆述光华_数据库Schema_v3.md》（2026-08-18 权威版）
 -- 全局约定：
 --   软删除：业务表带 deleted_at + deleted_by（B4-2，30 天物理清理）
@@ -12,7 +12,12 @@
 --   c. correction_log 保留 content_type / qdrant_point_id —— 纠错服务依赖（MVP 向量走 Qdrant）
 --   d. profile_dimension_history.value text —— 维度值为枚举字符串
 --   e. echo_history 不建 UNIQUE(user_id, event_id)（PG 多 NULL 不冲突，无效约束）
+-- 2026-08-26：38 表（补 profile_annotation_pool 等 Wave0 迁移表）+ CREATE EXTENSION vector
+--   （CI 从零建库缺 pgvector 扩展致 test_vector_extension 挂；镜像需 pgvector/pgvector:pg16）
 -- ============================================================
+
+-- pgvector 扩展（v3 后无向量列，预留纠错向量/同步；本地/CI/生产统一在此建）
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ========== 1. 用户与认证域（5 表） ==========
 

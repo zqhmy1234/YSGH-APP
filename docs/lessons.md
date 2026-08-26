@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 17:29 · commit f6af131 · ts=1787736548
+- **错误**：CI #16 quality gate 失败（Init PG 已通过）：test_vector_extension 断言 vector 扩展不存在 + test_sync/test_pipeline 删用户被 FK 拦截
+- **根因**：CI 从零建库 vs 本地旧库漂移：① pgvector 扩展只在本地手工建过，schema.sql/setup_pg.sql/迁移都没有 CREATE EXTENSION → CI 空库无 vector 扩展；② 本地 yishu 库是旧版 schema.sql（27 表/4 FK）建的 + alembic 只 stamp 未执行建表，schema.sql 现 38 表/20+ FK → 测试在无 FK 库上通过（删用户不检查子表），CI 完整 FK 库必挂
+- **修复**：schema.sql 加 CREATE EXTENSION IF NOT EXISTS vector + setup_pg.sql \\connect yishu 建扩展 + CI postgres 镜像换 pgvector/pgvector:pg16（官方自带）+ Init PG 步骤加 CREATE EXTENSION；测试 fixture 补齐子表清理（test_pipeline 补 UserProfile 等、test_sync 补 SyncFieldVersion）；本地全新库+vector+schema.sql 完整复现 CI 验证 419 passed+api_smoke 6/6+research 18 全过
+- **相关文件**：backend/sql/schema.sql, scripts/setup_pg.sql, .github/workflows/ci.yml, backend/tests/test_pipeline.py, backend/tests/test_sync.py
+- **教训**：本地库状态 ≠ schema.sql ≠ 迁移链，三处都可能漂移：表设计更新必须同步（迁移+schema.sql+本地库+CI 建库源），否则本地全绿 CI 必挂；本地验证 CI 环境必须用全新库+完整 schema 复现，不能依赖本地旧库
+
+---
+
 ### 2026-08-26 16:14 · commit bd754af · ts=1787732092
 - **错误**：CI #15 quality gate 失败 exit 1：test_profile_annotator 访问 profile_annotation_pool 表报 relation does not exist
 - **根因**：schema.sql 与迁移链漂移：profile_annotation_pool（B1 低置信度事件池，迁移 b0b1c2d3e4f5 建）未同步进 schema.sql；本地库是 alembic upgrade head 建的（有表）故 420 passed 全绿，CI 用 schema.sql 从空库建（缺表）必挂——同一 drift 类问题，与 issue #2 同源

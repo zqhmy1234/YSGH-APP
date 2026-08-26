@@ -59,7 +59,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # 2026-08-26：postgres:16-alpine → pgvector/pgvector:pg16（官方镜像自带 vector 扩展；
+        # schema.sql 建库需要 CREATE EXTENSION vector，普通 postgres 镜像无此扩展致 test_vector_extension 挂）
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: admin
@@ -127,6 +129,8 @@ jobs:
             sleep 5
           done
           PGPASSWORD=admin psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f scripts/setup_pg.sql
+          # pgvector 非 trusted 扩展需超级用户安装（yishu_app 无权限）；schema.sql 里 IF NOT EXISTS 幂等跳过
+          PGPASSWORD=admin psql -h localhost -U postgres -d yishu -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector"
           PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -v ON_ERROR_STOP=1 -f backend/sql/schema.sql
           PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
 
