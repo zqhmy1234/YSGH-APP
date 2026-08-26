@@ -13,7 +13,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
-from app.core.errors import ApiError
+from app.core.errors import (
+    ERR_WECHAT_001,
+    ERR_WECHAT_002,
+    ERR_WECHAT_003,
+    ERR_WECHAT_099,
+    ApiError,
+)
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -29,7 +35,7 @@ def _wechat_configured() -> bool:
 
 def _require_configured() -> None:
     if not _wechat_configured():
-        raise ApiError("WECHAT_099", "微信回调未配置（WECHAT_CORP_ID/TOKEN/ENCODING_AES_KEY）", http=503)
+        raise ApiError(ERR_WECHAT_099, "微信回调未配置（WECHAT_CORP_ID/TOKEN/ENCODING_AES_KEY）", http=503)
 
 
 class WechatFindRequest(BaseModel):
@@ -65,7 +71,7 @@ def wechat_callback_verify(
             settings.wechat_corp_id, msg_signature, timestamp, nonce, echostr,
         )
     except ValueError as exc:
-        raise ApiError("WECHAT_001", f"URL 验证失败: {exc}", http=403) from exc
+        raise ApiError(ERR_WECHAT_001, f"URL 验证失败: {exc}", http=403) from exc
     return Response(content=plain, media_type="text/plain")
 
 
@@ -86,7 +92,7 @@ async def wechat_callback(
             settings.wechat_corp_id, msg_signature, timestamp, nonce, body_str,
         )
     except ValueError as exc:
-        raise ApiError("WECHAT_002", f"回调处理失败: {exc}", http=403) from exc
+        raise ApiError(ERR_WECHAT_002, f"回调处理失败: {exc}", http=403) from exc
     if msg is not None:
         process_incoming(db, msg)
     return Response(content="success", media_type="text/plain")
@@ -101,5 +107,5 @@ def wechat_delete(
     """微信端软删本条（F6：只删本条；审查 CRITICAL 修复：补鉴权 + 归属校验）"""
     ok = soft_delete_by_msg(db, msg_id, user_id=user.id)
     if not ok:
-        raise ApiError("WECHAT_003", "消息不存在", http=404)
+        raise ApiError(ERR_WECHAT_003, "消息不存在", http=404)
     return ApiResponse(data={"deleted": True, "msg_id": msg_id})

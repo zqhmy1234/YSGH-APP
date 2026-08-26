@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ERR_CORR_003, ERR_CORR_004, ApiError
+from app.core.errors import ERR_CORR_001, ERR_CORR_002, ERR_CORR_003, ERR_CORR_004, ApiError
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -29,9 +29,9 @@ def create_correction(
     user: User = Depends(get_current_user),
 ):
     if req.new_label not in VALID_CLASSES:
-        raise ApiError("CORR_001", f"new_label 必须为 {sorted(VALID_CLASSES)} 之一", http=422)
+        raise ApiError(ERR_CORR_001, f"new_label 必须为 {sorted(VALID_CLASSES)} 之一", http=422)
     if req.source not in ("active", "echo", "org"):
-        raise ApiError("CORR_002", "source 必须为 active/echo/org", http=422)
+        raise ApiError(ERR_CORR_002, "source 必须为 active/echo/org", http=422)
     row = record_correction(
         db,
         user_id=user.id,

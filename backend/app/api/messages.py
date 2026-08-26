@@ -9,7 +9,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import ERR_MSG_001, ERR_MSG_002, ApiError
 from app.db.models import Message, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse, Page
@@ -45,7 +45,7 @@ def list_messages(
     query = select(Message).where(Message.user_id == user.id)
     if status:
         if status not in ("unread", "read", "archived"):
-            raise ApiError("MSG_001", "status 仅支持 unread/read/archived", http=422)
+            raise ApiError(ERR_MSG_001, "status 仅支持 unread/read/archived", http=422)
         query = query.where(Message.status == status)
     if cursor:
         query = query.where(Message.id < cursor)
@@ -83,7 +83,7 @@ def mark_read(
             )
         ).scalar()
         if not exists:
-            raise ApiError("MSG_002", "消息不存在", http=404)
+            raise ApiError(ERR_MSG_002, "消息不存在", http=404)
     db.commit()
     return ApiResponse(data={"read": msg_id})
 

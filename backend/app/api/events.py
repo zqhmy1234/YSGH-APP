@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import ERR_EVENT_004, ApiError
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -139,7 +139,7 @@ def event_items(
     try:
         items = _items(db, str(user.id), event_id)
     except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        raise ApiError(ERR_EVENT_004, str(exc), http=404) from exc
     return ApiResponse(data=items)
 
 
@@ -154,7 +154,7 @@ def merge_events(req: EventMergeRequest, db: Session = Depends(get_db), user: Us
     try:
         ev = _merge(db, str(user.id), req.target_event_id, req.source_event_ids)
     except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        raise ApiError(ERR_EVENT_004, str(exc), http=404) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
 
 
@@ -166,7 +166,7 @@ def split_event(req: EventSplitRequest, db: Session = Depends(get_db), user: Use
     try:
         ev = _split(db, str(user.id), req.event_id, req.content_ids)
     except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        raise ApiError(ERR_EVENT_004, str(exc), http=404) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
 
 
@@ -178,7 +178,7 @@ def confirm_event(req: EventConfirmRequest, db: Session = Depends(get_db), user:
     try:
         ev = _confirm(db, str(user.id), req.event_id, title=req.title)
     except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        raise ApiError(ERR_EVENT_004, str(exc), http=404) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
 
 
@@ -195,5 +195,5 @@ def set_cover(
     try:
         ev = _set_cover(db, str(user.id), event_id, req.cover_content_id)
     except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        raise ApiError(ERR_EVENT_004, str(exc), http=404) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))

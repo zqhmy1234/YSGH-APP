@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import ERR_ASR_001, ERR_ASR_002, ApiError
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.asr import (
@@ -27,6 +27,27 @@ from app.services.external.dashscope import moderate
 router = APIRouter(prefix="/api/v1/asr", tags=["asr"])
 # 护栏独立域（P2-06 前缀统一：guard/check 不属于 ASR 域，独立 /api/v1/guard）
 guard_router = APIRouter(prefix="/api/v1/guard", tags=["guard"])
+
+# ASR 校验类错误码（音频参数/格式问题 → 422 ASR_001；其余为服务不可用 → 503 ASR_002）
+_ASR_VALIDATION_CODES = {
+    "AUDIO_NOT_FOUND",
+    "AUDIO_TOO_LARGE",
+    "EMPTY_AUDIO",
+    "INVALID_AUDIO",
+    "UNSUPPORTED_FORMAT",
+}
+
+
+def _asr_error(exc: AsrError) -> ApiError:
+    """AsrError → ApiError（R4#1 收口：统一 ASR_001/ASR_002 映射，details 走 to_dict 单一来源）"""
+    is_validation = exc.code in _ASR_VALIDATION_CODES
+    return ApiError(
+        ERR_ASR_001 if is_validation else ERR_ASR_002,
+        exc.message,
+        http=422 if is_validation else 503,
+        details=exc.to_dict(),
+    )
+
 
 def _verify_audio(data: bytes, filename: str | None) -> tuple[bytes, str]:
     """校验大小、扩展名与音频魔数，返回原数据和规范格式。"""
@@ -49,12 +70,7 @@ def transcribe_audio(
     try:
         data, audio_format = _verify_audio(file.file.read(), file.filename)
     except AsrError as exc:
-        raise ApiError(
-            "ASR_001",
-            exc.message,
-            http=422,
-            details={"error_code": exc.code, "retryable": False},
-        ) from exc
+        raise _asr_error(exc) from exc
 
     # 临时文件保留真实扩展名，Fun-ASR Flash 依此构造 format 与 MIME。
     tmp_path: Path | None = None
@@ -65,20 +81,7 @@ def transcribe_audio(
         try:
             result = transcribe(tmp_path, preferred=preferred)
         except AsrError as exc:
-            validation_codes = {
-                "AUDIO_NOT_FOUND",
-                "AUDIO_TOO_LARGE",
-                "EMPTY_AUDIO",
-                "INVALID_AUDIO",
-                "UNSUPPORTED_FORMAT",
-            }
-            is_validation = exc.code in validation_codes
-            raise ApiError(
-                "ASR_001" if is_validation else "ASR_002",
-                exc.message,
-                http=422 if is_validation else 503,
-                details=exc.to_dict(),
-            ) from exc
+            raise _asr_error(exc) from exc
 
         if result.outcome == "no_speech":
             verdict = {"pass": True, "reason": "no-speech"}

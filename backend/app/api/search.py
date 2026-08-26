@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import ERR_SEARCH_001, ERR_SEARCH_002, ApiError
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -33,9 +33,9 @@ def search_by_image_api(
     """
     data = file.file.read()
     if len(data) == 0:
-        raise ApiError("SEARCH_001", "空图片文件", http=422)
+        raise ApiError(ERR_SEARCH_001, "空图片文件", http=422)
     if len(data) > _MAX_IMAGE_BYTES:
-        raise ApiError("SEARCH_002", f"图片超过 {_MAX_IMAGE_BYTES // 1024 // 1024}MB 上限", http=422)
+        raise ApiError(ERR_SEARCH_002, f"图片超过 {_MAX_IMAGE_BYTES // 1024 // 1024}MB 上限", http=422)
     suffix = Path(file.filename or "query.jpg").suffix or ".jpg"
     with NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(data)
