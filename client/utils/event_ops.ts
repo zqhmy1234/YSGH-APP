@@ -352,7 +352,7 @@ function flushOne(opType: string, payload: UTSJSONObject): Promise<boolean> {
 		(_r: boolean | null, _attempt: number): boolean => false,
 		(_r: boolean | null, _attempt: number): boolean => false
 	).then((r: boolean | null): boolean => {
-		return r != null && r
+		return r == true
 	})
 }
 
