@@ -1,11 +1,18 @@
 /**
- * 忆述光华 · 相册监听与安全存储插件接口（B-UT-1）
+ * 忆述光华 · 相册监听与安全存储插件接口（B-UT-1）· Wave4 Agent K B5d 升级
  *
  * 系统能力层（UTS 插件，纯 UTS 实现——标准基座可运行，无需自定义基座）：
  *  1. 相册监听：ContentObserver（UTS 继承原生类）+ MediaScanner 兼容（POC-01 已验证）
  *     - 游标去重：SharedPreferences last_seen（照片 _id），已处理跳过（B-UT-3）
  *     - 静默窗口攒批：3-5s 无新照片 → 回调 uvue 层（B-UT-4）
  *  2. 权限：READ_MEDIA_IMAGES（Android 13+）运行时请求 + 状态查询
+ *
+ *  Wave4 B5d 升级（K-1a 前台服务短命化 + 类型互斥）：
+ *  3. 前台服务（dataSync）：监听期间以后台存活保活（短命化——不常驻 24h，超时自停；
+ *     录音结束 stopForeground 降级后转 WorkManager）；服务未注册（标准基座）自动回退
+ *     页面级监听，行为与第一波完全一致（优雅降级，无回归）。
+ *  4. microphone/dataSync 两前台服务类型互斥（B5d §3）：录音中不启 dataSync，
+ *     由 setRecordingActive(active) 与录音插件（Agent J 域）协调。
  *
  * 注（2026-08-24 决策调整）：原 Hybrid Mode（Kotlin PhotoObserver/SecurePrefs）需自定义基座，
  * 且 EncryptedSharedPreferences 依赖 androidx.security 三方库；第一波改为纯 UTS 实现跑标准基座，
@@ -46,11 +53,15 @@ export class PhotoItem {
 /** 攒批回调：一批新照片（已按静默窗口去重） */
 export type PhotoBatchCallback = (items: Array<PhotoItem>) => void
 
+/** 前台服务当前激活类型（B5d §3 互斥状态查询） */
+export type ForegroundActiveType = 'microphone' | 'dataSync' | 'none' | 'unsupported'
+
 /** 相册监听器（实现位于 app-android，工厂函数创建） */
 export interface PhotoWatch {
-	/** 启动监听（幂等）；首次调用会在应用存活期间保持挂载 */
+	/** 启动监听（幂等）；首次调用会在应用存活期间保持挂载；
+	 *  自定义基座：同时启动 dataSync 前台服务（短命化，超时自停）；标准基座：回退页面级监听 */
 	start(callback: PhotoBatchCallback): void
-	/** 停止监听 */
+	/** 停止监听（停止前台服务 + 注销 ContentObserver） */
 	stop(): void
 	/** 读取当前游标（last_seen photo _id，用于 UI 展示状态） */
 	getLastSeenId(): number
@@ -58,6 +69,17 @@ export interface PhotoWatch {
 	requestReadPermission(): void
 	/** 相册读取权限是否已授予 */
 	isReadPermissionGranted(): boolean
+	/**
+	 * 录音状态互斥（B5d §3：microphone/dataSync 两前台服务类型不同时开）。
+	 * 录音插件（Agent J 域）在开始/结束录音时调用：
+	 *   - active=true  录音开始：立即停止 dataSync 前台服务（让位 microphone 前台服务）
+	 *   - active=false 录音结束：恢复 dataSync 前台服务（若监听仍挂载）
+	 */
+	setRecordingActive(active: boolean): void
+	/** dataSync 前台服务当前是否运行中（自定义基座下才有意义） */
+	isForegroundServiceActive(): boolean
+	/** 当前前台服务激活类型（互斥状态查询） */
+	getActiveType(): ForegroundActiveType
 }
 
 /** 创建相册监听器实例（跨端工厂，平台目录实现） */
