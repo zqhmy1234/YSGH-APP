@@ -8,6 +8,42 @@
 
 ---
 
+### 2026-08-27 03:52 · commit 5b47f3d · ts=1787773945
+- **错误**：test_event_aggregation_scripts.py/test_image_search.py lint 失败（I001 + E501 长行 + DTZ001）
+- **根因**：轮询 lambda 内 search_image 调用单行 127 列；新文件 import 未排序；naive datetime 无时区
+- **修复**：ruff --fix 排 import；search_image 调用换行拆分；naive datetime 加 noqa: DTZ001（对齐 load_real_photos 朴素时间契约）
+- **相关文件**：backend/tests/test_event_aggregation_scripts.py,backend/tests/test_image_search.py
+- **教训**：改测试文件后先 ruff check --fix + 自查 E501/DTZ001 再提交
+
+---
+
+### 2026-08-27 03:49 · commit 6b5760b · ts=1787773762
+- **错误**：新建 test_storage_backends.py 首次 lint 失败（I001 import 块未排序）
+- **根因**：新文件顶部 import pytest 与 from app.* 导入之间留了空行；ruff isort 要求同一导入块内不加空行（与 test_asr/test_ner 同根因，属于参数化/新文件常见格式）
+- **修复**：对新建/改动测试文件一律先跑 ruff check --fix 再提交
+- **相关文件**：backend/tests/test_storage_backends.py
+- **教训**：新建测试文件也要先 ruff --fix：import 与 from 导入同一块内无空行
+
+---
+
+### 2026-08-27 03:48 · commit 6b5760b · ts=1787773733
+- **错误**：R6#12 schema 约束改动（content/sync/auth）被并行 Agent 的 git add -A 全量暂存扫进 test 提交，随后 E1 改写历史（rebase/amend）时被剔除出提交历史
+- **根因**：多 Agent 共享同一工作目录/develop 分支：某 Agent 提交前 git add -A，把他人未暂存/已暂存的改动一并带入；随后历史改写使这些改动从 HEAD 消失，只剩工作树 diff
+- **修复**：并行环境下提交用 git commit -- <paths> 路径限定；提交前 git diff --cached --name-only 核对暂存内容；发现历史被改写后，从 git diff（工作树 vs HEAD）恢复改动并重新路径限定提交；upload.py 用 git add -p 逐 hunk 暂存避开他人 in-flight hunk
+- **相关文件**：docs/重构侦察报告_20260827.md
+- **教训**：共享工作区并行开发必须路径限定提交 + 提交前核对暂存区，历史改写会吞掉他人改动
+
+---
+
+### 2026-08-27 03:48 · commit 34158fa · ts=1787773688
+- **错误**：参数化重构后 review_agent lint 失败（E501 行超长 / I001 import 块未排序）
+- **根因**：新增 parametrize 用例的函数签名超 120 列；补 import pytest 后与 from 导入之间留了空行，ruff isort 要求同一导入块内不加空行
+- **修复**：函数签名拆多行；对 test_asr/test_ner/test_retry 跑 ruff check --fix 自动排 import
+- **相关文件**：backend/tests/test_asr.py,backend/tests/test_ner.py,backend/tests/test_retry.py
+- **教训**：ruff isort：同一导入块内 import 与 from 导入紧邻不加空行；parametrize 长签名需换行（E501<120）
+
+---
+
 ### 2026-08-27 03:27 · commit 88cfb63 · ts=1787772467
 - **错误**：ruff I001 import block un-sorted in services/upload.py
 - **根因**：手插 app.services.errors 导入未按字母序（errors < external < file_magic < pipeline < thumbnails < upload_meta），fast gate lint 阻断
