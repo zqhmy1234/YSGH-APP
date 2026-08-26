@@ -12,7 +12,6 @@ import uuid
 
 import pytest
 from app.db.models import Content, CorrectionLog, User
-from app.db.session import SessionLocal
 from app.services.correction import (
     arbitrate,
     global_candidate_count,
@@ -81,24 +80,6 @@ def _make_content(db, user_id: str, cid: str, text: str = "测试内容") -> Non
 
 def _new_cid() -> str:
     return str(uuid.uuid4())
-
-
-@pytest.fixture()
-def db_user():
-    """隔离测试用户（PG yishu 库直插）"""
-    db = SessionLocal()
-    user = User(phone=f"corr-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(
-        CorrectionLog.__table__.delete().where(CorrectionLog.user_id == user.id)
-    )
-    db.execute(Content.__table__.delete().where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def test_record_correction_dual_write(db_user, mock_encode):
