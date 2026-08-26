@@ -147,6 +147,40 @@ def test_enqueue_unique_passes_queue_and_timeout(monkeypatch):
     assert captured["retry"].max == 3  # 与既有 RETRY_POLICY 对齐
 
 
+def test_enqueue_unique_sanitizes_unsafe_key(monkeypatch):
+    """集成修复：key 含冒号/空格/中文等非法字符 → job_id 净化，不触发 RQ validate_job_id ValueError"""
+    import app.core.queue as queue_mod
+
+    enqueued: list[str] = []
+    _fake_queue_tooling(monkeypatch, enqueued)
+    monkeypatch.setattr(queue_mod.redis, "set", lambda k, v, **kw: True)
+
+    def my_job(x): ...
+
+    queue_mod.enqueue_unique(my_job, "content: 照片/1号")
+    assert len(enqueued) == 1
+    # 只允许 RQ 合法字符（字母/数字/下划线/连字符），且 key 段被净化
+    assert all(c.isalnum() or c in "_-" for c in enqueued[0])
+    assert enqueued[0].startswith("my_job_content")
+
+
+def test_enqueue_idempotent_sanitizes_unsafe_job_id(monkeypatch):
+    """集成修复：enqueue_idempotent 冒号 job_id 在 RQ 2.x 会 ValueError——真实 client_request_id
+    （可含冒号/空格/中文）入队即炸；现各段净化后正常入队且幂等键基于净化结果。"""
+    import app.core.queue as queue_mod
+
+    enqueued: list[str] = []
+    _fake_queue_tooling(monkeypatch, enqueued)
+    monkeypatch.setattr(queue_mod.redis, "set", lambda k, v, **kw: True)
+
+    def my_job(x): ...
+
+    queue_mod.enqueue_idempotent("classify", "user-1", "req: 照片/1号", my_job)
+    assert len(enqueued) == 1
+    assert all(c.isalnum() or c in "_-" for c in enqueued[0])
+    assert enqueued[0].startswith("classify_user-1_")
+
+
 # ---------- 双幂等键锚定（F1/P0-6） ----------
 
 

@@ -13,10 +13,20 @@ P0-8（审查 S3-低/运维，2026-08-26）：显式超时 + 重试策略
       rq worker high   --url $REDIS_URL
       rq worker low    --url $REDIS_URL
 """
+import re
+
 from redis import Redis
 from rq import Queue, Retry
 
 from app.core.config import settings
+
+# RQ 2.x validate_job_id 只允许字母/数字/下划线/连字符（冒号/空格/中文等会 ValueError）
+_JOB_ID_UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _safe_job_id_part(part: str) -> str:
+    """净化 job_id 拼接段：非法字符统一替换为下划线，保证确定性（同输入→同 job_id）。"""
+    return _JOB_ID_UNSAFE.sub("_", part)
 
 # 主连接（AOF 持久化，备份 DR-004）
 # 注意：RQ 的 job payload 是 pickle 二进制，连接必须 decode_responses=False
@@ -96,13 +106,13 @@ def enqueue_unique(
       - 既有 job 已 failed / 已过期 → 重建（RQ 同 job_id 覆盖）
     幂等键 TTL 7 天（与 RETRY_FAILURE_TTL 对齐，防键无限膨胀）。
     queue_name/job_timeout 可覆盖（情绪增强/文本类低优任务传 QUEUE_LOW + 300）。
-    注意：job_id 用下划线拼接（RQ 2.x validate_job_id 只允许字母/数字/下划线/连字符，
-    冒号会 ValueError——enqueue_idempotent 的冒号 job_id 存在同一潜在问题，待归口处理）。
+    注意：job_id 各段经 _safe_job_id_part 净化（RQ 2.x validate_job_id 只允许字母/数字/下划线/连字符，
+    冒号/空格/中文等会 ValueError——enqueue_idempotent 同款净化已于集成修复，统一走本 helper）。
     """
     name = getattr(func, "__name__", None)
     if name is None:
         name = func if isinstance(func, str) else type(func).__name__
-    job_id = f"{name}_{key}"
+    job_id = f"{name}_{_safe_job_id_part(key)}"
     idem_key = f"yishu:uq:{job_id}"
 
     def _enqueue() -> object:
@@ -135,13 +145,14 @@ def enqueue_idempotent(
 ):
     """幂等入队（R4#4：classify/corrections 提交端点重试安全）
 
-    确定性 job_id = "{prefix}:{user_id}:{client_request_id}" + Redis 原子预占位：
+    确定性 job_id = "<prefix>_<user_id>_<client_request_id>"（各段净化：非字母数字下划线连字符→下划线，
+    兼容 RQ 2.x validate_job_id；冒号会 ValueError）+ Redis 原子预占位：
       - 首次提交：占位成功 → 入队，返回 job
       - 重复/并发提交：占位失败 → 返回既有 job（不重复入队，防双入队双执行）；
         既有 job 已失败/过期 → 重建（RQ 同 job_id 覆盖）。
     幂等键 TTL 7 天（与 RETRY_FAILURE_TTL 对齐，防键无限膨胀）。
     """
-    job_id = f"{prefix}:{user_id}:{client_request_id}"
+    job_id = f"{_safe_job_id_part(prefix)}_{_safe_job_id_part(user_id)}_{_safe_job_id_part(client_request_id)}"
     idem_key = f"yishu:idem:{job_id}"
 
     def _enqueue() -> object:
