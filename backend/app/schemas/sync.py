@@ -1,5 +1,6 @@
 """B4 同步契约（数据同步与离线优先）"""
 from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 # R6#12（输入校验）：实体 ID 必须为 UUID 格式（防任意串进 UUID 列触发 DB 层 500）
 _UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -31,9 +32,17 @@ class SyncOp(BaseModel):
             node, depth = stack.pop()
             count += 1
             if count > _MAX_VALUE_ITEMS:
-                raise ValueError(f"value 条目数超出上限（{_MAX_VALUE_ITEMS}）")
+                raise PydanticCustomError(
+                    "sync_value_too_many_items",
+                    f"value 条目数超出上限（{_MAX_VALUE_ITEMS}）",
+                    {},
+                )
             if depth > _MAX_VALUE_DEPTH:
-                raise ValueError(f"value 嵌套深度超出上限（{_MAX_VALUE_DEPTH}）")
+                raise PydanticCustomError(
+                    "sync_value_too_deep",
+                    f"value 嵌套深度超出上限（{_MAX_VALUE_DEPTH}）",
+                    {},
+                )
             if isinstance(node, dict):
                 for sub in node.values():
                     if isinstance(sub, (dict, list)):
