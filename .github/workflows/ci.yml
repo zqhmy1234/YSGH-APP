@@ -14,6 +14,11 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  # P0-4（2026-08-27）：schema.sql ↔ alembic 漂移检测 weekly 巡检（周一 03:00 UTC），
+  # 失败仅出 annotation，不参与 PR 门禁；支持 workflow_dispatch 手动触发。
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -230,3 +235,49 @@ jobs:
           name: test-reports
           path: .cowork-temp/
           if-no-files-found: ignore
+
+  # ============================================================
+  # P0-4（2026-08-27）：schema.sql ↔ alembic 迁移链漂移检测（weekly）
+  # 背景：CI 建库源 = schema.sql，本地/生产走 alembic，两链无强制对齐——#8~#19 系列
+  # CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
+  # 设计：脚本在临时库分别用 schema.sql 与 alembic head（失败回退 ORM metadata）建库，
+  #       对比表集合/列/索引/外键/唯一约束/主键；退出码 1 = 检出漂移。
+  # 失败策略：continue-on-error 仅出 annotation，不阻断主流水线（避免拖慢 PR）。
+  schema-drift-weekly:
+    name: Schema Drift（weekly，schema.sql ↔ alembic）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 仅 schedule/workflow_dispatch 触发（不参与 push/PR 门禁）；
+    # 不加此 if 时 schedule 事件会连带跑 fast-gate/full-gate（未修改其逻辑，用 if 隔离）。
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (sqlalchemy/psycopg/alembic/pydantic——仅漂移检测所需，不装全量 requirements)
+        run: pip install sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings
+
+      - name: Run schema drift check (漂移仅出 annotation，不阻断)
+        # P0-4：检出漂移 → 脚本 exit 1 + ::error:: annotation；continue-on-error 保证
+        # weekly job 失败不破坏主流水线状态（主流水线=fast-gate/full-gate，PR 不受影响）。
+        continue-on-error: true
+        run: python scripts/check_schema_drift.py --admin-url postgresql+psycopg://postgres:admin@localhost:5432/postgres
