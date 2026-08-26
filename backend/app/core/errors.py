@@ -52,10 +52,12 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("CONTENT_006", "仅支持照片文件（jpg/png/webp/heic；含魔数校验）", 422),
     ErrorSpec("CONTENT_007", "照片超过大小上限", 413),
     ErrorSpec("CONTENT_008", "游标格式无效（应为 <created_at_iso>|<id>）", 422),
+    ErrorSpec("CONTENT_009", "cos_key 非法或不属于当前用户（前缀/对象不存在）", 422),
     # 纠错域
     ErrorSpec("CORR_001", "new_label 非法", 422),
     ErrorSpec("CORR_002", "source 非法", 422),
     ErrorSpec("CORR_003", "任务不存在或已过期", 404),
+    ErrorSpec("CORR_004", "任务不属于当前用户（越权查询）", 403),
     # 事件域
     ErrorSpec("EVENT_004", "事件不存在或不属于当前用户", 404),
     ErrorSpec("EVENT_005", "内容不存在或不属于当前用户", 404),
@@ -87,6 +89,7 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("WECHAT_099", "微信回调未配置", 503, retryable=True),
     # 分类域
     ErrorSpec("CLASSIFY_002", "任务不存在或已过期", 404),
+    ErrorSpec("CLASSIFY_003", "任务不属于当前用户（越权查询）", 403),
 ]
 
 ERROR_REGISTRY: dict[str, ErrorSpec] = {spec.code: spec for spec in _ERROR_SPECS}
@@ -108,9 +111,11 @@ ERR_CONTENT_005 = "CONTENT_005"
 ERR_CONTENT_006 = "CONTENT_006"
 ERR_CONTENT_007 = "CONTENT_007"
 ERR_CONTENT_008 = "CONTENT_008"
+ERR_CONTENT_009 = "CONTENT_009"
 ERR_CORR_001 = "CORR_001"
 ERR_CORR_002 = "CORR_002"
 ERR_CORR_003 = "CORR_003"
+ERR_CORR_004 = "CORR_004"
 ERR_EVENT_004 = "EVENT_004"
 ERR_EVENT_005 = "EVENT_005"
 ERR_MSG_001 = "MSG_001"
@@ -134,6 +139,7 @@ ERR_WECHAT_002 = "WECHAT_002"
 ERR_WECHAT_003 = "WECHAT_003"
 ERR_WECHAT_099 = "WECHAT_099"
 ERR_CLASSIFY_002 = "CLASSIFY_002"
+ERR_CLASSIFY_003 = "CLASSIFY_003"
 
 
 class ApiError(Exception):

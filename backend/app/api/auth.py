@@ -10,10 +10,13 @@ jscode2session（优先 unionid、回退 openid）；未配置时 dev/test 走 m
 保持 501（不静默降级 mock 登录）。
 """
 import secrets
+import threading
+import time
 import uuid
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -42,6 +45,73 @@ from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+# ---- TD-P3 M2 修复（审查中危）：验证码爆破防护 ----
+# 轻量内存计数（单进程）：
+#   - 每 phone 每窗口失败 ≥_OTP_MAX_FAILS 次 → 作废当前验证码 + 冷却（防爆破）
+#   - send / login 均做 IP+phone 双层滑动窗口限流（防短信轰炸 / 登录尝试洪泛）
+# 多副本部署登记：需将 _RATE/_OTP_STATE 换成 Redis 计数（INCR + EXPIRE，键名同名），
+# 本实现保留单进程语义，生产单副本即可覆盖 MVP。
+_OTP_WINDOW_SECONDS = 600          # 失败计数窗口 / 冷却时长（10 分钟）
+_OTP_MAX_FAILS = 5                 # 每码窗口内失败 ≥5 次作废
+_RATE_WINDOW = 60                  # 限流窗口（秒）
+_SMS_SEND_IP_LIMIT = 30            # send：同 IP 30 次/分钟
+_SMS_SEND_PHONE_LIMIT = 5          # send：同 phone 5 次/分钟（DB 60s/日 10 已有，此为双保险）
+_LOGIN_IP_LIMIT = 60               # login：同 IP 60 次/分钟
+_LOGIN_PHONE_LIMIT = 10            # login：同 phone 10 次/分钟
+
+_RATE_LOCK = threading.Lock()
+_RATE: dict[str, deque] = defaultdict(deque)          # key -> 时间戳队列
+_OTP_STATE: dict[str, dict] = {}                       # phone -> {fails, window_start, cooldown_until}
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else ""
+
+
+def _rate_allow(key: str, limit: int, window: float = _RATE_WINDOW) -> bool:
+    """滑动窗口限流：window 秒内 ≤ limit 次放行，否则拒绝"""
+    now = time.monotonic()
+    with _RATE_LOCK:
+        bucket = _RATE[key]
+        while bucket and now - bucket[0] >= window:
+            bucket.popleft()
+        bucket.append(now)
+        return len(bucket) <= limit
+
+
+def _otp_fail(phone: str) -> bool:
+    """记录一次失败；返回是否已达作废阈值（≥_OTP_MAX_FAILS）"""
+    now = time.monotonic()
+    with _RATE_LOCK:
+        st = _OTP_STATE.get(phone)
+        if st is None or now - st["window_start"] >= _OTP_WINDOW_SECONDS:
+            st = {"fails": 0, "window_start": now, "cooldown_until": 0.0}
+            _OTP_STATE[phone] = st
+        st["fails"] += 1
+        return st["fails"] >= _OTP_MAX_FAILS
+
+
+def _otp_start_cooldown(phone: str) -> None:
+    with _RATE_LOCK:
+        st = _OTP_STATE.get(phone)
+        if st is None:
+            st = {"fails": _OTP_MAX_FAILS, "window_start": time.monotonic(), "cooldown_until": 0.0}
+            _OTP_STATE[phone] = st
+        st["cooldown_until"] = time.monotonic() + _OTP_WINDOW_SECONDS
+
+
+def _otp_in_cooldown(phone: str) -> bool:
+    now = time.monotonic()
+    with _RATE_LOCK:
+        st = _OTP_STATE.get(phone)
+        return st is not None and now < st["cooldown_until"]
+
+
+def _otp_reset(phone: str) -> None:
+    """登录成功 / 新码发出 → 清除失败计数（每码独立窗口）"""
+    with _RATE_LOCK:
+        _OTP_STATE.pop(phone, None)
+
 
 @router.post("/wechat", response_model=ApiResponse[TokenPair])
 def wechat_login(req: WechatLoginRequest, db: Session = Depends(get_db)):
@@ -65,8 +135,25 @@ def wechat_login(req: WechatLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/phone", response_model=ApiResponse[TokenPair])
-def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
-    """手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）"""
+def phone_login(
+    req: PhoneLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）
+
+    TD-P3 M2（审查中危）：验证码爆破防护
+      - IP+phone 双层滑动窗口限流（超限 429）
+      - 每 phone 每窗口失败 ≥5 次 → 作废当前验证码（used_at 置位）+ 冷却 10 分钟
+    """
+    ip = _client_ip(request)
+    if not _rate_allow(f"login:ip:{ip}", _LOGIN_IP_LIMIT):
+        raise ApiError(ERR_AUTH_004, "登录尝试过于频繁，请稍后再试", http=429)
+    if not _rate_allow(f"login:phone:{req.phone}", _LOGIN_PHONE_LIMIT):
+        raise ApiError(ERR_AUTH_004, "登录尝试过于频繁，请稍后再试", http=429)
+    if _otp_in_cooldown(req.phone):
+        raise ApiError(ERR_AUTH_004, "验证码错误次数过多，请稍后再试", http=429)
+
     now = datetime.now(timezone.utc)
     record = db.execute(
         select(SmsCode).where(
@@ -78,8 +165,18 @@ def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
 
     # 哈希比较（secrets.compare_digest 防时序攻击；修复：原明文比较）
     if record is None or not secrets.compare_digest(_hash_code(req.code), record.code or ""):
+        # M2：失败计数 → 达阈值作废该码并冷却（防 6 位码 5 分钟窗口内爆破）
+        if _otp_fail(req.phone):
+            if record is not None and record.used_at is None:
+                record.used_at = now
+                db.commit()
+            _otp_start_cooldown(req.phone)
+            raise ApiError(
+                ERR_AUTH_004, "验证码错误次数过多，该验证码已作废，请重新获取", http=429
+            )
         raise ApiError(ERR_AUTH_003, "验证码错误或已过期", http=401)
 
+    _otp_reset(req.phone)
     record.used_at = now
     db.commit()
 
@@ -89,18 +186,25 @@ def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/sms/send", response_model=ApiResponse[dict])
-def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
+def send_sms(req: SendSmsRequest, request: Request, db: Session = Depends(get_db)):
     """发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）
 
-    P0-1（审查 H1）：生产环境禁止 mock 验证码直返（任意手机号可接管账户）——
-    与 wechat_login 的"生产未接入 → 501"对齐；真实短信通道（TODO T1）接入前
-    生产 phone 登录整体不可用。get_settings 已强制生产 mock_external_ai=False，
-    此处显式门控双保险（防运行时误改/测试泄漏）。
+    TD-P3 M2（审查中危）：send 侧 IP+phone 双层限流（防短信轰炸洪泛）。
     """
     now = datetime.now(timezone.utc)
 
+    # P0-1（审查 H1）：生产环境禁止 mock 验证码直返（任意手机号可接管账户）——
+    # 与 wechat_login 的"生产未接入 → 501"对齐；真实短信通道（TODO T1）接入前
+    # 生产 phone 登录整体不可用。get_settings 已强制生产 mock_external_ai=False，
+    # 此处显式门控双保险（防运行时误改/测试泄漏）。
     if settings.app_env == "production":
         raise ApiError(ERR_AUTH_099, "短信服务未接入（生产环境），请使用微信登录", http=501)
+
+    ip = _client_ip(request)
+    if not _rate_allow(f"sms:ip:{ip}", _SMS_SEND_IP_LIMIT):
+        raise ApiError(ERR_AUTH_004, "发送过于频繁，请稍后再试", http=429)
+    if not _rate_allow(f"sms:phone:{req.phone}", _SMS_SEND_PHONE_LIMIT):
+        raise ApiError(ERR_AUTH_004, "发送过于频繁，请稍后再试", http=429)
 
     # 防刷（AUTH-004）：同一手机号 60s 内已有未使用验证码 → 拒绝重发
     recent = db.execute(
@@ -128,6 +232,8 @@ def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
     # 安全修复：验证码只存 SHA-256 哈希（DB 泄漏不可直接登录）
     db.add(SmsCode(phone=req.phone, code=_hash_code(code), expire_at=now + timedelta(minutes=5)))
     db.commit()
+    # M2：新码发出 → 重置失败计数（每码独立 5 次窗口）
+    _otp_reset(req.phone)
 
     if settings.mock_external_ai:
         # mock 模式：直接返回验证码供联调（生产走阿里云短信 0.045 元/条）
@@ -150,11 +256,21 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     user_id = payload.get("sub")
     device_id = payload.get("device_id", "")
 
-    # 吊销校验：devices 表中存储的 refresh_token 必须匹配（AUTH-006 退出/改密后失效）
+    # 吊销校验：devices 表存 refresh_token 哈希，比对哈希（AUTH-006 退出/改密后失效）
+    # TD-P3 M6/L2（审查中危/低危）：DB 泄漏不再可直接复用 30 天会话——
+    # 明文列迁移期兼容（refresh_token_hash 为空时回退比对明文，随后续登录哈希化覆盖）。
     device = db.execute(
         select(Device).where(Device.user_id == user_id, Device.device_id == device_id)
     ).scalar_one_or_none()
-    if device is None or device.refresh_token != req.refresh_token:
+    if device is None:
+        raise ApiError(ERR_AUTH_005, "refresh token 已吊销", http=401)
+    if device.refresh_token_hash:
+        valid = secrets.compare_digest(device.refresh_token_hash, _hash_refresh_token(req.refresh_token))
+    else:
+        valid = bool(device.refresh_token) and secrets.compare_digest(
+            device.refresh_token, req.refresh_token
+        )
+    if not valid:
         raise ApiError(ERR_AUTH_005, "refresh token 已吊销", http=401)
 
     user = db.get(User, user_id)
@@ -268,8 +384,7 @@ def _issue_tokens(db: Session, user: User, device_id: str, platform: str = "andr
     if device is None:
         device = Device(user_id=user.id, device_id=device_id, platform=platform)
         db.add(device)
-    device.refresh_token = refresh
-    device.last_active_at = datetime.now(timezone.utc)
+    _store_refresh_token(device, refresh)
     try:
         db.commit()
     except IntegrityError:
@@ -281,8 +396,7 @@ def _issue_tokens(db: Session, user: User, device_id: str, platform: str = "andr
         ).scalar_one_or_none()
         if existing is None:
             raise
-        existing.refresh_token = refresh
-        existing.last_active_at = datetime.now(timezone.utc)
+        _store_refresh_token(existing, refresh)
         db.commit()
         device = existing
 
@@ -307,3 +421,23 @@ def _hash_code(code: str) -> str:
     import hashlib
 
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def _hash_refresh_token(token: str) -> str:
+    """refresh token 哈希（SHA-256；devices 表只存哈希，DB 泄漏不可直接复用 30 天会话）"""
+    import hashlib
+
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _store_refresh_token(device: Device, refresh: str) -> None:
+    """TD-P3 M6（审查中危/低危）：devices 表只存 refresh_token 哈希 + 最后轮换时间
+
+    - refresh_token 明文列写入后清空（迁移期遗留明文行由 refresh() 回退兼容）
+    - refresh_rotated_at 记录最后轮换时间（可观测 / 后续按需做过期策略）
+    """
+    now = datetime.now(timezone.utc)
+    device.refresh_token_hash = _hash_refresh_token(refresh)
+    device.refresh_token = None
+    device.refresh_rotated_at = now
+    device.last_active_at = now

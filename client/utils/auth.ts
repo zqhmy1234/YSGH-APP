@@ -1,8 +1,18 @@
 /**
  * 认证封装（B-CL-3）：mock wechat login（code=dev-client）→ token 对
  *
- * 注：2026-08-24 编译排查——插件安全存储函数暂被隔离（编译器 overload panic），
- * 临时用 uni storage；待定位后恢复 EncryptedSharedPreferences（B-CL-3 要求）。
+ * ⚠️ TD-P3 M5（审查中危）登记——安全存储降级说明（2026-08-26）：
+ *   理想实现：access/refresh token 走 EncryptedSharedPreferences（B-CL-3 要求），
+ *   插件接口已在 uni_modules/yishu-photo-watch/utssdk/interface.uts 声明
+ *   （安全存储随自定义基座波次恢复——依赖 androidx.security 三方库）。
+ *   当前状态：因 2026-08-24 编译器 overload panic，安全存储函数被隔离，
+ *   临时降级为 uni storage 明文落盘（含 30 天 refresh_token）。
+ *   风险：rooted 设备 / 系统备份 / 同机恶意应用可读取 → 长会话劫持。
+ *   既有缓解：① refresh_token 绑定 device_id（后端 devices 表可吊销、
+ *   轮换即作废旧 token，AUTH-005/006）；② access 仅 2h 短时。
+ *   恢复路径：自定义基座就绪后，将 setSecure/getSecure/removeSecure 改走
+ *   EncryptedSharedPreferences 实现（无需改本文件其他逻辑）。
+ *
  * 401 自动 refresh（refresh_token 换新对）。
  *
  * 所有函数 resolve-only（boolean），不 reject——UTS Promise.catch 重载限制，
@@ -20,6 +30,8 @@ const KEY_REFRESH = 'yishu.auth.refresh_token'
  */
 export const DEVICE_ID: string = 'yishu-android-dev'
 
+// 降级实现（TD-P3 M5 登记）：uni storage 明文；恢复 EncryptedSharedPreferences 见文件头说明。
+// 统一入口封装成 *Secure，恢复时只改这三个函数即可。
 function setSecure(key: string, value: string): void {
 	uni.setStorageSync(key, value)
 }

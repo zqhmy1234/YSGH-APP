@@ -29,6 +29,7 @@ from app.core.errors import (
     ERR_CONTENT_006,
     ERR_CONTENT_007,
     ERR_CONTENT_008,
+    ERR_CONTENT_009,
     ERR_PROFILE_SENSITIVE_001,
     ERR_PROFILE_SENSITIVE_002,
     ERR_PROFILE_SENSITIVE_003,
@@ -92,6 +93,33 @@ def _extract_exif_datetime(data: bytes) -> datetime | None:
     except Exception:  # noqa: BLE001 —— 非 JPEG/无 EXIF 静默降级
         return None
     return None
+
+
+def _validate_cos_key(db: Session, user_id: str, cos_key: str) -> None:
+    """TD-P3 M4（审查中危）：create_content 自供 cos_key 归属/前缀/存在性校验
+
+    仅允许本用户前缀（photos|voice|thumbnails/{user_id}/）且对象已存在
+    （或已登记为本用户同 cos_key 内容——幂等回退），否则 422 CONTENT_009。
+    防跨租户对象拉进自己管线（M4：已知他人 key 可被处理留存）与任意 key 触发存储遍历。
+    """
+    allowed = (f"photos/{user_id}/", f"voice/{user_id}/", f"thumbnails/{user_id}/")
+    if not cos_key.startswith(allowed):
+        raise ApiError(ERR_CONTENT_009, "cos_key 非法或不属于当前用户", http=422)
+    from app.services.external.storage import get_storage_backend
+
+    if get_storage_backend().object_exists(cos_key):
+        return
+    # 幂等回退：对象可能已被搬移/清理，但同用户已登记同 cos_key 内容（旧客户端重复建）
+    existing = db.scalar(
+        select(Content).where(
+            Content.user_id == user_id,
+            Content.cos_key == cos_key,
+            Content.deleted_at.is_(None),
+        )
+    )
+    if existing is not None:
+        return
+    raise ApiError(ERR_CONTENT_009, "cos_key 指向的对象不存在", http=422)
 
 
 @router.post("/upload", response_model=ApiResponse[ContentOut])
@@ -226,6 +254,10 @@ def create_content(
     """内容入库：POST → contents 表 → 异步 AI 管线（RQ）→ 状态回写（API-002/API-016）"""
     if req.content_type not in ("photo", "text", "voice", "article"):
         raise ApiError(ERR_CONTENT_001, "不支持的 content_type", http=422)
+
+    # TD-P3 M4（审查中危）：自供 cos_key 归属/前缀/存在性校验（防跨租户对象拉取）
+    if req.cos_key:
+        _validate_cos_key(db, user.id, req.cos_key)
 
     # 去重（Q16）：同用户 perceptual_hash 唯一（仅照片类有哈希；软删记录不参与，
     # 修复：原实现未过滤 deleted_at → 删除后重传同照片被 409 永久拒绝）

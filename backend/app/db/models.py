@@ -50,7 +50,11 @@ class Device(Base):
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     device_id: Mapped[str] = mapped_column(String)
     platform: Mapped[str] = mapped_column(String)
+    # TD-P3 M6（审查中危/低危）：refresh_token 不再明文落库——只存哈希 + 最后轮换时间。
+    # refresh_token 明文列保留用于迁移期兼容（存量行哈希化为空时回退比对；登录即覆写清空）。
     refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_token_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

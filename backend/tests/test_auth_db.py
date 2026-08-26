@@ -3,7 +3,7 @@
 前置：本地 PostgreSQL yishu 隔离库（scripts/setup_pg.sql + schema.sql 已执行）
 运行：pytest backend/tests/test_auth_db.py -v
 """
-
+import hashlib
 
 import pytest
 from app.db.models import Device, SmsCode, User
@@ -11,6 +11,10 @@ from app.db.session import SessionLocal
 from app.main import app
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 @pytest.fixture()
@@ -53,7 +57,10 @@ def test_wechat_login_creates_user(client, db):
         select(Device).where(Device.user_id == user.id, Device.device_id == "itest-dev")
     ).scalar_one_or_none()
     assert device is not None
-    assert device.refresh_token == data["refresh_token"], "devices 表应存 refresh（AUTH-006 吊销依据）"
+    # TD-P3 M6：devices 表不再存明文 refresh —— 只存哈希（DB 泄漏不可直接复用 30 天会话）
+    assert device.refresh_token is None, "devices 表不应存明文 refresh"
+    assert device.refresh_token_hash == _hash(data["refresh_token"])
+    assert device.refresh_rotated_at is not None
 
 
 @pytest.mark.integration
@@ -119,7 +126,9 @@ def test_refresh_rotation_and_revoke(client, db):
     device = db.execute(
         select(Device).where(Device.user_id == user.id, Device.device_id == "itest-dev")
     ).scalar_one()
-    assert device.refresh_token == new_refresh
+    # TD-P3 M6：哈希落库（明文列清空），轮换后新 token 哈希更新
+    assert device.refresh_token is None
+    assert device.refresh_token_hash == _hash(new_refresh)
 
     # 2. 旧 refresh 再换 → 401（轮换后旧 token 失效）
     r = client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})

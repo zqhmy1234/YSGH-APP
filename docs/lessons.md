@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 00:55 · commit cb0a903 · ts=1787763313
+- **错误**：TD-P3 安全加固 create_content 加 cos_key 前缀/存在性校验后，API 冒烟用例 dedup-409 与单测占位 cos_key（photos/smoke.jpg）被 422 拒绝，全量门禁 tests 红灯
+- **根因**：新增安全校验（M4）改变了 create_content 对 cos_key 的契约（此前任意 key 可入库）；测试/冒烟脚本中大量使用占位 cos_key，未随校验更新
+- **修复**：测试与冒烟脚本的 cos_key 改为真实用户前缀（photos|voice|thumbnails/{user_id}/）+ 先 put_object 造对象；新增校验须同步检索全仓占位数据
+- **相关文件**：backend/app/api/contents.py, scripts/api_smoke_cases.py, backend/tests/test_contents.py, backend/tests/test_content_upload.py
+- **教训**：安全契约收紧（如 cos_key 前缀校验）时必须全仓同步更新占位测试数据，含 api_smoke_cases.py 冒烟用例与存量单测
+
+---
+
 ### 2026-08-26 22:49 · commit bda641d · ts=1787755771
 - **错误**：pytest.ini 文件被占用致编辑/写入工具报 ReplaceFileW EIO (Win32 1175)
 - **根因**：Windows 上其他进程（防病毒/短暂句柄）占用文件时，编辑器原子替换（ReplaceFileW）失败；直接 .NET WriteAllText 成功

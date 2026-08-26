@@ -26,6 +26,20 @@ def auth_headers(client):
     return {"Authorization": f"Bearer {token}"}
 
 
+def _current_user_id(headers) -> str:
+    """从 access token 解析当前用户 id（cos_key 前缀校验需要真实用户前缀）"""
+    from app.core.security import decode_token
+
+    token = headers["Authorization"].split(" ", 1)[1]
+    return decode_token(token)["sub"]
+
+
+def _seed_object(cos_key: str) -> None:
+    from app.services.external.storage import get_storage_backend
+
+    get_storage_backend().put_object(cos_key, b"fake-object-bytes")
+
+
 def test_create_text_content(client, auth_headers):
     """文字碎片入库（F2）"""
     r = client.post(
@@ -40,10 +54,13 @@ def test_create_text_content(client, auth_headers):
 
 
 def test_create_photo_content(client, auth_headers):
-    """照片入库（F1）"""
+    """照片入库（F1）——cos_key 需为本用户前缀且对象存在（TD-P3 M4 校验）"""
+    user_id = _current_user_id(auth_headers)
+    cos_key = f"photos/{user_id}/202608/ok_{uuid.uuid4().hex[:8]}.jpg"
+    _seed_object(cos_key)
     r = client.post(
         "/api/v1/contents",
-        json={"content_type": "photo", "cos_key": "photos/x.jpg", "source": "app"},
+        json={"content_type": "photo", "cos_key": cos_key, "source": "app"},
         headers=auth_headers,
     )
     assert r.status_code == 200
@@ -74,11 +91,14 @@ def test_list_contents(client, auth_headers):
 
 
 def test_duplicate_hash_rejected(client, auth_headers):
-    """同用户同感知哈希 → 409（Q16 去重）"""
+    """同用户同感知哈希 → 409（Q16 去重）——cos_key 需为本用户前缀且对象存在（TD-P3 M4）"""
+    user_id = _current_user_id(auth_headers)
+    cos_key = f"photos/{user_id}/202608/dup_{uuid.uuid4().hex[:8]}.jpg"
+    _seed_object(cos_key)
     payload = {
         "content_type": "photo",
         "perceptual_hash": "hash-dup-001",
-        "cos_key": "photos/dup.jpg",
+        "cos_key": cos_key,
         "source": "app",
     }
     r1 = client.post("/api/v1/contents", json=payload, headers=auth_headers)

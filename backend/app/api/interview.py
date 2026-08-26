@@ -18,7 +18,12 @@ router = APIRouter(prefix="/api/v1/interview", tags=["interview"])
 
 
 @router.get("/questions", response_model=ApiResponse)
-def interview_questions():
+def interview_questions(user: User = Depends(get_current_user)):
+    """三问（静态文案）——TD-P3 L1（审查低危）：补鉴权，与全站鉴权约定一致
+
+    内容为静态三问（信息面极小），但公开端点与全站鉴权约定不一致；客户端
+    api.ts 已自动携带 Bearer（无 token 时 401 → 自动登录重放），补鉴权无兼容影响。
+    """
     return ApiResponse(data=QUESTIONS)
 
 

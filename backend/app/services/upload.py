@@ -33,6 +33,16 @@ VALID_UPLOAD_MODES = ("original", "thumbnail_meta")
 MAX_INLINE_MERGE_BYTES = 200 * 1024 * 1024
 DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024  # 8MB（对齐微信图片 3MB 与通用分片习惯）
 
+# ---- TD-P3 M1 修复（审查中危）：大数构造 DoS ----
+# 攻击面：file_size=10^12 + chunk_size=1 → chunk_count≈10^12 → get_status
+# 物化缺失列表 OOM 击穿 API 进程。三重防御：
+#   1. file_size 上限（≤500MB，与任务清单一致）
+#   2. chunk_size 下限（防 chunk_count 爆炸；1KB 下限兼容测试用小分片）
+#   3. get_status 分片数守卫（防迁移前遗留的恶意任务行仍触发 OOM）
+MAX_UPLOAD_FILE_SIZE = 500 * 1024 * 1024   # 500MB
+MIN_CHUNK_SIZE = 1024                       # 1KB
+MAX_CHUNK_COUNT = 100_000                   # get_status 防御性上限（超出视为异常任务）
+
 
 def _safe_enqueue_high(func, *args, **kwargs) -> None:
     """入队失败不阻断（P0-5）：内容已建，管线可异步补投——失败仅记日志"""
@@ -88,8 +98,12 @@ def init_upload(
     """创建/复用上传任务（client_upload_id 幂等）"""
     if file_size <= 0:
         raise ValueError("file_size 必须 > 0")
+    if file_size > MAX_UPLOAD_FILE_SIZE:
+        raise ValueError(f"file_size 超过上限（{MAX_UPLOAD_FILE_SIZE // (1024 * 1024)}MB）")
     if chunk_size <= 0:
         raise ValueError("chunk_size 必须 > 0")
+    if chunk_size < MIN_CHUNK_SIZE:
+        raise ValueError(f"chunk_size 过小（最小 {MIN_CHUNK_SIZE} 字节）")
 
     existing = db.scalar(
         select(UploadTask).where(
@@ -190,6 +204,9 @@ def get_status(db: Session, upload_id: str, user_id: str | None = None) -> dict:
         raise KeyError(f"上传任务不存在: {upload_id}")
     if user_id is not None:
         _assert_owner(task, user_id)
+    # TD-P3 M1 守卫：分片数异常（迁移前恶意任务行）直接拒绝，不物化巨型缺失列表
+    if task.chunk_count > MAX_CHUNK_COUNT:
+        raise ValueError(f"任务分片数异常（{task.chunk_count}），请重新上传")
     chunks = db.scalars(
         select(UploadChunk.chunk_index)
         .where(UploadChunk.upload_id == upload_id)

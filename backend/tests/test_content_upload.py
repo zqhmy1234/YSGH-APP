@@ -221,9 +221,16 @@ def test_upload_exif_overrides_client_taken_at(client, auth_headers):
 
 
 def test_voice_contents_cos_key_idempotent(client, auth_headers):
-    """B5a 集成配套：/contents voice 带 cos_key → 幂等（同用户同 cos_key 返回既有记录，防旧客户端二次建内容）"""
+    """B5a 集成配套：/contents voice 带 cos_key → 幂等（同用户同 cos_key 返回既有记录，防旧客户端二次建内容）
+
+    TD-P3 M4：cos_key 需为本用户前缀且对象存在（否则 422 CONTENT_009）。
+    """
+    from app.core.security import decode_token
+
     backend = get_storage_backend()
-    cos_key = f"voice/{uuid.uuid4().hex[:6]}/202608/demo.wav"
+    token = auth_headers["Authorization"].split(" ", 1)[1]
+    user_id = decode_token(token)["sub"]
+    cos_key = f"voice/{user_id}/202608/demo_{uuid.uuid4().hex[:6]}.wav"
     backend.put_object(cos_key, b"fake-wav-bytes")
     body = {
         "content_type": "voice",

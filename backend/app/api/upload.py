@@ -60,6 +60,20 @@ def init_upload(
             f"upload_mode 非法（可选 {'/'.join(upload_svc.VALID_UPLOAD_MODES)}）",
             http=422,
         )
+    # TD-P3 M1（审查中危）：大数构造 DoS——file_size 上限 + chunk_size 下限
+    # （服务层 init_upload 同款校验双保险；此处 API 边界先行拒绝，语义清晰）
+    if file_size > upload_svc.MAX_UPLOAD_FILE_SIZE:
+        raise ApiError(
+            ERR_UPLOAD_001,
+            f"文件超过大小上限（{upload_svc.MAX_UPLOAD_FILE_SIZE // (1024 * 1024)}MB）",
+            http=422,
+        )
+    if chunk_size < upload_svc.MIN_CHUNK_SIZE:
+        raise ApiError(
+            ERR_UPLOAD_001,
+            f"分片大小过小（最小 {upload_svc.MIN_CHUNK_SIZE} 字节）",
+            http=422,
+        )
     try:
         task = upload_svc.init_upload(
             db, user.id, client_upload_id, file_name, file_size, chunk_size, storage
@@ -161,6 +175,9 @@ def upload_status(
         return ApiResponse(data=upload_svc.get_status(db, upload_id, user_id=user.id))
     except KeyError as exc:
         raise ApiError(ERR_UPLOAD_002, str(exc), http=404) from exc
+    except ValueError as exc:
+        # TD-P3 M1：任务分片数异常（遗留恶意行）→ 422 而非 500/OOM
+        raise ApiError(ERR_UPLOAD_003, str(exc), http=422) from exc
 
 
 @router.get("/sts", response_model=ApiResponse[dict])

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.core.errors import ERR_CORR_003, ERR_CORR_004, ApiError
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
@@ -63,7 +63,11 @@ def arbitrate_text(
     from app.core.queue import enqueue_high
     from app.services.correction import arbitrate_job
 
-    job = enqueue_high(arbitrate_job, str(user.id), req.text, req.content_type)
+    # TD-P3 M3（审查中危）：job.meta 写入 user_id —— 查询侧归属校验（防越权轮询他人结果）
+    job = enqueue_high(
+        arbitrate_job, str(user.id), req.text, req.content_type,
+        meta={"user_id": str(user.id)},
+    )
     return ApiResponse(data={"job_id": job.id, "status": "queued"})
 
 
@@ -73,16 +77,24 @@ def arbitrate_job_status(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """查询三层裁决任务状态与结果（轮询）"""
+    """查询三层裁决任务状态与结果（轮询）
+
+    TD-P3 M3：归属校验——job.meta.user_id 必须等于当前用户，否则 403；
+    失败仅回传脱敏错误（不再直出 exc_info 末行）。
+    """
     from app.core.queue import get_job
 
     job = get_job(job_id)
     if job is None:
-        raise ApiError("CORR_003", "任务不存在或已过期", http=404)
+        raise ApiError(ERR_CORR_003, "任务不存在或已过期", http=404)
+    owner = (job.meta or {}).get("user_id")
+    if owner is not None and str(owner) != str(user.id):
+        raise ApiError(ERR_CORR_004, "任务不属于当前用户", http=403)
     status = job.get_status()
     if status == "finished":
         return ApiResponse(data={"job_id": job_id, "status": status, "result": job.return_value()})
     if status == "failed":
-        exc = job.exc_info.splitlines()[-1] if job.exc_info else "unknown"
-        return ApiResponse(data={"job_id": job_id, "status": status, "error": exc})
+        return ApiResponse(
+            data={"job_id": job_id, "status": status, "error": "任务执行失败，请稍后重试"}
+        )
     return ApiResponse(data={"job_id": job_id, "status": status or "queued"})

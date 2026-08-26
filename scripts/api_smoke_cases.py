@@ -199,11 +199,21 @@ def case_timeline_structure(client: TestClient, headers: dict, photos: list[tupl
 
 
 def case_dedup_semantics(client: TestClient, headers: dict) -> None:
-    """Q16：同用户同感知哈希 → 409 CONTENT_002（软删过滤语义）"""
+    """Q16：同用户同感知哈希 → 409 CONTENT_002（软删过滤语义）
+
+    TD-P3 M4：cos_key 需为本用户前缀且对象存在（占位 key 现会被 422 拒绝）。
+    """
+    from app.core.security import decode_token
+    from app.services.external.storage import get_storage_backend
+
+    token = headers["Authorization"].split(" ", 1)[1]
+    user_id = decode_token(token)["sub"]
+    cos_key = f"photos/{user_id}/202608/smoke_{uuid.uuid4().hex[:8]}.jpg"
+    get_storage_backend().put_object(cos_key, b"smoke-object-bytes")
     payload = {
         "content_type": "photo",
         "perceptual_hash": f"smoke-dup-{uuid.uuid4().hex[:8]}",
-        "cos_key": "photos/smoke.jpg",
+        "cos_key": cos_key,
         "source": "app",
     }
     r1 = client.post("/api/v1/contents", json=payload, headers=headers)
