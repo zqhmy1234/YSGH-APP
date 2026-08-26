@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_EVENT_004, ERR_EVENT_006, ERR_EVENT_007, ApiError
 from app.db.models import User
 from app.db.session import get_db
@@ -138,6 +138,7 @@ def event_items(
     from app.services.events import get_event_items as _items
 
     try:
+        event_id = uuid4_str(event_id)
         items = _items(db, str(user.id), event_id)
     except NotFoundError as exc:
         raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
@@ -157,7 +158,9 @@ def merge_events(req: EventMergeRequest, db: Session = Depends(get_db), user: Us
     from app.services.events import merge_events as _merge
 
     try:
-        ev = _merge(db, str(user.id), req.target_event_id, req.source_event_ids)
+        target_id = uuid4_str(req.target_event_id)
+        source_ids = [uuid4_str(s) for s in req.source_event_ids]
+        ev = _merge(db, str(user.id), target_id, source_ids)
     except NotFoundError as exc:
         raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
     except ConflictError as exc:
@@ -173,7 +176,8 @@ def split_event(req: EventSplitRequest, db: Session = Depends(get_db), user: Use
     from app.services.events import split_event as _split
 
     try:
-        ev = _split(db, str(user.id), req.event_id, req.content_ids)
+        event_id = uuid4_str(req.event_id)
+        ev = _split(db, str(user.id), event_id, req.content_ids)
     except NotFoundError as exc:
         raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
     except ConflictError as exc:
@@ -189,7 +193,8 @@ def confirm_event(req: EventConfirmRequest, db: Session = Depends(get_db), user:
     from app.services.events import confirm_event as _confirm
 
     try:
-        ev = _confirm(db, str(user.id), req.event_id, title=req.title)
+        event_id = uuid4_str(req.event_id)
+        ev = _confirm(db, str(user.id), event_id, title=req.title)
     except NotFoundError as exc:
         raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
     except ConflictError as exc:
@@ -210,6 +215,7 @@ def set_cover(
     from app.services.events import set_event_cover as _set_cover
 
     try:
+        event_id = uuid4_str(event_id)
         ev = _set_cover(db, str(user.id), event_id, req.cover_content_id)
     except NotFoundError as exc:
         raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc

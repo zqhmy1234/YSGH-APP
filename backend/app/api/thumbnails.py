@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_THUMB_001, ApiError
 from app.db.models import User
 from app.db.session import get_db
@@ -43,6 +43,7 @@ def get_content_thumbnail(
 ):
     """返回照片缩略图 JPEG（归属校验 + 懒生成兜底）"""
     try:
+        content_id = uuid4_str(content_id)
         data, content_type = thumbnails.get_thumbnail_bytes(db, content_id, user.id)
     except KeyError as exc:
         raise ApiError(ERR_THUMB_001, f"缩略图不可用: {exc}", http=404) from exc

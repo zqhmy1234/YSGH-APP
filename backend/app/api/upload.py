@@ -11,7 +11,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, uuid4_str
 from app.core.config import settings
 from app.core.errors import (
     ERR_UPLOAD_001,
@@ -45,8 +45,8 @@ def _exc_msg(exc: Exception) -> str:
 
 @router.post("/init", response_model=ApiResponse[dict])
 def init_upload(
-    client_upload_id: str = Form(...),
-    file_name: str = Form(...),
+    client_upload_id: str = Form(..., min_length=1, max_length=255),
+    file_name: str = Form(..., min_length=1, max_length=255),
     file_size: int = Form(...),
     chunk_size: int = Form(upload_svc.DEFAULT_CHUNK_SIZE),
     storage: str | None = Form(None),
@@ -136,6 +136,7 @@ def _upload_chunk_impl(
 ):
     data = file.file.read()
     try:
+        upload_id = uuid4_str(upload_id)
         result = upload_svc.upload_chunk(db, upload_id, chunk_index, data, chunk_hash, user_id=user.id)
     except NotFoundError as exc:
         raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
@@ -165,6 +166,7 @@ def complete_upload(
         复用 complete 流程，把原件挂到既有占位内容并触发完整管线（与 photo 同链路）。
     """
     try:
+        upload_id = uuid4_str(upload_id)
         result = upload_svc.complete_upload(db, upload_id, user_id=user.id)
         # 集成：对象已在存储 → 建 contents 记录（cos_key）+ 入队 process_content
         content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
@@ -191,6 +193,7 @@ def upload_status(
     user: User = Depends(get_current_user),
 ):
     try:
+        upload_id = uuid4_str(upload_id)
         return ApiResponse(data=upload_svc.get_status(db, upload_id, user_id=user.id))
     except NotFoundError as exc:
         raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc

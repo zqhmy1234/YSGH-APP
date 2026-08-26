@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
@@ -21,11 +20,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_EVENT_005, ApiError
 from app.db.models import Content, Event, EventItem, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
+from app.services.errors import NotFoundError
 
 router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
 
@@ -46,26 +46,18 @@ class ContentEventOut(BaseModel):
     photo_count: int = 0
 
 
-def _valid_uuid(value: str) -> str:
-    """UUID 路径参数校验：非法 → 抛 ValueError（调用方转 404）"""
-    try:
-        return str(uuid.UUID(value))
-    except (ValueError, AttributeError) as exc:
-        raise ValueError(f"内容 ID 非法: {value}") from exc
-
-
 def get_content_events(db: Session, user_id: str, content_id: str) -> list[dict]:
-    """内容所属事件列表（按 start_time 倒序；内容不存在/非本人 → ValueError）
+    """内容所属事件列表（按 start_time 倒序；内容不存在/非本人 → NotFoundError（ValueError 兼容））
 
     - 只查未删除事件（软删 30 天规则：删除的事件不参与展示）
     - 照片↔事件多对多：同一内容可属多个事件，全部返回
     """
-    cid = _valid_uuid(content_id)
+    cid = uuid4_str(content_id)
     content = db.execute(
         select(Content).where(Content.id == cid, Content.deleted_at.is_(None))
     ).scalar_one_or_none()
     if content is None or str(content.user_id) != user_id:
-        raise ValueError(f"内容不存在或不属于当前用户: {content_id}")
+        raise NotFoundError(f"内容不存在或不属于当前用户: {content_id}")
 
     rows = db.execute(
         select(Event)
