@@ -1,5 +1,7 @@
 # Wave 2 · Agent F（M1 补遗域）任务卡——docs/parallel-dev/06
 
+> ✅ 已完成并集成（2026-08-26，merge 690596b）
+
 ## Mission
 完成 M1 补遗 6 项：第二层 LLM 精排（llm_ops.rerank + rag.py 接线）、reranker 默认开策略、百炼托管护栏接入、50 条真实评测集+三指标、评测体系 5 项落地、纠错 7 天测量脚本。
 

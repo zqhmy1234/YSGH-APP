@@ -1,5 +1,7 @@
 # Wave 3 · Agent H（B4 客户端域）任务卡——docs/parallel-dev/08
 
+> ✅ 已完成并集成（2026-08-26，merge 0899ba6 + index.uvue 接线 f85a393）
+
 ## Mission
 完成 B4 客户端 6 项：/sync 客户端接线（SQLite 队列六字段+op_id+增量拉取+reconcile 消费）、WiFi/蜂窝流量约束、2h 定时兜底、同步状态 UI、批量失败暂停恢复、照片上传指数退避。
 

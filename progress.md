@@ -396,3 +396,16 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - 集成接线（fe1b376）：云侧 AGG_CONFIG 对齐端侧 30min 保守开关（conservative_mode → l0_eps_t_sec()，显式传参不受影响）；main.py 已含 event_items_router（E 在分支内注册，merge 保留）；修复 D 合并代码 B905 zip strict= lint（ruff 版本漂移，登记教训）
 - 集成后全量：341 passed 基线（见 fullgate-wave2.log）
 - 待办：Content.extra quality_score/face_count 无写入方（内容管线未接腾讯 CI 人脸标签，封面选择回退时间居中）——记录待后续；DASHSCOPE key 已配置，L2 归并真实 qwen 通道验证通过；托管护栏 llm_ops/guard_managed 待 Wave 2 F 实现
+
+## Wave 3 集成完成（2026-08-26 14:30）——下一步 Wave 4
+
+- 四个并行 worktree 全部完成并集成：F（M1 补遗，690596b）+ G（B4 后端，feb3a09）+ H（B4 客户端，0899ba6）+ I（B1 画像，1f958fe）；lessons.md 冲突 3 次均保留两边记录
+- 集成接线（f85a393）：main.py 注册 thumbnails_router（G）+ index.uvue 接 UploadStatusBanner 一行（H）+ 新迁移 c7d8e9f0a1b2（I 遗留项：profile_l2_evidence FK 补 ON DELETE CASCADE，dev 实删用户验证级联生效）+ schema.sql 同步
+- 顺手修复（用户授权）：lessons.py 台账日期固定 Asia/Shanghai（原 Python 运行时 localtime=UTC 慢 8 小时，标题日期混乱）+ 新增 docs/项目API密钥清单与获取.md（用户要求：必须写明白项目所需 API key 怎么获取、有哪些——config.py 为准全清单+获取途径+状态+别名，总纲挂链接）+ 登记对应教训
+- 全量门禁：**420 passed**（350 基线 + F 29 + G 23 + I 25）+ 19 deselected + 覆盖率 78.46% + api_smoke 6/6 + research 18 场景，review_agent --full 全绿
+- F 关键成果：LLM 精排第二层（仅真实判定换序，mock 原序）+ 托管护栏 qwen_response_check（moderate 托管优先 chat 兜底）+ 50 条真值评测集（hit_rate@3=0.8571；负样本误召回率 0.5714 真实缺口，待采集语料重校）+ 改写层 11/11
+- G 关键成果：缩略图管线（PIL→thumbnail_key→GET 端点懒生成）+ upload_mode/on_wifi 流量约束 + 微信媒体下载→COS + 30 天清理 job + COS 开通验证文档
+- H 关键成果：sync_client 字段级同步（六字段队列/op_id 幂等/增量拉取/reconcile/2h 定时）+ 流量约束（WiFi 原图/蜂窝暂缓）+ 指数退避 + 批量暂停/一键继续 + UploadStatusBanner（真机待补项归 Wave 4）
+- I 关键成果：枚举集 JSON 收尾入 git（L0 51 维全补 values_detail + L1 193 维 phrase/disclosure）+ profile_schema 加载器 + annotate 真实/mock 同构 + profile_annotator（双门槛/池/节流/查重/历史裁剪/证据锚点）+ 钩子接线 + 冷启动兴趣稀疏 5-10 维
+- 待 key/环境：COS/微信企微/Sentry 未配（代码先行 mock 测）；托管护栏实网验证待 key；B/C/D 采集语料落地后重跑评测基线；纠错测量需真实 correction_log 数据；真机 nova 11 补验（H 的 WiFi 原图/蜂窝暂缓完整相册链路 + 后台 2h 定时归 Wave 4 K）
+- 下一步：Wave 4（Agent J B5a 客户端 / Agent K B5d Android / Agent L M3 微信），任务卡 docs/parallel-dev/10/11/12

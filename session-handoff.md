@@ -134,3 +134,13 @@ init.ps1：通过
 - 基线：341 passed（fullgate-wave2.log 为准）+ review_agent --full 全绿
 - 下一步：Wave 3（Agent G B4 后端 / Agent H B4 客户端 / Agent I B1 画像），任务卡 docs/parallel-dev/07/08/09；Agent F（M1 补遗）仍在开发，merge 后接入
 - 待办登记：Content.extra quality_score/face_count 无写入方（腾讯 CI 人脸标签未接线）；托管护栏 guard_managed 待 F
+
+## Wave 3 集成完成（2026-08-26 14:30）——下一步 Wave 4
+
+- develop HEAD：f85a393（集成接线）+ 1f958fe（merge I）+ 0899ba6（merge H）+ feb3a09（merge G）+ 690596b（merge F）
+- Wave 3 完成：F（M1 补遗：LLM 精排第二层/托管护栏/50 条真值评测集/纠错测量）+ G（B4 后端：缩略图管线/upload_mode 流量约束/微信媒体上云/30 天清理/COS 验证文档）+ H（B4 客户端：sync_client 字段级同步/流量约束/退避/批量暂停/UploadStatusBanner）+ I（B1 画像：枚举集收尾入 git/annotator 标注核心/钩子接线/冷启动兴趣稀疏）
+- 集成接线：thumbnails_router 注册 + index.uvue UploadStatusBanner + l2_evidence CASCADE 迁移 c7d8e9f0a1b2 + schema.sql 同步
+- 顺手：lessons.py 时区修复（Asia/Shanghai）+ docs/项目API密钥清单与获取.md（全 key 清单/获取途径）
+- 基线：420 passed + api_smoke + research + review_agent --full 全绿
+- 下一步：Wave 4（Agent J B5a 客户端 / Agent K B5d Android / Agent L M3 微信），任务卡 docs/parallel-dev/10/11/12
+- 待办：COS/微信/Sentry key 到位后实网验证（smoke_cos/微信媒体下载/托管护栏）；B/C/D 采集语料后重跑评测；H 真机补验；cleanup job 需挂调度（建议系统 cron/rq-scheduler 每日低峰 python -m app.workers.cleanup_job --older-than-days 30）
