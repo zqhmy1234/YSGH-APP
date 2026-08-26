@@ -124,9 +124,10 @@ def test_to_filter_user_id_isolation():
 
     回归：此前 _to_filter 忽略 user_id → 检索全库，跨用户内容挤占召回窗口，
     api_smoke text-journey 门禁暴露（新用户内容被挤出 top-k）。
+    R8#6（2026-08-27）：_to_filter 是 @staticmethod 纯函数，直接调用不构造
+    QdrantClient（省 ~5.5s，去隐式依赖）。
     """
-    s = VectorStore()
-    f = s._to_filter({"user_id": "u-123", "content_types": ["image"]})
+    f = VectorStore._to_filter({"user_id": "u-123", "content_types": ["image"]})
     assert f is not None
     conds = {c.key: c for c in f.must}
     assert "user_id" in conds
@@ -140,23 +141,51 @@ def test_to_filter_content_type_photo_expands_legacy():
     回归：生产 photo 点 payload="photo"，旧基准点 payload="image"。过滤端
     请求规范值 "photo" 时必须同时匹配遗留 "image" 点，两端数据都不丢。
     """
-    s = VectorStore()
-    f = s._to_filter({"content_types": ["photo"]})
+    f = VectorStore._to_filter({"content_types": ["photo"]})
     conds = {c.key: c for c in f.must}
     assert conds["content_type"].match.any == ["photo", "image"]
 
 
 def test_to_filter_content_type_image_alias_maps_to_photo():
     """FIX-1：遗留 "image" 请求值归一为规范 "photo"（旧调用方兼容）"""
-    s = VectorStore()
-    f = s._to_filter({"content_types": ["image"]})
+    f = VectorStore._to_filter({"content_types": ["image"]})
     conds = {c.key: c for c in f.must}
     assert conds["content_type"].match.any == ["photo", "image"]
 
 
 def test_to_filter_content_type_text_untouched():
     """非 photo 类型不受归一影响"""
-    s = VectorStore()
-    f = s._to_filter({"content_types": ["text", "voice"]})
+    f = VectorStore._to_filter({"content_types": ["text", "voice"]})
     conds = {c.key: c for c in f.must}
     assert conds["content_type"].match.any == ["text", "voice"]
+
+
+def test_to_filter_time_range_epoch_seconds():
+    """时间窗过滤：datetime → epoch 秒（float），与 payload taken_at 数值一致
+
+    回归（审查 CRITICAL）：payload 侧 taken_at 存 epoch 秒，过滤端 Range
+    必须转 .timestamp() 数值——此前时间过滤静默不命中。
+    time_from/time_to 各生成一条 taken_at FieldCondition（gte/lte 分置）。
+    """
+    from datetime import datetime, timezone
+
+    lo = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    hi = datetime(2026, 12, 31, tzinfo=timezone.utc)
+    f = VectorStore._to_filter({"time_from": lo, "time_to": hi})
+    taken_conds = [c for c in f.must if c.key == "taken_at"]
+    assert len(taken_conds) == 2
+    assert {c.range.gte for c in taken_conds if c.range.gte is not None} == {lo.timestamp()}
+    assert {c.range.lte for c in taken_conds if c.range.lte is not None} == {hi.timestamp()}
+
+
+def test_to_filter_unknown_key_ignored():
+    """未知过滤键静默忽略（不产生非法 Filter 条件）"""
+    f = VectorStore._to_filter({"unknown_key": "x"})
+    assert f is None  # 无有效 must 条件 → 不构造 Filter（全库召回）
+
+
+def test_to_filter_empty_filters_none():
+    """空/None filters → None（不构造 Filter，避免空 must 误过滤）"""
+    assert VectorStore._to_filter(None) is None
+    assert VectorStore._to_filter({}) is None
+    assert VectorStore._to_filter({"content_types": []}) is None
