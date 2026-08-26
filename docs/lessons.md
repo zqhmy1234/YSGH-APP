@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 16:00 · commit 43b97a7 · ts=1787731238
+- **错误**：CI #13 Init PostgreSQL 失败 exit 2：schema.sql 建库步骤 psql -U yishu_app 认证失败
+- **根因**：为'避免日志明文'把 PGPASSWORD 从每条命令内联改为步骤级 env（单一密码 admin），导致 -U yishu_app 用错密码；本地 PG 复现确认 admin 连 yishu_app 认证失败 exit 2（#13 与 #6 差异仅在密码传递方式）
+- **修复**：恢复每条 psql 命令内联各自用户密码（PGPASSWORD=admin 连 postgres、PGPASSWORD=yishu_app_2026 连 yishu_app），保留 postgres 就绪重试循环（修 #8 竞态）；测试密码明文在仓库无新增泄露面（setup_pg.sql 本就含这些值）
+- **相关文件**：.github/workflows/ci.yml
+- **教训**：改 CI/运维脚本时，'安全优化'（如密码改 env 传递）必须逐命令核对账号密码映射，否则不同用户共用单一 env 密码必挂；改完先本地用相同命令序列复现验证再推
+
+---
+
 ### 2026-08-26 14:01 · commit 4ae3632 · ts=1787724101
 - **错误**：项目所需 API key 清单/获取方式未文档化：各 Agent 开发时反复猜测 key 来源（DASHSCOPE 控制台/腾讯云 CAM/COS 存储桶/高德开放平台/Sentry 项目/企微后台），api_smoke 报'腾讯云未配置'、托管护栏/精排真实通道待 key 验证等多次受阻
 - **根因**：外部凭证分散在 backend/.env 与各控制台，无单一权威文档说明'有哪些 key、在哪申请、怎么配'；config.py 有字段但无获取指引
