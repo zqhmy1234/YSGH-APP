@@ -8,6 +8,42 @@
 
 ---
 
+### 2026-08-27 02:36 · commit 499e06c · ts=1787769416
+- **错误**：upsert_profile_sensitive 改 ON CONFLICT 后 test_profile_sensitive_crud 失败：第二次 upsert(caution) 返回的 row2.disposition 仍是 forbid（旧值）
+- **根因**：SessionLocal expire_on_commit=False：Core pg_insert/update 直接执行不会更新 ORM identity-map 缓存对象；同一会话先 SELECT 缓存了旧行，提交后重查 select() 命中缓存返回旧对象（disposition 未刷新）
+- **修复**：upsert 后 db.execute(stmt) + db.commit() 再 db.expire_all() 强制缓存过期，重查 select 拉 DB 最新值
+- **相关文件**：backend/app/services/echo.py
+- **教训**：Core DML（pg_insert/on_conflict）后要让 ORM 看到新值必须 db.expire_all()/expire 目标对象，否则 expire_on_commit=False 下重查返回 identity-map 旧对象
+
+---
+
+### 2026-08-27 02:28 · commit 1de9fdd · ts=1787768895
+- **错误**：test_auth_db.py 加 sa_update 导入后 review_agent 快速门禁 lint I001（import 块未排序）连续两轮失败
+- **根因**：项目 ruff 的 isort profile 对 sqlalchemy 多名称导入要求逐行（from sqlalchemy import a / from sqlalchemy import b），手动合并成单行 from sqlalchemy import a, b 仍报 I001；手动改两轮后直接 ruff check --fix 由工具按 profile 落格式
+- **修复**：用 python -m ruff check <file> --fix 自动按 isort profile 重排（每名一行），再 git add + review_agent
+- **相关文件**：backend/tests/test_auth_db.py
+- **教训**：新增 sqlalchemy 导入别名时先跑 ruff check --fix 落 isort 格式，别手工猜合并/分行，避免门禁反复拦截
+
+---
+
+### 2026-08-27 02:17 · commit 57a9af1 · ts=1787768268
+- **错误**：test_push_delete_delete_in_batch 首版失败：批内 [delete, delete] 两 op 被 rejected 'entity 不存在'（applied=0）
+- **根因**：push_ops 对云端无任何记录（无墓碑/无字段行/contents 亦无）的实体 delete 按既有语义拒绝；测试没先建实体就裸发两条 delete，与批内同键去重无关
+- **修复**：用例改为 [upsert 建字段行, delete, delete]：首条 delete 建墓碑并登记回映射，第二条命中映射行，验证无 PK 冲突
+- **相关文件**：backend/tests/test_sync.py
+- **教训**：写批内重复键用例时先构造实体存在的前提（upsert 先行），否则触发的是既有的'entity 不存在'拒绝语义而非目标竞态
+
+---
+
+### 2026-08-27 01:42 · commit 57a9af1 · ts=1787766159
+- **错误**：Full Gate UndefinedColumn: column devices.refresh_token_hash does not exist (test_techdebt_p0)
+- **根因**：TD-P3 迁移 d3e4f5a6b7c8 给 devices 加 refresh_token_hash/refresh_rotated_at 只进 alembic 未同步 schema.sql；CI 建库源=schema.sql（决策项），本地库走 alembic 有列、CI 库无列
+- **修复**：schema.sql devices 表补两列（57a9af1）；A4 漂移检测脚本 scripts/check_schema_drift.py + weekly CI job 落地，后续由脚本把关
+- **相关文件**：-
+- **教训**：任何新迁移必须同步 schema.sql（CI 建库源唯一真源），先改 schema.sql 再写迁移或合入前跑漂移检测
+
+---
+
 ### 2026-08-27 01:18 · commit cf9d480 · ts=1787764709
 - **错误**：test_moderate_selector.py 引入未使用的 import pytest 且 import 分组排序不符 isort（ruff I001/F401）→ review_agent 快速门禁 lint 失败
 - **根因**：提交前未先本地跑 ruff check；模块级 import 从模板带入但最终未用到 pytest，注释块与 import 分组破坏 isort 排序
