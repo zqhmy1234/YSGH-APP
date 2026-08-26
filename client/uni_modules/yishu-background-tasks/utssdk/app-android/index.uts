@@ -1,0 +1,269 @@
+/**
+ * 忆述光华 · 后台任务队列（WorkManager）Android UTS 实现（B5d · Wave4 Agent K）
+ *
+ * 统一后台调度（B5d §2 统一调度 / §3 实现边界 / §5 优先级表）：
+ *  - P0 语音转写/上传（voice_transcribe）：独立唯一名，无网络约束（用户在等"录音变文字"）
+ *  - P1 新照片上传（sync_photo）：独立唯一名 + WiFi 约束（NetworkType.UNMETERED）
+ *  - P2 事件聚合重跑（event_aggregate）/ P3 云侧拉取（profile_fetch）/ P4 批量导入（batch_import）：
+ *    低优先共享档（同约束/同退避/同档调度，互不抢占 P0/P1），各自唯一名防类型间误去重
+ *  - existingWorkPolicy=KEEP 防重（唯一名 + 去重，重复 enqueue 不叠加）
+ *  - 指数退避：BackoffPolicy.EXPONENTIAL（Worker 内失败重试走退避）
+ *  - attribution tag（B5d §3，Android 16 扩展归因）：sync_photo / voice_transcribe /
+ *    event_aggregate / profile_fetch 落到每个任务（batch_import 归 sync_photo 域）
+ *  - 2h 定时兜底：PeriodicWork（唯一名 KEEP + WiFi + sync_photo tag），到点 Worker 记 pending
+ *
+ * 实现说明（两层架构，双基座兼容）：
+ *  - 原生 Kotlin（BgBackground.kt）：全部 WorkManager 调度（P0-P4/WiFi/退避/防重/tag/周期）
+ *    + Worker 执行器。注意：标准基座运行流程不编译原生 .kt（仅自定义基座/云打包编译），
+ *    故 UTS 侧先用 Class.forName 探测 BgTaskManager 是否存在。
+ *  - UTS（本文件）：pending 队列/状态管理（SharedPreferences，标准基座可用）+ 反射薄层
+ *    （仅当 BgTaskManager 存在时调用，否则安全降级 no-op）。
+ *  - libs/*.jar：work-runtime 及其传递依赖（编译期 classpath，resolveLibs 纯文件机制，
+ *    规避 HBuilderX config.json 依赖下载/类型生成在部分环境不生效的问题）。
+ *
+ * 任务执行模型（两段式，保证不丢任务）：
+ *  - WorkManager 到点唤醒（自定义基座）→ 原生 Worker 写 pending（SharedPreferences）
+ *  - 应用层（yishu-photo-watch.start / 集成接线）drainPendingTask() 取回 → 派发执行
+ *  - 标准基座：enqueueTask 直接记 pending，App 存活期由 sync_client setInterval 兜底
+ */
+
+import { BackgroundTaskHandler } from '../interface.uts'
+import Class from 'java.lang.Class'
+import SharedPreferences from 'android.content.SharedPreferences'
+import Context from 'android.content.Context'
+
+export { BackgroundTaskHandler } from '../interface.uts'
+
+// ---------- 常量（与原生 BgBackground.kt / BgTaskWorker 共享） ----------
+
+const MANAGER_CLASS = 'uni.UNIYISHU001.BgTaskManager'
+const PREFS_KEY = 'yishu_bg_tasks'
+const PENDING_KEY = 'pending_queue'
+const WAKEUP_KEY = 'last_wakeup'
+
+// ---------- 模块级状态 ----------
+
+let _initialized: boolean = false
+let _taskHandler: BackgroundTaskHandler | null = null
+let _appContext: Context | null = null
+
+function appContext(): Context {
+	const cached = _appContext
+	if (cached != null) {
+		return cached
+	}
+	const created = UTSAndroid.getAppContext()
+	_appContext = created
+	return created!
+}
+
+function prefs(): SharedPreferences {
+	return appContext().getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
+}
+
+// ---------- 原生 WorkManager 层探测（标准基座无 BgTaskManager → 降级） ----------
+
+/**
+ * androidx.work 运行时类是否存在（自定义基座 true / 标准基座 false）。
+ * 注意：不用 Class.forName 探测——其抛出的 ClassNotFoundException 是 Exception 类，
+ * UTS 的 catch (e: Error) 只捕获 Error 类（Exception 声明被 UTS 禁用），异常会冒泡到
+ * 运行时错误浮层。ClassLoader.getResource 对不存在的资源返回 null 且不抛异常。
+ */
+function workManagerRuntimePresent(): boolean {
+	try {
+		const cl = appContext().getClassLoader()
+		return cl.getResource('androidx/work/WorkManager.class') != null
+	} catch (e: Error) {
+		return false
+	}
+}
+
+/** 获取 BgTaskManager 类（仅在 androidx.work 存在时调用，此时类必然存在，不抛异常） */
+function managerClass(): Class<any> | null {
+	if (!workManagerRuntimePresent()) {
+		return null
+	}
+	try {
+		return Class.forName(MANAGER_CLASS) as Class<any>
+	} catch (e: Error) {
+		return null
+	}
+}
+
+/** 反射调用无参方法（返回 Object；类不存在/调用失败返回 null，不刷错误日志） */
+function invokeNoArg(methodName: string): any | null {
+	const cls = managerClass()
+	if (cls == null) {
+		return null
+	}
+	try {
+		const m = cls.getMethod(methodName)
+		return m.invoke(null)
+	} catch (e: Error) {
+		console.error('[yishu] 反射调用 ' + methodName + ' 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		return null
+	}
+}
+
+/** 反射调用单 String 参数方法 */
+function invokeString(methodName: string, arg: string): any | null {
+	const cls = managerClass()
+	if (cls == null) {
+		return null
+	}
+	try {
+		const strCls = Class.forName('java.lang.String') as Class<string>
+		const m = cls.getMethod(methodName, strCls)
+		return m.invoke(null, arg)
+	} catch (e: Error) {
+		console.error('[yishu] 反射调用 ' + methodName + ' 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		return null
+	}
+}
+
+// ---------- pending 队列（UTS 实现，标准/自定义基座均可用；原生 Worker 写入同一 key 兼容） ----------
+
+function readPendingLines(): Array<string> {
+	const raw = prefs().getString(PENDING_KEY, '')
+	if (raw == null || raw == '') {
+		return []
+	}
+	const lines = raw.split('\n')
+	const out: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			out.push(lines[i])
+		}
+	}
+	return out
+}
+
+function writePendingLines(lines: Array<string>): void {
+	prefs().edit().putString(PENDING_KEY, lines.join('\n')).apply()
+}
+
+function recordPending(taskType: string): void {
+	const lines = readPendingLines()
+	lines.push(taskType)
+	writePendingLines(lines)
+	console.log('[yishu] 后台任务 pending 记录: ' + taskType + '（应用层启动/前台后 drain 执行）')
+}
+
+// ---------- 对外接口 ----------
+
+/**
+ * WorkManager 是否可用（自定义基座 true / 标准基座 false）。
+ * 标准基座：androidx.work 运行时缺失 → false，调度降级为 pending 记录
+ * （App 存活期 sync_client setInterval 兜底）。
+ */
+export function isWorkManagerAvailable(): boolean {
+	if (!workManagerRuntimePresent()) {
+		return false
+	}
+	const v = invokeNoArg('isAvailable')
+	if (v == null) {
+		return false
+	}
+	return (v as Boolean) == true
+}
+
+/**
+ * 初始化后台调度（幂等）：注入 Application Context + 注册 2h 周期 PeriodicWork。
+ * 由 yishu-photo-watch.start() 自动引导调用（应用层亦可显式调用）。
+ * @param hours 周期小时数，默认 2
+ */
+export function initBackgroundTasks(hours: number): void {
+	if (_initialized) {
+		return
+	}
+	_initialized = true
+	if (!workManagerRuntimePresent()) {
+		console.log('[yishu] 后台任务：标准基座（无 WorkManager），降级 pending + setInterval 兜底')
+		return
+	}
+	const cls = managerClass()
+	if (cls == null) {
+		console.log('[yishu] 后台任务：BgTaskManager 不可用，降级 pending + setInterval 兜底')
+		return
+	}
+	try {
+		const ctxCls = Class.forName('android.content.Context') as Class<Context>
+		const initMethod = cls.getMethod('init', ctxCls)
+		initMethod.invoke(null, appContext())
+		const h = hours > 0 ? hours : 2
+		const periodCls = Class.forName('java.lang.Integer') as Class<number>
+		const m = cls.getMethod('initPeriodic', periodCls)
+		m.invoke(null, h)
+		console.log('[yishu] initBackgroundTasks ok（hours=' + h + '）')
+	} catch (e: Error) {
+		console.error('[yishu] initBackgroundTasks 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+	}
+}
+
+/**
+ * 注册任务执行回调（应用层接线）：drainPendingTask 取回的 taskType 派发到此回调（主线程调用）。
+ * 传 null 清除。集成接线示例见 interface.uts 头注。
+ */
+export function setBackgroundTaskHandler(cb: BackgroundTaskHandler | null): void {
+	_taskHandler = cb
+	console.log('[yishu] 后台任务 handler ' + (cb != null ? '已注册' : '已清除') + '，pending=' + pendingTaskCount())
+	drainAllPending()
+}
+
+/**
+ * 入队一个一次性后台任务（幂等防重，B5d §5 优先级由 taskType 推导）。
+ * 自定义基座：WorkManager 入队（唯一名 KEEP + WiFi + 指数退避 + attribution tag）；
+ * 标准基座：记 pending（应用层启动/前台后 drain 执行）。
+ */
+export function enqueueTask(taskType: string): void {
+	if (taskType == '') {
+		return
+	}
+	if (isWorkManagerAvailable()) {
+		invokeString('enqueueTask', taskType)
+	} else {
+		recordPending(taskType)
+	}
+}
+/** 取回并清除一条待处理任务（Worker 冷启动 / 标准基座降级期间记录）；无则返回 '' */
+export function drainPendingTask(): string {
+	const lines = readPendingLines()
+	if (lines.length === 0) {
+		return ''
+	}
+	const first = lines[0]
+	const kept: Array<string> = []
+	for (let i = 1; i < lines.length; i++) {
+		kept.push(lines[i])
+	}
+	writePendingLines(kept)
+	console.log('[yishu] 后台任务 drain: ' + first + '（剩余 ' + kept.length + '）')
+	return first
+}
+
+/** 待处理任务条数 */
+export function pendingTaskCount(): number {
+	return readPendingLines().length
+}
+
+/** 上次 WorkManager 唤醒记录（yyyy-MM-ddTHH:mm:ss+08:00，本地时间；原生 Worker 写入），从未唤醒返回 '' */
+export function lastWakeupAt(): string {
+	const v = prefs().getString(WAKEUP_KEY, '')
+	return v != null ? v : ''
+}
+
+/** 消费全部 pending：逐个取出 → 有 handler 则派发执行（主线程） */
+function drainAllPending(): void {
+	const handler = _taskHandler
+	if (handler == null) {
+		return
+	}
+	while (true) {
+		const taskType = drainPendingTask()
+		if (taskType == '') {
+			break
+		}
+		console.log('[yishu] drain 派发执行: ' + taskType)
+		handler(taskType)
+	}
+}

@@ -1,17 +1,29 @@
 /**
  * 忆述光华 · 相册监听插件 Android 纯 UTS 实现（B-UT-1/2/3/4 · 2026-08-24 决策调整）
+ * Wave4 Agent K · B5d 升级（K-1a）：前台服务短命化 + microphone/dataSync 互斥
  *
  * 纯 UTS（无 .kt）：标准基座即可运行。UTS 直接继承 android.database.ContentObserver
  * 并调用 MediaStore/SharedPreferences/ActivityCompat（标准基座内置 androidx.core）。
+ *
+ * B5d 升级点：
+ *  1. dataSync 前台服务（DataSyncService，manifest 声明 uni.UNIYISHU001.DataSyncService）：
+ *     - 监听期间后台存活保活；短命化（自停：持续 30min 或空闲 10min → stopForeground+stopSelf）
+ *     - 标准基座未注册服务 → 运行时检测自动回退页面级监听（与第一波行为一致，无回归）
+ *  2. 类型互斥：录音中（setRecordingActive(true)，Agent J 录音插件调用）停止 dataSync 让位
+ *     microphone；录音结束恢复 dataSync。两前台服务类型不同时开（B5d §3）。
+ *  3. 统一调度：start() 自动引导 yishu-background-tasks 插件的 2h 周期 WorkManager（B5d §2）。
  *
  * 注意：不在此处 `export * from '../interface.uts'`——函数声明在 interface.uts，
  * 本文件按同名实现即可（重复导出曾触发编译器 overload panic）；
  * 类型单独具名再导出（error3：页面需从平台模块引用插件类型）。
  */
-import { PhotoItem, PhotoBatchCallback, PhotoWatch } from '../interface.uts'
+import { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType } from '../interface.uts'
+import { initBackgroundTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 import Build from 'android.os.Build'
 import Manifest from 'android.Manifest'
 import PackageManager from 'android.content.pm.PackageManager'
+import PackageInfo from 'android.content.pm.PackageInfo'
+import ServiceInfo from 'android.content.pm.ServiceInfo'
 import Handler from 'android.os.Handler'
 import Looper from 'android.os.Looper'
 import ContentObserver from 'android.database.ContentObserver'
@@ -22,15 +34,43 @@ import Context from 'android.content.Context'
 import Intent from 'android.content.Intent'
 import Settings from 'android.provider.Settings'
 import ExifInterface from 'android.media.ExifInterface'
+import Service from 'android.app.Service'
+import IBinder from 'android.os.IBinder'
+import Notification from 'android.app.Notification'
+import NotificationManager from 'android.app.NotificationManager'
+import NotificationChannel from 'android.app.NotificationChannel'
+import NotificationCompat from 'androidx.core.app.NotificationCompat'
+import R from 'android.R'
 
 // 类型具名再导出（供页面从平台模块路径引用）
-export { PhotoItem, PhotoBatchCallback, PhotoWatch } from '../interface.uts'
+export { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType } from '../interface.uts'
 
 /** 静默窗口：4s 无新照片变更 → 触发攒批回调（B-UT-4，3-5s 区间） */
 const DEBOUNCE_MS: Long = 4000
 const KEY_LAST_SEEN = 'last_seen_photo_id'
 const REQ_READ_MEDIA = 2001
 const ZERO_LONG: Long = 0
+
+// ---------- B5d · dataSync 前台服务（短命化）常量 ----------
+
+/** 服务全限定名（与 utssdk/app-android/AndroidManifest.xml 的 <service> 一致；UTS 插件编译进 uni.<appid> 包） */
+const SERVICE_CLASS_FQN = 'uni.UNIYISHU001.DataSyncService'
+/** 前台服务通知 ID */
+const NOTIF_ID: Int = 1002
+const CHANNEL_ID = 'yishu_data_sync'
+/** 短命化：服务最长存活（不常驻 24h，B5d §3）——30 分钟自停 */
+const DATA_SYNC_MAX_LIFETIME_MS: Long = 30 * 60 * 1000
+/** 短命化：空闲自停（无新照片）——10 分钟 */
+const DATA_SYNC_IDLE_MS: Long = 10 * 60 * 1000
+/** 看门狗轮询间隔 */
+const WATCHDOG_INTERVAL_MS: Long = 60 * 1000
+
+// ---------- B5d · 模块级状态（进程级共享：observer / 服务 / 互斥） ----------
+
+let _recordingActive: boolean = false
+let _serviceRunning: boolean = false
+let _serviceStartedAt: Long = ZERO_LONG
+let _lastActivityMs: Long = ZERO_LONG
 
 let _appContext: Context | null = null
 function appContext(): Context {
@@ -187,12 +227,131 @@ class PhotoObserver extends ContentObserver {
 			// 先推进游标再回调：即使回调消费失败也不重复触发（轻量去重，B-UT-3）
 			prefs().edit().putLong(KEY_LAST_SEEN, maxId).apply()
 			console.log('[yishu] emitIncremental found ' + items.length + ', maxId=' + maxId)
+			// B5d：记录最近活动时间（dataSync 前台服务看门狗空闲自停依据）
+			_lastActivityMs = Date.now() as Long
 			cb(items)
 		} else {
 			console.log('[yishu] emitIncremental found 0 (lastSeen=' + lastSeen + ')')
 		}
 	}
 }
+
+// ---------- B5d · dataSync 前台服务（短命化，microphone/dataSync 互斥中的 dataSync 侧） ----------
+
+/** 服务是否已在本应用 AndroidManifest 注册（自定义基座 true / 标准基座 false） */
+function isDataSyncServiceRegistered(): boolean {
+	try {
+		// queryIntentServices（List 接口，size() 方法——规避 UTSArray.length 类型问题）
+		const probe = new Intent()
+		probe.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
+		const matches = appContext().getPackageManager().queryIntentServices(probe, 0)
+		return matches != null && matches.size > 0
+	} catch (e: Error) {
+		// 查询失败按未注册处理（回退页面级监听）
+	}
+	return false
+}
+
+class DataSyncService extends Service {
+	// UTS 规则：父类有构造器时必须显式初始化（error：This type has a constructor）
+	constructor() {
+		super()
+	}
+
+	override onBind(intent: Intent | null): IBinder | null {
+		return null
+	}
+
+	override onCreate(): void {
+		super.onCreate()
+		this.createChannel()
+	}
+
+	override onStartCommand(intent: Intent | null, flags: Int, startId: Int): Int {
+		this.startForegroundInternal()
+		this.scheduleWatchdog()
+		return Service.START_NOT_STICKY
+	}
+
+	override onDestroy(): void {
+		_serviceRunning = false
+		_serviceStartedAt = ZERO_LONG
+		console.log('[yishu] dataSync 前台服务已停止（onDestroy）')
+		super.onDestroy()
+	}
+
+	private createChannel(): void {
+		if (Build.VERSION.SDK_INT < 26) {
+			return
+		}
+		try {
+			const channel = new NotificationChannel(CHANNEL_ID, '数据同步', NotificationManager.IMPORTANCE_LOW)
+			channel.setShowBadge(false)
+			const nm = this.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+			if (nm != null) {
+				nm.createNotificationChannel(channel)
+			}
+		} catch (e: Error) {
+			console.error('[yishu] 通知渠道创建失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		}
+	}
+
+	private buildNotification(): Notification {
+		const builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+		builder.setContentTitle('忆述光华 · 数据同步中')
+		builder.setContentText('正在监听新照片，稍后自动停止')
+		builder.setSmallIcon(R.drawable.ic_menu_upload)
+		builder.setOngoing(true)
+		builder.setPriority(NotificationCompat.PRIORITY_LOW)
+		return builder.build()
+	}
+
+	private startForegroundInternal(): void {
+		try {
+			const notification = this.buildNotification()
+			if (Build.VERSION.SDK_INT >= 34) {
+				this.startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+			} else {
+				this.startForeground(NOTIF_ID, notification)
+			}
+			_serviceRunning = true
+			_serviceStartedAt = Date.now() as Long
+			console.log('[yishu] dataSync 前台服务 startForeground（type=dataSync）')
+		} catch (e: Error) {
+			console.error('[yishu] dataSync startForeground 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+			_serviceRunning = false
+		}
+	}
+
+	private stopForegroundInternal(): void {
+		try {
+			this.stopForeground(true)
+		} catch (e: Error) {
+			console.error('[yishu] dataSync stopForeground 异常（忽略）: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		}
+	}
+
+	/** 短命化看门狗：持续超时（30min）或空闲超时（10min）→ 降级自停（后续转 WorkManager 静默任务） */
+	private scheduleWatchdog(): void {
+		Handler(Looper.getMainLooper()).postDelayed(() => {
+			if (!_serviceRunning) {
+				return
+			}
+			const now: Long = Date.now() as Long
+			const lifetime: Long = now - _serviceStartedAt
+			const idle: Long = _lastActivityMs > 0 ? now - _lastActivityMs : ZERO_LONG
+			if (lifetime >= DATA_SYNC_MAX_LIFETIME_MS || (idle > 0 && idle >= DATA_SYNC_IDLE_MS)) {
+				console.log('[yishu] dataSync 短命化自停 lifetime=' + lifetime + 'ms idle=' + idle + 'ms')
+				this.stopForegroundInternal()
+				this.stopSelf()
+				return
+			}
+			this.scheduleWatchdog()
+		}, WATCHDOG_INTERVAL_MS)
+	}
+}
+
+// ---------- PhotoWatch 实现 ----------
 
 class PhotoWatchImpl implements PhotoWatch {
 	observer: PhotoObserver | null = null
@@ -214,13 +373,57 @@ class PhotoWatchImpl implements PhotoWatch {
 			// 注册后立即初扫（B-UT-4）：授权后拉取 last_seen 之后的存量照片（MediaScanner 已入库）
 			this.observer.emitIncremental()
 		}
+		// B5d 统一调度：相册监听启动即拉起 2h 周期后台同步（WorkManager；标准基座 no-op，App 存活期 setInterval 兜底）
+		initBackgroundTasks(2)
+		// B5d 短命化前台服务（dataSync）：录音中不启（互斥）；服务未注册（标准基座）自动回退页面级监听
+		if (!_recordingActive) {
+			this.ensureDataSyncService()
+		}
 	}
 
 	stop(): void {
+		this.stopDataSyncService()
 		if (this.registered && this.observer != null) {
 			appContext().getContentResolver().unregisterContentObserver(this.observer)
 			this.registered = false
 		}
+	}
+
+	/** 启动 dataSync 前台服务（幂等 + 服务注册检测 + Android 12 后台启动限制兜底） */
+	ensureDataSyncService(): void {
+		if (_serviceRunning) {
+			return
+		}
+		if (!isDataSyncServiceRegistered()) {
+			console.log('[yishu] dataSync 服务未注册（标准基座），保持页面级监听')
+			return
+		}
+		try {
+			// UTS 不支持 X.class 字面量（error18），用 setClassName 显式指定服务组件
+			const intent = new Intent()
+			intent.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
+			appContext().startService(intent)
+			console.log('[yishu] dataSync 前台服务启动（startService）')
+		} catch (e: Error) {
+			// 服务未注册 / Android 12+ 后台启动限制 → 回退页面级监听（不崩）
+			console.error('[yishu] dataSync 服务启动失败（回退页面级监听）: ' + (e != null && e.message != null ? e.message : 'unknown'))
+			_serviceRunning = false
+		}
+	}
+
+	/** 停止 dataSync 前台服务 */
+	stopDataSyncService(): void {
+		if (!_serviceRunning) {
+			return
+		}
+		try {
+			const intent = new Intent()
+			intent.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
+			appContext().stopService(intent)
+		} catch (e: Error) {
+			console.error('[yishu] dataSync 服务停止异常（忽略）: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		}
+		_serviceRunning = false
 	}
 
 	getLastSeenId(): number {
@@ -248,6 +451,40 @@ class PhotoWatchImpl implements PhotoWatch {
 	isReadPermissionGranted(): boolean {
 		const granted = PackageManager.PERMISSION_GRANTED
 		return appContext().checkSelfPermission(readPermissionName()) == granted
+	}
+
+	// ---------- B5d · microphone/dataSync 互斥（录音插件 Agent J 域调用） ----------
+
+	setRecordingActive(active: boolean): void {
+		_recordingActive = active
+		if (active) {
+			// 录音开始：立即停止 dataSync 前台服务，让位 microphone 前台服务（B5d §3 两类型不同时开）
+			this.stopDataSyncService()
+			console.log('[yishu] 录音开始：dataSync 前台服务让位 microphone')
+		} else {
+			// 录音结束：恢复 dataSync（若监听仍挂载；stopForeground 降级后转 WorkManager）
+			if (this.registered) {
+				this.ensureDataSyncService()
+			}
+			console.log('[yishu] 录音结束：dataSync 前台服务恢复')
+		}
+	}
+
+	isForegroundServiceActive(): boolean {
+		return _serviceRunning
+	}
+
+	getActiveType(): ForegroundActiveType {
+		if (_recordingActive) {
+			return 'microphone'
+		}
+		if (_serviceRunning) {
+			return 'dataSync'
+		}
+		if (!isDataSyncServiceRegistered()) {
+			return 'unsupported'
+		}
+		return 'none'
 	}
 }
 

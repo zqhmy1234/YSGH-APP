@@ -1,0 +1,12 @@
+{
+  "id": "yishu-background-tasks",
+  "displayName": "忆述光华 · 后台任务队列（WorkManager）",
+  "version": "1.0.0",
+  "description": "B5d 统一后台调度·WorkManager 队列（Wave4 Agent K）：P0-P4 优先级链（P0 语音/P1 新照片独立高优先，P2-P4 低优先共享）、WiFi 约束（NetworkType.UNMETERED）、指数退避、existingWorkPolicy 防重、attribution tag（sync_photo/voice_transcribe/event_aggregate/profile_fetch）、2h 周期定时兜底（接 Agent H sync 入口）。依赖 androidx.work（config.json 声明，自定义基座）。",
+  "keywords": [
+    "workmanager",
+    "background",
+    "sync",
+    "attribution"
+  ]
+}
