@@ -6,7 +6,7 @@
  * 服务端游标分页列入第二波（进度文档已记录）。
  */
 import { get, dataArr } from './api'
-import { parseIsoMs } from './time'
+import { parseIsoMs, dayKey, friendlyDay } from './time'
 
 export class TimelineEvent {
 	id: string
@@ -100,4 +100,94 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 			resolve(result)
 		})
 	})
+}
+
+/** 时间轴按日分组：日卡片组（L2 挂同日 L1 之下） */
+export class DayGroup {
+	key: string
+	label: string
+	events: Array<TimelineEvent>
+
+	constructor(key: string, label: string, events: Array<TimelineEvent>) {
+		this.key = key
+		this.label = label
+		this.events = events
+	}
+}
+
+/** buildDayGroups 返回：日卡片组 + 待确认区事件（组件侧落 pendingEvents 状态） */
+export class DayGroupResult {
+	groups: Array<DayGroup>
+	pending: Array<TimelineEvent>
+
+	constructor(groups: Array<DayGroup>, pending: Array<TimelineEvent>) {
+		this.groups = groups
+		this.pending = pending
+	}
+}
+
+/**
+ * 按日分组（纯函数；原 index.uvue groupDays 迁移，F10 拆分行为等价）：
+ * draft & confidence<0.7 → 待确认区；忽略事件过滤（isIgnored 注入，避免依赖 event_ops 本地态）；
+ * L1/L2 各自按 startTime 倒序；L2 挂到同日 L1 之下，无同日 L1 则独立成组。
+ */
+export function buildDayGroups(events: Array<TimelineEvent>, isIgnored: (eventId: string) => boolean): DayGroupResult {
+	const pending: Array<TimelineEvent> = []
+	const l1: Array<TimelineEvent> = []
+	const l2: Array<TimelineEvent> = []
+	for (let i = 0; i < events.length; i++) {
+		const ev = events[i]
+		if (isIgnored(ev.id)) {
+			continue // B3-5 忽略（本地隐藏）
+		}
+		const isPending = ev.status == 'draft' && ev.confidence > 0 && ev.confidence < 0.7
+		if (isPending) {
+			pending.push(ev)
+			continue
+		}
+		if (ev.level === 1) {
+			l1.push(ev)
+		} else if (ev.level === 2) {
+			l2.push(ev)
+		}
+	}
+	pending.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+	l1.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+	l2.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+
+	const groups: Array<DayGroup> = []
+	const l1ByDay: Map<string, number> = new Map<string, number>()
+	for (let i = 0; i < l1.length; i++) {
+		const ev = l1[i]
+		const k = dayKey(ev.startTime)
+		const copy = new TimelineEvent(
+			ev.id,
+			ev.level,
+			ev.title,
+			ev.titleSource,
+			ev.startTime,
+			ev.endTime,
+			ev.place,
+			ev.emotion,
+			ev.photoCount,
+			ev.contentCount,
+			ev.status,
+			ev.confidence,
+			ev.coverContentId
+		)
+		groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
+		l1ByDay.set(k, groups.length - 1)
+	}
+	for (let j = 0; j < l2.length; j++) {
+		const ev = l2[j]
+		const k = dayKey(ev.startTime)
+		const idx = l1ByDay.get(k)
+		if (idx != null && groups[idx].events.length > 0) {
+			groups[idx].events[0].children.push(ev)
+		} else {
+			groups.push(new DayGroup(k, friendlyDay(ev.startTime), [ev]))
+			l1ByDay.set(k, groups.length - 1)
+		}
+	}
+	return new DayGroupResult(groups, pending)
 }

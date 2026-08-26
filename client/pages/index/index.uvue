@@ -183,8 +183,8 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
-	import { dayKey, friendlyDay, formatMonthDay } from '@/utils/time'
+	import { fetchTimeline, TimelineEvent, buildDayGroups, DayGroup } from '@/utils/timeline'
+	import { formatMonthDay } from '@/utils/time'
 	import { uploadBatch, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
 	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
 	import { showErrorToast } from '@/utils/api'
@@ -206,18 +206,6 @@
 		mapAcceptedToClientIds
 	} from '@/utils/event_ops'
 	import { recordGrantTime, recordFirstDayRender } from '@/utils/agg/perf_timing.uts'
-
-	class DayGroup {
-		key: string
-		label: string
-		events: Array<TimelineEvent>
-
-		constructor(key: string, label: string, events: Array<TimelineEvent>) {
-			this.key = key
-			this.label = label
-			this.events = events
-		}
-	}
 
 	/** 会话照片映射项：content_id → 本地路径（封面/照片条/反向入口显示用） */
 	class PhotoPathEntry {
@@ -439,67 +427,11 @@
 					}
 				})
 			},
-			/** 按日分组：draft & confidence<0.7 → 待确认区；忽略的事件过滤；L2 挂同日 L1 */
+			/** 按日分组（委托 timeline.ts buildDayGroups 纯函数；F10 拆分行为等价） */
 			groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
-				const pending: Array<TimelineEvent> = []
-				const l1: Array<TimelineEvent> = []
-				const l2: Array<TimelineEvent> = []
-				for (let i = 0; i < events.length; i++) {
-					const ev = events[i]
-					if (isIgnoredEvent(ev.id)) {
-						continue // B3-5 忽略（本地隐藏）
-					}
-					const isPending = ev.status == 'draft' && ev.confidence > 0 && ev.confidence < 0.7
-					if (isPending) {
-						pending.push(ev)
-						continue
-					}
-					if (ev.level === 1) {
-						l1.push(ev)
-					} else if (ev.level === 2) {
-						l2.push(ev)
-					}
-				}
-				pending.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
-				this.pendingEvents = pending
-				l1.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
-				l2.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
-
-				const groups: Array<DayGroup> = []
-				const l1ByDay: Map<string, number> = new Map<string, number>()
-				for (let i = 0; i < l1.length; i++) {
-					const ev = l1[i]
-					const k = dayKey(ev.startTime)
-					const copy = new TimelineEvent(
-						ev.id,
-						ev.level,
-						ev.title,
-						ev.titleSource,
-						ev.startTime,
-						ev.endTime,
-						ev.place,
-						ev.emotion,
-						ev.photoCount,
-						ev.contentCount,
-						ev.status,
-						ev.confidence,
-						ev.coverContentId
-					)
-					groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
-					l1ByDay.set(k, groups.length - 1)
-				}
-				for (let j = 0; j < l2.length; j++) {
-					const ev = l2[j]
-					const k = dayKey(ev.startTime)
-					const idx = l1ByDay.get(k)
-					if (idx != null && groups[idx].events.length > 0) {
-						groups[idx].events[0].children.push(ev)
-					} else {
-						groups.push(new DayGroup(k, friendlyDay(ev.startTime), [ev]))
-						l1ByDay.set(k, groups.length - 1)
-					}
-				}
-				return groups
+				const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
+				this.pendingEvents = result.pending
+				return result.groups
 			},
 			/** content_id → 本地路径（会话映射；空=无） */
 			photoPathOf(contentId: string): string {
