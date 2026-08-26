@@ -23,8 +23,10 @@
  *   ③ 后台 WorkManager 定时 → registerBackgroundSync() 真接线（B5d：周期唤醒写 pending，
  *      应用层注册 handler 时 drain + App.onShow drain 消费，两段式不丢任务）
  */
-import { getBaseUrl } from './config'
-import { getToken, ensureLogin, refreshToken } from './auth'
+// O5 收口：网络层统一走 api.ts 的 rawRequest（401 刷新重放 + 5xx Sentry 上报），
+// 本地复制的请求封装已删，不再直接依赖 getToken/refreshToken
+import { rawRequest, HttpResult } from './api'
+import { ensureLogin } from './auth'
 // TD-P2B（S1-M3/M4 收口）：退避表 + 重试统一走 retry.ts、ISO 时间统一走 time.ts；
 // 此处保留导出别名（BACKOFF_MS/isoNow）兼容现有引用
 import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
@@ -286,54 +288,6 @@ function applyChanges(changes: Array<UTSJSONObject>): void {
 
 // ---------- HTTP ----------
 
-/** 统一 JSON 请求（401 → refresh 一次后重放，与 api.ts 对齐；status 0 = 网络失败） */
-class HttpResult {
-	status: number
-	body: UTSJSONObject | null
-
-	constructor(status: number, body: UTSJSONObject | null) {
-		this.status = status
-		this.body = body
-	}
-}
-
-function syncHttp(path: string, method: string, data: UTSJSONObject | null, retried: boolean, resolve: (r: HttpResult) => void): void {
-	uni.request({
-		url: getBaseUrl() + path,
-		method: method,
-		data: data == null ? {} : data,
-		header: {
-			'Content-Type': 'application/json',
-			'Authorization': 'Bearer ' + getToken()
-		},
-		timeout: 15000,
-		success: (res) => {
-			if (res.statusCode === 401 && !retried) {
-				// 冷启动旧 token 失效：refresh 一次后重放（refresh 内部无 refresh_token 时重新登录）
-				refreshToken().then((ok: boolean) => {
-					if (ok) {
-						syncHttp(path, method, data, true, resolve)
-					} else {
-						console.error('[yishu] sync 401 refresh 失败')
-						resolve(new HttpResult(401, null))
-					}
-				})
-				return
-			}
-			resolve(new HttpResult(res.statusCode, (res.data != null && typeof res.data == 'object') ? (res.data as UTSJSONObject) : null))
-		},
-		fail: () => {
-			resolve(new HttpResult(0, null))
-		}
-	})
-}
-
-function syncHttpPromise(path: string, method: string, data: UTSJSONObject | null): Promise<HttpResult> {
-	return new Promise<HttpResult>((resolve) => {
-		syncHttp(path, method, data, false, resolve)
-	})
-}
-
 /** 单次 push 结果 */
 class PushBatchResult {
 	ok: boolean
@@ -395,7 +349,7 @@ function postBatch(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
 			device_id: DEVICE_ID,
 			ops: syncOps
 		}
-		syncHttpPromise('/api/v1/sync/push', 'POST', reqBody).then((hr: HttpResult) => {
+		rawRequest('/api/v1/sync/push', 'POST', reqBody).then((hr: HttpResult) => {
 			const status = hr.status
 			if (status === 200) {
 				let applied = 0
@@ -559,7 +513,7 @@ export function pullIncremental(): Promise<PullOutcome> {
 				return
 			}
 			const since = readCursor()
-			syncHttpPromise('/api/v1/sync/pull?device_id=' + DEVICE_ID + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
+			rawRequest('/api/v1/sync/pull?device_id=' + DEVICE_ID + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
 				if (hr.status === 200) {
 					let changes: Array<UTSJSONObject> = []
 					let cursor = since
@@ -605,7 +559,7 @@ export function reconcileNow(): Promise<ReconcileReport | null> {
 			const reqBody: UTSJSONObject = {
 				items: items
 			}
-			syncHttpPromise('/api/v1/sync/reconcile', 'POST', reqBody).then((hr: HttpResult) => {
+			rawRequest('/api/v1/sync/reconcile', 'POST', reqBody).then((hr: HttpResult) => {
 				if (hr.status === 200 && hr.body != null) {
 					const d: UTSJSONObject | null = hr.body.getJSON('data')
 					if (d == null) {

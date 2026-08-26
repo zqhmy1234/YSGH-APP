@@ -27,6 +27,17 @@ export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 const REQUEST_TIMEOUT_MS: number = 15000
 
+/** 底层原始响应（O5 收口）：status（0=网络失败）+ body（对象守卫后的信封，null=非对象/裸值） */
+export class HttpResult {
+	status: number
+	body: UTSJSONObject | null
+
+	constructor(status: number, body: UTSJSONObject | null) {
+		this.status = status
+		this.body = body
+	}
+}
+
 /** 统一错误 toast（业务错误码也提示，方便第一波联调定位） */
 export function showErrorToast(err: Error | null): void {
 	const msg = err != null && err.message != '' ? err.message : '请求失败'
@@ -109,6 +120,56 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 /** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject */
 export function request(path: string, method: Method, data: UTSJSONObject | null): Promise<UTSJSONObject | null> {
 	return doRequest(path, method, data, false)
+}
+
+function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<HttpResult> {
+	return new Promise<HttpResult>((resolve) => {
+		uni.request({
+			url: getBaseUrl() + path,
+			method: method,
+			data: data == null ? {} : data,
+			header: buildHeader(),
+			timeout: REQUEST_TIMEOUT_MS,
+			success: (res) => {
+				// res.data 对象守卫保留（2026-08-26 H 建议：裸值强转 UTSJSONObject 会在主线程 FATAL）
+				const body: UTSJSONObject | null = (res.data != null && typeof res.data == 'object')
+					? (res.data as UTSJSONObject)
+					: null
+				// 5xx 服务端异常 → Sentry 上报（与 request 同噪音闸门；4xx 业务错误不打扰）
+				if (res.statusCode >= 500) {
+					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				}
+				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
+				if (res.statusCode === 401 && !retried) {
+					refreshToken().then((ok: boolean) => {
+						if (ok) {
+							doRawRequest(path, method, data, true).then((r: HttpResult) => {
+								resolve(r)
+							})
+						} else {
+							clearToken()
+							resolve(new HttpResult(401, body))
+						}
+					})
+					return
+				}
+				resolve(new HttpResult(res.statusCode, body))
+			},
+			fail: () => {
+				captureException('network fail: ' + path, 'api.network', null)
+				resolve(new HttpResult(0, null))
+			}
+		})
+	})
+}
+
+/**
+ * 底层请求（O5 收口：sync_client/event_sync 复用，取代各自复制粘贴的网络层）：
+ * 保留 status 的原始响应 + 401 自动刷新重放一次 + 5xx Sentry 上报；不 toast、
+ * 不 resolve(null)——4xx 停批 / 5xx 重试等业务语义由调用方按 HttpResult.status 自行决定。
+ */
+export function rawRequest(path: string, method: Method, data: UTSJSONObject | null): Promise<HttpResult> {
+	return doRawRequest(path, method, data, false)
 }
 
 export function get(path: string): Promise<UTSJSONObject | null> {
