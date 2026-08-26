@@ -5,15 +5,16 @@
 背景（audit_B5b #1）：dashscope.py 冻结只读，其 moderate() 为"规则预检 +
 qwen-flash chat 模拟护栏"（无托管）。B5b 定稿为百炼托管护栏——通过
 X-DashScope-DataInspection header 开启服务端内容安全检测（qwen_response_check）。
-本模块用 httpx 直发（不 import dashscope），实现托管检测 + "托管优先、chat 兜底"
-策略入口，供 llm_ops.base.moderate 接线。
+本模块用 httpx 直发托管检测；moderate_managed 的 chat 兜底直接走
+dashscope.moderate（函数内 import，避免模块级耦合）。策略入口由 llm_ops/moderate.py
+选择器同构接线（重构 P0-1 解环：base/guard_managed 不再互相 import）。
 
 接口：
 - qwen_response_check(text, ...) -> dict：托管检测单次调用（httpx 直发）。
   返回 {"pass": bool, "reason": str, "detector": "managed", ...}。
   不可用（mock / 无 key）抛 RuntimeError（调用方走 chat 兜底，保持现有契约）。
 - moderate_managed(text) -> dict：托管优先、chat 兜底 策略入口
-  （托管可用 → 托管判定；托管异常/不可用 → llm_ops.base.moderate 的 chat 规则兜底）。
+  （托管可用 → 托管判定；托管异常/不可用 → dashscope.moderate 的 chat 规则兜底）。
 
 fail-safe 对齐（决策 #12）：托管检测命中（含服务端审查拦截）→ 拒发；
 托管网络异常 → 交给 chat 兜底（dashscope.moderate 在生产无 key 时已 fail-closed）。
@@ -143,14 +144,16 @@ def moderate_managed(text: str) -> dict:
     """托管优先、chat 兜底 策略入口（B5b-1 定稿接线点）
 
     1. 托管可用 → qwen_response_check（pass/reject 由托管判定）；
-    2. 托管不可用/异常 → 回退 llm_ops.base.moderate（规则预检 + qwen-flash chat 双保险，
+    2. 托管不可用/异常 → dashscope.moderate 兜底（规则预检 + qwen-flash chat 双保险，
        生产无 key 时 fail-closed 拒发）。
+    （重构 P0-1 解环：chat 兜底直接走 dashscope，不再 import llm_ops.base；
+     与 llm_ops/moderate.py 选择器策略一致。）
     返回结构兼容 base.moderate：{"pass": bool, "reason": str, ...}。
     """
     try:
         return qwen_response_check(text)
     except RuntimeError as exc:
         logger.info("托管护栏不可用，chat 兜底: %s", exc)
-        from app.services.llm_ops.base import moderate as _chat_moderate
+        from app.services.external.dashscope import moderate as _chat_moderate
 
         return _chat_moderate(text)

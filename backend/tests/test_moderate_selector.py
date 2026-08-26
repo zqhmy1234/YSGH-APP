@@ -12,10 +12,11 @@ from __future__ import annotations
 import importlib
 import sys
 
-# 注意：不能用 `from app.services.llm_ops import moderate`——包属性会被
-# llm_ops/__init__.py 再导出的 base.moderate 函数占用（同名遮蔽），
-# 这里显式取子模块对象以便 monkeypatch 其内部符号。
-import app.services.llm_ops.moderate as moderate_mod
+# 注意：不能用 `import app.services.llm_ops.moderate as moderate_mod`——
+# llm_ops/__init__.py 会把包属性 moderate 覆盖为 base.moderate 函数（同名遮蔽），
+# `import a.b.c as x` 按属性链取末段会拿到函数而非模块；这里经 sys.modules
+# 取真模块对象以便 monkeypatch 其内部符号。
+moderate_mod = importlib.import_module("app.services.llm_ops.moderate")
 
 
 def test_selector_managed_first(monkeypatch):
@@ -87,8 +88,22 @@ def test_mock_mode_entries_consistent():
         assert verdict["pass"] is True, entry.__name__
 
 
+def test_moderate_selector_reexport_uniform():
+    """base.moderate 与选择器为同一实现来源：mock 下返回结构兼容（含 reason 键）"""
+    from app.services.llm_ops.base import moderate as base_moderate
+
+    verdict = base_moderate("今天天气不错")
+    assert isinstance(verdict, dict)
+    assert "pass" in verdict and "reason" in verdict
+    assert verdict["pass"] is True
+
+
 def test_no_import_cycle():
-    """解环：任意导入顺序下 llm_ops 包均可冷启动（无 ImportError）"""
+    """解环：任意导入顺序下 llm_ops 包均可冷启动（无 ImportError）
+
+    放在文件末尾：会重载模块（sys.modules 弹出后重建），避免影响
+    前面用例对 moderate_mod 模块对象的引用。
+    """
     mods = (
         "app.services.llm_ops",
         "app.services.llm_ops.base",
@@ -107,13 +122,3 @@ def test_no_import_cycle():
     importlib.import_module("app.services.llm_ops.guard_managed")
     importlib.import_module("app.services.llm_ops.moderate")
     importlib.import_module("app.services.llm_ops.base")
-
-
-def test_moderate_selector_reexport_uniform():
-    """base.moderate 与选择器为同一实现来源：mock 下返回结构兼容（含 reason 键）"""
-    from app.services.llm_ops.base import moderate as base_moderate
-
-    verdict = base_moderate("今天天气不错")
-    assert isinstance(verdict, dict)
-    assert "pass" in verdict and "reason" in verdict
-    assert verdict["pass"] is True
