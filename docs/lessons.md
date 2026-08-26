@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 14:01 · commit 4ae3632 · ts=1787724101
+- **错误**：项目所需 API key 清单/获取方式未文档化：各 Agent 开发时反复猜测 key 来源（DASHSCOPE 控制台/腾讯云 CAM/COS 存储桶/高德开放平台/Sentry 项目/企微后台），api_smoke 报'腾讯云未配置'、托管护栏/精排真实通道待 key 验证等多次受阻
+- **根因**：外部凭证分散在 backend/.env 与各控制台，无单一权威文档说明'有哪些 key、在哪申请、怎么配'；config.py 有字段但无获取指引
+- **修复**：新增 docs/项目API密钥清单与获取.md：以 config.py 为准列出全部外部 key（变量名/用途/获取途径/状态/别名），并在 00_总纲环境依赖节挂链接
+- **相关文件**：docs/项目API密钥清单与获取.md
+- **教训**：必须写明白项目所需 API key 怎么获取、有哪些——外部凭证文档化是并行开发的地基，任何新 Agent 开工前应能自查 key 清单与获取方式
+
+---
+
 ### 2026-08-25 23:16 · commit fe1b376 · ts=1787696184
 - **错误**：集成接线 bug：incremental_aggregate 入口未解析 eps_t_sec=None，_can_absorb 里 timedelta(seconds=None) 抛 TypeError（全量门禁 tests+research 双红）
 - **根因**：保守开关接线时只在 aggregate() 入口解析 None，incremental_aggregate() 直接透传 None 给 _can_absorb/st_dbscan；定向单测（test_agg_reference 11 项）与 run_validation 18 场景跑绿后才暴露——定向测试未覆盖 None 路径

@@ -19,6 +19,7 @@
    - **`backend/app/services/llm_ops/` 聚合包**（base.py 转发 dashscope，rerank/event_merge/annotate/guard 每域一个文件）
    - `pipeline.py` 已插入 4 个钩子调用点（extend_payload / mark_sensitive_on_ingest / annotate_on_ingest / consume_emotion）
 5. **环境依赖（2026-08-26 核实）**：本地依赖 **Docker Desktop** 提供 `yishu-redis`(6379) / `yishu-qdrant`(6333-6334) 容器（未启动时 test_queue/test_pipeline 等红；test_agent 已做端口自检 deselect）；PG 5432（yishu 库，迁移已到 head）；本地 .env 的 STORAGE_BACKEND=fs 会被 test_agent 覆盖为 fake。**判定测试失败前先区分环境 vs 代码**：看错误是连接拒绝（WinError 10061 / redis.exceptions）还是断言逻辑。
+6. **外部 API Key（2026-08-26 新增）**：项目所需全部外部 key 的变量名/用途/获取途径/状态见 **[docs/项目API密钥清单与获取.md](../项目API密钥清单与获取.md)**（权威清单，开工前自查；含别名、MOCK 开关、常见问题）。
 
 ## 2. 并行开发模式（多窗口互不干扰）
 
