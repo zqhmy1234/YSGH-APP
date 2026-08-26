@@ -109,9 +109,10 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pytest pytest-cov httpx ruff
 
-      - name: Init PostgreSQL (yishu 隔离库 + alembic upgrade head)
-        # 2026-08-26 issue #2：建库改跑 alembic upgrade head（迁移历史为单一事实来源）。
-        # #8/#9/#10 连续挂此步（psql 连接/认证失败，schema/alembic 两种建库同挂）→ 加重试循环+详细输出定位。
+      - name: Init PostgreSQL (yishu 隔离库 + schema)
+        # 2026-08-26 结论：迁移链不自包含（baseline 只做 alter_column，假设表已由 schema.sql 预建）
+        # → alembic 无法从空库建库（#9-#12 失败根因）；CI 建库源 = schema.sql（#6 验证成功），
+        # alembic 用于本地/生产增量。重试循环修复 #8 的 postgres 未就绪偶发（#11 验证有效）。
         env:
           PGPASSWORD: admin
         run: |
@@ -122,7 +123,7 @@ jobs:
             sleep 5
           done
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f scripts/setup_pg.sql
-          cd backend && alembic upgrade head
+          psql -h localhost -U yishu_app -d yishu -v ON_ERROR_STOP=1 -f backend/sql/schema.sql
           psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
 
       - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
