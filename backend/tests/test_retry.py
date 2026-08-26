@@ -12,19 +12,23 @@ import time
 import pytest
 from app.services.external.retry import RetryExhaustedError, _is_retryable, with_retry
 
+# R8#5（2026-08-27）：4 个 _is_retryable 单断言分类用例 → 表驱动参数化
+RETRYABLE_CASES = [
+    (ConnectionError("10053"), True),
+    (TimeoutError(), True),
+    (RuntimeError("dashscope qwen-flash 调用失败: 500 internal"), True),
+    (ValueError("参数错误"), False),
+]
 
-class TestRetryableDetection:
-    def test_connection_error_retryable(self):
-        assert _is_retryable(ConnectionError("10053"))
 
-    def test_timeout_error_retryable(self):
-        assert _is_retryable(TimeoutError())
-
-    def test_5xx_in_message_retryable(self):
-        assert _is_retryable(RuntimeError("dashscope qwen-flash 调用失败: 500 internal"))
-
-    def test_business_error_not_retryable(self):
-        assert not _is_retryable(ValueError("参数错误"))
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    RETRYABLE_CASES,
+    ids=["网络抖动ConnectionError可重试", "TimeoutError可重试", "5xx错误消息可重试", "业务错误ValueError不重试"],
+)
+def test_is_retryable(exc, expected):
+    """重试分类判定（R8#5 参数化）"""
+    assert _is_retryable(exc) is expected
 
 
 class TestWithRetry:

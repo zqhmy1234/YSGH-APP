@@ -5,44 +5,59 @@
 """
 
 
+import pytest
 from app.services.ner import _extract_llm, _extract_person_rules, _extract_place_rules, extract_entities
 
-
-class TestPlaceRules:
-    def test_city_extraction(self):
-        assert _extract_place_rules("去年在苏州吃的松鼠桂鱼") == "苏州"
-
-    def test_province_extraction(self):
-        assert _extract_place_rules("回广东过年") == "广东"
-        assert _extract_place_rules("河北省的旅行") == "河北"
-
-    def test_city_beats_province(self):
-        # "江苏" 和 "苏州" 同时出现 → 城市优先（最长优先 + 排序）
-        assert _extract_place_rules("江苏苏州的园林") == "苏州"
-
-    def test_suffix_form(self):
-        # 未入表地名走后缀形态
-        assert _extract_place_rules("去景德镇出差") == "景德镇"
-        assert _extract_place_rules("在拉萨市拍的") == "拉萨"
-
-    def test_landmark(self):
-        assert _extract_place_rules("外滩的夜景") == "外滩"
-
-    def test_common_noun_not_place(self):
-        # 普通名词不误判为地点（防过过滤）
-        assert _extract_place_rules("公园散步") is None
-        assert _extract_place_rules("在学校上课") is None
+# R8#5（2026-08-27）：9 个单断言规则用例压缩为表驱动参数化，
+# 中文场景语义保留在 parametrize id。
+PLACE_RULE_CASES = [
+    ("去年在苏州吃的松鼠桂鱼", "苏州"),
+    ("回广东过年", "广东"),
+    ("河北省的旅行", "河北"),
+    ("江苏苏州的园林", "苏州"),   # 城市优先于省份（最长优先 + 排序）
+    ("去景德镇出差", "景德镇"),   # 未入表地名走后缀形态
+    ("在拉萨市拍的", "拉萨"),     # 市后缀剥除
+    ("外滩的夜景", "外滩"),       # 地标
+    ("公园散步", None),           # 普通名词不误判为地点（防过过滤）
+    ("在学校上课", None),
+]
 
 
-class TestPersonRules:
-    def test_xiao_surname(self):
-        assert _extract_person_rules("和小张一起吃的饭") == "小张"
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    PLACE_RULE_CASES,
+    ids=[
+        "城市抽取-苏州",
+        "省份抽取-广东",
+        "省份简称-河北",
+        "城市优先于省份",
+        "后缀形态-景德镇",
+        "市后缀剥除-拉萨",
+        "地标识别-外滩",
+        "普通名词不误判-公园",
+        "普通名词不误判-学校",
+    ],
+)
+def test_extract_place_rules(text, expected):
+    """地名规则（R8#5 参数化）：城市/省份/后缀/地标抽取 + 普通名词不误判"""
+    assert _extract_place_rules(text) == expected
 
-    def test_honorific(self):
-        assert _extract_person_rules("王老师讲的话") == "王老师"
 
-    def test_no_person(self):
-        assert _extract_person_rules("考研数学真题") is None
+PERSON_RULE_CASES = [
+    ("和小张一起吃的饭", "小张"),
+    ("王老师讲的话", "王老师"),
+    ("考研数学真题", None),
+]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    PERSON_RULE_CASES,
+    ids=["小姓称谓-小张", "尊称识别-王老师", "普通词不误判-考研数学"],
+)
+def test_extract_person_rules(text, expected):
+    """人物规则（R8#5 参数化）：小X/称谓抽取 + 不误判"""
+    assert _extract_person_rules(text) == expected
 
 
 class TestExtractEntities:

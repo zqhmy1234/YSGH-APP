@@ -517,32 +517,34 @@ def _make_long_wav(path: Path, seconds: float, with_speech: bool = True) -> Path
     return path
 
 
-def test_vad_segments_splits_long_audio(tmp_path):
-    """>4min 长录音 → 产生分段（含语音段）"""
+# R8#5（2026-08-27）：VAD 三连改表驱动（保留中文场景语义到 parametrize id）。
+# expectation：None=不分段（≤4min）；[]=长静音空分段；"segments"=产生分段且每段 ≤4min
+VAD_SEGMENT_CASES = [
+    (360, True, "segments"),
+    (120, True, None),
+    (360, False, []),
+]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "with_speech", "expected"),
+    VAD_SEGMENT_CASES,
+    ids=["6分钟含语音长录音分段", "≤4分钟音频不分段", "长静音空分段→no_speech"],
+)
+def test_vad_segments(seconds, with_speech, expected, tmp_path):
+    """>4min 含语音 → 分段（每段 ≤4min）；≤4min → 不分段；长静音 → 空分段"""
     from app.services.external.asr import _segments_for
 
-    wav = _make_long_wav(tmp_path / "long.wav", seconds=360)
+    wav = _make_long_wav(tmp_path / "vad.wav", seconds=seconds, with_speech=with_speech)
     segs = _segments_for(wav)
-    assert segs, "6 分钟含语音音频应产生分段"
-    # 每段时长在合理范围（≤4min 上限）
-    for start_ms, end_ms in segs:
-        assert end_ms - start_ms <= 241_500, f"段超长: {end_ms - start_ms}ms"
-
-
-def test_vad_no_segments_for_short_audio(tmp_path):
-    """≤4min 音频不分段（整段转写）"""
-    from app.services.external.asr import _segments_for
-
-    wav = _make_long_wav(tmp_path / "short.wav", seconds=120)
-    assert _segments_for(wav) is None
-
-
-def test_vad_all_silence_no_segments(tmp_path):
-    """长静音音频 → 明确返回空分段，由入口映射为 no_speech。"""
-    from app.services.external.asr import _segments_for
-
-    wav = _make_long_wav(tmp_path / "silence.wav", seconds=360, with_speech=False)
-    assert _segments_for(wav) == []
+    if expected is None:
+        assert segs is None
+    elif expected == []:
+        assert segs == []
+    else:
+        assert segs, "6 分钟含语音音频应产生分段"
+        for start_ms, end_ms in segs:
+            assert end_ms - start_ms <= 241_500, f"段超长: {end_ms - start_ms}ms"
 
 
 def test_transcribe_long_audio_merges_segments(tmp_path, monkeypatch):
@@ -563,76 +565,75 @@ def test_transcribe_long_audio_merges_segments(tmp_path, monkeypatch):
 # ---------- B5a Wave4 AgentJ：音频事件 / 噪音降权 / 段级情绪合并 ----------
 
 
-def test_audio_events_parse_three_classes():
+# R8#5（2026-08-27）：audio-event 组改表驱动（中文场景语义保留在 parametrize id）
+AUDIO_EVENT_PARSE_CASES = [
+    ("<|NEUTRAL|><|Speech|>", []),
+    ("<|EMO_UNKNOWN|>", []),
+    ("<|LAUGHTER|>", ["laughter"]),
+    ("<|giggle|>", ["laughter"]),
+    ("<|LAUGHTER|><|BGM|><|NOISE|>", ["laughter", "environment"]),
+    ("<|SILENCE|>", ["silence"]),
+    ("<|LAUGHTER|><|Laughter|>", ["laughter"]),
+]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    AUDIO_EVENT_PARSE_CASES,
+    ids=[
+        "正常语音标签不消费",
+        "未知情绪标签不消费",
+        "笑声标签LAUGHTER",
+        "大小写不敏感-giggle",
+        "环境音事件BGM噪声",
+        "静音标签SILENCE",
+        "同事件去重",
+    ],
+)
+def test_parse_audio_events(raw, expected):
     """J-1：SenseVoice 富文本标签 → 音频事件 3 类（笑声/静音/键盘环境音）"""
-    from app.services.external.asr import (
-        AUDIO_EVENT_ENVIRONMENT,
-        AUDIO_EVENT_LAUGHTER,
-        AUDIO_EVENT_SILENCE,
-        _parse_audio_events,
-    )
+    from app.services.external.asr import _parse_audio_events
 
-    # 正常语音标签不消费
-    assert _parse_audio_events("<|NEUTRAL|><|Speech|>") == []
-    assert _parse_audio_events("<|EMO_UNKNOWN|>") == []
-    # 笑声
-    assert _parse_audio_events("<|LAUGHTER|>") == [AUDIO_EVENT_LAUGHTER]
-    # 大小写不敏感
-    assert _parse_audio_events("<|giggle|>") == [AUDIO_EVENT_LAUGHTER]
-    # 环境音（BGM/键盘/噪声）
-    events = _parse_audio_events("<|LAUGHTER|><|BGM|><|NOISE|>")
-    assert AUDIO_EVENT_LAUGHTER in events
-    assert AUDIO_EVENT_ENVIRONMENT in events
-    # 静音
-    assert _parse_audio_events("<|SILENCE|>") == [AUDIO_EVENT_SILENCE]
-    # 去重
-    assert _parse_audio_events("<|LAUGHTER|><|Laughter|>") == [AUDIO_EVENT_LAUGHTER]
+    assert _parse_audio_events(raw) == expected
 
 
-def test_audio_event_effects_laughter_bonus():
-    """J-1：笑声 → 情绪加分（平静→开心）；不覆盖强负向情绪"""
-    from app.services.external.asr import (
-        AUDIO_EVENT_LAUGHTER,
-        AsrResult,
-        apply_audio_event_effects,
-    )
+AUDIO_EVENT_EFFECT_CASES = [
+    # (base_emotion, base_conf, events, exp_emotion, exp_bonus, exp_silence, exp_not_oral, exp_source)
+    ("平静", 0.3, ["laughter"], "开心", True, False, False, "audio_event_laughter"),
+    ("难过", 0.9, ["laughter"], "难过", True, False, False, "none"),
+    ("平静", 0.3, ["silence"], "平静", False, True, False, "none"),
+    ("平静", 0.3, ["environment"], "平静", False, False, True, "none"),
+]
 
-    r = AsrResult(text="哈", channel="mock", emotion="平静", emotion_confidence=0.3, mock=True)
-    r.audio_events = [AUDIO_EVENT_LAUGHTER]
+
+@pytest.mark.parametrize(
+    ("base_emotion", "base_conf", "events", "exp_emotion", "exp_bonus", "exp_silence", "exp_not_oral", "exp_source"),
+    AUDIO_EVENT_EFFECT_CASES,
+    ids=["笑声-平静提升为开心", "笑声-不覆盖强负向情绪", "静音-空段提示", "环境音-疑似非口述"],
+)
+def test_audio_event_effects(
+    base_emotion,
+    base_conf,
+    events,
+    exp_emotion,
+    exp_bonus,
+    exp_silence,
+    exp_not_oral,
+    exp_source,
+):
+    """J-1：apply_audio_event_effects —— 笑声加分 / 静音空段 / 环境音非口述"""
+    from app.services.external.asr import AsrResult, apply_audio_event_effects
+
+    r = AsrResult(text="t", channel="mock", emotion=base_emotion, emotion_confidence=base_conf, mock=True)
+    r.audio_events = list(events)
     apply_audio_event_effects(r)
-    assert r.emotion_bonus is True
-    assert r.emotion == "开心"
-    assert r.emotion_confidence >= 0.6
-    assert r.emotion_source == "audio_event_laughter"
-
-    # 哭着说没事：笑声不覆盖难过
-    r2 = AsrResult(text="没事", channel="mock", emotion="难过", emotion_confidence=0.9, mock=True)
-    r2.audio_events = [AUDIO_EVENT_LAUGHTER]
-    apply_audio_event_effects(r2)
-    assert r2.emotion == "难过"
-    assert r2.emotion_bonus is True
-
-
-def test_audio_event_effects_silence_and_environment():
-    """J-1：静音→提示空段；键盘/环境音→疑似非口述"""
-    from app.services.external.asr import (
-        AUDIO_EVENT_ENVIRONMENT,
-        AUDIO_EVENT_SILENCE,
-        AsrResult,
-        apply_audio_event_effects,
-    )
-
-    r = AsrResult(text="", channel="mock", emotion="平静", mock=True)
-    r.audio_events = [AUDIO_EVENT_SILENCE]
-    apply_audio_event_effects(r)
-    assert r.silence_hint is True
-    assert r.not_oral is False
-
-    r2 = AsrResult(text="哒哒哒", channel="mock", emotion="平静", mock=True)
-    r2.audio_events = [AUDIO_EVENT_ENVIRONMENT]
-    apply_audio_event_effects(r2)
-    assert r2.not_oral is True
-    assert r2.silence_hint is False
+    assert r.emotion == exp_emotion
+    assert r.emotion_bonus is exp_bonus
+    assert r.silence_hint is exp_silence
+    assert r.not_oral is exp_not_oral
+    assert r.emotion_source == exp_source
+    if "laughter" in events:
+        assert r.emotion_confidence >= 0.6
 
 
 def test_sensevoice_transcribe_propagates_audio_events(tmp_path, monkeypatch):
