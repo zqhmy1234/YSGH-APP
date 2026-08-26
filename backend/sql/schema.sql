@@ -48,6 +48,8 @@ CREATE TABLE devices (                         -- 可吊销 refresh_token
     device_id     text NOT NULL,
     platform      text NOT NULL,               -- android / windows
     refresh_token text,
+    refresh_token_hash text,                    -- TD-P3 M6：SHA-256 存储（DB 泄漏不可直接复用 30 天会话）
+    refresh_rotated_at timestamptz,             -- TD-P3 M6：最后轮换时间
     last_active_at timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (user_id, device_id)
