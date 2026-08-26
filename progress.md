@@ -1,3 +1,15 @@
+## 2026-08-27 04:40 · 重构批次 CDE 三批集成 + 遗留项处理
+
+- **批次 C（客户端收敛 R3）**：C1 网络层统一（api.ts rawRequest 401 重放+5xx Sentry、event_sync 401 不静默丢批、O4/O5/O9）+ C2 收口与死代码（time.ts 消费切换/parseIsoMs 统一/标签单源/死导出清理，O1/O2/O7/O8/O10/O11/O12/O13）——全 client 域
+- **批次 D（测试基建 R8）**：D1 存量迁移+隔离（14 份 db_user 迁移 conftest 公共版、test_queue 独立 Redis /15、热词全局状态快照恢复、test_amap 定向删除、test_sync _eid 随机 UUID）+ D2 覆盖与提速（storage/event_aggregation 覆盖补强、参数化、_to_filter 提纯、correction mock、轮询替代固定 sleep）——全 backend/tests 域
+- **批次 E（契约与输入 R4/R6）**：E1 契约一致性（22 处裸码→ERR_*、uuid4_str 共享校验、服务层异常细分 404/409/413/422）+ E2 输入校验与幂等（client_generated_id 幂等键+部分唯一索引、schema 约束补齐、Interview 白名单、search 魔数/后缀白名单、enqueue_idempotent Redis SETNX 预占位）——schemas/api/services/migrations 域
+- **31 个 commit 逐条文件域复核通过**（无跨域污染；e53cb02 顺带 docs/lessons.md 属标准教训登记）
+- **集成遗留项处理**：O13 messages.uvue shortTime 委托 time.formatIsoShortTime；O11b search.uvue contentTypeCn 委托 search_api 单源；O11#11 profile.uvue 恒真守卫条件删除；test_correction db_user 迁移 conftest 公共版（R8#7 c4ecfac 合入后）；openapi.json 重导出（45 路径 78 schemas）；docs 提交（E1 执行记录 + D2/E2 四条 lessons）
+- **决策**：O6 双离线队列合并移交 F9（共享 queue_store.ts 属 F9 域，缺共享存储地基不宜半合并）；qcloud_cos.sts 登记已知问题（UPLOAD_005/008，STS 归口待团队子账号 ARN）；run_validation main() 保持不单测（CLI 入口，现有测试只覆盖纯函数，安全形态）
+- **TD-P3 schema.sql 漂移闭环**：57a9af1 已同步 devices 哈希列（refresh_token_hash/refresh_rotated_at），bb9c72e CI=success 确认 Full Gate 通过（cf9d480 失败根因已除）
+- **门禁**：快速门禁 ✅ + 精准域 439 passed / 1 deselected（2:27，排除 rag 模型组交 CI）
+- **推送**：12f1006（bb9c72e..12f1006，37 commits），CI run 33011027116 in_progress
+
 ## 2026-08-26 23:10 · 技术债 TD-P1B 性能与索引批次完成
 
 - **S6-1 aggregate_user 增量游标化（最大性能债）**：l2l3 只扫 30 天增量窗口内未成候选内容（不再全量重扫 400 条远古内容）；接线 `incremental_aggregate`（以"已落库 level>=2 候选"重建 previous 状态，新内容先匹配并入，失败回退本批候选不丢）；`_write_upper_candidates` 批量预载 + 已存在候选（成员组合相同）跳过 LLM 裁决与重查 → 批量导入 O(N²)（反复 LLM）→ 近线性
