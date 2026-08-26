@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.db.models import ProfileAnnotationPool, ProfileDimensionHistory, UserProfile
@@ -316,9 +317,18 @@ def get_or_create_profile(db: Session, user_id: str) -> UserProfile:
         select(UserProfile).where(UserProfile.user_id == user_id)
     ).scalar_one_or_none()
     if profile is None:
-        profile = UserProfile(user_id=user_id, dimensions={}, version=1)
-        db.add(profile)
-        db.flush()  # 立即落 id —— 同一事务内多次 apply_annotation 各查一次，防重复插入同一 user_id
+        # R2#9 竞态修复：并发首标（两请求同时 SELECT 无 → 双 INSERT 撞 PK user_id）——
+        # pg_insert on_conflict_do_nothing 原子兜底：冲突方不插不入，随后重查复用赢家行。
+        # 不用"捕获 IntegrityError + rollback"：本函数可能被已有待提交写
+        # （pool/history 行）的事务内调用（record_hits 末尾才 commit），rollback 会误伤整笔。
+        db.execute(
+            pg_insert(UserProfile)
+            .values(user_id=user_id, dimensions={}, version=1, token_usage=0)
+            .on_conflict_do_nothing(index_elements=[UserProfile.user_id])
+        )
+        profile = db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        ).scalar_one_or_none()
     return profile
 
 

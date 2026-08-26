@@ -299,3 +299,53 @@ def test_hook_fail_safe(db_user, monkeypatch):
     finally:
         logger.removeHandler(handler)
     assert any("标注失败" in m for m in logs), "异常应被捕获并记录日志"
+
+
+# ---------------------------------------------------------------- R2#9 并发首标竞态
+def test_get_or_create_profile_reuses_existing(db_user):
+    """R2#9：profile 已存在（并发赢家已提交）→ 直接复用，不重复插入"""
+    from app.services.profile_annotator import get_or_create_profile
+
+    db, user = db_user
+    db.add(UserProfile(user_id=user.id, dimensions={}, version=1))
+    db.commit()
+    p = get_or_create_profile(db, user.id)
+    assert p.user_id == user.id
+    rows = db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    ).scalars().all()
+    assert len(rows) == 1, "已存在 profile 不应重复插入"
+
+
+def test_get_or_create_profile_concurrent_first_call_no_500(db_user):
+    """R2#9 竞态修复：并发首标不 500——两会话同时 get_or_create 同一用户，
+    on_conflict_do_nothing 兜底：无论交错如何，无异常逃逸且仅一行 profile"""
+    import threading
+
+    from app.db.session import SessionLocal
+    from app.services.profile_annotator import get_or_create_profile
+
+    db, user = db_user
+    results: dict = {}
+
+    def worker(n: int):
+        s = SessionLocal()
+        try:
+            p = get_or_create_profile(s, user.id)
+            s.commit()
+            results[n] = p.user_id
+        except Exception as exc:  # noqa: BLE001 —— 记录逃逸异常（不应发生）
+            results[n] = exc
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(not isinstance(v, Exception) for v in results.values()), results
+    rows = db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    ).scalars().all()
+    assert len(rows) == 1, "并发首标只应有一行 profile"
