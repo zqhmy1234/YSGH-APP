@@ -62,6 +62,15 @@
 
 ---
 
+### 2026-08-26 05:58 · commit ab11507 · ts=1787695094
+- **错误**：api_smoke 在 worktree 中 photo-journey/timeline-structure 失败（缺测试照片）
+- **根因**：worktree 新建时未复制 .cowork-temp/test_photos（.env/models 复制了但漏照片）；api_smoke 断言 TEST_PHOTOS 非空，timeline 无照片致 min() 空
+- **修复**：复制 D:\GuangH-App\.cowork-temp\test_photos\*.jpg 到 worktree 的 .cowork-temp\test_photos\；review 门禁前先跑一次 api_smoke
+- **相关文件**：.cowork-temp/test_photos, scripts/api_smoke_cases.py
+- **教训**：wave2 worktree 环境准备清单含 test_photos；commit 前 review 门禁会全量跑 api_smoke，照片缺失必阻断
+
+---
+
 ### 2026-08-25 19:58 · commit 1f96b1f · ts=1787684290（Agent A 登记）
 - **错误**：review_agent 门禁失败：test_correction 报 HFValidationError（setfit 模型路径被当 HF repo id）+ api_smoke photo-journey/timeline-structure 失败（缺测试照片）
 - **根因**：git worktree 检出不含 gitignore 的本地运行资产：backend/.env（PG 凭据）、backend/models/（setfit/bge-reranker 已下载模型）、.cowork-temp/test_photos（api_smoke 测试照片）——门禁在 worktree 内跑全量测试时模型缺失走 HF hub 兜底报错、照片缺失致 smoke 空转

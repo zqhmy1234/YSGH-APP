@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "version": 1,
+    "note": "Query 改写层正确率评测用例（Wave2-F 2026-08-26，RAG评测体系 §6.4）。相对时间→filter 条件解析（time 层易错点）+ NER place/person + 显式参数优先 + 句中时间词不过滤。run_eval --rewrite-check 加载；expect 的 kind 由 run_eval 检查器按语义校验（相对窗口随运行时 now 计算）。",
+    "count": 11
+  },
+  "cases": [
+    {
+      "case_id": "rw-01",
+      "query": "去年去的地方",
+      "expect": { "kind": "last_year", "rewritten": "去的地方" }
+    },
+    {
+      "case_id": "rw-02",
+      "query": "去年夏天去的地方",
+      "expect": { "kind": "last_summer", "rewritten": "去的地方" }
+    },
+    {
+      "case_id": "rw-03",
+      "query": "上上周的旅行",
+      "expect": { "kind": "two_weeks_ago", "rewritten": "的旅行" }
+    },
+    {
+      "case_id": "rw-04",
+      "query": "三年前的今天",
+      "expect": { "kind": "three_years_ago", "rewritten": "的今天" }
+    },
+    {
+      "case_id": "rw-05",
+      "query": "前年去过的地方",
+      "expect": { "kind": "year_before_last", "rewritten": "去过的地方" }
+    },
+    {
+      "case_id": "rw-06",
+      "query": "上周的会议",
+      "expect": { "kind": "last_week", "rewritten": "的会议" }
+    },
+    {
+      "case_id": "rw-07",
+      "query": "昨天的记录",
+      "expect": { "kind": "yesterday", "rewritten": "的记录" }
+    },
+    {
+      "case_id": "rw-08",
+      "query": "记得明天下午之前把上个月的工作总结报告交给领导",
+      "expect": { "kind": "mid_query_no_filter", "rewritten": null }
+    },
+    {
+      "case_id": "rw-09",
+      "query": "苏州的美食",
+      "expect": { "kind": "place", "place": "苏州" }
+    },
+    {
+      "case_id": "rw-10",
+      "query": "和妈妈有关的记录",
+      "expect": { "kind": "person" }
+    },
+    {
+      "case_id": "rw-11",
+      "query": "苏州的美食",
+      "params": { "place": "上海" },
+      "expect": { "kind": "explicit_param_wins", "place": "上海" }
+    }
+  ]
+}

@@ -4,7 +4,8 @@
 运行：pytest backend/tests/test_rag.py -v
 
 覆盖：RET-001（文字搜图占位）/RET-003（dense+sparse 融合）/RET-007（改写）/
-      RET-016（溯源）/RET-018（延迟）/API-009（降级）
+      RET-016（溯源）/RET-018（延迟）/API-009（降级）/
+      Wave2-F（2026-08-26）：第二层 LLM 精排（B2-1 Ilya 方案）
 """
 from __future__ import annotations
 
@@ -584,3 +585,145 @@ def test_assemble_hits_event_attribution_user_isolation(pg_db_user):
     db.execute(sa_delete(Event).where(Event.id == ev.id))
     db.delete(other)
     db.commit()
+
+
+# ---- Wave2-F（2026-08-26）：第二层 LLM 精排（B2-1 Ilya 方案）----
+
+
+def test_llm_rerank_mock_returns_original_order(monkeypatch):
+    """无 key / mock 模式：LLM 精排原序返回（RRF 分保底），不改候选集、不抛错"""
+    from app.services.llm_ops.rerank import llm_rerank
+
+    hits = [
+        {"id": "a", "text": "杭州旅行记录", "score": 0.9},
+        {"id": "b", "text": "苏州美食记录", "score": 0.8},
+        {"id": "c", "text": "考研备考记录", "score": 0.7},
+    ]
+    out = llm_rerank("杭州旅行", hits, top_k=2)
+    assert [h["id"] for h in out] == ["a", "b", "c"]
+    assert all("rerank_reason" not in h for h in out)
+    assert all("rerank_rank" not in h for h in out)
+
+
+def test_llm_rerank_disabled_returns_original(monkeypatch):
+    """开关关闭：即使 LLM 可用也原序（配置门控）"""
+    from app.core.config import settings
+    from app.services.llm_ops.rerank import llm_rerank
+
+    monkeypatch.setattr(settings, "rerank_llm_enabled", False)
+    hits = [{"id": "a", "text": "x", "score": 0.5}, {"id": "b", "text": "y", "score": 0.4}]
+    out = llm_rerank("q", hits)
+    assert [h["id"] for h in out] == ["a", "b"]
+
+
+def test_llm_rerank_judged_ordering_and_reason(monkeypatch):
+    """真实判定路径：能回答组（原分降序）在前 + 不能回答组在后；top_k 记名次 + 理由"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [
+        {"id": "a", "text": "杭州西湖手摇船荷花", "score": 0.9},
+        {"id": "b", "text": "苏州松鼠桂鱼人均八十", "score": 0.8},
+        {"id": "c", "text": "马拉松五公里痛快", "score": 0.7},
+    ]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: (
+            '```json\n['
+            '{"i":0,"ans":true,"reason":"直接命中杭州"},'
+            '{"i":2,"ans":true,"reason":"内容相关"},'
+            '{"i":1,"ans":false,"reason":"无关"}'
+            ']\n```'
+        ),
+    )
+    out = rerank_mod.llm_rerank("杭州旅行", hits, top_k=2)
+    assert [h["id"] for h in out] == ["a", "c", "b"]
+    assert out[0]["rerank_rank"] == 1
+    assert out[1]["rerank_rank"] == 2
+    assert "命中" in out[0]["rerank_reason"]
+    assert out[2]["rerank_reason"] == "无关"
+
+
+def test_llm_rerank_parse_failure_returns_original(monkeypatch):
+    """LLM 输出无法解析：原序返回（降级不吞结果）"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [{"id": "a", "text": "x", "score": 0.5}, {"id": "b", "text": "y", "score": 0.4}]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(rerank_mod, "chat_text", lambda system, user: "完全不是 JSON")
+    out = rerank_mod.llm_rerank("q", hits)
+    assert [h["id"] for h in out] == ["a", "b"]
+
+
+def test_llm_rerank_exception_returns_original(monkeypatch):
+    """LLM 调用抛异常：原序返回（不向搜索链路抛错）"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [{"id": "a", "text": "x", "score": 0.5}]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod, "chat_text", lambda system, user: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    out = rerank_mod.llm_rerank("q", hits)
+    assert [h["id"] for h in out] == ["a"]
+
+
+def test_rerank_auto_enabled_strategy(monkeypatch):
+    """第一层 reranker 自动启用策略：显式优先 / 无 GPU 保持关 / 开关默认关"""
+    from app.core.config import settings
+    from app.services.rerank import rerank_auto_enabled
+
+    monkeypatch.setattr(settings, "rerank_auto_enable", False)
+    monkeypatch.setattr(settings, "rerank_enabled", False)
+    assert rerank_auto_enabled() is False
+
+    # 显式 rerank_enabled=True → 生效（忽略 auto 开关）
+    monkeypatch.setattr(settings, "rerank_enabled", True)
+    assert rerank_auto_enabled() is True
+
+    # auto=True 但无 GPU → 关闭
+    monkeypatch.setattr(settings, "rerank_enabled", False)
+    monkeypatch.setattr(settings, "rerank_auto_enable", True)
+    from app.services import rerank as rerank_mod
+
+    monkeypatch.setattr(rerank_mod, "_gpu_available", lambda: False)
+    assert rerank_auto_enabled() is False
+
+
+@pytest.mark.rag
+@pytest.mark.integration
+def test_search_llm_rerank_wiring_mock_noop(indexed_store):
+    """rag.py 接线回归：mock 模式下 LLM 精排为 no-op，搜索行为与精排前一致
+
+    - 结果数量/排序不被破坏（judged 为空 → 不替换 hits）
+    - 全链路不抛错；mock 时 trace 不带 llm_rerank_reason
+    """
+    q = SearchQuery(q="杭州旅行荷花", limit=5)
+    result = search(q, collection=TEST_COLLECTION)
+    ids = [h.content_id for h in result.hits]
+    assert "rag-001" in ids
+    assert all("llm_rerank_reason" not in (h.trace or {}) for h in result.hits)
+
+
+@pytest.mark.rag
+@pytest.mark.integration
+def test_search_llm_rerank_wiring_judged(indexed_store, monkeypatch):
+    """rag.py 接线：LLM 判定生效时 trace 回填精排理由 + 排序被精排接管"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: (
+            '[{"i":0,"ans":true,"reason":"杭州荷花命中"},'
+            '{"i":1,"ans":false,"reason":"无关"},'
+            '{"i":2,"ans":true,"reason":"相关"}]'
+        ),
+    )
+    q = SearchQuery(q="杭州旅行荷花", limit=5)
+    result = search(q, collection=TEST_COLLECTION)
+    assert result.hits
+    # 至少一条 trace 回填了 llm_rerank_reason（被精排判定过）
+    assert any("llm_rerank_reason" in (h.trace or {}) for h in result.hits)

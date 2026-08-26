@@ -14,6 +14,38 @@ from app.core.config import settings
 logger = logging.getLogger("yishu.rerank")
 
 
+def _gpu_available() -> bool:
+    """GPU 可用性探测（torch.cuda；torch 缺失/无 GPU → False，不抛异常）"""
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001 —— 探测失败视为无 GPU（保守关闭）
+        return False
+
+
+def rerank_auto_enabled() -> bool:
+    """第一层 reranker 生效判定（Wave2-F 2026-08-26 策略，config 见 rerank_auto_enable 注释）
+
+    规则：settings.rerank_enabled 显式 true → 生效（显式优先）；
+    否则 rerank_auto_enable=True 且 GPU 可用 且 模型就绪 → 自动生效；
+    其余（CPU / 模型缺失 / 显式关闭）→ 不生效。
+    门禁依据：CPU 单对 ~850ms × 候选 20 ≈ 17s 超 P95<3s；GPU 推理 + 候选受限才可满足。
+    """
+    if settings.rerank_enabled:
+        return True
+    if not settings.rerank_auto_enable:
+        return False
+    if not _gpu_available():
+        logger.info("rerank_auto_enable=True 但未检测到 GPU，第一层 reranker 保持关闭")
+        return False
+    if _load_model() is None:
+        logger.info("rerank_auto_enable=True 但 reranker 模型未就绪，第一层 reranker 保持关闭")
+        return False
+    logger.info("rerank_auto_enable=True 且 GPU 就绪 → 第一层 reranker 自动启用")
+    return True
+
+
 @lru_cache(maxsize=1)
 def _load_model():
     from pathlib import Path
