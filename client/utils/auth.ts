@@ -24,9 +24,9 @@ const KEY_ACCESS = 'yishu.auth.access_token'
 const KEY_REFRESH = 'yishu.auth.refresh_token'
 
 /**
- * 设备标识单例（P1-A 对齐）：auth/event_sync/sync_client 统一引用同一常量，
- * 消除 device_id 分裂（'yishu-android-dev' vs 'nova11' 被当成两台设备）。
- * 注意：与 sync_client.ts 的 DEVICE_ID 保持同值；后续统一收敛到单一来源。
+ * 设备标识单例（P1-A 对齐 · 2026-08-27 C1 收口 R3 O3）：全客户端唯一导出源，
+ * event_sync/sync_client 统一 import 此常量，消除 device_id 分裂
+ * （'yishu-android-dev' vs 'nova11' 被当成两台设备的历史事故）。
  */
 export const DEVICE_ID: string = 'yishu-android-dev'
 

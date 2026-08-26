@@ -26,7 +26,8 @@
 // O5 收口：网络层统一走 api.ts 的 rawRequest（401 刷新重放 + 5xx Sentry 上报），
 // 本地复制的请求封装已删，不再直接依赖 getToken/refreshToken
 import { rawRequest, HttpResult } from './api'
-import { ensureLogin } from './auth'
+// O3 收口：DEVICE_ID 唯一来源收敛到 auth.ts（历史双源定义出过事故），此处 import 不再本地定义
+import { ensureLogin, DEVICE_ID } from './auth'
 // TD-P2B（S1-M3/M4 收口）：退避表 + 重试统一走 retry.ts、ISO 时间统一走 time.ts；
 // 此处保留导出别名（BACKOFF_MS/isoNow）兼容现有引用
 import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
@@ -34,7 +35,7 @@ import { isoLocal } from './time'
 // B5d 后台任务插件（Wave 4 K）：WorkManager 周期唤醒写 pending → 应用层 drain 消费（两段式）
 import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 
-export const DEVICE_ID: string = 'yishu-android-dev'
+// O3 收口：DEVICE_ID 由 auth.ts 唯一导出（见上方 import），不再本地重复定义
 export const MAX_BATCH_FAILURES: number = 10
 /** 指数退避（S1-M3 收口：与 event_sync/uploader 共享 retry.ts：2s→4s→8s→8s→8s，5 次上限） */
 export const BACKOFF_MS: number[] = SHARED_BACKOFF_MS
