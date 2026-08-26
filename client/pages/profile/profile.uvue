@@ -67,10 +67,9 @@
 			})
 		},
 		onShow() {
-			// 切前台刷新未读数（消息/访谈状态可能变化）
-			if (this.profileReady || this.unreadCount >= 0) {
-				this.loadUnread()
-			}
+			// 切前台刷新未读数（消息/访谈状态可能变化）；
+			// 原条件 this.profileReady || this.unreadCount >= 0 恒真（unreadCount 非负），删除冗余守卫
+			this.loadUnread()
 		},
 		methods: {
 			loadProfile(): void {
