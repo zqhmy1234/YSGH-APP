@@ -17,6 +17,7 @@ from app.db.session import SessionLocal
 from app.services import upload as upload_svc
 from app.services.external.storage import get_storage_backend
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
@@ -125,6 +126,42 @@ def test_chunk_duplicate_idempotent(db_user):
     upload_svc.upload_chunk(db, task.id, 0, part)
     r2 = upload_svc.upload_chunk(db, task.id, 0, part)
     assert r2["status"] == "duplicate"
+
+
+def test_chunk_concurrent_upload_no_500(db_user):
+    """R2#13 竞态修复：同片并发上传不 500（ON CONFLICT DO NOTHING 原子兜底）
+
+    两会话同时上传同一片：一个 uploaded，另一个 rowcount=0 → duplicate，仅一行 chunk。
+    """
+    import threading
+
+    from app.db.session import SessionLocal
+
+    db, user = db_user
+    task, data = _make_task(db, user)
+    part = data[:CHUNK]
+    results: dict = {}
+
+    def worker(n: int):
+        s = SessionLocal()
+        try:
+            r = upload_svc.upload_chunk(s, task.id, 0, part)
+            results[n] = r["status"]
+        except Exception as exc:  # noqa: BLE001 —— 记录逃逸异常（不应发生）
+            results[n] = exc
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(v in ("uploaded", "duplicate") for v in results.values()), results
+    chunks = db.execute(
+        select(UploadChunk).where(UploadChunk.upload_id == task.id)
+    ).scalars().all()
+    assert len(chunks) == 1, "同片并发只应有一行 chunk 记录"
 
 
 def test_chunk_same_index_diff_hash_rejected(db_user):

@@ -19,6 +19,7 @@ from app.db.session import SessionLocal
 from app.services import echo as echo_svc
 from app.services.echo import dismiss_echo, get_today_echo
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.integration
@@ -229,6 +230,40 @@ def test_profile_sensitive_crud(db_user):
     assert delete_profile_sensitive(db, user.id, "前女友") is True
     assert delete_profile_sensitive(db, user.id, "前女友") is False
     assert list_profile_sensitive(db, user.id) == []
+
+
+def test_profile_sensitive_upsert_race_no_500(db_user):
+    """R2#13 竞态修复：并发 upsert 同 (user_id, topic) 不 500（ON CONFLICT 原子 upsert）"""
+    import threading
+
+    from app.db.session import SessionLocal
+    from app.services.echo import upsert_profile_sensitive
+
+    db, user = db_user
+    results: dict = {}
+
+    def worker(n: int):
+        s = SessionLocal()
+        try:
+            row = upsert_profile_sensitive(
+                s, user.id, "并发话题", "forbid" if n == 0 else "caution"
+            )
+            results[n] = row.disposition
+        except Exception as exc:  # noqa: BLE001 —— 记录逃逸异常（不应发生）
+            results[n] = exc
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(not isinstance(v, Exception) for v in results.values()), results
+    rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user.id)
+    ).scalars().all()
+    assert len(rows) == 1, "并发 upsert 应只剩一行（原子 upsert 合并）"
 
 
 def test_profile_sensitive_api_smoke(db_user):

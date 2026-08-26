@@ -159,6 +159,46 @@ def test_process_incoming_idempotent():
         db.close()
 
 
+def test_process_incoming_concurrent_same_msg_id_no_500():
+    """R2#13 竞态修复：并发同 msg_id 回调不 500（ON CONFLICT DO NOTHING 原子幂等）
+
+    两会话同时处理同一回调：一个 created，另一个 rowcount=0 → duplicate，仅一行入库。
+    """
+    import threading
+
+    from app.db.session import SessionLocal
+
+    msg = {"msg_id": f"wx-race-{uuid.uuid4().hex[:10]}", "msg_type": "text", "content": "并发消息"}
+    results: dict = {}
+
+    def worker(n: int):
+        s = SessionLocal()
+        try:
+            r = process_incoming(s, msg)
+            results[n] = r["status"]
+        except Exception as exc:  # noqa: BLE001 —— 记录逃逸异常（不应发生）
+            results[n] = exc
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(v in ("created", "duplicate") for v in results.values()), results
+
+    db = SessionLocal()
+    try:
+        rows = db.query(WechatMessage).filter(WechatMessage.msg_id == msg["msg_id"]).all()
+        assert len(rows) == 1, "并发同 msg_id 只应有一行入库"
+    finally:
+        db.execute(sa_delete(WechatMessage).where(WechatMessage.msg_id == msg["msg_id"]))
+        db.execute(sa_delete(Content).where(Content.source == "wechat"))
+        db.commit()
+        db.close()
+
+
 def test_wechat_api_smoke(monkeypatch):
     """API 冒烟：GET 验证 URL + POST 收包（配置测试凭证后）"""
     from app.main import app

@@ -181,8 +181,15 @@ def upload_chunk(
     backend = get_storage_backend(task.storage)
     backend.put_object(_staging_key(upload_id, chunk_index), data)
 
-    db.add(
-        UploadChunk(
+    # R2#13 竞态修复：同片并发上传 → ON CONFLICT DO NOTHING 原子兜底。
+    # SELECT 查重是快路径；并发窗口内两请求同时插同 (upload_id, chunk_index)
+    # （UNIQUE uq_upload_chunks_task_index），败者不再 IntegrityError 500 →
+    # rowcount=0 → 按哈希判定 duplicate（同内容）/ 冲突（异内容，客户端状态异常）。
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    inserted = db.execute(
+        pg_insert(UploadChunk)
+        .values(
             id=str(uuid.uuid4()),
             upload_id=upload_id,
             chunk_index=chunk_index,
@@ -190,7 +197,21 @@ def upload_chunk(
             size=len(data),
             status="uploaded",
         )
+        .on_conflict_do_nothing(
+            index_elements=[UploadChunk.upload_id, UploadChunk.chunk_index]
+        )
     )
+    if inserted.rowcount == 0:
+        winner = db.scalar(
+            select(UploadChunk).where(
+                UploadChunk.upload_id == upload_id,
+                UploadChunk.chunk_index == chunk_index,
+            )
+        )
+        if winner is not None and winner.chunk_hash == actual_hash:
+            return {"status": "duplicate", "chunk_index": chunk_index}
+        raise ValueError("同 index 已存在不同内容的片（客户端状态异常）")
+
     if task.status == "pending":
         task.status = "uploading"
     db.commit()

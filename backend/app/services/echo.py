@@ -80,6 +80,10 @@ def upsert_profile_sensitive(
 ) -> ProfileSensitive:
     """画像敏感增/改（B1-6 对话式）：(user_id, topic) 存在则更新，否则插入。
 
+    R2#13 竞态修复：原 SELECT 查重 → INSERT 有并发窗口（同 (user_id, topic) 双插
+    败者 IntegrityError 500）——唯一约束 profile_sensitive_user_id_topic_key 兜底，
+    但未捕获异常。现改 ON CONFLICT DO UPDATE 原子 upsert（单语句，无竞态窗口）。
+
     locked=True 为用户显式标记（永不过期语义强化）；返回值即最新行。
     """
     if disposition not in PROFILE_DISPOSITIONS:
@@ -87,20 +91,35 @@ def upsert_profile_sensitive(
     topic = topic.strip()
     if not topic:
         raise ValueError("topic 不能为空")
-    row = db.execute(
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    evidence_list = list(evidence) if evidence else []
+    stmt = (
+        pg_insert(ProfileSensitive)
+        .values(
+            user_id=user_id, topic=topic, disposition=disposition,
+            evidence=evidence_list, locked=locked,
+        )
+        .on_conflict_do_update(
+            index_elements=[ProfileSensitive.user_id, ProfileSensitive.topic],
+            set_={
+                "disposition": disposition,
+                "evidence": evidence_list,
+                "locked": locked,
+                "updated_at": func.now(),
+            },
+        )
+    )
+    db.execute(stmt)
+    db.commit()
+    # 强制过期 identity-map 缓存：Core 写不会更新 ORM 对象（expire_on_commit=False），
+    # 不 expire 则重查返回旧值（如 disposition 仍是插入时的值）
+    db.expire_all()
+    return db.execute(
         select(ProfileSensitive).where(
             ProfileSensitive.user_id == user_id, ProfileSensitive.topic == topic
         )
-    ).scalar_one_or_none()
-    if row is None:
-        row = ProfileSensitive(user_id=user_id, topic=topic)
-        db.add(row)
-    row.disposition = disposition
-    row.evidence = list(evidence) if evidence else []
-    row.locked = locked
-    db.commit()
-    db.refresh(row)
-    return row
+    ).scalar_one()
 
 
 def delete_profile_sensitive(db: Session, user_id: str, topic: str) -> bool:

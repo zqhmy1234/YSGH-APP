@@ -277,15 +277,29 @@ def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict
     if msg.get("msg_type") not in ("text", "image", "voice"):
         return {"status": "ignored", "msg_id": msg_id}
 
-    record = WechatMessage(
-        msg_id=msg_id,
-        user_id=user_id,
-        msg_type=msg["msg_type"],
-        content=msg.get("content"),
-        media_id=msg.get("media_id"),
-        status="processed",
+    # R2#13 竞态修复：msg_id 幂等改 ON CONFLICT DO NOTHING 原子插入——
+    # SELECT 查重是快路径；并发同回调双请求同时插同 msg_id（UNIQUE），败者不再
+    # IntegrityError 500，而是 rowcount=0 → 视作 duplicate（不重复建内容/媒体）。
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    inserted = db.execute(
+        pg_insert(WechatMessage)
+        .values(
+            msg_id=msg_id,
+            user_id=user_id,
+            msg_type=msg["msg_type"],
+            content=msg.get("content"),
+            media_id=msg.get("media_id"),
+            status="processed",
+        )
+        .on_conflict_do_nothing(index_elements=[WechatMessage.msg_id])
     )
-    db.add(record)
+    if inserted.rowcount == 0:
+        db.rollback()
+        return {"status": "duplicate", "msg_id": msg_id}
+    record = db.execute(
+        select(WechatMessage).where(WechatMessage.msg_id == msg_id)
+    ).scalar_one()
 
     result: dict = {"status": "created", "msg_id": msg_id}
 
