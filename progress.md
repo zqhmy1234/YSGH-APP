@@ -1,3 +1,22 @@
+## 2026-08-26 19:00 · CI 全链路修复完成（#8-#21）——CI #21 首次双绿
+
+**状态**：CI #21 Fast + Full Gate 全绿｜本地验证 419 passed + api_smoke 6/6 + research 18 全过
+
+### 根因链（7 个，全部登记 docs/lessons.md）
+1. #8 postgres 容器就绪竞态（加 qdrant 后 psql 连接被拒）→ Init PG 加重试循环
+2. #9-#12 alembic 迁移链不自包含（baseline 仅 alter_column，假设表已由 schema.sql 预建）→ 回退 schema.sql 建库；**issue #2 方向修正**
+3. #13 步骤级 env PGPASSWORD 单密码覆盖多用户 psql（-U yishu_app 拿 admin 密码）→ 每条命令内联各自密码
+4. #15 schema.sql 缺 profile_annotation_pool（迁移 b0b1c2d3e4f5 建表未同步）→ 补齐，本地临时库验证 38 表
+5. #16 pgvector 扩展缺失 + 测试 FK 清理不完整（本地旧库 27 表/4 FK 掩盖）→ schema.sql/setup_pg.sql 加 CREATE EXTENSION + CI 镜像 pgvector/pgvector:pg16 + 测试 fixture 补子表清理
+6. #17-#18 qdrant server 1.9.7 与 client>=1.19 不兼容（api_smoke payload 404）→ 镜像升 v1.19.0
+7. #19-#20 CI 全新缓存 BGE-M3 现场下载失败（pipeline 测试 status=failed）→ Warm HF models 步骤（scripts/warm_hf_models.py 强制在线）+ 失败详情写 annotation（API 匿名可读）
+
+### 关键决策
+- CI 建库源 = schema.sql（#6/#21 验证）；alembic 仅用于本地/生产增量；漂移检测另行设计（issue #2 修正）
+- 本地库与 schema.sql 曾严重漂移（27 表/4 FK vs 38 表/20+ FK），本地全绿掩盖 FK 测试问题——测试 fixture 已补子表清理
+
+**下一步**：Wave 4（J/K/L 三 Agent 并行）｜issue #2 关闭文案已备
+
 ## 2026-08-25 · PR 评论 5 项修复并更新现有 PR
 
 **状态**：分支已对齐 `origin/develop`｜PR base=`develop`｜音频范围 `49 passed`｜ruff/py_compile 通过

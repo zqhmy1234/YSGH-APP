@@ -144,3 +144,18 @@ init.ps1：通过
 - 基线：420 passed + api_smoke + research + review_agent --full 全绿
 - 下一步：Wave 4（Agent J B5a 客户端 / Agent K B5d Android / Agent L M3 微信），任务卡 docs/parallel-dev/10/11/12
 - 待办：COS/微信/Sentry key 到位后实网验证（smoke_cos/微信媒体下载/托管护栏）；B/C/D 采集语料后重跑评测；H 真机补验；cleanup job 需挂调度（建议系统 cron/rq-scheduler 每日低峰 python -m app.workers.cleanup_job --older-than-days 30）
+
+## CI 全链路修复完成（2026-08-26 19:00）——CI #21 全绿
+
+- develop HEAD：a92212b（warm_hf 强制在线）；CI #21 Fast + Full Gate 全绿（首次双绿）
+- 根因链（#8-#21，7 个根因逐一修复，均登记 docs/lessons.md）：
+  1. #8 postgres 就绪竞态 → Init PG 加重试循环
+  2. #9-#12 alembic 迁移链不自包含（baseline 仅 alter_column 假设表已由 schema.sql 预建）→ 回退 schema.sql 建库；**issue #2 方向修正：CI 建库不能跑 alembic**
+  3. #13 步骤级 env PGPASSWORD 单密码覆盖多用户 psql → 每条命令内联各自密码
+  4. #15 schema.sql 缺 profile_annotation_pool（迁移建表未同步）→ 补齐（本地临时库验证 38 表）
+  5. #16 pgvector 扩展缺失 + 测试 FK 清理不完整（本地旧库 27 表/4 FK 掩盖）→ schema.sql/setup_pg.sql 加 CREATE EXTENSION + CI 镜像 pgvector/pgvector:pg16 + 测试 fixture 补子表清理
+  6. #17-#18 qdrant server 1.9.7 与 client>=1.19 不兼容 → 镜像升 v1.19.0
+  7. #19-#20 CI 全新缓存 BGE-M3 现场下载失败 → 新增 Warm HF models 步骤（scripts/warm_hf_models.py，强制在线）+ 失败详情写 annotation（API 匿名可读）
+- 本地验证：全新库 + vector + schema.sql + review_agent --full = pytest 419 passed（唯一失败为复现库名假阳性）+ api_smoke 6/6 + research 18 全过
+- 遗留：Node.js 20 弃用警告（actions 升级到 v5/v6 可消除，非阻断）
+- 漂移防护：schema.sql vs 迁移链表名 diff 脚本（.cowork-temp/diff_schema_migrations.py 思路），lessons.md 已登记「三处漂移」教训
