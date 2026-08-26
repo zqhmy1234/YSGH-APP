@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.db.models import Content, UploadChunk, UploadTask, User
 from app.db.session import SessionLocal
 from app.services import upload as upload_svc
+from app.services.external.storage import get_storage_backend
 from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
@@ -226,5 +227,121 @@ def test_cross_user_access_denied(db_user):
     finally:
         # 清理 B 用户（A 的清理走 db_user fixture）
         db.execute(sa_delete(UploadTask).where(UploadTask.user_id == user_b.id))
+        db.delete(user_b)
+        db.commit()
+
+
+# ---------- Wave3 AgentG：流量约束（B4 §6）upload_mode / 手动补传原图 ----------
+
+def _jpeg_bytes() -> bytes:
+    """有效 JPEG（thumbnail_meta 路径 resize_to_jpeg 需要可解码图片）"""
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", (600, 400), (10, 120, 200))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def test_register_photo_content_thumbnail_meta(db_user):
+    """蜂窝路径：upload_mode=thumbnail_meta → 只落缩略图占位内容（original_pending）"""
+    db, user = db_user
+    jpeg = _jpeg_bytes()
+    # 模拟 complete 已把"缩略图"合并到最终对象
+    cos_key = f"photos/{user.id}/202608/thumbmeta_{uuid.uuid4().hex[:8]}.jpg"
+    from app.services.external.storage import get_storage_backend
+
+    get_storage_backend().put_object(cos_key, jpeg)
+
+    content_id = upload_svc.register_photo_content(
+        db,
+        user.id,
+        cos_key,
+        '{"upload_mode":"thumbnail_meta","on_wifi":false,"source":"app"}',
+    )
+    record = db.get(Content, content_id)
+    assert record is not None
+    assert record.thumbnail_key == f"thumbnails/{cos_key.split('/', 1)[1]}"
+    assert record.extra["upload_mode"] == "thumbnail_meta"
+    assert record.extra["on_wifi"] is False
+    assert record.extra["original_pending"] is True
+    assert record.status == "done"  # 占位即可浏览，不进管线
+    assert get_storage_backend().object_exists(record.thumbnail_key)
+
+
+def test_register_photo_content_invalid_upload_mode(db_user):
+    """upload_mode 白名单外 → ValueError"""
+    db, user = db_user
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(
+            db, user.id, "photos/x.jpg", '{"upload_mode":"hacker","source":"app"}'
+        )
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(
+            db, user.id, "photos/x.jpg", '{"on_wifi":"not-bool","source":"app"}'
+        )
+
+
+def test_register_photo_content_manual_original_links_placeholder(db_user):
+    """手动立即上传原图（复用 complete + meta.content_id）：挂原件到占位内容"""
+    db, user = db_user
+    # 先建 thumbnail_meta 占位
+    jpeg = _jpeg_bytes()
+    thumb_key = f"photos/{user.id}/202608/placeholder_{uuid.uuid4().hex[:8]}.jpg"
+    backend = get_storage_backend()
+    backend.put_object(thumb_key, jpeg)
+    placeholder_id = upload_svc.register_photo_content(
+        db, user.id, thumb_key, '{"upload_mode":"thumbnail_meta","source":"app"}'
+    )
+
+    # WiFi 后补传原件：走完整分片链路，meta 带 content_id
+    original_key = f"photos/{user.id}/202608/original_{uuid.uuid4().hex[:8]}.jpg"
+    backend.put_object(original_key, b"real-original-bytes")
+    content_id = upload_svc.register_photo_content(
+        db,
+        user.id,
+        original_key,
+        f'{{"content_id":"{placeholder_id}","upload_mode":"original","on_wifi":true,"source":"app"}}',
+    )
+    assert content_id == placeholder_id  # 复用同一内容
+    record = db.get(Content, content_id)
+    assert record.cos_key == original_key  # 原件已挂
+    assert record.thumbnail_key is not None  # 缩略图保留
+    assert record.extra.get("original_pending") is None  # 占位标记清除
+    assert record.extra["upload_mode"] == "original"
+    assert record.extra["on_wifi"] is True
+    assert record.status == "processing"  # 走完整管线
+
+
+def test_register_photo_content_content_id_ownership(db_user):
+    """content_id 归属校验：他人内容 → ValueError（防 IDOR）"""
+    db, user_a = db_user
+    user_b = User(phone=f"upload-lnk-{uuid.uuid4().hex[:8]}", status=1)
+    db.add(user_b)
+    db.commit()
+    db.refresh(user_b)
+    try:
+        # B 的占位内容
+        jpeg = _jpeg_bytes()
+        key_b = f"photos/{user_b.id}/202608/ph_{uuid.uuid4().hex[:8]}.jpg"
+        get_storage_backend().put_object(key_b, jpeg)
+        placeholder_b = upload_svc.register_photo_content(
+            db, user_b.id, key_b, '{"upload_mode":"thumbnail_meta","source":"app"}'
+        )
+        # A 试图用 content_id 挂自己原件到 B 的内容 → 拒绝
+        with pytest.raises(ValueError):
+            upload_svc.register_photo_content(
+                db,
+                user_a.id,
+                "photos/a/x.jpg",
+                f'{{"content_id":"{placeholder_b}","source":"app"}}',
+            )
+        # B 自己的占位不受影响
+        assert db.get(Content, placeholder_b).cos_key == key_b
+    finally:
+        db.execute(sa_delete(UploadTask).where(UploadTask.user_id == user_b.id))
+        db.execute(sa_delete(Content).where(Content.user_id == user_b.id))
         db.delete(user_b)
         db.commit()
