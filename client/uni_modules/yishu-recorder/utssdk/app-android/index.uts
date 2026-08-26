@@ -60,6 +60,9 @@ class RecorderImpl implements RecorderController {
 	_pauseStartMs: number = 0
 	_onInterrupted: RecInterruptedCallback | null = null
 	_onAutoStop: RecStopCallback | null = null
+	/** 30min 自动结束标记（定时器到点置位，onStop 据此区分手动/自动停止） */
+	_autoStopFired: boolean = false
+	_autoStopTimer: number = 0
 
 	start(
 		onStart: RecStartCallback,
@@ -73,6 +76,13 @@ class RecorderImpl implements RecorderController {
 		this._recordStartMs = Date.now()
 		this._onInterrupted = onInterrupted
 		this._onAutoStop = onAutoStop
+		// 30min 自动结束标记定时器（RecorderManager duration 到点会自行 onStop；
+		// 定时器只负责标记"这是自动结束"，让 onStop 区分手动/自动，避免误触 onAutoStop）
+		this._autoStopFired = false
+		this._autoStopTimer = setTimeout(() => {
+			this._autoStopFired = true
+			manager().stop()
+		}, MAX_RECORD_MS)
 
 		mgr.onStart(() => {
 			this._state = REC_STATE_RECORDING
@@ -83,14 +93,15 @@ class RecorderImpl implements RecorderController {
 			this._tempFile = path
 			const dur = this._recordedAccumMs +
 				(this._pauseStartMs == 0 ? Date.now() - this._recordStartMs : 0)
-			const wasAuto = this._state == REC_STATE_RECORDING && this._onAutoStop != null
+			const wasAuto = this._autoStopFired
 			const autoCb = this._onAutoStop
 			this._reset()
-			onStop(path, dur)
-			// J-7：duration 到点自动结束 → 分段保存回调
 			if (wasAuto && autoCb != null) {
+				// J-7：30min 自动结束 → 只走分段保存回调（不重复 onStop）
 				this._onAutoStop = null
 				autoCb(path, dur)
+			} else {
+				onStop(path, dur)
 			}
 		})
 		mgr.onError((err: IRecorderManagerFail) => {
@@ -176,6 +187,11 @@ class RecorderImpl implements RecorderController {
 	}
 
 	_reset(): void {
+		if (this._autoStopTimer != 0) {
+			clearTimeout(this._autoStopTimer)
+			this._autoStopTimer = 0
+		}
+		this._autoStopFired = false
 		this._state = REC_STATE_IDLE
 		this._recordStartMs = 0
 		this._recordedAccumMs = 0
