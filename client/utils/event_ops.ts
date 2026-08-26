@@ -26,9 +26,15 @@
 import { post, get, dataObj, dataArr } from './api'
 import { isoLocal, parseIsoMs } from './time'
 import { getNetKind, NetKind } from './uploader'
+// O6/F9：队列存储单源 queue_store（与 sync_client 双离线队列合并单 key，路由差异保留）；
+// event flush 退避统一走 retry.ts retryAsync（2s→4s→8s→8s→8s，5 次上限）
+import { enqueueEntry, countPendingOfTypes, allPendingOfTypes, removeByIds, bumpRetryById } from './queue_store'
+import { retryAsync } from './retry'
 
-const OP_LOG_KEY = 'yishu_op_log'
 const IGNORE_KEY = 'yishu_ignored_events'
+
+/** 事件类型操作（与 sync_client upsert_field/delete 区分，同队列按 op_type 路由） */
+const EVENT_TYPES: Array<string> = ['confirm', 'merge', 'split']
 
 /** 拆分选片条目（GET /events/{id}/items 解析） */
 export class SplitItem {
@@ -124,6 +130,46 @@ export function isIgnoredEvent(eventId: string): boolean {
 		}
 	}
 	return false
+}
+
+/** 事件成员照片映射项：event_id → content_id[]（端侧聚合成员；F10 余项从 index.uvue 迁入） */
+export class EventPhotoEntry {
+	eventId: string
+	contentIds: Array<string>
+
+	constructor(eventId: string, contentIds: Array<string>) {
+		this.eventId = eventId
+		this.contentIds = contentIds
+	}
+}
+
+/** 通过 sync accepted 明细建立 服务端事件 id → 成员照片 映射（端侧聚合的 client_event_id 与云端 id 不同；
+ *  F10 余项：从 index.uvue buildEventPhotoIds 迁入的纯函数，行为等价；返回新映射，不直接改调用方状态） */
+export function mapAcceptedToClientIds(clientEvents: Array<UTSJSONObject>, accepted: Array<UTSJSONObject>): Array<EventPhotoEntry> {
+	const clientMap: Array<EventPhotoEntry> = []
+	for (let k = 0; k < clientEvents.length; k++) {
+		const cid = clientEvents[k].getString('client_event_id') ?? ''
+		const pids = clientEvents[k].getArray('photo_ids') as Array<string> | null
+		if (cid != '' && pids != null) {
+			clientMap.push(new EventPhotoEntry(cid, pids))
+		}
+	}
+	const out: Array<EventPhotoEntry> = []
+	for (let a = 0; a < accepted.length; a++) {
+		const it = accepted[a]
+		const serverId = it.getString('event_id') ?? ''
+		const clientId = it.getString('client_event_id') ?? ''
+		if (serverId == '' || clientId == '') {
+			continue
+		}
+		for (let k = 0; k < clientMap.length; k++) {
+			if (clientMap[k].eventId == clientId) {
+				out.push(new EventPhotoEntry(serverId, clientMap[k].contentIds))
+				break
+			}
+		}
+	}
+	return out
 }
 
 /** 确认事件（转正；title 可空=保持原标题）→ 成功 true（离线则入队返回 true） */
@@ -251,7 +297,7 @@ export function splitEvent(eventId: string, contentIds: Array<string>): Promise<
 	})
 }
 
-/** 入离线队列（payload 为 UTSJSONObject；行分隔 JSON 串存储）
+/** 入离线队列（payload 为 UTSJSONObject；行分隔 JSON 串存储，存储共享 queue_store）
  *  2026-08-26 Wave3 H：队列补齐六字段契约（op_id/op_type/payload/status/created_at/retry_count），
  *  与 sync_client 后端 offline_queue 六字段对齐（audit_B4_sync §4）。 */
 export function enqueueOp(opType: string, payload: UTSJSONObject): void {
@@ -263,13 +309,7 @@ export function enqueueOp(opType: string, payload: UTSJSONObject): void {
 		created_at: isoNow(),
 		retry_count: 0
 	}
-	const raw = uni.getStorageSync(OP_LOG_KEY) as string
-	let lines: Array<string> = []
-	if (raw != '') {
-		lines = raw.split('\n')
-	}
-	lines.push(JSON.stringify(entry))
-	uni.setStorageSync(OP_LOG_KEY, lines.join('\n'))
+	enqueueEntry(entry)
 	uni.showToast({ title: '已离线排队，联网后自动同步', icon: 'none' })
 }
 
@@ -278,99 +318,79 @@ function isoNow(): string {
 	return isoLocal(Date.now())
 }
 
-/** 待同步队列条数 */
+/** 待同步队列条数（仅事件类型——共享队列按 op_type 过滤） */
 export function pendingOpCount(): number {
-	const raw = uni.getStorageSync(OP_LOG_KEY) as string
-	if (raw == '') {
-		return 0
-	}
-	return raw.split('\n').length
+	return countPendingOfTypes(EVENT_TYPES)
 }
 
 /** 联网后补发离线队列（按序；网络仍断则停，业务失败丢弃）→ 剩余条数 */
 export function flushOpQueue(): Promise<number> {
 	return new Promise<number>((resolve) => {
-		const raw = uni.getStorageSync(OP_LOG_KEY) as string
-		if (raw == '') {
+		const entries = allPendingOfTypes(EVENT_TYPES)
+		if (entries.length === 0) {
 			resolve(0)
 			return
 		}
 		getNetKind((kind: NetKind) => {
 			const online = kind != 'none'
 			if (!online) {
-				resolve(raw.split('\n').length)
+				resolve(entries.length)
 				return
 			}
-			flushNext(raw.split('\n'), [], 0, 0, resolve)
+			flushNext(entries, 0, 0, resolve)
 		})
 	})
 }
 
-/** 失败保留时 retry_count +1（六字段契约使用方；解析失败原样保留） */
-function bumpRetry(line: string): string {
-	try {
-		const e = JSON.parse(line) as UTSJSONObject
-		if (e != null) {
-			const cur = e.getNumber('retry_count') as number
-			e.set('retry_count', (cur != null ? cur : 0) + 1)
-			return JSON.stringify(e)
-		}
-	} catch (e) {
-		// 脏行原样保留
-	}
-	return line
+/** 单条带退避补发（O6/F9：flush 退避统一走 retry.ts retryAsync；失败可重试，
+ *  退避耗尽后由调用方按网络探测区分 业务失败丢弃 / 离线保留） */
+function flushOne(opType: string, payload: UTSJSONObject): Promise<boolean> {
+	return retryAsync<boolean>(
+		() => doOp(opType, payload).then((ok: boolean): boolean | null => {
+			return ok ? true : null
+		}),
+		(_r: boolean | null, _attempt: number): boolean => false,
+		(_r: boolean | null, _attempt: number): boolean => false
+	).then((r: boolean | null): boolean => {
+		return r == true
+	})
 }
 
 /** 单条处理（模块级函数：UTS 箭头函数不可自引用，递归必须用具名函数声明） */
-function flushNext(lines: Array<string>, remain: Array<string>, flushed: number, idx: number, resolve: (n: number) => void): void {
-	if (idx >= lines.length) {
-		uni.setStorageSync(OP_LOG_KEY, remain.join('\n'))
+function flushNext(entries: Array<UTSJSONObject>, idx: number, flushed: number, resolve: (n: number) => void): void {
+	if (idx >= entries.length) {
 		if (flushed > 0) {
 			uni.showToast({ title: '已同步 ' + flushed + ' 条离线操作', icon: 'none' })
 		}
-		resolve(remain.length)
+		resolve(countPendingOfTypes(EVENT_TYPES))
 		return
 	}
-	const line = lines[idx]
-	if (line == '') {
-		flushNext(lines, remain, flushed, idx + 1, resolve)
-		return
-	}
-	let entry: UTSJSONObject | null = null
-	try {
-		entry = JSON.parse(line) as UTSJSONObject
-	} catch (e) {
-		remain.push(line) // 解析失败保守保留，不丢用户操作
-		flushNext(lines, remain, flushed, idx + 1, resolve)
-		return
-	}
-	const opType = entry.getString('op_type') ?? ''
-	const payload = entry.getJSON('payload')
+	const e = entries[idx]
+	const opType = e.getString('op_type') ?? ''
+	const payload = e.getJSON('payload')
 	if (payload == null) {
-		flushNext(lines, remain, flushed, idx + 1, resolve) // 无 payload 视为脏数据丢弃
+		removeByIds([e.getString('op_id') ?? '']) // 无 payload 视为脏数据丢弃
+		flushNext(entries, idx + 1, flushed, resolve)
 		return
 	}
-	doOp(opType, payload).then((ok: boolean) => {
+	flushOne(opType, payload).then((ok: boolean) => {
 		if (ok) {
-			flushNext(lines, remain, flushed + 1, idx + 1, resolve)
-		} else {
-			// 失败后重新探测网络：仍断 → 保留该条及其后全部；在线 → 业务失败丢弃
-			getNetKind((kind: NetKind) => {
-				const online = kind != 'none'
-				if (!online) {
-					remain.push(bumpRetry(line))
-					for (let j = idx + 1; j < lines.length; j++) {
-						if (lines[j] != '') {
-							remain.push(lines[j])
-						}
-					}
-					uni.setStorageSync(OP_LOG_KEY, remain.join('\n'))
-					resolve(remain.length)
-				} else {
-					flushNext(lines, remain, flushed, idx + 1, resolve)
-				}
-			})
+			removeByIds([e.getString('op_id') ?? ''])
+			flushNext(entries, idx + 1, flushed + 1, resolve)
+			return
 		}
+		// 退避耗尽仍失败：重新探测网络——仍断 → bumpRetry 保留 + 停（网络恢复再补发）；
+		// 在线 → 业务失败丢弃（原语义）
+		getNetKind((kind: NetKind) => {
+			const online = kind != 'none'
+			if (online) {
+				removeByIds([e.getString('op_id') ?? ''])
+				flushNext(entries, idx + 1, flushed, resolve)
+			} else {
+				bumpRetryById(e.getString('op_id') ?? '')
+				resolve(countPendingOfTypes(EVENT_TYPES))
+			}
+		})
 	})
 }
 
