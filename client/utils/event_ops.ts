@@ -25,6 +25,7 @@
  */
 import { post, get, dataObj, dataArr } from './api'
 import { isoLocal, parseIsoMs } from './time'
+import { getNetKind, NetKind } from './uploader'
 
 const OP_LOG_KEY = 'yishu_op_log'
 const IGNORE_KEY = 'yishu_ignored_events'
@@ -125,23 +126,11 @@ export function isIgnoredEvent(eventId: string): boolean {
 	return false
 }
 
-/** 网络检查（uni-app x getNetworkType 为回调式；none/未知视为离线） */
-function checkNet(cb: (online: boolean) => void): void {
-	uni.getNetworkType({
-		success: (res) => {
-			const t = res.networkType
-			cb(t !== 'none' && t != '')
-		},
-		fail: () => {
-			cb(false)
-		}
-	})
-}
-
 /** 确认事件（转正；title 可空=保持原标题）→ 成功 true（离线则入队返回 true） */
 export function confirmEvent(eventId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
-		checkNet((online: boolean) => {
+		getNetKind((kind: NetKind) => {
+			const online = kind != 'none'
 			if (!online) {
 				const body: UTSJSONObject = {
 					event_id: eventId
@@ -172,7 +161,8 @@ export function confirmEvent(eventId: string): Promise<boolean> {
 /** 合并：source 并入 target（source 软删，target 置 confirmed）→ 成功 true */
 export function mergeEvent(sourceEventId: string, targetEventId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
-		checkNet((online: boolean) => {
+		getNetKind((kind: NetKind) => {
+			const online = kind != 'none'
 			if (!online) {
 				const body: UTSJSONObject = {
 					target_event_id: targetEventId,
@@ -230,7 +220,8 @@ export function fetchEventItems(eventId: string): Promise<Array<SplitItem>> {
 /** 拆分：选中内容拆出建新事件 → 成功 true（离线则入队返回 true） */
 export function splitEvent(eventId: string, contentIds: Array<string>): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
-		checkNet((online: boolean) => {
+		getNetKind((kind: NetKind) => {
+			const online = kind != 'none'
 			if (!online) {
 				const body: UTSJSONObject = {
 					event_id: eventId,
@@ -304,7 +295,8 @@ export function flushOpQueue(): Promise<number> {
 			resolve(0)
 			return
 		}
-		checkNet((online: boolean) => {
+		getNetKind((kind: NetKind) => {
+			const online = kind != 'none'
 			if (!online) {
 				resolve(raw.split('\n').length)
 				return
@@ -363,7 +355,8 @@ function flushNext(lines: Array<string>, remain: Array<string>, flushed: number,
 			flushNext(lines, remain, flushed + 1, idx + 1, resolve)
 		} else {
 			// 失败后重新探测网络：仍断 → 保留该条及其后全部；在线 → 业务失败丢弃
-			checkNet((online: boolean) => {
+			getNetKind((kind: NetKind) => {
+				const online = kind != 'none'
 				if (!online) {
 					remain.push(bumpRetry(line))
 					for (let j = idx + 1; j < lines.length; j++) {
