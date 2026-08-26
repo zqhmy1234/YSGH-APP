@@ -345,3 +345,45 @@ def test_register_photo_content_content_id_ownership(db_user):
         db.execute(sa_delete(Content).where(Content.user_id == user_b.id))
         db.delete(user_b)
         db.commit()
+
+
+def test_complete_voice_branch(db_user):
+    """B5a 集成：complete 后 register_photo_content 建 voice 内容（对象搬 voice/ 前缀 + 入队）"""
+    db, user = db_user
+    task, data = _make_task(db, user)
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+    result = upload_svc.complete_upload(db, task.id)
+
+    backend = get_storage_backend()
+    content_id = upload_svc.register_photo_content(
+        db,
+        user.id,
+        result["file_key"],
+        '{"content_type":"voice","duration_ms":65000,"source":"app","extra":{"file_name":"rec_01.wav"}}',
+    )
+    record = db.get(Content, content_id)
+    assert record is not None
+    assert record.content_type == "voice"
+    assert record.status == "processing"
+    assert record.extra["duration_ms"] == 65000
+    # 对象已搬到 voice/ 前缀，photos/ 旧键已删
+    assert record.cos_key.startswith(f"voice/{user.id}/")
+    assert backend.get_object(record.cos_key) == data
+    with pytest.raises(KeyError):
+        backend.get_object(result["file_key"])
+
+
+def test_complete_voice_rejects_bad_duration(db_user):
+    db, user = db_user
+    task, data = _make_task(db, user)
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+    result = upload_svc.complete_upload(db, task.id)
+    with pytest.raises(ValueError):
+        upload_svc.register_photo_content(
+            db,
+            user.id,
+            result["file_key"],
+            '{"content_type":"voice","duration_ms":"abc","source":"app"}',
+        )

@@ -1,3 +1,11 @@
+## 2026-08-26 20:20 · Wave 4 集成（J/L，K 未完成）
+
+- merge wave4-agentJ（ab6d447：ASR 消费域 J-1~J-8）+ wave4-agentL（a0fe630：M3 微信域）→ 集成接线 deb6e24
+- 集成接线：upload/complete voice 分支（register_photo_content，对象搬 voice/ 前缀）+ /contents voice cos_key 幂等 + 客户端 uploadVoicePersistent 优先 content_id + pipeline enrich_content_emotion 补 consume_emotion + OpenAPI 重导出 + test_pipeline fixture 补 Message 清理
+- 22:00 复盘调度登记（部署侧 cron 跑 backend/scripts/daily_review.py，幂等）
+- 基线：pytest 467 passed / 19 deselected + review_agent --full exit 0 全绿
+- 遗留：Agent K（B5d）完成后二次集成；WECHAT key 待申请（code2session 已接真实链路，未配保持 mock/501）
+
 ## 2026-08-26 19:00 · CI 全链路修复完成（#8-#21）——CI #21 首次双绿
 
 **状态**：CI #21 Fast + Full Gate 全绿｜本地验证 419 passed + api_smoke 6/6 + research 18 全过

@@ -154,3 +154,21 @@ def test_upload_exif_overrides_client_taken_at(client, auth_headers):
     assert r.status_code == 200, r.text
     taken = r.json()["data"]["taken_at"]
     assert taken.startswith("2026-08-22"), f"EXIF 时间应覆盖客户端时间: {taken}"
+
+
+def test_voice_contents_cos_key_idempotent(client, auth_headers):
+    """B5a 集成配套：/contents voice 带 cos_key → 幂等（同用户同 cos_key 返回既有记录，防旧客户端二次建内容）"""
+    backend = get_storage_backend()
+    cos_key = f"voice/{uuid.uuid4().hex[:6]}/202608/demo.wav"
+    backend.put_object(cos_key, b"fake-wav-bytes")
+    body = {
+        "content_type": "voice",
+        "cos_key": cos_key,
+        "source": "app",
+        "extra": {"duration_ms": 30000},
+    }
+    r1 = client.post("/api/v1/contents", json=body, headers=auth_headers)
+    assert r1.status_code == 200, r1.text
+    r2 = client.post("/api/v1/contents", json=body, headers=auth_headers)
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["data"]["id"] == r1.json()["data"]["id"]

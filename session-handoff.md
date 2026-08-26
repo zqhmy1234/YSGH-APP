@@ -159,3 +159,21 @@ init.ps1：通过
 - 本地验证：全新库 + vector + schema.sql + review_agent --full = pytest 419 passed（唯一失败为复现库名假阳性）+ api_smoke 6/6 + research 18 全过
 - 遗留：Node.js 20 弃用警告（actions 升级到 v5/v6 可消除，非阻断）
 - 漂移防护：schema.sql vs 迁移链表名 diff 脚本（.cowork-temp/diff_schema_migrations.py 思路），lessons.md 已登记「三处漂移」教训
+
+
+## Wave 4 集成完成（J/L，2026-08-26 20:20）——Agent K（B5d Android）未完成
+
+- develop HEAD：deb6e24（Wave4 J/L 集成接线）+ a0fe630（merge L）+ ab6d447（merge J）；Wave 4 三 Agent 并行，J（B5a 客户端/消费域）与 L（M3 微信域）已完成并合入，K 仍在开发（分支 wave4-agentK）
+- Wave 4 J（B5a 消费域）：后端 ASR 音频事件 3 类解析与消费/SNR 噪音降权/段级合并 dominant+peak（backend/app/services/external/asr.py）、events.emotion 联动钩子（pipeline_ext/emotion.py）、情绪关怀分层触发 + voice_done 接线 + 22:00 调度登记（services/notify.py）、AsrTranscribeResponse 新增 7 字段（audio_events/emotion_bonus/silence_hint/not_oral/snr_db/noise_weight/emotion_merge）、客户端长录音 30min 上限 + 分片持久化上传 + UTS 录音插件中断状态机 + 手动停止误触发 onAutoStop 修复
+- Wave 4 L（M3 微信域）：code2session 真实接入（unionid 优先回退 openid，业务 errcode→401/上游→502，未配 key 保持 mock/501）+ 内容安全可插拔适配器（规则/腾讯 CI/阿里云 Green 三实现 + off，缺 key 显式失败，fail-safe 放行不丢消息）
+- **集成接线（本段）**：
+  1. upload/complete meta.content_type=voice → register_photo_content voice 分支：对象搬 voice/{user}/ 前缀 + 建 content_type=voice + 入队 ASR（不再落 stray photo）；duration_ms 校验
+  2. /contents voice 带 cos_key 幂等（同用户同 cos_key 返回既有记录——旧客户端 saveVoiceContent 二次建内容防重）
+  3. 客户端 uploadVoicePersistent 优先用 complete 返回的 content_id，旧后端回退二次建内容
+  4. pipeline.py enrich_content_emotion 补 consume_emotion 调用（本地情绪增强后的真情绪触发事件层联动/关怀；幂等安全）
+  5. OpenAPI 重导出（docs/openapi.json，46 路径；AsrTranscribeResponse 已含 7 新字段）
+  6. test_pipeline fixture 补 Message 清理（B5a 情绪消费写 messages，完整 FK 下删 user 被拦）
+- **22:00 复盘调度（AgentJ 需求 2，部署侧）**：挂系统 cron/rq-scheduler/APScheduler，每天本地 22:00 跑 `python backend/scripts/daily_review.py`（幂等，无内容自动跳过）
+- **基线**：pytest **467 passed / 19 deselected**（420 基线 + J 19 + L 26 + 集成新增 3）+ review_agent --full exit 0 全绿（syntax 183 文件/lint/secrets/tests 覆盖率≥50%/research 场景全过）
+- **待 key 项**：WECHAT_APPID/WECHAT_SECRET（code2session 生产启用）、企微三件套 WECHAT_CORP_ID/TOKEN/ENCODING_AES_KEY（回调）、ALIYUN_ACCESS_KEY_ID/SECRET（内容安全，上架前可选加固，当前腾讯 CI 顶替）；阿里云 Green 实现未实网验证（签名按官方文档，待 key 校准）
+- **遗留**：Agent K（B5d Android 后台录音）完成后二次集成；J 真机录音中断（来电模拟）/30min 自动结束人工实测待办（已登记 audit_B5a_B5d_voice.md）；关怀文案库正式文案待产品部

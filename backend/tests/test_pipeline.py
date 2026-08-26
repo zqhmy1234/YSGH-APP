@@ -29,11 +29,13 @@ def db_user():
     yield db, user
     # 清理（顺序：先子表；2026-08-26：补 UserProfile——管线 B1 标注会写 user_profile，
     # 完整 FK schema 下删 user 被 user_profile_user_id_fkey 拦，本地旧库无 FK 掩盖）
-    from app.db.models import ProfileAnnotationPool, ProfileDimensionHistory, UserProfile
+    from app.db.models import Message, ProfileAnnotationPool, ProfileDimensionHistory, UserProfile
 
     db.execute(sa_delete(ProfileDimensionHistory).where(ProfileDimensionHistory.user_id == user.id))
     db.execute(sa_delete(ProfileAnnotationPool).where(ProfileAnnotationPool.user_id == user.id))
     db.execute(sa_delete(UserProfile).where(UserProfile.user_id == user.id))
+    # 2026-08-26（Wave4 集成）：B5a 情绪消费会写 messages（voice_done/关怀）→ 删 user 前必须先清
+    db.execute(sa_delete(Message).where(Message.user_id == user.id))
     db.execute(sa_delete(EventItem).where(EventItem.event_id.in_(
         select(Event.id).where(Event.user_id == user.id)
     )))

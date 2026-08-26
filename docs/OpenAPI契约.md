@@ -19,7 +19,7 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 ### 认证（/api/v1/auth）
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
-| POST | /wechat | 微信登录（code→unionid→token 对）| ✅ 真实 DB（code2session 仍 mock）|
+| POST | /wechat | 微信登录（code→unionid→token 对）| ✅ 真实 DB + 真实 code2session（Wave4-L，2026-08-26；WECHAT_APPID/SECRET 未配时保持 mock/501 语义）|
 | POST | /phone | 手机号验证码登录 | ✅ 真实 DB |
 | POST | /sms/send | 发验证码（6 位/5min/60s 防刷）| ✅ 真实 DB（发送走 mock）|
 | POST | /refresh | refresh 轮换（吊销校验）| ✅ 真实 DB |
@@ -63,7 +63,7 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 |---|---|---|---|
 | POST | /init | 建分片任务（client_upload_id 幂等，返回 upload_id/chunk_count）| 真实 DB |
 | PUT | /chunk | 传单片（幂等 + SHA256 校验，断点续传依据）| 真实 DB |
-| POST | /complete | 合并落最终对象（分片未齐拒绝，幂等）| 真实 DB |
+| POST | /complete | 合并落最终对象（分片未齐拒绝，幂等）；meta.content_type=voice 时直接建 voice 内容（对象搬 voice/ 前缀 + 入队 ASR，响应含 content_id；photo 默认走 register_photo_content）| 真实 DB（2026-08-26 Wave4 集成）|
 | GET | /status | 断点续传状态（已传/缺失分片）| 真实 DB |
 | GET | /sts | 客户端直传临时凭证（cos 后端；STS 未就绪降级提示）| 待真验 |
 

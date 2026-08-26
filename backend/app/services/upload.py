@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +22,8 @@ from app.db.models import Content, UploadChunk, UploadTask
 from app.services.external.storage import get_storage_backend
 from app.services.pipeline import process_content
 from app.services.thumbnails import derive_thumbnail_key, generate_thumbnail_job, resize_to_jpeg
+
+logger = logging.getLogger("yishu.upload")
 
 # 流量约束（B4 §6，Wave3 AgentG）：上传模式白名单
 VALID_UPLOAD_MODES = ("original", "thumbnail_meta")
@@ -229,6 +232,16 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     if on_wifi is not None:
         extra["on_wifi"] = on_wifi
 
+    # B5a 集成（Wave4 AgentJ 需求 1）：complete 直接建 voice 内容（客户端 uploadVoicePersistent
+    # 契约：meta.content_type=voice + duration_ms + source + extra.file_name）
+    content_type = meta_obj.get("content_type", "photo")
+    if content_type not in ("photo", "voice"):
+        raise ValueError("content_type 非法（可选 photo/voice）")
+    if content_type == "voice":
+        return _register_voice_content(
+            db, user_id, cos_key, meta_obj, extra, taken_at, gps_lat, gps_lng, source
+        )
+
     # 蜂窝路径：上传物是缩略图 → 只落缩略图 + 占位内容（等 WiFi 补传原件）
     if upload_mode == "thumbnail_meta":
         thumbnail_key = derive_thumbnail_key(cos_key)
@@ -285,6 +298,78 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     db.refresh(record)
     enqueue_high(process_content, str(record.id))
     enqueue_high(generate_thumbnail_job, str(record.id))
+    return str(record.id)
+
+
+def _register_voice_content(
+    db: Session,
+    user_id: str,
+    cos_key: str,
+    meta: dict,
+    extra: dict,
+    taken_at,
+    gps_lat,
+    gps_lng,
+    source: str,
+) -> str:
+    """B5a 集成（Wave4 AgentJ 需求 1）：complete 直接建 voice 内容（不再落 stray photo）。
+
+    - 对象从 photos/ 前缀搬到 voice/{user_id}/ 前缀（语音与照片隔离，生命周期/CDN 可分别配置）
+    - 建 content_type=voice 记录 + 入队 process_content（走 ASR/VAD 转写）；voice 无缩略图不入队
+    - 幂等：同用户同 cos_key 已存在 → 直接返回既有 content_id（旧客户端仍会二次建内容请求）
+    """
+    existing = db.scalar(
+        select(Content).where(
+            Content.user_id == user_id,
+            Content.cos_key == cos_key,
+            Content.deleted_at.is_(None),
+        )
+    )
+    if existing is not None:
+        return str(existing.id)
+
+    # 搬移到 voice/ 前缀（storage 后端 get/put/delete；fake 后端同样可用）
+    backend = get_storage_backend()
+    try:
+        data = backend.get_object(cos_key)
+    except KeyError:
+        data = None
+    if not data:
+        raise ValueError("对象存储中未找到已上传文件")
+    raw_extra = meta.get("extra")
+    file_name = raw_extra.get("file_name", "audio") if isinstance(raw_extra, dict) else "audio"
+    safe = "".join(c for c in str(file_name) if c.isalnum() or c in "._-") or "audio"
+    now = datetime.now(timezone.utc)
+    voice_key = f"voice/{user_id}/{now:%Y%m}/{uuid.uuid4().hex[:12]}_{safe}"
+    backend.put_object(voice_key, data)
+    try:
+        backend.delete_object(cos_key)
+    except Exception:  # noqa: BLE001 —— 旧键删除失败不阻断（孤儿对象由清理任务兜底）
+        logger.warning("voice 上传旧键删除失败 cos_key=%s", cos_key)
+
+    voice_extra = dict(extra)
+    duration_ms = meta.get("duration_ms")
+    if duration_ms is not None:
+        try:
+            voice_extra["duration_ms"] = int(duration_ms)
+        except (TypeError, ValueError):
+            raise ValueError("duration_ms 必须为整数（毫秒）") from None
+
+    record = Content(
+        user_id=user_id,
+        content_type="voice",
+        taken_at=taken_at,
+        gps_lat=gps_lat,
+        gps_lng=gps_lng,
+        cos_key=voice_key,
+        extra=voice_extra,
+        source=source,
+        status="processing",
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    enqueue_high(process_content, str(record.id))
     return str(record.id)
 
 

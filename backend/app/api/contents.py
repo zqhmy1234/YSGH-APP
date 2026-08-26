@@ -239,6 +239,19 @@ def create_content(
         if verdict.get("action") == "mask" and verdict.get("masked_text"):
             req.text = verdict["masked_text"]
 
+    # B5a 集成（Wave4 AgentJ 需求 1 配套）：voice 带 cos_key 时幂等——complete 已建 voice
+    # 内容，旧客户端仍会二次调用本端点（saveVoiceContent），按 同用户+同 cos_key 去重返回既有记录
+    if req.content_type == "voice" and req.cos_key:
+        existing_voice = db.scalar(
+            select(Content).where(
+                Content.user_id == user.id,
+                Content.cos_key == req.cos_key,
+                Content.deleted_at.is_(None),
+            )
+        )
+        if existing_voice is not None:
+            return ApiResponse(data=_to_out(existing_voice))
+
     record = Content(
         user_id=user.id,
         content_type=req.content_type,

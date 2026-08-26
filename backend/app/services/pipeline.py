@@ -294,6 +294,12 @@ def enrich_content_emotion(content_id: str) -> dict:
         detail.pop("emotion_error", None)
         extra["audio_processing"] = detail
         content.extra = extra
+        # B5a 集成（Wave4 AgentJ 需求 4）：本地情绪增强产出真情绪后，补触发
+        # 事件层联动（events.emotion）与关怀/voice_done 接线——否则初始 funasr
+        # 通道恒"平静"，enrich 才产出的真情绪不会联动（幂等安全，见 emotion.py 头注）
+        from app.services.pipeline_ext import consume_emotion
+
+        consume_emotion(db, content)
         db.commit()
         return {"content_id": content_id, "status": "succeeded"}
     except AsrError as exc:

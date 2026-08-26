@@ -44,9 +44,9 @@
 | Wave 3 | G（B4 后端） | storage/upload/sync/wechat 媒体/清理 job | 5 | COS key（代码先行） | ✅ 已集成 |
 | Wave 3 | H（B4 客户端） | sync_client 接线/流量约束/定时/状态 UI | 6 | G 的 API（已就绪） | ✅ 已集成 |
 | Wave 3 | I（B1 画像） | interview/标注钩子/枚举集接线 | 6 | llm_ops.annotate | ✅ 已集成 |
-| Wave 4 | J（B5a 客户端） | voice.ts 长录音/关怀触发/中断状态机/emotion 钩子 | 5 | PR#1 已就绪 |
-| Wave 4 | K（B5d Android） | 前台服务/WorkManager/attribution 插件 | 3 | — |
-| Wave 4 | L（M3 微信） | code2session/阿里云内容安全 | 2 | 微信密钥（代码先行） |
+| Wave 4 | J（B5a 客户端） | voice.ts 长录音/关怀触发/中断状态机/emotion 钩子 | 5 | PR#1 已就绪 | ✅ 已集成（2026-08-26）|
+| Wave 4 | K（B5d Android） | 前台服务/WorkManager/attribution 插件 | 3 | — | ⏳ 开发中 |
+| Wave 4 | L（M3 微信） | code2session/阿里云内容安全 | 2 | 微信密钥（代码先行） | ✅ 已集成（2026-08-26）|
 
 ## 4. 新 Agent 启动步骤（每次开工前必做）
 

@@ -433,7 +433,18 @@ export function uploadVoicePersistent(
 									return
 								}
 								const fileKey = fieldOf(resp.raw, 'file_key')
-								// 4. 建 voice 内容（cos_key 指向对象存储；集成后 complete 直接返回 voice content_id）
+								// 4. 建 voice 内容：集成后 complete 直接返回 voice content_id（后端 voice 分支已建库+入队）
+								//    旧后端无 content_id → 回退二次建内容请求（/contents 带 cos_key，后端按 cos_key 幂等去重）
+								const voiceContentId = fieldOf(resp.raw, 'content_id')
+								if (voiceContentId != '') {
+									const out: UTSJSONObject = {
+										content_id: voiceContentId,
+										file_key: fileKey,
+										long_audio: true
+									}
+									resolve(out)
+									return
+								}
 								saveVoiceContent('', durationMs, '', fileKey, filePath).then((contentId: string | null) => {
 									if (contentId == null) {
 										showErrorToast(new Error('长录音内容入库失败'))
