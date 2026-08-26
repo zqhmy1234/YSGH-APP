@@ -40,15 +40,22 @@
 			</view>
 		</view>
 
-		<!-- ═══════════ 语音入口（T-AU-1/2/3）═══════════ -->
+		<!-- ═══════════ 语音入口（T-AU-1/2/3 + B5a J-4/J-7）═══════════ -->
 		<view v-else class="voice-panel">
 			<!-- 录音控制 -->
 			<view class="record-box">
 				<view class="mic-btn" :class="recording ? 'mic-recording' : ''" @tap="toggleRecord">
 					<text class="mic-icon">{{ recording ? '⏹' : '🎤' }}</text>
 				</view>
-				<text class="record-hint">{{ recording ? '录音中，再点停止' : '点击开始录音（≤3.5 分钟）' }}</text>
+				<text class="record-hint">{{ recordHint }}</text>
 				<text v-if="recording" class="record-timer">{{ recordSeconds }}s</text>
+				<!-- J-7：中断/暂停状态 + 恢复按钮 -->
+				<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
+					<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
+					<view class="resume-btn" @tap="resumeRecordNow">
+						<text class="resume-text">继续录音</text>
+					</view>
+				</view>
 			</view>
 
 			<!-- 转写结果（可编辑 T-AU-3） -->
@@ -59,6 +66,9 @@
 				<view class="transcript-head">
 					<text class="transcript-title serif">转写结果</text>
 					<text v-if="emotion != ''" class="emotion-chip">情绪：{{ emotion }}</text>
+				</view>
+				<view v-if="voiceHints != ''" class="voice-hints">
+					<text class="muted">{{ voiceHints }}</text>
 				</view>
 				<textarea class="text-input serif" v-model="transcript" :maxlength="2000" />
 				<view class="text-actions">
@@ -78,7 +88,20 @@
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
 	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate } from '@/utils/text_recorder'
-	import { startRecord, stopRecord, transcribeWav, saveVoiceContent, MAX_RECORD_MS } from '@/utils/voice'
+	import {
+		startRecord,
+		stopRecord,
+		pauseRecord,
+		resumeRecord,
+		setShouldResume,
+		recorderState,
+		transcribeWav,
+		saveVoiceContent,
+		uploadVoicePersistent,
+		MAX_RECORD_MS,
+		REC_STATE_INTERRUPTED,
+		REC_STATE_PAUSED
+	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 
 	class LabelItem {
@@ -113,12 +136,16 @@
 				recording: false,
 				recordSeconds: 0,
 				recordTimer: 0 as number,
+				recState: 'idle',
+				recordHint: '点击开始录音（≤30 分钟）',
+				voiceHints: '',
 				transcribing: false,
 				transcript: '',
 				emotion: '',
 				guardMsg: '',
 				saving: false,
-				lastVoiceDuration: 0
+				lastVoiceDuration: 0,
+				lastVoiceFile: ''
 			}
 		},
 		onLoad() {
@@ -219,16 +246,22 @@
 					})
 				})
 			},
-			/** T-AU-1：录音开始/停止 */
+			/** T-AU-1 + J-7：录音开始/停止（含中断状态机） */
 			toggleRecord(): void {
 				if (this.recording) {
 					this.stopRecordNow()
 				} else {
 					this.recording = true
 					this.recordSeconds = 0
+					this.recState = 'idle'
+					this.recordHint = '录音中，再点停止'
 					this.transcript = ''
 					this.emotion = ''
 					this.guardMsg = ''
+					this.voiceHints = ''
+					this.lastVoiceFile = ''
+					// 来电/闹钟中断后自动恢复（J-7 shouldResume）
+					setShouldResume(true)
 					this.recordTimer = setInterval(() => {
 						this.recordSeconds++
 					}, 1000) as number
@@ -242,21 +275,48 @@
 						(msg: string) => {
 							console.error('[yishu] record error: ' + msg)
 							this.recording = false
+							this.recState = 'idle'
+							this.recordHint = '点击开始录音（≤30 分钟）'
 							if (this.recordTimer > 0) {
 								clearInterval(this.recordTimer)
 								this.recordTimer = 0
 							}
 							showErrorToast(new Error('录音失败：' + msg))
+						},
+						(autoPaused: boolean) => {
+							// J-7：来电/系统中断 → 自动暂停
+							console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
+							this.recState = recorderState()
+							this.recordHint = '录音被中断，已暂停'
+						},
+						(path: string, durationMs: number) => {
+							// J-7：30min 自动结束 → 分段保存
+							console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
+							this.onRecordStopped(path, durationMs)
 						}
 					)
 				}
 			},
+			/** J-7：恢复被中断/暂停的录音 */
+			resumeRecordNow(): void {
+				resumeRecord()
+				this.recState = recorderState()
+				this.recordHint = this.recState == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
+			},
+			/** J-7：手动暂停（保留 RECORDING→PAUSED；toggle 仍走停止） */
+			pauseRecordNow(): void {
+				pauseRecord()
+				this.recState = recorderState()
+				this.recordHint = '已暂停'
+			},
 			stopRecordNow(): void {
 				stopRecord()
 			},
-			/** 录音停止 → 转写（T-AU-2） */
+			/** 录音停止 → 长录音分片上传 / 短录音直传转写（T-AU-2 + J-4） */
 			onRecordStopped(path: string, durationMs: number): void {
 				this.recording = false
+				this.recState = 'idle'
+				this.recordHint = '点击开始录音（≤30 分钟）'
 				if (this.recordTimer > 0) {
 					clearInterval(this.recordTimer)
 					this.recordTimer = 0
@@ -266,7 +326,17 @@
 					return
 				}
 				this.lastVoiceDuration = durationMs
+				this.lastVoiceFile = path
 				this.transcribing = true
+				// J-4：>5min 长录音（>8MB，后端直传超限）→ 分片持久化 → 管线 VAD 转写
+				if (durationMs >= 300000) {
+					this.transcribing = false
+					this.voiceHints = '长录音已提交，云端整理中（>5min 自动分段转写）'
+					uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
+						console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+					})
+					return
+				}
 				transcribeWav(path).then((res) => {
 					this.transcribing = false
 					if (res == null) {
@@ -274,6 +344,25 @@
 					}
 					this.transcript = res.text
 					this.emotion = res.emotion
+					// B5a J-1/J-3：音频事件/噪音/段级合并提示
+					const hints: Array<string> = []
+					if (res.notOral) {
+						hints.push('疑似非口述（键盘/环境音）')
+					}
+					if (res.silenceHint) {
+						hints.push('检测到静音空段，可删除')
+					}
+					const merge = res.emotionMerge
+					if (merge != null) {
+						const dm = merge.getJSON('dominant')
+						if (dm != null) {
+							hints.push('主导情绪：' + (dm.getString('emotion') ?? '') + '（时长最长段）')
+						}
+					}
+					if (res.noiseWeight == 'equal') {
+						hints.push('噪音较大，情绪权重已降为持平')
+					}
+					this.voiceHints = hints.join('；')
 					if (!res.guardPassed) {
 						this.guardMsg = '内容未通过安全审核：' + res.guardReason
 					} else {
@@ -289,13 +378,14 @@
 					return
 				}
 				this.saving = true
-				saveVoiceContent(text, this.lastVoiceDuration, this.emotion).then((contentId: string | null) => {
+				saveVoiceContent(text, this.lastVoiceDuration, this.emotion, '', this.lastVoiceFile).then((contentId: string | null) => {
 					this.saving = false
 					if (contentId != null) {
 						uni.showToast({ title: '已入库', icon: 'success' })
 						this.transcript = ''
 						this.emotion = ''
 						this.guardMsg = ''
+						this.voiceHints = ''
 					} else {
 						showErrorToast(new Error('入库失败'))
 					}
@@ -508,5 +598,46 @@
 		padding-top: 6rpx;
 		padding-bottom: 6rpx;
 		border-radius: 20rpx;
+	}
+	/* J-7：中断/暂停条 */
+	.interrupt-bar {
+		margin-top: 24rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		background-color: #F3E8DC;
+		border-radius: 8rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		padding-top: 16rpx;
+		padding-bottom: 16rpx;
+	}
+	.interrupt-text {
+		flex: 1;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+	.resume-btn {
+		background-color: #B05A3A;
+		border-radius: 24rpx;
+		padding-left: 28rpx;
+		padding-right: 28rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
+	}
+	.resume-text {
+		color: #F6F1E7;
+		font-size: 26rpx;
+	}
+	/* J-1/J-3：音频事件/噪音/段级合并提示 */
+	.voice-hints {
+		margin-top: 12rpx;
+		margin-bottom: 12rpx;
+		background-color: #F3E8DC;
+		border-radius: 8rpx;
+		padding-left: 20rpx;
+		padding-right: 20rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
 	}
 </style>

@@ -1,0 +1,54 @@
+/**
+ * 忆述光华 · 录音插件接口（B5a Wave4 AgentJ J-7）
+ *
+ * 系统能力层（UTS 插件，纯 UTS 实现——标准基座可运行，无需自定义基座）：
+ *  1. wav 16kHz 16bit 单声道录音（对齐后端 ASR 契约；uni.getRecorderManager App 端产出 wav）
+ *  2. 中断状态机（J-7）：RECORDING → INTERRUPTED（来电/闹钟系统抢占自动暂停）
+ *     → shouldResume=true 中断结束自动恢复 / shouldResume=false 停留暂停
+ *     → 用户手动暂停 PAUSED / 恢复
+ *  3. 30min 自动结束（duration 到点 onStop 落盘分段保存）+ 精确计时（排除暂停/中断时段）
+ *
+ * 参考原生契约：research/poc/android/.../RecordingService.kt（POC-02 按 wav 16k 重做）。
+ */
+
+/** 录音状态（J-7） */
+export const REC_STATE_IDLE: string = 'idle'
+export const REC_STATE_RECORDING: string = 'recording'
+export const REC_STATE_INTERRUPTED: string = 'interrupted'
+export const REC_STATE_PAUSED: string = 'paused'
+
+/** 录音回调类型（UTS 回调传递约束：具名 type 而非内联签名） */
+export type RecStartCallback = () => void
+export type RecStopCallback = (path: string, durationMs: number) => void
+export type RecErrorCallback = (msg: string) => void
+export type RecInterruptedCallback = (autoPaused: boolean) => void
+
+/** 录音控制器（实现位于 app-android，工厂函数创建） */
+export interface RecorderController {
+	/** 开始录音（wav 16k 单声道 ≤30min）；onInterrupted=中断自动暂停回调（J-7）；
+	 *  onAutoStop=30min 自动结束回调（落盘分段保存） */
+	start(
+		onStart: RecStartCallback,
+		onStop: RecStopCallback,
+		onError: RecErrorCallback,
+		onInterrupted: RecInterruptedCallback,
+		onAutoStop: RecStopCallback
+	): void
+	/** 停止录音（落盘当前分段） */
+	stop(): void
+	/** 用户手动暂停（RECORDING→PAUSED，J-7） */
+	pause(): void
+	/** 恢复录音（PAUSED/INTERRUPTED→RECORDING，J-7） */
+	resume(): void
+	/** 设置中断恢复策略：来电/闹钟 shouldResume=true 时中断结束自动恢复 */
+	setShouldResume(flag: boolean): void
+	/** 当前状态（REC_STATE_*） */
+	state(): string
+	/** 累计录音时长（排除暂停/中断时段） */
+	recordedMs(): number
+	/** 最近一次落盘文件路径 */
+	lastFile(): string
+}
+
+/** 创建录音控制器实例（跨端工厂，平台目录实现） */
+export function createRecorder(): RecorderController

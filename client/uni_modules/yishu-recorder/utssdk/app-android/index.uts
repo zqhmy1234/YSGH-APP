@@ -1,0 +1,197 @@
+/**
+ * 忆述光华 · 录音插件 Android 纯 UTS 实现（B5a Wave4 AgentJ J-7）
+ *
+ * 纯 UTS（无 .kt）：标准基座即可运行。封装 uni.getRecorderManager()（App 端 wav 16k
+ * 单声道产出），实现中断状态机：
+ *   RECORDING → INTERRUPTED（onInterruptionBegin 来电/闹钟自动暂停）
+ *   INTERRUPTED → RECORDING（onInterruptionEnd + shouldResume）或停留暂停
+ *   RECORDING → PAUSED（用户手动 pause）→ RECORDING（resume）
+ *   30min 自动结束（start duration 到点 → onStop 落盘 → onAutoStop 分段保存）
+ * 精确计时排除暂停/中断时段（onStop 无 duration 字段，自行累计）。
+ *
+ * 注意：不在此处 `export * from '../interface.uts'`——函数声明在 interface.uts，
+ * 本文件按同名实现即可（重复导出曾触发编译器 overload panic）；
+ * 类型单独具名再导出（error3：页面需从平台模块引用插件类型）。
+ */
+import {
+	RecorderController,
+	RecStartCallback,
+	RecStopCallback,
+	RecErrorCallback,
+	RecInterruptedCallback,
+	REC_STATE_IDLE,
+	REC_STATE_RECORDING,
+	REC_STATE_INTERRUPTED,
+	REC_STATE_PAUSED
+} from '../interface.uts'
+
+// 类型具名再导出（供页面从平台模块路径引用）
+export {
+	RecorderController,
+	RecStartCallback,
+	RecStopCallback,
+	RecErrorCallback,
+	RecInterruptedCallback,
+	REC_STATE_IDLE,
+	REC_STATE_RECORDING,
+	REC_STATE_INTERRUPTED,
+	REC_STATE_PAUSED
+} from '../interface.uts'
+
+/** 录音上限（30min；后端 duration 到点自动 onStop 分段保存） */
+const MAX_RECORD_MS: number = 1800000
+
+/** 录音管理器单例 */
+let _mgr: RecorderManager | null = null
+
+function manager(): RecorderManager {
+	if (_mgr == null) {
+		_mgr = uni.getRecorderManager()
+	}
+	return _mgr!
+}
+
+class RecorderImpl implements RecorderController {
+	_state: string = REC_STATE_IDLE
+	_shouldResume: boolean = false
+	_tempFile: string = ''
+	_recordStartMs: number = 0
+	_recordedAccumMs: number = 0
+	_pauseStartMs: number = 0
+	_onInterrupted: RecInterruptedCallback | null = null
+	_onAutoStop: RecStopCallback | null = null
+
+	start(
+		onStart: RecStartCallback,
+		onStop: RecStopCallback,
+		onError: RecErrorCallback,
+		onInterrupted: RecInterruptedCallback,
+		onAutoStop: RecStopCallback
+	): void {
+		const mgr = manager()
+		this._reset()
+		this._recordStartMs = Date.now()
+		this._onInterrupted = onInterrupted
+		this._onAutoStop = onAutoStop
+
+		mgr.onStart(() => {
+			this._state = REC_STATE_RECORDING
+			onStart()
+		})
+		mgr.onStop((res: RecorderManagerOnStopResult) => {
+			const path = res.tempFilePath
+			this._tempFile = path
+			const dur = this._recordedAccumMs +
+				(this._pauseStartMs == 0 ? Date.now() - this._recordStartMs : 0)
+			const wasAuto = this._state == REC_STATE_RECORDING && this._onAutoStop != null
+			const autoCb = this._onAutoStop
+			this._reset()
+			onStop(path, dur)
+			// J-7：duration 到点自动结束 → 分段保存回调
+			if (wasAuto && autoCb != null) {
+				this._onAutoStop = null
+				autoCb(path, dur)
+			}
+		})
+		mgr.onError((err: IRecorderManagerFail) => {
+			this._state = REC_STATE_IDLE
+			onError(err.errMsg)
+		})
+		// J-7 中断监听（来电/闹钟等系统抢占）——一次注册常驻
+		mgr.onInterruptionBegin(() => {
+			if (this._state == REC_STATE_RECORDING || this._state == REC_STATE_PAUSED) {
+				if (this._state == REC_STATE_RECORDING) {
+					this._recordedAccumMs += Date.now() - this._recordStartMs
+					this._pauseStartMs = Date.now()
+				}
+				this._state = REC_STATE_INTERRUPTED
+				mgr.pause()
+				if (this._onInterrupted != null) {
+					this._onInterrupted(true)
+				}
+			}
+		})
+		mgr.onInterruptionEnd(() => {
+			if (this._state == REC_STATE_INTERRUPTED) {
+				if (this._shouldResume) {
+					// 来电/闹钟结束 → 自动恢复
+					mgr.resume()
+					this._recordStartMs = Date.now()
+					this._pauseStartMs = 0
+					this._state = REC_STATE_RECORDING
+				}
+				// shouldResume=false → 停留暂停（用户手动恢复）
+			}
+		})
+		mgr.start({
+			format: 'wav',
+			sampleRate: 16000,
+			numberOfChannels: 1,
+			encodeBitRate: 256000,
+			duration: MAX_RECORD_MS
+		})
+	}
+
+	stop(): void {
+		manager().stop()
+	}
+
+	pause(): void {
+		if (this._state != REC_STATE_RECORDING) {
+			return
+		}
+		const mgr = manager()
+		this._recordedAccumMs += Date.now() - this._recordStartMs
+		this._pauseStartMs = Date.now()
+		mgr.pause()
+		this._state = REC_STATE_PAUSED
+	}
+
+	resume(): void {
+		if (this._state != REC_STATE_PAUSED && this._state != REC_STATE_INTERRUPTED) {
+			return
+		}
+		const mgr = manager()
+		mgr.resume()
+		this._recordStartMs = Date.now()
+		this._pauseStartMs = 0
+		this._state = REC_STATE_RECORDING
+	}
+
+	setShouldResume(flag: boolean): void {
+		this._shouldResume = flag
+	}
+
+	state(): string {
+		return this._state
+	}
+
+	recordedMs(): number {
+		return this._recordedAccumMs +
+			(this._pauseStartMs == 0 ? Date.now() - this._recordStartMs : 0)
+	}
+
+	lastFile(): string {
+		return this._tempFile
+	}
+
+	_reset(): void {
+		this._state = REC_STATE_IDLE
+		this._recordStartMs = 0
+		this._recordedAccumMs = 0
+		this._pauseStartMs = 0
+		this._tempFile = ''
+	}
+}
+
+let _instance: RecorderImpl | null = null
+
+export function createRecorder(): RecorderController {
+	const inst = _instance
+	if (inst == null) {
+		const created = new RecorderImpl()
+		_instance = created
+		return created
+	}
+	return inst
+}
