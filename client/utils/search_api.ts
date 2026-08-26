@@ -12,7 +12,8 @@
  *
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
-import { post, dataObj, showErrorToast } from './api'
+// O9 收口：错误信封解析统一走 api.ts 的 parseErrorString（原本地 parseSearchError 副本已删）
+import { post, dataObj, showErrorToast, parseErrorString } from './api'
 import { getBaseUrl } from './config'
 import { getToken as getTokenForSearchUpload } from './auth'
 
@@ -209,7 +210,7 @@ export function searchByImage(filePath: string, limit: number): Promise<SearchOu
 						return
 					}
 				}
-				const errMsg = parseSearchError(res.data as string)
+				const errMsg = parseErrorString(res.data as string, '搜索失败（HTTP 非 200）')
 				showErrorToast(new Error(errMsg))
 				resolve(null)
 			},
@@ -219,21 +220,4 @@ export function searchByImage(filePath: string, limit: number): Promise<SearchOu
 			}
 		})
 	})
-}
-
-/** 错误信封解析（非 200 场景） */
-function parseSearchError(txt: string): string {
-	const idx = txt.indexOf('{')
-	if (idx >= 0) {
-		try {
-			const body = JSON.parse(txt.substring(idx)) as UTSJSONObject
-			const msg = body.getString('message')
-			if (msg != null && msg != '') {
-				return msg
-			}
-		} catch (e) {
-			// fallthrough
-		}
-	}
-	return '搜索失败（HTTP 非 200）'
 }

@@ -193,3 +193,33 @@ export function dataArr(body: UTSJSONObject): Array<UTSJSONObject> {
 	}
 	return arr as Array<UTSJSONObject>
 }
+
+/**
+ * 上传/上传类响应信封解析（O9 收口：voice/search_api 各自副本删除，统一本模块）。
+ * uploadFile 等路径的 res.data 为 string（lessons.md #3），可能带日志前缀——
+ * 取首个 '{' 起的 JSON 段再 parse；解析失败返回 null。
+ */
+export function parseEnvelopeString(raw: string): UTSJSONObject | null {
+	const idx = raw.indexOf('{')
+	if (idx < 0) {
+		return null
+	}
+	const jsonStr = raw.substring(idx)
+	try {
+		return JSON.parse(jsonStr) as UTSJSONObject
+	} catch (e) {
+		return null
+	}
+}
+
+/** 错误信封解析（非 200 场景：取 JSON 段的 message；无则返回 fallback） */
+export function parseErrorString(raw: string, fallback: string = '请求失败（HTTP 非 200）'): string {
+	const body = parseEnvelopeString(raw)
+	if (body != null) {
+		const msg = body.getString('message')
+		if (msg != null && msg != '') {
+			return msg
+		}
+	}
+	return fallback
+}

@@ -17,7 +17,8 @@
  *
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
-import { post, dataObj, showErrorToast } from './api'
+// O9 收口：上传/错误信封解析统一走 api.ts（原本地 parseEnvelope/parseError 副本已删）
+import { post, dataObj, showErrorToast, parseEnvelopeString, parseErrorString } from './api'
 import { getBaseUrl } from './config'
 import { getToken as getTokenForUpload } from './auth'
 // TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
@@ -165,7 +166,7 @@ export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 				if (res.statusCode === 200) {
 					// 教训（lessons.md #3）：uploadFile 的 res.data 是 string（JS 引擎无 UTSJSONObject.parse）
 					const txt = res.data as string
-					const body = parseEnvelope(txt)
+					const body = parseEnvelopeString(txt)
 					if (body == null) {
 						showErrorToast(new Error('转写响应解析失败'))
 						resolve(null)
@@ -208,7 +209,7 @@ export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 					return
 				}
 				// 非 200：尝试解析错误信封
-				const errMsg = parseError(res.data as string)
+				const errMsg = parseErrorString(res.data as string)
 				showErrorToast(new Error(errMsg))
 				resolve(null)
 			},
@@ -218,32 +219,6 @@ export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 			}
 		})
 	})
-}
-
-/** 上传响应信封解析（res.data 为 string；用字符串拆解拿 JSON 部分） */
-function parseEnvelope(txt: string): UTSJSONObject | null {
-	const idx = txt.indexOf('{')
-	if (idx < 0) {
-		return null
-	}
-	const jsonStr = txt.substring(idx)
-	try {
-		return JSON.parse(jsonStr) as UTSJSONObject
-	} catch (e) {
-		return null
-	}
-}
-
-/** 错误信封解析（非 200 场景） */
-function parseError(txt: string): string {
-	const body = parseEnvelope(txt)
-	if (body != null) {
-		const msg = body.getString('message')
-		if (msg != null && msg != '') {
-			return msg
-		}
-	}
-	return '请求失败（HTTP 非 200）'
 }
 
 /** POST /contents：语音内容入库（voice 类型，可选携带 cos_key 长音频）；返回 content_id 或 null */
