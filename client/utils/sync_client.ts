@@ -36,7 +36,21 @@ import { isoLocal } from './time'
 import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 
 // O3 收口：DEVICE_ID 由 auth.ts 唯一导出（见上方 import），不再本地重复定义
-export const MAX_BATCH_FAILURES: number = 10
+// F9/R1#10：暂停令牌单源 pause_controller（原内聚"暂停控制器（与照片上传共享）"一节）；
+// 此处 import + 再导出兼容既有外部引用（uploader/UploadStatusBanner），行为等价
+import {
+	MAX_BATCH_FAILURES as SHARED_MAX_BATCH_FAILURES,
+	SyncStatusListener,
+	pauseSync as sharedPauseSync,
+	resumeSync as sharedResumeSync,
+	isSyncPaused as sharedIsSyncPaused,
+	getPauseReason as sharedGetPauseReason,
+	subscribeSyncStatus as sharedSubscribeSyncStatus,
+	registerConsecutiveFailure as sharedRegisterConsecutiveFailure,
+	resetConsecutiveFailures as sharedResetConsecutiveFailures,
+	broadcastStatus as sharedBroadcastStatus
+} from './pause_controller'
+
 /** 指数退避（S1-M3 收口：与 event_sync/uploader 共享 retry.ts：2s→4s→8s→8s→8s，5 次上限） */
 export const BACKOFF_MS: number[] = SHARED_BACKOFF_MS
 const PUSH_BATCH_SIZE: number = 100
@@ -45,7 +59,6 @@ const DEFAULT_SYNC_INTERVAL_MS: number = 2 * 60 * 60 * 1000 // 2 小时定时兜
 const OP_QUEUE_KEY: string = 'yishu_sync_op_queue'
 const CURSOR_KEY: string = 'yishu_sync_cursor'
 const MIRROR_KEY: string = 'yishu_sync_mirror'
-const PAUSED_KEY: string = 'yishu_sync_paused'
 
 // ---------- 工具 ----------
 
@@ -96,7 +109,7 @@ function pushOp(opType: string, payload: UTSJSONObject): void {
 	lines.push(JSON.stringify(entry))
 	writeQueue(lines)
 	console.log('[yishu] sync enqueue ' + opType + ' queue=' + lines.length)
-	emitStatus()
+	sharedBroadcastStatus()
 }
 
 /** 字段级操作入队（upsert_field；value 支持 string/number/boolean，按类型标记存储防 UTS 读取歧义） */
@@ -145,59 +158,31 @@ export function pendingSyncCount(): number {
 	return n
 }
 
-// ---------- 暂停控制器（与照片上传共享） ----------
+// ---------- 暂停控制器（F9 职责分离：实现移至 pause_controller.ts，此处仅再导出兼容既有引用） ----------
 
-/** 订阅同步状态变化（UI 横幅用）；回调形如 (paused, reason) */
-export type SyncStatusListener = (paused: boolean, reason: string) => void
-let _statusListeners: Array<SyncStatusListener> = []
-let _consecutiveFailures: number = 0
+export type { SyncStatusListener } from './pause_controller'
 
+export const MAX_BATCH_FAILURES: number = SHARED_MAX_BATCH_FAILURES
 export function subscribeSyncStatus(cb: SyncStatusListener): void {
-	_statusListeners.push(cb)
+	sharedSubscribeSyncStatus(cb)
 }
-
-function emitStatus(): void {
-	const paused = isSyncPaused()
-	const reason = getPauseReason()
-	for (let i = 0; i < _statusListeners.length; i++) {
-		_statusListeners[i](paused, reason)
-	}
-}
-
 export function pauseSync(reason: string): void {
-	uni.setStorageSync(PAUSED_KEY, reason)
-	console.log('[yishu] sync paused: ' + reason)
-	emitStatus()
+	sharedPauseSync(reason)
 }
-
 export function resumeSync(): void {
-	uni.removeStorageSync(PAUSED_KEY)
-	_consecutiveFailures = 0
-	emitStatus()
+	sharedResumeSync()
 }
-
 export function isSyncPaused(): boolean {
-	const r = uni.getStorageSync(PAUSED_KEY) as string
-	return r != null && r != ''
+	return sharedIsSyncPaused()
 }
-
 export function getPauseReason(): string {
-	if (!isSyncPaused()) {
-		return ''
-	}
-	return uni.getStorageSync(PAUSED_KEY) as string
+	return sharedGetPauseReason()
 }
-
-/** 连续失败登记：≥MAX_BATCH_FAILURES 自动暂停（供 uploader 批量上传调用） */
 export function registerConsecutiveFailure(): void {
-	_consecutiveFailures++
-	if (_consecutiveFailures >= MAX_BATCH_FAILURES) {
-		pauseSync('网络异常，已暂停同步')
-	}
+	sharedRegisterConsecutiveFailure()
 }
-
 export function resetConsecutiveFailures(): void {
-	_consecutiveFailures = 0
+	sharedResetConsecutiveFailures()
 }
 
 // ---------- 游标持久化 ----------
