@@ -157,9 +157,10 @@ class TestVoicePipeline:
         monkeypatch.setattr("app.services.external.asr.transcribe", fake_transcribe)
         monkeypatch.setattr("app.services.pipeline._index_content", lambda *args: None)
         monkeypatch.setattr("app.services.pipeline._classify_content", lambda *args: None)
+        # F4/R5-5：尾段先入队后提交——情绪任务经 enqueue_unique（同 content 键去重）
         monkeypatch.setattr(
-            "app.core.queue.enqueue_low",
-            lambda func, content_id: queued.append((func, content_id)),
+            "app.core.queue.enqueue_unique",
+            lambda func, key, **kw: queued.append((func, key)),
         )
         from app.services.pipeline import enrich_content_emotion, process_content
 
@@ -277,7 +278,7 @@ class TestVoicePipeline:
         def fail_enqueue(*args, **kwargs):
             raise RuntimeError("redis unavailable")
 
-        monkeypatch.setattr("app.core.queue.enqueue_low", fail_enqueue)
+        monkeypatch.setattr("app.core.queue.enqueue_unique", fail_enqueue)
         from app.services.pipeline import process_content
 
         response = process_content(str(c.id))

@@ -467,7 +467,9 @@ def process_content(content_id: str) -> dict:
       - 阶段 3：主提交 status=done + 全部 DB 状态变更一次落库
       - 阶段 4：Qdrant 索引后置到主提交之后（DB 是真值，Qdrant 事后幂等增强；
         主提交失败则无向量写入，无孤儿向量；重投重跑按 content_id 幂等）
-      - 阶段 5：本地情绪低优先级任务入队（不阻塞内容可用性）
+      - 阶段 5：本地情绪低优先级任务入队——F4/R5-5 尾段**先入队后提交**（done
+        主提交前入队，消除 commit→enqueue 间隙崩溃丢任务；enqueue_unique 同
+        content 键不重复入队），入队失败回写 enqueue_failed 审计标记
     """
     from app.services.external.asr import AsrError
 
@@ -534,6 +536,37 @@ def process_content(content_id: str) -> dict:
             content.content_type == "voice"
             and audio_processing.get("emotion_enrichment") == "pending"
         )
+        # F4/R5-5（重构侦察 R5-5）：尾段先入队后提交——情绪任务在 done 主提交前
+        # 入队，消除 commit→enqueue 间隙崩溃丢任务；enqueue_unique 同 content 键
+        # 不重复入队（双 process_content 并发只投一次情绪任务，防双推理双副作用）。
+        emotion_job_status = None
+        if emotion_pending:
+            try:
+                from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
+
+                enqueue_unique(
+                    enrich_content_emotion,
+                    content_id,
+                    queue_name=QUEUE_LOW,
+                    job_timeout=DEFAULT_JOB_TIMEOUT,
+                )
+                emotion_job_status = "queued"
+                processed.append("emotion_queued")
+            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主转写
+                logger.warning(
+                    "本地情绪任务入队失败 content=%s: %s",
+                    content_id,
+                    type(exc).__name__,
+                )
+                # 失败不丢任务：回写 enqueue_failed 审计标记（requeue_job 超龄
+                # 重扫兜底，见 workers/requeue_job.py），主转写仍落 done
+                _set_emotion_enrichment(
+                    content,
+                    "enqueue_failed",
+                    error={"code": "EMOTION_ENQUEUE_FAILED", "retryable": True},
+                )
+                emotion_job_status = "enqueue_failed"
+
         content.status = "done"
         # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
         db.commit()
@@ -544,30 +577,6 @@ def process_content(content_id: str) -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.warning("后置索引失败 content=%s: %s", content.id, exc)
 
-        # 主转写先完成；本地情绪作为低优先级任务追加，不阻塞内容可用性。
-        emotion_job_status = None
-        if emotion_pending:
-            try:
-                from app.core.queue import enqueue_low
-
-                enqueue_low(enrich_content_emotion, content_id)
-                emotion_job_status = "queued"
-                processed.append("emotion_queued")
-            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主转写
-                logger.warning(
-                    "本地情绪任务入队失败 content=%s: %s",
-                    content_id,
-                    type(exc).__name__,
-                )
-                target = db.get(Content, content_id)
-                if target is not None:
-                    _set_emotion_enrichment(
-                        target,
-                        "enqueue_failed",
-                        error={"code": "EMOTION_ENQUEUE_FAILED", "retryable": True},
-                    )
-                    db.commit()
-                emotion_job_status = "enqueue_failed"
         return {
             "content_id": content_id,
             "status": "done",

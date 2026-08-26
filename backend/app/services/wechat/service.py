@@ -200,8 +200,8 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
       {"media": "ok", "cos_key": ..., "content_id": ...} / {"media": "failed", ...}
       / {"media": "blocked", "sensitive": True}
     """
-    from app.core.queue import enqueue_high
     from app.services.external.storage import get_storage_backend
+    from app.services.photo_content import safe_enqueue_unique
     from app.services.pipeline import process_content
 
     media_id = msg.get("media_id")
@@ -252,9 +252,10 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
         raise
     db.refresh(content)
 
-    enqueue_high(process_content, str(content.id))
+    # F4：enqueue_unique 同 content 键不重复入队（safe：失败仅记日志，P0-5）
+    safe_enqueue_unique(process_content, str(content.id))
     if content.content_type == "photo":
-        enqueue_high(thumbnails.generate_thumbnail_job, str(content.id))
+        safe_enqueue_unique(thumbnails.generate_thumbnail_job, str(content.id))
     return {"media": "ok", "cos_key": cos_key, "content_id": str(content.id)}
 
 
