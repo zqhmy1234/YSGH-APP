@@ -18,8 +18,17 @@ from app.db.models import GeoCache
 from app.db.session import SessionLocal
 from app.services.external import amap as amap_svc
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 
 pytestmark = pytest.mark.integration
+
+# 本文件全部测试写入的缓存 key（geo_cache 主键 = geohash）：teardown 按这些 key
+# 定向删除，不再清空整表（R8#13——防连带清掉未来其他模块/生产联调写入的缓存）。
+_TEST_COORDS = [(31.2304, 121.4737)]
+
+
+def _test_geohashes() -> list[str]:
+    return [amap_svc.encode_geohash(lat, lng) for lat, lng in _TEST_COORDS]
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +42,8 @@ def _ensure_mock_mode():
 def db():
     session = SessionLocal()
     yield session
-    session.execute(sa_delete(GeoCache))
+    # R8#13：整表清空 → 只删本测试写入的 geohash key（其余 geo_cache 行不动）
+    session.execute(sa_delete(GeoCache).where(GeoCache.geohash.in_(_test_geohashes())))
     session.commit()
     session.close()
 
@@ -74,7 +84,12 @@ def test_get_place_dev_mock_fallback(db, monkeypatch):
     monkeypatch.setattr(amap_svc, "regeo", boom)
     place = amap_svc.get_place(db, 31.2304, 121.4737)
     assert place and place.startswith("示例区·")
-    assert db.execute(sa_delete(GeoCache)).rowcount == 0  # mock 不落缓存
+    # mock 不落缓存（R8#13：按本测试 geohash 定向计数，不清整表）
+    assert db.execute(
+        select(func.count()).select_from(GeoCache).where(
+            GeoCache.geohash.in_(_test_geohashes())
+        )
+    ).scalar() == 0
 
 
 def test_get_place_production_rejects_mock(db, monkeypatch):
@@ -85,7 +100,12 @@ def test_get_place_production_rejects_mock(db, monkeypatch):
     monkeypatch.setattr(amap_svc, "regeo", boom)
     monkeypatch.setattr(settings, "app_env", "production")
     assert amap_svc.get_place(db, 31.2304, 121.4737) is None
-    assert db.execute(sa_delete(GeoCache)).rowcount == 0
+    # mock 不落缓存（R8#13：按本测试 geohash 定向计数，不清整表）
+    assert db.execute(
+        select(func.count()).select_from(GeoCache).where(
+            GeoCache.geohash.in_(_test_geohashes())
+        )
+    ).scalar() == 0
 
 
 def test_get_place_cache_hit_no_api(db, monkeypatch):
@@ -121,8 +141,11 @@ def test_get_place_cache_expired_refetch(db, monkeypatch):
     assert place == "陆家嘴"
     assert len(calls) == 1
     db.expire_all()
+    # 只按本测试 geohash 定向读回（R8#13：不再 DELETE 整表）
     row = db.execute(
-        sa_delete(GeoCache).returning(GeoCache.place)
+        sa_delete(GeoCache)
+        .where(GeoCache.geohash.in_(_test_geohashes()))
+        .returning(GeoCache.place)
     ).one()
     assert row[0] == "陆家嘴"  # 缓存已刷新
 
