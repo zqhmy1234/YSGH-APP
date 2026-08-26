@@ -97,13 +97,20 @@ jobs:
           pip install pytest pytest-cov httpx ruff
 
       - name: Init PostgreSQL (yishu 隔离库 + alembic upgrade head)
-        # 2026-08-26 issue #2：建库改跑 alembic upgrade head（迁移历史为单一事实来源），
-        # 不再导入 schema.sql（双轨漂移根因）；schema.sql 保留为开发参考/回退基线。
+        # 2026-08-26 issue #2：建库改跑 alembic upgrade head（迁移历史为单一事实来源）。
+        # #8/#9/#10 连续挂此步（psql 连接/认证失败，schema/alembic 两种建库同挂）→ 加重试循环+详细输出定位。
+        env:
+          PGPASSWORD: admin
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-          PGPASSWORD=admin psql -h localhost -U postgres -f scripts/setup_pg.sql
+          for i in $(seq 1 20); do
+            psql -h localhost -U postgres -c "select 1" >/dev/null 2>&1 && { echo "postgres ready (try $i)"; break; }
+            echo "[$i] postgres 未就绪，5s 后重试..."
+            sleep 5
+          done
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f scripts/setup_pg.sql
           cd backend && alembic upgrade head
-          PGPASSWORD=admin psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
+          psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
 
       - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
         run: python scripts/generate_test_photos.py
