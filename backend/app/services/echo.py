@@ -53,6 +53,14 @@ def profile_sensitive_blocked(db: Session, user_id: str, text: str) -> bool:
     rows = db.execute(
         select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
     ).scalars().all()
+    return _profile_hit(text, rows)
+
+
+def _profile_hit(text: str, rows) -> bool:
+    """命中画像敏感处置（forbid/caution/review）——rows 为已加载 ProfileSensitive 行
+
+    S6-7：独立出纯函数，供 get_today_echo 一次加载复用（避免逐候选 N 次查询）。
+    """
     for row in rows:
         topic = (row.topic or "").strip()
         if not topic:
@@ -122,20 +130,25 @@ def list_profile_sensitive(
     return db.execute(q).scalars().all()
 
 
-def _is_sensitive(db: Session, content: Content) -> bool:
+def _is_sensitive(db: Session, content: Content, profile_rows=None) -> bool:
     """敏感双查（SAF-006/007；用户 2026-08-20 拍板：已有敏感标记 + LLM 检测）
 
     第零查（B5b FIX-4 前置画像 L1 校验）：profile_sensitive 命中 forbid/caution/review
     → 跳过不重提（画像级永不过期，无降级路径）
     第一查：内容入库时的敏感标记（contents.sensitive_status ≠ 正常）
     第二查：出包前 LLM 检测（llm_ops.base.moderate：规则预检 + 百炼护栏，fail-safe）
+
+    profile_rows：可选已加载 ProfileSensitive 行（S6-7 get_today_echo 一次加载复用）。
     """
-    if profile_sensitive_blocked(db, str(content.user_id), content.text or ""):
+    text = content.text or ""
+    if profile_rows is not None:
+        if _profile_hit(text, profile_rows):
+            return True
+    elif profile_sensitive_blocked(db, str(content.user_id), text):
         return True
     if content.sensitive_status and content.sensitive_status != "正常":
         return True
     # 第二查：LLM 检测（对内容文本；mock 模式规则预检仍生效，fail-safe 拒发）
-    text = content.text or ""
     if text.strip():
         from app.services.llm_ops.base import moderate
 
@@ -195,12 +208,32 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         ).scalars().all()
     )
 
+    # S6-7 敏感话题一次加载复用（逐候选 N 次查询 → 每调用 1 次）
+    profile_rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    ).scalars().all()
+
+    llm_checked = False
     for content in row:
-        if _is_sensitive(db, content):
+        text = content.text or ""
+        # 便宜检查（画像敏感 + 入库敏感标记 + 已划掉）——不触发 LLM
+        if _profile_hit(text, profile_rows):
+            continue
+        if content.sensitive_status and content.sensitive_status != "正常":
             continue
         fp = _fingerprint(content.id)
         if fp in dismissed:
             continue
+        # LLM 检测仅首候选（S6-7）：出包前二次护栏只跑首个通过便宜检查的候选，
+        # 避免对整批候选逐条 LLM（20 次 → ≤1 次）；首候选 LLM 未过 → 不再回退未验证候选
+        if not llm_checked:
+            llm_checked = True
+            if text.strip():
+                from app.services.llm_ops.base import moderate
+
+                verdict = moderate(text)
+                if not verdict.get("pass", True):
+                    continue
         # 记录展示（回响每天≤1 条；event_id 为 NULL 避开 events 外键——事件服务 M2 接入）
         # 修复（审查 MAJOR 竞态）：查询计数无 DB 保护，并发双请求可同天两条——
         # 唯一索引 uq_echo_history_daily 兜底（shown_date 显式落列），插入冲突 →
@@ -222,7 +255,7 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         return {
             "content_id": content.id,
             "content_type": content.content_type,
-            "text": content.text,
+            "text": text,
             "taken_at": content.taken_at.isoformat() if content.taken_at else None,
             "place": content.place,
             "echo_date": today.isoformat(),

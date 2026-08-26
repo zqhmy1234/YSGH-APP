@@ -137,20 +137,44 @@ def run_api_smoke() -> tuple[bool, str]:
     照片 multipart 上传链路 / 时间轴结构 / 去重 409。详见 scripts/api_smoke_cases.py。
     2026-08-25 内存优化：smoke 进程跳过 reranker 加载（RERANKER_MODEL=__disabled__，
     命中存在性检查即降级原序）——rerank 覆盖在 pytest -m rag；smoke 峰值降 ~0.5-1GB。
+    TD-P1C（2026-08-26）：smoke 写 test_ 前缀测试 collection（QDRANT_COLLECTION），
+    不再写生产 yishu_contents；与 pytest 隔离 → 执行顺序不再影响门禁结果。
     """
     code, out = run(
         [sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")],
-        env={"RERANKER_MODEL": "__disabled__"},
+        env={
+            "RERANKER_MODEL": "__disabled__",
+            "QDRANT_COLLECTION": "test_yishu_contents",
+        },
     )
     if code != 0:
-        # 存量 flaky（2026-08-24 起：Qdrant 累积数据后新内容可能被挤出 top-k，
-        # 见 api_smoke_cases.py 注释）——自动重试一次，仍失败才阻断。
+        # 存量 flaky（2026-08-24 起：Qdrant 累积数据后新内容可能被挤出 top-k）——
+        # TD-P1C 后 smoke 已隔离于独立 collection，重试作为兜底保留。
         print("[retry] api_smoke 首次失败，自动重试一次")
         code, out = run(
             [sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")],
-            env={"RERANKER_MODEL": "__disabled__"},
+            env={
+                "RERANKER_MODEL": "__disabled__",
+                "QDRANT_COLLECTION": "test_yishu_contents",
+            },
         )
     return (code == 0), out.strip()[-1500:]
+
+
+def run_cleanup_test_collections() -> tuple[bool, str]:
+    """每跑结束清理 test_ 前缀 Qdrant collection（尽力而为，失败不阻断门禁）
+
+    TD-P1C（2026-08-26）：测试环境累计数据清理，防 test_ 库无界增长
+    挤占/污染后续跑（api_smoke 起始也会清理，这里作为每跑收尾兜底）。
+    """
+    cmd = (
+        "import sys; "
+        "sys.path.insert(0, r'" + str(ROOT / "backend") + "'); "
+        "from app.services.vector_store import cleanup_test_collections; "
+        "print('removed:', cleanup_test_collections())"
+    )
+    code, out = run([sys.executable, "-c", cmd])
+    return (code == 0), out.strip()[-500:]
 
 
 def run_research_validation() -> tuple[bool, str]:
@@ -179,21 +203,26 @@ def main() -> int:
                 "建议先关闭 HBuilderX 编译残留/TRAE/WorkBuddy 等大进程"
             )
 
-    # 执行顺序（2026-08-26 调整）：api_smoke 先于 pytest——
-    # pytest 的 test_pipeline 会向生产 collection（yishu_contents）写入测试内容，
-    # 积累后会把 api_smoke 新内容挤出 top-k（已知 flaky，api_smoke_cases 注释自认）。
+    # 执行顺序（TD-P1C 2026-08-26）：api_smoke 与 pytest 均已隔离——
+    # api_smoke 写 test_ 前缀测试 collection（不再写生产 yishu_contents），
+    # 不再需要"api_smoke 先于 pytest"顺序 hack；pytest 常规先行，
+    # 每跑结束统一清理 test_ collection（尽力而为）。
     sections = {
-        "api_smoke": run_api_smoke() if args.only is None or args.only == "api" else (True, "[skip]"),
         "pytest": run_pytest(args.cov_threshold) if args.only is None or args.only == "api" else (True, "[skip]"),
+        "api_smoke": run_api_smoke() if args.only is None or args.only == "api" else (True, "[skip]"),
         "research": run_research_validation() if args.only is None or args.only == "research" else (True, "[skip]"),
     }
     blocking = {k: v for k, v in sections.items() if not v[0]}
     passed = not blocking
 
+    # 每跑结束清理测试 collection（尽力而为，失败不阻断门禁）
+    cleanup_ok, cleanup_out = run_cleanup_test_collections()
+
     report = {
         "passed": passed,
         "blocking_sections": list(blocking.keys()),
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in sections.items()},
+        "cleanup_test_collections": {"ok": cleanup_ok, "output": cleanup_out},
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -207,6 +236,9 @@ def main() -> int:
         print(f"\n[{mark}] {name}")
         for line in out.splitlines()[:10]:
             print(f"    {line}")
+    print(f"\n[{'✅' if cleanup_ok else '⚠'}] cleanup_test_collections")
+    for line in cleanup_out.splitlines()[:3]:
+        print(f"    {line}")
     print("\n" + "=" * 60)
     if passed:
         print("✅ 测试全部通过")

@@ -361,23 +361,31 @@ _BACKENDS: dict[str, type[StorageBackend]] = {
 # fake 单例（进程内共享内存，供分片跨调用合并）
 _FAKE_INSTANCE = FakeStorageBackend()
 
+# cos/minio 进程级单例（S6-10：与 fake 同模式——避免每次调用新建外部连接客户端
+# 造成连接/凭证握手开销；懒加载，首次 get 才建）
+_MINIO_INSTANCE: MinioStorageBackend | None = None
+_COS_INSTANCE: CosStorageBackend | None = None
+
 # fake 容量上限（审查修复 P1/m-14：误配 fake 上生产时防内存无限增长）
 FAKE_MAX_OBJECTS = 10000
 FAKE_MAX_BYTES = 512 * 1024 * 1024  # 512MB
 
 
 def reset_storage_backend() -> None:
-    """重置 fake 单例内存（P2-04：测试隔离——两测试间互不污染）"""
-    global _FAKE_INSTANCE  # noqa: PLW0603
+    """重置存储单例（P2-04：测试隔离——两测试间互不污染）"""
+    global _FAKE_INSTANCE, _MINIO_INSTANCE, _COS_INSTANCE  # noqa: PLW0603
     _FAKE_INSTANCE = FakeStorageBackend()
+    _MINIO_INSTANCE = None
+    _COS_INSTANCE = None
 
 
 def get_storage_backend(name: str | None = None) -> StorageBackend:
     """存储后端工厂（按 settings.storage_backend 或显式 name）
 
-    fake 为模块级单例（同一进程内共享内存，分片跨调用可合并）；
-    minio/cos 每次新建（连接外部服务，无进程内状态）。
+    fake/minio/cos 均为进程级单例（同一进程内共享实例；fake 供分片跨调用合并，
+    minio/cos 避免重复建外部客户端）；fs 每次新建（本地文件系统无外部连接开销）。
     """
+    global _MINIO_INSTANCE, _COS_INSTANCE  # noqa: PLW0603
     key = (name or settings.storage_backend or "fake").lower()
     if key not in _BACKENDS:
         raise ValueError(f"未知存储后端: {key}（可选 {sorted(_BACKENDS)}）")
@@ -390,4 +398,12 @@ def get_storage_backend(name: str | None = None) -> StorageBackend:
         if total >= FAKE_MAX_BYTES:
             raise RuntimeError(f"fake 存储容量超限（>{FAKE_MAX_BYTES // 1024 // 1024}MB），检查是否误配 fake 上生产")
         return backend
+    if key == "minio":
+        if _MINIO_INSTANCE is None:
+            _MINIO_INSTANCE = _BACKENDS["minio"]()
+        return _MINIO_INSTANCE
+    if key == "cos":
+        if _COS_INSTANCE is None:
+            _COS_INSTANCE = _BACKENDS["cos"]()
+        return _COS_INSTANCE
     return _BACKENDS[key]()

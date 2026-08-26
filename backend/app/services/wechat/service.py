@@ -37,9 +37,16 @@ VALID_SOURCES = ("active", "echo", "org")
 # 企微媒体下载（真实模式；未配置走 mock）
 WECOM_API_BASE = "https://qyapi.weixin.qq.com/cgi-bin"
 
+# 企微 access_token 有效期 7200s（S6-9）：提前 200s 刷新余量，避免边界失效
+_ACCESS_TOKEN_TTL_SEC = 7200
+_ACCESS_TOKEN_REFRESH_MARGIN = 200
+
+# 进程级 token 缓存（S6-9）：{token, expires_at(monotonic)}；并发进程各自缓存（token 可并发有效）
+_token_cache: dict = {}
+
 
 def _corp_access_token() -> str | None:
-    """企业 access_token（media/get 必需）
+    """企业 access_token（media/get 必需）——进程内缓存 + 过期失效重取（S6-9）
 
     需企微应用凭证：WECHAT_CORP_ID + 应用 Secret。
     凭证未配置或 MOCK_EXTERNAL_AI=true → 返回 None（调用方走 mock）。
@@ -48,6 +55,12 @@ def _corp_access_token() -> str | None:
 
     if settings.mock_external_ai or not (settings.wechat_corp_id and settings.wechat_token):
         return None
+    import time
+
+    now = time.monotonic()
+    cached = _token_cache.get("token")
+    if cached is not None and _token_cache.get("expires_at", 0) > now:
+        return cached
     import httpx
 
     resp = httpx.get(
@@ -59,7 +72,20 @@ def _corp_access_token() -> str | None:
     data = resp.json()
     if data.get("errcode") not in (0, None):
         raise RuntimeError(f"企微 gettoken 失败: {data.get('errmsg')}")
-    return data.get("access_token")
+    token = data.get("access_token")
+    if token:
+        expires_in = int(data.get("expires_in") or _ACCESS_TOKEN_TTL_SEC)
+        _token_cache["token"] = token
+        _token_cache["expires_at"] = now + max(
+            60, expires_in - _ACCESS_TOKEN_REFRESH_MARGIN
+        )
+    return token
+
+
+def _invalidate_access_token() -> None:
+    """token 失效显式清缓存（S6-9：40014/42001 等失效错误后强制重取）"""
+    _token_cache.pop("token", None)
+    _token_cache.pop("expires_at", None)
 
 
 def _media_extension(msg_type: str) -> str:
@@ -96,6 +122,7 @@ def download_media(media_id: str, msg_type: str) -> bytes:
     真实模式：GET /media/get?access_token=..&media_id=..；失败抛 RuntimeError。
     凭证缺失 / mock 模式：返回可测试的 mock 字节（真实模式绝不混入 mock——
     mock 只出现在未配置或 MOCK_EXTERNAL_AI=true 的沙箱/联调环境）。
+    S6-9：token 失效错误（40014/42001）→ 清缓存重取一次（失效重取）。
     """
     token = _corp_access_token()
     if token is None:
@@ -103,15 +130,28 @@ def download_media(media_id: str, msg_type: str) -> bytes:
 
     import httpx
 
-    resp = httpx.get(
-        f"{WECOM_API_BASE}/media/get",
-        params={"access_token": token, "media_id": media_id},
-        timeout=30,
-    )
+    def _fetch(_token: str) -> httpx.Response:
+        return httpx.get(
+            f"{WECOM_API_BASE}/media/get",
+            params={"access_token": _token, "media_id": media_id},
+            timeout=30,
+        )
+
+    resp = _fetch(token)
     # 企微媒体下载失败时返回 JSON {errcode, errmsg}（成功时为二进制流）
     content_type = resp.headers.get("content-type", "")
     if "json" in content_type:
         data = resp.json()
+        # 失效重取：access_token 过期/无效 → 清缓存重取一次
+        if data.get("errcode") in (40014, 42001):
+            _invalidate_access_token()
+            new_token = _corp_access_token()
+            if new_token:
+                resp = _fetch(new_token)
+                content_type = resp.headers.get("content-type", "")
+                if "json" not in content_type:
+                    if resp.content:
+                        return resp.content
         raise RuntimeError(f"企微媒体下载失败: {data.get('errmsg', resp.status_code)}")
     resp.raise_for_status()
     if not resp.content:

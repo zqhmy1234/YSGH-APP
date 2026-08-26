@@ -11,7 +11,7 @@ import pytest
 from app.db.models import Content, Event, EventEditLog, EventItem, User
 from app.db.session import SessionLocal
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 pytestmark = pytest.mark.integration
 
@@ -24,9 +24,14 @@ def db_user():
     db.commit()
     db.refresh(user)
     yield db, user
-    db.execute(sa_delete(EventEditLog))
-    db.execute(sa_delete(EventItem))
-    db.execute(sa_delete(Event))
+    # TD-P1C（2026-08-26）：全表删除 → 按测试用户过滤——防误删他人/存量数据
+    # EventItem 无 user_id，按 event_id∈本人事件 OR content_id∈本人内容 清理
+    db.execute(sa_delete(EventEditLog).where(EventEditLog.user_id == user.id))
+    db.execute(sa_delete(EventItem).where(or_(
+        EventItem.event_id.in_(select(Event.id).where(Event.user_id == user.id)),
+        EventItem.content_id.in_(select(Content.id).where(Content.user_id == user.id)),
+    )))
+    db.execute(sa_delete(Event).where(Event.user_id == user.id))
     db.execute(sa_delete(Content).where(Content.user_id == user.id))
     db.delete(user)
     db.commit()

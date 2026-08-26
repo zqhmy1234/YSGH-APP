@@ -4,10 +4,14 @@
 - named vectors：text_vec（BGE-M3 dense 1024）+ image_vec（Qwen3-VL，M1 后接）
 - sparse：BGE-M3 lexical（关键词路）
 - 检索：dense+sparse 走 RRF 融合（WeKnora 参数：0.7/0.3, k=60）
+- 测试隔离（TD-P1C 2026-08-26）：默认 collection 经 default_collection() 解析——
+  测试环境设 QDRANT_COLLECTION=test_* 即写隔离库，cleanup_test_collections()
+  每跑结束清理 test_ 前缀 collection（尽力而为）。
 """
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from functools import lru_cache
 
@@ -19,6 +23,9 @@ from app.core.config import settings
 logger = logging.getLogger("yishu.rag")
 
 COLLECTION = "yishu_contents"
+# 测试专用 collection 前缀（TD-P1C 2026-08-26）：测试环境默认写 test_* 隔离库，
+# 不污染生产 yishu_contents；每跑结束由 cleanup_test_collections 尽力清理。
+TEST_COLLECTION_PREFIX = "test_"
 DENSE_VEC_NAME = "text_vec"
 IMAGE_VEC_NAME = "image_vec"
 VECTOR_SIZE = 1024  # BGE-M3 dense 维度
@@ -32,6 +39,54 @@ CONTENT_TYPE_IMAGE_LEGACY = "image"
 CONTENT_TYPE_ALIASES: dict[str, str] = {
     CONTENT_TYPE_IMAGE_LEGACY: CONTENT_TYPE_PHOTO,
 }
+
+
+def default_collection() -> str:
+    """生效的默认 collection（TD-P1C 2026-08-26：测试 collection 隔离）
+
+    生产/未设置环境变量 → 生产 yishu_contents；测试环境（CI / api_smoke /
+    conftest fixture）通过 `QDRANT_COLLECTION` 环境变量指到 test_* 隔离库，
+    使 pipeline 索引与搜索默认不再写生产空间。
+
+    每次调用实时读环境变量（而非模块常量），保证并发进程/测试间切换生效；
+    VectorStore 单例仍复用（collection 名只是路由参数，客户端连接不重建）。
+    """
+    return os.environ.get("QDRANT_COLLECTION") or COLLECTION
+
+
+def test_collection_name(base: str | None = None) -> str:
+    """按前缀生成测试 collection 名（默认基名 = 生产 collection）"""
+    return f"{TEST_COLLECTION_PREFIX}{base or COLLECTION}"
+
+
+def is_test_collection(name: str) -> bool:
+    """是否为测试专用 collection（test_ 前缀）"""
+    return bool(name) and name.startswith(TEST_COLLECTION_PREFIX)
+
+
+def cleanup_test_collections(client: QdrantClient | None = None) -> list[str]:
+    """清理全部 test_ 前缀的测试 collection（尽力而为，失败不阻断）
+
+    供测试门禁/api_smoke 每跑结束调用；Qdrant 不可达或删除失败仅告警，
+    不抛异常——避免清理失败阻断提交（TD-P1C 验收）。
+    """
+    try:
+        c = client or QdrantClient(url=settings.qdrant_url)
+        names = [col.name for col in c.get_collections().collections]
+        removed: list[str] = []
+        for name in names:
+            if not is_test_collection(name):
+                continue
+            try:
+                c.delete_collection(collection_name=name)
+                removed.append(name)
+                logger.info("已清理测试 collection: %s", name)
+            except Exception as exc:  # noqa: BLE001 —— 单库删除失败不阻断其余
+                logger.warning("清理测试 collection %s 失败: %s", name, exc)
+        return removed
+    except Exception as exc:  # noqa: BLE001 —— Qdrant 不可达不阻断门禁
+        logger.warning("测试 collection 清理跳过（Qdrant 不可达?）: %s", exc)
+        return []
 
 
 def point_id_for(content_id: str) -> str:
@@ -52,8 +107,12 @@ class VectorStore:
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
-        """建生产 collection（幂等）：named vectors text_vec + 预留 image_vec"""
-        self.ensure_collection(COLLECTION)
+        """建生效的默认 collection（幂等）：named vectors text_vec + 预留 image_vec
+
+        TD-P1C（2026-08-26）：默认库经 default_collection() 解析——
+        测试环境（QDRANT_COLLECTION=test_*）不建/不写生产 yishu_contents。
+        """
+        self.ensure_collection(default_collection())
 
     def ensure_collection(self, name: str) -> None:
         """按需建 collection（幂等；基准评测用独立 collection 隔离生产检索空间）"""
@@ -112,7 +171,7 @@ class VectorStore:
         用途：photo 首入库时 place/ci_tags 在索引后补全（pipeline.py 逆地理/CI
         打标之后刷新一次），避免重新编码 embedding。点不存在时 Qdrant 静默忽略。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         self.ensure_collection(col)
         self.client.set_payload(
             collection_name=col,
@@ -133,7 +192,7 @@ class VectorStore:
 
         collection：指定目标 collection（基准评测 → yishu_benchmark，不污染生产）。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         self.ensure_collection(col)
         self._upsert_merged(
             col,
@@ -160,7 +219,7 @@ class VectorStore:
 
         collection：检索目标 collection（默认生产；基准评测传 yishu_benchmark）。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         # dense 路（query_points + using 指定 named vector；qdrant-client 1.19）
         dense_hits = self.client.query_points(
             collection_name=col,
@@ -203,7 +262,7 @@ class VectorStore:
         一次写入；payload 强制写 content_id，供 search_image 回填真实内容 id
         （否则检索结果退化为 point_id 哈希，无法溯源）。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         self.ensure_collection(col)
         self._upsert_merged(
             col,
@@ -220,7 +279,7 @@ class VectorStore:
         collection: str | None = None,
     ) -> list[dict]:
         """以图搜图：image_vec 相似检索（图片查询向量 → 最相似图片）"""
-        col = collection or COLLECTION
+        col = collection or default_collection()
         hits = self.client.query_points(
             collection_name=col,
             query=vec,

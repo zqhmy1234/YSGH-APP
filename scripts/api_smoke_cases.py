@@ -12,11 +12,17 @@
   用例 5  F8 时间轴：L1 日卡片结构正确（level/title/photo_count/content_count）
   用例 6  去重语义：同用户同感知哈希二次上传 → 409 CONTENT_002
 
+  TD-P1C（2026-08-26 测试基建）：
+  - 默认写 test_ 前缀测试 collection（QDRANT_COLLECTION=test_yishu_contents），
+    不再写生产 yishu_contents；起始先尽力清理 test_ 库，用例不依赖跨跑残留。
+  - api_smoke 与 pytest 各自隔离 → 门禁不再需要"api_smoke 先于 pytest"顺序 hack。
+
 退出码：0 = 全部用例通过；1 = 有失败。
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -24,6 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
+
+# TD-P1C：默认向量 collection 指到 test_* 隔离库（必须在 import app 之前设置，
+# 使 app.services.vector_store.default_collection() 读取到测试库名）。
+os.environ.setdefault("QDRANT_COLLECTION", "test_yishu_contents")
 
 # Windows 控制台 GBK 兼容（✅/❌ 为 Unicode）
 if hasattr(sys.stdout, "reconfigure"):
@@ -203,7 +213,23 @@ def case_dedup_semantics(client: TestClient, headers: dict) -> None:
     assert r2.json()["code"] == "CONTENT_002", r2.text
 
 
+def _reset_test_collection() -> None:
+    """尽力清理 test_ 前缀 collection（TD-P1C：用例不依赖跨跑数据残留）。
+
+    删除失败不阻断冒烟（Qdrant 不可达等），由主流程继续。
+    """
+    try:
+        from app.services.vector_store import cleanup_test_collections
+
+        removed = cleanup_test_collections()
+        if removed:
+            print(f"[cleanup] 已清理测试 collection: {removed}")
+    except Exception as exc:  # noqa: BLE001 —— 清理尽力而为
+        print(f"[cleanup] 测试 collection 清理跳过: {exc}")
+
+
 def main() -> int:
+    _reset_test_collection()
     checks: list[tuple[str, bool, str]] = []
     client, headers = _new_client()
 

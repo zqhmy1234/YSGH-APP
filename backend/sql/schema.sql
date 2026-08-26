@@ -246,6 +246,7 @@ CREATE TABLE profile_l2_evidence (             -- L2 维度证据
     evidence_content_ids jsonb NOT NULL DEFAULT '[]',
     created_at  timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX idx_l2_evidence_user_dim ON profile_l2_evidence(user_id, dimension);  -- 画像证据溯源查询（S6-6）
 
 CREATE TABLE profile_annotation_pool (         -- B1 低置信度事件池（设计 2.3，迁移 b0b1c2d3e4f5）
     id               bigserial PRIMARY KEY,
@@ -360,6 +361,7 @@ CREATE TABLE offline_queue (                   -- 云端幂等去重（user+op �
     updated_at  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (user_id, op_id)
 );
+CREATE INDEX idx_offline_queue_user_id ON offline_queue(user_id, id);  -- 增量拉取游标扫描（S6-4）
 
 CREATE TABLE deleted_logs (                    -- 软删除 30 天清理对账
     id             bigserial PRIMARY KEY,
@@ -368,6 +370,7 @@ CREATE TABLE deleted_logs (                    -- 软删除 30 天清理对账
     deleted_at     timestamptz NOT NULL DEFAULT now(),
     cleanup_status text NOT NULL DEFAULT 'pending'  -- pending/done（向量/COS 已清）
 );
+CREATE INDEX idx_deleted_logs_cleanup ON deleted_logs(cleanup_status, deleted_at);  -- 30 天清理扫描（S6-4）
 
 CREATE TABLE sync_field_versions (             -- B4-2 字段级 LWW 版本存储（云端权威，v3 E2）
     entity_type  text NOT NULL,                -- content / event / profile
@@ -484,6 +487,7 @@ CREATE TABLE messages (                        -- 统一消息中心：in-app + 
     read_at     timestamptz
 );
 CREATE INDEX idx_messages_user_sent ON messages(user_id, sent_at DESC);
+CREATE INDEX idx_messages_user_id ON messages(user_id, id);  -- 消息按 id 分页/游标（S6-4）
 
 -- ========== 12. 设置域（1 表） ==========
 

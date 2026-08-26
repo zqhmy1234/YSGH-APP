@@ -77,6 +77,9 @@ def record_hits(
     schema = schema or get_schema()
     result: dict = {"applied": [], "pooled": [], "throttled": [], "new_values": [], "skipped": []}
     applied_dims: set[str] = set()  # 本批已应用过的维度：批内同维不再节流（同一条内容的多次命中）
+    # S6-6 性能修复：get_or_create_profile 提循环外（懒加载共享实例，批内只建/查一次；
+    # 全批低置信度入池时 profile 保持 None，不产生空 profile 副作用）
+    profile = None
     for hit in hits or []:
         dim = hit.get("dimension")
         value = hit.get("enum_value")
@@ -84,10 +87,12 @@ def record_hits(
         if not dim or not value or dim not in schema.dimensions:
             result["skipped"].append({"dimension": dim, "reason": "unknown_dimension"})
             continue
+        if profile is None:
+            profile = get_or_create_profile(db, user_id)
         r = apply_annotation(
             db, user_id, dim, value, confidence,
             content_id=content_id, evidence_text=evidence_text, source=source, schema=schema,
-            skip_throttle=(dim in applied_dims),
+            skip_throttle=(dim in applied_dims), profile=profile,
         )
         action = r.get("action")
         if action in ("added", "strengthened", "replaced"):
@@ -117,12 +122,15 @@ def apply_annotation(
     source: str = "annotation",
     schema: EnumSchema | None = None,
     skip_throttle: bool = False,
+    profile: UserProfile | None = None,
 ) -> dict:
     """单条命中应用（阈值 → 池 / 归一 → 节流 → 更新规则 → 证据锚点）。
 
     返回 {"action": pooled|strengthened|added|replaced|throttled|skipped, ...}。
     skip_throttle：同一条内容的多次命中（record_hits 批内同维）跳过同日节流，
     避免"一句话提到妈妈和老婆"只写入第一个。
+    profile：可选已加载画像（S6-6 record_hits 提循环外共享实例，批内只查一次）；
+    None 时按需 get_or_create_profile（独立调用/测试路径）。
     """
     schema = schema or get_schema()
     spec = schema.get(dimension)
@@ -142,7 +150,8 @@ def apply_annotation(
     if is_new:
         value = enum_value  # 开放枚举：直接新增（带证据+时间戳，查重已由 canonicalize 完成）
 
-    profile = get_or_create_profile(db, user_id)
+    if profile is None:
+        profile = get_or_create_profile(db, user_id)
     dims = dict(profile.dimensions or {})
     entry = dims.get(dimension)
     now = datetime.now(timezone.utc)
@@ -273,29 +282,32 @@ def _write_l2_evidence(db: Session, dimension: str, user_id: str, content_id: st
 
 
 def _trim_history(db: Session, user_id: str, dimension: str) -> None:
-    """历史裁剪：每维度仅保留最近 HISTORY_LIMIT 条（写入侧主动裁剪）
+    """历史裁剪：每维度仅保留最近 HISTORY_LIMIT 条（写入侧主动裁剪，单条 SQL）
 
+    S6-6 性能修复：原 select keep_ids + delete 两次查询合并为单条 DELETE
+    （子查询 ORDER BY 保序 + LIMIT 取最近 N 条，PG 子查询支持 LIMIT）。
     注意 SessionLocal autoflush=False：先 flush 让刚加的 history 行进入查询范围，
-    否则 keep_ids 会漏掉新行、越裁越多。
+    否则子查询会漏掉新行、越裁越多。
     """
     db.flush()
-    keep_ids = db.execute(
-        select(ProfileDimensionHistory.id)
-        .where(
+    db.execute(
+        delete(ProfileDimensionHistory).where(
             ProfileDimensionHistory.user_id == user_id,
             ProfileDimensionHistory.dimension == dimension,
+            ProfileDimensionHistory.id.notin_(
+                select(ProfileDimensionHistory.id)
+                .where(
+                    ProfileDimensionHistory.user_id == user_id,
+                    ProfileDimensionHistory.dimension == dimension,
+                )
+                .order_by(
+                    ProfileDimensionHistory.updated_at.desc(),
+                    ProfileDimensionHistory.id.desc(),
+                )
+                .limit(HISTORY_LIMIT)
+            ),
         )
-        .order_by(ProfileDimensionHistory.updated_at.desc(), ProfileDimensionHistory.id.desc())
-        .limit(HISTORY_LIMIT)
-    ).scalars().all()
-    if keep_ids:
-        db.execute(
-            delete(ProfileDimensionHistory).where(
-                ProfileDimensionHistory.user_id == user_id,
-                ProfileDimensionHistory.dimension == dimension,
-                ProfileDimensionHistory.id.notin_(keep_ids),
-            )
-        )
+    )
 
 
 # ---------------------------------------------------------------- 存储访问

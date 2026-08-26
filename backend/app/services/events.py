@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_, select
@@ -22,6 +23,11 @@ from app.services.event_aggregation.pipeline import RawPhoto
 logger = logging.getLogger("yishu.events")
 
 _AGG_BATCH = 200
+
+# 增量游标窗口（S6-1 性能债）：L2/L3 只依赖近邻时间窗口——
+# L3 是 7 天滑动窗、L2 是 L0 时间簇（≈1h）跨天归并。超过该窗口仍未成候选的
+# 内容不会与未来内容形成候选（窗口已过期），不再逐次全量重扫（O(N²)→近线性）。
+_AGG_WINDOW_DAYS = 30
 
 
 def _to_raw_photo(c: Content) -> dict:
@@ -81,6 +87,11 @@ def aggregate_user(
     )
     if since is not None:
         stmt = stmt.where(Content.created_at > since)
+    if mode != "full":
+        # S6-1 增量游标化：l2l3 只扫增量窗口内的未成候选内容，不再全量重扫远古内容
+        stmt = stmt.where(
+            Content.created_at >= datetime.now(timezone.utc) - timedelta(days=_AGG_WINDOW_DAYS)
+        )
     contents = db.execute(stmt).scalars().all()
     if not contents:
         return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0}
@@ -113,11 +124,24 @@ def aggregate_user(
         }
 
     # 2. mode="l2l3"：只跑 L2/L3 候选（B3-6；L1 由端侧提交）
+    #    S6-1 增量接线：以"已落库 level>=2 候选"重建 previous 状态，新内容增量并入
+    #    （incremental_aggregate 先匹配后分裂）；失败回退到本批独立候选（不丢候选）。
+    from app.services.event_aggregation.pipeline import incremental_aggregate
+
     try:
-        l2, l3 = _l2l3_candidates_from_photos(photos)
-    except Exception as exc:  # noqa: BLE001 —— 失败静默
-        logger.warning("L2/L3 候选失败 user=%s: %s", user_id, exc)
-        return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0, "error": str(exc)}
+        prev = _previous_aggregate_result(db, user_id)
+        if prev is not None:
+            merged = incremental_aggregate(prev, photos)
+            l2, l3 = merged.l2_candidates, merged.l3_candidates
+        else:
+            l2, l3 = _l2l3_candidates_from_photos(photos)
+    except Exception as exc:  # noqa: BLE001 —— 增量失败回退本批候选（用户无感知）
+        logger.warning("增量聚合失败 user=%s，回退本批候选: %s", user_id, exc)
+        try:
+            l2, l3 = _l2l3_candidates_from_photos(photos)
+        except Exception as exc2:  # noqa: BLE001 —— 失败静默
+            logger.warning("L2/L3 候选失败 user=%s: %s", user_id, exc2)
+            return {"l0": 0, "l1": 0, "items": 0, "upper_items": 0, "skipped": 0, "error": str(exc2)}
     upper_items = _write_upper_candidates(db, user_id, l2, l3)
     db.commit()
     return {"l0": 0, "l1": 0, "items": 0, "upper_items": upper_items, "skipped": 0}
@@ -201,27 +225,55 @@ def _write_upper_candidates(
     修复（S-SY-2）：原 _write_upper_events 按"已关联任意事件"跳过——
     端侧 L0/L1 真值后照片普遍已挂 L1 日卡片，会误跳 L2/L3；
     改为只查 level>=2 事件（L1 关联不再拦截候选生成）。
+
+    S6-1 性能修复：批量预载本用户 level>=2 事件+成员+确认态一次（N+1 上提循环外）；
+    已存在候选（成员组合相同 → 同一候选已落库）跳过 LLM 裁决与重查——
+    批量导入从 O(N²)（每个候选反复 LLM + 逐候选重查）降到近线性。
     """
     from app.services.llm_ops.event_merge import merge_verdict
 
+    # ── 批量预载（S6-2：每用户各 1 次查询）──
+    ev_rows = db.execute(
+        select(Event).where(
+            Event.user_id == user_id,
+            Event.level >= 2,
+            Event.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    members_by_event: dict[str, set[str]] = defaultdict(set)
+    linked_by_member: dict[str, set[str]] = defaultdict(set)
+    if ev_rows:
+        for eid, cid in db.execute(
+            select(EventItem.event_id, EventItem.content_id).where(
+                EventItem.event_id.in_([e.id for e in ev_rows])
+            )
+        ).all():
+            members_by_event[str(eid)].add(str(cid))
+            linked_by_member[str(cid)].add(str(eid))
+
+    # B3-5 confirmed 保护预载：用户背书事件标题（含改名）+ 成员命中集合
+    confirmed_titles: list[str] = []
+    confirmed_member_events: list[set[str]] = []
+    for e in ev_rows:
+        if e.status == "confirmed":
+            if e.title_source == "user":
+                confirmed_titles.append(e.title or "")
+            confirmed_member_events.append(members_by_event.get(str(e.id), set()))
+    l3_titles = {e.title for e in ev_rows if e.level == 3}
+
     added = 0
+
+    # ── L2：已存在候选跳过 LLM 裁决与重查（S6-1 核心）──
     for cand in l2_candidates:
-        members = cand.get("cluster") or []
+        members = [str(m) for m in (cand.get("cluster") or [])]
         if not members:
             continue
-        linked = set(
-            db.execute(
-                select(EventItem.content_id)
-                .join(Event, Event.id == EventItem.event_id)
-                .where(
-                    EventItem.content_id.in_(members),
-                    Event.user_id == user_id,
-                    Event.level >= 2,
-                    Event.deleted_at.is_(None),
-                )
-            ).scalars().all()
-        )
-        todo = [m for m in members if str(m) not in linked]
+        mset = set(members)
+        # 同成员组合候选已落库（已被某 level>=2 事件完整覆盖）→ 跳过 LLM/重查
+        if any(mset <= covered for covered in members_by_event.values()):
+            continue
+        linked = {m for m in members if m in linked_by_member}
+        todo = [m for m in members if m not in linked]
         if not todo:
             continue
         tr = cand.get("time_range") or []
@@ -255,25 +307,41 @@ def _write_upper_candidates(
         for mid in todo:
             db.add(EventItem(content_id=mid, event_id=ev.id))
             added += 1
+        # 本批内后续候选也可见该新事件（成员组合去重）
+        members_by_event[str(ev.id)] = set(todo)
+        for mid in todo:
+            linked_by_member[mid].add(str(ev.id))
+
+    # ── L3 ──
+    # 归属校验批量预载（S6-2：全部 L3 候选成员一次 IN 查询）
+    owned_set: set[str] = set()
+    all_l3_members = {str(m) for c in l3_candidates for m in (c.get("cluster") or [])}
+    if all_l3_members:
+        owned_set = {
+            str(r) for r in db.execute(
+                select(Content.id).where(
+                    Content.id.in_(all_l3_members), Content.user_id == user_id
+                )
+            ).scalars().all()
+        }
 
     for cand in l3_candidates:
         tag = cand.get("tag")
         if not tag:
             continue
-        # B3-5 confirmed 保护：用户已确认/改名的同标签主题流不重建（含成员重叠）
-        if _l3_confirmed_exists(db, user_id, tag, cand.get("cluster") or []):
+        # B3-5 confirmed 保护（预载数据，无逐候选查询）：
+        # ① 用户已确认/改名事件标题含该标签 → 不重建
+        if any(tag in (t or "") for t in confirmed_titles):
             continue
-        exists = db.execute(
-            select(Event.id).where(
-                Event.user_id == user_id,
-                Event.level == 3,
-                Event.deleted_at.is_(None),
-                Event.title == f"标签 · {tag}",
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
+        cluster = [str(m) for m in (cand.get("cluster") or [])]
+        # ② 候选窗口成员已挂用户背书事件（level>=2 confirmed）→ 不重建
+        if cluster and any(
+            any(str(m) in ce for ce in confirmed_member_events) for m in cluster
+        ):
             continue
-        cluster = cand.get("cluster") or []
+        # 同标签 L3 流已落库 → 不重建
+        if f"标签 · {tag}" in l3_titles:
+            continue
         tr = cand.get("time_range") or []
         try:
             start_ts = datetime.fromisoformat(tr[0]) if tr and tr[0] else None
@@ -295,65 +363,77 @@ def _write_upper_candidates(
         db.add(ev)
         db.flush()
         # L3 主题流真实挂成员（B3：照片↔事件多对多；生命周期/封面据此派生）
-        linked_l3 = set(
-            db.execute(
-                select(EventItem.content_id)
-                .join(Event, Event.id == EventItem.event_id)
-                .where(
-                    EventItem.content_id.in_(cluster),
-                    Event.user_id == user_id,
-                    Event.level >= 2,
-                    Event.deleted_at.is_(None),
-                )
-            ).scalars().all()
-        )
-        # 归属校验：只挂当前用户的内容（候选源自用户照片，防御性校验）
-        owned_l3 = set(
-            str(r) for r in db.execute(
-                select(Content.id).where(Content.id.in_(cluster), Content.user_id == user_id)
-            ).scalars().all()
-        )
+        linked_l3 = {m for m in cluster if m in linked_by_member}
         for mid in cluster:
-            if str(mid) not in owned_l3 or str(mid) in linked_l3:
+            if str(mid) not in owned_set or str(mid) in linked_l3:
                 continue
             db.add(EventItem(content_id=mid, event_id=ev.id))
             added += 1
+        # 本批新事件纳入映射（供批内后续候选去重）
+        members_by_event[str(ev.id)] = set(cluster)
+        for mid in cluster:
+            linked_by_member[mid].add(str(ev.id))
     return added
 
 
-def _l3_confirmed_exists(db: Session, user_id: str, tag: str, cluster: list[str]) -> bool:
-    """B3-5 confirmed 保护：用户已背书事件与候选主题流冲突则跳过重建
+def _previous_aggregate_result(db: Session, user_id: str):
+    """已落库 level>=2 候选 → AggregateResult（incremental_aggregate 增量基线）
 
-    ① 存在用户已确认（confirmed + title_source=user）的 L2/L3 事件标题含该标签
-       （用户改名后标题变化 → 防算法按"标签 · {tag}"重建同名流）
-    ② 候选窗口成员已挂到用户已确认的 level>=2 事件
+    S6-1：以"已落库候选成员"重建 previous.l0_clusters（每个候选事件=一组照片），
+    新内容经 incremental_aggregate 先匹配并入已有候选（跨天/跨标签候选不丢）。
+    l1_days 置空（端侧真值，云侧 l2l3 不重建）。无候选 → None（走本批独立候选）。
     """
-    titles = db.execute(
-        select(Event.title).where(
+    from app.services.event_aggregation.pipeline import AggregateResult
+    from app.services.event_aggregation.st_dbscan import Photo
+
+    events = db.execute(
+        select(Event).where(
             Event.user_id == user_id,
-            Event.deleted_at.is_(None),
             Event.level >= 2,
-            Event.status == "confirmed",
-            Event.title_source == "user",
+            Event.deleted_at.is_(None),
         )
     ).scalars().all()
-    if any(tag in (t or "") for t in titles):
-        return True
-    if cluster:
-        linked = db.execute(
-            select(Event.id)
-            .join(EventItem, EventItem.event_id == Event.id)
-            .where(
-                EventItem.content_id.in_(cluster),
-                Event.user_id == user_id,
-                Event.level >= 2,
-                Event.status == "confirmed",
-                Event.deleted_at.is_(None),
+    if not events:
+        return None
+    ev_ids = [e.id for e in events]
+    rows = db.execute(
+        select(EventItem.event_id, EventItem.content_id).where(
+            EventItem.event_id.in_(ev_ids)
+        )
+    ).all()
+    member_ids = [str(cid) for _, cid in rows]
+    if not member_ids:
+        return None
+    content_map = {
+        str(c.id): c for c in db.execute(
+            select(Content).where(Content.id.in_(member_ids))
+        ).scalars().all()
+    }
+    groups: dict[str, list[Photo]] = defaultdict(list)
+    for eid, cid in rows:
+        c = content_map.get(str(cid))
+        if c is None:
+            continue
+        extra = c.extra or {}
+        groups[str(eid)].append(
+            Photo(
+                id=str(c.id),
+                ts=c.taken_at or c.created_at,
+                lat=c.gps_lat,
+                lng=c.gps_lng,
+                tags=[c.content_class] if c.content_class else (extra.get("ci_tags") or []),
+                ocr_text=extra.get("ocr_text") or c.text,
+                quality=extra.get("quality_score"),
+                face_count=extra.get("face_count"),
             )
-        ).scalar_one_or_none()
-        if linked is not None:
-            return True
-    return False
+        )
+    return AggregateResult(
+        l0_clusters=[sorted(g, key=lambda p: p.ts) for g in groups.values()],
+        l1_days=[],
+        l2_candidates=[],
+        l3_candidates=[],
+        stats={},
+    )
 
 
 def _l3_confidence(cand: dict) -> float:
@@ -420,31 +500,50 @@ def sync_client_events(
     rejected: list[dict] = []
     affected: list[str] = []
 
+    # S6-2 批量预取（N+1 → 每批各 1 次查询）：
+    # ① 幂等键 client_event_id IN (...) 一次查
+    # ② photo_ids 归属按批合并（一次 IN 查询覆盖全部事件的照片）
+    cid_values = [item.get("client_event_id") for item in events]
+    truthy_cids = [c for c in cid_values if c]
+    existing_cids: set[str] = set()
+    if truthy_cids:
+        existing_cids = set(
+            db.execute(
+                select(Event.client_event_id).where(
+                    Event.user_id == user_id,
+                    Event.client_event_id.in_(truthy_cids),
+                )
+            ).scalars().all()
+        )
+    all_photo_ids = {str(p) for item in events for p in (item.get("photo_ids") or [])}
+    owned_ids: set[str] = set()
+    if all_photo_ids:
+        owned_ids = {
+            str(r) for r in db.execute(
+                select(Content.id).where(
+                    Content.id.in_(all_photo_ids),
+                    Content.user_id == user_id,
+                    Content.deleted_at.is_(None),
+                )
+            ).scalars().all()
+        }
+
     for item in events:
         cid = item.get("client_event_id")
-        exists = db.execute(
+        if cid in existing_cids or (cid is None and db.execute(
             select(Event.id).where(
-                Event.user_id == user_id,
-                Event.client_event_id == cid,
+                Event.user_id == user_id, Event.client_event_id.is_(None)
             )
-        ).scalar_one_or_none()
-        if exists is not None:
+        ).scalar_one_or_none() is not None):
             duplicates.append(cid)
             continue
 
-        photo_ids = item.get("photo_ids") or []
+        photo_ids = [str(p) for p in (item.get("photo_ids") or [])]
         if not photo_ids:
             rejected.append({"client_event_id": cid, "reason": "photo_ids 为空"})
             continue
-        rows = db.execute(
-            select(Content.id).where(
-                Content.id.in_(photo_ids),
-                Content.user_id == user_id,
-                Content.deleted_at.is_(None),
-            )
-        ).scalars().all()
-        valid = {str(r) for r in rows}
-        invalid = [p for p in photo_ids if p not in valid]
+        valid = [p for p in photo_ids if p in owned_ids]
+        invalid = [p for p in photo_ids if p not in owned_ids]
         if invalid:
             rejected.append(
                 {"client_event_id": cid, "reason": f"照片不存在或不属于当前用户: {invalid[:5]}"}

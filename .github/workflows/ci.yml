@@ -149,6 +149,23 @@ jobs:
         # env 继承 job 级（DATABASE_URL/REDIS_URL/QDRANT_URL/MOCK_EXTERNAL_AI/HF_HUB_OFFLINE/PYTHONPATH）
         run: python scripts/review_agent.py --full
 
+      - name: Run RAG integration tests (pytest -m rag)
+        # TD-P1C（2026-08-26）：RAG 门禁盲区——本地 pytest 默认 -m "not rag"，
+        # 此步骤显式跑 rag 分组，19 个检索/精排/以图搜图用例进 CI。
+        # 写 test_ 前缀隔离 collection（QDRANT_COLLECTION），不碰生产 yishu_contents。
+        env:
+          QDRANT_COLLECTION: test_yishu_contents
+        run: python -m pytest backend/tests -m rag -q --tb=short
+
+      - name: Clean up test Qdrant collections (best-effort)
+        # TD-P1C（2026-08-26）：每跑结束清理 test_ 前缀 collection（尽力而为，失败不阻断）
+        if: always()
+        run: >-
+          python -c
+          "import sys; sys.path.insert(0, 'backend');
+          from app.services.vector_store import cleanup_test_collections;
+          print('removed:', cleanup_test_collections())"
+
       - name: Report failure details to annotation (diagnostic)
         # 2026-08-26：失败详情写进 annotation（GitHub API 可匿名读 annotations，日志需登录）
         if: failure()

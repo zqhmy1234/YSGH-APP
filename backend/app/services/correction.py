@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import CorrectionLog
@@ -300,28 +300,26 @@ def arbitrate_job(user_id: str, text: str, content_type: str = "text") -> dict:
 def mark_global_candidates(db: Session) -> int:
     """第③层共性纠错扫描：同一 (old→new) 纠错对出现 ≥2 个不同用户 → 全局候选
 
+    S6-8 性能修复：原全表载入内存按对聚合（O(全表) 内存）→ 单条 SQL 聚合 + 批量
+    UPDATE（不载全表；计数含已标记行，语义与 Python 版一致）。
     返回新标记数量（B5-c-4：累计 ≥50 触发全局微调，脚本侧决策）。
     """
-    rows = db.execute(select(CorrectionLog)).scalars()
-    pairs: dict[tuple, set[str]] = {}
-    for row in rows:
-        key = (row.old_label, row.new_label, row.content_type)
-        pairs.setdefault(key, set()).add(row.user_id)
-
-    marked = 0
-    for (old_label, new_label, content_type), users in pairs.items():
-        if len(users) >= 2:
-            updated = db.execute(
-                CorrectionLog.__table__.update()
-                .where(
-                    CorrectionLog.old_label == old_label,
-                    CorrectionLog.new_label == new_label,
-                    CorrectionLog.content_type == content_type,
-                    CorrectionLog.is_global_candidate.is_(False),
-                )
-                .values(is_global_candidate=True)
-            )
-            marked += updated.rowcount or 0
+    result = db.execute(
+        text(
+            """
+            UPDATE correction_log
+            SET is_global_candidate = true
+            WHERE is_global_candidate = false
+              AND (old_label, new_label, content_type) IN (
+                  SELECT old_label, new_label, content_type
+                  FROM correction_log
+                  GROUP BY old_label, new_label, content_type
+                  HAVING COUNT(DISTINCT user_id) >= 2
+              )
+            """
+        )
+    )
+    marked = result.rowcount or 0
     db.commit()
     return marked
 

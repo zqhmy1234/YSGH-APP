@@ -11,9 +11,10 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, DeletedLog, OfflineQueue, SyncFieldVersion, SyncState
@@ -45,27 +46,69 @@ def push_ops(
     - 幂等检查按 (op_id, user_id) 双条件（防跨用户 op_id 碰撞静默跳过）
     - 归属校验：实体已存在且不属于当前用户 → 拒绝该条（rejected），不中断整批；
       entity_type=content 时额外对照 contents 表实体归属（防新建他人 UUID 实体）
+
+    S6-3 性能修复：op_id 幂等查 / content 归属查 / SyncFieldVersion 查按批 IN 预取
+    （N+1 → 每批 3 次查询），逐 op 冲突判定语义保留不变。
     """
     applied: list[dict] = []
     conflicts: list[dict] = []
     rejected: list[dict] = []
+
+    # ── S6-3 批量预取 ──
+    # ① 幂等：本用户已存在的 op_id 集合（一次查）
+    truthy_op_ids = [op.get("op_id") for op in ops if op.get("op_id")]
+    existing_op_ids: set[str] = set()
+    if truthy_op_ids:
+        existing_op_ids = set(
+            db.execute(
+                select(OfflineQueue.op_id).where(
+                    OfflineQueue.user_id == user_id,
+                    OfflineQueue.op_id.in_(truthy_op_ids),
+                )
+            ).scalars().all()
+        )
+
+    # ② content 实体归属（entity_type=content 一次查；无 deleted 过滤，与原 db.get 一致）
+    content_ids = [
+        str(op["entity_id"]) for op in ops
+        if op.get("entity_type") == "content" and op.get("entity_id")
+    ]
+    content_owner: dict[str, str] = {}
+    if content_ids:
+        for cid, uid in db.execute(
+            select(Content.id, Content.user_id).where(Content.id.in_(content_ids))
+        ).all():
+            content_owner[str(cid)] = str(uid)
+
+    # ③ SyncFieldVersion 按 (entity_type, entity_id) 组合批量预取：
+    #    含墓碑行（TOMBSTONE_FIELD）与逐字段行 + 实体归属（任意字段行的 user_id）
+    combos = {
+        (op.get("entity_type", "content"), str(op["entity_id"]))
+        for op in ops if op.get("entity_id")
+    }
+    sfv_by_key: dict[tuple[str, str, str], SyncFieldVersion] = {}
+    sfv_by_entity: dict[tuple[str, str], list[SyncFieldVersion]] = defaultdict(list)
+    if combos:
+        rows = db.execute(
+            select(SyncFieldVersion).where(
+                tuple_(SyncFieldVersion.entity_type, SyncFieldVersion.entity_id).in_(list(combos))
+            )
+        ).scalars().all()
+        for r in rows:
+            sfv_by_key[(r.entity_type, str(r.entity_id), r.field)] = r
+            sfv_by_entity[(r.entity_type, str(r.entity_id))].append(r)
+
     for op in ops:
         op_id = op.get("op_id")
         # 幂等：同用户 op_id 已存在 → 跳过（网络重试同一操作只执行一次）
-        if op_id:
-            existed = db.execute(
-                select(OfflineQueue).where(
-                    OfflineQueue.op_id == op_id,
-                    OfflineQueue.user_id == user_id,
-                )
-            ).scalar_one_or_none()
-            if existed is not None:
-                continue
+        if op_id in existing_op_ids:
+            continue
 
         entity_type = op.get("entity_type", "content")
         entity_id = op.get("entity_id")
         if not entity_id:
             continue
+        entity_id = str(entity_id)
         client_ts = parse_ts(op.get("updated_at")) or _utcnow()
         op_type = op.get("op_type", OP_UPSERT)
 
@@ -76,37 +119,26 @@ def push_ops(
 
         # 归属校验：contents 实体存在且非本人 → 拒绝
         if entity_type == "content":
-            content = db.get(Content, entity_id)
-            if content is not None and str(content.user_id) != user_id:
+            owner = content_owner.get(entity_id)
+            if owner is not None and owner != str(user_id):
                 _reject("entity 不属于当前用户")
                 continue
 
         if op_type == OP_DELETE:
             # 软删除墓碑：标记 deleted（entity 级），记录 deleted_logs
-            row = db.execute(
-                select(SyncFieldVersion).where(
-                    SyncFieldVersion.entity_type == entity_type,
-                    SyncFieldVersion.entity_id == entity_id,
-                    SyncFieldVersion.field == TOMBSTONE_FIELD,
-                )
-            ).scalar_one_or_none()
+            row = sfv_by_key.get((entity_type, entity_id, TOMBSTONE_FIELD))
             if row is not None and row.user_id != user_id:
                 _reject("entity 不属于当前用户")
                 continue
             # 墓碑不存在时：以实体任意字段行的归属为准（实体可能只有字段行）
             if row is None:
-                owner = db.execute(
-                    select(SyncFieldVersion.user_id)
-                    .where(
-                        SyncFieldVersion.entity_type == entity_type,
-                        SyncFieldVersion.entity_id == entity_id,
-                    )
-                    .limit(1)
-                ).scalar_one_or_none()
-                if owner is not None and str(owner) != user_id:
-                    _reject("entity 不属于当前用户")
-                    continue
-                if owner is None:
+                entity_rows = sfv_by_entity.get((entity_type, entity_id))
+                if entity_rows:
+                    owner = entity_rows[0].user_id
+                    if str(owner) != str(user_id):
+                        _reject("entity 不属于当前用户")
+                        continue
+                else:
                     # 实体在云端无任何记录（无墓碑、无字段行、contents 亦无）→ 无可删实体
                     _reject("entity 不存在")
                     continue
@@ -125,13 +157,7 @@ def push_ops(
                 continue
             value = op.get("value")
             # 字段级 LWW：客户端时间 > 云端 → 更新；否则云端胜（冲突提示）
-            row = db.execute(
-                select(SyncFieldVersion).where(
-                    SyncFieldVersion.entity_type == entity_type,
-                    SyncFieldVersion.entity_id == entity_id,
-                    SyncFieldVersion.field == field,
-                )
-            ).scalar_one_or_none()
+            row = sfv_by_key.get((entity_type, entity_id, field))
             if row is not None and row.user_id != user_id:
                 _reject("entity 不属于当前用户")
                 continue
