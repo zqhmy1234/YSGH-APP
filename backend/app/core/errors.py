@@ -12,10 +12,14 @@ P0-7（审查 S3-6）：全仓错误码唯一登记表——code → (语义, ht
      - CONTENT_003 = 内容含敏感信息(422)；游标错误拆分 CONTENT_008(422)
      - CONTENT_007 = 照片超大小上限(413)；event_items 内容不存在改 EVENT_005(404)
 """
+import logging
 from dataclasses import dataclass
 
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("yishu.errors")
 
 
 @dataclass(frozen=True)
@@ -155,5 +159,42 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     )
 
 
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """422 参数校验失败统一信封（P1-A 错误对齐）：
+    与业务 ApiError 同构 {code, message, request_id, details}；
+    message 取第一个校验错误的人类可读 msg（detail[0].msg → message）。
+    """
+    errors = exc.errors()
+    first = errors[0] if errors else {}
+    msg = str(first.get("msg", "请求参数校验失败"))
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "VALIDATION_ERROR",
+            "message": msg,
+            "request_id": getattr(request.state, "request_id", ""),
+            "details": {"errors": errors},
+        },
+    )
+
+
+async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """500 兜底（P1-A 错误对齐）：对外只给脱敏 message（不泄漏堆栈/内部路径/异常对象），
+    异常详情走日志/Sentry（request_id 串联，API-008）。"""
+    request_id = getattr(request.state, "request_id", "")
+    logger.exception("未处理异常 request_id=%s path=%s", request_id, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "INTERNAL_ERROR",
+            "message": "服务器内部错误，请稍后重试",
+            "request_id": request_id,
+            "details": None,
+        },
+    )
+
+
 def install_error_handlers(app) -> None:
     app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(Exception, unhandled_error_handler)

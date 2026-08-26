@@ -26,7 +26,6 @@ from app.core.errors import (
     ERR_CONTENT_001,
     ERR_CONTENT_002,
     ERR_CONTENT_003,
-    ERR_CONTENT_004,
     ERR_CONTENT_005,
     ERR_CONTENT_006,
     ERR_CONTENT_007,

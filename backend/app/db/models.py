@@ -6,7 +6,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Date, DateTime, Float, Index, String, Text, UniqueConstraint, func
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
