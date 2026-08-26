@@ -44,6 +44,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # 2026-08-26 修复：DATABASE_URL 等提到 job 级——Init PG 步骤的 alembic upgrade head
+    # 也需要读 DATABASE_URL（此前只在 quality gate 步骤定义 → alembic 用默认 postgres:postgres 密码错 exit 1，
+    # 即 #8-#11 连续失败根因；#6 用 schema.sql 不需要 DATABASE_URL 故成功）。
+    env:
+      DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
+      REDIS_URL: redis://localhost:6379/0
+      QDRANT_URL: http://localhost:6333
+      MOCK_EXTERNAL_AI: "true"
+      # 本地 embedding.py 默认 HF_HUB_OFFLINE=1（防国内网络 HEAD 超时挂起）；
+      # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
+      HF_HUB_OFFLINE: "0"
+      PYTHONPATH: .
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -116,15 +129,7 @@ jobs:
         run: python scripts/generate_test_photos.py
 
       - name: Run quality gate (review_agent --full)
-        env:
-          DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
-          REDIS_URL: redis://localhost:6379/0
-          QDRANT_URL: http://localhost:6333
-          MOCK_EXTERNAL_AI: "true"
-          # 本地 embedding.py 默认 HF_HUB_OFFLINE=1（防国内网络 HEAD 超时挂起）；
-          # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
-          HF_HUB_OFFLINE: "0"
-          PYTHONPATH: .
+        # env 继承 job 级（DATABASE_URL/REDIS_URL/QDRANT_URL/MOCK_EXTERNAL_AI/HF_HUB_OFFLINE/PYTHONPATH）
         run: python scripts/review_agent.py --full
 
       - name: Upload pytest coverage
