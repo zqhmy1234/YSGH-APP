@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 class WechatLoginRequest(BaseModel):
     """APP 微信登录：code 换 openid/unionid（服务端调微信接口）"""
 
-    code: str = Field(..., description="微信登录 code（wx.login 获取）")
-    device_id: str = Field(..., description="客户端设备唯一 ID")
+    code: str = Field(..., max_length=128, description="微信登录 code（wx.login 获取）")
+    device_id: str = Field(..., min_length=1, max_length=64, description="客户端设备唯一 ID")
 
 
 class PhoneLoginRequest(BaseModel):

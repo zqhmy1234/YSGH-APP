@@ -4,6 +4,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+# R6#12（输入校验）：cos_key/thumbnail_key 仅允许本域前缀
+# （与 api/contents._validate_cos_key 运行时校验同源；防任意键入库污染/存储遍历）
+_STORAGE_KEY_PREFIX = r"^(photos|voice|thumbnails)/"
+
 
 class ContentCreate(BaseModel):
     content_type: str = Field(..., pattern=r"^(photo|text|voice|article)$")
@@ -11,13 +15,21 @@ class ContentCreate(BaseModel):
         None, min_length=1, max_length=64,
         description="客户端生成的幂等键（R4#4：同用户唯一，双击/重试不重复入库）",
     )
-    text: str | None = None               # OCR 结果/转写/原文
+    text: str | None = Field(
+        None, max_length=64 * 1024, description="OCR 结果/转写/原文（≤64KB）"
+    )
     taken_at: datetime | None = None
     gps_lat: float | None = Field(None, ge=-90, le=90)
     gps_lng: float | None = Field(None, ge=-180, le=180)
     perceptual_hash: str | None = None    # 去重（Q16）
-    cos_key: str | None = None            # 照片原件（STS 直传后回调）
-    thumbnail_key: str | None = None
+    cos_key: str | None = Field(
+        None, pattern=_STORAGE_KEY_PREFIX,
+        description="照片原件（STS 直传后回调；仅 photos/voice/thumbnails/ 前缀）",
+    )
+    thumbnail_key: str | None = Field(
+        None, pattern=_STORAGE_KEY_PREFIX,
+        description="缩略图键（thumbnails/ 前缀）",
+    )
     extra: dict[str, Any] | None = None   # EXIF/时长/尺寸
     source: str = Field("app", pattern=r"^(app|windows|wechat|import)$")
 
