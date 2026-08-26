@@ -83,7 +83,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       qdrant:
-        image: qdrant/qdrant:v1.9.7
+        # 2026-08-26：v1.9.7 → v1.19.0（与 requirements qdrant-client>=1.19 匹配；
+        # 旧版 server 与新版 client 不兼容致 api_smoke payload 刷新 404——#17/#18 失败根因）
+        image: qdrant/qdrant:v1.19.0
         ports:
           - 6333:6333
         # 官方镜像自带 HEALTHCHECK（/healthz），勿加 curl health-cmd（镜像内无 curl）

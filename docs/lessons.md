@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-26 18:31 · commit 3030b57 · ts=1787740296
+- **错误**：CI #17/#18 quality gate 失败：api_smoke payload 刷新 404（No point with id found）
+- **根因**：qdrant service 镜像 v1.9.7 与 requirements qdrant-client>=1.19（pip 装 1.19.0）版本不兼容（client 1.19.0 vs server 1.9.7，Major versions should match）——annotation 诊断暴露；本地 yishu-qdrant 容器是 1.19.0 故本地复现通过
+- **修复**：ci.yml qdrant 镜像 v1.9.7 → v1.19.0（与 client 匹配）；同时 CI 加 annotation 诊断步骤（失败详情写 ::error::，API 匿名可读，日志需登录）
+- **相关文件**：.github/workflows/ci.yml
+- **教训**：服务容器镜像版本必须与依赖库版本匹配：升级 qdrant-client 后 CI service 镜像要同步升级，否则新版 client 调旧版 server 的 API 兼容性挂（本地环境若恰好是新版会掩盖）；CI 疑难失败先加 annotation 诊断再猜
+
+---
+
 ### 2026-08-26 17:29 · commit f6af131 · ts=1787736548
 - **错误**：CI #16 quality gate 失败（Init PG 已通过）：test_vector_extension 断言 vector 扩展不存在 + test_sync/test_pipeline 删用户被 FK 拦截
 - **根因**：CI 从零建库 vs 本地旧库漂移：① pgvector 扩展只在本地手工建过，schema.sql/setup_pg.sql/迁移都没有 CREATE EXTENSION → CI 空库无 vector 扩展；② 本地 yishu 库是旧版 schema.sql（27 表/4 FK）建的 + alembic 只 stamp 未执行建表，schema.sql 现 38 表/20+ FK → 测试在无 FK 库上通过（删用户不检查子表），CI 完整 FK 库必挂
