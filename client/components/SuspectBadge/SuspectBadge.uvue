@@ -1,0 +1,54 @@
+<template>
+	<!-- US-12 时间存疑角标（18号 D2 拍板：右上角小角标 + 点击说明弹层）。
+	     自包含：visible=false 或未传 → 不渲染（零侵入，不遮挡主内容）。
+	     位置：absolute 锚定宿主卡片（.card position:relative），置于卡片右上角、⋯ 操作钮下方。 -->
+	<view v-if="visible" class="suspect-badge" @tap="onTap">
+		<text class="suspect-badge-text">时间存疑</text>
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		props: {
+			visible: {
+				type: Boolean,
+				default: false
+			}
+		},
+		methods: {
+			/** 点击 → 说明弹层（D2 拍板文案） */
+			onTap(): void {
+				uni.showModal({
+					title: '时间存疑',
+					content: '这张照片的时间信息存疑，已按导入时间显示'
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	/* 右上角小角标：浅琥珀 #B8860B、圆角、字号小；z-index 4 低于 ⋯（5），不遮挡操作钮 */
+	.suspect-badge {
+		position: absolute;
+		top: 60rpx;
+		right: 16rpx;
+		z-index: 4;
+		background-color: #F5E6C8;
+		border-width: 1rpx;
+		border-color: #B8860B;
+		border-radius: 8rpx;
+		padding-left: 12rpx;
+		padding-right: 12rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.suspect-badge-text {
+		font-size: 20rpx;
+		color: #B8860B;
+		line-height: 28rpx;
+	}
+</style>
