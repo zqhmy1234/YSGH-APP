@@ -9,6 +9,7 @@
   - msg_id 幂等（重复回调只入一次）
   - API 冒烟（GET 验证 + POST 收包）
 """
+import time
 import uuid
 
 import pytest
@@ -18,7 +19,7 @@ from app.db.session import SessionLocal
 from app.services.wechat.crypto import decrypt, encrypt
 from app.services.wechat.gateway import handle_message, verify_url
 from app.services.wechat.service import process_incoming
-from app.services.wechat.signature import sign, verify
+from app.services.wechat.signature import REPLAY_WINDOW_SECONDS, is_timestamp_fresh, sign, verify
 from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
@@ -44,7 +45,9 @@ def _wrap(encrypted: str) -> str:
     return f"<xml><Encrypt><![CDATA[{encrypted}]]></Encrypt></xml>"
 
 
-def _params(encrypted: str, ts: str = "1409659589", nonce: str = "1372623149") -> dict:
+def _params(encrypted: str, ts: str | None = None, nonce: str = "1372623149") -> dict:
+    """构造回调参数；默认用当前时间戳（G2/R6#10 起 verify 强制 ±窗口新鲜度）"""
+    ts = ts or str(int(time.time()))
     return {
         "msg_signature": sign(TOKEN, ts, nonce, encrypted),
         "timestamp": ts,
@@ -82,6 +85,75 @@ def test_signature_verify_and_tamper():
     p = _params(encrypted)
     assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is True
     assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted + "x", p["msg_signature"]) is False
+
+
+def test_verify_rejects_stale_timestamp():
+    """G2/R6#10：重放旧包（时间戳超 ±窗口）→ 验签拒绝"""
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    stale = str(int(time.time()) - REPLAY_WINDOW_SECONDS - 60)  # 官方测试向量那种"历史时间戳"
+    p = _params(encrypted, ts=stale)
+    assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is False
+
+
+def test_verify_rejects_future_timestamp():
+    """G2/R6#10：未来时间戳（超窗口）→ 拒绝（防提前预演重放）"""
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    future = str(int(time.time()) + REPLAY_WINDOW_SECONDS + 60)
+    p = _params(encrypted, ts=future)
+    assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is False
+
+
+def test_verify_tolerates_clock_skew_boundary():
+    """G2/R6#10：窗口边界 ±window 内放行、刚越窗拒绝（时钟偏差容忍语义）"""
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    now = time.time()
+    inside = str(int(now - REPLAY_WINDOW_SECONDS) + 5)  # 窗口内（留 5s 裕量防 time.time 漂移）
+    p = _params(encrypted, ts=inside)
+    assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is True
+    outside = str(int(now - REPLAY_WINDOW_SECONDS) - 5)  # 越窗 5 秒
+    p2 = _params(encrypted, ts=outside)
+    assert verify(TOKEN, p2["timestamp"], p2["nonce"], encrypted, p2["msg_signature"]) is False
+
+
+def test_is_timestamp_fresh_invalid_input():
+    """G2/R6#10：非整数/空时间戳 → fail-closed 拒绝（不因解析失败放行）"""
+    now = time.time()
+    assert is_timestamp_fresh(str(int(now)), now=now) is True
+    assert is_timestamp_fresh("", now=now) is False
+    assert is_timestamp_fresh("abc", now=now) is False
+    assert is_timestamp_fresh(None, now=now) is False
+
+
+def test_verify_url_rejects_stale(monkeypatch):
+    """G2/R6#10：URL 验证入口同样防重放（旧时间戳 echostr → 拒绝）"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(settings, "wechat_corp_id", CORP_ID)
+    monkeypatch.setattr(settings, "wechat_token", TOKEN)
+    monkeypatch.setattr(settings, "wechat_encoding_aes_key", AES_KEY)
+    client = TestClient(app)
+    echostr = encrypt("1616140317555161061", AES_KEY, CORP_ID)
+    p = _params(echostr, ts=str(int(time.time()) - REPLAY_WINDOW_SECONDS - 60))
+    r = client.get("/api/v1/wechat/callback", params={**p, "echostr": echostr})
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == "WECHAT_001", r.text
+
+
+def test_wechat_api_stale_callback_rejected(monkeypatch):
+    """G2/R6#10：POST 收包入口重放旧包 → 403 WECHAT_002（防重放贯穿回调）"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(settings, "wechat_corp_id", CORP_ID)
+    monkeypatch.setattr(settings, "wechat_token", TOKEN)
+    monkeypatch.setattr(settings, "wechat_encoding_aes_key", AES_KEY)
+    client = TestClient(app)
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    p = _params(encrypted, ts=str(int(time.time()) - REPLAY_WINDOW_SECONDS - 60))
+    r = client.post("/api/v1/wechat/callback", params=p, content=_wrap(encrypted))
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == "WECHAT_002", r.text
 
 
 def test_verify_url_flow():
