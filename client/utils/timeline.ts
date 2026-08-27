@@ -7,6 +7,8 @@
  */
 import { get, dataArr } from './api'
 import { parseIsoMs, dayKey, friendlyDay } from './time'
+// A3（US-12 · C1）：time_suspect 字段名走 contract.ts 常量（A2 单写、只读引用，不硬编码）
+import { FIELD_TIME_SUSPECT } from './contract'
 
 export class TimelineEvent {
 	id: string
@@ -32,6 +34,12 @@ export class TimelineEvent {
 	photoIds: Array<string>
 	/** 封面本地路径（cover_content_id 优先，无则首图回退；无本地映射则空串） */
 	coverPath: string
+	/**
+	 * 时间存疑标记（US-12 · C1：EXIF/文件修改时间 vs 导入时间差异>阈值 → true；旧数据/缺失 → false）
+	 * A3 最小承接：fetchTimeline 解析后端 EventOut.time_suspect，供 index.uvue 角标渲染。
+	 * 默认 false = 向后兼容（零回归）；字段级默认初始化，不改构造函数签名。
+	 */
+	timeSuspect: boolean = false
 
 	constructor(
 		id: string,
@@ -95,6 +103,8 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 					item.getNumber('confidence') as number,
 					item.getString('cover_content_id') ?? ''
 				)
+				// US-12：time_suspect（后端 B2 补口；字段缺失 → false，向后兼容）
+				ev.timeSuspect = item.getBoolean(FIELD_TIME_SUSPECT) ?? false
 				result.push(ev)
 			}
 			resolve(result)
@@ -175,6 +185,7 @@ export function buildDayGroups(events: Array<TimelineEvent>, isIgnored: (eventId
 			ev.confidence,
 			ev.coverContentId
 		)
+		copy.timeSuspect = ev.timeSuspect // US-12：L1 分组拷贝保留标记（默认 false 的初始化值不覆盖）
 		groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
 		l1ByDay.set(k, groups.length - 1)
 	}
