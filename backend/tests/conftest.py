@@ -10,11 +10,13 @@
                            （测试不再写生产 yishu_contents）
   - db_user             —— 公共测试用户（R8#2：存量手写 db_user 迁移至此，
                            teardown 统一走 cleanup_user_data）
-  - _sensitive_words_state —— R8#12：敏感词模块全局热词状态 autouse 快照/恢复
-                           （唯一 autouse，防顺序敏感 flaky，为并行化铺路）
 
-注意：除 _sensitive_words_state（R8#12 明确要求 autouse 隔离进程内全局状态）外，
-所有 fixture 均为显式请求（无 autouse），避免影响存量测试行为。
+== autouse 清单（H3/R8#15 显式化，2026-08-27）==
+以下 2 个 autouse fixture 全仓生效，**用途 + 依赖**见各 fixture 文档串：
+  - _autouse_rate_limit_disabled    —— G1/R6#2#3：默认关通用限流中间件（依赖 settings.rate_limit_enabled）
+  - _autouse_sensitive_words_state  —— R8#12：敏感词模块全局热词状态快照/恢复（依赖 monkeypatch）
+除这两个明确要求 autouse 的隔离项外，其余 fixture 均为显式请求（无 autouse），
+避免影响存量测试行为。命名 `_autouse_` 前缀 = 自动生效，测试无需（也不应）请求。
 """
 from __future__ import annotations
 
@@ -217,18 +219,20 @@ def db_user(cleanup_user):
 
 
 # ---------------------------------------------------------------------------
-# 敏感词模块全局状态隔离（R8#12）
+# autouse① 敏感词模块全局状态隔离（R8#12）
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
-def _rate_limit_disabled(monkeypatch):
-    """G1/R6#2/#3：测试套件默认关闭通用限流中间件。
+def _autouse_rate_limit_disabled(monkeypatch):
+    """【autouse 全仓生效】G1/R6#2/#3：测试套件默认关闭通用限流中间件。
 
-    原因：限流中间件用共享 Redis /0 计数（真实连接），整仓测试开启会
+    用途：限流中间件用共享 Redis /0 计数（真实连接），整仓测试开启会
     跨用例/跨域共享窗口 → 依赖顺序/时机的 flaky 429；dev 流量也会被测试
     计数干扰。限流本身的 429/白名单/降级验证在 test_ratelimit.py 用
     独立 fixture 显式开启（MemoryStore + 小阈值），与全仓隔离。
+    依赖：monkeypatch（pytest 内置）+ app.core.config.settings.rate_limit_enabled。
+    豁免：需要真限流的用例自行 monkeypatch 置 True（见 test_ratelimit.py）。
     """
     from app.core.config import settings
 
@@ -236,16 +240,17 @@ def _rate_limit_disabled(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _sensitive_words_state(monkeypatch):
-    """R8#12：敏感词模块全局热词状态快照/恢复（消除顺序敏感 flaky）。
+def _autouse_sensitive_words_state(monkeypatch):
+    """【autouse 全仓生效】R8#12：敏感词模块全局热词状态快照/恢复（消除顺序敏感 flaky）。
 
-    背景（侦察实测）：add_violation_word 会原地变异 lru_cache 内的事件词集合
+    用途：add_violation_word 会原地变异 lru_cache 内的事件词集合
     （_load_event_words()）与进程级 _EVENT_REFLUX_WORDS；不恢复则跨用例残留，
     test_sensitive_words 顺序/选择敏感（test_hard_rule_independent 首跑失败），
     pytest-xdist 并行会放大随机失败。
     方案：monkeypatch 把进程级回流词集合换成全新 set（用后自动还原原集合）；
     事件词表缓存内容在 teardown 原地重建为快照（lru_cache 引用不变）。
-    autouse 幂等无害：不碰敏感词状态的用例零影响。
+    依赖：monkeypatch（pytest 内置）+ app.services.external.sensitive_words 模块全局状态。
+    幂等无害：不碰敏感词状态的用例零影响。
     """
     import app.services.external.sensitive_words as sw
 
