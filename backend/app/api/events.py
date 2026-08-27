@@ -26,14 +26,12 @@ from app.services.errors import ConflictError, NotFoundError, ValidationError
 
 router = make_router(prefix="/api/v1/events", tags=["events"])
 
-# ---- US-12 时间存疑最小校验（B3 设计 §6.4#10；仅 events 输出层计算，不改聚合逻辑）----
-# 数据源约束：入库时 taken_at 已取 EXIF 优先（services/photo_content.py），EXIF 是否
-# 缺失未单独落库 → 后端无法从 DB 直接判"EXIF 缺失"。故按可得字段做最小校验：
-#   1. taken_at 缺失        → 拍摄时间未知，无法可靠定轴 → True
-#   2. taken_at 晚于导入时间（created_at）超过容差 → 未来时间戳（相机时钟错 /
-#      MediaProvider 把扫描时间写成拍摄时间）物理不可能 → True
-#   3. taken_at 早于 created_at（旧照片补导入为合法常态）→ 不标记（避免误标正经旧照）
-TIME_SUSPECT_FUTURE_TOLERANCE = timedelta(hours=24)
+# ---- US-12 时间存疑最小校验（B3 设计 §6.4#10 · 任务卡 v2；仅 events 输出层计算，不改聚合逻辑）----
+# 规则：事件成员照片 taken_at（EXIF 优先，photo_content 入库时已取）与 created_at
+# （导入时间）差异 > TIME_SUSPECT_THRESHOLD_HOURS → time_suspect=True；
+# taken_at=None（无 EXIF/无时间）不误标 → False。阈值默认 72h，模块常量优先
+# （如需可提升为 config 配置项，仅加不减）。
+TIME_SUSPECT_THRESHOLD_HOURS = 72
 
 
 @router.get("/timeline", response_model=ApiResponse[list[EventOut]])
@@ -58,9 +56,9 @@ def timeline(
     events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
     # 审查修复(P1-11)：一次 GROUP BY 批量取计数，消除 N+1（原逐事件 count 查询）
     counts = _batch_counts(db, [e.id for e in events])
-    # US-12（Wave1-B2）：批量时间存疑——一次 JOIN 取成员照片 taken_at/created_at，
-    # 时间异常 → time_suspect=True（A3 据此显示"时间存疑"角标；旧数据无字段=不显示）
-    suspects = _batch_time_suspect(db, [e.id for e in events])
+    # US-12（Wave1-B2）：批量时间存疑——一次 GROUP BY 查询取成员照片 min/max(taken_at)
+    # 与 min(created_at)，差异>阈值 → time_suspect=True（A3 据此显示"时间存疑"角标）
+    suspects = _time_suspect_map(db, [e.id for e in events])
     # L3 生命周期：批量取最近活动 → 派生状态（读取时计算，MVP 不落库）
     last_act = get_event_last_activity(db, str(user.id), [e.id for e in events])
     lifecycles = {
@@ -102,45 +100,53 @@ def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
     return {str(r.event_id): {"content_count": int(r.total), "photo_count": int(r.photos)} for r in rows}
 
 
-def _photo_time_suspect(taken_at, created_at) -> bool:
-    """单张照片时间可信度最小校验（US-12）：时间异常 → True，默认 False。
+def _event_time_suspect_from_rows(min_taken, max_taken, min_created) -> bool:
+    """事件成员照片时间存疑判定：taken_at 极值与最早导入时间差异 > 阈值 → True。
 
-    语义见模块顶部 TIME_SUSPECT_FUTURE_TOLERANCE 注释（缺失/未来时间戳 → 存疑；
-    旧照片补导入不标记）。只在输出层派生，不写库、不改聚合。
+    taken_at=None（无 EXIF/无时间）不误标（v2：空成员/无 EXIF → False）。
     """
-    if taken_at is None:
-        return True
-    if created_at is None:
+    if min_created is None:
         return False
-    return taken_at > created_at + TIME_SUSPECT_FUTURE_TOLERANCE
+    threshold = timedelta(hours=TIME_SUSPECT_THRESHOLD_HOURS)
+    for taken in (min_taken, max_taken):
+        if taken is not None and abs(taken - min_created) > threshold:
+            return True
+    return False
 
 
-def _batch_time_suspect(db: Session, event_ids: list[str]) -> dict[str, bool]:
-    """批量时间存疑：{event_id: True}（一次 JOIN 取成员照片的 taken_at/created_at）
+def _time_suspect_map(db: Session, event_ids: list[str]) -> dict[str, bool]:
+    """批量时间存疑：{event_id: True}——一次 GROUP BY 查询（防 N+1，对齐 _batch_counts 模式）
 
     只判照片成员（events 的 start_time 主要来自照片时间；纯文字/语音事件时间来自
     端侧录入，可靠）；事件内任一照片时间存疑 → 事件 time_suspect=True。
-    与 _batch_counts 同模式：批量查询防 N+1。
     """
+    from sqlalchemy import func
+
     from app.db.models import Content, EventItem
 
     if not event_ids:
         return {}
     rows = db.execute(
-        select(EventItem.event_id, Content.taken_at, Content.created_at)
+        select(
+            EventItem.event_id,
+            func.min(Content.taken_at),
+            func.max(Content.taken_at),
+            func.min(Content.created_at),
+        )
         .join(Content, Content.id == EventItem.content_id)
         .where(EventItem.event_id.in_(event_ids), Content.content_type == "photo")
+        .group_by(EventItem.event_id)
     ).all()
     out: dict[str, bool] = {}
-    for event_id, taken_at, created_at in rows:
-        if _photo_time_suspect(taken_at, created_at):
+    for event_id, min_taken, max_taken, min_created in rows:
+        if _event_time_suspect_from_rows(min_taken, max_taken, min_created):
             out[str(event_id)] = True
     return out
 
 
 def _event_time_suspect(db: Session, event) -> bool:
     """单事件时间存疑（详情/操作响应复用）"""
-    return bool(_batch_time_suspect(db, [event.id]).get(str(event.id), False))
+    return bool(_time_suspect_map(db, [event.id]).get(str(event.id), False))
 
 
 def _to_out(e, counts: dict | None = None, lifecycle: dict | None = None, time_suspect: bool = False) -> EventOut:

@@ -174,25 +174,51 @@ def test_time_suspect_false_for_consistent_photo(db_user):
 
 
 def test_time_suspect_true_for_future_dated_photo(db_user):
-    """照片拍摄时间晚于导入时间超过容差（未来时间戳/相机时钟错）→ time_suspect=True"""
+    """照片拍摄时间晚于导入时间超过阈值（96h>72h，未来时间戳/相机时钟错）→ time_suspect=True"""
     db, user = db_user
     now = datetime.now(timezone.utc)
-    ev = _mk_event(db, user.id, start_time=now + timedelta(days=2))
-    photo = _mk_photo(db, user.id, taken_at=now + timedelta(days=2))
+    ev = _mk_event(db, user.id, start_time=now + timedelta(days=4))
+    photo = _mk_photo(db, user.id, taken_at=now + timedelta(days=4))
     _link(db, ev.id, photo.id)
     suspects = _timeline_suspects(db, user)
     assert suspects.get(str(ev.id)) is True
 
 
-def test_time_suspect_true_when_taken_at_missing(db_user):
-    """照片 taken_at 缺失（拍摄时间未知，无法可靠定轴）→ time_suspect=True"""
+def test_time_suspect_true_for_backward_drift_photo(db_user):
+    """照片拍摄时间远早于导入时间（96h 差异）→ time_suspect=True（对称差异>阈值）"""
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev = _mk_event(db, user.id, start_time=now - timedelta(days=4))
+    photo = _mk_photo(db, user.id, taken_at=now - timedelta(days=4))
+    _link(db, ev.id, photo.id)
+    suspects = _timeline_suspects(db, user)
+    assert suspects.get(str(ev.id)) is True
+
+
+def test_time_suspect_false_when_taken_at_missing(db_user):
+    """照片 taken_at 缺失（无 EXIF/无时间）→ 不误标，time_suspect=False（v2）"""
     db, user = db_user
     now = datetime.now(timezone.utc)
     ev = _mk_event(db, user.id, start_time=now)
     photo = _mk_photo(db, user.id, taken_at=None)
     _link(db, ev.id, photo.id)
     suspects = _timeline_suspects(db, user)
-    assert suspects.get(str(ev.id)) is True
+    assert suspects.get(str(ev.id)) is False
+
+
+def test_time_suspect_batch_multiple_events(db_user):
+    """批量：同一 timeline 请求多事件各取各的存疑标记（一次查询，互不干扰）"""
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev_ok = _mk_event(db, user.id, start_time=now - timedelta(hours=2), title="正常")
+    photo_ok = _mk_photo(db, user.id, taken_at=now - timedelta(hours=3))
+    _link(db, ev_ok.id, photo_ok.id)
+    ev_sus = _mk_event(db, user.id, start_time=now + timedelta(days=4), title="存疑")
+    photo_sus = _mk_photo(db, user.id, taken_at=now + timedelta(days=4))
+    _link(db, ev_sus.id, photo_sus.id)
+    suspects = _timeline_suspects(db, user)
+    assert suspects.get(str(ev_ok.id)) is False
+    assert suspects.get(str(ev_sus.id)) is True
 
 
 def test_time_suspect_false_for_text_only_event_legacy(db_user):
@@ -222,8 +248,8 @@ def test_time_suspect_in_single_event_response(db_user):
 
     db, user = db_user
     now = datetime.now(timezone.utc)
-    ev = _mk_event(db, user.id, start_time=now + timedelta(days=3), status="draft")
-    photo = _mk_photo(db, user.id, taken_at=now + timedelta(days=3))
+    ev = _mk_event(db, user.id, start_time=now + timedelta(days=4), status="draft")
+    photo = _mk_photo(db, user.id, taken_at=now + timedelta(days=4))
     _link(db, ev.id, photo.id)
     client = TestClient(app)
     app.dependency_overrides[deps.get_current_user] = lambda: user
