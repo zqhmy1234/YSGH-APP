@@ -1,5 +1,7 @@
 """事件路由：四层事件模型（B3）+ 时间轴（F8）+ 用户手动操作（B3-5）"""
 
+from datetime import timedelta
+
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +26,13 @@ from app.services.errors import ConflictError, NotFoundError, ValidationError
 
 router = make_router(prefix="/api/v1/events", tags=["events"])
 
+# ---- US-12 时间存疑最小校验（B3 设计 §6.4#10 · 任务卡 v2；仅 events 输出层计算，不改聚合逻辑）----
+# 规则：事件成员照片 taken_at（EXIF 优先，photo_content 入库时已取）与 created_at
+# （导入时间）差异 > TIME_SUSPECT_THRESHOLD_HOURS → time_suspect=True；
+# taken_at=None（无 EXIF/无时间）不误标 → False。阈值默认 72h，模块常量优先
+# （如需可提升为 config 配置项，仅加不减）。
+TIME_SUSPECT_THRESHOLD_HOURS = 72
+
 
 @router.get("/timeline", response_model=ApiResponse[list[EventOut]])
 def timeline(
@@ -47,6 +56,9 @@ def timeline(
     events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
     # 审查修复(P1-11)：一次 GROUP BY 批量取计数，消除 N+1（原逐事件 count 查询）
     counts = _batch_counts(db, [e.id for e in events])
+    # US-12（Wave1-B2）：批量时间存疑——一次 GROUP BY 查询取成员照片 min/max(taken_at)
+    # 与 min(created_at)，差异>阈值 → time_suspect=True（A3 据此显示"时间存疑"角标）
+    suspects = _time_suspect_map(db, [e.id for e in events])
     # L3 生命周期：批量取最近活动 → 派生状态（读取时计算，MVP 不落库）
     last_act = get_event_last_activity(db, str(user.id), [e.id for e in events])
     lifecycles = {
@@ -54,7 +66,17 @@ def timeline(
         for e in events
         if e.level >= 3
     }
-    return ApiResponse(data=[_to_out(e, counts, lifecycles.get(str(e.id))) for e in events])
+    return ApiResponse(
+        data=[
+            _to_out(
+                e,
+                counts,
+                lifecycles.get(str(e.id)),
+                suspects.get(str(e.id), False),
+            )
+            for e in events
+        ]
+    )
 
 
 def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
@@ -78,8 +100,57 @@ def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
     return {str(r.event_id): {"content_count": int(r.total), "photo_count": int(r.photos)} for r in rows}
 
 
-def _to_out(e, counts: dict | None = None, lifecycle: dict | None = None) -> EventOut:
-    """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1；L3 附生命周期）"""
+def _event_time_suspect_from_rows(min_taken, max_taken, min_created) -> bool:
+    """事件成员照片时间存疑判定：taken_at 极值与最早导入时间差异 > 阈值 → True。
+
+    taken_at=None（无 EXIF/无时间）不误标（v2：空成员/无 EXIF → False）。
+    """
+    if min_created is None:
+        return False
+    threshold = timedelta(hours=TIME_SUSPECT_THRESHOLD_HOURS)
+    for taken in (min_taken, max_taken):
+        if taken is not None and abs(taken - min_created) > threshold:
+            return True
+    return False
+
+
+def _time_suspect_map(db: Session, event_ids: list[str]) -> dict[str, bool]:
+    """批量时间存疑：{event_id: True}——一次 GROUP BY 查询（防 N+1，对齐 _batch_counts 模式）
+
+    只判照片成员（events 的 start_time 主要来自照片时间；纯文字/语音事件时间来自
+    端侧录入，可靠）；事件内任一照片时间存疑 → 事件 time_suspect=True。
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rows = db.execute(
+        select(
+            EventItem.event_id,
+            func.min(Content.taken_at),
+            func.max(Content.taken_at),
+            func.min(Content.created_at),
+        )
+        .join(Content, Content.id == EventItem.content_id)
+        .where(EventItem.event_id.in_(event_ids), Content.content_type == "photo")
+        .group_by(EventItem.event_id)
+    ).all()
+    out: dict[str, bool] = {}
+    for event_id, min_taken, max_taken, min_created in rows:
+        if _event_time_suspect_from_rows(min_taken, max_taken, min_created):
+            out[str(event_id)] = True
+    return out
+
+
+def _event_time_suspect(db: Session, event) -> bool:
+    """单事件时间存疑（详情/操作响应复用）"""
+    return bool(_time_suspect_map(db, [event.id]).get(str(event.id), False))
+
+
+def _to_out(e, counts: dict | None = None, lifecycle: dict | None = None, time_suspect: bool = False) -> EventOut:
+    """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1；L3 附生命周期；US-12 附时间存疑）"""
     counts = counts or {}
     c = counts.get(str(e.id), {"content_count": 0, "photo_count": 0})
     return EventOut(
@@ -98,6 +169,7 @@ def _to_out(e, counts: dict | None = None, lifecycle: dict | None = None) -> Eve
         generated_by=e.generated_by,
         content_count=c["content_count"],
         photo_count=c["photo_count"],
+        time_suspect=time_suspect,
         lifecycle=lifecycle,
     )
 
@@ -168,7 +240,7 @@ def merge_events(req: EventMergeRequest, db: Session = Depends(get_db), user: Us
         raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
     except ValidationError as exc:
         raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
-    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
+    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id]), time_suspect=_event_time_suspect(db, ev)))
 
 
 @router.post("/split", response_model=ApiResponse[EventOut])
@@ -185,7 +257,7 @@ def split_event(req: EventSplitRequest, db: Session = Depends(get_db), user: Use
         raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
     except ValidationError as exc:
         raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
-    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
+    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id]), time_suspect=_event_time_suspect(db, ev)))
 
 
 @router.post("/confirm", response_model=ApiResponse[EventOut])
@@ -202,7 +274,7 @@ def confirm_event(req: EventConfirmRequest, db: Session = Depends(get_db), user:
         raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
     except ValidationError as exc:
         raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
-    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
+    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id]), time_suspect=_event_time_suspect(db, ev)))
 
 
 @router.put("/{event_id}/cover", response_model=ApiResponse[EventOut])
@@ -224,4 +296,4 @@ def set_cover(
         raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
     except ValidationError as exc:
         raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
-    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
+    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id]), time_suspect=_event_time_suspect(db, ev)))

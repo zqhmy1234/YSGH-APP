@@ -38,6 +38,21 @@
 - **修复**：并行 worktree 跑全量门禁前补环境：cp backend/.env（DB/外部服务）+ 运行 scripts/generate_test_photos.py 生成测试照片；模型/HF 缓存为共享或按主 checkout 补齐
 - **相关文件**：scripts/api_smoke_cases.py, scripts/generate_test_photos.py
 - **教训**：并行 worktree 是全量仓库副本但 gitignored 产物缺失，--full 前需补齐环境资产（.env/测试照片/模型）
+### 2026-08-27 19:41 · commit c127037 · ts=1787830888
+- **错误**：ruff I001：app 子模块 as 导入与 from 导入混排未分组
+- **根因**：import app.services.copy_library as cl 与 from app.services.notify import ... 同属本地块但 isort 要求 as 导入与 from 导入按名称排序对齐；建议新建测试文件后先跑 ruff --fix 再提交
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-27 19:30 · commit 1ef7dce · ts=1787830220
+- **错误**：ruff I001 import 未排序导致 pre-commit 快速门禁 lint 阻断
+- **根因**：新建测试文件手写 import 未按 ruff isort 分组（标准库/第三方/本地 顺序 + 括号内排序）；auto-fix 可自动整理
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
 
 ---
 

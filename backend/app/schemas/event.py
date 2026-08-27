@@ -21,6 +21,10 @@ class EventOut(BaseModel):
     generated_by: str                   # device / cloud / cloud-llm / cloud-proto / user
     content_count: int = 0
     photo_count: int = 0
+    # US-12（Wave1-B2）：时间戳可信度标记——事件成员照片时间异常（EXIF/导入时间差>
+    # 阈值）→ true；默认 false 向后兼容（旧数据无字段=不存疑），客户端据此显示
+    # "时间存疑"角标（B3 设计 §6.4#10：时间错乱降级按导入时间；读取时派生，不落库）
+    time_suspect: bool = False
     # L3 生命周期（B3-2 活跃 30 天→静默→归档；读取时派生，MVP 不落库）
     lifecycle: dict | None = None       # {"state": active|silent|archived, idle_days, active_days}
 

@@ -40,6 +40,24 @@ def _patch_daytime(monkeypatch) -> None:
 
     monkeypatch.setattr(notify_mod, "datetime", _FakeDaytime)
 
+
+@pytest.fixture(autouse=True)
+def _copy_library_pinned_fallback(monkeypatch):
+    """固定文案库为内置回退（Wave1-B2：隔离 C2 数据文件对既有文案断言的影响）。
+
+    既有用例断言内置占位文案文本（如"怎么啦"/"辛苦"）；C2 数据文件落地后若直接
+    生效会让这些断言变红。加载器/数据行为由 test_copy_library.py 单独覆盖。
+    """
+    from pathlib import Path
+
+    import app.services.copy_library as cl
+
+    monkeypatch.setattr(cl, "COPY_LIBRARY_DIR", Path("__no_copy_library_dir__"))
+    cl.reload_care_templates()
+    yield
+    cl.reload_care_templates()
+
+
 pytestmark = pytest.mark.integration
 
 
