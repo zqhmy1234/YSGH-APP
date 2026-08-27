@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://yishu.local/copy-library/schema.json",
+  "title": "忆述光华 · 文案库契约（copy_library）",
+  "version": "1.0.0",
+  "description": "docs/copy_library/ 数据文件与 B2 copy_library 加载器（backend/app/services/copy_library.py）的共同契约。\n\n来源对齐：backend/app/services/notify.py CARE_TEMPLATES 6 键 + 触发常量（EMOTION_ACTION_THRESHOLD=0.7 / LATE_NIGHT 22:00-05:00 / CARE_STREAK_LOOKBACK_DAYS=3），由 Agent C2 按《18_契约增量清单_拍板项.md》C8 + 拍板⑤（温和克制、不提敏感话题、频次递减）定稿。\n\n本文件为 JSON Schema（draft-07）：根节点为契约元信息；两个数据文件的形状分别在 definitions.care_copy_file（docs/copy_library/care_copy.json）与 definitions.template_pool_file（docs/copy_library/template_pool.json）。校验脚本 scripts/validate_copy_library.py 同时读取 x-contract 做键对齐/数量区间/占位符闭合检查。\n\nB2 加载语义：读 care_copy.json → 按 x-contract.scenario_keys 逐场景取 candidates 中一条（rotation 决定轮换策略）→ 填回 CARE_TEMPLATES；文件缺失/解析失败 → 回退 notify.py 内置占位，绝不抛错打断触发逻辑。",
+  "definitions": {
+    "candidate": {
+      "type": "object",
+      "description": "单条关怀文案候选（加载器轮换时按条取用）。title/body 为发送到消息中心的原文，MVP 阶段禁止含占位符（占位符仅模板骨架池使用，见 x-contract.placeholders）。",
+      "required": ["title", "body"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "description": "消息标题（如『想陪你聊聊』）" },
+        "body": { "type": "string", "minLength": 1, "description": "消息正文" },
+        "tone": { "type": "string", "description": "本条候选的基调标签（温和/克制/陪伴/轻量……）" },
+        "notes": { "type": "string", "description": "候选备注（如『AI 起草待产品部审阅』『替换自内置占位』）" }
+      },
+      "additionalProperties": true
+    },
+    "care_scenario": {
+      "type": "object",
+      "description": "单一关怀场景（对应 notify.py CARE_TEMPLATES 的一个键）。",
+      "required": ["emotion", "intent", "applicable_condition", "rotation", "candidates"],
+      "properties": {
+        "emotion": { "type": "string", "description": "触发情绪中文（难过/生气……）" },
+        "intent": { "type": "string", "description": "场景意图（追问/回应/陪伴出口/深夜轻量/频次递减）" },
+        "applicable_condition": { "type": "string", "description": "触发条件（自然语言，对齐 notify.py 触发语义；<0.7 不触发由加载器统一门控，不在此列）" },
+        "rotation": { "type": "string", "enum": ["round_robin", "random", "fixed"], "description": "多候选轮换策略：round_robin=顺序循环 / random=随机 / fixed=始终取第一条" },
+        "notes": { "type": "string", "description": "场景备注" },
+        "candidates": {
+          "type": "array",
+          "minItems": 3,
+          "description": "该场景候选文案数组（≥3 条，多候选轮换去机械感）",
+          "items": { "$ref": "#/definitions/candidate" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "care_copy_file": {
+      "type": "object",
+      "description": "docs/copy_library/care_copy.json 的结构：6 个场景键 × 候选数组。",
+      "required": ["schema_version", "doc", "tone_policy", "scenarios"],
+      "properties": {
+        "schema_version": { "type": "string", "const": "1.0.0" },
+        "doc": { "type": "string", "description": "文件说明" },
+        "tone_policy": {
+          "type": "object",
+          "description": "文案基调策略（拍板⑤：温和克制、不提敏感话题、频次递减）",
+          "required": ["基调", "禁止主动提及", "仅陪伴出口"],
+          "properties": {
+            "基调": { "type": "string" },
+            "禁止主动提及": { "type": "array", "items": { "type": "string" }, "description": "敏感话题清单——正文/标题一律不主动提及，只给陪伴出口" },
+            "仅陪伴出口": { "type": "boolean", "description": "true=对敏感话题只提供陪伴出口，不追问不深挖" }
+          },
+          "additionalProperties": true
+        },
+        "scenarios": {
+          "type": "object",
+          "description": "场景键 → 场景对象。键集合必须与 x-contract.scenario_keys（=notify.py CARE_TEMPLATES 6 键）完全一致。",
+          "propertyNames": { "enum": ["sad_ask", "sad_respond", "angry", "late_night", "day2", "day3"] },
+          "additionalProperties": { "$ref": "#/definitions/care_scenario" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "template_entry": {
+      "type": "object",
+      "description": "模板骨架池单条：追问/回响的骨架模板（带占位符）+ 变体 + 适用条件。占位符必须取自 x-contract.placeholders 词表，且声明的 placeholders 集合与骨架/变体实际使用集合闭合。",
+      "required": ["id", "domain", "scenario", "intent", "skeleton", "applicable_condition"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "唯一 id（小写字母/数字/下划线）" },
+        "domain": { "type": "string", "enum": ["echo", "followup"], "description": "echo=回响（去年今日）/ followup=关怀追问" },
+        "scenario": { "type": "string", "description": "场景中文（如『回响·照片』『追问·难过第2天』）" },
+        "intent": { "type": "string", "description": "意图（引导回看/温和追问/回应/陪伴出口/深夜轻量……）" },
+        "dimensions": {
+          "type": "object",
+          "description": "分层维度（按情绪/场景/时段分层）",
+          "properties": {
+            "emotion": { "type": ["string", "null"], "description": "情绪维度（难过/生气/恐惧/厌恶/惊讶/其他/平静；echo 场景为 null）" },
+            "scenario": { "type": "string", "description": "场景维度标签" },
+            "period": { "type": "string", "enum": ["morning", "afternoon", "evening", "late_night", "any"], "description": "时段维度（清晨/白天/傍晚/深夜/任意）" }
+          },
+          "additionalProperties": true
+        },
+        "skeleton": { "type": "string", "minLength": 1, "description": "骨架模板（含 {placeholders}）" },
+        "placeholders": { "type": "array", "items": { "type": "string" }, "description": "骨架+变体实际使用的占位符清单（与使用处闭合）" },
+        "variants": { "type": "array", "items": { "type": "string" }, "description": "可选变体骨架（≥0 条，占位符需在 placeholders 集合内）" },
+        "applicable_condition": { "type": "string", "description": "适用条件（自然语言，如『echo.content_type==photo 且展示时段为早晨』）" }
+      },
+      "additionalProperties": true
+    },
+    "template_pool_file": {
+      "type": "object",
+      "description": "docs/copy_library/template_pool.json 的结构：追问/回响模板骨架池，数量区间 [x-contract.template_pool_count_min, x-contract.template_pool_count_max]（30–50）。",
+      "required": ["schema_version", "doc", "pool"],
+      "properties": {
+        "schema_version": { "type": "string", "const": "1.0.0" },
+        "doc": { "type": "string", "description": "文件说明" },
+        "pool": {
+          "type": "array",
+          "minItems": 30,
+          "maxItems": 50,
+          "items": { "$ref": "#/definitions/template_entry" }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "x-contract": {
+    "description": "契约常量（B2 加载器与校验脚本共用；来源 notify.py + 18 号文件 C8/D5）",
+    "scenario_keys": ["sad_ask", "sad_respond", "angry", "late_night", "day2", "day3"],
+    "scenario_trigger_semantics": {
+      "sad_ask": "SAD 未说明原因 → 关怀追问（『今天怎么啦』）",
+      "sad_respond": "SAD 已说明原因 → 回应内容（『辛苦了』，不重复追问）",
+      "angry": "ANGRY → 不主动追问，提供陪伴出口（兼作其他负面情绪默认陪伴出口）",
+      "late_night": "深夜（22:00–05:00）→ 轻量表达，不催回复",
+      "day2": "连续多日频次递减第 2 天（近 3 天 streak>=1）→ 『好些了吗』",
+      "day3": "连续多日频次递减第 3 天起（近 3 天 streak>=2）→ 只陪伴不追问"
+    },
+    "emotion_action_threshold": 0.7,
+    "threshold_rule": "confidence < 0.7 不触发（只存档案不打扰）；emotion==平静 不触发",
+    "late_night": { "start_hour": 22, "end_hour": 5, "tz": "+08:00" },
+    "care_streak_lookback_days": 3,
+    "care_candidates_min": 3,
+    "template_pool_count_min": 30,
+    "template_pool_count_max": 50,
+    "placeholders": {
+      "vocabulary": {
+        "name": "用户称呼（可选；未知则省略整段，不出现裸占位符）",
+        "time": "时间/时段（如『晚上 10 点』『这个点』）",
+        "period": "时段标签（清晨/上午/下午/傍晚/深夜）",
+        "place": "地点（回响 place 字段）",
+        "snippet": "内容片段（回响 text 摘要，建议 ≤15 字）",
+        "content_type": "内容类型中文（照片/文字/语音）",
+        "day": "第几天（day2/day3 频次递减用）",
+        "n": "任意数字"
+      },
+      "rule": "骨架模板与变体只能使用词表内占位符；每条模板声明 placeholders 必须与实际使用闭合；care_copy.json 的 title/body 为原文直发，禁用占位符（加载器不做替换，避免裸 {xxx} 泄漏给用户）"
+    },
+    "loader_contract": {
+      "loader": "backend/app/services/copy_library.py（B2 实现）",
+      "source_file": "docs/copy_library/care_copy.json",
+      "fallback": "文件缺失/解析失败/键缺失 → 回退 notify.py CARE_TEMPLATES 内置占位，不抛错",
+      "rotation": "加载器按场景 rotation 轮换候选（默认 round_robin），填回 CARE_TEMPLATES[scenario_key] = {title, body}",
+      "trigger_logic_untouched": "触发语义（maybe_send_emotion_care 分支）零改动，只换数据源"
+    }
+  }
+}
