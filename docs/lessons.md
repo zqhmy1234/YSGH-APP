@@ -23,6 +23,21 @@
 - **修复**：worktree 开发前复制主仓 backend/.env 到 worktree（gitignored 同机安全）或经 infisical run 注入；.env 键级核对再跑测试
 - **相关文件**：backend/.env / docs/项目API密钥清单与获取.md
 - **教训**：worktree 里跑全量测试前必须先补齐 .env，缺 DB 配置的报错要先想到是 .env 缺失而非代码问题
+### 2026-08-27 20:54 · commit fe70fdc · ts=1787835256
+- **错误**：并发下全量门禁 pytest 段 flake：test_rag.py::test_assemble_hits_event_attribution（integration 标记，走主套件，依赖共享 Qdrant）失败
+- **根因**：Wave1 十路 Agent 同时跑各自 --full/test_agent，多个 pytest 进程竞争共享 PG/Redis/Qdrant（另一路正在删/建 test_ collection、loadtest seed 数据），RAG 检索类集成测试取到空/瞬时不一致集合 → 偶发失败；同用例低负载直跑稳定通过
+- **修复**：全量门禁在低并发窗口跑（观察进程列表：只剩 1-2 个 pytest 再跑）；flaky 用例可直接重跑该文件确认；集成 Agent 在合并后主 checkout 重跑 --full 为权威门禁
+- **相关文件**：backend/tests/test_rag.py, scripts/test_agent.py
+- **教训**：10 路并行共享 PG/Redis/Qdrant 时全量门禁有共享资源 flake 概率，属环境并发限制而非代码回归，重跑/低峰窗口可复现为绿
+
+---
+
+### 2026-08-27 19:41 · commit c00a438 · ts=1787830863
+- **错误**：并行 worktree 跑 review_agent --full 时 api_smoke 失败（photo-journey/timeline-structure）
+- **根因**：gitignored 本地产物未随 worktree 复制：.cowork-temp/test_photos 测试照片缺失（.env 同理），api_smoke 的 TEST_PHOTOS glob 为空 → photo-journey 断言失败、timeline-structure 因无照片 min() 空
+- **修复**：并行 worktree 跑全量门禁前补环境：cp backend/.env（DB/外部服务）+ 运行 scripts/generate_test_photos.py 生成测试照片；模型/HF 缓存为共享或按主 checkout 补齐
+- **相关文件**：scripts/api_smoke_cases.py, scripts/generate_test_photos.py
+- **教训**：并行 worktree 是全量仓库副本但 gitignored 产物缺失，--full 前需补齐环境资产（.env/测试照片/模型）
 
 ---
 

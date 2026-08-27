@@ -15,14 +15,24 @@ job 可重复运行（幂等：done 行跳过，对象已删则静默）。
 TODO(遗留登记·P0-6)：孤儿对象扫描——当前仅清理软删墓碑关联对象；
 写后提交失败（best_effort_delete 也失败）/上传中止/审核拦截产生的无 contents
 引用的对象（uploads/staging 分片、未注册 cos_key、wechat 敏感拦截对象）需按
-"超龄 + 无 contents 引用"扫描清理（list_objects 按前缀对比 contents.cos_key，
-建议与本 job 同调度，待集成 Agent 排期）。
+"超龄 + 无 contents 引用"扫描清理（list_objects 按前缀对比 contents.cos_key）。
+
+孤儿扫描已实现（Wave1 B1 收尾 §5.2.6 · 任务卡 06 v2）：独立模块
+app/workers/orphan_scan.py，本文件 main() 提供 --orphan-scan 入口（阈值参数化：
+--orphan-staging-max-age 默认 1 / --orphan-object-max-age 默认 30，均对齐
+--limit/--dry-run 风格）：
+  python -m app.workers.cleanup_job --orphan-scan --dry-run   # 首跑观测
+实现细节（三类孤儿/引用集 R1∪R2/失败安全/幂等/阈值）见 orphan_scan.py 模块 docstring；
+依赖 storage.list_objects（契约 18/C7，B3 实现），未合入前返回 skipped 报告。
 
 调度（登记给集成 Agent）：
   RQ 无内置 cron —— 需集成 Agent 在部署侧挂定时（rq-scheduler / APScheduler /
-  系统 cron / Windows 计划任务），建议每天低峰一次：
+  系统 cron / Windows 计划任务），建议每天低峰一次（孤儿扫描与 30 天清理同调度，
+  **孤儿扫描首跑必须 dry-run 观测**，确认无误再切执行）：
       python -m app.workers.cleanup_job --older-than-days 30 --limit 500
-  （RQ worker 内亦可直接入队 run_cleanup 函数）
+      python -m app.workers.cleanup_job --orphan-scan --dry-run
+      python -m app.workers.cleanup_job --orphan-scan --orphan-object-max-age 30 --limit 500
+  （RQ worker 内亦可直接入队 run_cleanup / run_orphan_scan 函数）
 """
 from __future__ import annotations
 
@@ -122,12 +132,39 @@ def run_cleanup(older_than_days: int = 30, limit: int = 500, dry_run: bool = Fal
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="30 天软删除物理清理 job（B4 Wave3 AgentG）")
+    parser = argparse.ArgumentParser(
+        description="30 天软删除物理清理 / 孤儿对象扫描 job（B4 Wave3 AgentG + B1 Wave1）"
+    )
     parser.add_argument("--older-than-days", type=int, default=30)
     parser.add_argument("--limit", type=int, default=500)
     parser.add_argument("--dry-run", action="store_true", help="只扫描不物理删")
+    parser.add_argument(
+        "--orphan-scan",
+        action="store_true",
+        help="执行孤儿对象扫描（P0-6；独立模块 app.workers.orphan_scan）",
+    )
+    parser.add_argument(
+        "--orphan-staging-max-age", type=int, default=1,
+        help="孤儿扫描：staging 分片超龄阈值（天，默认 1：当天未完成即清）",
+    )
+    parser.add_argument(
+        "--orphan-object-max-age", type=int, default=30,
+        help="孤儿扫描：未注册/wechat 对象超龄阈值（天，默认 30：对齐物理清理）",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.orphan_scan:
+        from app.workers.orphan_scan import run_orphan_scan
+
+        report = run_orphan_scan(
+            staging_max_age_days=args.orphan_staging_max_age,
+            object_max_age_days=args.orphan_object_max_age,
+            limit=args.limit,
+            dry_run=args.dry_run,
+        )
+        logger.info("orphan-scan report: %s", report)
+        print(report)
+        return
     report = run_cleanup(older_than_days=args.older_than_days, limit=args.limit, dry_run=args.dry_run)
     logger.info("cleanup report: %s", report)
     print(report)
