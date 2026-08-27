@@ -3,6 +3,8 @@
 Wave4-L（M3 微信域）新增：code2session 真实接入（mock 微信响应）——
 配置 WECHAT_APPID/SECRET 后走真实 jscode2session；未配置保持 mock/501 语义。
 """
+import uuid
+
 import httpx
 import pytest
 from app.main import app
@@ -12,6 +14,12 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client():
     return TestClient(app)
+
+
+def _phone(prefix: str = "137") -> str:
+    """11 位唯一手机号（H3/R8#14：原用 int(time.time()) 当秒戳——跨运行/并行
+    Agent 同秒同号撞 60s 防刷窗口 → 429 flaky；改 uuid 随机，匹配 ^1\\d{10}$）"""
+    return f"{prefix}{uuid.uuid4().int % 10**8:08d}"
 
 
 def test_healthz(client):
@@ -42,9 +50,7 @@ def test_wechat_login_empty_code(client):
 
 def test_phone_login_wrong_code(client):
     """手机号登录错误验证码 → 401（AUTH-003）"""
-    import time
-
-    phone = f"137{int(time.time()) % 100000000:08d}"
+    phone = _phone("137")
     r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": "111111"})
     assert r.status_code == 401
     assert r.json()["code"] == "AUTH_003"
@@ -52,9 +58,7 @@ def test_phone_login_wrong_code(client):
 
 def test_sms_send_mock(client):
     """短信发送 mock：返回 6 位随机验证码（真实入库，联调用）"""
-    import time
-
-    phone = f"138{int(time.time()) % 100000000:08d}"  # 随机号码，避免 60s 防刷窗口冲突
+    phone = _phone("138")
     r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
     assert r.status_code == 200
     code = r.json()["data"]["mock_code"]
@@ -167,5 +171,21 @@ def test_wechat_login_production_not_configured_501(client, monkeypatch):
     monkeypatch.setattr(settings, "wechat_secret", "")
     monkeypatch.setattr(settings, "app_env", "production")
     r = client.post("/api/v1/auth/wechat", json={"code": "whatever", "device_id": "dev-p"})
+    assert r.status_code == 501
+    assert r.json()["code"] == "AUTH_099"
+
+
+# ---------------------------------------------------------------------------
+# H3：短信生产门控（原 test_techdebt_p0.py P0-1 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_send_sms_production_mock_blocked(client, monkeypatch):
+    """P0-1：production + mock_external_ai=true → 501（认证绕过门控，API 层双保险）"""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "mock_external_ai", True)
+    r = client.post("/api/v1/auth/sms/send", json={"phone": "13900000123"})
     assert r.status_code == 501
     assert r.json()["code"] == "AUTH_099"

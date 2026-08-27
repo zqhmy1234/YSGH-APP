@@ -302,3 +302,78 @@ def test_factory_fs_returns_fresh_instance(tmp_path, monkeypatch):
     b2 = get_storage_backend("fs")
     assert isinstance(b1, FilesystemStorageBackend)
     assert b1 is not b2
+
+
+# ---------------------------------------------------------------------------
+# H3：COS STS 路径级白名单（原 test_techdebt_p0.py P0-2 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_sts_policy_is_per_user(monkeypatch):
+    """P0-2：policy resource 为 photos/voice/thumbnails/{user_id}/*，禁止整桶通配"""
+    from app.services.external.storage import _build_sts_policy
+
+    monkeypatch.setattr(settings, "cos_region", "ap-shanghai")
+    monkeypatch.setattr(settings, "tencent_appid", "1250000000")
+    monkeypatch.setattr(settings, "cos_bucket", "yishu-prod")
+    policy = _build_sts_policy("user-123")
+    resources = policy["statement"][0]["resource"]
+    assert resources == [
+        "qcs::cos:ap-shanghai:uid/1250000000:yishu-prod/photos/user-123/*",
+        "qcs::cos:ap-shanghai:uid/1250000000:yishu-prod/voice/user-123/*",
+        "qcs::cos:ap-shanghai:uid/1250000000:yishu-prod/thumbnails/user-123/*",
+    ]
+    # 无整桶通配残留
+    assert not any(r.endswith(f":{settings.cos_bucket}/*") for r in resources)
+    # 他人前缀不可写
+    assert not any("user-124" in r for r in resources)
+    assert policy["statement"][0]["effect"] == "allow"
+
+
+def test_sts_policy_rejects_missing_or_malicious_user():
+    """P0-2：缺失 user_id / 路径逃逸 user_id 一律拒绝（防前缀逃逸）"""
+    from app.services.external.storage import _build_sts_policy
+
+    with pytest.raises(ValueError):
+        _build_sts_policy(None)
+    with pytest.raises(ValueError):
+        _build_sts_policy("")
+    with pytest.raises(ValueError):
+        _build_sts_policy("a/b")
+    with pytest.raises(ValueError):
+        _build_sts_policy("..")
+    with pytest.raises(ValueError):
+        _build_sts_policy("a\\b")
+
+
+# ---------------------------------------------------------------------------
+# H3：存储异常包装 / best-effort 删除（原 test_techdebt_p0.py P0-6 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_storage_error_attributes():
+    err = StorageError("COS_PUT_FAILED", "boom", retryable=True)
+    assert isinstance(err, RuntimeError)
+    assert err.code == "COS_PUT_FAILED"
+    assert err.retryable is True
+    assert "boom" in str(err)
+
+
+def test_best_effort_delete_removes_object():
+    from app.services.external.storage import best_effort_delete
+
+    backend = get_storage_backend("fake")
+    backend.put_object("p0/k1", b"x")
+    best_effort_delete("p0/k1", backend)
+    assert not backend.object_exists("p0/k1")
+
+
+def test_best_effort_delete_swallows_backend_failure():
+    """P0-6：删除失败仅告警不抛（孤儿对象由 cleanup 扫描兜底）"""
+    from app.services.external.storage import best_effort_delete
+
+    class BrokenBackend:
+        def delete_object(self, key):
+            raise RuntimeError("backend down")
+
+    best_effort_delete("k1", BrokenBackend())  # 不抛

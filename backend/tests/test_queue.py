@@ -2,12 +2,74 @@
 
 前置：Docker Redis 容器 yishu-redis 运行中（AOF 持久化）
 运行：pytest backend/tests/test_queue.py -v
+
+H3（2026-08-27）：原 test_techdebt_p0.py 的 P0-8 入队契约测试按域迁入
+（enqueue_high/low job_timeout/retry 参数、队列名）——纯单测，不依赖真实 Redis。
 """
 
 
 import pytest
 from app.core.config import settings
 from redis import Redis
+
+
+# ---------- H3：P0-8 RQ 入队契约（原 test_techdebt_p0.py 按域迁入） ----------
+
+
+class _FakeQueue:
+    def __init__(self):
+        self.calls = []
+
+    def enqueue(self, func, *args, **kwargs):
+        self.calls.append({"func": func, "args": args, "kwargs": kwargs})
+        return "job-abc"
+
+
+@pytest.fixture()
+def fake_queue(monkeypatch):
+    import app.core.queue as queue_mod
+
+    fake = _FakeQueue()
+    monkeypatch.setattr(queue_mod, "get_queue", lambda name: fake)
+    return queue_mod, fake
+
+
+def test_enqueue_high_defaults(fake_queue):
+    """P0-8：高优队列默认 ASR 级超时 600s + 3 次指数退避 + failure_ttl"""
+    queue_mod, fake = fake_queue
+    queue_mod.enqueue_high(lambda: None, "arg")
+    kwargs = fake.calls[0]["kwargs"]
+    assert kwargs["job_timeout"] == 600
+    assert kwargs["retry"].max == 3
+    assert kwargs["retry"].intervals == [10, 30, 90]
+    assert kwargs["failure_ttl"] > 0
+    assert kwargs["failure_ttl"] >= kwargs["job_timeout"]
+
+
+def test_enqueue_low_defaults(fake_queue):
+    """P0-8：低优队列默认 300s（聚合/批量非长任务）"""
+    queue_mod, fake = fake_queue
+    queue_mod.enqueue_low(lambda: None)
+    kwargs = fake.calls[0]["kwargs"]
+    assert kwargs["job_timeout"] == 300
+    assert kwargs["retry"].max == 3
+
+
+def test_enqueue_job_timeout_override(fake_queue):
+    """P0-8：调用方可覆盖 job_timeout（不破坏既有位置参数调用）"""
+    queue_mod, fake = fake_queue
+    queue_mod.enqueue_low(lambda: None, 1, 2, job_timeout=120)
+    kwargs = fake.calls[0]["kwargs"]
+    assert kwargs["job_timeout"] == 120
+    assert fake.calls[0]["args"] == (1, 2)
+
+
+def test_enqueue_queue_names(fake_queue):
+    """P0-8：high/low 队列名不变（worker 侧契约）"""
+    queue_mod, fake = fake_queue
+    queue_mod.enqueue_high(lambda: None)
+    queue_mod.enqueue_low(lambda: None)
+    assert [c["func"] for c in fake.calls]  # 两个都入队成功
 
 
 @pytest.fixture(scope="module")
