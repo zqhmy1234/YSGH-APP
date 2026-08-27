@@ -87,7 +87,7 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS, LabelOption } from '@/utils/text_recorder'
+	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS, LabelOption, trackCorrectionStreak, resetCorrectionStreak, shouldPromptCustomCategory } from '@/utils/text_recorder'
 	import {
 		startRecord,
 		stopRecord,
@@ -210,6 +210,9 @@
 						this.classifyLabel = labelCn(key)
 						submitCorrection(this.lastContentId, this.lastText, key, oldLabel).then((ok: boolean) => {
 							uni.showToast({ title: ok ? '已纠正' : '纠错记录失败', icon: 'none' })
+							if (ok) {
+								this.onCorrectionSuccess() // US-25：连续纠错计数（C9 客户端本地）
+							}
 						})
 						return
 					}
@@ -217,16 +220,43 @@
 						if (finalLabel != null) {
 							this.currentLabel = finalLabel
 							this.classifyLabel = labelCn(finalLabel)
-							submitCorrection(this.lastContentId, this.lastText, finalLabel, oldLabel)
+							submitCorrection(this.lastContentId, this.lastText, finalLabel, oldLabel).then((ok: boolean) => {
+								if (ok) {
+									this.onCorrectionSuccess() // US-25：连续纠错计数（C9 客户端本地）
+								}
+							})
 							uni.showToast({ title: '已纠正为：' + labelCn(finalLabel), icon: 'none' })
 						} else {
 							// 回滚 + 直接纠错记录
 							this.currentLabel = key
 							this.classifyLabel = labelCn(key)
-							submitCorrection(this.lastContentId, this.lastText, key, oldLabel)
+							submitCorrection(this.lastContentId, this.lastText, key, oldLabel).then((ok: boolean) => {
+								if (ok) {
+									this.onCorrectionSuccess() // US-25：连续纠错计数（C9 客户端本地）
+								}
+							})
 							uni.showToast({ title: '已纠正', icon: 'none' })
 						}
 					})
+				})
+			},
+			/** US-25（C9 客户端本地）：纠错成功 → 累计连续纠错次数，达 3 次弹"创建自定义分类？"（D4 拍板文案与交互） */
+			onCorrectionSuccess(): void {
+				trackCorrectionStreak()
+				if (!shouldPromptCustomCategory()) {
+					return
+				}
+				uni.showModal({
+					title: '创建自定义分类？',
+					content: '你已连续纠正 3 次，是否创建自定义分类，让分类更贴合你的表达？',
+					success: (res) => {
+						if (res.confirm) {
+							// 创建分类后清零（避免反复弹）；目标页缺失 → toast + 契约需求登记（18号契约无自定义分类管理页，不臆造路由）
+							resetCorrectionStreak()
+							uni.showToast({ title: '自定义分类功能即将上线', icon: 'none' })
+						}
+						// 取消：streak 保留，下次达 3 仍弹（如需"不再提示"可调 dismissCorrectionPrompt）
+					}
 				})
 			},
 			/** T-AU-1 + J-7：录音开始/停止（含中断状态机） */
