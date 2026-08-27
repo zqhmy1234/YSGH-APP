@@ -73,6 +73,13 @@ class ProfileSensitiveOut(BaseModel):
     updated_at: datetime
 
 
+class ProfileSensitiveDeleteOut(BaseModel):
+    """画像级敏感删除出参（DELETE /api/v1/profile/sensitive）"""
+
+    deleted: bool
+    topic: str
+
+
 class CosPresign(BaseModel):
     """STS 临时密钥 + 上传路径（决策 #10：30 秒有效）"""
 

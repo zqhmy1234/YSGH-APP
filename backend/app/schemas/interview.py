@@ -39,3 +39,18 @@ class InterviewAnswers(BaseModel):
 class InterviewResult(BaseModel):
     dimensions: dict[str, list[str]]
     confirmation: str
+
+
+class InterviewQuestion(BaseModel):
+    """产品部三问（静态文案，GET /api/v1/interview/questions）"""
+
+    key: str
+    question: str
+
+
+class InterviewProfileOut(BaseModel):
+    """画像出参（GET /api/v1/interview/profile）"""
+
+    dimensions: dict[str, list[str]]
+    version: int
+    cold_start_done: bool

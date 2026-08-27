@@ -16,3 +16,15 @@ class MessageOut(BaseModel):
     status: str
     sent_at: datetime
     read_at: datetime | None = None
+
+
+class MessageReadOut(BaseModel):
+    """单条已读出参（POST /api/v1/messages/{msg_id}/read）"""
+
+    read: int
+
+
+class MessageReadAllOut(BaseModel):
+    """全部已读出参（POST /api/v1/messages/read-all）"""
+
+    read_all: bool

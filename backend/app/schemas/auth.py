@@ -50,3 +50,15 @@ class UserBrief(BaseModel):
     nickname: str | None = None
     avatar: str | None = None
     is_new_user: bool = False           # 新用户 → 前端引导 AI 冷启动（F7）
+
+
+class SendSmsOut(BaseModel):
+    """发验证码出参（POST /api/v1/auth/sms/send；mock 通道直返验证码，生产直返被 501 拦截）"""
+
+    mock_code: str
+
+
+class LogoutOut(BaseModel):
+    """退出登录出参（POST /api/v1/auth/logout；幂等：无效/吊销失败仍 ok）"""
+
+    ok: bool
