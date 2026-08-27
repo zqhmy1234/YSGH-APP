@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 19:35 · commit 319a976 · ts=1787830519
+- **错误**：全新 git worktree 下 review_agent --full 的 DB 测试全部失败（psycopg OperationalError：password authentication failed for user postgres）
+- **根因**：worktree 是干净 checkout，gitignored 的 backend/.env 不在其中，DATABASE_URL 回退 config 默认 postgres:postgres，本机 PG 密码不同 → 认证失败；DB 测试强依赖真实 .env
+- **修复**：跑全量门禁前把主工作区 backend/.env 复制到 worktree backend/.env（gitignored 不入库，仅本地运行配置）；并先跑单测 test_notify 验证 DB 连通
+- **相关文件**：backend/.env
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债
