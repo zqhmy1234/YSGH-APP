@@ -2,9 +2,10 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user
 from app.core.errors import ERR_ASR_001, ERR_ASR_002, ApiError
 from app.db.models import User
@@ -24,9 +25,9 @@ from app.services.external.asr import (
 )
 from app.services.external.dashscope import moderate
 
-router = APIRouter(prefix="/api/v1/asr", tags=["asr"])
+router = make_router(prefix="/api/v1/asr", tags=["asr"])
 # 护栏独立域（P2-06 前缀统一：guard/check 不属于 ASR 域，独立 /api/v1/guard）
-guard_router = APIRouter(prefix="/api/v1/guard", tags=["guard"])
+guard_router = make_router(prefix="/api/v1/guard", tags=["guard"])
 
 # ASR 校验类错误码（音频参数/格式问题 → 422 ASR_001；其余为服务不可用 → 503 ASR_002）
 _ASR_VALIDATION_CODES = {

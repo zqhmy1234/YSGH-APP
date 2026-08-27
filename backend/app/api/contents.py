@@ -14,12 +14,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api import make_router
+from app.api.deps import PageParams, get_current_user, pagination_params
 from app.core.errors import (
     ERR_CONTENT_001,
     ERR_CONTENT_002,
@@ -46,6 +47,7 @@ from app.schemas.content import (
     ContentCreate,
     ContentOut,
     ProfileSensitiveCreate,
+    ProfileSensitiveDeleteOut,
     ProfileSensitiveOut,
 )
 from app.services.file_magic import is_photo_bytes
@@ -68,11 +70,11 @@ from app.services.upload_meta import (
 
 logger = logging.getLogger("yishu.contents")
 
-router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
+router = make_router(prefix="/api/v1/contents", tags=["contents"])
 
 # 画像级敏感对话式增删查（B1-6 / B5b FIX-4）：独立 router（prefix /api/v1/profile），
 # 需集成 Agent 在 main.py 注册：app.include_router(profile_sensitive_router)。
-profile_sensitive_router = APIRouter(prefix="/api/v1/profile", tags=["profile-sensitive"])
+profile_sensitive_router = make_router(prefix="/api/v1/profile", tags=["profile-sensitive"])
 
 # 照片上传共享常量（TD-P2B · S1-H2 收口：MAX_PHOTO_BYTES/ALLOWED_PHOTO_EXTS 收敛到
 # services/upload_meta.py，与分片链路 register_photo_content 同源；此处保留模块级名字
@@ -343,8 +345,7 @@ def create_content(
 
 @router.get("", response_model=ApiResponse[Page[ContentOut]])
 def list_contents(
-    limit: int = 20,
-    cursor: str | None = None,
+    page: PageParams = Depends(pagination_params),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -353,16 +354,17 @@ def list_contents(
     修复（审查 MAJOR）：原游标仅 created_at，同秒多条翻页错位/重复；
     改为 (created_at, id) 复合游标（id 兜底，UUID 不可比 → 用字符串序）。
     游标格式："<created_at_iso>|<id>"。
+    R4#6/#7（分页统一）：limit/cursor 走共享 pagination_params（limit 1..100，cursor 不透明字符串）。
     """
-    limit = min(max(limit, 1), 100)
+    limit = page.limit
     query = select(Content).where(
         Content.user_id == user.id,
         Content.deleted_at.is_(None),
     ).order_by(Content.created_at.desc(), Content.id.desc())
 
-    if cursor:
+    if page.cursor:
         try:
-            cursor_ts_raw, cursor_id = cursor.split("|", 1)
+            cursor_ts_raw, cursor_id = page.cursor.split("|", 1)
         except ValueError:
             # P0-7：游标错误从 CONTENT_003（敏感 422）拆分为独立码 CONTENT_008
             raise ApiError(ERR_CONTENT_008, "游标格式无效", http=422) from None
@@ -427,7 +429,7 @@ def profile_sensitive_add(
     return ApiResponse(data=_profile_sensitive_out(row))
 
 
-@profile_sensitive_router.delete("/sensitive", response_model=ApiResponse)
+@profile_sensitive_router.delete("/sensitive", response_model=ApiResponse[ProfileSensitiveDeleteOut])
 def profile_sensitive_delete(
     topic: str,
     db: Session = Depends(get_db),

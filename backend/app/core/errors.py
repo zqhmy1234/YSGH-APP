@@ -39,6 +39,11 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("AUTH_003", "验证码错误或已过期", 401),
     ErrorSpec("AUTH_004", "验证码发送过于频繁或达每日上限", 429),
     ErrorSpec("AUTH_005", "token 无效 / 过期 / 已吊销 / 类型错误", 401),
+    # R4#11（AUTH_099 拆分，2026-08-27）：通用"认证服务未接入或上游不可用"拆为具体码
+    ErrorSpec("AUTH_010", "短信服务未接入（生产未配置短信网关）", 501),
+    ErrorSpec("AUTH_011", "微信登录未接入（生产未配置微信应用）", 501),
+    ErrorSpec("AUTH_012", "微信登录上游不可用（网络/HTTP 异常）", 502, retryable=True),
+    ErrorSpec("AUTH_013", "微信登录响应异常（缺少 openid/unionid）", 502),
     ErrorSpec("AUTH_099", "认证服务未接入或上游不可用（微信/短信）", 501),
     # ASR 域
     ErrorSpec("ASR_001", "音频参数校验失败", 422),
@@ -66,6 +71,7 @@ _ERROR_SPECS: list[ErrorSpec] = [
     # 消息域
     ErrorSpec("MSG_001", "status 参数非法", 422),
     ErrorSpec("MSG_002", "消息不存在", 404),
+    ErrorSpec("MSG_003", "游标格式无效（应为消息 id）", 422),
     # 画像级敏感
     ErrorSpec("PROFILE_SENSITIVE_001", "话题参数非法", 422),
     ErrorSpec("PROFILE_SENSITIVE_002", "topic 不能为空", 422),
@@ -106,6 +112,10 @@ ERR_AUTH_001 = "AUTH_001"
 ERR_AUTH_003 = "AUTH_003"
 ERR_AUTH_004 = "AUTH_004"
 ERR_AUTH_005 = "AUTH_005"
+ERR_AUTH_010 = "AUTH_010"
+ERR_AUTH_011 = "AUTH_011"
+ERR_AUTH_012 = "AUTH_012"
+ERR_AUTH_013 = "AUTH_013"
 ERR_AUTH_099 = "AUTH_099"
 ERR_ASR_001 = "ASR_001"
 ERR_ASR_002 = "ASR_002"
@@ -128,6 +138,7 @@ ERR_EVENT_006 = "EVENT_006"
 ERR_EVENT_007 = "EVENT_007"
 ERR_MSG_001 = "MSG_001"
 ERR_MSG_002 = "MSG_002"
+ERR_MSG_003 = "MSG_003"
 ERR_PROFILE_SENSITIVE_001 = "PROFILE_SENSITIVE_001"
 ERR_PROFILE_SENSITIVE_002 = "PROFILE_SENSITIVE_002"
 ERR_PROFILE_SENSITIVE_003 = "PROFILE_SENSITIVE_003"

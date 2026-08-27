@@ -7,10 +7,11 @@ POST /api/v1/wechat/delete  —— 微信端软删本条（msg_id）
 
 未配置 WECHAT_* 时回调一律拒绝（安全：不响应未配置来源）；沙箱/联调用测试凭证。
 """
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import Depends, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.errors import (
@@ -23,10 +24,11 @@ from app.core.errors import (
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
+from app.schemas.wechat import WechatDeleteOut, WechatFindOut
 from app.services.wechat.gateway import handle_message, verify_url
 from app.services.wechat.service import find_memories, process_incoming, soft_delete_by_msg
 
-router = APIRouter(prefix="/api/v1/wechat", tags=["wechat"])
+router = make_router(prefix="/api/v1/wechat", tags=["wechat"])
 
 
 def _wechat_configured() -> bool:
@@ -45,7 +47,7 @@ class WechatFindRequest(BaseModel):
     limit: int = Field(3, ge=1, le=10)
 
 
-@router.post("/find", response_model=ApiResponse[dict])
+@router.post("/find", response_model=ApiResponse[WechatFindOut])
 def wechat_find(
     req: WechatFindRequest,
     db: Session = Depends(get_db),
@@ -98,7 +100,7 @@ async def wechat_callback(
     return Response(content="success", media_type="text/plain")
 
 
-@router.post("/delete", response_model=ApiResponse)
+@router.post("/delete", response_model=ApiResponse[WechatDeleteOut])
 def wechat_delete(
     msg_id: str,
     db: Session = Depends(get_db),

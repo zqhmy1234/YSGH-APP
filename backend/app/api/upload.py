@@ -8,9 +8,10 @@
 """
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user, uuid4_str
 from app.core.config import settings
 from app.core.errors import (
@@ -29,13 +30,30 @@ from app.core.errors import (
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
+from app.schemas.upload import (
+    UploadChunkOut,
+    UploadCompleteOut,
+    UploadInitOut,
+    UploadStatusOut,
+)
 from app.services import upload as upload_svc
 from app.services.errors import ConflictError, NotFoundError, TooLargeError
 from app.services.external.storage import get_storage_backend
 
 logger = logging.getLogger("yishu.upload")
 
-router = APIRouter(prefix="/api/v1/upload", tags=["upload"])
+router = make_router(prefix="/api/v1/upload", tags=["upload"])
+
+# R4#12（表单字段约束补齐）：客户端自报字段的可信度与形状收紧——
+#   - client_upload_id / file_name：安全字符白名单（禁路径分隔符/控制字符，防前缀逃逸与路径穿越）
+#   - file_size ≥1 / chunk_size ≥1：正数（大数/零值在服务层仍走 UPLOAD_001 语义码）
+#   - chunk_index ≥0：分片下标非负
+#   - chunk_hash：SHA256 64 hex（非 64 hex 视为非法输入 → 422）
+#   - upload_mode 保留 UPLOAD_007 业务码（手工校验，不改 422 语义）
+#   - upload_id 保留 uuid4_str → 404 语义（畸形 ID 视同不存在，不改为 422）
+_UPLOAD_ID_SAFE = r"^[A-Za-z0-9_-]{1,255}$"
+_FILE_NAME_SAFE = r"^[^/\\\x00-\x1f]{1,255}$"
+_SHA256_PATTERN = r"^[0-9a-fA-F]{64}$"
 
 
 def _exc_msg(exc: Exception) -> str:
@@ -43,12 +61,12 @@ def _exc_msg(exc: Exception) -> str:
     return getattr(exc, "message", None) or str(exc)
 
 
-@router.post("/init", response_model=ApiResponse[dict])
+@router.post("/init", response_model=ApiResponse[UploadInitOut])
 def init_upload(
-    client_upload_id: str = Form(..., min_length=1, max_length=255),
-    file_name: str = Form(..., min_length=1, max_length=255),
-    file_size: int = Form(...),
-    chunk_size: int = Form(upload_svc.DEFAULT_CHUNK_SIZE),
+    client_upload_id: str = Form(..., min_length=1, max_length=255, pattern=_UPLOAD_ID_SAFE),
+    file_name: str = Form(..., min_length=1, max_length=255, pattern=_FILE_NAME_SAFE),
+    file_size: int = Form(..., ge=1),
+    chunk_size: int = Form(upload_svc.DEFAULT_CHUNK_SIZE, ge=1),
     storage: str | None = Form(None),
     upload_mode: str = Form("original"),
     on_wifi: bool | None = Form(None),
@@ -61,6 +79,9 @@ def init_upload(
       upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）
       on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）
     两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。
+
+    R4#12：client_upload_id/file_name 安全字符白名单；file_size/chunk_size 正数下限；
+    大数上限（file_size>MAX）与分片下限（chunk_size<MIN）仍由下方 UPLOAD_001 业务码承接。
     """
     if upload_mode not in upload_svc.VALID_UPLOAD_MODES:
         raise ApiError(
@@ -100,24 +121,24 @@ def init_upload(
     })
 
 
-@router.put("/chunk", response_model=ApiResponse[dict])
+@router.put("/chunk", response_model=ApiResponse[UploadChunkOut])
 def upload_chunk(
     upload_id: str = Form(...),
-    chunk_index: int = Form(...),
+    chunk_index: int = Form(..., ge=0),
     file: UploadFile = File(...),
-    chunk_hash: str | None = Form(None),
+    chunk_hash: str | None = Form(None, pattern=_SHA256_PATTERN),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     return _upload_chunk_impl(upload_id, chunk_index, file, chunk_hash, db, user)
 
 
-@router.post("/chunk", response_model=ApiResponse[dict])
+@router.post("/chunk", response_model=ApiResponse[UploadChunkOut])
 def upload_chunk_post(
     upload_id: str = Form(...),
-    chunk_index: int = Form(...),
+    chunk_index: int = Form(..., ge=0),
     file: UploadFile = File(...),
-    chunk_hash: str | None = Form(None),
+    chunk_hash: str | None = Form(None, pattern=_SHA256_PATTERN),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -147,10 +168,10 @@ def _upload_chunk_impl(
     return ApiResponse(data=result)
 
 
-@router.post("/complete", response_model=ApiResponse[dict])
+@router.post("/complete", response_model=ApiResponse[UploadCompleteOut])
 def complete_upload(
     upload_id: str = Form(...),
-    meta: str = Form("{}"),
+    meta: str = Form("{}", max_length=16 * 1024),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -186,7 +207,7 @@ def complete_upload(
     return ApiResponse(data=result)
 
 
-@router.get("/status", response_model=ApiResponse[dict])
+@router.get("/status", response_model=ApiResponse[UploadStatusOut])
 def upload_status(
     upload_id: str,
     db: Session = Depends(get_db),

@@ -4,20 +4,26 @@ GET  /api/v1/interview/questions          —— 三问（最重要的人/人生
 POST /api/v1/interview/answers            —— 提交答案 → 画像维度激活 + 复述确认
 GET  /api/v1/interview/profile            —— 画像（冷启动状态）
 """
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
-from app.schemas.interview import InterviewAnswers, InterviewResult
+from app.schemas.interview import (
+    InterviewAnswers,
+    InterviewProfileOut,
+    InterviewQuestion,
+    InterviewResult,
+)
 from app.services.interview import QUESTIONS, get_profile, submit_answers
 
-router = APIRouter(prefix="/api/v1/interview", tags=["interview"])
+router = make_router(prefix="/api/v1/interview", tags=["interview"])
 
 
-@router.get("/questions", response_model=ApiResponse)
+@router.get("/questions", response_model=ApiResponse[list[InterviewQuestion]])
 def interview_questions(user: User = Depends(get_current_user)):
     """三问（静态文案）——TD-P3 L1（审查低危）：补鉴权，与全站鉴权约定一致
 
@@ -37,7 +43,7 @@ def interview_answers(
     return ApiResponse(data=InterviewResult(**result))
 
 
-@router.get("/profile", response_model=ApiResponse)
+@router.get("/profile", response_model=ApiResponse[InterviewProfileOut])
 def interview_profile(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

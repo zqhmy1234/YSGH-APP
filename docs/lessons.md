@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 17:33 · commit 07b91f8 · ts=1787823238
+- **错误**：merge(h4) 后 review_agent lint 拦 F811：test_queue.py fake_queue 重复定义（h3/h4 两分支同时拆出同一 test 文件，merge 自动拼接成整块重复）
+- **根因**：h3 与 h4 各自把 test_techdebt_p0 拆出 test_queue.py（内容仅差一个空行），git 三方合并对双 add 文件按内容拼接而非覆盖 → 重复 fixture；且 PowerShell Set-Content 写中文文件会破坏 UTF-8 编码（SyntaxError U+E21D）
+- **修复**：取 ruff 修正版（h3，133 行）经 git checkout 覆盖去重（勿用 PS Set-Content，用 git checkout 恢复字节）；merge 后先跑全量 lint 再提交
+- **相关文件**：backend/tests/test_queue.py
+- **教训**：并行拆分同一 test 文件时 merge 会整块拼接成重复——merge 后必跑全量 lint；写含中文文件一律用 git 而非 PowerShell
+
+---
+
 ### 2026-08-27 16:43 · commit dd8c6d2 · ts=1787820216
 - **错误**：R1#9 service 媒体网关用 global 语句被 ruff 抓 PLW0603，提交二次被拦
 - **根因**：模块级可变状态用 global 更新为 ruff 禁忌规则；且每次失败都刷新 last-failure 时间戳需补登记

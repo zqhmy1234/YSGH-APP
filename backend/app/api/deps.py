@@ -1,8 +1,9 @@
-"""认证依赖：从 Authorization Bearer 解析当前用户（AUTH-005 access 2h）+ 共享 UUID 校验（R4#2）"""
+"""认证依赖：Bearer 当前用户（AUTH-005）+ 共享 UUID 校验（R4#2）+ 共享分页参数（R4#7）"""
 import uuid
+from dataclasses import dataclass
 
 import jwt
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,26 @@ from app.db.session import get_db
 from app.services.errors import NotFoundError
 
 _bearer = HTTPBearer(auto_error=False)
+
+
+@dataclass(frozen=True)
+class PageParams:
+    """共享分页查询参数（R4#6/#7：cursor 定标 API-006；limit 上限统一）"""
+
+    limit: int
+    cursor: str | None
+
+
+def pagination_params(
+    limit: int = Query(20, ge=1, le=100, description="每页条数（1-100）"),
+    cursor: str | None = Query(None, description="分页游标（不透明字符串，由上次响应返回）"),
+) -> PageParams:
+    """共享分页参数依赖：contents/messages 列表统一套用（消除各端点手工 clamp 与 int/str 游标混用）
+
+    - limit 由 FastAPI Query 校验（1..100），替代端点内 `min(max(limit,1),N)` 手写截断
+    - cursor 统一为不透明字符串（对齐 Page.cursor: str | None；messages 内部按 id 解析）
+    """
+    return PageParams(limit=limit, cursor=cursor)
 
 
 def uuid4_str(value: str) -> str:

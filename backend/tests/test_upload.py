@@ -660,3 +660,4 @@ def test_get_status_guards_huge_chunk_count():
             db.execute(sa_delete(User).where(User.id == user_id))
         db.commit()
         db.close()
+

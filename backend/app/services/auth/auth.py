@@ -30,7 +30,7 @@ from app.core.errors import (
     ERR_AUTH_001,
     ERR_AUTH_004,
     ERR_AUTH_005,
-    ERR_AUTH_099,
+    ERR_AUTH_010,
     ApiError,
 )
 from app.core.security import create_access_token, create_refresh_token, decode_token
@@ -80,7 +80,7 @@ def send_sms(db: Session, req, client_ip: str | None) -> dict:
     # 生产 phone 登录整体不可用。get_settings 已强制生产 mock_external_ai=False，
     # 此处显式门控双保险（防运行时误改/测试泄漏）。
     if settings.app_env == "production":
-        raise ApiError(ERR_AUTH_099, "短信服务未接入（生产环境），请使用微信登录", http=501)
+        raise ApiError(ERR_AUTH_010, "短信服务未接入（生产环境），请使用微信登录", http=501)
 
     ip = client_ip or ""
     if not _rate_allow(f"sms:ip:{ip}", _SMS_SEND_IP_LIMIT):
@@ -131,7 +131,7 @@ def send_sms(db: Session, req, client_ip: str | None) -> dict:
     mock_code = sender.send(req.phone, code)
     if mock_code is None:
         # 真实通道未返回 mock 码（T1 未接入时 AliyunSmsSender 已 501；此处防御兜底）
-        raise ApiError(ERR_AUTH_099, "短信服务未接入", http=501)
+        raise ApiError(ERR_AUTH_010, "短信服务未接入", http=501)
     return {"mock_code": mock_code}
 
 

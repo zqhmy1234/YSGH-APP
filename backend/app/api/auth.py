@@ -11,14 +11,17 @@
 jscode2session（优先 unionid、回退 openid）；未配置时 dev/test 走 mock、production
 保持 501（不静默降级 mock 登录）。
 """
-from fastapi import APIRouter, Depends, Request
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.db.session import get_db
 from app.schemas.auth import (
+    LogoutOut,
     LogoutRequest,
     PhoneLoginRequest,
     RefreshRequest,
+    SendSmsOut,
     SendSmsRequest,
     TokenPair,
     WechatLoginRequest,
@@ -30,7 +33,7 @@ from app.services.auth import auth as auth_service
 # `_hash_refresh_token`/`_rotate_refresh_token` 定义于服务层 auth.py，此处 re-export 保持导入路径不变。
 from app.services.auth.auth import _hash_refresh_token, _rotate_refresh_token  # noqa: F401
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = make_router(prefix="/api/v1/auth", tags=["auth"])
 
 
 @router.post("/wechat", response_model=ApiResponse[TokenPair])
@@ -54,7 +57,7 @@ def phone_login(
     return ApiResponse(data=auth_service.phone_login(db=db, req=req, client_ip=_client_ip(request)))
 
 
-@router.post("/sms/send", response_model=ApiResponse[dict])
+@router.post("/sms/send", response_model=ApiResponse[SendSmsOut])
 def send_sms(req: SendSmsRequest, request: Request, db: Session = Depends(get_db)):
     """发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）
 
@@ -69,7 +72,7 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     return ApiResponse(data=auth_service.refresh(db=db, req=req))
 
 
-@router.post("/logout", response_model=ApiResponse[dict])
+@router.post("/logout", response_model=ApiResponse[LogoutOut])
 def logout(req: LogoutRequest, db: Session = Depends(get_db)):
     """退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）
 

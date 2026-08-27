@@ -151,7 +151,7 @@ def test_wechat_code2session_errcode_rejected(client, monkeypatch):
 
 
 def test_wechat_code2session_upstream_error(client, monkeypatch):
-    """微信服务不可用（网络异常）→ 502 AUTH_099，不静默降级 mock"""
+    """微信服务不可用（网络异常）→ 502 AUTH_012（R4#11：AUTH_099 拆分——上游不可用），不静默降级 mock"""
     _enable_wechat(monkeypatch)
 
     def fake_get(url, **kwargs):
@@ -160,11 +160,11 @@ def test_wechat_code2session_upstream_error(client, monkeypatch):
     monkeypatch.setattr("httpx.get", fake_get)
     r = client.post("/api/v1/auth/wechat", json={"code": "code-3", "device_id": "dev-4"})
     assert r.status_code == 502
-    assert r.json()["code"] == "AUTH_099"
+    assert r.json()["code"] == "AUTH_012"
 
 
 def test_wechat_login_production_not_configured_501(client, monkeypatch):
-    """生产环境未配置微信 → 501 AUTH_099（禁止 mock 登录）"""
+    """生产环境未配置微信 → 501 AUTH_011（R4#11：AUTH_099 拆分——微信未接入），禁止 mock 登录"""
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "wechat_appid", "")
@@ -172,7 +172,7 @@ def test_wechat_login_production_not_configured_501(client, monkeypatch):
     monkeypatch.setattr(settings, "app_env", "production")
     r = client.post("/api/v1/auth/wechat", json={"code": "whatever", "device_id": "dev-p"})
     assert r.status_code == 501
-    assert r.json()["code"] == "AUTH_099"
+    assert r.json()["code"] == "AUTH_011"
 
 
 # ---------------------------------------------------------------------------
@@ -181,11 +181,11 @@ def test_wechat_login_production_not_configured_501(client, monkeypatch):
 
 
 def test_send_sms_production_mock_blocked(client, monkeypatch):
-    """P0-1：production + mock_external_ai=true → 501（认证绕过门控，API 层双保险）"""
+    """P0-1：production + mock_external_ai=true → 501 AUTH_010（R4#11：AUTH_099 拆分——短信未接入）"""
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "mock_external_ai", True)
     r = client.post("/api/v1/auth/sms/send", json={"phone": "13900000123"})
     assert r.status_code == 501
-    assert r.json()["code"] == "AUTH_099"
+    assert r.json()["code"] == "AUTH_010"

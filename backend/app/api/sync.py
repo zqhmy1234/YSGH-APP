@@ -6,9 +6,10 @@ GET  /api/v1/sync/pull —— 增量拉取（since 游标，返回变更日志 +
 G2/R4#7 加固（2026-08-27）：sync_pull limit 上限校验——超上限拒绝并返回
 明确错误码 SYNC_001(422)，防止恶意超大分页打满 DB 查询/内存（纵深）。
 """
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user
 from app.core.errors import ERR_SYNC_001, ApiError
 from app.db.models import User
@@ -24,7 +25,7 @@ from app.schemas.sync import (
 from app.services.reconcile import reconcile_snapshot
 from app.services.sync import pull_changes, push_ops_safe
 
-router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
+router = make_router(prefix="/api/v1/sync", tags=["sync"])
 
 # 单次增量拉取上限（G2/R4#7：防超大分页；客户端按 has_more 分页续拉）
 MAX_PULL_LIMIT = 500
