@@ -3,6 +3,7 @@
  *
  * 与 backend/app/services/event_aggregation/pipeline.py 的 AGG_CONFIG 对齐。
  * 改参数必须两端同步改（端侧此处 / 云侧 pipeline.py），AGG-016 双跑测试兜底。
+ * 端云参数对照表见同目录 agg_config.md（R1#13 契约定稿，改参先看对照表）。
  *
  * 30min 保守模式（B3-2 · 2026-08-26 Wave2 AgentE 正式开关）：
  *  - 产品部验收口径为 L0 层可调参数，不硬编码：CONSERVATIVE_MODE=false 时

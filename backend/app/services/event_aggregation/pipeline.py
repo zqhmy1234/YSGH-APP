@@ -55,14 +55,18 @@ L0_MIN_PTS = 3
 NIGHT_HOUR, NIGHT_MIN = 23, 30
 
 # 统一参数配置（AGG-016 端云阈值一致性：端侧/云侧从同一配置源取参）
+# R1#13 契约同步：与端侧 client/utils/agg/agg_config.uts 参数一一对应
+# （对照表见 client/utils/agg/agg_config.md，改参数两端同步改）。
 AGG_CONFIG = {
     "l0": {
-        "eps_t_sec": L0_EPS_T_SEC,
-        "eps_s_m": L0_EPS_S_M,
-        "min_pts": L0_MIN_PTS,
+        "eps_t_sec": L0_EPS_T_SEC,                      # 端侧 L0_EPS_T_SEC_DEFAULT
+        "eps_t_sec_conservative": L0_EPS_T_SEC_CONSERVATIVE,  # 端侧 L0_EPS_T_SEC_CONSERVATIVE
+        "eps_s_m": L0_EPS_S_M,                          # 端侧 L0_EPS_S_M
+        "min_pts": L0_MIN_PTS,                          # 端侧 L0_MIN_PTS
         "conservative_mode": CONSERVATIVE_MODE,  # 2026-08-26 集成接线：对齐端侧 agg_config.uts（AGG-016 双跑覆盖）
     },
-    "burst_gap_sec": BURST_GAP_SEC,
+    "burst_gap_sec": BURST_GAP_SEC,                     # 端侧 BURST_GAP_SEC
+    "gps_speed": {"walk_ms": WALK_SPEED_MS, "drive_ms": DRIVE_SPEED_MS},  # 端侧 WALK_SPEED_MS/DRIVE_SPEED_MS
     "night": {"hour": NIGHT_HOUR, "minute": NIGHT_MIN},
     "l2_min_days": 2,
     "l2_min_photos": 10,
