@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 19:41 · commit c00a438 · ts=1787830863
+- **错误**：并行 worktree 跑 review_agent --full 时 api_smoke 失败（photo-journey/timeline-structure）
+- **根因**：gitignored 本地产物未随 worktree 复制：.cowork-temp/test_photos 测试照片缺失（.env 同理），api_smoke 的 TEST_PHOTOS glob 为空 → photo-journey 断言失败、timeline-structure 因无照片 min() 空
+- **修复**：并行 worktree 跑全量门禁前补环境：cp backend/.env（DB/外部服务）+ 运行 scripts/generate_test_photos.py 生成测试照片；模型/HF 缓存为共享或按主 checkout 补齐
+- **相关文件**：scripts/api_smoke_cases.py, scripts/generate_test_photos.py
+- **教训**：并行 worktree 是全量仓库副本但 gitignored 产物缺失，--full 前需补齐环境资产（.env/测试照片/模型）
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债
