@@ -25,9 +25,9 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 3. 把本文「当前接口」的**路径数**改为该输出值，并核对各域表格路径与 `j['paths']` 一致。
 4. 事件域/上传域等状态列变更时同步更新本文件。
 
-> 当前门禁值：**45 路径**（2026-08-26 实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）。
+> 当前门禁值：**46 路径**（2026-08-27 实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）→ 46（2026-08-27，G1 新增 /auth/logout 退出登录：devices 表吊销 refresh，AUTH-006）。
 
-## 当前接口（45 路径）
+## 当前接口（46 路径）
 
 ### 认证（/api/v1/auth）
 | 方法 | 路径 | 说明 | 状态 |
@@ -36,6 +36,7 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 | POST | /phone | 手机号验证码登录 | ✅ 真实 DB |
 | POST | /sms/send | 发验证码（6 位/5min/60s 防刷）| ✅ 真实 DB（发送走 mock）|
 | POST | /refresh | refresh 轮换（吊销校验）| ✅ 真实 DB |
+| POST | /logout | 退出登录：吊销该 refresh 绑定的设备会话（AUTH-006，幂等）| ✅ 真实 DB |
 
 ### 内容（/api/v1/contents，需 Bearer token）
 | 方法 | 路径 | 说明 | 状态 |

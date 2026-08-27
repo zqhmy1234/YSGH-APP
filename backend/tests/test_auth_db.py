@@ -21,7 +21,14 @@ from sqlalchemy import update as sa_update
 
 
 def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    """G1/R6#8：devices.refresh_token_hash 现行格式 = HMAC-SHA256+独立密钥（`hmac$` 前缀）。
+
+    直接用服务层 _hash_refresh_token（与实现同源，不再手写 sha256 副本——
+    手写副本在哈希算法升级后必然漂移，这里是断言对齐而非独立实现）。
+    """
+    from app.services.auth.auth import _hash_refresh_token
+
+    return _hash_refresh_token(token)
 
 
 def _code(prefix: str) -> str:
@@ -169,6 +176,60 @@ def test_invalid_refresh_rejected(client):
     """伪造 refresh → 401"""
     r = client.post("/api/v1/auth/refresh", json={"refresh_token": "forged.token.value"})
     assert r.status_code == 401
+
+
+@pytest.mark.integration
+def test_logout_revokes_refresh(client, db):
+    """G1/R6#7：logout 吊销该 refresh 绑定的设备会话（AUTH-006）——登出后旧 refresh 不可换新"""
+    code = _code("itest")
+    r = client.post("/api/v1/auth/wechat", json={"code": code, "device_id": "itest-dev"})
+    assert r.status_code == 200
+    refresh = r.json()["data"]["refresh_token"]
+
+    # logout → 200 + devices 行 refresh 哈希清空（吊销）
+    r = client.post("/api/v1/auth/logout", json={"refresh_token": refresh})
+    assert r.status_code == 200
+    assert r.json()["data"]["ok"] is True
+
+    user = db.execute(
+        select(User).where(User.unionid == f"mock-unionid-{code}")
+    ).scalar_one()
+    device = db.execute(
+        select(Device).where(Device.user_id == user.id, Device.device_id == "itest-dev")
+    ).scalar_one()
+    assert device.refresh_token_hash is None, "logout 后 devices 行 refresh 哈希应清空"
+    assert device.refresh_token is None
+
+    # 登出后旧 refresh 换新 → 401 已吊销
+    r = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
+    assert r.status_code == 401
+    assert r.json()["code"] == "AUTH_005"
+
+
+@pytest.mark.integration
+def test_logout_idempotent_invalid_token(client):
+    """G1/R6#7：logout 幂等——伪造/过期 token 仍 200（客户端必清本地凭据）"""
+    r = client.post("/api/v1/auth/logout", json={"refresh_token": "forged.token.value"})
+    assert r.status_code == 200
+    assert r.json()["data"]["ok"] is True
+
+
+@pytest.mark.integration
+def test_sms_code_stored_salted(client, db):
+    """G1/R6#9：验证码落库为 SHA-256+盐 哈希（非明文、非裸 sha256、含随机盐）"""
+    phone = _phone()
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
+    assert r.status_code == 200
+    code = r.json()["data"]["mock_code"]
+
+    row = db.execute(
+        select(SmsCode).where(SmsCode.phone == phone).order_by(SmsCode.id.desc())
+    ).scalar_one()
+    assert row.salt is not None and len(row.salt) >= 8, "应落库每码随机盐"
+    assert row.code != code, "不应存明文验证码"
+    assert row.code != hashlib.sha256(code.encode("utf-8")).hexdigest(), "不应存裸 sha256（须加盐）"
+    # 加盐哈希 = sha256(f"{salt}:{code}")
+    assert row.code == hashlib.sha256(f"{row.salt}:{code}".encode()).hexdigest()
 
 
 @pytest.mark.integration

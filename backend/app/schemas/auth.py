@@ -29,6 +29,12 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）"""
+
+    refresh_token: str = Field(..., description="要吊销的 refresh token（设备会话标识）")
+
+
 # ---------- 响应 ----------
 
 class TokenPair(BaseModel):

@@ -174,13 +174,55 @@
         }
       }
     },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "description": "退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）\n\n幂等：token 无效/过期/设备不存在 → 仍返回 ok（客户端必清本地凭据）。",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/contents/upload": {
       "post": {
         "tags": [
           "contents"
         ],
         "summary": "Upload Photo",
-        "description": "照片中转上传（客户端第一波 B3/B4：multipart → storage → contents → 管线）\n\nmultipart 表单：\n  file: 照片文件（jpg/jpeg/png/webp/heic/heif，≤20MB）\n  meta: JSON 字符串 {taken_at, gps_lat, gps_lng, perceptual_hash, source, extra}\n\n语义与 create_content 对齐：perceptual_hash 409 去重 / moderate 护栏 /\nsource 白名单；照片原件落 storage（cos_key），随后 enqueue_high(process_content)。",
+        "description": "照片中转上传（客户端第一波 B3/B4：multipart → storage → contents → 管线）\n\nmultipart 表单：\n  file: 照片文件（jpg/jpeg/png/webp/heic/heif，≤20MB）\n  meta: JSON 字符串 {taken_at, gps_lat, gps_lng, perceptual_hash, source, extra}\n\n语义与 create_content 对齐：perceptual_hash 409 去重 / moderate 护栏 /\nsource 白名单；照片原件落 storage（cos_key），随后入队 process_content。\nF1/P0-6 双轨收口：去重/护栏/建记录/入队统一委托 services/photo_content.py\n（dedup_key=\"perceptual_hash\" + moderate=True），本函数只做协议适配。",
         "operationId": "upload_photo_api_v1_contents_upload_post",
         "requestBody": {
           "content": {
@@ -2376,7 +2418,7 @@
           "meta"
         ],
         "summary": "Healthz",
-        "description": "健康检查（CI/部署探针）",
+        "description": "健康检查（CI/部署探针）——G2/R6#15 收敛：只暴露最小存活信息，\n不泄露 env/mock 开关/DB 连接串/版本明细（避免探测信息辅助攻击面测绘）。",
         "operationId": "healthz_healthz_get",
         "responses": {
           "200": {
@@ -4654,6 +4696,21 @@
           "confirmation"
         ],
         "title": "InterviewResult"
+      },
+      "LogoutRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token",
+            "description": "要吊销的 refresh token（设备会话标识）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "LogoutRequest",
+        "description": "退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）"
       },
       "MessageOut": {
         "properties": {

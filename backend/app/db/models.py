@@ -60,13 +60,18 @@ class Device(Base):
 
 
 class SmsCode(Base):
-    """sms_codes 表（防刷：限流+有效期，AUTH-003/004）"""
+    """sms_codes 表（防刷：限流+有效期，AUTH-003/004）
+
+    G1/R6#9：code 只存 SHA-256+盐 哈希（salt 随行落库，校验按行盐重算）——
+    存量无盐记录（salt 为空）走无盐 SHA-256 比对兼容。
+    """
 
     __tablename__ = "sms_codes"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     phone: Mapped[str] = mapped_column(String, index=True)
     code: Mapped[str] = mapped_column(String)
+    salt: Mapped[str | None] = mapped_column(String, nullable=True)
     expire_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -48,7 +48,7 @@ CREATE TABLE devices (                         -- 可吊销 refresh_token
     device_id     text NOT NULL,
     platform      text NOT NULL,               -- android / windows
     refresh_token text,
-    refresh_token_hash text,                    -- TD-P3 M6：SHA-256 存储（DB 泄漏不可直接复用 30 天会话）
+    refresh_token_hash text,                    -- TD-P3 M6/G1 R6#8：HMAC-SHA256+独立密钥（`hmac$`前缀）；存量无前缀为 SHA-256
     refresh_rotated_at timestamptz,             -- TD-P3 M6：最后轮换时间
     last_active_at timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now(),
@@ -58,7 +58,8 @@ CREATE TABLE devices (                         -- 可吊销 refresh_token
 CREATE TABLE sms_codes (                       -- 防刷
     id            bigserial PRIMARY KEY,
     phone         text NOT NULL,
-    code          text NOT NULL,
+    code          text NOT NULL,               -- G1/R6#9：SHA-256+盐 哈希（不存明文）
+    salt          text,                        -- G1/R6#9：每码随机盐（存量行可空=无盐兼容）
     expire_at     timestamptz NOT NULL,
     used_at       timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now()
