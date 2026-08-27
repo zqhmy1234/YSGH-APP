@@ -3,7 +3,8 @@
 
 职责（Commit Gate 的 tests 环节 + 独立运行）：
   1. pytest 全量测试（backend + research），失败即阻断
-  2. 覆盖率统计（--cov，阈值可配）
+  2. 覆盖率统计（--cov，阈值可配；2026-08-27 起 rag 分组在环境就绪时计入覆盖率，
+     产出 .cowork-temp/coverage.xml；环境缺失时显式警告而非静默漏跑）
   3. API 冒烟测试（FastAPI TestClient：healthz / auth mock 链路 / contents / search）
   4. 原型验证脚本（事件聚合 run_validation）
 
@@ -96,6 +97,44 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
+COV_XML = ".cowork-temp/coverage.xml"
+
+
+def _rag_env_ready() -> tuple[bool, str]:
+    """RAG 用例运行环境探测（2026-08-27 批次 H2：rag 纳入覆盖率前先确认可跑）
+
+    探测两点：Qdrant 6333 端口可达 + BGE-M3 已入 HF 缓存。
+    rag 用例重（19 个，加载 BGE-M3 ~1.2GB / 现场下载 2.2GB），环境缺失时
+    显式警告跳过（不现场下载、不挂起），保持本地门禁秒级可预测。
+    """
+    import os
+
+    reasons: list[str] = []
+    if not _port_open(6333):
+        reasons.append("Qdrant 6333 端口不可达（需 docker 起 yishu-qdrant）")
+    hub = os.environ.get("HF_HUB_CACHE")
+    if not hub:
+        hf_home = os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+        hub = str(Path(hf_home) / "hub")
+    if not (Path(hub) / "models--BAAI--bge-m3").is_dir():
+        reasons.append(f"BGE-M3 未入 HF 缓存（先跑 python scripts/warm_hf_models.py；缓存目录 {hub}）")
+    if reasons:
+        return False, "；".join(reasons)
+    return True, ""
+
+
+def _emit_warnings(warnings: list[str]) -> None:
+    """deselect 显式警告（2026-08-27 批次 H2：防静默漏跑）——stdout + workflow annotation
+
+    `::warning::` 在本地仅是普通行；在 CI 会被 GitHub 识别为 warning annotation
+    （匿名 API 可读），避免测试被静默 deselect 却不留痕迹。
+    """
+    for w in warnings:
+        esc = w.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::warning::{esc}")
+        print(f"[deselect 警告] {w}")
+
+
 def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     """pytest 全量 + 覆盖率（2026-08-25：测试环境封闭——覆盖 MOCK/STORAGE_BACKEND
 
@@ -104,30 +143,76 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     等 mock 断言失败（review_agent 全量门禁暴露）。
     2026-08-26：环境自检——docker 容器（yishu-redis/yishu-qdrant）未启动时
     deselect 已知依赖项，避免环境缺失卡住 commit（CI 仍全量验证）。
+    2026-08-27（批次 H2 R7）：
+      - T3 覆盖率统一 60：主套件 + rag 分组（环境就绪时 --cov-append）合并判定阈值；
+      - T6 deselect 显式警告：环境缺失 deselect / rag 未计入覆盖率时输出显式警告；
+      - T8 coverage.xml 产物：写 .cowork-temp/coverage.xml（CI 上传 artifact）。
     """
-    cmd = [
+    import os
+
+    env = {
+        **dict(os.environ),
+        "MOCK_EXTERNAL_AI": "true",
+        "STORAGE_BACKEND": "fake",
+    }
+    # 注意：主套件不全局设 QDRANT_COLLECTION——conftest 的 vector_collection fixture
+    # 已按需把默认 collection 指到 test_* 隔离库（TD-P1C）；rag 子进程单独设
+    # test_yishu_contents 与 CI `pytest -m rag` 步骤的隔离形态保持一致。
+    warnings: list[str] = []
+    outputs: list[str] = []
+    failed = False
+
+    main_cmd = [
         sys.executable, "-m", "pytest", "backend/tests",
         "-q", "--tb=short",
         "--cov=backend/app",
         "--cov-report=term-missing",
-        f"--cov-fail-under={cov_threshold}",
     ]
     if not _port_open(6379):
-        cmd += ["--deselect", "tests/test_queue.py::test_redis_connection"]
-        cmd += ["--deselect", "tests/test_queue.py::test_enqueue_and_worker_consume"]
-        cmd += ["--deselect", "tests/test_queue.py::test_queue_failure_goes_to_dead"]
+        main_cmd += ["--deselect", "tests/test_queue.py::test_redis_connection"]
+        main_cmd += ["--deselect", "tests/test_queue.py::test_enqueue_and_worker_consume"]
+        main_cmd += ["--deselect", "tests/test_queue.py::test_queue_failure_goes_to_dead"]
+        warnings.append("Redis 6379 不可达 → deselect 3 个 test_queue 依赖用例（CI 仍全量验证）")
     if not _port_open(6333):
-        cmd += ["--deselect", "tests/test_pipeline.py::TestPhotoPipeline::test_photo_caption_and_done"]
-        cmd += ["--deselect", "tests/test_pipeline.py::TestPhotoPipeline::test_photo_writes_image_vec"]
-    env = {
-        **dict(__import__("os").environ),
-        "MOCK_EXTERNAL_AI": "true",
-        "STORAGE_BACKEND": "fake",
-    }
-    code, out = run(cmd, env=env)
-    if "No module named pytest" in out or "No module named pytest-cov" in out:
-        return True, f"[skip] 缺依赖：{out.strip().splitlines()[-1] if out.strip() else 'pytest'}"
-    return (code == 0), out.strip()[-2500:]
+        main_cmd += ["--deselect", "tests/test_pipeline.py::TestPhotoPipeline::test_photo_caption_and_done"]
+        main_cmd += ["--deselect", "tests/test_pipeline.py::TestPhotoPipeline::test_photo_writes_image_vec"]
+        warnings.append("Qdrant 6333 不可达 → deselect 2 个 test_pipeline 向量用例（CI 仍全量验证）")
+
+    rag_ready, rag_reason = _rag_env_ready()
+    if rag_ready:
+        # 主套件先跑（不 gate 阈值），rag 追加覆盖后统一判定（合并覆盖 ≥ 主套件覆盖）
+        code, main_out = run(main_cmd, env=env)
+        outputs.append("[pytest·主套件]\n" + main_out.strip())
+        if code != 0:
+            failed = True
+        rag_cmd = [
+            sys.executable, "-m", "pytest", "backend/tests", "-m", "rag",
+            "-q", "--tb=short",
+            "--cov=backend/app",
+            "--cov-append",
+            "--cov-report=term-missing",
+            f"--cov-report=xml:{COV_XML}",
+            f"--cov-fail-under={cov_threshold}",
+        ]
+        code2, rag_out = run(rag_cmd, env={**env, "QDRANT_COLLECTION": "test_yishu_contents"})
+        outputs.append("[pytest·rag 分组（计入覆盖率）]\n" + rag_out.strip())
+        if code2 != 0:
+            failed = True
+    else:
+        warnings.append(f"RAG 用例未纳入覆盖率统计（{rag_reason}）；覆盖率阈值仅按主套件判定")
+        main_cmd += [f"--cov-fail-under={cov_threshold}", f"--cov-report=xml:{COV_XML}"]
+        code, out = run(main_cmd, env=env)
+        outputs.append("[pytest·主套件]\n" + out.strip())
+        if code != 0:
+            failed = True
+
+    if any("No module named pytest" in o or "No module named pytest-cov" in o for o in outputs):
+        last = outputs[-1].strip().splitlines()[-1] if outputs[-1].strip() else "pytest"
+        return True, f"[skip] 缺依赖：{last}"
+
+    _emit_warnings(warnings)
+    combined = "\n\n".join(outputs)
+    return (not failed), combined.strip()[-3500:]
 
 
 def run_api_smoke() -> tuple[bool, str]:

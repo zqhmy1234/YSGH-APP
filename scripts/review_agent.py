@@ -53,9 +53,26 @@ SECRET_PATTERNS = [
     "-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----",
     "password\\s*=\\s*['\"][^'\"]+['\"]",
     "secret\\s*=\\s*['\"][^'\"]{8,}['\"]",
+    # 2026-08-27（批次 H2 R7 · T9）：补齐常见密钥形态盲区
+    "ghp_[A-Za-z0-9]{36}",                       # GitHub PAT
+    "github_pat_[A-Za-z0-9_]{22,}",              # GitHub fine-grained PAT
+    "xox[baprs]-[A-Za-z0-9-]{10,}",              # Slack token
+    "AIza[0-9A-Za-z_-]{35}",                     # Google API key
+    "sk_live_[0-9a-zA-Z]{20,}",                  # Stripe secret key
+    "rk_live_[0-9a-zA-Z]{20,}",                  # Stripe restricted key
+    "glpat-[A-Za-z0-9-]{20,}",                   # GitLab PAT
+    # 通用配置键赋值（小写精确匹配，误报面已用仓库全量探测验证 = 0）
+    "(client_secret|access_token|api[_-]?key|secret_key|private_key)\\s*=\\s*['\"][^'\"]{8,}['\"]",
 ]
 SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py"}
-TEXT_EXTS = (".py", ".md", ".json", ".yaml", ".yml", ".toml", ".env", ".ini", ".sql", ".ts", ".uts", ".uvue")
+# 2026-08-27（T9）：补齐 client 工具链（已整目录排除）之外的文本类型盲区——
+# .txt/.properties/.ps1/.sh/.mjs/.bat/.xml/.gitignore/.example/.mako 均可能携带密钥
+TEXT_EXTS = (
+    ".py", ".md", ".json", ".yaml", ".yml", ".toml", ".env", ".ini", ".sql",
+    ".ts", ".uts", ".uvue",
+    ".txt", ".properties", ".ps1", ".sh", ".mjs", ".bat", ".xml", ".gitignore",
+    ".example", ".mako",
+)
 
 
 def run(cmd: list[str], cwd: Path | None = None, timeout: int = 300) -> tuple[int, str]:
@@ -86,8 +103,13 @@ def _skip_path(parts: tuple[str, ...]) -> bool:
 
 
 def _git_files(cached: bool) -> list[str]:
-    """git diff 文件名（相对路径，正斜杠）；cached=True 查暂存区（本次提交），否则查工作区改动"""
-    args = ["git", "diff", "--name-only", "--diff-filter=ACM"]
+    """git diff 文件名（相对路径，正斜杠）；cached=True 查暂存区（本次提交），否则查工作区改动
+
+    2026-08-27（批次 H2 R7 · T9）：--diff-filter=ACM → ACMR——重命名（R）文件此前
+    不出现于快模式 diff（git 视之为 R 而非 A），导致 rename 的文件漏过 syntax/lint/
+    secrets 扫描；加入 R 后与全量模式（rglob 覆盖仓库全部）语义一致。
+    """
+    args = ["git", "diff", "--name-only", "--diff-filter=ACMR"]
     if cached:
         args.insert(2, "--cached")
     code, out = run(args)
@@ -105,7 +127,11 @@ def _staged_files() -> list[str]:
 
 
 def _dirty_files() -> set[str]:
-    """有未暂存改动的文件（工作区 != 暂存区）——跳过，避免 lint 到进行中的半成品"""
+    """有未暂存改动的文件（工作区 != 暂存区）——跳过，避免 lint 到进行中的半成品
+
+    与 _git_files 同为 ACMR（含 rename）：重命名且工作区仍有改动的文件同样
+    被判定 dirty → 快/全量 lint 跳过语义一致（2026-08-27 · T9）。
+    """
     return {p.replace("\\", "/") for p in _git_files(cached=False)}
 
 
