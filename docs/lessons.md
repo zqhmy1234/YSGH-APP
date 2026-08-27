@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 20:06 · commit d809ca6 · ts=1787832376
+- **错误**：HBuilderX 5.15 全新全量构建(--compile true/run)无法通过：uploader.ts/upload_protocol.ts/event_ops.ts(.then回调返回值)与play.ts(const walk自引用)报UTS硬错误
+- **根因**：UTS 5.15 编译器对 .then 回调返回值链、retryAsync 可选参数泛型解析、const 箭头自引用存在根本缺陷；增量构建被 tsc 缓存掩盖，全新 worktree/cleanCache 即暴露；主干 develop 同命令同错，非单 Agent 引入，阻塞 Wave1 全部客户端 Agent 产出可运行 APK
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债
