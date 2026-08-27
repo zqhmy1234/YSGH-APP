@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 19:51 · commit 7565429 · ts=1787831517
+- **错误**：pre-commit 门禁 lint 阻断：ruff F821 Undefined name 'queries'（f-string 内 {queries:[]} 被当作变量引用）
+- **根因**：在 f-string 里想展示字面量 {queries:[]}，未转义大括号，ruff 把 queries 解析为未定义变量
+- **修复**：用 {{queries:[]}} 双写大括号转义字面量
+- **相关文件**：scripts/eval_negative_samples.py
+- **教训**：f-string 内含字典样字面量时大括号必须双写转义，否则 ruff F821 误判未定义名
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债
