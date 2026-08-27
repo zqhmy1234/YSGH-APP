@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-27 14:22 · commit 5fcbd29 · ts=1787811745
+- **错误**：review_agent lessons 门禁循环：登记教训后仍阻断（'上次检查失败后未登记教训'）
+- **根因**：review_agent 每次失败都覆写 .cowork-temp/last-failure.json 的 failed_at 时间戳；若先登记教训、后又有一次 gate 失败（如 lint），登记时间早于最新失败 → check_lessons 判定未登记
+- **修复**：教训登记必须在最后一次 review_agent 失败之后；失败→修复→（失败后再）登记→重跑 gate；先跑 python scripts/review_agent.py 确认无 lint 再一次性通过
+- **相关文件**：.cowork-temp/last-failure.json
+- **教训**：（无）
+
+---
+
+### 2026-08-27 14:18 · commit 5fcbd29 · ts=1787811496
+- **错误**：客户端 TS 单测：Node 类型剥离导入 client/utils/auth.ts 失败（ERR_MODULE_NOT_FOUND ./config）+ UTSJSONObject 方法缺失
+- **根因**：auth.ts 内部 import './config' 无扩展名，Node ESM 不猜扩展名；且 auth.ts 解析响应用 UTSJSONObject 方法（getJSON/getString/set），Node 普通对象没有这些方法
+- **修复**：node 24 registerHooks.resolve 给相对无扩展名导入补 .ts；uni 桩的 res.data 需模拟 getJSON/getString 方法；logout 改用对象字面量 data 避开 body.set
+- **相关文件**：scripts/test_auth_singleflight.mjs
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 07:59 · commit 28ba960 · ts=1787788752
 - **错误**：test_events.py F401: 'sqlalchemy.select' imported but unused（拆分 test_aggregation.py 后残留）
 - **根因**：把 F3 聚合测试从 test_events.py 拆到 test_aggregation.py 时，删除了用到 select 的查询用例但未同步清理 import；review_agent lint 门禁（ruff F401）拦截。

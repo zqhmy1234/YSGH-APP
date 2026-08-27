@@ -222,6 +222,20 @@ def db_user(cleanup_user):
 
 
 @pytest.fixture(autouse=True)
+def _rate_limit_disabled(monkeypatch):
+    """G1/R6#2/#3：测试套件默认关闭通用限流中间件。
+
+    原因：限流中间件用共享 Redis /0 计数（真实连接），整仓测试开启会
+    跨用例/跨域共享窗口 → 依赖顺序/时机的 flaky 429；dev 流量也会被测试
+    计数干扰。限流本身的 429/白名单/降级验证在 test_ratelimit.py 用
+    独立 fixture 显式开启（MemoryStore + 小阈值），与全仓隔离。
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "rate_limit_enabled", False)
+
+
+@pytest.fixture(autouse=True)
 def _sensitive_words_state(monkeypatch):
     """R8#12：敏感词模块全局热词状态快照/恢复（消除顺序敏感 flaky）。
 

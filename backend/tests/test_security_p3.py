@@ -9,7 +9,6 @@
 
 前置：本地 PostgreSQL yishu 库 + Redis（RQ）——与既有认证/上传/内容测试同环境。
 """
-import hashlib
 import secrets
 import uuid
 
@@ -389,8 +388,9 @@ def test_interview_questions_with_auth(client, auth_headers):
 
 
 def test_refresh_token_stored_as_hash(client, auth_headers):
-    """devices.refresh_token 清空、refresh_token_hash 落 SHA-256（M6/L2）"""
+    """devices.refresh_token 清空、refresh_token_hash 落 HMAC-SHA256（M6/L2 + G1/R6#8）"""
     from app.db.models import Device, User
+    from app.services.auth.auth import _hash_refresh_token
     from sqlalchemy import select
 
     code = f"p3-hash-{uuid.uuid4().hex[:8]}"
@@ -407,7 +407,9 @@ def test_refresh_token_stored_as_hash(client, auth_headers):
             select(Device).where(Device.user_id == user.id, Device.device_id == "p3-hash-dev")
         ).scalar_one()
         assert device.refresh_token is None, "devices 表不应再存明文 refresh"
-        assert device.refresh_token_hash == hashlib.sha256(refresh.encode("utf-8")).hexdigest()
+        # G1/R6#8：HMAC-SHA256 + 独立密钥（带 `hmac$` 版本前缀），不再裸 sha256
+        assert device.refresh_token_hash == _hash_refresh_token(refresh)
+        assert device.refresh_token_hash.startswith("hmac$")
         assert device.refresh_rotated_at is not None, "应记录最后轮换时间"
 
         # 哈希化后 refresh 仍可正常轮换（吊销语义不破坏）

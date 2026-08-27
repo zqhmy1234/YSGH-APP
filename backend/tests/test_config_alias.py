@@ -72,7 +72,11 @@ def test_production_forces_mock_external_ai_false(monkeypatch):
     from app.core.config import _apply_production_safety
 
     s = Settings(
-        _env_file=None, app_env="production", mock_external_ai=True, jwt_secret="s" * 40
+        _env_file=None,
+        app_env="production",
+        mock_external_ai=True,
+        jwt_secret="s" * 40,
+        refresh_token_hmac_key="r" * 40,
     )
     _apply_production_safety(s)
     assert s.mock_external_ai is False
@@ -94,4 +98,19 @@ def test_production_default_jwt_secret_raises(monkeypatch):
 
     s = Settings(_env_file=None, app_env="production", jwt_secret="change-me-32-bytes-min-secret-0000")
     with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        _apply_production_safety(s)
+
+
+def test_production_default_refresh_hmac_key_raises(monkeypatch):
+    """G1/R6#8：生产环境默认 refresh_token_hmac_key → RuntimeError（密钥隔离门禁）"""
+    import pytest
+    from app.core.config import _apply_production_safety
+
+    s = Settings(
+        _env_file=None,
+        app_env="production",
+        jwt_secret="s" * 40,
+        refresh_token_hmac_key="change-me-refresh-hmac-key-0000000000",
+    )
+    with pytest.raises(RuntimeError, match="REFRESH_TOKEN_HMAC_KEY"):
         _apply_production_safety(s)

@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: int = 30
     jwt_algorithm: str = "HS256"
 
+    # G1/R6#8（认证安全）：refresh_token 哈希用独立 HMAC 密钥（与 jwt_secret 隔离）。
+    # 即使 JWT 签名密钥泄漏，也无法用其伪造 devices 表 refresh_token 哈希；
+    # 生产默认值强制替换（见 _apply_production_safety）。
+    refresh_token_hmac_key: str = "change-me-refresh-hmac-key-0000000000"
+
     # 外部 API Key
     dashscope_api_key: str = ""
     # 百炼业务空间 ID（sk-ws- 工作空间级 key 必须带 X-DashScope-WorkSpace，SDK 无环境变量兜底）
@@ -166,12 +171,31 @@ class Settings(BaseSettings):
     # 实测参考：无门控替换式改写 EXT recall 0.886→0.75（改写伤害），门控+双路后应恢复。
     llm_rewrite_enabled: bool = True
 
+    # G1/R6#2/#3（认证安全 · 通用限流）：消费方 backend/app/core/ratelimit.py
+    #   覆盖域：auth / asr（含 /api/v1/guard）/ search（先覆盖三域，其余域按需登记）
+    #   维度：client_ip + user（Authorization Bearer 解析；无/坏 token 仅 IP 维度）
+    #   窗口：固定窗口 INCR+EXPIRE（rate_limit_window 秒）；Redis 故障降级进程内计数，不 500
+    #   白名单：rate_limit_whitelist（逗号分隔 IP）直接放行；
+    #   rate_limit_trust_proxy=True 时优先 X-Forwarded-For（仅部署在可信反向代理后开启）
+    rate_limit_enabled: bool = True
+    rate_limit_trust_proxy: bool = False
+    rate_limit_whitelist: str = ""
+    rate_limit_window: int = 60
+    rate_limit_auth_ip: int = 120          # auth 域：同 IP / 窗口
+    rate_limit_auth_user: int = 300        # auth 域：同用户 / 窗口
+    rate_limit_asr_ip: int = 20            # asr+guard 域：同 IP / 窗口
+    rate_limit_asr_user: int = 40          # asr+guard 域：同用户 / 窗口
+    rate_limit_search_ip: int = 60         # search 域：同 IP / 窗口
+    rate_limit_search_user: int = 120      # search 域：同用户 / 窗口
+
 
 def _apply_production_safety(settings: Settings) -> Settings:
     """生产环境安全兜底（P0-1，审查 H1/S4-四-3）：
 
     1. JWT：禁止默认密钥（公开字符串，任何人都可伪造 token）——dev/test 保留默认值。
-    2. Mock：强制 mock_external_ai=False——漏配环境变量的新部署若沿用默认 True，
+    2. Refresh HMAC：禁止默认密钥（G1/R6#8——与 jwt_secret 隔离的 refresh 哈希密钥，
+       DB 泄漏场景下防止攻击者用公开默认值离线爆破/构造哈希）。
+    3. Mock：强制 mock_external_ai=False——漏配环境变量的新部署若沿用默认 True，
        短信验证码 mock 直返会造成任意手机号账户接管（认证绕过），必须 fail-closed。
     """
     import logging
@@ -182,6 +206,11 @@ def _apply_production_safety(settings: Settings) -> Settings:
         raise RuntimeError(
             "生产环境必须配置 JWT_SECRET（当前为默认值，存在伪造 token 风险）——"
             "请在 backend/.env 设置强随机密钥（≥32 字节）"
+        )
+    if settings.refresh_token_hmac_key == "change-me-refresh-hmac-key-0000000000":
+        raise RuntimeError(
+            "生产环境必须配置 REFRESH_TOKEN_HMAC_KEY（当前为默认值）——"
+            "请设置与 JWT_SECRET 独立的强随机密钥（HMAC-SHA256 密钥隔离）"
         )
     if settings.mock_external_ai:
         logging.getLogger("yishu.config").warning(

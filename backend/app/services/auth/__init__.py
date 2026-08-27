@@ -7,6 +7,7 @@ from app.services.auth.auth import (
     _hash_refresh_token,
     _issue_tokens,
     _rotate_refresh_token,
+    logout,
     phone_login,
     refresh,
     send_sms,
@@ -31,6 +32,7 @@ __all__ = [
     "phone_login",
     "send_sms",
     "refresh",
+    "logout",
     # 令牌公共逻辑（test_auth_db R2#7 经 app.api.auth re-export 引用）
     "_hash_refresh_token",
     "_issue_tokens",

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.auth import (
+    LogoutRequest,
     PhoneLoginRequest,
     RefreshRequest,
     SendSmsRequest,
@@ -66,6 +67,15 @@ def send_sms(req: SendSmsRequest, request: Request, db: Session = Depends(get_db
 def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     """refresh token 轮换（AUTH-005：旧 refresh 失效；devices 表可吊销 AUTH-006）"""
     return ApiResponse(data=auth_service.refresh(db=db, req=req))
+
+
+@router.post("/logout", response_model=ApiResponse[dict])
+def logout(req: LogoutRequest, db: Session = Depends(get_db)):
+    """退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）
+
+    幂等：token 无效/过期/设备不存在 → 仍返回 ok（客户端必清本地凭据）。
+    """
+    return ApiResponse(data=auth_service.logout(db=db, refresh_token=req.refresh_token))
 
 
 def _client_ip(request: Request) -> str:

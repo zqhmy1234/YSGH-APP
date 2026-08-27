@@ -1,3 +1,16 @@
+## 2026-08-27 · 重构批次 G1（认证安全，基准 develop @ 5fcbd29，分支 techdebt/g1）
+
+- **① refresh single-flight（R6#6，client/utils/auth.ts）**：模块级 `_refreshInflight` 共享 in-flight——并发 401 只触发一次 `/auth/refresh`，其余 await 同一 Promise，落定后清除（成败均清）；消除并发双轮换竞态（后端轮换本就是原子 single-use，双轮换必一 401）
+- **② logout/revoke 端点（R6#7，AUTH-006）**：新增 `POST /api/v1/auth/logout`（请求 `{refresh_token}`，幂等：token 无效/过期仍 200）→ 服务层 `logout()` 把 devices 行 `refresh_token_hash/refresh_token` 置 NULL（吊销后 refresh() 校验落 401 已吊销）；客户端 `auth.ts` 新增 `logout()` 调端点 + 清本地凭据（真实消费方：scripts/test_auth_singleflight.mjs 断言调用 + 路由登记）
+- **③ refresh_token HMAC 哈希列（R6#8）**：TD-P3 已加列核实接线后补强——`_hash_refresh_token` 由裸 SHA-256 升级为 **HMAC-SHA256 + 独立密钥 `refresh_token_hmac_key`（与 jwt_secret 隔离）+ `hmac$` 版本前缀**；新增 `_verify_refresh_token_hash`（现行 HMAC 校验 + 存量无前缀 SHA-256 迁移期兼容）；轮换 WHERE 用 OR(hmac, legacy) 匹配，原子 single-use 语义不削弱；生产强制非默认密钥（_apply_production_safety 新门禁 + 单测）
+- **④ SMS 验证码加盐（R6#9）**：`sms_codes.salt` 列（新迁移 f1a2b3c4d5e6 + schema.sql），send 侧 `sha256(salt:code)` 落库（随机盐 `secrets.token_hex(8)`），校验按行盐重算（存量无盐行走兼容分支）；原子消费（R2#8 条件 UPDATE）保留
+- **⑤ 通用限流中间件（R6#2/#3，backend/app/core/ratelimit.py 新增）**：Redis 固定窗口（INCR+EXPIRE，`yishu:rl:{scope}:ip|user:{key}`）按 client_ip/user 双维度，先覆盖 auth / ASR(含 guard) / 搜索三域；白名单（`rate_limit_whitelist`，trust_proxy 时读 X-Forwarded-For）；Redis 故障自动降级进程内 MemoryStore（**降级不 500**）；中间件置于 RequestID 内侧（main.py 最外层=RequestID→CORS→…→RateLimit）——**429 响应同样带 X-Request-ID，不破坏 request_id 链路**；429 信封 `{code: RATE_LIMITED, message, request_id, details:{scope, dimension}}`
+- **契约快照（只增不减）**：openapi 45→46 路径（新增 /api/v1/auth/logout；旧路径零消失）；errors.py ERROR_REGISTRY 零改动零消失；feature_list.json 零改动
+- **测试**：auth 域精准 **85+ passed**（test_auth_g1 新增 10 单测：HMAC 格式/密钥隔离/存量兼容/加盐；test_ratelimit 新增 9 单测：429/白名单/降级不500/非三域放行/disabled 短路/user 维度/request_id 保留；test_auth_db 新增 logout×2 + 加盐落库断言，适配 HMAC；test_security_p3/test_config_alias 适配）；**refresh single-flight 并发单测**：scripts/test_auth_singleflight.mjs（node --test，真实导入 client/utils/auth.ts，Promise.all 5 并发 → 1 次 refresh + logout 消费方断言，4/4 绿）
+- **验证**：快速门禁 EXIT=0；本地 alembic upgrade head=f1a2b3c4d5e6 应用
+- **⚠️ 集成登记**：main.py 含 G2 在途重构（create_app/安全响应头/healthz 收敛）+ G1 限流中间件接线（1 import + 中间件注册，RequestID 保持最外层）；main.py 属 G2 文件域，由集成 Agent 统一合并/提交，勿重复覆盖
+- 提交：见 techdebt/g1 分支（本地未 push；报告文件留集成 Agent 统一提交）
+
 ## 2026-08-27 07:20 · 重构批次 F 第一波集成（6 Agent）+ 遗留 bug 修复
 
 - **merge（4 个 --no-ff）**：F-Auth（d47684c）/F-Rag（284fd2b）/F-Asr（1a60fe2）/F-ClientA（0f64c73）/F-ClientB（5 commits）/F-Content（9f0b2f4）全部合入 develop；共享工作区导致的链式 SHA（auth→clientb#1→rag→asr/content/clientb#2-5）git 自动去重，index.uvue（clienta+clientb 双收口）ort 策略无冲突自动合并

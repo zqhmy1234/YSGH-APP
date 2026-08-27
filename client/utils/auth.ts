@@ -13,7 +13,8 @@
  *   恢复路径：自定义基座就绪后，将 setSecure/getSecure/removeSecure 改走
  *   EncryptedSharedPreferences 实现（无需改本文件其他逻辑）。
  *
- * 401 自动 refresh（refresh_token 换新对）。
+ * 401 自动 refresh（refresh_token 换新对）——G1/R6#6：single-flight 共享 in-flight，
+ * 并发 401 只触发一次 refresh（其余 await 同一 Promise），消除并发双轮换竞态。
  *
  * 所有函数 resolve-only（boolean），不 reject——UTS Promise.catch 重载限制，
  * 调用方用双参 then 即可。
@@ -115,8 +116,29 @@ export function ensureLogin(): Promise<boolean> {
 	return p
 }
 
-/** refresh_token 换新（401 触发）；resolve-only */
+/** refresh_token 换新（401 触发）；resolve-only
+ *
+ * G1/R6#6（single-flight）：并发 401 只触发一次 refresh——
+ * 模块级 _refreshInflight 共享进行中 Promise，其余调用 await 同一 Promise；
+ * 落定后清除（无论成功/失败），下次重新执行。消除并发双轮换竞态
+ * （后端 refresh 轮换为原子 single-use，双轮换必有一个 401）。
+ */
+let _refreshInflight: Promise<boolean> | null = null
+
 export function refreshToken(): Promise<boolean> {
+	let p = _refreshInflight
+	if (p != null) {
+		return p
+	}
+	p = doRefresh()
+	_refreshInflight = p
+	p.then((ok: boolean) => {
+		_refreshInflight = null
+	})
+	return p
+}
+
+function doRefresh(): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
 		const rt = getRefreshToken()
 		if (rt == '') {
@@ -151,6 +173,31 @@ export function refreshToken(): Promise<boolean> {
 			fail: () => {
 				clearToken()
 				resolve(false)
+			}
+		})
+	})
+}
+
+/**
+ * 退出登录（G1/R6#7）：调后端 logout/revoke（吊销 devices 表 refresh，AUTH-006）
+ * 后清本地凭据。幂等：后端 token 无效/网络失败也返回 true——会话结束优先，
+ * 服务端吊销失败由 refresh 30 天 TTL 兜底。resolve-only。
+ */
+export function logout(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		uni.request({
+			url: getBaseUrl() + '/api/v1/auth/logout',
+			method: 'POST',
+			data: {
+				refresh_token: getRefreshToken()
+			},
+			success: () => {
+				clearToken()
+				resolve(true)
+			},
+			fail: () => {
+				clearToken()
+				resolve(true)
 			}
 		})
 	})

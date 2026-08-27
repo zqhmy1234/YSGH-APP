@@ -177,9 +177,20 @@ def _otp_reset(phone: str) -> None:
         _OTP_STATE.pop(phone, None)
 
 
-def _hash_code(code: str) -> str:
-    """验证码哈希（SHA-256；仅存哈希，校验时重算比对，DB 泄漏不可登录）"""
+def _hash_code(code: str, salt: str | None = None) -> str:
+    """验证码哈希（G1/R6#9：SHA-256 + 每码随机盐；DB 泄漏不可彩虹表反推）
+
+    - salt 非空：sha256(f"{salt}:{code}")（当前写入格式；salt 随行落库）
+    - salt 为空：sha256(code)（TD-P3 存量未加盐记录的比对兼容）
+    """
+    if salt:
+        return hashlib.sha256(f"{salt}:{code}".encode()).hexdigest()
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def _gen_code_salt() -> str:
+    """每码随机盐（16 hex 字符 = 64 bit 熵；随 sms_codes.salt 落库）"""
+    return secrets.token_hex(8)
 
 
 def _gen_sms_code() -> str:
@@ -211,7 +222,10 @@ def _verify_sms_code(db: Session, req, client_ip: str | None) -> str:
     ).scalar_one_or_none()
 
     # 哈希比较（secrets.compare_digest 防时序攻击；修复：原明文比较）
-    if record is None or not secrets.compare_digest(_hash_code(req.code), record.code or ""):
+    # G1/R6#9：加盐——按记录行 salt 重算（存量无 salt 行走无盐 SHA-256 兼容分支）
+    if record is None or not secrets.compare_digest(
+        _hash_code(req.code, record.salt), record.code or ""
+    ):
         # M2：失败计数 → 达阈值作废该码并冷却（防 6 位码 5 分钟窗口内爆破）
         if _otp_fail(req.phone):
             if record is not None and record.used_at is None:

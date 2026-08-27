@@ -15,11 +15,13 @@
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,6 +37,7 @@ from app.core.security import create_access_token, create_refresh_token, decode_
 from app.db.models import Device, SmsCode, User
 from app.schemas.auth import TokenPair, UserBrief
 from app.services.auth.providers import (
+    _gen_code_salt,
     _gen_sms_code,
     _hash_code,
     _otp_reset,
@@ -108,8 +111,17 @@ def send_sms(db: Session, req, client_ip: str | None) -> dict:
         raise ApiError(ERR_AUTH_004, "今日验证码发送次数已达上限", http=429)
 
     code = _gen_sms_code()
-    # 安全修复：验证码只存 SHA-256 哈希（DB 泄漏不可直接登录）
-    db.add(SmsCode(phone=req.phone, code=_hash_code(code), expire_at=now + timedelta(minutes=5)))
+    # 安全修复（G1/R6#9）：验证码只存 SHA-256+盐 哈希（DB 泄漏不可直接登录/彩虹表反推），
+    # 盐随行落库（sms_codes.salt），校验时按行盐重算比对。
+    salt = _gen_code_salt()
+    db.add(
+        SmsCode(
+            phone=req.phone,
+            code=_hash_code(code, salt),
+            salt=salt,
+            expire_at=now + timedelta(minutes=5),
+        )
+    )
     db.commit()
     # M2：新码发出 → 重置失败计数（每码独立 5 次窗口）
     _otp_reset(req.phone)
@@ -137,17 +149,16 @@ def refresh(db: Session, req) -> TokenPair:
     device_id = payload.get("device_id", "")
 
     # 吊销校验：devices 表存 refresh_token 哈希，比对哈希（AUTH-006 退出/改密后失效）
-    # TD-P3 M6/L2（审查中危/低危）：DB 泄漏不再可直接复用 30 天会话——
-    # 明文列迁移期兼容（refresh_token_hash 为空时回退比对明文，随后续登录哈希化覆盖）。
+    # TD-P3 M6/L2 + G1/R6#8：DB 泄漏不再可直接复用 30 天会话——
+    #   - G1：哈希升级 HMAC-SHA256（独立密钥 refresh_token_hmac_key，与 jwt_secret 隔离），
+    #     存储带 `hmac$` 版本前缀；明文列迁移期兼容（refresh_token_hash 为空时回退比对明文）。
     device = db.execute(
         select(Device).where(Device.user_id == user_id, Device.device_id == device_id)
     ).scalar_one_or_none()
     if device is None:
         raise ApiError(ERR_AUTH_005, "refresh token 已吊销", http=401)
     if device.refresh_token_hash:
-        valid = secrets.compare_digest(
-            device.refresh_token_hash, _hash_refresh_token(req.refresh_token)
-        )
+        valid = _verify_refresh_token_hash(device.refresh_token_hash, req.refresh_token)
     else:
         valid = bool(device.refresh_token) and secrets.compare_digest(
             device.refresh_token, req.refresh_token
@@ -162,6 +173,39 @@ def refresh(db: Session, req) -> TokenPair:
     # R2#7 竞态修复：轮换改条件 UPDATE（原子 single-use），不再 _issue_tokens 读-改-写——
     # 并发双 refresh 携同一旧 token 只有第一个成功，第二个 rowcount=0 → 401（重放窗口消除）
     return _rotate_refresh_token(db, user, device, device_id, req.refresh_token)
+
+
+def logout(db: Session, refresh_token: str) -> dict:
+    """退出登录（G1/R6#7）：吊销 devices 表该 refresh token 绑定的设备会话（AUTH-006）
+
+    幂等：token 无效 / 过期 / 类型错误 / 设备不存在 → 仍返回 {"ok": True}
+    （客户端必清本地凭据；服务端尽力吊销，失败由 refresh 30 天 TTL 兜底）。
+    吊销实现：devices 行 refresh_token_hash 与 refresh_token 均置 NULL——
+    后续 refresh() 校验落入明文回退分支且明文为空 → 401 已吊销（不再可换新）。
+    """
+    try:
+        payload = decode_token(refresh_token)
+    except Exception:
+        return {"ok": True}
+
+    if payload.get("type") != "refresh":
+        return {"ok": True}
+    user_id = payload.get("sub")
+    device_id = payload.get("device_id", "")
+    if not user_id or not device_id:
+        return {"ok": True}
+
+    db.execute(
+        update(Device)
+        .where(Device.user_id == user_id, Device.device_id == device_id)
+        .values(
+            refresh_token_hash=None,
+            refresh_token=None,
+            last_active_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+    return {"ok": True}
 
 
 # ---------- 注册/令牌公共逻辑 ----------
@@ -266,7 +310,10 @@ def _rotate_refresh_token(
     现改为条件 UPDATE（WHERE 命中旧 token 才写新值）：
       - 第一个请求 rowcount=1 轮换成功
       - 第二个请求 WHERE 已不命中（旧 token 已被换掉）→ rowcount=0 → 401 已吊销
-    迁移期兼容（TD-P3 M6）：refresh_token_hash 为空的行按明文比对（WHERE 命中明文）；
+    迁移期兼容（TD-P3 M6 + G1/R6#8）：
+      - refresh_token_hash 非空：WHERE 同时匹配 `hmac$` 新哈希与未加前缀的存量 SHA-256
+        （一行同一时刻只存一种格式，OR 子句等价命中当前格式，不削弱原子性）
+      - refresh_token_hash 为空：WHERE 命中明文（旧行回退比对），登录/轮换即哈希化覆盖。
     IntegrityError 路径保留（并发同设备写竞态兜底，语义同 _issue_tokens）。
     """
     access = create_access_token(user.id, device_id)
@@ -275,7 +322,10 @@ def _rotate_refresh_token(
     new_hash = _hash_refresh_token(refresh)
 
     if device.refresh_token_hash:
-        old_clause = Device.refresh_token_hash == _hash_refresh_token(old_refresh)
+        old_clause = or_(
+            Device.refresh_token_hash == _hash_refresh_token(old_refresh),
+            Device.refresh_token_hash == _sha256_legacy(old_refresh),
+        )
     else:
         # 迁移期明文行：WHERE 命中明文才轮换（哈希化后由上一分支接管）
         old_clause = (Device.refresh_token == old_refresh) & (
@@ -314,11 +364,38 @@ def _rotate_refresh_token(
     )
 
 
-def _hash_refresh_token(token: str) -> str:
-    """refresh token 哈希（SHA-256；devices 表只存哈希，DB 泄漏不可直接复用 30 天会话）"""
-    import hashlib
+def _hmac_key() -> str:
+    """refresh_token 哈希密钥（G1/R6#8：独立于 jwt_secret，函数内读取防导入期快照）"""
+    return settings.refresh_token_hmac_key
 
+
+def _hash_refresh_token(token: str) -> str:
+    """refresh token 哈希（G1/R6#8 升级：HMAC-SHA256 + 独立密钥 + 版本前缀）
+
+    - 密钥隔离：refresh_token_hmac_key ≠ jwt_secret——JWT 密钥泄漏无法构造 devices 哈希；
+      即使攻击者拿到 DB，也只能离线爆破高熵 JWT（不可行），无法直接复用 30 天会话。
+    - 版本前缀 `hmac$`：与 TD-P3 存量无前缀 SHA-256 区分（_verify_refresh_token_hash 双格式兼容）。
+    - 存储：devices.refresh_token_hash 只存本函数输出（DB 泄漏不可直接登录）。
+    """
+    return "hmac$" + hmac.new(
+        _hmac_key().encode("utf-8"), token.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def _sha256_legacy(token: str) -> str:
+    """TD-P3 存量 SHA-256 哈希（迁移期兼容：只用于比对存量行，不用于新写）"""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _verify_refresh_token_hash(stored: str, token: str) -> bool:
+    """校验存储哈希是否匹配给定 refresh token（secrets.compare_digest 防时序攻击）
+
+    - `hmac$` 前缀 → HMAC-SHA256（G1 现行格式）
+    - 无前缀 → TD-P3 存量 SHA-256（迁移期兼容，随后续轮换/登录自动升级）
+    """
+    if stored.startswith("hmac$"):
+        return secrets.compare_digest(stored, _hash_refresh_token(token))
+    return secrets.compare_digest(stored, _sha256_legacy(token))
 
 
 def _store_refresh_token(device: Device, refresh: str) -> None:
