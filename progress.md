@@ -261,6 +261,16 @@
 - 端侧 EXIF 兼容性（PIL 写入格式）待查
 # Session Progress Log — 忆述光华
 
+## 2026-08-27 14:50 · 重构批次 G 集成（G1 认证安全 + G2 越权纵深）
+
+- **merge 顺序（共享工作树，两分支均从 5fcbd29 切出）**：`--no-ff techdebt/g1`（67f50f1，22 文件）→ `--no-ff techdebt/g2`（1563cde，7 文件），均无冲突；main.py 双方都动过，终态取 G2 提交的合并态超集（create_app + 安全头 + healthz 收敛 + G1 限流接线，与工作区 G1 副本哈希一致验证后丢弃）
+- **G1 认证安全**：refresh single-flight（client auth.ts 共享 in-flight，并发 401 只一次 refresh，node 单测 4/4）；POST /auth/logout（AUTH-006 吊销，坏 token 仍 200 幂等）；refresh_token HMAC-SHA256 + 独立密钥 refresh_token_hmac_key（hmac$ 版本前缀 + 兼容存量 SHA-256 + 轮换 OR(hmac,legacy) 原子）+ 生产强制非默认密钥门禁；SMS 验证码加盐（sms_codes.salt 迁移 f1a2b3c4d5e6 + schema.sql）；通用限流中间件（core/ratelimit.py，Redis 固定窗口按 client_ip/user，覆盖 auth/ASR/搜索三域，IP 白名单 + trust_proxy + Redis 故障 MemoryStore 降级 + 置 RequestID 内侧保 429 带 X-Request-ID + 429 信封 RATE_LIMITED）；conftest autouse 默认关限流防跨用例 flaky
+- **G2 越权与纵深**：wechat 回调 timestamp 新鲜度窗口（±300s 防重放，GET/POST 双入口经 gateway verify 生效）；安全响应头 + 生产关 /docs（create_app()，docs/openapi/redoc_url 生产置 None）；/healthz 收敛为 {status:ok}；sync_pull limit（limit<1 或 >500 → 422 SYNC_001，errors.py 登记）
+- **门禁**：受影响域精准 113 passed（auth_g1/ratelimit/auth_db/security_p3/config_alias/techdebt_p0/wechat/security_g2/sync）+ single-flight node 4/4 + 快速门禁 EXIT=0；契约只增不减（openapi 45→46 仅 +logout；errors +SYNC_001）
+- **教训登记**：G2 14:30 --full 失败为共享工作树混合在途代码假象（G1 未提交 + DB 未迁移）+ healthz 字段断言未同步 → 已登记 lessons 并解除阻断（集成先合并再复验、字段契约同步断言）
+- **遗留登记**：REFRESH_TOKEN_HMAC_KEY 生产部署需在 Infisical/.env 配独立强随机密钥；限流阈值/白名单按部署环境复核
+- 推送：progress.md + lessons.md 集成提交后 push develop，CI 复验中
+
 ## 🚀 客户端第二波 · 首批交付（2026-08-24 晚 · W5 起）
 
 **状态**：S-SY-1 / S-SY-2 / S-AG-1 / S-AG-2 ✅（含真机验证）；剩余 S-XV/S-SY-4/5/6/S-ST/S-MO 按依赖序推进

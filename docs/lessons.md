@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 14:45 · commit 587ea10 · ts=1787813137
+- **错误**：全量门禁失败：G2 --full 时 auth 域 12 失败（G1 在途代码未配 HMAC key / DB 缺 salt 列）+ api_smoke healthz 断言旧字段 env/mock_external_ai（G2 已收敛删除）
+- **根因**：两个并行 Agent 共享同一工作树：G1 在途未提交代码 + 本地库未跑 G1 迁移，混进 G2 的全量门禁 → 门禁反映混合态而非任一分支真值；G2 收敛 healthz 删字段但 api_smoke_cases.py 断言未同步更新
+- **修复**：集成前先统一 merge（g1→g2 顺序，main.py 取含 G1 限流接线+G2 安全头的超集）再复验；字段级契约变更必须同步更新 api_smoke_cases.py 断言；并行 Agent 门禁失败先查是否混合态假象
+- **相关文件**：backend/app/main.py, scripts/api_smoke_cases.py
+- **教训**：共享工作树下并行 Agent 的全量门禁失败可能是混合在途代码的假象——集成 Agent 先合并再复验；healthz/契约字段变更要同步断言
+
+---
+
 ### 2026-08-27 14:22 · commit 5fcbd29 · ts=1787811745
 - **错误**：review_agent lessons 门禁循环：登记教训后仍阻断（'上次检查失败后未登记教训'）
 - **根因**：review_agent 每次失败都覆写 .cowork-temp/last-failure.json 的 failed_at 时间戳；若先登记教训、后又有一次 gate 失败（如 lint），登记时间早于最新失败 → check_lessons 判定未登记
