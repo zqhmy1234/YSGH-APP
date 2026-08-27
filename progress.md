@@ -5,6 +5,17 @@
 - **O6 落实确认**（用户点名）：F-ClientB 4ca9fbf 完整落地——queue_store.ts 单 key（yishu_offline_queue）承载六字段契约，sync_client（批推）与 event_ops（confirm/merge/split 顺序）共享存储、路由差异保留在各消费方 flush；旧双 key 一次性迁移（仅读+删，升级不丢操作）；event_ops flush 统一走 retry.ts retryAsync 退避
 - **遗留 bug 修复**：`enqueue_idempotent`（R4#4）与 `enqueue_unique`（F4）的 job_id 拼接含非法字符（冒号/空格/中文）会在 RQ 2.x validate_job_id 抛 ValueError（真实 client_request_id 入队即炸）——新增 `_safe_job_id_part` 净化器统一处理 + 2 个回归测试（test_photo_content）
 - 契约快照 diff：docs/openapi.json、core/errors.py ERROR_REGISTRY 零消失
+- **CI 确认**：develop @ a64f60a → Actions run #41（33022074746）conclusion=success（F 批次第一波全绿；CDE 04:40 推送 #40 亦在其上顺延绿）
+- 下一步：F 批次波次 2 = **F-Events**（F3 聚合独立 per-user 任务 + F5 events.py 拆包），前置 F-Content 已合入，可开；提示词见 docs/重构批次F提示词_20260827.md F-Events 节
+
+## 2026-08-27 08:30 · 重构批次 F-Events（F3 聚合独立 per-user 任务 + F5 events.py 拆包）
+
+- **F5/R1#5 events.py 拆包**：`services/events.py` → `services/events/` 子包（aggregate.py 聚合 / sync.py 事件上云与拉取 / timeline.py 时间轴 / edit.py merge·split·confirm·set_cover 手动操作）；`__init__.py` 重导出原公开函数（外部 import 不变，含测试引用的私有函数）；聚合细节收敛在 aggregate.py 窄端口不外泄到 pipeline；纯搬移零行为改动（`git grep "import app.services.events"` 旧模块路径调用点=0）
+- **F3/R5-3 聚合独立 per-user 任务**：process_content 不再同步跑聚合——主提交后经 `core/queue.enqueue_unique` 按 user 级 key（`user:<uid>`）SETNX 去重合并入队 `run_user_aggregation`（自开 Session 独立执行、失败静默返回 error dict、幂等可重投）；同用户并发多内容只跑一次聚合（聚合任务扫描该用户全部未成候选内容，一次覆盖并发批次）；low 队列 DEFAULT_JOB_TIMEOUT；workers/worker.py 登记
+- **测试**：新增 `tests/test_aggregation.py`（F3 聚合专属：任务单测 full 落 L1 / 失败静默 / per-user 去重并发：同用户只入队一次、不同用户各自入队、user key 净化 / _write_upper_candidates 幂等：候选已落库即跳过重写）+ `tests/test_events.py`（包级/入队契约：process_content 恰一次 enqueue_unique 按 user 级 key + 参数透传、入队失败不否定主转写、RQ 模块路径可解析 + worker 登记）；test_pipeline 事件用例更新为入队契约断言
+- **验证**：受影响域精准 144 passed（event_ops/event_sync/event_items/event_sensitive/events/pipeline/contents/upload/content_upload/photo_content/queue/requeue_job）+ 快速门禁 EXIT=0 + app.main import 无环 + 契约快照（docs/openapi.json / core/errors.py / feature_list.json）零 diff
+- **环境**：Docker Desktop 起 yishu-redis/yishu-qdrant 容器（此前引擎未启动 → Redis ConnectionError/Qdrant 版本告警为环境问题，非代码回归）
+- 提交：c0b74d1（F5 拆包）+ 28ba960（F3），本地 develop 未 push；报告文件留集成 Agent 统一提交
 
 ## 2026-08-27 06:50 · 重构批次 F-Content（F1 照片双轨收口 + F4 process_content job 级去重）
 
