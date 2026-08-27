@@ -352,7 +352,7 @@ def test_send_sms_production_blocked(client, db, monkeypatch):
     phone = _phone()
     r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
     assert r.status_code == 501
-    assert r.json()["code"] == "AUTH_099"
+    assert r.json()["code"] == "AUTH_010"  # R4#11：AUTH_099 拆分——短信服务未接入
     # 未生成验证码记录（防刷表无残留）
     rows = db.execute(
         select(SmsCode).where(SmsCode.phone == phone)

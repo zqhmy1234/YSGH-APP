@@ -33,7 +33,10 @@ from app.core.errors import (
     ERR_AUTH_001,
     ERR_AUTH_003,
     ERR_AUTH_004,
-    ERR_AUTH_099,
+    ERR_AUTH_010,
+    ERR_AUTH_011,
+    ERR_AUTH_012,
+    ERR_AUTH_013,
     ApiError,
 )
 from app.db.models import SmsCode
@@ -76,7 +79,7 @@ class AliyunSmsSender(SmsSender):
     name = "aliyun"
 
     def send(self, phone: str, code: str) -> str | None:
-        raise ApiError(ERR_AUTH_099, "短信服务未接入", http=501)
+        raise ApiError(ERR_AUTH_010, "短信服务未接入", http=501)
 
 
 def get_sms_sender() -> SmsSender:
@@ -299,7 +302,8 @@ def _wechat_code2session(code: str) -> str:
     优先用 unionid（三端一致主键），未绑定回退 openid（保证登录可用）。
     失败语义（不静默降级 mock）：
       - 业务错误（errcode≠0，如 40029 code 无效/已过期、40163 已使用）→ 401 AUTH_001
-      - 上游网络/HTTP 异常 → 502 AUTH_099
+      - 上游网络/HTTP 异常 → 502 AUTH_012（R4#11：AUTH_099 拆分——上游不可用）
+      - 响应缺少 openid/unionid → 502 AUTH_013（R4#11：响应协议异常）
     """
     import httpx
 
@@ -317,7 +321,7 @@ def _wechat_code2session(code: str) -> str:
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPError as exc:
-        raise ApiError(ERR_AUTH_099, "微信登录服务不可用", http=502) from exc
+        raise ApiError(ERR_AUTH_012, "微信登录服务不可用", http=502) from exc
 
     if data.get("errcode"):
         raise ApiError(
@@ -325,7 +329,7 @@ def _wechat_code2session(code: str) -> str:
         )
     unionid = data.get("unionid") or data.get("openid")
     if not unionid:
-        raise ApiError(ERR_AUTH_099, "微信登录响应缺少 openid/unionid", http=502)
+        raise ApiError(ERR_AUTH_013, "微信登录响应缺少 openid/unionid", http=502)
     return str(unionid)
 
 
@@ -343,7 +347,7 @@ class WechatLoginProvider(LoginProvider):
         elif settings.app_env == "production":
             # 安全修复（审查 CRITICAL）：生产环境未接入微信时拒绝登录，
             # 不允许任意 code 创建 mock 用户（认证形同虚设）
-            raise ApiError(ERR_AUTH_099, "微信登录未接入", http=501)
+            raise ApiError(ERR_AUTH_011, "微信登录未接入", http=501)
         else:
             # 仅开发/测试环境允许 mock（联调用）
             unionid = f"mock-unionid-{req.code}"
