@@ -176,8 +176,10 @@ jobs:
           }
           TS
           cd .cowork-temp/c2_tscheck
+          set +e
           npx --yes -p typescript@5.5.4 tsc --noEmit -p tsconfig.json > tsc.log 2>&1
           code=$?
+          set -e
           python - "$code" <<'EOF'
           import pathlib, re, sys
           code = int(sys.argv[1])
