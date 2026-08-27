@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 20:14 · commit abbdc6d · ts=1787832851
+- **错误**：full gate lint E902 os error 123 on archived py under non-ASCII backups dir
+- **根因**：git core.quotePath default true escapes non-ASCII paths with literal double quotes when output via git ls-files; review_agent feeds raw git output to ruff, making the path invalid on Windows
+- **修复**：set repo-level git config core.quotePath false; keep archived py under non-ASCII dir
+- **相关文件**：backups/20260827_残留归档/*.py + review_agent.py git output consumer
+- **教训**：before archiving py to a non-ASCII dir, confirm downstream tools tolerate git path quoting; set core.quotePath=false when git path output is machine-consumed
+
+---
+
 ### 2026-08-27 19:51 · commit 7565429 · ts=1787831517
 - **错误**：pre-commit 门禁 lint 阻断：ruff F821 Undefined name 'queries'（f-string 内 {queries:[]} 被当作变量引用）
 - **根因**：在 f-string 里想展示字面量 {queries:[]}，未转义大括号，ruff 把 queries 解析为未定义变量
