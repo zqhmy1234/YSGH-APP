@@ -10,6 +10,7 @@ F3 聚合专属测试（任务单测 / per-user 去重并发 / _write_upper_cand
 前置：PG yishu 库（db_user 公共 fixture）
 """
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.db.models import Content
@@ -97,3 +98,138 @@ def test_aggregation_task_importable_for_rq():
     import app.workers.worker
 
     assert hasattr(app.workers.worker, "main")
+
+
+# ---------------------------------------------------------------------------
+# US-12 时间存疑字段（Wave1-B2）：time_suspect 输出层最小校验
+# ---------------------------------------------------------------------------
+
+
+def _mk_event(db, user_id: str, start_time=None, title="测试事件", status="confirmed"):
+    from app.db.models import Event
+
+    ev = Event(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        level=1,
+        title=title,
+        start_time=start_time or datetime.now(timezone.utc),
+        status=status,
+        generated_by="cloud",
+        confidence=0.9,
+    )
+    db.add(ev)
+    db.commit()
+    return ev
+
+
+def _mk_photo(db, user_id: str, taken_at):
+    from app.db.models import Content as _C
+
+    c = _C(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        content_type="photo",
+        taken_at=taken_at,
+        status="done",
+        source="app",
+    )
+    db.add(c)
+    db.commit()
+    return c
+
+
+def _link(db, event_id: str, content_id: str) -> None:
+    from app.db.models import EventItem
+
+    db.add(EventItem(event_id=event_id, content_id=content_id))
+    db.commit()
+
+
+def _timeline_suspects(db, user) -> dict:
+    """调 /events/timeline → {event_id: time_suspect}"""
+    from app.api import deps
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    try:
+        r = client.get("/api/v1/events/timeline")
+        assert r.status_code == 200, r.text
+        return {e["id"]: e["time_suspect"] for e in r.json()["data"]}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_time_suspect_false_for_consistent_photo(db_user):
+    """照片时间正常（拍摄早于导入、差异小）→ time_suspect=False"""
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev = _mk_event(db, user.id, start_time=now - timedelta(hours=1))
+    photo = _mk_photo(db, user.id, taken_at=now - timedelta(hours=2))
+    _link(db, ev.id, photo.id)
+    suspects = _timeline_suspects(db, user)
+    assert suspects.get(str(ev.id)) is False
+
+
+def test_time_suspect_true_for_future_dated_photo(db_user):
+    """照片拍摄时间晚于导入时间超过容差（未来时间戳/相机时钟错）→ time_suspect=True"""
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev = _mk_event(db, user.id, start_time=now + timedelta(days=2))
+    photo = _mk_photo(db, user.id, taken_at=now + timedelta(days=2))
+    _link(db, ev.id, photo.id)
+    suspects = _timeline_suspects(db, user)
+    assert suspects.get(str(ev.id)) is True
+
+
+def test_time_suspect_true_when_taken_at_missing(db_user):
+    """照片 taken_at 缺失（拍摄时间未知，无法可靠定轴）→ time_suspect=True"""
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev = _mk_event(db, user.id, start_time=now)
+    photo = _mk_photo(db, user.id, taken_at=None)
+    _link(db, ev.id, photo.id)
+    suspects = _timeline_suspects(db, user)
+    assert suspects.get(str(ev.id)) is True
+
+
+def test_time_suspect_false_for_text_only_event_legacy(db_user):
+    """旧数据兼容：纯文字事件（无照片成员，旧数据无 time_suspect 概念）
+    → 字段存在且 False（客户端 FIELD_TIME_SUSPECT 读取安全，不显示角标）"""
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev = _mk_event(db, user.id, start_time=now - timedelta(hours=3))
+    txt = Content(
+        id=str(uuid.uuid4()), user_id=user.id, content_type="text",
+        text="今天记点事", taken_at=now - timedelta(hours=3),
+        status="done", source="app",
+    )
+    db.add(txt)
+    db.commit()
+    _link(db, ev.id, txt.id)
+    # 字段存在性由 _timeline_suspects 内 e["time_suspect"] 保证（缺失会 KeyError 挂测试）
+    suspects = _timeline_suspects(db, user)
+    assert suspects.get(str(ev.id)) is False
+
+
+def test_time_suspect_in_single_event_response(db_user):
+    """单事件响应（confirm）同样带 time_suspect（详情/操作输出填充）"""
+    from app.api import deps
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    ev = _mk_event(db, user.id, start_time=now + timedelta(days=3), status="draft")
+    photo = _mk_photo(db, user.id, taken_at=now + timedelta(days=3))
+    _link(db, ev.id, photo.id)
+    client = TestClient(app)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    try:
+        r = client.post("/api/v1/events/confirm", json={"event_id": str(ev.id)})
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["time_suspect"] is True
+    finally:
+        app.dependency_overrides.clear()
