@@ -28,6 +28,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, Message
+from app.services.copy_library import get_template
 
 logger = logging.getLogger("yishu.notify")
 
@@ -89,6 +90,8 @@ LATE_NIGHT_END_HOUR = 5
 CARE_STREAK_LOOKBACK_DAYS = 3    # 连续多日频次递减回看窗口
 
 # 关怀文案库（产品部占位，2026-08-26；产品部提供正式文案后仅替换模板）
+# Wave1-B2（US-21）：消费点改经 services/copy_library.get_template 获取（数据源
+# docs/copy_library/*.json），本 dict 保留为内置回退（文件缺失/损坏时兜底）。
 CARE_TEMPLATES: dict[str, dict[str, str]] = {
     "sad_ask": {
         "title": "想陪你聊聊",
@@ -309,7 +312,9 @@ def maybe_send_emotion_care(db: Session, content: Content) -> Message | None:
                 template_key = "sad_ask"
     # 恐惧/厌恶/惊讶等其它负面 → 保持默认陪伴出口（不追问原因）
 
-    tpl = CARE_TEMPLATES[template_key]
+    # Wave1-B2（US-21）：文案经 copy_library 获取（数据源 docs/copy_library/*.json，
+    # 缺失/损坏回退内置 CARE_TEMPLATES）；触发逻辑零改动。
+    tpl = get_template(template_key) or CARE_TEMPLATES[template_key]
     return create_message(
         db,
         content.user_id,
