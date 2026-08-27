@@ -23,6 +23,7 @@ from app.api import (  # noqa: E501
     corrections,
     echo,
     events,
+    export,
     interview,
     messages,
     search,
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(wechat.router)
     app.include_router(messages.router)
     app.include_router(upload.router)
+    app.include_router(export.router)  # 收尾 Wave1 AgentB2：GET /api/v1/export（US-42 个保法导出）
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

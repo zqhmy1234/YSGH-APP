@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 21:30 · commit 6e2bbd0 · ts=1787837455
+- **错误**：集成后 test_orphan_scan fail-safe 用例失败：假设后端无 list_objects（skipped 路径），但 B3 已实现并先合并
+- **根因**：并行 Agent 的任务卡按'B3 未合入时 fail-safe'编写用例，merge 顺序 B3→B1 后前提过时；测试断言依赖其他分支的交付时序
+- **修复**：改用无 list_objects 属性的 legacy 后端类验证 skipped 路径，保留降级覆盖
+- **相关文件**：backend/tests/test_orphan_scan.py
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 20:48 · commit 49d230c · ts=1787834890
 - **错误**：review_agent --full 全量门禁 tests 段超时（900s cap）且 api_smoke 报缺少测试照片/timeline min() 空
 - **根因**：worktree 缺 .cowork-temp/test_photos（100 张）与 backend/models（setfit-classifier/bge-reranker）——17号文档已注明需复制但未做；且本机可用内存仅 1.3GB（残留 pip-audit 进程未清）+ rag 分组（BGE-M3 1.2GB）纳入覆盖导致超时

@@ -25,9 +25,9 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 3. 把本文「当前接口」的**路径数**改为该输出值，并核对各域表格路径与 `j['paths']` 一致。
 4. 事件域/上传域等状态列变更时同步更新本文件。
 
-> 当前门禁值：**46 路径**（2026-08-27 实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）→ 46（2026-08-27，G1 新增 /auth/logout 退出登录：devices 表吊销 refresh，AUTH-006）。
+> 当前门禁值：**47 路径**（2026-08-27 收尾 Wave1 集成后实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26）→ 46（2026-08-27，G1 新增 /auth/logout）→ 47（2026-08-27 收尾 Wave1：B2 新增 /api/v1/export，EventOut.time_suspect 字段入 schema；46 路径零消失只增不减）。
 
-## 当前接口（46 路径）
+## 当前接口（47 路径）
 
 ### 认证（/api/v1/auth）
 | 方法 | 路径 | 说明 | 状态 |
@@ -189,3 +189,4 @@ curl -X POST http://localhost:8000/api/v1/contents \
 - 未实现端点保持 mock 响应（明确错误码），消费方联调不受阻
 - **接口语义变更（2026-08-20）**：classify/arbitrate 由同步改异步（job_id 轮询模式）；搜索保持同步（P95<3s 门禁）但后端有并发上限（信号量 4）
 - **事件域已全部真实 DB（2026-08-26）**：timeline/sync/merge/split/confirm/items/cover 均为真实读写，不再 mock
+

@@ -306,10 +306,27 @@ def test_orphan_scan_respects_limit(db_user, listable_backend):
 
 
 def test_orphan_scan_skips_when_backend_lacks_list_objects(db_user):
-    """B3 未合入（后端无 list_objects）→ skipped 报告，不崩"""
-    from app.services.external.storage import FakeStorageBackend
+    """后端无 list_objects（旧后端/降级场景）→ skipped 报告，不崩（fail-safe）
 
-    report = run_orphan_scan(backend=FakeStorageBackend())
+    注：B3 已为四后端实现 list_objects，本用例改用无该属性的 legacy 后端
+    验证 fail-safe 路径仍有效（集成后修正，原用例假设已过时）。
+    """
+    class _LegacyBackend:
+        """模拟 B3 合入前的存储后端：无 list_objects 属性"""
+
+        def put_object(self, key, data):
+            raise NotImplementedError
+
+        def get_object(self, key):
+            raise NotImplementedError
+
+        def delete_object(self, key):
+            raise NotImplementedError
+
+        def object_exists(self, key):
+            raise NotImplementedError
+
+    report = run_orphan_scan(backend=_LegacyBackend())
 
     assert report["skipped"] is True
     assert report["scanned_keys"] == 0
