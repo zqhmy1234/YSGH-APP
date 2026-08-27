@@ -22,12 +22,30 @@
 			</view>
 		</view>
 
+		<!-- 画像管理入口（A1 单写 pages/portrait/manage.uvue，契约 C4） -->
+		<view class="menu-card" @tap="goProfileManage">
+			<view class="menu-row">
+				<text class="menu-icon">🧩</text>
+				<text class="menu-title">画像管理</text>
+				<text class="menu-arrow">›</text>
+			</view>
+		</view>
+
 		<!-- 消息中心入口（T-PL-3） -->
 		<view class="menu-card" @tap="goMessages">
 			<view class="menu-row">
 				<text class="menu-icon">✉️</text>
 				<text class="menu-title">消息中心</text>
 				<text v-if="unreadCount > 0" class="menu-badge">{{ unreadCount }} 未读</text>
+				<text class="menu-arrow">›</text>
+			</view>
+		</view>
+
+		<!-- 设置入口（A2 单写 pages/settings/settings.uvue，契约 C5） -->
+		<view class="menu-card" @tap="goSettings">
+			<view class="menu-row">
+				<text class="menu-icon">⚙️</text>
+				<text class="menu-title">设置</text>
 				<text class="menu-arrow">›</text>
 			</view>
 		</view>
@@ -49,6 +67,8 @@
 	import { showErrorToast } from '@/utils/api'
 	// O20：dev 调试页常驻开关——config 派生（非 dev 构建自动关闭，不展示入口）
 	import { DEV_PAGE_ENABLED } from '@/utils/config'
+	// 页面路由契约（18 号 C4/C5）：画像管理 A1 页 + 设置 A2 页
+	import { PATH_PROFILE_MANAGE, PATH_SETTINGS } from '@/utils/contract'
 
 	export default {
 		data() {
@@ -100,8 +120,16 @@
 			goInterview(): void {
 				uni.navigateTo({ url: '/pages/interview/interview' })
 			},
+			/** 画像管理 → A1 页（契约 C4，pages/portrait/manage.uvue） */
+			goProfileManage(): void {
+				uni.navigateTo({ url: PATH_PROFILE_MANAGE })
+			},
 			goMessages(): void {
 				uni.navigateTo({ url: '/pages/messages/messages' })
+			},
+			/** 设置 → A2 页（契约 C5，pages/settings/settings.uvue） */
+			goSettings(): void {
+				uni.navigateTo({ url: PATH_SETTINGS })
 			},
 			/** O20：dev 构建下"关于"区点击进调试页；非 dev 构建（开关关）不导航 */
 			goDevCheck(): void {
