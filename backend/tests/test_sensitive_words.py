@@ -20,6 +20,9 @@ from app.services.external.sensitive_words import (
     filter_sensitive_rule,
 )
 
+# H3/R8#10：纯规则引擎单测（无外部依赖）→ unit 分层
+pytestmark = pytest.mark.unit
+
 
 class TestWordReject:
     """词表类整条拦截（政治/色情/涉枪爆 → reject）"""

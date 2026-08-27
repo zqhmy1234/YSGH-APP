@@ -8,6 +8,9 @@
 import pytest
 from app.services.ner import _extract_llm, _extract_person_rules, _extract_place_rules, extract_entities
 
+# H3/R8#10：纯规则/LLM 打桩单测 → unit 分层（-m unit 秒级快速回归）
+pytestmark = pytest.mark.unit
+
 # R8#5（2026-08-27）：9 个单断言规则用例压缩为表驱动参数化，
 # 中文场景语义保留在 parametrize id。
 PLACE_RULE_CASES = [

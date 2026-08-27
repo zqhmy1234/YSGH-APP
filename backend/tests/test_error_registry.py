@@ -9,6 +9,11 @@
 import ast
 from pathlib import Path
 
+import pytest
+
+# H3/R8#10：AST 扫描 + 登记表语义纯单测（无外部依赖）→ unit 分层
+pytestmark = pytest.mark.unit
+
 BACKEND_APP = Path(__file__).resolve().parent.parent / "app"
 
 
