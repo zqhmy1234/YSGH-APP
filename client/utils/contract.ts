@@ -97,3 +97,32 @@ export function parsePageData(d: UTSJSONObject): PageData | null {
 	const hasMore = d.getBoolean(FIELD_HAS_MORE) ?? false
 	return new PageData(items as Array<UTSJSONObject>, cursor, hasMore)
 }
+
+// ═══════════ Wave 1 收尾追加（唯一契约源：docs/parallel-dev-收尾/18_契约增量清单_拍板项.md C6）═══════════
+
+// —— 端点路径（API，对齐 docs/openapi.json；B2 实现，A1/A2/A3 只读引用）——
+/** 数据导出（US-42，C2）：GET /api/v1/export 全量 JSON 元数据（contents+events+profile+corrections+URL，不含图片二进制），同步返回 + Content-Disposition */
+export const PATH_EXPORT: string = '/api/v1/export'
+/** 画像敏感项管理（B1-6，C3 确认已有）：增/删/查共用 /api/v1/profile/sensitive（POST/DELETE/GET） */
+export const PATH_PROFILE_SENSITIVE: string = '/api/v1/profile/sensitive'
+
+// —— 页面路由（uni.navigateTo 的 url，非 API path；W0 拍板③ C4/C5）——
+/** 画像管理页路由（A1 单写 pages/portrait/manage.uvue） */
+export const PATH_PROFILE_MANAGE: string = '/pages/portrait/manage'
+/** 设置页路由（A2 单写 pages/settings/settings.uvue） */
+export const PATH_SETTINGS: string = '/pages/settings/settings'
+
+// —— 字段常量（对齐 DTO schema 属性名）——
+/** 事件时间存疑标记（C1：EXIF 时间 vs 导入时间差异>阈值 → true，默认 false 向后兼容；A3 渲染角标） */
+export const FIELD_TIME_SUSPECT: string = 'time_suspect'
+
+// —— 导出响应字段（对齐 B2 GET /api/v1/export 负载，18 号 C2；A2 导出保存/校验用）——
+/** 导出时间戳（B2 响应顶层字段） */
+export const FIELD_EXPORTED_AT: string = 'exported_at'
+/** 是否被截断（B2 响应顶层字段：分页/限流下可能截断） */
+export const FIELD_TRUNCATED: string = 'truncated'
+/** 导出负载段：contents / events / profile / corrections（对齐 C2 全量 JSON 元数据四段） */
+export const FIELD_EXPORT_CONTENTS: string = 'contents'
+export const FIELD_EXPORT_EVENTS: string = 'events'
+export const FIELD_EXPORT_PROFILE: string = 'profile'
+export const FIELD_EXPORT_CORRECTIONS: string = 'corrections'

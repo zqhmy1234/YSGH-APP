@@ -79,6 +79,12 @@
 - **修复**：用 {{queries:[]}} 双写大括号转义字面量
 - **相关文件**：scripts/eval_negative_samples.py
 - **教训**：f-string 内含字典样字面量时大括号必须双写转义，否则 ruff F821 误判未定义名
+### 2026-08-27 20:06 · commit d809ca6 · ts=1787832376
+- **错误**：HBuilderX 5.15 全新全量构建(--compile true/run)无法通过：uploader.ts/upload_protocol.ts/event_ops.ts(.then回调返回值)与play.ts(const walk自引用)报UTS硬错误
+- **根因**：UTS 5.15 编译器对 .then 回调返回值链、retryAsync 可选参数泛型解析、const 箭头自引用存在根本缺陷；增量构建被 tsc 缓存掩盖，全新 worktree/cleanCache 即暴露；主干 develop 同命令同错，非单 Agent 引入，阻塞 Wave1 全部客户端 Agent 产出可运行 APK
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
 
 ---
 
