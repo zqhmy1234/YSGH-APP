@@ -11,6 +11,20 @@
  */
 import { getBaseUrl } from './config'
 import { getToken } from './auth'
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析），
+// 本模块不再直接 uni.uploadFile；getBaseUrl 仍用于 formPost/init/complete。
+import { uploadFileHttp, HttpResult } from './api'
+// O15：上传端点路径 + 字段名统一走 contract.ts（与 OpenAPI 对齐，防漂移）
+import {
+	PATH_UPLOAD_INIT,
+	PATH_UPLOAD_CHUNK,
+	PATH_UPLOAD_COMPLETE,
+	FIELD_UPLOAD_ID,
+	FIELD_CLIENT_UPLOAD_ID,
+	FIELD_FILE_NAME,
+	FIELD_FILE_SIZE,
+	FIELD_UPLOAD_MODE
+} from './contract'
 
 /** 表单响应：status（0=网络失败） + raw（响应 JSON 字符串） */
 export class UploadResp {
@@ -94,46 +108,29 @@ export function fieldOf(raw: string, key: string): string {
 
 /** init：建上传任务（client_upload_id 幂等；单块协议 chunk_size=file_size，upload_mode 透传）→ UploadResp */
 export function initUpload(clientUploadId: string, fileName: string, fileSize: number, uploadMode: string): Promise<UploadResp> {
-	const body = 'client_upload_id=' + urlEncode(clientUploadId) +
-		'&file_name=' + urlEncode(fileName) +
-		'&file_size=' + fileSize +
+	const body = FIELD_CLIENT_UPLOAD_ID + '=' + urlEncode(clientUploadId) +
+		'&' + FIELD_FILE_NAME + '=' + urlEncode(fileName) +
+		'&' + FIELD_FILE_SIZE + '=' + fileSize +
 		'&chunk_size=' + fileSize +
-		'&upload_mode=' + uploadMode
-	return formPost('/api/v1/upload/init', body)
+		'&' + FIELD_UPLOAD_MODE + '=' + uploadMode
+	return formPost(PATH_UPLOAD_INIT, body)
 }
 
-/** chunk：传单片（POST multipart；后端幂等 + 大小校验）→ HTTP status（0=网络失败） */
+/** chunk：传单片（POST multipart；后端幂等 + 大小校验）→ HTTP status（0=网络失败）
+ *  R1#17：裸 uni.uploadFile 收敛 api.ts uploadFileHttp（401 重放 + 5xx Sentry 上报） */
 export function putChunk(uploadId: string, filePath: string, timeout: number): Promise<number> {
-	return new Promise<number>((resolve) => {
-		const form: UTSJSONObject = {
-			upload_id: uploadId,
-			chunk_index: '0'
-		}
-		uni.uploadFile({
-			url: getBaseUrl() + '/api/v1/upload/chunk',
-			filePath: filePath,
-			name: 'file',
-			formData: form,
-			header: { 'Authorization': 'Bearer ' + getToken() },
-			timeout: timeout,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					resolve(200)
-				} else {
-					console.error('[yishu] chunk HTTP ' + res.statusCode)
-					resolve(res.statusCode)
-				}
-			},
-			fail: () => {
-				console.error('[yishu] chunk NETWORK')
-				resolve(0)
-			}
-		})
+	// UTS 对象字面量键不支持计算属性 → 字面量键 + contract 字段名常量注释对齐（O15）
+	const form: UTSJSONObject = {
+		'upload_id': uploadId,
+		'chunk_index': '0'
+	}
+	return uploadFileHttp(PATH_UPLOAD_CHUNK, filePath, 'file', form, timeout).then((hr: HttpResult) => {
+		return hr.status
 	})
 }
 
 /** complete：完成 + 建内容记录（meta 与 /contents/upload 对齐）→ UploadResp（调用方取 content_id/file_key） */
 export function completeUpload(uploadId: string, meta: UTSJSONObject): Promise<UploadResp> {
-	const body = 'upload_id=' + urlEncode(uploadId) + '&meta=' + urlEncode(JSON.stringify(meta))
-	return formPost('/api/v1/upload/complete', body)
+	const body = FIELD_UPLOAD_ID + '=' + urlEncode(uploadId) + '&meta=' + urlEncode(JSON.stringify(meta))
+	return formPost(PATH_UPLOAD_COMPLETE, body)
 }

@@ -343,14 +343,13 @@ export function flushOpQueue(): Promise<number> {
 }
 
 /** 单条带退避补发（O6/F9：flush 退避统一走 retry.ts retryAsync；失败可重试，
- *  退避耗尽后由调用方按网络探测区分 业务失败丢弃 / 离线保留） */
+ *  退避耗尽后由调用方按网络探测区分 业务失败丢弃 / 离线保留）。
+ *  O18：isFatal/onFail 恒 false（4xx 停批由 doOp 返回 false 实现），省略死参 */
 function flushOne(opType: string, payload: UTSJSONObject): Promise<boolean> {
 	return retryAsync<boolean>(
 		() => doOp(opType, payload).then((ok: boolean): boolean | null => {
 			return ok ? true : null
-		}),
-		(_r: boolean | null, _attempt: number): boolean => false,
-		(_r: boolean | null, _attempt: number): boolean => false
+		})
 	).then((r: boolean | null): boolean => {
 		return r == true
 	})

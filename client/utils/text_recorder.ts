@@ -12,6 +12,8 @@
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
 import { post, get, dataObj } from './api'
+// O19：全量响应（含用户 text）脱敏后再落日志——res 可能含提交文本，不得整段刷 logcat
+import { redactLog } from './log'
 
 export class ClassifyResult {
 	label: string
@@ -132,7 +134,8 @@ function pollClassifyTick(
 ): void {
 	const next = count + 1
 	get('/api/v1/classify/jobs/' + jobId).then((res: UTSJSONObject | null) => {
-		console.log('[yishu] pollClassify tick ' + next + ' res=' + (res != null ? res.toJSONString() : 'null'))
+		// O19：全量响应脱敏后落日志（原整段 toJSONString 刷 logcat，含用户 text）
+		console.log('[yishu] pollClassify tick ' + next + ' res=' + (res != null ? redactLog(res.toJSONString()) : 'null'))
 		if (res == null) {
 			done(null)
 			return

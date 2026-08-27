@@ -33,9 +33,9 @@
 		</view>
 
 		<!-- 关于 -->
-		<view class="about-card">
+		<view class="about-card" @tap="goDevCheck">
 			<text class="about-text">忆述光华 · v0.1.0</text>
-			<text class="about-sub">翻看记忆，去年今日</text>
+			<text class="about-sub">{{ devEntrySub }}</text>
 		</view>
 
 		<!-- 底部 Tab -->
@@ -45,15 +45,17 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchInterviewProfile } from '@/utils/play'
-	import { fetchMessages } from '@/utils/play'
+	import { fetchInterviewProfile, fetchUnreadCount } from '@/utils/play'
 	import { showErrorToast } from '@/utils/api'
+	// O20：dev 调试页常驻开关——config 派生（非 dev 构建自动关闭，不展示入口）
+	import { DEV_PAGE_ENABLED } from '@/utils/config'
 
 	export default {
 		data() {
 			return {
 				profileReady: false,
-				unreadCount: 0
+				unreadCount: 0,
+				devEntrySub: DEV_PAGE_ENABLED ? '开发调试 ›' : '翻看记忆，去年今日'
 			}
 		},
 		onLoad() {
@@ -90,8 +92,9 @@
 				})
 			},
 			loadUnread(): void {
-				fetchMessages('unread').then((list) => {
-					this.unreadCount = list.length
+				// O17：未读数游标翻页累加（不再被首屏 limit=50 截断）
+				fetchUnreadCount().then((n: number) => {
+					this.unreadCount = n
 				})
 			},
 			goInterview(): void {
@@ -99,6 +102,13 @@
 			},
 			goMessages(): void {
 				uni.navigateTo({ url: '/pages/messages/messages' })
+			},
+			/** O20：dev 构建下"关于"区点击进调试页；非 dev 构建（开关关）不导航 */
+			goDevCheck(): void {
+				if (!DEV_PAGE_ENABLED) {
+					return
+				}
+				uni.navigateTo({ url: '/pages/debug/agg-check/agg-check' })
 			}
 		}
 	}

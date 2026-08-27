@@ -35,6 +35,8 @@ import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
 import { isoLocal } from './time'
 // B5d 后台任务插件（Wave 4 K）：WorkManager 周期唤醒写 pending → 应用层 drain 消费（两段式）
 import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
+// O15：sync 三端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { PATH_SYNC_PUSH, PATH_SYNC_PULL, PATH_SYNC_RECONCILE } from './contract'
 
 // O3 收口：DEVICE_ID 由 auth.ts 唯一导出（见上方 import），不再本地重复定义
 // F9/R1#10：暂停令牌单源 pause_controller（原内聚"暂停控制器（与照片上传共享）"一节）；
@@ -306,7 +308,7 @@ function postBatch(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
 			device_id: DEVICE_ID,
 			ops: syncOps
 		}
-		rawRequest('/api/v1/sync/push', 'POST', reqBody).then((hr: HttpResult) => {
+		rawRequest(PATH_SYNC_PUSH, 'POST', reqBody).then((hr: HttpResult) => {
 			const status = hr.status
 			if (status === 200) {
 				let applied = 0
@@ -438,7 +440,7 @@ export function pullIncremental(): Promise<PullOutcome> {
 				return
 			}
 			const since = readCursor()
-			rawRequest('/api/v1/sync/pull?device_id=' + DEVICE_ID + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
+			rawRequest(PATH_SYNC_PULL + '?device_id=' + DEVICE_ID + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
 				if (hr.status === 200) {
 					let changes: Array<UTSJSONObject> = []
 					let cursor = since
@@ -484,7 +486,7 @@ export function reconcileNow(): Promise<ReconcileReport | null> {
 			const reqBody: UTSJSONObject = {
 				items: items
 			}
-			rawRequest('/api/v1/sync/reconcile', 'POST', reqBody).then((hr: HttpResult) => {
+			rawRequest(PATH_SYNC_RECONCILE, 'POST', reqBody).then((hr: HttpResult) => {
 				if (hr.status === 200 && hr.body != null) {
 					const d: UTSJSONObject | null = hr.body.getJSON('data')
 					if (d == null) {

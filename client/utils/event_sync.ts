@@ -13,6 +13,10 @@
 import { rawRequest, HttpResult } from './api'
 import { ensureLogin, DEVICE_ID } from './auth'
 import { retryAsync } from './retry'
+// O15：事件上云端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { PATH_EVENTS_SYNC } from './contract'
+// O19：4xx 响应体可能含用户事件内容，脱敏后再落日志
+import { redactLog } from './log'
 
 export class SyncOutcome {
 	accepted: number
@@ -37,7 +41,7 @@ function postOnce(events: Array<UTSJSONObject>): Promise<SyncOutcome | null> {
 			device_id: DEVICE_ID,
 			events: events
 		}
-		rawRequest('/api/v1/events/sync', 'POST', body).then((hr: HttpResult) => {
+		rawRequest(PATH_EVENTS_SYNC, 'POST', body).then((hr: HttpResult) => {
 			if (hr.status === 200) {
 				const d: UTSJSONObject | null = hr.body != null ? hr.body.getJSON('data') : null
 				let accepted = 0
@@ -60,7 +64,8 @@ function postOnce(events: Array<UTSJSONObject>): Promise<SyncOutcome | null> {
 				resolve(new SyncOutcome(accepted, duplicates, rejected, acceptedEvents))
 			} else if (hr.status >= 400 && hr.status < 500) {
 				// 4xx 不可重试（含 refresh 后仍 401——rawRequest 内部已刷新重放一次，不再静默丢批）
-				console.error('[yishu] 事件同步 4xx=' + hr.status + ' ' + JSON.stringify(hr.body))
+				// O19：响应体可能含用户事件内容，脱敏后再落日志
+				console.error('[yishu] 事件同步 4xx=' + hr.status + ' ' + redactLog(JSON.stringify(hr.body)))
 				resolve(new SyncOutcome(0, 0, events.length, []))
 			} else {
 				resolve(null) // 5xx/其他 → 重试
@@ -83,10 +88,9 @@ export function syncClientEvents(events: Array<UTSJSONObject>): Promise<SyncOutc
 				return
 			}
 			// 每次尝试内部都经 rawRequest 重新取当前 token（401 刷新重放后自然带上新 token）
+			// O18：isFatal/onFail 恒 false（4xx 停批已由 postOnce 返回非 null 实现），省略死参
 			retryAsync<SyncOutcome>(
-				() => postOnce(events),
-				(): boolean => false,
-				(): boolean => false
+				() => postOnce(events)
 			).then((r: SyncOutcome | null) => {
 				resolve(r)
 			})

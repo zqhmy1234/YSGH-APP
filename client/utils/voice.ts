@@ -18,9 +18,10 @@
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
 // O9 收口：上传/错误信封解析统一走 api.ts（原本地 parseEnvelope/parseError 副本已删）
-import { post, dataObj, showErrorToast, parseEnvelopeString, parseErrorString } from './api'
-import { getBaseUrl } from './config'
-import { getToken as getTokenForUpload } from './auth'
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+// O15：asr/contents 端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { PATH_ASR_TRANSCRIBE, PATH_CONTENTS } from './contract'
 // TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
 // 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
 import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
@@ -152,71 +153,59 @@ export function resumeRecord(): void {
 	_controller.resume()
 }
 
-/** POST /asr/transcribe：上传 wav 转写（≤8MB 直传）；返回 AsrResult 或 null */
+/** POST /asr/transcribe：上传 wav 转写（≤8MB 直传）；返回 AsrResult 或 null
+ *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
 export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 	return new Promise<AsrResult | null>((resolve) => {
-		uni.uploadFile({
-			url: getBaseUrl() + '/api/v1/asr/transcribe?preferred=auto',
-			filePath: filePath,
-			name: 'file',
-			header: {
-				'Authorization': 'Bearer ' + getTokenForUpload()
-			},
-			success: (res) => {
-				if (res.statusCode === 200) {
-					// 教训（lessons.md #3）：uploadFile 的 res.data 是 string（JS 引擎无 UTSJSONObject.parse）
-					const txt = res.data as string
-					const body = parseEnvelopeString(txt)
-					if (body == null) {
-						showErrorToast(new Error('转写响应解析失败'))
-						resolve(null)
-						return
-					}
-					const d = body.getJSON('data')
-					if (d == null) {
-						showErrorToast(new Error('转写结果为空'))
-						resolve(null)
-						return
-					}
-					const g = d.getJSON('guardrail')
-					const passed = g != null ? (g.getBoolean('passed') ?? true) : true
-					// B5a J-1/J-3：音频事件 / 段级情绪合并 / 噪音标记
-					const merge = d.getJSON('emotion_merge')
-					const ae = d.getArray('audio_events') as Array<string> | null
-					const snrRaw = d.getNumber('snr_db')
-					const snr: number | null = snrRaw == null ? null : (snrRaw as number)
-					resolve(
-						new AsrResult(
-							d.getString('text') ?? '',
-							d.getString('channel') ?? '',
-							d.getString('emotion') ?? '平静',
-							(d.getNumber('emotion_confidence') as number) ?? 0,
-							d.getString('emotion_source') ?? 'none',
-							d.getBoolean('emotion_bonus') ?? false,
-							merge,
-							ae != null ? ae : [],
-							d.getBoolean('not_oral') ?? false,
-							d.getBoolean('silence_hint') ?? false,
-							snr,
-							d.getString('noise_weight') ?? 'high',
-							(d.getNumber('confidence') as number) ?? 0,
-							(d.getNumber('duration_ms') as number) ?? 0,
-							d.getBoolean('mock') ?? false,
-							passed,
-							g != null ? (g.getString('reason') ?? '') : ''
-						)
-					)
+		uploadFileHttp(PATH_ASR_TRANSCRIBE + '?preferred=auto', filePath, 'file', null, 30000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				// 教训（lessons.md #3）：uploadFile 的 res.data 是 string；uploadFileHttp 已按信封解析
+				const body = hr.body
+				if (body == null) {
+					showErrorToast(new Error('转写响应解析失败'))
+					resolve(null)
 					return
 				}
-				// 非 200：尝试解析错误信封
-				const errMsg = parseErrorString(res.data as string)
-				showErrorToast(new Error(errMsg))
-				resolve(null)
-			},
-			fail: () => {
-				showErrorToast(new Error('转写请求失败，请检查网络'))
-				resolve(null)
+				const d = body.getJSON('data')
+				if (d == null) {
+					showErrorToast(new Error('转写结果为空'))
+					resolve(null)
+					return
+				}
+				const g = d.getJSON('guardrail')
+				const passed = g != null ? (g.getBoolean('passed') ?? true) : true
+				// B5a J-1/J-3：音频事件 / 段级情绪合并 / 噪音标记
+				const merge = d.getJSON('emotion_merge')
+				const ae = d.getArray('audio_events') as Array<string> | null
+				const snrRaw = d.getNumber('snr_db')
+				const snr: number | null = snrRaw == null ? null : (snrRaw as number)
+				resolve(
+					new AsrResult(
+						d.getString('text') ?? '',
+						d.getString('channel') ?? '',
+						d.getString('emotion') ?? '平静',
+						(d.getNumber('emotion_confidence') as number) ?? 0,
+						d.getString('emotion_source') ?? 'none',
+						d.getBoolean('emotion_bonus') ?? false,
+						merge,
+						ae != null ? ae : [],
+						d.getBoolean('not_oral') ?? false,
+						d.getBoolean('silence_hint') ?? false,
+						snr,
+						d.getString('noise_weight') ?? 'high',
+						(d.getNumber('confidence') as number) ?? 0,
+						(d.getNumber('duration_ms') as number) ?? 0,
+						d.getBoolean('mock') ?? false,
+						passed,
+						g != null ? (g.getString('reason') ?? '') : ''
+					)
+				)
+				return
 			}
+			// 非 200：尝试解析错误信封（uploadFileHttp 已按信封解析；4xx 含 refresh 后仍 401）
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '转写失败（HTTP ' + hr.status + '）') : '转写失败（HTTP ' + hr.status + '）'
+			showErrorToast(new Error(msg))
+			resolve(null)
 		})
 	})
 }
@@ -246,7 +235,7 @@ export function saveVoiceContent(
 		body.set('cos_key', cosKey)
 	}
 	return new Promise<string | null>((resolve) => {
-		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
+		post(PATH_CONTENTS, body).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return
