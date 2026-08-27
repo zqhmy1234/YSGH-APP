@@ -5,25 +5,33 @@
 - 消息类型：text / image / voice / event（本项目只收：text/image/voice 入库，其余忽略）
 
 安全：验签失败必须拒绝（防伪造回调）；解密结构非法必须拒绝。
+
+R1#9 依赖反转：本模块只依赖端口契约（ports.SignaturePort / ports.CryptoPort），
+默认绑定具体实现（signature/crypto 模块）；测试/扩展可替换 `_signature`/`_crypto`。
 """
 from __future__ import annotations
 
 import logging
 import xml.etree.ElementTree as ET
 
-from app.services.wechat.crypto import decrypt
-from app.services.wechat.signature import verify
+from app.services.wechat import crypto as _crypto_impl
+from app.services.wechat import ports
+from app.services.wechat import signature as _signature_impl
 
 logger = logging.getLogger("yishu.wechat")
+
+# 端口绑定（默认具体实现；duck-typed 满足端口契约，可注入替身）
+_signature: ports.SignaturePort = _signature_impl
+_crypto: ports.CryptoPort = _crypto_impl
 
 
 def verify_url(
     token: str, aes_key: str, corpid: str, msg_signature: str, timestamp: str, nonce: str, echostr: str
 ) -> str:
     """URL 验证：返回解密后的 echostr 明文（调用方原样返回给企微）"""
-    if not verify(token, timestamp, nonce, echostr, msg_signature):
+    if not _signature.verify(token, timestamp, nonce, echostr, msg_signature):
         raise ValueError("URL 验证签名不匹配")
-    msg, receive_id = decrypt(echostr, aes_key)
+    msg, receive_id = _crypto.decrypt(echostr, aes_key)
     if receive_id != corpid:
         raise ValueError(f"receiveid 不匹配: {receive_id} != {corpid}")
     return msg
@@ -46,9 +54,9 @@ def handle_message(
         raise ValueError("回调缺少 Encrypt 字段")
     encrypt = encrypt_el.text.strip()
 
-    if not verify(token, timestamp, nonce, encrypt, msg_signature):
+    if not _signature.verify(token, timestamp, nonce, encrypt, msg_signature):
         raise ValueError("回调签名不匹配")
-    plain, receive_id = decrypt(encrypt, aes_key)
+    plain, receive_id = _crypto.decrypt(encrypt, aes_key)
     if receive_id != corpid:
         raise ValueError(f"receiveid 不匹配: {receive_id} != {corpid}")
 

@@ -29,8 +29,40 @@ from sqlalchemy.orm import Session
 from app.db.models import Content, WechatMessage
 from app.services import thumbnails
 from app.services.external.content_safety import get_content_safety
+from app.services.wechat import ports
 
 logger = logging.getLogger("yishu.wechat")
+
+# ---- 媒体网关端口（R1#9 依赖反转）----
+# 业务只依赖 ports.MediaGatewayPort 契约；默认驱动 = 本模块 download_media
+# （企微 HTTP 实现），可经 set_media_gateway 注入替身。默认网关方法内按模块全局
+# 解析 download_media（调用时查找）→ 测试 monkeypatch wx.download_media 仍生效。
+# 用 dict 容器持有（避免 global 语句，ruff PLW0603）。
+_media_gateway_ref: dict[str, ports.MediaGatewayPort | None] = {"gateway": None}
+
+
+class _DefaultMediaGateway:
+    """默认媒体网关驱动：委托模块级 download_media/_corp_access_token（企微 HTTP）"""
+
+    def get_access_token(self) -> str | None:
+        return _corp_access_token()
+
+    def download_media(self, media_id: str, msg_type: str) -> bytes:
+        return download_media(media_id, msg_type)
+
+
+def get_media_gateway() -> ports.MediaGatewayPort:
+    """当前媒体网关端口实现（默认 = 企微 HTTP 驱动；可 set_media_gateway 替换）"""
+    gw = _media_gateway_ref["gateway"]
+    if gw is None:
+        gw = _DefaultMediaGateway()
+        _media_gateway_ref["gateway"] = gw
+    return gw
+
+
+def set_media_gateway(gateway: ports.MediaGatewayPort | None) -> None:
+    """注入/重置媒体网关（None 恢复默认驱动；测试替身注入点）"""
+    _media_gateway_ref["gateway"] = gateway
 
 VALID_SOURCES = ("active", "echo", "org")
 
@@ -209,7 +241,7 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
         return {"media": "skipped", "reason": "no media_id"}
 
     try:
-        data = download_media(media_id, msg["msg_type"])
+        data = get_media_gateway().download_media(media_id, msg["msg_type"])
     except Exception as exc:  # noqa: BLE001 —— 下载失败不影响消息入库（只标记）
         logger.warning("企微媒体下载失败 msg=%s: %s", msg.get("msg_id"), exc)
         record.status = "media_failed"
