@@ -124,8 +124,10 @@ export function putChunk(uploadId: string, filePath: string, timeout: number): P
 		'upload_id': uploadId,
 		'chunk_index': '0'
 	}
-	return uploadFileHttp(PATH_UPLOAD_CHUNK, filePath, 'file', form, timeout).then((hr: HttpResult) => {
-		return hr.status
+	return new Promise<number>((resolve) => {
+		uploadFileHttp(PATH_UPLOAD_CHUNK, filePath, 'file', form, timeout).then((hr: HttpResult) => {
+			resolve(hr.status)
+		})
 	})
 }
 

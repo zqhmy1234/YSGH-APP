@@ -408,19 +408,22 @@ function uploadOnceResult(item: PhotoItem, uploadMode: string): Promise<UploadAt
 
 /** 指数退避重试（2s→4s→8s→8s→8s，5 次上限）；4xx 立即停该条 */
 function uploadWithRetry(item: PhotoItem, uploadMode: string): Promise<string | null> {
-	return retryAsync<UploadAttempt>(
-		() => uploadOnceResult(item, uploadMode),
-		(r: UploadAttempt | null): boolean => r != null && !r.ok,
-		(_r: UploadAttempt | null, attempt: number): boolean => {
-			console.error('[yishu] upload retry attempt=' + attempt + ' path=' + item.path)
-			return false
-		}
-	).then((r: UploadAttempt | null) => {
-		if (r != null && r.ok) {
-			return r.cid
-		}
-		console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
-		return null
+	return new Promise<string | null>((resolve) => {
+		retryAsync<UploadAttempt>(
+			() => uploadOnceResult(item, uploadMode),
+			(r: UploadAttempt | null): boolean => r != null && !r.ok,
+			(_r: UploadAttempt | null, attempt: number): boolean => {
+				console.error('[yishu] upload retry attempt=' + attempt + ' path=' + item.path)
+				return false
+			}
+		).then((r: UploadAttempt | null) => {
+			if (r != null && r.ok) {
+				resolve(r.cid)
+				return
+			}
+			console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
+			resolve(null)
+		})
 	})
 }
 

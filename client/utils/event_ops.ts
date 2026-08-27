@@ -345,13 +345,21 @@ export function flushOpQueue(): Promise<number> {
 /** 单条带退避补发（O6/F9：flush 退避统一走 retry.ts retryAsync；失败可重试，
  *  退避耗尽后由调用方按网络探测区分 业务失败丢弃 / 离线保留）。
  *  O18：isFatal/onFail 恒 false（4xx 停批由 doOp 返回 false 实现），省略死参 */
-function flushOne(opType: string, payload: UTSJSONObject): Promise<boolean> {
-	return retryAsync<boolean>(
-		() => doOp(opType, payload).then((ok: boolean): boolean | null => {
-			return ok ? true : null
+/** 单次补发尝试（retryAsync fn：成功 true / 可重试失败 null）——具名函数规避 UTS 嵌套箭头解析缺陷 */
+function flushOneAttempt(opType: string, payload: UTSJSONObject): Promise<boolean | null> {
+	return new Promise<boolean | null>((res) => {
+		doOp(opType, payload).then((ok: boolean) => {
+			res(ok ? true : null)
 		})
-	).then((r: boolean | null): boolean => {
-		return r == true
+	})
+}
+
+function flushOne(opType: string, payload: UTSJSONObject): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		// UTS 5.15 必须显式传 isFatal/onFail（O18 省略写法触发 "No value passed"）
+		retryAsync<boolean>(() => flushOneAttempt(opType, payload), () => false, () => false).then((r: boolean | null) => {
+			resolve(r == true)
+		})
 	})
 }
 

@@ -355,23 +355,33 @@ function dropAll(ops: Array<UTSJSONObject>): void {
 	dropBatchFromQueue(ops)
 }
 
+/** 单批提交尝试（成功/4xx 定局；网络/5xx 返回 null 触发退避重试）——具名函数规避 UTS 嵌套箭头解析缺陷 */
+function postBatchAttempt(ops: Array<UTSJSONObject>): Promise<PushBatchResult | null> {
+	return new Promise<PushBatchResult | null>((res) => {
+		postBatch(ops).then((r: PushBatchResult) => {
+			res(r.ok || r.is4xx ? r : null)
+		})
+	})
+}
+
 /** 单批提交 + 退避重试（TD-P2B S1-M3 收口：统一走 retry.ts retryAsync）
  *  网络/5xx → 重试（onFail 计数连续失败、暂停则中断）；4xx → isFatal 停批 */
 function postBatchWithRetry(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
-	return retryAsync<PushBatchResult>(
-		() => postBatch(ops).then((r: PushBatchResult): PushBatchResult | null => {
-			return r.ok || r.is4xx ? r : null
-		}),
-		(r: PushBatchResult | null): boolean => r != null && r.is4xx,
-		(_r: PushBatchResult | null, _attempt: number): boolean => {
-			registerConsecutiveFailure()
-			return isSyncPaused()
-		}
-	).then((r: PushBatchResult | null): PushBatchResult => {
-		if (r == null) {
-			return new PushBatchResult(false, 0, 0, 0, false)
-		}
-		return r
+	return new Promise<PushBatchResult>((resolve) => {
+		retryAsync<PushBatchResult>(
+			() => postBatchAttempt(ops),
+			(r: PushBatchResult | null): boolean => r != null && r.is4xx,
+			(_r: PushBatchResult | null, _attempt: number): boolean => {
+				registerConsecutiveFailure()
+				return isSyncPaused()
+			}
+		).then((r: PushBatchResult | null) => {
+			if (r == null) {
+				resolve(new PushBatchResult(false, 0, 0, 0, false))
+				return
+			}
+			resolve(r)
+		})
 	})
 }
 

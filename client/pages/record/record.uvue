@@ -87,7 +87,7 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS } from '@/utils/text_recorder'
+	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS, LabelOption } from '@/utils/text_recorder'
 	import {
 		startRecord,
 		stopRecord,
@@ -113,7 +113,8 @@
 				lastContentId: '',
 				lastText: '',
 				// 分类标签条（O10 收口：data 引用 text_recorder.ALL_LABELS，不再页面硬编码）
-				allLabels: ALL_LABELS,
+				// UTS 5.15：模板 v-for 推断需显式类型锚（本地约定 value as Type）
+				allLabels: ALL_LABELS as Array<LabelOption>,
 				// 语音
 				recording: false,
 				recordSeconds: 0,

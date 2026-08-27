@@ -88,9 +88,11 @@ export function syncClientEvents(events: Array<UTSJSONObject>): Promise<SyncOutc
 				return
 			}
 			// 每次尝试内部都经 rawRequest 重新取当前 token（401 刷新重放后自然带上新 token）
-			// O18：isFatal/onFail 恒 false（4xx 停批已由 postOnce 返回非 null 实现），省略死参
+			// O18：isFatal/onFail 恒 false（4xx 停批已由 postOnce 返回非 null 实现）；UTS 5.15 必须显式传参
 			retryAsync<SyncOutcome>(
-				() => postOnce(events)
+				() => postOnce(events),
+				() => false,
+				() => false
 			).then((r: SyncOutcome | null) => {
 				resolve(r)
 			})

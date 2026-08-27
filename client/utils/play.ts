@@ -297,20 +297,21 @@ export function fetchMessages(status: string): Promise<Array<AppMessage>> {
 }
 
 /** 未读数（O17：不再被首屏 limit 截断——游标翻页累加 unread 条数；失败返回 0） */
+/** 未读翻页累加（具名模块函数：UTS 箭头不可自引用，递归必须函数声明——event_ops flushNext 同款） */
+function walkUnread(cursor: string, total: number, resolve: (n: number) => void): void {
+	fetchMessagePage('unread', cursor, 50).then((page: MessagePage) => {
+		const t = total + page.items.length
+		if (page.hasMore && page.cursor != '' && t < 5000) {
+			walkUnread(page.cursor, t, resolve)
+		} else {
+			resolve(t)
+		}
+	})
+}
+
 export function fetchUnreadCount(): Promise<number> {
 	return new Promise<number>((resolve) => {
-		let total = 0
-		const walk = (cursor: string): void => {
-			fetchMessagePage('unread', cursor, 50).then((page: MessagePage) => {
-				total += page.items.length
-				if (page.hasMore && page.cursor != '' && total < 5000) {
-					walk(page.cursor)
-				} else {
-					resolve(total)
-				}
-			})
-		}
-		walk('')
+		walkUnread('', 0, resolve)
 	})
 }
 
