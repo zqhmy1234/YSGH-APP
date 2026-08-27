@@ -1,0 +1,1052 @@
+<template>
+	<view class="page">
+		<!-- 顶栏（navigationStyle: custom，页面自带返回） -->
+		<view class="topbar">
+			<view class="topbar-back" @tap="goBack">
+				<text class="topbar-back-text">‹</text>
+			</view>
+			<text class="topbar-title serif">画像管理</text>
+			<view class="topbar-space" />
+		</view>
+
+		<!-- 分段切换：画像维度 / 敏感话题 -->
+		<view class="seg">
+			<view class="seg-item" :class="tab === 'dim' ? 'seg-active' : ''" @tap="switchTab('dim')">
+				<text class="seg-text" :class="tab === 'dim' ? 'seg-text-active' : ''">画像维度</text>
+			</view>
+			<view class="seg-item" :class="tab === 'sensitive' ? 'seg-active' : ''" @tap="switchTab('sensitive')">
+				<text class="seg-text" :class="tab === 'sensitive' ? 'seg-text-active' : ''">敏感话题</text>
+			</view>
+		</view>
+
+		<!-- ════════ Tab 1 · 画像维度（只读 + L0 分组） ════════ -->
+		<view v-if="tab === 'dim'">
+			<!-- 画像只读概览卡 -->
+			<view class="profile-summary">
+				<view class="ps-head">
+					<text class="ps-title serif">我的画像</text>
+					<text class="ps-badge" :class="coldStartDone ? 'ps-badge-ok' : 'ps-badge-warn'">{{ coldStartDone ? '已建立' : '待完善' }}</text>
+				</view>
+				<text class="ps-desc">画像仅用于记忆整理与个性化回顾，不会对外分享；可在「敏感话题」里设定边界。</text>
+				<text class="ps-meta">画像版本 v{{ profileVersion }} · 已激活 {{ activatedCount }}/{{ totalDims }} 个维度</text>
+			</view>
+
+			<!-- 错误态：画像加载失败 → 重试 -->
+			<view v-if="profileLoadFailed" class="empty-card small">
+				<text class="empty-title serif">画像加载失败</text>
+				<text class="empty-desc">无法获取画像信息，请检查网络后重试。</text>
+				<view class="empty-btn" @tap="loadProfile">
+					<text class="empty-btn-text">重试</text>
+				</view>
+			</view>
+
+			<!-- 空状态：未建立画像 → 跳访谈 -->
+			<view v-else-if="!coldStartDone" class="empty-card">
+				<text class="empty-title serif">尚未建立画像</text>
+				<text class="empty-desc">回答三个问题，让记忆整理更懂你；完成后 AI 会自动推断下方维度。</text>
+				<view class="empty-btn" @tap="goInterview">
+					<text class="empty-btn-text">去完成冷启动访谈</text>
+				</view>
+			</view>
+
+			<!-- L0 分组列表（只读骨架） -->
+			<view v-for="cat in categories" :key="cat.name" class="cat-block">
+				<view class="cat-head">
+					<text class="cat-title serif">{{ cat.name }}</text>
+					<text class="cat-count">{{ cat.rows.length }}</text>
+				</view>
+				<view class="cat-card">
+					<view v-for="row in cat.rows" :key="row.dim.id" class="dim-row" @tap="openDetail(row)">
+						<view class="dim-main">
+							<view class="dim-line">
+								<text class="dim-label">{{ row.dim.label }}</text>
+								<text v-if="row.active.length > 0" class="dim-badge">已激活</text>
+							</view>
+							<text v-if="row.active.length > 0" class="dim-active">{{ joinValues(row.active) }}</text>
+							<text v-else class="dim-inactive">未激活 · 置信阈值 {{ row.dim.confidenceThreshold }}</text>
+						</view>
+						<text class="dim-arrow">›</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- ════════ Tab 2 · 敏感话题（增 / 删 / 查） ════════ -->
+		<view v-else class="sensitive-page">
+			<view class="sensitive-head">
+				<text class="sensitive-title serif">敏感话题</text>
+				<view class="sensitive-add" @tap="openAddForm">
+					<text class="sensitive-add-text">＋ 添加</text>
+				</view>
+			</view>
+			<text class="sensitive-desc">告诉回忆录哪些话题要避开或谨慎，AI 会尊重你的边界（US-41）。</text>
+
+			<!-- 对话式添加表单 -->
+			<view v-if="showAddForm" class="add-card">
+				<text class="add-title serif">添加敏感话题</text>
+				<input class="add-input" v-model="newTopic" placeholder="例如：某位亲戚的名字、某段经历" :maxlength="64" />
+				<input class="add-input note" v-model="newNote" placeholder="可选：补充一句说明，让我更懂你的顾虑" :maxlength="200" />
+				<text class="add-label">处置方式</text>
+				<view class="disp-row">
+					<view v-for="d in dispositions" :key="d.value" class="disp-chip" :class="selDisposition === d.value ? 'disp-chip-active' : ''" @tap="selectDisposition(d.value)">
+						<text class="disp-chip-text" :class="selDisposition === d.value ? 'disp-chip-text-active' : ''">{{ d.label }}</text>
+					</view>
+				</view>
+				<view class="add-actions">
+					<view class="btn ghost" @tap="closeAddForm">
+						<text class="btn-text ghost-text">取消</text>
+					</view>
+					<view class="btn" @tap="submitSensitive">
+						<text class="btn-text">{{ submitting ? '保存中…' : '保存' }}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 敏感列表 -->
+			<view v-if="sensitiveLoading" class="center-box">
+				<text class="muted">加载中…</text>
+			</view>
+			<view v-else-if="sensitiveLoadFailed" class="empty-card small">
+				<text class="empty-title serif">加载失败</text>
+				<text class="empty-desc">敏感话题加载失败，请检查网络后重试。</text>
+				<view class="empty-btn" @tap="loadSensitive">
+					<text class="empty-btn-text">重试</text>
+				</view>
+			</view>
+			<view v-else-if="sensitiveItems.length === 0" class="empty-card small">
+				<text class="empty-title serif">还没有敏感话题</text>
+				<text class="empty-desc">点击上方「添加」，告诉回忆录要避开的边界。</text>
+			</view>
+			<view v-else class="sens-list">
+				<view v-for="s in sensitiveItems" :key="s.id" class="sens-card">
+					<view class="sens-main">
+						<view class="sens-line">
+							<text class="sens-topic">{{ s.topic }}</text>
+							<text class="sens-disp" :class="dispClass(s.disposition)">{{ dispLabel(s.disposition) }}</text>
+							<text v-if="s.locked" class="sens-lock">🔒</text>
+						</view>
+						<text v-if="s.evidence.length > 0" class="sens-evidence">{{ s.evidence[0] }}</text>
+						<text class="sens-time">{{ shortTime(s.addedAt) }}</text>
+					</view>
+					<view class="sens-del" @tap="confirmDelete(s)">
+						<text class="sens-del-text">删除</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 维度详情浮层（只读） -->
+		<view v-if="detailRow != null" class="mask" @tap="closeDetail">
+			<view class="detail-sheet" @tap.stop>
+				<view class="detail-head">
+					<text class="detail-title serif">{{ detailRow.dim.label }}</text>
+					<view class="detail-close" @tap="closeDetail">
+						<text class="detail-close-text">✕</text>
+					</view>
+				</view>
+				<text class="detail-desc">{{ detailRow.dim.description }}</text>
+				<view class="detail-tags">
+					<text class="detail-tag">披露 {{ detailRow.dim.disclosure }}</text>
+					<text class="detail-tag">置信阈值 {{ detailRow.dim.confidenceThreshold }}</text>
+				</view>
+				<view v-if="detailRow.active.length > 0" class="detail-sec">
+					<text class="detail-sec-title">当前取值</text>
+					<view class="detail-chips">
+						<text v-for="v in detailRow.active" :key="v" class="chip chip-active">{{ v }}</text>
+					</view>
+				</view>
+				<view class="detail-sec">
+					<text class="detail-sec-title">可选枚举（种子值）</text>
+					<view class="detail-chips">
+						<text v-for="v in detailRow.dim.values" :key="v" class="chip">{{ v }}</text>
+					</view>
+				</view>
+				<text class="detail-note">维度值由 AI 自动推断并随记忆积累完善；本页只读展示，不支持手动修改（契约 C3）。</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { ensureLogin } from '@/utils/auth'
+	import { get, post, request, dataArr, showErrorToast } from '@/utils/api'
+	import { fetchInterviewProfile } from '@/utils/play'
+	import { PATH_INTERVIEW_PROFILE } from '@/utils/contract'
+	import { formatIsoShortTime } from '@/utils/time'
+	import { L0_DIMENSIONS, L0Dim } from './l0_skeleton'
+	import { PATH_PROFILE_SENSITIVE } from './profile_contract'
+
+	/** 维度行：L0 骨架 + 后端激活值（dimensions 字典） */
+	class DimRow {
+		dim: L0Dim
+		active: Array<string>
+
+		constructor(dim: L0Dim, active: Array<string>) {
+			this.dim = dim
+			this.active = active
+		}
+	}
+
+	/** L0 分类组（保持枚举集顺序） */
+	class PortraitCategory {
+		name: string
+		rows: Array<DimRow>
+
+		constructor(name: string, rows: Array<DimRow>) {
+			this.name = name
+			this.rows = rows
+		}
+	}
+
+	/** 敏感项（GET /api/v1/profile/sensitive 元素） */
+	class SensitiveItem {
+		id: number
+		topic: string
+		disposition: string
+		evidence: Array<string>
+		locked: boolean
+		addedAt: string
+
+		constructor(id: number, topic: string, disposition: string, evidence: Array<string>, locked: boolean, addedAt: string) {
+			this.id = id
+			this.topic = topic
+			this.disposition = disposition
+			this.evidence = evidence
+			this.locked = locked
+			this.addedAt = addedAt
+		}
+	}
+
+	/** 处置方式选项——枚举值读自 openapi ProfileSensitiveCreate.disposition.pattern
+	 *  ^(allow|mention|caution|review|forbid)$（唯一契约源 docs/openapi.json），非本地臆造 */
+	class DispositionOption {
+		value: string
+		label: string
+
+		constructor(value: string, label: string) {
+			this.value = value
+			this.label = label
+		}
+	}
+
+	const DISPOSITIONS: Array<DispositionOption> = [
+		new DispositionOption('forbid', '禁止提及'),
+		new DispositionOption('caution', '谨慎提及'),
+		new DispositionOption('review', '提及需确认'),
+		new DispositionOption('mention', '可提及'),
+		new DispositionOption('allow', '可自由提及')
+	]
+
+	export default {
+		data() {
+			return {
+				tab: 'dim' as string,
+				loadedOnce: false,
+				// 画像只读
+				coldStartDone: false,
+				profileVersion: 0,
+				activatedCount: 0,
+				totalDims: L0_DIMENSIONS.length,
+				categories: [] as Array<PortraitCategory>,
+				profileLoadFailed: false,
+				// 敏感话题
+				sensitiveItems: [] as Array<SensitiveItem>,
+				sensitiveLoading: false,
+				sensitiveLoadFailed: false,
+				showAddForm: false,
+				newTopic: '',
+				newNote: '',
+				selDisposition: 'forbid' as string,
+				submitting: false,
+				// 显式标注数组元素类型（uni-app x 模板 v-for 类型推断要求；onLoad 里赋 DISPOSITIONS）
+				dispositions: [] as Array<DispositionOption>,
+				// 维度详情浮层
+				detailRow: null as DimRow | null
+			}
+		},
+		onLoad() {
+			this.dispositions = DISPOSITIONS
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					showErrorToast(new Error('登录失败，请重试'))
+					return
+				}
+				this.loadProfile()
+				this.loadSensitive()
+				this.loadedOnce = true
+			})
+		},
+		onShow() {
+			// 切前台/从访谈返回时刷新（访谈完成后画像可能变化）
+			if (this.loadedOnce) {
+				this.loadProfile()
+				this.loadSensitive()
+			}
+		},
+		methods: {
+			goBack(): void {
+				uni.navigateBack({})
+			},
+			switchTab(t: string): void {
+				this.tab = t
+			},
+			goInterview(): void {
+				uni.navigateTo({ url: '/pages/interview/interview' })
+			},
+
+			// ─────────── 画像只读 + L0 分组 ───────────
+			loadProfile(): void {
+				fetchInterviewProfile().then((d: UTSJSONObject | null) => {
+					if (d == null) {
+						this.profileLoadFailed = true
+						return
+					}
+					this.profileLoadFailed = false
+					this.coldStartDone = d.getBoolean('cold_start_done') ?? false
+					this.profileVersion = d.getNumber('version') ?? 0
+					const dimDict = d.getJSON('dimensions')
+					this.buildView(dimDict == null ? ({} as UTSJSONObject) : dimDict)
+				})
+			},
+			/** 由 L0 骨架 + 后端 dimensions 字典构建分组视图（激活值高亮） */
+			buildView(dimDict: UTSJSONObject): void {
+				const all: Array<DimRow> = []
+				let count = 0
+				for (let i = 0; i < L0_DIMENSIONS.length; i++) {
+					const dim = L0_DIMENSIONS[i]
+					const raw = dimDict.getArray(dim.id)
+					const active: Array<string> = raw == null ? [] : (raw as Array<string>)
+					if (active.length > 0) {
+						count++
+					}
+					all.push(new DimRow(dim, active))
+				}
+				// 按 category 分组（保持 L0 顺序）
+				const cats: Array<PortraitCategory> = []
+				for (let i = 0; i < all.length; i++) {
+					const row = all[i]
+					const catName = row.dim.category
+					let cat: PortraitCategory | null = null
+					for (let j = 0; j < cats.length; j++) {
+						if (cats[j].name == catName) {
+							cat = cats[j]
+							break
+						}
+					}
+					if (cat == null) {
+						cat = new PortraitCategory(catName, [])
+						cats.push(cat)
+					}
+					cat.rows.push(row)
+				}
+				this.activatedCount = count
+				this.categories = cats
+			},
+			joinValues(arr: Array<string>): string {
+				let s = ''
+				for (let i = 0; i < arr.length; i++) {
+					if (i > 0) {
+						s += '、'
+					}
+					s += arr[i]
+				}
+				return s
+			},
+			openDetail(row: DimRow): void {
+				this.detailRow = row
+			},
+			closeDetail(): void {
+				this.detailRow = null
+			},
+
+			// ─────────── 敏感话题：查 ───────────
+			loadSensitive(): void {
+				this.sensitiveLoading = true
+				get(PATH_PROFILE_SENSITIVE).then((body: UTSJSONObject | null) => {
+					this.sensitiveLoading = false
+					if (body == null) {
+						this.sensitiveLoadFailed = true
+						return
+					}
+					this.sensitiveLoadFailed = false
+					this.sensitiveItems = this.parseSensitive(body)
+				})
+			},
+			parseSensitive(body: UTSJSONObject): Array<SensitiveItem> {
+				const arr = dataArr(body)
+				const out: Array<SensitiveItem> = []
+				for (let i = 0; i < arr.length; i++) {
+					const o = arr[i]
+					const ev = o.getArray('evidence')
+					out.push(new SensitiveItem(
+						o.getNumber('id') ?? 0,
+						o.getString('topic') ?? '',
+						o.getString('disposition') ?? 'forbid',
+						ev == null ? [] : (ev as Array<string>),
+						o.getBoolean('locked') ?? false,
+						o.getString('added_at') ?? ''
+					))
+				}
+				return out
+			},
+
+			// ─────────── 敏感话题：增（对话式表单） ───────────
+			openAddForm(): void {
+				this.showAddForm = true
+				this.newTopic = ''
+				this.newNote = ''
+				this.selDisposition = 'forbid'
+			},
+			closeAddForm(): void {
+				this.showAddForm = false
+			},
+			selectDisposition(v: string): void {
+				this.selDisposition = v
+			},
+			submitSensitive(): void {
+				if (this.submitting) {
+					return
+				}
+				const topic = this.newTopic.trim()
+				if (topic == '') {
+					showErrorToast(new Error('请输入敏感话题'))
+					return
+				}
+				this.submitting = true
+				const body: UTSJSONObject = {}
+				body.set('topic', topic)
+				body.set('disposition', this.selDisposition)
+				const note = this.newNote.trim()
+				if (note != '') {
+					const ev: Array<string> = [note]
+					body.set('evidence', ev)
+				}
+				post(PATH_PROFILE_SENSITIVE, body).then((res: UTSJSONObject | null) => {
+					this.submitting = false
+					if (res == null) {
+						return
+					}
+					uni.showToast({ title: '已添加', icon: 'none' })
+					this.closeAddForm()
+					this.loadSensitive()
+				})
+			},
+
+			// ─────────── 敏感话题：删（二次确认） ───────────
+			confirmDelete(s: SensitiveItem): void {
+				uni.showModal({
+					title: '删除敏感话题',
+					content: '确定删除「' + s.topic + '」吗？删除后回忆录将不再遵守该边界。',
+					confirmText: '删除',
+					confirmColor: '#B05A3A',
+					success: (res) => {
+						if (res.confirm) {
+							this.doDelete(s)
+						}
+					}
+				})
+			},
+			doDelete(s: SensitiveItem): void {
+				request(PATH_PROFILE_SENSITIVE + '?topic=' + encodeURIComponent(s.topic), 'DELETE', null).then((res: UTSJSONObject | null) => {
+					if (res == null) {
+						return
+					}
+					uni.showToast({ title: '已删除', icon: 'none' })
+					this.loadSensitive()
+				})
+			},
+
+			// ─────────── 展示辅助 ───────────
+			/** ISO → 短时间（委托 time.ts formatIsoShortTime 单源；UTS error18：模板须经方法调用） */
+			shortTime(iso: string): string {
+				return formatIsoShortTime(iso)
+			},
+			dispLabel(d: string): string {
+				if (d == 'forbid') {
+					return '禁止提及'
+				}
+				if (d == 'caution') {
+					return '谨慎提及'
+				}
+				if (d == 'review') {
+					return '提及需确认'
+				}
+				if (d == 'mention') {
+					return '可提及'
+				}
+				if (d == 'allow') {
+					return '可自由提及'
+				}
+				return d
+			},
+			dispClass(d: string): string {
+				if (d == 'forbid') {
+					return 'disp-forbid'
+				}
+				if (d == 'caution') {
+					return 'disp-caution'
+				}
+				if (d == 'review') {
+					return 'disp-review'
+				}
+				return 'disp-soft'
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #F6F1E7;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-top: 24rpx;
+		padding-bottom: 80rpx;
+	}
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+	.muted {
+		font-size: 26rpx;
+		color: #b3a696;
+	}
+	.center-box {
+		align-items: center;
+		display: flex;
+		flex-direction: column;
+		padding-top: 80rpx;
+	}
+
+	/* 顶栏 */
+	.topbar {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-top: 24rpx;
+		padding-bottom: 20rpx;
+	}
+	.topbar-back {
+		width: 64rpx;
+		height: 64rpx;
+		align-items: center;
+		justify-content: center;
+		display: flex;
+	}
+	.topbar-back-text {
+		font-size: 56rpx;
+		color: #3A2E25;
+		line-height: 56rpx;
+	}
+	.topbar-title {
+		flex: 1;
+		font-size: 40rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		letter-spacing: 4rpx;
+		text-align: center;
+	}
+	.topbar-space {
+		width: 64rpx;
+		height: 64rpx;
+	}
+
+	/* 分段切换 */
+	.seg {
+		display: flex;
+		flex-direction: row;
+		background-color: #EDE4D6;
+		border-radius: 12rpx;
+		padding: 6rpx;
+		margin-bottom: 24rpx;
+	}
+	.seg-item {
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		display: flex;
+		padding-top: 16rpx;
+		padding-bottom: 16rpx;
+		border-radius: 10rpx;
+	}
+	.seg-active {
+		background-color: #FBF7EF;
+	}
+	.seg-text {
+		font-size: 28rpx;
+		color: #8a7a6a;
+	}
+	.seg-text-active {
+		color: #3A2E25;
+		font-weight: bold;
+	}
+
+	/* 画像只读概览卡 */
+	.profile-summary {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.ps-head {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.ps-title {
+		font-size: 32rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.ps-badge {
+		font-size: 22rpx;
+		padding-left: 16rpx;
+		padding-right: 16rpx;
+		padding-top: 6rpx;
+		padding-bottom: 6rpx;
+		border-radius: 20rpx;
+	}
+	.ps-badge-ok {
+		color: #3A6B4F;
+		background-color: #E4EDE2;
+	}
+	.ps-badge-warn {
+		color: #B05A3A;
+		background-color: #F3E8DC;
+	}
+	.ps-desc {
+		margin-top: 14rpx;
+		font-size: 25rpx;
+		color: #8a7a6a;
+		line-height: 36rpx;
+	}
+	.ps-meta {
+		margin-top: 12rpx;
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+
+	/* 空状态 */
+	.empty-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 36rpx;
+		margin-bottom: 24rpx;
+		align-items: center;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.empty-card.small {
+		padding: 48rpx;
+	}
+	.empty-title {
+		font-size: 32rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.empty-desc {
+		margin-top: 14rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+		line-height: 38rpx;
+		text-align: center;
+	}
+	.empty-btn {
+		margin-top: 28rpx;
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+		padding-top: 18rpx;
+		padding-bottom: 18rpx;
+		padding-left: 48rpx;
+		padding-right: 48rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+	}
+	.empty-btn-text {
+		color: #F6F1E7;
+		font-size: 28rpx;
+	}
+
+	/* L0 分组 */
+	.cat-block {
+		margin-bottom: 28rpx;
+	}
+	.cat-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 8rpx;
+		padding-bottom: 12rpx;
+	}
+	.cat-title {
+		font-size: 28rpx;
+		color: #8a7a6a;
+		font-weight: bold;
+		letter-spacing: 2rpx;
+	}
+	.cat-count {
+		margin-left: 14rpx;
+		font-size: 22rpx;
+		color: #c9beb0;
+	}
+	.cat-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		overflow: hidden;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.dim-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 28rpx;
+		padding-right: 28rpx;
+		padding-top: 20rpx;
+		padding-bottom: 20rpx;
+		border-bottom-color: #F1E9DC;
+		border-bottom-width: 1rpx;
+	}
+	.dim-main {
+		flex: 1;
+	}
+	.dim-line {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.dim-label {
+		font-size: 29rpx;
+		color: #3A2E25;
+	}
+	.dim-badge {
+		margin-left: 14rpx;
+		font-size: 20rpx;
+		color: #3A6B4F;
+		background-color: #E4EDE2;
+		padding-left: 12rpx;
+		padding-right: 12rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 16rpx;
+	}
+	.dim-active {
+		margin-top: 8rpx;
+		font-size: 24rpx;
+		color: #6b5a48;
+	}
+	.dim-inactive {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #c9beb0;
+	}
+	.dim-arrow {
+		font-size: 34rpx;
+		color: #c9beb0;
+		margin-left: 16rpx;
+	}
+
+	/* 敏感话题头 */
+	.sensitive-page {
+		padding-bottom: 60rpx;
+	}
+	.sensitive-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 10rpx;
+	}
+	.sensitive-title {
+		font-size: 32rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.sensitive-add {
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+		padding-top: 12rpx;
+		padding-bottom: 12rpx;
+		padding-left: 26rpx;
+		padding-right: 26rpx;
+	}
+	.sensitive-add-text {
+		color: #F6F1E7;
+		font-size: 26rpx;
+	}
+	.sensitive-desc {
+		margin-bottom: 20rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		line-height: 36rpx;
+	}
+
+	/* 添加表单 */
+	.add-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.add-title {
+		font-size: 30rpx;
+		color: #3A2E25;
+		font-weight: bold;
+		margin-bottom: 20rpx;
+	}
+	.add-input {
+		background-color: #F6F1E7;
+		border-radius: 8rpx;
+		padding-left: 22rpx;
+		padding-right: 22rpx;
+		padding-top: 18rpx;
+		padding-bottom: 18rpx;
+		font-size: 27rpx;
+		color: #3A2E25;
+		margin-bottom: 16rpx;
+	}
+	.add-input.note {
+		font-size: 25rpx;
+		color: #6b5a48;
+	}
+	.add-label {
+		margin-top: 6rpx;
+		margin-bottom: 12rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+	}
+	.disp-row {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.disp-chip {
+		background-color: #EDE4D6;
+		border-radius: 24rpx;
+		padding-left: 20rpx;
+		padding-right: 20rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
+		margin-right: 14rpx;
+		margin-bottom: 14rpx;
+	}
+	.disp-chip-active {
+		background-color: #B05A3A;
+	}
+	.disp-chip-text {
+		font-size: 24rpx;
+		color: #6b5a48;
+	}
+	.disp-chip-text-active {
+		color: #F6F1E7;
+	}
+	.add-actions {
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-top: 8rpx;
+	}
+	.btn {
+		background-color: #B05A3A;
+		border-radius: 8rpx;
+		padding-top: 16rpx;
+		padding-bottom: 16rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+		margin-left: 20rpx;
+	}
+	.btn.ghost {
+		background-color: #EDE4D6;
+	}
+	.btn-text {
+		color: #F6F1E7;
+		font-size: 27rpx;
+	}
+	.ghost-text {
+		color: #6b5a48;
+	}
+
+	/* 敏感列表 */
+	.sens-card {
+		background-color: #FBF7EF;
+		border-radius: 8rpx;
+		padding: 24rpx;
+		margin-bottom: 16rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.sens-main {
+		flex: 1;
+	}
+	.sens-line {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.sens-topic {
+		font-size: 29rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.sens-disp {
+		margin-left: 14rpx;
+		font-size: 20rpx;
+		padding-left: 12rpx;
+		padding-right: 12rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 16rpx;
+	}
+	.disp-forbid {
+		color: #B05A3A;
+		background-color: #F3E8DC;
+	}
+	.disp-caution {
+		color: #8A6D3B;
+		background-color: #F5ECD9;
+	}
+	.disp-review {
+		color: #3A6B8C;
+		background-color: #E2ECF0;
+	}
+	.disp-soft {
+		color: #3A6B4F;
+		background-color: #E4EDE2;
+	}
+	.sens-lock {
+		margin-left: 10rpx;
+		font-size: 22rpx;
+	}
+	.sens-evidence {
+		margin-top: 8rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		line-height: 34rpx;
+	}
+	.sens-time {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #c9beb0;
+	}
+	.sens-del {
+		margin-left: 20rpx;
+		padding-left: 20rpx;
+		padding-right: 20rpx;
+		padding-top: 14rpx;
+		padding-bottom: 14rpx;
+		border-radius: 8rpx;
+		background-color: #F3E8DC;
+	}
+	.sens-del-text {
+		font-size: 24rpx;
+		color: #B05A3A;
+	}
+
+	/* 维度详情浮层 */
+	.mask {
+		position: fixed;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(58, 46, 37, 0.4);
+		justify-content: flex-end;
+		display: flex;
+	}
+	.detail-sheet {
+		background-color: #FBF7EF;
+		border-top-left-radius: 24rpx;
+		border-top-right-radius: 24rpx;
+		padding: 36rpx;
+		padding-bottom: 60rpx;
+		max-height: 1000rpx;
+	}
+	.detail-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.detail-title {
+		font-size: 34rpx;
+		color: #3A2E25;
+		font-weight: bold;
+	}
+	.detail-close {
+		width: 56rpx;
+		height: 56rpx;
+		align-items: center;
+		justify-content: center;
+		display: flex;
+	}
+	.detail-close-text {
+		font-size: 34rpx;
+		color: #8a7a6a;
+	}
+	.detail-desc {
+		margin-top: 18rpx;
+		font-size: 26rpx;
+		color: #6b5a48;
+		line-height: 38rpx;
+	}
+	.detail-tags {
+		display: flex;
+		flex-direction: row;
+		margin-top: 18rpx;
+	}
+	.detail-tag {
+		font-size: 22rpx;
+		color: #8a7a6a;
+		background-color: #EDE4D6;
+		border-radius: 20rpx;
+		padding-left: 16rpx;
+		padding-right: 16rpx;
+		padding-top: 6rpx;
+		padding-bottom: 6rpx;
+		margin-right: 14rpx;
+	}
+	.detail-sec {
+		margin-top: 26rpx;
+	}
+	.detail-sec-title {
+		font-size: 25rpx;
+		color: #8a7a6a;
+		margin-bottom: 12rpx;
+	}
+	.detail-chips {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.chip {
+		background-color: #EDE4D6;
+		border-radius: 22rpx;
+		padding-left: 18rpx;
+		padding-right: 18rpx;
+		padding-top: 8rpx;
+		padding-bottom: 8rpx;
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		font-size: 24rpx;
+		color: #6b5a48;
+	}
+	.chip-active {
+		background-color: #E4EDE2;
+		color: #3A6B4F;
+	}
+	.detail-note {
+		margin-top: 28rpx;
+		font-size: 22rpx;
+		color: #c9beb0;
+		line-height: 32rpx;
+	}
+</style>
