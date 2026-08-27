@@ -89,21 +89,9 @@ export class UploadOptions {
 	}
 }
 
-/** HTTP 状态错误（O16 收口：4xx 判定统一走 upload_pipeline 的 UploadPipeError.permanent） */
-class UploadHttpError extends Error {
-	status: number
-
-	constructor(status: number, message: string) {
-		super(message)
-		this.status = status
-	}
-}
-
+/** 4xx 判定（O16 收口：4xx 停条判定统一走 upload_pipeline 的 UploadPipeError.permanent；
+ *  原 UploadHttpError 类已随协议请求下收而删除，无残留实例化） */
 function is4xx(e: Error): boolean {
-	if (e instanceof UploadHttpError) {
-		const s = e.status
-		return s >= 400 && s < 500
-	}
 	if (e instanceof UploadPipeError) {
 		return e.permanent
 	}
