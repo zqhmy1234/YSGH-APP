@@ -454,6 +454,53 @@ def test_factory_fs_returns_fresh_instance(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# 真实后端参数化往返（C10 · 2026-08-28 · COS 切换验证：cos 真链路上传/读回/列举/删除闭环；
+# 凭据缺失自动 skip 标"环境依赖"——CI 无 key 跳过，本机 .env/Infisical 有 key 时真跑）
+# ---------------------------------------------------------------------------
+
+
+def _cos_creds_configured() -> bool:
+    return bool(
+        settings.tencent_secret_id
+        and settings.tencent_secret_key
+        and settings.cos_bucket
+        and settings.cos_region
+    )
+
+
+def _make_backend_for(name: str, tmp_path):
+    """构造被测后端；cos 凭据缺失抛 pytest.skip（环境依赖）"""
+    if name == "fake":
+        return get_storage_backend("fake")
+    if name == "fs":
+        return FilesystemStorageBackend(root=str(tmp_path))
+    if name == "cos":
+        if not _cos_creds_configured():
+            pytest.skip("环境依赖：COS 凭据未配置（TENCENT_SECRET_ID/KEY/COS_BUCKET/COS_REGION）")
+        from app.services.external.storage import CosStorageBackend
+
+        return CosStorageBackend()
+    raise AssertionError(f"未知后端: {name}")
+
+
+@pytest.mark.parametrize("backend_name", ["fake", "fs", "cos"])
+def test_round_trip_all_backends(backend_name, tmp_path):
+    """上传/读回/存在/前缀列举/删除 闭环（cos 缺 key 自动 skip）"""
+    import uuid
+
+    backend = _make_backend_for(backend_name, tmp_path)
+    key = f"param-test/{backend_name}-{uuid.uuid4().hex[:8]}.jpg"
+    data = b"parametrized-bytes-" + backend_name.encode()
+    backend.put_object(key, data)
+    assert backend.get_object(key) == data
+    assert backend.object_exists(key) is True
+    assert key in backend.list_objects("param-test/")
+    backend.delete_object(key)
+    assert backend.object_exists(key) is False
+    assert key not in backend.list_objects("param-test/")
+
+
+# ---------------------------------------------------------------------------
 # H3：COS STS 路径级白名单（原 test_techdebt_p0.py P0-2 按域迁入）
 # ---------------------------------------------------------------------------
 
