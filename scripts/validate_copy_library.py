@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""文案库校验器（docs/copy_library · schema/care_copy/template_pool）——Agent C2 交付
+"""文案库校验器（docs/copy_library · schema/care_copy/template_pool）——Agent C2 交付 v2
 
-校验项：
-  1. JSON 可解析（schema.json / care_copy.json / template_pool.json 三文件）
-  2. schema.json：draft-07 合法性（jsonschema 库可用时）+ 契约常量完整性
-  3. 契约对齐：schema.json x-contract 与 notify.py 触发常量（C8）一致
-     ——6 键 / 阈值 0.7 / 深夜 22-05 / 回看 3 天 / 数量区间 30-50 / 每场景候选 ≥3
-  4. care_copy.json：恰好 6 场景键 / 每场景 ≥3 候选 / title+body 非空 / 无占位符直发 /
-     基调策略齐备 / 敏感话题未主动提及（警告级）
-  5. template_pool.json：数量 ∈[30,50] / 条目必填字段 / id 唯一且小写下划线 /
-     占位符闭合（声明==使用）且均在词表内 / 花括号平衡
-  6. 输出校验报告（stdout + 可选 --report 路径）
+校验规则矩阵（v2，2026-08-28）：
+  ├─ JSON 可解析    三文件均可 json.load  → 失败=报错退出码 1
+  ├─ schema 合规    条目必填字段齐全、类型正确 → 失败=报错+字段定位
+  ├─ 键对齐         care_copy scenes ⊆ notify 六键（== 六键）→ 失败=报错
+  ├─ 数量区间        care 每场景 variants≥3；pool 总量 30–50 → 失败=报错
+  │                   pool 三层分布 echo12-18/ask10-16/companion8-16 → 越界=警告（建议值）
+  ├─ 占位符闭合      所有 { 有配对 }（正则扫描）+ 词表内 → 失败=报错
+  ├─ 长度/枚举       title≤20 / body≤100 / tone∈{gentle,warm,light} → 失败=报错
+  ├─ 敏感词预检      黑名单（前任/初恋等）扫描 body/template → 警告（标注人工审阅）
+  ├─ 唯一性          variant.id 全局唯一 → 失败=报错
+  └─ 输出            打印校验报告（通过项数/警告/失败）+ 退出码（0=全绿）
 
 用法：
   python scripts/validate_copy_library.py
@@ -47,18 +48,13 @@ NOTIFY_TRUTH = {
     "care_candidates_min": 3,
     "template_pool_count_min": 30,
     "template_pool_count_max": 50,
+    "pool_distribution": {"echo": (12, 18), "ask": (10, 16), "companion": (8, 16)},
+    "title_max_chars": 20,
+    "body_max_chars": 100,
 }
 
-# 场景 → 触发语义关键词（适用条件 soft 检查；自然语言描述，仅警告不阻断）
-TRIGGER_KEYWORDS: dict[str, list[str]] = {
-    "sad_ask": ["未说明", "追问"],
-    "sad_respond": ["已说明", "回应"],
-    "angry": ["陪伴", "不追问"],
-    "late_night": ["深夜", "22", "05", "22:00", "05:00"],
-    "day2": ["第 2 天", "第2天", "streak==1", "好些"],
-    "day3": ["第 3 天", "第3天", "streak>=2", "陪伴"],
-}
-
+VALID_TONES = {"gentle", "warm", "light"}
+VALID_POOL_SCENES = {"echo", "ask", "companion"}
 PLACEHOLDER_PATTERN = re.compile(r"\{([^{}]*)\}")
 
 
@@ -91,12 +87,80 @@ def load_json(path: Path, report: Report) -> object | None:
     except FileNotFoundError:
         report.add_error(f"文件缺失: {path.relative_to(ROOT)}")
     except json.JSONDecodeError as exc:
-        report.add_error(f"JSON 解析失败: {path.relative_to(ROOT)} @ {exc.lineno}:{exc.colno} {exc.msg}")
+        report.add_error(
+            f"JSON 解析失败: {path.relative_to(ROOT)} @ {exc.lineno}:{exc.colno} {exc.msg}"
+        )
     return None
 
 
+def extract_placeholders(text: str) -> set[str]:
+    """提取 {xxx} 占位符集合（不含空 {}）。"""
+    return {m for m in PLACEHOLDER_PATTERN.findall(text) if m.strip()}
+
+
+def brace_check(text: str, where: str, report: Report) -> None:
+    """占位符闭合：无空 {} 且 { 与 } 数量相等。"""
+    if "{}" in text:
+        report.add_error(f"{where}: 出现空占位符 {{}}")
+    if text.count("{") != text.count("}"):
+        report.add_error(f"{where}: 花括号不平衡（{text!r}）")
+
+
+def vocab_check(used: set[str], vocabulary: set[str], where: str, report: Report) -> None:
+    """词表检查：占位符必须在 x-contract.placeholders.vocabulary 内。"""
+    unknown = used - vocabulary
+    if unknown:
+        report.add_error(
+            f"{where}: 使用词表外占位符 {sorted(unknown)}（词表={sorted(vocabulary)}）"
+        )
+
+
+def sensitive_scan(texts: list[str], banned: set[str], where: str, report: Report) -> None:
+    """敏感词预检（警告级，标注人工审阅）。"""
+    for text in texts:
+        hit = [w for w in banned if w and w in text]
+        if hit:
+            report.add_warning(f"{where}: 命中『禁止主动提及』词 {hit}（请人工复核基调）")
+
+
+# ---------------------------------------------------------------------------
+# schema.json
+# ---------------------------------------------------------------------------
+def validate_schema_json(schema: object, report: Report) -> None:
+    """schema.json 顶层结构 + draft-07 合法性（jsonschema 可用时）。"""
+    if not isinstance(schema, dict):
+        report.add_error("schema.json 顶层必须是对象")
+        return
+    for field in ("schema_version", "updated_at", "scenes", "definitions", "x-contract"):
+        if field not in schema:
+            report.add_error(f"schema.json 缺顶层字段 {field}")
+    if schema.get("schema_version") != "1.0":
+        report.add_error(f"schema.json schema_version={schema.get('schema_version')!r}，须为 1.0")
+    if "definitions" in schema:
+        for name in (
+            "variant", "care_scene", "care_copy_file", "template_entry", "template_pool_file",
+        ):
+            if name not in schema["definitions"]:
+                report.add_error(f"schema.json definitions 缺 {name}")
+    try:
+        import jsonschema  # noqa: PLC0415
+
+        jsonschema.Draft7Validator.check_schema(schema)
+        report.add_info("schema.json: jsonschema Draft7 校验通过（check_schema）")
+    except ImportError:
+        report.add_info("jsonschema 库不可用，跳过 draft-07 语法校验（结构校验仍执行）")
+    except Exception as exc:  # noqa: BLE001
+        report.add_error(f"schema.json draft-07 语法不合法: {exc}")
+
+
 def check_contract_alignment(schema: dict, report: Report) -> None:
-    """schema.json x-contract 与 NOTIFY_TRUTH 对齐（C8 契约铁律）。"""
+    """schema.json 顶层 scenes + x-contract 与 NOTIFY_TRUTH 对齐（C8 契约铁律）。"""
+    top_scenes = schema.get("scenes")
+    if top_scenes != NOTIFY_TRUTH["scenario_keys"]:
+        report.add_error(
+            f"schema.json 顶层 scenes={top_scenes!r}，notify.py 真值={NOTIFY_TRUTH['scenario_keys']!r}"
+        )
+
     contract = schema.get("x-contract")
     if not isinstance(contract, dict):
         report.add_error("schema.json 缺 x-contract 契约块（B2 加载器与校验脚本共用常量）")
@@ -108,6 +172,8 @@ def check_contract_alignment(schema: dict, report: Report) -> None:
         "care_candidates_min": NOTIFY_TRUTH["care_candidates_min"],
         "template_pool_count_min": NOTIFY_TRUTH["template_pool_count_min"],
         "template_pool_count_max": NOTIFY_TRUTH["template_pool_count_max"],
+        "title_max_chars": NOTIFY_TRUTH["title_max_chars"],
+        "body_max_chars": NOTIFY_TRUTH["body_max_chars"],
     }
     for key, truth in checks.items():
         got = contract.get(key)
@@ -121,20 +187,26 @@ def check_contract_alignment(schema: dict, report: Report) -> None:
         or late_night.get("end_hour") != NOTIFY_TRUTH["late_night"]["end_hour"]
     ):
         report.add_error(
-            f"契约对齐失败: x-contract.late_night={late_night!r}，notify.py 真值={NOTIFY_TRUTH['late_night']!r}"
+            f"契约对齐失败: x-contract.late_night={late_night!r}，"
+            f"notify.py 真值={NOTIFY_TRUTH['late_night']!r}"
         )
     if not contract.get("placeholders") or "vocabulary" not in contract.get("placeholders", {}):
         report.add_error("schema.json x-contract.placeholders 缺 vocabulary 词表")
     report.add_info("契约对齐: 6 键/阈值 0.7/深夜 22-05/回看 3 天 与 notify.py 一致")
 
 
-def validate_care_copy(data: object, report: Report) -> None:
-    """care_copy.json：6 场景键 / 每场景≥3 候选 / 必填字段 / 无占位符 / 基调 / 敏感词警告。"""
+# ---------------------------------------------------------------------------
+# care_copy.json
+# ---------------------------------------------------------------------------
+def validate_care_copy(data: object, report: Report, vocabulary: set[str]) -> None:
+    """care_copy.json：scenes[] 6 键全覆盖 / 每场景 variants≥3 / 长度/枚举/唯一性/占位符闭合/敏感词。"""
     if not isinstance(data, dict):
         report.add_error("care_copy.json 顶层必须是对象")
         return
-    if data.get("schema_version") != "1.0.0":
-        report.add_error(f"care_copy.json schema_version={data.get('schema_version')!r}，须为 1.0.0")
+    if data.get("schema_version") != "1.0":
+        report.add_error(f"care_copy.json schema_version={data.get('schema_version')!r}，须为 1.0")
+    if not str(data.get("updated_at", "")).strip():
+        report.add_error("care_copy.json 缺 updated_at（YYYY-MM-DD）")
 
     tone = data.get("tone_policy")
     if not isinstance(tone, dict) or not all(k in tone for k in ("基调", "禁止主动提及", "仅陪伴出口")):
@@ -142,91 +214,105 @@ def validate_care_copy(data: object, report: Report) -> None:
         banned = set(tone.get("禁止主动提及", [])) if isinstance(tone, dict) else set()
     else:
         banned = set(tone.get("禁止主动提及", []))
-        if not isinstance(tone.get("仅陪伴出口"), bool):
-            report.add_error("care_copy.json tone_policy.仅陪伴出口 须为布尔")
         if tone.get("仅陪伴出口") is False:
-            report.add_warning("care_copy.json 仅陪伴出口=False，与拍板⑤（不提敏感话题仅陪伴）不一致")
+            report.add_warning(
+                "care_copy.json 仅陪伴出口=False，与拍板⑤（不提敏感话题仅陪伴）不一致"
+            )
 
-    scenarios = data.get("scenarios")
-    if not isinstance(scenarios, dict):
-        report.add_error("care_copy.json 缺 scenarios 对象")
+    scenes = data.get("scenes")
+    if not isinstance(scenes, list):
+        report.add_error("care_copy.json 缺 scenes 数组")
         return
 
-    keys = list(scenarios.keys())
-    if keys != NOTIFY_TRUTH["scenario_keys"]:
-        report.add_error(
-            f"场景键与 notify.py CARE_TEMPLATES 不一致: 实际={keys}，应有={NOTIFY_TRUTH['scenario_keys']}"
-        )
-    report.add_info(f"care_copy 场景键: {keys}（与 notify.py 对齐）")
-
-    for key in NOTIFY_TRUTH["scenario_keys"]:
-        sc = scenarios.get(key)
-        if not isinstance(sc, dict):
-            report.add_error(f"场景 {key}: 缺失/非对象")
+    scene_set: set[str] = set()
+    all_variant_ids: set[str] = set()
+    for entry in scenes:
+        if not isinstance(entry, dict):
+            report.add_error("care_copy.json scenes[] 条目须为对象")
             continue
-        for field in ("emotion", "intent", "applicable_condition", "rotation", "candidates"):
-            if field not in sc:
-                report.add_error(f"场景 {key}: 缺必填字段 {field}")
-        rotation = sc.get("rotation")
-        if rotation not in ("round_robin", "random", "fixed"):
-            report.add_error(f"场景 {key}: rotation={rotation!r}，须为 round_robin/random/fixed")
-        candidates = sc.get("candidates")
-        cand_len = len(candidates) if isinstance(candidates, list) else "非数组"
-        if not isinstance(candidates, list) or len(candidates) < NOTIFY_TRUTH["care_candidates_min"]:
+        scene = entry.get("scene")
+        if not isinstance(scene, str) or scene not in NOTIFY_TRUTH["scenario_keys"]:
             report.add_error(
-                f"场景 {key}: candidates 须 ≥{NOTIFY_TRUTH['care_candidates_min']} 条，实际={cand_len}"
+                f"care_copy 条目 scene={scene!r} 不在 notify 六键 {NOTIFY_TRUTH['scenario_keys']} 内"
             )
             continue
-        for i, cand in enumerate(candidates):
-            has_text = (
-                isinstance(cand, dict)
-                and str(cand.get("title", "")).strip()
-                and str(cand.get("body", "")).strip()
+        scene_set.add(scene)
+        variants = entry.get("variants")
+        if not isinstance(variants, list) or len(variants) < NOTIFY_TRUTH["care_candidates_min"]:
+            report.add_error(
+                f"场景 {scene}: variants 须 ≥{NOTIFY_TRUTH['care_candidates_min']} 条，"
+                f"实际={len(variants) if isinstance(variants, list) else '非数组'}"
             )
-            if not has_text:
-                report.add_error(f"场景 {key} 候选[{i}]: title/body 须非空字符串")
+            if not isinstance(variants, list):
+                continue  # 非数组无法细检，其余仍逐条细检给出完整诊断
+        report.add_info(f"场景 {scene}: {len(variants)} 条候选")
+        for i, v in enumerate(variants):
+            where = f"场景 {scene} variants[{i}]"
+            if not isinstance(v, dict):
+                report.add_error(f"{where}: 条目须为对象")
                 continue
-            for text in (str(cand["title"]), str(cand["body"])):
-                if "{" in text or "}" in text:
-                    report.add_error(
-                        f"场景 {key} 候选[{i}]: 正文含占位符 {text}——care_copy 为直发原文，"
-                        "禁止占位符（见 x-contract.placeholders.rule）"
-                    )
-                hit = [w for w in banned if w and w in text]
-                if hit:
-                    report.add_warning(f"场景 {key} 候选[{i}]: 命中『禁止主动提及』词 {hit}（请人工复核基调）")
+            vid = str(v.get("id", ""))
+            if not re.fullmatch(r"[a-z0-9_]+", vid):
+                report.add_error(f"{where}: id={vid!r} 须匹配 ^[a-z0-9_]+$")
+            if vid in all_variant_ids:
+                report.add_error(f"{where}: variant.id 重复 {vid}")
+            all_variant_ids.add(vid)
 
-    # 触发语义 soft 检查
-    for key, kws in TRIGGER_KEYWORDS.items():
-        sc = scenarios.get(key)
-        if isinstance(sc, dict):
-            cond = str(sc.get("applicable_condition", ""))
-            if cond and not any(k in cond for k in kws):
-                report.add_warning(
-                    f"场景 {key}: 适用条件未含预期触发关键词 {kws}，请核对与 notify.py 语义一致: {cond}"
+            title = str(v.get("title", ""))
+            body = str(v.get("body", ""))
+            if not title or not body:
+                report.add_error(f"{where}: title/body 须非空字符串")
+            if len(title) > NOTIFY_TRUTH["title_max_chars"]:
+                report.add_error(
+                    f"{where}: title 超 {NOTIFY_TRUTH['title_max_chars']} 字（实际 {len(title)}）: {title}"
                 )
+            if len(body) > NOTIFY_TRUTH["body_max_chars"]:
+                report.add_error(
+                    f"{where}: body 超 {NOTIFY_TRUTH['body_max_chars']} 字（实际 {len(body)}）: {body}"
+                )
+            if v.get("tone") not in VALID_TONES:
+                report.add_error(f"{where}: tone={v.get('tone')!r}，须 ∈ {sorted(VALID_TONES)}")
+
+            declared = set()
+            ph = v.get("placeholders")
+            if ph is not None:
+                if not isinstance(ph, list):
+                    report.add_error(f"{where}: placeholders 须为数组")
+                else:
+                    declared = {str(p.get("name", "")) for p in ph if isinstance(p, dict)}
+            for text in (title, body):
+                brace_check(text, where, report)
+                used = extract_placeholders(text)
+                vocab_check(used, vocabulary, where, report)
+                undeclared = used - declared
+                if undeclared:
+                    report.add_error(
+                        f"{where}: 使用了未声明占位符 {sorted(undeclared)}（须在 placeholders 声明）"
+                    )
+            sensitive_scan([title, body], banned, where, report)
+
+    if scene_set != set(NOTIFY_TRUTH["scenario_keys"]):
+        report.add_error(
+            f"care_copy 场景键集合须 == notify 六键: 实际={sorted(scene_set)}，"
+            f"应有={NOTIFY_TRUTH['scenario_keys']}"
+        )
+    report.add_info(f"care_copy 场景键: {sorted(scene_set)}（与 notify.py 对齐）")
 
 
-def extract_placeholders(text: str) -> set[str]:
-    """提取 {xxx} 占位符集合（不含空 {}）。"""
-    return {m for m in PLACEHOLDER_PATTERN.findall(text) if m.strip()}
-
-
-def brace_check(text: str, where: str, report: Report) -> None:
-    """花括号平衡检查：左/右数量相等且无空 {}。"""
-    if "{}" in text:
-        report.add_error(f"{where}: 出现空占位符 {{}}")
-    if text.count("{") != text.count("}"):
-        report.add_error(f"{where}: 花括号不平衡（{text!r}）")
-
-
-def validate_template_pool(data: object, report: Report, vocabulary: set[str]) -> None:
-    """template_pool.json：数量区间 / 必填字段 / id 唯一 / 占位符闭合与词表。"""
+# ---------------------------------------------------------------------------
+# template_pool.json
+# ---------------------------------------------------------------------------
+def validate_template_pool(
+    data: object, report: Report, vocabulary: set[str], banned: set[str]
+) -> None:
+    """template_pool.json：总量 30–50 / 三层分布建议 / 必填字段 / variants≥2 / 占位符闭合 / 敏感词。"""
     if not isinstance(data, dict):
         report.add_error("template_pool.json 顶层必须是对象")
         return
-    if data.get("schema_version") != "1.0.0":
-        report.add_error(f"template_pool.json schema_version={data.get('schema_version')!r}，须为 1.0.0")
+    if data.get("schema_version") != "1.0":
+        report.add_error(f"template_pool.json schema_version={data.get('schema_version')!r}，须为 1.0")
+    if not str(data.get("updated_at", "")).strip():
+        report.add_error("template_pool.json 缺 updated_at（YYYY-MM-DD）")
 
     pool = data.get("pool")
     if not isinstance(pool, list):
@@ -234,72 +320,66 @@ def validate_template_pool(data: object, report: Report, vocabulary: set[str]) -
         return
     lo, hi = NOTIFY_TRUTH["template_pool_count_min"], NOTIFY_TRUTH["template_pool_count_max"]
     if not (lo <= len(pool) <= hi):
-        report.add_error(f"模板骨架池数量须在 [{lo},{hi}]，实际={len(pool)}")
-    report.add_info(f"template_pool 条数: {len(pool)}（区间 [{lo},{hi}]）")
+        report.add_error(f"模板骨架池总量须在 [{lo},{hi}]，实际={len(pool)}")
+    report.add_info(f"template_pool 总量: {len(pool)}（区间 [{lo},{hi}]）")
 
+    dist: dict[str, int] = {"echo": 0, "ask": 0, "companion": 0}
     seen_ids: set[str] = set()
     for idx, entry in enumerate(pool):
         where = f"pool[{idx}]"
         if not isinstance(entry, dict):
             report.add_error(f"{where}: 条目须为对象")
             continue
-        for field in ("id", "domain", "scenario", "intent", "skeleton", "applicable_condition"):
+        scene = entry.get("scene")
+        if scene not in VALID_POOL_SCENES:
+            report.add_error(f"{where}: scene={scene!r}，须 ∈ {sorted(VALID_POOL_SCENES)}")
+        else:
+            dist[scene] += 1
+        for field in ("intent", "template", "variants"):
             if field not in entry:
                 report.add_error(f"{where}: 缺必填字段 {field}")
-        eid = str(entry.get("id", ""))
-        if not re.fullmatch(r"[a-z0-9_]+", eid):
-            report.add_error(f"{where}: id={eid!r} 须匹配 ^[a-z0-9_]+$")
-        if eid in seen_ids:
-            report.add_error(f"{where}: id 重复 {eid}")
-        seen_ids.add(eid)
-        if entry.get("domain") not in ("echo", "followup"):
-            report.add_error(f"{where}: domain={entry.get('domain')!r}，须为 echo/followup")
-
-        skeleton = str(entry.get("skeleton", ""))
-        variants = entry.get("variants") or []
-        if not isinstance(variants, list):
-            report.add_error(f"{where}: variants 须为数组")
+        if not str(entry.get("intent", "")).strip():
+            report.add_error(f"{where}: intent 须非空字符串")
+        if not str(entry.get("template", "")).strip():
+            report.add_error(f"{where}: template 须非空字符串")
+        variants = entry.get("variants")
+        if not isinstance(variants, list) or len(variants) < 2:
+            report.add_error(f"{where}: variants 须 ≥2 条")
             variants = []
-        texts = [skeleton] + [str(v) for v in variants]
-        for t in texts:
-            brace_check(t, where, report)
+        for text in [str(entry.get("template", ""))] + [str(x) for x in variants]:
+            brace_check(text, where, report)
+        used = extract_placeholders(str(entry.get("template", "")))
+        for x in variants if isinstance(variants, list) else []:
+            used |= extract_placeholders(str(x))
+        vocab_check(used, vocabulary, where, report)
+        pool_texts = [str(entry.get("template", ""))]
+        if isinstance(variants, list):
+            pool_texts += [str(x) for x in variants]
+        sensitive_scan(pool_texts, banned, where, report)
+        eid = str(entry.get("id", ""))
+        if eid and (not re.fullmatch(r"[a-z0-9_]+", eid) or eid in seen_ids):
+            report.add_error(f"{where}: id={eid!r} 非法或重复")
+        seen_ids.add(eid)
 
-        used = set()
-        for t in texts:
-            used |= extract_placeholders(t)
-        declared = set(entry.get("placeholders") or []) if isinstance(entry.get("placeholders"), list) else set()
-        if "placeholders" not in entry:
-            report.add_warning(f"{where}: 建议显式声明 placeholders 字段（现按实际使用推导）")
-        if used != declared:
-            report.add_error(
-                f"{where}: 占位符闭合失败——声明={sorted(declared)}，实际使用={sorted(used)}"
+    for scene, (dlo, dhi) in NOTIFY_TRUTH["pool_distribution"].items():
+        n = dist.get(scene, 0)
+        if not (dlo <= n <= dhi):
+            report.add_warning(
+                f"template_pool 分层分布: {scene}={n}，建议区间 [{dlo},{dhi}] 外（建议值，不阻断）"
             )
-        unknown = used - vocabulary
-        if unknown:
-            report.add_error(f"{where}: 使用词表外占位符 {sorted(unknown)}（词表={sorted(vocabulary)}）")
+    report.add_info(
+        f"template_pool 分层分布: echo={dist['echo']} / ask={dist['ask']} / "
+        f"companion={dist['companion']}（建议 echo12-18/ask10-16/companion8-16）"
+    )
 
 
-def validate_schema_json(schema: object, report: Report) -> None:
-    """schema.json 基本结构与 draft-07 合法性（jsonschema 可用时）。"""
-    if not isinstance(schema, dict):
-        report.add_error("schema.json 顶层必须是对象")
-        return
-    for field in ("title", "version", "definitions", "x-contract"):
-        if field not in schema:
-            report.add_error(f"schema.json 缺顶层字段 {field}")
-    if "definitions" in schema:
-        for name in ("candidate", "care_scenario", "care_copy_file", "template_entry", "template_pool_file"):
-            if name not in schema["definitions"]:
-                report.add_error(f"schema.json definitions 缺 {name}")
-    try:
-        import jsonschema  # noqa: PLC0415
-
-        jsonschema.Draft7Validator.check_schema(schema)
-        report.add_info("schema.json: jsonschema Draft7 校验通过（check_schema）")
-    except ImportError:
-        report.add_info("jsonschema 库不可用，跳过 draft-07 语法校验（结构校验仍执行）")
-    except Exception as exc:  # noqa: BLE001
-        report.add_error(f"schema.json draft-07 语法不合法: {exc}")
+def _banned_from_care(data: object) -> set[str]:
+    """从 care_copy.json 读取『禁止主动提及』词表（供 template_pool 敏感词预检复用）。"""
+    if isinstance(data, dict):
+        tone = data.get("tone_policy")
+        if isinstance(tone, dict):
+            return set(tone.get("禁止主动提及", []))
+    return set()
 
 
 def main() -> int:
@@ -314,26 +394,29 @@ def main() -> int:
     care = load_json(CARE_COPY_FILE, report)
     pool = load_json(TEMPLATE_POOL_FILE, report)
 
+    vocabulary: set[str] = set()
     if schema is not None:
         validate_schema_json(schema, report)
         check_contract_alignment(schema, report)
+        contract = schema.get("x-contract") if isinstance(schema, dict) else {}
+        vocabulary = set((contract.get("placeholders") or {}).get("vocabulary", {}).keys())
+    else:
+        report.add_warning("schema.json 缺失，占位符词表校验降级为空词表")
 
     if care is not None:
-        validate_care_copy(care, report)
+        validate_care_copy(care, report, vocabulary)
 
-    if pool is not None and schema is not None:
-        contract = schema.get("x-contract") if isinstance(schema, dict) else {}
-        vocab = set((contract.get("placeholders") or {}).get("vocabulary", {}).keys())
-        validate_template_pool(pool, report, vocab)
-    elif pool is not None:
-        report.add_warning("schema.json 缺失，无法做占位符词表校验（仅做结构/数量检查）")
-        validate_template_pool(pool, report, vocabulary=set())
+    if pool is not None:
+        banned = _banned_from_care(care) if care is not None else set()
+        validate_template_pool(pool, report, vocabulary, banned)
 
     # ---- 渲染报告 ----
     lines: list[str] = ["# 文案库校验报告（validate_copy_library）"]
     lines.append("")
     lines.append(f"- 时间: {datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')}")
-    lines.append(f"- 校验对象: {SCHEMA_FILE.name} / {CARE_COPY_FILE.name} / {TEMPLATE_POOL_FILE.name}")
+    lines.append(
+        f"- 校验对象: {SCHEMA_FILE.name} / {CARE_COPY_FILE.name} / {TEMPLATE_POOL_FILE.name}"
+    )
     lines.append(f"- 结果: {'✅ 全绿（PASSED）' if report.ok else '❌ 存在阻断项（BLOCKED）'}")
     lines.append(f"- 阻断 errors: {len(report.errors)} / 警告 warnings: {len(report.warnings)}")
     lines.append("")
