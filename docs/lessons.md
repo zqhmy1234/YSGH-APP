@@ -64,6 +64,21 @@
 - **修复**：统一先 python -m ruff check 再提交；datetime 用 timezone.utc；CSV 列抽成常量
 - **相关文件**：scripts/loadtest/loadtest.py, scripts/loadtest/seed_data.py
 - **教训**：写新脚本前先本地 ruff 清零，时区一律显式
+### 2026-08-27 20:14 · commit abbdc6d · ts=1787832851
+- **错误**：full gate lint E902 os error 123 on archived py under non-ASCII backups dir
+- **根因**：git core.quotePath default true escapes non-ASCII paths with literal double quotes when output via git ls-files; review_agent feeds raw git output to ruff, making the path invalid on Windows
+- **修复**：set repo-level git config core.quotePath false; keep archived py under non-ASCII dir
+- **相关文件**：backups/20260827_残留归档/*.py + review_agent.py git output consumer
+- **教训**：before archiving py to a non-ASCII dir, confirm downstream tools tolerate git path quoting; set core.quotePath=false when git path output is machine-consumed
+
+---
+
+### 2026-08-27 19:51 · commit 7565429 · ts=1787831517
+- **错误**：pre-commit 门禁 lint 阻断：ruff F821 Undefined name 'queries'（f-string 内 {queries:[]} 被当作变量引用）
+- **根因**：在 f-string 里想展示字面量 {queries:[]}，未转义大括号，ruff 把 queries 解析为未定义变量
+- **修复**：用 {{queries:[]}} 双写大括号转义字面量
+- **相关文件**：scripts/eval_negative_samples.py
+- **教训**：f-string 内含字典样字面量时大括号必须双写转义，否则 ruff F821 误判未定义名
 
 ---
 
