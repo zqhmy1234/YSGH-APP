@@ -7,16 +7,18 @@
  *
  * retryAsync 契约：
  *  - fn: 单次尝试 → Promise<T | null>（null = 需退避重试的可重试失败；非 null = 已定局）
- *  - isFatal(result, attempt): 该次失败是否不可重试（4xx/参数/归属错误 → true 立即终止）
- *  - onFail(result, attempt): 每次失败回调（返回 true 可提前中断剩余重试，如"已暂停"）
+ *  - isFatal(result, attempt)（可选）: 该次失败是否不可重试（4xx/参数/归属错误 → true 立即终止）
+ *  - onFail(result, attempt)（可选）: 每次失败回调（返回 true 可提前中断剩余重试，如"已暂停"）
  * 返回最后一次 result（成功值或最终失败值；null 表示退避耗尽仍失败）。
+ * O18：isFatal/onFail 可选（缺省=恒 false 空实现）——无 4xx 停条/暂停中断语义的调用方
+ * （event_sync 事件上云 / event_ops 离线补发）不再传死参 `() => false`。
  */
 export const BACKOFF_MS: number[] = [2000, 4000, 8000, 8000, 8000]
 
 export function retryAsync<T>(
 	fn: () => Promise<T | null>,
-	isFatal: (result: T | null, attempt: number) => boolean,
-	onFail: (result: T | null, attempt: number) => boolean
+	isFatal?: (result: T | null, attempt: number) => boolean,
+	onFail?: (result: T | null, attempt: number) => boolean
 ): Promise<T | null> {
 	return new Promise<T | null>((resolve) => {
 		function loop(attempt: number): void {
@@ -25,8 +27,10 @@ export function retryAsync<T>(
 					resolve(result)
 					return
 				}
-				const stop = onFail(result, attempt)
-				if (stop || isFatal(result, attempt) || attempt >= BACKOFF_MS.length) {
+				// 可选回调：未传视为恒 false（不终止不中断）
+				const stop = onFail != null ? onFail(result, attempt) : false
+				const fatal = isFatal != null ? isFatal(result, attempt) : false
+				if (stop || fatal || attempt >= BACKOFF_MS.length) {
 					resolve(result)
 					return
 				}
