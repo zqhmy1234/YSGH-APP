@@ -98,6 +98,9 @@ research/**/screenshots/
 *.tmp
 *.temp
 *~
+*.bak
+*.bak.json
+*.merge_bak
 
 # --- 归档与本地 CLI 关联（2026-08-21 安全加固：含 workspaceId，不入库）---
 backups/
@@ -120,3 +123,14 @@ R.txt
 classes.jar
 annotations.zip
 aidl/
+# Android 解包产物（2026-08-27 收口补齐：res/ drawable* layout* values* META-INF ProGuard/资源索引）
+res/
+drawable/
+drawable-*/
+layout/
+layout-*/
+values/
+values-*/
+META-INF/
+proguard.txt
+public.txt
