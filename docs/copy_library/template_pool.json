@@ -1,0 +1,458 @@
+{
+  "schema_version": "1.0.0",
+  "doc": "追问/回响模板骨架池（30–50 条，本文件 40 条）。回响（echo）沿用现有回响场景（去年今日，按内容类型 photo/text/voice × 时段分层）；追问（followup）按情绪/时段/频次递减分层（对齐 notify.py 触发语义）。骨架模板含占位符（词表见 schema.json x-contract.placeholders），供生成侧拼装；care_copy.json 为直发原文，本池为骨架层，二者用途不同。产品部替换文案：改本文件 skeleton/variants 或 care_copy.json candidates 均可，触发逻辑不动。",
+  "pool": [
+    {
+      "id": "echo_photo_morning",
+      "domain": "echo",
+      "scenario": "回响·照片（清晨）",
+      "intent": "引导用户回看去年今日的照片（清晨时段，轻快开场）",
+      "dimensions": { "emotion": null, "scenario": "echo_photo", "period": "morning" },
+      "skeleton": "早啊。去年的今天，你也拍了这样的照片。{snippet}",
+      "placeholders": ["snippet"],
+      "variants": [
+        "去年今日的清晨，你拍下了这张照片：{snippet}",
+        "看看去年的今天——清晨的光影还在吗？{snippet}"
+      ],
+      "applicable_condition": "echo.content_type==photo 且展示时段为清晨(morning)"
+    },
+    {
+      "id": "echo_photo_afternoon",
+      "domain": "echo",
+      "scenario": "回响·照片（白天）",
+      "intent": "引导用户回看去年今日的照片（白天时段）",
+      "dimensions": { "emotion": null, "scenario": "echo_photo", "period": "afternoon" },
+      "skeleton": "午后的光，去年今天也这样落下来。{snippet}",
+      "placeholders": ["snippet"],
+      "variants": [
+        "去年今天的这个时候，你在拍这个：{snippet}",
+        "还记得去年今天的午后吗？{snippet}"
+      ],
+      "applicable_condition": "echo.content_type==photo 且展示时段为白天(afternoon)"
+    },
+    {
+      "id": "echo_photo_evening",
+      "domain": "echo",
+      "scenario": "回响·照片（傍晚）",
+      "intent": "引导用户回看去年今日的照片（傍晚时段）",
+      "dimensions": { "emotion": null, "scenario": "echo_photo", "period": "evening" },
+      "skeleton": "傍晚时分，翻到去年今天的照片。{snippet}",
+      "placeholders": ["snippet"],
+      "variants": [
+        "去年今日的傍晚，你留下了这张：{snippet}",
+        "天快黑了，看看去年今天的你：{snippet}"
+      ],
+      "applicable_condition": "echo.content_type==photo 且展示时段为傍晚(evening)"
+    },
+    {
+      "id": "echo_photo_place",
+      "domain": "echo",
+      "scenario": "回响·照片（有地点）",
+      "intent": "照片回响带地点时唤起地点记忆",
+      "dimensions": { "emotion": null, "scenario": "echo_photo", "period": "any" },
+      "skeleton": "去年的今天，你在{place}拍下了这一张。{snippet}",
+      "placeholders": ["place", "snippet"],
+      "variants": ["{place}的这一天，你按下快门：{snippet}"],
+      "applicable_condition": "echo.content_type==photo 且 echo.place 非空"
+    },
+    {
+      "id": "echo_photo_noplace",
+      "domain": "echo",
+      "scenario": "回响·照片（无地点）",
+      "intent": "照片回响无地点时的通用呈现",
+      "dimensions": { "emotion": null, "scenario": "echo_photo", "period": "any" },
+      "skeleton": "去年今日，你拍下了这张照片。{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["翻翻旧照片，去年今天有这样的瞬间：{snippet}"],
+      "applicable_condition": "echo.content_type==photo 且 echo.place 为空"
+    },
+    {
+      "id": "echo_text_morning",
+      "domain": "echo",
+      "scenario": "回响·文字（清晨）",
+      "intent": "清晨回响文字内容，安静引入",
+      "dimensions": { "emotion": null, "scenario": "echo_text", "period": "morning" },
+      "skeleton": "早啊。去年今天的你，写下了这段话：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["清晨读一读去年今天写的字：{snippet}"],
+      "applicable_condition": "echo.content_type==text 且展示时段为清晨(morning)"
+    },
+    {
+      "id": "echo_text_afternoon",
+      "domain": "echo",
+      "scenario": "回响·文字（白天）",
+      "intent": "白天回响文字内容",
+      "dimensions": { "emotion": null, "scenario": "echo_text", "period": "afternoon" },
+      "skeleton": "去年今天的午后，你记下了这些：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["午后翻到去年今天的记录：{snippet}"],
+      "applicable_condition": "echo.content_type==text 且展示时段为白天(afternoon)"
+    },
+    {
+      "id": "echo_text_evening",
+      "domain": "echo",
+      "scenario": "回响·文字（傍晚）",
+      "intent": "傍晚回响文字内容",
+      "dimensions": { "emotion": null, "scenario": "echo_text", "period": "evening" },
+      "skeleton": "傍晚了，读到去年今天你写的话：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["去年今日的傍晚，你写下了：{snippet}"],
+      "applicable_condition": "echo.content_type==text 且展示时段为傍晚(evening)"
+    },
+    {
+      "id": "echo_text_place",
+      "domain": "echo",
+      "scenario": "回响·文字（有地点）",
+      "intent": "文字回响带地点时关联地点",
+      "dimensions": { "emotion": null, "scenario": "echo_text", "period": "any" },
+      "skeleton": "去年的今天，你在{place}写下：{snippet}",
+      "placeholders": ["place", "snippet"],
+      "variants": ["{place}的回忆，去年今天你记了一笔：{snippet}"],
+      "applicable_condition": "echo.content_type==text 且 echo.place 非空"
+    },
+    {
+      "id": "echo_text_noplace",
+      "domain": "echo",
+      "scenario": "回响·文字（无地点）",
+      "intent": "文字回响无地点时的通用呈现",
+      "dimensions": { "emotion": null, "scenario": "echo_text", "period": "any" },
+      "skeleton": "去年今天，你留下了一段文字：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["文字里的去年今日：{snippet}"],
+      "applicable_condition": "echo.content_type==text 且 echo.place 为空"
+    },
+    {
+      "id": "echo_voice_morning",
+      "domain": "echo",
+      "scenario": "回响·语音（清晨）",
+      "intent": "清晨回响语音内容",
+      "dimensions": { "emotion": null, "scenario": "echo_voice", "period": "morning" },
+      "skeleton": "早啊。去年今天的你，留下了一段声音。{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["清晨听听去年今天的声音：{snippet}"],
+      "applicable_condition": "echo.content_type==voice 且展示时段为清晨(morning)"
+    },
+    {
+      "id": "echo_voice_afternoon",
+      "domain": "echo",
+      "scenario": "回响·语音（白天）",
+      "intent": "白天回响语音内容",
+      "dimensions": { "emotion": null, "scenario": "echo_voice", "period": "afternoon" },
+      "skeleton": "去年今天午后，你录了一段话：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["午后回听去年今日：{snippet}"],
+      "applicable_condition": "echo.content_type==voice 且展示时段为白天(afternoon)"
+    },
+    {
+      "id": "echo_voice_evening",
+      "domain": "echo",
+      "scenario": "回响·语音（傍晚）",
+      "intent": "傍晚回响语音内容",
+      "dimensions": { "emotion": null, "scenario": "echo_voice", "period": "evening" },
+      "skeleton": "傍晚了，去年今天的你说了这些：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["去年今日傍晚的语音，还在：{snippet}"],
+      "applicable_condition": "echo.content_type==voice 且展示时段为傍晚(evening)"
+    },
+    {
+      "id": "echo_voice_place",
+      "domain": "echo",
+      "scenario": "回响·语音（有地点）",
+      "intent": "语音回响带地点时关联地点",
+      "dimensions": { "emotion": null, "scenario": "echo_voice", "period": "any" },
+      "skeleton": "去年的今天，你在{place}录下了一段话。{snippet}",
+      "placeholders": ["place", "snippet"],
+      "variants": ["{place}那天的声音，记得吗？{snippet}"],
+      "applicable_condition": "echo.content_type==voice 且 echo.place 非空"
+    },
+    {
+      "id": "echo_generic_open",
+      "domain": "echo",
+      "scenario": "回响·通用开场（时段未知）",
+      "intent": "回响信息不足时的通用开场",
+      "dimensions": { "emotion": null, "scenario": "echo_generic", "period": "any" },
+      "skeleton": "翻到去年今日：{snippet}",
+      "placeholders": ["snippet"],
+      "variants": [
+        "去年今天的这一刻，被你记了下来：{snippet}",
+        "时间回到去年的今天：{snippet}"
+      ],
+      "applicable_condition": "echo 命中 且时段/地点信息不足，走通用开场"
+    },
+    {
+      "id": "echo_generic_notext",
+      "domain": "echo",
+      "scenario": "回响·内容无文本",
+      "intent": "内容只有类型没有文本时的呈现（不伪造内容）",
+      "dimensions": { "emotion": null, "scenario": "echo_generic", "period": "any" },
+      "skeleton": "去年今天，有一条{content_type}还在这里。",
+      "placeholders": ["content_type"],
+      "variants": ["去年今日的{content_type}，是那天的见证。"],
+      "applicable_condition": "echo 命中 且 text 为空/过短，仅以类型呈现"
+    },
+    {
+      "id": "echo_dismiss_hint",
+      "domain": "echo",
+      "scenario": "回响·划掉后轻提示",
+      "intent": "用户划掉回响后给轻量反馈，不追问",
+      "dimensions": { "emotion": null, "scenario": "echo_dismiss", "period": "any" },
+      "skeleton": "好，这条就不再看啦。明天见。",
+      "placeholders": [],
+      "variants": ["划掉了。想看的记忆，我随时给你翻。"],
+      "applicable_condition": "echo dismiss 交互完成后的提示位"
+    },
+    {
+      "id": "echo_empty_gentle",
+      "domain": "echo",
+      "scenario": "回响·无内容时不打扰（护栏文案）",
+      "intent": "去年今日无内容时生成侧护栏：不打扰用户，不作为消息发送",
+      "dimensions": { "emotion": null, "scenario": "echo_empty", "period": "any" },
+      "skeleton": "今天没有找到去年的同一天。不打扰，继续好好过今天。",
+      "placeholders": [],
+      "variants": [],
+      "applicable_condition": "echo 无命中（仅生成侧护栏参考，不发送）"
+    },
+    {
+      "id": "echo_photo_voice_together",
+      "domain": "echo",
+      "scenario": "回响·同日照片+语音",
+      "intent": "同一天多种内容时合并呈现",
+      "dimensions": { "emotion": null, "scenario": "echo_generic", "period": "any" },
+      "skeleton": "去年的今天，有照片也有声音。{snippet}",
+      "placeholders": ["snippet"],
+      "variants": ["照片和语音，拼成去年今天的一天：{snippet}"],
+      "applicable_condition": "echo 同日命中多类型内容（photo+voice 等）"
+    },
+    {
+      "id": "echo_name_greeting",
+      "domain": "echo",
+      "scenario": "回响·带称呼版本",
+      "intent": "已掌握用户称呼时更贴近的问候",
+      "dimensions": { "emotion": null, "scenario": "echo_generic", "period": "any" },
+      "skeleton": "{name}，去年的今天，你还记得吗？{snippet}",
+      "placeholders": ["name", "snippet"],
+      "variants": ["{name}，翻到了去年今日：{snippet}"],
+      "applicable_condition": "画像有用户称呼且允许称呼（name 未知则省略整段）"
+    },
+    {
+      "id": "followup_sad_ask_day1",
+      "domain": "followup",
+      "scenario": "追问·难过第 1 天",
+      "intent": "SAD 未说明原因时温和追问（第 1 天）",
+      "dimensions": { "emotion": "难过", "scenario": "followup_sad", "period": "any" },
+      "skeleton": "感觉你今天有点心事。愿意的话，跟我说说今天怎么啦？我在听。",
+      "placeholders": [],
+      "variants": ["今天好像和平时不太一样。要是想聊聊，我随时都在。"],
+      "applicable_condition": "emotion==难过 且 未说明原因 且 非深夜 且 近3天 streak==0"
+    },
+    {
+      "id": "followup_sad_ask_gentle",
+      "domain": "followup",
+      "scenario": "追问·极温和版",
+      "intent": "更轻的追问邀请，给足退路",
+      "dimensions": { "emotion": "难过", "scenario": "followup_sad", "period": "any" },
+      "skeleton": "今天是不是有点累？想说的话，随时找我。",
+      "placeholders": [],
+      "variants": ["不用急着说，我在就好。"],
+      "applicable_condition": "emotion==难过 且 未说明原因 且 用户情绪敏感度较高时优先"
+    },
+    {
+      "id": "followup_sad_ask_open",
+      "domain": "followup",
+      "scenario": "追问·开放式",
+      "intent": "开放式邀请，不强指向具体原因",
+      "dimensions": { "emotion": "难过", "scenario": "followup_sad", "period": "any" },
+      "skeleton": "今天有什么想跟我说的吗？随便聊聊也行。",
+      "placeholders": [],
+      "variants": ["我在，想聊什么都可以。"],
+      "applicable_condition": "emotion==难过 且 未说明原因，用户习惯开放式表达"
+    },
+    {
+      "id": "followup_sad_respond",
+      "domain": "followup",
+      "scenario": "回应·已说明原因",
+      "intent": "SAD 已说明原因时回应『辛苦了』，不再追问",
+      "dimensions": { "emotion": "难过", "scenario": "followup_sad", "period": "any" },
+      "skeleton": "听到你说的这些，真的辛苦了。你已经做得很好了。",
+      "placeholders": [],
+      "variants": ["辛苦了，说出来不容易。"],
+      "applicable_condition": "emotion==难过 且 已说明原因（_SAD_REASON_MARKERS 命中）"
+    },
+    {
+      "id": "followup_sad_respond_validate",
+      "domain": "followup",
+      "scenario": "回应·肯定情绪价值",
+      "intent": "肯定用户表达情绪的勇气",
+      "dimensions": { "emotion": "难过", "scenario": "followup_sad", "period": "any" },
+      "skeleton": "愿意把这些说出来，本身就很难得。我陪你。",
+      "placeholders": [],
+      "variants": ["你愿意说，我就愿意听。"],
+      "applicable_condition": "emotion==难过 且 已说明原因，重点做情绪认可"
+    },
+    {
+      "id": "followup_sad_respond_open",
+      "domain": "followup",
+      "scenario": "回应·陪伴+开放",
+      "intent": "回应后留开放出口，尊重用户继续或沉默",
+      "dimensions": { "emotion": "难过", "scenario": "followup_sad", "period": "any" },
+      "skeleton": "辛苦了。还想继续说，我都在；不想说，我们就安静待会儿。",
+      "placeholders": [],
+      "variants": ["说出来的都是勇气。我在。"],
+      "applicable_condition": "emotion==难过 且 已说明原因，用户可能不想深聊"
+    },
+    {
+      "id": "followup_angry_accompany",
+      "domain": "followup",
+      "scenario": "陪伴·生气不追问",
+      "intent": "ANGRY 提供陪伴出口，不追问原因",
+      "dimensions": { "emotion": "生气", "scenario": "followup_angry", "period": "any" },
+      "skeleton": "听起来今天有点气。不急着说，想聊的时候随时找我。",
+      "placeholders": [],
+      "variants": ["气的时候先缓缓，我在。"],
+      "applicable_condition": "emotion==生气（愤怒时追问是火上浇油，只陪伴）"
+    },
+    {
+      "id": "followup_angry_vent",
+      "domain": "followup",
+      "scenario": "陪伴·邀吐槽（被动开放）",
+      "intent": "提供被动吐槽出口，由用户主导",
+      "dimensions": { "emotion": "生气", "scenario": "followup_angry", "period": "any" },
+      "skeleton": "气消了想吐槽，我听着。",
+      "placeholders": [],
+      "variants": ["想骂就骂两句，骂完舒服点。"],
+      "applicable_condition": "emotion==生气，用户愿意宣泄时启用被动出口"
+    },
+    {
+      "id": "followup_angry_space",
+      "domain": "followup",
+      "scenario": "陪伴·给空间",
+      "intent": "明确不施压，给足空间",
+      "dimensions": { "emotion": "生气", "scenario": "followup_angry", "period": "any" },
+      "skeleton": "我在这儿，等你气顺了再说。",
+      "placeholders": [],
+      "variants": ["不需要马上好起来，我在。"],
+      "applicable_condition": "emotion==生气，用户情绪高张时优先给空间"
+    },
+    {
+      "id": "followup_late_night_light",
+      "domain": "followup",
+      "scenario": "深夜·轻量",
+      "intent": "深夜时段轻量表达，不催回复",
+      "dimensions": { "emotion": "难过", "scenario": "followup_late_night", "period": "late_night" },
+      "skeleton": "如果还醒着，我随时在。别一个人扛着。",
+      "placeholders": [],
+      "variants": ["这么晚还没睡，我在。"],
+      "applicable_condition": "emotion==难过 且 当前本地时间 ∈ [22:00, 05:00)"
+    },
+    {
+      "id": "followup_late_night_insomnia",
+      "domain": "followup",
+      "scenario": "深夜·睡不着",
+      "intent": "深夜失眠时的安抚陪伴",
+      "dimensions": { "emotion": "难过", "scenario": "followup_late_night", "period": "late_night" },
+      "skeleton": "睡不着的话，我陪你待一会儿。",
+      "placeholders": [],
+      "variants": ["夜很深，但你不必一个人醒着。"],
+      "applicable_condition": "深夜时段 且 情绪负面，倾向安抚而非追问"
+    },
+    {
+      "id": "followup_late_night_nopressure",
+      "domain": "followup",
+      "scenario": "深夜·不催回复",
+      "intent": "明确不期待回复，卸下压力",
+      "dimensions": { "emotion": "难过", "scenario": "followup_late_night", "period": "late_night" },
+      "skeleton": "不急着答，我在就好。",
+      "placeholders": [],
+      "variants": ["不用回我，知道我在就行。"],
+      "applicable_condition": "深夜时段 且 用户无回复动作倾向"
+    },
+    {
+      "id": "followup_day2_check",
+      "domain": "followup",
+      "scenario": "追问·第 2 天（好些了吗）",
+      "intent": "频次递减第 2 天问候，程度递减",
+      "dimensions": { "emotion": "难过", "scenario": "followup_day2", "period": "any" },
+      "skeleton": "今天感觉好些了吗？还记得我，一直都在。",
+      "placeholders": [],
+      "variants": ["第二天了，问问你好点没。"],
+      "applicable_condition": "emotion==难过 且 非深夜 且 近3天 streak==1（第 2 天）"
+    },
+    {
+      "id": "followup_day2_open",
+      "domain": "followup",
+      "scenario": "追问·第 2 天（开放问询）",
+      "intent": "第 2 天开放式问询，不重复第 1 天追问",
+      "dimensions": { "emotion": "难过", "scenario": "followup_day2", "period": "any" },
+      "skeleton": "今天状态怎么样？想聊随时找我。",
+      "placeholders": [],
+      "variants": ["今天和昨天比，好一些了吗？"],
+      "applicable_condition": "emotion==难过 且 近3天 streak==1，用户偏好开放问法"
+    },
+    {
+      "id": "followup_day3_accompany",
+      "domain": "followup",
+      "scenario": "追问·第 3 天起（只陪伴）",
+      "intent": "连续多日负面时只陪伴不追问",
+      "dimensions": { "emotion": "难过", "scenario": "followup_day3", "period": "any" },
+      "skeleton": "这几天都有点低落吧。不用说什么，我就在这儿陪你。",
+      "placeholders": [],
+      "variants": ["这几天辛苦了。我安安静静陪着。"],
+      "applicable_condition": "emotion==难过 且 非深夜 且 近3天 streak>=2（第 3 天起）"
+    },
+    {
+      "id": "followup_day3_silent",
+      "domain": "followup",
+      "scenario": "追问·第 3 天起（安静陪伴）",
+      "intent": "最深度的递减：完全安静在场",
+      "dimensions": { "emotion": "难过", "scenario": "followup_day3", "period": "any" },
+      "skeleton": "你什么都不用说，我在。",
+      "placeholders": [],
+      "variants": ["低落不是你的错。需要的时候喊我。"],
+      "applicable_condition": "emotion==难过 且 近3天 streak>=2，连续低落高敏感场景"
+    },
+    {
+      "id": "followup_other_negative_default",
+      "domain": "followup",
+      "scenario": "其他负面·默认陪伴出口",
+      "intent": "恐惧/厌恶/惊讶等负面情绪的默认陪伴出口",
+      "dimensions": { "emotion": "其他", "scenario": "followup_other", "period": "any" },
+      "skeleton": "听起来今天不太容易。我在，陪着你。",
+      "placeholders": [],
+      "variants": ["不需要讲原因，我在就好。"],
+      "applicable_condition": "emotion∈{恐惧,厌恶,惊讶} 或 其他负面且非平静，默认陪伴出口"
+    },
+    {
+      "id": "followup_fear",
+      "domain": "followup",
+      "scenario": "恐惧·陪伴出口",
+      "intent": "恐惧情绪先安抚再陪伴",
+      "dimensions": { "emotion": "恐惧", "scenario": "followup_other", "period": "any" },
+      "skeleton": "吓到了吧？先深呼吸，我在。",
+      "placeholders": [],
+      "variants": ["别怕，我陪着你。"],
+      "applicable_condition": "emotion==恐惧 且 confidence>=0.7"
+    },
+    {
+      "id": "followup_disgust",
+      "domain": "followup",
+      "scenario": "厌恶·陪伴出口",
+      "intent": "厌恶情绪给空间，不评判",
+      "dimensions": { "emotion": "厌恶", "scenario": "followup_other", "period": "any" },
+      "skeleton": "今天好像被什么恶心到了。我在，陪你缓缓。",
+      "placeholders": [],
+      "variants": ["有些事就是很难受。我在。"],
+      "applicable_condition": "emotion==厌恶 且 confidence>=0.7"
+    },
+    {
+      "id": "followup_surprise_stabilize",
+      "domain": "followup",
+      "scenario": "惊讶·高置信稳定",
+      "intent": "高置信惊讶先稳定情绪再陪伴",
+      "dimensions": { "emotion": "惊讶", "scenario": "followup_other", "period": "any" },
+      "skeleton": "今天好像发生了不小的事。深呼吸，我在。",
+      "placeholders": [],
+      "variants": ["先缓一缓，我在。"],
+      "applicable_condition": "emotion==惊讶 且 confidence>=0.7，先稳定后陪伴"
+    }
+  ]
+}
