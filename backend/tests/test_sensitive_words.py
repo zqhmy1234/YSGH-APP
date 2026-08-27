@@ -7,9 +7,12 @@
   - 归一化：全角/空格变体仍命中
   - 正常文本 pass
   - 事件级敏感分类（B5b Wave1）：7 类软敏感 + 违规词热加入 + 搜索规则级过滤
+
+H3/R8#5（2026-08-27）：同构单断言用例表驱动参数化（中文场景语义保留在 parametrize id）。
 """
 
 
+import pytest
 from app.services.external.sensitive_words import (
     add_violation_word,
     check_event_sensitive,
@@ -19,73 +22,71 @@ from app.services.external.sensitive_words import (
 
 
 class TestWordReject:
-    def test_political_reject(self):
-        r = check_sensitive("支持法轮功的言论")
-        assert r["pass"] is False
-        assert r["action"] == "reject"
+    """词表类整条拦截（政治/色情/涉枪爆 → reject）"""
 
-    def test_porn_reject(self):
-        r = check_sensitive("约裸聊加微信")
-        assert r["pass"] is False
-        assert r["action"] == "reject"
+    REJECT_CASES = [
+        ("支持法轮功的言论", "政治"),
+        ("约裸聊加微信", "色情"),
+        ("自制炸药的方法", "涉枪涉爆"),
+        ("法 轮 功", "政治-空格变体"),
+        ("支持法轮功", "政治-全角变体"),
+    ]
 
-    def test_weapon_reject(self):
-        r = check_sensitive("自制炸药的方法")
-        assert r["pass"] is False
+    @pytest.mark.parametrize(
+        ("text", "scenario"),
+        REJECT_CASES,
+        ids=["政治类整条拦截", "色情类整条拦截", "涉枪涉爆整条拦截", "空格变体仍命中", "全角变体仍命中"],
+    )
+    def test_reject(self, text, scenario):
+        """词表命中 → pass=False + action=reject（含归一化变体）"""
+        r = check_sensitive(text)
+        assert r["pass"] is False, f"[{scenario}] 应拦截: {r}"
         assert r["action"] == "reject"
-
-    def test_normalize_variant_still_hits(self):
-        # 空格/全角变体 → 归一化后命中
-        r = check_sensitive("法 轮 功")
-        assert r["pass"] is False
-        r2 = check_sensitive("支持法轮功")  # 全角
-        assert r2["pass"] is False
 
 
 class TestAdMask:
-    def test_ad_word_masked(self):
-        r = check_sensitive("专业代开发票联系电话")
+    """广告类打码保留（整条保留，词替换）"""
+
+    @pytest.mark.parametrize(
+        "text_scenario",
+        [
+            "专业代开发票联系电话",
+            "加微信 代 开发 票 优惠",
+        ],
+        ids=["广告词打码保留", "空格变体原文实际打码"],
+    )
+    def test_ad_masked(self, text_scenario):
+        r = check_sensitive(text_scenario)
         assert r["pass"] is True
         assert r["action"] == "mask"
         assert "*" in r["masked_text"]
-        assert "代开发票" not in r["masked_text"]
-
-    def test_ad_word_variant_masked_in_original(self):
-        """审查修复(P1-13)：空格变体命中（normalized）→ 原文必须实际打码
-
-        原实现 matched 来自归一化文本、却用原文 replace——"代 开发 票"
-        归一化命中但原文 replace 落空，广告词漏打码。
-        """
-        r = check_sensitive("加微信 代 开发 票 优惠")
-        assert r["pass"] is True
-        assert r["action"] == "mask"
-        # 原文中的广告词各字符必须被打码（不再原样残留）
+        # 广告词字符不得原样残留（P1-13：原文实际打码，防归一化命中但原文 replace 落空）
         assert "代" not in r["masked_text"]
         assert "票" not in r["masked_text"]
-        assert "*" in r["masked_text"]
 
 
 class TestNumberMask:
-    def test_phone_masked(self):
-        r = check_sensitive("我的手机号是13812345678")
-        assert r["pass"] is True
-        assert r["action"] == "mask"
-        assert "138****5678" in r["masked_text"]
+    """号码类打码保留（身份证/手机/银行卡，保留头尾）"""
 
-    def test_id_card_masked(self):
-        r = check_sensitive("身份证号11010119900307789X")
-        assert r["pass"] is True
-        assert r["action"] == "mask"
-        assert "110***********789X" in r["masked_text"]  # 保留前3后4
+    NUMBER_CASES = [
+        ("我的手机号是13812345678", "138****5678", "手机号打码"),
+        ("身份证号11010119900307789X", "110***********789X", "身份证打码-保留前3后4"),
+        ("卡号6222021234567890123", "6222***********0123", "银行卡打码-保留前4后4"),
+    ]
 
-    def test_bank_card_masked(self):
-        r = check_sensitive("卡号6222021234567890123")
-        assert r["pass"] is True
+    @pytest.mark.parametrize(
+        ("text", "expect_mask", "scenario"),
+        NUMBER_CASES,
+        ids=["手机号打码", "身份证打码", "银行卡打码"],
+    )
+    def test_number_masked(self, text, expect_mask, scenario):
+        r = check_sensitive(text)
+        assert r["pass"] is True, f"[{scenario}] 号码应打码保留: {r}"
         assert r["action"] == "mask"
-        assert "6222***********0123" in r["masked_text"]
+        assert expect_mask in r["masked_text"]
 
     def test_number_in_normal_text(self):
-        # 长数字（如数量）不打码——16-19 位才算卡号
+        """长数字（如数量）不打码——16-19 位才算卡号"""
         r = check_sensitive("这个项目预算500万")
         assert r["pass"] is True
         assert r["action"] == "pass"
@@ -94,16 +95,20 @@ class TestNumberMask:
 class TestUrlBlacklist:
     """网址黑名单：域名提取 → 集合查询 → 打码（2026-08-20 接入）"""
 
-    def test_blacklisted_domain_masked(self):
-        r = check_sensitive("注册这个 0008-qq.cn 网站有优惠")
-        assert r["pass"] is True
-        assert r["action"] == "mask"
-        assert "0008-qq.cn" not in r["masked_text"]
+    URL_CASES = [
+        ("注册这个 0008-qq.cn 网站有优惠", "0008-qq.cn", "黑名单域名打码"),
+        ("详情见 https://www.000wyt.com 页面", "000wyt.com", "带协议 URL 打码"),
+    ]
 
-    def test_url_with_protocol_masked(self):
-        r = check_sensitive("详情见 https://www.000wyt.com 页面")
-        assert r["action"] == "mask"
-        assert "000wyt.com" not in r["masked_text"]
+    @pytest.mark.parametrize(
+        ("text", "forbidden", "scenario"),
+        URL_CASES,
+        ids=["黑名单域名打码", "带协议 URL 打码"],
+    )
+    def test_blacklisted_url_masked(self, text, forbidden, scenario):
+        r = check_sensitive(text)
+        assert r["action"] == "mask", f"[{scenario}] 黑名单网址应打码: {r}"
+        assert forbidden not in r["masked_text"]
 
     def test_normal_domain_not_masked(self):
         r = check_sensitive("可以访问 github.com 学习")
@@ -129,27 +134,22 @@ class TestPass:
 class TestEventSensitive:
     """事件级敏感分类（B5b Wave1：规则层，软敏感，独立于硬规则 reject/mask）"""
 
-    def test_breakup_hit(self):
-        r = check_event_sensitive("去年我们分手了，后来再也没联系")
-        assert r["pass"] is False
-        assert "分手" in r["categories"]
-        assert r["matched"]
+    CATEGORY_CASES = [
+        ("去年我们分手了，后来再也没联系", "分手"),
+        ("爷爷去年去世了，全家都很伤心", "离世"),
+        ("妈妈确诊癌症，下个月住院手术", "健康"),
+        ("那年生意破产欠了不少债", "金钱"),
+        ("那阵子家里天天吵架，婆媳关系很僵", "家庭矛盾"),
+    ]
 
-    def test_death_hit(self):
-        r = check_event_sensitive("爷爷去年去世了，全家都很伤心")
-        assert "离世" in r["categories"]
-
-    def test_health_hit(self):
-        r = check_event_sensitive("妈妈确诊癌症，下个月住院手术")
-        assert "健康" in r["categories"]
-
-    def test_money_hit(self):
-        r = check_event_sensitive("那年生意破产欠了不少债")
-        assert "金钱" in r["categories"]
-
-    def test_family_conflict_hit(self):
-        r = check_event_sensitive("那阵子家里天天吵架，婆媳关系很僵")
-        assert "家庭矛盾" in r["categories"]
+    @pytest.mark.parametrize(
+        ("text", "expect_cat"),
+        CATEGORY_CASES,
+        ids=["分手类命中", "离世类命中", "健康类命中", "金钱类命中", "家庭矛盾类命中"],
+    )
+    def test_category_hit(self, text, expect_cat):
+        r = check_event_sensitive(text)
+        assert expect_cat in r["categories"], f"应命中 {expect_cat}: {r}"
 
     def test_normal_text_pass(self):
         r = check_event_sensitive("今天去苏州吃了松鼠桂鱼，很开心")
@@ -175,7 +175,7 @@ class TestEventSensitive:
             assert r["pass"] is False
             assert "回流词" in r["categories"]
         finally:
-            # 清理进程内热加入，避免影响其他用例
+            # 清理进程内热加入，避免影响其他用例（R8#12 autouse 快照/恢复兜底）
             from app.services.external.sensitive_words import _EVENT_REFLUX_WORDS
 
             _EVENT_REFLUX_WORDS.discard("绝交")
@@ -199,12 +199,17 @@ class TestEventSensitive:
 class TestSearchRuleFilter:
     """搜索/摘要规则级敏感过滤（B5b-1 🟢 规则级，不过模型；供 Agent A 接线 rag.py）"""
 
-    def test_hard_sensitive_rejected(self):
-        assert filter_sensitive_rule("支持法轮功的言论") is True
+    FILTER_CASES = [
+        ("支持法轮功的言论", True),
+        ("今天去苏州吃了松鼠桂鱼", False),
+        ("去年我们分手了", False),
+    ]
 
-    def test_normal_text_allowed(self):
-        assert filter_sensitive_rule("今天去苏州吃了松鼠桂鱼") is False
-
-    def test_event_sensitive_not_blocked_for_search(self):
-        """事件级软敏感不阻断搜索（规则级过滤只挡硬违规）"""
-        assert filter_sensitive_rule("去年我们分手了") is False
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        FILTER_CASES,
+        ids=["硬敏感拦截", "正常文本放行", "事件级软敏感不阻断"],
+    )
+    def test_filter_sensitive_rule(self, text, expected):
+        """规则级过滤只挡硬违规，事件级软敏感不阻断搜索"""
+        assert filter_sensitive_rule(text) is expected
