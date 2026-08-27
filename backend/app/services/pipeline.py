@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -423,6 +425,38 @@ def _process_photo(db: Session, content: Content) -> None:
                 pass
 
 
+# ---------------------------------------------------------------------------
+# 内容类型处理注册表（R1#7：内容类型 if/elif 分流收敛为注册表）
+#
+# process_content 按 content.content_type 从 CONTENT_HANDLERS 取处理器；
+# 新增内容类型只需调用 register_content_handler 注册，无需改 process_content
+# 分流逻辑（行为等价：text/voice/photo 处理器已注册）。
+#
+# 注册表存**处理器函数名**、分发时按当前模块属性解析——与旧内联 dict 每调用
+# 取模块全局的语义一致（测试 monkeypatch `_process_text` 后分发能取到替身），
+# 也允许运行时替换处理器实现。
+# ---------------------------------------------------------------------------
+CONTENT_HANDLERS: dict[str, str] = {}
+
+
+def register_content_handler(content_type: str, handler: Callable[..., Any]) -> None:
+    """注册内容类型处理器（幂等覆盖；扩展新类型调用本函数）"""
+    CONTENT_HANDLERS[content_type] = handler.__name__
+
+
+register_content_handler("text", _process_text)
+register_content_handler("voice", _process_voice)
+register_content_handler("photo", _process_photo)
+
+
+def _resolve_handler(content_type: str) -> Callable[..., Any] | None:
+    """按内容类型取当前处理器（模块属性解析：monkeypatch/替换后取到最新实现）"""
+    name = CONTENT_HANDLERS.get(content_type)
+    if not name:
+        return None
+    return globals().get(name)
+
+
 def _index_after_commit(db: Session, content: Content) -> None:
     """主提交后的 Qdrant 索引（R2#1：Qdrant 写后置到 DB 提交之后）
 
@@ -525,11 +559,7 @@ def process_content(content_id: str) -> dict:
         db.commit()
 
         processed = []
-        handler = {
-            "text": _process_text,
-            "voice": _process_voice,
-            "photo": _process_photo,
-        }.get(content.content_type)
+        handler = _resolve_handler(content.content_type)
         processing_outcome = None
         if handler:
             # 阶段 1：处理器（SAVEPOINT 失败隔离——处理器部分 DB 变更失败仅回滚
