@@ -3,9 +3,10 @@ import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user
 from app.core.errors import ERR_CONTENT_006, ERR_SEARCH_001, ERR_SEARCH_002, ApiError
 from app.db.models import User
@@ -16,7 +17,7 @@ from app.services.file_magic import is_photo_bytes
 from app.services.rag import search as rag_search
 from app.services.rag import search_by_image
 
-router = APIRouter(prefix="/api/v1/search", tags=["search"])
+router = make_router(prefix="/api/v1/search", tags=["search"])
 
 # 图片上传上限（以图搜图查询图）
 _MAX_IMAGE_BYTES = 10 * 1024 * 1024

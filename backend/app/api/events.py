@@ -1,9 +1,10 @@
 """事件路由：四层事件模型（B3）+ 时间轴（F8）+ 用户手动操作（B3-5）"""
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_EVENT_004, ERR_EVENT_006, ERR_EVENT_007, ApiError
 from app.db.models import User
@@ -21,7 +22,7 @@ from app.schemas.event import (
 )
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 
-router = APIRouter(prefix="/api/v1/events", tags=["events"])
+router = make_router(prefix="/api/v1/events", tags=["events"])
 
 
 @router.get("/timeline", response_model=ApiResponse[list[EventOut]])

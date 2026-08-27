@@ -17,10 +17,11 @@ GET /api/v1/thumbnails/{content_id} —— 返回缩略图 JPEG 字节
 """
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_THUMB_001, ApiError
 from app.db.models import User
@@ -29,7 +30,7 @@ from app.services import thumbnails
 
 logger = logging.getLogger("yishu.thumbnails")
 
-router = APIRouter(prefix="/api/v1/thumbnails", tags=["thumbnails"])
+router = make_router(prefix="/api/v1/thumbnails", tags=["thumbnails"])
 
 # 缩略图确定性内容 → 客户端/CDN 可缓存 1 天
 CACHE_CONTROL = "public, max-age=86400"

@@ -15,11 +15,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_EVENT_005, ApiError
 from app.db.models import Content, Event, EventItem, User
@@ -27,7 +28,7 @@ from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.services.errors import NotFoundError
 
-router = APIRouter(prefix="/api/v1/contents", tags=["contents"])
+router = make_router(prefix="/api/v1/contents", tags=["contents"])
 
 
 class ContentEventOut(BaseModel):
