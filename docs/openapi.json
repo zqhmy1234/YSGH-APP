@@ -114,7 +114,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_SendSmsOut_"
                 }
               }
             }
@@ -198,7 +198,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_LogoutOut_"
                 }
               }
             }
@@ -314,7 +314,7 @@
           "contents"
         ],
         "summary": "List Contents",
-        "description": "内容分页列表（API-006 游标分页：数据增删中翻页不错位）\n\n修复（审查 MAJOR）：原游标仅 created_at，同秒多条翻页错位/重复；\n改为 (created_at, id) 复合游标（id 兜底，UUID 不可比 → 用字符串序）。\n游标格式：\"<created_at_iso>|<id>\"。",
+        "description": "内容分页列表（API-006 游标分页：数据增删中翻页不错位）\n\n修复（审查 MAJOR）：原游标仅 created_at，同秒多条翻页错位/重复；\n改为 (created_at, id) 复合游标（id 兜底，UUID 不可比 → 用字符串序）。\n游标格式：\"<created_at_iso>|<id>\"。\nR4#6/#7（分页统一）：limit/cursor 走共享 pagination_params（limit 1..100，cursor 不透明字符串）。",
         "operationId": "list_contents_api_v1_contents_get",
         "security": [
           {
@@ -328,9 +328,13 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页条数（1-100）",
               "default": 20,
               "title": "Limit"
-            }
+            },
+            "description": "每页条数（1-100）"
           },
           {
             "name": "cursor",
@@ -345,8 +349,10 @@
                   "type": "null"
                 }
               ],
+              "description": "分页游标（不透明字符串，由上次响应返回）",
               "title": "Cursor"
-            }
+            },
+            "description": "分页游标（不透明字符串，由上次响应返回）"
           }
         ],
         "responses": {
@@ -448,7 +454,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_ProfileSensitiveDeleteOut_"
                 }
               }
             }
@@ -1126,7 +1132,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_ClassifyJobQueued_"
                 }
               }
             }
@@ -1197,6 +1203,101 @@
         }
       }
     },
+    "/api/v1/classify/arbitrate": {
+      "post": {
+        "tags": [
+          "classify"
+        ],
+        "summary": "Arbitrate Text",
+        "description": "三层裁决分类（R4#9：归属 /classify 域；P2-01 推理移 worker：SetFit ~27s 入队异步）",
+        "operationId": "arbitrate_text_api_v1_classify_arbitrate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArbitrateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArbitrateJobQueued_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/classify/arbitrate/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "classify"
+        ],
+        "summary": "Arbitrate Job Status",
+        "description": "查询三层裁决任务状态与结果（轮询）\n\nTD-P3 M3：归属校验——job.meta.user_id 必须等于当前用户，否则 403；\n失败仅回传脱敏错误（不再直出 exc_info 末行）。",
+        "operationId": "arbitrate_job_status_api_v1_classify_arbitrate_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArbitrateJobOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/corrections": {
       "post": {
         "tags": [
@@ -1241,101 +1342,6 @@
             "HTTPBearer": []
           }
         ]
-      }
-    },
-    "/api/v1/classify/arbitrate": {
-      "post": {
-        "tags": [
-          "corrections"
-        ],
-        "summary": "Arbitrate Text",
-        "description": "三层裁决分类（P2-01 推理移 worker：SetFit ~27s 入队异步，返回 job_id 供轮询）",
-        "operationId": "arbitrate_text_api_v1_classify_arbitrate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ArbitrateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/classify/arbitrate/jobs/{job_id}": {
-      "get": {
-        "tags": [
-          "corrections"
-        ],
-        "summary": "Arbitrate Job Status",
-        "description": "查询三层裁决任务状态与结果（轮询）\n\nTD-P3 M3：归属校验——job.meta.user_id 必须等于当前用户，否则 403；\n失败仅回传脱敏错误（不再直出 exc_info 末行）。",
-        "operationId": "arbitrate_job_status_api_v1_classify_arbitrate_jobs__job_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Job Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/v1/asr/transcribe": {
@@ -1618,7 +1624,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_EchoTodayOut_"
                 }
               }
             }
@@ -1637,6 +1643,7 @@
           "echo"
         ],
         "summary": "Echo Dismiss",
+        "description": "划掉不再出现（R4#15 幂等：同内容已划掉 → 直接返回成功，不重复落 dismiss 记录）\n\n幂等键 = (user_id, fingerprint)；content_id 经确定性指纹（uuid5）稳定映射，\n重复 dismiss 不再叠加 EchoHistory 行（不重复计数）。",
         "operationId": "echo_dismiss_api_v1_echo__content_id__dismiss_post",
         "security": [
           {
@@ -1660,7 +1667,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_EchoDismissOut_"
                 }
               }
             }
@@ -1692,7 +1699,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_list_InterviewQuestion__"
                 }
               }
             }
@@ -1764,7 +1771,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_InterviewProfileOut_"
                 }
               }
             }
@@ -1801,7 +1808,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_WechatFindOut_"
                 }
               }
             }
@@ -1979,7 +1986,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_WechatDeleteOut_"
                 }
               }
             }
@@ -2003,7 +2010,7 @@
           "messages"
         ],
         "summary": "List Messages",
-        "description": "消息列表（sent_at DESC 游标分页；status 过滤 unread/read/archived）",
+        "description": "消息列表（id DESC 游标分页；status 过滤 unread/read/archived）\n\nR4#6/#7（分页统一）：limit/cursor 走共享 pagination_params（cursor 不透明字符串，\n内部按消息 id 解析）；与 contents 同款 Page 信封 + str 游标。",
         "operationId": "list_messages_api_v1_messages_get",
         "security": [
           {
@@ -2033,9 +2040,13 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页条数（1-100）",
               "default": 20,
               "title": "Limit"
-            }
+            },
+            "description": "每页条数（1-100）"
           },
           {
             "name": "cursor",
@@ -2044,14 +2055,16 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "分页游标（不透明字符串，由上次响应返回）",
               "title": "Cursor"
-            }
+            },
+            "description": "分页游标（不透明字符串，由上次响应返回）"
           }
         ],
         "responses": {
@@ -2108,7 +2121,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_MessageReadOut_"
                 }
               }
             }
@@ -2140,7 +2153,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_MessageReadAllOut_"
                 }
               }
             }
@@ -2159,7 +2172,7 @@
           "upload"
         ],
         "summary": "Init Upload",
-        "description": "建上传任务（client_upload_id 幂等）\n\n流量约束（B4 §6，Wave3 AgentG）：\n  upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）\n  on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）\n两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。",
+        "description": "建上传任务（client_upload_id 幂等）\n\n流量约束（B4 §6，Wave3 AgentG）：\n  upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）\n  on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）\n两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。\n\nR4#12：client_upload_id/file_name 安全字符白名单；file_size/chunk_size 正数下限；\n大数上限（file_size>MAX）与分片下限（chunk_size<MIN）仍由下方 UPLOAD_001 业务码承接。",
         "operationId": "init_upload_api_v1_upload_init_post",
         "requestBody": {
           "content": {
@@ -2177,7 +2190,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_UploadInitOut_"
                 }
               }
             }
@@ -2223,7 +2236,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_UploadChunkOut_"
                 }
               }
             }
@@ -2268,7 +2281,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_UploadChunkOut_"
                 }
               }
             }
@@ -2315,7 +2328,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_UploadCompleteOut_"
                 }
               }
             }
@@ -2367,7 +2380,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                  "$ref": "#/components/schemas/ApiResponse_UploadStatusOut_"
                 }
               }
             }
@@ -2435,7 +2448,7 @@
   },
   "components": {
     "schemas": {
-      "ApiResponse": {
+      "ApiResponse_ArbitrateJobOut_": {
         "properties": {
           "code": {
             "type": "string",
@@ -2449,12 +2462,13 @@
           },
           "data": {
             "anyOf": [
-              {},
+              {
+                "$ref": "#/components/schemas/ArbitrateJobOut"
+              },
               {
                 "type": "null"
               }
-            ],
-            "title": "Data"
+            ]
           },
           "request_id": {
             "type": "string",
@@ -2463,8 +2477,38 @@
           }
         },
         "type": "object",
-        "title": "ApiResponse",
-        "description": "统一响应体：{code, message, data, request_id}"
+        "title": "ApiResponse[ArbitrateJobOut]"
+      },
+      "ApiResponse_ArbitrateJobQueued_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArbitrateJobQueued"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ArbitrateJobQueued]"
       },
       "ApiResponse_AsrTranscribeResponse_": {
         "properties": {
@@ -2528,6 +2572,37 @@
         "type": "object",
         "title": "ApiResponse[ClassifyJobOut]"
       },
+      "ApiResponse_ClassifyJobQueued_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClassifyJobQueued"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ClassifyJobQueued]"
+      },
       "ApiResponse_ContentOut_": {
         "properties": {
           "code": {
@@ -2589,6 +2664,68 @@
         },
         "type": "object",
         "title": "ApiResponse[CorrectionOut]"
+      },
+      "ApiResponse_EchoDismissOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EchoDismissOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[EchoDismissOut]"
+      },
+      "ApiResponse_EchoTodayOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EchoTodayOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[EchoTodayOut]"
       },
       "ApiResponse_EventOut_": {
         "properties": {
@@ -2683,6 +2820,37 @@
         "type": "object",
         "title": "ApiResponse[GuardCheckResponse]"
       },
+      "ApiResponse_InterviewProfileOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterviewProfileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[InterviewProfileOut]"
+      },
       "ApiResponse_InterviewResult_": {
         "properties": {
           "code": {
@@ -2713,6 +2881,99 @@
         },
         "type": "object",
         "title": "ApiResponse[InterviewResult]"
+      },
+      "ApiResponse_LogoutOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogoutOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[LogoutOut]"
+      },
+      "ApiResponse_MessageReadAllOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageReadAllOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[MessageReadAllOut]"
+      },
+      "ApiResponse_MessageReadOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageReadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[MessageReadOut]"
       },
       "ApiResponse_Page_ContentOut__": {
         "properties": {
@@ -2776,6 +3037,37 @@
         "type": "object",
         "title": "ApiResponse[Page[MessageOut]]"
       },
+      "ApiResponse_ProfileSensitiveDeleteOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileSensitiveDeleteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ProfileSensitiveDeleteOut]"
+      },
       "ApiResponse_ProfileSensitiveOut_": {
         "properties": {
           "code": {
@@ -2837,6 +3129,37 @@
         },
         "type": "object",
         "title": "ApiResponse[SearchResult]"
+      },
+      "ApiResponse_SendSmsOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SendSmsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[SendSmsOut]"
       },
       "ApiResponse_SyncPullResult_": {
         "properties": {
@@ -2961,6 +3284,192 @@
         },
         "type": "object",
         "title": "ApiResponse[TokenPair]"
+      },
+      "ApiResponse_UploadChunkOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadChunkOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[UploadChunkOut]"
+      },
+      "ApiResponse_UploadCompleteOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadCompleteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[UploadCompleteOut]"
+      },
+      "ApiResponse_UploadInitOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadInitOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[UploadInitOut]"
+      },
+      "ApiResponse_UploadStatusOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[UploadStatusOut]"
+      },
+      "ApiResponse_WechatDeleteOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WechatDeleteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[WechatDeleteOut]"
+      },
+      "ApiResponse_WechatFindOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WechatFindOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[WechatFindOut]"
       },
       "ApiResponse_dict_": {
         "properties": {
@@ -3100,6 +3609,41 @@
         "type": "object",
         "title": "ApiResponse[list[EventOut]]"
       },
+      "ApiResponse_list_InterviewQuestion__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InterviewQuestion"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[InterviewQuestion]]"
+      },
       "ApiResponse_list_ProfileSensitiveOut__": {
         "properties": {
           "code": {
@@ -3134,6 +3678,67 @@
         },
         "type": "object",
         "title": "ApiResponse[list[ProfileSensitiveOut]]"
+      },
+      "ArbitrateJobOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ArbitrateJobOut",
+        "description": "裁决任务状态出参（GET /api/v1/classify/arbitrate/jobs/{job_id}）"
+      },
+      "ArbitrateJobQueued": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ArbitrateJobQueued",
+        "description": "裁决入队出参（POST /api/v1/classify/arbitrate；P2-01 异步）"
       },
       "ArbitrateRequest": {
         "properties": {
@@ -3375,6 +3980,7 @@
           },
           "meta": {
             "type": "string",
+            "maxLength": 16384,
             "title": "Meta",
             "default": "{}"
           }
@@ -3391,20 +3997,24 @@
             "type": "string",
             "maxLength": 255,
             "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{1,255}$",
             "title": "Client Upload Id"
           },
           "file_name": {
             "type": "string",
             "maxLength": 255,
             "minLength": 1,
+            "pattern": "^[^/\\\\\\x00-\\x1f]{1,255}$",
             "title": "File Name"
           },
           "file_size": {
             "type": "integer",
+            "minimum": 1.0,
             "title": "File Size"
           },
           "chunk_size": {
             "type": "integer",
+            "minimum": 1.0,
             "title": "Chunk Size",
             "default": 8388608
           },
@@ -3482,6 +4092,7 @@
           },
           "chunk_index": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Chunk Index"
           },
           "file": {
@@ -3492,7 +4103,8 @@
           "chunk_hash": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
               },
               {
                 "type": "null"
@@ -3517,6 +4129,7 @@
           },
           "chunk_index": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Chunk Index"
           },
           "file": {
@@ -3527,7 +4140,8 @@
           "chunk_hash": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
               },
               {
                 "type": "null"
@@ -3623,7 +4237,27 @@
           "job_id",
           "status"
         ],
-        "title": "ClassifyJobOut"
+        "title": "ClassifyJobOut",
+        "description": "分类任务状态出参（GET /api/v1/classify/jobs/{job_id}）"
+      },
+      "ClassifyJobQueued": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ClassifyJobQueued",
+        "description": "分类入队出参（POST /api/v1/classify；P2-01 异步，返回 job_id 供轮询）"
       },
       "ClassifyRequest": {
         "properties": {
@@ -4211,6 +4845,87 @@
         ],
         "title": "CorrectionOut"
       },
+      "EchoDismissOut": {
+        "properties": {
+          "dismissed": {
+            "type": "boolean",
+            "title": "Dismissed"
+          },
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dismissed",
+          "content_id"
+        ],
+        "title": "EchoDismissOut",
+        "description": "回响划掉出参（POST /api/v1/echo/{content_id}/dismiss）"
+      },
+      "EchoTodayOut": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "echo_date": {
+            "type": "string",
+            "title": "Echo Date"
+          },
+          "fingerprint": {
+            "type": "string",
+            "title": "Fingerprint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id",
+          "content_type",
+          "echo_date",
+          "fingerprint"
+        ],
+        "title": "EchoTodayOut",
+        "description": "去年今日回响出参（GET /api/v1/echo/today；无命中时 data=null）"
+      },
       "EventConfirmRequest": {
         "properties": {
           "event_id": {
@@ -4673,6 +5388,55 @@
         ],
         "title": "InterviewAnswers"
       },
+      "InterviewProfileOut": {
+        "properties": {
+          "dimensions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Dimensions"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "cold_start_done": {
+            "type": "boolean",
+            "title": "Cold Start Done"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimensions",
+          "version",
+          "cold_start_done"
+        ],
+        "title": "InterviewProfileOut",
+        "description": "画像出参（GET /api/v1/interview/profile）"
+      },
+      "InterviewQuestion": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "question"
+        ],
+        "title": "InterviewQuestion",
+        "description": "产品部三问（静态文案，GET /api/v1/interview/questions）"
+      },
       "InterviewResult": {
         "properties": {
           "dimensions": {
@@ -4696,6 +5460,20 @@
           "confirmation"
         ],
         "title": "InterviewResult"
+      },
+      "LogoutOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "LogoutOut",
+        "description": "退出登录出参（POST /api/v1/auth/logout；幂等：无效/吊销失败仍 ok）"
       },
       "LogoutRequest": {
         "properties": {
@@ -4773,6 +5551,34 @@
         ],
         "title": "MessageOut",
         "description": "消息出参（in-app 列表项 / push 记录）"
+      },
+      "MessageReadAllOut": {
+        "properties": {
+          "read_all": {
+            "type": "boolean",
+            "title": "Read All"
+          }
+        },
+        "type": "object",
+        "required": [
+          "read_all"
+        ],
+        "title": "MessageReadAllOut",
+        "description": "全部已读出参（POST /api/v1/messages/read-all）"
+      },
+      "MessageReadOut": {
+        "properties": {
+          "read": {
+            "type": "integer",
+            "title": "Read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "read"
+        ],
+        "title": "MessageReadOut",
+        "description": "单条已读出参（POST /api/v1/messages/{msg_id}/read）"
       },
       "Page_ContentOut_": {
         "properties": {
@@ -4906,6 +5712,25 @@
         ],
         "title": "ProfileSensitiveCreate",
         "description": "画像级敏感增/改（B1-6 对话式：POST /api/v1/profile/sensitive）"
+      },
+      "ProfileSensitiveDeleteOut": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "topic"
+        ],
+        "title": "ProfileSensitiveDeleteOut",
+        "description": "画像级敏感删除出参（DELETE /api/v1/profile/sensitive）"
       },
       "ProfileSensitiveOut": {
         "properties": {
@@ -5203,6 +6028,20 @@
           "latency_ms"
         ],
         "title": "SearchResult"
+      },
+      "SendSmsOut": {
+        "properties": {
+          "mock_code": {
+            "type": "string",
+            "title": "Mock Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mock_code"
+        ],
+        "title": "SendSmsOut",
+        "description": "发验证码出参（POST /api/v1/auth/sms/send；mock 通道直返验证码，生产直返被 501 拦截）"
       },
       "SendSmsRequest": {
         "properties": {
@@ -5519,6 +6358,167 @@
         ],
         "title": "TokenPair"
       },
+      "UploadChunkOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "chunk_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Index"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "UploadChunkOut",
+        "description": "传单片出参（PUT/POST /api/v1/upload/chunk）\n\nstatus ∈ uploaded / duplicate / completed；completed 时带 detail，uploaded/duplicate 带 chunk_index。"
+      },
+      "UploadCompleteOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "file_key": {
+            "type": "string",
+            "title": "File Key"
+          },
+          "upload_id": {
+            "type": "string",
+            "title": "Upload Id"
+          },
+          "content_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "file_key",
+          "upload_id"
+        ],
+        "title": "UploadCompleteOut",
+        "description": "合并出参（POST /api/v1/upload/complete）——分片未齐拒绝 409，超限 413"
+      },
+      "UploadInitOut": {
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "title": "Upload Id"
+          },
+          "chunk_size": {
+            "type": "integer",
+            "title": "Chunk Size"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "title": "Chunk Count"
+          },
+          "file_key": {
+            "type": "string",
+            "title": "File Key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "upload_mode": {
+            "type": "string",
+            "title": "Upload Mode"
+          },
+          "on_wifi": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Wifi"
+          }
+        },
+        "type": "object",
+        "required": [
+          "upload_id",
+          "chunk_size",
+          "chunk_count",
+          "file_key",
+          "status",
+          "upload_mode"
+        ],
+        "title": "UploadInitOut",
+        "description": "建上传任务出参（POST /api/v1/upload/init）"
+      },
+      "UploadStatusOut": {
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "title": "Upload Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "title": "Chunk Count"
+          },
+          "uploaded_chunks": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Uploaded Chunks"
+          },
+          "missing_chunks": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Missing Chunks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "upload_id",
+          "status",
+          "chunk_count",
+          "uploaded_chunks",
+          "missing_chunks"
+        ],
+        "title": "UploadStatusOut",
+        "description": "断点续传状态出参（GET /api/v1/upload/status）"
+      },
       "UserBrief": {
         "properties": {
           "id": {
@@ -5598,6 +6598,59 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WechatDeleteOut": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "msg_id": {
+            "type": "string",
+            "title": "Msg Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "msg_id"
+        ],
+        "title": "WechatDeleteOut",
+        "description": "微信软删出参（POST /api/v1/wechat/delete）"
+      },
+      "WechatFindOut": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "hits": {
+            "type": "integer",
+            "title": "Hits"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "reply",
+          "hits",
+          "latency_ms"
+        ],
+        "title": "WechatFindOut",
+        "description": "微信\"找\"出参（POST /api/v1/wechat/find）"
       },
       "WechatFindRequest": {
         "properties": {

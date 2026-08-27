@@ -261,6 +261,17 @@
 - 端侧 EXIF 兼容性（PIL 写入格式）待查
 # Session Progress Log — 忆述光华
 
+## 2026-08-27 17:40 · 重构批次 H 集成（H1-H5 全并行 5 分支）
+
+- **merge 顺序**（均从 18078e5 切出，`--no-ff`）：h1（models 拆包/event_aggregation 脚本迁移/pipeline 注册表/wechat 反转/PushChannel/upload 拆包）→ h2（CI 增强）→ h5（客户端收口）→ h3（测试杂项）→ h4（API 契约收口）
+- **共享工作树事故处理**：H3 首个 commit ddc8e29 误落 h4 分支（与 h3 的 232632d 等价）——两版仅 test_auth.py 不同（h4 含 R4#11 断言改造=超集）；已按 h4 版处理 test_auth（3 处 AUTH_099→010/011 取 h4，手机号 uuid 修复保持），test_error_registry/test_upload 取 h3 版（含 unit marker / M1 DoS 用例）
+- **merge 冲突处理**：test_queue.py 双 add 被 git 拼接成整块重复（F811 重复 fixture）→ 取 ruff 修正版（h3 133 行）；lessons.md 三处（h1/h3/h4）保留双方；test_error_registry add/add 取 h3
+- **openapi 重导**：H4 API 变更后按 docs/OpenAPI契约.md 命令重导，46 路径（arbitrate 已迁 /classify，契约文档已对齐）；errors 纯增 AUTH_010-013/MSG_003 零删除
+- **门禁**：全量非 rag **661 passed / 20 deselected**（基线 632→661，+29）＋ client tsc --noEmit EXIT=0 ＋ 快速门禁 EXIT=0；client 域 H5 无 pytest 靠 tsc+grep
+- **教训登记**：merge 双 add test 文件被拼接成整块重复——merge 后必跑全量 lint；写含中文文件一律用 git checkout 而非 PowerShell Set-Content（编码破坏教训复现）
+- **遗留**：HBuilderX 编译真机冒烟（H5 客户端行为等价，集成后补跑）；pip-audit-weekly 定时触发待 CI 观察；client tsc 非阻断试点
+- 推送：develop @ HEAD（openapi.json + progress + lessons 集成提交），CI 复验中
+
 ## 2026-08-27 14:50 · 重构批次 G 集成（G1 认证安全 + G2 越权纵深）
 
 - **merge 顺序（共享工作树，两分支均从 5fcbd29 切出）**：`--no-ff techdebt/g1`（67f50f1，22 文件）→ `--no-ff techdebt/g2`（1563cde，7 文件），均无冲突；main.py 双方都动过，终态取 G2 提交的合并态超集（create_app + 安全头 + healthz 收敛 + G1 限流接线，与工作区 G1 副本哈希一致验证后丢弃）
