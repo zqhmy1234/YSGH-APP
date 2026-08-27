@@ -25,8 +25,7 @@
  *
  * 兼容：uploadBatch(items, onProgress) 原签名不变（opts 可选，默认 auto）。
  */
-import { getBaseUrl } from './config'
-import { getToken, ensureLogin } from './auth'
+import { ensureLogin } from './auth'
 import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 // F9/R1#10 职责分离：暂停控制器（pauseSync/resumeSync/连续失败阈值）消费共享 pause_controller.ts；
 // 网络恢复钩子 onNetworkRestored 仍由 sync_client 提供（同步链路补推用）
@@ -40,16 +39,18 @@ import {
 } from './pause_controller'
 import { onNetworkRestored } from './sync_client'
 // TD-P2B（S1-H3/H4/M3）：分片协议收口 upload_protocol.ts、ISO 时间收口 time.ts、
-// 退避重试收口 retry.ts——本文件只保留业务编排（断点续传队列/流量约束/暂停控制器）
-import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
+// 退避重试收口 retry.ts、单文件上传状态机收口 upload_pipeline.ts（O16）——
+// 本文件只保留业务编排（批量并发池/断点续传队列/流量约束/暂停控制器）
 import { isoLocal } from './time'
 import { retryAsync } from './retry'
+import { runUploadPipeline, UploadSpec, UploadOutcome, UploadPipeError } from './upload_pipeline'
 
 export const MAX_CONCURRENCY: number = 3
 
 /** 断点续传：path|uploadId 逐行存 uni storage（UTS 无可靠 JSON.parse，用分隔串） */
 const PENDING_KEY: string = 'yishu_pending_uploads'
-/** 蜂窝暂缓原图：path|takenAt|width|height|size|lat|lng（等待 WiFi 或手动上传原图） */
+/** 蜂窝暂缓原图：path|takenAt|width|height|size|lat|lng|id（等待 WiFi 或手动上传原图）
+ *  O14：追加 MediaStore id（版本化行格式；旧 7 段行兼容解析 id=0） */
 const HELD_KEY: string = 'yishu_held_uploads'
 /** 重试耗尽失败项：同上格式（失败标红可点击重试） */
 const FAILED_KEY: string = 'yishu_failed_uploads'
@@ -88,7 +89,7 @@ export class UploadOptions {
 	}
 }
 
-/** HTTP 状态错误（4xx=永久停该条；5xx/网络=可退避重试） */
+/** HTTP 状态错误（O16 收口：4xx 判定统一走 upload_pipeline 的 UploadPipeError.permanent） */
 class UploadHttpError extends Error {
 	status: number
 
@@ -102,6 +103,9 @@ function is4xx(e: Error): boolean {
 	if (e instanceof UploadHttpError) {
 		const s = e.status
 		return s >= 400 && s < 500
+	}
+	if (e instanceof UploadPipeError) {
+		return e.permanent
 	}
 	return false
 }
@@ -222,11 +226,12 @@ function resolveMode(mode: UploadMode, kind: NetKind): string {
 }
 
 // ---------- held / failed 持久队列（PhotoItem 行分隔存储） ----------
+// O14：行格式追加 MediaStore id（第 8 段），parseEntry 兼容旧 7 段行（id=0）
 
 function entryOf(item: PhotoItem): string {
 	const la = item.lat != null ? '' + item.lat : ''
 	const ln = item.lng != null ? '' + item.lng : ''
-	return item.path + '|' + item.takenAt + '|' + item.width + '|' + item.height + '|' + item.size + '|' + la + '|' + ln
+	return item.path + '|' + item.takenAt + '|' + item.width + '|' + item.height + '|' + item.size + '|' + la + '|' + ln + '|' + item.id
 }
 
 function parseEntry(line: string): PhotoItem | null {
@@ -236,7 +241,9 @@ function parseEntry(line: string): PhotoItem | null {
 	}
 	const la = parts[5] == '' ? null : parseFloat(parts[5])
 	const ln = parts[6] == '' ? null : parseFloat(parts[6])
-	return new PhotoItem(0, parts[0], parseInt(parts[1]), parseInt(parts[2]), parseInt(parts[3]), la, ln, parseInt(parts[4]))
+	// 旧 7 段行（O14 前）无 id 段 → id=0；新行第 8 段为 MediaStore _id
+	const id = parts.length >= 8 && parts[7] != '' ? parseInt(parts[7]) : 0
+	return new PhotoItem(id, parts[0], parseInt(parts[1]), parseInt(parts[2]), parseInt(parts[3]), la, ln, parseInt(parts[4]))
 }
 
 function readLines(key: string): Array<string> {
@@ -336,111 +343,10 @@ function removeFailed(path: string): void {
 	removeEntry(FAILED_KEY, path)
 }
 
-// ---------- 协议请求（TD-P2B 收口：底层协议统一走 upload_protocol.ts，此处只保留
-//          业务编排封装——错误语义 4xx 停条 / 网络·5xx 可重试） ----------
+// ---------- 单张上传（O16 收口：init→status→chunk→complete 状态机统一走 upload_pipeline.ts，
+//          本文件只提供规格组装 + 断点 upload_id 持久化 + 4xx/网络语义映射） ----------
 
-function authHeader(): UTSJSONObject {
-	const header: UTSJSONObject = {}
-	const token = getToken()
-	if (token != '') {
-		header.set('Authorization', 'Bearer ' + token)
-	}
-	return header
-}
-
-/** 建任务（client_upload_id=path 幂等；upload_mode 透传 Agent G 契约参数）→ upload_id；4xx reject UploadHttpError 停条 */
-function initUploadTask(item: PhotoItem, fileSize: number, uploadMode: string): Promise<string> {
-	return new Promise<string>((resolve, reject) => {
-		const slashIdx = item.path.lastIndexOf('/')
-		const fileName = slashIdx >= 0 ? item.path.substring(slashIdx + 1) : item.path
-		initUpload(item.path, fileName, fileSize, uploadMode).then((resp: UploadResp) => {
-			if (resp.status === 200) {
-				const uploadId = fieldOf(resp.raw, 'upload_id')
-				if (uploadId == '') {
-					console.error('[yishu] init no upload_id: ' + resp.raw.substring(0, 120))
-					reject(new Error('init 无 upload_id'))
-					return
-				}
-				resolve(uploadId)
-				return
-			}
-			reject(new UploadHttpError(resp.status, 'init HTTP ' + resp.status))
-		})
-	})
-}
-
-/** 查断点状态：缺失分片列表（缺 0 或空数组=已完成）；非 200 视为需补传（交给 chunk 暴露真实错误） */
-function statusMissing(uploadId: string): Promise<boolean> {
-	return new Promise<boolean>((resolve) => {
-		uni.request({
-			url: getBaseUrl() + '/api/v1/upload/status?upload_id=' + uploadId,
-			method: 'GET',
-			header: authHeader(),
-			timeout: 15000,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					const raw = JSON.stringify(res.data)
-					const missing = fieldOf(raw, 'missing_chunks')
-					resolve(missing != '[]' && missing != '')
-				} else {
-					resolve(true)
-				}
-			},
-			fail: () => resolve(true)
-		})
-	})
-}
-
-/** 传单片（POST multipart；后端幂等 + 大小校验）；4xx reject UploadHttpError 停条 */
-function putChunkFor(uploadId: string, item: PhotoItem): Promise<boolean> {
-	return new Promise<boolean>((resolve, reject) => {
-		putChunk(uploadId, item.path, 60000).then((status: number) => {
-			if (status === 200) {
-				resolve(true)
-				return
-			}
-			if (status >= 400 && status < 500) {
-				reject(new UploadHttpError(status, 'chunk HTTP ' + status))
-				return
-			}
-			reject(new Error('chunk 网络失败'))
-		})
-	})
-}
-
-/** 完成 + 建内容记录（meta 与 /contents/upload 对齐，含 GPS）→ content_id；4xx 停条 */
-function completeUploadFor(uploadId: string, item: PhotoItem): Promise<string> {
-	return new Promise<string>((resolve, reject) => {
-		const meta: UTSJSONObject = {
-			taken_at: isoString(item.takenAt),
-			source: 'app',
-			extra: {
-				width: item.width,
-				height: item.height
-			}
-		}
-		if (item.lat != null && item.lng != null) {
-			meta.set('gps_lat', '' + item.lat)
-			meta.set('gps_lng', '' + item.lng)
-		}
-		completeUpload(uploadId, meta).then((resp: UploadResp) => {
-			if (resp.status === 200) {
-				const cid = fieldOf(resp.raw, 'content_id')
-				if (cid == '') {
-					console.error('[yishu] complete no content_id: ' + resp.raw.substring(0, 120))
-					reject(new Error('complete 无 content_id'))
-					return
-				}
-				resolve(cid)
-				return
-			}
-			reject(new UploadHttpError(resp.status, 'complete HTTP ' + resp.status))
-		})
-	})
-}
-
-// ---------- 单张上传（含断点续传 + 4xx 区分） ----------
-
+/** 单张照片上传（含断点续传 + 4xx 区分）；成功 resolve content_id，失败 reject（4xx=UploadPipeError.permanent） */
 function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 	return new Promise<string>((resolve, reject) => {
 		// 0. 文件大小（init 必填）——2026-08-25 真机修复：不再用 getFileSystemManager()
@@ -451,56 +357,35 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 			reject(new Error('文件大小为 0'))
 			return
 		}
-		// 1. 断点：已有 upload_id 直接复用，否则 init
-		const existing = findPending(item.path)
-		if (existing != '') {
-			statusMissing(existing).then((missing: boolean) => {
-				if (!missing) {
-					completeUploadFor(existing, item).then((cid: string) => {
-						clearPending(item.path)
-						resolve(cid)
-					}, (e: Error) => {
-						reject(e)
-					})
-				} else {
-					putChunkFor(existing, item).then((ok: boolean) => {
-						finishUpload(existing, ok, item, resolve, reject)
-					}, (e: Error) => {
-						reject(e)
-					})
+		const slashIdx = item.path.lastIndexOf('/')
+		const fileName = slashIdx >= 0 ? item.path.substring(slashIdx + 1) : item.path
+		// 1. 断点：已有 upload_id 直接复用（status 补传），否则 init（onNewUploadId 持久化）
+		const spec = new UploadSpec(item.path, fileName, fileSize, item.path, uploadMode, findPending(item.path))
+		const buildMeta = (): UTSJSONObject => {
+			const meta: UTSJSONObject = {
+				taken_at: isoString(item.takenAt),
+				source: 'app',
+				extra: {
+					width: item.width,
+					height: item.height
 				}
-			})
-			return
+			}
+			if (item.lat != null && item.lng != null) {
+				meta.set('gps_lat', '' + item.lat)
+				meta.set('gps_lng', '' + item.lng)
+			}
+			return meta
 		}
-		initUploadTask(item, fileSize, uploadMode).then((uploadId: string) => {
-			savePending(item.path, uploadId)
-			putChunkFor(uploadId, item).then((ok: boolean) => {
-				finishUpload(uploadId, ok, item, resolve, reject)
-			}, (e: Error) => {
-				reject(e)
-			})
+		runUploadPipeline(
+			spec,
+			buildMeta,
+			(uploadId: string) => { savePending(item.path, uploadId) },
+			(uploadId: string) => { clearPending(item.path) }
+		).then((out: UploadOutcome) => {
+			resolve(out.contentId)
 		}, (e: Error) => {
 			reject(e)
 		})
-	})
-}
-
-function finishUpload(
-	uploadId: string,
-	chunkOk: boolean,
-	item: PhotoItem,
-	resolve: (cid: string) => void,
-	reject: (e: Error) => void
-): void {
-	if (!chunkOk) {
-		reject(new Error('分片上传失败'))
-		return
-	}
-	completeUploadFor(uploadId, item).then((cid: string) => {
-		clearPending(item.path)
-		resolve(cid)
-	}, (e: Error) => {
-		reject(e)
 	})
 }
 
