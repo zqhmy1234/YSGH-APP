@@ -1,0 +1,19 @@
+{
+  "id": "health_vision",
+  "label": "视力",
+  "category": "健康与生活",
+  "current_values": [
+    "正常",
+    "矫正",
+    "弱视"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_vision",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

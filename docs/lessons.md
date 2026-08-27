@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
+- **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
+- **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债
+- **修复**：E501 拆行 + 换行；S101 在合并校验 assert 加 # noqa: S101（保持一次性校验逻辑不变）；删除 F841 未用 by_id；DTZ011 加 # noqa
+- **相关文件**：scripts/_expand_l1_and_gen_inputs.py, scripts/_merge_l0_refine.py, scripts/_merge_l1_refine.py
+- **教训**：一次性生成脚本也必须在收口前过门禁；遗留未过门禁的脚本收口时先跑 review_agent 修 lint，勿假设历史脚本合规
+
+---
+
 ### 2026-08-27 17:33 · commit 07b91f8 · ts=1787823238
 - **错误**：merge(h4) 后 review_agent lint 拦 F811：test_queue.py fake_queue 重复定义（h3/h4 两分支同时拆出同一 test 文件，merge 自动拼接成整块重复）
 - **根因**：h3 与 h4 各自把 test_techdebt_p0 拆出 test_queue.py（内容仅差一个空行），git 三方合并对双 add 文件按内容拼接而非覆盖 → 重复 fixture；且 PowerShell Set-Content 写中文文件会破坏 UTF-8 编码（SyntaxError U+E21D）

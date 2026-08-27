@@ -1,0 +1,19 @@
+{
+  "id": "comm_storytelling",
+  "label": "讲故事倾向",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "爱讲故事",
+    "适中",
+    "少"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_storytelling",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

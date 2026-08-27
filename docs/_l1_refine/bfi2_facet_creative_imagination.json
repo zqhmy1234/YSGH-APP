@@ -1,0 +1,13 @@
+{
+  "id": "bfi2_facet_creative_imagination",
+  "refine_mode": "template_level",
+  "values": ["很高", "高", "平均", "低", "很低"],
+  "values_detail": [
+    {"value": "很高", "phrase": "脑洞极大，爱写网文、搞二创、随手整活，没灵感就难受", "china_note": "中国互联网二创/网文/短视频创作生态发达，此类高想象用户极典型"},
+    {"value": "高", "phrase": "点子多，爱琢磨新玩法，朋友圈文案、段子信手拈来", "china_note": "内容社交时代常见的活跃创作者型"},
+    {"value": "平均", "phrase": "偶尔想些新花样，但落地不多，日常够用", "china_note": "主流人群，想象用于生活小趣味"},
+    {"value": "低", "phrase": "更认实干，照章办事，不爱天马行空", "china_note": "务实导向，重执行轻发散"},
+    {"value": "很低", "phrase": "几乎不想虚的，只信看得见摸得着的", "china_note": "边缘但真实存在的高度务实型"}
+  ],
+  "refine_note": "原5→现5；沿用level5有序档位，补全中国语境行为锚点（网文/二创/整活/段子），互斥统一、未引红线值"
+}

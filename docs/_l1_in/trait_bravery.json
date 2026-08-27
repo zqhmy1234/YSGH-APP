@@ -1,0 +1,27 @@
+{
+  "id": "trait_bravery",
+  "label": "勇敢",
+  "category": "超细性格",
+  "current_values": [
+    "很高",
+    "高",
+    "平均",
+    "低",
+    "很低"
+  ],
+  "value_template": "level5",
+  "template_values": [
+    "很高",
+    "高",
+    "平均",
+    "低",
+    "很低"
+  ],
+  "structure": null,
+  "source": "M",
+  "matraix_id": "trait_bravery",
+  "confidence_threshold": 0.8,
+  "note": "方案D超细；Character 5档枚举+三层披露+证据锚点；中国语境行为锚点见 values_detail",
+  "open_enum": true,
+  "refine_mode": "template_level"
+}

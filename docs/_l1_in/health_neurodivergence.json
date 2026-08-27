@@ -1,0 +1,18 @@
+{
+  "id": "health_neurodivergence",
+  "label": "神经多样性",
+  "category": "健康与生活",
+  "current_values": [
+    "无",
+    "有"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_neurodivergence",
+  "confidence_threshold": 0.8,
+  "note": "⚠️ 敏感：L3 披露",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

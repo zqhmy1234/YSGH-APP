@@ -1,0 +1,20 @@
+{
+  "id": "decision_style",
+  "label": "决策风格",
+  "category": "决策与偏好",
+  "current_values": [
+    "分析型",
+    "直觉型",
+    "随大流",
+    "犹豫"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "从 Risk & Decision 救回",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

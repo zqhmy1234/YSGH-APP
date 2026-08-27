@@ -1,0 +1,13 @@
+{
+  "id": "big5_cheerfulness",
+  "refine_mode": "template_level",
+  "values": ["很高", "高", "平均", "低", "很低"],
+  "values_detail": [
+    {"value": "很高", "phrase": "爱开玩笑、群里气氛组、段子手、逢人三分笑", "china_note": "中式社牛，饭局/微信群主动暖场，典型乐天派"},
+    {"value": "高", "phrase": "心态积极、爱凑热闹、爱分享喜事", "china_note": "主流开朗，熟人局活跃但不抢戏"},
+    {"value": "平均", "phrase": "看场合来，事儿来了能乐也能稳", "china_note": "中庸常态，不刻意嗨也不丧"},
+    {"value": "低", "phrase": "话少、不爱凑热闹、朋友圈常年潜水", "china_note": "偏内敛务实，非病态只是安静"},
+    {"value": "很低", "phrase": "一脸严肃、怕冷场、几乎不笑", "china_note": "边缘沉郁型，需留意是否伴随情绪困扰"}
+  ],
+  "refine_note": "原5→现5；保留level5模板档位，仅补中国语境行为锚点，互斥统一、无红线值"
+}

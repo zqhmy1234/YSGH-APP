@@ -1,0 +1,19 @@
+{
+  "id": "pref_team_vs_solo",
+  "label": "团队vs独干",
+  "category": "决策与偏好",
+  "current_values": [
+    "团队",
+    "独干",
+    "都行"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_team_vs_solo",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

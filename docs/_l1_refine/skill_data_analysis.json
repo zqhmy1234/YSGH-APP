@@ -1,0 +1,33 @@
+{
+  "id": "skill_data_analysis",
+  "refine_mode": "template_level",
+  "values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "values_detail": [
+    {
+      "value": "精通",
+      "phrase": "能独立用 SQL/Python 做数据清洗、建模与可视化，搭过看板或写过分析报表，能讲清结论背后的业务逻辑",
+      "china_note": "主流职场高阶，常见于数据/运营/增长岗，会用 Excel 透视表+PowerBI/帆软是常见本土组合"
+    },
+    {
+      "value": "熟练",
+      "phrase": "日常用 Excel、BI 工具做周报月报和取数，能看懂别人做的图表，但不太自己写复杂模型",
+      "china_note": "最普遍的白领水平，国产 WPS/钉钉报表场景典型"
+    },
+    {
+      "value": "入门",
+      "phrase": "会用筛选排序做个简单表格，知道同比环比大概意思，但遇上大数据量或复杂公式就犯难",
+      "china_note": "大量一线业务和销售岗的真实水平，重要少数"
+    },
+    {
+      "value": "不会",
+      "phrase": "看不懂报表和图表，分不清柱图和饼图要表达啥，遇到数据就头疼",
+      "china_note": "关键边缘人群，数字化鸿沟典型，需避免歧视性表述"
+    }
+  ],
+  "refine_note": "原4→现4；template_level 沿用模板 skill_level 四档原样，未扩值；仅补充中国语境行为锚点以统一 LLM 打标口径"
+}

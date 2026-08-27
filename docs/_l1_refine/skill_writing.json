@@ -1,0 +1,12 @@
+{
+  "id": "skill_writing",
+  "refine_mode": "template_level",
+  "values": ["精通", "熟练", "入门", "不会"],
+  "values_detail": [
+    {"value": "精通", "phrase": "笔杆子，公号、公文、稿件信手拈来", "china_note": "体制内/自媒体常见核心技能，能接商单做编辑，靠写字吃饭"},
+    {"value": "熟练", "phrase": "工作汇报、朋友圈长文无压力", "china_note": "职场刚需但非专业，应付日常书写绰绰有余"},
+    {"value": "入门", "phrase": "能写日记短评，长篇会卡要凑字数", "china_note": "多数普通用户状态，非刚需场景勉强够用"},
+    {"value": "不会", "phrase": "憋不出字，一提写东西就头大", "china_note": "文字输出困难群体，靠语音转写/复制粘贴应付"}
+  ],
+  "refine_note": "原 null → 现 4 档（skill_level 模板原样）；理由：写作按技能层级即可，无需显式中国语境重分类，保留模板值并补地道行为锚点"
+}

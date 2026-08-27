@@ -1,0 +1,18 @@
+{
+  "id": "pref_plan_vs_spontaneous",
+  "label": "计划vs随性",
+  "category": "决策与偏好",
+  "current_values": [
+    "计划派",
+    "随性派"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_plan_vs_spontaneous",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "comm_verbosity",
+  "label": "啰嗦度",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "话多",
+    "适中",
+    "简短"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_verbosity",
+  "confidence_threshold": 0.7,
+  "note": "决定复盘篇幅",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}
