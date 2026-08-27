@@ -19,8 +19,8 @@ import time
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from .generate_test_photos import generate
-from .pipeline import (
+from app.services.event_aggregation.generate_test_photos import generate
+from app.services.event_aggregation.pipeline import (
     AGG_CONFIG,
     RawPhoto,
     aggregate,
@@ -203,7 +203,7 @@ def validate_real_data(failures: list[str]) -> None:
     print("\n" + "=" * 60)
     print("场景 15：真实数据基准（500 张截图，无 GPS）")
     try:
-        from .load_real_photos import load_screenshots, sample_500
+        from app.services.event_aggregation.load_real_photos import load_screenshots, sample_500
 
         photos = load_screenshots()
         if not photos:
