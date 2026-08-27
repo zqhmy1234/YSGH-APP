@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 15:30 · commit 97adba4 · ts=1787815840
+- **错误**：H3 迁移 test_techdebt_p0 的 /upload/sts 用例到 test_upload.py 后 auth_headers 登录返回 501（微信登录未接入）：在 monkeypatch app_env=production 之后才调 auth_headers 登录
+- **根因**：auth_headers 走 wechat mock 登录，app_env 置 production 后 mock 登录被拒绝（生产未接入 → 501）；先登录拿 headers 再 monkeypatch 环境开关；且迁移时同函数内出现两处 auth_headers 调用（新旧残留），第二处又撞上 production
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 14:45 · commit 587ea10 · ts=1787813137
 - **错误**：全量门禁失败：G2 --full 时 auth 域 12 失败（G1 在途代码未配 HMAC key / DB 缺 salt 列）+ api_smoke healthz 断言旧字段 env/mock_external_ai（G2 已收敛删除）
 - **根因**：两个并行 Agent 共享同一工作树：G1 在途未提交代码 + 本地库未跑 G1 迁移，混进 G2 的全量门禁 → 门禁反映混合态而非任一分支真值；G2 收敛 healthz 删字段但 api_smoke_cases.py 断言未同步更新

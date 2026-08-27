@@ -500,3 +500,57 @@ def test_complete_upload_commit_failure_best_effort_delete(db_user, monkeypatch)
         upload_svc.complete_upload(db, task.id)
     monkeypatch.setattr(db, "commit", real_commit)
     assert not get_storage_backend().object_exists(task.file_key)
+
+
+# ---------------------------------------------------------------------------
+# H3：/upload/sts 生产门控 + user_id 透传（原 test_techdebt_p0.py P0-2 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_upload_sts_production_not_configured_501(client, auth_headers, monkeypatch):
+    """P0-2：生产且 COS/STS 未真配 → 501 UPLOAD_008（不返回假凭证）"""
+    _, headers = auth_headers("p0-sts-501")
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "tencent_secret_id", "")
+    monkeypatch.setattr(settings, "tencent_secret_key", "")
+    monkeypatch.setattr(settings, "cos_bucket", "")
+    monkeypatch.setattr(settings, "tencent_sts_role_arn", "")
+    r = client.get("/api/v1/upload/sts", headers=headers)
+    assert r.status_code == 501
+    assert r.json()["code"] == "UPLOAD_008"
+
+
+def test_upload_sts_passes_user_id(client, auth_headers, monkeypatch):
+    """P0-2：STS 凭证按请求方 user_id 签发（policy 路径级白名单的输入来源）"""
+    import app.api.upload as upload_api
+
+    _, headers = auth_headers("p0-sts-uid")
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "tencent_secret_id", "sid")
+    monkeypatch.setattr(settings, "tencent_secret_key", "skey")
+    monkeypatch.setattr(settings, "cos_bucket", "bucket")
+    monkeypatch.setattr(settings, "cos_region", "ap-shanghai")
+    monkeypatch.setattr(settings, "tencent_appid", "1250000000")
+    monkeypatch.setattr(settings, "tencent_sts_role_arn", "arn:root")
+    captured = {}
+
+    class StubBackend:
+        def get_sts_credentials(self, user_id=None):
+            captured["user_id"] = user_id
+            return {"tmp_secret_id": "s", "tmp_secret_key": "k", "session_token": "t"}
+
+    def _stub_backend():
+        return StubBackend()
+
+    monkeypatch.setattr(upload_api, "get_storage_backend", _stub_backend)
+    r = client.get("/api/v1/upload/sts", headers=headers)
+    assert r.status_code == 200, r.text
+    assert captured["user_id"], "必须把请求方 user_id 传入 STS 签发（禁止整桶凭证）"
+
+
+def test_upload_sts_fake_backend_501(client, auth_headers):
+    """P0-2：非 cos 后端 → 501 UPLOAD_005（既有语义回归）"""
+    _, headers = auth_headers("p0-sts-fake")
+    r = client.get("/api/v1/upload/sts", headers=headers)
+    assert r.status_code == 501
+    assert r.json()["code"] == "UPLOAD_005"
