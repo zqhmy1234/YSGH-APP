@@ -26,6 +26,11 @@ export const MOCK_EXTERNAL_AI: boolean = true
 /** 调试：启动后自动进入 AGG-016 一致性自检页（仅 dev；验证完置回 false） */
 export const AGG_CHECK_ON_DEVICE: boolean = false
 
+/** dev 调试页常驻开关（O20）：非 dev 构建（ENV='prod'）自动关闭——
+ *  值为 ENV 派生，生产构建无需人工改；dev 构建下 profile"关于"区展示调试入口。
+ *  注意：AGG_CHECK_ON_DEVICE 是"启动自动进页"的一次性开关，本开关是"页面/入口常驻"总闸。 */
+export const DEV_PAGE_ENABLED: boolean = ENV === 'dev'
+
 export function getBaseUrl(): string {
 	if (ENV === 'prod') {
 		return PROD_BASE_URL
