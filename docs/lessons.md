@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 16:05 · commit 232632d · ts=1787817902
+- **错误**：H3 拆分 test_security_p3 到 test_upload 后 SessionLocal 未在模块级 import——迁移的 test_upload_init_normal_still_works/test_get_status_guards_huge_chunk_count NameError
+- **根因**：原文件在函数内局部 import SessionLocal；迁移时复制了函数体却漏了局部 import，目标文件模块级只有 select/sa_delete。迁移跨文件代码需核对全部 import 依赖（含函数内局部 import）
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 15:53 · commit 865fb57 · ts=1787817210
 - **错误**：H3 并行撞号：test_auth 手机号用 int(time.time()) 秒戳——并行 Agent 同秒同号撞 60s 防刷窗口 → 429 flaky（test_sms_send_mock 复现）
 - **根因**：int(time.time()) 精度只有秒，多 Agent 并行/跨运行同秒生成相同手机号，命中 sms 60s 防刷窗口；改 uuid 随机（匹配 ^1\d{10}\$）
