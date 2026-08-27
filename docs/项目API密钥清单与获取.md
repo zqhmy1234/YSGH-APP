@@ -40,6 +40,7 @@
 | `ALIYUN_ACCESS_KEY_ID` | `ALIYUN_AK_ID` | 阿里云内容安全（Green 增强版）AccessKey——⚠️ **非百炼 DashScope key**，需阿里云账号 AccessKey + 开通「内容安全」服务（Wave4-L 适配器代码就绪：TextModeration/ImageBatchModeration） | 阿里云控制台 → AccessKey 管理 + 开通「内容安全」 | ⏳ 未配置（**上架前可选加固，无需现在申请**——当前 DASHSCOPE moderate + 腾讯 CI image_audit 双覆盖已够用；等团队阿里云 AccessKey 到位再接） |
 | `ALIYUN_ACCESS_KEY_SECRET` | `ALIYUN_AK_SECRET` | 同上 | 同上 | ⏳ 未配置（同上） |
 | `JWT_SECRET` | — | 登录令牌签名（≥32 字节；**生产必须改默认值**，否则启动即抛错） | 自行生成（`openssl rand -hex 32`） | ⚠️ dev 默认，生产必改 |
+| `REFRESH_TOKEN_HMAC_KEY` | — | refresh_token 哈希用独立 HMAC 密钥（**G1/R6#8：与 JWT_SECRET 完全隔离**——即使 JWT 签名密钥泄漏也无法伪造 devices 表 refresh 哈希；DB 泄漏场景防默认值离线爆破） | **本地随机生成（非外部申请）**：`python -c "import secrets; print(secrets.token_hex(32))"`（≥256bit=64 hex 字符）或 `openssl rand -hex 32` | ✅ 本地已生成（backend/.env，非默认值）；**生产必填**（config.py 生产兜底强制非默认，默认值直接抛错） |
 
 ## 2. 本地基础设施（非密钥但必备）
 

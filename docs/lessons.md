@@ -8,6 +8,24 @@
 
 ---
 
+### 2026-08-27 20:48 · commit 49d230c · ts=1787834890
+- **错误**：review_agent --full 全量门禁 tests 段超时（900s cap）且 api_smoke 报缺少测试照片/timeline min() 空
+- **根因**：worktree 缺 .cowork-temp/test_photos（100 张）与 backend/models（setfit-classifier/bge-reranker）——17号文档已注明需复制但未做；且本机可用内存仅 1.3GB（残留 pip-audit 进程未清）+ rag 分组（BGE-M3 1.2GB）纳入覆盖导致超时
+- **修复**：worktree 开工先复制主仓 .cowork-temp/test_photos 与 backend/models/*；跑全量前清理残留 python 进程释放内存；资产补齐 + 内存释放后 pytest 675 passed、api_smoke 全过、full gate 900s 内通过
+- **相关文件**：backend/models/ / .cowork-temp/test_photos/ / scripts/test_agent.py
+- **教训**：worktree 跑全量门禁三件事：补测试照片+模型资产、清残留进程、确认内存够——缺任一项都会让 review_agent --full 超时或 api_smoke 误报
+
+---
+
+### 2026-08-27 19:15 · commit 84b4b66 · ts=1787829338
+- **错误**：worktree 新建后缺 backend/.env（gitignored 不随分支检出），跑依赖 DB 的测试（test_content_upload 等）全部报 PostgreSQL 密码认证失败，疑似环境故障
+- **根因**：git worktree 只检出跟踪文件；.env 被 gitignore 不复制到新 worktree，config 落到默认 DATABASE_URL（postgres/postgres）与本机密码不符
+- **修复**：worktree 开发前复制主仓 backend/.env 到 worktree（gitignored 同机安全）或经 infisical run 注入；.env 键级核对再跑测试
+- **相关文件**：backend/.env / docs/项目API密钥清单与获取.md
+- **教训**：worktree 里跑全量测试前必须先补齐 .env，缺 DB 配置的报错要先想到是 .env 缺失而非代码问题
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债

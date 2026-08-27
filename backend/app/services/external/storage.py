@@ -68,6 +68,15 @@ class StorageBackend(ABC):
     def object_exists(self, key: str) -> bool:
         """对象是否存在"""
 
+    @abstractmethod
+    def list_objects(self, prefix: str = "") -> list[str]:
+        """按前缀列出对象键（升序，用于孤儿扫描等批量对比）
+
+        C7（2026-08-28 · 收尾 Wave1 B3）：B1 孤儿扫描消费——超龄 + 无 contents
+        引用对象需按前缀全量列举再与 DB cos_key 对比。返回相对键列表（不含目录
+        自身），prefix="" 列全部；实现须保证确定性升序（B1 对比依赖稳定顺序）。
+        """
+
     def get_sts_credentials(self, user_id: str | None = None) -> dict:
         """客户端直传临时凭证；不支持的实现抛 NotImplementedError
 
@@ -95,6 +104,9 @@ class FakeStorageBackend(StorageBackend):
 
     def object_exists(self, key: str) -> bool:
         return key in self._store
+
+    def list_objects(self, prefix: str = "") -> list[str]:
+        return sorted(k for k in self._store if k.startswith(prefix))
 
 
 class MinioStorageBackend(StorageBackend):
@@ -163,6 +175,25 @@ class MinioStorageBackend(StorageBackend):
                 "MINIO_STAT_FAILED", f"minio object_exists 失败: {type(exc).__name__}", retryable=True
             ) from exc
 
+    def list_objects(self, prefix: str = "") -> list[str]:
+        from minio import S3Error
+
+        try:
+            # list_objects 返回迭代器（内部自动分页），recursive=True 展平前缀下全部对象
+            names = [
+                obj.object_name
+                for obj in self._client.list_objects(self._bucket, prefix=prefix, recursive=True)
+            ]
+        except S3Error as exc:
+            raise StorageError(
+                "MINIO_LIST_FAILED", f"minio list_objects 失败: {exc}", retryable=True
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "MINIO_LIST_FAILED", f"minio list_objects 失败: {type(exc).__name__}", retryable=True
+            ) from exc
+        return sorted(names)
+
 
 class FilesystemStorageBackend(StorageBackend):
     """本地文件系统后端（2026-08-25 · 跨进程共享）
@@ -219,6 +250,21 @@ class FilesystemStorageBackend(StorageBackend):
 
     def object_exists(self, key: str) -> bool:
         return self._safe_path(key).is_file()
+
+    def list_objects(self, prefix: str = "") -> list[str]:
+        """前缀安全同 _safe_path：拒绝绝对路径/反斜杠/.. 段（防目录穿越枚举）"""
+        if prefix.startswith("/") or "\\" in prefix or ".." in prefix.split("/"):
+            raise ValueError(f"非法前缀: {prefix}")
+        base = self._root / prefix
+        if base.is_file():
+            return [prefix]
+        if not base.is_dir():
+            return []
+        return sorted(
+            p.relative_to(self._root).as_posix()
+            for p in base.rglob("*")
+            if p.is_file()
+        )
 
 
 def _cos_retryable(exc: Exception) -> bool:
@@ -287,6 +333,27 @@ class CosStorageBackend(StorageBackend):
         except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
             raise StorageError(
                 "COS_STAT_FAILED", f"COS object_exists 失败: {type(exc).__name__}",
+                retryable=_cos_retryable(exc),
+            ) from exc
+
+    def list_objects(self, prefix: str = "") -> list[str]:
+        """按前缀列出对象键（自动分页；IsTruncated 为字符串 'true'/'false'）"""
+        try:
+            names: list[str] = []
+            marker = ""
+            while True:
+                resp = self._client.list_objects(
+                    Bucket=self._bucket, Prefix=prefix, Marker=marker
+                )
+                for item in resp.get("Contents") or []:
+                    names.append(item["Key"])
+                if resp.get("IsTruncated") != "true":
+                    break
+                marker = resp.get("NextMarker") or marker
+            return sorted(names)
+        except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+            raise StorageError(
+                "COS_LIST_FAILED", f"COS list_objects 失败: {type(exc).__name__}",
                 retryable=_cos_retryable(exc),
             ) from exc
 
