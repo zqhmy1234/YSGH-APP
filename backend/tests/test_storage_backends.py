@@ -85,6 +85,138 @@ def test_fs_storage_error_wraps_put_failure(fs_backend, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# list_objects（C7 · 2026-08-28 · B1 孤儿扫描消费：按前缀全量列举 + 稳定升序）
+# ---------------------------------------------------------------------------
+
+
+def test_fs_list_objects_by_prefix(fs_backend):
+    """fs：前缀过滤 + 升序 + 精确文件键 + 空前缀全量"""
+    for k in ("photos/2026/a.jpg", "photos/2026/b.jpg", "photos/2025/c.jpg", "voice/v1.mp3"):
+        fs_backend.put_object(k, b"x")
+    assert fs_backend.list_objects("photos/") == [
+        "photos/2025/c.jpg",
+        "photos/2026/a.jpg",
+        "photos/2026/b.jpg",
+    ]
+    assert fs_backend.list_objects("photos/2026/") == ["photos/2026/a.jpg", "photos/2026/b.jpg"]
+    assert fs_backend.list_objects("photos/2026/a.jpg") == ["photos/2026/a.jpg"]  # 精确键
+    assert fs_backend.list_objects("nope/") == []
+    assert fs_backend.list_objects() == [
+        "photos/2025/c.jpg",
+        "photos/2026/a.jpg",
+        "photos/2026/b.jpg",
+        "voice/v1.mp3",
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad_prefix",
+    ["/etc", "../x", "a/../b", "a\\b"],
+    ids=["绝对路径", "上级逃逸", "路径段内..", "反斜杠"],
+)
+def test_fs_list_objects_rejects_unsafe_prefix(fs_backend, bad_prefix):
+    """前缀路径安全：拒绝绝对路径 / .. / 反斜杠（防目录穿越枚举）"""
+    with pytest.raises(ValueError):
+        fs_backend.list_objects(bad_prefix)
+
+
+def test_fake_list_objects_by_prefix():
+    """fake：内存字典按前缀过滤 + 升序"""
+    from app.services.external.storage import FakeStorageBackend
+
+    b = FakeStorageBackend()
+    for k in ("photos/u1/a.jpg", "photos/u1/b.jpg", "photos/u2/c.jpg", "voice/u1/v.mp3"):
+        b.put_object(k, b"x")
+    assert b.list_objects("photos/") == ["photos/u1/a.jpg", "photos/u1/b.jpg", "photos/u2/c.jpg"]
+    assert b.list_objects("photos/u1/") == ["photos/u1/a.jpg", "photos/u1/b.jpg"]
+    assert b.list_objects("voice/") == ["voice/u1/v.mp3"]
+    assert b.list_objects("nope/") == []
+    assert b.list_objects() == [
+        "photos/u1/a.jpg",
+        "photos/u1/b.jpg",
+        "photos/u2/c.jpg",
+        "voice/u1/v.mp3",
+    ]
+
+
+def test_cos_list_objects_by_prefix(cos_backend):
+    """cos：SDK list_objects 前缀过滤 + 升序（mock 客户端记录调用）"""
+    for k in ("photos/u1/a.jpg", "photos/u1/b.jpg", "photos/u2/c.jpg", "voice/v1.mp3"):
+        cos_backend.put_object(k, b"x")
+    assert cos_backend.list_objects("photos/") == [
+        "photos/u1/a.jpg",
+        "photos/u1/b.jpg",
+        "photos/u2/c.jpg",
+    ]
+    assert cos_backend.list_objects("photos/u1/") == ["photos/u1/a.jpg", "photos/u1/b.jpg"]
+    assert cos_backend.list_objects("nope/") == []
+    assert "list_objects" in cos_backend._client.calls
+
+
+def test_cos_list_objects_paginates(cos_backend):
+    """cos：IsTruncated=true 分页自动续页（NextMarker 拼接）"""
+    for i in range(5):
+        cos_backend.put_object(f"photos/u1/f{i:02d}.jpg", b"x")
+    cos_backend._client.list_page_size = 2
+    assert cos_backend.list_objects("photos/u1/") == [
+        f"photos/u1/f{i:02d}.jpg" for i in range(5)
+    ]
+
+
+def test_cos_list_failure_wrapped(cos_backend):
+    """cos：list 异常 → StorageError(COS_LIST_FAILED)"""
+    from qcloud_cos.cos_exception import CosClientError
+
+    cos_backend._client.error = CosClientError.__new__(CosClientError)
+    with pytest.raises(StorageError) as raised:
+        cos_backend.list_objects("photos/")
+    assert raised.value.code == "COS_LIST_FAILED"
+
+
+def test_minio_list_objects_by_prefix(monkeypatch):
+    """minio：SDK list_objects(recursive=True) 前缀过滤 + 升序"""
+    from app.services.external.storage import MinioStorageBackend
+
+    backend = object.__new__(MinioStorageBackend)
+    calls: dict = {}
+
+    class _Obj:
+        def __init__(self, name):
+            self.object_name = name
+
+    class _FakeMinioClient:
+        def list_objects(self, bucket, prefix="", recursive=False):
+            # 真实 minio SDK 服务端按 prefix 过滤后返回迭代器
+            calls.update(bucket=bucket, prefix=prefix, recursive=recursive)
+            all_names = ["photos/u1/b.jpg", "photos/u1/a.jpg", "voice/v1.mp3"]
+            return iter(_Obj(n) for n in all_names if n.startswith(prefix))
+
+    backend._client = _FakeMinioClient()
+    backend._bucket = "yishu-test-bucket"
+    assert backend.list_objects("photos/") == ["photos/u1/a.jpg", "photos/u1/b.jpg"]
+    assert calls == {"bucket": "yishu-test-bucket", "prefix": "photos/", "recursive": True}
+
+
+def test_minio_list_failure_wrapped():
+    """minio：list 异常 → StorageError(MINIO_LIST_FAILED, retryable=True)"""
+    from app.services.external.storage import MinioStorageBackend
+    from minio import S3Error
+
+    backend = object.__new__(MinioStorageBackend)
+
+    class _BrokenMinioClient:
+        def list_objects(self, bucket, prefix="", recursive=False):
+            raise S3Error("code", "msg", "resource", "reqid", "host", None)
+
+    backend._client = _BrokenMinioClient()
+    backend._bucket = "yishu-test-bucket"
+    with pytest.raises(StorageError) as raised:
+        backend.list_objects("photos/")
+    assert raised.value.code == "MINIO_LIST_FAILED"
+    assert raised.value.retryable is True
+
+
+# ---------------------------------------------------------------------------
 # CosStorageBackend（mock 客户端依赖注入，不建真连接/不烧 key）
 # ---------------------------------------------------------------------------
 
@@ -107,6 +239,7 @@ class _FakeCosClient:
         self.calls: list[str] = []
         self.error: Exception | None = None
         self.sts_creds = None
+        self.list_page_size: int | None = None  # 模拟 COS 分页（IsTruncated）
 
     def _maybe_raise(self, op: str):
         self.calls.append(op)
@@ -131,6 +264,22 @@ class _FakeCosClient:
     def object_exists(self, Bucket=None, Key=None, **kwargs):
         self._maybe_raise("object_exists")
         return Key in self.objects
+
+    def list_objects(self, Bucket=None, Prefix=None, Marker=None, **kwargs):
+        """模拟 COS SDK 分页语义：IsTruncated 为字符串 'true'/'false'"""
+        self._maybe_raise("list_objects")
+        keys = sorted(k for k in self.objects if k.startswith(Prefix or ""))
+        if Marker:
+            keys = [k for k in keys if k > Marker]
+        page_size = self.list_page_size
+        if page_size and len(keys) > page_size:
+            page = keys[:page_size]
+            return {
+                "Contents": [{"Key": k} for k in page],
+                "IsTruncated": "true",
+                "NextMarker": page[-1],
+            }
+        return {"Contents": [{"Key": k} for k in keys], "IsTruncated": "false", "NextMarker": ""}
 
 
 @pytest.fixture()
