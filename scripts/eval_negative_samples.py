@@ -153,7 +153,6 @@ def _validate(records: list[dict]) -> tuple[list[str], list[str], dict]:
         if missing:
             errors.append(f"{qid}: 缺必填字段 {sorted(missing)}")
         layer = rec.get("layer")
-        stats.setdefault("_layer_total", 0)
         if layer in stats["layers"]:
             stats["layers"][layer]["total"] += 1
         else:
