@@ -43,6 +43,7 @@ def main() -> None:
     queues = sys.argv[1:] or [QUEUE_HIGH, QUEUE_LOW]
     # 预导入任务函数（RQ 从模块路径反序列化，确保可导入）
     from app.services import pipeline  # noqa: F401  —— 注册 process_content
+    from app.services.events import run_user_aggregation  # noqa: F401  —— 注册聚合任务（F3）
 
     worker = get_worker_class()(
         [get_queue(q) for q in queues],

@@ -453,6 +453,34 @@ def _index_after_commit(db: Session, content: Content) -> None:
         logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
 
 
+def _enqueue_user_aggregation(user_id: str) -> str:
+    """F3/R5-3：按 user 级 key 入队聚合独立 RQ 任务（同用户同时多内容只跑一次）
+
+    core/queue.enqueue_unique 的 Redis SETNX 原子预占位做去重合并：
+      - job_id = run_user_aggregation_user_<uid>（确定性，同用户并发/重复触发不重复入队）
+      - 聚合任务扫描该用户全部未成候选内容（含本批并发内容），一次覆盖并发批次
+      - 放 low 队列（P2-P4 聚合/批量），DEFAULT_JOB_TIMEOUT（300s）
+
+    返回 "queued"（已入队）/ "enqueue_failed"（入队失败，调用方只记日志不否定主结果）。
+    """
+    try:
+        from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
+        from app.services.events import run_user_aggregation
+
+        enqueue_unique(
+            run_user_aggregation,
+            f"user:{user_id}",
+            str(user_id),
+            mode="l2l3",
+            queue_name=QUEUE_LOW,
+            job_timeout=DEFAULT_JOB_TIMEOUT,
+        )
+        return "queued"
+    except Exception as exc:  # noqa: BLE001 —— 入队失败不影响主转写结果
+        logger.warning("聚合任务入队失败 user=%s: %s", user_id, type(exc).__name__)
+        return "enqueue_failed"
+
+
 def process_content(content_id: str) -> dict:
     """内容处理主入口（RQ worker 消费；API-016 队列编排）
 
@@ -463,7 +491,8 @@ def process_content(content_id: str) -> dict:
         ASR 转写 / dashscope / 腾讯 CI / 高德等分钟级外部调用全部在事务外进行，
         contents 行锁/连接不再横跨整个管线（ASR/LLM 调用移出行锁窗口）
       - 阶段 1：处理器（外调 + 内存变更）包 begin_nested（SAVEPOINT）失败隔离
-      - 阶段 2：事件聚合（DB 写入，与状态位同事务）
+      - 阶段 2：事件聚合——F3/R5-3 已拆出为独立 per-user RQ 任务（主提交后经
+        enqueue_unique 按 user 级 key 入队去重合并，不再同步跑聚合写库）
       - 阶段 3：主提交 status=done + 全部 DB 状态变更一次落库
       - 阶段 4：Qdrant 索引后置到主提交之后（DB 是真值，Qdrant 事后幂等增强；
         主提交失败则无向量写入，无孤儿向量；重投重跑按 content_id 幂等）
@@ -510,15 +539,10 @@ def process_content(content_id: str) -> dict:
             processed.append(content.content_type)
 
         # 空白语音不形成记忆事件；端侧 L0/L1 真值后，云侧只跑 L2/L3 候选。
-        if processing_outcome != "no_speech":
-            try:
-                from app.services.events import aggregate_user
-
-                agg = aggregate_user(db, str(content.user_id), mode="l2l3")
-                if agg.get("upper_items") or agg.get("items"):
-                    processed.append("events")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("事件聚合失败 content=%s: %s", content.id, exc)
+        # F3/R5-3：聚合从 process_content 拆出为独立 per-user RQ 任务——
+        # 入队延后到主提交后执行（聚合任务独立会话须能读到已提交内容），
+        # enqueue_unique 按 user 级 key 去重合并（同用户同时多内容只跑一次）。
+        agg_pending = processing_outcome != "no_speech"
 
         # 回写状态（部分步骤失败也算 done；失败明细在 extra.error）
         # A2（P0-2）：本轮全成功则清掉上一轮失败残留的 error 标记——retryable
@@ -571,6 +595,18 @@ def process_content(content_id: str) -> dict:
         # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
         db.commit()
 
+        # F3/R5-3：聚合独立任务入队（主提交后——聚合任务独立会话须见已提交内容）。
+        # enqueue_unique 按 user 级 key 去重：同用户并发/连续多内容只投一个聚合任务
+        # （聚合扫描该用户全部未成候选内容，一次覆盖并发批次）；入队失败仅记日志
+        # 与返回标记，不影响主转写结果（聚合失败静默语义，requeue_job 兜底扫描）。
+        agg_job_status = None
+        if agg_pending:
+            agg_job_status = _enqueue_user_aggregation(str(content.user_id))
+            if agg_job_status == "queued":
+                processed.append("events_queued")
+            else:
+                processed.append("events_enqueue_failed")
+
         # 阶段 4：Qdrant 后置索引（失败只影响可搜索性，不否定已提交的处理）
         try:
             _index_after_commit(db, content)
@@ -583,6 +619,7 @@ def process_content(content_id: str) -> dict:
             "processed": processed,
             "outcome": processing_outcome,
             "emotion_job": emotion_job_status,
+            "agg_job": agg_job_status,
             "error": errors,
         }
     except AsrError as exc:

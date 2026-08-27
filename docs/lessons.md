@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 07:59 · commit 28ba960 · ts=1787788752
+- **错误**：test_events.py F401: 'sqlalchemy.select' imported but unused（拆分 test_aggregation.py 后残留）
+- **根因**：把 F3 聚合测试从 test_events.py 拆到 test_aggregation.py 时，删除了用到 select 的查询用例但未同步清理 import；review_agent lint 门禁（ruff F401）拦截。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 06:40 · commit 1a60fe2 · ts=1787784005
 - **错误**：enqueue_unique 入队抛 ValueError: Job ID must only contain letters, numbers, underscores and dashes
 - **根因**：RQ 2.x validate_job_id 限制 job_id 只允许字母/数字/下划线/连字符；enqueue_unique 首版用 func:key 冒号拼接，冒号触发 ValueError
