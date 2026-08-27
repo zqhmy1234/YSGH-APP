@@ -13,10 +13,14 @@ from app.services.classifier import classify
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "setfit-classifier"
 
-pytestmark = pytest.mark.skipif(
-    not (MODEL_DIR / "model.safetensors").exists() and not (MODEL_DIR / "pytorch_model.bin").exists(),
-    reason="SetFit 模型未训练（先跑 python scripts/train_setfit.py）",
-)
+# H3/R8#10：真 SetFit 模型推理 → 慢测试分层（-m "not slow" 本地快速回归排除）
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not (MODEL_DIR / "model.safetensors").exists() and not (MODEL_DIR / "pytorch_model.bin").exists(),
+        reason="SetFit 模型未训练（先跑 python scripts/train_setfit.py）",
+    ),
+]
 
 
 def _seed_eval() -> list[tuple[str, str]]:

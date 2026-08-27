@@ -10,7 +10,7 @@ import pytest
 from app.schemas.search import SearchQuery
 from app.services.embedding import encode_dense
 from app.services.rag import _merge_recalls, search_by_image
-from app.services.vector_store import get_store, point_id_for
+from app.services.vector_store import get_store
 from qdrant_client.http import models  # noqa: F401
 
 from tests.polling import polling_until  # backend/tests/polling.py（R8#9 轮询工具）
@@ -22,16 +22,28 @@ IMAGE_CORPUS = [
     {"id": "img-003", "caption": "会议室投影仪上的课程表截图", "label": "screenshot"},
 ]
 
+# R8#14（2026-08-27）：语料按 payload 标记删除（不再枚举固定 id）——隔离 collection
+# yishu_benchmark 内安全；与 test_rag 的 BENCH_MARK 同模式，防语料扩充旧点残留。
+BENCH_MARK = "rag-distribution"
+
 
 @pytest.fixture(scope="module")
 def image_indexed():
     """写入 image_vec 测试点（yishu_benchmark 独立 collection，不污染生产）"""
     store = get_store()
     store.ensure_collection("yishu_benchmark")
+    # R8#14：删除全部 benchmark 标记点（含扩充后旧语料），不再按固定 id 枚举
     store.client.delete(
         collection_name="yishu_benchmark",
-        points_selector=models.PointIdsList(
-            points=[point_id_for(f"img-{i:03d}") for i in range(1, 10)]
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="benchmark",
+                        match=models.MatchValue(value=BENCH_MARK),
+                    )
+                ]
+            )
         ),
     )
     for doc in IMAGE_CORPUS:
@@ -39,7 +51,7 @@ def image_indexed():
         payload = {
             "content_type": "image",
             "label": doc["label"],
-            "benchmark": "rag-distribution",
+            "benchmark": BENCH_MARK,
             "text": doc["caption"],
         }
         store.upsert_image_vec(content_id=doc["id"], vec=vec, payload=payload, collection="yishu_benchmark")
@@ -80,11 +92,11 @@ def test_search_image_photo_points_hit(image_indexed):
     image 旧点同时命中；此前 "image" 过滤在生产 photo 点下恒空结果。
     """
     store = image_indexed
-    # 生产语义点：content_type="photo"
+    # 生产语义点：content_type="photo"（带 benchmark 标记 → 下次 fixture 重建时一并清理）
     vec_photo = encode_dense(["会议室的课程表截图"])[0]
     store.upsert_image_vec(
         content_id="img-010", vec=vec_photo,
-        payload={"content_type": "photo", "text": "会议室的课程表截图", "label": "screenshot"},
+        payload={"content_type": "photo", "text": "会议室的课程表截图", "label": "screenshot", "benchmark": BENCH_MARK},
         collection="yishu_benchmark",
     )
     # R8#9：轮询等 photo 点索引就绪（不再固定 sleep 0.5s）

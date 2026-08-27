@@ -131,3 +131,72 @@ def test_cursor_pagination(client, auth_headers):
 
     r2 = client.get(f"/api/v1/contents?limit=2&cursor={data['cursor']}", headers=auth_headers)
     assert r2.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# H3：create_content cos_key 归属/前缀/存在性校验（原 test_security_p3.py M4 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_create_content_cos_key_cross_user_rejected(client, auth_headers):
+    """A 提交 B 前缀的 cos_key → 422 CONTENT_009（跨租户对象拉取被拒）"""
+    # auth_headers 只回传 token，两个用户分别登录取真实 user_id
+    headers_a = auth_headers
+    headers_b = client.post(
+        "/api/v1/auth/wechat",
+        json={"code": f"ct-b-{uuid.uuid4().hex[:8]}", "device_id": "ct-b-dev"},
+    )
+    assert headers_b.status_code == 200
+    token_b = headers_b.json()["data"]["access_token"]
+    from app.core.security import decode_token
+
+    user_b = decode_token(token_b)["sub"]
+    body = {
+        "content_type": "voice",
+        "cos_key": f"voice/{user_b}/202608/victim.wav",
+        "source": "app",
+    }
+    r = client.post("/api/v1/contents", json=body, headers=headers_a)
+    assert r.status_code == 422
+    assert r.json()["code"] == "CONTENT_009"
+
+
+def test_create_content_cos_key_missing_object_rejected(client, auth_headers):
+    """本用户前缀但对象不存在 → 422 CONTENT_009（任意 key 不触发存储遍历/管线）"""
+    user_id = _current_user_id(auth_headers)
+    body = {
+        "content_type": "photo",
+        "cos_key": f"photos/{user_id}/202608/nonexistent.jpg",
+        "source": "app",
+    }
+    r = client.post("/api/v1/contents", json=body, headers=auth_headers)
+    assert r.status_code == 422
+    assert r.json()["code"] == "CONTENT_009"
+
+
+def test_create_content_cos_key_valid_passes(client, auth_headers):
+    """本用户前缀 + 对象存在 → 正常入库（不误伤合法 voice/photo 回传）"""
+    user_id = _current_user_id(auth_headers)
+    cos_key = f"voice/{user_id}/202608/ok_{uuid.uuid4().hex[:8]}.wav"
+    _seed_object(cos_key)
+    body = {
+        "content_type": "voice",
+        "cos_key": cos_key,
+        "source": "app",
+        "extra": {"duration_ms": 1000},
+    }
+    try:
+        r = client.post("/api/v1/contents", json=body, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["content_type"] == "voice"
+    finally:
+        from app.db.models import Content
+        from app.db.session import SessionLocal
+        from sqlalchemy import delete as sa_delete
+
+        db = SessionLocal()
+        try:
+            db.execute(sa_delete(Content).where(Content.user_id == user_id))
+            db.commit()
+        finally:
+            db.close()

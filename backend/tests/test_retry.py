@@ -12,6 +12,9 @@ import time
 import pytest
 from app.services.external.retry import RetryExhaustedError, _is_retryable, with_retry
 
+# H3/R8#10：纯函数重试封装单测 → unit 分层
+pytestmark = pytest.mark.unit
+
 # R8#5（2026-08-27）：4 个 _is_retryable 单断言分类用例 → 表驱动参数化
 RETRYABLE_CASES = [
     (ConnectionError("10053"), True),

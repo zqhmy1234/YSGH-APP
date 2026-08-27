@@ -197,3 +197,22 @@ def test_interview_api_smoke(db_user):
         assert r2.status_code == 200 and r2.json()["data"]["cold_start_done"] is True
     finally:
         app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# H3：interview/questions 补鉴权（原 test_security_p3.py L1 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_interview_questions_requires_auth(client):
+    """未带 token → 401（与全站鉴权约定一致）"""
+    r = client.get("/api/v1/interview/questions")
+    assert r.status_code == 401
+
+
+def test_interview_questions_with_auth(client, auth_headers):
+    """登录后可正常获取三问（不误伤冷启动访谈流程）"""
+    _, headers = auth_headers("p3-interview")
+    r = client.get("/api/v1/interview/questions", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]

@@ -358,3 +358,107 @@ def test_send_sms_production_blocked(client, db, monkeypatch):
         select(SmsCode).where(SmsCode.phone == phone)
     ).scalars().all()
     assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# H3：OTP 作废 + 冷却（原 test_security_p3.py M2 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_otp_invalidated_after_5_failures(client):
+    """每 phone 每窗口失败 ≥5 次 → 作废该码 + 冷却（第 5 次起 429，正确码也不可用）"""
+    phone = _phone()
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
+    assert r.status_code == 200, r.text
+    code = r.json()["data"]["mock_code"]
+
+    for i in range(5):
+        r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": "000000"})
+        if i < 4:
+            assert r.status_code == 401, f"第 {i + 1} 次应 401，got {r.status_code} {r.text}"
+        else:
+            assert r.status_code == 429, f"第 5 次应 429 作废，got {r.status_code} {r.text}"
+            assert r.json()["code"] == "AUTH_004"
+
+    # 正确验证码也已作废（冷却中 → 429；DB 中该码 used_at 已置位）
+    r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": code})
+    assert r.status_code == 429
+    assert r.json()["code"] == "AUTH_004"
+
+    # 清理验证码记录（防 DB 残留）
+    db = SessionLocal()
+    try:
+        db.execute(sa_delete(SmsCode).where(SmsCode.phone == phone))
+        db.commit()
+    finally:
+        db.close()
+
+
+@pytest.mark.integration
+def test_otp_below_threshold_still_allows_success(client):
+    """失败 <5 次不误伤：4 次错误后正确码仍可登录"""
+    phone = _phone()
+    r = client.post("/api/v1/auth/sms/send", json={"phone": phone})
+    assert r.status_code == 200, r.text
+    code = r.json()["data"]["mock_code"]
+
+    for _ in range(4):
+        r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": "000000"})
+        assert r.status_code == 401
+
+    r = client.post("/api/v1/auth/phone", json={"phone": phone, "code": code})
+    assert r.status_code == 200, r.text
+
+    db = SessionLocal()
+    try:
+        from app.db.models import Device, SmsCode, User
+
+        user = db.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
+        if user is not None:
+            db.execute(sa_delete(Device).where(Device.user_id == user.id))
+        db.execute(sa_delete(SmsCode).where(SmsCode.phone == phone))
+        db.execute(sa_delete(User).where(User.phone == phone))
+        db.commit()
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# H3：refresh token 哈希落库（原 test_security_p3.py M6 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_refresh_token_stored_as_hash(client):
+    """devices.refresh_token 清空、refresh_token_hash 落 HMAC-SHA256（M6/L2 + G1/R6#8）"""
+    from app.db.models import Device, User
+    from app.services.auth.auth import _hash_refresh_token
+
+    code = _code("p3-hash")
+    r = client.post(
+        "/api/v1/auth/wechat", json={"code": code, "device_id": "p3-hash-dev"}
+    )
+    assert r.status_code == 200
+    refresh = r.json()["data"]["refresh_token"]
+
+    db = SessionLocal()
+    try:
+        user = db.execute(select(User).where(User.unionid == f"mock-unionid-{code}")).scalar_one()
+        device = db.execute(
+            select(Device).where(Device.user_id == user.id, Device.device_id == "p3-hash-dev")
+        ).scalar_one()
+        assert device.refresh_token is None, "devices 表不应再存明文 refresh"
+        # G1/R6#8：HMAC-SHA256 + 独立密钥（带 `hmac$` 版本前缀），不再裸 sha256
+        assert device.refresh_token_hash == _hash_refresh_token(refresh)
+        assert device.refresh_token_hash.startswith("hmac$")
+        assert device.refresh_rotated_at is not None, "应记录最后轮换时间"
+
+        # 哈希化后 refresh 仍可正常轮换（吊销语义不破坏）
+        r2 = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
+        assert r2.status_code == 200, r2.text
+    finally:
+        db.execute(sa_delete(Device).where(Device.device_id == "p3-hash-dev"))
+        db.execute(sa_delete(User).where(User.unionid == f"mock-unionid-{code}"))
+        db.commit()
+        db.close()

@@ -44,6 +44,42 @@
 
 ---
 
+### 2026-08-27 16:57 · commit 7cf1308 · ts=1787821051
+- **错误**：H3 拆分 test_techdebt_p0 到 test_queue 后 ruff I001 import 排序——全量门禁 lint 拦截（快速门禁仅查本次提交文件漏检）
+- **根因**：拆分时新增的 import 块顺序在快速门禁通过、全量门禁暴露：test_queue 顶部空行数量不符 ruff 格式。教训：全量门禁（--full）跑仓库级 lint，任何 commit 后都需过全量再声明完成
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-27 16:05 · commit 232632d · ts=1787817902
+- **错误**：H3 拆分 test_security_p3 到 test_upload 后 SessionLocal 未在模块级 import——迁移的 test_upload_init_normal_still_works/test_get_status_guards_huge_chunk_count NameError
+- **根因**：原文件在函数内局部 import SessionLocal；迁移时复制了函数体却漏了局部 import，目标文件模块级只有 select/sa_delete。迁移跨文件代码需核对全部 import 依赖（含函数内局部 import）
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-27 15:53 · commit 865fb57 · ts=1787817210
+- **错误**：H3 并行撞号：test_auth 手机号用 int(time.time()) 秒戳——并行 Agent 同秒同号撞 60s 防刷窗口 → 429 flaky（test_sms_send_mock 复现）
+- **根因**：int(time.time()) 精度只有秒，多 Agent 并行/跨运行同秒生成相同手机号，命中 sms 60s 防刷窗口；改 uuid 随机（匹配 ^1\d{10}\$）
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-27 15:30 · commit 97adba4 · ts=1787815840
+- **错误**：H3 迁移 test_techdebt_p0 的 /upload/sts 用例到 test_upload.py 后 auth_headers 登录返回 501（微信登录未接入）：在 monkeypatch app_env=production 之后才调 auth_headers 登录
+- **根因**：auth_headers 走 wechat mock 登录，app_env 置 production 后 mock 登录被拒绝（生产未接入 → 501）；先登录拿 headers 再 monkeypatch 环境开关；且迁移时同函数内出现两处 auth_headers 调用（新旧残留），第二处又撞上 production
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 14:45 · commit 587ea10 · ts=1787813137
 - **错误**：全量门禁失败：G2 --full 时 auth 域 12 失败（G1 在途代码未配 HMAC key / DB 缺 salt 列）+ api_smoke healthz 断言旧字段 env/mock_external_ai（G2 已收敛删除）
 - **根因**：两个并行 Agent 共享同一工作树：G1 在途未提交代码 + 本地库未跑 G1 迁移，混进 G2 的全量门禁 → 门禁反映混合态而非任一分支真值；G2 收敛 healthz 删字段但 api_smoke_cases.py 断言未同步更新

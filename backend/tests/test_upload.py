@@ -13,8 +13,10 @@ import uuid
 import pytest
 from app.core.config import settings
 from app.db.models import Content, UploadChunk, User
+from app.db.session import SessionLocal
 from app.services import upload as upload_svc
 from app.services.external.storage import get_storage_backend
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
@@ -500,3 +502,161 @@ def test_complete_upload_commit_failure_best_effort_delete(db_user, monkeypatch)
         upload_svc.complete_upload(db, task.id)
     monkeypatch.setattr(db, "commit", real_commit)
     assert not get_storage_backend().object_exists(task.file_key)
+
+
+# ---------------------------------------------------------------------------
+# H3：/upload/sts 生产门控 + user_id 透传（原 test_techdebt_p0.py P0-2 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_upload_sts_production_not_configured_501(client, auth_headers, monkeypatch):
+    """P0-2：生产且 COS/STS 未真配 → 501 UPLOAD_008（不返回假凭证）"""
+    _, headers = auth_headers("p0-sts-501")
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "tencent_secret_id", "")
+    monkeypatch.setattr(settings, "tencent_secret_key", "")
+    monkeypatch.setattr(settings, "cos_bucket", "")
+    monkeypatch.setattr(settings, "tencent_sts_role_arn", "")
+    r = client.get("/api/v1/upload/sts", headers=headers)
+    assert r.status_code == 501
+    assert r.json()["code"] == "UPLOAD_008"
+
+
+def test_upload_sts_passes_user_id(client, auth_headers, monkeypatch):
+    """P0-2：STS 凭证按请求方 user_id 签发（policy 路径级白名单的输入来源）"""
+    import app.api.upload as upload_api
+
+    _, headers = auth_headers("p0-sts-uid")
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "tencent_secret_id", "sid")
+    monkeypatch.setattr(settings, "tencent_secret_key", "skey")
+    monkeypatch.setattr(settings, "cos_bucket", "bucket")
+    monkeypatch.setattr(settings, "cos_region", "ap-shanghai")
+    monkeypatch.setattr(settings, "tencent_appid", "1250000000")
+    monkeypatch.setattr(settings, "tencent_sts_role_arn", "arn:root")
+    captured = {}
+
+    class StubBackend:
+        def get_sts_credentials(self, user_id=None):
+            captured["user_id"] = user_id
+            return {"tmp_secret_id": "s", "tmp_secret_key": "k", "session_token": "t"}
+
+    def _stub_backend():
+        return StubBackend()
+
+    monkeypatch.setattr(upload_api, "get_storage_backend", _stub_backend)
+    r = client.get("/api/v1/upload/sts", headers=headers)
+    assert r.status_code == 200, r.text
+    assert captured["user_id"], "必须把请求方 user_id 传入 STS 签发（禁止整桶凭证）"
+
+
+def test_upload_sts_fake_backend_501(client, auth_headers):
+    """P0-2：非 cos 后端 → 501 UPLOAD_005（既有语义回归）"""
+    _, headers = auth_headers("p0-sts-fake")
+    r = client.get("/api/v1/upload/sts", headers=headers)
+    assert r.status_code == 501
+    assert r.json()["code"] == "UPLOAD_005"
+
+
+# ---------------------------------------------------------------------------
+# H3：大数构造 DoS（原 test_security_p3.py M1 按域迁入）
+# ---------------------------------------------------------------------------
+
+
+def test_upload_init_oversize_rejected(client, auth_headers):
+    """file_size > 500MB → 422 UPLOAD_001（服务层 init_upload 同款拒绝）"""
+    _, headers = auth_headers("p3-m1-over")
+    r = client.post(
+        "/api/v1/upload/init",
+        data={
+            "client_upload_id": "cid-big",
+            "file_name": "big.bin",
+            "file_size": 600 * 1024 * 1024,
+            "chunk_size": 8 * 1024 * 1024,
+        },
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "UPLOAD_001"
+
+
+def test_upload_init_small_chunk_rejected(client, auth_headers):
+    """chunk_size < 下限 → 422 UPLOAD_001（防 chunk_count 爆炸）"""
+    _, headers = auth_headers("p3-m1-chunk")
+    r = client.post(
+        "/api/v1/upload/init",
+        data={
+            "client_upload_id": "cid-chunk",
+            "file_name": "x.bin",
+            "file_size": 1024 * 1024,
+            "chunk_size": 16,
+        },
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "UPLOAD_001"
+
+
+def test_upload_init_normal_still_works(client, auth_headers, cleanup_user):
+    """合法参数不受影响（不误伤正常分片上传）"""
+    user_id, headers = auth_headers("p3-m1-ok")
+    try:
+        r = client.post(
+            "/api/v1/upload/init",
+            data={
+                "client_upload_id": "cid-ok",
+                "file_name": "ok.jpg",
+                "file_size": 2500,
+                "chunk_size": 1024,
+            },
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["chunk_count"] == 3  # 2500/1024 → 3
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+        finally:
+            db.close()
+
+
+def test_get_status_guards_huge_chunk_count():
+    """get_status 分片数守卫：迁移前遗留的恶意任务行（chunk_count 10^12）不得物化列表"""
+    from app.db.models import UploadChunk, UploadTask, User
+
+    db = SessionLocal()
+    user_id = None
+    task_id = None
+    try:
+        user = User(phone=f"p3-status-{uuid.uuid4().hex[:8]}", status=1)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        user_id = user.id
+        task = UploadTask(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            client_upload_id="cid-huge",
+            file_name="x.bin",
+            file_size=10**12,
+            chunk_size=1,
+            chunk_count=10**12,
+            file_key="photos/x.bin",
+            storage="fake",
+            status="pending",
+        )
+        db.add(task)
+        db.commit()
+        task_id = task.id
+        with pytest.raises(ValueError):
+            upload_svc.get_status(db, task.id, user_id=user.id)
+    finally:
+        if task_id:
+            db.execute(sa_delete(UploadChunk).where(UploadChunk.upload_id == task_id))
+            db.execute(sa_delete(UploadTask).where(UploadTask.id == task_id))
+        if user_id:
+            db.execute(sa_delete(UploadTask).where(UploadTask.user_id == user_id))
+            db.execute(sa_delete(User).where(User.id == user_id))
+        db.commit()
+        db.close()
