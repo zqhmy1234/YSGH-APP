@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 19:26 · commit 0bd3aaf · ts=1787829991
+- **错误**：review_agent 快速门禁 lint 失败（DTZ005 无时区 datetime.now、E501 超长行、F841 未用变量、E741 歧义变量名、F401 未用 import）
+- **根因**：新脚本未先跑 ruff 就提交；datetime.now() 未用时区；CSV 列名列表重复内联导致超长行
+- **修复**：统一先 python -m ruff check 再提交；datetime 用 timezone.utc；CSV 列抽成常量
+- **相关文件**：scripts/loadtest/loadtest.py, scripts/loadtest/seed_data.py
+- **教训**：写新脚本前先本地 ruff 清零，时区一律显式
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债
