@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 16:22 · commit 68cf2ab · ts=1787818973
+- **错误**：R1#14 迁移 event_aggregation 开发脚本到 scripts/ 时带入未用导入 timedelta（F401，快速门禁 lint 阻断）
+- **根因**：原 load_real_photos.py 用 __import__('datetime').timedelta 惰性取用，datetime.timedelta 顶层导入实际未用；迁移时原样复制未清理
+- **修复**：删除未用导入（仅保留 datetime）
+- **相关文件**：scripts/agg_load_real_photos.py
+- **教训**：迁移代码时清理未用导入；快速门禁 lint 抓 F401 属预期，提交前先跑 review_agent 自查
+
+---
+
 ### 2026-08-27 14:45 · commit 587ea10 · ts=1787813137
 - **错误**：全量门禁失败：G2 --full 时 auth 域 12 失败（G1 在途代码未配 HMAC key / DB 缺 salt 列）+ api_smoke healthz 断言旧字段 env/mock_external_ai（G2 已收敛删除）
 - **根因**：两个并行 Agent 共享同一工作树：G1 在途未提交代码 + 本地库未跑 G1 迁移，混进 G2 的全量门禁 → 门禁反映混合态而非任一分支真值；G2 收敛 healthz 删字段但 api_smoke_cases.py 断言未同步更新

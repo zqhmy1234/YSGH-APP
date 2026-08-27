@@ -19,7 +19,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from .st_dbscan import Photo, haversine_m, l1_daily_aggregate, st_dbscan
+from app.services.event_aggregation.st_dbscan import Photo, haversine_m, l1_daily_aggregate, st_dbscan
 
 # 速度校验上限（B3-3）：步行 6km/h、驾车 120km/h；超限标记"坐标存疑"
 WALK_SPEED_MS = 6000 / 3600.0
