@@ -115,3 +115,14 @@ export const PATH_SETTINGS: string = '/pages/settings/settings'
 // —— 字段常量（对齐 DTO schema 属性名）——
 /** 事件时间存疑标记（C1：EXIF 时间 vs 导入时间差异>阈值 → true，默认 false 向后兼容；A3 渲染角标） */
 export const FIELD_TIME_SUSPECT: string = 'time_suspect'
+
+// —— 导出响应字段（对齐 B2 GET /api/v1/export 负载，18 号 C2；A2 导出保存/校验用）——
+/** 导出时间戳（B2 响应顶层字段） */
+export const FIELD_EXPORTED_AT: string = 'exported_at'
+/** 是否被截断（B2 响应顶层字段：分页/限流下可能截断） */
+export const FIELD_TRUNCATED: string = 'truncated'
+/** 导出负载段：contents / events / profile / corrections（对齐 C2 全量 JSON 元数据四段） */
+export const FIELD_EXPORT_CONTENTS: string = 'contents'
+export const FIELD_EXPORT_EVENTS: string = 'events'
+export const FIELD_EXPORT_PROFILE: string = 'profile'
+export const FIELD_EXPORT_CORRECTIONS: string = 'corrections'
