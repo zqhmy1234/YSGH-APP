@@ -12,8 +12,19 @@
  *  POST /api/v1/messages/read-all  → 全部已读
  *
  * 约定：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * O15 收口：端点路径统一走 contract.ts（PATH_*，与 OpenAPI 对齐）；O17：消息列表
+ * 分页字段对齐（fetchMessagePage 返回 {items, cursor, hasMore}，未读数走游标累加）。
  */
 import { get, post, dataObj, dataArr, showErrorToast } from './api'
+import {
+	PATH_MESSAGES,
+	PATH_ECHO_TODAY,
+	PATH_INTERVIEW_QUESTIONS,
+	PATH_INTERVIEW_ANSWERS,
+	PATH_INTERVIEW_PROFILE,
+	parsePageData,
+	PageData
+} from './contract'
 
 // ═══════════ 回响（T-PL-1）═══════════
 
@@ -38,7 +49,7 @@ export class EchoCard {
 /** GET /echo/today：去年今日回响（无则 null） */
 export function fetchTodayEcho(): Promise<EchoCard | null> {
 	return new Promise<EchoCard | null>((resolve) => {
-		get('/api/v1/echo/today').then((res: UTSJSONObject | null) => {
+		get(PATH_ECHO_TODAY).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return
@@ -101,7 +112,7 @@ export class InterviewResult {
 /** GET /interview/questions：三问；失败空数组 */
 export function fetchInterviewQuestions(): Promise<Array<InterviewQuestion>> {
 	return new Promise<Array<InterviewQuestion>>((resolve) => {
-		get('/api/v1/interview/questions').then((res: UTSJSONObject | null) => {
+		get(PATH_INTERVIEW_QUESTIONS).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve([])
 				return
@@ -159,7 +170,7 @@ export function submitInterviewAnswers(answers: UTSJSONObject): Promise<Intervie
 		answers: answers
 	}
 	return new Promise<InterviewResult | null>((resolve) => {
-		post('/api/v1/interview/answers', body).then((res: UTSJSONObject | null) => {
+		post(PATH_INTERVIEW_ANSWERS, body).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return
@@ -182,7 +193,7 @@ export function submitInterviewAnswers(answers: UTSJSONObject): Promise<Intervie
 /** GET /interview/profile：画像（冷启动状态）；返回 JSON 或 null */
 export function fetchInterviewProfile(): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
-		get('/api/v1/interview/profile').then((res: UTSJSONObject | null) => {
+		get(PATH_INTERVIEW_PROFILE).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return
@@ -214,41 +225,92 @@ export class AppMessage {
 	}
 }
 
-/** GET /messages：消息列表（status 过滤 ''=全部/unread/read）；失败空数组 */
-export function fetchMessages(status: string): Promise<Array<AppMessage>> {
+/** 消息分页结果（O17：与后端 Page{items, cursor, has_more} 对齐） */
+export class MessagePage {
+	items: Array<AppMessage>
+	cursor: string
+	hasMore: boolean
+
+	constructor(items: Array<AppMessage>, cursor: string, hasMore: boolean) {
+		this.items = items
+		this.cursor = cursor
+		this.hasMore = hasMore
+	}
+}
+
+/** GET /messages 分页拉取（status 过滤 ''=全部/unread/read；limit 每页条数）。
+ *  O17：返回 cursor/has_more（不再丢弃分页契约字段）；失败空页（never reject） */
+export function fetchMessagePage(status: string, cursor: string, limit: number): Promise<MessagePage> {
 	// 后端 status 仅支持 unread/read/archived；'all' 视同全部（不传 status）
-	const path = status == '' || status == 'all' ? '/api/v1/messages?limit=50' : '/api/v1/messages?status=' + status + '&limit=50'
-	return new Promise<Array<AppMessage>>((resolve) => {
-		get(path).then((res: UTSJSONObject | null) => {
+	let query = '?limit=' + limit
+	if (status != '' && status != 'all') {
+		query += '&status=' + status
+	}
+	if (cursor != '') {
+		query += '&cursor=' + cursor
+	}
+	return new Promise<MessagePage>((resolve) => {
+		get(PATH_MESSAGES + query).then((res: UTSJSONObject | null) => {
+			const empty = new MessagePage([], '', false)
 			if (res == null) {
-				resolve([])
+				resolve(empty)
 				return
 			}
 			const d = dataObj(res)
 			if (d == null) {
-				resolve([])
+				resolve(empty)
 				return
 			}
-			const arr = d.getArray('items')
-			const result: Array<AppMessage> = []
-			if (arr != null) {
-				for (let i = 0; i < arr.length; i++) {
-					const item = arr[i] as UTSJSONObject
-					result.push(
-						new AppMessage(
-							item.getNumber('id') as number,
-							item.getString('channel') ?? '',
-							item.getString('msg_type') ?? '',
-							item.getString('title') ?? '',
-							item.getString('body') ?? '',
-							item.getString('status') ?? '',
-							item.getString('sent_at') ?? ''
-						)
-					)
-				}
+			const page = parsePageData(d)
+			if (page == null) {
+				resolve(empty)
+				return
 			}
-			resolve(result)
+			const result: Array<AppMessage> = []
+			for (let i = 0; i < page.items.length; i++) {
+				const item = page.items[i] as UTSJSONObject
+				result.push(
+					new AppMessage(
+						item.getNumber('id') as number,
+						item.getString('channel') ?? '',
+						item.getString('msg_type') ?? '',
+						item.getString('title') ?? '',
+						item.getString('body') ?? '',
+						item.getString('status') ?? '',
+						item.getString('sent_at') ?? ''
+					)
+				)
+			}
+			resolve(new MessagePage(result, page.cursor, page.hasMore))
 		})
+	})
+}
+
+/** GET /messages 首屏（status 过滤 ''=全部/unread/read）；兼容旧调用方（取第一页 items）。
+ *  分页消费请用 fetchMessagePage（O17：含 cursor/has_more）；失败空数组 */
+export function fetchMessages(status: string): Promise<Array<AppMessage>> {
+	return new Promise<Array<AppMessage>>((resolve) => {
+		fetchMessagePage(status, '', 50).then((page: MessagePage) => {
+			resolve(page.items)
+		})
+	})
+}
+
+/** 未读数（O17：不再被首屏 limit 截断——游标翻页累加 unread 条数；失败返回 0） */
+export function fetchUnreadCount(): Promise<number> {
+	return new Promise<number>((resolve) => {
+		let total = 0
+		const walk = (cursor: string): void => {
+			fetchMessagePage('unread', cursor, 50).then((page: MessagePage) => {
+				total += page.items.length
+				if (page.hasMore && page.cursor != '' && total < 5000) {
+					walk(page.cursor)
+				} else {
+					resolve(total)
+				}
+			})
+		}
+		walk('')
 	})
 }
 

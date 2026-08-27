@@ -14,7 +14,9 @@
  */
 // O9 收口：错误信封解析统一走 api.ts 的 parseErrorString（原本地 parseSearchError 副本已删）
 // R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+// O15：搜索端点路径统一走 contract.ts（与 OpenAPI 对齐）
 import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { PATH_SEARCH, PATH_SEARCH_IMAGE } from './contract'
 
 export class SearchHitItem {
 	contentId: string
@@ -173,7 +175,7 @@ export function searchText(query: string, limit: number): Promise<SearchOutcome 
 		limit: limit
 	}
 	return new Promise<SearchOutcome | null>((resolve) => {
-		post('/api/v1/search', body).then((res: UTSJSONObject | null) => {
+		post(PATH_SEARCH, body).then((res: UTSJSONObject | null) => {
 			resolve(parseSearch(res))
 		})
 	})
@@ -183,7 +185,7 @@ export function searchText(query: string, limit: number): Promise<SearchOutcome 
  *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
 export function searchByImage(filePath: string, limit: number): Promise<SearchOutcome | null> {
 	return new Promise<SearchOutcome | null>((resolve) => {
-		uploadFileHttp('/api/v1/search/image?limit=' + limit, filePath, 'file', null, 30000).then((hr: HttpResult) => {
+		uploadFileHttp(PATH_SEARCH_IMAGE + '?limit=' + limit, filePath, 'file', null, 30000).then((hr: HttpResult) => {
 			if (hr.status === 200) {
 				// uploadFile res.data 是 string（lessons.md #3）；uploadFileHttp 已按信封解析
 				resolve(parseSearch(hr.body))

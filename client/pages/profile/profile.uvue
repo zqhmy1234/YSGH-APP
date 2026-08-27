@@ -45,8 +45,7 @@
 
 <script lang="uts">
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchInterviewProfile } from '@/utils/play'
-	import { fetchMessages } from '@/utils/play'
+	import { fetchInterviewProfile, fetchUnreadCount } from '@/utils/play'
 	import { showErrorToast } from '@/utils/api'
 
 	export default {
@@ -90,8 +89,9 @@
 				})
 			},
 			loadUnread(): void {
-				fetchMessages('unread').then((list) => {
-					this.unreadCount = list.length
+				// O17：未读数游标翻页累加（不再被首屏 limit=50 截断）
+				fetchUnreadCount().then((n: number) => {
+					this.unreadCount = n
 				})
 			},
 			goInterview(): void {

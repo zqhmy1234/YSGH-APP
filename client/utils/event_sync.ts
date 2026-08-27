@@ -13,6 +13,8 @@
 import { rawRequest, HttpResult } from './api'
 import { ensureLogin, DEVICE_ID } from './auth'
 import { retryAsync } from './retry'
+// O15：事件上云端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { PATH_EVENTS_SYNC } from './contract'
 
 export class SyncOutcome {
 	accepted: number
@@ -37,7 +39,7 @@ function postOnce(events: Array<UTSJSONObject>): Promise<SyncOutcome | null> {
 			device_id: DEVICE_ID,
 			events: events
 		}
-		rawRequest('/api/v1/events/sync', 'POST', body).then((hr: HttpResult) => {
+		rawRequest(PATH_EVENTS_SYNC, 'POST', body).then((hr: HttpResult) => {
 			if (hr.status === 200) {
 				const d: UTSJSONObject | null = hr.body != null ? hr.body.getJSON('data') : null
 				let accepted = 0

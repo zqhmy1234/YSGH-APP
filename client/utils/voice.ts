@@ -19,7 +19,9 @@
  */
 // O9 收口：上传/错误信封解析统一走 api.ts（原本地 parseEnvelope/parseError 副本已删）
 // R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+// O15：asr/contents 端点路径统一走 contract.ts（与 OpenAPI 对齐）
 import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { PATH_ASR_TRANSCRIBE, PATH_CONTENTS } from './contract'
 // TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
 // 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
 import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
@@ -155,7 +157,7 @@ export function resumeRecord(): void {
  *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
 export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 	return new Promise<AsrResult | null>((resolve) => {
-		uploadFileHttp('/api/v1/asr/transcribe?preferred=auto', filePath, 'file', null, 30000).then((hr: HttpResult) => {
+		uploadFileHttp(PATH_ASR_TRANSCRIBE + '?preferred=auto', filePath, 'file', null, 30000).then((hr: HttpResult) => {
 			if (hr.status === 200) {
 				// 教训（lessons.md #3）：uploadFile 的 res.data 是 string；uploadFileHttp 已按信封解析
 				const body = hr.body
@@ -233,7 +235,7 @@ export function saveVoiceContent(
 		body.set('cos_key', cosKey)
 	}
 	return new Promise<string | null>((resolve) => {
-		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
+		post(PATH_CONTENTS, body).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return
