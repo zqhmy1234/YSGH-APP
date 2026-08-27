@@ -68,6 +68,8 @@
 								<text class="pending-btn-text">确认</text>
 							</view>
 						</view>
+						<!-- US-12 时间存疑角标（D2：右上角小角标；false/缺失不渲染） -->
+						<SuspectBadge :visible="ev.timeSuspect === true" />
 					</view>
 				</view>
 
@@ -97,6 +99,8 @@
 								<text class="l2-chip-count rust">{{ child.photoCount }}张</text>
 							</view>
 						</view>
+						<!-- US-12 时间存疑角标（D2：右上角小角标；false/缺失不渲染；不遮挡 ⋯ 操作钮与主内容） -->
+						<SuspectBadge :visible="ev.timeSuspect === true" />
 					</view>
 				</view>
 				<view class="feed-foot">
