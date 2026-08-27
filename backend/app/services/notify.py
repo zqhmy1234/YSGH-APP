@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -29,6 +30,46 @@ from sqlalchemy.orm import Session
 from app.db.models import Content, Message
 
 logger = logging.getLogger("yishu.notify")
+
+
+# ---------------------------------------------------------------------------
+# 推送通道端口（R1#12：抽象推送通道，mock/真实通道实现，行为等价）
+#
+# create_message 的 push 分支经端口投递（幂等键 = message.id）；默认 MockPushChannel
+# 日志占位（S4-07：交付调度+消息生成+消息中心），凭证到位后 set_push_channel 换真实
+# 厂商通道零切换。
+# ---------------------------------------------------------------------------
+@runtime_checkable
+class PushChannel(Protocol):
+    """推送通道端口：把已入库消息投递给推送厂商"""
+
+    def send(self, *, user_id: str, message: Message) -> None:
+        """推送一条消息（幂等键 = message.id；实现方负责真实投递，失败记日志不抛）"""
+        ...
+
+
+class MockPushChannel:
+    """mock 通道：日志占位（凭证未配置时的默认实现；配 key 后换真实通道）"""
+
+    def send(self, *, user_id: str, message: Message) -> None:
+        logger.info("[MOCK_PUSH] user=%s msg_id=%s title=%s body=%s", user_id, message.id, message.title, message.body)
+
+
+_push_channel_ref: dict[str, PushChannel | None] = {"channel": None}
+
+
+def get_push_channel() -> PushChannel:
+    """当前推送通道（默认 mock；可 set_push_channel 注入真实厂商实现）"""
+    ch = _push_channel_ref["channel"]
+    if ch is None:
+        ch = MockPushChannel()
+        _push_channel_ref["channel"] = ch
+    return ch
+
+
+def set_push_channel(channel: PushChannel | None) -> None:
+    """注入/重置推送通道（None 恢复 mock 默认；真实厂商通道配 key 后注入）"""
+    _push_channel_ref["channel"] = channel
 
 # 复盘生成时区（产品口径：本地 22:00；MVP 中国区固定 +08:00）
 REVIEW_TZ = timezone(timedelta(hours=8))
@@ -147,9 +188,9 @@ def create_message(
     db.flush([msg])
 
     if channel == "push":
-        # 推送厂商凭证未配置 → mock 通道（S4-07：交付调度+消息生成+消息中心；
-        # 凭证到位后在此接入真实厂商，幂等键 = messages.id）
-        logger.info("[MOCK_PUSH] user=%s msg_id=%s title=%s body=%s", user_id, msg.id, title, body)
+        # 推送厂商凭证未配置 → mock 通道（R1#12 端口抽象：默认 MockPushChannel 日志
+        # 占位；凭证到位后 set_push_channel 换真实厂商通道，幂等键 = messages.id）
+        get_push_channel().send(user_id=user_id, message=msg)
     return msg
 
 
