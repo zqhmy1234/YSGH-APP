@@ -172,6 +172,71 @@ export function rawRequest(path: string, method: Method, data: UTSJSONObject | n
 	return doRawRequest(path, method, data, false)
 }
 
+/**
+ * 上传/上传类路径统一封装（R1#17：upload_protocol/voice/search_api 的裸 uni.uploadFile 收敛本模块）：
+ * 复用 rawRequest 模式——保留 status、401 自动刷新重放一次、5xx Sentry 上报、不 toast。
+ * uploadFile 的 res.data 为 string（lessons.md #3），经 parseEnvelopeString 解析为信封对象。
+ * 注意：multipart 上传不能带 Content-Type: application/json（uni.uploadFile 自动设 boundary），
+ * 故 header 仅 Authorization；formData 为 multipart 表单字段（可为 null）。
+ */
+function doUploadFileHttp(
+	path: string,
+	filePath: string,
+	name: string,
+	formData: UTSJSONObject | null,
+	timeout: number,
+	retried: boolean
+): Promise<HttpResult> {
+	return new Promise<HttpResult>((resolve) => {
+		const header: UTSJSONObject = {}
+		const token = getToken()
+		if (token != '') {
+			header.set('Authorization', 'Bearer ' + token)
+		}
+		uni.uploadFile({
+			url: getBaseUrl() + path,
+			filePath: filePath,
+			name: name,
+			formData: formData != null ? formData : ({} as UTSJSONObject),
+			header: header,
+			timeout: timeout,
+			success: (res) => {
+				// uploadFile res.data 是 string（lessons.md #3），经信封解析取对象
+				const raw = res.data as string
+				const body = parseEnvelopeString(raw)
+				// 5xx 服务端异常 → Sentry 上报（与 rawRequest 同噪音闸门）
+				if (res.statusCode >= 500) {
+					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				}
+				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
+				if (res.statusCode === 401 && !retried) {
+					refreshToken().then((ok: boolean) => {
+						if (ok) {
+							doUploadFileHttp(path, filePath, name, formData, timeout, true).then((r: HttpResult) => {
+								resolve(r)
+							})
+						} else {
+							clearToken()
+							resolve(new HttpResult(401, body))
+						}
+					})
+					return
+				}
+				resolve(new HttpResult(res.statusCode, body))
+			},
+			fail: () => {
+				captureException('network fail: ' + path, 'api.network', null)
+				resolve(new HttpResult(0, null))
+			}
+		})
+	})
+}
+
+/** 上传/上传类路径统一封装（R1#17）：见 doUploadFileHttp；返回 HttpResult（status + 信封对象）。 */
+export function uploadFileHttp(path: string, filePath: string, name: string, formData: UTSJSONObject | null, timeout: number): Promise<HttpResult> {
+	return doUploadFileHttp(path, filePath, name, formData, timeout, false)
+}
+
 export function get(path: string): Promise<UTSJSONObject | null> {
 	return request(path, 'GET', null)
 }

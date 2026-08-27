@@ -13,9 +13,8 @@
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
 // O9 收口：错误信封解析统一走 api.ts 的 parseErrorString（原本地 parseSearchError 副本已删）
-import { post, dataObj, showErrorToast, parseErrorString } from './api'
-import { getBaseUrl } from './config'
-import { getToken as getTokenForSearchUpload } from './auth'
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
 
 export class SearchHitItem {
 	contentId: string
@@ -180,44 +179,19 @@ export function searchText(query: string, limit: number): Promise<SearchOutcome 
 	})
 }
 
-/** POST /search/image：以图搜图（multipart）；返回 SearchOutcome 或 null */
+/** POST /search/image：以图搜图（multipart）；返回 SearchOutcome 或 null
+ *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
 export function searchByImage(filePath: string, limit: number): Promise<SearchOutcome | null> {
 	return new Promise<SearchOutcome | null>((resolve) => {
-		uni.uploadFile({
-			url: getBaseUrl() + '/api/v1/search/image?limit=' + limit,
-			filePath: filePath,
-			name: 'file',
-			header: {
-				'Authorization': 'Bearer ' + getTokenForSearchUpload()
-			},
-			success: (res) => {
-				if (res.statusCode === 200) {
-					// uploadFile res.data 是 string（lessons.md #3）
-					const txt = res.data as string
-					const idx = txt.indexOf('{')
-					if (idx < 0) {
-						showErrorToast(new Error('搜索响应解析失败'))
-						resolve(null)
-						return
-					}
-					try {
-						const body = JSON.parse(txt.substring(idx)) as UTSJSONObject
-						resolve(parseSearch(body))
-						return
-					} catch (e) {
-						showErrorToast(new Error('搜索响应解析失败'))
-						resolve(null)
-						return
-					}
-				}
-				const errMsg = parseErrorString(res.data as string, '搜索失败（HTTP 非 200）')
-				showErrorToast(new Error(errMsg))
-				resolve(null)
-			},
-			fail: () => {
-				showErrorToast(new Error('搜索请求失败，请检查网络'))
-				resolve(null)
+		uploadFileHttp('/api/v1/search/image?limit=' + limit, filePath, 'file', null, 30000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				// uploadFile res.data 是 string（lessons.md #3）；uploadFileHttp 已按信封解析
+				resolve(parseSearch(hr.body))
+				return
 			}
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '搜索失败（HTTP ' + hr.status + '）') : '搜索失败（HTTP ' + hr.status + '）'
+			showErrorToast(new Error(msg))
+			resolve(null)
 		})
 	})
 }

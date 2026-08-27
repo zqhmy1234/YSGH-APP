@@ -11,6 +11,9 @@
  */
 import { getBaseUrl } from './config'
 import { getToken } from './auth'
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析），
+// 本模块不再直接 uni.uploadFile；getBaseUrl 仍用于 formPost/init/complete。
+import { uploadFileHttp, HttpResult } from './api'
 
 /** 表单响应：status（0=网络失败） + raw（响应 JSON 字符串） */
 export class UploadResp {
@@ -102,33 +105,15 @@ export function initUpload(clientUploadId: string, fileName: string, fileSize: n
 	return formPost('/api/v1/upload/init', body)
 }
 
-/** chunk：传单片（POST multipart；后端幂等 + 大小校验）→ HTTP status（0=网络失败） */
+/** chunk：传单片（POST multipart；后端幂等 + 大小校验）→ HTTP status（0=网络失败）
+ *  R1#17：裸 uni.uploadFile 收敛 api.ts uploadFileHttp（401 重放 + 5xx Sentry 上报） */
 export function putChunk(uploadId: string, filePath: string, timeout: number): Promise<number> {
-	return new Promise<number>((resolve) => {
-		const form: UTSJSONObject = {
-			upload_id: uploadId,
-			chunk_index: '0'
-		}
-		uni.uploadFile({
-			url: getBaseUrl() + '/api/v1/upload/chunk',
-			filePath: filePath,
-			name: 'file',
-			formData: form,
-			header: { 'Authorization': 'Bearer ' + getToken() },
-			timeout: timeout,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					resolve(200)
-				} else {
-					console.error('[yishu] chunk HTTP ' + res.statusCode)
-					resolve(res.statusCode)
-				}
-			},
-			fail: () => {
-				console.error('[yishu] chunk NETWORK')
-				resolve(0)
-			}
-		})
+	const form: UTSJSONObject = {
+		upload_id: uploadId,
+		chunk_index: '0'
+	}
+	return uploadFileHttp('/api/v1/upload/chunk', filePath, 'file', form, timeout).then((hr: HttpResult) => {
+		return hr.status
 	})
 }
 
