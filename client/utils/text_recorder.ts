@@ -231,6 +231,76 @@ export function pollArbitrate(jobId: string, tries: number, intervalMs: number):
 	})
 }
 
+// ═══════════ US-25 连续纠错计数（C9 定稿：客户端本地实现，零后端改动）═══════════
+// 存储：uni storage key=yishu_correction_streak（int，字符串化）+ last_ts；>72h 无纠错 → 清零
+// 触发：连续纠错达 3 次 → record.uvue 弹"创建自定义分类？"（D4 拍板）；创建分类后 resetCorrectionStreak()
+const CORRECTION_STREAK_KEY: string = 'yishu_correction_streak'
+const CORRECTION_STREAK_TS_KEY: string = 'yishu_correction_streak_last_ts'
+const CORRECTION_PROMPT_DISMISS_KEY: string = 'yishu_correction_prompt_dismissed'
+/** 连续 3 天无纠错（72h）→ 计数清零 */
+const STREAK_EXPIRE_MS: number = 72 * 60 * 60 * 1000
+/** 触发阈值：连续纠错 3 次 */
+const STREAK_PROMPT_THRESHOLD: number = 3
+
+function readCorrectionStreak(): number {
+	const raw = uni.getStorageSync(CORRECTION_STREAK_KEY) as string
+	if (raw == null || raw == '') {
+		return 0
+	}
+	const n = parseInt(raw)
+	return isNaN(n) ? 0 : n
+}
+
+function readCorrectionLastTs(): number {
+	const raw = uni.getStorageSync(CORRECTION_STREAK_TS_KEY) as string
+	if (raw == null || raw == '') {
+		return 0
+	}
+	const n = parseInt(raw)
+	return isNaN(n) ? 0 : n
+}
+
+/**
+ * 纠错成功后调用：读当前 streak → 距上次纠错 >72h 先清零（连续 3 天无纠错重置）→ 递增 → 写回（含 last_ts）。
+ * @returns 递增后的 streak（调用方 ≥3 时按需弹提示，逻辑在 record.uvue）
+ */
+export function trackCorrectionStreak(): number {
+	const now = Date.now()
+	let streak = readCorrectionStreak()
+	const lastTs = readCorrectionLastTs()
+	if (lastTs > 0 && now - lastTs > STREAK_EXPIRE_MS) {
+		streak = 0
+	}
+	streak = streak + 1
+	uni.setStorageSync(CORRECTION_STREAK_KEY, '' + streak)
+	uni.setStorageSync(CORRECTION_STREAK_TS_KEY, '' + now)
+	return streak
+}
+
+/** 创建自定义分类 / 手动重置时调用：streak 与 last_ts 清零（避免反复弹） */
+export function resetCorrectionStreak(): void {
+	uni.setStorageSync(CORRECTION_STREAK_KEY, '0')
+	uni.setStorageSync(CORRECTION_STREAK_TS_KEY, '0')
+}
+
+/**
+ * 是否弹"创建自定义分类？"提示：streak ≥ 3 且未点"不再提示"。
+ * （取消后 streak 保留 → 下次达 3 仍弹；如需"不再提示"调 dismissCorrectionPrompt，README/完成消息注明）
+ */
+export function shouldPromptCustomCategory(): boolean {
+	const rawDismissed = uni.getStorageSync(CORRECTION_PROMPT_DISMISS_KEY)
+	const dismissed = rawDismissed === '' ? false : (rawDismissed as boolean)
+	if (dismissed === true) {
+		return false
+	}
+	return readCorrectionStreak() >= STREAK_PROMPT_THRESHOLD
+}
+
+/** "不再提示"本地标记：调用后本机不再弹"创建自定义分类？"提示（D4 取消路径的可选增强） */
+export function dismissCorrectionPrompt(): void {
+	uni.setStorageSync(CORRECTION_PROMPT_DISMISS_KEY, true)
+}
+
 function pollArbitrateTick(
 	jobId: string,
 	tries: number,
