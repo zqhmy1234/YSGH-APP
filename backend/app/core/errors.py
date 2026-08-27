@@ -73,6 +73,8 @@ _ERROR_SPECS: list[ErrorSpec] = [
     # 搜索域
     ErrorSpec("SEARCH_001", "空图片文件", 422),
     ErrorSpec("SEARCH_002", "图片超过大小上限", 422),
+    # 同步域
+    ErrorSpec("SYNC_001", "limit 参数超出允许范围（≥1 且 ≤单次上限，请按 has_more 分页）", 422),
     # 缩略图域
     ErrorSpec("THUMB_001", "缩略图不可用", 404),
     # 上传域
@@ -131,6 +133,7 @@ ERR_PROFILE_SENSITIVE_002 = "PROFILE_SENSITIVE_002"
 ERR_PROFILE_SENSITIVE_003 = "PROFILE_SENSITIVE_003"
 ERR_SEARCH_001 = "SEARCH_001"
 ERR_SEARCH_002 = "SEARCH_002"
+ERR_SYNC_001 = "SYNC_001"
 ERR_THUMB_001 = "THUMB_001"
 ERR_UPLOAD_001 = "UPLOAD_001"
 ERR_UPLOAD_002 = "UPLOAD_002"

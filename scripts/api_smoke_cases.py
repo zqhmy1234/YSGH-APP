@@ -60,11 +60,14 @@ def _new_client() -> tuple[TestClient, dict]:
 
 
 def case_healthz(client: TestClient) -> None:
+    # G2/R6#15：healthz 收敛——只暴露最小存活信息 {status: ok}
     r = client.get("/healthz")
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["status"] == "ok", body
-    assert "env" in body and "mock_external_ai" in body, body
+    assert r.json() == {"status": "ok"}, r.text
+    # G2/R6#11：安全响应头全接口下发
+    assert r.headers.get("x-content-type-options") == "nosniff", r.headers
+    assert r.headers.get("x-frame-options") == "DENY", r.headers
+    assert r.headers.get("referrer-policy") == "no-referrer", r.headers
 
 
 def case_auth_security(client: TestClient) -> None:
