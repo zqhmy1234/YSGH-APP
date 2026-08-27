@@ -1,0 +1,211 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-08-28",
+  "doc": "关怀默认文案库（US-21 关怀链路兜底）。对齐 backend/app/services/notify.py CARE_TEMPLATES 6 键与触发语义；AI 起草（拍板⑤：温和克制、不提敏感话题、每场景≥3 候选），产品部正式文案到位后仅替换本文件 JSON，触发逻辑不动。加载器：backend/app/services/copy_library.py（B2），读本文件 → 回填 CARE_TEMPLATES；缺失回退 notify.py 内置占位。字段规格见 schema.json definitions.care_copy_file / variant。",
+  "tone_policy": {
+    "基调": "温和克制：句子短、语气柔、不煽情不说教；尊重用户空间，不催不逼；每场景≥3 候选轮换去机械感。",
+    "禁止主动提及": ["前任", "创伤", "离世", "失恋", "分手", "疾病", "离婚", "亲人去世", "职场PUA", "霸凌"],
+    "仅陪伴出口": true,
+    "频次递减": "连续多日负面时：第 1 天温和追问 → 第 2 天『好些了吗』 → 第 3 天起只陪伴不追问。"
+  },
+  "scenes": [
+    {
+      "scene": "sad_ask",
+      "intent": "追问：SAD 未说明原因时，温和引导用户说出来（『今天怎么啦』）",
+      "variants": [
+        {
+          "id": "sad_ask_01",
+          "title": "想陪你聊聊",
+          "body": "感觉你今天有点心事。愿意的话，跟我说说今天怎么啦？我在听。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad", "streak_days": 0 },
+          "placeholders": [],
+          "notes": "AI 起草（对齐内置占位同款标题，行为兼容）"
+        },
+        {
+          "id": "sad_ask_02",
+          "title": "在的，怎么了",
+          "body": "今天好像和平时不太一样。要是想聊聊，我随时都在。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad", "streak_days": 0 },
+          "placeholders": [],
+          "notes": "AI 起草"
+        },
+        {
+          "id": "sad_ask_03",
+          "title": "想听你说说",
+          "body": "今天是不是遇到什么了？别一个人扛着，说出来会轻松些。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad", "streak_days": 0 },
+          "placeholders": [],
+          "notes": "AI 起草"
+        }
+      ]
+    },
+    {
+      "scene": "sad_respond",
+      "intent": "回应：SAD 已说明原因时回应内容（『辛苦了』），不重复追问",
+      "variants": [
+        {
+          "id": "sad_respond_01",
+          "title": "辛苦了",
+          "body": "听到你说的这些，真的辛苦了。你已经做得很好了。",
+          "tone": "warm",
+          "conditions": { "emotion": "sad" },
+          "placeholders": [],
+          "notes": "AI 起草（对齐内置占位同款标题，行为兼容）"
+        },
+        {
+          "id": "sad_respond_02",
+          "title": "抱抱你",
+          "body": "把这些说出来，真的很不容易。辛苦了，我一直都在。",
+          "tone": "warm",
+          "conditions": { "emotion": "sad" },
+          "placeholders": [],
+          "notes": "AI 起草"
+        },
+        {
+          "id": "sad_respond_03",
+          "title": "辛苦了，慢慢来",
+          "body": "你愿意说出来，我就陪着。别对自己太苛刻，慢慢来。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad" },
+          "placeholders": [],
+          "notes": "AI 起草"
+        }
+      ]
+    },
+    {
+      "scene": "angry",
+      "intent": "陪伴出口：ANGRY 不主动追问（愤怒时追问是火上浇油），提供陪伴出口",
+      "variants": [
+        {
+          "id": "angry_01",
+          "title": "我在",
+          "body": "听起来今天有点气。不急着说，想聊的时候随时找我。",
+          "tone": "gentle",
+          "conditions": { "emotion": "angry" },
+          "placeholders": [],
+          "notes": "AI 起草（对齐内置占位同款标题，行为兼容）"
+        },
+        {
+          "id": "angry_02",
+          "title": "先歇口气",
+          "body": "今天让你生气的事，先放一放。气消了想吐槽，我听着。",
+          "tone": "gentle",
+          "conditions": { "emotion": "angry" },
+          "placeholders": [],
+          "notes": "AI 起草"
+        },
+        {
+          "id": "angry_03",
+          "title": "陪你缓缓",
+          "body": "气到的时候不用硬撑。我在这儿，等你气顺了再说。",
+          "tone": "light",
+          "conditions": { "emotion": "angry" },
+          "placeholders": [],
+          "notes": "AI 起草"
+        }
+      ]
+    },
+    {
+      "scene": "late_night",
+      "intent": "深夜轻量：22:00-05:00 表达克制，不催回复",
+      "variants": [
+        {
+          "id": "late_night_01",
+          "title": "夜深了",
+          "body": "如果还醒着，我随时在。别一个人扛着。",
+          "tone": "light",
+          "conditions": { "emotion": "sad", "time_range": ["22", "05"] },
+          "placeholders": [],
+          "notes": "AI 起草（对齐内置占位同款标题，行为兼容）"
+        },
+        {
+          "id": "late_night_02",
+          "title": "睡不着的话",
+          "body": "这么晚还没睡，是在想什么吗？不急着答，我在就好。",
+          "tone": "light",
+          "conditions": { "emotion": "sad", "time_range": ["22", "05"] },
+          "placeholders": [],
+          "notes": "AI 起草"
+        },
+        {
+          "id": "late_night_03",
+          "title": "夜已深",
+          "body": "夜深了，情绪容易放大。先躺下歇会儿，明天我在。",
+          "tone": "light",
+          "conditions": { "emotion": "sad", "time_range": ["22", "05"] },
+          "placeholders": [],
+          "notes": "AI 起草"
+        }
+      ]
+    },
+    {
+      "scene": "day2",
+      "intent": "频次递减第 2 天：『好些了吗』，比追问更轻、比纯陪伴稍主动",
+      "variants": [
+        {
+          "id": "day2_01",
+          "title": "好些了吗",
+          "body": "今天感觉好些了吗？还记得我，一直都在。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad", "streak_days": 2 },
+          "placeholders": [],
+          "notes": "AI 起草（对齐内置占位同款标题，行为兼容）"
+        },
+        {
+          "id": "day2_02",
+          "title": "今天如何",
+          "body": "第二天了，问问你今天好点没。想聊随时找我。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad", "streak_days": 2 },
+          "placeholders": [],
+          "notes": "AI 起草"
+        },
+        {
+          "id": "day2_03",
+          "title": "还在陪你",
+          "body": "今天状态怎么样？不用回我，知道我在就好。",
+          "tone": "light",
+          "conditions": { "emotion": "sad", "streak_days": 2 },
+          "placeholders": [],
+          "notes": "AI 起草"
+        }
+      ]
+    },
+    {
+      "scene": "day3",
+      "intent": "频次递减第 3 天起：只陪伴不追问，安静在场",
+      "variants": [
+        {
+          "id": "day3_01",
+          "title": "陪你",
+          "body": "这几天都有点低落吧。不用说什么，我就在这儿陪你。",
+          "tone": "light",
+          "conditions": { "emotion": "sad", "streak_days": 3 },
+          "placeholders": [],
+          "notes": "AI 起草（对齐内置占位同款标题，行为兼容）"
+        },
+        {
+          "id": "day3_02",
+          "title": "不打扰，在陪着",
+          "body": "这几天辛苦了。你什么都不用说，我安安静静陪着。",
+          "tone": "light",
+          "conditions": { "emotion": "sad", "streak_days": 3 },
+          "placeholders": [],
+          "notes": "AI 起草"
+        },
+        {
+          "id": "day3_03",
+          "title": "一直都在",
+          "body": "低落不是你的错。需要的时候喊我，我在。",
+          "tone": "gentle",
+          "conditions": { "emotion": "sad", "streak_days": 3 },
+          "placeholders": [],
+          "notes": "AI 起草"
+        }
+      ]
+    }
+  ]
+}

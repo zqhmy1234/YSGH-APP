@@ -43,6 +43,11 @@
 - **根因**：import app.services.copy_library as cl 与 from app.services.notify import ... 同属本地块但 isort 要求 as 导入与 from 导入按名称排序对齐；建议新建测试文件后先跑 ruff --fix 再提交
 - **修复**：见代码
 - **相关文件**：-
+### 2026-08-27 19:35 · commit 319a976 · ts=1787830519
+- **错误**：全新 git worktree 下 review_agent --full 的 DB 测试全部失败（psycopg OperationalError：password authentication failed for user postgres）
+- **根因**：worktree 是干净 checkout，gitignored 的 backend/.env 不在其中，DATABASE_URL 回退 config 默认 postgres:postgres，本机 PG 密码不同 → 认证失败；DB 测试强依赖真实 .env
+- **修复**：跑全量门禁前把主工作区 backend/.env 复制到 worktree backend/.env（gitignored 不入库，仅本地运行配置）；并先跑单测 test_notify 验证 DB 连通
+- **相关文件**：backend/.env
 - **教训**：（无）
 
 ---
