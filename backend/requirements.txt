@@ -1,5 +1,8 @@
 # 忆述光华 backend · Python 依赖
 # Python 3.11 / FastAPI + RQ + PostgreSQL（开发决策清单 #3/#9 已拍板）
+# 缓存注解（2026-08-27 批次 H2 R7 · T4）：CI 的 pip 缓存 key 以本文件 hash 为源
+# （.github/workflows/ci.yml 的 pip-cache 步骤，restore-keys 兜底最近缓存）；
+# 改依赖后 pip 仅增量重下变更包，不因单行变更全量重下。
 
 # --- Web 框架 ---
 fastapi>=0.115
