@@ -1,0 +1,61 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "request_timeout_ms": 5000,
+  "duration_seconds": 30,
+  "duration_seconds_high": 60,
+  "min_requests": 500,
+  "min_requests_per_level": { "1": 50, "10": 200, "50": 500, "100": 500 },
+  "concurrency_levels": [1, 10, 50, 100],
+  "probe_levels": [200],
+  "rate_limit_note": "压测态限流已放宽（RATE_LIMIT_*_IP/USER=100000，window 60s），429 单独统计不计入错误率",
+  "seed": {
+    "login_code": "loadtest-seed",
+    "device_id": "loadtest-dev",
+    "text_count": 80,
+    "photo_count": 20,
+    "marker_prefix": "[loadtest]"
+  },
+  "paths": {
+    "auth": {
+      "method": "POST",
+      "url": "/api/v1/auth/wechat",
+      "kind": "json",
+      "params": {
+        "codes": ["loadtest-p1-01", "loadtest-p1-02", "loadtest-p1-03", "loadtest-p1-04", "loadtest-p1-05", "loadtest-p1-06", "loadtest-p1-07", "loadtest-p1-08", "loadtest-p1-09", "loadtest-p1-10"],
+        "device_id": "loadtest-p1-dev"
+      },
+      "note": "认证链路（dev mock 通道 code=loadtest-p1-<n>，复用 api_smoke _new_client 登录方式）"
+    },
+    "timeline": {
+      "method": "GET",
+      "url": "/api/v1/events/timeline",
+      "kind": "query",
+      "params": { "level": 1, "status": "confirmed" },
+      "use_seed_token": true,
+      "note": "核心读路径：时间轴聚合查询 + 计数批量（_batch_counts）"
+    },
+    "search": {
+      "method": "POST",
+      "url": "/api/v1/search",
+      "kind": "json",
+      "params": {
+        "query_words": ["咖啡", "出差", "聚会", "生日", "旅行", "晚饭", "孩子", "爬山", "新手机", "体检"],
+        "limit": 20
+      },
+      "use_seed_token": true,
+      "note": "描述性检索：召回 + 重排 + LLM 精排（延迟大头，门禁路径）"
+    },
+    "image": {
+      "method": "POST",
+      "url": "/api/v1/search/image",
+      "kind": "multipart",
+      "params": {
+        "query_images": ["q1.jpg", "q2.jpg", "q3.jpg"],
+        "limit": 10
+      },
+      "use_seed_token": true,
+      "warmup_images": 3,
+      "note": "以图搜图：caption 缓存命中/未命中两态分别计时（3 图轮换）"
+    }
+  }
+}

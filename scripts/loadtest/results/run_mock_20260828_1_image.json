@@ -1,0 +1,31 @@
+{
+  "samples": 50,
+  "p50_ms": 42.54,
+  "p90_ms": 57.86,
+  "p95_ms": 60.0,
+  "p99_ms": 115.59,
+  "avg_ms": 44.12,
+  "max_ms": 115.59,
+  "max_ts": "20:31:20",
+  "qps": 22.63,
+  "total": 50,
+  "ok": 50,
+  "errors": 0,
+  "rate_limited": 0,
+  "timeouts": 0,
+  "error_rate": 0.0,
+  "success_rate": 1.0,
+  "timeout_rate": 0.0,
+  "rate_limited_rate": 0.0,
+  "elapsed_s": 2.209,
+  "path": "image",
+  "level": 1,
+  "mode": "mock",
+  "tag": "mock_20260828",
+  "warmup_latencies_ms": [
+    219.31,
+    37.28,
+    36.64
+  ],
+  "rate_limit_note": "压测态限流已放宽（RATE_LIMIT_*_IP/USER=100000，window 60s），429 单独统计不计入错误率"
+}
