@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 16:57 · commit 7cf1308 · ts=1787821051
+- **错误**：H3 拆分 test_techdebt_p0 到 test_queue 后 ruff I001 import 排序——全量门禁 lint 拦截（快速门禁仅查本次提交文件漏检）
+- **根因**：拆分时新增的 import 块顺序在快速门禁通过、全量门禁暴露：test_queue 顶部空行数量不符 ruff 格式。教训：全量门禁（--full）跑仓库级 lint，任何 commit 后都需过全量再声明完成
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 16:05 · commit 232632d · ts=1787817902
 - **错误**：H3 拆分 test_security_p3 到 test_upload 后 SessionLocal 未在模块级 import——迁移的 test_upload_init_normal_still_works/test_get_status_guards_huge_chunk_count NameError
 - **根因**：原文件在函数内局部 import SessionLocal；迁移时复制了函数体却漏了局部 import，目标文件模块级只有 select/sa_delete。迁移跨文件代码需核对全部 import 依赖（含函数内局部 import）

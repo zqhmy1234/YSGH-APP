@@ -12,7 +12,6 @@ import pytest
 from app.core.config import settings
 from redis import Redis
 
-
 # ---------- H3：P0-8 RQ 入队契约（原 test_techdebt_p0.py 按域迁入） ----------
 
 
