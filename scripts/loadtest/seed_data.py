@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -151,12 +152,14 @@ def _upload_photo(client: httpx.Client, base_url: str, headers: dict, img_path: 
 
 
 def _already_seeded(client: httpx.Client, base_url: str, headers: dict, cfg: dict) -> bool:
+    """已造数判定：只认**处理完成**（status=done）的 marker 内容，避免残留 processing 行误判"""
     r = client.get(f"{base_url}/api/v1/contents?content_type=text&limit=100", headers=headers)
     if r.status_code != 200:
         return False
     marker = cfg["seed"]["marker_prefix"]
     items = r.json()["data"].get("items", [])
-    return sum(1 for it in items if (it.get("text") or "").startswith(marker)) >= cfg["seed"]["text_count"]
+    done = [it for it in items if (it.get("text") or "").startswith(marker) and it.get("status") == "done"]
+    return len(done) >= cfg["seed"]["text_count"]
 
 
 def _process(cid: str) -> dict:
@@ -211,6 +214,28 @@ def _verify(client: httpx.Client, base_url: str, headers: dict, cfg: dict, word:
         print(f"[verify] 时间轴响应 {r.status_code}")
 
 
+def _wait_for_memory(min_free_gb: float = 2.5, timeout_s: int = 1800) -> bool:
+    """内存自守：加载 BGE-M3/SetFit 前等待可用内存 ≥ 阈值（并行 Agent 争抢环境下防 OOM）
+
+    并行开发窗口常有其他 Agent 跑 pytest/api_smoke（各自加载 BGE-M3 ~1.3GB），
+    本机 16GB 内存经常吃紧 → 用 psutil.available（含可回收 standby）轮询等待。
+    """
+    import psutil
+
+    deadline = time.time() + timeout_s
+    waited = 0
+    while time.time() < deadline:
+        avail = psutil.virtual_memory().available / 1024 / 1024 / 1024
+        if avail >= min_free_gb:
+            if waited > 0:
+                print(f"[seed] 内存就绪（available={avail:.2f}GB，等待 {waited:.0f}s）")
+            return True
+        time.sleep(15)
+        waited += 15
+    print(f"[seed] ⚠️ 等待内存超时（{timeout_s}s 内未到 {min_free_gb}GB，当前 available={avail:.2f}GB）——继续尝试")
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="压测种子数据（隔离用户 + 内容 + 事件）")
     parser.add_argument("--force", action="store_true", help="强制重新造数（新用户 loadtest-seed-<ts>）")
@@ -243,6 +268,9 @@ def main() -> int:
         if _already_seeded(client, base_url, headers, cfg) and not args.force:
             print("[seed] 已造数（marker 前缀 [loadtest]），跳过；--force 可重新造数")
             return 0
+
+        # 内存自守：管线处理将加载 BGE-M3 + SetFit（~1.8GB），等可用内存足够再加载
+        _wait_for_memory(min_free_gb=2.5)
 
         assets = ensure_assets()
         photos = assets["photos"]

@@ -51,6 +51,14 @@ RESULTS = HERE / "results"
 RESULTS.mkdir(parents=True, exist_ok=True)
 ASSETS = HERE / "assets"
 
+# 汇总 CSV 列（同时用于表头 + 行写入，避免内联超长行）
+CSV_COLUMNS = [
+    "path", "level", "mode", "tag", "samples", "p50_ms", "p90_ms", "p95_ms",
+    "p99_ms", "avg_ms", "max_ms", "qps", "total", "ok", "errors",
+    "rate_limited", "timeouts", "error_rate", "success_rate",
+    "timeout_rate", "rate_limited_rate", "elapsed_s",
+]
+
 # 429 业务码（ratelimit.py RATE_LIMIT_CODE）
 _RATE_LIMITED_CODE = "RATE_LIMITED"
 
@@ -391,6 +399,30 @@ def _login_sync(base_url: str, code: str, device_id: str) -> str:
         return r.json()["data"]["access_token"]
 
 
+def _rebuild_summary(tag: str, mode: str) -> int:
+    """从 run_<tag>_*.json 重建汇总 CSV + 曲线（进程被杀/表头丢失后的恢复路径）"""
+    json_files = sorted(RESULTS.glob(f"run_{tag}_*_*.json"))
+    if not json_files:
+        print(f"[rebuild] 无 run_{tag}_*_*.json")
+        return 1
+    rows = []
+    for f in json_files:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[rebuild] 跳过损坏 {f.name}: {exc}")
+            continue
+        rows.append([d.get(k, "") for k in CSV_COLUMNS])
+    summary_path = RESULTS / f"summary_{tag}.csv"
+    with open(summary_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(CSV_COLUMNS)
+        w.writerows(rows)
+    print(f"[rebuild] 从 {len(rows)} 个 run JSON 重建 → {summary_path}")
+    _plot_curves(summary_path, tag, mode)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="忆述光华并发压测")
     parser.add_argument("--mode", choices=["mock", "real"], required=True, help="mock档 / 真实档（标注用）")
@@ -400,11 +432,14 @@ def main() -> int:
     parser.add_argument("--base-url", default=None, help="覆盖 config.base_url")
     parser.add_argument("--seed-code", default=None, help="种子用户 code（默认 config seed.login_code）")
     parser.add_argument("--pid", type=int, default=None, help="后端进程 PID（资源采样）")
+    parser.add_argument("--rebuild", action="store_true", help="仅从 run JSON 重建汇总 CSV + 曲线，不压测")
     args = parser.parse_args()
 
     cfg = _load_config()
-    base_url = args.base_url or os.environ.get("LOADTEST_BASE_URL", cfg["base_url"])
     tag = args.tag or _default_tag(args.mode)
+    if args.rebuild:
+        return _rebuild_summary(tag, args.mode)
+    base_url = args.base_url or os.environ.get("LOADTEST_BASE_URL", cfg["base_url"])
     seed_code = args.seed_code or cfg["seed"]["login_code"]
     levels = [int(x) for x in (args.levels or ",".join(map(str, cfg["concurrency_levels"]))).split(",")]
     if args.probe:
@@ -436,17 +471,11 @@ def main() -> int:
         sampler.start()
 
     summary_path = RESULTS / f"summary_{tag}.csv"
-    csv_columns = [
-        "path", "level", "mode", "tag", "samples", "p50_ms", "p90_ms", "p95_ms",
-        "p99_ms", "avg_ms", "max_ms", "qps", "total", "ok", "errors",
-        "rate_limited", "timeouts", "error_rate", "success_rate",
-        "timeout_rate", "rate_limited_rate", "elapsed_s",
-    ]
-    new_file = not summary_path.exists()
+    new_file = not summary_path.exists() or summary_path.stat().st_size == 0
     with open(summary_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if new_file:
-            writer.writerow(csv_columns)
+            writer.writerow(CSV_COLUMNS)
 
         async def _session():
             async with httpx.AsyncClient(base_url=base_url, timeout=cfg["request_timeout_ms"] / 1000) as client:
@@ -454,7 +483,7 @@ def main() -> int:
                     print(f"\n--- 并发档 {level} ---")
                     for path_name, path_cfg in cfg["paths"].items():
                         stats = await run_path(client, path_name, path_cfg, seed_headers, cfg, level, args.mode, tag)
-                        writer.writerow([stats[k] for k in csv_columns])
+                        writer.writerow([stats[k] for k in CSV_COLUMNS])
 
         asyncio.run(_session())
 
