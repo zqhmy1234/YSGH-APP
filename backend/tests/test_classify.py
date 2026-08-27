@@ -7,7 +7,6 @@
   - 失败仅回传脱敏错误（不直出 exc_info，防内部路径/堆栈泄漏）
   - corrections 三层裁决 job 越权 → 403 CORR_004
 """
-import pytest
 
 
 class _FakeJob:
