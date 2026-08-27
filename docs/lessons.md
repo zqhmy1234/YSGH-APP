@@ -8,6 +8,15 @@
 
 ---
 
+### 2026-08-27 19:30 · commit 1ef7dce · ts=1787830220
+- **错误**：ruff I001 import 未排序导致 pre-commit 快速门禁 lint 阻断
+- **根因**：新建测试文件手写 import 未按 ruff isort 分组（标准库/第三方/本地 顺序 + 括号内排序）；auto-fix 可自动整理
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债

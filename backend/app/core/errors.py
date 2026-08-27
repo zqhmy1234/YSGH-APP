@@ -94,6 +94,8 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("UPLOAD_008", "STS 直传未接入（生产未配置 COS/STS）", 501),
     ErrorSpec("UPLOAD_009", "上传分片状态冲突（分片未齐 / 同片内容不一致）", 409),
     ErrorSpec("UPLOAD_010", "文件超过后端中转大小上限（>200MB 请走客户端直传）", 413),
+    # 导出域（US-42 · Wave1-B2）
+    ErrorSpec("EXPORT_001", "导出参数非法（不支持的导出格式）", 422),
     # 微信域
     ErrorSpec("WECHAT_001", "企微 URL 验证失败", 403),
     ErrorSpec("WECHAT_002", "企微回调处理失败", 403),
@@ -156,6 +158,7 @@ ERR_UPLOAD_007 = "UPLOAD_007"
 ERR_UPLOAD_008 = "UPLOAD_008"
 ERR_UPLOAD_009 = "UPLOAD_009"
 ERR_UPLOAD_010 = "UPLOAD_010"
+ERR_EXPORT_001 = "EXPORT_001"
 ERR_WECHAT_001 = "WECHAT_001"
 ERR_WECHAT_002 = "WECHAT_002"
 ERR_WECHAT_003 = "WECHAT_003"
