@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<!-- 顶部：返回 + 标题（sub-page，navigationStyle=custom） -->
 		<view class="header">
@@ -122,17 +122,15 @@
 
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
 	import { ensureLogin, logout, getToken, DEVICE_ID } from '@/utils/auth'
 	import { get, dataObj, showErrorToast } from '@/utils/api'
 	import { PATH_PROFILE_MANAGE, PATH_EXPORT, FIELD_EXPORTED_AT } from '@/utils/contract'
 	import { dayKey } from '@/utils/time'
 
-	// 跨端可见开关（D6 拍板：仅客户端本地持久化，不做后端）——本地 key（对齐任务卡 v2）
+	// 常量
 	const KEY_CROSS_VISIBLE: string = 'yishu_visible_across_devices'
-
-	// 隐私政策占位文本（内容源：C3 定稿版 docs/隐私政策_定稿_20260828.md ——
-	// 基于 忆述光华_交付文档/忆述光华_隐私政策初稿.md 修订；MVP 先用占位，集成后替换全文）
 	const PRIVACY_PLACEHOLDER: string =
 		'（占位文本 · 待 C3 隐私政策定稿版替换，源：docs/隐私政策_定稿_20260828.md）\n\n' +
 		'忆述光华（以下简称"本应用"）重视你的个人信息与隐私安全。本政策概述我们如何收集、使用、存储与保护你的数据。\n\n' +
@@ -159,173 +157,151 @@
 		'· 如对隐私政策有任何疑问，可通过应用内反馈渠道联系我们。\n\n' +
 		'（以上为占位概要，正式条款以 C3 定稿版为准）'
 
-	export default {
-		data() {
-			return {
-				crossVisible: true,
-				loggedIn: false,
-				deviceId: DEVICE_ID,
-				exporting: false,
-				exportHint: '导出全部记忆数据（JSON），用于个人备份',
-				exportPath: '',
-				exportSize: '',
-				privacyOpen: false,
-				privacyText: PRIVACY_PLACEHOLDER
-			}
-		},
-		onLoad() {
-			// 读本地开关（D6：默认开启；无记录按 true）
-			const raw = uni.getStorageSync(KEY_CROSS_VISIBLE)
-			this.crossVisible = raw === '' ? true : (raw as boolean)
-			this.loggedIn = getToken() != ''
-			ensureLogin().then((ok: boolean) => {
-				this.loggedIn = ok
-			})
-		},
-		methods: {
-		/** 导航：时间轴页 */
-		goIndex(): void {
-			uni.navigateTo({ url: '/pages/index/index' })
-		},
-		/** 导航：搜索页 */
-		goSearch(): void {
-			uni.navigateTo({ url: '/pages/search/search' })
-		},
-		/** 导航：记录页 */
-		goRecord(): void {
-			uni.navigateTo({ url: '/pages/record/record' })
-		},
-		/** 导航：消息页 */
-		goMessages(): void {
-			uni.navigateTo({ url: '/pages/messages/messages' })
-		},
-		/** 导航：我的页 */
-		goProfile(): void {
-			uni.navigateTo({ url: '/pages/profile/profile' })
-		},
+	// 响应式数据
+	let crossVisible = true
+	let loggedIn = false
+	let deviceId = DEVICE_ID
+	let exporting = false
+	let exportHint = '导出全部记忆数据（JSON），用于个人备份'
+	let exportPath = ''
+	let exportSize = ''
+	let privacyOpen = false
+	let privacyText = PRIVACY_PLACEHOLDER
 
-			goBack(): void {
-				uni.navigateBack({ delta: 1 })
-			},
-			/** ① 跨端可见开关：仅本地持久化（D6 拍板，不做后端） */
-			toggleCrossVisible(): void {
-				this.crossVisible = !this.crossVisible
-				uni.setStorageSync(KEY_CROSS_VISIBLE, this.crossVisible)
-				uni.showToast({
-					title: this.crossVisible ? '已开启跨端可见' : '已关闭跨端可见',
-					icon: 'none',
-					duration: 1500
-				})
-			},
-			/** ④ 画像管理入口 → A1 页（契约 C4） */
-			goProfileManage(): void {
-				uni.navigateTo({ url: PATH_PROFILE_MANAGE })
-			},
-			/** ⑤ 退出登录：确认后复用 auth.ts logout（吊销 refresh + 清本地） */
-			confirmLogout(): void {
-				uni.showModal({
-					title: '退出登录',
-					content: '退出后本机将清除登录凭据，云端数据保留。确定退出？',
-					success: (res) => {
-						if (res.confirm) {
-							logout().then((ok: boolean) => {
-								this.loggedIn = false
-								uni.showToast({ title: '已退出登录', icon: 'success' })
-							})
-						}
-					}
-				})
-			},
-			/** ③ 导出按钮：请求 → 落盘 JSON 文件 → 成功反馈；loading + 失败可重试 */
-			exportData(): void {
-				if (this.exporting) {
-					return
-				}
-				this.exporting = true
-				this.exportPath = ''
-				this.exportSize = ''
-				this.doExport()
-			},
-			/**
-			 * 请求导出并保存（US-42，C2：GET /api/v1/export 全量 JSON 元数据）。
-			 * 经 api.ts 统一封装（Bearer + 401 自动 refresh + 错误 toast）；
-			 * 响应若为标准信封 {code,message,data} 则取 data 段，否则视为裸导出负载整体保存。
-			 */
-			doExport(): void {
-				get(PATH_EXPORT).then((res: UTSJSONObject | null) => {
-					if (res == null) {
-						this.onExportFail('导出失败（网络或服务异常）')
-						return
-					}
-					let payload: UTSJSONObject = res
-					const code = res.getNumber('code')
-					if (code != null) {
-						const d = dataObj(res)
-						if (d != null) {
-							payload = d
-						}
-					}
-					// 轻量结构校验：期望 exported_at（B2 契约字段）；缺失仅提示不阻断保存
-					const exportedAt = payload.getString(FIELD_EXPORTED_AT)
-					if (exportedAt == null || exportedAt == '') {
-						console.log('[yishu] export payload missing exported_at, saving raw payload')
-					}
-					this.writeExportFile(payload.toJSONString())
-				})
-			},
-			/** 落盘：写入应用沙箱 USER_DATA_PATH/yishu-export-<日期>.json（uni-app x FileSystemManager.writeFile）
-			 * D-20 修复：writeFile 的 data 只支持 base64(string)/utf8(ArrayBuffer)——UTF-8 字符串须先转
-			 * TextEncoder→ArrayBuffer→arrayBufferToBase64，再以 encoding='base64' 写入（原生 string+utf8 报 1200002）。 */
-			writeExportFile(jsonStr: string): void {
-				const fileName = 'yishu-export-' + dayKey(Date.now()) + '.json'
-				const filePath = uni.env.USER_DATA_PATH + '/' + fileName
-				const bytes = new TextEncoder().encode(jsonStr)
-				const base64 = uni.arrayBufferToBase64(bytes.buffer!)
-				console.log('[yishu] export writeFile path=' + filePath + ' len=' + jsonStr.length + ' b64len=' + base64.length)
-				uni.getFileSystemManager().writeFile({
-					filePath: filePath,
-					data: base64,
-					encoding: 'base64',
-					success: () => {
-						this.onExportSaved(filePath)
-					},
-					fail: (err) => {
-						console.log('[yishu] export writeFile FAIL err=' + JSON.stringify(err))
-						this.onExportFail('文件保存失败')
-					}
-				})
-			},
-			onExportSaved(savedPath: string): void {
-				this.exportPath = savedPath
-				// 取文件体积（getFileInfo 已在 voice.ts 验证可用）
-				uni.getFileSystemManager().getFileInfo({
-					filePath: savedPath,
-					success: (info) => {
-						const size = info.size
-						this.exportSize = formatBytes(size)
-						this.finishExport(true)
-					},
-					fail: () => {
-						this.finishExport(true)
-					}
-				})
-			},
-			finishExport(ok: boolean): void {
-				this.exporting = false
-				if (ok) {
-					this.exportHint = '导出成功 · ' + (this.exportSize != '' ? this.exportSize : '已保存')
-					uni.showToast({ title: '已导出', icon: 'success' })
-				}
-			},
-			onExportFail(msg: string): void {
-				this.exporting = false
-				this.exportHint = '导出失败，点击重试'
-				showErrorToast(new Error(msg))
-			}
-		}
+	// 生命周期
+	onLoad(() => {
+		const raw = uni.getStorageSync(KEY_CROSS_VISIBLE)
+		crossVisible = raw === '' ? true : (raw as boolean)
+		loggedIn = getToken() != ''
+		ensureLogin().then((ok: boolean) => {
+			loggedIn = ok
+		})
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+	function goBack(): void {
+		uni.navigateBack({ delta: 1 })
+	}
+	function goProfileManage(): void {
+		uni.navigateTo({ url: PATH_PROFILE_MANAGE })
 	}
 
-	/** 字节数 → 可读体积（KB/MB） */
+	// 业务方法
+	function toggleCrossVisible(): void {
+		crossVisible = !crossVisible
+		uni.setStorageSync(KEY_CROSS_VISIBLE, crossVisible)
+		uni.showToast({
+			title: crossVisible ? '已开启跨端可见' : '已关闭跨端可见',
+			icon: 'none',
+			duration: 1500
+		})
+	}
+	function confirmLogout(): void {
+		uni.showModal({
+			title: '退出登录',
+			content: '退出后本机将清除登录凭据，云端数据保留。确定退出？',
+			success: (res) => {
+				if (res.confirm) {
+					logout().then((ok: boolean) => {
+						loggedIn = false
+						uni.showToast({ title: '已退出登录', icon: 'success' })
+					})
+				}
+			}
+		})
+	}
+	function exportData(): void {
+		if (exporting) {
+			return
+		}
+		exporting = true
+		exportPath = ''
+		exportSize = ''
+		doExport()
+	}
+	function doExport(): void {
+		get(PATH_EXPORT).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				onExportFail('导出失败（网络或服务异常）')
+				return
+			}
+			let payload: UTSJSONObject = res
+			const code = res.getNumber('code')
+			if (code != null) {
+				const d = dataObj(res)
+				if (d != null) {
+					payload = d
+				}
+			}
+			const exportedAt = payload.getString(FIELD_EXPORTED_AT)
+			if (exportedAt == null || exportedAt == '') {
+				console.log('[yishu] export payload missing exported_at, saving raw payload')
+			}
+			writeExportFile(payload.toJSONString())
+		})
+	}
+	function writeExportFile(jsonStr: string): void {
+		const fileName = 'yishu-export-' + dayKey(Date.now()) + '.json'
+		const filePath = uni.env.USER_DATA_PATH + '/' + fileName
+		const bytes = new TextEncoder().encode(jsonStr)
+		const base64 = uni.arrayBufferToBase64(bytes.buffer!)
+		console.log('[yishu] export writeFile path=' + filePath + ' len=' + jsonStr.length + ' b64len=' + base64.length)
+		uni.getFileSystemManager().writeFile({
+			filePath: filePath,
+			data: base64,
+			encoding: 'base64',
+			success: () => {
+				onExportSaved(filePath)
+			},
+			fail: (err) => {
+				console.log('[yishu] export writeFile FAIL err=' + JSON.stringify(err))
+				onExportFail('文件保存失败')
+			}
+		})
+	}
+	function onExportSaved(savedPath: string): void {
+		exportPath = savedPath
+		uni.getFileSystemManager().getFileInfo({
+			filePath: savedPath,
+			success: (info) => {
+				const size = info.size
+				exportSize = formatBytes(size)
+				finishExport(true)
+			},
+			fail: () => {
+				finishExport(true)
+			}
+		})
+	}
+	function finishExport(ok: boolean): void {
+		exporting = false
+		if (ok) {
+			exportHint = '导出成功 · ' + (exportSize != '' ? exportSize : '已保存')
+			uni.showToast({ title: '已导出', icon: 'success' })
+		}
+	}
+	function onExportFail(msg: string): void {
+		exporting = false
+		exportHint = '导出失败，点击重试'
+		showErrorToast(new Error(msg))
+	}
+
+	// 工具函数
 	function formatBytes(bytes: number): string {
 		if (bytes >= 1048576) {
 			return (bytes / 1048576).toFixed(1) + ' MB'

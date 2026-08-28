@@ -108,7 +108,8 @@
 
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS } from '@/utils/text_recorder'
 	import {
@@ -124,294 +125,269 @@
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 
-	export default {
-		data() {
-			return {
-				mode: 'text' as string,
-				// 文字
-				draft: '',
-				submitting: false,
-				classifyLabel: '',     // 展示文案（“整理中…”/“待办”等）
-				currentLabel: '',      // 当前分类英文键
-				lastContentId: '',
-				lastText: '',
-				// 分类标签条（O10 收口：data 引用 text_recorder.ALL_LABELS，不再页面硬编码）
-				allLabels: ALL_LABELS,
-				// 语音
-				recording: false,
-				recordSeconds: 0,
-				recordTimer: 0 as number,
-				recState: 'idle',
-				recordHint: '点击开始录音（≤30 分钟）',
-				voiceHints: '',
-				transcribing: false,
-				transcript: '',
-				emotion: '',
-				guardMsg: '',
-				saving: false,
-				lastVoiceDuration: 0,
-				lastVoiceFile: ''
+	// 响应式数据
+	let mode = 'text'
+	let draft = ''
+	let submitting = false
+	let classifyLabel = ''
+	let currentLabel = ''
+	let lastContentId = ''
+	let lastText = ''
+	let allLabels = ALL_LABELS
+	let recording = false
+	let recordSeconds = 0
+	let recordTimer = 0 as number
+	let recState = 'idle'
+	let recordHint = '点击开始录音（≤30 分钟）'
+	let voiceHints = ''
+	let transcribing = false
+	let transcript = ''
+	let emotion = ''
+	let guardMsg = ''
+	let saving = false
+	let lastVoiceDuration = 0
+	let lastVoiceFile = ''
+
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
 			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				if (!ok) {
-					showErrorToast(new Error('登录失败，请重试'))
+		})
+	})
+	onUnload(() => {
+		if (recordTimer > 0) {
+			clearInterval(recordTimer)
+			recordTimer = 0
+		}
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+
+	// 文字记录方法
+	function switchMode(m: string): void {
+		mode = m
+	}
+	function submitText(): void {
+		const text = draft.trim()
+		console.log('[yishu] submitText: ' + text)
+		if (text == '') {
+			showErrorToast(new Error('先写点什么吧'))
+			return
+		}
+		submitting = true
+		classifyLabel = '整理中…'
+		currentLabel = ''
+		createTextContent(text).then((contentId: string | null) => {
+			console.log('[yishu] createTextContent -> ' + contentId)
+			if (contentId == null) {
+				submitting = false
+				classifyLabel = ''
+				return
+			}
+			lastContentId = contentId
+			lastText = text
+			draft = ''
+			submitClassify(text).then((jobId: string | null) => {
+				console.log('[yishu] submitClassify -> ' + jobId)
+				if (jobId == null) {
+					submitting = false
+					classifyLabel = '已记录'
+					uni.showToast({ title: '已记下', icon: 'success' })
+					return
+				}
+				pollClassify(jobId, 20, 3000).then((result) => {
+					console.log('[yishu] pollClassify done, result=' + (result != null ? result.label : 'null'))
+					submitting = false
+					if (result != null) {
+						currentLabel = result.label
+						classifyLabel = result.labelCn
+						uni.showToast({ title: '已分类：' + result.labelCn, icon: 'none' })
+					} else {
+						classifyLabel = '已记录（分类暂不可用）'
+						uni.showToast({ title: '已记下', icon: 'success' })
+					}
+				})
+			})
+		})
+	}
+	function onTagTap(key: string): void {
+		if (lastContentId == '' || key === currentLabel) {
+			return
+		}
+		const oldLabel = currentLabel
+		currentLabel = key
+		classifyLabel = '纠正中…'
+		submitArbitrate(lastText).then((jobId: string | null) => {
+			if (jobId == null) {
+				classifyLabel = labelCn(key)
+				submitCorrection(lastContentId, lastText, key, oldLabel).then((ok: boolean) => {
+					uni.showToast({ title: ok ? '已纠正' : '纠错记录失败', icon: 'none' })
+				})
+				return
+			}
+			pollArbitrate(jobId, 20, 3000).then((finalLabel: string | null) => {
+				if (finalLabel != null) {
+					currentLabel = finalLabel
+					classifyLabel = labelCn(finalLabel)
+					submitCorrection(lastContentId, lastText, finalLabel, oldLabel)
+					uni.showToast({ title: '已纠正为：' + labelCn(finalLabel), icon: 'none' })
+				} else {
+					currentLabel = key
+					classifyLabel = labelCn(key)
+					submitCorrection(lastContentId, lastText, key, oldLabel)
+					uni.showToast({ title: '已纠正', icon: 'none' })
 				}
 			})
-		},
-		onUnload() {
-			// 离开页面停止计时器
-			if (this.recordTimer > 0) {
-				clearInterval(this.recordTimer)
-				this.recordTimer = 0
-			}
-		},
-		methods: {
-		/** 导航：时间轴页 */
-		goIndex(): void {
-			uni.navigateTo({ url: '/pages/index/index' })
-		},
-		/** 导航：搜索页 */
-		goSearch(): void {
-			uni.navigateTo({ url: '/pages/search/search' })
-		},
-		/** 导航：记录页 */
-		goRecord(): void {
-			uni.navigateTo({ url: '/pages/record/record' })
-		},
-		/** 导航：消息页 */
-		goMessages(): void {
-			uni.navigateTo({ url: '/pages/messages/messages' })
-		},
-		/** 导航：我的页 */
-		goProfile(): void {
-			uni.navigateTo({ url: '/pages/profile/profile' })
-		},
+		})
+	}
 
-			switchMode(m: string): void {
-				this.mode = m
-			},
-			/** T-TX-1：提交文字 → 入库 → 分类异步轮询 */
-			submitText(): void {
-				const text = this.draft.trim()
-				console.log('[yishu] submitText: ' + text)
-				if (text == '') {
-					showErrorToast(new Error('先写点什么吧'))
-					return
+	// 语音录音方法
+	function toggleRecord(): void {
+		if (recording) {
+			stopRecordNow()
+		} else {
+			recording = true
+			recordSeconds = 0
+			recState = 'idle'
+			recordHint = '录音中，再点停止'
+			transcript = ''
+			emotion = ''
+			guardMsg = ''
+			voiceHints = ''
+			lastVoiceFile = ''
+			setShouldResume(true)
+			recordTimer = setInterval(() => {
+				recordSeconds++
+			}, 1000) as number
+			startRecord(
+				() => {
+					console.log('[yishu] record started')
+				},
+				(path: string, durationMs: number) => {
+					onRecordStopped(path, durationMs)
+				},
+				(msg: string) => {
+					console.error('[yishu] record error: ' + msg)
+					recording = false
+					recState = 'idle'
+					recordHint = '点击开始录音（≤30 分钟）'
+					if (recordTimer > 0) {
+						clearInterval(recordTimer)
+						recordTimer = 0
+					}
+					showErrorToast(new Error('录音失败：' + msg))
+				},
+				(autoPaused: boolean) => {
+					console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
+					recState = recorderState()
+					recordHint = '录音被中断，已暂停'
+				},
+				(path: string, durationMs: number) => {
+					console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
+					onRecordStopped(path, durationMs)
 				}
-				this.submitting = true
-				this.classifyLabel = '整理中…'
-				this.currentLabel = ''
-				createTextContent(text).then((contentId: string | null) => {
-					console.log('[yishu] createTextContent -> ' + contentId)
-					if (contentId == null) {
-						this.submitting = false
-						this.classifyLabel = ''
-						return
-					}
-					this.lastContentId = contentId
-					this.lastText = text
-					// 入库成功 → 清输入框
-					this.draft = ''
-					// 异步分类：入队 → 轮询（SetFit ~27s，最多 20 次 × 3s）
-					submitClassify(text).then((jobId: string | null) => {
-						console.log('[yishu] submitClassify -> ' + jobId)
-						if (jobId == null) {
-							this.submitting = false
-							this.classifyLabel = '已记录'
-							uni.showToast({ title: '已记下', icon: 'success' })
-							return
-						}
-						pollClassify(jobId, 20, 3000).then((result) => {
-							console.log('[yishu] pollClassify done, result=' + (result != null ? result.label : 'null'))
-							this.submitting = false
-							if (result != null) {
-								this.currentLabel = result.label
-								this.classifyLabel = result.labelCn
-								uni.showToast({ title: '已分类：' + result.labelCn, icon: 'none' })
-							} else {
-								this.classifyLabel = '已记录（分类暂不可用）'
-								uni.showToast({ title: '已记下', icon: 'success' })
-							}
-						})
-					})
-				})
-			},
-			/** T-TX-2：点标签纠正 → 三层裁决（异步轮询）→ 回写 */
-			onTagTap(key: string): void {
-				if (this.lastContentId == '' || key === this.currentLabel) {
-					return
-				}
-				// 立即乐观更新（体验优先），裁决失败回滚
-				const oldLabel = this.currentLabel
-				this.currentLabel = key
-				this.classifyLabel = '纠正中…'
-				submitArbitrate(this.lastText).then((jobId: string | null) => {
-					if (jobId == null) {
-						// 裁决不可用：直接记录纠错（三层裁决数据源①）
-						this.classifyLabel = labelCn(key)
-						submitCorrection(this.lastContentId, this.lastText, key, oldLabel).then((ok: boolean) => {
-							uni.showToast({ title: ok ? '已纠正' : '纠错记录失败', icon: 'none' })
-						})
-						return
-					}
-					pollArbitrate(jobId, 20, 3000).then((finalLabel: string | null) => {
-						if (finalLabel != null) {
-							this.currentLabel = finalLabel
-							this.classifyLabel = labelCn(finalLabel)
-							submitCorrection(this.lastContentId, this.lastText, finalLabel, oldLabel)
-							uni.showToast({ title: '已纠正为：' + labelCn(finalLabel), icon: 'none' })
-						} else {
-							// 回滚 + 直接纠错记录
-							this.currentLabel = key
-							this.classifyLabel = labelCn(key)
-							submitCorrection(this.lastContentId, this.lastText, key, oldLabel)
-							uni.showToast({ title: '已纠正', icon: 'none' })
-						}
-					})
-				})
-			},
-			/** T-AU-1 + J-7：录音开始/停止（含中断状态机） */
-			toggleRecord(): void {
-				if (this.recording) {
-					this.stopRecordNow()
-				} else {
-					this.recording = true
-					this.recordSeconds = 0
-					this.recState = 'idle'
-					this.recordHint = '录音中，再点停止'
-					this.transcript = ''
-					this.emotion = ''
-					this.guardMsg = ''
-					this.voiceHints = ''
-					this.lastVoiceFile = ''
-					// 来电/闹钟中断后自动恢复（J-7 shouldResume）
-					setShouldResume(true)
-					this.recordTimer = setInterval(() => {
-						this.recordSeconds++
-					}, 1000) as number
-					startRecord(
-						() => {
-							console.log('[yishu] record started')
-						},
-						(path: string, durationMs: number) => {
-							this.onRecordStopped(path, durationMs)
-						},
-						(msg: string) => {
-							console.error('[yishu] record error: ' + msg)
-							this.recording = false
-							this.recState = 'idle'
-							this.recordHint = '点击开始录音（≤30 分钟）'
-							if (this.recordTimer > 0) {
-								clearInterval(this.recordTimer)
-								this.recordTimer = 0
-							}
-							showErrorToast(new Error('录音失败：' + msg))
-						},
-						(autoPaused: boolean) => {
-							// J-7：来电/系统中断 → 自动暂停
-							console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
-							this.recState = recorderState()
-							this.recordHint = '录音被中断，已暂停'
-						},
-						(path: string, durationMs: number) => {
-							// J-7：30min 自动结束 → 分段保存
-							console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
-							this.onRecordStopped(path, durationMs)
-						}
-					)
-				}
-			},
-			/** J-7：恢复被中断/暂停的录音 */
-			resumeRecordNow(): void {
-				resumeRecord()
-				this.recState = recorderState()
-				this.recordHint = this.recState == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
-			},
-			stopRecordNow(): void {
-				stopRecord()
-			},
-			/** 录音停止 → 长录音分片上传 / 短录音直传转写（T-AU-2 + J-4） */
-			onRecordStopped(path: string, durationMs: number): void {
-				this.recording = false
-				this.recState = 'idle'
-				this.recordHint = '点击开始录音（≤30 分钟）'
-				if (this.recordTimer > 0) {
-					clearInterval(this.recordTimer)
-					this.recordTimer = 0
-				}
-				if (durationMs < 500) {
-					showErrorToast(new Error('录音太短'))
-					return
-				}
-				this.lastVoiceDuration = durationMs
-				this.lastVoiceFile = path
-				this.transcribing = true
-				// J-4：>5min 长录音（>8MB，后端直传超限）→ 分片持久化 → 管线 VAD 转写
-				if (durationMs >= 300000) {
-					this.transcribing = false
-					this.voiceHints = '长录音已提交，云端整理中（>5min 自动分段转写）'
-					uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
-						console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
-					})
-					return
-				}
-				transcribeWav(path).then((res) => {
-					this.transcribing = false
-					if (res == null) {
-						return
-					}
-					this.transcript = res.text
-					this.emotion = res.emotion
-					// B5a J-1/J-3：音频事件/噪音/段级合并提示
-					const hints: Array<string> = []
-					if (res.notOral) {
-						hints.push('疑似非口述（键盘/环境音）')
-					}
-					if (res.silenceHint) {
-						hints.push('检测到静音空段，可删除')
-					}
-					const merge = res.emotionMerge
-					if (merge != null) {
-						const dm = merge.getJSON('dominant')
-						if (dm != null) {
-							hints.push('主导情绪：' + (dm.getString('emotion') ?? '') + '（时长最长段）')
-						}
-					}
-					if (res.noiseWeight == 'equal') {
-						hints.push('噪音较大，情绪权重已降为持平')
-					}
-					this.voiceHints = hints.join('；')
-					if (!res.guardPassed) {
-						this.guardMsg = '内容未通过安全审核：' + res.guardReason
-					} else {
-						this.guardMsg = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
-					}
-				})
-			},
-			/** T-AU-3：转写可编辑 → 确认入库（voice 类型） */
-			submitVoice(): void {
-				const text = this.transcript.trim()
-				if (text == '') {
-					showErrorToast(new Error('转写内容为空'))
-					return
-				}
-				this.saving = true
-				saveVoiceContent(text, this.lastVoiceDuration, this.emotion, '', this.lastVoiceFile).then((contentId: string | null) => {
-					this.saving = false
-					if (contentId != null) {
-						uni.showToast({ title: '已入库', icon: 'success' })
-						this.transcript = ''
-						this.emotion = ''
-						this.guardMsg = ''
-						this.voiceHints = ''
-					} else {
-						showErrorToast(new Error('入库失败'))
-					}
-				})
-			}
+			)
 		}
+	}
+	function resumeRecordNow(): void {
+		resumeRecord()
+		recState = recorderState()
+		recordHint = recState == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
+	}
+	function stopRecordNow(): void {
+		stopRecord()
+	}
+	function onRecordStopped(path: string, durationMs: number): void {
+		recording = false
+		recState = 'idle'
+		recordHint = '点击开始录音（≤30 分钟）'
+		if (recordTimer > 0) {
+			clearInterval(recordTimer)
+			recordTimer = 0
+		}
+		if (durationMs < 500) {
+			showErrorToast(new Error('录音太短'))
+			return
+		}
+		lastVoiceDuration = durationMs
+		lastVoiceFile = path
+		transcribing = true
+		if (durationMs >= 300000) {
+			transcribing = false
+			voiceHints = '长录音已提交，云端整理中（>5min 自动分段转写）'
+			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
+				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+			})
+			return
+		}
+		transcribeWav(path).then((res) => {
+			transcribing = false
+			if (res == null) {
+				return
+			}
+			transcript = res.text
+			emotion = res.emotion
+			const hints: Array<string> = []
+			if (res.notOral) {
+				hints.push('疑似非口述（键盘/环境音）')
+			}
+			if (res.silenceHint) {
+				hints.push('检测到静音空段，可删除')
+			}
+			const merge = res.emotionMerge
+			if (merge != null) {
+				const dm = merge.getJSON('dominant')
+				if (dm != null) {
+					hints.push('主导情绪：' + (dm.getString('emotion') ?? '') + '（时长最长段）')
+				}
+			}
+			if (res.noiseWeight == 'equal') {
+				hints.push('噪音较大，情绪权重已降为持平')
+			}
+			voiceHints = hints.join('；')
+			if (!res.guardPassed) {
+				guardMsg = '内容未通过安全审核：' + res.guardReason
+			} else {
+				guardMsg = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
+			}
+		})
+	}
+	function submitVoice(): void {
+		const text = transcript.trim()
+		if (text == '') {
+			showErrorToast(new Error('转写内容为空'))
+			return
+		}
+		saving = true
+		saveVoiceContent(text, lastVoiceDuration, emotion, '', lastVoiceFile).then((contentId: string | null) => {
+			saving = false
+			if (contentId != null) {
+				uni.showToast({ title: '已入库', icon: 'success' })
+				transcript = ''
+				emotion = ''
+				guardMsg = ''
+				voiceHints = ''
+			} else {
+				showErrorToast(new Error('入库失败'))
+			}
+		})
 	}
 </script>
 

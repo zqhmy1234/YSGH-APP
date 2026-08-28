@@ -133,64 +133,65 @@
 	</view>
 </template>
 
-<script lang="uts">
-	export default {
-		data() {
-			return {
-				totalDays: 128,
-				totalPhotos: 342,
-				totalThemes: 12,
-				personalityTags: [
-					{ name: '怀旧', confidence: 87, active: true },
-					{ name: '感性', confidence: 76, active: true },
-					{ name: '细致', confidence: 72, active: true },
-					{ name: '乐观', confidence: 68, active: false },
-					{ name: '内敛', confidence: 65, active: false },
-					{ name: '创造力', confidence: 61, active: false }
-				],
-				themes: [
-					{ name: '家庭时光', count: 45, icon: '👨‍👩‍👧', color: '#c4913c24' },
-					{ name: '旅行记忆', count: 32, icon: '✈️', color: '#b05a3a1f' },
-					{ name: '校园生活', count: 28, icon: '📚', color: '#4e7d8c21' },
-					{ name: '美食探店', count: 23, icon: '🍜', color: '#7a8c5a24' }
-				]
-			}
-		},
-		onLoad() {
-			console.log('[portrait-manage] page loaded')
-		},
-		methods: {
-			goBack() {
-				uni.navigateBack()
-			},
-			goIndex() {
-				uni.navigateTo({ url: '/pages/index/index' })
-			},
-			goSearch() {
-				uni.navigateTo({ url: '/pages/search/search' })
-			},
-			goRecord() {
-				uni.navigateTo({ url: '/pages/record/record' })
-			},
-			goMessages() {
-				uni.navigateTo({ url: '/pages/messages/messages' })
-			},
-			goProfile() {
-				uni.navigateTo({ url: '/pages/profile/profile' })
-			},
-			onThemeTap(theme: any) {
-				uni.showToast({ title: '查看主题：' + theme.name, icon: 'none' })
-			},
-			onRefreshProfile() {
-				uni.showToast({ title: '正在重新生成画像...', icon: 'none' })
-			},
-			onEditTags() {
-				uni.showToast({ title: '编辑性格标签', icon: 'none' })
-			},
-			onPrivacySettings() {
-				uni.showToast({ title: '画像隐私设置', icon: 'none' })
-			}
-		}
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
+
+	// 响应式数据
+	let totalDays = 128
+	let totalPhotos = 342
+	let totalThemes = 12
+	let personalityTags = [
+		{ name: '怀旧', confidence: 87, active: true },
+		{ name: '感性', confidence: 76, active: true },
+		{ name: '细致', confidence: 72, active: true },
+		{ name: '乐观', confidence: 68, active: false },
+		{ name: '内敛', confidence: 65, active: false },
+		{ name: '创造力', confidence: 61, active: false }
+	]
+	let themes = [
+		{ name: '家庭时光', count: 45, icon: '👨‍👩‍👧', color: '#c4913c24' },
+		{ name: '旅行记忆', count: 32, icon: '✈️', color: '#b05a3a1f' },
+		{ name: '校园生活', count: 28, icon: '📚', color: '#4e7d8c21' },
+		{ name: '美食探店', count: 23, icon: '🍜', color: '#7a8c5a24' }
+	]
+
+	// 生命周期
+	onLoad(() => {
+		console.log('[portrait-manage] page loaded')
+	})
+
+	// 导航方法
+	function goBack() {
+		uni.navigateBack()
+	}
+	function goIndex() {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch() {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord() {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages() {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile() {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+
+	// 业务方法
+	function onThemeTap(theme: any) {
+		uni.showToast({ title: '查看主题：' + theme.name, icon: 'none' })
+	}
+	function onRefreshProfile() {
+		uni.showToast({ title: '正在重新生成画像...', icon: 'none' })
+	}
+	function onEditTags() {
+		uni.showToast({ title: '编辑性格标签', icon: 'none' })
+	}
+	function onPrivacySettings() {
+		uni.showToast({ title: '画像隐私设置', icon: 'none' })
 	}
 </script>
 

@@ -99,118 +99,109 @@
 
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { searchText, searchByImage, SearchOutcome, contentTypeCn as formatContentTypeCn } from '@/utils/search_api'
 	import { showErrorToast } from '@/utils/api'
 	import { shortDate as formatShortDate } from '@/utils/time'
 
-	export default {
-		data() {
-			return {
-				query: '',
-				queryImage: '',
-				loading: false,
-				searched: false,
-				degraded: false,
-				outcome: null as SearchOutcome | null
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				if (!ok) {
-					showErrorToast(new Error('登录失败，请重试'))
-				}
-			})
-		},
-		methods: {
-		/** 导航：时间轴页 */
-		goIndex(): void {
-			uni.navigateTo({ url: '/pages/index/index' })
-		},
-		/** 导航：搜索页 */
-		goSearch(): void {
-			uni.navigateTo({ url: '/pages/search/search' })
-		},
-		/** 导航：记录页 */
-		goRecord(): void {
-			uni.navigateTo({ url: '/pages/record/record' })
-		},
-		/** 导航：消息页 */
-		goMessages(): void {
-			uni.navigateTo({ url: '/pages/messages/messages' })
-		},
-		/** 导航：我的页 */
-		goProfile(): void {
-			uni.navigateTo({ url: '/pages/profile/profile' })
-		},
+	// 响应式数据
+	let query = ''
+	let queryImage = ''
+	let loading = false
+	let searched = false
+	let degraded = false
+	let outcome: SearchOutcome | null = null
 
-			/** 得分百分比（模板内不能直接调全局 Math） */
-			scorePct(score: number): number {
-				return Math.round(score * 100)
-			},
-			/** 内容类型中文名（模板直接调用限制：需挂 methods；委托 search_api.contentTypeCn 单源） */
-			contentTypeCn(t: string): string {
-				return formatContentTypeCn(t)
-			},
-			/** T-SR-1：提交搜索 */
-			doSearch(): void {
-				const q = this.query.trim()
-				if (q == '' && this.queryImage == '') {
-					showErrorToast(new Error('输入想找的内容'))
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+			}
+		})
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+
+	// 工具方法
+	function scorePct(score: number): number {
+		return Math.round(score * 100)
+	}
+	function contentTypeCn(t: string): string {
+		return formatContentTypeCn(t)
+	}
+	function shortDate(iso: string): string {
+		return formatShortDate(iso)
+	}
+
+	// 业务方法
+	function doSearch(): void {
+		const q = query.trim()
+		if (q == '' && queryImage == '') {
+			showErrorToast(new Error('输入想找的内容'))
+			return
+		}
+		loading = true
+		searched = false
+		degraded = false
+		searchText(q, 10).then((out: SearchOutcome | null) => {
+			loading = false
+			searched = true
+			if (out != null) {
+				outcome = out
+				degraded = out.degraded
+			} else {
+				outcome = null
+			}
+		})
+	}
+	function pickImage(): void {
+		uni.chooseMedia({
+			count: 1,
+			mediaType: ['image'],
+			sourceType: ['album'],
+			success: (res) => {
+				const files = res.tempFiles
+				if (files.length === 0) {
 					return
 				}
-				this.loading = true
-				this.searched = false
-				this.degraded = false
-				searchText(q, 10).then((out: SearchOutcome | null) => {
-					this.loading = false
-					this.searched = true
+				const path = files.tempFilePath
+				queryImage = path
+				loading = true
+				searched = false
+				degraded = false
+				searchByImage(path, 10).then((out: SearchOutcome | null) => {
+					loading = false
+					searched = true
 					if (out != null) {
-						this.outcome = out
-						this.degraded = out.degraded
+						outcome = out
+						degraded = out.degraded
 					} else {
-						this.outcome = null
+						outcome = null
 					}
 				})
 			},
-			/** T-SR-3：以图搜图（uni-app x App 端用 uni.chooseMedia 选图） */
-			pickImage(): void {
-				uni.chooseMedia({
-					count: 1,
-					mediaType: ['image'],
-					sourceType: ['album'],
-					success: (res) => {
-						const files = res.tempFiles
-						if (files.length === 0) {
-							return
-						}
-						const path = files[0].tempFilePath
-						this.queryImage = path
-						this.loading = true
-						this.searched = false
-						this.degraded = false
-						searchByImage(path, 10).then((out: SearchOutcome | null) => {
-							this.loading = false
-							this.searched = true
-							if (out != null) {
-								this.outcome = out
-								this.degraded = out.degraded
-							} else {
-								this.outcome = null
-							}
-						})
-					},
-					fail: () => {
-						// 用户取消选择：静默
-					}
-				})
-			},
-			/** ISO → 短日期（yyyy-mm-dd → mm月dd日；UTS 模板不能直调模块函数，methods 壳委托 time.ts） */
-			shortDate(iso: string): string {
-				return formatShortDate(iso)
+			fail: () => {
+				// 用户取消选择：静默
 			}
-		}
+		})
 	}
 </script>
 

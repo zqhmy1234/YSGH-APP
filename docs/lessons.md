@@ -1,4 +1,4 @@
-# 教训台账（Harness 强制登记 · 2026-08-20 起）
+﻿# 教训台账（Harness 强制登记 · 2026-08-20 起）
 
 > 规则（程序化强制，见 scripts/lessons.py + review_agent.py check_lessons）：
 > 开发阶段每次排查错误并修复后，必须登记一条教训——review_agent 检查失败后
@@ -6,6 +6,22 @@
 >
 > 新增：`python scripts/lessons.py add --error "..." --root-cause "..." [--fix "..." --file "..."]`
 > 复盘索引（按根因族归组）：[docs/lessons-主题索引.md](lessons-主题索引.md)；现行口径/术语/决策登记簿：[docs/决策台账.md](决策台账.md)
+
+---
+
+### 2026-08-29 03:11 UI还原与Vapor迁移批次1 ts=1787973060
+
+- **错误**：7页面setup改造提交时lint失败（scripts/临时脚本未清理），清理后lessons检查仍失败（_last_entry_time取第一个###行，lessons.md按旧→新排列，新条目在末尾不被识别）
+- **根因**：lessons.py _last_entry_time() 遍历找到第一个###行即返回，而lessons.md历史条目按时间升序排列（旧在前新在后），新增条目在末尾无法通过"晚于失败时间"校验
+- **修复**：新登记lessons必须插入到lessons.md第一个###行之前（文件顶部规则说明之后），使用ts=epoch时间戳格式，确保时间晚于last-failure.json中的失败时间
+- **相关文件**：docs/lessons.md, scripts/lessons.py
+- **教训**：lessons登记位置必须在文件顶部（第一个###之前），不是末尾；时间戳用ts=epoch格式
+### 2026-08-29 03:06 · commit cd41f18 · ts=1787943990
+- **错误**：uni-app x Vapor模式要求全页面使用组合式API(setup)，选项式API(data/methods)在Vapor下不兼容
+- **根因**：项目原全部页面使用选项式API(export default {data,methods})，Vapor模式5.25+仅支持组合式API
+- **修复**：逐页setup改造：1)<script setup lang=uts> 2)data变量改let 3)methods改function 4)生命周期从@dcloudio/uni-app导入 5)移除this引用 6)回调中直接访问闭包变量
+- **相关文件**：client/pages/*/*.uvue
+- **教训**：Vapor模式必须全页面setup改造，逐页迁移并验证回调闭包
 
 ---
 
@@ -1255,3 +1271,8 @@
 31. **给全局 python 补依赖**：`--no-deps` 抄近道 + 服务在线全量 install = 半卸载混合态（WinError5 文件锁）+ resolver 回溯死循环（17 分钟无进度）→ 重依赖走独立 venv；卸载安装前先停服务
 32. **HBuilderX cli launch 是 watch 常驻进程**：管道接 grep/tail 永久挂起，必须 run_in_background/重定向；双实例互抢（logcat/pyc），第二实例秒退只报文件占用
 33. **门禁资源前置巡检**：全量门禁峰值内存 ~5.5-6GB（0.9GB 可用时 pytest 被内核 SIGKILL 表现"exit 1 无输出"）；C 盘 0 空闲 ENOSPC 连锁；job_kill 只杀 pwsh 不杀 python 孙进程——重跑前 `Get-Process python` 清残留
+
+### 2026-08-29 03:09 UI还原与Vapor迁移（条目 34-35）ts=1787972981
+
+34. **UI像素级还原禁止依赖批量脚本，必须逐页与设计稿数据对比验证**：批量样式更新脚本只匹配通用.card类名，遗漏各页面自定义卡片类名（.hit-card/.msg-card/.profile-card等），导致圆角/背景色未按设计稿更新；批量创建后必须逐页精细审查：1)列出所有样式类名 2)逐一与SVG解析的设计数据对比 3)修正圆角/颜色/透明度等关键参数
+35. **Vapor模式必须全页面setup改造，逐页迁移并验证回调闭包**：uni-app x Vapor模式5.25+仅支持组合式API(setup)，选项式API(data/methods)不兼容；改造要点：1)<script setup lang=uts> 2)data变量改let 3)methods改function 4)生命周期从@dcloudio/uni-app导入 5)移除this引用 6)回调中直接访问闭包变量（录音/chooseMedia等异步回调特别注意）

@@ -71,101 +71,92 @@
 
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play'
 	import { showErrorToast } from '@/utils/api'
 
-	export default {
-		data() {
-			return {
-				step: 'disclose' as string, // disclose → ask → done
-				questions: [] as Array<InterviewQuestion>,
-				answers: {} as UTSJSONObject,
-				submitting: false,
-				confirmation: ''
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				if (!ok) {
-					showErrorToast(new Error('登录失败，请重试'))
-					return
-				}
-				fetchInterviewQuestions().then((qs: Array<InterviewQuestion>) => {
-					if (qs.length > 0) {
-						this.questions = qs
-						// 预置 answers 结构（UTSJSONObject set 注入）
-						for (let i = 0; i < qs.length; i++) {
-							this.answers.set(qs[i].key, '')
-						}
-						this.step = 'disclose'
-					} else {
-						showErrorToast(new Error('访谈问题加载失败'))
-					}
-				})
-			})
-		},
-		methods: {
-		/** 导航：时间轴页 */
-		goIndex(): void {
-			uni.navigateTo({ url: '/pages/index/index' })
-		},
-		/** 导航：搜索页 */
-		goSearch(): void {
-			uni.navigateTo({ url: '/pages/search/search' })
-		},
-		/** 导航：记录页 */
-		goRecord(): void {
-			uni.navigateTo({ url: '/pages/record/record' })
-		},
-		/** 导航：消息页 */
-		goMessages(): void {
-			uni.navigateTo({ url: '/pages/messages/messages' })
-		},
-		/** 导航：我的页 */
-		goProfile(): void {
-			uni.navigateTo({ url: '/pages/profile/profile' })
-		},
+	// 响应式数据
+	let step = 'disclose'
+	let questions: Array<InterviewQuestion> = []
+	let answers = UTSJSONObject()
+	let submitting = false
+	let confirmation = ''
 
-			beginInterview(): void {
-				this.step = 'ask'
-			},
-			submitAnswers(): void {
-				// 至少答一题
-				let filled = 0
-				const keys = this.questions
-				for (let i = 0; i < keys.length; i++) {
-					const v = this.answers.getString(keys[i].key) ?? ''
-					if (v.trim() != '') {
-						filled++
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+				return
+			}
+			fetchInterviewQuestions().then((qs: Array<InterviewQuestion>) => {
+				if (qs.length > 0) {
+					questions = qs
+					for (let i = 0; i < qs.length; i++) {
+						answers.set(qs[i].key, '')
 					}
+					step = 'disclose'
+				} else {
+					showErrorToast(new Error('访谈问题加载失败'))
 				}
-				if (filled === 0) {
-					showErrorToast(new Error('至少回答一个问题'))
-					return
-				}
-				this.submitting = true
-				submitInterviewAnswers(this.answers).then((res: InterviewResult | null) => {
-					this.submitting = false
-					if (res != null) {
-						this.confirmation = res.confirmation
-						this.step = 'done'
-					} else {
-						showErrorToast(new Error('提交失败，请重试'))
-					}
-				})
-			},
-			skipInterview(): void {
-				uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
-				setTimeout(() => {
-					uni.navigateBack({})
-				}, 800)
-			},
-			finishInterview(): void {
-				uni.navigateBack({})
+			})
+		})
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+
+	// 业务方法
+	function beginInterview(): void {
+		step = 'ask'
+	}
+	function submitAnswers(): void {
+		let filled = 0
+		for (let i = 0; i < questions.length; i++) {
+			const v = answers.getString(questions[i].key) ?? ''
+			if (v.trim() != '') {
+				filled++
 			}
 		}
+		if (filled === 0) {
+			showErrorToast(new Error('至少回答一个问题'))
+			return
+		}
+		submitting = true
+		submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
+			submitting = false
+			if (res != null) {
+				confirmation = res.confirmation
+				step = 'done'
+			} else {
+				showErrorToast(new Error('提交失败，请重试'))
+			}
+		})
+	}
+	function skipInterview(): void {
+		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
+		setTimeout(() => {
+			uni.navigateBack({})
+		}, 800)
+	}
+	function finishInterview(): void {
+		uni.navigateBack({})
 	}
 </script>
 

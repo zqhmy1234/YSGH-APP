@@ -66,95 +66,81 @@
 
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad, onShow } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchInterviewProfile, fetchUnreadCount } from '@/utils/play'
 	import { showErrorToast } from '@/utils/api'
-	// O20：dev 调试页常驻开关——config 派生（非 dev 构建自动关闭，不展示入口）
 	import { DEV_PAGE_ENABLED } from '@/utils/config'
 
-	export default {
-		data() {
-			return {
-				profileReady: false,
-				unreadCount: 0,
-				devEntrySub: DEV_PAGE_ENABLED ? '开发调试 ›' : '翻看记忆，去年今日'
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				if (!ok) {
-					showErrorToast(new Error('登录失败，请重试'))
-					return
-				}
-				this.loadProfile()
-				this.loadUnread()
-			})
-		},
-		onShow() {
-			// 切前台刷新未读数（消息/访谈状态可能变化）；
-			// 原条件 this.profileReady || this.unreadCount >= 0 恒真（unreadCount 非负），删除冗余守卫
-			this.loadUnread()
-		},
-		methods: {
-		/** 导航：时间轴页 */
-		goIndex(): void {
-			uni.navigateTo({ url: '/pages/index/index' })
-		},
-		/** 导航：搜索页 */
-		goSearch(): void {
-			uni.navigateTo({ url: '/pages/search/search' })
-		},
-		/** 导航：记录页 */
-		goRecord(): void {
-			uni.navigateTo({ url: '/pages/record/record' })
-		},
-		/** 导航：消息页 */
-		goMessages(): void {
-			uni.navigateTo({ url: '/pages/messages/messages' })
-		},
-		/** 导航：我的页 */
-		goProfile(): void {
-			uni.navigateTo({ url: '/pages/profile/profile' })
-		},
+	// 响应式数据
+	let profileReady = false
+	let unreadCount = 0
+	let devEntrySub = DEV_PAGE_ENABLED ? '开发调试 ›' : '翻看记忆，去年今日'
 
-			loadProfile(): void {
-				fetchInterviewProfile().then((d: UTSJSONObject | null) => {
-					if (d == null) {
-						return
-					}
-					// 后端画像：{dimensions: {}, version, cold_start_done}——dimensions 是 dict
-					const done = d.getBoolean('cold_start_done') ?? false
-					if (done) {
-						this.profileReady = true
-						return
-					}
-					const dims = d.getJSON('dimensions')
-					if (dims != null && dims.toJSONString().length > 2) {
-						this.profileReady = true
-					}
-				})
-			},
-			loadUnread(): void {
-				// O17：未读数游标翻页累加（不再被首屏 limit=50 截断）
-				fetchUnreadCount().then((n: number) => {
-					this.unreadCount = n
-				})
-			},
-			goInterview(): void {
-				uni.navigateTo({ url: '/pages/interview/interview' })
-			},
-			goMessages(): void {
-				uni.navigateTo({ url: '/pages/messages/messages' })
-			},
-			/** O20：dev 构建下"关于"区点击进调试页；非 dev 构建（开关关）不导航 */
-			goDevCheck(): void {
-				if (!DEV_PAGE_ENABLED) {
-					return
-				}
-				uni.navigateTo({ url: '/pages/debug/agg-check/agg-check' })
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+				return
 			}
+			loadProfile()
+			loadUnread()
+		})
+	})
+	onShow(() => {
+		// 切前台刷新未读数（消息/访谈状态可能变化）
+		loadUnread()
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+	function goInterview(): void {
+		uni.navigateTo({ url: '/pages/interview/interview' })
+	}
+	function goDevCheck(): void {
+		if (!DEV_PAGE_ENABLED) {
+			return
 		}
+		uni.navigateTo({ url: '/pages/debug/agg-check/agg-check' })
+	}
+
+	// 业务方法
+	function loadProfile(): void {
+		fetchInterviewProfile().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				return
+			}
+			const done = d.getBoolean('cold_start_done') ?? false
+			if (done) {
+				profileReady = true
+				return
+			}
+			const dims = d.getJSON('dimensions')
+			if (dims != null && dims.toJSONString().length > 2) {
+				profileReady = true
+			}
+		})
+	}
+	function loadUnread(): void {
+		fetchUnreadCount().then((n: number) => {
+			unreadCount = n
+		})
 	}
 </script>
 

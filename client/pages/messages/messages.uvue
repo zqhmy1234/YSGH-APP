@@ -66,95 +66,88 @@
 
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad, onShow } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchMessages, markMessageRead, markAllRead, AppMessage } from '@/utils/play'
 	import { showErrorToast } from '@/utils/api'
 	import { formatIsoShortTime } from '@/utils/time'
 
-	export default {
-		data() {
-			return {
-				filter: 'unread' as string,
-				loading: false,
-				loadedOnce: false,
-				messages: [] as Array<AppMessage>
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				if (!ok) {
-					showErrorToast(new Error('登录失败，请重试'))
-					return
-				}
-				this.reload()
-			})
-		},
-		onShow() {
-			// 切前台刷新（T-PL-3：打开/切前台刷新）
-			if (this.loadedOnce) {
-				this.reload()
-			}
-		},
-		methods: {
-		/** 导航：时间轴页 */
-		goIndex(): void {
-			uni.navigateTo({ url: '/pages/index/index' })
-		},
-		/** 导航：搜索页 */
-		goSearch(): void {
-			uni.navigateTo({ url: '/pages/search/search' })
-		},
-		/** 导航：记录页 */
-		goRecord(): void {
-			uni.navigateTo({ url: '/pages/record/record' })
-		},
-		/** 导航：消息页 */
-		goMessages(): void {
-			uni.navigateTo({ url: '/pages/messages/messages' })
-		},
-		/** 导航：我的页 */
-		goProfile(): void {
-			uni.navigateTo({ url: '/pages/profile/profile' })
-		},
+	// 响应式数据
+	let filter = 'unread'
+	let loading = false
+	let loadedOnce = false
+	let messages: Array<AppMessage> = []
 
-			reload(): void {
-				this.loading = true
-				fetchMessages(this.filter).then((list: Array<AppMessage>) => {
-					this.messages = list
-					this.loading = false
-					this.loadedOnce = true
-				})
-			},
-			switchFilter(f: string): void {
-				if (this.filter === f) {
-					return
-				}
-				this.filter = f
-				this.reload()
-			},
-			onMsgTap(m: AppMessage): void {
-				if (m.status === 'unread') {
-					markMessageRead(m.id).then((ok: boolean) => {
-						if (ok) {
-							this.reload()
-						}
-					})
-				}
-			},
-			readAll(): void {
-				markAllRead().then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已全部标为已读', icon: 'none' })
-						this.reload()
-					}
-				})
-			},
-			/** ISO → 短时间（MM-dd HH:mm，委托 time.ts formatIsoShortTime 单源） */
-			shortTime(iso: string): string {
-				return formatIsoShortTime(iso)
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+				return
 			}
+			reload()
+		})
+	})
+	onShow(() => {
+		// 切前台刷新（T-PL-3：打开/切前台刷新）
+		if (loadedOnce) {
+			reload()
 		}
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.navigateTo({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+
+	// 业务方法
+	function reload(): void {
+		loading = true
+		fetchMessages(filter).then((list: Array<AppMessage>) => {
+			messages = list
+			loading = false
+			loadedOnce = true
+		})
+	}
+	function switchFilter(f: string): void {
+		if (filter === f) {
+			return
+		}
+		filter = f
+		reload()
+	}
+	function onMsgTap(m: AppMessage): void {
+		if (m.status === 'unread') {
+			markMessageRead(m.id).then((ok: boolean) => {
+				if (ok) {
+					reload()
+				}
+			})
+		}
+	}
+	function readAll(): void {
+		markAllRead().then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已全部标为已读', icon: 'none' })
+				reload()
+			}
+		})
+	}
+	function shortTime(iso: string): string {
+		return formatIsoShortTime(iso)
 	}
 </script>
 
