@@ -80,6 +80,8 @@
 - **[yishu] 证据通道修正**：App console.log 只进 HBuilderX 会话 stdout，**不进 logcat**（GrabLog yishu 0 命中实证）→ SOP 的 GrabAppLog 流程对本波废弃，改"会话日志落盘 evidence/*_session_*.log"。
 - **RQ worker 缺失 + Windows embeddable 双坑**：本波发现 worker 进程从未在跑（D-02 因此静默一天）。启动链路：LobsterAI python 为 embeddable 发行（python311._pth → **忽略 PYTHONPATH 与 cwd**）→ `python -m app.workers.worker` 必炸 ModuleNotFoundError；uvicorn 能用是因 CLI 自己注入 cwd。正解 `-c "sys.path.insert(0, r'D:\GuangH-App\backend'); ..."` 引导。第二坑：`worker.work(with_scheduler=True)` 在 Windows spawn scheduler 子进程时 `TypeError: cannot pickle '_thread.lock'`（worker.py A2 内嵌 scheduler 模式在 Windows 不可用）→ dev 以无 scheduler 的 `work()` 消费（代价：RQ Retry 延迟任务不回投——登记部署清单，生产 Linux 无此问题）。
 - WiFi 被手机自动切回蜂窝两次（00:34 前 / 01:07）：`adb shell svc wifi enable` 恢复；6021-5G 信号 RSSI -29。
+- **O-1（观察项，非缺陷）**：18:0x 某次 uvicorn 在 BGE-M3 懒加载时刻无 traceback 直接 exit 1（日志末尾 `torch_dtype deprecated`+`tokenize→preprocess` 指纹），PC 端两次 curl 搜索复现均正常、latency 1.4-3.5s——判定瞬时原生崩溃，非可复现代码缺陷；疑与当日 numpy 2.5.2 升级后的版本漂移相关，4b 若再遇同类崩溃优先复查 numpy/scipy 与 torch/sentence-transformers 兼容性。
+- **全量门禁状态（4a 收口时）**：syntax/lint/todos/api_smoke/research/cleanup 全绿；secrets 3 条误报（uiautomator XML 的 password 属性为 false）已删 XML 消除；pytest 723 过 + 3 挂→2 个为我方环境因素（geo_cache 残留真调用缓存行 + 我误设 QDRANT_COLLECTION）已修转绿，剩 1 个 test_photo_writes_image_vec 失败源于**另一窗口未提交的 storage.py（+67 行）** + COS 未配置——非已提交基线回归，待该窗口落地/配 COS 后应转绿。
 
 ## 6. 遗留
 
