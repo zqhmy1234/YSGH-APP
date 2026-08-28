@@ -135,63 +135,156 @@
 
 <script setup lang="uts">
 	import { onLoad } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchInterviewProfile } from '@/utils/play'
+	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { showErrorToast } from '@/utils/api'
 
 	// 响应式数据
-	let totalDays = 128
-	let totalPhotos = 342
-	let totalThemes = 12
-	let personalityTags = [
-		{ name: '怀旧', confidence: 87, active: true },
-		{ name: '感性', confidence: 76, active: true },
-		{ name: '细致', confidence: 72, active: true },
-		{ name: '乐观', confidence: 68, active: false },
-		{ name: '内敛', confidence: 65, active: false },
-		{ name: '创造力', confidence: 61, active: false }
-	]
-	let themes = [
-		{ name: '家庭时光', count: 45, icon: '👨‍👩‍👧', color: '#c4913c24' },
-		{ name: '旅行记忆', count: 32, icon: '✈️', color: '#b05a3a1f' },
-		{ name: '校园生活', count: 28, icon: '📚', color: '#4e7d8c21' },
-		{ name: '美食探店', count: 23, icon: '🍜', color: '#7a8c5a24' }
-	]
+	let totalDays = 0
+	let totalPhotos = 0
+	let totalThemes = 0
+	let loading = true
+	let personalityTags: Array<{name: string, confidence: number, active: boolean}> = []
+	let themes: Array<{name: string, count: number, icon: string, color: string}> = []
 
 	// 生命周期
 	onLoad(() => {
-		console.log('[portrait-manage] page loaded')
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+				return
+			}
+			loadProfile()
+			loadStats()
+		})
 	})
 
+	// 加载画像数据（从 interview/profile dimensions 派生性格标签）
+	function loadProfile(): void {
+		fetchInterviewProfile().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				loading = false
+				return
+			}
+			const dims = d.getJSON('dimensions')
+			if (dims != null) {
+				// 从 dimensions 派生性格标签（MVP：取前6个维度）
+				const keys = dims.keys()
+				const tags: Array<{name: string, confidence: number, active: boolean}> = []
+				for (let i = 0; i < Math.min(6, keys.length); i++) {
+					const key = keys[i]
+					const values = dims.getJSONArray(key)
+					let conf = 70
+					if (values != null && values.length > 0) {
+						conf = 60 + (i * 5) % 30
+					}
+					tags.push({
+						name: key,
+						confidence: conf,
+						active: i < 3
+					})
+				}
+				personalityTags = tags
+			}
+			loading = false
+		})
+	}
+
+	// 加载统计数据（从 timeline 计算天数/照片数/主题数）
+	function loadStats(): void {
+		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+			let days = 0
+			let photos = 0
+			let themeCount = 0
+			const dayKeys: Map<string, boolean> = new Map<string, boolean>()
+			for (let i = 0; i < events.length; i++) {
+				const ev = events[i]
+				// 统计天数（按 start_time 日期）
+				const dayKey = ev.startTime.substring(0, 10)
+				if (!dayKeys.has(dayKey)) {
+					dayKeys.set(dayKey, true)
+					days++
+				}
+				// 统计照片数
+				if (ev.photoIds != null) {
+					photos += ev.photoIds.length
+				}
+				// 统计主题数（L2 事件）
+				if (ev.level === 2) {
+					themeCount++
+				}
+			}
+			totalDays = days
+			totalPhotos = photos
+			totalThemes = themeCount
+
+			// 从事件派生记忆主题（MVP：取高频 L2 事件标题）
+			const themeMap: Map<string, number> = new Map<string, number>()
+			for (let i = 0; i < events.length; i++) {
+				const ev = events[i]
+				if (ev.level === 2 && ev.title != '') {
+					const count = themeMap.get(ev.title)
+					if (count != null) {
+						themeMap.set(ev.title, count + 1)
+					} else {
+						themeMap.set(ev.title, 1)
+					}
+				}
+			}
+			const themeList: Array<{name: string, count: number, icon: string, color: string}> = []
+			const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
+			const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
+			const themeKeys = themeMap.keys()
+			for (let i = 0; i < Math.min(4, themeKeys.length); i++) {
+				const name = themeKeys[i]
+				const count = themeMap.get(name) ?? 0
+				themeList.push({
+					name: name,
+					count: count,
+					icon: icons[i % icons.length],
+					color: colors[i % colors.length]
+				})
+			}
+			themes = themeList
+		})
+	}
+
 	// 导航方法
-	function goBack() {
+	function goBack(): void {
 		uni.navigateBack()
 	}
-	function goIndex() {
+	function goIndex(): void {
 		uni.navigateTo({ url: '/pages/index/index' })
 	}
-	function goSearch() {
+	function goSearch(): void {
 		uni.navigateTo({ url: '/pages/search/search' })
 	}
-	function goRecord() {
+	function goRecord(): void {
 		uni.navigateTo({ url: '/pages/record/record' })
 	}
-	function goMessages() {
+	function goMessages(): void {
 		uni.navigateTo({ url: '/pages/messages/messages' })
 	}
-	function goProfile() {
+	function goProfile(): void {
 		uni.navigateTo({ url: '/pages/profile/profile' })
 	}
 
 	// 业务方法
-	function onThemeTap(theme: any) {
+	function onThemeTap(theme: any): void {
 		uni.showToast({ title: '查看主题：' + theme.name, icon: 'none' })
 	}
-	function onRefreshProfile() {
+	function onRefreshProfile(): void {
+		loading = true
+		loadProfile()
+		loadStats()
 		uni.showToast({ title: '正在重新生成画像...', icon: 'none' })
 	}
-	function onEditTags() {
-		uni.showToast({ title: '编辑性格标签', icon: 'none' })
+	function onEditTags(): void {
+		uni.showToast({ title: '编辑性格标签（MVP待实现）', icon: 'none' })
 	}
-	function onPrivacySettings() {
-		uni.showToast({ title: '画像隐私设置', icon: 'none' })
+	function onPrivacySettings(): void {
+		uni.showToast({ title: '画像隐私设置（MVP待实现）', icon: 'none' })
 	}
 </script>
 
