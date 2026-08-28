@@ -8,6 +8,33 @@
 
 ---
 
+### 2026-08-28 23:19 · commit 83eaafd · ts=1787930374
+- **错误**：US-25 真机验证发现：连续纠错 3 次弹窗正常（US-25 A级），但'不管点什么分类标签，纠错后一律变成混合'（US-22/23 分类纠错准确性观察项 O-2）
+- **根因**：三层裁决（个人规则→全局 SetFit→共性微调）对纠错输入的裁决结果倾向返回'混合'——可能 ①裁决链 finalLabel 回退默认 ②SetFit 对短文本区分度不足 ③共性规则误命中。需查 submitCorrection/submitArbitrate 裁决链与 ALL_LABELS 默认，属模型/裁决质量类（同 S2 情绪漏报批次3）
+- **修复**：登记观察项 O-2 待批次3 排查（分类裁决准确性）；不阻塞 US-25（弹窗交互本身 A 级）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 22:54 · commit 9e98e09 · ts=1787928855
+- **错误**：US-42 导出真机验证失败：uni.getFileSystemManager().writeFile({data: 普通UTF-8字符串, encoding:'utf8'}) 报 errCode 1200002 'Type error. only support base64 / utf-8'，后端 GET /api/v1/export 200 正常、失败在客户端落盘环节
+- **根因**：uni-app x 的 FileSystemManager.writeFile 的 data 只接受 base64(string)+encoding:'base64' 或 UTF-8 ArrayBuffer；直接传原生 string + encoding:'utf8' 不被接受（报 1200002）。此前该 API 全项目首次真机使用、从未验证；fail 回调曾丢错误详情导致无法定位
+- **修复**：改 TextEncoder().encode(str) → .buffer!（UTS 非空断言）→ uni.arrayBufferToBase64() → data=base64 + encoding:'base64'；真机复测通过（30.1KB 落盘 + runloop 无 FAIL + 设备文件存在）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 21:09 · commit 9e98e09 · ts=1787922596
+- **错误**：HBuilderX cli launch 为 watch 常驻进程，管道接 grep/tail 后永久挂起（Bash 超时）
+- **根因**：cli launch 不退出；必须 run_in_background 或重定向 /dev/null，部署结果用 adb dumpsys/pidof 分离验证
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-28 20:53 · commit 19669c7 · ts=1787921627
 - **错误**：收尾汇报用户故事数字被质疑'4个wave下来怎么没变化'：我报 ✅40→41（A级19→27），用户直觉=工作量与'打通数'不匹配，怀疑数据造假
 - **根因**：统计口径两维（状态✅/🟡/❌ vs 证据级B/C/A）被合并成单一总数汇报，掩盖了实质：07报告(08-27晚)本身已是Wave1/2完成后快照(✅40)；Wave3升级的8条里7条本来就在✅池只升证据级(B/C→A)，真从半通→打通仅US-48一条，故✅只+1、A级却+8。数字自洽但'没讲透'=汇报缺陷；另02报告line119'✅42'是笔误(表格实际40，07已修正)，跨文档数字必须回源核实
