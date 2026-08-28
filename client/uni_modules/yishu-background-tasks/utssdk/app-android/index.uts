@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 忆述光华 · 后台任务队列（WorkManager）Android UTS 实现（B5d · Wave4 Agent K）
  *
  * 统一后台调度（B5d §2 统一调度 / §3 实现边界 / §5 优先级表）：

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<view class="header">
 			<text class="title">AGG-016 一致性自检</text>
@@ -17,38 +17,31 @@
 	</view>
 </template>
 
-<script>
-import { AGG_FIXTURES } from '@/utils/agg/fixtures.uts'
-import { CaseResult, runAllCases } from '@/utils/agg/agg_check.uts'
-import { timingText } from '@/utils/agg/perf_timing.uts'
-// O20：dev 调试页常驻开关——非 dev 构建关闭（config 派生，页面级兜底守卫）
-import { DEV_PAGE_ENABLED } from '@/utils/config'
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
+	import { AGG_FIXTURES } from '@/utils/agg/fixtures.uts'
+	import { CaseResult, runAllCases } from '@/utils/agg/agg_check.uts'
+	import { timingText } from '@/utils/agg/perf_timing.uts'
+	import { DEV_PAGE_ENABLED } from '@/utils/config'
 
-export default {
-	data() {
-		return {
-			summaryText: '运行中…',
-			timing: '',
-			results: [] as CaseResult[],
-		}
-	},
-	onLoad() {
-		// O20：非 dev 构建（开关关）直接退回首页，不执行自检（dev 页不常驻生产包行为面）
+	let summaryText = '运行中…'
+	let timing = ''
+	let results: Array<CaseResult> = []
+
+	onLoad(() => {
 		if (!DEV_PAGE_ENABLED) {
 			uni.reLaunch({ url: '/pages/index/index' })
 			return
 		}
-		// AGG-016：端侧 UTS 算法 vs Python 期望（同参 tz=480 上海；含 30min 保守/去重用例）
 		const summary = runAllCases(AGG_FIXTURES)
-		this.summaryText = `${summary.passed}/${summary.total} 通过`
-		this.timing = timingText()
-		this.results = summary.results
+		summaryText = summary.passed + '/' + summary.total + ' 通过'
+		timing = timingText()
+		results = summary.results
 		for (let i = 0; i < summary.results.length; i++) {
 			const r = summary.results[i]
-			console.log(`[yishu-agg] ${r.name}: ${r.pass ? 'PASS' : 'FAIL'} ${r.detail}`)
+			console.log('[yishu-agg] ' + r.name + ': ' + (r.pass ? 'PASS' : 'FAIL') + ' ' + r.detail)
 		}
-	},
-}
+	})
 </script>
 
 <style>
