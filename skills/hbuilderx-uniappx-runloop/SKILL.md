@@ -79,3 +79,12 @@ official: false
 - 改完必须过 review_agent 全绿才能提交；`client/` 已被 ruff/review_agent 排除（B2 决策，Python 工具链不扫）
 - 提交前 `git status` 检查：`client/unpackage/` `client/.hbuilderx/` 是构建产物（已 gitignore）
 - 真机测试数据用完清理（测试照片目录 / DB 测试用户），不留脏状态
+
+## 6. Wave 3 真机波教训（2026-08-28 沉淀，补录）
+
+- **adb reverse 铁律（本波 11+ 次阵亡）**：`cli launch` 退出、任何 HBuilderX GUI/打包操作、adb server 重启都会清掉 `adb reverse tcp:8000 tcp:8000`。**每次 launch 后固定补 reverse + 设备侧 `adb shell curl -s http://127.0.0.1:8000/healthz` 探活**；App 报"网络异常/HTTP 0"第一排查=隧道三连（reverse 列表 / 设备 curl / PC healthz），别急着查代码。
+- **EMUI 纯净模式拦 adb install 且零错误提示**：`adb install` 失败+空错误 → 先看手机屏幕弹窗/设置关"纯净模式"，别绕 adb 版本/streamed 排查。
+- **云打包 CLI（07 清单实参）**：`cli pack --platform android --iscustom true --android.packagename com.yishu.guanghua --ignoreWarnings true`——`--ignoreWarnings` 需**显式布尔值**；自定义基座运行=`cli launch ... --playground custom --native-log true`（native-log 收原生日志）；出包自动落 `client/unpackage/debug/android_debug.apk`；先 `aapt dump xmltree <apk> AndroidManifest.xml | Select-String service` 验基座 manifest。
+- **UTS 基座能力探测不得用 `getResource('*.class')`**（D-18 根因）：Android class 全编译进 dex，`.class` 资源恒不存在→探测恒 false。云包是否含原生类用 `findstr /m /c:<类名> classes*.dex` 尸检；探测改插件自带 marker asset 或 `catch (e: any)` 包 Class.forName。
+- **UTS Service 必须 manifest 注册**（D-19 根因）：`class X extends Service` 只在源码里、插件无 manifest 片段 → 云包无该 service → startService 必死；"标准基座自动回退"注释掩盖全基座失效。
+- **全量编译才暴露存量错**：增量编译 warm cache 会掩盖 UTS 错误，`--cleanCache` 全量编译是回归前的硬验证（本波 7 处存量 UTS 错如此暴露）。

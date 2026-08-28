@@ -1,3 +1,8 @@
+> 📌 **当前状态速览（2026-08-28 收尾）**：Wave 1–4 全部收口，7 清单全达终态，A 级真机故事 27 条。
+> 快照/证据/遗留见 `忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md` + `AGENTS.md`「当前收口状态」节；
+> 4b 修复批次（D-18/D-19 等）见 `docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md` §4。
+> 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，过时段落见下标注。
+
 ## 2026-08-27 · 重构批次 G1（认证安全，基准 develop @ 5fcbd29，分支 techdebt/g1）
 
 - **① refresh single-flight（R6#6，client/utils/auth.ts）**：模块级 `_refreshInflight` 共享 in-flight——并发 401 只触发一次 `/auth/refresh`，其余 await 同一 Promise，落定后清除（成败均清）；消除并发双轮换竞态（后端轮换本就是原子 single-use，双轮换必一 401）
@@ -366,7 +371,7 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - 本机 LobsterAI python 不加载 cwd/PYTHONPATH：`python -m app.workers.worker` 报 No module named 'app' → 需 `python -c "import sys; sys.path.insert(0, r'D:\GuangH-App\backend'); from app.workers.worker import main; main()" high low` 启动
 - fake 存储为进程内单例：uvicorn 与独立 worker 不共享 → 本地 E2E 用单进程 TestClient 验证；dev 真联调用 minio/cos（docker hub 当前不可达，minio 镜像拉不动）
 
-## 📌 当前状态（2026-08-20）
+## 📌 历史快照 · 当前状态（2026-08-20）——已被 2026-08-28 收尾终版取代（见文件头速览）
 
 **质量门禁**：pytest 215 passed（14 deselected，覆盖率 75.20%，2026-08-21 00:42 全量证据）｜ruff 全绿｜review_agent 全绿（2026-08-24 修复 research 段模块路径后恢复）｜教训登记 hook 生效
 

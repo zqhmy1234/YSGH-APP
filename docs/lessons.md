@@ -8,6 +8,33 @@
 
 ---
 
+### 2026-08-28 20:53 · commit 19669c7 · ts=1787921627
+- **错误**：收尾汇报用户故事数字被质疑'4个wave下来怎么没变化'：我报 ✅40→41（A级19→27），用户直觉=工作量与'打通数'不匹配，怀疑数据造假
+- **根因**：统计口径两维（状态✅/🟡/❌ vs 证据级B/C/A）被合并成单一总数汇报，掩盖了实质：07报告(08-27晚)本身已是Wave1/2完成后快照(✅40)；Wave3升级的8条里7条本来就在✅池只升证据级(B/C→A)，真从半通→打通仅US-48一条，故✅只+1、A级却+8。数字自洽但'没讲透'=汇报缺陷；另02报告line119'✅42'是笔误(表格实际40，07已修正)，跨文档数字必须回源核实
+- **修复**：汇报模板改为'状态×证据级'矩阵：明确基线时点+逐条列出🟡→✅与B/C→A的移动；任何跨文档数字先回02权威目录核实；本教训即本文档条目
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 20:31 · commit 7726f0a · ts=1787920312
+- **错误**：4a 收口全量门禁复跑仍失败（test_amap mock 回退）：首轮已清 geo_cache 残留却未真正生效——清理脚本在 backend/ 目录下用 ..\.cowork-temp\ 相对路径引用脚本失败（FileNotFoundError），清理动作从未执行，残留真实 AMap 缓存行仍在，门禁复跑继续被同一测试卡住
+- **根因**：修复动作没有验证落地就重跑门禁：脚本路径解析错误（workdir=backend 时 ..\.cowork-temp 指向 backend\.cowork-temp 不存在）导致 DELETE 语句根本没执行；教训=环境残留类修复必须'先验证删除行数==预期 >0，再重跑门禁'，不能只删一次就假设已清
+- **修复**：修正脚本路径（workdir=backend 读 .env；sys.path 注入 backend）后 DELETE 生效、geo_cache count=0；test_amap 按门禁同款 MOCK=true 环境复跑转绿（单跑本就绿，全量失败=测试套件共享坐标顺序依赖+外部残留双因）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 19:36 · commit f5c0c59 · ts=1787916997
+- **错误**：4a 收口跑全量门禁时 3 个测试失败：①test_default_uses_production_collection 断言默认 collection 被 QDRANT_COLLECTION 覆盖（我先前手动复现搜索时 export 了这个变量，泄漏进 pytest 子进程）②test_get_place_dev_mock_fallback 缓存命中真实地名短路 mock ③test_photo_writes_image_vec COS 下载 NoSuchKey
+- **根因**：三错本质：①测试环境泄漏——手动调试用的环境变量必须 Remove-Item Env: 清掉，不能在设置了它的 shell 里跑门禁；②真实调用残留测试库数据（当天真实 AMap 调用写缓存行，与测试坐标同 geohash，pytest fixture 只管自己写入的行）；③门禁 pytest 对 storage 后端与 CI/COS 的一致性有隐性依赖。另有：review_agent secrets 正则会误报 uiautomator XML 的 password 属性（Android AX 树 EditText 自带），证据 XML 应随用随删或移出扫描路径
+- **修复**：Remove-Item Env:QDRANT_COLLECTION 后重跑转绿；清 geo_cache 残留转绿；#3 归他窗口未提交 storage.py + COS 未配置；误报 XML 已删（PNG 才是证据）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-28 17:54 · commit 1964c37 · ts=1787910843
 - **错误**：自定义基座 APK adb install 失败且错误信息为空（streamed install / adb 版本排查全是绕路，白折腾约10分钟）
 - **根因**：EMUI 纯净模式拦截第三方来源安装：不弹任何提示、pm 不回传失败原因，adb 侧只见空错误。真机测试环境标准前置应包含「关闭纯净模式」；判据=错误为空的安装失败先查手机屏幕弹窗/纯净模式，而非怀疑 adb/APK
