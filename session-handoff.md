@@ -195,3 +195,32 @@ init.ps1：通过
 - 代劳 J 遗留：test_notify 3 失败根因=时间依赖测试+streak 上界陷阱（已修，14 passed）；代劳 H 建议：api.ts/sync_client.ts res.data 守卫（防主线程 FATAL 复发）
 - 决策落地（均按推荐）：FinetuneJob 模型删（链占位迁移保留）；presign 接口删（STS 归口 /upload/sts，OpenAPI 45 路径）；短信 501 冻结确认；依赖升版 multipart 0.0.32/httpx 0.28.1/Pillow 12.3.0（CVE 修复，502 passed 回归通过）
 - K-2 排期：asr.py 每通道 max_duration 从 settings 注入 + _CHANNELS 适配器工厂（Hy ASR/讯飞预留）
+
+
+## 收尾 Wave1 A3/D1 补集成完成（2026-08-27 23:59）——交接 Wave 3
+
+- **commit 链（develop）**：6aea242（merge D1）← d45898d（merge A3）← 6e7c6d7（P0-2 性能修复）← cad1262/617028c（主轮集成）← 八分支 merge（5e1463b B3 / 794deae B1 / d119444 B2 / 6bf945f C1 / 5396b1e C2 / 98857df C3 / d97999b A1 / 6e2bbd0 A2）← 39734fe（UTS 编译基线修复）
+- **本轮环境/契约变化**：无后端改动（OpenAPI 保持 47 路径）；客户端新增 SuspectBadge 组件（easycom 自动注册）、text_recorder 纠错计数 storage key（yishu_correction_streak / _last_ts / prompt_dismissed）、timeline 事件模型新增 timeSuspect 字段；scripts/realdevice/ 7 清单 + adb_helpers 上线
+- **Wave 3 前置（必读 scripts/realdevice/README.md）**：⚠️ adb 版本冲突（A3 环境备注）：HBuilderX 内置 adb 1.0.36 与系统 adb v41 互杀 server 导致设备反复 offline——统一用 system adb v41 + `adb reverse tcp:8000 tcp:8000`；P1 后端在线（uvicorn :8000）已就绪；P2 DASHSCOPE key 真实档（清单 04/05：MOCK_EXTERNAL_AI=false，日志必须见真实 qwen/funasr/sensevoice 调用）；P3 nova 11 在线已验证（DKS9K23526028855 device）；P4 蜂窝卡（01/03）；P5 相册 ≥20/≥50/跨日 15–20 张照片；P6 测试账号数据隔离；P10 DCloud 账号（07）——缺任一项该清单标"待补"，不得虚构 A 级
+- **执行顺序建议**：03 首批 30s 计时 → 01 蜂窝同步 → 02 录音中断 → 05 真实转写情绪 → 04 L2/L3 归并 → 06 编译冒烟 → 07 自定义基座
+- **待用户拍板**：隐私政策定稿（C3）、部署就绪包确认（C3）、文案库基调审阅（C2）、自定义分类管理页是否入 MVP（A3 新登记）、"取消=不再提示"口径（dismissCorrectionPrompt hook 就绪待接线）
+- **远期待办（00 总纲 §7）**：F1 性能复测（P0-2 已修待 100/200 并发验证）、F2 encode_query 合并前向、F3 依赖升版批次、F4 限流 Retry-After 客户端消费 + export 登记 _DOMAIN_SCOPES、F5 COS 生产切换实网验证
+
+## 收尾 Wave 4a 代码侧总结（2026-08-28）——登记收口完成，交接等待 Wave 3（4b 续章）
+
+- **4a 交付**：08 骨架（忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md，◉§0/1.1/1.3/1.4 完整可溯源 + ○§1.2/1.5 真机占位）+ progress 代码侧条目 + feature_list 6 条代码侧 evidence（F1/F5/F7/P2-ECHO/VERIFY/OPS-SECRETS，脚本 .cowork-temp/wrap4a_fl_update.py）+ 状态列收口（01–14 已集成 / 15 待用户执行 / 16·21 进行中 / 19 已执行）
+- **4b 待填空位（4 个，勿重复 4a 已做项）**：① 08 §1.2 证据升级表（7 清单判定+证据路径，来源 19 号 §2 / scripts/realdevice/evidence/）② 08 §1.5 快照真机数字（A 级故事数/US-42 终判/30s 门禁行/功能代码与内测可达度终值）③ feature_list 真机 A 级 evidence 段（Wave 3 协调者单写，4b 汇总）④ 30s 计时门禁判定（清单 03 → 🟡→✅ 与否）
+- **Wave 3 不受影响**：本波零代码改动、零环境/契约变化（develop 基线仍 6aea242 后三笔纯文档/登记提交 76a4dbf/176e015/79e8727）；真机前置与执行顺序仍按 15 号 SOP + 19 号 §1 核查记录（P4/P6/P7 等用户现场项不变）
+- **等待团队行动清单**（07 §8.1 映射，全表见 08 §1.4）：① 产品部＝B/C/D 真值先行 + A 批补负样本（harness 已备一键跑）+ E/F/G 排期 + 正式文案库/基调审阅；② 运营/合规＝企微认证·ICP·软著三申请（未提交，5–6 周串行）+ 隐私政策定稿审阅签字；③ 负责人＝企微三件套/微信 AppID·Secret/阿里云短信/uni-push + 内测包团队项（20 号：M1 公网服务器·域名 / M4 HTTPS 证书 / M6 DCloud 签名账号）；④ 用户/测试＝7 清单实测；⑤ AI 远期待办＝00 §7 F1–F7（F1 性能复测优先）
+- **待用户拍板**：部署就绪包确认 / 自定义分类目标页是否入 MVP / 「取消=不再提示」口径（dismissCorrectionPrompt 就绪待接线）
+- **commit 偏好（用户确认）**：4a 不 commit 不 push——与 Wave 3 并行期间保持工作区可合并；4b 按 22 号 §4 统一 commit+交付
+
+
+## 收尾 Wave 完成（2026-08-28 4b 终版）——收尾波次整体完成
+
+- **08 终版**：`忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md`——§1.2 证据升级表（7 清单终判+证据路径）+ §1.5 快照终版 + §0 一页结论终版 + 附录 4 空位销项；逐项可溯源（19 号 §2 + `scripts/realdevice/evidence/`）
+- **快照**：功能代码 ~90% / 内测 60–70% / 用户故事 ✅41/🟡12/❌0（A 级 27 条）/ 性能门禁 达标10/部分2/未达标6 / 30s 门禁 ✅（6.0s≤30s）
+- **等待团队行动清单（07 §8.1 映射，全表见 08 §1.4）**：① 产品部＝B/C/D 真值先行 + A 批补负样本 + E/F/G 排期 + 正式文案库/基调审阅；② 运营/合规＝企微认证·ICP·软著三申请（未提交，5–6 周串行）+ 隐私政策定稿审阅签字；③ 负责人＝企微三件套/微信 AppID·Secret/阿里云短信/uni-push + 内测包团队项（20 号 M1 公网服务器·域名 / M4 HTTPS 证书 / M6 DCloud 签名账号）；④ 用户＝待补项：02 录音中断来电场景（P6 第二设备）+ 06①②中文 IME 人工复验；⑤ AI 远期待办＝00 §7 F1–F7（F1 性能复测优先）
+- **4b 修复批次（Wave 3 新缺陷）**：批次1＝D-18/D-19 原生能力对（重打包复验含会话 B FGS 通知项）；批次2＝D-16/D-07/D-08 语音链；批次3＝S2 情绪校准 + D-06 机型适配——修复方向/验收口径见 tracker 19 §4 D 单
+- **待用户拍板（同 4a 未变）**：部署就绪包确认 / 自定义分类目标页是否入 MVP / 「取消=不再提示」口径（dismissCorrectionPrompt 就绪待接线）
+- **全量门禁备注（4a 收口时）**：1 个测试（test_amap mock 回退）因测试套件共享坐标顺序依赖 + 协调者真实调用残留 geo_cache 行失败——非已提交代码回归，已清残留并登记 lessons（含 O-1 uvicorn 瞬时崩溃观察项，见 tracker 19 §5）；重跑验证待 4b 修复批次落地后随全量门禁复验
