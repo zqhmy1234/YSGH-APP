@@ -8,6 +8,239 @@
 
 ---
 
+### 2026-08-28 17:54 · commit 1964c37 · ts=1787910843
+- **错误**：自定义基座 APK adb install 失败且错误信息为空（streamed install / adb 版本排查全是绕路，白折腾约10分钟）
+- **根因**：EMUI 纯净模式拦截第三方来源安装：不弹任何提示、pm 不回传失败原因，adb 侧只见空错误。真机测试环境标准前置应包含「关闭纯净模式」；判据=错误为空的安装失败先查手机屏幕弹窗/纯净模式，而非怀疑 adb/APK
+- **修复**：用户设置中关闭纯净模式后手装成功；skill 补前置条目
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 16:05 · commit 0bd3aaf · ts=1787904305
+- **错误**：给全局Python装情绪依赖酿成环境半残事故：--no-deps抄近道装了numpy2.4.6（依赖链缺librosa/scipy）→ 服务在线时全量 pip install -r 撞 WinError5 文件锁（scipy pyd被uvicorn持有）→ numpy/scipy半卸载混合态（import崩/no attr）→ 重启后 resolver 又对老 numpy sdist 逐个回溯编译（17分钟无进度）
+- **根因**：三错叠加：①对正跑服务的全局解释器直接动 pip（文件锁必炸，应先停 uvicorn/worker）；②--no-deps 造出版本约束矛盾的混装态（numba/scipy 要 numpy<2.4 而实装 2.4.6）；③回溯死循环征兆=缓存大文件停写+pip-build-env/pip-modern-metadata 目录反复出现老版本号 sdist（识别该征兆应提前 15 分钟止损）。正解=停服务→pip uninstall 肇事包→窄面定向安装（numpy>=2.1 scipy librosa 让求解器自由解析）一次到位，全程 1.5 分钟
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 07:53 · commit e393ce3 · ts=1787874818
+- **错误**：Android ExifInterface.getAttribute(TAG_DATETIME_ORIGINAL) 对 Pillow 生成的测试照返回 null，端侧静默回退 DATE_ADDED，L1 日卡片日期全失真（wave3-03/04 取证，D-12）
+- **根因**：Pillow 扁平 API exif[36867]=ts 把 DateTimeOriginal 写进 IFD0；JPEG 规范该标签在 Exif 子 IFD（0x8769=34665 指针），Android 严格只读子 IFD；PC 侧 PIL 合并视图能读回（故生成器自校验发现不了）；端侧 readExifTaken dt==null 分支无日志（静默回退链 EXIF→DATE_TAKEN→DATE_ADDED 全盲）
+- **修复**：生成器改 exif[34665]={36867:ts,36868:ts}+306 兜底（已修，子IFD回读验证过）；建议产品侧 readExifTaken 回退链加告警日志（D-12 观测性改进项转 Wave4）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 07:27 · commit 125d861 · ts=1787873267
+- **错误**：HBuilderX cli launch 之后 adb reverse tcp:8000 静默丢失（表里只剩其自身 8001/8002），客户端全量 init HTTP 0 / 登录 ClassCastException
+- **根因**：HBuilderX 基座接管 USB 时重建 reverse 表，第三方 reverse 条目不保留
+- **修复**：每次 cli launch 后立即补 adb reverse tcp:8000 tcp:8000，任何客户端测试前必验设备侧 curl /healthz=ok
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 07:27 · commit 125d861 · ts=1787873267
+- **错误**：content delete --where '_id>N' 后测试目录 50 个文件本体消失（mv 报 No such file）
+- **根因**：shell 权限下 MediaStore 批量 delete 连带删除真实文件，不只删索引行（旧认知'仅删行'错误）
+- **修复**：保文件场景禁用 content delete；清场=content delete+预期文件同灭，或先 cp 备份
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 07:27 · commit 125d861 · ts=1787873266
+- **错误**：PowerShell 双引号内 adb shell 'for f in ...; do content call --arg \; done' 50 次 scan_file 全部空转 0.6s 返回
+- **根因**：PS 不以反斜杠转义 $，设备 sh 收到字面量 \ 不展开循环变量
+- **修复**：设备侧带变量循环一律经 python subprocess 单参数字符串传给 adb shell（无 PS 引号层）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 07:27 · commit 125d861 · ts=1787873266
+- **错误**：adb push 进 /sdcard/Pictures 后查得"0 行"且 observer found 0（EMUI nova11）（初判 07:27，07:5x 复核更正）
+- **根因（更正）**：双假阴性——①"0 行"是**假读数**：`--projection a,b,c` 逗号投影在本机 content query 报 Invalid column，被 `2>/dev/null|wc -l` 吞成 0；单列投影证明 **push 秒级生行**（date_added=推送时刻）；②found 0 是真：observer **错过 notifyChange**（+5s 唤醒时 found 0 为行可见性竞态，之后无重放）。操作结论不变（扳机用 scan_file），归因从"索引延迟"改"通知丢失"
+- **修复**：真机导入测试扳机逐文件 content call scan_file（≈1.17s/文件串行）；取证查询只用单列投影、勿盲目接 2>/dev/null
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-28 02:01 · commit 79e8727 · ts=1787853712
+- **错误**：commit 门禁 lint 两连拦：S110（noqa 码写 BLE001 不匹配规则自身）+ I001（测试内 import 块 PIL/app 顺序不合 house style）
+- **根因**：noqa 注释只压制对应规则码，S1xx 系列要精确标 S110；本仓 ruff isort 将 app.* 与第三方同区按字母序（app 在 PIL 前），新写函数内 import 块要对照相邻测试的排列
+- **修复**：exif.py noqa 改 S110；test_pipeline 新测试 import 顺序对齐同文件既有测试风格
+- **相关文件**：backend/app/services/exif.py
+- **教训**：新代码 lint 前先看同文件邻居怎么写——house style 的 isort 分区以既有通过用例为准
+
+---
+
+### 2026-08-28 01:56 · commit 79e8727 · ts=1787853366
+- **错误**：真机分片上传照片 taken_at=扫描时间，日卡片日期错误（multipart 路径 EXIF 正常）
+- **根因**：EXIF 权威解析助手 _extract_exif_datetime 只挂在 POST /contents 单发路径；分片协议 complete→register.py 不经它；且原实现只查主 IFD 36867，华为等相机把 DateTimeOriginal 放子 IFD 0x8769
+- **修复**：助手下沉 app/services/exif.py（子 IFD→主 IFD→306 三级兜底），在管线 _process_photo 单点回填（两条注册路径+历史行全覆盖）
+- **相关文件**：backend/app/services/exif.py
+- **教训**：同一字段多注册路径必须共享权威解析；EXIF 读取先实证标签布局再写取值路径
+
+---
+
+### 2026-08-28 01:56 · commit 79e8727 · ts=1787853365
+- **错误**：RQ worker 消费 process_content 全部 TypeError missing content_id（Wave3 真机管线卡死，contents 永远 processing）
+- **根因**：9f0b2f4 job级去重重构把 enqueue_high(func,cid) 迁到 enqueue_unique(func,key) 时丢任务实参——key 仅做幂等去重不注入函数参数；单测 fake 形态 lambda(func,key,**kw) 恰好掩盖（聚合调用带 *args 反而 TypeError 被 safe 吞成 warning）
+- **修复**：8 个调用点全部补实参（key+arg 双传）+ fake lambda 改 (func,key,*a) + 新增 D-03 EXIF 回填回归测试
+- **相关文件**：backend/app/api/contents.py
+- **教训**：迁移 enqueue 封装时参数语义必须逐点核对；测试 mock 签名要宽容 *args 否则会把真缺陷吃成静默
+
+---
+
+### 2026-08-28 00:46 · commit 79e8727 · ts=1787849216
+- **错误**：真机照片上传 /api/v1/upload/init 全部 422（wave3 清单01 Step1 实测；Wave2 交接口径误判为旧测试数据）
+- **根因**：R4#12 收紧 client_upload_id 白名单 ^[A-Za-z0-9_-]{1,255}$ 后，客户端幂等键仍是设备路径（/storage/... 含 / : 与 voice| 前缀）；api_smoke 用净化 ID 通过，掩盖契约漂移
+- **修复**：upload_protocol.ts initUpload 单点消毒：非白名单字符→_，>255 截尾；服务端安全语义不变
+- **相关文件**：client/utils/upload_protocol.ts
+- **教训**：后端收紧校验必须同步 grep 所有调用方构造点；真机全链路冒烟不能只看 api_smoke
+
+---
+
+### 2026-08-28 00:10 · commit 6aea242 · ts=1787847048
+- **错误**：同一 HBuilderX 编译误启动双实例：第二个 cli.exe 立刻退出（exit 1），只报 out-file g3_compile.log 被另一进程占用
+- **根因**：两条 pwsh 命令在同一消息里重复发出，Tee-Object 抢同一日志文件句柄；编译详情走 HBuilderX 控制台而非 stdout，日志只剩版本行
+- **修复**：保留先启动实例；编译结果判定不信 stdout，以 unpackage/cache/.app-android 产物 class 时间戳 + 新增组件 class（GenComponentsSuspectBadgeSuspectBadge）+ cli exit 0 三要素佐证
+- **相关文件**：-
+- **教训**：重编译永远单实例；判编译成败看 unpackage 产物时间戳和新文件 class，不看 cli stdout
+
+---
+
+### 2026-08-28 00:10 · commit 6aea242 · ts=1787847048
+- **错误**：job_kill 后台 pwsh 任务后残留孤儿子进程：被杀 --full 的 python/pytest 子进程继续存活，与重跑实例抢 __pycache__ .pyc rename，报 PermissionError [WinError 5]
+- **根因**：job_kill 只终止 pwsh 包装进程，不级联杀已 spawn 的 python 子进程；两实例并发写同一报告/缓存文件
+- **修复**：杀任务后 Get-CimInstance Win32_Process 查 python 残留 → Stop-Process -Id 精确清孤儿子进程 → 再单实例重跑
+- **相关文件**：-
+- **教训**：取消重型后台门禁任务后必须核对 python 子进程是否成孤儿并清掉，否则重跑会撞文件锁假失败
+
+---
+
+### 2026-08-28 00:10 · commit 6aea242 · ts=1787847048
+- **错误**：C 盘 0 空闲导致集成中途 ENOSPC 连锁故障：pwsh 工具调用直接报 no space left on device，后台 pytest 假死 exit 1 无输出
+- **根因**：门禁/编译/缓存全默认写 C 盘（pip cache 4.7GB + npm cache 4.2GB + C:\WINDOWS\TEMP 8.4GB 累积），仓库在 D 盘但临时产物挤爆系统盘
+- **修复**：python -m pip cache purge + npm cache clean --force + 删 C:\WINDOWS\TEMP 中 36h 前过期项（跳过占用），释放 9GB+ 后重跑门禁全绿
+- **相关文件**：-
+- **教训**：跑重型门禁（pytest/--full/编译）前顺手看 Get-PSDrive C 空闲，低于 2GB 先清缓存再开工，别等 ENOSPC 炸了才救火
+
+---
+
+### 2026-08-27 22:38 · commit cad1262 · ts=1787841506
+- **错误**：100 并发压测暴露：DB 连接池 QueuePool(5/10)=15 耗尽 → sqlalchemy TimeoutError 未捕获 → uvicorn 进程崩溃；search 信号量 SEARCH_CONCURRENCY=4 阻塞排队 → 高并发 5s 硬超时全灭
+- **根因**：池容量按低并发设计且连接超时无异常兜底；排队用阻塞等待而非限流语义，与客户端硬超时叠加成雪崩
+- **修复**：池扩 10/20 配置化 + TimeoutError→503+Retry-After；search/image 信号量非阻塞 acquire→429+Retry-After；BGE-M3 加载锁+重试；码 SEARCH_429/DB_POOL_EXHAUSTED 登记
+- **相关文件**：backend/app/core/errors.py
+- **教训**：（无）
+
+---
+
+### 2026-08-27 22:34 · commit cad1262 · ts=1787841281
+- **错误**：100 并发压测：DB 连接池 QueuePool(5/10)=15 耗尽 → sqlalchemy TimeoutError 未捕获 → uvicorn 进程崩溃；search 信号量 SEARCH_CONCURRENCY=4 阻塞排队 → 高并发 100% 超时全灭
+- **根因**：池容量按单进程低并发设计且连接超时无异常兜底；排队语义用阻塞等待而非限流，5s 客户端硬超时叠加成雪崩
+- **修复**：池扩为 10/20 配置化（db_pool_size/max_overflow）+ TimeoutError 转 503+Retry-After handler；search/image 信号量改非阻塞 acquire → 429+Retry-After；BGE-M3 加载双检锁+失败重试；错误码 SEARCH_429/DB_POOL_EXHAUSTED 登记
+- **相关文件**：backend/app/core/errors.py
+- **教训**：（无）
+
+---
+
+### 2026-08-27 21:30 · commit 6e2bbd0 · ts=1787837455
+- **错误**：集成后 test_orphan_scan fail-safe 用例失败：假设后端无 list_objects（skipped 路径），但 B3 已实现并先合并
+- **根因**：并行 Agent 的任务卡按'B3 未合入时 fail-safe'编写用例，merge 顺序 B3→B1 后前提过时；测试断言依赖其他分支的交付时序
+- **修复**：改用无 list_objects 属性的 legacy 后端类验证 skipped 路径，保留降级覆盖
+- **相关文件**：backend/tests/test_orphan_scan.py
+- **教训**：（无）
+
+---
+
+### 2026-08-27 20:48 · commit 49d230c · ts=1787834890
+- **错误**：review_agent --full 全量门禁 tests 段超时（900s cap）且 api_smoke 报缺少测试照片/timeline min() 空
+- **根因**：worktree 缺 .cowork-temp/test_photos（100 张）与 backend/models（setfit-classifier/bge-reranker）——17号文档已注明需复制但未做；且本机可用内存仅 1.3GB（残留 pip-audit 进程未清）+ rag 分组（BGE-M3 1.2GB）纳入覆盖导致超时
+- **修复**：worktree 开工先复制主仓 .cowork-temp/test_photos 与 backend/models/*；跑全量前清理残留 python 进程释放内存；资产补齐 + 内存释放后 pytest 675 passed、api_smoke 全过、full gate 900s 内通过
+- **相关文件**：backend/models/ / .cowork-temp/test_photos/ / scripts/test_agent.py
+- **教训**：worktree 跑全量门禁三件事：补测试照片+模型资产、清残留进程、确认内存够——缺任一项都会让 review_agent --full 超时或 api_smoke 误报
+
+---
+
+### 2026-08-27 19:15 · commit 84b4b66 · ts=1787829338
+- **错误**：worktree 新建后缺 backend/.env（gitignored 不随分支检出），跑依赖 DB 的测试（test_content_upload 等）全部报 PostgreSQL 密码认证失败，疑似环境故障
+- **根因**：git worktree 只检出跟踪文件；.env 被 gitignore 不复制到新 worktree，config 落到默认 DATABASE_URL（postgres/postgres）与本机密码不符
+- **修复**：worktree 开发前复制主仓 backend/.env 到 worktree（gitignored 同机安全）或经 infisical run 注入；.env 键级核对再跑测试
+- **相关文件**：backend/.env / docs/项目API密钥清单与获取.md
+- **教训**：worktree 里跑全量测试前必须先补齐 .env，缺 DB 配置的报错要先想到是 .env 缺失而非代码问题
+### 2026-08-27 20:54 · commit fe70fdc · ts=1787835256
+- **错误**：并发下全量门禁 pytest 段 flake：test_rag.py::test_assemble_hits_event_attribution（integration 标记，走主套件，依赖共享 Qdrant）失败
+- **根因**：Wave1 十路 Agent 同时跑各自 --full/test_agent，多个 pytest 进程竞争共享 PG/Redis/Qdrant（另一路正在删/建 test_ collection、loadtest seed 数据），RAG 检索类集成测试取到空/瞬时不一致集合 → 偶发失败；同用例低负载直跑稳定通过
+- **修复**：全量门禁在低并发窗口跑（观察进程列表：只剩 1-2 个 pytest 再跑）；flaky 用例可直接重跑该文件确认；集成 Agent 在合并后主 checkout 重跑 --full 为权威门禁
+- **相关文件**：backend/tests/test_rag.py, scripts/test_agent.py
+- **教训**：10 路并行共享 PG/Redis/Qdrant 时全量门禁有共享资源 flake 概率，属环境并发限制而非代码回归，重跑/低峰窗口可复现为绿
+
+---
+
+### 2026-08-27 19:41 · commit c00a438 · ts=1787830863
+- **错误**：并行 worktree 跑 review_agent --full 时 api_smoke 失败（photo-journey/timeline-structure）
+- **根因**：gitignored 本地产物未随 worktree 复制：.cowork-temp/test_photos 测试照片缺失（.env 同理），api_smoke 的 TEST_PHOTOS glob 为空 → photo-journey 断言失败、timeline-structure 因无照片 min() 空
+- **修复**：并行 worktree 跑全量门禁前补环境：cp backend/.env（DB/外部服务）+ 运行 scripts/generate_test_photos.py 生成测试照片；模型/HF 缓存为共享或按主 checkout 补齐
+- **相关文件**：scripts/api_smoke_cases.py, scripts/generate_test_photos.py
+- **教训**：并行 worktree 是全量仓库副本但 gitignored 产物缺失，--full 前需补齐环境资产（.env/测试照片/模型）
+### 2026-08-27 19:41 · commit c127037 · ts=1787830888
+- **错误**：ruff I001：app 子模块 as 导入与 from 导入混排未分组
+- **根因**：import app.services.copy_library as cl 与 from app.services.notify import ... 同属本地块但 isort 要求 as 导入与 from 导入按名称排序对齐；建议新建测试文件后先跑 ruff --fix 再提交
+- **修复**：见代码
+- **相关文件**：-
+### 2026-08-27 19:35 · commit 319a976 · ts=1787830519
+- **错误**：全新 git worktree 下 review_agent --full 的 DB 测试全部失败（psycopg OperationalError：password authentication failed for user postgres）
+- **根因**：worktree 是干净 checkout，gitignored 的 backend/.env 不在其中，DATABASE_URL 回退 config 默认 postgres:postgres，本机 PG 密码不同 → 认证失败；DB 测试强依赖真实 .env
+- **修复**：跑全量门禁前把主工作区 backend/.env 复制到 worktree backend/.env（gitignored 不入库，仅本地运行配置）；并先跑单测 test_notify 验证 DB 连通
+- **相关文件**：backend/.env
+- **教训**：（无）
+
+---
+
+### 2026-08-27 19:30 · commit 1ef7dce · ts=1787830220
+- **错误**：ruff I001 import 未排序导致 pre-commit 快速门禁 lint 阻断
+- **根因**：新建测试文件手写 import 未按 ruff isort 分组（标准库/第三方/本地 顺序 + 括号内排序）；auto-fix 可自动整理
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+### 2026-08-27 19:26 · commit 0bd3aaf · ts=1787829991
+- **错误**：review_agent 快速门禁 lint 失败（DTZ005 无时区 datetime.now、E501 超长行、F841 未用变量、E741 歧义变量名、F401 未用 import）
+- **根因**：新脚本未先跑 ruff 就提交；datetime.now() 未用时区；CSV 列名列表重复内联导致超长行
+- **修复**：统一先 python -m ruff check 再提交；datetime 用 timezone.utc；CSV 列抽成常量
+- **相关文件**：scripts/loadtest/loadtest.py, scripts/loadtest/seed_data.py
+- **教训**：写新脚本前先本地 ruff 清零，时区一律显式
+### 2026-08-27 20:14 · commit abbdc6d · ts=1787832851
+- **错误**：full gate lint E902 os error 123 on archived py under non-ASCII backups dir
+- **根因**：git core.quotePath default true escapes non-ASCII paths with literal double quotes when output via git ls-files; review_agent feeds raw git output to ruff, making the path invalid on Windows
+- **修复**：set repo-level git config core.quotePath false; keep archived py under non-ASCII dir
+- **相关文件**：backups/20260827_残留归档/*.py + review_agent.py git output consumer
+- **教训**：before archiving py to a non-ASCII dir, confirm downstream tools tolerate git path quoting; set core.quotePath=false when git path output is machine-consumed
+
+---
+
+### 2026-08-27 19:51 · commit 7565429 · ts=1787831517
+- **错误**：pre-commit 门禁 lint 阻断：ruff F821 Undefined name 'queries'（f-string 内 {queries:[]} 被当作变量引用）
+- **根因**：在 f-string 里想展示字面量 {queries:[]}，未转义大括号，ruff 把 queries 解析为未定义变量
+- **修复**：用 {{queries:[]}} 双写大括号转义字面量
+- **相关文件**：scripts/eval_negative_samples.py
+- **教训**：f-string 内含字典样字面量时大括号必须双写转义，否则 ruff F821 误判未定义名
+### 2026-08-27 20:06 · commit d809ca6 · ts=1787832376
+- **错误**：HBuilderX 5.15 全新全量构建(--compile true/run)无法通过：uploader.ts/upload_protocol.ts/event_ops.ts(.then回调返回值)与play.ts(const walk自引用)报UTS硬错误
+- **根因**：UTS 5.15 编译器对 .then 回调返回值链、retryAsync 可选参数泛型解析、const 箭头自引用存在根本缺陷；增量构建被 tsc 缓存掩盖，全新 worktree/cleanCache 即暴露；主干 develop 同命令同错，非单 Agent 引入，阻塞 Wave1 全部客户端 Agent 产出可运行 APK
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-08-27 18:10 · commit e077c32 · ts=1787825425
 - **错误**：画像枚举集精修生成管线脚本（scripts/_expand_l1_and_gen_inputs.py / _merge_l0_refine.py / _merge_l1_refine.py）初次收口提交时 review_agent 快速门禁失败：E501 超长行（128>120）、S101 assert、F841 未用变量、DTZ011 date.today()
 - **根因**：这批 8/25-8/26 遗留的一次性生成脚本从未跑过 pre-commit 门禁即被视为完成，收口提交时才暴露累积 lint 债

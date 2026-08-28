@@ -544,3 +544,54 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - I 关键成果：枚举集 JSON 收尾入 git（L0 51 维全补 values_detail + L1 193 维 phrase/disclosure）+ profile_schema 加载器 + annotate 真实/mock 同构 + profile_annotator（双门槛/池/节流/查重/历史裁剪/证据锚点）+ 钩子接线 + 冷启动兴趣稀疏 5-10 维
 - 待 key/环境：COS/微信企微/Sentry 未配（代码先行 mock 测）；托管护栏实网验证待 key；B/C/D 采集语料落地后重跑评测基线；纠错测量需真实 correction_log 数据；真机 nova 11 补验（H 的 WiFi 原图/蜂窝暂缓完整相册链路 + 后台 2h 定时归 Wave 4 K）
 - 下一步：Wave 4（Agent J B5a 客户端 / Agent K B5d Android / Agent L M3 微信），任务卡 docs/parallel-dev/10/11/12
+
+## 收尾 Wave 1 集成完成（2026-08-27 21:45）——下一步：A3/D1 补做 + 性能 P0 + 真机补验
+
+- 基线编译修复（39734fe）：UTS 5.15 全量编译 7 处存量错误（upload_protocol/uploader/event_ops/play/event_sync/sync_client/record.uvue）——resolve 模式 + 具名函数 + 显式类型锚；此前被增量编译 warm cache 掩盖，全量重编译即暴露（用户疑问根因）
+- 八分支集成：B3（list_objects/HMAC/COS 直连验证）→ B1（孤儿扫描 12 测试）→ B2（time_suspect/export/copy_library，678 passed）→ C1（压测报告）→ C2（文案库 40 条池）→ C3（隐私/归档/harness）→ A1（画像管理页）→ A2（设置页/导出/契约 hub）；lessons.md 冲突 5 次均保留双方
+- 集成接线（617028c）：main.py 注册 export router（B2 契约需求）；OpenAPI 重导 47 路径（46 零消失 + /api/v1/export + time_suspect 入 schema）
+- 集成后门禁：pytest 707 passed / 20 deselected（B1 fail-safe 用例适配 B3 已实现 list_objects 的现实）；客户端 9 页面全量编译通过（ready 148s）
+- 真机 nova 11（21:43）：应用启动成功，onLaunch 3.5s、ensureLogin true（adb reverse 隧道）、首页 onReady 453ms；画像管理页可达（635ms）、设置页可达（244ms，group-title view→text 样式修复）
+- 遗留：A3（时间存疑+纠错提示 UI）与 D1（真机 7 清单）未开工；压测 P0 未修复（DB 池 15 耗尽进程崩溃/SEARCH_CONCURRENCY=4 硬顶/BGE-M3 加载健壮性）；旧队列照片 upload/init 422（旧测试数据，新上传 api_smoke 验证正常）；设置页截图与导出闭环待用户目检
+## 收尾 Wave1 A3/D1 补集成完成（2026-08-27 23:59）——下一步：Wave 3 真机补验
+
+- 补集成 2 分支：wrap1-agentA3（merge d45898d：SuspectBadge 角标组件 + index.uvue 日卡片/待确认卡两处接入 + record.uvue 连续纠错弹层接线 + text_recorder.ts 本地计数 + timeline.ts 最小承接）+ wrap1-agentD1（merge 6aea242：真机补验 7 清单 + README 前置总表 P1–P11 + adb_helpers.ps1 证据脚本，新增 930 行）；merge-base 在主轮之后，文件域零重叠，双 merge 零冲突、无 lessons 冲突
+- A3 必要偏差裁决（INT）：timeline.ts 属总表"全员只读"，A3 需承接后端 time_suspect 字段——类字段默认 false 不改构造函数签名、字段名走 contract.ts 常量 FIELD_TIME_SUSPECT 只读引用、L1 分组拷贝保留标记，向后兼容零回归 → **采信**
+- 集成后门禁：G1 pytest 712 passed / 20 deselected（基线持平）；G2 review_agent --full 全绿（syntax 258 文件 / lint / secrets / tests+api_smoke）；G3 客户端 --cleanCache 全量编译通过（198 class，SuspectBadge easycom 自动注册解析、onCorrectionSuccess 编进产物，cli exit 0）；G4 OpenAPI 静态核对 47 路径、基线 46 零消失、/api/v1/export + time_suspect 在（本轮零后端改动不重导）；G5 涉改域回归由 G1 覆盖（events/notify/storage 全绿）
+- 治理文档入库：docs/parallel-dev-收尾/ 19 份任务卡/规则/总表（此前长期 untracked）
+- 环境事故（已恢复）：C 盘 0 空闲 → ENOSPC 连锁故障（所有工具调用失败 + pytest 假死 exit 1）——pip cache purge + npm cache clean + 清 C:\WINDOWS\TEMP 过期项释放 9GB+ 后重跑全绿；教训已登记 lessons
+- A3 自验补记（audit 全文披露）：模拟器 E2E 已过——角标两态（true 显示/false 不渲染）+ D2 弹层文案 + 3 次纠错→D4 弹层→确认清零全链路（logcat+UI 树双证据，a3-evidence/ 存档）、状态机镜像测试 9/9；遗留：nova 11 真机冒烟归 Wave 3（checklist_06）；D4 弹层"确认"后无自定义分类管理页（18 号契约只定义弹层）→ 当前 toast"即将上线"，页面需求待产品拍板；dismissCorrectionPrompt()（取消=不再提示）hook 已就绪未接线，待产品决策
+
+## 收尾 Wave 4a 收口登记（2026-08-28）——代码侧记录闭环；真机证据归 Wave 3/4b
+
+- 交付物：`忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md`——4a 骨架版（◉§0/§1.1/§1.3/§1.4 完整版；○§1.2/§1.5 真机占位 [待 4b]；铁律：无 nova 11 实测不宣称 A 级）
+- 代码侧成果概览（全量与逐项溯源见 08 §1.1）：编译修复 39734fe（UTS 7 处存量错误）→ 十分支集成（主轮 8：5e1463b B3 / 794deae B1 / d119444 B2 / 6bf945f C1 / 5396b1e C2 / 98857df C3 / d97999b A1 / 6e2bbd0 A2；补轮 2：d45898d A3 / 6aea242 D1）→ 接线 617028c → P0-2 性能修复 6e7c6d7（DB 池耗尽转 503 / 搜索并发转 429+Retry-After / 模型加载健壮性；效果复验=远期待办 F1，本条不宣称达标）
+- 新页面收口：画像管理（US-40/41）/ 设置页+导出（US-42）/ 时间存疑角标（US-12）/ 纠错提示弹层（US-25）；后端契约：/api/v1/export + time_suspect + copy_library 加载机制（OpenAPI 47 路径零消失）
+- 文档/脚本资产：孤儿扫描（backend/app/workers/orphan_scan.py，12 测试）/ 文案库 40 条默认+骨架池（docs/copy_library/）/ 隐私政策定稿+部署就绪包（docs/隐私政策_定稿_20260828.md、docs/部署就绪包_20260828.md，待审阅）/ 负样本重校 harness（scripts/eval_negative_samples.py）/ 残留归档（backups/20260827_残留归档/）/ 压测报告（docs/压测报告_20260828.md）/ 内测包构建配置清单（docs/parallel-dev-收尾/20，新增交付物：三层根因+M1–M7+注入方案）
+- 门禁快照：pytest 712 passed / 20 deselected；review_agent --full 全绿（syntax 258 文件）；client --cleanCache 198 class 编译通过
+- feature_list 登记：代码侧 evidence 追加 6 条（F1 孤儿扫描 / F5 压测+P0-2 / F7 导出闭环 / P2-ECHO 文案库 / VERIFY 编译修复+门禁 / OPS-SECRETS B3 密钥-COS）；画像 UI/US-12/US-25/D1 清单已由 Wave2 INT 登记（76a4dbf），不重复
+- 状态列收口：任务卡 01–14→已集成；15→待用户执行（Wave 3）；16/21→进行中；19→已执行（00/17/18/20/22 不在清单内不动）
+- 红线自检：本波零代码改动（models.py/migrations/client/backend 未触碰）；15 号内容未读写结果；真机记录段未写；与 Wave 3 协调者登记以"不同条目/不同 key"天然隔离
+- 4b 待填空位（22 号）：§1.2 证据升级表 / §1.5 快照真机数字 / feature_list 真机 A 级 evidence / 30s 计时门禁判定
+- commit 偏好（用户已确认）：4a 不 commit 不 push，工作区保持与 Wave 3 并行可合并
+
+## 收尾 Wave 3 真机补验——清单 01 通过（2026-08-28 01:06-02:53）
+
+- **清单 01（蜂窝链路+同步横幅，US-48/46/47）✅ 通过**：四步全过——①WiFi 10 张全链 done（contents+10、taken_at=EXIF 真值 08-22）②蜂窝 20 张注入 contents 增量 0（`蜂窝网络：只传缩略图+元数据`/`蜂窝/离线暂缓`日志在场，held 累积）③横幅手动"立即上传原图" +20（双次点击幂等无重复，队列清零横幅消失）④断网 1 张暂缓→WiFi 恢复钩子零点击自动补传（`WiFi 恢复，自动补传暂缓原图（held=1 failed=0）`），终态 34/34 done、0 永久 failed（强于预设 21 条口径——基线含 3 条 wave 前遗留）
+- **当场修复三缺陷（commit 00a9b08，含 4 条 lessons + 新回归测试）**：D-01 客户端 upload init 422（幂等键含设备路径非法字符→sanitizeKeyId；证伪 Wave2"旧测试数据"误诊，影响全量照片+语音上传）/ D-02 enqueue_unique 迁移丢任务实参（9f0b2f4 回归，8 调用点，管线自 08-27 静默断链）/ D-03 分片上传路径缺 EXIF 权威回填（下沉 services/exif.py 子 IFD 优先 + 管线单点回填）
+- **新遗留缺陷登记**：D-04 端侧 L1 卡日期不随服务端 EXIF 回填（清单 04 定性）/ D-05 横幅 emits 无宿主监听→手动补传照片不补端聚合（云侧 L2 兜底实证：1409c71a start_time=2026-08-22 08:00 EXIF 真值出卡；drain 失败路径 held/failed 双登记无去重）——修复移交 Wave4
+- **证据**：`scripts/realdevice/evidence/ck01_step1_*.log` + `ck01_step2_*.log` + `ck01_step34_*.log` + 截图×6（1a/2a/3a/3b/4a/4b）+ 注入 manifest；清单记录表已回填（checklist_01 §7）；跟踪表 19 §4 缺陷单/§5 环境事件同步登记
+- **环境/通道事实**（跟踪表 §5 全文）：RQ worker 此前从未运行（D-02 静默一天的土壤）+ Windows embeddable python ._pth 忽略 PYTHONPATH/cwd + with_scheduler Windows 崩（dev 用无 scheduler work()）+ [yishu] 日志只进 HBuilderX 会话不进 logcat（GrabAppLog 通道废弃，改会话落盘）+ MediaStore 同路径行复用扩到"历史用过目录名"（w3a-d 全新前缀规避）+ 每轮 launch 循环必丢 adb reverse（协调者固定补）
+- 07 报告升级影响：§8.1④ 蜂窝/横幅/断网项 待真机 → **A 级（nova 11 实测）**；30s 门禁（§7.1）不动，归清单 03
+- 下一清单：02 录音中断恢复（需第二设备呼入或闹钟抢占，P6 用户协同）
+
+## 收尾 Wave 3 真机补验·全波终局（2026-08-28 18:00 · 7 清单全达终态）
+
+- **记分板**：01 ✅ 34/34 全链（凌晨，详见上节）｜ 02 ❌ 中断恢复（闹钟/相机两路抢麦均不触发 onInterruptionBegin——D-06；来电待补 P6）｜ 03 ✅ **30s 门禁真机过线：首批 6.0s ≤30s**（50 张全量 61.2s）｜ 04 ✅ L2 真实 qwen 双独立轮铁证（标题非确定性+窗口真值+50/50 无错并），L3 数据不满足待补 ｜ 05 🟡 转写 **A 级**（4/4 语义命中，同音错=真 ASR）+ 情绪**实况 A**（真基座录 UI 直显「难过」conf 0.840/sensevoice_local；S1 平静 0.830 ✓、S2 开心漏报 0.496 待 C 批校准）+ guardrail 真通道 ｜ 06 🟡 四度编译+装包启动全成（onLaunch 3.5-5.3s）、FATAL 0 命中；①②中文 IME adb 注入不可=工装限制转人工 ｜ 07 🟡 **云打包链路 A 级全通**（真 AppID `__UNI__2650A2A`→pack 18.2s+排队 9min→APK 23.6MB/SHA256 存证→纯净模式拦装[环境]→`--playground custom` 真基座 17:43:40 启动+**sync pull 30 changes 端云直连**）
+- **本波挖出的产品级新缺陷（移交 4b，按修复批次）**：
+  - **批次1 原生能力对（07 判死，正式包同样中招）**：D-18 WorkManager 探测恒 false（`getResource('.class')` 在 Android 永 null——dex 尸检证明类全在包里，B5d 后台唤醒/周期/退避全废只靠 setInterval 假活）；D-19 DataSyncService 无 manifest 注册 + FOREGROUND_SERVICE 权限缺失（FGS 保活任何基座必死，"标准基座自动回退"注释掩盖全基座失效）
+  - **批次2 语音链**：D-16 情绪三层默认值把"未测出"伪造为"平静"（notify 门控永不触发，老人场景高危）；D-07 短录音音频不落 COS→管线 AUDIO_NOT_FOUND 全判死（05 轮 5 连复现）；D-08 转写失败即弃段（02）
+  - **批次3 模型/数据**：S2 开心类声学漏报校准（样本已留 ck05_emotion_replay jsonl）；D-06 中断回调机型适配；D-12/D-13 已关单，D-14（离线丢传永久丢失）D-15（L1 title_source 语义）在列
+  - 完整 19 单台账见 tracker 19 §4（D-01~D-19）
+- **环境事故与修复（诚实披露）**：本轮曾为补装 SenseVoice 依赖搞挂全局 python（pip 文件锁半卸载态+resolver 回溯死循环 ~25min），已完整恢复（numpy2.5.2/scipy1.18/librosa/funasr-onnx/modelscope 全链，SenseVoice 模型 D 盘缓存），过程 3 条 lessons 登记；服务中断 15:05→15:38 期间的设备上传靠端侧队列自愈（B4 韧性意外加分）。HBuilderX 每次 GUI/打包操作互杀 adb reverse（本日 11 次），固定由协调者重建
+- **4a 收口动作**：auth.ts 已还原 dev-client（编译复验中）；tracker 19/lessons/本条随收口 commit 落库；progress/feature_list 真机 A 级登记完成即 4b 解锁；设备测试目录 4a 清理（云端测试数据留 4b 复验用，随后再清）
