@@ -77,17 +77,23 @@ def add(args) -> int:
         f"\n---\n\n"
     )
     if LESSONS_PATH.exists():
-        existing = LESSONS_PATH.read_text(encoding="utf-8")
-        # 插到第一个 --- 之后（表头后）
-        if existing.startswith(HEADER):
-            existing = existing[len(HEADER):]
+        text = LESSONS_PATH.read_text(encoding="utf-8")
+        # 2026-08-29 修复：旧实现表头不匹配即整文件重建，曾致 1199 行台账被清空。
+        # 现改为不销毁插入：正文永远保留，只在表头分隔线后插入新条目。
+        if text.startswith(HEADER):
+            body = text[len(HEADER):]
+            out = HEADER + entry + body
+        elif "\n---\n" in text:
+            idx = text.find("\n---\n") + len("\n---\n")
+            out = text[:idx] + "\n" + entry + text[idx:].lstrip("\n")
+            print("⚠️ 表头与 HEADER 常量不一致（可能被手工改过），已改用安全插入，台账正文未动",
+                  file=sys.stderr)
         else:
-            # 迁移：旧文件无表头 → 重建
-            existing = ""
+            out = HEADER + entry + text  # 无分隔线的空表/外来文件：保留原文，仅补表头
     else:
-        existing = ""
+        out = HEADER + entry
     LESSONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    LESSONS_PATH.write_text(HEADER + entry + existing, encoding="utf-8")
+    LESSONS_PATH.write_text(out, encoding="utf-8")
     print(f"✅ 教训已登记：{LESSONS_PATH}")
     print(entry.strip())
     return 0
