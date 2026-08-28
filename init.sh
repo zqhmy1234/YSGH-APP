@@ -37,9 +37,9 @@ for f in "${DOCS[@]}"; do
   fi
 done
 
-# 2. Harness 文件检查
+# 2. Harness 文件检查（口径权威链：AGENTS.md「当前状态」+ docs/决策台账.md 为数字/决策/待拍板唯一来源）
 echo "--- 检查 harness 文件 ---"
-for f in AGENTS.md feature_list.json progress.md init.sh session-handoff.md; do
+for f in AGENTS.md feature_list.json progress.md init.sh session-handoff.md docs/决策台账.md docs/lessons.md docs/lessons-主题索引.md; do
   if [ -f "$f" ]; then
     echo "  OK  $f"
   else

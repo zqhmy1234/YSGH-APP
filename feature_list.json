@@ -96,7 +96,7 @@
     "B4 同步（跨端可见前置）"
    ],
    "status": "in-progress",
-   "evidence": "S4-01 回调通道完成（Sprint 4 线 A）：crypto/signature/gateway 协议 1:1（官方 path/90931 向量互操作）+ 收包验签解密 + msg_id 幂等入库 + 微信端软删本条 + wecom_sandbox 模拟；11 测试全过。待：S4-02 微信找（F5 RAG 已就绪，10s/3s 门禁）、S4-03 敏感识别接入、code2session 真实接入（待 appid/secret）",
+   "evidence": "S4-01 回调通道完成（Sprint 4 线 A）：crypto/signature/gateway 协议 1:1（官方 path/90931 向量互操作）+ 收包验签解密 + msg_id 幂等入库 + 微信端软删本条 + wecom_sandbox 模拟；11 测试全过。待：S4-02 微信找（F5 RAG 已就绪，10s/3s 门禁）、S4-03 敏感识别接入、code2session 真实接入（待 appid/secret） | 开发 Wave4 AgentL 已接：code2session 真实实现（unionid 优先/errcode 映射，未配 key 保持 mock/501）+ 内容安全可插拔适配器（规则/腾讯CI/阿里Green，fail-safe 放行不丢消息）——上条『待 appid/secret』仅指生产实网验收；US-31/32/33 现卡企微凭证（团队项，决策台账 §6）",
    "gate": "收+找 10s/3s；不丢消息 99.9%（M3 门禁）"
   },
   {
@@ -128,7 +128,7 @@
    "description": "测试清单 17 模块 ~140 项（P0 ~60）+ AI 故障注入测试桩 + 性能基准 JSON 化进 CI 金丝雀 + 备份演练 DR-001~006",
    "dependencies": [],
    "status": "completed",
-   "evidence": "收尾Wave1 D1（2026-08-27）：真机补验准备完成——scripts/realdevice/ 7 清单（蜂窝同步/录音中断/首批30s计时/L2L3云侧归并/真实转写情绪/HBuilderX冒烟/自定义基座云打包）+ README（前置总表 P1–P11 + 执行顺序 + 证据三要素标准 + 降级规则\"缺前置标待补不得虚构A级\"）+ adb_helpers.ps1（Shot/GrabLog/Record/Get-Device/KeepAwake）；Wave 3 按序执行 | Wave3 全波终局（2026-08-28，nova 11，7 清单全达终态）：01✅ 02❌(D-06) 03✅(30s 门禁 PASS 6.0s) 04✅(真实 qwen 双轮) 05🟡(转写 A+情绪实况 A，S2 待校准，D-16/D-07 复现) 06🟡(四度编译全成 onLaunch 3.5-5.3s FATAL 0，①②中文 IME 转人工复验) 07🟡(**云打包链路 A 级全通**：真 AppID __UNI__2650A2A→pack 18.2s+排队 9min→APK 23.6MB SHA256 存证→真基座启动+sync pull 30 changes 端云直连；但挖出 D-18【WorkManager 探测 getResource('.class') 在 Android 恒 false，dex 尸检类全在包里仍判降级=正式包后台永不启用】+D-19【DataSyncService 无 manifest 注册+FOREGROUND_SERVICE 权限缺失，FGS 全基座必死】)；缺陷台账 D-01~D-19 见 tracker 19 §4，4b 建议批次1=D-18/D-19 原生能力对、批次2=D-16/D-07/D-08 语音链、批次3=S2 校准+D-06 机型适配 | Wave3 真机补验 7 清单全达终态（2026-08-28，nova 11）：验证体系收口——01✅ 02❌(D-06) 03✅(30s门禁过线) 04✅(US-06/07→A) 05🟡(US-17/18/19→A) 06🟡 07🟡(链路A+D-18/D-19)；证据 scripts/realdevice/evidence/ 50 文件，判定见 08 文档 §1.2"
+   "evidence": "收尾Wave1 D1（2026-08-27）：真机补验准备完成——scripts/realdevice/ 7 清单（蜂窝同步/录音中断/首批30s计时/L2L3云侧归并/真实转写情绪/HBuilderX冒烟/自定义基座云打包）+ README（前置总表 P1–P11 + 执行顺序 + 证据三要素标准 + 降级规则\"缺前置标待补不得虚构A级\"）+ adb_helpers.ps1（Shot/GrabLog/Record/Get-Device/KeepAwake）；Wave 3 按序执行 | Wave3 全波终局（2026-08-28，nova 11，7 清单全达终态）：01✅ 02❌(D-06) 03✅(30s 门禁 PASS 6.0s) 04✅(真实 qwen 双轮) 05🟡(转写 A+情绪实况 A，S2 待校准，D-16/D-07 复现) 06🟡(四度编译全成 onLaunch 3.5-5.3s FATAL 0，①②中文 IME 转人工复验) 07🟡(**云打包链路 A 级全通**：真 AppID __UNI__2650A2A→pack 18.2s+排队 9min→APK 23.6MB SHA256 存证→真基座启动+sync pull 30 changes 端云直连；但挖出 D-18【WorkManager 探测 getResource('.class') 在 Android 恒 false，dex 尸检类全在包里仍判降级=正式包后台永不启用】+D-19【DataSyncService 无 manifest 注册+FOREGROUND_SERVICE 权限缺失，FGS 全基座必死】)；缺陷台账 19 单（D-01~D-16、D-18、D-19、D-21；D-17 未启用、D-20 系补验修复单 f726942）见 tracker 19 §4，4b 建议批次1=D-18/D-19 原生能力对、批次2=D-16/D-07/D-08 语音链、批次3=S2 校准+D-06 机型适配 | Wave3 真机补验 7 清单全达终态（2026-08-28，nova 11）：验证体系收口——01✅ 02❌(D-06) 03✅(30s门禁过线) 04✅(US-06/07→A) 05🟡(US-17/18/19→A) 06🟡 07🟡(链路A+D-18/D-19)；证据 scripts/realdevice/evidence/ 50 文件，判定见 08 文档 §1.2 | 终值口径（2026-08-29 整饬）：US-42/12/25/40/41 真机补验后用户故事 ✅46/🟡7/❌0、A 级 32 条；现行唯一口径=AGENTS.md「当前状态」+ docs/决策台账.md；下一步=4b 修复批次（散单 D-05/D-10/D-14/D-21 待并批）"
   },
   {
    "id": "OPS-SECRETS",
