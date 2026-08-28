@@ -176,7 +176,8 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad, onShow } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchTimeline, TimelineEvent, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import { formatMonthDay } from '@/utils/time'
@@ -213,453 +214,430 @@
 		}
 	}
 
-	export default {
-		data() {
-			return {
-				loaded: false,
-				refreshing: false,
-				days: [] as Array<DayGroup>,
-				pendingEvents: [] as Array<TimelineEvent>,
-				uploading: false,
-				uploadDone: 0,
-				uploadTotal: 0,
-				uploadFailed: 0,
-				echo: null as EchoCard | null,
-				showSplitPanel: false,
-				splitEventId: '',
-				splitItems: [] as Array<SplitItem>,
-				splitLoading: false,
-				// 照片→事件反向入口（B3-4）
-				showPhotoDetail: false,
-				photoDetailPath: '',
-				photoDetailEvents: [] as Array<ContentEventRef>,
-				photoDetailLoading: false,
-				// 会话照片/事件映射（封面、照片条）
-				localPhotoPath: [] as Array<PhotoPathEntry>,
-				eventPhotoIds: [] as Array<EventPhotoEntry>
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				this.reload()
-			})
-			// S-SY-5 三路触发 · 前台启动：已授权过则自动恢复监听（App 重启后 ContentObserver 丢失）
-			const watch = createPhotoWatch()
-			if (watch.isReadPermissionGranted()) {
-				this.startWatch()
-			}
-		},
-		onShow() {
-			// 切前台刷新（第一波数据新鲜度最低要求）
-			if (this.loaded) {
-				this.reload()
-			}
-		},
-		methods: {
-			/** 导航：搜索页 */
-			goSearch(): void {
-				uni.navigateTo({ url: '/pages/search/search' })
-			},
-			/** 导航：记录页 */
-			goRecord(): void {
-				uni.navigateTo({ url: '/pages/record/record' })
-			},
-			/** 导航：消息页 */
-			goMessages(): void {
-				uni.navigateTo({ url: '/pages/messages/messages' })
-			},
-			/** 导航：我的页 */
-			goProfile(): void {
-				uni.navigateTo({ url: '/pages/profile/profile' })
-			},
-			/** 播放语音 */
-			playVoice(voice: any): void {
-				if (!voice || !voice.url) {
-					uni.showToast({ title: '语音文件不存在', icon: 'none' })
-					return
-				}
-				uni.showToast({ title: '播放语音：' + (voice.title || '未命名'), icon: 'none' })
-				// TODO: 集成真实语音播放器
-			},
+	// 响应式数据
+	let loaded = false
+	let refreshing = false
+	let days: Array<DayGroup> = []
+	let pendingEvents: Array<TimelineEvent> = []
+	let uploading = false
+	let uploadDone = 0
+	let uploadTotal = 0
+	let uploadFailed = 0
+	let echo: EchoCard | null = null
+	let showSplitPanel = false
+	let splitEventId = ''
+	let splitItems: Array<SplitItem> = []
+	let splitLoading = false
+	let showPhotoDetail = false
+	let photoDetailPath = ''
+	let photoDetailEvents: Array<ContentEventRef> = []
+	let photoDetailLoading = false
+	let localPhotoPath: Array<PhotoPathEntry> = []
+	let eventPhotoIds: Array<EventPhotoEntry> = []
 
-			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下；draft<0.7 进待确认） */
-			reload(): void {
-				// 2026-08-25 离线 op_log：联网后先补发离线操作，再刷新（顺序执行）
-				flushOpQueue().then((_remain: number) => {
-					this.fetchAll()
-				})
-			},
-			fetchAll(): void {
-				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
-					this.days = this.groupDays(events)
-					this.attachPhotos()
-					this.loaded = true
-					this.refreshing = false
-					// 30s 验收（B3-6）：首批日卡片渲染完成埋点（幂等）
-					if (this.days.length > 0 || this.pendingEvents.length > 0) {
-						recordFirstDayRender()
-					}
-				})
-				// T-PL-1：同时拉今日回响（每天≤1 条，无则不显示）
-				fetchTodayEcho().then((card: EchoCard | null) => {
-					this.echo = card
-				})
-			},
-			/** S-MO-1：卡片操作菜单（L1：确认/合并到上一张/拆分；L2：确认主题）
-			 * 2026-08-25 修复：itemList 不再手动加"取消"——showActionSheet 原生自带底部取消按钮，
-			 * 手动加会重复（nova11 实测出现两个"取消"）。取消由原生按钮/fail 回调处理。 */
-			onCardOps(ev: TimelineEvent, dayIdx: number): void {
-				if (ev.level === 1) {
-					const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
-					uni.showActionSheet({
-						itemList: items,
-						success: (res) => {
-							if (res.tapIndex === 0) {
-								this.doConfirm(ev)
-							} else if (res.tapIndex === 1) {
-								this.doMerge(ev, dayIdx)
-							} else if (res.tapIndex === 2) {
-								this.doSplit(ev)
-							}
-						},
-						fail: () => {}
-					})
-				} else {
-					const items2: Array<string> = ['确认这个主题']
-					uni.showActionSheet({
-						itemList: items2,
-						success: (res) => {
-							if (res.tapIndex === 0) {
-								this.doConfirm(ev)
-							}
-						},
-						fail: () => {}
-					})
-				}
-			},
-			/** 确认转正（用户背书后算法不再改动） */
-			doConfirm(ev: TimelineEvent): void {
-				confirmEvent(ev.id).then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已确认', icon: 'none' })
-					} else {
-						uni.showToast({ title: '确认失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			/** 找当前卡片之前的最近一张 L1（合并目标；跳过 L2 组） */
-			getPrevL1Id(dayIdx: number): string {
-				for (let i = dayIdx - 1; i >= 0; i--) {
-					if (this.days[i].events.length > 0 && this.days[i].events[0].level === 1) {
-						return this.days[i].events[0].id
-					}
-				}
-				return ''
-			},
-			/** 合并到上一张 L1（source=当前，target=上一张；target 置 confirmed） */
-			doMerge(ev: TimelineEvent, dayIdx: number): void {
-				const targetId = this.getPrevL1Id(dayIdx)
-				if (targetId == '') {
-					uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
-					return
-				}
-				mergeEvent(ev.id, targetId).then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已合并', icon: 'none' })
-					} else {
-						uni.showToast({ title: '合并失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			/** 拆分：拉成员列表 → 选片面板（2026-08-25 S-MO-1 split UI） */
-			doSplit(ev: TimelineEvent): void {
-				this.splitLoading = true
-				this.showSplitPanel = true
-				this.splitEventId = ev.id
-				this.splitItems = []
-				fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
-					this.splitLoading = false
-					this.splitItems = items
-					if (items.length < 2) {
-						uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
-					}
-				})
-			},
-			toggleSplitItem(idx: number): void {
-				const items = this.splitItems
-				if (idx < 0 || idx >= items.length) {
-					return
-				}
-				const it = items[idx]
-				it.selected = !it.selected
-				items[idx] = it
-				this.splitItems = items
-			},
-			/** 确认拆分：至少选 1 条且不全选（拆出建新事件） */
-			confirmSplit(): void {
-				const items = this.splitItems
-				const ids: Array<string> = []
-				for (let i = 0; i < items.length; i++) {
-					if (items[i].selected) {
-						ids.push(items[i].contentId)
-					}
-				}
-				if (ids.length == 0) {
-					uni.showToast({ title: '至少选择一条', icon: 'none' })
-					return
-				}
-				if (ids.length >= items.length) {
-					uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
-					return
-				}
-				splitEvent(this.splitEventId, ids).then((ok: boolean) => {
-					this.showSplitPanel = false
-					if (ok) {
-						uni.showToast({ title: '已拆分', icon: 'none' })
-					} else {
-						uni.showToast({ title: '拆分失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			cancelSplit(): void {
-				this.showSplitPanel = false
-				this.splitItems = []
-			},
-			/** 拆分面板时间文案（epoch ms → MM-DD HH:mm；0=未知；格式化委托 time.ts） */
-			splitTimeText(ts: number): string {
-				if (ts <= 0) {
-					return '时间未知'
-				}
-				return formatMonthDay(ts)
-			},
-			/** T-PL-1：划掉回响（dismiss 不再出现） */
-			dismissEchoCard(): void {
-				const card = this.echo
-				if (card == null) {
-					return
-				}
-				dismissEcho(card.contentId).then((ok: boolean) => {
-					this.echo = null
-					if (ok) {
-						uni.showToast({ title: '已划掉', icon: 'none' })
-					}
-				})
-			},
-			/** 按日分组（委托 timeline.ts buildDayGroups 纯函数；F10 拆分行为等价） */
-			groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
-				const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
-				this.pendingEvents = result.pending
-				return result.groups
-			},
-			/** content_id → 本地路径（会话映射；空=无） */
-			photoPathOf(contentId: string): string {
-				for (let i = 0; i < this.localPhotoPath.length; i++) {
-					if (this.localPhotoPath[i].contentId == contentId) {
-						return this.localPhotoPath[i].path
-					}
-				}
-				return ''
-			},
-			/** event_id → 成员照片 content_id 列表（端侧聚合成员；无=空） */
-			lookupEventPhotos(eventId: string): Array<string> {
-				for (let i = 0; i < this.eventPhotoIds.length; i++) {
-					if (this.eventPhotoIds[i].eventId == eventId) {
-						return this.eventPhotoIds[i].contentIds
-					}
-				}
-				return []
-			},
-			/** 逐卡填充 photoIds + coverPath（封面：cover_content_id 优先，无则首图回退） */
-			attachPhotos(): void {
-				let strips = 0
-				let covers = 0
-				for (let i = 0; i < this.days.length; i++) {
-					const g = this.days[i]
-					for (let j = 0; j < g.events.length; j++) {
-						const ev = g.events[j]
-						ev.photoIds = this.lookupEventPhotos(ev.id)
-						let cover = this.photoPathOf(ev.coverContentId)
-						if (cover == '' && ev.photoIds.length > 0) {
-							cover = this.photoPathOf(ev.photoIds[0])
-						}
-						ev.coverPath = cover
-						if (ev.photoIds.length > 0) {
-							strips++
-						}
-						if (ev.coverPath != '') {
-							covers++
-						}
-					}
-				}
-				for (let j = 0; j < this.pendingEvents.length; j++) {
-					const ev = this.pendingEvents[j]
-					ev.photoIds = this.lookupEventPhotos(ev.id)
-					let cover = this.photoPathOf(ev.coverContentId)
-					if (cover == '' && ev.photoIds.length > 0) {
-						cover = this.photoPathOf(ev.photoIds[0])
-					}
-					ev.coverPath = cover
-					if (ev.photoIds.length > 0) {
-						strips++
-					}
-					if (ev.coverPath != '') {
-						covers++
-					}
-				}
-				console.log('[yishu] attachPhotos: days=' + this.days.length + ' pending=' + this.pendingEvents.length + ' localPaths=' + this.localPhotoPath.length + ' eventPhotoIds=' + this.eventPhotoIds.length + ' strips=' + strips + ' covers=' + covers)
-			},
-			/** 照片点开 → 反向入口"属于：事件列表"（B3-4） */
-			onPhotoTap(contentId: string): void {
-				this.showPhotoDetail = true
-				this.photoDetailLoading = true
-				this.photoDetailPath = this.photoPathOf(contentId)
-				this.photoDetailEvents = []
-				fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
-					this.photoDetailLoading = false
-					this.photoDetailEvents = evs
-				})
-			},
-			closePhotoDetail(): void {
-				this.showPhotoDetail = false
-				this.photoDetailEvents = []
-			},
-			/** "跳转"：MVP 无独立事件详情页，时间轴即跳转目标 → 关闭浮层即可看到该事件 */
-			jumpFromPhoto(_idx: number): void {
-				this.closePhotoDetail()
-			},
-			/** 待确认区：确认转正（调 confirm API） */
-			confirmPending(ev: TimelineEvent): void {
-				confirmEvent(ev.id).then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已确认', icon: 'none' })
-					} else {
-						uni.showToast({ title: '确认失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			/** 待确认区：忽略（MVP 本地隐藏；后端 reject 端点由 Agent D 域） */
-			ignorePending(ev: TimelineEvent): void {
-				ignoreEventLocally(ev.id)
-				uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
-				this.reload()
-			},
-			/** 事件层级标签（待确认区/反向入口） */
-			levelText(level: number): string {
-				if (level === 1) {
-					return '日卡片'
-				} else if (level === 2) {
-					return '主题'
-				} else if (level === 3) {
-					return '主题流'
-				}
-				return '瞬间'
-			},
-			levelTag(level: number): string {
-				if (level === 1) {
-					return '日卡'
-				} else if (level === 2) {
-					return '主题'
-				} else if (level === 3) {
-					return '主题流'
-				}
-				return '瞬间'
-			},
-			belongsMeta(ref: ContentEventRef): string {
-				const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
-				return ref.photoCount.toFixed(0) + '张 · ' + st
-			},
-			onRefresh(): void {
-				this.refreshing = true
-				this.reload()
-			},
-			/** 授权相册 → 启动监听（B-UT-5 前置；权限请求由插件原生实现） */
-			onGrantAndStart(): void {
-				console.log('[yishu] CTA tapped')
-				const watch = createPhotoWatch()
-				console.log('[yishu] permission granted? ' + watch.isReadPermissionGranted())
-				watch.requestReadPermission()
-				this.startWatch()
-			},
-			/** 启动 PhotoObserver 监听（幂等） */
-			startWatch(): void {
-				console.log('[yishu] startWatch begin')
-				// 30s 验收（B3-6）：授权/监听启动 = 计时起点（幂等）
-				recordGrantTime()
-				const watch = createPhotoWatch()
-				watch.start((items: Array<PhotoItem>) => {
-					console.log('[yishu] batch received: ' + items.length)
-					if (items.length === 0) {
-						return
-					}
-					this.handleBatch(items)
-				})
-				console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
-				uni.showToast({ title: '已开始监听相册', icon: 'none' })
-			},
-			/** 攒批 → 上传（并发≤3）→ 端侧聚合 L1 → 事件上云 → 拉 timeline 刷新（B-UP-2 + S-AG-3/4） */
-			handleBatch(items: Array<PhotoItem>): void {
-				this.uploading = true
-				this.uploadDone = 0
-				this.uploadTotal = items.length
-				this.uploadFailed = 0
-				uploadBatch(items, (p: UploadProgress) => {
-					this.uploadDone = p.done
-					this.uploadTotal = p.total
-					this.uploadFailed = p.failed
-				}).then((uploaded: Array<UploadedPhoto>) => {
-					this.uploading = false
-					if (this.uploadFailed > 0) {
-						uni.showToast({ title: '有 ' + this.uploadFailed + ' 张上传失败', icon: 'none' })
-					}
-					// 端侧聚合：上传成功照片 → L1 日卡片事件（B3-6 端侧 L0/L1 真值）
-					if (uploaded.length > 0) {
-						// 会话照片映射：content_id → 本地路径（封面/照片条显示）
-						for (let i = 0; i < uploaded.length; i++) {
-							this.localPhotoPath.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
-						}
-						const tz = -new Date().getTimezoneOffset()
-						const agg = aggregateToEvents(uploaded, tz)
-						const events: Array<UTSJSONObject> = []
-						for (let i = 0; i < agg.events.length; i++) {
-							const ev = agg.events[i]
-							const obj: UTSJSONObject = {
-								client_event_id: ev.clientEventId,
-								title: ev.title,
-								start_time: isoString(ev.startTime),
-								end_time: isoString(ev.endTime),
-								photo_ids: ev.photoIds
-							}
-							events.push(obj)
-						}
-						if (events.length > 0) {
-							syncClientEvents(events).then((out: SyncOutcome | null) => {
-								if (out != null) {
-									console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
-									// 服务端 event_id → 成员照片映射（照片条/封面按云端 id 关联；F10 委托 event_ops 纯函数）
-									const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
-									for (let m = 0; m < mapped.length; m++) {
-										this.eventPhotoIds.push(mapped[m])
-									}
-									console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + this.eventPhotoIds.length)
-								} else {
-									console.error('[yishu] 事件上云失败（重试耗尽）')
-									uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
-								}
-								this.reload()
-							})
-							return
-						}
-					}
-					this.reload()
-				})
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			reload()
+		})
+		const watch = createPhotoWatch()
+		if (watch.isReadPermissionGranted()) {
+			startWatch()
+		}
+	})
+	onShow(() => {
+		if (loaded) {
+			reload()
+		}
+	})
+
+	// 导航方法
+	function goSearch(): void {
+		uni.navigateTo({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.navigateTo({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.navigateTo({ url: '/pages/profile/profile' })
+	}
+
+	// 语音播放
+	function playVoice(voice: any): void {
+		if (!voice || !voice.url) {
+			uni.showToast({ title: '语音文件不存在', icon: 'none' })
+			return
+		}
+		uni.showToast({ title: '播放语音：' + (voice.title || '未命名'), icon: 'none' })
+	}
+
+	// 数据加载
+	function reload(): void {
+		flushOpQueue().then((_remain: number) => {
+			fetchAll()
+		})
+	}
+	function fetchAll(): void {
+		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+			days = groupDays(events)
+			attachPhotos()
+			loaded = true
+			refreshing = false
+			if (days.length > 0 || pendingEvents.length > 0) {
+				recordFirstDayRender()
 			}
+		})
+		fetchTodayEcho().then((card: EchoCard | null) => {
+			echo = card
+		})
+	}
+
+	// 卡片操作
+	function onCardOps(ev: TimelineEvent, dayIdx: number): void {
+		if (ev.level === 1) {
+			const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
+			uni.showActionSheet({
+				itemList: items,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						doConfirm(ev)
+					} else if (res.tapIndex === 1) {
+						doMerge(ev, dayIdx)
+					} else if (res.tapIndex === 2) {
+						doSplit(ev)
+					}
+				},
+				fail: () => {}
+			})
+		} else {
+			const items2: Array<string> = ['确认这个主题']
+			uni.showActionSheet({
+				itemList: items2,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						doConfirm(ev)
+					}
+				},
+				fail: () => {}
+			})
 		}
 	}
+	function doConfirm(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function getPrevL1Id(dayIdx: number): string {
+		for (let i = dayIdx - 1; i >= 0; i--) {
+			if (days[i].events.length > 0 && days[i].events.level === 1) {
+				return days[i].events.id
+			}
+		}
+		return ''
+	}
+	function doMerge(ev: TimelineEvent, dayIdx: number): void {
+		const targetId = getPrevL1Id(dayIdx)
+		if (targetId == '') {
+			uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
+			return
+		}
+		mergeEvent(ev.id, targetId).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已合并', icon: 'none' })
+			} else {
+				uni.showToast({ title: '合并失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+
+	// 拆分
+	function doSplit(ev: TimelineEvent): void {
+		splitLoading = true
+		showSplitPanel = true
+		splitEventId = ev.id
+		splitItems = []
+		fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
+			splitLoading = false
+			splitItems = items
+			if (items.length < 2) {
+				uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
+			}
+		})
+	}
+	function toggleSplitItem(idx: number): void {
+		const items = splitItems
+		if (idx < 0 || idx >= items.length) {
+			return
+		}
+		const it = items[idx]
+		it.selected = !it.selected
+		items[idx] = it
+		splitItems = items
+	}
+	function confirmSplit(): void {
+		const items = splitItems
+		const ids: Array<string> = []
+		for (let i = 0; i < items.length; i++) {
+			if (items[i].selected) {
+				ids.push(items[i].contentId)
+			}
+		}
+		if (ids.length == 0) {
+			uni.showToast({ title: '至少选择一条', icon: 'none' })
+			return
+		}
+		if (ids.length >= items.length) {
+			uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
+			return
+		}
+		splitEvent(splitEventId, ids).then((ok: boolean) => {
+			showSplitPanel = false
+			if (ok) {
+				uni.showToast({ title: '已拆分', icon: 'none' })
+			} else {
+				uni.showToast({ title: '拆分失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function cancelSplit(): void {
+		showSplitPanel = false
+		splitItems = []
+	}
+	function splitTimeText(ts: number): string {
+		if (ts <= 0) {
+			return '时间未知'
+		}
+		return formatMonthDay(ts)
+	}
+
+	// 回响
+	function dismissEchoCard(): void {
+		const card = echo
+		if (card == null) {
+			return
+		}
+		dismissEcho(card.contentId).then((ok: boolean) => {
+			echo = null
+			if (ok) {
+				uni.showToast({ title: '已划掉', icon: 'none' })
+			}
+		})
+	}
+
+	// 照片映射
+	function groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
+		const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
+		pendingEvents = result.pending
+		return result.groups
+	}
+	function photoPathOf(contentId: string): string {
+		for (let i = 0; i < localPhotoPath.length; i++) {
+			if (localPhotoPath[i].contentId == contentId) {
+				return localPhotoPath[i].path
+			}
+		}
+		return ''
+	}
+	function lookupEventPhotos(eventId: string): Array<string> {
+		for (let i = 0; i < eventPhotoIds.length; i++) {
+			if (eventPhotoIds[i].eventId == eventId) {
+				return eventPhotoIds[i].contentIds
+			}
+		}
+		return []
+	}
+	function attachPhotos(): void {
+		let strips = 0
+		let covers = 0
+		for (let i = 0; i < days.length; i++) {
+			const g = days[i]
+			for (let j = 0; j < g.events.length; j++) {
+				const ev = g.events[j]
+				ev.photoIds = lookupEventPhotos(ev.id)
+				let cover = photoPathOf(ev.coverContentId)
+				if (cover == '' && ev.photoIds.length > 0) {
+					cover = photoPathOf(ev.photoIds[0])
+				}
+				ev.coverPath = cover
+				if (ev.photoIds.length > 0) {
+					strips++
+				}
+				if (ev.coverPath != '') {
+					covers++
+				}
+			}
+		}
+		for (let j = 0; j < pendingEvents.length; j++) {
+			const ev = pendingEvents[j]
+			ev.photoIds = lookupEventPhotos(ev.id)
+			let cover = photoPathOf(ev.coverContentId)
+			if (cover == '' && ev.photoIds.length > 0) {
+				cover = photoPathOf(ev.photoIds[0])
+			}
+			ev.coverPath = cover
+			if (ev.photoIds.length > 0) {
+				strips++
+			}
+			if (ev.coverPath != '') {
+				covers++
+			}
+		}
+		console.log('[yishu] attachPhotos: days=' + days.length + ' pending=' + pendingEvents.length + ' localPaths=' + localPhotoPath.length + ' eventPhotoIds=' + eventPhotoIds.length + ' strips=' + strips + ' covers=' + covers)
+	}
+
+	// 照片详情
+	function onPhotoTap(contentId: string): void {
+		showPhotoDetail = true
+		photoDetailLoading = true
+		photoDetailPath = photoPathOf(contentId)
+		photoDetailEvents = []
+		fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
+			photoDetailLoading = false
+			photoDetailEvents = evs
+		})
+	}
+	function closePhotoDetail(): void {
+		showPhotoDetail = false
+		photoDetailEvents = []
+	}
+	function jumpFromPhoto(_idx: number): void {
+		closePhotoDetail()
+	}
+
+	// 待确认
+	function confirmPending(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function ignorePending(ev: TimelineEvent): void {
+		ignoreEventLocally(ev.id)
+		uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
+		reload()
+	}
+
+	// 工具方法
+	function levelText(level: number): string {
+		if (level === 1) {
+			return '日卡片'
+		} else if (level === 2) {
+			return '主题'
+		} else if (level === 3) {
+			return '主题流'
+		}
+		return '瞬间'
+	}
+	function levelTag(level: number): string {
+		if (level === 1) {
+			return '日卡'
+		} else if (level === 2) {
+			return '主题'
+		} else if (level === 3) {
+			return '主题流'
+		}
+		return '瞬间'
+	}
+	function belongsMeta(ref: ContentEventRef): string {
+		const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
+		return ref.photoCount.toFixed(0) + '张 · ' + st
+	}
+	function onRefresh(): void {
+		refreshing = true
+		reload()
+	}
+
+	// 相册监听
+	function onGrantAndStart(): void {
+		console.log('[yishu] CTA tapped')
+		const watch = createPhotoWatch()
+		console.log('[yishu] permission granted? ' + watch.isReadPermissionGranted())
+		watch.requestReadPermission()
+		startWatch()
+	}
+	function startWatch(): void {
+		console.log('[yishu] startWatch begin')
+		recordGrantTime()
+		const watch = createPhotoWatch()
+		watch.start((items: Array<PhotoItem>) => {
+			console.log('[yishu] batch received: ' + items.length)
+			if (items.length === 0) {
+				return
+			}
+			handleBatch(items)
+		})
+		console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
+		uni.showToast({ title: '已开始监听相册', icon: 'none' })
+	}
+	function handleBatch(items: Array<PhotoItem>): void {
+		uploading = true
+		uploadDone = 0
+		uploadTotal = items.length
+		uploadFailed = 0
+		uploadBatch(items, (p: UploadProgress) => {
+			uploadDone = p.done
+			uploadTotal = p.total
+			uploadFailed = p.failed
+		}).then((uploaded: Array<UploadedPhoto>) => {
+			uploading = false
+			if (uploadFailed > 0) {
+				uni.showToast({ title: '有 ' + uploadFailed + ' 张上传失败', icon: 'none' })
+			}
+			if (uploaded.length > 0) {
+				for (let i = 0; i < uploaded.length; i++) {
+					localPhotoPath.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
+				}
+				const tz = -new Date().getTimezoneOffset()
+				const agg = aggregateToEvents(uploaded, tz)
+				const events: Array<UTSJSONObject> = []
+				for (let i = 0; i < agg.events.length; i++) {
+					const ev = agg.events[i]
+					const obj: UTSJSONObject = {
+						client_event_id: ev.clientEventId,
+						title: ev.title,
+						start_time: isoString(ev.startTime),
+						end_time: isoString(ev.endTime),
+						photo_ids: ev.photoIds
+					}
+					events.push(obj)
+				}
+				if (events.length > 0) {
+					syncClientEvents(events).then((out: SyncOutcome | null) => {
+						if (out != null) {
+							console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
+							const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
+							for (let m = 0; m < mapped.length; m++) {
+								eventPhotoIds.push(mapped[m])
+							}
+							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + eventPhotoIds.length)
+						} else {
+							console.error('[yishu] 事件上云失败（重试耗尽）')
+							uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
+						}
+						reload()
+					})
+					return
+				}
+			}
+			reload()
+		})
+	}
 </script>
+
 
 <style>
 	/* 视觉规范 v2：像素级还原 SVG 设计稿
