@@ -1,0 +1,566 @@
+<template>
+	<view class="page">
+		<!-- 顶部导航栏 -->
+		<view class="header">
+			<view class="nav-row">
+				<view class="back-btn pressable" @tap="goBack">
+					<text class="back-arrow">‹</text>
+					<text class="back-text">我的</text>
+				</view>
+				<text class="header-title serif">画像管理</text>
+				<view class="header-right"></view>
+			</view>
+			<text class="header-sub">查看和管理你的个人记忆画像</text>
+		</view>
+
+		<scroll-view class="scroll" scroll-y>
+			<!-- 画像概览卡片 -->
+			<view class="profile-card pressable">
+				<view class="profile-head">
+					<view class="profile-avatar">
+						<text class="avatar-text">忆</text>
+					</view>
+					<view class="profile-info">
+						<text class="profile-title serif">我的记忆画像</text>
+						<text class="profile-badge">L2 · 主题级</text>
+					</view>
+				</view>
+				<text class="profile-desc">基于你的照片、文字、语音碎片，AI 自动生成的个人记忆画像。画像会随着记忆积累不断更新。</text>
+				<view class="profile-stats">
+					<view class="stat-item">
+						<text class="stat-number">{{ totalDays }}</text>
+						<text class="stat-label">记忆天数</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-number">{{ totalPhotos }}</text>
+						<text class="stat-label">照片</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-number">{{ totalThemes }}</text>
+						<text class="stat-label">主题</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 性格标签卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">性格标签</text>
+				<text class="menu-sub">AI 根据记忆内容自动生成的性格特征</text>
+				<view class="tag-list">
+					<view v-for="tag in personalityTags" :key="tag.name" class="tag-item" :class="{ 'tag-active': tag.active }">
+						<text class="tag-text">{{ tag.name }}</text>
+						<text class="tag-confidence">{{ tag.confidence }}%</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 记忆主题卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">记忆主题</text>
+				<text class="menu-sub">高频出现的记忆主题分类</text>
+				<view class="theme-list">
+					<view v-for="theme in themes" :key="theme.name" class="theme-item pressable" @tap="onThemeTap(theme)">
+						<view class="theme-icon" :style="{ backgroundColor: theme.color }">
+							<text class="theme-icon-text">{{ theme.icon }}</text>
+						</view>
+						<view class="theme-info">
+							<text class="theme-name">{{ theme.name }}</text>
+							<text class="theme-count">{{ theme.count }} 条记忆</text>
+						</view>
+						<text class="theme-arrow">›</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 画像设置卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">画像设置</text>
+				<view class="menu-row pressable" @tap="onRefreshProfile">
+					<view class="menu-icon amber">🔄</view>
+					<view class="menu-main">
+						<text class="menu-title-text">重新生成画像</text>
+						<text class="menu-desc">基于最新记忆数据重新计算画像</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-row pressable" @tap="onEditTags">
+					<view class="menu-icon rust">🏷️</view>
+					<view class="menu-main">
+						<text class="menu-title-text">编辑性格标签</text>
+						<text class="menu-desc">手动调整或确认 AI 生成的标签</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-row pressable" @tap="onPrivacySettings">
+					<view class="menu-icon">🔒</view>
+					<view class="menu-main">
+						<text class="menu-title-text">画像隐私设置</text>
+						<text class="menu-desc">控制哪些数据用于画像生成</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 关于画像 -->
+			<view class="about-card">
+				<text class="about-title serif">关于记忆画像</text>
+				<text class="about-text">记忆画像是 AI 基于你的个人记忆数据自动生成的用户画像，用于提供更个性化的回忆体验。所有数据仅存储在本地和你的私人空间，不会用于其他用途。</text>
+			</view>
+		</scroll-view>
+
+		<!-- 玻璃 TabBar -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item active pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		data() {
+			return {
+				totalDays: 128,
+				totalPhotos: 342,
+				totalThemes: 12,
+				personalityTags: [
+					{ name: '怀旧', confidence: 87, active: true },
+					{ name: '感性', confidence: 76, active: true },
+					{ name: '细致', confidence: 72, active: true },
+					{ name: '乐观', confidence: 68, active: false },
+					{ name: '内敛', confidence: 65, active: false },
+					{ name: '创造力', confidence: 61, active: false }
+				],
+				themes: [
+					{ name: '家庭时光', count: 45, icon: '👨‍👩‍👧', color: '#c4913c24' },
+					{ name: '旅行记忆', count: 32, icon: '✈️', color: '#b05a3a1f' },
+					{ name: '校园生活', count: 28, icon: '📚', color: '#4e7d8c21' },
+					{ name: '美食探店', count: 23, icon: '🍜', color: '#7a8c5a24' }
+				]
+			}
+		},
+		onLoad() {
+			console.log('[portrait-manage] page loaded')
+		},
+		methods: {
+			goBack() {
+				uni.navigateBack()
+			},
+			goIndex() {
+				uni.navigateTo({ url: '/pages/index/index' })
+			},
+			goSearch() {
+				uni.navigateTo({ url: '/pages/search/search' })
+			},
+			goRecord() {
+				uni.navigateTo({ url: '/pages/record/record' })
+			},
+			goMessages() {
+				uni.navigateTo({ url: '/pages/messages/messages' })
+			},
+			goProfile() {
+				uni.navigateTo({ url: '/pages/profile/profile' })
+			},
+			onThemeTap(theme: any) {
+				uni.showToast({ title: '查看主题：' + theme.name, icon: 'none' })
+			},
+			onRefreshProfile() {
+				uni.showToast({ title: '正在重新生成画像...', icon: 'none' })
+			},
+			onEditTags() {
+				uni.showToast({ title: '编辑性格标签', icon: 'none' })
+			},
+			onPrivacySettings() {
+				uni.showToast({ title: '画像隐私设置', icon: 'none' })
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #f8f7f4;
+	}
+
+	.serif {
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
+	}
+
+	.header {
+		padding-top: 48rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+	}
+	.nav-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.back-btn {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.back-arrow {
+		font-size: 40rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.back-text {
+		font-size: 28rpx;
+		color: #8a7a6a;
+		margin-left: 4rpx;
+	}
+	.header-title {
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.header-right {
+		width: 80rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	.scroll {
+		flex: 1;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-bottom: 160rpx;
+	}
+
+	/* 画像概览卡片 */
+	.profile-card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+	}
+	.profile-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+	.profile-avatar {
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 48rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 24rpx;
+	}
+	.avatar-text {
+		font-size: 40rpx;
+		color: #ffffff;
+		font-weight: bold;
+	}
+	.profile-info {
+		flex: 1;
+	}
+	.profile-title {
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.profile-badge {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #c4913c;
+		background-color: #c4913c1a;
+		padding: 4rpx 16rpx;
+		border-radius: 16rpx;
+		align-self: flex-start;
+	}
+	.profile-desc {
+		font-size: 26rpx;
+		color: #8a7a6a;
+		line-height: 40rpx;
+		margin-bottom: 24rpx;
+	}
+	.profile-stats {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-around;
+		padding-top: 20rpx;
+		border-top-width: 1rpx;
+		border-top-color: #f0ebe3;
+		border-top-style: solid;
+	}
+	.stat-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.stat-number {
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.stat-label {
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* 菜单卡片 */
+	.menu-card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+	}
+	.menu-title {
+		font-size: 30rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 8rpx;
+	}
+	.menu-sub {
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-bottom: 20rpx;
+	}
+
+	/* 性格标签 */
+	.tag-list {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.tag-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 12rpx 24rpx;
+		border-radius: 24rpx;
+		background-color: #f8f7f4;
+		margin-right: 16rpx;
+		margin-bottom: 12rpx;
+	}
+	.tag-active {
+		background-color: #c4913c1a;
+	}
+	.tag-text {
+		font-size: 26rpx;
+		color: #3a2e25;
+	}
+	.tag-active .tag-text {
+		color: #c4913c;
+		font-weight: 500;
+	}
+	.tag-confidence {
+		margin-left: 8rpx;
+		font-size: 20rpx;
+		color: #b3a696;
+	}
+
+	/* 记忆主题 */
+	.theme-list {
+		display: flex;
+		flex-direction: column;
+	}
+	.theme-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	.theme-item:last-child {
+		border-bottom-width: 0;
+	}
+	.theme-icon {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+	.theme-icon-text {
+		font-size: 28rpx;
+	}
+	.theme-info {
+		flex: 1;
+	}
+	.theme-name {
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.theme-count {
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.theme-arrow {
+		font-size: 32rpx;
+		color: #b3a696;
+	}
+
+	/* 菜单行 */
+	.menu-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	.menu-row:last-child {
+		border-bottom-width: 0;
+	}
+	.menu-icon {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 28rpx;
+		background-color: #f8f7f4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+		font-size: 28rpx;
+	}
+	.menu-icon.amber {
+		background-color: #c4913c1a;
+	}
+	.menu-icon.rust {
+		background-color: #b05a3a1f;
+	}
+	.menu-main {
+		flex: 1;
+	}
+	.menu-title-text {
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.menu-desc {
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.menu-arrow {
+		font-size: 32rpx;
+		color: #b3a696;
+	}
+
+	/* 关于画像 */
+	.about-card {
+		margin-top: 24rpx;
+		margin-bottom: 40rpx;
+		padding: 28rpx;
+	}
+	.about-title {
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 12rpx;
+	}
+	.about-text {
+		font-size: 24rpx;
+		color: #8a7a6a;
+		line-height: 38rpx;
+	}
+
+	/* 玻璃 TabBar */
+	.glass-tabbar {
+		position: fixed;
+		bottom: 60rpx;
+		left: 40rpx;
+		right: 40rpx;
+		height: 124rpx;
+		background-color: rgba(255,255,255,0.55);
+		border-radius: 62rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-around;
+		box-shadow: 0 8rpx 32rpx rgba(58,46,37,0.12);
+		padding: 0 24rpx;
+	}
+	.tabbar-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		width: 80rpx;
+		height: 80rpx;
+	}
+	.tabbar-icon {
+		width: 40rpx;
+		height: 40rpx;
+		margin-bottom: 4rpx;
+		font-size: 32rpx;
+		text-align: center;
+	}
+	.tabbar-label {
+		font-size: 20rpx;
+		color: #8a7a6a;
+	}
+	.tabbar-item.active .tabbar-label {
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.tabbar-fab {
+		width: 112rpx;
+		height: 112rpx;
+		border-radius: 56rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-top: -40rpx;
+		box-shadow: 0 8rpx 24rpx rgba(176,90,58,0.4);
+	}
+	.tabbar-fab-icon {
+		width: 48rpx;
+		height: 48rpx;
+		color: #ffffff;
+		font-size: 48rpx;
+		font-weight: 300;
+		line-height: 48rpx;
+		text-align: center;
+	}
+
+	/* 按压态动画 */
+	.pressable {
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+	.pressable:active {
+		transform: scale(0.98);
+		box-shadow: 0 2rpx 8rpx rgba(58,46,37,0.08);
+	}
+</style>

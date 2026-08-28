@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<view class="header">
 			<text class="header-title serif">搜索</text>
@@ -74,6 +74,29 @@
 		<!-- 底部 Tab -->
 		<yishu-tabbar current="search" />
 	</view>
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item  pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item active pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
+			</view>
+		</view>
+
 </template>
 
 <script lang="uts">
@@ -101,6 +124,27 @@
 			})
 		},
 		methods: {
+		/** 导航：时间轴页 */
+		goIndex(): void {
+			uni.navigateTo({ url: '/pages/index/index' })
+		},
+		/** 导航：搜索页 */
+		goSearch(): void {
+			uni.navigateTo({ url: '/pages/search/search' })
+		},
+		/** 导航：记录页 */
+		goRecord(): void {
+			uni.navigateTo({ url: '/pages/record/record' })
+		},
+		/** 导航：消息页 */
+		goMessages(): void {
+			uni.navigateTo({ url: '/pages/messages/messages' })
+		},
+		/** 导航：我的页 */
+		goProfile(): void {
+			uni.navigateTo({ url: '/pages/profile/profile' })
+		},
+
 			/** 得分百分比（模板内不能直接调全局 Math） */
 			scorePct(score: number): number {
 				return Math.round(score * 100)
@@ -173,9 +217,9 @@
 <style>
 	.page {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
 		padding-top: 88rpx;
 		padding-bottom: 140rpx;
 	}
@@ -188,7 +232,7 @@
 	}
 	.header-title {
 		font-size: 52rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		letter-spacing: 6rpx;
 	}
@@ -206,19 +250,19 @@
 		margin-bottom: 20rpx;
 	}
 	.search-input {
-		flex: 1;
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
+	flex: 1;
+	background-color: rgba(255,255,255,0.32);
+	border-radius: 46rpx;
 		padding-left: 24rpx;
 		padding-right: 24rpx;
-		height: 76rpx;
+		height: 92rpx;
 		font-size: 28rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
 	}
 	.search-btn {
 		margin-left: 16rpx;
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 		border-radius: 8rpx;
 		padding-left: 32rpx;
 		padding-right: 32rpx;
@@ -228,7 +272,7 @@
 		display: flex;
 	}
 	.search-btn-text {
-		color: #F6F1E7;
+		color: #f8f7f4;
 		font-size: 28rpx;
 	}
 
@@ -254,7 +298,7 @@
 	}
 	.image-btn-text {
 		font-size: 24rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 	}
 	.query-thumb {
 		width: 56rpx;
@@ -272,7 +316,7 @@
 	}
 	.degraded-text {
 		font-size: 24rpx;
-		color: #B05A3A;
+		color: #b05a3a;
 	}
 
 	.center-box {
@@ -283,7 +327,7 @@
 	}
 	.empty-title {
 		font-size: 36rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 	.empty-desc {
@@ -301,8 +345,8 @@
 		margin-bottom: 16rpx;
 	}
 	.hit-card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
+	background-color: #ffffff;
+	border-radius: 40rpx;
 		padding: 24rpx;
 		margin-bottom: 20rpx;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
@@ -314,7 +358,7 @@
 	}
 	.hit-type {
 		font-size: 22rpx;
-		color: #B05A3A;
+		color: #b05a3a;
 		background-color: #F3E8DC;
 		padding-left: 14rpx;
 		padding-right: 14rpx;
@@ -330,13 +374,13 @@
 	}
 	.hit-score {
 		font-size: 24rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 	.hit-text {
 		margin-top: 14rpx;
 		font-size: 28rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		line-height: 40rpx;
 	}
 	.hit-meta {
@@ -359,7 +403,7 @@
 	}
 	.trace-label {
 		font-size: 20rpx;
-		color: #B05A3A;
+		color: #b05a3a;
 	}
 	.trace-text {
 		margin-top: 4rpx;

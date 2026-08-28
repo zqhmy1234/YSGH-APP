@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<view class="header">
 			<text class="header-title serif">我的</text>
@@ -41,6 +41,29 @@
 		<!-- 底部 Tab -->
 		<yishu-tabbar current="profile" />
 	</view>
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item  pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item active pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
+			</view>
+		</view>
+
 </template>
 
 <script lang="uts">
@@ -74,6 +97,27 @@
 			this.loadUnread()
 		},
 		methods: {
+		/** 导航：时间轴页 */
+		goIndex(): void {
+			uni.navigateTo({ url: '/pages/index/index' })
+		},
+		/** 导航：搜索页 */
+		goSearch(): void {
+			uni.navigateTo({ url: '/pages/search/search' })
+		},
+		/** 导航：记录页 */
+		goRecord(): void {
+			uni.navigateTo({ url: '/pages/record/record' })
+		},
+		/** 导航：消息页 */
+		goMessages(): void {
+			uni.navigateTo({ url: '/pages/messages/messages' })
+		},
+		/** 导航：我的页 */
+		goProfile(): void {
+			uni.navigateTo({ url: '/pages/profile/profile' })
+		},
+
 			loadProfile(): void {
 				fetchInterviewProfile().then((d: UTSJSONObject | null) => {
 					if (d == null) {
@@ -117,9 +161,9 @@
 <style>
 	.page {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
 		padding-top: 88rpx;
 		padding-bottom: 140rpx;
 	}
@@ -132,7 +176,7 @@
 	}
 	.header-title {
 		font-size: 52rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		letter-spacing: 6rpx;
 	}
@@ -144,8 +188,8 @@
 
 	/* 画像卡 */
 	.profile-card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
 		padding: 32rpx;
 		margin-bottom: 24rpx;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
@@ -158,12 +202,12 @@
 	}
 	.profile-title {
 		font-size: 34rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 	.profile-badge {
 		font-size: 22rpx;
-		color: #B05A3A;
+		color: #b05a3a;
 		background-color: #F3E8DC;
 		padding-left: 16rpx;
 		padding-right: 16rpx;
@@ -179,7 +223,7 @@
 	}
 	.profile-btn {
 		margin-top: 28rpx;
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 		border-radius: 8rpx;
 		padding-top: 18rpx;
 		padding-bottom: 18rpx;
@@ -188,14 +232,14 @@
 		justify-content: center;
 	}
 	.profile-btn-text {
-		color: #F6F1E7;
+		color: #f8f7f4;
 		font-size: 28rpx;
 	}
 
 	/* 菜单 */
 	.menu-card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
 		padding: 28rpx;
 		margin-bottom: 24rpx;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
@@ -212,12 +256,12 @@
 	.menu-title {
 		flex: 1;
 		font-size: 30rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 	}
 	.menu-badge {
 		font-size: 22rpx;
-		color: #F6F1E7;
-		background-color: #B05A3A;
+		color: #f8f7f4;
+		background-color: #b05a3a;
 		padding-left: 14rpx;
 		padding-right: 14rpx;
 		padding-top: 4rpx;

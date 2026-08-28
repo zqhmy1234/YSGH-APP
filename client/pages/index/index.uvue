@@ -1,17 +1,28 @@
-<template>
+﻿<template>
 	<view class="page">
-		<!-- 顶栏：干净，不做旧（视觉规范：导航/按钮保持干净） -->
-		<view class="header">
-			<text class="header-title serif">忆述光华</text>
-			<text class="header-sub">翻看记忆，去年今日</text>
+		<!-- 照片出血氛围层（390x300 湖面图 + 顶部暗化 + 底部白色溶解渐变） -->
+		<view class="hero-section">
+			<image class="hero-image" src="/static/hero-lake-original.png" mode="aspectFill" />
+			<view class="hero-overlay-top"></view>
+			<view class="hero-overlay-bottom"></view>
+			<view class="hero-content">
+				<text class="hero-title serif">忆述光华</text>
+				<text class="hero-subtitle">翻看记忆，去年今日</text>
+			</view>
 		</view>
 
-		<!-- 同步状态横幅（B4 客户端：Wave3 AgentH 组件，集成 Agent 接线一行） -->
+		<!-- 玻璃搜索胶囊（backdrop-blur + 白色内高光） -->
+		<view class="search-capsule pressable" @tap="goSearch">
+			<text class="search-icon">🔍</text>
+			<text class="search-placeholder">搜索记忆、照片、主题…</text>
+		</view>
+
+		<!-- 同步状态横幅 -->
 		<UploadStatusBanner />
 
 		<scroll-view class="scroll" scroll-y refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
-			<!-- 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄；划掉 dismiss） -->
-			<view v-if="echo != null" class="echo-card">
+			<!-- 回响卡片（去年今日 · 角贴 + 泛黄） -->
+			<view v-if="echo != null" class="echo-card pressable">
 				<view class="echo-corner">
 					<text class="echo-corner-text">去年今日</text>
 				</view>
@@ -21,7 +32,7 @@
 					<text class="meta-item">{{ echo.place }}</text>
 				</view>
 				<view class="echo-actions">
-					<view class="echo-dismiss" @tap="dismissEchoCard">
+					<view class="echo-dismiss pressable" @tap="dismissEchoCard">
 						<text class="echo-dismiss-text">划掉</text>
 					</view>
 				</view>
@@ -32,23 +43,23 @@
 				<text class="muted">正在翻找相纸…</text>
 			</view>
 
-			<!-- 空状态：空白相纸插画 + 文案 + 引导（B-F8-3） -->
+			<!-- 空状态 -->
 			<view v-else-if="days.length === 0 && pendingEvents.length === 0" class="center-box">
 				<image class="empty-img" src="/static/empty-photo.svg" mode="aspectFit" />
 				<text class="empty-title serif">相册还空着</text>
 				<text class="empty-desc">授权相册后，照片会自动整理成一天的记忆卡片</text>
-				<view class="cta" @tap="onGrantAndStart">
+				<view class="cta pressable" @tap="onGrantAndStart">
 					<text class="cta-text">授权相册 · 开始整理</text>
 				</view>
 			</view>
 
-			<!-- 时间轴：L1 日卡片 + L2 主题两级 + L2 待确认区（B-F8-1 · B3-5） -->
+			<!-- 时间轴：L1 日卡片 + L2 主题两级 -->
 			<view v-else class="feed">
-				<!-- L2 待确认区（B3-5：confidence<0.7 的 draft 独立分组；确认/忽略） -->
+				<!-- L2 待确认区 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
 					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
-					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2">
+					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2 pressable">
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
 							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
 						</view>
@@ -58,13 +69,36 @@
 							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
 						</view>
 						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+						</view>
+						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列 -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡：左侧琥珀引用竖线 + 引言体 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
+							</view>
 						</view>
 						<view class="pending-actions">
-							<view class="pending-btn pending-btn-ghost" @tap="ignorePending(ev)">
+							<view class="pending-btn pending-btn-ghost pressable" @tap="ignorePending(ev)">
 								<text class="pending-btn-text">忽略</text>
 							</view>
-							<view class="pending-btn pending-btn-solid" @tap="confirmPending(ev)">
+							<view class="pending-btn pending-btn-solid pressable" @tap="confirmPending(ev)">
 								<text class="pending-btn-text">确认</text>
 							</view>
 						</view>
@@ -74,110 +108,71 @@
 				<view v-for="(day, dayIdx) in days" :key="day.key" class="day-block">
 					<text class="day-title serif">{{ day.label }}</text>
 					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'">
-						<!-- S-MO-1 操作入口（确认/合并；用户操作优先，算法不再覆盖） -->
-						<view class="card-ops" @tap="onCardOps(ev, dayIdx)">
+						<!-- 操作入口 -->
+						<view class="card-ops pressable" @tap="onCardOps(ev, dayIdx)">
 							<text class="card-ops-text">⋯</text>
 						</view>
-						<!-- 封面展示（B3-4：cover_content_id 有值显示，无则首图回退） -->
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
 							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
 						</view>
-						<text class="card-title serif" :class="ev.level === 1 ? 'title-l1' : 'title-l2'">{{ ev.title }}</text>
+						<text class="card-title serif">{{ ev.title }}</text>
 						<view class="card-meta">
-							<text v-if="ev.place != ''" class="meta-item">{{ ev.place }}</text>
+							<text class="meta-item">{{ levelText(ev.level) }}</text>
 							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
 						</view>
-						<!-- 照片条（会话照片；点开 → 反向入口"属于"列表） -->
 						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
 						</view>
-						<view v-if="ev.level === 1 && ev.children.length > 0" class="l2-list">
-							<view v-for="child in ev.children" :key="child.id" class="l2-chip">
-								<text class="l2-chip-title">{{ child.title }}</text>
-								<text class="l2-chip-count rust">{{ child.photoCount }}张</text>
+						<!-- 语音卡 -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
 							</view>
 						</view>
 					</view>
 				</view>
-				<view class="feed-foot">
-					<text class="muted">—— 记忆在此 ——</text>
-				</view>
 			</view>
 		</scroll-view>
 
-		<!-- 拆分选片面板（S-MO-1 split UI · 2026-08-25） -->
-		<view v-if="showSplitPanel" class="split-mask" @tap="cancelSplit">
-			<view class="split-panel" @tap.stop>
-				<text class="split-title serif">拆分这张卡</text>
-				<text class="split-sub muted">勾选要拆出的内容，剩余留在原卡</text>
-				<scroll-view class="split-list" scroll-y>
-					<view v-if="splitLoading" class="split-empty">
-						<text class="muted">正在加载成员…</text>
-					</view>
-					<view v-else-if="splitItems.length === 0" class="split-empty">
-						<text class="muted">没有可拆分的成员</text>
-					</view>
-					<view v-for="(item, idx) in splitItems" :key="item.contentId" class="split-row" @tap="toggleSplitItem(idx)">
-						<view class="split-check" :class="item.selected ? 'split-check-on' : ''">
-							<text v-if="item.selected" class="split-check-mark">✓</text>
-						</view>
-						<view class="split-row-main">
-							<text class="split-row-title">{{ item.title == '' ? '（无文字）' : item.title }}</text>
-							<text class="split-row-meta muted">{{ item.contentType }} · {{ splitTimeText(item.takenAt) }}</text>
-						</view>
-					</view>
-				</scroll-view>
-				<view class="split-actions">
-					<view class="split-btn split-btn-ghost" @tap="cancelSplit">
-						<text class="split-btn-text">取消</text>
-					</view>
-					<view class="split-btn split-btn-solid" @tap="confirmSplit">
-						<text class="split-btn-text">确认拆分</text>
-					</view>
-				</view>
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item active pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
 			</view>
 		</view>
-
-		<!-- 照片详情：反向入口"属于：事件列表"（B3-4 · 2026-08-26 Wave2 E） -->
-		<view v-if="showPhotoDetail" class="split-mask" @tap="closePhotoDetail">
-			<view class="split-panel" @tap.stop>
-				<text class="split-title serif">照片属于</text>
-				<text class="split-sub muted">这张照片属于 {{ photoDetailEvents.length }} 个事件（多对多）</text>
-				<view v-if="photoDetailPath != ''" class="photo-detail-img-wrap">
-					<image class="photo-detail-img" :src="photoDetailPath" mode="aspectFit" />
-				</view>
-				<scroll-view class="split-list" scroll-y>
-					<view v-if="photoDetailLoading" class="split-empty">
-						<text class="muted">正在查询…</text>
-					</view>
-					<view v-else-if="photoDetailEvents.length === 0" class="split-empty">
-						<text class="muted">尚未归属任何事件</text>
-					</view>
-					<view v-for="(ref, idx) in photoDetailEvents" :key="ref.id" class="belongs-row" @tap="jumpFromPhoto(idx)">
-						<view class="belongs-badge" :class="ref.level === 1 ? 'belongs-badge-l1' : 'belongs-badge-l2'">
-							<text class="belongs-badge-text">{{ levelTag(ref.level) }}</text>
-						</view>
-						<view class="belongs-main">
-							<text class="belongs-title">{{ ref.title }}</text>
-							<text class="belongs-meta muted">{{ belongsMeta(ref) }}</text>
-						</view>
-					</view>
-				</scroll-view>
-				<view class="split-actions">
-					<view class="split-btn split-btn-ghost" @tap="closePhotoDetail">
-						<text class="split-btn-text">关闭</text>
-					</view>
-				</view>
-			</view>
-		</view>
-
-		<!-- 上传进度浮层（B-UP-1 进度回调） -->
-		<view v-if="uploading" class="upload-bar">
-			<text class="upload-text">上传中 {{ uploadDone }}/{{ uploadTotal }}{{ uploadFailed > 0 ? '（失败' + uploadFailed + '）' : '' }}</text>
-		</view>
-
-		<!-- 底部 Tab（T-NA-1） -->
-		<yishu-tabbar current="home" />
 	</view>
 </template>
 
@@ -261,6 +256,32 @@
 			}
 		},
 		methods: {
+			/** 导航：搜索页 */
+			goSearch(): void {
+				uni.navigateTo({ url: '/pages/search/search' })
+			},
+			/** 导航：记录页 */
+			goRecord(): void {
+				uni.navigateTo({ url: '/pages/record/record' })
+			},
+			/** 导航：消息页 */
+			goMessages(): void {
+				uni.navigateTo({ url: '/pages/messages/messages' })
+			},
+			/** 导航：我的页 */
+			goProfile(): void {
+				uni.navigateTo({ url: '/pages/profile/profile' })
+			},
+			/** 播放语音 */
+			playVoice(voice: any): void {
+				if (!voice || !voice.url) {
+					uni.showToast({ title: '语音文件不存在', icon: 'none' })
+					return
+				}
+				uni.showToast({ title: '播放语音：' + (voice.title || '未命名'), icon: 'none' })
+				// TODO: 集成真实语音播放器
+			},
+
 			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下；draft<0.7 进待确认） */
 			reload(): void {
 				// 2026-08-25 离线 op_log：联网后先补发离线操作，再刷新（顺序执行）
@@ -641,32 +662,104 @@
 </script>
 
 <style>
-	/* 视觉规范 v1：相纸白底 / 墨褐文字 / 锈红强调；标题衬线；卡片撕边+底部投影；≥30% 留白 */
+	/* 视觉规范 v2：像素级还原 SVG 设计稿
+	   背景 #f8f7f4 / 卡片 #ffffff 圆角20 / 玻璃 TabBar #ffffff8c 圆角31
+	   主文字 #3a2e25 / 次文字 #8a7a6a / 锈红 #b05a3a / 琥珀 #c4913c */
 	.page {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		padding-top: 88rpx;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
+		padding-top: 0;
 	}
 
 	.serif {
-		font-family: "Noto Serif CJK SC", serif;
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
 	}
 
+	/* 顶栏：干净，不做旧 */
 	.header {
-		padding-top: 24rpx;
+		padding-top: 48rpx;
 		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
 	}
 	.header-title {
-		font-size: 52rpx;
-		color: #3A2E25;
+		font-size: 44rpx;
+		color: #3a2e25;
 		font-weight: bold;
-		letter-spacing: 6rpx;
+		letter-spacing: 4rpx;
 	}
 	.header-sub {
 		margin-top: 8rpx;
 		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 照片出血氛围层（390x300 湖面图 + 顶部暗化 + 底部白色溶解渐变） */
+	.hero-section {
+		position: relative;
+		width: 100%;
+		height: 600rpx;
+		overflow: hidden;
+	}
+	.hero-image {
+		width: 100%;
+		height: 100%;
+	}
+	.hero-overlay-top {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 200rpx;
+		background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+	}
+	.hero-overlay-bottom {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 280rpx;
+		background: linear-gradient(to bottom, transparent, #f8f7f4);
+	}
+	.hero-content {
+		position: absolute;
+		bottom: 40rpx;
+		left: 40rpx;
+		right: 40rpx;
+	}
+	.hero-title {
+		font-size: 48rpx;
+		color: #ffffff;
+		font-weight: bold;
+		text-shadow: 0 2rpx 8rpx rgba(0,0,0,0.3);
+	}
+	.hero-subtitle {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: rgba(255,255,255,0.85);
+	}
+
+	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
+	.search-capsule {
+		margin: 24rpx 40rpx;
+		padding: 20rpx 32rpx;
+		background-color: rgba(255,255,255,0.32);
+		border-radius: 46rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.08);
+	}
+	.search-icon {
+		width: 36rpx;
+		height: 36rpx;
+		margin-right: 16rpx;
+	}
+	.search-placeholder {
+		flex: 1;
+		font-size: 28rpx;
 		color: #8a7a6a;
 	}
 
@@ -679,6 +772,8 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
 	}
 	.empty-img {
 		width: 320rpx;
@@ -687,7 +782,7 @@
 	.empty-title {
 		margin-top: 40rpx;
 		font-size: 40rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 	.empty-desc {
@@ -703,11 +798,11 @@
 		padding-right: 64rpx;
 		padding-top: 24rpx;
 		padding-bottom: 24rpx;
-		background-color: #B05A3A;
-		border-radius: 8rpx;
+		background-color: #b05a3a;
+		border-radius: 40rpx;
 	}
 	.cta-text {
-		color: #F6F1E7;
+		color: #ffffff;
 		font-size: 30rpx;
 	}
 
@@ -717,20 +812,22 @@
 	}
 
 	.feed {
-		padding-bottom: 80rpx;
+		padding-bottom: 160rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
 	}
 	.day-block {
 		margin-top: 40rpx;
 	}
 	.day-title {
 		font-size: 34rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		margin-bottom: 20rpx;
 		padding-left: 8rpx;
 	}
 
-	/* 待确认区（B3-5 · 2026-08-26 Wave2 E） */
+	/* 待确认区 */
 	.pending-block {
 		margin-top: 24rpx;
 	}
@@ -755,33 +852,33 @@
 	}
 	.pending-btn-ghost {
 		border-width: 2rpx;
-		border-color: #B05A3A;
+		border-color: #b05a3a;
 		margin-right: 20rpx;
 	}
 	.pending-btn-solid {
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 	}
 	.pending-btn-text {
 		font-size: 26rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 	}
 	.pending-btn-solid .pending-btn-text {
-		color: #F6F1E7;
+		color: #ffffff;
 	}
 
-	/* 封面展示（B3-4 · 2026-08-26 Wave2 E） */
+	/* 封面展示 */
 	.cover-wrap {
 		margin-bottom: 20rpx;
-		border-radius: 8rpx;
+		border-radius: 16rpx;
 		overflow: hidden;
 	}
 	.cover-img {
 		width: 100%;
 		height: 280rpx;
-		background-color: #EDE5D5;
+		background-color: #ede5d5;
 	}
 
-	/* 照片条（会话照片；点开 → 反向入口） */
+	/* 照片条 */
 	.photo-strip {
 		margin-top: 20rpx;
 		display: flex;
@@ -793,139 +890,187 @@
 		height: 152rpx;
 		margin-right: 12rpx;
 		margin-bottom: 12rpx;
-		border-radius: 8rpx;
-		background-color: #EDE5D5;
+		border-radius: 12rpx;
+		background-color: #ede5d5;
 	}
 
-	/* 卡片：小圆角相纸感 + 右下撕边（border-radius 切角）+ 底部投影，不描边 */
+	/* 卡片：白色圆角 20 + 底部投影，不描边 */
 	.card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
-		padding: 28rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 32rpx;
 		margin-bottom: 24rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-		border-bottom-left-radius: 2rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
 		position: relative;
 	}
-	/* S-MO-1 操作入口：右上角 · 干净按钮（视觉规范：按钮不做旧）
-	z-index: 5 —— 2026-08-25 真机修复：标题文本节点覆盖 ⋯ 下半部（点击命中层），
-	加 z-index 保证整颗 ⋯ 可点 */
-	.card-ops {
-		position: absolute;
-		top: 8rpx;
-		right: 16rpx;
-		padding-left: 20rpx;
-		padding-right: 20rpx;
-		padding-top: 6rpx;
-		padding-bottom: 6rpx;
-		z-index: 5;
-	}
-	.card-ops-text {
-		font-size: 40rpx;
-		color: #B05A3A;
-		line-height: 40rpx;
-	}
 	.card-l1 {
-		border-top-right-radius: 2rpx;
+		border-radius: 40rpx;
 	}
 	.card-l2 {
-		margin-left: 32rpx;
-		margin-right: 8rpx;
-		border-top-right-radius: 2rpx;
+		border-radius: 32rpx;
+		margin-left: 20rpx;
 	}
 	.card-title {
-		color: #3A2E25;
-		padding-right: 96rpx; /* 2026-08-25 真机修复：避免标题文字压到右上角 ⋯ */
-	}
-	.title-l1 {
-		font-size: 36rpx;
-		font-weight: bold;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 12rpx;
 	}
 	.title-l2 {
-		font-size: 30rpx;
-		font-weight: bold;
+		font-size: 28rpx;
+		font-weight: 500;
 	}
 	.card-meta {
-		margin-top: 16rpx;
 		display: flex;
 		flex-direction: row;
+		align-items: center;
+		margin-bottom: 8rpx;
 	}
 	.meta-item {
 		font-size: 24rpx;
 		color: #8a7a6a;
-		margin-right: 24rpx;
+		margin-right: 20rpx;
 	}
 	.rust {
-		color: #B05A3A;
+		color: #b05a3a;
+	}
+	.amber {
+		color: #c4913c;
 	}
 
-	.l2-list {
-		margin-top: 20rpx;
-		border-top-width: 1rpx;
-		border-top-color: rgba(58, 46, 37, 0.15);
-		padding-top: 20rpx;
-	}
-	.l2-chip {
+	/* 语音卡：琥珀播放钮 + 波形竖条阵列 */
+	.voice-card {
 		display: flex;
 		flex-direction: row;
-		justify-content: space-between;
 		align-items: center;
-		padding-top: 12rpx;
-		padding-bottom: 12rpx;
+		padding: 20rpx;
+		background-color: rgba(196,145,60,0.14);
+		border-radius: 24rpx;
+		margin-top: 16rpx;
 	}
-	.l2-chip-title {
-		font-size: 28rpx;
-		color: #3A2E25;
+	.voice-play-btn {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		background-color: #c4913c;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
 	}
-	.l2-chip-count {
-		font-size: 24rpx;
+	.voice-play-icon {
+		width: 0;
+		height: 0;
+		border-left: 20rpx solid #ffffff;
+		border-top: 12rpx solid transparent;
+		border-bottom: 12rpx solid transparent;
+		margin-left: 6rpx;
+	}
+	.voice-wave {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 48rpx;
+	}
+	.voice-wave-bar {
+		width: 4rpx;
+		background-color: #c4913c;
+		border-radius: 2rpx;
+		margin-right: 4rpx;
+	}
+	.voice-title {
+		font-size: 26rpx;
+		color: #3a2e25;
+		font-weight: 500;
+		margin-top: 8rpx;
+	}
+	.voice-duration {
+		font-size: 22rpx;
+		color: #8a7a6a;
+		margin-left: 16rpx;
 	}
 
-	.feed-foot {
-		margin-top: 60rpx;
-		align-items: center;
+	/* 文字卡：左侧琥珀引用竖线 + 引言体 */
+	.quote-card {
 		display: flex;
+		flex-direction: row;
+		padding: 20rpx;
+		margin-top: 16rpx;
+	}
+	.quote-line {
+		width: 6rpx;
+		background-color: #c4913c;
+		border-radius: 3rpx;
+		margin-right: 20rpx;
+	}
+	.quote-content {
+		flex: 1;
+	}
+	.quote-text {
+		font-size: 28rpx;
+		color: #3a2e25;
+		line-height: 44rpx;
+		font-style: italic;
+	}
+	.quote-source {
+		margin-top: 12rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* 卡片操作菜单 */
+	.card-ops {
+		position: absolute;
+		top: 24rpx;
+		right: 24rpx;
+		width: 48rpx;
+		height: 48rpx;
+		display: flex;
+		align-items: center;
 		justify-content: center;
 	}
+	.card-ops-text {
+		font-size: 36rpx;
+		color: #8a7a6a;
+		font-weight: bold;
+	}
 
-	/* 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄） */
+	/* 回响卡片（去年今日 · 角贴 + 泛黄） */
 	.echo-card {
-		margin-top: 24rpx;
-		background-color: #F1E8D8;
-		border-radius: 8rpx;
-		padding: 28rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+		background-color: #faf6ee;
+		border-radius: 24rpx;
+		padding: 32rpx;
+		margin: 24rpx 40rpx;
 		position: relative;
-		overflow: hidden;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.08);
 	}
 	.echo-corner {
 		position: absolute;
-		top: 0;
-		right: 0;
-		background-color: #B05A3A;
-		padding-left: 28rpx;
-		padding-right: 28rpx;
-		padding-top: 8rpx;
-		padding-bottom: 8rpx;
-		border-bottom-left-radius: 12rpx;
+		top: -4rpx;
+		right: 32rpx;
+		background-color: #c4913c;
+		padding: 8rpx 20rpx;
+		border-radius: 0 0 12rpx 12rpx;
 	}
 	.echo-corner-text {
-		color: #F6F1E7;
-		font-size: 22rpx;
-		font-weight: bold;
+		font-size: 20rpx;
+		color: #ffffff;
+		font-weight: 500;
 	}
 	.echo-date {
-		font-size: 22rpx;
-		color: #b3a696;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-bottom: 12rpx;
 	}
 	.echo-text {
-		margin-top: 12rpx;
 		font-size: 30rpx;
-		color: #3A2E25;
-		line-height: 44rpx;
+		color: #3a2e25;
+		line-height: 48rpx;
+		font-style: italic;
 	}
 	.echo-meta {
-		margin-top: 12rpx;
+		margin-top: 16rpx;
 		display: flex;
 		flex-direction: row;
 	}
@@ -936,192 +1081,148 @@
 		justify-content: flex-end;
 	}
 	.echo-dismiss {
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-		border-width: 1rpx;
-		border-color: rgba(176, 90, 58, 0.6);
+		padding: 12rpx 32rpx;
 		border-radius: 24rpx;
+		background-color: rgba(176,90,58,0.1);
 	}
 	.echo-dismiss-text {
-		color: #B05A3A;
 		font-size: 24rpx;
+		color: #b05a3a;
 	}
 
-	.upload-bar {
+	/* 玻璃 TabBar（半透明白 55% + 中央＋按钮） */
+	.glass-tabbar {
 		position: fixed;
-		left: 32rpx;
-		right: 32rpx;
-		bottom: 48rpx;
-		background-color: #3A2E25;
-		border-radius: 12rpx;
-		padding: 20rpx 28rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.upload-text {
-		color: #F6F1E7;
-		font-size: 26rpx;
-	}
-
-	/* S-MO-1 拆分选片面板（2026-08-25） */
-	.split-mask {
-		position: fixed;
-		left: 0;
-		top: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(0, 0, 0, 0.45);
-		display: flex;
-		align-items: flex-end;
-		z-index: 100;
-	}
-	.split-panel {
-		width: 100%;
-		background-color: #F6F1E7;
-		border-top-left-radius: 28rpx;
-		border-top-right-radius: 28rpx;
-		padding: 32rpx 32rpx 40rpx 32rpx;
-	}
-	.split-title {
-		font-size: 34rpx;
-		color: #3A2E25;
-		font-weight: bold;
-	}
-	.split-sub {
-		font-size: 24rpx;
-		margin-top: 8rpx;
-	}
-	.split-list {
-		margin-top: 24rpx;
-		max-height: 560rpx;
-	}
-	.split-empty {
-		padding: 40rpx 0;
-		display: flex;
-		justify-content: center;
-	}
-	.split-row {
+		bottom: 60rpx;
+		left: 40rpx;
+		right: 40rpx;
+		height: 124rpx;
+		background-color: rgba(255,255,255,0.55);
+		border-radius: 62rpx;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 0;
-		border-bottom-width: 1rpx;
-		border-bottom-color: rgba(58, 46, 37, 0.08);
+		justify-content: space-around;
+		box-shadow: 0 8rpx 32rpx rgba(58,46,37,0.12);
+		padding: 0 24rpx;
 	}
-	.split-check {
+	.tabbar-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		width: 80rpx;
+		height: 80rpx;
+	}
+	.tabbar-icon {
 		width: 40rpx;
 		height: 40rpx;
-		border-radius: 20rpx;
-		border-width: 2rpx;
-		border-color: #B05A3A;
+		margin-bottom: 4rpx;
+	}
+	.tabbar-label {
+		font-size: 20rpx;
+		color: #8a7a6a;
+	}
+	.tabbar-item.active .tabbar-label {
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.tabbar-fab {
+		width: 112rpx;
+		height: 112rpx;
+		border-radius: 56rpx;
+		background-color: #b05a3a;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		margin-right: 20rpx;
+		margin-top: -40rpx;
+		box-shadow: 0 8rpx 24rpx rgba(176,90,58,0.4);
 	}
-	.split-check-on {
-		background-color: #B05A3A;
-	}
-	.split-check-mark {
-		color: #F6F1E7;
-		font-size: 26rpx;
-	}
-	.split-row-main {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-	}
-	.split-row-title {
-		font-size: 28rpx;
-		color: #3A2E25;
-	}
-	.split-row-meta {
-		font-size: 22rpx;
-		margin-top: 4rpx;
-	}
-	.split-actions {
-		margin-top: 32rpx;
-		display: flex;
-		flex-direction: row;
-	}
-	.split-btn {
-		flex: 1;
-		height: 80rpx;
-		border-radius: 40rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.split-btn-ghost {
-		border-width: 2rpx;
-		border-color: #B05A3A;
-		margin-right: 20rpx;
-	}
-	.split-btn-solid {
-		background-color: #B05A3A;
-	}
-	.split-btn-text {
-		font-size: 28rpx;
-		color: #3A2E25;
-	}
-	.split-btn-solid .split-btn-text {
-		color: #F6F1E7;
+	.tabbar-fab-icon {
+		width: 48rpx;
+		height: 48rpx;
+		color: #ffffff;
+		font-size: 48rpx;
+		font-weight: 300;
+		line-height: 48rpx;
+		text-align: center;
 	}
 
-	/* 照片详情：反向入口"属于"列表（B3-4 · 2026-08-26 Wave2 E） */
-	.photo-detail-img-wrap {
-		margin-top: 24rpx;
-		display: flex;
-		justify-content: center;
+	/* 按压态动画（scale 0.98 + 阴影收缩 200ms） */
+	.pressable {
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
-	.photo-detail-img {
-		width: 100%;
-		height: 360rpx;
-		border-radius: 12rpx;
-		background-color: #EDE5D5;
+	.pressable:active {
+		transform: scale(0.98);
+		box-shadow: 0 2rpx 8rpx rgba(58,46,37,0.08);
 	}
-	.belongs-row {
+
+	/* 拆分面板 */
+	.split-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #ffffff;
+		border-radius: 32rpx 32rpx 0 0;
+		padding: 32rpx;
+		max-height: 70vh;
+	}
+	.split-title {
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 24rpx;
+	}
+	.split-item {
+		padding: 20rpx;
+		border-radius: 16rpx;
+		background-color: #f8f7f4;
+		margin-bottom: 12rpx;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 0;
-		border-bottom-width: 1rpx;
-		border-bottom-color: rgba(58, 46, 37, 0.08);
 	}
-	.belongs-badge {
-		width: 72rpx;
-		height: 44rpx;
-		border-radius: 22rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-right: 20rpx;
-	}
-	.belongs-badge-l1 {
-		background-color: #C8B394;
-	}
-	.belongs-badge-l2 {
-		background-color: #B05A3A;
-	}
-	.belongs-badge-text {
-		color: #F6F1E7;
-		font-size: 22rpx;
-		font-weight: bold;
-	}
-	.belongs-main {
+	.split-item-text {
 		flex: 1;
+		font-size: 26rpx;
+		color: #3a2e25;
+	}
+	.split-actions {
+		margin-top: 24rpx;
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
+		justify-content: flex-end;
 	}
-	.belongs-title {
-		font-size: 28rpx;
-		color: #3A2E25;
+
+	/* 照片详情面板 */
+	.photo-detail-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #ffffff;
+		border-radius: 32rpx 32rpx 0 0;
+		padding: 32rpx;
+		max-height: 70vh;
 	}
-	.belongs-meta {
-		font-size: 22rpx;
-		margin-top: 4rpx;
+	.photo-detail-image {
+		width: 100%;
+		height: 400rpx;
+		border-radius: 16rpx;
+		margin-bottom: 24rpx;
+		background-color: #ede5d5;
+	}
+	.photo-detail-title {
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 16rpx;
+	}
+	.photo-detail-event {
+		padding: 16rpx;
+		border-radius: 12rpx;
+		background-color: #f8f7f4;
+		margin-bottom: 12rpx;
 	}
 </style>

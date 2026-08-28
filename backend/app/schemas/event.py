@@ -4,6 +4,14 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class VoiceInfo(BaseModel):
+    """语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）"""
+    url: str | None = None
+    title: str | None = None
+    duration: str | None = None
+    wave_heights: list[int] = []
+
+
 class EventOut(BaseModel):
     id: str
     level: int = Field(..., ge=0, le=3)
@@ -21,6 +29,11 @@ class EventOut(BaseModel):
     generated_by: str                   # device / cloud / cloud-llm / cloud-proto / user
     content_count: int = 0
     photo_count: int = 0
+    # 语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）
+    voice: VoiceInfo | None = None
+    # 文字卡引用（像素级 UI 还原：左侧琥珀引用竖线 + 引言体）
+    quote: str | None = None
+    quote_source: str | None = None
     # L3 生命周期（B3-2 活跃 30 天→静默→归档；读取时派生，MVP 不落库）
     lifecycle: dict | None = None       # {"state": active|silent|archived, idle_days, active_days}
 

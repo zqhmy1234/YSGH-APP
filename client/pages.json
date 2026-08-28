@@ -1,4 +1,4 @@
-{
+﻿{
   "pages": [
     {
       "path": "pages/index/index",
@@ -47,9 +47,14 @@
         "navigationStyle": "custom",
         "enablePullDownRefresh": false
       }
-    },
-    {
-      "path": "pages/debug/agg-check/agg-check",
+    },    {
+      "path": "pages/portrait/manage",
+      "style": {
+        "navigationBarTitleText": "画像管理",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },,
       "style": {
         "navigationBarTitleText": "AGG-016 自检"
       }

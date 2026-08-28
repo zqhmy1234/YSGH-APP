@@ -5,7 +5,9 @@
   "versionName": "0.1.0",
   "versionCode": "100",
   "locale": "zh-Hans",
-  "uni-app-x": {},
+  "uni-app-x": {
+    "vapor": true
+  },
   "vueVersion": "3",
   "app": {
     "distribute": {

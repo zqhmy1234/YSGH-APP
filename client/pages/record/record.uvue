@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<view class="header">
 			<text class="header-title serif">记录</text>
@@ -83,6 +83,29 @@
 		<!-- 底部 Tab -->
 		<yishu-tabbar current="record" />
 	</view>
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item  pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
+			</view>
+		</view>
+
 </template>
 
 <script lang="uts">
@@ -145,6 +168,27 @@
 			}
 		},
 		methods: {
+		/** 导航：时间轴页 */
+		goIndex(): void {
+			uni.navigateTo({ url: '/pages/index/index' })
+		},
+		/** 导航：搜索页 */
+		goSearch(): void {
+			uni.navigateTo({ url: '/pages/search/search' })
+		},
+		/** 导航：记录页 */
+		goRecord(): void {
+			uni.navigateTo({ url: '/pages/record/record' })
+		},
+		/** 导航：消息页 */
+		goMessages(): void {
+			uni.navigateTo({ url: '/pages/messages/messages' })
+		},
+		/** 导航：我的页 */
+		goProfile(): void {
+			uni.navigateTo({ url: '/pages/profile/profile' })
+		},
+
 			switchMode(m: string): void {
 				this.mode = m
 			},
@@ -374,9 +418,9 @@
 <style>
 	.page {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
 		padding-top: 88rpx;
 		padding-bottom: 140rpx;
 	}
@@ -389,7 +433,7 @@
 	}
 	.header-title {
 		font-size: 52rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		letter-spacing: 6rpx;
 	}
@@ -417,14 +461,14 @@
 		border-radius: 8rpx;
 	}
 	.seg-active {
-		background-color: #FBF7EF;
+		background-color: #ffffff;
 	}
 	.seg-text {
 		font-size: 28rpx;
 		color: #8a7a6a;
 	}
 	.seg-text-active {
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 
@@ -434,12 +478,12 @@
 		flex-direction: column;
 	}
 	.text-input {
-		background-color: #FBF7EF;
+		background-color: #ffffff;
 		border-radius: 8rpx;
 		padding: 24rpx;
 		min-height: 280rpx;
 		font-size: 30rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
 	}
 	.text-actions {
@@ -458,11 +502,11 @@
 		padding-right: 48rpx;
 		padding-top: 18rpx;
 		padding-bottom: 18rpx;
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 		border-radius: 8rpx;
 	}
 	.btn-text {
-		color: #F6F1E7;
+		color: #f8f7f4;
 		font-size: 28rpx;
 	}
 
@@ -493,14 +537,14 @@
 		margin-bottom: 12rpx;
 	}
 	.tag-active {
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 	}
 	.tag-text {
 		font-size: 24rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 	}
 	.tag-active .tag-text {
-		color: #F6F1E7;
+		color: #f8f7f4;
 	}
 
 	/* 语音面板 */
@@ -519,18 +563,18 @@
 		width: 160rpx;
 		height: 160rpx;
 		border-radius: 80rpx;
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 		align-items: center;
 		justify-content: center;
 		display: flex;
 		box-shadow: 0 8rpx 20rpx rgba(176, 90, 58, 0.4);
 	}
 	.mic-recording {
-		background-color: #3A2E25;
+		background-color: #3a2e25;
 	}
 	.mic-icon {
 		font-size: 64rpx;
-		color: #F6F1E7;
+		color: #f8f7f4;
 	}
 	.record-hint {
 		margin-top: 24rpx;
@@ -540,7 +584,7 @@
 	.record-timer {
 		margin-top: 12rpx;
 		font-size: 40rpx;
-		color: #B05A3A;
+		color: #b05a3a;
 		font-weight: bold;
 	}
 	.center-box {
@@ -562,12 +606,12 @@
 	}
 	.transcript-title {
 		font-size: 30rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 	.emotion-chip {
 		font-size: 24rpx;
-		color: #B05A3A;
+		color: #b05a3a;
 		background-color: #F3E8DC;
 		padding-left: 16rpx;
 		padding-right: 16rpx;
@@ -594,7 +638,7 @@
 		color: #8a7a6a;
 	}
 	.resume-btn {
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 		border-radius: 24rpx;
 		padding-left: 28rpx;
 		padding-right: 28rpx;
@@ -602,7 +646,7 @@
 		padding-bottom: 10rpx;
 	}
 	.resume-text {
-		color: #F6F1E7;
+		color: #f8f7f4;
 		font-size: 26rpx;
 	}
 	/* J-1/J-3：音频事件/噪音/段级合并提示 */

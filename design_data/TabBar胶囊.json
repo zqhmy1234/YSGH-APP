@@ -1,0 +1,224 @@
+{
+  "filename": "TabBar胶囊.svg",
+  "filepath": "C:\\Users\\ghf\\Downloads\\忆述光华 · W1 时间轴页方向小样\\TabBar胶囊.svg",
+  "width": 350.0,
+  "height": 62.0,
+  "viewBox": null,
+  "elements": [
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 350.0,
+        "height": 62.0
+      },
+      "x": 0,
+      "y": 0,
+      "width": 350.0,
+      "height": 62.0,
+      "rx": 31.0,
+      "ry": 31.0,
+      "fill": "#f6f1e7bf",
+      "stroke": null
+    },
+    {
+      "type": "Circle",
+      "depth": 0,
+      "bbox": {
+        "x": 17.5,
+        "y": 16.0,
+        "width": 15.0,
+        "height": 15.0
+      },
+      "cx": 25.0,
+      "cy": 23.5,
+      "rx": 7.5,
+      "ry": 7.5,
+      "fill": null
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 22.33,
+        "y": 20.83,
+        "width": 5.33,
+        "height": 5.33
+      },
+      "fill": "#b05a3a",
+      "stroke": null,
+      "path_length": 400
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 10.75,
+        "y": 38.06,
+        "width": 28.6,
+        "height": 9.28
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 10.75,
+            "y": 38.06,
+            "width": 28.6,
+            "height": 9.28
+          },
+          "fill": "#b05a3a",
+          "stroke": null,
+          "path_length": 11936
+        }
+      ]
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 90.5,
+        "y": 16.0,
+        "width": 15.0,
+        "height": 15.0
+      },
+      "fill": "#8a7a6a",
+      "stroke": null,
+      "path_length": 3244
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 93.25,
+        "y": 39.22,
+        "width": 8.46,
+        "height": 7.28
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 93.25,
+            "y": 39.22,
+            "width": 8.46,
+            "height": 7.28
+          },
+          "fill": "#b3a696",
+          "stroke": null,
+          "path_length": 1570
+        }
+      ]
+    },
+    {
+      "type": "Circle",
+      "depth": 0,
+      "bbox": {
+        "x": 255.33,
+        "y": 16.83,
+        "width": 10.83,
+        "height": 10.83
+      },
+      "cx": 260.75,
+      "cy": 22.25,
+      "rx": 5.42,
+      "ry": 5.42,
+      "fill": null
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 264.08,
+        "y": 25.58,
+        "width": 6.25,
+        "height": 6.25
+      },
+      "fill": "#8a7a6a",
+      "stroke": null,
+      "path_length": 1143
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 252.39,
+        "y": 38.09,
+        "width": 18.99,
+        "height": 9.23
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 252.39,
+            "y": 38.09,
+            "width": 18.99,
+            "height": 9.23
+          },
+          "fill": "#b3a696",
+          "stroke": null,
+          "path_length": 13964
+        }
+      ]
+    },
+    {
+      "type": "Circle",
+      "depth": 0,
+      "bbox": {
+        "x": 326.67,
+        "y": 16.83,
+        "width": 6.67,
+        "height": 6.67
+      },
+      "cx": 330.0,
+      "cy": 20.17,
+      "rx": 3.33,
+      "ry": 3.33,
+      "fill": null
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 322.49,
+        "y": 25.17,
+        "width": 15.02,
+        "height": 5.84
+      },
+      "fill": "#8a7a6a",
+      "stroke": null,
+      "path_length": 1675
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 320.41,
+        "y": 38.06,
+        "width": 18.88,
+        "height": 9.27
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 320.41,
+            "y": 38.06,
+            "width": 18.88,
+            "height": 9.27
+          },
+          "fill": "#b3a696",
+          "stroke": null,
+          "path_length": 11848
+        }
+      ]
+    }
+  ]
+}

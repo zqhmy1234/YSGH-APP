@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<view class="page">
 		<view class="header">
 			<text class="header-title serif">冷启动访谈</text>
@@ -46,6 +46,29 @@
 			</view>
 		</view>
 	</view>
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item  pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item active pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
+			</view>
+		</view>
+
 </template>
 
 <script lang="uts">
@@ -84,6 +107,27 @@
 			})
 		},
 		methods: {
+		/** 导航：时间轴页 */
+		goIndex(): void {
+			uni.navigateTo({ url: '/pages/index/index' })
+		},
+		/** 导航：搜索页 */
+		goSearch(): void {
+			uni.navigateTo({ url: '/pages/search/search' })
+		},
+		/** 导航：记录页 */
+		goRecord(): void {
+			uni.navigateTo({ url: '/pages/record/record' })
+		},
+		/** 导航：消息页 */
+		goMessages(): void {
+			uni.navigateTo({ url: '/pages/messages/messages' })
+		},
+		/** 导航：我的页 */
+		goProfile(): void {
+			uni.navigateTo({ url: '/pages/profile/profile' })
+		},
+
 			beginInterview(): void {
 				this.step = 'ask'
 			},
@@ -128,9 +172,9 @@
 <style>
 	.page {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
 		padding-top: 88rpx;
 	}
 	.serif {
@@ -142,7 +186,7 @@
 	}
 	.header-title {
 		font-size: 52rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		letter-spacing: 6rpx;
 	}
@@ -154,14 +198,14 @@
 
 	/* 披露 */
 	.disclose-card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
 		padding: 32rpx;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
 	}
 	.disclose-title {
 		font-size: 34rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		margin-bottom: 20rpx;
 	}
@@ -187,17 +231,17 @@
 	}
 	.q-title {
 		font-size: 30rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 		margin-bottom: 12rpx;
 	}
 	.q-input {
-		background-color: #FBF7EF;
+		background-color: #ffffff;
 		border-radius: 8rpx;
 		padding: 20rpx;
 		min-height: 140rpx;
 		font-size: 28rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
 	}
 	.ask-actions {
@@ -209,14 +253,14 @@
 
 	/* 复述确认 */
 	.done-card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
 		padding: 32rpx;
 		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
 	}
 	.done-title {
 		font-size: 36rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 		font-weight: bold;
 	}
 	.done-confirm {
@@ -233,19 +277,19 @@
 		padding-right: 44rpx;
 		padding-top: 16rpx;
 		padding-bottom: 16rpx;
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 		border-radius: 8rpx;
 	}
 	.btn-text {
-		color: #F6F1E7;
+		color: #f8f7f4;
 		font-size: 28rpx;
 	}
 	.ghost {
 		background-color: transparent;
 		border-width: 1rpx;
-		border-color: #B05A3A;
+		border-color: #b05a3a;
 	}
 	.ghost-text {
-		color: #B05A3A;
+		color: #b05a3a;
 	}
 </style>
