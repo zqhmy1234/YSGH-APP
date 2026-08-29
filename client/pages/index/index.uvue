@@ -221,10 +221,10 @@
 		voiceTotalSecValue,
 		fmtVoiceTime
 	} from '@/utils/audio_player'
-	import { formatMonthDay } from '@/utils/time'
+	import { formatMonthDay, parseIsoMs } from '@/utils/time'
 	import { uploadBatch, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
 	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
-	import { showErrorToast } from '@/utils/api'
+	import { showErrorToast, fetchDailySummary, DailySummary } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play'
@@ -330,6 +330,7 @@
 		ensureLogin().then((ok: boolean) => {
 			console.log('[dbg-index] ensureLogin -> ' + ok)
 			// 卡PA D2：命中缓存先渲染（消除切页闪屏），再后台静默刷新、刷新完浅替换
+			loadHeroSubs()  // R9-7：hero 副标题 API 拉取（与 timeline 刷新解耦）
 			const hit = getCachedTimeline()
 			if (hit != null) {
 				console.log('[dbg-index] timeline cache hit, age=' + ((Date.now() - hit.fetchedAt) / 1000).toFixed(0) + 's -> instant render')
@@ -458,7 +459,6 @@
 		const firstRender = !loaded.value
 		days.value = groupDays(events)
 		attachPhotos()
-		updateHeroSubs(events)
 		loaded.value = true
 		refreshing.value = false
 		// P-4 内容出现时间埋点：onLoad → 首帧内容上屏（logcat [perf] 行）
@@ -467,33 +467,33 @@
 		}
 	}
 
-	// R8：hero 副标题数据驱动（timeline 倒序 → events[0] 即最新事件；条数=ΣcontentCount，
-	// 全 0 时退化为事件数；空列表清空不残留旧文案——峰宝 09-06「模板 UI」投诉修复）
-	function updateHeroSubs(events: Array<TimelineEvent>): void {
-		if (events.length == 0) {
-			heroSub1.value = ''
-			heroSub2.value = ''
-			return
-		}
-		let total = 0
-		for (let i = 0; i < events.length; i++) {
-			total += events[i].contentCount
-		}
-		if (total == 0) {
-			total = events.length
-		}
-		const newest = events[0]
-		const d = new Date(newest.startTime)
-		let hh = d.getHours().toString()
-		if (hh.length < 2) {
-			hh = '0' + hh
-		}
-		let mi = d.getMinutes().toString()
-		if (mi.length < 2) {
-			mi = '0' + mi
-		}
-		heroSub1.value = (d.getMonth() + 1).toString() + '月 · ' + total.toString() + ' 条新记忆'
-		heroSub2.value = newest.title + ' · ' + (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + hh + ':' + mi
+	// R9-7（Q5 拍板）：hero 副标题 API 化——GET /stats/daily-summary 拉取，
+	// 替代 R8 本地 timeline 全量计算。失败/空数据清空文案（诚实，不造假不残留——
+	// 峰宝 09-06「模板 UI」投诉口径延续）。count=0 时 sub1 退化用「暂无新记忆」。
+	function loadHeroSubs(): void {
+		fetchDailySummary().then((s: DailySummary | null) => {
+			if (s == null) {
+				heroSub1.value = ''
+				heroSub2.value = ''
+				return
+			}
+			if (s.count == 0 || s.latestEventText == '' || s.latestEventTime == '') {
+				heroSub1.value = '暂无新记忆'
+				heroSub2.value = ''
+				return
+			}
+			const d = new Date(parseIsoMs(s.latestEventTime))
+			let hh = d.getHours().toString()
+			if (hh.length < 2) {
+				hh = '0' + hh
+			}
+			let mi = d.getMinutes().toString()
+			if (mi.length < 2) {
+				mi = '0' + mi
+			}
+			heroSub1.value = (d.getMonth() + 1).toString() + '月 · ' + s.count.toString() + ' 条新记忆'
+			heroSub2.value = s.latestEventText + ' · ' + (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + hh + ':' + mi
+		})
 	}
 
 	// 卡PA D2/R2：拉取结果统一渲染入口（更新数据源引用 + lastFetchAt + 空状态守门）

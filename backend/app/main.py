@@ -27,6 +27,7 @@ from app.api import (  # noqa: E501
     interview,
     messages,
     search,
+    stats,
     sync,
     upload,
     wechat,
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(wechat.router)
     app.include_router(messages.router)
     app.include_router(upload.router)
+    app.include_router(stats.router)  # R9-7 hero 副标题 API 化（Q5 拍板）
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

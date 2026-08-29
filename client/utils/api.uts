@@ -177,6 +177,46 @@ export function fetchEventStats(): Promise<EventStats | null> {
 	})
 }
 
+/** hero 副标题端点：GET /api/v1/stats/daily-summary（R9-7 · Q5 拍板） */
+export const PATH_DAILY_SUMMARY: string = '/api/v1/stats/daily-summary'
+
+/** hero 副标题投影（R9-7：count=事件关联 distinct 内容数；latest=最新非软删事件） */
+export class DailySummary {
+	count: number
+	latestEventText: string
+	latestEventTime: string
+
+	constructor(count: number, latestEventText: string, latestEventTime: string) {
+		this.count = count
+		this.latestEventText = latestEventText
+		this.latestEventTime = latestEventTime
+	}
+}
+
+/**
+ * GET /stats/daily-summary：hero 副标题数据源（onLoad 拉取替代本地计算）。
+ * 失败/空态 resolve(null)——调用方判空清空 hero 文案，不造假数据。
+ */
+export function fetchDailySummary(): Promise<DailySummary | null> {
+	return new Promise<DailySummary | null>((resolve) => {
+		get(PATH_DAILY_SUMMARY).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const cnt = d.getNumber('count') ?? 0
+			const text = d.getString('latest_event_text') ?? ''
+			const time = d.getString('latest_event_time') ?? ''
+			resolve(new DailySummary(cnt, text, time))
+		})
+	})
+}
+
 /**
  * GET /messages/unread-count：未读数单查询（性能卡 PE：取代 play.uts fetchUnreadCount
  * 游标翻全量累加的调用方迁移用，本卡不改 play.uts/messages.uvue——域外）。
