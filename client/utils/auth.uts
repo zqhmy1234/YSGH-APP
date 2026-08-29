@@ -53,6 +53,7 @@ export class AuthError extends Error {
 
 /** 微信 mock 登录（dev 环境 code=dev-client，后端 MOCK 模式签发） */
 export function wechatLogin(): Promise<boolean> {
+	console.log('[dbg-auth] wechatLogin fire POST /api/v1/auth/wechat')
 	return new Promise<boolean>((resolve) => {
 		uni.request({
 			url: getBaseUrl() + '/api/v1/auth/wechat',
@@ -62,6 +63,7 @@ export function wechatLogin(): Promise<boolean> {
 				device_id: DEVICE_ID
 			},
 			success: (res) => {
+				console.log('[dbg-auth] wechatLogin success status=' + res.statusCode)
 				if (res.statusCode === 200) {
 					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
@@ -75,6 +77,7 @@ export function wechatLogin(): Promise<boolean> {
 				resolve(false)
 			},
 			fail: () => {
+				console.log('[dbg-auth] wechatLogin FAIL')
 				resolve(false)
 			}
 		})
@@ -103,8 +106,10 @@ let _loginInflight: Promise<boolean> | null = null
 export function ensureLogin(): Promise<boolean> {
 	const token = getToken()
 	if (token != '') {
+		console.log('[dbg-auth] ensureLogin: cached token')
 		return Promise.resolve(true)
 	}
+	console.log('[dbg-auth] ensureLogin: no token, inflight=' + (_loginInflight != null))
 	let p = _loginInflight
 	if (p == null) {
 		p = wechatLogin()
@@ -126,6 +131,7 @@ export function ensureLogin(): Promise<boolean> {
 let _refreshInflight: Promise<boolean> | null = null
 
 export function refreshToken(): Promise<boolean> {
+	console.log('[dbg-auth] refreshToken called, inflight=' + (_refreshInflight != null))
 	let p = _refreshInflight
 	if (p != null) {
 		return p
@@ -141,6 +147,7 @@ export function refreshToken(): Promise<boolean> {
 function doRefresh(): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
 		const rt = getRefreshToken()
+		console.log('[dbg-auth] doRefresh, has_refresh=' + (rt != ''))
 		if (rt == '') {
 			// 无 refresh_token → 重新登录
 			wechatLogin().then((ok: boolean) => {

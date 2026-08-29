@@ -61,59 +61,99 @@ function buildHeader(): UTSJSONObject {
 
 function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
-		uni.request({
-			url: getBaseUrl() + path,
-			method: method,
-			data: data == null ? {} : data,
-			header: buildHeader(),
-			timeout: REQUEST_TIMEOUT_MS,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					// 2026-08-26（H 建议，集成代劳）：后端不可达/网关返回裸值时 res.data 非对象，
-					// 直接强转 UTSJSONObject 会在主线程 FATAL（app 启动崩溃根因）——先守卫再转换
-					if (res.data != null && typeof res.data == 'object') {
-						resolve(res.data as UTSJSONObject)
-					} else {
-						resolve(null)
-					}
-					return
-				}
-				// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
-				if (res.statusCode >= 500) {
-					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
-				}
-				const body = (res.data != null && typeof res.data == 'object')
-					? (res.data as UTSJSONObject)
-					: ({} as UTSJSONObject)
-				const err = new ApiError(
-					body.getString('code') ?? 'UNKNOWN',
-					body.getString('message') ?? ('HTTP ' + res.statusCode),
-					res.statusCode
-				)
-				// 401 → refresh 一次后重放；refresh 失败清 token
-				if (res.statusCode === 401 && !retried) {
-					refreshToken().then((ok: boolean) => {
-						if (ok) {
-							doRequest(path, method, data, true).then((b: UTSJSONObject | null) => {
-								resolve(b)
-							})
-						} else {
-							clearToken()
-							showErrorToast(err)
-							resolve(null)
-						}
-					})
-				} else {
-					showErrorToast(err)
-					resolve(null)
-				}
-			},
-			fail: () => {
-				captureException('network fail: ' + path, 'api.network', null)
-				showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
-				resolve(null)
+		let settled = false
+		const finish = (val: UTSJSONObject | null): void => {
+			if (settled) {
+				return
 			}
-		})
+			settled = true
+			clearTimeout(timer)
+			resolve(val)
+		}
+		// 5.24 蒸汽模式下 uni.request 的 timeout 参数与 GET 传 data:{} 空对象可能被桥接吞掉
+		// （不派发、不回调），故 timeout 改 JS 层看门狗、GET 且无 body 时省略 data 键与 Content-Type
+		const timer = setTimeout(() => {
+			console.log('[watchdog] timeout ' + path)
+			finish(null)
+		}, REQUEST_TIMEOUT_MS + 5000)
+		console.log('[dbg-req] fire ' + method + ' ' + getBaseUrl() + path)
+		const onSuccess = (res: any): void => {
+			console.log('[dbg-req] ok ' + path + ' status=' + res.statusCode)
+			if (res.statusCode === 200) {
+				// 2026-08-26（H 建议，集成代劳）：后端不可达/网关返回裸值时 res.data 非对象，
+				// 直接强转 UTSJSONObject 会在主线程 FATAL（app 启动崩溃根因）——先守卫再转换
+				if (res.data != null && typeof res.data == 'object') {
+					finish(res.data as UTSJSONObject)
+				} else {
+					finish(null)
+				}
+				return
+			}
+			// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
+			if (res.statusCode >= 500) {
+				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+			}
+			const body = (res.data != null && typeof res.data == 'object')
+				? (res.data as UTSJSONObject)
+				: ({} as UTSJSONObject)
+			const err = new ApiError(
+				body.getString('code') ?? 'UNKNOWN',
+				body.getString('message') ?? ('HTTP ' + res.statusCode),
+				res.statusCode
+			)
+			// 401 → refresh 一次后重放；refresh 失败清 token
+			if (res.statusCode === 401 && !retried) {
+				refreshToken().then((ok: boolean) => {
+					if (ok) {
+						doRequest(path, method, data, true).then((b: UTSJSONObject | null) => {
+							finish(b)
+						})
+					} else {
+						clearToken()
+						showErrorToast(err)
+						finish(null)
+					}
+				})
+			} else {
+				showErrorToast(err)
+				finish(null)
+			}
+		}
+		const onFail = (): void => {
+			console.log('[dbg-req] FAIL ' + path)
+			captureException('network fail: ' + path, 'api.network', null)
+			showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
+			finish(null)
+		}
+		const onComplete = (): void => {
+			console.log('[dbg-req] complete ' + path)
+		}
+		if (method === 'GET') {
+			// GET 无 body：省略 data 键 + 仅带 Authorization（去 Content-Type），贴近裸调用可通形态
+			const header: UTSJSONObject = {}
+			const token = getToken()
+			if (token != '') {
+				header.set('Authorization', 'Bearer ' + token)
+			}
+			uni.request({
+				url: getBaseUrl() + path,
+				method: 'GET',
+				header: header,
+				complete: onComplete,
+				success: onSuccess,
+				fail: onFail
+			})
+		} else {
+			uni.request({
+				url: getBaseUrl() + path,
+				method: method,
+				data: data,
+				header: buildHeader(),
+				complete: onComplete,
+				success: onSuccess,
+				fail: onFail
+			})
+		}
 	})
 }
 
@@ -124,42 +164,72 @@ export function request(path: string, method: Method, data: UTSJSONObject | null
 
 function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<HttpResult> {
 	return new Promise<HttpResult>((resolve) => {
-		uni.request({
-			url: getBaseUrl() + path,
-			method: method,
-			data: data == null ? {} : data,
-			header: buildHeader(),
-			timeout: REQUEST_TIMEOUT_MS,
-			success: (res) => {
-				// res.data 对象守卫保留（2026-08-26 H 建议：裸值强转 UTSJSONObject 会在主线程 FATAL）
-				const body: UTSJSONObject | null = (res.data != null && typeof res.data == 'object')
-					? (res.data as UTSJSONObject)
-					: null
-				// 5xx 服务端异常 → Sentry 上报（与 request 同噪音闸门；4xx 业务错误不打扰）
-				if (res.statusCode >= 500) {
-					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
-				}
-				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
-				if (res.statusCode === 401 && !retried) {
-					refreshToken().then((ok: boolean) => {
-						if (ok) {
-							doRawRequest(path, method, data, true).then((r: HttpResult) => {
-								resolve(r)
-							})
-						} else {
-							clearToken()
-							resolve(new HttpResult(401, body))
-						}
-					})
-					return
-				}
-				resolve(new HttpResult(res.statusCode, body))
-			},
-			fail: () => {
-				captureException('network fail: ' + path, 'api.network', null)
-				resolve(new HttpResult(0, null))
+		let settled = false
+		const finish = (val: HttpResult): void => {
+			if (settled) {
+				return
 			}
-		})
+			settled = true
+			clearTimeout(timer)
+			resolve(val)
+		}
+		// 同 doRequest：5.24 蒸汽模式下 timeout / GET 空 data 可能被桥接吞掉 → 看门狗 + 省略 data 键
+		const timer = setTimeout(() => {
+			console.log('[watchdog] timeout ' + path)
+			finish(new HttpResult(0, null))
+		}, REQUEST_TIMEOUT_MS + 5000)
+		const onSuccess = (res: any): void => {
+			// res.data 对象守卫保留（2026-08-26 H 建议：裸值强转 UTSJSONObject 会在主线程 FATAL）
+			const body: UTSJSONObject | null = (res.data != null && typeof res.data == 'object')
+				? (res.data as UTSJSONObject)
+				: null
+			// 5xx 服务端异常 → Sentry 上报（与 request 同噪音闸门；4xx 业务错误不打扰）
+			if (res.statusCode >= 500) {
+				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+			}
+			// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
+			if (res.statusCode === 401 && !retried) {
+				refreshToken().then((ok: boolean) => {
+					if (ok) {
+						doRawRequest(path, method, data, true).then((r: HttpResult) => {
+							finish(r)
+						})
+					} else {
+						clearToken()
+						finish(new HttpResult(401, body))
+					}
+				})
+				return
+			}
+			finish(new HttpResult(res.statusCode, body))
+		}
+		const onFail = (): void => {
+			captureException('network fail: ' + path, 'api.network', null)
+			finish(new HttpResult(0, null))
+		}
+		if (method === 'GET') {
+			const header: UTSJSONObject = {}
+			const token = getToken()
+			if (token != '') {
+				header.set('Authorization', 'Bearer ' + token)
+			}
+			uni.request({
+				url: getBaseUrl() + path,
+				method: 'GET',
+				header: header,
+				success: onSuccess,
+				fail: onFail
+			})
+		} else {
+			uni.request({
+				url: getBaseUrl() + path,
+				method: method,
+				data: data,
+				header: buildHeader(),
+				success: onSuccess,
+				fail: onFail
+			})
+		}
 	})
 }
 

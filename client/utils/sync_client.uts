@@ -604,7 +604,13 @@ export function onNetworkRestored(cb: NetRestoredListener): void {
 /** 应用启动挂接：2h 定时 + 网络恢复即补推（幂等，App.onLaunch 调用一次） */
 export function initSync(): void {
 	startPeriodicSync()
-	registerBackgroundSync()
+	// 标准基座无 androidx.work / UTSAndroid 全局 → registerBackgroundSync 抛 ReferenceError，
+	// 包 try/catch 降级为仅前台定时同步（插件自身已有标准基座降级分支，此处兜住调用链），不阻断启动
+	try {
+		registerBackgroundSync()
+	} catch (e) {
+		console.log('[yishu] sync registerBackgroundSync 标准基座降级: ' + e)
+	}
 	// 网络恢复（wifi/蜂窝/有线）→ 解除暂停并补跑同步链路（App 存活期间）
 	uni.onNetworkStatusChange((res) => {
 		if (res.isConnected) {
