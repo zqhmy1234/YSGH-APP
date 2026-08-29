@@ -1,93 +1,105 @@
-﻿<template>
+<template>
 	<view class="page">
-		<view class="header">
-			<text class="header-title serif">搜索</text>
-			<text class="header-sub">找回一段记忆</text>
-		</view>
-
-		<!-- 搜索框 + 提交（T-SR-1） -->
-		<view class="search-bar">
+		<!-- 搜索框（设计稿: x=20 y=120 350x48 rx=24，琥珀描边#b0593b 60%） -->
+		<view class="search-box">
+			<view class="search-magnifier">
+				<view class="search-magnifier-ring"></view>
+				<view class="search-magnifier-handle"></view>
+			</view>
 			<input
 				class="search-input"
-				v-model="query"
-				placeholder="试着描述：上周和妈妈吃饭…"
+				v-model="keyword"
+				placeholder="搜索记忆、照片、主题…"
+				placeholder-class="search-placeholder"
 				confirm-type="search"
 				@confirm="doSearch"
 			/>
-			<view class="search-btn" @tap="doSearch">
-				<text class="search-btn-text">搜索</text>
+			<view v-if="keyword != ''" class="search-clear pressable" @tap="clearKeyword">
+				<text class="search-clear-icon">×</text>
+			</view>
+			<view class="search-voice">
+				<view class="search-mic-capsule"></view>
+				<view class="search-mic-stem"></view>
+				<view class="search-mic-base"></view>
 			</view>
 		</view>
 
-		<!-- 以图搜图入口（T-SR-3） -->
-		<view class="image-row">
-			<text class="muted">以图搜图：</text>
-			<view class="image-btn" @tap="pickImage">
-				<text class="image-btn-text">选择照片</text>
+		<!-- 筛选标签（设计稿: y=184 42x33 rx=16.5，激活态#b0593b 12%） -->
+		<view class="filter-row">
+			<view
+				v-for="(f, idx) in filters"
+				:key="idx"
+				class="filter-tag pressable"
+				:class="{ 'filter-tag-active': activeFilter === idx }"
+				@tap="setFilter(idx)"
+			>
+				<text class="filter-text" :class="{ 'filter-text-active': activeFilter === idx }">{{ f }}</text>
 			</view>
-			<image v-if="queryImage != ''" class="query-thumb" :src="queryImage" mode="aspectFill" />
 		</view>
 
-		<!-- 降级提示（T-SR-4） -->
-		<view v-if="degraded" class="degraded-bar">
-			<text class="degraded-text">检索服务降级中，结果可能不完整</text>
-		</view>
+		<!-- 结果区 -->
+		<scroll-view class="result-list" scroll-y>
+			<!-- 结果计数（设计稿: y=235.8 #8a7a6a） -->
+			<text class="result-count">{{ resultCountText() }}</text>
 
-		<!-- 加载态 -->
-		<view v-if="loading" class="center-box">
-			<text class="muted">正在翻找…</text>
-		</view>
-
-		<!-- 空结果 -->
-		<view v-else-if="searched && outcome != null && outcome.hits.length === 0" class="center-box">
-			<text class="empty-title serif">没有找到</text>
-			<text class="empty-desc">换个说法试试，或选一张照片搜索</text>
-		</view>
-
-		<!-- 结果列表（T-SR-2 混合卡片 + 溯源） -->
-		<scroll-view v-else-if="outcome != null" class="result-list">
-			<view v-if="outcome.rewrittenQuery != '' && outcome.rewrittenQuery != outcome.query" class="rewrite-line">
-				<text class="muted">理解为你说的：{{ outcome.rewrittenQuery }}</text>
-			</view>
-			<view v-for="hit in outcome.hits" :key="hit.contentId" class="hit-card pressable" @tap="onHitTap(hit)">
-				<view class="hit-head">
-					<text class="hit-type">{{ contentTypeCn(hit.contentType) }}</text>
-					<text v-if="hit.eventTitle != ''" class="hit-event">{{ hit.eventTitle }}</text>
-					<text class="hit-score">{{ scorePct(hit.score) }}%</text>
+			<!-- 语音卡（设计稿: y=258 350x133 rx=20，语音区#c4913c 14%） -->
+			<view v-for="(item, idx) in voiceResults" :key="'v' + idx" class="result-card pressable" @tap="openResult(item)">
+				<view class="voice-zone">
+					<view class="voice-play-btn pressable" :class="{ 'is-playing': playingId === item.id }" @tap.stop="playVoice(item)">
+						<view v-if="playingId !== item.id" class="voice-play-triangle"></view>
+						<view v-else class="voice-pause">
+							<view class="voice-pause-bar"></view>
+							<view class="voice-pause-bar"></view>
+						</view>
+					</view>
+					<view class="voice-wave">
+						<view v-for="(h, i) in item.waveHeights" :key="i" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+					</view>
 				</view>
-				<text v-if="hit.text != ''" class="hit-text">{{ hit.text }}</text>
-				<view class="hit-meta">
-					<text v-if="hit.place != ''" class="meta-item">{{ hit.place }}</text>
-					<text v-if="hit.takenAt != ''" class="meta-item">{{ shortDate(hit.takenAt) }}</text>
-				</view>
-				<view v-if="hit.trace != ''" class="trace-box">
-					<text class="trace-label">命中依据</text>
-					<text class="trace-text">{{ hit.trace }}</text>
+				<text class="voice-title">{{ item.title }}</text>
+				<view class="result-meta voice-card-meta">
+					<text class="result-meta-text">{{ item.meta }}</text>
 				</view>
 			</view>
-			<view class="result-foot">
-				<text class="muted">共 {{ outcome.total }} 条 · {{ outcome.latencyMs }}ms</text>
+
+			<!-- 文字卡（设计稿: y=404 350x109 rx=20，引用区#c4913c 10%，引用竖线#c4913c） -->
+			<view v-for="(item, idx) in textResults" :key="'t' + idx" class="result-card pressable" @tap="openResult(item)">
+				<view class="quote-zone">
+					<view class="quote-line"></view>
+					<view class="quote-content">
+						<text class="quote-text">{{ item.text }}</text>
+					</view>
+				</view>
+				<view class="result-meta quote-card-meta">
+					<text class="result-meta-text">{{ item.meta }}</text>
+				</view>
+			</view>
+
+			<!-- 空状态 -->
+			<view v-if="voiceResults.length === 0 && textResults.length === 0" class="empty-state">
+				<text class="empty-icon">🔍</text>
+				<text class="empty-text">{{ emptyText() }}</text>
 			</view>
 		</scroll-view>
 
-		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<!-- 玻璃 TabBar（设计稿: 350x62 rx=31 #f6f1e7bf，与其他页面保持一致） -->
 		<view class="glass-tabbar">
-			<view class="tabbar-item  pressable" @tap="goIndex">
+			<view class="tabbar-item pressable" @tap="goIndex">
 				<text class="tabbar-icon">🏠</text>
 				<text class="tabbar-label">时间轴</text>
 			</view>
-			<view class="tabbar-item active pressable" @tap="goSearch">
-				<text class="tabbar-icon">🔍</text>
-				<text class="tabbar-label">搜索</text>
+			<view class="tabbar-item pressable" @tap="goAI">
+				<text class="tabbar-icon">✨</text>
+				<text class="tabbar-label">AI</text>
 			</view>
 			<view class="tabbar-fab pressable" @tap="goRecord">
 				<text class="tabbar-fab-icon">+</text>
 			</view>
-			<view class="tabbar-item  pressable" @tap="goMessages">
-				<text class="tabbar-icon">💬</text>
-				<text class="tabbar-label">消息</text>
+			<view class="tabbar-item active pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label tabbar-label-active">搜索</text>
 			</view>
-			<view class="tabbar-item  pressable" @tap="goProfile">
+			<view class="tabbar-item pressable" @tap="goProfile">
 				<text class="tabbar-icon">👤</text>
 				<text class="tabbar-label">我的</text>
 			</view>
@@ -96,317 +108,506 @@
 </template>
 
 <script setup lang="uts">
-	import { onLoad } from '@dcloudio/uni-app'
-	import { ensureLogin } from '@/utils/auth'
-	import { searchText, searchByImage, SearchOutcome, contentTypeCn as formatContentTypeCn } from '@/utils/search_api'
-	import { showErrorToast } from '@/utils/api'
-	import { shortDate as formatShortDate } from '@/utils/time'
+	import { ref, computed } from 'vue'
 
 	// 响应式数据
-	let query = ''
-	let queryImage = ''
-	let loading = false
-	let searched = false
-	let degraded = false
-	let outcome: SearchOutcome | null = null
+	let keyword = ref('')
+	let activeFilter = ref(0)
+	let playingId = ref('')
+	let filters = ['全部', '照片', '语音', '文字']
 
-	// 搜索结果点击
-function onHitTap(hit: any): void {
-	uni.showToast({ title: '查看: ' + (hit.text != '' ? hit.text.substring(0, 20) : hit.contentType), icon: 'none' })
-}
+	class VoiceResult {
+		id: string
+		title: string
+		meta: string
+		waveHeights: Array<number>
+		constructor(id: string, title: string, meta: string, waveHeights: Array<number>) {
+			this.id = id
+			this.title = title
+			this.meta = meta
+			this.waveHeights = waveHeights
+		}
+	}
 
-// 生命周期
-	onLoad(() => {
-		ensureLogin().then((ok: boolean) => {
-			if (!ok) {
-				showErrorToast(new Error('登录失败，请重试'))
+	class TextResult {
+		id: string
+		text: string
+		meta: string
+		constructor(id: string, text: string, meta: string) {
+			this.id = id
+			this.text = text
+			this.meta = meta
+		}
+	}
+
+	// 全量 mock 数据（设计稿示例：2 条语音 + 2 条文字）
+	let allVoice = [
+		new VoiceResult('v1', '和妈妈的通话', '语音 · 1分23秒 · 周末回家', [8, 14, 22, 30, 36, 40, 36, 28, 18, 10, 16, 26, 34, 40, 38, 30, 20, 12, 18, 28, 36, 40, 34, 24, 14, 10, 16, 24]),
+		new VoiceResult('v2', '会议录音', '语音 · 0分45秒 · 项目讨论', [24, 32, 40, 36, 26, 14, 20, 30, 38, 40, 34, 22, 12, 18, 28, 36, 40, 34, 24, 14, 20, 30, 38, 40, 32, 22, 12, 18]),
+	]
+	let allText = [
+		new TextResult('t1', '今天的夕阳很美，像去年夏天的那个傍晚。', '文字 · 日记'),
+		new TextResult('t2', '妈妈说，记得多穿点衣服，别着凉了。', '文字 · 妈妈'),
+	]
+
+	// 按「筛选类型 + 关键词」过滤（computed 响应 keyword / activeFilter 自动重算）
+	let voiceResults = computed(() => {
+		let showVoice = activeFilter.value === 0 || activeFilter.value === 2
+		let kw = keyword.value.trim()
+		return allVoice.filter((m: VoiceResult) => {
+			if (!showVoice) {
+				return false
 			}
+			if (kw == '') {
+				return true
+			}
+			return m.title.indexOf(kw) >= 0 || m.meta.indexOf(kw) >= 0
 		})
 	})
 
-	// 导航方法
+	let textResults = computed(() => {
+		let showText = activeFilter.value === 0 || activeFilter.value === 3
+		let kw = keyword.value.trim()
+		return allText.filter((m: TextResult) => {
+			if (!showText) {
+				return false
+			}
+			if (kw == '') {
+				return true
+			}
+			return m.text.indexOf(kw) >= 0 || m.meta.indexOf(kw) >= 0
+		})
+	})
+
+	function resultCountText(): string {
+		let n = voiceResults.value.length + textResults.value.length
+		return '共 ' + n.toString() + ' 条结果'
+	}
+
+	function emptyText(): string {
+		if (activeFilter.value === 1) {
+			return '暂无照片结果'
+		}
+		return '没有找到相关记忆，换个关键词试试'
+	}
+
+	function setFilter(idx: number): void {
+		activeFilter.value = idx
+	}
+
+	function clearKeyword(): void {
+		keyword.value = ''
+	}
+
+	function doSearch(): void {
+		if (keyword.value != '') {
+			uni.showToast({ title: '已搜索：' + keyword.value, icon: 'none' })
+		}
+	}
+
+	function openResult(item: any): void {
+		uni.showToast({ title: '记忆详情页开发中', icon: 'none' })
+	}
+
+	function playVoice(item: VoiceResult): void {
+		if (playingId.value === item.id) {
+			playingId.value = ''
+			uni.showToast({ title: '已暂停', icon: 'none' })
+		} else {
+			playingId.value = item.id
+			uni.showToast({ title: '正在播放：' + item.title, icon: 'none' })
+		}
+	}
+
+	// TabBar 导航（与全库一致）
 	function goIndex(): void {
 		uni.reLaunch({ url: '/pages/index/index' })
 	}
-	function goSearch(): void {
-		uni.reLaunch({ url: '/pages/search/search' })
+	function goAI(): void {
+		uni.showToast({ title: 'AI 功能开发中', icon: 'none' })
 	}
 	function goRecord(): void {
 		uni.reLaunch({ url: '/pages/record/record' })
 	}
-	function goMessages(): void {
-		uni.reLaunch({ url: '/pages/messages/messages' })
+	function goSearch(): void {
+		// 当前页面
 	}
 	function goProfile(): void {
 		uni.reLaunch({ url: '/pages/profile/profile' })
 	}
-
-	// 工具方法
-	function scorePct(score: number): number {
-		return Math.round(score * 100)
-	}
-	function contentTypeCn(t: string): string {
-		return formatContentTypeCn(t)
-	}
-	function shortDate(iso: string): string {
-		return formatShortDate(iso)
-	}
-
-	// 业务方法
-	function doSearch(): void {
-		const q = query.trim()
-		if (q == '' && queryImage == '') {
-			showErrorToast(new Error('输入想找的内容'))
-			return
-		}
-		loading = true
-		searched = false
-		degraded = false
-		searchText(q, 10).then((out: SearchOutcome | null) => {
-			loading = false
-			searched = true
-			if (out != null) {
-				outcome = out
-				degraded = out.degraded
-			} else {
-				outcome = null
-			}
-		})
-	}
-	function pickImage(): void {
-		uni.chooseMedia({
-			count: 1,
-			mediaType: ['image'],
-			sourceType: ['album'],
-			success: (res) => {
-				const files = res.tempFiles
-				if (files.length === 0) {
-					return
-				}
-				const path = files.tempFilePath
-				queryImage = path
-				loading = true
-				searched = false
-				degraded = false
-				searchByImage(path, 10).then((out: SearchOutcome | null) => {
-					loading = false
-					searched = true
-					if (out != null) {
-						outcome = out
-						degraded = out.degraded
-					} else {
-						outcome = null
-					}
-				})
-			},
-			fail: () => {
-				// 用户取消选择：静默
-			}
-		})
-	}
 </script>
 
 <style>
+	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x844 画布，rpx = 设计px × 2）
+	   背景 #f8f7f4 / 搜索框 700x96 rx=48 白底+琥珀描边 / 筛选标签 84x66 rx=33
+	   语音卡 700x266 rx=40 / 文字卡 700x218 rx=40 / 玻璃 TabBar #f6f1e7bf rx=62 */
 	.page {
-		flex: 1;
+		width: 100%;
+		height: 100%;
 		background-color: #f8f7f4;
-		padding-left: 0;
-		padding-right: 0;
-		padding-top: 88rpx;
-		padding-bottom: 140rpx;
-	}
-	.serif {
-		font-family: "Noto Serif CJK SC", serif;
-	}
-	.header {
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
-	}
-	.header-title {
-		font-size: 52rpx;
-		color: #3a2e25;
-		font-weight: bold;
-		letter-spacing: 6rpx;
-	}
-	.header-sub {
-		margin-top: 8rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
+		display: flex;
+		flex-direction: column;
 	}
 
-	/* 搜索框 */
-	.search-bar {
+	/* ===== 搜索框（设计稿: x=20 y=120 350x48 rx=24，阴影 dy=6 blur=9 alpha 0.08） ===== */
+	.search-box {
+		position: relative;
+		margin: 240rpx 40rpx 0 40rpx;
+		width: 700rpx;
+		height: 96rpx;
+		background-color: #ffffff;
+		border: 2rpx solid rgba(176, 89, 59, 0.6);
+		border-radius: 48rpx;
+		box-sizing: border-box;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 20rpx;
+		box-shadow: 0 12rpx 18rpx rgba(58, 45, 38, 0.08);
+	}
+	/* 放大镜（设计稿: 圆形描边 #b05a3a + 斜柄，中心 48/46） */
+	.search-magnifier {
+		position: absolute;
+		left: 38rpx;
+		top: 36rpx;
+		width: 24rpx;
+		height: 24rpx;
+	}
+	.search-magnifier-ring {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 15rpx;
+		height: 15rpx;
+		border: 3rpx solid #b05a3a;
+		border-radius: 50%;
+		box-sizing: border-box;
+	}
+	.search-magnifier-handle {
+		position: absolute;
+		right: 1rpx;
+		bottom: 1rpx;
+		width: 13rpx;
+		height: 3rpx;
+		background-color: #b05a3a;
+		border-radius: 2rpx;
+		transform: rotate(45deg);
 	}
 	.search-input {
-	flex: 1;
-	background-color: rgba(255,255,255,0.32);
-	border-radius: 46rpx;
-		padding-left: 24rpx;
-		padding-right: 24rpx;
-		height: 92rpx;
-		font-size: 28rpx;
+		flex: 1;
+		height: 96rpx;
+		padding-left: 86rpx;
+		padding-right: 12rpx;
+		font-size: 32rpx;
 		color: #3a2e25;
-		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
 	}
-	.search-btn {
-		margin-left: 16rpx;
-		background-color: #b05a3a;
-		border-radius: 8rpx;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		height: 76rpx;
+	.search-placeholder {
+		color: #b3a696;
+	}
+	/* 清除按钮（输入时出现） */
+	.search-clear {
+		width: 44rpx;
+		height: 44rpx;
+		border-radius: 22rpx;
+		background-color: rgba(138, 122, 106, 0.15);
+		display: flex;
 		align-items: center;
 		justify-content: center;
-		display: flex;
+		margin-right: 14rpx;
 	}
-	.search-btn-text {
-		color: #f8f7f4;
-		font-size: 28rpx;
+	.search-clear-icon {
+		font-size: 30rpx;
+		color: #8a7a6a;
+		line-height: 30rpx;
+	}
+	/* 语音（麦克风）图标 */
+	.search-voice {
+		position: relative;
+		width: 32rpx;
+		height: 40rpx;
+		margin-right: 26rpx;
+	}
+	.search-mic-capsule {
+		position: absolute;
+		top: 0;
+		left: 6rpx;
+		width: 20rpx;
+		height: 26rpx;
+		border: 3rpx solid #8a7a6a;
+		border-radius: 10rpx;
+		box-sizing: border-box;
+	}
+	.search-mic-stem {
+		position: absolute;
+		top: 24rpx;
+		left: 14rpx;
+		width: 4rpx;
+		height: 11rpx;
+		background-color: #8a7a6a;
+		border-radius: 2rpx;
+	}
+	.search-mic-base {
+		position: absolute;
+		top: 31rpx;
+		left: 2rpx;
+		width: 28rpx;
+		height: 4rpx;
+		background-color: #8a7a6a;
+		border-radius: 3rpx;
 	}
 
-	/* 以图搜图 */
-	.image-row {
+	/* ===== 筛选标签（设计稿: y=184 42x33 rx=16.5，无阴影） ===== */
+	.filter-row {
+		display: flex;
+		flex-direction: row;
+		margin: 32rpx 40rpx 0 40rpx;
+	}
+	.filter-tag {
+		width: 84rpx;
+		height: 66rpx;
+		background-color: #ffffff;
+		border-radius: 33rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 16rpx;
+	}
+	.filter-tag-active {
+		background-color: rgba(176, 89, 59, 0.12);
+	}
+	.filter-text {
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.filter-text-active {
+		color: #b05a3a;
+		font-weight: 600;
+	}
+
+	/* ===== 结果区 ===== */
+	.result-list {
+		flex: 1;
+		padding: 0 40rpx 220rpx 40rpx;
+	}
+	/* 结果计数（设计稿: y=235.8 #8a7a6a） */
+	.result-count {
+		display: block;
+		margin: 38rpx 0 22rpx 0;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* ===== 结果卡（设计稿: 语音 350x133 / 文字 350x109，rx=20，阴影 dy=4 blur=8 alpha 0.06） ===== */
+	.result-card {
+		width: 700rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 16rpx 16rpx 34rpx 16rpx;
+		margin-bottom: 26rpx;
+		box-sizing: border-box;
+		box-shadow: 0 8rpx 16rpx rgba(58, 46, 37, 0.06);
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* 语音区（设计稿: 28,266,334x64 rx=12，#c4913c 14%） */
+	.voice-zone {
+		position: relative;
+		width: 668rpx;
+		height: 128rpx;
+		background-color: rgba(196, 145, 60, 0.14);
+		border-radius: 24rpx;
+	}
+	/* 播放按钮：白底圆 + 琥珀三角（设计稿: 中心 58,298 r=16） */
+	.voice-play-btn {
+		position: absolute;
+		left: 28rpx;
+		top: 32rpx;
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		background-color: #ffffff;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 4rpx 8rpx rgba(58, 46, 37, 0.12);
+	}
+	.voice-play-triangle {
+		width: 0;
+		height: 0;
+		border-left: 15rpx solid #b05a3a;
+		border-top: 9rpx solid transparent;
+		border-bottom: 9rpx solid transparent;
+		margin-left: 4rpx;
+	}
+	.voice-pause {
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 24rpx;
+		justify-content: center;
 	}
-	.muted {
-		font-size: 24rpx;
-		color: #b3a696;
+	.voice-pause-bar {
+		width: 6rpx;
+		height: 24rpx;
+		background-color: #b05a3a;
+		border-radius: 3rpx;
+		margin: 0 4rpx;
 	}
-	.image-btn {
-		margin-left: 16rpx;
-		padding-left: 24rpx;
-		padding-right: 24rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-		background-color: #EBE3D4;
-		border-radius: 24rpx;
+	/* 波形（设计稿: 100.8,286.8,182.4x22.4，#c4913c） */
+	.voice-wave {
+		position: absolute;
+		left: 146rpx;
+		top: 42rpx;
+		width: 364rpx;
+		height: 44rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
 	}
-	.image-btn-text {
-		font-size: 24rpx;
+	.voice-wave-bar {
+		width: 6rpx;
+		background-color: #c4913c;
+		border-radius: 3rpx;
+	}
+	/* 语音卡标题（设计稿: y=340.6 #3a2e25 约16px） */
+	.voice-title {
+		display: block;
+		margin: 21rpx 0 0 17rpx;
+		font-size: 32rpx;
+		line-height: 40rpx;
 		color: #3a2e25;
-	}
-	.query-thumb {
-		width: 56rpx;
-		height: 56rpx;
-		border-radius: 8rpx;
-		margin-left: 16rpx;
+		font-weight: 600;
 	}
 
-	/* 降级提示（T-SR-4） */
-	.degraded-bar {
-		background-color: #F3E8DC;
-		border-radius: 8rpx;
-		padding: 16rpx 24rpx;
-		margin-bottom: 20rpx;
+	/* 引用区（设计稿: 28,412,334x64 rx=12，#c4913c 10%） */
+	.quote-zone {
+		width: 668rpx;
+		height: 128rpx;
+		background-color: rgba(196, 145, 60, 0.10);
+		border-radius: 24rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 24rpx;
+		box-sizing: border-box;
 	}
-	.degraded-text {
-		font-size: 24rpx;
-		color: #b05a3a;
+	/* 引用竖线（设计稿: 40,424,3x40 #c4913c rx=1.5） */
+	.quote-line {
+		width: 6rpx;
+		height: 80rpx;
+		background-color: #c4913c;
+		border-radius: 3rpx;
+		margin-right: 21rpx;
+	}
+	.quote-content {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+	}
+	/* 引言体（设计稿: y=426 #5a4c40 约15px 两行） */
+	.quote-text {
+		font-size: 28rpx;
+		line-height: 40rpx;
+		color: #5a4c40;
+		font-style: italic;
 	}
 
-	.center-box {
-		padding-top: 120rpx;
+	/* 卡底元信息（设计稿: #8a7a6a 约10px） */
+	.result-meta {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-left: 17rpx;
+	}
+	.voice-card-meta {
+		margin-top: 7rpx;
+	}
+	.quote-card-meta {
+		margin-top: 20rpx;
+	}
+	.result-meta-text {
+		font-size: 20rpx;
+		color: #8a7a6a;
+	}
+
+	/* 空状态 */
+	.empty-state {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+		padding: 100rpx 0;
 	}
-	.empty-title {
-		font-size: 36rpx;
-		color: #3a2e25;
-		font-weight: bold;
+	.empty-icon {
+		font-size: 72rpx;
+		margin-bottom: 24rpx;
 	}
-	.empty-desc {
-		margin-top: 12rpx;
+	.empty-text {
 		font-size: 26rpx;
 		color: #8a7a6a;
 	}
 
-	/* 结果卡片 */
-	.result-list {
-		display: flex;
-		flex-direction: column;
-	}
-	.rewrite-line {
-		margin-bottom: 16rpx;
-	}
-	.hit-card {
-	background-color: #ffffff;
-	border-radius: 40rpx;
-		padding: 24rpx;
-		margin-bottom: 20rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-	}
-	.hit-head {
+	/* ===== 玻璃 TabBar（设计稿: 350x62 rx=31 #f6f1e7bf，与全库一致） ===== */
+	.glass-tabbar {
+		position: fixed;
+		bottom: 60rpx;
+		left: 40rpx;
+		right: 40rpx;
+		height: 124rpx;
+		background-color: rgba(246, 241, 231, 0.75);
+		border-radius: 62rpx;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
+		justify-content: space-around;
+		box-shadow: 0 8rpx 32rpx rgba(58, 46, 37, 0.12);
+		padding: 0 24rpx;
+		overflow: visible;
 	}
-	.hit-type {
-		font-size: 22rpx;
-		color: #b05a3a;
-		background-color: #F3E8DC;
-		padding-left: 14rpx;
-		padding-right: 14rpx;
-		padding-top: 4rpx;
-		padding-bottom: 4rpx;
-		border-radius: 16rpx;
-	}
-	.hit-event {
-		margin-left: 16rpx;
-		font-size: 24rpx;
-		color: #8a7a6a;
-		flex: 1;
-	}
-	.hit-score {
-		font-size: 24rpx;
-		color: #3a2e25;
-		font-weight: bold;
-	}
-	.hit-text {
-		margin-top: 14rpx;
-		font-size: 28rpx;
-		color: #3a2e25;
-		line-height: 40rpx;
-	}
-	.hit-meta {
-		margin-top: 10rpx;
-		display: flex;
-		flex-direction: row;
-	}
-	.meta-item {
-		font-size: 22rpx;
-		color: #b3a696;
-		margin-right: 20rpx;
-	}
-	.trace-box {
-		margin-top: 16rpx;
-		border-top-width: 1rpx;
-		border-top-color: rgba(58, 46, 37, 0.12);
-		padding-top: 14rpx;
+	.tabbar-item {
 		display: flex;
 		flex-direction: column;
-	}
-	.trace-label {
-		font-size: 20rpx;
-		color: #b05a3a;
-	}
-	.trace-text {
-		margin-top: 4rpx;
-		font-size: 22rpx;
-		color: #8a7a6a;
-		line-height: 32rpx;
-	}
-	.result-foot {
-		margin-top: 20rpx;
 		align-items: center;
-		display: flex;
 		justify-content: center;
+		width: 80rpx;
+		height: 80rpx;
+	}
+	.tabbar-icon {
+		width: 40rpx;
+		height: 40rpx;
+		margin-bottom: 4rpx;
+	}
+	.tabbar-label {
+		font-size: 20rpx;
+		color: #8a7a6a;
+	}
+	.tabbar-label-active {
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.tabbar-fab {
+		width: 112rpx;
+		height: 112rpx;
+		border-radius: 56rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-top: -40rpx;
+		box-shadow: 0 8rpx 24rpx rgba(176, 90, 58, 0.4);
+	}
+	.tabbar-fab-icon {
+		width: 48rpx;
+		height: 48rpx;
+		color: #f6f1e7;
+		font-size: 48rpx;
+		font-weight: 300;
+		line-height: 48rpx;
+		text-align: center;
+	}
+
+	/* 按压态动画 */
+	.pressable {
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
 </style>
