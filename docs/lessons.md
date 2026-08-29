@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-08-29 14:28 · commit d34c394 · ts=1787984895
+- **错误**：SKILL 补丁 amend 时使用了 --no-verify 绕过快速门禁（AGENTS 明令禁止）
+- **根因**：把 amend 当成了「修补上一提交」的轻量操作，误以为纯 markdown 内容无门禁价值即可跳过；规则没有为 amend 开例外
+- **修复**：教训当场登记补交；今后一切提交（含 amend/rebase 后重放）一律走 hook，若怀疑会白跑也宁可多跑一次门禁
+- **相关文件**：skills/hbuilderx-uniappx-runloop/SKILL.md
+- **教训**：hook 禁令范围=每一次 commit 对象形成，与内容类型和 amend 形式无关
+
+---
+
 ### 2026-08-29 01:30 · commit a6bb5a9 · ts=1787938242
 - **错误**：harness 整饬会话中 lessons.py add 把 docs/lessons.md 从 1213 行摧毁至 28 行（1199 行台账仅剩表头+两条新条目），且随 a6bb5a9 提交后才被 diff stat（-1191 行）识破
 - **根因**：add() 以硬编码 HEADER 常量做 startswith 判断，else 分支直接 existing=''（'旧文件无表头→重建'）；本次给表头引用块加了一行复盘索引指针，令 startswith 失配→整本台账被静默丢弃；第二次 add 又在已损毁文件上正常前插，掩盖了破坏痕迹
