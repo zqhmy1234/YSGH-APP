@@ -1,4 +1,4 @@
-﻿<template>
+<template>
 	<view class="page">
 		<!-- 顶部导航：返回箭头 + 居中标题（设计稿: 返回 y=63.6 x=22.3，标题居中 34.4x16.5） -->
 		<view class="nav-row">
@@ -13,7 +13,10 @@
 			<!-- 行 1：账号与安全（锁图标 + 右侧箭头） -->
 			<view class="row pressable" @tap="goAccount">
 				<view class="row-icon">
-					<text class="row-emoji">🔒</text>
+					<view class="icon-lock">
+						<view class="icon-lock-shackle"></view>
+						<view class="icon-lock-body"></view>
+					</view>
 				</view>
 				<text class="row-title">账号与安全</text>
 				<text class="row-chevron">›</text>
@@ -22,7 +25,10 @@
 			<!-- 行 2：通知偏好（铃铛图标 + 自定义开关，激活态锈红） -->
 			<view class="row">
 				<view class="row-icon">
-					<text class="row-emoji">🔔</text>
+					<view class="icon-bell">
+						<view class="icon-bell-dome"></view>
+						<view class="icon-bell-clapper"></view>
+					</view>
 				</view>
 				<text class="row-title">通知偏好</text>
 				<view class="switch-track" :class="notifyOn ? 'switch-on' : ''" @tap="toggleNotify">
@@ -36,7 +42,10 @@
 			<!-- 行 1：深色模式（月亮图标 + 右侧状态文字） -->
 			<view class="row pressable" @tap="cycleTheme">
 				<view class="row-icon">
-					<text class="row-emoji">🌙</text>
+					<view class="icon-moon">
+						<view class="icon-moon-disc"></view>
+						<view class="icon-moon-cut"></view>
+					</view>
 				</view>
 				<text class="row-title">深色模式</text>
 				<text class="row-value">{{ themeText }}</text>
@@ -45,7 +54,10 @@
 			<!-- 行 2：清理缓存（垃圾桶图标 + 右侧缓存大小） -->
 			<view class="row pressable" @tap="clearCache">
 				<view class="row-icon">
-					<text class="row-emoji">🗑️</text>
+					<view class="icon-trash">
+						<view class="icon-trash-lid"></view>
+						<view class="icon-trash-body"></view>
+					</view>
 				</view>
 				<text class="row-title">清理缓存</text>
 				<text class="row-value">{{ cacheText }}</text>
@@ -148,7 +160,7 @@
 	.title {
 		flex: 1;
 		text-align: center;
-		font-size: 34rpx;
+		font-size: 38.5rpx;
 		color: #3a2e25;
 		font-weight: bold;
 	}
@@ -161,7 +173,7 @@
 		display: flex;
 		flex-direction: column;
 		margin-bottom: 24rpx;
-		box-shadow: 0 4rpx 16rpx rgba(58, 46, 37, 0.06);
+		box-shadow: 0 6rpx 20rpx rgba(58, 46, 37, 0.05);
 	}
 	.card-tall {
 		height: 216rpx;
@@ -187,13 +199,109 @@
 		justify-content: center;
 		margin-right: 20rpx;
 	}
-	.row-emoji {
-		font-size: 32rpx;
-		line-height: 40rpx;
+	/* 琥珀线性小图标（view 占位，颜色 #c4913c） */
+	.icon-lock {
+		position: relative;
+		width: 26rpx;
+		height: 30rpx;
+	}
+	.icon-lock-shackle {
+		position: absolute;
+		top: 0;
+		left: 4rpx;
+		width: 18rpx;
+		height: 14rpx;
+		border: 3rpx solid #c4913c;
+		border-bottom: none;
+		border-radius: 9rpx 9rpx 0 0;
+		box-sizing: border-box;
+	}
+	.icon-lock-body {
+		position: absolute;
+		top: 12rpx;
+		left: 0;
+		width: 26rpx;
+		height: 18rpx;
+		border: 3rpx solid #c4913c;
+		border-radius: 5rpx;
+		box-sizing: border-box;
+	}
+	.icon-bell {
+		position: relative;
+		width: 28rpx;
+		height: 30rpx;
+	}
+	.icon-bell-dome {
+		position: absolute;
+		top: 0;
+		left: 4rpx;
+		width: 20rpx;
+		height: 18rpx;
+		border: 3rpx solid #c4913c;
+		border-radius: 10rpx 10rpx 0 0;
+		box-sizing: border-box;
+	}
+	.icon-bell-clapper {
+		position: absolute;
+		top: 20rpx;
+		left: 13rpx;
+		width: 4rpx;
+		height: 6rpx;
+		background-color: #c4913c;
+		border-radius: 2rpx;
+	}
+	.icon-moon {
+		position: relative;
+		width: 24rpx;
+		height: 24rpx;
+	}
+	.icon-moon-disc {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 24rpx;
+		height: 24rpx;
+		border: 3rpx solid #c4913c;
+		border-radius: 50%;
+		box-sizing: border-box;
+	}
+	.icon-moon-cut {
+		position: absolute;
+		top: -3rpx;
+		left: 9rpx;
+		width: 18rpx;
+		height: 18rpx;
+		background-color: #ffffff;
+		border-radius: 50%;
+	}
+	.icon-trash {
+		position: relative;
+		width: 24rpx;
+		height: 30rpx;
+	}
+	.icon-trash-lid {
+		position: absolute;
+		top: 0;
+		left: 1rpx;
+		width: 22rpx;
+		height: 3rpx;
+		background-color: #c4913c;
+		border-radius: 2rpx;
+	}
+	.icon-trash-body {
+		position: absolute;
+		top: 7rpx;
+		left: 3rpx;
+		width: 18rpx;
+		height: 22rpx;
+		border: 3rpx solid #c4913c;
+		border-top: none;
+		border-radius: 0 0 6rpx 6rpx;
+		box-sizing: border-box;
 	}
 	.row-title {
 		flex: 1;
-		font-size: 28rpx;
+		font-size: 25rpx;
 		color: #3a2e25;
 		font-weight: 500;
 	}

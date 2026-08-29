@@ -1,5 +1,8 @@
 <template>
 	<view class="page">
+		<!-- 页首大标题（设计稿: 21,61 ≈38px=73rpx 粗 #3a2e25 左对齐） -->
+		<text class="page-title">搜索</text>
+
 		<!-- 搜索框（设计稿: x=20 y=120 350x48 rx=24，琥珀描边#b0593b 60%） -->
 		<view class="search-box">
 			<view class="search-magnifier">
@@ -14,14 +17,6 @@
 				confirm-type="search"
 				@confirm="doSearch"
 			/>
-			<view v-if="keyword != ''" class="search-clear pressable" @tap="clearKeyword">
-				<text class="search-clear-icon">×</text>
-			</view>
-			<view class="search-voice">
-				<view class="search-mic-capsule"></view>
-				<view class="search-mic-stem"></view>
-				<view class="search-mic-base"></view>
-			</view>
 		</view>
 
 		<!-- 筛选标签（设计稿: y=184 42x33 rx=16.5，激活态#b0593b 12%） -->
@@ -294,12 +289,24 @@
 		background-color: #f8f7f4;
 		display: flex;
 		flex-direction: column;
+		position: relative;
+	}
+
+	/* 页首大标题（设计稿: 21,61 ≈38px=73rpx 粗 #3a2e25 左对齐） */
+	.page-title {
+		position: absolute;
+		top: 44rpx;
+		left: 40rpx;
+		font-size: 73rpx;
+		font-weight: bold;
+		color: #3a2e25;
+		line-height: 88rpx;
 	}
 
 	/* ===== 搜索框（设计稿: x=20 y=120 350x48 rx=24，阴影 dy=6 blur=9 alpha 0.08） ===== */
 	.search-box {
 		position: relative;
-		margin: 240rpx 40rpx 0 40rpx;
+		margin: 146rpx 40rpx 0 40rpx;
 		width: 700rpx;
 		height: 96rpx;
 		background-color: #ffffff;
@@ -314,7 +321,7 @@
 	/* 放大镜（设计稿: 圆形描边 #b05a3a + 斜柄，中心 48/46） */
 	.search-magnifier {
 		position: absolute;
-		left: 38rpx;
+		left: 46rpx;
 		top: 36rpx;
 		width: 24rpx;
 		height: 24rpx;
@@ -342,64 +349,13 @@
 	.search-input {
 		flex: 1;
 		height: 96rpx;
-		padding-left: 86rpx;
+		padding-left: 94rpx;
 		padding-right: 12rpx;
-		font-size: 32rpx;
+		font-size: 35rpx;
 		color: #3a2e25;
 	}
 	.search-placeholder {
 		color: #b3a696;
-	}
-	/* 清除按钮（输入时出现） */
-	.search-clear {
-		width: 44rpx;
-		height: 44rpx;
-		border-radius: 22rpx;
-		background-color: rgba(138, 122, 106, 0.15);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-right: 14rpx;
-	}
-	.search-clear-icon {
-		font-size: 30rpx;
-		color: #8a7a6a;
-		line-height: 30rpx;
-	}
-	/* 语音（麦克风）图标 */
-	.search-voice {
-		position: relative;
-		width: 32rpx;
-		height: 40rpx;
-		margin-right: 26rpx;
-	}
-	.search-mic-capsule {
-		position: absolute;
-		top: 0;
-		left: 6rpx;
-		width: 20rpx;
-		height: 26rpx;
-		border: 3rpx solid #8a7a6a;
-		border-radius: 10rpx;
-		box-sizing: border-box;
-	}
-	.search-mic-stem {
-		position: absolute;
-		top: 24rpx;
-		left: 14rpx;
-		width: 4rpx;
-		height: 11rpx;
-		background-color: #8a7a6a;
-		border-radius: 2rpx;
-	}
-	.search-mic-base {
-		position: absolute;
-		top: 31rpx;
-		left: 2rpx;
-		width: 28rpx;
-		height: 4rpx;
-		background-color: #8a7a6a;
-		border-radius: 3rpx;
 	}
 
 	/* ===== 筛选标签（设计稿: y=184 42x33 rx=16.5，无阴影） ===== */

@@ -10,10 +10,10 @@
 
 				<!-- 顶栏圆钮：返回 / 收藏 / 更多（设计稿: 44px 圆，中心 y=86） -->
 				<view class="hero-btn btn-back pressable" @tap="goBack">
-					<hens-svg :src="iconBack" :width="14" :height="24" />
+					<image src="/static/icons/detail-back.svg" :width="7" :height="12" />
 				</view>
 				<view class="hero-btn btn-fav pressable" @tap="toggleFav">
-					<hens-svg :src="iconHeart" :width="24" :height="22" />
+					<image src="/static/icons/detail-star.svg" :width="14" :height="14" />
 				</view>
 				<view class="hero-btn btn-more pressable" @tap="onMore">
 					<view class="more-dots">
@@ -33,7 +33,7 @@
 				<!-- 卡片 1：AI 的观察（✦ 图标 + 锈红标题；有内容才显示） -->
 				<view v-if="aiNote != ''" class="card card-ai">
 					<view class="ai-row">
-						<hens-svg :src="iconSparkle" :width="21" :height="21" />
+						<image src="/static/icons/detail-sparkle.svg" :width="10" :height="10" />
 						<text class="ai-label">AI 的观察</text>
 					</view>
 					<text class="card-body">{{ aiNote }}</text>
@@ -69,15 +69,15 @@
 		<!-- ═══════════ 底部悬浮操作栏（设计稿: 350x60 rx=30，距底 40px，玻璃质感）═══════════ -->
 		<view class="action-bar">
 			<view class="action-item action-1 pressable" @tap="askAI">
-				<hens-svg :src="iconBubble" :width="30" :height="30" />
+				<image src="/static/icons/detail-bubble.svg" :width="30" :height="30" />
 				<text class="action-label">问 AI</text>
 			</view>
 			<view class="action-item action-2 pressable" @tap="addCapsule">
-				<hens-svg :src="iconCapsule" :width="30" :height="30" />
+				<image src="/static/icons/detail-capsule.svg" :width="30" :height="30" />
 				<text class="action-label">加入胶囊</text>
 			</view>
 			<view class="action-item action-3 pressable" @tap="share">
-				<hens-svg :src="iconShare" :width="26" :height="28" />
+				<image src="/static/icons/detail-share.svg" :width="26" :height="28" />
 				<text class="action-label">分享</text>
 			</view>
 		</view>
@@ -89,20 +89,6 @@
 	import { onLoad } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, ContentEventRef } from '@/utils/event_ops'
 	import { formatIsoShortTime } from '@/utils/time'
-
-	// ═══════════ 设计稿图标（SVG 路径取自 design_data_for_agents/08_记忆详情页）═══════════
-	// 返回箭头（白）
-	const iconBack = `<svg viewBox="-1.24 -1.42 7.92 13.35" xmlns="http://www.w3.org/2000/svg"><path d="M1.1667 5.25L5.8334 0.5834Q6.085 0.3458 6.075 0Q6.085 -0.3458 5.8334 -0.5834Q5.5958 -0.835 5.25 -0.825Q4.9042 -0.835 4.6666 -0.5834L-0.5834 4.6666Q-0.835 4.9042 -0.825 5.25Q-0.835 5.5958 -0.5834 5.8334L4.6666 11.0834Q4.9042 11.335 5.25 11.325Q5.5958 11.335 5.8334 11.0834Q6.085 10.8458 6.075 10.5Q6.085 10.1542 5.8334 9.9166L1.1667 5.25Z" fill="#FFFFFF" fill-rule="evenodd"/></svg>`
-	// 收藏（白·心形）
-	const iconHeart = `<svg viewBox="-1.27 -1.30 15.67 15.02" xmlns="http://www.w3.org/2000/svg"><path d="M8.9782 3.5028L7.2053 -0.3158Q7.0811 -0.6048 6.7827 -0.7043Q6.4905 -0.8209 6.2092 -0.6803Q6.0884 -0.6246 5.9947 -0.5303Q5.9004 -0.4366 5.8448 -0.3158L4.0718 3.5028L-0.0855 3.9799Q-0.3989 4.0067 -0.5873 4.2586Q-0.7899 4.4992 -0.7451 4.8105Q-0.7302 4.9434 -0.6697 5.0627Q-0.6098 5.1823 -0.5117 5.2733L2.5576 8.138L1.7396 12.2279Q1.669 12.5344 1.851 12.791Q2.0178 13.0576 2.3279 13.1104Q2.4588 13.137 2.5907 13.116Q2.7227 13.0958 2.8392 13.0306L6.525 10.983L10.2108 13.0306Q10.4812 13.1912 10.781 13.0961Q11.0858 13.0185 11.2306 12.7392Q11.2958 12.6227 11.316 12.4907Q11.337 12.3588 11.3104 12.2279L10.4924 8.138L13.5617 5.2733Q13.7978 5.0654 13.7996 4.7509Q13.8194 4.4369 13.5983 4.2133Q13.5073 4.1152 13.3877 4.0553Q13.2684 3.9948 13.1355 3.9799L8.9782 3.5028ZM6.525 1.781L7.7947 4.5158Q7.876 4.6946 8.0361 4.8081Q8.1943 4.9243 8.3895 4.9451L11.3509 5.2849L9.1633 7.3267Q9.0194 7.4589 8.961 7.6453Q8.8997 7.8308 8.9396 8.0221L9.5215 10.9318L6.8892 9.4694Q6.7197 9.3734 6.525 9.375Q6.3303 9.3734 6.1608 9.4694L3.5285 10.9318L4.1104 8.0221Q4.1503 7.8308 4.089 7.6453Q4.0306 7.4589 3.8867 7.3267L1.6991 5.2849L4.6605 4.9451Q4.8557 4.9243 5.0139 4.8081Q5.174 4.6946 5.2552 4.5158L6.525 1.781Z" fill="#FFFFFF" fill-rule="evenodd"/></svg>`
-	// ✦ 星芒（锈红，AI 观察标题前）
-	const iconSparkle = `<svg viewBox="0 0 11 11" xmlns="http://www.w3.org/2000/svg"><path d="M5.25 0L6.4167 4.0833L10.5 5.25L6.4167 6.4167L5.25 10.5L4.0833 6.4167L0 5.25L4.0833 4.0833L5.25 0Z" fill="#B05A3A" fill-rule="evenodd"/></svg>`
-	// 问 AI（锈红·气泡）
-	const iconBubble = `<svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg"><path d="M11.987 10.6265Q14.1667 8.7145 14.1667 5.8333Q14.1667 2.9522 11.987 1.0402Q9.8512 -0.8333 6.6667 -0.8333Q3.4821 -0.8333 1.3463 1.0402Q-0.8333 2.9522 -0.8333 5.8333Q-0.8333 7.4372 -0.2973 8.8129Q0.1424 9.9416 0.8695 10.7269L0.0475 13.056Q-0.0782 13.3821 0.0815 13.6929Q0.2232 14.0124 0.556 14.1192Q0.7293 14.1813 0.9125 14.1629Q1.0959 14.1463 1.2543 14.0525L4.3594 12.2349Q5.3637 12.5 6.6667 12.5Q9.8512 12.5 11.987 10.6265ZM10.888 2.2931Q12.5 3.7072 12.5 5.8333Q12.5 7.9595 10.888 9.3735Q9.2238 10.8333 6.6667 10.8333Q5.3852 10.8333 4.5135 10.5428Q4.3428 10.4849 4.1635 10.5045Q3.9842 10.5223 3.829 10.6142L2.3767 11.4643L2.6192 10.7773Q2.7086 10.5341 2.6383 10.2846Q2.5747 10.0334 2.3757 9.8673Q1.6648 9.2579 1.2556 8.2079Q0.8333 7.124 0.8333 5.8333Q0.8333 3.7072 2.4454 2.2931Q4.1095 0.8333 6.6667 0.8333Q9.2238 0.8333 10.888 2.2931Z" fill="#B05A3A" fill-rule="evenodd"/></svg>`
-	// 加入胶囊（锈红·圆圈+胶囊）
-	const iconCapsule = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7.5" fill="none" stroke="#B05A3A" stroke-width="1.4"/><path d="M8.8333 7.5131L8.8333 3.8300Q8.8434 3.4807 8.5893 3.2407Q8.3493 2.9866 8.0000 2.9967Q7.6507 2.9866 7.4107 3.2407Q7.1566 3.4807 7.1667 3.8300L7.1667 8.4803L10.5032 10.3869Q10.8015 10.5689 11.1359 10.4673Q11.4756 10.3851 11.6402 10.0768Q11.8223 9.7785 11.7206 9.4441Q11.6384 9.1044 11.3301 8.9398L8.8333 7.5131Z" fill="#B05A3A" fill-rule="evenodd"/></svg>`
-	// 分享（锈红·上箭头）
-	const iconShare = `<svg viewBox="-1.25 -1.43 9.11 12.87" xmlns="http://www.w3.org/2000/svg"><path d="M-0.5893 2.7441L2.7441 -0.5893Q2.984 -0.8434 3.3333 -0.8333Q3.6827 -0.8434 3.9226 -0.5893L7.2559 2.7441Q7.5101 2.984 7.5 3.3333Q7.5101 3.6827 7.2559 3.9226Q7.016 4.1767 6.6667 4.1667Q6.3173 4.1767 6.0774 3.9226L4.1667 2.0118L4.1667 10Q4.1767 10.3493 3.9226 10.5893Q3.6827 10.8434 3.3333 10.8333Q2.984 10.8434 2.7441 10.5893Q2.4899 10.3493 2.5 10L2.5 2.0118L0.5893 3.9226Q0.3493 4.1767 0 4.1667Q-0.3493 4.1767 -0.5893 3.9226Q-0.8434 3.6827 -0.8333 3.3333Q-0.8434 2.984 -0.5893 2.7441Z" fill="#B05A3A" fill-rule="evenodd"/></svg>`
 
 	// ═══════════ 响应式状态 ═══════════
 	let fav = ref(false) // 收藏状态
@@ -258,7 +244,7 @@
 		left: 0;
 		width: 100%;
 		height: 220rpx;
-		background: linear-gradient(to bottom, rgba(25, 20, 15, 0.45) 0%, rgba(25, 20, 15, 0.15) 50%, rgba(25, 20, 15, 0) 100%);
+		background: linear-gradient(to right, rgba(25, 20, 15, 0.45) 0%, rgba(25, 20, 15, 0.15) 50%, rgba(25, 20, 15, 0) 100%);
 	}
 	/* 底部溶解（设计稿 gradient_1: 透明→#F8F7F4 60%→100%） */
 	.hero-overlay-bottom {
@@ -267,7 +253,7 @@
 		left: 0;
 		width: 100%;
 		height: 240rpx;
-		background: linear-gradient(to bottom, rgba(248, 247, 244, 0) 0%, rgba(248, 247, 244, 0.6) 50%, #f8f7f4 100%);
+		background: linear-gradient(to right, rgba(248, 247, 244, 0) 0%, rgba(248, 247, 244, 0.6) 50%, #f8f7f4 100%);
 	}
 
 	/* 顶栏圆钮（设计稿: 44px 半透明白玻璃圆，中心 y=86 距顶 64px） */
@@ -277,8 +263,8 @@
 		width: 88rpx;
 		height: 88rpx;
 		border-radius: 44rpx;
-		background-color: rgba(255, 255, 255, 0.30);
-		border: 2rpx solid rgba(255, 255, 255, 0.35);
+		background-color: rgba(59, 46, 38, 0.30);
+		border: 2rpx solid rgba(255, 255, 255, 0.40);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -286,8 +272,8 @@
 		z-index: 5;
 	}
 	.btn-back { left: 32rpx; }
-	.btn-fav { left: 552rpx; }
-	.btn-more { left: 660rpx; }
+	.btn-fav { left: 531rpx; }
+	.btn-more { left: 635rpx; }
 
 	/* 更多按钮三点（设计稿: 3 个 r=1.2 白点，间距 5.25px） */
 	.more-dots {
@@ -296,9 +282,9 @@
 		align-items: center;
 	}
 	.more-dot {
-		width: 8rpx;
-		height: 8rpx;
-		border-radius: 4rpx;
+		width: 4.6rpx;
+		height: 4.6rpx;
+		border-radius: 2.3rpx;
 		background-color: #ffffff;
 		margin-right: 10rpx;
 	}
@@ -316,7 +302,7 @@
 	/* 主标题（设计稿: 28px serif 加粗 #3A2E25，y=376.7） */
 	.mem-title {
 		display: flex;
-		font-size: 56rpx;
+		font-size: 50rpx;
 		line-height: 72rpx;
 		font-weight: bold;
 		color: #3a2e25;
@@ -416,11 +402,11 @@
 	}
 	/* 卡片 A 渐变占位（设计稿 gradient_2: #798B5A 30%→#C4913B 20%） */
 	.ph-a {
-		background: linear-gradient(to bottom, rgba(121, 139, 90, 0.30), rgba(196, 145, 59, 0.20));
+		background: linear-gradient(to right, rgba(121, 139, 90, 0.30), rgba(196, 145, 59, 0.20));
 	}
 	/* 卡片 B 渐变占位（设计稿 gradient_4: #4E7C8B 28%→#798B5A 15%） */
 	.ph-b {
-		background: linear-gradient(to bottom, rgba(78, 124, 139, 0.28), rgba(121, 139, 90, 0.15));
+		background: linear-gradient(to right, rgba(78, 124, 139, 0.28), rgba(121, 139, 90, 0.15));
 	}
 	.related-title {
 		display: flex;
@@ -466,7 +452,7 @@
 	/* 三项分别居中于设计稿 x 中心：32 / 196.5 / 360（设计 px） */
 	.action-1 { left: 24rpx; width: 80rpx; }
 	.action-2 { left: 333rpx; width: 120rpx; }
-	.action-3 { left: 680rpx; width: 80rpx; }
+	.action-3 { left: 648rpx; width: 80rpx; }
 	.action-label {
 		margin-top: 8rpx;
 		font-size: 22rpx;

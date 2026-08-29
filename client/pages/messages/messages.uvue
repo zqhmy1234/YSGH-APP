@@ -1,44 +1,31 @@
 <template>
 	<view class="page">
-		<!-- 顶部标题区（设计稿: y=16 标题 / y=60-65 分段 / y=110 副标题） -->
+		<!-- 顶部导航：返回箭头 ‹ + 居中标题「消息」~35rpx（设计稿: y=63.6，无右侧「⋯」） -->
 		<view class="header">
-			<view class="header-row">
-				<text class="header-title">消息</text>
-				<view class="header-more pressable" @tap="onMore">
-					<hens-svg :src="moreIconSvg" :size="18" color="#3A2E25" />
+			<view class="nav-row">
+				<view class="back-btn pressable" @tap="goBack">
+					<text class="back-arrow">‹</text>
 				</view>
+				<text class="nav-title">消息</text>
 			</view>
-
-			<!-- 分段控件（设计稿: 系统通知 x=23 y=65 / AI互动 x=177 y=60） -->
-			<view class="segment-row">
-				<view
-					v-for="(seg, idx) in segments"
-					:key="idx"
-					class="segment-item pressable"
-					:class="{ 'segment-item-active': activeSegment === idx }"
-					@tap="setSegment(idx)"
-				>
-					<text class="segment-text" :class="{ 'segment-text-active': activeSegment === idx }">{{ seg }}</text>
-					<view v-if="idx === 0 && unreadCount > 0" class="segment-dot"></view>
-				</view>
-			</view>
-
-			<text class="header-sub">今天有 {{ unreadCount }} 条未读消息</text>
+			<text class="header-sub">今天</text>
 		</view>
 
 		<!-- 滚动内容区 -->
 		<scroll-view class="content-scroll">
-			<!-- AI 精选卡（设计稿: x=20 y=138 350x104 rx=20，渐变#D9E2CA，星标+波形+标题+副标题） -->
+			<!-- 时间胶囊卡（设计稿: x=20 y=138 673x200 rx=20 白，内嵌 642x169 rx=12 鼠尾草绿横向渐变面板） -->
 			<view class="featured-card pressable" @tap="openFeatured">
-				<view class="featured-wave-row">
-					<hens-svg :src="starSvg" :size="14" />
-					<hens-svg :src="waveSvg" :width="260" :height="12" />
+				<view class="featured-panel">
+					<view class="featured-meta-row">
+						<image src="/static/icons/msg-star.svg" :width="10" :height="10" />
+						<text class="featured-meta">时间胶囊 · 8 个月前</text>
+					</view>
+					<text class="featured-title">去年今天：你在天台看了流星雨</text>
+					<text class="featured-sub">点开重温…</text>
 				</view>
-				<text class="featured-title">本周记忆摘要</text>
-				<text class="featured-sub">AI 为你整理了 12 条记忆，3 个重要时刻</text>
 			</view>
 
-			<!-- 消息列表卡（设计稿: x=20 y=300 350x204 rx=20，3行消息） -->
+			<!-- 消息列表卡（设计稿: x=20 y=300 673x392 rx=20，3行消息，行间无分隔线） -->
 			<view class="message-card">
 				<view
 					v-for="(msg, idx) in filteredMessages"
@@ -48,7 +35,7 @@
 					@tap="openMessage(msg)"
 				>
 					<view class="message-avatar" :style="{ backgroundColor: msg.avatarBg }">
-						<hens-svg :src="msg.iconSvg" :size="18" />
+						<image :src="msg.iconPath" :width="18" :height="18" />
 					</view>
 					<view class="message-body">
 						<view class="message-top">
@@ -68,9 +55,6 @@
 
 			<view class="bottom-spacer"></view>
 		</scroll-view>
-
-		<!-- 统一 TabBar 组件 -->
-		<TabBar active="messages" />
 	</view>
 </template>
 
@@ -81,23 +65,11 @@
 		fetchMessages,
 		fetchUnreadCount,
 		markMessageRead,
-		markAllRead,
 		AppMessage
 	} from '@/utils/play'
 	import { formatIsoShortTime } from '@/utils/time'
 
-	// ===== hens-svg 图标（SVG 字符串，从设计稿 path 提取） =====
-	const starSvg = `<svg viewBox="0 0 11 11" xmlns="http://www.w3.org/2000/svg"><path d="M5.25 0L6.4167 4.0833L10.5 5.25L6.4167 6.4167L5.25 10.5L4.0833 6.4167L0 5.25L4.0833 4.0833L5.25 0Z" fill="#7A8C5A"/></svg>`
-	const waveSvg = `<svg viewBox="0 0 104 14" xmlns="http://www.w3.org/2000/svg"><path d="M2 7q4 4 8 0t8 0 8 0 8 0 8 0 8 0 8 0 8 0 8 0 8 0 8 0 8 0" stroke="#7A8C5A" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>`
-	const moreIconSvg = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#3A2E25"/><circle cx="12" cy="12" r="2" fill="#3A2E25"/><circle cx="19" cy="12" r="2" fill="#3A2E25"/></svg>`
-	// 头像图标
-	const bellSvg = `<svg viewBox="-1 -1 13 10" xmlns="http://www.w3.org/2000/svg"><path d="M3.375 5.9583L0.5834 3.1666Q0.3458 2.915 0 2.925Q-0.3458 2.915 -0.5834 3.1666Q-0.835 3.4042 -0.825 3.75Q-0.835 4.0958 -0.5834 4.3334L2.7916 7.7084Q3.0292 7.96 3.375 7.95Q3.7208 7.96 3.9584 7.7084L11.0834 0.5834Q11.335 0.3458 11.325 0Q11.335 -0.3458 11.0834 -0.5834Q10.8458 -0.835 10.5 -0.825Q10.1541 -0.835 9.9166 -0.5834L3.375 5.9583Z" fill="#B05A3A"/></svg>`
-	const aiAvatarSvg = `<svg viewBox="-1 -1 12 16" xmlns="http://www.w3.org/2000/svg"><path d="M6.9963 0.1287Q7.875 1.0074 7.875 2.25L7.875 6Q7.875 7.2426 6.9963 8.1213Q6.1176 9 4.875 9Q3.6324 9 2.7537 8.1213Q1.875 7.2426 1.875 6L1.875 2.25Q1.875 1.0074 2.7537 0.1287Q3.6324 -0.75 4.875 -0.75Q6.1176 -0.75 6.9963 0.1287ZM5.9357 1.1893Q5.4963 0.75 4.875 0.75Q4.2537 0.75 3.8143 1.1893Q3.375 1.6287 3.375 2.25L3.375 6Q3.375 6.6213 3.8143 7.0607Q4.2537 7.5 4.875 7.5Q5.4963 7.5 5.9357 7.0607Q6.375 6.6213 6.375 6L6.375 2.25Q6.375 1.6287 5.9357 1.1893ZM1.9582 8.9168Q0.75 7.7086 0.75 6Q0.759 5.6856 0.5303 5.4697Q0.3144 5.241 0 5.25Q-0.3144 5.241 -0.5303 5.4697Q-0.759 5.6856 -0.75 6Q-0.75 8.33 0.8975 9.9775Q2.2733 11.3533 4.125 11.5802L4.125 13.5Q4.116 13.8144 4.3447 14.0303Q4.5606 14.259 4.875 14.25Q5.1894 14.259 5.4053 14.0303Q5.634 13.8144 5.625 13.5L5.625 11.5802Q7.4767 11.3533 8.8525 9.9775Q10.5 8.33 10.5 6Q10.509 5.6856 10.2803 5.4697Q10.0644 5.241 9.75 5.25Q9.4356 5.241 9.2197 5.4697Q8.9909 5.6856 9 6Q9 7.7086 7.7918 8.9168Q6.5836 10.125 4.875 10.125Q3.1664 10.125 1.9582 8.9168Z" fill="#7A8C5A"/></svg>`
-	const tealAvatarSvg = `<svg viewBox="-2 -1 18 16" xmlns="http://www.w3.org/2000/svg"><path d="M13.1191 3.0053Q10.9874 -0.7285 6.7286 -0.7499Q2.3893 -0.7285 0.2425 3.0053Q-1.8969 6.7524 0.2446 10.4983Q2.3893 14.25 6.6808 14.25Q10.9723 14.25 13.1171 10.4983Q15.2585 6.7524 13.1191 3.0053Z" fill="#4E7D8C"/></svg>`
-
 	// ===== 响应式状态 =====
-	let activeSegment = ref(0)
-	let segments = ['系统通知', 'AI 互动']
 	let unreadCount = ref(0)
 	let allMessages = ref<Array<AppMessage>>([])
 
@@ -106,16 +78,16 @@
 		title: string
 		summary: string
 		time: string
-		iconSvg: string
+		iconPath: string
 		avatarBg: string
 		read: boolean
 		type: number
-		constructor(id: number, title: string, summary: string, time: string, iconSvg: string, avatarBg: string, read: boolean, type: number) {
+		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number) {
 			this.id = id
 			this.title = title
 			this.summary = summary
 			this.time = time
-			this.iconSvg = iconSvg
+			this.iconPath = iconPath
 			this.avatarBg = avatarBg
 			this.read = read
 			this.type = type
@@ -129,12 +101,12 @@
 	}
 	function msgIcon(t: string): string {
 		if (t == 'care_followup') {
-			return aiAvatarSvg
+			return '/static/icons/msg-ai.svg'
 		}
 		if (t == 'voice_done' || t == 'echo') {
-			return tealAvatarSvg
+			return '/static/icons/msg-teal.svg'
 		}
-		return bellSvg
+		return '/static/icons/msg-bell.svg'
 	}
 	function msgBg(t: string): string {
 		if (t == 'care_followup') {
@@ -162,13 +134,15 @@
 	let filteredMessages = computed((): Array<MessageItem> => {
 		const out: Array<MessageItem> = []
 		for (let i = 0; i < allMessages.value.length; i++) {
-			const it = toItem(allMessages.value[i])
-			if (it.type === activeSegment.value) {
-				out.push(it)
-			}
+			out.push(toItem(allMessages.value[i]))
 		}
 		return out
 	})
+
+	/** 返回上级（设计稿消息中心由别的页签进入，带返回导航） */
+	function goBack(): void {
+		uni.navigateBack({ delta: 1 })
+	}
 
 	/** 加载消息列表 + 未读数（onShow 每次进入刷新） */
 	function loadMessages(): void {
@@ -184,10 +158,6 @@
 		loadMessages()
 	})
 
-	function setSegment(idx: number): void {
-		activeSegment.value = idx
-	}
-
 	function openMessage(msg: MessageItem): void {
 		if (!msg.read) {
 			msg.read = true
@@ -201,31 +171,12 @@
 	function openFeatured(): void {
 		uni.showToast({ title: '本周记忆摘要待接入', icon: 'none' })
 	}
-
-	function onMore(): void {
-		uni.showActionSheet({
-			itemList: ['全部标记已读'],
-			success: (res) => {
-				if (res.tapIndex === 0) {
-					markAllRead().then((ok: boolean) => {
-						if (ok) {
-							unreadCount.value = 0
-							for (let i = 0; i < allMessages.value.length; i++) {
-								allMessages.value[i].status = 'read'
-							}
-						}
-					})
-				}
-			}
-		})
-	}
 </script>
 
 <style>
 	/* 视觉规范：像素级还原 消息中心.svg（390x844画布）
 	   背景 #F8F7F4 / 精选卡渐变 #D9E2CA / 消息卡 #FFFFFF rx=20
-	   头像: 锈红#B0593B / 绿#7A8C5A / 青#4E7D8C
-	   玻璃 TabBar #F6F1E7 75% rx=31 / FAB #B05A3A */
+	   头像: 锈红#B0593B / 绿#7A8C5A / 青#4E7D8C */
 	.page {
 		width: 100%;
 		height: 100%;
@@ -234,101 +185,99 @@
 		flex-direction: column;
 	}
 
-	/* ===== 顶部标题区 ===== */
+	/* ===== 顶部导航（返回箭头 ‹ + 居中标题 ~35rpx） ===== */
 	.header {
-		padding: 32rpx 40rpx 0 40rpx;
+		padding: 0 40rpx;
 	}
-	.header-row {
+	.nav-row {
+		position: relative;
+		height: 64rpx;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 20rpx;
+		padding-top: 94rpx;
+		margin-bottom: 24rpx;
 	}
-	.header-title {
-		font-size: 44rpx;
-		color: #3a2e25;
-		font-weight: 700;
-	}
-	.header-more {
-		width: 56rpx;
-		height: 56rpx;
+	.back-btn {
+		position: absolute;
+		left: 0;
+		top: 94rpx;
+		width: 80rpx;
+		height: 64rpx;
 		display: flex;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-start;
+		z-index: 2;
+	}
+	.back-arrow {
+		font-size: 48rpx;
+		line-height: 64rpx;
+		color: #3a2e25;
+		font-weight: 300;
+	}
+	.nav-title {
+		flex: 1;
+		text-align: center;
+		font-size: 35rpx;
+		color: #3a2e25;
+		font-weight: 700;
 	}
 	.header-sub {
-		font-size: 24rpx;
+		font-size: 22rpx;
 		color: #8a7a6a;
-		margin-top: 12rpx;
-	}
-
-	/* ===== 分段控件 ===== */
-	.segment-row {
-		display: flex;
-		flex-direction: row;
-		margin-bottom: 8rpx;
-	}
-	.segment-item {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		margin-right: 48rpx;
-		padding: 8rpx 0;
-		position: relative;
-	}
-	.segment-text {
-		font-size: 30rpx;
-		color: #b3a696;
-		font-weight: 500;
-	}
-	.segment-text-active {
-		color: #3a2e25;
-		font-weight: 700;
-	}
-	.segment-dot {
-		width: 12rpx;
-		height: 12rpx;
-		background-color: #b05a3a;
-		border-radius: 6rpx;
-		margin-left: 8rpx;
+		margin-top: 16rpx;
 	}
 
 	/* ===== 滚动内容区 ===== */
 	.content-scroll {
 		flex: 1;
-		padding: 20rpx 40rpx 0 40rpx;
+		padding: 20rpx 38rpx 0 38rpx;
 	}
 
-	/* ===== AI 精选卡（设计稿: 350x104 rx=20） ===== */
+	/* ===== 时间胶囊卡（设计稿: 673x200 rx=20，内嵌 642x169 rx=12 渐变面板） ===== */
 	.featured-card {
-		width: 700rpx;
+		width: 673rpx;
+		box-sizing: border-box;
 		background-color: #ffffff;
 		border-radius: 40rpx;
-		padding: 28rpx;
-		margin-bottom: 24rpx;
+		padding: 15rpx;
+		margin-bottom: 111rpx;
 		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
 	}
-	.featured-wave-row {
+	.featured-panel {
+		width: 100%;
+		background: linear-gradient(90deg, rgba(217,226,202,0.6), rgba(217,226,202,0.12));
+		border-radius: 24rpx;
+		padding: 28rpx;
+		display: flex;
+		flex-direction: column;
+	}
+	.featured-meta-row {
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 16rpx;
+		margin-bottom: 12rpx;
+	}
+	.featured-meta {
+		font-size: 21rpx;
+		color: #7a8c5a;
+		margin-left: 10rpx;
 	}
 	.featured-title {
 		font-size: 30rpx;
 		color: #3a2e25;
-		font-weight: 600;
+		font-weight: 700;
 		margin-bottom: 8rpx;
 	}
 	.featured-sub {
-		font-size: 24rpx;
+		font-size: 23rpx;
 		color: #5a4c40;
 	}
 
-	/* ===== 消息列表卡（设计稿: 350x204 rx=20） ===== */
+	/* ===== 消息列表卡（设计稿: 673x392 rx=20，行距 123rpx，行间无分隔线） ===== */
 	.message-card {
-		width: 700rpx;
+		width: 673rpx;
+		box-sizing: border-box;
 		background-color: #ffffff;
 		border-radius: 40rpx;
 		padding: 8rpx 28rpx;
@@ -338,11 +287,9 @@
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		padding: 24rpx 0;
+		padding: 21rpx 0;
+		min-height: 123rpx;
 		position: relative;
-		border-bottom-width: 1rpx;
-		border-bottom-color: rgba(58,46,37,0.06);
-		border-bottom-style: solid;
 	}
 	.message-avatar {
 		width: 80rpx;
@@ -366,19 +313,19 @@
 		margin-bottom: 6rpx;
 	}
 	.message-title {
-		font-size: 28rpx;
+		font-size: 27rpx;
 		color: #3a2e25;
 		font-weight: 600;
 	}
 	.message-time {
-		font-size: 22rpx;
+		font-size: 19rpx;
 		color: #b3a696;
 		margin-left: 16rpx;
 	}
 	.message-summary {
-		font-size: 24rpx;
+		font-size: 21rpx;
 		color: #8a7a6a;
-		line-height: 36rpx;
+		line-height: 32rpx;
 	}
 	.unread-dot {
 		width: 14rpx;
@@ -403,7 +350,6 @@
 	.bottom-spacer {
 		height: 180rpx;
 	}
-
 
 	/* 按压态 */
 	.pressable {
