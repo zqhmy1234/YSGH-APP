@@ -144,7 +144,7 @@
 					</view>
 					<textarea class="text-input serif" v-model="draft" placeholder="补充一句此刻的感想（可选）" :maxlength="500" />
 					<view class="text-actions">
-						<text class="muted">照片记录后端待接入，保存仅本地预览</text>
+						<text class="muted">拍摄或选择后点保存，将上传到你的记忆库</text>
 					</view>
 				</view>
 			</scroll-view>
@@ -168,6 +168,8 @@
 		REC_STATE_PAUSED
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
+	import { uploadBatch, UploadProgress, UploadedPhoto } from '@/utils/uploader'
+	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
 
 	// ===== 设计稿图标（SVG path 取自 design_data_for_agents/05_记录面板） =====
 	// 底部弹层四入口图标
@@ -187,6 +189,8 @@
 	let formTitle = '写几句'
 	let saveText = '记下来'
 	let photoPreview = ''
+	let photoSize = 0
+	let photoUploading = false
 	// 文字记录
 	let draft = ''
 	let submitting = false
@@ -270,6 +274,10 @@
 				if (tp != null) {
 					photoPreview = tp
 				}
+				const tf = res.tempFiles[0]
+				if (tf != null) {
+					photoSize = tf.size
+				}
 			},
 			fail: () => {
 				showErrorToast(new Error('未选择照片'))
@@ -281,7 +289,27 @@
 			showErrorToast(new Error('请先拍照或选一张照片'))
 			return
 		}
-		uni.showToast({ title: '照片记录后端待接入，已保留本地预览', icon: 'none' })
+		if (photoUploading) {
+			return
+		}
+		photoUploading = true
+		uni.showLoading({ title: '上传中…', mask: true })
+		const now = Date.now()
+		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
+		const item = new PhotoItem(-now, photoPreview, now, 0, 0, null, null, photoSize)
+		const items: Array<PhotoItem> = [item]
+		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
+			uni.hideLoading()
+			photoUploading = false
+			if (uploaded.length > 0) {
+				uni.showToast({ title: '照片已保存', icon: 'success' })
+				photoPreview = ''
+				photoSize = 0
+				closeForm()
+			} else {
+				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
+			}
+		})
 	}
 
 	// ===== 文字记录方法 =====

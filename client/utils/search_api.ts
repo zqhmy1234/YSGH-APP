@@ -168,11 +168,15 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 	)
 }
 
-/** POST /search：描述性搜索；返回 SearchOutcome 或 null */
-export function searchText(query: string, limit: number): Promise<SearchOutcome | null> {
+/** POST /search：描述性搜索；contentTypes 非空时按 photo/voice/text/article 过滤；返回 SearchOutcome 或 null */
+export function searchText(query: string, limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
 	const body: UTSJSONObject = {
 		q: query,
 		limit: limit
+	}
+	// 仅在指定类型时下发 content_types（空数组=全部，不下发避免后端误判）
+	if (contentTypes.length > 0) {
+		body.set('content_types', contentTypes)
 	}
 	return new Promise<SearchOutcome | null>((resolve) => {
 		post(PATH_SEARCH, body).then((res: UTSJSONObject | null) => {

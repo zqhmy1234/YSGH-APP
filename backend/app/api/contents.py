@@ -345,6 +345,7 @@ def create_content(
 
 @router.get("", response_model=ApiResponse[Page[ContentOut]])
 def list_contents(
+    content_id: str | None = None,
     page: PageParams = Depends(pagination_params),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -361,6 +362,9 @@ def list_contents(
         Content.user_id == user.id,
         Content.deleted_at.is_(None),
     ).order_by(Content.created_at.desc(), Content.id.desc())
+    # 详情页精确取单条（content_id 为 UUID 字符串；路径 /contents/{id} 已归缩略图端点）
+    if content_id:
+        query = query.where(Content.id == content_id)
 
     if page.cursor:
         try:

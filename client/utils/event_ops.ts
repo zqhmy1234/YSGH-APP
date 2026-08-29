@@ -101,6 +101,57 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 	})
 }
 
+	/** 单条内容详情（记忆详情页；GET /contents?content_id= 精确取，失败 null） */
+	export class ContentDetail {
+		id: string
+		contentType: string
+		text: string
+		takenAt: string
+		place: string
+		status: string
+
+		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string) {
+			this.id = id
+			this.contentType = contentType
+			this.text = text
+			this.takenAt = takenAt
+			this.place = place
+			this.status = status
+		}
+	}
+
+	export function fetchContentDetail(contentId: string): Promise<ContentDetail | null> {
+		return new Promise<ContentDetail | null>((resolve) => {
+			get('/api/v1/contents?content_id=' + contentId + '&limit=1').then((resp: UTSJSONObject | null) => {
+				if (resp == null) {
+					resolve(null)
+					return
+				}
+				const d = dataObj(resp)
+				if (d == null) {
+					resolve(null)
+					return
+				}
+				const arr = d.getArray('items')
+				if (arr == null || arr.length == 0) {
+					resolve(null)
+					return
+				}
+				const it = arr[0] as UTSJSONObject
+				resolve(
+					new ContentDetail(
+						it.getString('id') ?? '',
+						it.getString('content_type') ?? '',
+						it.getString('text') ?? '',
+						it.getString('taken_at') ?? '',
+						it.getString('place') ?? '',
+						it.getString('status') ?? ''
+					)
+				)
+			})
+		})
+	}
+
 /** L2 待确认区"忽略"（MVP 本地隐藏；后端 reject 端点由 Agent D 域，后续可替换） */
 export function ignoreEventLocally(eventId: string): void {
 	const raw = uni.getStorageSync(IGNORE_KEY) as string

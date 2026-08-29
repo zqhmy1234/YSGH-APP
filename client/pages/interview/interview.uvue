@@ -22,7 +22,7 @@
 		<!-- 问题卡片（设计稿 350x113 @20,220 rx=20 · 三行：琥珀序号/深褐问题/灰提示） -->
 		<view v-if="!done" class="interview-card">
 			<text class="card-index">访谈 · 第 {{ step + 1 }}问</text>
-			<text class="card-question serif">{{ questions[step] }}</text>
+			<text class="card-question serif">{{ currentQuestion }}</text>
 			<text class="card-hint">随便聊聊，一两句话就够</text>
 		</view>
 
@@ -72,20 +72,31 @@
 </template>
 
 <script setup lang="uts">
-	import { ref } from 'vue'
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import {
+		fetchInterviewQuestions,
+		submitInterviewAnswers,
+		InterviewQuestion,
+		InterviewResult
+	} from '@/utils/play'
 
-	// 三问文案（与设计稿冷启动访谈一致）
-	const questions: Array<string> = [
-		'最近有什么小事，让你印象很深？',
-		'今天有什么瞬间，值得被记住？',
-		'此刻，最想对谁说一句话？'
+	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
+	const fallbackQuestions: Array<InterviewQuestion> = [
+		new InterviewQuestion('important_person', '最近有什么小事，让你印象很深？'),
+		new InterviewQuestion('life_turn', '今天有什么瞬间，值得被记住？'),
+		new InterviewQuestion('proud_thing', '此刻，最想对谁说一句话？')
 	]
+	let questions = ref<Array<InterviewQuestion>>(fallbackQuestions)
+	const currentQuestion = computed((): string => {
+		if (step.value >= 0 && step.value < questions.value.length) {
+			return questions.value[step.value].question
+		}
+		return ''
+	})
 
 	// 麦克风图标（设计稿 path，viewBox 对齐 -2..16 / -2..22）
 	const micSvg: string = '<svg viewBox="-2 -2 18 24" xmlns="http://www.w3.org/2000/svg"><path d="M10.1058 0.1859Q11.375 1.4551 11.375 3.25L11.375 8.6667Q11.375 10.4616 10.1058 11.7308Q8.8366 13 7.0417 13Q5.2467 13 3.9775 11.7308Q2.7083 10.4616 2.7083 8.6667L2.7083 3.25Q2.7083 1.4551 3.9775 0.1859Q5.2467 -1.0833 7.0417 -1.0833Q8.8366 -1.0833 10.1058 0.1859ZM8.5737 1.7179Q7.9391 1.0833 7.0417 1.0833Q6.1442 1.0833 5.5096 1.7179Q4.875 2.3525 4.875 3.25L4.875 8.6667Q4.875 9.5641 5.5096 10.1987Q6.1442 10.8333 7.0417 10.8333Q7.9391 10.8333 8.5737 10.1987Q9.2083 9.5641 9.2083 8.6667L9.2083 3.25Q9.2083 2.3525 8.5737 1.7179ZM2.8285 12.8799Q1.0833 11.1347 1.0833 8.6667Q1.0964 8.2125 0.766 7.9006Q0.4541 7.5703 0 7.5833Q-0.4541 7.5703 -0.766 7.9006Q-1.0964 8.2125 -1.0833 8.6667Q-1.0833 12.0322 1.2964 14.4119Q3.2837 16.3992 5.9583 16.7269L5.9583 19.5Q5.9453 19.9541 6.2756 20.266Q6.5875 20.5964 7.0417 20.5833Q7.4958 20.5964 7.8077 20.266Q8.1381 19.9541 8.125 19.5L8.125 16.7269Q10.7997 16.3992 12.7869 14.4119Q15.1667 12.0322 15.1667 8.6667Q15.1797 8.2125 14.8494 7.9006Q14.5375 7.5703 14.0833 7.5833Q13.6292 7.5703 13.3173 7.9006Q12.9869 8.2125 13 8.6667Q13 11.1347 11.2549 12.8799Q9.5097 14.625 7.0417 14.625Q4.5736 14.625 2.8285 12.8799Z"/></svg>'
-
-	// 金色四角星（设计稿 path）
-	const sparkleSvg: string = '<svg viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg"><path d="M15 0L18.3 11.7L30 15L18.3 18.3L15 30L11.7 18.3L0 15L11.7 11.7L15 0Z"/></svg>'
 
 	// 状态
 	let step = ref(0)
@@ -94,7 +105,27 @@
 	let recSeconds = ref(0)
 	let showTextModal = ref(false)
 	let textAnswer = ref('')
+	let confirmation = ref('')
+	let submitting = ref(false)
 	let timerId: number = -1
+	// 按问题 key 收集答案（后端 answers dict 白名单 key）
+	const answers: UTSJSONObject = {}
+
+	onLoad(() => {
+		fetchInterviewQuestions().then((list: Array<InterviewQuestion>) => {
+			if (list.length > 0) {
+				questions.value = list
+			}
+		})
+	})
+
+	// 当前问题 key
+	function currentKey(): string {
+		if (step.value >= 0 && step.value < questions.value.length) {
+			return questions.value[step.value].key
+		}
+		return ''
+	}
 
 	// 麦克风点按：录音 / 停止
 	function onMicTap(): void {
@@ -120,19 +151,41 @@
 		}
 		recording.value = false
 		if (advance) {
+			// 冷启动语音回答：完整 ASR 链路在记录页；此处先占位，保证三问答案非空闭环
+			const k = currentKey()
+			if (k != '') {
+				answers[k] = '（语音回答 ' + recSeconds.value + ' 秒）'
+			}
 			uni.showToast({ title: '已记录语音回答', icon: 'none' })
 			nextStep()
 		}
 	}
 
-	// 前进：进入下一问或完成
+	// 前进：进入下一问或提交完成
 	function nextStep(): void {
-		if (step.value < questions.length - 1) {
+		if (step.value < questions.value.length - 1) {
 			step.value = step.value + 1
 			textAnswer.value = ''
 		} else {
-			done.value = true
+			submitAll()
 		}
+	}
+
+	// 提交三问答案到后端，拿复述确认
+	function submitAll(): void {
+		if (submitting.value) {
+			return
+		}
+		submitting.value = true
+		uni.showLoading({ title: '正在生成画像…' })
+		submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
+			uni.hideLoading()
+			submitting.value = false
+			if (res != null && res.confirmation != '') {
+				confirmation.value = res.confirmation
+			}
+			done.value = true
+		})
 	}
 
 	// 文字回答弹层
@@ -148,6 +201,10 @@
 			return
 		}
 		showTextModal.value = false
+		const k = currentKey()
+		if (k != '') {
+			answers[k] = textAnswer.value.trim()
+		}
 		uni.showToast({ title: '已记录文字回答', icon: 'none' })
 		nextStep()
 	}
