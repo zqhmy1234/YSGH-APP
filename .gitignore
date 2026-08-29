@@ -134,3 +134,11 @@ values-*/
 META-INF/
 proguard.txt
 public.txt
+
+# 后端联调敏感/临时文件
+backend/token.txt
+backend/.venv/
+backend/pip_install*.log
+backend/uvicorn*.log
+backend/__pycache__/
+
