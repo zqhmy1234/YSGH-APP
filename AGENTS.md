@@ -19,7 +19,7 @@
 - `docs/parallel-dev/` — **开发期并行开发任务卡（「开发 Wave 1–4」，Agent A–L，2026-08-25~26，已结束）**：00 总纲（文件域所有权/波次/完成定义）→ 02–12 任务卡 → 13 集成规则 → `_B5a_B5d修正后待办.md`。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
 - `docs/parallel-dev-收尾/` — **收尾波次任务卡（「收尾 Wave 1–4」，2026-08-27~28，已全收口）**：00 总纲（17 项范围+远期待办 §7）→ 01–12 任务卡 → 13 集成 → 14 INT → 15 真机 SOP → 16/21/22 归档（4a/4b）→ 17–20 附表。**19 号跟踪表 §4＝缺陷台账（20 单：D-01~D-16、D-18~D-22；D-17 未启用；D-20 系补验修复单 f726942；D-22=08-29 P-2 诊断坐实 O-2 升单）与环境事件（O-1；O-2→D-22）唯一来源**；各卡是历史记录，勿当待办入口。⚠️「开发 Wave 4」（J/K/L）≠「收尾 Wave 4」（4a/4b 归档），全库术语表见 `docs/决策台账.md` §0
 - `skills/infisical-secrets/SKILL.md` — Infisical 密钥链路 skill（所有外部 API Key 统一从这里取，2026-08-19 打通）
-- `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查 + **收尾 Wave 3 真机教训：adb reverse 铁律 / EMUI 纯净模式 / 云打包 CLI 参数 / D-18/D-19 原生探测坑**；**改 client/ 代码前先读**，2026-08-24 沉淀、08-28 补录）
+- `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查 + **收尾 Wave 3 真机教训：adb reverse 铁律 / EMUI 纯净模式 / 云打包 CLI 参数 / D-18/D-19 原生探测坑·**5.24 迁移期多窗协调军规**；**改 client/ 代码前先读**，2026-08-24 沉淀、08-28 补录）
 - `skills/android-media-e2e/SKILL.md` — 真机 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位 + **收尾 Wave 3 沉淀：语音短录音链 / 情绪三层默认值 / 云打包验证**；F1 链路真机验收流程，2026-08-24 沉淀、08-28 补录）
 - `DSH插件选型与安装方案.md` — 本机 DSH 环境文档（与产品无关）
 

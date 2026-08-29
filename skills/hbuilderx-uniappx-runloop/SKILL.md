@@ -36,6 +36,9 @@ official: false
 
 - 只看结尾：`项目 client 编译成功` = 过；`[plugin:uni:app-uts] 编译失败` = 按第 4 节速查表修
 - 黄色 `warning: Identity equality ... boxing` 可忽略（statusCode === 200 的装箱告警）
+- **路径军规**：项目名解析吃相对名——本机 4 个同名 `client` 条目（主仓/worktree×N），**一律绝对路径**；未导入的 worktree 项目先 `cli.exe project open --path "<绝对路径>"` 注册后再 launch
+- **禁止并发编译**：全机只有一个 HBuilderX 实例，两会话同时 `cli launch --compile` 会互杀（表现为莫名 `已停止运行...`，实为对端抢占）——开跑前确认没有别的窗口/agent 在编译；多窗并行期（08-29 起）编译窗口是稀缺资源，先协调再点火
+- **内存闸**：编译前 `Get-CimInstance Win32_OperatingSystem` 查 `FreePhysicalMemory`（<2GB 大概率 OOM/静默失败；BGE-M3/SetFit 常驻期更甚）
 
 ### 2. 真机运行（~1min）
 
@@ -86,5 +89,13 @@ official: false
 - **EMUI 纯净模式拦 adb install 且零错误提示**：`adb install` 失败+空错误 → 先看手机屏幕弹窗/设置关"纯净模式"，别绕 adb 版本/streamed 排查。
 - **云打包 CLI（07 清单实参）**：`cli pack --platform android --iscustom true --android.packagename com.yishu.guanghua --ignoreWarnings true`——`--ignoreWarnings` 需**显式布尔值**；自定义基座运行=`cli launch ... --playground custom --native-log true`（native-log 收原生日志）；出包自动落 `client/unpackage/debug/android_debug.apk`；先 `aapt dump xmltree <apk> AndroidManifest.xml | Select-String service` 验基座 manifest。
 - **UTS 基座能力探测不得用 `getResource('*.class')`**（D-18 根因）：Android class 全编译进 dex，`.class` 资源恒不存在→探测恒 false。云包是否含原生类用 `findstr /m /c:<类名> classes*.dex` 尸检；探测改插件自带 marker asset 或 `catch (e: any)` 包 Class.forName。
-- **UTS Service 必须 manifest 注册**（D-19 根因）：`class X extends Service` 只在源码里、插件无 manifest 片段 → 云包无该 service → startService 必死；"标准基座自动回退"注释掩盖全基座失效。
+- **UTS Service 必须 manifest 注册，且注册点有讲究**（D-19 真根因，08-29 升级）：`class X extends Service` 只在源码里 → 云包无该 service → startService 必死。**注意：插件目录 `utssdk/app-android/AndroidManifest.xml` 写了也没用——云打包不合并插件内 manifest**（ask.dcloud.net.cn/question/214927 实证）；真合并点 = **工程根 `client/AndroidManifest.xml`**（3.6.0+）与 `client/nativeResources/android/{assets,res}/`。「标准基座自动回退」注释掩盖全基座失效。
+- **.gitignore 通配吞真源**（D-19 伴生雷）：根 .gitignore 无锚点通配 `AndroidManifest.xml`、`res/`（本意清构建残留）会把工程根/nativeResources 的**真源文件**一并忽略——文件写了、编译用得到、git 里却不存在（08-28 Agent 走错位的疑因）。修复=豁免三连 `!client/AndroidManifest.xml` `!client/nativeResources/` `!client/nativeResources/**`；验证=`git check-ignore -v` 三件套（真源不被忽略 + `.env` 仍忽略 + unpackage 残留仍忽略）。
 - **全量编译才暴露存量错**：增量编译 warm cache 会掩盖 UTS 错误，`--cleanCache` 全量编译是回归前的硬验证（本波 7 处存量 UTS 错如此暴露）。
+
+## 7. 5.24 迁移期状态（2026-08-29 起，多窗并行）
+
+- **develop 干净基线在 HBuilderX 5.24 下编不过**：UTS `.then` 回调返回类型推断收紧，群发 `Return type mismatch: expected 'Function', actual 'X'`（upload_protocol.ts/uploader.ts/event_ops.ts/sync_client.ts 等）。此前历史「编译通过」证据全部跑在主工作区**脏未提交修复**上（教训：基线可编译性只能以 clean worktree 冷编译证明）。
+- **迁移归属（08-29 拍板，台账 §1.9）**：修复在途窗 `wrap1-agentA2-ui-restore`（其旧基线上逐文件修）；主修复分支 fix/4b **让位客户端域**——客户端半修复（D-07/08/05/14/10/21/22/06/U3）全部冻结，待迁移提交落地后 rebase → 统一一次冷编译。
+- **同形热修约定**：fix/4b 已对 upload_protocol/uploader 打两枚 `new Promise` 包装同形热修（解锁被卡流程用）；rebase 时**以迁移窗最终版为准**，勿坚持我方版本。
+- **UTS Promise 包装范式**（迁移期通用）：`.then` 直接 return 值的旧写法 → `return new Promise<T>((resolve) => { ...resolve(v) })`；嵌套箭头函数若触发推断问题，改具名 function 声明（他窗 event_ops 已验证该绕行有效）。
