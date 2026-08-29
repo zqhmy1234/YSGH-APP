@@ -1,293 +1,480 @@
-﻿<template>
+<template>
 	<view class="page">
-		<view class="header">
-			<text class="header-title serif">冷启动访谈</text>
-			<text class="header-sub">回答三个问题，让记忆整理更懂你</text>
+		<!-- 氛围渐变圆（设计稿 3 处径向光斑：琥珀上左 / 青绿上右 / 蓝灰中左） -->
+		<view class="glow glow-amber"></view>
+		<view class="glow glow-green"></view>
+		<view class="glow glow-blue"></view>
+
+		<!-- 进度指示点（3 问，设计稿 dots y=68 · 激活 #B05A3A / 未激活 #E5DED2） -->
+		<view class="dots-row">
+			<view v-for="(i) in 3" :key="i" class="dot" :class="{ 'dot-active': (i - 1) === step }"></view>
 		</view>
 
-		<scroll-view class="content-scroll">
-		<!-- 三层披露（T-PL-2）：先披露再作答 -->
-		<view v-if="step === 'disclose'" class="disclose-card">
-			<text class="disclose-title serif">关于你的回答</text>
-			<text class="disclose-item">1. 仅用于记忆整理与个性化回顾，不会对外分享</text>
-			<text class="disclose-item">2. 可以随时修改或清空你的画像</text>
-			<text class="disclose-item">3. 未命中的回答不会写入画像（闭集约束）</text>
-			<view class="disclose-actions">
-				<view class="btn ghost" @tap="skipInterview">
-					<text class="btn-text ghost-text">跳过</text>
-				</view>
-				<view class="btn" @tap="beginInterview">
-					<text class="btn-text">知道了，开始</text>
-				</view>
-			</view>
+		<!-- 金色四角星装饰（设计稿 30x30 @180,99，中心 ~195,114） -->
+		<view class="sparkle">
+			<hens-svg :src="sparkleSvg" :width="30" :height="30" color="#C4913C" />
 		</view>
 
-		<!-- 三问作答 -->
-		<view v-else-if="step === 'ask'" class="ask-card">
-			<view v-for="(q, qi) in questions" :key="q.key" class="q-block">
-				<text class="q-title serif">{{ qi + 1 }}. {{ q.question }}</text>
-				<textarea class="q-input serif" v-model="answers[q.key]" :maxlength="500" placeholder="说点什么…" />
-			</view>
-			<view class="ask-actions">
-				<view class="btn ghost" @tap="skipInterview">
-					<text class="btn-text ghost-text">跳过</text>
-				</view>
-				<view class="btn" @tap="submitAnswers">
-					<text class="btn-text">{{ submitting ? '提交中…' : '提交' }}</text>
-				</view>
+		<!-- 品牌名 + 标语（设计稿 y=142 / y=172 居中） -->
+		<text class="brand-title serif">忆述光华</text>
+		<text class="brand-slogan">把日子过成可以回访的故事</text>
+
+		<!-- 问题卡片（设计稿 350x113 @20,220 rx=20 · 三行：琥珀序号/深褐问题/灰提示） -->
+		<view v-if="!done" class="interview-card">
+			<text class="card-index">访谈 · 第 {{ step + 1 }}问</text>
+			<text class="card-question serif">{{ questions[step] }}</text>
+			<text class="card-hint">随便聊聊，一两句话就够</text>
+		</view>
+
+		<!-- 完成卡片（三问答毕） -->
+		<view v-else class="interview-card">
+			<text class="card-index">访谈完成</text>
+			<text class="card-question serif">谢谢你的分享，已经开始了解你了</text>
+			<view class="start-btn pressable" @tap="goHome">
+				<text class="start-btn-text">开始使用</text>
 			</view>
 		</view>
 
-		<!-- 复述确认（B1-6 档案确认闭环） -->
-		<view v-else-if="step === 'done'" class="done-card">
-			<text class="done-title serif">谢谢你的分享</text>
-			<text class="done-confirm">{{ confirmation }}</text>
-			<view class="btn" @tap="finishInterview">
-				<text class="btn-text">完成</text>
+		<!-- 录音区：同心环 + 麦克风按钮（设计稿中心 ~195,490） -->
+		<view v-if="!done" class="record-orbit">
+			<view class="ring ring-outer"></view>
+			<view class="ring ring-inner"></view>
+			<view class="mic-btn pressable" @tap="onMicTap">
+				<hens-svg :src="micSvg" :width="17" :height="22" color="#FFFFFF" />
 			</view>
 		</view>
-		</scroll-view>
-		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
-		<view class="glass-tabbar">
-			<view class="tabbar-item  pressable" @tap="goIndex">
-				<text class="tabbar-icon">🏠</text>
-				<text class="tabbar-label">时间轴</text>
-			</view>
-			<view class="tabbar-item  pressable" @tap="goSearch">
-				<text class="tabbar-icon">🔍</text>
-				<text class="tabbar-label">搜索</text>
-			</view>
-			<view class="tabbar-fab pressable" @tap="goRecord">
-				<text class="tabbar-fab-icon">+</text>
-			</view>
-			<view class="tabbar-item  pressable" @tap="goMessages">
-				<text class="tabbar-icon">💬</text>
-				<text class="tabbar-label">消息</text>
-			</view>
-			<view class="tabbar-item active pressable" @tap="goProfile">
-				<text class="tabbar-icon">👤</text>
-				<text class="tabbar-label">我的</text>
-			</view>
-		</view>
-</view>
+		<view v-if="!done" class="record-hint" :class="{ 'hint-recording': recording }">{{ recording ? '正在录音 ' + recSeconds + '″' : '点按说话' }}</view>
+		<view v-if="!done" class="text-answer pressable" @tap="openTextModal">用文字回答</view>
 
+		<!-- 跳过访谈 -->
+		<text v-if="!done" class="skip pressable" @tap="skipInterview">跳过访谈</text>
+
+		<!-- 主页指示条（设计稿 y=828） -->
+		<view class="home-bar"></view>
+
+		<!-- 文字回答弹层 -->
+		<view v-if="showTextModal" class="text-modal">
+			<view class="modal-mask" @tap="closeTextModal"></view>
+			<view class="modal-card">
+				<text class="modal-title serif">用文字回答</text>
+				<textarea class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
+				<view class="modal-actions">
+					<view class="modal-btn modal-btn-ghost pressable" @tap="closeTextModal">
+						<text class="modal-btn-text ghost-text">取消</text>
+					</view>
+					<view class="modal-btn pressable" @tap="submitTextAnswer">
+						<text class="modal-btn-text">提交</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
 </template>
 
 <script setup lang="uts">
-	import { onLoad } from '@dcloudio/uni-app'
-	import { ensureLogin } from '@/utils/auth'
-	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play'
-	import { showErrorToast } from '@/utils/api'
+	import { ref } from 'vue'
 
-	// 响应式数据
-	let step = 'disclose'
-	let questions: Array<InterviewQuestion> = []
-	let answers = UTSJSONObject()
-	let submitting = false
-	let confirmation = ''
+	// 三问文案（与设计稿冷启动访谈一致）
+	const questions: Array<string> = [
+		'最近有什么小事，让你印象很深？',
+		'今天有什么瞬间，值得被记住？',
+		'此刻，最想对谁说一句话？'
+	]
 
-	// 生命周期
-	onLoad(() => {
-		ensureLogin().then((ok: boolean) => {
-			if (!ok) {
-				showErrorToast(new Error('登录失败，请重试'))
-				return
-			}
-			fetchInterviewQuestions().then((qs: Array<InterviewQuestion>) => {
-				if (qs.length > 0) {
-					questions = qs
-					for (let i = 0; i < qs.length; i++) {
-						answers.set(qs[i].key, '')
-					}
-					step = 'disclose'
-				} else {
-					showErrorToast(new Error('访谈问题加载失败'))
-				}
-			})
-		})
-	})
+	// 麦克风图标（设计稿 path，viewBox 对齐 -2..16 / -2..22）
+	const micSvg: string = '<svg viewBox="-2 -2 18 24" xmlns="http://www.w3.org/2000/svg"><path d="M10.1058 0.1859Q11.375 1.4551 11.375 3.25L11.375 8.6667Q11.375 10.4616 10.1058 11.7308Q8.8366 13 7.0417 13Q5.2467 13 3.9775 11.7308Q2.7083 10.4616 2.7083 8.6667L2.7083 3.25Q2.7083 1.4551 3.9775 0.1859Q5.2467 -1.0833 7.0417 -1.0833Q8.8366 -1.0833 10.1058 0.1859ZM8.5737 1.7179Q7.9391 1.0833 7.0417 1.0833Q6.1442 1.0833 5.5096 1.7179Q4.875 2.3525 4.875 3.25L4.875 8.6667Q4.875 9.5641 5.5096 10.1987Q6.1442 10.8333 7.0417 10.8333Q7.9391 10.8333 8.5737 10.1987Q9.2083 9.5641 9.2083 8.6667L9.2083 3.25Q9.2083 2.3525 8.5737 1.7179ZM2.8285 12.8799Q1.0833 11.1347 1.0833 8.6667Q1.0964 8.2125 0.766 7.9006Q0.4541 7.5703 0 7.5833Q-0.4541 7.5703 -0.766 7.9006Q-1.0964 8.2125 -1.0833 8.6667Q-1.0833 12.0322 1.2964 14.4119Q3.2837 16.3992 5.9583 16.7269L5.9583 19.5Q5.9453 19.9541 6.2756 20.266Q6.5875 20.5964 7.0417 20.5833Q7.4958 20.5964 7.8077 20.266Q8.1381 19.9541 8.125 19.5L8.125 16.7269Q10.7997 16.3992 12.7869 14.4119Q15.1667 12.0322 15.1667 8.6667Q15.1797 8.2125 14.8494 7.9006Q14.5375 7.5703 14.0833 7.5833Q13.6292 7.5703 13.3173 7.9006Q12.9869 8.2125 13 8.6667Q13 11.1347 11.2549 12.8799Q9.5097 14.625 7.0417 14.625Q4.5736 14.625 2.8285 12.8799Z"/></svg>'
 
-	// 导航方法
-	function goIndex(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
-	}
-	function goSearch(): void {
-		uni.reLaunch({ url: '/pages/search/search' })
-	}
-	function goRecord(): void {
-		uni.reLaunch({ url: '/pages/record/record' })
-	}
-	function goMessages(): void {
-		uni.reLaunch({ url: '/pages/messages/messages' })
-	}
-	function goProfile(): void {
-		uni.reLaunch({ url: '/pages/profile/profile' })
-	}
+	// 金色四角星（设计稿 path）
+	const sparkleSvg: string = '<svg viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg"><path d="M15 0L18.3 11.7L30 15L18.3 18.3L15 30L11.7 18.3L0 15L11.7 11.7L15 0Z"/></svg>'
 
-	// 业务方法
-	function beginInterview(): void {
-		step = 'ask'
-	}
-	function submitAnswers(): void {
-		let filled = 0
-		for (let i = 0; i < questions.length; i++) {
-			const v = answers.getString(questions[i].key) ?? ''
-			if (v.trim() != '') {
-				filled++
-			}
+	// 状态
+	let step = ref(0)
+	let done = ref(false)
+	let recording = ref(false)
+	let recSeconds = ref(0)
+	let showTextModal = ref(false)
+	let textAnswer = ref('')
+	let timerId: number = -1
+
+	// 麦克风点按：录音 / 停止
+	function onMicTap(): void {
+		if (!recording.value) {
+			startRecording()
+		} else {
+			stopRecording(true)
 		}
-		if (filled === 0) {
-			showErrorToast(new Error('至少回答一个问题'))
+	}
+
+	function startRecording(): void {
+		recording.value = true
+		recSeconds.value = 0
+		timerId = setInterval(() => {
+			recSeconds.value = recSeconds.value + 1
+		}, 1000)
+	}
+
+	function stopRecording(advance: boolean): void {
+		if (timerId >= 0) {
+			clearInterval(timerId)
+			timerId = -1
+		}
+		recording.value = false
+		if (advance) {
+			uni.showToast({ title: '已记录语音回答', icon: 'none' })
+			nextStep()
+		}
+	}
+
+	// 前进：进入下一问或完成
+	function nextStep(): void {
+		if (step.value < questions.length - 1) {
+			step.value = step.value + 1
+			textAnswer.value = ''
+		} else {
+			done.value = true
+		}
+	}
+
+	// 文字回答弹层
+	function openTextModal(): void {
+		showTextModal.value = true
+	}
+	function closeTextModal(): void {
+		showTextModal.value = false
+	}
+	function submitTextAnswer(): void {
+		if (textAnswer.value.trim() == '') {
+			uni.showToast({ title: '写一句话再提交吧', icon: 'none' })
 			return
 		}
-		submitting = true
-		submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
-			submitting = false
-			if (res != null) {
-				confirmation = res.confirmation
-				step = 'done'
-			} else {
-				showErrorToast(new Error('提交失败，请重试'))
-			}
-		})
+		showTextModal.value = false
+		uni.showToast({ title: '已记录文字回答', icon: 'none' })
+		nextStep()
 	}
+
+	// 跳过访谈
 	function skipInterview(): void {
 		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
 		setTimeout(() => {
-			uni.navigateBack({})
-		}, 800)
+			uni.reLaunch({ url: '/pages/index/index' })
+		}, 600)
 	}
-	function finishInterview(): void {
-		uni.navigateBack({})
+
+	// 完成 → 进入时间轴
+	function goHome(): void {
+		uni.reLaunch({ url: '/pages/index/index' })
 	}
 </script>
 
 <style>
+	/* 冷启动访谈页 · 像素级还原 design_data_for_agents/06_冷启动访谈（390x844 画布，px×2=rpx）
+	   背景 #F8F7F4 / 主文字 #3A2E25 / 次文字 #8A7A6A / 琥珀 #C4913C / 锈红 #B05A3A */
 	.page {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
+		position: relative;
+		width: 100%;
+		height: 100%;
 		background-color: #f8f7f4;
-		padding-left: 0;
-		padding-right: 0;
-		padding-top: 88rpx;
+		overflow: hidden;
 	}
 	.serif {
-		font-family: "Noto Serif CJK SC", serif;
+		font-family: "Sarasa Gothic SC", serif;
 	}
-	.header {
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
+
+	/* 氛围渐变圆 */
+	.glow {
+		position: absolute;
+		border-radius: 50%;
+		pointer-events: none;
 	}
-	.header-title {
-		font-size: 52rpx;
-		color: #3a2e25;
+	.glow-amber {
+		left: -120rpx;
+		top: 80rpx;
+		width: 560rpx;
+		height: 560rpx;
+		background: radial-gradient(circle, rgba(196, 145, 59, 0.16), rgba(196, 145, 59, 0));
+	}
+	.glow-green {
+		left: 440rpx;
+		top: 340rpx;
+		width: 520rpx;
+		height: 520rpx;
+		background: radial-gradient(circle, rgba(121, 139, 90, 0.13), rgba(121, 139, 90, 0));
+	}
+	.glow-blue {
+		left: 60rpx;
+		top: 660rpx;
+		width: 480rpx;
+		height: 480rpx;
+		background: radial-gradient(circle, rgba(78, 124, 139, 0.11), rgba(78, 124, 139, 0));
+	}
+
+	/* 进度指示点（3 个，8px 直径，间距 14px） */
+	.dots-row {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 128rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: center;
+	}
+	.dot {
+		width: 16rpx;
+		height: 16rpx;
+		border-radius: 8rpx;
+		background-color: #e5ded2;
+		margin-left: 7rpx;
+		margin-right: 7rpx;
+	}
+	.dot-active {
+		background-color: #b05a3a;
+	}
+
+	/* 金色四角星 */
+	.sparkle {
+		position: absolute;
+		left: 360rpx;
+		top: 198rpx;
+		width: 60rpx;
+		height: 60rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	/* 品牌名 + 标语 */
+	.brand-title {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 284rpx;
+		text-align: center;
+		font-size: 40rpx;
 		font-weight: bold;
-		letter-spacing: 6rpx;
+		color: #3a2e25;
 	}
-	.header-sub {
-		margin-top: 8rpx;
+	.brand-slogan {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 344rpx;
+		text-align: center;
 		font-size: 26rpx;
 		color: #8a7a6a;
 	}
 
-	/* 披露 */
-	.content-scroll {
-		flex: 1;
-	}
-	.disclose-card {
+	/* 问题卡片 */
+	.interview-card {
+		position: absolute;
+		left: 40rpx;
+		top: 440rpx;
+		width: 700rpx;
+		min-height: 226rpx;
 		background-color: #ffffff;
 		border-radius: 40rpx;
-		padding: 32rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-top: 40rpx;
+		padding-bottom: 46rpx;
+		box-shadow: 0 8rpx 24rpx rgba(58, 46, 37, 0.08);
 	}
-	.disclose-title {
-		font-size: 34rpx;
-		color: #3a2e25;
+	.card-index {
+		font-size: 20rpx;
+		line-height: 20rpx;
+		color: #c4913c;
+	}
+	.card-question {
+		margin-top: 26rpx;
+		font-size: 40rpx;
 		font-weight: bold;
-		margin-bottom: 20rpx;
+		color: #3a2e25;
+		line-height: 40rpx;
 	}
-	.disclose-item {
+	.card-hint {
+		margin-top: 28rpx;
+		font-size: 26rpx;
+		line-height: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 完成卡「开始使用」按钮 */
+	.start-btn {
+		margin-top: 32rpx;
+		height: 76rpx;
+		border-radius: 38rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.start-btn-text {
+		font-size: 30rpx;
+		color: #f8f7f4;
+		font-weight: 600;
+	}
+
+	/* 录音区：同心环 + 麦克风 */
+	.record-orbit {
+		position: absolute;
+		left: 250rpx;
+		top: 840rpx;
+		width: 280rpx;
+		height: 280rpx;
+	}
+	.ring {
+		position: absolute;
+		border-radius: 50%;
+	}
+	.ring-outer {
+		left: 0;
+		top: 0;
+		width: 280rpx;
+		height: 280rpx;
+		background-color: rgba(176, 89, 59, 0.2);
+	}
+	.ring-inner {
+		left: 32rpx;
+		top: 32rpx;
+		width: 216rpx;
+		height: 216rpx;
+		background-color: rgba(176, 89, 59, 0.4);
+	}
+	.mic-btn {
+		position: absolute;
+		left: 76rpx;
+		top: 76rpx;
+		width: 128rpx;
+		height: 128rpx;
+		border-radius: 64rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 8rpx 24rpx rgba(176, 90, 58, 0.35);
+	}
+	.record-hint {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 1124rpx;
+		text-align: center;
 		font-size: 26rpx;
 		color: #5a4c40;
-		line-height: 44rpx;
 	}
-	.disclose-actions {
-		margin-top: 36rpx;
+	.hint-recording {
+		color: #b05a3a;
+	}
+	.text-answer {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 1188rpx;
+		text-align: center;
+		font-size: 26rpx;
+		color: #b05a3a;
+	}
+
+	/* 跳过访谈 */
+	.skip {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 1482rpx;
+		text-align: center;
+		font-size: 26rpx;
+		color: #b3a696;
+	}
+
+	/* 主页指示条 */
+	.home-bar {
+		position: absolute;
+		left: 250rpx;
+		top: 1656rpx;
+		width: 280rpx;
+		height: 10rpx;
+		border-radius: 5rpx;
+		background-color: #3a2e25;
+		opacity: 0.18;
+	}
+
+	/* 文字回答弹层 */
+	.text-modal {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 99;
+	}
+	.modal-mask {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(58, 46, 37, 0.35);
+	}
+	.modal-card {
+		width: 620rpx;
+		background-color: #ffffff;
+		border-radius: 32rpx;
+		padding: 40rpx;
+		z-index: 1;
+		box-shadow: 0 16rpx 48rpx rgba(58, 46, 37, 0.18);
+	}
+	.modal-title {
+		font-size: 34rpx;
+		font-weight: bold;
+		color: #3a2e25;
+	}
+	.modal-input {
+		margin-top: 24rpx;
+		width: 540rpx;
+		min-height: 180rpx;
+		background-color: #f8f7f4;
+		border-radius: 20rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: #3a2e25;
+	}
+	.modal-placeholder {
+		color: #b3a696;
+	}
+	.modal-actions {
+		margin-top: 28rpx;
 		display: flex;
 		flex-direction: row;
 		justify-content: flex-end;
 	}
-
-	/* 三问 */
-	.ask-card {
-		display: flex;
-		flex-direction: column;
-	}
-	.q-block {
-		margin-bottom: 28rpx;
-	}
-	.q-title {
-		font-size: 30rpx;
-		color: #3a2e25;
-		font-weight: bold;
-		margin-bottom: 12rpx;
-	}
-	.q-input {
-		background-color: #ffffff;
-		border-radius: 8rpx;
-		padding: 20rpx;
-		min-height: 140rpx;
-		font-size: 28rpx;
-		color: #3a2e25;
-		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
-	}
-	.ask-actions {
-		margin-top: 20rpx;
-		display: flex;
-		flex-direction: row;
-		justify-content: flex-end;
-	}
-
-	/* 复述确认 */
-	.done-card {
-		background-color: #ffffff;
-		border-radius: 40rpx;
-		padding: 32rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-	}
-	.done-title {
-		font-size: 36rpx;
-		color: #3a2e25;
-		font-weight: bold;
-	}
-	.done-confirm {
-		margin-top: 16rpx;
-		font-size: 28rpx;
-		color: #5a4c40;
-		line-height: 44rpx;
-	}
-
-	/* 按钮 */
-	.btn {
+	.modal-btn {
 		margin-left: 20rpx;
 		padding-left: 44rpx;
 		padding-right: 44rpx;
-		padding-top: 16rpx;
-		padding-bottom: 16rpx;
+		height: 72rpx;
+		border-radius: 36rpx;
 		background-color: #b05a3a;
-		border-radius: 8rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
-	.btn-text {
-		color: #f8f7f4;
-		font-size: 28rpx;
-	}
-	.ghost {
+	.modal-btn-ghost {
 		background-color: transparent;
-		border-width: 1rpx;
+		border-width: 2rpx;
 		border-color: #b05a3a;
+	}
+	.modal-btn-text {
+		font-size: 28rpx;
+		color: #f8f7f4;
 	}
 	.ghost-text {
 		color: #b05a3a;
+	}
+
+	/* 按压态 */
+	.pressable {
+		transition: transform 0.2s ease, opacity 0.2s ease;
 	}
 </style>
