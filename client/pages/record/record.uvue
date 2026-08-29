@@ -2,7 +2,7 @@
 	<view class="page">
 		<!-- ═══════════ 背景层：时间轴主页（压暗前，仅作设计稿背景） ═══════════ -->
 		<view class="backdrop">
-			<image class="hero-photo" src="/static/hero-lake-original.png" mode="aspectFill" />
+			<image class="hero-photo" src="/static/hero-lake.jpg" mode="aspectFill" />
 			<view class="hero-shade-top"></view>
 			<view class="hero-shade-bottom"></view>
 

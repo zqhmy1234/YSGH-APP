@@ -2,7 +2,7 @@
 	<view class="page">
 		<!-- 照片出血氛围层（390x300 湖面图 + 顶部暗化 + 底部白色溶解渐变） -->
 		<view class="hero-section">
-			<image class="hero-image" src="/static/hero-lake-original.png" mode="aspectFill" />
+			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" />
 			<view class="hero-overlay-top"></view>
 			<view class="hero-overlay-bottom"></view>
 			<view class="hero-content">

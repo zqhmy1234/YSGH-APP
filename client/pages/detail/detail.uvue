@@ -4,7 +4,7 @@
 		<scroll-view class="scroll">
 			<!-- ═══════════ 顶部照片区（设计稿: 390x360 照片出血，底部溶解入背景）═══════════ -->
 			<view class="hero-section">
-				<image class="hero-image" src="/static/hero-lake-original.png" mode="aspectFill" />
+				<image class="hero-image" src="/static/hero-detail.jpg" mode="aspectFill" />
 				<view class="hero-overlay-top"></view>
 				<view class="hero-overlay-bottom"></view>
 
@@ -158,7 +158,7 @@
 	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x1100 画布）
 	   背景 #f8f7f4 / 卡片 #ffffff rx=20 / 文字主 #3a2e25 次 #8a7a6a / 正文 #5a4c40
 	   标题/区块 serif / 图标主色（锈红） #b05a3a / 引导文字 #b3a696
-	   照片 /static/hero-lake-original.png（与设计稿同场景占位，真机换真实照片） */
+	   顶部出血图 /static/hero-detail.jpg（设计稿原图压缩） */
 	.page {
 		width: 100%;
 		height: 100%;
