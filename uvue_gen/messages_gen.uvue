@@ -1,0 +1,314 @@
+<template>
+	<!-- ardot 直转 v2：消息中心（帧 4:89）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n4_91">9:41</text> <!-- 状态栏时间 -->
+		<view class="n4_92"> <!-- 电池 -->
+		</view>
+		<image class="n4_93" src="/static/icons/i4_93.svg" /> <!-- icon: 返回 -->
+		<view class="n4_95"> <!-- 标题容器 -->
+			<text class="n4_96">消息</text> <!-- 页标题 -->
+		</view>
+		<text class="n4_97">今天</text> <!-- 日期分组 -->
+		<view class="n4_98"> <!-- 回响卡 -->
+			<view class="n4_99"> <!-- 回响块 -->
+				<view class="n4_100"> <!-- 回响标签行 -->
+					<image class="n4_101" src="/static/icons/i4_101.svg" /> <!-- icon: 星芒 -->
+					<text class="n4_103">时间胶囊 · 8 个月前</text> <!-- 回响来源 -->
+				</view>
+				<text class="n4_104">去年今天：你在天台看了流星雨</text> <!-- 回响标题 -->
+				<text class="n4_105">点开重温那段记忆，或写一句此刻的想法</text> <!-- 回响说明 -->
+			</view>
+		</view>
+		<view class="n4_106"> <!-- 普通消息列表 -->
+			<view class="n4_107"> <!-- 行-整理完成 -->
+				<view class="n4_108"> <!-- 图标底 -->
+					<image class="n4_109" src="/static/icons/i4_109.svg" /> <!-- icon: 图标 -->
+				</view>
+				<view class="n4_111"> <!-- 文案列 -->
+					<text class="n4_112">整理完成</text> <!-- 标题 -->
+					<text class="n4_113">3 条新记忆已归入时间轴</text> <!-- 摘要 -->
+				</view>
+				<text class="n4_114">09:12</text> <!-- 时间 -->
+			</view>
+			<view class="n4_115"> <!-- 行-转写完成 -->
+				<view class="n4_116"> <!-- 图标底 -->
+					<image class="n4_117" src="/static/icons/i4_117.svg" /> <!-- icon: 图标 -->
+				</view>
+				<view class="n4_119"> <!-- 文案列 -->
+					<text class="n4_120">语音已转写</text> <!-- 标题 -->
+					<text class="n4_121">「和妈妈的通话」可以搜索了</text> <!-- 摘要 -->
+				</view>
+				<text class="n4_122">08:40</text> <!-- 时间 -->
+			</view>
+			<view class="n4_123"> <!-- 行-备份完成 -->
+				<view class="n4_124"> <!-- 图标底 -->
+					<image class="n4_125" src="/static/icons/i4_125.svg" /> <!-- icon: 图标 -->
+				</view>
+				<view class="n4_127"> <!-- 文案列 -->
+					<text class="n4_128">夜间备份完成</text> <!-- 标题 -->
+					<text class="n4_129">128 条记忆已安全同步</text> <!-- 摘要 -->
+				</view>
+				<text class="n4_130">昨天</text> <!-- 时间 -->
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n4_91 {
+		position: absolute;
+		left: 46.2rpx;
+		top: 115.4rpx;
+		width: 59.6rpx;
+		height: 34.6rpx;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_92 {
+		position: absolute;
+		left: 661.5rpx;
+		top: 121.2rpx;
+		width: 42.3rpx;
+		height: 21.2rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_93 {
+		position: absolute;
+		left: 30.8rpx;
+		top: 200rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+	.n4_95 {
+		position: absolute;
+		left: 0rpx;
+		top: 200rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_96 {
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.n4_97 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 296.2rpx;
+		width: 46.2rpx;
+		height: 28.8rpx;
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_98 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 350rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 61.5rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_99 {
+		width: 100%;
+		flex-direction: column;
+		gap: 11.5rpx;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-image: linear-gradient(to bottom, rgba(217, 227, 203, 0.6), rgba(217, 227, 203, 0.12));
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_100 {
+		width: 100%;
+		flex-direction: row;
+		gap: 11.5rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_101 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n4_103 {
+		font-weight: 600;
+		font-size: 21.2rpx;
+		color: #7A8C5A;
+	}
+	.n4_104 {
+		width: 100%;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.n4_105 {
+		width: 100%;
+		font-size: 23.1rpx;
+		color: #5A4C40;
+	}
+	.n4_106 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 661.5rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 46.2rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_107 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_108 {
+		width: 76.9rpx;
+		height: 76.9rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: rgba(176, 89, 59, 0.12);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_109 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_111 {
+		flex: 1;
+		flex-direction: column;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n4_112 {
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_113 {
+		width: 100%;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_114 {
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	.n4_115 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_116 {
+		width: 76.9rpx;
+		height: 76.9rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: rgba(122, 140, 90, 0.14);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_117 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_119 {
+		flex: 1;
+		flex-direction: column;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n4_120 {
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_121 {
+		width: 100%;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_122 {
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	.n4_123 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_124 {
+		width: 76.9rpx;
+		height: 76.9rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: rgba(78, 125, 140, 0.13);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_125 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_127 {
+		flex: 1;
+		flex-direction: column;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n4_128 {
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_129 {
+		width: 100%;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_130 {
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+</style>

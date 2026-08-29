@@ -1,0 +1,230 @@
+<template>
+	<!-- ardot 直转 v2：设置页（帧 4:131）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n4_133">9:41</text> <!-- 状态栏时间 -->
+		<view class="n4_134"> <!-- 电池 -->
+		</view>
+		<image class="n4_135" src="/static/icons/i4_135.svg" /> <!-- icon: 返回 -->
+		<view class="n4_137"> <!-- 标题容器 -->
+			<text class="n4_138">设置</text> <!-- 页标题 -->
+		</view>
+		<view class="n4_139"> <!-- 组1 -->
+			<view class="n4_140"> <!-- 行-账号与安全 -->
+				<image class="n4_141" src="/static/icons/i4_141.svg" /> <!-- icon: 图标 -->
+				<text class="n4_144">账号与安全</text> <!-- 文字 -->
+				<image class="n4_145" src="/static/icons/i4_145.svg" /> <!-- icon: 箭头 -->
+			</view>
+			<view class="n4_147"> <!-- 行-通知偏好 -->
+				<image class="n4_196" src="/static/icons/i4_196.svg" /> <!-- icon: 图标 -->
+				<text class="n4_151">通知偏好</text> <!-- 文字 -->
+				<view class="n4_152"> <!-- 开关 -->
+					<view class="n4_153"> <!-- 滑块 -->
+					</view>
+				</view>
+			</view>
+		</view>
+		<view class="n4_154"> <!-- 组2 -->
+			<view class="n4_155"> <!-- 行-深色模式 -->
+				<image class="n4_156" src="/static/icons/i4_156.svg" /> <!-- icon: 图标 -->
+				<text class="n4_158">深色模式</text> <!-- 文字 -->
+				<text class="n4_159">跟随系统</text> <!-- 值 -->
+			</view>
+			<view class="n4_160"> <!-- 行-清理缓存 -->
+				<image class="n4_161" src="/static/icons/i4_161.svg" /> <!-- icon: 图标 -->
+				<text class="n4_163">清理缓存</text> <!-- 文字 -->
+				<text class="n4_164">236 MB</text> <!-- 值 -->
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n4_133 {
+		position: absolute;
+		left: 46.2rpx;
+		top: 115.4rpx;
+		width: 59.6rpx;
+		height: 34.6rpx;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_134 {
+		position: absolute;
+		left: 661.5rpx;
+		top: 121.2rpx;
+		width: 42.3rpx;
+		height: 21.2rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_135 {
+		position: absolute;
+		left: 30.8rpx;
+		top: 200rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+	.n4_137 {
+		position: absolute;
+		left: 0rpx;
+		top: 200rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_138 {
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.n4_139 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 296.2rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 46.2rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_140 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_141 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_144 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_145 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n4_147 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_196 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_151 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_152 {
+		width: 88.5rpx;
+		height: 53.8rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 5.8rpx;
+		padding-right: 5.8rpx;
+		padding-top: 5.8rpx;
+		padding-bottom: 5.8rpx;
+		background-color: #B05A3A;
+		border-radius: 26.9rpx;
+		overflow: hidden;
+	}
+	.n4_153 {
+		width: 42.3rpx;
+		height: 42.3rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 1.9rpx 11.5rpx rgba(59, 46, 38, 0.25);
+		border-radius: 21.2rpx;
+		overflow: hidden;
+	}
+	.n4_154 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 526.9rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 46.2rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_155 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_156 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_158 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_159 {
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.n4_160 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_161 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_163 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_164 {
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+</style>

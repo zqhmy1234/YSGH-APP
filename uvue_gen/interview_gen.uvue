@@ -1,0 +1,296 @@
+<template>
+	<!-- ardot 直转 v2：冷启动访谈（帧 4:167）· 审计化生成 -->
+	<view class="page-root">
+		<view class="n4_198"> <!-- 光斑-琥珀 -->
+		</view>
+		<view class="n4_199"> <!-- 光斑-苔绿 -->
+		</view>
+		<view class="n4_200"> <!-- 光斑-青蓝 -->
+		</view>
+		<text class="n4_169">9:41</text> <!-- 状态栏时间 -->
+		<view class="n4_170"> <!-- 电池 -->
+		</view>
+		<view class="n4_171"> <!-- 进度点 -->
+			<view class="n4_172"> <!-- 点1 -->
+			</view>
+			<view class="n4_173"> <!-- 点2 -->
+			</view>
+			<view class="n4_174"> <!-- 点3 -->
+			</view>
+		</view>
+		<image class="n4_175" src="/static/icons/i4_175.svg" /> <!-- icon: 品牌星芒 -->
+		<view class="n4_177"> <!-- 品牌名容器 -->
+			<text class="n4_178">忆述光华</text> <!-- 忆述光华 -->
+		</view>
+		<view class="n4_179"> <!-- tagline容器 -->
+			<text class="n4_180">把日子过成可以回访的故事</text> <!-- tagline -->
+		</view>
+		<view class="n4_181"> <!-- 问题卡 -->
+			<text class="n4_182">访谈 · 第 1 问</text> <!-- 问题编号 -->
+			<text class="n4_183">最近有什么小事，让你印象很深？</text> <!-- 问题 -->
+			<text class="n4_184">随便聊聊，一两句话就够</text> <!-- 问题引导 -->
+		</view>
+		<view class="n4_185"> <!-- 语音环 -->
+			<view class="n4_186"> <!-- 麦克风钮 -->
+				<image class="n4_187" src="/static/icons/i4_187.svg" /> <!-- icon: 麦克风 -->
+			</view>
+		</view>
+		<view class="n4_189"> <!-- 说话提示容器 -->
+			<text class="n4_190">点按说话</text> <!-- 点按说话 -->
+		</view>
+		<view class="n4_191"> <!-- 文字回答容器 -->
+			<text class="n4_192">用文字回答</text> <!-- 用文字回答 -->
+		</view>
+		<view class="n4_193"> <!-- 跳过容器 -->
+			<text class="n4_194">跳过访谈</text> <!-- 跳过访谈 -->
+		</view>
+		<view class="n4_195"> <!-- Home指示条 -->
+		</view>
+		<view class="n4_201"> <!-- 呼吸光环外圈 -->
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n4_198 {
+		position: absolute;
+		left: -115.4rpx;
+		top: 161.5rpx;
+		width: 538.5rpx;
+		height: 538.5rpx;
+		background-color: rgba(196, 145, 60, 0.16);
+		border-radius: 269.2rpx;
+		overflow: hidden;
+	}
+	.n4_199 {
+		position: absolute;
+		left: 423.1rpx;
+		top: 411.5rpx;
+		width: 500rpx;
+		height: 500rpx;
+		background-color: rgba(122, 140, 90, 0.13);
+		border-radius: 250rpx;
+		overflow: hidden;
+	}
+	.n4_200 {
+		position: absolute;
+		left: 57.7rpx;
+		top: 719.2rpx;
+		width: 461.5rpx;
+		height: 461.5rpx;
+		background-color: rgba(78, 125, 140, 0.11);
+		border-radius: 230.8rpx;
+		overflow: hidden;
+	}
+	.n4_169 {
+		position: absolute;
+		left: 46.2rpx;
+		top: 115.4rpx;
+		width: 59.6rpx;
+		height: 34.6rpx;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_170 {
+		position: absolute;
+		left: 661.5rpx;
+		top: 121.2rpx;
+		width: 42.3rpx;
+		height: 21.2rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_171 {
+		position: absolute;
+		left: 0rpx;
+		top: 207.7rpx;
+		width: 750rpx;
+		flex-direction: row;
+		gap: 11.5rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_172 {
+		width: 15.4rpx;
+		height: 15.4rpx;
+		background-color: #B05A3A;
+		border-radius: 7.7rpx;
+		overflow: hidden;
+	}
+	.n4_173 {
+		width: 15.4rpx;
+		height: 15.4rpx;
+		background-color: #E5DED2;
+		border-radius: 7.7rpx;
+		overflow: hidden;
+	}
+	.n4_174 {
+		width: 15.4rpx;
+		height: 15.4rpx;
+		background-color: #E5DED2;
+		border-radius: 7.7rpx;
+		overflow: hidden;
+	}
+	.n4_175 {
+		position: absolute;
+		left: 340.4rpx;
+		top: 269.2rpx;
+		width: 69.2rpx;
+		height: 69.2rpx;
+	}
+	.n4_177 {
+		position: absolute;
+		left: 0rpx;
+		top: 357.7rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_178 {
+		font-weight: bold;
+		font-size: 38.5rpx;
+		color: #3A2E25;
+	}
+	.n4_179 {
+		position: absolute;
+		left: 0rpx;
+		top: 415.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_180 {
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_181 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 507.7rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 19.2rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-top: 38.5rpx;
+		padding-bottom: 38.5rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.6);
+		box-shadow: 0rpx 7.7rpx 61.5rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_182 {
+		font-weight: 600;
+		font-size: 21.2rpx;
+		color: #C4913C;
+	}
+	.n4_183 {
+		width: 100%;
+		font-weight: 600;
+		font-size: 38.5rpx;
+		color: #3A2E25;
+	}
+	.n4_184 {
+		width: 100%;
+		font-size: 25rpx;
+		color: #8A7A6A;
+	}
+	.n4_185 {
+		position: absolute;
+		left: 271.2rpx;
+		top: 923.1rpx;
+		width: 207.7rpx;
+		height: 207.7rpx;
+		background-color: rgba(176, 89, 59, 0.12);
+		border-radius: 103.8rpx;
+		overflow: hidden;
+	}
+	.n4_186 {
+		position: absolute;
+		left: 42.3rpx;
+		top: 42.3rpx;
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 15.4rpx 107.7rpx rgba(176, 89, 59, 0.45);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_187 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_189 {
+		position: absolute;
+		left: 0rpx;
+		top: 1161.5rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_190 {
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n4_191 {
+		position: absolute;
+		left: 0rpx;
+		top: 1223.1rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_192 {
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+	.n4_193 {
+		position: absolute;
+		left: 0rpx;
+		top: 1507.7rpx;
+		width: 750rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_194 {
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.n4_195 {
+		position: absolute;
+		left: 240.4rpx;
+		top: 1676.9rpx;
+		width: 269.2rpx;
+		height: 9.6rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_201 {
+		position: absolute;
+		left: 240.4rpx;
+		top: 892.3rpx;
+		width: 269.2rpx;
+		height: 269.2rpx;
+		background-color: rgba(176, 89, 59, 0.06);
+		border-radius: 134.6rpx;
+		overflow: hidden;
+	}
+</style>

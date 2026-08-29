@@ -1,0 +1,464 @@
+<template>
+	<!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n2_388">9:41</text> <!-- 状态栏时间 -->
+		<view class="n2_389"> <!-- 电池 -->
+		</view>
+		<text class="n2_390">搜索</text> <!-- 大标题 -->
+		<view class="n2_391"> <!-- 搜索胶囊-聚焦 -->
+			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
+			<view class="n2_395"> <!-- 已输入 -->
+				<text class="n2_396">湖边|</text> <!-- 输入文字 -->
+			</view>
+		</view>
+		<view class="n2_397"> <!-- 筛选行 -->
+			<view class="n2_398"> <!-- chip全部 -->
+				<text class="n2_399">全部</text> <!-- 全部 -->
+			</view>
+			<view class="n2_400"> <!-- chip照片 -->
+				<text class="n2_401">照片</text> <!-- 照片 -->
+			</view>
+			<view class="n2_402"> <!-- chip语音 -->
+				<text class="n2_403">语音</text> <!-- 语音 -->
+			</view>
+			<view class="n2_404"> <!-- chip文字 -->
+				<text class="n2_405">文字</text> <!-- 文字 -->
+			</view>
+		</view>
+		<text class="n2_406">找到 2 条关于「湖边」的回忆</text> <!-- 结果提示 -->
+		<view class="n2_423"> <!-- 玻璃TabBar -->
+			<view class="n2_424"> <!-- Tab-时间轴 -->
+				<image class="n2_425" src="/static/icons/i2_425.svg" /> <!-- icon: 图标-指南针 -->
+				<text class="n2_428">时间轴</text> <!-- 标签-时间轴 -->
+			</view>
+			<view class="n2_429"> <!-- Tab-AI -->
+				<image class="n2_430" src="/static/icons/i2_430.svg" /> <!-- icon: 图标-对话 -->
+				<text class="n2_432">AI</text> <!-- 标签-AI -->
+			</view>
+			<view class="n2_433"> <!-- 中央留位 -->
+			</view>
+			<view class="n2_434"> <!-- Tab-搜索 -->
+				<image class="n2_435" src="/static/icons/i2_435.svg" /> <!-- icon: 图标-搜索 -->
+				<text class="n2_438">搜索</text> <!-- 标签-搜索 -->
+			</view>
+			<view class="n2_439"> <!-- Tab-我的 -->
+				<image class="n2_440" src="/static/icons/i2_440.svg" /> <!-- icon: 图标-我的 -->
+				<text class="n2_443">我的</text> <!-- 标签-我的 -->
+			</view>
+		</view>
+		<view class="n2_444"> <!-- 中央＋按钮 -->
+			<image class="n2_445" src="/static/icons/i2_445.svg" /> <!-- icon: 加号 -->
+		</view>
+		<view class="n2_447"> <!-- Home指示条 -->
+		</view>
+		<view class="n2_588"> <!-- 语音卡 -->
+			<view class="n2_589"> <!-- 语音媒体 -->
+				<view class="n2_591"> <!-- 玻璃播放钮 -->
+					<image class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
+				</view>
+				<view class="n2_592"> <!-- 波形 -->
+					<image class="n2_596" src="/static/icons/i2_596.svg" /> <!-- icon: Vector -->
+				</view>
+			</view>
+			<view class="n2_590"> <!-- 语音文字区 -->
+				<text class="n2_593">湖边的晨雾，07:42</text> <!-- 语音卡标题 -->
+				<text class="n2_594">8月28日 07:42 · 语音 2分05秒 · 已转写</text> <!-- 语音卡元信息 -->
+			</view>
+		</view>
+		<view class="n2_598"> <!-- 文字卡 -->
+			<view class="n2_599"> <!-- 摘要块 -->
+				<view class="n2_601"> <!-- 引用竖线 -->
+				</view>
+				<text class="n2_602">湖边的风把雾吹散的那一刻，整个水面都在发光，随手拍了一张。</text> <!-- 摘要文本 -->
+			</view>
+			<view class="n2_600"> <!-- 文字元信息区 -->
+				<text class="n2_603">8月28日 07:45 · 文字记录</text> <!-- 文字卡元信息 -->
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n2_388 {
+		position: absolute;
+		left: 46.2rpx;
+		top: 115.4rpx;
+		width: 59.6rpx;
+		height: 34.6rpx;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_389 {
+		position: absolute;
+		left: 661.5rpx;
+		top: 121.2rpx;
+		width: 42.3rpx;
+		height: 21.2rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_390 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 192.3rpx;
+		width: 153.8rpx;
+		height: 92.3rpx;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		color: #3A2E25;
+	}
+	.n2_391 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 315.4rpx;
+		width: 673.1rpx;
+		height: 92.3rpx;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 30.8rpx;
+		padding-bottom: 30.8rpx;
+		background-color: #FFFFFF;
+		border-width: 1.9rpx;
+		border-color: rgba(176, 89, 59, 0.6);
+		box-shadow: 0rpx 11.5rpx 69.2rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_392 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n2_395 {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_396 {
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_397 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 438.5rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_398 {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: rgba(176, 89, 59, 0.12);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_399 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #B05A3A;
+	}
+	.n2_400 {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_401 {
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_402 {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_403 {
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_404 {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_405 {
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_406 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 534.6rpx;
+		width: 305.8rpx;
+		height: 28.8rpx;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_423 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1530.8rpx;
+		width: 673.1rpx;
+		height: 119.2rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.65);
+		box-shadow: 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
+		border-radius: 69.2rpx;
+		overflow: hidden;
+	}
+	.n2_424 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_425 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_428 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_429 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_430 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_432 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_433 {
+		width: 92.3rpx;
+		height: 19.2rpx;
+		overflow: hidden;
+	}
+	.n2_434 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_435 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_438 {
+		font-weight: 600;
+		font-size: 19.2rpx;
+		color: #B05A3A;
+	}
+	.n2_439 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_440 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_443 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_444 {
+		position: absolute;
+		left: 321.2rpx;
+		top: 1507.7rpx;
+		width: 107.7rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 11.5rpx 61.5rpx rgba(176, 89, 59, 0.35);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.n2_445 {
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+	.n2_447 {
+		position: absolute;
+		left: 240.4rpx;
+		top: 1676.9rpx;
+		width: 269.2rpx;
+		height: 9.6rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_588 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 580.8rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 61.5rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_589 {
+		width: 100%;
+		height: 123.1rpx;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: rgba(196, 145, 60, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_591 {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.72);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n2_595 {
+		width: 23.1rpx;
+		height: 23.1rpx;
+	}
+	.n2_592 {
+		width: 384.6rpx;
+		height: 50rpx;
+		overflow: hidden;
+	}
+	.n2_596 {
+		position: absolute;
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	.n2_590 {
+		width: 100%;
+		flex-direction: column;
+		gap: 5.8rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_593 {
+		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
+	}
+	.n2_594 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_598 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 861.5rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 61.5rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_599 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 60, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_601 {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
+	}
+	.n2_602 {
+		flex: 1;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n2_600 {
+		width: 100%;
+		flex-direction: column;
+		gap: 5.8rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_603 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+</style>

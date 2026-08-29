@@ -1,6 +1,9 @@
 <template>
 	<!-- ardot 直转 v2：我的页（帧 2:448）· 审计化生成 -->
 	<view class="page-root">
+		<text class="n2_450">9:41</text> <!-- 状态栏时间 -->
+		<view class="n2_451"> <!-- 电池 -->
+		</view>
 		<view class="n2_452"> <!-- 头像 -->
 			<text class="n2_453">峰</text> <!-- 头像字 -->
 		</view>
@@ -21,84 +24,61 @@
 			</view>
 		</view>
 		<view class="n2_466"> <!-- 列表组1 -->
-			<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像管理 -->
+			<view class="n2_467"> <!-- 行-画像管理 -->
 				<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
 				<text class="n2_472">画像管理</text> <!-- 文字 -->
 				<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 			</view>
-			<view class="n2_475" @tap="goMessagesCenter"> <!-- 行-消息中心 -->
+			<view class="n2_475"> <!-- 行-消息中心 -->
 				<image class="n2_476" src="/static/icons/i2_476.svg" /> <!-- icon: 图标 -->
 				<text class="n2_478">消息中心</text> <!-- 文字 -->
 				<image class="n2_479" src="/static/icons/i2_479.svg" /> <!-- icon: 箭头 -->
 			</view>
 		</view>
 		<view class="n2_481"> <!-- 列表组2 -->
-			<view class="n2_482" @tap="goSettings"> <!-- 行-设置 -->
+			<view class="n2_482"> <!-- 行-设置 -->
 				<image class="n2_483" src="/static/icons/i2_483.svg" /> <!-- icon: 图标 -->
 				<text class="n2_486">设置</text> <!-- 文字 -->
 				<image class="n2_487" src="/static/icons/i2_487.svg" /> <!-- icon: 箭头 -->
 			</view>
-			<view class="n2_489" @tap="goPrivacy"> <!-- 行-存储与备份 -->
+			<view class="n2_489"> <!-- 行-存储与备份 -->
 				<image class="n2_490" src="/static/icons/i2_490.svg" /> <!-- icon: 图标 -->
 				<text class="n2_493">存储与备份</text> <!-- 文字 -->
 				<image class="n2_494" src="/static/icons/i2_494.svg" /> <!-- icon: 箭头 -->
 			</view>
-			<view class="n2_496" @tap="goAbout"> <!-- 行-关于 -->
+			<view class="n2_496"> <!-- 行-关于 -->
 				<image class="n2_550" src="/static/icons/i2_550.svg" /> <!-- icon: 关于图标 -->
 				<text class="n2_501">关于忆述光华</text> <!-- 文字 -->
 				<image class="n2_502" src="/static/icons/i2_502.svg" /> <!-- icon: 箭头 -->
 			</view>
 		</view>
-		<TabBar active="profile" />
+		<view class="n2_504"> <!-- 玻璃TabBar -->
+			<view class="n2_505"> <!-- Tab-时间轴 -->
+				<image class="n2_506" src="/static/icons/i2_506.svg" /> <!-- icon: 图标-指南针 -->
+				<text class="n2_509">时间轴</text> <!-- 标签-时间轴 -->
+			</view>
+			<view class="n2_510"> <!-- Tab-AI -->
+				<image class="n2_511" src="/static/icons/i2_511.svg" /> <!-- icon: 图标-对话 -->
+				<text class="n2_513">AI</text> <!-- 标签-AI -->
+			</view>
+			<view class="n2_514"> <!-- 中央留位 -->
+			</view>
+			<view class="n2_515"> <!-- Tab-搜索 -->
+				<image class="n2_516" src="/static/icons/i2_516.svg" /> <!-- icon: 图标-搜索 -->
+				<text class="n2_519">搜索</text> <!-- 标签-搜索 -->
+			</view>
+			<view class="n2_520"> <!-- Tab-我的 -->
+				<image class="n2_521" src="/static/icons/i2_521.svg" /> <!-- icon: 图标-我的 -->
+				<text class="n2_524">我的</text> <!-- 标签-我的 -->
+			</view>
+		</view>
+		<view class="n2_525"> <!-- 中央＋按钮 -->
+			<image class="n2_526" src="/static/icons/i2_526.svg" /> <!-- icon: 加号 -->
+		</view>
+		<view class="n2_528"> <!-- Home指示条 -->
+		</view>
 	</view>
 </template>
-
-<script setup lang="uts">
-	// ===== 设计稿图标（已落成 /static/icons/*.svg 静态资源） =====
-
-	// TabBar 图标（我的=激活态锈红；其余=常态灰）
-
-	// ===== 交互 =====
-	// 类型入口（照片/语音/文字）
-	function goType(type: string): void {
-		uni.navigateTo({ url: '/pages/search/search?type=' + type })
-	}
-
-	// 菜单：我的画像
-	function goPortraitManage(): void {
-		uni.navigateTo({ url: '/pages/portrait/manage' })
-	}
-
-	// 菜单：我的收藏（页面未建成，占位）
-	function goFavorites(): void {
-		uni.showToast({ title: '收藏功能开发中', icon: 'none' })
-	}
-
-	// 菜单：设置（pages.json 已注册 pages/settings/settings）
-	function goSettings(): void {
-		uni.navigateTo({ url: '/pages/settings/settings' })
-	}
-
-	// 菜单：隐私政策
-	function goPrivacy(): void {
-		uni.showToast({ title: '隐私政策开发中', icon: 'none' })
-	}
-
-	// 菜单：关于我们
-	function goAbout(): void {
-		uni.showToast({ title: '关于页面开发中', icon: 'none' })
-	}
-
-
-	// ardot 直转接线：消息中心入口
-	function goMessagesCenter(): void {
-		uni.navigateTo({ url: '/pages/messages/messages' })
-	}
-
-
-
-
-</script>
 
 <style>
 	.page-root {
