@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-08-30 03:11 · commit 9279c16 · ts=1788030680
+- **错误**：设计数据提取管线 8 份 design_data.json 全为 0 元素（elements:0/texts:0）
+- **根因**：parse_svg_v2/v3 用 svgelements 解析崩 'Circle' object has no attribute 'r'，外层 try/except 吞错致 elements=[]；且 svgelements 丢失 fill-opacity 与渐变方向。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：设计稿提取一律用 etree 直接遍历（.cowork-temp/svg_parse.py 已跑通），弃用 svgelements；不轻信 design_data_for_agents/design_data.json 数值。
+
+---
+
 ### 2026-08-29 03:11 UI还原与Vapor迁移批次1 ts=1787973060
 
 - **错误**：7页面setup改造提交时lint失败（scripts/临时脚本未清理），清理后lessons检查仍失败（_last_entry_time取第一个###行，lessons.md按旧→新排列，新条目在末尾不被识别）
