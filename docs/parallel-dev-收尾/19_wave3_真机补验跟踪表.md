@@ -50,8 +50,8 @@
 | 编号 | 清单 | 归属 | 处置 |
 |---|---|---|---|
 | D-01 | 01 Step1 | 客户端 upload_protocol | ✅ 已修+真机复验通过（01:09 十张零 4xx）：initUpload 单点 sanitizeKeyId（白名单外字符→_，>255 截尾）。**Wave2 交接"422=旧测试数据"系误诊**——R4#12 白名单收紧未同步客户端构造点，影响所有照片+语音上传 |
-| D-02 | 01 Step1 管线段 | 服务端 9f0b2f4 回归 | ✅ 已修：8 个 enqueue_unique 调用点丢任务实参（key≠args）→ contents 永远 processing。修复后 10/10 done + 聚合 0.03s。教训已登记（mock 签名宽容 *args） |
-| D-03 | 01 Step1 管线段 | 服务端 双路径不对称 | ✅ 已修：EXIF 权威解析只挂 multipart 路径，分片上传路径缺 → taken_at 污染成扫描时间。下沉 `services/exif.py`（子 IFD 0x8769 优先——华为真照片布局）+ 管线 `_process_photo` 单点回填；回归测试 `test_photo_exif_backfills_taken_at` |
+| D-02 | 01 Step1 管线段 | 服务端 9f0b2f4 回归 | ✅ 已修：8 个 enqueue_unique 调用点丢任务实参（key≠args）→ contents 永远 processing。修复后 10/10 done + 聚合 0.03s。教训已登记（mock 签名宽容 *args） |【08-29 暗物质勘误：该修复代码从未提交（验证实为脏树假象）——净基线 committed 里 8 个 key-only 调用点仍带活雷（照片管线必炸）；自抢救快照 2bad295 补落 fix/4b 8a0b27a+acce7ef（8/8 收全，test_pipeline 24 绿+upload/photo_content 26 绿），R3 merge 后 develop 复活】
+| D-03 | 01 Step1 管线段 | 服务端 双路径不对称 | ✅ 已修：EXIF 权威解析只挂 multipart 路径，分片上传路径缺 → taken_at 污染成扫描时间。下沉 `services/exif.py`（子 IFD 0x8769 优先——华为真照片布局）+ 管线 `_process_photo` 单点回填；回归测试 `test_photo_exif_backfills_taken_at` |【08-29 暗物质勘误：services/exif.py 全新文件从未入 git（diff 审查盲区，tracker「已修」不实），已随 D-02 组补落 fix/4b 8a0b27a——且所存版=子 IFD 0x8769 优先+40MP 防护的 Wave3 升级版，比当年内联版更强】
 | D-04 | 01 观察 | 端云日期语义 | 🔒 关单定性（04 终局 08-28）：L1 日期失真源头=测试生成器曾把 DateTimeOriginal 写 IFD0（Android 只读子 IFD→null→静默回退 DATE_ADDED），生成器已修（bc855a0）；w3k 合法 EXIF 实测 L1 三日精确命中（accepted=2/1、days=3、DB start/end=真值）→ **端侧链路无罪**。保留改进：服务端对 start_time≈date_added 的 L1 回填后回头修正（合并 D-12 处置） |
 | D-05 | 01 Step2 | 客户端（横幅接线+队列） | 📋 待 Wave4 修，不阻塞：a) 横幅 emits 无宿主监听 → held 手动上传成功后不补端侧聚合/事件上云（contents 有、事件无）；b) drain 耗尽路径 held/failed 双登记无去重（计数虚增）。修复设计见 `evidence/ck01_step2_20260828_021530.log` 尾注 |
 | D-06 | 02 Step2/3 | 客户端 yishu-recorder(UTS)+uni 运行时 | 📋 失败单移交 Wave4：真机麦克风被抢占时 uni RecorderManager 无感（无 interruption/error 回调、无 UI 提示）——相机录像抢麦窗 wav 内为数字零（**静默吞音**，用户以为在录）；另场次同操作直接 onError 硬杀+文件截断（**非确定性**）。闹钟场景证伪清单 §2 前提（GAIN_TRANSIENT 实测录音无感）。来电路径待 P6 补测。修复方向：AudioRecord.getInterruption/activeRecording 轮询自检 + 零能量看门狗 + 抢占窗在转写/入库显式标注，禁止静默 |
@@ -84,6 +84,7 @@
 - WiFi 被手机自动切回蜂窝两次（00:34 前 / 01:07）：`adb shell svc wifi enable` 恢复；6021-5G 信号 RSSI -29。
 - **O-1（观察项，非缺陷）**：18:0x 某次 uvicorn 在 BGE-M3 懒加载时刻无 traceback 直接 exit 1（日志末尾 `torch_dtype deprecated`+`tokenize→preprocess` 指纹），PC 端两次 curl 搜索复现均正常、latency 1.4-3.5s——判定瞬时原生崩溃，非可复现代码缺陷；疑与当日 numpy 2.5.2 升级后的版本漂移相关，4b 若再遇同类崩溃优先复查 numpy/scipy 与 torch/sentence-transformers 兼容性。**08-29 P-2 只读诊断改判**：版本漂移**证伪**（Stage1 ABI/tokenize/sparse 探针全 PASS + 08-27 起 WER 零 python.exe 崩溃记录→非原生 AV）→最符合外部终止/内存压力（python.exe 单实例 commit 峰值 11.87GB）；降版禁止，复发取证包（PYTHONFAULTHANDLER+WER LocalDumps）与条件式 stage2 全权重复现清单见诊断 §1.3/§1.5；未动环境（守 ⑤ 拍板）。
 - **O-2（US-25 纠错恒 mixed）**：08-29 P-2 诊断定性=**非环境事件，系客户端流程缺陷**（裁决回声覆盖+classifier 静默降级 mixed）→已立单 **D-22（§4）**，本行仅作指针。
+- **O-3（08-29 暗物质审计事件）**：主区旧脏按拍板③三重备份后清空（快照分支 `salvage/main-worktree-dirty-20260829`@2bad295 三父全量 + `.cowork-temp/salvage/` patch + 112 文件直拷），审出**两单「修了没入库」**：①D-02/D-03 修复组（勘误见 §4 对应行）②copy_library v1 基线资产（拍板引用文件未入库，7589775 补落含 notify 纯回退接线）。**残余他窗未提交工作**（sms providers+108、embedding O-1 dtype 修复+41、storage+67、cleanup_job+47、export API、orphan_scan worker、SuspectBadge 组件等）全存于 salvage 分支，物主可 `git checkout salvage/main-worktree-dirty-20260829 -- <path>` 单文件回捞；**该分支在认领清账前禁删**。证据目录 `scripts/realdevice/evidence/.gitignore`（「证据留本地」铁律）已恢复并提交入库防再误伤。
 - **全量门禁状态（4a 收口时）**：syntax/lint/todos/api_smoke/research/cleanup 全绿；secrets 3 条误报（uiautomator XML 的 password 属性为 false）已删 XML 消除；pytest 723 过 + 3 挂→2 个为我方环境因素（geo_cache 残留真调用缓存行 + 我误设 QDRANT_COLLECTION）已修转绿，剩 1 个 test_photo_writes_image_vec 失败源于**另一窗口未提交的 storage.py（+67 行）** + COS 未配置——非已提交基线回归，待该窗口落地/配 COS 后应转绿。
 
 ## 6. 遗留

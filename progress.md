@@ -658,3 +658,10 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **feat/dashscope-backend-hardening 验收并 merge 进 develop（`5ed7c5c`）**：F5 百炼真实链路两处加固（精排解析三级兜底 + VL 过期缓存兜底）+ `scripts/check_dashscope_matrix.py` 9 链路真实矩阵（**Infisical 注入与 .env 直读双路径 9/9**；LLM 精排 4/4 judged_n 正确、0.73–2.25s）+ 默认套件 664 绿；我方独立复跑 test_image_search+test_rag 34 passed/15 deselected ✓。**文件域纪律良好**（未碰 asr 域/openapi.json，报告 §4 自证）。append 区冲突两处（lessons/progress）双保留解冲；merge 后代码域与源分支 parity 零差异；被 merge 阻挡的 `rag/image.py` 他窗旧脏已抢救至 `.cowork-temp/salvage/image_py_main_dirty_20260829.patch`（1KB，可回放）。
 - **wrap1-agentA2-ui-restore 侦察（`efb183d`，未合）**：**5.24 迁移实质在该分支落地**（photo-watch 21 处 android 导入改 any / background-tasks SharedPreferences 修复 / CSS 选择器迁移 / Vapor main.uts 入口 /「编译成功+全页面截屏正常」）；且**顺带做了 D-21 四页 scroll-view 修复**。碰撞面：两插件 index.uts（撞我 R1-a D-18 重写）、record.uvue（撞 R1-c 守卫+D-22 客户端半）、schemas/event.py（不同区域，轻）、.gitignore（追加区）。**卫生问题**：~90MB 二进制入库（SarasaGothic 字体 ×3=69MB + 截图 13 张 + hero 原图 4.5MB）+ deploy_log ×4 + design_data/13k 行——且基线停在 677ea68（缺我全部 R1/记账/此 merge）。**结论：不可按现状 merge**，需先整备（二进制/日志/design_data 去留拍板）。
 - **fix/4b 策略**：暂不再 rebase（等 wrap1 处置定局后一次到位：迁移版上传链 + D-18/D-21/D-22 客户端半在统一基线上重放，同形热修两枚让位）。内存仍 ~1GB，编译窗口未到。
+
+## 2026-08-29 16:3x · 暗物质审计：两单「修了没入库」补落 + 主区旧脏三重备份清空
+
+- **触发**：合入 dashscope 分支时主区唯一脏文件挡路 → 按拍板③做全量清空（salvage 快照分支 2bad295 三父含 untracked + patch + 112 文件直拷；PS 把 `stash@{0}` 花括号吞了致 stash 假 drop，SHA 从 drop 日志复活——教训已登记）。
+- **审出**：①**D-02/D-03 修复从未提交**——committed develop 里 8 个 enqueue key-only 调用点带活雷（净基线照片管线 worker 必 TypeError），D-03 的 exif.py 全新文件压根不在 git，当年「真机复验 ✅」全跑在脏树上；②**文案库 v1**（08-29 拍板引用的 docs/copy_library/ + service + notify 接线）同样零入库。
+- **补落 fix/4b 三枚**：8a0b27a（exif.py+pipeline+photo_content+register+test_pipeline，24 绿）→ 7589775（文案库五件+validate 校验器+notify 纯回退接线，7/7 绿）→ acce7ef（contents+wechat 收全 8/8 调用点+真值源合一，26 绿）。分支现 @ acce7ef。
+- **其他**：dashscope 分支验收并 merge（5ed7c5c，双路径 9/9+复跑 34 绿）；evidence/「证据留本地」铁律 .gitignore 恢复入库；主区 `import app.main` 冒烟 55 路由 OK；内存告警 0.65GB（暂停重活）。

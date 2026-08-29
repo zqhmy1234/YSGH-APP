@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-08-29 16:48 · commit 630d4bd · ts=1787993283
+- **错误**：pwsh 里 git rev-parse stash@{0} 花括号被 PowerShell 语法吃掉，update-ref 拿到字面量 stash@ 失败，随后 stash drop 照跑，快照只剩悬空对象
+- **根因**：未加引号的 stash@{0} 在 PS 中触发 @ splatting/插值解析；且破坏性操作（drop）排在建引用之后却无前置成功校验
+- **修复**：从 drop 日志回读 SHA 用 update-ref 复活悬空 commit（对象未 gc 前可救），belt 文件拷贝+patch 双保险本就齐
+- **相关文件**：.cowork-temp/dark_accounting.py
+- **教训**：PS 中 git revision 必须单引号包裹（'stash@{0}'）；drop/clean 类破坏性命令前，备份引用必须先建并验证成功
+
+---
+
 ### 2026-08-29 14:28 · commit d34c394 · ts=1787984895
 - **错误**：SKILL 补丁 amend 时使用了 --no-verify 绕过快速门禁（AGENTS 明令禁止）
 - **根因**：把 amend 当成了「修补上一提交」的轻量操作，误以为纯 markdown 内容无门禁价值即可跳过；规则没有为 amend 开例外

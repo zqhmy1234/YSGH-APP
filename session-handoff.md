@@ -16,9 +16,9 @@
 
 ## 2. 工作区红线（当下生效！）
 
-- **他窗旧脏 132 文件未提交**（08-27/28 遗留，含 backend storage.py、client/utils/*.ts 的 UTS 5.24 迁移修复等；staged 已清空）＋**第三活跃窗**在 `.wt/wrap1-agentA2-ui-restore` 分支做 UI 恢复+UTS 插件编译修复（13:15 仍在提交，与 D-18 插件文件同域——协调归谁再动）：任何 commit **必须 pathspec 限定**（`git commit -- <自己的路径>`），禁 `git add -A`/reset/stash 触碰他人内容；`test_photo_writes_image_vec` 当前失败即该窗口 storage.py 未落地+COS 未配所致——非基线回归，勿"顺手修"。
+- **主区旧脏已清空（08-29 拍板③）**：125 项三重备份（快照分支 `salvage/main-worktree-dirty-20260829`@2bad295 + `.cowork-temp/salvage/` patch+文件拷）后 checkout 还原净 develop——**salvage 分支在残余工作认领前禁删**（内含 sms/embedding-dtype/storage/export/orphan_scan 等他窗未提交货）；审计已揪出两单「修了没入库」（D-02/D-03+文案库，fix/4b 补落，tracker O-3）。**第三窗未停手（用户 08-29 确认）：其分支与编译窗一概不碰**；任何 commit 仍 pathspec 限定，禁 `git add -A`/reset/stash。
 - models.py / migrations 冻结；交付文档只读（改须用户授权，先例：08 快照同步 cbc1751）；密钥只走 Infisical；pre-commit 快速门禁不可绕（`--no-verify` 禁用）。
-- 基线：develop @ cd93902（2026-08-29）；4b 修复分支 fix/4b @ f1f8a3c（含 R1-a 8cb15b4 + R1-c f1f8a3c，R3 回合）。**客户端全项目编译门：待他窗 5.24 迁移提交后统一复验**（HBuilderX 单实例，双窗并发编译互相击杀，08-29 双实锤）。
+- 基线：develop @ 630d4bd（含 DASHSCOPE 加固 merge 5ed7c5c）；4b 修复分支 fix/4b @ acce7ef（R1-a/c/d 五枚 + 暗物质补落三枚 8a0b27a/7589775/acce7ef，R3 回合）。**客户端全项目编译门：待第三窗迁移收口合流**（合流前 fix/4b 冻结客户端域；其报「编译成功」待我方冷编译复验）。
 
 ## 3. 真机 / 环境要点（新窗口必读）
 
