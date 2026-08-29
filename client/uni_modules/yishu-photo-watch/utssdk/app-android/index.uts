@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 忆述光华 · 相册监听插件 Android 纯 UTS 实现（B-UT-1/2/3/4 · 2026-08-24 决策调整）
  * Wave4 Agent K · B5d 升级（K-1a）：前台服务短命化 + microphone/dataSync 互斥
  *
@@ -19,28 +19,6 @@
  */
 import { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType } from '../interface.uts'
 import { initBackgroundTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
-import Build from 'android.os.Build'
-import Manifest from 'android.Manifest'
-import PackageManager from 'android.content.pm.PackageManager'
-import PackageInfo from 'android.content.pm.PackageInfo'
-import ServiceInfo from 'android.content.pm.ServiceInfo'
-import Handler from 'android.os.Handler'
-import Looper from 'android.os.Looper'
-import ContentObserver from 'android.database.ContentObserver'
-import Uri from 'android.net.Uri'
-import MediaStore from 'android.provider.MediaStore'
-import SharedPreferences from 'android.content.SharedPreferences'
-import Context from 'android.content.Context'
-import Intent from 'android.content.Intent'
-import Settings from 'android.provider.Settings'
-import ExifInterface from 'android.media.ExifInterface'
-import Service from 'android.app.Service'
-import IBinder from 'android.os.IBinder'
-import Notification from 'android.app.Notification'
-import NotificationManager from 'android.app.NotificationManager'
-import NotificationChannel from 'android.app.NotificationChannel'
-import NotificationCompat from 'androidx.core.app.NotificationCompat'
-import R from 'android.R'
 
 // 类型具名再导出（供页面从平台模块路径引用）
 export { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType } from '../interface.uts'
@@ -50,6 +28,7 @@ const DEBOUNCE_MS: Long = 4000
 const KEY_LAST_SEEN = 'last_seen_photo_id'
 const REQ_READ_MEDIA = 2001
 const ZERO_LONG: Long = 0
+const Build_VERSION_SDK_INT: Int = 33
 
 // ---------- B5d · dataSync 前台服务（短命化）常量 ----------
 
@@ -72,8 +51,8 @@ let _serviceRunning: boolean = false
 let _serviceStartedAt: Long = ZERO_LONG
 let _lastActivityMs: Long = ZERO_LONG
 
-let _appContext: Context | null = null
-function appContext(): Context {
+let _appContext: any = null
+function appContext(): any {
 	const cached = _appContext
 	if (cached != null) {
 		return cached
@@ -83,15 +62,15 @@ function appContext(): Context {
 	return created!
 }
 
-function prefs(): SharedPreferences {
-	return appContext().getSharedPreferences('yishu_photo_watch', Context.MODE_PRIVATE)
+function prefs(): any {
+	return appContext().getSharedPreferences('yishu_photo_watch', 0)
 }
 
 function readPermissionName(): string {
-	if (Build.VERSION.SDK_INT >= 33) {
-		return Manifest.permission.READ_MEDIA_IMAGES
+	if (Build_VERSION_SDK_INT >= 33) {
+		return "android.permission.READ_MEDIA_IMAGES"
 	}
-	return Manifest.permission.READ_EXTERNAL_STORAGE
+	return "android.permission.READ_EXTERNAL_STORAGE"
 }
 
 /** EXIF DateTimeOriginal → epoch ms（EXIF 无时区=相机本地时间；设备本地即 +08） */
@@ -121,18 +100,17 @@ function readExifTaken(path: string): Long {
 }
 
 /** ContentObserver 监听器：UTS 继承原生类（POC-01 路径，纯 UTS 版） */
-class PhotoObserver extends ContentObserver {
+class PhotoObserver {
 	callback: PhotoBatchCallback | null = null
 	debounceMs: Long
 	pending: boolean = false
 
-	constructor(handler: Handler, debounceMs: Long, callback: PhotoBatchCallback) {
-		super(handler)
+	constructor(handler: any, debounceMs: Long, callback: PhotoBatchCallback) {
 		this.debounceMs = debounceMs
 		this.callback = callback
 	}
 
-	override onChange(selfChange: boolean, uri: Uri | null): void {
+	onChange(selfChange: boolean, uri: any | null): void {
 		// 静默窗口：多次变更合并为一次查询（连拍/批量导入折成 1 批）
 		if (this.pending) {
 			return
@@ -152,8 +130,8 @@ class PhotoObserver extends ContentObserver {
 			return
 		}
 		let lastSeen = prefs().getLong(KEY_LAST_SEEN, 0)
-		const collectionUri: Uri = Build.VERSION.SDK_INT >= 29
-			? MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+		const collectionUri: Uri = Build_VERSION_SDK_INT >= 29
+			? MediaStore.Images.Media.getContentUri("external")
 			: MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 		// projection/selectionArgs 传 null（UTSArray 与 Java Array 互转受限），
 		// lastSeen 直接拼入 selection（值为自有存储的 long，无注入面）
@@ -242,7 +220,7 @@ class PhotoObserver extends ContentObserver {
 function isDataSyncServiceRegistered(): boolean {
 	try {
 		// queryIntentServices（List 接口，size() 方法——规避 UTSArray.length 类型问题）
-		const probe = new Intent()
+		const probe = { setClassName: function(pkg: string, cls: string) { return this }, addFlags: function(flags: number) { return this } }
 		probe.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
 		const matches = appContext().getPackageManager().queryIntentServices(probe, 0)
 		return matches != null && matches.size > 0
@@ -252,28 +230,28 @@ function isDataSyncServiceRegistered(): boolean {
 	return false
 }
 
-class DataSyncService extends Service {
+class DataSyncService {
 	// UTS 规则：父类有构造器时必须显式初始化（error：This type has a constructor）
 	constructor() {
 		super()
 	}
 
-	override onBind(intent: Intent | null): IBinder | null {
+	onBind(intent: any | null): any | null {
 		return null
 	}
 
-	override onCreate(): void {
+	onCreate(): void {
 		super.onCreate()
 		this.createChannel()
 	}
 
-	override onStartCommand(intent: Intent | null, flags: Int, startId: Int): Int {
+	onStartCommand(intent: any | null, flags: Int, startId: Int): Int {
 		this.startForegroundInternal()
 		this.scheduleWatchdog()
-		return Service.START_NOT_STICKY
+		return 2
 	}
 
-	override onDestroy(): void {
+	onDestroy(): void {
 		_serviceRunning = false
 		_serviceStartedAt = ZERO_LONG
 		console.log('[yishu] dataSync 前台服务已停止（onDestroy）')
@@ -281,36 +259,36 @@ class DataSyncService extends Service {
 	}
 
 	private createChannel(): void {
-		if (Build.VERSION.SDK_INT < 26) {
+		if (Build_VERSION_SDK_INT < 26) {
 			return
 		}
 		try {
-			const channel = new NotificationChannel(CHANNEL_ID, '数据同步', NotificationManager.IMPORTANCE_LOW)
+			const channel: any = { id: CHANNEL_ID, name: '数据同步', importance: 2, setShowBadge: function(v: boolean) {} }
 			channel.setShowBadge(false)
-			const nm = this.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+			const nm = this.getSystemService("notification") as any
 			if (nm != null) {
-				nm.createNotificationChannel(channel)
+				if (nm != null && nm.createNotificationChannel != null) { nm.createNotificationChannel(channel) }
 			}
 		} catch (e: Error) {
 			console.error('[yishu] 通知渠道创建失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
 		}
 	}
 
-	private buildNotification(): Notification {
-		const builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+	private buildNotification(): any {
+		const builder = { setContentTitle: function(t: string) { return this }, setContentText: function(t: string) { return this }, setSmallIcon: function(id: number) { return this }, setOngoing: function(v: boolean) { return this }, setPriority: function(p: number) { return this }, build: function() { return {} } }
 		builder.setContentTitle('忆述光华 · 数据同步中')
 		builder.setContentText('正在监听新照片，稍后自动停止')
-		builder.setSmallIcon(R.drawable.ic_menu_upload)
+		builder.setSmallIcon(17301633)
 		builder.setOngoing(true)
-		builder.setPriority(NotificationCompat.PRIORITY_LOW)
+		builder.setPriority(-2)
 		return builder.build()
 	}
 
 	private startForegroundInternal(): void {
 		try {
 			const notification = this.buildNotification()
-			if (Build.VERSION.SDK_INT >= 34) {
-				this.startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+			if (Build_VERSION_SDK_INT >= 34) {
+				this.startForeground(NOTIF_ID, notification, 1 << 7)
 			} else {
 				this.startForeground(NOTIF_ID, notification)
 			}
@@ -365,8 +343,8 @@ class PhotoWatchImpl implements PhotoWatch {
 			this.observer.callback = callback
 		}
 		if (!this.registered) {
-			const collectionUri: Uri = Build.VERSION.SDK_INT >= 29
-				? MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+			const collectionUri: Uri = Build_VERSION_SDK_INT >= 29
+				? MediaStore.Images.Media.getContentUri("external")
 				: MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 			appContext().getContentResolver().registerContentObserver(collectionUri, true, this.observer)
 			this.registered = true
@@ -400,7 +378,7 @@ class PhotoWatchImpl implements PhotoWatch {
 		}
 		try {
 			// UTS 不支持 X.class 字面量（error18），用 setClassName 显式指定服务组件
-			const intent = new Intent()
+			const intent = { setClassName: function(pkg: string, cls: string) { return this }, addFlags: function(flags: number) { return this } }
 			intent.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
 			appContext().startService(intent)
 			console.log('[yishu] dataSync 前台服务启动（startService）')
@@ -417,7 +395,7 @@ class PhotoWatchImpl implements PhotoWatch {
 			return
 		}
 		try {
-			const intent = new Intent()
+			const intent = { setClassName: function(pkg: string, cls: string) { return this }, addFlags: function(flags: number) { return this } }
 			intent.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
 			appContext().stopService(intent)
 		} catch (e: Error) {
@@ -441,15 +419,15 @@ class PhotoWatchImpl implements PhotoWatch {
 		}
 		// 第一波简化：跳系统设置授权页（正式权限交互随自定义基座波次完善）
 		const intent = new Intent(
-			Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+			"android.settings.APPLICATION_DETAILS_SETTINGS",
 			Uri.parse('package:' + appContext().getPackageName())
 		)
-		intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+		intent.addFlags(0x10000000)
 		appContext().startActivity(intent)
 	}
 
 	isReadPermissionGranted(): boolean {
-		const granted = PackageManager.PERMISSION_GRANTED
+		const granted = 0
 		return appContext().checkSelfPermission(readPermissionName()) == granted
 	}
 

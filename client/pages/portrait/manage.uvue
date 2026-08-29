@@ -624,7 +624,7 @@
 		font-size: 20rpx;
 		color: #8a7a6a;
 	}
-	.tabbar-item.active .tabbar-label {
+	.tabbar-label-active {
 		color: #3a2e25;
 		font-weight: 600;
 	}
@@ -653,8 +653,5 @@
 	.pressable {
 		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
-	.pressable:active {
-		transform: scale(0.98);
-		box-shadow: 0 2rpx 8rpx rgba(58,46,37,0.08);
-	}
+	
 </style>
