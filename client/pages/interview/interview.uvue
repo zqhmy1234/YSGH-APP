@@ -5,6 +5,7 @@
 			<text class="header-sub">回答三个问题，让记忆整理更懂你</text>
 		</view>
 
+		<scroll-view scroll-y="true" class="content-scroll">
 		<!-- 三层披露（T-PL-2）：先披露再作答 -->
 		<view v-if="step === 'disclose'" class="disclose-card">
 			<text class="disclose-title serif">关于你的回答</text>
@@ -45,8 +46,9 @@
 				<text class="btn-text">完成</text>
 			</view>
 		</view>
+		</scroll-view>
 		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
-<view class="glass-tabbar">
+		<view class="glass-tabbar">
 			<view class="tabbar-item  pressable" @tap="goIndex">
 				<text class="tabbar-icon">🏠</text>
 				<text class="tabbar-label">时间轴</text>
@@ -163,6 +165,8 @@
 <style>
 	.page {
 		flex: 1;
+		display: flex;
+		flex-direction: column;
 		background-color: #f8f7f4;
 		padding-left: 0;
 		padding-right: 0;
@@ -188,6 +192,9 @@
 	}
 
 	/* 披露 */
+	.content-scroll {
+		flex: 1;
+	}
 	.disclose-card {
 		background-color: #ffffff;
 		border-radius: 40rpx;
