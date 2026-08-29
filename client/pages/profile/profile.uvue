@@ -37,8 +37,8 @@
 			<text class="about-text">忆述光华 · v0.1.0</text>
 			<text class="about-sub">{{ devEntrySub }}</text>
 		</view>
-		（半透明白 55% + 中央＋按钮） -->
-		<view class="glass-tabbar">
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+<view class="glass-tabbar">
 			<view class="tabbar-item  pressable" @tap="goIndex">
 				<text class="tabbar-icon">🏠</text>
 				<text class="tabbar-label">时间轴</text>

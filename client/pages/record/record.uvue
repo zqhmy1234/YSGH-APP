@@ -79,8 +79,8 @@
 				</view>
 			</view>
 		</view>
-		（半透明白 55% + 中央＋按钮） -->
-		<view class="glass-tabbar">
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+<view class="glass-tabbar">
 			<view class="tabbar-item  pressable" @tap="goIndex">
 				<text class="tabbar-icon">🏠</text>
 				<text class="tabbar-label">时间轴</text>
