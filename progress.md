@@ -637,3 +637,11 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **第三活跃窗发现**：`.wt/wrap1-agentA2-ui-restore`（分支 18 分钟前仍提交，`fix(uts) 移除 java.lang.Class 导入`）——与我修 **D-18 同一插件文件**、且其旧版仍含恒 false 探测与 Class.forName 群（5.24 迁移未决）。两窗并撞一单，归谁待用户裁定；我侧 marker 重写在其旧基线之上，merge 冲突可控但须表态。
 - **P-2 收编**：O-1 改判（漂移证伪→疑外部终止/内存压力，1.6GB 空闲实测在案）；O-2 坐实→**tracker19 D-22 新单**（缺陷台账 19→20 单，AGENTS/台账 §5.7 并批待拍板同步）；tracker19 §5 补上缺失的 O-2 行（原「唯一来源」竟无此行，记账债+1）。US-25 现 ✅A 与 D-22 现象矛盾——R2 须重断（已写入 §5.7）。
 - **纪律执行**：全程 pathspec 提交零触碰他窗脏文件；主仓脏文档=本批记账+前批拍板文案（一并入库）；无 push；scratch 暂存 .cowork-temp 波尾清理。
+
+## 2026-08-29 14:3x · 百炼真实链路加固 + 验证矩阵（独立分支 feat/dashscope-backend-hardening，worktree `.wt/dashscope`）
+
+- **背景**：用户通知 DASHSCOPE 双 Key 已在 Infisical 就绪（会话中恢复登录，token 9d+），要求完成需要这两个 key 的后端补充开发。域协调：全程避开他窗 in-flight 的 `api/asr.py`/`services/external/asr/`/`docs/openapi.json`。
+- **两处加固**（08-28 真实评测报告实证反推）：①`llm_ops/rerank.py` 解析三级兜底——标准解析失败→逐块正则打捞（截断尾块/全角标点，ans 未知前缀宁不判）→`_norm_ans` 中英文布尔归一，根治 `bool("false")==True` 静默错误换序 + 「解析失败回退原序」精排空转；②`rag/image.py` VL 重试耗尽→**过期缓存兜底**（08-28 评测以图搜图 2/10 miss=连接重置空结果），空 caption 不覆写缓存位。新增单测 7 项（rerank 形态 4 + caption 兜底 3）全绿。
+- **真实验证矩阵**（新 `scripts/check_dashscope_matrix.py`，9 链路）：**双通道各 9/9 pass**——Infisical 注入（14:24）与 .env 直读（14:23）：rewrite 1.1-1.3s / route 224-239ms / rerank 判定 4/4 置顶正确 0.73-2.25s（追加样本共 4 次调用解析零失败）/ guard chat+managed 双路径 / fail_closed 拒发实证 / **Qwen3-VL 真实照片 3.2-4.2s** / caption 缓存+过期兜底 / event_merge real conf 0.85。**零 403 workspace 复发**（lessons 08-25 旧病）。OPS-SECRETS「拿 Key 零代码切换」百炼域达成——全部由既有生产代码路径直出。
+- **验证与登记**：默认套件 **664 passed / 4 skipped**（EXIT=0；首轮 1 例 test_amap 偶发=与前台子集并发共跑测试库时序污染，复跑不复现，纪律入报告 §6）；ruff 涉改文件全绿；lessons 登记 1 条（LLM 输出契约漂移静默退化族）；证据 `docs/百炼真实链路验证与加固_20260829.md` + `.cowork-temp/dashscope_matrix_*.json`；feature_list F5/OPS-SECRETS evidence 追加。
+- **遗留登记（不擅改默认值）**：rerank 默认开 + 真实档 0.7-2.3s/查询对 P95<3s 的张力→GPU/异步策略评审再拍板；fun-asr 模型开通态+WER 基线属他窗 asr 域；answer_quality「真实生成答案」接线为下一候选。

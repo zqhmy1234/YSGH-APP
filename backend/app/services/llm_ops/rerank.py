@@ -9,10 +9,18 @@
   绝不因精排失败让搜索结果变空或抛错。
 - 精排判定语义：候选与查询相关且【能回答问题】（信息量足够），不只是泛相关——
   与"召回层语义近邻"区分开，把模糊近邻压到不可回答组。
+
+鲁棒性加固（2026-08-29 百炼真实链路加固·F5）：08-28 真实评测实证
+「llm_rerank 逐查询调用、输出解析失败回退原序」——qwen-flash 输出并非恒
+标准 JSON：ans 字符串化（bool("false")==True 会错误换序）、数组被 max_tokens
+截断、全角标点混入、i 输出成字符串、单候选输出对象而非数组。解析层改为
+「标准解析 → 逐块打捞提取 → 字段归一」三级兜底，消除静默空转与真伪值误判。
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 from app.core.config import settings
 from app.services.llm_ops.base import chat_text, llm_available
@@ -45,21 +53,114 @@ def _build_prompt(query: str, candidates: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# ---- 输出解析加固（2026-08-29 百炼真实链路加固） ----
+
+# ans 真伪值归一集合：qwen-flash 偶发把 ans 写成字符串/中文（"false"/"是"）。
+# 直接 bool("false") == True 是最阴险的误判（非空字符串恒真 → 无关候选被顶到前排）。
+_ANS_TRUE_TEXTS = {"true", "1", "yes", "y", "是", "对", "能", "可以", "是的", "能够回答"}
+_ANS_FALSE_TEXTS = {"false", "0", "no", "n", "否", "不", "不能", "不可以", "不是", "无关", "无法回答"}
+
+# 打捞提取：独立 {...} 块（截断数组的尾块不完整，交给 _TAIL_RE 补收）
+_BLOCK_RE = re.compile(r"\{[^{}]*\}")
+_TAIL_RE = re.compile(r"\{[^{}]*$")
+_I_RE = re.compile(r'"i"\s*[:：]\s*"?(-?\d+)"?')
+_ANS_RE = re.compile(r'"ans"\s*[:：]\s*"?([A-Za-z]+|[01]|[\u4e00-\u9fff]+)"?', re.IGNORECASE)
+_REASON_RE = re.compile(r'"reason"\s*[:：]\s*"([^"]*)"')
+
+
+def _norm_ans_opt(value: object) -> bool | None:
+    """ans 真伪判定（可识别才给结论）：bool/数字直判；字符串归一后查同义集合；
+    无法识别（含截断前缀 "tru"）→ None（salvage 路径据此放弃该块，宁不判不冒换序风险）"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        s = value.strip().lower().strip("\"'")
+        if s in _ANS_TRUE_TEXTS:
+            return True
+        if s in _ANS_FALSE_TEXTS:
+            return False
+    return None
+
+
+def _norm_ans(value: object) -> bool:
+    """ans 归一（消费路径）：未知值 → False（不能回答组保底，与原 bool() 契约保守一致）"""
+    return _norm_ans_opt(value) is True
+
+
+def _norm_i(value: object) -> int | None:
+    """i 字段归一（int 与 "3" 字符串均接受；bool 显式排除，防 True→1 假索引）"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        s = value.strip().strip("\"'")
+        if s.lstrip("-").isdigit():
+            return int(s)
+    return None
+
+
+def _salvage_blocks(answer: str) -> list[dict]:
+    """整数组解析失败（截断/全角标点/散文混入）时的逐块打捞
+
+    逐 {...} 块先试 json.loads，失败退正则提取 i/ans/reason；数组截断时尾部
+    不完整块（无 `}`）也尽力抢救 i/ans（reason 常为截断牺牲品，可缺）。
+    丢 i 的块与无法正则识别的块丢弃（调用方按未判定 → 不能回答组保底）。
+    """
+    items: list[dict] = []
+    blocks = _BLOCK_RE.findall(answer)
+    tail = _TAIL_RE.search(answer)
+    if tail:
+        blocks.append(tail.group(0))
+    for blk in blocks:
+        try:
+            obj = json.loads(blk)
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict):
+            items.append(obj)
+            continue
+        m_i = _I_RE.search(blk)
+        if not m_i:
+            continue
+        m_a = _ANS_RE.search(blk)
+        if not m_a or _norm_ans_opt(m_a.group(1)) is None:
+            continue  # ans 缺失或截断成未知前缀（如 "tru"）→ 宁可不判，不冒换序风险
+        item: dict = {"i": int(m_i.group(1)), "ans": m_a.group(1)}
+        m_r = _REASON_RE.search(blk)
+        if m_r:
+            item["reason"] = m_r.group(1)
+        items.append(item)
+    return items
+
+
 def _extract_json_array(answer: str) -> list[dict]:
     """容错解析 LLM 输出 → 判定数组（字段级清洗保留在 rerank）
 
-    解析部分（```json 围栏剥离 / 首个 [ 前剥噪 / 末尾 ] 后剥噪 / 类型校验）统一走
-    llm_ops.parsing.extract_json_array（S1-H1 收口）；此处只做 i/ans/reason 字段清洗。
+    三级兜底（2026-08-29 加固）：
+    1. 标准路径：围栏剥离/数组切片统一走 llm_ops.parsing.extract_json_array（S1-H1 收口）；
+    2. 打捞路径：整数组解析失败 → _salvage_blocks 逐块正则提取（截断/全角/散文）；
+    3. 字段归一：i 接受字符串数字；ans 走 _norm_ans（字符串 "false" 不再被 bool() 误判真）。
     """
     data = extract_json_array(answer)
-    out = []
+    if not data:
+        data = _salvage_blocks(answer)
+    out: list[dict] = []
+    seen: set[int] = set()
     for item in data:
-        if isinstance(item, dict) and isinstance(item.get("i"), int):
-            out.append({
-                "i": item["i"],
-                "ans": bool(item.get("ans", False)),
-                "reason": str(item.get("reason", ""))[:_MAX_CANDIDATE_CHARS],
-            })
+        if not isinstance(item, dict):
+            continue
+        i = _norm_i(item.get("i"))
+        if i is None or i in seen:
+            continue
+        seen.add(i)
+        out.append({
+            "i": i,
+            "ans": _norm_ans(item.get("ans", False)),
+            "reason": str(item.get("reason", ""))[:_MAX_CANDIDATE_CHARS],
+        })
     return out
 
 
