@@ -70,29 +70,8 @@
 			</view>
 		</view>
 
-		<!-- 玻璃 TabBar（设计稿: 350x62 rx=31，图标中心 x=45/118/195/281/350；本页“我的”激活态锈红）
-		     注：主 Agent 统一 TabBar 组件就绪后，替换为 <TabBar :active="profile" /> -->
-		<view class="glass-tabbar">
-			<view class="tabbar-item tabbar-item-1 pressable" @tap="goIndex">
-				<hens-svg :src="iconTimeline" :width="16" :height="16" />
-				<text class="tabbar-label">时间轴</text>
-			</view>
-			<view class="tabbar-item tabbar-item-2 pressable" @tap="goAI">
-				<hens-svg :src="iconAi" :width="16" :height="16" />
-				<text class="tabbar-label">AI</text>
-			</view>
-			<view class="tabbar-fab pressable" @tap="goRecord">
-				<hens-svg :src="iconPlus" :width="16" :height="16" />
-			</view>
-			<view class="tabbar-item tabbar-item-4 pressable" @tap="goSearch">
-				<hens-svg :src="iconSearch" :width="16" :height="16" />
-				<text class="tabbar-label">搜索</text>
-			</view>
-			<view class="tabbar-item tabbar-item-5 tabbar-item-active pressable" @tap="goProfile">
-				<hens-svg :src="iconProfile" :width="16" :height="16" />
-				<text class="tabbar-label tabbar-label-active">我的</text>
-			</view>
-		</view>
+		<!-- 统一 TabBar 组件 -->
+		<TabBar active="profile" />
 	</view>
 </template>
 
@@ -111,11 +90,6 @@
 	const iconChevron = `<svg viewBox="0 0 6 10" xmlns="http://www.w3.org/2000/svg"><path d="M3.9125 3.0875L0.4125 -0.4125Q0.2445 -0.5904 0 -0.5833Q-0.2445 -0.5904 -0.4125 -0.4125Q-0.5904 -0.2445 -0.5833 0Q-0.5904 0.2445 -0.4125 0.4125L2.675 3.5L-0.4125 6.5875Q-0.5904 6.7555 -0.5833 7Q-0.5904 7.2445 -0.4125 7.4125Q-0.2445 7.5904 0 7.5833Q0.2445 7.5904 0.4125 7.4125L3.9125 3.9125Q4.0904 3.7445 4.0833 3.5Q4.0904 3.2555 3.9125 3.0875Z" fill="#B3A696" fill-rule="evenodd"/></svg>`
 
 	// TabBar 图标（我的=激活态锈红；其余=常态灰）
-	const iconTimeline = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="7.5" cy="7.5" r="7.5" fill="none" stroke="#8A7A6A" stroke-width="1.6667"/><path d="M5.3333 0L3.75 3.75L0 5.3333L1.5833 1.5833L5.3333 0Z" fill="#8A7A6A"/></svg>`
-	const iconAi = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M11.987 10.6265Q14.1667 8.7145 14.1667 5.8333Q14.1667 2.9522 11.987 1.0402Q9.8512 -0.8333 6.6667 -0.8333Q3.4821 -0.8333 1.3463 1.0402Q-0.8333 2.9522 -0.8333 5.8333Q-0.8333 7.4372 -0.2973 8.8129Q0.1424 9.9416 0.8695 10.7269L0.0475 13.056Q-0.0782 13.3821 0.0815 13.6929Q0.2232 14.0124 0.556 14.1192Q0.7293 14.1813 0.9125 14.1629Q1.0959 14.1463 1.2543 14.0525L4.3594 12.2349Q5.3637 12.5 6.6667 12.5Q9.8512 12.5 11.987 10.6265ZM10.888 2.2931Q12.5 3.7072 12.5 5.8333Q12.5 7.9595 10.888 9.3735Q9.2238 10.8333 6.6667 10.8333Q5.3852 10.8333 4.5135 10.5428Q4.3428 10.4849 4.1635 10.5045Q3.9842 10.5223 3.829 10.6142L2.3767 11.4643L2.6192 10.7773Q2.7086 10.5341 2.6383 10.2846Q2.5747 10.0334 2.3757 9.8673Q1.6648 9.2579 1.2556 8.2079Q0.8333 7.124 0.8333 5.8333Q0.8333 3.7072 2.4454 2.2931Q4.1095 0.8333 6.6667 0.8333Q9.2238 0.8333 10.888 2.2931Z" fill="#8A7A6A" fill-rule="evenodd"/></svg>`
-	const iconSearch = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="5.4167" cy="5.4167" r="5.4167" fill="none" stroke="#8A7A6A" stroke-width="1.6667"/><path d="M5.1726 3.9941L0.5893 -0.5893Q0.3493 -0.8434 0 -0.8333Q-0.3493 -0.8434 -0.5893 -0.5893Q-0.8434 -0.3493 -0.8333 0Q-0.8434 0.3493 -0.5893 0.5893L3.9941 5.1726Q4.234 5.4267 4.5833 5.4167Q4.9327 5.4267 5.1726 5.1726Q5.4267 4.9327 5.4167 4.5833Q5.4267 4.234 5.1726 3.9941Z" fill="#8A7A6A" fill-rule="evenodd"/></svg>`
-	const iconProfile = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="3.3333" cy="3.3333" r="3.3333" fill="none" stroke="#B05A3A" stroke-width="1.6667"/><path d="M2.2844 0.2722Q0.2463 1.4765 -0.766 3.8384L0.766 4.4949Q2.3352 0.8333 6.6667 0.8333Q10.9981 0.8333 12.5674 4.4949L14.0993 3.8384Q13.087 1.4765 11.049 0.2722Q9.1781 -0.8333 6.6667 -0.8333Q4.1552 -0.8333 2.2844 0.2722Z" fill="#B05A3A" fill-rule="evenodd"/></svg>`
-	const iconPlus = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M7.5167 5.3167L7.5167 0Q7.5299 -0.4611 7.1945 -0.7778Q6.8778 -1.1133 6.4167 -1.1Q5.9555 -1.1133 5.6389 -0.7778Q5.3034 -0.4611 5.3167 0L5.3167 5.3167L0 5.3167Q-0.4611 5.3034 -0.7778 5.6389Q-1.1133 5.9555 -1.1 6.4167Q-1.1133 6.8778 -0.7778 7.1945Q-0.4611 7.5299 0 7.5167L5.3167 7.5167L5.3167 12.8333Q5.3034 13.2945 5.6389 13.6111Q5.9555 13.9466 6.4167 13.9333Q6.8778 13.9466 7.1945 13.6111Q7.5299 13.2945 7.5167 12.8333L7.5167 7.5167L12.8333 7.5167Q13.2945 7.5299 13.6111 7.1945Q13.9466 6.8778 13.9333 6.4167Q13.9466 5.9555 13.6111 5.6389Q13.2945 5.3034 12.8333 5.3167L7.5167 5.3167Z" fill="#FAF9F5" fill-rule="evenodd"/></svg>`
 
 	// ===== 交互 =====
 	// 类型入口（照片/语音/文字）
@@ -149,22 +123,6 @@
 		uni.showToast({ title: '关于页面开发中', icon: 'none' })
 	}
 
-	// TabBar 导航
-	function goIndex(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
-	}
-	function goAI(): void {
-		uni.showToast({ title: 'AI功能开发中', icon: 'none' })
-	}
-	function goRecord(): void {
-		uni.reLaunch({ url: '/pages/record/record' })
-	}
-	function goSearch(): void {
-		uni.reLaunch({ url: '/pages/search/search' })
-	}
-	function goProfile(): void {
-		// 当前页面
-	}
 </script>
 
 <style>
@@ -317,62 +275,6 @@
 		line-height: 40rpx;
 	}
 
-	/* ===== 玻璃 TabBar（350x62 rx=31；图标按设计稿绝对定位，中心 x=45/118/195/281/350） ===== */
-	.glass-tabbar {
-		position: fixed;
-		bottom: 60rpx;
-		left: 40rpx;
-		right: 40rpx;
-		height: 124rpx;
-		background-color: rgba(246, 241, 231, 0.75);
-		border-radius: 62rpx;
-		box-shadow: 0 8rpx 32rpx rgba(58, 46, 37, 0.12);
-	}
-	.tabbar-item {
-		position: absolute;
-		top: 0;
-		height: 124rpx;
-		width: 100rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-	}
-	.tabbar-item-1 {
-		left: 0;
-	}
-	.tabbar-item-2 {
-		left: 146rpx;
-	}
-	.tabbar-item-4 {
-		left: 471rpx;
-	}
-	.tabbar-item-5 {
-		left: 610rpx;
-	}
-	.tabbar-label {
-		margin-top: 6rpx;
-		font-size: 20rpx;
-		color: #b3a696;
-		line-height: 24rpx;
-	}
-	.tabbar-label-active {
-		color: #b05a3a;
-		font-weight: 600;
-	}
-	.tabbar-fab {
-		position: absolute;
-		left: 294rpx;
-		top: -24rpx;
-		width: 112rpx;
-		height: 112rpx;
-		border-radius: 56rpx;
-		background-color: #b05a3a;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 8rpx 24rpx rgba(176, 90, 58, 0.4);
-	}
 
 	/* 按压态动画 */
 	.pressable {

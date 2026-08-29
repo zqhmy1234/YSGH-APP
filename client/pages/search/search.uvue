@@ -82,28 +82,8 @@
 			</view>
 		</scroll-view>
 
-		<!-- 玻璃 TabBar（设计稿: 350x62 rx=31 #f6f1e7bf，与其他页面保持一致） -->
-		<view class="glass-tabbar">
-			<view class="tabbar-item pressable" @tap="goIndex">
-				<text class="tabbar-icon">🏠</text>
-				<text class="tabbar-label">时间轴</text>
-			</view>
-			<view class="tabbar-item pressable" @tap="goAI">
-				<text class="tabbar-icon">✨</text>
-				<text class="tabbar-label">AI</text>
-			</view>
-			<view class="tabbar-fab pressable" @tap="goRecord">
-				<text class="tabbar-fab-icon">+</text>
-			</view>
-			<view class="tabbar-item active pressable" @tap="goSearch">
-				<text class="tabbar-icon">🔍</text>
-				<text class="tabbar-label tabbar-label-active">搜索</text>
-			</view>
-			<view class="tabbar-item pressable" @tap="goProfile">
-				<text class="tabbar-icon">👤</text>
-				<text class="tabbar-label">我的</text>
-			</view>
-		</view>
+		<!-- 统一 TabBar 组件 -->
+		<TabBar active="search" />
 	</view>
 </template>
 
@@ -219,22 +199,6 @@
 		}
 	}
 
-	// TabBar 导航（与全库一致）
-	function goIndex(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
-	}
-	function goAI(): void {
-		uni.showToast({ title: 'AI 功能开发中', icon: 'none' })
-	}
-	function goRecord(): void {
-		uni.reLaunch({ url: '/pages/record/record' })
-	}
-	function goSearch(): void {
-		// 当前页面
-	}
-	function goProfile(): void {
-		uni.reLaunch({ url: '/pages/profile/profile' })
-	}
 </script>
 
 <style>
@@ -547,64 +511,6 @@
 		color: #8a7a6a;
 	}
 
-	/* ===== 玻璃 TabBar（设计稿: 350x62 rx=31 #f6f1e7bf，与全库一致） ===== */
-	.glass-tabbar {
-		position: fixed;
-		bottom: 60rpx;
-		left: 40rpx;
-		right: 40rpx;
-		height: 124rpx;
-		background-color: rgba(246, 241, 231, 0.75);
-		border-radius: 62rpx;
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-around;
-		box-shadow: 0 8rpx 32rpx rgba(58, 46, 37, 0.12);
-		padding: 0 24rpx;
-		overflow: visible;
-	}
-	.tabbar-item {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		width: 80rpx;
-		height: 80rpx;
-	}
-	.tabbar-icon {
-		width: 40rpx;
-		height: 40rpx;
-		margin-bottom: 4rpx;
-	}
-	.tabbar-label {
-		font-size: 20rpx;
-		color: #8a7a6a;
-	}
-	.tabbar-label-active {
-		color: #3a2e25;
-		font-weight: 600;
-	}
-	.tabbar-fab {
-		width: 112rpx;
-		height: 112rpx;
-		border-radius: 56rpx;
-		background-color: #b05a3a;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-top: -40rpx;
-		box-shadow: 0 8rpx 24rpx rgba(176, 90, 58, 0.4);
-	}
-	.tabbar-fab-icon {
-		width: 48rpx;
-		height: 48rpx;
-		color: #f6f1e7;
-		font-size: 48rpx;
-		font-weight: 300;
-		line-height: 48rpx;
-		text-align: center;
-	}
 
 	/* 按压态动画 */
 	.pressable {

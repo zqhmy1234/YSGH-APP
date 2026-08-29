@@ -235,23 +235,8 @@
 	})
 
 	// 导航方法
-	function goIndex(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
-	}
-	function goAI(): void {
-		uni.showToast({ title: 'AI功能开发中', icon: 'none' })
-	}
 	function goSearch(): void {
 		uni.reLaunch({ url: '/pages/search/search' })
-	}
-	function goRecord(): void {
-		uni.reLaunch({ url: '/pages/record/record' })
-	}
-	function goMessages(): void {
-		uni.reLaunch({ url: '/pages/messages/messages' })
-	}
-	function goProfile(): void {
-		uni.reLaunch({ url: '/pages/profile/profile' })
 	}
 
 	// 语音播放
@@ -1057,64 +1042,6 @@
 		color: #b05a3a;
 	}
 
-	/* 玻璃 TabBar（半透明白 55% + 中央＋按钮） */
-	.glass-tabbar {
-		position: fixed;
-		bottom: 60rpx;
-		overflow: visible;
-		left: 40rpx;
-		right: 40rpx;
-		height: 124rpx;
-		background-color: rgba(246,241,231,0.75);
-		border-radius: 62rpx;
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-around;
-		box-shadow: 0 8rpx 32rpx rgba(58,46,37,0.12);
-		padding: 0 24rpx;
-	}
-	.tabbar-item {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		width: 80rpx;
-		height: 80rpx;
-	}
-	.tabbar-icon {
-		width: 40rpx;
-		height: 40rpx;
-		margin-bottom: 4rpx;
-	}
-	.tabbar-label {
-		font-size: 20rpx;
-		color: #8a7a6a;
-	}
-	.tabbar-label-active {
-		color: #3a2e25;
-		font-weight: 600;
-	}
-	.tabbar-fab {
-		width: 112rpx;
-		height: 112rpx;
-		border-radius: 56rpx;
-		background-color: #b05a3a;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-top: -40rpx;
-		box-shadow: 0 8rpx 24rpx rgba(176,90,58,0.4);
-	}
-	.tabbar-fab-icon {
-		width: 48rpx;
-		height: 48rpx;
-		color: #f6f1e7;
-		font-size: 48rpx;
-		font-weight: 300;
-		line-height: 48rpx;
-		text-align: center;
-	}
 
 	/* 按压态动画（scale 0.98 + 阴影收缩 200ms） */
 	.pressable {
