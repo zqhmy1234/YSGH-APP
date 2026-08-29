@@ -645,3 +645,10 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **企微事件（负责人→用户→我）**：可信 IP=调用方出口 IP——实测本机 `61.171.241.17`（手机电信流量 CGNAT，会漂；校园网必变，换网即 `curl ip.sb` 报新 IP 可多配）。凭证 5 项：CORP_ID/TOKEN/AES_KEY 就绪，APPID/SECRET 待打包——US-31/32/33 卡点性质缩为「等打包+M1 服务器」（台账 §6/handoff 已登记 614a4df）。
 - **协作通知**：用户另派一 agent 做 DASHSCOPE 后端补充任务（独立分支）——已提醒避开 `api/asr.py`/`services/external/asr/`/`docs/openapi.json`（asr 域是我 R1 主战场；契约再生成归 R3 统一）。若其提交与 9922e4a channels 冲突，以契约增量合并为准。
 - **R1 剩余 = 全部冻结项**，等待第三窗迁移提交 → rebase → 统一编译 → R2 真机波。
+## 2026-08-29 14:3x · 百炼真实链路加固 + 验证矩阵（独立分支 feat/dashscope-backend-hardening，worktree `.wt/dashscope`）
+
+- **背景**：用户通知 DASHSCOPE 双 Key 已在 Infisical 就绪（会话中恢复登录，token 9d+），要求完成需要这两个 key 的后端补充开发。域协调：全程避开他窗 in-flight 的 `api/asr.py`/`services/external/asr/`/`docs/openapi.json`。
+- **两处加固**（08-28 真实评测报告实证反推）：①`llm_ops/rerank.py` 解析三级兜底——标准解析失败→逐块正则打捞（截断尾块/全角标点，ans 未知前缀宁不判）→`_norm_ans` 中英文布尔归一，根治 `bool("false")==True` 静默错误换序 + 「解析失败回退原序」精排空转；②`rag/image.py` VL 重试耗尽→**过期缓存兜底**（08-28 评测以图搜图 2/10 miss=连接重置空结果），空 caption 不覆写缓存位。新增单测 7 项（rerank 形态 4 + caption 兜底 3）全绿。
+- **真实验证矩阵**（新 `scripts/check_dashscope_matrix.py`，9 链路）：**双通道各 9/9 pass**——Infisical 注入（14:24）与 .env 直读（14:23）：rewrite 1.1-1.3s / route 224-239ms / rerank 判定 4/4 置顶正确 0.73-2.25s（追加样本共 4 次调用解析零失败）/ guard chat+managed 双路径 / fail_closed 拒发实证 / **Qwen3-VL 真实照片 3.2-4.2s** / caption 缓存+过期兜底 / event_merge real conf 0.85。**零 403 workspace 复发**（lessons 08-25 旧病）。OPS-SECRETS「拿 Key 零代码切换」百炼域达成——全部由既有生产代码路径直出。
+- **验证与登记**：默认套件 **664 passed / 4 skipped**（EXIT=0；首轮 1 例 test_amap 偶发=与前台子集并发共跑测试库时序污染，复跑不复现，纪律入报告 §6）；ruff 涉改文件全绿；lessons 登记 1 条（LLM 输出契约漂移静默退化族）；证据 `docs/百炼真实链路验证与加固_20260829.md` + `.cowork-temp/dashscope_matrix_*.json`；feature_list F5/OPS-SECRETS evidence 追加。
+- **遗留登记（不擅改默认值）**：rerank 默认开 + 真实档 0.7-2.3s/查询对 P95<3s 的张力→GPU/异步策略评审再拍板；fun-asr 模型开通态+WER 基线属他窗 asr 域；answer_quality「真实生成答案」接线为下一候选。

@@ -15,6 +15,21 @@
 - **修复**：教训当场登记补交；今后一切提交（含 amend/rebase 后重放）一律走 hook，若怀疑会白跑也宁可多跑一次门禁
 - **相关文件**：skills/hbuilderx-uniappx-runloop/SKILL.md
 - **教训**：hook 禁令范围=每一次 commit 对象形成，与内容类型和 amend 形式无关
+### 2026-08-29 15:07 · commit d36397d · ts=1787987252
+- **错误**：新 worktree 直接跑 review_agent --full 连锁失败三段：①backend/models 空目录→SetFit 不可用→photo-journey/timeline-structure 冒烟降级 mixed 挂 ②.cowork-temp/test_photos 缺失→api_smoke photo-journey 报「先跑 generate_test_photos」→timeline min() 空级联 ③test_search_latency_under_3s 首轮偶发超时（模型冷启动+CPU 争用），复跑即绿
+- **根因**：git worktree 检出只含入库文件，全量门禁的运行前置（models 权重目录、测试照片素材、模型冷启动）全部不在 git 内；worktree 隔离开发模式（本仓惯例 .wt/*）无「门禁前置初始化」清单可循
+- **修复**：worktree 门禁前置三步固化并写入报告 §5：backend/models 三模型目录 junction 指主区 + python scripts/generate_test_photos.py + 计时类测试失败先单跑复核再判 flake（本仓 test_search_latency_under_3s 实测单跑 1 passed）
+- **相关文件**：docs/百炼真实链路验证与加固_20260829.md;scripts/review_agent.py
+- **教训**：worktree 隔离开发必须先初始化「非入库运行前置」（模型权重/测试素材），否则全量门禁的失败是环境噪声不是代码回归——先对照基线与单跑复核，再决定是否修代码
+
+---
+
+### 2026-08-29 14:32 · commit d36397d · ts=1787985131
+- **错误**：LLM 精排输出契约漂移时静默退化（单一严格解析路径）：ans 被 qwen-flash 写成字符串「false」时 bool 强转恒判真（非空字符串）；数组被 max_tokens 截断/全角标点混入时整批解析失败→原序返回，搜索结果悄然劣化无任何报错
+- **根因**：解析层只有单一 json 严格路径（整数组失败即全弃），且 bool() 强转对字符串布尔值语义反转；降级契约「失败→原序」掩盖了契约漂移，无原始输出留证难以归因
+- **修复**：rerank.py 解析三级兜底：标准解析失败→逐块正则打捞（含截断尾块，ans 未知前缀宁不判不冒换序风险）→字段归一 _norm_ans（中英文布尔同义集合）；新增 4 项形态单测 + check_dashscope_matrix.py 真实档回归探针（解析失败时捕获原始输出入证据）
+- **相关文件**：backend/app/services/llm_ops/rerank.py;scripts/check_dashscope_matrix.py;backend/tests/test_rag.py
+- **教训**：对 LLM 结构化输出的降级必须区分「形态失败」（可打捞）与「内容失败」（该放弃）；bool(字符串) 做布尔判定是恒真陷阱，外部契约布尔字段必须显式枚举归一
 
 ---
 

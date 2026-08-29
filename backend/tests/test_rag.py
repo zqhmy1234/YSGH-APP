@@ -699,6 +699,96 @@ def test_llm_rerank_exception_returns_original(monkeypatch):
     assert [h["id"] for h in out] == ["a"]
 
 
+# ---- 2026-08-29 百炼真实链路加固：解析三级兜底（08-28 实测"解析失败回退原序"根因修复） ----
+
+
+def test_llm_rerank_ans_string_false_not_misjudged(monkeypatch):
+    """ans 字符串化归一："false" 不再被 bool("false")==True 误判为能回答（静默错误换序）"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [
+        {"id": "a", "text": "杭州西湖手摇船荷花", "score": 0.9},
+        {"id": "b", "text": "苏州松鼠桂鱼人均八十", "score": 0.8},
+    ]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: (
+            '[{"i":0,"ans":"false","reason":"话题不同"},'
+            '{"i":1,"ans":"true","reason":"菜品命中"}]'
+        ),
+    )
+    out = rerank_mod.llm_rerank("苏州吃什么", hits, top_k=1)
+    assert [h["id"] for h in out] == ["b", "a"]
+    assert out[0]["rerank_rank"] == 1
+    assert out[1]["rerank_reason"] == "话题不同"
+
+
+def test_llm_rerank_truncated_array_salvage(monkeypatch):
+    """输出被截断（max_tokens 耗尽，尾块不完整）：已完整块照常判定，不全量退化原序"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [
+        {"id": "a", "text": "杭州西湖手摇船荷花", "score": 0.9},
+        {"id": "b", "text": "苏州松鼠桂鱼人均八十", "score": 0.8},
+        {"id": "c", "text": "马拉松五公里痛快", "score": 0.7},
+    ]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: (
+            '[{"i":0,"ans":false,"reason":"无关"},'
+            '{"i":1,"ans":true,"reason":"苏州命中"},'
+            '{"i":2,"ans":tru'  # 截断尾块（无闭合）
+        ),
+    )
+    out = rerank_mod.llm_rerank("苏州美食", hits, top_k=2)
+    # b 判能回答置顶；a 判无关、c 截断无法判定 → 不能回答组按分降序（a 0.9 > c 0.7）
+    assert [h["id"] for h in out] == ["b", "a", "c"]
+    assert out[0]["rerank_rank"] == 1
+    assert out[2]["rerank_reason"] == "未判定"
+
+
+def test_llm_rerank_fullwidth_punctuation_salvage(monkeypatch):
+    """全角冒号混入（qwen 偶发）：整数组 json 解析失败 → 逐块正则打捞，判定不丢"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [
+        {"id": "a", "text": "马拉松五公里痛快", "score": 0.9},
+        {"id": "b", "text": "杭州西湖手摇船荷花", "score": 0.8},
+    ]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: '[{"i"：0,"ans"：false,"reason"："无关"},{"i"：1,"ans"：true,"reason"："荷花"}]',
+    )
+    out = rerank_mod.llm_rerank("杭州看花", hits, top_k=1)
+    assert [h["id"] for h in out] == ["b", "a"]
+    assert out[0]["rerank_rank"] == 1
+
+
+def test_llm_rerank_single_object_and_string_index(monkeypatch):
+    """单候选输出为对象（非数组）+ i 为字符串："1" → 归一后仍能判定换序"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [
+        {"id": "a", "text": "马拉松五公里痛快", "score": 0.9},
+        {"id": "b", "text": "杭州西湖手摇船荷花", "score": 0.8},
+    ]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: '结果：{"i": "1", "ans": true, "reason": "能回答"}',
+    )
+    out = rerank_mod.llm_rerank("杭州看花", hits, top_k=1)
+    assert [h["id"] for h in out] == ["b", "a"]
+    assert out[0]["rerank_reason"] == "能回答"
+
+
 def test_rerank_auto_enabled_strategy(monkeypatch):
     """第一层 reranker 自动启用策略：显式优先 / 无 GPU 保持关 / 开关默认关"""
     from app.core.config import settings

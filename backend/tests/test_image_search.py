@@ -192,3 +192,71 @@ def test_merge_recalls_dedupe_keep_max():
     merged = _merge_recalls([a, b])
     assert [m["content_id"] for m in merged] == ["x", "z", "y"]
     assert merged[0]["score"] == 0.9
+
+
+# ---- 2026-08-29 百炼真实链路加固：VL 最终失败的过期缓存兜底 ----
+# 08-28 COCO 实测以图搜图 2/10 miss = qwen3-vl-plus 连接重置（内部 3 次重试耗尽）
+# → 空结果。兜底：重试耗尽后若存在 >TTL 旧 caption → 降级返回旧值（检索可用性优先）。
+
+
+def _stale_seeded_image(tmp_path, monkeypatch, cached_caption: str) -> str:
+    """写一张真实文件 + 预置"已过期"缓存（25h 前），返回图片路径"""
+    import hashlib
+    import time as _time
+
+    from app.services.rag import image as img_mod
+
+    content = b"stale-fallback-probe-20260829"
+    img = tmp_path / "q.jpg"
+    img.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    monkeypatch.setitem(img_mod._caption_cache, digest, (_time.time() - 25 * 3600, cached_caption))
+    return str(img)
+
+
+def test_caption_stale_fallback_on_vl_failure(tmp_path, monkeypatch):
+    """VL 最终失败 + 存在过期缓存 → 返回旧 caption（不抛错，以图搜图不再空结果）"""
+    from app.services.rag.image import _cached_image_caption
+
+    path = _stale_seeded_image(tmp_path, monkeypatch, "缓存描述：西湖荷花游船")
+
+    def boom(p):
+        raise RuntimeError("connection reset by peer")
+
+    import app.services.external.dashscope as ds_mod
+
+    monkeypatch.setattr(ds_mod, "image_caption", boom)
+    assert _cached_image_caption(path) == "缓存描述：西湖荷花游船"
+
+
+def test_caption_stale_fallback_on_vl_empty(tmp_path, monkeypatch):
+    """VL 成功但空描述 → 同样降级旧缓存；且空 caption 不覆写缓存位"""
+    from app.services.rag import image as img_mod
+    from app.services.rag.image import _cached_image_caption
+
+    path = _stale_seeded_image(tmp_path, monkeypatch, "旧描述保留")
+
+    import app.services.external.dashscope as ds_mod
+
+    monkeypatch.setattr(ds_mod, "image_caption", lambda p: "  ")
+    assert _cached_image_caption(path) == "旧描述保留"
+    # 过期条目未被空串覆写（digest 键仍在且值仍为旧描述）
+    vals = [v[1] for v in img_mod._caption_cache.values()]
+    assert "旧描述保留" in vals
+
+
+def test_caption_failure_without_cache_still_raises(tmp_path, monkeypatch):
+    """无缓存可兜底时维持原契约：异常上抛 → 调用方（search_by_image）degraded"""
+    from app.services.rag.image import _cached_image_caption
+
+    img = tmp_path / "fresh.jpg"
+    img.write_bytes(b"no-stale-entry-probe-20260829")
+
+    import app.services.external.dashscope as ds_mod
+
+    def boom(p):
+        raise RuntimeError("connection reset by peer")
+
+    monkeypatch.setattr(ds_mod, "image_caption", boom)
+    with pytest.raises(RuntimeError):
+        _cached_image_caption(str(img))

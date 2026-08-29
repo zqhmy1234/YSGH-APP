@@ -3,6 +3,8 @@
 拆包自 services/rag.py（F6，2026-08-27）：
   - search_by_image：以图搜图主入口（与文本 search 共享并发信号量）
   - caption 缓存（P95 优化，audit #8：按图片字节 sha256 进程内 TTL 24h）
+  - 2026-08-29 真实链路加固：VL 最终失败降级用过期缓存兜底（08-28 评测
+    2/10 miss 系 qwen3-vl 连接重置 → 空结果，网络抖动期检索可用性优先）
 """
 from __future__ import annotations
 
@@ -26,8 +28,11 @@ _caption_cache_lock = threading.Lock()
 def _cached_image_caption(image_path: str) -> str:
     """图片 → caption（按字节 sha256 缓存；重复查询跳过 VL 往返）
 
-    缓存未命中 → 调 image_caption（qwen3-vl-plus）；失败抛异常由调用方降级。
-    缓存在进程内共享（get_store 同生命周期），超 TTL/超上限自动淘汰。
+    缓存未命中 → 调 image_caption（qwen3-vl-plus，内部含 3 次指数退避重试）；
+    最终失败抛异常由调用方降级。**2026-08-29 真实链路加固**：08-28 COCO 实测
+    以图搜图 2/10 miss 即 VL 连接重置重试耗尽 → 空结果；现重试耗尽后若存在
+    过期缓存（>TTL 旧记录）→ 降级返回旧 caption（网络抖动期检索仍可用），
+    无缓存才抛异常。失败兜底不落缓存污染（空 caption 不占缓存位）。
     """
     import hashlib
 
@@ -46,7 +51,17 @@ def _cached_image_caption(image_path: str) -> str:
             return hit[1]
     from app.services.external.dashscope import image_caption as _vl_caption
 
-    caption = _vl_caption(image_path).strip()
+    stale = hit[1] if hit else ""  # hit 存在即已过 TTL —— 失败时的兜底素材
+    try:
+        caption = _vl_caption(image_path).strip()
+    except Exception as exc:  # noqa: BLE001 —— VL 最终失败：过期缓存兜底（08-29 加固）
+        if stale:
+            logger.warning("VL caption 调用失败，降级用过期缓存（%.1fh 前）: %s", (now - hit[0]) / 3600, exc)
+            return stale
+        raise
+    if not caption:
+        # VL 成功但空描述（罕见）→ 同样优先旧缓存，避免以图搜图空结果
+        return stale
     with _caption_cache_lock:
         if len(_caption_cache) >= _CAPTION_CACHE_MAX:
             # 简单淘汰：清掉最早一半（零依赖，够用）
