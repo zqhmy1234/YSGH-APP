@@ -1,0 +1,163 @@
+﻿15:04:39.453 HBuilderX Version: 5.24
+15:04:41.350 项目 client 开始编译
+15:04:42.802 请注意运行模式下，因日志输出、sourcemap 以及未压缩源码等原因，性能和包体积，均不及发行模式。
+15:04:42.805 编译器版本：5.24（uni-app x）VDOM模式
+15:04:42.808 当前样式隔离策略：1.0。推荐升级为 2.0。详见：https://doc.dcloud.net.cn/uni-app-x/css/common/style-isolation.html
+15:04:42.811 正在编译中...
+15:04:42.814 编译会生成大量临时文件，杀毒软件监控时会影响编译速度，并造成CPU升高。推荐把项目目录添加到杀毒软件的监控排除名单中。[添加] [帮助]
+15:04:52.889 [33m​﻿[plugin:uni:app-uvue-css] ERROR: property value `70vh` is not supported for `max-height` (supported values are: `number`|`pixel`)​[39m
+15:04:52.895 at pages/index/index.uvue:503:3
+15:04:52.897 501|    border-radius: 32rpx 32rpx 0 0;
+15:04:52.899 502|    padding: 32rpx;
+15:04:52.900 503|    max-height: 70vh;
+15:04:52.919    |     ^
+15:04:52.922 504|   }
+15:04:52.926 505|   .split-title {
+15:04:52.928 ﻿
+15:04:52.930 [33m​﻿[plugin:uni:app-uvue-css] ERROR: property value `70vh` is not supported for `max-height` (supported values are: `number`|`pixel`)​[39m
+15:04:52.932 at pages/index/index.uvue:541:3
+15:04:52.935 539|    border-radius: 32rpx 32rpx 0 0;
+15:04:52.938 540|    padding: 32rpx;
+15:04:52.941 541|    max-height: 70vh;
+15:04:52.944    |     ^
+15:04:52.947 542|   }
+15:04:52.950 543|   .photo-detail-image {
+15:04:52.952 ﻿
+15:04:52.956 [33m​﻿[plugin:uni:app-uvue-css] WARNING: `word-break` is not a standard property name (may not be supported)​[39m
+15:04:52.960 at pages/debug/agg-check/agg-check.uvue:63:2
+15:04:52.964 61 |   font-size: 22rpx;
+15:04:52.966 62 |   color: #B05A3A;
+15:04:52.969 63 |   word-break: break-all;
+15:04:52.975    |    ^
+15:04:52.985 64 |  }
+15:04:52.989 65 |  
+15:04:52.993 ﻿
+15:05:02.292 [31mPicked up JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8[39m
+15:05:02.742 当前工程8个页面，正在编译为android class，此过程耗时较长.
+15:05:03.240 当前工程8个页面，正在编译为android class，此过程耗时较长..
+15:05:03.754 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:04.269 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:04.780 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:05.295 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:05.798 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:06.315 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:06.826 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:07.332 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:07.847 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:08.367 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:08.874 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:09.386 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:09.901 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:10.401 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:10.902 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:11.416 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:11.932 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:12.445 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:12.945 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:13.461 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:13.971 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:14.480 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:14.981 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:15.482 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:15.995 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:16.508 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:17.010 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:17.524 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:18.030 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:18.537 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:19.040 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:19.546 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:20.059 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:20.570 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:21.089 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:21.602 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:22.108 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:22.618 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:23.135 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:23.643 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:24.146 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:24.666 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:25.173 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:25.695 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:26.196 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:26.697 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:27.211 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:27.725 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:28.241 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:28.757 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:29.279 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:29.782 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:30.291 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:30.802 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:31.317 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:31.832 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:32.349 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:32.848 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:33.363 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:33.877 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:34.401 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:34.915 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:35.419 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:35.935 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:36.443 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:36.965 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:37.467 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:37.990 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:38.497 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:39.022 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:39.532 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:40.047 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:40.564 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:41.077 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:41.582 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:42.094 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:42.607 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:43.130 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:43.636 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:44.147 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:44.649 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:45.147 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:45.661 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:46.175 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:46.691 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:47.202 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:47.715 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:48.229 当前工程8个页面，正在编译为android class，此过程耗时较长...
+15:05:48.745 当前工程8个页面，正在编译为android class，此过程耗时较长.  
+15:05:49.255 当前工程8个页面，正在编译为android class，此过程耗时较长.. 
+15:05:49.534 当前工程8个页面，正在编译为android class，此过程耗时较长... 
+15:05:49.538 [31m⁠[plugin:uni:app-uts] kotlin编译失败⁠[39m
+15:05:49.542 [31m‌error: 找不到名称“refresh”。参考: https://doc.dcloud.net.cn/uni-app-x/uts/compiler-known-issues.html#error18‌[39m
+15:05:49.547 at components/UploadStatusBanner/UploadStatusBanner.uvue:70:2
+15:05:49.551 68 |     pauseReason = reason
+15:05:49.556 69 |    })
+15:05:49.559 70 |    refresh()
+15:05:49.564    |    ^
+15:05:49.567 71 |    refresher = setInterval(() => {
+15:05:49.572 72 |     refresh()⁠
+15:05:49.575 [31m‌error: 找不到名称“refresh”。参考: https://doc.dcloud.net.cn/uni-app-x/uts/compiler-known-issues.html#error18‌[39m
+15:05:49.581 at components/UploadStatusBanner/UploadStatusBanner.uvue:72:3
+15:05:49.585 70 |    refresh()
+15:05:49.589 71 |    refresher = setInterval(() => {
+15:05:49.592 72 |     refresh()
+15:05:49.596    |     ^
+15:05:49.600 73 |    }, 3000) as number
+15:05:49.602 74 |   })⁠
+15:05:49.606 [31m‌error: 找不到名称“doContinue”。参考: https://doc.dcloud.net.cn/uni-app-x/uts/compiler-known-issues.html#error18‌[39m
+15:05:49.610 at components/UploadStatusBanner/UploadStatusBanner.uvue:93:3
+15:05:49.613 91 |   function onBannerTap(): void {
+15:05:49.617 92 |    if (failed > 0 && !paused) {
+15:05:49.620 93 |     doContinue('retry-failed')
+15:05:49.624    |     ^
+15:05:49.628 94 |    }
+15:05:49.631 95 |   }⁠
+15:05:49.635 [31m‌error: 找不到名称“doContinue”。参考: https://doc.dcloud.net.cn/uni-app-x/uts/compiler-known-issues.html#error18‌[39m
+15:05:49.639 at components/UploadStatusBanner/UploadStatusBanner.uvue:98:3
+15:05:49.643 96 |   function onActionTap(): void {
+15:05:49.647 97 |    if (paused) {
+15:05:49.651 98 |     doContinue('continue-upload')
+15:05:49.653    |     ^
+15:05:49.659 99 |    } else if (held > 0 && netKind != 'wifi') {
+15:05:49.662 100|     doContinue('upload-original')⁠
+15:05:49.683 [31m已停止运行...[39m
+

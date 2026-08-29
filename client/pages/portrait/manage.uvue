@@ -145,8 +145,8 @@
 	let totalPhotos = 0
 	let totalThemes = 0
 	let loading = true
-	let personalityTags: Array<{name: string, confidence: number, active: boolean}> = []
-	let themes: Array<{name: string, count: number, icon: string, color: string}> = []
+	let personalityTags: Array<any> = []
+	let themes: Array<any> = []
 
 	// 生命周期
 	onLoad(() => {
@@ -171,7 +171,7 @@
 			if (dims != null) {
 				// 从 dimensions 派生性格标签（MVP：取前6个维度）
 				const keys = dims.keys()
-				const tags: Array<{name: string, confidence: number, active: boolean}> = []
+				const tags: Array<any> = []
 				for (let i = 0; i < Math.min(6, keys.length); i++) {
 					const key = keys[i]
 					const values = dims.getJSONArray(key)
@@ -232,7 +232,7 @@
 					}
 				}
 			}
-			const themeList: Array<{name: string, count: number, icon: string, color: string}> = []
+			const themeList: Array<any> = []
 			const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
 			const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
 			const themeKeys = themeMap.keys()

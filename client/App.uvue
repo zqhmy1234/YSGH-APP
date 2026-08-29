@@ -1,53 +1,55 @@
-<script lang="uts">
+<script setup lang="uts">
+	import { onLaunch, onShow, onError } from '@dcloudio/uni-app'
 	import { ensureLogin } from './utils/auth'
 	import { initSentry, captureException } from './utils/sentry'
 	import { initSync, drainBackgroundTasks } from './utils/sync_client'
 
-	export default {
-		onLaunch() {
-			console.log('[yishu] client launch, env=' + 'dev')
-			// 加载自定义字体 Sarasa Gothic SC（像素级 UI 还原：Bold/SemiBold/Regular 分级）
-			this.loadCustomFonts()
-			// Sentry 初始化（决策 #12 双通道·客户端侧；无 DSN 时静默禁用）
-			initSentry()
-			// 静默登录预热 token（B-CL-3：mock wechat login；失败不阻断启动，页面请求时再补）
-			ensureLogin().then((ok: boolean) => {
-				console.log('[yishu] ensureLogin -> ' + ok)
+	/** 加载自定义字体（uni.loadFontFace 全端支持 ttf/otf；Android 不认 woff/woff2） */
+	function loadCustomFonts(): void {
+		const fonts = [
+			{ family: 'Sarasa Gothic SC', source: 'url(/static/fonts/SarasaGothicSC-Regular.ttf)', weight: '400' },
+			{ family: 'Sarasa Gothic SC', source: 'url(/static/fonts/SarasaGothicSC-SemiBold.ttf)', weight: '600' },
+			{ family: 'Sarasa Gothic SC', source: 'url(/static/fonts/SarasaGothicSC-Bold.ttf)', weight: '700' }
+		]
+		for (let i = 0; i < fonts.length; i++) {
+			const f = fonts[i]
+			uni.loadFontFace({
+				family: f.family,
+				source: f.source,
+				weight: f.weight,
+				success: () => {
+					console.log('[yishu] font loaded: ' + f.family + ' ' + f.weight)
+				},
+				fail: (err: any) => {
+					console.log('[yishu] font load failed: ' + f.family + ' ' + f.weight + ' -> ' + JSON.stringify(err))
+				}
 			})
-			// B4 同步三路触发 · ① 前台主动：2h setInterval 定时兜底 + 网络恢复即补推
-			// （Wave3 H；后台 WorkManager 两段式由 registerBackgroundSync 真接线 + onShow drain 消费）
-			initSync()
-		},
-		/** 加载自定义字体（uni.loadFontFace 全端支持 ttf/otf；Android 不认 woff/woff2） */
-		loadCustomFonts() {
-			const fonts = [
-				{ family: 'Sarasa Gothic SC', source: 'url(/static/fonts/SarasaGothicSC-Regular.ttf)', weight: '400' },
-				{ family: 'Sarasa Gothic SC', source: 'url(/static/fonts/SarasaGothicSC-SemiBold.ttf)', weight: '600' },
-				{ family: 'Sarasa Gothic SC', source: 'url(/static/fonts/SarasaGothicSC-Bold.ttf)', weight: '700' }
-			]
-			for (let i = 0; i < fonts.length; i++) {
-				const f = fonts[i]
-				uni.loadFontFace({
-					family: f.family,
-					source: f.source,
-					weight: f.weight,
-					success: () => {
-						console.log('[yishu] font loaded: ' + f.family + ' ' + f.weight)
-					},
-					fail: (err: any) => {
-						console.log('[yishu] font load failed: ' + f.family + ' ' + f.weight + ' -> ' + JSON.stringify(err))
-					}
-				})
-			}
-		},
-		onShow() {
-			// B5d 两段式消费：前台时 drain 积压后台任务（WorkManager 唤醒写入的 pending；幂等空跑无害）
-			drainBackgroundTasks()
-		},
-		onError(err: any) {
-			captureException('' + err, 'app.onError', null)
 		}
 	}
+
+	onLaunch(() => {
+		console.log('[yishu] client launch, env=' + 'dev')
+		// 加载自定义字体 Sarasa Gothic SC（像素级 UI 还原：Bold/SemiBold/Regular 分级）
+		loadCustomFonts()
+		// Sentry 初始化（决策 #12 双通道·客户端侧；无 DSN 时静默禁用）
+		initSentry()
+		// 静默登录预热 token（B-CL-3：mock wechat login；失败不阻断启动，页面请求时再补）
+		ensureLogin().then((ok: boolean) => {
+			console.log('[yishu] ensureLogin -> ' + ok)
+		})
+		// B4 同步三路触发 · ① 前台主动：2h setInterval 定时兜底 + 网络恢复即补推
+		// （Wave3 H；后台 WorkManager 两段式由 registerBackgroundSync 真接线 + onShow drain 消费）
+		initSync()
+	})
+
+	onShow(() => {
+		// B5d 两段式消费：前台时 drain 积压后台任务（WorkManager 唤醒写入的 pending；幂等空跑无害）
+		drainBackgroundTasks()
+	})
+
+	onError((err: any) => {
+		captureException('' + err, 'app.onError', null)
+	})
 </script>
 
 <style>
