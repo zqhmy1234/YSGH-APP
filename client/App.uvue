@@ -62,7 +62,12 @@
 
 	onShow(() => {
 		// B5d 两段式消费：前台时 drain 积压后台任务（WorkManager 唤醒写入的 pending；幂等空跑无害）
-		drainBackgroundTasks()
+		// 标准基座无 UTSAndroid → 插件 drainPendingTasks 可能抛，包 try/catch 不阻断 onShow
+		try {
+			drainBackgroundTasks()
+		} catch (e) {
+			console.log('[yishu] drainBackgroundTasks 标准基座降级: ' + e)
+		}
 	})
 
 	onError((err: any) => {
