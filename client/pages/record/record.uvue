@@ -1,110 +1,155 @@
 ﻿<template>
 	<view class="page">
-		<view class="header">
-			<text class="header-title serif">记录</text>
-			<text class="header-sub">记下此刻，未来回响</text>
+		<!-- ═══════════ 背景层：时间轴主页（压暗前，仅作设计稿背景） ═══════════ -->
+		<view class="backdrop">
+			<image class="hero-photo" src="/static/hero-lake-original.png" mode="aspectFill" />
+			<view class="hero-shade-top"></view>
+			<view class="hero-shade-bottom"></view>
+
+			<!-- 顶部 hero：标题 + 头像 -->
+			<text class="hero-title serif">回忆</text>
+			<view class="hero-avatar">
+				<text class="hero-avatar-char serif">峰</text>
+			</view>
+			<text class="hero-sub1">八月 · 28 条新记忆</text>
+			<text class="hero-sub2">清晨的湖边，风很轻 · 8月28日 07:42</text>
+
+			<!-- 搜索胶囊 -->
+			<view class="search-capsule">
+				<hens-svg class="search-icon" :src="searchIcon" :width="14" :height="14" color="#8A7A6A" />
+				<text class="search-placeholder">描述一段回忆，帮你找</text>
+			</view>
+
+			<!-- 日期 + 分隔线 -->
+			<text class="date-label">8月28日 · 星期五</text>
+			<view class="divider"></view>
+
+			<!-- 语音卡（弹层之上露出的顶部） -->
+			<view class="voice-card">
+				<view class="voice-inner">
+					<view class="play-btn">
+						<hens-svg :src="playIcon" :width="11" :height="13" color="#B05A3A" />
+					</view>
+					<hens-svg class="wave" :src="waveIcon" :width="182" :height="22" color="#C4913C" />
+				</view>
+				<text class="voice-title">和妈妈的通话</text>
+				<text class="voice-meta">8月27日 12:36 · 语音 3分12秒 · 已转写</text>
+			</view>
 		</view>
 
-		<!-- 分段切换：文字 / 语音 -->
-		<view class="seg">
-			<view class="seg-item" :class="mode === 'text' ? 'seg-active' : ''" @tap="switchMode('text')">
-				<text class="seg-text" :class="mode === 'text' ? 'seg-text-active' : ''">文字</text>
-			</view>
-			<view class="seg-item" :class="mode === 'voice' ? 'seg-active' : ''" @tap="switchMode('voice')">
-				<text class="seg-text" :class="mode === 'voice' ? 'seg-text-active' : ''">语音</text>
-			</view>
-		</view>
+		<!-- ═══════════ 模态遮罩（55% 暗色，压暗背景） ═══════════ -->
+		<view class="scrim"></view>
 
-		<scroll-view class="content-scroll">
-		<!-- ═══════════ 文字入口（T-TX-1/2）═══════════ -->
-		<view v-if="mode === 'text'" class="text-panel">
-			<textarea
-				class="text-input serif"
-				v-model="draft"
-				placeholder="此刻在想什么？记下来…"
-				:maxlength="2000"
-			/>
-			<view class="text-actions">
-				<text class="muted">分类：{{ classifyLabel }}</text>
-				<view class="btn" @tap="submitText">
-					<text class="btn-text">{{ submitting ? '整理中…' : '记下来' }}</text>
+		<!-- ═══════════ 底部弹层：新的记忆（设计稿默认态） ═══════════ -->
+		<view class="sheet">
+			<view class="grab"></view>
+			<text class="sheet-title">新的记忆</text>
+			<view class="sheet-options">
+				<view class="option" @tap="openMode('photo')">
+					<view class="option-circle c-photo">
+						<hens-svg :src="cameraIcon" :width="22" :height="19" color="#B05A3A" />
+					</view>
+					<text class="option-label">拍照</text>
+				</view>
+				<view class="option" @tap="openMode('gallery')">
+					<view class="option-circle c-gallery">
+						<hens-svg :src="galleryIcon" :width="21" :height="18" color="#C4913C" />
+					</view>
+					<text class="option-label">选照片</text>
+				</view>
+				<view class="option" @tap="openMode('voice')">
+					<view class="option-circle c-voice">
+						<hens-svg :src="micIcon" :width="17" :height="22" color="#7A8C5A" />
+					</view>
+					<text class="option-label">说一段</text>
+				</view>
+				<view class="option" @tap="openMode('text')">
+					<view class="option-circle c-text">
+						<hens-svg :src="keyboardIcon" :width="20" :height="20" color="#4E7D8C" />
+					</view>
+					<text class="option-label">写几句</text>
 				</view>
 			</view>
-			<!-- 分类标签（可点改 → 三层裁决 T-TX-2） -->
-			<view v-if="classifyLabel != '' && classifyLabel != '整理中…'" class="tag-row">
-				<text class="tag-hint">分类不对？点标签纠正：</text>
-				<view class="tag-list">
-					<view v-for="t in allLabels" :key="t.key" class="tag" :class="t.key === currentLabel ? 'tag-active' : ''" @tap="onTagTap(t.key)">
-						<text class="tag-text">{{ t.cn }}</text>
+			<view class="home-indicator"></view>
+			<text class="sheet-hint">长按 + 可直达完整记录表单</text>
+		</view>
+
+		<!-- ═══════════ 功能层：选中入口后的记录表单 ═══════════ -->
+		<view v-if="formMode != ''" class="form-layer">
+			<view class="form-head">
+				<view class="form-back" @tap="closeForm">
+					<text class="form-back-text">‹</text>
+				</view>
+				<text class="form-title serif">{{ formTitle }}</text>
+				<view class="form-save" @tap="onSave">
+					<text class="form-save-text">{{ saveText }}</text>
+				</view>
+			</view>
+			<scroll-view class="form-scroll">
+				<!-- 文字入口 -->
+				<view v-if="formMode == 'text'" class="form-body">
+					<textarea class="text-input serif" v-model="draft" placeholder="此刻在想什么？记下来…" :maxlength="2000" />
+					<view class="text-actions">
+						<text class="muted">分类：{{ classifyLabel }}</text>
+					</view>
+					<view v-if="classifyLabel != '' && classifyLabel != '整理中…'" class="tag-row">
+						<text class="tag-hint">分类不对？点标签纠正：</text>
+						<view class="tag-list">
+							<view v-for="t in allLabels" :key="t.key" class="tag" :class="t.key === currentLabel ? 'tag-active' : ''" @tap="onTagTap(t.key)">
+								<text class="tag-text" :class="t.key === currentLabel ? 'tag-active-text' : ''">{{ t.cn }}</text>
+							</view>
+						</view>
 					</view>
 				</view>
-			</view>
-		</view>
-
-		<!-- ═══════════ 语音入口（T-AU-1/2/3 + B5a J-4/J-7）═══════════ -->
-		<view v-else class="voice-panel">
-			<!-- 录音控制 -->
-			<view class="record-box">
-				<view class="mic-btn" :class="recording ? 'mic-recording' : ''" @tap="toggleRecord">
-					<text class="mic-icon">{{ recording ? '⏹' : '🎤' }}</text>
-				</view>
-				<text class="record-hint">{{ recordHint }}</text>
-				<text v-if="recording" class="record-timer">{{ recordSeconds }}s</text>
-				<!-- J-7：中断/暂停状态 + 恢复按钮 -->
-				<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
-					<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
-					<view class="resume-btn" @tap="resumeRecordNow">
-						<text class="resume-text">继续录音</text>
+				<!-- 语音入口 -->
+				<view v-else-if="formMode == 'voice'" class="form-body">
+					<view class="record-box">
+						<view class="mic-btn" :class="recording ? 'mic-recording' : ''" @tap="toggleRecord">
+							<text class="mic-icon">{{ recording ? '⏹' : '🎤' }}</text>
+						</view>
+						<text class="record-hint">{{ recordHint }}</text>
+						<text v-if="recording" class="record-timer">{{ recordSeconds }}s</text>
+						<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
+							<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
+							<view class="resume-btn" @tap="resumeRecordNow">
+								<text class="resume-text">继续录音</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="transcribing" class="center-box">
+						<text class="muted">正在转写…</text>
+					</view>
+					<view v-else-if="transcript != ''" class="transcript-box">
+						<view class="transcript-head">
+							<text class="transcript-title serif">转写结果</text>
+							<text v-if="emotion != ''" class="emotion-chip">情绪：{{ emotion }}</text>
+						</view>
+						<view v-if="voiceHints != ''" class="voice-hints">
+							<text class="muted">{{ voiceHints }}</text>
+						</view>
+						<textarea class="text-input serif" v-model="transcript" :maxlength="2000" />
+						<view class="text-actions">
+							<text class="muted">{{ guardMsg }}</text>
+						</view>
 					</view>
 				</view>
-			</view>
-
-			<!-- 转写结果（可编辑 T-AU-3） -->
-			<view v-if="transcribing" class="center-box">
-				<text class="muted">正在转写…</text>
-			</view>
-			<view v-else-if="transcript != ''" class="transcript-box">
-				<view class="transcript-head">
-					<text class="transcript-title serif">转写结果</text>
-					<text v-if="emotion != ''" class="emotion-chip">情绪：{{ emotion }}</text>
-				</view>
-				<view v-if="voiceHints != ''" class="voice-hints">
-					<text class="muted">{{ voiceHints }}</text>
-				</view>
-				<textarea class="text-input serif" v-model="transcript" :maxlength="2000" />
-				<view class="text-actions">
-					<text class="muted">{{ guardMsg }}</text>
-					<view class="btn" @tap="submitVoice">
-						<text class="btn-text">{{ saving ? '保存中…' : '确认入库' }}</text>
+				<!-- 照片 / 相册入口 -->
+				<view v-else class="form-body">
+					<view class="photo-box" @tap="pickPhoto">
+						<image v-if="photoPreview != ''" class="photo-preview" :src="photoPreview" mode="aspectFill" />
+						<view v-else class="photo-empty">
+							<hens-svg :src="cameraIcon" :width="40" :height="36" color="#B3A696" />
+							<text class="photo-empty-text">{{ formMode == 'photo' ? '点击拍照' : '点击从相册选择' }}</text>
+						</view>
+					</view>
+					<textarea class="text-input serif" v-model="draft" placeholder="补充一句此刻的感想（可选）" :maxlength="500" />
+					<view class="text-actions">
+						<text class="muted">照片记录后端待接入，保存仅本地预览</text>
 					</view>
 				</view>
-			</view>
+			</scroll-view>
 		</view>
-		</scroll-view>
-		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
-		<view class="glass-tabbar">
-			<view class="tabbar-item  pressable" @tap="goIndex">
-				<text class="tabbar-icon">🏠</text>
-				<text class="tabbar-label">时间轴</text>
-			</view>
-			<view class="tabbar-item  pressable" @tap="goSearch">
-				<text class="tabbar-icon">🔍</text>
-				<text class="tabbar-label">搜索</text>
-			</view>
-			<view class="tabbar-fab pressable" @tap="goRecord">
-				<text class="tabbar-fab-icon">+</text>
-			</view>
-			<view class="tabbar-item  pressable" @tap="goMessages">
-				<text class="tabbar-icon">💬</text>
-				<text class="tabbar-label">消息</text>
-			</view>
-			<view class="tabbar-item  pressable" @tap="goProfile">
-				<text class="tabbar-icon">👤</text>
-				<text class="tabbar-label">我的</text>
-			</view>
-		</view>
-</view>
-
+	</view>
 </template>
 
 <script setup lang="uts">
@@ -124,8 +169,25 @@
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 
-	// 响应式数据
-	let mode = 'text'
+	// ===== 设计稿图标（SVG path 取自 design_data_for_agents/05_记录面板） =====
+	// 底部弹层四入口图标
+	const cameraIcon = `<svg viewBox="0 0 20 17" xmlns="http://www.w3.org/2000/svg"><path d="M5.7877 -0.5574Q5.9328 -0.8039 6.1829 -0.9427Q6.4306 -1.0857 6.7167 -1.0833L12.7833 -1.0833Q13.0694 -1.0857 13.3171 -0.9427Q13.5672 -0.8039 13.7123 -0.5574L14.6967 1.0833L17.3333 1.0833Q18.6795 1.0833 19.6314 2.0352Q20.5833 2.9871 20.5833 4.3333L20.5833 14.0833Q20.5833 15.4295 19.6314 16.3814Q18.6795 17.3333 17.3333 17.3333L2.1667 17.3333Q0.8205 17.3333 -0.1314 16.3814Q-1.0833 15.4295 -1.0833 14.0833L-1.0833 4.3333Q-1.0833 2.9871 -0.1314 2.0352Q0.8205 1.0833 2.1667 1.0833L4.8033 1.0833L5.7877 -0.5574ZM6.3456 2.724L7.33 1.0833L12.17 1.0833L13.1544 2.724Q13.2995 2.9705 13.5496 3.1094Q13.7973 3.2524 14.0833 3.25L17.3333 3.25Q17.7821 3.25 18.0994 3.5673Q18.4167 3.8846 18.4167 4.3333L18.4167 14.0833Q18.4167 14.5321 18.0994 14.8494Q17.7821 15.1667 17.3333 15.1667L2.1667 15.1667Q1.7179 15.1667 1.4006 14.8494Q1.0833 14.5321 1.0833 14.0833L1.0833 4.3333Q1.0833 3.8846 1.4006 3.5673Q1.7179 3.25 2.1667 3.25L5.4167 3.25Q5.7027 3.2524 5.9504 3.1094Q6.2005 2.9705 6.3456 2.724ZM5.9583 8.6667Q5.9583 10.2372 7.0689 11.3478Q8.1794 12.4583 9.75 12.4583Q11.3206 12.4583 12.4311 11.3478Q13.5417 10.2372 13.5417 8.6667Q13.5417 7.0961 12.4311 5.9856Q11.3206 4.875 9.75 4.875Q8.1794 4.875 7.0689 5.9856Q5.9583 7.0961 5.9583 8.6667ZM9.75 10.2917Q9.0769 10.2917 8.601 9.8157Q8.125 9.3398 8.125 8.6667Q8.125 7.9936 8.601 7.5176Q9.0769 7.0417 9.75 7.0417Q10.4231 7.0417 10.899 7.5176Q11.375 7.9936 11.375 8.6667Q11.375 9.3398 10.899 9.8157Q10.4231 10.2917 9.75 10.2917Z"/></svg>`
+	const galleryIcon = `<svg viewBox="0 0 20 16" xmlns="http://www.w3.org/2000/svg"><path d="M18.2308 0.1859Q16.9616 -1.0833 15.1667 -1.0833L3.25 -1.0833Q1.4551 -1.0833 0.1859 0.1859Q-1.0833 1.4551 -1.0833 3.25L-1.0833 11.9167Q-1.0833 13.7116 0.1859 14.9808Q1.4551 16.25 3.25 16.25L15.1667 16.25Q16.9616 16.25 18.2308 14.9808Q19.5 13.7116 19.5 11.9167L19.5 3.25Q19.5 1.4551 18.2308 0.1859ZM3.25 1.0833L15.1667 1.0833Q16.0641 1.0833 16.6987 1.7179Q17.3333 2.3525 17.3333 3.25L17.3333 9.9857L13.7197 6.7737Q13.4023 6.4765 12.9682 6.5005Q12.5334 6.502 12.234 6.8173L10.2917 8.7596L8.2896 6.7576Q8.5388 5.8741 8.0311 4.989Q7.3711 3.8386 6.0679 3.7935Q6.0168 3.7901 5.9637 3.7914Q5.9107 3.7901 5.8596 3.7935Q4.5564 3.8386 3.8964 4.9891Q3.2128 6.1807 3.9014 7.3695Q4.1903 7.8684 4.6 8.1579L1.8987 11.1969Q1.5872 11.5277 1.6269 11.9803Q1.6405 12.4344 1.9886 12.7263Q2.3194 13.0378 2.7719 12.9981Q3.2261 12.9845 3.518 12.6364L7.088 8.6201L9.5256 11.0577Q9.8375 11.3881 10.2917 11.375Q10.7458 11.3881 11.0577 11.0577L13.0437 9.0717L17.1553 12.7263Q17.1655 12.736 17.1759 12.7454Q17.0173 13.1302 16.6987 13.4487Q16.0641 14.0833 15.1667 14.0833L3.25 14.0833Q2.3525 14.0833 1.7179 13.4487Q1.0833 12.8141 1.0833 11.9167L1.0833 3.25Q1.0833 2.3525 1.7179 1.7179Q2.3525 1.0833 3.25 1.0833ZM5.9523 5.9586Q5.958 5.9585 5.9637 5.9583Q5.9695 5.9585 5.9752 5.9586Q6.0922 5.9635 6.1517 6.0672Q6.2138 6.1755 6.1512 6.2836Q6.0886 6.3917 5.9637 6.3917Q5.8389 6.3917 5.7763 6.2836Q5.7137 6.1755 5.7758 6.0672Q5.8353 5.9635 5.9523 5.9586Z"/></svg>`
+	const micIcon = `<svg viewBox="0 0 15 21" xmlns="http://www.w3.org/2000/svg"><path d="M10.1058 0.1859Q11.375 1.4551 11.375 3.25L11.375 8.6667Q11.375 10.4616 10.1058 11.7308Q8.8366 13 7.0417 13Q5.2467 13 3.9775 11.7308Q2.7083 10.4616 2.7083 8.6667L2.7083 3.25Q2.7083 1.4551 3.9775 0.1859Q5.2467 -1.0833 7.0417 -1.0833Q8.8366 -1.0833 10.1058 0.1859ZM8.5737 1.7179Q7.9391 1.0833 7.0417 1.0833Q6.1442 1.0833 5.5096 1.7179Q4.875 2.3525 4.875 3.25L4.875 8.6667Q4.875 9.5641 5.5096 10.1987Q6.1442 10.8333 7.0417 10.8333Q7.9391 10.8333 8.5737 10.1987Q9.2083 9.5641 9.2083 8.6667L9.2083 3.25Q9.2083 2.3525 8.5737 1.7179ZM2.8285 12.8799Q1.0833 11.1347 1.0833 8.6667Q1.0964 8.2125 0.766 7.9006Q0.4541 7.5703 0 7.5833Q-0.4541 7.5703 -0.766 7.9006Q-1.0964 8.2125 -1.0833 8.6667Q-1.0833 12.0322 1.2964 14.4119Q3.2837 16.3992 5.9583 16.7269L5.9583 19.5Q5.9453 19.9541 6.2756 20.266Q6.5875 20.5964 7.0417 20.5833Q7.4958 20.5964 7.8077 20.266Q8.1381 19.9541 8.125 19.5L8.125 16.7269Q10.7997 16.3992 12.7869 14.4119Q15.1667 12.0322 15.1667 8.6667Q15.1797 8.2125 14.8494 7.9006Q14.5375 7.5703 14.0833 7.5833Q13.6292 7.5703 13.3173 7.9006Q12.9869 8.2125 13 8.6667Q13 11.1347 11.2549 12.8799Q9.5097 14.625 7.0417 14.625Q4.5736 14.625 2.8285 12.8799Z"/></svg>`
+	const keyboardIcon = `<svg viewBox="0 0 20 19" xmlns="http://www.w3.org/2000/svg"><path d="M0.0323 12.8679Q0.0679 12.725 0.1406 12.5969Q0.213 12.4686 0.3173 12.3646L12.776 -0.0941Q13.7666 -1.0837 15.1667 -1.0833Q15.3387 -1.0833 15.5059 -1.0676Q16.6938 -0.9561 17.5569 -0.0929Q18.547 0.8971 18.5473 2.2973Q18.5477 3.6974 17.5577 4.6883L5.0994 17.1467Q4.9953 17.2509 4.8671 17.3234Q4.739 17.3961 4.5961 17.4316L0.2628 18.515Q0.1334 18.5474 0 18.5473Q-0.1334 18.5474 -0.2628 18.515Q-0.7065 18.4175 -0.929 18.0213Q-1.1738 17.6386 -1.051 17.2012L0.0323 12.8679ZM1.4889 15.9751L2.0616 13.6845L11.375 4.371L13.0929 6.089L3.7795 15.4024L1.4889 15.9751ZM14.625 4.5569L16.0256 3.1563Q16.3808 2.8008 16.3806 2.2978Q16.3805 1.7948 16.0248 1.4391Q15.7138 1.1281 15.3033 1.0896Q15.2369 1.0834 15.1662 1.0833Q14.6632 1.0832 14.3073 1.4387L12.9071 2.839L14.625 4.5569Z"/></svg>`
+	// 背景层图标：搜索放大镜 / 播放三角 / 波形
+	const searchIcon = `<svg viewBox="0 0 6 6" xmlns="http://www.w3.org/2000/svg"><path d="M4.6553 3.5947L0.5303 -0.5303Q0.3144 -0.759 0 -0.75Q-0.3144 -0.759 -0.5303 -0.5303Q-0.759 -0.3144 -0.75 0Q-0.759 0.3144 -0.5303 0.5303L3.5947 4.6553Q3.8106 4.884 4.125 4.875Q4.4394 4.884 4.6553 4.6553Q4.884 4.4394 4.875 4.125Q4.884 3.8106 4.6553 3.5947Z"/></svg>`
+	const playIcon = `<svg viewBox="0 0 6 7" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L5.5 3.25L0 6.5L0 0Z"/></svg>`
+	const waveIcon = `<svg viewBox="0 0 183 22" xmlns="http://www.w3.org/2000/svg"><path d="M49.2 20L49.2 0Q49.2145 -0.5031 48.8485 -0.8485Q48.5031 -1.2145 48 -1.2Q47.4969 -1.2145 47.1515 -0.8485Q46.7855 -0.5031 46.8 0L46.8 20Q46.7855 20.5031 47.1515 20.8485Q47.4969 21.2145 48 21.2Q48.5031 21.2145 48.8485 20.8485Q49.2145 20.5031 49.2 20ZM109.2 19L109.2 1Q109.2145 0.4969 108.8485 0.1515Q108.5031 -0.2145 108 -0.2Q107.4969 -0.2145 107.1515 0.1515Q106.7855 0.4969 106.8 1L106.8 19Q106.7855 19.5031 107.1515 19.8485Q107.4969 20.2145 108 20.2Q108.5031 20.2145 108.8485 19.8485Q109.2145 19.5031 109.2 19ZM25.2 18L25.2 2Q25.2145 1.4969 24.8485 1.1515Q24.5031 0.7855 24 0.8Q23.4969 0.7855 23.1515 1.1515Q22.7855 1.4969 22.8 2L22.8 18Q22.7855 18.5031 23.1515 18.8485Q23.4969 19.2145 24 19.2Q24.5031 19.2145 24.8485 18.8485Q25.2145 18.5031 25.2 18ZM73.2 18L73.2 2Q73.2145 1.4969 72.8485 1.1515Q72.503 0.7855 72 0.8Q71.4969 0.7855 71.1515 1.1515Q70.7855 1.4969 70.8 2L70.8 18Q70.7855 18.5031 71.1515 18.8485Q71.4969 19.2145 72 19.2Q72.503 19.2145 72.8485 18.8485Q73.2145 18.5031 73.2 18ZM97.2 17L97.2 3Q97.2145 2.4969 96.8485 2.1515Q96.503 1.7855 96 1.8Q95.4969 1.7855 95.1515 2.1515Q94.7855 2.4969 94.8 3L94.8 17Q94.7855 17.5031 95.1515 17.8485Q95.4969 18.2145 96 18.2Q96.503 18.2145 96.8485 17.8485Q97.2145 17.5031 97.2 17ZM133.2 17L133.2 3Q133.2145 2.4969 132.8485 2.1515Q132.5031 1.7855 132 1.8Q131.4969 1.7855 131.1515 2.1515Q130.7855 2.4969 130.8 3L130.8 17Q130.7855 17.5031 131.1515 17.8485Q131.4969 18.2145 132 18.2Q132.5031 18.2145 132.8485 17.8485Q133.2145 17.5031 133.2 17ZM157.2 16L157.2 4Q157.2145 3.4969 156.8485 3.1515Q156.503 2.7855 156 2.8Q155.4969 2.7855 155.1515 3.1515Q154.7855 3.4969 154.8 4L154.8 16Q154.7855 16.5031 155.1515 16.8485Q155.4969 17.2145 156 17.2Q156.503 17.2145 156.8485 16.8485Q157.2145 16.5031 157.2 16ZM61.2 15L61.2 5Q61.2145 4.4969 60.8485 4.1515Q60.5031 3.7855 60 3.8Q59.4969 3.7855 59.1515 4.1515Q58.7855 4.4969 58.8 5L58.8 15Q58.7855 15.5031 59.1515 15.8485Q59.4969 16.2145 60 16.2Q60.5031 16.2145 60.8485 15.8485Q61.2145 15.5031 61.2 15ZM13.2 14L13.2 6Q13.2145 5.4969 12.8485 5.1515Q12.5031 4.7855 12 4.8Q11.4969 4.7855 11.1515 5.1515Q10.7855 5.4969 10.8 6L10.8 14Q10.7855 14.5031 11.1515 14.8485Q11.4969 15.2145 12 15.2Q12.5031 15.2145 12.8485 14.8485Q13.2145 14.5031 13.2 14ZM121.2 14L121.2 6Q121.2145 5.4969 120.8485 5.1515Q120.5031 4.7855 120 4.8Q119.4969 4.7855 119.1515 5.1515Q118.7855 5.4969 118.8 6L118.8 14Q118.7855 14.5031 119.1515 14.8485Q119.4969 15.2145 120 15.2Q120.5031 15.2145 120.8485 14.8485Q121.2145 14.5031 121.2 14ZM181.2 14L181.2 6Q181.2145 5.4969 180.8485 5.1515Q180.5031 4.7855 180 4.8Q179.4969 4.7855 179.1515 5.1515Q178.7855 5.4969 178.8 6L178.8 14Q178.7855 14.5031 179.1515 14.8485Q179.4969 15.2145 180 15.2Q180.5031 15.2145 180.8485 14.8485Q181.2145 14.5031 181.2 14ZM37.2 13L37.2 7Q37.2145 6.4969 36.8485 6.1515Q36.5031 5.7855 36 5.8Q35.4969 5.7855 35.1515 6.1515Q34.7855 6.4969 34.8 7L34.8 13Q34.7855 13.5031 35.1515 13.8485Q35.4969 14.2145 36 14.2Q36.5031 14.2145 36.8485 13.8485Q37.2145 13.5031 37.2 13ZM145.2 13L145.2 7Q145.2145 6.4969 144.8485 6.1515Q144.5031 5.7855 144 5.8Q143.4969 5.7855 143.1515 6.1515Q142.7855 6.4969 142.8 7L142.8 13Q142.7855 13.5031 143.1515 13.8485Q143.4969 14.2145 144 14.2Q144.5031 14.2145 144.8485 13.8485Q145.2145 13.5031 145.2 13ZM85.2 12L85.2 8Q85.2145 7.4969 84.8485 7.1515Q84.5031 6.7855 84 6.8Q83.4969 6.7855 83.1515 7.1515Q82.7855 7.4969 82.8 8L82.8 12Q82.7855 12.5031 83.1515 12.8485Q83.4969 13.2145 84 13.2Q84.5031 13.2145 84.8485 12.8485Q85.2145 12.5031 85.2 12ZM169.2 12L169.2 8Q169.2145 7.4969 168.8485 7.1515Q168.503 6.7855 168 6.8Q167.4969 6.7855 167.1515 7.1515Q166.7855 7.4969 166.8 8L166.8 12Q166.7855 12.5031 167.1515 12.8485Q167.4969 13.2145 168 13.2Q168.503 13.2145 168.8485 12.8485Q169.2145 12.5031 169.2 12ZM193.2 11L193.2 9Q193.2144 8.4969 192.8485 8.1515Q192.5031 7.7855 192 7.8Q191.4969 7.7855 191.1515 8.1515Q190.7855 8.4969 190.8 9L190.8 11Q190.7855 11.5031 191.1515 11.8485Q191.4969 12.2145 192 12.2Q192.5031 12.2145 192.8485 11.8485Q193.2144 11.5031 193.2 11Z"/></svg>`
+
+
+	// ===== 响应式数据 =====
+	// 弹层 / 表单状态
+	let formMode = ''
+	let formTitle = '写几句'
+	let saveText = '记下来'
+	let photoPreview = ''
+	// 文字记录
 	let draft = ''
 	let submitting = false
 	let classifyLabel = ''
@@ -133,6 +195,7 @@
 	let lastContentId = ''
 	let lastText = ''
 	let allLabels = ALL_LABELS
+	// 语音记录
 	let recording = false
 	let recordSeconds = 0
 	let recordTimer = 0 as number
@@ -147,7 +210,7 @@
 	let lastVoiceDuration = 0
 	let lastVoiceFile = ''
 
-	// 生命周期
+	// ===== 生命周期 =====
 	onLoad(() => {
 		ensureLogin().then((ok: boolean) => {
 			if (!ok) {
@@ -162,27 +225,66 @@
 		}
 	})
 
-	// 导航方法
-	function goIndex(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
+	// ===== 弹层交互 =====
+	function openMode(m: string): void {
+		formMode = m
+		if (m == 'photo') {
+			formTitle = '拍照'
+			saveText = '保存'
+		} else if (m == 'gallery') {
+			formTitle = '选照片'
+			saveText = '保存'
+		} else if (m == 'voice') {
+			formTitle = '说一段'
+			saveText = '确认入库'
+		} else {
+			formTitle = '写几句'
+			saveText = '记下来'
+		}
 	}
-	function goSearch(): void {
-		uni.reLaunch({ url: '/pages/search/search' })
+	function closeForm(): void {
+		// 录音中返回弹层：停止录音，避免后台空转
+		if (recording) {
+			stopRecordNow()
+		}
+		formMode = ''
 	}
-	function goRecord(): void {
-		uni.reLaunch({ url: '/pages/record/record' })
-	}
-	function goMessages(): void {
-		uni.reLaunch({ url: '/pages/messages/messages' })
-	}
-	function goProfile(): void {
-		uni.reLaunch({ url: '/pages/profile/profile' })
+	function onSave(): void {
+		if (formMode == 'text') {
+			submitText()
+		} else if (formMode == 'voice') {
+			submitVoice()
+		} else {
+			savePhoto()
+		}
 	}
 
-	// 文字记录方法
-	function switchMode(m: string): void {
-		mode = m
+	// ===== 照片 / 相册（uni.chooseImage，保存后端待接入 → 仅本地预览提示） =====
+	function pickPhoto(): void {
+		const srcs: Array<string> = formMode == 'photo' ? ['camera'] : ['album']
+		uni.chooseImage({
+			count: 1,
+			sourceType: srcs,
+			success: (res) => {
+				const tp = res.tempFilePaths[0]
+				if (tp != null) {
+					photoPreview = tp
+				}
+			},
+			fail: () => {
+				showErrorToast(new Error('未选择照片'))
+			}
+		})
 	}
+	function savePhoto(): void {
+		if (photoPreview == '') {
+			showErrorToast(new Error('请先拍照或选一张照片'))
+			return
+		}
+		uni.showToast({ title: '照片记录后端待接入，已保留本地预览', icon: 'none' })
+	}
+
+	// ===== 文字记录方法 =====
 	function submitText(): void {
 		const text = draft.trim()
 		console.log('[yishu] submitText: ' + text)
@@ -257,7 +359,7 @@
 		})
 	}
 
-	// 语音录音方法
+	// ===== 语音录音方法 =====
 	function toggleRecord(): void {
 		if (recording) {
 			stopRecordNow()
@@ -391,84 +493,361 @@
 </script>
 
 <style>
+	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x844 画布）
+	   背景 #f8f7f4 / 主文字 #3a2e25 / 次文字 #8a7a6a / 辅助 #b3a696
+	   琥珀 #c4913c / 锈红 #b05a3a / 卡片 #ffffff / 弹层面板 #faf9f5 */
 	.page {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
+		width: 100%;
+		height: 100%;
+		position: relative;
 		background-color: #f8f7f4;
-		padding-left: 0;
-		padding-right: 0;
-		padding-top: 88rpx;
-		padding-bottom: 140rpx;
+		overflow: hidden;
 	}
 	.serif {
 		font-family: "Noto Serif CJK SC", serif;
 	}
-	.header {
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
+
+	/* ═══════ 背景层 ═══════ */
+	.backdrop {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
 	}
-	.header-title {
-		font-size: 52rpx;
-		color: #3a2e25;
+	.hero-photo {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 577rpx;
+	}
+	.hero-shade-top {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 269rpx;
+		background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.38) 0%, rgba(26, 20, 15, 0.12) 60%, rgba(26, 20, 15, 0) 100%);
+	}
+	.hero-shade-bottom {
+		position: absolute;
+		top: 346rpx;
+		left: 0;
+		width: 750rpx;
+		height: 269rpx;
+		background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0) 0%, rgba(248, 247, 244, 0.92) 78%, #f8f7f4 100%);
+	}
+	.hero-title {
+		position: absolute;
+		left: 38rpx;
+		top: 115rpx;
+		font-size: 76rpx;
+		color: #ffffff;
 		font-weight: bold;
-		letter-spacing: 6rpx;
+		letter-spacing: 4rpx;
 	}
-	.header-sub {
-		margin-top: 8rpx;
+	.hero-avatar {
+		position: absolute;
+		left: 635rpx;
+		top: 112rpx;
+		width: 77rpx;
+		height: 77rpx;
+		border-radius: 38rpx;
+		background-color: #c4913c;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.hero-avatar-char {
+		font-size: 34rpx;
+		color: #ffffff;
+		font-weight: 600;
+	}
+	.hero-sub1 {
+		position: absolute;
+		left: 38rpx;
+		top: 213rpx;
+		font-size: 31rpx;
+		color: #ffffff;
+		font-weight: 600;
+	}
+	.hero-sub2 {
+		position: absolute;
+		left: 38rpx;
+		top: 244rpx;
+		font-size: 29rpx;
+		color: #ffffff;
+		opacity: 0.92;
+	}
+
+	/* 搜索胶囊 */
+	.search-capsule {
+		position: absolute;
+		left: 38rpx;
+		top: 473rpx;
+		width: 673rpx;
+		height: 88rpx;
+		border-radius: 44rpx;
+		background-color: #ffffff;
+		flex-direction: row;
+		align-items: center;
+	}
+	.search-icon {
+		margin-left: 37rpx;
+	}
+	.search-placeholder {
+		margin-left: 23rpx;
 		font-size: 26rpx;
 		color: #8a7a6a;
 	}
 
-	/* 分段切换 */
-	.seg {
-		display: flex;
-		flex-direction: row;
-		background-color: #EBE3D4;
-		border-radius: 10rpx;
-		padding: 6rpx;
-		margin-bottom: 28rpx;
-	}
-	.seg-item {
-		flex: 1;
-		align-items: center;
-		justify-content: center;
-		padding-top: 14rpx;
-		padding-bottom: 14rpx;
-		border-radius: 8rpx;
-	}
-	.seg-active {
-		background-color: #ffffff;
-	}
-	.seg-text {
-		font-size: 28rpx;
+	/* 日期 + 分隔线 */
+	.date-label {
+		position: absolute;
+		left: 38rpx;
+		top: 604rpx;
+		font-size: 26rpx;
 		color: #8a7a6a;
 	}
-	.seg-text-active {
-		color: #3a2e25;
-		font-weight: bold;
+	.divider {
+		position: absolute;
+		left: 252rpx;
+		top: 621rpx;
+		width: 459rpx;
+		height: 2rpx;
+		background-color: #3a2e25;
+		opacity: 0.08;
 	}
 
-	/* 文字面板 */
-	.content-scroll {
-		flex: 1;
+	/* 语音卡（弹层之上露出的顶部） */
+	.voice-card {
+		position: absolute;
+		left: 38rpx;
+		top: 660rpx;
+		width: 673rpx;
+		height: 256rpx;
+		border-radius: 38rpx;
+		background-color: #ffffff;
 	}
-	.text-panel {
+	.voice-inner {
+		position: absolute;
+		left: 65rpx;
+		top: 702rpx;
+		width: 619rpx;
+		height: 112rpx;
+		border-radius: 35rpx;
+		background-color: rgba(196, 145, 60, 0.14);
+		flex-direction: row;
+		align-items: center;
+	}
+	.play-btn {
+		position: absolute;
+		left: 81rpx;
+		top: 706rpx;
+		width: 62rpx;
+		height: 62rpx;
+		border-radius: 31rpx;
+		background-color: #ffffff;
 		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1;
+	}
+	.wave {
+		position: absolute;
+		left: 173rpx;
+		top: 717rpx;
+	}
+	.voice-title {
+		position: absolute;
+		left: 69rpx;
+		top: 813rpx;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.voice-meta {
+		position: absolute;
+		left: 69rpx;
+		top: 860rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+	}
+
+	/* ═══════ 模态遮罩 ═══════ */
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: rgba(26, 20, 15, 0.55);
+		z-index: 10;
+	}
+
+	/* ═══════ 底部弹层：新的记忆 ═══════ */
+	.sheet {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 654rpx;
+		background-color: #faf9f5;
+		border-top-left-radius: 77rpx;
+		border-top-right-radius: 77rpx;
+		z-index: 20;
+	}
+	.grab {
+		position: absolute;
+		top: 27rpx;
+		left: 50%;
+		margin-left: -46rpx;
+		width: 92rpx;
+		height: 10rpx;
+		border-radius: 5rpx;
+		background-color: #b3a696;
+	}
+	.sheet-title {
+		position: absolute;
+		top: 74rpx;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 34rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.sheet-options {
+		position: absolute;
+		top: 192rpx;
+		left: 38rpx;
+		right: 38rpx;
+		flex-direction: row;
+		justify-content: space-between;
+	}
+	.option {
+		width: 123rpx;
+		flex-direction: column;
+		align-items: center;
+	}
+	.option-circle {
+		width: 123rpx;
+		height: 123rpx;
+		border-radius: 62rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.c-photo {
+		background-color: rgba(176, 89, 59, 0.12);
+	}
+	.c-gallery {
+		background-color: rgba(196, 145, 60, 0.12);
+	}
+	.c-voice {
+		background-color: rgba(122, 140, 90, 0.14);
+	}
+	.c-text {
+		background-color: rgba(78, 125, 140, 0.13);
+	}
+	.option-label {
+		margin-top: 20rpx;
+		font-size: 24rpx;
+		color: #3a2e25;
+	}
+	.home-indicator {
+		position: absolute;
+		left: 50%;
+		margin-left: -134rpx;
+		top: 615rpx;
+		width: 269rpx;
+		height: 10rpx;
+		border-radius: 5rpx;
+		background-color: #3a2e25;
+		opacity: 0.18;
+	}
+	.sheet-hint {
+		position: absolute;
+		top: 538rpx;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-size: 22rpx;
+		color: #b3a696;
+	}
+
+	/* ═══════ 功能层：记录表单 ═══════ */
+	.form-layer {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: #faf9f5;
+		z-index: 30;
 		flex-direction: column;
 	}
+	.form-head {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		border-bottom-width: 1rpx;
+		border-bottom-color: rgba(58, 46, 37, 0.08);
+		border-bottom-style: solid;
+	}
+	.form-back {
+		width: 64rpx;
+		height: 64rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.form-back-text {
+		font-size: 52rpx;
+		color: #3a2e25;
+		line-height: 52rpx;
+	}
+	.form-title {
+		font-size: 34rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.form-save {
+		padding-left: 36rpx;
+		padding-right: 36rpx;
+		padding-top: 14rpx;
+		padding-bottom: 14rpx;
+		background-color: #b05a3a;
+		border-radius: 28rpx;
+	}
+	.form-save-text {
+		color: #f8f7f4;
+		font-size: 26rpx;
+	}
+	.form-scroll {
+		flex: 1;
+	}
+	.form-body {
+		padding: 32rpx 40rpx 40rpx 40rpx;
+		flex-direction: column;
+	}
+
+	/* 文字/语音通用 */
 	.text-input {
 		background-color: #ffffff;
-		border-radius: 8rpx;
+		border-radius: 24rpx;
 		padding: 24rpx;
 		min-height: 280rpx;
 		font-size: 30rpx;
 		color: #3a2e25;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.08);
 	}
 	.text-actions {
 		margin-top: 24rpx;
-		display: flex;
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
@@ -477,23 +856,10 @@
 		font-size: 24rpx;
 		color: #b3a696;
 	}
-	.btn {
-		padding-left: 48rpx;
-		padding-right: 48rpx;
-		padding-top: 18rpx;
-		padding-bottom: 18rpx;
-		background-color: #b05a3a;
-		border-radius: 8rpx;
-	}
-	.btn-text {
-		color: #f8f7f4;
-		font-size: 28rpx;
-	}
 
 	/* 分类标签（纠错触点） */
 	.tag-row {
 		margin-top: 32rpx;
-		display: flex;
 		flex-direction: column;
 	}
 	.tag-hint {
@@ -502,7 +868,6 @@
 		margin-bottom: 12rpx;
 	}
 	.tag-list {
-		display: flex;
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
@@ -523,20 +888,15 @@
 		font-size: 24rpx;
 		color: #3a2e25;
 	}
-	.tag-active .tag-text {
+	.tag-active-text {
 		color: #f8f7f4;
 	}
 
 	/* 语音面板 */
-	.voice-panel {
-		display: flex;
-		flex-direction: column;
-	}
 	.record-box {
 		align-items: center;
 		padding-top: 40rpx;
 		padding-bottom: 40rpx;
-		display: flex;
 		flex-direction: column;
 	}
 	.mic-btn {
@@ -570,15 +930,12 @@
 	.center-box {
 		align-items: center;
 		padding-top: 80rpx;
-		display: flex;
 		flex-direction: column;
 	}
 	.transcript-box {
-		display: flex;
 		flex-direction: column;
 	}
 	.transcript-head {
-		display: flex;
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
@@ -599,14 +956,12 @@
 		padding-bottom: 6rpx;
 		border-radius: 20rpx;
 	}
-	/* J-7：中断/暂停条 */
 	.interrupt-bar {
 		margin-top: 24rpx;
-		display: flex;
 		flex-direction: row;
 		align-items: center;
 		background-color: #F3E8DC;
-		border-radius: 8rpx;
+		border-radius: 16rpx;
 		padding-left: 24rpx;
 		padding-right: 24rpx;
 		padding-top: 16rpx;
@@ -629,15 +984,40 @@
 		color: #f8f7f4;
 		font-size: 26rpx;
 	}
-	/* J-1/J-3：音频事件/噪音/段级合并提示 */
 	.voice-hints {
 		margin-top: 12rpx;
 		margin-bottom: 12rpx;
 		background-color: #F3E8DC;
-		border-radius: 8rpx;
+		border-radius: 16rpx;
 		padding-left: 20rpx;
 		padding-right: 20rpx;
 		padding-top: 10rpx;
 		padding-bottom: 10rpx;
+	}
+
+	/* 照片面板 */
+	.photo-box {
+		width: 670rpx;
+		height: 360rpx;
+		border-radius: 24rpx;
+		background-color: #ffffff;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.08);
+		overflow: hidden;
+		align-items: center;
+		justify-content: center;
+	}
+	.photo-preview {
+		width: 670rpx;
+		height: 360rpx;
+	}
+	.photo-empty {
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+	}
+	.photo-empty-text {
+		margin-top: 16rpx;
+		font-size: 26rpx;
+		color: #b3a696;
 	}
 </style>
