@@ -255,19 +255,19 @@
 		uni.navigateBack()
 	}
 	function goIndex(): void {
-		uni.navigateTo({ url: '/pages/index/index' })
+		uni.reLaunch({ url: '/pages/index/index' })
 	}
 	function goSearch(): void {
-		uni.navigateTo({ url: '/pages/search/search' })
+		uni.reLaunch({ url: '/pages/search/search' })
 	}
 	function goRecord(): void {
-		uni.navigateTo({ url: '/pages/record/record' })
+		uni.reLaunch({ url: '/pages/record/record' })
 	}
 	function goMessages(): void {
-		uni.navigateTo({ url: '/pages/messages/messages' })
+		uni.reLaunch({ url: '/pages/messages/messages' })
 	}
 	function goProfile(): void {
-		uni.navigateTo({ url: '/pages/profile/profile' })
+		uni.reLaunch({ url: '/pages/profile/profile' })
 	}
 
 	// 业务方法

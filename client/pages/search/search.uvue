@@ -45,11 +45,11 @@
 		</view>
 
 		<!-- 结果列表（T-SR-2 混合卡片 + 溯源） -->
-		<view v-else-if="outcome != null" class="result-list">
+		<scroll-view scroll-y="true" v-else-if="outcome != null" class="result-list">
 			<view v-if="outcome.rewrittenQuery != '' && outcome.rewrittenQuery != outcome.query" class="rewrite-line">
 				<text class="muted">理解为你说的：{{ outcome.rewrittenQuery }}</text>
 			</view>
-			<view v-for="hit in outcome.hits" :key="hit.contentId" class="hit-card">
+			<view v-for="hit in outcome.hits" :key="hit.contentId" class="hit-card pressable" @tap="onHitTap(hit)">
 				<view class="hit-head">
 					<text class="hit-type">{{ contentTypeCn(hit.contentType) }}</text>
 					<text v-if="hit.eventTitle != ''" class="hit-event">{{ hit.eventTitle }}</text>
@@ -60,7 +60,6 @@
 					<text v-if="hit.place != ''" class="meta-item">{{ hit.place }}</text>
 					<text v-if="hit.takenAt != ''" class="meta-item">{{ shortDate(hit.takenAt) }}</text>
 				</view>
-				<!-- 溯源（信任底线） -->
 				<view v-if="hit.trace != ''" class="trace-box">
 					<text class="trace-label">命中依据</text>
 					<text class="trace-text">{{ hit.trace }}</text>
@@ -69,11 +68,8 @@
 			<view class="result-foot">
 				<text class="muted">共 {{ outcome.total }} 条 · {{ outcome.latencyMs }}ms</text>
 			</view>
-		</view>
+		</scroll-view>
 
-		<!-- 底部 Tab -->
-		<yishu-tabbar current="search" />
-	</view>
 		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
 		<view class="glass-tabbar">
 			<view class="tabbar-item  pressable" @tap="goIndex">
@@ -96,7 +92,7 @@
 				<text class="tabbar-label">我的</text>
 			</view>
 		</view>
-
+	</view>
 </template>
 
 <script setup lang="uts">
@@ -114,7 +110,12 @@
 	let degraded = false
 	let outcome: SearchOutcome | null = null
 
-	// 生命周期
+	// 搜索结果点击
+function onHitTap(hit: any): void {
+\tuni.showToast({ title: '查看: ' + (hit.text != '' ? hit.text.substring(0, 20) : hit.contentType), icon: 'none' })
+}
+
+// 生命周期
 	onLoad(() => {
 		ensureLogin().then((ok: boolean) => {
 			if (!ok) {
@@ -125,19 +126,361 @@
 
 	// 导航方法
 	function goIndex(): void {
-		uni.navigateTo({ url: '/pages/index/index' })
+		uni.reLaunch({ url: '/pages/index/index' })
 	}
 	function goSearch(): void {
-		uni.navigateTo({ url: '/pages/search/search' })
+		uni.reLaunch({ url: '/pages/search/search' })
 	}
 	function goRecord(): void {
-		uni.navigateTo({ url: '/pages/record/record' })
+		uni.reLaunch({ url: '/pages/record/record' })
 	}
 	function goMessages(): void {
-		uni.navigateTo({ url: '/pages/messages/messages' })
+		uni.reLaunch({ url: '/pages/messages/messages' })
 	}
 	function goProfile(): void {
-		uni.navigateTo({ url: '/pages/profile/profile' })
+		uni.reLaunch({ url: '/pages/profile/profile' })
+	}
+
+	// 工具方法
+	function scorePct(score: number): number {
+		return Math.round(score * 100)
+	}
+	function contentTypeCn(t: string): string {
+		return formatContentTypeCn(t)
+	}
+	function shortDate(iso: string): string {
+		return formatShortDate(iso)
+	}
+
+	// 业务方法
+	function doSearch(): void {
+		const q = query.trim()
+		if (q == '' && queryImage == '') {
+			showErrorToast(new Error('输入想找的内容'))
+			return
+		}
+		loading = true
+		searched = false
+		degraded = false
+		searchText(q, 10).then((out: SearchOutcome | null) => {
+			loading = false
+			searched = true
+			if (out != null) {
+				outcome = out
+				degraded = out.degraded
+			} else {
+				outcome = null
+			}
+		})
+	}
+	function pickImage(): void {
+		uni.chooseMedia({
+			count: 1,
+			mediaType: ['image'],
+			sourceType: ['album'],
+			success: (res) => {
+				const files = res.tempFiles
+				if (files.length === 0) {
+					return
+				}
+				const path = files.tempFilePath
+				queryImage = path
+				loading = true
+				searched = false
+				degraded = false
+				searchByImage(path, 10).then((out: SearchOutcome | null) => {
+					loading = false
+					searched = true
+					if (out != null) {
+						outcome = out
+						degraded = out.degraded
+					} else {
+						outcome = null
+					}
+				})
+			},
+			fail: () => {
+				// 用户取消选择：静默
+			}
+		})
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
+		padding-top: 88rpx;
+		padding-bottom: 140rpx;
+	}
+	.serif {
+		font-family: "Noto Serif CJK SC", serif;
+	}
+	.header {
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.header-title {
+		font-size: 52rpx;
+		color: #3a2e25;
+		font-weight: bold;
+		letter-spacing: 6rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 搜索框 */
+	.search-bar {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+	.search-input {
+	flex: 1;
+	background-color: rgba(255,255,255,0.32);
+	border-radius: 46rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		height: 92rpx;
+		font-size: 28rpx;
+		color: #3a2e25;
+		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
+	}
+	.search-btn {
+		margin-left: 16rpx;
+		background-color: #b05a3a;
+		border-radius: 8rpx;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		height: 76rpx;
+		align-items: center;
+		justify-content: center;
+		display: flex;
+	}
+	.search-btn-text {
+		color: #f8f7f4;
+		font-size: 28rpx;
+	}
+
+	/* 以图搜图 */
+	.image-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 24rpx;
+	}
+	.muted {
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+	.image-btn {
+		margin-left: 16rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
+		background-color: #EBE3D4;
+		border-radius: 24rpx;
+	}
+	.image-btn-text {
+		font-size: 24rpx;
+		color: #3a2e25;
+	}
+	.query-thumb {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 8rpx;
+		margin-left: 16rpx;
+	}
+
+	/* 降级提示（T-SR-4） */
+	.degraded-bar {
+		background-color: #F3E8DC;
+		border-radius: 8rpx;
+		padding: 16rpx 24rpx;
+		margin-bottom: 20rpx;
+	}
+	.degraded-text {
+		font-size: 24rpx;
+		color: #b05a3a;
+	}
+
+	.center-box {
+		padding-top: 120rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.empty-title {
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.empty-desc {
+		margin-top: 12rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 结果卡片 */
+	.result-list {
+		display: flex;
+		flex-direction: column;
+	}
+	.rewrite-line {
+		margin-bottom: 16rpx;
+	}
+	.hit-card {
+	background-color: #ffffff;
+	border-radius: 40rpx;
+		padding: 24rpx;
+		margin-bottom: 20rpx;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+	}
+	.hit-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.hit-type {
+		font-size: 22rpx;
+		color: #b05a3a;
+		background-color: #F3E8DC;
+		padding-left: 14rpx;
+		padding-right: 14rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 16rpx;
+	}
+	.hit-event {
+		margin-left: 16rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		flex: 1;
+	}
+	.hit-score {
+		font-size: 24rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.hit-text {
+		margin-top: 14rpx;
+		font-size: 28rpx;
+		color: #3a2e25;
+		line-height: 40rpx;
+	}
+	.hit-meta {
+		margin-top: 10rpx;
+		display: flex;
+		flex-direction: row;
+	}
+	.meta-item {
+		font-size: 22rpx;
+		color: #b3a696;
+		margin-right: 20rpx;
+	}
+	.trace-box {
+		margin-top: 16rpx;
+		border-top-width: 1rpx;
+		border-top-color: rgba(58, 46, 37, 0.12);
+		padding-top: 14rpx;
+		display: flex;
+		flex-direction: column;
+	}
+	.trace-label {
+		font-size: 20rpx;
+		color: #b05a3a;
+	}
+	.trace-text {
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+		line-height: 32rpx;
+	}
+	.result-foot {
+		margin-top: 20rpx;
+		align-items: center;
+		display: flex;
+		justify-content: center;
+	}
+</style>
+, '</scroll-view>' 
+
+		<!-- 底部 Tab -->
+</view>
+		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		<view class="glass-tabbar">
+			<view class="tabbar-item  pressable" @tap="goIndex">
+				<text class="tabbar-icon">🏠</text>
+				<text class="tabbar-label">时间轴</text>
+			</view>
+			<view class="tabbar-item active pressable" @tap="goSearch">
+				<text class="tabbar-icon">🔍</text>
+				<text class="tabbar-label">搜索</text>
+			</view>
+			<view class="tabbar-fab pressable" @tap="goRecord">
+				<text class="tabbar-fab-icon">+</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goMessages">
+				<text class="tabbar-icon">💬</text>
+				<text class="tabbar-label">消息</text>
+			</view>
+			<view class="tabbar-item  pressable" @tap="goProfile">
+				<text class="tabbar-icon">👤</text>
+				<text class="tabbar-label">我的</text>
+			</view>
+		</view>`n</view>`n`n</template>
+
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
+	import { searchText, searchByImage, SearchOutcome, contentTypeCn as formatContentTypeCn } from '@/utils/search_api'
+	import { showErrorToast } from '@/utils/api'
+	import { shortDate as formatShortDate } from '@/utils/time'
+
+	// 响应式数据
+	let query = ''
+	let queryImage = ''
+	let loading = false
+	let searched = false
+	let degraded = false
+	let outcome: SearchOutcome | null = null
+
+	// 搜索结果点击
+function onHitTap(hit: any): void {
+\tuni.showToast({ title: '查看: ' + (hit.text != '' ? hit.text.substring(0, 20) : hit.contentType), icon: 'none' })
+}
+
+// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+			}
+		})
+	})
+
+	// 导航方法
+	function goIndex(): void {
+		uni.reLaunch({ url: '/pages/index/index' })
+	}
+	function goSearch(): void {
+		uni.reLaunch({ url: '/pages/search/search' })
+	}
+	function goRecord(): void {
+		uni.reLaunch({ url: '/pages/record/record' })
+	}
+	function goMessages(): void {
+		uni.reLaunch({ url: '/pages/messages/messages' })
+	}
+	function goProfile(): void {
+		uni.reLaunch({ url: '/pages/profile/profile' })
 	}
 
 	// 工具方法

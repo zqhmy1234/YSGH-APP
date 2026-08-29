@@ -20,7 +20,7 @@
 		<!-- 同步状态横幅 -->
 		<UploadStatusBanner />
 
-		<scroll-view class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+		<scroll-view class="scroll" scroll-y="true" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
 			<!-- 回响卡片（去年今日 · 角贴 + 泛黄） -->
 			<view v-if="echo != null" class="echo-card pressable">
 				<view class="echo-corner">
@@ -252,17 +252,20 @@
 	})
 
 	// 导航方法
+	function goIndex(): void {
+		uni.reLaunch({ url: '/pages/index/index' })
+	}
 	function goSearch(): void {
-		uni.navigateTo({ url: '/pages/search/search' })
+		uni.reLaunch({ url: '/pages/search/search' })
 	}
 	function goRecord(): void {
-		uni.navigateTo({ url: '/pages/record/record' })
+		uni.reLaunch({ url: '/pages/record/record' })
 	}
 	function goMessages(): void {
-		uni.navigateTo({ url: '/pages/messages/messages' })
+		uni.reLaunch({ url: '/pages/messages/messages' })
 	}
 	function goProfile(): void {
-		uni.navigateTo({ url: '/pages/profile/profile' })
+		uni.reLaunch({ url: '/pages/profile/profile' })
 	}
 
 	// 语音播放

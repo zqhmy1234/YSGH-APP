@@ -37,11 +37,7 @@
 			<text class="about-text">忆述光华 · v0.1.0</text>
 			<text class="about-sub">{{ devEntrySub }}</text>
 		</view>
-
-		<!-- 底部 Tab -->
-		<yishu-tabbar current="profile" />
-	</view>
-		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
+		（半透明白 55% + 中央＋按钮） -->
 		<view class="glass-tabbar">
 			<view class="tabbar-item  pressable" @tap="goIndex">
 				<text class="tabbar-icon">🏠</text>
@@ -63,6 +59,7 @@
 				<text class="tabbar-label">我的</text>
 			</view>
 		</view>
+</view>
 
 </template>
 
@@ -96,19 +93,19 @@
 
 	// 导航方法
 	function goIndex(): void {
-		uni.navigateTo({ url: '/pages/index/index' })
+		uni.reLaunch({ url: '/pages/index/index' })
 	}
 	function goSearch(): void {
-		uni.navigateTo({ url: '/pages/search/search' })
+		uni.reLaunch({ url: '/pages/search/search' })
 	}
 	function goRecord(): void {
-		uni.navigateTo({ url: '/pages/record/record' })
+		uni.reLaunch({ url: '/pages/record/record' })
 	}
 	function goMessages(): void {
-		uni.navigateTo({ url: '/pages/messages/messages' })
+		uni.reLaunch({ url: '/pages/messages/messages' })
 	}
 	function goProfile(): void {
-		uni.navigateTo({ url: '/pages/profile/profile' })
+		uni.reLaunch({ url: '/pages/profile/profile' })
 	}
 	function goInterview(): void {
 		uni.navigateTo({ url: '/pages/interview/interview' })
