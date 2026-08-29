@@ -48,7 +48,7 @@
 				<text class="menu-sub">AI 根据记忆内容自动生成的性格特征</text>
 				<view class="tag-list">
 					<view v-for="tag in personalityTags" :key="tag.name" class="tag-item" :class="{ 'tag-active': tag.active }">
-						<text class="tag-text">{{ tag.name }}</text>
+						<text :class="tag.active ? 'tag-text tag-text-active' : 'tag-text'">{{ tag.name }}</text>
 						<text class="tag-confidence">{{ tag.confidence }}%</text>
 					</view>
 				</view>
@@ -59,7 +59,7 @@
 				<text class="menu-title serif">记忆主题</text>
 				<text class="menu-sub">高频出现的记忆主题分类</text>
 				<view class="theme-list">
-					<view v-for="theme in themes" :key="theme.name" class="theme-item pressable" @tap="onThemeTap(theme)">
+					<view v-for="(theme, tIdx) in themes" :key="theme.name" :class="tIdx === themes.length - 1 ? 'theme-item pressable no-border' : 'theme-item pressable'" @tap="onThemeTap(theme)">
 						<view class="theme-icon" :style="{ backgroundColor: theme.color }">
 							<text class="theme-icon-text">{{ theme.icon }}</text>
 						</view>
@@ -91,7 +91,7 @@
 					</view>
 					<text class="menu-arrow">›</text>
 				</view>
-				<view class="menu-row pressable" @tap="onPrivacySettings">
+				<view class="menu-row pressable no-border" @tap="onPrivacySettings">
 					<view class="menu-icon">🔒</view>
 					<view class="menu-main">
 						<text class="menu-title-text">画像隐私设置</text>
@@ -466,7 +466,7 @@
 		font-size: 26rpx;
 		color: #3a2e25;
 	}
-	.tag-active .tag-text {
+	.tag-text-active {
 		color: #c4913c;
 		font-weight: 500;
 	}
@@ -490,7 +490,7 @@
 		border-bottom-color: #f0ebe3;
 		border-bottom-style: solid;
 	}
-	.theme-item:last-child {
+	.theme-item.no-border {
 		border-bottom-width: 0;
 	}
 	.theme-icon {
@@ -533,7 +533,7 @@
 		border-bottom-color: #f0ebe3;
 		border-bottom-style: solid;
 	}
-	.menu-row:last-child {
+	.menu-row.no-border {
 		border-bottom-width: 0;
 	}
 	.menu-icon {

@@ -25,7 +25,7 @@ import { PATH_ASR_TRANSCRIBE, PATH_CONTENTS } from './contract'
 // TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
 // 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
 import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
-import { createRecorder, RecorderController } from '@/uni_modules/yishu-recorder/utssdk/app-android/index.uts'
+import { createRecorder } from '@/uni_modules/yishu-recorder/utssdk/app-android/index.uts'
 
 /** 录音上限（J-4 放开 3.5min → 30min；后端 duration 到达自动 onStop 分段保存） */
 export const MAX_RECORD_MS: number = 1800000
@@ -100,7 +100,7 @@ export class AsrResult {
 /** 录音控制器单例（系统能力层插件 yishu-recorder，J-7 状态机持有者） */
 let _controller = createRecorder()
 
-export function getRecorder(): RecorderController {
+export function getRecorder(): typeof _controller {
 	return _controller
 }
 

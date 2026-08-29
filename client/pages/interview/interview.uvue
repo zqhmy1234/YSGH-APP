@@ -191,21 +191,21 @@
 		top: 80rpx;
 		width: 560rpx;
 		height: 560rpx;
-		background: radial-gradient(circle, rgba(196, 145, 59, 0.16), rgba(196, 145, 59, 0));
+		background-color: rgba(196, 145, 59, 0.08);
 	}
 	.glow-green {
 		left: 440rpx;
 		top: 340rpx;
 		width: 520rpx;
 		height: 520rpx;
-		background: radial-gradient(circle, rgba(121, 139, 90, 0.13), rgba(121, 139, 90, 0));
+		background-color: rgba(121, 139, 90, 0.065);
 	}
 	.glow-blue {
 		left: 60rpx;
 		top: 660rpx;
 		width: 480rpx;
 		height: 480rpx;
-		background: radial-gradient(circle, rgba(78, 124, 139, 0.11), rgba(78, 124, 139, 0));
+		background-color: rgba(78, 124, 139, 0.055);
 	}
 
 	/* 进度指示点（3 个，8px 直径，间距 14px） */

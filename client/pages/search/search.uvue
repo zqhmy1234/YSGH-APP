@@ -38,7 +38,7 @@
 		</view>
 
 		<!-- 结果区 -->
-		<scroll-view class="result-list" scroll-y>
+		<scroll-view class="result-list">
 			<!-- 结果计数（设计稿: y=235.8 #8a7a6a） -->
 			<text class="result-count">{{ resultCountText() }}</text>
 
@@ -390,7 +390,7 @@
 	}
 	/* 结果计数（设计稿: y=235.8 #8a7a6a） */
 	.result-count {
-		display: block;
+		display: flex;
 		margin: 38rpx 0 22rpx 0;
 		font-size: 22rpx;
 		color: #8a7a6a;
@@ -471,7 +471,7 @@
 	}
 	/* 语音卡标题（设计稿: y=340.6 #3a2e25 约16px） */
 	.voice-title {
-		display: block;
+		display: flex;
 		margin: 21rpx 0 0 17rpx;
 		font-size: 32rpx;
 		line-height: 40rpx;

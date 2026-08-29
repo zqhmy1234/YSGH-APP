@@ -7,7 +7,7 @@
 		</view>
 		<scroll-view class="list">
 			<view v-for="(r, i) in results" :key="i" class="row" :class="r.pass ? 'row-pass' : 'row-fail'">
-				<text class="badge">{{ r.pass ? 'PASS' : 'FAIL' }}</text>
+				<text :class="r.pass ? 'badge badge-pass' : 'badge badge-fail'">{{ r.pass ? 'PASS' : 'FAIL' }}</text>
 				<view class="cell">
 					<text class="name">{{ r.name }}</text>
 					<text v-if="!r.pass" class="detail">{{ r.detail }}</text>
@@ -90,7 +90,7 @@
 	color: #FFFFFF;
 	background-color: #7C9A6D;
 }
-.row-fail .badge {
+.badge-fail {
 	background-color: #B05A3A;
 }
 .cell {
@@ -106,6 +106,5 @@
 	margin-top: 6rpx;
 	font-size: 22rpx;
 	color: #B05A3A;
-	word-break: break-all;
 }
 </style>

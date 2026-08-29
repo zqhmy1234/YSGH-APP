@@ -1,4 +1,4 @@
-﻿{
+{
   "pages": [
     {
       "path": "pages/index/index",
@@ -52,6 +52,22 @@
       "path": "pages/portrait/manage",
       "style": {
         "navigationBarTitleText": "画像管理",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": {
+        "navigationBarTitleText": "设置",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/detail/detail",
+      "style": {
+        "navigationBarTitleText": "记忆详情",
         "navigationStyle": "custom",
         "enablePullDownRefresh": false
       }

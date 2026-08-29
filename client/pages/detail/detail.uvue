@@ -358,11 +358,11 @@
 	}
 	/* 卡片 A 渐变占位（设计稿 gradient_2: #798B5A 30%→#C4913B 20%） */
 	.ph-a {
-		background: linear-gradient(121deg, rgba(121, 139, 90, 0.30) 0%, rgba(196, 145, 59, 0.20) 100%);
+		background: linear-gradient(to bottom, rgba(121, 139, 90, 0.30), rgba(196, 145, 59, 0.20));
 	}
 	/* 卡片 B 渐变占位（设计稿 gradient_4: #4E7C8B 28%→#798B5A 15%） */
 	.ph-b {
-		background: linear-gradient(121deg, rgba(78, 124, 139, 0.28) 0%, rgba(121, 139, 90, 0.15) 100%);
+		background: linear-gradient(to bottom, rgba(78, 124, 139, 0.28), rgba(121, 139, 90, 0.15));
 	}
 	.related-title {
 		display: flex;

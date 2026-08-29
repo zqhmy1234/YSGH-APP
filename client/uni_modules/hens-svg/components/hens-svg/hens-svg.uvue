@@ -11,7 +11,26 @@
 <script setup lang="uts">
 // 引入 HensSvgView 原生对象
 import { HensSvgView } from "@/uni_modules/hens-svg"
-import { SvgConfig, SvgError, SvgCallback, SvgLoadingCallback } from "@/uni_modules/hens-svg/utssdk/interface.uts"
+// 类型内联定义（Vapor 模式下从 interface.uts 导入函数类型会报 not exported，故内联）
+type SvgError = {
+	message: string
+	details?: string
+}
+type SvgConfig = {
+	src: string
+	width?: number
+	height?: number
+	size?: number
+	color?: string
+	opacity?: number
+	backgroundColor?: string
+	aspectRatio?: "fill" | "fit" | "stretch"
+	cache?: boolean
+	timeout?: number
+	retries?: number
+}
+type SvgCallback = (error?: SvgError | null) => void
+type SvgLoadingCallback = (isLoading: boolean) => void
 
 // Props定义 - 完整版
 const props = defineProps({
