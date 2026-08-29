@@ -142,3 +142,6 @@ backend/pip_install*.log
 backend/uvicorn*.log
 backend/__pycache__/
 
+
+backend/routes.txt
+
