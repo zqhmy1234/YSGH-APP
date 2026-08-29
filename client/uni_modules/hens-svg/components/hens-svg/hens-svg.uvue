@@ -1,0 +1,146 @@
+<template>
+  <native-view 
+    @init="onViewInit" 
+    :style="{
+      width: sizeWidth + 'px',
+      height: sizeHeight + 'px'
+    }"
+  />
+</template>
+
+<script setup lang="uts">
+// 引入 HensSvgView 原生对象
+import { HensSvgView } from "@/uni_modules/hens-svg"
+import { SvgConfig, SvgError, SvgCallback, SvgLoadingCallback } from "@/uni_modules/hens-svg/utssdk/interface.uts"
+
+// Props定义 - 完整版
+const props = defineProps({
+  src: {
+    type: String,
+    required: true
+  },
+  size: {
+    type: Number,
+    default: 100
+  },
+  width: {
+    type: Number,
+    default: 0
+  },
+  height: {
+    type: Number, 
+    default: 0
+  },
+  color: {
+    type: String,
+    default: ''
+  },
+  opacity: {
+    type: Number,
+    default: 1.0
+  },
+  backgroundColor: {
+    type: String,
+    default: ''
+  },
+  aspectRatio: {
+    type: String,
+    default: 'fit'
+  },
+  cache: {
+    type: Boolean,
+    default: true
+  },
+  timeout: {
+    type: Number,
+    default: 10000
+  },
+  retryAttempts: {
+    type: Number,
+    default: 1
+  }
+})
+
+// Events定义
+const emit = defineEmits(['load', 'error', 'loading'])
+
+// 计算尺寸
+const sizeWidth = computed(() => {
+  return props.width > 0 ? props.width : props.size
+})
+
+const sizeHeight = computed(() => {
+  return props.height > 0 ? props.height : props.size
+})
+
+let svgInstance: HensSvgView | null = null
+
+// 加载SVG
+function loadSvgInternal() {
+  const instance = svgInstance
+  if (instance == null) return
+  if (props.src == '') return
+  
+  const config: SvgConfig = {
+    src: props.src,
+    width: sizeWidth.value,
+    height: sizeHeight.value,
+    color: props.color != '' ? props.color : null,
+    opacity: props.opacity,
+    backgroundColor: props.backgroundColor != '' ? props.backgroundColor : null,
+    aspectRatio: props.aspectRatio as "fill" | "fit" | "stretch",
+    cache: props.cache,
+    timeout: props.timeout,
+    retries: props.retryAttempts
+  }
+  
+  const callback: SvgCallback = (error?: SvgError | null) => {
+    // 检查是否为有效错误：必须有message属性且不为空
+    if (error != null && error.message != null && error.message.length > 0) {
+      emit('error', error)
+    } else {
+      emit('load')
+    }
+  }
+  
+  const loadingCallback: SvgLoadingCallback = (isLoading: boolean) => {
+    emit('loading', isLoading)
+  }
+  
+  instance.loadSvg(config, callback, loadingCallback)
+}
+
+// native-view初始化时触发此方法
+function onViewInit(e: UniNativeViewInitEvent) {
+  // 获取UniNativeViewElement 传递给HensSvgView对象
+  svgInstance = new HensSvgView(e.detail.element)
+  loadSvgInternal()
+}
+
+// 监听变化
+watch([
+  () => props.src, 
+  () => props.size, 
+  () => props.width, 
+  () => props.height, 
+  () => props.color,
+  () => props.opacity,
+  () => props.backgroundColor,
+  () => props.aspectRatio,
+  () => props.cache,
+  () => props.timeout,
+  () => props.retryAttempts
+], () => {
+  loadSvgInternal()
+})
+
+// 清理
+onUnmounted(() => {
+  const instance = svgInstance
+  if (instance != null) {
+    instance.destroy()
+  }
+  svgInstance = null
+})
+
+</script>

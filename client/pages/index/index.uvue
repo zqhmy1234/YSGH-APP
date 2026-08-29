@@ -13,7 +13,7 @@
 
 		<!-- 玻璃搜索胶囊（backdrop-blur + 白色内高光） -->
 		<view class="search-capsule pressable" @tap="goSearch">
-			<text class="search-icon">🔍</text>
+			<hens-svg :src="searchIcon" :width="18" :height="18" color="#8A7A6A" />
 			<text class="search-placeholder">搜索记忆、照片、主题…</text>
 		</view>
 
@@ -151,28 +151,8 @@
 			</view>
 		</scroll-view>
 
-		<!-- 玻璃 TabBar（半透明白 55% + 中央＋按钮） -->
-		<view class="glass-tabbar">
-			<view class="tabbar-item active pressable" @tap="goIndex">
-				<text class="tabbar-icon">🏠</text>
-				<text class="tabbar-label">时间轴</text>
-			</view>
-			<view class="tabbar-item pressable" @tap="goSearch">
-				<text class="tabbar-icon">🔍</text>
-				<text class="tabbar-label">搜索</text>
-			</view>
-			<view class="tabbar-fab pressable" @tap="goRecord">
-				<text class="tabbar-fab-icon">+</text>
-			</view>
-			<view class="tabbar-item pressable" @tap="goMessages">
-				<text class="tabbar-icon">💬</text>
-				<text class="tabbar-label">消息</text>
-			</view>
-			<view class="tabbar-item pressable" @tap="goProfile">
-				<text class="tabbar-icon">👤</text>
-				<text class="tabbar-label">我的</text>
-			</view>
-		</view>
+		<!-- 统一 TabBar 组件 -->
+		<TabBar active="index" />
 	</view>
 </template>
 
@@ -214,6 +194,9 @@
 		}
 	}
 
+	// SVG 图标数据（从设计稿提取）
+	const searchIcon = `<svg viewBox="0 0 11 11" xmlns="http://www.w3.org/2000/svg"><path d="M5.1726 3.9941L0.5893 -0.5893Q0.3493 -0.8434 0 -0.8333Q-0.3493 -0.8434 -0.5893 -0.5893Q-0.8434 -0.3493 -0.8333 0Q-0.8434 0.3493 -0.5893 0.5893L3.9941 5.1726Q4.234 5.4267 4.5833 5.4167Q4.9327 5.4267 5.1726 5.1726Q5.4267 4.9327 5.4167 4.5833Q5.4267 4.234 5.1726 3.9941Z"/></svg>`
+
 	// 响应式数据
 	let loaded = false
 	let refreshing = false
@@ -254,6 +237,9 @@
 	// 导航方法
 	function goIndex(): void {
 		uni.reLaunch({ url: '/pages/index/index' })
+	}
+	function goAI(): void {
+		uni.showToast({ title: 'AI功能开发中', icon: 'none' })
 	}
 	function goSearch(): void {
 		uni.reLaunch({ url: '/pages/search/search' })
@@ -843,7 +829,7 @@
 		font-size: 26rpx;
 		color: #3a2e25;
 	}
-	.pending-btn-solid .pending-btn-text {
+	.pending-btn-text-solid {
 		color: #ffffff;
 	}
 
@@ -1075,10 +1061,11 @@
 	.glass-tabbar {
 		position: fixed;
 		bottom: 60rpx;
+		overflow: visible;
 		left: 40rpx;
 		right: 40rpx;
 		height: 124rpx;
-		background-color: rgba(255,255,255,0.55);
+		background-color: rgba(246,241,231,0.75);
 		border-radius: 62rpx;
 		display: flex;
 		flex-direction: row;
@@ -1122,7 +1109,7 @@
 	.tabbar-fab-icon {
 		width: 48rpx;
 		height: 48rpx;
-		color: #ffffff;
+		color: #f6f1e7;
 		font-size: 48rpx;
 		font-weight: 300;
 		line-height: 48rpx;
@@ -1144,7 +1131,7 @@
 		background-color: #ffffff;
 		border-radius: 32rpx 32rpx 0 0;
 		padding: 32rpx;
-		max-height: 70vh;
+		max-height: 500px;
 	}
 	.split-title {
 		font-size: 32rpx;
@@ -1182,7 +1169,7 @@
 		background-color: #ffffff;
 		border-radius: 32rpx 32rpx 0 0;
 		padding: 32rpx;
-		max-height: 70vh;
+		max-height: 500px;
 	}
 	.photo-detail-image {
 		width: 100%;

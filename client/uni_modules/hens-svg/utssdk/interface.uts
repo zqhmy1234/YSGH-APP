@@ -1,0 +1,46 @@
+/**
+ * 简洁的SVG组件类型定义
+ * 基于 Linus "好品味" 原则：消除特殊情况，简洁通用
+ */
+
+/**
+ * 扁平化SVG配置 - 主要API
+ */
+export type SvgConfig = {
+	/** SVG源（自动检测类型：URL/路径/内容） */
+	src: string
+	/** 宽度像素 */
+	width?: number
+	/** 高度像素 */
+	height?: number
+	/** 尺寸快捷方式（等宽高） */
+	size?: number
+	/** 颜色（十六进制或CSS颜色名） */
+	color?: string
+	/** 透明度 0-1 */
+	opacity?: number
+	/** 背景色 */
+	backgroundColor?: string
+	/** 纵横比策略 */
+	aspectRatio?: "fill" | "fit" | "stretch"
+	/** 启用缓存 */
+	cache?: boolean
+	/** 网络超时毫秒数 */
+	timeout?: number
+	/** 重试次数 */
+	retries?: number
+}
+
+/**
+ * 简化错误类型
+ */
+export type SvgError = {
+	message: string
+	details?: string
+}
+
+/**
+ * 简化回调类型 - 支持 loading 状态
+ */
+export type SvgCallback = (error?: SvgError | null) => void
+export type SvgLoadingCallback = (isLoading: boolean) => void

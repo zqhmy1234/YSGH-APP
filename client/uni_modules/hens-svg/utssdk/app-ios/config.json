@@ -1,0 +1,12 @@
+{
+  "deploymentTarget": "13",
+  "capabilities": {
+    "outgoing-network": "uses"
+  },
+  "dependencies-pods": [
+    {
+      "name": "SVGKit",
+      "version": "3.0.0"
+    }
+  ]
+}
