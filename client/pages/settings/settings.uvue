@@ -88,7 +88,7 @@
 		<view v-if="privacyOpen" class="privacy-mask" @tap="privacyOpen = false">
 			<view class="privacy-sheet" @tap.stop>
 				<text class="privacy-title serif">隐私政策</text>
-				<scroll-view class="privacy-scroll" scroll-y="true">
+				<scroll-view class="privacy-scroll">
 					<text class="privacy-text">{{ privacyText }}</text>
 				</scroll-view>
 				<view class="privacy-close" @tap="privacyOpen = false">

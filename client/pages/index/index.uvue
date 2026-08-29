@@ -20,7 +20,7 @@
 		<!-- 同步状态横幅 -->
 		<UploadStatusBanner />
 
-		<scroll-view class="scroll" scroll-y="true" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+		<scroll-view class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
 			<!-- 回响卡片（去年今日 · 角贴 + 泛黄） -->
 			<view v-if="echo != null" class="echo-card pressable">
 				<view class="echo-corner">

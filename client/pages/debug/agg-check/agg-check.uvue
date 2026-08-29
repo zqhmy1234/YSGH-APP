@@ -5,7 +5,7 @@
 			<text class="sub">UTS ST-DBSCAN vs Python 同参双跑（{{summaryText}}）</text>
 			<text class="sub">30s 验收：{{ timing }}</text>
 		</view>
-		<scroll-view class="list" scroll-y="true">
+		<scroll-view class="list">
 			<view v-for="(r, i) in results" :key="i" class="row" :class="r.pass ? 'row-pass' : 'row-fail'">
 				<text class="badge">{{ r.pass ? 'PASS' : 'FAIL' }}</text>
 				<view class="cell">

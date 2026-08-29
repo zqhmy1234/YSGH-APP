@@ -5,7 +5,7 @@
 			<text class="header-sub">回答三个问题，让记忆整理更懂你</text>
 		</view>
 
-		<scroll-view scroll-y="true" class="content-scroll">
+		<scroll-view class="content-scroll">
 		<!-- 三层披露（T-PL-2）：先披露再作答 -->
 		<view v-if="step === 'disclose'" class="disclose-card">
 			<text class="disclose-title serif">关于你的回答</text>
