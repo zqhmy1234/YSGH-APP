@@ -28,7 +28,6 @@
  */
 
 import { BackgroundTaskHandler } from '../interface.uts'
-import Class from 'java.lang.Class'
 import SharedPreferences from 'android.content.SharedPreferences'
 import Context from 'android.content.Context'
 
