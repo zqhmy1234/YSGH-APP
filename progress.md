@@ -627,3 +627,13 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **④D-06 调研定案（用户指定方向）**：无需第二设备——等价复现三级：相机抢麦脚本（`evidence/ck02_grab_trigger` 08-28 彩排过，FIRE/TAP/RELEASE 全自动）+ `am start -a android.intent.action.CALL -d tel:<短号>` 去电模拟（nova 11 有卡，Telecom 抢占与来电同源）+ 看门狗单测；定性=Android《共享音频输入》平台政策（ck02_external_corroboration 官方文档摘录），watchdog+显式标注即正解；真来电降为可选加测。
 - **回填**：决策台账 §1.6 ✅并批 / 新增 §1.8 D-06 等价路径 / §5.3·§5.4 销项（待拍板 5→3）；tracker19 D-15 行→"已拍板待修"；计划文档五处 ✅。
 - **P-1**：`.wt/fix4b` worktree（分支 fix/4b @ e80176f）+ backend/.env 拷贝 + models 就位（junction）——R1 全程在 worktree 内，主工作区（他窗 164 文件）零触碰；R2 云打包亦在 worktree 出包，防他窗未提交改动进包。
+- **文案库基调拍板（用户连答三项）**：①基调维持「温和克制」②禁止主动提及 10 项照单通过 ③现有默认库升格**内测正式基线 v1** → 台账 §5.5 销项（待拍板 3→2，仅剩部署就绪包+目标页）、§3.3 刷新、AGENTS US-21 卡点改「仅 D-16」；validate_copy_library 无需改（拍板即现状定稿）。
+
+## 2026-08-29 14:0x · R1-a/R1-c 落地 + P-2 诊断收编（第三窗发现与编译门挂起）
+
+- **R1-a（D-18/D-19）代码落地 fix/4b `8cb15b4`**：探测改 nativeResources 标记资产（AssetManager.list 免异常）；FGS service+权限迁**工程根 client/AndroidManifest.xml**（真根因：云打包不合并 UTS 插件内 manifest，ask.dcloud 214927 实证+插件内双 manifest 加教训注释）。**伴生抓获**：`.gitignore:121` 通配 `AndroidManifest.xml` 吞工程根真源（`!!` 实测；疑即 08-28 Agent K 走位之谜成因）→ 豁免三连+check-ignore 复验。修复过程自伤一次：dedupe 脚本把 .gitignore 提交成 9 行（.env 忽略全丢）——commit stat 自审拦截，母版重建+amend，lessons×4 登记在案。
+- **R1-c（D-16）代码落地 fix/4b `f1f8a3c`**：三层默认值拆穿（未测得=None 贯穿 models/backends/schema；EMO_UNKNOWN→None；mock 不伪造；笑声提升兼容 None；端侧 null→'' chip 自然隐藏+主导情绪空提示守卫；契约口径 emotion 可空）。**验证**：test_asr 47 + emotion_consume + notify + pipeline 合计 **89 全绿**（pytest，worktree 内）。lint E501 一拦一修（ids 折行）过闸。
+- **基线编译真相（lesson 已录）**：`--cleanCache` 冷编译暴露 **develop 干净基线在 HBuilderX 5.24 下编不过**（upload_protocol/uploader 等 `.then` 返回类型推断错误群发）——此前所有「编译通过」皆跑在含修复的脏工作区。他窗旧脏（08-27/28，132 文件）正是这批迁移修复；R1-a 连带做了两枚**同形热修**（merge 时以他窗最终版为准）。**客户端编译门自此挂起，等他窗 5.24 迁移提交**——已列入协调请求。
+- **第三活跃窗发现**：`.wt/wrap1-agentA2-ui-restore`（分支 18 分钟前仍提交，`fix(uts) 移除 java.lang.Class 导入`）——与我修 **D-18 同一插件文件**、且其旧版仍含恒 false 探测与 Class.forName 群（5.24 迁移未决）。两窗并撞一单，归谁待用户裁定；我侧 marker 重写在其旧基线之上，merge 冲突可控但须表态。
+- **P-2 收编**：O-1 改判（漂移证伪→疑外部终止/内存压力，1.6GB 空闲实测在案）；O-2 坐实→**tracker19 D-22 新单**（缺陷台账 19→20 单，AGENTS/台账 §5.7 并批待拍板同步）；tracker19 §5 补上缺失的 O-2 行（原「唯一来源」竟无此行，记账债+1）。US-25 现 ✅A 与 D-22 现象矛盾——R2 须重断（已写入 §5.7）。
+- **纪律执行**：全程 pathspec 提交零触碰他窗脏文件；主仓脏文档=本批记账+前批拍板文案（一并入库）；无 push；scratch 暂存 .cowork-temp 波尾清理。
