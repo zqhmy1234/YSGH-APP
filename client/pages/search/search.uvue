@@ -45,7 +45,7 @@
 		</view>
 
 		<!-- 结果列表（T-SR-2 混合卡片 + 溯源） -->
-		<scroll-view scroll-y="true" v-else-if="outcome != null" class="result-list">
+		<scroll-view v-else-if="outcome != null" class="result-list">
 			<view v-if="outcome.rewrittenQuery != '' && outcome.rewrittenQuery != outcome.query" class="rewrite-line">
 				<text class="muted">理解为你说的：{{ outcome.rewrittenQuery }}</text>
 			</view>
