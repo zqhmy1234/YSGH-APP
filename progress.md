@@ -637,3 +637,11 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **第三活跃窗发现**：`.wt/wrap1-agentA2-ui-restore`（分支 18 分钟前仍提交，`fix(uts) 移除 java.lang.Class 导入`）——与我修 **D-18 同一插件文件**、且其旧版仍含恒 false 探测与 Class.forName 群（5.24 迁移未决）。两窗并撞一单，归谁待用户裁定；我侧 marker 重写在其旧基线之上，merge 冲突可控但须表态。
 - **P-2 收编**：O-1 改判（漂移证伪→疑外部终止/内存压力，1.6GB 空闲实测在案）；O-2 坐实→**tracker19 D-22 新单**（缺陷台账 19→20 单，AGENTS/台账 §5.7 并批待拍板同步）；tracker19 §5 补上缺失的 O-2 行（原「唯一来源」竟无此行，记账债+1）。US-25 现 ✅A 与 D-22 现象矛盾——R2 须重断（已写入 §5.7）。
 - **纪律执行**：全程 pathspec 提交零触碰他窗脏文件；主仓脏文档=本批记账+前批拍板文案（一并入库）；无 push；scratch 暂存 .cowork-temp 波尾清理。
+
+## 2026-08-29 15:0x · 拍板三连 + R1-d 后端半收官 + 企微可信 IP/凭证事件
+
+- **拍板三连（用户，ask_user_question 全选推荐）**：①**客户端 UTS 5.24 迁移归第三窗**——fix/4b 让位客户端域，全部客户端半冻结待 rebase；②**D-22 并批批次2** 确认（§5.7 销项，待拍板回到 2 项）；③**D-09 遗留单腿暴露=登录态 GET /api/v1/asr/channels**（G2 最小 healthz 纪律不破）。登记台账 §1.9。
+- **R1-d 落地三枚（fix/4b）**：`81424fb` D-22 后端半（degraded 标记+active 回写 content_class+ArbitrateRequest 契约字段+测试常量向量盲区→hash 派生+degraded/回写双新用例）；`6f43e87` D-15（sync 改标 'device'，schemas/sql 注释同步）；`9922e4a` D-09 遗留 channels 端点（401 反证默认登录态+泄漏负断言）。**91 测试全绿**（correction/classify/asr/event_sync/event_ops）。门禁插曲：UP012 一拦一修+lessons 登记。
+- **企微事件（负责人→用户→我）**：可信 IP=调用方出口 IP——实测本机 `61.171.241.17`（手机电信流量 CGNAT，会漂；校园网必变，换网即 `curl ip.sb` 报新 IP 可多配）。凭证 5 项：CORP_ID/TOKEN/AES_KEY 就绪，APPID/SECRET 待打包——US-31/32/33 卡点性质缩为「等打包+M1 服务器」（台账 §6/handoff 已登记 614a4df）。
+- **协作通知**：用户另派一 agent 做 DASHSCOPE 后端补充任务（独立分支）——已提醒避开 `api/asr.py`/`services/external/asr/`/`docs/openapi.json`（asr 域是我 R1 主战场；契约再生成归 R3 统一）。若其提交与 9922e4a channels 冲突，以契约增量合并为准。
+- **R1 剩余 = 全部冻结项**，等待第三窗迁移提交 → rebase → 统一编译 → R2 真机波。
