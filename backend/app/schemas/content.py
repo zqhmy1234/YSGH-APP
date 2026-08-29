@@ -32,6 +32,9 @@ class ContentCreate(BaseModel):
     )
     extra: dict[str, Any] | None = None   # EXIF/时长/尺寸
     source: str = Field("app", pattern=r"^(app|windows|wechat|import)$")
+    remark: str | None = Field(
+        None, max_length=2000, description="用户备注（BA1：save 系接口可选上送）"
+    )
 
 
 class ContentOut(BaseModel):
@@ -52,6 +55,12 @@ class ContentOut(BaseModel):
     # 契约「默认缩略图 + 原图按需」：列表/卡片只用 thumbnail_url，点开详情才取 original_url。
     thumbnail_url: str | None = None
     original_url: str | None = None
+    # BA1 字段补齐批（迁移 f2a3b4c5d6e7）：全可选默认 None，老数据不受影响
+    duration: int | None = None        # 音频时长秒
+    remark: str | None = None          # 用户备注
+    size_bytes: int | None = None      # 原件体积
+    tags_json: list | None = None      # 预留 AI 打标
+    ai_description: str | None = None  # 预留照片 AI 描述
 
 
 class ProfileSensitiveCreate(BaseModel):

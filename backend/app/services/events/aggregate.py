@@ -344,8 +344,48 @@ def _write_upper_candidates(
             any(str(m) in ce for ce in confirmed_member_events) for m in cluster
         ):
             continue
-        # 同标签 L3 流已落库 → 不重建
+        # 同标签 L3 流已落库 → 不重建；但新成员必须并入已有流（R9-C 修复 2026-09-07）
+        # 旧行为 continue = 同标签后续内容永不进事件层（时间轴永远看不到新录音/新内容）——
+        # 实锤：4f8fe57e（09-07 21:25 语音）聚合任务正常执行，候选正确并进 mixed 簇，
+        # 却在 write 阶段被本分支整体丢弃，EventItem 零挂接
         if f"标签 · {tag}" in l3_titles:
+            existing_l3 = next(
+                (e for e in ev_rows if e.level == 3 and e.title == f"标签 · {tag}"),
+                None,
+            )
+            # 用户背书的流不动（B3-5：confirmed + 用户手改标题 → 算法永不覆盖）
+            if (
+                existing_l3 is not None
+                and not (existing_l3.status == "confirmed" and existing_l3.title_source == "user")
+            ):
+                existing_members = members_by_event.get(str(existing_l3.id), set())
+                linked_l3 = {m for m in cluster if m in linked_by_member}
+                for mid in cluster:
+                    if str(mid) not in owned_set or str(mid) in linked_l3:
+                        continue
+                    if str(mid) in existing_members:
+                        continue
+                    db.add(EventItem(content_id=mid, event_id=existing_l3.id))
+                    added += 1
+                # 新成员并入后同步映射（供批内后续候选去重；集合幂等，老成员重复 add 无害）
+                for mid in cluster:
+                    linked_by_member[mid].add(str(existing_l3.id))
+                    existing_members.add(str(mid))
+                # 时间窗外延：候选范围比已有流更晚/更早时扩展（start_time 驱动时间轴日分组）
+                tr = cand.get("time_range") or []
+                try:
+                    cand_start = datetime.fromisoformat(tr[0]) if tr and tr[0] else None
+                    cand_end = datetime.fromisoformat(tr[1]) if len(tr) > 1 and tr[1] else None
+                except ValueError:
+                    cand_start = cand_end = None
+                if cand_start is not None and (
+                    existing_l3.start_time is None or cand_start < existing_l3.start_time
+                ):
+                    existing_l3.start_time = cand_start
+                if cand_end is not None and (
+                    existing_l3.end_time is None or cand_end > existing_l3.end_time
+                ):
+                    existing_l3.end_time = cand_end
             continue
         tr = cand.get("time_range") or []
         try:

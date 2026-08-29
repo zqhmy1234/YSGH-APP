@@ -183,6 +183,12 @@ def _register_voice_content(
         extra=voice_extra,
         source=source,
         status="processing",
+        # BA1（迁移 f2a3b4c5d6e7）：duration=客户端上送 duration_ms 换算秒（向下取整；
+        # 毫秒来源即 meta.duration_ms——complete 协议既有字段，voice_extra 已存备份）。
+        # 异步 ASR 管线（BA3 批次）如产出更准时长可回写覆盖。
+        duration=(int(duration_ms) // 1000) if duration_ms is not None else None,
+        # BA1：上传音频字节数（落盘体积，storage put 前即可量得）
+        size_bytes=len(data),
     )
     db.add(record)
     try:

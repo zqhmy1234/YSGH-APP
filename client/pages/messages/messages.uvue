@@ -99,10 +99,14 @@
 		markAllRead().then((ok: boolean) => {
 			if (ok) {
 				unreadCount.value = 0
+				// R9-E：渲染真源是 toItem 的 m.status != 'unread'（181 行），且 filteredMessages computed
+				// 依赖 allMessages.value 数组引用——旧码改幽灵字段 read 且 in-place 改元素，双失效圆点不动。
+				// 改 status 真源 + slice() 重建引用触发 computed 重算
 				const arr = allMessages.value
 				for (let i = 0; i < arr.length; i++) {
-					arr[i].read = true
+					arr[i].status = 'read'
 				}
+				allMessages.value = arr.slice()
 				uni.showToast({ title: '已全部标记为已读', icon: 'none' })
 			} else {
 				// 显式失败：不允许静默（项目军规）
@@ -132,7 +136,9 @@
 		read: boolean
 		type: number
 		msgType: string
-		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number, msgType: string) {
+		// FE1：MessageOut.content_id（null → ''；''=无关联内容，点击保持既有就地展示路径）
+		contentId: string
+		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number, msgType: string, contentId: string) {
 			this.id = id
 			this.title = title
 			this.summary = summary
@@ -142,6 +148,7 @@
 			this.read = read
 			this.type = type
 			this.msgType = msgType
+			this.contentId = contentId
 		}
 	}
 
@@ -180,7 +187,9 @@
 			msgBg(m.msgType),
 			m.status != 'unread',
 			msgSegment(m.msgType),
-			m.msgType
+			m.msgType,
+			// FE1：AppMessage.contentId（play.uts 解析 MessageOut.content_id，null→''）
+			m.contentId
 		)
 	}
 
@@ -242,6 +251,16 @@
 				unreadCount.value--
 			}
 			markMessageRead(msg.id)
+			// R9-E：同步 allMessages 真源 status + 重建引用，computed 重算后圆点即时消失
+			//（旧码只改渲染副本 MessageItem.read，computed 不重算，圆点不动）
+			const arr = allMessages.value
+			for (let i = 0; i < arr.length; i++) {
+				if (arr[i].id == msg.id) {
+					arr[i].status = 'read'
+					break
+				}
+			}
+			allMessages.value = arr.slice()
 		}
 		if (msg.msgType == 'care_followup') {
 			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页），
@@ -251,6 +270,12 @@
 		}
 		if (msg.msgType == 'echo') {
 			openEchoFromMessage(msg)
+			return
+		}
+		// FE1（BA1）：MessageOut.content_id 非空 → 直达关联记忆详情（跳转写法同 onEchoReplay 先例）；
+		// 为空保持既有路径（复盘·语音完成贴底弹层）
+		if (msg.contentId != '') {
+			uni.navigateTo({ url: '/pages/detail/detail?contentId=' + msg.contentId })
 			return
 		}
 		if (msg.msgType == 'daily_review' || msg.msgType == 'voice_done') {

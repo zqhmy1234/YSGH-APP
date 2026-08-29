@@ -51,16 +51,19 @@
 </template>
 
 <script setup lang="uts">
-	// USE_MOCK_CAPSULE（卡22 拍板：真端点待后端 W2-3，确认后本地暂存演示态）。
-	// 发版前统一 grep 清理（总账 B8 同族）
-	const USE_MOCK_CAPSULE = true
+	// BA2 真封存（FE2）：POST /api/v1/capsules {content_id, open_at(ISO 8601 带时区), note?}
+	// 契约（backend/app/api/capsules.py 已实证）：open_at 必须晚于当前时刻否则 422 CAPSULE_001；
+	// content 须属当前用户且未删除否则 404；重复封存同内容后端不拦截（每次新建一行）；
+	// 到期开启后端自动产消息。旧 USE_MOCK_CAPSULE 本地暂存（capsule_drafts）演示态已删除。
+	import { sealCapsule } from '@/utils/capsule_api'
+	import { isoLocal, shortDate } from '@/utils/time'
 
 	const props = defineProps({
 		summary: {
 			type: String,
 			default: ''
 		},
-		// W1-8：本地暂存需要 content_id 标识被封存的记忆（宿主 detail 传入）
+		// content_id：被封存的记忆（宿主 detail 传入；空 = 无关联内容，封存显式拒绝）
 		contentId: {
 			type: String,
 			default: ''
@@ -73,22 +76,33 @@
 	class CapsuleOpt {
 		main: string = ''
 		sub: string = ''
-		constructor(main: string, sub: string) {
+		monthsLater: number = 0   // 到期 = 当前日期 + N 个月（0 = 自定义日期，无到期日）
+		constructor(main: string, sub: string, monthsLater: number) {
 			this.main = main
 			this.sub = sub
+			this.monthsLater = monthsLater
 		}
 	}
 
-	// 画布 63:63~63:85 四选项真值文案（副文案含到期日期）
+	// 到期时刻（ms）：Date.UTC 月加法自动进位（先例 time.uts:106；setMonth 零先例禁用）。
+	// 本地字段喂 UTC 有 ≤8h 偏差，「N 个月后」粒度无感；后端仅校验晚于 now
+	function openAtMs(monthsLater: number): number {
+		const now = new Date()
+		return Date.UTC(now.getFullYear(), now.getMonth() + monthsLater, now.getDate(), now.getHours(), now.getMinutes())
+	}
+
+	// 画布 63:63~63:85 四选项真值主文案；sub 日期动态算真实到期日（画布装饰段
+	// 「冬天的菜市场」等与演示日期绑定，动态日期后语义不成立 → 只留真实到期日）
 	const opts: Array<CapsuleOpt> = [
-		new CapsuleOpt('3 个月后', '12月2日 · 冬天的菜市场'),
-		new CapsuleOpt('半年后', '3月2日 · 开春再见'),
-		new CapsuleOpt('1 年后', '2027年9月2日 · 整整一年'),
-		new CapsuleOpt('自定义日期（生日 / 纪念日）', '')
+		new CapsuleOpt('3 个月后', shortDate(isoLocal(openAtMs(3))), 3),
+		new CapsuleOpt('半年后', shortDate(isoLocal(openAtMs(6))), 6),
+		new CapsuleOpt('1 年后', shortDate(isoLocal(openAtMs(12))), 12),
+		new CapsuleOpt('自定义日期（生日 / 纪念日）', '', 0)
 	]
 
 	// 画布默认选中第 0 项「3 个月后」
 	let selected = ref(0)
+	let submitting = ref(false)
 
 	const summaryText = computed((): string => props.summary)
 
@@ -105,33 +119,38 @@
 		selected.value = idx
 	}
 
-	/** W1-8 本地暂存：胶囊端点未建（后端 W2-3），确认仅落 storage，绝不假称已云端封存。
-	 *  存储契约：key = capsule_drafts，值为逗号分隔条目串，每条 = contentId|时机文案
-	 *  （UTS 无可靠 JSON.parse，对齐 uploader.uts 分隔串先例）。W2-3 端点上线后此处切换为真封存。 */
-	function stageDraft(contentId: string, timing: string): void {
-		const raw = uni.getStorageSync('capsule_drafts') as string
-		let entries: Array<string> = []
-		if (raw != null && raw != '' && raw != '[]') {
-			const parts = raw.split(',')
-			for (let i = 0; i < parts.length; i++) {
-				if (parts[i] != '') {
-					entries.push(parts[i])
-				}
-			}
-		}
-		entries.push(contentId + '|' + timing)
-		uni.setStorageSync('capsule_drafts', entries.join(','))
-	}
-
 	function onConfirm(): void {
-		if (!USE_MOCK_CAPSULE) {
+		if (submitting.value) {
 			return
 		}
-		// 本地演示态：真端点（创建胶囊/到期提醒推送）待后端 W2-3，不假称已云端封存
+		if (props.contentId == '') {
+			// 无关联内容（宿主未传 content_id）：显式拒绝，不发无效请求
+			uni.showToast({ title: '未关联记忆内容，无法封存', icon: 'none', duration: 2200 })
+			return
+		}
 		const opt = opts[selected.value]
-		stageDraft(props.contentId, opt.main)
-		uni.showToast({ title: '演示：本地暂存，云端封存待上线', icon: 'none', duration: 2200 })
-		emit('close')
+		if (opt.monthsLater <= 0) {
+			// 自定义日期（onOptTap 已拦，此处双保险）
+			uni.showToast({ title: '自定义日期即将上线', icon: 'none' })
+			return
+		}
+		const dueMs = openAtMs(opt.monthsLater)
+		if (dueMs <= Date.now()) {
+			// 后端契约 open_at 必须晚于 now（422 CAPSULE_001）→ 本地先校验显式 toast
+			uni.showToast({ title: '开启时间必须晚于当前时间', icon: 'none', duration: 2200 })
+			return
+		}
+		submitting.value = true
+		// open_at = 带时区 ISO 8601（time.uts isoLocal +08:00，满足后端 tzinfo 校验）；note 可选未采集不传
+		sealCapsule(props.contentId, isoLocal(dueMs), '').then((ok: boolean) => {
+			submitting.value = false
+			if (ok) {
+				uni.showToast({ title: '已封存', icon: 'success' })
+				emit('close')
+			}
+			// 失败不重复 toast：api.uts doRequest 已全局 showErrorToast 显式后端 message
+			// （422 =「open_at 必须晚于当前时刻」、404 = 内容无权等），面板保留供用户重试
+		})
 	}
 </script>
 

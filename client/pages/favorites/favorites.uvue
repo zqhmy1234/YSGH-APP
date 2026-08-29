@@ -4,8 +4,9 @@
 	           .wt/missing-pages/uvue_gen/favorites_empty_canvas.json（60:841，33 节点）
 	     SCALE=750/390=1.9231；坐标/颜色/字号/圆角/阴影全部取自 JSON 逐节点换算。
 	     状态栏 9:41/电池（60:767/60:768）+ Home 指示条（60:775/60:848）=系统自绘不还原（全库先例）。
-     诚实化：favorite 端点未建（W2-2/远期账 A2）→ 真链路=读本地 favorite_ids（卡16 契约）匹配 fetchTimeline；
-     USE_MOCK_FAVORITES=true 且无真收藏时注入 F4a 帧演示条目（对齐 USE_MOCK_* 先例；B8 清理项）。 -->
+     FE1（W2-2）：列表走 GET /api/v1/favorites 真端点（play.uts favoritesList）、取消收藏走
+     DELETE /api/v1/contents/{id}/favorite（play.uts favoriteRemove）；端点空/失败回落本地
+     favorite_ids × timeline 契约；USE_MOCK_FAVORITES 演示条目注入路径已移除（B8 清理项兑现）。 -->
 	<view class="page-root">
 		<!-- 60:769 大标题「我的收藏」18pt SemiBold #3A2E25 @y62（trash/settings 二级页先例） -->
 		<view class="nav-title">
@@ -132,8 +133,9 @@
 <script setup lang="uts">
 	import { ref, computed } from 'vue'
 	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
-	import { get, dataArr } from '@/utils/api'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
+	import { favoritesList, favoriteRemove } from '@/utils/play'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -145,11 +147,8 @@
 		fmtVoiceTime
 	} from '@/utils/audio_player'
 
-	// ── mock 开关（对齐 USE_MOCK_TIMELINE/USE_MOCK_STORAGE/USE_MOCK_TRASH 先例）──
-	// W2-2 favorite 端点已上线（2026-09-05）：GET /api/v1/favorites 真数据优先，
-	// 空时回落本地 favorite_ids × timeline 契约；USE_MOCK_FAVORITES=false（演示条目退出，空态诚实）
-	const USE_MOCK_FAVORITES: boolean = false
-	// B8 清理项：发版前 grep USE_MOCK 全部 false（见 docs/远期待办总账.md B8）
+	// ── FE1（W2-2）：真端点已接（favoritesList/favoriteRemove），USE_MOCK_FAVORITES 及
+	//    演示条目注入路径已整体移除；空收藏=诚实空态 ──
 
 	/** 收藏卡模型（UTS 零先例禁令：class + constructor + new，对齐 TrashItem/MessageItem 先例；全参显式） */
 	class FavCard {
@@ -282,31 +281,11 @@
 		return cards
 	}
 
-	/** 注入画布 F4a（60:766）演示条目：文案/条数真值逐节点取自帧（60:776 语音卡 / 60:777 文字卡 / 60:829 照片卡），
-	 *  仅供 UI 验证非真数据；USE_MOCK_FAVORITES=false 即回归诚实空态（对齐 USE_MOCK_TRASH 注入先例 trash.uvue:76）。
-	 *  contentId 恒空串 → 播放/跳详情/取消收藏三入口走诚实 toast，不进真引擎 */
-	function buildDemoCards(): Array<FavCard> {
-		const demo: Array<FavCard> = []
-		// 60:776 语音卡：60:812 标题「湖边的晨雾，07:42」/ 60:813 元信息「8月28日 07:42 · 语音 2分05秒 · 已转写」
-		demo.push(new FavCard('demo-v', 'voice', '湖边的晨雾，07:42', '8月28日 07:42 · 语音 2分05秒 · 已转写', '', '', [], []))
-		// 60:777 文字卡：60:815 摘要 / 60:816「8月28日 07:45 · 文字记录」（画布无标题节点 → title 空串不渲染）
-		demo.push(new FavCard('demo-t', 'text', '', '8月28日 07:45 · 文字记录', '湖边的风把雾吹散的那一刻，整个水面都在发光，随手拍了一张。', '', [], []))
-		// 60:829 照片卡：60:833「早市的人间烟火」/ 60:834「8月30日 16:20 · 照片 2张 · 已收藏」；
-		// photos 两个空串 → 渲染画布 60:831/60:832 占位色块（#E9DFCB/#E1D3B8）
-		demo.push(new FavCard('demo-p', 'photo', '早市的人间烟火', '8月30日 16:20 · 照片 2张 · 已收藏', '', '', [], ['', '']))
-		return demo
-	}
-
-	/** W2-2 真端点优先：GET /api/v1/favorites（ContentOut 列表）→ FavCard；
+	/** W2-2 真端点：GET /api/v1/favorites（ContentOut 列表）→ FavCard；
 	 *  端点空/失败 → resolve false，回落本地 favorite_ids × timeline 契约 */
 	function tryLoadFromEndpoint(): Promise<boolean> {
 		return new Promise<boolean>((resolve) => {
-			get('/api/v1/favorites').then((res: UTSJSONObject | null) => {
-				if (res == null) {
-					resolve(false)
-					return
-				}
-				const arr = dataArr(res)
+			favoritesList().then((arr: Array<UTSJSONObject>) => {
 				const cards: Array<FavCard> = []
 				for (let i = 0; i < arr.length; i++) {
 					const o = arr[i]
@@ -365,10 +344,6 @@
 					favTotal.value = cards.length
 					loaded.value = true
 				})
-			} else if (USE_MOCK_FAVORITES) {
-				allCards.value = buildDemoCards()
-				favTotal.value = 12
-				loaded.value = true
 			} else {
 				allCards.value = []
 				favTotal.value = 0
@@ -465,30 +440,37 @@
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + item.contentId })
 	}
 
-	/** 取消收藏：从 favorite_ids 摘除；云端 favorite 端点未建（W0-4 口径），本地态如实标注 */
+	/** 取消收藏（FE1 · W2-2 真端点）：DELETE /api/v1/contents/{id}/favorite；
+	 *  成功才同步本地 favorite_ids 契约 + 列表重建引用（slice 语义：重建数组赋值）；
+	 *  失败不动本地态，显式 toast（api 层已报具体原因，此处补充结果语义） */
 	function onUnfav(item: FavCard): void {
-		// 演示条目不在 favorite_ids 契约内——不落盘不假删，诚实提示
 		if (item.contentId == '') {
-			uni.showToast({ title: '演示条目，仅供预览', icon: 'none' })
+			uni.showToast({ title: '该条目未关联记忆，无法取消收藏', icon: 'none' })
 			return
 		}
-		const next: Array<string> = []
-		for (let i = 0; i < favIds.value.length; i++) {
-			if (favIds.value[i] != item.contentId) {
-				next.push(favIds.value[i])
+		favoriteRemove(item.contentId).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '取消收藏失败 · 请稍后重试', icon: 'none' })
+				return
 			}
-		}
-		persistFavoriteIds(next)
-		favIds.value = next
-		const cards: Array<FavCard> = []
-		for (let i = 0; i < allCards.value.length; i++) {
-			if (allCards.value[i].id != item.id) {
-				cards.push(allCards.value[i])
+			const next: Array<string> = []
+			for (let i = 0; i < favIds.value.length; i++) {
+				if (favIds.value[i] != item.contentId) {
+					next.push(favIds.value[i])
+				}
 			}
-		}
-		allCards.value = cards
-		favTotal.value = cards.length
-		uni.showToast({ title: '已取消收藏 · 云端同步即将上线', icon: 'none', duration: 1500 })
+			persistFavoriteIds(next)
+			favIds.value = next
+			const cards: Array<FavCard> = []
+			for (let i = 0; i < allCards.value.length; i++) {
+				if (allCards.value[i].id != item.id) {
+					cards.push(allCards.value[i])
+				}
+			}
+			allCards.value = cards
+			favTotal.value = cards.length
+			uni.showToast({ title: '已取消收藏', icon: 'none', duration: 1500 })
+		})
 	}
 
 	function goTimeline(): void {

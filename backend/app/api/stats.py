@@ -42,6 +42,13 @@ def daily_summary(
         .join(Content, Content.id == EventItem.content_id)
         .where(Event.user_id == user.id, Event.deleted_at.is_(None))
     ).scalar()
+    # BA1（迁移 f2a3b4c5d6e7）：用量字节聚合——该用户未删除内容 size_bytes 求和
+    # （NULL 不参与 SUM；全空 → None → 归 0，与前端「无数据清零」口径一致）
+    total_bytes = db.execute(
+        select(func.coalesce(func.sum(Content.size_bytes), 0)).where(
+            Content.user_id == user.id, Content.deleted_at.is_(None)
+        )
+    ).scalar()
     return ApiResponse(
         data={
             "count": int(count_row or 0),
@@ -49,5 +56,6 @@ def daily_summary(
             "latest_event_time": (
                 latest.start_time.isoformat() if latest and latest.start_time else None
             ),
+            "total_bytes": int(total_bytes or 0),
         }
     )

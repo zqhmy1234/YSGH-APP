@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (  # noqa: E501
     asr,
     auth,
+    capsules,
     classify,
     contents,
     corrections,
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(interview.router)
     app.include_router(wechat.router)
     app.include_router(messages.router)
+    app.include_router(capsules.router)  # BA2 时间胶囊（远期总账 A5）
     app.include_router(upload.router)
     app.include_router(stats.router)  # R9-7 hero 副标题 API 化（Q5 拍板）
 

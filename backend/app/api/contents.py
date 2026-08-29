@@ -296,6 +296,18 @@ def create_content(
         extra=req.extra,
         source=req.source,
         status="processing",   # AI 管线完成后回写 done（异步）
+        # BA1（迁移 f2a3b4c5d6e7）：用户备注（save 系可选上送）
+        remark=req.remark,
+        # BA1：voice 走本端点时 duration 从客户端 extra.duration_ms（毫秒）换算秒——
+        # 主落库点在 services/upload/register.py（complete 直建链路），此处为
+        # POST /contents 二次调用（B5a saveVoiceContent）兜底对齐
+        duration=(
+            int(req.extra["duration_ms"]) // 1000
+            if req.content_type == "voice"
+            and isinstance(req.extra, dict)
+            and req.extra.get("duration_ms") is not None
+            else None
+        ),
     )
     db.add(record)
     try:
@@ -482,6 +494,12 @@ def _to_out(c: Content) -> ContentOut:
         status=c.status,
         audio_processing=(c.extra or {}).get("audio_processing"),
         created_at=c.created_at,
+        # BA1（迁移 f2a3b4c5d6e7）：扩展字段直出（全可空，老数据为 None）
+        duration=c.duration,
+        remark=c.remark,
+        size_bytes=c.size_bytes,
+        tags_json=c.tags_json,
+        ai_description=c.ai_description,
     )
 
 

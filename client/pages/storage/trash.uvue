@@ -3,9 +3,8 @@
 	     真值：.wt/missing-pages/uvue_gen/trash_canvas.json（60:629，390×844 · 36 节点）
 	     SCALE=750/390=1.9231；节点坐标/颜色/字号/圆角/阴影全部取自 JSON，逐节点换算。
 	     状态栏 9:41/电池=系统自绘（画布节点不还原，同全库先例）。
-	     诚实化：后端无回收站列表/恢复/清空端点（软删数据在后端 deleted_at，无列表 API）→
-	     默认空态；USE_MOCK_TRASH=true 常开 F2b 帧内三条演示行供视觉对拍（对齐 USE_MOCK_* 项目先例）。
-	     恢复/清空=诚实 toast（A3 总账；真数据挂 W2-1 删除端点）。 -->
+	     FE1（W2-1）：GET /api/v1/trash + restore + 清空全走真端点（play.uts 封装），
+	     USE_MOCK_TRASH 演示数据注入路径已移除；空列表=诚实空态。 -->
 	<view class="page-root">
 		<!-- 铁律 11.5：返回图标排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
 		<view class="nav-title">
@@ -53,13 +52,8 @@
 <script setup lang="uts">
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
-
-	// mock 开关（对齐 USE_MOCK_TIMELINE/USE_MOCK_STORAGE 先例）。
-	// W2-1 端点已上线（2026-09-05）：GET /api/v1/trash + restore + 清空，真数据切换
-	// （峰宝拍板「删除/回收站端点上线后改 false 并接真数据」兑现）
-	const USE_MOCK_TRASH = false
-
-	import { get, post, request, dataArr, dataObj, showErrorToast } from '@/utils/api'
+	// FE1（W2-1）：回收站三端点统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
+	import { trashList, trashRestore, trashClear } from '@/utils/play'
 
 	class TrashItem {
 		id: string
@@ -101,15 +95,9 @@
 		return new TrashItem(id, title, meta, ct)
 	}
 
-	/** 拉回收站真数据（resolve-only，失败=空态诚实） */
+	/** 拉回收站真数据（trashList 失败/空 → 空态诚实；网络失败 api 层已显式 toast） */
 	function fetchTrash(): void {
-		get('/api/v1/trash').then((res: UTSJSONObject | null) => {
-			if (res == null) {
-				items.value = []
-				clearCount.value = 0
-				return
-			}
-			const arr = dataArr(res)
+		trashList().then((arr: Array<UTSJSONObject>) => {
 			const rows: Array<TrashItem> = []
 			for (let i = 0; i < arr.length; i++) {
 				rows.push(mapTrashRow(arr[i]))
@@ -120,17 +108,7 @@
 	}
 
 	onLoad(() => {
-		if (USE_MOCK_TRASH) {
-			// F2b 帧内三条演示数据（仅供视觉对拍，非真数据）
-			items.value = [
-				new TrashItem('m1', '陪妈逛菜市场（照片 · 4 张）', '8月30日 删除 · 12 天后清除', 'photo'),
-				new TrashItem('m2', '周五聚餐（语音 2\'18"）', '8月28日 删除 · 10 天后清除', 'voice'),
-				new TrashItem('m3', '读《活着》想到的（文字）', '8月20日 删除 · 2 天后清除', 'text')
-			]
-			clearCount.value = 5
-		} else {
-			fetchTrash()
-		}
+		fetchTrash()
 	})
 
 	function ticoCls(kind: string): string {
@@ -152,10 +130,11 @@
 		return '/static/icons/trash-info.svg'
 	}
 
-	/** 恢复（W2-1 真端点）：POST /api/v1/trash/{id}/restore 成功后就地移除行 */
+	/** 恢复（W2-1 真端点）：POST /api/v1/trash/{id}/restore 成功后就地移除行（重建引用触发渲染） */
 	function onRestore(it: TrashItem): void {
-		post('/api/v1/trash/' + it.id + '/restore', {}).then((res: UTSJSONObject | null) => {
-			if (res == null) {
+		trashRestore(it.id).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '恢复失败 · 请稍后重试', icon: 'none' })
 				return
 			}
 			const rows: Array<TrashItem> = []
@@ -181,8 +160,9 @@
 				if (!res.confirm) {
 					return
 				}
-				request('/api/v1/trash', 'DELETE', null).then((res2: UTSJSONObject | null) => {
-					if (res2 == null) {
+				trashClear().then((ok: boolean) => {
+					if (!ok) {
+						uni.showToast({ title: '清空失败 · 请稍后重试', icon: 'none' })
 						return
 					}
 					fetchTrash()

@@ -15,7 +15,7 @@
  * O15 收口：端点路径统一走 contract.ts（PATH_*，与 OpenAPI 对齐）；O17：消息列表
  * 分页字段对齐（fetchMessagePage 返回 {items, cursor, hasMore}，未读数走游标累加）。
  */
-import { get, post, dataObj, dataArr, showErrorToast, fetchUnreadCountSimple } from './api'
+import { get, post, request, dataObj, dataArr, showErrorToast, fetchUnreadCountSimple } from './api'
 import {
 	PATH_MESSAGES,
 	PATH_ECHO_TODAY,
@@ -222,9 +222,12 @@ export class AppMessage {
 	echoTakenAt: string
 	echoPlace: string
 	echoDate: string
+	// FE1 批：MessageOut.content_id（string|null，BA1 消息跳详情）——null/缺省解析为 ''，
+	// '' = 无关联内容（调用方保持既有就地展示路径）
+	contentId: string
 
 	constructor(id: number, channel: string, msgType: string, title: string, body: string, status: string, sentAt: string,
-		echoContentId: string = '', echoContentType: string = 'text', echoText: string = '', echoTakenAt: string = '', echoPlace: string = '', echoDate: string = '') {
+		echoContentId: string = '', echoContentType: string = 'text', echoText: string = '', echoTakenAt: string = '', echoPlace: string = '', echoDate: string = '', contentId: string = '') {
 		this.id = id
 		this.channel = channel
 		this.msgType = msgType
@@ -238,6 +241,7 @@ export class AppMessage {
 		this.echoTakenAt = echoTakenAt
 		this.echoPlace = echoPlace
 		this.echoDate = echoDate
+		this.contentId = contentId
 	}
 }
 
@@ -316,7 +320,9 @@ export function fetchMessagePage(status: string, cursor: string, limit: number):
 						echoText,
 						echoTakenAt,
 						echoPlace,
-						echoDate
+						echoDate,
+						// FE1：MessageOut.content_id（null → ''）
+						item.getString('content_id') ?? ''
 					)
 				)
 			}
@@ -359,6 +365,146 @@ export function markAllRead(): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
 		post('/api/v1/messages/read-all', {}).then((res: UTSJSONObject | null) => {
 			resolve(res != null)
+		})
+	})
+}
+
+// ═══════════ 收藏 / 删除 / 回收站（FE1 批 · W2-1/W2-2 真端点）═══════════
+// 契约（backend app/api/contents.py 554-710 实证，信封 {code, message, data}）：
+//  GET/POST/DELETE /api/v1/contents/{id}/favorite → FavoriteOut{content_id, favorite, favorite_at}
+//  GET    /api/v1/favorites        → ContentOut[]
+//  DELETE /api/v1/contents/{id}    → ContentDeleteOut{content_id, deleted, permanent_at}（软删 30 天）
+//  GET    /api/v1/trash            → TrashItemOut[]{id, content_type, text, place, taken_at, deleted_at, days_left}
+//  POST   /api/v1/trash/{id}/restore；DELETE /api/v1/trash（清空）
+
+/** GET /contents/{id}/favorite：单条收藏态（detail 页星标初始化）；失败 false（api 层已全局 toast） */
+export function favoriteGet(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		get('/api/v1/contents/' + contentId + '/favorite').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(false)
+				return
+			}
+			const d = dataObj(res)
+			resolve(d != null && (d.getBoolean('favorite') ?? false))
+		})
+	})
+}
+
+/** POST /contents/{id}/favorite：收藏（幂等）；返回是否成功 */
+export function favoriteAdd(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/contents/' + contentId + '/favorite', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** DELETE /contents/{id}/favorite：取消收藏（幂等）；返回是否成功 */
+export function favoriteRemove(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/contents/' + contentId + '/favorite', 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** GET /favorites：收藏列表（ContentOut[]，按收藏时间倒序）；失败/空 → 空数组（api 层已 toast） */
+export function favoritesList(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get('/api/v1/favorites').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			resolve(dataArr(res))
+		})
+	})
+}
+
+/** DELETE /contents/{id}：软删（移入回收站 30 天保留）；返回是否成功 */
+export function deleteContent(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/contents/' + contentId, 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** GET /trash：回收站列表（TrashItemOut[]，days_left 后端算好）；失败/空 → 空数组（api 层已 toast） */
+export function trashList(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get('/api/v1/trash').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			resolve(dataArr(res))
+		})
+	})
+}
+
+/** POST /trash/{id}/restore：恢复单条；返回是否成功 */
+export function trashRestore(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/trash/' + contentId + '/restore', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** DELETE /trash：清空回收站（彻底删除不可逆）；返回是否成功 */
+export function trashClear(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/trash', 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** ContentOut AI 增量投影（FE1）：tags_json（string[]|null，打标异步可能 null）+ ai_description（string|null，照片 AI 描述）。
+ *  null 语义在调用方消化：tags 空=不显示 chips 区块、aiDescription 空=不显示描述行（不造假占位） */
+export class ContentAiMeta {
+	tags: Array<string>
+	aiDescription: string
+
+	constructor(tags: Array<string>, aiDescription: string) {
+		this.tags = tags
+		this.aiDescription = aiDescription
+	}
+}
+
+/** GET /contents?content_id=：拉单条 AI 增量字段（ContentDetail 未承载 tags/ai_description，
+ *  event_ops 域外只读 → 本封装独立拉取；失败/无内容 resolve null（api 层已 toast） */
+export function fetchContentAiMeta(contentId: string): Promise<ContentAiMeta | null> {
+	return new Promise<ContentAiMeta | null>((resolve) => {
+		get('/api/v1/contents?content_id=' + contentId + '&limit=1').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const items = d.getArray('items')
+			if (items == null || items.length == 0) {
+				resolve(null)
+				return
+			}
+			const it = items[0] as UTSJSONObject
+			// tags_json：list|null → 逐项过滤空串（整表 cast 先例 play.uts flattenDimensions getArray as Array<string>）
+			const tags: Array<string> = []
+			const raw = it.getArray('tags_json') as Array<string> | null
+			if (raw != null) {
+				for (let i = 0; i < raw.length; i++) {
+					if (raw[i] != '') {
+						tags.push(raw[i])
+					}
+				}
+			}
+			resolve(new ContentAiMeta(tags, it.getString('ai_description') ?? ''))
 		})
 	})
 }

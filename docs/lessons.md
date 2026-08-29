@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-09-08 00:45 · commit 8b00170 · ts=1788799535
+- **错误**：A批提交被pre-commit拦两次：①lint——subagent产码13处ruff违规（I001 import乱序x9、F401未用import x2、S108 /tmp假路径x2）②lessons门禁——提交前未登记教训
+- **根因**：subagent 只被要求跑 pytest 自测，没有要求提交前过 ruff 门禁；S108 是测试里用 /tmp/x.jpg 做语义占位路径触发 bandit 误报
+- **修复**：ruff --fix 收 11 处；S108 两处换项目内相对路径字符串；lessons 登记本条；26 用例重跑全绿后重提
+- **相关文件**：backend/tests/test_ba3_ai_chain.py
+- **教训**：subagent 产码的验收标准必须含『提交前预跑 ruff check』，否则每次都在 pre-commit 撞墙返工；测试假路径禁用 /tmp 前缀（S108 误报源）
+
+---
+
+### 2026-09-06 23:59 · commit 830b397 · ts=1788710372
+- **错误**：R9-B6 提交被 review_agent lint 门禁阻断：test_stats_daily_summary.py 预留 import（from app.api.stats import daily_summary as _impl）未被使用，ruff F401
+- **根因**：写测试时把实现层口径直验的 import 留在函数头但实际走了等价 SQL 断言——预留 import 即死代码，ruff 必拦；测试 imports 必须即用即 import
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-09-06 23:59 · commit 830b397 · ts=1788710356
+- **错误**：R9-B6 提交被 review_agent lint 门禁阻断：test_stats_daily_summary.py 预留 import（from app.api.stats import daily_summary as _impl）未被使用，ruff F401
+- **根因**：写测试时把'实现层口径直验'的 import 留在函数头但实际走了等价 SQL 断言——预留 import = 死代码，ruff 必拦；测试 imports 必须即用即 import
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-09-06 14:03 · commit 9a92bdc · ts=1788674584
 - **错误**：R9-B6提交时lessons门禁状态未更新重试
 - **根因**：lessons add 首次执行输出被截断未确认落盘

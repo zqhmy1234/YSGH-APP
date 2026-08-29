@@ -342,6 +342,38 @@ def enrich_content_emotion(content_id: str) -> dict:
         db.close()
 
 
+def tag_content(content_id: str) -> dict:
+    """BA3（AI 链批）：低优先级 RQ 任务 —— 文本/语音类 chips 自由标签
+
+    标签口径（F1 拍板）：AI 动态生成、不限死枚举，写 contents.tags_json（list[str]，
+    与 ContentOut 出参对接）；与 SetFit 5 类（content_class）互不相关。
+    失败语义（不静默）：LLM 未配置/超时/解析失败 → log 错误原因（AiTaggingError.code），
+    tags_json 维持 None；不 re-raise（RQ 视为成功不再重投，重试上限由 ai_tagging 内部
+    with_retry 3 次承担）——打标是增强项，不阻塞主内容 done。
+    """
+    from app.services.ai_tagging import AiTaggingError, generate_tags
+
+    db: Session = SessionLocal()
+    try:
+        content = db.get(Content, content_id)
+        if content is None:
+            return {"content_id": content_id, "status": "not-found"}
+        try:
+            tags = generate_tags(content)
+        except AiTaggingError as exc:
+            logger.warning(
+                "AI 打标失败 content=%s: %s %s", content_id, exc.code, exc
+            )
+            db.rollback()
+            return {"content_id": content_id, "status": "failed", "error": exc.code}
+        content.tags_json = list(tags)
+        db.commit()
+        logger.info("AI 打标成功 content=%s tags=%s", content_id, tags)
+        return {"content_id": content_id, "status": "succeeded", "tags": tags}
+    finally:
+        db.close()
+
+
 def _process_photo(db: Session, content: Content) -> None:
     """照片：image_caption 写 caption 入索引 + CI 打标（都失败静默）
 
@@ -399,6 +431,21 @@ def _process_photo(db: Session, content: Content) -> None:
                 logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
         elif image_path is not None:
             logger.info("CI 打标跳过（STORAGE_BACKEND=%s 且非 mock，图片不在 COS）", settings.storage_backend)
+
+        # BA3（AI 链批）挂钩：照片 AI 一句话描述（qwen3-vl，复用 dashscope 封装）写
+        # ai_description。在此内联执行（本地临时图片文件仅存活于本处理器窗口）。
+        # 失败语义同 caption：仅 log，不阻断照片主流程（打标是增强项，主内容仍 done）；
+        # LLM 未配置走「配置缺失」显式路径（AiTaggingError.LLM_NOT_CONFIGURED，log 可查）。
+        if image_path is not None:
+            try:
+                from app.services.ai_tagging import generate_photo_description
+
+                content.ai_description = generate_photo_description(
+                    content, image_path=str(image_path)
+                )
+                logger.info("照片 AI 描述成功 content=%s", content.id)
+            except Exception as exc:  # noqa: BLE001 —— 描述失败不影响照片浏览
+                logger.warning("照片 AI 描述失败 content=%s: %s", content.id, exc)
 
         # Wave0 钩子：B5b 事件级敏感标记 + B1 画像标注（照片 caption/标签）
         from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
@@ -622,6 +669,33 @@ def process_content(content_id: str) -> dict:
                 )
                 emotion_job_status = "enqueue_failed"
 
+        # BA3（AI 链批）挂钩：文本/语音类 chips 标签投低优先级 RQ 任务（tag_content）。
+        # 先入队后提交（同情绪任务 F4/R5-5 语义，消除 commit→enqueue 间隙崩溃丢任务；
+        # enqueue_unique 同 content 键去重，双投安全）。空白语音（no_speech）无文本不打标。
+        # 失败语义：入队失败仅 log + processed 标记，不否定主内容 done（打标是增强项）。
+        tags_job_status = None
+        if content.content_type in ("text", "voice") and processing_outcome != "no_speech":
+            try:
+                from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
+
+                enqueue_unique(
+                    tag_content,
+                    content_id,
+                    content_id,  # 函数参数（key 只是去重键，缺 args = 零参秒死）
+                    queue_name=QUEUE_LOW,
+                    job_timeout=DEFAULT_JOB_TIMEOUT,
+                )
+                tags_job_status = "queued"
+                processed.append("tags_queued")
+            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主结果
+                logger.warning(
+                    "AI 打标任务入队失败 content=%s: %s",
+                    content_id,
+                    type(exc).__name__,
+                )
+                tags_job_status = "enqueue_failed"
+                processed.append("tags_enqueue_failed")
+
         content.status = "done"
         # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
         db.commit()
@@ -650,6 +724,7 @@ def process_content(content_id: str) -> dict:
             "processed": processed,
             "outcome": processing_outcome,
             "emotion_job": emotion_job_status,
+            "tags_job": tags_job_status,
             "agg_job": agg_job_status,
             "error": errors,
         }

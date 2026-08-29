@@ -45,6 +45,18 @@ def main() -> None:
     from app.services import pipeline  # noqa: F401  —— 注册 process_content
     from app.services.events import run_user_aggregation  # noqa: F401  —— 注册聚合任务（F3）
 
+    # BA3（AI 链批）：LLM Key 未配置时启动期警告——chips 打标/照片描述走「配置缺失」
+    # 显式路径（AiTaggingError.LLM_NOT_CONFIGURED，log 可查），不 crash 主流程。
+    # 开发环境可能没有 Key（Key 走 Infisical，仅真实环境注入）。
+    from app.services.llm_ops.base import llm_available
+    from app.services.pipeline import tag_content  # noqa: F401  —— 注册 BA3 AI 打标任务（low 队列）
+
+    if not llm_available():
+        logger.warning(
+            "DASHSCOPE_API_KEY 未配置（或 MOCK_EXTERNAL_AI=true）——"
+            "AI chips 打标与照片 AI 描述将跳过（配置缺失路径，主内容 done 不受影响）"
+        )
+
     worker = get_worker_class()(
         [get_queue(q) for q in queues],
         connection=redis,

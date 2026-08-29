@@ -147,7 +147,7 @@
 							</view>
 						</view>
 
-						<!-- 备注（白卡占位；后端 Content 无 remark 字段暂不入库，台账 A8） -->
+						<!-- 备注（BA1 已接真：remark 随保存接口入库，ContentOut 回显） -->
 						<text class="v-sec">备注</text>
 						<textarea class="v-remark" v-model="remark" placeholder="补充几句…" :maxlength="200" />
 					</view>
@@ -232,7 +232,7 @@
 							</view>
 						</view>
 
-						<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；后端 Content 无 remark 字段暂不入库——远期总账 A 类） -->
+						<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；BA1 已接真随保存入库） -->
 						<template v-if="formMode != 'photo'">
 							<text class="sec-label sec-label-gap">备注</text>
 							<textarea class="remark-input" v-model="remark" placeholder="补充几句…" :maxlength="200" />
@@ -256,7 +256,8 @@
 	// 手写 `import { onMounted } from '@dcloudio/uni-app'` 会编译失败
 	// （真机实锤 2026-08-31："onMounted" is not exported by "@dcloudio/uni-app/dist-x/uni-app.es.js"）。
 	import { ensureLogin } from '@/utils/auth'
-	import { createTextContent, submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
+	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
+	import { createTextContentRemark, createVoiceContentRemark } from '@/utils/capsule_api'
 	import {
 		startRecord,
 		stopRecord,
@@ -265,7 +266,6 @@
 		setShouldResume,
 		recorderState,
 		transcribeWav,
-		saveVoiceContent,
 		uploadVoicePersistent,
 		REC_STATE_PAUSED
 	} from '@/utils/voice'
@@ -953,7 +953,10 @@
 		}
 		submitting.value = true
 		const picked = manualLabel.value
-		createTextContent(text).then((contentId: string | null) => {
+		// BA1（FE2）：备注卡接真——remark 随 POST /api/v1/contents 入库（薄封装 capsule_api）；
+		// 提交前捕获快照（保存成功后 remark 会被清空，闭包内不能读 ref）
+		const remarkVal = remark.value.trim()
+		createTextContentRemark(text, remarkVal).then((contentId: string | null) => {
 			console.log('[yishu] createTextContent -> ' + contentId)
 			submitting.value = false
 			if (contentId == null) {
@@ -1273,13 +1276,18 @@
 		const duration = lastVoiceDuration.value
 		const vFile = lastVoiceFile.value
 		const emo = emotion.value
+		// BA1（FE2）：备注卡接真——remark 快照（保存成功后会清空，闭包内不能读 ref）
+		const remarkVal = remark.value.trim()
 		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链改走分片上传——
 		// wav 先落对象存储（cos_key），后端 complete 直接建 voice content（本地转写 text
 		// 预填 + 入队 ASR 管线）。旧 saveVoiceContent(''cosKey) 只落文本不传文件，
 		// 造成「有转写无音频」恒不可播（28 条 failed=AUDIO_DOWNLOAD_FAILED 实锤）。
+		// 契约边界（FE2 登记）：主链 /upload complete 直建链路不收 remark（后端
+		// services/upload 全域无 remark 字段）→ 备注仅在下方两条文本降级链入库；
+		// 主链成功时备注无端点可补（后端无 content 更新端点），属后端契约限制非静默丢弃。
 		if (vFile == '') {
 			// 无本地录音文件（异常路径，如实降级）：仅落文本，toast 显式告知无音频
-			saveVoiceContent(text, duration, emo, '', '').then((contentId: string | null) => {
+			createVoiceContentRemark(text, duration, remarkVal, '').then((contentId: string | null) => {
 				saving.value = false
 				if (contentId != null) {
 					afterVoiceSaved(contentId, text, picked, false)
@@ -1300,8 +1308,8 @@
 			} else {
 				// 音频上传失败（显式降级，不静默）：仅落转写文本，cos_key 留空 → 播放链
 				// 会诚实报「音频未上传」；toast 明说原因，峰宝铁律：不允许静默
-				console.error('[yishu] voice upload failed, fallback text-only save')
-				saveVoiceContent(text, duration, emo, '', vFile).then((fbId: string | null) => {
+			console.error('[yishu] voice upload failed, fallback text-only save')
+			createVoiceContentRemark(text, duration, remarkVal, vFile).then((fbId: string | null) => {
 					saving.value = false
 					if (fbId != null) {
 						afterVoiceSaved(fbId, text, picked, false)

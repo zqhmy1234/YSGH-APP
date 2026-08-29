@@ -42,8 +42,10 @@
 				</view>
 			</view>
 
-			<!-- P-4 骨架屏：登录/首拉期间占位（替代原单行文字等待，视觉上内容区不再空白） -->
-			<view v-if="!loaded" class="skeleton" aria-label="加载中">
+			<!-- P-4 骨架屏：R9-D 修复——vapor 渲染器对「一次性 v-if 卸载」失效（09-07 真机 uiautomator+像素扫描
+			     实锤骨架整树残留、米黄 sk-line 从待确认区露出）。改为恒渲染 + 动态 class display:none 收起，
+			     走属性更新路径，不依赖节点卸载 -->
+			<view class="skeleton" :class="loaded ? 'sk-hidden' : ''" aria-label="加载中">
 				<view class="sk-card">
 					<view class="sk-line sk-day"></view>
 					<view class="sk-card-body">
@@ -65,8 +67,8 @@
 				</view>
 			</view>
 
-			<!-- 时间轴：L1 日卡片 + L2 主题两级 -->
-			<view v-else class="feed">
+			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对，无条件渲染；未加载时本就是空壳） -->
+			<view class="feed">
 				<!-- L2 待确认区 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
@@ -1212,6 +1214,9 @@
 	}
 
 	/* P-4 骨架屏（2026-09-04）：暖白系占位块，模拟日卡版式；纯静态零动画开销 */
+	.sk-hidden {
+		display: none;
+	}
 	.skeleton {
 		padding-left: 40rpx;
 		padding-right: 40rpx;

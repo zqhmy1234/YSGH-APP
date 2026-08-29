@@ -1,9 +1,8 @@
 <template>
-	<!-- 卡12 F2a 存储与备份（2026-09-02 画布 JSON 真值整体重写）
-	     真值：.wt/missing-pages/uvue_gen/storage_canvas.json（60:565 · 63 节点）
-	     布局锚点：settings.uvue 二级页骨架（导航/卡片/行/toggle 全套项目先例）
-	     容量分区：2.3 GB / 128 GB（照片 1.56 / 语音 0.51 / 文字 0.23，轨道按占比 116/37/17）
-	     诚实化：无字节用量端点（总账 A9）→ USE_MOCK_STORAGE 注入画布演示值，真数据优先 -->
+<!-- 卡12 F2a 存储与备份（2026-09-02 画布 JSON 真值整体重写）
+     真值：.wt/missing-pages/uvue_gen/storage_canvas.json（60:565 · 63 节点）
+     布局锚点：settings.uvue 二级页骨架（导航/卡片/行/toggle 全套项目先例）
+     容量分区：后端无分类型字节 → 分类行诚实空态；总量接真 total_bytes（BA1 · FE2） -->
 	<view class="page-root">
 		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
 		<view class="nav-title">
@@ -12,12 +11,14 @@
 		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
 
 		<view class="list-flow">
-			<!-- ═══ 卡1 · 存储用量（画布 60:606：容量分区 · radius 16 · 无阴影） ═══ -->
+			<!-- ═══ 卡1 · 存储用量（画布 60:606：容量分区 · radius 16 · 无阴影）
+			     BA1（FE2）：总量接真字节 total_bytes（daily-summary），后端无分类型字节
+			     → 照片/语音/文字分类行诚实空态（值 '—' · 填充 0），不造假分布 -->
 			<view class="usage-card">
 				<text class="usage-title">存储用量</text>
 				<view class="usage-main-row">
-					<text class="usage-num">{{ totalGb }}</text>
-					<text class="usage-total">GB / 128 GB</text>
+					<text class="usage-num">{{ totalSize }}</text>
+					<text class="usage-total">/ 128 GB</text>
 				</view>
 				<view class="cat-row">
 					<view class="cat-dot cat-dot-photo"></view>
@@ -25,7 +26,7 @@
 					<view class="cat-track">
 						<view class="cat-fill cat-fill-photo" :style="{ width: photoFill }"></view>
 					</view>
-					<view class="cat-val-wrap"><text class="cat-val">{{ photoGb }}</text></view>
+					<view class="cat-val-wrap"><text class="cat-val">{{ photoVal }}</text></view>
 				</view>
 				<view class="cat-row">
 					<view class="cat-dot cat-dot-voice"></view>
@@ -33,7 +34,7 @@
 					<view class="cat-track">
 						<view class="cat-fill cat-fill-voice" :style="{ width: voiceFill }"></view>
 					</view>
-					<view class="cat-val-wrap"><text class="cat-val">{{ voiceGb }}</text></view>
+					<view class="cat-val-wrap"><text class="cat-val">{{ voiceVal }}</text></view>
 				</view>
 				<view class="cat-row">
 					<view class="cat-dot cat-dot-text"></view>
@@ -41,7 +42,7 @@
 					<view class="cat-track">
 						<view class="cat-fill cat-fill-text" :style="{ width: textFill }"></view>
 					</view>
-					<view class="cat-val-wrap"><text class="cat-val">{{ textGb }}</text></view>
+					<view class="cat-val-wrap"><text class="cat-val">{{ textVal }}</text></view>
 				</view>
 			</view>
 
@@ -98,60 +99,51 @@
 	import { pendingSyncCount, isSyncPaused, runSyncChain } from '@/utils/sync_client'
 	import { pauseSync, resumeSync } from '@/utils/pause_controller'
 	import { fetchExportFilePath } from '@/utils/api'
+	import { fetchTotalBytes, fmtBytes } from '@/utils/capsule_api'
 
-	// ── 演示数据开关（峰宝拍板 2026-09-02）：真数据优先，为空才注入画布演示值；发版前统一置 false（总账 B8）
-	const USE_MOCK_STORAGE = true
-
-	// ── 同步状态（真数据优先：sync_client 真实状态）──
+	// ── 同步状态（真数据：sync_client 真实状态）──
 	let pendingN = ref(0)
 	let syncOn = ref(true)
 	let retrying = ref(false)
 	let exporting = ref(false)
-	// 上次同步：sync_client 无 lastSyncAt 持久化（总账 B7）→ mock 注画布值「今天 17:42」，真模式诚实「—」
+	// 上次同步：sync_client 无 lastSyncAt 持久化（总账 B7）→ 诚实显示「—」
 	let lastSyncText = ref('—')
 
-	// ── 存储用量（容量分区，画布 F2a 真值）──
-	// 无字节用量端点（总账 A9）→ USE_MOCK_STORAGE 注入画布演示值；端点上线后换真字节值
-	let totalGb = ref('—')        // 大数字 2.3
-	let photoGb = ref('—')
-	let voiceGb = ref('—')
-	let textGb = ref('—')
-	let photoFill = ref('0rpx')   // 轨道填充宽（画布 116/170 轨道）
-	let voiceFill = ref('0rpx')   // 37/170
-	let textFill = ref('0rpx')    // 17/170
+	// ── 存储用量（BA1 · FE2 接真）──
+	// 总量 = GET /api/v1/stats/daily-summary → total_bytes（该用户未删除内容 size_bytes
+	// 求和；后端 coalesce 归 0，出参缺省按 0 处理），fmtBytes 格式化 KB/MB/GB。
+	// 请求失败保持 '—'（api 层已全局 toast 显式原因，对齐本页 onExport 失败显式风格）。
+	// 后端无分类型字节 → 照片/语音/文字分类行诚实空态（值 '—' · 填充 0），不造假分布。
+	let totalSize = ref('—')
+	let photoVal = ref('—')
+	let voiceVal = ref('—')
+	let textVal = ref('—')
+	let photoFill = ref('0rpx')   // 分类填充宽（后端无分类型数据恒 0）
+	let voiceFill = ref('0rpx')
+	let textFill = ref('0rpx')
 
-	// ── 数据管理（画布演示值）──
-	let trashText = ref('30 天后清除')   // 画布 "5 条 · 30 天后清除"
-	let cacheText = ref('—')            // 画布 "236 MB"
+	// ── 数据管理（回收站文案为画布静态说明；缓存值无端点 → 诚实「—」）──
+	let trashText = ref('30 天后清除')
+	let cacheText = ref('—')
 
 	onLoad(() => {
-		applyMockStorage()
+		loadUsage()
 	})
 	onShow(() => {
-		// 真数据优先：同步真实状态（不受 mock 影响）
+		// 同步真实状态 + 用量刷新（从回收站等子页返回时回读）
 		pendingN.value = pendingSyncCount()
 		syncOn.value = !isSyncPaused()
-		// mock 兜底：画布真值「2 条记忆待补传」
-		if (USE_MOCK_STORAGE && pendingN.value <= 0) {
-			pendingN.value = 2
-		}
+		loadUsage()
 	})
 
-	/** 注入画布 F2a 演示值（真数据为空时供 UI 验证；发版前置 USE_MOCK_STORAGE=false 即回归诚实空态） */
-	function applyMockStorage(): void {
-		if (!USE_MOCK_STORAGE) {
-			return
-		}
-		totalGb.value = '2.3'
-		photoGb.value = '1.56 GB'
-		voiceGb.value = '0.51 GB'
-		textGb.value = '0.23 GB'
-		photoFill.value = '223.1rpx'
-		voiceFill.value = '71.2rpx'
-		textFill.value = '32.7rpx'
-		lastSyncText.value = '今天 17:42'
-		trashText.value = '5 条 · 30 天后清除'
-		cacheText.value = '236 MB'
+	/** 拉真字节总量（fetchTotalBytes；失败 -1 → 保持 '—'，api 层已全局 toast） */
+	function loadUsage(): void {
+		fetchTotalBytes().then((n: number) => {
+			if (n < 0) {
+				return
+			}
+			totalSize.value = fmtBytes(n)
+		})
 	}
 
 	/** 一键重试：runSyncChain（补推→增量拉，内部全路径 resolve 永不 reject），完成后刷新待补传数 */
@@ -174,9 +166,6 @@
 		uni.showLoading({ title: '同步中…', mask: true })
 		runSyncChain().then(() => {
 			pendingN.value = pendingSyncCount()
-			if (USE_MOCK_STORAGE && pendingN.value <= 0) {
-				pendingN.value = 2
-			}
 			uni.hideLoading()
 			retrying.value = false
 			if (pendingN.value > 0) {

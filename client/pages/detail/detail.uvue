@@ -59,12 +59,18 @@
 				<text v-else class="n4_vtitle">{{ memTitle }}</text>
 			</view>
 		</view>
-		<view v-if="aiNote != ''" class="n4_424" :style="{ top: isVoice ? '1073.1rpx' : '861.5rpx' }"> <!-- AI注释卡（有内容才显示；F5b 语音态 y558pt） -->
+		<view v-if="aiNote != '' || tagList.length > 0" class="n4_424" :style="{ top: isVoice ? '1073.1rpx' : '861.5rpx' }"> <!-- AI注释卡（描述或标签任一存在才显示；FE1 数据源 tags_json/ai_description，null=不显示区块） -->
 			<view class="n4_425"> <!-- 注释头 -->
 				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
 				<text class="n4_428">AI 的观察</text> <!-- AI观察 -->
 			</view>
-			<text class="n4_429">{{ aiNote }}</text> <!-- 注释文字（动态） -->
+			<text v-if="aiNote != ''" class="n4_429">{{ aiNote }}</text> <!-- 注释文字（动态；照片 AI 描述，null 不显示） -->
+			<!-- FE1：AI 打标 chips（tags_json，异步打标可能 null → 空数组整行隐藏） -->
+			<view v-if="tagList.length > 0" class="n4-tag-row">
+				<view v-for="(tg, ti) in tagList" :key="ti" class="n4-tag">
+					<text class="n4-tag-text">{{ tg }}</text>
+				</view>
+			</view>
 		</view>
 		<view class="n4_430" :style="{ top: isVoice ? '1346.2rpx' : '1134.6rpx' }"> <!-- 正文卡（F5b 语音态 y700pt） -->
 			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
@@ -136,8 +142,8 @@
 <script setup lang="uts">
 	import { ref } from 'vue'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
-	import { request, post } from '@/utils/api'
-	import { fetchContentDetail, fetchContentEvents, ContentEventRef } from '@/utils/event_ops'
+	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
+	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta } from '@/utils/play'
 	import { formatIsoShortTime } from '@/utils/time'
 	import {
 		toggleVoice,
@@ -160,7 +166,7 @@
 	let memTitle = ref('记忆详情')
 	let memMeta = ref('')
 	let memBody = ref('')
-	let aiNote = ref('') // AI 观察（后端暂无来源，默认空→隐藏）
+	let aiNote = ref('') // AI 的观察（照片记忆 = 后端 ai_description；空→整卡隐藏）
 	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
 	let heroSrc = ref('/static/images/img4_406.png')
 	let relatedList = ref<Array<ContentEventRef>>([])
@@ -170,10 +176,16 @@
 	// W0-2 · F5b：语音记忆才显示语音卡；波形由 contentId 确定性生成（与 index/search 同源 genWaveHeights）
 	let isVoice = ref(false)
 	let detailWave = ref<Array<number>>([])
+	// 语音可播性状态（修 R9 崩溃单：模板/脚本曾引用未定义的 voicePlayable/voiceNote → 详情页开语音记忆即 C++ abort）
+	// 语义对齐事件级语音卡文案：done=可播；failed=转写失败；其余=处理中。默认 false，详情加载成功后按 status 置位
+	let voicePlayable = ref(false)
+	let voiceNote = ref('')
 	// 正文来源行：画布静态「来自照片的 AI 描述」对语音记忆失真，按类型切换（照片默认保持画布原文）
 	let bodySource = ref('来自照片的 AI 描述 · 你也可以补充一句')
 	// 卡19：来源行「你也可以补充一句」的用户补句（本地暂存，后端无 PATCH 补充端点 → 冷启动即失）
 	let bodySup = ref('')
+	// FE1：AI 打标 chips（tags_json，打标异步可能 null → 空数组=不显示区块）
+	let tagList = ref<Array<string>>([])
 
 	/** 取正文首句/前 14 字作标题 */
 	function makeTitle(text: string): string {
@@ -202,17 +214,11 @@
 			return
 		}
 		contentId.value = id
-		// 卡16 集成接线：进入详情时回读 favorite_ids，星标亮灭反映已收藏态（favorites.uvue 同契约）
-		const favRaw = uni.getStorageSync('favorite_ids') as string
-		if (favRaw != null && favRaw != '' && favRaw != '[]') {
-			const favParts = favRaw.split(',')
-			for (let i = 0; i < favParts.length; i++) {
-				if (favParts[i] == id) {
-					fav.value = true
-					break
-				}
-			}
-		}
+		// FE1 真端点（W2-2）：GET /contents/{id}/favorite 查单条收藏态初始化星标；
+		// 失败 false（api 层已全局 toast），不再读本地 favorite_ids（列表页回落契约不受影响）
+		favoriteGet(id).then((favd: boolean) => {
+			fav.value = favd
+		})
 		fetchContentDetail(id).then((d) => {
 			if (d == null) {
 				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
@@ -227,6 +233,17 @@
 				isVoice.value = true
 				detailWave.value = genWaveHeights(id, 28)
 				bodySource.value = '来自语音转写的 AI 描述 · 你也可以补充一句'
+				// 可播性按转写状态显式判定（禁止静默）：与事件级语音卡（v.status）同词表
+				if (d.status == 'done') {
+					voicePlayable.value = true
+					voiceNote.value = ''
+				} else if (d.status == 'failed') {
+					voicePlayable.value = false
+					voiceNote.value = '这段语音转写失败，暂不可播放'
+				} else {
+					voicePlayable.value = false
+					voiceNote.value = '转写处理中，稍后可播放'
+				}
 			}
 			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
 			if (d.contentType == 'photo' && d.thumbnailUrl != '') {
@@ -240,6 +257,16 @@
 				meta = meta + (meta != '' ? ' · ' : '') + d.place
 			}
 			memMeta.value = meta
+			// FE1：AI 增量字段（tags_json/ai_description 打标异步，可能 null → 空=不显示对应区块，不造假占位）
+			fetchContentAiMeta(id).then((ai: ContentAiMeta | null) => {
+				if (ai == null) {
+					return
+				}
+				tagList.value = ai.tags
+				if (d.contentType == 'photo' && ai.aiDescription != '') {
+					aiNote.value = ai.aiDescription
+				}
+			})
 		})
 		fetchContentEvents(id).then((evs: Array<ContentEventRef>) => {
 			relatedList.value = evs
@@ -340,9 +367,9 @@
 	}
 
 	function toggleFav(): void {
+		// FE1（W2-2）：真端点 toggle（幂等）+ 本地 favorite_ids 双写保留（favorites 页回落契约 +
+		// 离线星标即时反馈）；失败不回滚本地态，toast 显式原因（api 层全局 toast + 页内补充提示）
 		fav.value = !fav.value
-		// 卡16 集成接线（主窗口 2026-09-02）：favorite_ids 本地落盘（逗号分隔串，favorites.uvue
-		// readFavoriteIds 同契约）；云端 favorite 端点仍未建（W0-4 远期账），toast 保持诚实标注
 		const raw = uni.getStorageSync('favorite_ids') as string
 		let ids: Array<string> = []
 		if (raw != null && raw != '' && raw != '[]') {
@@ -374,19 +401,16 @@
 			ids = next
 		}
 		uni.setStorageSync('favorite_ids', ids.join(','))
-		// W2-2 真端点（2026-09-05）：POST/DELETE /api/v1/contents/{id}/favorite；本地 favorite_ids
-		// 双写保留（favorites 页回落契约 + 离线星标即时反馈），端点失败不回滚本地态（诚实 toast）
 		if (contentId.value != '') {
-			const path = '/api/v1/contents/' + contentId.value + '/favorite'
 			if (fav.value) {
-				post(path, {}).then((_res: UTSJSONObject | null) => {
-					if (_res == null) {
+				favoriteAdd(contentId.value).then((ok: boolean) => {
+					if (!ok) {
 						uni.showToast({ title: '云端收藏失败 · 稍后重试', icon: 'none' })
 					}
 				})
 			} else {
-				request(path, 'DELETE', null).then((_res: UTSJSONObject | null) => {
-					if (_res == null) {
+				favoriteRemove(contentId.value).then((ok: boolean) => {
+					if (!ok) {
 						uni.showToast({ title: '云端取消失败 · 稍后重试', icon: 'none' })
 					}
 				})
@@ -410,9 +434,10 @@
 						content: '删除后将移入回收站，保留 30 天。确定删除吗？',
 						success: (r) => {
 							if (r.confirm) {
-								// W2-1 真端点（2026-09-05）：DELETE /api/v1/contents/{id} 软删 → 回收站可见可恢复
-								request('/api/v1/contents/' + contentId.value, 'DELETE', null).then((res2: UTSJSONObject | null) => {
-									if (res2 == null) {
+								// FE1（W2-1）：DELETE /api/v1/contents/{id} 软删 → 回收站 30 天保留，可恢复
+								deleteContent(contentId.value).then((ok: boolean) => {
+									if (!ok) {
+										uni.showToast({ title: '删除失败 · 请稍后重试', icon: 'none' })
 										return
 									}
 									uni.showToast({ title: '已移入回收站', icon: 'none' })
@@ -437,7 +462,8 @@
 		uni.redirectTo({ url: '/pages/ai/ai' })
 	}
 	function addCapsule(): void {
-		// 卡22 接线：拉起时间胶囊弹层（浮层不跳页）；封存真端点待后端 W2-3，面板内 USE_MOCK_CAPSULE 演示态
+		// 卡22 接线：拉起时间胶囊弹层（浮层不跳页）；FE1 起入口为真实面板（封存端点 POST /api/v1/capsules
+		// 由 CapsuleSheet 组件内部接线，非本页职责）
 		capsuleOpen.value = true
 	}
 	function share(): void {
@@ -682,6 +708,31 @@
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 26.9rpx;
 		color: #5A4C40;
+	}
+	/* FE1：AI 打标 chips 行（flex-wrap 先例 ai/index/manage.uvue；uvue 无 flex gap → margin 表达） */
+	.n4-tag-row {
+		width: 100%;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 15.4rpx;
+	}
+	.n4-tag {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: rgba(196, 145, 60, 0.12);
+		border-radius: 9999rpx;
+		margin-right: 11.5rpx;
+		margin-bottom: 7.7rpx;
+		overflow: hidden;
+	}
+	.n4-tag-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B05A3A;
 	}
 	.n4_430 {
 		position: absolute;

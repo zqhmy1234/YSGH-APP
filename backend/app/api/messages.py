@@ -27,6 +27,7 @@ def _to_out(m: Message) -> MessageOut:
         title=m.title,
         body=m.body,
         payload=m.payload or {},
+        content_id=m.content_id,  # BA1：messages.content_id 列直出
         status=m.status,
         sent_at=m.sent_at,
         read_at=m.read_at,
