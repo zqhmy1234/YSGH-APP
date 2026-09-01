@@ -619,3 +619,14 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **验证**：快速门禁 `python scripts/review_agent.py` EXIT=0（纯文档波零代码改动；全量门禁随 4b 修复批次落地后统一复跑）。
 - **事故与自纠（诚实记录）**：本会话 `lessons.py add` 因我给表头加指针行触发其「旧文件无表头→重建」分支，将台账 1199 行毁至 28 行并随 a6bb5a9 提交（diff stat -1191 暴露）→ HEAD~1 恢复+重放三处增补；add() 改**不销毁三分支**（本会话新教训 01:30 即其回归用例）；另 edit 工具落盘 CRLF 曾毁 init.sh 可执行性→二进制还原 LF+新建 `.gitattributes`（`*.sh/*.py eol=lf`）。主题索引因此新增族11（工具自毁）、§4.8 入决策台账。
 - **授权销项（同日续）**：用户拍板「授权你同步。过时的文档，空的旧的文件夹一律删」→ ①08 三处+02 全表同步终值（顺带修正 6a7f0f9 漏回填 02 的 US-12/25/40/41/42/48 六行+统计行+半通清单，02 顶部加同步注记）；②删 4 份孤立执行类文档（PR1_审查报告/RAG管线审查/RAG指标提升/生产兜底审计，先做引用核查：代码/测试/交付文档 live 引用的 46+ 处候选全部保留——refactor-plan·技术债三件套·批次F-H 提示词等）；③拔除 .wt 13 个旧 worktree+backend/.wt，清空目录 464 个（uploads 测试残留 300+/APK 尸检根树/truth-data 占位）；④backups/20260827_残留归档按 D8 拍板保留；⑤docs/README 索引二轮更新+旧「不删除」规改为「live 引用保留/授权删」；台账 §4.9/§5.6/AGENTS/handoff 同步。
+
+## 2026-09-01 · W10 峰宝九条验机反馈全落地（AI mock 数据 + 附件入口 + 画像页四改 + security 页冲突清理）
+
+- **背景**：峰宝人肉验机九条暴击（网络异常复发/AI 页无数据/画像页无数据/两页 SVG 丑/旧玻璃 TabBar/页头 44px/功能冲突/附件无入口），全部认领当日落地；详细对照表与差异降级登记 `_diff_ledger.md` §W10.4。
+- **网络异常（skill 修正）**：双根因实锤——多版本 adb 互杀（server 重启灭全部 reverse）+ monkey 拉活≠重启（网络栈失败态不复位）；`uvue-deploy-device-ops` skill 禁忌表旧「1.0.41」口径清除 + deploy_one.sh step2/3 顺序反转（reverse 先于启动 → force-stop 冷启动）+ FAIL 分支补全量日志输出（tail -4 吞编译错误描述盲区）。
+- **AI 对话页 mock（contract-first）**：业界调研五篇共识落成 mock 契约（`POST /api/v1/chat/messages → {reply}`，kind=bubble/plain+chips/cards/confirm/typing，B2 接线时 mock 层整体可删）；ai.uvue 全量重写 ~640 行——seed 8 条覆盖五形态族、onSend 本地闭环（typing 1.8s→四形态轮换）、附件面板浮层+入口钮；`USE_MOCK_CHAT=true` 显式登记（对齐 USE_MOCK_TIMELINE/USE_MOCK_DATA 先例）。
+- **画像管理页**：seed 三条敏感话题（id904 forbid/id905 mention/id906 review）GET 复核通过；TabBar 组件接入（删自绘玻璃 tabbar+emoji FAB）；页头 44→60px（padding-top 115.4rpx）；emoji→SVG 三枚。
+- **账号与安全页**：删「数据导出」「存储空间」两行+方法（功能冲突，归宿=未来存储与备份页）；三 emoji→SVG。
+- **uvue 编译失败一轮（实锤两枚新坑）**：type 字面量构造 `MemCard(title:...)` 与函数默认参数 `= []` 全项目零先例编译器不认 → class+constructor+new / 全参显式；顺带修 seed plain 调用参数错位（bullets 塞 cards 位）+ CSS `.a.b`/后代+`:first-child` 三处。教训沉淀 ardot-to-uvue-css-restore「UTS 编译器坑」节。
+- **画布同步三板 + 终审**：AI 输入条附件钮（clip SVG，发送钮右位）、画像页页头下移+新 TabBar 按 TabBar.uvue 规格重建（SVG 图标族+「我的」锈红 active）、security 页删两行（后续组 y-88 间距恒定）+三 SVG；截图终审通过；uvue 附件钮初版序写反已对照画布纠正。画布坑三枚沉淀 ardot-canvas-pitfalls（BACKGROUND_BLUR 写入拒绝且清空全字段/SVG rect+A 命令不支持/纯水平线段零面积 degenerate）。
+- **推包三轮收口（2026-09-01）**：ZS8sLT 编译失败（已修，见上）→ hqSTjw 编译同步实际成功但 `OUT=$(cli ...)` 命令替换被 HBuilderX.exe 继承 stdout 管道 EOF 永不来僵死 23 分钟（TaskStop 终止；deploy_one.sh step1 改后台+mktemp 重定向+10s×150 轮询，坑沉淀 uvue-deploy-device-ops 禁忌表）→ **fOeJLH 轮询版首战 1m57s 三步全绿**（同步成功/reverse 非空/force-stop 冷启动）。设备已跑最终版产物；真机复核清单交峰宝人肉验机（AI 页五形态+附件面板在发送钮右侧/画像页新 TabBar+seed 三条+60px 头/security 页单行+SVG）。遗留：四份画布快照（ai/ai_reply/portrait_manage/account_security）下会话开工前按 W9 重导。

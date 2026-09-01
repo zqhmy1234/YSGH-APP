@@ -108,7 +108,7 @@
 	.n2_452 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 207.7rpx;
+		top: 123.1rpx;
 		width: 123.1rpx;
 		height: 123.1rpx;
 		flex-direction: row;
@@ -125,7 +125,7 @@
 	.n2_454 {
 		position: absolute;
 		left: 188.5rpx;
-		top: 223.1rpx;
+		top: 138.5rpx;
 		width: 84.6rpx;
 		height: 51.9rpx;
 		font-weight: bold;
@@ -135,7 +135,7 @@
 	.n2_455 {
 		position: absolute;
 		left: 188.5rpx;
-		top: 284.6rpx;
+		top: 200.0rpx;
 		width: 369.2rpx;
 		height: 28.8rpx;
 		font-size: 23.1rpx;
@@ -144,7 +144,7 @@
 	.n2_456 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 376.9rpx;
+		top: 292.3rpx;
 		width: 673.1rpx;
 		flex-direction: row;
 		justify-content: space-between;
@@ -203,7 +203,7 @@
 	.n2_466 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 565.4rpx;
+		top: 480.8rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		padding-left: 11.5rpx;
@@ -266,7 +266,7 @@
 	.n2_481 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 830.8rpx;
+		top: 746.2rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		padding-left: 11.5rpx;
@@ -353,7 +353,7 @@
 	.n2_504 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 1530.8rpx;
+		top: 1446.2rpx;
 		width: 673.1rpx;
 		height: 119.2rpx;
 		flex-direction: row;
@@ -364,9 +364,7 @@
 		padding-top: 19.2rpx;
 		padding-bottom: 19.2rpx;
 		background-color: rgba(255, 255, 255, 0.72);
-		border-width: 1.9rpx;
-		border-color: rgba(255, 255, 255, 0.65);
-		box-shadow: 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
 		border-radius: 69.2rpx;
 		overflow: hidden;
 	}
@@ -431,7 +429,7 @@
 	.n2_525 {
 		position: absolute;
 		left: 321.2rpx;
-		top: 1507.7rpx;
+		top: 1423.1rpx;
 		width: 107.7rpx;
 		height: 107.7rpx;
 		flex-direction: row;

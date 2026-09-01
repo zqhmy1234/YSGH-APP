@@ -1,0 +1,129 @@
+<template>
+	<!-- ardot 直转 v2：补充态 · 空状态（帧 2:277）· 审计化生成 -->
+	<view class="page-root">
+		<view class="n2_284"> <!-- 主按钮 -->
+			<text class="n2_285">拍下第一张</text> <!-- 按钮文字 -->
+		</view>
+		<view class="n2_301"> <!-- 插画-太阳 -->
+			<image class="n2_302" src="/static/icons/i2_302.svg" /> <!-- icon: Vector -->
+		</view>
+		<view class="n2_303"> <!-- 插画-山湖 -->
+			<image class="n2_304" src="/static/icons/i2_304.svg" /> <!-- icon: Vector -->
+		</view>
+		<view class="n2_305"> <!-- 标题容器 -->
+			<text class="n2_306">还没有回忆</text> <!-- 空状态标题 -->
+		</view>
+		<view class="n2_307"> <!-- 引导容器 -->
+			<text class="n2_308">拍一张照片，或说几句话</text> <!-- 引导一 -->
+			<text class="n2_309">你的回忆会住在这里</text> <!-- 引导二 -->
+		</view>
+		<view class="n2_310"> <!-- 备选容器 -->
+			<text class="n2_311">或者，录一段语音</text> <!-- 备选操作 -->
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		height: 1153.8rpx;
+		border-radius: 46.2rpx;
+		background-color: #F8F7F4;
+	}
+	.n2_284 {
+		position: absolute;
+		left: 134.6rpx;
+		top: 711.5rpx;
+		width: 480.8rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 11.5rpx 30.8rpx rgba(176, 89, 59, 0.3);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.n2_285 {
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+	.n2_301 {
+		position: absolute;
+		left: 367.3rpx;
+		top: 173.1rpx;
+		width: 115.4rpx;
+		height: 115.4rpx;
+		overflow: hidden;
+	}
+	.n2_302 {
+		position: absolute;
+		left: 30.8rpx;
+		top: 30.8rpx;
+		width: 53.8rpx;
+		height: 53.8rpx;
+	}
+	.n2_303 {
+		position: absolute;
+		left: 259.6rpx;
+		top: 242.3rpx;
+		width: 230.8rpx;
+		height: 173.1rpx;
+		overflow: hidden;
+	}
+	.n2_304 {
+		position: absolute;
+		left: 23.1rpx;
+		top: 23.1rpx;
+		width: 184.6rpx;
+		height: 107.7rpx;
+	}
+	.n2_305 {
+		position: absolute;
+		left: 0rpx;
+		top: 480.8rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_306 {
+		font-weight: 600;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_307 {
+		position: absolute;
+		left: 0rpx;
+		top: 561.5rpx;
+		width: 750rpx;
+		flex-direction: column;
+		align-items: center;
+		gap: 7.7rpx;
+		overflow: hidden;
+	}
+	.n2_308 {
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.n2_309 {
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.n2_310 {
+		position: absolute;
+		left: 0rpx;
+		top: 869.2rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_311 {
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+</style>

@@ -146,12 +146,15 @@
 		flex-direction: row;
 		align-items: center;
 	}
+	/* uvue App 端样式不继承，text 类需各自声明 font-family */
 	.banner-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #F6F1E7;
 		font-size: 30rpx;
 		margin-right: 16rpx;
 	}
 	.banner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #F6F1E7;
 		font-size: 26rpx;
 		flex: 1;
@@ -166,6 +169,7 @@
 		border-radius: 28rpx;
 	}
 	.banner-action-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #B05A3A;
 		font-size: 24rpx;
 		font-weight: bold;

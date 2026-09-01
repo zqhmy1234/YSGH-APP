@@ -1,0 +1,138 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
+.phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
+.page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
+.n4_303 { position: absolute; left: 20.0px; top: 56.0px; width: 105.0px; height: 39.0px; font-weight: bold; font-size: 32.0px; color: #3A2E25; }
+.n4_304 { position: absolute; left: 20.0px; top: 120.0px; width: 350.0px; display: flex; flex-direction: column; gap: 28.0px; overflow: hidden; }
+.n4_305 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_306 { display: flex; flex-direction: row; gap: 6.0px; align-items: center; overflow: hidden; }
+.n4_307 { width: 20.0px; height: 20.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #B05A3A; border-radius: 10.0px; overflow: hidden; }
+.n4_308 { width: 12.0px; height: 12.0px; }
+.n4_310 { font-weight: 600; font-size: 12.0px; color: #5A4C40; }
+.n4_311 { width: 100%; display: flex; flex-direction: column; gap: 8.0px; overflow: hidden; }
+.n4_312 { font-weight: 600; font-size: 16.0px; color: #3A2E25; }
+.n4_313 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n4_314 { width: 5.0px; height: 5.0px; background-color: #B05A3A; border-radius: 3.0px; overflow: hidden; }
+.n4_315 { flex: 1; font-size: 13.0px; color: #5A4C40; }
+.n4_316 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n4_317 { width: 5.0px; height: 5.0px; background-color: #B05A3A; border-radius: 3.0px; overflow: hidden; }
+.n4_318 { flex: 1; font-size: 13.0px; color: #5A4C40; }
+.n4_319 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n4_320 { width: 5.0px; height: 5.0px; background-color: #B05A3A; border-radius: 3.0px; overflow: hidden; }
+.n4_321 { flex: 1; font-size: 13.0px; color: #5A4C40; }
+.n4_322 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_323 { width: 100%; display: flex; flex-direction: row; gap: 12.0px; align-items: center; overflow: hidden; }
+.n4_324 { width: 160.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 3px 10px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
+.n4_325 { width: 100%; height: 90.0px; background-image: linear-gradient(to bottom right, rgba(196, 145, 60, 0.35), rgba(122, 140, 90, 0.2)); border-radius: 10.0px; overflow: hidden; }
+.n4_326 { font-weight: 600; font-size: 13.0px; color: #3A2E25; }
+.n4_327 { font-size: 10.0px; color: #8A7A6A; }
+.n4_328 { width: 160.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 3px 10px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
+.n4_329 { width: 100%; height: 90.0px; background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.3), rgba(122, 140, 90, 0.15)); border-radius: 10.0px; overflow: hidden; }
+.n4_330 { font-weight: 600; font-size: 13.0px; color: #3A2E25; }
+.n4_331 { font-size: 10.0px; color: #8A7A6A; }
+.n4_332 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_333 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n4_334 { display: flex; flex-direction: row; align-items: center; padding-left: 9.0px; padding-right: 9.0px; padding-top: 9.0px; padding-bottom: 9.0px; background-color: #FFFFFF; border: 1.0px solid rgba(176, 89, 59, 0.35); border-radius: 999px; overflow: hidden; }
+.n4_335 { font-size: 12.0px; color: #B05A3A; }
+.n4_336 { display: flex; flex-direction: row; align-items: center; padding-left: 9.0px; padding-right: 9.0px; padding-top: 9.0px; padding-bottom: 9.0px; background-color: #FFFFFF; border: 1.0px solid rgba(176, 89, 59, 0.35); border-radius: 999px; overflow: hidden; }
+.n4_337 { font-size: 12.0px; color: #B05A3A; }
+.n4_338 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_339 { width: 100%; display: flex; flex-direction: column; gap: 10.0px; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
+.n4_340 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n4_341 { width: 16.0px; height: 16.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; }
+.n4_343 { flex: 1; font-size: 14.0px; color: #3A2E25; }
+.n4_344 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_460 { flex: 1; display: flex; flex-direction: row; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: #F8F7F4; border-radius: 999px; overflow: hidden; }
+.n4_461 { font-weight: 600; font-size: 13.0px; color: #5A4C40; }
+.n4_462 { flex: 1; display: flex; flex-direction: row; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: #B05A3A; border-radius: 999px; overflow: hidden; }
+.n4_463 { font-weight: 600; font-size: 13.0px; color: #FFFFFF; }
+.n4_348 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_349 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n4_350 { font-size: 14.0px; color: #8A7A6A; }
+.n4_351 { width: 5.0px; height: 5.0px; background-color: #B05A3A; border-radius: 3.0px; overflow: hidden; }
+.n4_352 { width: 5.0px; height: 5.0px; background-color: #B05A3A; border-radius: 3.0px; overflow: hidden; }
+.n4_353 { width: 5.0px; height: 5.0px; background-color: #B05A3A; border-radius: 3.0px; overflow: hidden; }
+</style></head><body><div class="phone">
+    <span class="n4_303">AI 回复</span> <!-- 大标题 -->
+    <div class="n4_304"> <!-- 回复流 -->
+      <span class="n4_305">① 直铺长答（无气泡 · 宽版好读）</span> <!-- 节1 -->
+      <div class="n4_306"> <!-- AI头行 -->
+        <div class="n4_307"> <!-- AI头像 -->
+          <img class="n4_308" src="icons/i4_308.svg" /> <!-- 星芒 -->
+        </div>
+        <span class="n4_310">AI · 8月回顾</span> <!-- AI名 -->
+      </div>
+      <div class="n4_311"> <!-- 直铺内容 -->
+        <span class="n4_312">你 8 月的记忆脉络</span> <!-- 小标题 -->
+        <div class="n4_313"> <!-- bullet行 -->
+          <div class="n4_314"> <!-- 圆点 -->
+          </div>
+          <span class="n4_315">记录高峰在月末，共 23 条</span> <!-- 要点 -->
+        </div>
+        <div class="n4_316"> <!-- bullet行 -->
+          <div class="n4_317"> <!-- 圆点 -->
+          </div>
+          <span class="n4_318">「湖边」是本月最强的记忆锚点</span> <!-- 要点 -->
+        </div>
+        <div class="n4_319"> <!-- bullet行 -->
+          <div class="n4_320"> <!-- 圆点 -->
+          </div>
+          <span class="n4_321">语音占比 41%，转写准确率 98%</span> <!-- 要点 -->
+        </div>
+      </div>
+      <span class="n4_322">② 记忆卡横滑组（第二张露边示意滑动）</span> <!-- 节2 -->
+      <div class="n4_323"> <!-- 横滑组 -->
+        <div class="n4_324"> <!-- 记忆卡1 -->
+          <div class="n4_325"> <!-- 缩略 -->
+          </div>
+          <span class="n4_326">清晨的湖边</span> <!-- 标题 -->
+          <span class="n4_327">8月28日 · 照片</span> <!-- 元信息 -->
+        </div>
+        <div class="n4_328"> <!-- 记忆卡2 -->
+          <div class="n4_329"> <!-- 缩略 -->
+          </div>
+          <span class="n4_330">实验室的深夜</span> <!-- 标题 -->
+          <span class="n4_331">8月22日 · 文字</span> <!-- 元信息 -->
+        </div>
+      </div>
+      <span class="n4_332">③ 快捷追问 chips（每条回复尾部标准件）</span> <!-- 节3 -->
+      <div class="n4_333"> <!-- 追问chips -->
+        <div class="n4_334"> <!-- chip1 -->
+          <span class="n4_335">那周最开心的事</span> <!-- 追问1 -->
+        </div>
+        <div class="n4_336"> <!-- chip2 -->
+          <span class="n4_337">生成 8 月周报</span> <!-- 追问2 -->
+        </div>
+      </div>
+      <span class="n4_338">④ 行动确认卡（AI 发起的待确认操作）</span> <!-- 节4 -->
+      <div class="n4_339"> <!-- 行动确认卡 -->
+        <div class="n4_340"> <!-- 确认行 -->
+          <img class="n4_341" src="icons/i4_341.svg" /> <!-- 星芒 -->
+          <span class="n4_343">要把「湖边晨雾」加入 8 月时间胶囊吗？</span> <!-- 确认文字 -->
+        </div>
+        <div class="n4_344"> <!-- 按钮行 -->
+          <div class="n4_460"> <!-- 暂不钮 -->
+            <span class="n4_461">暂不</span> <!-- 暂不 -->
+          </div>
+          <div class="n4_462"> <!-- 加入钮 -->
+            <span class="n4_463">加入胶囊</span> <!-- 加入胶囊 -->
+          </div>
+        </div>
+      </div>
+      <span class="n4_348">⑤ 流式输出态（感知响应速度）</span> <!-- 节5 -->
+      <div class="n4_349"> <!-- 流式行 -->
+        <span class="n4_350">正在翻你的回忆</span> <!-- 流式文字 -->
+        <div class="n4_351"> <!-- 点1 -->
+        </div>
+        <div class="n4_352"> <!-- 点2 -->
+        </div>
+        <div class="n4_353"> <!-- 点3 -->
+        </div>
+      </div>
+    </div>
+</div></body></html>

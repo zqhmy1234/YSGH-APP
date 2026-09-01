@@ -1,16 +1,7 @@
 <template>
 	<!-- ardot 直转 v2：定稿 · 精修高保真（帧 2:189）· 审计化生成 -->
 	<view class="page-root">
-		<view class="n2_256"> <!-- 照片出血氛围层 -->
-			<view class="n2_257"> <!-- 顶部暗化 -->
-			</view>
-			<view class="n2_258"> <!-- 底部白色溶解 -->
-			</view>
-			<text class="n2_259">清晨的湖边，风很轻 · 8月28日 07:42</text> <!-- 照片说明 -->
-		</view>
-		<text class="n2_192">9:41</text> <!-- 状态栏时间 -->
-		<view class="n2_193"> <!-- 电池 -->
-		</view>
+		<image class="n2_256" src="/static/images/img2_256.png" mode="aspectFill" /> <!-- 合成图: 照片出血氛围层 -->
 		<text class="n2_194">回忆</text> <!-- 大标题 -->
 		<text class="n2_195">八月 · 28 条新记忆</text> <!-- 副标题 -->
 		<view class="n2_196"> <!-- 头像 -->
@@ -74,8 +65,6 @@
 		<view class="n2_252"> <!-- 中央＋按钮 -->
 			<image class="n2_253" src="/static/icons/i2_253.svg" /> <!-- icon: 加号 -->
 		</view>
-		<view class="n2_255"> <!-- Home指示条 -->
-		</view>
 	</view>
 </template>
 
@@ -87,64 +76,14 @@
 	.n2_256 {
 		position: absolute;
 		left: 0rpx;
-		top: 84.6rpx;
+		top: 0.0rpx;
 		width: 750rpx;
 		height: 576.9rpx;
-		background-color: #EDE5D5;
-		overflow: hidden;
-	}
-	.n2_257 {
-		position: absolute;
-		left: 0rpx;
-		top: 0rpx;
-		width: 750rpx;
-		height: 269.2rpx;
-		background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.5), rgba(26, 20, 15, 0.28));
-		overflow: hidden;
-	}
-	.n2_258 {
-		position: absolute;
-		left: 0rpx;
-		top: 307.7rpx;
-		width: 750rpx;
-		height: 269.2rpx;
-		background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0.38), #F8F7F4);
-		overflow: hidden;
-	}
-	.n2_259 {
-		position: absolute;
-		left: 38.5rpx;
-		top: 238.5rpx;
-		width: 434.6rpx;
-		height: 30.8rpx;
-		font-size: 25rpx;
-		color: #FFFFFF;
-		text-shadow: 0rpx 1.9rpx 46.2rpx rgba(26, 20, 15, 0.55);
-	}
-	.n2_192 {
-		position: absolute;
-		left: 46.2rpx;
-		top: 115.4rpx;
-		width: 59.6rpx;
-		height: 34.6rpx;
-		font-weight: 600;
-		font-size: 28.8rpx;
-		color: #FFFFFF;
-	}
-	.n2_193 {
-		position: absolute;
-		left: 661.5rpx;
-		top: 121.2rpx;
-		width: 42.3rpx;
-		height: 21.2rpx;
-		background-color: #FFFFFF;
-		border-radius: 5.8rpx;
-		overflow: hidden;
 	}
 	.n2_194 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 192.3rpx;
+		top: 107.7rpx;
 		width: 153.8rpx;
 		height: 92.3rpx;
 		font-weight: bold;
@@ -154,20 +93,21 @@
 	.n2_195 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 296.2rpx;
+		top: 211.5rpx;
 		width: 226.9rpx;
 		height: 30.8rpx;
 		font-size: 25rpx;
 		color: rgba(255, 255, 255, 0.85);
-		text-shadow: 0rpx 1.9rpx 30.8rpx rgba(26, 20, 15, 0.5);
+		text-shadow: 0rpx 1.9rpx 15.4rpx rgba(25, 20, 15, 0.5);
 	}
 	.n2_196 {
 		position: absolute;
 		left: 634.6rpx;
-		top: 196.2rpx;
+		top: 111.5rpx;
 		width: 76.9rpx;
 		height: 76.9rpx;
 		flex-direction: row;
+		justify-content: center;
 		align-items: center;
 		background-color: #C4913C;
 		border-width: 1.9rpx;
@@ -183,7 +123,7 @@
 	.n2_198 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 557.7rpx;
+		top: 473.1rpx;
 		width: 673.1rpx;
 		height: 88.5rpx;
 		flex-direction: row;
@@ -196,7 +136,7 @@
 		background-color: rgba(255, 255, 255, 0.72);
 		border-width: 1.9rpx;
 		border-color: rgba(255, 255, 255, 0.5);
-		box-shadow: 0rpx 15.4rpx 92.3rpx rgba(59, 46, 38, 0.08);
+		box-shadow: 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.08);
 		border-radius: 9999rpx;
 		overflow: hidden;
 	}
@@ -206,12 +146,12 @@
 	}
 	.n2_202 {
 		font-size: 26.9rpx;
-		color: #FFFFFF;
+		color: #8A7A6A;
 	}
 	.n2_203 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 692.3rpx;
+		top: 607.7rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		gap: 23.1rpx;
@@ -243,7 +183,7 @@
 		padding-top: 15.4rpx;
 		padding-bottom: 15.4rpx;
 		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 61.5rpx rgba(59, 46, 38, 0.06);
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
 		border-radius: 38.5rpx;
 		overflow: hidden;
 	}
@@ -265,6 +205,7 @@
 		width: 61.5rpx;
 		height: 61.5rpx;
 		flex-direction: row;
+		justify-content: center;
 		align-items: center;
 		background-color: rgba(255, 255, 255, 0.72);
 		border-width: 1.9rpx;
@@ -315,7 +256,7 @@
 		padding-top: 15.4rpx;
 		padding-bottom: 15.4rpx;
 		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 61.5rpx rgba(59, 46, 38, 0.06);
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
 		border-radius: 38.5rpx;
 		overflow: hidden;
 	}
@@ -361,7 +302,7 @@
 	.n2_231 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 1530.8rpx;
+		top: 1446.2rpx;
 		width: 673.1rpx;
 		height: 119.2rpx;
 		flex-direction: row;
@@ -372,9 +313,7 @@
 		padding-top: 19.2rpx;
 		padding-bottom: 19.2rpx;
 		background-color: rgba(255, 255, 255, 0.72);
-		border-width: 1.9rpx;
-		border-color: rgba(255, 255, 255, 0.65);
-		box-shadow: 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), 0rpx 19.2rpx 53.8rpx rgba(59, 46, 38, 0.1);
 		border-radius: 69.2rpx;
 		overflow: hidden;
 	}
@@ -439,28 +378,19 @@
 	.n2_252 {
 		position: absolute;
 		left: 321.2rpx;
-		top: 1507.7rpx;
+		top: 1423.1rpx;
 		width: 107.7rpx;
 		height: 107.7rpx;
 		flex-direction: row;
+		justify-content: center;
 		align-items: center;
 		background-color: #B05A3A;
-		box-shadow: 0rpx 11.5rpx 61.5rpx rgba(176, 89, 59, 0.35);
+		box-shadow: 0rpx 11.5rpx 30.8rpx rgba(176, 89, 59, 0.35);
 		border-radius: 53.8rpx;
 		overflow: hidden;
 	}
 	.n2_253 {
 		width: 42.3rpx;
 		height: 42.3rpx;
-	}
-	.n2_255 {
-		position: absolute;
-		left: 240.4rpx;
-		top: 1676.9rpx;
-		width: 269.2rpx;
-		height: 9.6rpx;
-		background-color: #3A2E25;
-		border-radius: 5.8rpx;
-		overflow: hidden;
 	}
 </style>

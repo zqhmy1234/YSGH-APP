@@ -24,6 +24,7 @@
  *  - GET  /api/v1/contents/{id}/events        → 照片所属事件列表（反向入口）
  */
 import { post, get, dataObj, dataArr } from './api'
+import { resolveMediaUrl } from './config'
 import { isoLocal, parseIsoMs } from './time'
 import { getNetKind, NetKind } from './uploader'
 // O6/F9：队列存储单源 queue_store（与 sync_client 双离线队列合并单 key，路由差异保留）；
@@ -109,14 +110,20 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 		takenAt: string
 		place: string
 		status: string
+		/** 照片缩略图票据 URL（仅 photo 有值；详情页头图直接 <image :src>） */
+		thumbnailUrl: string
+		/** 原图票据 URL（短时效；photo 有值） */
+		originalUrl: string
 
-		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string) {
+		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string, thumbnailUrl: string, originalUrl: string) {
 			this.id = id
 			this.contentType = contentType
 			this.text = text
 			this.takenAt = takenAt
 			this.place = place
 			this.status = status
+			this.thumbnailUrl = thumbnailUrl
+			this.originalUrl = originalUrl
 		}
 	}
 
@@ -145,7 +152,9 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 						it.getString('text') ?? '',
 						it.getString('taken_at') ?? '',
 						it.getString('place') ?? '',
-						it.getString('status') ?? ''
+						it.getString('status') ?? '',
+						resolveMediaUrl(it.getString('thumbnail_url')),
+						resolveMediaUrl(it.getString('original_url'))
 					)
 				)
 			})

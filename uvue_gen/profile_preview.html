@@ -1,14 +1,17 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:0;background:#333;display:flex;justify-content:center;}
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
 .phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
 .page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
-.n2_450 { position: absolute; left: 24.0px; top: 60.0px; width: 31.0px; height: 18.0px; font-weight: 600; font-size: 15.0px; color: #3A2E25; }
-.n2_451 { position: absolute; left: 344.0px; top: 63.0px; width: 22.0px; height: 11.0px; background-color: #3A2E25; border-radius: 3.0px; overflow: hidden; }
-.n2_452 { position: absolute; left: 20.0px; top: 108.0px; width: 64.0px; height: 64.0px; display: flex; flex-direction: row; align-items: center; background-color: #C4913C; border-radius: 32.0px; overflow: hidden; }
+.n2_452 { position: absolute; left: 20.0px; top: 64.0px; width: 64.0px; height: 64.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #C4913C; border-radius: 32.0px; overflow: hidden; }
 .n2_453 { font-weight: 600; font-size: 24.0px; color: #FFFFFF; }
-.n2_454 { position: absolute; left: 98.0px; top: 116.0px; width: 44.0px; height: 27.0px; font-weight: bold; font-size: 22.0px; color: #3A2E25; }
-.n2_455 { position: absolute; left: 98.0px; top: 148.0px; width: 192.0px; height: 15.0px; font-size: 12.0px; color: #8A7A6A; }
-.n2_456 { position: absolute; left: 20.0px; top: 196.0px; width: 350.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 18.0px; padding-right: 18.0px; padding-top: 18.0px; padding-bottom: 18.0px; background-color: #FFFFFF; box-shadow: 0px 3px 24px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n2_454 { position: absolute; left: 98.0px; top: 72.0px; width: 44.0px; height: 27.0px; font-weight: bold; font-size: 22.0px; color: #3A2E25; }
+.n2_455 { position: absolute; left: 98.0px; top: 104.0px; width: 192.0px; height: 15.0px; font-size: 12.0px; color: #8A7A6A; }
+.n2_456 { position: absolute; left: 20.0px; top: 152.0px; width: 350.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 18.0px; padding-right: 18.0px; padding-top: 18.0px; padding-bottom: 18.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
 .n2_457 { display: flex; flex-direction: column; gap: 2.0px; overflow: hidden; }
 .n2_458 { font-weight: bold; font-size: 22.0px; color: #3A2E25; }
 .n2_459 { font-size: 11.0px; color: #8A7A6A; }
@@ -18,7 +21,7 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_463 { display: flex; flex-direction: column; gap: 2.0px; overflow: hidden; }
 .n2_464 { font-weight: bold; font-size: 22.0px; color: #3A2E25; }
 .n2_465 { font-size: 11.0px; color: #8A7A6A; }
-.n2_466 { position: absolute; left: 20.0px; top: 294.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 24px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n2_466 { position: absolute; left: 20.0px; top: 250.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
 .n2_467 { width: 100%; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; overflow: hidden; }
 .n2_468 { width: 20.0px; height: 20.0px; }
 .n2_472 { flex: 1; font-size: 15.0px; color: #3A2E25; }
@@ -27,7 +30,7 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_476 { width: 20.0px; height: 20.0px; }
 .n2_478 { flex: 1; font-size: 15.0px; color: #3A2E25; }
 .n2_479 { width: 14.0px; height: 14.0px; }
-.n2_481 { position: absolute; left: 20.0px; top: 432.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 24px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n2_481 { position: absolute; left: 20.0px; top: 388.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
 .n2_482 { width: 100%; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; overflow: hidden; }
 .n2_483 { width: 20.0px; height: 20.0px; }
 .n2_486 { flex: 1; font-size: 15.0px; color: #3A2E25; }
@@ -40,7 +43,7 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_550 { width: 20.0px; height: 20.0px; }
 .n2_501 { flex: 1; font-size: 15.0px; color: #3A2E25; }
 .n2_502 { width: 14.0px; height: 14.0px; }
-.n2_504 { position: absolute; left: 20.0px; top: 796.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.65); box-shadow: 0px 10px 56px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
+.n2_504 { position: absolute; left: 20.0px; top: 752.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.65), 0px 10px 28px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
 .n2_505 { display: flex; flex-direction: column; gap: 3.0px; overflow: hidden; }
 .n2_506 { width: 20.0px; height: 20.0px; }
 .n2_509 { font-size: 10.0px; color: #B3A696; }
@@ -54,13 +57,10 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_520 { display: flex; flex-direction: column; gap: 3.0px; overflow: hidden; }
 .n2_521 { width: 20.0px; height: 20.0px; }
 .n2_524 { font-weight: 600; font-size: 10.0px; color: #B05A3A; }
-.n2_525 { position: absolute; left: 167.0px; top: 784.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; align-items: center; background-color: #B05A3A; box-shadow: 0px 6px 32px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
+.n2_525 { position: absolute; left: 167.0px; top: 740.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #B05A3A; box-shadow: 0px 6px 16px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
 .n2_526 { width: 22.0px; height: 22.0px; }
 .n2_528 { position: absolute; left: 125.0px; top: 872.0px; width: 140.0px; height: 5.0px; background-color: #3A2E25; border-radius: 3.0px; overflow: hidden; }
 </style></head><body><div class="phone">
-    <span class="n2_450">9:41</span> <!-- 状态栏时间 -->
-    <div class="n2_451"> <!-- 电池 -->
-    </div>
     <div class="n2_452"> <!-- 头像 -->
       <span class="n2_453">峰</span> <!-- 头像字 -->
     </div>

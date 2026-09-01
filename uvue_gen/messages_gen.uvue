@@ -82,14 +82,14 @@
 	.n4_93 {
 		position: absolute;
 		left: 30.8rpx;
-		top: 200rpx;
+		top: 115.4rpx;
 		width: 42.3rpx;
 		height: 42.3rpx;
 	}
 	.n4_95 {
 		position: absolute;
 		left: 0rpx;
-		top: 200rpx;
+		top: 115.4rpx;
 		width: 750rpx;
 		flex-direction: row;
 		align-items: center;
@@ -103,7 +103,7 @@
 	.n4_97 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 296.2rpx;
+		top: 211.5rpx;
 		width: 46.2rpx;
 		height: 28.8rpx;
 		font-weight: 600;
@@ -113,7 +113,7 @@
 	.n4_98 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 350rpx;
+		top: 265.4rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		padding-left: 15.4rpx;
@@ -167,7 +167,7 @@
 	.n4_106 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 661.5rpx;
+		top: 576.9rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		padding-left: 11.5rpx;

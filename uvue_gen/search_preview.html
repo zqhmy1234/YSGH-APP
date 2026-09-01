@@ -1,15 +1,18 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:0;background:#333;display:flex;justify-content:center;}
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
 .phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
 .page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
-.n2_388 { position: absolute; left: 24.0px; top: 60.0px; width: 31.0px; height: 18.0px; font-weight: 600; font-size: 15.0px; color: #3A2E25; }
-.n2_389 { position: absolute; left: 344.0px; top: 63.0px; width: 22.0px; height: 11.0px; background-color: #3A2E25; border-radius: 3.0px; overflow: hidden; }
-.n2_390 { position: absolute; left: 20.0px; top: 100.0px; width: 80.0px; height: 48.0px; font-weight: bold; font-size: 40.0px; color: #3A2E25; }
-.n2_391 { position: absolute; left: 20.0px; top: 164.0px; width: 350.0px; height: 48.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: #FFFFFF; border: 1.0px solid rgba(176, 89, 59, 0.6); box-shadow: 0px 6px 36px rgba(59, 46, 38, 0.08); border-radius: 999px; overflow: hidden; }
+.n2_390 { position: absolute; left: 20.0px; top: 56.0px; width: 80.0px; height: 48.0px; font-weight: bold; font-size: 40.0px; color: #3A2E25; }
+.n2_391 { position: absolute; left: 20.0px; top: 120.0px; width: 350.0px; height: 48.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: #FFFFFF; box-shadow: 0px 0px 0px 1.0px rgba(176, 89, 59, 0.6), 0px 6px 18px rgba(59, 46, 38, 0.08); border-radius: 999px; overflow: hidden; }
 .n2_392 { width: 18.0px; height: 18.0px; }
 .n2_395 { flex: 1; display: flex; flex-direction: row; align-items: center; overflow: hidden; }
 .n2_396 { font-size: 15.0px; color: #3A2E25; }
-.n2_397 { position: absolute; left: 20.0px; top: 228.0px; width: 350.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
+.n2_397 { position: absolute; left: 20.0px; top: 184.0px; width: 350.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; overflow: hidden; }
 .n2_398 { display: flex; flex-direction: row; align-items: center; padding-left: 9.0px; padding-right: 9.0px; padding-top: 9.0px; padding-bottom: 9.0px; background-color: rgba(176, 89, 59, 0.12); border-radius: 999px; overflow: hidden; }
 .n2_399 { font-weight: 600; font-size: 12.0px; color: #B05A3A; }
 .n2_400 { display: flex; flex-direction: row; align-items: center; padding-left: 9.0px; padding-right: 9.0px; padding-top: 9.0px; padding-bottom: 9.0px; background-color: #FFFFFF; border-radius: 999px; overflow: hidden; }
@@ -18,8 +21,8 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_403 { font-size: 12.0px; color: #8A7A6A; }
 .n2_404 { display: flex; flex-direction: row; align-items: center; padding-left: 9.0px; padding-right: 9.0px; padding-top: 9.0px; padding-bottom: 9.0px; background-color: #FFFFFF; border-radius: 999px; overflow: hidden; }
 .n2_405 { font-size: 12.0px; color: #8A7A6A; }
-.n2_406 { position: absolute; left: 20.0px; top: 278.0px; width: 159.0px; height: 15.0px; font-size: 12.0px; color: #8A7A6A; }
-.n2_423 { position: absolute; left: 20.0px; top: 796.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.65); box-shadow: 0px 10px 56px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
+.n2_406 { position: absolute; left: 20.0px; top: 234.0px; width: 159.0px; height: 15.0px; font-size: 12.0px; color: #8A7A6A; }
+.n2_423 { position: absolute; left: 20.0px; top: 752.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.65), 0px 10px 28px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
 .n2_424 { display: flex; flex-direction: column; gap: 3.0px; overflow: hidden; }
 .n2_425 { width: 20.0px; height: 20.0px; }
 .n2_428 { font-size: 10.0px; color: #B3A696; }
@@ -33,28 +36,24 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_439 { display: flex; flex-direction: column; gap: 3.0px; overflow: hidden; }
 .n2_440 { width: 20.0px; height: 20.0px; }
 .n2_443 { font-size: 10.0px; color: #B3A696; }
-.n2_444 { position: absolute; left: 167.0px; top: 784.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; align-items: center; background-color: #B05A3A; box-shadow: 0px 6px 32px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
+.n2_444 { position: absolute; left: 167.0px; top: 740.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #B05A3A; box-shadow: 0px 6px 16px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
 .n2_445 { width: 22.0px; height: 22.0px; }
-.n2_447 { position: absolute; left: 125.0px; top: 872.0px; width: 140.0px; height: 5.0px; background-color: #3A2E25; border-radius: 3.0px; overflow: hidden; }
-.n2_588 { position: absolute; left: 20.0px; top: 302.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 32px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
-.n2_589 { width: 100%; height: 64.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-color: rgba(196, 145, 60, 0.14); border-radius: 12.0px; overflow: hidden; }
-.n2_591 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; align-items: center; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.8); border-radius: 16.0px; overflow: hidden; }
+.n2_588 { position: absolute; left: 20.0px; top: 258.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06), 0px 1px 3px rgba(59, 46, 38, 0.04); border-radius: 20.0px; overflow: hidden; }
+.n2_589 { width: 100%; height: 64.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-color: rgba(196, 145, 59, 0.14); border-radius: 12.0px; overflow: hidden; }
+.n2_591 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.8); border-radius: 16.0px; overflow: hidden; }
 .n2_595 { width: 12.0px; height: 12.0px; }
-.n2_592 { width: 200.0px; height: 26.0px; overflow: hidden; }
+.n2_592 { width: 200.0px; height: 26.0px; overflow: hidden; position: relative; }
 .n2_596 { position: absolute; left: 4.0px; top: 3.0px; width: 192.0px; height: 20.0px; }
 .n2_590 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
 .n2_593 { font-weight: 600; font-size: 17.0px; color: #3A2E25; }
 .n2_594 { font-size: 11.0px; color: #8A7A6A; }
-.n2_598 { position: absolute; left: 20.0px; top: 448.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 32px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
-.n2_599 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: rgba(196, 145, 60, 0.1); border-radius: 12.0px; overflow: hidden; }
+.n2_598 { position: absolute; left: 20.0px; top: 404.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06), 0px 1px 3px rgba(59, 46, 38, 0.04); border-radius: 20.0px; overflow: hidden; }
+.n2_599 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: rgba(196, 145, 59, 0.1); border-radius: 12.0px; overflow: hidden; }
 .n2_601 { width: 3.0px; height: 40.0px; background-color: #C4913C; border-radius: 2.0px; overflow: hidden; }
 .n2_602 { flex: 1; font-size: 14.0px; color: #5A4C40; }
 .n2_600 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
 .n2_603 { font-size: 11.0px; color: #8A7A6A; }
 </style></head><body><div class="phone">
-    <span class="n2_388">9:41</span> <!-- 状态栏时间 -->
-    <div class="n2_389"> <!-- 电池 -->
-    </div>
     <span class="n2_390">搜索</span> <!-- 大标题 -->
     <div class="n2_391"> <!-- 搜索胶囊-聚焦 -->
       <img class="n2_392" src="icons/i2_392.svg" /> <!-- 搜索图标 -->
@@ -99,8 +98,6 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
     </div>
     <div class="n2_444"> <!-- 中央＋按钮 -->
       <img class="n2_445" src="icons/i2_445.svg" /> <!-- 加号 -->
-    </div>
-    <div class="n2_447"> <!-- Home指示条 -->
     </div>
     <div class="n2_588"> <!-- 语音卡 -->
       <div class="n2_589"> <!-- 语音媒体 -->

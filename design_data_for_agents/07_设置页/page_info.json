@@ -1,0 +1,11 @@
+{
+  "page_key": "07_设置页",
+  "page_path": "pages/settings/settings.uvue",
+  "page_desc": "设置页",
+  "design_data_file": "design_data.json",
+  "common_components": [
+    "TabBar胶囊.json",
+    "中央＋按钮.json",
+    "_summary.json"
+  ]
+}

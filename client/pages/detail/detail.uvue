@@ -1,86 +1,76 @@
 <template>
-	<view class="page">
-		<!-- 滚动内容（照片区 + 标题 + 卡片 + 相关记忆一体滚动） -->
-		<scroll-view class="scroll">
-			<!-- ═══════════ 顶部照片区（设计稿: 390x360 照片出血，底部溶解入背景）═══════════ -->
-			<view class="hero-section">
-				<image class="hero-image" src="/static/hero-detail.jpg" mode="aspectFill" />
-				<view class="hero-overlay-top"></view>
-				<view class="hero-overlay-bottom"></view>
-
-				<!-- 顶栏圆钮：返回 / 收藏 / 更多（设计稿: 44px 圆，中心 y=86） -->
-				<view class="hero-btn btn-back pressable" @tap="goBack">
-					<image src="/static/icons/detail-back.svg" :width="7" :height="12" />
-				</view>
-				<view class="hero-btn btn-fav pressable" @tap="toggleFav">
-					<image src="/static/icons/detail-star.svg" :width="14" :height="14" />
-				</view>
-				<view class="hero-btn btn-more pressable" @tap="onMore">
-					<view class="more-dots">
-						<view class="more-dot"></view>
-						<view class="more-dot"></view>
-						<view class="more-dot last"></view>
-					</view>
-				</view>
+	<!-- ardot 直转 v2：记忆详情页（帧 4:404）· 审计化生成 -->
+	<view class="page-root">
+		<!-- W9 流式重构：一页一个滚动根 —— page-root 锁视口，内容区进 scroll-view，
+		     玻璃操作条在滚动区外 absolute bottom 钉死视口底部（峰宝拍板：操作条固定不滑动） -->
+		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
+		<view class="detail-body">
+		<!-- 全幅媒体：照片记忆 → 服务端票据 URL 真图；其余类型 → 画布静态合成图占位 -->
+		<image class="n4_406" :src="heroSrc" mode="aspectFill" />
+		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
+		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级） -->
+		<view class="n4_407a"></view>
+		<view class="n4_407b"></view>
+		<view class="n4_408a"></view>
+		<view class="n4_408b"></view>
+		<view class="n4_409"> <!-- 玻璃顶栏 -->
+			<view class="n4_410" @tap="goBack"> <!-- 返回钮 -->
+				<image class="n4_411" src="/static/icons/i4_411.svg" /> <!-- icon: 返回图标 -->
 			</view>
-
-			<!-- 内容区 -->
-			<view class="content">
-				<!-- 标题 + 元信息 -->
-				<text class="mem-title serif">{{ memTitle }}</text>
-				<text class="mem-meta">{{ memMeta }}</text>
-
-				<!-- 卡片 1：AI 的观察（✦ 图标 + 锈红标题；有内容才显示） -->
-				<view v-if="aiNote != ''" class="card card-ai">
-					<view class="ai-row">
-						<image src="/static/icons/detail-sparkle.svg" :width="10" :height="10" />
-						<text class="ai-label">AI 的观察</text>
-					</view>
-					<text class="card-body">{{ aiNote }}</text>
+			<view class="n4_413"> <!-- 右侧钮组 -->
+				<view class="n4_414" @tap="toggleFav"> <!-- 收藏钮 -->
+					<image class="n4_415" src="/static/icons/i4_415.svg" /> <!-- icon: 收藏图标 -->
 				</view>
-
-				<!-- 卡片 2：照片描述（正文 + 灰色引导） -->
-				<view class="card card-desc">
-					<text class="card-body">{{ memBody }}</text>
-					<text class="card-footer">来自照片的 AI 描述 · 你也可以补充一句</text>
+				<view class="n4_417" @tap="onMore"> <!-- 更多钮 -->
+					<image class="n4_418" src="/static/icons/i4_418.svg" /> <!-- icon: 更多图标 -->
 				</view>
-
-				<!-- 相关记忆（所属事件，横向滚动；无归属则隐藏） -->
-				<template v-if="relatedList.length > 0">
-					<text class="section-title serif">相关记忆</text>
-					<scroll-view class="related-scroll" direction="horizontal">
-						<view class="related-row">
-							<view
-								v-for="(ev, idx) in relatedList"
-								:key="idx"
-								class="related-card pressable"
-								@tap="onRelatedEvent(ev)"
-							>
-								<view class="related-photo ph-a"></view>
-								<text class="related-title">{{ ev.title }}</text>
-								<text class="related-sub">{{ ev.photoCount }} 条记忆</text>
-							</view>
-						</view>
-					</scroll-view>
-				</template>
-			</view>
-		</scroll-view>
-
-		<!-- ═══════════ 底部悬浮操作栏（设计稿: 350x60 rx=30，距底 40px，玻璃质感）═══════════ -->
-		<view class="action-bar">
-			<view class="action-item action-1 pressable" @tap="askAI">
-				<image src="/static/icons/detail-bubble.svg" :width="30" :height="30" />
-				<text class="action-label">问 AI</text>
-			</view>
-			<view class="action-item action-2 pressable" @tap="addCapsule">
-				<image src="/static/icons/detail-capsule.svg" :width="30" :height="30" />
-				<text class="action-label">加入胶囊</text>
-			</view>
-			<view class="action-item action-3 pressable" @tap="share">
-				<image src="/static/icons/detail-share.svg" :width="26" :height="28" />
-				<text class="action-label">分享</text>
 			</view>
 		</view>
+		<text class="n4_422">{{ memTitle }}</text> <!-- 详情标题（动态） -->
+		<text class="n4_423">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
+		<view v-if="aiNote != ''" class="n4_424"> <!-- AI注释卡（有内容才显示） -->
+			<view class="n4_425"> <!-- 注释头 -->
+				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
+				<text class="n4_428">AI 的观察</text> <!-- AI观察 -->
+			</view>
+			<text class="n4_429">{{ aiNote }}</text> <!-- 注释文字（动态） -->
+		</view>
+		<view class="n4_430"> <!-- 正文卡 -->
+			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
+			<text class="n4_432">来自照片的 AI 描述 · 你也可以补充一句</text> <!-- 正文来源 -->
+		</view>
+		<!-- 相关记忆（HEAD 版交互接回：无归属事件整区隐藏；画布静态2卡→数据驱动横滑，画布4:434本即横滑容器） -->
+		<template v-if="relatedList.length > 0">
+			<text class="n4_433">相关记忆</text> <!-- 相关记忆节标 -->
+			<scroll-view class="n4_434" direction="horizontal" :show-scrollbar="false">
+				<view class="n4_434-row">
+					<view v-for="(ev, idx) in relatedList" :key="idx" class="n4_435" @tap="onRelatedEvent(ev)">
+						<!-- 缩略占位：画布两卡分别苔琥珀/青蓝渐变，按 idx 交替 -->
+						<view class="n4_442" :class="{ 'n4_442-b': idx % 2 === 1 }"></view>
+						<text class="n4_436">{{ ev.title }}</text>
+						<text class="n4_437">{{ ev.photoCount }} 条记忆</text>
+					</view>
+				</view>
+			</scroll-view>
+		</template>
+		</view>
+		</scroll-view>
+		<view class="n4_441"> <!-- 玻璃操作条（滚动区外，钉死视口底部） -->
+			<view class="n4_444" @tap="askAI"> <!-- 操作-问AI -->
+				<image class="n4_445" src="/static/icons/i4_445.svg" /> <!-- icon: 图标 -->
+				<text class="n4_447">问 AI</text> <!-- 文字 -->
+			</view>
+			<view class="n4_448" @tap="addCapsule"> <!-- 操作-胶囊 -->
+				<image class="n4_449" src="/static/icons/i4_449.svg" /> <!-- icon: 图标 -->
+				<text class="n4_452">加入胶囊</text> <!-- 文字 -->
+			</view>
+			<view class="n4_453" @tap="share"> <!-- 操作-分享 -->
+				<image class="n4_454" src="/static/icons/i4_454.svg" /> <!-- icon: 图标 -->
+				<text class="n4_457">分享</text> <!-- 文字 -->
+			</view>
+		</view>
+		<!-- 画布 4:458/4:459（假状态栏时间+电池）已移除：navigationStyle:custom 沉浸式，
+		     系统状态栏渲染真实时间与电量；该文本为白色，叠在 4:406 全幅媒体上会形成双时钟 -->
 	</view>
 </template>
 
@@ -97,6 +87,8 @@
 	let memMeta = ref('')
 	let memBody = ref('')
 	let aiNote = ref('') // AI 观察（后端暂无来源，默认空→隐藏）
+	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
+	let heroSrc = ref('/static/images/img4_406.png')
 	let relatedList = ref<Array<ContentEventRef>>([])
 
 	/** 取正文首句/前 14 字作标题 */
@@ -132,6 +124,10 @@
 			}
 			memBody.value = d.text
 			memTitle.value = makeTitle(d.text)
+			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
+			if (d.contentType == 'photo' && d.thumbnailUrl != '') {
+				heroSrc.value = d.thumbnailUrl
+			}
 			let meta = ''
 			if (d.takenAt != '') {
 				meta = formatIsoShortTime(d.takenAt)
@@ -148,7 +144,13 @@
 
 	// ═══════════ 交互 ═══════════
 	function goBack(): void {
-		uni.navigateBack({ delta: 1 })
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}
 	}
 
 	function toggleFav(): void {
@@ -199,269 +201,377 @@
 </script>
 
 <style>
-	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x1100 画布）
-	   背景 #f8f7f4 / 卡片 #ffffff rx=20 / 文字主 #3a2e25 次 #8a7a6a / 正文 #5a4c40
-	   标题/区块 serif / 图标主色（锈红） #b05a3a / 引导文字 #b3a696
-	   顶部出血图 /static/hero-detail.jpg（设计稿原图压缩） */
-	.page {
-		width: 100%;
-		height: 100%;
-		background-color: #f8f7f4;
-		display: flex;
-		flex-direction: column;
-		position: relative;
-		box-sizing: border-box;
-	}
-	.serif {
-		font-family: "Noto Serif CJK SC", serif;
-	}
-
-	/* ===== 滚动区 ===== */
-	.scroll {
+	.page-root {
+		/* W9 流式重构：锁视口高度（原画布直转 height:2115.4rpx 导致整页滚动、操作条跟着滑） */
 		flex: 1;
-		width: 100%;
-		min-height: 0;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
 	}
-
-	/* ═══════════ 顶部照片区 ═══════════ */
-	.hero-section {
-		position: relative;
-		width: 100%;
-		height: 720rpx;
+	.detail-scroll {
+		flex: 1;
+	}
+	.detail-body {
+		/* 画布整页高度：所有子元素保持画布绝对坐标（uvue absolute 相对父元素） */
+		width: 750rpx;
+		height: 2115.4rpx;
+	}
+	.n4_406 {
+		position: absolute;
+		/* absolute-ok: 全幅媒体背景层（hero） */
+		left: 0rpx;
+		top: 0rpx;
+		width: 750rpx;
+		height: 692.3rpx;
+	}
+	/* 画布 4:407 顶部暗化拆段：上段 (0,0,390,55) 0.45→0.15 */
+	.n4_407a {
+		position: absolute;
+		/* absolute-ok: hero 渐变遮罩装饰层 */
+		left: 0rpx;
+		top: 0rpx;
+		width: 750rpx;
+		height: 105.8rpx;
+		background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.45), rgba(26, 20, 15, 0.15));
+	}
+	/* 4:407 下段 (0,55,390,55) 0.15→0 */
+	.n4_407b {
+		position: absolute;
+		/* absolute-ok: hero 渐变遮罩装饰层 */
+		left: 0rpx;
+		top: 105.8rpx;
+		width: 750rpx;
+		height: 105.8rpx;
+		background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.15), rgba(26, 20, 15, 0));
+	}
+	/* 画布 4:408 底部溶解拆段：上段 (0,240,390,60) 0→0.6 */
+	.n4_408a {
+		position: absolute;
+		/* absolute-ok: hero 渐变遮罩装饰层 */
+		left: 0rpx;
+		top: 461.5rpx;
+		width: 750rpx;
+		height: 115.4rpx;
+		background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0), rgba(248, 247, 244, 0.6));
+	}
+	/* 4:408 下段 (0,300,390,60) 0.6→1.0 */
+	.n4_408b {
+		position: absolute;
+		/* absolute-ok: hero 渐变遮罩装饰层 */
+		left: 0rpx;
+		top: 576.9rpx;
+		width: 750rpx;
+		height: 115.4rpx;
+		background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0.6), rgba(248, 247, 244, 1));
+	}
+	.n4_409 {
+		position: absolute;
+		/* absolute-ok: 玻璃顶栏（固定导航） */
+		left: 30.8rpx;
+		top: 123.1rpx;
+		width: 688.5rpx;
+		flex-direction: row;
+		/* 画布真值：返回钮 x=0 贴左、钮组 x=260 贴右 → space-between（原 center 挤中间） */
+		justify-content: space-between;
+		align-items: center;
 		overflow: hidden;
 	}
-	.hero-image {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 100%;
-	}
-	/* 顶部暗化（设计稿 gradient_0: #19140F 44.7%→14.9%→0） */
-	.hero-overlay-top {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 220rpx;
-		background: linear-gradient(to right, rgba(25, 20, 15, 0.45) 0%, rgba(25, 20, 15, 0.15) 50%, rgba(25, 20, 15, 0) 100%);
-	}
-	/* 底部溶解（设计稿 gradient_1: 透明→#F8F7F4 60%→100%） */
-	.hero-overlay-bottom {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		width: 100%;
-		height: 240rpx;
-		background: linear-gradient(to right, rgba(248, 247, 244, 0) 0%, rgba(248, 247, 244, 0.6) 50%, #f8f7f4 100%);
-	}
-
-	/* 顶栏圆钮（设计稿: 44px 半透明白玻璃圆，中心 y=86 距顶 64px） */
-	.hero-btn {
-		position: absolute;
-		top: 128rpx;
-		width: 88rpx;
-		height: 88rpx;
-		border-radius: 44rpx;
-		background-color: rgba(59, 46, 38, 0.30);
-		border: 2rpx solid rgba(255, 255, 255, 0.40);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 4rpx 12rpx rgba(25, 20, 15, 0.12);
-		z-index: 5;
-	}
-	.btn-back { left: 32rpx; }
-	.btn-fav { left: 531rpx; }
-	.btn-more { left: 635rpx; }
-
-	/* 更多按钮三点（设计稿: 3 个 r=1.2 白点，间距 5.25px） */
-	.more-dots {
-		display: flex;
+	.n4_410 {
+		width: 84.6rpx;
+		height: 84.6rpx;
 		flex-direction: row;
+		justify-content: center;
 		align-items: center;
+		/* 深色毛玻璃：画布 BLUR(12) + fill 深棕 a0.30（原被降级成 0.72）。
+		   两轴均居中，border 内缩 1px 会被居中抵消，保留 border 即可 */
+		background-color: rgba(59, 46, 38, 0.3);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.4);
+		border-radius: 42.3rpx;
+		overflow: hidden;
 	}
-	.more-dot {
-		width: 4.6rpx;
-		height: 4.6rpx;
-		border-radius: 2.3rpx;
-		background-color: #ffffff;
-		margin-right: 10rpx;
+	.n4_411 {
+		width: 34.6rpx;
+		height: 34.6rpx;
 	}
-	.more-dot.last {
-		margin-right: 0;
+	.n4_413 {
+		flex-direction: row;
+		/* 画布 gap=10px（19.2rpx）→ 换 .n4_417 margin-left */
+		align-items: center;
+		overflow: hidden;
 	}
-
-	/* ═══════════ 内容区 ═══════════ */
-	.content {
-		width: 100%;
-		padding: 34rpx 40rpx 240rpx 40rpx;
-		box-sizing: border-box;
+	.n4_414 {
+		width: 84.6rpx;
+		height: 84.6rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(59, 46, 38, 0.3);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.4);
+		border-radius: 42.3rpx;
+		overflow: hidden;
 	}
-
-	/* 主标题（设计稿: 28px serif 加粗 #3A2E25，y=376.7） */
-	.mem-title {
-		display: flex;
+	.n4_415 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_417 {
+		margin-left: 19.2rpx;
+		width: 84.6rpx;
+		height: 84.6rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(59, 46, 38, 0.3);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.4);
+		border-radius: 42.3rpx;
+		overflow: hidden;
+	}
+	.n4_418 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_422 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 723.1rpx;
+		/* 画布 hug 450rpx 放不下 14 字标题（14×50=700rpx 上限），放宽到正文卡同宽 */
+		width: 673.1rpx;
+		height: 59.6rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
 		font-size: 50rpx;
-		line-height: 72rpx;
-		font-weight: bold;
-		color: #3a2e25;
+		color: #3A2E25;
 	}
-	/* 元信息（设计稿: 12px #8A7A6A，y=412.4） */
-	.mem-meta {
-		display: flex;
-		margin-top: 16rpx;
-		font-size: 24rpx;
-		line-height: 34rpx;
-		color: #8a7a6a;
-	}
-
-	/* 通用卡片（设计稿: 350 宽 rx=20 白底，阴影 dy=4 blur=8 @6%） */
-	.card {
-		width: 100%;
-		min-height: 200rpx;
-		background-color: #ffffff;
-		border-radius: 40rpx;
-		padding: 34rpx 40rpx 36rpx 40rpx;
-		box-sizing: border-box;
-		box-shadow: 0 8rpx 16rpx rgba(58, 45, 38, 0.06);
-	}
-	.card-ai {
-		margin-top: 46rpx;
-	}
-	.card-desc {
-		margin-top: 74rpx;
-	}
-
-	/* 卡片 1 标题行：✦ + “AI 的观察” */
-	.ai-row {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-	}
-	.ai-label {
-		margin-left: 16rpx;
-		font-size: 24rpx;
-		line-height: 32rpx;
-		color: #b05a3a;
-		font-weight: 600;
-	}
-
-	/* 正文（设计稿: 14px #5A4C40，三行） */
-	.card-body {
-		display: flex;
-		margin-top: 20rpx;
-		font-size: 28rpx;
-		line-height: 40rpx;
-		color: #5a4c40;
-	}
-	/* 卡片 2 引导文字（设计稿: 11px #B3A696） */
-	.card-footer {
-		display: flex;
-		margin-top: 18rpx;
-		font-size: 22rpx;
-		line-height: 30rpx;
-		color: #b3a696;
-	}
-
-	/* 区块标题（设计稿: 16px serif 加粗，y=742.4） */
-	.section-title {
-		display: flex;
-		margin-top: 100rpx;
-		font-size: 32rpx;
-		line-height: 44rpx;
-		font-weight: bold;
-		color: #3a2e25;
-	}
-
-	/* 相关记忆横向滚动 */
-	.related-scroll {
-		width: 100%;
-		margin-top: 28rpx;
-	}
-	.related-row {
-		display: flex;
-		flex-direction: row;
-		align-items: flex-start;
-	}
-	.related-card {
-		width: 300rpx;
-		height: 244rpx;
-		flex-shrink: 0;
-		background-color: #ffffff;
-		border-radius: 32rpx;
-		padding: 16rpx;
-		box-sizing: border-box;
-		box-shadow: 0 6rpx 10rpx rgba(58, 45, 38, 0.06);
-		margin-right: 24rpx;
-	}
-	.related-photo {
-		width: 100%;
-		height: 160rpx;
-		border-radius: 20rpx;
-	}
-	/* 卡片 A 渐变占位（设计稿 gradient_2: #798B5A 30%→#C4913B 20%） */
-	.ph-a {
-		background: linear-gradient(to right, rgba(121, 139, 90, 0.30), rgba(196, 145, 59, 0.20));
-	}
-	/* 卡片 B 渐变占位（设计稿 gradient_4: #4E7C8B 28%→#798B5A 15%） */
-	.ph-b {
-		background: linear-gradient(to right, rgba(78, 124, 139, 0.28), rgba(121, 139, 90, 0.15));
-	}
-	.related-title {
-		display: flex;
-		margin-top: 10rpx;
-		font-size: 24rpx;
-		line-height: 32rpx;
-		color: #3a2e25;
-		font-weight: 600;
-	}
-	.related-sub {
-		display: flex;
-		margin-top: 6rpx;
-		font-size: 20rpx;
-		line-height: 28rpx;
-		color: #8a7a6a;
-	}
-
-	/* ═══════════ 底部悬浮操作栏（设计稿: 350x60 rx=30 玻璃，阴影 dy=10 blur=14 @10%）═══════════ */
-	.action-bar {
-		position: fixed;
-		left: 40rpx;
-		right: 40rpx;
-		bottom: 80rpx;
-		height: 120rpx;
-		border-radius: 60rpx;
-		background-color: rgba(255, 255, 255, 0.72);
-		border: 2rpx solid rgba(255, 255, 255, 0.60);
-		box-shadow: 0 20rpx 28rpx rgba(58, 45, 38, 0.10);
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		z-index: 20;
-	}
-	.action-item {
+	.n4_423 {
 		position: absolute;
-		top: 0;
-		height: 120rpx;
-		display: flex;
+		left: 38.5rpx;
+		top: 792.3rpx;
+		/* 同标题：动态元信息（时间·地点）可能超画布 hug 宽，放宽到卡宽 */
+		width: 673.1rpx;
+		height: 28.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_424 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 861.5rpx;
+		width: 673.1rpx;
 		flex-direction: column;
+		/* 画布 gap=8px（15.4rpx）→ 换 .n4_429 margin-top */
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 30.8rpx;
+		padding-bottom: 30.8rpx;
+		background-color: #FFFFFF;
+		/* 画布双层：r16 a.06 + r3 a.04（原 blur 被 ×2 成 61.5 且漏第二层） */
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_425 {
+		width: 100%;
+		flex-direction: row;
+		/* 画布 gap=6px → 换 .n4_428 margin-left */
 		align-items: center;
+		overflow: hidden;
+	}
+	.n4_426 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n4_428 {
+		margin-left: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 21.2rpx;
+		color: #B05A3A;
+	}
+	.n4_429 {
+		width: 100%;
+		margin-top: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n4_430 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1134.6rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		/* 画布 gap=6px（11.5rpx）→ 换 .n4_432 margin-top */
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 30.8rpx;
+		padding-bottom: 30.8rpx;
+		background-color: #FFFFFF;
+		/* 画布 blur r12 -> 23.1rpx（原被 ×2 成 46.2） */
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_431 {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n4_432 {
+		margin-top: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	.n4_433 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1426.9rpx;
+		width: 123.1rpx;
+		height: 36.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.n4_434 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1484.6rpx;
+		width: 673.1rpx;
+		/* 画布 4:434 高 hug：padding 30.8 + 缩略 153.8 + 标题行 ~32.3 + 元信息行 ~24.2 */
+		height: 242rpx;
+		flex-direction: row;
+		/* 容器仅含单行 row，画布 gap 在 row 内生效（见 .n4_434-row） */
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_434-row {
+		flex-direction: row;
+		/* 画布 gap=12px（23.1rpx）→ 换 .n4_435 margin-right（横滑末卡多一条右缝，不可见） */
+		align-items: center;
+	}
+	.n4_435 {
+		width: 288.5rpx;
+		margin-right: 23.1rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		/* 画布 blur r10 -> 19.2rpx（原被 ×2 成 38.5） */
+		box-shadow: 0rpx 5.8rpx 19.2rpx rgba(59, 46, 38, 0.06);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_442 {
+		width: 100%;
+		height: 153.8rpx;
+		/* 画布 gradientTransform 求逆后方向向量为归一化 (0.707,0.707)=135deg */
+		background-image: linear-gradient(to bottom right, rgba(122, 140, 90, 0.3), rgba(196, 145, 60, 0.2));
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	/* 偶数卡缩略用画布 4:443 青蓝渐变（uvue 样式不继承，整条声明重写） */
+	.n4_442-b {
+		width: 100%;
+		height: 153.8rpx;
+		background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.28), rgba(122, 140, 90, 0.15));
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_436 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #3A2E25;
+	}
+	.n4_437 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 17.3rpx;
+		color: #8A7A6A;
+	}
+	/* 画布 4:438/4:443/4:439/4:440（相关卡2 静态样板）已移除：
+	   改为 v-for 数据驱动后复用 .n4_435/.n4_442/.n4_436/.n4_437 */
+	.n4_441 {
+		position: absolute;
+		/* absolute-ok: 玻璃操作条（W9 改 bottom 钉死视口底部：画布 bar 底边距画板底 40px=76.9rpx） */
+		left: 38.5rpx;
+		bottom: 76.9rpx;
+		width: 673.1rpx;
+		height: 115.4rpx;
+		flex-direction: row;
+		/* W9 拍板（2026-09-01 峰宝真值）：三 op 间距 48px=92.3rpx，op 簇在 bar 内水平居中。
+		   旧快照（8/30 导出）的 x=0/156.5/330px 左锚点已过期作废 */
 		justify-content: center;
+		align-items: center;
+		/* 毛玻璃：画布 BLUR(20) + fill 白 a0.55（原被降级成 0.72） */
+		background-color: rgba(255, 255, 255, 0.55);
+		/* 外环代替 border（免内缩）+ INNER_SHADOW 白a.45
+		   + DROP r28 a.1（原 blur 被 ×2 成 107.7 且漏 inset 层） */
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.45), 0rpx 19.2rpx 53.8rpx rgba(59, 46, 38, 0.1);
+		border-radius: 57.7rpx;
+		overflow: hidden;
 	}
-	/* 三项分别居中于设计稿 x 中心：32 / 196.5 / 360（设计 px） */
-	.action-1 { left: 24rpx; width: 80rpx; }
-	.action-2 { left: 333rpx; width: 120rpx; }
-	.action-3 { left: 648rpx; width: 80rpx; }
-	.action-label {
-		margin-top: 8rpx;
-		font-size: 22rpx;
-		line-height: 28rpx;
-		color: #3a2e25;
+	.n4_444 {
+		/* op1 无前距；flex 居中布局，垂直由 bar align-items:center 兜住（画布 y=12px ≈ 居中） */
+		flex-direction: column;
+		/* 图标 20x20 水平居中于文字上方（画布真值），不加则 uvue 列默认靠左 → 相对位置漂移 */
+		align-items: center;
+		/* 画布 gap=4px（7.7rpx）→ 换 .n4_447 margin-top */
+		overflow: hidden;
 	}
-
-	/* 按压态 */
-	.pressable {
-		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	.n4_445 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_447 {
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 19.2rpx;
+		color: #3A2E25;
+	}
+	.n4_448 {
+		/* W9 拍板：op 间距 48px=92.3rpx（uvue 无 flex gap → margin 表达） */
+		margin-left: 92.3rpx;
+		flex-direction: column;
+		/* 画布真值：胶囊图标偏移 10px = (文字宽40 - 20)/2，图标居中于文字上方 */
+		align-items: center;
+		/* 画布 gap=4px → 换 .n4_452 margin-top */
+		overflow: hidden;
+	}
+	.n4_449 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_452 {
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 19.2rpx;
+		color: #3A2E25;
+	}
+	.n4_453 {
+		/* W9 拍板：op 间距 48px=92.3rpx（uvue 无 flex gap → margin 表达） */
+		margin-left: 92.3rpx;
+		flex-direction: column;
+		/* 画布真值：分享文字宽 20px = 图标宽 → 偏移 0，仍需 center 保持三列规则一致 */
+		align-items: center;
+		/* 画布 gap=4px → 换 .n4_457 margin-top */
+		overflow: hidden;
+	}
+	.n4_454 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_457 {
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 19.2rpx;
+		color: #3A2E25;
 	}
 </style>

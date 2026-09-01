@@ -1,9 +1,14 @@
 /**
  * 环境配置（B-CL-2）：baseURL 开关 + mock 开关
  *
- *  - dev 模拟器：10.0.2.2:8000（Android 模拟器访问宿主机）
+ *  - dev 模拟器：10.0.2.2:8010（Android 模拟器访问宿主机）
  *  - dev 真机：填 REAL_DEVICE_HOST 为本机局域网 IP（真机与后端同网段）
  *  - prod：生产域名（合规/部署后替换）
+ *
+ * ⚠️ 端口 8010 的由来（2026-08-31 峰宝拍板）：8000 会被 HBuilderX launcher 的
+ *    httpServer.js（node.exe）抢占——该桩对**任何路径**都返回 HTTP 200 + 裸字符串 "404"，
+ *    客户端守卫因此 resolve(null)，表现为"接口全空但不报错"。改端口根治。
+ *    联调前必须确认：curl --noproxy '*' http://127.0.0.1:8010/healthz 返回真 JSON。
  */
 export const ENV: string = 'dev' // 'dev' | 'prod'
 
@@ -11,13 +16,13 @@ export const ENV: string = 'dev' // 'dev' | 'prod'
 export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o4511955023888384.ingest.us.sentry.io/4511958507388928'
 
 /** 真机联调后端地址：
- *  - 'localhost'：经 adb reverse USB 隧道访问本机（最稳，绕开 WiFi 段/防火墙；需 adb reverse tcp:8000 tcp:8000）
- *  - 局域网 IP：直接 WiFi 访问（依赖同网段 + 本机防火墙放行 8000）
+ *  - 'localhost'：经 adb reverse USB 隧道访问本机（最稳，绕开 WiFi 段/防火墙；需 adb reverse tcp:8010 tcp:8010）
+ *  - 局域网 IP：直接 WiFi 访问（依赖同网段 + 本机防火墙放行 8010）
  *  - 留空：走模拟器地址 10.0.2.2
  */
 export const REAL_DEVICE_HOST: string = 'localhost'
 
-const DEV_BASE_URL: string = 'http://10.0.2.2:8000'
+const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
 const PROD_BASE_URL: string = 'https://api.yishuguanghua.example.com'
 
 /** 外部 AI mock 开关（与后端 MOCK_EXTERNAL_AI 对齐；生产必须 false） */
@@ -37,10 +42,40 @@ export function getBaseUrl(): string {
 	}
 	if (REAL_DEVICE_HOST == 'localhost') {
 		// adb reverse USB 隧道（真机联调最稳路径）
-		return 'http://127.0.0.1:8000'
+		return 'http://127.0.0.1:8010'
 	}
 	if (REAL_DEVICE_HOST != '') {
-		return 'http://' + REAL_DEVICE_HOST + ':8000'
+		return 'http://' + REAL_DEVICE_HOST + ':8010'
 	}
 	return DEV_BASE_URL
+}
+
+/**
+ * 媒体下发 URL 解析（Valet Key · 2026-08-31）
+ *
+ * 后端下发的图片 URL 有两种形态：
+ *  - 绝对 URL（`http...`）：COS 生产后端的原生预签名 URL，直接用（不经后端，省带宽）
+ *  - 相对路径（`/api/v1/media/...`）：fs/minio 后端的 HMAC 票据，需拼当前 BASE_URL
+ *
+ * 为什么后端发相对路径：服务端刻意不持有 host 配置——真机（adb reverse 的 127.0.0.1）、
+ * 模拟器（10.0.2.2）、生产域名三种场景 host 各不相同，交给客户端拼自己已在用的
+ * getBaseUrl() 最不容易漂移。将来切 COS 后端时本函数无需改动。
+ *
+ * 安全性：URL 里的 exp/uid/sig 票据由服务端签发，短时效（缩略图 24h / 原图 15m），
+ * 不带 Authorization header 也能取到图——这正是 <image :src> 能工作的原因。
+ *
+ * @param url 后端下发的 thumbnail_url / original_url / cover_url
+ * @return 可直接喂给 <image :src> 的 URL；空值返回空串（模板侧用 != '' 判空）
+ */
+export function resolveMediaUrl(url: string | null): string {
+	if (url == null) {
+		return ''
+	}
+	if (url == '') {
+		return ''
+	}
+	if (url.startsWith('http://') || url.startsWith('https://')) {
+		return url
+	}
+	return getBaseUrl() + url
 }

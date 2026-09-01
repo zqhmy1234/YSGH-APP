@@ -106,7 +106,7 @@
 	.n2_390 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 192.3rpx;
+		top: 107.7rpx;
 		width: 153.8rpx;
 		height: 92.3rpx;
 		font-weight: bold;
@@ -116,7 +116,7 @@
 	.n2_391 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 315.4rpx;
+		top: 230.8rpx;
 		width: 673.1rpx;
 		height: 92.3rpx;
 		flex-direction: row;
@@ -127,9 +127,7 @@
 		padding-top: 30.8rpx;
 		padding-bottom: 30.8rpx;
 		background-color: #FFFFFF;
-		border-width: 1.9rpx;
-		border-color: rgba(176, 89, 59, 0.6);
-		box-shadow: 0rpx 11.5rpx 69.2rpx rgba(59, 46, 38, 0.08);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(176, 89, 59, 0.6), 0rpx 11.5rpx 69.2rpx rgba(59, 46, 38, 0.08);
 		border-radius: 9999rpx;
 		overflow: hidden;
 	}
@@ -150,7 +148,7 @@
 	.n2_397 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 438.5rpx;
+		top: 353.8rpx;
 		width: 673.1rpx;
 		flex-direction: row;
 		gap: 15.4rpx;
@@ -221,7 +219,7 @@
 	.n2_406 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 534.6rpx;
+		top: 450.0rpx;
 		width: 305.8rpx;
 		height: 28.8rpx;
 		font-size: 23.1rpx;
@@ -230,7 +228,7 @@
 	.n2_423 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 1530.8rpx;
+		top: 1446.2rpx;
 		width: 673.1rpx;
 		height: 119.2rpx;
 		flex-direction: row;
@@ -241,9 +239,7 @@
 		padding-top: 19.2rpx;
 		padding-bottom: 19.2rpx;
 		background-color: rgba(255, 255, 255, 0.72);
-		border-width: 1.9rpx;
-		border-color: rgba(255, 255, 255, 0.65);
-		box-shadow: 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
 		border-radius: 69.2rpx;
 		overflow: hidden;
 	}
@@ -308,7 +304,7 @@
 	.n2_444 {
 		position: absolute;
 		left: 321.2rpx;
-		top: 1507.7rpx;
+		top: 1423.1rpx;
 		width: 107.7rpx;
 		height: 107.7rpx;
 		flex-direction: row;
@@ -335,7 +331,7 @@
 	.n2_588 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 580.8rpx;
+		top: 496.2rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		padding-left: 15.4rpx;
@@ -410,7 +406,7 @@
 	.n2_598 {
 		position: absolute;
 		left: 38.5rpx;
-		top: 861.5rpx;
+		top: 776.9rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		padding-left: 15.4rpx;

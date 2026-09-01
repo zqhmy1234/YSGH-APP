@@ -51,10 +51,26 @@ export class AuthError extends Error {
 	}
 }
 
-/** 微信 mock 登录（dev 环境 code=dev-client，后端 MOCK 模式签发） */
+/** 微信 mock 登录（dev 环境 code=dev-client，后端 MOCK 模式签发）
+ * W7-401 加固：看门狗 10s——蒸汽模式下 uni.request 桥接可能吞回调（api.uts 同源教训），
+ * 超时按失败处理，保证 ensureLogin 有限时内落定。
+ */
 export function wechatLogin(): Promise<boolean> {
 	console.log('[dbg-auth] wechatLogin fire POST /api/v1/auth/wechat')
 	return new Promise<boolean>((resolve) => {
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-auth] wechatLogin ' + why)
+			resolve(ok)
+		}
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout')
+		}, 10000)
 		uni.request({
 			url: getBaseUrl() + '/api/v1/auth/wechat',
 			method: 'POST',
@@ -63,22 +79,20 @@ export function wechatLogin(): Promise<boolean> {
 				device_id: DEVICE_ID
 			},
 			success: (res) => {
-				console.log('[dbg-auth] wechatLogin success status=' + res.statusCode)
 				if (res.statusCode === 200) {
 					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
 					if (data != null) {
 						setSecure(KEY_ACCESS, data.getString('access_token') as string)
 						setSecure(KEY_REFRESH, data.getString('refresh_token') as string)
-						resolve(true)
+						finish(true, 'success status=200')
 						return
 					}
 				}
-				resolve(false)
+				finish(false, 'fail status=' + res.statusCode)
 			},
 			fail: () => {
-				console.log('[dbg-auth] wechatLogin FAIL')
-				resolve(false)
+				finish(false, 'network FAIL')
 			}
 		})
 	})
@@ -155,6 +169,25 @@ function doRefresh(): Promise<boolean> {
 			})
 			return
 		}
+		// W7-401 自愈：refresh 失败（已轮换作废/过期/吊销）≠ 终局——
+		// 清 token 后降级重新登录（code=dev-client 映射同一种子用户，数据不丢）。
+		// 旧实现只 clearToken+resolve(false)，app 卡死在 401 循环无法自愈。
+		const fallbackLogin = (why: string): void => {
+			console.log('[dbg-auth] doRefresh ' + why + ' -> clearToken + re-login fallback')
+			clearToken()
+			wechatLogin().then((ok: boolean) => {
+				resolve(ok)
+			})
+		}
+		let settled = false
+		const timer = setTimeout(() => {
+			// 蒸汽模式桥接吞回调兜底（api.uts 同源教训）：8s 无响应按失败处理
+			if (settled) {
+				return
+			}
+			settled = true
+			fallbackLogin('watchdog timeout(8s)')
+		}, 8000)
 		uni.request({
 			url: getBaseUrl() + '/api/v1/auth/refresh',
 			method: 'POST',
@@ -163,23 +196,32 @@ function doRefresh(): Promise<boolean> {
 				device_id: DEVICE_ID
 			},
 			success: (res) => {
+				console.log('[dbg-auth] doRefresh status=' + res.statusCode)
+				if (settled) {
+					return
+				}
+				settled = true
+				clearTimeout(timer)
 				if (res.statusCode === 200) {
 					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
 					if (data != null) {
 						setSecure(KEY_ACCESS, data.getString('access_token') as string)
 						setSecure(KEY_REFRESH, data.getString('refresh_token') as string)
+						console.log('[dbg-auth] doRefresh success, tokens rotated')
 						resolve(true)
 						return
 					}
 				}
-				// 刷新失败 → 清 token
-				clearToken()
-				resolve(false)
+				fallbackLogin('fail status=' + res.statusCode)
 			},
 			fail: () => {
-				clearToken()
-				resolve(false)
+				if (settled) {
+					return
+				}
+				settled = true
+				clearTimeout(timer)
+				fallbackLogin('network FAIL')
 			}
 		})
 	})

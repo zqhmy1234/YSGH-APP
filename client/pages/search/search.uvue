@@ -1,94 +1,66 @@
 <template>
-	<view class="page">
-		<!-- 页首大标题（设计稿: 21,61 ≈38px=73rpx 粗 #3a2e25 左对齐） -->
-		<text class="page-title">搜索</text>
-
-		<!-- 搜索框（设计稿: x=20 y=120 350x48 rx=24，琥珀描边#b0593b 60%） -->
-		<view class="search-box">
-			<view class="search-magnifier">
-				<view class="search-magnifier-ring"></view>
-				<view class="search-magnifier-handle"></view>
-			</view>
-			<input
-				class="search-input"
-				v-model="keyword"
-				placeholder="搜索记忆、照片、主题…"
-				placeholder-class="search-placeholder"
-				confirm-type="search"
-				@confirm="doSearch"
-			/>
-		</view>
-
-		<!-- 筛选标签（设计稿: y=184 42x33 rx=16.5，激活态#b0593b 12%） -->
-		<view class="filter-row">
-			<view
-				v-for="(f, idx) in filters"
-				:key="idx"
-				class="filter-tag pressable"
-				:class="{ 'filter-tag-active': activeFilter === idx }"
-				@tap="setFilter(idx)"
-			>
-				<text class="filter-text" :class="{ 'filter-text-active': activeFilter === idx }">{{ f }}</text>
+	<!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n2_390">搜索</text> <!-- 大标题 -->
+		<view class="n2_391"> <!-- 搜索胶囊 -->
+			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
+			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
+				<input class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
 			</view>
 		</view>
-
-		<!-- 结果区 -->
-		<scroll-view class="result-list">
-			<!-- 结果计数（设计稿: y=235.8 #8a7a6a） -->
-			<text class="result-count">{{ resultCountText() }}</text>
-
-			<!-- 语音卡（设计稿: y=258 350x133 rx=20，语音区#c4913c 14%） -->
-			<view v-for="(item, idx) in voiceResults" :key="'v' + idx" class="result-card pressable" @tap="openResult(item)">
-				<view class="voice-zone">
-					<view class="voice-play-btn pressable" :class="{ 'is-playing': playingId === item.id }" @tap.stop="playVoice(item)">
-						<view v-if="playingId !== item.id" class="voice-play-triangle"></view>
-						<view v-else class="voice-pause">
-							<view class="voice-pause-bar"></view>
-							<view class="voice-pause-bar"></view>
-						</view>
+		<view class="n2_397"> <!-- 筛选行（HEAD 交互接回：4 静态 chip→filters v-for + active 态） -->
+			<view v-for="(f, idx) in filters" :key="idx" class="chip" :class="{ 'chip-active': idx === activeFilter, 'chip-ml': idx > 0 }" @tap="setFilter(idx)">
+				<text class="chip-text" :class="{ 'chip-text-active': idx === activeFilter }">{{ f }}</text>
+			</view>
+		</view>
+		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
+		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
+		<scroll-view class="n2-results" :show-scrollbar="false">
+			<view v-for="(item, idx) in voiceResults" :key="'v' + idx" class="n2_588" @tap="openResult(item)">
+				<view class="n2_589"> <!-- 语音媒体 -->
+					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
+						<image class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
 					</view>
-					<view class="voice-wave">
-						<view v-for="(h, i) in item.waveHeights" :key="i" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+					<view class="n2_592"> <!-- 波形（装饰用画布 SVG） -->
+						<image class="n2_596" src="/static/icons/i2_596.svg" />
 					</view>
 				</view>
-				<text class="voice-title">{{ item.title }}</text>
-				<view class="result-meta voice-card-meta">
-					<text class="result-meta-text">{{ item.meta }}</text>
+				<view class="n2_590"> <!-- 语音文字区 -->
+					<text class="n2_593">{{ item.title }}</text>
+					<text class="n2_594">{{ item.meta }}</text>
 				</view>
 			</view>
-
-			<!-- 文字卡（设计稿: y=404 350x109 rx=20，引用区#c4913c 10%，引用竖线#c4913c） -->
-			<view v-for="(item, idx) in textResults" :key="'t' + idx" class="result-card pressable" @tap="openResult(item)">
-				<view class="quote-zone">
-					<view class="quote-line"></view>
-					<view class="quote-content">
-						<text class="quote-text">{{ item.text }}</text>
-					</view>
+			<view v-for="(item, idx) in textResults" :key="'t' + idx" class="n2_598" @tap="openResult(item)">
+				<!-- 照片命中：服务端票据 URL 直连回显（<image> 无法带 header，预签名/票据 URL 是唯一通路） -->
+				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFill" />
+				<view class="n2_599"> <!-- 摘要块 -->
+					<view class="n2_601"></view> <!-- 引用竖线 -->
+					<text class="n2_602">{{ item.text }}</text>
 				</view>
-				<view class="result-meta quote-card-meta">
-					<text class="result-meta-text">{{ item.meta }}</text>
+				<view class="n2_600"> <!-- 文字元信息区 -->
+					<text class="n2_603">{{ item.meta }}</text>
 				</view>
 			</view>
-
-			<!-- 空状态 -->
-			<view v-if="voiceResults.length === 0 && textResults.length === 0" class="empty-state">
-				<text class="empty-icon">🔍</text>
-				<text class="empty-text">{{ emptyText() }}</text>
+			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">{{ emptyText() }}</text>
 			</view>
 		</scroll-view>
+		<TabBar active="search" @plus="sheetOpen = true" />
 
-		<!-- 统一 TabBar 组件 -->
-		<TabBar active="search" />
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
 	</view>
 </template>
 
 <script setup lang="uts">
 	import { ref, computed } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
-	import { searchText, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { searchText, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
 
 	// ── 响应式状态 ──
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
 	let keyword = ref('')
 	let activeFilter = ref(0)
 	let playingId = ref('')
@@ -97,6 +69,37 @@
 	let degraded = ref(false)
 	let hits = ref<Array<SearchHitItem>>([])
 	let filters = ['全部', '照片', '语音', '文字']
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面（返回 true = 已自行处理）
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// ── 本地 mock 数据（视觉验收用）────────────────────────────────────────
+	// 后端/索引无数据时结果区整块不渲染 → 波形卡、引用竖线、筛选间距全都无法对拍。
+	// 这里预填 6 条（3 语音 + 3 文字/照片），让结果区有内容可验。
+	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
+	//   打开时的危害：onLoad **无条件**灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*），
+	//   真实搜索结果永远被这 6 条压住，筛选/跳转全在假数据上跑。
+	//   关掉后进入页面会拉一次默认结果（见 onLoad），不再需要预填。
+	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
+	const USE_MOCK_DATA: boolean = false
+
+	function mockHits(): Array<SearchHitItem> {
+		const out: Array<SearchHitItem> = []
+		out.push(new SearchHitItem('v-mock-1', 'voice', '和妈妈的通话', '2026-08-27T12:36:00', '上海', 'ev-mock-1', '和妈妈的通话', 0.9, '', ''))
+		out.push(new SearchHitItem('v-mock-2', 'voice', '清晨湖边的风声', '2026-08-28T07:42:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.85, '', ''))
+		out.push(new SearchHitItem('v-mock-3', 'voice', '宿舍夜谈', '2026-08-25T23:10:00', '宿舍', 'ev-mock-3', '夜谈', 0.8, '', ''))
+		out.push(new SearchHitItem('t-mock-1', 'text', '那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。', '2026-08-28T07:42:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.88, '', ''))
+		out.push(new SearchHitItem('p-mock-1', 'photo', '湖面上的薄雾还没散，对岸的树影倒映在水里', '2026-08-28T07:45:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.82, '', ''))
+		out.push(new SearchHitItem('t-mock-2', 'text', '第一次尝试手冲，水温 92°C，粉水比 1:15，苦了一点但回甘明显', '2026-08-20T15:20:00', '宿舍', 'ev-mock-4', '手冲咖啡初体验', 0.75, '', ''))
+		return out
+	}
+	// ── mock 结束 ────────────────────────────────────────────────────────
 
 	// 从「我的」类型卡跳入：?type=photo/voice/text 预设对应筛选标签
 	onLoad((options: OnLoadOptions) => {
@@ -108,6 +111,14 @@
 		} else if (t == 'text') {
 			activeFilter.value = 3
 		}
+		if (USE_MOCK_DATA) {
+			hits.value = mockHits()
+			hasSearched.value = true
+			return
+		}
+		// mock 关闭后：进入即拉「最近内容」兜底（后端 /search 的 q 要求非空，
+		// 空词场景只能用 contents 列表端点），否则结果区一片空白。
+		loadRecent()
 	})
 
 	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
@@ -128,10 +139,13 @@
 		id: string
 		text: string
 		meta: string
-		constructor(id: string, text: string, meta: string) {
+		/** 照片缩略图票据 URL（仅 content_type=photo 有值；文字/语音为空串） */
+		thumb: string
+		constructor(id: string, text: string, meta: string, thumb: string) {
 			this.id = id
 			this.text = text
 			this.meta = meta
+			this.thumb = thumb
 		}
 	}
 
@@ -175,12 +189,30 @@
 		return []
 	}
 
+	// 本地筛选（与 filterContentTypes() 同源，两处阈值必须一致）
+	// ⚠️ 为什么必须在这里再过滤一次：setFilter() 只在「已搜过 && keyword 非空」时才重发请求，
+	//    而 mock / 空词场景 keyword 为空 → 请求不发 → 若 computed 不读 activeFilter，
+	//    点「照片/语音/文字」就毫无反应、永远 6 条（真机实锤 2026-08-31）。
+	//    真实搜索场景后端已按同一组 types 过滤过，这里是幂等二次过滤，不改变结果。
+	function matchesFilter(ct: string): boolean {
+		if (activeFilter.value === 1) {
+			return ct == 'photo'
+		}
+		if (activeFilter.value === 2) {
+			return ct == 'voice'
+		}
+		if (activeFilter.value === 3) {
+			return ct == 'text'
+		}
+		return true
+	}
+
 	// 语音结果（content_type=voice → 语音卡）
 	let voiceResults = computed((): Array<VoiceResult> => {
 		const out: Array<VoiceResult> = []
 		for (let i = 0; i < hits.value.length; i++) {
 			const h = hits.value[i]
-			if (h.contentType == 'voice') {
+			if (h.contentType == 'voice' && matchesFilter(h.contentType)) {
 				const title = h.eventTitle != '' ? h.eventTitle : '语音记忆'
 				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId)))
 			}
@@ -196,8 +228,12 @@
 			if (h.contentType == 'voice') {
 				continue
 			}
+			if (!matchesFilter(h.contentType)) {
+				continue
+			}
 			const txt = h.text != '' ? h.text : '（无文本描述）'
-			out.push(new TextResult(h.contentId, txt, hitMeta(h)))
+			// 照片命中带服务端下发的缩略图票据 URL，其余类型为空串
+			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : ''))
 		}
 		return out
 	})
@@ -264,6 +300,28 @@
 		runSearch()
 	}
 
+	/**
+	 * 进入页面的默认数据源：GET /contents 拉最近内容。
+	 * 后端 /search 的 q 要求非空（SearchRequest min_length=1），空词语义搜索发不出去，
+	 * 所以「刚进页面还什么都没搜」时用最近内容兜底，结果区不再空白。
+	 * score 恒为 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
+	 */
+	// RecordSheet 保存成功回调：刷新最近内容兜底列表
+	function onRecordSaved(): void {
+		loadRecent()
+	}
+
+	function loadRecent(): void {
+		loading.value = true
+		fetchRecentContents(30, filterContentTypes()).then((out) => {
+			loading.value = false
+			if (out == null || out.hits.length == 0) {
+				return // 保持空态文案，不打 hasSearched（避免误显「共 0 条结果」）
+			}
+			hits.value = out.hits
+		})
+	}
+
 	function openResult(item: any): void {
 		const id = (item as VoiceResult).id
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + id })
@@ -277,282 +335,274 @@
 			uni.showToast({ title: '语音播放待接入音频流', icon: 'none' })
 		}
 	}
-</script>
+
+	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用与 setFilter(idx:number) 签名冲突，
+	//   模板已改回 HEAD 的 v-for + setFilter(idx)，此处删除）
+	</script>
 
 <style>
-	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x844 画布，rpx = 设计px × 2）
-	   背景 #f8f7f4 / 搜索框 700x96 rx=48 白底+琥珀描边 / 筛选标签 84x66 rx=33
-	   语音卡 700x266 rx=40 / 文字卡 700x218 rx=40 / 玻璃 TabBar #f6f1e7bf rx=62 */
-	.page {
-		width: 100%;
-		height: 100%;
-		background-color: #f8f7f4;
-		display: flex;
-		flex-direction: column;
-		position: relative;
-	}
-
-	/* 页首大标题（设计稿: 21,61 ≈38px=73rpx 粗 #3a2e25 左对齐） */
-	.page-title {
-		position: absolute;
-		top: 44rpx;
-		left: 40rpx;
-		font-size: 73rpx;
-		font-weight: bold;
-		color: #3a2e25;
-		line-height: 88rpx;
-	}
-
-	/* ===== 搜索框（设计稿: x=20 y=120 350x48 rx=24，阴影 dy=6 blur=9 alpha 0.08） ===== */
-	.search-box {
-		position: relative;
-		margin: 146rpx 40rpx 0 40rpx;
-		width: 700rpx;
-		height: 96rpx;
-		background-color: #ffffff;
-		border: 2rpx solid rgba(176, 89, 59, 0.6);
-		border-radius: 48rpx;
-		box-sizing: border-box;
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		box-shadow: 0 12rpx 18rpx rgba(58, 45, 38, 0.08);
-	}
-	/* 放大镜（设计稿: 圆形描边 #b05a3a + 斜柄，中心 48/46） */
-	.search-magnifier {
-		position: absolute;
-		left: 46rpx;
-		top: 36rpx;
-		width: 24rpx;
-		height: 24rpx;
-	}
-	.search-magnifier-ring {
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 15rpx;
-		height: 15rpx;
-		border: 3rpx solid #b05a3a;
-		border-radius: 50%;
-		box-sizing: border-box;
-	}
-	.search-magnifier-handle {
-		position: absolute;
-		right: 1rpx;
-		bottom: 1rpx;
-		width: 13rpx;
-		height: 3rpx;
-		background-color: #b05a3a;
-		border-radius: 2rpx;
-		transform: rotate(45deg);
-	}
-	.search-input {
+	.page-root {
 		flex: 1;
-		height: 96rpx;
-		padding-left: 94rpx;
-		padding-right: 12rpx;
-		font-size: 35rpx;
-		color: #3a2e25;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
 	}
-	.search-placeholder {
-		color: #b3a696;
+	.n2_390 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 153.8rpx;
+		height: 92.3rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		color: #3A2E25;
 	}
-
-	/* ===== 筛选标签（设计稿: y=184 42x33 rx=16.5，无阴影） ===== */
-	.filter-row {
-		display: flex;
+	.n2_391 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 230.8rpx;
+		width: 673.1rpx;
+		height: 92.3rpx;
 		flex-direction: row;
-		margin: 32rpx 40rpx 0 40rpx;
-	}
-	.filter-tag {
-		width: 84rpx;
-		height: 66rpx;
-		background-color: #ffffff;
-		border-radius: 33rpx;
-		display: flex;
+		/* ⚠️ 无垂直 padding：画布 2:391 paddingTop/Bottom 均为 null，
+		   子元素靠 y 居中（搜索图标 y=15/h=18 → 上下各 15pt，容器 h=48pt）。
+		   此前误补 padding-top/bottom=30.8rpx → 内容区只剩 92.3-30.8×2=30.7rpx，
+		   装不下 34.6rpx 的搜索图标 → 被裁（全项目同类审计 2026-08-31 抓到）。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
 		align-items: center;
-		justify-content: center;
-		margin-right: 16rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: #FFFFFF;
+		/* 画布 stroke 为居中描边；uvue 下 border-width 会内缩 content box 1px，
+		   改用 box-shadow 外环 0 0 0 1.9rpx 等价还原（不内缩子元素） */
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(176, 89, 59, 0.6), 0rpx 11.5rpx 34.6rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
 	}
-	.filter-tag-active {
+	.n2_392 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n2_395 {
+		flex: 1;
+		margin-left: 15.4rpx; /* 画布 2:391 gap=8pt：图标右缘 34 → 输入区 x42 */
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_396 {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_397 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 353.8rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	/* chip 动态化（HEAD 交互接回）：默认白底灰字，active 态锈红 tint */
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.chip-active {
 		background-color: rgba(176, 89, 59, 0.12);
 	}
-	.filter-text {
-		font-size: 22rpx;
-		color: #8a7a6a;
+	/* 画布 2:397 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
+	.chip-ml {
+		margin-left: 15.4rpx;
 	}
-	.filter-text-active {
-		color: #b05a3a;
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.chip-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
 		font-weight: 600;
+		color: #B05A3A;
 	}
-
-	/* ===== 结果区 ===== */
-	.result-list {
-		flex: 1;
-		padding: 0 40rpx 220rpx 40rpx;
+	.n2_406 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 450rpx;
+		width: 305.8rpx;
+		height: 28.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
 	}
-	/* 结果计数（设计稿: y=235.8 #8a7a6a） */
-	.result-count {
-		display: flex;
-		margin: 38rpx 0 22rpx 0;
-		font-size: 22rpx;
-		color: #8a7a6a;
+	.n2-results {
+		position: absolute;
+		left: 38.5rpx;
+		top: 496.2rpx;
+		bottom: 169.2rpx; /* TabBar 高度避让 */
+		width: 673.1rpx;
+		background-color: #F8F7F4;
 	}
-
-	/* ===== 结果卡（设计稿: 语音 350x133 / 文字 350x109，rx=20，阴影 dy=4 blur=8 alpha 0.06） ===== */
-	.result-card {
-		width: 700rpx;
-		background-color: #ffffff;
-		border-radius: 40rpx;
-		padding: 16rpx 16rpx 34rpx 16rpx;
-		margin-bottom: 26rpx;
-		box-sizing: border-box;
-		box-shadow: 0 8rpx 16rpx rgba(58, 46, 37, 0.06);
-		display: flex;
+	.n2_588 {
+		width: 673.1rpx;
 		flex-direction: column;
+		margin-bottom: 23.1rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
 	}
-
-	/* 语音区（设计稿: 28,266,334x64 rx=12，#c4913c 14%） */
-	.voice-zone {
-		position: relative;
-		width: 668rpx;
-		height: 128rpx;
-		background-color: rgba(196, 145, 60, 0.14);
-		border-radius: 24rpx;
-	}
-	/* 播放按钮：白底圆 + 琥珀三角（设计稿: 中心 58,298 r=16） */
-	.voice-play-btn {
-		position: absolute;
-		left: 28rpx;
-		top: 32rpx;
-		width: 64rpx;
-		height: 64rpx;
-		border-radius: 32rpx;
-		background-color: #ffffff;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 4rpx 8rpx rgba(58, 46, 37, 0.12);
-	}
-	.voice-play-triangle {
-		width: 0;
-		height: 0;
-		border-left: 15rpx solid #b05a3a;
-		border-top: 9rpx solid transparent;
-		border-bottom: 9rpx solid transparent;
-		margin-left: 4rpx;
-	}
-	.voice-pause {
-		display: flex;
+	.n2_589 {
+		width: 100%;
+		height: 123.1rpx;
 		flex-direction: row;
+		/* ⚠️ 无垂直 padding：画布 2:589 paddingTop/Bottom 均为 null，
+		   子元素靠 y 居中（玻璃播放钮 y=16/h=32 → 上下各 16pt，容器 h=64pt）。
+		   此前误补 padding-top/bottom=26.9rpx → 播放钮底部越出可视区被 overflow 裁掉。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
 		align-items: center;
-		justify-content: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		background-color: rgba(196, 145, 59, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
 	}
-	.voice-pause-bar {
-		width: 6rpx;
-		height: 24rpx;
-		background-color: #b05a3a;
-		border-radius: 3rpx;
-		margin: 0 4rpx;
-	}
-	/* 波形（设计稿: 100.8,286.8,182.4x22.4，#c4913c） */
-	.voice-wave {
-		position: absolute;
-		left: 146rpx;
-		top: 42rpx;
-		width: 364rpx;
-		height: 44rpx;
-		display: flex;
+	.n2_591 {
+		width: 61.5rpx;
+		height: 61.5rpx;
 		flex-direction: row;
+		justify-content: center;
 		align-items: center;
-		justify-content: space-between;
+		/* 毛玻璃：画布 BLUR(8) + fill 白 a0.50（原被降级成 0.72） */
+		background-color: rgba(255, 255, 255, 0.5);
+		/* 补画布 INNER_SHADOW 白a.4；两轴居中故保留 border */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		border-radius: 30.8rpx;
+		overflow: hidden;
 	}
-	.voice-wave-bar {
-		width: 6rpx;
-		background-color: #c4913c;
-		border-radius: 3rpx;
+	.n2_595 {
+		width: 23.1rpx;
+		height: 23.1rpx;
 	}
-	/* 语音卡标题（设计稿: y=340.6 #3a2e25 约16px） */
-	.voice-title {
-		display: flex;
-		margin: 21rpx 0 0 17rpx;
-		font-size: 32rpx;
-		line-height: 40rpx;
-		color: #3a2e25;
+	.n2_592 {
+		width: 384.6rpx;
+		height: 50rpx;
+		margin-left: 23.1rpx; /* 画布 2:589 gap=12pt：播放钮右缘 46 → 波形 x58 */
+		overflow: hidden;
+	}
+	.n2_596 {
+		position: absolute;
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	.n2_590 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_593 {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
 	}
-
-	/* 引用区（设计稿: 28,412,334x64 rx=12，#c4913c 10%） */
-	.quote-zone {
-		width: 668rpx;
-		height: 128rpx;
-		background-color: rgba(196, 145, 60, 0.10);
-		border-radius: 24rpx;
-		display: flex;
+	.n2_594 {
+		margin-top: 5.8rpx; /* 画布 2:590 gap=3pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_598 {
+		width: 673.1rpx;
+		flex-direction: column;
+		margin-bottom: 23.1rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2-result-photo {
+		width: 100%;
+		height: 320rpx;
+		margin-bottom: 15.4rpx;
+		border-radius: 23.1rpx;
+		background-color: #EFEAE2;
+	}
+	.n2_599 {
+		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 24rpx;
-		box-sizing: border-box;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 59, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
 	}
-	/* 引用竖线（设计稿: 40,424,3x40 #c4913c rx=1.5） */
-	.quote-line {
-		width: 6rpx;
-		height: 80rpx;
-		background-color: #c4913c;
-		border-radius: 3rpx;
-		margin-right: 21rpx;
+	.n2_601 {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
 	}
-	.quote-content {
+	.n2_602 {
 		flex: 1;
-		display: flex;
+		margin-left: 19.2rpx; /* 画布 2:599 gap=10pt：竖线右缘 15 → 文本 x25 */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n2_600 {
+		width: 100%;
 		flex-direction: column;
-		justify-content: center;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
 	}
-	/* 引言体（设计稿: y=426 #5a4c40 约15px 两行） */
-	.quote-text {
-		font-size: 28rpx;
-		line-height: 40rpx;
-		color: #5a4c40;
-		font-style: italic;
+	.n2_603 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
 	}
-
-	/* 卡底元信息（设计稿: #8a7a6a 约10px） */
-	.result-meta {
-		display: flex;
+	.n2-empty {
 		flex-direction: row;
-		align-items: center;
-		margin-left: 17rpx;
+		justify-content: center;
+		padding-top: 61.5rpx;
+		padding-bottom: 61.5rpx;
 	}
-	.voice-card-meta {
-		margin-top: 7rpx;
-	}
-	.quote-card-meta {
-		margin-top: 20rpx;
-	}
-	.result-meta-text {
-		font-size: 20rpx;
-		color: #8a7a6a;
-	}
-
-	/* 空状态 */
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		padding: 100rpx 0;
-	}
-	.empty-icon {
-		font-size: 72rpx;
-		margin-bottom: 24rpx;
-	}
-	.empty-text {
-		font-size: 26rpx;
-		color: #8a7a6a;
-	}
-
-
-	/* 按压态动画 */
-	.pressable {
-		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	.n2-empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #B3A696;
 	}
 </style>

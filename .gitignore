@@ -145,3 +145,6 @@ backend/__pycache__/
 
 backend/routes.txt
 
+
+# 审查/部署证据留本地（36e0b64 铁律延伸）
+review/out/

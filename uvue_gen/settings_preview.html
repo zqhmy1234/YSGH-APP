@@ -1,13 +1,16 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:0;background:#333;display:flex;justify-content:center;}
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
 .phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
 .page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
-.n4_133 { position: absolute; left: 24.0px; top: 60.0px; width: 31.0px; height: 18.0px; font-weight: 600; font-size: 15.0px; color: #3A2E25; }
-.n4_134 { position: absolute; left: 344.0px; top: 63.0px; width: 22.0px; height: 11.0px; background-color: #3A2E25; border-radius: 3.0px; overflow: hidden; }
-.n4_135 { position: absolute; left: 16.0px; top: 104.0px; width: 22.0px; height: 22.0px; }
-.n4_137 { position: absolute; left: 0.0px; top: 104.0px; width: 390.0px; display: flex; flex-direction: row; align-items: center; overflow: hidden; }
+.n4_135 { position: absolute; left: 16.0px; top: 60.0px; width: 22.0px; height: 22.0px; }
+.n4_137 { position: absolute; left: 0.0px; top: 60.0px; width: 390.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; overflow: hidden; }
 .n4_138 { font-weight: 600; font-size: 18.0px; color: #3A2E25; }
-.n4_139 { position: absolute; left: 20.0px; top: 154.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 24px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n4_139 { position: absolute; left: 20.0px; top: 110.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
 .n4_140 { width: 100%; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; overflow: hidden; }
 .n4_141 { width: 20.0px; height: 20.0px; }
 .n4_144 { flex: 1; font-size: 15.0px; color: #3A2E25; }
@@ -16,8 +19,8 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n4_196 { width: 20.0px; height: 20.0px; }
 .n4_151 { flex: 1; font-size: 15.0px; color: #3A2E25; }
 .n4_152 { width: 46.0px; height: 28.0px; display: flex; flex-direction: row; align-items: center; padding-left: 3.0px; padding-right: 3.0px; padding-top: 3.0px; padding-bottom: 3.0px; background-color: #B05A3A; border-radius: 14.0px; overflow: hidden; }
-.n4_153 { width: 22.0px; height: 22.0px; background-color: #FFFFFF; box-shadow: 0px 1px 6px rgba(59, 46, 38, 0.25); border-radius: 11.0px; overflow: hidden; }
-.n4_154 { position: absolute; left: 20.0px; top: 274.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 24px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n4_153 { width: 22.0px; height: 22.0px; background-color: #FFFFFF; box-shadow: 0px 1px 3px rgba(59, 46, 38, 0.25); border-radius: 11.0px; overflow: hidden; }
+.n4_154 { position: absolute; left: 20.0px; top: 230.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 6.0px; padding-right: 6.0px; padding-top: 6.0px; padding-bottom: 6.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
 .n4_155 { width: 100%; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; overflow: hidden; }
 .n4_156 { width: 20.0px; height: 20.0px; }
 .n4_158 { flex: 1; font-size: 15.0px; color: #3A2E25; }
@@ -27,9 +30,6 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n4_163 { flex: 1; font-size: 15.0px; color: #3A2E25; }
 .n4_164 { font-size: 13.0px; color: #B3A696; }
 </style></head><body><div class="phone">
-    <span class="n4_133">9:41</span> <!-- 状态栏时间 -->
-    <div class="n4_134"> <!-- 电池 -->
-    </div>
     <img class="n4_135" src="icons/i4_135.svg" /> <!-- 返回 -->
     <div class="n4_137"> <!-- 标题容器 -->
       <span class="n4_138">设置</span> <!-- 页标题 -->

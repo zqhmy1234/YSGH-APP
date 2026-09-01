@@ -1,44 +1,8 @@
 <template>
 	<view class="page">
-		<!-- ═══════════ 背景层：时间轴主页（压暗前，仅作设计稿背景） ═══════════ -->
-		<view class="backdrop">
-			<image class="hero-photo" src="/static/hero-lake.jpg" mode="aspectFill" />
-			<view class="hero-shade-top"></view>
-			<view class="hero-shade-bottom"></view>
-
-			<!-- 顶部 hero：标题 + 头像 -->
-			<text class="hero-title serif">回忆</text>
-			<view class="hero-avatar">
-				<text class="hero-avatar-char serif">峰</text>
-			</view>
-			<text class="hero-sub1">八月 · 28 条新记忆</text>
-			<text class="hero-sub2">清晨的湖边，风很轻 · 8月28日 07:42</text>
-
-			<!-- 搜索胶囊 -->
-			<view class="search-capsule">
-				<image class="search-icon" src="/static/icons/record-search.svg" :width="14" :height="14" />
-				<text class="search-placeholder">描述一段回忆，帮你找</text>
-			</view>
-
-			<!-- 日期 + 分隔线 -->
-			<text class="date-label">8月28日 · 星期五</text>
-			<view class="divider"></view>
-
-			<!-- 语音卡（弹层之上露出的顶部） -->
-			<view class="voice-card">
-				<view class="voice-inner">
-					<view class="play-btn">
-						<image src="/static/icons/record-play.svg" :width="11" :height="13" />
-					</view>
-					<image class="wave" src="/static/icons/record-wave.svg" :width="182" :height="22" />
-				</view>
-				<text class="voice-title">和妈妈的通话</text>
-				<text class="voice-meta">8月27日 12:36 · 语音 3分12秒 · 已转写</text>
-			</view>
-		</view>
-
-		<!-- ═══════════ 模态遮罩（55% 暗色，压暗背景） ═══════════ -->
-		<view class="scrim"></view>
+		<!-- ═══════════ 模态遮罩（55% 暗色，压暗真实页面） ═══════════
+		     点遮罩 = 关闭浮层（原独立页无此交互，浮层化后必须补，否则只能靠系统返回键） -->
+		<view class="scrim" @tap="onClose"></view>
 
 		<!-- ═══════════ 底部弹层：新的记忆（设计稿默认态） ═══════════ -->
 		<view class="sheet">
@@ -47,25 +11,25 @@
 			<view class="sheet-options">
 				<view class="option" @tap="openMode('photo')">
 					<view class="option-circle c-photo">
-						<image src="/static/icons/record-camera.svg" :width="22" :height="19" />
+						<image class="option-icon icon-camera" src="/static/icons/record-camera.svg" />
 					</view>
 					<text class="option-label">拍照</text>
 				</view>
 				<view class="option" @tap="openMode('gallery')">
 					<view class="option-circle c-gallery">
-						<image src="/static/icons/record-gallery.svg" :width="21" :height="18" />
+						<image class="option-icon icon-gallery" src="/static/icons/record-gallery.svg" />
 					</view>
 					<text class="option-label">选照片</text>
 				</view>
 				<view class="option" @tap="openMode('voice')">
 					<view class="option-circle c-voice">
-						<image src="/static/icons/record-mic.svg" :width="17" :height="22" />
+						<image class="option-icon icon-mic" src="/static/icons/record-mic.svg" />
 					</view>
 					<text class="option-label">说一段</text>
 				</view>
 				<view class="option" @tap="openMode('text')">
 					<view class="option-circle c-text">
-						<image src="/static/icons/record-keyboard.svg" :width="20" :height="20" />
+						<image class="option-icon icon-keyboard" src="/static/icons/record-keyboard.svg" />
 					</view>
 					<text class="option-label">写几句</text>
 				</view>
@@ -138,7 +102,7 @@
 					<view class="photo-box" @tap="pickPhoto">
 						<image v-if="photoPreview != ''" class="photo-preview" :src="photoPreview" mode="aspectFill" />
 						<view v-else class="photo-empty">
-							<image src="/static/icons/record-camera-gray.svg" :width="40" :height="36" />
+							<image class="photo-empty-icon" src="/static/icons/record-camera-gray.svg" />
 							<text class="photo-empty-text">{{ formMode == 'photo' ? '点击拍照' : '点击从相册选择' }}</text>
 						</view>
 					</view>
@@ -153,7 +117,9 @@
 </template>
 
 <script setup lang="uts">
-	import { onLoad, onUnload } from '@dcloudio/uni-app'
+	// ⚠️ 不要 import 生命周期：uni-app x 规定 ref/computed/onLoad/onMounted 等由框架自动引入，
+	// 手写 `import { onMounted } from '@dcloudio/uni-app'` 会编译失败
+	// （真机实锤 2026-08-31："onMounted" is not exported by "@dcloudio/uni-app/dist-x/uni-app.es.js"）。
 	import { ensureLogin } from '@/utils/auth'
 	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS } from '@/utils/text_recorder'
 	import {
@@ -171,83 +137,104 @@
 	import { uploadBatch, UploadProgress, UploadedPhoto } from '@/utils/uploader'
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
 
-	// ===== 设计稿图标（已落成 /static/icons/*.svg 静态资源） =====
-
+	// ===== 对外事件 =====
+	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
+	// 关闭由宿主页决定（<RecordSheet v-if="sheetOpen" @close="sheetOpen=false" />）
+	const emit = defineEmits(['close', 'saved'])
 
 	// ===== 响应式数据 =====
 	// 弹层 / 表单状态
-	let formMode = ''
-	let formTitle = '写几句'
-	let saveText = '记下来'
-	let photoPreview = ''
-	let photoSize = 0
-	let photoUploading = false
+	let formMode = ref('')
+	let formTitle = ref('写几句')
+	let saveText = ref('记下来')
+	let photoPreview = ref('')
+	let photoSize = ref(0)
+	let photoUploading = ref(false)
 	// 文字记录
-	let draft = ''
-	let submitting = false
-	let classifyLabel = ''
-	let currentLabel = ''
-	let lastContentId = ''
-	let lastText = ''
-	let allLabels = ALL_LABELS
+	let draft = ref('')
+	let submitting = ref(false)
+	let classifyLabel = ref('')
+	let currentLabel = ref('')
+	let lastContentId = ref('')
+	let lastText = ref('')
+	let allLabels = ref(ALL_LABELS)
 	// 语音记录
-	let recording = false
-	let recordSeconds = 0
-	let recordTimer = 0 as number
-	let recState = 'idle'
-	let recordHint = '点击开始录音（≤30 分钟）'
-	let voiceHints = ''
-	let transcribing = false
-	let transcript = ''
-	let emotion = ''
-	let guardMsg = ''
-	let saving = false
-	let lastVoiceDuration = 0
-	let lastVoiceFile = ''
+	let recording = ref(false)
+	let recordSeconds = ref(0)
+	let recordTimer = ref(0)
+	let recState = ref('idle')
+	let recordHint = ref('点击开始录音（≤30 分钟）')
+	let voiceHints = ref('')
+	let transcribing = ref(false)
+	let transcript = ref('')
+	let emotion = ref('')
+	let guardMsg = ref('')
+	let saving = ref(false)
+	let lastVoiceDuration = ref(0)
+	let lastVoiceFile = ref('')
 
-	// ===== 生命周期 =====
-	onLoad(() => {
+	// ===== 生命周期（组件化：onLoad/onUnload → onMounted/onUnmounted） =====
+	onMounted(() => {
 		ensureLogin().then((ok: boolean) => {
 			if (!ok) {
 				showErrorToast(new Error('登录失败，请重试'))
 			}
 		})
 	})
-	onUnload(() => {
-		if (recordTimer > 0) {
-			clearInterval(recordTimer)
-			recordTimer = 0
+	onUnmounted(() => {
+		if (recordTimer.value > 0) {
+			clearInterval(recordTimer.value)
+			recordTimer.value = 0
 		}
 	})
 
+	// ===== 浮层整体关闭（点遮罩 / 宿主页调用） =====
+	function onClose(): void {
+		// 铁律 11：closeForm 曾因 stopRecord 抛异常导致状态永不复位 → 此处同样无条件通知宿主页
+		try {
+			if (recording.value) {
+				stopRecordNow()
+			}
+		} catch (e) {
+			console.log('[yishu] onClose 停止录音失败（忽略，仍强制关闭浮层）: ' + e)
+		}
+		formMode.value = ''
+		emit('close')
+	}
+
 	// ===== 弹层交互 =====
 	function openMode(m: string): void {
-		formMode = m
+		formMode.value = m
 		if (m == 'photo') {
-			formTitle = '拍照'
-			saveText = '保存'
+			formTitle.value = '拍照'
+			saveText.value = '保存'
 		} else if (m == 'gallery') {
-			formTitle = '选照片'
-			saveText = '保存'
+			formTitle.value = '选照片'
+			saveText.value = '保存'
 		} else if (m == 'voice') {
-			formTitle = '说一段'
-			saveText = '确认入库'
+			formTitle.value = '说一段'
+			saveText.value = '确认入库'
 		} else {
-			formTitle = '写几句'
-			saveText = '记下来'
+			formTitle.value = '写几句'
+			saveText.value = '记下来'
 		}
 	}
 	function closeForm(): void {
 		// 录音中返回弹层：停止录音，避免后台空转
-		if (recording) {
-			stopRecordNow()
+		// 铁律：formMode 必须**无条件**复位——原生插件抛异常曾导致「录音中关不掉表单、出不去」
+		try {
+			if (recording.value) {
+				stopRecordNow()
+			}
+		} catch (e) {
+			console.log('[yishu] closeForm 停止录音失败（忽略，仍强制关闭表单）: ' + e)
 		}
-		formMode = ''
+		formMode.value = ''
 	}
 	function onSave(): void {
-		if (formMode == 'text') {
+		if (formMode.value == 'text') {
 			submitText()
-		} else if (formMode == 'voice') {
+		} else if (formMode.value == 'voice') {
 			submitVoice()
 		} else {
 			savePhoto()
@@ -256,18 +243,18 @@
 
 	// ===== 照片 / 相册（uni.chooseImage，保存后端待接入 → 仅本地预览提示） =====
 	function pickPhoto(): void {
-		const srcs: Array<string> = formMode == 'photo' ? ['camera'] : ['album']
+		const srcs: Array<string> = formMode.value == 'photo' ? ['camera'] : ['album']
 		uni.chooseImage({
 			count: 1,
 			sourceType: srcs,
 			success: (res) => {
 				const tp = res.tempFilePaths[0]
 				if (tp != null) {
-					photoPreview = tp
+					photoPreview.value = tp
 				}
 				const tf = res.tempFiles[0]
 				if (tf != null) {
-					photoSize = tf.size
+					photoSize.value = tf.size
 				}
 			},
 			fail: () => {
@@ -276,26 +263,27 @@
 		})
 	}
 	function savePhoto(): void {
-		if (photoPreview == '') {
+		if (photoPreview.value == '') {
 			showErrorToast(new Error('请先拍照或选一张照片'))
 			return
 		}
-		if (photoUploading) {
+		if (photoUploading.value) {
 			return
 		}
-		photoUploading = true
+		photoUploading.value = true
 		uni.showLoading({ title: '上传中…', mask: true })
 		const now = Date.now()
 		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
-		const item = new PhotoItem(-now, photoPreview, now, 0, 0, null, null, photoSize)
+		const item = new PhotoItem(-now, photoPreview.value, now, 0, 0, null, null, photoSize.value)
 		const items: Array<PhotoItem> = [item]
 		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()
-			photoUploading = false
+			photoUploading.value = false
 			if (uploaded.length > 0) {
 				uni.showToast({ title: '照片已保存', icon: 'success' })
-				photoPreview = ''
-				photoSize = 0
+				emit('saved') // 修复（2026-08-31）：保存成功要通知宿主刷新（原只 emit close → timeline 不刷新）
+				photoPreview.value = ''
+				photoSize.value = 0
 				closeForm()
 			} else {
 				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
@@ -305,73 +293,76 @@
 
 	// ===== 文字记录方法 =====
 	function submitText(): void {
-		const text = draft.trim()
+		const text = draft.value.trim()
 		console.log('[yishu] submitText: ' + text)
 		if (text == '') {
 			showErrorToast(new Error('先写点什么吧'))
 			return
 		}
-		submitting = true
-		classifyLabel = '整理中…'
-		currentLabel = ''
+		submitting.value = true
+		classifyLabel.value = '整理中…'
+		currentLabel.value = ''
 		createTextContent(text).then((contentId: string | null) => {
 			console.log('[yishu] createTextContent -> ' + contentId)
 			if (contentId == null) {
-				submitting = false
-				classifyLabel = ''
+				submitting.value = false
+				classifyLabel.value = ''
 				return
 			}
-			lastContentId = contentId
-			lastText = text
-			draft = ''
+			lastContentId.value = contentId
+			lastText.value = text
+			draft.value = ''
 			submitClassify(text).then((jobId: string | null) => {
 				console.log('[yishu] submitClassify -> ' + jobId)
 				if (jobId == null) {
-					submitting = false
-					classifyLabel = '已记录'
+					submitting.value = false
+					classifyLabel.value = '已记录'
 					uni.showToast({ title: '已记下', icon: 'success' })
+					emit('saved') // 文字已入库，通知宿主刷新
 					return
 				}
 				pollClassify(jobId, 20, 3000).then((result) => {
 					console.log('[yishu] pollClassify done, result=' + (result != null ? result.label : 'null'))
-					submitting = false
+					submitting.value = false
 					if (result != null) {
-						currentLabel = result.label
-						classifyLabel = result.labelCn
+						currentLabel.value = result.label
+						classifyLabel.value = result.labelCn
 						uni.showToast({ title: '已分类：' + result.labelCn, icon: 'none' })
+						emit('saved') // 文字已入库（分类完成），通知宿主刷新
 					} else {
-						classifyLabel = '已记录（分类暂不可用）'
+						classifyLabel.value = '已记录（分类暂不可用）'
 						uni.showToast({ title: '已记下', icon: 'success' })
+						emit('saved') // 文字已入库，通知宿主刷新
 					}
 				})
 			})
 		})
 	}
 	function onTagTap(key: string): void {
-		if (lastContentId == '' || key === currentLabel) {
+		if (lastContentId.value == '' || key === currentLabel.value) {
 			return
 		}
-		const oldLabel = currentLabel
-		currentLabel = key
-		classifyLabel = '纠正中…'
-		submitArbitrate(lastText).then((jobId: string | null) => {
+		const oldLabel = currentLabel.value
+		currentLabel.value = key
+		classifyLabel.value = '纠正中…'
+		submitArbitrate(lastText.value).then((jobId: string | null) => {
 			if (jobId == null) {
-				classifyLabel = labelCn(key)
-				submitCorrection(lastContentId, lastText, key, oldLabel).then((ok: boolean) => {
+				classifyLabel.value = labelCn(key)
+				submitCorrection(lastContentId.value, lastText.value, key, oldLabel).then((ok: boolean) => {
 					uni.showToast({ title: ok ? '已纠正' : '纠错记录失败', icon: 'none' })
 				})
 				return
 			}
 			pollArbitrate(jobId, 20, 3000).then((finalLabel: string | null) => {
 				if (finalLabel != null) {
-					currentLabel = finalLabel
-					classifyLabel = labelCn(finalLabel)
-					submitCorrection(lastContentId, lastText, finalLabel, oldLabel)
+					currentLabel.value = finalLabel
+					classifyLabel.value = labelCn(finalLabel)
+					submitCorrection(lastContentId.value, lastText.value, finalLabel, oldLabel)
 					uni.showToast({ title: '已纠正为：' + labelCn(finalLabel), icon: 'none' })
 				} else {
-					currentLabel = key
-					classifyLabel = labelCn(key)
-					submitCorrection(lastContentId, lastText, key, oldLabel)
+					currentLabel.value = key
+					classifyLabel.value = labelCn(key)
+					submitCorrection(lastContentId.value, lastText.value, key, oldLabel)
 					uni.showToast({ title: '已纠正', icon: 'none' })
 				}
 			})
@@ -380,22 +371,25 @@
 
 	// ===== 语音录音方法 =====
 	function toggleRecord(): void {
-		if (recording) {
+		if (recording.value) {
 			stopRecordNow()
 		} else {
-			recording = true
-			recordSeconds = 0
-			recState = 'idle'
-			recordHint = '录音中，再点停止'
-			transcript = ''
-			emotion = ''
-			guardMsg = ''
-			voiceHints = ''
-			lastVoiceFile = ''
+			recording.value = true
+			recordSeconds.value = 0
+			recState.value = 'idle'
+			recordHint.value = '录音中，再点停止'
+			transcript.value = ''
+			emotion.value = ''
+			guardMsg.value = ''
+			voiceHints.value = ''
+			lastVoiceFile.value = ''
 			setShouldResume(true)
-			recordTimer = setInterval(() => {
-				recordSeconds++
+			recordTimer.value = setInterval(() => {
+				recordSeconds.value++
 			}, 1000) as number
+			// 原生录音插件在标准基座缺失（UTSAndroid is not defined）→ 同步抛出会让状态机卡死，
+			// 导致「录音中关不掉表单」。必须兜底：失败即回滚状态 + 提示。
+			try {
 			startRecord(
 				() => {
 					console.log('[yishu] record started')
@@ -405,65 +399,94 @@
 				},
 				(msg: string) => {
 					console.error('[yishu] record error: ' + msg)
-					recording = false
-					recState = 'idle'
-					recordHint = '点击开始录音（≤30 分钟）'
-					if (recordTimer > 0) {
-						clearInterval(recordTimer)
-						recordTimer = 0
+					recording.value = false
+					recState.value = 'idle'
+					recordHint.value = '点击开始录音（≤30 分钟）'
+					if (recordTimer.value > 0) {
+						clearInterval(recordTimer.value)
+						recordTimer.value = 0
 					}
 					showErrorToast(new Error('录音失败：' + msg))
 				},
 				(autoPaused: boolean) => {
 					console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
-					recState = recorderState()
-					recordHint = '录音被中断，已暂停'
+					recState.value = recorderState()
+					recordHint.value = '录音被中断，已暂停'
 				},
 				(path: string, durationMs: number) => {
-					console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
+					console.log('[yishu] record auto-stop at 30min, saving.value segment: ' + durationMs + 'ms')
 					onRecordStopped(path, durationMs)
 				}
 			)
+			} catch (e) {
+				console.log('[yishu] startRecord failed (标准基座无原生录音插件，状态回滚): ' + e)
+				recording.value = false
+				recState.value = 'idle'
+				recordHint.value = '当前基座不支持录音（需自定义基座）'
+				if (recordTimer.value > 0) {
+					clearInterval(recordTimer.value)
+					recordTimer.value = 0
+				}
+				// 铁律 10.8：能力不可用必须给 toast。只改 recordHint 文案用户看不见
+				// （真机 2026-08-31 峰宝复验：「点麦克风不会有任何提示」）
+				uni.showToast({ title: '当前基座不支持录音，请改用自定义基座', icon: 'none' })
+			}
 		}
 	}
 	function resumeRecordNow(): void {
-		resumeRecord()
-		recState = recorderState()
-		recordHint = recState == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
+		try {
+			resumeRecord()
+			recState.value = recorderState()
+			recordHint.value = recState.value == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
+		} catch (e) {
+			console.log('[yishu] resumeRecord failed (标准基座无原生插件，忽略): ' + e)
+		}
 	}
 	function stopRecordNow(): void {
-		stopRecord()
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[yishu] stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 兜底：原生不可用也要把 UI 状态复位，否则「录音中」永远退不出去
+			recording.value = false
+			recState.value = 'idle'
+			recordHint.value = '点击开始录音（≤30 分钟）'
+			if (recordTimer.value > 0) {
+				clearInterval(recordTimer.value)
+				recordTimer.value = 0
+			}
+		}
 	}
 	function onRecordStopped(path: string, durationMs: number): void {
-		recording = false
-		recState = 'idle'
-		recordHint = '点击开始录音（≤30 分钟）'
-		if (recordTimer > 0) {
-			clearInterval(recordTimer)
-			recordTimer = 0
+		recording.value = false
+		recState.value = 'idle'
+		recordHint.value = '点击开始录音（≤30 分钟）'
+		if (recordTimer.value > 0) {
+			clearInterval(recordTimer.value)
+			recordTimer.value = 0
 		}
 		if (durationMs < 500) {
 			showErrorToast(new Error('录音太短'))
 			return
 		}
-		lastVoiceDuration = durationMs
-		lastVoiceFile = path
-		transcribing = true
+		lastVoiceDuration.value = durationMs
+		lastVoiceFile.value = path
+		transcribing.value = true
 		if (durationMs >= 300000) {
-			transcribing = false
-			voiceHints = '长录音已提交，云端整理中（>5min 自动分段转写）'
+			transcribing.value = false
+			voiceHints.value = '长录音已提交，云端整理中（>5min 自动分段转写）'
 			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
 				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
 			})
 			return
 		}
 		transcribeWav(path).then((res) => {
-			transcribing = false
+			transcribing.value = false
 			if (res == null) {
 				return
 			}
-			transcript = res.text
-			emotion = res.emotion
+			transcript.value = res.text
+			emotion.value = res.emotion
 			const hints: Array<string> = []
 			if (res.notOral) {
 				hints.push('疑似非口述（键盘/环境音）')
@@ -481,29 +504,30 @@
 			if (res.noiseWeight == 'equal') {
 				hints.push('噪音较大，情绪权重已降为持平')
 			}
-			voiceHints = hints.join('；')
+			voiceHints.value = hints.join('；')
 			if (!res.guardPassed) {
-				guardMsg = '内容未通过安全审核：' + res.guardReason
+				guardMsg.value = '内容未通过安全审核：' + res.guardReason
 			} else {
-				guardMsg = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
+				guardMsg.value = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
 			}
 		})
 	}
 	function submitVoice(): void {
-		const text = transcript.trim()
+		const text = transcript.value.trim()
 		if (text == '') {
 			showErrorToast(new Error('转写内容为空'))
 			return
 		}
-		saving = true
-		saveVoiceContent(text, lastVoiceDuration, emotion, '', lastVoiceFile).then((contentId: string | null) => {
-			saving = false
+		saving.value = true
+		saveVoiceContent(text, lastVoiceDuration.value, emotion.value, '', lastVoiceFile.value).then((contentId: string | null) => {
+			saving.value = false
 			if (contentId != null) {
 				uni.showToast({ title: '已入库', icon: 'success' })
-				transcript = ''
-				emotion = ''
-				guardMsg = ''
-				voiceHints = ''
+				emit('saved') // 修复（2026-08-31）：语音入库后通知宿主刷新
+				transcript.value = ''
+				emotion.value = ''
+				guardMsg.value = ''
+				voiceHints.value = ''
 			} else {
 				showErrorToast(new Error('入库失败'))
 			}
@@ -516,185 +540,26 @@
 	   背景 #f8f7f4 / 主文字 #3a2e25 / 次文字 #8a7a6a / 辅助 #b3a696
 	   琥珀 #c4913c / 锈红 #b05a3a / 卡片 #ffffff / 弹层面板 #faf9f5 */
 	.page {
-		width: 100%;
+		position: fixed;
+		left: 0;
+		top: 0;
+		width: 750rpx;
 		height: 100%;
-		position: relative;
-		background-color: #f8f7f4;
-		overflow: hidden;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		/* 浮层根容器：透明底，遮罩交给 .scrim（z-index:10）。
+		   z-index 1000 > TabBar 的 999，保证面板浮在 TabBar 之上。 */
+		z-index: 1000;
 	}
 	.serif {
-		font-family: "Noto Serif CJK SC", serif;
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
 	}
 
-	/* ═══════ 背景层 ═══════ */
-	.backdrop {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 750rpx;
-		height: 100%;
-	}
-	.hero-photo {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 750rpx;
-		height: 577rpx;
-	}
-	.hero-shade-top {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 750rpx;
-		height: 269rpx;
-		background-image: linear-gradient(to right, rgba(26, 20, 15, 0.38) 0%, rgba(26, 20, 15, 0.12) 60%, rgba(26, 20, 15, 0) 100%);
-	}
-	.hero-shade-bottom {
-		position: absolute;
-		top: 346rpx;
-		left: 0;
-		width: 750rpx;
-		height: 269rpx;
-		background-image: linear-gradient(to right, rgba(248, 247, 244, 0) 0%, rgba(248, 247, 244, 0.92) 78%, #f8f7f4 100%);
-	}
-	.hero-title {
-		position: absolute;
-		left: 38rpx;
-		top: 115rpx;
-		font-size: 76rpx;
-		color: #ffffff;
-		font-weight: bold;
-		letter-spacing: 4rpx;
-	}
-	.hero-avatar {
-		position: absolute;
-		left: 635rpx;
-		top: 112rpx;
-		width: 77rpx;
-		height: 77rpx;
-		border-radius: 38rpx;
-		background-color: #c4913c;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.hero-avatar-char {
-		font-size: 34rpx;
-		color: #ffffff;
-		font-weight: 600;
-	}
-	.hero-sub1 {
-		position: absolute;
-		left: 38rpx;
-		top: 213rpx;
-		font-size: 24rpx;
-		color: #ffffff;
-		font-weight: 600;
-	}
-	.hero-sub2 {
-		position: absolute;
-		left: 38rpx;
-		top: 244rpx;
-		font-size: 24rpx;
-		color: #ffffff;
-		opacity: 0.92;
-	}
 
 	/* 搜索胶囊 */
-	.search-capsule {
-		position: absolute;
-		left: 38rpx;
-		top: 473rpx;
-		width: 673rpx;
-		height: 88rpx;
-		border-radius: 44rpx;
-		background-color: rgba(255, 255, 255, 0.32);
-		border: 2rpx solid rgba(255, 255, 255, 0.52);
-		box-sizing: border-box;
-		flex-direction: row;
-		align-items: center;
-	}
-	.search-icon {
-		margin-left: 37rpx;
-	}
-	.search-placeholder {
-		margin-left: 23rpx;
-		font-size: 26rpx;
-		color: #ffffff;
-	}
 
 	/* 日期 + 分隔线 */
-	.date-label {
-		position: absolute;
-		left: 38rpx;
-		top: 604rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-	}
-	.divider {
-		position: absolute;
-		left: 252rpx;
-		top: 621rpx;
-		width: 459rpx;
-		height: 2rpx;
-		background-color: #3a2e25;
-		opacity: 0.08;
-	}
 
 	/* 语音卡（弹层之上露出的顶部） */
-	.voice-card {
-		position: absolute;
-		left: 38rpx;
-		top: 660rpx;
-		width: 673rpx;
-		height: 256rpx;
-		border-radius: 38rpx;
-		background-color: #ffffff;
-	}
-	.voice-inner {
-		position: absolute;
-		left: 65rpx;
-		top: 702rpx;
-		width: 619rpx;
-		height: 112rpx;
-		border-radius: 23rpx;
-		background-color: rgba(196, 145, 60, 0.14);
-		flex-direction: row;
-		align-items: center;
-	}
-	.play-btn {
-		position: absolute;
-		left: 81rpx;
-		top: 706rpx;
-		width: 62rpx;
-		height: 62rpx;
-		border-radius: 31rpx;
-		background-color: #ffffff;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1;
-	}
-	.wave {
-		position: absolute;
-		left: 173rpx;
-		top: 717rpx;
-	}
-	.voice-title {
-		position: absolute;
-		left: 69rpx;
-		top: 813rpx;
-		font-size: 32rpx;
-		color: #3a2e25;
-		font-weight: 600;
-	}
-	.voice-meta {
-		position: absolute;
-		left: 69rpx;
-		top: 860rpx;
-		font-size: 24rpx;
-		color: #8a7a6a;
-	}
 
 	/* ═══════ 模态遮罩 ═══════ */
 	.scrim {
@@ -730,6 +595,7 @@
 		background-color: #b3a696;
 	}
 	.sheet-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		position: absolute;
 		top: 74rpx;
 		left: 0;
@@ -751,6 +617,26 @@
 		width: 123rpx;
 		flex-direction: column;
 		align-items: center;
+	}
+	.option-icon {
+		/* 尺寸走 CSS（uvue <image> 不支持 width/height 属性绑定） */
+	}
+	.icon-camera {
+		/* 画布「相机」FRAME 26x26（i4_7 导出即 26x26，内径留白在 SVG 里） */
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.icon-gallery {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.icon-mic {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.icon-keyboard {
+		width: 50rpx;
+		height: 50rpx;
 	}
 	.option-circle {
 		width: 123rpx;
@@ -774,12 +660,14 @@
 		background-color: rgba(78, 125, 140, 0.13);
 	}
 	.option-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 20rpx;
 		font-size: 24rpx;
 		color: #3a2e25;
 	}
 	.home-indicator {
 		position: absolute;
+		/* absolute-ok: 浮层底部 Home 指示条装饰 */
 		left: 50%;
 		margin-left: -134rpx;
 		top: 615rpx;
@@ -790,6 +678,7 @@
 		opacity: 0.18;
 	}
 	.sheet-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		position: absolute;
 		top: 538rpx;
 		left: 0;
@@ -802,6 +691,7 @@
 	/* ═══════ 功能层：记录表单 ═══════ */
 	.form-layer {
 		position: absolute;
+		/* absolute-ok: 记录浮层表单层（浮层结构本体） */
 		top: 0;
 		left: 0;
 		width: 750rpx;
@@ -829,11 +719,13 @@
 		justify-content: center;
 	}
 	.form-back-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 52rpx;
 		color: #3a2e25;
 		line-height: 52rpx;
 	}
 	.form-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 34rpx;
 		color: #3a2e25;
 		font-weight: 600;
@@ -847,6 +739,7 @@
 		border-radius: 28rpx;
 	}
 	.form-save-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #f8f7f4;
 		font-size: 26rpx;
 	}
@@ -875,6 +768,7 @@
 		align-items: center;
 	}
 	.muted {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #b3a696;
 	}
@@ -885,6 +779,7 @@
 		flex-direction: column;
 	}
 	.tag-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #8a7a6a;
 		margin-bottom: 12rpx;
@@ -907,10 +802,12 @@
 		background-color: #b05a3a;
 	}
 	.tag-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #3a2e25;
 	}
 	.tag-active-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #f8f7f4;
 	}
 
@@ -931,19 +828,22 @@
 		display: flex;
 		box-shadow: 0 8rpx 20rpx rgba(176, 90, 58, 0.4);
 	}
-	.mic-recording {
+	.mic-recording.value {
 		background-color: #3a2e25;
 	}
 	.mic-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 64rpx;
 		color: #f8f7f4;
 	}
 	.record-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 24rpx;
 		font-size: 26rpx;
 		color: #8a7a6a;
 	}
 	.record-timer {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 12rpx;
 		font-size: 40rpx;
 		color: #b05a3a;
@@ -964,11 +864,13 @@
 		margin-bottom: 16rpx;
 	}
 	.transcript-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 30rpx;
 		color: #3a2e25;
 		font-weight: bold;
 	}
 	.emotion-chip {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #b05a3a;
 		background-color: #F3E8DC;
@@ -990,6 +892,7 @@
 		padding-bottom: 16rpx;
 	}
 	.interrupt-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		flex: 1;
 		font-size: 26rpx;
 		color: #8a7a6a;
@@ -1003,6 +906,7 @@
 		padding-bottom: 10rpx;
 	}
 	.resume-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #f8f7f4;
 		font-size: 26rpx;
 	}
@@ -1037,7 +941,12 @@
 		align-items: center;
 		justify-content: center;
 	}
+	.photo-empty-icon {
+		width: 76.9rpx;
+		height: 69.2rpx;
+	}
 	.photo-empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 16rpx;
 		font-size: 26rpx;
 		color: #b3a696;

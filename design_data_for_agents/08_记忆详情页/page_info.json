@@ -1,0 +1,11 @@
+{
+  "page_key": "08_记忆详情页",
+  "page_path": "pages/detail/detail.uvue",
+  "page_desc": "记忆详情页",
+  "design_data_file": "design_data.json",
+  "common_components": [
+    "TabBar胶囊.json",
+    "中央＋按钮.json",
+    "_summary.json"
+  ]
+}

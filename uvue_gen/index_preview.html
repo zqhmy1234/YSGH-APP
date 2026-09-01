@@ -1,40 +1,40 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:0;background:#333;display:flex;justify-content:center;}
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
 .phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
 .page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
-.n2_256 { position: absolute; left: 0.0px; top: 44.0px; width: 390.0px; height: 300.0px; background-color: #EDE5D5; overflow: hidden; }
-.n2_257 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 140.0px; background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.5), rgba(26, 20, 15, 0.28)); overflow: hidden; }
-.n2_258 { position: absolute; left: 0.0px; top: 160.0px; width: 390.0px; height: 140.0px; background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0.38), #F8F7F4); overflow: hidden; }
-.n2_259 { position: absolute; left: 20.0px; top: 124.0px; width: 226.0px; height: 16.0px; font-size: 13.0px; color: #FFFFFF; text-shadow: 0px 1px 24px rgba(26, 20, 15, 0.55); }
-.n2_192 { position: absolute; left: 24.0px; top: 60.0px; width: 31.0px; height: 18.0px; font-weight: 600; font-size: 15.0px; color: #FFFFFF; }
-.n2_193 { position: absolute; left: 344.0px; top: 63.0px; width: 22.0px; height: 11.0px; background-color: #FFFFFF; border-radius: 3.0px; overflow: hidden; }
-.n2_194 { position: absolute; left: 20.0px; top: 100.0px; width: 80.0px; height: 48.0px; font-weight: bold; font-size: 40.0px; color: #FFFFFF; }
-.n2_195 { position: absolute; left: 20.0px; top: 154.0px; width: 118.0px; height: 16.0px; font-size: 13.0px; color: rgba(255, 255, 255, 0.85); text-shadow: 0px 1px 16px rgba(26, 20, 15, 0.5); }
-.n2_196 { position: absolute; left: 330.0px; top: 102.0px; width: 40.0px; height: 40.0px; display: flex; flex-direction: row; align-items: center; background-color: #C4913C; border: 1.0px solid rgba(255, 255, 255, 0.7); border-radius: 20.0px; overflow: hidden; }
+.n2_256 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 300.0px; }
+.n2_194 { position: absolute; left: 20.0px; top: 56.0px; width: 80.0px; height: 48.0px; font-weight: bold; font-size: 40.0px; color: #FFFFFF; }
+.n2_195 { position: absolute; left: 20.0px; top: 110.0px; width: 118.0px; height: 16.0px; font-size: 13.0px; color: rgba(255, 255, 255, 0.85); text-shadow: 0px 1px 8px rgba(25, 20, 15, 0.5); }
+.n2_196 { position: absolute; left: 330.0px; top: 58.0px; width: 40.0px; height: 40.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #C4913C; border: 1.0px solid rgba(255, 255, 255, 0.7); border-radius: 20.0px; overflow: hidden; }
 .n2_197 { font-weight: 600; font-size: 16.0px; color: #FFFFFF; }
-.n2_198 { position: absolute; left: 20.0px; top: 290.0px; width: 350.0px; height: 46.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.5); box-shadow: 0px 8px 48px rgba(59, 46, 38, 0.08); border-radius: 999px; overflow: hidden; }
+.n2_198 { position: absolute; left: 20.0px; top: 246.0px; width: 350.0px; height: 46.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.5); box-shadow: 0px 8px 24px rgba(59, 46, 38, 0.08); border-radius: 999px; overflow: hidden; }
 .n2_199 { width: 18.0px; height: 18.0px; }
-.n2_202 { font-size: 14.0px; color: #FFFFFF; }
-.n2_203 { position: absolute; left: 20.0px; top: 360.0px; width: 350.0px; display: flex; flex-direction: column; gap: 12.0px; overflow: hidden; }
+.n2_202 { font-size: 14.0px; color: #8A7A6A; }
+.n2_203 { position: absolute; left: 20.0px; top: 316.0px; width: 350.0px; display: flex; flex-direction: column; gap: 12.0px; overflow: hidden; }
 .n2_204 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; overflow: hidden; }
 .n2_205 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
 .n2_206 { flex: 1; height: 1.0px; background-color: #3A2E25; overflow: hidden; }
-.n2_215 { width: 100%; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 32px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
+.n2_215 { width: 100%; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
 .n2_216 { width: 100%; height: 64.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-color: rgba(196, 145, 60, 0.14); border-radius: 12.0px; overflow: hidden; }
-.n2_217 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; align-items: center; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.8); border-radius: 16.0px; overflow: hidden; }
+.n2_217 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.8); border-radius: 16.0px; overflow: hidden; }
 .n2_218 { width: 12.0px; height: 12.0px; }
-.n2_220 { width: 200.0px; height: 26.0px; overflow: hidden; }
+.n2_220 { width: 200.0px; height: 26.0px; overflow: hidden; position: relative; }
 .n2_221 { position: absolute; left: 4.0px; top: 3.0px; width: 192.0px; height: 20.0px; }
 .n2_222 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
 .n2_223 { font-weight: 600; font-size: 17.0px; color: #3A2E25; }
 .n2_224 { font-size: 11.0px; color: #8A7A6A; }
-.n2_225 { width: 100%; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 32px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
+.n2_225 { width: 100%; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
 .n2_226 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: rgba(196, 145, 60, 0.1); border-radius: 12.0px; overflow: hidden; }
 .n2_227 { width: 3.0px; height: 40.0px; background-color: #C4913C; border-radius: 2.0px; overflow: hidden; }
 .n2_228 { flex: 1; font-size: 14.0px; color: #5A4C40; }
 .n2_229 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
 .n2_230 { font-size: 11.0px; color: #8A7A6A; }
-.n2_231 { position: absolute; left: 20.0px; top: 796.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.65); box-shadow: 0px 10px 56px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
+.n2_231 { position: absolute; left: 20.0px; top: 752.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.65), 0px 10px 28px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
 .n2_232 { display: flex; flex-direction: column; gap: 3.0px; overflow: hidden; }
 .n2_233 { width: 20.0px; height: 20.0px; }
 .n2_236 { font-weight: 600; font-size: 10.0px; color: #B05A3A; }
@@ -48,20 +48,10 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
 .n2_247 { display: flex; flex-direction: column; gap: 3.0px; overflow: hidden; }
 .n2_248 { width: 20.0px; height: 20.0px; }
 .n2_251 { font-size: 10.0px; color: #B3A696; }
-.n2_252 { position: absolute; left: 167.0px; top: 784.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; align-items: center; background-color: #B05A3A; box-shadow: 0px 6px 32px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
+.n2_252 { position: absolute; left: 167.0px; top: 740.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #B05A3A; box-shadow: 0px 6px 16px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
 .n2_253 { width: 22.0px; height: 22.0px; }
-.n2_255 { position: absolute; left: 125.0px; top: 872.0px; width: 140.0px; height: 5.0px; background-color: #3A2E25; border-radius: 3.0px; overflow: hidden; }
 </style></head><body><div class="phone">
-    <div class="n2_256"> <!-- 照片出血氛围层 -->
-      <div class="n2_257"> <!-- 顶部暗化 -->
-      </div>
-      <div class="n2_258"> <!-- 底部白色溶解 -->
-      </div>
-      <span class="n2_259">清晨的湖边，风很轻 · 8月28日 07:42</span> <!-- 照片说明 -->
-    </div>
-    <span class="n2_192">9:41</span> <!-- 状态栏时间 -->
-    <div class="n2_193"> <!-- 电池 -->
-    </div>
+    <img class="n2_256" src="images/img2_256.png" /> <!-- 照片出血氛围层 -->
     <span class="n2_194">回忆</span> <!-- 大标题 -->
     <span class="n2_195">八月 · 28 条新记忆</span> <!-- 副标题 -->
     <div class="n2_196"> <!-- 头像 -->
@@ -124,7 +114,5 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
     </div>
     <div class="n2_252"> <!-- 中央＋按钮 -->
       <img class="n2_253" src="icons/i2_253.svg" /> <!-- 加号 -->
-    </div>
-    <div class="n2_255"> <!-- Home指示条 -->
     </div>
 </div></body></html>

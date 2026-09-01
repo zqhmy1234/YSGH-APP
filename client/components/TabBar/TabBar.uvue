@@ -4,13 +4,13 @@
 		<view class="tabbar-bg">
 			<!-- 时间轴 -->
 			<view class="tabbar-item" @tap="goIndex">
-				<image :src="active === 'index' ? '/static/icons/tab-timeline-active.svg' : '/static/icons/tab-timeline-inactive.svg'" :width="15" :height="15" />
+				<image class="tabbar-icon" :src="active === 'index' ? '/static/icons/tab-timeline-active.svg' : '/static/icons/tab-timeline-inactive.svg'" />
 				<text class="tabbar-text" :class="{ 'text-active': active === 'index' }">时间轴</text>
 			</view>
 
 			<!-- AI -->
 			<view class="tabbar-item" @tap="goAI">
-				<image :src="active === 'ai' ? '/static/icons/tab-ai-active.svg' : '/static/icons/tab-ai-inactive.svg'" :width="15" :height="15" />
+				<image class="tabbar-icon" :src="active === 'ai' ? '/static/icons/tab-ai-active.svg' : '/static/icons/tab-ai-inactive.svg'" />
 				<text class="tabbar-text" :class="{ 'text-active': active === 'ai' }">AI</text>
 			</view>
 
@@ -19,20 +19,20 @@
 
 			<!-- 搜索 -->
 			<view class="tabbar-item" @tap="goSearch">
-				<image :src="active === 'search' ? '/static/icons/tab-search-active.svg' : '/static/icons/tab-search-inactive.svg'" :width="15" :height="15" />
+				<image class="tabbar-icon" :src="active === 'search' ? '/static/icons/tab-search-active.svg' : '/static/icons/tab-search-inactive.svg'" />
 				<text class="tabbar-text" :class="{ 'text-active': active === 'search' }">搜索</text>
 			</view>
 
 			<!-- 我的 -->
 			<view class="tabbar-item" @tap="goProfile">
-				<image :src="active === 'profile' ? '/static/icons/tab-profile-active.svg' : '/static/icons/tab-profile-inactive.svg'" :width="15" :height="15" />
+				<image class="tabbar-icon" :src="active === 'profile' ? '/static/icons/tab-profile-active.svg' : '/static/icons/tab-profile-inactive.svg'" />
 				<text class="tabbar-text" :class="{ 'text-active': active === 'profile' }">我的</text>
 			</view>
 		</view>
 
 		<!-- 中央大红加号按钮（凸起） -->
 		<view class="tabbar-fab" @tap="goRecord">
-			<image src="/static/icons/tab-plus.svg" :width="15" :height="15" />
+			<image class="tabbar-fab-icon" src="/static/icons/tab-plus.svg" />
 		</view>
 	</view>
 </template>
@@ -46,6 +46,11 @@
 		}
 	})
 
+	// 中央 + 只「通知宿主页拉起浮层」，绝不自己跳转页面。
+	// 产品定义铁律（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面；
+	// 时间轴页点 + 仍留在时间轴页，搜索页点 + 仍留在搜索页，其他页同理。
+	const emit = defineEmits(['plus'])
+
 	// 跳转方法
 	const goIndex = () => {
 		if (props.active !== 'index') {
@@ -55,7 +60,7 @@
 
 	const goAI = () => {
 		if (props.active !== 'ai') {
-			uni.redirectTo({ url: '/pages/record/record' })
+			uni.redirectTo({ url: '/pages/ai/ai' })
 		}
 	}
 
@@ -72,7 +77,8 @@
 	}
 
 	const goRecord = () => {
-		uni.navigateTo({ url: '/pages/record/record' })
+		// 不跳页：交给宿主页拉起 RecordSheet 浮层（保持当前页面不动）
+		emit('plus')
 	}
 </script>
 
@@ -82,22 +88,26 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		height: 92px;
+		/* FAB bottom48+高56 → 顶在104px；容器110px留6px余量，防止原生层贴边裁切（真机实锤92px裁切） */
+		height: 110px;
 		z-index: 999;
 	}
 
 	.tabbar-bg {
 		position: absolute;
+		/* absolute-ok: 底栏毛玻璃背景层（底栏结构本体） */
 		left: 20px;
 		right: 20px;
 		bottom: 30px;
 		height: 62px;
+		/* 毛玻璃：画布 BLUR(20) + fill 白 a0.55（backdrop-filter 真机实测生效后保留） */
+		backdrop-filter: blur(20px);
 		background-color: rgba(255, 255, 255, 0.55);
-		border-radius: 31px;
-		border-width: 1px;
-		border-color: rgba(255, 255, 255, 0.65);
-		border-style: solid;
-		box-shadow: 0 10rpx 14rpx rgba(58, 46, 37, 0.098);
+		border-radius: 36px;
+		/* justify-content 为 space-around（非 center），border 内缩会让各 item
+		   位移量不一致，故用 box-shadow 外环代替 border（1px = 1.9rpx）。
+		   阴影按画布还原：外环白a.65 + INNER 白a.45 + DROP y10 blur28 a.1 */
+		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.65), inset 0 1px 2px rgba(255, 255, 255, 0.45), 0 10px 28px rgba(59, 46, 38, 0.1);
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-around;
@@ -118,27 +128,47 @@
 		height: 56px;
 	}
 
+	/* uvue App 端样式不继承，font-family 必须写在 text 类自身上（画布 19.2rpx = 10px） */
+	.tabbar-icon {
+		/* uvue App 端 <image> 不支持 width/height 属性绑定（编译警告实锤），尺寸走 CSS。
+		   画布图标容器 20×20（i2_233/238/243/248 导出即 20×20，内径留白已在 SVG 里） */
+		width: 20px;
+		height: 20px;
+	}
+	.tabbar-fab-icon {
+		/* 画布 2:253 加号 22x22 */
+		width: 22px;
+		height: 22px;
+	}
 	.tabbar-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 10px;
 		color: #B3A696;
-		margin-top: 2px;
+		/* 画布：图标0..20、标签y=23 → 间距3px（uvue不支持flex gap，用margin实现） */
+		margin-top: 3px;
 	}
 
+	/* 画布选中态为 Semi Bold；本类与 .tabbar-text 并存，需各自独立声明字体 */
 	.text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
 		color: #B05A3A;
 	}
 
 	.tabbar-fab {
 		position: absolute;
+		/* absolute-ok: 中央 + 钮（底栏结构本体） */
 		left: 50%;
 		margin-left: -28px;
-		bottom: 44px;
+		/* 画布真值：FAB y=740..796，页高844 → bottom=48px（凸出条顶 12px） */
+		bottom: 48px;
 		width: 56px;
 		height: 56px;
 		background-color: #B05A3A;
 		border-radius: 28px;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 4px 12px rgba(176, 90, 58, 0.4);
+		/* 画布：INNER_SHADOW 白a.35 + DROP y6 blur16 a.35（6px=11.5rpx, 16px=30.8rpx） */
+		box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 6px 16px rgba(176, 89, 59, 0.35);
 	}
 </style>

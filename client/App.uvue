@@ -77,5 +77,20 @@
 
 <style>
 	/* 全局基底：相纸白（视觉规范 v2 像素级还原）——uvue 仅支持 class 选择器，
-	   页面背景由 pages.json globalStyle + 各页根 .page 类控制 */
+	   页面背景由 pages.json globalStyle + 各页根 .page 类控制
+
+	   字体：Sarasa Gothic SC 已在本文件 onLaunch 里用
+	   uni.loadFontFace({ global: true }) 注册，同一 family 名下挂
+	   400 / 600 / 700 三档字重，由 CSS 的 font-weight 选中对应 TTF。
+
+	   [重要·已踩坑·勿改回] uni-app x App 平台【样式不继承】。
+	   标准 CSS 中 color / font-size / font-family 等文字属性可继承，
+	   但 uvue App 端父元素样式不会影响子元素，文本样式必须
+	   【直接写在 text 组件自身的类上】。
+	   所以「在根类声明 font-family 靠继承下发」在 App 端【无效】，
+	   每个 text 类都要单独写：
+	       font-family: "Sarasa Gothic SC", sans-serif;
+	   漏写的 text 会退回系统字体，行高与字宽与设计稿不符。
+	   同理，:class 绑定的叠加类（如 TabBar 的 .text-active）也需各自
+	   独立声明 font-family / font-weight，不能依赖基础类。 */
 </style>

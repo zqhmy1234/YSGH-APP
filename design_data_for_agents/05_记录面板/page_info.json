@@ -1,0 +1,11 @@
+{
+  "page_key": "05_记录面板",
+  "page_path": "pages/record/record.uvue",
+  "page_desc": "记录面板页（添加记忆）",
+  "design_data_file": "design_data.json",
+  "common_components": [
+    "TabBar胶囊.json",
+    "中央＋按钮.json",
+    "_summary.json"
+  ]
+}

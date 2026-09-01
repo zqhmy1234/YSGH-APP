@@ -78,7 +78,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 		}, REQUEST_TIMEOUT_MS + 5000)
 		console.log('[dbg-req] fire ' + method + ' ' + getBaseUrl() + path)
 		const onSuccess = (res: any): void => {
-			console.log('[dbg-req] ok ' + path + ' status=' + res.statusCode)
+			console.log('[dbg-req] ok ' + path + ' status=' + res.statusCode + ' (' + typeof res.statusCode + ')')
 			if (res.statusCode === 200) {
 				// 2026-08-26（H 建议，集成代劳）：后端不可达/网关返回裸值时 res.data 非对象，
 				// 直接强转 UTSJSONObject 会在主线程 FATAL（app 启动崩溃根因）——先守卫再转换
@@ -93,16 +93,22 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			if (res.statusCode >= 500) {
 				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
 			}
-			const body = (res.data != null && typeof res.data == 'object')
-				? (res.data as UTSJSONObject)
-				: ({} as UTSJSONObject)
-			const err = new ApiError(
-				body.getString('code') ?? 'UNKNOWN',
-				body.getString('message') ?? ('HTTP ' + res.statusCode),
-				res.statusCode
-			)
+			// 2026-09-01 正式修复（根因实锤于诊断日志）：401/非200 时后端 data 可能非 JSON 对象，
+			// 旧写法 fallback `({} as UTSJSONObject)` 在蒸汽模式（纯 JS）下是裸 JS 对象——
+			// 没有 UTSJSONObject 原型，getString 非函数 → 同步抛 TypeError 被桥接吞 →
+			// 401 分支永远执行不到（refresh 自愈链失效、20s watchdog 才 resolved）。
+			// 修法：instanceof UTSJSONObject 精确判型，非对象时直接用 HTTP 默认文案。
+			let code = 'UNKNOWN'
+			let msg = 'HTTP ' + res.statusCode
+			if (res.data instanceof UTSJSONObject) {
+				code = res.data.getString('code') ?? code
+				msg = res.data.getString('message') ?? msg
+			}
+			const err = new ApiError(code, msg,
+				typeof res.statusCode == 'number' ? (res.statusCode as number) : 401)
 			// 401 → refresh 一次后重放；refresh 失败清 token
 			if (res.statusCode === 401 && !retried) {
+				console.log('[dbg-req] 401-branch-enter ' + path)
 				refreshToken().then((ok: boolean) => {
 					if (ok) {
 						doRequest(path, method, data, true).then((b: UTSJSONObject | null) => {

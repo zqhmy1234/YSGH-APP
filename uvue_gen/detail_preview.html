@@ -1,57 +1,57 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:0;background:#333;display:flex;justify-content:center;}
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
 .phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
 .page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
-.n4_406 { position: absolute; left: 0.0px; top: 44.0px; width: 390.0px; height: 360.0px; background-color: #EDE5D5; overflow: hidden; }
-.n4_407 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 110.0px; background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.45), rgba(26, 20, 15, 0.15)); overflow: hidden; }
-.n4_408 { position: absolute; left: 0.0px; top: 240.0px; width: 390.0px; height: 120.0px; background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0.6), #F8F7F4); overflow: hidden; }
-.n4_409 { position: absolute; left: 16.0px; top: 108.0px; width: 358.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; overflow: hidden; }
-.n4_410 { width: 44.0px; height: 44.0px; display: flex; flex-direction: row; align-items: center; background-color: rgba(59, 46, 38, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.4); border-radius: 22.0px; overflow: hidden; }
+.n4_406 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 360.0px; }
+.n4_407 { position: absolute; left: 0.0px; top: 44.0px; width: 390.0px; height: 110.0px; background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.45), rgba(26, 20, 15, 0.15) 50%, rgba(26, 20, 15, 0)); }
+.n4_408 { position: absolute; left: 0.0px; top: 284.0px; width: 390.0px; height: 120.0px; background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0), rgba(248, 247, 244, 0.6) 50%, rgba(248, 247, 244, 1)); }
+.n4_409 { position: absolute; left: 16.0px; top: 64.0px; width: 358.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; overflow: hidden; }
+.n4_410 { width: 44.0px; height: 44.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(59, 46, 38, 0.3); border: 1.0px solid rgba(255, 255, 255, 0.4); border-radius: 22.0px; overflow: hidden; }
 .n4_411 { width: 18.0px; height: 18.0px; }
 .n4_413 { display: flex; flex-direction: row; gap: 10.0px; align-items: center; overflow: hidden; }
-.n4_414 { width: 44.0px; height: 44.0px; display: flex; flex-direction: row; align-items: center; background-color: rgba(59, 46, 38, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.4); border-radius: 22.0px; overflow: hidden; }
+.n4_414 { width: 44.0px; height: 44.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(59, 46, 38, 0.3); border: 1.0px solid rgba(255, 255, 255, 0.4); border-radius: 22.0px; overflow: hidden; }
 .n4_415 { width: 18.0px; height: 18.0px; }
-.n4_417 { width: 44.0px; height: 44.0px; display: flex; flex-direction: row; align-items: center; background-color: rgba(59, 46, 38, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.4); border-radius: 22.0px; overflow: hidden; }
+.n4_417 { width: 44.0px; height: 44.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(59, 46, 38, 0.3); border: 1.0px solid rgba(255, 255, 255, 0.4); border-radius: 22.0px; overflow: hidden; }
 .n4_418 { width: 18.0px; height: 18.0px; }
-.n4_422 { position: absolute; left: 20.0px; top: 420.0px; width: 234.0px; height: 31.0px; font-weight: bold; font-size: 26.0px; color: #3A2E25; }
-.n4_423 { position: absolute; left: 20.0px; top: 456.0px; width: 227.0px; height: 15.0px; font-size: 12.0px; color: #8A7A6A; }
-.n4_424 { position: absolute; left: 20.0px; top: 492.0px; width: 350.0px; display: flex; flex-direction: column; gap: 8.0px; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: #FFFFFF; box-shadow: 0px 4px 32px rgba(59, 46, 38, 0.06); border-radius: 20.0px; overflow: hidden; }
+.n4_422 { position: absolute; left: 20.0px; top: 376.0px; width: 234.0px; height: 31.0px; font-weight: bold; font-size: 26.0px; color: #3A2E25; }
+.n4_423 { position: absolute; left: 20.0px; top: 412.0px; width: 227.0px; height: 15.0px; font-size: 12.0px; color: #8A7A6A; }
+.n4_424 { position: absolute; left: 20.0px; top: 448.0px; width: 350.0px; display: flex; flex-direction: column; gap: 8.0px; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06), 0px 1px 3px rgba(59, 46, 38, 0.04); border-radius: 20.0px; overflow: hidden; }
 .n4_425 { width: 100%; display: flex; flex-direction: row; gap: 6.0px; align-items: center; overflow: hidden; }
 .n4_426 { width: 14.0px; height: 14.0px; }
 .n4_428 { font-weight: 600; font-size: 11.0px; color: #B05A3A; }
 .n4_429 { width: 100%; font-size: 14.0px; color: #5A4C40; }
-.n4_430 { position: absolute; left: 20.0px; top: 634.0px; width: 350.0px; display: flex; flex-direction: column; gap: 6.0px; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: #FFFFFF; box-shadow: 0px 3px 24px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n4_430 { position: absolute; left: 20.0px; top: 590.0px; width: 350.0px; display: flex; flex-direction: column; gap: 6.0px; padding-left: 16.0px; padding-right: 16.0px; padding-top: 16.0px; padding-bottom: 16.0px; background-color: #FFFFFF; box-shadow: 0px 3px 12px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
 .n4_431 { width: 100%; font-size: 14.0px; color: #5A4C40; }
 .n4_432 { font-size: 11.0px; color: #B3A696; }
-.n4_433 { position: absolute; left: 20.0px; top: 786.0px; width: 64.0px; height: 19.0px; font-weight: 600; font-size: 16.0px; color: #3A2E25; }
-.n4_434 { position: absolute; left: 20.0px; top: 816.0px; width: 350.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; overflow: hidden; }
-.n4_435 { width: 150.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 3px 20px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
-.n4_442 { width: 100%; height: 80.0px; background-image: linear-gradient(to bottom, rgba(122, 140, 90, 0.3), rgba(196, 145, 60, 0.2)); border-radius: 10.0px; overflow: hidden; }
+.n4_433 { position: absolute; left: 20.0px; top: 742.0px; width: 64.0px; height: 19.0px; font-weight: 600; font-size: 16.0px; color: #3A2E25; }
+.n4_434 { position: absolute; left: 20.0px; top: 772.0px; width: 350.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; overflow: hidden; }
+.n4_435 { width: 150.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 3px 10px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
+.n4_442 { width: 100%; height: 80.0px; background-image: linear-gradient(to bottom right, rgba(122, 140, 90, 0.3), rgba(196, 145, 60, 0.2)); border-radius: 10.0px; overflow: hidden; }
 .n4_436 { font-weight: 600; font-size: 12.0px; color: #3A2E25; }
 .n4_437 { font-size: 9.0px; color: #8A7A6A; }
-.n4_438 { width: 150.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 3px 20px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
-.n4_443 { width: 100%; height: 80.0px; background-image: linear-gradient(to bottom, rgba(78, 125, 140, 0.28), rgba(122, 140, 90, 0.15)); border-radius: 10.0px; overflow: hidden; }
+.n4_438 { width: 150.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 3px 10px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
+.n4_443 { width: 100%; height: 80.0px; background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.28), rgba(122, 140, 90, 0.15)); border-radius: 10.0px; overflow: hidden; }
 .n4_439 { font-weight: 600; font-size: 12.0px; color: #3A2E25; }
 .n4_440 { font-size: 9.0px; color: #8A7A6A; }
-.n4_441 { position: absolute; left: 20.0px; top: 1044.0px; width: 350.0px; height: 60.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.65); box-shadow: 0px 10px 56px rgba(59, 46, 38, 0.1); border-radius: 30.0px; overflow: hidden; }
-.n4_444 { display: flex; flex-direction: column; gap: 4.0px; overflow: hidden; }
+.n4_441 { position: absolute; left: 20.0px; top: 1000.0px; width: 350.0px; height: 60.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; background-color: rgba(255, 255, 255, 0.55); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.65), inset 0px 1px 2px rgba(255, 255, 255, 0.45), 0px 10px 28px rgba(59, 46, 38, 0.1); border-radius: 30.0px; overflow: hidden; }
+.n4_444 { display: flex; flex-direction: column; gap: 4.0px; align-items: center; overflow: hidden; }
 .n4_445 { width: 20.0px; height: 20.0px; }
 .n4_447 { font-size: 10.0px; color: #3A2E25; }
-.n4_448 { display: flex; flex-direction: column; gap: 4.0px; overflow: hidden; }
+.n4_448 { display: flex; flex-direction: column; gap: 4.0px; align-items: center; overflow: hidden; }
 .n4_449 { width: 20.0px; height: 20.0px; }
 .n4_452 { font-size: 10.0px; color: #3A2E25; }
-.n4_453 { display: flex; flex-direction: column; gap: 4.0px; overflow: hidden; }
+.n4_453 { display: flex; flex-direction: column; gap: 4.0px; align-items: center; overflow: hidden; }
 .n4_454 { width: 20.0px; height: 20.0px; }
 .n4_457 { font-size: 10.0px; color: #3A2E25; }
-.n4_458 { position: absolute; left: 24.0px; top: 60.0px; width: 31.0px; height: 18.0px; font-weight: 600; font-size: 15.0px; color: #FFFFFF; }
-.n4_459 { position: absolute; left: 344.0px; top: 63.0px; width: 22.0px; height: 11.0px; background-color: #FFFFFF; border-radius: 3.0px; overflow: hidden; }
 </style></head><body><div class="phone">
-    <div class="n4_406"> <!-- 全幅媒体 -->
-      <div class="n4_407"> <!-- 顶部暗化 -->
-      </div>
-      <div class="n4_408"> <!-- 底部溶解 -->
-      </div>
-    </div>
+    <img class="n4_406" src="images/img4_406.png" /> <!-- 全幅媒体 -->
+    <div class="n4_407"></div> <!-- 顶部暗化 -->
+    <div class="n4_408"></div> <!-- 底部溶解 -->
     <div class="n4_409"> <!-- 玻璃顶栏 -->
       <div class="n4_410"> <!-- 返回钮 -->
         <img class="n4_411" src="icons/i4_411.svg" /> <!-- 返回图标 -->
@@ -106,8 +106,5 @@ body{margin:0;background:#333;display:flex;justify-content:center;}
         <img class="n4_454" src="icons/i4_454.svg" /> <!-- 图标 -->
         <span class="n4_457">分享</span> <!-- 文字 -->
       </div>
-    </div>
-    <span class="n4_458">9:41</span> <!-- 状态栏时间 -->
-    <div class="n4_459"> <!-- 电池 -->
     </div>
 </div></body></html>

@@ -15,8 +15,9 @@
 
 		<!-- 玻璃搜索胶囊（backdrop-blur + 白色内高光） -->
 		<view class="search-capsule pressable" @tap="goSearch">
-			<image src="/static/icons/index-search.svg" :width="18" :height="18" />
-			<text class="search-placeholder">搜索记忆、照片、主题…</text>
+			<!-- uvue App 端 <image> 不支持 width/height 属性绑定，尺寸走 CSS（.search-icon 36rpx≈18px） -->
+			<image class="search-icon" src="/static/icons/index-search.svg" />
+			<text class="search-placeholder">描述一段回忆，帮你找</text>
 		</view>
 
 		<!-- 同步状态横幅 -->
@@ -40,20 +41,9 @@
 				</view>
 			</view>
 
-			<!-- 加载中 -->
+			<!-- 加载中 / 时间轴（空状态已拆为独立页 /pages/empty/empty，fetchAll 空数据时 redirect 过去） -->
 			<view v-if="!loaded" class="center-box">
 				<text class="muted">正在翻找相纸…</text>
-			</view>
-
-			<!-- 空状态 -->
-			<view v-else-if="days.length === 0 && pendingEvents.length === 0" class="center-box">
-				<image class="empty-img" src="/static/empty-photo.svg" mode="aspectFit" />
-				<text class="empty-title serif">还没有回忆</text>
-				<text class="empty-desc">拍一张照片，或说几句话&#10;你的回忆会住在这里</text>
-				<view class="cta pressable" @tap="onGrantAndStart">
-					<text class="cta-text">拍下第一张</text>
-				</view>
-				<text class="empty-voice pressable" @tap="goVoice">或者，录一段语音</text>
 			</view>
 
 			<!-- 时间轴：L1 日卡片 + L2 主题两级 -->
@@ -113,9 +103,11 @@
 						<text class="day-title serif">{{ day.label }}</text>
 						<view class="day-line"></view>
 					</view>
-					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'">
+					<!-- 整卡可点进详情（真机实锤：此前卡片**没绑任何 @tap**，详情页从时间轴无入口）。
+					     内部已有 @tap 的子元素必须加 .stop，否则点操作/照片/播放也会冒泡进详情 -->
+					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'" @tap="openDetail(ev)">
 						<!-- 操作入口 -->
-						<view class="card-ops pressable" @tap="onCardOps(ev, dayIdx)">
+						<view class="card-ops pressable" @tap.stop="onCardOps(ev, dayIdx)">
 							<text class="card-ops-text">⋯</text>
 						</view>
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
@@ -127,10 +119,10 @@
 							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
 						</view>
 						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap.stop="onPhotoTap(cid)" />
 						</view>
 						<!-- 语音卡 -->
-						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
 							<view class="voice-play-btn">
 								<view class="voice-play-icon"></view>
 							</view>
@@ -158,7 +150,10 @@
 		</scroll-view>
 
 		<!-- 统一 TabBar 组件 -->
-		<TabBar active="index" />
+		<TabBar active="index" @plus="sheetOpen = true" />
+
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
 	</view>
 </template>
 
@@ -200,26 +195,47 @@
 		}
 	}
 
-	// 响应式数据
-	let loaded = false
-	let refreshing = false
-	let days: Array<DayGroup> = []
-	let pendingEvents: Array<TimelineEvent> = []
-	let uploading = false
-	let uploadDone = 0
-	let uploadTotal = 0
-	let uploadFailed = 0
-	let echo: EchoCard | null = null
-	let showSplitPanel = false
-	let splitEventId = ''
-	let splitItems: Array<SplitItem> = []
-	let splitLoading = false
-	let showPhotoDetail = false
-	let photoDetailPath = ''
-	let photoDetailEvents: Array<ContentEventRef> = []
-	let photoDetailLoading = false
-	let localPhotoPath: Array<PhotoPathEntry> = []
-	let eventPhotoIds: Array<EventPhotoEntry> = []
+	// 响应式数据（uvue script setup 裸 let 非响应式，必须 ref —— 真机实锤：数据到位但界面停在加载态）
+	let loaded = ref(false)
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let refreshing = ref(false)
+	let days = ref<Array<DayGroup>>([])
+	let pendingEvents = ref<Array<TimelineEvent>>([])
+	let uploading = ref(false)
+	let uploadDone = ref(0)
+	let uploadTotal = ref(0)
+	let uploadFailed = ref(0)
+	let echo = ref<EchoCard | null>(null)
+	let showSplitPanel = ref(false)
+	let splitEventId = ref('')
+	let splitItems = ref<Array<SplitItem>>([])
+	let splitLoading = ref(false)
+	let showPhotoDetail = ref(false)
+	let photoDetailPath = ref('')
+	let photoDetailEvents = ref<Array<ContentEventRef>>([])
+	let photoDetailLoading = ref(false)
+	let localPhotoPath = ref<Array<PhotoPathEntry>>([])
+	let eventPhotoIds = ref<Array<EventPhotoEntry>>([])
+	/**
+	 * content_id → 服务端缩略图 URL（Valet Key 票据，已 resolve 成绝对 URL）
+	 *
+	 * 为什么需要：`<image :src>` 带不了 Authorization header，历史照片此前只能靠
+	 * 「本次会话刚上传」的本地路径显示，冷启动必然空白。服务端现在随 timeline
+	 * 下发票据 URL，这里建索引供 photoPathOf() 回退。
+	 * 非响应式：attachPhotos() 在 days.value 赋值之后、渲染之前填充，无需触发额外更新。
+	 */
+	let photoUrlById: Map<string, string> = new Map<string, string>()
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面。
+	// 返回 true 表示已自行处理（阻止默认返回行为）。
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
 
 	// 生命周期
 	onLoad(() => {
@@ -238,7 +254,7 @@
 		}
 	})
 	onShow(() => {
-		if (loaded) {
+		if (loaded.value) {
 			reload()
 		}
 	})
@@ -246,11 +262,6 @@
 	// 导航方法
 	function goSearch(): void {
 		uni.reLaunch({ url: '/pages/search/search' })
-	}
-
-	// 空状态次级入口：录一段语音（进记录页语音模式）
-	function goVoice(): void {
-		uni.reLaunch({ url: '/pages/record/record' })
 	}
 
 	// 语音播放
@@ -270,21 +281,67 @@
 			fetchAll()
 		})
 	}
+	// ── 本地 mock 时间轴（视觉验收用）────────────────────────────────────────
+	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
+	//   打开时的危害：events==0 就注入 ev-m1~m4 四条**假 id**（云端不存在），
+	//   页面看着有内容，实则任何真数据都进不来——当时"fetchTimeline 返回 0 条"的
+	//   根因是 8000 端口被 HBuilderX launcher 劫持（见 SOP §17），不是后端没数据。
+	//   现在端口迁 8010 + 真机用户已有真实事件，再开就是自欺欺人。
+	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
+	const USE_MOCK_TIMELINE: boolean = false
+
+	function mockEvents(): Array<TimelineEvent> {
+		const day = 86400000
+		const now = Date.now()
+		const out: Array<TimelineEvent> = []
+		out.push(new TimelineEvent('ev-m1', 1, '清晨的湖边', 'ai', now - day, now - day + 3600000, '光华湖', null, 3, 2, 'confirmed', 0.92, 'ct-m1'))
+		out.push(new TimelineEvent('ev-m2', 2, '手冲咖啡初体验', 'user', now - 2 * day, now - 2 * day + 1800000, '宿舍', null, 1, 1, 'confirmed', 0.88, 'ct-m2'))
+		out.push(new TimelineEvent('ev-m3', 1, '和妈妈的通话', 'ai', now - 3 * day, now - 3 * day + 900000, '上海', null, 0, 1, 'confirmed', 0.95, 'ct-m3'))
+		out.push(new TimelineEvent('ev-m4', 2, '夜谈', 'user', now - 4 * day, now - 4 * day + 7200000, '宿舍', null, 2, 2, 'draft', 0.61, 'ct-m4'))
+		return out
+	}
+	// ── mock 结束 ────────────────────────────────────────────────────────
+
 	function fetchAll(): void {
 		console.log('[dbg-index] fetchAll -> fetchTimeline')
 		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
 			console.log('[dbg-index] fetchTimeline resolved: ' + events.length + ' events')
-			days = groupDays(events)
+			if (USE_MOCK_TIMELINE && events.length == 0) {
+				events = mockEvents()
+				console.log('[dbg-index] USE_MOCK_TIMELINE -> 注入 ' + events.length + ' 条 mock 事件')
+			}
+			days.value = groupDays(events)
 			attachPhotos()
-			loaded = true
-			refreshing = false
-			if (days.length > 0 || pendingEvents.length > 0) {
+			loaded.value = true
+			refreshing.value = false
+			// 空数据 → 独立空状态页（首次登录首屏；画布 2:284~2:311）
+			if (days.value.length === 0 && pendingEvents.value.length === 0) {
+				console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
+				uni.redirectTo({ url: '/pages/empty/empty' })
+				return
+			}
+			if (days.value.length > 0 || pendingEvents.value.length > 0) {
 				recordFirstDayRender()
 			}
 		})
 		fetchTodayEcho().then((card: EchoCard | null) => {
-			echo = card
+			echo.value = card
 		})
+	}
+
+	// 整卡进详情：detail 页要的是 **contentId**，而 TimelineEvent.id 是 event id，不能直接用。
+	// 取数优先级：封面 content_id → 照片条第一张 → 都没有则提示（避免跳进空白详情页）
+	function openDetail(ev: TimelineEvent): void {
+		let cid = ev.coverContentId
+		if (cid == '' && ev.photoIds.length > 0) {
+			cid = ev.photoIds[0]
+		}
+		if (cid == '') {
+			uni.showToast({ title: '这条记忆暂无可查看的内容', icon: 'none' })
+			return
+		}
+		console.log('[dbg-index] openDetail contentId=' + cid)
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + cid })
 	}
 
 	// 卡片操作
@@ -328,9 +385,15 @@
 		})
 	}
 	function getPrevL1Id(dayIdx: number): string {
+		// 修复（2026-08-31）：原写 days.value[i].events.level / .events.id —— events 是数组，
+		// 属性访问恒 undefined → 本函数永远返回空串 → 「合并到上一张」功能整体失效。
+		// 正解：向前逐日找第一张 L1 事件。
 		for (let i = dayIdx - 1; i >= 0; i--) {
-			if (days[i].events.length > 0 && days[i].events.level === 1) {
-				return days[i].events.id
+			const evs = days.value[i].events
+			for (let j = 0; j < evs.length; j++) {
+				if (evs[j].level === 1) {
+					return evs[j].id
+				}
 			}
 		}
 		return ''
@@ -353,30 +416,30 @@
 
 	// 拆分
 	function doSplit(ev: TimelineEvent): void {
-		splitLoading = true
-		showSplitPanel = true
-		splitEventId = ev.id
-		splitItems = []
+		splitLoading.value = true
+		showSplitPanel.value = true
+		splitEventId.value = ev.id
+		splitItems.value = []
 		fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
-			splitLoading = false
-			splitItems = items
+			splitLoading.value = false
+			splitItems.value = items
 			if (items.length < 2) {
 				uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
 			}
 		})
 	}
 	function toggleSplitItem(idx: number): void {
-		const items = splitItems
+		const items = splitItems.value
 		if (idx < 0 || idx >= items.length) {
 			return
 		}
 		const it = items[idx]
 		it.selected = !it.selected
 		items[idx] = it
-		splitItems = items
+		splitItems.value = items
 	}
 	function confirmSplit(): void {
-		const items = splitItems
+		const items = splitItems.value
 		const ids: Array<string> = []
 		for (let i = 0; i < items.length; i++) {
 			if (items[i].selected) {
@@ -391,8 +454,8 @@
 			uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
 			return
 		}
-		splitEvent(splitEventId, ids).then((ok: boolean) => {
-			showSplitPanel = false
+		splitEvent(splitEventId.value, ids).then((ok: boolean) => {
+			showSplitPanel.value = false
 			if (ok) {
 				uni.showToast({ title: '已拆分', icon: 'none' })
 			} else {
@@ -402,8 +465,8 @@
 		})
 	}
 	function cancelSplit(): void {
-		showSplitPanel = false
-		splitItems = []
+		showSplitPanel.value = false
+		splitItems.value = []
 	}
 	function splitTimeText(ts: number): string {
 		if (ts <= 0) {
@@ -414,12 +477,12 @@
 
 	// 回响
 	function dismissEchoCard(): void {
-		const card = echo
+		const card = echo.value
 		if (card == null) {
 			return
 		}
 		dismissEcho(card.contentId).then((ok: boolean) => {
-			echo = null
+			echo.value = null
 			if (ok) {
 				uni.showToast({ title: '已划掉', icon: 'none' })
 			}
@@ -429,38 +492,81 @@
 	// 照片映射
 	function groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
 		const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
-		pendingEvents = result.pending
+		pendingEvents.value = result.pending
 		return result.groups
 	}
+	/**
+	 * 照片显示路径：本地优先 → 服务端票据 URL 回退（2026-08-31 修复）
+	 *
+	 * 本地：本次会话上传的照片（localPhotoPath，零延迟、离线可用）
+	 * 服务端：timeline 下发的缩略图 URL（历史照片的唯一来源；此前缺这一层回退，
+	 *       导致冷启动时 <image :src=""> 恒空 —— "卡片没照片"的直接根因之一）
+	 */
+	// RecordSheet 保存成功回调：重新拉 timeline，让刚录入的记忆立刻上屏
+	function onRecordSaved(): void {
+		reload()
+	}
+
 	function photoPathOf(contentId: string): string {
-		for (let i = 0; i < localPhotoPath.length; i++) {
-			if (localPhotoPath[i].contentId == contentId) {
-				return localPhotoPath[i].path
+		for (let i = 0; i < localPhotoPath.value.length; i++) {
+			if (localPhotoPath.value[i].contentId == contentId) {
+				return localPhotoPath.value[i].path
 			}
 		}
-		return ''
+		const remote = photoUrlById.get(contentId)
+		return remote == null ? '' : remote
 	}
 	function lookupEventPhotos(eventId: string): Array<string> {
-		for (let i = 0; i < eventPhotoIds.length; i++) {
-			if (eventPhotoIds[i].eventId == eventId) {
-				return eventPhotoIds[i].contentIds
+		for (let i = 0; i < eventPhotoIds.value.length; i++) {
+			if (eventPhotoIds.value[i].eventId == eventId) {
+				return eventPhotoIds.value[i].contentIds
 			}
 		}
 		return []
 	}
+	/**
+	 * 单事件挂载照片（服务端优先，本地会话补充）——2026-08-31 重写
+	 *
+	 * 三层取值顺序：本地路径（刚上传）＞ 服务端票据 URL（历史照片）＞ 空。
+	 */
+	function attachEventPhotos(ev: TimelineEvent): void {
+		// ① 先把服务端下发的成员 URL 收进全局表，供 photoPathOf() 回退。
+		//    必须在算封面之前：封面的第三顺位回退依赖这张表。
+		for (let k = 0; k < ev.photos.length; k++) {
+			const ph = ev.photos[k]
+			if (ph.thumbnailUrl != '') {
+				photoUrlById.set(ph.contentId, ph.thumbnailUrl)
+			}
+		}
+		// ② photoIds：服务端已下发则**保留**（timeline 按 taken_at 排好序）。
+		//    ⚠️ 原代码无条件 `ev.photoIds = lookupEventPhotos(ev.id)` —— 本地表在
+		//    冷启动/未上传时是空数组，会把服务端填好的值覆盖成空 → 照片条恒空。
+		//    这是"卡片没照片"最直接的那一层。
+		if (ev.photoIds.length == 0) {
+			ev.photoIds = lookupEventPhotos(ev.id)
+		}
+		// ③ 封面：本地路径 → 服务端 cover_url → 首图
+		let cover = photoPathOf(ev.coverContentId)
+		if (cover == '' && ev.coverUrl != '') {
+			cover = ev.coverUrl
+		}
+		if (cover == '' && ev.photoIds.length > 0) {
+			cover = photoPathOf(ev.photoIds[0])
+		}
+		ev.coverPath = cover
+	}
+
 	function attachPhotos(): void {
 		let strips = 0
 		let covers = 0
-		for (let i = 0; i < days.length; i++) {
-			const g = days[i]
+		let remote = 0
+		photoUrlById = new Map<string, string>()
+		for (let i = 0; i < days.value.length; i++) {
+			const g = days.value[i]
 			for (let j = 0; j < g.events.length; j++) {
 				const ev = g.events[j]
-				ev.photoIds = lookupEventPhotos(ev.id)
-				let cover = photoPathOf(ev.coverContentId)
-				if (cover == '' && ev.photoIds.length > 0) {
-					cover = photoPathOf(ev.photoIds[0])
-				}
-				ev.coverPath = cover
+				attachEventPhotos(ev)
+				remote += ev.photos.length
 				if (ev.photoIds.length > 0) {
 					strips++
 				}
@@ -469,14 +575,10 @@
 				}
 			}
 		}
-		for (let j = 0; j < pendingEvents.length; j++) {
-			const ev = pendingEvents[j]
-			ev.photoIds = lookupEventPhotos(ev.id)
-			let cover = photoPathOf(ev.coverContentId)
-			if (cover == '' && ev.photoIds.length > 0) {
-				cover = photoPathOf(ev.photoIds[0])
-			}
-			ev.coverPath = cover
+		for (let j = 0; j < pendingEvents.value.length; j++) {
+			const ev = pendingEvents.value[j]
+			attachEventPhotos(ev)
+			remote += ev.photos.length
 			if (ev.photoIds.length > 0) {
 				strips++
 			}
@@ -484,23 +586,23 @@
 				covers++
 			}
 		}
-		console.log('[yishu] attachPhotos: days=' + days.length + ' pending=' + pendingEvents.length + ' localPaths=' + localPhotoPath.length + ' eventPhotoIds=' + eventPhotoIds.length + ' strips=' + strips + ' covers=' + covers)
+		console.log('[yishu] attachPhotos: days=' + days.value.length + ' pending=' + pendingEvents.value.length + ' localPaths=' + localPhotoPath.value.length + ' eventPhotoIds=' + eventPhotoIds.value.length + ' serverPhotos=' + remote + ' strips=' + strips + ' covers=' + covers)
 	}
 
 	// 照片详情
 	function onPhotoTap(contentId: string): void {
-		showPhotoDetail = true
-		photoDetailLoading = true
-		photoDetailPath = photoPathOf(contentId)
-		photoDetailEvents = []
+		showPhotoDetail.value = true
+		photoDetailLoading.value = true
+		photoDetailPath.value = photoPathOf(contentId)
+		photoDetailEvents.value = []
 		fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
-			photoDetailLoading = false
-			photoDetailEvents = evs
+			photoDetailLoading.value = false
+			photoDetailEvents.value = evs
 		})
 	}
 	function closePhotoDetail(): void {
-		showPhotoDetail = false
-		photoDetailEvents = []
+		showPhotoDetail.value = false
+		photoDetailEvents.value = []
 	}
 	function jumpFromPhoto(_idx: number): void {
 		closePhotoDetail()
@@ -549,18 +651,11 @@
 		return ref.photoCount.toFixed(0) + '张 · ' + st
 	}
 	function onRefresh(): void {
-		refreshing = true
+		refreshing.value = true
 		reload()
 	}
 
 	// 相册监听
-	function onGrantAndStart(): void {
-		console.log('[yishu] CTA tapped')
-		const watch = createPhotoWatch()
-		console.log('[yishu] permission granted? ' + watch.isReadPermissionGranted())
-		watch.requestReadPermission()
-		startWatch()
-	}
 	function startWatch(): void {
 		console.log('[yishu] startWatch begin')
 		recordGrantTime()
@@ -576,22 +671,22 @@
 		uni.showToast({ title: '已开始监听相册', icon: 'none' })
 	}
 	function handleBatch(items: Array<PhotoItem>): void {
-		uploading = true
-		uploadDone = 0
-		uploadTotal = items.length
-		uploadFailed = 0
+		uploading.value = true
+		uploadDone.value = 0
+		uploadTotal.value = items.length
+		uploadFailed.value = 0
 		uploadBatch(items, (p: UploadProgress) => {
-			uploadDone = p.done
-			uploadTotal = p.total
-			uploadFailed = p.failed
+			uploadDone.value = p.done
+			uploadTotal.value = p.total
+			uploadFailed.value = p.failed
 		}).then((uploaded: Array<UploadedPhoto>) => {
-			uploading = false
-			if (uploadFailed > 0) {
-				uni.showToast({ title: '有 ' + uploadFailed + ' 张上传失败', icon: 'none' })
+			uploading.value = false
+			if (uploadFailed.value > 0) {
+				uni.showToast({ title: '有 ' + uploadFailed.value + ' 张上传失败', icon: 'none' })
 			}
 			if (uploaded.length > 0) {
 				for (let i = 0; i < uploaded.length; i++) {
-					localPhotoPath.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
+					localPhotoPath.value.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
 				}
 				const tz = -new Date().getTimezoneOffset()
 				const agg = aggregateToEvents(uploaded, tz)
@@ -613,9 +708,9 @@
 							console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
 							const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
 							for (let m = 0; m < mapped.length; m++) {
-								eventPhotoIds.push(mapped[m])
+								eventPhotoIds.value.push(mapped[m])
 							}
-							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + eventPhotoIds.length)
+							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + eventPhotoIds.value.length)
 						} else {
 							console.error('[yishu] 事件上云失败（重试耗尽）')
 							uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
@@ -637,6 +732,7 @@
 	   主文字 #3a2e25 / 次文字 #8a7a6a / 锈红 #b05a3a / 琥珀 #c4913c */
 	.page {
 		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
 		background-color: #f8f7f4;
 		padding-left: 0;
 		padding-right: 0;
@@ -679,22 +775,27 @@
 	}
 	.hero-overlay-top {
 		position: absolute;
+		/* absolute-ok: hero 顶部暗化遮罩 */
 		top: 0;
 		left: 0;
 		right: 0;
 		height: 269rpx;
-		background: linear-gradient(to right, rgba(25,20,15,0.498), rgba(25,20,15,0));
+		/* 画布 2:257：垂直暗化 rgba(25,20,15) a0.5→0.28@50%→0。uvue 限三参数，双标线性插值中点≈0.25 与 0.28 近似 */
+		background: linear-gradient(to bottom, rgba(25,20,15,0.5), rgba(25,20,15,0));
 	}
 	.hero-overlay-bottom {
 		position: absolute;
+		/* absolute-ok: hero 底部溶解遮罩 */
 		bottom: 0;
 		left: 0;
 		right: 0;
 		height: 269rpx;
-		background: linear-gradient(to right, rgba(248,247,244,0), #f8f7f4);
+		/* 画布 2:258：底部米色垂直溶解 #F8F7F4 a0→0.78@75%→1。三参数限两标，溶解曲线近似 */
+		background: linear-gradient(to bottom, rgba(248,247,244,0), #f8f7f4);
 	}
 	.hero-avatar {
 		position: absolute;
+		/* absolute-ok: hero 头像角标（画布锚点） */
 		top: 111rpx;
 		right: 38rpx;
 		width: 77rpx;
@@ -709,31 +810,51 @@
 		justify-content: center;
 	}
 	.hero-avatar-char {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 40rpx;
 		color: #ffffff;
 		font-weight: 600;
 	}
+	/* 画布真值（2026-09-01 重拉 index_canvas.json）：
+	   大标题 px(20,56) fs40 → rpx(38.5,107.7) fs76.9，白 a1.0，无阴影
+	   副标题 px(20,110) fs13 → rpx(38.5,211.5) fs25，白 a0.85
+	   照片说明 px(20,124) fs13 → rpx(38.5,238.5) fs25，白 a1.0，宽 226px→434.6rpx */
 	.hero-content {
 		position: absolute;
-		bottom: 40rpx;
-		left: 40rpx;
-		right: 40rpx;
+		/* absolute-ok: hero 文案容器（铺满锚定） */
+		left: 0rpx;
+		top: 0rpx;
+		right: 0rpx;
+		bottom: 0rpx;
 	}
 	.hero-title {
-		font-size: 73rpx;
+		position: absolute;
+		/* absolute-ok: hero 大标题（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 107.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 76.9rpx;
 		color: #ffffff;
 		font-weight: bold;
-		text-shadow: 0 2rpx 8rpx rgba(0,0,0,0.3);
 	}
 	.hero-sub1 {
-		margin-top: 10rpx;
-		font-size: 26rpx;
+		position: absolute;
+		/* absolute-ok: hero 副标题（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 211.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
 		color: rgba(255,255,255,0.85);
 	}
 	.hero-sub2 {
-		margin-top: 6rpx;
-		font-size: 24rpx;
-		color: rgba(255,255,255,0.92);
+		position: absolute;
+		/* absolute-ok: hero 照片说明（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 238.5rpx;
+		width: 434.6rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #ffffff;
 	}
 
 	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
@@ -756,6 +877,7 @@
 		margin-right: 16rpx;
 	}
 	.search-placeholder {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		flex: 1;
 		font-size: 28rpx;
 		color: rgba(255,255,255,0.85);
@@ -773,45 +895,8 @@
 		padding-left: 40rpx;
 		padding-right: 40rpx;
 	}
-	.empty-img {
-		width: 320rpx;
-		height: 266rpx;
-	}
-	.empty-title {
-		margin-top: 40rpx;
-		font-size: 40rpx;
-		color: #3a2e25;
-		font-weight: bold;
-	}
-	.empty-desc {
-		margin-top: 16rpx;
-		font-size: 25rpx;
-		color: #8a7a6a;
-		text-align: center;
-		line-height: 40rpx;
-	}
-	.cta {
-		margin-top: 56rpx;
-		padding-left: 64rpx;
-		padding-right: 64rpx;
-		min-height: 108rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background-color: #b05a3a;
-		border-radius: 54rpx;
-	}
-	.cta-text {
-		color: #ffffff;
-		font-size: 30rpx;
-	}
-	.empty-voice {
-		margin-top: 24rpx;
-		font-size: 26rpx;
-		color: #b05a3a;
-	}
-
 	.muted {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #b3a696;
 	}
@@ -830,6 +915,7 @@
 		margin-bottom: 20rpx;
 	}
 	.day-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 22rpx;
 		color: #8a7a6a;
 		font-weight: 500;
@@ -847,6 +933,7 @@
 		margin-top: 24rpx;
 	}
 	.pending-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-bottom: 20rpx;
 		padding-left: 8rpx;
 	}
@@ -874,6 +961,7 @@
 		background-color: #b05a3a;
 	}
 	.pending-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 26rpx;
 		color: #3a2e25;
 	}
@@ -926,12 +1014,14 @@
 		margin-left: 20rpx;
 	}
 	.card-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 32rpx;
 		color: #3a2e25;
 		font-weight: 600;
 		margin-bottom: 12rpx;
 	}
 	.title-l2 {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 28rpx;
 		font-weight: 500;
 	}
@@ -942,11 +1032,13 @@
 		margin-bottom: 8rpx;
 	}
 	.meta-item {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #8a7a6a;
 		margin-right: 20rpx;
 	}
 	.rust {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #b05a3a;
 	}
 	.amber {
@@ -996,12 +1088,14 @@
 		margin-right: 4rpx;
 	}
 	.voice-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 26rpx;
 		color: #3a2e25;
 		font-weight: 500;
 		margin-top: 8rpx;
 	}
 	.voice-duration {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 22rpx;
 		color: #8a7a6a;
 		margin-left: 16rpx;
@@ -1026,12 +1120,14 @@
 		flex: 1;
 	}
 	.quote-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 28rpx;
 		color: #3a2e25;
 		line-height: 44rpx;
 		font-style: italic;
 	}
 	.quote-source {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 12rpx;
 		font-size: 22rpx;
 		color: #8a7a6a;
@@ -1040,6 +1136,7 @@
 	/* 卡片操作菜单 */
 	.card-ops {
 		position: absolute;
+		/* absolute-ok: 卡内右上角操作钮（卡内锚点，随卡滚动） */
 		top: 24rpx;
 		right: 24rpx;
 		width: 48rpx;
@@ -1049,6 +1146,7 @@
 		justify-content: center;
 	}
 	.card-ops-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 36rpx;
 		color: #8a7a6a;
 		font-weight: bold;
@@ -1065,6 +1163,7 @@
 	}
 	.echo-corner {
 		position: absolute;
+		/* absolute-ok: echo 卡右上角标（卡内锚点） */
 		top: -4rpx;
 		right: 32rpx;
 		background-color: #c4913c;
@@ -1072,16 +1171,19 @@
 		border-radius: 0 0 12rpx 12rpx;
 	}
 	.echo-corner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 20rpx;
 		color: #ffffff;
 		font-weight: 500;
 	}
 	.echo-date {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #8a7a6a;
 		margin-bottom: 12rpx;
 	}
 	.echo-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 30rpx;
 		color: #3a2e25;
 		line-height: 48rpx;
@@ -1104,6 +1206,7 @@
 		background-color: rgba(176,90,58,0.1);
 	}
 	.echo-dismiss-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #b05a3a;
 	}
@@ -1111,6 +1214,7 @@
 
 	/* 按压态动画（scale 0.98 + 阴影收缩 200ms） */
 	.pressable {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
 	

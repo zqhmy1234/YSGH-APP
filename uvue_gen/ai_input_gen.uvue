@@ -1,0 +1,340 @@
+<template>
+	<!-- ardot 直转 v2：用户输入·消息形态族（帧 4:254）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n4_258">用户输入</text> <!-- 大标题 -->
+		<view class="n4_259"> <!-- 剪贴板检测条 -->
+			<image class="n4_260" src="/static/icons/i4_260.svg" /> <!-- icon: 链接图标 -->
+			<text class="n4_262">检测到剪贴板链接：tech-transfer 的文章</text> <!-- 检测文字 -->
+			<text class="n4_263">收进</text> <!-- 收进按钮 -->
+		</view>
+		<text class="n4_264">A · 复合消息（文字 + 多图 + 文件 一条发送）</text> <!-- 节A -->
+		<view class="n4_265"> <!-- 形态流 -->
+			<view class="n4_266"> <!-- 复合消息行 -->
+				<view class="n4_267"> <!-- 复合气泡 -->
+					<text class="n4_268">今天路过的云和一个很重要的文件，都收进去</text> <!-- 复合文字 -->
+					<view class="n4_269"> <!-- 图片网格 -->
+						<view class="n4_270"> <!-- 图1 -->
+						</view>
+						<view class="n4_271"> <!-- 图2 -->
+						</view>
+					</view>
+					<view class="n4_272"> <!-- 文件chip -->
+						<image class="n4_273" src="/static/icons/i4_273.svg" /> <!-- icon: 文件图标 -->
+						<text class="n4_275">实习周报.docx</text> <!-- 文件名 -->
+					</view>
+				</view>
+			</view>
+			<view class="n4_276"> <!-- 语音消息行 -->
+				<view class="n4_277"> <!-- 语音气泡 -->
+					<view class="n4_278"> <!-- 播放钮 -->
+						<image class="n4_279" src="/static/icons/i4_279.svg" /> <!-- icon: 播放 -->
+					</view>
+					<view class="n4_281"> <!-- 波形白 -->
+						<image class="n4_282" src="/static/icons/i4_282.svg" /> <!-- icon: Vector -->
+					</view>
+					<text class="n4_283">0:23</text> <!-- 时长 -->
+				</view>
+				<image class="n4_284" src="/static/icons/i4_284.svg" /> <!-- icon: 转写展开钮 -->
+			</view>
+			<view class="n4_286"> <!-- 引用消息行 -->
+				<view class="n4_287"> <!-- 引用气泡 -->
+					<view class="n4_288"> <!-- 引用块 -->
+						<view class="n4_289"> <!-- 引用缩略 -->
+						</view>
+						<text class="n4_290">清晨的湖边，风很轻</text> <!-- 引用标题 -->
+					</view>
+					<text class="n4_291">那天之后我又去了两次，每次感觉都不一样</text> <!-- 引用后文字 -->
+				</view>
+			</view>
+			<view class="n4_292"> <!-- 链接消息行 -->
+				<view class="n4_293"> <!-- 链接卡 -->
+					<view class="n4_297"> <!-- 封面 -->
+					</view>
+					<view class="n4_294"> <!-- 链接正文 -->
+						<text class="n4_295">Agent 开发入门指南</text> <!-- 标题 -->
+						<text class="n4_296">微信公众号 · tech-transfer</text> <!-- 来源 -->
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		height: 2115.4rpx;
+		background-color: #F8F7F4;
+	}
+	.n4_258 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 246.2rpx;
+		height: 75rpx;
+		font-weight: bold;
+		font-size: 61.5rpx;
+		color: #3A2E25;
+	}
+	.n4_259 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 215.4rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.7);
+		border-radius: 26.9rpx;
+		overflow: hidden;
+	}
+	.n4_260 {
+		width: 30.8rpx;
+		height: 30.8rpx;
+	}
+	.n4_262 {
+		flex: 1;
+		font-size: 23.1rpx;
+		color: #5A4C40;
+	}
+	.n4_263 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #B05A3A;
+	}
+	.n4_264 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 357.7rpx;
+		width: 482.7rpx;
+		height: 28.8rpx;
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_265 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 407.7rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 46.2rpx;
+		overflow: hidden;
+	}
+	.n4_266 {
+		width: 100%;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_267 {
+		width: 557.7rpx;
+		flex-direction: column;
+		gap: 15.4rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #B05A3A;
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_268 {
+		width: 100%;
+		font-size: 25rpx;
+		color: #FFFFFF;
+	}
+	.n4_269 {
+		width: 100%;
+		flex-direction: row;
+		gap: 11.5rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_270 {
+		flex: 1;
+		height: 192.3rpx;
+		background-color: #EDE5D5;
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_271 {
+		flex: 1;
+		height: 192.3rpx;
+		background-color: #E0D6C4;
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_272 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_273 {
+		width: 30.8rpx;
+		height: 30.8rpx;
+	}
+	.n4_275 {
+		flex: 1;
+		font-size: 23.1rpx;
+		color: #FFFFFF;
+	}
+	.n4_276 {
+		width: 100%;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: flex-start;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n4_277 {
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: #B05A3A;
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_278 {
+		width: 46.2rpx;
+		height: 46.2rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.25);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_279 {
+		width: 19.2rpx;
+		height: 19.2rpx;
+	}
+	.n4_281 {
+		width: 173.1rpx;
+		height: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_282 {
+		position: absolute;
+		left: 3.8rpx;
+		top: 3.8rpx;
+		width: 153.8rpx;
+		height: 23.1rpx;
+	}
+	.n4_283 {
+		font-size: 23.1rpx;
+		color: #FFFFFF;
+	}
+	.n4_284 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n4_286 {
+		width: 100%;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_287 {
+		width: 500rpx;
+		flex-direction: column;
+		gap: 15.4rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #B05A3A;
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_288 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_289 {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		background-color: #EDE5D5;
+		border-radius: 11.5rpx;
+		overflow: hidden;
+	}
+	.n4_290 {
+		flex: 1;
+		font-size: 21.2rpx;
+		color: #FFFFFF;
+	}
+	.n4_291 {
+		width: 100%;
+		font-size: 25rpx;
+		color: #FFFFFF;
+	}
+	.n4_292 {
+		width: 100%;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_293 {
+		width: 480.8rpx;
+		flex-direction: column;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 19.2rpx rgba(59, 46, 38, 0.06);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_297 {
+		width: 100%;
+		height: 134.6rpx;
+		background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.25), rgba(122, 140, 90, 0.18));
+		overflow: hidden;
+	}
+	.n4_294 {
+		width: 100%;
+		flex-direction: column;
+		gap: 3.8rpx;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_295 {
+		width: 100%;
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.n4_296 {
+		font-size: 19.2rpx;
+		color: #8A7A6A;
+	}
+</style>

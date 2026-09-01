@@ -1,68 +1,61 @@
 <template>
-	<view class="page">
-		<!-- 氛围渐变圆（设计稿 3 处径向光斑：琥珀上左 / 青绿上右 / 蓝灰中左） -->
-		<view class="glow glow-amber"></view>
-		<view class="glow glow-green"></view>
-		<view class="glow glow-blue"></view>
-
-		<!-- 进度指示点（3 问，设计稿 dots y=68 · 激活 #B05A3A / 未激活 #E5DED2） -->
-		<view class="dots-row">
-			<view v-for="(i) in 3" :key="i" class="dot" :class="{ 'dot-active': (i - 1) === step }"></view>
+	<!-- ardot 直转 v2：冷启动访谈（帧 4:167）· 审计化生成 -->
+	<view class="page-root">
+		<!-- 光斑：画布为 GRADIENT_RADIAL，uvue App 端不支持 radial-gradient，
+		     改用预混 SVG 圆盘（_genspot.py 生成，纯 <circle fill> 零透明度属性；
+		     三光斑经程序验证两两零重叠，且正下方是纯色底 #F8F7F4，可安全预混） -->
+		<image class="n4_198" src="/static/icons/i4_198.svg" /> <!-- 光斑-琥珀 画布4:198 -->
+		<image class="n4_199" src="/static/icons/i4_199.svg" /> <!-- 光斑-苔绿 画布4:199 -->
+		<image class="n4_200" src="/static/icons/i4_200.svg" /> <!-- 光斑-青蓝 画布4:200 -->
+		<view class="n4_171"> <!-- 进度点（画布4:171；三问流转：当前问亮锈红） -->
+			<view v-for="(i) in 3" :key="i" class="dot" :class="{ 'dot-active': (i - 1) === step, 'dot-first': i === 1 }"></view>
 		</view>
-
-		<!-- 金色四角星装饰（设计稿 30x30 @180,99，中心 ~195,114） -->
-		<view class="sparkle">
-			<image src="/static/icons/interview-sparkle.svg" :width="30" :height="30" />
+		<image class="n4_175" src="/static/icons/i4_175.svg" /> <!-- icon: 品牌星芒 -->
+		<view class="n4_177"> <!-- 品牌名容器 -->
+			<text class="n4_178">忆述光华</text> <!-- 忆述光华 -->
 		</view>
-
-		<!-- 品牌名 + 标语（设计稿 y=142 / y=172 居中） -->
-		<text class="brand-title serif">忆述光华</text>
-		<text class="brand-slogan">把日子过成可以回访的故事</text>
-
-		<!-- 问题卡片（设计稿 350x113 @20,220 rx=20 · 三行：琥珀序号/深褐问题/灰提示） -->
-		<view v-if="!done" class="interview-card">
-			<text class="card-index">访谈 · 第 {{ step + 1 }}问</text>
-			<text class="card-question serif">{{ currentQuestion }}</text>
-			<text class="card-hint">随便聊聊，一两句话就够</text>
+		<view class="n4_179"> <!-- tagline容器 -->
+			<text class="n4_180">把日子过成可以回访的故事</text> <!-- tagline -->
 		</view>
-
-		<!-- 完成卡片（三问答毕） -->
-		<view v-else class="interview-card">
-			<text class="card-index">访谈完成</text>
-			<text class="card-question serif">谢谢你的分享，已经开始了解你了</text>
-			<view class="start-btn pressable" @tap="goHome">
+		<view v-if="!done" class="n4_181"> <!-- 问题卡（三问动态） -->
+			<text class="n4_182">访谈 · 第 {{ step + 1 }} 问</text> <!-- 问题编号 -->
+			<text class="n4_183">{{ currentQuestion }}</text> <!-- 问题 -->
+			<text class="n4_184">随便聊聊，一两句话就够</text> <!-- 问题引导 -->
+		</view>
+		<view v-else class="n4_181"> <!-- 完成卡（三问答毕） -->
+			<text class="n4_182">访谈完成</text>
+			<text class="n4_183">谢谢你的分享，已经开始了解你了</text>
+			<view class="start-btn" @tap="goHome">
 				<text class="start-btn-text">开始使用</text>
 			</view>
 		</view>
-
-		<!-- 录音区：同心环 + 麦克风按钮（设计稿中心 ~195,490） -->
-		<view v-if="!done" class="record-orbit">
-			<view class="ring ring-outer"></view>
-			<view class="ring ring-inner"></view>
-			<view class="mic-btn pressable" @tap="onMicTap">
-				<image src="/static/icons/interview-mic.svg" :width="17" :height="22" />
+		<view v-if="!done" class="n4_185"> <!-- 语音环 -->
+			<view class="n4_186" @tap="onMicTap"> <!-- 麦克风钮 -->
+				<image class="n4_187" src="/static/icons/i4_187.svg" /> <!-- icon: 麦克风 -->
 			</view>
 		</view>
-		<view v-if="!done" class="record-hint" :class="{ 'hint-recording': recording }">{{ recording ? '正在录音 ' + recSeconds + '″' : '点按说话' }}</view>
-		<view v-if="!done" class="text-answer pressable" @tap="openTextModal">用文字回答</view>
-
-		<!-- 跳过访谈 -->
-		<text v-if="!done" class="skip pressable" @tap="skipInterview">跳过访谈</text>
-
-		<!-- 主页指示条（设计稿 y=828） -->
-		<view class="home-bar"></view>
-
-		<!-- 文字回答弹层 -->
+		<view v-if="!done" class="n4_189"> <!-- 说话提示容器 -->
+			<text class="n4_190" :class="{ 'hint-recording': recording }" @tap="onMicTap">{{ recording ? '正在录音 ' + recSeconds + '″' : '点按说话' }}</text>
+		</view>
+		<view v-if="!done" class="n4_191"> <!-- 文字回答容器 -->
+			<text class="n4_192" @tap="openTextModal">用文字回答</text> <!-- 用文字回答 -->
+		</view>
+		<view v-if="!done" class="n4_193"> <!-- 跳过容器 -->
+			<text class="n4_194" @tap="skipInterview">跳过访谈</text> <!-- 跳过访谈 -->
+		</view>
+		<view class="n4_201"> <!-- 呼吸光环外圈 -->
+		</view>
+		<!-- 文字回答弹层（画布未画此态，沿用 HEAD 版已验证结构；uvue 样式不继承，text 类逐个补 font-family） -->
 		<view v-if="showTextModal" class="text-modal">
 			<view class="modal-mask" @tap="closeTextModal"></view>
 			<view class="modal-card">
-				<text class="modal-title serif">用文字回答</text>
+				<text class="modal-title">用文字回答</text>
 				<textarea class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
 				<view class="modal-actions">
-					<view class="modal-btn modal-btn-ghost pressable" @tap="closeTextModal">
+					<view class="modal-btn modal-btn-ghost" @tap="closeTextModal">
 						<text class="modal-btn-text ghost-text">取消</text>
 					</view>
-					<view class="modal-btn pressable" @tap="submitTextAnswer">
+					<view class="modal-btn" @tap="submitTextAnswer">
 						<text class="modal-btn-text">提交</text>
 					</view>
 				</view>
@@ -221,240 +214,254 @@
 </script>
 
 <style>
-	/* 冷启动访谈页 · 像素级还原 design_data_for_agents/06_冷启动访谈（390x844 画布，px×2=rpx）
-	   背景 #F8F7F4 / 主文字 #3A2E25 / 次文字 #8A7A6A / 琥珀 #C4913C / 锈红 #B05A3A */
-	.page {
-		position: relative;
-		width: 100%;
-		height: 100%;
-		background-color: #f8f7f4;
-		overflow: hidden;
+	.page-root {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
 	}
-	.serif {
-		font-family: "Sarasa Gothic SC", serif;
-	}
-
-	/* 氛围渐变圆 */
-	.glow {
+	.n4_198 {
 		position: absolute;
-		border-radius: 50%;
-		pointer-events: none;
+		left: -115.4rpx;
+		top: 76.9rpx;
+		width: 538.5rpx;
+		height: 538.5rpx;
 	}
-	.glow-amber {
-		left: -120rpx;
-		top: 80rpx;
-		width: 560rpx;
-		height: 560rpx;
-		background: radial-gradient(circle, rgba(196, 145, 59, 0.157) 0%, rgba(196, 145, 59, 0) 70%);
-	}
-	.glow-green {
-		left: 440rpx;
-		top: 340rpx;
-		width: 520rpx;
-		height: 520rpx;
-		background: radial-gradient(circle, rgba(121, 139, 90, 0.129) 0%, rgba(121, 139, 90, 0) 70%);
-	}
-	.glow-blue {
-		left: 60rpx;
-		top: 660rpx;
-		width: 480rpx;
-		height: 480rpx;
-		background: radial-gradient(circle, rgba(78, 124, 139, 0.110) 0%, rgba(78, 124, 139, 0) 70%);
-	}
-
-	/* 进度指示点（3 个，8px 直径，间距 14px） */
-	.dots-row {
+	.n4_199 {
 		position: absolute;
-		left: 0;
-		right: 0;
-		top: 128rpx;
-		display: flex;
+		left: 423.1rpx;
+		top: 326.9rpx;
+		width: 500rpx;
+		height: 500rpx;
+	}
+	.n4_200 {
+		position: absolute;
+		left: 57.7rpx;
+		top: 634.6rpx;
+		width: 461.5rpx;
+		height: 461.5rpx;
+	}
+	.n4_171 {
+		position: absolute;
+		left: 0rpx;
+		top: 123.1rpx;
+		width: 750rpx;
 		flex-direction: row;
 		justify-content: center;
+		/* 画布 4:171 gap=6pt → 11.5rpx，换到非首子节点 margin-left
+		   （uvue App 端丢弃 gap；三个点是 v-for 生成，首点靠 .dot-first 归零 margin） */
+		align-items: center;
+		overflow: hidden;
 	}
 	.dot {
-		width: 16rpx;
-		height: 16rpx;
-		border-radius: 8rpx;
-		background-color: #e5ded2;
-		margin-left: 7rpx;
-		margin-right: 7rpx;
+		width: 15.4rpx;
+		height: 15.4rpx;
+		margin-left: 11.5rpx; /* 画布 4:171 gap=6pt */
+		background-color: #E5DED2;
+		border-radius: 7.7rpx;
+		overflow: hidden;
+	}
+	/* v-for 首点：margin 归零，否则三个点整体右偏 11.5rpx、不再居中于 750rpx */
+	.dot-first {
+		margin-left: 0rpx;
 	}
 	.dot-active {
-		background-color: #b05a3a;
+		background-color: #B05A3A;
 	}
-
-	/* 金色四角星 */
-	.sparkle {
+	.n4_175 {
 		position: absolute;
-		left: 315rpx;
-		top: 160rpx;
-		width: 120rpx;
-		height: 120rpx;
-		display: flex;
-		align-items: center;
+		left: 340.4rpx;
+		top: 184.6rpx;
+		width: 69.2rpx;
+		height: 69.2rpx;
+		/* 画布 3 层同心发光：r20/a.2 + r10/a.35 + r4/a.5 */
+		box-shadow: 0rpx 0rpx 38.5rpx rgba(196, 145, 60, 0.2), 0rpx 0rpx 19.2rpx rgba(196, 145, 60, 0.35), 0rpx 0rpx 7.7rpx rgba(196, 145, 60, 0.5);
+		border-radius: 34.6rpx;
+	}
+	.n4_177 {
+		position: absolute;
+		left: 0rpx;
+		top: 273.1rpx;
+		width: 750rpx;
+		flex-direction: row;
 		justify-content: center;
-		border-radius: 50%;
-		background: radial-gradient(circle, rgba(196, 145, 60, 0.5) 0%, rgba(196, 145, 60, 0.15) 40%, rgba(196, 145, 60, 0) 70%);
+		align-items: center;
+		overflow: hidden;
 	}
-
-	/* 品牌名 + 标语 */
-	.brand-title {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 284rpx;
-		text-align: center;
-		font-size: 40rpx;
+	.n4_178 {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		color: #3a2e25;
+		font-size: 38.5rpx;
+		color: #3A2E25;
 	}
-	.brand-slogan {
+	.n4_179 {
 		position: absolute;
-		left: 0;
-		right: 0;
-		top: 344rpx;
-		text-align: center;
-		font-size: 26rpx;
-		color: #8a7a6a;
+		left: 0rpx;
+		top: 330.8rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
 	}
-
-	/* 问题卡片 */
-	.interview-card {
+	.n4_180 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_181 {
 		position: absolute;
-		left: 40rpx;
-		top: 440rpx;
-		width: 700rpx;
-		min-height: 226rpx;
+		left: 38.5rpx;
+		top: 423.1rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		/* 画布 4:181 gap=10pt → 19.2rpx，换到非首子节点 margin-top
+		   （uvue App 端丢弃 gap；子节点纵向序：编号→问题→引导，两段间距各 10pt 已由坐标验证） */
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-top: 38.5rpx;
+		padding-bottom: 38.5rpx;
+		/* 毛玻璃：画布为 BACKGROUND_BLUR(16) + fill 白 a0.55；
+		   转换器曾统一降级成 0.72，此处按画布还原 */
 		background-color: rgba(255, 255, 255, 0.55);
-		border: 2rpx solid rgba(255, 255, 255, 0.6);
-		border-radius: 40rpx;
-		padding-left: 40rpx;
-		padding-right: 40rpx;
-		padding-top: 40rpx;
-		padding-bottom: 46rpx;
-		box-shadow: 0 8rpx 24rpx rgba(58, 46, 37, 0.08);
+		/* 画布效果共 4 层：stroke 白a.6（居中描边→改外环免内缩）
+		   + INNER_SHADOW 白a.4 + DROP r16 a.06 + DROP r3 a.04 */
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.6), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
 	}
-	.card-index {
-		font-size: 20rpx;
-		line-height: 20rpx;
-		color: #c4913c;
+	.n4_182 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 21.2rpx;
+		color: #C4913C;
 	}
-	.card-question {
-		margin-top: 26rpx;
-		font-size: 40rpx;
-		font-weight: bold;
-		color: #3a2e25;
-		line-height: 40rpx;
+	.n4_183 {
+		width: 100%;
+		margin-top: 19.2rpx; /* 画布 4:181 gap=10pt（编号→问题） */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 38.5rpx;
+		color: #3A2E25;
 	}
-	.card-hint {
-		margin-top: 28rpx;
-		font-size: 26rpx;
-		line-height: 26rpx;
-		color: #8a7a6a;
+	.n4_184 {
+		width: 100%;
+		margin-top: 19.2rpx; /* 画布 4:181 gap=10pt（问题→引导） */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8A7A6A;
 	}
-
-	/* 完成卡「开始使用」按钮 */
+	.n4_185 {
+		position: absolute;
+		left: 271.2rpx;
+		top: 838.5rpx;
+		width: 207.7rpx;
+		height: 207.7rpx;
+		background-color: rgba(176, 89, 59, 0.12);
+		/* 画布 INNER_SHADOW 顶部白色高光 a0.5 */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.5);
+		border-radius: 103.8rpx;
+		overflow: hidden;
+	}
+	.n4_186 {
+		position: absolute;
+		left: 42.3rpx;
+		top: 42.3rpx;
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		/* 画布 INNER_SHADOW 白a.35 + DROP 下拉投影 */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.35), 0rpx 15.4rpx 53.8rpx rgba(176, 89, 59, 0.45);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_187 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_189 {
+		position: absolute;
+		left: 0rpx;
+		top: 1076.9rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_190 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 录音中提示变锈红（画布未画此态，沿用 HEAD 版） */
+	.hint-recording {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+	.n4_191 {
+		position: absolute;
+		left: 0rpx;
+		top: 1138.5rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_192 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+	.n4_193 {
+		position: absolute;
+		left: 0rpx;
+		top: 1423.1rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_194 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.n4_201 {
+		position: absolute;
+		left: 240.4rpx;
+		top: 807.7rpx;
+		width: 269.2rpx;
+		height: 269.2rpx;
+		background-color: rgba(176, 89, 59, 0.06);
+		border-radius: 134.6rpx;
+		overflow: hidden;
+	}
+	/* ↓ 完成卡「开始使用」按钮 + 文字回答弹层（画布未画此二态，沿用 HEAD 版已验证样式；
+	   uvue 样式不继承，text 类逐个带 font-family） */
 	.start-btn {
 		margin-top: 32rpx;
 		height: 76rpx;
 		border-radius: 38rpx;
-		background-color: #b05a3a;
+		background-color: #B05A3A;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 	}
 	.start-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 30rpx;
-		color: #f8f7f4;
+		color: #F8F7F4;
 		font-weight: 600;
 	}
-
-	/* 录音区：同心环 + 麦克风 */
-	.record-orbit {
-		position: absolute;
-		left: 250rpx;
-		top: 790rpx;
-		width: 280rpx;
-		height: 280rpx;
-	}
-	.ring {
-		position: absolute;
-		border-radius: 50%;
-	}
-	.ring-outer {
-		left: 0;
-		top: 0;
-		width: 280rpx;
-		height: 280rpx;
-		background-color: rgba(176, 89, 59, 0.06);
-	}
-	.ring-inner {
-		left: 32rpx;
-		top: 32rpx;
-		width: 216rpx;
-		height: 216rpx;
-		background-color: rgba(176, 89, 59, 0.12);
-	}
-	.mic-btn {
-		position: absolute;
-		left: 76rpx;
-		top: 76rpx;
-		width: 128rpx;
-		height: 128rpx;
-		border-radius: 64rpx;
-		background-color: #b05a3a;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 8rpx 24rpx rgba(176, 90, 58, 0.35);
-	}
-	.record-hint {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 1074rpx;
-		text-align: center;
-		font-size: 26rpx;
-		color: #5a4c40;
-	}
-	.hint-recording {
-		color: #b05a3a;
-	}
-	.text-answer {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 1138rpx;
-		text-align: center;
-		font-size: 26rpx;
-		color: #b05a3a;
-	}
-
-	/* 跳过访谈 */
-	.skip {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 1422rpx;
-		text-align: center;
-		font-size: 26rpx;
-		color: #b3a696;
-	}
-
-	/* 主页指示条 */
-	.home-bar {
-		position: absolute;
-		left: 250rpx;
-		top: 1596rpx;
-		width: 280rpx;
-		height: 10rpx;
-		border-radius: 5rpx;
-		background-color: #3a2e25;
-		opacity: 0.18;
-	}
-
-	/* 文字回答弹层 */
 	.text-modal {
 		position: absolute;
 		left: 0;
@@ -476,29 +483,30 @@
 	}
 	.modal-card {
 		width: 620rpx;
-		background-color: #ffffff;
+		background-color: #FFFFFF;
 		border-radius: 32rpx;
 		padding: 40rpx;
 		z-index: 1;
 		box-shadow: 0 16rpx 48rpx rgba(58, 46, 37, 0.18);
 	}
 	.modal-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 34rpx;
 		font-weight: bold;
-		color: #3a2e25;
+		color: #3A2E25;
 	}
 	.modal-input {
 		margin-top: 24rpx;
 		width: 540rpx;
 		min-height: 180rpx;
-		background-color: #f8f7f4;
+		background-color: #F8F7F4;
 		border-radius: 20rpx;
 		padding: 24rpx;
 		font-size: 28rpx;
-		color: #3a2e25;
+		color: #3A2E25;
 	}
 	.modal-placeholder {
-		color: #b3a696;
+		color: #B3A696;
 	}
 	.modal-actions {
 		margin-top: 28rpx;
@@ -512,7 +520,7 @@
 		padding-right: 44rpx;
 		height: 72rpx;
 		border-radius: 36rpx;
-		background-color: #b05a3a;
+		background-color: #B05A3A;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -520,18 +528,17 @@
 	.modal-btn-ghost {
 		background-color: transparent;
 		border-width: 2rpx;
-		border-color: #b05a3a;
+		border-color: #B05A3A;
+		border-style: solid;
 	}
 	.modal-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 28rpx;
-		color: #f8f7f4;
+		color: #F8F7F4;
 	}
 	.ghost-text {
-		color: #b05a3a;
-	}
-
-	/* 按压态 */
-	.pressable {
-		transition: transform 0.2s ease, opacity 0.2s ease;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #B05A3A;
 	}
 </style>

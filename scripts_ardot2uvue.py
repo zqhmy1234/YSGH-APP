@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ardot → uvue 直转管道 v2（数据驱动完备版）
 
 完备性保证（所有类型 × 所有属性 = 数据穷举驱动）：
@@ -13,9 +12,14 @@
 双输出     : uvue（页面代码）+ html（浏览器直接预览视觉，无需部署）
 换算       : rpx = px * 750/390（精确 1.9231），html px = 设计 px
 """
-import json, io, re, sys, os
+import json
+import os
+import sys
 
-SRC_FILE = os.environ.get('ARDOT_JSON', r'C:\Users\ghf\.workbuddy\projects\d-GuangH-App\514ed5f4-4e5c-4545-9f95-f672df876976\tool-results\mcp-connector-proxy-ardot_batch_read-1788032327586-d99a04.txt')
+SRC_FILE = os.environ.get('ARDOT_JSON') or os.path.join(
+    r'C://Users//ghf//.workbuddy//projects//d-GuangH-App',
+    '514ed5f4-4e5c-4545-9f95-f672df876976', 'tool-results',
+    'mcp-connector-proxy-ardot_batch_read-1788032327586-d99a04.txt')
 ROOT_DIR = r'D:/GuangH-App/.wt/wrap1-agentA2-ui-restore'
 DESIGN_W = 390
 RPX_W = 750
@@ -24,7 +28,7 @@ STATUS_OFFSET = 44  # px，沉浸式状态栏补偿
 VEC_TYPES = ('VECTOR', 'ELLIPSE', 'RECTANGLE')
 
 def load_nodes():
-    raw = io.open(SRC_FILE, encoding='utf-8').read()
+    raw = open(SRC_FILE, encoding='utf-8').read()
     i = raw.find('{')
     obj = json.loads(raw[i:])
     if 'content' in obj:
@@ -222,8 +226,8 @@ class Gen:
             if e['type'] == 'DROP_SHADOW':
                 c = e['color']
                 if 'box-shadow' not in ' '.join(d):
-                    d.append(f'box-shadow: {self.rpx(e["offset"]["x"])} {self.rpx(e["offset"]["y"])} {self.rpx(e["radius"]*2)} {rgba(c)}')
-                    hd.append(f'box-shadow: {e["offset"]["x"]:.0f}px {e["offset"]["y"]:.0f}px {e["radius"]*2:.0f}px {rgba(c)}')
+                    d.append(f'box-shadow: {self.rpx(e["offset"]["x"])} {self.rpx(e["offset"]["y"])} {self.rpx(e["radius"]*2)} {rgba(c)}')  # noqa: E501
+                    hd.append(f'box-shadow: {e["offset"]["x"]:.0f}px {e["offset"]["y"]:.0f}px {e["radius"]*2:.0f}px {rgba(c)}')  # noqa: E501
                 break
 
     def walk(self, node, parent, root=False):
@@ -242,7 +246,8 @@ class Gen:
         if t in VEC_TYPES or is_icon(node):
             slug = 'i' + nid.replace(':', '_')
             self.icons.append((nid, slug, name))
-            w, h = node.get('width', 20), node.get('height', 20)
+            w = node.get('width', 20)
+            h = node.get('height', 20)
             self.ulines.append(f'{pad}<image class="{cls}" src="/static/icons/{slug}.svg" /> <!-- icon: {name} -->')
             self.hlines.append(f'{hpad}<img class="{cls}" src="icons/{slug}.svg" /> <!-- {name} -->')
             d, hd = self.box_decls(node, parent, root)
@@ -272,14 +277,19 @@ class Gen:
             for f in (node.get('fills') or []):
                 if f['type'] == 'SOLID' and f.get('visible', True):
                     col = rgba(f['color'], f.get('opacity', 1) if f.get('opacity', 1) < 1 else None)
+                    # glass 降级：白底胶囊上的白字加深（透明底设计稿用白字，降级后失效）
+                    par_has_glass = parent and any(e.get('type') == 'BACKGROUND_BLUR' for e in (parent.get('effects') or []))
+                    if par_has_glass and f['color']['r'] > 0.9 and f['color']['g'] > 0.9 and f['color']['b'] > 0.9:
+                        col = '#8A7A6A'
+                        self.audit.near(nid, name, 'glass降级容器内白字→#8A7A6A')
                     d.append(f'color: {col}')
                     hd.append(f'color: {col}')
                     break
             for e in (node.get('effects') or []):
                 if e['type'] == 'DROP_SHADOW':
                     c = e['color']
-                    d.append(f'text-shadow: {self.rpx(e["offset"]["x"])} {self.rpx(e["offset"]["y"])} {self.rpx(e["radius"]*2)} {rgba(c)}')
-                    hd.append(f'text-shadow: {e["offset"]["x"]:.0f}px {e["offset"]["y"]:.0f}px {e["radius"]*2:.0f}px {rgba(c)}')
+                    d.append(f'text-shadow: {self.rpx(e["offset"]["x"])} {self.rpx(e["offset"]["y"])} {self.rpx(e["radius"]*2)} {rgba(c)}')  # noqa: E501
+                    hd.append(f'text-shadow: {e["offset"]["x"]:.0f}px {e["offset"]["y"]:.0f}px {e["radius"]*2:.0f}px {rgba(c)}')  # noqa: E501
                     break
             ta = node.get('textAlignHorizontal')
             if ta == 'CENTER':
@@ -294,6 +304,16 @@ class Gen:
             return
 
         # FRAME
+        has_img = any(f.get('type') == 'IMAGE' and f.get('visible', True) for f in (node.get('fills') or []))
+        if has_img:
+            slug = 'img' + nid.replace(':', '_')
+            self.ulines.append(f'{pad}<image class="{cls}" src="/static/images/{slug}.png" mode="aspectFill" /> <!-- 合成图: {name} -->')  # noqa: E501
+            self.hlines.append(f'{hpad}<img class="{cls}" src="images/{slug}.png" /> <!-- {name} -->')
+            d, hd = self.box_decls(node, parent, root)
+            self.emit(cls, d)
+            self.emit_h(cls, hd)
+            self.audit.near(nid, name, 'IMAGE填充→画布导出合成图(含渐变叠加)')
+            return
         self.ulines.append(f'{pad}<view class="{cls}"> <!-- {name} -->')
         self.hlines.append(f'{hpad}<div class="{cls}"> <!-- {name} -->')
         self.indent += 1
@@ -316,6 +336,8 @@ class Gen:
             d.append('overflow: hidden')
             hd.append('overflow: hidden')
         self.emit(cls, d)
+        if node.get('layout', 'none') == 'none' and (node.get('children') or []):
+            hd.append('position: relative')
         self.emit_h(cls, hd)
         for c in (node.get('children') or []):
             self.walk(c, node)
@@ -353,7 +375,7 @@ def convert(frame, slug):
         uvue += f'\t.{cls} {{\n' + ''.join(f'\t\t{x};\n' for x in decls) + '\t}\n'
     uvue += '</style>\n'
     out_u = os.path.join(ROOT_DIR, 'uvue_gen', slug + '_gen.uvue')
-    io.open(out_u, 'w', encoding='utf-8').write(uvue)
+    open(out_u, 'w', encoding='utf-8').write(uvue)
     # 组 html
     body = '\n'.join(g.hlines[3:])
     css = ''
@@ -362,7 +384,7 @@ def convert(frame, slug):
     html = ('\n'.join(g.hlines[:3]) + '\n' + css + '</style></head><body><div class="phone">\n'
             + body + '\n</div></body></html>\n')
     out_h = os.path.join(ROOT_DIR, 'uvue_gen', slug + '_preview.html')
-    io.open(out_h, 'w', encoding='utf-8').write(html)
+    open(out_h, 'w', encoding='utf-8').write(html)
     ok = g.audit.report(frame.get('name', slug))
     print(f'[{"ok" if ok else "WARN"}] {slug}: uvue+html, {len(g.icons)} icons')
     return [(nid, s, nm) for nid, s, nm in g.icons]
@@ -391,5 +413,5 @@ if __name__ == '__main__':
                 all_icons[nid] = (s, nm)
         else:
             print(f'[miss] {name} {fid}')
-    io.open(ICONS_JSON, 'w', encoding='utf-8').write(json.dumps(all_icons, ensure_ascii=False, indent=1))
+    open(ICONS_JSON, 'w', encoding='utf-8').write(json.dumps(all_icons, ensure_ascii=False, indent=1))
     print(f'图标清单 → {ICONS_JSON}（{len(all_icons)} 个）')

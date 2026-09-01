@@ -6,7 +6,64 @@
  * 服务端游标分页列入第二波（进度文档已记录）。
  */
 import { get, dataArr } from './api'
+import { resolveMediaUrl } from './config'
 import { parseIsoMs, dayKey, friendlyDay } from './time'
+
+/**
+ * 事件成员照片（服务端随 timeline 一次下发 · 2026-08-31）
+ *
+ * 为什么需要它：此前 EventOut 不带任何成员信息，客户端只能在「刚上传」时从
+ * 上传回调拿到本地路径——冷启动/重新进页面时 eventPhotoIds 恒空，卡片照片条
+ * 永远渲染不出来（真机实锤）。现在服务端一次批量下发，客户端开箱即有图。
+ */
+export class EventPhoto {
+	contentId: string
+	/** 已 resolve 的缩略图绝对 URL（可直接喂 <image :src>；空串=服务端没给） */
+	thumbnailUrl: string
+	/** 已 resolve 的原图绝对 URL（点开详情/大图时才用，短时效 15m） */
+	originalUrl: string
+	takenAt: number
+	place: string
+	title: string
+
+	constructor(
+		contentId: string,
+		thumbnailUrl: string,
+		originalUrl: string,
+		takenAt: number,
+		place: string,
+		title: string
+	) {
+		this.contentId = contentId
+		this.thumbnailUrl = thumbnailUrl
+		this.originalUrl = originalUrl
+		this.takenAt = takenAt
+		this.place = place
+		this.title = title
+	}
+}
+
+/** 解析服务端 photos[]（缺失/空返回空数组，绝不抛） */
+function parsePhotos(item: UTSJSONObject): Array<EventPhoto> {
+	const out: Array<EventPhoto> = []
+	const raw = item.getArray('photos')
+	if (raw == null) {
+		return out
+	}
+	const arr = raw as Array<UTSJSONObject>
+	for (let i = 0; i < arr.length; i++) {
+		const p = arr[i]
+		out.push(new EventPhoto(
+			p.getString('content_id') ?? '',
+			resolveMediaUrl(p.getString('thumbnail_url')),
+			resolveMediaUrl(p.getString('original_url')),
+			parseIsoMs(p.getString('taken_at') ?? ''),
+			p.getString('place') ?? '',
+			p.getString('title') ?? ''
+		))
+	}
+	return out
+}
 
 export class TimelineEvent {
 	id: string
@@ -28,10 +85,16 @@ export class TimelineEvent {
 	coverContentId: string
 	/** L1 卡片下的 L2 主题（客户端分组填充；接口层恒为空数组） */
 	children: Array<TimelineEvent>
-	/** 卡片照片条 content_id 列表（客户端会话填充：端侧聚合成员，按拍摄顺序） */
+	/** 卡片照片条 content_id 列表（服务端 photos 优先，无则回退本地会话填充） */
 	photoIds: Array<string>
 	/** 封面本地路径（cover_content_id 优先，无则首图回退；无本地映射则空串） */
 	coverPath: string
+	/** 成员照片（服务端下发，含 URL；冷启动即有图，照片条渲染的唯一真源） */
+	photos: Array<EventPhoto>
+	/** content_id → 缩略图 URL（photoPathOf 的后端回退查表；避免每次渲染遍历） */
+	photoUrlMap: Map<string, string>
+	/** 封面 URL（服务端 cover_url，已 resolve）；空串=无封面 */
+	coverUrl: string
 
 	constructor(
 		id: string,
@@ -64,6 +127,15 @@ export class TimelineEvent {
 		this.children = []
 		this.photoIds = []
 		this.coverPath = ''
+		this.photos = []
+		this.photoUrlMap = new Map<string, string>()
+		this.coverUrl = ''
+	}
+
+	/** 服务端下发的缩略图 URL（本地无图时用它回退）；查不到返回空串 */
+	serverPhotoUrl(contentId: string): string {
+		const u = this.photoUrlMap.get(contentId)
+		return u == null ? '' : u
 	}
 }
 
@@ -95,6 +167,24 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
 					item.getNumber('confidence') as number,
 					item.getString('cover_content_id') ?? ''
 				)
+				// 图片下发（Valet Key）：服务端已批量下发成员照片与封面 URL，
+				// 客户端直接建索引——冷启动不再依赖上传回调，照片条开箱即渲染。
+				ev.photos = parsePhotos(item)
+				for (let k = 0; k < ev.photos.length; k++) {
+					const ph = ev.photos[k]
+					if (ph.thumbnailUrl != '') {
+						ev.photoUrlMap.set(ph.contentId, ph.thumbnailUrl)
+					}
+				}
+				// photoIds：服务端成员优先；为空再保留本地会话填充（上传回调）的值
+				if (ev.photos.length > 0) {
+					const ids: Array<string> = []
+					for (let k = 0; k < ev.photos.length; k++) {
+						ids.push(ev.photos[k].contentId)
+					}
+					ev.photoIds = ids
+				}
+				ev.coverUrl = resolveMediaUrl(item.getString('cover_url'))
 				result.push(ev)
 			}
 			resolve(result)
@@ -175,8 +265,24 @@ export function buildDayGroups(events: Array<TimelineEvent>, isIgnored: (eventId
 			ev.confidence,
 			ev.coverContentId
 		)
-		groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
-		l1ByDay.set(k, groups.length - 1)
+		// ⚠️ 修复（2026-08-31）：原 copy 只复制 constructor 覆盖的 13 个字段，
+		//    photoIds / coverPath / photos / photoUrlMap / coverUrl 全部丢失 →
+		//    分组后的卡片一律没照片，即便 timeline 已拉到数据。
+		//    这是"卡片没照片"的隐藏第四层断链（前三层见 _diff_ledger.md W6 §23.2）。
+		copy.photoIds = ev.photoIds
+		copy.coverPath = ev.coverPath
+		copy.photos = ev.photos
+		copy.photoUrlMap = ev.photoUrlMap
+		copy.coverUrl = ev.coverUrl
+		// 画布真值（index_canvas 内容区）：一个「日期分组」头 + 当天多张卡。
+		// 同日多个 L1 必须合并进同一 DayGroup，禁止每个 L1 各自重复日期头。
+		const existIdx = l1ByDay.get(k)
+		if (existIdx != null) {
+			groups[existIdx].events.push(copy)
+		} else {
+			groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
+			l1ByDay.set(k, groups.length - 1)
+		}
 	}
 	for (let j = 0; j < l2.length; j++) {
 		const ev = l2[j]
