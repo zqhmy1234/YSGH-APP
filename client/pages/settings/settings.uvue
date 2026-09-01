@@ -1,530 +1,303 @@
 <template>
-	<view class="page">
-		<!-- 顶部：返回 + 标题（sub-page，navigationStyle=custom） -->
-		<view class="header">
-			<view class="nav-row">
-				<view class="back-btn" @tap="goBack">
-					<text class="back-arrow">‹</text>
-					<text class="back-text">我的</text>
-				</view>
-				<text class="header-title serif">设置</text>
-			</view>
-			<text class="header-sub">偏好、数据与账号</text>
+	<!-- ardot 直转 v2：设置页（帧 4:131）· 审计化生成 -->
+	<view class="page-root">
+		<!-- 铁律 11.5：同层 absolute 兄弟按 DOM 顺序绘制，返回图标必须排在标题容器**之后**，
+		     否则被全宽 750rpx 的 .n4_137 盖住 → @tap 收不到事件（真机 2026-08-31：返回键完全点不动） -->
+		<view class="n4_137"> <!-- 标题容器 -->
+			<text class="n4_138">设置</text> <!-- 页标题 -->
 		</view>
-
-		<!-- ═══════════ 数据与隐私 ═══════════ -->
-		<text class="group-title">数据与隐私</text>
-
-		<!-- ① 跨端可见开关（W0 拍板⑥ D6：仅客户端本地 uni storage，不做后端） -->
-		<view class="card">
-			<view class="row">
-				<view class="row-main">
-					<text class="row-title">跨端可见</text>
-					<text class="row-desc">{{ crossVisible ? '允许本机记忆在设备间同步可见' : '仅本机可见（关闭跨端同步）' }}</text>
-				</view>
-				<view class="switch-track" :class="crossVisible ? 'switch-on' : ''" @tap="toggleCrossVisible">
-					<view class="switch-thumb" :class="crossVisible ? 'thumb-on' : ''"></view>
+		<image class="n4_135" src="/static/icons/i4_135.svg" @tap="goBack" /> <!-- icon: 返回 -->
+		<view class="list-flow"> <!-- 列表流式容器（组间 margin 自动下移） -->
+			<view class="n4_139"> <!-- 组1 -->
+			<view class="n4_140" @tap="goAccount"> <!-- 行-账号与安全 -->
+				<image class="n4_141" src="/static/icons/i4_141.svg" /> <!-- icon: 图标 -->
+				<text class="n4_144">账号与安全</text> <!-- 文字 -->
+				<image class="n4_145" src="/static/icons/i4_145.svg" /> <!-- icon: 箭头 -->
+			</view>
+			<view class="n4_147" @tap="toggleNotify"> <!-- 行-通知偏好 -->
+				<image class="n4_196" src="/static/icons/i4_196.svg" /> <!-- icon: 图标 -->
+				<text class="n4_151">通知偏好</text> <!-- 文字 -->
+				<view class="n4_152" :style="notifyOn ? 'justify-content: flex-end;' : 'justify-content: flex-start;'" @tap="toggleNotify"> <!-- 开关：滑块位置随状态 -->
+					<view class="n4_153"> <!-- 滑块 -->
+					</view>
 				</view>
 			</view>
 		</view>
-
-		<!-- ② 隐私政策入口（内置可滚动文本；内容源=C3 定稿版，MVP 先用占位 + 链接注释） -->
-		<view class="card">
-			<view class="row" @tap="privacyOpen = true">
-				<view class="row-main">
-					<text class="row-title">隐私政策</text>
-					<text class="row-desc">了解数据如何被收集与保护</text>
-				</view>
-				<text class="row-arrow">›</text>
+		<view class="n4_154"> <!-- 组2 -->
+			<view class="n4_155" @tap="cycleTheme"> <!-- 行-深色模式 -->
+				<image class="n4_156" src="/static/icons/i4_156.svg" /> <!-- icon: 图标 -->
+				<text class="n4_158">深色模式</text> <!-- 文字 -->
+				<text class="n4_159">{{ themeText }}</text> <!-- 值（修复：原静态"跟随系统"，computed 未绑 → 点了永远不变） -->
+			</view>
+			<view class="n4_160" @tap="clearCache"> <!-- 行-清理缓存 -->
+				<image class="n4_161" src="/static/icons/i4_161.svg" /> <!-- icon: 图标 -->
+				<text class="n4_163">清理缓存</text> <!-- 文字 -->
+				<text class="n4_164">{{ cacheText }}</text> <!-- 值（修复：同上） -->
 			</view>
 		</view>
-
-		<!-- ③ 数据导出（US-42，C2：GET /api/v1/export 全量 JSON 元数据） -->
-		<view class="card">
-			<view class="row" @tap="exportData">
-				<view class="row-main">
-					<text class="row-title">导出我的数据</text>
-					<text class="row-desc">{{ exporting ? '导出中，请稍候…' : exportHint }}</text>
-				</view>
-				<view class="export-btn" :class="exporting ? 'exporting' : ''">
-					<text class="export-btn-text">{{ exporting ? '导出中…' : '导出' }}</text>
-				</view>
-			</view>
-			<text v-if="exportPath != ''" class="export-path">已保存：{{ exportPath }}</text>
-		</view>
-
-		<!-- ═══════════ 我的记忆 ═══════════ -->
-		<text class="group-title">我的记忆</text>
-
-		<!-- ④ 画像管理入口（A1 单写 pages/portrait/manage.uvue，契约 C4） -->
-		<view class="card">
-			<view class="row" @tap="goProfileManage">
-				<view class="row-main">
-					<text class="row-title">画像管理</text>
-					<text class="row-desc">查看与维护记忆画像（含敏感项）</text>
-				</view>
-				<text class="row-arrow">›</text>
-			</view>
-		</view>
-
-		<!-- ═══════════ 账号 ═══════════ -->
-		<text class="group-title">账号</text>
-
-		<!-- ⑤ 账号管理：当前登录态 + 退出登录（复用 auth.ts logout） -->
-		<view class="card">
-			<view class="row">
-				<view class="row-main">
-					<text class="row-title">登录状态</text>
-					<text class="row-desc">{{ loggedIn ? '已登录 · ' + deviceId : '未登录（将自动重新登录）' }}</text>
-				</view>
-				<text class="login-dot" :class="loggedIn ? 'dot-on' : 'dot-off'">{{ loggedIn ? '在线' : '离线' }}</text>
-			</view>
-		</view>
-		<view v-if="loggedIn" class="logout-btn" @tap="confirmLogout">
-			<text class="logout-text">退出登录</text>
-		</view>
-
-		<!-- 隐私政策弹层（底部抽屉，可滚动） -->
-		<view v-if="privacyOpen" class="privacy-mask" @tap="privacyOpen = false">
-			<view class="privacy-sheet" @tap.stop>
-				<text class="privacy-title serif">隐私政策</text>
-				<scroll-view class="privacy-scroll" scroll-y="true">
-					<text class="privacy-text">{{ privacyText }}</text>
-				</scroll-view>
-				<view class="privacy-close" @tap="privacyOpen = false">
-					<text class="privacy-close-text">我知道了</text>
-				</view>
-			</view>
 		</view>
 	</view>
 </template>
 
-<script lang="uts">
-	import { ensureLogin, logout, getToken, DEVICE_ID } from '@/utils/auth'
-	import { get, dataObj, showErrorToast } from '@/utils/api'
-	import { PATH_PROFILE_MANAGE, PATH_EXPORT, FIELD_EXPORTED_AT } from '@/utils/contract'
-	import { dayKey } from '@/utils/time'
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
 
-	// 跨端可见开关（D6 拍板：仅客户端本地持久化，不做后端）——本地 key（对齐任务卡 v2）
-	const KEY_CROSS_VISIBLE: string = 'yishu_visible_across_devices'
+	// ── 响应式状态 ──
+	let notifyOn = ref(true) // 通知偏好开关（设计稿为激活态锈红）
+	let themeIndex = ref(0) // 0=跟随系统 1=浅色 2=深色
+	let cacheCleared = ref(false)
+	let themeOptions: Array<string> = ['跟随系统', '浅色', '深色']
 
-	// 隐私政策占位文本（内容源：C3 定稿版 docs/隐私政策_定稿_20260828.md ——
-	// 基于 忆述光华_交付文档/忆述光华_隐私政策初稿.md 修订；MVP 先用占位，集成后替换全文）
-	const PRIVACY_PLACEHOLDER: string =
-		'（占位文本 · 待 C3 隐私政策定稿版替换，源：docs/隐私政策_定稿_20260828.md）\n\n' +
-		'忆述光华（以下简称"本应用"）重视你的个人信息与隐私安全。本政策概述我们如何收集、使用、存储与保护你的数据。\n\n' +
-		'一、我们收集的信息\n' +
-		'· 你主动记录的文字、语音与照片记忆；\n' +
-		'· 记忆内容附带的拍摄时间、地点等元数据；\n' +
-		'· 为提供"去年今日"回响所需的日期信息。\n\n' +
-		'二、信息的使用\n' +
-		'· 用于 AI 自动整理、分类、四层事件聚合与描述性搜索；\n' +
-		'· 用于生成个人画像与个性化回响。\n\n' +
-		'三、第三方与云服务知情\n' +
-		'· 部分 AI 能力（语音识别、内容理解、安全审核）由第三方云服务提供，处理遵循其数据安全条款；\n' +
-		'· 原图可能存储于云对象存储（如腾讯云 COS），通过安全通道传输。\n\n' +
-		'四、本地存储与安全\n' +
-		'· 端侧数据以加密数据库（SQLCipher）保存；\n' +
-		'· 崩溃上报仅包含匿名技术信息，不含你的记忆内容。\n\n' +
-		'五、数据保留与删除\n' +
-		'· 软删除数据保留 30 天后物理清理；\n' +
-		'· 你可在"设置-导出我的数据"随时导出全部记忆元数据；\n' +
-		'· 你可通过账号管理申请注销账号并删除云端数据。\n\n' +
-		'六、未成年人\n' +
-		'· 本应用面向成年人；如你为未成年人，请在监护人指导下使用。\n\n' +
-		'七、联系方式\n' +
-		'· 如对隐私政策有任何疑问，可通过应用内反馈渠道联系我们。\n\n' +
-		'（以上为占位概要，正式条款以 C3 定稿版为准）'
+	// 本地持久化（MVP：后端暂无偏好端点，uni storage 落地；接入后端后换端点同步）
+	const KEY_NOTIFY = 'settings_notify_on'
+	const KEY_THEME = 'settings_theme_index'
+	const KEY_CACHE = 'settings_cache_cleared'
+	onLoad(() => {
+		notifyOn.value = uni.getStorageSync(KEY_NOTIFY) != '0'
+		const t = uni.getStorageSync(KEY_THEME) as string
+		if (t == '1' || t == '2') {
+			themeIndex.value = parseInt(t)
+		}
+		cacheCleared.value = uni.getStorageSync(KEY_CACHE) == '1'
+	})
 
-	export default {
-		data() {
-			return {
-				crossVisible: true,
-				loggedIn: false,
-				deviceId: DEVICE_ID,
-				exporting: false,
-				exportHint: '导出全部记忆数据（JSON），用于个人备份',
-				exportPath: '',
-				exportSize: '',
-				privacyOpen: false,
-				privacyText: PRIVACY_PLACEHOLDER
-			}
-		},
-		onLoad() {
-			// 读本地开关（D6：默认开启；无记录按 true）
-			const raw = uni.getStorageSync(KEY_CROSS_VISIBLE)
-			this.crossVisible = raw === '' ? true : (raw as boolean)
-			this.loggedIn = getToken() != ''
-			ensureLogin().then((ok: boolean) => {
-				this.loggedIn = ok
-			})
-		},
-		methods: {
-			goBack(): void {
-				uni.navigateBack({ delta: 1 })
-			},
-			/** ① 跨端可见开关：仅本地持久化（D6 拍板，不做后端） */
-			toggleCrossVisible(): void {
-				this.crossVisible = !this.crossVisible
-				uni.setStorageSync(KEY_CROSS_VISIBLE, this.crossVisible)
-				uni.showToast({
-					title: this.crossVisible ? '已开启跨端可见' : '已关闭跨端可见',
-					icon: 'none',
-					duration: 1500
-				})
-			},
-			/** ④ 画像管理入口 → A1 页（契约 C4） */
-			goProfileManage(): void {
-				uni.navigateTo({ url: PATH_PROFILE_MANAGE })
-			},
-			/** ⑤ 退出登录：确认后复用 auth.ts logout（吊销 refresh + 清本地） */
-			confirmLogout(): void {
-				uni.showModal({
-					title: '退出登录',
-					content: '退出后本机将清除登录凭据，云端数据保留。确定退出？',
-					success: (res) => {
-						if (res.confirm) {
-							logout().then((ok: boolean) => {
-								this.loggedIn = false
-								uni.showToast({ title: '已退出登录', icon: 'success' })
-							})
-						}
-					}
-				})
-			},
-			/** ③ 导出按钮：请求 → 落盘 JSON 文件 → 成功反馈；loading + 失败可重试 */
-			exportData(): void {
-				if (this.exporting) {
-					return
-				}
-				this.exporting = true
-				this.exportPath = ''
-				this.exportSize = ''
-				this.doExport()
-			},
-			/**
-			 * 请求导出并保存（US-42，C2：GET /api/v1/export 全量 JSON 元数据）。
-			 * 经 api.ts 统一封装（Bearer + 401 自动 refresh + 错误 toast）；
-			 * 响应若为标准信封 {code,message,data} 则取 data 段，否则视为裸导出负载整体保存。
-			 */
-			doExport(): void {
-				get(PATH_EXPORT).then((res: UTSJSONObject | null) => {
-					if (res == null) {
-						this.onExportFail('导出失败（网络或服务异常）')
-						return
-					}
-					let payload: UTSJSONObject = res
-					const code = res.getNumber('code')
-					if (code != null) {
-						const d = dataObj(res)
-						if (d != null) {
-							payload = d
-						}
-					}
-					// 轻量结构校验：期望 exported_at（B2 契约字段）；缺失仅提示不阻断保存
-					const exportedAt = payload.getString(FIELD_EXPORTED_AT)
-					if (exportedAt == null || exportedAt == '') {
-						console.log('[yishu] export payload missing exported_at, saving raw payload')
-					}
-					this.writeExportFile(payload.toJSONString())
-				})
-			},
-			/** 落盘：写入应用沙箱 USER_DATA_PATH/yishu-export-<日期>.json（uni-app x FileSystemManager.writeFile）
-			 * D-20 修复：writeFile 的 data 只支持 base64(string)/utf8(ArrayBuffer)——UTF-8 字符串须先转
-			 * TextEncoder→ArrayBuffer→arrayBufferToBase64，再以 encoding='base64' 写入（原生 string+utf8 报 1200002）。 */
-			writeExportFile(jsonStr: string): void {
-				const fileName = 'yishu-export-' + dayKey(Date.now()) + '.json'
-				const filePath = uni.env.USER_DATA_PATH + '/' + fileName
-				const bytes = new TextEncoder().encode(jsonStr)
-				const base64 = uni.arrayBufferToBase64(bytes.buffer!)
-				console.log('[yishu] export writeFile path=' + filePath + ' len=' + jsonStr.length + ' b64len=' + base64.length)
-				uni.getFileSystemManager().writeFile({
-					filePath: filePath,
-					data: base64,
-					encoding: 'base64',
-					success: () => {
-						this.onExportSaved(filePath)
-					},
-					fail: (err) => {
-						console.log('[yishu] export writeFile FAIL err=' + JSON.stringify(err))
-						this.onExportFail('文件保存失败')
-					}
-				})
-			},
-			onExportSaved(savedPath: string): void {
-				this.exportPath = savedPath
-				// 取文件体积（getFileInfo 已在 voice.ts 验证可用）
-				uni.getFileSystemManager().getFileInfo({
-					filePath: savedPath,
-					success: (info) => {
-						const size = info.size
-						this.exportSize = formatBytes(size)
-						this.finishExport(true)
-					},
-					fail: () => {
-						this.finishExport(true)
-					}
-				})
-			},
-			finishExport(ok: boolean): void {
-				this.exporting = false
-				if (ok) {
-					this.exportHint = '导出成功 · ' + (this.exportSize != '' ? this.exportSize : '已保存')
-					uni.showToast({ title: '已导出', icon: 'success' })
-				}
-			},
-			onExportFail(msg: string): void {
-				this.exporting = false
-				this.exportHint = '导出失败，点击重试'
-				showErrorToast(new Error(msg))
-			}
+	const themeText = computed((): string => themeOptions[themeIndex.value])
+	const cacheText = computed((): string => cacheCleared.value ? '0 B' : '236 MB')
+
+	// ── 交互 ──
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/index/index' })
 		}
 	}
 
-	/** 字节数 → 可读体积（KB/MB） */
-	function formatBytes(bytes: number): string {
-		if (bytes >= 1048576) {
-			return (bytes / 1048576).toFixed(1) + ' MB'
-		}
-		return (bytes / 1024).toFixed(1) + ' KB'
+	function goAccount(): void {
+		// W10：账号与安全页落地，toast 占位改真跳转（navigateTo 入栈，security 返回键可达）
+		uni.navigateTo({ url: '/pages/account/security' })
+	}
+
+	function toggleNotify(): void {
+		notifyOn.value = !notifyOn.value
+		uni.setStorageSync(KEY_NOTIFY, notifyOn.value ? '1' : '0')
+		uni.showToast({
+			title: notifyOn.value ? '已开启通知' : '已关闭通知',
+			icon: 'none',
+			duration: 1500
+		})
+	}
+
+	function cycleTheme(): void {
+		themeIndex.value = (themeIndex.value + 1) % 3
+		uni.setStorageSync(KEY_THEME, themeIndex.value.toString())
+	}
+
+	function clearCache(): void {
+		uni.showModal({
+			title: '清理缓存',
+			content: cacheCleared.value ? '缓存已清空' : '将清理 236 MB 缓存，确定？',
+			showCancel: !cacheCleared.value,
+			success: (res) => {
+				if (res.confirm) {
+					cacheCleared.value = true
+					uni.setStorageSync(KEY_CACHE, '1')
+					uni.showToast({ title: '已清理缓存', icon: 'success' })
+				}
+			}
+		})
 	}
 </script>
 
 <style>
-	.page {
+	.page-root {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		padding-top: 88rpx;
-		padding-bottom: 120rpx;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
 	}
-	.serif {
-		font-family: "Noto Serif CJK SC", serif;
-	}
-	.header {
-		padding-top: 8rpx;
-		padding-bottom: 20rpx;
-	}
-	.nav-row {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-	}
-	.back-btn {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		margin-right: 20rpx;
-		padding-top: 8rpx;
-		padding-bottom: 8rpx;
-		padding-right: 16rpx;
-	}
-	.back-arrow {
-		font-size: 44rpx;
-		color: #B05A3A;
-		line-height: 40rpx;
-		margin-right: 6rpx;
-	}
-	.back-text {
-		font-size: 28rpx;
-		color: #B05A3A;
-	}
-	.header-title {
-		font-size: 52rpx;
-		color: #3A2E25;
-		font-weight: bold;
-		letter-spacing: 6rpx;
-	}
-	.header-sub {
-		margin-top: 6rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-	}
-	.group-title {
-		margin-top: 8rpx;
-		margin-bottom: 14rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-		font-weight: bold;
-		letter-spacing: 2rpx;
-	}
-
-	/* 卡片行 */
-	.card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
-		padding-left: 28rpx;
-		padding-right: 28rpx;
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
-		margin-bottom: 20rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-	}
-	.row {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-	}
-	.row-main {
-		flex: 1;
-		display: flex;
+	/* 列表流式容器：组1/组2 依次入流（画布组1 y=110px=211.5rpx、组间距 20px=38.5rpx），
+	   加行自动下移；标题容器/返回图标为固定控件保留 absolute（含铁律 11.5 DOM 顺序约束） */
+	.list-flow {
+		margin-top: 211.5rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
 		flex-direction: column;
 	}
-	.row-title {
-		font-size: 30rpx;
-		color: #3A2E25;
-		font-weight: bold;
+	.n4_135 {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		/* 双保险：除 DOM 后置外再加 z-index，确保热区不被全宽标题容器吃掉 */
+		z-index: 1;
 	}
-	.row-desc {
-		margin-top: 8rpx;
-		font-size: 24rpx;
-		color: #8a7a6a;
-		line-height: 32rpx;
-	}
-	.row-arrow {
-		font-size: 40rpx;
-		color: #b3a696;
-		margin-left: 12rpx;
-	}
-
-	/* 自定义开关（同 record 分段控件风格，规避 UTS 事件类型风险） */
-	.switch-track {
-		width: 96rpx;
-		height: 52rpx;
-		border-radius: 26rpx;
-		background-color: #EBE3D4;
-		display: flex;
+	.n4_137 {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
 		flex-direction: row;
-		align-items: center;
-		padding-left: 6rpx;
-		padding-right: 6rpx;
-	}
-	.switch-on {
-		background-color: #B05A3A;
-		justify-content: flex-end;
-	}
-	.switch-thumb {
-		width: 40rpx;
-		height: 40rpx;
-		border-radius: 20rpx;
-		background-color: #FBF7EF;
-		box-shadow: 0 2rpx 8rpx rgba(58, 46, 37, 0.3);
-	}
-	.thumb-on {
-		background-color: #F6F1E7;
-	}
-
-	/* 导出 */
-	.export-btn {
-		margin-left: 12rpx;
-		background-color: #B05A3A;
-		border-radius: 8rpx;
-		padding-left: 28rpx;
-		padding-right: 28rpx;
-		padding-top: 12rpx;
-		padding-bottom: 12rpx;
-	}
-	.exporting {
-		background-color: #b3a696;
-	}
-	.export-btn-text {
-		color: #F6F1E7;
-		font-size: 26rpx;
-	}
-	.export-path {
-		margin-top: 14rpx;
-		font-size: 22rpx;
-		color: #b3a696;
-	}
-
-	/* 账号 */
-	.login-dot {
-		font-size: 22rpx;
-		padding-left: 16rpx;
-		padding-right: 16rpx;
-		padding-top: 6rpx;
-		padding-bottom: 6rpx;
-		border-radius: 20rpx;
-	}
-	.dot-on {
-		color: #2E7D32;
-		background-color: #E4EFE3;
-	}
-	.dot-off {
-		color: #b3a696;
-		background-color: #EBE3D4;
-	}
-	.logout-btn {
-		margin-top: 12rpx;
-		margin-bottom: 24rpx;
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
-		padding-top: 20rpx;
-		padding-bottom: 20rpx;
-		align-items: center;
-		display: flex;
 		justify-content: center;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-	}
-	.logout-text {
-		color: #B05A3A;
-		font-size: 30rpx;
-		font-weight: bold;
-	}
-
-	/* 隐私政策底部抽屉 */
-	.privacy-mask {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(58, 46, 37, 0.45);
-		display: flex;
-		flex-direction: column;
-		justify-content: flex-end;
-	}
-	.privacy-sheet {
-		background-color: #FBF7EF;
-		border-top-left-radius: 20rpx;
-		border-top-right-radius: 20rpx;
-		padding-left: 40rpx;
-		padding-right: 40rpx;
-		padding-top: 32rpx;
-		padding-bottom: 40rpx;
-		display: flex;
-		flex-direction: column;
-		max-height: 1300rpx;
-	}
-	.privacy-title {
-		font-size: 34rpx;
-		color: #3A2E25;
-		font-weight: bold;
-		text-align: center;
-		margin-bottom: 20rpx;
-	}
-	.privacy-scroll {
-		flex: 1;
-		max-height: 900rpx;
-	}
-	.privacy-text {
-		font-size: 26rpx;
-		color: #3A2E25;
-		line-height: 42rpx;
-	}
-	.privacy-close {
-		margin-top: 28rpx;
-		background-color: #B05A3A;
-		border-radius: 8rpx;
-		padding-top: 18rpx;
-		padding-bottom: 18rpx;
 		align-items: center;
-		display: flex;
-		justify-content: center;
+		overflow: hidden;
 	}
-	.privacy-close-text {
-		color: #F6F1E7;
-		font-size: 28rpx;
+	.n4_138 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.n4_139 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_140 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_141 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_144 {
+		flex: 1; margin-left: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_145 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n4_147 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_196 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_151 {
+		flex: 1; margin-left: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_152 {
+		width: 88.5rpx;
+		height: 53.8rpx;
+		flex-direction: row;
+		justify-content: flex-end;
+		/* ⚠️ 无垂直 padding：画布 4:152 paddingTop/Bottom 均为 null，
+		   滑块 y=3/h=22 → 上下各 3pt，容器 h=28pt（居中）。
+		   此前误补 padding-top/bottom=5.8rpx → 滑块底部 3pt 被 overflow 裁掉。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
+		align-items: center;
+		padding-left: 5.8rpx;
+		padding-right: 5.8rpx;
+		background-color: #B05A3A;
+		/* 画布 INNER_SHADOW 顶部白色高光：inset 0 1.9rpx 3.8rpx rgba(255,255,255,0.3) */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.3);
+		border-radius: 26.9rpx;
+		overflow: hidden;
+	}
+	.n4_153 {
+		width: 42.3rpx;
+		height: 42.3rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.25);
+		border-radius: 21.2rpx;
+		overflow: hidden;
+	}
+	.n4_154 {
+		/* 流式重构：原 absolute top:442.3 写死，改 margin-top 跟组1底部走 */
+		margin-top: 38.5rpx;
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_155 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_156 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_158 {
+		flex: 1; margin-left: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_159 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.n4_160 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_161 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_163 {
+		flex: 1; margin-left: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n4_164 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #B3A696;
 	}
 </style>

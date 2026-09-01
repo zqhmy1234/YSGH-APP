@@ -1,11 +1,13 @@
-{
+﻿{
   "name": "忆述光华",
   "appid": "__UNI__YISHU001",
   "description": "个人记忆整理与回顾 App（客户端第一波：F1 数据链路 + F8 时间轴）",
   "versionName": "0.1.0",
   "versionCode": "100",
   "locale": "zh-Hans",
-  "uni-app-x": {},
+  "uni-app-x": {
+    "vapor": true
+  },
   "vueVersion": "3",
   "app": {
     "distribute": {

@@ -1,0 +1,11 @@
+{
+  "page_key": "01_时间轴主页",
+  "page_path": "pages/index/index.uvue",
+  "page_desc": "时间轴主页（首页）",
+  "design_data_file": "design_data.json",
+  "common_components": [
+    "TabBar胶囊.json",
+    "中央＋按钮.json",
+    "_summary.json"
+  ]
+}

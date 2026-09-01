@@ -1,0 +1,641 @@
+<template>
+	<!-- ardot 直转 v2：记录面板（帧 2:552）· 审计化生成 -->
+	<view class="page-root">
+		<view class="n4_27"> <!-- 定稿 · 精修高保真 -->
+		<image class="n4_28" src="/static/images/img4_28.png" mode="aspectFill" /> <!-- 合成图: 照片出血氛围层 -->
+		<view class="n4_39"></view> <!-- 顶部暗化 -->
+		<view class="n4_40"></view> <!-- 底部白色溶解 -->
+		<text class="n4_41">清晨的湖边，风很轻 · 8月28日 07:42</text> <!-- 照片说明 -->
+		<text class="n4_31">回忆</text> <!-- 大标题 -->
+			<text class="n4_32">八月 · 28 条新记忆</text> <!-- 副标题 -->
+			<view class="n4_33"> <!-- 头像 -->
+				<text class="n4_42">峰</text> <!-- 头像字 -->
+			</view>
+			<view class="n4_34"> <!-- 玻璃搜索胶囊 -->
+				<image class="n4_43" src="/static/icons/i4_43.svg" /> <!-- icon: 搜索图标 -->
+				<text class="n4_44">描述一段回忆，帮你找</text> <!-- 搜索占位 -->
+			</view>
+			<view class="n4_35"> <!-- 内容区 -->
+				<view class="n4_45"> <!-- 日期分组 -->
+					<text class="n4_56">8月28日 · 星期五</text> <!-- 日期文字 -->
+					<view class="n4_57"> <!-- 日期线 -->
+					</view>
+				</view>
+				<view class="n4_46"> <!-- 语音卡 -->
+					<view class="n4_58"> <!-- 语音媒体 -->
+						<view class="n4_71"> <!-- 玻璃播放钮 -->
+							<image class="n4_85" src="/static/icons/i4_85.svg" /> <!-- icon: 播放图标 -->
+						</view>
+						<view class="n4_72"> <!-- 波形 -->
+							<image class="n4_86" src="/static/icons/i4_86.svg" /> <!-- icon: Vector -->
+						</view>
+					</view>
+					<view class="n4_59"> <!-- 语音文字区 -->
+						<text class="n4_73">和妈妈的通话</text> <!-- 语音卡标题 -->
+						<text class="n4_74">8月27日 12:36 · 语音 3分12秒 · 已转写</text> <!-- 语音卡元信息 -->
+					</view>
+				</view>
+				<view class="n4_47"> <!-- 文字卡 -->
+					<view class="n4_60"> <!-- 摘要块 -->
+						<view class="n4_75"> <!-- 引用竖线 -->
+						</view>
+						<text class="n4_76">今天把实验室的仪器终于调通了，导师说这个数据比预期干净很多，晚上请全组喝了奶茶。</text> <!-- 摘要文本 -->
+					</view>
+					<view class="n4_61"> <!-- 文字元信息区 -->
+						<text class="n4_77">8月26日 21:15 · 文字记录</text> <!-- 文字卡元信息 -->
+					</view>
+				</view>
+			</view>
+			<view class="n4_36"> <!-- 玻璃TabBar -->
+				<view class="n4_48"> <!-- Tab-时间轴 -->
+					<image class="n4_62" src="/static/icons/i4_62.svg" /> <!-- icon: 图标-指南针 -->
+					<text class="n4_63">时间轴</text> <!-- 标签-时间轴 -->
+				</view>
+				<view class="n4_49"> <!-- Tab-AI -->
+					<image class="n4_64" src="/static/icons/i4_64.svg" /> <!-- icon: 图标-对话 -->
+					<text class="n4_65">AI</text> <!-- 标签-AI -->
+				</view>
+				<view class="n4_50"> <!-- 中央留位 -->
+				</view>
+				<view class="n4_51"> <!-- Tab-搜索 -->
+					<image class="n4_66" src="/static/icons/i4_66.svg" /> <!-- icon: 图标-搜索 -->
+					<text class="n4_67">搜索</text> <!-- 标签-搜索 -->
+				</view>
+				<view class="n4_52"> <!-- Tab-我的 -->
+					<image class="n4_68" src="/static/icons/i4_68.svg" /> <!-- icon: 图标-我的 -->
+					<text class="n4_69">我的</text> <!-- 标签-我的 -->
+				</view>
+			</view>
+			<view class="n4_37"> <!-- 中央＋按钮 -->
+				<image class="n4_53" src="/static/icons/i4_53.svg" /> <!-- icon: 加号 -->
+			</view>
+	</view>
+		<view class="n2_554"> <!-- 暗化遮罩 -->
+		</view>
+		<view class="n2_555"> <!-- 录入Sheet -->
+			<view class="n2_556"> <!-- 把手 -->
+			</view>
+			<view class="n2_584"> <!-- 标题容器 -->
+				<text class="n2_585">新的记忆</text> <!-- 面板标题 -->
+			</view>
+			<view class="n2_586"> <!-- 提示容器 -->
+				<text class="n2_587">长按 ＋ 可直达完整记录表单</text> <!-- 面板提示 -->
+			</view>
+			<view class="n4_4"> <!-- 入口单行 -->
+				<view class="n4_5"> <!-- 入口-拍照 -->
+					<view class="n4_6"> <!-- 图标底 -->
+						<image class="n4_7" src="/static/icons/i4_7.svg" /> <!-- icon: 相机 -->
+					</view>
+					<text class="n4_9">拍照</text> <!-- 拍照 -->
+				</view>
+				<view class="n4_10"> <!-- 入口-选照片 -->
+					<view class="n4_11"> <!-- 图标底 -->
+						<image class="n4_12" src="/static/icons/i4_12.svg" /> <!-- icon: 图片 -->
+					</view>
+					<text class="n4_14">选照片</text> <!-- 选照片 -->
+				</view>
+				<view class="n4_15"> <!-- 入口-语音 -->
+					<view class="n4_16"> <!-- 图标底 -->
+						<image class="n4_17" src="/static/icons/i4_17.svg" /> <!-- icon: 麦克风 -->
+					</view>
+					<text class="n4_19">说一段</text> <!-- 语音 -->
+				</view>
+				<view class="n4_20"> <!-- 入口-文字 -->
+					<view class="n4_21"> <!-- 图标底 -->
+						<image class="n4_22" src="/static/icons/i4_22.svg" /> <!-- icon: 笔 -->
+					</view>
+					<text class="n4_24">写几句</text> <!-- 文字 -->
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #3A2E25;
+	}
+	.n4_27 {
+		position: absolute;
+		left: 0rpx;
+		top: 0.0rpx;
+		width: 750rpx;
+		height: 1623.1rpx;
+		background-color: #F8F7F4;
+		overflow: hidden;
+	}
+	.n4_28 {
+		position: absolute;
+		left: 0rpx;
+		top: 0rpx;
+		width: 750rpx;
+		height: 576.9rpx;
+	}
+	.n4_39 {
+		position: absolute;
+		left: 0rpx;
+		top: 0rpx;
+		width: 750rpx;
+		height: 269.2rpx;
+		background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.5), rgba(26, 20, 15, 0.28) 50%, rgba(26, 20, 15, 0));
+	}
+	.n4_40 {
+		position: absolute;
+		left: 0rpx;
+		top: 346.2rpx;
+		width: 750rpx;
+		height: 269.2rpx;
+		background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0), rgba(248, 247, 244, 0.38) 45%, rgba(248, 247, 244, 0.78) 75%, rgba(248, 247, 244, 1));
+	}
+	.n4_41 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 238.5rpx;
+		width: 434.6rpx;
+		height: 30.8rpx;
+		font-size: 25rpx;
+		color: #FFFFFF;
+		text-shadow: 0rpx 1.9rpx 23.1rpx rgba(26, 20, 15, 0.55);
+	}
+	.n4_31 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 153.8rpx;
+		height: 92.3rpx;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		color: #FFFFFF;
+	}
+	.n4_32 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 211.5rpx;
+		width: 226.9rpx;
+		height: 30.8rpx;
+		font-size: 25rpx;
+		color: rgba(255, 255, 255, 0.85);
+		text-shadow: 0rpx 1.9rpx 15.4rpx rgba(26, 20, 15, 0.5);
+	}
+	.n4_33 {
+		position: absolute;
+		left: 634.6rpx;
+		top: 111.5rpx;
+		width: 76.9rpx;
+		height: 76.9rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #C4913C;
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.7);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_42 {
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+	.n4_34 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 473.1rpx;
+		width: 673.1rpx;
+		height: 88.5rpx;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: rgba(255, 255, 255, 0.25);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.5), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.35), 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n4_43 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_44 {
+		font-size: 26.9rpx;
+		color: #FFFFFF;
+	}
+	.n4_35 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 607.7rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_45 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_56 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_57 {
+		flex: 1;
+		height: 1.9rpx;
+		background-color: #3A2E25;
+		overflow: hidden;
+	}
+	.n4_46 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_58 {
+		width: 100%;
+		height: 123.1rpx;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		background-color: rgba(196, 145, 60, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_71 {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.5);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_85 {
+		width: 23.1rpx;
+		height: 23.1rpx;
+	}
+	.n4_72 {
+		width: 384.6rpx;
+		height: 50rpx;
+		overflow: hidden;
+	}
+	.n4_86 {
+		position: absolute;
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	.n4_59 {
+		width: 100%;
+		flex-direction: column;
+		gap: 5.8rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n4_73 {
+		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
+	}
+	.n4_74 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n4_47 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_60 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 60, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_75 {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
+	}
+	.n4_76 {
+		flex: 1;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n4_61 {
+		width: 100%;
+		flex-direction: column;
+		gap: 5.8rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n4_77 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n4_36 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1446.2rpx;
+		width: 673.1rpx;
+		height: 119.2rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: rgba(255, 255, 255, 0.55);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.45), 0rpx 19.2rpx 53.8rpx rgba(59, 46, 38, 0.1);
+		border-radius: 69.2rpx;
+		overflow: hidden;
+	}
+	.n4_48 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_62 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_63 {
+		font-weight: 600;
+		font-size: 19.2rpx;
+		color: #B05A3A;
+	}
+	.n4_49 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_64 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_65 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n4_50 {
+		width: 92.3rpx;
+		height: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_51 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_66 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_67 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n4_52 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_68 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_69 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n4_37 {
+		position: absolute;
+		left: 321.2rpx;
+		top: 1423.1rpx;
+		width: 107.7rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.35), 0rpx 11.5rpx 30.8rpx rgba(176, 89, 59, 0.35);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.n4_53 {
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+	.n2_554 {
+		position: absolute;
+		left: 0rpx;
+		top: 0.0rpx;
+		width: 750rpx;
+		height: 1623.1rpx;
+		background-color: #1A140F;
+		overflow: hidden;
+	}
+	.n2_555 {
+		position: absolute;
+		left: 0rpx;
+		top: 976.9rpx;
+		width: 750rpx;
+		height: 653.8rpx;
+		background-color: #FAF9F5;
+		border-radius: 76.9rpx;
+		overflow: hidden;
+	}
+	.n2_556 {
+		position: absolute;
+		left: 328.8rpx;
+		top: 26.9rpx;
+		width: 92.3rpx;
+		height: 9.6rpx;
+		background-color: #B3A696;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_584 {
+		position: absolute;
+		left: 0rpx;
+		top: 69.2rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_585 {
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.n2_586 {
+		position: absolute;
+		left: 0rpx;
+		top: 538.5rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_587 {
+		font-size: 23.1rpx;
+		color: #B3A696;
+	}
+	.n4_4 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 192.3rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_5 {
+		flex-direction: column;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_6 {
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(176, 89, 59, 0.12);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.7), 0rpx 5.8rpx 15.4rpx rgba(59, 46, 38, 0.07);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_7 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_9 {
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.n4_10 {
+		flex-direction: column;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_11 {
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(196, 145, 60, 0.12);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.7), 0rpx 5.8rpx 15.4rpx rgba(59, 46, 38, 0.07);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_12 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_14 {
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.n4_15 {
+		flex-direction: column;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_16 {
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(122, 140, 90, 0.14);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.7), 0rpx 5.8rpx 15.4rpx rgba(59, 46, 38, 0.07);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_17 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_19 {
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.n4_20 {
+		flex-direction: column;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_21 {
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(78, 125, 140, 0.13);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.7), 0rpx 5.8rpx 15.4rpx rgba(59, 46, 38, 0.07);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_22 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_24 {
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+</style>

@@ -1,0 +1,814 @@
+<template>
+	<!-- ardot 直转 v2：AI 对话页（帧 2:332）· W10.4 数据驱动改造（2026-09-01 峰宝拍板）
+	     mock 契约（contract-first，B2 对话域接线时按此换真端点，mock 层整体可删）：
+	     POST /api/v1/chat/messages   { conversation_id?, content, attachments?[] } → { reply }
+	     GET  /api/v1/chat/replies/:id（流式分片轮询/SSE，形态由 reply.kind 决定：
+	          bubble | plain+chips | cards | confirm | typing）
+	     mock 开关：USE_MOCK_CHAT = true（页内显式常量，联调铁律登记 _diff_ledger §W10.4） -->
+	<view class="page-root">
+		<view class="header">
+			<text class="n2_336">AI</text>
+			<text class="n2_337">问问你的回忆</text>
+		</view>
+		<scroll-view class="n4_88" scroll-y :scroll-into-view="scrollInto">
+			<view v-for="m in messages" :key="m.id" :id="'msg-' + m.id">
+				<!-- AI 消息组 -->
+				<view v-if="m.role === 'ai'" class="ai-group">
+					<view class="n2_339">
+						<text class="n2_341">AI</text>
+						<view class="n4_1">
+							<image class="n4_2" src="/static/icons/i4_2.svg" />
+						</view>
+					</view>
+					<!-- 形态①：普通气泡（可内嵌记忆卡） -->
+					<view v-if="m.kind === 'bubble'" class="n2_342">
+						<text class="n2_343">{{ m.text }}</text>
+						<view v-if="m.cards.length > 0" class="n2_344">
+							<image class="n2_345" :src="m.cards[0].img" mode="aspectFill" />
+							<view class="n2_346">
+								<text class="n2_347">{{ m.cards[0].title }}</text>
+								<text class="n2_348">{{ m.cards[0].meta }}</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333） -->
+					<view v-else-if="m.kind === 'plain'" class="plain-block">
+						<text class="plain-title">{{ m.text }}</text>
+						<view v-for="(b, bi) in m.bullets" :key="bi" class="plain-bullet">
+							<view class="plain-dot" />
+							<text class="plain-text">{{ b }}</text>
+						</view>
+						<view v-if="m.chips.length > 0" class="chips-row">
+							<view v-for="(c, ci) in m.chips" :key="ci" class="chip pressable" @tap="onChipTap(c)">
+								<text class="chip-text">{{ c }}</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态③：记忆卡横滑组（画布 4:323，第二张露边示意滑动） -->
+					<view v-else-if="m.kind === 'cards'" class="cards-wrap">
+						<scroll-view class="cards-scroll" scroll-x>
+							<view v-for="(cd, di) in m.cardList" :key="di" class="mem-card">
+								<image class="mem-thumb" :src="cd.img" mode="aspectFill" />
+								<text class="mem-title">{{ cd.title }}</text>
+								<text class="mem-meta">{{ cd.meta }}</text>
+							</view>
+						</scroll-view>
+						<view v-if="m.chips.length > 0" class="chips-row">
+							<view v-for="(c, ci) in m.chips" :key="ci" class="chip pressable" @tap="onChipTap(c)">
+								<text class="chip-text">{{ c }}</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态④：行动确认卡（AI 发起待确认操作，画布 4:339） -->
+					<view v-else-if="m.kind === 'confirm'" class="confirm-card">
+						<view class="confirm-row">
+							<view class="confirm-star">
+								<image class="confirm-star-img" src="/static/icons/i4_2.svg" />
+							</view>
+							<text class="confirm-text">{{ m.text }}</text>
+						</view>
+						<view class="confirm-btns">
+							<view class="btn-ghost pressable" @tap="onConfirmAction(m, false)">
+								<text class="btn-ghost-text">暂不</text>
+							</view>
+							<view class="btn-primary pressable" @tap="onConfirmAction(m, true)">
+								<text class="btn-primary-text">加入胶囊</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态⑤：流式输出态（画布 4:349；点透明度阶梯模拟渐隐，App 端 keyframes 支持有限） -->
+					<view v-else-if="m.kind === 'typing'" class="typing-row">
+						<text class="typing-text">{{ m.text }}</text>
+					<view class="td-1" />
+					<view class="td-2" />
+					<view class="td-3" />
+					</view>
+				</view>
+				<!-- 用户消息行 -->
+				<view v-else class="n2_349">
+					<view class="n2_350">
+						<text class="n2_351">{{ m.text }}</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+		<view class="n2_355">
+			<input class="n2_357" v-model="draft" placeholder="问点什么…" placeholder-style="color:#B3A696;font-size:26.9rpx;" :maxlength="200" confirm-type="send" @confirm="onSend" />
+			<view class="n2_358" @tap="onSend">
+				<image class="n2_359" src="/static/icons/i2_359.svg" />
+			</view>
+			<!-- 附件入口（2026-09-01 峰宝拍板）：发送钮左移、入口放其右侧（最右端，画布终审同序） -->
+			<view class="attach-btn pressable" @tap="attachOpen = true">
+				<image class="attach-btn-icon" src="/static/icons/icon-paperclip.svg" />
+			</view>
+		</view>
+		<TabBar active="ai" @plus="sheetOpen = true" />
+
+		<!-- 附件选择面板（画布 ai_typing 4:361 半屏形态）：scrim 点空收起 -->
+		<view v-if="attachOpen" class="attach-scrim" @tap="attachOpen = false" />
+		<view v-if="attachOpen" class="attach-panel">
+			<view class="attach-handle" />
+			<text class="attach-title">添加附件</text>
+			<view class="attach-grid">
+				<view class="grid-row">
+					<image class="grid-thumb grid-thumb-first" src="/static/images/img2_345.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img2_140.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img2_256.png" mode="aspectFill" />
+				</view>
+				<view class="grid-row">
+					<image class="grid-thumb grid-thumb-first" src="/static/images/img2_74.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img4_406.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img2_16.png" mode="aspectFill" />
+				</view>
+			</view>
+			<view class="attach-entries">
+				<view class="attach-entry attach-entry-first pressable" @tap="onAttachEntry('文件')">
+					<image class="attach-entry-icon" src="/static/icons/icon-file.svg" />
+					<text class="attach-entry-text">文件</text>
+				</view>
+				<view class="attach-entry pressable" @tap="onAttachEntry('粘贴链接')">
+					<image class="attach-entry-icon" src="/static/icons/icon-link.svg" />
+					<text class="attach-entry-text">粘贴链接</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onLoad, onBackPress } from '@dcloudio/uni-app'
+
+	// AI 对话页（W10.4 数据驱动）：消息流全量 mock（形态族覆盖），onSend 本地闭环
+	// 契约见 template 头注释；B2 对话域接线后：messages 改真端点拉取，onSend 改 POST
+
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let draft = ref('') // AI 输入草稿
+	let attachOpen = ref(false) // 附件选择面板开关（输入过程态 P 形态）
+
+	// ── 消息数据模型（contract-first：字段名与未来 B2 chat 契约对齐）──
+	// uvue 约定：对象一律 class+constructor+new（项目已验证套路，对齐 messages.uvue MessageItem），
+	// 不用 type 字面量构造（MemCard(title:...) 写法编译器不认，W10.4 编译失败实锤）
+	class MemCard {
+		title: string
+		meta: string
+		img: string
+		constructor(title: string, meta: string, img: string) {
+			this.title = title
+			this.meta = meta
+			this.img = img
+		}
+	}
+	class AiMsg {
+		id: number
+		role: string // 'user' | 'ai'
+		kind: string // 'bubble' | 'plain' | 'cards' | 'confirm' | 'typing'
+		text: string
+		bullets: Array<string> // plain 形态要点
+		chips: Array<string> // 尾部快捷追问
+		cards: Array<MemCard> // bubble 内嵌卡（0/1 张）；cards 横滑时用 cardList
+		cardList: Array<MemCard>
+		constructor(id: number, role: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<MemCard>, cardList: Array<MemCard>) {
+			this.id = id
+			this.role = role
+			this.kind = kind
+			this.text = text
+			this.bullets = bullets
+			this.chips = chips
+			this.cards = cards
+			this.cardList = cardList
+		}
+	}
+	let messages = ref<Array<AiMsg>>([])
+	let nextId = ref(1)
+	let scrollInto = ref('') // scroll-view 锚点滚动（新消息自动落底）
+	let replyKindIdx = ref(0) // AI 回复形态轮换指针
+	const REPLY_KIND_ROTATION = ['bubble', 'plain', 'cards', 'confirm']
+
+	// mock 相册图（static/images 现有资产）
+	const MOCK_IMGS = ['/static/images/img2_345.png', '/static/images/img2_140.png', '/static/images/img2_256.png', '/static/images/img2_74.png']
+
+	// AI 回复语料池（mock：B2 接入后删除；uts 数组单型约束，标题与要点拆两常量）
+	const MOCK_PLAIN_TITLE = '你 8 月的记忆脉络'
+	const MOCK_PLAIN_BULLETS = ['记录高峰在月末，共 23 条', '「湖边」是本月最强的记忆锚点', '语音占比 41%，转写准确率 98%']
+	const MOCK_CARD_TITLES = ['清晨的湖边', '实验室的深夜', '桂花树下', '周末的菜场']
+
+	// ── mock 对话样张（onLoad 注入，覆盖画布 ai_reply 板 ①②③④⑥ + 用户长文）──
+	function seedMockMessages(): void {
+		const seq: Array<AiMsg> = [
+			mkUser('那天天气怎么样？'),
+			mkAi('bubble', '那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。', [new MemCard('清晨的湖边，风很轻', '8月28日 · 照片', MOCK_IMGS[0])], [], [], []),
+			mkUser('帮我回顾一下这个月'),
+			mkAi('plain', MOCK_PLAIN_TITLE, [], ['那周最开心的事', '生成 8 月周报'], MOCK_PLAIN_BULLETS, []),
+			mkAi('cards', '', [], ['看看那天还在做什么'], [], [new MemCard('清晨的湖边', '8月28日 · 照片', MOCK_IMGS[0]), new MemCard('实验室的深夜', '8月22日 · 文字', MOCK_IMGS[1])]),
+			mkUser('这段语音转写的内容帮我整理一下：那天我们在湖边走了很久，聊到奶奶种的那棵桂花树，说秋天满院子都是甜香，还想约着国庆回去看看，把院子重新收拾一遍，拍照留个纪念。'),
+			mkAi('bubble', '奶奶总说，老屋门口的那棵桂花树是她嫁过来那年种下的。每到秋天，满院子都是甜香，她总在树下摆一张小桌择菜，跟路过邻居打招呼。你上次回去是三年前的秋天，还拍了满地金黄的落花——要不要把这段整理成一条「桂花树」主题记忆？', [], [], [], []),
+			mkAi('confirm', '要把「湖边晨雾」加入 8 月时间胶囊吗？', [], [], [], [])
+		]
+		messages.value = seq
+	}
+
+	// 工厂：减少字面量重复（全显式参数，不用默认值——uts 默认参数零先例不冒险）
+	function mkUser(text: string): AiMsg {
+		nextId.value = nextId.value + 1
+		return new AiMsg(nextId.value, 'user', 'bubble', text, [], [], [], [])
+	}
+	function mkAi(kind: string, text: string, cards: Array<MemCard>, chips: Array<string>, bullets: Array<string>, cardList: Array<MemCard>): AiMsg {
+		nextId.value = nextId.value + 1
+		return new AiMsg(nextId.value, 'ai', kind, text, bullets, chips, cards, cardList)
+	}
+
+	// ── 发送闭环（mock）：用户消息 → typing → 1.8s 后 AI 回复（形态轮换）──
+	function onSend(): void {
+		const t = draft.value.trim()
+		if (t == '') {
+			return
+		}
+		draft.value = ''
+		const u = mkUser(t)
+		const tp = mkAi('typing', '正在翻你的回忆', [])
+		messages.value.push(u)
+		messages.value.push(tp)
+		scrollToBottom(tp.id)
+		const replyId = tp.id
+		const userId = u.id
+		setTimeout(() => {
+			removeById(replyId)
+			const kind = REPLY_KIND_ROTATION[replyKindIdx.value % REPLY_KIND_ROTATION.length]
+			replyKindIdx.value = replyKindIdx.value + 1
+			const ai = buildMockReply(kind, userId)
+			messages.value.push(ai)
+			scrollToBottom(ai.id)
+		}, 1800)
+	}
+
+	// mock 回复生成器（B2 接线后删除）
+	function buildMockReply(kind: string, _userId: number): AiMsg {
+		if (kind == 'plain') {
+			return mkAi('plain', MOCK_PLAIN_TITLE, [], ['那周最开心的事', '生成 9 月计划'], MOCK_PLAIN_BULLETS, [])
+		}
+		if (kind == 'cards') {
+			const i = nextId.value % MOCK_CARD_TITLES.length
+			return mkAi('cards', '', [], ['看看那天还在做什么'], [], [new MemCard(MOCK_CARD_TITLES[i], '8月 · 照片', MOCK_IMGS[i % MOCK_IMGS.length]), new MemCard(MOCK_CARD_TITLES[(i + 1) % MOCK_CARD_TITLES.length], '8月 · 文字', MOCK_IMGS[(i + 1) % MOCK_IMGS.length])])
+		}
+		if (kind == 'confirm') {
+			return mkAi('confirm', '要把这条记忆加入本月时间胶囊吗？', [], [], [], [])
+		}
+		return mkAi('bubble', '翻到了——那天你拍了 4 张照片、留了 1 段 37 秒的语音，都在「湖边」这个主题下面。想听那段语音的转写吗？', [], [], [], [])
+	}
+
+	// 移除 typing 占位（uts 数组无 filter 先例，手写重建最稳）
+	function removeById(id: number): void {
+		const src = messages.value
+		const out: Array<AiMsg> = []
+		for (let i = 0; i < src.length; i++) {
+			if (src[i].id != id) {
+				out.push(src[i])
+			}
+		}
+		messages.value = out
+	}
+
+	// 锚点滚动：scroll-into-view 指向最新消息 id（不支持时静默无滚动，不阻塞）
+	function scrollToBottom(id: number): void {
+		scrollInto.value = ''
+		setTimeout(() => {
+			scrollInto.value = 'msg-' + id
+		}, 50)
+	}
+
+	// chips 点击 = 快捷追问当作输入发送（体验闭环）
+	function onChipTap(c: string): void {
+		draft.value = c
+		onSend()
+	}
+
+	// 行动确认卡按钮（mock：B2 接线后改 POST 确认接口）
+	function onConfirmAction(m: AiMsg, ok: boolean): void {
+		removeById(m.id)
+		if (ok) {
+			const ai = mkAi('bubble', '好，已把「湖边晨雾」收进 8 月时间胶囊。', [new MemCard('8 月时间胶囊', '已收录 12 条记忆', MOCK_IMGS[2])], [], [], [])
+			messages.value.push(ai)
+			scrollToBottom(ai.id)
+		}
+	}
+
+	// 附件入口行（mock：MVP 文件/链接选择器未接，诚实提示）
+	function onAttachEntry(name: string): void {
+		attachOpen.value = false
+		uni.showToast({ title: name + '：内测期即将开放', icon: 'none' })
+	}
+
+	// 返回键拦截：浮层/面板开着先收起，而不是退出页面
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		if (attachOpen.value) {
+			attachOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// RecordSheet 保存成功回调（AI 页无可刷新数据，占位收口）
+	function onRecordSaved(): void {
+	}
+
+	onLoad(() => {
+		seedMockMessages()
+	})
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+	}
+	.header {
+		padding-top: 107.7rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+	}
+	.n2_336 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		line-height: 92.3rpx; /* 画布 h48pt，锁行高 */
+		color: #3A2E25;
+	}
+	.n2_337 {
+		margin-top: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8A7A6A;
+	}
+	.n2_355 {
+		margin-left: 38.5rpx;
+		margin-right: 38.5rpx;
+		margin-bottom: 188.5rpx;
+		height: 100rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: rgba(255, 255, 255, 0.55);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_357 {
+		flex: 1;
+		height: 69.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	/* 附件入口钮（2026-09-01）：与发送钮同族 69.2rpx 圆钮，白底描边弱化、锈红 clip 点缀 */
+	.attach-btn {
+		width: 69.2rpx;
+		height: 69.2rpx;
+		margin-left: 15.4rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(58, 46, 37, 0.12);
+		border-radius: 34.6rpx;
+		overflow: hidden;
+	}
+	.attach-btn-icon {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n2_358 {
+		width: 69.2rpx;
+		height: 69.2rpx;
+		margin-left: 15.4rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		border-radius: 34.6rpx;
+		overflow: hidden;
+	}
+	.n2_359 {
+		width: 30.8rpx;
+		height: 30.8rpx;
+	}
+	.n4_88 {
+		flex: 1;
+		margin-top: 46.2rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	.ai-group {
+		width: 596.2rpx;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_339 {
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_341 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #5A4C40;
+	}
+	.n4_1 {
+		width: 46.2rpx;
+		height: 46.2rpx;
+		margin-left: 11.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B0593B;
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 5.8rpx 15.4rpx rgba(176, 89, 59, 0.3);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_2 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_342 {
+		width: 100%;
+		max-width: 500rpx;
+		margin-top: 15.4rpx;
+		flex-direction: column;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx 38.5rpx 38.5rpx 7.7rpx;
+		overflow: hidden;
+	}
+	.n2_343 {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		line-height: 44rpx;
+		color: #3A2E25;
+	}
+	.n2_344 {
+		width: 100%;
+		margin-top: 19.2rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #F8F7F4;
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_345 {
+		width: 92.3rpx;
+		height: 92.3rpx;
+	}
+	.n2_346 {
+		flex: 1;
+		margin-left: 19.2rpx;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_347 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.n2_348 {
+		margin-top: 3.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 形态②：直铺长答（画布 4:311 无气泡宽版） */
+	.plain-block {
+		width: 100%;
+		margin-top: 15.4rpx;
+		flex-direction: column;
+	}
+	.plain-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.plain-bullet {
+		margin-top: 19.2rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.plain-dot {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+	}
+	.plain-text {
+		flex: 1;
+		margin-left: 25rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		line-height: 44rpx;
+		color: #3A2E25;
+	}
+	/* 追问 chips（画布 4:334）：米灰底胶囊、墨棕次级字 */
+	.chips-row {
+		margin-top: 23.1rpx;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.chip {
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		margin-right: 15.4rpx;
+		margin-bottom: 11.5rpx;
+		background-color: #F0EBE3;
+		border-radius: 9999rpx;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 形态③：记忆卡横滑（画布 4:323，卡 160pt 宽、缩略 h90pt、第二张露边） */
+	.cards-wrap {
+		width: 100%;
+		margin-top: 15.4rpx;
+		flex-direction: column;
+	}
+	.cards-scroll {
+		width: 100%;
+		flex-direction: row;
+	}
+	.mem-card {
+		width: 307.7rpx;
+		margin-right: 23.1rpx;
+		flex-direction: column;
+		background-color: #FFFFFF;
+		border-radius: 23.1rpx;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		overflow: hidden;
+	}
+	.mem-thumb {
+		width: 307.7rpx;
+		height: 173.1rpx;
+	}
+	.mem-title {
+		margin-top: 15.4rpx;
+		margin-left: 15.4rpx;
+		margin-right: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.mem-meta {
+		margin-top: 3.8rpx;
+		margin-left: 15.4rpx;
+		margin-bottom: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 形态④：行动确认卡（画布 4:339） */
+	.confirm-card {
+		width: 100%;
+		margin-top: 15.4rpx;
+		padding: 26.9rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		flex-direction: column;
+	}
+	.confirm-row {
+		flex-direction: row;
+		align-items: center;
+	}
+	.confirm-star {
+		width: 46.2rpx;
+		height: 46.2rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B0593B;
+		border-radius: 23.1rpx;
+	}
+	.confirm-star-img {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.confirm-text {
+		flex: 1;
+		margin-left: 19.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		line-height: 42rpx;
+		color: #3A2E25;
+	}
+	.confirm-btns {
+		margin-top: 23.1rpx;
+		flex-direction: row;
+	}
+	.btn-ghost {
+		flex: 1;
+		height: 69.2rpx;
+		justify-content: center;
+		align-items: center;
+		background-color: #F8F7F4;
+		border-radius: 34.6rpx;
+	}
+	.btn-ghost-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.btn-primary {
+		flex: 1;
+		height: 69.2rpx;
+		margin-left: 15.4rpx;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		border-radius: 34.6rpx;
+	}
+	.btn-primary-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #FFFFFF;
+	}
+	/* 形态⑤：流式输出态（画布 4:349，三点透明度阶梯） */
+	.typing-row {
+		width: 100%;
+		margin-top: 15.4rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.typing-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		color: #8A7A6A;
+	}
+	/* uvue 仅支持单类选择器：三点透明度阶梯拆独立类（.typing-dot.d1 复合选择器不支持） */
+	.td-1 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		margin-left: 15.4rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+	}
+	.td-2 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		margin-left: 15.4rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+		opacity: 0.55;
+	}
+	.td-3 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		margin-left: 15.4rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+		opacity: 0.25;
+	}
+	/* 用户消息行 */
+	.n2_349 {
+		width: 673.1rpx;
+		margin-top: 30.8rpx;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_350 {
+		max-width: 500rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #AA5334;
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.3), 0rpx 7.7rpx 19.2rpx rgba(176, 89, 59, 0.25);
+		border-radius: 38.5rpx 38.5rpx 7.7rpx 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_351 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		line-height: 44rpx;
+		color: #FFFFFF;
+	}
+	/* 附件选择面板（画布 ai_typing 4:361 半屏形态：把手 + 标题 + 相册 2×3 + 两入口） */
+	.attach-scrim {
+		position: fixed;
+		/* absolute-ok: 全屏遮罩浮层（浮层白名单） */
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(42, 33, 26, 0.4);
+		z-index: 1000;
+	}
+	.attach-panel {
+		position: fixed;
+		/* absolute-ok: 底部半屏浮层面板（浮层白名单），z1000 与 RecordSheet 同层 */
+		left: 38.5rpx;
+		right: 38.5rpx;
+		bottom: 220rpx; /* 避让 TabBar（110px=220rpx 全高） */
+		padding-bottom: 34.6rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		box-shadow: 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.18);
+		flex-direction: column;
+		align-items: center;
+		z-index: 1001;
+	}
+	.attach-handle {
+		margin-top: 23.1rpx;
+		width: 92.3rpx;
+		height: 9.6rpx;
+		border-radius: 4.8rpx;
+		background-color: #E5DED4;
+	}
+	.attach-title {
+		margin-top: 26.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.attach-grid {
+		margin-top: 30.8rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		width: 100%;
+		flex-direction: column;
+	}
+	.grid-row {
+		margin-top: 11.5rpx;
+		flex-direction: row;
+	}
+	.grid-thumb {
+		width: 192.3rpx;
+		height: 146.2rpx;
+		margin-left: 15.4rpx;
+		border-radius: 23.1rpx;
+		background-color: #F0EBE3;
+	}
+	/* uvue 不支持后代+伪类选择器，首元素用显式覆盖类（须置于 .grid-thumb 之后生效） */
+	.grid-thumb-first {
+		margin-left: 0;
+	}
+	.attach-entries {
+		margin-top: 26.9rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		width: 100%;
+		flex-direction: row;
+	}
+	.attach-entry {
+		flex: 1;
+		height: 80.8rpx;
+		margin-left: 15.4rpx;
+		padding-left: 23.1rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #F8F7F4;
+		border-radius: 23.1rpx;
+	}
+	.attach-entry-first {
+		margin-left: 0;
+	}
+	.attach-entry-icon {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.attach-entry-text {
+		margin-left: 19.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+</style>

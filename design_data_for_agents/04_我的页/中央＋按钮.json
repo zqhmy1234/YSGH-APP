@@ -1,0 +1,78 @@
+{
+  "filename": "中央＋按钮.svg",
+  "filepath": "C:\\Users\\ghf\\Downloads\\忆述光华 · W1 时间轴页方向小样\\中央＋按钮.svg",
+  "file_size": 870,
+  "width": 56.0,
+  "height": 56.0,
+  "viewBox": null,
+  "elements": [],
+  "parse_error": "'Circle' object has no attribute 'r'",
+  "parse_traceback": "Traceback (most recent call last):\n  File \"D:\\GuangH-App\\.wt\\wrap1-agentA2-ui-restore\\parse_svg_v3.py\", line 165, in parse_with_svgelements\n    elem_results = recursive_extract_svgelements(elem, 0)\n  File \"D:\\GuangH-App\\.wt\\wrap1-agentA2-ui-restore\\parse_svg_v3.py\", line 105, in recursive_extract_svgelements\n    info['r'] = round(float(elem.r), 2) if elem.r else 0\n                                           ^^^^^^\nAttributeError: 'Circle' object has no attribute 'r'. Did you mean: 'rx'?\n",
+  "root_attrib": {
+    "width": "56",
+    "height": "56"
+  },
+  "all_elements": [
+    {
+      "tag": "svg",
+      "attrib": {
+        "width": "56",
+        "height": "56"
+      },
+      "text": null
+    },
+    {
+      "tag": "circle",
+      "attrib": {
+        "fill": "#B05A3A",
+        "cx": "28",
+        "cy": "28",
+        "r": "28"
+      },
+      "text": null
+    },
+    {
+      "tag": "path",
+      "attrib": {
+        "fill": "#F6F1E7",
+        "transform": "matrix(1 0 0 1 21.5833 21.5833)",
+        "d": "M7.5167 5.3167L7.5167 0Q7.5299 -0.4611 7.1945 -0.7778Q6.8778 -1.1133 6.4167 -1.1Q5.9555 -1.1133 5.6389 -0.7778Q5.3034 -0.4611 5.3167 0L5.3167 5.3167L0 5.3167Q-0.4611 5.3034 -0.7778 5.6389Q-1.1133 5.9555 -1.1 6.4167Q-1.1133 6.8778 -0.7778 7.1945Q-0.4611 7.5299 0 7.5167L5.3167 7.5167L5.3167 12.8333Q5.3034 13.2945 5.6389 13.6111Q5.9555 13.9466 6.4167 13.9333Q6.8778 13.9466 7.1945 13.6111Q7.5299 13.2945 7.5167 12.8333L7.5167 7.5167L12.8333 7.5167Q13.2945 7.5299 13.6111 7.1945Q13.9466 6.8778 13.9333 6.4167Q13.9466 5.9555 13.6111 5.6389Q13.2945 5.3034 12.8333 5.3167L7.5167 5.3167Z",
+        "fill-rule": "evenodd"
+      },
+      "text": null
+    }
+  ],
+  "defs": [],
+  "clipPaths": {},
+  "gradients": {},
+  "filters": {},
+  "texts": [],
+  "images": [],
+  "element_counts": {},
+  "etree_element_counts": {
+    "svg": 1,
+    "circle": 1,
+    "path": 1
+  },
+  "quality_check": {
+    "has_width": true,
+    "has_height": true,
+    "svgelements_count": 0,
+    "etree_count": 3,
+    "path_count": 0,
+    "rect_count": 0,
+    "circle_count": 0,
+    "group_count": 0,
+    "has_clipPaths": false,
+    "clipPath_count": 0,
+    "has_gradients": false,
+    "gradient_count": 0,
+    "has_filters": false,
+    "filter_count": 0,
+    "text_count": 0,
+    "image_count": 0,
+    "svgelements_error": true,
+    "etree_error": false
+  },
+  "component_name": "中央＋按钮"
+}

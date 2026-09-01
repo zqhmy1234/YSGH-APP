@@ -1,376 +1,608 @@
 <template>
-	<view class="page">
-		<view class="header">
-			<text class="header-title serif">搜索</text>
-			<text class="header-sub">找回一段记忆</text>
-		</view>
-
-		<!-- 搜索框 + 提交（T-SR-1） -->
-		<view class="search-bar">
-			<input
-				class="search-input"
-				v-model="query"
-				placeholder="试着描述：上周和妈妈吃饭…"
-				confirm-type="search"
-				@confirm="doSearch"
-			/>
-			<view class="search-btn" @tap="doSearch">
-				<text class="search-btn-text">搜索</text>
+	<!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n2_390">搜索</text> <!-- 大标题 -->
+		<view class="n2_391"> <!-- 搜索胶囊 -->
+			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
+			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
+				<input class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
 			</view>
 		</view>
-
-		<!-- 以图搜图入口（T-SR-3） -->
-		<view class="image-row">
-			<text class="muted">以图搜图：</text>
-			<view class="image-btn" @tap="pickImage">
-				<text class="image-btn-text">选择照片</text>
+		<view class="n2_397"> <!-- 筛选行（HEAD 交互接回：4 静态 chip→filters v-for + active 态） -->
+			<view v-for="(f, idx) in filters" :key="idx" class="chip" :class="{ 'chip-active': idx === activeFilter, 'chip-ml': idx > 0 }" @tap="setFilter(idx)">
+				<text class="chip-text" :class="{ 'chip-text-active': idx === activeFilter }">{{ f }}</text>
 			</view>
-			<image v-if="queryImage != ''" class="query-thumb" :src="queryImage" mode="aspectFill" />
 		</view>
-
-		<!-- 降级提示（T-SR-4） -->
-		<view v-if="degraded" class="degraded-bar">
-			<text class="degraded-text">检索服务降级中，结果可能不完整</text>
-		</view>
-
-		<!-- 加载态 -->
-		<view v-if="loading" class="center-box">
-			<text class="muted">正在翻找…</text>
-		</view>
-
-		<!-- 空结果 -->
-		<view v-else-if="searched && outcome != null && outcome.hits.length === 0" class="center-box">
-			<text class="empty-title serif">没有找到</text>
-			<text class="empty-desc">换个说法试试，或选一张照片搜索</text>
-		</view>
-
-		<!-- 结果列表（T-SR-2 混合卡片 + 溯源） -->
-		<view v-else-if="outcome != null" class="result-list">
-			<view v-if="outcome.rewrittenQuery != '' && outcome.rewrittenQuery != outcome.query" class="rewrite-line">
-				<text class="muted">理解为你说的：{{ outcome.rewrittenQuery }}</text>
-			</view>
-			<view v-for="hit in outcome.hits" :key="hit.contentId" class="hit-card">
-				<view class="hit-head">
-					<text class="hit-type">{{ contentTypeCn(hit.contentType) }}</text>
-					<text v-if="hit.eventTitle != ''" class="hit-event">{{ hit.eventTitle }}</text>
-					<text class="hit-score">{{ scorePct(hit.score) }}%</text>
+		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
+		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
+		<scroll-view class="n2-results" :show-scrollbar="false">
+			<view v-for="(item, idx) in voiceResults" :key="'v' + idx" class="n2_588" @tap="openResult(item)">
+				<view class="n2_589"> <!-- 语音媒体 -->
+					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
+						<image class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
+					</view>
+					<view class="n2_592"> <!-- 波形（装饰用画布 SVG） -->
+						<image class="n2_596" src="/static/icons/i2_596.svg" />
+					</view>
 				</view>
-				<text v-if="hit.text != ''" class="hit-text">{{ hit.text }}</text>
-				<view class="hit-meta">
-					<text v-if="hit.place != ''" class="meta-item">{{ hit.place }}</text>
-					<text v-if="hit.takenAt != ''" class="meta-item">{{ shortDate(hit.takenAt) }}</text>
-				</view>
-				<!-- 溯源（信任底线） -->
-				<view v-if="hit.trace != ''" class="trace-box">
-					<text class="trace-label">命中依据</text>
-					<text class="trace-text">{{ hit.trace }}</text>
+				<view class="n2_590"> <!-- 语音文字区 -->
+					<text class="n2_593">{{ item.title }}</text>
+					<text class="n2_594">{{ item.meta }}</text>
 				</view>
 			</view>
-			<view class="result-foot">
-				<text class="muted">共 {{ outcome.total }} 条 · {{ outcome.latencyMs }}ms</text>
+			<view v-for="(item, idx) in textResults" :key="'t' + idx" class="n2_598" @tap="openResult(item)">
+				<!-- 照片命中：服务端票据 URL 直连回显（<image> 无法带 header，预签名/票据 URL 是唯一通路） -->
+				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFill" />
+				<view class="n2_599"> <!-- 摘要块 -->
+					<view class="n2_601"></view> <!-- 引用竖线 -->
+					<text class="n2_602">{{ item.text }}</text>
+				</view>
+				<view class="n2_600"> <!-- 文字元信息区 -->
+					<text class="n2_603">{{ item.meta }}</text>
+				</view>
 			</view>
-		</view>
+			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">{{ emptyText() }}</text>
+			</view>
+		</scroll-view>
+		<TabBar active="search" @plus="sheetOpen = true" />
 
-		<!-- 底部 Tab -->
-		<yishu-tabbar current="search" />
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
 	</view>
 </template>
 
-<script lang="uts">
-	import { ensureLogin } from '@/utils/auth'
-	import { searchText, searchByImage, SearchOutcome, contentTypeCn as formatContentTypeCn } from '@/utils/search_api'
-	import { showErrorToast } from '@/utils/api'
-	import { shortDate as formatShortDate } from '@/utils/time'
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { searchText, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { shortDate } from '@/utils/time'
 
-	export default {
-		data() {
-			return {
-				query: '',
-				queryImage: '',
-				loading: false,
-				searched: false,
-				degraded: false,
-				outcome: null as SearchOutcome | null
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				if (!ok) {
-					showErrorToast(new Error('登录失败，请重试'))
-				}
-			})
-		},
-		methods: {
-			/** 得分百分比（模板内不能直接调全局 Math） */
-			scorePct(score: number): number {
-				return Math.round(score * 100)
-			},
-			/** 内容类型中文名（模板直接调用限制：需挂 methods；委托 search_api.contentTypeCn 单源） */
-			contentTypeCn(t: string): string {
-				return formatContentTypeCn(t)
-			},
-			/** T-SR-1：提交搜索 */
-			doSearch(): void {
-				const q = this.query.trim()
-				if (q == '' && this.queryImage == '') {
-					showErrorToast(new Error('输入想找的内容'))
-					return
-				}
-				this.loading = true
-				this.searched = false
-				this.degraded = false
-				searchText(q, 10).then((out: SearchOutcome | null) => {
-					this.loading = false
-					this.searched = true
-					if (out != null) {
-						this.outcome = out
-						this.degraded = out.degraded
-					} else {
-						this.outcome = null
-					}
-				})
-			},
-			/** T-SR-3：以图搜图（uni-app x App 端用 uni.chooseMedia 选图） */
-			pickImage(): void {
-				uni.chooseMedia({
-					count: 1,
-					mediaType: ['image'],
-					sourceType: ['album'],
-					success: (res) => {
-						const files = res.tempFiles
-						if (files.length === 0) {
-							return
-						}
-						const path = files[0].tempFilePath
-						this.queryImage = path
-						this.loading = true
-						this.searched = false
-						this.degraded = false
-						searchByImage(path, 10).then((out: SearchOutcome | null) => {
-							this.loading = false
-							this.searched = true
-							if (out != null) {
-								this.outcome = out
-								this.degraded = out.degraded
-							} else {
-								this.outcome = null
-							}
-						})
-					},
-					fail: () => {
-						// 用户取消选择：静默
-					}
-				})
-			},
-			/** ISO → 短日期（yyyy-mm-dd → mm月dd日；UTS 模板不能直调模块函数，methods 壳委托 time.ts） */
-			shortDate(iso: string): string {
-				return formatShortDate(iso)
-			}
+	// ── 响应式状态 ──
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let keyword = ref('')
+	let activeFilter = ref(0)
+	let playingId = ref('')
+	let loading = ref(false)
+	let hasSearched = ref(false)
+	let degraded = ref(false)
+	let hits = ref<Array<SearchHitItem>>([])
+	let filters = ['全部', '照片', '语音', '文字']
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面（返回 true = 已自行处理）
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// ── 本地 mock 数据（视觉验收用）────────────────────────────────────────
+	// 后端/索引无数据时结果区整块不渲染 → 波形卡、引用竖线、筛选间距全都无法对拍。
+	// 这里预填 6 条（3 语音 + 3 文字/照片），让结果区有内容可验。
+	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
+	//   打开时的危害：onLoad **无条件**灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*），
+	//   真实搜索结果永远被这 6 条压住，筛选/跳转全在假数据上跑。
+	//   关掉后进入页面会拉一次默认结果（见 onLoad），不再需要预填。
+	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
+	const USE_MOCK_DATA: boolean = false
+
+	function mockHits(): Array<SearchHitItem> {
+		const out: Array<SearchHitItem> = []
+		out.push(new SearchHitItem('v-mock-1', 'voice', '和妈妈的通话', '2026-08-27T12:36:00', '上海', 'ev-mock-1', '和妈妈的通话', 0.9, '', ''))
+		out.push(new SearchHitItem('v-mock-2', 'voice', '清晨湖边的风声', '2026-08-28T07:42:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.85, '', ''))
+		out.push(new SearchHitItem('v-mock-3', 'voice', '宿舍夜谈', '2026-08-25T23:10:00', '宿舍', 'ev-mock-3', '夜谈', 0.8, '', ''))
+		out.push(new SearchHitItem('t-mock-1', 'text', '那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。', '2026-08-28T07:42:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.88, '', ''))
+		out.push(new SearchHitItem('p-mock-1', 'photo', '湖面上的薄雾还没散，对岸的树影倒映在水里', '2026-08-28T07:45:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.82, '', ''))
+		out.push(new SearchHitItem('t-mock-2', 'text', '第一次尝试手冲，水温 92°C，粉水比 1:15，苦了一点但回甘明显', '2026-08-20T15:20:00', '宿舍', 'ev-mock-4', '手冲咖啡初体验', 0.75, '', ''))
+		return out
+	}
+	// ── mock 结束 ────────────────────────────────────────────────────────
+
+	// 从「我的」类型卡跳入：?type=photo/voice/text 预设对应筛选标签
+	onLoad((options: OnLoadOptions) => {
+		const t = options['type'] as string
+		if (t == 'photo') {
+			activeFilter.value = 1
+		} else if (t == 'voice') {
+			activeFilter.value = 2
+		} else if (t == 'text') {
+			activeFilter.value = 3
+		}
+		if (USE_MOCK_DATA) {
+			hits.value = mockHits()
+			hasSearched.value = true
+			return
+		}
+		// mock 关闭后：进入即拉「最近内容」兜底（后端 /search 的 q 要求非空，
+		// 空词场景只能用 contents 列表端点），否则结果区一片空白。
+		loadRecent()
+	})
+
+	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
+	class VoiceResult {
+		id: string
+		title: string
+		meta: string
+		waveHeights: Array<number>
+		constructor(id: string, title: string, meta: string, waveHeights: Array<number>) {
+			this.id = id
+			this.title = title
+			this.meta = meta
+			this.waveHeights = waveHeights
 		}
 	}
-</script>
+
+	class TextResult {
+		id: string
+		text: string
+		meta: string
+		/** 照片缩略图票据 URL（仅 content_type=photo 有值；文字/语音为空串） */
+		thumb: string
+		constructor(id: string, text: string, meta: string, thumb: string) {
+			this.id = id
+			this.text = text
+			this.meta = meta
+			this.thumb = thumb
+		}
+	}
+
+	/** 由 contentId 确定性生成装饰波形（28 根，8~40rpx；真实音频波形待语音流接入） */
+	function genWave(id: string): Array<number> {
+		let seed = 7
+		for (let i = 0; i < id.length; i++) {
+			seed = (seed * 31 + id.charCodeAt(i)) % 100000
+		}
+		const arr: Array<number> = []
+		for (let i = 0; i < 28; i++) {
+			seed = (seed * 1103515245 + 12345) % 100000
+			arr.push(8 + (seed % 33))
+		}
+		return arr
+	}
+
+	/** 组装卡底元信息：类型 · 日期 · 所属事件 */
+	function hitMeta(h: SearchHitItem): string {
+		let s = contentTypeCn(h.contentType)
+		if (h.takenAt != '') {
+			s += ' · ' + shortDate(h.takenAt)
+		}
+		if (h.eventTitle != '') {
+			s += ' · ' + h.eventTitle
+		}
+		return s
+	}
+
+	// 筛选标签 → 后端 content_types（全部=不过滤）
+	function filterContentTypes(): Array<string> {
+		if (activeFilter.value === 1) {
+			return ['photo']
+		}
+		if (activeFilter.value === 2) {
+			return ['voice']
+		}
+		if (activeFilter.value === 3) {
+			return ['text']
+		}
+		return []
+	}
+
+	// 本地筛选（与 filterContentTypes() 同源，两处阈值必须一致）
+	// ⚠️ 为什么必须在这里再过滤一次：setFilter() 只在「已搜过 && keyword 非空」时才重发请求，
+	//    而 mock / 空词场景 keyword 为空 → 请求不发 → 若 computed 不读 activeFilter，
+	//    点「照片/语音/文字」就毫无反应、永远 6 条（真机实锤 2026-08-31）。
+	//    真实搜索场景后端已按同一组 types 过滤过，这里是幂等二次过滤，不改变结果。
+	function matchesFilter(ct: string): boolean {
+		if (activeFilter.value === 1) {
+			return ct == 'photo'
+		}
+		if (activeFilter.value === 2) {
+			return ct == 'voice'
+		}
+		if (activeFilter.value === 3) {
+			return ct == 'text'
+		}
+		return true
+	}
+
+	// 语音结果（content_type=voice → 语音卡）
+	let voiceResults = computed((): Array<VoiceResult> => {
+		const out: Array<VoiceResult> = []
+		for (let i = 0; i < hits.value.length; i++) {
+			const h = hits.value[i]
+			if (h.contentType == 'voice' && matchesFilter(h.contentType)) {
+				const title = h.eventTitle != '' ? h.eventTitle : '语音记忆'
+				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId)))
+			}
+		}
+		return out
+	})
+
+	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
+	let textResults = computed((): Array<TextResult> => {
+		const out: Array<TextResult> = []
+		for (let i = 0; i < hits.value.length; i++) {
+			const h = hits.value[i]
+			if (h.contentType == 'voice') {
+				continue
+			}
+			if (!matchesFilter(h.contentType)) {
+				continue
+			}
+			const txt = h.text != '' ? h.text : '（无文本描述）'
+			// 照片命中带服务端下发的缩略图票据 URL，其余类型为空串
+			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : ''))
+		}
+		return out
+	})
+
+	function resultCountText(): string {
+		if (loading.value) {
+			return '搜索中…'
+		}
+		let n = voiceResults.value.length + textResults.value.length
+		return hasSearched.value ? ('共 ' + n.toString() + ' 条结果') : '输入关键词，搜索你的记忆'
+	}
+
+	function emptyText(): string {
+		if (!hasSearched.value) {
+			return '输入关键词开始搜索'
+		}
+		if (activeFilter.value === 1) {
+			return '暂无照片结果'
+		}
+		if (activeFilter.value === 2) {
+			return '暂无语音结果'
+		}
+		if (activeFilter.value === 3) {
+			return '暂无文字结果'
+		}
+		return '没有找到相关记忆，换个关键词试试'
+	}
+
+	function setFilter(idx: number): void {
+		activeFilter.value = idx
+		// 已搜过则按新类型重新请求
+		if (hasSearched.value && keyword.value.trim() != '') {
+			runSearch()
+		}
+	}
+
+	function clearKeyword(): void {
+		keyword.value = ''
+		hits.value = []
+		hasSearched.value = false
+	}
+
+	/** 发起描述性搜索（resolve-only，失败由封装 toast） */
+	function runSearch(): void {
+		const q = keyword.value.trim()
+		if (q == '') {
+			uni.showToast({ title: '请输入搜索关键词', icon: 'none' })
+			return
+		}
+		loading.value = true
+		searchText(q, 30, filterContentTypes()).then((out) => {
+			loading.value = false
+			hasSearched.value = true
+			if (out == null) {
+				hits.value = []
+				return
+			}
+			hits.value = out.hits
+			degraded.value = out.degraded
+		})
+	}
+
+	function doSearch(): void {
+		runSearch()
+	}
+
+	/**
+	 * 进入页面的默认数据源：GET /contents 拉最近内容。
+	 * 后端 /search 的 q 要求非空（SearchRequest min_length=1），空词语义搜索发不出去，
+	 * 所以「刚进页面还什么都没搜」时用最近内容兜底，结果区不再空白。
+	 * score 恒为 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
+	 */
+	// RecordSheet 保存成功回调：刷新最近内容兜底列表
+	function onRecordSaved(): void {
+		loadRecent()
+	}
+
+	function loadRecent(): void {
+		loading.value = true
+		fetchRecentContents(30, filterContentTypes()).then((out) => {
+			loading.value = false
+			if (out == null || out.hits.length == 0) {
+				return // 保持空态文案，不打 hasSearched（避免误显「共 0 条结果」）
+			}
+			hits.value = out.hits
+		})
+	}
+
+	function openResult(item: any): void {
+		const id = (item as VoiceResult).id
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + id })
+	}
+
+	function playVoice(item: VoiceResult): void {
+		if (playingId.value === item.id) {
+			playingId.value = ''
+		} else {
+			playingId.value = item.id
+			uni.showToast({ title: '语音播放待接入音频流', icon: 'none' })
+		}
+	}
+
+	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用与 setFilter(idx:number) 签名冲突，
+	//   模板已改回 HEAD 的 v-for + setFilter(idx)，此处删除）
+	</script>
 
 <style>
-	.page {
+	.page-root {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		padding-top: 88rpx;
-		padding-bottom: 140rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
 	}
-	.serif {
-		font-family: "Noto Serif CJK SC", serif;
-	}
-	.header {
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
-	}
-	.header-title {
-		font-size: 52rpx;
-		color: #3A2E25;
+	.n2_390 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 153.8rpx;
+		height: 92.3rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		letter-spacing: 6rpx;
+		font-size: 76.9rpx;
+		color: #3A2E25;
 	}
-	.header-sub {
-		margin-top: 8rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
+	.n2_391 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 230.8rpx;
+		width: 673.1rpx;
+		height: 92.3rpx;
+		flex-direction: row;
+		/* ⚠️ 无垂直 padding：画布 2:391 paddingTop/Bottom 均为 null，
+		   子元素靠 y 居中（搜索图标 y=15/h=18 → 上下各 15pt，容器 h=48pt）。
+		   此前误补 padding-top/bottom=30.8rpx → 内容区只剩 92.3-30.8×2=30.7rpx，
+		   装不下 34.6rpx 的搜索图标 → 被裁（全项目同类审计 2026-08-31 抓到）。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: #FFFFFF;
+		/* 画布 stroke 为居中描边；uvue 下 border-width 会内缩 content box 1px，
+		   改用 box-shadow 外环 0 0 0 1.9rpx 等价还原（不内缩子元素） */
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(176, 89, 59, 0.6), 0rpx 11.5rpx 34.6rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
 	}
-
-	/* 搜索框 */
-	.search-bar {
-		display: flex;
+	.n2_392 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n2_395 {
+		flex: 1;
+		margin-left: 15.4rpx; /* 画布 2:391 gap=8pt：图标右缘 34 → 输入区 x42 */
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 20rpx;
+		overflow: hidden;
 	}
-	.search-input {
-		flex: 1;
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
-		padding-left: 24rpx;
-		padding-right: 24rpx;
-		height: 76rpx;
-		font-size: 28rpx;
+	.n2_396 {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
 		color: #3A2E25;
-		box-shadow: 0 4rpx 12rpx rgba(58, 46, 37, 0.1);
 	}
-	.search-btn {
-		margin-left: 16rpx;
-		background-color: #B05A3A;
-		border-radius: 8rpx;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		height: 76rpx;
+	.n2_397 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 353.8rpx;
+		width: 673.1rpx;
+		flex-direction: row;
 		align-items: center;
+		overflow: hidden;
+	}
+	/* chip 动态化（HEAD 交互接回）：默认白底灰字，active 态锈红 tint */
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.chip-active {
+		background-color: rgba(176, 89, 59, 0.12);
+	}
+	/* 画布 2:397 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
+	.chip-ml {
+		margin-left: 15.4rpx;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.chip-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		font-weight: 600;
+		color: #B05A3A;
+	}
+	.n2_406 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 450rpx;
+		width: 305.8rpx;
+		height: 28.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2-results {
+		position: absolute;
+		left: 38.5rpx;
+		top: 496.2rpx;
+		bottom: 169.2rpx; /* TabBar 高度避让 */
+		width: 673.1rpx;
+		background-color: #F8F7F4;
+	}
+	.n2_588 {
+		width: 673.1rpx;
+		flex-direction: column;
+		margin-bottom: 23.1rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_589 {
+		width: 100%;
+		height: 123.1rpx;
+		flex-direction: row;
+		/* ⚠️ 无垂直 padding：画布 2:589 paddingTop/Bottom 均为 null，
+		   子元素靠 y 居中（玻璃播放钮 y=16/h=32 → 上下各 16pt，容器 h=64pt）。
+		   此前误补 padding-top/bottom=26.9rpx → 播放钮底部越出可视区被 overflow 裁掉。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		background-color: rgba(196, 145, 59, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_591 {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		flex-direction: row;
 		justify-content: center;
-		display: flex;
-	}
-	.search-btn-text {
-		color: #F6F1E7;
-		font-size: 28rpx;
-	}
-
-	/* 以图搜图 */
-	.image-row {
-		display: flex;
-		flex-direction: row;
 		align-items: center;
-		margin-bottom: 24rpx;
+		/* 毛玻璃：画布 BLUR(8) + fill 白 a0.50（原被降级成 0.72） */
+		background-color: rgba(255, 255, 255, 0.5);
+		/* 补画布 INNER_SHADOW 白a.4；两轴居中故保留 border */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		border-radius: 30.8rpx;
+		overflow: hidden;
 	}
-	.muted {
-		font-size: 24rpx;
-		color: #b3a696;
+	.n2_595 {
+		width: 23.1rpx;
+		height: 23.1rpx;
 	}
-	.image-btn {
-		margin-left: 16rpx;
-		padding-left: 24rpx;
-		padding-right: 24rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-		background-color: #EBE3D4;
-		border-radius: 24rpx;
+	.n2_592 {
+		width: 384.6rpx;
+		height: 50rpx;
+		margin-left: 23.1rpx; /* 画布 2:589 gap=12pt：播放钮右缘 46 → 波形 x58 */
+		overflow: hidden;
 	}
-	.image-btn-text {
-		font-size: 24rpx;
+	.n2_596 {
+		position: absolute;
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	.n2_590 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_593 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 32.7rpx;
 		color: #3A2E25;
 	}
-	.query-thumb {
-		width: 56rpx;
-		height: 56rpx;
-		border-radius: 8rpx;
-		margin-left: 16rpx;
+	.n2_594 {
+		margin-top: 5.8rpx; /* 画布 2:590 gap=3pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
 	}
-
-	/* 降级提示（T-SR-4） */
-	.degraded-bar {
-		background-color: #F3E8DC;
-		border-radius: 8rpx;
-		padding: 16rpx 24rpx;
-		margin-bottom: 20rpx;
-	}
-	.degraded-text {
-		font-size: 24rpx;
-		color: #B05A3A;
-	}
-
-	.center-box {
-		padding-top: 120rpx;
-		display: flex;
+	.n2_598 {
+		width: 673.1rpx;
 		flex-direction: column;
-		align-items: center;
+		margin-bottom: 23.1rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
 	}
-	.empty-title {
-		font-size: 36rpx;
-		color: #3A2E25;
-		font-weight: bold;
+	.n2-result-photo {
+		width: 100%;
+		height: 320rpx;
+		margin-bottom: 15.4rpx;
+		border-radius: 23.1rpx;
+		background-color: #EFEAE2;
 	}
-	.empty-desc {
-		margin-top: 12rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-	}
-
-	/* 结果卡片 */
-	.result-list {
-		display: flex;
-		flex-direction: column;
-	}
-	.rewrite-line {
-		margin-bottom: 16rpx;
-	}
-	.hit-card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
-		padding: 24rpx;
-		margin-bottom: 20rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-	}
-	.hit-head {
-		display: flex;
+	.n2_599 {
+		width: 100%;
 		flex-direction: row;
 		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 59, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
 	}
-	.hit-type {
-		font-size: 22rpx;
-		color: #B05A3A;
-		background-color: #F3E8DC;
-		padding-left: 14rpx;
-		padding-right: 14rpx;
-		padding-top: 4rpx;
-		padding-bottom: 4rpx;
-		border-radius: 16rpx;
+	.n2_601 {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
 	}
-	.hit-event {
-		margin-left: 16rpx;
-		font-size: 24rpx;
-		color: #8a7a6a;
+	.n2_602 {
 		flex: 1;
+		margin-left: 19.2rpx; /* 画布 2:599 gap=10pt：竖线右缘 15 → 文本 x25 */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
 	}
-	.hit-score {
-		font-size: 24rpx;
-		color: #3A2E25;
-		font-weight: bold;
-	}
-	.hit-text {
-		margin-top: 14rpx;
-		font-size: 28rpx;
-		color: #3A2E25;
-		line-height: 40rpx;
-	}
-	.hit-meta {
-		margin-top: 10rpx;
-		display: flex;
-		flex-direction: row;
-	}
-	.meta-item {
-		font-size: 22rpx;
-		color: #b3a696;
-		margin-right: 20rpx;
-	}
-	.trace-box {
-		margin-top: 16rpx;
-		border-top-width: 1rpx;
-		border-top-color: rgba(58, 46, 37, 0.12);
-		padding-top: 14rpx;
-		display: flex;
+	.n2_600 {
+		width: 100%;
 		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
 	}
-	.trace-label {
-		font-size: 20rpx;
-		color: #B05A3A;
+	.n2_603 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
 	}
-	.trace-text {
-		margin-top: 4rpx;
-		font-size: 22rpx;
-		color: #8a7a6a;
-		line-height: 32rpx;
-	}
-	.result-foot {
-		margin-top: 20rpx;
-		align-items: center;
-		display: flex;
+	.n2-empty {
+		flex-direction: row;
 		justify-content: center;
+		padding-top: 61.5rpx;
+		padding-bottom: 61.5rpx;
+	}
+	.n2-empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #B3A696;
 	}
 </style>

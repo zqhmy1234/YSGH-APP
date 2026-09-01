@@ -1,0 +1,831 @@
+﻿<template>
+	<view class="page">
+		<!-- 顶部导航栏 -->
+		<view class="header">
+			<view class="nav-row">
+				<view class="back-btn pressable" @tap="goBack">
+					<text class="back-arrow">‹</text>
+					<text class="back-text">我的</text>
+				</view>
+				<text class="header-title serif">画像管理</text>
+				<view class="header-right"></view>
+			</view>
+			<text class="header-sub">查看和管理你的个人记忆画像</text>
+		</view>
+
+		<scroll-view class="scroll">
+			<!-- 画像概览卡片 -->
+			<view class="profile-card pressable">
+				<view class="profile-head">
+					<view class="profile-avatar">
+						<text class="avatar-text">忆</text>
+					</view>
+					<view class="profile-info">
+						<text class="profile-title serif">我的记忆画像</text>
+						<text class="profile-badge">L2 · 主题级</text>
+					</view>
+				</view>
+				<text class="profile-desc">基于你的照片、文字、语音碎片，AI 自动生成的个人记忆画像。画像会随着记忆积累不断更新。</text>
+				<view class="profile-stats">
+					<view class="stat-item">
+						<text class="stat-number">{{ totalDays }}</text>
+						<text class="stat-label">记忆天数</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-number">{{ totalPhotos }}</text>
+						<text class="stat-label">照片</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-number">{{ totalThemes }}</text>
+						<text class="stat-label">主题</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 性格标签卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">性格标签</text>
+				<text class="menu-sub">AI 根据记忆内容自动生成的性格特征</text>
+				<view class="tag-list">
+					<view v-for="tag in personalityTags" :key="tag.name" class="tag-item" :class="{ 'tag-active': tag.active }">
+						<text :class="tag.active ? 'tag-text tag-text-active' : 'tag-text'">{{ tag.name }}</text>
+						<text class="tag-confidence">{{ tag.confidence }}%</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 记忆主题卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">记忆主题</text>
+				<text class="menu-sub">高频出现的记忆主题分类</text>
+				<view class="theme-list">
+					<view v-for="(theme, tIdx) in themes" :key="theme.name" :class="tIdx === themes.length - 1 ? 'theme-item pressable no-border' : 'theme-item pressable'" @tap="onThemeTap(theme)">
+						<view class="theme-icon" :style="{ backgroundColor: theme.color }">
+							<text class="theme-icon-text">{{ theme.icon }}</text>
+						</view>
+						<view class="theme-info">
+							<text class="theme-name">{{ theme.name }}</text>
+							<text class="theme-count">{{ theme.count }} 条记忆</text>
+						</view>
+						<text class="theme-arrow">›</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 敏感画像管理卡片（W10 画布 41:92 新增，承接 /api/v1/profile/sensitive 三端点） -->
+			<view class="menu-card">
+				<text class="menu-title serif">敏感画像管理</text>
+				<text class="menu-sub">标记后，AI 回顾与画像将按处置方式处理这些话题</text>
+				<view class="sens-list">
+					<view v-for="(s, sIdx) in sensitiveTopics" :key="s.topic" :class="sIdx === sensitiveTopics.length - 1 ? 'sens-row no-border' : 'sens-row'">
+						<text class="sens-name">{{ s.topic }}</text>
+						<text class="sens-badge-text" :style="badgeStyle(s.disposition)">{{ dispositionLabel(s.disposition) }}</text>
+						<text class="sens-remove" @tap="onRemoveSensitive(s)">✕</text>
+					</view>
+				</view>
+				<!-- 添加行：点击就地展开输入形态（后端 upsert 默认 forbid，MVP 不做级别选择） -->
+				<view v-if="!adding" class="sens-add pressable" @tap="adding = true">
+					<text class="sens-add-text">＋ 添加敏感话题</text>
+				</view>
+				<view v-else class="sens-add-form">
+					<input class="sens-add-input" v-model="newTopic" placeholder="话题，如：老伴离世" placeholder-style="color:#B3A696;font-size:25rpx;" :maxlength="64" confirm-type="done" @confirm="confirmAddSensitive" />
+					<view class="sens-add-confirm pressable" @tap="confirmAddSensitive">
+						<text class="sens-add-confirm-text">添加</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 画像设置卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">画像设置</text>
+				<view class="menu-row pressable" @tap="onRefreshProfile">
+					<view class="menu-icon amber">
+						<image class="menu-icon-img" src="/static/icons/icon-refresh.svg" />
+					</view>
+					<view class="menu-main">
+						<text class="menu-title-text">重新生成画像</text>
+						<text class="menu-desc">基于最新记忆数据重新计算画像</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-row pressable" @tap="onEditTags">
+					<view class="menu-icon rust">
+						<image class="menu-icon-img" src="/static/icons/icon-tag.svg" />
+					</view>
+					<view class="menu-main">
+						<text class="menu-title-text">编辑性格标签</text>
+						<text class="menu-desc">手动调整或确认 AI 生成的标签</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-row pressable no-border" @tap="onPrivacySettings">
+					<view class="menu-icon">
+						<image class="menu-icon-img" src="/static/icons/icon-lock.svg" />
+					</view>
+					<view class="menu-main">
+						<text class="menu-title-text">画像隐私设置</text>
+						<text class="menu-desc">控制哪些数据用于画像生成</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 关于画像 -->
+			<view class="about-card">
+				<text class="about-title serif">关于记忆画像</text>
+				<text class="about-text">记忆画像是 AI 基于你的个人记忆数据自动生成的用户画像，用于提供更个性化的回忆体验。所有数据仅存储在本地和你的私人空间，不会用于其他用途。</text>
+			</view>
+		</scroll-view>
+
+		<!-- TabBar（W10.4 换新，峰宝拍板）：旧玻璃自绘 TabBar（emoji 图标）废弃，
+		     统一共享组件（真值 = 画布 TabBar 族：SVG 图标 + FAB 咬合 6pt 同 index/ai/search 页） -->
+		<TabBar active="profile" @plus="sheetOpen = true" />
+
+		<!-- 记录面板浮层：点中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchInterviewProfile } from '@/utils/play'
+	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { dayKey } from '@/utils/time'
+	import { showErrorToast, get, post, request } from '@/utils/api'
+
+	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影）
+	type SensTopic = {
+		topic: string
+		disposition: string
+	}
+
+	// 响应式数据
+	// 记录面板浮层开关（中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let totalDays = ref(0)
+	let totalPhotos = ref(0)
+	let totalThemes = ref(0)
+	let loading = ref(true)
+	let personalityTags = ref<Array<any>>([])
+	let themes = ref<Array<any>>([])
+	// 敏感画像管理（W10 画布 41:92 新增）
+	let sensitiveTopics = ref<Array<SensTopic>>([])
+	let adding = ref(false) // 添加行展开态（就地展开输入，不弹窗）
+	let newTopic = ref('')
+
+	// 返回键拦截：浮层/添加行开着时先收起，而不是退出页面（返回 true = 已自行处理）
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		if (adding.value) {
+			adding.value = false
+			return true
+		}
+		return false
+	})
+
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+				return
+			}
+			loadProfile()
+			loadStats()
+			loadSensitive()
+		})
+	})
+
+	// 加载画像数据（从 interview/profile dimensions 派生性格标签）
+	function loadProfile(): void {
+		fetchInterviewProfile().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				loading.value = false
+				return
+			}
+			const dims = d.getJSON('dimensions')
+			if (dims != null) {
+				// 从 dimensions 派生性格标签（MVP：取前6个维度）
+				const keys = dims.keys()
+				const tags: Array<any> = []
+				for (let i = 0; i < Math.min(6, keys.length); i++) {
+					const key = keys[i]
+					const values = dims.getJSONArray(key)
+					let conf = 70
+					if (values != null && values.length > 0) {
+						conf = 60 + (i * 5) % 30
+					}
+					tags.push({
+						name: key,
+						confidence: conf,
+						active: i < 3
+					})
+				}
+				personalityTags.value = tags
+			}
+			loading.value = false
+		})
+	}
+
+	// RecordSheet 保存成功回调：刷新统计数字
+	function onRecordSaved(): void {
+		loadStats()
+	}
+
+	// 加载统计数据（从 timeline 计算天数/照片数/主题数）
+	function loadStats(): void {
+		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+			let days = 0
+			let photos = 0
+			let themeCount = 0
+			const dayKeys: Map<string, boolean> = new Map<string, boolean>()
+			for (let i = 0; i < events.length; i++) {
+				const ev = events[i]
+				// 统计天数（按 start_time 日期）
+				// 修复（2026-08-31）：startTime 是 epoch ms（number），原 .substring(0,10) 对 number 调用 → 必抛 → 统计恒 0
+				const dayKeyStr = dayKey(ev.startTime)
+				if (!dayKeys.has(dayKeyStr)) {
+					dayKeys.set(dayKeyStr, true)
+					days++
+				}
+				// 统计照片数
+				if (ev.photoIds != null) {
+					photos += ev.photoIds.length
+				}
+				// 统计主题数（L2 事件）
+				if (ev.level === 2) {
+					themeCount++
+				}
+			}
+			totalDays.value = days
+			totalPhotos.value = photos
+			totalThemes.value = themeCount
+
+			// 从事件派生记忆主题（MVP：取高频 L2 事件标题）
+			const themeMap: Map<string, number> = new Map<string, number>()
+			for (let i = 0; i < events.length; i++) {
+				const ev = events[i]
+				if (ev.level === 2 && ev.title != '') {
+					const count = themeMap.get(ev.title)
+					if (count != null) {
+						themeMap.set(ev.title, count + 1)
+					} else {
+						themeMap.set(ev.title, 1)
+					}
+				}
+			}
+			const themeList: Array<any> = []
+			const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
+			const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
+			const themeKeys = themeMap.keys()
+			for (let i = 0; i < Math.min(4, themeKeys.length); i++) {
+				const name = themeKeys[i]
+				const count = themeMap.get(name) ?? 0
+				themeList.push({
+					name: name,
+					count: count,
+					icon: icons[i % icons.length],
+					color: colors[i % colors.length]
+				})
+			}
+			themes.value = themeList
+		})
+	}
+
+	// ── 敏感画像管理（W10 画布 41:92；端点契约见 backend/app/api/contents.py profile_sensitive_router）──
+
+	// 处置级别五档（后端 ProfileSensitiveCreate.pattern：allow|mention|caution|review|forbid）
+	function dispositionLabel(d: string): string {
+		switch (d) {
+			case 'allow': return '允许'
+			case 'mention': return '可提及'
+			case 'caution': return '谨慎'
+			case 'review': return '需复核'
+			case 'forbid': return '禁止'
+			default: return d
+		}
+	}
+
+	// 徽章配色对齐画布 41:97 禁止（锈红 a0.12）/ 41:103 谨慎（锈金 a0.10）/ 41:109 需复核（米灰底次级字）；
+	// allow/mention 延伸记忆主题图标四色系（橄榄绿 / 黛蓝）
+	function badgeStyle(d: string): string {
+		if (d == 'forbid') { return 'color:#B05A3A;background-color:rgba(176,90,58,0.12);' }
+		if (d == 'caution') { return 'color:#C4913C;background-color:rgba(196,145,60,0.10);' }
+		if (d == 'review') { return 'color:#8A7A6A;background-color:#F0EBE3;' }
+		if (d == 'allow') { return 'color:#7A8C5A;background-color:rgba(122,140,90,0.14);' }
+		return 'color:#4E7D8C;background-color:rgba(78,125,140,0.13);'
+	}
+
+	// GET /api/v1/profile/sensitive：列出全部话题（后端按更新时间倒序）
+	function loadSensitive(): void {
+		get('/api/v1/profile/sensitive').then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				return
+			}
+			const arr = body.getArray('data')
+			if (arr == null) {
+				return
+			}
+			const list: Array<SensTopic> = []
+			for (let i = 0; i < arr.length; i++) {
+				const it = arr[i]
+				const topic = it.getString('topic')
+				if (topic != null && topic != '') {
+					list.push({ topic: topic, disposition: it.getString('disposition') ?? 'forbid' })
+				}
+			}
+			sensitiveTopics.value = list
+		})
+	}
+
+	// DELETE /api/v1/profile/sensitive?topic=xxx：先强确认再删。
+	// 中文 topic 直接拼 query：Android 端 OkHttp 对非 ASCII query 自动 percent-encode（UTF-8）；
+	// 若后续 iOS 适配发现 URLSession 拒绝裸中文 URL，再补手写编码（登记差异台账 W10）
+	function onRemoveSensitive(s: SensTopic): void {
+		uni.showModal({
+			title: '移除敏感话题',
+			content: '将移除「' + s.topic + '」的标记，AI 将恢复常规处理',
+			success: (res) => {
+				if (res.confirm) {
+					request('/api/v1/profile/sensitive?topic=' + s.topic, 'DELETE', null).then((body: UTSJSONObject | null) => {
+						if (body != null) {
+							uni.showToast({ title: '已移除', icon: 'none' })
+							loadSensitive()
+						}
+					})
+				}
+			}
+		})
+	}
+
+	// POST /api/v1/profile/sensitive（幂等 upsert）：UI 显式添加默认 forbid + locked=true
+	// （后端 locked 语义 = 用户显式标记、永不过期；与 B1-6 对话式「别跟我提 X」产物同权）
+	function confirmAddSensitive(): void {
+		const t = newTopic.value.trim()
+		if (t == '') {
+			uni.showToast({ title: '请输入话题', icon: 'none' })
+			return
+		}
+		const d: UTSJSONObject = { topic: t, disposition: 'forbid', locked: true }
+		post('/api/v1/profile/sensitive', d).then((body: UTSJSONObject | null) => {
+			if (body != null) {
+				uni.showToast({ title: '已添加', icon: 'none' })
+				newTopic.value = ''
+				adding.value = false
+				loadSensitive()
+			}
+		})
+	}
+
+	// 导航：TabBar 跳转/中央+ 全部由共享组件接管（本页仅保留返回钮）
+	function goBack(): void {
+		uni.navigateBack()
+	}
+
+	// 业务方法
+	function onThemeTap(theme: any): void {
+		uni.showToast({ title: '查看主题：' + theme.name, icon: 'none' })
+	}
+	function onRefreshProfile(): void {
+		loading.value = true
+		loadProfile()
+		loadStats()
+		uni.showToast({ title: '正在重新生成画像...', icon: 'none' })
+	}
+	function onEditTags(): void {
+		uni.showToast({ title: '编辑性格标签（MVP待实现）', icon: 'none' })
+	}
+	function onPrivacySettings(): void {
+		uni.showToast({ title: '画像隐私设置（MVP待实现）', icon: 'none' })
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		background-color: #f8f7f4;
+	}
+
+	.serif {
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
+	}
+
+	.header {
+		/* W10.4 下移（峰宝拍板 2026-09-01）：页标题/返回钮水平线距顶 44px→60px=115.4rpx
+		   （对齐 security 页页头真值 y60pt），以下内容随文档流自动下移 */
+		padding-top: 115.4rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+	}
+	.nav-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.back-btn {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.back-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.back-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #8a7a6a;
+		margin-left: 4rpx;
+	}
+	.header-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.header-right {
+		width: 80rpx;
+	}
+	.header-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	.scroll {
+		flex: 1;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-bottom: 240rpx; /* W10.4：避让共享 TabBar（fixed 全高 110px=220rpx） */
+	}
+
+	/* 画像概览卡片 */
+	.profile-card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+	}
+	.profile-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+	.profile-avatar {
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 48rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 24rpx;
+	}
+	.avatar-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #ffffff;
+		font-weight: bold;
+	}
+	.profile-info {
+		flex: 1;
+	}
+	.profile-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.profile-badge {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #c4913c;
+		background-color: #c4913c1a;
+		padding: 4rpx 16rpx;
+		border-radius: 16rpx;
+		align-self: flex-start;
+	}
+	.profile-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #8a7a6a;
+		line-height: 40rpx;
+		margin-bottom: 24rpx;
+	}
+	.profile-stats {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-around;
+		padding-top: 20rpx;
+		border-top-width: 1rpx;
+		border-top-color: #f0ebe3;
+		border-top-style: solid;
+	}
+	.stat-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.stat-number {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.stat-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* 菜单卡片 */
+	.menu-card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+	}
+	.menu-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 8rpx;
+	}
+	.menu-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-bottom: 20rpx;
+	}
+
+	/* 性格标签 */
+	.tag-list {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.tag-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 12rpx 24rpx;
+		border-radius: 24rpx;
+		background-color: #f8f7f4;
+		margin-right: 16rpx;
+		margin-bottom: 12rpx;
+	}
+	.tag-active {
+		background-color: #c4913c1a;
+	}
+	.tag-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #3a2e25;
+	}
+	.tag-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #c4913c;
+		font-weight: 500;
+	}
+	.tag-confidence {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-left: 8rpx;
+		font-size: 20rpx;
+		color: #b3a696;
+	}
+
+	/* 记忆主题 */
+	.theme-list {
+		display: flex;
+		flex-direction: column;
+	}
+	.theme-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	.theme-item.no-border {
+		border-bottom-width: 0;
+	}
+	.theme-icon {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+	.theme-icon-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+	}
+	.theme-info {
+		flex: 1;
+	}
+	.theme-name {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.theme-count {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.theme-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #b3a696;
+	}
+
+	/* 敏感画像管理（W10 画布 41:92）：话题名 fs14.5pt=27.9rpx、徽章 fs10.5pt=20rpx、
+	   行高 44pt 节奏用 padding 25rpx 近似（画布线两侧各 8pt 双间隙 → 上下 25rpx 单间隙，登记台账） */
+	.sens-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-top: 25rpx;
+		padding-bottom: 25rpx;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	.sens-row.no-border {
+		border-bottom-width: 0;
+	}
+	.sens-name {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27.9rpx;
+		color: #3a2e25;
+	}
+	.sens-badge-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #8a7a6a; /* 静态默认（review 档同色）；运行时被 :style="badgeStyle(...)" 按处置级别覆盖 */
+		padding: 4.8rpx 11.5rpx;
+		border-radius: 15.4rpx;
+	}
+	.sens-remove {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #b3a696;
+		margin-left: 19.2rpx;
+	}
+	.sens-add {
+		margin-top: 19.2rpx;
+		height: 77rpx;
+		border-radius: 23.1rpx;
+		background-color: #f8f7f4;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.sens-add-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8a7a6a;
+	}
+	/* 添加行展开态（画布无此形态，交互自洽样式：输入 + 确认钮） */
+	.sens-add-form {
+		margin-top: 19.2rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.sens-add-input {
+		flex: 1;
+		height: 77rpx;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		border-radius: 23.1rpx;
+		background-color: #f8f7f4;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #3a2e25;
+	}
+	.sens-add-confirm {
+		margin-left: 15.4rpx;
+		height: 77rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		border-radius: 23.1rpx;
+		background-color: #b05a3a;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.sens-add-confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #ffffff;
+	}
+
+	/* 菜单行 */
+	.menu-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	.menu-row.no-border {
+		border-bottom-width: 0;
+	}
+	.menu-icon {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 28rpx;
+		background-color: #f8f7f4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+		font-size: 28rpx;
+	}
+	.menu-icon.amber {
+		background-color: #c4913c1a;
+	}
+	.menu-icon.rust {
+		background-color: #b05a3a1f;
+	}
+	/* W10.4：emoji → 同风格线性 SVG（20×20 线稿，显示 28rpx，色随行系） */
+	.menu-icon-img {
+		width: 28rpx;
+		height: 28rpx;
+	}
+	.menu-main {
+		flex: 1;
+	}
+	.menu-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.menu-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.menu-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #b3a696;
+	}
+
+	/* 关于画像 */
+	.about-card {
+		margin-top: 24rpx;
+		margin-bottom: 40rpx;
+		padding: 28rpx;
+	}
+	.about-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 12rpx;
+	}
+	.about-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		line-height: 38rpx;
+	}
+
+	/* TabBar（W10.4）：自绘玻璃 TabBar 样式族已删，由 components/TabBar/TabBar.uvue 接管 */
+
+	/* 按压态动画 */
+	.pressable {
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+	
+</style>

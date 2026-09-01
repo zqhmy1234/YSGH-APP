@@ -1,0 +1,435 @@
+<template>
+	<!-- ardot 直转 v2：AI回复·多形态族（帧 4:299）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n4_303">AI 回复</text> <!-- 大标题 -->
+		<view class="n4_304"> <!-- 回复流 -->
+			<text class="n4_305">① 直铺长答（无气泡 · 宽版好读）</text> <!-- 节1 -->
+			<view class="n4_306"> <!-- AI头行 -->
+				<view class="n4_307"> <!-- AI头像 -->
+					<image class="n4_308" src="/static/icons/i4_308.svg" /> <!-- icon: 星芒 -->
+				</view>
+				<text class="n4_310">AI · 8月回顾</text> <!-- AI名 -->
+			</view>
+			<view class="n4_311"> <!-- 直铺内容 -->
+				<text class="n4_312">你 8 月的记忆脉络</text> <!-- 小标题 -->
+				<view class="n4_313"> <!-- bullet行 -->
+					<view class="n4_314"> <!-- 圆点 -->
+					</view>
+					<text class="n4_315">记录高峰在月末，共 23 条</text> <!-- 要点 -->
+				</view>
+				<view class="n4_316"> <!-- bullet行 -->
+					<view class="n4_317"> <!-- 圆点 -->
+					</view>
+					<text class="n4_318">「湖边」是本月最强的记忆锚点</text> <!-- 要点 -->
+				</view>
+				<view class="n4_319"> <!-- bullet行 -->
+					<view class="n4_320"> <!-- 圆点 -->
+					</view>
+					<text class="n4_321">语音占比 41%，转写准确率 98%</text> <!-- 要点 -->
+				</view>
+			</view>
+			<text class="n4_322">② 记忆卡横滑组（第二张露边示意滑动）</text> <!-- 节2 -->
+			<view class="n4_323"> <!-- 横滑组 -->
+				<view class="n4_324"> <!-- 记忆卡1 -->
+					<view class="n4_325"> <!-- 缩略 -->
+					</view>
+					<text class="n4_326">清晨的湖边</text> <!-- 标题 -->
+					<text class="n4_327">8月28日 · 照片</text> <!-- 元信息 -->
+				</view>
+				<view class="n4_328"> <!-- 记忆卡2 -->
+					<view class="n4_329"> <!-- 缩略 -->
+					</view>
+					<text class="n4_330">实验室的深夜</text> <!-- 标题 -->
+					<text class="n4_331">8月22日 · 文字</text> <!-- 元信息 -->
+				</view>
+			</view>
+			<text class="n4_332">③ 快捷追问 chips（每条回复尾部标准件）</text> <!-- 节3 -->
+			<view class="n4_333"> <!-- 追问chips -->
+				<view class="n4_334"> <!-- chip1 -->
+					<text class="n4_335">那周最开心的事</text> <!-- 追问1 -->
+				</view>
+				<view class="n4_336"> <!-- chip2 -->
+					<text class="n4_337">生成 8 月周报</text> <!-- 追问2 -->
+				</view>
+			</view>
+			<text class="n4_338">④ 行动确认卡（AI 发起的待确认操作）</text> <!-- 节4 -->
+			<view class="n4_339"> <!-- 行动确认卡 -->
+				<view class="n4_340"> <!-- 确认行 -->
+					<image class="n4_341" src="/static/icons/i4_341.svg" /> <!-- icon: 星芒 -->
+					<text class="n4_343">要把「湖边晨雾」加入 8 月时间胶囊吗？</text> <!-- 确认文字 -->
+				</view>
+				<view class="n4_344"> <!-- 按钮行 -->
+					<view class="n4_460"> <!-- 暂不钮 -->
+						<text class="n4_461">暂不</text> <!-- 暂不 -->
+					</view>
+					<view class="n4_462"> <!-- 加入钮 -->
+						<text class="n4_463">加入胶囊</text> <!-- 加入胶囊 -->
+					</view>
+				</view>
+			</view>
+			<text class="n4_348">⑤ 流式输出态（感知响应速度）</text> <!-- 节5 -->
+			<view class="n4_349"> <!-- 流式行 -->
+				<text class="n4_350">正在翻你的回忆</text> <!-- 流式文字 -->
+				<view class="n4_351"> <!-- 点1 -->
+				</view>
+				<view class="n4_352"> <!-- 点2 -->
+				</view>
+				<view class="n4_353"> <!-- 点3 -->
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		height: 2115.4rpx;
+		background-color: #F8F7F4;
+	}
+	.n4_303 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 201.9rpx;
+		height: 75rpx;
+		font-weight: bold;
+		font-size: 61.5rpx;
+		color: #3A2E25;
+	}
+	.n4_304 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 230.8rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 53.8rpx;
+		overflow: hidden;
+	}
+	.n4_305 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_306 {
+		flex-direction: row;
+		gap: 11.5rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_307 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_308 {
+		width: 23.1rpx;
+		height: 23.1rpx;
+	}
+	.n4_310 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #5A4C40;
+	}
+	.n4_311 {
+		width: 100%;
+		flex-direction: column;
+		gap: 15.4rpx;
+		overflow: hidden;
+	}
+	.n4_312 {
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.n4_313 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_314 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		background-color: #B05A3A;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_315 {
+		flex: 1;
+		font-size: 25rpx;
+		color: #5A4C40;
+	}
+	.n4_316 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_317 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		background-color: #B05A3A;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_318 {
+		flex: 1;
+		font-size: 25rpx;
+		color: #5A4C40;
+	}
+	.n4_319 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_320 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		background-color: #B05A3A;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_321 {
+		flex: 1;
+		font-size: 25rpx;
+		color: #5A4C40;
+	}
+	.n4_322 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_323 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_324 {
+		width: 307.7rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 19.2rpx rgba(59, 46, 38, 0.06);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_325 {
+		width: 100%;
+		height: 173.1rpx;
+		background-image: linear-gradient(to bottom right, rgba(196, 145, 60, 0.35), rgba(122, 140, 90, 0.2));
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_326 {
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.n4_327 {
+		font-size: 19.2rpx;
+		color: #8A7A6A;
+	}
+	.n4_328 {
+		width: 307.7rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 19.2rpx rgba(59, 46, 38, 0.06);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_329 {
+		width: 100%;
+		height: 173.1rpx;
+		background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.3), rgba(122, 140, 90, 0.15));
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_330 {
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.n4_331 {
+		font-size: 19.2rpx;
+		color: #8A7A6A;
+	}
+	.n4_332 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_333 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_334 {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-width: 1.9rpx;
+		border-color: rgba(176, 89, 59, 0.35);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n4_335 {
+		font-size: 23.1rpx;
+		color: #B05A3A;
+	}
+	.n4_336 {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-width: 1.9rpx;
+		border-color: rgba(176, 89, 59, 0.35);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n4_337 {
+		font-size: 23.1rpx;
+		color: #B05A3A;
+	}
+	.n4_338 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_339 {
+		width: 100%;
+		flex-direction: column;
+		gap: 19.2rpx;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_340 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_341 {
+		width: 30.8rpx;
+		height: 30.8rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+	}
+	.n4_343 {
+		flex: 1;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.n4_344 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_460 {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: #F8F7F4;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n4_461 {
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #5A4C40;
+	}
+	.n4_462 {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: #B05A3A;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n4_463 {
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #FFFFFF;
+	}
+	.n4_348 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_349 {
+		width: 100%;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_350 {
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.n4_351 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		background-color: #B05A3A;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_352 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		background-color: #B05A3A;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n4_353 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		background-color: #B05A3A;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+</style>

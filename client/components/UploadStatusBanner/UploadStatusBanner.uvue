@@ -1,4 +1,4 @@
-<template>
+﻿<template>
 	<!-- 同步状态横幅（B4 §7 · Wave3 Agent H）：
 	     待上传图标 / 失败标红可点击重试 / 暂停横幅"网络异常，已暂停同步" / 一键继续上传。
 	     自包含：直接读 sync_client + uploader 模块状态，宿主页只需一行 <UploadStatusBanner />。
@@ -14,134 +14,104 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onMounted, onBeforeUnmount, computed } from 'vue'
 	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_client'
 	import { heldCount, failedCount, continuePendingUploads, getNetKind, NetKind } from '@/utils/uploader'
 
-	export default {
-		emits: ['continue-upload', 'retry-failed', 'upload-original'],
-		data() {
-			return {
-				paused: false,
-				pauseReason: '',
-				held: 0,
-				failed: 0,
-				uploading: false,
-				netKind: 'unknown' as NetKind,
-				refresher: 0
-			}
-		},
-		computed: {
-			show(): boolean {
-				return this.paused || this.held > 0 || this.failed > 0 || this.uploading
-			},
-			bannerClass(): string {
-				if (this.paused) {
-					return 'banner-paused'
-				}
-				if (this.held > 0) {
-					return 'banner-held'
-				}
-				if (this.failed > 0) {
-					return 'banner-failed'
-				}
-				return 'banner-uploading'
-			},
-			icon(): string {
-				if (this.paused) {
-					return '⏸'
-				}
-				if (this.held > 0) {
-					return '📤'
-				}
-				if (this.failed > 0) {
-					return '⚠️'
-				}
-				return '⏳'
-			},
-			text(): string {
-				if (this.paused) {
-					return this.pauseReason != '' ? this.pauseReason : '网络异常，已暂停同步'
-				}
-				if (this.held > 0) {
-					if (this.netKind == 'wifi') {
-						return this.held + ' 张照片待上传（原图）'
-					}
-					return this.held + ' 张照片待 WiFi 上传（蜂窝仅传缩略图+元数据）'
-				}
-				if (this.failed > 0) {
-					return this.failed + ' 张照片上传失败，点击重试'
-				}
-				return '正在上传…'
-			},
-			showAction(): boolean {
-				return this.paused || this.held > 0 || this.failed > 0
-			},
-			actionText(): string {
-				if (this.paused) {
-					return '继续上传'
-				}
-				if (this.held > 0 && this.netKind != 'wifi') {
-					return '立即上传原图'
-				}
-				return '重试'
-			}
-		},
-		mounted() {
-			// 订阅暂停状态（sync_client 推送）+ 3s 轮询数量（uni storage 读，开销可忽略）
-			subscribeSyncStatus((paused: boolean, reason: string) => {
-				this.paused = paused
-				this.pauseReason = reason
-			})
-			this.refresh()
-			this.refresher = setInterval(() => {
-				this.refresh()
-			}, 3000)
-		},
-		beforeUnmount() {
-			if (this.refresher != 0) {
-				clearInterval(this.refresher)
-				this.refresher = 0
-			}
-		},
-		methods: {
-			refresh(): void {
-				this.paused = isSyncPaused()
-				this.pauseReason = getPauseReason()
-				this.held = heldCount()
-				this.failed = failedCount()
-				getNetKind((kind: NetKind) => {
-					this.netKind = kind
-				})
-			},
-			onBannerTap(): void {
-				// 失败标红可点击重试（整条可点）
-				if (this.failed > 0 && !this.paused) {
-					this.doContinue('retry-failed')
-				}
-			},
-			onActionTap(): void {
-				if (this.paused) {
-					this.doContinue('continue-upload')
-				} else if (this.held > 0 && this.netKind != 'wifi') {
-					this.doContinue('upload-original')
-				} else {
-					this.doContinue('retry-failed')
-				}
-			},
-			/** 一键继续：解除暂停 + 上传 held/failed（原图模式） */
-			doContinue(evt: string): void {
-				this.uploading = true
-				this.$emit(evt)
-				continuePendingUploads(() => {
-					this.uploading = false
-					this.refresh()
-				}).then(() => {
-					this.uploading = false
-					this.refresh()
-				})
-			}
+	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
+
+	let paused = false
+	let pauseReason = ''
+	let held = 0
+	let failed = 0
+	let uploading = false
+	let netKind: NetKind = 'unknown'
+	let refresher = 0
+
+	const show = computed((): boolean => {
+		return paused || held > 0 || failed > 0 || uploading
+	})
+	const bannerClass = computed((): string => {
+		if (paused) return 'banner-paused'
+		if (held > 0) return 'banner-held'
+		if (failed > 0) return 'banner-failed'
+		return 'banner-uploading'
+	})
+	const icon = computed((): string => {
+		if (paused) return '⏸'
+		if (held > 0) return '📤'
+		if (failed > 0) return '⚠️'
+		return '⏳'
+	})
+	const text = computed((): string => {
+		if (paused) return pauseReason != '' ? pauseReason : '网络异常，已暂停同步'
+		if (held > 0) {
+			if (netKind == 'wifi') return held + ' 张照片待上传（原图）'
+			return held + ' 张照片待 WiFi 上传（蜂窝仅传缩略图+元数据）'
 		}
+		if (failed > 0) return failed + ' 张照片上传失败，点击重试'
+		return '正在上传…'
+	})
+	const showAction = computed((): boolean => {
+		return paused || held > 0 || failed > 0
+	})
+	const actionText = computed((): string => {
+		if (paused) return '继续上传'
+		if (held > 0 && netKind != 'wifi') return '立即上传原图'
+		return '重试'
+	})
+
+	onMounted(() => {
+		subscribeSyncStatus((p: boolean, reason: string) => {
+			paused = p
+			pauseReason = reason
+		})
+		refresh()
+		refresher = setInterval(() => {
+			refresh()
+		}, 3000) as number
+	})
+	onBeforeUnmount(() => {
+		if (refresher != 0) {
+			clearInterval(refresher)
+			refresher = 0
+		}
+	})
+
+	function refresh(): void {
+		paused = isSyncPaused()
+		pauseReason = getPauseReason()
+		held = heldCount()
+		failed = failedCount()
+		getNetKind((kind: NetKind) => {
+			netKind = kind
+		})
+	}
+	function onBannerTap(): void {
+		if (failed > 0 && !paused) {
+			doContinue('retry-failed')
+		}
+	}
+	function onActionTap(): void {
+		if (paused) {
+			doContinue('continue-upload')
+		} else if (held > 0 && netKind != 'wifi') {
+			doContinue('upload-original')
+		} else {
+			doContinue('retry-failed')
+		}
+	}
+	function doContinue(evt: string): void {
+		uploading = true
+		emit(evt)
+		continuePendingUploads(() => {
+			uploading = false
+			refresh()
+		}).then(() => {
+			uploading = false
+			refresh()
+		})
 	}
 </script>
 
@@ -176,12 +146,15 @@
 		flex-direction: row;
 		align-items: center;
 	}
+	/* uvue App 端样式不继承，text 类需各自声明 font-family */
 	.banner-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #F6F1E7;
 		font-size: 30rpx;
 		margin-right: 16rpx;
 	}
 	.banner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #F6F1E7;
 		font-size: 26rpx;
 		flex: 1;
@@ -196,6 +169,7 @@
 		border-radius: 28rpx;
 	}
 	.banner-action-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		color: #B05A3A;
 		font-size: 24rpx;
 		font-weight: bold;

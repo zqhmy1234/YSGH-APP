@@ -1,4 +1,4 @@
-# 教训台账（Harness 强制登记 · 2026-08-20 起）
+﻿# 教训台账（Harness 强制登记 · 2026-08-20 起）
 
 > 规则（程序化强制，见 scripts/lessons.py + review_agent.py check_lessons）：
 > 开发阶段每次排查错误并修复后，必须登记一条教训——review_agent 检查失败后
@@ -9,6 +9,93 @@
 
 ---
 
+### 2026-09-01 15:28 · commit 36e0b64 · ts=1788247729
+- **错误**：wrap1 合并解冲突脚本首版将 progress.md 从 680 行砍到 58 行（develop 侧 622 行记账差点丢失），lessons.md 同样被砍至 ~108 行
+- **根因**：union 脚本只把两个冲突块拼进输出，冲突区之外的正文（out 列表）从未加入 merged；且无行数守恒校验，第一轮静默落盘
+- **修复**：merge --abort 重做；二版脚本加 pre/blocks/post 三段守恒断言（输出=输入-3标记行+拼接行），锚点复验（W10/暗物质/harness台账整饬/stash教训全在）后重新提交
+- **相关文件**：progress.md;docs/lessons.md
+- **教训**：合并解冲突的脚本必须行数守恒校验+关键锚点复验后才允许落盘；union 类解法要显式保留冲突区外正文，而非只拼冲突块
+
+---
+
+### 2026-09-01 15:15 · commit 551e72d · ts=1788246901
+- **错误**：W10.4 提交时把一次性审查脚本（review/gen_record_sheet.py 等，%格式化+混合缩进）加入暂存区，被 ruff 快速门禁拦下
+- **根因**：worktree 既有惯例是一性脚本留本地不入库，本次误按『目录整加』思维暂存了 review/ 下的脚本
+- **修复**：git reset 退出脚本；review/out/ 证据目录进 .gitignore；脚本留本地复用
+- **相关文件**：review/gen_record_sheet.py
+- **教训**：一次性工具不入库；入库代码必须原生过 lint 门禁，不为提交临时豁免
+
+---
+
+### 2026-08-30 04:48 · commit 551e72d · ts=1788036538
+- **错误**：门禁 lint 消耗战：E501长行/E701单行if/UP020 io.open/F401未用变量/F841逐条暴露，提交被反复拦
+- **根因**：写脚本时未按仓库 ruff 规则预先约束（行宽120、禁单行多语句、用内置open），应写完先本地跑 review_agent 再迭代而非最后一把过
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-30 04:43 · commit 551e72d · ts=1788036219
+- **错误**：组装器 name_taps 注入 image 事件时把 src 写死为 x 丢失真实图标路径
+- **根因**：字符串重构时未保留原匹配组的捕获内容，且生成后未读回检查产物
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-30 04:24 · commit 2192963 · ts=1788035081
+- **错误**：ardot直转初版三连坑：①flex horizontal 非法值(ucss只认row)致列表行竖排堆叠 ②TEXT节点定位/尺寸被丢弃致昵称顶状态栏/箭头不贴边 ③SCALE硬编码2.0致4%系统性放大(正确=750/390=1.9231)
+- **根因**：转换器按臆测写而非数据穷举驱动；脚本产物未读回验证就部署
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-08-30 03:11 · commit 9279c16 · ts=1788030680
+- **错误**：设计数据提取管线 8 份 design_data.json 全为 0 元素（elements:0/texts:0）
+- **根因**：parse_svg_v2/v3 用 svgelements 解析崩 'Circle' object has no attribute 'r'，外层 try/except 吞错致 elements=[]；且 svgelements 丢失 fill-opacity 与渐变方向。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：设计稿提取一律用 etree 直接遍历（.cowork-temp/svg_parse.py 已跑通），弃用 svgelements；不轻信 design_data_for_agents/design_data.json 数值。
+
+---
+
+### 2026-08-29 03:11 UI还原与Vapor迁移批次1 ts=1787973060
+
+- **错误**：7页面setup改造提交时lint失败（scripts/临时脚本未清理），清理后lessons检查仍失败（_last_entry_time取第一个###行，lessons.md按旧→新排列，新条目在末尾不被识别）
+- **根因**：lessons.py _last_entry_time() 遍历找到第一个###行即返回，而lessons.md历史条目按时间升序排列（旧在前新在后），新增条目在末尾无法通过"晚于失败时间"校验
+- **修复**：新登记lessons必须插入到lessons.md第一个###行之前（文件顶部规则说明之后），使用ts=epoch时间戳格式，确保时间晚于last-failure.json中的失败时间
+- **相关文件**：docs/lessons.md, scripts/lessons.py
+- **教训**：lessons登记位置必须在文件顶部（第一个###之前），不是末尾；时间戳用ts=epoch格式
+### 2026-08-29 03:06 · commit cd41f18 · ts=1787943990
+- **错误**：uni-app x Vapor模式要求全页面使用组合式API(setup)，选项式API(data/methods)在Vapor下不兼容
+- **根因**：项目原全部页面使用选项式API(export default {data,methods})，Vapor模式5.25+仅支持组合式API
+- **修复**：逐页setup改造：1)<script setup lang=uts> 2)data变量改let 3)methods改function 4)生命周期从@dcloudio/uni-app导入 5)移除this引用 6)回调中直接访问闭包变量
+- **相关文件**：client/pages/*/*.uvue
+- **教训**：Vapor模式必须全页面setup改造，逐页迁移并验证回调闭包
+
+---
+
+### 2026-08-29 03:00 · commit 677ea68 · ts=1787943637
+- **错误**：批量样式更新脚本遗漏自定义卡片类名(如.hit-card/.msg-card/.profile-card)，导致圆角/背景色未按设计稿更新
+- **根因**：脚本只匹配通用.card类名，未覆盖各页面自定义卡片类名；批量创建后未逐页与设计稿数据对比验证
+- **修复**：UI还原必须逐页精细审查：1)列出所有样式类名 2)逐一与SVG解析的设计数据对比 3)修正圆角/颜色/透明度等关键参数 4)禁止依赖批量脚本一次性完成
+- **相关文件**：client/pages/*/*.uvue
+- **教训**：UI像素级还原禁止依赖批量脚本，必须逐页与设计稿数据对比验证
+
+---
+
+### 2026-08-29 03:00 · commit 677ea68 · ts=1787943615
+- **错误**：批量样式更新脚本遗漏自定义卡片类名(如.hit-card/.msg-card/.profile-card)，导致圆角/背景色未按设计稿更新
+- **根因**：脚本只匹配通用.card类名，未覆盖各页面自定义卡片类名；批量创建后未逐页与设计稿数据对比验证
+- **修复**：UI还原必须逐页精细审查：1)列出所有样式类名 2)逐一与SVG解析的设计数据对比 3)修正圆角/颜色/透明度等关键参数 4)禁止依赖批量脚本一次性完成
+- **相关文件**：-
+- **教训**：（无）
+
+---
 ### 2026-08-29 16:48 · commit 630d4bd · ts=1787993283
 - **错误**：pwsh 里 git rev-parse stash@{0} 花括号被 PowerShell 语法吃掉，update-ref 拿到字面量 stash@ 失败，随后 stash drop 照跑，快照只剩悬空对象
 - **根因**：未加引号的 stash@{0} 在 PS 中触发 @ splatting/插值解析；且破坏性操作（drop）排在建引用之后却无前置成功校验
@@ -39,6 +126,7 @@
 - **修复**：rerank.py 解析三级兜底：标准解析失败→逐块正则打捞（含截断尾块，ans 未知前缀宁不判不冒换序风险）→字段归一 _norm_ans（中英文布尔同义集合）；新增 4 项形态单测 + check_dashscope_matrix.py 真实档回归探针（解析失败时捕获原始输出入证据）
 - **相关文件**：backend/app/services/llm_ops/rerank.py;scripts/check_dashscope_matrix.py;backend/tests/test_rag.py
 - **教训**：对 LLM 结构化输出的降级必须区分「形态失败」（可打捞）与「内容失败」（该放弃）；bool(字符串) 做布尔判定是恒真陷阱，外部契约布尔字段必须显式枚举归一
+
 
 ---
 
@@ -1270,3 +1358,8 @@
 31. **给全局 python 补依赖**：`--no-deps` 抄近道 + 服务在线全量 install = 半卸载混合态（WinError5 文件锁）+ resolver 回溯死循环（17 分钟无进度）→ 重依赖走独立 venv；卸载安装前先停服务
 32. **HBuilderX cli launch 是 watch 常驻进程**：管道接 grep/tail 永久挂起，必须 run_in_background/重定向；双实例互抢（logcat/pyc），第二实例秒退只报文件占用
 33. **门禁资源前置巡检**：全量门禁峰值内存 ~5.5-6GB（0.9GB 可用时 pytest 被内核 SIGKILL 表现"exit 1 无输出"）；C 盘 0 空闲 ENOSPC 连锁；job_kill 只杀 pwsh 不杀 python 孙进程——重跑前 `Get-Process python` 清残留
+
+### 2026-08-29 03:09 UI还原与Vapor迁移（条目 34-35）ts=1787972981
+
+34. **UI像素级还原禁止依赖批量脚本，必须逐页与设计稿数据对比验证**：批量样式更新脚本只匹配通用.card类名，遗漏各页面自定义卡片类名（.hit-card/.msg-card/.profile-card等），导致圆角/背景色未按设计稿更新；批量创建后必须逐页精细审查：1)列出所有样式类名 2)逐一与SVG解析的设计数据对比 3)修正圆角/颜色/透明度等关键参数
+35. **Vapor模式必须全页面setup改造，逐页迁移并验证回调闭包**：uni-app x Vapor模式5.25+仅支持组合式API(setup)，选项式API(data/methods)不兼容；改造要点：1)<script setup lang=uts> 2)data变量改let 3)methods改function 4)生命周期从@dcloudio/uni-app导入 5)移除this引用 6)回调中直接访问闭包变量（录音/chooseMedia等异步回调特别注意）

@@ -1,0 +1,266 @@
+/**
+ * 搜索入口（T-SR-1/2/3/4）：描述性搜索 + 以图搜图 + 降级态
+ *
+ * 链路（后端契约）：
+ *  POST /api/v1/search            → {q, intent, content_types?, time_from?, time_to?, place?, tag?, limit}
+ *    → SearchResult {query, rewritten_query, intent, hits[], total, latency_ms, degraded}
+ *  POST /api/v1/search/image      → multipart file（jpg/png ≤10MB）+ limit → SearchResult
+ *  SearchHit {content_id, content_type, text, taken_at, place, event_id, event_title, score, trace{}}
+ *
+ * 降级态（T-SR-4）：degraded=true（Qdrant 降级纯 PG 检索）→ 页面黄条提示；
+ * 网络失败/后端 5xx → 错误态（resolve(null) + toast）。
+ *
+ * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
+ */
+// O9 收口：错误信封解析统一走 api.ts 的 parseErrorString（原本地 parseSearchError 副本已删）
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+// O15：搜索端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { post, get, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { resolveMediaUrl } from './config'
+import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_CONTENTS } from './contract'
+
+export class SearchHitItem {
+	contentId: string
+	contentType: string
+	text: string
+	takenAt: string
+	place: string
+	eventId: string
+	eventTitle: string
+	score: number
+	trace: string // 溯源摘要（trace dict → 可读文本）
+	/** 缩略图 URL（已 resolve；照片类结果卡显示用；空串=无图） */
+	thumbnailUrl: string
+
+	constructor(
+		contentId: string,
+		contentType: string,
+		text: string,
+		takenAt: string,
+		place: string,
+		eventId: string,
+		eventTitle: string,
+		score: number,
+		trace: string,
+		thumbnailUrl: string
+	) {
+		this.contentId = contentId
+		this.contentType = contentType
+		this.text = text
+		this.takenAt = takenAt
+		this.place = place
+		this.eventId = eventId
+		this.eventTitle = eventTitle
+		this.score = score
+		this.trace = trace
+		this.thumbnailUrl = thumbnailUrl
+	}
+}
+
+export class SearchOutcome {
+	query: string
+	rewrittenQuery: string
+	intent: string
+	hits: Array<SearchHitItem>
+	total: number
+	latencyMs: number
+	degraded: boolean
+
+	constructor(
+		query: string,
+		rewrittenQuery: string,
+		intent: string,
+		hits: Array<SearchHitItem>,
+		total: number,
+		latencyMs: number,
+		degraded: boolean
+	) {
+		this.query = query
+		this.rewrittenQuery = rewrittenQuery
+		this.intent = intent
+		this.hits = hits
+		this.total = total
+		this.latencyMs = latencyMs
+		this.degraded = degraded
+	}
+}
+
+/** 内容类型中文名（结果卡片徽标） */
+export function contentTypeCn(t: string): string {
+	if (t == 'photo') {
+		return '照片'
+	}
+	if (t == 'voice') {
+		return '语音'
+	}
+	if (t == 'article') {
+		return '文章'
+	}
+	return '文字'
+}
+
+/** 溯源 dict → 可读摘要（后端 trace 结构：{matched, dense_score, sparse_score, rrf}） */
+function traceToText(trace: UTSJSONObject | null): string {
+	if (trace == null) {
+		return ''
+	}
+	const parts: Array<string> = []
+	// matched 召回通道
+	const matched = trace.getArray('matched')
+	if (matched != null && matched.length > 0) {
+		const names: Array<string> = []
+		for (let i = 0; i < matched.length; i++) {
+			const m = matched[i] as string
+			if (m == 'dense') {
+				names.push('语义')
+			} else if (m == 'sparse') {
+				names.push('关键词')
+			} else {
+				names.push(m)
+			}
+		}
+		parts.push('召回：' + names.join('+'))
+	}
+	// 分数
+	const dense = trace.getNumber('dense_score')
+	const sparse = trace.getNumber('sparse_score')
+	if (dense != null && dense > 0) {
+		parts.push('语义分 ' + Math.round(dense * 1000) / 10)
+	}
+	if (sparse != null && sparse > 0) {
+		parts.push('关键词分 ' + Math.round(sparse * 1000) / 10)
+	}
+	return parts.join(' · ')
+}
+
+/** 解析 SearchResult 信封 → SearchOutcome；失败 resolve(null) */
+function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
+	if (body == null) {
+		return null
+	}
+	const d = dataObj(body)
+	if (d == null) {
+		return null
+	}
+	const hits: Array<SearchHitItem> = []
+	const arr = d.getArray('hits')
+	if (arr != null) {
+		for (let i = 0; i < arr.length; i++) {
+			const h = arr[i] as UTSJSONObject
+			hits.push(
+				new SearchHitItem(
+					h.getString('content_id') ?? '',
+					h.getString('content_type') ?? 'text',
+					h.getString('text') ?? '',
+					h.getString('taken_at') ?? '',
+					h.getString('place') ?? '',
+					h.getString('event_id') ?? '',
+					h.getString('event_title') ?? '',
+					h.getNumber('score') as number,
+					traceToText(h.getJSON('trace')),
+					// 后端 SearchHit 契约暂无图字段（向量召回路径不 join contents 存储键），
+					// 结果卡图片位留空。需要时后端在 SearchHit 补 thumbnail_url 即可，
+					// 客户端本字段已就位，无需再改。
+					''
+				)
+			)
+		}
+	}
+	return new SearchOutcome(
+		d.getString('query') ?? '',
+		d.getString('rewritten_query') ?? '',
+		d.getString('intent') ?? '',
+		hits,
+		d.getNumber('total') as number,
+		d.getNumber('latency_ms') as number,
+		d.getBoolean('degraded') ?? false
+	)
+}
+
+/**
+ * 最近内容（搜索页进入时的默认列表）——2026-08-31 新增
+ *
+ * 为什么需要：后端 `SearchQuery.q` 要求 min_length=1，**不支持空词查询**；
+ * 而 mock 关掉后搜索页进入时关键词为空 → 结果区一片空白，页面看着像坏了。
+ * 改用 GET /api/v1/contents 拉最近内容兜底，用户一进页面就能看到自己的记忆。
+ *
+ * 与真实搜索的语义差异（调用方需知）：
+ *  - score 恒为 0：表示"按时间倒序"，不是"按相关度"
+ *  - intent='recent'：区别于搜索的 text/image/mixed
+ *  - eventId/eventTitle 为空：contents 列表端点不返回事件归属
+ *  - 命中缩略图 URL（contents 端点有 thumbnail_url，搜索端点暂无）
+ */
+export function fetchRecentContents(limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
+	return new Promise<SearchOutcome | null>((resolve) => {
+		get(PATH_CONTENTS + '?limit=' + limit).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const raw = d.getArray('items')
+			const hits: Array<SearchHitItem> = []
+			if (raw != null) {
+				const arr = raw as Array<UTSJSONObject>
+				for (let i = 0; i < arr.length; i++) {
+					const c = arr[i]
+					const ct = c.getString('content_type') ?? 'text'
+					if (contentTypes.length > 0 && contentTypes.indexOf(ct) < 0) {
+						continue // 与 filterContentTypes() 同源，服务端不筛则在端上筛
+					}
+					hits.push(new SearchHitItem(
+						c.getString('id') ?? '',
+						ct,
+						c.getString('text') ?? '',
+						c.getString('taken_at') ?? c.getString('created_at') ?? '',
+						c.getString('place') ?? '',
+						'',
+						'',
+						0,
+						'',
+						resolveMediaUrl(c.getString('thumbnail_url'))
+					))
+				}
+			}
+			resolve(new SearchOutcome('', '', 'recent', hits, hits.length, 0, false))
+		})
+	})
+}
+
+/** POST /search：描述性搜索；contentTypes 非空时按 photo/voice/text/article 过滤；返回 SearchOutcome 或 null */
+export function searchText(query: string, limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
+	const body: UTSJSONObject = {
+		q: query,
+		limit: limit
+	}
+	// 仅在指定类型时下发 content_types（空数组=全部，不下发避免后端误判）
+	if (contentTypes.length > 0) {
+		body.set('content_types', contentTypes)
+	}
+	return new Promise<SearchOutcome | null>((resolve) => {
+		post(PATH_SEARCH, body).then((res: UTSJSONObject | null) => {
+			resolve(parseSearch(res))
+		})
+	})
+}
+
+/** POST /search/image：以图搜图（multipart）；返回 SearchOutcome 或 null
+ *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
+export function searchByImage(filePath: string, limit: number): Promise<SearchOutcome | null> {
+	return new Promise<SearchOutcome | null>((resolve) => {
+		uploadFileHttp(PATH_SEARCH_IMAGE + '?limit=' + limit, filePath, 'file', null, 30000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				// uploadFile res.data 是 string（lessons.md #3）；uploadFileHttp 已按信封解析
+				resolve(parseSearch(hr.body))
+				return
+			}
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '搜索失败（HTTP ' + hr.status + '）') : '搜索失败（HTTP ' + hr.status + '）'
+			showErrorToast(new Error(msg))
+			resolve(null)
+		})
+	})
+}

@@ -1,17 +1,31 @@
 <template>
 	<view class="page">
-		<!-- 顶栏：干净，不做旧（视觉规范：导航/按钮保持干净） -->
-		<view class="header">
-			<text class="header-title serif">忆述光华</text>
-			<text class="header-sub">翻看记忆，去年今日</text>
+		<!-- 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） -->
+		<view class="hero-section">
+			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" />
+			<view class="hero-overlay-top"></view>
+			<view class="hero-overlay-bottom"></view>
+			<view class="hero-avatar"><text class="hero-avatar-char serif">峰</text></view>
+			<view class="hero-content">
+				<text class="hero-title serif">回忆</text>
+				<text class="hero-sub1">八月 · 28 条新记忆</text>
+				<text class="hero-sub2">清晨的湖边，风很轻 · 8月28日 07:42</text>
+			</view>
 		</view>
 
-		<!-- 同步状态横幅（B4 客户端：Wave3 AgentH 组件，集成 Agent 接线一行） -->
+		<!-- 玻璃搜索胶囊（backdrop-blur + 白色内高光） -->
+		<view class="search-capsule pressable" @tap="goSearch">
+			<!-- uvue App 端 <image> 不支持 width/height 属性绑定，尺寸走 CSS（.search-icon 36rpx≈18px） -->
+			<image class="search-icon" src="/static/icons/index-search.svg" />
+			<text class="search-placeholder">描述一段回忆，帮你找</text>
+		</view>
+
+		<!-- 同步状态横幅 -->
 		<UploadStatusBanner />
 
-		<scroll-view class="scroll" scroll-y refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
-			<!-- 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄；划掉 dismiss） -->
-			<view v-if="echo != null" class="echo-card">
+		<scroll-view class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+			<!-- 回响卡片（去年今日 · 角贴 + 泛黄） -->
+			<view v-if="echo != null" class="echo-card pressable">
 				<view class="echo-corner">
 					<text class="echo-corner-text">去年今日</text>
 				</view>
@@ -21,34 +35,24 @@
 					<text class="meta-item">{{ echo.place }}</text>
 				</view>
 				<view class="echo-actions">
-					<view class="echo-dismiss" @tap="dismissEchoCard">
+					<view class="echo-dismiss pressable" @tap="dismissEchoCard">
 						<text class="echo-dismiss-text">划掉</text>
 					</view>
 				</view>
 			</view>
 
-			<!-- 加载中 -->
+			<!-- 加载中 / 时间轴（空状态已拆为独立页 /pages/empty/empty，fetchAll 空数据时 redirect 过去） -->
 			<view v-if="!loaded" class="center-box">
 				<text class="muted">正在翻找相纸…</text>
 			</view>
 
-			<!-- 空状态：空白相纸插画 + 文案 + 引导（B-F8-3） -->
-			<view v-else-if="days.length === 0 && pendingEvents.length === 0" class="center-box">
-				<image class="empty-img" src="/static/empty-photo.svg" mode="aspectFit" />
-				<text class="empty-title serif">相册还空着</text>
-				<text class="empty-desc">授权相册后，照片会自动整理成一天的记忆卡片</text>
-				<view class="cta" @tap="onGrantAndStart">
-					<text class="cta-text">授权相册 · 开始整理</text>
-				</view>
-			</view>
-
-			<!-- 时间轴：L1 日卡片 + L2 主题两级 + L2 待确认区（B-F8-1 · B3-5） -->
+			<!-- 时间轴：L1 日卡片 + L2 主题两级 -->
 			<view v-else class="feed">
-				<!-- L2 待确认区（B3-5：confidence<0.7 的 draft 独立分组；确认/忽略） -->
+				<!-- L2 待确认区 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
 					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
-					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2">
+					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2 pressable">
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
 							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
 						</view>
@@ -58,13 +62,36 @@
 							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
 						</view>
 						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+						</view>
+						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列 -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡：左侧琥珀引用竖线 + 引言体 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
+							</view>
 						</view>
 						<view class="pending-actions">
-							<view class="pending-btn pending-btn-ghost" @tap="ignorePending(ev)">
+							<view class="pending-btn pending-btn-ghost pressable" @tap="ignorePending(ev)">
 								<text class="pending-btn-text">忽略</text>
 							</view>
-							<view class="pending-btn pending-btn-solid" @tap="confirmPending(ev)">
+							<view class="pending-btn pending-btn-solid pressable" @tap="confirmPending(ev)">
 								<text class="pending-btn-text">确认</text>
 							</view>
 						</view>
@@ -72,116 +99,66 @@
 				</view>
 
 				<view v-for="(day, dayIdx) in days" :key="day.key" class="day-block">
-					<text class="day-title serif">{{ day.label }}</text>
-					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'">
-						<!-- S-MO-1 操作入口（确认/合并；用户操作优先，算法不再覆盖） -->
-						<view class="card-ops" @tap="onCardOps(ev, dayIdx)">
+					<view class="day-head">
+						<text class="day-title serif">{{ day.label }}</text>
+						<view class="day-line"></view>
+					</view>
+					<!-- 整卡可点进详情（真机实锤：此前卡片**没绑任何 @tap**，详情页从时间轴无入口）。
+					     内部已有 @tap 的子元素必须加 .stop，否则点操作/照片/播放也会冒泡进详情 -->
+					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'" @tap="openDetail(ev)">
+						<!-- 操作入口 -->
+						<view class="card-ops pressable" @tap.stop="onCardOps(ev, dayIdx)">
 							<text class="card-ops-text">⋯</text>
 						</view>
-						<!-- 封面展示（B3-4：cover_content_id 有值显示，无则首图回退） -->
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
 							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
 						</view>
-						<text class="card-title serif" :class="ev.level === 1 ? 'title-l1' : 'title-l2'">{{ ev.title }}</text>
+						<text class="card-title serif">{{ ev.title }}</text>
 						<view class="card-meta">
-							<text v-if="ev.place != ''" class="meta-item">{{ ev.place }}</text>
+							<text class="meta-item">{{ levelText(ev.level) }}</text>
 							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
 						</view>
-						<!-- 照片条（会话照片；点开 → 反向入口"属于"列表） -->
 						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap.stop="onPhotoTap(cid)" />
 						</view>
-						<view v-if="ev.level === 1 && ev.children.length > 0" class="l2-list">
-							<view v-for="child in ev.children" :key="child.id" class="l2-chip">
-								<text class="l2-chip-title">{{ child.title }}</text>
-								<text class="l2-chip-count rust">{{ child.photoCount }}张</text>
+						<!-- 语音卡 -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
 							</view>
 						</view>
 					</view>
 				</view>
-				<view class="feed-foot">
-					<text class="muted">—— 记忆在此 ——</text>
-				</view>
 			</view>
 		</scroll-view>
 
-		<!-- 拆分选片面板（S-MO-1 split UI · 2026-08-25） -->
-		<view v-if="showSplitPanel" class="split-mask" @tap="cancelSplit">
-			<view class="split-panel" @tap.stop>
-				<text class="split-title serif">拆分这张卡</text>
-				<text class="split-sub muted">勾选要拆出的内容，剩余留在原卡</text>
-				<scroll-view class="split-list" scroll-y>
-					<view v-if="splitLoading" class="split-empty">
-						<text class="muted">正在加载成员…</text>
-					</view>
-					<view v-else-if="splitItems.length === 0" class="split-empty">
-						<text class="muted">没有可拆分的成员</text>
-					</view>
-					<view v-for="(item, idx) in splitItems" :key="item.contentId" class="split-row" @tap="toggleSplitItem(idx)">
-						<view class="split-check" :class="item.selected ? 'split-check-on' : ''">
-							<text v-if="item.selected" class="split-check-mark">✓</text>
-						</view>
-						<view class="split-row-main">
-							<text class="split-row-title">{{ item.title == '' ? '（无文字）' : item.title }}</text>
-							<text class="split-row-meta muted">{{ item.contentType }} · {{ splitTimeText(item.takenAt) }}</text>
-						</view>
-					</view>
-				</scroll-view>
-				<view class="split-actions">
-					<view class="split-btn split-btn-ghost" @tap="cancelSplit">
-						<text class="split-btn-text">取消</text>
-					</view>
-					<view class="split-btn split-btn-solid" @tap="confirmSplit">
-						<text class="split-btn-text">确认拆分</text>
-					</view>
-				</view>
-			</view>
-		</view>
+		<!-- 统一 TabBar 组件 -->
+		<TabBar active="index" @plus="sheetOpen = true" />
 
-		<!-- 照片详情：反向入口"属于：事件列表"（B3-4 · 2026-08-26 Wave2 E） -->
-		<view v-if="showPhotoDetail" class="split-mask" @tap="closePhotoDetail">
-			<view class="split-panel" @tap.stop>
-				<text class="split-title serif">照片属于</text>
-				<text class="split-sub muted">这张照片属于 {{ photoDetailEvents.length }} 个事件（多对多）</text>
-				<view v-if="photoDetailPath != ''" class="photo-detail-img-wrap">
-					<image class="photo-detail-img" :src="photoDetailPath" mode="aspectFit" />
-				</view>
-				<scroll-view class="split-list" scroll-y>
-					<view v-if="photoDetailLoading" class="split-empty">
-						<text class="muted">正在查询…</text>
-					</view>
-					<view v-else-if="photoDetailEvents.length === 0" class="split-empty">
-						<text class="muted">尚未归属任何事件</text>
-					</view>
-					<view v-for="(ref, idx) in photoDetailEvents" :key="ref.id" class="belongs-row" @tap="jumpFromPhoto(idx)">
-						<view class="belongs-badge" :class="ref.level === 1 ? 'belongs-badge-l1' : 'belongs-badge-l2'">
-							<text class="belongs-badge-text">{{ levelTag(ref.level) }}</text>
-						</view>
-						<view class="belongs-main">
-							<text class="belongs-title">{{ ref.title }}</text>
-							<text class="belongs-meta muted">{{ belongsMeta(ref) }}</text>
-						</view>
-					</view>
-				</scroll-view>
-				<view class="split-actions">
-					<view class="split-btn split-btn-ghost" @tap="closePhotoDetail">
-						<text class="split-btn-text">关闭</text>
-					</view>
-				</view>
-			</view>
-		</view>
-
-		<!-- 上传进度浮层（B-UP-1 进度回调） -->
-		<view v-if="uploading" class="upload-bar">
-			<text class="upload-text">上传中 {{ uploadDone }}/{{ uploadTotal }}{{ uploadFailed > 0 ? '（失败' + uploadFailed + '）' : '' }}</text>
-		</view>
-
-		<!-- 底部 Tab（T-NA-1） -->
-		<yishu-tabbar current="home" />
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	import { onLoad, onShow } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchTimeline, TimelineEvent, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import { formatMonthDay } from '@/utils/time'
@@ -218,456 +195,692 @@
 		}
 	}
 
-	export default {
-		data() {
-			return {
-				loaded: false,
-				refreshing: false,
-				days: [] as Array<DayGroup>,
-				pendingEvents: [] as Array<TimelineEvent>,
-				uploading: false,
-				uploadDone: 0,
-				uploadTotal: 0,
-				uploadFailed: 0,
-				echo: null as EchoCard | null,
-				showSplitPanel: false,
-				splitEventId: '',
-				splitItems: [] as Array<SplitItem>,
-				splitLoading: false,
-				// 照片→事件反向入口（B3-4）
-				showPhotoDetail: false,
-				photoDetailPath: '',
-				photoDetailEvents: [] as Array<ContentEventRef>,
-				photoDetailLoading: false,
-				// 会话照片/事件映射（封面、照片条）
-				localPhotoPath: [] as Array<PhotoPathEntry>,
-				eventPhotoIds: [] as Array<EventPhotoEntry>
-			}
-		},
-		onLoad() {
-			ensureLogin().then((ok: boolean) => {
-				this.reload()
-			})
-			// S-SY-5 三路触发 · 前台启动：已授权过则自动恢复监听（App 重启后 ContentObserver 丢失）
+	// 响应式数据（uvue script setup 裸 let 非响应式，必须 ref —— 真机实锤：数据到位但界面停在加载态）
+	let loaded = ref(false)
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let refreshing = ref(false)
+	let days = ref<Array<DayGroup>>([])
+	let pendingEvents = ref<Array<TimelineEvent>>([])
+	let uploading = ref(false)
+	let uploadDone = ref(0)
+	let uploadTotal = ref(0)
+	let uploadFailed = ref(0)
+	let echo = ref<EchoCard | null>(null)
+	let showSplitPanel = ref(false)
+	let splitEventId = ref('')
+	let splitItems = ref<Array<SplitItem>>([])
+	let splitLoading = ref(false)
+	let showPhotoDetail = ref(false)
+	let photoDetailPath = ref('')
+	let photoDetailEvents = ref<Array<ContentEventRef>>([])
+	let photoDetailLoading = ref(false)
+	let localPhotoPath = ref<Array<PhotoPathEntry>>([])
+	let eventPhotoIds = ref<Array<EventPhotoEntry>>([])
+	/**
+	 * content_id → 服务端缩略图 URL（Valet Key 票据，已 resolve 成绝对 URL）
+	 *
+	 * 为什么需要：`<image :src>` 带不了 Authorization header，历史照片此前只能靠
+	 * 「本次会话刚上传」的本地路径显示，冷启动必然空白。服务端现在随 timeline
+	 * 下发票据 URL，这里建索引供 photoPathOf() 回退。
+	 * 非响应式：attachPhotos() 在 days.value 赋值之后、渲染之前填充，无需触发额外更新。
+	 */
+	let photoUrlById: Map<string, string> = new Map<string, string>()
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面。
+	// 返回 true 表示已自行处理（阻止默认返回行为）。
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// 生命周期
+	onLoad(() => {
+		console.log('[dbg-index] onLoad')
+		ensureLogin().then((ok: boolean) => {
+			console.log('[dbg-index] ensureLogin -> ' + ok)
+			reload()
+		})
+		try {
 			const watch = createPhotoWatch()
 			if (watch.isReadPermissionGranted()) {
-				this.startWatch()
+				startWatch()
 			}
-		},
-		onShow() {
-			// 切前台刷新（第一波数据新鲜度最低要求）
-			if (this.loaded) {
-				this.reload()
+		} catch (e) {
+			console.log('[dbg-index] photoWatch init failed (标准基座无原生插件，忽略): ' + e)
+		}
+	})
+	onShow(() => {
+		if (loaded.value) {
+			reload()
+		}
+	})
+
+	// 导航方法
+	function goSearch(): void {
+		uni.reLaunch({ url: '/pages/search/search' })
+	}
+
+	// 语音播放
+	function playVoice(voice: any): void {
+		if (!voice || !voice.url) {
+			uni.showToast({ title: '语音文件不存在', icon: 'none' })
+			return
+		}
+		uni.showToast({ title: '播放语音：' + (voice.title || '未命名'), icon: 'none' })
+	}
+
+	// 数据加载
+	function reload(): void {
+		console.log('[dbg-index] reload -> flushOpQueue')
+		flushOpQueue().then((_remain: number) => {
+			console.log('[dbg-index] flushOpQueue done, fetchAll')
+			fetchAll()
+		})
+	}
+	// ── 本地 mock 时间轴（视觉验收用）────────────────────────────────────────
+	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
+	//   打开时的危害：events==0 就注入 ev-m1~m4 四条**假 id**（云端不存在），
+	//   页面看着有内容，实则任何真数据都进不来——当时"fetchTimeline 返回 0 条"的
+	//   根因是 8000 端口被 HBuilderX launcher 劫持（见 SOP §17），不是后端没数据。
+	//   现在端口迁 8010 + 真机用户已有真实事件，再开就是自欺欺人。
+	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
+	const USE_MOCK_TIMELINE: boolean = false
+
+	function mockEvents(): Array<TimelineEvent> {
+		const day = 86400000
+		const now = Date.now()
+		const out: Array<TimelineEvent> = []
+		out.push(new TimelineEvent('ev-m1', 1, '清晨的湖边', 'ai', now - day, now - day + 3600000, '光华湖', null, 3, 2, 'confirmed', 0.92, 'ct-m1'))
+		out.push(new TimelineEvent('ev-m2', 2, '手冲咖啡初体验', 'user', now - 2 * day, now - 2 * day + 1800000, '宿舍', null, 1, 1, 'confirmed', 0.88, 'ct-m2'))
+		out.push(new TimelineEvent('ev-m3', 1, '和妈妈的通话', 'ai', now - 3 * day, now - 3 * day + 900000, '上海', null, 0, 1, 'confirmed', 0.95, 'ct-m3'))
+		out.push(new TimelineEvent('ev-m4', 2, '夜谈', 'user', now - 4 * day, now - 4 * day + 7200000, '宿舍', null, 2, 2, 'draft', 0.61, 'ct-m4'))
+		return out
+	}
+	// ── mock 结束 ────────────────────────────────────────────────────────
+
+	function fetchAll(): void {
+		console.log('[dbg-index] fetchAll -> fetchTimeline')
+		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+			console.log('[dbg-index] fetchTimeline resolved: ' + events.length + ' events')
+			if (USE_MOCK_TIMELINE && events.length == 0) {
+				events = mockEvents()
+				console.log('[dbg-index] USE_MOCK_TIMELINE -> 注入 ' + events.length + ' 条 mock 事件')
 			}
-		},
-		methods: {
-			/** 拉取全量（L1+L2）→ 按日分组（L2 挂到同日 L1 之下；draft<0.7 进待确认） */
-			reload(): void {
-				// 2026-08-25 离线 op_log：联网后先补发离线操作，再刷新（顺序执行）
-				flushOpQueue().then((_remain: number) => {
-					this.fetchAll()
-				})
-			},
-			fetchAll(): void {
-				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
-					this.days = this.groupDays(events)
-					this.attachPhotos()
-					this.loaded = true
-					this.refreshing = false
-					// 30s 验收（B3-6）：首批日卡片渲染完成埋点（幂等）
-					if (this.days.length > 0 || this.pendingEvents.length > 0) {
-						recordFirstDayRender()
+			days.value = groupDays(events)
+			attachPhotos()
+			loaded.value = true
+			refreshing.value = false
+			// 空数据 → 独立空状态页（首次登录首屏；画布 2:284~2:311）
+			if (days.value.length === 0 && pendingEvents.value.length === 0) {
+				console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
+				uni.redirectTo({ url: '/pages/empty/empty' })
+				return
+			}
+			if (days.value.length > 0 || pendingEvents.value.length > 0) {
+				recordFirstDayRender()
+			}
+		})
+		fetchTodayEcho().then((card: EchoCard | null) => {
+			echo.value = card
+		})
+	}
+
+	// 整卡进详情：detail 页要的是 **contentId**，而 TimelineEvent.id 是 event id，不能直接用。
+	// 取数优先级：封面 content_id → 照片条第一张 → 都没有则提示（避免跳进空白详情页）
+	function openDetail(ev: TimelineEvent): void {
+		let cid = ev.coverContentId
+		if (cid == '' && ev.photoIds.length > 0) {
+			cid = ev.photoIds[0]
+		}
+		if (cid == '') {
+			uni.showToast({ title: '这条记忆暂无可查看的内容', icon: 'none' })
+			return
+		}
+		console.log('[dbg-index] openDetail contentId=' + cid)
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + cid })
+	}
+
+	// 卡片操作
+	function onCardOps(ev: TimelineEvent, dayIdx: number): void {
+		if (ev.level === 1) {
+			const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
+			uni.showActionSheet({
+				itemList: items,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						doConfirm(ev)
+					} else if (res.tapIndex === 1) {
+						doMerge(ev, dayIdx)
+					} else if (res.tapIndex === 2) {
+						doSplit(ev)
 					}
-				})
-				// T-PL-1：同时拉今日回响（每天≤1 条，无则不显示）
-				fetchTodayEcho().then((card: EchoCard | null) => {
-					this.echo = card
-				})
-			},
-			/** S-MO-1：卡片操作菜单（L1：确认/合并到上一张/拆分；L2：确认主题）
-			 * 2026-08-25 修复：itemList 不再手动加"取消"——showActionSheet 原生自带底部取消按钮，
-			 * 手动加会重复（nova11 实测出现两个"取消"）。取消由原生按钮/fail 回调处理。 */
-			onCardOps(ev: TimelineEvent, dayIdx: number): void {
-				if (ev.level === 1) {
-					const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
-					uni.showActionSheet({
-						itemList: items,
-						success: (res) => {
-							if (res.tapIndex === 0) {
-								this.doConfirm(ev)
-							} else if (res.tapIndex === 1) {
-								this.doMerge(ev, dayIdx)
-							} else if (res.tapIndex === 2) {
-								this.doSplit(ev)
-							}
-						},
-						fail: () => {}
-					})
-				} else {
-					const items2: Array<string> = ['确认这个主题']
-					uni.showActionSheet({
-						itemList: items2,
-						success: (res) => {
-							if (res.tapIndex === 0) {
-								this.doConfirm(ev)
-							}
-						},
-						fail: () => {}
-					})
+				},
+				fail: () => {}
+			})
+		} else {
+			const items2: Array<string> = ['确认这个主题']
+			uni.showActionSheet({
+				itemList: items2,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						doConfirm(ev)
+					}
+				},
+				fail: () => {}
+			})
+		}
+	}
+	function doConfirm(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function getPrevL1Id(dayIdx: number): string {
+		// 修复（2026-08-31）：原写 days.value[i].events.level / .events.id —— events 是数组，
+		// 属性访问恒 undefined → 本函数永远返回空串 → 「合并到上一张」功能整体失效。
+		// 正解：向前逐日找第一张 L1 事件。
+		for (let i = dayIdx - 1; i >= 0; i--) {
+			const evs = days.value[i].events
+			for (let j = 0; j < evs.length; j++) {
+				if (evs[j].level === 1) {
+					return evs[j].id
 				}
-			},
-			/** 确认转正（用户背书后算法不再改动） */
-			doConfirm(ev: TimelineEvent): void {
-				confirmEvent(ev.id).then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已确认', icon: 'none' })
-					} else {
-						uni.showToast({ title: '确认失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			/** 找当前卡片之前的最近一张 L1（合并目标；跳过 L2 组） */
-			getPrevL1Id(dayIdx: number): string {
-				for (let i = dayIdx - 1; i >= 0; i--) {
-					if (this.days[i].events.length > 0 && this.days[i].events[0].level === 1) {
-						return this.days[i].events[0].id
-					}
-				}
-				return ''
-			},
-			/** 合并到上一张 L1（source=当前，target=上一张；target 置 confirmed） */
-			doMerge(ev: TimelineEvent, dayIdx: number): void {
-				const targetId = this.getPrevL1Id(dayIdx)
-				if (targetId == '') {
-					uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
-					return
-				}
-				mergeEvent(ev.id, targetId).then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已合并', icon: 'none' })
-					} else {
-						uni.showToast({ title: '合并失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			/** 拆分：拉成员列表 → 选片面板（2026-08-25 S-MO-1 split UI） */
-			doSplit(ev: TimelineEvent): void {
-				this.splitLoading = true
-				this.showSplitPanel = true
-				this.splitEventId = ev.id
-				this.splitItems = []
-				fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
-					this.splitLoading = false
-					this.splitItems = items
-					if (items.length < 2) {
-						uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
-					}
-				})
-			},
-			toggleSplitItem(idx: number): void {
-				const items = this.splitItems
-				if (idx < 0 || idx >= items.length) {
-					return
-				}
-				const it = items[idx]
-				it.selected = !it.selected
-				items[idx] = it
-				this.splitItems = items
-			},
-			/** 确认拆分：至少选 1 条且不全选（拆出建新事件） */
-			confirmSplit(): void {
-				const items = this.splitItems
-				const ids: Array<string> = []
-				for (let i = 0; i < items.length; i++) {
-					if (items[i].selected) {
-						ids.push(items[i].contentId)
-					}
-				}
-				if (ids.length == 0) {
-					uni.showToast({ title: '至少选择一条', icon: 'none' })
-					return
-				}
-				if (ids.length >= items.length) {
-					uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
-					return
-				}
-				splitEvent(this.splitEventId, ids).then((ok: boolean) => {
-					this.showSplitPanel = false
-					if (ok) {
-						uni.showToast({ title: '已拆分', icon: 'none' })
-					} else {
-						uni.showToast({ title: '拆分失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			cancelSplit(): void {
-				this.showSplitPanel = false
-				this.splitItems = []
-			},
-			/** 拆分面板时间文案（epoch ms → MM-DD HH:mm；0=未知；格式化委托 time.ts） */
-			splitTimeText(ts: number): string {
-				if (ts <= 0) {
-					return '时间未知'
-				}
-				return formatMonthDay(ts)
-			},
-			/** T-PL-1：划掉回响（dismiss 不再出现） */
-			dismissEchoCard(): void {
-				const card = this.echo
-				if (card == null) {
-					return
-				}
-				dismissEcho(card.contentId).then((ok: boolean) => {
-					this.echo = null
-					if (ok) {
-						uni.showToast({ title: '已划掉', icon: 'none' })
-					}
-				})
-			},
-			/** 按日分组（委托 timeline.ts buildDayGroups 纯函数；F10 拆分行为等价） */
-			groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
-				const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
-				this.pendingEvents = result.pending
-				return result.groups
-			},
-			/** content_id → 本地路径（会话映射；空=无） */
-			photoPathOf(contentId: string): string {
-				for (let i = 0; i < this.localPhotoPath.length; i++) {
-					if (this.localPhotoPath[i].contentId == contentId) {
-						return this.localPhotoPath[i].path
-					}
-				}
-				return ''
-			},
-			/** event_id → 成员照片 content_id 列表（端侧聚合成员；无=空） */
-			lookupEventPhotos(eventId: string): Array<string> {
-				for (let i = 0; i < this.eventPhotoIds.length; i++) {
-					if (this.eventPhotoIds[i].eventId == eventId) {
-						return this.eventPhotoIds[i].contentIds
-					}
-				}
-				return []
-			},
-			/** 逐卡填充 photoIds + coverPath（封面：cover_content_id 优先，无则首图回退） */
-			attachPhotos(): void {
-				let strips = 0
-				let covers = 0
-				for (let i = 0; i < this.days.length; i++) {
-					const g = this.days[i]
-					for (let j = 0; j < g.events.length; j++) {
-						const ev = g.events[j]
-						ev.photoIds = this.lookupEventPhotos(ev.id)
-						let cover = this.photoPathOf(ev.coverContentId)
-						if (cover == '' && ev.photoIds.length > 0) {
-							cover = this.photoPathOf(ev.photoIds[0])
-						}
-						ev.coverPath = cover
-						if (ev.photoIds.length > 0) {
-							strips++
-						}
-						if (ev.coverPath != '') {
-							covers++
-						}
-					}
-				}
-				for (let j = 0; j < this.pendingEvents.length; j++) {
-					const ev = this.pendingEvents[j]
-					ev.photoIds = this.lookupEventPhotos(ev.id)
-					let cover = this.photoPathOf(ev.coverContentId)
-					if (cover == '' && ev.photoIds.length > 0) {
-						cover = this.photoPathOf(ev.photoIds[0])
-					}
-					ev.coverPath = cover
-					if (ev.photoIds.length > 0) {
-						strips++
-					}
-					if (ev.coverPath != '') {
-						covers++
-					}
-				}
-				console.log('[yishu] attachPhotos: days=' + this.days.length + ' pending=' + this.pendingEvents.length + ' localPaths=' + this.localPhotoPath.length + ' eventPhotoIds=' + this.eventPhotoIds.length + ' strips=' + strips + ' covers=' + covers)
-			},
-			/** 照片点开 → 反向入口"属于：事件列表"（B3-4） */
-			onPhotoTap(contentId: string): void {
-				this.showPhotoDetail = true
-				this.photoDetailLoading = true
-				this.photoDetailPath = this.photoPathOf(contentId)
-				this.photoDetailEvents = []
-				fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
-					this.photoDetailLoading = false
-					this.photoDetailEvents = evs
-				})
-			},
-			closePhotoDetail(): void {
-				this.showPhotoDetail = false
-				this.photoDetailEvents = []
-			},
-			/** "跳转"：MVP 无独立事件详情页，时间轴即跳转目标 → 关闭浮层即可看到该事件 */
-			jumpFromPhoto(_idx: number): void {
-				this.closePhotoDetail()
-			},
-			/** 待确认区：确认转正（调 confirm API） */
-			confirmPending(ev: TimelineEvent): void {
-				confirmEvent(ev.id).then((ok: boolean) => {
-					if (ok) {
-						uni.showToast({ title: '已确认', icon: 'none' })
-					} else {
-						uni.showToast({ title: '确认失败', icon: 'none' })
-					}
-					this.reload()
-				})
-			},
-			/** 待确认区：忽略（MVP 本地隐藏；后端 reject 端点由 Agent D 域） */
-			ignorePending(ev: TimelineEvent): void {
-				ignoreEventLocally(ev.id)
-				uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
-				this.reload()
-			},
-			/** 事件层级标签（待确认区/反向入口） */
-			levelText(level: number): string {
-				if (level === 1) {
-					return '日卡片'
-				} else if (level === 2) {
-					return '主题'
-				} else if (level === 3) {
-					return '主题流'
-				}
-				return '瞬间'
-			},
-			levelTag(level: number): string {
-				if (level === 1) {
-					return '日卡'
-				} else if (level === 2) {
-					return '主题'
-				} else if (level === 3) {
-					return '主题流'
-				}
-				return '瞬间'
-			},
-			belongsMeta(ref: ContentEventRef): string {
-				const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
-				return ref.photoCount.toFixed(0) + '张 · ' + st
-			},
-			onRefresh(): void {
-				this.refreshing = true
-				this.reload()
-			},
-			/** 授权相册 → 启动监听（B-UT-5 前置；权限请求由插件原生实现） */
-			onGrantAndStart(): void {
-				console.log('[yishu] CTA tapped')
-				const watch = createPhotoWatch()
-				console.log('[yishu] permission granted? ' + watch.isReadPermissionGranted())
-				watch.requestReadPermission()
-				this.startWatch()
-			},
-			/** 启动 PhotoObserver 监听（幂等） */
-			startWatch(): void {
-				console.log('[yishu] startWatch begin')
-				// 30s 验收（B3-6）：授权/监听启动 = 计时起点（幂等）
-				recordGrantTime()
-				const watch = createPhotoWatch()
-				watch.start((items: Array<PhotoItem>) => {
-					console.log('[yishu] batch received: ' + items.length)
-					if (items.length === 0) {
-						return
-					}
-					this.handleBatch(items)
-				})
-				console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
-				uni.showToast({ title: '已开始监听相册', icon: 'none' })
-			},
-			/** 攒批 → 上传（并发≤3）→ 端侧聚合 L1 → 事件上云 → 拉 timeline 刷新（B-UP-2 + S-AG-3/4） */
-			handleBatch(items: Array<PhotoItem>): void {
-				this.uploading = true
-				this.uploadDone = 0
-				this.uploadTotal = items.length
-				this.uploadFailed = 0
-				uploadBatch(items, (p: UploadProgress) => {
-					this.uploadDone = p.done
-					this.uploadTotal = p.total
-					this.uploadFailed = p.failed
-				}).then((uploaded: Array<UploadedPhoto>) => {
-					this.uploading = false
-					if (this.uploadFailed > 0) {
-						uni.showToast({ title: '有 ' + this.uploadFailed + ' 张上传失败', icon: 'none' })
-					}
-					// 端侧聚合：上传成功照片 → L1 日卡片事件（B3-6 端侧 L0/L1 真值）
-					if (uploaded.length > 0) {
-						// 会话照片映射：content_id → 本地路径（封面/照片条显示）
-						for (let i = 0; i < uploaded.length; i++) {
-							this.localPhotoPath.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
-						}
-						const tz = -new Date().getTimezoneOffset()
-						const agg = aggregateToEvents(uploaded, tz)
-						const events: Array<UTSJSONObject> = []
-						for (let i = 0; i < agg.events.length; i++) {
-							const ev = agg.events[i]
-							const obj: UTSJSONObject = {
-								client_event_id: ev.clientEventId,
-								title: ev.title,
-								start_time: isoString(ev.startTime),
-								end_time: isoString(ev.endTime),
-								photo_ids: ev.photoIds
-							}
-							events.push(obj)
-						}
-						if (events.length > 0) {
-							syncClientEvents(events).then((out: SyncOutcome | null) => {
-								if (out != null) {
-									console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
-									// 服务端 event_id → 成员照片映射（照片条/封面按云端 id 关联；F10 委托 event_ops 纯函数）
-									const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
-									for (let m = 0; m < mapped.length; m++) {
-										this.eventPhotoIds.push(mapped[m])
-									}
-									console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + this.eventPhotoIds.length)
-								} else {
-									console.error('[yishu] 事件上云失败（重试耗尽）')
-									uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
-								}
-								this.reload()
-							})
-							return
-						}
-					}
-					this.reload()
-				})
 			}
 		}
+		return ''
+	}
+	function doMerge(ev: TimelineEvent, dayIdx: number): void {
+		const targetId = getPrevL1Id(dayIdx)
+		if (targetId == '') {
+			uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
+			return
+		}
+		mergeEvent(ev.id, targetId).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已合并', icon: 'none' })
+			} else {
+				uni.showToast({ title: '合并失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+
+	// 拆分
+	function doSplit(ev: TimelineEvent): void {
+		splitLoading.value = true
+		showSplitPanel.value = true
+		splitEventId.value = ev.id
+		splitItems.value = []
+		fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
+			splitLoading.value = false
+			splitItems.value = items
+			if (items.length < 2) {
+				uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
+			}
+		})
+	}
+	function toggleSplitItem(idx: number): void {
+		const items = splitItems.value
+		if (idx < 0 || idx >= items.length) {
+			return
+		}
+		const it = items[idx]
+		it.selected = !it.selected
+		items[idx] = it
+		splitItems.value = items
+	}
+	function confirmSplit(): void {
+		const items = splitItems.value
+		const ids: Array<string> = []
+		for (let i = 0; i < items.length; i++) {
+			if (items[i].selected) {
+				ids.push(items[i].contentId)
+			}
+		}
+		if (ids.length == 0) {
+			uni.showToast({ title: '至少选择一条', icon: 'none' })
+			return
+		}
+		if (ids.length >= items.length) {
+			uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
+			return
+		}
+		splitEvent(splitEventId.value, ids).then((ok: boolean) => {
+			showSplitPanel.value = false
+			if (ok) {
+				uni.showToast({ title: '已拆分', icon: 'none' })
+			} else {
+				uni.showToast({ title: '拆分失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function cancelSplit(): void {
+		showSplitPanel.value = false
+		splitItems.value = []
+	}
+	function splitTimeText(ts: number): string {
+		if (ts <= 0) {
+			return '时间未知'
+		}
+		return formatMonthDay(ts)
+	}
+
+	// 回响
+	function dismissEchoCard(): void {
+		const card = echo.value
+		if (card == null) {
+			return
+		}
+		dismissEcho(card.contentId).then((ok: boolean) => {
+			echo.value = null
+			if (ok) {
+				uni.showToast({ title: '已划掉', icon: 'none' })
+			}
+		})
+	}
+
+	// 照片映射
+	function groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
+		const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
+		pendingEvents.value = result.pending
+		return result.groups
+	}
+	/**
+	 * 照片显示路径：本地优先 → 服务端票据 URL 回退（2026-08-31 修复）
+	 *
+	 * 本地：本次会话上传的照片（localPhotoPath，零延迟、离线可用）
+	 * 服务端：timeline 下发的缩略图 URL（历史照片的唯一来源；此前缺这一层回退，
+	 *       导致冷启动时 <image :src=""> 恒空 —— "卡片没照片"的直接根因之一）
+	 */
+	// RecordSheet 保存成功回调：重新拉 timeline，让刚录入的记忆立刻上屏
+	function onRecordSaved(): void {
+		reload()
+	}
+
+	function photoPathOf(contentId: string): string {
+		for (let i = 0; i < localPhotoPath.value.length; i++) {
+			if (localPhotoPath.value[i].contentId == contentId) {
+				return localPhotoPath.value[i].path
+			}
+		}
+		const remote = photoUrlById.get(contentId)
+		return remote == null ? '' : remote
+	}
+	function lookupEventPhotos(eventId: string): Array<string> {
+		for (let i = 0; i < eventPhotoIds.value.length; i++) {
+			if (eventPhotoIds.value[i].eventId == eventId) {
+				return eventPhotoIds.value[i].contentIds
+			}
+		}
+		return []
+	}
+	/**
+	 * 单事件挂载照片（服务端优先，本地会话补充）——2026-08-31 重写
+	 *
+	 * 三层取值顺序：本地路径（刚上传）＞ 服务端票据 URL（历史照片）＞ 空。
+	 */
+	function attachEventPhotos(ev: TimelineEvent): void {
+		// ① 先把服务端下发的成员 URL 收进全局表，供 photoPathOf() 回退。
+		//    必须在算封面之前：封面的第三顺位回退依赖这张表。
+		for (let k = 0; k < ev.photos.length; k++) {
+			const ph = ev.photos[k]
+			if (ph.thumbnailUrl != '') {
+				photoUrlById.set(ph.contentId, ph.thumbnailUrl)
+			}
+		}
+		// ② photoIds：服务端已下发则**保留**（timeline 按 taken_at 排好序）。
+		//    ⚠️ 原代码无条件 `ev.photoIds = lookupEventPhotos(ev.id)` —— 本地表在
+		//    冷启动/未上传时是空数组，会把服务端填好的值覆盖成空 → 照片条恒空。
+		//    这是"卡片没照片"最直接的那一层。
+		if (ev.photoIds.length == 0) {
+			ev.photoIds = lookupEventPhotos(ev.id)
+		}
+		// ③ 封面：本地路径 → 服务端 cover_url → 首图
+		let cover = photoPathOf(ev.coverContentId)
+		if (cover == '' && ev.coverUrl != '') {
+			cover = ev.coverUrl
+		}
+		if (cover == '' && ev.photoIds.length > 0) {
+			cover = photoPathOf(ev.photoIds[0])
+		}
+		ev.coverPath = cover
+	}
+
+	function attachPhotos(): void {
+		let strips = 0
+		let covers = 0
+		let remote = 0
+		photoUrlById = new Map<string, string>()
+		for (let i = 0; i < days.value.length; i++) {
+			const g = days.value[i]
+			for (let j = 0; j < g.events.length; j++) {
+				const ev = g.events[j]
+				attachEventPhotos(ev)
+				remote += ev.photos.length
+				if (ev.photoIds.length > 0) {
+					strips++
+				}
+				if (ev.coverPath != '') {
+					covers++
+				}
+			}
+		}
+		for (let j = 0; j < pendingEvents.value.length; j++) {
+			const ev = pendingEvents.value[j]
+			attachEventPhotos(ev)
+			remote += ev.photos.length
+			if (ev.photoIds.length > 0) {
+				strips++
+			}
+			if (ev.coverPath != '') {
+				covers++
+			}
+		}
+		console.log('[yishu] attachPhotos: days=' + days.value.length + ' pending=' + pendingEvents.value.length + ' localPaths=' + localPhotoPath.value.length + ' eventPhotoIds=' + eventPhotoIds.value.length + ' serverPhotos=' + remote + ' strips=' + strips + ' covers=' + covers)
+	}
+
+	// 照片详情
+	function onPhotoTap(contentId: string): void {
+		showPhotoDetail.value = true
+		photoDetailLoading.value = true
+		photoDetailPath.value = photoPathOf(contentId)
+		photoDetailEvents.value = []
+		fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
+			photoDetailLoading.value = false
+			photoDetailEvents.value = evs
+		})
+	}
+	function closePhotoDetail(): void {
+		showPhotoDetail.value = false
+		photoDetailEvents.value = []
+	}
+	function jumpFromPhoto(_idx: number): void {
+		closePhotoDetail()
+	}
+
+	// 待确认
+	function confirmPending(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function ignorePending(ev: TimelineEvent): void {
+		ignoreEventLocally(ev.id)
+		uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
+		reload()
+	}
+
+	// 工具方法
+	function levelText(level: number): string {
+		if (level === 1) {
+			return '日卡片'
+		} else if (level === 2) {
+			return '主题'
+		} else if (level === 3) {
+			return '主题流'
+		}
+		return '瞬间'
+	}
+	function levelTag(level: number): string {
+		if (level === 1) {
+			return '日卡'
+		} else if (level === 2) {
+			return '主题'
+		} else if (level === 3) {
+			return '主题流'
+		}
+		return '瞬间'
+	}
+	function belongsMeta(ref: ContentEventRef): string {
+		const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
+		return ref.photoCount.toFixed(0) + '张 · ' + st
+	}
+	function onRefresh(): void {
+		refreshing.value = true
+		reload()
+	}
+
+	// 相册监听
+	function startWatch(): void {
+		console.log('[yishu] startWatch begin')
+		recordGrantTime()
+		const watch = createPhotoWatch()
+		watch.start((items: Array<PhotoItem>) => {
+			console.log('[yishu] batch received: ' + items.length)
+			if (items.length === 0) {
+				return
+			}
+			handleBatch(items)
+		})
+		console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
+		uni.showToast({ title: '已开始监听相册', icon: 'none' })
+	}
+	function handleBatch(items: Array<PhotoItem>): void {
+		uploading.value = true
+		uploadDone.value = 0
+		uploadTotal.value = items.length
+		uploadFailed.value = 0
+		uploadBatch(items, (p: UploadProgress) => {
+			uploadDone.value = p.done
+			uploadTotal.value = p.total
+			uploadFailed.value = p.failed
+		}).then((uploaded: Array<UploadedPhoto>) => {
+			uploading.value = false
+			if (uploadFailed.value > 0) {
+				uni.showToast({ title: '有 ' + uploadFailed.value + ' 张上传失败', icon: 'none' })
+			}
+			if (uploaded.length > 0) {
+				for (let i = 0; i < uploaded.length; i++) {
+					localPhotoPath.value.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
+				}
+				const tz = -new Date().getTimezoneOffset()
+				const agg = aggregateToEvents(uploaded, tz)
+				const events: Array<UTSJSONObject> = []
+				for (let i = 0; i < agg.events.length; i++) {
+					const ev = agg.events[i]
+					const obj: UTSJSONObject = {
+						client_event_id: ev.clientEventId,
+						title: ev.title,
+						start_time: isoString(ev.startTime),
+						end_time: isoString(ev.endTime),
+						photo_ids: ev.photoIds
+					}
+					events.push(obj)
+				}
+				if (events.length > 0) {
+					syncClientEvents(events).then((out: SyncOutcome | null) => {
+						if (out != null) {
+							console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
+							const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
+							for (let m = 0; m < mapped.length; m++) {
+								eventPhotoIds.value.push(mapped[m])
+							}
+							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + eventPhotoIds.value.length)
+						} else {
+							console.error('[yishu] 事件上云失败（重试耗尽）')
+							uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
+						}
+						reload()
+					})
+					return
+				}
+			}
+			reload()
+		})
 	}
 </script>
 
+
 <style>
-	/* 视觉规范 v1：相纸白底 / 墨褐文字 / 锈红强调；标题衬线；卡片撕边+底部投影；≥30% 留白 */
+	/* 视觉规范 v2：像素级还原 SVG 设计稿
+	   背景 #f8f7f4 / 卡片 #ffffff 圆角20 / 玻璃 TabBar #ffffff8c 圆角31
+	   主文字 #3a2e25 / 次文字 #8a7a6a / 锈红 #b05a3a / 琥珀 #c4913c */
 	.page {
 		flex: 1;
-		background-color: #F6F1E7;
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		padding-top: 88rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
+		padding-top: 0;
 	}
 
 	.serif {
-		font-family: "Noto Serif CJK SC", serif;
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
 	}
 
+	/* 顶栏：干净，不做旧 */
 	.header {
-		padding-top: 24rpx;
+		padding-top: 48rpx;
 		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
 	}
 	.header-title {
-		font-size: 52rpx;
-		color: #3A2E25;
+		font-size: 44rpx;
+		color: #3a2e25;
 		font-weight: bold;
-		letter-spacing: 6rpx;
+		letter-spacing: 4rpx;
 	}
 	.header-sub {
 		margin-top: 8rpx;
 		font-size: 26rpx;
 		color: #8a7a6a;
+	}
+
+	/* 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） */
+	.hero-section {
+		position: relative;
+		width: 100%;
+		height: 600rpx;
+		overflow: hidden;
+	}
+	.hero-image {
+		width: 100%;
+		height: 100%;
+	}
+	.hero-overlay-top {
+		position: absolute;
+		/* absolute-ok: hero 顶部暗化遮罩 */
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 269rpx;
+		/* 画布 2:257：垂直暗化 rgba(25,20,15) a0.5→0.28@50%→0。uvue 限三参数，双标线性插值中点≈0.25 与 0.28 近似 */
+		background: linear-gradient(to bottom, rgba(25,20,15,0.5), rgba(25,20,15,0));
+	}
+	.hero-overlay-bottom {
+		position: absolute;
+		/* absolute-ok: hero 底部溶解遮罩 */
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 269rpx;
+		/* 画布 2:258：底部米色垂直溶解 #F8F7F4 a0→0.78@75%→1。三参数限两标，溶解曲线近似 */
+		background: linear-gradient(to bottom, rgba(248,247,244,0), #f8f7f4);
+	}
+	.hero-avatar {
+		position: absolute;
+		/* absolute-ok: hero 头像角标（画布锚点） */
+		top: 111rpx;
+		right: 38rpx;
+		width: 77rpx;
+		height: 77rpx;
+		border-radius: 38.5rpx;
+		background-color: #c4913c;
+		border-width: 2rpx;
+		border-color: rgba(255,255,255,0.7);
+		border-style: solid;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.hero-avatar-char {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #ffffff;
+		font-weight: 600;
+	}
+	/* 画布真值（2026-09-01 重拉 index_canvas.json）：
+	   大标题 px(20,56) fs40 → rpx(38.5,107.7) fs76.9，白 a1.0，无阴影
+	   副标题 px(20,110) fs13 → rpx(38.5,211.5) fs25，白 a0.85
+	   照片说明 px(20,124) fs13 → rpx(38.5,238.5) fs25，白 a1.0，宽 226px→434.6rpx */
+	.hero-content {
+		position: absolute;
+		/* absolute-ok: hero 文案容器（铺满锚定） */
+		left: 0rpx;
+		top: 0rpx;
+		right: 0rpx;
+		bottom: 0rpx;
+	}
+	.hero-title {
+		position: absolute;
+		/* absolute-ok: hero 大标题（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 107.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 76.9rpx;
+		color: #ffffff;
+		font-weight: bold;
+	}
+	.hero-sub1 {
+		position: absolute;
+		/* absolute-ok: hero 副标题（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 211.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: rgba(255,255,255,0.85);
+	}
+	.hero-sub2 {
+		position: absolute;
+		/* absolute-ok: hero 照片说明（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 238.5rpx;
+		width: 434.6rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #ffffff;
+	}
+
+	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
+	.search-capsule {
+		margin: 24rpx 40rpx;
+		padding: 20rpx 32rpx;
+		background-color: rgba(255,255,255,0.32);
+		border-radius: 46rpx;
+		border-width: 1rpx;
+		border-color: rgba(255,255,255,0.5);
+		border-style: solid;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 6rpx 22rpx rgba(58,46,37,0.078);
+	}
+	.search-icon {
+		width: 36rpx;
+		height: 36rpx;
+		margin-right: 16rpx;
+	}
+	.search-placeholder {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		flex: 1;
+		font-size: 28rpx;
+		color: rgba(255,255,255,0.85);
 	}
 
 	.scroll {
@@ -679,62 +892,48 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
 	}
-	.empty-img {
-		width: 320rpx;
-		height: 266rpx;
-	}
-	.empty-title {
-		margin-top: 40rpx;
-		font-size: 40rpx;
-		color: #3A2E25;
-		font-weight: bold;
-	}
-	.empty-desc {
-		margin-top: 16rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-		text-align: center;
-		line-height: 40rpx;
-	}
-	.cta {
-		margin-top: 56rpx;
-		padding-left: 64rpx;
-		padding-right: 64rpx;
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
-		background-color: #B05A3A;
-		border-radius: 8rpx;
-	}
-	.cta-text {
-		color: #F6F1E7;
-		font-size: 30rpx;
-	}
-
 	.muted {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #b3a696;
 	}
 
 	.feed {
-		padding-bottom: 80rpx;
+		padding-bottom: 160rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
 	}
 	.day-block {
 		margin-top: 40rpx;
 	}
-	.day-title {
-		font-size: 34rpx;
-		color: #3A2E25;
-		font-weight: bold;
+	.day-head {
+		flex-direction: row;
+		align-items: center;
 		margin-bottom: 20rpx;
+	}
+	.day-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 22rpx;
+		color: #8a7a6a;
+		font-weight: 500;
 		padding-left: 8rpx;
 	}
+	.day-line {
+		flex: 1;
+		height: 1rpx;
+		background-color: rgba(58,46,37,0.08);
+		margin-left: 16rpx;
+	}
 
-	/* 待确认区（B3-5 · 2026-08-26 Wave2 E） */
+	/* 待确认区 */
 	.pending-block {
 		margin-top: 24rpx;
 	}
 	.pending-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-bottom: 20rpx;
 		padding-left: 8rpx;
 	}
@@ -755,33 +954,34 @@
 	}
 	.pending-btn-ghost {
 		border-width: 2rpx;
-		border-color: #B05A3A;
+		border-color: #b05a3a;
 		margin-right: 20rpx;
 	}
 	.pending-btn-solid {
-		background-color: #B05A3A;
+		background-color: #b05a3a;
 	}
 	.pending-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 26rpx;
-		color: #3A2E25;
+		color: #3a2e25;
 	}
-	.pending-btn-solid .pending-btn-text {
-		color: #F6F1E7;
+	.pending-btn-text-solid {
+		color: #ffffff;
 	}
 
-	/* 封面展示（B3-4 · 2026-08-26 Wave2 E） */
+	/* 封面展示 */
 	.cover-wrap {
 		margin-bottom: 20rpx;
-		border-radius: 8rpx;
+		border-radius: 16rpx;
 		overflow: hidden;
 	}
 	.cover-img {
 		width: 100%;
 		height: 280rpx;
-		background-color: #EDE5D5;
+		background-color: #ede5d5;
 	}
 
-	/* 照片条（会话照片；点开 → 反向入口） */
+	/* 照片条 */
 	.photo-strip {
 		margin-top: 20rpx;
 		display: flex;
@@ -793,139 +993,204 @@
 		height: 152rpx;
 		margin-right: 12rpx;
 		margin-bottom: 12rpx;
-		border-radius: 8rpx;
-		background-color: #EDE5D5;
+		border-radius: 12rpx;
+		background-color: #ede5d5;
 	}
 
-	/* 卡片：小圆角相纸感 + 右下撕边（border-radius 切角）+ 底部投影，不描边 */
+	/* 卡片：白色圆角 20 + 底部投影，不描边 */
 	.card {
-		background-color: #FBF7EF;
-		border-radius: 8rpx;
-		padding: 28rpx;
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 32rpx;
 		margin-bottom: 24rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
-		border-bottom-left-radius: 2rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
 		position: relative;
-	}
-	/* S-MO-1 操作入口：右上角 · 干净按钮（视觉规范：按钮不做旧）
-	z-index: 5 —— 2026-08-25 真机修复：标题文本节点覆盖 ⋯ 下半部（点击命中层），
-	加 z-index 保证整颗 ⋯ 可点 */
-	.card-ops {
-		position: absolute;
-		top: 8rpx;
-		right: 16rpx;
-		padding-left: 20rpx;
-		padding-right: 20rpx;
-		padding-top: 6rpx;
-		padding-bottom: 6rpx;
-		z-index: 5;
-	}
-	.card-ops-text {
-		font-size: 40rpx;
-		color: #B05A3A;
-		line-height: 40rpx;
 	}
 	.card-l1 {
-		border-top-right-radius: 2rpx;
+		border-radius: 40rpx;
 	}
 	.card-l2 {
-		margin-left: 32rpx;
-		margin-right: 8rpx;
-		border-top-right-radius: 2rpx;
+		border-radius: 32rpx;
+		margin-left: 20rpx;
 	}
 	.card-title {
-		color: #3A2E25;
-		padding-right: 96rpx; /* 2026-08-25 真机修复：避免标题文字压到右上角 ⋯ */
-	}
-	.title-l1 {
-		font-size: 36rpx;
-		font-weight: bold;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 12rpx;
 	}
 	.title-l2 {
-		font-size: 30rpx;
-		font-weight: bold;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		font-weight: 500;
 	}
 	.card-meta {
-		margin-top: 16rpx;
 		display: flex;
 		flex-direction: row;
+		align-items: center;
+		margin-bottom: 8rpx;
 	}
 	.meta-item {
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
 		color: #8a7a6a;
-		margin-right: 24rpx;
+		margin-right: 20rpx;
 	}
 	.rust {
-		color: #B05A3A;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #b05a3a;
+	}
+	.amber {
+		color: #c4913c;
 	}
 
-	.l2-list {
-		margin-top: 20rpx;
-		border-top-width: 1rpx;
-		border-top-color: rgba(58, 46, 37, 0.15);
-		padding-top: 20rpx;
-	}
-	.l2-chip {
+	/* 语音卡：琥珀播放钮 + 波形竖条阵列 */
+	.voice-card {
 		display: flex;
 		flex-direction: row;
-		justify-content: space-between;
 		align-items: center;
-		padding-top: 12rpx;
-		padding-bottom: 12rpx;
+		padding: 20rpx;
+		background-color: rgba(196,145,60,0.14);
+		border-radius: 24rpx;
+		margin-top: 16rpx;
 	}
-	.l2-chip-title {
-		font-size: 28rpx;
-		color: #3A2E25;
+	.voice-play-btn {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		background-color: rgba(255,255,255,0.8);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+		box-shadow: 0 2rpx 6rpx rgba(58,46,37,0.12);
 	}
-	.l2-chip-count {
-		font-size: 24rpx;
+	.voice-play-icon {
+		width: 0;
+		height: 0;
+		border-left: 20rpx solid #b05a3a;
+		border-top: 12rpx solid transparent;
+		border-bottom: 12rpx solid transparent;
+		margin-left: 6rpx;
+	}
+	.voice-wave {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 48rpx;
+	}
+	.voice-wave-bar {
+		width: 4rpx;
+		background-color: #c4913c;
+		border-radius: 2rpx;
+		margin-right: 4rpx;
+	}
+	.voice-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #3a2e25;
+		font-weight: 500;
+		margin-top: 8rpx;
+	}
+	.voice-duration {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 22rpx;
+		color: #8a7a6a;
+		margin-left: 16rpx;
 	}
 
-	.feed-foot {
-		margin-top: 60rpx;
-		align-items: center;
+	/* 文字卡：左侧琥珀引用竖线 + 米色引言面板 */
+	.quote-card {
 		display: flex;
+		flex-direction: row;
+		padding: 20rpx;
+		margin-top: 16rpx;
+		background-color: rgba(196,145,60,0.10);
+		border-radius: 24rpx;
+	}
+	.quote-line {
+		width: 6rpx;
+		background-color: #c4913c;
+		border-radius: 3rpx;
+		margin-right: 20rpx;
+	}
+	.quote-content {
+		flex: 1;
+	}
+	.quote-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		line-height: 44rpx;
+		font-style: italic;
+	}
+	.quote-source {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 12rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* 卡片操作菜单 */
+	.card-ops {
+		position: absolute;
+		/* absolute-ok: 卡内右上角操作钮（卡内锚点，随卡滚动） */
+		top: 24rpx;
+		right: 24rpx;
+		width: 48rpx;
+		height: 48rpx;
+		display: flex;
+		align-items: center;
 		justify-content: center;
 	}
+	.card-ops-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 36rpx;
+		color: #8a7a6a;
+		font-weight: bold;
+	}
 
-	/* 回响卡片（T-PL-1：去年今日 · 角贴 + 泛黄） */
+	/* 回响卡片（去年今日 · 角贴 + 泛黄） */
 	.echo-card {
-		margin-top: 24rpx;
-		background-color: #F1E8D8;
-		border-radius: 8rpx;
-		padding: 28rpx;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.12);
+		background-color: #faf6ee;
+		border-radius: 24rpx;
+		padding: 32rpx;
+		margin: 24rpx 40rpx;
 		position: relative;
-		overflow: hidden;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.08);
 	}
 	.echo-corner {
 		position: absolute;
-		top: 0;
-		right: 0;
-		background-color: #B05A3A;
-		padding-left: 28rpx;
-		padding-right: 28rpx;
-		padding-top: 8rpx;
-		padding-bottom: 8rpx;
-		border-bottom-left-radius: 12rpx;
+		/* absolute-ok: echo 卡右上角标（卡内锚点） */
+		top: -4rpx;
+		right: 32rpx;
+		background-color: #c4913c;
+		padding: 8rpx 20rpx;
+		border-radius: 0 0 12rpx 12rpx;
 	}
 	.echo-corner-text {
-		color: #F6F1E7;
-		font-size: 22rpx;
-		font-weight: bold;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #ffffff;
+		font-weight: 500;
 	}
 	.echo-date {
-		font-size: 22rpx;
-		color: #b3a696;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-bottom: 12rpx;
 	}
 	.echo-text {
-		margin-top: 12rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 30rpx;
-		color: #3A2E25;
-		line-height: 44rpx;
+		color: #3a2e25;
+		line-height: 48rpx;
+		font-style: italic;
 	}
 	.echo-meta {
-		margin-top: 12rpx;
+		margin-top: 16rpx;
 		display: flex;
 		flex-direction: row;
 	}
@@ -936,192 +1201,90 @@
 		justify-content: flex-end;
 	}
 	.echo-dismiss {
-		padding-left: 32rpx;
-		padding-right: 32rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-		border-width: 1rpx;
-		border-color: rgba(176, 90, 58, 0.6);
+		padding: 12rpx 32rpx;
 		border-radius: 24rpx;
+		background-color: rgba(176,90,58,0.1);
 	}
 	.echo-dismiss-text {
-		color: #B05A3A;
+		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 24rpx;
+		color: #b05a3a;
 	}
 
-	.upload-bar {
-		position: fixed;
-		left: 32rpx;
-		right: 32rpx;
-		bottom: 48rpx;
-		background-color: #3A2E25;
-		border-radius: 12rpx;
-		padding: 20rpx 28rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.upload-text {
-		color: #F6F1E7;
-		font-size: 26rpx;
-	}
 
-	/* S-MO-1 拆分选片面板（2026-08-25） */
-	.split-mask {
-		position: fixed;
-		left: 0;
-		top: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(0, 0, 0, 0.45);
-		display: flex;
-		align-items: flex-end;
-		z-index: 100;
+	/* 按压态动画（scale 0.98 + 阴影收缩 200ms） */
+	.pressable {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
+	
+
+	/* 拆分面板 */
 	.split-panel {
-		width: 100%;
-		background-color: #F6F1E7;
-		border-top-left-radius: 28rpx;
-		border-top-right-radius: 28rpx;
-		padding: 32rpx 32rpx 40rpx 32rpx;
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #ffffff;
+		border-radius: 32rpx 32rpx 0 0;
+		padding: 32rpx;
+		max-height: 500px;
 	}
 	.split-title {
-		font-size: 34rpx;
-		color: #3A2E25;
-		font-weight: bold;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 24rpx;
 	}
-	.split-sub {
-		font-size: 24rpx;
-		margin-top: 8rpx;
-	}
-	.split-list {
-		margin-top: 24rpx;
-		max-height: 560rpx;
-	}
-	.split-empty {
-		padding: 40rpx 0;
-		display: flex;
-		justify-content: center;
-	}
-	.split-row {
+	.split-item {
+		padding: 20rpx;
+		border-radius: 16rpx;
+		background-color: #f8f7f4;
+		margin-bottom: 12rpx;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 0;
-		border-bottom-width: 1rpx;
-		border-bottom-color: rgba(58, 46, 37, 0.08);
 	}
-	.split-check {
-		width: 40rpx;
-		height: 40rpx;
-		border-radius: 20rpx;
-		border-width: 2rpx;
-		border-color: #B05A3A;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-right: 20rpx;
-	}
-	.split-check-on {
-		background-color: #B05A3A;
-	}
-	.split-check-mark {
-		color: #F6F1E7;
-		font-size: 26rpx;
-	}
-	.split-row-main {
+	.split-item-text {
 		flex: 1;
-		display: flex;
-		flex-direction: column;
-	}
-	.split-row-title {
-		font-size: 28rpx;
-		color: #3A2E25;
-	}
-	.split-row-meta {
-		font-size: 22rpx;
-		margin-top: 4rpx;
+		font-size: 26rpx;
+		color: #3a2e25;
 	}
 	.split-actions {
-		margin-top: 32rpx;
-		display: flex;
-		flex-direction: row;
-	}
-	.split-btn {
-		flex: 1;
-		height: 80rpx;
-		border-radius: 40rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.split-btn-ghost {
-		border-width: 2rpx;
-		border-color: #B05A3A;
-		margin-right: 20rpx;
-	}
-	.split-btn-solid {
-		background-color: #B05A3A;
-	}
-	.split-btn-text {
-		font-size: 28rpx;
-		color: #3A2E25;
-	}
-	.split-btn-solid .split-btn-text {
-		color: #F6F1E7;
-	}
-
-	/* 照片详情：反向入口"属于"列表（B3-4 · 2026-08-26 Wave2 E） */
-	.photo-detail-img-wrap {
 		margin-top: 24rpx;
 		display: flex;
-		justify-content: center;
-	}
-	.photo-detail-img {
-		width: 100%;
-		height: 360rpx;
-		border-radius: 12rpx;
-		background-color: #EDE5D5;
-	}
-	.belongs-row {
-		display: flex;
 		flex-direction: row;
-		align-items: center;
-		padding: 20rpx 0;
-		border-bottom-width: 1rpx;
-		border-bottom-color: rgba(58, 46, 37, 0.08);
+		justify-content: flex-end;
 	}
-	.belongs-badge {
-		width: 72rpx;
-		height: 44rpx;
-		border-radius: 22rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-right: 20rpx;
+
+	/* 照片详情面板 */
+	.photo-detail-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #ffffff;
+		border-radius: 32rpx 32rpx 0 0;
+		padding: 32rpx;
+		max-height: 500px;
 	}
-	.belongs-badge-l1 {
-		background-color: #C8B394;
+	.photo-detail-image {
+		width: 100%;
+		height: 400rpx;
+		border-radius: 16rpx;
+		margin-bottom: 24rpx;
+		background-color: #ede5d5;
 	}
-	.belongs-badge-l2 {
-		background-color: #B05A3A;
+	.photo-detail-title {
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 16rpx;
 	}
-	.belongs-badge-text {
-		color: #F6F1E7;
-		font-size: 22rpx;
-		font-weight: bold;
-	}
-	.belongs-main {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-	}
-	.belongs-title {
-		font-size: 28rpx;
-		color: #3A2E25;
-	}
-	.belongs-meta {
-		font-size: 22rpx;
-		margin-top: 4rpx;
+	.photo-detail-event {
+		padding: 16rpx;
+		border-radius: 12rpx;
+		background-color: #f8f7f4;
+		margin-bottom: 12rpx;
 	}
 </style>

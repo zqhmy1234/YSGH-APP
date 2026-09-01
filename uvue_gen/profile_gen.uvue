@@ -1,0 +1,456 @@
+<template>
+	<!-- ardot 直转 v2：我的页（帧 2:448）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n2_450">9:41</text> <!-- 状态栏时间 -->
+		<view class="n2_451"> <!-- 电池 -->
+		</view>
+		<view class="n2_452"> <!-- 头像 -->
+			<text class="n2_453">峰</text> <!-- 头像字 -->
+		</view>
+		<text class="n2_454">峰宝</text> <!-- 昵称 -->
+		<text class="n2_455">已记录 128 段回忆 · 连续记录 6 天</text> <!-- 签名行 -->
+		<view class="n2_456"> <!-- 统计卡 -->
+			<view class="n2_457"> <!-- 统计-回忆 -->
+				<text class="n2_458">128</text> <!-- 数 -->
+				<text class="n2_459">回忆</text> <!-- 名 -->
+			</view>
+			<view class="n2_460"> <!-- 统计-照片 -->
+				<text class="n2_461">42</text> <!-- 数 -->
+				<text class="n2_462">照片</text> <!-- 名 -->
+			</view>
+			<view class="n2_463"> <!-- 统计-语音 -->
+				<text class="n2_464">23</text> <!-- 数 -->
+				<text class="n2_465">语音</text> <!-- 名 -->
+			</view>
+		</view>
+		<view class="n2_466"> <!-- 列表组1 -->
+			<view class="n2_467"> <!-- 行-画像管理 -->
+				<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
+				<text class="n2_472">画像管理</text> <!-- 文字 -->
+				<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+			</view>
+			<view class="n2_475"> <!-- 行-消息中心 -->
+				<image class="n2_476" src="/static/icons/i2_476.svg" /> <!-- icon: 图标 -->
+				<text class="n2_478">消息中心</text> <!-- 文字 -->
+				<image class="n2_479" src="/static/icons/i2_479.svg" /> <!-- icon: 箭头 -->
+			</view>
+		</view>
+		<view class="n2_481"> <!-- 列表组2 -->
+			<view class="n2_482"> <!-- 行-设置 -->
+				<image class="n2_483" src="/static/icons/i2_483.svg" /> <!-- icon: 图标 -->
+				<text class="n2_486">设置</text> <!-- 文字 -->
+				<image class="n2_487" src="/static/icons/i2_487.svg" /> <!-- icon: 箭头 -->
+			</view>
+			<view class="n2_489"> <!-- 行-存储与备份 -->
+				<image class="n2_490" src="/static/icons/i2_490.svg" /> <!-- icon: 图标 -->
+				<text class="n2_493">存储与备份</text> <!-- 文字 -->
+				<image class="n2_494" src="/static/icons/i2_494.svg" /> <!-- icon: 箭头 -->
+			</view>
+			<view class="n2_496"> <!-- 行-关于 -->
+				<image class="n2_550" src="/static/icons/i2_550.svg" /> <!-- icon: 关于图标 -->
+				<text class="n2_501">关于忆述光华</text> <!-- 文字 -->
+				<image class="n2_502" src="/static/icons/i2_502.svg" /> <!-- icon: 箭头 -->
+			</view>
+		</view>
+		<view class="n2_504"> <!-- 玻璃TabBar -->
+			<view class="n2_505"> <!-- Tab-时间轴 -->
+				<image class="n2_506" src="/static/icons/i2_506.svg" /> <!-- icon: 图标-指南针 -->
+				<text class="n2_509">时间轴</text> <!-- 标签-时间轴 -->
+			</view>
+			<view class="n2_510"> <!-- Tab-AI -->
+				<image class="n2_511" src="/static/icons/i2_511.svg" /> <!-- icon: 图标-对话 -->
+				<text class="n2_513">AI</text> <!-- 标签-AI -->
+			</view>
+			<view class="n2_514"> <!-- 中央留位 -->
+			</view>
+			<view class="n2_515"> <!-- Tab-搜索 -->
+				<image class="n2_516" src="/static/icons/i2_516.svg" /> <!-- icon: 图标-搜索 -->
+				<text class="n2_519">搜索</text> <!-- 标签-搜索 -->
+			</view>
+			<view class="n2_520"> <!-- Tab-我的 -->
+				<image class="n2_521" src="/static/icons/i2_521.svg" /> <!-- icon: 图标-我的 -->
+				<text class="n2_524">我的</text> <!-- 标签-我的 -->
+			</view>
+		</view>
+		<view class="n2_525"> <!-- 中央＋按钮 -->
+			<image class="n2_526" src="/static/icons/i2_526.svg" /> <!-- icon: 加号 -->
+		</view>
+		<view class="n2_528"> <!-- Home指示条 -->
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n2_450 {
+		position: absolute;
+		left: 46.2rpx;
+		top: 115.4rpx;
+		width: 59.6rpx;
+		height: 34.6rpx;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_451 {
+		position: absolute;
+		left: 661.5rpx;
+		top: 121.2rpx;
+		width: 42.3rpx;
+		height: 21.2rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_452 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 123.1rpx;
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #C4913C;
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n2_453 {
+		font-weight: 600;
+		font-size: 46.2rpx;
+		color: #FFFFFF;
+	}
+	.n2_454 {
+		position: absolute;
+		left: 188.5rpx;
+		top: 138.5rpx;
+		width: 84.6rpx;
+		height: 51.9rpx;
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_455 {
+		position: absolute;
+		left: 188.5rpx;
+		top: 200.0rpx;
+		width: 369.2rpx;
+		height: 28.8rpx;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_456 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 292.3rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 34.6rpx;
+		padding-right: 34.6rpx;
+		padding-top: 34.6rpx;
+		padding-bottom: 34.6rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 46.2rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_457 {
+		flex-direction: column;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n2_458 {
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_459 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_460 {
+		flex-direction: column;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n2_461 {
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_462 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_463 {
+		flex-direction: column;
+		gap: 3.8rpx;
+		overflow: hidden;
+	}
+	.n2_464 {
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_465 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_466 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 480.8rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 46.2rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_467 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_468 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_472 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_473 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_475 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_476 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_478 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_479 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_481 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 746.2rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 46.2rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_482 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_483 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_486 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_487 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_489 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_490 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_493 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_494 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_496 {
+		width: 100%;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_550 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_501 {
+		flex: 1;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.n2_502 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_504 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1446.2rpx;
+		width: 673.1rpx;
+		height: 119.2rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), 0rpx 19.2rpx 107.7rpx rgba(59, 46, 38, 0.1);
+		border-radius: 69.2rpx;
+		overflow: hidden;
+	}
+	.n2_505 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_506 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_509 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_510 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_511 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_513 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_514 {
+		width: 92.3rpx;
+		height: 19.2rpx;
+		overflow: hidden;
+	}
+	.n2_515 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_516 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_519 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_520 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_521 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_524 {
+		font-weight: 600;
+		font-size: 19.2rpx;
+		color: #B05A3A;
+	}
+	.n2_525 {
+		position: absolute;
+		left: 321.2rpx;
+		top: 1423.1rpx;
+		width: 107.7rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 11.5rpx 61.5rpx rgba(176, 89, 59, 0.35);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.n2_526 {
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+	.n2_528 {
+		position: absolute;
+		left: 240.4rpx;
+		top: 1676.9rpx;
+		width: 269.2rpx;
+		height: 9.6rpx;
+		background-color: #3A2E25;
+		border-radius: 5.8rpx;
+		overflow: hidden;
+	}
+</style>

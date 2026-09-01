@@ -9,12 +9,17 @@
       }
     },
     {
-      "path": "pages/record/record",
+      "path": "pages/empty/empty",
       "style": {
-        "navigationBarTitleText": "记录",
+        "navigationBarTitleText": "忆述光华",
         "navigationStyle": "custom",
-        "enablePullDownRefresh": false
+        "backgroundColor": "#F8F7F4"
       }
+    },
+    {
+      "path": "pages/ai/ai",
+      "style": { "navigationStyle": "custom" },
+      "navigationBarTitleText": "AI 对话"
     },
     {
       "path": "pages/search/search",
@@ -44,6 +49,38 @@
       "path": "pages/messages/messages",
       "style": {
         "navigationBarTitleText": "消息中心",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/portrait/manage",
+      "style": {
+        "navigationBarTitleText": "画像管理",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": {
+        "navigationBarTitleText": "设置",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/account/security",
+      "style": {
+        "navigationBarTitleText": "账号与安全",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/detail/detail",
+      "style": {
+        "navigationBarTitleText": "记忆详情",
         "navigationStyle": "custom",
         "enablePullDownRefresh": false
       }

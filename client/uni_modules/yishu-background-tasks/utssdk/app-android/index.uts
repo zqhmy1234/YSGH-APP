@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 忆述光华 · 后台任务队列（WorkManager）Android UTS 实现（B5d · Wave4 Agent K）
  *
  * 统一后台调度（B5d §2 统一调度 / §3 实现边界 / §5 优先级表）：
@@ -28,9 +28,6 @@
  */
 
 import { BackgroundTaskHandler } from '../interface.uts'
-import Class from 'java.lang.Class'
-import SharedPreferences from 'android.content.SharedPreferences'
-import Context from 'android.content.Context'
 
 export { BackgroundTaskHandler } from '../interface.uts'
 
@@ -57,8 +54,8 @@ function appContext(): Context {
 	return created!
 }
 
-function prefs(): SharedPreferences {
-	return appContext().getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
+function prefs(): any {
+	return appContext().getSharedPreferences(PREFS_KEY, 0)
 }
 
 // ---------- 原生 WorkManager 层探测（标准基座无 BgTaskManager → 降级） ----------
