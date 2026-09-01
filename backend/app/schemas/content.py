@@ -46,6 +46,12 @@ class ContentOut(BaseModel):
     status: str
     audio_processing: dict[str, Any] | None = None
     created_at: datetime
+    # 媒体下发 URL（Valet Key · 2026-08-31）：<image :src> 带不了 Bearer header，
+    # 改发短时效签名 URL。缩略图 24h / 原图 15m（config.media_*_ttl）。
+    # 相对路径（/api/v1/media/...）由客户端拼 BASE_URL；COS 后端返回绝对 URL。
+    # 契约「默认缩略图 + 原图按需」：列表/卡片只用 thumbnail_url，点开详情才取 original_url。
+    thumbnail_url: str | None = None
+    original_url: str | None = None
 
 
 class ProfileSensitiveCreate(BaseModel):

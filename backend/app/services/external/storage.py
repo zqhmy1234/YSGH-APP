@@ -75,6 +75,24 @@ class StorageBackend(ABC):
         """
         raise NotImplementedError("该存储后端不支持 STS 临时凭证")
 
+    def get_download_url(self, key: str, user_id: str = "", ttl: int = 900) -> str | None:
+        """对象下发 URL（Valet Key / 预签名 · 2026-08-31 新增）
+
+        为什么加这一层：`<image :src>` 带不了 Authorization header，私有对象无法用
+        Bearer 下发（移动端历史照片显示不出来的根因）。业界标准是短时效签名 URL。
+
+        Args:
+            key: 对象键
+            user_id: 归属用户（签进票据，供端点做归属二次校验；COS presigned 不使用）
+            ttl: 有效期（秒）——缩略图建议 86400、原图建议 900（见 config.media_*_ttl）
+
+        Returns:
+            绝对 URL（COS presigned）或相对路径（`/api/v1/media/{key}?...`，由客户端
+            拼 BASE_URL）；**None = 该后端不支持签名下发**，调用方应回退
+            `/api/v1/thumbnails/{content_id}` 代理端点（保留其懒生成兜底能力）。
+        """
+        return None
+
 
 class FakeStorageBackend(StorageBackend):
     """内存实现（测试/默认）"""
@@ -95,6 +113,12 @@ class FakeStorageBackend(StorageBackend):
 
     def object_exists(self, key: str) -> bool:
         return key in self._store
+
+    def get_download_url(self, key: str, user_id: str = "", ttl: int = 900) -> str | None:
+        """票据 URL（供单测验证签名/过期/越权三态；与 fs 后端同逻辑）"""
+        from app.services.external.media_url import build_media_path
+
+        return build_media_path(key, user_id, ttl)
 
 
 class MinioStorageBackend(StorageBackend):
@@ -164,6 +188,19 @@ class MinioStorageBackend(StorageBackend):
             ) from exc
 
 
+    def get_download_url(self, key: str, user_id: str = "", ttl: int = 900) -> str | None:
+        """MinIO 原生预签名（S3 兼容；失败回落 None → 调用方走代理端点）"""
+        from datetime import timedelta
+
+        try:
+            return self._client.presigned_get_object(
+                self._bucket, key, expires=timedelta(seconds=max(int(ttl), 1))
+            )
+        except Exception as exc:  # noqa: BLE001 —— 签名失败不阻断，回退代理端点
+            logger.warning("minio 预签名失败，回退代理端点 key=%s err=%s", key, exc)
+            return None
+
+
 class FilesystemStorageBackend(StorageBackend):
     """本地文件系统后端（2026-08-25 · 跨进程共享）
 
@@ -219,6 +256,17 @@ class FilesystemStorageBackend(StorageBackend):
 
     def object_exists(self, key: str) -> bool:
         return self._safe_path(key).is_file()
+
+    def get_download_url(self, key: str, user_id: str = "", ttl: int = 900) -> str | None:
+        """HMAC 票据 URL（相对路径，客户端拼 BASE_URL）
+
+        相对路径是刻意的：fs 后端没有对外可访问的域名概念，让客户端拼自己配置的
+        BASE_URL，真机(adb reverse)/模拟器/生产域名三种场景都能自动生效，
+        服务端不需要（也不应该）持有 host 配置。
+        """
+        from app.services.external.media_url import build_media_path
+
+        return build_media_path(key, user_id, ttl)
 
 
 def _cos_retryable(exc: Exception) -> bool:
@@ -289,6 +337,24 @@ class CosStorageBackend(StorageBackend):
                 "COS_STAT_FAILED", f"COS object_exists 失败: {type(exc).__name__}",
                 retryable=_cos_retryable(exc),
             ) from exc
+
+    def get_download_url(self, key: str, user_id: str = "", ttl: int = 900) -> str | None:
+        """COS 原生预签名 URL（生产路径；绝对路径，客户端直连 COS 不经过后端）
+
+        这是 Valet Key 的标准形态：签名对象是 COS 的短时效票据，与用户 JWT 无关。
+        私有桶 + 短时效 → 即便 URL 外泄，暴露窗口也只有 TTL（原图 15m）。
+        失败回落 None（调用方走代理端点），不让图片下发因签名异常而 500。
+        """
+        try:
+            return self._client.get_presigned_url(
+                Bucket=self._bucket,
+                Key=key,
+                Method="GET",
+                Expired=max(int(ttl), 1),
+            )
+        except Exception as exc:  # noqa: BLE001 —— 签名失败回退代理端点
+            logger.warning("COS 预签名失败，回退代理端点 key=%s err=%s", key, exc)
+            return None
 
     def get_sts_credentials(self, user_id: str | None = None) -> dict:
         """STS 临时凭证（客户端直传）——路径级白名单（P0-2 · 审查 H2）

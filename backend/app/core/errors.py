@@ -68,6 +68,9 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("EVENT_005", "内容不存在或不属于当前用户", 404),
     ErrorSpec("EVENT_006", "事件操作冲突（内容不属于该事件 / 封面不是事件成员）", 409),
     ErrorSpec("EVENT_007", "事件参数非法（拆分内容列表为空等）", 422),
+    # 媒体下发票据域（Valet Key · 2026-08-31）
+    ErrorSpec("MEDIA_001", "媒体票据无效或已过期", 401),
+    ErrorSpec("MEDIA_002", "媒体对象不存在或不属于当前用户", 404),
     # 消息域
     ErrorSpec("MSG_001", "status 参数非法", 422),
     ErrorSpec("MSG_002", "消息不存在", 404),
@@ -136,6 +139,9 @@ ERR_EVENT_004 = "EVENT_004"
 ERR_EVENT_005 = "EVENT_005"
 ERR_EVENT_006 = "EVENT_006"
 ERR_EVENT_007 = "EVENT_007"
+ERR_MEDIA_001 = "MEDIA_001"
+ERR_MEDIA_002 = "MEDIA_002"
+ERR_MEDIA_003 = "MEDIA_003"
 ERR_MSG_001 = "MSG_001"
 ERR_MSG_002 = "MSG_002"
 ERR_MSG_003 = "MSG_003"

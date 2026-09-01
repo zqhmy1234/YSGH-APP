@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-09-02 03:12 · commit d1ab389 · ts=1788289963
+- **错误**：pre-commit 快速门禁连续两次拦截：① main.py I001 import 块排序（media_router 插在 thumbnails 之后违反字母序）② media_url.py UP012 encode('utf-8') 冗余参数
+- **根因**：① 新增 import 习惯性追加到块尾，未按模块名字母序插入 ② 手写 encode 显式带 utf-8，ruff 视为冗余
+- **修复**：① media import 移至 event_items 与 thumbnails 之间 ② .encode('utf-8') → .encode()
+- **相关文件**：backend/app/main.py, backend/app/services/external/media_url.py
+- **教训**：主树 backend 提交前先过 lint 同款规则；新增 import 一律按字母序插入而非追加块尾
+
+---
+
+### 2026-09-01 17:39 · commit 2059f40 · ts=1788255541
+- **错误**：跨会话抢救的暂存区 .cowork-temp/salvage/ 被工作区清理 Agent 整目录删除，其中 rag/image.py 的预 stash 回滚 1KB diff 成为永久损失（另两重备份恰在 git 分支未受损）
+- **根因**：三重备份设计有两重落在 gitignore 区（.cowork-temp），对清理类 Agent 而言 ignore 目录=垃圾的同义词；唯 stash 分支不可变但设计时未把「image.py 曾先被 checkout 回滚」这一时间差纳入备份覆盖
+- **修复**：教训固化：抢救/备份物只存 git（分支或 stash 树），如需落盘必须放非 ignore 路径并在台账写回捞命令；本次损失已定性（image.py 后被 dashscope 正式重写，风险可接受）
+- **相关文件**：docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md
+- **教训**：给清理 Agent 的禁碰清单必须含 .cowork-temp 里的备份物——或直接别把备份放那儿
+
+---
+
 ### 2026-09-01 15:28 · commit 36e0b64 · ts=1788247729
 - **错误**：wrap1 合并解冲突脚本首版将 progress.md 从 680 行砍到 58 行（develop 侧 622 行记账差点丢失），lessons.md 同样被砍至 ~108 行
 - **根因**：union 脚本只把两个冲突块拼进输出，冲突区之外的正文（out 列表）从未加入 merged；且无行数守恒校验，第一轮静默落盘

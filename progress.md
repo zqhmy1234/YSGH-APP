@@ -679,3 +679,16 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **画布同步三板 + 终审**：AI 输入条附件钮（clip SVG，发送钮右位）、画像页页头下移+新 TabBar 按 TabBar.uvue 规格重建（SVG 图标族+「我的」锈红 active）、security 页删两行（后续组 y-88 间距恒定）+三 SVG；截图终审通过；uvue 附件钮初版序写反已对照画布纠正。画布坑三枚沉淀 ardot-canvas-pitfalls（BACKGROUND_BLUR 写入拒绝且清空全字段/SVG rect+A 命令不支持/纯水平线段零面积 degenerate）。
 - **推包三轮收口（2026-09-01）**：ZS8sLT 编译失败（已修，见上）→ hqSTjw 编译同步实际成功但 `OUT=$(cli ...)` 命令替换被 HBuilderX.exe 继承 stdout 管道 EOF 永不来僵死 23 分钟（TaskStop 终止；deploy_one.sh step1 改后台+mktemp 重定向+10s×150 轮询，坑沉淀 uvue-deploy-device-ops 禁忌表）→ **fOeJLH 轮询版首战 1m57s 三步全绿**（同步成功/reverse 非空/force-stop 冷启动）。设备已跑最终版产物；真机复核清单交峰宝人肉验机（AI 页五形态+附件面板在发送钮右侧/画像页新 TabBar+seed 三条+60px 头/security 页单行+SVG）。遗留：四份画布快照（ai/ai_reply/portrait_manage/account_security）下会话开工前按 W9 重导。
 
+## 2026-09-01 15:5x · 重估与放行：wrap1 合流波主账追平（A 批）
+
+- **触发**：用户令「重读 git/代码/台账，重判形势」→ 全量侦察发现 08-30~09-01 跨窗活动井喷：08-31 全页面系统审查（33 gap 静默吞/detail overlay 缺层）、媒体票据 Valet Key 新域（主区 8 文件在途）、09-01 峰宝九条验机+W10.4 全量入库，**17 枚经 cea5025 跨日 merge 进 develop——5.24 迁移正式落地**（utils 21 .ts→.uts/Vapor/零错零警），origin 已同步。
+- **重估结论**：旧「客户端冻结待迁移」前提解除；主账（AGENTS/台账/handoff/tracker19）滞后 3 天空窗，本批追平（§1.11/O-4/D-21 入库状态/待拍板 2→3 项 §5.8 AI mock 归宿）；审计报告抢救入库 `docs/audit_20260831_*`；「20 单」数不变（AI mock 非缺陷入待拍板）。
+- **用户放行 A+B**：A=本批；B=fix/4b rebase + 统一冷编译复验。
+- **B 批战果（同日 17:26）**：rebase **8/8 成功**（热修两枚按拍板让位丢弃零残留/record.uvue 守卫随其拆迁 graft 进 RecordSheet 新结构/.gitignore 豁免与工程根 manifest 幸存 check-ignore 实测/contents.py 双方改动 auto-heal；备份 fix4b-pre-rebase@acce7ef）。受影响后端 9 套件 **138 全绿**（中途 12 败=机器重启致 Docker Desktop 未跑、yishu-redis/yishu-qdrant 随眠——拉起容器即愈，非代码问题）。**统一冷编译一次通过：12 页面编译成功 ready 105s**（唯一 WARNING backdrop-filter=wrap1 画布保留项）。fix/4b 现 @ d09f639，R1 冻结清单全线解冻，R2 真机波就绪。
+
+## 2026-09-01 19:0x · R1 尾段落地五枚 + 云打包发车 + 暗物质第三例（U3）
+
+- **rebase 后解冻清单实施完毕（fix/4b 新增五枚）**：`23e8604` D-22 客户端半（意图先流+仲裁纯参考，16 绿+编译过）→ `97eb795` D-07/D-08 语音链（短录音带音频入库+250s 分流黑洞修复+超时伸缩+失败段持久队列，test_pipeline 25 绿）→ `2a0194b` D-10/D-12（parseBody 安全解析+回退链 warn）→ `381a210` D-05/D-14（聚合共口+四路同源+双队列去重）。tracker §4 七行状态同步。
+- **worktree 事故与自愈**：主仓 `.git/worktrees/` 被清理 Agent 误注销（三 worktree 全掉注册，分支/文件零损失）——fix4b 重建注册+`.env` 回迁+**无缓存全量冷编译两次通过**；wrap1 worktree 旧目录原样保留（其窗在途 uvue_gen 清理现场），dashscope worktree 已合流无需重建。禁碰清单已重申。
+- **🌑 暗物质第三例（O-5）**：`dismissCorrectionPrompt` 及 D4 弹窗整条特性从未提交（只活在 stash 树），台账 5.3「hook 已就绪」前提崩塌——**U3 悬置待重拍（A 回炉移植/B 二期/C R2 后评）**。
+- **R2 云打包已发车**（后台，Vapor 自定义基座，参数含 `--project` 绝对路径新规）；包出→aapt 尸检（D-19 service 注册）→真机装基座（先查纯净模式）→D-18/19 日志复验→纠错/语音/断网重传真机电池。内存 4GB 档，HBuilderX 独占已协调。
