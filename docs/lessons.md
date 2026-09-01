@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-02 03:15 · commit 2e77ad9 · ts=1788290100
+- **错误**：git add/commit 在错误目录执行：missing-pages worktree 的操作落到主树（两次 pathspec 报错 / add 落空）
+- **根因**：Bash 工具每条调用 cwd 重置回主树根，上一条的 cd 不持久；混用两树时极易 add 错树
+- **修复**：每条涉及 worktree 的命令都显式以 cd /d/GuangH-App/.wt/missing-pages && 开头，绝不依赖上一条的 cd
+- **相关文件**：_diff_ledger.md, _resource_endpoint_matrix.md
+- **教训**：多 worktree 并存时：每条 git 命令显式 cd，commit 前先 git status 核对分支名（feature/missing-pages-impl vs develop）
+
+---
+
 ### 2026-09-02 03:12 · commit d1ab389 · ts=1788289963
 - **错误**：pre-commit 快速门禁连续两次拦截：① main.py I001 import 块排序（media_router 插在 thumbnails 之后违反字母序）② media_url.py UP012 encode('utf-8') 冗余参数
 - **根因**：① 新增 import 习惯性追加到块尾，未按模块名字母序插入 ② 手写 encode 显式带 utf-8，ruff 视为冗余
