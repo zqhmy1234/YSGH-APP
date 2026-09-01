@@ -1,0 +1,450 @@
+<template>
+	<!-- ardot 直转 v2：我的页（帧 2:448）· 审计化生成 -->
+	<view class="page-root">
+		<view class="n2_452"> <!-- 头像 -->
+			<text class="n2_453">峰</text> <!-- 头像字 -->
+		</view>
+		<text class="n2_454">峰宝</text> <!-- 昵称 -->
+		<text class="n2_455">已记录 {{ statMemories }} 段回忆</text> <!-- 签名行（修复：原硬编码"128 段 · 连续 6 天"，改真数据） -->
+		<view class="n2_456"> <!-- 统计卡（修复：三个数字原硬编码 128/42/23，接 GET /contents 真数据） -->
+			<view class="n2_457"> <!-- 统计-回忆 -->
+				<text class="n2_458">{{ statMemories }}</text> <!-- 数 -->
+				<text class="n2_459">回忆</text> <!-- 名 -->
+			</view>
+			<view class="n2_460"> <!-- 统计-照片 -->
+				<text class="n2_461">{{ statPhotos }}</text> <!-- 数 -->
+				<text class="n2_462">照片</text> <!-- 名 -->
+			</view>
+			<view class="n2_463"> <!-- 统计-语音 -->
+				<text class="n2_464">{{ statVoices }}</text> <!-- 数 -->
+				<text class="n2_465">语音</text> <!-- 名 -->
+			</view>
+		</view>
+		<view class="list-flow"> <!-- 列表流式容器（流式重构三定律：组间 margin 表达画布 y 差，加行/加组自动下移，不再写死 top） -->
+			<view class="n2_466"> <!-- 列表组1 -->
+				<view class="n2_467" @tap="goInterview"> <!-- 行-记忆访谈（旧版入口在还原中丢失，对齐旧版 profile goInterview() 补回；样式复用 467 行） -->
+					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标（暂用画像图标） -->
+					<text class="n2_472">记忆访谈</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像管理 -->
+					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
+					<text class="n2_472">画像管理</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_475" @tap="goMessagesCenter"> <!-- 行-消息中心 -->
+					<image class="n2_476" src="/static/icons/i2_476.svg" /> <!-- icon: 图标 -->
+					<text class="n2_478">消息中心</text> <!-- 文字 -->
+					<image class="n2_479" src="/static/icons/i2_479.svg" /> <!-- icon: 箭头 -->
+				</view>
+			</view>
+			<view class="n2_481"> <!-- 列表组2（margin-top 73.1rpx = 画布组间距 38px，跟组1底部走） -->
+				<view class="n2_482" @tap="goSettings"> <!-- 行-设置 -->
+					<image class="n2_483" src="/static/icons/i2_483.svg" /> <!-- icon: 图标 -->
+					<text class="n2_486">设置</text> <!-- 文字 -->
+					<image class="n2_487" src="/static/icons/i2_487.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_489" @tap="goPrivacy"> <!-- 行-存储与备份 -->
+					<image class="n2_490" src="/static/icons/i2_490.svg" /> <!-- icon: 图标 -->
+					<text class="n2_493">存储与备份</text> <!-- 文字 -->
+					<image class="n2_494" src="/static/icons/i2_494.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_496" @tap="goAbout"> <!-- 行-关于 -->
+					<image class="n2_550" src="/static/icons/i2_550.svg" /> <!-- icon: 关于图标 -->
+					<text class="n2_501">关于忆述光华</text> <!-- 文字 -->
+					<image class="n2_502" src="/static/icons/i2_502.svg" /> <!-- icon: 箭头 -->
+				</view>
+			</view>
+		</view>
+		<TabBar active="profile" @plus="sheetOpen = true" />
+
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { fetchRecentContents } from '@/utils/search_api'
+
+	// ===== 设计稿图标（已落成 /static/icons/*.svg 静态资源） =====
+
+	// TabBar 图标（我的=激活态锈红；其余=常态灰）
+
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+
+	// ===== 统计真数据（P2：接 GET /contents；57 条以内一次拉全，MVP 够用） =====
+	let statMemories = ref(0)
+	let statPhotos = ref(0)
+	let statVoices = ref(0)
+
+	onShow(() => {
+		loadProfileStats()
+	})
+
+	function loadProfileStats(): void {
+		fetchRecentContents(100, []).then((out) => {
+			if (out == null) {
+				return
+			}
+			let photos = 0
+			let voices = 0
+			for (let i = 0; i < out.hits.length; i++) {
+				const t = out.hits[i].contentType
+				if (t == 'photo') {
+					photos++
+				} else if (t == 'voice') {
+					voices++
+				}
+			}
+			statMemories.value = out.hits.length
+			statPhotos.value = photos
+			statVoices.value = voices
+		})
+	}
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面（返回 true = 已自行处理）
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// ===== 交互 =====
+	// 类型入口（照片/语音/文字）
+	function goType(type: string): void {
+		uni.navigateTo({ url: '/pages/search/search?type=' + type })
+	}
+
+	// RecordSheet 保存成功回调（统计数字随之刷新）
+	function onRecordSaved(): void {
+		loadProfileStats()
+	}
+
+	// 菜单：记忆访谈（旧版 profile 页 goInterview() 入口，画布直转时整段丢失 → 对齐旧版补回）
+	function goInterview(): void {
+		uni.navigateTo({ url: '/pages/interview/interview' })
+	}
+
+	// 菜单：我的画像
+	function goPortraitManage(): void {
+		uni.navigateTo({ url: '/pages/portrait/manage' })
+	}
+
+	// 菜单：我的收藏（页面未建成，占位）
+	function goFavorites(): void {
+		uni.showToast({ title: '收藏功能开发中', icon: 'none' })
+	}
+
+	// 菜单：设置（pages.json 已注册 pages/settings/settings）
+	function goSettings(): void {
+		uni.navigateTo({ url: '/pages/settings/settings' })
+	}
+
+	// 菜单：隐私政策
+	function goPrivacy(): void {
+		uni.showToast({ title: '隐私政策开发中', icon: 'none' })
+	}
+
+	// 菜单：关于我们
+	function goAbout(): void {
+		uni.showToast({ title: '关于页面开发中', icon: 'none' })
+	}
+
+
+	// ardot 直转接线：消息中心入口
+	function goMessagesCenter(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+
+
+
+
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+	}
+	/* 列表流式容器：组1/组2 依次入流，组间距 margin 表达（画布组1 y=250px=480.8rpx、组间距 38px=73.1rpx）。
+	   头部四块（头像/昵称/签名/统计卡）为静态内容保留 absolute 定位，不参与流。 */
+	.list-flow {
+		margin-top: 480.8rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	.n2_452 {
+		position: absolute;
+		/* absolute-ok: 静态头部·头像（内容永不增长，画布锚点） */
+		left: 38.5rpx;
+		top: 123.1rpx;
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #C4913C;
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n2_453 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 46.2rpx;
+		color: #FFFFFF;
+	}
+	.n2_454 {
+		position: absolute;
+		/* absolute-ok: 静态头部·昵称（同上） */
+		left: 188.5rpx;
+		top: 138.5rpx;
+		width: 84.6rpx;
+		height: 51.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_455 {
+		position: absolute;
+		/* absolute-ok: 静态头部·签名行（同上） */
+		left: 188.5rpx;
+		top: 200rpx;
+		width: 369.2rpx;
+		height: 28.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_456 {
+		position: absolute;
+		/* absolute-ok: 静态头部·统计卡（同上） */
+		left: 38.5rpx;
+		top: 292.3rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 34.6rpx;
+		padding-right: 34.6rpx;
+		padding-top: 34.6rpx;
+		padding-bottom: 34.6rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_457 {
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_458 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_459 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+		/* uvue App端不支持flex gap（官方能力边界），画布 gap=3.8rpx 改子元素margin */
+		margin-top: 3.8rpx;
+	}
+	.n2_460 {
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_461 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_462 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
+		margin-top: 3.8rpx;
+	}
+	.n2_463 {
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_464 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	.n2_465 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
+		margin-top: 3.8rpx;
+	}
+	.n2_466 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_467 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_468 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_472 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: 23.1rpx;
+	}
+	.n2_473 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_475 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_476 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_478 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: 23.1rpx;
+	}
+	.n2_479 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_481 {
+		/* 流式重构：原 absolute top:746.2 写死（加行即重叠的根因），改 margin-top 跟组1底部走 */
+		margin-top: 73.1rpx;
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_482 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_483 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_486 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: 23.1rpx;
+	}
+	.n2_487 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_489 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_490 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_493 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: 23.1rpx;
+	}
+	.n2_494 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_496 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_550 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_501 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: 23.1rpx;
+	}
+	.n2_502 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+</style>

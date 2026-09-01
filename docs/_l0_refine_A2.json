@@ -1,0 +1,142 @@
+{
+  "group": "A2",
+  "based_on": "D:\\GuangH-App\\docs\\画像维度枚举集_l0.json",
+  "dimensions": [
+    {
+      "id": "marital_status",
+      "phrase": "用户{value}",
+      "values": ["单身", "相亲中", "恋爱中", "同居", "订婚", "已婚", "隐婚", "离异", "丧偶", "再婚"],
+      "values_detail": [
+        {"value": "单身", "phrase": "用户{value}", "china_note": "含主动不婚，与不婚主义可并存，状态取'未婚'"},
+        {"value": "相亲中", "phrase": "用户{value}", "china_note": "中国式婚恋高频态，父母催婚/相亲角/媒妁语境，区别于自由恋爱"},
+        {"value": "恋爱中", "phrase": "用户{value}", "china_note": "异地恋作为修饰归relation_detail，此处只标状态"},
+        {"value": "同居", "phrase": "用户{value}", "china_note": "非婚同居在城市青年增多，却常不被父母认可，回响忌默认'已婚'"},
+        {"value": "订婚", "phrase": "用户{value}", "china_note": "含彩礼/订婚宴前置叙事"},
+        {"value": "已婚", "phrase": "用户{value}", "china_note": "公开已婚且无隐婚/再婚特殊语境时取此"},
+        {"value": "隐婚", "phrase": "用户{value}", "china_note": "已婚但对外不公开（职场/舆论顾虑），披露姿态变体，与'已婚'互斥时以披露姿态为准"},
+        {"value": "离异", "phrase": "用户{value}", "china_note": "含离异带娃，娃的叙事归children_count/family_structure"},
+        {"value": "丧偶", "phrase": "用户{value}", "china_note": "丧偶未再婚；再婚则归'再婚'"},
+        {"value": "再婚", "phrase": "用户{value}", "china_note": "离异或丧偶后重组，联动family_structure=重组家庭"}
+      ],
+      "refine_note": "原6→现10；补相亲中/同居/隐婚/再婚，去domestic partnership中国化；相亲中是中国式婚恋高频态，隐婚是披露姿态变体，再婚承载重组家庭叙事"
+    },
+    {
+      "id": "children_count",
+      "phrase": "用户子女情况：{value}",
+      "values": ["无子女", "备孕中", "孕期", "1个", "2个", "3个及以上", "子女已成年", "待领养", "继子女", "失独"],
+      "values_detail": [
+        {"value": "无子女", "phrase": "用户子女情况：{value}", "china_note": "含丁克与暂未育，催生压力下为关键叙事"},
+        {"value": "备孕中", "phrase": "用户子女情况：{value}", "china_note": "中国式备孕（叶酸/备孕群/长辈期待），焦虑源"},
+        {"value": "孕期", "phrase": "用户子女情况：{value}", "china_note": "与'备孕中'互斥，取当前态"},
+        {"value": "1个", "phrase": "用户子女情况：{value}", "china_note": "独生子女政策下主流"},
+        {"value": "2个", "phrase": "用户子女情况：{value}", "china_note": "二胎/三胎政策后增多"},
+        {"value": "3个及以上", "phrase": "用户子女情况：{value}", "china_note": "多孩/三胎"},
+        {"value": "子女已成年", "phrase": "用户子女情况：{value}", "china_note": "空巢/随迁过渡信号，与'1个/2个'可并存时取此生命阶段标签"},
+        {"value": "待领养", "phrase": "用户子女情况：{value}", "china_note": "等待收养，含排队/福利院语境"},
+        {"value": "继子女", "phrase": "用户子女情况：{value}", "china_note": "再婚带入，归重组家庭；与亲生count可并存"},
+        {"value": "失独", "phrase": "用户子女情况：{value}", "china_note": "独生子女离世，政策遗留创伤，回响须极谨慎并联动sensitive_topic"}
+      ],
+      "refine_note": "原6→现10；补待领养/继子女/失独，拆原'备孕/孕期'为二；失独为计划生育遗留创伤态，最值得注意"
+    },
+    {
+      "id": "employment_status",
+      "phrase": "用户{value}",
+      "values": ["全职", "兼职", "自由职业", "灵活就业", "个体经营", "学生", "待业", "待业备考", "家庭主妇/夫", "退休", "内退", "下岗"],
+      "values_detail": [
+        {"value": "全职", "phrase": "用户{value}", "china_note": "含体制内/体制外，差异归occupation_domain"},
+        {"value": "灵活就业", "phrase": "用户{value}", "china_note": "外卖/网约车/零工/平台经济，无稳定雇主，非'自由职业'（后者更独立）"},
+        {"value": "个体经营", "phrase": "用户{value}", "china_note": "摆摊/小生意/个体工商户，含地摊经济"},
+        {"value": "待业备考", "phrase": "用户{value}", "china_note": "考研/考公空窗期，中国式gap，长辈易误解为'不务正业'"},
+        {"value": "家庭主妇/夫", "phrase": "用户{value}", "china_note": "含全职带娃/煮夫，常伴经济依赖叙事"},
+        {"value": "内退", "phrase": "用户{value}", "china_note": "体制内/国企提前内退，领减薪"},
+        {"value": "下岗", "phrase": "用户{value}", "china_note": "90年代国企改制遗留，仍有群体提及，创伤感强"},
+        {"value": "待业", "phrase": "用户{value}", "china_note": "主动求职中，与'待业备考'互斥取主因"}
+      ],
+      "refine_note": "原7→现12；补灵活就业/个体经营/待业备考/内退/下岗；灵活就业=零工平台经济，待业备考=考研考公空窗，内退/下岗为体制转型遗留态"
+    },
+    {
+      "id": "housing_status",
+      "phrase": "用户{value}",
+      "values": ["自有住房", "按揭中", "租房", "公租房", "保障房", "和父母同住", "宿舍/单位房", "借住亲友", "民宿漂泊"],
+      "values_detail": [
+        {"value": "自有住房", "phrase": "用户{value}", "china_note": "无贷自有，与'按揭中'互斥"},
+        {"value": "按揭中", "phrase": "用户{value}", "china_note": "房贷月供，中国式'房奴'焦虑源"},
+        {"value": "公租房", "phrase": "用户{value}", "china_note": "保障房租赁通道，外来务工/低收入"},
+        {"value": "保障房", "phrase": "用户{value}", "china_note": "经济适用房/共有产权房，购类保障"},
+        {"value": "和父母同住", "phrase": "用户{value}", "china_note": "含啃老/代际共居，常因买房压力"},
+        {"value": "民宿漂泊", "phrase": "用户{value}", "china_note": "数字游民/频繁搬家青年，无稳定居所，边缘但增长"}
+      ],
+      "refine_note": "原6→现9；补公租房/保障房/借住亲友/民宿漂泊；按揭中与自有住房互斥（有无贷），民宿漂泊对应漂泊青年"
+    },
+    {
+      "id": "generation",
+      "phrase": "用户是{value}",
+      "values": ["10后", "05后", "00后", "90后", "80后", "70后", "60后", "50后及以上"],
+      "values_detail": [
+        {"value": "80后", "phrase": "用户是{value}", "china_note": "独生一代+房奴+育儿内卷见证者"},
+        {"value": "90后", "phrase": "用户是{value}", "china_note": "互联网原住民，反内卷/躺平话语"},
+        {"value": "00后", "phrase": "用户是{value}", "china_note": "Z世代，职场整顿/边界感"},
+        {"value": "60后", "phrase": "用户是{value}", "china_note": "文革/知青一代，含退休银发"},
+        {"value": "50后及以上", "phrase": "用户是{value}", "china_note": "空巢/失能高龄，银发叙事"}
+      ],
+      "refine_note": "原6→现8；补10后（α世代）、拆'60后及以上'为60后/50后及以上；各世代承载强文化脚本"
+    },
+    {
+      "id": "birth_order",
+      "phrase": "用户是{value}",
+      "values": ["独生子女", "老大", "中间", "老幺", "双胞胎/多胞胎"],
+      "values_detail": [
+        {"value": "独生子女", "phrase": "用户是{value}", "china_note": "计划生育核心标识，无兄弟姐妹，养老压力独担；二胎后部分独生转为'老大'（互斥以现状为准）"}
+      ],
+      "refine_note": "原5→现5；保留；独生子女为计划生育政策核心中国标识，最需回响体察的养老独担叙事"
+    },
+    {
+      "id": "home_language",
+      "phrase": "家庭语言{value}",
+      "values": ["普通话为主", "普通话方言混用", "方言家庭", "民汉双语", "涉外双语", "多语家庭"],
+      "values_detail": [
+        {"value": "普通话方言混用", "phrase": "家庭语言{value}", "china_note": "最常见，校园/职场普通话+祖辈方言，年轻一代方言退化"},
+        {"value": "民汉双语", "phrase": "家庭语言{value}", "china_note": "少数民族家庭，汉语+本族语"},
+        {"value": "涉外双语", "phrase": "家庭语言{value}", "china_note": "跨国婚姻，中文+外语"},
+        {"value": "方言家庭", "phrase": "家庭语言{value}", "china_note": "祖辈带娃方言环境"}
+      ],
+      "refine_note": "原4→现6；补普通话方言混用/民汉双语/涉外双语；普通话方言混用最常见，民汉双语对应少数民族"
+    },
+    {
+      "id": "urbanicity",
+      "phrase": "用户生活在{value}",
+      "values": ["大城市", "中小城市", "县城", "乡镇", "农村", "城乡接合部", "城中村"],
+      "values_detail": [
+        {"value": "县城", "phrase": "用户生活在{value}", "china_note": "县城体制/考编热核心场景"},
+        {"value": "城乡接合部", "phrase": "用户生活在{value}", "china_note": "城市边缘，户籍/公共服务夹缝"},
+        {"value": "城中村", "phrase": "用户生活在{value}", "china_note": "外来务工聚居，低成本城市落脚，与'大城市'互斥取居住质感"}
+      ],
+      "refine_note": "原5→现7；补城乡接合部/城中村；城中村/城乡接合部是外来务工与漂泊青年典型居所"
+    },
+    {
+      "id": "socioeconomic_band",
+      "phrase": "",
+      "values": ["低收入", "中低收入", "中等", "中高", "高收入"],
+      "values_detail": [
+        {"value": "低收入", "phrase": "", "china_note": "对应'贫困/温饱'，内部推断用"},
+        {"value": "中等", "phrase": "", "china_note": "对应'小康'，中国中产 aspirational 叙事锚点"},
+        {"value": "高收入", "phrase": "", "china_note": "对应'富裕'，内部推断用"}
+      ],
+      "refine_note": "原5→现5；有序五档已完备且为敏感维度，保留；对应中国'贫困/温饱/小康/中产/富裕'叙事，仅内部推断（消费观/焦虑）禁止直接引用收入表述"
+    },
+    {
+      "id": "family_structure",
+      "phrase": "用户{value}",
+      "values": ["独居", "和父母同住", "核心家庭", "三代同堂", "异地家庭", "重组家庭", "单亲家庭", "留守家庭", "随迁家庭", "丁克家庭", "失独家庭"],
+      "values_detail": [
+        {"value": "留守家庭", "phrase": "用户{value}", "china_note": "父母外出务工，老人/童留守农村，城乡流动产物"},
+        {"value": "随迁家庭", "phrase": "用户{value}", "china_note": "务工带娃进城，城乡夹缝，与留守为双生子"},
+        {"value": "单亲家庭", "phrase": "用户{value}", "china_note": "离异/丧偶/非婚生育"},
+        {"value": "丁克家庭", "phrase": "用户{value}", "china_note": "双收入无孩，主动选择，常遇催生压力"},
+        {"value": "重组家庭", "phrase": "用户{value}", "china_note": "再婚组建，含继子女关系张力"},
+        {"value": "失独家庭", "phrase": "用户{value}", "china_note": "独子离世，极敏感，须联动sensitive_topic谨慎回响"}
+      ],
+      "refine_note": "原6→现11；补单亲/留守/随迁/丁克/失独；留守与随迁是城乡人口流动双生子，失独为计划生育遗留创伤态须联动sensitive_topic"
+    }
+  ]
+}

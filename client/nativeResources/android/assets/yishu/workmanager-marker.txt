@@ -1,0 +1,20 @@
+yishu WorkManager availability marker (D-18 fix, 2026-08-29)
+------------------------------------------------------------
+Purpose: runtime presence probe for the native background-task stack
+(androidx.work.* bundled via uni_modules/yishu-background-tasks libs/*.jar).
+
+Why a marker asset: Android compiles all classes into dex; ClassLoader
+.getResource('androidx/work/WorkManager.class') can therefore never find it
+and returned false on every build, including cloud-built packages that
+provably contain the classes (dex autopsied: work ∈ classes3.dex).
+
+Semantics: this file is merged into the APK assets by the official
+project-level mechanism (client/nativeResources/android/assets/, HBuilderX
+>=3.6.0). It is present if and only if the app was built from THIS project
+(custom base / cloud package / release). The DCloud standard debug base does
+not contain project nativeResources nor our UTS plugins, so absence correctly
+degrades to the app-layer setInterval path.
+
+Probe code: uni_modules/yishu-background-tasks/utssdk/app-android/index.uts
+workManagerRuntimePresent() via AssetManager.list("yishu") (exception-free).
+Do not delete or rename: probe matches on "workmanager-marker.txt".

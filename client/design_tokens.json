@@ -1,0 +1,64 @@
+{
+  "colors": {
+    "bg_page": "#f8f7f4",
+    "bg_card": "#ffffff",
+    "bg_glass": "#ffffff8c",
+    "bg_glass_light": "#ffffff52",
+    "bg_glass_strong": "#ffffffcc",
+    "text_primary": "#3a2e25",
+    "text_secondary": "#8a7a6a",
+    "text_tertiary": "#b3a696",
+    "text_muted": "#5a4c40",
+    "accent_rust": "#b05a3a",
+    "accent_rust_light": "#b0593b1f",
+    "accent_amber": "#c4913c",
+    "accent_amber_light": "#c4913c24",
+    "accent_amber_faint": "#c4913c1a",
+    "photo_overlay_top": "#00000080",
+    "photo_overlay_bottom": "#f8f7f4ff",
+    "record_bg": "#1a140f",
+    "record_panel": "#faf9f5"
+  },
+  "dimensions": {
+    "page_width": 390,
+    "page_height": 844,
+    "card_margin_x": 20,
+    "card_width": 350,
+    "card_radius": 20,
+    "card_radius_small": 12,
+    "tabbar_width": 350,
+    "tabbar_height": 62,
+    "tabbar_radius": 31,
+    "tabbar_y": 752,
+    "fab_size": 56,
+    "fab_radius": 28,
+    "search_width": 350,
+    "search_height": 46,
+    "search_radius": 23,
+    "photo_hero_height": 300,
+    "safe_bottom": 34,
+    "status_bar_height": 44
+  },
+  "typography": {
+    "font_family": "Sarasa Gothic SC",
+    "title_size": 22,
+    "subtitle_size": 16,
+    "body_size": 14,
+    "caption_size": 12,
+    "small_size": 10
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 20,
+    "xxl": 24
+  },
+  "effects": {
+    "press_scale": 0.98,
+    "press_duration": 200,
+    "card_shadow": "0 4 16 #00000008",
+    "glass_blur": 16
+  }
+}

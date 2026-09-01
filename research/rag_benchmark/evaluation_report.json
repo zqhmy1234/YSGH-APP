@@ -1,0 +1,164 @@
+{
+  "_meta": {
+    "version": 2,
+    "note": "RAG 全分布测评"
+  },
+  "corpora": {},
+  "truth": {
+    "queries": 50,
+    "sources": [
+      "truth_queries_50"
+    ],
+    "corpus_size": 117,
+    "layers": {
+      "descriptive": {
+        "n": 10,
+        "placeholder": false,
+        "negative_n": 1,
+        "negative_fp": 1,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.059,
+          "recall@3": 0.1645,
+          "recall@5": 0.2762,
+          "recall@10": 0.5586,
+          "hit_rate@1": 1.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 1.0,
+          "precision@3": 0.9259,
+          "precision@5": 0.9333,
+          "precision@10": 0.9444,
+          "mrr": 1.0,
+          "ndcg@3": 0.941,
+          "n_queries": 9
+        }
+      },
+      "keyword": {
+        "n": 8,
+        "placeholder": false,
+        "negative_n": 1,
+        "negative_fp": 1,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.0375,
+          "recall@3": 0.1115,
+          "recall@5": 0.1776,
+          "recall@10": 0.3373,
+          "hit_rate@1": 0.7143,
+          "hit_rate@3": 0.8571,
+          "hit_rate@5": 0.8571,
+          "hit_rate@10": 0.8571,
+          "precision@1": 0.7143,
+          "precision@3": 0.7143,
+          "precision@5": 0.6857,
+          "precision@10": 0.6571,
+          "mrr": 0.7619,
+          "ndcg@3": 0.7143,
+          "n_queries": 7
+        }
+      },
+      "time": {
+        "n": 7,
+        "placeholder": true,
+        "negative_n": 1,
+        "negative_fp": 0,
+        "unmatched_n": 0,
+        "behavior_acc": 1.0,
+        "retrieval": null
+      },
+      "place": {
+        "n": 6,
+        "placeholder": true,
+        "negative_n": 1,
+        "negative_fp": 0,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": null
+      },
+      "person": {
+        "n": 6,
+        "placeholder": true,
+        "negative_n": 1,
+        "negative_fp": 1,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": null
+      },
+      "image": {
+        "n": 5,
+        "placeholder": true,
+        "negative_n": 1,
+        "negative_fp": 0,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": null
+      },
+      "route": {
+        "n": 8,
+        "placeholder": true,
+        "negative_n": 1,
+        "negative_fp": 1,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.032,
+          "recall@3": 0.0711,
+          "recall@5": 0.1101,
+          "recall@10": 0.2077,
+          "hit_rate@1": 0.6,
+          "hit_rate@3": 0.6,
+          "hit_rate@5": 0.6,
+          "hit_rate@10": 0.6,
+          "precision@1": 0.6,
+          "precision@3": 0.4667,
+          "precision@5": 0.44,
+          "precision@10": 0.42,
+          "mrr": 0.6,
+          "ndcg@3": 0.4939,
+          "n_queries": 5
+        }
+      }
+    },
+    "overall": {
+      "retrieval": {
+        "recall@1": 0.0454,
+        "recall@3": 0.1246,
+        "recall@5": 0.2038,
+        "recall@10": 0.4013,
+        "hit_rate@1": 0.8095,
+        "hit_rate@3": 0.8571,
+        "hit_rate@5": 0.8571,
+        "hit_rate@10": 0.8571,
+        "precision@1": 0.8095,
+        "precision@3": 0.746,
+        "precision@5": 0.7333,
+        "precision@10": 0.7238,
+        "mrr": 0.8254,
+        "ndcg@3": 0.759,
+        "n_queries": 21
+      },
+      "negative_n": 7,
+      "negative_error_rate": 0.5714,
+      "placeholder_n": 16,
+      "unmatched_n": 0,
+      "cross_modal": {
+        "n": 5,
+        "multi_modal_hit": 1,
+        "acc": 0.2
+      }
+    },
+    "gates": {
+      "hit_rate@3": 0.8571,
+      "gate_hit_rate@3": true,
+      "negative_error_rate": 0.5714,
+      "gate_negative_error_rate": false,
+      "threshold_hit_rate@3": 0.7,
+      "threshold_negative": 0.05
+    }
+  },
+  "overall_pass": false
+}

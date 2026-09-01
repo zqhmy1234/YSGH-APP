@@ -1,0 +1,105 @@
+/**
+ * 预处理（B3-4）：去重 + 连拍折叠 + GPS 漂移修正（UTS 移植）
+ *
+ * 与 backend/app/services/event_aggregation/pipeline.py 的 preprocess 同逻辑
+ * （AGG-016 双跑），2026-08-26 Wave2 AgentE 新增步骤①：
+ *  - ① 感知哈希去重：phash 非空且重复 → 跳过（重复照片只保留首张）；
+ *    与云端 contents.uq_contents_user_hash（user_id, perceptual_hash 唯一）
+ *    语义对齐（同用户同哈希只入库一次）。phash 为空 → 按 id 兜底去重
+ *    （同批重复注入防御），否则不判断重复。
+ *  - ② 连拍折叠：<5s 间隔折叠为 1 个时间点（保留首张，burstGroup 记组）
+ *  - ③ 漂移修正：相邻照片速度超物理上限 → 坐标置空（存疑标记，由调用方取众数）
+ */
+import { BURST_GAP_SEC, DRIVE_SPEED_MS } from './agg_config.uts'
+import { Photo, haversineM } from './st_dbscan.uts'
+
+/** 原始照片（预处理输入；ts 为 epoch ms UTC；phash 空=不参与感知去重） */
+export class RawPhoto {
+	id: string
+	ts: number
+	lat: number | null
+	lng: number | null
+	tags: string[]
+	phash: string
+
+	constructor(id: string, ts: number, lat: number | null, lng: number | null, tags: string[], phash: string) {
+		this.id = id
+		this.ts = ts
+		this.lat = lat
+		this.lng = lng
+		this.tags = tags
+		this.phash = phash
+	}
+}
+
+/** ① 感知哈希去重：同哈希只保留首张（与云端 uq_contents_user_hash 对齐） */
+function dedup(photos: RawPhoto[]): RawPhoto[] {
+	const seen: Map<string, boolean> = new Map<string, boolean>()
+	const out: RawPhoto[] = []
+	for (let i = 0; i < photos.length; i++) {
+		const p = photos[i]
+		const key = p.phash != '' ? p.phash : p.id
+		if (seen.get(key) != null) {
+			continue // 重复跳过（首张保留）
+		}
+		seen.set(key, true)
+		out.push(p)
+	}
+	return out
+}
+
+/** 预处理：去重 → 连拍折叠 → GPS 漂移修正（B3-4） */
+export function preprocess(photos: RawPhoto[]): Photo[] {
+	// ① 去重先行（设计 §3：去重(Q16) → 连拍折叠 → 漂移修正）
+	const depped = dedup(photos)
+
+	const sorted: RawPhoto[] = []
+	for (let i = 0; i < depped.length; i++) {
+		sorted.push(depped[i])
+	}
+	sorted.sort((a: RawPhoto, b: RawPhoto): number => {
+		return a.ts < b.ts ? -1 : (a.ts > b.ts ? 1 : 0)
+	})
+
+	// --- ② 连拍折叠（与原始序列的紧邻上一张比较：<5s 归入当前组）---
+	const folded: Photo[] = []
+	let group = 0
+	let prevTs: number | null = null
+	for (let i = 0; i < sorted.length; i++) {
+		const p = sorted[i]
+		if (prevTs != null && (p.ts - prevTs) / 1000.0 < BURST_GAP_SEC) {
+			// 归入当前折叠组：改写上一张（首张）的 burstGroup 保持组号一致
+			const last = folded[folded.length - 1]
+			last.burstGroup = group
+		} else {
+			group++
+			folded.push(new Photo(p.id, p.ts, p.lat, p.lng, group, p.tags))
+		}
+		prevTs = p.ts
+	}
+
+	// --- ③ GPS 漂移修正（速度校验：超驾车上限 → 坐标置空标记存疑）---
+	const corrected: Photo[] = []
+	for (let i = 0; i < folded.length; i++) {
+		const p = folded[i]
+		let drift = false
+		if (p.lat != null && p.lng != null && i > 0 && corrected.length > 0) {
+			const prev = corrected[corrected.length - 1]
+			if (prev.lat != null && prev.lng != null) {
+				const dt = (p.ts - prev.ts) / 1000.0
+				if (dt > 0) {
+					const speed = haversineM(prev.lat, prev.lng, p.lat, p.lng) / dt
+					if (speed > DRIVE_SPEED_MS) {
+						drift = true
+					}
+				}
+			}
+		}
+		if (drift) {
+			corrected.push(new Photo(p.id, p.ts, null, null, p.burstGroup, p.tags))
+		} else {
+			corrected.push(p)
+		}
+	}
+	return corrected
+}

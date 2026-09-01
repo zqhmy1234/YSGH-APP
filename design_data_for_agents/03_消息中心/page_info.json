@@ -1,0 +1,11 @@
+{
+  "page_key": "03_消息中心",
+  "page_path": "pages/messages/messages.uvue",
+  "page_desc": "消息中心页",
+  "design_data_file": "design_data.json",
+  "common_components": [
+    "TabBar胶囊.json",
+    "中央＋按钮.json",
+    "_summary.json"
+  ]
+}

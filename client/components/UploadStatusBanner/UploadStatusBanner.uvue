@@ -1,0 +1,177 @@
+﻿<template>
+	<!-- 同步状态横幅（B4 §7 · Wave3 Agent H）：
+	     待上传图标 / 失败标红可点击重试 / 暂停横幅"网络异常，已暂停同步" / 一键继续上传。
+	     自包含：直接读 sync_client + uploader 模块状态，宿主页只需一行 <UploadStatusBanner />。
+	     优先级：暂停 > 蜂窝暂缓原图 > 失败可重试 > 上传中。 -->
+	<view v-if="show" class="banner" :class="bannerClass">
+		<view class="banner-main" @tap="onBannerTap">
+			<text class="banner-icon">{{ icon }}</text>
+			<text class="banner-text">{{ text }}</text>
+		</view>
+		<view v-if="showAction" class="banner-action" @tap="onActionTap">
+			<text class="banner-action-text">{{ actionText }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onMounted, onBeforeUnmount, computed } from 'vue'
+	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_client'
+	import { heldCount, failedCount, continuePendingUploads, getNetKind, NetKind } from '@/utils/uploader'
+
+	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
+
+	let paused = false
+	let pauseReason = ''
+	let held = 0
+	let failed = 0
+	let uploading = false
+	let netKind: NetKind = 'unknown'
+	let refresher = 0
+
+	const show = computed((): boolean => {
+		return paused || held > 0 || failed > 0 || uploading
+	})
+	const bannerClass = computed((): string => {
+		if (paused) return 'banner-paused'
+		if (held > 0) return 'banner-held'
+		if (failed > 0) return 'banner-failed'
+		return 'banner-uploading'
+	})
+	const icon = computed((): string => {
+		if (paused) return '⏸'
+		if (held > 0) return '📤'
+		if (failed > 0) return '⚠️'
+		return '⏳'
+	})
+	const text = computed((): string => {
+		if (paused) return pauseReason != '' ? pauseReason : '网络异常，已暂停同步'
+		if (held > 0) {
+			if (netKind == 'wifi') return held + ' 张照片待上传（原图）'
+			return held + ' 张照片待 WiFi 上传（蜂窝仅传缩略图+元数据）'
+		}
+		if (failed > 0) return failed + ' 张照片上传失败，点击重试'
+		return '正在上传…'
+	})
+	const showAction = computed((): boolean => {
+		return paused || held > 0 || failed > 0
+	})
+	const actionText = computed((): string => {
+		if (paused) return '继续上传'
+		if (held > 0 && netKind != 'wifi') return '立即上传原图'
+		return '重试'
+	})
+
+	onMounted(() => {
+		subscribeSyncStatus((p: boolean, reason: string) => {
+			paused = p
+			pauseReason = reason
+		})
+		refresh()
+		refresher = setInterval(() => {
+			refresh()
+		}, 3000) as number
+	})
+	onBeforeUnmount(() => {
+		if (refresher != 0) {
+			clearInterval(refresher)
+			refresher = 0
+		}
+	})
+
+	function refresh(): void {
+		paused = isSyncPaused()
+		pauseReason = getPauseReason()
+		held = heldCount()
+		failed = failedCount()
+		getNetKind((kind: NetKind) => {
+			netKind = kind
+		})
+	}
+	function onBannerTap(): void {
+		if (failed > 0 && !paused) {
+			doContinue('retry-failed')
+		}
+	}
+	function onActionTap(): void {
+		if (paused) {
+			doContinue('continue-upload')
+		} else if (held > 0 && netKind != 'wifi') {
+			doContinue('upload-original')
+		} else {
+			doContinue('retry-failed')
+		}
+	}
+	function doContinue(evt: string): void {
+		uploading = true
+		emit(evt)
+		continuePendingUploads(() => {
+			uploading = false
+			refresh()
+		}).then(() => {
+			uploading = false
+			refresh()
+		})
+	}
+</script>
+
+<style>
+	.banner {
+		margin-left: 32rpx;
+		margin-right: 32rpx;
+		margin-top: 16rpx;
+		border-radius: 12rpx;
+		padding: 20rpx 28rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.banner-paused {
+		background-color: #B05A3A;
+	}
+	.banner-held {
+		background-color: #3A2E25;
+	}
+	.banner-failed {
+		background-color: #B05A3A;
+	}
+	.banner-uploading {
+		background-color: #3A2E25;
+		opacity: 0.85;
+	}
+	.banner-main {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* uvue App 端样式不继承，text 类需各自声明 font-family */
+	.banner-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #F6F1E7;
+		font-size: 30rpx;
+		margin-right: 16rpx;
+	}
+	.banner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #F6F1E7;
+		font-size: 26rpx;
+		flex: 1;
+	}
+	.banner-action {
+		margin-left: 20rpx;
+		padding-left: 28rpx;
+		padding-right: 28rpx;
+		padding-top: 10rpx;
+		padding-bottom: 10rpx;
+		background-color: #FBF7EF;
+		border-radius: 28rpx;
+	}
+	.banner-action-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #B05A3A;
+		font-size: 24rpx;
+		font-weight: bold;
+	}
+</style>

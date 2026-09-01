@@ -1,0 +1,396 @@
+<template>
+	<!-- ardot 直转 v2：定稿 · 精修高保真（帧 2:189）· 审计化生成 -->
+	<view class="page-root">
+		<image class="n2_256" src="/static/images/img2_256.png" mode="aspectFill" /> <!-- 合成图: 照片出血氛围层 -->
+		<text class="n2_194">回忆</text> <!-- 大标题 -->
+		<text class="n2_195">八月 · 28 条新记忆</text> <!-- 副标题 -->
+		<view class="n2_196"> <!-- 头像 -->
+			<text class="n2_197">峰</text> <!-- 头像字 -->
+		</view>
+		<view class="n2_198"> <!-- 玻璃搜索胶囊 -->
+			<image class="n2_199" src="/static/icons/i2_199.svg" /> <!-- icon: 搜索图标 -->
+			<text class="n2_202">描述一段回忆，帮你找</text> <!-- 搜索占位 -->
+		</view>
+		<view class="n2_203"> <!-- 内容区 -->
+			<view class="n2_204"> <!-- 日期分组 -->
+				<text class="n2_205">8月28日 · 星期五</text> <!-- 日期文字 -->
+				<view class="n2_206"> <!-- 日期线 -->
+				</view>
+			</view>
+			<view class="n2_215"> <!-- 语音卡 -->
+				<view class="n2_216"> <!-- 语音媒体 -->
+					<view class="n2_217"> <!-- 玻璃播放钮 -->
+						<image class="n2_218" src="/static/icons/i2_218.svg" /> <!-- icon: 播放图标 -->
+					</view>
+					<view class="n2_220"> <!-- 波形 -->
+						<image class="n2_221" src="/static/icons/i2_221.svg" /> <!-- icon: Vector -->
+					</view>
+				</view>
+				<view class="n2_222"> <!-- 语音文字区 -->
+					<text class="n2_223">和妈妈的通话</text> <!-- 语音卡标题 -->
+					<text class="n2_224">8月27日 12:36 · 语音 3分12秒 · 已转写</text> <!-- 语音卡元信息 -->
+				</view>
+			</view>
+			<view class="n2_225"> <!-- 文字卡 -->
+				<view class="n2_226"> <!-- 摘要块 -->
+					<view class="n2_227"> <!-- 引用竖线 -->
+					</view>
+					<text class="n2_228">今天把实验室的仪器终于调通了，导师说这个数据比预期干净很多，晚上请全组喝了奶茶。</text> <!-- 摘要文本 -->
+				</view>
+				<view class="n2_229"> <!-- 文字元信息区 -->
+					<text class="n2_230">8月26日 21:15 · 文字记录</text> <!-- 文字卡元信息 -->
+				</view>
+			</view>
+		</view>
+		<view class="n2_231"> <!-- 玻璃TabBar -->
+			<view class="n2_232"> <!-- Tab-时间轴 -->
+				<image class="n2_233" src="/static/icons/i2_233.svg" /> <!-- icon: 图标-指南针 -->
+				<text class="n2_236">时间轴</text> <!-- 标签-时间轴 -->
+			</view>
+			<view class="n2_237"> <!-- Tab-AI -->
+				<image class="n2_238" src="/static/icons/i2_238.svg" /> <!-- icon: 图标-对话 -->
+				<text class="n2_240">AI</text> <!-- 标签-AI -->
+			</view>
+			<view class="n2_241"> <!-- 中央留位 -->
+			</view>
+			<view class="n2_242"> <!-- Tab-搜索 -->
+				<image class="n2_243" src="/static/icons/i2_243.svg" /> <!-- icon: 图标-搜索 -->
+				<text class="n2_246">搜索</text> <!-- 标签-搜索 -->
+			</view>
+			<view class="n2_247"> <!-- Tab-我的 -->
+				<image class="n2_248" src="/static/icons/i2_248.svg" /> <!-- icon: 图标-我的 -->
+				<text class="n2_251">我的</text> <!-- 标签-我的 -->
+			</view>
+		</view>
+		<view class="n2_252"> <!-- 中央＋按钮 -->
+			<image class="n2_253" src="/static/icons/i2_253.svg" /> <!-- icon: 加号 -->
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n2_256 {
+		position: absolute;
+		left: 0rpx;
+		top: 0.0rpx;
+		width: 750rpx;
+		height: 576.9rpx;
+	}
+	.n2_194 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 153.8rpx;
+		height: 92.3rpx;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		color: #FFFFFF;
+	}
+	.n2_195 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 211.5rpx;
+		width: 226.9rpx;
+		height: 30.8rpx;
+		font-size: 25rpx;
+		color: rgba(255, 255, 255, 0.85);
+		text-shadow: 0rpx 1.9rpx 15.4rpx rgba(25, 20, 15, 0.5);
+	}
+	.n2_196 {
+		position: absolute;
+		left: 634.6rpx;
+		top: 111.5rpx;
+		width: 76.9rpx;
+		height: 76.9rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #C4913C;
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.7);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_197 {
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+	.n2_198 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 473.1rpx;
+		width: 673.1rpx;
+		height: 88.5rpx;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 30.8rpx;
+		padding-bottom: 30.8rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.5);
+		box-shadow: 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_199 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n2_202 {
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.n2_203 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 607.7rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_204 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_205 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n2_206 {
+		flex: 1;
+		height: 1.9rpx;
+		background-color: #3A2E25;
+		overflow: hidden;
+	}
+	.n2_215 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_216 {
+		width: 100%;
+		height: 123.1rpx;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: rgba(196, 145, 60, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_217 {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.72);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n2_218 {
+		width: 23.1rpx;
+		height: 23.1rpx;
+	}
+	.n2_220 {
+		width: 384.6rpx;
+		height: 50rpx;
+		overflow: hidden;
+	}
+	.n2_221 {
+		position: absolute;
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	.n2_222 {
+		width: 100%;
+		flex-direction: column;
+		gap: 5.8rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_223 {
+		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
+	}
+	.n2_224 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_225 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_226 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 60, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_227 {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
+	}
+	.n2_228 {
+		flex: 1;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n2_229 {
+		width: 100%;
+		flex-direction: column;
+		gap: 5.8rpx;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_230 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_231 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1446.2rpx;
+		width: 673.1rpx;
+		height: 119.2rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 19.2rpx;
+		padding-right: 19.2rpx;
+		padding-top: 19.2rpx;
+		padding-bottom: 19.2rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), 0rpx 19.2rpx 53.8rpx rgba(59, 46, 38, 0.1);
+		border-radius: 69.2rpx;
+		overflow: hidden;
+	}
+	.n2_232 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_233 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_236 {
+		font-weight: 600;
+		font-size: 19.2rpx;
+		color: #B05A3A;
+	}
+	.n2_237 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_238 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_240 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_241 {
+		width: 92.3rpx;
+		height: 19.2rpx;
+		overflow: hidden;
+	}
+	.n2_242 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_243 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_246 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_247 {
+		flex-direction: column;
+		gap: 5.8rpx;
+		overflow: hidden;
+	}
+	.n2_248 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n2_251 {
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	.n2_252 {
+		position: absolute;
+		left: 321.2rpx;
+		top: 1423.1rpx;
+		width: 107.7rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 11.5rpx 30.8rpx rgba(176, 89, 59, 0.35);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.n2_253 {
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+</style>

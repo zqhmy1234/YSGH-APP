@@ -1,0 +1,13 @@
+{
+	"name": "yishu-recorder",
+	"id": "yishu-recorder",
+	"version": "1.0.0",
+	"description": "忆述光华 · 录音系统能力层（B5a Wave4 AgentJ J-7）：wav 16k 单声道 ≤30min + 中断状态机（RECORDING→INTERRUPTED→恢复/暂停/30min 自动结束分段保存）",
+	"main": "utssdk/index.uts",
+	"author": "AgentJ",
+	"license": "Apache-2.0",
+	"uni_modules": {
+		"dependencies": {},
+		"encrypt": []
+	}
+}

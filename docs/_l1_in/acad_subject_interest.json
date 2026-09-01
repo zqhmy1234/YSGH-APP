@@ -1,0 +1,24 @@
+{
+  "id": "acad_subject_interest",
+  "label": "学科兴趣",
+  "category": "学习与认知",
+  "current_values": [
+    "文学写作",
+    "音乐",
+    "心理学",
+    "哲学",
+    "计算机",
+    "经济",
+    "历史",
+    "外语"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "MC",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "从 Learning: Academic 的 acad_* 精选中国语境 8 个",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

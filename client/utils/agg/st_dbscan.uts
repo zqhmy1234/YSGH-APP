@@ -1,0 +1,200 @@
+/**
+ * ST-DBSCAN 时空聚类（B3 L0 瞬间层核心 · UTS 移植）
+ *
+ * 语义：AND 语义邻居——两点相邻当且仅当 时间差 ≤ ε_t 且 空间距离 ≤ ε_s。
+ * 与 backend/app/services/event_aggregation/st_dbscan.py 同参同逻辑（AGG-016 双跑）。
+ *
+ * UTS 约定：
+ *  - ts 为 epoch 毫秒（UTC）；时间差 = |a.ts - b.ts| / 1000（秒）
+ *  - 日界按 tzOffsetMin（分钟）偏移后取 UTC 日期（端侧传设备本地时区偏移）
+ */
+
+/** 照片时间点（预处理后） */
+export class Photo {
+	id: string
+	ts: number           // epoch ms (UTC)
+	lat: number | null   // null = 无 GPS
+	lng: number | null
+	burstGroup: number   // 连拍折叠组（预处理填充）
+	tags: string[]
+
+	constructor(id: string, ts: number, lat: number | null, lng: number | null, burstGroup: number, tags: string[]) {
+		this.id = id
+		this.ts = ts
+		this.lat = lat
+		this.lng = lng
+		this.burstGroup = burstGroup
+		this.tags = tags
+	}
+}
+
+/** L1 日卡片（B3-2 自然日；深夜 23:30-1:00 归属前一天） */
+export class DayCard {
+	date: string
+	photos: Photo[]
+	isSparse: boolean
+
+	constructor(date: string, photos: Photo[], isSparse: boolean) {
+		this.date = date
+		this.photos = photos
+		this.isSparse = isSparse
+	}
+}
+
+/** 两点球面距离（米） */
+export function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+	const r = 6371000.0
+	const p1 = lat1 * Math.PI / 180.0
+	const p2 = lat2 * Math.PI / 180.0
+	const dp = (lat2 - lat1) * Math.PI / 180.0
+	const dl = (lng2 - lng1) * Math.PI / 180.0
+	const a = Math.sin(dp / 2.0) * Math.sin(dp / 2.0) +
+		Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2.0) * Math.sin(dl / 2.0)
+	return 2.0 * r * Math.asin(Math.sqrt(a))
+}
+
+/** AND 语义：时间与空间都近才算邻居；任一无 GPS 则只看时间 */
+function isNeighbor(a: Photo, b: Photo, epsTsec: number, epsS_m: number): boolean {
+	const dt = Math.abs(a.ts - b.ts) / 1000.0
+	if (dt > epsTsec) {
+		return false
+	}
+	if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) {
+		return true // 无 GPS 按时间窗归组（B3 矩阵 #6）
+	}
+	return haversineM(a.lat, a.lng, b.lat, b.lng) <= epsS_m
+}
+
+/**
+ * ST-DBSCAN：返回簇列表；散片（噪声）不返回（由调用方并入 L1）
+ * 复杂度 O(n²)；万级需网格索引（后续优化，与 Python 原型注释一致）
+ */
+export function stDbscan(photos: Photo[], epsTsec: number, epsS_m: number, minPts: number): Photo[][] {
+	const n = photos.length
+	const visited: boolean[] = []
+	for (let i = 0; i < n; i++) {
+		visited.push(false)
+	}
+	const clusters: Photo[][] = []
+
+	for (let i = 0; i < n; i++) {
+		if (visited[i]) {
+			continue
+		}
+		visited[i] = true
+		const seed = photos[i]
+		const neighbors: number[] = []
+		for (let j = 0; j < n; j++) {
+			if (j == i) {
+				continue
+			}
+			if (isNeighbor(seed, photos[j], epsTsec, epsS_m)) {
+				neighbors.push(j)
+			}
+		}
+		if (neighbors.length < minPts - 1) {
+			continue // 噪声：散片 → L1 日卡片（B3-2 min_pts=3）
+		}
+
+		const cluster: Photo[] = [seed]
+		const queue: number[] = []
+		for (let q = 0; q < neighbors.length; q++) {
+			queue.push(neighbors[q])
+		}
+		while (queue.length > 0) {
+			const j = queue.pop() as number
+			if (visited[j]) {
+				continue
+			}
+			visited[j] = true
+			cluster.push(photos[j])
+			const jn: number[] = []
+			for (let k = 0; k < n; k++) {
+				if (k == j) {
+					continue
+				}
+				if (isNeighbor(photos[j], photos[k], epsTsec, epsS_m)) {
+					jn.push(k)
+				}
+			}
+			if (jn.length >= minPts - 1) {
+				for (let q = 0; q < jn.length; q++) {
+					const k = jn[q]
+					if (!visited[k]) {
+						queue.push(k)
+					}
+				}
+			}
+		}
+		clusters.push(cluster)
+	}
+	return clusters
+}
+
+function pad2(n: number): string {
+	return n < 10 ? '0' + n : '' + n
+}
+
+/**
+ * 自然日分桶；深夜 23:30-1:00 归属前一天（B3-2）
+ * 统一：23:30-23:59 / 00:00-00:59 / 01:00 整点 → 前一天（与 Python 实现一致）
+ */
+function bucketDay(ts: number, tzOffsetMin: number): string {
+	const shifted = ts + tzOffsetMin * 60000
+	const d = new Date(shifted)
+	const hour = d.getUTCHours()
+	const minute = d.getUTCMinutes()
+	const toPrev = (hour == 23 && minute >= 30) || hour == 0 || (hour == 1 && minute == 0)
+	const base = new Date(shifted - (toPrev ? 86400000 : 0))
+	return base.getUTCFullYear() + '-' + pad2(base.getUTCMonth() + 1) + '-' + pad2(base.getUTCDate())
+}
+
+/**
+ * L1 日聚合：簇 + 散片 → 自然日卡片
+ * 规则（B3-2）：自然日 0-24 时；深夜 23:30-1:00 连续拍摄归属前一天。
+ * 输出 DayCard[]，稀疏（1-2 张）标记并入日卡片（B3 #8）。
+ */
+export function l1DailyAggregate(clusters: Photo[][], noise: Photo[], tzOffsetMin: number): DayCard[] {
+	const dayMap: Map<string, Photo[]> = new Map<string, Photo[]>()
+	for (let i = 0; i < clusters.length; i++) {
+		const cl = clusters[i]
+		for (let j = 0; j < cl.length; j++) {
+			const p = cl[j]
+			const key = bucketDay(p.ts, tzOffsetMin)
+			const arr = dayMap.get(key)
+			if (arr == null) {
+				dayMap.set(key, [p])
+			} else {
+				arr.push(p)
+			}
+		}
+	}
+	for (let i = 0; i < noise.length; i++) {
+		const p = noise[i]
+		const key = bucketDay(p.ts, tzOffsetMin)
+		const arr = dayMap.get(key)
+		if (arr == null) {
+			dayMap.set(key, [p])
+		} else {
+			arr.push(p)
+		}
+	}
+
+	const keys: string[] = []
+	dayMap.forEach((v: Photo[], k: string) => {
+		keys.push(k)
+	})
+	keys.sort((a: string, b: string): number => {
+		return a < b ? -1 : (a > b ? 1 : 0)
+	})
+
+	const result: DayCard[] = []
+	for (let i = 0; i < keys.length; i++) {
+		const ps = dayMap.get(keys[i]) as Photo[]
+		ps.sort((a: Photo, b: Photo): number => {
+			return a.ts < b.ts ? -1 : (a.ts > b.ts ? 1 : 0)
+		})
+		result.push(new DayCard(keys[i], ps, ps.length <= 2))
+	}
+	return result
+}

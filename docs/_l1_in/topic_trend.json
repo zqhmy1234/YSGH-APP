@@ -1,0 +1,19 @@
+{
+  "id": "topic_trend",
+  "label": "主题迁移趋势",
+  "category": "活跃主题与兴趣",
+  "current_values": [
+    "上升",
+    "稳定",
+    "下降"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "N",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "本周 vs 上周（A 视角复盘对比需求）",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

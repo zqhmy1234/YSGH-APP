@@ -1,0 +1,370 @@
+<template>
+	<!-- ardot 直转 v2：记忆详情页（帧 4:404）· 审计化生成 -->
+	<view class="page-root">
+	<image class="n4_406" src="/static/images/img4_406.png" mode="aspectFill" /> <!-- 合成图: 全幅媒体 -->
+	<view class="n4_407"></view> <!-- 顶部暗化 -->
+	<view class="n4_408"></view> <!-- 底部溶解 -->
+	<view class="n4_409"> <!-- 玻璃顶栏 -->
+			<view class="n4_410"> <!-- 返回钮 -->
+				<image class="n4_411" src="/static/icons/i4_411.svg" /> <!-- icon: 返回图标 -->
+			</view>
+			<view class="n4_413"> <!-- 右侧钮组 -->
+				<view class="n4_414"> <!-- 收藏钮 -->
+					<image class="n4_415" src="/static/icons/i4_415.svg" /> <!-- icon: 收藏图标 -->
+				</view>
+				<view class="n4_417"> <!-- 更多钮 -->
+					<image class="n4_418" src="/static/icons/i4_418.svg" /> <!-- icon: 更多图标 -->
+				</view>
+			</view>
+		</view>
+		<text class="n4_422">清晨的湖边，风很轻</text> <!-- 详情标题 -->
+		<text class="n4_423">8月28日 07:42 · 拍摄于湖边 · 与AI整理</text> <!-- 详情元信息 -->
+		<view class="n4_424"> <!-- AI注释卡 -->
+			<view class="n4_425"> <!-- 注释头 -->
+				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
+				<text class="n4_428">AI 的观察</text> <!-- AI观察 -->
+			</view>
+			<text class="n4_429">这是你本月最早的一条晨间记录。拍摄后 12 分钟，你搜索了「湖边露营装备」——也许下一次，你不只是路过。</text> <!-- 注释文字 -->
+		</view>
+		<view class="n4_430"> <!-- 正文卡 -->
+			<text class="n4_431">六点半出门，湖边几乎没有人。雾还没散，芦苇一动不动，水面像一层薄玻璃。站了十分钟，只听到自己的呼吸声。</text> <!-- 正文 -->
+			<text class="n4_432">来自照片的 AI 描述 · 你也可以补充一句</text> <!-- 正文来源 -->
+		</view>
+		<text class="n4_433">相关记忆</text> <!-- 相关记忆节标 -->
+		<view class="n4_434"> <!-- 相关横滑 -->
+			<view class="n4_435"> <!-- 相关卡1 -->
+				<view class="n4_442"> <!-- 缩略 -->
+				</view>
+				<text class="n4_436">公园野餐</text> <!-- 标题 -->
+				<text class="n4_437">8月26日</text> <!-- 元信息 -->
+			</view>
+			<view class="n4_438"> <!-- 相关卡2 -->
+				<view class="n4_443"> <!-- 缩略 -->
+				</view>
+				<text class="n4_439">图书馆四楼</text> <!-- 标题 -->
+				<text class="n4_440">8月14日</text> <!-- 元信息 -->
+			</view>
+		</view>
+		<view class="n4_441"> <!-- 玻璃操作条 -->
+			<view class="n4_444"> <!-- 操作-问AI -->
+				<image class="n4_445" src="/static/icons/i4_445.svg" /> <!-- icon: 图标 -->
+				<text class="n4_447">问 AI</text> <!-- 文字 -->
+			</view>
+			<view class="n4_448"> <!-- 操作-胶囊 -->
+				<image class="n4_449" src="/static/icons/i4_449.svg" /> <!-- icon: 图标 -->
+				<text class="n4_452">加入胶囊</text> <!-- 文字 -->
+			</view>
+			<view class="n4_453"> <!-- 操作-分享 -->
+				<image class="n4_454" src="/static/icons/i4_454.svg" /> <!-- icon: 图标 -->
+				<text class="n4_457">分享</text> <!-- 文字 -->
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		height: 2115.4rpx;
+		background-color: #F8F7F4;
+	}
+	.n4_406 {
+		position: absolute;
+		left: 0rpx;
+		top: 0.0rpx;
+		width: 750rpx;
+		height: 692.3rpx;
+	}
+	.n4_407 {
+		position: absolute;
+		left: 0rpx;
+		top: 84.6rpx;
+		width: 750rpx;
+		height: 211.5rpx;
+		background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.45), rgba(26, 20, 15, 0.15) 50%, rgba(26, 20, 15, 0));
+	}
+	.n4_408 {
+		position: absolute;
+		left: 0rpx;
+		top: 546.2rpx;
+		width: 750rpx;
+		height: 230.8rpx;
+		background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0), rgba(248, 247, 244, 0.6) 50%, rgba(248, 247, 244, 1));
+	}
+	.n4_409 {
+		position: absolute;
+		left: 30.8rpx;
+		top: 123.1rpx;
+		width: 688.5rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_410 {
+		width: 84.6rpx;
+		height: 84.6rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(59, 46, 38, 0.3);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.4);
+		border-radius: 42.3rpx;
+		overflow: hidden;
+	}
+	.n4_411 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_413 {
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_414 {
+		width: 84.6rpx;
+		height: 84.6rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(59, 46, 38, 0.3);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.4);
+		border-radius: 42.3rpx;
+		overflow: hidden;
+	}
+	.n4_415 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_417 {
+		width: 84.6rpx;
+		height: 84.6rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(59, 46, 38, 0.3);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.4);
+		border-radius: 42.3rpx;
+		overflow: hidden;
+	}
+	.n4_418 {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n4_422 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 723.1rpx;
+		width: 450rpx;
+		height: 59.6rpx;
+		font-weight: bold;
+		font-size: 50rpx;
+		color: #3A2E25;
+	}
+	.n4_423 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 792.3rpx;
+		width: 436.5rpx;
+		height: 28.8rpx;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_424 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 861.5rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 15.4rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 30.8rpx;
+		padding-bottom: 30.8rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_425 {
+		width: 100%;
+		flex-direction: row;
+		gap: 11.5rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_426 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n4_428 {
+		font-weight: 600;
+		font-size: 21.2rpx;
+		color: #B05A3A;
+	}
+	.n4_429 {
+		width: 100%;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n4_430 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1134.6rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 11.5rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 30.8rpx;
+		padding-bottom: 30.8rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_431 {
+		width: 100%;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.n4_432 {
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	.n4_433 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1426.9rpx;
+		width: 123.1rpx;
+		height: 36.5rpx;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.n4_434 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1484.6rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		gap: 23.1rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_435 {
+		width: 288.5rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 19.2rpx rgba(59, 46, 38, 0.06);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_442 {
+		width: 100%;
+		height: 153.8rpx;
+		background-image: linear-gradient(to bottom right, rgba(122, 140, 90, 0.3), rgba(196, 145, 60, 0.2));
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_436 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #3A2E25;
+	}
+	.n4_437 {
+		font-size: 17.3rpx;
+		color: #8A7A6A;
+	}
+	.n4_438 {
+		width: 288.5rpx;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 19.2rpx rgba(59, 46, 38, 0.06);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.n4_443 {
+		width: 100%;
+		height: 153.8rpx;
+		background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.28), rgba(122, 140, 90, 0.15));
+		border-radius: 19.2rpx;
+		overflow: hidden;
+	}
+	.n4_439 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #3A2E25;
+	}
+	.n4_440 {
+		font-size: 17.3rpx;
+		color: #8A7A6A;
+	}
+	.n4_441 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1923.1rpx;
+		width: 673.1rpx;
+		height: 115.4rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.55);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.45), 0rpx 19.2rpx 53.8rpx rgba(59, 46, 38, 0.1);
+		border-radius: 57.7rpx;
+		overflow: hidden;
+	}
+	.n4_444 {
+		flex-direction: column;
+		gap: 7.7rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_445 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_447 {
+		font-size: 19.2rpx;
+		color: #3A2E25;
+	}
+	.n4_448 {
+		flex-direction: column;
+		gap: 7.7rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_449 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_452 {
+		font-size: 19.2rpx;
+		color: #3A2E25;
+	}
+	.n4_453 {
+		flex-direction: column;
+		gap: 7.7rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_454 {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.n4_457 {
+		font-size: 19.2rpx;
+		color: #3A2E25;
+	}
+</style>

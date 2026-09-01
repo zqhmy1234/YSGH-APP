@@ -1,0 +1,96 @@
+<script setup lang="uts">
+	import { onLaunch, onShow, onError } from '@dcloudio/uni-app'
+	import { ensureLogin } from './utils/auth'
+	import { initSentry, captureException } from './utils/sentry'
+	import { initSync, drainBackgroundTasks } from './utils/sync_client'
+
+	/** 加载自定义字体（官方文档 doc.dcloud.net.cn/uni-app-x/api/load-font-face.html）：
+	 *  - global:true 必传（onLaunch 时无页面 vm，非全局加载会在 Vapor 下抛 'vm' undefined）
+	 *  - weight 属于 desc 描述符，非顶层参数；source 必须 url() 包裹且路径加引号 */
+	function loadCustomFonts(): void {
+		const fonts = [
+			{ family: 'Sarasa Gothic SC', source: "url('/static/fonts/SarasaGothicSC-Regular.ttf')", weight: '400' },
+			{ family: 'Sarasa Gothic SC', source: "url('/static/fonts/SarasaGothicSC-SemiBold.ttf')", weight: '600' },
+			{ family: 'Sarasa Gothic SC', source: "url('/static/fonts/SarasaGothicSC-Bold.ttf')", weight: '700' }
+		]
+		for (let i = 0; i < fonts.length; i++) {
+			const f = fonts[i]
+			uni.loadFontFace({
+				global: true,
+				family: f.family,
+				source: f.source,
+				desc: { weight: f.weight },
+				success: () => {
+					console.log('[yishu] font loaded: ' + f.family + ' ' + f.weight)
+				},
+				fail: (err: any) => {
+					console.log('[yishu] font load failed: ' + f.family + ' ' + f.weight + ' -> ' + JSON.stringify(err))
+				}
+			})
+		}
+	}
+
+	onLaunch(() => {
+		console.log('[yishu] client launch, env=' + 'dev')
+		// 加载自定义字体 Sarasa Gothic SC（global:true 已在 loadCustomFonts 内，失败不阻断启动）
+		try {
+			loadCustomFonts()
+		} catch (e) {
+			console.log('[yishu] loadCustomFonts threw: ' + e)
+		}
+		// Sentry 初始化（决策 #12 双通道·客户端侧；无 DSN 时静默禁用）
+		try {
+			initSentry()
+		} catch (e) {
+			console.log('[yishu] initSentry threw: ' + e)
+		}
+		// 静默登录预热 token（B-CL-3：mock wechat login；失败不阻断启动，页面请求时再补）
+		try {
+			ensureLogin().then((ok: boolean) => {
+				console.log('[yishu] ensureLogin -> ' + ok)
+			})
+		} catch (e) {
+			console.log('[yishu] ensureLogin threw: ' + e)
+		}
+		// B4 同步三路触发 · ① 前台主动：2h setInterval 定时兜底 + 网络恢复即补推
+		try {
+			initSync()
+		} catch (e) {
+			console.log('[yishu] initSync threw: ' + e)
+		}
+	})
+
+	onShow(() => {
+		// B5d 两段式消费：前台时 drain 积压后台任务（WorkManager 唤醒写入的 pending；幂等空跑无害）
+		// 标准基座无 UTSAndroid → 插件 drainPendingTasks 可能抛，包 try/catch 不阻断 onShow
+		try {
+			drainBackgroundTasks()
+		} catch (e) {
+			console.log('[yishu] drainBackgroundTasks 标准基座降级: ' + e)
+		}
+	})
+
+	onError((err: any) => {
+		captureException('' + err, 'app.onError', null)
+	})
+</script>
+
+<style>
+	/* 全局基底：相纸白（视觉规范 v2 像素级还原）——uvue 仅支持 class 选择器，
+	   页面背景由 pages.json globalStyle + 各页根 .page 类控制
+
+	   字体：Sarasa Gothic SC 已在本文件 onLaunch 里用
+	   uni.loadFontFace({ global: true }) 注册，同一 family 名下挂
+	   400 / 600 / 700 三档字重，由 CSS 的 font-weight 选中对应 TTF。
+
+	   [重要·已踩坑·勿改回] uni-app x App 平台【样式不继承】。
+	   标准 CSS 中 color / font-size / font-family 等文字属性可继承，
+	   但 uvue App 端父元素样式不会影响子元素，文本样式必须
+	   【直接写在 text 组件自身的类上】。
+	   所以「在根类声明 font-family 靠继承下发」在 App 端【无效】，
+	   每个 text 类都要单独写：
+	       font-family: "Sarasa Gothic SC", sans-serif;
+	   漏写的 text 会退回系统字体，行高与字宽与设计稿不符。
+	   同理，:class 绑定的叠加类（如 TabBar 的 .text-active）也需各自
+	   独立声明 font-family / font-weight，不能依赖基础类。 */
+</style>

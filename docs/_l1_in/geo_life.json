@@ -1,0 +1,15 @@
+{
+  "id": "geo_life",
+  "label": "地域生活",
+  "category": "中国自建补充",
+  "current_values": null,
+  "value_template": null,
+  "template_values": null,
+  "structure": "细值层：家乡/现居城市/方言/咸甜辣/天气敏感度（聚合 region_cn 的细值），非固定枚举",
+  "source": "N",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "自建；回响引用'家乡/现居'语境",
+  "open_enum": true,
+  "refine_mode": "non_enum_structure"
+}

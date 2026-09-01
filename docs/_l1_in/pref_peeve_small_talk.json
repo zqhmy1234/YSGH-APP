@@ -1,0 +1,19 @@
+{
+  "id": "pref_peeve_small_talk",
+  "label": "雷区·尬聊",
+  "category": "决策与偏好",
+  "current_values": [
+    "忍不了",
+    "还好",
+    "无所谓"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "peeve_forced_small_talk",
+  "confidence_threshold": 0.7,
+  "note": "peeve 系列精选 3 个（追问/回响避免踩雷）",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

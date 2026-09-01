@@ -1,0 +1,269 @@
+<template>
+	<!-- W10 新页：账号与安全（画布板 41:161）· 手工还原
+	     无 TabBar（画布真值）；W10.4：emoji 图标全部换同风格线性 SVG（icon-phone/chat/shield）；
+	     「数据导出」「存储空间」两行移出（与「我的」页「存储与备份」功能冲突，峰宝拍板
+	     2026-09-01：统一归未来「存储与备份」页，画布同步删） -->
+	<view class="page-root">
+		<!-- 铁律 11.5：同层 absolute 兄弟按 DOM 顺序绘制，返回图标必须排在标题容器**之后**，
+		     否则被全宽 750rpx 的标题容器盖住 → @tap 收不到事件（settings 页真机实锤先例） -->
+		<view class="n41_166"> <!-- 画布 41:166 标题容器 -->
+			<text class="n41_167">账号与安全</text> <!-- 画布 41:167 页标题 -->
+		</view>
+		<image class="n41_164" src="/static/icons/i4_135.svg" @tap="goBack" /> <!-- 画布 41:164 返回（复用 settings 同款箭头 SVG） -->
+		<view class="list-flow"> <!-- 列表流式容器（组间 margin 自动下移） -->
+			<view class="sec-group"> <!-- 画布 41:169 组·账号信息 -->
+				<view class="sec-row" @tap="onPhone"> <!-- 画布 41:170 行·手机号 -->
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/icon-phone.svg" />
+					</view>
+					<text class="sec-label">手机号</text>
+					<text class="sec-value">138****5678</text>
+					<text class="sec-arrow">›</text>
+				</view>
+				<view class="sec-row" @tap="onWechat"> <!-- 画布 41:176 行·微信 -->
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/icon-chat.svg" />
+					</view>
+					<text class="sec-label">微信</text>
+					<view class="sec-badge"> <!-- 画布 41:180 绑定徽章 -->
+						<text class="sec-badge-text">已绑定</text>
+					</view>
+					<text class="sec-arrow">›</text>
+				</view>
+			</view>
+			<view class="sec-group group-gap"> <!-- 画布 41:183 组·数据与隐私（组间距 38pt=73.1rpx；导出/存储两行已移出 → 存储与备份页） -->
+				<view class="sec-row" @tap="onPrivacy"> <!-- 画布 41:189 行·隐私权限 -->
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/icon-shield.svg" />
+					</view>
+					<text class="sec-label">隐私权限</text>
+					<text class="sec-arrow">›</text>
+				</view>
+			</view>
+			<view class="sec-group group-gap" @tap="onLogout"> <!-- 画布 41:200 组·退出登录 -->
+				<view class="sec-row-center">
+					<text class="sec-logout-text">退出登录</text>
+				</view>
+			</view>
+			<text class="sec-danger-label">危险区</text> <!-- 画布 41:203 危险区标签（组3底 486 → y538，间距 52pt） -->
+			<view class="sec-group group-delete" @tap="onDeleteAccount"> <!-- 画布 41:204 组·注销账号 -->
+				<view class="sec-row-center">
+					<text class="sec-delete-text">注销账号</text>
+				</view>
+			</view>
+			<text class="sec-danger-note">注销后所有记忆数据将被永久删除，且无法恢复</text> <!-- 画布 41:207 危险说明 -->
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// W10 新页：账号与安全（画布板 41:161）
+	// 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
+	// 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
+	// 手机号/微信/隐私 = MVP toast 占位（对齐 settings 页 goAccount 模式）；
+	// W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
+	import { logout } from '@/utils/auth'
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}
+	}
+
+	function onPhone(): void {
+		uni.showToast({ title: '手机号管理开发中', icon: 'none' })
+	}
+
+	function onWechat(): void {
+		uni.showToast({ title: '微信绑定管理开发中', icon: 'none' })
+	}
+
+	function onPrivacy(): void {
+		uni.showToast({ title: '隐私权限开发中', icon: 'none' })
+	}
+
+	function onLogout(): void {
+		uni.showModal({
+			title: '退出登录',
+			content: '退出后需重新登录才能查看你的记忆',
+			success: (res) => {
+				if (res.confirm) {
+					// logout() 幂等：后端吊销失败也清本地凭据并 resolve(true)（auth.uts G1/R6#7）
+					logout().then((_ok: boolean) => {
+						uni.reLaunch({ url: '/pages/index/index' })
+					})
+				}
+			}
+		})
+	}
+
+	function onDeleteAccount(): void {
+		uni.showModal({
+			title: '注销账号',
+			content: '注销后所有记忆数据将被永久删除且无法恢复，确定继续？',
+			success: (res) => {
+				if (res.confirm) {
+					// 后端暂无注销端点（backend/api 无 users/me DELETE）——诚实降级，不做假删除
+					uni.showToast({ title: '内测期暂不支持自助注销，请联系团队', icon: 'none', duration: 2500 })
+				}
+			}
+		})
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+	}
+	.n41_164 {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束，settings 同款位置） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	.n41_166 {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中，画布 41:166 y60pt） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n41_167 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	/* 列表流式容器：画布组1 y110pt=211.5rpx；左右页边距 20pt=38.5rpx（组宽 350pt ✓） */
+	.list-flow {
+		margin-top: 211.5rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	/* 组卡同构：白底圆角 20pt=38.5rpx，内衬 6pt=11.5rpx（画布 41:169/183/200/204） */
+	.sec-group {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	/* 画布组间距 38pt=73.1rpx（组1底 210 → 组2 y248；组2底 392 → 组3 y430，两处一致） */
+	.group-gap {
+		margin-top: 73.1rpx;
+	}
+	/* 行基类：图标 x12pt（相对行）→ 左右衬 23.1rpx，行高 44pt 节奏 = 23.1×2 + 内容 38.5 */
+	.sec-row {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		overflow: hidden;
+	}
+	/* 画布 41:171 图标圈 20×20 无底色 → 纯定位容器 */
+	.sec-icon {
+		width: 38.5rpx;
+		height: 38.5rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	/* W10.4：emoji → 同风格线性 SVG（画布 icon 容器 20×20pt=38.5rpx，SVG 20×20 内含留白） */
+	.sec-icon-img {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.sec-label {
+		flex: 1;
+		margin-left: 23.1rpx; /* 画布文字 x44 - 图标底 32 = 12pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx; /* 画布 fs15pt */
+		color: #3A2E25;
+	}
+	.sec-value {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx; /* 画布 fs13pt */
+		color: #B3A696;
+	}
+	.sec-arrow {
+		margin-left: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx; /* 画布 fs14pt */
+		color: #B3A696;
+	}
+	/* 画布 41:180 绑定徽章：锈金 a0.10 底 + 锈金字，圆角 8pt=15.4rpx */
+	.sec-badge {
+		margin-left: 15.4rpx;
+		padding: 3.8rpx 11.5rpx;
+		border-radius: 15.4rpx;
+		background-color: rgba(196, 145, 60, 0.10);
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.sec-badge-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx; /* 画布 fs11pt */
+		color: #C4913C;
+	}
+	/* 退出/注销行：画布 h44pt=84.6rpx 文字居中 */
+	.sec-row-center {
+		width: 100%;
+		height: 84.6rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.sec-logout-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.sec-delete-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #B05A3A;
+	}
+	/* 画布 41:203 危险区标签：x26pt（页边距 20 + 组衬 6）→ 组卡左缘内 11.5rpx */
+	.sec-danger-label {
+		margin-top: 100rpx; /* 组3底 486 → y538，间距 52pt=100rpx */
+		margin-left: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx; /* 画布 fs12pt */
+		color: #B3A696;
+	}
+	/* 画布标签底 553 → 组4 y560，间距 7pt=13.5rpx */
+	.group-delete {
+		margin-top: 13.5rpx;
+	}
+	/* 画布 41:207 危险说明：组4底 616 → y628，间距 12pt=23.1rpx，全宽居中 */
+	.sec-danger-note {
+		margin-top: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx; /* 画布 fs11pt */
+		color: #B3A696;
+		text-align: center;
+	}
+</style>

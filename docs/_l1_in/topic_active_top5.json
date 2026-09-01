@@ -1,0 +1,15 @@
+{
+  "id": "topic_active_top5",
+  "label": "活跃主题 Top5",
+  "category": "活跃主题与兴趣",
+  "current_values": null,
+  "value_template": null,
+  "template_values": null,
+  "structure": "排序列表 [(主题, 强度, 时间戳), ...] Top5，非固定枚举——主题值从 L2 动态集合取",
+  "source": "MC",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "L1 常驻；回响去重/复盘主线/摘要主题全靠它；主题迁移趋势见 topic_trend",
+  "open_enum": true,
+  "refine_mode": "non_enum_structure"
+}

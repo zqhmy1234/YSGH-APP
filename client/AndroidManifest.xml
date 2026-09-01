@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  项目级 AndroidManifest（云打包合并真源）——D-19 修复单，2026-08-29。
+  ⚠️ 机制：UTS 插件目录下的 utssdk/app-android/AndroidManifest.xml **不会**被云端打包合并
+  （官方论坛答复 ask.dcloud.net.cn/q/214927「插件导入 AndroidManifest 不生效，需要导入到基座 APP」；
+  HBuilderX 3.6.0 起官方机制＝项目根目录本文件 + nativeResources/，见 tutorial/app-nativeresource-android）。
+  云包 manifest aapt 尸检实证（tracker19 D-19）：插件 manifest 的 <service> 在正式包里消失，
+  全包仅剩 uni-app 自带 WebSocketService → DataSyncService startService 必死。
+  故所有 service/权限声明以本文件为准；插件内 manifest 仅作离线调试冗余（内容须与本文件保持同步）。
+  资源类（assets）见 client/nativeResources/android/assets/（D-18 WorkManager 探测 marker 同源于此）。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ==== yishu-background-tasks（B5d / D-18 复验对象）==== -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- ==== yishu-photo-watch（B5d K-1a dataSync 前台服务 / D-19 复验对象）==== -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!-- 类名=UTS 编译产物包名 uni.<APPID 去 __UNI__ 前缀> + 源码类名（appid __UNI__YISHU001）；
+             R2 验收：aapt dump badging 见该 service + 端内 queryIntentServices 自检日志 -->
+        <service
+            android:name="uni.UNIYISHU001.DataSyncService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>

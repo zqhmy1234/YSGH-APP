@@ -1,0 +1,144 @@
+{
+  "total_pages": 8,
+  "pages": [
+    {
+      "page_key": "01_时间轴主页",
+      "page_path": "pages/index/index.uvue",
+      "page_desc": "时间轴主页（首页）",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 357,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 39,
+        "gradient_count": 2,
+        "filter_count": 15
+      }
+    },
+    {
+      "page_key": "02_搜索页",
+      "page_path": "pages/search/search.uvue",
+      "page_desc": "搜索页",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 301,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 38,
+        "gradient_count": 0,
+        "filter_count": 11
+      }
+    },
+    {
+      "page_key": "03_消息中心",
+      "page_path": "pages/messages/messages.uvue",
+      "page_desc": "消息中心页",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 133,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 16,
+        "gradient_count": 3,
+        "filter_count": 5
+      }
+    },
+    {
+      "page_key": "04_我的页",
+      "page_path": "pages/profile/profile.uvue",
+      "page_desc": "我的页（个人中心）",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 256,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 33,
+        "gradient_count": 0,
+        "filter_count": 8
+      }
+    },
+    {
+      "page_key": "05_记录面板",
+      "page_path": "pages/record/record.uvue",
+      "page_desc": "记录面板页（添加记忆）",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 479,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 48,
+        "gradient_count": 2,
+        "filter_count": 23
+      }
+    },
+    {
+      "page_key": "06_冷启动访谈",
+      "page_path": "pages/interview/interview.uvue",
+      "page_desc": "冷启动访谈页",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 170,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 11,
+        "gradient_count": 3,
+        "filter_count": 11
+      }
+    },
+    {
+      "page_key": "07_设置页",
+      "page_path": "pages/settings/settings.uvue",
+      "page_desc": "设置页",
+      "stats": {
+        "width": 390.0,
+        "height": 844.0,
+        "element_count": 100,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 12,
+        "gradient_count": 0,
+        "filter_count": 4
+      }
+    },
+    {
+      "page_key": "08_记忆详情页",
+      "page_path": "pages/detail/detail.uvue",
+      "page_desc": "记忆详情页",
+      "stats": {
+        "width": 390.0,
+        "height": 1100.0,
+        "element_count": 295,
+        "rect_count": 0,
+        "circle_count": 0,
+        "path_count": 0,
+        "clipPath_count": 34,
+        "gradient_count": 6,
+        "filter_count": 10
+      }
+    }
+  ],
+  "common_components": [
+    "TabBar胶囊.json",
+    "中央＋按钮.json",
+    "_summary.json"
+  ],
+  "worktree_path": "D:\\GuangH-App\\.wt\\wrap1-agentA2-ui-restore",
+  "client_path": "D:\\GuangH-App\\.wt\\wrap1-agentA2-ui-restore\\client",
+  "hbuilderx_path": "D:\\HBuilderX\\HBuilderX.exe",
+  "cli_path": "D:\\HBuilderX\\cli.exe",
+  "device_id": "DKS9K23526028855",
+  "device_name": "华为 Nova 11"
+}

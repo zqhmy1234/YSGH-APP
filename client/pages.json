@@ -1,0 +1,102 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "忆述光华",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/empty/empty",
+      "style": {
+        "navigationBarTitleText": "忆述光华",
+        "navigationStyle": "custom",
+        "backgroundColor": "#F8F7F4"
+      }
+    },
+    {
+      "path": "pages/ai/ai",
+      "style": { "navigationStyle": "custom" },
+      "navigationBarTitleText": "AI 对话"
+    },
+    {
+      "path": "pages/search/search",
+      "style": {
+        "navigationBarTitleText": "搜索",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "我的",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/interview/interview",
+      "style": {
+        "navigationBarTitleText": "冷启动访谈",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/messages/messages",
+      "style": {
+        "navigationBarTitleText": "消息中心",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/portrait/manage",
+      "style": {
+        "navigationBarTitleText": "画像管理",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": {
+        "navigationBarTitleText": "设置",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/account/security",
+      "style": {
+        "navigationBarTitleText": "账号与安全",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/detail/detail",
+      "style": {
+        "navigationBarTitleText": "记忆详情",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/debug/agg-check/agg-check",
+      "style": {
+        "navigationBarTitleText": "AGG-016 自检"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "#F6F1E7",
+    "backgroundColor": "#F6F1E7",
+    "backgroundColorTop": "#F6F1E7",
+    "backgroundColorBottom": "#F6F1E7"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "skill_conflict_resolution",
+  "refine_mode": "template_level",
+  "values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "values_detail": [
+    { "value": "精通", "phrase": "当和事佬、找中间人斡旋、给台阶下留面子，四两拨千斤化干戈", "china_note": "关系社会高阶解法，懂'和稀泥'的分寸，保全双方面子化解深层矛盾" },
+    { "value": "熟练", "phrase": "能主动调解、就事论事摆事实讲道理，劝得住架", "china_note": "理性直面型主流，本土受教育群体常见，但不一定能化解面子/人情层面的暗结" },
+    { "value": "入门", "phrase": "勉强劝架、照本宣科讲道理，容易站队表错态", "china_note": "有心无力，熟人社会里常因不懂差序而把水搅浑" },
+    { "value": "不会", "phrase": "一点就炸、要么回避冷处理要么甩脸子，遇冲突只会激化", "china_note": "边缘高风险：直接引爆或冷暴力，本土家庭职场中负面后果最重" }
+  ],
+  "refine_note": "原null→现4（template_values原样）；理由：refine_mode=template_level，按技能熟练度四级原样落地，不引红线值，不弱化任何防护，仅补中国语境行为锚点。"
+}

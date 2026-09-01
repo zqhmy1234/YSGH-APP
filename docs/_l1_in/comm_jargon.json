@@ -1,0 +1,19 @@
+{
+  "id": "comm_jargon",
+  "label": "术语使用",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "爱用术语",
+    "适中",
+    "避免"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_use_of_jargon",
+  "confidence_threshold": 0.7,
+  "note": "与 tech_savviness 联动",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

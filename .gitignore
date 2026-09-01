@@ -1,0 +1,156 @@
+# ============================================================
+# 忆述光华 · .gitignore（2026-08-20 系统化重写）
+# 原则：只上传 生产代码/测试代码/harness文档/设计文档；
+#       本地隐私（API key、个人路径、构建缓存、语料数据）一律不上传。
+# ============================================================
+
+# --- 密钥与隐私（最高优先级，绝不入库）---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+local.properties
+**/local.properties
+*.local
+secrets/
+credentials/
+
+# --- 语言构建缓存 ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json.tmp
+
+# Gradle / Android 构建（research/poc 用）
+.gradle/
+build/
+*.apk
+*.aab
+*.wgt
+*.hprof
+.kotlin/
+
+# --- 构建产物 ---
+dist/
+out/
+*.exe
+*.dmg
+*.o
+*.so
+*.dll.bak
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- AI agent 工作区（本机会话产物，不入库）---
+.cowork-temp/
+.workbuddy/
+.wt/
+*.log
+last-failure.json
+
+# --- 数据库 / 备份 ---
+*.dump
+*.sha256
+backups/*.dump
+backups/*.sha256
+*.sql.bak
+
+# --- ML 模型与语料（可下载/可再生，不入库）---
+backend/models/
+*.safetensors
+backend/checkpoints/
+research/rag_benchmark/corpus.json
+research/asr_bench/wav/
+research/asr_bench/*.wav
+*.onnx
+*.pt
+*.pth
+
+# --- 个人截图/照片语料（隐私，绝不上传）---
+research/**/Screenshots/
+research/**/Pictures/
+research/**/photos/
+research/**/screenshots/
+*.png.bak
+*.jpg.bak
+
+# --- 临时文件 ---
+*.tmp
+*.temp
+*~
+*.bak
+*.bak.json
+*.merge_bak
+
+# --- 归档与本地 CLI 关联（2026-08-21 安全加固：含 workspaceId，不入库）---
+backups/
+.infisical.json
+
+# 本地文件系统存储后端（STORAGE_BACKEND=fs）
+backend/data/storage/
+# --- 数据库文件 / 本地语料下载（2026-08-25 整理追加）---
+*.db
+*.sqlite
+*.sqlite3
+*.sql3
+research/rag_benchmark/external/
+
+# --- 会话与临时产物 ---
+session-memory-*.md
+# uni-app x / HBuilderX Android 构建残留（2026-08-26 系统性审查）
+AndroidManifest.xml
+R.txt
+classes.jar
+annotations.zip
+aidl/
+# Android 解包产物（2026-08-27 收口补齐：res/ drawable* layout* values* META-INF ProGuard/资源索引）
+res/
+drawable/
+drawable-*/
+layout/
+layout-*/
+values/
+values-*/
+META-INF/
+proguard.txt
+public.txt
+
+# 后端联调敏感/临时文件
+backend/token.txt
+backend/.venv/
+backend/pip_install*.log
+backend/uvicorn*.log
+backend/__pycache__/
+
+
+backend/routes.txt
+
+
+# 审查/部署证据留本地（36e0b64 铁律延伸）
+review/out/
+# --- D-19 真源豁免（08-29 R1-a）：上方 AndroidManifest.xml / res/ 通配规则本意排除构建残留/解包产物，
+# 但云打包合并点（工程根 manifest、nativeResources 资源覆盖）是必须入库的源文件。
+# 目录先豁免才可进入子树；check-ignore 三连实测不再被吞。
+!client/AndroidManifest.xml
+!client/nativeResources/
+!client/nativeResources/**

@@ -1,0 +1,207 @@
+{
+  "_meta": {
+    "version": 1,
+    "note": "语音转写风格分布（口语/无标点/错字）",
+    "count": 33
+  },
+  "items": [
+    {
+      "id": "c-00",
+      "text": "那个明天别忘了去拿快递哈",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-01",
+      "text": "我靠今天加班到十点累死了",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-02",
+      "text": "想弄个那种自动浇花的装置",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-03",
+      "text": "人生如逆旅嘛我亦是行人",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-04",
+      "text": "奶奶做的红烧肉真好吃啊",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-05",
+      "text": "下个月要去云南旅游了准备攻略",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-06",
+      "text": "记得给猫买猫粮和猫砂",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-07",
+      "text": "今天面试感觉凉了心里没底",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-08",
+      "text": "听说地铁新线开通了很方便",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-09",
+      "text": "把上次拍的照片整理一下发朋友圈",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-10",
+      "text": "考研还剩一百天有点慌",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-11",
+      "text": "想去学游泳一直没去成",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-12",
+      "text": "这个月工资还没发唉",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-13",
+      "text": "孩子的家长会定在周五下午",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-14",
+      "text": "周末想约老张去钓鱼",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-15",
+      "text": "手机又没电了老是忘带充电器",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-16",
+      "text": "今天看到彩虹了运气不错",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-17",
+      "text": "想把客厅重新布置一下",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-18",
+      "text": "记录一下今天跑完十公里",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-19",
+      "text": "那家川菜馆的毛血旺绝了",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-20",
+      "text": "明天要交方案今晚赶一赶",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-21",
+      "text": "小区停水了要提前存水",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-22",
+      "text": "给爸妈买了按摩仪",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-23",
+      "text": "今天心情不错出去走走",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-24",
+      "text": "这个月电费怎么这么贵",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-25",
+      "text": "想换个新手机纠结中",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-26",
+      "text": "闺蜜下个月要结婚了随多少礼",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-27",
+      "text": "菜市场的青菜便宜了",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-28",
+      "text": "楼下的流浪猫生了一窝",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-29",
+      "text": "今天被领导夸了开心",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-30",
+      "text": "复习完高数第二章",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-31",
+      "text": "感觉最近皮肤变差了",
+      "content_type": "voice",
+      "label": "voice"
+    },
+    {
+      "id": "c-32",
+      "text": "订了周五的机票回老家",
+      "content_type": "voice",
+      "label": "voice"
+    }
+  ]
+}

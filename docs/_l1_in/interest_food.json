@@ -1,0 +1,24 @@
+{
+  "id": "interest_food",
+  "label": "饮食偏好",
+  "category": "活跃主题与兴趣",
+  "current_values": [
+    "川菜",
+    "火锅",
+    "奶茶",
+    "家常菜",
+    "甜口",
+    "辣口",
+    "清淡",
+    "咖啡"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "MC",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "改造自 Interests: Food；中国化",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

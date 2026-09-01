@@ -1,0 +1,29 @@
+{
+  "id": "interest_hobbies",
+  "label": "兴趣爱好",
+  "category": "活跃主题与兴趣",
+  "current_values": [
+    "摄影",
+    "跑步",
+    "健身",
+    "钓鱼",
+    "广场舞",
+    "剧本杀",
+    "骑行",
+    "爬山",
+    "手工",
+    "游戏",
+    "追剧",
+    "阅读",
+    "宠物"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "MC",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "改造自 Interests: Hobbies/Sports；中国化（广场舞/剧本杀）",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "pref_group_vs_alone",
+  "label": "群vs独",
+  "category": "决策与偏好",
+  "current_values": [
+    "爱热闹",
+    "爱独处"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_big_group_vs_one_on_one",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

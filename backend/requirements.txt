@@ -1,0 +1,56 @@
+# 忆述光华 backend · Python 依赖
+# Python 3.11 / FastAPI + RQ + PostgreSQL（开发决策清单 #3/#9 已拍板）
+# 缓存注解（2026-08-27 批次 H2 R7 · T4）：CI 的 pip 缓存 key 以本文件 hash 为源
+# （.github/workflows/ci.yml 的 pip-cache 步骤，restore-keys 兜底最近缓存）；
+# 改依赖后 pip 仅增量重下变更包，不因单行变更全量重下。
+
+# --- Web 框架 ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+python-multipart>=0.0.18  # CVE-2024-53981 需 >=0.0.18（2026-08-26 决策升版）
+
+# --- 数据库 ---
+sqlalchemy>=2.0
+psycopg[binary]>=3.2
+alembic>=1.13        # P2-05 迁移（ORM 唯一权威）
+# pgvector 已移出：全仓无 Python import（vector 为服务端扩展，由 pgvector/pgvector:pg16
+# 镜像 + schema.sql CREATE EXTENSION vector 提供；test_vector_extension 仅查扩展存在性）
+
+# --- 队列（RQ，决策 #9）---
+rq>=1.16
+redis>=5.0
+
+# --- 认证（决策 #8：JWT 自建，无密码哈希）---
+pyjwt>=2.9
+
+# --- 外部 API / AI ---
+httpx>=0.27.2        # CVE-2024-40635 需 >=0.27.2；核心依赖（code2session/amap/content_safety/guard/wechat 均在用）
+dashscope>=1.20          # 阿里云百炼（qwen/护栏）
+numpy>=1.26              # 音频 PCM 解码与 SenseVoice logits 后处理（直接依赖）
+funasr-onnx>=0.4.2       # SenseVoiceSmall 本地 CPU 情绪识别
+modelscope>=1.20         # SenseVoiceSmall-ONNX 模型下载与缓存
+imageio-ffmpeg>=0.6      # M4A/MP3/AAC 等统一解码为 16kHz 单声道
+
+# --- 可观测（决策 #12：Sentry 云版）---
+sentry-sdk[fastapi]>=2.13
+
+# --- 工具 ---
+
+# --- RAG（B2：Qdrant + BGE-M3，M1 Part 2）---
+qdrant-client>=1.19
+sentence-transformers>=3.4
+
+# --- SetFit 分类（M1 Part 3 / F2）---
+setfit>=1.1
+
+# --- 对象存储（S5-03 COS 分片/断电续传；MinIO 本地模拟）---
+cos-python-sdk-v5>=1.9.33
+minio>=7.2.0
+
+# --- 缩略图管线（B4 后端：PIL 生成，Wave3 AgentG；generate_test_photos 亦依赖）---
+Pillow>=11.0.0        # EpsImagePlugin 系列 CVE 需 >=11；本服务处理用户上传图片（2026-08-26 决策升版）
+
+# --- 长录音 VAD 分段（B5a-2 · P1-16）---
+webrtcvad-wheels>=2.0.10

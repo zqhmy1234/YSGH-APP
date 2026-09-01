@@ -1,0 +1,168 @@
+<template>
+	<view class="page">
+		<!-- 空状态独立页：画布 2:284~2:311「补充态·空状态」帧 390×600（×2rpx 直换，独立页面非时间轴内嵌态） -->
+		<view class="center-empty">
+			<!-- 插画组合：组合框 (135,90) 120×126pt，太阳 (56,0) 60×60pt（SVG 已烘焙整帧含留白），山湖 (0,36) 120×90pt -->
+			<view class="empty-illus">
+				<image class="empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
+				<view class="empty-lake"><image class="empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
+			</view>
+			<text class="empty-title">还没有回忆</text>
+			<text class="empty-desc">拍一张照片，或说几句话</text>
+			<text class="empty-desc empty-desc2">你的回忆会住在这里</text>
+			<view class="empty-cta pressable" @tap="onTakeFirst">
+				<text class="empty-cta-text">拍下第一张</text>
+			</view>
+			<text class="empty-voice pressable" @tap="goVoice">或者，录一段语音</text>
+		</view>
+
+		<!-- 玻璃 TabBar（画布空态帧未画，产品上首启页必须保留主导航） -->
+		<TabBar active="index" @plus="sheetOpen = true" />
+
+		<!-- 记录面板浮层：点 TabBar 中央 + 或「录一段语音」就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+	</view>
+</template>
+
+<script setup>
+	// CTA「拍下第一张」：主干口径（index.onGrantAndStart）= 请求权限 → **原地 startWatch**，不跳页。
+	// 旧实现 reLaunch 回 index 是错的：会触发 ensureLogin/fetchTimeline，网络一抖就 toast「网络异常」，
+	// 且空数据又把人 redirect 回本页 = 死循环 + 永远走不到权限弹窗（2026-08-31 真机实锤）。
+	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
+	import { recordGrantTime } from '@/utils/agg/perf_timing.uts'
+
+	// 记录面板浮层开关（TabBar 中央 + / 录一段语音 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面（返回 true = 已自行处理）
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// RecordSheet 保存成功回调（empty 页无可刷新数据，占位收口）
+	function onRecordSaved(): void {
+	}
+
+	function onTakeFirst(): void {
+		console.log('[empty] CTA tapped')
+		try {
+			const watch = createPhotoWatch()
+			if (!watch.isReadPermissionGranted()) {
+				watch.requestReadPermission()
+			}
+			watch.start((items: Array<PhotoItem>) => {
+				console.log('[empty] photo batch received: ' + items.length)
+			})
+			recordGrantTime()
+			uni.showToast({ title: '已开始监听相册', icon: 'none' })
+		} catch (e) {
+			console.log('[empty] photoWatch 不可用（标准基座无原生插件）: ' + e)
+			uni.showToast({ title: '当前基座不支持相册接入，请改用自定义基座', icon: 'none' })
+		}
+	}
+
+	// 次级入口「或者，录一段语音」：就地拉起记录面板浮层
+	// 产品定义铁律（2026-08-31 峰宝拍板）：记录面板 = 浮层不是页面，
+	// 任何入口都**不跳页**——旧实现 navigateTo('/pages/record/record') 是错的。
+	function goVoice(): void {
+		sheetOpen.value = true
+	}
+</script>
+
+<style>
+	/* 画布帧仅 600pt 高、真机约 844pt——绝对定位会整体偏顶，改为 flex 垂直居中（峰宝定稿：画面正中央） */
+	.page {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #f8f7f4;
+		justify-content: center;
+	}
+	.center-empty {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	/* 画布 2:301/2:303 插画组合：组合框 120×126pt，太阳 60pt，山湖 120×90pt */
+	.empty-illus {
+		position: relative;
+		width: 240rpx;
+		height: 252rpx;
+	}
+	/* 画布 2:301 太阳帧 60×60pt=120rpx；SVG 原生 60×60px 已含 16px 环心留白，直接铺满 */
+	.empty-sun {
+		position: absolute;
+		left: 112rpx;
+		top: 0;
+		width: 120rpx;
+		height: 120rpx;
+	}
+	.empty-lake {
+		position: absolute;
+		left: 0;
+		top: 72rpx;
+		width: 240rpx;
+		height: 180rpx;
+	}
+	.empty-lake-img {
+		position: absolute;
+		left: 24rpx;
+		top: 24rpx;
+		width: 192rpx;
+		height: 112rpx;
+	}
+	/* 画布 2:306 标题 22 SemiBold #3A2E25 @y250，间隔 34pt */
+	.empty-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 68rpx;
+		font-size: 44rpx;
+		line-height: 62rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	/* 画布 2:308/2:309 引导 14pt #8A7A6A @y292/y313（行距 21pt） */
+	.empty-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 22rpx;
+		font-size: 28rpx;
+		color: #8a7a6a;
+		text-align: center;
+		line-height: 42rpx;
+	}
+	.empty-desc2 {
+		margin-top: 0;
+	}
+	/* 画布 2:284 主按钮 250×56 圆角28 阴影(0,6,16,a0.3) @y370，距引导底 36pt */
+	.empty-cta {
+		margin-top: 72rpx;
+		width: 500rpx;
+		height: 112rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: #b05a3a;
+		border-radius: 56rpx;
+		box-shadow: 0 12rpx 32rpx rgba(176, 89, 58, 0.3);
+	}
+	.empty-cta-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #ffffff;
+		font-size: 32rpx;
+		font-weight: 600;
+	}
+	/* 画布 2:311 备选 14 SemiBold #B05A3A @y452，距按钮 26pt */
+	.empty-voice {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 52rpx;
+		font-size: 28rpx;
+		font-weight: 600;
+		color: #b05a3a;
+	}
+	.pressable {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+</style>

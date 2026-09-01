@@ -1,0 +1,118 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
+.phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
+.page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
+.n4_358 { position: absolute; left: 20.0px; top: 56.0px; width: 128.0px; height: 39.0px; font-weight: bold; font-size: 32.0px; color: #3A2E25; }
+.n4_359 { position: absolute; left: 20.0px; top: 112.0px; width: 206.0px; height: 15.0px; font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_361 { position: absolute; left: 20.0px; top: 196.0px; width: 350.0px; height: 360.0px; background-color: #FAF9F5; box-shadow: 0px 12px 36px rgba(59, 46, 38, 0.12); border-radius: 40.0px; overflow: hidden; }
+.n4_362 { position: absolute; left: 151.0px; top: 12.0px; width: 48.0px; height: 5.0px; background-color: #B3A696; border-radius: 3.0px; overflow: hidden; }
+.n4_363 { position: absolute; left: 0.0px; top: 32.0px; width: 350.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; overflow: hidden; }
+.n4_364 { font-weight: 600; font-size: 16.0px; color: #3A2E25; }
+.n4_365 { position: absolute; left: 16.0px; top: 72.0px; width: 318.0px; display: flex; flex-direction: column; gap: 6.0px; overflow: hidden; }
+.n4_366 { width: 100%; display: flex; flex-direction: row; gap: 6.0px; align-items: center; overflow: hidden; }
+.n4_367 { flex: 1; height: 76.0px; background-color: #EDE5D5; border-radius: 10.0px; overflow: hidden; }
+.n4_368 { flex: 1; height: 76.0px; background-color: #E0D6C4; border-radius: 10.0px; overflow: hidden; }
+.n4_369 { flex: 1; height: 76.0px; background-color: #D8CDB8; border-radius: 10.0px; overflow: hidden; }
+.n4_370 { width: 100%; display: flex; flex-direction: row; gap: 6.0px; align-items: center; overflow: hidden; }
+.n4_371 { flex: 1; height: 76.0px; background-color: #E5DCC9; border-radius: 10.0px; overflow: hidden; }
+.n4_372 { flex: 1; height: 76.0px; background-color: #EDE5D5; border-radius: 10.0px; overflow: hidden; }
+.n4_373 { flex: 1; height: 76.0px; background-color: #E0D6C4; border-radius: 10.0px; overflow: hidden; }
+.n4_374 { position: absolute; left: 16.0px; top: 250.0px; width: 318.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; overflow: hidden; }
+.n4_375 { flex: 1; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: #FFFFFF; box-shadow: 0px 2px 8px rgba(59, 46, 38, 0.05); border-radius: 14.0px; overflow: hidden; }
+.n4_376 { width: 18.0px; height: 18.0px; }
+.n4_378 { flex: 1; font-size: 14.0px; color: #3A2E25; }
+.n4_379 { flex: 1; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: #FFFFFF; box-shadow: 0px 2px 8px rgba(59, 46, 38, 0.05); border-radius: 14.0px; overflow: hidden; }
+.n4_380 { width: 18.0px; height: 18.0px; }
+.n4_382 { flex: 1; font-size: 14.0px; color: #3A2E25; }
+.n4_383 { position: absolute; left: 20.0px; top: 580.0px; width: 232.0px; height: 15.0px; font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_384 { position: absolute; left: 20.0px; top: 604.0px; width: 350.0px; display: flex; flex-direction: row; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_385 { width: 136.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 2px 8px rgba(59, 46, 38, 0.06); border-radius: 12.0px; overflow: hidden; }
+.n4_386 { width: 32.0px; height: 32.0px; background-color: #EDE5D5; border-radius: 6.0px; overflow: hidden; }
+.n4_387 { flex: 1; display: flex; flex-direction: column; gap: 2.0px; overflow: hidden; }
+.n4_388 { width: 100%; font-weight: 600; font-size: 11.0px; color: #3A2E25; }
+.n4_389 { font-size: 9.0px; color: #8A7A6A; }
+.n4_390 { width: 150.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 2px 8px rgba(59, 46, 38, 0.06); border-radius: 12.0px; overflow: hidden; }
+.n4_391 { flex: 1; display: flex; flex-direction: column; gap: 2.0px; overflow: hidden; }
+.n4_392 { width: 100%; font-weight: 600; font-size: 11.0px; color: #3A2E25; }
+.n4_393 { font-size: 9.0px; color: #8A7A6A; }
+.n4_394 { width: 14.0px; height: 14.0px; }
+.n4_397 { position: absolute; left: 20.0px; top: 700.0px; width: 170.0px; height: 15.0px; font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_398 { position: absolute; left: 20.0px; top: 724.0px; width: 350.0px; display: flex; flex-direction: row; justify-content: flex-end; align-items: center; overflow: hidden; }
+.n4_399 { width: 200.0px; display: flex; flex-direction: column; gap: 8.0px; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: #B05A3A; border-radius: 20.0px; overflow: hidden; }
+.n4_400 { width: 100%; font-size: 13.0px; color: #FFFFFF; }
+.n4_401 { width: 100%; height: 4.0px; background-color: #FFFFFF; border-radius: 2.0px; overflow: hidden; position: relative; }
+.n4_402 { position: absolute; left: 0.0px; top: 0.0px; width: 80.0px; height: 4.0px; background-color: #FFFFFF; border-radius: 2.0px; overflow: hidden; }
+.n4_403 { font-size: 10.0px; color: #FFFFFF; }
+</style></head><body><div class="phone">
+    <span class="n4_358">输入过程</span> <!-- 大标题 -->
+    <span class="n4_359">P · 附件选择面板（＋号唤起的半屏）</span> <!-- 节P -->
+    <div class="n4_361"> <!-- 附件面板 -->
+      <div class="n4_362"> <!-- 把手 -->
+      </div>
+      <div class="n4_363"> <!-- 面板标题容器 -->
+        <span class="n4_364">添加附件</span> <!-- 添加附件 -->
+      </div>
+      <div class="n4_365"> <!-- 相册网格 -->
+        <div class="n4_366"> <!-- 网格行1 -->
+          <div class="n4_367"> <!-- 缩略1 -->
+          </div>
+          <div class="n4_368"> <!-- 缩略2 -->
+          </div>
+          <div class="n4_369"> <!-- 缩略3 -->
+          </div>
+        </div>
+        <div class="n4_370"> <!-- 网格行2 -->
+          <div class="n4_371"> <!-- 缩略4 -->
+          </div>
+          <div class="n4_372"> <!-- 缩略5 -->
+          </div>
+          <div class="n4_373"> <!-- 缩略6 -->
+          </div>
+        </div>
+      </div>
+      <div class="n4_374"> <!-- 其他入口行 -->
+        <div class="n4_375"> <!-- 入口-文件 -->
+          <img class="n4_376" src="icons/i4_376.svg" /> <!-- 图标 -->
+          <span class="n4_378">文件</span> <!-- 文字 -->
+        </div>
+        <div class="n4_379"> <!-- 入口-粘贴链接 -->
+          <img class="n4_380" src="icons/i4_380.svg" /> <!-- 图标 -->
+          <span class="n4_382">粘贴链接</span> <!-- 文字 -->
+        </div>
+      </div>
+    </div>
+    <span class="n4_383">Q · 多附件预览编辑（发送前，逐个可删）</span> <!-- 节Q -->
+    <div class="n4_384"> <!-- 预览条 -->
+      <div class="n4_385"> <!-- chip图 -->
+        <div class="n4_386"> <!-- 缩略 -->
+        </div>
+        <div class="n4_387"> <!-- 信息 -->
+          <span class="n4_388">IMG_0327.jpg</span> <!-- 名 -->
+          <span class="n4_389">3.1 MB</span> <!-- 状态 -->
+        </div>
+      </div>
+      <div class="n4_390"> <!-- chip文件 -->
+        <div class="n4_391"> <!-- 信息 -->
+          <span class="n4_392">论文初稿.pdf</span> <!-- 名 -->
+          <span class="n4_393">2.4 MB · 上传中 45%</span> <!-- 状态 -->
+        </div>
+        <img class="n4_394" src="icons/i4_394.svg" /> <!-- 移除 -->
+      </div>
+    </div>
+    <span class="n4_397">R · 发送中态（进度就地可见）</span> <!-- 节R -->
+    <div class="n4_398"> <!-- 发送中行 -->
+      <div class="n4_399"> <!-- 发送中气泡 -->
+        <span class="n4_400">把这两样都收进去</span> <!-- 文字 -->
+        <div class="n4_401"> <!-- 进度底 -->
+          <div class="n4_402"> <!-- 进度条 -->
+          </div>
+        </div>
+        <span class="n4_403">上传中 62%</span> <!-- 进度文字 -->
+      </div>
+    </div>
+</div></body></html>

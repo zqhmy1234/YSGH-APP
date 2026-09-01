@@ -1,0 +1,644 @@
+/**
+ * 照片批量上传 v2（S-ST-1 分片协议 + 断点续传 · 2026-08-25）
+ * —— 2026-08-26 Wave3 H：B4 客户端域增强
+ *
+ * 替换 v1 multipart（POST /contents/upload）为后端分片协议：
+ *   init → chunk(PUT) → complete(meta)（后端 complete 建 contents 记录 + 入队管线）
+ *   断点续传：upload_id 持久化到 uni storage，重试/重启后 GET /upload/status 只补缺失片
+ *
+ * 分片粒度说明：UTS 无可靠的 ArrayBuffer 切片/临时文件 API，MVP 照片 ≤20MB，
+ * 采用单块协议（chunk_size = file_size，chunk_count = 1）——仍走完整分片状态机
+ * （init 幂等 / status 断点 / complete 集成），断电续传语义完整；>8MB 真分片
+ * 待 Windows 大文件场景（第四波）再补，后端已支持任意 chunk_size。
+ *
+ * Wave3 H 新增（B4 客户端 6 项中的 4 项）：
+ *  - 流量约束（B4 §5）：uni.getNetworkType 判断——WiFi/有线传原图，蜂窝只传
+ *    缩略图+元数据（调用 Agent G 的 upload_mode 参数；G 未完成前按契约 mock：
+ *    蜂窝自动=暂缓原图入 held 队列，等 WiFi 或"立即上传原图"手动入口）；
+ *    "立即上传原图" = continuePendingUploads() 手动入口。
+ *  - 指数退避重试：2s→4s→8s→8s→8s（5 次上限，复用 event_sync 模式）；
+ *    4xx 停该条（参数/归属错误重试无意义）。
+ *  - 批量失败暂停恢复：连续失败 ≥10 → pauseSync() 暂停剩余（保留队列）→
+ *    顶部横幅"网络异常，已暂停同步" → "继续上传"一键恢复（与 sync_client 共享暂停控制器）。
+ *  - held/failed 持久队列：蜂窝暂缓（held）+ 重试耗尽（failed）的照片路径持久化，
+ *    供 UploadStatusBanner 展示"待上传/失败标红可点击重试/继续上传"。
+ *
+ * 兼容：uploadBatch(items, onProgress) 原签名不变（opts 可选，默认 auto）。
+ */
+import { ensureLogin } from './auth'
+import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+// F9/R1#10 职责分离：暂停控制器（pauseSync/resumeSync/连续失败阈值）消费共享 pause_controller.ts；
+// 网络恢复钩子 onNetworkRestored 仍由 sync_client 提供（同步链路补推用）
+import {
+	pauseSync,
+	resumeSync,
+	isSyncPaused,
+	registerConsecutiveFailure,
+	resetConsecutiveFailures,
+	MAX_BATCH_FAILURES
+} from './pause_controller'
+import { onNetworkRestored } from './sync_client'
+// TD-P2B（S1-H3/H4/M3）：分片协议收口 upload_protocol.ts、ISO 时间收口 time.ts、
+// 退避重试收口 retry.ts、单文件上传状态机收口 upload_pipeline.ts（O16）——
+// 本文件只保留业务编排（批量并发池/断点续传队列/流量约束/暂停控制器）
+import { isoLocal } from './time'
+import { retryAsync } from './retry'
+import { runUploadPipeline, UploadSpec, UploadOutcome, UploadPipeError } from './upload_pipeline'
+
+export const MAX_CONCURRENCY: number = 3
+
+/** 断点续传：path|uploadId 逐行存 uni storage（UTS 无可靠 JSON.parse，用分隔串） */
+const PENDING_KEY: string = 'yishu_pending_uploads'
+/** 蜂窝暂缓原图：path|takenAt|width|height|size|lat|lng|id（等待 WiFi 或手动上传原图）
+ *  O14：追加 MediaStore id（版本化行格式；旧 7 段行兼容解析 id=0） */
+const HELD_KEY: string = 'yishu_held_uploads'
+/** 重试耗尽失败项：同上格式（失败标红可点击重试） */
+const FAILED_KEY: string = 'yishu_failed_uploads'
+
+export class UploadProgress {
+	done: number
+	total: number
+	failed: number
+
+	constructor(done: number, total: number, failed: number) {
+		this.done = done
+		this.total = total
+		this.failed = failed
+	}
+}
+
+/** 单张上传成功结果：本地照片 + 云侧 content_id（端侧聚合与事件上云用） */
+export class UploadedPhoto {
+	item: PhotoItem
+	contentId: string
+
+	constructor(item: PhotoItem, contentId: string) {
+		this.item = item
+		this.contentId = contentId
+	}
+}
+
+/** 上传模式（B4 流量约束） */
+export type UploadMode = 'auto' | 'original' | 'thumbnail' | 'hold'
+
+export class UploadOptions {
+	mode: UploadMode
+
+	constructor(mode: UploadMode = 'auto') {
+		this.mode = mode
+	}
+}
+
+/** 4xx 判定（O16 收口：4xx 停条判定统一走 upload_pipeline 的 UploadPipeError.permanent；
+ *  原 UploadHttpError 类已随协议请求下收而删除，无残留实例化） */
+function is4xx(e: Error): boolean {
+	if (e instanceof UploadPipeError) {
+		return e.permanent
+	}
+	return false
+}
+
+/** epoch ms → ISO8601 本地时间（S1-M4 收口：统一走 time.isoLocal；保留导出名兼容 index.uvue 引用） */
+export function isoString(ms: number): string {
+	return isoLocal(ms)
+}
+
+// ---------- 断点续传持久化 ----------
+
+function readPending(): Array<string> {
+	const raw = uni.getStorageSync(PENDING_KEY)
+	if (raw == null || raw == '') {
+		return []
+	}
+	return (raw as string).split('\n')
+}
+
+function writePending(lines: Array<string>): void {
+	const clean: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			clean.push(lines[i])
+		}
+	}
+	uni.setStorageSync(PENDING_KEY, clean.join('\n'))
+}
+
+function findPending(path: string): string {
+	const lines = readPending()
+	for (let i = 0; i < lines.length; i++) {
+		const parts = lines[i].split('|')
+		if (parts.length >= 2 && parts[0] == path) {
+			return parts[1]
+		}
+	}
+	return ''
+}
+
+function savePending(path: string, uploadId: string): void {
+	const lines = readPending()
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith(path + '|')) {
+			lines[i] = path + '|' + uploadId
+			writePending(lines)
+			return
+		}
+	}
+	lines.push(path + '|' + uploadId)
+	writePending(lines)
+}
+
+function clearPending(path: string): void {
+	const lines = readPending()
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].startsWith(path + '|')) {
+			kept.push(lines[i])
+		}
+	}
+	writePending(kept)
+}
+
+// ---------- 流量约束：网络类型判断 ----------
+
+/** 网络类型：wifi（wifi/ethernet 无限流量视为 wifi）/ cellular / none / unknown */
+export type NetKind = 'wifi' | 'cellular' | 'none' | 'unknown'
+
+/** uni.getNetworkType 回调式封装（uni-app x）；ethernet 有线视为 wifi */
+export function getNetKind(cb: (kind: NetKind) => void): void {
+	uni.getNetworkType({
+		success: (res) => {
+			const t = res.networkType
+			if (t == 'wifi' || t == 'ethernet') {
+				cb('wifi')
+			} else if (t == 'none' || t == '') {
+				cb('none')
+			} else {
+				cb('cellular') // 4g/5g/3g/2g/unknown 一律按蜂窝保守处理
+			}
+		},
+		fail: () => {
+			cb('unknown')
+		}
+	})
+}
+
+/** 按请求模式 + 实际网络解析上传模式：
+ *  - original：强制原图（WiFi 默认 / "立即上传原图"手动入口）
+ *  - thumbnail：缩略图+元数据（Agent G upload_mode；G 未完成前按契约 mock=hold 暂缓）
+ *  - auto：WiFi→original；蜂窝/none→hold（流量约束：蜂窝不自动传原图）
+ *  - hold：一律暂缓
+ * 返回 'original' | 'thumbnail' | 'hold' */
+function resolveMode(mode: UploadMode, kind: NetKind): string {
+	if (mode == 'original') {
+		return 'original'
+	}
+	if (mode == 'thumbnail') {
+		// 缩略图管线/upload_mode 未就绪（audit_B4_sync §1：全仓无缩略图生成）；
+		// 契约先行：暂缓入 held，Agent G 落地后此处改 init(upload_mode='thumbnail')。
+		console.log('[yishu] thumbnail 模式待 Agent G upload_mode 落地，暂缓上传')
+		return 'hold'
+	}
+	if (mode == 'hold') {
+		return 'hold'
+	}
+	// auto
+	if (kind == 'wifi') {
+		return 'original'
+	}
+	if (kind == 'cellular') {
+		console.log('[yishu] 蜂窝网络：只传缩略图+元数据（mock=暂缓原图，等 WiFi/手动）')
+		return 'hold'
+	}
+	console.log('[yishu] 网络不可用（' + kind + '）：暂缓原图')
+	return 'hold'
+}
+
+// ---------- held / failed 持久队列（PhotoItem 行分隔存储） ----------
+// O14：行格式追加 MediaStore id（第 8 段），parseEntry 兼容旧 7 段行（id=0）
+
+function entryOf(item: PhotoItem): string {
+	const la = item.lat != null ? '' + item.lat : ''
+	const ln = item.lng != null ? '' + item.lng : ''
+	return item.path + '|' + item.takenAt + '|' + item.width + '|' + item.height + '|' + item.size + '|' + la + '|' + ln + '|' + item.id
+}
+
+function parseEntry(line: string): PhotoItem | null {
+	const parts = line.split('|')
+	if (parts.length < 7) {
+		return null
+	}
+	const la = parts[5] == '' ? null : parseFloat(parts[5])
+	const ln = parts[6] == '' ? null : parseFloat(parts[6])
+	// 旧 7 段行（O14 前）无 id 段 → id=0；新行第 8 段为 MediaStore _id
+	const id = parts.length >= 8 && parts[7] != '' ? parseInt(parts[7]) : 0
+	return new PhotoItem(id, parts[0], parseInt(parts[1]), parseInt(parts[2]), parseInt(parts[3]), la, ln, parseInt(parts[4]))
+}
+
+function readLines(key: string): Array<string> {
+	const raw = uni.getStorageSync(key) as string
+	if (raw == null || raw == '') {
+		return []
+	}
+	const out: Array<string> = []
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			out.push(lines[i])
+		}
+	}
+	return out
+}
+
+function writeLines(key: string, lines: Array<string>): void {
+	uni.setStorageSync(key, lines.join('\n'))
+}
+
+function addEntry(key: string, line: string): void {
+	const lines = readLines(key)
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith(entryPath(line) + '|')) {
+			lines[i] = line
+			writeLines(key, lines)
+			return
+		}
+	}
+	lines.push(line)
+	writeLines(key, lines)
+}
+
+function removeEntry(key: string, path: string): void {
+	const lines = readLines(key)
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].startsWith(path + '|')) {
+			kept.push(lines[i])
+		}
+	}
+	writeLines(key, kept)
+}
+
+function entryPath(line: string): string {
+	const idx = line.indexOf('|')
+	return idx >= 0 ? line.substring(0, idx) : line
+}
+
+function parseAll(key: string): Array<PhotoItem> {
+	const lines = readLines(key)
+	const out: Array<PhotoItem> = []
+	for (let i = 0; i < lines.length; i++) {
+		const it = parseEntry(lines[i])
+		if (it != null) {
+			out.push(it)
+		}
+	}
+	return out
+}
+
+export function heldCount(): number {
+	return readLines(HELD_KEY).length
+}
+
+export function failedCount(): number {
+	return readLines(FAILED_KEY).length
+}
+
+/** 待上传总数（held 蜂窝暂缓 + failed 失败可重试），供 UploadStatusBanner 展示 */
+export function pendingPhotoCount(): number {
+	return heldCount() + failedCount()
+}
+
+export function heldPhotos(): Array<PhotoItem> {
+	return parseAll(HELD_KEY)
+}
+
+export function failedPhotos(): Array<PhotoItem> {
+	return parseAll(FAILED_KEY)
+}
+
+function addHeld(item: PhotoItem): void {
+	addEntry(HELD_KEY, entryOf(item))
+}
+
+function removeHeld(path: string): void {
+	removeEntry(HELD_KEY, path)
+}
+
+function addFailed(item: PhotoItem): void {
+	addEntry(FAILED_KEY, entryOf(item))
+}
+
+function removeFailed(path: string): void {
+	removeEntry(FAILED_KEY, path)
+}
+
+// ---------- 单张上传（O16 收口：init→status→chunk→complete 状态机统一走 upload_pipeline.ts，
+//          本文件只提供规格组装 + 断点 upload_id 持久化 + 4xx/网络语义映射） ----------
+
+/** 单张照片上传（含断点续传 + 4xx 区分）；成功 resolve content_id，失败 reject（4xx=UploadPipeError.permanent） */
+function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
+	return new Promise<string>((resolve, reject) => {
+		// 0. 文件大小（init 必填）——2026-08-25 真机修复：不再用 getFileSystemManager()
+		// .getFileInfo（uni-app x 沙箱读不了 MediaStore 绝对路径，必失败），改用
+		// MediaStore SIZE 列（emitIncremental 已注入 PhotoItem.size）。
+		const fileSize = item.size
+		if (fileSize <= 0) {
+			reject(new Error('文件大小为 0'))
+			return
+		}
+		const slashIdx = item.path.lastIndexOf('/')
+		const fileName = slashIdx >= 0 ? item.path.substring(slashIdx + 1) : item.path
+		// 1. 断点：已有 upload_id 直接复用（status 补传），否则 init（onNewUploadId 持久化）
+		const spec = new UploadSpec(item.path, fileName, fileSize, item.path, uploadMode, findPending(item.path))
+		const buildMeta = (): UTSJSONObject => {
+			const meta: UTSJSONObject = {
+				taken_at: isoString(item.takenAt),
+				source: 'app',
+				extra: {
+					width: item.width,
+					height: item.height
+				}
+			}
+			if (item.lat != null && item.lng != null) {
+				meta.set('gps_lat', '' + item.lat)
+				meta.set('gps_lng', '' + item.lng)
+			}
+			return meta
+		}
+		runUploadPipeline(
+			spec,
+			buildMeta,
+			(uploadId: string) => { savePending(item.path, uploadId) },
+			(uploadId: string) => { clearPending(item.path) }
+		).then((out: UploadOutcome) => {
+			resolve(out.contentId)
+		}, (e: Error) => {
+			reject(e)
+		})
+	})
+}
+
+/** 单次上传结果：ok=true+cid 成功 / ok=false 4xx 不可重试 / null 网络·5xx 可重试 */
+class UploadAttempt {
+	ok: boolean
+	cid: string
+
+	constructor(ok: boolean, cid: string) {
+		this.ok = ok
+		this.cid = cid
+	}
+}
+
+/** 单次上传（无重试）；4xx 停条由 retryAsync 的 isFatal 判定（TD-P2B 收口：统一走 retry.ts） */
+function uploadOnceResult(item: PhotoItem, uploadMode: string): Promise<UploadAttempt | null> {
+	return new Promise<UploadAttempt | null>((resolve) => {
+		uploadOne(item, uploadMode).then((cid: string) => {
+			resolve(new UploadAttempt(true, cid))
+		}, (e: Error) => {
+			const msg = e != null && e.message != null ? e.message : 'unknown'
+			console.error('[yishu] upload ERR path=' + item.path + ' msg=' + msg)
+			if (is4xx(e)) {
+				console.error('[yishu] 4xx 停该条（' + item.path + '）')
+				resolve(new UploadAttempt(false, ''))
+				return
+			}
+			resolve(null)
+		})
+	})
+}
+
+/** 指数退避重试（2s→4s→8s→8s→8s，5 次上限）；4xx 立即停该条 */
+function uploadWithRetry(item: PhotoItem, uploadMode: string): Promise<string | null> {
+	return retryAsync<UploadAttempt>(
+		() => uploadOnceResult(item, uploadMode),
+		(r: UploadAttempt | null): boolean => r != null && !r.ok,
+		(_r: UploadAttempt | null, attempt: number): boolean => {
+			console.error('[yishu] upload retry attempt=' + attempt + ' path=' + item.path)
+			return false
+		}
+	).then((r: UploadAttempt | null) => {
+		if (r != null && r.ok) {
+			return r.cid
+		}
+		console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
+		return null
+	})
+}
+
+/** 并发池（游标式分配，天然实现 ≤3 并发；批量失败 ≥10 暂停剩余） */
+class UploadPool {
+	items: Array<PhotoItem>
+	onProgress: (p: UploadProgress) => void
+	resolve: (out: Array<UploadedPhoto>) => void
+	uploadMode: string = 'original'
+	index: number = 0
+	done: number = 0
+	failed: number = 0
+	consecutive: number = 0
+	total: number
+	results: Array<UploadedPhoto> = []
+
+	constructor(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (out: Array<UploadedPhoto>) => void) {
+		this.items = items
+		this.onProgress = onProgress
+		this.resolve = resolve
+		this.total = items.length
+	}
+
+	start(uploadMode: string): void {
+		this.uploadMode = uploadMode
+		const slots = this.total < MAX_CONCURRENCY ? this.total : MAX_CONCURRENCY
+		for (let s = 0; s < slots; s++) {
+			this.next()
+		}
+	}
+
+	/** 暂停：剩余项入 held 队列 + 提前返回已成功部分（横幅"继续上传"恢复） */
+	holdRemaining(): void {
+		// D-05b（09-01）：已入 failed 队列（退避耗尽）的路径不再双登 held
+		// ——计数虚增（held=13 实 10）源头修正；drain 侧并集去重兜底存量。
+		const failedItems = failedPhotos()
+		for (let i = this.index; i < this.total; i++) {
+			let dup = false
+			for (let j = 0; j < failedItems.length; j++) {
+				if (failedItems[j].path == this.items[i].path) {
+					dup = true
+					break
+				}
+			}
+			if (!dup) {
+				addHeld(this.items[i])
+			}
+		}
+		this.resolve(this.results)
+	}
+
+	next(): void {
+		if (isSyncPaused()) {
+			this.holdRemaining()
+			return
+		}
+		const i = this.index
+		this.index++
+		if (i >= this.total) {
+			return
+		}
+		const item = this.items[i]
+		uploadWithRetry(item, this.uploadMode).then((cid: string | null) => {
+			if (cid != null) {
+				this.done++
+				this.consecutive = 0
+				this.results.push(new UploadedPhoto(item, cid))
+				resetConsecutiveFailures()
+			} else {
+				this.failed++
+				this.consecutive++
+				addFailed(item)
+				registerConsecutiveFailure()
+				if (this.consecutive >= MAX_BATCH_FAILURES) {
+					console.error('[yishu] 连续失败 ' + MAX_BATCH_FAILURES + ' 条，暂停剩余（横幅可继续）')
+					pauseSync('网络异常，已暂停同步')
+					this.holdRemaining()
+					return
+				}
+			}
+			const p = new UploadProgress(this.done, this.total, this.failed)
+			this.onProgress(p)
+			if (this.done + this.failed === this.total) {
+				this.resolve(this.results)
+			} else {
+				this.next()
+			}
+		})
+	}
+}
+
+/** 整批失败（登录失败/后端不可达）：全部入 failed 队列 + 连续失败计数（≥N 触发暂停横幅） */
+function failWholeBatch(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (out: Array<UploadedPhoto>) => void): void {
+	for (let i = 0; i < items.length; i++) {
+		addFailed(items[i])
+	}
+	for (let i = 0; i < items.length; i++) {
+		registerConsecutiveFailure()
+	}
+	const fail = new UploadProgress(0, items.length, items.length)
+	onProgress(fail)
+	resolve([])
+}
+
+/** 批量上传主入口（并发 ≤3）；成功项返回（上传前确保已登录）。
+ *  opts.mode：auto（WiFi 原图/蜂窝暂缓）/ original（强制原图）/ thumbnail / hold */
+export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) => void, opts: UploadOptions | null = null): Promise<Array<UploadedPhoto>> {
+	return new Promise<Array<UploadedPhoto>>((resolve) => {
+		if (items.length === 0) {
+			const empty = new UploadProgress(0, 0, 0)
+			onProgress(empty)
+			resolve([])
+			return
+		}
+		const mode: UploadMode = opts != null && opts.mode != null ? opts.mode : 'auto'
+		getNetKind((kind: NetKind) => {
+			const effective = resolveMode(mode, kind)
+			if (effective == 'hold') {
+				// 蜂窝/离线：暂缓入 held（流量约束），横幅展示"待 WiFi 上传/立即上传原图"
+				for (let i = 0; i < items.length; i++) {
+					addHeld(items[i])
+				}
+				const held = new UploadProgress(0, items.length, 0)
+				onProgress(held)
+				console.log('[yishu] 蜂窝/离线暂缓 ' + items.length + ' 张原图（held=' + heldCount() + '）')
+				resolve([])
+				return
+			}
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					console.error('[yishu] 上传前登录失败（后端不可达），整批入失败队列')
+					failWholeBatch(items, onProgress, resolve)
+					return
+				}
+				const pool = new UploadPool(items, onProgress, resolve)
+				pool.start(effective)
+			})
+		})
+	})
+}
+
+// D-05a（09-01）：drain/手动补传成功后的宿主聚合钩子（index 页注册；
+// 闭掉「重传成功但 contents 有、事件无」孤儿面——横幅 emits 无消费者教训的正面解法）
+let onUploadsCompleteHook: ((uploaded: Array<UploadedPhoto>) => void) | null = null
+
+export function setOnUploadsComplete(cb: (uploaded: Array<UploadedPhoto>) => void): void {
+	onUploadsCompleteHook = cb
+}
+
+/** 一键继续：解除暂停 + 上传 held/failed 全部待处理照片（原图模式；B4 §5"立即上传原图"手动入口） */
+export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+	return new Promise<Array<UploadedPhoto>>((resolve) => {
+		resumeSync()
+		const held = heldPhotos()
+		const failed = failedPhotos()
+		// D-05b（09-01）：held∪failed 按 path 去重——历史版本跨队列双登记
+		// （退避耗尽 addFailed + holdRemaining addHeld 同路径）会让同一照片传两遍。
+		const items: Array<PhotoItem> = []
+		const seen: Array<string> = []
+		for (let i = 0; i < held.length; i++) {
+			if (seen.indexOf(held[i].path) < 0) {
+				seen.push(held[i].path)
+				items.push(held[i])
+			}
+		}
+		for (let i = 0; i < failed.length; i++) {
+			if (seen.indexOf(failed[i].path) < 0) {
+				seen.push(failed[i].path)
+				items.push(failed[i])
+			}
+		}
+		if (items.length === 0) {
+			const empty = new UploadProgress(0, 0, 0)
+			onProgress(empty)
+			resolve([])
+			return
+		}
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				console.error('[yishu] 继续上传：登录失败（后端不可达）')
+				failWholeBatch(items, onProgress, resolve)
+				return
+			}
+			const pool = new UploadPool(items, onProgress, (out: Array<UploadedPhoto>) => {
+				// 成功后从 held/failed 队列移除（无论池是否因暂停提前返回，只清已成功项）
+				for (let i = 0; i < out.length; i++) {
+					removeHeld(out[i].item.path)
+					removeFailed(out[i].item.path)
+				}
+				// D-05a（09-01）：补传成功 → 补端侧聚合+事件上云（与 live 路径同源）
+				if (out.length > 0 && onUploadsCompleteHook != null) {
+					onUploadsCompleteHook(out)
+				}
+				resolve(out)
+			})
+			pool.start('original')
+		})
+	})
+}
+
+/** WiFi 恢复时自动补传暂缓原图（B4 §5 流量约束闭环：蜂窝暂缓 → 到 WiFi 自动续传）；
+ *  由 sync_client.onNetworkRestored 在网络恢复时调用，本文件模块加载时注册（无循环依赖）。 */
+function maybeUploadHeldOnWifi(): void {
+	if (heldCount() === 0 && failedCount() === 0) {
+		return
+	}
+	if (isSyncPaused()) {
+		return
+	}
+	getNetKind((kind: NetKind) => {
+		if (kind == 'wifi') {
+			console.log('[yishu] WiFi 恢复，自动补传暂缓原图（held=' + heldCount() + ' failed=' + failedCount() + '）')
+			continuePendingUploads(() => {})
+		}
+	})
+}
+
+// 模块加载时注册网络恢复钩子（sync_client 触发；App 启动经 index/profile 引入 uploader 即生效）
+onNetworkRestored((): void => {
+	maybeUploadHeldOnWifi()
+})

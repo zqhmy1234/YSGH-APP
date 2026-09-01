@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ D-19 教训：UTS 插件内的 AndroidManifest.xml 不参与云端打包合并（仅离线调试可见效）。
+     权限/service 声明真源 = 项目根 client/AndroidManifest.xml（HBuilderX>=3.6.0 官方合并点）。
+     本文件内容与其保持一致；单独改这里不会进正式包。-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 相册监听（B-UT-1）：API 33+ READ_MEDIA_IMAGES，API 32- READ_EXTERNAL_STORAGE -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!-- B5d 前台服务（Wave4 Agent K · K-1a 短命化）：dataSync 类型 + 通知 + 录音互斥所需声明
+         标准基座已内置这些权限；此处为自定义基座兜底声明 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- dataSync 前台服务：相册监听后台存活保活（短命化，超时自停；与 microphone 类型互斥） -->
+    <service
+        android:name="uni.UNIYISHU001.DataSyncService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+</manifest>

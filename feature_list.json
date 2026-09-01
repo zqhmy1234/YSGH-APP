@@ -1,0 +1,143 @@
+{
+ "features": [
+  {
+   "id": "M0",
+   "name": "M0 工程地基（W1-2）",
+   "description": "POC 五测（相册监听/前台录音/attribution tag/SQLCipher/聚合 spike）+ 28 表 schema + OpenAPI 契约与 mock + 四端工程骨架 + 企微认证/备案/软著申请提交",
+   "dependencies": [],
+   "status": "in-progress",
+   "evidence": "POC 五测全部 PASS → D7 结论 GO（docs/D7_POC结论.md，2026-08-17 正式化）；OpenAPI 契约 14 路径 + mock；CI 接入（.github/workflows/ci.yml，S2-05）；合规三申请待提交",
+   "gate": "POC 五测 D7 结论 + 契约发布 + 合规申请提交（全局 Gate，失败→切原生 Kotlin/Flutter）"
+  },
+  {
+   "id": "F1",
+   "name": "F1 照片自动读取分类（P0）",
+   "description": "相册监听（ContentObserver）+ 四层事件模型：端侧 L0 瞬间（ST-DBSCAN 60min/500m/min_pts3）+ L1 日卡片，云侧 L2 LLM 语义归并 + L3 主题流；photo↔event 多对多",
+   "dependencies": [
+    "M0"
+   ],
+   "status": "in-progress",
+   "evidence": "客户端第一波（2026-08-24）：后端 multipart 端点 POST /api/v1/contents/upload（B-BE-1/2）交付 + 10 项新 pytest 全过 + curl 冒烟；50 张测试照片全链路单进程验证 PASS（L1 日卡片与生成集真值一致）；真机 nova 11 E2E 全通（标准基座 + 纯 UTS 插件）：相册监听→游标去重→攒批上传→后端 EXIF→聚合→时间轴渲染，截屏验证 L1 日卡片（08-22 卡 40 张 / 08-23 卡 10 张）与真值一致；首扫游标初始化到 max(id) 防存量相册全量导入（隐私修复）；L2 语义归并待真实数据（P2-07）；客户端第二波（2026-08-24）：S-SY-1 POST /api/v1/events/sync（client_event_id 幂等+归属校验+offline_queue 变更日志）+ S-SY-2 aggregate_user 重构（云侧只跑 L2/L3，mode=full 基线保留）+ events.client_event_id 迁移（部分唯一索引）；S-AG-1 UTS ST-DBSCAN 算法层（client/utils/agg，参数单一来源 agg_config）编译通过；S-AG-2 AGG-016 真机双跑 10/10 PASS（nova 11，簇成员+日卡片与 Python 同参一致）；pytest 234 passed | Wave2 集成（2026-08-26）：Agent D（B3 云侧）L2 地点域连续 5km/12hr + LLM 归并裁决（真实 qwen-flash 通道验证通过，无 key mock 确定性通道同构）+ L3 7 天窗/活跃30天→静默→归档（读取时派生）+ 封面选择（人脸→质量分→时间居中/最新，cover_content_id 赋值+换封面端点）+ GPS 漂移完善（众数拉回/approx/degraded）+ confirmed 保护 + 增量先匹配后分裂（_can_absorb 并入现有簇）+ OCR 内容维 + 15 新测试；Agent E（B3 端侧+UI）30min 保守开关（CONSERVATIVE_MODE+l0EpsTsec，云侧 AGG_CONFIG conservative_mode 已对齐）+ 预处理去重（与 uq_contents_user_hash 对齐）+ L2 待确认区（draft/conf<0.7 独立分组+确认/忽略）+ 封面（cover_content_id 优先/首图回退）+ 反向入口 GET /api/v1/contents/{id}/events（8 测试）+ 30s 验收埋点 perf_timing + AGG 双跑 14 用例（真机 nova 11 全过）；集成接线 conservative_mode → l0_eps_t_sec()；全量 341 passed | Wave3 集成（2026-08-26）：Agent G（B4 后端）缩略图管线（PIL 480px→thumbnail_key→GET /api/v1/thumbnails/{content_id} 懒生成+回填脚本）+ upload_mode/on_wifi 流量约束 + 微信 image/voice 媒体下载→COS（CI 敏感排除）+ 30 天清理 job（消费 deleted_logs.cleanup_status）+ COS 开通验证文档 + 23 新测试；Agent H（B4 客户端）sync_client.ts 字段级同步（六字段队列/op_id 幂等/增量拉取/reconcile/2h 定时）+ uploader 流量约束（WiFi 原图/蜂窝暂缓 held）+ 指数退避 2s→4s→8s×5 + 批量失败≥10 暂停/一键继续 + UploadStatusBanner（index.uvue 接线一行）；集成接线 f85a393；全量 420 passed | TD-P1B 性能（2026-08-26）：aggregate_user 增量游标化（30 天窗口 + incremental_aggregate 接线，已落库 level>=2 候选重建 previous）+ _write_upper_candidates 跳过已存在候选免 LLM（O(N^2)→近线性）+ sync.push_ops/sync_client_events/reconcile 批量预取 + 4 缺失索引（deleted_logs/offline_queue/messages/profile_l2_evidence 迁移 a7b8c9d0e1f2，本地库已应用） | Wave3 真机清单01+03+04（2026-08-28，nova 11）：01 蜂窝链路四步全过（WiFi 10 张全链/蜂窝 20 张零上传/手动补传幂等/断网自动补传，终态 34/34 done，当场修 D-01/D-02/D-03）；**30s 门禁真机 PASS——T0 授权扳机→T1 首批日卡片 6.0s ≤30s**（50 张全量 61.2s）；L2 云侧真实 qwen 双独立轮归并（「抽象圆点拍摄集」/「抽象圆点实验」标题非确定性铁证，窗口=EXIF 真值 08-22 08:00→08-24 10:56，成员 50/50 无缺并无错并，触发 0.596s）；L3 数据不满足待补；D-12 EXIF 子 IFD 关单（bc855a0）；新单 D-14（离线丢传永久丢失+重传跳端聚合）/D-15（L1 title_source 语义待拍板） | 4a/4b 真机补验（2026-08-28 晚，nova 11，逐项 A 级）：US-12 时间存疑角标真机显示（旧 EXIF 照片 7 事件 time_suspect=true，角标渲染 ✓，D-21 滚动另计）；US-25 连续纠错 3 次弹「创建自定义分类？」✓（纠错总变混合=O-2 观察项）；US-40 画像维度展示 v28/6/51 ✓；US-41 敏感话题添加/删除 ✓；US-42 导出真机 30.1KB 落盘 ✓（D-20 修复 f726942：writeFile data 须 base64/ArrayBuffer）",
+   "gate": "30s 首批事件（≥50 张）+ L1/L2 正确率验收"
+  },
+  {
+   "id": "F2",
+   "name": "F2 文字碎片输入（P0）",
+   "description": "SetFit 全局 5 类分类（待办/灵感/情绪/引用/混合）+ B5-c 三层裁决纠错（个人规则→全局→共性微调）",
+   "dependencies": [
+    "M0"
+   ],
+   "status": "in-progress",
+   "evidence": "SetFit 5 类分类服务完成（M1 Part 3）：BGE-M3 底座全参数微调（AMP，50 条种子样本），评估集 10/10 准确率 100%（门禁 ≥75%）；推理 API POST /api/v1/classify + 溯源结构；test_setfit.py 4 项全过。三层裁决完成（B5-c）：①个人规则层（correction_log 向量相似>0.8 同类型，Qdrant corrections 集合 + BGE-M3）②全局 SetFit ③共性纠错标记（≥2 用户一致→is_global_candidate，≥50 触发微调）；POST /corrections + /classify/arbitrate；test_correction.py 6 项全过。审查修复：reflow 微调不再直接覆盖生产模型（训练前备份 + staging + 评估集门禁≥75% 才换入），mark_global_candidates 触发已补（扫描前先标记） | 客户端第三波（2026-08-24）：文字入口页（pages/record）——POST /contents(text) 落库 + 分类异步 job 轮询展示标签 + 点标签三层裁决纠错（correction_log 回写），真机全链路验证通过 | 4a/4b 真机补验（2026-08-28 晚，nova 11，逐项 A 级）：US-12 时间存疑角标真机显示（旧 EXIF 照片 7 事件 time_suspect=true，角标渲染 ✓，D-21 滚动另计）；US-25 连续纠错 3 次弹「创建自定义分类？」✓（纠错总变混合=O-2 观察项）；US-40 画像维度展示 v28/6/51 ✓；US-41 敏感话题添加/删除 ✓；US-42 导出真机 30.1KB 落盘 ✓（D-20 修复 f726942：writeFile data 须 base64/ArrayBuffer）",
+   "gate": "分类准确率 ≥75%（M1）→ ≥80%（M2）"
+  },
+  {
+   "id": "F3",
+   "name": "F3 语音输入 + AI 提炼（P0）",
+   "description": "FunASR/SenseVoice 双通道（声学情绪+语义内容）+ 长录音 VAD 分段 + 录音中断状态机 + 情绪关怀分层触发",
+   "dependencies": [
+    "M0"
+   ],
+   "status": "in-progress",
+   "evidence": "ASR 主通道为 Fun-ASR Flash（fun-asr-flash-2026-06-15，AAC/AMR/FLAC/M4A/MP3/OGG/OPUS/WAV/WebM/WMA Data URI）；云端转写后由本地 CPU iic/SenseVoiceSmall-onnx 独立执行声学情绪，常见格式经内置 FFmpeg 解码，不再限 WAV。情绪置信度从模型情绪 logits 计算，独立保存 emotion_confidence/source/model/actionable（<0.7 只记录）；情绪失败不抹掉真实转写，生产入口拒绝 mock。2026-08-25 同一条 5 秒 M4A 已分别完成真实 FunASR 云端转写与本地 SenseVoice 推理（平静，约 0.8741）；ASR/API、语音管线、内容接口 40 项通过。多样本 WER/情绪准确率正式校准仍待 20-50 段标注录音。客户端第三波（2026-08-24）已完成语音入口页：uni.getRecorderManager 录 WAV（16kHz 单声道 ≤3.5min）→ POST /asr/transcribe → 可编辑 + 情绪标签 → voice 入库，真机 mock 链路验证通过。情绪关怀分策略已确认（SAD 分原因追问/ANGRY 陪伴/深夜轻量/频次递减），关怀文案库待产品部提供 | Wave3 真机清单02+05（2026-08-28，nova 11 用户真录音）：**转写 A 级**——4/4 真机实录百炼 FunASR 语义命中（\"全班第三→第3\"数字归一+\"写点→洗点\"同音错=真实识别非回显铁证），guardrail 真通道 passed×4；**情绪实况 A 级**——SenseVoice ONNX 就位后 APP 复录 UI 直显「难过」（conf 0.840），原 4 段回放 S1 平静 0.830 ✓/S3 难过 0.875 ✓/S2 开心漏报 0.496 待 C 批校准；中断恢复 ❌=D-06（闹钟/相机抢麦不触发 onInterruptionBegin，来电场景待补 P6）；新单 D-16（三层默认值把\"未测出\"伪造为\"平静\"，notify 门控高危）+D-07 五连复现（短录音不落 COS→管线 AUDIO_NOT_FOUND 判死）+D-08（转写失败即弃段）",
+   "gate": "转写 WER 达标 + 情绪触发映射正确"
+  },
+  {
+   "id": "F4",
+   "name": "F4 AI 分类纠错（P0）",
+   "description": "correction_log 向量匹配（余弦>0.8+类型约束）+ 个人规则优先 + 共性纠错 ≥50 条触发 SetFit 微调 + 三道噪音闸门",
+   "dependencies": [
+    "F2"
+   ],
+   "status": "in-progress",
+   "evidence": "三层裁决已完成（B5-c）：个人规则层 + 全局 SetFit + 共性纠错标记；纠错测量方案口径待产品部确认（全量重测 vs 抽样），测量脚本 M1 交付 | 收尾Wave1补集（2026-08-27）：US-25 低置信度提示 UI——text_recorder.ts 连续纠错计数（yishu_correction_streak，72h 无纠错清零，达 3 触发）+ record.uvue 纠错成功回调三处接线弹 D4\"创建自定义分类？\"（确认清零/取消保留），C9 定稿零后端改动；全量编译通过（A3）",
+   "gate": "纠错后 7 天同类准确率提升 ≥10%（可测）"
+  },
+  {
+   "id": "F5",
+   "name": "F5 描述性搜索（P0）",
+   "description": "Qdrant + BGE-M3（dense+sparse RRF 0.7/0.3 k=60）+ Qwen3-VL 图片塔 + LLM 查询路由/改写 + bge-reranker 粗排 + qwen-flash 精排 + 溯源",
+   "dependencies": [
+    "M0"
+   ],
+   "status": "in-progress",
+   "evidence": "RAG 管线骨架完成（M1 Part 2）：BGE-M3 dense+sparse 真实编码（手动 sparse_linear 实现）+ Qdrant named vectors 混合检索 RRF 0.7/0.3 + 查询路由/改写（规则兜底）+ 溯源 + 降级；backend/tests/test_rag.py 6 项集成测试全过（-m rag，Qdrant 容器 + 本地 BGE-M3）。RAG 全分布测评体系（9b38721）：corpus-B 文字 84 条 / corpus-C 语音 33 条 / corpus-E 规模 1 万条 + 分层查询 15 条 + 行业标准指标（recall/hit_rate/MRR/nDCG）；审查修复：基准语料索引独立 collection yishu_benchmark（不再污染生产检索）。待：Qwen3-VL 图片塔（需 DASHSCOPE key）+ 500 张截图图片基准 + rerank 双层 | 客户端第三波（2026-08-24）：搜索页（pages/search）——POST /search 混合结果卡片 + trace 溯源展示（召回通道/分数）+ uni.chooseMedia 以图搜图 + degraded 降级态黄条，真机验证通过 | 缺口项核实与修复（2026-08-25）：①Qwen3-VL 图片塔已真实接线（dashscope.py image_caption + rag.search_by_image + pipeline 写 image_vec），旧 evidence 过时；②corpus-A 500 张截图基准已完成（image_search_report.json：15 查询 hit_rate@3=1.0）；③双层 Rerank 第一层 bge-reranker 粗排已接线（rerank.py + rag.py），第二层 qwen-flash LLM 精排未实现=真实缺口；④新发现缺口：以图搜图延迟 P95=7629ms 超 3s 门禁（图片塔+编码慢）；⑤RAG 集成测试隔离修复：test_rag.py 改用独立 collection yishu_test_rag（原与生产 yishu_contents 共用，生产有真实数据后测试点被挤出 Top-k flaky），修复后 pytest -m rag 14/14 通过；默认套件 247 passed（addopts -m \"not rag\" 排除重测试） | 客户端第二波真机/模拟器验证（2026-08-25）：S-ST-1 分片上传全链路打通（修复 uni-app x getFileInfo 沙箱限制，改 MediaStore SIZE 列；上传→端侧聚合→L1 事件上云 accepted）；RAG 管线审查修复 3 bug（rerank 加载从未生效→automodel_args、时间正则误伤→仅句首、关键词精确命中提升 _boost_exact_matches）+ rerank 默认关（CPU 40s 超门禁，GPU 可开）；修复后 hit_rate@3=0.7273 门禁 PASS；AMAP 逆地理全链路 E2E 落库（外滩→东方明珠广播电视塔） | Wave1 集成（2026-08-26）：Agent A（B2 搜索）FIX-1 content_type 归一（photo 规范值+过滤端 MatchAny 兼容）+ payload 补 place/ci_tags（NER 过滤生产生效）+ 时间词表扩充 + 溯源事件级归因 + Qdrant 降级 PG 兜底 + caption 缓存（以图搜图 P95 7629→2013ms）+ 15 回归测试；修复真实 bug：vector_store._to_filter 缺 user_id → 检索阶段全库召回（跨用户污染），已加 user_id 过滤 + rag 两路接入 + 测试修正；Agent C（B5b 护栏）FIX-4 profile_sensitive 接线（回响双查 L1 校验 + /api/v1/profile/sensitive 增删查）+ 事件级敏感分类器（规则先行+LLM 补漏+提及≥3次降级+写 sensitive_tags）+ 违规词回流（level=3）+ 检测器抽象（Rule/Managed/SelfHosted）+ 7 类事件词表 + 31 测试；集成 Agent：main.py 注册 profile_sensitive_router + photo 首入库 payload 后补刷新（update_payload）+ 搜索/以图搜图规则级敏感过滤（filter_sensitive_rule）；全量 312 passed + api_smoke 6/6 + review_agent 全绿 | Wave2-F M1 补遗（2026-08-26）：第二层 LLM 精排 llm_rerank（qwen-flash 判\"能否回答\"，仅真实判定换序+trace 回填，mock/无 key 原序）+ 托管护栏 qwen_response_check（X-DashScope-DataInspection，moderate 托管优先 chat 兜底）+ 50 条真值评测集（hit_rate@3=0.8571；负样本误召回率 0.5714 真实缺口待采集语料重校）+ 改写层 11/11 + 三指标基线（faithfulness/relevancy/context_precision）+ 纠错 7 天测量脚本 + 29 测试 | 百炼真实链路加固与验证（2026-08-29 分支 feat/dashscope-backend-hardening）：①LLM 精排解析三级兜底（ans 字符串布尔归一根治 bool(\"false\") 恒真误判 / max_tokens 截断逐块打捞 / 全角标点容错；08-28 评测\"解析失败回退原序\"静默空转根因修复）②以图搜图 VL 重试耗尽→过期缓存兜底（08-28 评测 2/10 miss=连接重置降级实证）③scripts/check_dashscope_matrix.py 9 链路真实档矩阵双通道全绿（infisical run 注入 + .env，rewrite/route/rerank 4样本解析4/4/guard chat+managed/fail_closed/vl_caption 3.2-4.2s/caption_cache 兜底/event_merge real 0.85），无 403 workspace 复发；新增 7 项形态/兜底单测全绿，默认套件 664 passed；证据 docs/百炼真实链路验证与加固_20260829.md",
+   "gate": "Top3≥70% + P95<3s（M1/M2 门禁）"
+  },
+  {
+   "id": "F7",
+   "name": "F7 AI 访谈式冷启动（P0 优先玩法）",
+   "description": "产品部三问 → L0 关系核心/人生大事/价值观 + L1 兴趣稀疏 + L2 留白；枚举化画像维度 + 三层披露 + 对话式管理",
+   "dependencies": [
+    "F2"
+   ],
+   "status": "in-progress",
+   "evidence": "三问 → 维度激活完成（Sprint 3）：规则枚举映射 + 复述确认 + 画像落库；审查修复：未命中枚举进 profile_dimension_pending 扩展队列（B1 闭集约束，不再写'其他'）+ 历史值写入侧裁剪最近 10 条；4+2 测试全过 | 客户端第三波（2026-08-24）：冷启动访谈页（pages/interview）——三层披露 + 三问作答 + 复述确认 + 可跳过；画像 cold_start_done 生效（profile 页状态联动），真机验证通过 | Wave3 集成（2026-08-26）：枚举集 JSON 收尾入 git（L0 51 维全补 values_detail+phrase、L1 193 维全补 phrase+disclosure、别名表/默认标注池/集合型标记）+ profile_schema 加载器（零硬编码+validate）+ llm_ops.annotate（qwen-flash 真实通道+确定性 mock 同构）+ profile_annotator（双门槛 0.7/0.8、<0.7 进池、开放枚举同义归一、更新规则/节流/历史裁剪、证据锚点 l2_evidence）+ pipeline_ext/profile 钩子接线（入库即标注 fail-safe）+ 冷启动 L1 兴趣稀疏 5-10 维 + 25 测试；集成：l2_evidence FK 补 ON DELETE CASCADE（迁移 c7d8e9f0a1b2，实删用户验证级联生效） | 收尾 Wave1（2026-08-27）：画像管理页 pages/portrait/manage 真机可达（nova 11 onReady 635ms，L0 51 维分组 + 敏感项增删查 tab，A1）+ profile.uvue 入口 + pages.json 注册（A2）；B2 确认零新端点（interview/profile + profile/sensitive 已满足 D3 拍板） | 4a/4b 真机补验（2026-08-28 晚，nova 11，逐项 A 级）：US-12 时间存疑角标真机显示（旧 EXIF 照片 7 事件 time_suspect=true，角标渲染 ✓，D-21 滚动另计）；US-25 连续纠错 3 次弹「创建自定义分类？」✓（纠错总变混合=O-2 观察项）；US-40 画像维度展示 v28/6/51 ✓；US-41 敏感话题添加/删除 ✓；US-42 导出真机 30.1KB 落盘 ✓（D-20 修复 f726942：writeFile data 须 base64/ArrayBuffer）",
+   "gate": "画像标注映射完整 + 格式容错（PRF-001/002）"
+  },
+  {
+   "id": "F8",
+   "name": "F8 时间轴展示（P0 优先玩法）",
+   "description": "L1 日卡片 + L2 主题事件 + L3 主题流展示；稀疏记录并入日卡片（'8月14日 · 2张'）",
+   "dependencies": [
+    "F1"
+   ],
+   "status": "in-progress",
+   "evidence": "客户端第一波（2026-08-24）：F8 时间轴页（pages/index/index.uvue）交付——L1 日卡片 + L2 主题分组只读渲染、下拉刷新、空状态（空白相纸插画/文案/引导授权）、上传进度浮层；GET /api/v1/events/timeline 对接 + ISO 解析 + 日期分组（utils/timeline.ts）；视觉规范 v1 三色铁律落地；真机 nova 11 截屏验证：空状态 + 上传进度 + L1 日卡片渲染（40/10 张照片卡片），配色/留白/撕边卡片符合规范（自审 ≥75 分） | 客户端第三波（2026-08-24）：首页新增去年今日回响卡片（GET /echo/today + dismiss 划掉）+ 底部四宫格 Tab 导航（时间轴/记录/搜索/我的），真机验证通过 | 客户端第二波（2026-08-25）：S-MO-1 操作菜单真机+模拟器验证（确认/合并/拆分/取消）；拆分选片 UI 全链路（GET /events/{id}/items + 选片面板 + POST split，模拟器实测 200 + timeline 刷新）；修复 3 个真机 bug：⋯ 被标题 z-order 覆盖（z-index+padding）、双取消（移除 itemList 手动取消）、split/merge 时间窗 autoflush（db.flush()，新事件不再分组到 1月1日）；fs 存储后端跨进程共享（fake 进程内单例跨进程读不到） | 收尾Wave1补集（2026-08-27）：US-12 时间存疑角标——SuspectBadge 组件（easycom）+ index.uvue 日卡片/待确认卡两处接入 + timeline.ts 承接 time_suspect（FIELD_TIME_SUSPECT 常量只读引用，默认 false 零回归）；--cleanCache 全量编译通过（A3） | 4a/4b 真机补验（2026-08-28 晚，nova 11，逐项 A 级）：US-12 时间存疑角标真机显示（旧 EXIF 照片 7 事件 time_suspect=true，角标渲染 ✓，D-21 滚动另计）；US-25 连续纠错 3 次弹「创建自定义分类？」✓（纠错总变混合=O-2 观察项）；US-40 画像维度展示 v28/6/51 ✓；US-41 敏感话题添加/删除 ✓；US-42 导出真机 30.1KB 落盘 ✓（D-20 修复 f726942：writeFile data 须 base64/ArrayBuffer）",
+   "gate": "时间轴流畅 + 事件结构正确"
+  },
+  {
+   "id": "F6",
+   "name": "F6 微信入口·收+找（P1）",
+   "description": "企业微信「微信客服」+ UnionID 绑定 + 消息回调幂等（msg_id）+ 只收找不编辑 + 敏感排除",
+   "dependencies": [
+    "M0",
+    "F5",
+    "B4 同步（跨端可见前置）"
+   ],
+   "status": "in-progress",
+   "evidence": "S4-01 回调通道完成（Sprint 4 线 A）：crypto/signature/gateway 协议 1:1（官方 path/90931 向量互操作）+ 收包验签解密 + msg_id 幂等入库 + 微信端软删本条 + wecom_sandbox 模拟；11 测试全过。待：S4-02 微信找（F5 RAG 已就绪，10s/3s 门禁）、S4-03 敏感识别接入、code2session 真实接入（待 appid/secret） | 开发 Wave4 AgentL 已接：code2session 真实实现（unionid 优先/errcode 映射，未配 key 保持 mock/501）+ 内容安全可插拔适配器（规则/腾讯CI/阿里Green，fail-safe 放行不丢消息）——上条『待 appid/secret』仅指生产实网验收；US-31/32/33 现卡企微凭证（团队项，决策台账 §6）",
+   "gate": "收+找 10s/3s；不丢消息 99.9%（M3 门禁）"
+  },
+  {
+   "id": "F9",
+   "name": "F9 Windows 桌面端（P1）",
+   "description": "Electron + Python sidecar（JSON-RPC 2.0 v1）+ PP-OCRv5 mobile（20MB）+ 批量导入分批 200/断点续传 + 三档离线降级 + AI 引擎适配器（云端默认/Ollama 可选）+ 删除告知",
+   "dependencies": [
+    "M0"
+   ],
+   "status": "not-started",
+   "evidence": "（2026-08-26 拍板）桌面端 F9 已移出 MVP 归二期，不阻塞 MVP 内测；Electron+sidecar 架构已定稿（开发决策清单）。",
+   "gate": "OCR 置信度门控 + 断电续传正确（M4 联调）"
+  },
+  {
+   "id": "P2-ECHO",
+   "name": "回响机制·去年今日（P2）",
+   "description": "B5-b 双查（画像 L1 敏感校验 + 百炼检测）+ 模板骨架池 30-50 + 30 天不重复；追问洞察（P2）",
+   "dependencies": [
+    "F1",
+    "F7"
+   ],
+   "status": "in-progress",
+   "evidence": "回响 API 完成（Sprint 3）：去年今日内容命中 + 每天≤1 条 + dismiss 划掉 + 敏感排除 + 闰年退化；审查修复：每天≤1 条 DB 层兜底（部分唯一索引 (user_id, shown_date) WHERE action<>'dismiss'，并发竞态 IntegrityError 回滚）+ 日界改本地口径；7 测试全过。产品部已确认回响敏感校验双查（画像敏感 + 检测，SAF-006/007）；推送策略已确认（回响 in-app / 复盘 push，复盘推送已实现于消息中心） | Wave1 集成（2026-08-26）：回响双查补全画像 L1 校验（profile_sensitive disposition forbid/caution/review 跳过不重提，Agent C）",
+   "gate": "回响敏感校验双查 + 30 天不重复（产品部口径）"
+  },
+  {
+   "id": "VERIFY",
+   "name": "验证体系（横切）",
+   "description": "测试清单 17 模块 ~140 项（P0 ~60）+ AI 故障注入测试桩 + 性能基准 JSON 化进 CI 金丝雀 + 备份演练 DR-001~006",
+   "dependencies": [],
+   "status": "completed",
+   "evidence": "收尾Wave1 D1（2026-08-27）：真机补验准备完成——scripts/realdevice/ 7 清单（蜂窝同步/录音中断/首批30s计时/L2L3云侧归并/真实转写情绪/HBuilderX冒烟/自定义基座云打包）+ README（前置总表 P1–P11 + 执行顺序 + 证据三要素标准 + 降级规则\"缺前置标待补不得虚构A级\"）+ adb_helpers.ps1（Shot/GrabLog/Record/Get-Device/KeepAwake）；Wave 3 按序执行 | Wave3 全波终局（2026-08-28，nova 11，7 清单全达终态）：01✅ 02❌(D-06) 03✅(30s 门禁 PASS 6.0s) 04✅(真实 qwen 双轮) 05🟡(转写 A+情绪实况 A，S2 待校准，D-16/D-07 复现) 06🟡(四度编译全成 onLaunch 3.5-5.3s FATAL 0，①②中文 IME 转人工复验) 07🟡(**云打包链路 A 级全通**：真 AppID __UNI__2650A2A→pack 18.2s+排队 9min→APK 23.6MB SHA256 存证→真基座启动+sync pull 30 changes 端云直连；但挖出 D-18【WorkManager 探测 getResource('.class') 在 Android 恒 false，dex 尸检类全在包里仍判降级=正式包后台永不启用】+D-19【DataSyncService 无 manifest 注册+FOREGROUND_SERVICE 权限缺失，FGS 全基座必死】)；缺陷台账 19 单（D-01~D-16、D-18、D-19、D-21；D-17 未启用、D-20 系补验修复单 f726942）见 tracker 19 §4，4b 建议批次1=D-18/D-19 原生能力对、批次2=D-16/D-07/D-08 语音链、批次3=S2 校准+D-06 机型适配 | Wave3 真机补验 7 清单全达终态（2026-08-28，nova 11）：验证体系收口——01✅ 02❌(D-06) 03✅(30s门禁过线) 04✅(US-06/07→A) 05🟡(US-17/18/19→A) 06🟡 07🟡(链路A+D-18/D-19)；证据 scripts/realdevice/evidence/ 50 文件，判定见 08 文档 §1.2 | 终值口径（2026-08-29 整饬）：US-42/12/25/40/41 真机补验后用户故事 ✅46/🟡7/❌0、A 级 32 条；现行唯一口径=AGENTS.md「当前状态」+ docs/决策台账.md；下一步=4b 修复批次（散单 D-05/D-10/D-14/D-21 待并批）"
+  },
+  {
+   "id": "OPS-SECRETS",
+   "name": "密钥管理链路（Infisical，横切 OPS）",
+   "description": "所有外部 API Key 与凭证集中存 Infisical（组织 Yishuguanghua / 项目 yishu-backend / 环境 dev+staging+prod）；命令行链路：winget 装 CLI → infisical login（浏览器授权）→ infisical init → secrets 列出/取单条/run 注入；流程固化于 skills/infisical-secrets/SKILL.md",
+   "dependencies": [],
+   "status": "in-progress",
+   "evidence": "2026-08-19 打通：CLI v0.43.122 安装 + 登录（组织账号）+ 关联 yishu-backend（workspaceId 见本地 .infisical.json（不入库））+ dev/prod 各 10 条 Secrets 可列出/可取单条/可注入（infisical run 实测注入 10 条）；skill 已固化（skills/infisical-secrets/SKILL.md）并登记 harness。执行推进（14:4x）：①config.py 腾讯云密钥 AliasChoices 别名读取 + dashscope_workspace_id（test_config_alias 6 测试）②百炼探测可用（check_dashscope.py --force 真实调用成功，qwen-flash）③S5-03 COS 分片上传/断电续传（upload_tasks+upload_chunks 表迁移 20260819 + storage.py 抽象 fake/minio/cos + services/upload.py 状态机 + api/upload.py 5 路由；test_upload 10 测试）④S5-04 端云对账（services/reconcile.py + /sync/reconcile；test_reconcile 6 测试）⑤CI 图片标签+内容审核（tencent_ci.py；test_tencent_ci 6 测试）⑥微信找沙箱链路（find_memories + /wechat/find；test_wechat_find 4 测试）⑦数据安全审计（audit_security.py 四域 JSON 输出全绿；备份 RPO 恢复≤24h）。RAG 调优暂停（用户拍板：数据量不足）；路由过滤修复已保留（route_acc 0.5→1.0），reranker 模型 bge-reranker-base 已下载接线。全量 pytest 215 passed（2026-08-21 全量证据；145/210/203 为中间值，勿引用）。待办：①腾讯云密钥命名已别名兼容（Infisical 存量名不变）②STS_ROLE_ARN root 改子账号角色（用户搁置）③staging 环境填充④缺失项申请：WECHAT_APPID/SECRET、WECOM_CORP_ID/TOKEN/AES_KEY | 高德 + Sentry 落地（2026-08-25）：AMAP_WEB_API_KEY（dev 已存，32 位 Web 服务 Key）→ 逆地理服务完成（services/external/amap.py：geohash 精度 6 纯函数 + geo_cache 表迁移 4d00dfec7b46 + 缓存≤30 天合规 + mock 生产拒落库 + with_retry；pipeline._process_photo 接线写 contents.place；test_amap 9 项全过；真实调用验证：外滩坐标 → 上海市黄浦区南京东路街道）；SENTRY_DSN（dev 已存，命名无 _DEV/_PROD 后缀，us.sentry.io）→ 后端 main.py 生产环境 sentry_sdk 初始化已有（traces_sample_rate=0.1）+ 客户端轻量信封上报完成（utils/sentry.ts：Envelope 协议 uni.request 直传 /api/<project>/envelope/，零三方依赖标准基座可用；App.uvue onError + api.ts 5xx/网络错误上报；HBuilderX 编译通过；DSN 为公开标识按 Sentry 官方惯例内嵌）。注意：Infisical 存量名 SENTRY_DSN / AMAP_WEB_API_KEY 与文档命名不一致，config.py 已别名兼容（test_config_alias 覆盖） | S-ST-1 分片上传客户端 + complete 集成（2026-08-25）：后端 /upload/complete 接 meta 建 contents 记录 + 入队管线（services/upload.py register_photo_content，语义与 /contents/upload 对齐：taken_at ISO/gps 边界/source 白名单；否则分片链路与内容管线断裂）；/upload/chunk 加 POST 别名（uni-app x uni.uploadFile 不支持 PUT method）；test_upload 13 项全过（+2 集成测试）；客户端 uploader.ts v2 重写——分片协议（init→chunk→complete）+ 断点续传（upload_id 持久化 uni storage + GET /status 补缺片）+ GPS 入 meta（PhotoItem.lat/lng）+ FileSystemManager.getFileInfo 取尺寸（uni.getFileInfo uni-app x 不可用）；HBuilderX 编译通过；分片粒度=单块（UTS 无可靠 ArrayBuffer 切片，MVP 照片 ≤20MB，>8MB 真分片留 Windows 波次）；OpenAPI 重导出 41 路径；真机 E2E 验证待峰宝（nova 11） | 2026-08-29 DASHSCOPE 双 Key 真实档验证：infisical run --env=dev 注入路径实测 9 链路全过（scripts/check_dashscope_matrix.py，含 Qwen3-VL 图片塔真实调用 + 护栏 fail_closed 门控），百炼域\"拿 Key 零代码切换\"达成；密钥零回显零入库",
+   "gate": "拿 Key 零代码切换：真实调用（RAG 图片塔/ASR 转写/COS 分片）跑通且无密钥落盘"
+  }
+ ]
+}

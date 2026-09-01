@@ -1,0 +1,19 @@
+{
+  "id": "habit_todo_lists",
+  "label": "清单习惯",
+  "category": "行为习惯",
+  "current_values": [
+    "重度清单",
+    "轻度",
+    "不用"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "habit_to_do_lists",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

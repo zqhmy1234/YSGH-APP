@@ -1,0 +1,447 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-08-28",
+  "doc": "追问/回响/陪伴模板骨架池（总量 30–50，本文件 40 条）。三层分布建议：回响 echo 12–18（本文件 16）/ 追问 ask 10–16（14）/ 陪伴 companion 8–16（10）。回响沿用现有回响场景（去年今日，按内容类型 × 时段）；追问按情绪/时段/频次递减对齐 notify 触发语义；陪伴为不追问只陪伴的出口层。骨架模板含 {占位符}（词表见 schema.json x-contract.placeholders），供生成侧拼装；care_copy.json 为直发原文，本池为骨架层，二者用途不同。每条 template + variants ≥2 条变体。产品部替换：改 template/variants 或 care_copy.json 均可，触发逻辑不动。",
+  "pool": [
+    {
+      "id": "echo_photo_morning",
+      "scene": "echo",
+      "intent": "去年今日回响·照片（清晨时段，轻快开场）",
+      "template": "早啊。去年的今天，你也拍了这样的照片。{snippet}",
+      "variants": [
+        "去年今日的清晨，你拍下了这张照片：{snippet}",
+        "看看去年的今天——清晨的光影还在吗？{snippet}"
+      ],
+      "conditions": { "content_type": "photo", "period": "morning" }
+    },
+    {
+      "id": "echo_photo_afternoon",
+      "scene": "echo",
+      "intent": "去年今日回响·照片（白天时段）",
+      "template": "午后的光，去年今天也这样落下来。{snippet}",
+      "variants": [
+        "去年今天的这个时候，你在拍这个：{snippet}",
+        "还记得去年今天的午后吗？{snippet}"
+      ],
+      "conditions": { "content_type": "photo", "period": "afternoon" }
+    },
+    {
+      "id": "echo_photo_evening",
+      "scene": "echo",
+      "intent": "去年今日回响·照片（傍晚时段）",
+      "template": "傍晚时分，翻到去年今天的照片。{snippet}",
+      "variants": [
+        "去年今日的傍晚，你留下了这张：{snippet}",
+        "天快黑了，看看去年今天的你：{snippet}"
+      ],
+      "conditions": { "content_type": "photo", "period": "evening" }
+    },
+    {
+      "id": "echo_photo_place",
+      "scene": "echo",
+      "intent": "去年今日回响·照片（有地点）",
+      "template": "去年的今天，你在{place}拍下了这一张。{snippet}",
+      "variants": [
+        "{place}的这一天，你按下快门：{snippet}",
+        "你还记得{place}那天的这张照片吗？{snippet}"
+      ],
+      "conditions": { "content_type": "photo", "place_required": true }
+    },
+    {
+      "id": "echo_photo_noplace",
+      "scene": "echo",
+      "intent": "去年今日回响·照片（无地点通用）",
+      "template": "去年今日，你拍下了这张照片。{snippet}",
+      "variants": [
+        "翻翻旧照片，去年今天有这样的瞬间：{snippet}",
+        "去年的今天，光影留下了这一瞬：{snippet}"
+      ],
+      "conditions": { "content_type": "photo" }
+    },
+    {
+      "id": "echo_text_morning",
+      "scene": "echo",
+      "intent": "去年今日回响·文字（清晨时段）",
+      "template": "早啊。去年今天的你，写下了这段话：{snippet}",
+      "variants": [
+        "清晨读一读去年今天写的字：{snippet}",
+        "早起翻到去年今天的一段话：{snippet}"
+      ],
+      "conditions": { "content_type": "text", "period": "morning" }
+    },
+    {
+      "id": "echo_text_afternoon",
+      "scene": "echo",
+      "intent": "去年今日回响·文字（白天时段）",
+      "template": "去年今天的午后，你记下了这些：{snippet}",
+      "variants": [
+        "午后翻到去年今天的记录：{snippet}",
+        "午后，读到去年今天的几行字：{snippet}"
+      ],
+      "conditions": { "content_type": "text", "period": "afternoon" }
+    },
+    {
+      "id": "echo_text_evening",
+      "scene": "echo",
+      "intent": "去年今日回响·文字（傍晚时段）",
+      "template": "傍晚了，读到去年今天你写的话：{snippet}",
+      "variants": [
+        "去年今日的傍晚，你写下了：{snippet}",
+        "夜晚来临前，回看去年今天写下的：{snippet}"
+      ],
+      "conditions": { "content_type": "text", "period": "evening" }
+    },
+    {
+      "id": "echo_text_place",
+      "scene": "echo",
+      "intent": "去年今日回响·文字（有地点）",
+      "template": "去年的今天，你在{place}写下：{snippet}",
+      "variants": [
+        "{place}的回忆，去年今天你记了一笔：{snippet}",
+        "{place}的这段记录，是去年今天写的：{snippet}"
+      ],
+      "conditions": { "content_type": "text", "place_required": true }
+    },
+    {
+      "id": "echo_voice_morning",
+      "scene": "echo",
+      "intent": "去年今日回响·语音（清晨时段）",
+      "template": "早啊。去年今天的你，留下了一段声音。{snippet}",
+      "variants": [
+        "清晨听听去年今天的声音：{snippet}",
+        "清晨，去年今天的你开口说过：{snippet}"
+      ],
+      "conditions": { "content_type": "voice", "period": "morning" }
+    },
+    {
+      "id": "echo_voice_afternoon",
+      "scene": "echo",
+      "intent": "去年今日回响·语音（白天时段）",
+      "template": "去年今天午后，你录了一段话：{snippet}",
+      "variants": [
+        "午后回听去年今日：{snippet}",
+        "午后回听去年今日的一段声音：{snippet}"
+      ],
+      "conditions": { "content_type": "voice", "period": "afternoon" }
+    },
+    {
+      "id": "echo_voice_evening",
+      "scene": "echo",
+      "intent": "去年今日回响·语音（傍晚时段）",
+      "template": "傍晚了，去年今天的你说了这些：{snippet}",
+      "variants": [
+        "去年今日傍晚的语音，还在：{snippet}",
+        "傍晚，听听去年今天你自己说的话：{snippet}"
+      ],
+      "conditions": { "content_type": "voice", "period": "evening" }
+    },
+    {
+      "id": "echo_voice_place",
+      "scene": "echo",
+      "intent": "去年今日回响·语音（有地点）",
+      "template": "去年的今天，你在{place}录下了一段话。{snippet}",
+      "variants": [
+        "{place}那天的声音，记得吗？{snippet}",
+        "{place}那天的声音，你还记得吗？{snippet}"
+      ],
+      "conditions": { "content_type": "voice", "place_required": true }
+    },
+    {
+      "id": "echo_generic_open",
+      "scene": "echo",
+      "intent": "去年今日回响·通用开场（时段/地点信息不足）",
+      "template": "翻到去年今日：{snippet}",
+      "variants": [
+        "去年今天的这一刻，被你记了下来：{snippet}",
+        "时间回到去年的今天：{snippet}"
+      ],
+      "conditions": { "period": "any" }
+    },
+    {
+      "id": "echo_generic_notext",
+      "scene": "echo",
+      "intent": "去年今日回响·内容无文本（仅以类型呈现，不伪造内容）",
+      "template": "去年今天，有一条{content_type}还在这里。",
+      "variants": [
+        "去年今日的{content_type}，是那天的见证。",
+        "那天的{content_type}，一直替你记得。"
+      ],
+      "conditions": { "text_present": false }
+    },
+    {
+      "id": "echo_dismiss_hint",
+      "scene": "echo",
+      "intent": "回响划掉后轻提示（不追问）",
+      "template": "好，这条就不再看啦。明天见。",
+      "variants": [
+        "划掉了。想看的记忆，我随时给你翻。",
+        "好的，划掉了。我还在，随时找我。"
+      ],
+      "conditions": { "action": "dismiss" }
+    },
+    {
+      "id": "ask_sad_day1",
+      "scene": "ask",
+      "intent": "SAD 未说明原因·第 1 天追问",
+      "template": "感觉你今天有点心事。愿意的话，跟我说说今天怎么啦？",
+      "variants": [
+        "今天好像和平时不太一样。要是想聊聊，我随时都在。",
+        "今天好像有点不对劲。想说就说，我在听。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": false, "streak_days": 1 }
+    },
+    {
+      "id": "ask_sad_invite",
+      "scene": "ask",
+      "intent": "SAD 未说明·邀请式追问（给足退路）",
+      "template": "今天是不是遇到什么了？想说就说，不想说也没关系。",
+      "variants": [
+        "想聊的话，我都在；不想聊，我们就安静待会儿。",
+        "不勉强你，想说的时候我都在。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": false }
+    },
+    {
+      "id": "ask_sad_open",
+      "scene": "ask",
+      "intent": "SAD 未说明·开放式追问",
+      "template": "今天有什么想跟我说的吗？随便聊聊也行。",
+      "variants": [
+        "我在，想聊什么都可以。",
+        "随便聊聊也好，我从这边听着。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": false }
+    },
+    {
+      "id": "ask_sad_gentle",
+      "scene": "ask",
+      "intent": "SAD 未说明·极温和追问",
+      "template": "今天是不是有点累？想说的话，随时找我。",
+      "variants": [
+        "不用急着说，我在就好。",
+        "累的话就歇会儿，想说再找我。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": false }
+    },
+    {
+      "id": "ask_echo_photo",
+      "scene": "ask",
+      "intent": "回响·照片引导追问（回忆当时）",
+      "template": "去年的今天拍下了这张照片。还记得当时为什么按下快门吗？",
+      "variants": [
+        "这张照片背后，藏着什么故事？",
+        "那张照片，现在还愿意看看吗？"
+      ],
+      "conditions": { "context": "echo_photo" }
+    },
+    {
+      "id": "ask_echo_text",
+      "scene": "ask",
+      "intent": "回响·文字引导追问（对照现在）",
+      "template": "去年今天的你写了这些。现在的你，会怎么看当时的自己？",
+      "variants": [
+        "重读这些字，有什么新的感受吗？",
+        "过去的文字里，藏着当时的心情。"
+      ],
+      "conditions": { "context": "echo_text" }
+    },
+    {
+      "id": "ask_echo_voice",
+      "scene": "ask",
+      "intent": "回响·语音引导追问（重温声音）",
+      "template": "去年今天的这段声音，你还记得吗？想再听听那时的自己。",
+      "variants": [
+        "声音里的回忆，现在听来是什么感觉？",
+        "那时的声音，和现在有什么不同？"
+      ],
+      "conditions": { "context": "echo_voice" }
+    },
+    {
+      "id": "ask_echo_today",
+      "scene": "ask",
+      "intent": "回响·引出『今天』的追问",
+      "template": "去年的今天是这样。那今天呢，过得还好吗？",
+      "variants": [
+        "翻到去年今日，想问问你，现在这一刻过得怎么样？",
+        "去年的今天，和今天有什么不一样吗？"
+      ],
+      "conditions": { "context": "echo_any" }
+    },
+    {
+      "id": "ask_followup_probe",
+      "scene": "ask",
+      "intent": "用户已开口后的轻追问（承接）",
+      "template": "然后呢？我听着。",
+      "variants": [
+        "后来怎么样了？",
+        "继续说，我在听。"
+      ],
+      "conditions": { "user_opened": true }
+    },
+    {
+      "id": "ask_followup_deepen",
+      "scene": "ask",
+      "intent": "追问细节（轻，不深挖敏感话题）",
+      "template": "听起来这件事对你不容易。愿意多讲讲吗？",
+      "variants": [
+        "当时是什么感觉？",
+        "想说说当时的感觉吗？"
+      ],
+      "conditions": { "user_opened": true, "sensitive": false }
+    },
+    {
+      "id": "ask_day2_check",
+      "scene": "ask",
+      "intent": "频次递减第 2 天·『好些了吗』",
+      "template": "今天感觉好些了吗？还记得我，一直都在。",
+      "variants": [
+        "第二天了，问问你好点没。",
+        "今天好点了吗？慢慢来。"
+      ],
+      "conditions": { "emotion": "sad", "streak_days": 2 }
+    },
+    {
+      "id": "ask_day2_open",
+      "scene": "ask",
+      "intent": "频次递减第 2 天·开放问询",
+      "template": "今天状态怎么样？想聊随时找我。",
+      "variants": [
+        "今天和昨天比，好一些了吗？",
+        "今天想聊聊吗？我都在。"
+      ],
+      "conditions": { "emotion": "sad", "streak_days": 2 }
+    },
+    {
+      "id": "ask_latenight_soft",
+      "scene": "ask",
+      "intent": "深夜极轻追问（先陪后问，不催回复）",
+      "template": "如果还醒着，我陪你待会儿。想说就说，不急着答。",
+      "variants": [
+        "深夜的思绪容易打转。要是有话，我在。",
+        "这么晚还醒着，是心里有事吗？不急，我在。"
+      ],
+      "conditions": { "emotion": "sad", "time_range": ["22", "05"] }
+    },
+    {
+      "id": "ask_choice",
+      "scene": "ask",
+      "intent": "二选一轻问（给用户掌控感）",
+      "template": "今天想聊点什么，还是就想安静待会儿？",
+      "variants": [
+        "想说说今天的事，还是想换个话题？",
+        "要不要先从轻松的话题开始？"
+      ],
+      "conditions": { "user_open_to_talk": true }
+    },
+    {
+      "id": "companion_sad_respond",
+      "scene": "companion",
+      "intent": "SAD 已说明原因·回应『辛苦了』",
+      "template": "听到你说的这些，真的辛苦了。你已经做得很好了。",
+      "variants": [
+        "辛苦了，说出来不容易。",
+        "辛苦了。我在这儿，不着急。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": true }
+    },
+    {
+      "id": "companion_sad_validate",
+      "scene": "companion",
+      "intent": "SAD 已说明·肯定情绪价值",
+      "template": "愿意把这些说出来，本身就很难得。我陪你。",
+      "variants": [
+        "你愿意说，我就愿意听。",
+        "说出来就是勇敢。我陪着你。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": true }
+    },
+    {
+      "id": "companion_sad_open",
+      "scene": "companion",
+      "intent": "SAD 已说明·陪伴+开放出口",
+      "template": "辛苦了。还想继续说，我都在；不想说，我们就安静待会儿。",
+      "variants": [
+        "说出来的都是勇气。我在。",
+        "我可以听，也可以就这么陪着。"
+      ],
+      "conditions": { "emotion": "sad", "reason_explained": true }
+    },
+    {
+      "id": "companion_angry",
+      "scene": "companion",
+      "intent": "ANGRY·陪伴出口不追问",
+      "template": "听起来今天有点气。不急着说，想聊的时候随时找我。",
+      "variants": [
+        "气的时候先缓缓，我在。",
+        "不用急着消气，我在旁边等你。"
+      ],
+      "conditions": { "emotion": "angry" }
+    },
+    {
+      "id": "companion_angry_vent",
+      "scene": "companion",
+      "intent": "ANGRY·邀吐槽（被动开放）",
+      "template": "气消了想吐槽，我听着。",
+      "variants": [
+        "想骂就骂两句，骂完舒服点。",
+        "气憋着伤身，想发就发，我听着。"
+      ],
+      "conditions": { "emotion": "angry" }
+    },
+    {
+      "id": "companion_angry_space",
+      "scene": "companion",
+      "intent": "ANGRY·给空间不施压",
+      "template": "我在这儿，等你气顺了再说。",
+      "variants": [
+        "不需要马上好起来，我在。",
+        "我不催你，缓过来再说。"
+      ],
+      "conditions": { "emotion": "angry" }
+    },
+    {
+      "id": "companion_latenight",
+      "scene": "companion",
+      "intent": "深夜·轻量陪伴",
+      "template": "如果还醒着，我随时在。别一个人扛着。",
+      "variants": [
+        "这么晚还没睡，我在。",
+        "夜深了，我在。别担心，睡吧。"
+      ],
+      "conditions": { "time_range": ["22", "05"] }
+    },
+    {
+      "id": "companion_latenight_nopressure",
+      "scene": "companion",
+      "intent": "深夜·不催回复",
+      "template": "不急着答，我在就好。",
+      "variants": [
+        "不用回我，知道我在就行。",
+        "什么都不用回，我在就好。"
+      ],
+      "conditions": { "time_range": ["22", "05"] }
+    },
+    {
+      "id": "companion_day3",
+      "scene": "companion",
+      "intent": "频次递减第 3 天起·只陪伴不追问",
+      "template": "这几天都有点低落吧。不用说什么，我就在这儿陪你。",
+      "variants": [
+        "这几天辛苦了。我安安静静陪着。",
+        "低落没关系，我一直都在。"
+      ],
+      "conditions": { "emotion": "sad", "streak_days": 3 }
+    },
+    {
+      "id": "companion_other",
+      "scene": "companion",
+      "intent": "其他负面（恐惧/厌恶/惊讶等）·默认陪伴出口",
+      "template": "听起来今天不太容易。我在，陪着你。",
+      "variants": [
+        "不需要讲原因，我在就好。",
+        "无论怎样，我都陪着你。"
+      ],
+      "conditions": { "emotion": "other" }
+    }
+  ]
+}

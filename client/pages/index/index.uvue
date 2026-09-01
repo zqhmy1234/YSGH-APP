@@ -1,0 +1,1302 @@
+<template>
+	<view class="page">
+		<!-- 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） -->
+		<view class="hero-section">
+			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" />
+			<view class="hero-overlay-top"></view>
+			<view class="hero-overlay-bottom"></view>
+			<view class="hero-avatar"><text class="hero-avatar-char serif">峰</text></view>
+			<view class="hero-content">
+				<text class="hero-title serif">回忆</text>
+				<text class="hero-sub1">八月 · 28 条新记忆</text>
+				<text class="hero-sub2">清晨的湖边，风很轻 · 8月28日 07:42</text>
+			</view>
+		</view>
+
+		<!-- 玻璃搜索胶囊（backdrop-blur + 白色内高光） -->
+		<view class="search-capsule pressable" @tap="goSearch">
+			<!-- uvue App 端 <image> 不支持 width/height 属性绑定，尺寸走 CSS（.search-icon 36rpx≈18px） -->
+			<image class="search-icon" src="/static/icons/index-search.svg" />
+			<text class="search-placeholder">描述一段回忆，帮你找</text>
+		</view>
+
+		<!-- 同步状态横幅 -->
+		<UploadStatusBanner />
+
+		<scroll-view class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+			<!-- 回响卡片（去年今日 · 角贴 + 泛黄） -->
+			<view v-if="echo != null" class="echo-card pressable">
+				<view class="echo-corner">
+					<text class="echo-corner-text">去年今日</text>
+				</view>
+				<text class="echo-date muted">{{ echo.echoDate }}</text>
+				<text class="echo-text serif">{{ echo.text }}</text>
+				<view v-if="echo.place != ''" class="echo-meta">
+					<text class="meta-item">{{ echo.place }}</text>
+				</view>
+				<view class="echo-actions">
+					<view class="echo-dismiss pressable" @tap="dismissEchoCard">
+						<text class="echo-dismiss-text">划掉</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 加载中 / 时间轴（空状态已拆为独立页 /pages/empty/empty，fetchAll 空数据时 redirect 过去） -->
+			<view v-if="!loaded" class="center-box">
+				<text class="muted">正在翻找相纸…</text>
+			</view>
+
+			<!-- 时间轴：L1 日卡片 + L2 主题两级 -->
+			<view v-else class="feed">
+				<!-- L2 待确认区 -->
+				<view v-if="pendingEvents.length > 0" class="pending-block">
+					<text class="day-title serif">待确认</text>
+					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
+					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2 pressable">
+						<view v-if="ev.coverPath != ''" class="cover-wrap">
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
+						</view>
+						<text class="card-title serif title-l2">{{ ev.title }}</text>
+						<view class="card-meta">
+							<text class="meta-item">{{ levelText(ev.level) }}</text>
+							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+						</view>
+						<view v-if="ev.photoIds.length > 0" class="photo-strip">
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+						</view>
+						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列 -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡：左侧琥珀引用竖线 + 引言体 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
+							</view>
+						</view>
+						<view class="pending-actions">
+							<view class="pending-btn pending-btn-ghost pressable" @tap="ignorePending(ev)">
+								<text class="pending-btn-text">忽略</text>
+							</view>
+							<view class="pending-btn pending-btn-solid pressable" @tap="confirmPending(ev)">
+								<text class="pending-btn-text">确认</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<view v-for="(day, dayIdx) in days" :key="day.key" class="day-block">
+					<view class="day-head">
+						<text class="day-title serif">{{ day.label }}</text>
+						<view class="day-line"></view>
+					</view>
+					<!-- 整卡可点进详情（真机实锤：此前卡片**没绑任何 @tap**，详情页从时间轴无入口）。
+					     内部已有 @tap 的子元素必须加 .stop，否则点操作/照片/播放也会冒泡进详情 -->
+					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'" @tap="openDetail(ev)">
+						<!-- 操作入口 -->
+						<view class="card-ops pressable" @tap.stop="onCardOps(ev, dayIdx)">
+							<text class="card-ops-text">⋯</text>
+						</view>
+						<view v-if="ev.coverPath != ''" class="cover-wrap">
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
+						</view>
+						<text class="card-title serif">{{ ev.title }}</text>
+						<view class="card-meta">
+							<text class="meta-item">{{ levelText(ev.level) }}</text>
+							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+						</view>
+						<view v-if="ev.photoIds.length > 0" class="photo-strip">
+							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap.stop="onPhotoTap(cid)" />
+						</view>
+						<!-- 语音卡 -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 统一 TabBar 组件 -->
+		<TabBar active="index" @plus="sheetOpen = true" />
+
+		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
+	import { fetchTimeline, TimelineEvent, buildDayGroups, DayGroup } from '@/utils/timeline'
+	import { formatMonthDay } from '@/utils/time'
+	import { uploadBatch, setOnUploadsComplete, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
+	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
+	import { showErrorToast } from '@/utils/api'
+	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
+	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
+	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play'
+	import {
+		confirmEvent,
+		mergeEvent,
+		fetchEventItems,
+		splitEvent,
+		SplitItem,
+		flushOpQueue,
+		fetchContentEvents,
+		ContentEventRef,
+		ignoreEventLocally,
+		isIgnoredEvent,
+		EventPhotoEntry,
+		mapAcceptedToClientIds
+	} from '@/utils/event_ops'
+	import { recordGrantTime, recordFirstDayRender } from '@/utils/agg/perf_timing.uts'
+
+	/** 会话照片映射项：content_id → 本地路径（封面/照片条/反向入口显示用） */
+	class PhotoPathEntry {
+		contentId: string
+		path: string
+
+		constructor(contentId: string, path: string) {
+			this.contentId = contentId
+			this.path = path
+		}
+	}
+
+	// 响应式数据（uvue script setup 裸 let 非响应式，必须 ref —— 真机实锤：数据到位但界面停在加载态）
+	let loaded = ref(false)
+	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let refreshing = ref(false)
+	let days = ref<Array<DayGroup>>([])
+	let pendingEvents = ref<Array<TimelineEvent>>([])
+	let uploading = ref(false)
+	let uploadDone = ref(0)
+	let uploadTotal = ref(0)
+	let uploadFailed = ref(0)
+	let echo = ref<EchoCard | null>(null)
+	let showSplitPanel = ref(false)
+	let splitEventId = ref('')
+	let splitItems = ref<Array<SplitItem>>([])
+	let splitLoading = ref(false)
+	let showPhotoDetail = ref(false)
+	let photoDetailPath = ref('')
+	let photoDetailEvents = ref<Array<ContentEventRef>>([])
+	let photoDetailLoading = ref(false)
+	let localPhotoPath = ref<Array<PhotoPathEntry>>([])
+	let eventPhotoIds = ref<Array<EventPhotoEntry>>([])
+	/**
+	 * content_id → 服务端缩略图 URL（Valet Key 票据，已 resolve 成绝对 URL）
+	 *
+	 * 为什么需要：`<image :src>` 带不了 Authorization header，历史照片此前只能靠
+	 * 「本次会话刚上传」的本地路径显示，冷启动必然空白。服务端现在随 timeline
+	 * 下发票据 URL，这里建索引供 photoPathOf() 回退。
+	 * 非响应式：attachPhotos() 在 days.value 赋值之后、渲染之前填充，无需触发额外更新。
+	 */
+	let photoUrlById: Map<string, string> = new Map<string, string>()
+
+	// 返回键拦截：浮层开着时先关浮层，而不是退出页面。
+	// 返回 true 表示已自行处理（阻止默认返回行为）。
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// 生命周期
+	onLoad(() => {
+		console.log('[dbg-index] onLoad')
+		ensureLogin().then((ok: boolean) => {
+			console.log('[dbg-index] ensureLogin -> ' + ok)
+			reload()
+		})
+		try {
+			const watch = createPhotoWatch()
+			if (watch.isReadPermissionGranted()) {
+				startWatch()
+			}
+		} catch (e) {
+			console.log('[dbg-index] photoWatch init failed (标准基座无原生插件，忽略): ' + e)
+		}
+	})
+	onShow(() => {
+		if (loaded.value) {
+			reload()
+		}
+	})
+
+	// 导航方法
+	function goSearch(): void {
+		uni.reLaunch({ url: '/pages/search/search' })
+	}
+
+	// 语音播放
+	function playVoice(voice: any): void {
+		if (!voice || !voice.url) {
+			uni.showToast({ title: '语音文件不存在', icon: 'none' })
+			return
+		}
+		uni.showToast({ title: '播放语音：' + (voice.title || '未命名'), icon: 'none' })
+	}
+
+	// 数据加载
+	function reload(): void {
+		console.log('[dbg-index] reload -> flushOpQueue')
+		flushOpQueue().then((_remain: number) => {
+			console.log('[dbg-index] flushOpQueue done, fetchAll')
+			fetchAll()
+		})
+	}
+	// ── 本地 mock 时间轴（视觉验收用）────────────────────────────────────────
+	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
+	//   打开时的危害：events==0 就注入 ev-m1~m4 四条**假 id**（云端不存在），
+	//   页面看着有内容，实则任何真数据都进不来——当时"fetchTimeline 返回 0 条"的
+	//   根因是 8000 端口被 HBuilderX launcher 劫持（见 SOP §17），不是后端没数据。
+	//   现在端口迁 8010 + 真机用户已有真实事件，再开就是自欺欺人。
+	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
+	const USE_MOCK_TIMELINE: boolean = false
+
+	function mockEvents(): Array<TimelineEvent> {
+		const day = 86400000
+		const now = Date.now()
+		const out: Array<TimelineEvent> = []
+		out.push(new TimelineEvent('ev-m1', 1, '清晨的湖边', 'ai', now - day, now - day + 3600000, '光华湖', null, 3, 2, 'confirmed', 0.92, 'ct-m1'))
+		out.push(new TimelineEvent('ev-m2', 2, '手冲咖啡初体验', 'user', now - 2 * day, now - 2 * day + 1800000, '宿舍', null, 1, 1, 'confirmed', 0.88, 'ct-m2'))
+		out.push(new TimelineEvent('ev-m3', 1, '和妈妈的通话', 'ai', now - 3 * day, now - 3 * day + 900000, '上海', null, 0, 1, 'confirmed', 0.95, 'ct-m3'))
+		out.push(new TimelineEvent('ev-m4', 2, '夜谈', 'user', now - 4 * day, now - 4 * day + 7200000, '宿舍', null, 2, 2, 'draft', 0.61, 'ct-m4'))
+		return out
+	}
+	// ── mock 结束 ────────────────────────────────────────────────────────
+
+	function fetchAll(): void {
+		console.log('[dbg-index] fetchAll -> fetchTimeline')
+		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+			console.log('[dbg-index] fetchTimeline resolved: ' + events.length + ' events')
+			if (USE_MOCK_TIMELINE && events.length == 0) {
+				events = mockEvents()
+				console.log('[dbg-index] USE_MOCK_TIMELINE -> 注入 ' + events.length + ' 条 mock 事件')
+			}
+			days.value = groupDays(events)
+			attachPhotos()
+			loaded.value = true
+			refreshing.value = false
+			// 空数据 → 独立空状态页（首次登录首屏；画布 2:284~2:311）
+			if (days.value.length === 0 && pendingEvents.value.length === 0) {
+				console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
+				uni.redirectTo({ url: '/pages/empty/empty' })
+				return
+			}
+			if (days.value.length > 0 || pendingEvents.value.length > 0) {
+				recordFirstDayRender()
+			}
+		})
+		fetchTodayEcho().then((card: EchoCard | null) => {
+			echo.value = card
+		})
+	}
+
+	// 整卡进详情：detail 页要的是 **contentId**，而 TimelineEvent.id 是 event id，不能直接用。
+	// 取数优先级：封面 content_id → 照片条第一张 → 都没有则提示（避免跳进空白详情页）
+	function openDetail(ev: TimelineEvent): void {
+		let cid = ev.coverContentId
+		if (cid == '' && ev.photoIds.length > 0) {
+			cid = ev.photoIds[0]
+		}
+		if (cid == '') {
+			uni.showToast({ title: '这条记忆暂无可查看的内容', icon: 'none' })
+			return
+		}
+		console.log('[dbg-index] openDetail contentId=' + cid)
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + cid })
+	}
+
+	// 卡片操作
+	function onCardOps(ev: TimelineEvent, dayIdx: number): void {
+		if (ev.level === 1) {
+			const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
+			uni.showActionSheet({
+				itemList: items,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						doConfirm(ev)
+					} else if (res.tapIndex === 1) {
+						doMerge(ev, dayIdx)
+					} else if (res.tapIndex === 2) {
+						doSplit(ev)
+					}
+				},
+				fail: () => {}
+			})
+		} else {
+			const items2: Array<string> = ['确认这个主题']
+			uni.showActionSheet({
+				itemList: items2,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						doConfirm(ev)
+					}
+				},
+				fail: () => {}
+			})
+		}
+	}
+	function doConfirm(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function getPrevL1Id(dayIdx: number): string {
+		// 修复（2026-08-31）：原写 days.value[i].events.level / .events.id —— events 是数组，
+		// 属性访问恒 undefined → 本函数永远返回空串 → 「合并到上一张」功能整体失效。
+		// 正解：向前逐日找第一张 L1 事件。
+		for (let i = dayIdx - 1; i >= 0; i--) {
+			const evs = days.value[i].events
+			for (let j = 0; j < evs.length; j++) {
+				if (evs[j].level === 1) {
+					return evs[j].id
+				}
+			}
+		}
+		return ''
+	}
+	function doMerge(ev: TimelineEvent, dayIdx: number): void {
+		const targetId = getPrevL1Id(dayIdx)
+		if (targetId == '') {
+			uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
+			return
+		}
+		mergeEvent(ev.id, targetId).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已合并', icon: 'none' })
+			} else {
+				uni.showToast({ title: '合并失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+
+	// 拆分
+	function doSplit(ev: TimelineEvent): void {
+		splitLoading.value = true
+		showSplitPanel.value = true
+		splitEventId.value = ev.id
+		splitItems.value = []
+		fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
+			splitLoading.value = false
+			splitItems.value = items
+			if (items.length < 2) {
+				uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
+			}
+		})
+	}
+	function toggleSplitItem(idx: number): void {
+		const items = splitItems.value
+		if (idx < 0 || idx >= items.length) {
+			return
+		}
+		const it = items[idx]
+		it.selected = !it.selected
+		items[idx] = it
+		splitItems.value = items
+	}
+	function confirmSplit(): void {
+		const items = splitItems.value
+		const ids: Array<string> = []
+		for (let i = 0; i < items.length; i++) {
+			if (items[i].selected) {
+				ids.push(items[i].contentId)
+			}
+		}
+		if (ids.length == 0) {
+			uni.showToast({ title: '至少选择一条', icon: 'none' })
+			return
+		}
+		if (ids.length >= items.length) {
+			uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
+			return
+		}
+		splitEvent(splitEventId.value, ids).then((ok: boolean) => {
+			showSplitPanel.value = false
+			if (ok) {
+				uni.showToast({ title: '已拆分', icon: 'none' })
+			} else {
+				uni.showToast({ title: '拆分失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function cancelSplit(): void {
+		showSplitPanel.value = false
+		splitItems.value = []
+	}
+	function splitTimeText(ts: number): string {
+		if (ts <= 0) {
+			return '时间未知'
+		}
+		return formatMonthDay(ts)
+	}
+
+	// 回响
+	function dismissEchoCard(): void {
+		const card = echo.value
+		if (card == null) {
+			return
+		}
+		dismissEcho(card.contentId).then((ok: boolean) => {
+			echo.value = null
+			if (ok) {
+				uni.showToast({ title: '已划掉', icon: 'none' })
+			}
+		})
+	}
+
+	// 照片映射
+	function groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
+		const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
+		pendingEvents.value = result.pending
+		return result.groups
+	}
+	/**
+	 * 照片显示路径：本地优先 → 服务端票据 URL 回退（2026-08-31 修复）
+	 *
+	 * 本地：本次会话上传的照片（localPhotoPath，零延迟、离线可用）
+	 * 服务端：timeline 下发的缩略图 URL（历史照片的唯一来源；此前缺这一层回退，
+	 *       导致冷启动时 <image :src=""> 恒空 —— "卡片没照片"的直接根因之一）
+	 */
+	// RecordSheet 保存成功回调：重新拉 timeline，让刚录入的记忆立刻上屏
+	function onRecordSaved(): void {
+		reload()
+	}
+
+	function photoPathOf(contentId: string): string {
+		for (let i = 0; i < localPhotoPath.value.length; i++) {
+			if (localPhotoPath.value[i].contentId == contentId) {
+				return localPhotoPath.value[i].path
+			}
+		}
+		const remote = photoUrlById.get(contentId)
+		return remote == null ? '' : remote
+	}
+	function lookupEventPhotos(eventId: string): Array<string> {
+		for (let i = 0; i < eventPhotoIds.value.length; i++) {
+			if (eventPhotoIds.value[i].eventId == eventId) {
+				return eventPhotoIds.value[i].contentIds
+			}
+		}
+		return []
+	}
+	/**
+	 * 单事件挂载照片（服务端优先，本地会话补充）——2026-08-31 重写
+	 *
+	 * 三层取值顺序：本地路径（刚上传）＞ 服务端票据 URL（历史照片）＞ 空。
+	 */
+	function attachEventPhotos(ev: TimelineEvent): void {
+		// ① 先把服务端下发的成员 URL 收进全局表，供 photoPathOf() 回退。
+		//    必须在算封面之前：封面的第三顺位回退依赖这张表。
+		for (let k = 0; k < ev.photos.length; k++) {
+			const ph = ev.photos[k]
+			if (ph.thumbnailUrl != '') {
+				photoUrlById.set(ph.contentId, ph.thumbnailUrl)
+			}
+		}
+		// ② photoIds：服务端已下发则**保留**（timeline 按 taken_at 排好序）。
+		//    ⚠️ 原代码无条件 `ev.photoIds = lookupEventPhotos(ev.id)` —— 本地表在
+		//    冷启动/未上传时是空数组，会把服务端填好的值覆盖成空 → 照片条恒空。
+		//    这是"卡片没照片"最直接的那一层。
+		if (ev.photoIds.length == 0) {
+			ev.photoIds = lookupEventPhotos(ev.id)
+		}
+		// ③ 封面：本地路径 → 服务端 cover_url → 首图
+		let cover = photoPathOf(ev.coverContentId)
+		if (cover == '' && ev.coverUrl != '') {
+			cover = ev.coverUrl
+		}
+		if (cover == '' && ev.photoIds.length > 0) {
+			cover = photoPathOf(ev.photoIds[0])
+		}
+		ev.coverPath = cover
+	}
+
+	function attachPhotos(): void {
+		let strips = 0
+		let covers = 0
+		let remote = 0
+		photoUrlById = new Map<string, string>()
+		for (let i = 0; i < days.value.length; i++) {
+			const g = days.value[i]
+			for (let j = 0; j < g.events.length; j++) {
+				const ev = g.events[j]
+				attachEventPhotos(ev)
+				remote += ev.photos.length
+				if (ev.photoIds.length > 0) {
+					strips++
+				}
+				if (ev.coverPath != '') {
+					covers++
+				}
+			}
+		}
+		for (let j = 0; j < pendingEvents.value.length; j++) {
+			const ev = pendingEvents.value[j]
+			attachEventPhotos(ev)
+			remote += ev.photos.length
+			if (ev.photoIds.length > 0) {
+				strips++
+			}
+			if (ev.coverPath != '') {
+				covers++
+			}
+		}
+		console.log('[yishu] attachPhotos: days=' + days.value.length + ' pending=' + pendingEvents.value.length + ' localPaths=' + localPhotoPath.value.length + ' eventPhotoIds=' + eventPhotoIds.value.length + ' serverPhotos=' + remote + ' strips=' + strips + ' covers=' + covers)
+	}
+
+	// 照片详情
+	function onPhotoTap(contentId: string): void {
+		showPhotoDetail.value = true
+		photoDetailLoading.value = true
+		photoDetailPath.value = photoPathOf(contentId)
+		photoDetailEvents.value = []
+		fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
+			photoDetailLoading.value = false
+			photoDetailEvents.value = evs
+		})
+	}
+	function closePhotoDetail(): void {
+		showPhotoDetail.value = false
+		photoDetailEvents.value = []
+	}
+	function jumpFromPhoto(_idx: number): void {
+		closePhotoDetail()
+	}
+
+	// 待确认
+	function confirmPending(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+			reload()
+		})
+	}
+	function ignorePending(ev: TimelineEvent): void {
+		ignoreEventLocally(ev.id)
+		uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
+		reload()
+	}
+
+	// 工具方法
+	function levelText(level: number): string {
+		if (level === 1) {
+			return '日卡片'
+		} else if (level === 2) {
+			return '主题'
+		} else if (level === 3) {
+			return '主题流'
+		}
+		return '瞬间'
+	}
+	function levelTag(level: number): string {
+		if (level === 1) {
+			return '日卡'
+		} else if (level === 2) {
+			return '主题'
+		} else if (level === 3) {
+			return '主题流'
+		}
+		return '瞬间'
+	}
+	function belongsMeta(ref: ContentEventRef): string {
+		const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
+		return ref.photoCount.toFixed(0) + '张 · ' + st
+	}
+	function onRefresh(): void {
+		refreshing.value = true
+		reload()
+	}
+
+	// 相册监听
+	function startWatch(): void {
+		console.log('[yishu] startWatch begin')
+		recordGrantTime()
+		const watch = createPhotoWatch()
+		watch.start((items: Array<PhotoItem>) => {
+			console.log('[yishu] batch received: ' + items.length)
+			if (items.length === 0) {
+				return
+			}
+			handleBatch(items)
+		})
+		console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
+		uni.showToast({ title: '已开始监听相册', icon: 'none' })
+	}
+	function handleBatch(items: Array<PhotoItem>): void {
+		uploading.value = true
+		uploadDone.value = 0
+		uploadTotal.value = items.length
+		uploadFailed.value = 0
+		uploadBatch(items, (p: UploadProgress) => {
+			uploadDone.value = p.done
+			uploadTotal.value = p.total
+			uploadFailed.value = p.failed
+		}).then((uploaded: Array<UploadedPhoto>) => {
+			uploading.value = false
+			if (uploadFailed.value > 0) {
+				uni.showToast({ title: '有 ' + uploadFailed.value + ' 张上传失败', icon: 'none' })
+			}
+			aggregateUploaded(uploaded)
+		})
+	}
+	/** D-05a/D-14（09-01）：上传成功后的端侧聚合+事件上云共口——live 监听（handleBatch）与
+	 *  drain/手动补传（uploader setOnUploadsComplete 钩子）共用，杜绝「contents 有、
+	 *  事件无」孤儿（B5d 不丢数据硬约束）。 */
+	function aggregateUploaded(uploaded: Array<UploadedPhoto>): void {
+		if (uploaded.length == 0) {
+			reload() // 行为保真：原路径空批亦刷新时间轴
+			return
+		}
+			for (let i = 0; i < uploaded.length; i++) {
+				localPhotoPath.value.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
+			}
+			const tz = -new Date().getTimezoneOffset()
+			const agg = aggregateToEvents(uploaded, tz)
+			const events: Array<UTSJSONObject> = []
+			for (let i = 0; i < agg.events.length; i++) {
+				const ev = agg.events[i]
+				const obj: UTSJSONObject = {
+					client_event_id: ev.clientEventId,
+					title: ev.title,
+					start_time: isoString(ev.startTime),
+					end_time: isoString(ev.endTime),
+					photo_ids: ev.photoIds
+				}
+				events.push(obj)
+			}
+			if (events.length > 0) {
+				syncClientEvents(events).then((out: SyncOutcome | null) => {
+					if (out != null) {
+						console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
+						const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
+						for (let m = 0; m < mapped.length; m++) {
+							eventPhotoIds.value.push(mapped[m])
+						}
+						console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + eventPhotoIds.value.length)
+					} else {
+						console.error('[yishu] 事件上云失败（重试耗尽）')
+						uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
+					}
+					reload()
+				})
+				return
+			}
+		reload()
+	}
+	// D-05a（09-01）：注册补传成功聚合钩子（横幅手动/WiFi 自动 drain 走同一聚合链）
+	setOnUploadsComplete((uploaded: Array<UploadedPhoto>): void => {
+		aggregateUploaded(uploaded)
+	})
+</script>
+
+
+<style>
+	/* 视觉规范 v2：像素级还原 SVG 设计稿
+	   背景 #f8f7f4 / 卡片 #ffffff 圆角20 / 玻璃 TabBar #ffffff8c 圆角31
+	   主文字 #3a2e25 / 次文字 #8a7a6a / 锈红 #b05a3a / 琥珀 #c4913c */
+	.page {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #f8f7f4;
+		padding-left: 0;
+		padding-right: 0;
+		padding-top: 0;
+	}
+
+	.serif {
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
+	}
+
+	/* 顶栏：干净，不做旧 */
+	.header {
+		padding-top: 48rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+	}
+	.header-title {
+		font-size: 44rpx;
+		color: #3a2e25;
+		font-weight: bold;
+		letter-spacing: 4rpx;
+	}
+	.header-sub {
+		margin-top: 8rpx;
+		font-size: 26rpx;
+		color: #8a7a6a;
+	}
+
+	/* 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） */
+	.hero-section {
+		position: relative;
+		width: 100%;
+		height: 600rpx;
+		overflow: hidden;
+	}
+	.hero-image {
+		width: 100%;
+		height: 100%;
+	}
+	.hero-overlay-top {
+		position: absolute;
+		/* absolute-ok: hero 顶部暗化遮罩 */
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 269rpx;
+		/* 画布 2:257：垂直暗化 rgba(25,20,15) a0.5→0.28@50%→0。uvue 限三参数，双标线性插值中点≈0.25 与 0.28 近似 */
+		background: linear-gradient(to bottom, rgba(25,20,15,0.5), rgba(25,20,15,0));
+	}
+	.hero-overlay-bottom {
+		position: absolute;
+		/* absolute-ok: hero 底部溶解遮罩 */
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 269rpx;
+		/* 画布 2:258：底部米色垂直溶解 #F8F7F4 a0→0.78@75%→1。三参数限两标，溶解曲线近似 */
+		background: linear-gradient(to bottom, rgba(248,247,244,0), #f8f7f4);
+	}
+	.hero-avatar {
+		position: absolute;
+		/* absolute-ok: hero 头像角标（画布锚点） */
+		top: 111rpx;
+		right: 38rpx;
+		width: 77rpx;
+		height: 77rpx;
+		border-radius: 38.5rpx;
+		background-color: #c4913c;
+		border-width: 2rpx;
+		border-color: rgba(255,255,255,0.7);
+		border-style: solid;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.hero-avatar-char {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #ffffff;
+		font-weight: 600;
+	}
+	/* 画布真值（2026-09-01 重拉 index_canvas.json）：
+	   大标题 px(20,56) fs40 → rpx(38.5,107.7) fs76.9，白 a1.0，无阴影
+	   副标题 px(20,110) fs13 → rpx(38.5,211.5) fs25，白 a0.85
+	   照片说明 px(20,124) fs13 → rpx(38.5,238.5) fs25，白 a1.0，宽 226px→434.6rpx */
+	.hero-content {
+		position: absolute;
+		/* absolute-ok: hero 文案容器（铺满锚定） */
+		left: 0rpx;
+		top: 0rpx;
+		right: 0rpx;
+		bottom: 0rpx;
+	}
+	.hero-title {
+		position: absolute;
+		/* absolute-ok: hero 大标题（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 107.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 76.9rpx;
+		color: #ffffff;
+		font-weight: bold;
+	}
+	.hero-sub1 {
+		position: absolute;
+		/* absolute-ok: hero 副标题（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 211.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: rgba(255,255,255,0.85);
+	}
+	.hero-sub2 {
+		position: absolute;
+		/* absolute-ok: hero 照片说明（画布锚点，静态） */
+		left: 38.5rpx;
+		top: 238.5rpx;
+		width: 434.6rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #ffffff;
+	}
+
+	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
+	.search-capsule {
+		margin: 24rpx 40rpx;
+		padding: 20rpx 32rpx;
+		background-color: rgba(255,255,255,0.32);
+		border-radius: 46rpx;
+		border-width: 1rpx;
+		border-color: rgba(255,255,255,0.5);
+		border-style: solid;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 6rpx 22rpx rgba(58,46,37,0.078);
+	}
+	.search-icon {
+		width: 36rpx;
+		height: 36rpx;
+		margin-right: 16rpx;
+	}
+	.search-placeholder {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		flex: 1;
+		font-size: 28rpx;
+		color: rgba(255,255,255,0.85);
+	}
+
+	.scroll {
+		flex: 1;
+	}
+
+	.center-box {
+		padding-top: 140rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+	}
+	.muted {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #b3a696;
+	}
+
+	.feed {
+		padding-bottom: 160rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+	}
+	.day-block {
+		margin-top: 40rpx;
+	}
+	.day-head {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+	.day-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 22rpx;
+		color: #8a7a6a;
+		font-weight: 500;
+		padding-left: 8rpx;
+	}
+	.day-line {
+		flex: 1;
+		height: 1rpx;
+		background-color: rgba(58,46,37,0.08);
+		margin-left: 16rpx;
+	}
+
+	/* 待确认区 */
+	.pending-block {
+		margin-top: 24rpx;
+	}
+	.pending-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-bottom: 20rpx;
+		padding-left: 8rpx;
+	}
+	.pending-actions {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.pending-btn {
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-top: 14rpx;
+		padding-bottom: 14rpx;
+		border-radius: 32rpx;
+		display: flex;
+		align-items: center;
+	}
+	.pending-btn-ghost {
+		border-width: 2rpx;
+		border-color: #b05a3a;
+		margin-right: 20rpx;
+	}
+	.pending-btn-solid {
+		background-color: #b05a3a;
+	}
+	.pending-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #3a2e25;
+	}
+	.pending-btn-text-solid {
+		color: #ffffff;
+	}
+
+	/* 封面展示 */
+	.cover-wrap {
+		margin-bottom: 20rpx;
+		border-radius: 16rpx;
+		overflow: hidden;
+	}
+	.cover-img {
+		width: 100%;
+		height: 280rpx;
+		background-color: #ede5d5;
+	}
+
+	/* 照片条 */
+	.photo-strip {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.strip-img {
+		width: 152rpx;
+		height: 152rpx;
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		border-radius: 12rpx;
+		background-color: #ede5d5;
+	}
+
+	/* 卡片：白色圆角 20 + 底部投影，不描边 */
+	.card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+		position: relative;
+	}
+	.card-l1 {
+		border-radius: 40rpx;
+	}
+	.card-l2 {
+		border-radius: 32rpx;
+		margin-left: 20rpx;
+	}
+	.card-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 12rpx;
+	}
+	.title-l2 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		font-weight: 500;
+	}
+	.card-meta {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 8rpx;
+	}
+	.meta-item {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-right: 20rpx;
+	}
+	.rust {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #b05a3a;
+	}
+	.amber {
+		color: #c4913c;
+	}
+
+	/* 语音卡：琥珀播放钮 + 波形竖条阵列 */
+	.voice-card {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx;
+		background-color: rgba(196,145,60,0.14);
+		border-radius: 24rpx;
+		margin-top: 16rpx;
+	}
+	.voice-play-btn {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		background-color: rgba(255,255,255,0.8);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+		box-shadow: 0 2rpx 6rpx rgba(58,46,37,0.12);
+	}
+	.voice-play-icon {
+		width: 0;
+		height: 0;
+		border-left: 20rpx solid #b05a3a;
+		border-top: 12rpx solid transparent;
+		border-bottom: 12rpx solid transparent;
+		margin-left: 6rpx;
+	}
+	.voice-wave {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: 48rpx;
+	}
+	.voice-wave-bar {
+		width: 4rpx;
+		background-color: #c4913c;
+		border-radius: 2rpx;
+		margin-right: 4rpx;
+	}
+	.voice-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #3a2e25;
+		font-weight: 500;
+		margin-top: 8rpx;
+	}
+	.voice-duration {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 22rpx;
+		color: #8a7a6a;
+		margin-left: 16rpx;
+	}
+
+	/* 文字卡：左侧琥珀引用竖线 + 米色引言面板 */
+	.quote-card {
+		display: flex;
+		flex-direction: row;
+		padding: 20rpx;
+		margin-top: 16rpx;
+		background-color: rgba(196,145,60,0.10);
+		border-radius: 24rpx;
+	}
+	.quote-line {
+		width: 6rpx;
+		background-color: #c4913c;
+		border-radius: 3rpx;
+		margin-right: 20rpx;
+	}
+	.quote-content {
+		flex: 1;
+	}
+	.quote-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		line-height: 44rpx;
+		font-style: italic;
+	}
+	.quote-source {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 12rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* 卡片操作菜单 */
+	.card-ops {
+		position: absolute;
+		/* absolute-ok: 卡内右上角操作钮（卡内锚点，随卡滚动） */
+		top: 24rpx;
+		right: 24rpx;
+		width: 48rpx;
+		height: 48rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.card-ops-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 36rpx;
+		color: #8a7a6a;
+		font-weight: bold;
+	}
+
+	/* 回响卡片（去年今日 · 角贴 + 泛黄） */
+	.echo-card {
+		background-color: #faf6ee;
+		border-radius: 24rpx;
+		padding: 32rpx;
+		margin: 24rpx 40rpx;
+		position: relative;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.08);
+	}
+	.echo-corner {
+		position: absolute;
+		/* absolute-ok: echo 卡右上角标（卡内锚点） */
+		top: -4rpx;
+		right: 32rpx;
+		background-color: #c4913c;
+		padding: 8rpx 20rpx;
+		border-radius: 0 0 12rpx 12rpx;
+	}
+	.echo-corner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #ffffff;
+		font-weight: 500;
+	}
+	.echo-date {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-bottom: 12rpx;
+	}
+	.echo-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30rpx;
+		color: #3a2e25;
+		line-height: 48rpx;
+		font-style: italic;
+	}
+	.echo-meta {
+		margin-top: 16rpx;
+		display: flex;
+		flex-direction: row;
+	}
+	.echo-actions {
+		margin-top: 20rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.echo-dismiss {
+		padding: 12rpx 32rpx;
+		border-radius: 24rpx;
+		background-color: rgba(176,90,58,0.1);
+	}
+	.echo-dismiss-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #b05a3a;
+	}
+
+
+	/* 按压态动画（scale 0.98 + 阴影收缩 200ms） */
+	.pressable {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+	
+
+	/* 拆分面板 */
+	.split-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #ffffff;
+		border-radius: 32rpx 32rpx 0 0;
+		padding: 32rpx;
+		max-height: 500px;
+	}
+	.split-title {
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 24rpx;
+	}
+	.split-item {
+		padding: 20rpx;
+		border-radius: 16rpx;
+		background-color: #f8f7f4;
+		margin-bottom: 12rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.split-item-text {
+		flex: 1;
+		font-size: 26rpx;
+		color: #3a2e25;
+	}
+	.split-actions {
+		margin-top: 24rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+
+	/* 照片详情面板 */
+	.photo-detail-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #ffffff;
+		border-radius: 32rpx 32rpx 0 0;
+		padding: 32rpx;
+		max-height: 500px;
+	}
+	.photo-detail-image {
+		width: 100%;
+		height: 400rpx;
+		border-radius: 16rpx;
+		margin-bottom: 24rpx;
+		background-color: #ede5d5;
+	}
+	.photo-detail-title {
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 16rpx;
+	}
+	.photo-detail-event {
+		padding: 16rpx;
+		border-radius: 12rpx;
+		background-color: #f8f7f4;
+		margin-bottom: 12rpx;
+	}
+</style>

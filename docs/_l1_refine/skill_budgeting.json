@@ -1,0 +1,33 @@
+{
+  "id": "skill_budgeting",
+  "refine_mode": "template_level",
+  "values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "values_detail": [
+    {
+      "value": "精通",
+      "phrase": "会做资产配置、定投和记账复盘，钱怎么生钱心里有谱",
+      "china_note": "覆盖有房贷理财、基金股票经验的成熟用户，属主流进阶层"
+    },
+    {
+      "value": "熟练",
+      "phrase": "会用记账 App、买点理财，但不搞复杂配置",
+      "china_note": "大量城市白领常态，主流多数"
+    },
+    {
+      "value": "入门",
+      "phrase": "刚学记账、偶尔看收益，还在摸索",
+      "china_note": "年轻用户或理财觉醒期，重要少数"
+    },
+    {
+      "value": "不会",
+      "phrase": "月光，不知道钱花哪了，从没理过财",
+      "china_note": "下沉及低收入群体典型，关键边缘需被识别"
+    }
+  ],
+  "refine_note": "原4→现4；template_level 原样沿用 skill_level 四档，补中国语境行为锚点，未引具体产品与红线值"
+}

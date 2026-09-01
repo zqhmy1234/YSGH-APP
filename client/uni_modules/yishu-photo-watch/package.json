@@ -1,0 +1,10 @@
+{
+  "id": "yishu-photo-watch",
+  "displayName": "忆述光华 · 相册监听",
+  "version": "1.0.0",
+  "description": "客户端第一波系统能力层：ContentObserver 相册监听（游标去重 + 静默窗口攒批）。安全存储（EncryptedSharedPreferences）待自定义基座波次恢复（含 androidx.security 三方依赖）",
+  "keywords": [
+    "photo",
+    "observer"
+  ]
+}

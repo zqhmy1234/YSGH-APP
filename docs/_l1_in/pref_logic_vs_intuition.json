@@ -1,0 +1,19 @@
+{
+  "id": "pref_logic_vs_intuition",
+  "label": "逻辑vs直觉",
+  "category": "决策与偏好",
+  "current_values": [
+    "逻辑",
+    "直觉",
+    "混合"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_logic_vs_intuition",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

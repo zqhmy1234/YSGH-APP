@@ -1,0 +1,356 @@
+{
+  "filename": "内容区.svg",
+  "filepath": "C:\\Users\\ghf\\Downloads\\忆述光华 · W1 时间轴页方向小样\\内容区.svg",
+  "width": 350.0,
+  "height": 657.0,
+  "viewBox": null,
+  "elements": [
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 0.6,
+        "y": 7.4,
+        "width": 140.76,
+        "height": 24.44
+      },
+      "fill": "#3a2e25",
+      "stroke": null,
+      "path_length": 14189
+    },
+    {
+      "type": "Circle",
+      "depth": 0,
+      "bbox": {
+        "x": 310.0,
+        "y": 0.0,
+        "width": 40.0,
+        "height": 40.0
+      },
+      "cx": 330.0,
+      "cy": 20.0,
+      "rx": 20.0,
+      "ry": 20.0,
+      "fill": "#4e7d8c"
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 323.02,
+        "y": 12.0,
+        "width": 14.53,
+        "height": 14.85
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 323.02,
+            "y": 12.0,
+            "width": 14.53,
+            "height": 14.85
+          },
+          "fill": "#f6f1e7",
+          "stroke": null,
+          "path_length": 5932
+        }
+      ]
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 0.0,
+        "y": 54.0,
+        "width": 350.0,
+        "height": 44.0
+      },
+      "x": 0,
+      "y": 54.0,
+      "width": 350.0,
+      "height": 44.0,
+      "rx": 22.0,
+      "ry": 22.0,
+      "fill": "#ede5d5",
+      "stroke": null
+    },
+    {
+      "type": "Circle",
+      "depth": 0,
+      "bbox": {
+        "x": 19.0,
+        "y": 70.0,
+        "width": 9.75,
+        "height": 9.75
+      },
+      "cx": 23.88,
+      "cy": 74.88,
+      "rx": 4.88,
+      "ry": 4.88,
+      "fill": null
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 26.87,
+        "y": 77.87,
+        "width": 5.63,
+        "height": 5.63
+      },
+      "fill": "#8a7a6a",
+      "stroke": null,
+      "path_length": 1092
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 42.39,
+        "y": 69.66,
+        "width": 139.2,
+        "height": 13.34
+      },
+      "fill": "#b3a696",
+      "stroke": null,
+      "path_length": 46945
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 0.0,
+        "y": 112.0,
+        "width": 350.0,
+        "height": 242.0
+      },
+      "x": 0,
+      "y": 112.0,
+      "width": 350.0,
+      "height": 242.0,
+      "rx": 16.0,
+      "ry": 16.0,
+      "fill": "#fbf7ef",
+      "stroke": null
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 8.0,
+        "y": 120.0,
+        "width": 334.0,
+        "height": 180.0
+      },
+      "x": 8.0,
+      "y": 120.0,
+      "width": 334.0,
+      "height": 180.0,
+      "rx": 8.0,
+      "ry": 8.0,
+      "fill": "#000000",
+      "stroke": null
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 14.5,
+        "y": 307.46,
+        "width": 142.82,
+        "height": 31.47
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 14.5,
+            "y": 307.46,
+            "width": 142.82,
+            "height": 15.46
+          },
+          "fill": "#3a2e25",
+          "stroke": null,
+          "path_length": 49238
+        },
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 14.66,
+            "y": 328.76,
+            "width": 141.66,
+            "height": 10.18
+          },
+          "fill": "#8a7a6a",
+          "stroke": null,
+          "path_length": 54616
+        }
+      ]
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 0.0,
+        "y": 368.0,
+        "width": 350.0,
+        "height": 134.0
+      },
+      "x": 0,
+      "y": 368.0,
+      "width": 350.0,
+      "height": 134.0,
+      "rx": 16.0,
+      "ry": 16.0,
+      "fill": "#fbf7ef",
+      "stroke": null
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 8.0,
+        "y": 376.0,
+        "width": 334.0,
+        "height": 72.0
+      },
+      "x": 8.0,
+      "y": 376.0,
+      "width": 334.0,
+      "height": 72.0,
+      "rx": 8.0,
+      "ry": 8.0,
+      "fill": "#4e7d8c29",
+      "stroke": null
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 89.8,
+        "y": 399.8,
+        "width": 182.4,
+        "height": 24.4
+      },
+      "fill": "#4e7d8c",
+      "stroke": null,
+      "path_length": 16765
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 14.38,
+        "y": 455.46,
+        "width": 172.94,
+        "height": 31.45
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 14.38,
+            "y": 455.46,
+            "width": 161.12,
+            "height": 14.88
+          },
+          "fill": "#3a2e25",
+          "stroke": null,
+          "path_length": 50907
+        },
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 14.66,
+            "y": 476.67,
+            "width": 172.67,
+            "height": 10.24
+          },
+          "fill": "#8a7a6a",
+          "stroke": null,
+          "path_length": 54806
+        }
+      ]
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 0.0,
+        "y": 516.0,
+        "width": 350.0,
+        "height": 141.0
+      },
+      "x": 0,
+      "y": 516.0,
+      "width": 350.0,
+      "height": 141.0,
+      "rx": 16.0,
+      "ry": 16.0,
+      "fill": "#fbf7ef",
+      "stroke": null
+    },
+    {
+      "type": "Rect",
+      "depth": 0,
+      "bbox": {
+        "x": 8.0,
+        "y": 524.0,
+        "width": 334.0,
+        "height": 100.0
+      },
+      "x": 8.0,
+      "y": 524.0,
+      "width": 334.0,
+      "height": 100.0,
+      "rx": 8.0,
+      "ry": 8.0,
+      "fill": "#4e7d8c29",
+      "stroke": null
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 20.49,
+        "y": 538.1,
+        "width": 306.92,
+        "height": 30.4
+      },
+      "fill": "#5a4c40",
+      "stroke": null,
+      "path_length": 208659
+    },
+    {
+      "type": "Group",
+      "depth": 0,
+      "bbox": {
+        "x": 14.66,
+        "y": 631.65,
+        "width": 152.44,
+        "height": 10.25
+      },
+      "children": [
+        {
+          "type": "Path",
+          "depth": 1,
+          "bbox": {
+            "x": 14.66,
+            "y": 631.65,
+            "width": 152.44,
+            "height": 10.25
+          },
+          "fill": "#8a7a6a",
+          "stroke": null,
+          "path_length": 54903
+        }
+      ]
+    }
+  ]
+}

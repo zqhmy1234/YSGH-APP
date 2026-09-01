@@ -1,0 +1,124 @@
+{
+  "queries": [
+    {
+      "query": "小白入门学习",
+      "expected": [
+        "img-20241207-105619"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "设计中四大类",
+      "expected": [
+        "img-20241207-110254"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "机端",
+      "expected": [
+        "img-20241207-112256"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "幻灯片页面尺",
+      "expected": [
+        "img-20241207-112405"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "演示文稿编辑",
+      "expected": [
+        "img-20241208-205000"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "演讲者视图界",
+      "expected": [
+        "img-20241209-132614"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "手术",
+      "expected": [
+        "img-20241210-122822"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "文字",
+      "expected": [
+        "img-20241211-151921"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "毛利兰笑着俯",
+      "expected": [
+        "img-20241213-031143"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "了多种橙色主",
+      "expected": [
+        "img-20241215-010705"
+      ],
+      "layer": "keyword",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "小白入门学习知识地图",
+      "expected": [
+        "img-20241207-105619"
+      ],
+      "layer": "descriptive",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "设计中四大类工具主题设置",
+      "expected": [
+        "img-20241207-110254"
+      ],
+      "layer": "descriptive",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "电脑端和投影机",
+      "expected": [
+        "img-20241207-112256"
+      ],
+      "layer": "descriptive",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "幻灯片页面尺寸标题及",
+      "expected": [
+        "img-20241207-112405"
+      ],
+      "layer": "descriptive",
+      "expected_label": "screenshot"
+    },
+    {
+      "query": "演示文稿编辑界面正对一张孔子雕像",
+      "expected": [
+        "img-20241208-205000"
+      ],
+      "layer": "descriptive",
+      "expected_label": "screenshot"
+    }
+  ]
+}

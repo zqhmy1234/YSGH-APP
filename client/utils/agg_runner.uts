@@ -1,0 +1,123 @@
+/**
+ * 端侧聚合运行器（S-AG-3/4 · B3-6 端侧 L0/L1 真值）
+ *
+ * 上传成功照片（本地元数据 + 云侧 content_id）→ UTS ST-DBSCAN 算法层
+ * → L1 日卡片事件（client_event_id 幂等键）→ 供 POST /events/sync 上云。
+ * 与云侧 AGG-016 同参同逻辑（agg_config 单一来源）。
+ */
+import { L0_EPS_S_M, L0_MIN_PTS, l0EpsTsec } from '@/utils/agg/agg_config.uts'
+import { preprocess, RawPhoto } from '@/utils/agg/pipeline.uts'
+import { DayCard, Photo, l1DailyAggregate, stDbscan } from '@/utils/agg/st_dbscan.uts'
+import { UploadedPhoto } from '@/utils/uploader'
+
+/** 端侧 L1 事件（POST /events/sync 载荷） */
+export class ClientL1Event {
+	clientEventId: string
+	title: string
+	startTime: number      // epoch ms
+	endTime: number        // epoch ms
+	photoIds: string[]     // 云侧 content_id 列表
+
+	constructor(clientEventId: string, title: string, startTime: number, endTime: number, photoIds: string[]) {
+		this.clientEventId = clientEventId
+		this.title = title
+		this.startTime = startTime
+		this.endTime = endTime
+		this.photoIds = photoIds
+	}
+}
+
+export class AggRunResult {
+	events: ClientL1Event[]
+	clusterCount: number
+
+	constructor(events: ClientL1Event[], clusterCount: number) {
+		this.events = events
+		this.clusterCount = clusterCount
+	}
+}
+
+/** 生成客户端事件幂等键（时间戳 + 随机后缀，同用户唯一） */
+function genClientEventId(): string {
+	return 'ev-' + Date.now() + '-' + Math.floor(Math.random() * 1000000)
+}
+
+/**
+ * 照片去重键（djb2 → hex；同文件重扫/重复注入取同键）
+ *
+ * MVP 感知哈希占位：UTS 无像素解码 API，以「文件路径 + 字节数」做内容身份键，
+ * 与云端 contents.perceptual_hash 语义对齐（同用户同哈希只保留一条）——
+ * 真实像素级感知哈希由后端 CI 管线计算（本键仅做端侧预处理去重用）。
+ */
+function photoHashOf(u: UploadedPhoto): string {
+	const s = u.item.path + '|' + u.item.size
+	let h = 5381
+	for (let i = 0; i < s.length; i++) {
+		const c = s.charCodeAt(i) ?? 0
+		h = ((h << 5) + h + c) & 0x7fffffff
+	}
+	return h.toString(16)
+}
+
+/**
+ * 端侧聚合：上传成功照片 → L0（ST-DBSCAN）→ L1 日卡片事件
+ * @param uploads 上传成功结果（本地元数据 + content_id）
+ * @param tzOffsetMin 设备本地时区偏移（分钟；日界按本地自然日）
+ */
+export function aggregateToEvents(uploads: Array<UploadedPhoto>, tzOffsetMin: number): AggRunResult {
+	// 1. 组装算法层输入（photo id = content_id；ts = 本地拍摄时间；phash = 文件身份键）
+	const raws: RawPhoto[] = []
+	for (let i = 0; i < uploads.length; i++) {
+		const u = uploads[i]
+		raws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, [], photoHashOf(u)))
+	}
+
+	// 2. 预处理（含去重） → L0 → L1（与 AGG-016 同参；时间窗取生效配置）
+	const pts = preprocess(raws)
+	const clusters = stDbscan(pts, l0EpsTsec(), L0_EPS_S_M, L0_MIN_PTS)
+	const clustered: Set<string> = new Set<string>()
+	for (let i = 0; i < clusters.length; i++) {
+		const cl = clusters[i]
+		for (let j = 0; j < cl.length; j++) {
+			clustered.add(cl[j].id)
+		}
+	}
+	const noise: Photo[] = []
+	for (let i = 0; i < pts.length; i++) {
+		if (!clustered.has(pts[i].id)) {
+			noise.push(pts[i])
+		}
+	}
+	const days = l1DailyAggregate(clusters, noise, tzOffsetMin)
+
+	// 3. 日卡片 → L1 事件（title 用卡片日期；时间窗取成员首末）
+	const events: ClientL1Event[] = []
+	for (let i = 0; i < days.length; i++) {
+		const d = days[i]
+		if (d.photos.length === 0) {
+			continue
+		}
+		const ids: string[] = []
+		let minTs = d.photos[0].ts
+		let maxTs = d.photos[0].ts
+		for (let j = 0; j < d.photos.length; j++) {
+			const p = d.photos[j]
+			ids.push(p.id)
+			if (p.ts < minTs) {
+				minTs = p.ts
+			}
+			if (p.ts > maxTs) {
+				maxTs = p.ts
+			}
+		}
+		events.push(new ClientL1Event(
+			genClientEventId(),
+			d.date + ' · ' + d.photos.length + '条',
+			minTs,
+			maxTs,
+			ids
+		))
+	}
+	console.log('[yishu] 端侧聚合: ' + uploads.length + ' 张 → ' + clusters.length + ' 簇 → ' + events.length + ' 个 L1 事件')
+	return new AggRunResult(events, clusters.length)
+}

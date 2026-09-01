@@ -1,0 +1,110 @@
+﻿<template>
+	<view class="page">
+		<view class="header">
+			<text class="title">AGG-016 一致性自检</text>
+			<text class="sub">UTS ST-DBSCAN vs Python 同参双跑（{{summaryText}}）</text>
+			<text class="sub">30s 验收：{{ timing }}</text>
+		</view>
+		<scroll-view class="list">
+			<view v-for="(r, i) in results" :key="i" class="row" :class="r.pass ? 'row-pass' : 'row-fail'">
+				<text :class="r.pass ? 'badge badge-pass' : 'badge badge-fail'">{{ r.pass ? 'PASS' : 'FAIL' }}</text>
+				<view class="cell">
+					<text class="name">{{ r.name }}</text>
+					<text v-if="!r.pass" class="detail">{{ r.detail }}</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onLoad } from '@dcloudio/uni-app'
+	import { AGG_FIXTURES } from '@/utils/agg/fixtures.uts'
+	import { CaseResult, runAllCases } from '@/utils/agg/agg_check.uts'
+	import { timingText } from '@/utils/agg/perf_timing.uts'
+	import { DEV_PAGE_ENABLED } from '@/utils/config'
+
+	let summaryText = '运行中…'
+	let timing = ''
+	let results: Array<CaseResult> = []
+
+	onLoad(() => {
+		if (!DEV_PAGE_ENABLED) {
+			uni.reLaunch({ url: '/pages/index/index' })
+			return
+		}
+		const summary = runAllCases(AGG_FIXTURES)
+		summaryText = summary.passed + '/' + summary.total + ' 通过'
+		timing = timingText()
+		results = summary.results
+		for (let i = 0; i < summary.results.length; i++) {
+			const r = summary.results[i]
+			console.log('[yishu-agg] ' + r.name + ': ' + (r.pass ? 'PASS' : 'FAIL') + ' ' + r.detail)
+		}
+	})
+</script>
+
+<style>
+.page {
+	display: flex;
+	flex-direction: column;
+	background-color: #F6F1E7;
+	padding: 24rpx;
+}
+.header {
+	padding: 24rpx 8rpx;
+}
+.title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #3A2E25;
+}
+.sub {
+	margin-top: 8rpx;
+	font-size: 24rpx;
+	color: #8a7a6a;
+}
+.list {
+	flex: 1;
+}
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	padding: 20rpx;
+	margin-bottom: 16rpx;
+	border-radius: 12rpx;
+}
+.row-pass {
+	background-color: #EAF3E3;
+}
+.row-fail {
+	background-color: #F7E3DF;
+}
+.badge {
+	font-size: 22rpx;
+	font-weight: bold;
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+	margin-right: 16rpx;
+	color: #FFFFFF;
+	background-color: #7C9A6D;
+}
+.badge-fail {
+	background-color: #B05A3A;
+}
+.cell {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+}
+.name {
+	font-size: 28rpx;
+	color: #3A2E25;
+}
+.detail {
+	margin-top: 6rpx;
+	font-size: 22rpx;
+	color: #B05A3A;
+}
+</style>

@@ -1,0 +1,12 @@
+{
+  "id": "habit_journaling",
+  "refine_mode": "template_level",
+  "values": ["经常", "偶尔", "很少", "不"],
+  "values_detail": [
+    {"value": "经常", "phrase": "经常记，成了日常", "china_note": "写手账、发朋友圈记、记备忘录，中国年轻人手账/打卡文化盛行"},
+    {"value": "偶尔", "phrase": "想起来才记一下", "china_note": "旅游、重要日子才发微博/微信记一笔，非规律性"},
+    {"value": "很少", "phrase": "基本不记，难得一次", "china_note": "只在关键节点（如年终总结）才写，主流之外的轻量记录者"},
+    {"value": "不", "phrase": "啥都不记", "china_note": "无记录习惯，靠脑子记或完全不留痕，中国语境典型多数群体"}
+  ],
+  "refine_note": "原4频档→现4频档；template_level 原样保留频率档，补中国语境口语锚点"
+}

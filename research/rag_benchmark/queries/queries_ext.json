@@ -1,0 +1,512 @@
+{
+  "queries": [
+    {
+      "query": "驼奶的功效",
+      "expected": [
+        "ext-t2r-67441"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "鸡肉熬高汤为什么会发酸",
+      "expected": [
+        "ext-t2r-82262"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "雷克萨斯es300有没有电吸门",
+      "expected": [
+        "ext-t2r-10596"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "过年要给父母红包吗",
+      "expected": [
+        "ext-t2r-151842"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "货车保险杠前面加装的灯叫什么",
+      "expected": [
+        "ext-t2r-35788"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "a2吊销后几年可以恢复",
+      "expected": [
+        "ext-t2r-610848",
+        "ext-t2r-631648"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "大猪蹄裂咋治疗",
+      "expected": [
+        "ext-t2r-481792"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "加200块钱油跑500公里",
+      "expected": [
+        "ext-t2r-526024",
+        "ext-t2r-575048"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "大明宣德年制铜香炉值多少钱",
+      "expected": [
+        "ext-t2r-578086",
+        "ext-t2r-486596"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "狗吃多少克科学",
+      "expected": [
+        "ext-t2r-506029"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "五子棋禁手可以下四三点嘛",
+      "expected": [
+        "ext-t2r-158256"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "头孢是用什么做的",
+      "expected": [
+        "ext-t2r-220776"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "左室璧增厚是高血压引起的吗",
+      "expected": [
+        "ext-t2r-679721"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "医院ct片子保存多久",
+      "expected": [
+        "ext-t2r-163598",
+        "ext-t2r-380768"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "8个月宝宝结膜炎可以用加替沙眼用凝胶吗",
+      "expected": [
+        "ext-t2r-385329"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "手持麦克风输出没声音",
+      "expected": [
+        "ext-t2r-592869"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "玩五福彩票犯法吗",
+      "expected": [
+        "ext-t2r-111915"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "索菲亚全屋定制一般价格下来多少钱",
+      "expected": [
+        "ext-t2r-462812"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "喝益母草水有什么功效",
+      "expected": [
+        "ext-t2r-426365"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "干馍片好消化吗",
+      "expected": [
+        "ext-t2r-711526"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "血液染色体和精子染色体的区别",
+      "expected": [
+        "ext-t2r-259472",
+        "ext-t2r-620397"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "网上报名必须填一寸免冠照片吗",
+      "expected": [
+        "ext-t2r-359242"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "qq飞车端游玩法",
+      "expected": [
+        "ext-t2r-247022"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "出海工作多少钱一个月",
+      "expected": [
+        "ext-t2r-374718"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "荒野乱斗是哪个公司出的",
+      "expected": [
+        "ext-t2r-687058"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "属于输入设备的是什么",
+      "expected": [
+        "ext-t2r-392395",
+        "ext-t2r-736776"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "一年15000元的保险",
+      "expected": [
+        "ext-t2r-522824"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "乌舍是什么意思",
+      "expected": [
+        "ext-t2r-140284"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "女生阴唇大可以做手术吗",
+      "expected": [
+        "ext-t2r-8461",
+        "ext-t2r-649221"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "蚊子咬了擦藿香正气水有用么",
+      "expected": [
+        "ext-t2r-254953",
+        "ext-t2r-426071"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "为什么要弘扬劳模精神",
+      "expected": [
+        "ext-t2r-687205"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "海燕驾校a2驾驶证报名费",
+      "expected": [
+        "ext-t2r-357648"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "皮肤变老的原因引起的",
+      "expected": [
+        "ext-t2r-209389"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "大棚的同义词",
+      "expected": [
+        "ext-t2r-638737"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "戒指取不下来怎么办",
+      "expected": [
+        "ext-t2r-467117"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "郭沫若什么朝代",
+      "expected": [
+        "ext-t2r-405844"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "画完妆后可以用隔离吗",
+      "expected": [
+        "ext-t2r-404278",
+        "ext-t2r-470699"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "如何说一个人画风突变",
+      "expected": [
+        "ext-t2r-750446"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "荒野大镖客2多少帧流畅",
+      "expected": [
+        "ext-t2r-496207"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "本科汉语言考研可考哪些专业",
+      "expected": [
+        "ext-t2r-155413",
+        "ext-t2r-422113"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "曹操为什么要试探刘备",
+      "expected": [
+        "ext-t2r-366870"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "大专毕业了,想学畜牧业去哪学",
+      "expected": [
+        "ext-t2r-319074"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "上海户口离职证明退工单",
+      "expected": [
+        "ext-t2r-704862"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "怎么设置屏幕旋转",
+      "expected": [
+        "ext-t2r-280844",
+        "ext-t2r-374951"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "巴克庄园家具是什么档次",
+      "expected": [
+        "ext-t2r-583137"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "公共交通意外险包括哪些方面",
+      "expected": [
+        "ext-t2r-294686"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "罗丹乳胶漆怎么样",
+      "expected": [
+        "ext-t2r-596481",
+        "ext-t2r-313346"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "胸口痛痒长胸毛怎么办",
+      "expected": [
+        "ext-t2r-98349",
+        "ext-t2r-656317"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "那些软件不支持分屏",
+      "expected": [
+        "ext-t2r-266632"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "外阴部有一个大的黑色的肉疙瘩",
+      "expected": [
+        "ext-t2r-440816"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "青岛59中47中哪个好",
+      "expected": [
+        "ext-t2r-310452"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "猪头肉炒什么好吃",
+      "expected": [
+        "ext-t2r-5385"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "丙烯地板怎么洗",
+      "expected": [
+        "ext-t2r-203295",
+        "ext-t2r-153148"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "小孩喉咙发炎喷雾",
+      "expected": [
+        "ext-t2r-492501"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "湖南潭州教育可靠吗",
+      "expected": [
+        "ext-t2r-403761"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "探望支架病人买什么好",
+      "expected": [
+        "ext-t2r-548504",
+        "ext-t2r-122508"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "盛邦定制家具质量怎么样",
+      "expected": [
+        "ext-t2r-68853"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "持续高烧左上腹胀痛是什么病",
+      "expected": [
+        "ext-t2r-37206",
+        "ext-t2r-228170"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "如何去淤青比较快脸上",
+      "expected": [
+        "ext-t2r-227482"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "用圆来画的图型有哪些",
+      "expected": [
+        "ext-t2r-434262"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "红冻馅儿怎么做好吃",
+      "expected": [
+        "ext-t2r-522952"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "打胎时宫缩是自然分娩宫缩的几级",
+      "expected": [
+        "ext-t2r-584843"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "拖拉机灯是多少伏的",
+      "expected": [
+        "ext-t2r-5052"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "带电的粒子有哪些",
+      "expected": [
+        "ext-t2r-359853",
+        "ext-t2r-721486"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "心窝下面右边痛,后背也疼,是什么病",
+      "expected": [
+        "ext-t2r-678540",
+        "ext-t2r-183094"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "空降闸跟起落杆有什么不同",
+      "expected": [
+        "ext-t2r-177321"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "名师e学堂能知道分屏吗",
+      "expected": [
+        "ext-t2r-247355"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "剩的豆腐脑怎么利用",
+      "expected": [
+        "ext-t2r-275925"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "呷浦呷浦让个人加盟吗",
+      "expected": [
+        "ext-t2r-729329"
+      ],
+      "layer": "external"
+    },
+    {
+      "query": "新兵连周日几点发手机",
+      "expected": [
+        "ext-t2r-494149"
+      ],
+      "layer": "external"
+    }
+  ]
+}

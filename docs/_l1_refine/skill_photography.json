@@ -1,0 +1,33 @@
+{
+  "id": "skill_photography",
+  "refine_mode": "template_level",
+  "values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "values_detail": [
+    {
+      "value": "精通",
+      "phrase": "会后期、能约拍、玩单反/微单，朋友圈出大片",
+      "china_note": "中国主流摄影进阶人群，手机+相机双修，小红书/朋友圈审美驱动，常接私约或做副业"
+    },
+    {
+      "value": "熟练",
+      "phrase": "手机随手出片，懂构图滤镜，旅行必拍",
+      "china_note": "最大基数人群，不靠设备靠审美，节假日景区/网红打卡主力"
+    },
+    {
+      "value": "入门",
+      "phrase": "刚买相机或学构图，还得靠自动模式",
+      "china_note": "装备党起步期，兴趣驱动但技术未稳，易被种草入坑"
+    },
+    {
+      "value": "不会",
+      "phrase": "只会原图直出，拍照纯记录",
+      "china_note": "边缘但真实存在，重隐私或不感兴趣，记忆靠原图不靠美化"
+    }
+  ],
+  "refine_note": "原4（template_values原样）→现4；template_level沿用skill_level模板，逐档补中国语境行为锚点，互斥清晰"
+}

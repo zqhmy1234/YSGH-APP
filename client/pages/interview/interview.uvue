@@ -1,0 +1,544 @@
+<template>
+	<!-- ardot 直转 v2：冷启动访谈（帧 4:167）· 审计化生成 -->
+	<view class="page-root">
+		<!-- 光斑：画布为 GRADIENT_RADIAL，uvue App 端不支持 radial-gradient，
+		     改用预混 SVG 圆盘（_genspot.py 生成，纯 <circle fill> 零透明度属性；
+		     三光斑经程序验证两两零重叠，且正下方是纯色底 #F8F7F4，可安全预混） -->
+		<image class="n4_198" src="/static/icons/i4_198.svg" /> <!-- 光斑-琥珀 画布4:198 -->
+		<image class="n4_199" src="/static/icons/i4_199.svg" /> <!-- 光斑-苔绿 画布4:199 -->
+		<image class="n4_200" src="/static/icons/i4_200.svg" /> <!-- 光斑-青蓝 画布4:200 -->
+		<view class="n4_171"> <!-- 进度点（画布4:171；三问流转：当前问亮锈红） -->
+			<view v-for="(i) in 3" :key="i" class="dot" :class="{ 'dot-active': (i - 1) === step, 'dot-first': i === 1 }"></view>
+		</view>
+		<image class="n4_175" src="/static/icons/i4_175.svg" /> <!-- icon: 品牌星芒 -->
+		<view class="n4_177"> <!-- 品牌名容器 -->
+			<text class="n4_178">忆述光华</text> <!-- 忆述光华 -->
+		</view>
+		<view class="n4_179"> <!-- tagline容器 -->
+			<text class="n4_180">把日子过成可以回访的故事</text> <!-- tagline -->
+		</view>
+		<view v-if="!done" class="n4_181"> <!-- 问题卡（三问动态） -->
+			<text class="n4_182">访谈 · 第 {{ step + 1 }} 问</text> <!-- 问题编号 -->
+			<text class="n4_183">{{ currentQuestion }}</text> <!-- 问题 -->
+			<text class="n4_184">随便聊聊，一两句话就够</text> <!-- 问题引导 -->
+		</view>
+		<view v-else class="n4_181"> <!-- 完成卡（三问答毕） -->
+			<text class="n4_182">访谈完成</text>
+			<text class="n4_183">谢谢你的分享，已经开始了解你了</text>
+			<view class="start-btn" @tap="goHome">
+				<text class="start-btn-text">开始使用</text>
+			</view>
+		</view>
+		<view v-if="!done" class="n4_185"> <!-- 语音环 -->
+			<view class="n4_186" @tap="onMicTap"> <!-- 麦克风钮 -->
+				<image class="n4_187" src="/static/icons/i4_187.svg" /> <!-- icon: 麦克风 -->
+			</view>
+		</view>
+		<view v-if="!done" class="n4_189"> <!-- 说话提示容器 -->
+			<text class="n4_190" :class="{ 'hint-recording': recording }" @tap="onMicTap">{{ recording ? '正在录音 ' + recSeconds + '″' : '点按说话' }}</text>
+		</view>
+		<view v-if="!done" class="n4_191"> <!-- 文字回答容器 -->
+			<text class="n4_192" @tap="openTextModal">用文字回答</text> <!-- 用文字回答 -->
+		</view>
+		<view v-if="!done" class="n4_193"> <!-- 跳过容器 -->
+			<text class="n4_194" @tap="skipInterview">跳过访谈</text> <!-- 跳过访谈 -->
+		</view>
+		<view class="n4_201"> <!-- 呼吸光环外圈 -->
+		</view>
+		<!-- 文字回答弹层（画布未画此态，沿用 HEAD 版已验证结构；uvue 样式不继承，text 类逐个补 font-family） -->
+		<view v-if="showTextModal" class="text-modal">
+			<view class="modal-mask" @tap="closeTextModal"></view>
+			<view class="modal-card">
+				<text class="modal-title">用文字回答</text>
+				<textarea class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
+				<view class="modal-actions">
+					<view class="modal-btn modal-btn-ghost" @tap="closeTextModal">
+						<text class="modal-btn-text ghost-text">取消</text>
+					</view>
+					<view class="modal-btn" @tap="submitTextAnswer">
+						<text class="modal-btn-text">提交</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import {
+		fetchInterviewQuestions,
+		submitInterviewAnswers,
+		InterviewQuestion,
+		InterviewResult
+	} from '@/utils/play'
+
+	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
+	const fallbackQuestions: Array<InterviewQuestion> = [
+		new InterviewQuestion('important_person', '最近有什么小事，让你印象很深？'),
+		new InterviewQuestion('life_turn', '今天有什么瞬间，值得被记住？'),
+		new InterviewQuestion('proud_thing', '此刻，最想对谁说一句话？')
+	]
+	let questions = ref<Array<InterviewQuestion>>(fallbackQuestions)
+	const currentQuestion = computed((): string => {
+		if (step.value >= 0 && step.value < questions.value.length) {
+			return questions.value[step.value].question
+		}
+		return ''
+	})
+
+	// 状态
+	let step = ref(0)
+	let done = ref(false)
+	let recording = ref(false)
+	let recSeconds = ref(0)
+	let showTextModal = ref(false)
+	let textAnswer = ref('')
+	let confirmation = ref('')
+	let submitting = ref(false)
+	let timerId: number = -1
+	// 按问题 key 收集答案（后端 answers dict 白名单 key）
+	const answers: UTSJSONObject = {}
+
+	onLoad(() => {
+		fetchInterviewQuestions().then((list: Array<InterviewQuestion>) => {
+			if (list.length > 0) {
+				questions.value = list
+			}
+		})
+	})
+
+	// 当前问题 key
+	function currentKey(): string {
+		if (step.value >= 0 && step.value < questions.value.length) {
+			return questions.value[step.value].key
+		}
+		return ''
+	}
+
+	// 麦克风点按：录音 / 停止
+	function onMicTap(): void {
+		if (!recording.value) {
+			startRecording()
+		} else {
+			stopRecording(true)
+		}
+	}
+
+	function startRecording(): void {
+		recording.value = true
+		recSeconds.value = 0
+		timerId = setInterval(() => {
+			recSeconds.value = recSeconds.value + 1
+		}, 1000)
+	}
+
+	function stopRecording(advance: boolean): void {
+		if (timerId >= 0) {
+			clearInterval(timerId)
+			timerId = -1
+		}
+		recording.value = false
+		if (advance) {
+			// 冷启动语音回答：完整 ASR 链路在记录页；此处先占位，保证三问答案非空闭环
+			const k = currentKey()
+			if (k != '') {
+				answers[k] = '（语音回答 ' + recSeconds.value + ' 秒）'
+			}
+			uni.showToast({ title: '已记录语音回答', icon: 'none' })
+			nextStep()
+		}
+	}
+
+	// 前进：进入下一问或提交完成
+	function nextStep(): void {
+		if (step.value < questions.value.length - 1) {
+			step.value = step.value + 1
+			textAnswer.value = ''
+		} else {
+			submitAll()
+		}
+	}
+
+	// 提交三问答案到后端，拿复述确认
+	function submitAll(): void {
+		if (submitting.value) {
+			return
+		}
+		submitting.value = true
+		uni.showLoading({ title: '正在生成画像…' })
+		submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
+			uni.hideLoading()
+			submitting.value = false
+			if (res != null && res.confirmation != '') {
+				confirmation.value = res.confirmation
+			}
+			done.value = true
+		})
+	}
+
+	// 文字回答弹层
+	function openTextModal(): void {
+		showTextModal.value = true
+	}
+	function closeTextModal(): void {
+		showTextModal.value = false
+	}
+	function submitTextAnswer(): void {
+		if (textAnswer.value.trim() == '') {
+			uni.showToast({ title: '写一句话再提交吧', icon: 'none' })
+			return
+		}
+		showTextModal.value = false
+		const k = currentKey()
+		if (k != '') {
+			answers[k] = textAnswer.value.trim()
+		}
+		uni.showToast({ title: '已记录文字回答', icon: 'none' })
+		nextStep()
+	}
+
+	// 跳过访谈
+	function skipInterview(): void {
+		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
+		setTimeout(() => {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}, 600)
+	}
+
+	// 完成 → 进入时间轴
+	function goHome(): void {
+		uni.reLaunch({ url: '/pages/index/index' })
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+	}
+	.n4_198 {
+		position: absolute;
+		left: -115.4rpx;
+		top: 76.9rpx;
+		width: 538.5rpx;
+		height: 538.5rpx;
+	}
+	.n4_199 {
+		position: absolute;
+		left: 423.1rpx;
+		top: 326.9rpx;
+		width: 500rpx;
+		height: 500rpx;
+	}
+	.n4_200 {
+		position: absolute;
+		left: 57.7rpx;
+		top: 634.6rpx;
+		width: 461.5rpx;
+		height: 461.5rpx;
+	}
+	.n4_171 {
+		position: absolute;
+		left: 0rpx;
+		top: 123.1rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		/* 画布 4:171 gap=6pt → 11.5rpx，换到非首子节点 margin-left
+		   （uvue App 端丢弃 gap；三个点是 v-for 生成，首点靠 .dot-first 归零 margin） */
+		align-items: center;
+		overflow: hidden;
+	}
+	.dot {
+		width: 15.4rpx;
+		height: 15.4rpx;
+		margin-left: 11.5rpx; /* 画布 4:171 gap=6pt */
+		background-color: #E5DED2;
+		border-radius: 7.7rpx;
+		overflow: hidden;
+	}
+	/* v-for 首点：margin 归零，否则三个点整体右偏 11.5rpx、不再居中于 750rpx */
+	.dot-first {
+		margin-left: 0rpx;
+	}
+	.dot-active {
+		background-color: #B05A3A;
+	}
+	.n4_175 {
+		position: absolute;
+		left: 340.4rpx;
+		top: 184.6rpx;
+		width: 69.2rpx;
+		height: 69.2rpx;
+		/* 画布 3 层同心发光：r20/a.2 + r10/a.35 + r4/a.5 */
+		box-shadow: 0rpx 0rpx 38.5rpx rgba(196, 145, 60, 0.2), 0rpx 0rpx 19.2rpx rgba(196, 145, 60, 0.35), 0rpx 0rpx 7.7rpx rgba(196, 145, 60, 0.5);
+		border-radius: 34.6rpx;
+	}
+	.n4_177 {
+		position: absolute;
+		left: 0rpx;
+		top: 273.1rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_178 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 38.5rpx;
+		color: #3A2E25;
+	}
+	.n4_179 {
+		position: absolute;
+		left: 0rpx;
+		top: 330.8rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_180 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.n4_181 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 423.1rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		/* 画布 4:181 gap=10pt → 19.2rpx，换到非首子节点 margin-top
+		   （uvue App 端丢弃 gap；子节点纵向序：编号→问题→引导，两段间距各 10pt 已由坐标验证） */
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-top: 38.5rpx;
+		padding-bottom: 38.5rpx;
+		/* 毛玻璃：画布为 BACKGROUND_BLUR(16) + fill 白 a0.55；
+		   转换器曾统一降级成 0.72，此处按画布还原 */
+		background-color: rgba(255, 255, 255, 0.55);
+		/* 画布效果共 4 层：stroke 白a.6（居中描边→改外环免内缩）
+		   + INNER_SHADOW 白a.4 + DROP r16 a.06 + DROP r3 a.04 */
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.6), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n4_182 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 21.2rpx;
+		color: #C4913C;
+	}
+	.n4_183 {
+		width: 100%;
+		margin-top: 19.2rpx; /* 画布 4:181 gap=10pt（编号→问题） */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 38.5rpx;
+		color: #3A2E25;
+	}
+	.n4_184 {
+		width: 100%;
+		margin-top: 19.2rpx; /* 画布 4:181 gap=10pt（问题→引导） */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8A7A6A;
+	}
+	.n4_185 {
+		position: absolute;
+		left: 271.2rpx;
+		top: 838.5rpx;
+		width: 207.7rpx;
+		height: 207.7rpx;
+		background-color: rgba(176, 89, 59, 0.12);
+		/* 画布 INNER_SHADOW 顶部白色高光 a0.5 */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.5);
+		border-radius: 103.8rpx;
+		overflow: hidden;
+	}
+	.n4_186 {
+		position: absolute;
+		left: 42.3rpx;
+		top: 42.3rpx;
+		width: 123.1rpx;
+		height: 123.1rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		/* 画布 INNER_SHADOW 白a.35 + DROP 下拉投影 */
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.35), 0rpx 15.4rpx 53.8rpx rgba(176, 89, 59, 0.45);
+		border-radius: 61.5rpx;
+		overflow: hidden;
+	}
+	.n4_187 {
+		width: 50rpx;
+		height: 50rpx;
+	}
+	.n4_189 {
+		position: absolute;
+		left: 0rpx;
+		top: 1076.9rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_190 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 录音中提示变锈红（画布未画此态，沿用 HEAD 版） */
+	.hint-recording {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+	.n4_191 {
+		position: absolute;
+		left: 0rpx;
+		top: 1138.5rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_192 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+	.n4_193 {
+		position: absolute;
+		left: 0rpx;
+		top: 1423.1rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_194 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.n4_201 {
+		position: absolute;
+		left: 240.4rpx;
+		top: 807.7rpx;
+		width: 269.2rpx;
+		height: 269.2rpx;
+		background-color: rgba(176, 89, 59, 0.06);
+		border-radius: 134.6rpx;
+		overflow: hidden;
+	}
+	/* ↓ 完成卡「开始使用」按钮 + 文字回答弹层（画布未画此二态，沿用 HEAD 版已验证样式；
+	   uvue 样式不继承，text 类逐个带 font-family） */
+	.start-btn {
+		margin-top: 32rpx;
+		height: 76rpx;
+		border-radius: 38rpx;
+		background-color: #B05A3A;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.start-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30rpx;
+		color: #F8F7F4;
+		font-weight: 600;
+	}
+	.text-modal {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 99;
+	}
+	.modal-mask {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(58, 46, 37, 0.35);
+	}
+	.modal-card {
+		width: 620rpx;
+		background-color: #FFFFFF;
+		border-radius: 32rpx;
+		padding: 40rpx;
+		z-index: 1;
+		box-shadow: 0 16rpx 48rpx rgba(58, 46, 37, 0.18);
+	}
+	.modal-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 34rpx;
+		font-weight: bold;
+		color: #3A2E25;
+	}
+	.modal-input {
+		margin-top: 24rpx;
+		width: 540rpx;
+		min-height: 180rpx;
+		background-color: #F8F7F4;
+		border-radius: 20rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: #3A2E25;
+	}
+	.modal-placeholder {
+		color: #B3A696;
+	}
+	.modal-actions {
+		margin-top: 28rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.modal-btn {
+		margin-left: 20rpx;
+		padding-left: 44rpx;
+		padding-right: 44rpx;
+		height: 72rpx;
+		border-radius: 36rpx;
+		background-color: #B05A3A;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.modal-btn-ghost {
+		background-color: transparent;
+		border-width: 2rpx;
+		border-color: #B05A3A;
+		border-style: solid;
+	}
+	.modal-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #F8F7F4;
+	}
+	.ghost-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #B05A3A;
+	}
+</style>

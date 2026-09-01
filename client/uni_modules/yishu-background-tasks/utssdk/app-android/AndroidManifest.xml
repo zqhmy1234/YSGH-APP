@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ D-19 教训：UTS 插件内的 AndroidManifest.xml 不参与云端打包合并（仅离线调试可见效）。
+     权限/service 声明真源 = 项目根 client/AndroidManifest.xml（HBuilderX>=3.6.0 官方合并点）。
+     本文件内容与其保持一致；单独改这里不会进正式包。-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- B5d 后台任务（Wave4 Agent K）：WorkManager 需要网络/唤醒权限（标准基座已内置，此处为自定义基座兜底声明） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+</manifest>

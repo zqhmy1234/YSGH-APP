@@ -1,0 +1,37 @@
+{
+  "filename": "中央＋按钮.svg",
+  "filepath": "C:\\Users\\ghf\\Downloads\\忆述光华 · W1 时间轴页方向小样\\中央＋按钮.svg",
+  "width": 56.0,
+  "height": 56.0,
+  "viewBox": null,
+  "elements": [
+    {
+      "type": "Circle",
+      "depth": 0,
+      "bbox": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 56.0,
+        "height": 56.0
+      },
+      "cx": 28.0,
+      "cy": 28.0,
+      "rx": 28.0,
+      "ry": 28.0,
+      "fill": "#b05a3a"
+    },
+    {
+      "type": "Path",
+      "depth": 0,
+      "bbox": {
+        "x": 20.48,
+        "y": 20.48,
+        "width": 15.03,
+        "height": 15.03
+      },
+      "fill": "#f6f1e7",
+      "stroke": null,
+      "path_length": 2206
+    }
+  ]
+}
