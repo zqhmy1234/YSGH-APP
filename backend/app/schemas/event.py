@@ -5,7 +5,13 @@ from pydantic import BaseModel, Field
 
 
 class VoiceInfo(BaseModel):
-    """语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）"""
+    """语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）
+
+    W0-2（2026-09-02）补 content_id：客户端就地播放唯一依赖此键
+    （GET /api/v1/media/audio/{content_id}，Bearer 鉴权）；url 字段留空——
+    音频走鉴权端点 + 临时文件（token 只能走 header 的硬约束），不发裸 URL。
+    """
+    content_id: str | None = None
     url: str | None = None
     title: str | None = None
     duration: str | None = None
