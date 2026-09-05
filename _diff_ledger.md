@@ -762,3 +762,263 @@ P2：① profile 统计接真数据 + manage 接 `/profile/sensitive` ② 清死
 **状态**：uvue 代码全落地、画布三板同步 + 截图终审通过（AI 附件钮序 ✓/画像页新 TabBar+60px 头 ✓/security 单行+SVG ✓）；推包三轮收口（终态=fOeJLH 成功，设备已跑最终版产物并冷启动）→ 任务 #11/#12 完成，交峰宝人肉验机（期间严禁占 adb）。遗留债：四份画布快照（ai/ai_reply/portrait_manage/account_security）未重导出，下会话开工前按 W9 制度补。
 
 **W10.4-b 事故收口（08:0x，峰宝投诉「重建重启没生效+无数据+网络异常」）**：诊断=后端 8010 活（healthz ok）+ reverse 空 + adb 互杀再现 → **真凶=deploy_one.sh 用 1.0.36 老 client 建隧道，脚本结束后 HBuilderX 侧 41 server 抢回 → reverse 清空**（结构性互杀，非没做）。**adbs/ 根下裸 adb.exe=1.0.41（HBuilderX 真身）——旧「无 1.0.41」口径作废，device-adb.md 版本矩阵本就正确，主 SKILL.md 被错误实测覆盖**。治本：deploy_one.sh ADB 默认换 1.0.41 裸真身 + SKILL.md 三处口径修正 + 项目副本同步；隧道户口迁 41 server + force-stop 冷启动，峰宝可验机。产物闭环：app-service.js 产物 mtime 07:51 > ai.uvue 07:35 → 设备跑的是含附件钮序修正的最终版。**军规（峰宝拍板）：一切部署/诊断命令必须带超时自动返回**——shell 内 adb 用 `timeout 25` 前缀 + Bash 工具级 timeout 双保险；推包走后台+轮询（10s×150 硬上限 25 分钟）。
+
+
+## 卡09 F1i 照片 2/9（RecordSheet 重写·2026-09-02）
+
+> 真值：`.wt/missing-pages/uvue_gen/record_f1i_canvas.json`（390x844 · 37节点）
+> 目标文件：`client/components/RecordSheet/RecordSheet.uvue`（白名单内唯一改动）
+
+| # | 差异/降级项 | 真值（画布） | 实现 | 状态 |
+|---|---|---|---|---|
+| F1i-1 | 状态栏时间/电池/Home指示条 | 9:41 / 电池图标 / Home条 | 系统级UI，组件不绘制（uni-app页面由OS渲染） | ✅ 标准做法，非缺陷 |
+| F1i-2 | 返回按钮图标 | VECTOR矢量（左箭头） | 文字"‹"近似（与现有text/voice模式form-back一致） | 🟡 有据降级：矢量路径未在canvas JSON中导出，文字近似视觉可达80% |
+| F1i-3 | 时间图标（时钟） | VECTOR 16.67x16.67 | Unicode字符"◷" | 🟡 有据降级：需后续替换为SVG线框图标 |
+| F1i-4 | 地点图标（定位针） | VECTOR 11.67x16.67 | Unicode字符"⌖" | 🟡 有据降级：需后续替换为SVG线框图标 |
+| F1i-5 | 照片内容 | 真实图片fill（imageHash b3e0.../c2db...） | mock占位图（hero-lake.jpg / hero-ai.jpg），USE_MOCK_PHOTO_GRID=true | ✅ 预期：真实照片来自用户uni.chooseImage选择，发版前grep清理mock |
+| F1i-6 | 确定钮位置 | y=600（静态帧内流，距底190px） | fixed bottom:60rpx（Home指示条上方，移动端标准模式） | 🟡 有据降级：静态帧坐标≠交互页固定底钮；相对间距（信息卡→按钮18px）在内容短时保持 |
+| F1i-7 | 照片添加交互 | 画布照片卡无可见添加钮（2张填满行） | 整卡@tap=pickPhoto添加更多（功能扩展，视觉零偏差） | ✅ 功能扩展：F1h空态有可见添加格，F1i 2张态卡可点添加 |
+| F1i-8 | 分类"＋"自定义分类 | chip"＋" | 点击toast"自定义分类（待接入）" | ✅ MVP范围外：自定义分类非MVP功能，chip视觉已还原 |
+| F1i-9 | 照片卡高度（2张态） | 186px（=20pad+146img+20pad） | computed 357rpx（=76rpx pad+281rpx img），画布186px=357.7rpx | ✅ 1rpx舍入差，可忽略 |
+| F1i-10 | 分类chips选中态边框 | stroke #c4913c 1px | border 2rpx solid #c4913c | ✅ 1px=2rpx |
+
+**自审结论**：37节点全覆盖（系统级3节点除外），文案12项全对，颜色15项全对，关键间距8项全对，孤儿CSS=0。自评 **82分**（扣分项：图标3项文字近似-9分、确定钮定位模式-6分、mock数据-3分；均为有据降级）。
+
+---
+
+## 主窗口联调批次（2026-09-02，自 `.wt/missing-pages/_diff_ledger.md` §B~§E 同步）
+
+> 以下 C/D/E 三节 + §B 尾注来自 missing-pages 工作树台账；五连改全貌（schemas/events.py/
+> api.uts/timeline.uts/event_ops.uts）见工作树台账 §B。
+
+**服务端验证（16:5x）**：timeline 12/12 事件带 photo_ids（38 cid，per_event=4
+生效：5→4）；缩略图端点 200/52265B。客户端待推包真机复验。
+**远期**：Valet Key（HMAC 票据 URL）落地后本过渡管线整体退役。
+
+### C. 联调环境配方固化（峰宝铁令：每次冷启动联调前必须数据就绪）
+
+后端启动四件套（缺一即联调废）：
+```bash
+set -a && source <(sed 's/\r$//' D:/GuangH-App/backend/.env | grep -v '^#') && set +a
+export WECHAT_APPID= WECHAT_SECRET=          # 置空强制 mock 登录分支（真实凭据会 401）
+export FS_STORAGE_ROOT=D:/GuangH-App/backend/data/storage   # 照片真身所在
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
++ 冷启动前预检：`/healthz`、timeline 有数据（curl 登录取 data.access_token）、
+thumbnail 端点 200。
+
+### D. 照片管线真机首验暴露两处硬伤（2026-09-02 20:1x 修复，待复验）
+
+1. **「正在翻找相纸」永久卡死 + 照片条仍空**（后端日志实锤：设备 0 次 /thumbnails 请求）：
+   timeline.uts photo_ids 解析误写 `pidArr.getString(pk)`（Array 上调 UTSJSONObject 方法，
+   非项目先例）→ 运行时异常 → fetchTimeline Promise 永不 resolve。修复=改先例写法
+   （event_ops.uts:224 同款：`getArray('photo_ids') as Array<string> | null` + 下标取值）。
+   **教训**：新写法必须 grep 先例的**元素级访问**写法，不止 API 名。
+2. **瞬态失败误踢空状态页**（峰宝所见「空状态时间轴页」）：请求失败（连接层，后端日志
+   无对应请求）也返回 0 条 → fetchAll 直接 redirectTo empty。修复=timeline.uts 增
+   `wasLastFetchFailed()` 标记（body==null 置位），fetchAll 失败时 2.5s 后重试一次，
+   仍空才跳 empty 页；成功复位 emptyRetryDone。
+
+### E. 「上次带图联调」机制勘误（峰宝指正，代码已核实）
+
+峰宝是对的：那次成功联调 = **电脑本地截图经 agg_load_real_photos.py 注入 DB** +
+**主树后端在途代码（第四窗 media.py + events.py 已接 photos[]/cover_url）**签发
+带 exp/uid/sig 票据的 URL → 客户端 resolveMediaUrl → `<image :src>` 免 header 直显。
+与「手机上传走本地通路」无关（此前推断有误）。工作树后端是干净 checkout 无 media.py，
+故 cover_url/photos 恒空——五连改过渡管线是其在工作树的独立等价实现，不依赖在途文件；
+Valet Key 正式落地后整体退役（含本过渡管线）。
+### F. 画像隐私面板四图标占位退化修复（2026-09-02 20:3x，峰宝点名「怎么不是画布上的」）
+
+- **病根**：PortraitPrivacyPanel 四行图标全是他页借来的近似资产
+  （icon-chat=account/security、storage-bell/moon=storage、license-trash=about），
+  F9c 画布真矢量从未导出。
+- **修复**：从 ardot 719545763760845 导出**整帧** SVG（图标帧 64:299/302/305/308，
+  20×20px=38.5rpx 与 .row-icon CSS 直配），落盘 static/icons/i64_299/302/305/308.svg，
+  组件引用已换。借用原件他页在用，禁覆盖。
+- **陷阱实录（三条全踩）**：
+  1. 图标是 FRAME 非 VECTOR；行1 为双矢量组合（64:311+64:312），只导内层 Vector
+     会缺一半图形（首导 64:312 仅 6.7×5.8 即此坑，已改整帧重导）。
+  2. 导出件带 transform="matrix(1 0 0 1 dx dy)"（每元素各自平移）→ 按 svg-pitfalls §2
+     烘焙进坐标。工具沉淀：static/icons/bake_svg_translate.py（M/L/Q/Z + rect）。
+  3. rect 无 x/y 属性时（默认 0）脚本删 transform 丢平移（299 实锤，气泡框错位到
+     原点）——脚本已补「无 x/y 先补 0」防线。
+- 待复验：真机隐私面板四图标形状 vs 画布（峰宝）。
+### G. 时间轴搜索胶囊冷启动漂移修复（2026-09-02 20:4x，峰宝漂移截图定案）
+
+- **漂移形态**（峰宝截图 20:19 + 旧 20:07 卡加载截图同款实锤）：胶囊被撑高
+  （~110rpx vs 正常 ~88rpx）、占位文字贴顶、放大镜垂直居中——首帧布局错，
+  feed 加载后 relayout 自愈（「从我的回来就正常」）。
+- **定案过程**：画布真值 350×46 单行居中 ✓ 实现 CSS 一致；loadFontFace 全项目
+  零先例（Sarasa 未注册，回退恒定排除字体异步）；UploadStatusBanner 文档流排除。
+  机制判定：uvue 首帧对 content-driven 高度 + flex:1 text 行盒计算异常，
+  relayout 后自愈（引擎级行为，代码无语义错误）。
+- **修复（几何钉死，不给首帧自由度）**：`.search-capsule` height 88.5rpx 固定
+  （画布 46px×1.9231）+ padding 改 0 32rpx（垂直居中交 height+align-items）；
+  `.search-placeholder` 去 flex:1（首帧纵向拉伸字形贴顶嫌疑）。
+- **待复验**：冷启动首帧胶囊单行居中不撑高（峰宝）。
+- **悬账**：峰宝口述「空状态页也漂移」——empty.uvue 无截图证据，待漂移态截图定案。
+### H. 21:08 部署批次：cli 同步日志行缺失 + 备份判据沉淀（2026-09-02 21:2x）
+
+- **事故**：deploy_one.sh 卡 step1 12 分钟（峰宝质疑「只有你在跑排什么队」——正确）。
+  真判据排查：产物 21:09 编译成功、21:09:30「正在同步手机端程序文件...」后 8 分钟无下文；
+  run-as 实证设备端 app-service.js=425436B 与本地一致、四图标已落盘——
+  **cli 偶发不吐「同步手机端程序文件成功」日志行，同步实际完成**，脚本单点判据空等。
+- **处置**：TaskStop 死等脚本 → 手动 step2（reverse tcp:8010 重建 ✓）+ step3（force-stop 冷启动 ✓）。
+- **沉淀**：deploy_one.sh 补 fallback 判据（设备端产物 stat 比对本地，一致即判同步成功）；
+  SKILL.md 禁忌表补行。峰宝观察「没漂移了」＝旧包（漂移修复在 21:09 产物中，冷启动后才生效）。
+- **顺带修复**：VoiceWave.uvue:126 keyframes `to` 选择器 uvue 不支持（编译警告实锤）→ 改 `100%`；
+  待下次推包生效（呼吸缩放动画此前大概率没在跑）。
+- **复验状态**：①搜索胶囊首帧不撑高 ✅（21:38 峰宝）；②隐私面板四图标=画布真值 ✅（21:38 峰宝）；③时间轴照片条/详情页——数据面 08-31 联调已验，视觉面随 21:09 新包继续观察。
+### I. 🔴 重大发现：CSS @keyframes 动画全平台无效——轮盘录音动效从未跑过（2026-09-02 21:3x）
+
+- **触发**：VoiceWave `to` 修复后纯编译复验，`0%`/`100%` 同样报错
+  「uvue only support classname selector」→ 官方文档实锤：
+  **uni-app x App 平台暂不支持 CSS @keyframes**（doc.dcloud.net.cn/uni-app-x/css/css_diff_web.html
+  「不支持 CSS @keyframes…需要使用 API 方式实现动画，详见 UniElement 的 animate 方法」）。
+- **波及三处（均为 08-31~09-01 新写、真机从未跑过动画）**：
+  RecordSheet `wheel-rot`（**轮盘录音旋转——峰宝 09-01 拍板方案 A 本体**）、
+  RecordSheet `wd-in`（轨迹位移）、VoiceWave `wave-live`（波形呼吸）。
+  编译 ERROR 非阻断 + 静默不跑 → 「已实现动效」实为假象。
+- **当前落盘状态**：from/to → 0%/100% 编辑无效但无害（与 from/to 同样静默），保留标准语法
+  待拍板后处置。
+- **候选方案（待峰宝拍板，改决策不动手）**：
+  - **A'：UniElement.animate() 重写**（官方正路）。已查证能力：iterations: Infinity 无限循环 ✓、
+    transform rotate/translate ✓、Android 4.51+（VDOM）；**Vapor 下兼容性未获直接证据，
+    需真机验证**；transform 单位 rpx 支持未明。轮盘三段映射：外层 rotate 无限 linear ✓ /
+    小圆点逐元素 animate（多元素不支持一次绑定，7 点各调）✓ / **轨迹痕迹做不了
+    → 拍板时的降级预案 B（轨迹弧静态淡出 SVG）自然启用**。VoiceWave alternate+Infinity ✓。
+  - **B：静态降级**：删三处 keyframes + animation 属性（视觉=当前真机现状，零变化），
+    编译 ERROR 清零，动效记远期待办总账。
+### J. 🔴 照片态表单错接「写几句」骨架 + 网格换行 bug 重写（2026-09-02 22:5x，峰宝验机三连反馈）
+
+- **峰宝反馈（截图 9 张实拍）**：①1-9 张照片布局与画布完全不符——1 张单列还行、
+  4 张排成单列、5-9 张只有两列；②点击照片进的是「写几句」的表单（「选一个合适的分类」
+  +备注+竖排信息卡），一个添加照片的入口都没有。
+- **根因 1（布局）**：`.pcell` 尾随 `margin-right:13rpx` 计入 flex 行宽 → 三列 3×185+2×13=583
+  超出 pgrid 581，第三列被挤断换行 → 5-9 张只剩两列；4 张田字同样单列化。
+- **根因 2（表单错接）**：missing-pages 版照片态（F1g-k）复用了「写几句」标注骨架——
+  hint 是「选一个合适的分类」、挂了画布上照片帧没有的「备注」、信息卡是 F1d 竖排行；
+  画布真值（record_f1g/h/i/j/k_canvas.json）：hint=「AI 已预选 · 点标签可纠正」、
+  分类 chips 4 枚、**横排信息卡「时间 | 地点」**、照片区上方白卡（AI 描述占位）。
+- **修复（RecordSheet.uvue 6 刀）**：
+  1. cellCls 签名升级 `(n,idx)` → 列尾判定返 `pc-nor`（margin-right:0），行宽不再溢出
+  2. 照片区套 `.pcard` 白卡 + `.pai-desc` AI 描述占位（照片态专属）
+  3. hint 三元分流：photo/gallery=「AI 已预选 · 点标签可纠正」，其余=「选一个合适的分类」
+  4. 信息卡改画布横排：时间 | 分隔线 | 地点（复用 F1d v-info 图标风格）
+  5. 备注节 `v-if="formMode != 'photo'"`（画布照片帧无此节）
+  6. 加号格填色 #ede5d5、圆角/间距按画布真值校准
+- **验证**：纯编译 `--compile true` exit=0「项目 client 编译成功」（22:55，18s）；
+  残余 ERROR 仅 §I 已知 @keyframes 项（非阻断非本次引入）。
+- **待复验（峰宝人肉验机，推包后）**：①照片 1/2/3/4/5-9 张网格档位 vs 画布
+  （1 图 581×435 / 2 图两列 281 / 3 图三列 185 / 4 图田字 281 / 5+ 三列 185）；
+  ②照片态表单=画布（AI 已预选 hint + 横排信息卡 + 无备注 + 白卡 AI 描述）；
+  ③写几句/语音态表单回归未受影响。
+### K. §I 拍板落地：A' 矢量动画（UniElement.animate()）+ VoiceWave 降级静态（2026-09-02 23:1x，峰宝拍板「A 矢量动画吧。推」）
+
+- **API 实证（官方 hello-uni-app-x animate.uvue 源码全文核对，非推断）**：
+  `element.animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}], {duration, iterations: Infinity, easing, direction})`
+  返回 UniAnimation（cancel()/pause()/play()）；元素获取 uni.getElementById(id)；
+  keyframes 数组形式、属性值单值字符串；**transform 官方仅 px 先例（无 rpx）**；
+  direction: 'alternate' + iterations: Infinity 官方同用先例 ✓。
+- **RecordSheet 轮盘（A' 本体，已实现）**：
+  - `.wheel` 加 id="rs-wheel"、7 颗 `.wd` 加 :id="'rs-wd-'+i"（RecordSheet 同屏单实例，id 无冲突）
+  - startWheelAnims()：外轮 rotate 0→360° 9s infinite linear（原 CSS 参数）；圆点 translateX 0→-90rpx
+    （**按 uni.getWindowInfo().windowWidth/750 换算 px**，官方无 rpx 先例），alternate+infinite，
+    时长沿用原 wd-anim0..6 档位 [3.6,4.4,5.2,4.0,4.8,3.9,5.6]s
+  - stopWheelAnims()：cancel 全部实例；4 处 `recording.value=false` 收敛为 setRecordingOff() 防漏关
+  - CSS 删除：.wheel-rec/@keyframes wheel-rot/.wd-anim0..6/@keyframes wd-in（死代码清零）
+  - 轨迹痕迹：wheel-trails 静态弧保留（拍板降级预案 B 自然启用）
+- **VoiceWave 呼吸：降级静态**（A' 范围内但成本>收益）：呼吸目标 bar=liveBarIdx computed
+  **随播放进度动态变化**，命令式 animate 需监听 props 换目标元素；且组件被 index/search/detail
+  三处宿主多实例挂载，uni.getElementById 有全局 id 冲突风险。wave-bar-live 类保留作语义标记。
+- **验证**：纯编译 exit=0「项目 client 编译成功」（23:19），**ERROR=0（§I keyframes 报错全清零）**，
+  animate()/UniAnimation/UniElement/getWindowInfo 类型全过（Vapor 兼容真机实证待峰宝验机）。
+- **待复验（峰宝人肉验机）**：录音开始→轮盘顺时针匀速转+小圆点来回向心；结束→停转复位；
+  录音中断/暂停→轮盘不误停；快速开关录音反复 3 次→动画不叠加不残留。
+### L. 🔴 照片入口错接 + 圆点从未显示 + 轨迹弧重做（2026-09-02 23:4x，峰宝验机四连反馈）
+
+- **峰宝反馈（截图 1 张 + 口述）**：①点「拍照」进的不是拍照、点「选照片」进的不是选照片，
+  两者混在一起；②「选照片」进的照片页不能加照片/选照片，「压根就是写一段话的页面」；
+  ③「拍照」拍 1 张后加照片入口消失，1-9 网格档位根本验不了；④轮盘旋转正常 ✅
+  （**Vapor 兼容实锤，§K 前置条件达成**），但 7 颗圆点压根看不见 + 轨迹弧杂乱无章；
+  ⑤录音没有暂停方案（点中央圆点直接结束转写）。
+- **根因 1（入口错接）**：openMode('photo'/'gallery') 只设 formMode 进空表单，二次点
+  pempty 才拉 picker——空表单形态与写几句难分辨，且拍照/选照片看起来是一个东西。
+- **根因 2（加号格）**：§J 时按画布 F1k「4/9 无加号格」把 v-if 收窄成 `>=5` →
+  1-4 张全无续拍入口（画布帧是瞬时呈现，功能必须恒可加）。
+- **根因 3（圆点隐形，自 F1b 首版起从未显示过）**：`.wheel-dot` 包裹层 0x0 尺寸 +
+  子元素越界 → Android 原生 clipChildren（默认 true）整颗裁剪。
+- **修复（RecordSheet.uvue 5 刀 + SVG 重生成）**：
+  1. openMode photo/gallery 直达 `pickPhotos(true)`：拍照→相机、选照片→相册多选；
+     取消且 0 张 → closeForm 回面板（不再落空表单）
+  2. addPhotos 重构为 pickPhotos(closeOnCancel)，取消选择静默（去误导 toast）
+  3. 加号格 v-if 恢复 `<9` 恒显示；1 张大图档加号格降档 pc-b（581×435 大图旁不出现巨型加号格）
+  4. wheel-dot 包裹层改实尺寸 dia×dia（off=289-dia/2 预计算，rotate 原点=自身中心=轮盘圆心），
+     圆点不再被裁剪；CSS .wheel-dot/.wd 同步清理
+  5. record-trails.svg 重生成：7 条贴轨道短螺旋弧（各圆点公转反方向 26° 弧段 +
+     向心 40rpx 收窄、深棕 10%、封顶防出轮盘），取代原满幅大弧（杂乱根因）
+- **验证**：纯编译 exit=0「项目 client 编译成功」（23:36）ERROR=0。
+- **待复验（峰宝）**：①点拍照直接拉相机拍 1 张→出大图+281 加号格可续拍；
+  ②点选照片直接拉相册可多选；③1/2/3/4/5-9 网格档位逐档验；④录音中圆点可见+轨迹贴轨道；
+  ⑤取消选择回面板不落空表单。
+- **暂停方案（待峰宝拍板，未实施）**：原生 pauseRecord/resumeRecord/recorderState 已备
+  （中断续录 UI 先例），缺的只是交互入口。候选：A 双击圆点（需延迟判定、误触结束风险）/
+  **B 录音中加独立「暂停|继续」按钮（推荐，不动「点击=结束」拍板交互）** / C 长按圆点。
+### M. 录音手动暂停落地（2026-09-02 23:4x，峰宝拍板方案 B——「继续」后实施）
+
+- **拍板**：§L 悬置的三候选中峰宝回「继续」= 按推荐方案 B 实施：录音中加独立
+  「暂停」按钮，不动「点击中央圆点=结束录音」拍板交互（画布 F1b 无此元素，功能优先）。
+- **实现（RecordSheet.uvue 4 刀）**：
+  1. import 补 pauseRecord（voice.uts J-7 原生能力，本就存在）
+  2. 模板：rec-hint 下加「暂停」胶囊（细边框低调度）；暂停后复用 interrupt-bar「继续录音」
+  3. pauseRecordNow()：原生 pause + recState=recorderState() + 计时器冻结 + 轮盘动画
+     pause() 同步停转；resumeRecordNow() 补计时器重启 + 轮盘 play() 恢复
+  4. CSS .pause-pill（64rpx 胶囊、#b3a696 边框、白 55% 底）
+- **验证**：纯编译 exit=0「项目 client 编译成功」（23:40）ERROR=0；已随批推包。
+- **待复验（峰宝）**：①录音中「暂停」按钮出现；②点暂停→计时停走+轮盘停转+提示
+  「已暂停」；③「继续录音」→计时续走+轮盘续转；④暂停状态下点中央圆点→正常结束进转写。
+### N. 🔴 §M 推翻重做 + 圆点/轨迹/网格三拍板落地（2026-09-03 00:4x，峰宝四连拍板「写计划」后批「你先跑」）
+
+- **§M 作废**：峰宝拍板推翻独立暂停按钮——「他妈的谁让你继续的！」正确交互=**单击暂停/继续（立即生效）、连点两下结束**。
+  toggleRecord 双击判定（400ms 窗口，单击无延迟）：第一击立即 pauseRecordNow（计时冻结+轮盘 pause），
+  窗口内第二击 endFromTap（先 resume 原生态再 stopRecordNow）；resumeRecordNow 补计时重启+轮盘 play。
+  pause-pill 模板+CSS 删除；提示语全线改「轻触暂停 · 连点两次结束 / 已暂停 · 轻触继续」。
+- **P2 圆点重排**（拍板：大小不一·错落有致·距心距离不一）：7 颗 dia 14~34 七档、r 154~262 非均匀、
+  角度间隔 41°~69° 打破均匀（原 r158~264/dia16~30 观感差异太弱）。
+- **P3 轨迹=运行留痕**（拍板：轨迹由圆点运行留下，非预存）：record-trails.svg 删除+CSS 清理；
+  每颗圆点尾随 2 颗幽灵点（.wg 透明度 0 默认 / 录制态 0.4、0.18），同轨道向心 animate、
+  delay 150/300ms 错开成点列痕迹——纯 UniElement.animate()，无预存素材。
+- **P4 入口时序+表单错接**（拍板：点选照片后页面应与点拍照一样；点进去应立刻弹 picker）：
+  openMode photo/gallery **不再先设 formMode**——立即 pickPhotos，成功拿到照片才 formMode='photo' 进表单页，
+  取消留面板；sourceKind ref 记录入口（camera/album），gallery/拍照统一同一表单（模板只认 'photo' 的
+  根因=gallery 落进写几句骨架，现彻底消灭）；pempty 文案按 sourceKind 分流。
+- **P5 网格档位新拍板**（放弃 F1g 单图形态）：cellCls/imgCls 改总数驱动——
+  total=照片数+(<9?加号格1:0)：total2=两列281 / 3=三列185 / 4=田字281 / ≥5=三列 / 9 满无加号格；
+  加号格 :class 特例删除（总数驱动自然覆盖 1 图档）；F1g pai-desc/photoAiDesc/pc-a/pimg-a 死代码全清。
+- **P6 空状态相机**：empty.uvue「拍下第一张」旧实现 createPhotoWatch 原生监听（标准基座必炸→
+  toast「不支持相册接入」）废弃；改走 RecordSheet 拍照流——新增 initialMode prop + onMounted 直达
+  openMode('photo')（直弹相机→拍照表单），firstPhoto 标记随 onSheetClose 复位。
+- **验证**：纯编译 exit=0「项目 client 编译成功」（00:46）ERROR=0。
+- **待复验（峰宝手机回来推包后）**：①单击暂停/双击结束+暂停中轮盘停转恢复；②圆点大小/距离/角度错落；
+  ③轨迹为圆点身后延迟拖尾点列；④拍照/选照片点按即弹、取消回面板、两入口同表单；
+  ⑤1/2/3/4/5-9 网格按新档位；⑥空状态拍下第一张直弹相机。
+
+### §O 修复批次（2026-09-03 01:4x · 峰宝八条验收反馈 · 详细登记见 .wt/missing-pages/_diff_ledger.md 同名节）
+
+- **P1 轮盘 R2 重构**：§N 版无感根因实锤=uvue 静态 style transform 双函数组合中 rotate 被静默丢弃（7 点全叠 0° 方向；§L 版同写法被 trails SVG 掩盖误诊）。整条 transform 定位路线废弃，改三角函数预计算轨道点 + setInterval 33ms 数据驱动；幽灵点=主点 t-150/t-300ms 真实位置采样（轨迹=运行留痕字面实现）。真机截屏四连自查通过（错落分布/公转/向心振荡/拖尾/暂停冻结）。**新铁律：uvue 静态 style transform 只可单函数。**
+- **P2** TabBar 加 subpage prop，四 go 函数 active 命中且 subpage 时 navigateBack（manage 已传）；**P3** detail 收藏星绑 fav 态+新增 i4_415-active.svg 琥珀亮星；**P4** audio_player 下载失败回退 static/test-voice.wav（2.5s 拟合测试音，toast 诚实标注）；**P5** detail 玻璃顶栏移出 scroll-view 钉视口+z-index；**P7** manage 副标题删；**P8** storage 上次同步行 .toggle 补 23.1rpx 间隔（bell 图标行=峰宝所指「通知偏好」行）。P6 无刀（P3 修后列表态即可验）。
+- 上机：§O 全批编译 ERROR=0 + deploy 三步过（01:40），待峰宝复验。
+
+### §O 自查收口（2026-09-03 02:0x · mirror 自 missing-pages 工作树）
+
+- P2 根因实锤：manage.uvue:141 `:subpage="true"` 被并行 Edit 回滚（第三次）→ 补回 + 重推包，adb 实证 manage→点「我的」→navigateBack ✓
+- 追加刀：manage 底部内容穿透 TabBar 玻璃——scroll-view 盒子通到屏底、padding-bottom 只在滚到底起效；改 `margin-bottom:110px` 收盒根治 ✓
+- §O 八项自查全过：P1 轮盘/P2 回跳/P3 星星（金星⇄白星像素实证+favorite_ids 落盘）/P4 测试音（0:03 进度+正在播放态）/P5 顶栏固定/P7 副标题/P8 行值间隔/穿透修复；本轮两刀 deploy 63s 三步全过，待峰宝复验。细节见工作树 _diff_ledger.md 同名节
+
+### §Q 收藏栈回同步 + 全局开关系统审查（2026-09-03 02:3x · mirror 自 missing-pages 工作树）
+
+- 峰宝复验实锤：详情取消收藏→返回列表那条还在（退出重进才消失）。根因=favorites onLoad-only 反模式（栈内保活页不触发 onLoad）
+- **系统审查 8 键写读矩阵**（favorite_ids/portrait 标签×2/privacy×2/settings×3/IGNORE_KEY）：唯一实锤只有 favorites——其余全被三模式覆盖：事件回写（manage @save）/v-if 重建（PrivacyPanel/TagEditPanel）/同页闭环（settings）。结论：无同病键
+- 修复三刀 favorites.uvue：①onShow 栈回刷新（loadCards 抽取+firstShow 防首拉）②P9 筛选空态「该类型下暂无收藏」③写格式统一 join(',')（detail 读侧 split 不兼容数组）
+- adb 实锤：基线 1 条→详情取消→返回即时空态「还没有收藏」✓；实心亮黄星新版已生效
+- 入库 e37e482（pre-commit 门禁过；ref 不落盘老坑又犯，手写 ref+pack-refs 补救，8s 存活复验）
