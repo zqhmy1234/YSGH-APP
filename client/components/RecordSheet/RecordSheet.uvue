@@ -40,78 +40,308 @@
 
 		<!-- ═══════════ 功能层：选中入口后的记录表单 ═══════════ -->
 		<view v-if="formMode != ''" class="form-layer">
-			<view class="form-head">
-				<view class="form-back" @tap="closeForm">
-					<text class="form-back-text">‹</text>
+
+			<!-- ═══════ 照片模式：F1h–F1k 多图网格编辑态（卡09 F1i 2/9） ═══════ -->
+			<!-- F1a 语音待录态：全屏轮盘设计（canvas JSON 真值还原，390x844） -->
+			<view v-if="formMode == 'voice' && !recording && transcript == '' && !transcribing" class="voice-idle">
+				<text class="vi-time">{{ statusTime }}</text>
+				<view class="vi-battery"></view>
+				<view class="vi-back" @tap="closeForm">
+					<text class="vi-back-icon">‹</text>
 				</view>
-				<text class="form-title serif">{{ formTitle }}</text>
-				<view class="form-save" @tap="onSave">
-					<text class="form-save-text">{{ saveText }}</text>
+				<text class="vi-title">说一段</text>
+				<view class="vi-close" @tap="onClose">
+					<text class="vi-close-icon">×</text>
+				</view>
+				<view class="vi-wheel">
+					<view class="wheel-center" @tap="toggleRecord"></view>
+					<view class="wheel-dot wd1"></view>
+					<view class="wheel-dot wd2"></view>
+					<view class="wheel-dot wd3"></view>
+					<view class="wheel-dot wd4"></view>
+					<view class="wheel-dot wd5"></view>
+					<view class="wheel-dot wd6"></view>
+					<view class="wheel-dot wd7"></view>
+				</view>
+				<text class="vi-timer">00:00</text>
+				<text class="vi-hint">轻触中央圆点 · 开始录音</text>
+				<view class="vi-home"></view>
+			</view>
+
+			<view v-else-if="formMode == 'photo' || formMode == 'gallery'" class="photo-layout">
+				<!-- 自定义头部：状态栏(9:41+电池) + 返回‹ + 居中标题"照片"，无头部保存钮（确定钮在信息卡之后随流） -->
+				<view class="photo-head">
+					<text class="ph-status-time">{{ statusTime }}</text>
+					<view class="ph-status-battery"></view>
+					<view class="photo-back" @tap="closeForm">
+						<text class="photo-back-text">‹</text>
+					</view>
+					<text class="photo-title">照片</text>
+					<view class="photo-head-spacer"></view>
+				</view>
+
+				<scroll-view class="photo-scroll" scroll-y>
+					<!-- 节标：照片 · N/9 -->
+					<text class="photo-section-label">照片 · {{ photoList.length }}/9</text>
+
+					<!-- 照片卡：白底圆角阴影，内建自适应网格（2张=单行大图 / 3张=单行小图 / 4张=2×2大图 / 5-9张=九宫格，逐帧画布真值） -->
+					<view class="photo-card" :style="{ height: photoCardHeight + 'rpx' }" @tap="onPhotoCardTap">
+						<view class="photo-grid">
+							<view v-for="(p, idx) in photoList" :key="idx"
+										class="photo-item" @tap="openF1gDetail(idx)"
+										:style="{ width: photoItemSize + 'rpx', height: photoItemSize + 'rpx', marginRight: photoGridGap + 'rpx', marginBottom: photoGridGap + 'rpx', borderRadius: photoItemRadius + 'rpx' }">
+								<image class="photo-img" :src="p" mode="aspectFill" />
+								<view class="photo-delete" @tap.stop="removePhoto(idx)"
+											:style="{ width: photoDeleteSize + 'rpx', height: photoDeleteSize + 'rpx', top: photoDeleteTop + 'rpx', right: photoDeleteRight + 'rpx', borderRadius: photoDeleteRadius + 'rpx' }">
+									<text class="photo-delete-text" :style="{ fontSize: photoDeleteFont + 'rpx', lineHeight: photoDeleteFont + 'rpx' }">×</text>
+								</view>
+							</view>
+							<!-- F1h：可见添加格（5张以上九宫格模式，未满9张时显示；4张为2×2大图无添加格） -->
+							<view v-if="photoList.length >= 5 && photoList.length < 9"
+										class="photo-add-cell"
+										:style="{ width: photoItemSize + 'rpx', height: photoItemSize + 'rpx', marginRight: photoGridGap + 'rpx', marginBottom: photoGridGap + 'rpx', borderRadius: photoItemRadius + 'rpx' }"
+										@tap.stop="pickPhoto">
+								<text class="photo-add-text">＋</text>
+							</view>
+						</view>
+					</view>
+
+					<!-- 分类区 -->
+					<view class="cat-section">
+						<view class="cat-head">
+							<text class="cat-label">分类</text>
+							<text class="cat-hint">AI 已预选 · 点标签可纠正</text>
+						</view>
+						<view class="cat-chips">
+							<view v-for="c in categoryList" :key="c.key"
+										class="cat-chip"
+										:class="c.key === currentCategory ? 'cat-chip-active' : ''"
+										@tap="selectCategory(c.key)">
+								<text class="cat-chip-text"
+											:class="c.key === currentCategory ? 'cat-chip-text-active' : ''">{{ c.cn }}</text>
+							</view>
+							<view class="cat-chip cat-chip-add" @tap="addCategory">
+								<text class="cat-chip-add-text">＋</text>
+							</view>
+						</view>
+					</view>
+
+					<!-- 信息卡：时间 + 地点 -->
+					<view class="info-card">
+						<view class="info-row">
+							<view class="info-icon-wrap">
+								<text class="info-icon-text">◷</text>
+							</view>
+							<text class="info-text">{{ photoTime }}</text>
+						</view>
+						<view class="info-divider"></view>
+						<view class="info-row">
+							<view class="info-icon-wrap">
+								<text class="info-icon-text">⌖</text>
+							</view>
+							<text class="info-text">{{ photoLocation }}</text>
+
+						</view>
+					</view>
+
+					<!-- 确定钮：随内容流放置（canvas y=550 F1j / y=756 F1k，位于信息卡之后，非固定底栏） -->
+					<view class="photo-confirm" @tap="confirmPhoto">
+						<text class="photo-confirm-text">确定</text>
+					</view>
+					<!-- 底部留白（Home 指示条区域） -->
+					<view style="height: 140rpx;"></view>
+				</scroll-view>
+				<!-- Home 指示条（canvas y=828 140x5 r3） -->
+				<view class="photo-home-indicator"></view>
+				<!-- ═══════ F1g 单图详情覆盖层（卡07 还原：canvas 390x844 → 750rpx SCALE=1.9231） ═══════ -->
+				<view v-if="f1gView" class="f1g-overlay">
+					<!-- 导航栏：返回网格 + 标题"照片"（canvas y=60） -->
+					<view class="f1g-nav">
+						<view class="f1g-back" @tap="closeF1gDetail">
+							<text class="f1g-back-text">‹</text>
+						</view>
+						<text class="f1g-title">照片</text>
+						<view class="f1g-nav-spacer"></view>
+					</view>
+
+					<!-- 可滚动内容区 -->
+					<scroll-view class="f1g-scroll" scroll-y>
+						<view class="f1g-content">
+							<!-- 节标：照片 · N/9（canvas y=116，fontSize13 Medium #8A7A6A） -->
+							<text class="f1g-section-label">照片 · {{ f1gPhotoIdx + 1 }}/{{ photoList.length }}</text>
+
+							<!-- 照片卡（canvas y=146 w=342 h=292，白bg圆角20 shadow 0,6,18 6%） -->
+							<view class="f1g-photo-card">
+								<!-- 照片（canvas x=20 y=20 w=302 h=226，圆角12） -->
+								<image v-if="f1gPhotoIdx < photoList.length" class="f1g-photo-img" :src="photoList[f1gPhotoIdx]" mode="aspectFill" />
+								<view v-else class="f1g-photo-placeholder">
+									<text class="f1g-placeholder-icon">◫</text>
+								</view>
+								<!-- AI 描述（canvas y=254，fontSize13 Regular #8A7A6A，帧真值写死） -->
+								<text class="f1g-ai-desc">AI 描述：{{ f1gPhotoIdx < photoAiDescs.length ? photoAiDescs[f1gPhotoIdx] : '' }}</text>
+							</view>
+
+							<!-- 分类节标行（canvas y=488：左"分类" + 右"AI 已预选·点标签可纠正"） -->
+							<view class="f1g-cat-header">
+								<text class="f1g-cat-label">分类</text>
+								<text class="f1g-cat-hint">AI 已预选 · 点标签可纠正</text>
+							</view>
+
+							<!-- 分类 chips（canvas y=518：日常生活[选中]/家人与朋友/旅行/＋） -->
+							<view class="f1g-chips">
+								<view v-for="c in categoryList" :key="c.key" class="f1g-chip" :class="c.key === currentCategory ? 'f1g-chip-active' : ''" @tap="selectCategory(c.key)">
+									<text class="f1g-chip-text" :class="c.key === currentCategory ? 'f1g-chip-active-text' : ''">{{ c.cn }}</text>
+								</view>
+								<view class="f1g-chip f1g-chip-add" @tap="addCategory">
+									<text class="f1g-chip-add-text">＋</text>
+								</view>
+							</view>
+
+							<!-- 信息卡（canvas y=590 w=342 h=116，时间+分隔线+地点） -->
+							<view class="f1g-info-card">
+								<view class="f1g-info-row">
+									<image class="f1g-info-icon" src="/static/icons/i2_319.svg" />
+									<text class="f1g-info-text">{{ photoTime }}</text>
+								</view>
+								<view class="f1g-info-divider"></view>
+								<view class="f1g-info-row">
+									<image class="f1g-info-icon f1g-info-icon-loc" src="/static/icons/i2_320.svg" />
+									<text class="f1g-info-text">{{ photoLocation }}</text>
+								</view>
+							</view>
+
+							<!-- 底部占位（防止内容被固定钮遮挡） -->
+							<view style="height: 180rpx;"></view>
+						</view>
+					</scroll-view>
+
+					<!-- 固定底部确定钮（canvas y=746 w=342 h=54，#B05A3A 圆角27 shadow） -->
+					<view class="f1g-confirm" @tap="confirmPhoto">
+						<text class="f1g-confirm-text">确定</text>
+					</view>
 				</view>
 			</view>
-			<scroll-view class="form-scroll">
-				<!-- 文字入口 -->
-				<view v-if="formMode == 'text'" class="form-body">
-					<textarea class="text-input serif" v-model="draft" placeholder="此刻在想什么？记下来…" :maxlength="2000" />
-					<view class="text-actions">
-						<text class="muted">分类：{{ classifyLabel }}</text>
+
+			<!-- ═══════ 文字 / 语音模式：原有布局 ═══════ -->
+			<view v-else class="form-standard">
+				<view class="form-head">
+					<view class="form-back" @tap="closeForm">
+						<text class="form-back-text">‹</text>
 					</view>
-					<view v-if="classifyLabel != '' && classifyLabel != '整理中…'" class="tag-row">
-						<text class="tag-hint">分类不对？点标签纠正：</text>
-						<view class="tag-list">
-							<view v-for="t in allLabels" :key="t.key" class="tag" :class="t.key === currentLabel ? 'tag-active' : ''" @tap="onTagTap(t.key)">
-								<text class="tag-text" :class="t.key === currentLabel ? 'tag-active-text' : ''">{{ t.cn }}</text>
+					<text class="form-title serif">{{ formTitle }}</text>
+					<view v-if="formMode != 'text'" class="form-save" @tap="onSave">
+						<text class="form-save-text">{{ saveText }}</text>
+					</view>
+				</view>
+				<scroll-view class="form-scroll">
+					<!-- 文字入口 · F1e 写几句空态 -->
+					<view v-if="formMode == 'text'" class="f1e-body">
+						<text class="f1e-section-label">正文</text>
+						<view class="f1e-input-card">
+							<textarea class="f1e-textarea" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="2000" />
+						</view>
+						<view class="f1e-category-head">
+							<text class="f1e-section-label f1e-category-label">分类</text>
+							<text class="f1e-category-hint">选一个合适的分类</text>
+						</view>
+						<CategoryChips :categories="textCategories" :selected-key="textSelectedCategory" variant="manual" @select="onTextCategorySelect" @add="onTextCategoryAdd" />
+						<view class="f1e-info-card">
+							<view class="f1e-info-row">
+								<view class="f1e-icon-clock">
+									<view class="clock-face"></view>
+									<view class="clock-hand-h"></view>
+									<view class="clock-hand-m"></view>
+								</view>
+								<text class="f1e-info-text">{{ timeDisplay }}</text>
+							</view>
+							<view class="f1e-divider"></view>
+							<view class="f1e-info-row">
+								<view class="f1e-icon-location">
+									<view class="loc-ring"></view>
+									<view class="loc-dot"></view>
+								</view>
+								<text class="f1e-info-text">{{ locationDisplay }}</text>
+							</view>
+						</view>
+						<text class="f1e-section-label f1e-label-top">备注</text>
+						<view class="f1e-note-card">
+							<textarea class="f1e-note-input" v-model="note" placeholder="补充几句…" :maxlength="500" />
+						</view>
+						<view class="f1e-confirm-btn" @tap="onSave">
+							<text class="f1e-confirm-text">确定</text>
+						</view>
+					</view>
+					<!-- 语音入口 -->
+					<view v-else class="form-body">
+						<view class="record-box">
+							<view class="mic-btn" :class="recording ? 'mic-recording' : ''" @tap="toggleRecord">
+								<text class="mic-icon">{{ recording ? '⏹' : '🎤' }}</text>
+							</view>
+							<text class="record-hint">{{ recordHint }}</text>
+							<text v-if="recording" class="record-timer">{{ recordSeconds }}s</text>
+							<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
+								<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
+								<view class="resume-btn" @tap="resumeRecordNow">
+									<text class="resume-text">继续录音</text>
+								</view>
+							</view>
+						</view>
+						<view v-if="transcribing" class="center-box">
+							<text class="muted">正在转写…</text>
+						</view>
+						<view v-else-if="transcript != ''" class="transcript-box">
+							<view class="transcript-head">
+								<text class="transcript-title serif">转写结果</text>
+								<text v-if="emotion != ''" class="emotion-chip">情绪：{{ emotion }}</text>
+							</view>
+							<view v-if="voiceHints != ''" class="voice-hints">
+								<text class="muted">{{ voiceHints }}</text>
+							</view>
+							<textarea class="text-input serif" v-model="transcript" :maxlength="2000" />
+							<view class="text-actions">
+								<text class="muted">{{ guardMsg }}</text>
 							</view>
 						</view>
 					</view>
-				</view>
-				<!-- 语音入口 -->
-				<view v-else-if="formMode == 'voice'" class="form-body">
-					<view class="record-box">
-						<view class="mic-btn" :class="recording ? 'mic-recording' : ''" @tap="toggleRecord">
-							<text class="mic-icon">{{ recording ? '⏹' : '🎤' }}</text>
-						</view>
-						<text class="record-hint">{{ recordHint }}</text>
-						<text v-if="recording" class="record-timer">{{ recordSeconds }}s</text>
-						<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
-							<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
-							<view class="resume-btn" @tap="resumeRecordNow">
-								<text class="resume-text">继续录音</text>
-							</view>
-						</view>
-					</view>
-					<view v-if="transcribing" class="center-box">
-						<text class="muted">正在转写…</text>
-					</view>
-					<view v-else-if="transcript != ''" class="transcript-box">
-						<view class="transcript-head">
-							<text class="transcript-title serif">转写结果</text>
-							<text v-if="emotion != ''" class="emotion-chip">情绪：{{ emotion }}</text>
-						</view>
-						<view v-if="voiceHints != ''" class="voice-hints">
-							<text class="muted">{{ voiceHints }}</text>
-						</view>
-						<textarea class="text-input serif" v-model="transcript" :maxlength="2000" />
-						<view class="text-actions">
-							<text class="muted">{{ guardMsg }}</text>
-						</view>
-					</view>
-				</view>
-				<!-- 照片 / 相册入口 -->
-				<view v-else class="form-body">
-					<view class="photo-box" @tap="pickPhoto">
-						<image v-if="photoPreview != ''" class="photo-preview" :src="photoPreview" mode="aspectFill" />
-						<view v-else class="photo-empty">
-							<image class="photo-empty-icon" src="/static/icons/record-camera-gray.svg" />
-							<text class="photo-empty-text">{{ formMode == 'photo' ? '点击拍照' : '点击从相册选择' }}</text>
-						</view>
-					</view>
-					<textarea class="text-input serif" v-model="draft" placeholder="补充一句此刻的感想（可选）" :maxlength="500" />
-					<view class="text-actions">
-						<text class="muted">拍摄或选择后点保存，将上传到你的记忆库</text>
-					</view>
-				</view>
-			</scroll-view>
+				</scroll-view>
+			</view>
+		</view>
+
+		<!-- ═══════════ F1c 语音预览态 ═══════════ -->
+		<view v-if="voicePreview" class="preview-layer">
+			<!-- 状态栏 -->
+			<text class="pv-status-time">9:41</text>
+			<view class="pv-status-battery"></view>
+			<!-- 头部：返回 / 标题 / 关闭 -->
+			<view class="pv-back" @tap="onPreviewBack">
+				<image class="pv-back-icon" src="/static/icons/detail-back.svg" />
+			</view>
+			<text class="pv-title">说一段</text>
+			<view class="pv-close" @tap="onPreviewClose">
+				<text class="pv-close-text">×</text>
+			</view>
+			<!-- 转写卡 -->
+			<view class="pv-card">
+				<scroll-view class="pv-card-scroll" scroll-y="true">
+					<text class="pv-card-text">{{ transcript }}</text>
+				</scroll-view>
+				<text class="pv-card-meta">时长 {{ previewDuration }} · {{ previewTime }}</text>
+			</view>
+			<!-- 底部双按钮 -->
+			<view class="pv-btn-rerecord" @tap="onRerecord">
+				<text class="pv-btn-rerecord-text">重新录</text>
+			</view>
+			<view class="pv-btn-confirm" @tap="onPreviewConfirm">
+				<text class="pv-btn-confirm-text">确定</text>
+			</view>
+			<!-- Home 指示条 -->
+	// ===== F1g 单图详情视图（卡07 还原：单张照片 + AI描述 + 分类chips） =====
+	let f1gView = ref(false)
+	let f1gPhotoIdx = ref(0)
+	// F1g：每张照片的 AI 描述（帧真值写死，USE_MOCK 模式）
+	let photoAiDescs: Array<string> = ['傍晚的江边，梧桐叶沙沙作响', '', '', '', '', '', '', '', '']
+
+			<view class="pv-home-indicator"></view>
 		</view>
 	</view>
 </template>
@@ -136,20 +366,40 @@
 	import { showErrorToast } from '@/utils/api'
 	import { uploadBatch, UploadProgress, UploadedPhoto } from '@/utils/uploader'
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
+	import CategoryChips from './CategoryChips.uvue'
 
 	// ===== 对外事件 =====
 	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
 	// 关闭由宿主页决定（<RecordSheet v-if="sheetOpen" @close="sheetOpen=false" />）
 	const emit = defineEmits(['close', 'saved'])
 
+	// ===== Mock 常量（发版前 grep USE_MOCK_ 统一清理） =====
+	// F1i–F1k 照片态帧共用网格：USE_MOCK_PHOTO_COUNT 控制演示张数（2=F1i / 3=F1j / 4=F1k / 6=F1h 九宫格）
+	const USE_MOCK_PHOTO_GRID = true
+	const USE_MOCK_PHOTO_COUNT = 4
+
 	// ===== 响应式数据 =====
 	// 弹层 / 表单状态
 	let formMode = ref('')
 	let formTitle = ref('写几句')
 	let saveText = ref('记下来')
-	let photoPreview = ref('')
-	let photoSize = ref(0)
 	let photoUploading = ref(false)
+	// 照片模式：多图列表（替代原单图 photoPreview）
+	let photoList = ref<Array<string>>([])
+	// 照片模式：分类
+	interface PhotoCategory {
+		key: string
+		cn: string
+	}
+	let categoryList = ref<Array<PhotoCategory>>([
+		{ key: 'daily', cn: '日常生活' },
+		{ key: 'family', cn: '家人与朋友' },
+		{ key: 'travel', cn: '旅行' }
+	])
+	let currentCategory = ref('daily')
+	// 照片模式：信息卡
+	let photoTime = ref('今天 17:42')
+	let photoLocation = ref('上海 · 江边')
 	// 文字记录
 	let draft = ref('')
 	let submitting = ref(false)
@@ -172,14 +422,98 @@
 	let saving = ref(false)
 	let lastVoiceDuration = ref(0)
 	let lastVoiceFile = ref('')
+	// F1a 状态栏时间（canvas 还原：9:41 位置，动态真实时间）
+	let statusTime = ref('9:41')
+	// F1c 预览态
+	let voicePreview = ref(false)
+	let previewDuration = ref('')
+	let previewTime = ref('')
+
+	// ===== F1e 文字空态数据 =====
+	let note = ref('')
+	let textSelectedCategory = ref('daily')
+	let textCategories = ref([
+		{ key: 'daily', label: '日常生活' },
+		{ key: 'family', label: '家人与朋友' },
+		{ key: 'travel', label: '旅行' }
+	])
+	let timeDisplay = ref('今天 17:42')
+	let locationDisplay = ref('上海 · 江边')
+
+	// ===== 照片网格自适应（F1i–F1k 逐帧真值：画布 JSON 定制尺寸，非均分） =====
+	// 大图模式（2/4 张）：146px 方格 · gap 10px · 圆角 10px · 删除角标 20px
+	// 小图模式（3/5-9 张）：96px 方格 · gap 7px · 圆角 8px · 删除角标 18px
+	const PHOTO_CARD_PAD = 38 // 20px × 1.9231 ≈ 38rpx（上下左右）
+	const PHOTO_LARGE_SIZE = 281 // 146px × 1.9231 ≈ 281rpx（F1i 2张 / F1k 4张）
+	const PHOTO_LARGE_GAP = 19 // 10px × 1.9231 ≈ 19rpx
+	const PHOTO_LARGE_RADIUS = 19 // 10px × 1.9231 ≈ 19rpx
+	const PHOTO_LARGE_DEL = 38 // 20px × 1.9231 ≈ 38rpx
+	const PHOTO_LARGE_DEL_TOP = 12 // 6px × 1.9231 ≈ 12rpx
+	const PHOTO_SMALL_SIZE = 185 // 96px × 1.9231 ≈ 185rpx（F1j 3张 / F1h 5-9张）
+	const PHOTO_SMALL_GAP = 13 // 7px × 1.9231 ≈ 13rpx
+	const PHOTO_SMALL_RADIUS = 15 // 8px × 1.9231 ≈ 15rpx
+	const PHOTO_SMALL_DEL = 35 // 18px × 1.9231 ≈ 35rpx
+	const PHOTO_SMALL_DEL_TOP = 8 // 4px × 1.9231 ≈ 8rpx
+	const PHOTO_CARD_H_SQUARE = 658 // 342px × 1.9231 ≈ 658rpx（F1k 4张 2×2 / F1h 5-9张 九宫格）
+
+	// 小图（九宫格）模式 = 3 张或 5-9 张；大图模式 = 2/4 张
+	const photoIsSmall = computed((): boolean => {
+		const c = photoList.value.length
+		return c == 3 || c >= 5
+	})
+	const photoGridGap = computed((): number => photoIsSmall.value ? PHOTO_SMALL_GAP : PHOTO_LARGE_GAP)
+	const photoItemRadius = computed((): number => photoIsSmall.value ? PHOTO_SMALL_RADIUS : PHOTO_LARGE_RADIUS)
+	const photoDeleteSize = computed((): number => photoIsSmall.value ? PHOTO_SMALL_DEL : PHOTO_LARGE_DEL)
+	const photoDeleteTop = computed((): number => photoIsSmall.value ? PHOTO_SMALL_DEL_TOP : PHOTO_LARGE_DEL_TOP)
+	const photoDeleteRadius = computed((): number => Math.floor(photoDeleteSize.value / 2))
+	const photoDeleteFont = 23 // 12px × 1.9231 ≈ 23rpx（× 号字号，两模式一致）
+	const photoDeleteRight = 8 // 4px × 1.9231 ≈ 8rpx（两模式一致）
+
+	const photoItemSize = computed((): number => {
+		const count = photoList.value.length
+		if (count <= 0) {
+			return 181 // 空态3列占位
+		}
+		if (count == 1) {
+			return 581 // 单张全宽（无帧真值，保留既有全宽）
+		}
+		return photoIsSmall.value ? PHOTO_SMALL_SIZE : PHOTO_LARGE_SIZE
+	})
+
+	const photoCardHeight = computed((): number => {
+		const count = photoList.value.length
+		if (count == 2) {
+			return PHOTO_CARD_PAD * 2 + PHOTO_LARGE_SIZE // F1i 186px：单行大图
+		}
+		if (count == 3) {
+			return PHOTO_CARD_PAD * 2 + PHOTO_SMALL_SIZE // F1j 136px：单行小图
+		}
+		if (count == 4) {
+			return PHOTO_CARD_H_SQUARE // F1k 342px：2×2 大图
+		}
+		if (count >= 5) {
+			return PHOTO_CARD_H_SQUARE // F1h 342px：3 列九宫格固定高
+		}
+		if (count == 1) {
+			return PHOTO_CARD_PAD * 2 + 581 // 单张全宽
+		}
+		return PHOTO_CARD_H_SQUARE // 空态：3 行占位
+	})
 
 	// ===== 生命周期（组件化：onLoad/onUnload → onMounted/onUnmounted） =====
 	onMounted(() => {
+		// F1a 状态栏时间初始化
+		const _now = new Date()
+		statusTime.value = _now.getHours() + ':' + (_now.getMinutes() < 10 ? '0' : '') + _now.getMinutes()
 		ensureLogin().then((ok: boolean) => {
 			if (!ok) {
 				showErrorToast(new Error('登录失败，请重试'))
 			}
 		})
+		// Mock 注入：F1i–F1k 演示态预填 USE_MOCK_PHOTO_COUNT 张照片
+		if (USE_MOCK_PHOTO_GRID && photoList.value.length == 0) {
+			photoList.value = buildMockPhotoList()
+		}
 	})
 	onUnmounted(() => {
 		if (recordTimer.value > 0) {
@@ -218,6 +552,19 @@
 			formTitle.value = '写几句'
 			saveText.value = '记下来'
 		}
+		// 进入照片模式时确保 mock 数据已注入（onMounted 可能已执行过）
+		if ((m == 'photo' || m == 'gallery') && USE_MOCK_PHOTO_GRID && photoList.value.length == 0) {
+			photoList.value = buildMockPhotoList()
+		}
+	}
+	// F1i–F1k mock 生成：按 USE_MOCK_PHOTO_COUNT 循环轮换两张示例图
+	function buildMockPhotoList(): Array<string> {
+		const srcs = ['/static/hero-lake.jpg', '/static/hero-ai.jpg']
+		const out: Array<string> = []
+		for (let i = 0; i < USE_MOCK_PHOTO_COUNT; i++) {
+			out.push(srcs[i % 2])
+		}
+		return out
 	}
 	function closeForm(): void {
 		// 录音中返回弹层：停止录音，避免后台空转
@@ -236,25 +583,35 @@
 			submitText()
 		} else if (formMode.value == 'voice') {
 			submitVoice()
-		} else {
-			savePhoto()
 		}
 	}
 
-	// ===== 照片 / 相册（uni.chooseImage，保存后端待接入 → 仅本地预览提示） =====
+	// ===== 照片 / 相册（多图网格，F1h–F1k） =====
 	function pickPhoto(): void {
+		if (photoList.value.length >= 9) {
+			uni.showToast({ title: '最多 9 张照片', icon: 'none' })
+			return
+	// F1g 单图详情：从网格下钻 / 返回
+	function openF1gDetail(idx: number): void {
+		f1gPhotoIdx.value = idx
+		f1gView.value = true
+	}
+	function closeF1gDetail(): void {
+		f1gView.value = false
+	}
+
+		}
 		const srcs: Array<string> = formMode.value == 'photo' ? ['camera'] : ['album']
+		const remaining = 9 - photoList.value.length
 		uni.chooseImage({
-			count: 1,
+			count: remaining,
 			sourceType: srcs,
 			success: (res) => {
-				const tp = res.tempFilePaths[0]
-				if (tp != null) {
-					photoPreview.value = tp
-				}
-				const tf = res.tempFiles[0]
-				if (tf != null) {
-					photoSize.value = tf.size
+				const paths = res.tempFilePaths
+				for (let i = 0; i < paths.length; i++) {
+					if (photoList.value.length < 9) {
+						photoList.value.push(paths[i])
+					}
 				}
 			},
 			fail: () => {
@@ -262,9 +619,25 @@
 			}
 		})
 	}
-	function savePhoto(): void {
-		if (photoPreview.value == '') {
-			showErrorToast(new Error('请先拍照或选一张照片'))
+	function onPhotoCardTap(): void {
+		// 点击照片卡空白区 = 添加更多照片（F1i 无可见添加钮，卡可点）
+		pickPhoto()
+	}
+	function removePhoto(idx: number): void {
+		if (idx < 0 || idx >= photoList.value.length) {
+			return
+		}
+		photoList.value.splice(idx, 1)
+	}
+	function selectCategory(key: string): void {
+		currentCategory.value = key
+	}
+	function addCategory(): void {
+		uni.showToast({ title: '自定义分类（待接入）', icon: 'none' })
+	}
+	function confirmPhoto(): void {
+		if (photoList.value.length == 0) {
+			showErrorToast(new Error('请先添加照片'))
 			return
 		}
 		if (photoUploading.value) {
@@ -273,17 +646,19 @@
 		photoUploading.value = true
 		uni.showLoading({ title: '上传中…', mask: true })
 		const now = Date.now()
-		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
-		const item = new PhotoItem(-now, photoPreview.value, now, 0, 0, null, null, photoSize.value)
-		const items: Array<PhotoItem> = [item]
+		const items: Array<PhotoItem> = []
+		for (let i = 0; i < photoList.value.length; i++) {
+			// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
+			const item = new PhotoItem(-now - i, photoList.value[i], now, 0, 0, null, null, 0)
+			items.push(item)
+		}
 		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()
 			photoUploading.value = false
 			if (uploaded.length > 0) {
 				uni.showToast({ title: '照片已保存', icon: 'success' })
-				emit('saved') // 修复（2026-08-31）：保存成功要通知宿主刷新（原只 emit close → timeline 不刷新）
-				photoPreview.value = ''
-				photoSize.value = 0
+				emit('saved')
+				photoList.value = []
 				closeForm()
 			} else {
 				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
@@ -367,6 +742,14 @@
 				}
 			})
 		})
+	}
+
+	// ===== F1e 文字空态方法 =====
+	function onTextCategorySelect(key: string): void {
+		textSelectedCategory.value = key
+	}
+	function onTextCategoryAdd(): void {
+		uni.showToast({ title: '自定义分类（二期）', icon: 'none' })
 	}
 
 	// ===== 语音录音方法 =====
@@ -510,7 +893,52 @@
 			} else {
 				guardMsg.value = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
 			}
+			enterPreview()
 		})
+	}
+
+	// ===== F1c 预览态方法 =====
+	function formatDuration(ms: number): string {
+		const totalSec = Math.floor(ms / 1000)
+		const m = Math.floor(totalSec / 60)
+		const s = totalSec % 60
+		return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s
+	}
+	function formatPreviewTime(ts: number): string {
+		const d = new Date(ts)
+		const h = d.getHours()
+		const min = d.getMinutes()
+		return '今天 ' + (h < 10 ? '0' : '') + h + ':' + (min < 10 ? '0' : '') + min
+	}
+	function enterPreview(): void {
+		previewDuration.value = formatDuration(lastVoiceDuration.value)
+		previewTime.value = formatPreviewTime(Date.now())
+		voicePreview.value = true
+	}
+	function onPreviewBack(): void {
+		voicePreview.value = false
+	}
+	function onPreviewClose(): void {
+		voicePreview.value = false
+		onClose()
+	}
+	function onRerecord(): void {
+		voicePreview.value = false
+		transcript.value = ''
+		emotion.value = ''
+		guardMsg.value = ''
+		voiceHints.value = ''
+		transcribing.value = false
+		recording.value = false
+		recState.value = 'idle'
+		recordHint.value = '点击开始录音（≤30 分钟）'
+		lastVoiceFile.value = ''
+		lastVoiceDuration.value = 0
+	}
+	function onPreviewConfirm(): void {
+		voicePreview.value = false
+		submitVoice()
+		closeForm()
 	}
 	function submitVoice(): void {
 		const text = transcript.value.trim()
@@ -537,7 +965,7 @@
 
 <style>
 	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x844 画布）
-	   背景 #f8f7f4 / 主文字 #3a2e25 / 次文字 #8a7a6a / 辅助 #b3a696
+	   背景 #f8f7f4 / 主文字 #3a2e25 / 次文字 #8a7a6a / 辅助 #b3a694
 	   琥珀 #c4913c / 锈红 #b05a3a / 卡片 #ffffff / 弹层面板 #faf9f5 */
 	.page {
 		position: fixed;
@@ -553,13 +981,6 @@
 	.serif {
 		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
 	}
-
-
-	/* 搜索胶囊 */
-
-	/* 日期 + 分隔线 */
-
-	/* 语音卡（弹层之上露出的顶部） */
 
 	/* ═══════ 模态遮罩 ═══════ */
 	.scrim {
@@ -700,6 +1121,277 @@
 		z-index: 30;
 		flex-direction: column;
 	}
+
+	/* ═══════ 照片模式布局（F1h–F1k，卡09 F1i 2/9） ═══════ */
+	.photo-layout {
+		flex: 1;
+		flex-direction: column;
+		position: relative;
+		background-color: #f8f7f4;
+	}
+	.photo-head {
+		position: relative;
+		/* 状态栏区 16px 约 31rpx + 导航行 y=60px 约 115rpx */
+		padding-top: 115rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.ph-status-time {
+		position: absolute;
+		left: 46rpx;
+		top: 31rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 29rpx;
+		color: #3A2E25;
+		font-weight: 500;
+	}
+	.photo-back {
+		width: 48rpx;
+		height: 48rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.ph-status-battery {
+		position: absolute;
+		right: 46rpx;
+		top: 38rpx;
+		width: 46rpx;
+		height: 23rpx;
+		border-radius: 8rpx;
+		background-color: #3A2E25;
+	}
+	.photo-back-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 48rpx;
+		color: #3a2e25;
+		line-height: 48rpx;
+	}
+	.photo-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		flex: 1;
+		text-align: center;
+		font-size: 33rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.photo-head-spacer {
+		width: 48rpx;
+		height: 48rpx;
+	}
+	.photo-scroll {
+		flex: 1;
+	}
+	.photo-home-indicator {
+		position: absolute;
+		left: 240rpx;
+		bottom: 21rpx;
+		width: 269rpx;
+		height: 10rpx;
+		border-radius: 6rpx;
+		background-color: #3A2E25;
+	}
+	.photo-section-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-left: 46rpx;
+		margin-top: 8rpx;
+		font-size: 25rpx;
+		color: #8a7a6a;
+		font-weight: 500;
+	}
+	.photo-card {
+		margin-left: 46rpx;
+		margin-right: 46rpx;
+		margin-top: 23rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		padding: 38rpx;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+		overflow: hidden;
+	}
+	.photo-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.photo-item {
+		position: relative;
+		/* absolute-ok: 照片项内删除角标定位 */
+		border-radius: 19rpx;
+		overflow: hidden;
+	}
+	.photo-img {
+		width: 100%;
+		height: 100%;
+		border-radius: 19rpx;
+	}
+	.photo-delete {
+		position: absolute;
+		/* absolute-ok: 删除角标固定在照片右上角（尺寸/位置/圆角由内联动态绑定，随大小图模式变化） */
+		background-color: rgba(58, 46, 37, 0.6);
+		align-items: center;
+		justify-content: center;
+	}
+	.photo-delete-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23rpx;
+		color: #ffffff;
+		line-height: 23rpx;
+		text-align: center;
+	}
+
+	/* F1h：可见添加格（九宫格模式下的 ＋ 格） */
+	.photo-add-cell {
+		background-color: #ede5d5;
+		/* 圆角由内联动态绑定：小图模式 15rpx（8px） */
+		align-items: center;
+		justify-content: center;
+	}
+	.photo-add-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 46rpx;
+		color: #b3a696;
+		line-height: 46rpx;
+	}
+
+	/* 分类区 */
+	.cat-section {
+		margin-left: 46rpx;
+		margin-right: 46rpx;
+		margin-top: 58rpx;
+	}
+	.cat-head {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.cat-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8a7a6a;
+		font-weight: 500;
+	}
+	.cat-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23rpx;
+		color: #b3a694;
+		text-align: right;
+	}
+	.cat-chips {
+		margin-top: 23rpx;
+		flex-direction: row;
+		align-items: center;
+		height: 69rpx;
+	}
+	.cat-chip {
+		height: 69rpx;
+		padding-left: 27rpx;
+		padding-right: 27rpx;
+		background-color: #ffffff;
+		border-radius: 35rpx;
+		margin-right: 19rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.cat-chip-active {
+		background-color: #ede5d5;
+		border-width: 2rpx;
+		border-color: #c4913c;
+		border-style: solid;
+		padding-left: 25rpx;
+		padding-right: 25rpx;
+	}
+	.cat-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #8a7a6a;
+	}
+	.cat-chip-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #8a5a20;
+		font-weight: 500;
+	}
+	.cat-chip-add {
+		width: 65rpx;
+		padding-left: 0;
+		padding-right: 0;
+		margin-right: 0;
+	}
+	.cat-chip-add-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #b3a694;
+		line-height: 31rpx;
+	}
+
+	/* 信息卡 */
+	.info-card {
+		margin-left: 46rpx;
+		margin-right: 46rpx;
+		margin-top: 73rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		padding-top: 42rpx;
+		padding-bottom: 42rpx;
+		padding-left: 38rpx;
+		padding-right: 38rpx;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+	}
+	.info-row {
+		flex-direction: row;
+		align-items: center;
+	}
+	.info-icon-wrap {
+		width: 38rpx;
+		height: 38rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.info-icon-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #8a7a6a;
+		line-height: 28rpx;
+	}
+	.info-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-left: 23rpx;
+		font-size: 29rpx;
+		color: #3a2e25;
+	}
+	.info-divider {
+		margin-top: 29rpx;
+		margin-bottom: 31rpx;
+		margin-left: 0;
+		height: 2rpx;
+		background-color: #f0ebe2;
+	}
+
+	/* 确定钮：随内容流放置（位于信息卡之后） */
+	.photo-confirm {
+		/* 随内容流放置：canvas 真值 F1j y=550 / F1k y=756（信息卡之后，非固定底栏） */
+		margin-left: 46rpx;
+		margin-right: 46rpx;
+		margin-top: 38rpx;
+		height: 104rpx;
+		background-color: #b05a3a;
+		border-radius: 52rpx;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.3);
+	}
+	.photo-confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #ffffff;
+		font-weight: 500;
+		line-height: 31rpx;
+	}
+
+	/* ═══════ 文字/语音模式：原有布局 ═══════ */
 	.form-head {
 		padding-top: 24rpx;
 		padding-bottom: 24rpx;
@@ -773,44 +1465,6 @@
 		color: #b3a696;
 	}
 
-	/* 分类标签（纠错触点） */
-	.tag-row {
-		margin-top: 32rpx;
-		flex-direction: column;
-	}
-	.tag-hint {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 24rpx;
-		color: #8a7a6a;
-		margin-bottom: 12rpx;
-	}
-	.tag-list {
-		flex-direction: row;
-		flex-wrap: wrap;
-	}
-	.tag {
-		padding-left: 24rpx;
-		padding-right: 24rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-		background-color: #EBE3D4;
-		border-radius: 24rpx;
-		margin-right: 16rpx;
-		margin-bottom: 12rpx;
-	}
-	.tag-active {
-		background-color: #b05a3a;
-	}
-	.tag-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 24rpx;
-		color: #3a2e25;
-	}
-	.tag-active-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		color: #f8f7f4;
-	}
-
 	/* 语音面板 */
 	.record-box {
 		align-items: center;
@@ -828,7 +1482,7 @@
 		display: flex;
 		box-shadow: 0 8rpx 20rpx rgba(176, 90, 58, 0.4);
 	}
-	.mic-recording.value {
+	.mic-recording {
 		background-color: #3a2e25;
 	}
 	.mic-icon {
@@ -921,34 +1575,678 @@
 		padding-bottom: 10rpx;
 	}
 
-	/* 照片面板 */
-	.photo-box {
-		width: 670rpx;
-		height: 360rpx;
-		border-radius: 24rpx;
-		background-color: #ffffff;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.08);
-		overflow: hidden;
-		align-items: center;
-		justify-content: center;
-	}
-	.photo-preview {
-		width: 670rpx;
-		height: 360rpx;
-	}
-	.photo-empty {
+	/* ===== F1e 写几句空态（卡05 还原，390x844 -> 750rpx SCALE=1.9231） ===== */
+	.f1e-body {
+		padding: 23rpx 46rpx 46rpx 46rpx;
 		flex-direction: column;
+	}
+	.f1e-section-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8A7A6A;
+		font-weight: 500;
+		margin-bottom: 23rpx;
+	}
+	.f1e-label-top {
+		margin-top: 58rpx;
+	}
+	.f1e-category-label {
+		margin-bottom: 0;
+	}
+	.f1e-input-card {
+		height: 250rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+		overflow: hidden;
+	}
+	.f1e-textarea {
+		width: 100%;
+		height: 100%;
+		padding: 38rpx;
+		font-size: 29rpx;
+		color: #3A2E25;
+		line-height: 54rpx;
+	}
+	.f1e-category-head {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-top: 96rpx;
+		margin-bottom: 23rpx;
+	}
+	.f1e-category-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23rpx;
+		color: #B3A696;
+	}
+	.f1e-info-card {
+		margin-top: 69rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+		padding-top: 42rpx;
+		padding-bottom: 42rpx;
+		padding-left: 38rpx;
+		padding-right: 38rpx;
+	}
+	.f1e-info-row {
+		flex-direction: row;
+		align-items: center;
+	}
+	.f1e-icon-clock {
+		width: 38rpx;
+		height: 38rpx;
+		position: relative;
+		margin-right: 27rpx;
+	}
+	.clock-face {
+		position: absolute;
+		width: 34rpx;
+		height: 34rpx;
+		border-radius: 17rpx;
+		border-width: 2rpx;
+		border-color: #8A7A6A;
+		border-style: solid;
+		left: 0;
+		top: 0;
+	}
+	.clock-hand-h {
+		position: absolute;
+		width: 2rpx;
+		height: 9rpx;
+		background-color: #8A7A6A;
+		left: 16rpx;
+		top: 9rpx;
+	}
+	.clock-hand-m {
+		position: absolute;
+		width: 9rpx;
+		height: 2rpx;
+		background-color: #8A7A6A;
+		left: 12rpx;
+		top: 16rpx;
+	}
+	.f1e-info-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 29rpx;
+		color: #3A2E25;
+	}
+	.f1e-divider {
+		height: 2rpx;
+		background-color: #F0EBE3;
+		margin-top: 29rpx;
+		margin-bottom: 31rpx;
+	}
+	.f1e-icon-location {
+		width: 38rpx;
+		height: 38rpx;
+		position: relative;
+		margin-right: 27rpx;
+	}
+	.loc-ring {
+		position: absolute;
+		width: 26rpx;
+		height: 26rpx;
+		border-radius: 13rpx;
+		border-width: 2rpx;
+		border-color: #8A7A6A;
+		border-style: solid;
+		left: 4rpx;
+		top: 2rpx;
+	}
+	.loc-dot {
+		position: absolute;
+		width: 8rpx;
+		height: 8rpx;
+		border-radius: 4rpx;
+		background-color: #8A7A6A;
+		left: 13rpx;
+		top: 11rpx;
+	}
+	.f1e-note-card {
+		height: 123rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+		overflow: hidden;
+	}
+	.f1e-note-input {
+		width: 100%;
+		height: 100%;
+		padding: 38rpx;
+		font-size: 29rpx;
+		color: #3A2E25;
+	}
+	.f1e-confirm-btn {
+		margin-top: 77rpx;
+		height: 104rpx;
+		background-color: #B05A3A;
+		border-radius: 52rpx;
+		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.30);
 		align-items: center;
 		justify-content: center;
 	}
-	.photo-empty-icon {
-		width: 76.9rpx;
-		height: 69.2rpx;
-	}
-	.photo-empty-text {
+	.f1e-confirm-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-top: 16rpx;
-		font-size: 26rpx;
+		font-size: 31rpx;
+		color: #ffffff;
+		font-weight: 500;
+
+	/* ═══════ F1c 语音预览态 ═══════ */
+	.preview-layer {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: #f8f7f4;
+		z-index: 40;
+	}
+	.pv-status-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		position: absolute;
+		left: 46rpx;
+		top: 31rpx;
+		font-size: 29rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.pv-status-battery {
+		position: absolute;
+		right: 46rpx;
+		top: 38rpx;
+		width: 46rpx;
+		height: 23rpx;
+		background-color: #3a2e25;
+		border-radius: 8rpx;
+	}
+	.pv-back {
+		position: absolute;
+		left: 38rpx;
+		top: 115rpx;
+		width: 46rpx;
+		height: 49rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.pv-back-icon {
+		width: 31rpx;
+		height: 32rpx;
+	}
+	.pv-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 115rpx;
+		text-align: center;
+		font-size: 33rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		height: 46rpx;
+	}
+	.pv-close {
+		position: absolute;
+		right: 38rpx;
+		top: 115rpx;
+		width: 46rpx;
+		height: 49rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.pv-close-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #3a2e25;
+		line-height: 40rpx;
+	}
+	.pv-card {
+		position: absolute;
+		left: 46rpx;
+		top: 288rpx;
+		width: 658rpx;
+		height: 500rpx;
+		background-color: #ffffff;
+		border-radius: 46rpx;
+		box-shadow: 0 15rpx 46rpx rgba(58, 46, 37, 0.08);
+		overflow: hidden;
+	}
+	.pv-card-scroll {
+		position: absolute;
+		left: 46rpx;
+		top: 69rpx;
+		right: 46rpx;
+		height: 323rpx;
+	}
+	.pv-card-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 33rpx;
+		color: #3a2e25;
+		line-height: 46rpx;
+	}
+	.pv-card-meta {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		position: absolute;
+		left: 46rpx;
+		bottom: 73rpx;
+		right: 46rpx;
+		font-size: 25rpx;
+		color: #8a7a6a;
+	}
+	.pv-btn-rerecord {
+		position: absolute;
+		left: 46rpx;
+		bottom: 127rpx;
+		width: 306rpx;
+		height: 104rpx;
+		background-color: #ede5d5;
+		border-radius: 52rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.pv-btn-rerecord-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.pv-btn-confirm {
+		position: absolute;
+		left: 398rpx;
+		bottom: 127rpx;
+		width: 306rpx;
+		height: 104rpx;
+		background-color: #b05a3a;
+		border-radius: 52rpx;
+		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.3);
+		align-items: center;
+		justify-content: center;
+	}
+	.pv-btn-confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #ffffff;
+		font-weight: 500;
+	}
+	.pv-home-indicator {
+		position: absolute;
+		left: 240rpx;
+		bottom: 21rpx;
+		width: 269rpx;
+		height: 10rpx;
+		background-color: #3a2e25;
+		border-radius: 6rpx;
+	}
+	}
+	/* ===== F1a 语音待录态（canvas JSON 真值还原，390x844 -> 750rpx，SCALE=1.9231） ===== */
+	.voice-idle {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: #F6F1E7;
+	}
+	.vi-time {
+		position: absolute;
+		left: 46rpx;
+		top: 31rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 29rpx;
+		color: #3A2E25;
+		font-weight: 500;
+	}
+	.vi-battery {
+		position: absolute;
+		right: 46rpx;
+		top: 38rpx;
+		width: 46rpx;
+		height: 23rpx;
+		border-radius: 8rpx;
+		background-color: #3A2E25;
+	}
+	.vi-back {
+		position: absolute;
+		left: 38rpx;
+		top: 115rpx;
+		width: 46rpx;
+		height: 46rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.vi-back-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 46rpx;
+		color: #3A2E25;
+		line-height: 46rpx;
+	}
+	.vi-title {
+		position: absolute;
+		top: 115rpx;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 33rpx;
+		color: #3A2E25;
+		font-weight: 600;
+	}
+	.vi-close {
+		position: absolute;
+		right: 38rpx;
+		top: 115rpx;
+		width: 46rpx;
+		height: 46rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.vi-close-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 38rpx;
+		color: #3A2E25;
+		line-height: 38rpx;
+	}
+	.vi-wheel {
+		position: absolute;
+		left: 86rpx;
+		top: 519rpx;
+		width: 577rpx;
+		height: 577rpx;
+		animation: wheel-spin 12s linear infinite;
+	}
+	@keyframes wheel-spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+	.wheel-center {
+		position: absolute;
+		left: 231rpx;
+		top: 231rpx;
+		width: 115rpx;
+		height: 115rpx;
+		border-radius: 58rpx;
+		background-color: rgba(255, 255, 255, 0.6);
+		box-shadow: 0 8rpx 23rpx rgba(58, 46, 37, 0.18);
+	}
+	.wheel-dot {
+		position: absolute;
+		border-radius: 50%;
+		background-color: #ffffff;
+		box-shadow: 0 4rpx 10rpx rgba(58, 46, 37, 0.16);
+		animation: dot-pulse 2s ease-in-out infinite;
+	}
+	@keyframes dot-pulse {
+		0%, 100% { transform: translateX(0); }
+		50% { transform: translateX(-6rpx); }
+	}
+	.wd1 { left: 526rpx; top: 368rpx; width: 23rpx; height: 23rpx; opacity: 1; animation-delay: 0s; }
+	.wd2 { left: 328rpx; top: 458rpx; width: 17rpx; height: 17rpx; opacity: 0.8; animation-delay: 0.3s; }
+	.wd3 { left: 119rpx; top: 461rpx; width: 27rpx; height: 27rpx; opacity: 0.95; animation-delay: 0.6s; }
+	.wd4 { left: 125rpx; top: 268rpx; width: 13rpx; height: 13rpx; opacity: 0.7; animation-delay: 0.9s; }
+	.wd5 { left: 151rpx; top: 58rpx; width: 21rpx; height: 21rpx; opacity: 0.9; animation-delay: 1.2s; }
+	.wd6 { left: 370rpx; top: 89rpx; width: 15rpx; height: 15rpx; opacity: 0.75; animation-delay: 1.5s; }
+	.wd7 { left: 442rpx; top: 220rpx; width: 19rpx; height: 19rpx; opacity: 0.85; animation-delay: 1.8s; }
+	.vi-timer {
+		position: absolute;
+		top: 1173rpx;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 85rpx;
+		color: #B3A696;
+		font-weight: bold;
+	}
+	.vi-hint {
+		position: absolute;
+		top: 1319rpx;
+		left: 0;
+		right: 0;
+		text-align: center;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.vi-home {
+		position: absolute;
+		left: 240rpx;
+		bottom: 21rpx;
+		width: 269rpx;
+		height: 10rpx;
+		border-radius: 6rpx;
+		background-color: #3A2E25;
+	}
+	.form-standard {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	/* ═══════ F1g 单图详情覆盖层（卡07 还原，canvas 390x844 → 750rpx SCALE=1.9231） ═══════ */
+	.f1g-overlay {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: #f8f7f4;
+		z-index: 40;
+		flex-direction: column;
+	}
+	/* 导航栏（canvas y=60：返回24x24 at x=20 + 标题居中 fontSize17 SemiBold #3A2E25） */
+	.f1g-nav {
+		flex-shrink: 0;
+		padding-top: 72rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.f1g-back {
+		width: 48rpx;
+		height: 48rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.f1g-back-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 52rpx;
+		color: #3a2e25;
+		line-height: 52rpx;
+	}
+	.f1g-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		flex: 1;
+		text-align: center;
+		font-size: 33rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.f1g-nav-spacer {
+		width: 48rpx;
+		height: 48rpx;
+	}
+	/* 滚动区 */
+	.f1g-scroll {
+		flex: 1;
+	}
+	.f1g-content {
+		padding-left: 46rpx;
+		padding-right: 46rpx;
+		padding-bottom: 32rpx;
+		flex-direction: column;
+	}
+	/* 节标（canvas y=116，fontSize13 Medium #8A7A6A，距照片卡12px=23rpx） */
+	.f1g-section-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8a7a6a;
+		font-weight: 500;
+		margin-bottom: 23rpx;
+	}
+	/* 照片卡（canvas y=146 w=342 h=292，白bg圆角20px=38rpx shadow 0 6 18 6% #3A2E25） */
+	.f1g-photo-card {
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		padding: 38rpx;
+		flex-direction: column;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+		margin-bottom: 96rpx;
+	}
+	/* 照片（canvas x=20 y=20 w=302 h=226 → 581rpx x 435rpx，圆角12px=23rpx） */
+	.f1g-photo-img {
+		width: 581rpx;
+		height: 435rpx;
+		border-radius: 23rpx;
+	}
+	.f1g-photo-placeholder {
+		width: 581rpx;
+		height: 435rpx;
+		border-radius: 23rpx;
+		background-color: #ede5d5;
+		align-items: center;
+		justify-content: center;
+	}
+	.f1g-placeholder-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 80rpx;
+		color: rgba(138, 122, 106, 0.4);
+	}
+	/* AI 描述（canvas y=254，fontSize13 Regular #8A7A6A，距照片底8px=15rpx） */
+	.f1g-ai-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8a7a6a;
+		margin-top: 15rpx;
+	}
+	/* 分类节标行（canvas y=488：左"分类"13 Medium #8A7A6A + 右"AI已预选·点标签可纠正"12 Regular #B3A696） */
+	.f1g-cat-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 23rpx;
+	}
+	.f1g-cat-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8a7a6a;
+		font-weight: 500;
+	}
+	.f1g-cat-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23rpx;
 		color: #b3a696;
 	}
+	/* 分类 chips 行（canvas y=518 h=36，chip间距12px=23rpx） */
+	.f1g-chips {
+		flex-direction: row;
+		align-items: center;
+		flex-wrap: wrap;
+		margin-bottom: 69rpx;
+	}
+	.f1g-chip {
+		height: 69rpx;
+		padding-left: 28rpx;
+		padding-right: 28rpx;
+		background-color: #ffffff;
+		border-radius: 35rpx;
+		align-items: center;
+		justify-content: center;
+		margin-right: 23rpx;
+		margin-bottom: 12rpx;
+	}
+	/* 选中态（canvas chip-选中：bg #EDE5D5 + stroke #C4913C 1px，文字 #8A5A20 Medium） */
+	.f1g-chip-active {
+		background-color: #ede5d5;
+		border-width: 2rpx;
+		border-color: #c4913c;
+		border-style: solid;
+	}
+	.f1g-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #8a7a6a;
+	}
+	.f1g-chip-active-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #8a5a20;
+		font-weight: 500;
+	}
+	/* ＋添加 chip（canvas w=34 h=36 圆角17px，文字＋16 Regular #B3A696） */
+	.f1g-chip-add {
+		width: 65rpx;
+		padding-left: 0;
+		padding-right: 0;
+		border-radius: 33rpx;
+		margin-right: 0;
+	}
+	.f1g-chip-add-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #b3a696;
+		line-height: 31rpx;
+	}
+	/* 信息卡（canvas y=590 w=342 h=116，白bg圆角20 shadow，内边距22px/20px） */
+	.f1g-info-card {
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		padding-left: 38rpx;
+		padding-right: 38rpx;
+		padding-top: 42rpx;
+		padding-bottom: 42rpx;
+		flex-direction: column;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+		margin-bottom: 77rpx;
+	}
+	.f1g-info-row {
+		flex-direction: row;
+		align-items: center;
+		height: 38rpx;
+	}
+	/* 时间图标（canvas Vector 16.67x16.67 → 32rpx，i2_319.svg 时钟） */
+	.f1g-info-icon {
+		width: 32rpx;
+		height: 32rpx;
+		margin-right: 23rpx;
+	}
+	/* 地点图标（canvas Vector 11.67x16.67 → 22rpx x 32rpx，i2_320.svg 定位） */
+	.f1g-info-icon-loc {
+		width: 22rpx;
+		height: 32rpx;
+	}
+	.f1g-info-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 29rpx;
+		color: #3a2e25;
+	}
+	/* 分隔线（canvas y=57 w=302 h=1，bg #F0EBE2） */
+	.f1g-info-divider {
+		height: 2rpx;
+		background-color: #f0ebe2;
+		margin-top: 29rpx;
+		margin-bottom: 31rpx;
+	}
+	/* 固定底部确定钮（canvas y=746 w=342 h=54，#B05A3A 圆角27px=52rpx，shadow 0 6 16 30%） */
+	.f1g-confirm {
+		position: absolute;
+		left: 46rpx;
+		right: 46rpx;
+		bottom: 56rpx;
+		height: 104rpx;
+		background-color: #b05a3a;
+		border-radius: 52rpx;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.3);
+	}
+	.f1g-confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #ffffff;
+		font-weight: 500;
+	}
 </style>
+

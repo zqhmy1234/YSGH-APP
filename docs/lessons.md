@@ -9,6 +9,78 @@
 
 ---
 
+### 2026-09-06 01:32 · commit cac6fdc · ts=1788629564
+- **错误**：新录音上传成功但时间轴永不显示（搜索却能搜到），且历史积压 contents 全部卡 status=processing
+- **根因**：RQ worker 进程从未启动：上传后 enqueue_unique(process_content) 的异步 AI 管线（分类/情绪/聚合/状态回写）在 Redis 里积压 high 296 + low 185 条零消费者；uvicorn 只承担 API，事件层聚合全靠 worker
+- **修复**：cd backend && python -m app.workers.worker 拉起（Windows 自动选 SimpleWorker），积压消化清零，新录音已聚合进 timeline（curl 实证）；军规：后端启动必带 worker
+- **相关文件**：app/workers/worker.py,app/api/contents.py
+- **教训**：uvicorn 活着≠管线活着；时间轴与搜索数据源不同层（events vs contents），不一致先查异步管线是否在跑
+
+---
+
+### 2026-09-04 14:49 · commit 06045c3 · ts=1788504554
+- **错误**：性能批收口时 HBuilderX cli launch 持续报「未检测到已打开的HBuilderX」，最初误诊为安全中心 wmic.exe 黑名单拦截（进程明明存活）
+- **根因**：cli.exe 与 IDE 的进程探测/通信实际走 Windows 命名管道（LocalSocketClient pipe stream，strings cli.exe 可证），wmic 只是表象；真实原因是 HBuilderX 初始化未完成管道未就绪（约 40s+），且沙箱内启动的 GUI 进程会被隔离回收（启动即退）
+- **修复**：非沙箱通道 cli open 启动 → 等待 40s+ 初始化完成 → 再跑 launch；进程存活用 tasklist 双确认
+- **相关文件**：D:/HBuilderX/cli.exe
+- **教训**：HBuilderX cli 报「未检测到」先怀疑管道未就绪而非进程不存在；GUI 程序必须非沙箱启动；诊断二进制行为用 strings 提取特征串而非猜
+
+---
+
+### 2026-09-04 14:48 · commit 06045c3 · ts=1788504506
+- **错误**：性能批收口时 HBuilderX cli launch 持续报「未检测到已打开的HBuilderX」，最初误诊为安全中心 wmic.exe 黑名单拦截（进程明明存活）
+- **根因**：cli.exe 与 IDE 的进程探测/通信实际走 Windows 命名管道（LocalSocketClient pipe stream，strings cli.exe 可证），wmic 只是表象；真实原因是 HBuilderX 初始化未完成管道未就绪（约 40s+），且沙箱内启动的 GUI 进程会被隔离回收（启动即退）
+- **修复**：非沙箱通道 cli open 启动 → 等待 40s+ 初始化完成 → 再跑 launch；进程存活用 tasklist 双确认
+- **相关文件**：D:/HBuilderX/cli.exe
+- **教训**：HBuilderX cli 报「未检测到」先怀疑管道未就绪而非进程不存在；GUI 程序必须非沙箱启动；诊断二进制行为用 strings 提取特征串而非猜
+
+---
+
+### 2026-09-04 04:13 · commit 06045c3 · ts=1788466401
+- **错误**：E01~E05 批次三坑连环：①本机 git commit/update-ref 的 ref 更新必然静默失败（脱离沙箱也拦，疑后台 git 进程 pack-refs 竞争）——commit 报成功但分支 ref 不动、对象成孤儿；②worktree 里 rm -rf $(git rev-parse --git-dir)/refs 误删主仓 refs 目录（worktree 下 --git-dir 返回主仓 .git）连带 18 页面文件假删除；③手拼 placeholder SHA 两次写进 packed-refs（e6e2161xxx/e49a215000）
+- **根因**：①ref 更新通道在本机环境不可信：git 自身写 ref 与后台 pack-refs/gc 进程竞争，loose ref 写入被吞；②--git-dir 在 worktree 语义误解：返回主仓 .git 而非 worktree 私有目录，对它 rm -rf 就是删主仓 git 元数据；③把短 SHA/占位串当全 SHA 写 ref 文件，packed-refs 头声明 sorted，坏行破坏全部 refs 解析
+- **修复**：①commit 后立即 git log --oneline -1 验证，ref 未动则 git fsck --lost-found 找孤儿 commit（验 parent 链确认）→ python 二进制模式（open(p,'rb')/wb）替换 packed-refs 分支行，或 printf 直写主仓 loose ref；②worktree 里永不执行指向 $(git rev-parse --git-dir) 的删除命令；③铁律：永远 git rev-parse <短SHA> 拿全 40 位再写，禁止手拼；git commit 禁用 --quiet（吞 hook 输出且静默失败不可见）
+- **相关文件**：.git/packed-refs; .git/refs/heads/*; worktree refs
+- **教训**：本机 git ref 更新必须「commit→验证→修 ref→三通道复核」四步走：commit 不用 --quiet、文件集合用 git show --stat 自检、SHA 永远 rev-parse 现取、packed-refs 只能 python 二进制替换、worktree 下 --git-dir 指主仓不可删
+
+---
+
+### 2026-09-03 22:19 · commit 06045c3 · ts=1788445156
+- **错误**：worktree 提交后 ref 手术连环失败：packed-refs 被写入坏 SHA 行导致 git 报 unexpected line、所有 refs 不可见（worktree HEAD 都解析失败）；随后 git update-ref 报成功但 refs/heads/feature 目录整个消失、什么都没写
+- **根因**：①reflog SHA 用 cut -c1-80 抄取：old(40)+space+new(40)=81字符被截尾，41字符真SHA丢了尾字符，40字符坏SHA进 packed-refs（头声明 sorted，坏对象行破坏解析）②沙箱环境对 git 进程的 refs/heads/ 目录创建静默拦截：update-ref 退出码 0 但不落盘
+- **修复**：sed 删除坏行恢复 packed-refs 合法性 → mkdir -p + printf 手工写 loose ref 文件（sed/printf 直写 .git 可靠）→ 三通道复核（log 主仓+worktree+rev-parse）
+- **相关文件**：D:/GuangH-App/.git/packed-refs; D:/GuangH-App/.git/refs/heads/feature/missing-pages-impl
+- **教训**：reflog 取 SHA 禁止 cut 截断（用 awk '{print }' 取整列）；沙箱下 git update-ref 不可信（报成功不落盘），ref 手术一律 printf 直写 loose ref 文件 + 手术后必须三通道复核
+
+---
+
+### 2026-09-03 19:55 · commit 06045c3 · ts=1788436543
+- **错误**：同一文件多个 Edit 工具并行调用后部分修改静默丢失（TagEditPanel.uvue 5刀丢3、storage.uvue 模板刀丢失，两处实锤）
+- **根因**：并行 Edit 各自基于同一旧文件内容生成全文并写回，后完成者覆盖先完成者；每个工具调用都返回成功，无任何报错信号
+- **修复**：补刀丢失修改并逐刀 grep 验刀（旧色值/旧标识符清零才算过）；此后同文件多刀一律串行发出
+- **相关文件**：client/components/TagEditPanel/TagEditPanel.uvue; client/pages/storage/storage.uvue
+- **教训**：同文件多刀 Edit 必须串行 + 每刀 grep 验刀，并行报成功不等于落盘
+
+---
+
+### 2026-09-02 14:43 · commit 06045c3 · ts=1788331392
+- **错误**：ardot 文件 ID 只存在于会话上下文，跨会话即失传
+- **根因**：外部资产标识未按持久知识对待
+- **修复**：ID 首次获取立即写入 MEMORY.md + docs/lessons.md + 技能铁律
+- **相关文件**：AGENTS.md, docs/lessons.md
+- **教训**：一切外部资源 ID（ardot/figma/后端地址/真值源）首次拿到即持久化，绝不停留在会话上下文
+
+---
+
+### 2026-09-02 14:43 · commit 06045c3 · ts=1788331391
+- **错误**：RecordSheet/EchoSheet/privacy/about/theme-detail/storage 等页面在无画布 JSON 真值下还原（PNG 像素实测/规范推断直排）
+- **根因**：ardot 源文件 ID 从未写入项目持久记忆，会话丢失后误判「本地无记载=无真值」，未向用户报告即自选降级路线
+- **修复**：从画布 719545763760845 重导 42 帧全树 JSON 落盘 uvue_gen/（batch_read readDepth12+tool-results 落盘拆帧）；已建 PNG 路线页面全部按 JSON 真值返工（docs/missing-pages-restore/ 25 张帧卡）
+- **相关文件**：uvue_gen/, docs/missing-pages-restore/
+- **教训**：无 canvas JSON 不开工；PNG 只是辅助校验，降级必须先报告用户拍板
+
+---
+
 ### 2026-09-02 03:15 · commit 2e77ad9 · ts=1788290100
 - **错误**：git add/commit 在错误目录执行：missing-pages worktree 的操作落到主树（两次 pathspec 报错 / add 落空）
 - **根因**：Bash 工具每条调用 cwd 重置回主树根，上一条的 cd 不持久；混用两树时极易 add 错树
@@ -1390,3 +1462,7 @@
 
 34. **UI像素级还原禁止依赖批量脚本，必须逐页与设计稿数据对比验证**：批量样式更新脚本只匹配通用.card类名，遗漏各页面自定义卡片类名（.hit-card/.msg-card/.profile-card等），导致圆角/背景色未按设计稿更新；批量创建后必须逐页精细审查：1)列出所有样式类名 2)逐一与SVG解析的设计数据对比 3)修正圆角/颜色/透明度等关键参数
 35. **Vapor模式必须全页面setup改造，逐页迁移并验证回调闭包**：uni-app x Vapor模式5.25+仅支持组合式API(setup)，选项式API(data/methods)不兼容；改造要点：1)<script setup lang=uts> 2)data变量改let 3)methods改function 4)生命周期从@dcloudio/uni-app导入 5)移除this引用 6)回调中直接访问闭包变量（录音/chooseMedia等异步回调特别注意）
+### 2026-09-06 01:5x R8 管线停摆与环境陷阱（条目 36-37）ts=1788632200
+
+36. **uvicorn 活着 ≠ 管线活着**：RQ worker 未启动时上传后 `enqueue_unique(process_content)` 积压 296+185 条零消费者，contents 恒 status=processing、永不聚合 → 时间轴（events 层）看不到、搜索（contents/qdrant 层）看得到；后端启动必须 `cd backend && python -m app.workers.worker`（Windows 自动 SimpleWorker）
+37. **echo「去年今日」跨天坑**：seed_echo_today 硬编码日期跨天即空转（两次实锤）；每日名额（EchoHistory shown_at 当日≥1）任何验证后必须删记录还原；--date 参数化后仍须显式传当天
