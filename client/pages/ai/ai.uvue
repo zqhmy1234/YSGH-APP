@@ -296,10 +296,10 @@
 		}
 	}
 
-	// 附件入口行（mock：MVP 文件/链接选择器未接，诚实提示）
+	// 附件入口行（mock：MVP 文件/链接选择器未接，W0-4 措辞诚实化，与全项目占位口径统一）
 	function onAttachEntry(name: string): void {
 		attachOpen.value = false
-		uni.showToast({ title: name + '：内测期即将开放', icon: 'none' })
+		uni.showToast({ title: name + '：即将上线', icon: 'none' })
 	}
 
 	// 返回键拦截：浮层/面板开着先收起，而不是退出页面

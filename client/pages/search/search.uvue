@@ -16,21 +16,35 @@
 		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
 		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
 		<scroll-view class="n2-results" :show-scrollbar="false">
-			<view v-for="(item, idx) in voiceResults" :key="'v' + idx" class="n2_588" @tap="openResult(item)">
+			<view v-for="(item, idx) in voiceResults" :key="'v' + item.id" class="n2_588" @tap="openResult(item)">
 				<view class="n2_589"> <!-- 语音媒体 -->
 					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
-						<image class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
+						<!-- W0-2 播放态：播放 SVG ↔ 暂停双竖条（tick 局部更新：读卡字段，非全局函数） -->
+						<view v-if="item.active && item.playing" class="search-pause-icon">
+							<view class="search-pause-bar"></view>
+							<view class="search-pause-bar"></view>
+						</view>
+						<image v-else class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
 					</view>
-					<view class="n2_592"> <!-- 波形（装饰用画布 SVG） -->
+					<!-- 波形：空闲=画布 SVG（对拍保真）；活动=VoiceWave 已播金/未播米 + 进度行（F5a 规范） -->
+					<VoiceWave v-if="item.active" class="n2_592" :heights="item.waveHeights" :active="true" :progress="item.progress" />
+					<view v-else class="n2_592">
 						<image class="n2_596" src="/static/icons/i2_596.svg" />
 					</view>
+				</view>
+				<view v-if="item.active" class="voice-progress-row">
+					<text class="voice-progress-time">{{ item.curText }}</text>
+					<view class="voice-track">
+						<view class="voice-track-fill" :style="{ width: (item.progress * 100) + '%' }"></view>
+					</view>
+					<text class="voice-progress-time">{{ item.totalText }}</text>
 				</view>
 				<view class="n2_590"> <!-- 语音文字区 -->
 					<text class="n2_593">{{ item.title }}</text>
 					<text class="n2_594">{{ item.meta }}</text>
 				</view>
 			</view>
-			<view v-for="(item, idx) in textResults" :key="'t' + idx" class="n2_598" @tap="openResult(item)">
+			<view v-for="(item, idx) in textResults" :key="'t' + item.id" class="n2_598" @tap="openResult(item)">
 				<!-- 照片命中：服务端票据 URL 直连回显（<image> 无法带 header，预签名/票据 URL 是唯一通路） -->
 				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFill" />
 				<view class="n2_599"> <!-- 摘要块 -->
@@ -53,17 +67,27 @@
 </template>
 
 <script setup lang="uts">
-	import { ref, computed } from 'vue'
-	import { onLoad } from '@dcloudio/uni-app'
+	import { ref, computed, watch } from 'vue'
+	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { searchText, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
+	import {
+		toggleVoice,
+		stopVoice,
+		fmtVoiceTime,
+		genWaveHeights,
+		voiceCurrentId,
+		voicePlaying,
+		voiceProgress,
+		voiceCurSec,
+		voiceTotalSec
+	} from '@/utils/audio_player'
 
 	// ── 响应式状态 ──
 	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
 	let sheetOpen = ref(false)
 	let keyword = ref('')
 	let activeFilter = ref(0)
-	let playingId = ref('')
 	let loading = ref(false)
 	let hasSearched = ref(false)
 	let degraded = ref(false)
@@ -77,6 +101,11 @@
 			return true
 		}
 		return false
+	})
+
+	// 离页停播：防止语音跨页残留出声（redirectTo 切 Tab 会销毁本页）
+	onUnload(() => {
+		stopVoice()
 	})
 
 	// ── 本地 mock 数据（视觉验收用）────────────────────────────────────────
@@ -127,11 +156,23 @@
 		title: string
 		meta: string
 		waveHeights: Array<number>
+		// 播放态快照（tick 局部更新）：syncActiveCard 只写「正在播放那张卡」的这些属性，
+		// 其余卡零写入零重渲染；默认值在 constructor 内赋（UTS 无字段默认初始化）
+		active: boolean
+		playing: boolean
+		progress: number
+		curText: string
+		totalText: string
 		constructor(id: string, title: string, meta: string, waveHeights: Array<number>) {
 			this.id = id
 			this.title = title
 			this.meta = meta
 			this.waveHeights = waveHeights
+			this.active = false
+			this.playing = false
+			this.progress = 0
+			this.curText = ''
+			this.totalText = ''
 		}
 	}
 
@@ -149,18 +190,9 @@
 		}
 	}
 
-	/** 由 contentId 确定性生成装饰波形（28 根，8~40rpx；真实音频波形待语音流接入） */
+	/** 由 contentId 确定性生成装饰波形 → 统一走 audio_player.genWaveHeights（W0-2 三处一致） */
 	function genWave(id: string): Array<number> {
-		let seed = 7
-		for (let i = 0; i < id.length; i++) {
-			seed = (seed * 31 + id.charCodeAt(i)) % 100000
-		}
-		const arr: Array<number> = []
-		for (let i = 0; i < 28; i++) {
-			seed = (seed * 1103515245 + 12345) % 100000
-			arr.push(8 + (seed % 33))
-		}
-		return arr
+		return genWaveHeights(id, 28)
 	}
 
 	/** 组装卡底元信息：类型 · 日期 · 所属事件 */
@@ -190,10 +222,10 @@
 	}
 
 	// 本地筛选（与 filterContentTypes() 同源，两处阈值必须一致）
-	// ⚠️ 为什么必须在这里再过滤一次：setFilter() 只在「已搜过 && keyword 非空」时才重发请求，
-	//    而 mock / 空词场景 keyword 为空 → 请求不发 → 若 computed 不读 activeFilter，
-	//    点「照片/语音/文字」就毫无反应、永远 6 条（真机实锤 2026-08-31）。
-	//    真实搜索场景后端已按同一组 types 过滤过，这里是幂等二次过滤，不改变结果。
+	// D7 零冗余请求：切筛选不再重发搜索请求（setFilter 只改 activeFilter），
+	// 结果全部在这里本地过滤；filterContentTypes() 仅在首搜路径（runSearch/loadRecent）
+	// 作为 content_types 参数传服务端。诚实语义：首搜已按类型服务端过滤时，
+	// 池子里没有其他类型 → 切过去显示「暂无xx结果」空态，不回退补发请求。
 	function matchesFilter(ct: string): boolean {
 		if (activeFilter.value === 1) {
 			return ct == 'photo'
@@ -207,8 +239,50 @@
 		return true
 	}
 
-	// 语音结果（content_type=voice → 语音卡）
-	let voiceResults = computed((): Array<VoiceResult> => {
+	// 语音结果（content_type=voice → 语音卡）。
+	// 性能重构：computed → ref + 手动重建。33ms 播放 tick 不再走整列表重算，
+	// 只由 syncActiveCard 写单卡属性（见下）；列表仅在 hits / 筛选变化时重建。
+	let voiceResults = ref<Array<VoiceResult>>([])
+
+	/**
+	 * 播放 tick 局部更新：把全局播放态写进「正在播放那张卡」的属性。
+	 * 带相等性守卫——值没变不写 → 不触发响应式 → 其余卡零重渲染；
+	 * 状态迁移（切换/暂停/停止/播完）由 voiceCurrentId 清旧卡 active。
+	 */
+	function syncActiveCard(): void {
+		const cid = voiceCurrentId.value
+		const playing = voicePlaying.value
+		const prog = voiceProgress.value
+		const cur = fmtVoiceTime(voiceCurSec.value)
+		const total = fmtVoiceTime(voiceTotalSec.value)
+		for (let i = 0; i < voiceResults.value.length; i++) {
+			const c = voiceResults.value[i]
+			if (c.id == cid) {
+				if (c.active == false) {
+					c.active = true
+				}
+				if (c.playing != playing) {
+					c.playing = playing
+				}
+				if (c.progress != prog) {
+					c.progress = prog
+				}
+				if (c.curText != cur) {
+					c.curText = cur
+				}
+				if (c.totalText != total) {
+					c.totalText = total
+				}
+			} else if (c.active) {
+				c.active = false
+				c.playing = false
+				c.progress = 0
+			}
+		}
+	}
+
+	/** 重建语音卡列表（hits / 筛选变化时触发；tick 不走这里） */
+	function rebuildVoice(): void {
 		const out: Array<VoiceResult> = []
 		for (let i = 0; i < hits.value.length; i++) {
 			const h = hits.value[i]
@@ -217,8 +291,18 @@
 				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId)))
 			}
 		}
-		return out
-	})
+		voiceResults.value = out
+		syncActiveCard()
+	}
+
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncActiveCard
+	watch(hits, (): void => { rebuildVoice() })
+	watch(activeFilter, (): void => { rebuildVoice() })
+	watch(voiceCurrentId, (): void => { syncActiveCard() })
+	watch(voicePlaying, (): void => { syncActiveCard() })
+	watch(voiceProgress, (): void => { syncActiveCard() })
+	watch(voiceCurSec, (): void => { syncActiveCard() })
+	watch(voiceTotalSec, (): void => { syncActiveCard() })
 
 	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
 	let textResults = computed((): Array<TextResult> => {
@@ -263,11 +347,9 @@
 	}
 
 	function setFilter(idx: number): void {
+		// D7 零冗余请求：切筛选纯本地过滤（matchesFilter 链响应 activeFilter），
+		// 不再重发搜索请求；首搜时 filterContentTypes() 才传参服务端。
 		activeFilter.value = idx
-		// 已搜过则按新类型重新请求
-		if (hasSearched.value && keyword.value.trim() != '') {
-			runSearch()
-		}
 	}
 
 	function clearKeyword(): void {
@@ -327,13 +409,12 @@
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + id })
 	}
 
+	// W0-2 就地播放：真音频流（downloadFile 带 header → InnerAudioContext），
+	// 播放态视觉与 index/detail 统一（F5a 规范：钮变暂停 + 已播金/未播米 + 进度行）。
+	// tick 局部更新后，播放态进卡由 syncActiveCard 负责（watch audio_player refs 驱动），
+	// 原模板包装函数 voiceIsActive/voiceIsPlaying/voiceProgressOfCard/voiceCurSecText/voiceTotalSecText 已删。
 	function playVoice(item: VoiceResult): void {
-		if (playingId.value === item.id) {
-			playingId.value = ''
-		} else {
-			playingId.value = item.id
-			uni.showToast({ title: '语音播放待接入音频流', icon: 'none' })
-		}
+		toggleVoice(item.id)
 	}
 
 	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用与 setFilter(idx:number) 签名冲突，
@@ -512,6 +593,48 @@
 		top: 5.8rpx;
 		width: 369.2rpx;
 		height: 38.5rpx;
+	}
+	/* W0-2 播放态（F5a 规范）：暂停形 + 进度行 */
+	.search-pause-icon {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.search-pause-bar {
+		width: 6rpx;
+		height: 20rpx;
+		background-color: #B05A3A;
+		border-radius: 2rpx;
+		margin-left: 4rpx;
+		margin-right: 4rpx;
+	}
+	.voice-progress-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-left: 15.4rpx;
+		margin-right: 15.4rpx;
+		margin-top: 11.5rpx; /* 画布 3pt 节奏 */
+	}
+	.voice-progress-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #8A7A6A;
+	}
+	.voice-track {
+		flex: 1;
+		height: 4rpx;
+		background-color: #E5DCC8;
+		border-radius: 2rpx;
+		margin-left: 12rpx;
+		margin-right: 12rpx;
+		overflow: hidden;
+	}
+	.voice-track-fill {
+		height: 4rpx;
+		background-color: #C4913C;
+		border-radius: 2rpx;
 	}
 	.n2_590 {
 		width: 100%;

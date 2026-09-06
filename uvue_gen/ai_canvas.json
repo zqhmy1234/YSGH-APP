@@ -319,7 +319,7 @@
      "width": 36,
      "height": 36,
      "name": "发送钮",
-     "x": 298,
+     "x": 254,
      "y": 8,
      "clipsContent": true,
      "cornerRadius": 18,
@@ -357,6 +357,88 @@
          "name": "Vector",
          "x": 4,
          "y": 3.3333334922790527
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "52:1",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 0,
+     "padding": {
+      "left": 0,
+      "right": 0,
+      "top": 0,
+      "bottom": 0
+     },
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "strokes": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487
+       },
+       "opacity": 0.11999999731779099,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 36,
+     "height": 36,
+     "name": "附件钮",
+     "x": 298,
+     "y": 8,
+     "clipsContent": true,
+     "cornerRadius": 18,
+     "children": [
+      {
+       "id": "52:2",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "width": 16,
+       "height": 16,
+       "name": "clip图标",
+       "x": 10,
+       "y": 10,
+       "children": [
+        {
+         "id": "52:3",
+         "type": "VECTOR",
+         "strokes": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.6901960968971252,
+            "g": 0.3529411852359772,
+            "b": 0.22745098173618317
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 7.905020236968994,
+         "height": 9.033020973205566,
+         "name": "Vector",
+         "x": 3.1638691425323486,
+         "y": 2.1711103916168213
         }
        ]
       }
@@ -1276,10 +1358,6 @@
        "x": 0,
        "y": 32,
        "clipsContent": true,
-       "topLeftRadius": 20,
-       "topRightRadius": 20,
-       "bottomLeftRadius": 4,
-       "bottomRightRadius": 20,
        "children": [
         {
          "id": "2:343",
@@ -1573,10 +1651,6 @@
        "x": 194,
        "y": 0,
        "clipsContent": true,
-       "topLeftRadius": 20,
-       "topRightRadius": 20,
-       "bottomLeftRadius": 20,
-       "bottomRightRadius": 4,
        "children": [
         {
          "id": "2:351",
@@ -1685,10 +1759,6 @@
        "x": 0,
        "y": 0,
        "clipsContent": true,
-       "topLeftRadius": 20,
-       "topRightRadius": 20,
-       "bottomLeftRadius": 4,
-       "bottomRightRadius": 20,
        "children": [
         {
          "id": "2:354",
@@ -1776,10 +1846,6 @@
        "x": 90,
        "y": 0,
        "clipsContent": true,
-       "topLeftRadius": 20,
-       "topRightRadius": 20,
-       "bottomLeftRadius": 20,
-       "bottomRightRadius": 4,
        "children": [
         {
          "id": "41:3",

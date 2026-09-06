@@ -285,9 +285,10 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
     db.refresh(content)
 
     # F4：enqueue_unique 同 content 键不重复入队（safe：失败仅记日志，P0-5）
-    safe_enqueue_unique(process_content, str(content.id))
+    # R9-B6：key 之后补函数参数（缺 args = 零参 TypeError 秒死）
+    safe_enqueue_unique(process_content, str(content.id), str(content.id))
     if content.content_type == "photo":
-        safe_enqueue_unique(thumbnails.generate_thumbnail_job, str(content.id))
+        safe_enqueue_unique(thumbnails.generate_thumbnail_job, str(content.id), str(content.id))
     return {"media": "ok", "cos_key": cos_key, "content_id": str(content.id)}
 
 

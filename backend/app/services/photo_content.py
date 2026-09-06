@@ -122,9 +122,10 @@ def _enqueue_pipeline(content_id: str, enqueue_thumbnail: bool) -> None:
 
     enqueue_unique 同 content 键不重复入队（F4/R5-4#5）。
     """
-    safe_enqueue_unique(process_content, content_id)
+    # R9-B6：key 之后补函数参数 content_id（缺 args = 零参 TypeError 秒死）
+    safe_enqueue_unique(process_content, content_id, content_id)
     if enqueue_thumbnail:
-        safe_enqueue_unique(thumbnails.generate_thumbnail_job, content_id)
+        safe_enqueue_unique(thumbnails.generate_thumbnail_job, content_id, content_id)
 
 
 def register_photo_content(

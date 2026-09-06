@@ -601,6 +601,7 @@ def process_content(content_id: str) -> dict:
                 enqueue_unique(
                     enrich_content_emotion,
                     content_id,
+                    content_id,  # R9-B6：函数参数（key 只是去重键，缺 args = 零参秒死）
                     queue_name=QUEUE_LOW,
                     job_timeout=DEFAULT_JOB_TIMEOUT,
                 )

@@ -1,0 +1,266 @@
+<template>
+	<!-- 卡14 · F3a 隐私政策（2026-09-02 帧真值整体重写，W1-2 旧版作废重排）
+	     真值：.wt/missing-pages/uvue_gen/privacy_canvas.json（390x844 · 23 节点 · 2026-09-02 导出）
+	     帧态：四章 chips（信息收集选中）+ 2.1 记忆记录与整理服务 正文卡（节标/3 段/分隔线/下一节链接）
+	     交互：chips 切换章节 / 「下一节 ←」组间跳转（保留 W1-2 接线）
+	     降级（台账登记）：假状态栏时间+电池移除（detail 先例，navigationStyle:custom 沉浸式，系统渲染真实时钟）；
+	           引言/您的权利/第三方 正文无帧真值 → 复用草稿 v0.1 文案（收集章节已按帧重排） -->
+	<view class="page-root">
+		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">隐私政策</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<!-- 章节 chips（F3a：引言/信息收集/您的权利/第三方；选中=深棕底白字，未选中=白底深棕字） -->
+		<view class="chips-row">
+			<view v-for="(sec, idx) in sections" :key="sec.key" class="chip" :class="idx == activeIdx ? 'chip-on' : ''" :style="{ width: sec.w + 'rpx' }" @tap="onChip(idx)">
+				<text class="chip-text" :class="idx == activeIdx ? 'chip-text-on' : ''">{{ sec.label }}</text>
+			</view>
+		</view>
+
+		<!-- 内容滚动区（chips 固定，正文卡可滚） -->
+		<scroll-view class="body-scroll" direction="vertical" :show-scrollbar="false">
+			<view class="card">
+				<text class="sec-title">{{ sections[activeIdx].title }}</text>
+				<view v-for="(blk, bi) in sections[activeIdx].blocks" :key="bi">
+					<text v-if="blk.kind == 'h'" class="blk-h">{{ blk.text }}</text>
+					<text v-else-if="blk.kind == 'b'" class="blk-b">{{ blk.text }}</text>
+					<text v-else class="blk-p">{{ blk.text }}</text>
+				</view>
+				<view class="card-divider"></view>
+				<view v-if="activeIdx < sections.length - 1" class="next-link" @tap="onNext">
+					<text class="next-link-text">下一节：{{ sections[activeIdx + 1].label }} ←</text>
+				</view>
+				<text v-else class="next-link next-link-end">已到末节，感谢阅读</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+
+	// 先例铁律：type 字面量构造编译器不认 → class + constructor + new（对齐 MessageItem/DayGroup 套路）
+	class PolicyBlock {
+		kind: string = 'p' // p=正文段 / b=强调段 / h=小节标题
+		text: string = ''
+		constructor(kind: string, text: string) {
+			this.kind = kind
+			this.text = text
+		}
+	}
+	class PolicySection {
+		key: string = ''
+		label: string = ''
+		title: string = ''
+		w: number = 146 // chip 宽（rpx，画布 76px=146.2rpx；引言 52px=100rpx）
+		blocks: Array<PolicyBlock> = []
+		constructor(key: string, label: string, title: string, w: number, blocks: Array<PolicyBlock>) {
+			this.key = key
+			this.label = label
+			this.title = title
+			this.w = w
+			this.blocks = blocks
+		}
+	}
+
+	// 四章 sections：信息收集章节 = 帧真值（privacy_canvas.json 60:717-60:722，3 段 + 分隔线 + 下一节链接）；
+	// 引言/您的权利/第三方 无帧正文 → 复用草稿 v0.1 文案（台账登记降级），正式定稿后整段替换不动布局
+	const sections: Array<PolicySection> = [
+		new PolicySection('intro', '引言', '欢迎使用忆述光华', 100, [
+			new PolicyBlock('p', '欢迎使用「忆述光华」App（以下简称"本应用"或"我们"）。本应用是一款个人记忆整理与回顾工具，帮助您以照片、语音、文字等方式记录生活点滴，并通过 AI 能力自动整理、分类与检索，形成可回顾的个人记忆库。'),
+			new PolicyBlock('p', '我们深知个人信息对您的重要性，恪守权责一致、目的明确、选择同意、最少够用、确保安全、主体参与、公开透明七项原则，并按业界成熟的安全标准采取相应的安全保护措施。'),
+			new PolicyBlock('b', '请您在使用本应用前，仔细阅读并充分理解本隐私政策的全部内容。您开始使用本应用，即表示同意我们按本政策收集、存储、使用、共享和披露您的个人信息；如不同意任何内容，请立即停止使用。'),
+			new PolicyBlock('p', '本政策适用范围：本应用（Android 端）及其服务。本应用目前仅提供 Android 移动端，不包含桌面端。'),
+		]),
+		// 帧真值（F3a 默认选中态）：2.1 记忆记录与整理服务 = 节标 + 段落 + 强调段 + 段落2（60:717~60:720）
+		new PolicySection('collect', '信息收集', '2.1 记忆记录与整理服务', 146.2, [
+			new PolicyBlock('p', '当您记录记忆时，我们仅收集以下信息：您主动授权的相册照片（含拍摄时间与地点元数据）、您主动录制的语音片段、您主动输入的文字内容。仅在您授权后读取，不上传未授权内容。'),
+			new PolicyBlock('b', '语音经加密后上传至服务器处理，仅用于转写与情绪识别。'),
+			new PolicyBlock('p', '同步遵循最少上传原则：WiFi 环境上传原图，移动网络仅上传缩略图与元数据，以节省您的流量。'),
+		]),
+		new PolicySection('rights', '您的权利', '您对个人信息的控制权', 146.2, [
+			new PolicyBlock('p', '我们非常重视您对个人信息的自主控制权，为您提供了以下管理路径：'),
+			new PolicyBlock('b', '访问与查看：在「我的-画像管理」可查看 APP 对您的渐进式画像；时间轴与搜索可查看全部记忆。'),
+			new PolicyBlock('b', '修改与纠正：记忆的分类标签可手动纠正；画像可在对话式管理界面修改。'),
+			new PolicyBlock('b', '删除：删除记忆即软删除——先移入回收站，30 天内可在回收站恢复；30 天后彻底清除且不可恢复。'),
+			new PolicyBlock('b', '敏感话题管理：可在画像管理中标记"不希望被提及"的话题，AI 将遵守您的偏好。'),
+			new PolicyBlock('b', '数据导出：「我的-存储与备份」可导出您的全部记忆数据。'),
+			new PolicyBlock('b', '注销账号：「设置-账号与安全-注销账号」，注销后我们将删除或匿名化处理您的个人信息。'),
+			new PolicyBlock('b', '撤回授权：可在系统权限设置中随时关闭相册、麦克风等授权；关闭后相应功能不可用，但不影响已授权期间的处理。'),
+			new PolicyBlock('p', '如对个人信息处理有任何疑问，可通过本政策末节的联系方式与我们取得联系，我们将在 15 个工作日内予以答复。'),
+		]),
+		new PolicySection('third', '第三方', '第三方服务与其他条款', 146.2, [
+			new PolicyBlock('p', '为向您提供服务，本应用接入以下第三方服务。我们仅在必要范围内共享您的必要信息，并要求第三方承担保密义务与合规义务：'),
+			new PolicyBlock('b', '阿里云百炼 / FunASR / Qwen3-VL：AI 摘要、分类、语音转写、情绪识别与以图搜图。'),
+			new PolicyBlock('b', '腾讯云 COS 与图像识别：记忆内容云端加密存储与图片内容安全审核。'),
+			new PolicyBlock('b', '百度 OCR：文字类照片的文字识别（即用即弃，不存原图）。'),
+			new PolicyBlock('b', '高德地图：GPS 坐标转地名，用于事件聚合。'),
+			new PolicyBlock('b', '企业微信客服：微信入口收+找（转发收入记忆）。'),
+			new PolicyBlock('b', 'Sentry 与 uni-push：崩溃监控、性能分析与消息推送。'),
+			new PolicyBlock('h', '其他条款'),
+			new PolicyBlock('p', '您的个人信息存储于中华人民共和国境内的服务器；我们采用传输加密、存储加密、访问控制与安全审计等措施保护其安全，如发生安全事件将依法及时告知。'),
+			new PolicyBlock('p', '我们不会与上述服务提供者以外的任何公司、组织和个人共享、转让或公开披露您的个人信息，法律法规另有规定的除外。'),
+			new PolicyBlock('p', '本应用面向成年用户；未满 14 周岁的未成年人使用前应事先取得家长或法定监护人的同意。'),
+			new PolicyBlock('p', '本政策可能适时修订，未经您明确同意不会削减您应享的权利；重大变更将以显著方式通知并再次征得同意。如对本政策有任何疑问、意见或建议，可通过应用商店页面公示的联系方式与我们联系（联系方式将随正式版本公布），我们将在 15 个工作日内答复。'),
+		]),
+	]
+
+	// 帧默认选中「信息收集」（F3a 60:710 选中态深棕底白字）
+	let activeIdx = ref(1)
+
+	function onChip(idx: number): void {
+		activeIdx.value = idx
+	}
+	function onNext(): void {
+		if (activeIdx.value < sections.length - 1) {
+			activeIdx.value = activeIdx.value + 1
+		}
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页（settings.uvue 先例）
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航（settings.uvue 二级页先例原值；F3a 标题 18pt=34.6rpx） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 章节 chips（F3a y108：高 32px=61.5rpx，圆角 16px=30.8rpx，间距 gap8px=15.4rpx；行起 x20=38.5rpx） ── */
+	.chips-row {
+		position: absolute;
+		/* absolute-ok: 固定筛选行（随内容滚动会失去锚点语义） */
+		left: 38.5rpx;
+		top: 207.7rpx;
+		width: 673rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		height: 61.5rpx;
+		border-radius: 30.8rpx;
+		background-color: #FFFFFF;
+		margin-right: 15.4rpx;
+	}
+	.chip-on {
+		background-color: #3A2E25;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.chip-text-on {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		font-weight: 500;
+		color: #FFFFFF;
+	}
+	/* ── 内容卡（F3a 卡顶 y156=300rpx；页边距 20px=38.5rpx；卡内 gap14px=26.9rpx 换 margin） ── */
+	.body-scroll {
+		flex: 1;
+		margin-top: 300rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-bottom: 60rpx;
+	}
+	.card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-top: 38.5rpx;
+		padding-bottom: 38.5rpx;
+		background-color: #FFFFFF;
+		border-radius: 30.8rpx;
+	}
+	.sec-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.blk-h {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #3A2E25;
+		margin-top: 26.9rpx;
+	}
+	.blk-p {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		line-height: 40.4rpx;
+		color: #6B5D4F;
+		margin-top: 26.9rpx;
+	}
+	.blk-b {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 25rpx;
+		line-height: 40.4rpx;
+		color: #3A2E25;
+		margin-top: 26.9rpx;
+	}
+	.card-divider {
+		height: 1.9rpx;
+		background-color: #EDE5D5;
+		margin-top: 26.9rpx;
+	}
+.next-link {
+	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
+	font-family: "Sarasa Gothic SC", sans-serif;
+	padding: 11.5rpx 0rpx;
+	margin-top: 26.9rpx;
+	align-items: center;
+}
+.next-link-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 500;
+	font-size: 25rpx;
+	color: #C4913C;
+}
+	.next-link-end {
+		color: #B3A696;
+	}
+</style>

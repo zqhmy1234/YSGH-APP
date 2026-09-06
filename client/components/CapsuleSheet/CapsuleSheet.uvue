@@ -1,0 +1,323 @@
+<template>
+	<!-- ═══════════ 时间胶囊弹层（F7b 画布真值还原 · 卡22 · 2026-09-03 视觉重设计版） ═══════════
+	     浮层铁律 1 同族：弹层 = 全局浮层不是页面，唤起不发生页面跳转
+	     （RecordSheet/EchoSheet/ShareSheet 同款 fixed + z-index 1000 范式）。
+	     画布 63:53：弹层顶 y=331 → min-height 986.5rpx；弹层 gap=16px→30.8rpx margin；
+	     选项列表 gap=8px→15.4rpx；视觉语言对齐详情页定稿（峰宝 09-03 拍板）：
+	     弹层暖底 #FAF9F5 / 摘要行白卡+双投影 / 选中态锈红 #B05A3A（描边+勾选圆）/
+	     未选卡白底淡投影 / 主按钮锈红；几何未变，仅色彩与投影改版 -->
+	<view class="sheet-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">加入时间胶囊</text>
+				<!-- × 热区修复（峰宝 09-05 实锤：text@tap 热区只有字形大小点不中）——
+			     view 承载给足 60rpx 方形热区，内部 text 纯展示（text@tap 全库清零军规） -->
+			<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 63:57 记忆摘要行：白卡 + 双投影（重设计：原 #EDE5D5 土黄大色块废弃） -->
+			<view class="summary-row">
+				<image class="summary-star" src="/static/icons/detail-sparkle.svg" />
+				<text class="summary-text">{{ summaryText }}</text>
+			</view>
+			<!-- 63:61 节标 -->
+			<text class="section-label">开启时机</text>
+			<!-- 63:62 时机选项列表（4 项，画布默认选中「3 个月后」） -->
+			<view class="opt-list">
+				<view v-for="(o, idx) in opts" :key="idx"
+					class="opt" :class="{ 'opt-on': selected == idx }"
+					:style="{ marginTop: idx > 0 ? '15.4rpx' : '0rpx' }"
+					@tap="onOptTap(idx)">
+					<view class="opt-texts">
+						<text class="opt-main">{{ o.main }}</text>
+						<text v-if="o.sub != ''" class="opt-sub">{{ o.sub }}</text>
+					</view>
+					<view v-if="selected == idx" class="opt-check">
+						<image class="opt-check-mark" src="/static/icons/opt-check.svg" />
+					</view>
+					<view v-else class="opt-circle"></view>
+				</view>
+			</view>
+			<!-- 63:86 说明 -->
+			<text class="note-text">封存期间这条记忆会上锁，到期那天我们会提醒你打开</text>
+			<!-- 63:87 主按钮 48px→92.3rpx r24 锈红 #B05A3A（§W 修订：原注释误留旧琥珀色） -->
+			<view class="main-btn" @tap="onConfirm">
+				<text class="main-btn-text">封存胶囊</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// USE_MOCK_CAPSULE（卡22 拍板：真端点待后端 W2-3，确认后本地暂存演示态）。
+	// 发版前统一 grep 清理（总账 B8 同族）
+	const USE_MOCK_CAPSULE = true
+
+	const props = defineProps({
+		summary: {
+			type: String,
+			default: ''
+		},
+		// W1-8：本地暂存需要 content_id 标识被封存的记忆（宿主 detail 传入）
+		contentId: {
+			type: String,
+			default: ''
+		}
+	})
+
+	const emit = defineEmits(['close'])
+
+	// 选项对象：UTS 零先例禁令 → class+constructor+new（对齐 MessageItem/DayGroup 先例），禁 type 字面量
+	class CapsuleOpt {
+		main: string = ''
+		sub: string = ''
+		constructor(main: string, sub: string) {
+			this.main = main
+			this.sub = sub
+		}
+	}
+
+	// 画布 63:63~63:85 四选项真值文案（副文案含到期日期）
+	const opts: Array<CapsuleOpt> = [
+		new CapsuleOpt('3 个月后', '12月2日 · 冬天的菜市场'),
+		new CapsuleOpt('半年后', '3月2日 · 开春再见'),
+		new CapsuleOpt('1 年后', '2027年9月2日 · 整整一年'),
+		new CapsuleOpt('自定义日期（生日 / 纪念日）', '')
+	]
+
+	// 画布默认选中第 0 项「3 个月后」
+	let selected = ref(0)
+
+	const summaryText = computed((): string => props.summary)
+
+	function onClose(): void {
+		emit('close')
+	}
+
+	function onOptTap(idx: number): void {
+		if (idx == 3) {
+			// 自定义日期无选择器（画布无对应交互帧），诚实化降级
+			uni.showToast({ title: '自定义日期即将上线', icon: 'none' })
+			return
+		}
+		selected.value = idx
+	}
+
+	/** W1-8 本地暂存：胶囊端点未建（后端 W2-3），确认仅落 storage，绝不假称已云端封存。
+	 *  存储契约：key = capsule_drafts，值为逗号分隔条目串，每条 = contentId|时机文案
+	 *  （UTS 无可靠 JSON.parse，对齐 uploader.uts 分隔串先例）。W2-3 端点上线后此处切换为真封存。 */
+	function stageDraft(contentId: string, timing: string): void {
+		const raw = uni.getStorageSync('capsule_drafts') as string
+		let entries: Array<string> = []
+		if (raw != null && raw != '' && raw != '[]') {
+			const parts = raw.split(',')
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i] != '') {
+					entries.push(parts[i])
+				}
+			}
+		}
+		entries.push(contentId + '|' + timing)
+		uni.setStorageSync('capsule_drafts', entries.join(','))
+	}
+
+	function onConfirm(): void {
+		if (!USE_MOCK_CAPSULE) {
+			return
+		}
+		// 本地演示态：真端点（创建胶囊/到期提醒推送）待后端 W2-3，不假称已云端封存
+		const opt = opts[selected.value]
+		stageDraft(props.contentId, opt.main)
+		uni.showToast({ title: '演示：本地暂存，云端封存待上线', icon: 'none', duration: 2200 })
+		emit('close')
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet/ShareSheet 同款铁律） */
+		z-index: 1000;
+	}
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		/* 画布 63:52 真值：暖黑 a=0.40 */
+		background-color: rgba(59, 46, 38, 0.4);
+		z-index: 10;
+	}
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: 750rpx;
+		/* 画布 63:53 弹层顶 y=331 → 高 513 逻辑 = 986.5rpx；内容驱动 + 下限兜底 */
+		min-height: 986.5rpx;
+		/* 重设计：白 → 暖底 #FAF9F5（§W 补刀：§U 批此刀被写竞争吞掉，34270a3 入库的是残缺版） */
+		background-color: #FAF9F5;
+		/* 承载形状圆角（§W 峰宝拍板）：顶圆角对齐 RecordSheet 弹层 77rpx 家族语言，底缘贴屏 */
+		border-top-left-radius: 77rpx;
+		border-top-right-radius: 77rpx;
+		padding-top: 34.6rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-bottom: 53.8rpx;
+		z-index: 20;
+		flex-direction: column;
+	}
+	.head-row {
+		width: 100%;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: flex-start;
+	}
+	.head-title {
+		/* 画布 63:55：y 相对头行 +4px */
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.head-close {
+		/* 热区 ≥60rpx 方形 + 居中（峰宝拍板：可点区域必须大于字形） */
+		width: 60rpx;
+		height: 60rpx;
+		justify-content: center;
+		align-items: center;
+		/* 补偿原 padding 10rpx 的视觉位置 */
+		margin-right: -10rpx;
+	}
+	.head-close-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 42.3rpx;
+		color: #B3A696;
+		/* 文字在 60rpx 热区内略微上移对齐原视觉基线 */
+		margin-top: -4rpx;
+	}
+	.summary-row {
+		width: 100%;
+		margin-top: 30.8rpx;
+		height: 100rpx;
+		/* 重设计：白卡 + 双投影（画布 y4/blur16/a0.06 + y1/blur3/a0.04 → rpx；messages 卡同款语言） */
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 23.1rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		overflow: hidden;
+	}
+	.summary-star {
+		width: 26.9rpx;
+		height: 26.9rpx;
+		margin-right: 15.4rpx;
+	}
+	.summary-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	.section-label {
+		margin-top: 30.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.opt-list {
+		width: 100%;
+		margin-top: 30.8rpx;
+		flex-direction: column;
+	}
+	.opt {
+		width: 100%;
+		height: 100rpx;
+		background-color: #FFFFFF;
+		border-width: 1.9rpx;
+		border-color: #EDE5D5;
+		border-radius: 23.1rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		overflow: hidden;
+	}
+	/* 选中态叠加类（只覆盖描边色 = chip 系合法先例；须写在 .opt 之后；§W 补刀锈红） */
+	.opt-on {
+		border-color: #B05A3A;
+	}
+	.opt-texts {
+		flex-direction: column;
+	}
+	.opt-main {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.opt-sub {
+		/* 画布选项内 gap=2px → margin（gap 引擎丢弃） */
+		margin-top: 3.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.opt-check {
+		width: 30.8rpx;
+		height: 30.8rpx;
+		border-radius: 15.4rpx;
+		/* §W 补刀：勾选圆锈红（§U 批被写竞争吞掉） */
+		background-color: #B05A3A;
+		justify-content: center;
+		align-items: center;
+	}
+	/* 白勾：画布 63:69 真矢量导出（2026-09-02 export_nodes，替代原 CSS rotate 实现） */
+	.opt-check-mark {
+		width: 13.5rpx;
+		height: 9rpx;
+	}
+	.opt-circle {
+		width: 28.8rpx;
+		height: 28.8rpx;
+		border-radius: 14.4rpx;
+		border-width: 1.9rpx;
+		border-color: #B3A696;
+		background-color: rgba(0, 0, 0, 0);
+	}
+	.note-text {
+		margin-top: 30.8rpx;
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	.main-btn {
+		width: 100%;
+		margin-top: 30.8rpx;
+		height: 92.3rpx;
+		border-radius: 46.2rpx;
+		/* 重设计：主按钮琥珀→锈红 #B05A3A（画布 63:87 改版真值，对齐全 app 主按钮体系） */
+		background-color: #B05A3A;
+		justify-content: center;
+		align-items: center;
+	}
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+</style>

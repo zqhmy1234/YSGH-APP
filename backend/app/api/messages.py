@@ -71,6 +71,23 @@ def list_messages(
     )
 
 
+@router.get("/unread-count", response_model=ApiResponse[dict])
+def unread_count(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """未读数（性能卡 PG：单 count 查询，替代前端 fetchUnreadCount 游标翻全量累加）
+
+    口径：status == "unread"（messages 表无 is_read 字段，与列表/已读端点一致）。
+    """
+    total = db.execute(
+        select(func.count())
+        .select_from(Message)
+        .where(Message.user_id == user.id, Message.status == "unread")
+    ).scalar()
+    return ApiResponse(data={"count": int(total)})
+
+
 @router.post("/{msg_id}/read", response_model=ApiResponse[MessageReadOut])
 def mark_read(
     msg_id: int,

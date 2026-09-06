@@ -15,7 +15,7 @@
  * O15 收口：端点路径统一走 contract.ts（PATH_*，与 OpenAPI 对齐）；O17：消息列表
  * 分页字段对齐（fetchMessagePage 返回 {items, cursor, hasMore}，未读数走游标累加）。
  */
-import { get, post, dataObj, dataArr, showErrorToast } from './api'
+import { get, post, dataObj, dataArr, showErrorToast, fetchUnreadCountSimple } from './api'
 import {
 	PATH_MESSAGES,
 	PATH_ECHO_TODAY,
@@ -213,8 +213,18 @@ export class AppMessage {
 	body: string
 	status: string
 	sentAt: string
+	// R9 批次3（R9-1）：echo 消息 payload 快照（拍板 A-1：点击回放快照，不调 today 不占名额）。
+	// 仅 msgType=='echo' 时有值；echoContentId=='' 表示存量无 payload 消息（降级 toast）。
+	// 用 string 字段而非 UTSJSONObject class 字段——后者全项目零先例（uvue 编码先例铁律）
+	echoContentId: string
+	echoContentType: string
+	echoText: string
+	echoTakenAt: string
+	echoPlace: string
+	echoDate: string
 
-	constructor(id: number, channel: string, msgType: string, title: string, body: string, status: string, sentAt: string) {
+	constructor(id: number, channel: string, msgType: string, title: string, body: string, status: string, sentAt: string,
+		echoContentId: string = '', echoContentType: string = 'text', echoText: string = '', echoTakenAt: string = '', echoPlace: string = '', echoDate: string = '') {
 		this.id = id
 		this.channel = channel
 		this.msgType = msgType
@@ -222,6 +232,12 @@ export class AppMessage {
 		this.body = body
 		this.status = status
 		this.sentAt = sentAt
+		this.echoContentId = echoContentId
+		this.echoContentType = echoContentType
+		this.echoText = echoText
+		this.echoTakenAt = echoTakenAt
+		this.echoPlace = echoPlace
+		this.echoDate = echoDate
 	}
 }
 
@@ -269,6 +285,23 @@ export function fetchMessagePage(status: string, cursor: string, limit: number):
 			const result: Array<AppMessage> = []
 			for (let i = 0; i < page.items.length; i++) {
 				const item = page.items[i] as UTSJSONObject
+				// R9 批次3：echo 消息 payload 快照提取（getJSON 先例 event_ops.uts:441；
+				// 非 echo 消息 payload 为空对象 → echoContentId='' 不影响）
+				let echoContentId = ''
+				let echoContentType = 'text'
+				let echoText = ''
+				let echoTakenAt = ''
+				let echoPlace = ''
+				let echoDate = ''
+				const p = item.getJSON('payload')
+				if (p != null) {
+					echoContentId = p.getString('content_id') ?? ''
+					echoContentType = p.getString('content_type') ?? 'text'
+					echoText = p.getString('text') ?? ''
+					echoTakenAt = p.getString('taken_at') ?? ''
+					echoPlace = p.getString('place') ?? ''
+					echoDate = p.getString('echo_date') ?? ''
+				}
 				result.push(
 					new AppMessage(
 						item.getNumber('id') as number,
@@ -277,7 +310,13 @@ export function fetchMessagePage(status: string, cursor: string, limit: number):
 						item.getString('title') ?? '',
 						item.getString('body') ?? '',
 						item.getString('status') ?? '',
-						item.getString('sent_at') ?? ''
+						item.getString('sent_at') ?? '',
+						echoContentId,
+						echoContentType,
+						echoText,
+						echoTakenAt,
+						echoPlace,
+						echoDate
 					)
 				)
 			}
@@ -296,21 +335,13 @@ export function fetchMessages(status: string): Promise<Array<AppMessage>> {
 	})
 }
 
-/** 未读数（O17：不再被首屏 limit 截断——游标翻页累加 unread 条数；失败返回 0） */
+/** 未读数（P4 性能收口：改走 GET /messages/unread-count 单 count 查询，替代旧游标翻全量累加；
+ *  失败 -1 → 0 保持旧兼容语义；调用方 messages.uvue 仅作角标展示） */
 export function fetchUnreadCount(): Promise<number> {
 	return new Promise<number>((resolve) => {
-		let total = 0
-		const walk = (cursor: string): void => {
-			fetchMessagePage('unread', cursor, 50).then((page: MessagePage) => {
-				total += page.items.length
-				if (page.hasMore && page.cursor != '' && total < 5000) {
-					walk(page.cursor)
-				} else {
-					resolve(total)
-				}
-			})
-		}
-		walk('')
+		fetchUnreadCountSimple().then((n: number) => {
+			resolve(n < 0 ? 0 : n)
+		})
 	})
 }
 

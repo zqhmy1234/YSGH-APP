@@ -3,6 +3,22 @@
 	<view class="page-root">
 		<!-- W9 流式重构：一页一个滚动根 —— page-root 锁视口，内容区进 scroll-view，
 		     玻璃操作条在滚动区外 absolute bottom 钉死视口底部（峰宝拍板：操作条固定不滑动） -->
+		<!-- §O P5（峰宝拍板）：玻璃顶栏移出滚动区钉死视口顶——page-root 锁视口，absolute 相对其定位
+		     不随内容滚动；原先写在 scroll-view 内随下滑移动。同层绘制顺序在 scroll-view 之前，
+		     故补 z-index 保险浮于 hero 之上 -->
+		<view class="n4_409"> <!-- 玻璃顶栏 -->
+			<view class="n4_410" @tap="goBack"> <!-- 返回钮 -->
+				<image class="n4_411" src="/static/icons/i4_411.svg" /> <!-- icon: 返回图标 -->
+			</view>
+			<view class="n4_413"> <!-- 右侧钮组 -->
+				<view class="n4_414" @tap="toggleFav"> <!-- 收藏钮（§O P3：星标绑定收藏态，收藏→琥珀亮星） -->
+					<image class="n4_415" :src="fav ? '/static/icons/i4_415-active.svg' : '/static/icons/i4_415.svg'" />
+				</view>
+				<view class="n4_417" @tap="onMore"> <!-- 更多钮 -->
+					<image class="n4_418" src="/static/icons/i4_418.svg" /> <!-- icon: 更多图标 -->
+				</view>
+			</view>
+		</view>
 		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
 		<view class="detail-body">
 		<!-- 全幅媒体：照片记忆 → 服务端票据 URL 真图；其余类型 → 画布静态合成图占位 -->
@@ -13,36 +29,53 @@
 		<view class="n4_407b"></view>
 		<view class="n4_408a"></view>
 		<view class="n4_408b"></view>
-		<view class="n4_409"> <!-- 玻璃顶栏 -->
-			<view class="n4_410" @tap="goBack"> <!-- 返回钮 -->
-				<image class="n4_411" src="/static/icons/i4_411.svg" /> <!-- icon: 返回图标 -->
-			</view>
-			<view class="n4_413"> <!-- 右侧钮组 -->
-				<view class="n4_414" @tap="toggleFav"> <!-- 收藏钮 -->
-					<image class="n4_415" src="/static/icons/i4_415.svg" /> <!-- icon: 收藏图标 -->
-				</view>
-				<view class="n4_417" @tap="onMore"> <!-- 更多钮 -->
-					<image class="n4_418" src="/static/icons/i4_418.svg" /> <!-- icon: 更多图标 -->
-				</view>
-			</view>
-		</view>
 		<text class="n4_422">{{ memTitle }}</text> <!-- 详情标题（动态） -->
 		<text class="n4_423">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
-		<view v-if="aiNote != ''" class="n4_424"> <!-- AI注释卡（有内容才显示） -->
+		<!-- F5b 语音卡（画布 y448pt = 861.5rpx）：白卡 r20pt / padding 14pt + 琥珀实心钮 40pt + 波形 20 条 + 标题 fs14。
+		     播放态按 F5a 规范帧：钮切暂停双白条、已播段 #C4913C / 未播段 #E5DCC8、
+		     进度行（当前时间 fs10 · 轨道 h4pt #EDE5D5 · 总时长 fs10）+ 标题转「正在播放 · X」fs12。
+		     语音卡出现时后续元素按 F5b 帧下移（558/700/852/882pt×1.923），内联 style 优先级最高免层叠歧义 -->
+		<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
+			<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': !voicePlayable }">
+				<view v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
+					<view class="n4_vbtn-pause-bar"></view>
+					<view class="n4_vbtn-pause-bar"></view>
+				</view>
+				<view v-else class="n4_vbtn-play"></view>
+			</view>
+			<view class="n4_vcol">
+				<text v-if="voiceNote != ''" class="n4_vnote">{{ voiceNote }}</text>
+				<view class="n4_vwave">
+					<VoiceWave :heights="detailWave" :active="voiceIsActive(contentId)" :progress="voiceProgressOfCard(contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+				</view>
+				<view v-if="voiceIsActive(contentId)" class="n4_vprog">
+					<text class="n4_vprog-cur">{{ voiceCurSecText() }}</text>
+					<view class="n4_vtrack">
+						<view class="n4_vtrack-fill" :style="{ width: (voiceProgressOfCard(contentId) * 100) + '%' }"></view>
+					</view>
+					<text class="n4_vprog-total">{{ voiceTotalSecText() }}</text>
+				</view>
+				<text v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vtitle-playing">正在播放 · {{ memTitle }}</text>
+				<text v-else class="n4_vtitle">{{ memTitle }}</text>
+			</view>
+		</view>
+		<view v-if="aiNote != ''" class="n4_424" :style="{ top: isVoice ? '1073.1rpx' : '861.5rpx' }"> <!-- AI注释卡（有内容才显示；F5b 语音态 y558pt） -->
 			<view class="n4_425"> <!-- 注释头 -->
 				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
 				<text class="n4_428">AI 的观察</text> <!-- AI观察 -->
 			</view>
 			<text class="n4_429">{{ aiNote }}</text> <!-- 注释文字（动态） -->
 		</view>
-		<view class="n4_430"> <!-- 正文卡 -->
+		<view class="n4_430" :style="{ top: isVoice ? '1346.2rpx' : '1134.6rpx' }"> <!-- 正文卡（F5b 语音态 y700pt） -->
 			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
-			<text class="n4_432">来自照片的 AI 描述 · 你也可以补充一句</text> <!-- 正文来源 -->
+			<!-- 卡19 接线：来源行「你也可以补充一句」可点 → 弹输入补一句（本地暂存，见 onEditSup） -->
+			<text v-if="bodySup != ''" class="n4_431-sup">{{ bodySup }}</text>
+			<text class="n4_432" @tap="onEditSup">{{ bodySource }}</text> <!-- 正文来源：可点补充（W0-2：语音=转写描述，照片=AI 描述） -->
 		</view>
 		<!-- 相关记忆（HEAD 版交互接回：无归属事件整区隐藏；画布静态2卡→数据驱动横滑，画布4:434本即横滑容器） -->
 		<template v-if="relatedList.length > 0">
-			<text class="n4_433">相关记忆</text> <!-- 相关记忆节标 -->
-			<scroll-view class="n4_434" direction="horizontal" :show-scrollbar="false">
+			<text class="n4_433" :style="{ top: isVoice ? '1638.5rpx' : '1426.9rpx' }">相关记忆</text> <!-- 相关记忆节标（F5b 语音态 y852pt） -->
+			<scroll-view class="n4_434" direction="horizontal" :show-scrollbar="false" :style="{ top: isVoice ? '1695.8rpx' : '1484.6rpx' }">
 				<view class="n4_434-row">
 					<view v-for="(ev, idx) in relatedList" :key="idx" class="n4_435" @tap="onRelatedEvent(ev)">
 						<!-- 缩略占位：画布两卡分别苔琥珀/青蓝渐变，按 idx 交替 -->
@@ -52,6 +85,29 @@
 					</view>
 				</view>
 			</scroll-view>
+		</template>
+		<!-- R9 批次4（Q3 拍板）：事件级语音卡「这条记忆里的声音」——当前内容所属第一个事件内的
+		     其他 voice 成员（排除自身）。播放复用全局引擎；processing/failed 禁播+小字（Q2 拍板）。
+		     生日歌案例：photo 详情无语音大卡，但 ST-DBSCAN 把跑步语音聚进了同事件 → 在此回放 -->
+		<template v-if="eventVoices.length > 0">
+			<text class="n4_evt-title" :style="{ top: evtSectionTop() }">这条记忆里的声音</text>
+			<view v-for="(v, vi) in eventVoices" :key="vi" class="n4_evt-card"
+				:style="{ top: evtCardTop(vi) }" @tap="onPlayEventVoice(v)">
+				<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': v.status != 'done' }">
+					<view v-if="voiceIsActive(v.contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
+						<view class="n4_vbtn-pause-bar"></view>
+						<view class="n4_vbtn-pause-bar"></view>
+					</view>
+					<view v-else class="n4_vbtn-play"></view>
+				</view>
+				<view class="n4_evt-col">
+					<text v-if="v.status != 'done'" class="n4_vnote">{{ v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放' }}</text>
+					<view class="n4_evt-wave">
+						<VoiceWave :heights="evtWaveOf(v.contentId)" :active="voiceIsActive(v.contentId)" :progress="voiceProgressOfCard(v.contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+					</view>
+					<text class="n4_evt-name">{{ evtTitleOf(v) }}</text>
+				</view>
+			</view>
 		</template>
 		</view>
 		</scroll-view>
@@ -71,17 +127,35 @@
 		</view>
 		<!-- 画布 4:458/4:459（假状态栏时间+电池）已移除：navigationStyle:custom 沉浸式，
 		     系统状态栏渲染真实时间与电量；该文本为白色，叠在 4:406 全幅媒体上会形成双时钟 -->
+		<!-- 卡21/卡22 F7 弹层（浮层铁律 1 同族：唤起不跳页，v-if 卸载复位） -->
+		<ShareSheet v-if="shareOpen" :title="memTitle" :hero="heroSrc" @close="shareOpen = false" />
+		<CapsuleSheet v-if="capsuleOpen" :summary="memTitle" :contentId="contentId" @close="capsuleOpen = false" />
 	</view>
 </template>
 
 <script setup lang="uts">
 	import { ref } from 'vue'
-	import { onLoad } from '@dcloudio/uni-app'
+	import { onLoad, onUnload } from '@dcloudio/uni-app'
+	import { request, post } from '@/utils/api'
 	import { fetchContentDetail, fetchContentEvents, ContentEventRef } from '@/utils/event_ops'
 	import { formatIsoShortTime } from '@/utils/time'
+	import {
+		toggleVoice,
+		stopVoice,
+		isVoiceActive,
+		isVoicePlaying,
+		voiceProgressOf,
+		voiceCurSecValue,
+		voiceTotalSecValue,
+		fmtVoiceTime,
+		genWaveHeights
+	} from '@/utils/audio_player'
 
 	// ═══════════ 响应式状态 ═══════════
 	let fav = ref(false) // 收藏状态
+	// 卡21/卡22 F7 弹层开关（浮层铁律：唤起不跳页）
+	let shareOpen = ref(false)
+	let capsuleOpen = ref(false)
 	let contentId = ref('')
 	let memTitle = ref('记忆详情')
 	let memMeta = ref('')
@@ -90,6 +164,16 @@
 	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
 	let heroSrc = ref('/static/images/img4_406.png')
 	let relatedList = ref<Array<ContentEventRef>>([])
+	// R9 批次4（Q3 拍板）：事件级语音成员——「这条记忆里的声音」区块数据源
+	// （当前内容所属第一个事件内的 voice 成员，排除自身）；空数组=区块隐藏
+	let eventVoices = ref<Array<SplitItem>>([])
+	// W0-2 · F5b：语音记忆才显示语音卡；波形由 contentId 确定性生成（与 index/search 同源 genWaveHeights）
+	let isVoice = ref(false)
+	let detailWave = ref<Array<number>>([])
+	// 正文来源行：画布静态「来自照片的 AI 描述」对语音记忆失真，按类型切换（照片默认保持画布原文）
+	let bodySource = ref('来自照片的 AI 描述 · 你也可以补充一句')
+	// 卡19：来源行「你也可以补充一句」的用户补句（本地暂存，后端无 PATCH 补充端点 → 冷启动即失）
+	let bodySup = ref('')
 
 	/** 取正文首句/前 14 字作标题 */
 	function makeTitle(text: string): string {
@@ -118,12 +202,32 @@
 			return
 		}
 		contentId.value = id
+		// 卡16 集成接线：进入详情时回读 favorite_ids，星标亮灭反映已收藏态（favorites.uvue 同契约）
+		const favRaw = uni.getStorageSync('favorite_ids') as string
+		if (favRaw != null && favRaw != '' && favRaw != '[]') {
+			const favParts = favRaw.split(',')
+			for (let i = 0; i < favParts.length; i++) {
+				if (favParts[i] == id) {
+					fav.value = true
+					break
+				}
+			}
+		}
 		fetchContentDetail(id).then((d) => {
 			if (d == null) {
+				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
+				// fetchContentDetail 失败可能=网络断/404 已删除/服务不可达
+				uni.showToast({ title: '详情加载失败，请稍后重试', icon: 'none' })
 				return
 			}
 			memBody.value = d.text
 			memTitle.value = makeTitle(d.text)
+			// W0-2：语音记忆 → F5b 语音卡显示 + 播放引擎按 contentId 接线（audio 端点，W0-1）
+			if (d.contentType == 'voice') {
+				isVoice.value = true
+				detailWave.value = genWaveHeights(id, 28)
+				bodySource.value = '来自语音转写的 AI 描述 · 你也可以补充一句'
+			}
 			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
 			if (d.contentType == 'photo' && d.thumbnailUrl != '') {
 				heroSrc.value = d.thumbnailUrl
@@ -139,10 +243,92 @@
 		})
 		fetchContentEvents(id).then((evs: Array<ContentEventRef>) => {
 			relatedList.value = evs
+			// R9 批次4（Q3 拍板）：拉第一个所属事件成员，过滤 voice（排除自身）→「这条记忆里的声音」
+			// 生日前歌案例：photo 详情无语音卡，但事件里聚了跑步语音——事件级声音在这里补齐
+			if (evs.length > 0 && evs[0].id != '') {
+				fetchEventItems(evs[0].id).then((items: Array<SplitItem>) => {
+					const voices: Array<SplitItem> = []
+					for (let i = 0; i < items.length; i++) {
+						if (items[i].contentType == 'voice' && items[i].contentId != id) {
+							voices.push(items[i])
+						}
+					}
+					eventVoices.value = voices
+				})
+			}
 		})
 	})
 
 	// ═══════════ 交互 ═══════════
+	onUnload(() => {
+		// W0-2：离页停播，防止语音跨页残留出声（与 index/search 同规）
+		stopVoice()
+	})
+
+	// 语音播放（W0-2 · F5b：详情页语音卡复用全局播放引擎，播放态三处一致）
+	function onPlayVoice(): void {
+		if (!isVoice.value || contentId.value == '') {
+			return
+		}
+		// 禁播守卫：显式 toast，绝不静默（峰宝拍板 2026-09-06）
+		if (!voicePlayable.value) {
+			uni.showToast({ title: voiceNote.value != '' ? voiceNote.value : '音频暂不可播放', icon: 'none' })
+			return
+		}
+		toggleVoice(contentId.value)
+	}
+	// 模板取值封装（uvue 模板不直接绑跨模块 ref，对齐 index/search wrapper 先例）
+	function voiceIsActive(cid: string): boolean {
+		return isVoiceActive(cid)
+	}
+	function voiceIsPlaying(): boolean {
+		return isVoicePlaying()
+	}
+	function voiceProgressOfCard(cid: string): number {
+		return voiceProgressOf(cid)
+	}
+	function voiceCurSecText(): string {
+		return fmtVoiceTime(voiceCurSecValue())
+	}
+	function voiceTotalSecText(): string {
+		return fmtVoiceTime(voiceTotalSecValue())
+	}
+
+	// ═══ R9 批次4：事件级语音卡（「这条记忆里的声音」）═══
+	// 布局：绝对定位体系（画布还原页），区块置于相关记忆之后；相关记忆隐藏时上移补位
+	function evtSectionTop(): string {
+		const base = relatedList.value.length > 0
+			? (isVoice.value ? 1984.3 : 1773.1)
+			: (isVoice.value ? 1703.8 : 1492.3)
+		return base + 'rpx'
+	}
+	function evtCardTop(vi: number): string {
+		const base = relatedList.value.length > 0
+			? (isVoice.value ? 2040.8 : 1829.6)
+			: (isVoice.value ? 1760.3 : 1548.8)
+		return (base + vi * 193) + 'rpx'
+	}
+	/** 成员卡播放：processing/failed 显式 toast（Q2 拍板），绝不静默；done → 全局引擎 */
+	function onPlayEventVoice(v: SplitItem): void {
+		if (v.status != 'done') {
+			uni.showToast({
+				title: v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放',
+				icon: 'none'
+			})
+			return
+		}
+		toggleVoice(v.contentId)
+	}
+	/** 成员卡波形：contentId 确定性生成（与 index/search/detail 大卡同源） */
+	function evtWaveOf(cid: string): Array<number> {
+		return genWaveHeights(cid, 20)
+	}
+	/** 成员标题：转写文本截断；空文本（未转写）给中性占位 */
+	function evtTitleOf(v: SplitItem): string {
+		const t = (v.title ?? '').trim()
+		return t == '' ? '一段声音' : (t.length > 18 ? t.substring(0, 18) + '…' : t)
+	}
+
 	function goBack(): void {
 		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
 		const pages = getCurrentPages()
@@ -155,6 +341,57 @@
 
 	function toggleFav(): void {
 		fav.value = !fav.value
+		// 卡16 集成接线（主窗口 2026-09-02）：favorite_ids 本地落盘（逗号分隔串，favorites.uvue
+		// readFavoriteIds 同契约）；云端 favorite 端点仍未建（W0-4 远期账），toast 保持诚实标注
+		const raw = uni.getStorageSync('favorite_ids') as string
+		let ids: Array<string> = []
+		if (raw != null && raw != '' && raw != '[]') {
+			const parts = raw.split(',')
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i] != '') {
+					ids.push(parts[i])
+				}
+			}
+		}
+		if (fav.value) {
+			let exists = false
+			for (let i = 0; i < ids.length; i++) {
+				if (ids[i] == contentId.value) {
+					exists = true
+					break
+				}
+			}
+			if (!exists) {
+				ids.push(contentId.value)
+			}
+		} else {
+			const next: Array<string> = []
+			for (let i = 0; i < ids.length; i++) {
+				if (ids[i] != contentId.value) {
+					next.push(ids[i])
+				}
+			}
+			ids = next
+		}
+		uni.setStorageSync('favorite_ids', ids.join(','))
+		// W2-2 真端点（2026-09-05）：POST/DELETE /api/v1/contents/{id}/favorite；本地 favorite_ids
+		// 双写保留（favorites 页回落契约 + 离线星标即时反馈），端点失败不回滚本地态（诚实 toast）
+		if (contentId.value != '') {
+			const path = '/api/v1/contents/' + contentId.value + '/favorite'
+			if (fav.value) {
+				post(path, {}).then((_res: UTSJSONObject | null) => {
+					if (_res == null) {
+						uni.showToast({ title: '云端收藏失败 · 稍后重试', icon: 'none' })
+					}
+				})
+			} else {
+				request(path, 'DELETE', null).then((_res: UTSJSONObject | null) => {
+					if (_res == null) {
+						uni.showToast({ title: '云端取消失败 · 稍后重试', icon: 'none' })
+					}
+				})
+			}
+		}
 		uni.showToast({ title: fav.value ? '已收藏' : '已取消收藏', icon: 'none', duration: 1500 })
 	}
 
@@ -165,14 +402,25 @@
 			success: (res) => {
 				const idx = res.tapIndex
 				if (idx === 0) {
-					uni.showToast({ title: '编辑功能待接入', icon: 'none' })
+					// W0-4 诚实化：编辑器未建（远期账），不写「待接入」这类含糊占位
+					uni.showToast({ title: '记忆编辑即将上线', icon: 'none' })
 				} else if (idx === 1) {
 					uni.showModal({
 						title: '删除记忆',
-						content: '删除后不可恢复，确定删除这条记忆吗？',
+						content: '删除后将移入回收站，保留 30 天。确定删除吗？',
 						success: (r) => {
 							if (r.confirm) {
-								uni.showToast({ title: '已删除', icon: 'success' })
+								// W2-1 真端点（2026-09-05）：DELETE /api/v1/contents/{id} 软删 → 回收站可见可恢复
+								request('/api/v1/contents/' + contentId.value, 'DELETE', null).then((res2: UTSJSONObject | null) => {
+									if (res2 == null) {
+										return
+									}
+									uni.showToast({ title: '已移入回收站', icon: 'none' })
+									// 软删成功 → 详情页内容已不存在，返回上一页
+									setTimeout(() => {
+										goBack()
+									}, 600)
+								})
 							}
 						}
 					})
@@ -185,18 +433,53 @@
 
 	// 底部操作栏
 	function askAI(): void {
-		uni.showToast({ title: 'AI 对话待接入', icon: 'none' })
+		// B10 已回退（原生 tabBar 证伪），redirectTo 跳 AI 页恢复；带上下文预填属远期 B1
+		uni.redirectTo({ url: '/pages/ai/ai' })
 	}
 	function addCapsule(): void {
-		uni.showToast({ title: '已加入胶囊', icon: 'none' })
+		// 卡22 接线：拉起时间胶囊弹层（浮层不跳页）；封存真端点待后端 W2-3，面板内 USE_MOCK_CAPSULE 演示态
+		capsuleOpen.value = true
 	}
 	function share(): void {
-		uni.showToast({ title: '分享功能待接入', icon: 'none' })
+		// 卡21 接线：拉起分享弹层（浮层不跳页）；社交项灰显诚实化见 ShareSheet
+		shareOpen.value = true
 	}
 
-	// 相关记忆卡片：点击所属事件（事件详情页未建，暂提示）
+	// 相关记忆卡片：卡19 接线 —— 跳该事件封面内容的详情页（事件详情页未建，不假跳不存在的页）
 	function onRelatedEvent(ev: ContentEventRef): void {
-		uni.showToast({ title: ev.title, icon: 'none' })
+		if (ev.coverContentId == '') {
+			uni.showToast({ title: ev.title + ' · 暂无可打开的记忆', icon: 'none' })
+			return
+		}
+		// detail → detail 用 redirectTo 同页替换：避免层层压栈，返回仍回来源页
+		uni.redirectTo({ url: '/pages/detail/detail?contentId=' + ev.coverContentId })
+	}
+
+	// 正文来源行「你也可以补充一句」：弹输入补一句
+	// 诚实化：后端无 PATCH 补充端点（远期账 A 类），仅本地暂存，冷启动即失 —— 不假称已保存云端
+	function onEditSup(): void {
+		uni.showModal({
+			title: '补充一句',
+			content: bodySup.value,
+			editable: true,
+			placeholderText: '这一刻，你还想记下什么…',
+			confirmText: '记下',
+			cancelText: '取消',
+			success: (res: any) => {
+				if (res.confirm != true) {
+					return
+				}
+				if (res.content == null) {
+					return
+				}
+				const v = res.content as string
+				if (v == '') {
+					return
+				}
+				bodySup.value = v
+				uni.showToast({ title: '已记在这条记忆里 · 云端保存即将上线', icon: 'none', duration: 2000 })
+			}
+		})
 	}
 </script>
 
@@ -212,9 +495,10 @@
 		flex: 1;
 	}
 	.detail-body {
-		/* 画布整页高度：所有子元素保持画布绝对坐标（uvue absolute 相对父元素） */
+		/* 画布整页高度：所有子元素保持画布绝对坐标（uvue absolute 相对父元素）；
+		   R9 批次4 扩至 2650：事件级语音卡区块（相关记忆后纵排 ≤3 卡，voice 态卡底 ~2620） */
 		width: 750rpx;
-		height: 2115.4rpx;
+		height: 2650rpx;
 	}
 	.n4_406 {
 		position: absolute;
@@ -266,7 +550,8 @@
 	}
 	.n4_409 {
 		position: absolute;
-		/* absolute-ok: 玻璃顶栏（固定导航） */
+		/* absolute-ok: 玻璃顶栏（固定导航）——§O P5 移出 scroll-view 后相对 page-root（视口）钉死 */
+		z-index: 10;
 		left: 30.8rpx;
 		top: 123.1rpx;
 		width: 688.5rpx;
@@ -421,6 +706,14 @@
 		font-size: 26.9rpx;
 		color: #5A4C40;
 	}
+	/* 用户补句（卡19「你也可以补充一句」接线产物，帧外元素）：正文同款 + 上间距 */
+	.n4_431-sup {
+		width: 100%;
+		margin-top: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
 	.n4_432 {
 		margin-top: 11.5rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -485,15 +778,185 @@
 		border-radius: 19.2rpx;
 		overflow: hidden;
 	}
+	/* 相关卡标题/元信息：画布 4:438 缩略→标题→元信息零间隙（真值），峰宝拍板（2026-09-02
+	   主窗口收口）覆盖：缩略→标题 8pt / 标题→元信息 4pt 呼吸间距（theme-detail/favorites 照片卡同族），已登记 _diff_ledger.md */
 	.n4_436 {
+		margin-top: 15.4rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
 		font-size: 23.1rpx;
 		color: #3A2E25;
 	}
 	.n4_437 {
+		margin-top: 7.7rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 17.3rpx;
+		color: #8A7A6A;
+	}
+	/* ── F5b 语音卡（画布 y448pt = 861.5rpx）──
+	   真值：白卡 #FFFFFF / r20pt / padding 14pt / 双层阴影（DS 0,4,b16 a.06 + DS 0,1,b3 a.04）
+	   + 行 gap 12pt：琥珀实心钮 40pt（Vector 11x15 白三角）+ 信息列（波形 20 条 + 标题 fs14）。
+	   旧版是琥珀底 + 白钮 + 锈红三角，与帧全不符，按帧重做 */
+	.n4_vcard {
+		position: absolute;
+		/* absolute-ok: F5b 语音记忆卡（画布系绝对定位） */
+		left: 38.5rpx;
+		top: 861.5rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		/* 画布真值：钮 y=14（=padding，内容区顶部）、信息列 y=14 亦从内容区顶部起 → 顶部对齐非居中 */
+		align-items: flex-start;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	/* 播放钮 40x40 r20 琥珀实心（画布 #C4913C），内 Vector 11x15 白三角 → 居中（画布 x14.5 / y12.5） */
+	.n4_vbtn {
+		width: 76.9rpx;
+		height: 76.9rpx;
+		border-radius: 38.5rpx;
+		background-color: #C4913C;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		/* 画布 gap=12pt（23.1rpx）→ 换 margin-right（uvue 无 flex gap） */
+		margin-right: 23.1rpx;
+	}
+	/* R9 禁播态（峰宝拍板 2026-09-06）：独立类覆盖（uvue 禁复合选择器），:class 动态叠加 */
+	.n4_vbtn-disabled {
+		background-color: #D8CFC2;
+	}
+	/* 禁播/处理中提示小字（fs11 #B3A696，波形容器上方） */
+	.n4_vnote {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B3A696;
+		margin-bottom: 7.7rpx;
+	}
+	.n4_vbtn-play {
+		width: 0rpx;
+		height: 0rpx;
+		border-left: 21.2rpx solid #FFFFFF;
+		border-top: 14.4rpx solid transparent;
+		border-bottom: 14.4rpx solid transparent;
+	}
+	/* 播放中 → 暂停双竖条（F5a 真值：两条 4x14pt 白条紧邻，x=16/20） */
+	.n4_vbtn-pause {
+		flex-direction: row;
+	}
+	.n4_vbtn-pause-bar {
+		width: 7.7rpx;
+		height: 26.9rpx;
+		border-radius: 3.8rpx;
+		background-color: #FFFFFF;
+		/* 峰宝 09-03 拍板：F5a 真值双条紧邻改常规分离（对齐 index 同款 margin 5rpx，缝 10rpx） */
+		margin-left: 5rpx;
+		margin-right: 5rpx;
+	}
+	.n4_vcol {
+		flex: 1;
+		flex-direction: column;
+	}
+	/* 波形容器 w=fill_container / h=28pt（53.8rpx），与 F5a 播放态规范同高 */
+	.n4_vwave {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		height: 53.8rpx;
+	}
+	/* ── R9 批次4：事件级语音卡（「这条记忆里的声音」区块）── */
+	.n4_evt-title {
+		position: absolute;
+		left: 38.5rpx;
+		width: 420rpx;
+		height: 36.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.n4_evt-card {
+		position: absolute;
+		left: 38.5rpx;
+		width: 673.1rpx;
+		height: 170rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		padding-left: 27rpx;
+		padding-right: 27rpx;
+		/* 悬浮感（与 n4_vcard 同族淡阴影） */
+		box-shadow: 0rpx 4rpx 15rpx rgba(58, 46, 37, 0.06);
+	}
+	.n4_evt-col {
+		flex: 1;
+		flex-direction: column;
+	}
+	.n4_evt-wave {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		height: 44rpx;
+	}
+	.n4_evt-name {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25.4rpx;
+		color: #3A2E25;
+		margin-top: 5.8rpx;
+	}
+	/* 进度行（F5a 播放中）：gap 8pt，当前时间 fs10 Medium #3A2E25 / 轨道 h4 #EDE5D5 / 总时长 fs10 #B3A696 */
+	.n4_vprog {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		margin-top: 15.4rpx;
+	}
+	.n4_vprog-cur {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 19.2rpx;
+		color: #3A2E25;
+	}
+	.n4_vtrack {
+		flex: 1;
+		height: 7.7rpx;
+		background-color: #EDE5D5;
+		border-radius: 3.8rpx;
+		margin-left: 15.4rpx;
+		margin-right: 15.4rpx;
+	}
+	.n4_vtrack-fill {
+		height: 7.7rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+	}
+	.n4_vprog-total {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 19.2rpx;
+		color: #B3A696;
+	}
+	/* 默认/暂停态标题（F5b：fs14 Medium #3A2E25，满宽可换行） */
+	.n4_vtitle {
+		width: 100%;
+		margin-top: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	/* 播放中态标题（F5a：fs12 Medium #8A7A6A「正在播放 · X」，满宽可换行） */
+	.n4_vtitle-playing {
+		width: 100%;
+		margin-top: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 23.1rpx;
 		color: #8A7A6A;
 	}
 	/* 画布 4:438/4:443/4:439/4:440（相关卡2 静态样板）已移除：

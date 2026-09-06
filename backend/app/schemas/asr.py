@@ -9,7 +9,7 @@ class AsrTranscribeResponse(BaseModel):
 
     - outcome: succeeded / no_speech / mock
     - channel: funasr / sensevoice / local_vad / mock
-    - emotion: 声学情绪（开心/难过/生气/惊讶/恐惧/厌恶/平静），B5-c 情绪关怀分层触发依据
+    - emotion: 声学情绪（开心/难过/生气/惊讶/恐惧/厌恶/平静），B5-c 情绪关怀分层触发依据；null=未测得（D-16）
     - guardrail: 内容安全审核结论（fail-safe：真实模式下不可用默认拦截）
     """
 
@@ -18,7 +18,7 @@ class AsrTranscribeResponse(BaseModel):
     channel: Literal["funasr", "sensevoice", "local_vad", "mock"] = Field(
         ..., description="实际使用通道"
     )
-    emotion: str = Field("平静", description="声学情绪标签（SenseVoice 通道产出）")
+    emotion: str | None = Field(None, description="声学情绪标签（SenseVoice 通道产出）；None=未测得（D-16）")
     emotion_confidence: float = Field(
         0.0, ge=0.0, le=1.0, description="声学情绪置信度"
     )

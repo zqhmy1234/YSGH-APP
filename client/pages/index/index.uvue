@@ -2,21 +2,22 @@
 	<view class="page">
 		<!-- 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） -->
 		<view class="hero-section">
-			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" />
+			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" lazy-load="true" />
 			<view class="hero-overlay-top"></view>
 			<view class="hero-overlay-bottom"></view>
 			<view class="hero-avatar"><text class="hero-avatar-char serif">峰</text></view>
 			<view class="hero-content">
 				<text class="hero-title serif">回忆</text>
-				<text class="hero-sub1">八月 · 28 条新记忆</text>
-				<text class="hero-sub2">清晨的湖边，风很轻 · 8月28日 07:42</text>
+				<!-- R8：数据驱动化（此前硬编码画布示意文案「八月 · 28 条新记忆/清晨的湖边」= 峰宝 09-06 投诉的模板 UI 之一） -->
+				<text class="hero-sub1">{{ heroSub1 }}</text>
+				<text class="hero-sub2">{{ heroSub2 }}</text>
 			</view>
 		</view>
 
 		<!-- 玻璃搜索胶囊（backdrop-blur + 白色内高光） -->
 		<view class="search-capsule pressable" @tap="goSearch">
 			<!-- uvue App 端 <image> 不支持 width/height 属性绑定，尺寸走 CSS（.search-icon 36rpx≈18px） -->
-			<image class="search-icon" src="/static/icons/index-search.svg" />
+			<image class="search-icon" src="/static/icons/index-search.svg" lazy-load="true" />
 			<text class="search-placeholder">描述一段回忆，帮你找</text>
 		</view>
 
@@ -24,8 +25,8 @@
 		<UploadStatusBanner />
 
 		<scroll-view class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
-			<!-- 回响卡片（去年今日 · 角贴 + 泛黄） -->
-			<view v-if="echo != null" class="echo-card pressable">
+			<!-- 回响卡片（去年今日 · 角贴 + 泛黄）；W6 拍板：整卡 → 该记忆详情页 -->
+			<view v-if="echo != null" class="echo-card pressable" @tap="openEchoDetail">
 				<view class="echo-corner">
 					<text class="echo-corner-text">去年今日</text>
 				</view>
@@ -41,9 +42,27 @@
 				</view>
 			</view>
 
-			<!-- 加载中 / 时间轴（空状态已拆为独立页 /pages/empty/empty，fetchAll 空数据时 redirect 过去） -->
-			<view v-if="!loaded" class="center-box">
-				<text class="muted">正在翻找相纸…</text>
+			<!-- P-4 骨架屏：登录/首拉期间占位（替代原单行文字等待，视觉上内容区不再空白） -->
+			<view v-if="!loaded" class="skeleton" aria-label="加载中">
+				<view class="sk-card">
+					<view class="sk-line sk-day"></view>
+					<view class="sk-card-body">
+						<view class="sk-line sk-title"></view>
+						<view class="sk-strip">
+							<view class="sk-img"></view>
+							<view class="sk-img"></view>
+							<view class="sk-img"></view>
+						</view>
+						<view class="sk-line sk-meta"></view>
+					</view>
+				</view>
+				<view class="sk-card">
+					<view class="sk-line sk-day"></view>
+					<view class="sk-card-body">
+						<view class="sk-line sk-title"></view>
+						<view class="sk-line sk-meta"></view>
+					</view>
+				</view>
 			</view>
 
 			<!-- 时间轴：L1 日卡片 + L2 主题两级 -->
@@ -52,30 +71,42 @@
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
 					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
-					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2 pressable">
+					<view v-for="ev in pendingEvents" :key="ev.id" class="card card-l2 pressable" @tap="openDetail(ev)">
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
-							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" lazy-load="true" />
 						</view>
 						<text class="card-title serif title-l2">{{ ev.title }}</text>
 						<view class="card-meta">
 							<text class="meta-item">{{ levelText(ev.level) }}</text>
-							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+							<!-- 卡PA R4：视图字段组装期预计算（卡E01 计数口径不变），模板零函数调用 -->
+							<text v-if="ev.hasRenderablePhotos" class="meta-item rust">{{ ev.photoCountText }}</text>
 						</view>
-						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap="onPhotoTap(cid)" />
+						<view v-if="ev.hasRenderablePhotos" class="photo-strip">
+							<image v-for="(p, pi) in ev.renderPhotoPaths" :key="pi" class="strip-img pressable" :src="p" mode="aspectFill" lazy-load="true" @tap="onPhotoTap(ev.renderPhotoIds[pi])" />
 						</view>
-						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列 -->
+						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列（W0-2 播放态：钮变暂停 + 已播金/未播米 + 进度行） -->
 						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
 							<view class="voice-play-btn">
-								<view class="voice-play-icon"></view>
+								<view v-if="voiceIsActive(ev.voice.contentId) && voiceIsPlaying()" class="voice-pause-icon">
+									<view class="voice-pause-bar"></view>
+									<view class="voice-pause-bar"></view>
+								</view>
+								<view v-else class="voice-play-icon"></view>
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+									<VoiceWave :heights="ev.voice.waveHeights" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+								</view>
+								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
+									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+									<view class="voice-track">
+										<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(ev.voice.contentId) * 100) + '%' }"></view>
+									</view>
+									<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
 								</view>
 								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
 									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ ev.voice.duration }}</text>
+									<text class="voice-duration">{{ voiceIsActive(ev.voice.contentId) ? voiceTotalSecText() : ev.voice.duration }}</text>
 								</view>
 							</view>
 						</view>
@@ -98,7 +129,7 @@
 					</view>
 				</view>
 
-				<view v-for="(day, dayIdx) in days" :key="day.key" class="day-block">
+				<view v-for="(day, dayIdx) in visibleDays" :key="day.key" class="day-block">
 					<view class="day-head">
 						<text class="day-title serif">{{ day.label }}</text>
 						<view class="day-line"></view>
@@ -111,28 +142,40 @@
 							<text class="card-ops-text">⋯</text>
 						</view>
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
-							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" />
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" lazy-load="true" />
 						</view>
 						<text class="card-title serif">{{ ev.title }}</text>
 						<view class="card-meta">
 							<text class="meta-item">{{ levelText(ev.level) }}</text>
-							<text class="meta-item rust">{{ ev.photoCount }} 张照片</text>
+							<!-- 卡PA R4：视图字段组装期预计算（卡E01 计数口径不变），模板零函数调用 -->
+							<text v-if="ev.hasRenderablePhotos" class="meta-item rust">{{ ev.photoCountText }}</text>
 						</view>
-						<view v-if="ev.photoIds.length > 0" class="photo-strip">
-							<image v-for="cid in ev.photoIds" :key="cid" class="strip-img pressable" :src="photoPathOf(cid)" mode="aspectFill" @tap.stop="onPhotoTap(cid)" />
+						<view v-if="ev.hasRenderablePhotos" class="photo-strip">
+							<image v-for="(p, pi) in ev.renderPhotoPaths" :key="pi" class="strip-img pressable" :src="p" mode="aspectFill" lazy-load="true" @tap.stop="onPhotoTap(ev.renderPhotoIds[pi])" />
 						</view>
-						<!-- 语音卡 -->
+						<!-- 语音卡（W0-2 播放态，同待确认区卡） -->
 						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
 							<view class="voice-play-btn">
-								<view class="voice-play-icon"></view>
+								<view v-if="voiceIsActive(ev.voice.contentId) && voiceIsPlaying()" class="voice-pause-icon">
+									<view class="voice-pause-bar"></view>
+									<view class="voice-pause-bar"></view>
+								</view>
+								<view v-else class="voice-play-icon"></view>
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<view v-for="h in ev.voice.waveHeights" :key="h" class="voice-wave-bar" :style="{ height: h + 'rpx' }"></view>
+									<VoiceWave :heights="ev.voice.waveHeights" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+								</view>
+								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
+									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+									<view class="voice-track">
+										<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(ev.voice.contentId) * 100) + '%' }"></view>
+									</view>
+									<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
 								</view>
 								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
 									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ ev.voice.duration }}</text>
+									<text class="voice-duration">{{ voiceIsActive(ev.voice.contentId) ? voiceTotalSecText() : ev.voice.duration }}</text>
 								</view>
 							</view>
 						</view>
@@ -146,6 +189,11 @@
 						</view>
 					</view>
 				</view>
+
+				<!-- 卡PB R1：尾部加载更多（点一次多 20 组；触底自动加载按卡面不做） -->
+				<view v-if="visibleDayCount < days.length" class="load-more pressable" @tap="loadMoreDays">
+					<text class="load-more-text">加载更多 · 还有 {{ days.length - visibleDayCount }} 组</text>
+				</view>
 			</view>
 		</scroll-view>
 
@@ -158,9 +206,21 @@
 </template>
 
 <script setup lang="uts">
-	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+	// 卡PB R1：computed 显式引入（ref 沿页面现状未显式引入，避免重复声明）
+	import { computed } from 'vue'
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchTimeline, TimelineEvent, buildDayGroups, DayGroup } from '@/utils/timeline'
+	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
+	import {
+		toggleVoice,
+		stopVoice,
+		isVoiceActive,
+		isVoicePlaying,
+		voiceProgressOf,
+		voiceCurSecValue,
+		voiceTotalSecValue,
+		fmtVoiceTime
+	} from '@/utils/audio_player'
 	import { formatMonthDay } from '@/utils/time'
 	import { uploadBatch, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
 	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
@@ -175,10 +235,10 @@
 		splitEvent,
 		SplitItem,
 		flushOpQueue,
+		pendingOpCount,
 		fetchContentEvents,
 		ContentEventRef,
 		ignoreEventLocally,
-		isIgnoredEvent,
 		EventPhotoEntry,
 		mapAcceptedToClientIds
 	} from '@/utils/event_ops'
@@ -211,6 +271,9 @@
 	let splitEventId = ref('')
 	let splitItems = ref<Array<SplitItem>>([])
 	let splitLoading = ref(false)
+	// R8：hero 副标题数据驱动（画布口径：sub1=「N月 · X 条新记忆」sub2=最新记忆摘要 · M月dd日 HH:mm）
+	let heroSub1 = ref('')
+	let heroSub2 = ref('')
 	let showPhotoDetail = ref(false)
 	let photoDetailPath = ref('')
 	let photoDetailEvents = ref<Array<ContentEventRef>>([])
@@ -226,6 +289,27 @@
 	 * 非响应式：attachPhotos() 在 days.value 赋值之后、渲染之前填充，无需触发额外更新。
 	 */
 	let photoUrlById: Map<string, string> = new Map<string, string>()
+	/** 卡PA R4：content_id → 本地路径 O(1) 查表（对齐 photoUrlById 先例；非响应式，
+	 *  handleBatch push 后同步 set，photoPathOf 不再线性扫描 localPhotoPath 数组） */
+	let localPhotoPathMap: Map<string, string> = new Map<string, string>()
+	// 卡PA D2/R2：当前渲染数据源（与 timeline.uts 缓存同数组引用，本地补丁直接同步缓存）
+	let currentEvents: Array<TimelineEvent> = []
+	// 卡PA R2：上次成功拉取时间（onShow TTL 内不重拉）
+	let lastFetchAt = 0
+	// 卡PA R2：页面存活守卫（缩略图后台批次回调在 onUnload 后不再触发渲染）
+	let pageAlive = ref(true)
+	// 卡PA R2：onShow 静默刷新 TTL（与 timeline.uts TIMELINE_CACHE_TTL 同值口径）
+	const SHOW_REFRESH_TTL: number = 60000
+	// 卡PB R1：按日分批渲染——首屏 20 组，尾部按钮每点一次 +LOAD_MORE_STEP 组。
+	// 协同铁律：缓存命中/refreshSilently/patchEventById 都是 days.value 整组浅替换，
+	// visibleDayCount 不参与替换保持原值，visibleDays 每次渲染从 days 现切（不缓存 slice 结果），
+	// 因此分批对闪屏缓存刷新路径零改动。
+	let visibleDayCount = ref(20)
+	const LOAD_MORE_STEP: number = 20
+	// 卡PB R1：可见日组窗口（computed 先例：favorites/search 页同款写法）
+	let visibleDays = computed((): Array<DayGroup> => {
+		return days.value.slice(0, visibleDayCount.value)
+	})
 
 	// 返回键拦截：浮层开着时先关浮层，而不是退出页面。
 	// 返回 true 表示已自行处理（阻止默认返回行为）。
@@ -239,10 +323,21 @@
 
 	// 生命周期
 	onLoad(() => {
+		// P-4 内容出现时间埋点（新验收口径）：logcat 抓 [perf] 行，
+		// content-visible(onLoad 起算) = 真实可感知指标；TotalTime 受 debug 基座固定成本支配基本不动
+		console.log('[perf] index onLoad at ' + Date.now())
 		console.log('[dbg-index] onLoad')
 		ensureLogin().then((ok: boolean) => {
 			console.log('[dbg-index] ensureLogin -> ' + ok)
-			reload()
+			// 卡PA D2：命中缓存先渲染（消除切页闪屏），再后台静默刷新、刷新完浅替换
+			const hit = getCachedTimeline()
+			if (hit != null) {
+				console.log('[dbg-index] timeline cache hit, age=' + ((Date.now() - hit.fetchedAt) / 1000).toFixed(0) + 's -> instant render')
+				applyFetchedEvents(hit.events)
+				refreshSilently()
+			} else {
+				reload()
+			}
 		})
 		try {
 			const watch = createPhotoWatch()
@@ -254,9 +349,20 @@
 		}
 	})
 	onShow(() => {
-		if (loaded.value) {
-			reload()
+		// 卡PA R2：TTL 内不重拉；过期走后台静默刷新（不清 days，无闪屏）
+		if (!loaded.value) {
+			return
 		}
+		if (Date.now() - lastFetchAt < SHOW_REFRESH_TTL) {
+			return
+		}
+		refreshSilently()
+	})
+	onUnload(() => {
+		// 卡PA D1：页面销毁后缩略图后台批次回调不再触发渲染
+		pageAlive.value = false
+		// 离页停播：redirectTo 切 Tab 会销毁本页，防止语音跨页残留出声
+		stopVoice()
 	})
 
 	// 导航方法
@@ -264,21 +370,44 @@
 		uni.reLaunch({ url: '/pages/search/search' })
 	}
 
-	// 语音播放
-	function playVoice(voice: any): void {
-		if (!voice || !voice.url) {
+	// 语音播放（W0-2 就地播放：播放钮变暂停 + 波形金色跳动 + 进度行，F5a 规范）
+	function playVoice(voice: EventVoice | null): void {
+		if (voice == null) {
 			uni.showToast({ title: '语音文件不存在', icon: 'none' })
 			return
 		}
-		uni.showToast({ title: '播放语音：' + (voice.title || '未命名'), icon: 'none' })
+		toggleVoice(voice.contentId)
+	}
+	// 模板取值封装（uvue 模板不直接绑跨模块 ref）
+	function voiceIsActive(cid: string): boolean {
+		return isVoiceActive(cid)
+	}
+	function voiceIsPlaying(): boolean {
+		return isVoicePlaying()
+	}
+	function voiceProgressOfCard(cid: string): number {
+		return voiceProgressOf(cid)
+	}
+	function voiceCurSecText(): string {
+		return fmtVoiceTime(voiceCurSecValue())
+	}
+	function voiceTotalSecText(): string {
+		return fmtVoiceTime(voiceTotalSecValue())
 	}
 
 	// 数据加载
+	// P-4（2026-09-04 峰宝拍板）：首拉不被离线队列阻塞——fetchAll 立即走；
+	// flushOpQueue 并行冲刷，确有离线操作时冲刷完补一次静默刷新保最终一致
+	// （此前串行：登录→冲刷→拉取，队列非空时内容出现晚 1~2 个 RTT）
 	function reload(): void {
-		console.log('[dbg-index] reload -> flushOpQueue')
+		console.log('[perf] index reload: fetchAll 与 flushOpQueue 并行')
+		fetchAll()
+		const hadOps = pendingOpCount() > 0
 		flushOpQueue().then((_remain: number) => {
-			console.log('[dbg-index] flushOpQueue done, fetchAll')
-			fetchAll()
+			console.log('[dbg-index] flushOpQueue done, remain=' + _remain + ', hadOps=' + hadOps)
+			if (hadOps && pageAlive.value) {
+				refreshSilently()
+			}
 		})
 	}
 	// ── 本地 mock 时间轴（视觉验收用）────────────────────────────────────────
@@ -302,30 +431,120 @@
 	}
 	// ── mock 结束 ────────────────────────────────────────────────────────
 
+	// 空状态重试去重：瞬态失败重试一次的守门位（成功后复位）
+	let emptyRetryDone = false
+
 	function fetchAll(): void {
-		console.log('[dbg-index] fetchAll -> fetchTimeline')
-		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+		console.log('[dbg-index] fetchAll -> fetchTimelineAsync')
+		fetchTimelineAsync(null, onThumbBatch).then((events: Array<TimelineEvent>) => {
 			console.log('[dbg-index] fetchTimeline resolved: ' + events.length + ' events')
-			if (USE_MOCK_TIMELINE && events.length == 0) {
-				events = mockEvents()
-				console.log('[dbg-index] USE_MOCK_TIMELINE -> 注入 ' + events.length + ' 条 mock 事件')
-			}
-			days.value = groupDays(events)
-			attachPhotos()
-			loaded.value = true
-			refreshing.value = false
-			// 空数据 → 独立空状态页（首次登录首屏；画布 2:284~2:311）
-			if (days.value.length === 0 && pendingEvents.value.length === 0) {
-				console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
-				uni.redirectTo({ url: '/pages/empty/empty' })
-				return
-			}
-			if (days.value.length > 0 || pendingEvents.value.length > 0) {
-				recordFirstDayRender()
-			}
+			applyFetchedEvents(events)
 		})
 		fetchTodayEcho().then((card: EchoCard | null) => {
 			echo.value = card
+		})
+	}
+
+	// 卡PA D1：缩略图后台批次落地回调 → 整组 days.value 浅替换（改数据+一次性赋值，禁逐条 push）
+	function onThumbBatch(): void {
+		if (!pageAlive.value || !loaded.value) {
+			return
+		}
+		renderFromEvents(currentEvents)
+	}
+
+	// 卡PA D2：渲染出口（days/pending 整组浅替换；不清空、不回退加载态防闪屏）
+	function renderFromEvents(events: Array<TimelineEvent>): void {
+		const firstRender = !loaded.value
+		days.value = groupDays(events)
+		attachPhotos()
+		updateHeroSubs(events)
+		loaded.value = true
+		refreshing.value = false
+		// P-4 内容出现时间埋点：onLoad → 首帧内容上屏（logcat [perf] 行）
+		if (firstRender) {
+			console.log('[perf] index content-visible at ' + Date.now())
+		}
+	}
+
+	// R8：hero 副标题数据驱动（timeline 倒序 → events[0] 即最新事件；条数=ΣcontentCount，
+	// 全 0 时退化为事件数；空列表清空不残留旧文案——峰宝 09-06「模板 UI」投诉修复）
+	function updateHeroSubs(events: Array<TimelineEvent>): void {
+		if (events.length == 0) {
+			heroSub1.value = ''
+			heroSub2.value = ''
+			return
+		}
+		let total = 0
+		for (let i = 0; i < events.length; i++) {
+			total += events[i].contentCount
+		}
+		if (total == 0) {
+			total = events.length
+		}
+		const newest = events[0]
+		const d = new Date(newest.startTime)
+		let hh = d.getHours().toString()
+		if (hh.length < 2) {
+			hh = '0' + hh
+		}
+		let mi = d.getMinutes().toString()
+		if (mi.length < 2) {
+			mi = '0' + mi
+		}
+		heroSub1.value = (d.getMonth() + 1).toString() + '月 · ' + total.toString() + ' 条新记忆'
+		heroSub2.value = newest.title + ' · ' + (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + hh + ':' + mi
+	}
+
+	// 卡PA D2/R2：拉取结果统一渲染入口（更新数据源引用 + lastFetchAt + 空状态守门）
+	function applyFetchedEvents(events: Array<TimelineEvent>): void {
+		if (USE_MOCK_TIMELINE && events.length == 0) {
+			events = mockEvents()
+			console.log('[dbg-index] USE_MOCK_TIMELINE -> 注入 ' + events.length + ' 条 mock 事件')
+		}
+		currentEvents = events
+		lastFetchAt = Date.now()
+		renderFromEvents(events)
+		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
+		// 不能当「真·空状态」踢进 empty 页——失败标记位成立时延迟重试一次，仍空才跳。
+		if (days.value.length === 0 && pendingEvents.value.length === 0) {
+			if (wasLastFetchFailed() && !emptyRetryDone) {
+				emptyRetryDone = true
+				console.log('[dbg-index] timeline fetch failed -> retry in 2.5s')
+				setTimeout(() => { fetchAll() }, 2500)
+				return
+			}
+			console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
+			uni.redirectTo({ url: '/pages/empty/empty' })
+			return
+		}
+		emptyRetryDone = false
+		if (days.value.length > 0 || pendingEvents.value.length > 0) {
+			recordFirstDayRender()
+		}
+	}
+
+	// 卡PA D2/R2：后台静默刷新（flushOpQueue → 拉取 → 成功才浅替换；失败保持现状不动）
+	function refreshSilently(): void {
+		if (!pageAlive.value) {
+			return
+		}
+		console.log('[dbg-index] refreshSilently begin')
+		flushOpQueue().then((_remain: number) => {
+			if (!pageAlive.value) {
+				return
+			}
+			fetchTimelineAsync(null, onThumbBatch).then((events: Array<TimelineEvent>) => {
+				if (!pageAlive.value) {
+					return
+				}
+				console.log('[dbg-index] refreshSilently resolved: ' + events.length + ' events')
+				if (wasLastFetchFailed()) {
+					console.log('[dbg-index] refreshSilently fetch failed -> keep current UI')
+					return
+				}
+				applyFetchedEvents(events)
+			})
 		})
 	}
 
@@ -342,6 +561,16 @@
 		}
 		console.log('[dbg-index] openDetail contentId=' + cid)
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + cid })
+	}
+
+	// W6（峰宝拍板 2026-09-04）：回响卡整卡 → 该记忆详情页（「去年今日」回响详情落点）
+	function openEchoDetail(): void {
+		const card = echo.value
+		if (card == null || card.contentId == '') {
+			uni.showToast({ title: '这条回响暂无可查看的内容', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + card.contentId })
 	}
 
 	// 卡片操作
@@ -374,14 +603,35 @@
 			})
 		}
 	}
+	// 卡PA R2：按事件 id 定位局部替换单事件对象（改 currentEvents=缓存同引用 → 整组浅替换触发）
+	function patchEventById(eventId: string, mutate: (ev: TimelineEvent) => void): void {
+		for (let i = 0; i < currentEvents.length; i++) {
+			if (currentEvents[i].id == eventId) {
+				mutate(currentEvents[i])
+				break
+			}
+		}
+		renderFromEvents(currentEvents)
+	}
+	// 卡PA R2：结构性变化（合并=事件消失）按 id splice 掉（同数组改动直接同步缓存）
+	function removeEventById(eventId: string): void {
+		for (let i = 0; i < currentEvents.length; i++) {
+			if (currentEvents[i].id == eventId) {
+				currentEvents.splice(i, 1)
+				break
+			}
+		}
+		renderFromEvents(currentEvents)
+	}
 	function doConfirm(ev: TimelineEvent): void {
 		confirmEvent(ev.id).then((ok: boolean) => {
 			if (ok) {
 				uni.showToast({ title: '已确认', icon: 'none' })
+				// 卡PA R2：本地补丁 status，confirmed 自动离开待确认区落入日组
+				patchEventById(ev.id, (e: TimelineEvent): void => { e.status = 'confirmed' })
 			} else {
 				uni.showToast({ title: '确认失败', icon: 'none' })
 			}
-			reload()
 		})
 	}
 	function getPrevL1Id(dayIdx: number): string {
@@ -407,10 +657,11 @@
 		mergeEvent(ev.id, targetId).then((ok: boolean) => {
 			if (ok) {
 				uni.showToast({ title: '已合并', icon: 'none' })
+				// 卡PA R2：合并后源卡消失 → 按 id 局部移除（目标卡计数待下次 TTL 刷新自愈）
+				removeEventById(ev.id)
 			} else {
 				uni.showToast({ title: '合并失败', icon: 'none' })
 			}
-			reload()
 		})
 	}
 
@@ -461,7 +712,9 @@
 			} else {
 				uni.showToast({ title: '拆分失败', icon: 'none' })
 			}
-			reload()
+			// 卡PA R2（拍板采纳的偏差方案）：拆分产生服务端新事件 id，本地无法合成 →
+			// 无闪屏后台静默刷新（不清 days、不回退加载态），刷新完浅替换
+			refreshSilently()
 		})
 	}
 	function cancelSplit(): void {
@@ -490,8 +743,24 @@
 	}
 
 	// 照片映射
+	// 卡PA D9：忽略表读一次进 Set 传入 buildDayGroups（key 镜像 event_ops.uts:35
+	// IGNORE_KEY='yishu_ignored_events'——event_ops 不在本卡文件域，故此处镜像读；
+	// buildDayGroups 循环内零 getStorageSync）
+	function loadIgnoredIds(): Set<string> {
+		const ids: Set<string> = new Set<string>()
+		const raw = uni.getStorageSync('yishu_ignored_events') as string
+		if (raw != '') {
+			const parts = raw.split('\n')
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i] != '') {
+					ids.add(parts[i])
+				}
+			}
+		}
+		return ids
+	}
 	function groupDays(events: Array<TimelineEvent>): Array<DayGroup> {
-		const result = buildDayGroups(events, (eventId: string): boolean => isIgnoredEvent(eventId))
+		const result = buildDayGroups(events, loadIgnoredIds())
 		pendingEvents.value = result.pending
 		return result.groups
 	}
@@ -502,16 +771,28 @@
 	 * 服务端：timeline 下发的缩略图 URL（历史照片的唯一来源；此前缺这一层回退，
 	 *       导致冷启动时 <image :src=""> 恒空 —— "卡片没照片"的直接根因之一）
 	 */
-	// RecordSheet 保存成功回调：重新拉 timeline，让刚录入的记忆立刻上屏
+	// RecordSheet 保存成功回调：后台静默刷新（卡PA R2：新录入产生服务端新事件 id，
+	// 本地无法合成 → 无闪屏 refreshSilently，刷新完浅替换让刚录入的记忆上屏）
+	// R8 补刷：后端 AI 管线为异步（转写后分类/聚合秒~分钟级，2026-09-06 实测曾因
+	// RQ worker 未启动积压 296 条致新录音永不进时间轴），保存瞬间刷新必然拉不到
+	// 新事件 → 延迟补刷两次兜底；refreshSilently 自带 pageAlive 守卫，离页自动失效
 	function onRecordSaved(): void {
-		reload()
+		refreshSilently()
+		setTimeout(() => {
+			refreshSilently()
+		}, 4000)
+		setTimeout(() => {
+			refreshSilently()
+		}, 12000)
 	}
 
+	// 卡PA R4：photoPathOf 改双 Map O(1) 查表（原对 localPhotoPath 线性扫描）。
+	// 本地：本次会话上传的照片（localPhotoPathMap，零延迟、离线可用）
+	// 服务端：timeline 下发的缩略图 URL（photoUrlById，历史照片的唯一来源）
 	function photoPathOf(contentId: string): string {
-		for (let i = 0; i < localPhotoPath.value.length; i++) {
-			if (localPhotoPath.value[i].contentId == contentId) {
-				return localPhotoPath.value[i].path
-			}
+		const local = localPhotoPathMap.get(contentId)
+		if (local != null) {
+			return local
 		}
 		const remote = photoUrlById.get(contentId)
 		return remote == null ? '' : remote
@@ -554,6 +835,22 @@
 			cover = photoPathOf(ev.photoIds[0])
 		}
 		ev.coverPath = cover
+		// 卡PA R4：视图字段组装期预计算（v-for 模板内零 photoPathOf/renderPhotoIds 调用）。
+		// 过滤口径沿卡E01「有多少是多少」：photoPathOf 为空串的 cid 不进渲染列表；
+		// photoCount 是后端 timeline 字段不改语义，meta 展示值对齐实际可渲染数。
+		const renderIds: Array<string> = []
+		const renderPaths: Array<string> = []
+		for (let k = 0; k < ev.photoIds.length; k++) {
+			const p = photoPathOf(ev.photoIds[k])
+			if (p != '') {
+				renderIds.push(ev.photoIds[k])
+				renderPaths.push(p)
+			}
+		}
+		ev.renderPhotoIds = renderIds
+		ev.renderPhotoPaths = renderPaths
+		ev.hasRenderablePhotos = renderIds.length > 0
+		ev.photoCountText = renderIds.length.toFixed(0) + ' 张照片'
 	}
 
 	function attachPhotos(): void {
@@ -613,16 +910,18 @@
 		confirmEvent(ev.id).then((ok: boolean) => {
 			if (ok) {
 				uni.showToast({ title: '已确认', icon: 'none' })
+				// 卡PA R2：本地补丁 status，confirmed 自动离开待确认区落入日组
+				patchEventById(ev.id, (e: TimelineEvent): void => { e.status = 'confirmed' })
 			} else {
 				uni.showToast({ title: '确认失败', icon: 'none' })
 			}
-			reload()
 		})
 	}
 	function ignorePending(ev: TimelineEvent): void {
 		ignoreEventLocally(ev.id)
 		uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
-		reload()
+		// 卡PA R2：本地补丁后直接重渲染（loadIgnoredIds 每次现读，忽略表即时生效）
+		renderFromEvents(currentEvents)
 	}
 
 	// 工具方法
@@ -653,6 +952,12 @@
 	function onRefresh(): void {
 		refreshing.value = true
 		reload()
+	}
+
+	// 卡PB R1：加载更多（每点一次多 LOAD_MORE_STEP 组）
+	function loadMoreDays(): void {
+		visibleDayCount.value = visibleDayCount.value + LOAD_MORE_STEP
+		console.log('[dbg-index] loadMoreDays -> visibleDayCount=' + visibleDayCount.value)
 	}
 
 	// 相册监听
@@ -687,6 +992,8 @@
 			if (uploaded.length > 0) {
 				for (let i = 0; i < uploaded.length; i++) {
 					localPhotoPath.value.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
+					// 卡PA R4：同步 O(1) 查表（photoPathOf 不再线性扫描）
+					localPhotoPathMap.set(uploaded[i].contentId, uploaded[i].item.path)
 				}
 				const tz = -new Date().getTimezoneOffset()
 				const agg = aggregateToEvents(uploaded, tz)
@@ -715,12 +1022,15 @@
 							console.error('[yishu] 事件上云失败（重试耗尽）')
 							uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
 						}
-						reload()
+						// 卡PA R2（拍板采纳的偏差方案）：上传产生服务端新事件，本地无法合成 →
+						// 无闪屏后台静默刷新
+						refreshSilently()
 					})
 					return
 				}
 			}
-			reload()
+			// 卡PA R2：同上，上传完成走无闪屏静默刷新
+			refreshSilently()
 		})
 	}
 </script>
@@ -860,7 +1170,11 @@
 	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
 	.search-capsule {
 		margin: 24rpx 40rpx;
-		padding: 20rpx 32rpx;
+		/* 几何钉死：画布 46px×1.9231=88.5rpx 固定高，垂直居中靠 height+align-items。
+		   禁止 content-driven 高度——冷启动首帧 uvue 对行内 text 行盒计算异常会撑高胶囊
+		   +文字贴顶（2026-09-02 真机漂移实锤，feed relayout 后才自愈），固定高根除 */
+		height: 88.5rpx;
+		padding: 0 32rpx;
 		background-color: rgba(255,255,255,0.32);
 		border-radius: 46rpx;
 		border-width: 1rpx;
@@ -878,7 +1192,8 @@
 	}
 	.search-placeholder {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		flex: 1;
+		/* 不用 flex:1——uvue 首帧曾把 flex:1 的 text 纵向拉伸致字形贴顶（漂移实锤之一）；
+		   胶囊本身 stretch 满宽可点，无需 text 撑开 */
 		font-size: 28rpx;
 		color: rgba(255,255,255,0.85);
 	}
@@ -894,6 +1209,55 @@
 		align-items: center;
 		padding-left: 40rpx;
 		padding-right: 40rpx;
+	}
+
+	/* P-4 骨架屏（2026-09-04）：暖白系占位块，模拟日卡版式；纯静态零动画开销 */
+	.skeleton {
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-top: 24rpx;
+		display: flex;
+		flex-direction: column;
+	}
+	.sk-card {
+		background-color: #FFFFFF;
+		border-radius: 24rpx;
+		padding: 24rpx;
+		margin-bottom: 28rpx;
+	}
+	.sk-card-body {
+		display: flex;
+		flex-direction: column;
+	}
+	.sk-line {
+		background-color: #EFE9DD;
+		border-radius: 10rpx;
+	}
+	.sk-day {
+		width: 180rpx;
+		height: 30rpx;
+		margin-bottom: 20rpx;
+	}
+	.sk-title {
+		width: 420rpx;
+		height: 40rpx;
+		margin-bottom: 24rpx;
+	}
+	.sk-meta {
+		width: 260rpx;
+		height: 26rpx;
+	}
+	.sk-strip {
+		display: flex;
+		flex-direction: row;
+		margin-bottom: 24rpx;
+	}
+	.sk-img {
+		width: 190rpx;
+		height: 190rpx;
+		border-radius: 16rpx;
+		background-color: #EFE9DD;
+		margin-right: 16rpx;
 	}
 	.muted {
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -1100,6 +1464,46 @@
 		color: #8a7a6a;
 		margin-left: 16rpx;
 	}
+	/* W0-2 播放态（F5a 规范）：暂停形 + 进度行 */
+	.voice-pause-icon {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.voice-pause-bar {
+		width: 8rpx;
+		height: 24rpx;
+		background-color: #b05a3a;
+		border-radius: 2rpx;
+		margin-left: 5rpx;
+		margin-right: 5rpx;
+	}
+	.voice-progress-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-top: 10rpx;
+	}
+	.voice-progress-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #8a7a6a;
+	}
+	.voice-track {
+		flex: 1;
+		height: 4rpx;
+		background-color: #e5dcc8;
+		border-radius: 2rpx;
+		margin-left: 12rpx;
+		margin-right: 12rpx;
+		overflow: hidden;
+	}
+	.voice-track-fill {
+		height: 4rpx;
+		background-color: #c4913c;
+		border-radius: 2rpx;
+	}
 
 	/* 文字卡：左侧琥珀引用竖线 + 米色引言面板 */
 	.quote-card {
@@ -1286,5 +1690,25 @@
 		border-radius: 12rpx;
 		background-color: #f8f7f4;
 		margin-bottom: 12rpx;
+	}
+
+	/* 卡PB R1：尾部加载更多按钮 */
+	.load-more {
+		margin-top: 32rpx;
+		padding: 20rpx 40rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		border-width: 2rpx;
+		border-color: rgba(58,46,37,0.15);
+		border-style: solid;
+		border-radius: 36rpx;
+		background-color: #ffffff;
+	}
+	.load-more-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #8a7a6a;
 	}
 </style>

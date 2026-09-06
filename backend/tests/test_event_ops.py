@@ -223,6 +223,27 @@ class TestEventItems:
         assert items[0]["title"] == "第一张照片的caption"
         assert items[0]["content_type"] == "photo"
 
+    def test_items_status_field_for_voice_playability(self, db_user):
+        """R9 批次4（Q2 拍板）：成员明细携带 contents.status——voice 成员
+        processing/failed → 客户端禁播+小字；done → 可播"""
+        from app.services.events import get_event_items
+
+        db, user = db_user
+        ev = _event(db, user.id)
+        c_done = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=2))
+        c_proc = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=1))
+        c_done.content_type = "voice"
+        c_done.status = "done"
+        c_done.text = "已完成转写的语音"
+        c_proc.content_type = "voice"
+        c_proc.status = "processing"
+        c_proc.text = None
+        db.commit()
+        items = get_event_items(db, str(user.id), str(ev.id))
+        by_id = {i["content_id"]: i for i in items}
+        assert by_id[str(c_done.id)]["status"] == "done"
+        assert by_id[str(c_proc.id)]["status"] == "processing"
+
     def test_items_foreign_event_rejected(self, db_user):
         from app.services.events import get_event_items
 

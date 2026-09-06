@@ -1,0 +1,240 @@
+/**
+ * 就地语音播放引擎（W0-2 · F5a/F5b 播放态规范 · 2026-09-02）
+ *
+ * 链路（对齐 _resource_endpoint_matrix W0-1 行）：
+ *  GET /api/v1/media/audio/{content_id}（Bearer）
+ *    → uni.downloadFile({ header }) 落临时文件（图片通路硬约束：token 只能走 header，
+ *      InnerAudioContext.src 是裸 URL 带不了 header，必须先下载再播）
+ *    → uni.createInnerAudioContext 播放本地临时文件
+ *
+ * 全局单例：同一时刻只播一条；点同一条 = 暂停/续播，点另一条 = 切换。
+ * index / search / detail 三处卡片绑定同一组状态（F5a 拍板：三处统一播放态视觉）。
+ *
+ * 会话级缓存：contentId → 临时文件路径（Map）。临时文件当次启动有效，
+ * 冷启动后 Map 清空会重新下载（后端 Cache-Control: private, max-age=86400 已兜底）。
+ *
+ * API 可用性查证（2026-09-02 uni-app x 官方文档）：
+ *  - uni.downloadFile：uni-app x Android 3.91+，支持 header（UTSJSONObject）
+ *  - uni.createInnerAudioContext：uni-app x Android 4.33+；wav/m4a/aac 全支持；
+ *    用完必须 destroy 释放（本引擎 stopVoice 统一释放）
+ */
+
+import { ref } from 'vue'
+import { getToken } from './auth'
+import { getBaseUrl } from './config'
+
+// ── 全局播放状态（三处页面共享绑定）──
+export let voiceCurrentId = ref('') // 正在加载/播放的 content_id；'' = 空闲
+export let voiceLoading = ref(false)
+export let voicePlaying = ref(false)
+export let voiceProgress = ref(0) // 0..1（onTimeUpdate 驱动）
+export let voiceCurSec = ref(0)
+export let voiceTotalSec = ref(0)
+
+let audioCtx: InnerAudioContext | null = null
+let fileCache = new Map<string, string>()
+// §P8 波形卡顿修复（峰宝实锤「分成三段一卡一卡」）：Android 端 onTimeUpdate 触发粒度粗（~500ms），
+// 3s 测试音只跳 3 档。改 33ms 数据时钟轮询 currentTime（RecordSheet dotClock 同款已实证机制），
+// onTimeUpdate 保留作兜底
+let progressClockId = -1
+
+// ── 模板取值封装（uvue 模板不直接绑跨模块 ref，统一走函数）──
+
+/** 该条语音是否处于「加载中/播放中/暂停中」任一活动态（决定播放钮与波形着色） */
+export function isVoiceActive(contentId: string): boolean {
+	return voiceCurrentId.value == contentId
+}
+
+/** 全局是否正在出声（决定钮显示暂停形还是播放形） */
+export function isVoicePlaying(): boolean {
+	return voicePlaying.value
+}
+
+/** 该条进度 0..1（非活动条恒 0） */
+export function voiceProgressOf(contentId: string): number {
+	return isVoiceActive(contentId) ? voiceProgress.value : 0
+}
+
+export function voiceCurSecValue(): number {
+	return voiceCurSec.value
+}
+
+export function voiceTotalSecValue(): number {
+	return voiceTotalSec.value
+}
+
+/** 秒 → m:ss（F5a 进度行格式 0:12 / 0:32） */
+export function fmtVoiceTime(sec: number): string {
+	let s = sec
+	if (s < 0) {
+		s = 0
+	}
+	const m = Math.floor(s / 60)
+	const r = Math.floor(s % 60)
+	if (r < 10) {
+		return m + ':0' + r
+	}
+	return m + ':' + r
+}
+
+/**
+ * 由 contentId 确定性生成装饰波形（28 根，8~40rpx）
+ * 自 search.uvue genWave 收口（W0-2：index/search/detail 三处统一）。
+ * 真实音频波形待后续（需解码 PCM，远期）。
+ */
+export function genWaveHeights(id: string, count: number): Array<number> {
+	let seed = 7
+	for (let i = 0; i < id.length; i++) {
+		seed = (seed * 31 + id.charCodeAt(i)) % 100000
+	}
+	const arr: Array<number> = []
+	for (let i = 0; i < count; i++) {
+		seed = (seed * 1103515245 + 12345) % 100000
+		arr.push(8 + (seed % 33))
+	}
+	return arr
+}
+
+// ── 引擎 ──
+
+/** 卡片点击入口：同一条 → 暂停/续播；另一条 → 停旧起新 */
+export function toggleVoice(contentId: string): void {
+	if (contentId == '') {
+		return
+	}
+	if (voiceCurrentId.value == contentId) {
+		const ctx = audioCtx
+		if (ctx != null) {
+			if (voicePlaying.value) {
+				ctx.pause()
+			} else {
+				ctx.play()
+			}
+		}
+		return
+	}
+	stopVoice()
+	startPlay(contentId)
+}
+
+/** 停止并释放（页面 onUnload 也应调用，防跨页残留出声） */
+export function stopVoice(): void {
+	stopProgressClock()
+	const ctx = audioCtx
+	if (ctx != null) {
+		ctx.stop()
+		ctx.destroy()
+		audioCtx = null
+	}
+	voiceCurrentId.value = ''
+	voiceLoading.value = false
+	voicePlaying.value = false
+	voiceProgress.value = 0
+	voiceCurSec.value = 0
+	voiceTotalSec.value = 0
+}
+
+/** §P8：进度时钟只随播放引擎生死（stopVoice / playFile 换条时重置） */
+function stopProgressClock(): void {
+	if (progressClockId != -1) {
+		clearInterval(progressClockId)
+		progressClockId = -1
+	}
+}
+
+function startPlay(contentId: string): void {
+	const cached = fileCache.get(contentId)
+	if (cached != null) {
+		playFile(contentId, cached as string)
+		return
+	}
+	voiceLoading.value = true
+	voiceCurrentId.value = contentId
+	const header: UTSJSONObject = {}
+	const token = getToken()
+	if (token != '') {
+		header.set('Authorization', 'Bearer ' + token)
+	}
+	uni.downloadFile({
+		url: getBaseUrl() + '/api/v1/media/audio/' + contentId,
+		header: header,
+		timeout: 30000,
+		success: (res: any) => {
+			voiceLoading.value = false
+			if (res.statusCode != 200 || res.tempFilePath == null || res.tempFilePath == '') {
+				// R9 拍板（2026-09-06 峰宝）：测试音退役——404=音频不可用。覆盖两种真实情况：
+				// ①转写中（processing，稍后就绪）②音频链修复前录制的旧条目（字节从未存在，永久缺失）
+				// 文案不指认单一原因（R9-B6：峰宝被「网络异常」误导实录），端点统一 404 防 IDOR
+				voiceCurrentId.value = ''
+				uni.showToast({ title: '音频暂不可用', icon: 'none', duration: 1500 })
+				return
+			}
+			fileCache.set(contentId, res.tempFilePath as string)
+			// 下载期间用户可能已点别条/停止——只有仍是当前条才续播
+			if (voiceCurrentId.value == contentId) {
+				playFile(contentId, res.tempFilePath as string)
+			}
+		},
+		fail: (_err: any) => {
+			voiceLoading.value = false
+			// R9 拍板：测试音退役——网络失败显式报错，不静默不冒充
+			voiceCurrentId.value = ''
+			uni.showToast({ title: '网络异常 · 音频加载失败', icon: 'none', duration: 1500 })
+		}
+	})
+}
+
+function playFile(contentId: string, filePath: string): void {
+	// 用户在下载等待期又点了别的条：过期回调直接丢弃
+	if (voiceCurrentId.value != contentId) {
+		return
+	}
+	const ctx = uni.createInnerAudioContext()
+	ctx.src = filePath
+	ctx.onPlay(() => {
+		voicePlaying.value = true
+	})
+	ctx.onPause(() => {
+		voicePlaying.value = false
+	})
+	ctx.onStop(() => {
+		voicePlaying.value = false
+	})
+	ctx.onEnded(() => {
+		voicePlaying.value = false
+		voiceProgress.value = 1
+		voiceCurSec.value = voiceTotalSec.value
+	})
+	ctx.onError((_err: any) => {
+		uni.showToast({ title: '播放失败', icon: 'none' })
+		stopVoice()
+	})
+	ctx.onTimeUpdate(() => {
+		const total = ctx.duration
+		const cur = ctx.currentTime
+		if (total > 0) {
+			voiceTotalSec.value = Math.round(total)
+			voiceCurSec.value = Math.round(cur)
+			const p = cur / total
+			voiceProgress.value = p > 1 ? 1 : p
+		}
+	})
+	audioCtx = ctx
+	// §P8：33ms 轮询时钟驱动平滑渐进（onTimeUpdate 兜底粒度粗）
+	stopProgressClock()
+	progressClockId = setInterval(() => {
+		const c = audioCtx
+		if (c == null) {
+			return
+		}
+		const total = c.duration
+		const cur = c.currentTime
+		if (total > 0) {
+			voiceTotalSec.value = Math.round(total)
+			voiceCurSec.value = Math.round(cur)
+			const p = cur / total
+			voiceProgress.value = p > 1 ? 1 : p
+		}
+	}, 33)
+	ctx.play()
+}

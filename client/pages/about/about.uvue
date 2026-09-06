@@ -1,0 +1,262 @@
+<template>
+	<!-- 卡15 F3b 关于页（2026-09-02，按画布 JSON 真值整体重写）
+	     真值：.wt/missing-pages/uvue_gen/about_canvas.json（60:723 F3b 关于 · 390x844 · SCALE=750/390=1.9231）
+	     状态栏 9:41/电池（60:724/60:725）=系统自绘不还原（全库既有约定，说明项非降级）
+	     图标映射：60:748/749 锁 → storage-lock.svg；60:751 铃 → storage-bell.svg；
+	       60:753 圆形刷新 → icon-refresh.svg（弃 W1-2 storage-moon，月亮语义不符 JSON 矢量）；60:754 → license-trash.svg
+	     诚实化降级（W1-2 口径 6 条，重排后逐条复核成立，见差异台账 卡15 F3b）：
+	       开源许可无内容文案 → 行保留画布真值 tap 诚实 toast（用户协议已由卡E04 上线内容页真跳转）；
+	       检查更新无更新服务 → 「已是最新」静态真值 + tap toast；版本号 v1.0.0 写死画布值（发版手动同步）；
+	       备案行照抄画布占位「沪ICP备 XXXXXXXX号 · 公司主体待补充」（占位即「待备案」语义） -->
+	<view class="page-root">
+		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">关于</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<view class="list-flow">
+			<!-- ═══ 品牌区（F3b 60:759 星 y100 / 60:761 名 / 60:762 slogan / 60:763 版本胶囊） ═══ -->
+			<view class="brand-zone">
+				<view class="brand-star-wrap">
+					<image class="brand-star" src="/static/icons/about-star.svg" />
+				</view>
+				<text class="brand-name">忆述光华</text>
+				<text class="brand-slogan">把日子过成值得回味的记忆</text>
+				<view class="brand-ver">
+					<text class="brand-ver-text">v1.0.0</text>
+				</view>
+			</view>
+
+			<!-- ═══ 卡1（F3b 60:728 组1 y300）：用户协议 / 隐私政策 v1.0 ═══ -->
+			<view class="card">
+				<view class="arow" @tap="onAgreement">
+					<image class="arow-icon" src="/static/icons/storage-lock.svg" />
+					<text class="arow-label">用户协议</text>
+					<image class="chev" src="/static/icons/i4_145.svg" />
+				</view>
+				<view class="arow" @tap="goPrivacy">
+					<image class="arow-icon" src="/static/icons/storage-bell.svg" />
+					<text class="arow-label">隐私政策</text>
+					<text class="arow-value">v1.0</text>
+				</view>
+			</view>
+
+			<!-- ═══ 卡2（F3b 60:729 组2 y420）：检查更新 已是最新 / 开源许可 ═══ -->
+			<view class="card card-gap">
+				<view class="arow" @tap="onCheckUpdate">
+					<image class="arow-icon" src="/static/icons/icon-refresh.svg" />
+					<text class="arow-label">检查更新</text>
+					<text class="arow-latest">已是最新</text>
+				</view>
+				<view class="arow" @tap="onLicense">
+					<image class="arow-icon" src="/static/icons/license-trash.svg" />
+					<text class="arow-label">开源许可</text>
+					<image class="chev" src="/static/icons/i4_145.svg" />
+				</view>
+			</view>
+		</view>
+
+		<!-- 底部备案行（F3b 60:765 y796：贴底居中灰字；画布占位文案照抄=「待备案」语义） -->
+		<view class="footer-beian">
+			<text class="footer-beian-text">沪ICP备 XXXXXXXX号 · 公司主体待补充</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// 菜单行：用户协议 → 用户协议内容页（卡E04，文案草稿待峰宝审定稿）
+	function onAgreement(): void {
+		uni.navigateTo({ url: '/pages/about/agreement' })
+	}
+
+	// 菜单行：隐私政策 → F3a 隐私政策页
+	function goPrivacy(): void {
+		uni.navigateTo({ url: '/pages/privacy/privacy' })
+	}
+
+	// 菜单行：检查更新（无更新服务，画布真值「已是最新」）
+	function onCheckUpdate(): void {
+		uni.showToast({ title: '已是最新版本', icon: 'none' })
+	}
+
+	// 菜单行：开源许可（无清单页，诚实占位）
+	function onLicense(): void {
+		uni.showToast({ title: '开源许可清单即将上线', icon: 'none' })
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页（settings.uvue 先例）
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航（F3b 60:727 标题容器 / 60:726 返回，均 y60→115.4rpx；settings.uvue 二级页先例） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 品牌区（F3b 星帧 36pt=69.2rpx y100→192.3rpx；星→名 36pt；名→slogan 6pt；slogan→胶囊 15pt；胶囊→卡1 42pt） ── */
+	.list-flow {
+		margin-top: 192.3rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	.brand-zone {
+		width: 100%;
+		flex-direction: column;
+		align-items: center;
+	}
+	.brand-star-wrap {
+		width: 69.2rpx;
+		height: 69.2rpx;
+		/* 峰宝拍板（2026-09-02 主窗口收口）：辉光容器加 50% 圆角 —— uvue box-shadow 沿矩形边渲染，
+		   无圆角时金色辉光是方形框，视觉上显得星芒歪斜不居中；圆形辉光对齐画布
+		   DROP_SHADOW showShadowBehindNode 的柔和径向观感（radius 20/10/4 a.2/.35/.5）。
+		   另：画布上星芒节点中心偏页左 10pt（185 vs 195，画布生成缺陷），实现按页中心
+		   align-items:center 居中，覆盖画布偏移，已登记 _diff_ledger.md */
+		border-radius: 34.6rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		box-shadow: 0rpx 0rpx 38.5rpx rgba(196, 145, 60, 0.2), 0rpx 0rpx 19.2rpx rgba(196, 145, 60, 0.35), 0rpx 0rpx 7.7rpx rgba(196, 145, 60, 0.5);
+	}
+	.brand-star {
+		width: 57.7rpx;
+		height: 57.7rpx;
+	}
+	.brand-name {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 38.5rpx;
+		line-height: 50rpx;
+		color: #3A2E25;
+		/* 峰宝拍板（2026-09-02 联调）：星→名间距 69.2→103.8rpx（下移半个星芒 34.6rpx）——
+		   辉光 box-shadow 会被后续兄弟节点绘制覆盖（uvue z 序＝文档序），原 69.2rpx 不够
+		   容纳 38.5rpx 辉光外溢，观感为「辉光被标题容器遮住」；下移留足空间。已登记台账 */
+		margin-top: 103.8rpx;
+	}
+	.brand-slogan {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		line-height: 32.7rpx;
+		color: #8A7A6A;
+		margin-top: 11.5rpx;
+	}
+	.brand-ver {
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		width: 123rpx;
+		height: 42.3rpx;
+		margin-top: 28.8rpx;
+		border-radius: 21.2rpx;
+		background-color: #EDE5D5;
+	}
+	.brand-ver-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		line-height: 26.9rpx;
+		color: #8A7A6A;
+	}
+	/* ── 行卡（F3b 60:728 组1 y300→577rpx / 60:729 组2 y420→807.7rpx；卡 350pt=673rpx 圆角 20pt=38.5rpx；
+	    卡 padding 6pt=11.5rpx；行高 44pt=84.6rpx；行 padding 12pt=23.1rpx；卡1 高 100pt→卡2 距 20pt） ── */
+	.card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		margin-top: 80.8rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+	}
+	.card-gap {
+		/* F3b 组1 底 400pt → 组2 顶 420pt = 20pt */
+		margin-top: 38.5rpx;
+	}
+	.arow {
+		flex-direction: row;
+		align-items: center;
+		height: 84.6rpx;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+	}
+	.arow-icon {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	.arow-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.85rpx;
+		color: #3A2E25;
+		flex: 1;
+		margin-left: 23.1rpx;
+	}
+	.arow-value {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8A7A6A;
+	}
+	.arow-latest {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.chev {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	/* ── 底部备案（F3b 60:765 y796 高 14pt → 距底 34pt=65.4rpx） ── */
+	.footer-beian {
+		position: absolute;
+		/* absolute-ok: 固定页脚·备案行（贴底不随内容流） */
+		left: 0rpx;
+		bottom: 65.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+	}
+	.footer-beian-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 19.2rpx;
+		line-height: 26.9rpx;
+		color: #B3A696;
+	}
+</style>

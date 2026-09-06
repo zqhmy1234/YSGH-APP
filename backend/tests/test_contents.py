@@ -79,8 +79,10 @@ def test_create_invalid_type(client, auth_headers):
 
 def test_presign_removed(client, auth_headers):
     """2026-08-26 决策：presign 删除（无消费方 + 与 /upload/sts 重叠），STS 直传归口 /upload/sts"""
+    # 2026-09-05：DELETE /contents/{content_id}（W2-1）参数路由接管后，
+    # POST 到该形状路径返回 405（路径存在但方法不允许）——同样证明 presign 无 POST 端点
     r = client.post("/api/v1/contents/presign", json={}, headers=auth_headers)
-    assert r.status_code == 404
+    assert r.status_code in (404, 405)
 
 
 def test_list_contents(client, auth_headers):

@@ -41,7 +41,7 @@ export const REC_STATE_PAUSED: string = 'paused'
 export class AsrResult {
 	text: string
 	channel: string
-	emotion: string
+	emotion: string  // '' = 未测得（D-16，后端 null 映射空串）
 	emotionConfidence: number
 	emotionSource: string
 	/** 笑声等正向音频事件带来的情绪加分（B5a J-3；P1-A 对齐：消费后端 emotion_bonus） */
@@ -183,7 +183,7 @@ export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 					new AsrResult(
 						d.getString('text') ?? '',
 						d.getString('channel') ?? '',
-						d.getString('emotion') ?? '平静',
+						d.getString('emotion') ?? '',  // D-16: null(未测得) -> 空串，情绪 chip 按空判定不渲染
 						(d.getNumber('emotion_confidence') as number) ?? 0,
 						d.getString('emotion_source') ?? 'none',
 						d.getBoolean('emotion_bonus') ?? false,
@@ -259,14 +259,17 @@ function fileNameOf(path: string): string {
 // 协议请求（init/chunk/complete + urlEncode/formPost/fieldOf）统一走 upload_protocol.ts（TD-P2B S1-H3）
 
 /**
- * J-4 长录音上传：wav 文件 → 分片协议落对象存储（file_key）→ 建 voice 内容（cos_key）→ 管线转写。
- * 返回 {content_id, file_key, long_audio} 或 null。集成登记：后端 complete 的 meta 支持
- * content_type=voice 后直接返回 voice content_id（register_photo_content 增加 voice 分支），
- * 本函数随后可去掉二次建内容请求。
+ * 录音持久化上传（R9-B1 起短录音也走本链）：wav 文件 → 分片协议落对象存储（file_key）
+ * → 后端 complete 直接建 voice 内容（cos_key + text 预填 + 入队 ASR）。
+ * 返回 {content_id, file_key, long_audio} 或 null。
+ * text：客户端本地转写文本（后端 _register_voice_content 直接落库，管线转写完成后覆盖）；
+ * emotion：本地情绪（只存 extra.client_emotion，不进正式情绪字段）。
  */
 export function uploadVoicePersistent(
 	filePath: string,
-	durationMs: number
+	durationMs: number,
+	text: string = '',
+	emotion: string = ''
 ): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
 		const clientUploadId = 'voice|' + filePath
@@ -301,12 +304,18 @@ export function uploadVoicePersistent(
 							resolve(null)
 							return
 						}
-						// 3. complete（meta 带 content_type=voice，集成后后端直接建 voice 内容）
+						// 3. complete（meta 带 content_type=voice + 本地转写 text 预填，后端直接建 voice 内容）
 						const meta: UTSJSONObject = {
 							content_type: 'voice',
 							duration_ms: durationMs,
 							source: 'app',
 							extra: { file_name: fileName }
+						}
+						if (text != '') {
+							meta.set('text', text)
+						}
+						if (emotion != '') {
+							meta.set('emotion', emotion)
 						}
 						completeUpload(uploadId, meta).then((resp: UploadResp) => {
 							if (resp.status !== 200) {

@@ -414,5 +414,15 @@ if __name__ == '__main__':
                 all_icons[nid] = (s, nm)
         else:
             print(f'[miss] {name} {fid}')
+    # 主窗口 2026-09-02：manifest 现含 "_coverage" 元数据键（缺失页批覆盖记录），
+    # 重跑导出时必须保留，禁止整文件覆盖丢弃
+    prev = {}
+    if os.path.exists(ICONS_JSON):
+        try:
+            prev = json.load(open(ICONS_JSON, encoding='utf-8'))
+        except Exception:
+            prev = {}
+    if '_coverage' in prev:
+        all_icons['_coverage'] = prev['_coverage']
     open(ICONS_JSON, 'w', encoding='utf-8').write(json.dumps(all_icons, ensure_ascii=False, indent=1))
     print(f'图标清单 → {ICONS_JSON}（{len(all_icons)} 个）')

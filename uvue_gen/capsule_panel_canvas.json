@@ -1,0 +1,95 @@
+{
+ "source": "Ardot 719545763760845 node 63:53 (F7b 时间胶囊面板弹层)",
+ "note": "2026-09-03 视觉重设计后真值快照（峰宝拍板：对齐详情页定稿语言）；几何未变，仅 fills/strokes/effects 改版；§W(09-03 峰宝拍板) sheet 承载形状改顶圆角 40pt(77rpx，RecordSheet 家族语言)，画布原值 0 被覆盖",
+ "sheet": {
+  "id": "63:53",
+  "fill": "#FAF9F5",
+  "cornerRadius": 40
+ },
+ "nodes": {
+  "63:54 头行": {
+   "texts": {
+    "63:55 标题": {
+     "fill": "#3A2E25",
+     "size": 16,
+     "weight": "SemiBold"
+    },
+    "63:56 关闭": {
+     "fill": "#B3A696",
+     "size": 22
+    }
+   }
+  },
+  "63:57 摘要行": {
+   "fill": "#FFFFFF",
+   "cornerRadius": 12,
+   "effects": [
+    {
+     "y": 4,
+     "blur": 16,
+     "a": 0.06
+    },
+    {
+     "y": 1,
+     "blur": 3,
+     "a": 0.04
+    }
+   ],
+   "children": {
+    "63:59 星芒": {
+     "fill": "#B05A3A"
+    },
+    "63:60 文字": {
+     "fill": "#3A2E25",
+     "size": 13,
+     "weight": "Medium"
+    }
+   }
+  },
+  "63:61 节标": {
+   "fill": "#8A7A6A",
+   "size": 12,
+   "weight": "Medium"
+  },
+  "63:63 选中卡(3个月后)": {
+   "fill": "#FFFFFF",
+   "stroke": "#B05A3A",
+   "cornerRadius": 12,
+   "effects": [
+    {
+     "y": 2,
+     "blur": 8,
+     "a": 0.05
+    }
+   ],
+   "check_dot_63:68": "#B05A3A",
+   "check_mark_63:69": "#FFFFFF stroke"
+  },
+  "63:70/76/82 未选卡": {
+   "fill": "#FFFFFF",
+   "stroke": "#EDE5D5",
+   "cornerRadius": 12,
+   "effects": [
+    {
+     "y": 2,
+     "blur": 8,
+     "a": 0.05
+    }
+   ],
+   "circle_stroke": "#B3A696"
+  },
+  "63:86 说明": {
+   "fill": "#B3A696",
+   "size": 11
+  },
+  "63:87 主按钮": {
+   "fill": "#B05A3A",
+   "cornerRadius": 24,
+   "text_63:88": {
+    "fill": "#FFFFFF",
+    "size": 16,
+    "weight": "SemiBold"
+   }
+  }
+ }
+}

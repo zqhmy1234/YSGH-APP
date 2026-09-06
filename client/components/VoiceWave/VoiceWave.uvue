@@ -1,0 +1,154 @@
+<template>
+	<!-- F5a 语音播放态规范：波形竖条阵列（index / search / detail 三处共用）
+	     尺寸真值（F5a 帧）：容器 h=28pt(53.8rpx)、竖条 4pt 宽、gap 3pt、r=2pt
+	     默认态：全部 idleColor —— detail 帧(F5b) 真值 #E5DCC8；index/search 现传 #C4913C（属其帧卡范围）
+	     活动态：已播段 playedColor #C4913C、未播段 idleColor #E5DCC8（F5a 拍板色值），
+	     当前根 bar 呼吸缩放（CSS 动画不可用时优雅降级为静态） -->
+	<view class="wave">
+		<view
+			v-for="(s, i) in barStyles"
+			:key="i"
+			class="wave-bar"
+			:class="i === liveBarIdx ? 'wave-bar-live' : ''"
+			:style="s"
+		></view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// 运行时声明 props（项目先例 TabBar.uvue；数组默认值按 UTS 已知问题需显式断言）
+	const props = defineProps({
+		/** 波形高度数组（rpx），由 genWaveHeights 生成 */
+		heights: {
+			type: Array,
+			required: true
+		},
+		/** 是否为当前播放条（决定着色与呼吸动画） */
+		active: {
+			type: Boolean,
+			default: false
+		},
+		/** 播放进度 0..1（非活动条恒传 0） */
+		progress: {
+			type: Number,
+			default: 0
+		},
+		/** 已播段/空闲色（index 卡默认琥珀 #C4913C） */
+		playedColor: {
+			type: String,
+			default: '#C4913C'
+		},
+		/** 未播段色（F5a 拍板 #E5DCC8） */
+		idleColor: {
+			type: String,
+			default: '#E5DCC8'
+		}
+	})
+
+	/**
+	 * F5a 真值：波形容器 h=28pt（53.8rpx），竖条高 12pt~28pt（23.1~53.8rpx）。
+	 * genWaveHeights 产出的是 8~40rpx 的原始序列，直接当条高会整体偏矮且溢出区间，
+	 * 故按 min/max 归一化映射到真值区间（最高条满格、最低条 43% 满高），保持相对起伏。
+	 */
+	let bars = computed((): Array<number> => {
+		const hs = props.heights as Array<number>
+		let min = 0
+		let max = 0
+		for (let i = 0; i < hs.length; i++) {
+			const v = hs[i]
+			if (i === 0) {
+				min = v
+				max = v
+			} else {
+				if (v < min) {
+					min = v
+				}
+				if (v > max) {
+					max = v
+				}
+			}
+		}
+		const span = max - min
+		const out: Array<number> = []
+		for (let i = 0; i < hs.length; i++) {
+			let r = 0.5
+			if (span > 0) {
+				r = (hs[i] - min) / span
+			}
+			out.push(23.1 + r * 30.7)
+		}
+		return out
+	})
+
+	let playedCount = computed((): number => {
+		if (!props.active || props.progress <= 0) {
+			return 0
+		}
+		const n = Math.floor((bars.value.length * props.progress))
+		if (n > bars.value.length) {
+			return bars.value.length
+		}
+		return n
+	})
+
+	/** 呼吸动画落在进度前沿那根 bar 上；未开播/播完则无 */
+	let liveBarIdx = computed((): number => {
+		if (!props.active || props.progress <= 0 || props.progress >= 1) {
+			return -1
+		}
+		const c = playedCount.value
+		return c > 0 ? c - 1 : 0
+	})
+
+	// R7 性能刀（2026-09-04）：每 bar 最终 style 预生成字符串 + 逐 bar 缓存对比——
+	// 旧实现 :style 内联对象逐 tick 全量重建（28 对象/次渲染）；现值不变的 bar 复用缓存
+	// 里的同一字符串（渲染层判等跳过原生更新），进度 tick 只有分界 ±1 与呼吸 bar
+	// （height×1.3）两三根真正产生新串。:style 字符串绑定走 manage badgeStyle 先例；
+	// 色值仍走 props（index/detail/favorites/search/theme-detail 五处宿主有自定义色），不入静态类
+	let barStyleCache: Array<string> = []
+	let barStyles = computed((): Array<string> => {
+		const hs = bars.value
+		const pc = playedCount.value
+		const live = liveBarIdx.value
+		const out: Array<string> = []
+		for (let i = 0; i < hs.length; i++) {
+			const h = (i === live ? hs[i] * 1.3 : hs[i])
+			const bg = i < pc ? props.playedColor : props.idleColor
+			const s = 'height:' + h + 'rpx;background-color:' + bg + ';'
+			if (i < barStyleCache.length && barStyleCache[i] == s) {
+				out.push(barStyleCache[i])
+			} else {
+				if (i < barStyleCache.length) {
+					barStyleCache[i] = s
+				} else {
+					barStyleCache.push(s)
+				}
+				out.push(s)
+			}
+		}
+		return out
+	})
+</script>
+
+<style>
+	/* F5a 真值：容器 h=28pt（53.8rpx）；竖条 4pt 宽（7.7rpx）/ gap 3pt（5.8rpx）/ r2pt（3.8rpx） */
+	.wave {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		height: 53.8rpx;
+		overflow: hidden;
+	}
+	.wave-bar {
+		width: 7.7rpx;
+		border-radius: 3.8rpx;
+		margin-right: 5.8rpx;
+	}
+	/* 呼吸缩放（F5a「波形跳动」）：§I A' 拍板后降级静态——
+	   呼吸目标 bar 随播放进度动态变化（liveBarIdx computed），命令式 animate 需监听 props
+	   换目标元素且本组件三处宿主多实例（uni.getElementById 有 id 冲突风险），成本>收益。
+	   wave-bar-live 类保留作语义标记，将来接 animate 时复用 */
+	.wave-bar-live {
+		/* 静态：无动画 */
+	}
+</style>

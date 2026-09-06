@@ -1,0 +1,3040 @@
+{
+ "id": "60:180",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9725490212440491,
+    "g": 0.9686274528503418,
+    "b": 0.95686274766922
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 844,
+ "name": "F1f 文字·输入中",
+ "x": 11930,
+ "y": 120,
+ "clipsContent": true,
+ "children": [
+  {
+   "id": "60:181",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.9725490212440491,
+      "g": 0.9686274528503418,
+      "b": 0.95686274766922
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 390,
+   "height": 844,
+   "name": "页面层",
+   "x": 0,
+   "y": 0,
+   "clipsContent": true,
+   "children": [
+    {
+     "id": "60:182",
+     "type": "TEXT",
+     "fontSize": 15,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "9:41",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 70,
+     "height": 20,
+     "name": "状态栏时间",
+     "x": 24,
+     "y": 16,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:183",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 24,
+     "height": 12,
+     "name": "电池",
+     "x": 342,
+     "y": 20,
+     "clipsContent": true,
+     "cornerRadius": 4,
+     "children": []
+    },
+    {
+     "id": "60:184",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 24,
+     "height": 24,
+     "name": "返回",
+     "x": 20,
+     "y": 60,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:196",
+       "type": "VECTOR",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 16,
+       "height": 16,
+       "name": "Vector",
+       "x": 4,
+       "y": 4
+      }
+     ]
+    },
+    {
+     "id": "60:185",
+     "type": "TEXT",
+     "fontSize": 17,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Semi Bold"
+     },
+     "characters": "写几句",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 24,
+     "name": "标题",
+     "x": 0,
+     "y": 60,
+     "textAlignHorizontal": "CENTER",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:187",
+     "type": "TEXT",
+     "fontSize": 13,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "正文",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.5411764979362488,
+        "g": 0.47843137383461,
+        "b": 0.4156862795352936
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 120,
+     "height": 18,
+     "name": "节标-正文",
+     "x": 24,
+     "y": 116,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:188",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "effects": [
+      {
+       "type": "DROP_SHADOW",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487,
+        "a": 0.05999999865889549
+       },
+       "offset": {
+        "x": 0,
+        "y": 6
+       },
+       "radius": 18,
+       "spread": 0,
+       "visible": true,
+       "blendMode": "NORMAL",
+       "showShadowBehindNode": false,
+       "boundVariables": {}
+      }
+     ],
+     "width": 342,
+     "height": 420,
+     "name": "输入卡",
+     "x": 24,
+     "y": 146,
+     "clipsContent": true,
+     "cornerRadius": 20,
+     "children": [
+      {
+       "id": "60:197",
+       "type": "TEXT",
+       "fontSize": 16,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "今天陪妈逛了趟菜市场，她挑了半个多小时茄子",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 302,
+       "height": 110,
+       "name": "正文文字",
+       "x": 20,
+       "y": 20,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "60:218",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.6901960968971252,
+          "g": 0.3529411852359772,
+          "b": 0.22745098173618317
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 2,
+       "height": 22,
+       "name": "光标",
+       "x": 72,
+       "y": 44,
+       "clipsContent": true,
+       "cornerRadius": 1,
+       "children": []
+      }
+     ]
+    },
+    {
+     "id": "60:219",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.8627451062202454,
+        "g": 0.8509804010391235,
+        "b": 0.8274509906768799
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 234,
+     "name": "键盘",
+     "x": 0,
+     "y": 610,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:224",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-Q",
+       "x": 3,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:225",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "Q",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:226",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-W",
+       "x": 42,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:227",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "W",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:228",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-E",
+       "x": 81,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:229",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "E",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:230",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-R",
+       "x": 120,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:231",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "R",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:232",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-T",
+       "x": 159,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:233",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "T",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:234",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-Y",
+       "x": 198,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:235",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "Y",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:236",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-U",
+       "x": 237,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:237",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "U",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:238",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-I",
+       "x": 276,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:239",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "I",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:240",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-O",
+       "x": 315,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:241",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "O",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:242",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-P",
+       "x": 354,
+       "y": 6,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:243",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "P",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:244",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-A",
+       "x": 22,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:245",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "A",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:246",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-S",
+       "x": 61,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:247",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "S",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:248",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-D",
+       "x": 100,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:249",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "D",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:250",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-F",
+       "x": 139,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:251",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "F",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:252",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-G",
+       "x": 178,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:253",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "G",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:254",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-H",
+       "x": 217,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:255",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "H",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:256",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-J",
+       "x": 256,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:257",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "J",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:258",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-K",
+       "x": 295,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:259",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "K",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:260",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-L",
+       "x": 334,
+       "y": 59,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:261",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "L",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:262",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7843137383460999,
+          "g": 0.772549033164978,
+          "b": 0.7450980544090271
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 46,
+       "height": 42,
+       "name": "key-shift",
+       "x": 3,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:263",
+         "type": "TEXT",
+         "fontSize": 18,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "⇧",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 46,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:264",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-Z",
+       "x": 61,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:265",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "Z",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:266",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-X",
+       "x": 100,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:267",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "X",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:268",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-C",
+       "x": 139,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:269",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "C",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:270",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-V",
+       "x": 178,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:271",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "V",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:272",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-B",
+       "x": 217,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:273",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "B",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:274",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-N",
+       "x": 256,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:275",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "N",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:276",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 33,
+       "height": 42,
+       "name": "key-M",
+       "x": 295,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:277",
+         "type": "TEXT",
+         "fontSize": 17,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "M",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 33,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:278",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7843137383460999,
+          "g": 0.772549033164978,
+          "b": 0.7450980544090271
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 46,
+       "height": 42,
+       "name": "key-backspace",
+       "x": 340,
+       "y": 112,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:279",
+         "type": "TEXT",
+         "fontSize": 18,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "⌫",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 46,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 10,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:280",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7843137383460999,
+          "g": 0.772549033164978,
+          "b": 0.7450980544090271
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 46,
+       "height": 42,
+       "name": "key-123",
+       "x": 3,
+       "y": 165,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:281",
+         "type": "TEXT",
+         "fontSize": 15,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "123",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 46,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 11,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:282",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 214,
+       "height": 42,
+       "name": "key-space",
+       "x": 55,
+       "y": 165,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:283",
+         "type": "TEXT",
+         "fontSize": 15,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "空格",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 214,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 11,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:284",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.6901960968971252,
+          "g": 0.3529411852359772,
+          "b": 0.22745098173618317
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 1,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 112,
+       "height": 42,
+       "name": "key-return",
+       "x": 275,
+       "y": 165,
+       "clipsContent": true,
+       "cornerRadius": 6,
+       "children": [
+        {
+         "id": "60:285",
+         "type": "TEXT",
+         "fontSize": 15,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Medium"
+         },
+         "characters": "换行",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 112,
+         "height": 20,
+         "name": "字符",
+         "x": 0,
+         "y": 11,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "60:220",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.9411764740943909,
+        "g": 0.929411768913269,
+        "b": 0.9019607901573181
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 44,
+     "name": "键盘工具条",
+     "x": 0,
+     "y": 566,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:221",
+       "type": "TEXT",
+       "fontSize": 13,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "21/1000",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.5411764979362488,
+          "g": 0.47843137383461,
+          "b": 0.4156862795352936
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 90,
+       "height": 18,
+       "name": "字数",
+       "x": 20,
+       "y": 13,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "60:222",
+       "type": "TEXT",
+       "fontSize": 15,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Semi Bold"
+       },
+       "characters": "确定",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.6901960968971252,
+          "g": 0.3529411852359772,
+          "b": 0.22745098173618317
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 76,
+       "height": 22,
+       "name": "accessory确定",
+       "x": 290,
+       "y": 11,
+       "textAlignHorizontal": "RIGHT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "60:223",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.8470588326454163,
+          "g": 0.8313725590705872,
+          "b": 0.7921568751335144
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 390,
+       "height": 1,
+       "name": "底部分隔线",
+       "x": 0,
+       "y": 43,
+       "clipsContent": true,
+       "children": []
+      }
+     ]
+    },
+    {
+     "id": "60:186",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 140,
+     "height": 5,
+     "name": "Home指示条",
+     "x": 125,
+     "y": 828,
+     "clipsContent": true,
+     "cornerRadius": 3,
+     "children": []
+    }
+   ]
+  }
+ ]
+}

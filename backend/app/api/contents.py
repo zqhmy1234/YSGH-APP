@@ -331,10 +331,13 @@ def create_content(
     # 审查修复(P1-12)：voice/photo 用户等待 → 高优队列；text/article 低优
     # F4/R5-4#5：enqueue_unique 同 content 键不重复入队（job 级去重）
     if req.content_type in ("voice", "photo"):
-        enqueue_unique(process_content, str(record.id))
+        # R9-B6（2026-09-06）：第 2 个 str(record.id) 是函数参数——enqueue_unique 的 key
+        # 只是去重键，缺 args = process_content() 零参 TypeError 秒死（failed 262 条同因）
+        enqueue_unique(process_content, str(record.id), str(record.id))
     else:
         enqueue_unique(
             process_content,
+            str(record.id),
             str(record.id),
             queue_name=QUEUE_LOW,
             job_timeout=DEFAULT_JOB_TIMEOUT,
@@ -396,7 +399,7 @@ def list_contents(
 
     return ApiResponse(
         data=Page(
-            items=[_to_out(c) for c in page_items],
+            items=[_attach_thumb(_to_out(c), c, str(user.id)) for c in page_items],
             cursor=next_cursor,
             has_more=has_more,
         )
@@ -480,3 +483,241 @@ def _to_out(c: Content) -> ContentOut:
         audio_processing=(c.extra or {}).get("audio_processing"),
         created_at=c.created_at,
     )
+
+
+def _attach_thumb(item: ContentOut, c: Content, user_id: str) -> ContentOut:
+    """photo 条目补缩略图票（2026-09-05）：列表/搜索兜底卡片直连回显。
+    票签发失败降级无图不阻塞列表（与 recall/favorites 同款容错）。"""
+    if c.content_type == "photo" and c.thumbnail_key and item.thumbnail_url is None:
+        try:
+            _orig, thumb = content_urls(None, c.thumbnail_key, user_id)
+            item.thumbnail_url = thumb
+        except Exception:  # noqa: BLE001, S110 —— 票失败降级无图，不影响列表主链路（recall/favorites 同款容错）
+            pass
+    return item
+
+
+# ---------- W2-1 删除/回收站 + W2-2 收藏（2026-09-05） ----------
+# 设计要点：
+# - 软删只置 deleted_at/deleted_by（全库既有查询已过滤 deleted_at，零侵入）
+# - 收藏持久化走 contents.extra JSONB 键 favorite_at（零迁移；pipeline.set_extra 同款
+#   「dict 重建再赋值」写法防 JSONB in-place mutation 不触发 UPDATE）
+# - trash/favorites 独立 prefix router：/api/v1/trash、/api/v1/favorites 与
+#   /api/v1/contents/{id} 路径段数不同零冲突（DELETE /{content_id} 只匹配 3 段）
+
+from app.core.errors import ERR_CONTENT_010  # noqa: E402
+from app.schemas.content import (  # noqa: E402
+    TRASH_RETENTION_DAYS,
+    ContentDeleteOut,
+    FavoriteOut,
+    TrashClearOut,
+    TrashItemOut,
+)
+from app.services.external.media_url import content_urls  # noqa: E402
+
+trash_router = make_router(prefix="/api/v1/trash", tags=["trash"])
+favorites_router = make_router(prefix="/api/v1/favorites", tags=["favorites"])
+
+
+def _load_alive_content(db: Session, user_id: str, content_id: str) -> Content:
+    """取当前用户未删除内容；不存在/已删除/非本人 → 统一 404 CONTENT_010（IDOR 防护不区分三种情形）"""
+    row = db.execute(
+        select(Content).where(
+            Content.id == content_id,
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
+    return row
+
+
+@router.delete("/{content_id}", response_model=ApiResponse[ContentDeleteOut])
+def delete_content(
+    content_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """软删内容（W2-1）：置 deleted_at/deleted_by，30 天保留期后可被清理任务彻底清除"""
+    row = _load_alive_content(db, user.id, content_id)
+    now = datetime.now(timezone.utc)
+    row.deleted_at = now
+    row.deleted_by = user.id
+    db.commit()
+    return ApiResponse(
+        data=ContentDeleteOut(
+            content_id=row.id,
+            deleted=True,
+            permanent_at=now + timedelta(days=TRASH_RETENTION_DAYS),
+        )
+    )
+
+
+@router.post("/{content_id}/favorite", response_model=ApiResponse[FavoriteOut])
+def favorite_add(
+    content_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """收藏内容（W2-2）：extra.favorite_at 落 ISO 时间戳；重复收藏幂等返回既有态"""
+    row = _load_alive_content(db, user.id, content_id)
+    extra = dict(row.extra or {})
+    existing = extra.get("favorite_at")
+    if existing is None:
+        extra["favorite_at"] = datetime.now(timezone.utc).isoformat()
+        row.extra = extra
+        db.commit()
+        existing = row.extra["favorite_at"]
+    fav_dt = parse_ts(str(existing)) if existing else None
+    return ApiResponse(data=FavoriteOut(content_id=row.id, favorite=True, favorite_at=fav_dt))
+
+
+@router.delete("/{content_id}/favorite", response_model=ApiResponse[FavoriteOut])
+def favorite_remove(
+    content_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """取消收藏（W2-2）：extra.favorite_at 摘除；未收藏幂等返回 favorite=false"""
+    row = _load_alive_content(db, user.id, content_id)
+    extra = dict(row.extra or {})
+    had = extra.pop("favorite_at", None)
+    row.extra = extra
+    if had is not None:
+        db.commit()
+    return ApiResponse(data=FavoriteOut(content_id=row.id, favorite=False, favorite_at=None))
+
+
+@router.get("/{content_id}/favorite", response_model=ApiResponse[FavoriteOut])
+def favorite_get(
+    content_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """查询单条收藏态（W2-2：detail 页星标初始化用）"""
+    row = _load_alive_content(db, user.id, content_id)
+    fav_raw = (row.extra or {}).get("favorite_at")
+    fav_dt = parse_ts(str(fav_raw)) if fav_raw else None
+    return ApiResponse(data=FavoriteOut(content_id=row.id, favorite=fav_dt is not None, favorite_at=fav_dt))
+
+
+@favorites_router.get("", response_model=ApiResponse[list[ContentOut]])
+def favorites_list(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """收藏列表（W2-2）：extra.favorite_at 非空且未删除，按收藏时间倒序 + 缩略图签票"""
+    rows = (
+        db.execute(
+            select(Content)
+            .where(
+                Content.user_id == user.id,
+                Content.deleted_at.is_(None),
+                Content.extra["favorite_at"].astext.isnot(None),
+            )
+            .order_by(Content.extra["favorite_at"].astext.desc())
+        )
+        .scalars()
+        .all()
+    )
+    out: list[ContentOut] = []
+    for c in rows:
+        item = _to_out(c)
+        if c.thumbnail_key:
+            try:
+                _orig, thumb = content_urls(None, c.thumbnail_key, str(user.id))
+                item.thumbnail_url = thumb
+            except Exception:  # 签票失败降级无图不阻塞主链路（recall.py 同口径）
+                logging.getLogger(__name__).warning(
+                    "收藏缩略图签票失败 content_id=%s", c.id, exc_info=True
+                )
+        out.append(item)
+    return ApiResponse(data=out)
+
+
+@trash_router.get("", response_model=ApiResponse[list[TrashItemOut]])
+def trash_list(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """回收站列表（W2-1）：软删条目按删除时间倒序，days_left 由后端算好"""
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.execute(
+            select(Content)
+            .where(Content.user_id == user.id, Content.deleted_at.is_not(None))
+            .order_by(Content.deleted_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    items: list[TrashItemOut] = []
+    for c in rows:
+        deleted = c.deleted_at
+        if deleted is None:  # 理论不可达（查询已过滤）；防御
+            continue
+        if deleted.tzinfo is None:
+            deleted = deleted.replace(tzinfo=timezone.utc)
+        days_left = max(0, TRASH_RETENTION_DAYS - (now - deleted).days)
+        items.append(
+            TrashItemOut(
+                id=str(c.id),
+                content_type=c.content_type,
+                text=c.text,
+                place=c.place,
+                taken_at=c.taken_at,
+                deleted_at=deleted,
+                days_left=days_left,
+            )
+        )
+    return ApiResponse(data=items)
+
+
+@trash_router.post("/{content_id}/restore", response_model=ApiResponse[ContentDeleteOut])
+def trash_restore(
+    content_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """回收站恢复（W2-1）：清除 deleted_at/deleted_by，回到正常内容域"""
+    row = db.execute(
+        select(Content).where(
+            Content.id == content_id,
+            Content.user_id == user.id,
+            Content.deleted_at.is_not(None),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ApiError(ERR_CONTENT_010, "回收站中不存在该内容或无权访问", http=404)
+    row.deleted_at = None
+    row.deleted_by = None
+    db.commit()
+    return ApiResponse(data=ContentDeleteOut(content_id=row.id, deleted=False, permanent_at=None))
+
+
+@trash_router.delete("", response_model=ApiResponse[TrashClearOut])
+def trash_clear(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """回收站清空（W2-1）：当前用户全部软删条目硬删（不可逆；客户端 showModal 强确认）。
+
+    降级登记（_diff_ledger）：Qdrant 向量/COS 原件清理未挂接——MVP 只删 DB 行，
+    向量残留不影响正确性（查询按 contents 行驱动）；挂接挂远期账 A3。
+    """
+    rows = (
+        db.execute(
+            select(Content).where(
+                Content.user_id == user.id, Content.deleted_at.is_not(None)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cleared = 0
+    for row in rows:
+        db.delete(row)
+        cleared += 1
+    db.commit()
+    return ApiResponse(data=TrashClearOut(cleared=cleared))

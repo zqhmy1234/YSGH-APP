@@ -26,3 +26,11 @@ class ArbitrateRequest(BaseModel):
         None, min_length=1, max_length=64,
         description="客户端请求幂等键（R4#4：重复提交返回同一 job，不重复入队）",
     )
+    # D-22（08-29 契约增量，18 号表；R2 客户端重构时消费，本波仅透传入 job）
+    content_id: str | None = Field(
+        None, max_length=64,
+        description="被裁决内容 ID（可选：层①按内容点核对最新用户意图）",
+    )
+    preferred_label: str | None = Field(
+        None, description="用户所选标签（可选：层②degraded 时以用户意图为准的兜底依据）",
+    )

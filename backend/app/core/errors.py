@@ -58,6 +58,8 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("CONTENT_007", "照片超过大小上限", 413),
     ErrorSpec("CONTENT_008", "游标格式无效（应为 <created_at_iso>|<id>）", 422),
     ErrorSpec("CONTENT_009", "cos_key 非法或不属于当前用户（前缀/对象不存在）", 422),
+    ErrorSpec("CONTENT_010", "内容不存在或无权访问（含已删除）", 404),
+    ErrorSpec("CONTENT_011", "收藏状态冲突（重复收藏/未收藏）", 409),
     # 纠错域
     ErrorSpec("CORR_001", "new_label 非法", 422),
     ErrorSpec("CORR_002", "source 非法", 422),
@@ -68,6 +70,9 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("EVENT_005", "内容不存在或不属于当前用户", 404),
     ErrorSpec("EVENT_006", "事件操作冲突（内容不属于该事件 / 封面不是事件成员）", 409),
     ErrorSpec("EVENT_007", "事件参数非法（拆分内容列表为空等）", 422),
+    # 媒体下发票据域（Valet Key · 2026-08-31）
+    ErrorSpec("MEDIA_001", "媒体票据无效或已过期", 401),
+    ErrorSpec("MEDIA_002", "媒体对象不存在或不属于当前用户", 404),
     # 消息域
     ErrorSpec("MSG_001", "status 参数非法", 422),
     ErrorSpec("MSG_002", "消息不存在", 404),
@@ -128,6 +133,8 @@ ERR_CONTENT_006 = "CONTENT_006"
 ERR_CONTENT_007 = "CONTENT_007"
 ERR_CONTENT_008 = "CONTENT_008"
 ERR_CONTENT_009 = "CONTENT_009"
+ERR_CONTENT_010 = "CONTENT_010"
+ERR_CONTENT_011 = "CONTENT_011"
 ERR_CORR_001 = "CORR_001"
 ERR_CORR_002 = "CORR_002"
 ERR_CORR_003 = "CORR_003"
@@ -136,6 +143,9 @@ ERR_EVENT_004 = "EVENT_004"
 ERR_EVENT_005 = "EVENT_005"
 ERR_EVENT_006 = "EVENT_006"
 ERR_EVENT_007 = "EVENT_007"
+ERR_MEDIA_001 = "MEDIA_001"
+ERR_MEDIA_002 = "MEDIA_002"
+ERR_MEDIA_003 = "MEDIA_003"
 ERR_MSG_001 = "MSG_001"
 ERR_MSG_002 = "MSG_002"
 ERR_MSG_003 = "MSG_003"

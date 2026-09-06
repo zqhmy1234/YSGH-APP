@@ -82,6 +82,7 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
     content_ids = [rh["content_id"] for rh in raw_hits[:limit]]
     content_map: dict[str, Content] = {}
     event_map: dict[str, dict] = {}
+    thumb_map: dict[str, str] = {}
     if db is not None and user_id is not None:
         # 过滤非 UUID 格式 id（UUID 列无法匹配 rag-001 类测试点，防 PG 报错）
         _uuid_re = re.compile(
@@ -96,6 +97,18 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
                 )
             ).scalars().all()
             content_map = {str(c.id): c for c in rows}
+            # 缩略图票据（2026-09-04 峰宝拍板搜索结果带图）：命中照片按 content_id 签票，
+            # <image :src> 直连免 header；失败/无 thumbnail_key 不阻塞溯源主链路
+            from app.services.external.media_url import content_urls
+
+            for c in content_map.values():
+                if c.content_type == "photo" and c.thumbnail_key:
+                    try:
+                        _orig, thumb = content_urls(None, c.thumbnail_key, str(user_id))
+                        if thumb:
+                            thumb_map[str(c.id)] = thumb
+                    except Exception:  # noqa: BLE001 —— 签票失败降级为无图，不影响命中
+                        logger.warning("搜索缩略图签票失败 content_id=%s", c.id, exc_info=True)
             # 事件级归因：content → event_items → events（用户隔离 + 软删过滤）
             try:
                 ev_rows = db.execute(
@@ -133,6 +146,7 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
             event_id=ev["id"] if ev else None,
             event_title=ev["title"] if ev else None,
             score=rh["score"],
+            thumbnail_url=thumb_map.get(rh["content_id"]),
             trace={
                 "matched": matched or ["dense"],
                 "dense_score": rh["dense_score"],

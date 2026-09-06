@@ -9,6 +9,157 @@
 
 ---
 
+### 2026-09-06 14:03 · commit 9a92bdc · ts=1788674584
+- **错误**：R9-B6提交时lessons门禁状态未更新重试
+- **根因**：lessons add 首次执行输出被截断未确认落盘
+- **修复**：重新登记
+- **相关文件**：-
+- **教训**：lessons add 后确认 docs/lessons.md 尾部新增
+
+---
+
+### 2026-09-06 13:58 · commit 9a92bdc · ts=1788674330
+- **错误**：RQ管线enqueue_unique系8处调用点把去重key当函数参数，漏传*args——worker零参调用TypeError秒死，failed:high 262条同因；exc_info只落worker stderr不落job hash，形成'无异常栈秒死'假象，误导排查方向至SimpleWorker Windows问题
+- **根因**：enqueue_unique(func, key, *args)的key仅拼job_id做去重，函数参数必须经args显式透传；process_content/enrich_content_emotion/generate_thumbnail_job调用点全部只传key；同文件run_user_aggregation/classify_job写法正确使聚合/分类链存活，管线呈半瘫假象
+- **修复**：8处调用点补函数参数（contents.py/photo_content.py/register.py/wechat service/pipeline.py）+args透传守护测试2例；9b1dd21d重放finished/DB done实证ASR管线worker内首次跑通
+- **相关文件**：-
+- **教训**：job级去重封装的key与函数参数是两个概念：新增enqueue调用点必须核对函数签名补args，并用job.args断言守护；诊断RQ失败时先看worker进程stderr（TaskOutput流），job hash无exc_info不代表无异常
+
+---
+
+### 2026-09-06 11:56 · commit eb49ad8 · ts=1788666995
+- **错误**：R9 seed摘除时空壳软删UPDATE未限定受影响事件id，把279个历史孤儿事件（含101个L3空壳）一并软删
+- **根因**：①批量UPDATE/DELETE未先SELECT出受影响主键集合再显式IN-list限定；②L3事件成员不走event_items挂载，NOT EXISTS判空对L3不成立；③盘点查询'成员N'是join seed后的行数而非总成员数，误把20个事件全当会变空壳
+- **修复**：前照盘点+事务回滚（psycopg非autocommit时assert放commit前）+按id清单精确恢复279个；正向成果保留：130条seed成员摘除+18个seed空壳事件软删+2个rescue事件时间重算（COALESCE回退created_at因语音taken_at=NULL）
+- **相关文件**：-
+- **教训**：批量数据清理三步军规：先SELECT受影响主键→显式IN-list限定→前后行数对账assert；对聚合产物做存在性判断前必须核实每个level的成员挂载方式
+
+---
+
+### 2026-09-06 03:06 · commit efca914 · ts=1788635170
+- **错误**：短录音链 saveVoiceContent(cosKey='') 硬编码空串——只传转写文本从不传音频文件，153 条 voice 中 28 条 failed、cos_key=NULL 恒不可播；且 fs storage 根随进程 cwd 漂移（主树/工作树各一份 storage，thumbnails 只在主树），跨树启动后端即读不到真数据
+- **根因**：①设计缺陷：短录音被当作「轻量文本记录」，音频文件从未纳入上链范围；②环境缺陷：fs_storage_root 默认相对路径 'data/storage'，依赖进程 cwd，两树两个根
+- **修复**：客户端 submitVoice 改走 uploadVoicePersistent 分片上传（cos_key 必有，降级路径显式 toast）；后端 _register_voice_content 接受 meta.text 预填；后端启动一律 FS_STORAGE_ROOT=D:/GuangH-App/backend/data/storage 显式指定真数据根
+- **相关文件**：client/utils/voice.uts,client/components/RecordSheet/RecordSheet.uvue,backend/app/services/upload/register.py
+- **教训**：「能落库」≠「能播」：媒体内容必须连同文件本体验收（media 端点字节级断言）；fs 相对路径根 = 隐性环境分叉，服务启动必须显式绝对路径
+
+---
+
+### 2026-09-05 13:38 · commit 84c20e7 · ts=1788586729
+- **错误**：回收站「恢复」按钮真机点击无响应（连点5次零请求，后端无日志）
+- **根因**：uvue 原生端小字号(21.2rpx) text@tap hit-test 失效；view@tap 对照组（清空按钮）立即弹框，根因锁定元素类型而非坐标
+- **修复**：外包 view.trestore-btn 承载 @tap，padding 20/24rpx 扩热区+负 margin 抵消位移（R4/84c20e7）。可点击元素一律 view 承载；detail.uvue:72/interview.uvue:44 等同类 text@tap 待真机回归排查
+- **相关文件**：client/pages/storage/trash.uvue
+- **教训**：uvue 真机验证可点击性不能只看渲染效果——text@tap 视觉正常但热区可能完全失效；对照实验（同页 view@tap）是定位元素类型问题最快路径
+
+---
+
+### 2026-09-05 02:34 · commit 5299f4d · ts=1788546873
+- **错误**：reinject_missing_photos.py 首次入库被 pre-commit lint 拦截（UP009 utf-8 声明/E402 chdir 后 import/S311 random/B007 未用循环变量/E501 超长行）
+- **根因**：写新脚本时未先跑 ruff check 预检，且不知道本仓 lint 规则集含 UP/S/B 全家；E402 在 sys.path/chdir 型脚本里必然触发，应顶部 noqa 集中声明
+- **修复**：新脚本入库前先 ruff check 预检；脚本型 E402/S311/B007 用文件头 '# ruff: noqa: E402, S311, B007' 集中豁免并注释理由
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-09-04 14:50 · commit 4a606d7 · ts=1788504645
+- **错误**：性能批收口时 HBuilderX cli launch 持续报「未检测到已打开的HBuilderX」，最初误诊为安全中心 wmic.exe 黑名单拦截（进程明明存活）
+- **根因**：cli.exe 与 IDE 的进程探测/通信实际走 Windows 命名管道（LocalSocketClient pipe stream，strings cli.exe 可证），wmic 只是表象；真实原因是 HBuilderX 初始化未完成管道未就绪（约 40s+），且沙箱内启动的 GUI 进程会被隔离回收（启动即退）；worktree 有独立 scripts/lessons.py+docs/lessons.md，登记必须用当前树版本（../../ 调的是主仓版）
+- **修复**：非沙箱通道 cli open 启动 → 等待 40s+ 初始化完成 → 再跑 launch；进程存活用 tasklist 双确认
+- **相关文件**：D:/HBuilderX/cli.exe
+- **教训**：HBuilderX cli 报「未检测到」先怀疑管道未就绪而非进程不存在；GUI 程序必须非沙箱启动；诊断二进制行为用 strings 提取特征串而非猜
+
+---
+
+### 2026-09-04 02:02 · commit 234d34c · ts=1788458533
+- **错误**：整饬时为修复分支指针手工编辑主仓 packed-refs：①用 Python 文本模式 write 把全文件行尾写成 CRLF，git 报全部 ref broken name(尾随?)+^peeled 行 unexpected，仓库 refs 整体瘫痪数分钟；②插入位置未保持字母序，二分查找失效(for-each-ref 线性可读但 rev-parse/log 解析失败)
+- **根因**：packed-refs 是二进制敏感格式：Windows 文本模式 write 会把 \n 翻译成 \r\n 污染所有行尾；ref 行必须按 refname 字节序排列，乱序后线性遍历可见但二分解析失败
+- **修复**：改主仓 packed-refs 必须用 open(pr,'wb') 二进制写 + \n 行尾；插入/更新分支行后按 refname 重新整体排序，^peeled 行跟随其父 tag 行作为一组参与排序
+- **相关文件**：-
+- **教训**：手工改 packed-refs 只允许二进制模式写+写后整体重排序校验；文本模式 open('w') 在 Windows 上必污染行尾
+
+### 2026-08-29 14:22 · commit f1f8a3c · ts=1787984576
+- **错误**：R1-d commit C1 被快速门禁拦截：test_correction.py 新函数里 sha256(text).encode utf-8 参数触发 ruff UP012（str.encode 默认即 utf-8，冗余参数）
+- **根因**：写测试补丁时按旧习惯给 encode 传显式编码参数，仓库 ruff 规则集会判冗余；lint 只查暂存文件所以提交前没预检到
+- **修复**：删去冗余参数（.encode() 无参），复跑 test_correction 全绿后重提
+- **相关文件**：backend/tests/test_correction.py
+- **教训**：新增 python 字符串编码调用一律裸 .encode()；提交前先跑一次 python scripts/review_agent.py 手动预检再走 git commit
+
+---
+
+### 2026-08-29 13:52 · commit 8cb15b4 · ts=1787982733
+- **错误**：commit B 首提被快速门禁拦截：test_asr.py 参数化 ids 行加第5个字符串后 126>120 触发 E501
+- **根因**：给 ids 列表追加元素时只保证功能正确，未复测行宽；该文件历史上 ids 是单行写法贴近 120 上限，加项必爆
+- **修复**：ids 改为多行分组写法（单行 ≤58），复跑 test_asr 47 全绿后重提
+- **相关文件**：backend/tests/test_asr.py
+- **教训**：python 行内列表要加长项时直接折多行，别赌行宽余量
+
+---
+
+### 2026-08-29 13:50 · commit 380ebbd · ts=1787982629
+- **错误**：修复 .gitignore 豁免时把提交版截成 9 行（!client 豁免块之外的全部规则丢失，含 .env 密钥忽略），amend 前靠 commit stat 自检 141 行异常抓获
+- **根因**：三连失误：①同一条消息里 edit 工具与 python 脚本对同一文件双写竞态（重复追加豁免块）②dedupe 脚本头截断逻辑对中间态行数判断错误 ③EOL 断言把行尾换行算成 mixed 误报——修脚本 bug 时把完好文件再次写坏
+- **修复**：git show 85e7e57~1:.gitignore 恢复母版 136 行 + 追加豁免块 → 143 行全 CRLF 重写 → git commit --amend；check-ignore 三连（豁免/仍忽略/构建残留仍忽略）复验
+- **相关文件**：.gitignore
+- **教训**：任何提交后必须 git show <sha> --stat 自检：变更行数与预期不符即停（本条即自救记录）；同一文件的写操作严禁在同一条消息里并发多工具
+
+---
+
+### 2026-09-04 00:43 · commit f126687 · ts=1788453787
+- **错误**：整饬清理时 rm 命令在主树 D:/GuangH-App 执行（shell cwd 静默回落工作区根），幸运目标文件主树不存在未造成损失；随后 git -C /d/... POSIX 风格路径报 not a git repository
+- **根因**：本沙箱 Bash 工具的 cwd 持久化不可靠：前一条 cd 进 worktree 后下一条命令可能静默回到工作区根；且 git -C 配 /d/ POSIX 风格路径偶发仓库解析失败
+- **修复**：改用 Windows 风格路径：每条危险命令显式 cd "D:/..." 前缀 + git -C "D:/..."；rm 前先 pwd/git status 确认落点
+- **相关文件**：-
+- **教训**：跨 worktree 操作时路径必须逐条显式写 Windows 风格全路径，危险命令（rm/git add -A）执行前必须核实当前落点
+
+---
+
+### 2026-09-03 03:37 · commit 34270a3 · ts=1788377843
+- **错误**：§U批commit后git log复核分支仍停4d21b5d(沙箱ref静默丢失#36复发)
+- **根因**：linked worktree分支的loose ref文件(worktrees/<name>/refs/heads/...)直写全量SHA后落盘成功(cat可见)但git解析仍走主仓common packed-refs旧值——本沙箱git无视worktree loose ref；短SHA更不会被解析
+- **修复**：Python改主仓packed-refs该分支行(必须40位全量SHA)→git log立即解析新值34270a3。铁律升级:commit后git log复核分支不动时①update-ref→②Python直写worktree loose ref(全量SHA)→③终极=改common packed-refs行,三通道逐一验证;reflog只证明commit对象存在不证明分支前进
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-09-03 03:23 · commit 4d21b5d · ts=1788376991
+- **错误**：git commit/update-ref 显示成功但分支指针纹丝不动（§T/§T2 两提交 63db7cf/4d21b5d 提交后 git log 仍停在 e37e482，一度误判为外部进程回拨/仓库被拆）
+- **根因**：沙箱环境对 .git/refs/heads/ 下新文件创建静默丢弃：分支只有 packed-refs 记录（无 loose ref 文件）时，commit/update-ref 写的松散 ref 落盘即失，对象与 reflog 均正常落盘——git 无报错、分支不动；refs/heads/feature 目录本身不存在（分支被打包进 packed-refs 后松散文件消失）。判据三件套：commit 输出正常 + git log 停旧值 + reflog 顶端是新提交
+- **修复**：python 直写 loose ref 文件（Windows 路径 D://...//refs//heads//feature//missing-pages-impl，内容=新 sha）后 update-ref 即正常；备选=直接改 packed-refs 对应行。注意 Git Bash 的 /d/ 路径 python 不认、ls .git | head 会把 refs/ objects/ 截掉造成'仓库被拆'假象
+- **相关文件**：.git/packed-refs, .git/refs/heads/
+- **教训**：本窗提交后必须 git log 复核分支真动没动；'commit 成功'≠'分支前进'，reflog 才是提交存在的铁证
+
+---
+
+### 2026-09-03 02:12 · commit d3bfc45 · ts=1788372739
+- **错误**：pre-commit lint E501: backend/app/api/events.py:106 函数签名 122>120 超长阻断提交
+- **根因**：W1-4 批新增 _to_out 四参签名一行写完，提交前未本地预跑 ruff 快速门禁
+- **修复**：签名折行 two-line；教训=批量 commit 前先跑 python scripts/review_agent.py 预检，别让 hook 当第一发现人
+- **相关文件**：backend/app/api/events.py
+- **教训**：大批次 commit 前本地预跑快速门禁，E501 这类机械错误零成本预防
+
+---
+
+### 2026-09-02 03:12 · commit d1ab389 · ts=1788289963
+- **错误**：pre-commit 快速门禁连续两次拦截：① main.py I001 import 块排序（media_router 插在 thumbnails 之后违反字母序）② media_url.py UP012 encode('utf-8') 冗余参数
+- **根因**：① 新增 import 习惯性追加到块尾，未按模块名字母序插入 ② 手写 encode 显式带 utf-8，ruff 视为冗余
+- **修复**：① media import 移至 event_items 与 thumbnails 之间 ② .encode('utf-8') → .encode()
+- **相关文件**：backend/app/main.py, backend/app/services/external/media_url.py
+- **教训**：主树 backend 提交前先过 lint 同款规则；新增 import 一律按字母序插入而非追加块尾
+
+---
+
+### 2026-09-01 17:39 · commit 2059f40 · ts=1788255541
+- **错误**：跨会话抢救的暂存区 .cowork-temp/salvage/ 被工作区清理 Agent 整目录删除，其中 rag/image.py 的预 stash 回滚 1KB diff 成为永久损失（另两重备份恰在 git 分支未受损）
+- **根因**：三重备份设计有两重落在 gitignore 区（.cowork-temp），对清理类 Agent 而言 ignore 目录=垃圾的同义词；唯 stash 分支不可变但设计时未把「image.py 曾先被 checkout 回滚」这一时间差纳入备份覆盖
+- **修复**：教训固化：抢救/备份物只存 git（分支或 stash 树），如需落盘必须放非 ignore 路径并在台账写回捞命令；本次损失已定性（image.py 后被 dashscope 正式重写，风险可接受）
+- **相关文件**：docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md
+- **教训**：给清理 Agent 的禁碰清单必须含 .cowork-temp 里的备份物——或直接别把备份放那儿
+
+---
+
 ### 2026-09-01 15:28 · commit 36e0b64 · ts=1788247729
 - **错误**：wrap1 合并解冲突脚本首版将 progress.md 从 680 行砍到 58 行（develop 侧 622 行记账差点丢失），lessons.md 同样被砍至 ~108 行
 - **根因**：union 脚本只把两个冲突块拼进输出，冲突区之外的正文（out 列表）从未加入 merged；且无行数守恒校验，第一轮静默落盘

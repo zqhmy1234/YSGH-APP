@@ -1,0 +1,181 @@
+<template>
+	<!-- 卡E04 · W4 用户协议页（2026-09-04 新建，复用 privacy.uvue 版式）
+	     真值来源：E 系功能卡无画布帧真值 → 版式复用卡14 F3a privacy.uvue
+	     （导航/滚动容器/PolicyBlock 正文卡样式原值，样式值源出 privacy_canvas.json），非画布还原
+	     文案性质：草稿 v0.1，待峰宝审定稿；定稿后仅替换 script 内 blocks 文本，版式不动
+	     结构：导航标题+返回（goBack 回落先例同 privacy）/ 全文单卡滚动，
+	       7 节：服务说明 / 数据收集范围 / 数据存储与安全 / 用户权利 / 未成年人保护 / 协议变更与生效 / 联系渠道 -->
+	<view class="page-root">
+		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">用户协议</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<!-- 内容滚动区（本页无章节 chips，全文单卡直读；上边距对齐 about 品牌区起点 192.3rpx） -->
+		<scroll-view class="body-scroll" direction="vertical" :show-scrollbar="false">
+			<view class="card">
+				<text class="sec-title">忆述光华用户协议</text>
+				<view v-for="(blk, bi) in blocks" :key="bi">
+					<text v-if="blk.kind == 'h'" class="blk-h">{{ blk.text }}</text>
+					<text v-else-if="blk.kind == 'b'" class="blk-b">{{ blk.text }}</text>
+					<text v-else class="blk-p">{{ blk.text }}</text>
+				</view>
+				<view class="card-divider"></view>
+				<text class="next-link next-link-end">已到文末，感谢阅读</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// 先例铁律：type 字面量构造编译器不认 → class + constructor + new（privacy.uvue PolicyBlock 同款）
+	class PolicyBlock {
+		kind: string = 'p' // p=正文段 / b=强调条款 / h=节标题
+		text: string = ''
+		constructor(kind: string, text: string) {
+			this.kind = kind
+			this.text = text
+		}
+	}
+
+	// 协议全文（草稿 v0.1，待峰宝审定稿）：7 节 = h 节标题 + p 正文 + b 强调条款
+	const blocks: Array<PolicyBlock> = [
+		new PolicyBlock('p', '欢迎使用「忆述光华」App（以下简称"本应用"）。本协议是您与本应用运营者之间，就使用本应用服务订立的约定。请您在使用前仔细阅读本协议全部内容；您开始使用本应用，即视为已阅读并同意本协议。'),
+		new PolicyBlock('h', '一、服务说明'),
+		new PolicyBlock('p', '本应用是一款个人记忆整理与回顾工具，帮助您以照片、文字、语音碎片等方式记录生活，并通过 AI 能力自动整理、分类与检索，形成可回顾的个人记忆库。'),
+		new PolicyBlock('p', '我们会持续优化服务体验，部分功能可能随版本更新有所调整；调整不改变您对已保存记忆数据的归属与访问权利。'),
+		new PolicyBlock('b', '本应用服务仅供您本人使用，请妥善保管账号与设备安全。'),
+		new PolicyBlock('h', '二、数据收集范围'),
+		new PolicyBlock('p', '我们仅在您主动操作时收集以下内容：您授权选取或拍摄的照片、您输入的文字内容、您录制的语音碎片。未经授权的相册、麦克风内容不会被读取或上传。'),
+		new PolicyBlock('p', '照片的拍摄时间、地点等元数据仅用于记忆时间轴整理与事件聚合，不作其他用途。'),
+		new PolicyBlock('b', '我们不收集通讯录、短信、通话记录等与记忆整理无关的信息。'),
+		new PolicyBlock('h', '三、数据存储与安全'),
+		new PolicyBlock('p', '您的记忆数据默认保存在设备本地数据库（SQLite）中；开启云备份后，数据经加密上传至云端，用于防丢失与恢复。'),
+		new PolicyBlock('b', '云端数据全程加密传输与存储；我们绝不向任何第三方出售您的个人信息或记忆内容。'),
+		new PolicyBlock('p', '我们采用传输加密、访问控制与安全审计等措施保护您的数据；如发生安全事件，将依法及时告知您。'),
+		new PolicyBlock('h', '四、用户权利'),
+		new PolicyBlock('p', '您对自己的记忆数据拥有完整的控制权，可随时行使以下权利：'),
+		new PolicyBlock('b', '查看：在时间轴、搜索与「我的-画像管理」中查看全部记忆与画像内容。'),
+		new PolicyBlock('b', '导出：在「我的-存储与备份」导出您的记忆数据（功能逐步开放中）。'),
+		new PolicyBlock('b', '更正：手动纠正记忆的分类、标签与文字内容。'),
+		new PolicyBlock('b', '删除：删除记忆先移入回收站，30 天内可恢复；彻底删除后本地与云端副本同步清除。'),
+		new PolicyBlock('h', '五、未成年人保护'),
+		new PolicyBlock('p', '本应用面向成年用户设计。未满 14 周岁的未成年人使用本应用前，应事先取得家长或法定监护人的同意。'),
+		new PolicyBlock('p', '如发现我们在不知情的情况下收集了未成年人的个人信息，监护人可联系我们予以删除。'),
+		new PolicyBlock('h', '六、协议变更与生效'),
+		new PolicyBlock('p', '本协议自您确认同意之日起生效。我们可能随服务发展适时修订本协议，重大变更将通过应用内显著方式通知您。'),
+		new PolicyBlock('b', '未经您明确同意，修订不会削减您依本协议享有的权利；您继续使用本应用即视为接受修订后的协议。'),
+		new PolicyBlock('h', '七、联系渠道'),
+		new PolicyBlock('p', '如对本协议或您的数据处理有任何疑问、意见或建议，可通过以下渠道与我们联系：'),
+		new PolicyBlock('b', '应用内「我的-设置-关于」页面公示的官方渠道。'),
+		new PolicyBlock('b', '应用商店页面公示的联系方式（随正式版本公布）。'),
+		new PolicyBlock('p', '我们将在 15 个工作日内予以答复。'),
+	]
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页（settings.uvue 先例）
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航（settings.uvue 二级页先例原值，复用 privacy.uvue） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 内容卡（privacy.uvue 原值；本页无 chips 行，滚动区上移 300→192.3rpx，取 about 页品牌区起点同值） ── */
+	.body-scroll {
+		flex: 1;
+		margin-top: 192.3rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-bottom: 60rpx;
+	}
+	.card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-top: 38.5rpx;
+		padding-bottom: 38.5rpx;
+		background-color: #FFFFFF;
+		border-radius: 30.8rpx;
+	}
+	.sec-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.blk-h {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 25rpx;
+		color: #3A2E25;
+		margin-top: 26.9rpx;
+	}
+	.blk-p {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		line-height: 40.4rpx;
+		color: #6B5D4F;
+		margin-top: 26.9rpx;
+	}
+	.blk-b {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 25rpx;
+		line-height: 40.4rpx;
+		color: #3A2E25;
+		margin-top: 26.9rpx;
+	}
+	.card-divider {
+		height: 1.9rpx;
+		background-color: #EDE5D5;
+		margin-top: 26.9rpx;
+	}
+	.next-link {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 25rpx;
+		color: #C4913C;
+		margin-top: 26.9rpx;
+	}
+	.next-link-end {
+		color: #B3A696;
+	}
+</style>

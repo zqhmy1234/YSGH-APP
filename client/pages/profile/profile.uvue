@@ -23,13 +23,18 @@
 		<view class="list-flow"> <!-- 列表流式容器（流式重构三定律：组间 margin 表达画布 y 差，加行/加组自动下移，不再写死 top） -->
 			<view class="n2_466"> <!-- 列表组1 -->
 				<view class="n2_467" @tap="goInterview"> <!-- 行-记忆访谈（旧版入口在还原中丢失，对齐旧版 profile goInterview() 补回；样式复用 467 行） -->
-					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标（暂用画像图标） -->
+					<image class="n2_468" src="/static/icons/i2_468a.svg" /> <!-- icon: 麦克风（§P8 峰宝点名图标重复：访谈=麦） -->
 					<text class="n2_472">记忆访谈</text> <!-- 文字 -->
 					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 				</view>
 				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像管理 -->
 					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
 					<text class="n2_472">画像管理</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_467" @tap="goFavorites"> <!-- 行-我的收藏（峰宝联调点名 2026-09-02：goFavorites 接线早已落盘但模板漏行，补入口；样式复用 467 行族） -->
+					<image class="n2_468" src="/static/icons/i2_468b.svg" /> <!-- icon: 空心星（§P8 峰宝点名图标重复：收藏=星） -->
+					<text class="n2_472">我的收藏</text> <!-- 文字 -->
 					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 				</view>
 				<view class="n2_475" @tap="goMessagesCenter"> <!-- 行-消息中心 -->
@@ -44,7 +49,7 @@
 					<text class="n2_486">设置</text> <!-- 文字 -->
 					<image class="n2_487" src="/static/icons/i2_487.svg" /> <!-- icon: 箭头 -->
 				</view>
-				<view class="n2_489" @tap="goPrivacy"> <!-- 行-存储与备份 -->
+				<view class="n2_489" @tap="goStorageBackup"> <!-- 行-存储与备份（W0-4 错绑修复：原误绑 goPrivacy，audit F2 实锤） -->
 					<image class="n2_490" src="/static/icons/i2_490.svg" /> <!-- icon: 图标 -->
 					<text class="n2_493">存储与备份</text> <!-- 文字 -->
 					<image class="n2_494" src="/static/icons/i2_494.svg" /> <!-- icon: 箭头 -->
@@ -133,9 +138,9 @@
 		uni.navigateTo({ url: '/pages/portrait/manage' })
 	}
 
-	// 菜单：我的收藏（页面未建成，占位）
+	// 菜单：我的收藏（卡16 集成接线，主窗口 2026-09-02：收藏页已建成，toast 占位退役）
 	function goFavorites(): void {
-		uni.showToast({ title: '收藏功能开发中', icon: 'none' })
+		uni.navigateTo({ url: '/pages/favorites/favorites' })
 	}
 
 	// 菜单：设置（pages.json 已注册 pages/settings/settings）
@@ -143,14 +148,14 @@
 		uni.navigateTo({ url: '/pages/settings/settings' })
 	}
 
-	// 菜单：隐私政策
-	function goPrivacy(): void {
-		uni.showToast({ title: '隐私政策开发中', icon: 'none' })
+	// 菜单：存储与备份（W0-4 错绑修复：原 goPrivacy 误绑此行；W1-1 页面已落地改真跳转）
+	function goStorageBackup(): void {
+		uni.navigateTo({ url: '/pages/storage/storage' })
 	}
 
-	// 菜单：关于我们
+	// 菜单：关于我们（W1-2 页面已落地改真跳转）
 	function goAbout(): void {
-		uni.showToast({ title: '关于页面开发中', icon: 'none' })
+		uni.navigateTo({ url: '/pages/about/about' })
 	}
 
 

@@ -1,0 +1,232 @@
+<template>
+	<!-- ═══════════ 画像隐私设置面板（F9c · 卡25 · canvas JSON 真值） ═══════════
+	     真值：.wt/missing-pages/uvue_gen/portrait_privacy_panel_canvas.json（2026-09-02 14:33 导出，34 节点，帧 F9c）。
+	     画布为整页形态（不透明底 + 返回钮），宿主 manage.uvue 以全屏浮层唤起（不跳页，铁律 1 同族；
+	     fixed 全屏盖 TabBar，RecordSheet 范式）。
+	     结构（逻辑 px ×1.9231→rpx）：底 #F8F7F4 / 返回 22×22 @16,60 / 标题 18·600 居中 y60 /
+	     组1（y110 白卡 r20 p6 影 0,3,12,.05）：行 h52 p12（图标 20×20 + 文字 15·400 #3A2E25 + 开关 46×28 r14
+	     #B05A3A p3 内阴影白a0.3，滑块 22 白 影 0,1,3,.25）/ 说明 11·400 #B3A696 y232 /
+	     组2（y250 同款卡）：行 h44（敏感话题管理→管理 › 13·400 #B3A696；清除画像数据→不可恢复 13·400 #B05A3A）/
+	     说明 11·400 #B3A696 y356 -->
+	<view class="panel-root">
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="onClose" />
+		<view class="nav-title">
+			<text class="nav-title-text">画像隐私设置</text>
+		</view>
+
+		<view class="flow">
+			<!-- 64:291 组1：两行画像使用开关 -->
+			<view class="group-card">
+				<view class="row">
+					<image class="row-icon" src="/static/icons/i64_299.svg" />
+					<text class="row-text">AI 对话使用画像</text>
+					<view :class="aiOn ? 'switch switch-on' : 'switch switch-off'" @tap="toggleAi">
+						<view class="switch-knob"></view>
+					</view>
+				</view>
+				<view class="row">
+					<image class="row-icon" src="/static/icons/i64_302.svg" />
+					<text class="row-text">回响使用画像</text>
+					<view :class="echoOn ? 'switch switch-on' : 'switch switch-off'" @tap="toggleEcho">
+						<view class="switch-knob"></view>
+					</view>
+				</view>
+			</view>
+			<!-- 64:320 说明-参与程度（W1-5：尾部补诚实标注——开关仅本地生效，画像消费端点未接，禁假称云端完成） -->
+			<text class="group-hint">关闭后对应功能只使用记忆内容本身，不再引用你的画像（本地生效，云端同步待接入）</text>
+
+			<!-- 64:292 组2：敏感话题管理 + 清除画像数据 -->
+			<view class="group-card group-2">
+				<view class="row" @tap="onManageSensitive">
+					<image class="row-icon" src="/static/icons/i64_305.svg" />
+					<text class="row-text">敏感话题管理</text>
+					<text class="row-value">管理 ›</text>
+				</view>
+				<view class="row" @tap="onClearPortrait">
+					<image class="row-icon" src="/static/icons/i64_308.svg" />
+					<text class="row-text">清除画像数据</text>
+					<text class="row-value value-danger">不可恢复</text>
+				</view>
+			</view>
+			<!-- 64:321 说明-清除 -->
+			<text class="group-hint">清除将删除全部画像维度与证据锚点，需二次确认且不可恢复</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	const emit = defineEmits(['close', 'cleared'])
+
+	// ── 开关本地态（真端点待后端登记台账，卡25 交互接线；settings.uvue 字符串 storage 先例，
+	//    默认开 = 键缺省/空 均视为开） ──
+	let aiOn = ref(uni.getStorageSync('privacy_ai_chat') != '0')
+	let echoOn = ref(uni.getStorageSync('privacy_echo') != '0')
+
+	function toggleAi(): void {
+		aiOn.value = !aiOn.value
+		uni.setStorageSync('privacy_ai_chat', aiOn.value ? '1' : '0')
+	}
+	function toggleEcho(): void {
+		echoOn.value = !echoOn.value
+		uni.setStorageSync('privacy_echo', echoOn.value ? '1' : '0')
+	}
+
+	/** 管理 ›：收起面板回宿主页（敏感画像管理卡片就在 manage 页内，无独立二级页） */
+	function onManageSensitive(): void {
+		onClose()
+	}
+
+	/** 清除画像数据：二次强确认（confirm 先例 = manage onRemoveSensitive showModal）。
+	 *  MVP 本地清空：隐私开关 / locked 标签 / AI 标签编辑覆盖全部置空并复位开关；
+	 *  后端画像清除端点未登记（台账 卡25 F9c），不伪造远端清除成功 */
+	function onClearPortrait(): void {
+		uni.showModal({
+			title: '清除画像数据',
+			content: '将删除全部画像维度与证据锚点，此操作不可恢复。确定清除吗？',
+			success: (res) => {
+				if (res.confirm) {
+					uni.setStorageSync('privacy_ai_chat', '')
+					uni.setStorageSync('privacy_echo', '')
+					uni.setStorageSync('portrait_locked_tags', '')
+					uni.setStorageSync('portrait_ai_tags_edited', '')
+					aiOn.value = true
+					echoOn.value = true
+					uni.showToast({ title: '画像数据已清除（本地）', icon: 'none' })
+					emit('cleared')
+					onClose()
+				}
+			}
+		})
+	}
+
+	function onClose(): void {
+		emit('close')
+	}
+</script>
+
+<style>
+	/* 全屏浮层：不透明底盖住宿主页与 TabBar（fixed 全屏，z-index 1000 > TabBar 999） */
+	.panel-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: #F8F7F4;
+		z-index: 1000;
+		flex-direction: column;
+	}
+	/* ── 导航：画布 标题 18px SemiBold y60 / 返回 22×22 @16,60（theme-detail 同款） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（关面板） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* 内容流：画布组 x20 → 左右 inset 38.5rpx，组1 y110 */
+	.flow {
+		position: absolute;
+		/* absolute-ok: 内容容器（内容短，无需滚动） */
+		left: 0rpx;
+		right: 0rpx;
+		top: 211.5rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	/* 64:291/64:292 组卡：白底 r20 p6 影 (0,3,12,.05) */
+	.group-card {
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		padding: 11.5rpx;
+		box-shadow: 0 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		flex-direction: column;
+	}
+	/* 组2 y250：说明 y232+13=245 → gap5=9.6rpx */
+	.group-2 {
+		margin-top: 9.6rpx;
+	}
+	/* ── 行：p12 图标20 文字15 值13；开关行 h52 / 值行 h44 ── */
+	.row {
+		padding: 23.1rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:299 行图标：20×20 → 38.5rpx（库存 svg 见台账：眼睛无库存降级 icon-chat） */
+	.row-icon {
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	/* 64:300 行文字：15px Regular #3A2E25，图标右 gap12=23.1rpx */
+	.row-text {
+		flex: 1;
+		margin-left: 23.1rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	/* 64:307/64:310 行值：13px Regular；管理 › #B3A696 / 不可恢复 #B05A3A */
+	.row-value {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 25rpx;
+		color: #B3A696;
+	}
+	.value-danger {
+		color: #B05A3A;
+	}
+	/* ── 64:318 开关：46×28 r14 p3，开 #B05A3A（滑块靠右 x21）/ 关降级 #D8D0C6（画布只有开态），
+	   滑块 22 白圆 影 0,1,3,.25；INNER_SHADOW 白a0.3 纳入 inset ── */
+	.switch {
+		width: 88.5rpx;
+		height: 53.8rpx;
+		border-radius: 26.9rpx;
+		padding: 5.8rpx;
+		box-shadow: inset 0 1.9rpx 3.9rpx rgba(255, 255, 255, 0.3);
+		flex-direction: row;
+	}
+	.switch-on {
+		background-color: #B05A3A;
+		justify-content: flex-end;
+	}
+	.switch-off {
+		background-color: #D8D0C6;
+		justify-content: flex-start;
+	}
+	.switch-knob {
+		width: 42.3rpx;
+		height: 42.3rpx;
+		border-radius: 21.2rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0 1.9rpx 5.8rpx rgba(59, 46, 38, 0.25);
+	}
+	/* ── 说明：11px Regular #B3A696（组1 底 226→232 gap6=11.5rpx / 组2 底 350→356 同） ── */
+	.group-hint {
+		margin-top: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+</style>

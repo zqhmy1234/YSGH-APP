@@ -46,6 +46,12 @@ class ContentOut(BaseModel):
     status: str
     audio_processing: dict[str, Any] | None = None
     created_at: datetime
+    # 媒体下发 URL（Valet Key · 2026-08-31）：<image :src> 带不了 Bearer header，
+    # 改发短时效签名 URL。缩略图 24h / 原图 15m（config.media_*_ttl）。
+    # 相对路径（/api/v1/media/...）由客户端拼 BASE_URL；COS 后端返回绝对 URL。
+    # 契约「默认缩略图 + 原图按需」：列表/卡片只用 thumbnail_url，点开详情才取 original_url。
+    thumbnail_url: str | None = None
+    original_url: str | None = None
 
 
 class ProfileSensitiveCreate(BaseModel):
@@ -88,3 +94,49 @@ class CosPresign(BaseModel):
     session_token: str
     expired_at: datetime
     cos_key: str
+
+
+# ---------- W2-1 删除/回收站 + W2-2 收藏（2026-09-05） ----------
+
+TRASH_RETENTION_DAYS = 30  # 回收站保留期（对齐客户端 trash 页文案「保留 30 天」）
+
+
+class ContentDeleteOut(BaseModel):
+    """软删出参（DELETE /api/v1/contents/{content_id}；W2-1）
+
+    permanent_at：软删=保留期截止时间；restore 场景为 null。
+    """
+
+    content_id: str
+    deleted: bool
+    permanent_at: datetime | None = Field(None, description="保留期截止（30 天后彻底清除）；恢复时为 null")
+
+
+class FavoriteOut(BaseModel):
+    """收藏切换出参（POST/DELETE /api/v1/contents/{content_id}/favorite；W2-2）
+
+    持久化：contents.extra JSONB 键 favorite_at（ISO 字符串，零迁移）——
+    favorite=false 时 favorite_at=null。
+    """
+
+    content_id: str
+    favorite: bool
+    favorite_at: datetime | None = None
+
+
+class TrashItemOut(BaseModel):
+    """回收站条目（GET /api/v1/trash；W2-1）"""
+
+    id: str
+    content_type: str
+    text: str | None = None
+    place: str | None = None
+    taken_at: datetime | None = None
+    deleted_at: datetime
+    days_left: int = Field(description="距彻底清除剩余天数（向下取整，最小 0）")
+
+
+class TrashClearOut(BaseModel):
+    """回收站清空出参（DELETE /api/v1/trash）"""
+
+    cleared: int

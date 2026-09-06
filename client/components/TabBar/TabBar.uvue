@@ -43,6 +43,12 @@
 		active: {
 			type: String,
 			default: 'index'
+		},
+		// §O P2（峰宝拍板）：当前页是该 tab 域的子页（navigateTo 压栈，如 manage）时传 true——
+		// 点本域 tab = navigateBack 返回域主页；域主页自身不传，维持原「无操作」语义
+		subpage: {
+			type: Boolean,
+			default: false
 		}
 	})
 
@@ -52,27 +58,41 @@
 	const emit = defineEmits(['plus'])
 
 	// 跳转方法
+	// B10 回退（2026-09-03 峰宝真机证伪）：原生 tabBar 注册 + hideTabBar 在 app-uvue Android
+	// 不干净生效——原生条仍渲染在最底（截实锤），页面视口/层级被打乱且交互失效。
+	// 回退 redirectTo（切换闪屏问题回到 B 类待拍板：剩单页组件化/glassEffect 两案）
 	const goIndex = () => {
 		if (props.active !== 'index') {
 			uni.redirectTo({ url: '/pages/index/index' })
+		} else if (props.subpage == true) {
+			// §O P2：子页点本域 tab = 返回域主页（栈内必有主页，back 必达）
+			uni.navigateBack()
 		}
 	}
 
 	const goAI = () => {
 		if (props.active !== 'ai') {
 			uni.redirectTo({ url: '/pages/ai/ai' })
+		} else if (props.subpage == true) {
+			uni.navigateBack()
 		}
 	}
 
 	const goSearch = () => {
 		if (props.active !== 'search') {
 			uni.redirectTo({ url: '/pages/search/search' })
+		} else if (props.subpage == true) {
+			uni.navigateBack()
 		}
 	}
 
 	const goProfile = () => {
 		if (props.active !== 'profile') {
 			uni.redirectTo({ url: '/pages/profile/profile' })
+		} else if (props.subpage == true) {
+			// §O P2 修复：画像管理页点「我的」回不去的根因——active==='profile' 直接 return。
+			// 子页（manage 等 navigateTo 压栈）应 navigateBack 回 profile 主页
+			uni.navigateBack()
 		}
 	}
 

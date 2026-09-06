@@ -271,7 +271,10 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         except IntegrityError:
             db.rollback()
             return None
-        return {
+        # R9 批次3（R9-1 · 拍板 A-1）：回响首次展示同步建发 in-app echo 消息，
+        # payload=回响快照——消息中心点击直接回放快照（不调 /echo/today、不占名额）。
+        # 只在「新展示」分支到达此处（shown_today>=1 早返回 None）→ 天然每回响至多 1 条消息。
+        snapshot = {
             "content_id": content.id,
             "content_type": content.content_type,
             "text": text,
@@ -280,7 +283,46 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
             "echo_date": today.isoformat(),
             "fingerprint": fp,
         }
+        _create_echo_message(db, user_id, snapshot)
+        return snapshot
     return None
+
+
+def _create_echo_message(db: Session, user_id: str, snapshot: dict) -> None:
+    """建发 in-app echo 消息（payload=回响快照，R9 批次3）
+
+    事务边界：EchoHistory 已由调用方 commit；本函数 create_message(flush)+commit
+    独立落库。消息建发失败不阻断回响本体（回响查询是主产物），但 logger.error
+    显式记录原因——违反「结果不允许静默」军规的兜底是日志而非吞异常。
+    """
+    text = (snapshot.get("text") or "").strip()
+    ctype = snapshot.get("content_type") or "text"
+    body_hint = {
+        "photo": "去年今天的一张照片",
+        "voice": "去年今天的一段声音",
+    }.get(ctype, "去年今天的一段文字")
+    body = (text[:40] + "…") if len(text) > 40 else (text or body_hint)
+    try:
+        from app.services.notify import create_message
+
+        create_message(
+            db,
+            user_id,
+            channel="in_app",
+            msg_type="echo",
+            title="时间胶囊 · 去年今天",
+            body=body,
+            payload=snapshot,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.error(
+            "echo 消息建发失败（回响本体不受影响）user=%s content=%s",
+            user_id,
+            snapshot.get("content_id"),
+            exc_info=True,
+        )
 
 
 def dismiss_echo(db: Session, user_id: str, content_id: str) -> None:

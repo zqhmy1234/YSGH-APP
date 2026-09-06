@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     storage_backend: Literal["fake", "fs", "minio", "cos"] = "fake"
     # 本地文件系统后端根目录（相对 backend/ 解析；2026-08-25 新增，跨进程共享）
     fs_storage_root: str = "data/storage"
+    # 媒体下发票据（Valet Key · 2026-08-31 新增）
+    # 背景：<image :src> 带不了 Authorization header，私有图片无法用 Bearer 下发。
+    # 解法：storage.get_download_url() 签发短时效签名 URL——COS 用原生 presigned，
+    # fs/minio/fake 用 HMAC 票据指向 /api/v1/media/{key}（见 services/external/media_url.py）。
+    # 签名密钥独立于 jwt_secret（泄漏面隔离）；留空时回退 jwt_secret。
+    media_url_secret: str = ""
+    # 双 TTL（对齐业界成熟做法）：缩略图长时效配合客户端缓存秒开；原图短时效防泄露。
+    media_thumb_ttl: int = 86400        # 缩略图 24h
+    media_original_ttl: int = 900       # 原图 15m
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"

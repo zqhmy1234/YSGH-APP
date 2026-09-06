@@ -1,0 +1,266 @@
+<template>
+	<!-- ═══════════ 分享弹层（F7a 画布真值还原 · 卡21 · 2026-09-03 视觉重设计版） ═══════════
+	     重设计令牌（对齐 4:404 详情页定稿 / CapsuleSheet 同款）：弹层暖底 #FAF9F5、
+	     预览白卡+双投影 0/7.7/30.8 a0.06 + 0/1.9/5.8 a0.04、锈红 #B05A3A 星芒/品牌字/主按钮、
+	     三社交图标圆改白底+淡投影 0/3.8/15.4 a0.05。几何未变（r30.8 卡、r46.2 图标圆同旧画布）。
+	     浮层铁律 1 同族：弹层 = 全局浮层不是页面，唤起不发生页面跳转
+	     （RecordSheet/EchoSheet 同款 fixed + z-index 1000 范式，盖 TabBar 999）。
+	     画布 63:10：弹层顶 y=417 → min-height 821rpx；弹层 gap=16px→30.8rpx margin；
+	     遮罩 63:9 = rgba(59,46,38,0.4)；画布「底页(弱化)」由宿主 detail 真实页面呈现，不属于本组件 -->
+	<view class="sheet-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">分享记忆</text>
+				<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 重设计：淡底 → 白卡+双投影（4:404 详情页定稿令牌，pt→rpx：y4/blur16/a0.06 + y1/blur3/a0.04） -->
+			<view class="preview-card">
+				<view class="preview-grid">
+					<view class="preview-photo">
+						<image v-if="heroSrc != ''" class="preview-photo-img" :src="heroSrc" mode="aspectFill" />
+					</view>
+					<view class="preview-photo2"></view>
+				</view>
+				<text class="preview-title">{{ titleText }}</text>
+				<view class="brand-row">
+					<!-- 重设计：spark-gold → detail-sparkle（锈红星芒，CapsuleSheet 同款） -->
+					<image class="brand-star" src="/static/icons/detail-sparkle.svg" />
+					<text class="brand-text">忆述光华 · 把日子过成值得回味的记忆</text>
+				</view>
+			</view>
+			<!-- 重设计：#C4913C → 锈红 #B05A3A（CapsuleSheet 主按钮同款） -->
+			<view class="main-btn" @tap="onSave">
+				<text class="main-btn-text">保存到相册</text>
+			</view>
+			<!-- 63:25 面板项行：三社交项画布即灰显态（#B3A696 文案 / #8A7A6A 图标），灰显诚实化 -->
+			<view class="items-row">
+				<view class="share-item" @tap="onSocial('微信分享待接入')">
+					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-wechat.svg" /></view>
+					<text class="item-label">微信好友</text>
+				</view>
+				<view class="share-item item-mid" @tap="onSocial('朋友圈分享待接入')">
+					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-moments.svg" /></view>
+					<text class="item-label">朋友圈</text>
+				</view>
+				<view class="share-item item-mid" @tap="onSocial('链接复制待接入')">
+					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-link.svg" /></view>
+					<text class="item-label">复制链接</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props：只传基本类型（对象 prop 在 UTS 组件边界有类型陷阱，EchoSheet 同款规避）
+	const props = defineProps({
+		title: {
+			type: String,
+			default: ''
+		},
+		hero: {
+			type: String,
+			default: ''
+		}
+	})
+
+	const emit = defineEmits(['close'])
+
+	// 模板取值走 computed（EchoSheet 先例：uvue 模板不直接绑跨模块 ref）
+	const titleText = computed((): string => props.title)
+	const heroSrc = computed((): string => props.hero)
+
+	function onClose(): void {
+		emit('close')
+	}
+
+	function onSave(): void {
+		// 卡21/W1-6 复核：canvas 绘制（<canvas>/createCanvasContext）与 uni.saveImageToPhotosAlbum
+		// 全项目均零先例 → 无法生成/保存卡片图，白名单 share_card.uts 的创建条件（canvas 需独立封装）不成立，故不新建。
+		// 降级为诚实 toast，台账登记（W1-6/W1-8 降级登记 3）。真图保存通路待原生能力接入后启用。
+		uni.showToast({ title: '卡片图生成即将上线', icon: 'none' })
+	}
+
+	function onSocial(msg: string): void {
+		// 社交项灰显诚实化（卡21 交互接线）。画布本就是灰显态（弱字色+浅图标底）；
+		// 微信/朋友圈/复制链接 SDK 均未接入，按渠道出诚实占位 toast
+		uni.showToast({ title: msg, icon: 'none' })
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet 同款铁律） */
+		z-index: 1000;
+	}
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		/* 画布 63:9 真值：暖黑 a=0.40 */
+		background-color: rgba(59, 46, 38, 0.4);
+		z-index: 10;
+	}
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: 750rpx;
+		/* 画布 63:10 弹层顶 y=417 → 高 427 逻辑 = 821rpx；内容驱动 + 下限兜底 */
+		min-height: 821rpx;
+		/* 重设计：白 → 暖底 #FAF9F5（CapsuleSheet 同款） */
+		background-color: #FAF9F5;
+		/* 承载形状圆角（§W 峰宝拍板）：顶圆角对齐 RecordSheet 弹层 77rpx 家族语言，底缘贴屏 */
+		border-top-left-radius: 77rpx;
+		border-top-right-radius: 77rpx;
+		/* 画布无圆角声明（§W 拍板覆盖画布，快照已回写），底缘贴屏 */
+		padding-top: 34.6rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-bottom: 48.1rpx;
+		z-index: 20;
+		flex-direction: column;
+	}
+	.head-row {
+		width: 100%;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: flex-start;
+	}
+	.head-title {
+		/* 画布 63:12：y 相对头行 +4px */
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+.head-close {
+	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06），补偿原 padding 10rpx */
+	width: 60rpx;
+	height: 60rpx;
+	justify-content: center;
+	align-items: center;
+	margin-right: -10rpx;
+}
+.head-close-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 42.3rpx;
+	color: #B3A696;
+}
+	.preview-card {
+		width: 100%;
+		margin-top: 30.8rpx;
+		background-color: #FFFFFF;
+		border-radius: 30.8rpx;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+	}
+	.preview-grid {
+		width: 100%;
+		height: 211.5rpx;
+		flex-direction: row;
+	}
+	.preview-photo {
+		flex: 1;
+		background-color: #E9DFCB;
+		border-radius: 15.4rpx;
+		overflow: hidden;
+	}
+	.preview-photo-img {
+		width: 100%;
+		height: 100%;
+	}
+	.preview-photo2 {
+		flex: 1;
+		margin-left: 7.7rpx;
+		background-color: #E1D3B8;
+		border-radius: 15.4rpx;
+		overflow: hidden;
+	}
+	.preview-title {
+		margin-top: 19.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	.brand-row {
+		margin-top: 19.2rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.brand-star {
+		width: 26.9rpx;
+		height: 26.9rpx;
+		margin-right: 11.5rpx;
+	}
+	.brand-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 19.2rpx;
+		/* 重设计：金棕 → 锈红 */
+		color: #B05A3A;
+	}
+	.main-btn {
+		width: 100%;
+		margin-top: 30.8rpx;
+		height: 92.3rpx;
+		border-radius: 46.2rpx;
+		background-color: #B05A3A;
+		justify-content: center;
+		align-items: center;
+	}
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+	.items-row {
+		width: 100%;
+		margin-top: 30.8rpx;
+		flex-direction: row;
+	}
+	.share-item {
+		width: 173.1rpx;
+		flex-direction: column;
+		align-items: center;
+	}
+	.item-mid {
+		/* 画布项间距 40px → margin（gap 引擎丢弃） */
+		margin-left: 76.9rpx;
+	}
+	.item-icon {
+		width: 92.3rpx;
+		height: 92.3rpx;
+		border-radius: 46.2rpx;
+		/* 重设计：淡底 → 白底+淡投影（4:404 令牌，pt→rpx：y2/blur8/a0.05） */
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		justify-content: center;
+		align-items: center;
+	}
+	.item-icon-img {
+		width: 42.3rpx;
+		height: 42.3rpx;
+	}
+	.item-label {
+		margin-top: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+</style>

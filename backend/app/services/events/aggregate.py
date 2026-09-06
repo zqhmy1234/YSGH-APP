@@ -84,6 +84,7 @@ def aggregate_user(
         .where(
             Content.user_id == user_id,
             Content.deleted_at.is_(None),
+            Content.source != "seed",  # 2026-09-06 峰宝拍板：seed 注入数据不进聚类（回声卡演示仍可见）
             Content.id.not_in(linked_l2),
         )
         .order_by(Content.created_at)
@@ -478,6 +479,7 @@ def _refresh_upper_candidates(db: Session, user_id: str, photo_ids: list[str]) -
             Content.id.in_(photo_ids),
             Content.user_id == user_id,
             Content.deleted_at.is_(None),
+            Content.source != "seed",  # seed 不参与 L2/L3 候选（端侧提交路径同样排除）
         )
     ).scalars().all()
     if not rows:

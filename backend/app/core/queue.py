@@ -128,8 +128,13 @@ def enqueue_unique(
 
     if redis.set(idem_key, "1", nx=True, ex=RETRY_FAILURE_TTL):
         return _enqueue()
+    # R9-B3（2026-09-06）：只对「在途」job 去重——queued/started/deferred/scheduled 返回既有；
+    # finished / failed / 不存在 → 重建（RQ 同 job_id 覆盖；本文件头「幂等任务重投安全」）。
+    # 旧判定 `status != "failed"` 把 finished 也当「已处理」直接返回：
+    # 聚合 job 是 user 级确定性 job_id + 幂等键 TTL 7 天，首次聚合 finished 后，
+    # 同窗口内该用户后续每条新内容的聚合请求全被吞掉——新内容永不进事件层（时间轴）。
     existing = get_job(job_id)
-    if existing is not None and existing.get_status() != "failed":
+    if existing is not None and existing.get_status() in ("queued", "started", "deferred", "scheduled"):
         return existing
     return _enqueue()
 
@@ -168,7 +173,12 @@ def enqueue_idempotent(
 
     if redis.set(idem_key, "1", nx=True, ex=RETRY_FAILURE_TTL):
         return _enqueue()
+    # R9-B3（2026-09-06）：只对「在途」job 去重——queued/started/deferred/scheduled 返回既有；
+    # finished / failed / 不存在 → 重建（RQ 同 job_id 覆盖；本文件头「幂等任务重投安全」）。
+    # 旧判定 `status != "failed"` 把 finished 也当「已处理」直接返回：
+    # 聚合 job 是 user 级确定性 job_id + 幂等键 TTL 7 天，首次聚合 finished 后，
+    # 同窗口内该用户后续每条新内容的聚合请求全被吞掉——新内容永不进事件层（时间轴）。
     existing = get_job(job_id)
-    if existing is not None and existing.get_status() != "failed":
+    if existing is not None and existing.get_status() in ("queued", "started", "deferred", "scheduled"):
         return existing
     return _enqueue()

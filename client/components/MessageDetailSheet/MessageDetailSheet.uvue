@@ -1,0 +1,179 @@
+<template>
+	<!-- ═══════════ 消息详情弹层（每日复盘·语音完成 · §V 拍板 A 贴底弹层 2026-09-03） ═══════════
+	     范式 = EchoSheet 同族：全局浮层不是页面，唤起不发生页面跳转（峰宝拍板铁律 1 同族）。
+	     视觉 = §V 重设计令牌：暖白 #FAF9F5 + 顶圆角 24rpx + 深棕文字 + 类型徽章（沿用消息行 tint 家族）。
+	     Props 只传基本类型（UTS 组件边界规则，EchoSheet 同款）。
+	     正文完整展示；「查看关联记忆」CTA 挂总账 A10（消息↔内容 ID 未接线）——不放假按钮 -->
+	<view class="sheet-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<view class="badge" :style="{ backgroundColor: avatarBg }">
+					<image class="badge-icon" :src="iconPath" />
+					<text class="badge-text">{{ typeLabel }}</text>
+				</view>
+				<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<text class="sheet-title">{{ title }}</text>
+			<text class="sheet-time">{{ time }}</text>
+			<text class="sheet-body">{{ body }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props：基本类型直传（对象 prop 在 UTS 组件边界有类型陷阱，项目零先例不冒险）
+	const props = defineProps({
+		title: {
+			type: String,
+			default: ''
+		},
+		body: {
+			type: String,
+			default: ''
+		},
+		time: {
+			type: String,
+			default: ''
+		},
+		msgType: {
+			type: String,
+			default: ''
+		},
+		iconPath: {
+			type: String,
+			default: ''
+		},
+		avatarBg: {
+			type: String,
+			default: 'rgba(176, 89, 59, 0.12)'
+		}
+	})
+	const emit = defineEmits(['close'])
+
+	/** msg_type → 徽章文案（当前路由只有 daily_review/voice_done 会进本层，其余兜底） */
+	let typeLabel = computed((): string => {
+		if (props.msgType == 'daily_review') {
+			return '每日复盘'
+		}
+		if (props.msgType == 'voice_done') {
+			return '语音处理完成'
+		}
+		if (props.msgType == 'care_followup') {
+			return '关怀随访'
+		}
+		if (props.msgType == 'echo') {
+			return '去年今天'
+		}
+		return '系统通知'
+	})
+
+	function onClose(): void {
+		emit('close')
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet 同款铁律） */
+		z-index: 1000;
+	}
+	/* 遮罩：与 EchoSheet 64:42 同值 rgba(59,46,38,0.4) */
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: rgba(59, 46, 38, 0.4);
+		z-index: 10;
+	}
+	/* 弹层：§V 令牌（暖白 #FAF9F5 + 顶圆角 24rpx，EchoSheet 重设计同款）；
+	   高度 hug 贴底（内容较少不设 min-height），padding 同 EchoSheet 20/20/18/28 → 34.6/38.5/53.8 */
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: 750rpx;
+		background-color: #FAF9F5;
+		border-top-left-radius: 24rpx;
+		border-top-right-radius: 24rpx;
+		padding-top: 34.6rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-bottom: 53.8rpx;
+		z-index: 20;
+		flex-direction: column;
+	}
+	.head-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+	/* 类型徽章：沿用消息行 tint 底 + 类型图标（视觉家族一致），h32 r16 与 F9b chip 同构 */
+	.badge {
+		flex-direction: row;
+		align-items: center;
+		height: 61.5rpx;
+		border-radius: 30.8rpx;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+	}
+	.badge-icon {
+		width: 32rpx;
+		height: 32rpx;
+	}
+	.badge-text {
+		margin-left: 9.6rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 24.9rpx;
+		color: #3A2E25;
+	}
+	/* × 关闭：EchoSheet 64:46 同值 */
+.head-close {
+	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06） */
+	width: 60rpx;
+	height: 60rpx;
+	justify-content: center;
+	align-items: center;
+}
+.head-close-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: 42.3rpx;
+	color: #B3A696;
+}
+	/* 标题 16px SemiBold 深棕 */
+	.sheet-title {
+		margin-top: 26.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	/* 完整时间 11px 灰棕 */
+	.sheet-time {
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 正文 15px lh24 深棕（完整正文，长文本自然换行） */
+	.sheet-body {
+		margin-top: 26.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 28.9rpx;
+		line-height: 46.2rpx;
+		color: #3A2E25;
+	}
+</style>

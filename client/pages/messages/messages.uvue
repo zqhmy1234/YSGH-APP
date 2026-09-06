@@ -7,37 +7,56 @@
 			<text class="n4_96">消息</text> <!-- 页标题 -->
 		</view>
 		<image class="n4_93" src="/static/icons/i4_93.svg" @tap="goBack" /> <!-- icon: 返回 -->
+		<!-- R7 小接线（W2-4 对拍行动项）：「全部已读」——markAllRead 封装在（play.uts:319）但零触发。
+		     按 R4 教训（text@tap 小字号热区真机失效）用 view 承载 @tap -->
+		<view class="readall-btn" @tap="onMarkAllRead">
+			<text class="readall-text">全部已读</text>
+		</view>
 		<text class="n4_97">今天</text> <!-- 日期分组 -->
-		<view class="n4_98" @tap="openFeatured"> <!-- 回响卡（HEAD 交互接回） -->
+		<!-- R7：回响卡改数据驱动——模板原硬编码「天台看流星雨」（昨天 seed 的过期文案），
+		     峰宝跨天后看到的就是它。echoCard null（无回响/名额耗尽/内容已删）整卡隐藏，诚实空态 -->
+		<view class="n4_98" v-if="echoCard != null" @tap="openFeatured"> <!-- 回响卡（HEAD 交互接回） -->
 			<view class="n4_99"> <!-- 回响块 -->
 				<view class="n4_100"> <!-- 回响标签行 -->
 					<image class="n4_101" src="/static/icons/i4_101.svg" /> <!-- icon: 星芒 -->
-					<text class="n4_103">时间胶囊 · 8 个月前</text> <!-- 回响来源 -->
+					<text class="n4_103">时间胶囊 · 去年今天</text> <!-- 回响来源 -->
 				</view>
-				<text class="n4_104">去年今天：你在天台看了流星雨</text> <!-- 回响标题 -->
+				<text class="n4_104">{{ echoCardTitle }}</text> <!-- 回响标题（真数据） -->
 				<text class="n4_105">点开重温那段记忆，或写一句此刻的想法</text> <!-- 回响说明 -->
 			</view>
 		</view>
 		<!-- 消息列表（HEAD 交互接回：3 静态行→filteredMessages v-for；行结构统一用画布行1样式） -->
 		<view v-if="filteredMessages.length > 0" class="n4_106">
-			<view v-for="(msg, idx) in filteredMessages" :key="idx" class="n4_107" @tap="openMessage(msg)">
-				<view class="n4_108" :style="{ backgroundColor: msg.avatarBg }"> <!-- 图标底（动态色） -->
-					<image class="n4_109" :src="msg.iconPath" /> <!-- icon: 按消息类型 -->
-				</view>
-				<view class="n4_111"> <!-- 文案列 -->
-					<view class="n4_111-top">
-						<text class="n4_112">{{ msg.title }}</text>
-						<text class="n4_114">{{ msg.time }}</text>
+			<view v-for="(msg, idx) in filteredMessages" :key="idx" class="n4-msgwrap">
+				<view class="n4_107" @tap="openMessage(msg)">
+					<view class="n4_108" :style="{ backgroundColor: msg.avatarBg }"> <!-- 图标底（动态色） -->
+						<image class="n4_109" :src="msg.iconPath" /> <!-- icon: 按消息类型 -->
 					</view>
-					<text class="n4_113">{{ msg.summary }}</text>
+					<view class="n4_111"> <!-- 文案列 -->
+						<view class="n4_111-top">
+							<text class="n4_112">{{ msg.title }}</text>
+							<text class="n4_114">{{ msg.time }}</text>
+						</view>
+						<text class="n4_113">{{ msg.summary }}</text>
+					</view>
+					<view v-if="!msg.read" class="n4-unread-dot"></view>
 				</view>
-				<view v-if="!msg.read" class="n4-unread-dot"></view>
+				<!-- 就地展开已废弃（§V 拍板 2026-09-03：太简陋）→ 复盘·语音完成改贴底 MessageDetailSheet -->
 			</view>
 		</view>
 		<!-- 空状态 -->
 		<view v-if="filteredMessages.length == 0" class="n4-empty">
 			<text class="n4-empty-text">暂无消息</text>
 		</view>
+		<!-- ═══ 回响弹层（F6a · W1-3）：浮层不是页面（峰宝拍板铁律 1 同族） ═══ -->
+		<!-- R9 批次3：绑 echoSheetCard（双来源——页面实时卡 / 消息 payload 快照卡，拍板 A-1） -->
+		<EchoSheet v-if="echoVisible && echoSheetCard != null" :echoText="echoSheetCard.text"
+			:takenAt="echoSheetCard.takenAt" :place="echoSheetCard.place"
+			@close="echoVisible = false" @replay="onEchoReplay" @dismiss="onEchoDismiss" />
+		<!-- 消息详情弹层（§V 拍板 A：复盘·语音完成贴底弹层，替代就地展开） -->
+		<MessageDetailSheet v-if="detailVisible" :title="detailTitle" :body="detailBody"
+			:time="detailTime" :msgType="detailMsgType" :iconPath="detailIcon" :avatarBg="detailBg"
+			@close="detailVisible = false" />
 	</view>
 </template>
 
@@ -48,13 +67,60 @@
 		fetchMessages,
 		fetchUnreadCount,
 		markMessageRead,
+		markAllRead,
+		fetchTodayEcho,
+		dismissEcho,
+		EchoCard,
 		AppMessage
 	} from '@/utils/play'
 	import { formatIsoShortTime } from '@/utils/time'
 
-	// ===== 响应式状态 =====
+	// ── 响应式状态 ──
 	let unreadCount = ref(0)
 	let allMessages = ref<Array<AppMessage>>([])
+	// 回响弹层（W1-3）：GET /echo/today 真端点；空回响时按峰宝拍板（2026-09-02）注入演示数据供 UI 验证
+	let echoVisible = ref(false)
+	let echoCard = ref<EchoCard | null>(null)
+	// R9 批次3（R9-1 · 拍板 A-1）：弹层展示卡（双来源——实时 echoCard / 消息 payload 快照卡）；
+	// 快照回放不调 /echo/today、不占名额
+	let echoSheetCard = ref<EchoCard | null>(null)
+
+	/** R7：回响卡标题（真数据驱动，替代模板硬编码「天台看流星雨」过期文案）——取去年今日内容文本前段 */
+	const echoCardTitle = computed((): string => {
+		const c = echoCard.value
+		if (c == null) { return '去年今天的记忆' }
+		const t = (c.text ?? '').trim()
+		if (t == '') { return '去年今天的记忆' }
+		return t.length > 22 ? t.substring(0, 22) + '…' : t
+	})
+
+	/** R7 小接线：「全部已读」——POST /messages/read-all 后本地同步未读数与消息列表 */
+	function onMarkAllRead(): void {
+		markAllRead().then((ok: boolean) => {
+			if (ok) {
+				unreadCount.value = 0
+				const arr = allMessages.value
+				for (let i = 0; i < arr.length; i++) {
+					arr[i].read = true
+				}
+				uni.showToast({ title: '已全部标记为已读', icon: 'none' })
+			} else {
+				// 显式失败：不允许静默（项目军规）
+				uni.showToast({ title: '标记失败，请稍后再试', icon: 'none' })
+			}
+		})
+	}
+	// 消息详情弹层（§V 拍板 A 2026-09-03）：复盘·语音完成贴底弹层，替代已废弃的就地展开
+	let detailVisible = ref(false)
+	let detailTitle = ref('')
+	let detailBody = ref('')
+	let detailTime = ref('')
+	let detailMsgType = ref('')
+	let detailIcon = ref('')
+	let detailBg = ref('')
+	// 回响演示开关（2026-09-05 关闭）：真数据已注入（scripts/seed_echo_today.py，去年今日照片），
+	// 演示卡假 id 会触发 detail 404（峰宝反馈）；B8 清理项：发版前 grep USE_MOCK 全部 false
+	const USE_MOCK_ECHO = false
 
 	class MessageItem {
 		id: number
@@ -65,7 +131,8 @@
 		avatarBg: string
 		read: boolean
 		type: number
-		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number) {
+		msgType: string
+		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number, msgType: string) {
 			this.id = id
 			this.title = title
 			this.summary = summary
@@ -74,6 +141,7 @@
 			this.avatarBg = avatarBg
 			this.read = read
 			this.type = type
+			this.msgType = msgType
 		}
 	}
 
@@ -111,7 +179,8 @@
 			msgIcon(m.msgType),
 			msgBg(m.msgType),
 			m.status != 'unread',
-			msgSegment(m.msgType)
+			msgSegment(m.msgType),
+			m.msgType
 		)
 	}
 
@@ -135,7 +204,7 @@
 		}
 	}
 
-	/** 加载消息列表 + 未读数（onShow 每次进入刷新） */
+	/** 加载消息列表 + 未读数 + 今日回响（onShow 每次进入刷新） */
 	function loadMessages(): void {
 		fetchMessages('').then((list: Array<AppMessage>) => {
 			allMessages.value = list
@@ -143,12 +212,29 @@
 		fetchUnreadCount().then((n: number) => {
 			unreadCount.value = n
 		})
+		loadEcho()
+	}
+
+	/** 今日回响：真端点（GET /echo/today）。2026-09-05 起真数据已注入（seed_echo_today.py），
+	 *  USE_MOCK_ECHO=false——演示卡点击假 id 触发 detail 404 的体验问题就此根除（峰宝反馈实锤）
+	 *  R7（2026-09-06）：跨天/名额耗尽时端点返回 null → 清空旧卡（诚实空态），
+	 *  否则页面常驻场景旧卡残留、点「重温」指向已失效内容 */
+	function loadEcho(): void {
+		fetchTodayEcho().then((card: EchoCard | null) => {
+			echoCard.value = card
+		})
 	}
 
 	onShow(() => {
 		loadMessages()
+		// R7（2026-09-06）：onShow 同步刷新回声卡——本页常驻不销毁（redirectTo 切 tab），
+		// 跨天后旧卡残留（峰宝实锤：昨天 9-5 的卡今天还在，名额已耗尽点击无响应）；
+		// fetchTodayEcho null 时不清空旧卡？——清。旧卡 contentId 指向的内容可能已被删，
+		// 点「重温」必失败；诚实回落「今天没有回响」
+		loadEcho()
 	})
 
+	/** 消息类型路由（W1-3 拍板：关怀→AI 页 / 回响→弹层 / 复盘·语音完成→就地展开 / 其余仅标已读） */
 	function openMessage(msg: MessageItem): void {
 		if (!msg.read) {
 			msg.read = true
@@ -157,10 +243,98 @@
 			}
 			markMessageRead(msg.id)
 		}
+		if (msg.msgType == 'care_followup') {
+			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页），
+			// 全库扫描发现于 B10 回退残留扫描；项目跨页导航先例为 redirectTo
+			uni.redirectTo({ url: '/pages/ai/ai' })
+			return
+		}
+		if (msg.msgType == 'echo') {
+			openEchoFromMessage(msg)
+			return
+		}
+		if (msg.msgType == 'daily_review' || msg.msgType == 'voice_done') {
+			// §V 拍板 A：贴底弹层展示完整正文+完整时间（替代就地展开）；「查看关联记忆」挂总账 A10
+			detailTitle.value = msg.title
+			detailBody.value = msg.summary
+			detailTime.value = msg.time
+			detailMsgType.value = msg.msgType
+			detailIcon.value = msg.iconPath
+			detailBg.value = msg.avatarBg
+			detailVisible.value = true
+			return
+		}
 	}
 
 	function openFeatured(): void {
-		uni.showToast({ title: '本周记忆摘要待接入', icon: 'none' })
+		if (echoCard.value != null) {
+			echoSheetCard.value = echoCard.value
+			echoVisible.value = true
+		} else {
+			// 无回响（且 mock 关）：诚实提示，不弹空层
+			uni.showToast({ title: '今天没有「去年今天」回响', icon: 'none' })
+		}
+	}
+
+	/** R9 批次3（R9-1 · 拍板 A-1）：echo 消息点击 → 回放 payload 快照（不调 today、不占名额）。
+	 *  存量消息 payload={}（建发侧上线前产生）→ 无引用可回放，诚实降级 toast */
+	function openEchoFromMessage(msg: MessageItem): void {
+		const src = findAppMessageById(msg.id)
+		if (src == null || src.echoContentId == '') {
+			uni.showToast({ title: '这条回响没有关联记忆，可在时间轴重温', icon: 'none' })
+			return
+		}
+		echoSheetCard.value = new EchoCard(
+			src.echoContentId,
+			src.echoContentType,
+			src.echoText,
+			src.echoTakenAt,
+			src.echoPlace,
+			src.echoDate
+		)
+		echoVisible.value = true
+	}
+
+	/** R9 批次3：按 id 从消息源数组找回原始 AppMessage（MessageItem 未承载 payload 快照字段） */
+	function findAppMessageById(id: number): AppMessage | null {
+		const arr = allMessages.value
+		for (let i = 0; i < arr.length; i++) {
+			if (arr[i].id == id) {
+				return arr[i]
+			}
+		}
+		return null
+	}
+
+	/** 弹层「重温这段记忆」：真回响带 content_id 进详情；演示数据无关联记忆，诚实提示 */
+	function onEchoReplay(): void {
+		const card = echoSheetCard.value
+		echoVisible.value = false
+		if (card == null) {
+			return
+		}
+		if (card.contentId.indexOf('echo-demo') == 0) {
+			uni.showToast({ title: '演示回响，未关联真实记忆', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + card.contentId })
+	}
+
+	/** 弹层「今年不再提醒」：POST /echo/{id}/dismiss 真端点（幂等；快照回放 dismiss 同样生效）；
+	 *  完成后关层（v-if 卸载复位按钮态） */
+	function onEchoDismiss(): void {
+		const card = echoSheetCard.value
+		if (card == null) {
+			return
+		}
+		dismissEcho(card.contentId).then((ok: boolean) => {
+			echoVisible.value = false
+			if (ok) {
+				uni.showToast({ title: '今年不再提醒', icon: 'none' })
+			} else {
+				uni.showToast({ title: '设置未成功，请稍后再试', icon: 'none' })
+			}
+		})
 	}
 </script>
 
@@ -203,8 +377,22 @@
 		height: 28.8rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
+		font-size: 23.1rpx;		color: #8A7A6A;
+	}
+	/* R7 小接线：「全部已读」按钮（view 承载 @tap，R4 text@tap 热区教训）——
+	   右上角与「今天」分组标题同行；padding 扩热区 + 负 margin 抵消位移 */
+	.readall-btn {
+		position: absolute;
+		right: 38.5rpx;
+		top: 199.5rpx;
+		padding: 20rpx 16rpx;
+		margin: -20rpx -16rpx;
+	}
+	.readall-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
 		font-size: 23.1rpx;
-		color: #8A7A6A;
+		color: #C4913C;
 	}
 	.n4_98 {
 		position: absolute;
@@ -359,5 +547,9 @@
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 26.9rpx;
 		color: #B3A696;
+	}
+	/* W1-3：就地展开区已废弃（§V 拍板 2026-09-03：太简陋 → MessageDetailSheet 贴底弹层），CSS 一并移除 */
+	.n4-msgwrap {
+		width: 100%;
 	}
 </style>

@@ -2,7 +2,7 @@
 	import { onLaunch, onShow, onError } from '@dcloudio/uni-app'
 	import { ensureLogin } from './utils/auth'
 	import { initSentry, captureException } from './utils/sentry'
-	import { initSync, drainBackgroundTasks } from './utils/sync_client'
+	import { initSync, drainBackgroundTasks, reconcileNow } from './utils/sync_client'
 
 	/** 加载自定义字体（官方文档 doc.dcloud.net.cn/uni-app-x/api/load-font-face.html）：
 	 *  - global:true 必传（onLaunch 时无页面 vm，非全局加载会在 Vapor 下抛 'vm' undefined）
@@ -57,6 +57,22 @@
 			initSync()
 		} catch (e) {
 			console.log('[yishu] initSync threw: ' + e)
+		}
+		// R7 小接线（W2-4 对拍行动项）：端云对账 reconcile 低频触发——每 24h 冷启动执行一次。
+		// 封装在（sync_client.uts:474）但零触发的存量缺口；need_push 补推 / need_pull 补拉由
+		// 对账报告驱动（封装内部已处理，本层只管节流）。失败不阻断启动。
+		try {
+			const RKEY = 'reconcile_last_at'
+			const last = uni.getStorageSync(RKEY) as string
+			const now = Date.now()
+			if (last == null || last == '' || now - (Number(last) || 0) > 24 * 3600 * 1000) {
+				uni.setStorageSync(RKEY, String(now))
+				reconcileNow().then((r) => {
+					console.log('[yishu] reconcile on launch -> ' + (r == null ? 'null' : 'push=' + r.needPush + ' pull=' + r.needPull + ' divergent=' + r.divergent))
+				})
+			}
+		} catch (e) {
+			console.log('[yishu] reconcile threw: ' + e)
 		}
 	})
 

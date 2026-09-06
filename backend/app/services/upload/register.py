@@ -155,9 +155,27 @@ def _register_voice_content(
         except (TypeError, ValueError):
             raise ValidationError("duration_ms 必须为整数（毫秒）") from None
 
+    # R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：短录音链改走本分支后，
+    # 客户端本地转写文本/情绪预填随 meta 上送——text 直接落库（管线 ASR 完成后仍按
+    # 既有逻辑回写覆盖，双通道一致）；emotion 只存 extra.client_emotion 供参考，
+    # 不进正式情绪字段（避免干扰管线情绪判定）。
+    voice_text = meta.get("text")
+    if voice_text is not None:
+        if not isinstance(voice_text, str):
+            raise ValidationError("text 必须为字符串")
+        if voice_text.strip() == "":
+            voice_text = None
+    client_emotion = meta.get("emotion")
+    if client_emotion is not None:
+        if not isinstance(client_emotion, str):
+            raise ValidationError("emotion 必须为字符串")
+        else:
+            voice_extra["client_emotion"] = client_emotion
+
     record = Content(
         user_id=user_id,
         content_type="voice",
+        text=voice_text,
         taken_at=taken_at,
         gps_lat=gps_lat,
         gps_lng=gps_lng,
@@ -175,5 +193,6 @@ def _register_voice_content(
         raise
     db.refresh(record)
     # F4：enqueue_unique 同 content 键不重复入队（safe：失败仅记日志，P0-5）
-    safe_enqueue_unique(process_content, str(record.id))
+    # R9-B6：key 之后补函数参数（缺 args = process_content() 零参 TypeError 秒死）
+    safe_enqueue_unique(process_content, str(record.id), str(record.id))
     return str(record.id)

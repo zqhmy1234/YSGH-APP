@@ -387,7 +387,7 @@ def _infer_sensevoice(path: Path) -> SenseVoiceResult:
     clean_text = re.sub(r"<\|[^|]+\|>", "", raw_text).strip()
     return SenseVoiceResult(
         text=clean_text,
-        emotion=SENSEVOICE_EMOTION_TAGS.get(raw_emotion, "平静"),
+        emotion=SENSEVOICE_EMOTION_TAGS.get(raw_emotion),  # D-16: EMO_UNKNOWN -> None（未测得），不再伪装「平静」
         emotion_confidence=_sensevoice_emotion_confidence(
             model,
             sample_logits,
@@ -433,7 +433,7 @@ def _transcribe_mock(path: Path, errors: list[str] | None = None) -> AsrResult:
         text="这是一段本地模拟转写文本。",
         channel="mock",
         outcome="mock",
-        emotion="平静",
+        # D-16: 不给 emotion（未测得=None）；mock 同样不伪造「平静」
         confidence=0.5,
         duration_ms=audio.duration_ms,
         mock=True,

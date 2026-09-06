@@ -47,7 +47,7 @@ def test_mock_fallback_deterministic(wav_file: Path):
     assert r1.mock is True
     assert r1.channel == "mock"
     assert r1.text == "这是一段本地模拟转写文本。"
-    assert r1.emotion == "平静"
+    assert r1.emotion is None  # D-16: mock 不再伪造「平静」
     assert r1.duration_ms == 500  # wav 头解析 0.5s
     assert r1 == r2  # 确定性
     assert r1.errors  # 记录降级原因（未配置 key）
@@ -58,6 +58,14 @@ def test_mock_preferred(wav_file: Path):
     r = transcribe(wav_file, preferred="mock")
     assert r.channel == "mock"
     assert r.mock is True
+
+
+def test_unmeasured_emotion_is_none_not_calm():
+    """D-16 回归：未测得情绪=None（而非「平静」）；audit 的 actionable 同步不放行"""
+    r = AsrResult(text="t", channel="funasr")
+    assert r.emotion is None
+    assert r.emotion_source == "none"
+    assert r.audit_dict()["emotion_actionable"] is False
 
 
 def test_production_rejects_global_mock_mode(wav_file: Path, monkeypatch):
@@ -366,7 +374,7 @@ def test_transcribe_api_mock(wav_file: Path, client):
     assert data["outcome"] == "mock"
     assert data["mock"] is True
     assert data["text"] == "这是一段本地模拟转写文本。"
-    assert data["emotion"] == "平静"
+    assert data["emotion"] is None  # D-16: 未测得 -> API 返回 null
     assert data["guardrail"]["passed"] is True  # mock 护栏放行
 
 
@@ -600,6 +608,7 @@ def test_parse_audio_events(raw, expected):
 AUDIO_EVENT_EFFECT_CASES = [
     # (base_emotion, base_conf, events, exp_emotion, exp_bonus, exp_silence, exp_not_oral, exp_source)
     ("平静", 0.3, ["laughter"], "开心", True, False, False, "audio_event_laughter"),
+    (None, 0.0, ["laughter"], "开心", True, False, False, "audio_event_laughter"),
     ("难过", 0.9, ["laughter"], "难过", True, False, False, "none"),
     ("平静", 0.3, ["silence"], "平静", False, True, False, "none"),
     ("平静", 0.3, ["environment"], "平静", False, False, True, "none"),
@@ -609,7 +618,10 @@ AUDIO_EVENT_EFFECT_CASES = [
 @pytest.mark.parametrize(
     ("base_emotion", "base_conf", "events", "exp_emotion", "exp_bonus", "exp_silence", "exp_not_oral", "exp_source"),
     AUDIO_EVENT_EFFECT_CASES,
-    ids=["笑声-平静提升为开心", "笑声-不覆盖强负向情绪", "静音-空段提示", "环境音-疑似非口述"],
+    ids=[
+        "笑声-平静提升为开心", "笑声-未测得(None)提升为开心",
+        "笑声-不覆盖强负向情绪", "静音-空段提示", "环境音-疑似非口述",
+    ],
 )
 def test_audio_event_effects(
     base_emotion,

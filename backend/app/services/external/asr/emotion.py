@@ -62,8 +62,8 @@ def apply_audio_event_effects(result: AsrResult) -> None:
         # 笑声 = 正向情绪信号（B5a §2 情绪加分）：中性/低置信时提为"开心"，
         # 不覆盖已存在的强负向情绪（哭着笑由语义侧兜底）。
         result.emotion_bonus = True
-        if result.emotion == "平静" or result.emotion_confidence < EMOTION_ACTION_THRESHOLD:
-            if result.emotion == "平静":
+        if result.emotion in (None, "平静") or result.emotion_confidence < EMOTION_ACTION_THRESHOLD:
+            if result.emotion in (None, "平静"):  # D-16: 未测得(None)与平静同样被笑声提升为开心
                 result.emotion = "开心"
                 result.emotion_confidence = max(result.emotion_confidence, 0.6)
                 if result.emotion_source in {"", "none"}:

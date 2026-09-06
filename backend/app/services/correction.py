@@ -274,15 +274,18 @@ def arbitrate(
             "layer": "personal",
             "similarity": personal["similarity"],
             "source": personal["source"],
+            "degraded": False,
         }
     from app.services.classifier import classify
 
     result = classify(text)
+    # D-22（08-29）：degraded 透传——降级 mixed 不再伪装模型结论（含 conf=0.0 指纹）
     return {
         "label": result["label"],
         "label_cn": result["label_cn"],
         "confidence": result["confidence"],
         "layer": "global",
+        "degraded": bool(result.get("degraded", False)),
     }
 
 
