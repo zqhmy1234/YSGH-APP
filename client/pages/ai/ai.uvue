@@ -319,8 +319,69 @@
 	function onRecordSaved(): void {
 	}
 
-	onLoad(() => {
+	// ── B1 上下文预填接收端（detail 页 askAI 携带当前记忆上下文跳入）──
+	// 主控裁决（2026-09-08）：统一走 detail.uvue askAI 的 storage 三键契约（含 content_id 供对话域后续用）：
+	//   yishu_ai_context_title（记忆标题）/ yishu_ai_context_body（正文全文）/ yishu_ai_context_content_id（内容 id）
+	// 读后即清防陈旧残留；url query 通道（memTitle/memSummary）保留作 manage→theme-detail 同族先例兼容
+	const PREFILL_KEY_TITLE = 'memTitle'
+	const PREFILL_KEY_SUMMARY = 'memSummary'
+	const PREFILL_CTX_TITLE = 'yishu_ai_context_title'
+	const PREFILL_CTX_BODY = 'yishu_ai_context_body'
+	const PREFILL_CTX_CONTENT_ID = 'yishu_ai_context_content_id'
+	const PREFILL_MAX_LEN = 200
+
+	function prefillDraftFrom(options: OnLoadOptions): void {
+		let title = ''
+		let summary = ''
+		const rt = options[PREFILL_KEY_TITLE]
+		if (rt != null) {
+			title = decodeURIComponent(rt as string)
+		}
+		const rs = options[PREFILL_KEY_SUMMARY]
+		if (rs != null) {
+			summary = decodeURIComponent(rs as string)
+		}
+		if (title == '' && summary == '') {
+			// storage 三键兜底（detail.uvue askAI 契约，读后即清；JSON.parse 先例 api.uts:530）
+			try {
+				const ctxTitle = uni.getStorageSync(PREFILL_CTX_TITLE)
+				const ctxBody = uni.getStorageSync(PREFILL_CTX_BODY)
+				const ctxCid = uni.getStorageSync(PREFILL_CTX_CONTENT_ID)
+				const hasCtx = (ctxTitle != null && ctxTitle != '') || (ctxBody != null && ctxBody != '')
+					|| (ctxCid != null && ctxCid != '')
+				if (hasCtx) {
+					title = (ctxTitle != null ? (ctxTitle as string) : '')
+					summary = (ctxBody != null ? (ctxBody as string) : '')
+					// content_id 暂不入对话 payload（B2 对话域接线时用），先清防残留
+					uni.removeStorageSync(PREFILL_CTX_TITLE)
+					uni.removeStorageSync(PREFILL_CTX_BODY)
+					uni.removeStorageSync(PREFILL_CTX_CONTENT_ID)
+				}
+			} catch (e) {
+				console.log('[dbg-ai] prefill storage parse failed: ' + e)
+			}
+		}
+		if (title == '' && summary == '') {
+			return
+		}
+		let text = ''
+		if (title != '') {
+			text = '关于「' + title + '」'
+			if (summary != '') {
+				text = text + '：' + summary
+			}
+		} else {
+			text = summary
+		}
+		if (text.length > PREFILL_MAX_LEN) {
+			text = text.substring(0, PREFILL_MAX_LEN)
+		}
+		draft.value = text
+	}
+
+	onLoad((options: OnLoadOptions) => {
 		seedMockMessages()
+		prefillDraftFrom(options)
 	})
 </script>
 

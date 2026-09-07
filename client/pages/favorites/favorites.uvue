@@ -424,9 +424,9 @@
 		return fmtVoiceTime(voiceTotalSecValue())
 	}
 	function playVoice(item: FavCard): void {
-		// 演示条目（mock 注入无真 contentId）不进播放引擎——诚实提示
+		// 无关联记忆的条目（端点数据缺 content_id）不进播放引擎——显式提示（mock 演示条目路径已亡，措辞接真）
 		if (item.contentId == '') {
-			uni.showToast({ title: '演示条目，暂不可播放', icon: 'none' })
+			uni.showToast({ title: '该条目未关联记忆，暂不可播放', icon: 'none' })
 			return
 		}
 		toggleVoice(item.contentId)
@@ -435,6 +435,7 @@
 	// ── 卡片跳转（search openResult 先例：contentId 进详情）──
 	function openCard(item: FavCard): void {
 		if (item.contentId == '') {
+			uni.showToast({ title: '该条目未关联记忆，无法打开', icon: 'none' })
 			return
 		}
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + item.contentId })

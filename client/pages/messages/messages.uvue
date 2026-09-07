@@ -122,9 +122,8 @@
 	let detailMsgType = ref('')
 	let detailIcon = ref('')
 	let detailBg = ref('')
-	// 回响演示开关（2026-09-05 关闭）：真数据已注入（scripts/seed_echo_today.py，去年今日照片），
-	// 演示卡假 id 会触发 detail 404（峰宝反馈）；B8 清理项：发版前 grep USE_MOCK 全部 false
-	const USE_MOCK_ECHO = false
+	// 回响演示开关 USE_MOCK_ECHO 已随真端点接线移除（2026-09-05 起真数据走 GET /echo/today，
+	// 演示卡假 id 触发 detail 404 的路径不复存在）；无回响时 echoCard=null 整卡隐藏=诚实空态
 
 	class MessageItem {
 		id: number
@@ -224,8 +223,8 @@
 		loadEcho()
 	}
 
-	/** 今日回响：真端点（GET /echo/today）。2026-09-05 起真数据已注入（seed_echo_today.py），
-	 *  USE_MOCK_ECHO=false——演示卡点击假 id 触发 detail 404 的体验问题就此根除（峰宝反馈实锤）
+	/** 今日回响：真端点（GET /echo/today）。回响卡点击假 id 触发 detail 404 的演示路径已随
+	 *  USE_MOCK_ECHO 移除根除（峰宝反馈实锤）
 	 *  R7（2026-09-06）：跨天/名额耗尽时端点返回 null → 清空旧卡（诚实空态），
 	 *  否则页面常驻场景旧卡残留、点「重温」指向已失效内容 */
 	function loadEcho(): void {
@@ -331,15 +330,15 @@
 		return null
 	}
 
-	/** 弹层「重温这段记忆」：真回响带 content_id 进详情；演示数据无关联记忆，诚实提示 */
+	/** 弹层「重温这段记忆」：真回响带 content_id 进详情；无关联记忆时显式提示不跳空详情 */
 	function onEchoReplay(): void {
 		const card = echoSheetCard.value
 		echoVisible.value = false
 		if (card == null) {
 			return
 		}
-		if (card.contentId.indexOf('echo-demo') == 0) {
-			uni.showToast({ title: '演示回响，未关联真实记忆', icon: 'none' })
+		if (card.contentId == '') {
+			uni.showToast({ title: '这条回响没有关联记忆，可在时间轴重温', icon: 'none' })
 			return
 		}
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + card.contentId })

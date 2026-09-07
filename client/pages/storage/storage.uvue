@@ -96,17 +96,19 @@
 <script setup lang="uts">
 	import { ref } from 'vue'
 	import { onLoad, onShow } from '@dcloudio/uni-app'
-	import { pendingSyncCount, isSyncPaused, runSyncChain } from '@/utils/sync_client'
+	import { pendingSyncCount, isSyncPaused, runSyncChain, getLastSyncAt } from '@/utils/sync_client'
 	import { pauseSync, resumeSync } from '@/utils/pause_controller'
 	import { fetchExportFilePath } from '@/utils/api'
 	import { fetchTotalBytes, fmtBytes } from '@/utils/capsule_api'
+	import { formatIsoShortTime } from '@/utils/time'
 
 	// ── 同步状态（真数据：sync_client 真实状态）──
 	let pendingN = ref(0)
 	let syncOn = ref(true)
 	let retrying = ref(false)
 	let exporting = ref(false)
-	// 上次同步：sync_client 无 lastSyncAt 持久化（总账 B7）→ 诚实显示「—」
+	// 上次同步：B7（BB1）sync_client 已落盘 yishu_last_sync_at（ISO）→ onShow 读真值；
+	// 无记录/空串保持「—」诚实空态
 	let lastSyncText = ref('—')
 
 	// ── 存储用量（BA1 · FE2 接真）──
@@ -133,8 +135,18 @@
 		// 同步真实状态 + 用量刷新（从回收站等子页返回时回读）
 		pendingN.value = pendingSyncCount()
 		syncOn.value = !isSyncPaused()
+		refreshLastSync()
 		loadUsage()
 	})
+
+	/** 上次同步真值（B7 · BB1）：ISO → MM-dd HH:mm（time.formatIsoShortTime 项目先例）；
+	 *  无记录保持「—」 */
+	function refreshLastSync(): void {
+		const last = getLastSyncAt()
+		if (last != '') {
+			lastSyncText.value = formatIsoShortTime(last)
+		}
+	}
 
 	/** 拉真字节总量（fetchTotalBytes；失败 -1 → 保持 '—'，api 层已全局 toast） */
 	function loadUsage(): void {
@@ -166,6 +178,7 @@
 		uni.showLoading({ title: '同步中…', mask: true })
 		runSyncChain().then(() => {
 			pendingN.value = pendingSyncCount()
+			refreshLastSync()
 			uni.hideLoading()
 			retrying.value = false
 			if (pendingN.value > 0) {

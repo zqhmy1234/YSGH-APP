@@ -3,7 +3,7 @@
 	     尺寸真值（F5a 帧）：容器 h=28pt(53.8rpx)、竖条 4pt 宽、gap 3pt、r=2pt
 	     默认态：全部 idleColor —— detail 帧(F5b) 真值 #E5DCC8；index/search 现传 #C4913C（属其帧卡范围）
 	     活动态：已播段 playedColor #C4913C、未播段 idleColor #E5DCC8（F5a 拍板色值），
-	     当前根 bar 呼吸缩放（CSS 动画不可用时优雅降级为静态） -->
+	     当前根 bar 呼吸缩放（UniElement.animate，RecordSheet 轮盘同款真机先例） -->
 	<view class="wave">
 		<view
 			v-for="(s, i) in barStyles"
@@ -11,11 +11,15 @@
 			class="wave-bar"
 			:class="i === liveBarIdx ? 'wave-bar-live' : ''"
 			:style="s"
+			:id="barId(i)"
 		></view>
 	</view>
 </template>
 
 <script setup lang="uts">
+	// BB3：呼吸门控要读全局播放态（audio_player 单例 ref，跨模块绑走 search.uvue 先例）
+	import { voicePlaying } from '@/utils/audio_player'
+
 	// 运行时声明 props（项目先例 TabBar.uvue；数组默认值按 UTS 已知问题需显式断言）
 	const props = defineProps({
 		/** 波形高度数组（rpx），由 genWaveHeights 生成 */
@@ -42,15 +46,52 @@
 		idleColor: {
 			type: String,
 			default: '#E5DCC8'
+		},
+		/** BB3 真实波形（可选，0..1 峰值数组，来自后端 /contents/{id}/waveform）：
+		     真值优先——非空且 len≥2 时按线性映射渲染真实波形；无效/缺省显式回退
+		     genWaveHeights 伪波形（warn 日志不静默）。宿主零改动兼容（可不传） */
+		waveform: {
+			type: Array,
+			required: false,
+			default: null
 		}
+	})
+
+	// BB3 真实波形有效性门（显式回退不静默）：warn 只发一次防 computed 重算刷屏
+	let waveformWarned = false
+	let useRealWave = computed((): boolean => {
+		const wf = props.waveform
+		if (wf == null) {
+			return false
+		}
+		const arr = wf as Array<number>
+		if (arr.length < 2) {
+			if (!waveformWarned) {
+				console.warn('[VoiceWave] waveform 无效（空/长度<2），回退伪波形')
+				waveformWarned = true
+			}
+			return false
+		}
+		return true
 	})
 
 	/**
 	 * F5a 真值：波形容器 h=28pt（53.8rpx），竖条高 12pt~28pt（23.1~53.8rpx）。
-	 * genWaveHeights 产出的是 8~40rpx 的原始序列，直接当条高会整体偏矮且溢出区间，
-	 * 故按 min/max 归一化映射到真值区间（最高条满格、最低条 43% 满高），保持相对起伏。
+	 * heights（伪波形 8~40rpx 原始序列）按 min/max 归一化映射到真值区间；
+	 * waveform（真实 0..1 峰值）直接线性映射（保真不重归一，静音段=最矮条）。
 	 */
 	let bars = computed((): Array<number> => {
+		const out: Array<number> = []
+		if (useRealWave.value) {
+			const wf = props.waveform as Array<number>
+			for (let i = 0; i < wf.length; i++) {
+				let v = wf[i]
+				if (v < 0) { v = 0 }
+				if (v > 1) { v = 1 }
+				out.push(23.1 + v * 30.7)
+			}
+			return out
+		}
 		const hs = props.heights as Array<number>
 		let min = 0
 		let max = 0
@@ -69,7 +110,6 @@
 			}
 		}
 		const span = max - min
-		const out: Array<number> = []
 		for (let i = 0; i < hs.length; i++) {
 			let r = 0.5
 			if (span > 0) {
@@ -128,6 +168,53 @@
 		}
 		return out
 	})
+
+	// ===== B9 呼吸动画（BB3 · 2026-09-08） =====
+	// 多实例元素定位：组件 setup 时生成实例唯一 id 前缀（挂载点 6 处，全局固定 id 必冲突；
+	// RecordSheet :id="'rs-dot'+i" 动态绑定 + uni.getElementById 真机先例同款），不用全局固定 id
+	const instPrefix = 'vw' + Math.floor(Math.random() * 1000000000) + '_'
+	function barId(i: number): string {
+		return instPrefix + i
+	}
+
+	// 呼吸门控 = 自条活动（liveBarIdx≥0）&& 全局真在出声（voicePlaying，暂停即停）；
+	// 目标 bar 随进度前沿切换：watch 里 cancel 旧元素动画 → 新元素起 900ms 三关键帧
+	// 三角波 scaleY 1→0.5→1（RecordSheet UniElement.animate 写法，§I A' 拍板机制）
+
+	let liveAnim: UniAnimation | null = null
+	function stopLiveAnim(): void {
+		liveAnim?.cancel()
+		liveAnim = null
+	}
+	function startLiveAnim(idx: number): void {
+		stopLiveAnim()
+		const el = uni.getElementById(barId(idx))
+		if (el == null) {
+			// 首帧竞态防御：bar 元素未就绪则本轮不呼吸（进度推进下轮 watch 再试）
+			console.warn('[VoiceWave] live bar 元素未就绪 idx=' + idx)
+			return
+		}
+		liveAnim = el.animate([
+			{ transform: 'scaleY(1)' },
+			{ transform: 'scaleY(0.5)' },
+			{ transform: 'scaleY(1)' }
+		], {
+			duration: 900,
+			iterations: Infinity,
+			easing: 'linear'
+		})
+	}
+	function syncLiveAnim(): void {
+		const idx = liveBarIdx.value
+		if (idx < 0 || !voicePlaying.value) {
+			stopLiveAnim()
+			return
+		}
+		startLiveAnim(idx)
+	}
+	watch(liveBarIdx, (): void => { syncLiveAnim() })
+	watch(voicePlaying, (): void => { syncLiveAnim() })
+	onUnmounted(() => { stopLiveAnim() })
 </script>
 
 <style>
@@ -144,11 +231,9 @@
 		border-radius: 3.8rpx;
 		margin-right: 5.8rpx;
 	}
-	/* 呼吸缩放（F5a「波形跳动」）：§I A' 拍板后降级静态——
-	   呼吸目标 bar 随播放进度动态变化（liveBarIdx computed），命令式 animate 需监听 props
-	   换目标元素且本组件三处宿主多实例（uni.getElementById 有 id 冲突风险），成本>收益。
-	   wave-bar-live 类保留作语义标记，将来接 animate 时复用 */
+	/* 呼吸缩放（F5a「波形跳动」）B9 已接线：目标 bar 由 watch(liveBarIdx/voicePlaying)
+	   驱动 UniElement.animate scaleY 1↔0.5（RecordSheet 真机先例机制）；本类保留作语义标记 */
 	.wave-bar-live {
-		/* 静态：无动画 */
+		/* 动画走命令式 animate，此类无静态样式 */
 	}
 </style>

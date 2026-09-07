@@ -9,18 +9,21 @@
 - POST /api/v1/contents/upload：照片 multipart 中转上传（客户端→后端→storage→contents→管线）
 - 复用 create_content 的去重（409）/护栏（moderate）/类型白名单语义
 """
+import array
 import io as _io
 import logging
+import struct
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api import make_router
-from app.api.deps import PageParams, get_current_user, pagination_params
+from app.api.deps import PageParams, get_current_user, pagination_params, uuid4_str
 from app.core.errors import (
     ERR_CONTENT_001,
     ERR_CONTENT_002,
@@ -30,6 +33,7 @@ from app.core.errors import (
     ERR_CONTENT_007,
     ERR_CONTENT_008,
     ERR_CONTENT_009,
+    ERR_MEDIA_003,
     ERR_PROFILE_SENSITIVE_001,
     ERR_PROFILE_SENSITIVE_002,
     ERR_PROFILE_SENSITIVE_003,
@@ -50,6 +54,8 @@ from app.schemas.content import (
     ProfileSensitiveDeleteOut,
     ProfileSensitiveOut,
 )
+from app.services.errors import NotFoundError
+from app.services.external.storage import StorageError, get_storage_backend
 from app.services.file_magic import is_photo_bytes
 from app.services.photo_content import (
     DuplicateError,
@@ -527,6 +533,7 @@ from app.core.errors import ERR_CONTENT_010  # noqa: E402
 from app.schemas.content import (  # noqa: E402
     TRASH_RETENTION_DAYS,
     ContentDeleteOut,
+    ContentRemarkUpdate,
     FavoriteOut,
     TrashClearOut,
     TrashItemOut,
@@ -549,6 +556,29 @@ def _load_alive_content(db: Session, user_id: str, content_id: str) -> Content:
     if row is None:
         raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
     return row
+
+
+@router.patch("/{content_id}", response_model=ApiResponse[ContentOut])
+def update_content_remark(
+    content_id: str,
+    req: ContentRemarkUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """更新内容备注（BB1）：仅 remark 单字段（schema extra="forbid"，越权字段 422）。
+
+    归属校验复用 _load_alive_content：非本人/已软删/不存在 → 404 CONTENT_010
+    （IDOR 不区分三种情形）；畸形 ID 同语义 404（uuid4_str，R4#2）。
+    """
+    try:
+        uuid4_str(content_id)
+    except NotFoundError:
+        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404) from None
+    row = _load_alive_content(db, user.id, content_id)
+    row.remark = req.remark
+    db.commit()
+    db.refresh(row)
+    return ApiResponse(data=_to_out(row))
 
 
 @router.delete("/{content_id}", response_model=ApiResponse[ContentDeleteOut])
@@ -739,3 +769,98 @@ def trash_clear(
         cleared += 1
     db.commit()
     return ApiResponse(data=TrashClearOut(cleared=cleared))
+
+
+# ---------- BB3：真实音频波形（2026-09-08） ----------
+# 只读端点：GET /api/v1/contents/{id}/waveform?buckets=N
+# 客户端 VoiceWave 组件真实波形数据源（替代 genWaveHeights 确定性伪波形的升级通路）。
+# 缓存取舍：语音条 ≤60s（16kHz/16bit/单声道 ≈1.9MB），解析为纯内存分桶峰值采样，
+# 现算成本毫秒级，低于缓存失效/存储复杂度——故每次现算不缓存（量大后再议 LRU）。
+_WAVEFORM_MAX_BYTES = 16 * 1024 * 1024  # 防御上限：60s 语音 ≈1.9MB，远超真实值才触发
+
+
+def _wav_bucket_peaks(data: bytes, buckets: int) -> list[float]:
+    """解析 WAV（RIFF/PCM16）→ buckets 个 0..1 峰值。
+
+    容错：chunk 遍历找 data chunk（不认死 44 字节标准偏移，兼容扩展头/前缀附注块）。
+    非 RIFF/WAVE、缺 fmt/data、非 PCM16、样本为空 → ValueError（调用方映射 404 显式报错）。
+    """
+    if len(data) < 12 or data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not RIFF/WAVE")
+    audio_format: int | None = None
+    bits: int | None = None
+    pcm: bytes | None = None
+    pos = 12
+    while pos + 8 <= len(data):
+        chunk_id = data[pos : pos + 4]
+        (chunk_size,) = struct.unpack_from("<I", data, pos + 4)
+        body = data[pos + 8 : pos + 8 + chunk_size]
+        if chunk_id == b"fmt " and len(body) >= 16:
+            audio_format, _ch, _rate, _br, _align, bits = struct.unpack_from("<HHIIHH", body)
+        elif chunk_id == b"data":
+            pcm = body
+            break  # data 一般是最后的有效块（fmt 在前），提前止省一轮遍历
+        pos += 8 + chunk_size + (chunk_size & 1)  # chunk 按 2 字节对齐
+    if audio_format != 1 or bits != 16:
+        raise ValueError("not PCM16")
+    if not pcm:
+        raise ValueError("empty data chunk")
+    samples = array.array("h")
+    usable = len(pcm) - len(pcm) % 2
+    samples.frombytes(pcm[:usable])
+    if sys.byteorder == "big":
+        samples.byteswap()
+    total = len(samples)
+    step = total / buckets
+    peaks: list[float] = []
+    for b in range(buckets):
+        start = int(b * step)
+        end = min(max(start + 1, int((b + 1) * step)), total)
+        if start >= total:
+            peaks.append(0.0)  # 样本数 < 桶数：尾部桶补 0（不静默截断桶数）
+            continue
+        peak = max(abs(v) for v in samples[start:end])
+        peaks.append(peak / 32768.0)
+    return peaks
+
+
+@router.get("/{content_id}/waveform", response_model=ApiResponse[dict])
+def get_content_waveform(
+    content_id: str,
+    buckets: int = Query(default=28, ge=1, le=128),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """内容音频真实波形（BB3 · 2026-09-08 新增）
+
+    客户端 VoiceWave 组件数据源：读语音原件 → 解析 WAV data chunk →
+    buckets 桶峰值（0..1 浮点，客户端映射到条高渲染）。
+
+    - 归属校验：不存在/已删除/非本人 → 404 CONTENT_010（_load_alive_content 同款 IDOR 防护）
+    - 非语音内容 / cos_key 缺失 / 对象读取失败 / 非 PCM16 WAV → 404 MEDIA_003
+      「音频不可用」（与 media.get_content_audio 同口径：对外不区分原因防探测，
+      服务端日志留真因；显式错误码非静默）
+    - buckets 参数由 FastAPI Query 校验（1..128，越界自动 422 信封）
+    - 不缓存：语音 ≤60s 现算毫秒级，见上方 BB3 注释
+    """
+    cid = uuid4_str(content_id)
+    row = _load_alive_content(db, user.id, cid)
+    if row.content_type != "voice" or not row.cos_key:
+        raise ApiError(ERR_MEDIA_003, "音频不可用", http=404)
+    try:
+        data = get_storage_backend().get_object(row.cos_key)
+    except (KeyError, ValueError) as exc:
+        logger.info("波形音频对象不可用 key=%s err=%s", row.cos_key, exc)
+        raise ApiError(ERR_MEDIA_003, "音频不可用", http=404) from exc
+    except StorageError as exc:
+        logger.warning("波形音频读取失败（存储故障）key=%s code=%s", row.cos_key, exc.code)
+        raise ApiError(ERR_MEDIA_003, "音频不可用", http=404) from exc
+    if len(data) > _WAVEFORM_MAX_BYTES:
+        logger.warning("波形音频超防御上限 key=%s size=%d", row.cos_key, len(data))
+        raise ApiError(ERR_MEDIA_003, "音频不可用", http=404)
+    try:
+        peaks = _wav_bucket_peaks(data, buckets)
+    except ValueError as exc:
+        logger.info("波形解析失败 content_id=%s reason=%s", cid, exc)
+        raise ApiError(ERR_MEDIA_003, "音频不可用", http=404) from exc
+    return ApiResponse(data={"buckets": [round(p, 4) for p in peaks]})

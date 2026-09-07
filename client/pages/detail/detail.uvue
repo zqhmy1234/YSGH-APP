@@ -143,7 +143,7 @@
 	import { ref } from 'vue'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
-	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta } from '@/utils/play'
+	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/play'
 	import { formatIsoShortTime } from '@/utils/time'
 	import {
 		toggleVoice,
@@ -426,8 +426,10 @@
 			success: (res) => {
 				const idx = res.tapIndex
 				if (idx === 0) {
-					// W0-4 诚实化：编辑器未建（远期账），不写「待接入」这类含糊占位
-					uni.showToast({ title: '记忆编辑即将上线', icon: 'none' })
+					// B12（BB1）：「编辑记忆」语义=改正文碎片文字，后端当前仅开放 remark 单字段
+					// （PATCH /contents/{id}）→ 编辑降级走备注编辑通道（与补充说明同款真保存）；
+					// 正文文字修改需专用端点，不造假编辑器
+					onEditSup()
 				} else if (idx === 1) {
 					uni.showModal({
 						title: '删除记忆',
@@ -458,7 +460,16 @@
 
 	// 底部操作栏
 	function askAI(): void {
-		// B10 已回退（原生 tabBar 证伪），redirectTo 跳 AI 页恢复；带上下文预填属远期 B1
+		// B10 已回退（原生 tabBar 证伪），redirectTo 跳 AI 页恢复
+		// B1（BB1）上下文预填：当前记忆标题/正文/内容 id 以 storage 暂存（跳转传参最稳形态，
+		// 对齐 favorite_ids 等字符串 storage 先例；标题可能含特殊字符不宜 url query）。
+		// 参数契约（供 BB2 接收端 ai.uvue 消费，读后应 removeStorageSync 清除）：
+		//   yishu_ai_context_title     string  记忆标题（正文首句截断 ≤14 字，空=''）
+		//   yishu_ai_context_body      string  记忆正文全文（空=''）
+		//   yishu_ai_context_content_id string 内容 id（可回查详情，空=''）
+		uni.setStorageSync('yishu_ai_context_title', memTitle.value)
+		uni.setStorageSync('yishu_ai_context_body', memBody.value)
+		uni.setStorageSync('yishu_ai_context_content_id', contentId.value)
 		uni.redirectTo({ url: '/pages/ai/ai' })
 	}
 	function addCapsule(): void {
@@ -482,7 +493,8 @@
 	}
 
 	// 正文来源行「你也可以补充一句」：弹输入补一句
-	// 诚实化：后端无 PATCH 补充端点（远期账 A 类），仅本地暂存，冷启动即失 —— 不假称已保存云端
+	// B12（BB1）：接真 PATCH /contents/{id} remark——成功后才本地同步显示（response-first），
+	// 失败显式 toast 不改本地态（不静默原则）
 	function onEditSup(): void {
 		uni.showModal({
 			title: '补充一句',
@@ -502,8 +514,18 @@
 				if (v == '') {
 					return
 				}
-				bodySup.value = v
-				uni.showToast({ title: '已记在这条记忆里 · 云端保存即将上线', icon: 'none', duration: 2000 })
+				if (contentId.value == '') {
+					uni.showToast({ title: '内容未加载，无法保存', icon: 'none' })
+					return
+				}
+				updateContentRemark(contentId.value, v).then((ok: boolean) => {
+					if (!ok) {
+						uni.showToast({ title: '云端保存失败 · 请稍后重试', icon: 'none' })
+						return
+					}
+					bodySup.value = v
+					uni.showToast({ title: '已记在这条记忆里', icon: 'success' })
+				})
 			}
 		})
 	}

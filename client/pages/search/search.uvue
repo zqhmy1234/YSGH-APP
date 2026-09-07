@@ -108,27 +108,9 @@
 		stopVoice()
 	})
 
-	// ── 本地 mock 数据（视觉验收用）────────────────────────────────────────
-	// 后端/索引无数据时结果区整块不渲染 → 波形卡、引用竖线、筛选间距全都无法对拍。
-	// 这里预填 6 条（3 语音 + 3 文字/照片），让结果区有内容可验。
-	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
-	//   打开时的危害：onLoad **无条件**灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*），
-	//   真实搜索结果永远被这 6 条压住，筛选/跳转全在假数据上跑。
-	//   关掉后进入页面会拉一次默认结果（见 onLoad），不再需要预填。
-	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
-	const USE_MOCK_DATA: boolean = false
-
-	function mockHits(): Array<SearchHitItem> {
-		const out: Array<SearchHitItem> = []
-		out.push(new SearchHitItem('v-mock-1', 'voice', '和妈妈的通话', '2026-08-27T12:36:00', '上海', 'ev-mock-1', '和妈妈的通话', 0.9, '', ''))
-		out.push(new SearchHitItem('v-mock-2', 'voice', '清晨湖边的风声', '2026-08-28T07:42:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.85, '', ''))
-		out.push(new SearchHitItem('v-mock-3', 'voice', '宿舍夜谈', '2026-08-25T23:10:00', '宿舍', 'ev-mock-3', '夜谈', 0.8, '', ''))
-		out.push(new SearchHitItem('t-mock-1', 'text', '那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。', '2026-08-28T07:42:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.88, '', ''))
-		out.push(new SearchHitItem('p-mock-1', 'photo', '湖面上的薄雾还没散，对岸的树影倒映在水里', '2026-08-28T07:45:00', '光华湖', 'ev-mock-2', '清晨的湖边，风很轻', 0.82, '', ''))
-		out.push(new SearchHitItem('t-mock-2', 'text', '第一次尝试手冲，水温 92°C，粉水比 1:15，苦了一点但回甘明显', '2026-08-20T15:20:00', '宿舍', 'ev-mock-4', '手冲咖啡初体验', 0.75, '', ''))
-		return out
-	}
-	// ── mock 结束 ────────────────────────────────────────────────────────
+	// 本地 mock 数据注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
+	// 此前 onLoad 无条件灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*）压住真实结果；
+	// 现进入页面即拉「最近内容」兜底（见 onLoad），空结果走诚实空态文案。
 
 	// 从「我的」类型卡跳入：?type=photo/voice/text 预设对应筛选标签
 	onLoad((options: OnLoadOptions) => {
@@ -140,12 +122,7 @@
 		} else if (t == 'text') {
 			activeFilter.value = 3
 		}
-		if (USE_MOCK_DATA) {
-			hits.value = mockHits()
-			hasSearched.value = true
-			return
-		}
-		// mock 关闭后：进入即拉「最近内容」兜底（后端 /search 的 q 要求非空，
+		// 进入即拉「最近内容」兜底（后端 /search 的 q 要求非空，
 		// 空词场景只能用 contents 列表端点），否则结果区一片空白。
 		loadRecent()
 	})

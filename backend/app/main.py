@@ -31,6 +31,7 @@ from app.api import (  # noqa: E501
     stats,
     sync,
     upload,
+    users,
     wechat,
 )
 from app.api.contents import favorites_router, profile_sensitive_router, trash_router
@@ -136,6 +137,7 @@ def create_app() -> FastAPI:
     app.include_router(capsules.router)  # BA2 时间胶囊（远期总账 A5）
     app.include_router(upload.router)
     app.include_router(stats.router)  # R9-7 hero 副标题 API 化（Q5 拍板）
+    app.include_router(users.router)  # BB1 GET /api/v1/users/me（当前用户信息·手机号服务端掩码）
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

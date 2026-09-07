@@ -16,6 +16,8 @@
  * 分页字段对齐（fetchMessagePage 返回 {items, cursor, hasMore}，未读数走游标累加）。
  */
 import { get, post, request, dataObj, dataArr, showErrorToast, fetchUnreadCountSimple } from './api'
+import { getBaseUrl } from './config'
+import { getToken } from './auth'
 import {
 	PATH_MESSAGES,
 	PATH_ECHO_TODAY,
@@ -505,6 +507,72 @@ export function fetchContentAiMeta(contentId: string): Promise<ContentAiMeta | n
 				}
 			}
 			resolve(new ContentAiMeta(tags, it.getString('ai_description') ?? ''))
+		})
+	})
+}
+
+// ═══════════ 用户域 + 内容备注（BB1 · 2026-09-08）═══════════
+// 契约（backend app/api/users.py / app/api/contents.py 实证）：
+//  GET   /api/v1/users/me     → UserMeOut{id, nickname, avatar, phone(服务端掩码 138****XXXX|null)}
+//  PATCH /api/v1/contents/{id} → {"remark": string|null}（仅 remark 单字段，其他字段 422）→ ContentOut
+
+/** GET /users/me：当前用户信息（掩码手机号下发，完整号码不出网）；失败 null（api 层已全局 toast） */
+export function fetchUsersMe(): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		get('/api/v1/users/me').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			resolve(dataObj(res))
+		})
+	})
+}
+
+/** PATCH 单发（BB1 自持封装）：api.uts 的 Method 联合类型无 PATCH（域外文件不动）；
+ *  uni-app x uni.request method 官方合法值含 PATCH（app-android 支持，doc.dcloud.net.cn/uni-app-x/api/request）。
+ *  非 200/网络失败 → resolve null（不静默：调用方显式 toast；对象守卫对齐 api.uts 2026-08-26 先例） */
+function patchJson(path: string, data: UTSJSONObject): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		const header: UTSJSONObject = { 'Content-Type': 'application/json' }
+		const token = getToken()
+		if (token != '') {
+			header.set('Authorization', 'Bearer ' + token)
+		}
+		const onSuccess = (res: any): void => {
+			if (res.statusCode != 200) {
+				console.error('[yishu] patchJson HTTP ' + res.statusCode + ' ' + path)
+				resolve(null)
+				return
+			}
+			// 裸值强转 UTSJSONObject 会主线程 FATAL（api.uts 先例）：先守卫再转换
+			if (res.data != null && typeof res.data == 'object') {
+				resolve(res.data as UTSJSONObject)
+			} else {
+				resolve(null)
+			}
+		}
+		const onFail = (): void => {
+			console.error('[yishu] patchJson FAIL ' + path)
+			resolve(null)
+		}
+		uni.request({
+			url: getBaseUrl() + path,
+			method: 'PATCH',
+			data: data,
+			header: header,
+			success: onSuccess,
+			fail: onFail
+		})
+	})
+}
+
+/** PATCH /contents/{id}：更新备注（B12 补充说明真保存）；返回是否成功 */
+export function updateContentRemark(contentId: string, remark: string): Promise<boolean> {
+	const body: UTSJSONObject = { remark: remark }
+	return new Promise<boolean>((resolve) => {
+		patchJson('/api/v1/contents/' + contentId, body).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
 		})
 	})
 }

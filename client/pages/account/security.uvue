@@ -17,8 +17,8 @@
 						<image class="sec-icon-img" src="/static/icons/icon-phone.svg" />
 					</view>
 					<text class="sec-label">手机号</text>
-					<!-- W0-4 状态化：auth 本地只有 token、后端无 users/me（B4 远期），显真实绑定态不显假号 -->
-					<text class="sec-value">未绑定</text>
+					<!-- B4（BB1）：GET /users/me 真值（服务端掩码 138****XXXX）；失败/未绑定保持「未绑定」不显假号 -->
+					<text class="sec-value">{{ phoneText }}</text>
 					<text class="sec-arrow">›</text>
 				</view>
 				<view class="sec-row" @tap="onWechat"> <!-- 画布 41:176 行·微信 -->
@@ -64,7 +64,27 @@
 // W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」）：手机号显「未绑定」不显假号 138****5678
 // （auth 本地仅 token、后端无 users/me）；微信徽章=当前登录方式；绑定管理 toast 措辞「即将上线」；
 // W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
+	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
 	import { logout } from '@/utils/auth'
+	import { fetchUsersMe } from '@/utils/play'
+
+	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
+	let phoneText = ref('未绑定')
+
+	onLoad(() => {
+		fetchUsersMe().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				// 不静默：失败显式 toast，保持「未绑定」降级显示
+				uni.showToast({ title: '账号信息加载失败', icon: 'none' })
+				return
+			}
+			const masked = d.getString('phone')
+			if (masked != null && masked != '') {
+				phoneText.value = masked
+			}
+		})
+	})
 
 	function goBack(): void {
 		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页

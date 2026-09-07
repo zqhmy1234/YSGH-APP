@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # R6#12（输入校验）：cos_key/thumbnail_key 仅允许本域前缀
 # （与 api/contents._validate_cos_key 运行时校验同源；防任意键入库污染/存储遍历）
@@ -108,6 +108,18 @@ class CosPresign(BaseModel):
 # ---------- W2-1 删除/回收站 + W2-2 收藏（2026-09-05） ----------
 
 TRASH_RETENTION_DAYS = 30  # 回收站保留期（对齐客户端 trash 页文案「保留 30 天」）
+
+
+class ContentRemarkUpdate(BaseModel):
+    """内容备注更新入参（PATCH /api/v1/contents/{id}；BB1）
+
+    extra="forbid"：仅允许 remark 单字段，越权字段（status/user_id 等）显式 422；
+    remark 可为 null（清除备注）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    remark: str | None = Field(None, max_length=2000, description="用户备注；null=清除")
 
 
 class ContentDeleteOut(BaseModel):

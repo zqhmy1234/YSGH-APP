@@ -413,26 +413,9 @@
 			}
 		})
 	}
-	// ── 本地 mock 时间轴（视觉验收用）────────────────────────────────────────
-	// ⚠️ 2026-08-31 关闭（峰宝拍板：这是 MVP，不是 demo）。
-	//   打开时的危害：events==0 就注入 ev-m1~m4 四条**假 id**（云端不存在），
-	//   页面看着有内容，实则任何真数据都进不来——当时"fetchTimeline 返回 0 条"的
-	//   根因是 8000 端口被 HBuilderX launcher 劫持（见 SOP §17），不是后端没数据。
-	//   现在端口迁 8010 + 真机用户已有真实事件，再开就是自欺欺人。
-	//   保留代码仅为应急：确需本地视觉冒烟时可临时置 true，验证完必须置回。
-	const USE_MOCK_TIMELINE: boolean = false
-
-	function mockEvents(): Array<TimelineEvent> {
-		const day = 86400000
-		const now = Date.now()
-		const out: Array<TimelineEvent> = []
-		out.push(new TimelineEvent('ev-m1', 1, '清晨的湖边', 'ai', now - day, now - day + 3600000, '光华湖', null, 3, 2, 'confirmed', 0.92, 'ct-m1'))
-		out.push(new TimelineEvent('ev-m2', 2, '手冲咖啡初体验', 'user', now - 2 * day, now - 2 * day + 1800000, '宿舍', null, 1, 1, 'confirmed', 0.88, 'ct-m2'))
-		out.push(new TimelineEvent('ev-m3', 1, '和妈妈的通话', 'ai', now - 3 * day, now - 3 * day + 900000, '上海', null, 0, 1, 'confirmed', 0.95, 'ct-m3'))
-		out.push(new TimelineEvent('ev-m4', 2, '夜谈', 'user', now - 4 * day, now - 4 * day + 7200000, '宿舍', null, 2, 2, 'draft', 0.61, 'ct-m4'))
-		return out
-	}
-	// ── mock 结束 ────────────────────────────────────────────────────────
+	// 本地 mock 时间轴注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
+	// events==0 直接走诚实空态（fetch 失败重试一次后跳 /pages/empty/empty），
+	// 不再注入 ev-m1~m4 假 id 数据。
 
 	// 空状态重试去重：瞬态失败重试一次的守门位（成功后复位）
 	let emptyRetryDone = false
@@ -500,10 +483,6 @@
 
 	// 卡PA D2/R2：拉取结果统一渲染入口（更新数据源引用 + lastFetchAt + 空状态守门）
 	function applyFetchedEvents(events: Array<TimelineEvent>): void {
-		if (USE_MOCK_TIMELINE && events.length == 0) {
-			events = mockEvents()
-			console.log('[dbg-index] USE_MOCK_TIMELINE -> 注入 ' + events.length + ' 条 mock 事件')
-		}
 		currentEvents = events
 		lastFetchAt = Date.now()
 		renderFromEvents(events)
