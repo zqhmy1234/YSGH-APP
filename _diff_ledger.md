@@ -1022,3 +1022,79 @@ Valet Key 正式落地后整体退役（含本过渡管线）。
 - 修复三刀 favorites.uvue：①onShow 栈回刷新（loadCards 抽取+firstShow 防首拉）②P9 筛选空态「该类型下暂无收藏」③写格式统一 join(',')（detail 读侧 split 不兼容数组）
 - adb 实锤：基线 1 条→详情取消→返回即时空态「还没有收藏」✓；实心亮黄星新版已生效
 - 入库 e37e482（pre-commit 门禁过；ref 不落盘老坑又犯，手写 ref+pack-refs 补救，8s 存活复验）
+
+### §R 点播放闪退破案（2026-09-07 21:1x · 真机驻扎 logcat 尸检实锤）
+
+- **症状**：峰宝时间轴点语音记忆卡片 → 整个 App 闪退（复现率 100%，冷启动后 4s 内死）
+- **尸检链路**（crash_live_0907.log，2026-09-07 21:10:10 pid 16780）：
+  ①`openDetail contentId=5e36b916`（index.uvue:562）→ ②详情页 JS 异常
+  `ReferenceError: voicePlayable is not defined`（RenderEffect.render，Vue warn「Active effect was not restored」在前）→
+  ③vapor 动态渲染适配器 C++ 断言 `std::runtime_error: Dynamic render adapter if condition block must return bool` →
+  ④`Process exited due to signal 6 (Aborted)`。无 Java 栈、无 tombstone（华为拦），全靠实时 logcat 抓获
+- **根因**：detail.uvue 模板 39 行 `:class="{'n4_vbtn-disabled': !voicePlayable}"` + 47 行 `voiceNote` +
+  脚本 274 行 `!voicePlayable.value`——**三个引用全文件零声明**（幽灵变量），audio_player.uts 也无此导出。
+  编译器不报错静默放行，只有运行到语音记忆详情才炸
+- **修复**：声明 `voicePlayable = ref(false)` / `voiceNote = ref('')`；fetchContentDetail 语音分支按
+  `d.status` 显式判定（done=可播 / failed='这段语音转写失败，暂不可播放' / 其余='转写处理中，稍后可播放'），
+  与事件级语音卡（v.status）同词表，禁播守卫 toast 不变（显式不静默）
+- **新铁律（等峰宝拍板登记）**：uvue 模板/脚本引用未定义标识符**编译期零报错**，运行时以 C++ abort 形式
+  裸崩（非 JS catch 可兜）——「编译成功」对新页面引用完整性零背书；页面级变量引用需自查或靠复验兜底
+- **上机**：deploy_one.sh 推包（21:1x），待峰宝复验：时间轴点那条 mixed 录音卡片进详情 → 不闪退 +
+  语音卡按 status 显示正确可播态
+
+### §S 时间轴「新内容不可见」+ 详情页只显 1 条音频 双案破获（2026-09-07 21:3x-22:0x）
+
+- **案一 R9-C（时间轴不可见）**：新录音 4f8fe57e（21:25）转写 done 但 EventItem 零挂接 → 时间轴（只渲染
+  events 表）看不见、搜索页（直查 content 表）能搜到。根因=aggregate.py `_write_upper_candidates` L3 分支
+  「同标签流已落库 → continue」整体跳过，**没有把新成员并入已有流**。老三条能挂上纯因 02:06 那次跑时
+  `标签 · mixed` 尚不存在（那次运行创建了它）；此后同标签新内容全部被吞
+  - 修复：existing L3（非 confirmed+user）→ 新成员追加 EventItem + start/end 时间窗外延
+  - 验证：worker 重启（PID 旧 24784→新，带 FS_STORAGE_ROOT 对齐）+ 清幂等键重投 → 实锤成员 3→4
+- **案二（详情页只显 1 条）**：detail.uvue 调用 `fetchEventItems`/`SplitItem` 但 **import 漏了这两个名字**
+  → 编译产物 `fetchEventItems` 未定义 → `.then` 内 ReferenceError 被 Promise 静默吞 → eventVoices 恒空 →
+  「这条记忆里的声音」区块永不渲染。实锤：logcat 10 次 `/contents/{id}/events` 全 200，
+  `/events/{id}/items` 零发出；编译产物仅有 `fetchEventItems$1`（index 拆分面板处正确改名），
+  详情页作用域引用裸名未链接
+  - 修复：import 补 `fetchEventItems, SplitItem`；**清 unpackage/dist 全量重编**后符号统一（不再有 $1 错位）
+    ——旧包是增量编译缓存脏产物，同日两个符号级 bug 均与此相关
+- **新铁律（升级版）**：uvue 编译器对未定义标识符零报错（§R 已立），且 **Promise 链内 ReferenceError 被静默吞
+  连崩溃都没有**（比 §R 的 C++ abort 更隐蔽）；**增量编译缓存可产生符号改名错位**——符号级诡异问题先清缓存全量编
+- 上机：deploy 三步过（21:57 全量重编版），worker 新代码已实证跑通；待峰宝复验
+  ①详情页「这条记忆里的声音」显示 3 条（任意成员进详情）②时间轴下拉刷新 mixed 事件含新录音
+
+### §T 时间轴「米黄色块」破案：骨架屏 v-if 卸载残留（2026-09-07 22:2x · uiautomator dump + 像素扫描双实锤）
+
+- **症状**：待确认区副标题底下 + 卡片背后有米黄色块（峰宝 02:08 截图 + 22:2x 新包复验仍在，排除旧包脏产物）
+- **取证链**：①静态侧全清——index.uvue 待确认区全套样式/全局/Banner/pressable 均无米黄底，全页 #EFE9DD 唯一归属骨架屏 ②真机 `uiautomator dump` + 截图像素扫描（is_cream 色域过滤）双对照——渲染树中抓到**骨架屏完整残留**：[91,1130][351,1173]=260×43px=恰好 sk-day 180×30rpx；[91,1201][698,1258]=607×57px=恰好 sk-title 420×40rpx；三张 274×274px=恰好 sk-img 190rpx 并排；[91,1600][466,1637]=恰好 sk-meta 260×26rpx——四组尺寸零偏差咬合
+- **根因**：P-4 骨架屏 `v-if="!loaded"` / `v-else` 大块配对，loaded=true 后 **vapor 渲染器未卸载骨架分支**，节点树永久残留叠在 feed 底下；sk-card 白底与真卡同色不可见，米黄 sk-line 从「待确认」标题区与卡间隙露出。与 §R 闪退（"Dynamic render adapter if condition block must return bool" C++ 断言）同族——vapor 对条件块处理有 bug，§R 表现为崩溃、§T 表现为静默残留
+- **反证锚点**：RecordSheet v-if 高频开合正常、voice-play-icon 小块 v-else 正常——失效面锁定「仅切一次的大块 if/else 配对」
+- **修复**（零卸载依赖，不走任何 if 移除路径）：骨架恒渲染 + `:class="loaded ? 'sk-hidden' : ''"`（动态 class 先例 139 行）+ `.sk-hidden { display: none; }` 属性路径收起；feed 去 v-else 改无条件渲染（未加载时本就是空壳）
+- **上机**：deploy 推包（22:2x），待峰宝复验色块消失
+
+### §V 消息未读圆点不消失 双 bug（2026-09-07 22:4x · 代码审计实锤）
+
+- **症状**：点「语音已整理好」消息圆点不消失；「全部已读」也不消失
+- **双 bug**：①**字段错位**——渲染真源是 toItem 的 `m.status != 'unread'`（messages.uvue:181），而 onMarkAllRead 改的是
+  `arr[i].read`（AppMessage 无 read 字段，幽灵属性赋值，编译器第 3 次静默放行）②**响应式断链**——filteredMessages
+  computed 依赖 allMessages.value 数组引用，in-place 改元素属性引用不变 → computed 永不重算；openMessage 改的
+  msg.read 是渲染副本 MessageItem，同样不触发
+- **修复**：两处统一改 status='read'（真源）+ `allMessages.value = arr.slice()` 重建引用触发 computed 重算；
+  后端 /messages/read-all、/{id}/read 端点已实证存在（openapi 22:35）
+- **推包**：deploy 三步过（22:39），待峰宝复验
+
+### ✅ 复验关单（2026-09-07 22:44 · 峰宝真机复验）
+- §R 点播放闪退（voicePlayable）→ 通过
+- §S 时间轴不可见+详情单条（R9-C + fetchEventItems import）→ 通过
+- §T 待确认区米黄块（骨架 v-if 卸载残留）→ 通过
+- §V 消息未读圆点（status 错位 + computed 断链）→ 通过
+
+### §W A 类后端缺口实施批次（2026-09-07 23:0x-23:4x · 三 subagent 并行 + 主控接线验收）
+
+- **BA1 字段补齐**（agent-f4ff4162）：migration f2a3b4c5d6e7 一次收 6 列（Content duration/remark/size_bytes/tags_json/ai_description + Message.content_id）+ voice taken_at 存量回填；落库点=upload/register.py:189（voice duration+size）、photo_content.py:262（photo size）、contents.py:300（remark）、notify.py:207（content_id，_coerce 防 UUID 列污染）；出参 ContentOut×5/MessageOut.content_id/stats total_bytes
+- **BA2 胶囊**（agent-a8581553）：capsules 表+4 端点（封存/列表/开启/撤销+scan）+ 到期推送惰性触发（30s 节流）+sealed→due 幂等产消息（msg_type=capsule_due 带 content_id）；错误码 CAPSULE_001~004
+- **BA3 AI 链**（agent-cbd00e27）：ai_tagging.py（generate_tags qwen-flash / generate_photo_description Qwen3-VL，复用 llm_ops+dashscope 封装 with_retry）；pipeline 挂钩 tag_content 任务（low 队列 enqueue_unique）+照片描述内联；失败语义显式（LLM_NOT_CONFIGURED/LLM_CALL_FAILED，主内容 done 不受影响）
+- **测试污染案**：BA3 合跑挂 3→真凶=alembic env.py fileConfig 默认 disable_existing_loggers=True 禁用 yishu.pipeline logger（迁移测试后全库日志哑火）；修=env.py 传 disable_existing_loggers=False（canonical）+BA3 用例改直挂 handler 双保险；**26 passed 合跑全绿**
+- **FE1/FE2 前端接线**（agent-3823896c/934936d1）：收藏四态/删除/showModal/trash 三链路/favorites/消息 content_id 跳转/chips+AI 描述卡（FE1）；RecordSheet remark（文本+语音降级链）/storage total_bytes 用量卡/CapsuleSheet 真封存/USE_MOCK_STORAGE·TRASH·FAVORITES·CAPSULE 四开关清除（FE2）；新增封装 play.uts×9+capsule_api.uts×4
+- **上机**：uvicorn/worker 重启（tag_content 注册），openapi 61 路由实证 capsule 4+ContentOut 5 字段+MessageOut.content_id；deploy 推包（23:4x）
+- **诚实缺口登记**：①A8 半项——语音主链（分片上传 complete）不收 remark，remark 仅文本/降级链入库（RecordSheet:1285 注释），建议后端补 update 端点或 complete 收 remark ②A7 半项——手选分类 submitCorrection→classify/corrections 入库接线未做（端点存活）③A6 前端空闲态 duration 显示未接（出参已就位）④存量红 test_pipeline::test_voice_queues_local_emotion_after_transcript（R9-B6 三参 vs 测试二参，非本批引入）待修
+- **远期总账状态**：A1/A2/A3/A5/A9(余量)/A10 → 🟡 代码落地待真机复验；A6/A7/A8 → 🟡 半项；A4/A11 ⏳ 不变
