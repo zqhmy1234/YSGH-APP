@@ -1764,3 +1764,11 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **详情页 AI 描述间距（布局，根因改判）**：峰宝抱怨的是**正文卡「来自照片的AI描述」行**（bodySource）离元信息远。画布真值核对：照片态各块（标题 723.1/元信息 792.3/AI注释卡 861.5/正文卡 1134.6）与代码逐项一致，撤销了我一次错误的「上移」误改（diff 净零）。真根因=**全页绝对定位硬编码 rpx 的固有代价**：画布 AI 注释卡按 mock 两行长文案定高，真实描述短（或照片态无描述卡 v-if 隐藏）→ 正文卡 top 仍钉 1134.6 → 中间空一段。修法两案待峰宝拍板：①AI注释卡起改流式（后续区块自然上接）②onLoad 后按 aiNote 实际高度动态算正文 top。当前不动（UI 结构变更需审批）
 - **暂停归零（search.uvue）**：syncActiveCard 静态审查——pause 分支保留 active、progress 冻结，逻辑正确；疑心点=`stopProgressClock 后 ctx.duration 变化`或**崩溃前兆（native 播放实例被并发操作）**——**待设备重连实时复现定位**，暂不改（盲改=返工）
 - **🔴 崩溃（点部分音频闪退）**：crash 缓冲已轮空、tombstone 不可读（设备掉线）；audio_player startPlay 失败路径干净（toast+清 active）——CME 嫌疑=33ms 时钟读 audioCtx（被另一条 playFile 换条 destroy 竞态？）。**待设备重连：复现 + logcat -b crash 实时抓全栈**
+
+### §DD 续（2026-09-09 凌晨，CME 崩溃根治 + D4 流式重构 + git ref 第四连发）
+
+- **崩溃根因（真机 FATAL 全栈实锤，19:42 PID 10226 已全文落盘 `_verify_0908/crash_buffer_full.log`）**：`java.util.ConcurrentModificationException @ LinkedHashMap 迭代器 ← io.dcloud.uniappxv.s7.onComplete（框架动画/音频回调分发器）`。机理=B9 呼吸动画 `iterations:Infinity` 每 900ms 完成一轮→框架遍历动画监听表分发 onComplete→分发栈内 watch(liveBarIdx/voicePlaying) 触发 cancel/animate 同步改表→CME。「点部分音频崩」=只有播够久（进度前沿跨 bar）才触发；「暂停归零消失」同链（onPause 分发栈内二次改表）。修=VoiceWave syncLiveAnim 全量挪 setTimeout(0) 下一宏任务（animTimer 去重 + onUnmounted 清 timer）——动画增删永不落在回调分发栈内
+- **D4 流式重构（峰宝拍板「改流式布局」）**：detail 元信息以下全页绝对定位改普通流 n4_flow（margin-top 861.5 占装饰层高度、卡间距 23.1rpx/节距 46.2rpx 画布真值换算、body 撤定高 2650 由内容撑开）；空洞根因=画布 mock 文案撑高 top-to-top 间距，真实文案短/v-if 隐藏即露空。附带根治语音播放态进度行与下方钉死元素重叠。删死函数 evtSectionTop/evtCardTop
+- **8001 隧道盲区（新坑实锤）**：HBuilderX 标准基座经 adb reverse 从主机 **8001 dev-server** 拉 JS 产物——USB 重连清 reverse 后 deploy_one.sh 只重建业务口 8010，**8001 无人管**→cli 卡「正在建立手机连接/手机无响应」→设备跑旧包报 `Failed to connect to 127.0.0.1:8001`。修=推包前手建 `adb reverse tcp:8001 tcp:8001`（deploy_one.sh 待补 8001 逻辑=后置项）
+- **🔴 git ref 第四连发 + 两个新坑**：commit 987c6bd 成功但分支 ref 静默停 e3289ba（packed-refs 场景）。① `git update-ref refs/heads/... <sha>` **exit 0 但没写**（本机 git 维护任务损坏同源）；② 首次 python loose 直写从**带 `cut -c1-80` 的 reflog 输出复制 SHA→39 字符残缺**→HEAD unknown revision。正解=SHA 必须现场 `git rev-parse <abbrev>^{commit}` 取全长并断言 len==40 再写。修后三通道一致 + push 成功 600bb5c..987c6bd
+- **提交链**：6afcec3→600bb5c→987c6bd（全部已推远程 origin/feature/missing-pages-impl）
