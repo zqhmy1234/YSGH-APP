@@ -11,7 +11,6 @@
 			class="wave-bar"
 			:class="i === liveBarIdx ? 'wave-bar-live' : ''"
 			:style="s"
-			:id="barId(i)"
 		></view>
 	</view>
 </template>
@@ -150,9 +149,12 @@
 		const hs = bars.value
 		const pc = playedCount.value
 		const live = liveBarIdx.value
+		// v3 呼吸：三角波 1→0.5→1（周期 900ms≈18 tick；liveBarIdx 变化重置相位=新 bar 从满高起）
+		const ph = liveBarIdx.value * 18 + breathTick.value
+		const tri = 1 - 0.5 * (((ph % 18) * 2) > 18 ? ((ph % 18) * 2) - 18 : (ph % 18) * 2) / 9
 		const out: Array<string> = []
 		for (let i = 0; i < hs.length; i++) {
-			const h = (i === live ? hs[i] * 1.3 : hs[i])
+			const h = (i === live ? hs[i] * tri : hs[i])
 			const bg = i < pc ? props.playedColor : props.idleColor
 			const s = 'height:' + h + 'rpx;background-color:' + bg + ';'
 			if (i < barStyleCache.length && barStyleCache[i] == s) {
@@ -169,69 +171,36 @@
 		return out
 	})
 
-	// ===== B9 呼吸动画（BB3 · 2026-09-08） =====
-	// 多实例元素定位：组件 setup 时生成实例唯一 id 前缀（挂载点 6 处，全局固定 id 必冲突；
-	// RecordSheet :id="'rs-dot'+i" 动态绑定 + uni.getElementById 真机先例同款），不用全局固定 id
-	const instPrefix = 'vw' + Math.floor(Math.random() * 1000000000) + '_'
-	function barId(i: number): string {
-		return instPrefix + i
-	}
-
-	// 呼吸门控 = 自条活动（liveBarIdx≥0）&& 全局真在出声（voicePlaying，暂停即停）；
-	// 目标 bar 随进度前沿切换：watch 里 cancel 旧元素动画 → 新元素起 900ms 三关键帧
-	// 三角波 scaleY 1→0.5→1（RecordSheet UniElement.animate 写法，§I A' 拍板机制）
-
-	let liveAnim: UniAnimation | null = null
-	function stopLiveAnim(): void {
-		liveAnim?.cancel()
-		liveAnim = null
-	}
-	function startLiveAnim(idx: number): void {
-		stopLiveAnim()
-		const el = uni.getElementById(barId(idx))
-		if (el == null) {
-			// 首帧竞态防御：bar 元素未就绪则本轮不呼吸（进度推进下轮 watch 再试）
-			console.warn('[VoiceWave] live bar 元素未就绪 idx=' + idx)
-			return
+	// ===== B9 呼吸动画 v3（2026-09-09 native 崩溃根治，纯数据驱动，UniElement.animate 退役）=====
+	// 证据链：① 19:42 Java FATAL=ConcurrentModificationException @ 框架动画回调监听表
+	//   （cancel/animate 在分发栈内同步改表）；② v1 把 cancel/animate 挪 setTimeout(0) 后，
+	//   换条 A→B 仍秒挂且 crash 缓冲 0B=native 层——延时回调执行时旧卡已 v-if 卸载，
+	//   对已销毁元素句柄操作 = use-after-free，try/catch 接不住 SIGSEGV。
+	// 结论：列表 v-if 换卡场景下 UniElement.animate 不存在安全窗口（同步撞 Java CME、
+	//   异步撞 native UAF）。CSS @keyframes App 端不支持（RecordSheet §I A' 拍板）→
+	//   第三条路=50ms 心跳推进 breathTick，live bar 高度在 barStyles 内做 1→0.5→1
+	//   振荡（周期 900ms≈18 tick，观感与 v1 animate 一致），:style 字符串与进度染色
+	//   同路径、零原生句柄，仅「本条活动 && 全局播放中」时运行。
+	let breathTick = ref(0)
+	let breathClockId = -1
+	function syncBreathClock(): void {
+		const want = props.active && voicePlaying.value
+		if (want && breathClockId == -1) {
+			breathClockId = setInterval((): void => {
+				breathTick.value = breathTick.value + 1
+			}, 50)
+		} else if (!want && breathClockId != -1) {
+			clearInterval(breathClockId)
+			breathClockId = -1
 		}
-		liveAnim = el.animate([
-			{ transform: 'scaleY(1)' },
-			{ transform: 'scaleY(0.5)' },
-			{ transform: 'scaleY(1)' }
-		], {
-			duration: 900,
-			iterations: Infinity,
-			easing: 'linear'
-		})
 	}
-	// 🔴 CME 崩溃根治（2026-09-09 真机 FATAL 全栈实锤：主线程 LinkedHashMap 迭代中
-	// 被并发修改，栈顶=框架动画/音频回调分发器 onComplete）：Infinity 呼吸动画每 900ms
-	// 完成一轮 → 框架遍历动画监听表分发 onComplete → 分发栈内若触发 watch → cancel/
-	// animate 同步改表 → 崩溃。同链解释「暂停→进度归零波形消失」（onPause 分发栈内
-	// 二次改表状态错乱）。修=动画增删全部挪 setTimeout(0) 下一宏任务：执行时分发栈已出栈
-	let animTimer = -1
-	function syncLiveAnim(): void {
-		if (animTimer != -1) {
-			clearTimeout(animTimer)
-		}
-		animTimer = setTimeout((): void => {
-			animTimer = -1
-			const idx = liveBarIdx.value
-			if (idx < 0 || !voicePlaying.value) {
-				stopLiveAnim()
-				return
-			}
-			startLiveAnim(idx)
-		}, 0)
-	}
-	watch(liveBarIdx, (): void => { syncLiveAnim() })
-	watch(voicePlaying, (): void => { syncLiveAnim() })
+	watch(liveBarIdx, (): void => { syncBreathClock() })
+	watch(voicePlaying, (): void => { syncBreathClock() })
 	onUnmounted(() => {
-		if (animTimer != -1) {
-			clearTimeout(animTimer)
-			animTimer = -1
+		if (breathClockId != -1) {
+			clearInterval(breathClockId)
+			breathClockId = -1
 		}
-		stopLiveAnim()
 	})
 </script>
 
