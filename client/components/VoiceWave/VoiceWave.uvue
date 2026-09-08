@@ -204,17 +204,35 @@
 			easing: 'linear'
 		})
 	}
+	// 🔴 CME 崩溃根治（2026-09-09 真机 FATAL 全栈实锤：主线程 LinkedHashMap 迭代中
+	// 被并发修改，栈顶=框架动画/音频回调分发器 onComplete）：Infinity 呼吸动画每 900ms
+	// 完成一轮 → 框架遍历动画监听表分发 onComplete → 分发栈内若触发 watch → cancel/
+	// animate 同步改表 → 崩溃。同链解释「暂停→进度归零波形消失」（onPause 分发栈内
+	// 二次改表状态错乱）。修=动画增删全部挪 setTimeout(0) 下一宏任务：执行时分发栈已出栈
+	let animTimer = -1
 	function syncLiveAnim(): void {
-		const idx = liveBarIdx.value
-		if (idx < 0 || !voicePlaying.value) {
-			stopLiveAnim()
-			return
+		if (animTimer != -1) {
+			clearTimeout(animTimer)
 		}
-		startLiveAnim(idx)
+		animTimer = setTimeout((): void => {
+			animTimer = -1
+			const idx = liveBarIdx.value
+			if (idx < 0 || !voicePlaying.value) {
+				stopLiveAnim()
+				return
+			}
+			startLiveAnim(idx)
+		}, 0)
 	}
 	watch(liveBarIdx, (): void => { syncLiveAnim() })
 	watch(voicePlaying, (): void => { syncLiveAnim() })
-	onUnmounted(() => { stopLiveAnim() })
+	onUnmounted(() => {
+		if (animTimer != -1) {
+			clearTimeout(animTimer)
+			animTimer = -1
+		}
+		stopLiveAnim()
+	})
 </script>
 
 <style>

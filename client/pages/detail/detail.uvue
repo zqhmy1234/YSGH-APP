@@ -31,11 +31,13 @@
 		<view class="n4_408b"></view>
 		<text class="n4_422">{{ memTitle }}</text> <!-- 详情标题（动态） -->
 		<text class="n4_423">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
-		<!-- F5b 语音卡（画布 y448pt = 861.5rpx）：白卡 r20pt / padding 14pt + 琥珀实心钮 40pt + 波形 20 条 + 标题 fs14。
-		     播放态按 F5a 规范帧：钮切暂停双白条、已播段 #C4913C / 未播段 #E5DCC8、
-		     进度行（当前时间 fs10 · 轨道 h4pt #EDE5D5 · 总时长 fs10）+ 标题转「正在播放 · X」fs12。
-		     语音卡出现时后续元素按 F5b 帧下移（558/700/852/882pt×1.923），内联 style 优先级最高免层叠歧义 -->
-		<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
+		<!-- D4 流式重构（2026-09-09 峰宝拍板「改流式布局」）：元信息以下全部进普通流容器。
+		     病根=全页绝对定位硬编码 top：画布卡片 top-to-top 间距（273.1/292.3）含 mock 文案撑出的
+		     卡高，真实文案变短/区块 v-if 隐藏 → 空洞（峰宝实证：AI 描述离元信息太远）。
+		     画布真值换算：卡间距统一 23.1rpx(12pt)（vcard→AI=211.6-188.5✓ AI→正文=273.1-250✓），
+		     节标签前 46.2rpx(24pt) 大节距。附带根治：语音播放态进度行 v-if 出现时不再与下方钉死元素重叠 -->
+		<view class="n4_flow">
+			<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
 			<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': !voicePlayable }">
 				<view v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
 					<view class="n4_vbtn-pause-bar"></view>
@@ -59,7 +61,7 @@
 				<text v-else class="n4_vtitle">{{ memTitle }}</text>
 			</view>
 		</view>
-		<view v-if="aiNote != '' || tagList.length > 0" class="n4_424" :style="{ top: isVoice ? '1073.1rpx' : '861.5rpx' }"> <!-- AI注释卡（描述或标签任一存在才显示；FE1 数据源 tags_json/ai_description，null=不显示区块） -->
+		<view v-if="aiNote != '' || tagList.length > 0" class="n4_424"> <!-- AI注释卡（描述或标签任一存在才显示；FE1 数据源 tags_json/ai_description，null=不显示区块）；D4 流式：语音态被 vcard 自然推下（画布同位 1073.1=vcard 底，margin 0 即还原） -->
 			<view class="n4_425"> <!-- 注释头 -->
 				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
 				<text class="n4_428">AI 的观察</text> <!-- AI观察 -->
@@ -72,7 +74,7 @@
 				</view>
 			</view>
 		</view>
-		<view class="n4_430" :style="{ top: isVoice ? '1346.2rpx' : '1134.6rpx' }"> <!-- 正文卡（F5b 语音态 y700pt） -->
+		<view class="n4_430"> <!-- 正文卡（D4 流式：margin 23.1 接力 AI 卡，语音态被上方区块自然推下） -->
 			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
 			<!-- 卡19 接线：来源行「你也可以补充一句」可点 → 弹输入补一句（本地暂存，见 onEditSup） -->
 			<text v-if="bodySup != ''" class="n4_431-sup">{{ bodySup }}</text>
@@ -80,8 +82,8 @@
 		</view>
 		<!-- 相关记忆（HEAD 版交互接回：无归属事件整区隐藏；画布静态2卡→数据驱动横滑，画布4:434本即横滑容器） -->
 		<template v-if="relatedList.length > 0">
-			<text class="n4_433" :style="{ top: isVoice ? '1638.5rpx' : '1426.9rpx' }">相关记忆</text> <!-- 相关记忆节标（F5b 语音态 y852pt） -->
-			<scroll-view class="n4_434" direction="horizontal" :show-scrollbar="false" :style="{ top: isVoice ? '1695.8rpx' : '1484.6rpx' }">
+			<text class="n4_433">相关记忆</text> <!-- 相关记忆节标（D4 流式：margin 46.2 大节距） -->
+			<scroll-view class="n4_434" direction="horizontal" :show-scrollbar="false">
 				<view class="n4_434-row">
 					<view v-for="(ev, idx) in relatedList" :key="idx" class="n4_435" @tap="onRelatedEvent(ev)">
 						<!-- 缩略占位：画布两卡分别苔琥珀/青蓝渐变，按 idx 交替 -->
@@ -96,9 +98,9 @@
 		     其他 voice 成员（排除自身）。播放复用全局引擎；processing/failed 禁播+小字（Q2 拍板）。
 		     生日歌案例：photo 详情无语音大卡，但 ST-DBSCAN 把跑步语音聚进了同事件 → 在此回放 -->
 		<template v-if="eventVoices.length > 0">
-			<text class="n4_evt-title" :style="{ top: evtSectionTop() }">这条记忆里的声音</text>
+			<text class="n4_evt-title">这条记忆里的声音</text>
 			<view v-for="(v, vi) in eventVoices" :key="vi" class="n4_evt-card"
-				:style="{ top: evtCardTop(vi) }" @tap="onPlayEventVoice(v)">
+				@tap="onPlayEventVoice(v)">
 				<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': v.status != 'done' }">
 					<view v-if="voiceIsActive(v.contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
 						<view class="n4_vbtn-pause-bar"></view>
@@ -115,6 +117,7 @@
 				</view>
 			</view>
 		</template>
+		</view> <!-- /n4_flow（D4 流式容器闭合） -->
 		</view>
 		</scroll-view>
 		<view class="n4_441"> <!-- 玻璃操作条（滚动区外，钉死视口底部） -->
@@ -351,19 +354,7 @@
 	}
 
 	// ═══ R9 批次4：事件级语音卡（「这条记忆里的声音」）═══
-	// 布局：绝对定位体系（画布还原页），区块置于相关记忆之后；相关记忆隐藏时上移补位
-	function evtSectionTop(): string {
-		const base = relatedList.value.length > 0
-			? (isVoice.value ? 1984.3 : 1773.1)
-			: (isVoice.value ? 1703.8 : 1492.3)
-		return base + 'rpx'
-	}
-	function evtCardTop(vi: number): string {
-		const base = relatedList.value.length > 0
-			? (isVoice.value ? 2040.8 : 1829.6)
-			: (isVoice.value ? 1760.3 : 1548.8)
-		return (base + vi * 193) + 'rpx'
-	}
+	// D4 流式重构（2026-09-09）：区块随 n4_flow 普通流排布，evtSectionTop/evtCardTop 绝对定位函数已删
 	/** 成员卡播放：processing/failed 显式 toast（Q2 拍板），绝不静默；done → 全局引擎 */
 	function onPlayEventVoice(v: SplitItem): void {
 		if (v.status != 'done') {
@@ -572,10 +563,20 @@
 		flex: 1;
 	}
 	.detail-body {
-		/* 画布整页高度：所有子元素保持画布绝对坐标（uvue absolute 相对父元素）；
-		   R9 批次4 扩至 2650：事件级语音卡区块（相关记忆后纵排 ≤3 卡，voice 态卡底 ~2620） */
+		/* D4 流式重构（2026-09-09）：撤画布定高 2650 —— hero/标题/元信息/渐变仍绝对定位（固定装饰层），
+		   元信息以下唯一子元素 n4_flow 走普通流，body 高由内容自然撑开（scroll-view 纵向滚动依赖此） */
 		width: 750rpx;
-		height: 2650rpx;
+		flex-direction: column;
+	}
+	.n4_flow {
+		/* D4 流式容器：margin-top=861.5 占住 hero+标题+元信息绝对层（画布首卡 y448pt），
+		   其下卡片全部普通流：卡间距 23.1rpx(12pt)/节距 46.2rpx(24pt)（画布真值换算），
+		   v-if 隐藏区块不留空洞 */
+		margin-top: 861.5rpx;
+		width: 750rpx;
+		flex-direction: column;
+		align-items: flex-start;
+		padding-bottom: 46.2rpx; /* 底部留白（原 body 定高尾差，操作条为视口钉死浮层不占流） */
 	}
 	.n4_406 {
 		position: absolute;
@@ -719,9 +720,9 @@
 		color: #8A7A6A;
 	}
 	.n4_424 {
-		position: absolute;
-		left: 38.5rpx;
-		top: 861.5rpx;
+		/* D4 流式（同 vcard）：卡间距由前卡 margin-bottom 提供，本卡无 mt——AI 隐藏时正文卡直接接力 */
+		margin-left: 38.5rpx;
+		margin-bottom: 23.1rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		/* 画布 gap=8px（15.4rpx）→ 换 .n4_429 margin-top */
@@ -786,9 +787,9 @@
 		color: #B05A3A;
 	}
 	.n4_430 {
-		position: absolute;
-		left: 38.5rpx;
-		top: 1134.6rpx;
+		/* D4 流式：间距由前卡 margin-bottom 接力（本卡零边距，隐藏链天然无缝） */
+		margin-left: 38.5rpx;
+		margin-bottom: 23.1rpx;
 		width: 673.1rpx;
 		flex-direction: column;
 		/* 画布 gap=6px（11.5rpx）→ 换 .n4_432 margin-top */
@@ -823,9 +824,10 @@
 		color: #B3A696;
 	}
 	.n4_433 {
-		position: absolute;
-		left: 38.5rpx;
-		top: 1426.9rpx;
+		/* D4 流式：节标前后各 23.1 与卡 mb 叠加=46.2 大节距（uvue flex 无 margin 折叠，单边各半） */
+		margin-top: 23.1rpx;
+		margin-bottom: 21.2rpx; /* 画布实测节标底→横滑顶 21.2 */
+		margin-left: 38.5rpx;
 		width: 123.1rpx;
 		height: 36.5rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -834,9 +836,9 @@
 		color: #3A2E25;
 	}
 	.n4_434 {
-		position: absolute;
-		left: 38.5rpx;
-		top: 1484.6rpx;
+		/* D4 流式：紧跟节标（间距由其 margin-bottom 21.2 提供） */
+		margin-left: 38.5rpx;
+		margin-bottom: 23.1rpx;
 		width: 673.1rpx;
 		/* 画布 4:434 高 hug：padding 30.8 + 缩略 153.8 + 标题行 ~32.3 + 元信息行 ~24.2 */
 		height: 242rpx;
@@ -900,14 +902,13 @@
 	   + 行 gap 12pt：琥珀实心钮 40pt（Vector 11x15 白三角）+ 信息列（波形 20 条 + 标题 fs14）。
 	   旧版是琥珀底 + 白钮 + 锈红三角，与帧全不符，按帧重做 */
 	.n4_vcard {
-		position: absolute;
-		/* absolute-ok: F5b 语音记忆卡（画布系绝对定位） */
-		left: 38.5rpx;
-		top: 861.5rpx;
+		/* D4 流式：普通流 + margin 接力（原绝对 top 861.5=flow 容器 margin-top 承担） */
+		margin-left: 38.5rpx;
 		width: 673.1rpx;
 		flex-direction: row;
 		/* 画布真值：钮 y=14（=padding，内容区顶部）、信息列 y=14 亦从内容区顶部起 → 顶部对齐非居中 */
 		align-items: flex-start;
+		margin-bottom: 23.1rpx; /* D4：卡间距 12pt（画布 vcard→AI注释卡实测 23.1） */
 		padding-left: 26.9rpx;
 		padding-right: 26.9rpx;
 		padding-top: 26.9rpx;
@@ -973,8 +974,10 @@
 	}
 	/* ── R9 批次4：事件级语音卡（「这条记忆里的声音」区块）── */
 	.n4_evt-title {
-		position: absolute;
-		left: 38.5rpx;
+		/* D4 流式节标：同 433 模式（mt23.1+前卡mb=46.2 大节距，mb21.2 接卡） */
+		margin-top: 23.1rpx;
+		margin-bottom: 21.2rpx;
+		margin-left: 38.5rpx;
 		width: 420rpx;
 		height: 36.5rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -983,8 +986,9 @@
 		color: #3A2E25;
 	}
 	.n4_evt-card {
-		position: absolute;
-		left: 38.5rpx;
+		/* D4 流式：卡间距画布实测 193-170=23.1（原 vi*193 钉位改自然接力） */
+		margin-left: 38.5rpx;
+		margin-bottom: 23.1rpx;
 		width: 673.1rpx;
 		height: 170rpx;
 		flex-direction: row;
