@@ -48,9 +48,12 @@ def test_process_content_queues_per_user_aggregation(db_user, monkeypatch):
     assert r["status"] == "done"
     assert r["agg_job"] == "queued"
     assert "events_queued" in r["processed"]
-    # 恰一次聚合入队，user 级 key + 参数透传
-    assert len(calls) == 1, f"text 无情绪任务，仅应有一次聚合入队，实际 {calls}"
-    func, key, a, kw = calls[0]
+    # BA3（A1 打标）后 text 内容也投 tag_content（key=content id）——恰 2 次入队
+    assert len(calls) == 2, f"text 应恰有打标+聚合两次入队，实际 {calls}"
+    tag_call = next(c for c in calls if c[0].__name__ == "tag_content")
+    assert tag_call[1] == str(c.id), f"打标 key 应为 content id，实际 {tag_call[1]}"
+    assert tag_call[2] == (str(c.id),), f"打标应透传 content_id 参数，实际 {tag_call[2]}"
+    func, key, a, kw = next(c for c in calls if c[0].__name__ == "run_user_aggregation")
     assert func.__name__ == "run_user_aggregation"
     assert key == f"user:{user.id}"
     assert a == (str(user.id),)

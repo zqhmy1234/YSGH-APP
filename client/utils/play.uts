@@ -24,6 +24,7 @@ import {
 	PATH_INTERVIEW_QUESTIONS,
 	PATH_INTERVIEW_ANSWERS,
 	PATH_INTERVIEW_PROFILE,
+	PATH_WAVEFORM,
 	parsePageData,
 	PageData
 } from './contract'
@@ -507,6 +508,54 @@ export function fetchContentAiMeta(contentId: string): Promise<ContentAiMeta | n
 				}
 			}
 			resolve(new ContentAiMeta(tags, it.getString('ai_description') ?? ''))
+		})
+	})
+}
+
+/** GET /contents/{id}/waveform?buckets=28：真实播放波形（0..1 峰值数组，BB3；data.buckets）。
+ *  静默降级封装（增强项，fetchThumbnailPath 先例）：404（非语音内容/文件非 WAV，MEDIA_003）
+ *  与网络失败一律 resolve null + console.warn，**不 toast**——波形缺失宿主回退伪波形；
+ *  直连带 Authorization（token 只能走 header，patchJson 自持封装同款；不重试不 refresh，
+ *  token 失效由业务请求先触发自愈） */
+export function fetchWaveform(contentId: string): Promise<Array<number> | null> {
+	return new Promise<Array<number> | null>((resolve) => {
+		const path = PATH_WAVEFORM.replace('{id}', contentId) + '?buckets=28'
+		const header: UTSJSONObject = {}
+		const token = getToken()
+		if (token != '') {
+			header.set('Authorization', 'Bearer ' + token)
+		}
+		const onSuccess = (res: any): void => {
+			if (res.statusCode != 200) {
+				console.warn('[play] fetchWaveform HTTP ' + res.statusCode + ' ' + contentId)
+				resolve(null)
+				return
+			}
+			// 裸值强转 UTSJSONObject 会主线程 FATAL（api.uts 2026-08-26 先例）：先守卫再转换
+			if (res.data == null || typeof res.data != 'object') {
+				console.warn('[play] fetchWaveform 非对象响应 ' + contentId)
+				resolve(null)
+				return
+			}
+			const d = res.data as UTSJSONObject
+			const buckets = d.getArray('buckets') as Array<number> | null
+			if (buckets == null || buckets.length == 0) {
+				console.warn('[play] fetchWaveform buckets 空 ' + contentId)
+				resolve(null)
+				return
+			}
+			resolve(buckets)
+		}
+		const onFail = (): void => {
+			console.warn('[play] fetchWaveform FAIL ' + contentId)
+			resolve(null)
+		}
+		uni.request({
+			url: getBaseUrl() + path,
+			method: 'GET',
+			header: header,
+			success: onSuccess,
+			fail: onFail
 		})
 	})
 }

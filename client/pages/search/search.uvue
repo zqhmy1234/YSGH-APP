@@ -27,7 +27,7 @@
 						<image v-else class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
 					</view>
 					<!-- 波形：空闲=画布 SVG（对拍保真）；活动=VoiceWave 已播金/未播米 + 进度行（F5a 规范） -->
-					<VoiceWave v-if="item.active" class="n2_592" :heights="item.waveHeights" :active="true" :progress="item.progress" />
+					<VoiceWave v-if="item.active" class="n2_592" :heights="item.waveHeights" :waveform="waveformOf(item.id)" :active="true" :progress="item.progress" />
 					<view v-else class="n2_592">
 						<image class="n2_596" src="/static/icons/i2_596.svg" />
 					</view>
@@ -70,6 +70,7 @@
 	import { ref, computed, watch } from 'vue'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { searchText, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { fetchWaveform } from '@/utils/play'
 	import { shortDate } from '@/utils/time'
 	import {
 		toggleVoice,
@@ -170,6 +171,28 @@
 	/** 由 contentId 确定性生成装饰波形 → 统一走 audio_player.genWaveHeights（W0-2 三处一致） */
 	function genWave(id: string): Array<number> {
 		return genWaveHeights(id, 28)
+	}
+
+	// ═══ BB3 真实波形（contentId → 后端 /waveform 峰值数组）═══
+	// waveformMap 非响应式缓存（照 index photoUrlById 先例）；waveformVersion 计数器驱动重渲染：
+	// waveformOf 被模板调用时读 version 建立响应式依赖，拉取落表后 version++ → 模板重取。
+	// 语义：null = 未拉到（懒加载未触发/404 非语音非 WAV）→ VoiceWave 组件回退 heights 伪波形（静默）
+	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
+	let waveformVersion = ref(0)
+	function waveformOf(cid: string): Array<number> | null {
+		waveformVersion.value
+		return waveformMap.get(cid) ?? null
+	}
+	function loadWaveform(cid: string): void {
+		if (waveformMap.has(cid)) {
+			return
+		}
+		fetchWaveform(cid).then((b: Array<number> | null) => {
+			if (b != null && b.length >= 2) {
+				waveformMap.set(cid, b)
+				waveformVersion.value++
+			}
+		})
 	}
 
 	/** 组装卡底元信息：类型 · 日期 · 所属事件 */
@@ -391,6 +414,8 @@
 	// tick 局部更新后，播放态进卡由 syncActiveCard 负责（watch audio_player refs 驱动），
 	// 原模板包装函数 voiceIsActive/voiceIsPlaying/voiceProgressOfCard/voiceCurSecText/voiceTotalSecText 已删。
 	function playVoice(item: VoiceResult): void {
+		// BB3：播放入口懒拉真实波形（列表不为每卡预拉；组件内 waveform prop 真值优先）
+		loadWaveform(item.id)
 		toggleVoice(item.id)
 	}
 

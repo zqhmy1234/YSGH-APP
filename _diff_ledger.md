@@ -1740,3 +1740,14 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **实机验证**：9b1dd21d（峰宝 13:23 录的「测试测试，关闭关闭，开始开始」）重放 → job finished → DB done + ASR 文本落库 + cos_key 在 → **ASR 管线在 worker 内首次完整跑通**；此前 `GET /media/audio/9b1dd21d 200` 已证实新录音可播（R9-B1 写链生效实锤）
 - **「网络异常」toast 真相**：峰宝 13:14 反馈时设备还是旧包（批次 2 13:17 才推上）；且点的是 2ff143ab 等音频链修复前的旧条目（字节从未存在，永久缺失）→ 404 属**预期正确行为**，误导的是文案。批次 2 新包 404 文案「音频未就绪·转写处理中」对永久缺失条目仍不准确 → R9-B6 改中性「音频暂不可用」（端点统一 404 防 IDOR 口径不动）
 - **事件层注意**：旧 failed 条目若 status 非 done，detail 禁播态（R9-B5）已灰钮；时间轴 wave 点击 404 → toast 不再误导
+
+### §CC 续九（2026-09-08 21:0x，BB3 波形三宿主接线 + A/B 批五场景联调测试，两 subagent 并行 + 主控验收）
+
+- **BB3 客户端接线（5 文件，135+/7-）**：contract.uts `PATH_WAVEFORM` + play.uts `fetchWaveform`（GET /contents/{id}/waveform?buckets=28）+ index/search/detail 三宿主统一模式（`waveformMap` 非响应式缓存照 photoUrlById 先例 + `waveformVersion` ref 计数驱动重渲染 + `waveformOf` 模板函数裸读 version 建依赖；先例=voiceIsActive 同机制 W0-2 真机已验）
+- **fetchWaveform 不走 get() 封装的取舍**：api.uts `doRequest` 失败路径全局 `showErrorToast`（404 会弹「HTTP 404」）违背「波形缺失静默回退」拍板 → 改 `patchJson` 同款 `uni.request` 直连 + 自带 Authorization，四路失败（非 200/非对象响应/buckets 空/网络 fail）一律 `resolve(null)+console.warn` 不 toast；代价=无 401 自动重放（增强项可接受，token 失效由业务请求先触发自愈）
+- **回退层设计**：`heights`（detailWave/evtWaveOf 伪波形）保留原值不动，VoiceWave 组件内 `waveform` prop 真值优先（null/len<2 回退 heights）——双保险最小改动
+- **触发时机**：detail onLoad voice 分支进页即拉 + 事件卡 eventVoices 就绪后循环拉（区块 ≤3 卡非列表场景）；index/search playVoice 入口懒拉（列表不为每卡预拉）；Map 命中直接 return 零重复请求
+- **🔴 留尾巴（登记）**：favorites/theme-detail/TagEditPanel 三处 VoiceWave 挂载**未接真波形**（峰宝拍板三宿主=index/search/detail）——若 favorites 页演示真数据后观感违和，同款三件套 15 分钟可补
+- **五场景联调测试**：`backend/tests/test_ab_scenarios.py` 29 用例全绿（S1 语音全旅程 11/S2 胶囊 8/S3 聚合 R9-C 回归 4/S4 越权矩阵 4/S5 回响链 2），三级断言（HTTP+出参+DB 回查），teardown 自清零残留，ruff 全绿——缺口实证登记远期待办总账（voice 路径 size_bytes 不回填/无 GET /contents/{id} 详情路由/event_edit_log 序列漂移）
+- **🔴 event_edit_log 序列漂移（C 类悬账）**：schema.sql 定义 bigserial，实际建表无 default 无序列 → merge/split/confirm IntegrityError + test_event_ops.py 存量 7 用例失败；2026-09-08 手工幂等补建 `event_edit_log_id_seq`（本地库已修，**schema.sql 对齐迁移未落，新环境重跑仍炸**）
+- **编译门状态**：客户端改动仅静态自查（先例逐项核对过：String.replace/`as` 强转/`?? null`/`new Map<T,E>` 全有先例，无 type 字面量构造/默认参数/复合选择器）——**未过 cli 编译门**（设备未插线 + launch --compile true 无产物落盘挂起前科），插线后 deploy_one.sh 推包时首验

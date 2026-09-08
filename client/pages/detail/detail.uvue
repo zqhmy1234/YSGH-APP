@@ -46,7 +46,7 @@
 			<view class="n4_vcol">
 				<text v-if="voiceNote != ''" class="n4_vnote">{{ voiceNote }}</text>
 				<view class="n4_vwave">
-					<VoiceWave :heights="detailWave" :active="voiceIsActive(contentId)" :progress="voiceProgressOfCard(contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+					<VoiceWave :heights="detailWave" :waveform="waveformOf(contentId)" :active="voiceIsActive(contentId)" :progress="voiceProgressOfCard(contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
 				</view>
 				<view v-if="voiceIsActive(contentId)" class="n4_vprog">
 					<text class="n4_vprog-cur">{{ voiceCurSecText() }}</text>
@@ -109,7 +109,7 @@
 				<view class="n4_evt-col">
 					<text v-if="v.status != 'done'" class="n4_vnote">{{ v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放' }}</text>
 					<view class="n4_evt-wave">
-						<VoiceWave :heights="evtWaveOf(v.contentId)" :active="voiceIsActive(v.contentId)" :progress="voiceProgressOfCard(v.contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+						<VoiceWave :heights="evtWaveOf(v.contentId)" :waveform="waveformOf(v.contentId)" :active="voiceIsActive(v.contentId)" :progress="voiceProgressOfCard(v.contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
 					</view>
 					<text class="n4_evt-name">{{ evtTitleOf(v) }}</text>
 				</view>
@@ -143,7 +143,7 @@
 	import { ref } from 'vue'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
-	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/play'
+	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta, updateContentRemark, fetchWaveform } from '@/utils/play'
 	import { formatIsoShortTime } from '@/utils/time'
 	import {
 		toggleVoice,
@@ -176,6 +176,29 @@
 	// W0-2 · F5b：语音记忆才显示语音卡；波形由 contentId 确定性生成（与 index/search 同源 genWaveHeights）
 	let isVoice = ref(false)
 	let detailWave = ref<Array<number>>([])
+
+	// ═══ BB3 真实波形（contentId → 后端 /waveform 峰值数组；主卡 + 事件卡共用）═══
+	// waveformMap 非响应式缓存（照 index photoUrlById 先例）；waveformVersion 计数器驱动重渲染：
+	// waveformOf 被模板调用时读 version 建立响应式依赖，拉取落表后 version++ → 模板重取。
+	// 语义：null = 未拉到（未拉/404 非语音非 WAV）→ VoiceWave 组件回退 heights 伪波形（静默）；
+	// heights（detailWave/evtWaveOf）保持原值不动，作为回退层，最小改动
+	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
+	let waveformVersion = ref(0)
+	function waveformOf(cid: string): Array<number> | null {
+		waveformVersion.value
+		return waveformMap.get(cid) ?? null
+	}
+	function loadWaveform(cid: string): void {
+		if (waveformMap.has(cid)) {
+			return
+		}
+		fetchWaveform(cid).then((b: Array<number> | null) => {
+			if (b != null && b.length >= 2) {
+				waveformMap.set(cid, b)
+				waveformVersion.value++
+			}
+		})
+	}
 	// 语音可播性状态（修 R9 崩溃单：模板/脚本曾引用未定义的 voicePlayable/voiceNote → 详情页开语音记忆即 C++ abort）
 	// 语义对齐事件级语音卡文案：done=可播；failed=转写失败；其余=处理中。默认 false，详情加载成功后按 status 置位
 	let voicePlayable = ref(false)
@@ -232,6 +255,8 @@
 			if (d.contentType == 'voice') {
 				isVoice.value = true
 				detailWave.value = genWaveHeights(id, 28)
+				// BB3：进页即拉真实波形（详情页单条语音，非列表懒加载场景）
+				loadWaveform(id)
 				bodySource.value = '来自语音转写的 AI 描述 · 你也可以补充一句'
 				// 可播性按转写状态显式判定（禁止静默）：与事件级语音卡（v.status）同词表
 				if (d.status == 'done') {
@@ -281,6 +306,10 @@
 						}
 					}
 					eventVoices.value = voices
+					// BB3：事件卡区块渲染即拉各成员真实波形（区块 ≤3 卡，非列表预拉场景）
+					for (let i = 0; i < voices.length; i++) {
+						loadWaveform(voices[i].contentId)
+					}
 				})
 			}
 		})
