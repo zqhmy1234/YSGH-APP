@@ -1751,3 +1751,16 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **五场景联调测试**：`backend/tests/test_ab_scenarios.py` 29 用例全绿（S1 语音全旅程 11/S2 胶囊 8/S3 聚合 R9-C 回归 4/S4 越权矩阵 4/S5 回响链 2），三级断言（HTTP+出参+DB 回查），teardown 自清零残留，ruff 全绿——缺口实证登记远期待办总账（voice 路径 size_bytes 不回填/无 GET /contents/{id} 详情路由/event_edit_log 序列漂移）
 - **🔴 event_edit_log 序列漂移（C 类悬账）**：schema.sql 定义 bigserial，实际建表无 default 无序列 → merge/split/confirm IntegrityError + test_event_ops.py 存量 7 用例失败；2026-09-08 手工幂等补建 `event_edit_log_id_seq`（本地库已修，**schema.sql 对齐迁移未落，新环境重跑仍炸**）
 - **编译门状态**：客户端改动仅静态自查（先例逐项核对过：String.replace/`as` 强转/`?? null`/`new Map<T,E>` 全有先例，无 type 字面量构造/默认参数/复合选择器）——**未过 cli 编译门**（设备未插线 + launch --compile true 无产物落盘挂起前科），插线后 deploy_one.sh 推包时首验
+- **提交与推送实况（本批次）**：工作树 `6afcec3`（9 文件 1062+/12-，pre-commit 四门全绿，rev-parse/log/for-each-ref 三通道复核一致）+ 主仓 develop `c6ecf83`（总账刷新）已推远程（da99bb5..c6ecf83）。**🔴 后置**：① 工作树分支 push 两次被 GitHub SSH 连接重置（20.205.243.166:22 Connection reset，网络干扰非权限——主仓同 remote 推送成功），`git push origin feature/missing-pages-impl` 待网络恢复后补推；② git 后台维护任务（geometric-repack/commit-graph）持续报 `Could not read 45b0feb/4cd81692/d1ab3896`——工作树对象库存在被 prune 的悬空历史引用（`git branch -vv` 亦报 bad revision），不影响 commit/push 核心链路，择日 `git fsck` 体检
+
+### §DD（2026-09-08 深夜，真机复验六案排查——峰宝验机反馈 6 FAIL）
+
+- **REAL_DEVICE_HOST 坑修复**：首推后 App 全请求打旧热点 IP `192.168.43.246`，主机实际在复旦 WLAN `10.219.237.21`——WiFi 同网段方案不成立。改 `config.uts REAL_DEVICE_HOST='localhost'`（adb reverse USB 隧道，config 注释既有拍板方案），重推实证设备请求经隧道到达后端 ✓
+- **账号破案（devices 表实锤）**：真机 token 归属 = **e4134743**（unionid `mock-unionid-dev-client`，09-08 19:33 活跃，83 内容/10 语音）；7e4b6a2a（w3e）是测试残留账号。**此前 phone 灌值/紫灰软删打错账号**——紫灰 18 张在 7e4b6a2a 名下（del=True），峰宝(e4134743)却搜到 = 下面 D3 泄漏实证
+- **🔴 D3 搜索软删+跨用户泄漏（后端 recall.py 修复）**：`_assemble_hits` DB 回查缺 `deleted_at`/`status`/归属过滤，且回查落空后仍用 **Qdrant 残留向量 text 冒充命中项** append（假数据删了/failed/别人的都能被搜到，峰宝「搜成功出 6 条紫灰」根因）。修=回查加三条件 + `attempted_ids` 集合精准整条剔除（非 UUID 测试点/无 DB 模式不受影响）；新增回归 `test_rag.py::test_assemble_hits_filters_deleted_failed_and_foreign`（done 保留/软删·failed·他人剔除/非 UUID 放行）单跑绿 + 85 项搜索测试全绿
+- **存储页 0B（数据修复）**：非拟合——A9 缺口实证 = size_bytes 列 BA1 迁移前历史数据全 None；photo/voice 磁盘文件全在（如 105/223KB）。回填 64 条真实磁盘字节 → e4134743 总用量 **5.51MB 真值**；新链路 voice complete 已写 size（register.py L191）、photo 走 photo_register 链路待核（留尾）
+- **事件卡无成员（数据修复）**：e4134743 的 11 events 是 09-06/07 修复前空壳（event_items=0），重跑 run_user_aggregation 挂 3 成员（L3「标签·mixed」）；峰宝录的新语音 done 后会自动并入
+- **手机号未绑定（数据修复）**：test 账号 phone=None 属正常（非 bug），给 e4134743 灌 13800001234 ✓
+- **详情页 AI 描述间距（布局，根因改判）**：峰宝抱怨的是**正文卡「来自照片的AI描述」行**（bodySource）离元信息远。画布真值核对：照片态各块（标题 723.1/元信息 792.3/AI注释卡 861.5/正文卡 1134.6）与代码逐项一致，撤销了我一次错误的「上移」误改（diff 净零）。真根因=**全页绝对定位硬编码 rpx 的固有代价**：画布 AI 注释卡按 mock 两行长文案定高，真实描述短（或照片态无描述卡 v-if 隐藏）→ 正文卡 top 仍钉 1134.6 → 中间空一段。修法两案待峰宝拍板：①AI注释卡起改流式（后续区块自然上接）②onLoad 后按 aiNote 实际高度动态算正文 top。当前不动（UI 结构变更需审批）
+- **暂停归零（search.uvue）**：syncActiveCard 静态审查——pause 分支保留 active、progress 冻结，逻辑正确；疑心点=`stopProgressClock 后 ctx.duration 变化`或**崩溃前兆（native 播放实例被并发操作）**——**待设备重连实时复现定位**，暂不改（盲改=返工）
+- **🔴 崩溃（点部分音频闪退）**：crash 缓冲已轮空、tombstone 不可读（设备掉线）；audio_player startPlay 失败路径干净（toast+清 active）——CME 嫌疑=33ms 时钟读 audioCtx（被另一条 playFile 换条 destroy 竞态？）。**待设备重连：复现 + logcat -b crash 实时抓全栈**
