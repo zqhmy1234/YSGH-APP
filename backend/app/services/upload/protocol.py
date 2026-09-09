@@ -50,6 +50,29 @@ def _staging_key(upload_id: str, index: int) -> str:
     return f"uploads/{upload_id}/{index}.part"
 
 
+def staging_prefix(upload_id: str) -> str:
+    """该任务的 staging 分片键前缀（reaper 用，见 workers/cleanup_job.reap_stale_uploads）"""
+    return f"uploads/{upload_id}/"
+
+
+def discard_staging_for_task(db: Session, task: UploadTask, backend) -> int:
+    """reaper 共用：物理删该任务全部 staging 分片 + upload_chunks 行；
+    任务行保留并标 failed（审计轨迹 + client_upload_id 幂等键语义不破坏，
+    客户端按 status≠completed 自然重新 init）。返回实删分片数。"""
+    n = 0
+    for i in range(task.chunk_count):
+        try:
+            backend.delete_object(_staging_key(str(task.id), i))
+            n += 1
+        except Exception as exc:  # noqa: BLE001 —— 单片失败记日志继续，不中断整任务
+            logger.warning("reaper 删分片失败 task=%s idx=%d: %s", task.id, i, exc)
+    db.execute(
+        UploadChunk.__table__.delete().where(UploadChunk.upload_id == task.id)
+    )
+    task.status = "failed"
+    return n
+
+
 def _final_key(user_id: str, file_name: str) -> str:
     safe = "".join(c for c in file_name if c.isalnum() or c in "._-") or "file"
     now = datetime.now(timezone.utc)
