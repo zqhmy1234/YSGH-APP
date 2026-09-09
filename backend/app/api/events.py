@@ -106,7 +106,7 @@ def timeline(
     counts = _batch_counts(db, event_ids)
     # photo_ids 保留兼容：客户端 photoPathOf 兜底通路（thumbnails/{cid} + downloadFile header）；
     # 主通路为下方 photos[].thumbnail_url 票据直发（Valet Key）
-    photo_ids = _batch_photo_ids(db, event_ids)
+    photo_ids = _batch_photo_ids(db, event_ids, str(user.id))
     # L3 生命周期：批量取最近活动 → 派生状态（读取时计算，MVP 不落库）
     last_act = get_event_last_activity(db, str(user.id), event_ids)
     lifecycles = {
@@ -330,7 +330,9 @@ def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
     return {str(r.event_id): {"content_count": int(r.total), "photo_count": int(r.photos)} for r in rows}
 
 
-def _batch_photo_ids(db: Session, event_ids: list[str], per_event: int = 4) -> dict[str, list[str]]:
+def _batch_photo_ids(
+    db: Session, event_ids: list[str], user_id: str, per_event: int = 4
+) -> dict[str, list[str]]:
     """批量取每事件成员照片 content_id（taken_at 序，截前 per_event 张；一次查询防 N+1）
 
     兼容通路：客户端凭 cid 走 /api/v1/thumbnails/{cid}（downloadFile+header）；
@@ -343,7 +345,14 @@ def _batch_photo_ids(db: Session, event_ids: list[str], per_event: int = 4) -> d
     rows = db.execute(
         select(EventItem.event_id, Content.id)
         .join(Content, Content.id == EventItem.content_id)
-        .where(EventItem.event_id.in_(event_ids), Content.content_type == "photo")
+        # P2-5（2026-09-10 深扫）：与 _batch_event_photos 正例对齐——不依赖
+        # 「event_items 只含本人内容」上游不变量，DB 回查层自带归属/软删过滤（纵深）
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.content_type == "photo",
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
         .order_by(Content.taken_at)
     ).all()
     out: dict[str, list[str]] = {}

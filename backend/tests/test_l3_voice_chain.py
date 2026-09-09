@@ -257,3 +257,44 @@ class TestL5AudioReadChain:
             from tests.conftest import cleanup_user_data
 
             cleanup_user_data(db, user_id)
+
+    def test_audio_soft_deleted_404(self, client, auth_headers, db):
+        """P2-4（2026-09-10 深扫）：本人软删（回收站）期间的语音 → 404 不下发。
+
+        与 waveform/favorite/PATCH 同族 _load_alive_content 口径对齐——全项目
+        「deleted_at 内容对外不可达」一致性契约；恢复（deleted_at 清空）后可播。
+        本用例先断软删态 404，再模拟恢复断 200，钉死两侧语义。
+        """
+        from datetime import datetime, timezone
+
+        from app.db.models import Content
+        from app.services.external.storage import get_storage_backend
+
+        user_id, headers = auth_headers("l5softdel")
+        cos_key = f"voice/{user_id}/202609/softdel_{uuid.uuid4().hex[:8]}.wav"
+        get_storage_backend().put_object(cos_key, b"RIFFfake-wav-bytes")
+        row = Content(
+            user_id=uuid.UUID(user_id),
+            content_type="voice",
+            text="回收站语音",
+            source="app",
+            status="confirmed",
+            cos_key=cos_key,
+            deleted_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        try:
+            # ① 软删态：即使对象在存储、是本人内容，也必须 404
+            r = client.get(f"/api/v1/media/audio/{row.id}", headers=headers)
+            assert r.status_code == 404, f"软删语音应 404，实际 {r.status_code}"
+            # ② 模拟恢复：清 deleted_at 后即可播（证明 404 归因软删而非其他）
+            row.deleted_at = None
+            db.commit()
+            r2 = client.get(f"/api/v1/media/audio/{row.id}", headers=headers)
+            assert r2.status_code == 200, f"恢复后应 200，实际 {r2.status_code}"
+        finally:
+            from tests.conftest import cleanup_user_data
+
+            cleanup_user_data(db, user_id)
