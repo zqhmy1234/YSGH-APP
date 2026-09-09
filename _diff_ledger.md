@@ -1792,3 +1792,9 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **真机终验**：峰宝亲测「都已测过，全部通过，没有闪帧」；四 tab 渲染逐一截图核（index 待确认卡/时间轴、ai 对话流、profile 统计、search）零串色零异常
 - **行为变更（拍板项 2/3 生效）**：跨 tab 连续播放（离页停播退役）/ 返回 tab 数据与滚动常驻
 - **🔴 P4 留尾**：老四页 pages/index|ai|search|profile 仍在 pages.json（全端入口已收编=事实退役，无触达路径）——删除动作待峰宝定时机（建议观察数日无回潮再删，删后全量回归）；pages.json 中 shell 已为 pages[0] 启动页（终态非临时）
+
+### §EE 续（2026-09-09 傍晚，B10 P4 老四页删除收口 + 一桩虚惊事故）
+
+- **P4 落地**（e2e3c26 已推）：pages.json 20→16 页、老四页 3785 行删除（历史可溯 7b831fc）；删前全库清查=代码零触达（仅组件头注释提及）；编译门「项目 client 编译成功」16 页零 ERROR（新增 2 warning=theme-detail/TabBar 既有 backdrop-filter，与 P1 同款非本次引入）；B10 全案关单
+- **🔴 事故实录（git rm 通配误删 152 文件）**：`git rm client/pages/**` 类操作在本机 shell 连续 SIGTERM 环境下半途暴走，把整个 client/pages 下 152 个文件标删——**教训=大批量删除必须逐路径显式列举 + 每步 status 核验**；恢复：清 worktree 僵死 index.lock（SIGTERM 遗留 0 字节锁）→ `git checkout HEAD -- client/` 全量复原（含 untracked 幸存检查）→ python 精准删 pages.json 四条目 → 逐文件 rm → `git add -u` 暂存核验恰 5 项才 commit。全程零数据丢失（HEAD 有底）
+- **环境观察**：本时段 shell 进程频繁 SIGTERM（连裸 rm 都拦腰杀），疑与工作树 git 维护任务/磁盘抖动同源——命令拆小步 + 每步读回验证是硬纪律
