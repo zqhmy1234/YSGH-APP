@@ -72,7 +72,8 @@ function parsePhotos(item: UTSJSONObject): Array<EventPhoto> {
  * 后端契约 schemas/event.py::VoiceInfo（content_id/title/duration/wave_heights）；
  * 播放走 GET /api/v1/media/audio/{content_id}（utils/audio_player.uts），
  * 波形由 contentId 确定性生成（装饰波形，真实波形远期）。
- * duration 后端暂无字段 → 空串；播放时由 InnerAudioContext.duration 补齐（进度行）。
+ * duration=后端已格式化 "m:ss"（A6 闭环 2026-09-09，events.py _fmt_voice_duration）；
+ * 无 duration 老数据=空串；播放中进度行仍由 InnerAudioContext 实时值驱动。
  */
 export class EventVoice {
 	contentId: string
@@ -99,7 +100,10 @@ function parseVoice(item: UTSJSONObject): EventVoice | null {
 		return null
 	}
 	const title = v.getString('title') ?? '语音记忆'
-	return new EventVoice(cid, title, '', genWaveHeights(cid, 28))
+	// A6（2026-09-09 闭环）：后端 VoiceInfo.duration 直发已格式化 "m:ss"（events.py
+	// _fmt_voice_duration），客户端零换算直透传；老数据/无 duration → null → 空串
+	const dur = v.getString('duration') ?? ''
+	return new EventVoice(cid, title, dur, genWaveHeights(cid, 28))
 }
 
 export class TimelineEvent {
