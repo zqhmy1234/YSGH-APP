@@ -1772,3 +1772,12 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **8001 隧道盲区（新坑实锤）**：HBuilderX 标准基座经 adb reverse 从主机 **8001 dev-server** 拉 JS 产物——USB 重连清 reverse 后 deploy_one.sh 只重建业务口 8010，**8001 无人管**→cli 卡「正在建立手机连接/手机无响应」→设备跑旧包报 `Failed to connect to 127.0.0.1:8001`。修=推包前手建 `adb reverse tcp:8001 tcp:8001`（deploy_one.sh 待补 8001 逻辑=后置项）
 - **🔴 git ref 第四连发 + 两个新坑**：commit 987c6bd 成功但分支 ref 静默停 e3289ba（packed-refs 场景）。① `git update-ref refs/heads/... <sha>` **exit 0 但没写**（本机 git 维护任务损坏同源）；② 首次 python loose 直写从**带 `cut -c1-80` 的 reflog 输出复制 SHA→39 字符残缺**→HEAD unknown revision。正解=SHA 必须现场 `git rev-parse <abbrev>^{commit}` 取全长并断言 len==40 再写。修后三通道一致 + push 成功 600bb5c..987c6bd
 - **提交链**：6afcec3→600bb5c→987c6bd（全部已推远程 origin/feature/missing-pages-impl）
+
+### §DD 续二（2026-09-09 凌晨后半，换条 SIGSEGV 三轮追查→v5 池轮换根治 + 暂停归零 v5.1）
+
+- **崩溃完整病理链（铁证归档 `_verify_0908/`：v2/v3 .dmp + java_1942 CME 栈 + crash_buffer_full.log）**：① v1-v3 时期 Java FATAL=UniElement 动画监听表 CME（19:42 全栈）；② 02:19-02:51 四次 `am_proc_died reason=2` = **native SIGSEGV**（crash 缓冲 0B=非 Java 层），logcat 时序 `PGAudioState audio stop → Choreographer Skipped 78 frames → dodoodla_crash Dump path → signal 11` 锁定=**同实例 stop→setSrc→play 连发触发 Android MediaPlayer 状态机竞态**；③ dcloud 基座自存 minidump：`run-as io.dcloud.uniappx cat cache/uni-crash/c/*.dmp` 可拉全量崩溃归档（重大工具发现，EMUI 清 logcat 也不怕）
+- **社区查证定论**（用户点名要搜，IT营/CSDN/DCloud 官方 -99 处置）：频繁 create/destroy 与同实例连用都会崩，正解=**多实例池轮换**（同实例永不连续承接 stop+play）→ **v5：3 实例池 + 120ms 串行队列双保险 + [dbg-audio] 步迹崩溃标记器**（v4 上机 03:05 队列 pause 正常执行零崩，标记器机制有效）
+- **呼吸动画 v3**：UniElement.animate/getElementById 全退役（setTimeout 延后执行反而撞已卸载元素句柄 UAF——v1 修法本身是错的），50ms breathTick 数据驱动 barStyles 三角波，观感不变零原生句柄
+- **暂停归零 v5.1**：Android pause() 后 currentTime 瞬时回 0 已知行为→暂停即 stopProgressClock + 时钟/onTimeUpdate 双处 `c.paused` 闸门，视觉冻结暂停点
+- **🔴 git ref 第五案（新形态，与四连发不同）**：commit 9541278 输出后 `rev-parse HEAD` 短暂显示旧值 47cc2db，**数秒后 packed+loose 双双自行追上 9541278**（无需手术）——Windows 文件系统/DCS 延迟导致 ref 可见性滞后，**不是静默失败的第三种形态**。纪律=修 ref 前等几秒复验，手术脚本 assert 锚点唯一性就是保险丝（本次 anchor=0 断言直接拦截了一次多余的盲写）。教训入 git-safety 技能
+- 提交链：987c6bd → 47cc2db → 9541278（全部已推远程）
