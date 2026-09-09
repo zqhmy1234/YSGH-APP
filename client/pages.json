@@ -10,45 +10,10 @@
 			}
 		},
 		{
-			"path": "pages/index/index",
-			"style": {
-				"navigationBarTitleText": "忆述光华",
-				"navigationStyle": "custom",
-				"enablePullDownRefresh": false,
-				"backgroundColor": "#F8F7F4"
-			}
-		},
-		{
 			"path": "pages/empty/empty",
 			"style": {
 				"navigationBarTitleText": "忆述光华",
 				"navigationStyle": "custom",
-				"backgroundColor": "#F8F7F4"
-			}
-		},
-		{
-			"path": "pages/ai/ai",
-			"style": {
-				"navigationStyle": "custom",
-				"backgroundColor": "#F8F7F4"
-			},
-			"navigationBarTitleText": "AI 对话"
-		},
-		{
-			"path": "pages/search/search",
-			"style": {
-				"navigationBarTitleText": "搜索",
-				"navigationStyle": "custom",
-				"enablePullDownRefresh": false,
-				"backgroundColor": "#F8F7F4"
-			}
-		},
-		{
-			"path": "pages/profile/profile",
-			"style": {
-				"navigationBarTitleText": "我的",
-				"navigationStyle": "custom",
-				"enablePullDownRefresh": false,
 				"backgroundColor": "#F8F7F4"
 			}
 		},
