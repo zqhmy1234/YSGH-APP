@@ -1781,3 +1781,14 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **暂停归零 v5.1**：Android pause() 后 currentTime 瞬时回 0 已知行为→暂停即 stopProgressClock + 时钟/onTimeUpdate 双处 `c.paused` 闸门，视觉冻结暂停点
 - **🔴 git ref 第五案（新形态，与四连发不同）**：commit 9541278 输出后 `rev-parse HEAD` 短暂显示旧值 47cc2db，**数秒后 packed+loose 双双自行追上 9541278**（无需手术）——Windows 文件系统/DCS 延迟导致 ref 可见性滞后，**不是静默失败的第三种形态**。纪律=修 ref 前等几秒复验，手术脚本 assert 锚点唯一性就是保险丝（本次 anchor=0 断言直接拦截了一次多余的盲写）。教训入 git-safety 技能
 - 提交链：987c6bd → 47cc2db → 9541278（全部已推远程）
+
+### §EE（2026-09-09 下午，B10 TabBar 切页闪屏根治——P1 金丝雀 + P2 四 tab 全壳内，真机终验通过）
+
+- **P0 探针出局**：官方文档实锤 uni-app x `redirectTo` 参数表无 animationType（仅 navigateTo 支持）→ 转场动画关不掉，A 单页容器化为唯一根治（峰宝令「没用直接进A」）
+- **P1 金丝雀**（5cc7b8c + fcc8a3a）：shell.uvue 唯一宿主（v-if 首挂 + v-show 保活=零销毁零创建）；TabSearch/TabProfile 自两页整体搬迁+props 契约（shownSeq/savedSeq/typeQuery watch 广播）；V1 撞名波——脚本普查全四页 0 标签/复合选择器、8 撞名类 5 真异值精准改名（search: s-chip*/svp-*、ai: ai-root/ai-header、profile: profile-root）；TabBar +embedded prop（壳内 emit('tab')，老世界逐字不变）
+- **两个真机踩坑当场修**：① 增量编译不响应 pages.json 入口顺序变更——清 unpackage/dist 全量重编才生效（app-config.js shell 首项实证）；② shell 顶替启动页引入**数据全 0 回归**（组件 onMounted 拉数据早于 token 就绪）→ shell 加 ensureLogin ready 闸门，复验统计 83/60/10 与 DB 逐字吻合
+- **P2 四 tab 全壳内**（7b831fc）：TabIndex/TabAi 同款契约化（index onLoad 内 ensureLogin 解包直调+onShow TTL→shownSeq；ai options→shell 解参双 prop；attachOpen 上收）；**shell_state.uts 模块级共享 ref 桥**（audio_player 先例，零 defineExpose——EchoSheet 拍板「编译器风险不冒险」）：requestShellTab 跨 tab 导航 + aiAttachOpen 返回键协同 + shellActiveTab；全端老页触点收编 20 处（reLaunch index→shell、redirectTo ai→shell?tab=ai、TabBar 非嵌入分支→shell?tab=X、goSearch/goType→壳内切）
+- **客观判据（可复用）**：壳内 v-show 切换 = `logcat -b events` 零 wm_create_activity/wm_finish_activity + pid 不变；老路 redirectTo = 成对 create/finish。P1 期对照实测（壳内四击零足迹、老路一击即现形）；P2 六连切（时间轴→AI→搜索→我的→时间轴→AI）零足迹，屏宽 1084 下 tab 中心 x=105/340/737/926 y≈2205
+- **真机终验**：峰宝亲测「都已测过，全部通过，没有闪帧」；四 tab 渲染逐一截图核（index 待确认卡/时间轴、ai 对话流、profile 统计、search）零串色零异常
+- **行为变更（拍板项 2/3 生效）**：跨 tab 连续播放（离页停播退役）/ 返回 tab 数据与滚动常驻
+- **🔴 P4 留尾**：老四页 pages/index|ai|search|profile 仍在 pages.json（全端入口已收编=事实退役，无触达路径）——删除动作待峰宝定时机（建议观察数日无回潮再删，删后全量回归）；pages.json 中 shell 已为 pages[0] 启动页（终态非临时）
