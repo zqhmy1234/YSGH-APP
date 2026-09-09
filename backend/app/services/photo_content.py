@@ -225,8 +225,12 @@ def register_photo_content(
         if existing is None or str(existing.user_id) != str(user_id):
             raise NotFoundError("content_id 不存在或不属于当前用户")
         if data is None:
-            _require_photo_bytes(cos_key)  # P0-3：补传原件同样魔数校验
+            # D5 修复（2026-09-09）：补传原件体积必须落 size_bytes——原实现只借
+            # _require_photo_bytes 校验却丢弃返回字节；占位期 thumbnail_meta 未写
+            # size，原件挂上后仍缺 → 存储页用量少算蜂窝首传的照片
+            data = _require_photo_bytes(cos_key)
         existing.cos_key = cos_key
+        existing.size_bytes = len(data)
         existing.status = "processing"
         # 合并（不覆盖占位期既有 extra，如 wechat 追溯/元数据）
         existing.extra = {**(existing.extra or {}), **(extra or {})}

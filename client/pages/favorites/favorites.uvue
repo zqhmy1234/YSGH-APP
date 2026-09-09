@@ -56,7 +56,7 @@
 							<image v-else class="play-icon" src="/static/icons/i2_595.svg" />
 						</view>
 						<!-- 60:811 波形 200×26pt @(58,19)：空闲=画布 SVG（60:825 与 i2_596 同源实证）；活动=VoiceWave+进度行（search F5a 先例） -->
-						<VoiceWave v-if="voiceIsActive(item.contentId)" class="wave-box" :heights="item.waveHeights" :active="true" :progress="voiceProgressOfCard(item.contentId)" />
+						<VoiceWave v-if="voiceIsActive(item.contentId)" class="wave-box" :heights="item.waveHeights" :waveform="waveformOf(item.contentId)" :active="true" :progress="voiceProgressOfCard(item.contentId)" />
 						<view v-else class="wave-box">
 							<image class="wave-img" src="/static/icons/i2_596.svg" />
 						</view>
@@ -135,7 +135,7 @@
 	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
 	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
-	import { favoritesList, favoriteRemove } from '@/utils/play'
+	import { favoritesList, favoriteRemove, fetchWaveform } from '@/utils/play'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -423,12 +423,34 @@
 	function voiceTotalSecText(): string {
 		return fmtVoiceTime(voiceTotalSecValue())
 	}
+
+	// ═══ BB3 真实波形接线（favorites 补线 2026-09-09；三件套照 search 逐字对齐）═══
+	// waveformMap 非响应式缓存 + waveformVersion 计数驱动重渲染（waveformOf 模板读取建依赖）；
+	// null = 未拉到 → VoiceWave 组件回退 heights 伪波形（静默）
+	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
+	let waveformVersion = ref(0)
+	function waveformOf(cid: string): Array<number> | null {
+		waveformVersion.value
+		return waveformMap.get(cid) ?? null
+	}
+	function loadWaveform(cid: string): void {
+		if (waveformMap.has(cid)) {
+			return
+		}
+		fetchWaveform(cid).then((b: Array<number> | null) => {
+			if (b != null && b.length >= 2) {
+				waveformMap.set(cid, b)
+				waveformVersion.value++
+			}
+		})
+	}
 	function playVoice(item: FavCard): void {
 		// 无关联记忆的条目（端点数据缺 content_id）不进播放引擎——显式提示（mock 演示条目路径已亡，措辞接真）
 		if (item.contentId == '') {
 			uni.showToast({ title: '该条目未关联记忆，暂不可播放', icon: 'none' })
 			return
 		}
+		loadWaveform(item.contentId) // BB3：播放入口懒拉真实波形
 		toggleVoice(item.contentId)
 	}
 

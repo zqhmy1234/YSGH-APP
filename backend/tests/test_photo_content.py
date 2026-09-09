@@ -326,3 +326,8 @@ def test_update_mode_links_original(db_user):
     assert record.status == "processing"
     assert record.extra.get("original_pending") is None
     assert record.thumbnail_key is not None  # 占位缩略图保留
+    # D5 修复钉桩（2026-09-09）：补传原件体积必须落 size_bytes（存储页用量真实）
+    _orig_sz = len(get_storage_backend().get_object(original_key))
+    assert record.size_bytes == _orig_sz, (
+        f"update 补传后 size_bytes 应=原件存储体积 {_orig_sz}，实际 {record.size_bytes}"
+    )
