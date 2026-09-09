@@ -309,13 +309,13 @@
 	function skipInterview(): void {
 		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
 		setTimeout(() => {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}, 600)
 	}
 
 	// 完成 → 进入时间轴
 	function goHome(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
+		uni.reLaunch({ url: '/pages/shell/shell' })
 	}
 </script>
 

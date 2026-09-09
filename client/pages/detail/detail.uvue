@@ -382,7 +382,7 @@
 		if (pages.length > 1) {
 			uni.navigateBack({ delta: 1 })
 		} else {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}
 	}
 
@@ -490,7 +490,7 @@
 		uni.setStorageSync('yishu_ai_context_title', memTitle.value)
 		uni.setStorageSync('yishu_ai_context_body', memBody.value)
 		uni.setStorageSync('yishu_ai_context_content_id', contentId.value)
-		uni.redirectTo({ url: '/pages/ai/ai' })
+		uni.redirectTo({ url: '/pages/shell/shell?tab=ai' })
 	}
 	function addCapsule(): void {
 		// 卡22 接线：拉起时间胶囊弹层（浮层不跳页）；FE1 起入口为真实面板（封存端点 POST /api/v1/capsules

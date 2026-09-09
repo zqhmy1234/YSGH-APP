@@ -120,7 +120,7 @@
 	// ===== 交互 =====
 	// 类型入口（照片/语音/文字）
 	function goType(type: string): void {
-		uni.navigateTo({ url: '/pages/search/search?type=' + type })
+		uni.navigateTo({ url: '/pages/shell/shell?type=' + type })
 	}
 
 	// RecordSheet 保存成功回调（统计数字随之刷新）

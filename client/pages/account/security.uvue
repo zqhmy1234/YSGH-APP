@@ -92,7 +92,7 @@
 		if (pages.length > 1) {
 			uni.navigateBack({ delta: 1 })
 		} else {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}
 	}
 
@@ -118,7 +118,7 @@
 				if (res.confirm) {
 					// logout() 幂等：后端吊销失败也清本地凭据并 resolve(true)（auth.uts G1/R6#7）
 					logout().then((_ok: boolean) => {
-						uni.reLaunch({ url: '/pages/index/index' })
+						uni.reLaunch({ url: '/pages/shell/shell' })
 					})
 				}
 			}

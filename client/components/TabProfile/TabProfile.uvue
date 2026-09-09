@@ -68,6 +68,7 @@
 
 <script setup lang="uts">
 	import { ref, onMounted, watch } from 'vue'
+	import { requestShellTab } from '@/utils/shell_state'
 	import { fetchRecentContents } from '@/utils/search_api'
 
 	// ===== 设计稿图标（已落成 /static/icons/*.svg 静态资源） =====
@@ -124,7 +125,7 @@
 	// ===== 交互 =====
 	// 类型入口（照片/语音/文字）
 	function goType(type: string): void {
-		uni.navigateTo({ url: '/pages/shell/shell?type=' + type })
+		requestShellTab('search', 'type=' + type) // B10 P2：壳内零销毁切 tab（原 navigateTo 壳）
 	}
 
 	// RecordSheet 保存成功回调（统计数字随之刷新）

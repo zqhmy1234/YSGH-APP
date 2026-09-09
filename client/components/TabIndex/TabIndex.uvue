@@ -1,5 +1,7 @@
 <template>
-	<view class="page">
+	<!-- B10 方案A P2：自 pages/index/index.uvue 整体搬迁；TabBar/RecordSheet 挂载与
+	     页级生命周期/ensureLogin 上收 shell（契约见 script），处置记录台账 §EE -->
+<view class="page">
 		<!-- 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） -->
 		<view class="hero-section">
 			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" lazy-load="true" />
@@ -198,24 +200,16 @@
 				</view>
 			</view>
 		</scroll-view>
-
-		<!-- 统一 TabBar 组件 -->
-		<TabBar active="index" @plus="sheetOpen = true" />
-
-		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
-		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
 	</view>
 </template>
 
 <script setup lang="uts">
-	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 	// 卡PB R1：computed 显式引入（ref 沿页面现状未显式引入，避免重复声明）
-	import { computed } from 'vue'
-	import { ensureLogin } from '@/utils/auth'
+	import { computed, onMounted, watch } from 'vue'
+	import { requestShellTab } from '@/utils/shell_state'
 	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
 		toggleVoice,
-		stopVoice,
 		isVoiceActive,
 		isVoicePlaying,
 		voiceProgressOf,
@@ -259,8 +253,6 @@
 
 	// 响应式数据（uvue script setup 裸 let 非响应式，必须 ref —— 真机实锤：数据到位但界面停在加载态）
 	let loaded = ref(false)
-	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
-	let sheetOpen = ref(false)
 	let refreshing = ref(false)
 	let days = ref<Array<DayGroup>>([])
 	let pendingEvents = ref<Array<TimelineEvent>>([])
@@ -313,46 +305,43 @@
 		return days.value.slice(0, visibleDayCount.value)
 	})
 
-	// 返回键拦截：浮层开着时先关浮层，而不是退出页面。
-	// 返回 true 表示已自行处理（阻止默认返回行为）。
-	onBackPress((): boolean => {
-		if (sheetOpen.value) {
-			sheetOpen.value = false
-			return true
-		}
-		return false
-	})
-
 	// 生命周期
-	onLoad(() => {
+	// B10 方案A 组件契约（2026-09-09 P2）：token 就绪由 shell ready 闸门保证（原 onLoad 内
+	// ensureLogin().then 串行语义上收 shell）；shownSeq 每次切到本 tab ++（原页级 onShow TTL 刷新）；
+	// savedSeq 记录保存成功 ++（原 RecordSheet @saved）。数据常驻=拍板项3；离页停播=拍板项2 退役
+	// （原 onUnload stopVoice 删除，跨 tab 连播为正式行为；pageAlive 保 true——壳不销毁本页）。
+	const props = defineProps({
+		shownSeq: { type: Number, default: 0 },
+		savedSeq: { type: Number, default: 0 }
+	})
+	// 原 onLoad 体（[perf] 埋点/卡PA D2 缓存先渲/photoWatch 初始化，逐字保留）
+	onMounted((): void => {
 		// P-4 内容出现时间埋点（新验收口径）：logcat 抓 [perf] 行，
 		// content-visible(onLoad 起算) = 真实可感知指标；TotalTime 受 debug 基座固定成本支配基本不动
 		console.log('[perf] index onLoad at ' + Date.now())
 		console.log('[dbg-index] onLoad')
-		ensureLogin().then((ok: boolean) => {
-			console.log('[dbg-index] ensureLogin -> ' + ok)
-			// 卡PA D2：命中缓存先渲染（消除切页闪屏），再后台静默刷新、刷新完浅替换
-			loadHeroSubs()  // R9-7：hero 副标题 API 拉取（与 timeline 刷新解耦）
-			const hit = getCachedTimeline()
-			if (hit != null) {
-				console.log('[dbg-index] timeline cache hit, age=' + ((Date.now() - hit.fetchedAt) / 1000).toFixed(0) + 's -> instant render')
-				applyFetchedEvents(hit.events)
-				refreshSilently()
-			} else {
-				reload()
-			}
-		})
+		// 卡PA D2：命中缓存先渲染（消除切页闪屏），再后台静默刷新、刷新完浅替换
+		// （token 就绪由 shell ready 闸门保证——原 ensureLogin().then 包装解包直调）
+		loadHeroSubs()  // R9-7：hero 副标题 API 拉取（与 timeline 刷新解耦）
+		const hit = getCachedTimeline()
+		if (hit != null) {
+			console.log('[dbg-index] timeline cache hit, age=' + ((Date.now() - hit.fetchedAt) / 1000).toFixed(0) + 's -> instant render')
+			applyFetchedEvents(hit.events)
+			refreshSilently()
+		} else {
+			reload()
+		}
 		try {
-			const watch = createPhotoWatch()
-			if (watch.isReadPermissionGranted()) {
+			const photoWatch = createPhotoWatch()
+			if (photoWatch.isReadPermissionGranted()) {
 				startWatch()
 			}
 		} catch (e) {
 			console.log('[dbg-index] photoWatch init failed (标准基座无原生插件，忽略): ' + e)
 		}
 	})
-	onShow(() => {
-		// 卡PA R2：TTL 内不重拉；过期走后台静默刷新（不清 days，无闪屏）
+	watch((): number => props.shownSeq, (n: number): void => {
+		// 原 onShow 体逐字（TTL 内不重拉，过期后台静默刷新）
 		if (!loaded.value) {
 			return
 		}
@@ -361,16 +350,15 @@
 		}
 		refreshSilently()
 	})
-	onUnload(() => {
-		// 卡PA D1：页面销毁后缩略图后台批次回调不再触发渲染
-		pageAlive.value = false
-		// 离页停播：redirectTo 切 Tab 会销毁本页，防止语音跨页残留出声
-		stopVoice()
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
 	})
 
 	// 导航方法
 	function goSearch(): void {
-		uni.reLaunch({ url: '/pages/shell/shell?tab=search' })
+		requestShellTab('search', '') // B10 方案A：壳内零销毁切 tab（原 reLaunch 老页）
 	}
 
 	// 语音播放（W0-2 就地播放：播放钮变暂停 + 波形金色跳动 + 进度行，F5a 规范）
@@ -1040,8 +1028,8 @@
 	}
 </script>
 
-
 <style>
+
 	/* 视觉规范 v2：像素级还原 SVG 设计稿
 	   背景 #f8f7f4 / 卡片 #ffffff 圆角20 / 玻璃 TabBar #ffffff8c 圆角31
 	   主文字 #3a2e25 / 次文字 #8a7a6a / 锈红 #b05a3a / 琥珀 #c4913c */

@@ -208,7 +208,7 @@
 		if (pages.length > 1) {
 			uni.navigateBack({ delta: 1 })
 		} else {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}
 	}
 
@@ -264,7 +264,7 @@
 		if (msg.msgType == 'care_followup') {
 			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页），
 			// 全库扫描发现于 B10 回退残留扫描；项目跨页导航先例为 redirectTo
-			uni.redirectTo({ url: '/pages/ai/ai' })
+			uni.redirectTo({ url: '/pages/shell/shell?tab=ai' })
 			return
 		}
 		if (msg.msgType == 'echo') {

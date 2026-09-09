@@ -72,7 +72,7 @@
 			if (props.embedded) {
 				emit('tab', 'index') // B10 方案A：壳层 v-show 切换（零销毁零创建）
 			} else {
-				uni.redirectTo({ url: '/pages/index/index' })
+				uni.redirectTo({ url: '/pages/shell/shell?tab=index' }) // B10 P2：老世界 tab 触点收编进壳
 			}
 		} else if (props.subpage == true) {
 			// §O P2：子页点本域 tab = 返回域主页（栈内必有主页，back 必达）
@@ -85,7 +85,7 @@
 			if (props.embedded) {
 				emit('tab', 'ai') // B10 方案A：壳层 v-show 切换（零销毁零创建）
 			} else {
-				uni.redirectTo({ url: '/pages/ai/ai' })
+				uni.redirectTo({ url: '/pages/shell/shell?tab=ai' }) // B10 P2：老世界 tab 触点收编进壳
 			}
 		} else if (props.subpage == true) {
 			uni.navigateBack()
@@ -97,7 +97,7 @@
 			if (props.embedded) {
 				emit('tab', 'search') // B10 方案A：壳层 v-show 切换（零销毁零创建）
 			} else {
-				uni.redirectTo({ url: '/pages/search/search' })
+				uni.redirectTo({ url: '/pages/shell/shell?tab=search' }) // B10 P2：老世界 tab 触点收编进壳
 			}
 		} else if (props.subpage == true) {
 			uni.navigateBack()
@@ -109,7 +109,7 @@
 			if (props.embedded) {
 				emit('tab', 'profile') // B10 方案A：壳层 v-show 切换（零销毁零创建）
 			} else {
-				uni.redirectTo({ url: '/pages/profile/profile' })
+				uni.redirectTo({ url: '/pages/shell/shell?tab=profile' }) // B10 P2：老世界 tab 触点收编进壳
 			}
 		} else if (props.subpage == true) {
 			// §O P2 修复：画像管理页点「我的」回不去的根因——active==='profile' 直接 return。

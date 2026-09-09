@@ -498,7 +498,7 @@
 
 	function goTimeline(): void {
 		// F4b 主按钮「去时间轴逛逛」→ 时间轴首页（index 非 navigateTo 可达的普通栈页，reLaunch 复位）
-		uni.reLaunch({ url: '/pages/index/index' })
+		uni.reLaunch({ url: '/pages/shell/shell' })
 	}
 
 	function goBack(): void {
@@ -507,7 +507,7 @@
 		if (pages.length > 1) {
 			uni.navigateBack({ delta: 1 })
 		} else {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}
 	}
 </script>

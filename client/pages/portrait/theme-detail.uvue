@@ -208,7 +208,7 @@
 		if (pages.length > 1) {
 			uni.navigateBack({ delta: 1 })
 		} else {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}
 	}
 </script>
