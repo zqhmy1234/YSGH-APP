@@ -5,8 +5,11 @@
 	     - 铁律 1：中央 + 只拉 RecordSheet 浮层（全壳唯一挂载），任何 tab 不跳页
 	     - 正式产品行为（峰宝拍板 2026-09-09）：跨 tab 连续播放 / 返回 tab 数据与滚动常驻 -->
 	<view class="shell-root">
-		<TabSearch v-if="everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
-		<TabProfile v-if="everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
+		<!-- ready 闸门：ensureLogin 完成前不挂载任何 tab 组件（组件 onMounted 即拉数据，
+		     须晚于 token 就绪；对齐老 index 页 onLoad 内 ensureLogin().then(拉数据) 串行语义。
+		     失败也放行——api.uts 401 自愈重登兜底，不卡白屏） -->
+		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
+		<TabProfile v-if="ready && everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
 		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
 		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onSaved" />
 	</view>
@@ -15,9 +18,11 @@
 <script setup lang="uts">
 	import { ref } from 'vue'
 	import { onLoad, onBackPress } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
 
 	const VALID_TABS = ['index', 'ai', 'search', 'profile']
 
+	let ready = ref(false)        // ensureLogin 完成闸门（见模板注释）
 	let activeTab = ref('search') // 金丝雀默认 search（P4 完成后恢复 index 常驻）
 	let everSearch = ref(false)   // 首进才挂载（v-if 一次性），此后仅 v-show 切换=保活
 	let everProfile = ref(false)
@@ -32,9 +37,7 @@
 		if (ty != '') {
 			searchType.value = ty
 			activate('search') // 带 type 入口语义 = 进搜索（对齐原 navigateTo('/pages/search/search?type=')）
-			return
-		}
-		if (VALID_TABS.indexOf(t) >= 0) {
+		} else if (VALID_TABS.indexOf(t) >= 0) {
 			activate(t)
 		} else {
 			if (t != '') {
@@ -43,6 +46,11 @@
 			}
 			activate(activeTab.value)
 		}
+		// token 就绪后放行组件挂载（对齐老 index onLoad 内 ensureLogin().then(拉数据) 串行语义）
+		ensureLogin().then((ok: boolean) => {
+			console.log('[shell] ensureLogin -> ' + ok + '，放行 tab 组件挂载')
+			ready.value = true
+		})
 	})
 
 	function activate(tab: string): void {
