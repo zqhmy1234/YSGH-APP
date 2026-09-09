@@ -5,8 +5,8 @@
 	     GET  /api/v1/chat/replies/:id（流式分片轮询/SSE，形态由 reply.kind 决定：
 	          bubble | plain+chips | cards | confirm | typing）
 	     mock 开关：USE_MOCK_CHAT = true（页内显式常量，联调铁律登记 _diff_ledger §W10.4） -->
-	<view class="page-root">
-		<view class="header">
+	<view class="ai-root">
+		<view class="ai-header">
 			<text class="n2_336">AI</text>
 			<text class="n2_337">问问你的回忆</text>
 		</view>
@@ -386,13 +386,13 @@
 </script>
 
 <style>
-	.page-root {
+	.ai-root {
 		flex: 1;
 		flex-direction: column;
 		font-family: "Sarasa Gothic SC", sans-serif;
 		background-color: #F8F7F4;
 	}
-	.header {
+	.ai-header {
 		padding-top: 107.7rpx;
 		padding-left: 38.5rpx;
 		padding-right: 38.5rpx;

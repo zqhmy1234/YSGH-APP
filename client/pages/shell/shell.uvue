@@ -1,0 +1,104 @@
+<template>
+	<!-- B10 方案A 单页容器（金丝雀 P1 形态）：
+	     - 承载组件=已迁 tab（search/profile）；v-show 切换零销毁零创建=闪屏物理消失
+	     - 未迁 tab（index/ai）临时 redirectTo 老页面世界（P2 迁完收编，P4 老页退役）
+	     - 铁律 1：中央 + 只拉 RecordSheet 浮层（全壳唯一挂载），任何 tab 不跳页
+	     - 正式产品行为（峰宝拍板 2026-09-09）：跨 tab 连续播放 / 返回 tab 数据与滚动常驻 -->
+	<view class="shell-root">
+		<TabSearch v-if="everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
+		<TabProfile v-if="everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
+		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onSaved" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad, onBackPress } from '@dcloudio/uni-app'
+
+	const VALID_TABS = ['index', 'ai', 'search', 'profile']
+
+	let activeTab = ref('search') // 金丝雀默认 search（P4 完成后恢复 index 常驻）
+	let everSearch = ref(false)   // 首进才挂载（v-if 一次性），此后仅 v-show 切换=保活
+	let everProfile = ref(false)
+	let sheetOpen = ref(false)
+	let searchType = ref('')       // ?type=photo/voice/text 透传 TabSearch（原 onLoad options 契约）
+	let savedSeq = ref(0)          // 记录保存成功广播（组件 watch → 原 @saved 语义）
+	let profileShownSeq = ref(0)   // 切到 profile 广播（组件 watch → 原页级 onShow 等价）
+
+	onLoad((options : OnLoadOptions) => {
+		const t = options['tab'] ?? ''
+		const ty = options['type'] ?? ''
+		if (ty != '') {
+			searchType.value = ty
+			activate('search') // 带 type 入口语义 = 进搜索（对齐原 navigateTo('/pages/search/search?type=')）
+			return
+		}
+		if (VALID_TABS.indexOf(t) >= 0) {
+			activate(t)
+		} else {
+			if (t != '') {
+				// 非法 tab 显式声明不静默
+				console.warn('[shell] 非法 tab 参数: ' + t + ' → 回落 ' + activeTab.value)
+			}
+			activate(activeTab.value)
+		}
+	})
+
+	function activate(tab: string): void {
+		if (tab == 'search') {
+			everSearch.value = true
+		}
+		if (tab == 'profile') {
+			everProfile.value = true
+		}
+		activeTab.value = tab
+		if (tab == 'profile') {
+			profileShownSeq.value = profileShownSeq.value + 1 // 含首次（onShow 原语义：进 tab 即刷统计）
+		}
+	}
+
+	/** TabBar 嵌入式回调：已迁 tab 壳内 v-show 切换；未迁 tab 暂回老页世界（金丝雀过渡） */
+	function onTabTap(tab: string): void {
+		if (tab == 'search' || tab == 'profile') {
+			activate(tab)
+			return
+		}
+		console.log('[shell] 未迁 tab → redirectTo 老页: ' + tab)
+		const url = tab == 'index' ? '/pages/index/index' : '/pages/ai/ai'
+		uni.redirectTo({
+			url: url,
+			fail: (err: any) => {
+				console.warn('[shell] 老页跳转失败（显式声明）: ' + err)
+			}
+		})
+	}
+
+	function openSheet(): void {
+		sheetOpen.value = true
+	}
+
+	function onSaved(): void {
+		sheetOpen.value = false
+		savedSeq.value = savedSeq.value + 1
+	}
+
+	// 返回键：浮层开着先关浮层（原各 tab 页 onBackPress 语义上收）；否则走默认退出
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		return false
+	})
+</script>
+
+<style>
+	.shell-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+		position: relative;
+	}
+</style>

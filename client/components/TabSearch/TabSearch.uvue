@@ -1,5 +1,6 @@
 <template>
-	<!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
+	<!-- B10 方案A 金丝雀：自 pages/search/search.uvue 整体搬迁（模板/样式零改动；TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE） -->
+<!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
 	<view class="search-root">
 		<text class="n2_390">搜索</text> <!-- 大标题 -->
 		<view class="n2_391"> <!-- 搜索胶囊 -->
@@ -59,22 +60,17 @@
 				<text class="n2-empty-text">{{ emptyText() }}</text>
 			</view>
 		</scroll-view>
-		<TabBar active="search" @plus="sheetOpen = true" />
 
-		<!-- 记录面板浮层：点 TabBar 中央 + 就地拉起，不跳页（产品定义铁律） -->
-		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
 	</view>
 </template>
 
 <script setup lang="uts">
-	import { ref, computed, watch } from 'vue'
-	import { onLoad, onUnload } from '@dcloudio/uni-app'
+	import { ref, computed, watch, onMounted } from 'vue'
 	import { searchText, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { fetchWaveform } from '@/utils/play'
 	import { shortDate } from '@/utils/time'
 	import {
 		toggleVoice,
-		stopVoice,
 		fmtVoiceTime,
 		genWaveHeights,
 		voiceCurrentId,
@@ -85,8 +81,6 @@
 	} from '@/utils/audio_player'
 
 	// ── 响应式状态 ──
-	// 记录面板浮层开关（TabBar 中央 + 触发，就地拉起不跳页）
-	let sheetOpen = ref(false)
 	let keyword = ref('')
 	let activeFilter = ref(0)
 	let loading = ref(false)
@@ -95,27 +89,18 @@
 	let hits = ref<Array<SearchHitItem>>([])
 	let filters = ['全部', '照片', '语音', '文字']
 
-	// 返回键拦截：浮层开着时先关浮层，而不是退出页面（返回 true = 已自行处理）
-	onBackPress((): boolean => {
-		if (sheetOpen.value) {
-			sheetOpen.value = false
-			return true
-		}
-		return false
-	})
-
-	// 离页停播：防止语音跨页残留出声（redirectTo 切 Tab 会销毁本页）
-	onUnload(() => {
-		stopVoice()
-	})
-
 	// 本地 mock 数据注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
 	// 此前 onLoad 无条件灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*）压住真实结果；
 	// 现进入页面即拉「最近内容」兜底（见 onLoad），空结果走诚实空态文案。
 
-	// 从「我的」类型卡跳入：?type=photo/voice/text 预设对应筛选标签
-	onLoad((options: OnLoadOptions) => {
-		const t = options['type'] as string
+	// B10 方案A 组件契约（shell → 组件）：savedSeq 每次记录保存成功 ++（原 onRecordSaved 回调）。
+	// typeQuery 承接原 ?type= 预设筛选（shell onLoad 解析后注入）。数据常驻=拍板项 3 正式行为。
+	const props = defineProps({
+		typeQuery: { type: String, default: '' },
+		savedSeq: { type: Number, default: 0 }
+	})
+	onMounted((): void => {
+		const t = props.typeQuery
 		if (t == 'photo') {
 			activeFilter.value = 1
 		} else if (t == 'voice') {
@@ -123,9 +108,12 @@
 		} else if (t == 'text') {
 			activeFilter.value = 3
 		}
-		// 进入即拉「最近内容」兜底（后端 /search 的 q 要求非空，
-		// 空词场景只能用 contents 列表端点），否则结果区一片空白。
 		loadRecent()
+	})
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
 	})
 
 	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
@@ -421,9 +409,10 @@
 
 	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用与 setFilter(idx:number) 签名冲突，
 	//   模板已改回 HEAD 的 v-for + setFilter(idx)，此处删除）
-	</script>
+</script>
 
 <style>
+
 	.search-root {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;

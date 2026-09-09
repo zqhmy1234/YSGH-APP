@@ -49,13 +49,19 @@
 		subpage: {
 			type: Boolean,
 			default: false
+		},
+		// B10 方案A（2026-09-09）：嵌入 shell 宿主时传 true——goX 不再 redirectTo，
+		// 改 emit('tab', name) 由壳层 v-show 切换（闪屏根治主通道）；老页面世界零影响
+		embedded: {
+			type: Boolean,
+			default: false
 		}
 	})
 
 	// 中央 + 只「通知宿主页拉起浮层」，绝不自己跳转页面。
 	// 产品定义铁律（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面；
 	// 时间轴页点 + 仍留在时间轴页，搜索页点 + 仍留在搜索页，其他页同理。
-	const emit = defineEmits(['plus'])
+	const emit = defineEmits(['plus', 'tab'])
 
 	// 跳转方法
 	// B10 回退（2026-09-03 峰宝真机证伪）：原生 tabBar 注册 + hideTabBar 在 app-uvue Android
@@ -63,7 +69,11 @@
 	// 回退 redirectTo（切换闪屏问题回到 B 类待拍板：剩单页组件化/glassEffect 两案）
 	const goIndex = () => {
 		if (props.active !== 'index') {
-			uni.redirectTo({ url: '/pages/index/index' })
+			if (props.embedded) {
+				emit('tab', 'index') // B10 方案A：壳层 v-show 切换（零销毁零创建）
+			} else {
+				uni.redirectTo({ url: '/pages/index/index' })
+			}
 		} else if (props.subpage == true) {
 			// §O P2：子页点本域 tab = 返回域主页（栈内必有主页，back 必达）
 			uni.navigateBack()
@@ -72,7 +82,11 @@
 
 	const goAI = () => {
 		if (props.active !== 'ai') {
-			uni.redirectTo({ url: '/pages/ai/ai' })
+			if (props.embedded) {
+				emit('tab', 'ai') // B10 方案A：壳层 v-show 切换（零销毁零创建）
+			} else {
+				uni.redirectTo({ url: '/pages/ai/ai' })
+			}
 		} else if (props.subpage == true) {
 			uni.navigateBack()
 		}
@@ -80,7 +94,11 @@
 
 	const goSearch = () => {
 		if (props.active !== 'search') {
-			uni.redirectTo({ url: '/pages/search/search' })
+			if (props.embedded) {
+				emit('tab', 'search') // B10 方案A：壳层 v-show 切换（零销毁零创建）
+			} else {
+				uni.redirectTo({ url: '/pages/search/search' })
+			}
 		} else if (props.subpage == true) {
 			uni.navigateBack()
 		}
@@ -88,7 +106,11 @@
 
 	const goProfile = () => {
 		if (props.active !== 'profile') {
-			uni.redirectTo({ url: '/pages/profile/profile' })
+			if (props.embedded) {
+				emit('tab', 'profile') // B10 方案A：壳层 v-show 切换（零销毁零创建）
+			} else {
+				uni.redirectTo({ url: '/pages/profile/profile' })
+			}
 		} else if (props.subpage == true) {
 			// §O P2 修复：画像管理页点「我的」回不去的根因——active==='profile' 直接 return。
 			// 子页（manage 等 navigateTo 压栈）应 navigateBack 回 profile 主页
