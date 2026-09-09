@@ -240,6 +240,28 @@ def _autouse_rate_limit_disabled(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _autouse_wechat_credentials_sandboxed(monkeypatch):
+    """【autouse 全仓生效】微信域凭证测试沙箱（2026-09-09 凭证接通波立）。
+
+    用途：backend/.env 现已存真实 WECHAT_APPID/SECRET/CORP_ID（dev 服务真实
+    code2session 已生效），而 auth_headers fixture 用随机 mock code 打
+    POST /auth/wechat——若走真实分支，每个测试用户建立都调微信 API 并被
+    invalid code 401 炸穿全库。本 fixture 进程内清空凭证 → 测试回到
+    dev mock 登录语义；需要真实分支的用例自行 monkeypatch 显式注入测试
+    appid/secret + mock httpx.get（test_auth.py::test_wechat_login_real_*
+    先例，Wave4-L 基建），或显式清空测 501/503（test_wechat_login_production_*）。
+    只影响测试进程（monkeypatch 自动还原），dev 服务器加载 .env 真值不受影响。
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "wechat_appid", "")
+    monkeypatch.setattr(settings, "wechat_secret", "")
+    monkeypatch.setattr(settings, "wechat_corp_id", "")
+    monkeypatch.setattr(settings, "wechat_token", "")
+    monkeypatch.setattr(settings, "wechat_encoding_aes_key", "")
+
+
+@pytest.fixture(autouse=True)
 def _autouse_sensitive_words_state(monkeypatch):
     """【autouse 全仓生效】R8#12：敏感词模块全局热词状态快照/恢复（消除顺序敏感 flaky）。
 
