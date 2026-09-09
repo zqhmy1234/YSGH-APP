@@ -202,3 +202,211 @@ def test_create_content_cos_key_valid_passes(client, auth_headers):
             db.commit()
         finally:
             db.close()
+
+
+# ---------------------------------------------------------------------------
+# A9（2026-09-09 缺口收口）：POST /contents voice 单段路径回填 size_bytes
+# ---------------------------------------------------------------------------
+
+
+def _db_row_size_bytes(content_id: str) -> int | None:
+    """DB 回查 size_bytes（TestClient 会话与请求会话不同，需独立会话重读）"""
+    from app.db.models import Content
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        row = db.get(Content, content_id)
+        assert row is not None, "内容行应存在"
+        return row.size_bytes
+    finally:
+        db.close()
+
+
+def test_create_voice_backfills_size_bytes(client, auth_headers):
+    """A9：voice 带 cos_key（字节已在存储）→ 建记录实测回填 size_bytes（契约偏差①收口）"""
+    user_id = _current_user_id(auth_headers)
+    wav = b"RIFF" + b"\x00" * 100  # 104 字节假对象（存在性校验通过即可，无需合法 WAV）
+    cos_key = f"voice/{user_id}/202609/a9_{uuid.uuid4().hex[:8]}.wav"
+    from app.services.external.storage import get_storage_backend
+
+    get_storage_backend().put_object(cos_key, wav)
+    try:
+        r = client.post(
+            "/api/v1/contents",
+            json={"content_type": "voice", "cos_key": cos_key, "source": "app"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        cid = r.json()["data"]["id"]
+        # 出参与 DB 双断言：size_bytes = 存储对象实测字节数
+        assert r.json()["data"]["size_bytes"] == len(wav), "出参应回显实测大小"
+        assert _db_row_size_bytes(cid) == len(wav), "DB 应落 size_bytes"
+    finally:
+        from app.db.models import Content
+        from app.db.session import SessionLocal
+        from sqlalchemy import delete as sa_delete
+
+        db = SessionLocal()
+        try:
+            db.execute(sa_delete(Content).where(Content.user_id == user_id))
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_create_voice_declared_size_wins(client, auth_headers):
+    """A9：客户端显式声明 size_bytes 优先于存储实测（上送 999 → 落 999）"""
+    user_id = _current_user_id(auth_headers)
+    cos_key = f"voice/{user_id}/202609/a9d_{uuid.uuid4().hex[:8]}.wav"
+    from app.services.external.storage import get_storage_backend
+
+    get_storage_backend().put_object(cos_key, b"x" * 50)
+    try:
+        r = client.post(
+            "/api/v1/contents",
+            json={
+                "content_type": "voice", "cos_key": cos_key, "source": "app",
+                "size_bytes": 999,
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["size_bytes"] == 999, "客户端声明应优先"
+    finally:
+        from app.db.models import Content
+        from app.db.session import SessionLocal
+        from sqlalchemy import delete as sa_delete
+
+        db = SessionLocal()
+        try:
+            db.execute(sa_delete(Content).where(Content.user_id == user_id))
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_size_probe_failure_degrades_to_none(client, auth_headers, monkeypatch):
+    """A9 真实降级路径：存在性校验通过但 get_object 抛错（并发删对象/存储抖动）
+    → 仍 200 建记录、size_bytes=None 不阻塞（_resolve_size_bytes except 分支直测）"""
+    user_id = _current_user_id(auth_headers)
+    cos_key = f"voice/{user_id}/202609/a9r_{uuid.uuid4().hex[:8]}.wav"
+    from app.services.external.storage import get_storage_backend
+
+    backend = get_storage_backend()
+    backend.put_object(cos_key, b"y" * 64)
+
+    def _boom(_key):
+        raise KeyError(_key)  # 模拟 object_exists 后对象被并发删除
+
+    monkeypatch.setattr(backend, "get_object", _boom)
+    try:
+        r = client.post(
+            "/api/v1/contents",
+            json={"content_type": "voice", "cos_key": cos_key, "source": "app"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, f"降级不得阻塞建记录: {r.text}"
+        assert r.json()["data"]["size_bytes"] is None, "降级应为 None"
+    finally:
+        from app.db.models import Content
+        from app.db.session import SessionLocal
+        from sqlalchemy import delete as sa_delete
+
+        db = SessionLocal()
+        try:
+            db.execute(sa_delete(Content).where(Content.user_id == user_id))
+            db.commit()
+        finally:
+            db.close()
+
+
+# ---------------------------------------------------------------------------
+# 详情路由（2026-09-09 缺口收口）：GET /contents/{content_id}
+# （契约偏差③收口：此前客户端用 GET /contents?content_id= 列表过滤替代）
+# ---------------------------------------------------------------------------
+
+
+def test_detail_get_by_id(client, auth_headers):
+    """详情：本人内容 200 + 全字段出参（text/remark/duration/size_bytes）"""
+    user_id = _current_user_id(auth_headers)
+    cos_key = f"voice/{user_id}/202609/d1_{uuid.uuid4().hex[:8]}.wav"
+    _seed_object(cos_key)
+    r = client.post(
+        "/api/v1/contents",
+        json={
+            "content_type": "voice", "cos_key": cos_key, "source": "app",
+            "remark": "详情备注", "extra": {"duration_ms": 5000},
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    cid = r.json()["data"]["id"]
+    try:
+        r2 = client.get(f"/api/v1/contents/{cid}", headers=auth_headers)
+        assert r2.status_code == 200, r2.text
+        d = r2.json()["data"]
+        assert d["id"] == cid, "详情 id 应对应"
+        assert d["content_type"] == "voice"
+        assert d["remark"] == "详情备注", f"remark 应直出: {d['remark']!r}"
+        assert d["duration"] == 5, f"duration 应 5: {d['duration']}"
+        assert d["size_bytes"] == len(b"fake-object-bytes"), "size_bytes 应实测回填"
+        for field in ("status", "created_at", "taken_at", "tags_json", "ai_description"):
+            assert field in d, f"ContentOut 缺字段 {field}"
+    finally:
+        from app.db.models import Content
+        from app.db.session import SessionLocal
+        from sqlalchemy import delete as sa_delete
+
+        db = SessionLocal()
+        try:
+            db.execute(sa_delete(Content).where(Content.user_id == user_id))
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_detail_idor_and_soft_deleted_404(client, auth_headers):
+    """详情越权三态：他人内容 / 软删条目 / 畸形 ID → 全 404 CONTENT_010（IDOR 不区分）"""
+    user_id = _current_user_id(auth_headers)
+    r = client.post(
+        "/api/v1/contents",
+        json={"content_type": "text", "text": "详情三态", "source": "app"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    cid = r.json()["data"]["id"]
+    try:
+        # ① 本人正常 200
+        assert client.get(f"/api/v1/contents/{cid}", headers=auth_headers).status_code == 200
+        # ② 他人（B 登录）→ 404 CONTENT_010
+        rb = client.post(
+            "/api/v1/auth/wechat",
+            json={"code": f"dt-b-{uuid.uuid4().hex[:8]}", "device_id": "dt-b-dev"},
+        )
+        assert rb.status_code == 200
+        headers_b = {"Authorization": f"Bearer {rb.json()['data']['access_token']}"}
+        r2 = client.get(f"/api/v1/contents/{cid}", headers=headers_b)
+        assert r2.status_code == 404, f"他人应 404: {r2.status_code}"
+        assert r2.json()["code"] == "CONTENT_010", f"错误码: {r2.json()['code']}"
+        # ③ 软删 → 404（回收站走 /trash）
+        rd = client.delete(f"/api/v1/contents/{cid}", headers=auth_headers)
+        assert rd.status_code == 200, rd.text
+        r3 = client.get(f"/api/v1/contents/{cid}", headers=auth_headers)
+        assert r3.status_code == 404, f"软删应 404: {r3.status_code}"
+        assert r3.json()["code"] == "CONTENT_010"
+        # ④ 畸形 ID → 同语义 404（R4#2 口径）
+        r4 = client.get("/api/v1/contents/not-a-uuid", headers=auth_headers)
+        assert r4.status_code == 404, f"畸形 ID 应 404: {r4.status_code}"
+        assert r4.json()["code"] == "CONTENT_010"
+    finally:
+        from app.db.models import Content
+        from app.db.session import SessionLocal
+        from sqlalchemy import delete as sa_delete
+
+        db = SessionLocal()
+        try:
+            db.execute(sa_delete(Content).where(Content.user_id == user_id))
+            db.commit()
+        finally:
+            db.close()

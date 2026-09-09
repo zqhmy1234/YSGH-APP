@@ -35,6 +35,10 @@ class ContentCreate(BaseModel):
     remark: str | None = Field(
         None, max_length=2000, description="用户备注（BA1：save 系接口可选上送）"
     )
+    size_bytes: int | None = Field(
+        None, ge=0,
+        description="声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）",
+    )
 
 
 class ContentOut(BaseModel):

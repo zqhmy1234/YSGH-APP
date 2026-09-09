@@ -405,6 +405,62 @@ def test_complete_voice_rejects_bad_duration(db_user):
             '{"content_type":"voice","duration_ms":"abc","source":"app"}',
         )
 
+
+# ---------- A8（2026-09-09 缺口收口）：complete voice 链路收 remark ----------
+
+def test_complete_voice_remark_persisted(db_user):
+    """A8：voice complete 主链 meta.remark → contents.remark 落库（此前该链路丢备注）"""
+    db, user = db_user
+    task, data = _make_task(db, user)
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+    result = upload_svc.complete_upload(db, task.id)
+    meta = (
+        '{"content_type":"voice","duration_ms":5000,"source":"app",'
+        '"remark":"外婆的叮嘱","extra":{"file_name":"rec_a8.wav"}}'
+    )
+    content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
+    record = db.get(Content, content_id)
+    assert record is not None
+    assert record.remark == "外婆的叮嘱", f"remark 应落库: {record.remark!r}"
+
+
+def _voice_complete_result(db, user):
+    """独立分片任务 → complete → file_key（每用例新对象：voice 分支会搬移/删原键）"""
+    task, data = _make_task(db, user)
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+    return upload_svc.complete_upload(db, task.id)["file_key"]
+
+
+def test_complete_voice_remark_validation(db_user):
+    """A8：remark 非字符串/超长 → ValidationError（422 语义）；空白串 → 归一 None
+
+    三态各用独立任务：voice 分支会把对象从 photos/ 搬到 voice/ 并删旧键，
+    复用同一 file_key 会让后续用例撞上 NotFoundError（对象已搬走）而非目标校验错。
+    """
+    db, user = db_user
+    # ① 非 str 拒绝（与 duration_ms/text/emotion 同护栏风格）
+    with pytest.raises(ValueError, match="remark"):
+        upload_svc.register_photo_content(
+            db, user.id, _voice_complete_result(db, user),
+            '{"content_type":"voice","remark":123}',
+        )
+    # ② 超长（>2000，对齐 ContentCreate.max_length）拒绝
+    with pytest.raises(ValueError, match="超长"):
+        upload_svc.register_photo_content(
+            db, user.id, _voice_complete_result(db, user),
+            '{"content_type":"voice","remark":"' + "x" * 2001 + '"}',
+        )
+    # ③ 空白串归一 None（对齐 text 处理口径），不报错
+    content_id = upload_svc.register_photo_content(
+        db, user.id, _voice_complete_result(db, user),
+        '{"content_type":"voice","remark":"   "}',
+    )
+    record = db.get(Content, content_id)
+    assert record is not None
+    assert record.remark is None, f"空白 remark 应归一 None: {record.remark!r}"
+
 # ---------- P0 批次（2026-08-26）：幂等 / 魔数 / 存储兜底 ----------
 
 def test_register_photo_content_idempotent(db_user):

@@ -221,13 +221,24 @@ def _batch_event_photos(db: Session, event_ids: list, user_id: str) -> dict[str,
     return out
 
 
+def _fmt_voice_duration(seconds: int | None) -> str | None:
+    """A6：语音时长（秒）→ 客户端契约格式 "m:ss"（如 5→"0:05"、65→"1:05"）
+
+    None / 负值 / 非 int → None（客户端显示空；bool 排除：True 不是合法时长）。
+    """
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds < 0:
+        return None
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
 def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str, VoiceInfo | None]:
     """批量取事件成员语音（W0-2 · 2026-09-02：timeline 语音卡就地播放）
 
     每事件最多 VOICES_PER_EVENT 条（ROW_NUMBER 分区截断）；归属同 _batch_event_photos。
     只下发 content_id + title（语音转写首句），不带 url——播放走鉴权端点
     GET /api/v1/media/audio/{content_id}（token 只能走 header，客户端先落临时文件）。
-    duration 暂无字段，客户端播放时由 InnerAudioContext.duration 补齐。
+    A6（2026-09-09 缺口收口）：duration 下发格式化字符串 "m:ss"（客户端契约已定，
+    卡片渲染直接可用）；内容 duration 列为空时下发 None（客户端显示空）。
     """
     from sqlalchemy import func
 
@@ -244,6 +255,7 @@ def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str,
             EventItem.event_id.label("event_id"),
             Content.id.label("content_id"),
             Content.text,
+            Content.duration,
             rn,
         )
         .join(Content, Content.id == EventItem.content_id)
@@ -264,6 +276,7 @@ def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str,
         out[str(r.event_id)] = VoiceInfo(
             content_id=str(r.content_id),
             title=title[:40],
+            duration=_fmt_voice_duration(r.duration),
         )
     return out
 

@@ -172,10 +172,23 @@ def _register_voice_content(
         else:
             voice_extra["client_emotion"] = client_emotion
 
+    # A8（2026-09-09 缺口收口）：用户备注随 meta 上送（与 POST /contents 的
+    # ContentCreate.remark 对齐口径；客户端分片链路 saveVoice 备注此前在
+    # complete 主链丢失，仅二次调用 POST /contents 才兜底）
+    voice_remark = meta.get("remark")
+    if voice_remark is not None:
+        if not isinstance(voice_remark, str):
+            raise ValidationError("remark 必须为字符串")
+        if len(voice_remark) > 2000:
+            raise ValidationError("remark 超长（≤2000 字符，对齐 ContentCreate）")
+        if voice_remark.strip() == "":
+            voice_remark = None
+
     record = Content(
         user_id=user_id,
         content_type="voice",
         text=voice_text,
+        remark=voice_remark,
         taken_at=taken_at,
         gps_lat=gps_lat,
         gps_lng=gps_lng,

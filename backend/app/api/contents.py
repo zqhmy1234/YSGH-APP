@@ -141,6 +141,25 @@ def _validate_cos_key(db: Session, user_id: str, cos_key: str) -> None:
     raise ApiError(ERR_CONTENT_009, "cos_key 指向的对象不存在", http=422)
 
 
+def _resolve_size_bytes(req: ContentCreate) -> int | None:
+    """A9（2026-09-09 缺口收口）：确定入库的原件字节数
+
+    优先级：客户端显式声明（ContentCreate.size_bytes，可选字段）>
+    带 cos_key 时从存储实测（voice 单段链路字节已在存储里）> None。
+    实测失败（KeyError/存储故障等）降级 None——不阻塞建记录，
+    与分片 complete 主链（services/upload/register.py size_bytes=len(data)）对齐口径。
+    """
+    if req.size_bytes is not None:
+        return req.size_bytes
+    if not req.cos_key:
+        return None
+    try:
+        return len(get_storage_backend().get_object(req.cos_key))
+    except Exception:  # noqa: BLE001 —— 降级不阻塞建记录（object_exists 已过存在性校验，此处防并发删对象/存储抖动）
+        logger.warning("size_bytes 存储实测失败（降级 None 不阻塞入库）key=%s", req.cos_key)
+        return None
+
+
 @router.post("/upload", response_model=ApiResponse[ContentOut])
 def upload_photo(
     file: UploadFile = File(...),
@@ -304,6 +323,8 @@ def create_content(
         status="processing",   # AI 管线完成后回写 done（异步）
         # BA1（迁移 f2a3b4c5d6e7）：用户备注（save 系可选上送）
         remark=req.remark,
+        # A9（2026-09-09）：原件字节数——客户端声明优先，否则带 cos_key 时实测存储对象
+        size_bytes=_resolve_size_bytes(req),
         # BA1：voice 走本端点时 duration 从客户端 extra.duration_ms（毫秒）换算秒——
         # 主落库点在 services/upload/register.py（complete 直建链路），此处为
         # POST /contents 二次调用（B5a saveVoiceContent）兜底对齐
@@ -556,6 +577,29 @@ def _load_alive_content(db: Session, user_id: str, content_id: str) -> Content:
     if row is None:
         raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
     return row
+
+
+@router.get("/{content_id}", response_model=ApiResponse[ContentOut])
+def get_content_detail(
+    content_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """内容详情（2026-09-09 缺口收口：客户端此前用 GET /contents?content_id= 列表过滤替代）
+
+    归属/存在性：不存在 / 已软删 / 非本人 → 统一 404 CONTENT_010
+    （复用 _load_alive_content，与 favorite/PATCH/waveform 同口径：IDOR 不区分三种情形；
+    软删条目回收站走 GET /api/v1/trash）。畸形 ID 同语义 404（uuid4_str，R4#2）。
+    路由顺序：本路由定义在 GET "" （列表，L367）之后，空串与路径参数不歧义；
+    与 GET /{content_id}/waveform（两段路径）不冲突。
+    出参：_to_out 全字段 + photo 条目补缩略图票（_attach_thumb，与列表同兜底）。
+    """
+    try:
+        cid = uuid4_str(content_id)
+    except NotFoundError:
+        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404) from None
+    row = _load_alive_content(db, user.id, cid)
+    return ApiResponse(data=_attach_thumb(_to_out(row), row, str(user.id)))
 
 
 @router.patch("/{content_id}", response_model=ApiResponse[ContentOut])

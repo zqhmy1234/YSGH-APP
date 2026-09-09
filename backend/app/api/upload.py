@@ -180,6 +180,10 @@ def complete_upload(
     meta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra,
                         upload_mode, on_wifi, content_id?}，语义与 /contents/upload 对齐。
 
+    A8（2026-09-09）：voice 分支（meta.content_type=voice）额外识别
+    {duration_ms, text, emotion, remark}——remark 为用户备注（str，≤2000 字符，
+    与 POST /contents 的 ContentCreate.remark 对齐），落 contents.remark。
+
     Wave3 AgentG（流量约束 B4 §6）：
       - upload_mode="thumbnail_meta"（蜂窝）：上传物即缩略图 → 只落 thumbnail_key
         占位内容（original_pending），不进管线；WiFi 后再用本端点补传原件。
