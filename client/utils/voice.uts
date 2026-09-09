@@ -269,7 +269,8 @@ export function uploadVoicePersistent(
 	filePath: string,
 	durationMs: number,
 	text: string = '',
-	emotion: string = ''
+	emotion: string = '',
+	remark: string = ''
 ): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
 		const clientUploadId = 'voice|' + filePath
@@ -316,6 +317,13 @@ export function uploadVoicePersistent(
 						}
 						if (emotion != '') {
 							meta.set('emotion', emotion)
+						}
+						// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark
+						// （services/upload/register.py _register_voice_content meta.remark），
+						// 客户端此前仅文本降级链入库备注 → 主链分片上传路径补透传，
+						// 语音备注随 complete 直建内容一次落库（此前 FE2「主链不收 remark」注释作废）
+						if (remark != '') {
+							meta.set('remark', remark)
 						}
 						completeUpload(uploadId, meta).then((resp: UploadResp) => {
 							if (resp.status !== 200) {

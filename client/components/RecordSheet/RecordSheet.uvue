@@ -1278,13 +1278,12 @@
 		const emo = emotion.value
 		// BA1（FE2）：备注卡接真——remark 快照（保存成功后会清空，闭包内不能读 ref）
 		const remarkVal = remark.value.trim()
-		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链改走分片上传——
+		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链走分片上传——
 		// wav 先落对象存储（cos_key），后端 complete 直接建 voice content（本地转写 text
 		// 预填 + 入队 ASR 管线）。旧 saveVoiceContent(''cosKey) 只落文本不传文件，
 		// 造成「有转写无音频」恒不可播（28 条 failed=AUDIO_DOWNLOAD_FAILED 实锤）。
-		// 契约边界（FE2 登记）：主链 /upload complete 直建链路不收 remark（后端
-		// services/upload 全域无 remark 字段）→ 备注仅在下方两条文本降级链入库；
-		// 主链成功时备注无端点可补（后端无 content 更新端点），属后端契约限制非静默丢弃。
+		// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark → uploadVoicePersistent
+		// 透传 remarkVal，主链成功路径备注一次落库（不再仅降级链入库）。
 		if (vFile == '') {
 			// 无本地录音文件（异常路径，如实降级）：仅落文本，toast 显式告知无音频
 			createVoiceContentRemark(text, duration, remarkVal, '').then((contentId: string | null) => {
@@ -1297,7 +1296,7 @@
 			})
 			return
 		}
-		uploadVoicePersistent(vFile, duration, text, emo).then((res: UTSJSONObject | null) => {
+		uploadVoicePersistent(vFile, duration, text, emo, remarkVal).then((res: UTSJSONObject | null) => {
 			let contentId: string | null = null
 			if (res != null) {
 				contentId = res.getString('content_id')
