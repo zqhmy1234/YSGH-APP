@@ -262,6 +262,23 @@ def _autouse_wechat_credentials_sandboxed(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _autouse_otp_store_memory(monkeypatch):
+    """【autouse 全仓生效】OTP/登录限流计数测试沙箱（P2-2 · 2026-09-10 迁 Redis）。
+
+    用途：otp_store 生产默认 Redis 后端；测试注入 MemoryOtpStore（=迁移前原内存
+    实现逐字搬入），保三件事：①行为逐字全等（爆破/冷却用例不因迁后端漂移）；
+    ②跨用例累计语义与原实现一致（同一进程单例内存态，test_sms 系列防刷用例依赖）；
+    ③测试对真实 Redis 零写依赖（不污染 dev 键空间）。
+    Redis 真路径由 tests/test_otp_store_redis.py（integration）显式钉桩。
+    """
+    from app.services.auth.otp_store import MemoryOtpStore, set_backend
+
+    set_backend(MemoryOtpStore())
+    yield
+    set_backend(None)  # 生产进程/下个会话惰性重建 Redis 后端
+
+
+@pytest.fixture(autouse=True)
 def _autouse_sensitive_words_state(monkeypatch):
     """【autouse 全仓生效】R8#12：敏感词模块全局热词状态快照/恢复（消除顺序敏感 flaky）。
 

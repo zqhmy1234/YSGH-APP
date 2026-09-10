@@ -18,10 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import threading
-import time
 from abc import ABC, abstractmethod
-from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -40,6 +37,7 @@ from app.core.errors import (
     ApiError,
 )
 from app.db.models import SmsCode
+from app.services.auth.otp_store import get_backend
 
 # ---------------------------------------------------------------------------
 # 短信发送端口（SmsSender）
@@ -119,65 +117,41 @@ class LoginProvider(ABC):
 
 # ---------------- 手机号渠道基础设施（send 与 login 共用） ----------------
 # TD-P3 M2 修复（审查中危）：验证码爆破防护
-# 轻量内存计数（单进程）：
-#   - 每 phone 每窗口失败 ≥_OTP_MAX_FAILS 次 → 作废当前验证码 + 冷却（防爆破）
-#   - send / login 均做 IP+phone 双层滑动窗口限流（防短信轰炸 / 登录尝试洪泛）
-# 多副本部署登记：需将 _RATE/_OTP_STATE 换成 Redis 计数（INCR + EXPIRE，键名同名），
-# 本实现保留单进程语义，生产单副本即可覆盖 MVP。
+# ── P2-2（2026-09-10）：计数后端迁 app.services.auth.otp_store ──
+# 原「模块级内存 dict/deque」在多 uvicorn worker/多副本下各计各的 → 爆破阈值
+# 放大 N 倍（本文件旧注释自认「生产单副本即可覆盖」）。现默认 Redis 后端
+# （ZSET 滑窗/INCR+EXPIRE(nx) 失败计数/SET EX 冷却），Redis 故障自动降级
+# 进程内 Memory（=原实现逐字搬入，单进程语义不变，不 500）；测试经 conftest
+# 注入 Memory 保确定性与零 Redis 写依赖。签名与阈值常量保持原样（auth.py
+# 跨模块 import _rate_allow，行为全等红线）。
 _OTP_WINDOW_SECONDS = 600          # 失败计数窗口 / 冷却时长（10 分钟）
 _OTP_MAX_FAILS = 5                 # 每码窗口内失败 ≥5 次作废
 _RATE_WINDOW = 60                  # 限流窗口（秒）
 _LOGIN_IP_LIMIT = 60               # login：同 IP 60 次/分钟
 _LOGIN_PHONE_LIMIT = 10            # login：同 phone 10 次/分钟
 
-_RATE_LOCK = threading.Lock()
-_RATE: dict[str, deque] = defaultdict(deque)          # key -> 时间戳队列
-_OTP_STATE: dict[str, dict] = {}                       # phone -> {fails, window_start, cooldown_until}
-
 
 def _rate_allow(key: str, limit: int, window: float = _RATE_WINDOW) -> bool:
-    """滑动窗口限流：window 秒内 ≤ limit 次放行，否则拒绝"""
-    now = time.monotonic()
-    with _RATE_LOCK:
-        bucket = _RATE[key]
-        while bucket and now - bucket[0] >= window:
-            bucket.popleft()
-        bucket.append(now)
-        return len(bucket) <= limit
+    """滑动窗口限流（委托 otp_store 后端；语义=window 秒内 ≤limit 次放行含本次）"""
+    return get_backend().rate_allow(key, limit, window)
 
 
 def _otp_fail(phone: str) -> bool:
     """记录一次失败；返回是否已达作废阈值（≥_OTP_MAX_FAILS）"""
-    now = time.monotonic()
-    with _RATE_LOCK:
-        st = _OTP_STATE.get(phone)
-        if st is None or now - st["window_start"] >= _OTP_WINDOW_SECONDS:
-            st = {"fails": 0, "window_start": now, "cooldown_until": 0.0}
-            _OTP_STATE[phone] = st
-        st["fails"] += 1
-        return st["fails"] >= _OTP_MAX_FAILS
+    return get_backend().otp_fail(phone, _OTP_WINDOW_SECONDS, _OTP_MAX_FAILS)
 
 
 def _otp_start_cooldown(phone: str) -> None:
-    with _RATE_LOCK:
-        st = _OTP_STATE.get(phone)
-        if st is None:
-            st = {"fails": _OTP_MAX_FAILS, "window_start": time.monotonic(), "cooldown_until": 0.0}
-            _OTP_STATE[phone] = st
-        st["cooldown_until"] = time.monotonic() + _OTP_WINDOW_SECONDS
+    get_backend().otp_start_cooldown(phone, _OTP_WINDOW_SECONDS)
 
 
 def _otp_in_cooldown(phone: str) -> bool:
-    now = time.monotonic()
-    with _RATE_LOCK:
-        st = _OTP_STATE.get(phone)
-        return st is not None and now < st["cooldown_until"]
+    return get_backend().otp_in_cooldown(phone)
 
 
 def _otp_reset(phone: str) -> None:
-    """登录成功 / 新码发出 → 清除失败计数（每码独立窗口）"""
-    with _RATE_LOCK:
-        _OTP_STATE.pop(phone, None)
+    """登录成功 / 新码发出 → 清除失败计数与冷却（每码独立窗口）"""
+    get_backend().otp_reset(phone)
 
 
 def _hash_code(code: str, salt: str | None = None) -> str:
