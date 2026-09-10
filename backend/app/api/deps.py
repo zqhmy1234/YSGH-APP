@@ -1,15 +1,18 @@
-"""认证依赖：Bearer 当前用户（AUTH-005）+ 共享 UUID 校验（R4#2）+ 共享分页参数（R4#7）"""
+"""认证依赖：Bearer 当前用户（AUTH-005）+ 共享 UUID 校验（R4#2）+ 共享分页参数（R4#7）
++ 共享归属校验 loader（波D ②：按 id 取本人实体的统一入口）
+"""
 import uuid
 from dataclasses import dataclass
 
 import jwt
 from fastapi import Depends, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import ERR_AUTH_001, ERR_AUTH_005, ApiError
+from app.core.errors import ERR_AUTH_001, ERR_AUTH_005, ERR_CONTENT_010, ApiError
 from app.core.security import decode_token
-from app.db.models import User
+from app.db.models import Content, User
 from app.db.session import get_db
 from app.services.errors import NotFoundError
 
@@ -71,3 +74,29 @@ def get_current_user(
     if user is None or user.status != 1:
         raise ApiError(ERR_AUTH_001, "用户不存在或已冻结", http=401)
     return user
+
+
+# ---------------------------------------------------------------------------
+# 共享归属校验 loader（波D ② 收敛；原 contents.py:_load_alive_content 提升为公共）
+# ---------------------------------------------------------------------------
+
+
+def load_alive_content(db: Session, user_id: str, content_id: str):
+    """取当前用户未删除内容；不存在/已删除/非本人 → 统一 404 CONTENT_010（IDOR 防护不区分三种情形）
+
+    波D ② 收敛（2026-09-10）：本函数原为 `api/contents.py::_load_alive_content`（模块私有），
+    被 contents 域 7 个端点复用（detail / PATCH / DELETE / favorite×3 / waveform）。
+    提升到 deps.py 作为「按 content_id 取本人既有实体」的唯一入口，供跨域复用
+    （capsules.seal_capsule 同款语义——ERR_CONTENT_010 + 同名文案）。
+    语义与提升前逐字等价：同一查询条件、同一错误码、同一 message、同一 HTTP 404。
+    """
+    row = db.execute(
+        select(Content).where(
+            Content.id == content_id,
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
+    return row

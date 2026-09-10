@@ -23,7 +23,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api import make_router
-from app.api.deps import PageParams, get_current_user, pagination_params, uuid4_str
+from app.api.deps import (
+    PageParams,
+    get_current_user,
+    load_alive_content,
+    pagination_params,
+    uuid4_str,
+)
 from app.core.errors import (
     ERR_CONTENT_001,
     ERR_CONTENT_002,
@@ -565,20 +571,6 @@ trash_router = make_router(prefix="/api/v1/trash", tags=["trash"])
 favorites_router = make_router(prefix="/api/v1/favorites", tags=["favorites"])
 
 
-def _load_alive_content(db: Session, user_id: str, content_id: str) -> Content:
-    """取当前用户未删除内容；不存在/已删除/非本人 → 统一 404 CONTENT_010（IDOR 防护不区分三种情形）"""
-    row = db.execute(
-        select(Content).where(
-            Content.id == content_id,
-            Content.user_id == user_id,
-            Content.deleted_at.is_(None),
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
-    return row
-
-
 @router.get("/{content_id}", response_model=ApiResponse[ContentOut])
 def get_content_detail(
     content_id: str,
@@ -588,7 +580,7 @@ def get_content_detail(
     """内容详情（2026-09-09 缺口收口：客户端此前用 GET /contents?content_id= 列表过滤替代）
 
     归属/存在性：不存在 / 已软删 / 非本人 → 统一 404 CONTENT_010
-    （复用 _load_alive_content，与 favorite/PATCH/waveform 同口径：IDOR 不区分三种情形；
+    （复用 load_alive_content，与 favorite/PATCH/waveform 同口径：IDOR 不区分三种情形；
     软删条目回收站走 GET /api/v1/trash）。畸形 ID 同语义 404（uuid4_str，R4#2）。
     路由顺序：本路由定义在 GET "" （列表，L367）之后，空串与路径参数不歧义；
     与 GET /{content_id}/waveform（两段路径）不冲突。
@@ -598,7 +590,7 @@ def get_content_detail(
         cid = uuid4_str(content_id)
     except NotFoundError:
         raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404) from None
-    row = _load_alive_content(db, user.id, cid)
+    row = load_alive_content(db, user.id, cid)
     return ApiResponse(data=_attach_thumb(_to_out(row), row, str(user.id)))
 
 
@@ -611,14 +603,14 @@ def update_content_remark(
 ):
     """更新内容备注（BB1）：仅 remark 单字段（schema extra="forbid"，越权字段 422）。
 
-    归属校验复用 _load_alive_content：非本人/已软删/不存在 → 404 CONTENT_010
+    归属校验复用 load_alive_content：非本人/已软删/不存在 → 404 CONTENT_010
     （IDOR 不区分三种情形）；畸形 ID 同语义 404（uuid4_str，R4#2）。
     """
     try:
         uuid4_str(content_id)
     except NotFoundError:
         raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404) from None
-    row = _load_alive_content(db, user.id, content_id)
+    row = load_alive_content(db, user.id, content_id)
     row.remark = req.remark
     db.commit()
     db.refresh(row)
@@ -632,7 +624,7 @@ def delete_content(
     user: User = Depends(get_current_user),
 ):
     """软删内容（W2-1）：置 deleted_at/deleted_by，30 天保留期后可被清理任务彻底清除"""
-    row = _load_alive_content(db, user.id, content_id)
+    row = load_alive_content(db, user.id, content_id)
     now = datetime.now(timezone.utc)
     row.deleted_at = now
     row.deleted_by = user.id
@@ -653,7 +645,7 @@ def favorite_add(
     user: User = Depends(get_current_user),
 ):
     """收藏内容（W2-2）：extra.favorite_at 落 ISO 时间戳；重复收藏幂等返回既有态"""
-    row = _load_alive_content(db, user.id, content_id)
+    row = load_alive_content(db, user.id, content_id)
     extra = dict(row.extra or {})
     existing = extra.get("favorite_at")
     if existing is None:
@@ -672,7 +664,7 @@ def favorite_remove(
     user: User = Depends(get_current_user),
 ):
     """取消收藏（W2-2）：extra.favorite_at 摘除；未收藏幂等返回 favorite=false"""
-    row = _load_alive_content(db, user.id, content_id)
+    row = load_alive_content(db, user.id, content_id)
     extra = dict(row.extra or {})
     had = extra.pop("favorite_at", None)
     row.extra = extra
@@ -688,7 +680,7 @@ def favorite_get(
     user: User = Depends(get_current_user),
 ):
     """查询单条收藏态（W2-2：detail 页星标初始化用）"""
-    row = _load_alive_content(db, user.id, content_id)
+    row = load_alive_content(db, user.id, content_id)
     fav_raw = (row.extra or {}).get("favorite_at")
     fav_dt = parse_ts(str(fav_raw)) if fav_raw else None
     return ApiResponse(data=FavoriteOut(content_id=row.id, favorite=fav_dt is not None, favorite_at=fav_dt))
@@ -880,7 +872,7 @@ def get_content_waveform(
     客户端 VoiceWave 组件数据源：读语音原件 → 解析 WAV data chunk →
     buckets 桶峰值（0..1 浮点，客户端映射到条高渲染）。
 
-    - 归属校验：不存在/已删除/非本人 → 404 CONTENT_010（_load_alive_content 同款 IDOR 防护）
+    - 归属校验：不存在/已删除/非本人 → 404 CONTENT_010（load_alive_content 同款 IDOR 防护）
     - 非语音内容 / cos_key 缺失 / 对象读取失败 / 非 PCM16 WAV → 404 MEDIA_003
       「音频不可用」（与 media.get_content_audio 同口径：对外不区分原因防探测，
       服务端日志留真因；显式错误码非静默）
@@ -888,7 +880,7 @@ def get_content_waveform(
     - 不缓存：语音 ≤60s 现算毫秒级，见上方 BB3 注释
     """
     cid = uuid4_str(content_id)
-    row = _load_alive_content(db, user.id, cid)
+    row = load_alive_content(db, user.id, cid)
     if row.content_type != "voice" or not row.cos_key:
         raise ApiError(ERR_MEDIA_003, "音频不可用", http=404)
     try:

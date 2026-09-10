@@ -18,8 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api import make_router
-from app.api.deps import get_current_user
-from app.core.errors import ERR_CONTENT_010, ApiError
+from app.api.deps import get_current_user, load_alive_content
+from app.core.errors import ApiError
 from app.db.models import Capsule, Content, User
 from app.db.session import get_db
 from app.schemas.capsule import (
@@ -98,15 +98,9 @@ def seal_capsule(
     now = datetime.now(timezone.utc)
     if body.open_at <= now:
         raise ApiError(ERR_CAPSULE_001, "open_at 必须晚于当前时刻", http=422)
-    content = db.execute(
-        select(Content).where(
-            Content.id == body.content_id,
-            Content.user_id == user.id,
-            Content.deleted_at.is_(None),
-        )
-    ).scalar_one_or_none()
-    if content is None:
-        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
+    # 波D ② 收敛（2026-09-10）：复用 deps.load_alive_content——原内联查询与其逐字等价
+    # （同 where 三条件、同 ERR_CONTENT_010、同文案「内容不存在或无权访问」、同 HTTP 404）
+    content = load_alive_content(db, user.id, body.content_id)
     cap = Capsule(
         user_id=user.id,
         content_id=content.id,
