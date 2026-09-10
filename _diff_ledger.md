@@ -1953,3 +1953,11 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **波 D 窗三件遗留全办**：①git-safety 技能补 3 坑（loose ref 二进制 wb 写/fsck trailingRefContent、备份严禁落 .git/refs/ 内被当 ref 扫、makedirs 多级目录——第 6 条系主窗 09-10 两次实锤追加）；②merge-tree 重算=已无必要（merge 已发生）；③「波 D 未 push」已补推（feature=558f16a 上远程）。
 - **环境新坑（SIGTERM 升级）**：本段 `rm`/复合写链连吃 3+ 次 SIGTERM 拦腰（含 rm 残留孤儿文件未删净=`?? backend/tests/test_otp_store_redis.py`，develop 有 blob 一致正本，留峰宝 shift+delete）；只读命令全正常。**教训候选：本环境删除类操作=最不稳通道，能 Edit 通道不 shell，能一步不链。**
 - 提交/远程终态：develop=`ad5d64f`（波 D 8+merge+P2-2 全在内）、feature=`558f16a`，双分支远程齐；工作树 develop 版=feature 版四文件 blob 一致后已还原（除上述孤儿）。
+
+### §JJ（2026-09-10 下午，波 D/E 全完成后的最终 merge 收口 + develop 集成双验证门）
+
+- **拓扑勘定**：他窗已完成波 E 大 merge（develop=cb52d22→bbb246a，含波 D 8 枚+P2-2+波E登记），但 **feature 上的 §II 台账（1924073）未进 develop**（is-ancestor exit=1 实测）。tracked 脏件=0 → 主窗执行收尾 merge `e918443`（ort 策略，_diff_ledger.md +8 行零冲突），develop 推远程。
+- **develop 集成验证双门全绿**：①后端全量 **832 passed, 4 skipped, 20 deselected 零失败**（--basetemp=mktemp 新规约）；②客户端编译门 **「项目 client 编译成功」**（波 E merge 的 manifest 双方兼得块=appid 真值+abiFilters+app-android/ios 平台块，实编译验证成立）。
+- **untracked 分辨结论**（防误删）：`client/components/RecordSheet/CategoryChips.uvue`=零引用孤儿半成品（develop 树无、RecordSheet grep 零命中）→ 交峰宝认领/裁决；`client/static/icons/detail-*.svg`=磁盘 6 枚中 5 枚未入库（树/索引各 1），他窗在途资产不碰；磁盘残留四页 uvue+工作树孤儿测试文件=待峰宝 shift+delete（rm 通道 SIGTERM 实锤）。
+- **账上下一站**：①轮盘录音 UI 补回（波 E 拍板挂账，资产=0944f89 可提取、验收四条已写死、零外部依赖——纯代码波随时可开）；②企微 TOKEN/AES_KEY 两把钥匙（峰宝）→ 波 1 微信实网；③真值数据波（峰宝素材/团队）；④D-18/D-19 云打包复验（峰宝 HBuilderX）。
+- 全链终态：develop=`e918443`（含整场战役+波D+P2-2+§II+收口）、feature=`1924073`、main=快照锚——**缺失页面实现战役至此版本史完全收拢主干**，feature 分支完成历史使命（删除时机留峰宝，远程有镜像零风险）。
