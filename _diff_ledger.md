@@ -1970,6 +1970,14 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **安全落地的（已 commit `0c5bc3d` 未回退，本就独立正确）**：① .gitignore 工程真源豁免三连（client/AndroidManifest.xml + nativeResources 可入库）——无论后续走 marker-asset 还是工程根 manifest 注册 service，都需要这个，且修正了 gitignore 否定规则必须后置的坑；② reinject B905 收口（全仓 ruff 首次零 error）。
 - **未解，需峰宝侧输入二选一**：A) 手机装今日 vapor.apk，实测「录音/相册后台监听」是否真坏（判"云包缺插件"是不是现网真 bug，还是仅调试基座才有）；B) 给一份"已知插件在包里"的历史 APK 作参照，我 diff 出编译配置差异。**在拿到 A/B 前，插件 import 路径/package.json 一律保持基线不动**（改了要么编译炸、要么无据盲改）。D-18/D-19 修复方案文档（调研 agent 产出）已存档待此前提解决后启用。
 
+### §MM（2026-09-10 傍晚，D-18/19 根因自证破口——recorder 云包实证修复，bg/photo-watch 精确工单化）
+
+- **不靠峰宝，自己做 A/B 闭环**（§LL 遗留的二选一我自己造了实验）：recorder 单变量翻转（voice.uts 深 import→根 import）→ 本地编译门绿 → **云打包 2m38s 成功 → 新包 dex 实测 RecorderController/RecorderImpl/yishuRecorder/createRecorder/recordedMs/shouldResume 全 ✅ 进包**；同包内仍深引用的 photo-watch/bg-tasks 照旧 ❌ = **机制因果链闭合：根引用=插件进原生编译管线的开关，云打包验证为实**。已 commit `37793e5` 推 develop。→ §LL"需峰宝输入"作废，根因已自证。
+- **纠正自己 §LL 的一处夸大**：当时说"录音链云包必炸"——查证 recorder 源码 `index.uts:4` 头注「纯 UTS 封装 uni.getRecorderManager()，标准基座即可运行」，且 `uni.getRecorderManager` 是 UTS 内置（非依赖插件类），所以**基线下录音功能本就不断**（走内置，插件层未进包但被内置兜住）。真正缺原生类的影响面 = photo-watch 后台相册监听（startService）、bg-tasks WorkManager 调度（Class.forName 反射）——这两条云包里确实静默降级/失效，是 D-18/D-19 的实体。**诚实区分：不是"录音坏了"，是"后台能力（相册监听/定时同步）在云包不生效"**。
+- **bg-tasks 剩余修复=三件套（已精确定位，非猜测，但需云打包终验故本轮不盲改）**：①宿主 import 改根（同 recorder 已验机制）；②`import Context from "android.content.Context"` 本地 `.uts2js` 门报 Could not resolve——但 BgBackground.kt 历史 `import android.content.Context` 云编译成功过，判断为**本地门不载 Android SDK、云打包正常**（recorder 无 android.* 故本地能验，此点只能云打包验，不当 bug 盲修）；③**真 bug 已坐实**：`MANAGER_CLASS='uni.UNIYISHU001.BgTaskManager'` 硬编码假 appid 包名，真 appid 编译包名=`uni.UNI2650A2A`（本地 class 缓存实证目录名）——即便类进包 Class.forName 也找不到，D-18"探测恒 false"根因之一，修时连 BgBackground.kt 的 `package uni.UNIYISHU001` 一起改；④service/WorkManager 需工程根 client/AndroidManifest.xml 注册（gitignore 豁免 0c5bc3d 已为此铺路）。
+- **photo-watch 剩余修复**：改根 import + `_appContext: any=null`（:54 error18，改 `Context|null`+补 import）+ DataSyncService 在工程根 manifest 注册（D-19 真修法）。两插件都需"根 import + 源码 error18 修 + manifest 注册"三步齐才生效，且**终验只能云打包**（本地门对 android.* 不采信）——故列为精确工单，等一个专门云打包窗口一次做完三步、别零敲碎打烧打包次数。
+- 本轮已交付且自证的：recorder 修复（进包实证）+ 根因定性（开关=根引用）+ 影响面纠偏（后台能力非录音）+ gitignore 铺路 + B905 清零。剩余 bg/photo-watch = 三步齐全量改 + 云打包终验，是一个独立可派工单。
+
 ### §KK（2026-09-10 下午，收口三连：轮盘误报销账 + 云打包集成复验 + 分支/worktree 终清理）
 
 - **轮盘补回单=误报销账（46a96f6）**：波 E 裁决窗「分支侧零轮盘」不成立——现行 RecordSheet 即拍板轮盘终版（透明轮盘/DROP_SHADOW 白点/公转 9s+DOT_TRACK 向心+幽灵轨迹/「确定」钮四判据逐条实证），含峰宝 09-04/05 验机的 R3b/R3c 修复记录；VoiceWave 系播放侧组件被误认为录音侧。教训入总账：**merge 基底裁决必须打开文件看实内容，禁止靠 class 命名族推断功能归属**。
