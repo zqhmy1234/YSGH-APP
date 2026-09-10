@@ -74,8 +74,12 @@ def test_real_encode_dimension_smoke():
     assert len(dense) == 1024
 
 
-def _make_content(db, user_id: str, cid: str, text: str = "测试内容") -> None:
-    """建真实 contents 行（correction_log.content_id 外键约束）"""
+def _make_content(db, user_id: str, cid: str, text: str = "测试内容", deleted_at=None) -> None:
+    """建真实 contents 行（correction_log.content_id 外键约束）
+
+    deleted_at（波D ② 补漏测试用，2026-09-10）：显式传入时间即造「已软删（回收站）」
+    内容行；默认 None 保持既有调用行为不变（内容存活）。
+    """
     db.add(
         Content(
             id=cid,
@@ -83,6 +87,7 @@ def _make_content(db, user_id: str, cid: str, text: str = "测试内容") -> Non
             content_type="text",
             text=text,
             status="done",
+            deleted_at=deleted_at,
         )
     )
     db.commit()
@@ -277,5 +282,57 @@ def test_correction_active_writes_back_content_class(db_user, mock_encode):
         assert r2.status_code == 200, r2.text
         db.expire_all()
         assert db.scalar(select(Content).where(Content.id == cid_e)).content_class is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_correction_soft_deleted_content_rejected(db_user, mock_encode):
+    """波D ② 补漏（2026-09-10 深扫）：本人已软删（回收站）内容 → 写纠错 404 EVENT_005。
+
+    原实现 `select(Content).where(Content.id == req.content_id)` 漏 deleted_at 过滤，
+    本人已软删内容仍可被写入纠错并回写 content_class——与全项目「deleted_at 内容
+    对外不可达」一致性契约相悖（同 P2-4 media/audio、P2-5 _batch_photo_ids 同族修复）。
+
+    本用例双侧钉桩（参照 test_l3_voice_chain.py::test_audio_soft_deleted_404 写法）：
+      ① 软删态 → 404 EVENT_005（证明过滤生效，非 200 漏网）
+      ② 恢复（deleted_at 清空）→ 200（证明 404 归因软删，而非归属/参数等其他原因）
+    错误码 EVENT_005 保持不变（本端点既有口径，不随过滤收敛改变）。
+    """
+    from datetime import datetime, timezone
+
+    from app.api import deps
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    cid = _new_cid()
+    _make_content(
+        db, user.id, cid,
+        text="回收站里的纠错内容",
+        deleted_at=datetime.now(timezone.utc),
+    )
+    client = TestClient(app)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    try:
+        payload = {
+            "content_id": cid,
+            "text": "回收站里的纠错内容",
+            "new_label": "idea",
+            "old_label": "mixed",
+            "source": "active",
+        }
+        # ① 软删态：本人内容、id 合法，仍必须 404
+        r = client.post("/api/v1/corrections", json=payload)
+        assert r.status_code == 404, f"软删内容应 404，实际 {r.status_code}: {r.text}"
+        assert r.json()["code"] == "EVENT_005", f"错误码: {r.json()['code']}"
+
+        # ② 模拟恢复：清 deleted_at 后即可纠错（404 归因软删而非其他）
+        db.expire_all()
+        row = db.scalar(select(Content).where(Content.id == cid))
+        assert row is not None
+        row.deleted_at = None
+        db.commit()
+        r2 = client.post("/api/v1/corrections", json=payload)
+        assert r2.status_code == 200, f"恢复后应 200，实际 {r2.status_code}: {r2.text}"
     finally:
         app.dependency_overrides.clear()
