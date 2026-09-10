@@ -5,7 +5,7 @@
  *  UTS 编译器对第三方库类型（androidx.work）的 .d.ts 依赖 HBuilderX 的
  *  config.json 依赖下载机制（gradle + Jars2DtsGenerator）；该机制在部分环境
  *  （CLI 编译 / .wt worktree / CI）不生效导致 error18。libs/ 目录是纯文件机制：
- *  resolveLibs 直接把 libs/*.jar 加入 kotlinc classpath，任何环境可编译。
+ *  resolveLibs 直接把 libs 目录下全部 jar 加入 kotlinc classpath，任何环境可编译。
  *  注意：标准基座运行流程不编译原生 .kt（仅自定义基座/云打包编译），
  *  UTS 侧以 Class.forName 探测本类是否存在，不存在时安全降级。
  *
