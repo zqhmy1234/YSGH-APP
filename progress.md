@@ -4,6 +4,10 @@
 > **下一步 = 4b 修复批次（执行计划已定：`docs/4b修复批次执行计划_20260829.md`，P-0 拍板五项全落、P-1 隔离工作区已建）**：批次1 D-18/D-19（重打包复验）→ 批次2 D-16/D-07/D-08＋散单 D-05/D-10/D-14/D-21（08-29 拍板并批）→ 批次3 S2 校准（卡真值）+D-06（**等价复现验收，无需第二设备**，台账 §1.8）。
 > 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，仅加 [勘误] 注记。与速览冲突的旧数字以速览为准。
 
+## ✅ 速查卡 · 2026-09-10 · 缺失页面战役全收口（波 A-E + 安全深扫 + 波 D 重构 + P2-2）
+
+✅ 全战役并入 develop 且集成双门绿：远程链 feature=`1924073`（已删本地，远程镜像保留）→ merge `cb52d22`（波E 手工构造）→ P2-2 `ad5d64f` → §II/§JJ/§KK 台账 → `0c5bc3d`（gitignore 豁免+B905 清零）｜验证=后端全量 **832 passed 4 skipped 零失败** + 客户端编译门「编译成功」+ **云打包出包成功**（android_debug_vapor.apk 32.2MB）｜安全=深扫 0 P0 七项修复全落地（P1-1 回调 XML/P2-1 sync 投毒/P2-3 胶囊并发/P2-4 音频软删/P2-5 归属纵深/P2-6 日志/MEDIA_003）+ AST 归属门禁与错误码门禁双焊死｜波 D=归属 loader 收敛+三巨文件拆分（AST 逐函数比对零漂移）｜分支终态=develop+main 两枚，fix/4b 归档 origin/archive/fix-4b｜⚠️ 新发现（进行波）：三枚 yishu UTS 插件类未进云包 dex（旧包同病=非 merge 回归），D-18/D-19 原生波根因调研中｜台账权威=_diff_ledger.md §GG/§HH/§II/§JJ/§KK + docs/后端重构与性能优化计划_20260910.md
+
 ## ✅ 速查卡 · 2026-08-27 · 重构批次 G1（认证安全）
 
 ✅ 认证安全四件套+限流中间件：techdebt/g1 @ 67f50f1（G 集成波并入 develop）｜client/utils/auth.ts + backend/app/core/ratelimit.py + auth 服务层 + 迁移 f1a2b3c4d5e6｜refresh single-flight 共享 in-flight（并发 401 只一次 refresh）+ /auth/logout 吊销（AUTH-006）+ refresh_token HMAC-SHA256 独立密钥（hmac$ 前缀+存量兼容）+ SMS 验证码加盐 + Redis 固定窗口限流（auth/ASR/搜索三域、白名单、降级不 500、429 带 X-Request-ID）｜设计来源：重构批次 F 提示词 R6（AUTH-006/R6#2/#3/#6-#9）

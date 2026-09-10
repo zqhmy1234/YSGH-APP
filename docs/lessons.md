@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-09-10 17:08 · commit 0c5bc3d · ts=1789031325
+- **错误**：08-28 证据记录『findstr BgTaskManager 命中 classes2.dex』与 09-10 全 dex 复核矛盾（两包均零命中）
+- **根因**：findstr 未注明所扫具体文件（*.dex 通配/或扫错目录），记录不可复现
+- **修复**：尸检类证据必须带完整命令行+文件名；09-10 起改用 python zipfile 全 dex 逐字节扫
+- **相关文件**：scripts/realdevice/evidence/ck07_pack_20260828.md
+- **教训**：二进制取证记录要可复现：注明扫描对象与工具参数，否则后人按错误证据排错
+
+---
+
+### 2026-09-10 17:08 · commit 0c5bc3d · ts=1789031324
+- **错误**：给用户的 bash 形态命令（cd /d/GuangH-App）在其 PowerShell 里执行，造出假路径 D:\d\GuangH-App，一连串 not a git repository 恐慌
+- **根因**：未确认用户终端类型就发跨 shell 语法命令
+- **修复**：命令一律给 PowerShell 形态；教训已入 _diff_ledger §KK
+- **相关文件**：-
+- **教训**：手动执行类命令先问/判目标 shell，Windows 默认 PowerShell 语法
+
+---
+
+### 2026-09-10 17:08 · commit 0c5bc3d · ts=1789031324
+- **错误**：波E merge 冲突裁决把『RecordSheet 分支侧无 wheel-dot 类名』判定为『轮盘 UI 丢失』，立了补回任务卡；09-10 复核证伪——现行实现即轮盘终版，VoiceWave 是播放侧组件
+- **根因**：靠 class 命名族/组件名推断功能归属，未打开两侧文件核对实际功能内容
+- **修复**：销账 46a96f6；裁决前双侧文件逐开比对功能语义
+- **相关文件**：client/components/RecordSheet/RecordSheet.uvue
+- **教训**：merge 基底裁决判『功能丢失』必须看文件实内容，禁止靠命名族推断
+
+---
+
 ### 2026-09-06 01:32 · commit cac6fdc · ts=1788629564
 - **错误**：新录音上传成功但时间轴永不显示（搜索却能搜到），且历史积压 contents 全部卡 status=processing
 - **根因**：RQ worker 进程从未启动：上传后 enqueue_unique(process_content) 的异步 AI 管线（分类/情绪/聚合/状态回写）在 Redis 里积压 high 296 + low 185 条零消费者；uvicorn 只承担 API，事件层聚合全靠 worker
