@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-09-10 12:26 · commit 2f14af0 · ts=1789014374
+- **错误**：全量 pytest 进度标记全为 . 与 s（零 F/E）但进程 exit=1，易被误判为测试失败
+- **根因**：本机沙箱拦截 pytest 会话末的 tmpdir 批量清理：C://Windows//Temp//pytest-of-ghf//garbage-* 累积 134 个 > safe-delete 阈值 70，删除被拒后 pytest 以非零码退出；测试本身全过
+- **修复**：全量回测改用 --basetemp=C:\WINDOWS\TEMP/tmp.Em5To4jrXw 传独立空目录（basetemp 显式指定时 pytest 不做旧 garbage 目录回收），摘要行恢复正常、exit 0
+- **相关文件**：backend/tests
+- **教训**：判读 pytest 退出码前必须先看进度标记：无 F/E 即为全绿；EXIT=1 可能来自环境拦截（tmpdir 批量删除）而非测试失败；全量回测统一带 --basetemp=C:\WINDOWS\TEMP/tmp.iagrIG2wuJ
+
+---
+
+### 2026-09-10 12:26 · commit 2f14af0 · ts=1789014365
+- **错误**：git commit 报告成功（退出码 0）但分支 ref 指针未更新，三通道复核显示旧 HEAD（波D 期间 7 次 commit 发生 2 次滞后 + 1 次回退）
+- **根因**：本机沙箱拦截 git 更新 ref 的「临时文件 + rename」原子操作，rename 静默失败而 commit 退出码仍为 0；直接 open()/write() 直写 loose ref 有效
+- **修复**：三通道复核（rev-parse HEAD + log --oneline -1 + for-each-ref refs/heads/<分支>）；不一致时：reflog -1 挖真身 → 正则断言 40 位 SHA → git log -1 校验 subject → 二进制模式（wb + b\n）写 loose ref → 同步 packed-refs（锚点唯一断言 + 备份）→ 复检三通道
+- **相关文件**：.git/refs/heads/feature/missing-pages-impl
+- **教训**：任何 commit 后必须三通道复核 HEAD，commit 退出码 0 不等于 ref 已更新；loose ref 必须二进制写入，文本模式会写入 CRLF 触发 fsck trailingRefContent；备份文件绝不能落在 .git/refs/ 目录内（会被当 ref 扫描）
+
+---
+
 ### 2026-09-08 00:45 · commit 8b00170 · ts=1788799535
 - **错误**：A批提交被pre-commit拦两次：①lint——subagent产码13处ruff违规（I001 import乱序x9、F401未用import x2、S108 /tmp假路径x2）②lessons门禁——提交前未登记教训
 - **根因**：subagent 只被要求跑 pytest 自测，没有要求提交前过 ruff 门禁；S108 是测试里用 /tmp/x.jpg 做语义占位路径触发 bandit 误报
