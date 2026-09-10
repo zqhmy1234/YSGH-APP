@@ -34,6 +34,22 @@ def _to_out(m: Message) -> MessageOut:
     )
 
 
+def load_owned_message(db: Session, user_id: str, msg_id: int) -> Message:
+    """取当前用户消息；不存在/非本人 → 统一 404 MSG_002（IDOR 防护不区分两情形）
+
+    波D ② 收敛（2026-09-10）：messages 域此前在 mark_read 内内联「UPDATE 未命中 →
+    补查存在性」两段式判定；收敛为显式 loader，供按 id 取消息的端点统一复用。
+    语义与内联判定逐字等价：同一 where（id + user_id）、同一错误码 ERR_MSG_002、
+    同一文案「消息不存在」、同一 HTTP 404（不区分「不存在」与「非本人」）。
+    """
+    row = db.execute(
+        select(Message).where(Message.id == msg_id, Message.user_id == user_id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise ApiError(ERR_MSG_002, "消息不存在", http=404)
+    return row
+
+
 @router.get("", response_model=ApiResponse[Page[MessageOut]])
 def list_messages(
     status: str | None = None,
@@ -95,21 +111,20 @@ def mark_read(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """单条已读（越权访问他人消息 → 404 不泄露存在性）"""
-    row = db.execute(
+    """单条已读（越权访问他人消息 → 404 不泄露存在性）
+
+    波D ② 收敛（2026-09-10）：归属校验统一走 load_owned_message（404 ERR_MSG_002），
+    替代原「UPDATE 未命中 → 补查存在性」两段式判定。
+    更新语句保留**原子 UPDATE**（where 含 status='unread'），不改写为「读-改-写」——
+    避免并发下 TOCTOU 竞态；已 read 的本人消息幂等无操作（与原实现同）。
+    对外语义与改造前逐字等价：状态码/错误码/文案/幂等行为均不变。
+    """
+    load_owned_message(db, str(user.id), msg_id)
+    db.execute(
         update(Message)
         .where(Message.id == msg_id, Message.user_id == user.id, Message.status == "unread")
         .values(status="read", read_at=func.now())
     )
-    if row.rowcount == 0:
-        # 已是 read 也算成功（幂等）；非本人消息才 404
-        exists = db.execute(
-            select(func.count()).select_from(Message).where(
-                Message.id == msg_id, Message.user_id == user.id
-            )
-        ).scalar()
-        if not exists:
-            raise ApiError(ERR_MSG_002, "消息不存在", http=404)
     db.commit()
     return ApiResponse(data={"read": msg_id})
 
