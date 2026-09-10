@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-09-11 02:47 · commit 698881d · ts=1789066062
+- **错误**：本地模块编译报 Plugin [id: 'com.android.application', version: '8.2.2'] was not found，误判为仓库不通/需换镜像源
+- **根因**：根因在 Gradle 之外：~/.gradle/gradle.properties 的 systemProp.*proxy* 指向 127.0.0.1:7890（已死端口，curl 经其零响应），而当时可用代理是 28605。Gradle 把『经死代理导致仓库不可达』报成『找不到插件』，症状与真因不在同一层
+- **修复**：注释掉 gradle.properties 全部 systemProp.*proxy* 改直连（dl.google.com / maven.aliyun.com 直连均 200）；未改写成 28605——那是会话级沙箱代理，硬编码会埋新雷。备份留 .cowork-temp/fix_gradle_proxy.py
+- **相关文件**：C:/Users/ghf/.gradle/gradle.properties
+- **教训**：gradle 报『插件/依赖找不到』先测代理端口连通性再怀疑仓库；亦需区分常驻代理与沙箱临时代理，勿把会话端口写进全局配置
+
+---
+
+### 2026-09-11 02:47 · commit 698881d · ts=1789066061
+- **错误**：云打包在 :app:checkReleaseDuplicateClasses 失败，报 2688 条重复类（core-1.5.0-classes.jar 对 core-1.13.1.aar 一条就占 2004 条，重跑 .cowork-temp/parse_dup.py 可复现）
+- **根因**：uni_modules 下手工 libs/*.jar 被 gradle 当普通文件依赖整体打进包，与 app 自身及云端注入的 androidx 同族类（core/annotation/lifecycle/sqlite）逐类重复；官方提示『uts 插件依赖的三方库冲突』
+- **修复**：12 个手工 jar 全删，改 config.json maven 声明；云打包一次通过（02:38:41 发起 → 02:42:55 成功）
+- **相关文件**：client/uni_modules/yishu-background-tasks/utssdk/app-android/libs
+- **教训**：uni_modules 插件带三方库禁用 libs/*.jar 堆叠（既撞重复类又缺 manifest 合并），一律 config.json maven 声明
+
+---
+
+### 2026-09-11 02:47 · commit 698881d · ts=1789066042
+- **错误**：bg-tasks 用手工 libs/*.jar 堆带 work-runtime，本地编译通过、Class.forName 探针亦为 True，但运行期 WorkManager 无法自动初始化且 Room 完全缺失
+- **根因**：*-classes.jar 不含 AndroidManifest.xml，其组件 androidx.startup.InitializationProvider 不参与 manifest 合并；且手工 jar 无传递依赖闭包（Room/SQLite 全缺，而 WorkDatabase 常量池引用 androidx.room 5 处）。探针只做 Class.forName 故判定与真实可用性脱钩
+- **修复**：删 12 个手工 jar，config.json 声明 androidx.work:work-runtime:2.9.1 交由 gradle 解析 AAR 闭包；APK manifest 实证含 InitializationProvider + WorkManagerInitializer + authority com.yishu.guanghua.androidx-startup
+- **相关文件**：client/uni_modules/yishu-background-tasks/utssdk/app-android/config.json
+- **教训**：手工 classes-jar 无 manifest、无依赖闭包，会让探针假通过而功能全哑；UTS 插件带三方库一律走 config.json maven 声明，验收以打包产物 manifest+dex 双查为准
+
+---
+
 ### 2026-09-10 17:08 · commit 0c5bc3d · ts=1789031325
 - **错误**：08-28 证据记录『findstr BgTaskManager 命中 classes2.dex』与 09-10 全 dex 复核矛盾（两包均零命中）
 - **根因**：findstr 未注明所扫具体文件（*.dex 通配/或扫错目录），记录不可复现

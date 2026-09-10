@@ -2038,6 +2038,7 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
   1. **路线选择**：A＝删光 12 个手工 jar + `config.json` 声明 `androidx.work:work-runtime:2.9.1`（gradle 解析完整闭包：含 Room、含 `InitializationProvider` manifest 合并 ⇒ 自动初始化恢复、功能真可用、无重复类）｜B＝只删 9 个冲突 jar（**本地能编过、云端能打包，但缺 Room ⇒ 运维期必崩 = 探针假通过，已否决**）｜C＝手工补 room jar + 代码里手动 `WorkManager.initialize()`（零 gradle 依赖但手工闭包脆弱）。
   2. **是否先补本地 gradle**（需下载 `gradle-8.13-bin.zip` ~130MB + 写入用户 home 的 `.gradle`，属工作区外写操作，需授权）。
 - **未闭环项登记（不写成已完成）**：B1/B2 云打包终验 ❌（被重复类拦住）；B3 六探针 dex 扫描 ❌（无新包可扫）；B4 关单 ❌（D-18/D-19 未关）。
+  → **已由 §PP-终验 回刷**：B1/B2 云打包 **✅**（02:42:55 成功，4 分 14 秒）、B3 六探针 **✅ 6/6**；**仅 B4 关单仍 ❌**（待真机行为验）。
 
 #### §PP-处置（2026-09-11 02:00-02:35，峰宝拍板「全删 12 jar 走 maven」+「补本地 gradle」后执行）
 
@@ -2059,4 +2060,70 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **自动初始化前提实证**：`work-runtime-2.9.1.aar`（1,838,630 B，02:33 新下）**内含 `AndroidManifest.xml` + `WorkManagerInitializer` + `androidx.startup` + `InitializationProvider`** ⇒ gradle 合并该 manifest 后 **WorkManager 自动初始化恢复**（jar 通路必然给不了的能力）；`startup-runtime-1.1.1.aar` 亦含 `InitializationProvider`。
 - **本地 dex 探针（新工具 `.cowork-temp/scan_dex.py`，python 逐字节，遵工单禁用 findstr）**：`client/unpackage/**` 3 个模块 dex 扫得 **B3 六探针 4/6** —— `yishuPhotoWatch` ✅、`DataSyncService` ✅、`uni/UNIYISHU001` ✅、`BgTaskManager` ✅（另 `uni/UNIYISHU001/BgTaskManager`、`uts/sdk/modules/yishuPhotoWatch/DataSyncService`、`androidx/work/ExistingPeriodicWorkPolicy` 全 ✅）；`yishuRecorder`/`RecorderController` ❌ 属**预期**（不在本次编译批次，recorder 已于 `37793e5` 独立验证过）。
 - ⚠️ **口径提醒（防误读）**：模块 dex 只含**本模块自身类**，依赖类不落模块 dex。因此 `androidx/room`、`androidx/startup`、`WorkManagerImpl` 在本地 dex **扫不到不是缺陷**；它们的可用性由上面 gradle 缓存 + AAR manifest 证据链支撑，最终仍需**云包 APK 全 dex + 真机行为**闭合。工单 B3 的判据本就是云包 APK，本段只是前置预验。
-- 云打包（`--iscustom true --android.packagename com.yishu.guanghua`）已发起，实录 `.cowork-temp/pack_r3_maven.txt`。**结果未出前，B3/B4 一律标未闭环。**
+- 云打包（`--iscustom true --android.packagename com.yishu.guanghua`）已发起，实录 `.cowork-temp/pack_r3_maven.txt`。
+
+#### §PP-终验（2026-09-11 02:38–02:47）· 云打包成功 + B3 六探针 6/6
+
+**① 云打包：一次通过，4 分 14 秒**
+
+```
+02:38:41  开始打包
+02:39:0x  编译 16 页 + 组件
+02:40:06  正在提交到云端
+02:42:55  打包成功 → D:\GuangH-App\client\unpackage\debug\android_debug_vapor.apk（32,585,173 B）
+```
+
+⚠️ **对照**：切 maven 前同一工程 **`:app:checkReleaseDuplicateClasses` 报 2688 条重复类直接失败**。删 12 个手工 jar 后**零重复类、一次过**——这是「根因消除」而非「参数绕过」，因为重复类的来源（手工 jar 与 androidx 同族类）物理上已不存在。
+
+**② B3 六探针（云包 APK 全 dex）：6/6 全 True** ✅
+
+工具 `.cowork-temp/scan_dex_v2.py`（v2 相对 v1 新增：直接吃 .apk、展开内部 `classes*.dex` + `AndroidManifest.xml`、AXML 双编码探测）。扫描对象 `android_debug_vapor.apk` → 展开 4 成员（classes/classes2/classes3 + manifest，dex 合计 26,000,912 B）。
+
+| 探针 | 结果 | 命中位置 |
+|---|---|---|
+| `yishuPhotoWatch` | ✅ True | classes3.dex |
+| `DataSyncService` | ✅ True | classes3.dex |
+| `uni/UNIYISHU001` | ✅ True | classes3.dex |
+| `BgTaskManager` | ✅ True | classes3.dex |
+| `yishuRecorder` | ✅ True | classes3.dex |
+| `RecorderController` | ✅ True | classes3.dex |
+
+⇒ 工单 B3 判据**全 True**。recorder 两项本次也命中（此前本地模块 dex 未编译该模块，属预期差异）。
+
+**③ 运行期闭包（这才是"功能真可用 vs 探针假通过"的分水岭）**
+
+| 探针 | 结果 | 意义 |
+|---|---|---|
+| `androidx/work/WorkManager;` | ✅ | 依赖已进包 |
+| `androidx/work/impl/WorkManagerImpl` | ✅ | 实现类在 |
+| `androidx/work/WorkManagerInitializer` | ✅ | **初始化器在**（jar 通路缺的就是它） |
+| `androidx/room/` | ✅ | **Room 补齐**（jar 通路零 Room，WorkDatabase 却引用 5 处） |
+| `androidx/sqlite/` | ✅ | Room 底座在 |
+| `androidx/startup/` | ✅ | **自动初始化框架在** |
+| 实包 FQN `uni/UNIYISHU001/BgTaskManager` | ✅ | 与手写 manifest 包名口径一致 |
+| 实包 FQN `uts/sdk/modules/yishuPhotoWatch/DataSyncService` | ✅ | 与 manifest 注册名一致 |
+
+**④ 合并后 manifest 实证（AXML 解串，逐字匹配非模糊）—— 这是 §PP 开头"jar 通路两个致命缺口"被补齐的最终证据**
+
+| manifest 串 | 值 | 证明 |
+|---|---|---|
+| service 注册名 | `/uts.sdk.modules.yishuPhotoWatch.DataSyncService` | 工程根 manifest 的 FQN **与 dex 实包逐字一致**（§OO「别猜，等实包」闭环） |
+| startup provider | `androidx.startup.InitializationProvider` | **WorkManager 自动初始化链路存在** |
+| 初始化器 | `androidx.work.WorkManagerInitializer` | 初始化器已注册 |
+| provider authority | `com.yishu.guanghua.androidx-startup` | **provider 真被合并进 application**（未合并则不会生成该 authority） |
+| work 基础组件 | `SystemForegroundService` / `SystemJobService` / `SystemAlarmService` / `DiagnosticsReceiver` / `RescheduleReceiver` | work-runtime AAR manifest 完整合并 |
+| Room 组件 | `androidx.room.MultiInstanceInvalidationService` | Room AAR manifest 也合了 |
+| 权限 | `FOREGROUND_SERVICE` | FGS 权限在包内 |
+
+⚠️ **`BgTaskManager` 在 manifest 命中 0 条——非缺陷**：它是 `uni.UNIYISHU001` 包下的普通类，不是 Android 组件，本就不该注册进 manifest（其存在性由 dex 探针负责，已 ✅）。
+
+**⑤ 提交与环境地雷**
+
+- commit `698881d`（23 files changed, 204 insertions, 71 deletions；12 jars deleted）。**三通道复核一致**：`rev-parse HEAD` = `for-each-ref refs/heads/develop` = `reflog -1` = `698881d219d8f074a517604fa30382e78ba97946`，`cat-file -t` = commit ⇒ **本次未触发 git ref 静默失败**（铁律流程照走）。
+- 环境地雷核验：add 后与 commit 后 ` D` 计数**均为 0**，无 client/ 批量删除。
+- 顺手纠错：lessons 初稿写 `core` 冲突 **1004** 条为误记，重跑 `parse_dup.py` 确证 **2004**，已订正（同一脚本 `os.listdir(libs_dir)` 在 libs 删除后会抛异常，已加 `isdir` 容错）。
+
+**⑥ 未闭环（不写成已完成）**
+
+- **B4 关单 ❌**：D-18/D-19 **仍未关闭**，缺真机行为验——① 照片拍完杀掉 App，后台同步是否续跑（FGS 活体）；② `isWorkManagerAvailable()` 是否真为 `true`（自动初始化是否真的发生）。
+- ⚠️ **工单 B4 的一处前提不成立**：B4 写「销 `docs/远期待办总账.md` 条目」，但全仓检索证实 **D-18/D-19 从未登记在该文件**——其正式记录在 `docs/parallel-dev-收尾/19_*.md` §4 缺陷台账 + `docs/4b_R2_出包卡点与D19根因诊断_20260901.md` + `docs/lessons.md` 第 29 条。**关单时应改销这三处，勿在总账里找不存在的条目。**
