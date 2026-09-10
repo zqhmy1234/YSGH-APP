@@ -1978,6 +1978,15 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **photo-watch 剩余修复**：改根 import + `_appContext: any=null`（:54 error18，改 `Context|null`+补 import）+ DataSyncService 在工程根 manifest 注册（D-19 真修法）。两插件都需"根 import + 源码 error18 修 + manifest 注册"三步齐才生效，且**终验只能云打包**（本地门对 android.* 不采信）——故列为精确工单，等一个专门云打包窗口一次做完三步、别零敲碎打烧打包次数。
 - 本轮已交付且自证的：recorder 修复（进包实证）+ 根因定性（开关=根引用）+ 影响面纠偏（后台能力非录音）+ gitignore 铺路 + B905 清零。剩余 bg/photo-watch = 三步齐全量改 + 云打包终验，是一个独立可派工单。
 
+### §NN（2026-09-10 傍晚续，bg-tasks 深挖又钉两颗史前死因 + ⚠️ 环境级 142 文件异常删除事故【已恢复】）
+
+- **bg-tasks 从没进过云包的真正死因不止"深引用"，底下还压着两颗 AgentK(f97e314) 时代的确定性 bug（本地编译门首次触发原生路径才暴露）**：
+  ① **`libs/listenablefuture-1.0.jar` 是 689 字节的 404 HTML 网页**（`git cat-file -s`=689、头部 `<html><title>404`）——当年把 Maven 报错页存成了 jar；Kotlin 编译器报 `Failed requirement` classpath 炸。**全文 .kt 不引用 ListenableFuture**（grep 零命中）= 纯死件，修复=删除。
+  ② **BgBackground.kt 头注释未闭合**：非我 §MM 初判的"9vs8 计数"（计数其实平衡），真凶=Kotlin 块注释**支持嵌套**，第 8 行 `libs/*.jar` 里的 `/*` 在 `/**` 头注释内开了嵌套注释，第 24 行 `*/` 关的是嵌套那个 → 头注释永不闭合（编译器报 `Unclosed comment at :1`）。修复=第 8 行 `libs/*.jar` 改成 `libs 目录下全部 jar`（去 `/*`）。
+  ③ 加 §MM 已记的 ③硬编码包名 `uni.UNIYISHU001`（真 appid=`UNI2650A2A`）、④工程根 manifest 注册 service。**→ bg-tasks 完整修复=删死jar+修注释+修包名+宿主根import+源码Context类型(photo-watch式any证伪·Kotlin要静态类型·须官方UTS引Android类语法)+manifest注册，六件事且终验只能云打包（本地 .uts2js 门对 android.* 不采信：bg import Context 本地报 Could not resolve 但 .kt 侧云编译历史 OK，二者引擎不同）**。
+- **⚠️⚠️ 环境级事故实录（git-safety SOP-6 同族再现，已完全恢复）**：执行一条 `git rm <jar> && python写.kt && python复扫 && git add` 复合链时被 SIGTERM 拦腰，事后 `git status` 惊现 **142 个 client/ 文件 ` D`（未暂存删除）**——远超那条命令该碰的范围（git rm 只针对 1 jar），且 `.git/index.lock` 僵死(0字节/无活进程)。**判明：非我误删，是环境级异常（AV/git后台竞争，与记忆 SOP-6「回收站出现.git删除记录」同族）**。恢复三步：`rm -f .git/index.lock`（清僵死锁）→ `git fsck` 确认 HEAD=fa674ff 完好零错（142 文件全在 HEAD 树里，git ls-tree 实锤）→ `git checkout HEAD -- client/`（单命令·不链式）一次全找回。**终核：工作树零脏、recorder 修复 37793e5 仍在、142 文件回齐。教训：复合 git 写链是本环境删除事故高发形态——本可一步一命令避免；恢复首选 `git checkout HEAD -- <子树>`（比 reset 稳，不碰其他区）。**
+- **bg/photo-watch 决策**：不再在当前会话硬凑（需一个专门的"改完即云打包终验"窗口一次做六件，零敲碎打只烧打包次数不出结论；且本地门无法预筛原生编译对错）。两颗确定 bug（死jar/注释毒）+ 包名 + manifest 四件写成本节，连同 §MM 三步，构成**可派工单**。当前 bg/photo-watch 代码保持深引用基线不动（=线上行为不变·后台能力静默降级·不崩）。
+
 ### §KK（2026-09-10 下午，收口三连：轮盘误报销账 + 云打包集成复验 + 分支/worktree 终清理）
 
 - **轮盘补回单=误报销账（46a96f6）**：波 E 裁决窗「分支侧零轮盘」不成立——现行 RecordSheet 即拍板轮盘终版（透明轮盘/DROP_SHADOW 白点/公转 9s+DOT_TRACK 向心+幽灵轨迹/「确定」钮四判据逐条实证），含峰宝 09-04/05 验机的 R3b/R3c 修复记录；VoiceWave 系播放侧组件被误认为录音侧。教训入总账：**merge 基底裁决必须打开文件看实内容，禁止靠 class 命名族推断功能归属**。
