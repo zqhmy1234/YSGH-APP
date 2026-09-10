@@ -118,6 +118,8 @@ research/rag_benchmark/external/
 # --- 会话与临时产物 ---
 session-memory-*.md
 # uni-app x / HBuilderX Android 构建残留（2026-08-26 系统性审查）
+# ⚠️ 这些无锚点通配会连 client/ 工程真源一并吞（D-19 伴生雷）——
+# 工程真源豁免三连统一放在本块末尾（gitignore 后匹配者胜，前置 ! 无效）。
 AndroidManifest.xml
 R.txt
 classes.jar
@@ -134,6 +136,12 @@ values-*/
 META-INF/
 proguard.txt
 public.txt
+# D-19 伴生雷豁免（2026-09-10）：云打包 manifest 合并点=client/AndroidManifest.xml、
+# nativeResources=官方静态资源注入通道——两真源必须可入库；根目录解包残留继续被上方忽略。
+# 验证：git check-ignore client/AndroidManifest.xml → 不忽略；AndroidManifest.xml → 忽略
+!client/AndroidManifest.xml
+!client/nativeResources/
+!client/nativeResources/**
 
 # 后端联调敏感/临时文件
 backend/token.txt

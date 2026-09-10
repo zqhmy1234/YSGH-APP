@@ -93,7 +93,7 @@ def main():
     print(f"[pick] Screenshots 可用 {len(pngs)} 张（已排除 seed_demo 40 张），抽 {len(picks)} 张")
 
     ok, fail = 0, 0
-    for (pid, ck), fname in zip(targets, picks):
+    for (pid, ck), fname in zip(targets, picks, strict=True):
         src = os.path.join(SRC_DIR, fname)
         dest = os.path.join(storage_root, ck)
         if args.dry_run:
