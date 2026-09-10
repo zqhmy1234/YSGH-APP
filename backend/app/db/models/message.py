@@ -24,6 +24,9 @@ class Message(Base):
     msg_type: Mapped[str] = mapped_column(String)  # daily_review / voice_done / care_followup / echo
     title: Mapped[str] = mapped_column(String)
     body: Mapped[str] = mapped_column(Text)
+    # BA1（迁移 f2a3b4c5d6e7）：关联内容（voice_done/echo 等消息跳详情用）；
+    # 口径对齐 payload.content_id（notify.create_message 落库点同步写入）
+    content_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)  # 附加数据（内容 id / 语音 id / 模板标记）
     status: Mapped[str] = mapped_column(String, default="unread")  # unread / read / archived
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

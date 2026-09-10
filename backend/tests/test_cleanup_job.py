@@ -14,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from app.db.models import Content, DeletedLog, SyncFieldVersion
 from app.services.external.storage import get_storage_backend
-from app.workers.cleanup_job import run_cleanup
+from app.workers.cleanup_job import run_cleanup, run_upload_reaper
+from sqlalchemy import text
 
 pytestmark = pytest.mark.integration
 
@@ -138,3 +139,118 @@ def test_cleanup_idempotent(db_user):
     r2 = run_cleanup(older_than_days=30)
     assert r2["scanned"] == 0
     assert r2["cleaned"] == 0
+
+
+# ══════════════ P0-6 孤儿上传分片 reaper（2026-09-10 审计波 B）══════════════
+
+
+def _stale_upload_task(db, user, *, status="uploading", days=10, chunks=2):
+    """直建上传任务 + staging 分片对象 + chunks 行，并把 updated_at 改老以命中超龄窗"""
+    import uuid as _u
+
+    from app.db.models import UploadChunk, UploadTask
+    from app.services.upload.protocol import _staging_key
+
+    tid = str(_u.uuid4())
+    file_key = f"photos/{user.id}/202609/reap_{tid[:8]}.jpg"
+    task = UploadTask(
+        id=tid, user_id=user.id, client_upload_id=f"reap|{tid}",
+        file_name="reap.jpg", file_size=100 * chunks, chunk_size=100,
+        chunk_count=chunks, file_key=file_key, storage="fake", status=status,
+    )
+    db.add(task)
+    backend = get_storage_backend()
+    for i in range(chunks):
+        backend.put_object(_staging_key(tid, i), b"x" * 100)
+        db.add(UploadChunk(upload_id=tid, chunk_index=i, chunk_hash="h", size=100, status="uploaded"))
+    db.commit()
+    db.execute(
+        text("UPDATE upload_tasks SET updated_at = now() - make_interval(days => :d) WHERE id = :i"),
+        {"d": days, "i": tid},
+    )
+    db.commit()
+    return task, file_key
+
+
+def test_reaper_clears_stale_upload_task(db_user):
+    """僵死 uploading 任务超龄 → staging 对象删 + chunks 行删 + 任务标 failed（行保留）"""
+    db, user = db_user
+    task, file_key = _stale_upload_task(db, user)
+    tid = str(task.id)
+    backend = get_storage_backend()
+    assert backend.object_exists(f"uploads/{tid}/0.part")
+    assert backend.object_exists(f"uploads/{tid}/1.part")
+
+    report = run_upload_reaper(older_than_days=7)
+    assert report["reaped"] >= 1
+    assert report["failed"] == 0
+    assert report["chunks_removed"] >= 2
+
+    db.expunge_all()
+    from app.db.models import UploadChunk, UploadTask
+    t = db.get(UploadTask, tid)
+    assert t is not None  # 任务行保留（幂等键语义不破坏）
+    assert t.status == "failed"
+    assert not backend.object_exists(f"uploads/{tid}/0.part")
+    assert not backend.object_exists(f"uploads/{tid}/1.part")
+    assert file_key is not None  # 最终对象从未写（未 complete），不产生原件
+    rows = db.execute(UploadChunk.__table__.select().where(UploadChunk.upload_id == tid)).all()
+    assert rows == []
+
+
+def test_reaper_skips_fresh_and_completed_tasks(db_user):
+    """未超龄 uploading + completed 任务 → 僵死扫描不动（updated_at 未老 / 状态排除）"""
+    db, user = db_user
+    fresh, _ = _stale_upload_task(db, user, days=0)     # 未超龄
+    done, _ = _stale_upload_task(db, user, status="completed", days=20)  # completed 排除
+    fid, did = str(fresh.id), str(done.id)
+
+    # 目录扫描 fake 后端跳过（local_root=None），仅僵死任务扫描生效
+    run_upload_reaper(older_than_days=7)
+    # 注：reaper 全局扫描（孤儿就该全局清），不假设全库只有本用例数据 →
+    # 不断言 reaped 计数，改验证本用例两条各自的 updated_at/状态使其不被 reap
+    db.expunge_all()
+    from app.db.models import UploadTask
+    assert db.get(UploadTask, fid).status == "uploading"   # 未超龄→不动
+    assert db.get(UploadTask, did).status == "completed"    # completed→排除
+
+
+def test_reaper_orphan_dirs_via_local_root(db_user, monkeypatch, tmp_path):
+    """fs 后端孤儿目录扫描：无任务行目录超龄删、completed 残留目录删、新孤儿不删"""
+    import os
+    from time import mktime
+
+
+    db, user = db_user
+    # completed 任务 + 其残留 staging 目录（应被 leftover 清）
+    done, _ = _stale_upload_task(db, user, status="completed", days=20)
+    did = str(done.id)
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (uploads / did).mkdir()                      # completed 残留 → leftover
+    (uploads / did / "0.part").write_bytes(b"x")
+
+    orphan_old = uploads / "ffffffff-0000-0000-0000-000000000000"
+    orphan_old.mkdir()
+    (orphan_old / "0.part").write_bytes(b"y")
+    old = mktime((2020, 1, 1, 0, 0, 0, 0, 0, 0))
+    os.utime(orphan_old / "0.part", (old, old))   # 超龄 → orphan 删
+    os.utime(orphan_old, (old, old))              # 目录 mtime 也造老（reaper 取 max 保守）
+
+    orphan_new = uploads / "eeeeeeee-0000-0000-0000-000000000000"
+    orphan_new.mkdir()
+    (orphan_new / "0.part").write_bytes(b"z")     # 新（mtime 现在）→ 不删
+
+    class _FsStub:
+        def local_root(self):
+            return tmp_path
+
+    monkeypatch.setattr("app.workers.cleanup_job.get_storage_backend", lambda name=None: _FsStub())
+
+    report = run_upload_reaper(older_than_days=7)
+    assert report["orphan_dirs"] == 1
+    assert report["leftover_dirs"] == 1
+    assert not orphan_old.exists()
+    assert not (uploads / did).exists()
+    assert orphan_new.exists()  # 未超龄，保留（防误删 in-flight）

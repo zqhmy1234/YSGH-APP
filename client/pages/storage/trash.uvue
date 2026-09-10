@@ -1,0 +1,366 @@
+<template>
+	<!-- 卡13 · F2b 回收站（2026-09-02 按画布 JSON 真值整体重写）
+	     真值：.wt/missing-pages/uvue_gen/trash_canvas.json（60:629，390×844 · 36 节点）
+	     SCALE=750/390=1.9231；节点坐标/颜色/字号/圆角/阴影全部取自 JSON，逐节点换算。
+	     状态栏 9:41/电池=系统自绘（画布节点不还原，同全库先例）。
+	     FE1（W2-1）：GET /api/v1/trash + restore + 清空全走真端点（play.uts 封装），
+	     USE_MOCK_TRASH 演示数据注入路径已移除；空列表=诚实空态。 -->
+	<view class="page-root">
+		<!-- 铁律 11.5：返回图标排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">回收站</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<view class="list-flow">
+			<text class="hint-line">删除的记忆将保留 30 天，之后彻底清除</text>
+
+			<!-- 空态（画布无空态帧，自造；语义对齐回收站规则；真数据空时兜底） -->
+			<view v-if="items.length == 0" class="empty-card">
+				<image class="empty-icon" src="/static/icons/storage-moon.svg" />
+				<text class="empty-title">回收站是空的</text>
+				<text class="empty-sub">删除的记忆将在这里保留 30 天</text>
+			</view>
+
+			<!-- 列表（F2b 60:636：白底圆角卡 + 三行 = 圆底类型图标 + 标题/删除meta + 恢复） -->
+			<view v-else class="card">
+				<view v-for="it in items" :key="it.id" class="trow">
+					<view class="tico" :class="ticoCls(it.kind)">
+						<image class="tico-img" :src="iconOf(it.kind)" />
+					</view>
+					<view class="tmain">
+						<text class="ttitle">{{ it.title }}</text>
+						<text class="tmeta">{{ it.meta }}</text>
+					</view>
+					<!-- R4 修复（2026-09-05 验机实锤）：text@tap 小字号热区真机点击无响应（连点5次零请求），
+					     改 view 容器承载 @tap（对齐项目内 view@tap 100% 可靠实证：清空按钮/菜单行） -->
+					<view class="trestore-btn" @tap="onRestore(it)">
+						<text class="trestore">恢复</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 清空（F2b 60:671 白底圆角行 + 60:673 灰色警示行；空态隐藏） -->
+			<view v-if="items.length > 0" class="clear-btn" @tap="onClearAll">
+				<text class="clear-btn-text">清空回收站</text>
+			</view>
+			<text v-if="items.length > 0" class="clear-hint">清空后 {{ clearCount }} 条记忆将立即彻底删除，不可恢复</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	// FE1（W2-1）：回收站三端点统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
+	import { trashList, trashRestore, trashClear } from '@/utils/play'
+
+	class TrashItem {
+		id: string
+		title: string
+		meta: string
+		kind: string // photo / voice / text
+		constructor(id: string, title: string, meta: string, kind: string) {
+			this.id = id
+			this.title = title
+			this.meta = meta
+			this.kind = kind
+		}
+	}
+
+	let items = ref<Array<TrashItem>>([])
+	// 清空警示条条数：mock 时=画布真值「5 条记忆」；真数据时=实际条数
+	let clearCount = ref(0)
+
+	/** TrashItemOut（后端 W2-1）→ 页面行模型；title 缺省按类型取名（照片无 text 字段） */
+	function mapTrashRow(o: UTSJSONObject): TrashItem {
+		const id = o.getString('id') ?? ''
+		const ct = o.getString('content_type') ?? 'text'
+		const txt = o.getString('text') ?? ''
+		const place = o.getString('place') ?? ''
+		const deletedAt = o.getString('deleted_at') ?? ''
+		const daysLeft = o.getNumber('days_left') ?? 0
+		let title = txt != '' ? txt : place
+		if (title == '') {
+			if (ct == 'photo') { title = '照片' } else if (ct == 'voice') { title = '语音' } else { title = '文字' }
+		}
+		// 删除日 = deleted_at 截取 ISO 前 10 位 →「M月D日 删除」；days_left 后端已算好
+		let delDate = ''
+		if (deletedAt.length >= 10) {
+			const mm = parseInt(deletedAt.substring(5, 7))
+			const dd = parseInt(deletedAt.substring(8, 10))
+			delDate = mm + '月' + dd + '日'
+		}
+		const meta = delDate + ' 删除 · ' + daysLeft + ' 天后清除'
+		return new TrashItem(id, title, meta, ct)
+	}
+
+	/** 拉回收站真数据（trashList 失败/空 → 空态诚实；网络失败 api 层已显式 toast） */
+	function fetchTrash(): void {
+		trashList().then((arr: Array<UTSJSONObject>) => {
+			const rows: Array<TrashItem> = []
+			for (let i = 0; i < arr.length; i++) {
+				rows.push(mapTrashRow(arr[i]))
+			}
+			items.value = rows
+			clearCount.value = rows.length
+		})
+	}
+
+	onLoad(() => {
+		fetchTrash()
+	})
+
+	function ticoCls(kind: string): string {
+		if (kind == 'photo') {
+			return 'tico-photo'
+		}
+		if (kind == 'voice') {
+			return 'tico-voice'
+		}
+		return 'tico-text'
+	}
+	function iconOf(kind: string): string {
+		if (kind == 'photo') {
+			return '/static/icons/trash-check.svg'
+		}
+		if (kind == 'voice') {
+			return '/static/icons/trash-mic.svg'
+		}
+		return '/static/icons/trash-info.svg'
+	}
+
+	/** 恢复（W2-1 真端点）：POST /api/v1/trash/{id}/restore 成功后就地移除行（重建引用触发渲染） */
+	function onRestore(it: TrashItem): void {
+		trashRestore(it.id).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '恢复失败 · 请稍后重试', icon: 'none' })
+				return
+			}
+			const rows: Array<TrashItem> = []
+			for (let i = 0; i < items.value.length; i++) {
+				if (items.value[i].id != it.id) {
+					rows.push(items.value[i])
+				}
+			}
+			items.value = rows
+			clearCount.value = rows.length
+			uni.showToast({ title: '已恢复', icon: 'none' })
+		})
+	}
+
+	/** 清空（W2-1 真端点）：强确认 → DELETE /api/v1/trash（彻底删除，不可逆） */
+	function onClearAll(): void {
+		uni.showModal({
+			title: '清空回收站',
+			content: clearCount.value + ' 条记忆将立即彻底删除，不可恢复。确定清空吗？',
+			confirmText: '清空',
+			confirmColor: '#B05A3A',
+			success: (res) => {
+				if (!res.confirm) {
+					return
+				}
+				trashClear().then((ok: boolean) => {
+					if (!ok) {
+						uni.showToast({ title: '清空失败 · 请稍后重试', icon: 'none' })
+						return
+					}
+					fetchTrash()
+					uni.showToast({ title: '回收站已清空', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航（60:633 标题 / 60:632 返回，settings.uvue 二级页先例） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 流（60:634 说明横幅 → 60:636 列表 → 60:671 清空行 → 60:673 清空说明） ── */
+	.list-flow {
+		margin-top: 215.4rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	.hint-line {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 23.1rpx;
+		line-height: 30.8rpx;
+		color: #8A7A6A;
+	}
+	/* ── 回收站列表卡（60:636：白底 · 圆角 20pt · 阴影 y3/r12 · 内边距 6pt） ── */
+	.card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 11.5rpx;
+		padding-right: 11.5rpx;
+		padding-top: 11.5rpx;
+		padding-bottom: 11.5rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		margin-top: 38.5rpx;
+		overflow: hidden;
+	}
+	.trow {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+	}
+	.tico {
+		width: 76.9rpx;
+		height: 76.9rpx;
+		border-radius: 38.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+	}
+	/* 图标底=JSON fill 色 @低透明度叠白底（颜色×1.9231 无透明度通道 → 按画布混合值） */
+	.tico-photo {
+		background-color: #F6EBE7;
+	}
+	.tico-voice {
+		background-color: #ECEFE8;
+	}
+	.tico-text {
+		background-color: #E8EEF0;
+	}
+	.tico-img {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.tmain {
+		flex: 1;
+		flex-direction: column;
+		margin-left: 23.1rpx;
+	}
+	.ttitle {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.tmeta {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+		margin-top: 3.8rpx;
+	}
+	/* R4：view 热区容器（padding 扩大点击面积，负 margin 抵消布局位移） */
+	.trestore-btn {
+		padding-left: 20rpx;
+		padding-right: 20rpx;
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+		margin-right: -20rpx;
+		margin-top: -24rpx;
+		margin-bottom: -24rpx;
+	}
+	.trestore {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #C4913C;
+	}
+	/* ── 清空行（60:671：白底 · 圆角 14pt · 高 48pt；文字 60:672 居中） ── */
+	.clear-btn {
+		width: 100%;
+		height: 92.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 26.9rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		margin-top: 92.3rpx;
+	}
+	.clear-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #B05A3A;
+	}
+	.clear-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B3A696;
+		text-align: center;
+		width: 100%;
+		margin-top: 15.4rpx;
+	}
+	/* ── 空态（自造，画布无空态帧；真数据空时兜底展示） ── */
+	.empty-card {
+		width: 100%;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		padding-top: 90rpx;
+		padding-bottom: 90rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		margin-top: 38.5rpx;
+	}
+	.empty-icon {
+		width: 56rpx;
+		height: 56rpx;
+		opacity: 0.4;
+	}
+	.empty-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #B3A696;
+		margin-top: 24rpx;
+	}
+	.empty-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #B3A696;
+		margin-top: 12rpx;
+		opacity: 0.8;
+	}
+</style>

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
 	<!-- 同步状态横幅（B4 §7 · Wave3 Agent H）：
 	     待上传图标 / 失败标红可点击重试 / 暂停横幅"网络异常，已暂停同步" / 一键继续上传。
 	     自包含：直接读 sync_client + uploader 模块状态，宿主页只需一行 <UploadStatusBanner />。

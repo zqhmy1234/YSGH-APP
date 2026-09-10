@@ -158,10 +158,9 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 					h.getString('event_title') ?? '',
 					h.getNumber('score') as number,
 					traceToText(h.getJSON('trace')),
-					// 后端 SearchHit 契约暂无图字段（向量召回路径不 join contents 存储键），
-					// 结果卡图片位留空。需要时后端在 SearchHit 补 thumbnail_url 即可，
-					// 客户端本字段已就位，无需再改。
-					''
+					// 2026-09-04 后端 SearchHit 补 thumbnail_url（Valet Key 票据，
+					// 仅 photo 命中有值）→ resolveMediaUrl 拼直连地址，结果卡带图
+					resolveMediaUrl(h.getString('thumbnail_url'))
 				)
 			)
 		}

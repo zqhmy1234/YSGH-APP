@@ -1,0 +1,974 @@
+<template>
+	<!-- 卡16 F4a + 卡17 F4b · 我的收藏（列表态/空态同页双态）
+	     真值：.wt/missing-pages/uvue_gen/favorites_canvas.json（60:766，51 节点）
+	           .wt/missing-pages/uvue_gen/favorites_empty_canvas.json（60:841，33 节点）
+	     SCALE=750/390=1.9231；坐标/颜色/字号/圆角/阴影全部取自 JSON 逐节点换算。
+	     状态栏 9:41/电池（60:767/60:768）+ Home 指示条（60:775/60:848）=系统自绘不还原（全库先例）。
+     FE1（W2-2）：列表走 GET /api/v1/favorites 真端点（play.uts favoritesList）、取消收藏走
+     DELETE /api/v1/contents/{id}/favorite（play.uts favoriteRemove）；端点空/失败回落本地
+     favorite_ids × timeline 契约；USE_MOCK_FAVORITES 演示条目注入路径已移除（B8 清理项兑现）。 -->
+	<view class="page-root">
+		<!-- 60:769 大标题「我的收藏」18pt SemiBold #3A2E25 @y62（trash/settings 二级页先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">我的收藏</text>
+		</view>
+		<!-- 60:827 返回 22pt @(16,60)（复用 i4_135：同几何同色 #3A2E25） -->
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<!-- 60:770 搜索胶囊 350×48 @(20,120) r9999 白底 + 锈红描边环（居中描边→box-shadow 外环，search n2_391 先例） -->
+		<view class="search-capsule">
+			<!-- 60:778 搜索图标 18pt（复用 i2_392：同几何 圆9.75+柄4.125 #B05A3A） -->
+			<image class="capsule-icon" src="/static/icons/i2_392.svg" />
+			<view class="capsule-input-area">
+				<input class="capsule-input" v-model="keyword" placeholder="在收藏中搜索" placeholder-style="color:#B2A696;font-size:28.8rpx" />
+			</view>
+		</view>
+
+		<!-- 60:771 筛选行 @(20,184) gap8pt（gap→margin 铁律） -->
+		<view class="chip-row">
+			<view v-for="(f, idx) in filters" :key="idx" class="chip" :class="{ 'chip-active': idx === activeFilter, 'chip-ml': idx > 0 }" @tap="setFilter(idx)">
+				<text class="chip-text" :class="{ 'chip-text-active': idx === activeFilter }">{{ f }}</text>
+			</view>
+		</view>
+
+		<!-- 60:772 结果提示「12 条收藏」12pt #8A7A6A @(20,234)（动态条数） -->
+		<text v-if="loaded && allCards.length > 0" class="count-text">{{ countText() }}</text>
+
+		<!-- ═══ F4a 列表态（卡流，search 结果区先例：绝对定位滚动区） ═══ -->
+		<scroll-view v-if="loaded && allCards.length > 0" class="card-scroll" :show-scrollbar="false">
+			<!-- §P9：类型筛选 0 结果时给提示（原纯空白被误读为渲染缺陷；countText=总数为画布真值不动） -->
+			<view v-if="displayCards.length == 0" class="filter-empty">
+				<text class="filter-empty-text">该类型下暂无收藏</text>
+				<text class="filter-empty-text filter-empty-sub">换个类型看看，或去记忆详情页点亮星星</text>
+			</view>
+			<view v-for="item in displayCards" :key="item.id" class="fav-card" :class="item.kind == 'text' ? 'fav-card-text' : ''" @tap="openCard(item)">
+				<!-- ── 语音卡（60:776）── -->
+				<view v-if="item.kind == 'voice'">
+					<!-- 60:790 语音媒体 fill×64pt pad14 gap12 r12 金底14% -->
+					<view class="voice-media">
+						<!-- 60:810 玻璃播放钮 32pt r16 白50%+inset白40%+border白80% -->
+						<view class="glass-btn" @tap.stop="playVoice(item)">
+							<view v-if="voiceIsActive(item.contentId) && voiceIsPlaying()" class="fav-pause-icon">
+								<view class="fav-pause-bar"></view>
+								<view class="fav-pause-bar"></view>
+							</view>
+							<!-- 60:824/60:826 播放图标 12pt（复用 i2_595：同三角 5.5×6.5 #B05A3A） -->
+							<image v-else class="play-icon" src="/static/icons/i2_595.svg" />
+						</view>
+						<!-- 60:811 波形 200×26pt @(58,19)：空闲=画布 SVG（60:825 与 i2_596 同源实证）；活动=VoiceWave+进度行（search F5a 先例） -->
+						<VoiceWave v-if="voiceIsActive(item.contentId)" class="wave-box" :heights="item.waveHeights" :waveform="waveformOf(item.contentId)" :active="true" :progress="voiceProgressOfCard(item.contentId)" />
+						<view v-else class="wave-box">
+							<image class="wave-img" src="/static/icons/i2_596.svg" />
+						</view>
+					</view>
+					<view v-if="voiceIsActive(item.contentId)" class="voice-progress-row">
+						<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+						<view class="voice-track">
+							<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(item.contentId) * 100) + '%' }"></view>
+						</view>
+						<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
+					</view>
+					<!-- 60:791 语音文字区 pad8 gap3 -->
+					<view class="voice-text-area">
+						<text class="card-title">{{ item.title }}</text>
+						<text class="card-meta">{{ item.meta }}</text>
+					</view>
+				</view>
+				<!-- ── 文字卡（60:777）── -->
+				<view v-else-if="item.kind == 'text'">
+					<!-- 60:792 摘要块 pad12 gap10 r12 金底10% -->
+					<view class="quote-block">
+						<!-- 60:814 引用竖线 3×40pt r2 #C4913C -->
+						<view class="quote-bar"></view>
+						<!-- 60:815 摘要文本 14pt #5A4C40 -->
+						<text class="quote-text">{{ item.body }}</text>
+					</view>
+					<!-- 60:793 文字元信息区 pad8（meta 为区首子节点：画布 60:816 y8=纯 padding，gap 不作用于首子） -->
+					<view class="text-meta-area">
+						<text class="card-meta card-meta-first">{{ item.meta }}</text>
+					</view>
+				</view>
+				<!-- ── 照片卡（60:829）── -->
+				<view v-else>
+					<!-- 60:830 照片网格 gap4：双列 fill×110pt r8（占位色 60:831 #E9DFCB / 60:832 #E1D3B8）
+					     空 URL（无缩略图/mock 演示）→ 纯占位色块（theme-detail photo-cell 先例：外格底色+内 image，零先例 template v-for 禁用） -->
+					<view class="photo-grid">
+						<view v-for="(p, pi) in item.photos" :key="pi" class="photo-cell" :class="pi == 0 ? 'photo-a' : 'photo-b'">
+							<image v-if="p != ''" class="photo-img" :src="p" mode="aspectFill" />
+						</view>
+					</view>
+					<text class="card-title card-title-photo">{{ item.title }}</text>
+					<text class="card-meta card-meta-photo">{{ item.meta }}</text>
+				</view>
+				<!-- 60:835/837/839 星标 20pt 卡内 @(318,16)→right12pt top16pt（收藏态角标，点按取消收藏） -->
+				<image class="fav-star" src="/static/icons/favorites-star.svg" @tap.stop="onUnfav(item)" />
+			</view>
+		</scroll-view>
+
+		<!-- ═══ F4b 空态（判据=收藏 key 为空；绝对定位同画布） ═══ -->
+		<view v-if="loaded && allCards.length == 0" class="empty-wrap">
+			<!-- 60:892 插画-太阳 60pt @(191,258) + 60:894 插画-山湖 120×90pt @(135,294)
+			     （复用 i2_302/i2_304：与 empty 页插画同几何同色 #C4913C/#8A7A6A，empty.uvue 布局先例） -->
+			<view class="empty-illus">
+				<image class="empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
+				<view class="empty-lake"><image class="empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
+			</view>
+			<!-- 60:896/897 标题容器 全宽居中 @y418：「还没有收藏」22pt SemiBold -->
+			<view class="empty-title-row">
+				<text class="empty-title">还没有收藏</text>
+			</view>
+			<!-- 60:898 引导容器 gap4 @y460：两行 14pt #8A7A6A -->
+			<view class="empty-guide">
+				<text class="guide-text">在时间轴长按卡片即可收藏</text>
+				<text class="guide-text guide-text-2">收藏的好内容都会住在这里</text>
+			</view>
+			<!-- 60:901 主按钮 250×56pt @(70,538) r28 #B05A3A 阴影锈红30% -->
+			<view class="empty-cta" @tap="goTimeline">
+				<text class="empty-cta-text">去时间轴逛逛</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
+	import { favoritesList, favoriteRemove, fetchWaveform } from '@/utils/play'
+	import {
+		toggleVoice,
+		stopVoice,
+		isVoiceActive,
+		isVoicePlaying,
+		voiceProgressOf,
+		voiceCurSecValue,
+		voiceTotalSecValue,
+		fmtVoiceTime
+	} from '@/utils/audio_player'
+
+	// ── FE1（W2-2）：真端点已接（favoritesList/favoriteRemove），USE_MOCK_FAVORITES 及
+	//    演示条目注入路径已整体移除；空收藏=诚实空态 ──
+
+	/** 收藏卡模型（UTS 零先例禁令：class + constructor + new，对齐 TrashItem/MessageItem 先例；全参显式） */
+	class FavCard {
+		id: string
+		kind: string // voice / text / photo
+		title: string
+		meta: string
+		body: string // 文字卡摘要（其余卡空串）
+		contentId: string // 跳详情 + 播放引擎键
+		waveHeights: Array<number>
+		photos: Array<string> // 照片卡缩略 URL（空串=画布占位色块）
+
+		constructor(
+			id: string,
+			kind: string,
+			title: string,
+			meta: string,
+			body: string,
+			contentId: string,
+			waveHeights: Array<number>,
+			photos: Array<string>
+		) {
+			this.id = id
+			this.kind = kind
+			this.title = title
+			this.meta = meta
+			this.body = body
+			this.contentId = contentId
+			this.waveHeights = waveHeights
+			this.photos = photos
+		}
+	}
+
+	function pad2(n: number): string {
+		return n < 10 ? '0' + n : '' + n
+	}
+
+	/** epoch ms → 「8月28日 07:42」（画布 meta 日期形态；time.uts 无现成同型，页内私有函数） */
+	function fmtFavTime(ms: number): string {
+		const d = new Date(ms)
+		return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+	}
+
+	// ── 响应式状态 ──
+	let keyword = ref('')
+	let activeFilter = ref(0)
+	let filters = ['全部', '照片', '语音', '文字'] // 60:797/798/799/800
+	let allCards = ref<Array<FavCard>>([])
+	let favTotal = ref(0) // 「N 条收藏」计数（画布 60:772 文案真值）
+	let loaded = ref(false)
+	let favIds = ref<Array<string>>([])
+
+	/** 收藏数据契约（卡16）：uni.getStorageSync('favorite_ids') Array<string> content_id
+	 *  诚实化：detail 页收藏端点未建（W0-4），favorite_ids 由本地写入；try/catch 兜底（empty/index 先例） */
+	function readFavoriteIds(): Array<string> {
+		const out: Array<string> = []
+		try {
+			const raw = uni.getStorageSync('favorite_ids')
+			if (raw == null) {
+				return out
+			}
+			if (typeof raw == 'string') {
+				// 兼容逗号分隔串存储形态（typeof 判型 api.uts/sync_client 先例；uploader 分隔串先例）
+				const s = raw as string
+				if (s == '' || s == '[]') {
+					return out
+				}
+				const parts = s.split(',')
+				for (let i = 0; i < parts.length; i++) {
+					const p = parts[i].replace('[', '').replace(']', '').replace(' ', '')
+					if (p != '') {
+						out.push(p)
+					}
+				}
+				return out
+			}
+			const arr = raw as Array<string>
+			for (let i = 0; i < arr.length; i++) {
+				if (arr[i] != '') {
+					out.push(arr[i])
+				}
+			}
+		} catch (e) {
+			console.log('[favorites] readFavoriteIds 异常: ' + e)
+		}
+		return out
+	}
+
+	function persistFavoriteIds(ids: Array<string>): void {
+		// 格式统一（峰宝复验批）：与 detail 写侧同款逗号串——detail 读侧 favRaw.split(',') 不做数组兼容
+		uni.setStorageSync('favorite_ids', ids.join(','))
+	}
+
+	/** 真数据：fetchTimeline 过滤（卡16 契约）——事件含被收藏成员即成卡 */
+	function buildRealCards(events: Array<TimelineEvent>, ids: Array<string>): Array<FavCard> {
+		const cards: Array<FavCard> = []
+		for (let i = 0; i < events.length; i++) {
+			const ev = events[i]
+			// ① 语音成员命中 → 语音卡（严格贴 theme-detail metaOf 先例：if != null 块内直接 ev.voice.xxx，无 ! 断言）
+			if (ev.voice != null) {
+				if (ids.indexOf(ev.voice.contentId) >= 0) {
+					const meta = fmtFavTime(ev.startTime) + ' · 语音' // 时长/转写态 EventVoice 无字段→省略（台账降级②）
+					cards.push(new FavCard(ev.id, 'voice', ev.title, meta, '', ev.voice.contentId, ev.voice.waveHeights, []))
+					continue
+				}
+			}
+			// ② 照片成员命中 → 照片卡（缩略 URL 直喂 :src，EventPhoto 先例）
+			let hitPhoto = false
+			for (let k = 0; k < ev.photoIds.length; k++) {
+				if (ids.indexOf(ev.photoIds[k]) >= 0) {
+					hitPhoto = true
+					break
+				}
+			}
+			if (hitPhoto) {
+				const urls: Array<string> = []
+				for (let k = 0; k < ev.photos.length && k < 2; k++) {
+					urls.push(ev.photos[k].thumbnailUrl)
+				}
+				const meta = fmtFavTime(ev.startTime) + ' · 照片 ' + ev.photoCount + '张'
+				cards.push(new FavCard(ev.id, 'photo', ev.title, meta, '', ev.coverContentId, [], urls))
+				continue
+			}
+			// ③ 封面/文字命中 → 文字卡（TimelineEvent 无 body → 标题即一句话主题，theme-detail 降级先例）
+			if (ids.indexOf(ev.coverContentId) >= 0) {
+				const meta = fmtFavTime(ev.startTime) + ' · 文字记录'
+				cards.push(new FavCard(ev.id, 'text', ev.title, meta, ev.title, ev.coverContentId, [], []))
+			}
+		}
+		return cards
+	}
+
+	/** W2-2 真端点：GET /api/v1/favorites（ContentOut 列表）→ FavCard；
+	 *  端点空/失败 → resolve false，回落本地 favorite_ids × timeline 契约 */
+	function tryLoadFromEndpoint(): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
+			favoritesList().then((arr: Array<UTSJSONObject>) => {
+				const cards: Array<FavCard> = []
+				for (let i = 0; i < arr.length; i++) {
+					const o = arr[i]
+					const id = o.getString('id') ?? ''
+					const ct = o.getString('content_type') ?? 'text'
+					const txt = o.getString('text') ?? ''
+					const place = o.getString('place') ?? ''
+					const takenAt = o.getString('taken_at') ?? ''
+					const thumb = o.getString('thumbnail_url') ?? ''
+					// meta：taken_at 前 10 位 →「M月D日 · 类型 · 已收藏」（fmtFavTime 面向 Event.startTime，此处直接截 ISO）
+					let day = ''
+					if (takenAt.length >= 10) {
+						const mm = parseInt(takenAt.substring(5, 7))
+						const dd = parseInt(takenAt.substring(8, 10))
+						day = mm + '月' + dd + '日'
+					}
+					const kindWord = ct == 'photo' ? '照片' : (ct == 'voice' ? '语音' : '文字记录')
+					const meta = day + ' · ' + kindWord + ' · 已收藏'
+					let title = txt != '' ? txt : place
+					if (ct == 'photo' && title == '') { title = '照片' }
+					if (ct == 'photo') {
+						const ps: Array<string> = []
+						if (thumb != '') { ps.push(thumb) }
+						cards.push(new FavCard(id, 'photo', title, meta, '', id, [], ps))
+					} else if (ct == 'voice') {
+						cards.push(new FavCard(id, 'voice', title, meta, '', id, [], []))
+					} else {
+						cards.push(new FavCard(id, 'text', '', meta, txt, id, [], []))
+					}
+				}
+				if (cards.length == 0) {
+					resolve(false)
+					return
+				}
+				allCards.value = cards
+				favTotal.value = cards.length
+				loaded.value = true
+				resolve(true)
+			})
+		})
+	}
+
+	function loadCards(): void {
+		const ids = readFavoriteIds()
+		favIds.value = ids
+		// W2-2：端点真数据优先（有真收藏即渲染，不依赖 timeline 事件挂载）
+		tryLoadFromEndpoint().then((hit: boolean) => {
+			if (hit) {
+				return
+			}
+			if (ids.length > 0) {
+				// 回落真链路：fetchTimeline 过滤（失败 resolve 空数组 → 空态，诚实不造假数据）
+				fetchTimeline(null).then((events: Array<TimelineEvent>) => {
+					const cards = buildRealCards(events, ids)
+					allCards.value = cards
+					favTotal.value = cards.length
+					loaded.value = true
+				})
+			} else {
+				allCards.value = []
+				favTotal.value = 0
+				loaded.value = true
+			}
+		})
+	}
+
+	onLoad(() => {
+		loadCards()
+	})
+
+	// 栈回刷新（峰宝 2026-09-03 复验实锤：detail 取消收藏后 navigateBack，onLoad-only 列表不更新）
+	// onShow 在 onLoad 后必然跟发一次 → firstShow 防首次双拉；此后每次栈回重读 favorite_ids 重建列表
+	let firstShow = true
+	onShow(() => {
+		if (firstShow) {
+			firstShow = false
+			return
+		}
+		loadCards()
+	})
+
+	// 离页停播：防止语音跨页残留出声（search/detail 同规）
+	onUnload(() => {
+		stopVoice()
+	})
+
+	// ── 筛选（chip 类型 + 关键词，端上过滤）──
+	const displayCards = computed((): Array<FavCard> => {
+		const out: Array<FavCard> = []
+		const kw = keyword.value.trim()
+		for (let i = 0; i < allCards.value.length; i++) {
+			const c = allCards.value[i]
+			if (activeFilter.value == 1 && c.kind != 'photo') {
+				continue
+			}
+			if (activeFilter.value == 2 && c.kind != 'voice') {
+				continue
+			}
+			if (activeFilter.value == 3 && c.kind != 'text') {
+				continue
+			}
+			if (kw != '' && c.title.indexOf(kw) < 0 && c.meta.indexOf(kw) < 0 && c.body.indexOf(kw) < 0) {
+				continue
+			}
+			out.push(c)
+		}
+		return out
+	})
+
+	function setFilter(idx: number): void {
+		activeFilter.value = idx
+	}
+
+	function countText(): string {
+		// §P9：筛选激活时显示筛选后条数（总数配 0 张卡=误导；全部档维持画布真值 favTotal）
+		if (activeFilter.value != 0) {
+			return displayCards.value.length + ' 条收藏'
+		}
+		return favTotal.value + ' 条收藏'
+	}
+
+	// ── 播放引擎接线（search 先例三处一致）──
+	function voiceIsActive(id: string): boolean {
+		return isVoiceActive(id)
+	}
+	function voiceIsPlaying(): boolean {
+		return isVoicePlaying()
+	}
+	function voiceProgressOfCard(id: string): number {
+		return voiceProgressOf(id)
+	}
+	function voiceCurSecText(): string {
+		return fmtVoiceTime(voiceCurSecValue())
+	}
+	function voiceTotalSecText(): string {
+		return fmtVoiceTime(voiceTotalSecValue())
+	}
+
+	// ═══ BB3 真实波形接线（favorites 补线 2026-09-09；三件套照 search 逐字对齐）═══
+	// waveformMap 非响应式缓存 + waveformVersion 计数驱动重渲染（waveformOf 模板读取建依赖）；
+	// null = 未拉到 → VoiceWave 组件回退 heights 伪波形（静默）
+	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
+	let waveformVersion = ref(0)
+	function waveformOf(cid: string): Array<number> | null {
+		waveformVersion.value
+		return waveformMap.get(cid) ?? null
+	}
+	function loadWaveform(cid: string): void {
+		if (waveformMap.has(cid)) {
+			return
+		}
+		fetchWaveform(cid).then((b: Array<number> | null) => {
+			if (b != null && b.length >= 2) {
+				waveformMap.set(cid, b)
+				waveformVersion.value++
+			}
+		})
+	}
+	function playVoice(item: FavCard): void {
+		// 无关联记忆的条目（端点数据缺 content_id）不进播放引擎——显式提示（mock 演示条目路径已亡，措辞接真）
+		if (item.contentId == '') {
+			uni.showToast({ title: '该条目未关联记忆，暂不可播放', icon: 'none' })
+			return
+		}
+		loadWaveform(item.contentId) // BB3：播放入口懒拉真实波形
+		toggleVoice(item.contentId)
+	}
+
+	// ── 卡片跳转（search openResult 先例：contentId 进详情）──
+	function openCard(item: FavCard): void {
+		if (item.contentId == '') {
+			uni.showToast({ title: '该条目未关联记忆，无法打开', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + item.contentId })
+	}
+
+	/** 取消收藏（FE1 · W2-2 真端点）：DELETE /api/v1/contents/{id}/favorite；
+	 *  成功才同步本地 favorite_ids 契约 + 列表重建引用（slice 语义：重建数组赋值）；
+	 *  失败不动本地态，显式 toast（api 层已报具体原因，此处补充结果语义） */
+	function onUnfav(item: FavCard): void {
+		if (item.contentId == '') {
+			uni.showToast({ title: '该条目未关联记忆，无法取消收藏', icon: 'none' })
+			return
+		}
+		favoriteRemove(item.contentId).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '取消收藏失败 · 请稍后重试', icon: 'none' })
+				return
+			}
+			const next: Array<string> = []
+			for (let i = 0; i < favIds.value.length; i++) {
+				if (favIds.value[i] != item.contentId) {
+					next.push(favIds.value[i])
+				}
+			}
+			persistFavoriteIds(next)
+			favIds.value = next
+			const cards: Array<FavCard> = []
+			for (let i = 0; i < allCards.value.length; i++) {
+				if (allCards.value[i].id != item.id) {
+					cards.push(allCards.value[i])
+				}
+			}
+			allCards.value = cards
+			favTotal.value = cards.length
+			uni.showToast({ title: '已取消收藏', icon: 'none', duration: 1500 })
+		})
+	}
+
+	function goTimeline(): void {
+		// F4b 主按钮「去时间轴逛逛」→ 时间轴首页（index 非 navigateTo 可达的普通栈页，reLaunch 复位）
+		uni.reLaunch({ url: '/pages/shell/shell' })
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航（60:769 标题 / 60:827 返回；trash.uvue 先例：标题容器全宽居中，返回钮 z-index 置顶） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 119.2rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 60:770 搜索胶囊（search n2_391 同款：居中描边→box-shadow 外环不内缩） ── */
+	.search-capsule {
+		position: absolute;
+		/* absolute-ok: 固定页头·搜索胶囊 */
+		left: 38.5rpx;
+		top: 230.8rpx;
+		width: 673.1rpx;
+		height: 92.3rpx;
+		flex-direction: row;
+		/* 无垂直 padding：图标 y15/h18 靠 align-items:center 居中（画布 60:770 pad=null，search 审计教训） */
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(176, 89, 59, 0.6), 0rpx 11.5rpx 34.6rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.capsule-icon {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.capsule-input-area {
+		flex: 1;
+		margin-left: 15.4rpx; /* 画布 60:770 gap=8pt：图标右缘 34 → 输入区 x42 */
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.capsule-input {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	/* ── 60:771 筛选行（chip 9pt 内边距=17.3rpx，search 先例） ── */
+	.chip-row {
+		position: absolute;
+		/* absolute-ok: 固定页头·筛选行 */
+		left: 38.5rpx;
+		top: 353.8rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.chip-active {
+		background-color: rgba(176, 89, 59, 0.12);
+	}
+	/* 画布 60:771 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
+	.chip-ml {
+		margin-left: 15.4rpx;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.chip-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		font-weight: 600;
+		color: #B05A3A;
+	}
+	/* ── 60:772 结果提示 ── */
+	.count-text {
+		position: absolute;
+		/* absolute-ok: 固定页头·条数提示 */
+		left: 38.5rpx;
+		top: 450rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	/* §P9 类型筛选 0 结果提示（滚动区内居中，非画布真值、UX 自洽样式） */
+	.filter-empty {
+		margin-top: 200rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.filter-empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.filter-empty-sub {
+		margin-top: 11.5rpx;
+		font-size: 23.1rpx;
+		color: #B3A696;
+	}
+	/* ── F4a 卡流滚动区（画布首卡 y258→496.2rpx；无 TabBar 底部避让） ── */
+	.card-scroll {
+		position: absolute;
+		/* absolute-ok: 结果卡流视口 */
+		left: 38.5rpx;
+		top: 496.2rpx;
+		bottom: 0rpx;
+		width: 673.1rpx;
+	}
+	/* ── 通用卡壳（60:776/777/829：白底 r20 pad8 双层阴影 y4/r16 a6% + y1/r3 a4%） ── */
+	.fav-card {
+		width: 673.1rpx;
+		flex-direction: column;
+		margin-bottom: 19.2rpx; /* 画布语音→文字卡间距：语音底 394→文字顶 404 = 10pt */
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	/* 画布文字→照片卡间距 24pt（404+111=515 → 539）；伪类禁 → 显式覆盖类（写在原类之后） */
+	.fav-card-text {
+		margin-bottom: 46.2rpx;
+	}
+	/* 60:835/837/839 星标角标 20pt 卡内 right12pt top16pt */
+	.fav-star {
+		position: absolute;
+		/* absolute-ok: 卡内收藏星标 */
+		right: 23.1rpx;
+		top: 30.8rpx;
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	/* ── 语音卡（60:790 媒体条：pad14 gap12 h64 r12 金底14%） ── */
+	.voice-media {
+		width: 100%;
+		height: 123.1rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		background-color: rgba(196, 145, 59, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	/* 60:810 玻璃播放钮（画布 BACKGROUND_BLUR(8)+白50%+inset白40%+border白80%，search n2_591 同值先例） */
+	.glass-btn {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.5);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.play-icon {
+		width: 23.1rpx;
+		height: 23.1rpx;
+	}
+	.fav-pause-icon {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.fav-pause-bar {
+		width: 6rpx;
+		height: 20rpx;
+		background-color: #B05A3A;
+		border-radius: 2rpx;
+		margin-left: 4rpx;
+		margin-right: 4rpx;
+	}
+	/* 60:811 波形 200×26pt @(58,19)：x58=钮右缘46+gap12 */
+	.wave-box {
+		width: 384.6rpx;
+		height: 50rpx;
+		margin-left: 23.1rpx;
+		overflow: hidden;
+	}
+	.wave-img {
+		position: absolute;
+		/* absolute-ok: 波形 SVG 在框内 (4,3) 偏移 */
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	/* F5a 播放进度行（search 先例同值） */
+	.voice-progress-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-left: 15.4rpx;
+		margin-right: 15.4rpx;
+		margin-top: 11.5rpx; /* 画布 3pt 节奏 */
+	}
+	.voice-progress-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #8A7A6A;
+	}
+	.voice-track {
+		flex: 1;
+		height: 4rpx;
+		background-color: #E5DCC8;
+		border-radius: 2rpx;
+		margin-left: 12rpx;
+		margin-right: 12rpx;
+		overflow: hidden;
+	}
+	.voice-track-fill {
+		height: 4rpx;
+		background-color: #C4913C;
+		border-radius: 2rpx;
+	}
+	/* 60:791 语音文字区 pad8 gap3 */
+	.voice-text-area {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	/* 60:812/833 卡标题 17pt SemiBold */
+	.card-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
+	}
+	/* 照片卡标题：画布 60:833 紧贴网格零间隙（真值），峰宝拍板（2026-09-02）覆盖为
+	   网格→标题 12pt 呼吸间距（theme-detail title-flush 同族），已登记 _diff_ledger.md */
+	.card-title-photo {
+		margin-top: 23.1rpx;
+	}
+	/* 60:813/816/834 卡元信息 11pt #8A7A6A（gap3→margin 5.8rpx） */
+	.card-meta {
+		margin-top: 5.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 照片卡 meta：画布 60:834 原值零间隙，峰宝拍板（2026-09-02）覆盖为标题→元信息 4pt */
+	.card-meta-photo {
+		margin-top: 7.7rpx;
+	}
+	/* 文字卡 meta：区首子节点（uvue 无 :first-child 伪类 → 显式覆盖类，写在原类之后） */
+	.card-meta-first {
+		margin-top: 0rpx;
+	}
+	/* ── 文字卡（60:792 摘要块 pad12 gap10 r12 金底10%） ── */
+	.quote-block {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 59, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	/* 60:814 引用竖线 3×40pt r2 */
+	.quote-bar {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
+	}
+	/* 60:815 摘要文本 14pt #5A4C40 */
+	.quote-text {
+		flex: 1;
+		margin-left: 19.2rpx; /* 画布 60:792 gap=10pt：竖线右缘 15 → 文本 x25 */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 60:793 文字元信息区 pad8 */
+	.text-meta-area {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	/* ── 照片卡（60:830 网格 gap4，双列 fill×110pt r8） ── */
+	.photo-grid {
+		width: 100%;
+		flex-direction: row;
+		overflow: hidden;
+	}
+	/* 60:831/832 照片格 fill×110pt r8（theme-detail photo-cell 先例：外格底色+内 image） */
+	.photo-cell {
+		flex: 1;
+		height: 211.5rpx;
+		border-radius: 15.4rpx;
+		overflow: hidden;
+	}
+	.photo-img {
+		width: 100%;
+		height: 211.5rpx;
+	}
+	/* 画布占位色 60:831/60:832（真图 URL 覆盖底色；空 URL=占位块） */
+	.photo-a {
+		background-color: #E9DFCB;
+	}
+	.photo-b {
+		margin-left: 7.7rpx; /* 画布 60:830 gap=4pt */
+		background-color: #E1D3B8;
+	}
+	/* ══════════ F4b 空态（60:841 帧，绝对定位同画布坐标） ══════════ */
+	.empty-wrap {
+		position: absolute;
+		/* absolute-ok: 空态整块（画布节点绝对坐标直移） */
+		left: 0rpx;
+		top: 0rpx;
+		bottom: 0rpx;
+		width: 750rpx;
+	}
+	/* 插画组合块 (135,258) 120×126pt（empty.uvue 同几何先例：太阳叠山湖） */
+	.empty-illus {
+		position: absolute;
+		/* absolute-ok: 空态插画 */
+		left: 259.6rpx;
+		top: 496.2rpx;
+		width: 240rpx;
+		height: 252rpx;
+	}
+	.empty-sun {
+		position: absolute;
+		/* absolute-ok: 插画内太阳 (191-135=56pt, 0) */
+		left: 112rpx;
+		top: 0rpx;
+		width: 120rpx;
+		height: 120rpx;
+	}
+	.empty-lake {
+		position: absolute;
+		/* absolute-ok: 插画内山湖 (0, 36pt) */
+		left: 0rpx;
+		top: 72rpx;
+		width: 240rpx;
+		height: 180rpx;
+	}
+	.empty-lake-img {
+		position: absolute;
+		/* absolute-ok: 山湖矢量 (12,12) 96×56pt */
+		left: 24rpx;
+		top: 24rpx;
+		width: 192rpx;
+		height: 112rpx;
+	}
+	/* 60:896 标题容器 全宽居中 @y418 */
+	.empty-title-row {
+		position: absolute;
+		/* absolute-ok: 空态标题行（全宽居中） */
+		left: 0rpx;
+		top: 804.2rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+	}
+	.empty-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	/* 60:898 引导容器 @y460 gap4 */
+	.empty-guide {
+		position: absolute;
+		/* absolute-ok: 空态引导两行 */
+		left: 0rpx;
+		top: 884.6rpx;
+		width: 750rpx;
+		flex-direction: column;
+		align-items: center;
+	}
+	.guide-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.guide-text-2 {
+		margin-top: 7.7rpx; /* 画布 60:898 gap=4pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	/* 60:901 主按钮 250×56pt @(70,538) r28 */
+	.empty-cta {
+		position: absolute;
+		/* absolute-ok: 空态主按钮 */
+		left: 134.6rpx;
+		top: 1034.6rpx;
+		width: 480.8rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 11.5rpx 30.8rpx rgba(176, 89, 59, 0.3);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.empty-cta-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+</style>

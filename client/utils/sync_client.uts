@@ -67,6 +67,8 @@ import { enqueueEntry, countPendingOfTypes, nextBatchOfTypes, removeByIds } from
 const SYNC_TYPES: Array<string> = ['upsert_field', 'delete']
 const CURSOR_KEY: string = 'yishu_sync_cursor'
 const MIRROR_KEY: string = 'yishu_sync_mirror'
+// B7（BB1）：同步链路完成时间落盘键（storage 页「上次同步」读真值）
+const LAST_SYNC_KEY: string = 'yishu_last_sync_at'
 
 // ---------- 工具 ----------
 
@@ -528,6 +530,15 @@ export function reconcileNow(): Promise<ReconcileReport | null> {
 	})
 }
 
+/** B7（BB1）：读上次同步链路完成时间（ISO 串）；无记录返回 ''（调用方显示「—」） */
+export function getLastSyncAt(): string {
+	const raw = uni.getStorageSync(LAST_SYNC_KEY) as string
+	if (raw == null) {
+		return ''
+	}
+	return raw
+}
+
 /** 完整同步链路：补推 → 增量拉取（暂停时直接返回） */
 export function runSyncChain(): Promise<SyncChainResult> {
 	return new Promise<SyncChainResult>((resolve) => {
@@ -537,6 +548,9 @@ export function runSyncChain(): Promise<SyncChainResult> {
 		}
 		pushPendingOps().then((push: PushOutcome) => {
 			pullIncremental().then((pull: PullOutcome) => {
+				// B7（BB1）：链路跑完即落盘完成时刻（链路内逐段失败已有 console.error 与
+				// 暂停计数显式化；此处记录的是「最近一次完整跑链时刻」）
+				uni.setStorageSync(LAST_SYNC_KEY, isoNow())
 				resolve(new SyncChainResult(push.applied, pull.changes, isSyncPaused(), push.conflicts))
 			})
 		})

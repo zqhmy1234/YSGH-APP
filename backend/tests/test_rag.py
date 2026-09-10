@@ -847,3 +847,51 @@ def test_search_llm_rerank_wiring_judged(indexed_store, monkeypatch):
     assert result.hits
     # 至少一条 trace 回填了 llm_rerank_reason（被精排判定过）
     assert any("llm_rerank_reason" in (h.trace or {}) for h in result.hits)
+
+# ---- D3 修复回归（2026-09-08 真机实证）：软删/failed/非归属内容不得出现在搜索结果 ----
+
+
+@pytest.mark.integration
+def test_assemble_hits_filters_deleted_failed_and_foreign():
+    """_assemble_hits DB 回查闸门：done 保留；软删/failed/他人内容整条剔除；
+    非 UUID 测试点与无 DB 模式照常放行（不回归 rag-001 类用例）。"""
+    from datetime import timezone
+
+    from app.services.rag.recall import _assemble_hits
+
+    db = SessionLocal()
+    u1 = User(phone=f"ragd3a-{uuid.uuid4().hex[:8]}", status=1)
+    u2 = User(phone=f"ragd3b-{uuid.uuid4().hex[:8]}", status=1)
+    db.add_all([u1, u2])
+    db.commit()
+    db.refresh(u1)
+    db.refresh(u2)
+    try:
+        c_done = Content(user_id=u1.id, content_type="text", text="正常内容", status="done", source="app")
+        c_del = Content(user_id=u1.id, content_type="text", text="已软删内容", status="done", source="app",
+                        deleted_at=datetime.now(timezone.utc))
+        c_failed = Content(user_id=u1.id, content_type="text", text="失败内容", status="failed", source="app")
+        c_foreign = Content(user_id=u2.id, content_type="text", text="他人内容", status="done", source="app")
+        db.add_all([c_done, c_del, c_failed, c_foreign])
+        db.commit()
+
+        def _rh(cid: str) -> dict:
+            # 模拟 Qdrant 残留向量点：自带 text（DB 回查落空时若仅降级仍会冒充命中内容）
+            return {"content_id": str(cid), "score": 1.0, "dense_score": 1.0, "sparse_score": 0.0,
+                    "text": f"向量残留文本-{str(cid)[:8]}"}
+
+        raw = [_rh(c_done.id), _rh(c_del.id), _rh(c_failed.id), _rh(c_foreign.id), _rh("rag-001")]
+        hits = _assemble_hits(raw, limit=10, db=db, user_id=str(u1.id))
+        got = {h.content_id for h in hits}
+        assert str(c_done.id) in got, "done 内容必须保留"
+        assert str(c_del.id) not in got, "软删内容必须整条剔除（D3 修复点）"
+        assert str(c_failed.id) not in got, "failed 内容必须整条剔除"
+        assert str(c_foreign.id) not in got, "他人内容必须整条剔除（用户隔离）"
+        assert "rag-001" in got, "非 UUID 测试点不受 DB 回查影响照常放行"
+    finally:
+        from sqlalchemy import delete as sa_delete
+        db.execute(sa_delete(Content).where(Content.user_id.in_([u1.id, u2.id])))
+        db.delete(u1)
+        db.delete(u2)
+        db.commit()
+        db.close()

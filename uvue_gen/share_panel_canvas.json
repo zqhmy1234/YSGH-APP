@@ -1,0 +1,73 @@
+{
+ "source": "Ardot 719545763760845 node 63:10 (F7a 分享面板弹层)",
+ "note": "2026-09-03 视觉重设计后真值快照；几何未变，仅 fills/strokes/effects 改版；§W(09-03 峰宝拍板) sheet 承载形状改顶圆角 40pt(77rpx，RecordSheet 家族语言)，画布原值 0 被覆盖",
+ "sheet": {
+  "id": "63:10",
+  "fill": "#FAF9F5",
+  "cornerRadius": 40
+ },
+ "nodes": {
+  "63:11 头行": {
+   "texts": {
+    "63:12 标题": {
+     "fill": "#3A2E25",
+     "size": 16,
+     "weight": "SemiBold"
+    },
+    "63:13 关闭": {
+     "fill": "#B3A696",
+     "size": 22
+    }
+   }
+  },
+  "63:14 卡片预览": {
+   "fill": "#FFFFFF",
+   "cornerRadius": 16,
+   "effects": [
+    {
+     "y": 4,
+     "blur": 16,
+     "a": 0.06
+    },
+    {
+     "y": 1,
+     "blur": 3,
+     "a": 0.04
+    }
+   ],
+   "inner_placeholders": {
+    "63:16": "#E9DFC B(0.914/0.875/0.796)",
+    "63:17": "(0.882/0.827/0.722)"
+   },
+   "ai_badge": {
+    "63:21 icon": "#B05A3A",
+    "63:22 text": "#B05A3A size10"
+   }
+  },
+  "63:23 主按钮": {
+   "fill": "#B05A3A",
+   "cornerRadius": 24,
+   "text_63:24": {
+    "fill": "#FFFFFF",
+    "size": 16,
+    "weight": "SemiBold"
+   }
+  },
+  "63:27/30/33 面板项图标圆": {
+   "fill": "#FFFFFF",
+   "opacity": 1,
+   "cornerRadius": 24,
+   "effects": [
+    {
+     "y": 2,
+     "blur": 8,
+     "a": 0.05
+    }
+   ],
+   "labels_63:28/31/34": {
+    "fill": "#B3A696",
+    "size": 11
+   }
+  }
+ }
+}

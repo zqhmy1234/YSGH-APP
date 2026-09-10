@@ -1,0 +1,1251 @@
+{
+ "id": "60:433",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9725490212440491,
+    "g": 0.9686274528503418,
+    "b": 0.95686274766922
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 844,
+ "name": "F1j 照片·三图",
+ "x": 13810,
+ "y": 120,
+ "clipsContent": true,
+ "children": [
+  {
+   "id": "60:434",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.9725490212440491,
+      "g": 0.9686274528503418,
+      "b": 0.95686274766922
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 390,
+   "height": 844,
+   "name": "页面层",
+   "x": 0,
+   "y": 0,
+   "clipsContent": true,
+   "children": [
+    {
+     "id": "60:435",
+     "type": "TEXT",
+     "fontSize": 15,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "9:41",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 70,
+     "height": 20,
+     "name": "状态栏时间",
+     "x": 24,
+     "y": 16,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:436",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 24,
+     "height": 12,
+     "name": "电池",
+     "x": 342,
+     "y": 20,
+     "clipsContent": true,
+     "cornerRadius": 4,
+     "children": []
+    },
+    {
+     "id": "60:437",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 24,
+     "height": 24,
+     "name": "返回",
+     "x": 20,
+     "y": 60,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:447",
+       "type": "VECTOR",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 16,
+       "height": 16,
+       "name": "Vector",
+       "x": 4,
+       "y": 4
+      }
+     ]
+    },
+    {
+     "id": "60:438",
+     "type": "TEXT",
+     "fontSize": 17,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Semi Bold"
+     },
+     "characters": "照片",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 24,
+     "name": "标题",
+     "x": 0,
+     "y": 60,
+     "textAlignHorizontal": "CENTER",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:439",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 140,
+     "height": 5,
+     "name": "Home指示条",
+     "x": 125,
+     "y": 828,
+     "clipsContent": true,
+     "cornerRadius": 3,
+     "children": []
+    },
+    {
+     "id": "60:440",
+     "type": "TEXT",
+     "fontSize": 13,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "照片 · 3/9",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.5411764979362488,
+        "g": 0.47843137383461,
+        "b": 0.4156862795352936
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 120,
+     "height": 18,
+     "name": "节标-转写",
+     "x": 24,
+     "y": 116,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:441",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "effects": [
+      {
+       "type": "DROP_SHADOW",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487,
+        "a": 0.05999999865889549
+       },
+       "offset": {
+        "x": 0,
+        "y": 6
+       },
+       "radius": 18,
+       "spread": 0,
+       "visible": true,
+       "blendMode": "NORMAL",
+       "showShadowBehindNode": false,
+       "boundVariables": {}
+      }
+     ],
+     "width": 342,
+     "height": 136,
+     "name": "照片卡",
+     "x": 24,
+     "y": 146,
+     "clipsContent": true,
+     "cornerRadius": 20,
+     "children": [
+      {
+       "id": "60:544",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "IMAGE",
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "rotation": 0,
+         "scaleMode": "FILL",
+         "imageHash": "2557ddfaa12b8cc2938545fecffbfd8975c74ce7",
+         "imageTransform": [
+          [
+           1,
+           0,
+           0
+          ],
+          [
+           0,
+           1,
+           0
+          ]
+         ],
+         "scalingFactor": 1,
+         "filters": {
+          "exposure": 0,
+          "contrast": 0,
+          "saturation": 0,
+          "temperature": 0,
+          "tint": 0,
+          "highlights": 0,
+          "shadows": 0
+         }
+        }
+       ],
+       "width": 96,
+       "height": 96,
+       "name": "照片1",
+       "x": 20,
+       "y": 20,
+       "clipsContent": true,
+       "cornerRadius": 8,
+       "children": [
+        {
+         "id": "60:545",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22699999809265137,
+            "g": 0.18000000715255737,
+            "b": 0.14499999582767487
+           },
+           "opacity": 0.6000000238418579,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 18,
+         "height": 18,
+         "name": "删除角标",
+         "x": 74,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 9,
+         "children": [
+          {
+           "id": "60:546",
+           "type": "TEXT",
+           "fontSize": 12,
+           "lineHeight": {
+            "unit": "AUTO"
+           },
+           "fontName": {
+            "family": "Sarasa Gothic SC",
+            "style": "Regular"
+           },
+           "characters": "×",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 1,
+              "g": 1,
+              "b": 1
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 18,
+           "height": 18,
+           "name": "叉",
+           "x": 0,
+           "y": 0,
+           "textAlignHorizontal": "CENTER",
+           "textAlignVertical": "CENTER"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "60:547",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "IMAGE",
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "rotation": 0,
+         "scaleMode": "FILL",
+         "imageHash": "df534dc6fe19bab9a28564dbc6e8ce2484d04cdb",
+         "imageTransform": [
+          [
+           1,
+           0,
+           0
+          ],
+          [
+           0,
+           1,
+           0
+          ]
+         ],
+         "scalingFactor": 1,
+         "filters": {
+          "exposure": 0,
+          "contrast": 0,
+          "saturation": 0,
+          "temperature": 0,
+          "tint": 0,
+          "highlights": 0,
+          "shadows": 0
+         }
+        }
+       ],
+       "width": 96,
+       "height": 96,
+       "name": "照片2",
+       "x": 123,
+       "y": 20,
+       "clipsContent": true,
+       "cornerRadius": 8,
+       "children": [
+        {
+         "id": "60:548",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22699999809265137,
+            "g": 0.18000000715255737,
+            "b": 0.14499999582767487
+           },
+           "opacity": 0.6000000238418579,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 18,
+         "height": 18,
+         "name": "删除角标",
+         "x": 74,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 9,
+         "children": [
+          {
+           "id": "60:549",
+           "type": "TEXT",
+           "fontSize": 12,
+           "lineHeight": {
+            "unit": "AUTO"
+           },
+           "fontName": {
+            "family": "Sarasa Gothic SC",
+            "style": "Regular"
+           },
+           "characters": "×",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 1,
+              "g": 1,
+              "b": 1
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 18,
+           "height": 18,
+           "name": "叉",
+           "x": 0,
+           "y": 0,
+           "textAlignHorizontal": "CENTER",
+           "textAlignVertical": "CENTER"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "60:550",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "IMAGE",
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "rotation": 0,
+         "scaleMode": "FILL",
+         "imageHash": "559d6ede03f7ed3726d0e7a8a1f04c35342d8c27",
+         "imageTransform": [
+          [
+           1,
+           0,
+           0
+          ],
+          [
+           0,
+           1,
+           0
+          ]
+         ],
+         "scalingFactor": 1,
+         "filters": {
+          "exposure": 0,
+          "contrast": 0,
+          "saturation": 0,
+          "temperature": 0,
+          "tint": 0,
+          "highlights": 0,
+          "shadows": 0
+         }
+        }
+       ],
+       "width": 96,
+       "height": 96,
+       "name": "照片3",
+       "x": 226,
+       "y": 20,
+       "clipsContent": true,
+       "cornerRadius": 8,
+       "children": [
+        {
+         "id": "60:551",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22699999809265137,
+            "g": 0.18000000715255737,
+            "b": 0.14499999582767487
+           },
+           "opacity": 0.6000000238418579,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 18,
+         "height": 18,
+         "name": "删除角标",
+         "x": 74,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 9,
+         "children": [
+          {
+           "id": "60:552",
+           "type": "TEXT",
+           "fontSize": 12,
+           "lineHeight": {
+            "unit": "AUTO"
+           },
+           "fontName": {
+            "family": "Sarasa Gothic SC",
+            "style": "Regular"
+           },
+           "characters": "×",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 1,
+              "g": 1,
+              "b": 1
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 18,
+           "height": 18,
+           "name": "叉",
+           "x": 0,
+           "y": 0,
+           "textAlignHorizontal": "CENTER",
+           "textAlignVertical": "CENTER"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "60:442",
+     "type": "TEXT",
+     "fontSize": 13,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "分类",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.5411764979362488,
+        "g": 0.47843137383461,
+        "b": 0.4156862795352936
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 80,
+     "height": 18,
+     "name": "节标-分类",
+     "x": 24,
+     "y": 312,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:443",
+     "type": "TEXT",
+     "fontSize": 12,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Regular"
+     },
+     "characters": "AI 已预选 · 点标签可纠正",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7019608020782471,
+        "g": 0.6509804129600525,
+        "b": 0.5882353186607361
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 180,
+     "height": 18,
+     "name": "分类提示",
+     "x": 186,
+     "y": 312,
+     "textAlignHorizontal": "RIGHT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:444",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 342,
+     "height": 36,
+     "name": "分类chips",
+     "x": 24,
+     "y": 342,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:455",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.929411768913269,
+          "g": 0.8980392217636108,
+          "b": 0.8352941274642944
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "strokes": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7686274647712708,
+          "g": 0.5686274766921997,
+          "b": 0.23529411852359772
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 96,
+       "height": 36,
+       "name": "chip-选中",
+       "x": 0,
+       "y": 0,
+       "clipsContent": true,
+       "cornerRadius": 18,
+       "children": [
+        {
+         "id": "60:472",
+         "type": "TEXT",
+         "fontSize": 14,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Medium"
+         },
+         "characters": "日常生活",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.3529411852359772,
+            "b": 0.125490203499794
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 96,
+         "height": 20,
+         "name": "chip文字",
+         "x": 0,
+         "y": 8,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:456",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 112,
+       "height": 36,
+       "name": "chip",
+       "x": 108,
+       "y": 0,
+       "clipsContent": true,
+       "cornerRadius": 18,
+       "children": [
+        {
+         "id": "60:473",
+         "type": "TEXT",
+         "fontSize": 14,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "家人与朋友",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 112,
+         "height": 20,
+         "name": "chip文字",
+         "x": 0,
+         "y": 8,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:457",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 64,
+       "height": 36,
+       "name": "chip",
+       "x": 232,
+       "y": 0,
+       "clipsContent": true,
+       "cornerRadius": 18,
+       "children": [
+        {
+         "id": "60:474",
+         "type": "TEXT",
+         "fontSize": 14,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "旅行",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 64,
+         "height": 20,
+         "name": "chip文字",
+         "x": 0,
+         "y": 8,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "60:458",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 34,
+       "height": 36,
+       "name": "chip",
+       "x": 308,
+       "y": 0,
+       "clipsContent": true,
+       "cornerRadius": 17,
+       "children": [
+        {
+         "id": "60:475",
+         "type": "TEXT",
+         "fontSize": 16,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "＋",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7019608020782471,
+            "g": 0.6509804129600525,
+            "b": 0.5882353186607361
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 34,
+         "height": 22,
+         "name": "chip文字",
+         "x": 0,
+         "y": 7,
+         "textAlignHorizontal": "CENTER",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "60:445",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "effects": [
+      {
+       "type": "DROP_SHADOW",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487,
+        "a": 0.05999999865889549
+       },
+       "offset": {
+        "x": 0,
+        "y": 6
+       },
+       "radius": 18,
+       "spread": 0,
+       "visible": true,
+       "blendMode": "NORMAL",
+       "showShadowBehindNode": false,
+       "boundVariables": {}
+      }
+     ],
+     "width": 342,
+     "height": 116,
+     "name": "信息卡",
+     "x": 24,
+     "y": 416,
+     "clipsContent": true,
+     "cornerRadius": 20,
+     "children": [
+      {
+       "id": "60:459",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "width": 20,
+       "height": 20,
+       "name": "时间图标",
+       "x": 20,
+       "y": 22,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "60:476",
+         "type": "VECTOR",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 16.66666603088379,
+         "height": 16.66666603088379,
+         "name": "Vector",
+         "x": 1.6666666269302368,
+         "y": 1.6666666269302368
+        }
+       ]
+      },
+      {
+       "id": "60:460",
+       "type": "TEXT",
+       "fontSize": 15,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "今天 17:42",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 250,
+       "height": 20,
+       "name": "时间文字",
+       "x": 52,
+       "y": 22,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "60:461",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.9411764740943909,
+          "g": 0.9215686321258545,
+          "b": 0.886274516582489
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 302,
+       "height": 1,
+       "name": "分隔线",
+       "x": 20,
+       "y": 57,
+       "clipsContent": true,
+       "children": []
+      },
+      {
+       "id": "60:462",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "width": 20,
+       "height": 20,
+       "name": "地点图标",
+       "x": 20,
+       "y": 74,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "60:477",
+         "type": "VECTOR",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 11.666666030883789,
+         "height": 16.66666603088379,
+         "name": "Vector",
+         "x": 4.166666507720947,
+         "y": 1.6666666269302368
+        }
+       ]
+      },
+      {
+       "id": "60:463",
+       "type": "TEXT",
+       "fontSize": 15,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "上海 · 江边",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 250,
+       "height": 20,
+       "name": "地点文字",
+       "x": 52,
+       "y": 74,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    },
+    {
+     "id": "60:446",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.6901960968971252,
+        "g": 0.3529411852359772,
+        "b": 0.22745098173618317
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "effects": [
+      {
+       "type": "DROP_SHADOW",
+       "color": {
+        "r": 0.6899999976158142,
+        "g": 0.3529999852180481,
+        "b": 0.22699999809265137,
+        "a": 0.30000001192092896
+       },
+       "offset": {
+        "x": 0,
+        "y": 6
+       },
+       "radius": 16,
+       "spread": 0,
+       "visible": true,
+       "blendMode": "NORMAL",
+       "showShadowBehindNode": true,
+       "boundVariables": {}
+      }
+     ],
+     "width": 342,
+     "height": 54,
+     "name": "确定钮",
+     "x": 24,
+     "y": 550,
+     "clipsContent": true,
+     "cornerRadius": 27,
+     "children": [
+      {
+       "id": "60:464",
+       "type": "TEXT",
+       "fontSize": 16,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Medium"
+       },
+       "characters": "确定",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 342,
+       "height": 22,
+       "name": "保存文字",
+       "x": 0,
+       "y": 16,
+       "textAlignHorizontal": "CENTER",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

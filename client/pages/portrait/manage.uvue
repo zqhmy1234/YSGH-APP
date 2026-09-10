@@ -1,4 +1,4 @@
-﻿<template>
+<template>
 	<view class="page">
 		<!-- 顶部导航栏 -->
 		<view class="header">
@@ -7,15 +7,15 @@
 					<text class="back-arrow">‹</text>
 					<text class="back-text">我的</text>
 				</view>
-				<text class="header-title serif">画像管理</text>
-				<view class="header-right"></view>
-			</view>
-			<text class="header-sub">查看和管理你的个人记忆画像</text>
+			<text class="header-title serif">画像管理</text>
+			<view class="header-right"></view>
 		</view>
+	</view>
 
 		<scroll-view class="scroll">
-			<!-- 画像概览卡片 -->
-			<view class="profile-card pressable">
+			<!-- 画像概览卡片（W6 拍板 2026-09-04：画像详情页未设计，整卡不可点；
+			     「画像详情页」已登记远期总账 B 类，出设计稿后再接） -->
+			<view class="profile-card">
 				<view class="profile-head">
 					<view class="profile-avatar">
 						<text class="avatar-text">忆</text>
@@ -80,7 +80,7 @@
 					<view v-for="(s, sIdx) in sensitiveTopics" :key="s.topic" :class="sIdx === sensitiveTopics.length - 1 ? 'sens-row no-border' : 'sens-row'">
 						<text class="sens-name">{{ s.topic }}</text>
 						<text class="sens-badge-text" :style="badgeStyle(s.disposition)">{{ dispositionLabel(s.disposition) }}</text>
-						<text class="sens-remove" @tap="onRemoveSensitive(s)">✕</text>
+						<view class="sens-remove" @tap="onRemoveSensitive(s)"><text class="sens-remove-text">✕</text></view>
 					</view>
 				</view>
 				<!-- 添加行：点击就地展开输入形态（后端 upsert 默认 forbid，MVP 不做级别选择） -->
@@ -103,7 +103,7 @@
 						<image class="menu-icon-img" src="/static/icons/icon-refresh.svg" />
 					</view>
 					<view class="menu-main">
-						<text class="menu-title-text">重新生成画像</text>
+						<text class="menu-title-text">刷新画像</text>
 						<text class="menu-desc">基于最新记忆数据重新计算画像</text>
 					</view>
 					<text class="menu-arrow">›</text>
@@ -139,10 +139,16 @@
 
 		<!-- TabBar（W10.4 换新，峰宝拍板）：旧玻璃自绘 TabBar（emoji 图标）废弃，
 		     统一共享组件（真值 = 画布 TabBar 族：SVG 图标 + FAB 咬合 6pt 同 index/ai/search 页） -->
-		<TabBar active="profile" @plus="sheetOpen = true" />
+		<TabBar active="profile" :subpage="true" @plus="sheetOpen = true" />
 
 		<!-- 记录面板浮层：点中央 + 就地拉起，不跳页（产品定义铁律） -->
 		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+
+		<!-- 编辑性格标签面板（卡24 F9b）：就地拉起不跳页，AI 标签可删 / locked 不可删 -->
+		<TagEditPanel v-if="tagOpen" :ai-tags="tagNamesState" @close="tagOpen = false" @save="onTagsSaved" />
+
+		<!-- 画像隐私设置面板（卡25 F9c）：全屏浮层就地拉起不跳页，开关本地态 + 清除强确认 -->
+		<PortraitPrivacyPanel v-if="privacyOpen" @close="privacyOpen = false" @cleared="onPortraitCleared" />
 	</view>
 </template>
 
@@ -151,8 +157,7 @@
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchInterviewProfile } from '@/utils/play'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
-	import { dayKey } from '@/utils/time'
-	import { showErrorToast, get, post, request } from '@/utils/api'
+	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
 
 	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影）
 	type SensTopic = {
@@ -173,11 +178,24 @@
 	let sensitiveTopics = ref<Array<SensTopic>>([])
 	let adding = ref(false) // 添加行展开态（就地展开输入，不弹窗）
 	let newTopic = ref('')
+	// 浮层开关与标签态（卡24 F9b / 卡25 F9c：模板与 handler 引用，声明归主窗口合并补齐
+	// ——两 Agent 并发各写引用漏声明，setup 未定义引用导致页面渲染黑屏，2026-09-02 真机实锤）
+	let tagOpen = ref(false) // 编辑性格标签面板
+	let privacyOpen = ref(false) // 画像隐私设置面板
+	let tagNamesState = ref<Array<string>>([]) // 当前标签名集（TagEditPanel :ai-tags 契约）
 
 	// 返回键拦截：浮层/添加行开着时先收起，而不是退出页面（返回 true = 已自行处理）
 	onBackPress((): boolean => {
 		if (sheetOpen.value) {
 			sheetOpen.value = false
+			return true
+		}
+		if (tagOpen.value) {
+			tagOpen.value = false
+			return true
+		}
+		if (privacyOpen.value) {
+			privacyOpen.value = false
 			return true
 		}
 		if (adding.value) {
@@ -212,6 +230,9 @@
 				// 从 dimensions 派生性格标签（MVP：取前6个维度）
 				const keys = dims.keys()
 				const tags: Array<any> = []
+				// W1-5 修复：tagNamesState 同步派生（原仅 rebuildTagsFromStorage 写，
+				// 首次打开 TagEditPanel :ai-tags 为空数组 → AI 标签区空白）
+				const names: Array<string> = []
 				for (let i = 0; i < Math.min(6, keys.length); i++) {
 					const key = keys[i]
 					const values = dims.getJSONArray(key)
@@ -224,8 +245,10 @@
 						confidence: conf,
 						active: i < 3
 					})
+					names.push(key)
 				}
 				personalityTags.value = tags
+				tagNamesState.value = names
 			}
 			loading.value = false
 		})
@@ -236,36 +259,21 @@
 		loadStats()
 	}
 
-	// 加载统计数据（从 timeline 计算天数/照片数/主题数）
+	// 加载统计（性能卡 PE 2026-09-04）：统计卡改 GET /events/stats 单聚合端点（api.uts fetchEventStats），
+	// 原 fetchTimeline(null) 全量拉取 + 全事件缩略图触发已删（性能黑洞）。
+	// 记忆主题列表仍需 L2 事件明细（标题/条数派生），窄化为 fetchTimeline(2) 仅拉 L2 子集（server level 过滤）。
 	function loadStats(): void {
-		fetchTimeline(null).then((events: Array<TimelineEvent>) => {
-			let days = 0
-			let photos = 0
-			let themeCount = 0
-			const dayKeys: Map<string, boolean> = new Map<string, boolean>()
-			for (let i = 0; i < events.length; i++) {
-				const ev = events[i]
-				// 统计天数（按 start_time 日期）
-				// 修复（2026-08-31）：startTime 是 epoch ms（number），原 .substring(0,10) 对 number 调用 → 必抛 → 统计恒 0
-				const dayKeyStr = dayKey(ev.startTime)
-				if (!dayKeys.has(dayKeyStr)) {
-					dayKeys.set(dayKeyStr, true)
-					days++
-				}
-				// 统计照片数
-				if (ev.photoIds != null) {
-					photos += ev.photoIds.length
-				}
-				// 统计主题数（L2 事件）
-				if (ev.level === 2) {
-					themeCount++
-				}
+		fetchEventStats().then((s: EventStats | null) => {
+			if (s != null) {
+				totalDays.value = s.dayCount
+				totalPhotos.value = s.photoCount
 			}
-			totalDays.value = days
-			totalPhotos.value = photos
-			totalThemes.value = themeCount
-
-			// 从事件派生记忆主题（MVP：取高频 L2 事件标题）
+			// s==null：请求失败（doRequest 已全局 toast），统计保持 0 不造假
+		})
+		fetchTimeline(2).then((events: Array<TimelineEvent>) => {
+			// 主题数 = L2 事件总数（口径与原 level===2 计数一致）
+			totalThemes.value = events.length
+			// 从 L2 事件派生记忆主题（MVP：取高频 L2 事件标题）——派生逻辑不变，数据源窄化为 L2
 			const themeMap: Map<string, number> = new Map<string, number>()
 			for (let i = 0; i < events.length; i++) {
 				const ev = events[i]
@@ -388,19 +396,68 @@
 
 	// 业务方法
 	function onThemeTap(theme: any): void {
-		uni.showToast({ title: '查看主题：' + theme.name, icon: 'none' })
+		uni.navigateTo({ url: '/pages/portrait/theme-detail?theme=' + encodeURIComponent(theme.name) })
 	}
 	function onRefreshProfile(): void {
 		loading.value = true
 		loadProfile()
 		loadStats()
-		uni.showToast({ title: '正在重新生成画像...', icon: 'none' })
+		uni.showToast({ title: '正在刷新画像...', icon: 'none' })
 	}
 	function onEditTags(): void {
-		uni.showToast({ title: '编辑性格标签（MVP待实现）', icon: 'none' })
+		tagOpen.value = true
 	}
 	function onPrivacySettings(): void {
-		uni.showToast({ title: '画像隐私设置（MVP待实现）', icon: 'none' })
+		privacyOpen.value = true
+	}
+
+	// ── 卡24 F9b：TagEditPanel 结果写回（storage 由面板落，宿主重读重建本地态） ──
+	function onTagsSaved(): void {
+		rebuildTagsFromStorage()
+	}
+
+	/** storage 编辑结果（\n 连接）覆盖 personalityTags/tagNamesState；两键皆空 = 从未编辑，不动派生值 */
+	function rebuildTagsFromStorage(): void {
+		const editedStr = uni.getStorageSync('portrait_ai_tags_edited') as string
+		const lockedStr = uni.getStorageSync('portrait_locked_tags') as string
+		if (editedStr == '' && lockedStr == '') {
+			return
+		}
+		const tags: Array<any> = []
+		const names: Array<string> = []
+		if (editedStr != '') {
+			const segs = editedStr.split('\n')
+			for (let i = 0; i < segs.length; i++) {
+				if (segs[i] != '') {
+					tags.push({ name: segs[i], confidence: 70, active: true })
+					names.push(segs[i])
+				}
+			}
+		} else {
+			// 从未删过 AI 标签：保留现网派生标签
+			for (let i = 0; i < tagNamesState.value.length; i++) {
+				tags.push({ name: tagNamesState.value[i], confidence: 70, active: true })
+				names.push(tagNamesState.value[i])
+			}
+		}
+		if (lockedStr != '') {
+			const lsegs = lockedStr.split('\n')
+			for (let i = 0; i < lsegs.length; i++) {
+				if (lsegs[i] != '') {
+					tags.push({ name: lsegs[i], confidence: 100, active: true })
+					names.push(lsegs[i])
+				}
+			}
+		}
+		personalityTags.value = tags
+		tagNamesState.value = names
+	}
+
+	// ── 卡25 F9c：画像数据已清除（面板清 storage 后回调）→ 本地标签态清零；
+	//    后端画像清除端点未登记（台账 卡25 F9c），不重拉后端防复活 ──
+	function onPortraitCleared(): void {
+		personalityTags.value = []
+		tagNamesState.value = []
 	}
 </script>
 
@@ -454,18 +511,15 @@
 	.header-right {
 		width: 80rpx;
 	}
-	.header-sub {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-top: 8rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-	}
 
 	.scroll {
 		flex: 1;
+		margin-bottom: 110px; /* 真机实锤修复：padding-bottom 240rpx 只在滚到底起效，
+		                         scroll-view 盒子仍通到屏底，任意滚动位内容都会铺进 TabBar 玻璃区；
+		                         改收盒子（TabBar fixed 高 110px），内容永不进 TabBar 区 */
 		padding-left: 40rpx;
 		padding-right: 40rpx;
-		padding-bottom: 240rpx; /* W10.4：避让共享 TabBar（fixed 全高 110px=220rpx） */
+		padding-bottom: 40rpx;
 	}
 
 	/* 画像概览卡片 */
@@ -623,9 +677,8 @@
 		border-bottom-color: #f0ebe3;
 		border-bottom-style: solid;
 	}
-	.theme-item.no-border {
-		border-bottom-width: 0;
-	}
+	/* no-border 为独立覆盖类（模板按行尾条件追加 token）；uvue 禁复合选择器，
+	   原 .theme-item.no-border 复合写法引擎丢弃 → 统一改独立类，置于全部基类之后 */
 	.theme-icon {
 		width: 64rpx;
 		height: 64rpx;
@@ -672,9 +725,6 @@
 		border-bottom-color: #f0ebe3;
 		border-bottom-style: solid;
 	}
-	.sens-row.no-border {
-		border-bottom-width: 0;
-	}
 	.sens-name {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -688,12 +738,19 @@
 		padding: 4.8rpx 11.5rpx;
 		border-radius: 15.4rpx;
 	}
-	.sens-remove {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #b3a696;
-		margin-left: 19.2rpx;
-	}
+.sens-remove {
+	/* 热区 ≥44rpx（text@tap 清零军规 2026-09-06） */
+	margin-left: 19.2rpx;
+	width: 44rpx;
+	height: 44rpx;
+	justify-content: center;
+	align-items: center;
+}
+.sens-remove-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 23.1rpx;
+	color: #b3a696;
+}
 	.sens-add {
 		margin-top: 19.2rpx;
 		height: 77rpx;
@@ -755,8 +812,10 @@
 		border-bottom-color: #f0ebe3;
 		border-bottom-style: solid;
 	}
-	.menu-row.no-border {
-		border-bottom-width: 0;
+	/* 独立覆盖类：行尾去分隔线（theme-item/sens-row/menu-row 三族共用；
+	   写在全部基类之后，对齐 favorites card-meta-first 真机先例） */
+	.no-border {
+		border-bottom-width: 0rpx;
 	}
 	.menu-icon {
 		width: 56rpx;
@@ -769,10 +828,11 @@
 		margin-right: 20rpx;
 		font-size: 28rpx;
 	}
-	.menu-icon.amber {
+	/* 独立覆盖类（原 .menu-icon.amber/.rust 复合写法引擎丢弃）：模板 token 不变 */
+	.amber {
 		background-color: #c4913c1a;
 	}
-	.menu-icon.rust {
+	.rust {
 		background-color: #b05a3a1f;
 	}
 	/* W10.4：emoji → 同风格线性 SVG（20×20 线稿，显示 28rpx，色随行系） */

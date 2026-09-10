@@ -73,7 +73,13 @@ def get_content_audio(
     因前缀白名单外的「audio/」键 401。
     """
     cid = uuid4_str(content_id)
-    content = db.scalar(select(Content).where(Content.id == cid))
+    # P2-4（2026-09-10 深扫）：与 contents.py waveform/favorite/PATCH 同族
+    # _load_alive_content 口径对齐——补 deleted_at.is_(None)，软删（回收站）期间
+    # 音频不下发（恢复后 deleted_at 清空即复原）。原实现漏过滤：本人软删内容仍
+    # 可被取回音频，与全项目「deleted_at 内容对外不可达」一致性契约相悖
+    content = db.scalar(
+        select(Content).where(Content.id == cid, Content.deleted_at.is_(None))
+    )
     if (
         content is None
         or content.user_id != user.id
@@ -120,7 +126,9 @@ def get_media(key: str, exp: int | None = None, uid: str | None = None, sig: str
 
     ok, reason = verify_media(key, exp or 0, uid or "", sig or "")
     if not ok:
-        logger.info("媒体票据校验失败 reason=%s key=%s uid=%s", reason, key, uid)
+        # P2-6（2026-09-10 深扫）：降级 debug 且只留 reason——票据失败属高频可预期
+        # 事件（过期/篡改），info 级刷屏；key/uid 虽非机密但不进日志更稳
+        logger.debug("媒体票据校验失败 reason=%s", reason)
         raise ApiError(ERR_MEDIA_001, "媒体票据无效或已过期", http=401)
 
     backend = get_storage_backend()

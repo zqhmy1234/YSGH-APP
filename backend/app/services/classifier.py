@@ -36,8 +36,10 @@ LABEL_CN_MAP = dict(zip(DEFAULT_CLASSES, DEFAULT_CLASSES_CN, strict=True))
 def _load() -> tuple[object | None, list[str], list[str]]:
     """加载模型 + 标签映射（进程内单例）
 
-    2026-08-25 内存优化：model_kwargs torch_dtype=float16（SetFit 底座=BGE-M3 全参微调，
-    fp32 实测 2.2GB → fp16 约 1.2GB；CPU 推理可用，test_setfit 回归覆盖）。
+    2026-08-25 内存优化：model_kwargs dtype=float16（SetFit 底座=BGE-M3 全参微调，
+    fp32 实测 2.2GB → fp16 约 1.2GB；CPU 推理可用，test_setfit 回归覆盖。
+    2026-08-29 O-1 顺带项：torch_dtype→dtype（transformers>=4.56 改名，4.57 旧名弃用警告）；
+    降级路径加 degraded 标记（D-22：mixed 不再与模型结论混同）。
     2026-08-26 降级：模型目录缺失/加载失败（CI 全新检出无 gitignore 权重、生产未预置）
     → 返回 None，classify/classify_batch 走确定性降级（mixed），不崩溃（与 rerank/caption 降级同模式）。
     """
@@ -45,7 +47,7 @@ def _load() -> tuple[object | None, list[str], list[str]]:
         import torch
         from setfit import SetFitModel
 
-        model = SetFitModel.from_pretrained(_MODEL_DIR, model_kwargs={"torch_dtype": torch.float16})
+        model = SetFitModel.from_pretrained(_MODEL_DIR, model_kwargs={"dtype": torch.float16})
     except Exception as exc:  # noqa: BLE001 —— 模型不可用降级（不阻断分类/纠错链路）
         logger.warning("SetFit 模型不可用（%s），分类降级为 mixed 规则结果: %s", _MODEL_DIR, exc)
         return None, DEFAULT_CLASSES, DEFAULT_CLASSES_CN
@@ -60,11 +62,16 @@ def _load() -> tuple[object | None, list[str], list[str]]:
 
 
 def _fallback_result(text: str, classes: list[str], classes_cn: list[str]) -> dict:
-    """模型不可用时确定性降级：mixed（不猜具体类，避免错误分类污染纠错/画像）"""
+    """模型不可用时确定性降级：mixed（不猜具体类，避免错误分类污染纠错/画像）
+
+    D-22（08-29）：degraded=True 显式标记——降级 mixed+conf0 与模型真判 mixed 从此
+    可区分，裁决链/客户端不再把「模型没跑」伪装成分类结论（与 D-16 emotion_source 同族教训）。
+    """
     return {
         "label": "mixed",
         "label_cn": "混合",
         "confidence": 0.0,
+        "degraded": True,
         "scores": [{"label": c, "label_cn": cn, "score": 0.0} for c, cn in zip(classes, classes_cn, strict=True)],
     }
 
@@ -85,6 +92,7 @@ def classify(text: str) -> dict:
         "label": classes[idx],
         "label_cn": classes_cn[idx],
         "confidence": round(float(probs[idx]), 4),
+        "degraded": False,
         "scores": [
             {"label": c, "label_cn": cn, "score": round(float(p), 4)}
             for c, cn, p in zip(classes, classes_cn, probs, strict=True)
@@ -111,6 +119,7 @@ def classify_batch(texts: list[str]) -> list[dict]:
             "label": classes[idx],
             "label_cn": classes_cn[idx],
             "confidence": round(float(p[idx]), 4),
+            "degraded": False,
             "scores": [
                 {"label": c, "label_cn": cn, "score": round(float(s), 4)}
                 for c, cn, s in zip(classes, classes_cn, p, strict=True)

@@ -18,19 +18,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (  # noqa: E501
     asr,
     auth,
+    capsules,
     classify,
     contents,
     corrections,
     echo,
     events,
+    export,
     interview,
     messages,
     search,
+    stats,
     sync,
     upload,
+    users,
     wechat,
 )
-from app.api.contents import profile_sensitive_router
+from app.api.contents import favorites_router, profile_sensitive_router, trash_router
 from app.api.event_items import router as event_items_router
 from app.api.media import router as media_router  # 媒体票据下发（Valet Key · 2026-08-31）
 from app.api.thumbnails import router as thumbnails_router  # B4 缩略图（Wave3 AgentG 提供，集成接线）
@@ -112,7 +116,9 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(contents.router)
-    app.include_router(profile_sensitive_router)  # B5b FIX-4：画像级敏感增删查（Wave1 AgentC 提供，集成接线）
+    app.include_router(profile_sensitive_router)  # B5b FIX-4
+    app.include_router(trash_router)  # W2-1 回收站列表/恢复/清空
+    app.include_router(favorites_router)  # W2-2 收藏列表：画像级敏感增删查（Wave1 AgentC 提供，集成接线）
     app.include_router(event_items_router)  # B3-4 照片→事件反向入口（Wave2 AgentE 提供）
     app.include_router(thumbnails_router)  # B4 缩略图 GET /api/v1/thumbnails/{content_id}（Wave3 AgentG 提供）
     app.include_router(media_router)  # 媒体票据下发 GET /api/v1/media/{key}（Valet Key；<image> 用）
@@ -120,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(classify.router)
     app.include_router(corrections.router)
+    app.include_router(export.router)  # A9 数据导出（卡E03 W3 恢复：US-42 链路）
     app.include_router(asr.router)
     app.include_router(asr.guard_router)
     app.include_router(sync.router)
@@ -127,7 +134,10 @@ def create_app() -> FastAPI:
     app.include_router(interview.router)
     app.include_router(wechat.router)
     app.include_router(messages.router)
+    app.include_router(capsules.router)  # BA2 时间胶囊（远期总账 A5）
     app.include_router(upload.router)
+    app.include_router(stats.router)  # R9-7 hero 副标题 API 化（Q5 拍板）
+    app.include_router(users.router)  # BB1 GET /api/v1/users/me（当前用户信息·手机号服务端掩码）
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

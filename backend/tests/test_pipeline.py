@@ -160,7 +160,7 @@ class TestVoicePipeline:
         # F4/R5-5：尾段先入队后提交——情绪任务经 enqueue_unique（同 content 键去重）
         monkeypatch.setattr(
             "app.core.queue.enqueue_unique",
-            lambda func, key, **kw: queued.append((func, key)),
+            lambda func, key, *a, **kw: queued.append((func, key, a)),
         )
         from app.services.pipeline import enrich_content_emotion, process_content
 
@@ -168,7 +168,10 @@ class TestVoicePipeline:
         assert response["status"] == "done"
         assert response["emotion_job"] == "queued"
         assert calls == [{"enhance_emotion": False}]
-        assert queued == [(enrich_content_emotion, str(c.id))]
+        # R9-B6：函数参数经 *args 透传（旧 lambda 缺 *a 会 TypeError）；
+        # BA3 后带文本语音还会投 tag_content——情绪任务用过滤断言
+        emotion_calls = [q for q in queued if q[0] == enrich_content_emotion]
+        assert emotion_calls == [(enrich_content_emotion, str(c.id), (str(c.id),))]
         db.refresh(c)
         assert c.status == "done"
         assert c.text == "云端转写先完成"

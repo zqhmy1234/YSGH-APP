@@ -47,6 +47,8 @@ def get_event_items(db: Session, user_id: str, event_id: str) -> list[dict]:
             "title": (c.text or "")[:80] if c.text else None,
             "taken_at": c.taken_at,
             "place": c.place,
+            # R9 批次4：语音成员禁播态判据（processing/failed → 客户端禁播+小字，Q2 拍板）
+            "status": c.status,
         }
         for c in rows
     ]

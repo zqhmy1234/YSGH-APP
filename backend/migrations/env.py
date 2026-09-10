@@ -26,7 +26,9 @@ from app.db.session import Base  # noqa: E402
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False：fileConfig 默认会禁用已在册 logger（如 yishu.pipeline），
+    # 导致迁移测试之后的用例日志全灭（2026-09-07 BA3 合跑污染实锤）
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", settings.database_url)
 

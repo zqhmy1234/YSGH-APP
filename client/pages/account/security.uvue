@@ -17,7 +17,8 @@
 						<image class="sec-icon-img" src="/static/icons/icon-phone.svg" />
 					</view>
 					<text class="sec-label">手机号</text>
-					<text class="sec-value">138****5678</text>
+					<!-- B4（BB1）：GET /users/me 真值（服务端掩码 138****XXXX）；失败/未绑定保持「未绑定」不显假号 -->
+					<text class="sec-value">{{ phoneText }}</text>
 					<text class="sec-arrow">›</text>
 				</view>
 				<view class="sec-row" @tap="onWechat"> <!-- 画布 41:176 行·微信 -->
@@ -57,12 +58,33 @@
 </template>
 
 <script setup lang="uts">
-	// W10 新页：账号与安全（画布板 41:161）
-	// 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
-	// 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
-	// 手机号/微信/隐私 = MVP toast 占位（对齐 settings 页 goAccount 模式）；
-	// W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
+// W10 新页：账号与安全（画布板 41:161）
+// 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
+// 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
+// W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」）：手机号显「未绑定」不显假号 138****5678
+// （auth 本地仅 token、后端无 users/me）；微信徽章=当前登录方式；绑定管理 toast 措辞「即将上线」；
+// W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
+	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
 	import { logout } from '@/utils/auth'
+	import { fetchUsersMe } from '@/utils/play'
+
+	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
+	let phoneText = ref('未绑定')
+
+	onLoad(() => {
+		fetchUsersMe().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				// 不静默：失败显式 toast，保持「未绑定」降级显示
+				uni.showToast({ title: '账号信息加载失败', icon: 'none' })
+				return
+			}
+			const masked = d.getString('phone')
+			if (masked != null && masked != '') {
+				phoneText.value = masked
+			}
+		})
+	})
 
 	function goBack(): void {
 		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
@@ -70,20 +92,22 @@
 		if (pages.length > 1) {
 			uni.navigateBack({ delta: 1 })
 		} else {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}
 	}
 
 	function onPhone(): void {
-		uni.showToast({ title: '手机号管理开发中', icon: 'none' })
+		// W0-4 诚实化：绑定管理能力依赖后端 users/me（B5 远期），措辞改「即将上线」
+		uni.showToast({ title: '手机号绑定即将上线', icon: 'none' })
 	}
 
 	function onWechat(): void {
-		uni.showToast({ title: '微信绑定管理开发中', icon: 'none' })
+		// W0-4：徽章「已绑定」反映当前登录方式=微信（wechatLogin 真链路）；解绑/换绑管理远期 B5
+		uni.showToast({ title: '微信绑定管理即将上线', icon: 'none' })
 	}
 
 	function onPrivacy(): void {
-		uni.showToast({ title: '隐私权限开发中', icon: 'none' })
+		uni.showToast({ title: '隐私权限设置即将上线', icon: 'none' })
 	}
 
 	function onLogout(): void {
@@ -94,7 +118,7 @@
 				if (res.confirm) {
 					// logout() 幂等：后端吊销失败也清本地凭据并 resolve(true)（auth.uts G1/R6#7）
 					logout().then((_ok: boolean) => {
-						uni.reLaunch({ url: '/pages/index/index' })
+						uni.reLaunch({ url: '/pages/shell/shell' })
 					})
 				}
 			}

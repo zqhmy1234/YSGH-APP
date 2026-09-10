@@ -321,3 +321,33 @@ def test_wechat_delete_requires_auth():
     r = client.post("/api/v1/wechat/delete", data={"msg_id": "1234567890"})
     assert r.status_code == 401
     assert r.json()["code"] == "AUTH_005"
+
+
+# ══════════ P1-1 回归（2026-09-10 深扫修复：回调 XML 安全解析）══════════
+
+
+def test_handle_message_malformed_xml_raises_valueerror():
+    """P1-1：畸形 XML body 必须转 ValueError（api 层 except ValueError→403）——
+    回归钉桩：原生 ET.ParseError 继承 SyntaxError 会漏过 except ValueError 变 500。"""
+    with pytest.raises(ValueError):
+        handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", "<xml><unclosed>")
+
+
+def test_handle_message_entity_expansion_raises_valueerror():
+    """P1-1：内部实体膨胀（billion-laughs 型）payload 必须 ValueError（defusedxml 拦截，
+    DefusedXmlException 是 ValueError 子类）——未认证 DoS 防线。"""
+    ents = '<!ENTITY lol "lol">'
+    for i in range(1, 10):
+        ref = "&lol;" if i == 1 else "&lol" + str(i - 1) + ";"
+        body = ref * 10
+        ents += "<!ENTITY lol" + str(i) + ' "' + body + '">'
+    evil = "<xml><!DOCTYPE lolz [" + ents + "]><Encrypt>&lol9;</Encrypt></xml>"
+    with pytest.raises(ValueError):
+        handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", evil)
+
+
+def test_handle_message_oversized_body_rejected():
+    """P1-1：body 超长（>100KB）解析前即拒（ValueError），防大 body 内存吃满。"""
+    big = "<xml><Encrypt>" + "A" * 110_000 + "</Encrypt></xml>"
+    with pytest.raises(ValueError):
+        handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", big)

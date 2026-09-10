@@ -25,6 +25,8 @@ class SearchHit(BaseModel):
     event_id: str | None
     event_title: str | None
     score: float
+    # 命中内容缩略图票据 URL（Valet Key，仅 photo 类型有值；2026-09-04 峰宝拍板搜索结果带图）
+    thumbnail_url: str | None = None
     # 溯源（大厂标配 + 记忆类产品信任底线，B2 关键设计约束 #3）
     trace: dict = Field(..., description="命中字段/事件/标签解释，RET-016")
 

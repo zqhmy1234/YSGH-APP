@@ -21,6 +21,8 @@ class ClassifyResult(BaseModel):
     label_cn: str
     confidence: float
     scores: list[ClassScore]
+    # D-22（08-29）：true=模型不可用的降级 mixed，非模型结论；客户端据此差异化展示
+    degraded: bool = False
 
 
 class ClassifyJobQueued(BaseModel):

@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # R6#12（输入校验）：cos_key/thumbnail_key 仅允许本域前缀
 # （与 api/contents._validate_cos_key 运行时校验同源；防任意键入库污染/存储遍历）
@@ -32,6 +32,13 @@ class ContentCreate(BaseModel):
     )
     extra: dict[str, Any] | None = None   # EXIF/时长/尺寸
     source: str = Field("app", pattern=r"^(app|windows|wechat|import)$")
+    remark: str | None = Field(
+        None, max_length=2000, description="用户备注（BA1：save 系接口可选上送）"
+    )
+    size_bytes: int | None = Field(
+        None, ge=0,
+        description="声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）",
+    )
 
 
 class ContentOut(BaseModel):
@@ -52,6 +59,12 @@ class ContentOut(BaseModel):
     # 契约「默认缩略图 + 原图按需」：列表/卡片只用 thumbnail_url，点开详情才取 original_url。
     thumbnail_url: str | None = None
     original_url: str | None = None
+    # BA1 字段补齐批（迁移 f2a3b4c5d6e7）：全可选默认 None，老数据不受影响
+    duration: int | None = None        # 音频时长秒
+    remark: str | None = None          # 用户备注
+    size_bytes: int | None = None      # 原件体积
+    tags_json: list | None = None      # 预留 AI 打标
+    ai_description: str | None = None  # 预留照片 AI 描述
 
 
 class ProfileSensitiveCreate(BaseModel):
@@ -94,3 +107,61 @@ class CosPresign(BaseModel):
     session_token: str
     expired_at: datetime
     cos_key: str
+
+
+# ---------- W2-1 删除/回收站 + W2-2 收藏（2026-09-05） ----------
+
+TRASH_RETENTION_DAYS = 30  # 回收站保留期（对齐客户端 trash 页文案「保留 30 天」）
+
+
+class ContentRemarkUpdate(BaseModel):
+    """内容备注更新入参（PATCH /api/v1/contents/{id}；BB1）
+
+    extra="forbid"：仅允许 remark 单字段，越权字段（status/user_id 等）显式 422；
+    remark 可为 null（清除备注）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    remark: str | None = Field(None, max_length=2000, description="用户备注；null=清除")
+
+
+class ContentDeleteOut(BaseModel):
+    """软删出参（DELETE /api/v1/contents/{content_id}；W2-1）
+
+    permanent_at：软删=保留期截止时间；restore 场景为 null。
+    """
+
+    content_id: str
+    deleted: bool
+    permanent_at: datetime | None = Field(None, description="保留期截止（30 天后彻底清除）；恢复时为 null")
+
+
+class FavoriteOut(BaseModel):
+    """收藏切换出参（POST/DELETE /api/v1/contents/{content_id}/favorite；W2-2）
+
+    持久化：contents.extra JSONB 键 favorite_at（ISO 字符串，零迁移）——
+    favorite=false 时 favorite_at=null。
+    """
+
+    content_id: str
+    favorite: bool
+    favorite_at: datetime | None = None
+
+
+class TrashItemOut(BaseModel):
+    """回收站条目（GET /api/v1/trash；W2-1）"""
+
+    id: str
+    content_type: str
+    text: str | None = None
+    place: str | None = None
+    taken_at: datetime | None = None
+    deleted_at: datetime
+    days_left: int = Field(description="距彻底清除剩余天数（向下取整，最小 0）")
+
+
+class TrashClearOut(BaseModel):
+    """回收站清空出参（DELETE /api/v1/trash）"""
+
+    cleared: int

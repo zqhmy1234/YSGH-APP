@@ -18,6 +18,21 @@ class VoiceInfo(BaseModel):
     wave_heights: list[int] = []
 
 
+class EventPhotoOut(BaseModel):
+    """事件成员照片（Valet Key 票据直发 · 2026-09-04 补齐）
+
+    thumbnail_url/original_url 为签名票据 URL（<image :src> 直连，免 header）；
+    taken_at/place/title 供客户端卡片展示。见 media_url.content_urls()。
+    """
+
+    content_id: str
+    thumbnail_url: str | None = None
+    original_url: str | None = None
+    taken_at: datetime | None = None
+    place: str | None = None
+    title: str | None = None
+
+
 class EventOut(BaseModel):
     id: str
     level: int = Field(..., ge=0, le=3)
@@ -35,6 +50,15 @@ class EventOut(BaseModel):
     generated_by: str                   # device / cloud / cloud-llm / cloud-proto / user
     content_count: int = 0
     photo_count: int = 0
+    # 成员照片 content_id 列表（≤4 张，taken_at 序）。
+    # 过渡方案（2026-09-02 主窗口）：客户端 downloadFile+header 拉 /api/v1/thumbnails/{cid}
+    # 落临时文件——图片通路硬约束 token 只能走 header，<image :src> 带不上；
+    # 第四窗 Valet Key（photos[]/thumbnail_url 票据直发）入库后客户端切照片对象，本字段保留兼容。
+    photo_ids: list[str] = []
+    # 成员照片对象（Valet Key 票据直发，每事件 ≤6 张 taken_at 序；主通路）
+    photos: list[EventPhotoOut] = []
+    # 封面缩略图票据 URL（cover_content_id 对应，可不在成员照片前 N 张内）
+    cover_url: str | None = None
     # 语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）
     voice: VoiceInfo | None = None
     # 文字卡引用（像素级 UI 还原：左侧琥珀引用竖线 + 引言体）
@@ -83,6 +107,8 @@ class EventItemOut(BaseModel):
     title: str | None = None
     taken_at: datetime | None = None
     place: str | None = None
+    # R9 批次4（Q2 拍板）：voice 成员禁播态判据——processing/failed → 客户端禁播+小字
+    status: str | None = None
 
 
 class ClientEventItem(BaseModel):

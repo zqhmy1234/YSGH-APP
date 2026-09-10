@@ -2,10 +2,10 @@
 	<view class="page">
 		<!-- ═══════════ 模态遮罩（55% 暗色，压暗真实页面） ═══════════
 		     点遮罩 = 关闭浮层（原独立页无此交互，浮层化后必须补，否则只能靠系统返回键） -->
-		<view class="scrim" @tap="onClose"></view>
+		<view v-if="!directPick" class="scrim" @tap="onClose"></view>
 
 		<!-- ═══════════ 底部弹层：新的记忆（设计稿默认态） ═══════════ -->
-		<view class="sheet">
+		<view v-if="!directPick" class="sheet">
 			<view class="grab"></view>
 			<text class="sheet-title">新的记忆</text>
 			<view class="sheet-options">
@@ -38,310 +38,215 @@
 			<text class="sheet-hint">长按 + 可直达完整记录表单</text>
 		</view>
 
-		<!-- ═══════════ 功能层：选中入口后的记录表单 ═══════════ -->
+		<!-- ═══════════ 功能层：F1 全谱系还原（W0-3 · 2026-09-02）
+		     F1a 待录音 / F1b 录音中（轮盘+CSS 双层螺旋动效）/ F1c 预览 / F1d 语音标注
+		     F1e 写几句 / F1f 输入中（键盘为真机系统键盘）/ F1g-k 照片网格 302/146/96 档位
+		     视觉规范：底 #F6F1E7 · 深棕 #3A2E25 · 次棕 #8A7A6A · 弱棕 #B3A696 · 金 #C4913C · 锈红 #B05A3A -->
 		<view v-if="formMode != ''" class="form-layer">
-
-			<!-- ═══════ 照片模式：F1h–F1k 多图网格编辑态（卡09 F1i 2/9） ═══════ -->
-			<!-- F1a 语音待录态：全屏轮盘设计（canvas JSON 真值还原，390x844） -->
-			<view v-if="formMode == 'voice' && !recording && transcript == '' && !transcribing" class="voice-idle">
-				<text class="vi-time">{{ statusTime }}</text>
-				<view class="vi-battery"></view>
-				<view class="vi-back" @tap="closeForm">
-					<text class="vi-back-icon">‹</text>
+			<!-- 导航：返回 + 标题（语音录制/预览态另有右上关闭，F1a-c 帧真值） -->
+			<view class="fnav">
+				<view class="fnav-btn" @tap="closeForm">
+					<image class="fnav-back-icon" src="/static/icons/i4_135.svg" />
 				</view>
-				<text class="vi-title">说一段</text>
-				<view class="vi-close" @tap="onClose">
-					<text class="vi-close-icon">×</text>
+				<text class="fnav-title">{{ formTitle }}</text>
+				<view v-if="formMode == 'voice' && voiceStage != 'annotate'" class="fnav-btn" @tap="onClose">
+					<text class="fnav-close">✕</text>
 				</view>
-				<view class="vi-wheel">
-					<view class="wheel-center" @tap="toggleRecord"></view>
-					<view class="wheel-dot wd1"></view>
-					<view class="wheel-dot wd2"></view>
-					<view class="wheel-dot wd3"></view>
-					<view class="wheel-dot wd4"></view>
-					<view class="wheel-dot wd5"></view>
-					<view class="wheel-dot wd6"></view>
-					<view class="wheel-dot wd7"></view>
-				</view>
-				<text class="vi-timer">00:00</text>
-				<text class="vi-hint">轻触中央圆点 · 开始录音</text>
-				<view class="vi-home"></view>
+				<view v-else class="fnav-btn"></view>
 			</view>
 
-			<view v-else-if="formMode == 'photo' || formMode == 'gallery'" class="photo-layout">
-				<!-- 自定义头部：状态栏(9:41+电池) + 返回‹ + 居中标题"照片"，无头部保存钮（确定钮在信息卡之后随流） -->
-				<view class="photo-head">
-					<text class="ph-status-time">{{ statusTime }}</text>
-					<view class="ph-status-battery"></view>
-					<view class="photo-back" @tap="closeForm">
-						<text class="photo-back-text">‹</text>
+			<!-- ═══ 语音 · 录制态（F1a/F1b：透明轮盘 7 白点 + 中央磨砂玻璃珠） ═══ -->
+			<view v-if="formMode == 'voice' && voiceStage == 'record'" class="stage-col">
+				<view class="wheel-zone">
+					<!-- 轮盘动画走 UniElement.animate()（§I A' 拍板：CSS @keyframes App 端不支持） -->
+					<view class="wheel" id="rs-wheel">
+						<!-- R3 性能刀（2026-09-04）：21 点 = 7 主 + 7 幽灵a/b 运行留痕采样，改 transform
+						     单函数 translate 驱动（GPU 合成，不触发 layout reflow；§O P1 实锤被丢弃的是
+						     rotate+translate 多函数组合，单函数规避）。尺寸/投影全部静态 CSS 类
+						     （.wds*/.wgs* 尺寸 + .wd 白点阴影），:style 字符串绑定（manage badgeStyle 先例）
+						     只留逐帧 tf；预计算轨道表，tick 仅 index 推进。
+						     档位见 DOT_SPECS：dia20~56 / r154~262 / 角度打破均匀；幽灵=主点 75% 尺寸 -->
+						<view v-for="(p, i) in dotPts" :key="i" :class="dotCls(p, i)" :style="p.tf" :id="'rs-dot' + i"></view>
 					</view>
-					<text class="photo-title">照片</text>
-					<view class="photo-head-spacer"></view>
+					<view class="hub-hit" @tap="toggleRecord">
+						<view class="hub"></view>
+					</view>
 				</view>
+				<view class="rec-bottom">
+					<text class="rec-timer" :class="recording ? 'rec-timer-on' : ''">{{ fmtRecTime(recordSeconds) }}</text>
+					<text class="rec-hint">{{ recordHint }}</text>
+					<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
+						<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
+						<view class="resume-btn" @tap="resumeRecordNow">
+							<text class="resume-text">继续录音</text>
+						</view>
+					</view>
+				</view>
+			</view>
 
-				<scroll-view class="photo-scroll" scroll-y>
-					<!-- 节标：照片 · N/9 -->
-					<text class="photo-section-label">照片 · {{ photoList.length }}/9</text>
+			<!-- ═══ 语音 · 预览态（F1c：转写白卡 + 重新录/确定） ═══ -->
+			<view v-else-if="formMode == 'voice' && voiceStage == 'preview'" class="stage-col">
+				<view class="prev-card">
+					<text class="prev-text">{{ transcript }}</text>
+					<text class="prev-meta">时长 {{ fmtRecTime(recSecFromMs(lastVoiceDuration)) }} · {{ infoTime }}</text>
+				</view>
+				<view class="flex-spacer"></view>
+				<view class="cta-row">
+					<view class="cta2" @tap="reRecord"><text class="cta2-text">重新录</text></view>
+					<view class="cta-main" @tap="toAnnotate"><text class="cta-main-text">确定</text></view>
+				</view>
+			</view>
 
-					<!-- 照片卡：白底圆角阴影，内建自适应网格（2张=单行大图 / 3张=单行小图 / 4张=2×2大图 / 5-9张=九宫格，逐帧画布真值） -->
-					<view class="photo-card" :style="{ height: photoCardHeight + 'rpx' }" @tap="onPhotoCardTap">
-						<view class="photo-grid">
-							<view v-for="(p, idx) in photoList" :key="idx"
-										class="photo-item" @tap="openF1gDetail(idx)"
-										:style="{ width: photoItemSize + 'rpx', height: photoItemSize + 'rpx', marginRight: photoGridGap + 'rpx', marginBottom: photoGridGap + 'rpx', borderRadius: photoItemRadius + 'rpx' }">
-								<image class="photo-img" :src="p" mode="aspectFill" />
-								<view class="photo-delete" @tap.stop="removePhoto(idx)"
-											:style="{ width: photoDeleteSize + 'rpx', height: photoDeleteSize + 'rpx', top: photoDeleteTop + 'rpx', right: photoDeleteRight + 'rpx', borderRadius: photoDeleteRadius + 'rpx' }">
-									<text class="photo-delete-text" :style="{ fontSize: photoDeleteFont + 'rpx', lineHeight: photoDeleteFont + 'rpx' }">×</text>
+			<!-- ═══ 语音 · 补录信息态（F1d：转写内容 + 分类 chips + 信息卡 + 备注 + 保存） ═══
+			     帧真值 record_f1d_canvas.json（390x844 · 35 节点 · 2026-09-02 导出）
+			     分类 chips 用真实枚举 ALL_LABELS（待办/灵感/情绪/引用/混合），画布「日常生活/家人与朋友/旅行」为示例名；
+			     AI 预选 = 进入标注态对转写文本真实打标（submitClassify+pollClassify），非演示 -->
+			<view v-else-if="formMode == 'voice'" class="stage-col">
+				<scroll-view class="anno-scroll" direction="vertical" :show-scrollbar="false">
+					<view class="v-body">
+						<!-- 转写内容（节标 13pt #8A7A6A；白卡 654x250 radius 38rpx，可改字纠正） -->
+						<text class="v-sec v-sec-first">转写内容</text>
+						<textarea class="v-trans" v-model="transcript" :maxlength="2000" />
+						<text v-if="voiceDiag != ''" class="v-diag">{{ voiceDiag }}</text>
+
+						<!-- 分类（AI 已预选 · 点标签可纠正；chips=ALL_LABELS 真实枚举） -->
+						<view class="v-row">
+							<text class="v-row-label">分类</text>
+							<text class="v-row-hint">AI 已预选 · 点标签可纠正</text>
+						</view>
+						<view class="v-chips">
+							<view v-for="t in allLabels" :key="t.key" class="v-chip" :class="vChipCls(t.key)" @tap="onVChipTap(t.key)">
+								<text class="v-chip-text" :class="vChipTextCls(t.key)">{{ t.cn }}</text>
+							</view>
+							<view v-for="c in customLabels" :key="'c_' + c" class="v-chip" :class="custVChipCls(c)" @tap="onVChipTap('custom:' + c)">
+								<text class="v-chip-text" :class="custVChipTextCls(c)">{{ c }}</text>
+							</view>
+							<view class="v-chip v-chip-plus" @tap="onPlusTap"><text class="v-chip-plus-text">＋</text></view>
+						</view>
+						<view v-if="plusOpen" class="plus-editor">
+							<input class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
+							<view class="plus-ok" @tap="confirmCustom"><text class="plus-ok-text">添加</text></view>
+						</view>
+
+						<!-- 信息卡（时间行 + 分隔线 + 地点行；地点为演示值，定位服务接入后替换，台账 B6） -->
+						<view class="v-info">
+							<view class="v-info-row v-info-row1">
+								<view class="v-ico">
+									<view class="v-ico-clock"></view>
+									<view class="v-ico-hv"></view>
+									<view class="v-ico-hh"></view>
 								</view>
+								<text class="v-info-text">{{ infoTime }}</text>
 							</view>
-							<!-- F1h：可见添加格（5张以上九宫格模式，未满9张时显示；4张为2×2大图无添加格） -->
-							<view v-if="photoList.length >= 5 && photoList.length < 9"
-										class="photo-add-cell"
-										:style="{ width: photoItemSize + 'rpx', height: photoItemSize + 'rpx', marginRight: photoGridGap + 'rpx', marginBottom: photoGridGap + 'rpx', borderRadius: photoItemRadius + 'rpx' }"
-										@tap.stop="pickPhoto">
-								<text class="photo-add-text">＋</text>
+							<view class="v-divider"></view>
+							<view class="v-info-row v-info-row2">
+								<view class="v-ico">
+									<view class="v-ico-pin"></view>
+								</view>
+								<text class="v-info-text">{{ locationText }}</text>
 							</view>
 						</view>
-					</view>
 
-					<!-- 分类区 -->
-					<view class="cat-section">
-						<view class="cat-head">
-							<text class="cat-label">分类</text>
-							<text class="cat-hint">AI 已预选 · 点标签可纠正</text>
-						</view>
-						<view class="cat-chips">
-							<view v-for="c in categoryList" :key="c.key"
-										class="cat-chip"
-										:class="c.key === currentCategory ? 'cat-chip-active' : ''"
-										@tap="selectCategory(c.key)">
-								<text class="cat-chip-text"
-											:class="c.key === currentCategory ? 'cat-chip-text-active' : ''">{{ c.cn }}</text>
-							</view>
-							<view class="cat-chip cat-chip-add" @tap="addCategory">
-								<text class="cat-chip-add-text">＋</text>
-							</view>
-						</view>
+						<!-- 备注（BA1 已接真：remark 随保存接口入库，ContentOut 回显） -->
+						<text class="v-sec">备注</text>
+						<textarea class="v-remark" v-model="remark" placeholder="补充几句…" :maxlength="200" />
 					</view>
-
-					<!-- 信息卡：时间 + 地点 -->
-					<view class="info-card">
-						<view class="info-row">
-							<view class="info-icon-wrap">
-								<text class="info-icon-text">◷</text>
-							</view>
-							<text class="info-text">{{ photoTime }}</text>
-						</view>
-						<view class="info-divider"></view>
-						<view class="info-row">
-							<view class="info-icon-wrap">
-								<text class="info-icon-text">⌖</text>
-							</view>
-							<text class="info-text">{{ photoLocation }}</text>
-
-						</view>
-					</view>
-
-					<!-- 确定钮：随内容流放置（canvas y=550 F1j / y=756 F1k，位于信息卡之后，非固定底栏） -->
-					<view class="photo-confirm" @tap="confirmPhoto">
-						<text class="photo-confirm-text">确定</text>
-					</view>
-					<!-- 底部留白（Home 指示条区域） -->
-					<view style="height: 140rpx;"></view>
 				</scroll-view>
-				<!-- Home 指示条（canvas y=828 140x5 r3） -->
-				<view class="photo-home-indicator"></view>
-				<!-- ═══════ F1g 单图详情覆盖层（卡07 还原：canvas 390x844 → 750rpx SCALE=1.9231） ═══════ -->
-				<view v-if="f1gView" class="f1g-overlay">
-					<!-- 导航栏：返回网格 + 标题"照片"（canvas y=60） -->
-					<view class="f1g-nav">
-						<view class="f1g-back" @tap="closeF1gDetail">
-							<text class="f1g-back-text">‹</text>
-						</view>
-						<text class="f1g-title">照片</text>
-						<view class="f1g-nav-spacer"></view>
-					</view>
-
-					<!-- 可滚动内容区 -->
-					<scroll-view class="f1g-scroll" scroll-y>
-						<view class="f1g-content">
-							<!-- 节标：照片 · N/9（canvas y=116，fontSize13 Medium #8A7A6A） -->
-							<text class="f1g-section-label">照片 · {{ f1gPhotoIdx + 1 }}/{{ photoList.length }}</text>
-
-							<!-- 照片卡（canvas y=146 w=342 h=292，白bg圆角20 shadow 0,6,18 6%） -->
-							<view class="f1g-photo-card">
-								<!-- 照片（canvas x=20 y=20 w=302 h=226，圆角12） -->
-								<image v-if="f1gPhotoIdx < photoList.length" class="f1g-photo-img" :src="photoList[f1gPhotoIdx]" mode="aspectFill" />
-								<view v-else class="f1g-photo-placeholder">
-									<text class="f1g-placeholder-icon">◫</text>
-								</view>
-								<!-- AI 描述（canvas y=254，fontSize13 Regular #8A7A6A，帧真值写死） -->
-								<text class="f1g-ai-desc">AI 描述：{{ f1gPhotoIdx < photoAiDescs.length ? photoAiDescs[f1gPhotoIdx] : '' }}</text>
-							</view>
-
-							<!-- 分类节标行（canvas y=488：左"分类" + 右"AI 已预选·点标签可纠正"） -->
-							<view class="f1g-cat-header">
-								<text class="f1g-cat-label">分类</text>
-								<text class="f1g-cat-hint">AI 已预选 · 点标签可纠正</text>
-							</view>
-
-							<!-- 分类 chips（canvas y=518：日常生活[选中]/家人与朋友/旅行/＋） -->
-							<view class="f1g-chips">
-								<view v-for="c in categoryList" :key="c.key" class="f1g-chip" :class="c.key === currentCategory ? 'f1g-chip-active' : ''" @tap="selectCategory(c.key)">
-									<text class="f1g-chip-text" :class="c.key === currentCategory ? 'f1g-chip-active-text' : ''">{{ c.cn }}</text>
-								</view>
-								<view class="f1g-chip f1g-chip-add" @tap="addCategory">
-									<text class="f1g-chip-add-text">＋</text>
-								</view>
-							</view>
-
-							<!-- 信息卡（canvas y=590 w=342 h=116，时间+分隔线+地点） -->
-							<view class="f1g-info-card">
-								<view class="f1g-info-row">
-									<image class="f1g-info-icon" src="/static/icons/i2_319.svg" />
-									<text class="f1g-info-text">{{ photoTime }}</text>
-								</view>
-								<view class="f1g-info-divider"></view>
-								<view class="f1g-info-row">
-									<image class="f1g-info-icon f1g-info-icon-loc" src="/static/icons/i2_320.svg" />
-									<text class="f1g-info-text">{{ photoLocation }}</text>
-								</view>
-							</view>
-
-							<!-- 底部占位（防止内容被固定钮遮挡） -->
-							<view style="height: 180rpx;"></view>
-						</view>
-					</scroll-view>
-
-					<!-- 固定底部确定钮（canvas y=746 w=342 h=54，#B05A3A 圆角27 shadow） -->
-					<view class="f1g-confirm" @tap="confirmPhoto">
-						<text class="f1g-confirm-text">确定</text>
-					</view>
-				</view>
+				<view class="v-save" @tap="onSave"><text class="v-save-text">保存</text></view>
 			</view>
 
-			<!-- ═══════ 文字 / 语音模式：原有布局 ═══════ -->
-			<view v-else class="form-standard">
-				<view class="form-head">
-					<view class="form-back" @tap="closeForm">
-						<text class="form-back-text">‹</text>
-					</view>
-					<text class="form-title serif">{{ formTitle }}</text>
-					<view v-if="formMode != 'text'" class="form-save" @tap="onSave">
-						<text class="form-save-text">{{ saveText }}</text>
-					</view>
-				</view>
-				<scroll-view class="form-scroll">
-					<!-- 文字入口 · F1e 写几句空态 -->
-					<view v-if="formMode == 'text'" class="f1e-body">
-						<text class="f1e-section-label">正文</text>
-						<view class="f1e-input-card">
-							<textarea class="f1e-textarea" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="2000" />
-						</view>
-						<view class="f1e-category-head">
-							<text class="f1e-section-label f1e-category-label">分类</text>
-							<text class="f1e-category-hint">选一个合适的分类</text>
-						</view>
-						<CategoryChips :categories="textCategories" :selected-key="textSelectedCategory" variant="manual" @select="onTextCategorySelect" @add="onTextCategoryAdd" />
-						<view class="f1e-info-card">
-							<view class="f1e-info-row">
-								<view class="f1e-icon-clock">
-									<view class="clock-face"></view>
-									<view class="clock-hand-h"></view>
-									<view class="clock-hand-m"></view>
-								</view>
-								<text class="f1e-info-text">{{ timeDisplay }}</text>
+			<!-- ═══ 标注骨架（F1e 写几句 / F1g-k 照片；F1d 语音走上方专属分支） ═══ -->
+			<view v-else class="stage-col">
+				<scroll-view class="anno-scroll" direction="vertical" :show-scrollbar="false">
+					<view class="anno-body">
+						<!-- 照片区（F1g-k：网格自适应 302/146/96 档位） -->
+						<template v-if="formMode == 'photo'">
+							<text class="sec-label sec-label-first">照片 · {{ photos.length }}/9</text>
+							<view v-if="photos.length == 0" class="pempty" @tap="addPhotos">
+								<text class="pempty-icon">＋</text>
+								<text class="pempty-text">{{ sourceKind == 'camera' ? '点击拍照' : '点击从相册选择' }}</text>
 							</view>
-							<view class="f1e-divider"></view>
-							<view class="f1e-info-row">
-								<view class="f1e-icon-location">
-									<view class="loc-ring"></view>
-									<view class="loc-dot"></view>
+						<view v-else class="pcard">
+							<view class="pgrid">
+								<view v-for="(p, i) in photos" :key="i" class="pcell" :class="cellCls(i, photos.length)">
+									<image class="pimg" :class="imgCls(photos.length)" :src="p" mode="aspectFill" />
+									<view v-if="photos.length > 1" class="pdel" @tap="removePhoto(i)">
+										<text class="pdel-x">✕</text>
+									</view>
 								</view>
-								<text class="f1e-info-text">{{ locationDisplay }}</text>
+							<!-- 加号格：<9 恒显示（峰宝 09-02 拍板：拍 1 张后必须能续拍/续选）；形态随「照片数+加号格」总数（P5） -->
+							<view v-if="photos.length < 9" class="pcell pplus" :class="cellCls(photos.length, photos.length)" @tap="addPhotos">
+								<text class="pplus-icon">＋</text>
 							</view>
-						</view>
-						<text class="f1e-section-label f1e-label-top">备注</text>
-						<view class="f1e-note-card">
-							<textarea class="f1e-note-input" v-model="note" placeholder="补充几句…" :maxlength="500" />
-						</view>
-						<view class="f1e-confirm-btn" @tap="onSave">
-							<text class="f1e-confirm-text">确定</text>
 						</view>
 					</view>
-					<!-- 语音入口 -->
-					<view v-else class="form-body">
-						<view class="record-box">
-							<view class="mic-btn" :class="recording ? 'mic-recording' : ''" @tap="toggleRecord">
-								<text class="mic-icon">{{ recording ? '⏹' : '🎤' }}</text>
+					</template>
+						<!-- 转写内容（F1d，可改字纠正）/ 正文（F1e） -->
+						<template v-else>
+							<text class="sec-label sec-label-first">{{ formMode == 'voice' ? '转写内容' : '正文' }}</text>
+							<textarea v-if="formMode == 'voice'" class="a-input" v-model="transcript" :maxlength="2000" />
+							<textarea v-else class="a-input" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="1000" />
+							<view v-if="formMode == 'text' && draft != ''" class="counter-wrap">
+								<text class="counter-row">{{ draft.length }}/1000</text>
 							</view>
-							<text class="record-hint">{{ recordHint }}</text>
-							<text v-if="recording" class="record-timer">{{ recordSeconds }}s</text>
-							<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
-								<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
-								<view class="resume-btn" @tap="resumeRecordNow">
-									<text class="resume-text">继续录音</text>
+							<!-- 语音诊断行（情绪/通道/安全审核：画布 F1d 无槽位，低调度呈现） -->
+							<text v-if="formMode == 'voice' && voiceDiag != ''" class="diag-line">{{ voiceDiag }}</text>
+						</template>
+
+						<!-- 分类 chips（照片态 hint=AI 已预选 · 点标签可纠正（F1g-k 真值）；写几句=选一个合适的分类（F1e 真值）） -->
+						<view class="sec-row">
+							<text class="sec-row-label">分类</text>
+							<text class="sec-row-hint">{{ formMode == 'photo' ? 'AI 已预选 · 点标签可纠正' : '选一个合适的分类' }}</text>
+						</view>
+						<view class="chips">
+							<view v-for="t in allLabels" :key="t.key" class="chip" :class="manualLabel == t.key ? 'chip-on' : ''" @tap="onChipTap(t.key)">
+								<text class="chip-text" :class="manualLabel == t.key ? 'chip-on-text' : ''">{{ t.cn }}</text>
+							</view>
+							<view v-for="c in customLabels" :key="'c_' + c" class="chip" :class="custChipCls(c)" @tap="onCustChipTap(c)">
+								<text class="chip-text" :class="custChipTextCls(c)">{{ c }}</text>
+							</view>
+							<view class="chip chip-plus" @tap="onPlusTap"><text class="chip-plus-text">＋</text></view>
+						</view>
+						<!-- 自定义分类输入行（点＋展开；本地持久化 custom_labels，后端 corrections 白名单不支持自由标签——台账 A 类） -->
+						<view v-if="plusOpen" class="plus-editor">
+							<input class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
+							<view class="plus-ok" @tap="confirmCustom"><text class="plus-ok-text">添加</text></view>
+						</view>
+
+						<!-- 信息卡（F1g-k/F1d 真值：时间行 + 分隔线 + 地点行；地点为演示值，定位服务接入后替换，台账 B6） -->
+						<view class="v-info">
+							<view class="v-info-row v-info-row1">
+								<view class="v-ico">
+									<view class="v-ico-clock"></view>
+									<view class="v-ico-hv"></view>
+									<view class="v-ico-hh"></view>
 								</view>
+								<text class="v-info-text">{{ infoTime }}</text>
+							</view>
+							<view class="v-divider"></view>
+							<view class="v-info-row v-info-row2">
+								<view class="v-ico">
+									<view class="v-ico-pin"></view>
+								</view>
+								<text class="v-info-text">{{ locationText }}</text>
 							</view>
 						</view>
-						<view v-if="transcribing" class="center-box">
-							<text class="muted">正在转写…</text>
-						</view>
-						<view v-else-if="transcript != ''" class="transcript-box">
-							<view class="transcript-head">
-								<text class="transcript-title serif">转写结果</text>
-								<text v-if="emotion != ''" class="emotion-chip">情绪：{{ emotion }}</text>
-							</view>
-							<view v-if="voiceHints != ''" class="voice-hints">
-								<text class="muted">{{ voiceHints }}</text>
-							</view>
-							<textarea class="text-input serif" v-model="transcript" :maxlength="2000" />
-							<view class="text-actions">
-								<text class="muted">{{ guardMsg }}</text>
-							</view>
+
+						<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；BA1 已接真随保存入库） -->
+						<template v-if="formMode != 'photo'">
+							<text class="sec-label sec-label-gap">备注</text>
+							<textarea class="remark-input" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+						</template>
+
+						<!-- 确定钮（画布真值：随内容流置于信息卡之后，非固定底栏） -->
+						<view class="cta-full" @tap="onSave">
+							<text class="cta-full-text">{{ ctaLabel }}</text>
 						</view>
 					</view>
 				</scroll-view>
 			</view>
-		</view>
 
-		<!-- ═══════════ F1c 语音预览态 ═══════════ -->
-		<view v-if="voicePreview" class="preview-layer">
-			<!-- 状态栏 -->
-			<text class="pv-status-time">9:41</text>
-			<view class="pv-status-battery"></view>
-			<!-- 头部：返回 / 标题 / 关闭 -->
-			<view class="pv-back" @tap="onPreviewBack">
-				<image class="pv-back-icon" src="/static/icons/detail-back.svg" />
-			</view>
-			<text class="pv-title">说一段</text>
-			<view class="pv-close" @tap="onPreviewClose">
-				<text class="pv-close-text">×</text>
-			</view>
-			<!-- 转写卡 -->
-			<view class="pv-card">
-				<scroll-view class="pv-card-scroll" scroll-y="true">
-					<text class="pv-card-text">{{ transcript }}</text>
-				</scroll-view>
-				<text class="pv-card-meta">时长 {{ previewDuration }} · {{ previewTime }}</text>
-			</view>
-			<!-- 底部双按钮 -->
-			<view class="pv-btn-rerecord" @tap="onRerecord">
-				<text class="pv-btn-rerecord-text">重新录</text>
-			</view>
-			<view class="pv-btn-confirm" @tap="onPreviewConfirm">
-				<text class="pv-btn-confirm-text">确定</text>
-			</view>
-			<!-- Home 指示条 -->
-	// ===== F1g 单图详情视图（卡07 还原：单张照片 + AI描述 + 分类chips） =====
-	let f1gView = ref(false)
-	let f1gPhotoIdx = ref(0)
-	// F1g：每张照片的 AI 描述（帧真值写死，USE_MOCK 模式）
-	let photoAiDescs: Array<string> = ['傍晚的江边，梧桐叶沙沙作响', '', '', '', '', '', '', '', '']
-
-			<view class="pv-home-indicator"></view>
+			<view class="home-bar"></view>
 		</view>
 	</view>
 </template>
@@ -351,61 +256,251 @@
 	// 手写 `import { onMounted } from '@dcloudio/uni-app'` 会编译失败
 	// （真机实锤 2026-08-31："onMounted" is not exported by "@dcloudio/uni-app/dist-x/uni-app.es.js"）。
 	import { ensureLogin } from '@/utils/auth'
-	import { labelCn, createTextContent, submitClassify, pollClassify, submitCorrection, submitArbitrate, pollArbitrate, ALL_LABELS } from '@/utils/text_recorder'
+	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
+	import { createTextContentRemark, createVoiceContentRemark } from '@/utils/capsule_api'
 	import {
 		startRecord,
 		stopRecord,
+		pauseRecord,
 		resumeRecord,
 		setShouldResume,
 		recorderState,
 		transcribeWav,
-		saveVoiceContent,
 		uploadVoicePersistent,
 		REC_STATE_PAUSED
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 	import { uploadBatch, UploadProgress, UploadedPhoto } from '@/utils/uploader'
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
-	import CategoryChips from './CategoryChips.uvue'
 
 	// ===== 对外事件 =====
 	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
 	// 关闭由宿主页决定（<RecordSheet v-if="sheetOpen" @close="sheetOpen=false" />）
+	// initialMode：宿主页带模式直达（P6：空状态「拍下第一张」→ 'photo' 直弹相机，不走 photoWatch 原生监听）
+	const props = defineProps({
+		initialMode: {
+			type: String,
+			default: ''
+		}
+	})
 	const emit = defineEmits(['close', 'saved'])
 
-	// ===== Mock 常量（发版前 grep USE_MOCK_ 统一清理） =====
-	// F1i–F1k 照片态帧共用网格：USE_MOCK_PHOTO_COUNT 控制演示张数（2=F1i / 3=F1j / 4=F1k / 6=F1h 九宫格）
-	const USE_MOCK_PHOTO_GRID = true
-	const USE_MOCK_PHOTO_COUNT = 4
+	// 直达拍照态（P6 空状态「拍下第一张」）：直达期间面板 UI 整体隐藏（防「先闪面板再拉相机」），
+	// 相机拍成功才现身照片表单；取消/失败 = emit('close') 直接回宿主页（用户没打开过面板，不留悬空面板）。
+	// ⚠️ 本声明曾在 §T 批并行写竞争中丢失（模板引用未声明变量 → 渲染崩溃，+ / 拍下第一张全灭），§V 补回
+	// ⚠️ 初值必须声明时同步判（§W 峰宝真机复验）：uvue 原生渲染 mounted 钩子晚于首帧上屏，
+	// 若初值 false 靠 onMounted 置 true，首帧会把面板照常画出来 →「先闪面板再开相机」复发
+	// ⚠️ §X 升级为「直达会话全程标志」：成功后不再复位——scrim/sheet 整场不挂载，表单 z 序独占
+	//（09-03 真机实锤：二次进入时三者同帧挂载致 uvue 原生 z 序错乱，表单被面板盖住=「点了没反应」）
+	let directPick = ref(props.initialMode == 'photo')
+
+	// ===== 轮盘圆点（R3 性能刀 2026-09-04：transform 单函数 translate + 预计算轨道表） =====
+	// §O P1 首刀真机实锤（01:32 截图）：:style 双函数 'rotate(a) translateX(r)' 中 rotate 被
+	// 静默丢弃——多函数组合不可靠；R2 改 left/top/width/height 数据驱动（视觉可用但逐帧触发
+	// layout reflow + 21 对象/tick 重建）。R3 按性能卡拍板折中：单函数 'translate(x, y)' 走
+	// GPU 合成（transform 不参与布局），尺寸/投影全部静态 CSS 类，tick 查轨道表推进 index
+	// 拼 tf 字符串（零三角函数、零对象重建）；:style 字符串绑定走 manage badgeStyle 先例。
+	// 轨迹=运行留痕的字面实现（峰宝拍板）：幽灵点 = 主点 t-150ms / t-300ms 时刻的真实位置采样
+	class DotSpec {
+		a: number = 0      // 极角 deg（打破均匀分布）
+		r: number = 0      // 轨道半径 rpx（距心距离不一）
+		dia: number = 0    // 点径 rpx（大小不一）
+		constructor(a: number, r: number, dia: number) {
+			this.a = a
+			this.r = r
+			this.dia = dia
+		}
+	}
+	// 档位（峰宝拍板：大小不一 dia20~56 / 错落有致 / 距心不一 r154~262）
+	const DOT_SPECS: Array<DotSpec> = [
+		new DotSpec(12, 262, 40),
+		new DotSpec(58, 172, 22),
+		new DotSpec(115, 246, 32),
+		new DotSpec(167, 154, 20),
+		new DotSpec(214, 238, 48),
+		new DotSpec(283, 182, 26),
+		new DotSpec(331, 214, 56)
+	]
+	const DOT_DURS = [3600, 4400, 5200, 4000, 4800, 3900, 5600]  // 每点向心振荡周期 ms
+	const DOT_CENTER = 289     // 轮盘圆心 rpx（577/2）
+	const DOT_INWARD = 90      // 向心行程 rpx
+	const DOT_STEPS = 60       // 轨道表档数（向心往返行程 2×90=180rpx / 60 ≈ 3rpx/档，肉眼连续）
+	// 渲染模型：21 点 = 7 主(kind0) + 7 幽灵a(kind1, t-150ms) + 7 幽灵b(kind2, t-300ms)
+	// R3：DotPt 预分配终身复用（tick 零 new）；尺寸走静态类 .wds*/.wgs*（d 只作向心半经补偿）
+	class DotPt {
+		kind: number = 0
+		d: number = 0     // 直径 rpx（幽灵=主点 75%）
+		tf: string = ''   // transform 单函数字符串（唯一逐帧变化量，:style 直接绑定）
+		constructor(kind: number, d: number) {
+			this.kind = kind
+			this.d = d
+		}
+	}
+	// 预计算：轨道半径表（三角波采样，与 animate direction:alternate 同形）+ cos/sin（极角恒定）
+	// 扁平一维存储：DOT_TRACK[i * DOT_STEPS + k] = 主点 i 第 k 档半径
+	const DOT_TRACK: Array<number> = []
+	const DOT_COS: Array<number> = []
+	const DOT_SIN: Array<number> = []
+	function buildDotTrack(): void {
+		for (let i = 0; i < DOT_SPECS.length; i++) {
+			const spec = DOT_SPECS[i]
+			const rad = spec.a * Math.PI / 180.0
+			DOT_COS.push(Math.cos(rad))
+			DOT_SIN.push(Math.sin(rad))
+			for (let k = 0; k < DOT_STEPS; k++) {
+				const ph = k * 1.0 / DOT_STEPS
+				const tri = ph < 0.5 ? ph * 2 : 2 - ph * 2
+				DOT_TRACK.push(spec.r - DOT_INWARD * tri)
+			}
+		}
+	}
+	let dotPts = ref<Array<DotPt>>([])
+	function buildDotPts(): void {
+		const arr: Array<DotPt> = []
+		for (let i = 0; i < DOT_SPECS.length; i++) {
+			const dia = DOT_SPECS[i].dia
+			arr.push(new DotPt(0, dia))
+			arr.push(new DotPt(1, dia * 0.75))
+			arr.push(new DotPt(2, dia * 0.75))
+		}
+		dotPts.value = arr
+	}
+	// R6（2026-09-05 峰宝验机反馈「圆点自身局部小抖动」）：旧 24Hz JS setInterval + Vue 响应式
+	// 逐 tick patch 21 节点，与父轮盘 60fps 原生公转（UniElement.animate）双时钟打架——
+	// JS tick 落在任意 vsync 相位 + Android 定时器漂移，圆点相对顺滑母盘呈现局部抖动。
+	// 修复：圆点改 UniElement.animate 三关键帧三角波（A→B→A，整周期 linear 无限循环，
+	// 不赌 direction:'alternate' 兼容性），与轮盘 rotate 同机制纯原生插值，抖动根除。
+	// 幽灵轨迹=主点 t-150/300ms 采样：setTimeout 延迟起播（同 duration → 恒定相位差）。
+	// keyframes 内 transform 取裸值（轮盘 'rotate(0deg)' 先例）；:style 才要完整声明（R3c 铁律）
+	let dotAnims: Array<UniAnimation> = []
+	let ghostTimers: Array<number> = []
+	let dotPaused = false
+
+	// t 时刻整套点位：查轨道表 index 推进（主点三角波向心振荡，幽灵滞后采样；零三角函数零重建）
+	// R3b 换算系数（峰宝验机 09-04 修复）：transform 值带 rpx 被原生端静默丢弃 → 21 点全部
+	// 塌缩到 (0,0)（视觉=只剩最大那颗+box-shadow 被轮盘 overflow 裁出 90° 直角）、幽灵轨迹同灭。
+	// 官方 transform 仅支持 px：拼 tf 前按 windowWidth/750 换算（§I A' 时代轮盘 animate 同款公式），
+	// 取整 px（点径 20~56rpx≈10~29px、档距≈3rpx，整数 px 视觉无损）。getSystemInfoSync 为
+	// uni-app x 官方支持 uni API，系数缓存一次零逐帧开销
+	let pxScale = 0
+	function getPxScale(): number {
+		if (pxScale == 0) {
+			pxScale = uni.getSystemInfoSync().windowWidth / 750.0
+		}
+		return pxScale
+	}
+	function dotRender(tMs: number): void {
+		const arr = dotPts.value
+		for (let i = 0; i < DOT_SPECS.length; i++) {
+			const dur = DOT_DURS[i]
+			const cx = DOT_COS[i]
+			const cy = DOT_SIN[i]
+			for (let k = 0; k < 3; k++) {
+				const lag = k == 1 ? 150 : (k == 2 ? 300 : 0)
+				const t = tMs - lag
+				const ph = ((t % dur) + dur) % dur / dur
+				const idx = Math.floor(ph * DOT_STEPS) % DOT_STEPS
+				const rT = DOT_TRACK[i * DOT_STEPS + idx]
+				const p = arr[i * 3 + k]
+				// 基点=轮盘左上角（.wdpt 静态钉 0,0），translate 一次到位：圆心位 + 半径偏移 - 半径补偿
+				// （R3c 09-05 真根因修复：R3b 只换了 px 单位没修绑定格式——:style 绑定的是
+				// 完整 CSS 声明串（manage badgeStyle 先例='color:#B05A3A;...'，带属性名），
+				// 裸 transform 值 'translate(...)' 缺属性名 → 原生端按非法 CSS 静默丢弃，
+				// 21 点全部无定位叠 (0,0)=峰宝看到的「只剩一个 90° 裁切阴影小圆」。
+				// 必须拼 'transform:translate(...);' 完整声明；px 换算保留（单位保险））
+				const s = getPxScale()
+				p.tf = 'transform:translate(' + Math.round((DOT_CENTER + cx * rT - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * rT - p.d / 2) * s) + 'px);'
+			}
+		}
+		// 同引用赋值不触发响应式 → slice 新数组身份（21 元素复用，仅 tf 变化被原生 patch）
+		dotPts.value = arr.slice()
+	}
+	function dotCls(p: DotPt, i: number): string {
+		const mi = Math.floor(i / 3)
+		if (p.kind == 0) { return 'wd wdpt wds' + mi }
+		if (!recording.value) { return 'wd wdpt wg wgs' + mi }
+		return (p.kind == 1 ? 'wd wdpt wg wg-a wgs' : 'wd wdpt wg wg-b wgs') + mi
+	}
+	function startDotAnims(): void {
+		stopDotAnims()
+		dotPaused = false
+		const s = getPxScale()
+		for (let i = 0; i < DOT_SPECS.length; i++) {
+			const spec = DOT_SPECS[i]
+			const rad = spec.a * Math.PI / 180.0
+			const cx = Math.cos(rad)
+			const cy = Math.sin(rad)
+			for (let k = 0; k < 3; k++) {
+				const p = dotPts.value[i * 3 + k]
+				const el = uni.getElementById('rs-dot' + (i * 3 + k))
+				if (el == null) { continue }
+				// 三关键帧三角波（与 DOT_TRACK 同形）：A→B→A，时长=DOT_DURS[i]=原整周期，linear
+				const lag = k == 1 ? 150 : (k == 2 ? 300 : 0)
+				if (lag == 0) {
+					el.animate([
+						{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' },
+						{ transform: 'translate(' + Math.round((DOT_CENTER + cx * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px)' },
+						{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' }
+					], { duration: DOT_DURS[i], iterations: Infinity, easing: 'linear' })
+				} else {
+					// 幽灵：延迟起播=主点 t-lag 位置采样（起播前静止在 r0 与主点重合出发）
+					const tid = setTimeout(() => {
+						const a = el.animate([
+							{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' },
+							{ transform: 'translate(' + Math.round((DOT_CENTER + cx * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px)' },
+							{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' }
+						], { duration: DOT_DURS[i], iterations: Infinity, easing: 'linear' })
+						if (dotPaused) { a.pause() }
+						dotAnims.push(a)
+					}, lag) as number
+					ghostTimers.push(tid)
+				}
+			}
+		}
+	}
+	function pauseDotAnims(): void {
+		// 单击暂停：原生动画就地冻结（不复位）
+		dotPaused = true
+		for (const a of dotAnims) { a.pause() }
+	}
+	function resumeDotAnims(): void {
+		dotPaused = false
+		for (const a of dotAnims) { a.play() }
+	}
+	function stopDotAnims(): void {
+		for (const t of ghostTimers) { clearTimeout(t) }
+		ghostTimers = []
+		for (const a of dotAnims) { a.cancel() }
+		dotAnims = []
+		dotRender(0)   // 复位到初始轨道位（幽灵隐藏靠 .wg opacity）
+	}
+	buildDotTrack()
+	buildDotPts()
+	dotRender(0)   // 非录制态初始点位（主点静止在轨道点）
 
 	// ===== 响应式数据 =====
 	// 弹层 / 表单状态
 	let formMode = ref('')
 	let formTitle = ref('写几句')
-	let saveText = ref('记下来')
+	// 语音三段流（F1 录制 → 预览 → 标注）
+	let voiceStage = ref('record') // record | preview | annotate
+	let infoTime = ref('')
+	let manualLabel = ref('')
+	// F1d 语音补录信息态：AI 预选分类（进入标注态真实打标，hint「AI 已预选 · 点标签可纠正」）
+	let aiLabel = ref('')
+	// F1d 信息卡地点行：无定位服务 → USE_MOCK 演示值（00 公共铁律 §5；发版前 grep 清理，台账 B6）
+	const USE_MOCK_LOCATION = true
+	let locationText = ref(USE_MOCK_LOCATION ? '上海 · 江边' : '')
+	let remark = ref('')
+	// 照片（F1g-k 多图）
+	let photos = ref<Array<string>>([])
+	let photoSizes = ref<Array<number>>([])
 	let photoUploading = ref(false)
-	// 照片模式：多图列表（替代原单图 photoPreview）
-	let photoList = ref<Array<string>>([])
-	// 照片模式：分类
-	interface PhotoCategory {
-		key: string
-		cn: string
-	}
-	let categoryList = ref<Array<PhotoCategory>>([
-		{ key: 'daily', cn: '日常生活' },
-		{ key: 'family', cn: '家人与朋友' },
-		{ key: 'travel', cn: '旅行' }
-	])
-	let currentCategory = ref('daily')
-	// 照片模式：信息卡
-	let photoTime = ref('今天 17:42')
-	let photoLocation = ref('上海 · 江边')
+	// 照片入口来源（峰宝 09-02 拍板：拍照/选照片同一表单页，sourceKind 只决定拉相机还是相册）
+	let sourceKind = ref('camera')
 	// 文字记录
 	let draft = ref('')
 	let submitting = ref(false)
-	let classifyLabel = ref('')
-	let currentLabel = ref('')
-	let lastContentId = ref('')
 	let lastText = ref('')
 	let allLabels = ref(ALL_LABELS)
 	// 语音记录
@@ -413,7 +508,9 @@
 	let recordSeconds = ref(0)
 	let recordTimer = ref(0)
 	let recState = ref('idle')
-	let recordHint = ref('点击开始录音（≤30 分钟）')
+	// 单击/双击判定时间戳（峰宝 09-02 拍板：单击=暂停/继续，连点两下=结束；400ms 窗口）
+	let lastTapAt: number = 0
+	let recordHint = ref('轻触中央圆点 · 开始录音')
 	let voiceHints = ref('')
 	let transcribing = ref(false)
 	let transcript = ref('')
@@ -422,97 +519,40 @@
 	let saving = ref(false)
 	let lastVoiceDuration = ref(0)
 	let lastVoiceFile = ref('')
-	// F1a 状态栏时间（canvas 还原：9:41 位置，动态真实时间）
-	let statusTime = ref('9:41')
-	// F1c 预览态
-	let voicePreview = ref(false)
-	let previewDuration = ref('')
-	let previewTime = ref('')
 
-	// ===== F1e 文字空态数据 =====
-	let note = ref('')
-	let textSelectedCategory = ref('daily')
-	let textCategories = ref([
-		{ key: 'daily', label: '日常生活' },
-		{ key: 'family', label: '家人与朋友' },
-		{ key: 'travel', label: '旅行' }
-	])
-	let timeDisplay = ref('今天 17:42')
-	let locationDisplay = ref('上海 · 江边')
-
-	// ===== 照片网格自适应（F1i–F1k 逐帧真值：画布 JSON 定制尺寸，非均分） =====
-	// 大图模式（2/4 张）：146px 方格 · gap 10px · 圆角 10px · 删除角标 20px
-	// 小图模式（3/5-9 张）：96px 方格 · gap 7px · 圆角 8px · 删除角标 18px
-	const PHOTO_CARD_PAD = 38 // 20px × 1.9231 ≈ 38rpx（上下左右）
-	const PHOTO_LARGE_SIZE = 281 // 146px × 1.9231 ≈ 281rpx（F1i 2张 / F1k 4张）
-	const PHOTO_LARGE_GAP = 19 // 10px × 1.9231 ≈ 19rpx
-	const PHOTO_LARGE_RADIUS = 19 // 10px × 1.9231 ≈ 19rpx
-	const PHOTO_LARGE_DEL = 38 // 20px × 1.9231 ≈ 38rpx
-	const PHOTO_LARGE_DEL_TOP = 12 // 6px × 1.9231 ≈ 12rpx
-	const PHOTO_SMALL_SIZE = 185 // 96px × 1.9231 ≈ 185rpx（F1j 3张 / F1h 5-9张）
-	const PHOTO_SMALL_GAP = 13 // 7px × 1.9231 ≈ 13rpx
-	const PHOTO_SMALL_RADIUS = 15 // 8px × 1.9231 ≈ 15rpx
-	const PHOTO_SMALL_DEL = 35 // 18px × 1.9231 ≈ 35rpx
-	const PHOTO_SMALL_DEL_TOP = 8 // 4px × 1.9231 ≈ 8rpx
-	const PHOTO_CARD_H_SQUARE = 658 // 342px × 1.9231 ≈ 658rpx（F1k 4张 2×2 / F1h 5-9张 九宫格）
-
-	// 小图（九宫格）模式 = 3 张或 5-9 张；大图模式 = 2/4 张
-	const photoIsSmall = computed((): boolean => {
-		const c = photoList.value.length
-		return c == 3 || c >= 5
+	const voiceDiag = computed((): string => {
+		const parts: Array<string> = []
+		if (emotion.value != '') {
+			parts.push('情绪：' + emotion.value)
+		}
+		if (voiceHints.value != '') {
+			parts.push(voiceHints.value)
+		}
+		if (guardMsg.value != '') {
+			parts.push(guardMsg.value)
+		}
+		return parts.join(' · ')
 	})
-	const photoGridGap = computed((): number => photoIsSmall.value ? PHOTO_SMALL_GAP : PHOTO_LARGE_GAP)
-	const photoItemRadius = computed((): number => photoIsSmall.value ? PHOTO_SMALL_RADIUS : PHOTO_LARGE_RADIUS)
-	const photoDeleteSize = computed((): number => photoIsSmall.value ? PHOTO_SMALL_DEL : PHOTO_LARGE_DEL)
-	const photoDeleteTop = computed((): number => photoIsSmall.value ? PHOTO_SMALL_DEL_TOP : PHOTO_LARGE_DEL_TOP)
-	const photoDeleteRadius = computed((): number => Math.floor(photoDeleteSize.value / 2))
-	const photoDeleteFont = 23 // 12px × 1.9231 ≈ 23rpx（× 号字号，两模式一致）
-	const photoDeleteRight = 8 // 4px × 1.9231 ≈ 8rpx（两模式一致）
-
-	const photoItemSize = computed((): number => {
-		const count = photoList.value.length
-		if (count <= 0) {
-			return 181 // 空态3列占位
+	const ctaLabel = computed((): string => {
+		if (formMode.value == 'voice') {
+			return '保存'
 		}
-		if (count == 1) {
-			return 581 // 单张全宽（无帧真值，保留既有全宽）
-		}
-		return photoIsSmall.value ? PHOTO_SMALL_SIZE : PHOTO_LARGE_SIZE
-	})
-
-	const photoCardHeight = computed((): number => {
-		const count = photoList.value.length
-		if (count == 2) {
-			return PHOTO_CARD_PAD * 2 + PHOTO_LARGE_SIZE // F1i 186px：单行大图
-		}
-		if (count == 3) {
-			return PHOTO_CARD_PAD * 2 + PHOTO_SMALL_SIZE // F1j 136px：单行小图
-		}
-		if (count == 4) {
-			return PHOTO_CARD_H_SQUARE // F1k 342px：2×2 大图
-		}
-		if (count >= 5) {
-			return PHOTO_CARD_H_SQUARE // F1h 342px：3 列九宫格固定高
-		}
-		if (count == 1) {
-			return PHOTO_CARD_PAD * 2 + 581 // 单张全宽
-		}
-		return PHOTO_CARD_H_SQUARE // 空态：3 行占位
+		return '确定'
 	})
 
 	// ===== 生命周期（组件化：onLoad/onUnload → onMounted/onUnmounted） =====
 	onMounted(() => {
-		// F1a 状态栏时间初始化
-		const _now = new Date()
-		statusTime.value = _now.getHours() + ':' + (_now.getMinutes() < 10 ? '0' : '') + _now.getMinutes()
 		ensureLogin().then((ok: boolean) => {
 			if (!ok) {
 				showErrorToast(new Error('登录失败，请重试'))
 			}
 		})
-		// Mock 注入：F1i–F1k 演示态预填 USE_MOCK_PHOTO_COUNT 张照片
-		if (USE_MOCK_PHOTO_GRID && photoList.value.length == 0) {
-			photoList.value = buildMockPhotoList()
+		// 自定义分类：进面板即读本地持久化（custom_labels 逗号串）
+		customLabels.value = readCustomLabels()
+		// P6：宿主页带模式直达（空状态「拍下第一张」→ 直弹相机）
+		if (props.initialMode == 'photo') {
+			directPick.value = true   // 直达期间隐藏面板 UI，防「先闪面板再拉相机」
+			openMode('photo')
 		}
 	})
 	onUnmounted(() => {
@@ -521,6 +561,52 @@
 			recordTimer.value = 0
 		}
 	})
+
+	// ===== 模板取值封装（uvue 模板不直接绑跨模块复杂表达式） =====
+	function fmtRecTime(sec: number): string {
+		const m = Math.floor(sec / 60)
+		const s = sec % 60
+		const sm = s < 10 ? '0' + s : '' + s
+		const fm = m < 10 ? '0' + m : '' + m
+		return fm + ':' + sm
+	}
+	function recSecFromMs(ms: number): number {
+		return Math.round(ms / 1000)
+	}
+	// F1g-k 网格档位：1 图 302×226 / 2 图两列 146 / 3 图三列 96 / 4 图田字 146 / 5+ 三列 96（pt×1.9231 → rpx）
+	// 列尾零右边距：uvue flex 换行把尾随 margin 计入行宽——2 列 (281+19)×2=600>581 曾致 4 张单列、
+	// 3 列 (185+13)×3=594>581 曾致 5-9 张只剩两列（真机实锤 2026-09-02）
+	// 峰宝 09-02 拍板：形态按「照片数+加号格」总数套，放弃 F1g 单图大图形态（差异台账 §N）——
+	// 1 图+加号=两列(281) / 2+加号=三列(185) / 3+加号=田字(281) / 4+加号起=三列；9 张满无加号格
+	function cellCls(i: number, n: number): string {
+		const total = n + ((n < 9) ? 1 : 0)
+		let cls = ''
+		if (total == 2 || total == 4) {
+			cls = 'pc-b'
+		} else {
+			cls = 'pc-c'
+		}
+		const cols = (total == 2 || total == 4) ? 2 : 3
+		if ((i + 1) % cols == 0 || i == total - 1) {
+			cls = cls + ' pc-nor'
+		}
+		return cls
+	}
+	function imgCls(n: number): string {
+		const total = n + ((n < 9) ? 1 : 0)
+		if (total == 2 || total == 4) {
+			return 'pimg-b'
+		}
+		return 'pimg-c'
+	}
+	function setInfoTime(): void {
+		const d = new Date()
+		const h = d.getHours()
+		const m = d.getMinutes()
+		const hs = h < 10 ? '0' + h : '' + h
+		const ms = m < 10 ? '0' + m : '' + m
+		infoTime.value = '今天 ' + hs + ':' + ms
+	}
 
 	// ===== 浮层整体关闭（点遮罩 / 宿主页调用） =====
 	function onClose(): void {
@@ -533,38 +619,41 @@
 			console.log('[yishu] onClose 停止录音失败（忽略，仍强制关闭浮层）: ' + e)
 		}
 		formMode.value = ''
+		voiceStage.value = 'record'
 		emit('close')
 	}
 
 	// ===== 弹层交互 =====
 	function openMode(m: string): void {
+		if (m == 'photo' || m == 'gallery') {
+			// 峰宝 09-02 拍板：点击**立即**拉 picker（不先进表单页再弹）；成功后才进表单页，
+			// 取消留在记录面板；拍照/选照片进**同一**照片表单（sourceKind 只决定拉相机还是相册）
+			sourceKind.value = m == 'photo' ? 'camera' : 'album'
+			pickPhotos()
+			return
+		}
 		formMode.value = m
-		if (m == 'photo') {
-			formTitle.value = '拍照'
-			saveText.value = '保存'
-		} else if (m == 'gallery') {
-			formTitle.value = '选照片'
-			saveText.value = '保存'
-		} else if (m == 'voice') {
+		setInfoTime()
+		if (m == 'voice') {
 			formTitle.value = '说一段'
-			saveText.value = '确认入库'
+			voiceStage.value = 'record'
+			recordHint.value = '轻触中央圆点 · 开始录音'
+			recordSeconds.value = 0
+			// R7（2026-09-06）：进入录音页先复位录音器——强退路径（onClose「忽略仍关闭」）
+			// 可能留下未释放的原生会话，下次 start 报 Android "other errors"（峰宝真机实锤）。
+			// recorderState() 非 idle 时强制 stop 释放；未录音时 stop 是无害调用（包 try 防御）。
+			try {
+				const st = recorderState()
+				if (st != 'idle' && st != '') {
+					stopRecord()
+					console.log('[yishu] openMode(voice) 防御性复位录音器: 上一状态=' + st)
+				}
+			} catch (e) {
+				console.log('[yishu] openMode(voice) 复位录音器异常（忽略）: ' + e)
+			}
 		} else {
 			formTitle.value = '写几句'
-			saveText.value = '记下来'
 		}
-		// 进入照片模式时确保 mock 数据已注入（onMounted 可能已执行过）
-		if ((m == 'photo' || m == 'gallery') && USE_MOCK_PHOTO_GRID && photoList.value.length == 0) {
-			photoList.value = buildMockPhotoList()
-		}
-	}
-	// F1i–F1k mock 生成：按 USE_MOCK_PHOTO_COUNT 循环轮换两张示例图
-	function buildMockPhotoList(): Array<string> {
-		const srcs = ['/static/hero-lake.jpg', '/static/hero-ai.jpg']
-		const out: Array<string> = []
-		for (let i = 0; i < USE_MOCK_PHOTO_COUNT; i++) {
-			out.push(srcs[i % 2])
-		}
-		return out
 	}
 	function closeForm(): void {
 		// 录音中返回弹层：停止录音，避免后台空转
@@ -577,67 +666,249 @@
 			console.log('[yishu] closeForm 停止录音失败（忽略，仍强制关闭表单）: ' + e)
 		}
 		formMode.value = ''
+		// §X：直达会话（拍下第一张）用户没打开过面板，表单返回=直接关浮层回宿主页
+		if (directPick.value) {
+			emit('close')
+			return
+		}
+		voiceStage.value = 'record'
 	}
 	function onSave(): void {
 		if (formMode.value == 'text') {
 			submitText()
 		} else if (formMode.value == 'voice') {
 			submitVoice()
+		} else {
+			savePhoto()
 		}
 	}
-
-	// ===== 照片 / 相册（多图网格，F1h–F1k） =====
-	function pickPhoto(): void {
-		if (photoList.value.length >= 9) {
-			uni.showToast({ title: '最多 9 张照片', icon: 'none' })
+	function onChipTap(key: string): void {
+		// F1 标注态：点标签选分类（重复点同一枚 = 取消手选）
+		manualLabel.value = manualLabel.value == key ? '' : key
+	}
+	// F1d 语音标注态 chips：有效选中 = 手选优先，未手选则取 AI 预选
+	function vChipCls(key: string): string {
+		const eff = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		return eff == key ? 'v-chip-on' : ''
+	}
+	function vChipTextCls(key: string): string {
+		const eff = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		return eff == key ? 'v-chip-on-text' : ''
+	}
+	function onVChipTap(key: string): void {
+		// F1d：点其他标签 = 手选覆盖 AI 预选；点当前有效选中 = 无操作（不取消）
+		const eff = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		if (eff == key) {
 			return
-	// F1g 单图详情：从网格下钻 / 返回
-	function openF1gDetail(idx: number): void {
-		f1gPhotoIdx.value = idx
-		f1gView.value = true
-	}
-	function closeF1gDetail(): void {
-		f1gView.value = false
-	}
-
 		}
-		const srcs: Array<string> = formMode.value == 'photo' ? ['camera'] : ['album']
-		const remaining = 9 - photoList.value.length
-		uni.chooseImage({
-			count: remaining,
-			sourceType: srcs,
-			success: (res) => {
-				const paths = res.tempFilePaths
-				for (let i = 0; i < paths.length; i++) {
-					if (photoList.value.length < 9) {
-						photoList.value.push(paths[i])
+		manualLabel.value = key
+	}
+	// ===== 自定义分类（峰宝 09-03 拍板：点＋必须可用）=====
+	// 本地持久化 custom_labels（逗号串）；选中 key = 'custom:'+名称。
+	// 诚实边界：后端 corrections.py VALID_CLASSES 白名单不支持自由标签 → 自定义选中时保存跳过 submitCorrection（台账 A 类登记）
+	let customLabels = ref<Array<string>>([])
+	let plusOpen = ref(false)
+	let newCat = ref('')
+	function readCustomLabels(): Array<string> {
+		const out: Array<string> = []
+		try {
+			const raw = uni.getStorageSync('custom_labels')
+			if (raw == null) {
+				return out
+			}
+			if (typeof raw == 'string') {
+				const s = raw as string
+				if (s == '' || s == '[]') {
+					return out
+				}
+				const parts = s.split(',')
+				for (let i = 0; i < parts.length; i++) {
+					const p = parts[i].replace('[', '').replace(']', '').replace(' ', '')
+					if (p != '') {
+						out.push(p)
 					}
 				}
+				return out
+			}
+			const arr = raw as Array<string>
+			for (let i = 0; i < arr.length; i++) {
+				if (arr[i] != '') {
+					out.push(arr[i])
+				}
+			}
+			return out
+		} catch (e) {
+			return out
+		}
+	}
+	function persistCustomLabels(): void {
+		uni.setStorageSync('custom_labels', customLabels.value.join(','))
+	}
+	function confirmCustom(): void {
+		const name = newCat.value.replace(' ', '').trim()
+		if (name == '') {
+			uni.showToast({ title: '请输入分类名', icon: 'none' })
+			return
+		}
+		let dup = false
+		for (let i = 0; i < allLabels.value.length; i++) {
+			if (allLabels.value[i].cn == name) {
+				dup = true
+				break
+			}
+		}
+		for (let i = 0; i < customLabels.value.length; i++) {
+			if (customLabels.value[i] == name) {
+				dup = true
+				break
+			}
+		}
+		if (dup) {
+			uni.showToast({ title: '该分类已存在', icon: 'none' })
+			return
+		}
+		customLabels.value.push(name)
+		persistCustomLabels()
+		manualLabel.value = 'custom:' + name
+		newCat.value = ''
+		plusOpen.value = false
+	}
+	// 自定义 chip 选中态（key='custom:'+名称；复用手选覆盖/取消语义）
+	function isCustOn(c: string): boolean {
+		return manualLabel.value == 'custom:' + c
+	}
+	function custChipCls(c: string): string {
+		return isCustOn(c) ? 'chip-on' : ''
+	}
+	function custChipTextCls(c: string): string {
+		return isCustOn(c) ? 'chip-on-text' : ''
+	}
+	function custVChipCls(c: string): string {
+		return isCustOn(c) ? 'v-chip-on' : ''
+	}
+	function custVChipTextCls(c: string): string {
+		return isCustOn(c) ? 'v-chip-on-text' : ''
+	}
+	function onCustChipTap(c: string): void {
+		const key = 'custom:' + c
+		manualLabel.value = manualLabel.value == key ? '' : key
+	}
+	function onPlusTap(): void {
+		// 点＋展开内联输入行（原 toast「即将上线」已废弃——峰宝拍板必须可用）
+		plusOpen.value = !plusOpen.value
+		if (plusOpen.value) {
+			newCat.value = ''
+		}
+	}
+
+	// ===== 语音三段流（F1a/b → F1c → F1d） =====
+	function toAnnotate(): void {
+		formTitle.value = '补充信息'
+		setInfoTime()
+		voiceStage.value = 'annotate'
+		// F1d：进入标注态即对转写文本真实打标 → AI 预选分类（hint「AI 已预选 · 点标签可纠正」真实化）
+		aiLabel.value = ''
+		if (transcript.value.trim() != '') {
+			submitClassify(transcript.value).then((jobId: string | null) => {
+				if (jobId == null) {
+					return
+				}
+				pollClassify(jobId, 20, 3000).then((result) => {
+					if (result != null && result.label != '') {
+						aiLabel.value = result.label
+					}
+				})
+			})
+		}
+	}
+	function reRecord(): void {
+		transcript.value = ''
+		aiLabel.value = ''
+		emotion.value = ''
+		voiceHints.value = ''
+		guardMsg.value = ''
+		lastVoiceDuration.value = 0
+		lastVoiceFile.value = ''
+		recordSeconds.value = 0
+		recordHint.value = '轻触中央圆点 · 开始录音'
+		formTitle.value = '说一段'
+		voiceStage.value = 'record'
+	}
+
+	// ===== 照片 / 相册（F1g-k：多选 ≤9 张，删除角标 + 加号格续选） =====
+	// sourceKind 决定拉相机还是相册（峰宝 09-02 拍板：拍照/选照片同一表单页，只是入口不同）；
+	// 成功拿到照片才进表单页（不落空表单）；取消一律静默（入口取消=留面板，续选取消=留表单）
+	function pickPhotos(): void {
+		const srcs: Array<string> = sourceKind.value == 'camera' ? ['camera'] : ['album']
+		uni.chooseImage({
+			count: 9 - photos.value.length,
+			sourceType: srcs,
+			success: (res) => {
+				// §X：directPick 是直达会话全程标志，成功后不复位——scrim/sheet 整场不挂载，
+				// 表单独占屏幕（峰宝 09-03 真机实锤：与 scrim/sheet 同帧挂载时 uvue 原生 z 序
+				// 不稳定，二次进入 form-layer 被压到 scrim/sheet 之下=「表单在但看不见+点了没反应」）
+				const paths = res.tempFilePaths
+				for (let i = 0; i < paths.length; i++) {
+					if (photos.value.length >= 9) {
+						break
+					}
+					const p = paths[i]
+					if (p != null) {
+						photos.value.push(p)
+					}
+				}
+				const tfs = res.tempFiles
+				for (let i = 0; i < tfs.length; i++) {
+					const tf = tfs[i]
+					if (tf != null) {
+						photoSizes.value.push(tf.size)
+					}
+				}
+				// 拿到照片才进表单页
+				formMode.value = 'photo'
+				formTitle.value = '照片'
+				setInfoTime()
+				// 画布 F1g-k「AI 已预选」：默认选中首枚（真实照片打标接入前为演示预选，USE_MOCK 登记台账）
+				manualLabel.value = 'todo'
 			},
 			fail: () => {
-				showErrorToast(new Error('未选择照片'))
+				// 取消选择：静默（入口场景留面板 / 续选场景留表单），不给误导 toast
+				// 直达模式（空状态拍下第一张）：用户没打开过面板，取消/失败=直接关浮层回宿主页
+				// §X：directPick 为会话标志不复位（组件随 close 即将销毁）
+				if (directPick.value) {
+					emit('close')
+				}
 			}
 		})
 	}
-	function onPhotoCardTap(): void {
-		// 点击照片卡空白区 = 添加更多照片（F1i 无可见添加钮，卡可点）
-		pickPhoto()
+	function addPhotos(): void {
+		pickPhotos()
 	}
-	function removePhoto(idx: number): void {
-		if (idx < 0 || idx >= photoList.value.length) {
+	function removePhoto(i: number): void {
+		if (i < 0 || i >= photos.value.length) {
 			return
 		}
-		photoList.value.splice(idx, 1)
+		// splice/filter 均零项目先例，按下标重建数组整体重赋值（reactivity 最稳）
+		const next: Array<string> = []
+		for (let j = 0; j < photos.value.length; j++) {
+			if (j != i) {
+				next.push(photos.value[j])
+			}
+		}
+		photos.value = next
+		if (i < photoSizes.value.length) {
+			const ns: Array<number> = []
+			for (let j = 0; j < photoSizes.value.length; j++) {
+				if (j != i) {
+					ns.push(photoSizes.value[j])
+				}
+			}
+			photoSizes.value = ns
+		}
 	}
-	function selectCategory(key: string): void {
-		currentCategory.value = key
-	}
-	function addCategory(): void {
-		uni.showToast({ title: '自定义分类（待接入）', icon: 'none' })
-	}
-	function confirmPhoto(): void {
-		if (photoList.value.length == 0) {
-			showErrorToast(new Error('请先添加照片'))
+	function savePhoto(): void {
+		if (photos.value.length == 0) {
+			showErrorToast(new Error('请先拍照或选一张照片'))
 			return
 		}
 		if (photoUploading.value) {
@@ -646,27 +917,30 @@
 		photoUploading.value = true
 		uni.showLoading({ title: '上传中…', mask: true })
 		const now = Date.now()
+		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
 		const items: Array<PhotoItem> = []
-		for (let i = 0; i < photoList.value.length; i++) {
-			// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
-			const item = new PhotoItem(-now - i, photoList.value[i], now, 0, 0, null, null, 0)
-			items.push(item)
+		for (let i = 0; i < photos.value.length; i++) {
+			const sz = i < photoSizes.value.length ? photoSizes.value[i] : 0
+			items.push(new PhotoItem(-(now + i), photos.value[i], now, 0, 0, null, null, sz))
 		}
 		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()
 			photoUploading.value = false
 			if (uploaded.length > 0) {
-				uni.showToast({ title: '照片已保存', icon: 'success' })
+				uni.showToast({ title: '已记录', icon: 'success' })
 				emit('saved')
-				photoList.value = []
-				closeForm()
+				photos.value = []
+				photoSizes.value = []
+				remark.value = ''
+				manualLabel.value = ''
+				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
 			} else {
 				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
 			}
 		})
 	}
 
-	// ===== 文字记录方法 =====
+	// ===== 文字记录（F1e：确定 → 整栈收起；云端分类继续跑，手选分类不一致时登记纠正） =====
 	function submitText(): void {
 		const text = draft.value.trim()
 		console.log('[yishu] submitText: ' + text)
@@ -674,94 +948,125 @@
 			showErrorToast(new Error('先写点什么吧'))
 			return
 		}
+		if (submitting.value) {
+			return
+		}
 		submitting.value = true
-		classifyLabel.value = '整理中…'
-		currentLabel.value = ''
-		createTextContent(text).then((contentId: string | null) => {
+		const picked = manualLabel.value
+		// BA1（FE2）：备注卡接真——remark 随 POST /api/v1/contents 入库（薄封装 capsule_api）；
+		// 提交前捕获快照（保存成功后 remark 会被清空，闭包内不能读 ref）
+		const remarkVal = remark.value.trim()
+		createTextContentRemark(text, remarkVal).then((contentId: string | null) => {
 			console.log('[yishu] createTextContent -> ' + contentId)
+			submitting.value = false
 			if (contentId == null) {
-				submitting.value = false
-				classifyLabel.value = ''
 				return
 			}
-			lastContentId.value = contentId
+			const cid = contentId
 			lastText.value = text
 			draft.value = ''
+			remark.value = ''
+			manualLabel.value = ''
+			uni.showToast({ title: '已记录', icon: 'success' })
+			emit('saved')
+			emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+			// 云端分类继续执行（服务端打标）；组件可能已随浮层销毁，仅剩服务端副作用
 			submitClassify(text).then((jobId: string | null) => {
-				console.log('[yishu] submitClassify -> ' + jobId)
+				if (picked != '' && picked.indexOf('custom:') != 0) {
+					// 手选分类优先：直接登记纠正，不等 AI 结果（custom: 前缀 = 自定义分类，后端白名单不支持——台账 A 类）
+					submitCorrection(cid, text, picked, '').then((ok: boolean) => {
+						console.log('[yishu] manual correction ok=' + ok)
+					})
+					return
+				}
 				if (jobId == null) {
-					submitting.value = false
-					classifyLabel.value = '已记录'
-					uni.showToast({ title: '已记下', icon: 'success' })
-					emit('saved') // 文字已入库，通知宿主刷新
 					return
 				}
 				pollClassify(jobId, 20, 3000).then((result) => {
-					console.log('[yishu] pollClassify done, result=' + (result != null ? result.label : 'null'))
-					submitting.value = false
-					if (result != null) {
-						currentLabel.value = result.label
-						classifyLabel.value = result.labelCn
-						uni.showToast({ title: '已分类：' + result.labelCn, icon: 'none' })
-						emit('saved') // 文字已入库（分类完成），通知宿主刷新
-					} else {
-						classifyLabel.value = '已记录（分类暂不可用）'
-						uni.showToast({ title: '已记下', icon: 'success' })
-						emit('saved') // 文字已入库，通知宿主刷新
-					}
+					// AI 打标完成即服务端生效，无 UI 依赖
+					console.log('[yishu] pollClassify done, label=' + (result != null ? result.label : 'null'))
 				})
 			})
 		})
-	}
-	function onTagTap(key: string): void {
-		if (lastContentId.value == '' || key === currentLabel.value) {
-			return
-		}
-		const oldLabel = currentLabel.value
-		currentLabel.value = key
-		classifyLabel.value = '纠正中…'
-		submitArbitrate(lastText.value).then((jobId: string | null) => {
-			if (jobId == null) {
-				classifyLabel.value = labelCn(key)
-				submitCorrection(lastContentId.value, lastText.value, key, oldLabel).then((ok: boolean) => {
-					uni.showToast({ title: ok ? '已纠正' : '纠错记录失败', icon: 'none' })
-				})
-				return
-			}
-			pollArbitrate(jobId, 20, 3000).then((finalLabel: string | null) => {
-				if (finalLabel != null) {
-					currentLabel.value = finalLabel
-					classifyLabel.value = labelCn(finalLabel)
-					submitCorrection(lastContentId.value, lastText.value, finalLabel, oldLabel)
-					uni.showToast({ title: '已纠正为：' + labelCn(finalLabel), icon: 'none' })
-				} else {
-					currentLabel.value = key
-					classifyLabel.value = labelCn(key)
-					submitCorrection(lastContentId.value, lastText.value, key, oldLabel)
-					uni.showToast({ title: '已纠正', icon: 'none' })
-				}
-			})
-		})
-	}
-
-	// ===== F1e 文字空态方法 =====
-	function onTextCategorySelect(key: string): void {
-		textSelectedCategory.value = key
-	}
-	function onTextCategoryAdd(): void {
-		uni.showToast({ title: '自定义分类（二期）', icon: 'none' })
 	}
 
 	// ===== 语音录音方法 =====
+	// 轮盘动画（§I A' 拍板：UniElement.animate()，官方 hello-uni-app-x animate 示例同款写法）
+	// 外层轮盘 rotate 360° 无限 linear；7 小圆点各自 translateX 向心，alternate 来回（轨迹痕迹=静态弧 wheel-trails，拍板降级预案）
+	let wheelAnim: UniAnimation | null = null
+	// §O P1-R2：wdAnims/WD_DURS 废弃（21 路 animate → DOT_DURS 数据时钟驱动）
+
+	// §O P1-R2：轮盘公转 UniElement.animate（rotate 单函数已真机实证）+ R6 圆点改同机制
+	// animate 三关键帧三角波（废弃 24Hz JS 时钟——双时钟打架=圆点局部抖动，见 R6 注释）
+	function startWheelAnims(): void {
+		const wheel = uni.getElementById('rs-wheel')
+		if (wheel != null) {
+			wheelAnim = wheel.animate([
+				{ transform: 'rotate(0deg)' },
+				{ transform: 'rotate(360deg)' }
+			], {
+				duration: 9000,
+				iterations: Infinity,
+				easing: 'linear'
+			})
+		}
+		startDotAnims()
+	}
+
+	function stopWheelAnims(): void {
+		wheelAnim?.cancel()
+		wheelAnim = null
+		stopDotAnims()
+	}
+
+	// 暂停/恢复轮盘动画（§M 手动暂停时轮盘同步停转；圆点动画同步冻结/续走）
+	function pauseWheelAnims(): void {
+		wheelAnim?.pause()
+		pauseDotAnims()
+	}
+	function resumeWheelAnims(): void {
+		// 峰宝 09-05 真机实锤（台账 §Y/§CC 续四）：UniAnimation.pause() 后 play() 不续播——
+		// 暂停时动画已失效复位，恢复时 a.play() 无效果=「继续录音动画没了」。
+		// 拍板方案 A：resume 改 stop + 全链重新 animate（rotate/圆点均为无限循环，
+		// 重头播放无跳变感）。已知边界：暂停帧不保证冻结在中途角度（pause 真机行为
+		// 不稳定），暂停视觉=静止轮盘+圆点回轨道位，恢复=重新起转。
+		stopWheelAnims()
+		startWheelAnims()
+	}
+
+	// recording 复位统一出口（4 处 false 赋值收敛，防漏关动画）
+	function setRecordingOff(): void {
+		recording.value = false
+		stopWheelAnims()
+	}
+
 	function toggleRecord(): void {
+		if (transcribing.value) {
+			return
+		}
 		if (recording.value) {
-			stopRecordNow()
+			// 峰宝 09-02 拍板：单击=暂停/继续（立即生效，无 300ms 等待），连点两下=结束录音
+			const now = Date.now()
+			if (lastTapAt > 0 && now - lastTapAt < 400) {
+				lastTapAt = 0
+				endFromTap()
+			} else {
+				lastTapAt = now
+				if (recState.value == REC_STATE_PAUSED) {
+					resumeRecordNow()
+				} else {
+					pauseRecordNow()
+				}
+			}
 		} else {
+			lastTapAt = 0
 			recording.value = true
+			startWheelAnims()
 			recordSeconds.value = 0
 			recState.value = 'idle'
-			recordHint.value = '录音中，再点停止'
+			recordHint.value = '轻触暂停 · 连点两次结束'
 			transcript.value = ''
+			aiLabel.value = ''
 			emotion.value = ''
 			guardMsg.value = ''
 			voiceHints.value = ''
@@ -782,30 +1087,48 @@
 				},
 				(msg: string) => {
 					console.error('[yishu] record error: ' + msg)
-					recording.value = false
+					setRecordingOff()
 					recState.value = 'idle'
-					recordHint.value = '点击开始录音（≤30 分钟）'
+					recordHint.value = '轻触中央圆点 · 开始录音'
 					if (recordTimer.value > 0) {
 						clearInterval(recordTimer.value)
 						recordTimer.value = 0
 					}
-					showErrorToast(new Error('录音失败：' + msg))
+					// R7（2026-09-06）：Android RecorderManager 的 errMsg 是系统原文（如 "other errors"），
+					// 用户看不懂。按常见根因翻译；无法识别时给可行动建议。常见触发：
+					// 上次录音未正确释放（强退路径）后立刻再录 / 麦克风被系统占用 / 快速 start-stop 竞态。
+					const m = msg.toLowerCase()
+					if (m.indexOf('other') >= 0 || m.indexOf('fail') >= 0) {
+						showErrorToast(new Error('录音器未就绪（可能被上次录音占用），请重试一次；仍失败请杀掉 App 重开'))
+					} else if (m.indexOf('permission') >= 0 || m.indexOf('denied') >= 0) {
+						showErrorToast(new Error('麦克风权限未开启，请在系统设置中允许'))
+					} else {
+						showErrorToast(new Error('录音失败：' + msg))
+					}
 				},
 				(autoPaused: boolean) => {
 					console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
 					recState.value = recorderState()
 					recordHint.value = '录音被中断，已暂停'
+					// R7 补缺口：系统中断（来电/音频焦点/省电）时原生录音已自动暂停，但轮盘动画
+					// 与计时器此前不联动——轮盘继续转+计时继续跑，与手动暂停（§M：全联动）不一致。
+					// 对齐 pauseRecordNow 的联动集（轮盘/圆点动画 pause + 计时器冻结）
+					pauseWheelAnims()
+					if (recordTimer.value > 0) {
+						clearInterval(recordTimer.value)
+						recordTimer.value = 0
+					}
 				},
 				(path: string, durationMs: number) => {
-					console.log('[yishu] record auto-stop at 30min, saving.value segment: ' + durationMs + 'ms')
+					console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
 					onRecordStopped(path, durationMs)
 				}
 			)
 			} catch (e) {
 				console.log('[yishu] startRecord failed (标准基座无原生录音插件，状态回滚): ' + e)
-				recording.value = false
+				setRecordingOff()
 				recState.value = 'idle'
-				recordHint.value = '当前基座不支持录音（需自定义基座）'
+				recordHint.value = '轻触中央圆点 · 开始录音'
 				if (recordTimer.value > 0) {
 					clearInterval(recordTimer.value)
 					recordTimer.value = 0
@@ -816,11 +1139,46 @@
 			}
 		}
 	}
+	// §M 手动暂停（方案 B，峰宝 2026-09-02 拍板）：原生已暂停，UI 计时器冻结 + 轮盘停转，
+	// 恢复入口复用 interrupt-bar「继续录音」
+	function pauseRecordNow(): void {
+		try {
+			pauseRecord()
+			recState.value = recorderState()
+			pauseWheelAnims()
+			if (recordTimer.value > 0) {
+				clearInterval(recordTimer.value)
+				recordTimer.value = 0
+			}
+			recordHint.value = '已暂停 · 轻触继续'
+		} catch (e) {
+			console.log('[yishu] pauseRecord failed (标准基座无原生插件，忽略): ' + e)
+		}
+	}
+	// 双击结束：第一击可能已把原生录音置为暂停，先恢复原生态再停（stopped 回调统一走 onRecordStopped）
+	function endFromTap(): void {
+		if (recState.value == REC_STATE_PAUSED) {
+			try {
+				resumeRecord()
+			} catch (e) {
+				console.log('[yishu] endFromTap resumeRecord failed (忽略): ' + e)
+			}
+		}
+		stopRecordNow()
+	}
 	function resumeRecordNow(): void {
 		try {
 			resumeRecord()
 			recState.value = recorderState()
-			recordHint.value = recState.value == REC_STATE_PAUSED ? '录音中，再点停止' : '已继续录音'
+			resumeWheelAnims()
+			// 计时器随恢复重启（暂停期间已冻结）
+			if (recordTimer.value > 0) {
+				clearInterval(recordTimer.value)
+			}
+			recordTimer.value = setInterval(() => {
+				recordSeconds.value++
+			}, 1000) as number
+			recordHint.value = recState.value == REC_STATE_PAUSED ? '录音被中断，已暂停' : '轻触暂停 · 连点两次结束'
 		} catch (e) {
 			console.log('[yishu] resumeRecord failed (标准基座无原生插件，忽略): ' + e)
 		}
@@ -831,9 +1189,9 @@
 		} catch (e) {
 			console.log('[yishu] stopRecord failed (标准基座无原生插件，忽略): ' + e)
 			// 兜底：原生不可用也要把 UI 状态复位，否则「录音中」永远退不出去
-			recording.value = false
+			setRecordingOff()
 			recState.value = 'idle'
-			recordHint.value = '点击开始录音（≤30 分钟）'
+			recordHint.value = '轻触中央圆点 · 开始录音'
 			if (recordTimer.value > 0) {
 				clearInterval(recordTimer.value)
 				recordTimer.value = 0
@@ -841,31 +1199,39 @@
 		}
 	}
 	function onRecordStopped(path: string, durationMs: number): void {
-		recording.value = false
+		setRecordingOff()
 		recState.value = 'idle'
-		recordHint.value = '点击开始录音（≤30 分钟）'
 		if (recordTimer.value > 0) {
 			clearInterval(recordTimer.value)
 			recordTimer.value = 0
 		}
 		if (durationMs < 500) {
+			recordHint.value = '轻触中央圆点 · 开始录音'
 			showErrorToast(new Error('录音太短'))
 			return
 		}
 		lastVoiceDuration.value = durationMs
 		lastVoiceFile.value = path
 		transcribing.value = true
+		recordHint.value = '正在转写…'
 		if (durationMs >= 300000) {
+			// 长录音（>5min）：分段转写走持久上传，无标注态（画布无此帧）——诚实收栈
 			transcribing.value = false
-			voiceHints.value = '长录音已提交，云端整理中（>5min 自动分段转写）'
+			recordHint.value = '轻触中央圆点 · 开始录音'
+			uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
 			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
 				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+				uni.showToast({ title: '已记录', icon: 'success' })
+				emit('saved')
+				emit('close')
 			})
 			return
 		}
 		transcribeWav(path).then((res) => {
 			transcribing.value = false
 			if (res == null) {
+				recordHint.value = '轻触中央圆点 · 开始录音'
+				showErrorToast(new Error('转写失败，请重试'))
 				return
 			}
 			transcript.value = res.text
@@ -893,52 +1259,8 @@
 			} else {
 				guardMsg.value = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
 			}
-			enterPreview()
+			voiceStage.value = 'preview' // F1c
 		})
-	}
-
-	// ===== F1c 预览态方法 =====
-	function formatDuration(ms: number): string {
-		const totalSec = Math.floor(ms / 1000)
-		const m = Math.floor(totalSec / 60)
-		const s = totalSec % 60
-		return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s
-	}
-	function formatPreviewTime(ts: number): string {
-		const d = new Date(ts)
-		const h = d.getHours()
-		const min = d.getMinutes()
-		return '今天 ' + (h < 10 ? '0' : '') + h + ':' + (min < 10 ? '0' : '') + min
-	}
-	function enterPreview(): void {
-		previewDuration.value = formatDuration(lastVoiceDuration.value)
-		previewTime.value = formatPreviewTime(Date.now())
-		voicePreview.value = true
-	}
-	function onPreviewBack(): void {
-		voicePreview.value = false
-	}
-	function onPreviewClose(): void {
-		voicePreview.value = false
-		onClose()
-	}
-	function onRerecord(): void {
-		voicePreview.value = false
-		transcript.value = ''
-		emotion.value = ''
-		guardMsg.value = ''
-		voiceHints.value = ''
-		transcribing.value = false
-		recording.value = false
-		recState.value = 'idle'
-		recordHint.value = '点击开始录音（≤30 分钟）'
-		lastVoiceFile.value = ''
-		lastVoiceDuration.value = 0
-	}
-	function onPreviewConfirm(): void {
-		voicePreview.value = false
-		submitVoice()
-		closeForm()
 	}
 	function submitVoice(): void {
 		const text = transcript.value.trim()
@@ -946,27 +1268,90 @@
 			showErrorToast(new Error('转写内容为空'))
 			return
 		}
+		if (saving.value) {
+			return
+		}
 		saving.value = true
-		saveVoiceContent(text, lastVoiceDuration.value, emotion.value, '', lastVoiceFile.value).then((contentId: string | null) => {
-			saving.value = false
-			if (contentId != null) {
-				uni.showToast({ title: '已入库', icon: 'success' })
-				emit('saved') // 修复（2026-08-31）：语音入库后通知宿主刷新
-				transcript.value = ''
-				emotion.value = ''
-				guardMsg.value = ''
-				voiceHints.value = ''
+		const picked = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		const duration = lastVoiceDuration.value
+		const vFile = lastVoiceFile.value
+		const emo = emotion.value
+		// BA1（FE2）：备注卡接真——remark 快照（保存成功后会清空，闭包内不能读 ref）
+		const remarkVal = remark.value.trim()
+		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链走分片上传——
+		// wav 先落对象存储（cos_key），后端 complete 直接建 voice content（本地转写 text
+		// 预填 + 入队 ASR 管线）。旧 saveVoiceContent(''cosKey) 只落文本不传文件，
+		// 造成「有转写无音频」恒不可播（28 条 failed=AUDIO_DOWNLOAD_FAILED 实锤）。
+		// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark → uploadVoicePersistent
+		// 透传 remarkVal，主链成功路径备注一次落库（不再仅降级链入库）。
+		if (vFile == '') {
+			// 无本地录音文件（异常路径，如实降级）：仅落文本，toast 显式告知无音频
+			createVoiceContentRemark(text, duration, remarkVal, '').then((contentId: string | null) => {
+				saving.value = false
+				if (contentId != null) {
+					afterVoiceSaved(contentId, text, picked, false)
+				} else {
+					showErrorToast(new Error('语音入库失败（无本地录音文件且文本入库未成功）'))
+				}
+			})
+			return
+		}
+		uploadVoicePersistent(vFile, duration, text, emo, remarkVal).then((res: UTSJSONObject | null) => {
+			let contentId: string | null = null
+			if (res != null) {
+				contentId = res.getString('content_id')
+			}
+			if (contentId != null && contentId != '') {
+				saving.value = false
+				afterVoiceSaved(contentId, text, picked, true)
 			} else {
-				showErrorToast(new Error('入库失败'))
+				// 音频上传失败（显式降级，不静默）：仅落转写文本，cos_key 留空 → 播放链
+				// 会诚实报「音频未上传」；toast 明说原因，峰宝铁律：不允许静默
+			console.error('[yishu] voice upload failed, fallback text-only save')
+			createVoiceContentRemark(text, duration, remarkVal, vFile).then((fbId: string | null) => {
+					saving.value = false
+					if (fbId != null) {
+						afterVoiceSaved(fbId, text, picked, false)
+					} else {
+						showErrorToast(new Error('语音保存失败（音频上传与文本入库均未成功）'))
+					}
+				})
 			}
 		})
+	}
+
+	/** 语音保存成功后的统一收尾（R9-B1 抽取）：手选分类纠正 + toast + 清态 + 收起浮层 */
+	function afterVoiceSaved(contentId: string, text: string, picked: string, audioOk: boolean): void {
+		if (picked != '' && picked.indexOf('custom:') != 0) {
+			// 手选分类 → 纠正端点真持久化（custom: 前缀 = 自定义分类跳过，后端白名单不支持——台账 A 类）
+			submitCorrection(contentId, text, picked, '').then((ok: boolean) => {
+				console.log('[yishu] voice manual correction ok=' + ok)
+			})
+		}
+		if (audioOk) {
+			uni.showToast({ title: '已记录', icon: 'success' })
+		} else {
+			// 降级路径显式告知：文本已存但音频没有（峰宝铁律：不允许静默）
+			uni.showToast({ title: '已存文本（音频未上传）', icon: 'none', duration: 2500 })
+		}
+		emit('saved')
+		transcript.value = ''
+		emotion.value = ''
+		guardMsg.value = ''
+		voiceHints.value = ''
+		remark.value = ''
+		manualLabel.value = ''
+		aiLabel.value = ''
+		voiceStage.value = 'record'
+		emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
 	}
 </script>
 
 <style>
 	/* 视觉规范 v3：像素级还原 SVG 设计稿（390x844 画布）
-	   背景 #f8f7f4 / 主文字 #3a2e25 / 次文字 #8a7a6a / 辅助 #b3a694
-	   琥珀 #c4913c / 锈红 #b05a3a / 卡片 #ffffff / 弹层面板 #faf9f5 */
+	   背景 #f8f7f4 / 主文字 #3a2e25 / 次文字 #8a7a6a / 辅助 #b3a696
+	   琥珀 #c4913c / 锈红 #b05a3a / 卡片 #ffffff / 弹层面板 #faf9f5
+	   W0-3 表单层：底 #F6F1E7（F1 帧峰宝拍板暖白，2026-09-01） */
 	.page {
 		position: fixed;
 		left: 0;
@@ -977,9 +1362,6 @@
 		/* 浮层根容器：透明底，遮罩交给 .scrim（z-index:10）。
 		   z-index 1000 > TabBar 的 999，保证面板浮在 TabBar 之上。 */
 		z-index: 1000;
-	}
-	.serif {
-		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
 	}
 
 	/* ═══════ 模态遮罩 ═══════ */
@@ -1109,7 +1491,7 @@
 		color: #b3a696;
 	}
 
-	/* ═══════ 功能层：记录表单 ═══════ */
+	/* ═══════ 功能层：F1 表单（W0-3 全谱系还原） ═══════ */
 	.form-layer {
 		position: absolute;
 		/* absolute-ok: 记录浮层表单层（浮层结构本体） */
@@ -1117,60 +1499,42 @@
 		left: 0;
 		width: 750rpx;
 		height: 100%;
-		background-color: #faf9f5;
+		background-color: #f6f1e7;
 		z-index: 30;
 		flex-direction: column;
 	}
-
-	/* ═══════ 照片模式布局（F1h–F1k，卡09 F1i 2/9） ═══════ */
-	.photo-layout {
-		flex: 1;
-		flex-direction: column;
-		position: relative;
-		background-color: #f8f7f4;
+	.home-bar {
+		position: absolute;
+		/* absolute-ok: 表单层底部 Home 指示条装饰（F1 帧 y822pt） */
+		bottom: 30rpx;
+		left: 50%;
+		margin-left: -134rpx;
+		width: 269rpx;
+		height: 10rpx;
+		border-radius: 5rpx;
+		background-color: #3a2e25;
 	}
-	.photo-head {
-		position: relative;
-		/* 状态栏区 16px 约 31rpx + 导航行 y=60px 约 115rpx */
-		padding-top: 115rpx;
-		padding-bottom: 24rpx;
-		padding-left: 40rpx;
-		padding-right: 40rpx;
+
+	/* ── 导航（F1 帧：返回 + 居中标题，语音录制/预览态另有右上关闭） ── */
+	.fnav {
+		padding-top: 88rpx;
+		padding-left: 32rpx;
+		padding-right: 32rpx;
+		padding-bottom: 16rpx;
 		flex-direction: row;
 		align-items: center;
-		justify-content: space-between;
 	}
-	.ph-status-time {
-		position: absolute;
-		left: 46rpx;
-		top: 31rpx;
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 29rpx;
-		color: #3A2E25;
-		font-weight: 500;
-	}
-	.photo-back {
-		width: 48rpx;
-		height: 48rpx;
+	.fnav-btn {
+		width: 64rpx;
+		height: 64rpx;
 		align-items: center;
 		justify-content: center;
 	}
-	.ph-status-battery {
-		position: absolute;
-		right: 46rpx;
-		top: 38rpx;
-		width: 46rpx;
-		height: 23rpx;
-		border-radius: 8rpx;
-		background-color: #3A2E25;
+	.fnav-back-icon {
+		width: 44rpx;
+		height: 44rpx;
 	}
-	.photo-back-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 48rpx;
-		color: #3a2e25;
-		line-height: 48rpx;
-	}
-	.photo-title {
+	.fnav-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		flex: 1;
 		text-align: center;
@@ -1178,367 +1542,120 @@
 		color: #3a2e25;
 		font-weight: 600;
 	}
-	.photo-head-spacer {
-		width: 48rpx;
-		height: 48rpx;
-	}
-	.photo-scroll {
-		flex: 1;
-	}
-	.photo-home-indicator {
-		position: absolute;
-		left: 240rpx;
-		bottom: 21rpx;
-		width: 269rpx;
-		height: 10rpx;
-		border-radius: 6rpx;
-		background-color: #3A2E25;
-	}
-	.photo-section-label {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-left: 46rpx;
-		margin-top: 8rpx;
-		font-size: 25rpx;
-		color: #8a7a6a;
-		font-weight: 500;
-	}
-	.photo-card {
-		margin-left: 46rpx;
-		margin-right: 46rpx;
-		margin-top: 23rpx;
-		background-color: #ffffff;
-		border-radius: 38rpx;
-		padding: 38rpx;
-		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-		overflow: hidden;
-	}
-	.photo-grid {
-		flex-direction: row;
-		flex-wrap: wrap;
-	}
-	.photo-item {
-		position: relative;
-		/* absolute-ok: 照片项内删除角标定位 */
-		border-radius: 19rpx;
-		overflow: hidden;
-	}
-	.photo-img {
-		width: 100%;
-		height: 100%;
-		border-radius: 19rpx;
-	}
-	.photo-delete {
-		position: absolute;
-		/* absolute-ok: 删除角标固定在照片右上角（尺寸/位置/圆角由内联动态绑定，随大小图模式变化） */
-		background-color: rgba(58, 46, 37, 0.6);
-		align-items: center;
-		justify-content: center;
-	}
-	.photo-delete-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23rpx;
-		color: #ffffff;
-		line-height: 23rpx;
-		text-align: center;
-	}
-
-	/* F1h：可见添加格（九宫格模式下的 ＋ 格） */
-	.photo-add-cell {
-		background-color: #ede5d5;
-		/* 圆角由内联动态绑定：小图模式 15rpx（8px） */
-		align-items: center;
-		justify-content: center;
-	}
-	.photo-add-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 46rpx;
-		color: #b3a696;
-		line-height: 46rpx;
-	}
-
-	/* 分类区 */
-	.cat-section {
-		margin-left: 46rpx;
-		margin-right: 46rpx;
-		margin-top: 58rpx;
-	}
-	.cat-head {
-		flex-direction: row;
-		justify-content: space-between;
-		align-items: center;
-	}
-	.cat-label {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #8a7a6a;
-		font-weight: 500;
-	}
-	.cat-hint {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23rpx;
-		color: #b3a694;
-		text-align: right;
-	}
-	.cat-chips {
-		margin-top: 23rpx;
-		flex-direction: row;
-		align-items: center;
-		height: 69rpx;
-	}
-	.cat-chip {
-		height: 69rpx;
-		padding-left: 27rpx;
-		padding-right: 27rpx;
-		background-color: #ffffff;
-		border-radius: 35rpx;
-		margin-right: 19rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.cat-chip-active {
-		background-color: #ede5d5;
-		border-width: 2rpx;
-		border-color: #c4913c;
-		border-style: solid;
-		padding-left: 25rpx;
-		padding-right: 25rpx;
-	}
-	.cat-chip-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 27rpx;
-		color: #8a7a6a;
-	}
-	.cat-chip-text-active {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 27rpx;
-		color: #8a5a20;
-		font-weight: 500;
-	}
-	.cat-chip-add {
-		width: 65rpx;
-		padding-left: 0;
-		padding-right: 0;
-		margin-right: 0;
-	}
-	.cat-chip-add-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 31rpx;
-		color: #b3a694;
-		line-height: 31rpx;
-	}
-
-	/* 信息卡 */
-	.info-card {
-		margin-left: 46rpx;
-		margin-right: 46rpx;
-		margin-top: 73rpx;
-		background-color: #ffffff;
-		border-radius: 38rpx;
-		padding-top: 42rpx;
-		padding-bottom: 42rpx;
-		padding-left: 38rpx;
-		padding-right: 38rpx;
-		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-	}
-	.info-row {
-		flex-direction: row;
-		align-items: center;
-	}
-	.info-icon-wrap {
-		width: 38rpx;
-		height: 38rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.info-icon-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28rpx;
-		color: #8a7a6a;
-		line-height: 28rpx;
-	}
-	.info-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-left: 23rpx;
-		font-size: 29rpx;
-		color: #3a2e25;
-	}
-	.info-divider {
-		margin-top: 29rpx;
-		margin-bottom: 31rpx;
-		margin-left: 0;
-		height: 2rpx;
-		background-color: #f0ebe2;
-	}
-
-	/* 确定钮：随内容流放置（位于信息卡之后） */
-	.photo-confirm {
-		/* 随内容流放置：canvas 真值 F1j y=550 / F1k y=756（信息卡之后，非固定底栏） */
-		margin-left: 46rpx;
-		margin-right: 46rpx;
-		margin-top: 38rpx;
-		height: 104rpx;
-		background-color: #b05a3a;
-		border-radius: 52rpx;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.3);
-	}
-	.photo-confirm-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 31rpx;
-		color: #ffffff;
-		font-weight: 500;
-		line-height: 31rpx;
-	}
-
-	/* ═══════ 文字/语音模式：原有布局 ═══════ */
-	.form-head {
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
-		padding-left: 40rpx;
-		padding-right: 40rpx;
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		border-bottom-width: 1rpx;
-		border-bottom-color: rgba(58, 46, 37, 0.08);
-		border-bottom-style: solid;
-	}
-	.form-back {
-		width: 64rpx;
-		height: 64rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.form-back-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 52rpx;
-		color: #3a2e25;
-		line-height: 52rpx;
-	}
-	.form-title {
+	.fnav-close {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 34rpx;
 		color: #3a2e25;
-		font-weight: 600;
 	}
-	.form-save {
-		padding-left: 36rpx;
-		padding-right: 36rpx;
-		padding-top: 14rpx;
-		padding-bottom: 14rpx;
-		background-color: #b05a3a;
-		border-radius: 28rpx;
+
+	.stage-col {
+		flex: 1;
+		flex-direction: column;
 	}
-	.form-save-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		color: #f8f7f4;
-		font-size: 26rpx;
-	}
-	.form-scroll {
+	.flex-spacer {
 		flex: 1;
 	}
-	.form-body {
-		padding: 32rpx 40rpx 40rpx 40rpx;
-		flex-direction: column;
-	}
 
-	/* 文字/语音通用 */
-	.text-input {
-		background-color: #ffffff;
-		border-radius: 24rpx;
-		padding: 24rpx;
-		min-height: 280rpx;
-		font-size: 30rpx;
-		color: #3a2e25;
-		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.08);
-	}
-	.text-actions {
-		margin-top: 24rpx;
-		flex-direction: row;
-		justify-content: space-between;
-		align-items: center;
-	}
-	.muted {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 24rpx;
-		color: #b3a696;
-	}
-
-	/* 语音面板 */
-	.record-box {
-		align-items: center;
-		padding-top: 40rpx;
-		padding-bottom: 40rpx;
-		flex-direction: column;
-	}
-	.mic-btn {
-		width: 160rpx;
-		height: 160rpx;
-		border-radius: 80rpx;
-		background-color: #b05a3a;
+	/* ── F1a/F1b 录制态：透明轮盘 ── */
+	.wheel-zone {
+		flex: 1;
+		position: relative;
 		align-items: center;
 		justify-content: center;
-		display: flex;
-		box-shadow: 0 8rpx 20rpx rgba(176, 90, 58, 0.4);
 	}
-	.mic-recording {
-		background-color: #3a2e25;
+	.wheel {
+		/* F1b 真值 60:126：轮盘 300pt x1.9231 = 577rpx（卡02 F1b 对齐画布） */
+		width: 577rpx;
+		height: 577rpx;
+		position: relative;
+		/* 轮盘本体完全透明（拍板：轮廓无色）；录制态旋转由 UniElement.animate() 驱动（§I A'） */
 	}
-	.mic-icon {
+	.wdpt {
+		position: absolute;
+		left: 0rpx;
+		top: 0rpx;
+		/* absolute-ok：R3 基点静态钉轮盘左上角，轨道位置全部由单函数 translate 注入
+		   （GPU 合成不触发 layout；§O P1 废弃的是 rotate+translate 多函数组合，单函数规避） */
+	}
+	.wd {
+		/* 圆点本体：白色+悬浮投影（视觉铁律：淡底白点必须带 DROP_SHADOW）——R3 静态类承载，不再逐帧内联 */
+		background-color: #ffffff;
+		border-radius: 50%;
+		box-shadow: 0 4rpx 10rpx rgba(58, 46, 37, 0.16);
+	}
+	/* R3 尺寸静态类（width/height 不再逐帧内联；主点档位=DOT_SPECS dia，幽灵=主点 75%。
+	   不用 transform scale 缩幽灵——会与动态 translate 组成多函数（§O P1 实锤坑） */
+	.wds0 { width: 40rpx; height: 40rpx; }
+	.wds1 { width: 22rpx; height: 22rpx; }
+	.wds2 { width: 32rpx; height: 32rpx; }
+	.wds3 { width: 20rpx; height: 20rpx; }
+	.wds4 { width: 48rpx; height: 48rpx; }
+	.wds5 { width: 26rpx; height: 26rpx; }
+	.wds6 { width: 56rpx; height: 56rpx; }
+	.wgs0 { width: 30rpx; height: 30rpx; }
+	.wgs1 { width: 16.5rpx; height: 16.5rpx; }
+	.wgs2 { width: 24rpx; height: 24rpx; }
+	.wgs3 { width: 15rpx; height: 15rpx; }
+	.wgs4 { width: 36rpx; height: 36rpx; }
+	.wgs5 { width: 19.5rpx; height: 19.5rpx; }
+	.wgs6 { width: 42rpx; height: 42rpx; }
+	/* 幽灵拖尾（§N 拍板：轨迹=圆点运行留下的）：非录制态完全隐藏，录制态按透明度分层
+	   （§O P1：0.4/0.18 过淡真机无感 → 提至 0.5/0.25；尺寸改 75% 主点，错位起点见动画段） */
+	.wg {
+		opacity: 0;
+	}
+	.wg-a {
+		opacity: 0.5;
+	}
+	.wg-b {
+		opacity: 0.25;
+	}
+	.hub-hit {
+		position: absolute;
+		/* absolute-ok: 中央圆点触达区（放大热区，拍板：点击中央圆点开始/结束录音） */
+		left: 50%;
+		top: 50%;
+		margin-left: -100rpx;
+		margin-top: -100rpx;
+		width: 200rpx;
+		height: 200rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.hub {
+		width: 115rpx;
+		height: 115rpx;
+		border-radius: 58rpx;
+		/* 磨砂玻璃珠感（F1b 真值 60:134：60pt 白 60% + 深棕 18% 投影） */
+		background-color: rgba(255, 255, 255, 0.6);
+		box-shadow: 0 8rpx 23rpx rgba(58, 46, 37, 0.18);
+	}
+	.rec-bottom {
+		width: 750rpx;
+		flex-direction: column;
+		align-items: center;
+		padding-bottom: 300rpx;
+	}
+	.rec-timer {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 64rpx;
-		color: #f8f7f4;
-	}
-	.record-hint {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-top: 24rpx;
-		font-size: 26rpx;
-		color: #8a7a6a;
-	}
-	.record-timer {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-top: 12rpx;
-		font-size: 40rpx;
-		color: #b05a3a;
+		font-size: 85rpx;
 		font-weight: bold;
+		color: #b3a696;
 	}
-	.center-box {
-		align-items: center;
-		padding-top: 80rpx;
-		flex-direction: column;
-	}
-	.transcript-box {
-		flex-direction: column;
-	}
-	.transcript-head {
-		flex-direction: row;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 16rpx;
-	}
-	.transcript-title {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 30rpx;
+	.rec-timer-on {
 		color: #3a2e25;
-		font-weight: bold;
 	}
-	.emotion-chip {
+	.rec-hint {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 24rpx;
-		color: #b05a3a;
-		background-color: #F3E8DC;
-		padding-left: 16rpx;
-		padding-right: 16rpx;
-		padding-top: 6rpx;
-		padding-bottom: 6rpx;
-		border-radius: 20rpx;
+		margin-top: 16rpx;
+		font-size: 25rpx;
+		color: #b3a696;
 	}
 	.interrupt-bar {
 		margin-top: 24rpx;
 		flex-direction: row;
 		align-items: center;
-		background-color: #F3E8DC;
+		background-color: #f3e8dc;
 		border-radius: 16rpx;
 		padding-left: 24rpx;
 		padding-right: 24rpx;
@@ -1564,689 +1681,527 @@
 		color: #f8f7f4;
 		font-size: 26rpx;
 	}
-	.voice-hints {
-		margin-top: 12rpx;
-		margin-bottom: 12rpx;
-		background-color: #F3E8DC;
-		border-radius: 16rpx;
-		padding-left: 20rpx;
-		padding-right: 20rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-	}
 
-	/* ===== F1e 写几句空态（卡05 还原，390x844 -> 750rpx SCALE=1.9231） ===== */
-	.f1e-body {
-		padding: 23rpx 46rpx 46rpx 46rpx;
-		flex-direction: column;
-	}
-	.f1e-section-label {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #8A7A6A;
-		font-weight: 500;
-		margin-bottom: 23rpx;
-	}
-	.f1e-label-top {
-		margin-top: 58rpx;
-	}
-	.f1e-category-label {
-		margin-bottom: 0;
-	}
-	.f1e-input-card {
-		height: 250rpx;
-		background-color: #ffffff;
-		border-radius: 38rpx;
-		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-		overflow: hidden;
-	}
-	.f1e-textarea {
-		width: 100%;
-		height: 100%;
-		padding: 38rpx;
-		font-size: 29rpx;
-		color: #3A2E25;
-		line-height: 54rpx;
-	}
-	.f1e-category-head {
-		flex-direction: row;
-		justify-content: space-between;
-		align-items: center;
+	/* ── F1c 预览态 ── */
+	.prev-card {
+		width: 654rpx;
 		margin-top: 96rpx;
-		margin-bottom: 23rpx;
-	}
-	.f1e-category-hint {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23rpx;
-		color: #B3A696;
-	}
-	.f1e-info-card {
-		margin-top: 69rpx;
+		margin-left: 48rpx;
 		background-color: #ffffff;
-		border-radius: 38rpx;
-		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-		padding-top: 42rpx;
-		padding-bottom: 42rpx;
-		padding-left: 38rpx;
-		padding-right: 38rpx;
+		border-radius: 32rpx;
+		padding: 44rpx;
+		min-height: 450rpx;
+		flex-direction: column;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.05);
 	}
-	.f1e-info-row {
-		flex-direction: row;
-		align-items: center;
-	}
-	.f1e-icon-clock {
-		width: 38rpx;
-		height: 38rpx;
-		position: relative;
-		margin-right: 27rpx;
-	}
-	.clock-face {
-		position: absolute;
-		width: 34rpx;
-		height: 34rpx;
-		border-radius: 17rpx;
-		border-width: 2rpx;
-		border-color: #8A7A6A;
-		border-style: solid;
-		left: 0;
-		top: 0;
-	}
-	.clock-hand-h {
-		position: absolute;
-		width: 2rpx;
-		height: 9rpx;
-		background-color: #8A7A6A;
-		left: 16rpx;
-		top: 9rpx;
-	}
-	.clock-hand-m {
-		position: absolute;
-		width: 9rpx;
-		height: 2rpx;
-		background-color: #8A7A6A;
-		left: 12rpx;
-		top: 16rpx;
-	}
-	.f1e-info-text {
+	.prev-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 29rpx;
-		color: #3A2E25;
-	}
-	.f1e-divider {
-		height: 2rpx;
-		background-color: #F0EBE3;
-		margin-top: 29rpx;
-		margin-bottom: 31rpx;
-	}
-	.f1e-icon-location {
-		width: 38rpx;
-		height: 38rpx;
-		position: relative;
-		margin-right: 27rpx;
-	}
-	.loc-ring {
-		position: absolute;
-		width: 26rpx;
-		height: 26rpx;
-		border-radius: 13rpx;
-		border-width: 2rpx;
-		border-color: #8A7A6A;
-		border-style: solid;
-		left: 4rpx;
-		top: 2rpx;
-	}
-	.loc-dot {
-		position: absolute;
-		width: 8rpx;
-		height: 8rpx;
-		border-radius: 4rpx;
-		background-color: #8A7A6A;
-		left: 13rpx;
-		top: 11rpx;
-	}
-	.f1e-note-card {
-		height: 123rpx;
-		background-color: #ffffff;
-		border-radius: 38rpx;
-		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-		overflow: hidden;
-	}
-	.f1e-note-input {
-		width: 100%;
-		height: 100%;
-		padding: 38rpx;
-		font-size: 29rpx;
-		color: #3A2E25;
-	}
-	.f1e-confirm-btn {
-		margin-top: 77rpx;
-		height: 104rpx;
-		background-color: #B05A3A;
-		border-radius: 52rpx;
-		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.30);
-		align-items: center;
-		justify-content: center;
-	}
-	.f1e-confirm-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 31rpx;
-		color: #ffffff;
-		font-weight: 500;
-
-	/* ═══════ F1c 语音预览态 ═══════ */
-	.preview-layer {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 750rpx;
-		height: 100%;
-		background-color: #f8f7f4;
-		z-index: 40;
-	}
-	.pv-status-time {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		position: absolute;
-		left: 46rpx;
-		top: 31rpx;
-		font-size: 29rpx;
-		color: #3a2e25;
-		font-weight: 500;
-	}
-	.pv-status-battery {
-		position: absolute;
-		right: 46rpx;
-		top: 38rpx;
-		width: 46rpx;
-		height: 23rpx;
-		background-color: #3a2e25;
-		border-radius: 8rpx;
-	}
-	.pv-back {
-		position: absolute;
-		left: 38rpx;
-		top: 115rpx;
-		width: 46rpx;
-		height: 49rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.pv-back-icon {
-		width: 31rpx;
-		height: 32rpx;
-	}
-	.pv-title {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 115rpx;
-		text-align: center;
 		font-size: 33rpx;
+		line-height: 50rpx;
 		color: #3a2e25;
-		font-weight: 600;
-		height: 46rpx;
 	}
-	.pv-close {
-		position: absolute;
-		right: 38rpx;
-		top: 115rpx;
-		width: 46rpx;
-		height: 49rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.pv-close-text {
+	.prev-meta {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 40rpx;
-		color: #3a2e25;
-		line-height: 40rpx;
+		margin-top: 40rpx;
+		font-size: 24rpx;
+		color: #b3a696;
 	}
-	.pv-card {
-		position: absolute;
-		left: 46rpx;
-		top: 288rpx;
-		width: 658rpx;
-		height: 500rpx;
-		background-color: #ffffff;
+	.cta-row {
+		width: 654rpx;
+		margin-left: 48rpx;
+		margin-bottom: 170rpx;
+		flex-direction: row;
+	}
+	.cta2 {
+		flex: 1;
+		height: 92rpx;
 		border-radius: 46rpx;
-		box-shadow: 0 15rpx 46rpx rgba(58, 46, 37, 0.08);
-		overflow: hidden;
+		background-color: #ebe3d4;
+		align-items: center;
+		justify-content: center;
 	}
-	.pv-card-scroll {
-		position: absolute;
-		left: 46rpx;
-		top: 69rpx;
-		right: 46rpx;
-		height: 323rpx;
-	}
-	.pv-card-text {
+	.cta2-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 33rpx;
 		color: #3a2e25;
-		line-height: 46rpx;
 	}
-	.pv-card-meta {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		position: absolute;
-		left: 46rpx;
-		bottom: 73rpx;
-		right: 46rpx;
-		font-size: 25rpx;
-		color: #8a7a6a;
-	}
-	.pv-btn-rerecord {
-		position: absolute;
-		left: 46rpx;
-		bottom: 127rpx;
-		width: 306rpx;
-		height: 104rpx;
-		background-color: #ede5d5;
-		border-radius: 52rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.pv-btn-rerecord-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 31rpx;
-		color: #3a2e25;
-		font-weight: 500;
-	}
-	.pv-btn-confirm {
-		position: absolute;
-		left: 398rpx;
-		bottom: 127rpx;
-		width: 306rpx;
-		height: 104rpx;
-		background-color: #b05a3a;
-		border-radius: 52rpx;
-		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.3);
-		align-items: center;
-		justify-content: center;
-	}
-	.pv-btn-confirm-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 31rpx;
-		color: #ffffff;
-		font-weight: 500;
-	}
-	.pv-home-indicator {
-		position: absolute;
-		left: 240rpx;
-		bottom: 21rpx;
-		width: 269rpx;
-		height: 10rpx;
-		background-color: #3a2e25;
-		border-radius: 6rpx;
-	}
-	}
-	/* ===== F1a 语音待录态（canvas JSON 真值还原，390x844 -> 750rpx，SCALE=1.9231） ===== */
-	.voice-idle {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 750rpx;
-		height: 100%;
-		background-color: #F6F1E7;
-	}
-	.vi-time {
-		position: absolute;
-		left: 46rpx;
-		top: 31rpx;
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 29rpx;
-		color: #3A2E25;
-		font-weight: 500;
-	}
-	.vi-battery {
-		position: absolute;
-		right: 46rpx;
-		top: 38rpx;
-		width: 46rpx;
-		height: 23rpx;
-		border-radius: 8rpx;
-		background-color: #3A2E25;
-	}
-	.vi-back {
-		position: absolute;
-		left: 38rpx;
-		top: 115rpx;
-		width: 46rpx;
-		height: 46rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.vi-back-icon {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 46rpx;
-		color: #3A2E25;
-		line-height: 46rpx;
-	}
-	.vi-title {
-		position: absolute;
-		top: 115rpx;
-		left: 0;
-		right: 0;
-		text-align: center;
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 33rpx;
-		color: #3A2E25;
-		font-weight: 600;
-	}
-	.vi-close {
-		position: absolute;
-		right: 38rpx;
-		top: 115rpx;
-		width: 46rpx;
-		height: 46rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.vi-close-icon {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 38rpx;
-		color: #3A2E25;
-		line-height: 38rpx;
-	}
-	.vi-wheel {
-		position: absolute;
-		left: 86rpx;
-		top: 519rpx;
-		width: 577rpx;
-		height: 577rpx;
-		animation: wheel-spin 12s linear infinite;
-	}
-	@keyframes wheel-spin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
-	}
-	.wheel-center {
-		position: absolute;
-		left: 231rpx;
-		top: 231rpx;
-		width: 115rpx;
-		height: 115rpx;
-		border-radius: 58rpx;
-		background-color: rgba(255, 255, 255, 0.6);
-		box-shadow: 0 8rpx 23rpx rgba(58, 46, 37, 0.18);
-	}
-	.wheel-dot {
-		position: absolute;
-		border-radius: 50%;
-		background-color: #ffffff;
-		box-shadow: 0 4rpx 10rpx rgba(58, 46, 37, 0.16);
-		animation: dot-pulse 2s ease-in-out infinite;
-	}
-	@keyframes dot-pulse {
-		0%, 100% { transform: translateX(0); }
-		50% { transform: translateX(-6rpx); }
-	}
-	.wd1 { left: 526rpx; top: 368rpx; width: 23rpx; height: 23rpx; opacity: 1; animation-delay: 0s; }
-	.wd2 { left: 328rpx; top: 458rpx; width: 17rpx; height: 17rpx; opacity: 0.8; animation-delay: 0.3s; }
-	.wd3 { left: 119rpx; top: 461rpx; width: 27rpx; height: 27rpx; opacity: 0.95; animation-delay: 0.6s; }
-	.wd4 { left: 125rpx; top: 268rpx; width: 13rpx; height: 13rpx; opacity: 0.7; animation-delay: 0.9s; }
-	.wd5 { left: 151rpx; top: 58rpx; width: 21rpx; height: 21rpx; opacity: 0.9; animation-delay: 1.2s; }
-	.wd6 { left: 370rpx; top: 89rpx; width: 15rpx; height: 15rpx; opacity: 0.75; animation-delay: 1.5s; }
-	.wd7 { left: 442rpx; top: 220rpx; width: 19rpx; height: 19rpx; opacity: 0.85; animation-delay: 1.8s; }
-	.vi-timer {
-		position: absolute;
-		top: 1173rpx;
-		left: 0;
-		right: 0;
-		text-align: center;
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 85rpx;
-		color: #B3A696;
-		font-weight: bold;
-	}
-	.vi-hint {
-		position: absolute;
-		top: 1319rpx;
-		left: 0;
-		right: 0;
-		text-align: center;
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #B3A696;
-	}
-	.vi-home {
-		position: absolute;
-		left: 240rpx;
-		bottom: 21rpx;
-		width: 269rpx;
-		height: 10rpx;
-		border-radius: 6rpx;
-		background-color: #3A2E25;
-	}
-	.form-standard {
+	.cta-main {
 		flex: 1;
-		flex-direction: column;
+		height: 92rpx;
+		border-radius: 46rpx;
+		background-color: #b05a3a;
+		align-items: center;
+		justify-content: center;
+		margin-left: 24rpx;
+	}
+	.cta-main-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 33rpx;
+		color: #fff7ef;
 	}
 
-	/* ═══════ F1g 单图详情覆盖层（卡07 还原，canvas 390x844 → 750rpx SCALE=1.9231） ═══════ */
-	.f1g-overlay {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 750rpx;
-		height: 100%;
-		background-color: #f8f7f4;
-		z-index: 40;
+	/* ── 标注骨架（F1d/F1e/F1g-k 共用） ── */
+	.anno-scroll {
+		flex: 1;
+	}
+	.anno-body {
+		padding: 20rpx 48rpx 60rpx 48rpx;
 		flex-direction: column;
 	}
-	/* 导航栏（canvas y=60：返回24x24 at x=20 + 标题居中 fontSize17 SemiBold #3A2E25） */
-	.f1g-nav {
-		flex-shrink: 0;
-		padding-top: 72rpx;
-		padding-bottom: 24rpx;
-		padding-left: 40rpx;
-		padding-right: 40rpx;
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-	}
-	.f1g-back {
-		width: 48rpx;
-		height: 48rpx;
-		align-items: center;
-		justify-content: center;
-	}
-	.f1g-back-text {
+	.sec-label {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 52rpx;
-		color: #3a2e25;
-		line-height: 52rpx;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-top: 40rpx;
+		margin-bottom: 20rpx;
 	}
-	.f1g-title {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		flex: 1;
-		text-align: center;
+	.sec-label-first {
+		margin-top: 20rpx;
+	}
+	.sec-label-gap {
+		margin-top: 44rpx;
+	}
+	.a-input {
+		width: 654rpx;
+		background-color: #ffffff;
+		border-radius: 24rpx;
+		padding: 36rpx;
+		min-height: 258rpx;
 		font-size: 33rpx;
+		line-height: 50rpx;
+		color: #3a2e25;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.05);
+	}
+	/* text-align:right App 端零先例 → flex-end 容器包裹（ai.uvue/index.uvue 先例） */
+	.counter-wrap {
+		width: 654rpx;
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-top: 12rpx;
+	}
+	.counter-row {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21rpx;
+		color: #b3a696;
+	}
+	.diag-line {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		width: 654rpx;
+		margin-top: 16rpx;
+		font-size: 23rpx;
+		line-height: 34rpx;
+		color: #b3a696;
+	}
+	.sec-row {
+		width: 654rpx;
+		margin-top: 58rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.sec-row-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 29rpx;
 		color: #3a2e25;
 		font-weight: 600;
 	}
-	.f1g-nav-spacer {
-		width: 48rpx;
-		height: 48rpx;
+	.sec-row-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21rpx;
+		color: #b3a696;
 	}
-	/* 滚动区 */
-	.f1g-scroll {
+	.chips {
+		width: 654rpx;
+		margin-top: 24rpx;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.chip {
+		padding-left: 30rpx;
+		padding-right: 30rpx;
+		padding-top: 18rpx;
+		padding-bottom: 18rpx;
+		background-color: #ffffff;
+		border-radius: 36rpx;
+		margin-right: 16rpx;
+		margin-bottom: 16rpx;
+		box-shadow: 0 2rpx 6rpx rgba(58, 46, 37, 0.05);
+	}
+	.chip-on {
+		border-width: 3rpx;
+		border-style: solid;
+		border-color: #c4913c;
+		background-color: #fbf4e4;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #3a2e25;
+	}
+	.chip-on-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #3a2e25;
+	}
+	.chip-plus {
+		padding-left: 26rpx;
+		padding-right: 26rpx;
+	}
+	.chip-plus-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30rpx;
+		color: #8a7a6a;
+	}
+	/* 自定义分类输入行（点＋展开；风格对齐 v-info 白卡族） */
+	.plus-editor {
+		width: 654rpx;
+		margin-top: 20rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.plus-input {
 		flex: 1;
+		height: 72rpx;
+		background-color: #ffffff;
+		border-radius: 36rpx;
+		padding-left: 30rpx;
+		padding-right: 30rpx;
+		font-size: 27rpx;
+		color: #3a2e25;
+		box-shadow: 0 2rpx 6rpx rgba(58, 46, 37, 0.05);
 	}
-	.f1g-content {
-		padding-left: 46rpx;
-		padding-right: 46rpx;
-		padding-bottom: 32rpx;
+	.plus-ok {
+		margin-left: 16rpx;
+		padding-left: 30rpx;
+		padding-right: 30rpx;
+		padding-top: 16rpx;
+		padding-bottom: 16rpx;
+		border-radius: 32rpx;
+		background-color: #b05a3a;
+	}
+	.plus-ok-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #fff7ef;
+	}
+	.remark-input {
+		width: 654rpx;
+		background-color: #ffffff;
+		border-radius: 24rpx;
+		padding: 30rpx 36rpx;
+		height: 100rpx;
+		font-size: 29rpx;
+		color: #3a2e25;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.05);
+	}
+	.cta-full {
+		width: 654rpx;
+		/* F1g 真值对拍 09-03：删 margin-left 48（anno-body 已有 padding 48，双计致右移出格=峰宝所见确定钮破坏）；
+		   加 margin-top 77（真值 信息卡→确定钮 gap 40pt，原贴死零距=破坏其二） */
+		margin-top: 77rpx;
+		margin-bottom: 170rpx;
+		height: 92rpx;
+		border-radius: 46rpx;
+		background-color: #b05a3a;
+		align-items: center;
+		justify-content: center;
+	}
+	.cta-full-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 33rpx;
+		color: #fff7ef;
+	}
+	/* ── F1d 语音补录信息态（画布 record_f1d 390x844 · SCALE 1.9231 → rpx） ── */
+	.v-body {
+		padding: 24rpx 46rpx 60rpx 46rpx;
 		flex-direction: column;
 	}
-	/* 节标（canvas y=116，fontSize13 Medium #8A7A6A，距照片卡12px=23rpx） */
-	.f1g-section-label {
+	.v-sec {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 25rpx;
 		color: #8a7a6a;
-		font-weight: 500;
-		margin-bottom: 23rpx;
 	}
-	/* 照片卡（canvas y=146 w=342 h=292，白bg圆角20px=38rpx shadow 0 6 18 6% #3A2E25） */
-	.f1g-photo-card {
+	.v-sec-first {
+		margin-top: 24rpx;
+	}
+	.v-trans {
+		width: 654rpx;
+		margin-top: 24rpx;
 		background-color: #ffffff;
 		border-radius: 38rpx;
 		padding: 38rpx;
-		flex-direction: column;
+		min-height: 250rpx;
+		font-size: 31rpx;
+		line-height: 48rpx;
+		color: #3a2e25;
 		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-		margin-bottom: 96rpx;
 	}
-	/* 照片（canvas x=20 y=20 w=302 h=226 → 581rpx x 435rpx，圆角12px=23rpx） */
-	.f1g-photo-img {
-		width: 581rpx;
-		height: 435rpx;
-		border-radius: 23rpx;
-	}
-	.f1g-photo-placeholder {
-		width: 581rpx;
-		height: 435rpx;
-		border-radius: 23rpx;
-		background-color: #ede5d5;
-		align-items: center;
-		justify-content: center;
-	}
-	.f1g-placeholder-icon {
+	.v-diag {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 80rpx;
-		color: rgba(138, 122, 106, 0.4);
+		width: 654rpx;
+		margin-top: 20rpx;
+		font-size: 23rpx;
+		line-height: 34rpx;
+		color: #b3a696;
 	}
-	/* AI 描述（canvas y=254，fontSize13 Regular #8A7A6A，距照片底8px=15rpx） */
-	.f1g-ai-desc {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #8a7a6a;
-		margin-top: 15rpx;
-	}
-	/* 分类节标行（canvas y=488：左"分类"13 Medium #8A7A6A + 右"AI已预选·点标签可纠正"12 Regular #B3A696） */
-	.f1g-cat-header {
+	.v-row {
+		width: 654rpx;
+		margin-top: 96rpx;
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 23rpx;
 	}
-	.f1g-cat-label {
+	.v-row-label {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 25rpx;
 		color: #8a7a6a;
-		font-weight: 500;
 	}
-	.f1g-cat-hint {
+	.v-row-hint {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 23rpx;
 		color: #b3a696;
 	}
-	/* 分类 chips 行（canvas y=518 h=36，chip间距12px=23rpx） */
-	.f1g-chips {
+	.v-chips {
+		width: 654rpx;
+		margin-top: 24rpx;
 		flex-direction: row;
-		align-items: center;
 		flex-wrap: wrap;
-		margin-bottom: 69rpx;
 	}
-	.f1g-chip {
+	.v-chip {
 		height: 69rpx;
-		padding-left: 28rpx;
-		padding-right: 28rpx;
+		padding-left: 30rpx;
+		padding-right: 30rpx;
+		margin-right: 23rpx;
+		margin-bottom: 16rpx;
 		background-color: #ffffff;
 		border-radius: 35rpx;
+		flex-direction: row;
 		align-items: center;
 		justify-content: center;
-		margin-right: 23rpx;
-		margin-bottom: 12rpx;
+		box-shadow: 0 2rpx 6rpx rgba(58, 46, 37, 0.05);
 	}
-	/* 选中态（canvas chip-选中：bg #EDE5D5 + stroke #C4913C 1px，文字 #8A5A20 Medium） */
-	.f1g-chip-active {
-		background-color: #ede5d5;
+	.v-chip-on {
 		border-width: 2rpx;
-		border-color: #c4913c;
 		border-style: solid;
+		border-color: #c4913c;
+		background-color: #ede5d5;
 	}
-	.f1g-chip-text {
+	.v-chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 27rpx;
 		color: #8a7a6a;
 	}
-	.f1g-chip-active-text {
+	.v-chip-on-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 27rpx;
 		color: #8a5a20;
-		font-weight: 500;
 	}
-	/* ＋添加 chip（canvas w=34 h=36 圆角17px，文字＋16 Regular #B3A696） */
-	.f1g-chip-add {
-		width: 65rpx;
-		padding-left: 0;
-		padding-right: 0;
-		border-radius: 33rpx;
-		margin-right: 0;
+	.v-chip-plus {
+		padding-left: 26rpx;
+		padding-right: 26rpx;
 	}
-	.f1g-chip-add-text {
+	.v-chip-plus-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 31rpx;
 		color: #b3a696;
-		line-height: 31rpx;
 	}
-	/* 信息卡（canvas y=590 w=342 h=116，白bg圆角20 shadow，内边距22px/20px） */
-	.f1g-info-card {
+	.v-info {
+		width: 654rpx;
+		margin-top: 69rpx;
 		background-color: #ffffff;
 		border-radius: 38rpx;
-		padding-left: 38rpx;
-		padding-right: 38rpx;
-		padding-top: 42rpx;
-		padding-bottom: 42rpx;
 		flex-direction: column;
 		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
-		margin-bottom: 77rpx;
 	}
-	.f1g-info-row {
+	.v-info-row {
 		flex-direction: row;
 		align-items: center;
-		height: 38rpx;
+		padding-left: 38rpx;
+		padding-right: 38rpx;
 	}
-	/* 时间图标（canvas Vector 16.67x16.67 → 32rpx，i2_319.svg 时钟） */
-	.f1g-info-icon {
-		width: 32rpx;
-		height: 32rpx;
-		margin-right: 23rpx;
+	.v-info-row1 {
+		padding-top: 42rpx;
+		margin-bottom: 30rpx;
 	}
-	/* 地点图标（canvas Vector 11.67x16.67 → 22rpx x 32rpx，i2_320.svg 定位） */
-	.f1g-info-icon-loc {
-		width: 22rpx;
-		height: 32rpx;
+	.v-info-row2 {
+		padding-top: 32rpx;
+		padding-bottom: 42rpx;
 	}
-	.f1g-info-text {
+	.v-info-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 29rpx;
 		color: #3a2e25;
 	}
-	/* 分隔线（canvas y=57 w=302 h=1，bg #F0EBE2） */
-	.f1g-info-divider {
+	.v-ico {
+		position: relative;
+		width: 38rpx;
+		height: 38rpx;
+	}
+	.v-ico-clock {
+		position: absolute;
+		left: 3rpx;
+		top: 3rpx;
+		width: 32rpx;
+		height: 32rpx;
+		border-radius: 50%;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #8a7a6a;
+	}
+	.v-ico-hv {
+		position: absolute;
+		left: 18rpx;
+		top: 8rpx;
+		width: 3rpx;
+		height: 10rpx;
+		background-color: #8a7a6a;
+		border-radius: 2rpx;
+	}
+	.v-ico-hh {
+		position: absolute;
+		left: 19rpx;
+		top: 18rpx;
+		width: 9rpx;
+		height: 3rpx;
+		background-color: #8a7a6a;
+		border-radius: 2rpx;
+	}
+	.v-ico-pin {
+		width: 24rpx;
+		height: 24rpx;
+		border-radius: 50% 50% 50% 0;
+		background-color: #8a7a6a;
+		transform: rotate(-45deg);
+		margin-left: 7rpx;
+		margin-top: 5rpx;
+	}
+	.v-divider {
+		width: 578rpx;
+		margin-left: 38rpx;
 		height: 2rpx;
 		background-color: #f0ebe2;
-		margin-top: 29rpx;
-		margin-bottom: 31rpx;
 	}
-	/* 固定底部确定钮（canvas y=746 w=342 h=54，#B05A3A 圆角27px=52rpx，shadow 0 6 16 30%） */
-	.f1g-confirm {
-		position: absolute;
-		left: 46rpx;
-		right: 46rpx;
-		bottom: 56rpx;
+	.v-remark {
+		width: 654rpx;
+		margin-top: 24rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		padding: 38rpx;
+		height: 123rpx;
+		font-size: 29rpx;
+		color: #3a2e25;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+	}
+	.v-save {
+		width: 654rpx;
+		margin-left: 46rpx;
+		margin-top: 77rpx;
+		margin-bottom: 158rpx;
 		height: 104rpx;
-		background-color: #b05a3a;
 		border-radius: 52rpx;
+		background-color: #b05a3a;
+		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 		box-shadow: 0 12rpx 31rpx rgba(176, 90, 58, 0.3);
 	}
-	.f1g-confirm-text {
+	.v-save-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 31rpx;
 		color: #ffffff;
-		font-weight: 500;
+	}
+
+
+	/* ── F1g-k 照片网格（档位：1 图 581×435 / 2 图 281 / 3 图 185 / 4 图田字 281 / 5+ 三列 185，rpx） ── */
+	/* 照片白卡（画布 照片卡/九宫卡：342px=658rpx、radius 20px、padding 20px、阴影） */
+	.pcard {
+		width: 658rpx;
+		background-color: #ffffff;
+		border-radius: 38rpx;
+		padding: 38rpx;
+		box-shadow: 0 12rpx 35rpx rgba(58, 46, 37, 0.06);
+	}
+	.pgrid {
+		width: 581rpx;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.pcell {
+		position: relative;
+		/* absolute-ok 容器：删除角标锚点（右边距由档位类给，列尾 pc-nor 清零防挤断换行） */
+	}
+	.pc-b {
+		width: 281rpx;
+		height: 281rpx;
+		margin-right: 19rpx;
+		margin-bottom: 19rpx;
+	}
+	.pc-c {
+		width: 185rpx;
+		height: 185rpx;
+		margin-right: 13rpx;
+		margin-bottom: 13rpx;
+	}
+	.pc-nor {
+		margin-right: 0;
+	}
+	.pimg-b {
+		width: 281rpx;
+		height: 281rpx;
+		border-radius: 19rpx;
+	}
+	.pimg-c {
+		width: 185rpx;
+		height: 185rpx;
+		border-radius: 15rpx;
+	}
+	.pdel {
+		position: absolute;
+		/* absolute-ok: 删除角标（F1h 帧真值：深棕 60% 圆 + 白 ×） */
+		top: 8rpx;
+		right: 8rpx;
+		width: 38rpx;
+		height: 38rpx;
+		border-radius: 19rpx;
+		background-color: rgba(58, 46, 37, 0.6);
+		align-items: center;
+		justify-content: center;
+	}
+	.pdel-x {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #ffffff;
+	}
+	.pplus {
+		background-color: #ede5d8;
+		border-radius: 16rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	.pplus-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 52rpx;
+		color: #8a7a6a;
+	}
+	.pempty {
+		width: 581rpx;
+		height: 435rpx;
+		margin-left: 36rpx;
+		background-color: #ffffff;
+		border-radius: 24rpx;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 6rpx 16rpx rgba(58, 46, 37, 0.05);
+	}
+	.pempty-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 64rpx;
+		color: #b3a696;
+	}
+	.pempty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 16rpx;
+		font-size: 26rpx;
+		color: #b3a696;
 	}
 </style>
-

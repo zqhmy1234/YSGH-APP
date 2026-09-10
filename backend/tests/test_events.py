@@ -48,9 +48,12 @@ def test_process_content_queues_per_user_aggregation(db_user, monkeypatch):
     assert r["status"] == "done"
     assert r["agg_job"] == "queued"
     assert "events_queued" in r["processed"]
-    # 恰一次聚合入队，user 级 key + 参数透传
-    assert len(calls) == 1, f"text 无情绪任务，仅应有一次聚合入队，实际 {calls}"
-    func, key, a, kw = calls[0]
+    # BA3（A1 打标）后 text 内容也投 tag_content（key=content id）——恰 2 次入队
+    assert len(calls) == 2, f"text 应恰有打标+聚合两次入队，实际 {calls}"
+    tag_call = next(c for c in calls if c[0].__name__ == "tag_content")
+    assert tag_call[1] == str(c.id), f"打标 key 应为 content id，实际 {tag_call[1]}"
+    assert tag_call[2] == (str(c.id),), f"打标应透传 content_id 参数，实际 {tag_call[2]}"
+    func, key, a, kw = next(c for c in calls if c[0].__name__ == "run_user_aggregation")
     assert func.__name__ == "run_user_aggregation"
     assert key == f"user:{user.id}"
     assert a == (str(user.id),)
@@ -97,3 +100,79 @@ def test_aggregation_task_importable_for_rq():
     import app.workers.worker
 
     assert hasattr(app.workers.worker, "main")
+
+
+# ---------------------------------------------------------------------------
+# A6（2026-09-09 缺口收口）：timeline voice 出参带 duration（契约 "m:ss"）
+# ---------------------------------------------------------------------------
+
+
+def test_timeline_voice_duration_formatted(db_user):
+    """timeline 出参 voice.duration == "0:05"（构造 duration=5s 语音挂进事件）"""
+    from datetime import datetime, timezone
+
+    from app.core.security import create_access_token
+    from app.db.models import Event, EventItem
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    event = Event(user_id=user.id, level=1, title="A6", start_time=now, status="confirmed")
+    db.add(event)
+    voice = Content(
+        id=str(uuid.uuid4()), user_id=user.id, content_type="voice",
+        text="语音记忆正文", duration=5, status="done", source="app",
+        taken_at=now,
+    )
+    db.add(voice)
+    db.commit()
+    db.add(EventItem(event_id=event.id, content_id=voice.id))
+    db.commit()
+
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {create_access_token(str(user.id))}"}
+    r = client.get("/api/v1/events/timeline", headers=headers)
+    assert r.status_code == 200, r.text
+    target = next(
+        (e for e in r.json()["data"] if e["id"] == str(event.id)), None
+    )
+    assert target is not None, f"timeline 应含事件: {[e['id'] for e in r.json()['data']]}"
+    voice_out = target["voice"]
+    assert voice_out is not None, "应带单条 voice"
+    assert voice_out["content_id"] == str(voice.id)
+    assert voice_out["duration"] == "0:05", f"duration 应格式化为 0:05: {voice_out['duration']!r}"
+    # teardown：db_user 统一清理链覆盖 events/event_items/contents（按 user_id）
+
+
+def test_timeline_voice_duration_none_when_absent(db_user):
+    """A6：内容 duration 列为空 → voice.duration 下发 None（客户端显示空）"""
+    from datetime import datetime, timezone
+
+    from app.core.security import create_access_token
+    from app.db.models import Event, EventItem
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    now = datetime.now(timezone.utc)
+    event = Event(user_id=user.id, level=1, title="A6空", start_time=now, status="confirmed")
+    db.add(event)
+    voice = Content(
+        id=str(uuid.uuid4()), user_id=user.id, content_type="voice",
+        text=None, duration=None, status="done", source="app", taken_at=now,
+    )
+    db.add(voice)
+    db.commit()
+    db.add(EventItem(event_id=event.id, content_id=voice.id))
+    db.commit()
+
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {create_access_token(str(user.id))}"}
+    r = client.get("/api/v1/events/timeline", headers=headers)
+    assert r.status_code == 200, r.text
+    target = next((e for e in r.json()["data"] if e["id"] == str(event.id)), None)
+    assert target is not None
+    assert target["voice"]["duration"] is None, "无时长应 None"
+    assert target["voice"]["title"] == "语音记忆", "无文本应回退语音记忆"
+    # teardown：db_user 统一清理链覆盖 events/event_items/contents（按 user_id）

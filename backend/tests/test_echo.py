@@ -17,7 +17,7 @@ import pytest
 from app.db.models import Content, EchoHistory, ProfileSensitive
 from app.services import echo as echo_svc
 from app.services.echo import dismiss_echo, get_today_echo
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.integration
@@ -52,6 +52,45 @@ def test_echo_hits_last_year(db_user):
     assert result is not None
     assert result["content_id"] == c.id
     assert result["fingerprint"]
+
+
+def test_echo_message_created_with_payload(db_user):
+    """R9 批次3（R9-1）：回响首次展示同步建发 in_app echo 消息，payload=完整快照
+    （消息中心点击直接回放快照，不调 /echo/today、不占名额——拍板 A-1）"""
+    from app.db.models import Message
+
+    db, user = db_user
+    c = _last_year_content(db, user.id, "消息中心快照测试")
+    result = get_today_echo(db, user.id)
+    assert result is not None
+    msg = db.execute(
+        select(Message).where(
+            Message.user_id == user.id,
+            Message.msg_type == "echo",
+            Message.channel == "in_app",
+        )
+    ).scalars().all()
+    assert len(msg) == 1, "首次展示应建发恰好 1 条 echo 消息"
+    payload = msg[0].payload or {}
+    assert payload.get("content_id") == c.id
+    assert payload.get("text") == "消息中心快照测试"
+    assert payload.get("fingerprint") == result["fingerprint"], "payload 快照与回响返回一致"
+
+
+def test_echo_message_not_duplicated(db_user):
+    """R9 批次3：同日第二次调用返回 None（名额耗尽）→ 不重复建发消息"""
+    from app.db.models import Message
+
+    db, user = db_user
+    _last_year_content(db, user.id, "去重测试")
+    assert get_today_echo(db, user.id) is not None
+    assert get_today_echo(db, user.id) is None
+    n = db.execute(
+        select(func.count()).select_from(Message).where(
+            Message.user_id == user.id, Message.msg_type == "echo"
+        )
+    ).scalar()
+    assert n == 1, f"同日第二次不应新建消息（实际 {n} 条）"
 
 
 def test_echo_daily_limit(db_user):

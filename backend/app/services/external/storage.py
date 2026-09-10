@@ -68,6 +68,11 @@ class StorageBackend(ABC):
     def object_exists(self, key: str) -> bool:
         """对象是否存在"""
 
+    def local_root(self) -> Path | None:
+        """本地文件系统根（仅 fs 后端返回）——孤儿分片目录扫描用（P0-3 reaper）；
+        fake/minio/cos 返回 None（无磁盘目录可扫/需 list_objects 另行处理）"""
+        return None
+
     def get_sts_credentials(self, user_id: str | None = None) -> dict:
         """客户端直传临时凭证；不支持的实现抛 NotImplementedError
 
@@ -222,6 +227,9 @@ class FilesystemStorageBackend(StorageBackend):
         if not key or key.startswith("/") or "\\" in key or ".." in key.split("/"):
             raise ValueError(f"非法对象键: {key}")
         return self._root / key
+
+    def local_root(self) -> Path | None:
+        return self._root
 
     def put_object(self, key: str, data: bytes) -> None:
         p = self._safe_path(key)

@@ -155,9 +155,40 @@ def _register_voice_content(
         except (TypeError, ValueError):
             raise ValidationError("duration_ms 必须为整数（毫秒）") from None
 
+    # R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：短录音链改走本分支后，
+    # 客户端本地转写文本/情绪预填随 meta 上送——text 直接落库（管线 ASR 完成后仍按
+    # 既有逻辑回写覆盖，双通道一致）；emotion 只存 extra.client_emotion 供参考，
+    # 不进正式情绪字段（避免干扰管线情绪判定）。
+    voice_text = meta.get("text")
+    if voice_text is not None:
+        if not isinstance(voice_text, str):
+            raise ValidationError("text 必须为字符串")
+        if voice_text.strip() == "":
+            voice_text = None
+    client_emotion = meta.get("emotion")
+    if client_emotion is not None:
+        if not isinstance(client_emotion, str):
+            raise ValidationError("emotion 必须为字符串")
+        else:
+            voice_extra["client_emotion"] = client_emotion
+
+    # A8（2026-09-09 缺口收口）：用户备注随 meta 上送（与 POST /contents 的
+    # ContentCreate.remark 对齐口径；客户端分片链路 saveVoice 备注此前在
+    # complete 主链丢失，仅二次调用 POST /contents 才兜底）
+    voice_remark = meta.get("remark")
+    if voice_remark is not None:
+        if not isinstance(voice_remark, str):
+            raise ValidationError("remark 必须为字符串")
+        if len(voice_remark) > 2000:
+            raise ValidationError("remark 超长（≤2000 字符，对齐 ContentCreate）")
+        if voice_remark.strip() == "":
+            voice_remark = None
+
     record = Content(
         user_id=user_id,
         content_type="voice",
+        text=voice_text,
+        remark=voice_remark,
         taken_at=taken_at,
         gps_lat=gps_lat,
         gps_lng=gps_lng,
@@ -165,6 +196,12 @@ def _register_voice_content(
         extra=voice_extra,
         source=source,
         status="processing",
+        # BA1（迁移 f2a3b4c5d6e7）：duration=客户端上送 duration_ms 换算秒（向下取整；
+        # 毫秒来源即 meta.duration_ms——complete 协议既有字段，voice_extra 已存备份）。
+        # 异步 ASR 管线（BA3 批次）如产出更准时长可回写覆盖。
+        duration=(int(duration_ms) // 1000) if duration_ms is not None else None,
+        # BA1：上传音频字节数（落盘体积，storage put 前即可量得）
+        size_bytes=len(data),
     )
     db.add(record)
     try:
@@ -175,5 +212,6 @@ def _register_voice_content(
         raise
     db.refresh(record)
     # F4：enqueue_unique 同 content 键不重复入队（safe：失败仅记日志，P0-5）
-    safe_enqueue_unique(process_content, str(record.id))
+    # R9-B6：key 之后补函数参数（缺 args = process_content() 零参 TypeError 秒死）
+    safe_enqueue_unique(process_content, str(record.id), str(record.id))
     return str(record.id)

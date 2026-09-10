@@ -1,7 +1,7 @@
 """内容域 + 纠错域 ORM 模型（contents/correction_log，对齐 backend/sql/schema.sql）"""
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -48,6 +48,12 @@ class Content(Base):
     client_generated_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=False
     )  # R4#4 幂等键（客户端生成，同用户唯一）
+    # BA1 字段补齐批（迁移 f2a3b4c5d6e7）：展示/用量扩展字段
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="音频时长秒")
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tags_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # 预留 AI 打标
+    ai_description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 预留照片 AI 描述
     emotion: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     sensitive_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     sensitive_status: Mapped[str] = mapped_column(String, default="正常")

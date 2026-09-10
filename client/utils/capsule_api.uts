@@ -1,0 +1,172 @@
+/**
+ * 胶囊 / 备注 / 用量 薄封装（FE2 批 · 对齐 backend/app/api/capsules.py、contents.py、stats.py）
+ *
+ * 后端契约（已实证）：
+ *  POST /api/v1/capsules            {content_id, open_at(ISO 8601 带时区), note?} → CapsuleOut
+ *                                   open_at 必须晚于当前时刻，否则 422 CAPSULE_001；
+ *                                   content 须属当前用户且未删除，否则 404；重复封存同内容后端不拦截（每次新建一行）
+ *  GET  /api/v1/capsules            列表（本批未接）
+ *  POST /api/v1/contents            ContentCreate 可选 remark（max_length=2000）随内容入库，ContentOut 回显
+ *  GET  /api/v1/stats/daily-summary 出参 dict 新增 total_bytes（未删除内容 size_bytes 求和，
+ *                                   后端 coalesce 归 0——缺省/为空按 0 处理）
+ *
+ * 为什么这些封装放这里：text_recorder.uts / voice.uts 的 save 系封装不收 remark 参数
+ * 且不在本批文件域（禁改）→ 按 FE2 任务拍板，新建薄封装收口本模块；请求体逐字段
+ * 复刻原封装（text_recorder.createTextContent / voice.saveVoiceContent）仅追加 remark。
+ *
+ * 约定对齐 utils/api.uts：resolve-only 永不 reject；post/get 失败 resolve(null) 且已全局
+ * showErrorToast（后端 message 显式展示，调用方不重复 toast）。
+ */
+import { get, post, dataObj, PATH_DAILY_SUMMARY } from './api'
+
+/** 胶囊端点（BA2 批）：POST /api/v1/capsules */
+export const PATH_CAPSULES: string = '/api/v1/capsules'
+
+/**
+ * 封存胶囊：POST /api/v1/capsules。
+ * openAtIso 必须是带时区的 ISO 8601 字符串（调用方用 time.uts isoLocal 产出）；
+ * 本地「必须晚于 now」校验由调用方负责（组件侧 toast 更即时），后端 422 兜底。
+ * 成功 resolve(true)；失败 resolve(false)（api 层已全局 toast 显式原因）。
+ */
+export function sealCapsule(contentId: string, openAtIso: string, note: string): Promise<boolean> {
+	const body: UTSJSONObject = {
+		content_id: contentId,
+		open_at: openAtIso
+	}
+	if (note != '') {
+		body.set('note', note)
+	}
+	return new Promise<boolean>((resolve) => {
+		post(PATH_CAPSULES, body).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/**
+ * POST /api/v1/contents：文字入库（text 类型）+ 用户备注。
+ * 请求体逐字段复刻 text_recorder.createTextContent（content_type/text/source）追加 remark
+ * （后端 ContentCreate.remark 可选，max_length=2000；ContentOut 回显）。
+ * 返回 content_id 或 null。
+ */
+export function createTextContentRemark(text: string, remark: string): Promise<string | null> {
+	const body: UTSJSONObject = {
+		content_type: 'text',
+		text: text,
+		source: 'app'
+	}
+	if (remark != '') {
+		body.set('remark', remark)
+	}
+	return new Promise<string | null>((resolve) => {
+		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(d.getString('id'))
+		})
+	})
+}
+
+/**
+ * POST /api/v1/contents：语音文本入库 + 用户备注（RecordSheet submitVoice 降级路径用——
+ * 无本地录音文件 / 音频上传失败时的「仅落文本」分支）。
+ * 请求体逐字段复刻 voice.saveVoiceContent（content_type=voice/text/extra.duration_ms/
+ * file_name/source，cos_key 留空即纯文本；原封装 emotion 参数未入请求体，此处同口径），
+ * 追加 remark。
+ * 返回 content_id 或 null。
+ */
+export function createVoiceContentRemark(
+	text: string,
+	durationMs: number,
+	remark: string,
+	filePath: string
+): Promise<string | null> {
+	const extra: UTSJSONObject = {
+		duration_ms: durationMs
+	}
+	if (filePath != '') {
+		const idx = filePath.lastIndexOf('/')
+		extra.set('file_name', idx >= 0 ? filePath.substring(idx + 1) : filePath)
+	}
+	const body: UTSJSONObject = {
+		content_type: 'voice',
+		text: text,
+		extra: extra,
+		source: 'app'
+	}
+	if (remark != '') {
+		body.set('remark', remark)
+	}
+	return new Promise<string | null>((resolve) => {
+		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(d.getString('id'))
+		})
+	})
+}
+
+/**
+ * GET /api/v1/stats/daily-summary 取 total_bytes（storage.uvue 用量卡消费）。
+ * 字段语义（backend/app/api/stats.py 47-51）：该用户未删除内容 size_bytes 求和，
+ * 后端 coalesce 归 0；出参缺省按 0 处理（防御）。
+ * 失败 resolve(-1)（与真 0 区分：调用方判 <0 保持旧值，api 层已全局 toast）。
+ */
+export function fetchTotalBytes(): Promise<number> {
+	return new Promise<number>((resolve) => {
+		get(PATH_DAILY_SUMMARY).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(-1)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(-1)
+				return
+			}
+			resolve(d.getNumber('total_bytes') ?? 0)
+		})
+	})
+}
+
+/** 字节 → KB/MB/GB 显示串（1 位小数去尾零；1024 进位；负数/非法返回 '—'） */
+export function fmtBytes(bytes: number): string {
+	if (bytes < 0) {
+		return '—'
+	}
+	const KB = 1024.0
+	const MB = KB * 1024.0
+	const GB = MB * 1024.0
+	if (bytes >= GB) {
+		return trim1((bytes / GB).toFixed(1)) + ' GB'
+	}
+	if (bytes >= MB) {
+		return trim1((bytes / MB).toFixed(1)) + ' MB'
+	}
+	if (bytes >= KB) {
+		return trim1((bytes / KB).toFixed(1)) + ' KB'
+	}
+	return Math.round(bytes) + ' B'
+}
+
+/** 去掉 toFixed(1) 结果的尾随 «.0»（「2.0 GB」→「2 GB」；「2.3 GB」原样） */
+function trim1(s: string): string {
+	if (s.endsWith('.0')) {
+		return s.substring(0, s.length - 2)
+	}
+	return s
+}

@@ -54,3 +54,6 @@ Pillow>=11.0.0        # EpsImagePlugin 系列 CVE 需 >=11；本服务处理用�
 
 # --- 长录音 VAD 分段（B5a-2 · P1-16）---
 webrtcvad-wheels>=2.0.10
+
+# --- 企微回调 XML 安全解析（P1-1 · 2026-09-10 深扫：防 billion-laughs DoS）---
+defusedxml>=0.7.1

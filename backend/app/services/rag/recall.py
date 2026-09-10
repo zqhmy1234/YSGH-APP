@@ -82,20 +82,42 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
     content_ids = [rh["content_id"] for rh in raw_hits[:limit]]
     content_map: dict[str, Content] = {}
     event_map: dict[str, dict] = {}
+    thumb_map: dict[str, str] = {}
+    # D3 修复配套：记录「已尝试 DB 回查的合法 UUID id」——回查落空（软删/failed/非归属）
+    # 者整条剔除；无 DB 模式与非 UUID 测试点（rag-001 类）不受影响照常放行
+    attempted_ids: set[str] = set()
     if db is not None and user_id is not None:
         # 过滤非 UUID 格式 id（UUID 列无法匹配 rag-001 类测试点，防 PG 报错）
         _uuid_re = re.compile(
             r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
         )
         valid_ids = [cid for cid in content_ids if _uuid_re.match(cid)]
+        attempted_ids = set(valid_ids)
         if valid_ids:
             rows = db.execute(
                 select(Content).where(
                     Content.id.in_(valid_ids),
                     Content.user_id == user_id,
+                    # D3 修复（2026-09-08 真机实证）：软删内容不得召回——Qdrant 向量在删除
+                    # 链路补齐前仍残留，DB 回查是唯一闸门（与 pg_fallback.py:48 同口径）。
+                    # status 过滤：processing/failed 半态内容不进结果（时间轴同口径）
+                    Content.deleted_at.is_(None),
+                    Content.status == "done",
                 )
             ).scalars().all()
             content_map = {str(c.id): c for c in rows}
+            # 缩略图票据（2026-09-04 峰宝拍板搜索结果带图）：命中照片按 content_id 签票，
+            # <image :src> 直连免 header；失败/无 thumbnail_key 不阻塞溯源主链路
+            from app.services.external.media_url import content_urls
+
+            for c in content_map.values():
+                if c.content_type == "photo" and c.thumbnail_key:
+                    try:
+                        _orig, thumb = content_urls(None, c.thumbnail_key, str(user_id))
+                        if thumb:
+                            thumb_map[str(c.id)] = thumb
+                    except Exception:  # noqa: BLE001 —— 签票失败降级为无图，不影响命中
+                        logger.warning("搜索缩略图签票失败 content_id=%s", c.id, exc_info=True)
             # 事件级归因：content → event_items → events（用户隔离 + 软删过滤）
             try:
                 ev_rows = db.execute(
@@ -115,6 +137,10 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
                 logger.warning("事件归因回填失败", exc_info=True)
     for rh in raw_hits[:limit]:
         c = content_map.get(rh["content_id"])
+        # D3 修复（2026-09-08 真机实证）：软删/failed/非归属内容 Qdrant 向量仍残留，
+        # DB 回查落空的合法 UUID 点整条剔除（此前只降级字段仍带残留 text 出现在结果里）
+        if c is None and rh["content_id"] in attempted_ids:
+            continue
         matched = []
         if rh.get("pg"):
             matched.append("pg")
@@ -133,6 +159,7 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
             event_id=ev["id"] if ev else None,
             event_title=ev["title"] if ev else None,
             score=rh["score"],
+            thumbnail_url=thumb_map.get(rh["content_id"]),
             trace={
                 "matched": matched or ["dense"],
                 "dense_score": rh["dense_score"],

@@ -34,6 +34,53 @@ PHOTOS_PER_EVENT = 6
 VOICES_PER_EVENT = 1
 
 
+@router.get("/stats", response_model=ApiResponse[dict])
+def event_stats(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """派生统计（性能卡 PG：单聚合查询，替代前端 fetchTimeline(null) 全量拉取派生）
+
+    口径（事件域对齐 timeline：user_id + deleted_at IS NULL，services/events/timeline.py）：
+    - event_count：非软删事件总数（含各 level/status）
+    - day_count：非空 start_time 按天去重天数（对齐前端 dayKey(start_time)）
+    - photo_count：事件经 event_items 关联的 distinct 照片数（content_type=photo，不截断）
+    - unread_count：messages status=unread 条数（标量子查询并入本查询）
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, Event, EventItem, Message
+
+    unread_sq = (
+        select(func.count())
+        .select_from(Message)
+        .where(Message.user_id == user.id, Message.status == "unread")
+    ).scalar_subquery()
+    row = db.execute(
+        select(
+            func.count(func.distinct(Event.id)),
+            func.count(func.distinct(func.date(Event.start_time))),
+            func.count(func.distinct(Content.id)),
+            unread_sq,
+        )
+        .select_from(Event)
+        .outerjoin(EventItem, EventItem.event_id == Event.id)
+        .outerjoin(
+            Content,
+            (Content.id == EventItem.content_id) & (Content.content_type == "photo"),
+        )
+        .where(Event.user_id == user.id, Event.deleted_at.is_(None))
+    ).one()
+    return ApiResponse(
+        data={
+            "event_count": int(row[0]),
+            "day_count": int(row[1]),
+            "photo_count": int(row[2]),
+            "unread_count": int(row[3]),
+        }
+    )
+
+
 @router.get("/timeline", response_model=ApiResponse[list[EventOut]])
 def timeline(
     level: int | None = None,
@@ -57,6 +104,9 @@ def timeline(
     event_ids = [e.id for e in events]
     # 审查修复(P1-11)：一次 GROUP BY 批量取计数，消除 N+1（原逐事件 count 查询）
     counts = _batch_counts(db, event_ids)
+    # photo_ids 保留兼容：客户端 photoPathOf 兜底通路（thumbnails/{cid} + downloadFile header）；
+    # 主通路为下方 photos[].thumbnail_url 票据直发（Valet Key）
+    photo_ids = _batch_photo_ids(db, event_ids, str(user.id))
     # L3 生命周期：批量取最近活动 → 派生状态（读取时计算，MVP 不落库）
     last_act = get_event_last_activity(db, str(user.id), event_ids)
     lifecycles = {
@@ -80,6 +130,7 @@ def timeline(
                 photos=photos_by_event.get(str(e.id)),
                 voice=voices_by_event.get(str(e.id)),
                 cover_url=cover_urls.get(str(e.cover_content_id)) if e.cover_content_id else None,
+                photo_ids=photo_ids.get(str(e.id)),
             )
             for e in events
         ]
@@ -170,13 +221,24 @@ def _batch_event_photos(db: Session, event_ids: list, user_id: str) -> dict[str,
     return out
 
 
+def _fmt_voice_duration(seconds: int | None) -> str | None:
+    """A6：语音时长（秒）→ 客户端契约格式 "m:ss"（如 5→"0:05"、65→"1:05"）
+
+    None / 负值 / 非 int → None（客户端显示空；bool 排除：True 不是合法时长）。
+    """
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds < 0:
+        return None
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
 def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str, VoiceInfo | None]:
     """批量取事件成员语音（W0-2 · 2026-09-02：timeline 语音卡就地播放）
 
     每事件最多 VOICES_PER_EVENT 条（ROW_NUMBER 分区截断）；归属同 _batch_event_photos。
     只下发 content_id + title（语音转写首句），不带 url——播放走鉴权端点
     GET /api/v1/media/audio/{content_id}（token 只能走 header，客户端先落临时文件）。
-    duration 暂无字段，客户端播放时由 InnerAudioContext.duration 补齐。
+    A6（2026-09-09 缺口收口）：duration 下发格式化字符串 "m:ss"（客户端契约已定，
+    卡片渲染直接可用）；内容 duration 列为空时下发 None（客户端显示空）。
     """
     from sqlalchemy import func
 
@@ -193,6 +255,7 @@ def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str,
             EventItem.event_id.label("event_id"),
             Content.id.label("content_id"),
             Content.text,
+            Content.duration,
             rn,
         )
         .join(Content, Content.id == EventItem.content_id)
@@ -213,6 +276,7 @@ def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str,
         out[str(r.event_id)] = VoiceInfo(
             content_id=str(r.content_id),
             title=title[:40],
+            duration=_fmt_voice_duration(r.duration),
         )
     return out
 
@@ -266,6 +330,39 @@ def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
     return {str(r.event_id): {"content_count": int(r.total), "photo_count": int(r.photos)} for r in rows}
 
 
+def _batch_photo_ids(
+    db: Session, event_ids: list[str], user_id: str, per_event: int = 4
+) -> dict[str, list[str]]:
+    """批量取每事件成员照片 content_id（taken_at 序，截前 per_event 张；一次查询防 N+1）
+
+    兼容通路：客户端凭 cid 走 /api/v1/thumbnails/{cid}（downloadFile+header）；
+    主通路为 photos[]/thumbnail_url 票据直发（Valet Key），两路并存互为兜底。
+    """
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rows = db.execute(
+        select(EventItem.event_id, Content.id)
+        .join(Content, Content.id == EventItem.content_id)
+        # P2-5（2026-09-10 深扫）：与 _batch_event_photos 正例对齐——不依赖
+        # 「event_items 只含本人内容」上游不变量，DB 回查层自带归属/软删过滤（纵深）
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.content_type == "photo",
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+        .order_by(Content.taken_at)
+    ).all()
+    out: dict[str, list[str]] = {}
+    for eid, cid in rows:
+        lst = out.setdefault(str(eid), [])
+        if len(lst) < per_event:
+            lst.append(str(cid))
+    return out
+
+
 def _to_out(
     e,
     counts: dict | None = None,
@@ -273,11 +370,13 @@ def _to_out(
     photos: list | None = None,
     voice: VoiceInfo | None = None,
     cover_url: str | None = None,
+    photo_ids: list[str] | None = None,
 ) -> EventOut:
     """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1；L3 附生命周期）
 
     photos/voice/cover_url 由 timeline 批量传入；merge/split/confirm/cover 等单事件
     操作不传（返回空），客户端需要照片时重新拉 timeline 即可。
+    photo_ids 保留兼容（客户端兜底通路）。
     """
     counts = counts or {}
     c = counts.get(str(e.id), {"content_count": 0, "photo_count": 0})
@@ -297,6 +396,7 @@ def _to_out(
         generated_by=e.generated_by,
         content_count=c["content_count"],
         photo_count=c["photo_count"],
+        photo_ids=photo_ids or [],
         lifecycle=lifecycle,
         cover_url=cover_url,
         photos=photos or [],

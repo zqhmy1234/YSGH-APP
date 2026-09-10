@@ -69,11 +69,13 @@ def _query_by_cos_key(db: Session, user_id: str, cos_key: str) -> Content | None
     ).scalar_one_or_none()
 
 
-def _require_photo_bytes(cos_key: str) -> None:
+def _require_photo_bytes(cos_key: str) -> bytes:
     """照片原件魔数校验（P0-3 · 审查 H3）：分片 complete 路径校验文件类型
 
     伪装文件（`.jpg` 扩展名 + 任意字节）→ ValidationError（API 层 422），并尽力
     删除刚落的对象防孤儿；对象缺失 → NotFoundError（API 层 404）。
+    BA1（迁移 f2a3b4c5d6e7）：返回取回的字节（调用方顺手取 len 作 size_bytes，
+    避免二次 get_object 拉全量）。
     """
     from app.services.file_magic import is_photo_bytes
 
@@ -85,6 +87,7 @@ def _require_photo_bytes(cos_key: str) -> None:
     if not is_photo_bytes(data):
         best_effort_delete(cos_key, backend)
         raise ValidationError("文件内容与照片格式不符（魔数校验失败）")
+    return data
 
 
 def reflow_violation(db: Session, verdict: dict) -> None:
@@ -122,9 +125,10 @@ def _enqueue_pipeline(content_id: str, enqueue_thumbnail: bool) -> None:
 
     enqueue_unique 同 content 键不重复入队（F4/R5-4#5）。
     """
-    safe_enqueue_unique(process_content, content_id)
+    # R9-B6：key 之后补函数参数 content_id（缺 args = 零参 TypeError 秒死）
+    safe_enqueue_unique(process_content, content_id, content_id)
     if enqueue_thumbnail:
-        safe_enqueue_unique(thumbnails.generate_thumbnail_job, content_id)
+        safe_enqueue_unique(thumbnails.generate_thumbnail_job, content_id, content_id)
 
 
 def register_photo_content(
@@ -221,8 +225,12 @@ def register_photo_content(
         if existing is None or str(existing.user_id) != str(user_id):
             raise NotFoundError("content_id 不存在或不属于当前用户")
         if data is None:
-            _require_photo_bytes(cos_key)  # P0-3：补传原件同样魔数校验
+            # D5 修复（2026-09-09）：补传原件体积必须落 size_bytes——原实现只借
+            # _require_photo_bytes 校验却丢弃返回字节；占位期 thumbnail_meta 未写
+            # size，原件挂上后仍缺 → 存储页用量少算蜂窝首传的照片
+            data = _require_photo_bytes(cos_key)
         existing.cos_key = cos_key
+        existing.size_bytes = len(data)
         existing.status = "processing"
         # 合并（不覆盖占位期既有 extra，如 wechat 追溯/元数据）
         existing.extra = {**(existing.extra or {}), **(extra or {})}
@@ -241,7 +249,9 @@ def register_photo_content(
         cos_key = f"photos/{user_id}/{uuid.uuid4().hex}{ext}"
         backend.put_object(cos_key, data)
     else:
-        _require_photo_bytes(cos_key)  # P0-3：original 新建路径魔数校验
+        # P0-3：original 新建路径魔数校验（分片 complete 路径无 bytes 入参，
+        # 借校验内 get_object 的返回量体积，BA1 size_bytes）
+        data = _require_photo_bytes(cos_key)
     record = Content(
         user_id=user_id,
         content_type="photo",
@@ -253,6 +263,7 @@ def register_photo_content(
         extra=extra,
         source=photo_meta.source,
         status="processing",
+        size_bytes=len(data),  # BA1（迁移 f2a3b4c5d6e7）：原件体积（multipart/分片两路都覆盖）
     )
     db.add(record)
     try:

@@ -13,26 +13,28 @@
 			<view class="empty-cta pressable" @tap="onTakeFirst">
 				<text class="empty-cta-text">拍下第一张</text>
 			</view>
-			<text class="empty-voice pressable" @tap="goVoice">或者，录一段语音</text>
+			<view class="empty-voice pressable" @tap="goVoice">
+				<text class="empty-voice-text">或者，录一段语音</text>
+			</view>
 		</view>
 
 		<!-- 玻璃 TabBar（画布空态帧未画，产品上首启页必须保留主导航） -->
 		<TabBar active="index" @plus="sheetOpen = true" />
 
-		<!-- 记录面板浮层：点 TabBar 中央 + 或「录一段语音」就地拉起，不跳页（产品定义铁律） -->
-		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+		<!-- 记录面板浮层：点 TabBar 中央 + 或「录一段语音」就地拉起，不跳页（产品定义铁律）；
+		     firstPhoto=true 时带 initialMode='photo' 直达拍照流（直弹相机） -->
+		<RecordSheet v-if="sheetOpen" :initial-mode="firstPhoto ? 'photo' : ''" @close="onSheetClose" @saved="onRecordSaved" />
 	</view>
 </template>
 
 <script setup>
-	// CTA「拍下第一张」：主干口径（index.onGrantAndStart）= 请求权限 → **原地 startWatch**，不跳页。
-	// 旧实现 reLaunch 回 index 是错的：会触发 ensureLogin/fetchTimeline，网络一抖就 toast「网络异常」，
-	// 且空数据又把人 redirect 回本页 = 死循环 + 永远走不到权限弹窗（2026-08-31 真机实锤）。
-	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
-	import { recordGrantTime } from '@/utils/agg/perf_timing.uts'
+	// CTA「拍下第一张」：走记录面板拍照流（直弹相机→拍照表单），与面板「拍照」入口完全同通路。
+	// 旧实现 photoWatch 原生监听已废弃（标准基座必炸 + 语义不符，§N 台账）
 
-	// 记录面板浮层开关（TabBar 中央 + / 录一段语音 触发，就地拉起不跳页）
+	// 记录面板浮层开关（TabBar 中央 + / 录一段语音 / 拍下第一张 触发，就地拉起不跳页）
 	let sheetOpen = ref(false)
+	// 「拍下第一张」直达拍照流标记（带 initialMode='photo'，浮层关闭时复位）
+	let firstPhoto = ref(false)
 
 	// 返回键拦截：浮层开着时先关浮层，而不是退出页面（返回 true = 已自行处理）
 	onBackPress((): boolean => {
@@ -48,26 +50,20 @@
 	}
 
 	function onTakeFirst(): void {
-		console.log('[empty] CTA tapped')
-		try {
-			const watch = createPhotoWatch()
-			if (!watch.isReadPermissionGranted()) {
-				watch.requestReadPermission()
-			}
-			watch.start((items: Array<PhotoItem>) => {
-				console.log('[empty] photo batch received: ' + items.length)
-			})
-			recordGrantTime()
-			uni.showToast({ title: '已开始监听相册', icon: 'none' })
-		} catch (e) {
-			console.log('[empty] photoWatch 不可用（标准基座无原生插件）: ' + e)
-			uni.showToast({ title: '当前基座不支持相册接入，请改用自定义基座', icon: 'none' })
-		}
+		// 峰宝 09-02 拍板（P6）：拍下第一张 = 走记录面板拍照流（直弹相机）。
+		// 旧实现 createPhotoWatch 原生监听：标准基座必炸（实机 toast「不支持相册接入」），
+		// 且「监听相册」≠「拍照」，语义本就不对——入口与 RecordSheet 拍照入口完全同通路
+		firstPhoto.value = true
+		sheetOpen.value = true
 	}
 
-	// 次级入口「或者，录一段语音」：就地拉起记录面板浮层
-	// 产品定义铁律（2026-08-31 峰宝拍板）：记录面板 = 浮层不是页面，
-	// 任何入口都**不跳页**——旧实现 navigateTo('/pages/record/record') 是错的。
+	// 浮层关闭统一出口（复位 firstPhoto，防止下次从 TabBar + 打开还带拍照直达）
+	function onSheetClose(): void {
+		sheetOpen.value = false
+		firstPhoto.value = false
+	}
+
+	// 「或者，录一段语音」：就地拉起记录面板浮层
 	function goVoice(): void {
 		sheetOpen.value = true
 	}
@@ -154,13 +150,19 @@
 		font-weight: 600;
 	}
 	/* 画布 2:311 备选 14 SemiBold #B05A3A @y452，距按钮 26pt */
-	.empty-voice {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-top: 52rpx;
-		font-size: 28rpx;
-		font-weight: 600;
-		color: #b05a3a;
-	}
+.empty-voice {
+	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
+	font-family: "Sarasa Gothic SC", sans-serif;
+	margin-top: 52rpx;
+	padding: 11.5rpx 0rpx;
+	align-items: center;
+}
+.empty-voice-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 28rpx;
+	font-weight: 600;
+	color: #b05a3a;
+}
 	.pressable {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		transition: transform 0.2s ease, box-shadow 0.2s ease;

@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Protocol, runtime_checkable
 
@@ -158,6 +159,22 @@ def _care_streak_days(db: Session, user_id: str, now: datetime | None = None) ->
     )
 
 
+def _coerce_content_id(value) -> str | None:
+    """BA1：payload.content_id → messages.content_id（UUID 列）防污染转换
+
+    既有 payload 口径宽松（测试/旧数据可能放非 UUID 占位值，如 "v-1"），
+    列是 UUID 类型硬约束——非法值置 None（出参退化为 None，不影响消息本体），
+    不让消息建发因关联字段失败。
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        uuid.UUID(value.strip())
+    except ValueError:
+        return None
+    return value.strip()
+
+
 def create_message(
     db: Session,
     user_id: str,
@@ -183,6 +200,11 @@ def create_message(
         title=title,
         body=body,
         payload=payload or {},
+        # BA1（迁移 f2a3b4c5d6e7）：消息关联内容——口径对齐既有 payload.content_id
+        # （voice_done 见 notify_voice_done / echo 见 echo._create_echo_message 快照），
+        # 出参 MessageOut.content_id 由此列下发，客户端跳详情不再解析 payload；
+        # 非 UUID 值（旧数据/测试占位）置 None，防 UUID 列污染
+        content_id=_coerce_content_id((payload or {}).get("content_id")),
     )
     db.add(msg)
     db.flush([msg])

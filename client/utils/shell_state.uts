@@ -1,0 +1,23 @@
+// B10 方案A 壳层共享状态桥（2026-09-09）
+// 先例=audio_player.uts 模块级 export ref（全项目零 defineExpose/$refs 先例——
+// EchoSheet.uvue:110 拍板「不用 defineExpose，编译器风险不冒险」），
+// shell 与 tab 组件通过本模块的响应式 ref 双向协同，无需父子句柄传递。
+import { ref } from 'vue'
+
+/** shell 当前激活 tab（组件读取用于跨 tab 切换判定；shell 写） */
+export let shellActiveTab = ref('index')
+
+/** 组件请求切 tab（index goSearch / profile goType 等跨 tab 导航 → 组件 ++seq 并带目标；shell watch） */
+export let shellNavSeq = ref(0)
+export let shellNavTab = ref('')
+export let shellNavQuery = ref('')
+
+/** 发起跨 tab 切换（组件侧调用；等价原 redirectTo/navigateTo tab 页语义，但壳内零销毁） */
+export function requestShellTab(tab: string, query: string): void {
+	shellNavTab.value = tab
+	shellNavQuery.value = query
+	shellNavSeq.value = shellNavSeq.value + 1
+}
+
+/** ai 附件面板开关（原页级 onBackPress 第二优先级拦截——上收 shell 后组件写、shell 读） */
+export let aiAttachOpen = ref(false)

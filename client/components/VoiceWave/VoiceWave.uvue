@@ -1,0 +1,226 @@
+<template>
+	<!-- F5a 语音播放态规范：波形竖条阵列（index / search / detail 三处共用）
+	     尺寸真值（F5a 帧）：容器 h=28pt(53.8rpx)、竖条 4pt 宽、gap 3pt、r=2pt
+	     默认态：全部 idleColor —— detail 帧(F5b) 真值 #E5DCC8；index/search 现传 #C4913C（属其帧卡范围）
+	     活动态：已播段 playedColor #C4913C、未播段 idleColor #E5DCC8（F5a 拍板色值），
+	     当前根 bar 呼吸缩放（UniElement.animate，RecordSheet 轮盘同款真机先例） -->
+	<view class="wave">
+		<view
+			v-for="(s, i) in barStyles"
+			:key="i"
+			class="wave-bar"
+			:class="i === liveBarIdx ? 'wave-bar-live' : ''"
+			:style="s"
+		></view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// BB3：呼吸门控要读全局播放态（audio_player 单例 ref，跨模块绑走 search.uvue 先例）
+	import { voicePlaying } from '@/utils/audio_player'
+
+	// 运行时声明 props（项目先例 TabBar.uvue；数组默认值按 UTS 已知问题需显式断言）
+	const props = defineProps({
+		/** 波形高度数组（rpx），由 genWaveHeights 生成 */
+		heights: {
+			type: Array,
+			required: true
+		},
+		/** 是否为当前播放条（决定着色与呼吸动画） */
+		active: {
+			type: Boolean,
+			default: false
+		},
+		/** 播放进度 0..1（非活动条恒传 0） */
+		progress: {
+			type: Number,
+			default: 0
+		},
+		/** 已播段/空闲色（index 卡默认琥珀 #C4913C） */
+		playedColor: {
+			type: String,
+			default: '#C4913C'
+		},
+		/** 未播段色（F5a 拍板 #E5DCC8） */
+		idleColor: {
+			type: String,
+			default: '#E5DCC8'
+		},
+		/** BB3 真实波形（可选，0..1 峰值数组，来自后端 /contents/{id}/waveform）：
+		     真值优先——非空且 len≥2 时按线性映射渲染真实波形；无效/缺省显式回退
+		     genWaveHeights 伪波形（warn 日志不静默）。宿主零改动兼容（可不传） */
+		waveform: {
+			type: Array,
+			required: false,
+			default: null
+		}
+	})
+
+	// BB3 真实波形有效性门（显式回退不静默）：warn 只发一次防 computed 重算刷屏
+	let waveformWarned = false
+	let useRealWave = computed((): boolean => {
+		const wf = props.waveform
+		if (wf == null) {
+			return false
+		}
+		const arr = wf as Array<number>
+		if (arr.length < 2) {
+			if (!waveformWarned) {
+				console.warn('[VoiceWave] waveform 无效（空/长度<2），回退伪波形')
+				waveformWarned = true
+			}
+			return false
+		}
+		return true
+	})
+
+	/**
+	 * F5a 真值：波形容器 h=28pt（53.8rpx），竖条高 12pt~28pt（23.1~53.8rpx）。
+	 * heights（伪波形 8~40rpx 原始序列）按 min/max 归一化映射到真值区间；
+	 * waveform（真实 0..1 峰值）直接线性映射（保真不重归一，静音段=最矮条）。
+	 */
+	let bars = computed((): Array<number> => {
+		const out: Array<number> = []
+		if (useRealWave.value) {
+			const wf = props.waveform as Array<number>
+			for (let i = 0; i < wf.length; i++) {
+				let v = wf[i]
+				if (v < 0) { v = 0 }
+				if (v > 1) { v = 1 }
+				out.push(23.1 + v * 30.7)
+			}
+			return out
+		}
+		const hs = props.heights as Array<number>
+		let min = 0
+		let max = 0
+		for (let i = 0; i < hs.length; i++) {
+			const v = hs[i]
+			if (i === 0) {
+				min = v
+				max = v
+			} else {
+				if (v < min) {
+					min = v
+				}
+				if (v > max) {
+					max = v
+				}
+			}
+		}
+		const span = max - min
+		for (let i = 0; i < hs.length; i++) {
+			let r = 0.5
+			if (span > 0) {
+				r = (hs[i] - min) / span
+			}
+			out.push(23.1 + r * 30.7)
+		}
+		return out
+	})
+
+	let playedCount = computed((): number => {
+		if (!props.active || props.progress <= 0) {
+			return 0
+		}
+		const n = Math.floor((bars.value.length * props.progress))
+		if (n > bars.value.length) {
+			return bars.value.length
+		}
+		return n
+	})
+
+	/** 呼吸动画落在进度前沿那根 bar 上；未开播/播完则无 */
+	let liveBarIdx = computed((): number => {
+		if (!props.active || props.progress <= 0 || props.progress >= 1) {
+			return -1
+		}
+		const c = playedCount.value
+		return c > 0 ? c - 1 : 0
+	})
+
+	// R7 性能刀（2026-09-04）：每 bar 最终 style 预生成字符串 + 逐 bar 缓存对比——
+	// 旧实现 :style 内联对象逐 tick 全量重建（28 对象/次渲染）；现值不变的 bar 复用缓存
+	// 里的同一字符串（渲染层判等跳过原生更新），进度 tick 只有分界 ±1 与呼吸 bar
+	// （height×1.3）两三根真正产生新串。:style 字符串绑定走 manage badgeStyle 先例；
+	// 色值仍走 props（index/detail/favorites/search/theme-detail 五处宿主有自定义色），不入静态类
+	let barStyleCache: Array<string> = []
+	let barStyles = computed((): Array<string> => {
+		const hs = bars.value
+		const pc = playedCount.value
+		const live = liveBarIdx.value
+		// v3 呼吸：三角波 1→0.5→1（周期 900ms≈18 tick；liveBarIdx 变化重置相位=新 bar 从满高起）
+		const ph = liveBarIdx.value * 18 + breathTick.value
+		const tri = 1 - 0.5 * (((ph % 18) * 2) > 18 ? ((ph % 18) * 2) - 18 : (ph % 18) * 2) / 9
+		const out: Array<string> = []
+		for (let i = 0; i < hs.length; i++) {
+			const h = (i === live ? hs[i] * tri : hs[i])
+			const bg = i < pc ? props.playedColor : props.idleColor
+			const s = 'height:' + h + 'rpx;background-color:' + bg + ';'
+			if (i < barStyleCache.length && barStyleCache[i] == s) {
+				out.push(barStyleCache[i])
+			} else {
+				if (i < barStyleCache.length) {
+					barStyleCache[i] = s
+				} else {
+					barStyleCache.push(s)
+				}
+				out.push(s)
+			}
+		}
+		return out
+	})
+
+	// ===== B9 呼吸动画 v3（2026-09-09 native 崩溃根治，纯数据驱动，UniElement.animate 退役）=====
+	// 证据链：① 19:42 Java FATAL=ConcurrentModificationException @ 框架动画回调监听表
+	//   （cancel/animate 在分发栈内同步改表）；② v1 把 cancel/animate 挪 setTimeout(0) 后，
+	//   换条 A→B 仍秒挂且 crash 缓冲 0B=native 层——延时回调执行时旧卡已 v-if 卸载，
+	//   对已销毁元素句柄操作 = use-after-free，try/catch 接不住 SIGSEGV。
+	// 结论：列表 v-if 换卡场景下 UniElement.animate 不存在安全窗口（同步撞 Java CME、
+	//   异步撞 native UAF）。CSS @keyframes App 端不支持（RecordSheet §I A' 拍板）→
+	//   第三条路=50ms 心跳推进 breathTick，live bar 高度在 barStyles 内做 1→0.5→1
+	//   振荡（周期 900ms≈18 tick，观感与 v1 animate 一致），:style 字符串与进度染色
+	//   同路径、零原生句柄，仅「本条活动 && 全局播放中」时运行。
+	let breathTick = ref(0)
+	let breathClockId = -1
+	function syncBreathClock(): void {
+		const want = props.active && voicePlaying.value
+		if (want && breathClockId == -1) {
+			breathClockId = setInterval((): void => {
+				breathTick.value = breathTick.value + 1
+			}, 50)
+		} else if (!want && breathClockId != -1) {
+			clearInterval(breathClockId)
+			breathClockId = -1
+		}
+	}
+	watch(liveBarIdx, (): void => { syncBreathClock() })
+	watch(voicePlaying, (): void => { syncBreathClock() })
+	onUnmounted(() => {
+		if (breathClockId != -1) {
+			clearInterval(breathClockId)
+			breathClockId = -1
+		}
+	})
+</script>
+
+<style>
+	/* F5a 真值：容器 h=28pt（53.8rpx）；竖条 4pt 宽（7.7rpx）/ gap 3pt（5.8rpx）/ r2pt（3.8rpx） */
+	.wave {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		height: 53.8rpx;
+		overflow: hidden;
+	}
+	.wave-bar {
+		width: 7.7rpx;
+		border-radius: 3.8rpx;
+		margin-right: 5.8rpx;
+	}
+	/* 呼吸缩放（F5a「波形跳动」）B9 已接线：目标 bar 由 watch(liveBarIdx/voicePlaying)
+	   驱动 UniElement.animate scaleY 1↔0.5（RecordSheet 真机先例机制）；本类保留作语义标记 */
+	.wave-bar-live {
+		/* 动画走命令式 animate，此类无静态样式 */
+	}
+</style>

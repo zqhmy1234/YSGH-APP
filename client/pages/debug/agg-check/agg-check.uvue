@@ -30,7 +30,7 @@
 
 	onLoad(() => {
 		if (!DEV_PAGE_ENABLED) {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 			return
 		}
 		const summary = runAllCases(AGG_FIXTURES)

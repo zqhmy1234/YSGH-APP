@@ -1,0 +1,356 @@
+/**
+ * 就地语音播放引擎（W0-2 · F5a/F5b 播放态规范 · 2026-09-02）
+ *
+ * 链路：GET /api/v1/media/audio/{content_id}（Bearer）→ uni.downloadFile({header})
+ *   落临时文件（token 只能走 header，InnerAudioContext.src 带不了）→ 池实例播本地文件。
+ *
+ * 全局同一时刻只播一条；点同一条 = 暂停/续播，点另一条 = 池轮换停旧起新。
+ * index / search / detail 三处卡片绑定同一组状态（F5a 拍板：三处统一播放态视觉）。
+ *
+ * 会话级缓存：contentId → 临时文件路径（Map）。冷启动清空重下（后端 Cache-Control 兜底）。
+ *
+ * ── 🔴 华为换条 SIGSEGV 根治史（三轮真机实锤 + 社区案例，v5 定稿）──
+ *  ① 每条 create/destroy：destroy 与在途原生回调竞态 → Java ConcurrentModification
+ *     Exception（09-08 19:42 FATAL 全栈在案）
+ *  ② v2/v3 单例：同实例 stop→换src→play 连发 = Android MediaPlayer 状态机竞态
+ *     → SIGSEGV（02:19/02:22/02:34/02:51 四次，uni-crash/*.dmp + logcat「PGAudioState
+ *     stop → Skipped 78 frames → signal 11」时序在案）
+ *  ④ v4 同实例 120ms 串行队列：缓解未除根（仍同实例反复 stop/play）
+ *  社区定论（IT营/CSDN/官方「-99」处置同款）：**多实例池轮换**——同一实例永不承接
+ *  「上一条的 stop」+「下一条的 play」，从根消除状态机竞态；实例不 destroy 只 pause
+ *  置闲（避开 ① 销毁竞态）。v5 = 3 实例池 + 串行队列 + [dbg-audio] 步迹日志（崩溃标记器：
+ *  万一再 SIGSEGV，logcat 最后一条 step 直接点名凶手原生调用）。
+ */
+
+import { ref } from 'vue'
+import { getToken } from './auth'
+import { getBaseUrl } from './config'
+
+// ── 全局播放状态（三处页面共享绑定）──
+export let voiceCurrentId = ref('') // 正在加载/播放的 content_id；'' = 空闲
+export let voiceLoading = ref(false)
+export let voicePlaying = ref(false)
+export let voiceProgress = ref(0) // 0..1（onTimeUpdate + 33ms 时钟驱动）
+export let voiceCurSec = ref(0)
+export let voiceTotalSec = ref(0)
+
+let fileCache = new Map<string, string>()
+let progressClockId = -1
+
+// ── v5 三实例池（首播一次性 create，全会话存活，绝不 destroy）──
+const POOL_SIZE = 3
+let poolReady = false
+let pool: Array<InnerAudioContext> = []
+let slotCid: Array<string> = [] // 每槽当前绑定的 content_id（回调自校验，防旧实例串写新条）
+let activeIdx = -1 // 当前出声槽；-1 = 还没播过
+
+function bindSlotEvents(c: InnerAudioContext, idx: number): void {
+	c.onPlay(() => {
+		if (voiceCurrentId.value == slotCid[idx]) {
+			voicePlaying.value = true
+		}
+	})
+	c.onPause(() => {
+		if (voiceCurrentId.value == slotCid[idx]) {
+			voicePlaying.value = false
+		}
+	})
+	c.onStop(() => {
+		if (voiceCurrentId.value == slotCid[idx]) {
+			voicePlaying.value = false
+		}
+	})
+	c.onEnded(() => {
+		if (voiceCurrentId.value != slotCid[idx]) {
+			return
+		}
+		voicePlaying.value = false
+		voiceProgress.value = 1
+		voiceCurSec.value = voiceTotalSec.value
+	})
+	c.onError((_err: any) => {
+		if (voiceCurrentId.value == '' || voiceCurrentId.value != slotCid[idx]) {
+			return // 切走后旧实例残尾错误静默忽略
+		}
+		uni.showToast({ title: '播放失败', icon: 'none' })
+		stopVoice()
+	})
+	c.onTimeUpdate(() => {
+		if (voiceCurrentId.value != slotCid[idx]) {
+			return
+		}
+		if (c.paused) {
+			return // v5.1：暂停期原生回调可能携带瞬时 0 值，同 33ms 时钟闸同防
+		}
+		const total = c.duration
+		const cur = c.currentTime
+		if (total > 0) {
+			voiceTotalSec.value = Math.round(total)
+			voiceCurSec.value = Math.round(cur)
+			const p = cur / total
+			voiceProgress.value = p > 1 ? 1 : p
+		}
+	})
+}
+
+function ensurePool(): void {
+	if (poolReady) {
+		return
+	}
+	for (let i = 0; i < POOL_SIZE; i++) {
+		const c = uni.createInnerAudioContext()
+		pool.push(c)
+		slotCid.push('')
+		bindSlotEvents(c, i)
+	}
+	poolReady = true
+}
+
+// ── 原生调用串行队列（池轮换 + 队列双保险；每步前打 [dbg-audio] 崩溃标记器）──
+class AudioStep {
+	kind: string // 'pause' | 'setSrc' | 'play'
+	idx: number
+	path: string
+	constructor(kind: string, idx: number, path: string) {
+		this.kind = kind
+		this.idx = idx
+		this.path = path
+	}
+}
+
+let stepQ: Array<AudioStep> = []
+let dispatchTimer = -1
+const STEP_GAP_MS = 120
+
+function enqueueStep(kind: string, idx: number, path: string): void {
+	stepQ.push(new AudioStep(kind, idx, path))
+	if (dispatchTimer == -1) {
+		dispatchTimer = setInterval((): void => { drainOne() }, STEP_GAP_MS)
+	}
+}
+
+function stopDispatch(): void {
+	if (dispatchTimer != -1) {
+		clearInterval(dispatchTimer)
+		dispatchTimer = -1
+	}
+}
+
+function drainOne(): void {
+	if (stepQ.length == 0) {
+		stopDispatch()
+		return
+	}
+	const s = stepQ.shift()
+	if (s == null || s.idx < 0 || s.idx >= pool.length) {
+		return
+	}
+	console.log('[dbg-audio] step=' + s.kind + ' idx=' + s.idx + ' pending=' + stepQ.length)
+	const c = pool[s.idx]
+	try {
+		if (s.kind == 'pause') {
+			c.pause() // 只 pause 不 destroy——池实例全会话存活，无 ① 销毁竞态
+		} else if (s.kind == 'setSrc') {
+			c.src = s.path
+		} else if (s.kind == 'play') {
+			c.play()
+		}
+	} catch (e) {
+		console.warn('[audio_player] 步骤失败 kind=' + s.kind + '（忽略）: ' + e)
+	}
+}
+
+// ── 模板取值封装（uvue 模板不直接绑跨模块 ref，统一走函数）──
+
+/** 该条语音是否处于「加载中/播放中/暂停中」任一活动态 */
+export function isVoiceActive(contentId: string): boolean {
+	return voiceCurrentId.value == contentId
+}
+
+/** 全局是否正在出声 */
+export function isVoicePlaying(): boolean {
+	return voicePlaying.value
+}
+
+/** 该条进度 0..1（非活动条恒 0） */
+export function voiceProgressOf(contentId: string): number {
+	return isVoiceActive(contentId) ? voiceProgress.value : 0
+}
+
+export function voiceCurSecValue(): number {
+	return voiceCurSec.value
+}
+
+export function voiceTotalSecValue(): number {
+	return voiceTotalSec.value
+}
+
+/** 秒 → m:ss（F5a 进度行格式 0:12 / 0:32） */
+export function fmtVoiceTime(sec: number): string {
+	let s = sec
+	if (s < 0) {
+		s = 0
+	}
+	const m = Math.floor(s / 60)
+	const r = Math.floor(s % 60)
+	if (r < 10) {
+		return m + ':0' + r
+	}
+	return m + ':' + r
+}
+
+/** 由 contentId 确定性生成装饰伪波形（28 根，8~40rpx）——真实波形走宿主 waveform prop */
+export function genWaveHeights(id: string, count: number): Array<number> {
+	let seed = 7
+	for (let i = 0; i < id.length; i++) {
+		seed = (seed * 31 + id.charCodeAt(i)) % 100000
+	}
+	const arr: Array<number> = []
+	for (let i = 0; i < count; i++) {
+		seed = (seed * 1103515245 + 12345) % 100000
+		arr.push(8 + (seed % 33))
+	}
+	return arr
+}
+
+// ── 引擎 ──
+
+/** 卡片点击入口：同一条 → 暂停/续播；另一条 → 池轮换停旧起新 */
+export function toggleVoice(contentId: string): void {
+	if (contentId == '') {
+		return
+	}
+	ensurePool()
+	if (voiceCurrentId.value == contentId && activeIdx >= 0) {
+		if (voicePlaying.value) {
+			// 🔴 v5.1 暂停归零修复（峰宝二次报「点暂停波形+进度条直接归零」）：
+			// Android pause() 后 MediaPlayer 的 currentTime 会瞬时回 0——33ms 时钟若继续
+			// 采样会把 progress 写成 0（波形染色回米、进度条空）。暂停即停表冻结视觉；
+			// 续播（play 入队）时重新起表，onPlay 前 paused 仍 true 有第二道闸不抢跑。
+			stopProgressClock()
+			enqueueStep('pause', activeIdx, '')
+		} else {
+			startProgressClock()
+			enqueueStep('play', activeIdx, '')
+		}
+		return
+	}
+	// 换条：先确保旧出声槽进队暂停（清队列也不能丢它），再重置 JS 态起新
+	const prevIdx = activeIdx
+	const hadAudio = voiceCurrentId.value != '' && prevIdx >= 0
+	stepQ = []
+	if (hadAudio) {
+		enqueueStep('pause', prevIdx, '')
+	}
+	stopProgressClock()
+	voiceCurrentId.value = ''
+	voicePlaying.value = false
+	voiceProgress.value = 0
+	voiceCurSec.value = 0
+	voiceTotalSec.value = 0
+	startPlay(contentId)
+}
+
+/** 停止（页面 onUnload 也应调用）：只 pause 出声槽，不 destroy */
+export function stopVoice(): void {
+	const prevIdx = activeIdx
+	const hadAudio = voiceCurrentId.value != '' && prevIdx >= 0
+	stepQ = []
+	stopProgressClock()
+	voiceCurrentId.value = ''
+	voiceLoading.value = false
+	voicePlaying.value = false
+	voiceProgress.value = 0
+	voiceCurSec.value = 0
+	voiceTotalSec.value = 0
+	if (hadAudio) {
+		enqueueStep('pause', prevIdx, '')
+	}
+}
+
+function stopProgressClock(): void {
+	if (progressClockId != -1) {
+		clearInterval(progressClockId)
+		progressClockId = -1
+	}
+}
+
+function startProgressClock(): void {
+	stopProgressClock()
+	progressClockId = setInterval(() => {
+		if (activeIdx < 0 || voiceCurrentId.value == '') {
+			return
+		}
+		const c = pool[activeIdx]
+		// v5.1 第二道闸：paused=true 期间不采样（续播指令入队到 onPlay 落地之间，
+		// currentTime 可能仍是暂停态瞬时 0 值）
+		if (c.paused) {
+			return
+		}
+		const total = c.duration
+		const cur = c.currentTime
+		if (total > 0) {
+			voiceTotalSec.value = Math.round(total)
+			voiceCurSec.value = Math.round(cur)
+			const p = cur / total
+			voiceProgress.value = p > 1 ? 1 : p
+		}
+	}, 33)
+}
+
+function startPlay(contentId: string): void {
+	voiceCurrentId.value = contentId
+	voiceLoading.value = false
+	voicePlaying.value = false
+	voiceProgress.value = 0
+	voiceCurSec.value = 0
+	voiceTotalSec.value = 0
+	const cached = fileCache.get(contentId)
+	if (cached != null) {
+		playFile(contentId, cached as string)
+		return
+	}
+	voiceLoading.value = true
+	const header: UTSJSONObject = {}
+	const token = getToken()
+	if (token != '') {
+		header.set('Authorization', 'Bearer ' + token)
+	}
+	uni.downloadFile({
+		url: getBaseUrl() + '/api/v1/media/audio/' + contentId,
+		header: header,
+		timeout: 30000,
+		success: (res: any) => {
+			voiceLoading.value = false
+			if (res.statusCode != 200 || res.tempFilePath == null || res.tempFilePath == '') {
+				// R9 拍板（2026-09-06 峰宝）：404=音频不可用（转写中 / 旧条目字节永久缺失）
+				voiceCurrentId.value = ''
+				uni.showToast({ title: '音频暂不可用', icon: 'none', duration: 1500 })
+				return
+			}
+			fileCache.set(contentId, res.tempFilePath as string)
+			// 下载期用户可能已点别条——只有仍是当前条才续播
+			if (voiceCurrentId.value == contentId) {
+				playFile(contentId, res.tempFilePath as string)
+			}
+		},
+		fail: (_err: any) => {
+			voiceLoading.value = false
+			voiceCurrentId.value = ''
+			uni.showToast({ title: '网络异常 · 音频加载失败', icon: 'none', duration: 1500 })
+		}
+	})
+}
+
+/** 换条核心：轮转取下一槽（≠ 出声槽）→ 该槽 setSrc → play。同实例永不连续承接 */
+function playFile(contentId: string, filePath: string): void {
+	if (voiceCurrentId.value != contentId) {
+		return // 下载等待期又点了别的条：过期回调丢弃
+	}
+	const nextIdx = (activeIdx + 1) % POOL_SIZE
+	slotCid[nextIdx] = contentId
+	activeIdx = nextIdx
+	enqueueStep('setSrc', nextIdx, filePath)
+	enqueueStep('play', nextIdx, '')
+	startProgressClock()
+}

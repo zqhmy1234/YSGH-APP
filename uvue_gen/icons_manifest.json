@@ -342,5 +342,61 @@
  "2:330": [
   "i2_330",
   "Vector"
- ]
+ ],
+ "63:20": [
+  "spark-gold",
+  "星芒(品牌条)"
+ ],
+ "63:59": [
+  "spark-gold",
+  "星芒(摘要行·两帧同形)"
+ ],
+ "63:35": [
+  "share-wechat",
+  "微信"
+ ],
+ "63:39": [
+  "share-moments",
+  "朋友圈"
+ ],
+ "63:42": [
+  "share-link",
+  "链接"
+ ],
+ "63:69": [
+  "opt-check",
+  "胶囊选项白勾"
+ ],
+ "_coverage": {
+  "source_ardot": "719545763760845",
+  "pipeline_covered": [
+   "2:",
+   "4:"
+  ],
+  "note": "缺失页批 25 帧画布 VECTOR 全量清单见同目录 icons_vector_inventory.json（2026-09-02 主窗口扫描）；缺图标必须回画布 export_nodes 导真件，禁手绘（F7 收口拍板）；scripts_ardot2uvue.py 重跑会覆盖本文件，_coverage 由脚本保留逻辑维护",
+  "self_served": {
+   "63:": [
+    "spark-gold(63:20/63:59)",
+    "share-wechat(63:35)",
+    "share-moments(63:39)",
+    "share-link(63:42)",
+    "opt-check(63:69)"
+   ],
+   "others": [
+    "about-star(F3b)",
+    "favorites-star(60:835)",
+    "trash-mic/check/info(卡13)",
+    "record-*(卡01-11)",
+    "storage-*(卡12)",
+    "detail-*(卡19)",
+    "tab-*/msg-*/profile-*(W10.4 TabBar)"
+   ]
+  },
+  "pending_export_segments": [
+   "41:",
+   "52:",
+   "60:",
+   "64:"
+  ]
+ }
 }

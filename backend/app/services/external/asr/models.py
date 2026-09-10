@@ -63,7 +63,7 @@ class AsrResult:
     text: str
     channel: str
     outcome: str = "succeeded"
-    emotion: str = "平静"
+    emotion: str | None = None  # D-16: 未测得=None（旧「平静」默认值把自己伪装成真读数）
     emotion_confidence: float = 0.0
     emotion_source: str = "none"
     emotion_model: str | None = None
@@ -104,7 +104,8 @@ class AsrResult:
             "emotion_source": self.emotion_source,
             "emotion_model": self.emotion_model,
             "emotion_actionable": (
-                self.emotion != "平静"
+                self.emotion is not None
+                and self.emotion != "平静"
                 and self.emotion_confidence >= EMOTION_ACTION_THRESHOLD
             ),
             "emotion_merge": self.emotion_merge,
@@ -127,7 +128,7 @@ class SenseVoiceResult:
     """SenseVoice 本地推理结果；置信度只针对声学情绪标签。"""
 
     text: str
-    emotion: str
+    emotion: str | None  # D-16: EMO_UNKNOWN -> None（未测得）
     emotion_confidence: float
     raw_emotion: str
     audio_events: list[str] = field(default_factory=list)

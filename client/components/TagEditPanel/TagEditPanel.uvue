@@ -1,0 +1,352 @@
+<template>
+	<!-- ═══════════ 编辑性格标签面板（F9b · 卡24 · canvas JSON 真值） ═══════════
+	     真值：.wt/missing-pages/uvue_gen/tag_edit_panel_canvas.json（2026-09-02 14:33 导出，44 节点，帧 F9b）。
+	     组件范围 = 帧内弹层子树：64:253 遮罩 + 64:254 编辑标签弹层（底页弱化层 64:243/64:244 属宿主 manage.uvue）。
+	     弹层 = 全局浮层不是页面，唤起不发生页面跳转（峰宝拍板铁律 1 同族，EchoSheet/RecordSheet 范式）。
+     结构（逻辑 px ×1.9231→rpx）：遮罩 #3B2E26 a0.4 / 弹层 y398 padding 20/20/18/28 · 纵向 gap14（→26.9rpx margin）/
+     头行：编辑性格标签 16·600 #3A2E25（y+4）+ × 22·400 #B3A696 / 节标 12·500 #8A7A6A /
+     AI 标签区 wrap gap8：chip h32 r16 白底+淡投影（字 13·400 #3A2E25 + × 14·400 #B3A696，AI 标签可删）/
+     locked chip 白底描边 #B05A3A（字 13·500 + 锈红锁 12×12，手动固定不可删）/
+     添加行 h44 r22 白底+双投影（输入 + 固定钮 60×32 #B05A3A）/ 锁定说明 11·400 #B3A696 /
+     主按钮 h48 r24 #B05A3A 完成 16·600 白
+     §U 重设计（2026-09-03 峰宝拍板「与分享/胶囊面板同款问题」）：对齐 4:404 详情页令牌——弹层暖底 #FAF9F5、
+     土黄 #EDE5D5 全清（chips/添加行改白卡+投影）、琥珀金 #C4913C 全换锈红 #B05A3A（主按钮/固定钮/锁描边）；
+     锁图标换画布 64:276 导出真件 tag-lock-rust.svg（storage-lock.svg 三处共用金锁不动）；画布改后截图
+     uvue_gen/panel_redesign_shots/F9b_tagedit_after.png -->
+	<view class="sheet-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">编辑性格标签</text>
+				<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 64:258 节标-AI派生 -->
+			<text class="section-label">AI 从记忆里读出的你</text>
+			<!-- 64:259 AI标签区：wrap gap8，AI 生成标签带 × 可删 -->
+			<view class="chip-area">
+				<view v-for="(tag, i) in aiList" :key="tag" class="ai-chip">
+					<text class="ai-chip-text">{{ tag }}</text>
+					<view class="ai-chip-del" @tap="removeAi(i)"><text class="ai-chip-del-text">×</text></view>
+				</view>
+			</view>
+			<!-- 64:272 节标-手动固定 -->
+			<text class="section-label">我固定的人设（锁定后 AI 不会改动）</text>
+			<!-- 64:273 手动标签区：locked 标签白底锈红描边 + 锁标识，无 × 不可删（§U：金→锈红） -->
+			<view class="chip-area">
+				<view v-for="tag in lockedList" :key="tag" class="locked-chip">
+					<text class="locked-chip-text">{{ tag }}</text>
+					<image class="locked-icon" src="/static/icons/tag-lock-rust.svg" />
+				</view>
+			</view>
+			<!-- 64:279 添加行：输入 + 固定（新标签进 locked 区） -->
+			<view class="add-row">
+				<input class="add-input" v-model="newTag" placeholder="添加你眼中的自己…" placeholder-style="color:#B3A696;font-size:25rpx;" :maxlength="12" confirm-type="done" @confirm="addLocked" />
+				<view class="add-btn" @tap="addLocked">
+					<text class="add-btn-text">固定</text>
+				</view>
+			</view>
+			<!-- 64:283 锁定说明 -->
+			<text class="lock-hint">固定（锁定）的标签不会被 AI 更新覆盖，随时可解锁或删除</text>
+			<!-- 64:284 主按钮-完成：结果写回 manage 本地态（storage + @save） -->
+			<view class="main-btn" @tap="onDone">
+				<text class="main-btn-text">完成</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props：Array<string> 有 VoiceWave heights（type: Array）先例；对象 prop 零先例不冒险（EchoSheet 铁律）
+	const props = defineProps({
+		aiTags: {
+			type: Array,
+			required: true
+		}
+	})
+
+	const emit = defineEmits(['close', 'save'])
+
+	// ── 状态：AI 标签（可删） / locked 手动固定标签（不可删） / 输入框 ──
+	let aiList = ref<Array<string>>([])
+	let lockedList = ref<Array<string>>([])
+	let newTag = ref('')
+
+	// storage 键（\n 连接存取，规避 JSON 解析零先例；settings.uvue 字符串 storage 先例）
+	// 初始化：edited 键非空 → 上次编辑结果优先；否则用 props.aiTags（首次打开）
+	const editedStr = uni.getStorageSync('portrait_ai_tags_edited') as string
+	if (editedStr != '') {
+		const segs = editedStr.split('\n')
+		for (let i = 0; i < segs.length; i++) {
+			if (segs[i] != '') {
+				aiList.value.push(segs[i])
+			}
+		}
+	} else {
+		for (let i = 0; i < props.aiTags.length; i++) {
+			const t = props.aiTags[i] as string
+			if (t != '') {
+				aiList.value.push(t)
+			}
+		}
+	}
+	const lockedStr = uni.getStorageSync('portrait_locked_tags') as string
+	if (lockedStr != '') {
+		const lsegs = lockedStr.split('\n')
+		for (let i = 0; i < lsegs.length; i++) {
+			if (lsegs[i] != '') {
+				lockedList.value.push(lsegs[i])
+			}
+		}
+	}
+
+	/** 删除 AI 生成标签（locked 标签无 × 入口 = 不可删，卡24 交互接线）。
+	 *  W1-5 复核：ref 数组禁 splice（零先例铁律 7，index.uvue splice 先例为裸数组非同构）→ 下标重建重赋值 */
+	function removeAi(idx: number): void {
+		const out: Array<string> = []
+		for (let i = 0; i < aiList.value.length; i++) {
+			if (i != idx) {
+				out.push(aiList.value[i])
+			}
+		}
+		aiList.value = out
+	}
+
+	/** 固定新标签：去重（locked 与 AI 区都查），进 locked 区 */
+	function addLocked(): void {
+		const t = newTag.value.trim()
+		if (t == '') {
+			uni.showToast({ title: '请输入标签', icon: 'none' })
+			return
+		}
+		for (let i = 0; i < lockedList.value.length; i++) {
+			if (lockedList.value[i] == t) {
+				uni.showToast({ title: '已固定过这个标签', icon: 'none' })
+				return
+			}
+		}
+		for (let i = 0; i < aiList.value.length; i++) {
+			if (aiList.value[i] == t) {
+				uni.showToast({ title: 'AI 标签里已有「' + t + '」', icon: 'none' })
+				return
+			}
+		}
+		lockedList.value.push(t)
+		newTag.value = ''
+	}
+
+	/** 完成：结果写回 storage（manage @save 重读重建本地态），关层 */
+	function onDone(): void {
+		uni.setStorageSync('portrait_ai_tags_edited', aiList.value.join('\n'))
+		uni.setStorageSync('portrait_locked_tags', lockedList.value.join('\n'))
+		emit('save')
+		onClose()
+	}
+
+	function onClose(): void {
+		emit('close')
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet 同款铁律） */
+		z-index: 1000;
+	}
+	/* 64:253 遮罩：r0.23 g0.18 b0.15 op0.4 → rgba(59,46,38,0.4) */
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 750rpx;
+		height: 100%;
+		background-color: rgba(59, 46, 38, 0.4);
+		z-index: 10;
+	}
+	/* 64:254 编辑标签弹层：y398（min-height 446px=858.5rpx 兜底）；padding 20/20/18/28；
+	   §U 重设计：白 → 暖底 #FAF9F5（对齐详情页令牌）；JSON 无 cornerRadius → 直角（EchoSheet 同款真值处理） */
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: 750rpx;
+		min-height: 858.5rpx;
+		background-color: #FAF9F5;
+		padding-top: 34.6rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		padding-bottom: 53.8rpx;
+		z-index: 20;
+		flex-direction: column;
+	}
+	/* 64:255 弹层头：标题 y+4 → mt 7.7rpx */
+	.head-row {
+		flex-direction: row;
+		justify-content: space-between;
+	}
+	.head-title {
+		margin-top: 7.7rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #3A2E25;
+	}
+	/* 64:257 关闭：22px Regular #B3A696，字形 ×（U+00D7） */
+.head-close {
+	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06） */
+	width: 60rpx;
+	height: 60rpx;
+	justify-content: center;
+	align-items: center;
+}
+.head-close-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: 42.3rpx;
+	color: #B3A696;
+}
+	/* 64:258/64:272 节标：12px Medium #8A7A6A；纵向 gap14 → 非首子元素 mt 26.9rpx */
+	.section-label {
+		margin-top: 26.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	/* 64:259/64:273 标签区：弹层子元素统一 gap14 → mt 26.9rpx；wrap 内 chip 右 15.4rpx
+	   （flex-wrap 有 manage tag-list 先例；chip 不带 margin-bottom —— 画布全部单行，
+	   多行换行时上下行无间距，降级登记台账 卡24 F9b） */
+	.chip-area {
+		margin-top: 26.9rpx;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	/* 64:260 AIchip：h32 r16 白底+淡投影（§U：土黄 #EDE5D5 → 白卡；投影画布 y1 r4 a0.06 → 1.9/7.7rpx） */
+	.ai-chip {
+		height: 61.5rpx;
+		border-radius: 30.8rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 1.9rpx 7.7rpx rgba(59, 46, 38, 0.06);
+		padding-left: 23.1rpx;
+		padding-right: 15.4rpx;
+		margin-right: 15.4rpx;
+		margin-bottom: 15.4rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:261 文字：13px Regular #3A2E25 */
+	.ai-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	/* 64:262 删钮 ×：14px Regular #B3A696，gap4 → ml 7.7rpx */
+.ai-chip-del {
+	/* 热区 ≥44rpx（text@tap 清零军规 2026-09-06） */
+	margin-left: 7.7rpx;
+	width: 44rpx;
+	height: 44rpx;
+	justify-content: center;
+	align-items: center;
+}
+.ai-chip-del-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: 26.9rpx;
+	color: #B3A696;
+}
+	/* 64:274 lockedchip：白底 + 描边 #B05A3A 1pt=1.9rpx（§U：金→锈红对齐详情页令牌），p-l12 p-r10 gap5，无 × */
+	.locked-chip {
+		height: 61.5rpx;
+		border-radius: 30.8rpx;
+		background-color: #FFFFFF;
+		border-width: 1.9rpx;
+		border-style: solid;
+		border-color: #B05A3A;
+		padding-left: 23.1rpx;
+		padding-right: 19.2rpx;
+		margin-right: 15.4rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:275 文字：13px Medium #3A2E25 */
+	.locked-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	/* 64:276 锁图标：12×12 → 23.1rpx（§U 换画布 64:276 导出真件 tag-lock-rust.svg #AF5A39） */
+	.locked-icon {
+		width: 23.1rpx;
+		height: 23.1rpx;
+		margin-left: 9.6rpx;
+	}
+	/* 64:279 添加行：h44 r22 白底+双投影（§U：土黄→白卡；投影画布 y4 r16 a0.06 + y1 r3 a0.04 → 7.7/30.8 + 1.9/5.8rpx） */
+	.add-row {
+		margin-top: 26.9rpx;
+		height: 84.6rpx;
+		border-radius: 42.3rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		padding-left: 26.9rpx;
+		padding-right: 11.5rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:280 输入：13px #B3A696 占位（输入本体 #3A2E25） */
+	.add-input {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 25rpx;
+		color: #3A2E25;
+	}
+	/* 64:281 添加按钮：60×32 r16 #B05A3A（§U：金→锈红） */
+	.add-btn {
+		width: 115.4rpx;
+		height: 61.5rpx;
+		border-radius: 30.8rpx;
+		background-color: #B05A3A;
+		justify-content: center;
+		align-items: center;
+	}
+	/* 64:282 固定：12px Medium 白 */
+	.add-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: 23.1rpx;
+		color: #FFFFFF;
+	}
+	/* 64:283 锁定说明：11px Regular #B3A696 */
+	.lock-hint {
+		margin-top: 26.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	/* 64:284 主按钮：h48 r24 #B05A3A（§U：金→锈红；stretch 撑满 padding 内宽） */
+	.main-btn {
+		margin-top: 26.9rpx;
+		height: 92.3rpx;
+		border-radius: 46.2rpx;
+		background-color: #B05A3A;
+		justify-content: center;
+		align-items: center;
+	}
+	/* 64:285 完成：16px SemiBold 白 */
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}
+</style>

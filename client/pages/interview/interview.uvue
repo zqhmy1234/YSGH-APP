@@ -21,6 +21,9 @@
 			<text class="n4_182">访谈 · 第 {{ step + 1 }} 问</text> <!-- 问题编号 -->
 			<text class="n4_183">{{ currentQuestion }}</text> <!-- 问题 -->
 			<text class="n4_184">随便聊聊，一两句话就够</text> <!-- 问题引导 -->
+			<view v-if="lastEmotion != ''" class="emo-chip"> <!-- 上一答情绪标签（D-16：空串=未测得不渲染） -->
+				<text class="emo-chip-text">情绪 · {{ lastEmotion }}</text>
+			</view>
 		</view>
 		<view v-else class="n4_181"> <!-- 完成卡（三问答毕） -->
 			<text class="n4_182">访谈完成</text>
@@ -35,7 +38,9 @@
 			</view>
 		</view>
 		<view v-if="!done" class="n4_189"> <!-- 说话提示容器 -->
-			<text class="n4_190" :class="{ 'hint-recording': recording }" @tap="onMicTap">{{ recording ? '正在录音 ' + recSeconds + '″' : '点按说话' }}</text>
+			<view class="n4_190" :class="{ 'hint-recording': recording }" @tap="onMicTap">
+				<text class="n4_190-text">{{ hintText }}</text>
+			</view>
 		</view>
 		<view v-if="!done" class="n4_191"> <!-- 文字回答容器 -->
 			<text class="n4_192" @tap="openTextModal">用文字回答</text> <!-- 用文字回答 -->
@@ -66,13 +71,15 @@
 
 <script setup lang="uts">
 	import { ref, computed } from 'vue'
-	import { onLoad } from '@dcloudio/uni-app'
+	import { onLoad, onUnload, onBackPress } from '@dcloudio/uni-app'
 	import {
 		fetchInterviewQuestions,
 		submitInterviewAnswers,
 		InterviewQuestion,
 		InterviewResult
 	} from '@/utils/play'
+	import { startRecord, stopRecord, transcribeWav, AsrResult } from '@/utils/voice'
+	import { showErrorToast } from '@/utils/api'
 
 	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
 	const fallbackQuestions: Array<InterviewQuestion> = [
@@ -87,12 +94,24 @@
 		}
 		return ''
 	})
+	// 语音钮下方提示：转写中 > 录音中 > 待命（uvue 模板不绑嵌套三元，收敛进 computed）
+	const hintText = computed((): string => {
+		if (transcribing.value) {
+			return '正在转写…'
+		}
+		if (recording.value) {
+			return '正在录音 ' + recSeconds.value + '″'
+		}
+		return '点按说话'
+	})
 
 	// 状态
 	let step = ref(0)
 	let done = ref(false)
 	let recording = ref(false)
 	let recSeconds = ref(0)
+	let transcribing = ref(false)
+	let lastEmotion = ref('')
 	let showTextModal = ref(false)
 	let textAnswer = ref('')
 	let confirmation = ref('')
@@ -109,6 +128,31 @@
 		})
 	})
 
+	// 离页清理：录音中直接停（防麦克风泄漏），计时器必清
+	onUnload(() => {
+		if (recording.value) {
+			try {
+				stopRecord()
+			} catch (e) {
+				console.log('[interview] onUnload stopRecord failed (忽略): ' + e)
+			}
+		}
+		resetRecUi()
+	})
+
+	// 返回键：录音中先停录音再放行（不拦返回）
+	onBackPress((): boolean => {
+		if (recording.value) {
+			try {
+				stopRecord()
+			} catch (e) {
+				console.log('[interview] onBackPress stopRecord failed (忽略): ' + e)
+			}
+			resetRecUi()
+		}
+		return false
+	})
+
 	// 当前问题 key
 	function currentKey(): string {
 		if (step.value >= 0 && step.value < questions.value.length) {
@@ -117,12 +161,15 @@
 		return ''
 	}
 
-	// 麦克风点按：录音 / 停止
+	// 麦克风点按：录音 / 停止（真语音链路：录音→转写→答案真文本）
 	function onMicTap(): void {
+		if (transcribing.value) {
+			return
+		}
 		if (!recording.value) {
 			startRecording()
 		} else {
-			stopRecording(true)
+			stopRecording()
 		}
 	}
 
@@ -132,23 +179,82 @@
 		timerId = setInterval(() => {
 			recSeconds.value = recSeconds.value + 1
 		}, 1000)
+		// 原生录音插件在标准基座缺失（UTSAndroid is not defined）→ 同步抛出会让状态卡死，
+		// 兜底照抄 RecordSheet:982-1023：失败即回滚状态 + toast。五回调参数顺序对齐 voice.uts
+		try {
+			startRecord(
+				() => {
+					console.log('[interview] record started')
+				},
+				(path: string, durationMs: number) => {
+					onRecordStopped(path, durationMs)
+				},
+				(msg: string) => {
+					console.error('[interview] record error: ' + msg)
+					resetRecUi()
+					showErrorToast(new Error('录音失败：' + msg))
+				},
+				(autoPaused: boolean) => {
+					console.log('[interview] record interrupted (autoPaused=' + autoPaused + ')')
+				},
+				(path: string, durationMs: number) => {
+					// 30min 上限自动结束：与手动停同一落盘转写链路
+					onRecordStopped(path, durationMs)
+				}
+			)
+		} catch (e) {
+			console.log('[interview] startRecord failed (标准基座无原生录音插件，状态回滚): ' + e)
+			resetRecUi()
+			uni.showToast({ title: '当前基座不支持录音，可改用文字回答', icon: 'none' })
+		}
 	}
 
-	function stopRecording(advance: boolean): void {
+	function stopRecording(): void {
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[interview] stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 兜底：原生不可用也要把 UI 状态复位，否则「录音中」退不出去
+			resetRecUi()
+		}
+	}
+
+	// 录音 UI/计时复位（onError 与 start/stop 异常兜底共用）
+	function resetRecUi(): void {
 		if (timerId >= 0) {
 			clearInterval(timerId)
 			timerId = -1
 		}
 		recording.value = false
-		if (advance) {
-			// 冷启动语音回答：完整 ASR 链路在记录页；此处先占位，保证三问答案非空闭环
+	}
+
+	// 录音落盘回调：500ms 最短守卫（语义对齐 RecordSheet:1092）→ 转写 → 答案真文本
+	function onRecordStopped(path: string, durationMs: number): void {
+		resetRecUi()
+		if (durationMs < 500) {
+			showErrorToast(new Error('录音太短'))
+			return
+		}
+		transcribing.value = true
+		transcribeWav(path).then((res: AsrResult | null) => {
+			transcribing.value = false
+			if (res == null) {
+				// 转写失败：诚实 toast 不静默；不推进问题，保留「用文字回答」输入兜底
+				showErrorToast(new Error('转写失败，可改用文字回答'))
+				return
+			}
+			if (res.text.trim() == '') {
+				showErrorToast(new Error('没听清，可改用文字回答'))
+				return
+			}
 			const k = currentKey()
 			if (k != '') {
-				answers[k] = '（语音回答 ' + recSeconds.value + ' 秒）'
+				answers[k] = res.text
 			}
+			lastEmotion.value = res.emotion  // D-16：未测得为空串，chip 不渲染
 			uni.showToast({ title: '已记录语音回答', icon: 'none' })
 			nextStep()
-		}
+		})
 	}
 
 	// 前进：进入下一问或提交完成
@@ -203,13 +309,13 @@
 	function skipInterview(): void {
 		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
 		setTimeout(() => {
-			uni.reLaunch({ url: '/pages/index/index' })
+			uni.reLaunch({ url: '/pages/shell/shell' })
 		}, 600)
 	}
 
 	// 完成 → 进入时间轴
 	function goHome(): void {
-		uni.reLaunch({ url: '/pages/index/index' })
+		uni.reLaunch({ url: '/pages/shell/shell' })
 	}
 </script>
 
@@ -350,6 +456,24 @@
 		font-size: 25rpx;
 		color: #8A7A6A;
 	}
+	/* 上一答情绪 chip（对齐 RecordSheet v-chip 胶囊形；画布未画此态） */
+	.emo-chip {
+		margin-top: 19.2rpx; /* 与卡内 gap 一致（画布 4:181 gap=10pt） */
+		align-self: flex-start;
+		padding-left: 23rpx;
+		padding-right: 23rpx;
+		height: 46.2rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: rgba(176, 89, 59, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.emo-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #B05A3A;
+	}
 	.n4_185 {
 		position: absolute;
 		left: 271.2rpx;
@@ -391,12 +515,17 @@
 		align-items: center;
 		overflow: hidden;
 	}
-	.n4_190 {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-weight: 600;
-		font-size: 26.9rpx;
-		color: #5A4C40;
-	}
+.n4_190 {
+	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
+	padding: 11.5rpx 0rpx;
+	align-items: center;
+}
+.n4_190-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 600;
+	font-size: 26.9rpx;
+	color: #5A4C40;
+}
 	/* 录音中提示变锈红（画布未画此态，沿用 HEAD 版） */
 	.hint-recording {
 		font-family: "Sarasa Gothic SC", sans-serif;

@@ -12,6 +12,7 @@ R1#16 拆包（2026-08-27）：按域拆为 models/ 子包——
 （migrations/env.py / check_schema_drift 依赖此语义）。
 """
 from app.db.models.auth import Device, SmsCode, User
+from app.db.models.capsule import Capsule
 from app.db.models.content import Content, CorrectionLog
 from app.db.models.echo import EchoHistory
 from app.db.models.event import Event, EventEditLog, EventItem
@@ -30,6 +31,7 @@ from app.db.models.upload import UploadChunk, UploadTask
 from app.db.models.wechat import WechatMessage
 
 __all__ = [
+    "Capsule",
     "Content",
     "CorrectionLog",
     "DeletedLog",

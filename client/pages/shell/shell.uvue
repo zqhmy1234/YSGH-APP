@@ -1,0 +1,154 @@
+<template>
+	<!-- B10 方案A 单页容器（P2 四 tab 全壳内）：
+	     - 四 tab 组件 v-if 首挂 + v-show 保活切换 = 零销毁零创建 = 闪屏物理消失（P1 真机实证）
+	     - 组件解析走 easycom（components/TabX/TabX.uvue 目录即组件名先例，P1 同款，无显式 import 先例）
+	     - 铁律 1：中央 + 只拉 RecordSheet 浮层（全壳唯一挂载），任何 tab 不跳页
+	     - 正式产品行为（峰宝拍板 2026-09-09）：跨 tab 连续播放 / 返回 tab 数据与滚动常驻
+	     - 老 pages/index|ai|search|profile 四页仍在 pages.json（老世界 reLaunch 兜底可达，P4 退役） -->
+	<view class="shell-root">
+		<!-- ready 闸门：ensureLogin 完成前不挂载任何 tab 组件（组件 onMounted 即拉数据，
+		     须晚于 token 就绪；对齐老 index 页 onLoad 内 ensureLogin().then(拉数据) 串行语义。
+		     失败也放行——api.uts 401 自愈重登兜底，不卡白屏） -->
+		<TabIndex v-if="ready && everIndex" v-show="activeTab == 'index'" :shown-seq="indexShownSeq" :saved-seq="savedSeq" />
+		<TabAi v-if="ready && everAi" v-show="activeTab == 'ai'" :prefill-title="aiTitle" :prefill-summary="aiSummary" :saved-seq="savedSeq" />
+		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
+		<TabProfile v-if="ready && everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
+		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onSaved" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, watch } from 'vue'
+	import { onLoad, onBackPress } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
+	import { shellActiveTab, shellNavSeq, shellNavTab, shellNavQuery, aiAttachOpen } from '@/utils/shell_state'
+
+	const VALID_TABS = ['index', 'ai', 'search', 'profile']
+
+	let ready = ref(false)        // ensureLogin 完成闸门（见模板注释）
+	let activeTab = ref('index')   // P2 终态：index 常驻启动（对齐原 pages[0] 语义）
+	let everIndex = ref(true)
+	let everAi = ref(false)
+	let everSearch = ref(false)
+	let everProfile = ref(false)
+	let sheetOpen = ref(false)
+	let searchType = ref('')       // ?type=photo/voice/text 透传 TabSearch（原 onLoad options 契约）
+	let aiTitle = ref('')          // ?memTitle= url 通道透传 TabAi（manage→theme-detail 同族先例兼容）
+	let aiSummary = ref('')        // ?memSummary= 同上
+	let savedSeq = ref(0)          // 记录保存成功广播（组件 watch → 原 @saved 语义）
+	let profileShownSeq = ref(0)   // 切到 profile 广播（组件 watch → 原页级 onShow 等价）
+	let indexShownSeq = ref(0)     // 切到 index 广播（原页级 onShow TTL 刷新等价；首挂由 onMounted 拉）
+
+	onLoad((options : OnLoadOptions) => {
+		const t = options['tab'] ?? ''
+		const ty = options['type'] ?? ''
+		// AI url 预填通道（detail/messages 若带 memTitle=/memSummary= 跳入；storage 三键通道由 TabAi 直读与来源无关）
+		const rt = options['memTitle']
+		const rs = options['memSummary']
+		let hasPrefill = false
+		if (rt != null) {
+			aiTitle.value = decodeURIComponent(rt as string)
+			hasPrefill = true
+		}
+		if (rs != null) {
+			aiSummary.value = decodeURIComponent(rs as string)
+			hasPrefill = true
+		}
+		if (ty != '') {
+			searchType.value = ty
+			activate('search') // 带 type 入口语义 = 进搜索（对齐原 navigateTo('/pages/search/search?type=')）
+		} else if (hasPrefill) {
+			activate('ai')     // 带预填参数 = 进 AI（对齐原 redirectTo('/pages/ai/ai?memTitle=…')）
+		} else if (VALID_TABS.indexOf(t) >= 0) {
+			activate(t)
+		} else {
+			if (t != '') {
+				// 非法 tab 显式声明不静默
+				console.warn('[shell] 非法 tab 参数: ' + t + ' → 回落 ' + activeTab.value)
+			}
+			activate(activeTab.value)
+		}
+		// token 就绪后放行组件挂载（对齐老 index onLoad 内 ensureLogin().then(拉数据) 串行语义）
+		ensureLogin().then((ok: boolean) => {
+			console.log('[shell] ensureLogin -> ' + ok + '，放行 tab 组件挂载')
+			ready.value = true
+		})
+	})
+
+	function activate(tab: string): void {
+		if (tab == 'ai') {
+			everAi.value = true
+		}
+		if (tab == 'search') {
+			everSearch.value = true
+		}
+		if (tab == 'profile') {
+			everProfile.value = true
+		}
+		activeTab.value = tab
+		shellActiveTab.value = tab // 组件侧可读当前激活 tab（shell_state 桥）
+		if (tab == 'profile') {
+			profileShownSeq.value = profileShownSeq.value + 1 // 含首次（onShow 原语义：进 tab 即刷统计）
+		}
+		if (tab == 'index') {
+			indexShownSeq.value = indexShownSeq.value + 1 // 首挂时组件未 mount 收不到 watch，语义安全
+		}
+	}
+
+	/** TabBar 嵌入式回调：四 tab 全壳内 v-show 切换（P2 终态，零老路） */
+	function onTabTap(tab: string): void {
+		if (VALID_TABS.indexOf(tab) >= 0) {
+			activate(tab)
+			return
+		}
+		console.warn('[shell] 未知 tab 回调（显式声明）: ' + tab)
+	}
+
+	// 组件发起的跨 tab 导航（index goSearch / profile goType——原 reLaunch/navigateTo tab 页语义 → 壳内零销毁切换）
+	watch((): number => shellNavSeq.value, (n: number): void => {
+		if (n <= 0) {
+			return
+		}
+		const tab = shellNavTab.value
+		const q = shellNavQuery.value
+		if (q.indexOf('type=') == 0) {
+			searchType.value = q.substring(5)
+		}
+		activate(tab)
+	})
+
+	function openSheet(): void {
+		sheetOpen.value = true
+	}
+
+	function onSaved(): void {
+		sheetOpen.value = false
+		savedSeq.value = savedSeq.value + 1
+	}
+
+	// 返回键：浮层开着先关浮层（原各 tab 页 onBackPress 语义上收）；
+	// ai 附件面板（shell_state.aiAttachOpen，P2 上收）优先级在 RecordSheet 之下（原 ai 页内 sheet>attach 顺序）；
+	// 否则走默认退出
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		if (activeTab.value == 'ai' && aiAttachOpen.value) {
+			aiAttachOpen.value = false
+			return true
+		}
+		return false
+	})
+</script>
+
+<style>
+	.shell-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+		position: relative;
+	}
+</style>

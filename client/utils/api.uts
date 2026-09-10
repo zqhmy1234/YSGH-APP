@@ -59,6 +59,186 @@ function buildHeader(): UTSJSONObject {
 	return header
 }
 
+// 缩略图落地缓存（content_id → 本地临时路径；会话级，防重复下载）
+const _thumbPathCache = new Map<string, string>()
+
+/**
+ * 拉照片缩略图落临时文件（2026-09-02 主窗口，Valet Key 过渡通路）
+ *
+ * 图片通路硬约束：token 只能走 header，<image :src> 带不上认证 →
+ * 拍板方案二：uni.downloadFile({header}) 落临时文件喂 <image :src>
+ * （先例：audio_player.uts startPlay 同构）。第四窗票据 URL 入库后可整体退役。
+ * 成功返回本地路径（可直接喂 <image :src>），失败返回空串（调用方跳过该图）。
+ */
+export function fetchThumbnailPath(contentId: string): Promise<string> {
+	const cached = _thumbPathCache.get(contentId)
+	if (cached != null) {
+		return Promise.resolve(cached as string)
+	}
+	return new Promise<string>((resolve) => {
+		uni.downloadFile({
+			url: getBaseUrl() + '/api/v1/thumbnails/' + contentId,
+			header: buildHeader(),
+			timeout: 30000,
+			success: (res: any) => {
+				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
+					const p = res.tempFilePath as string
+					_thumbPathCache.set(contentId, p)
+					resolve(p)
+				} else {
+					resolve('')
+				}
+			},
+			fail: (_err: any) => {
+				resolve('')
+			}
+		})
+	})
+}
+
+// ═══════════ 数据导出（卡E03 W3 · 总账 A9 关单，对齐 backend/app/api/export.py）═══════════
+
+/** 数据导出端点（US-42）：GET /api/v1/export 全量 JSON 元数据（contents/events/profile/corrections，不含图片二进制） */
+export const PATH_EXPORT: string = '/api/v1/export'
+
+/**
+ * 拉全量导出 JSON 落临时文件（storage.uvue onExport 消费）：
+ * 通路同 fetchThumbnailPath（既有拍板：token 只能走 header，uni.downloadFile({header}) 落临时文件）。
+ * 成功返回本地路径，失败返回空串（调用方诚实提示）。
+ */
+export function fetchExportFilePath(): Promise<string> {
+	return new Promise<string>((resolve) => {
+		uni.downloadFile({
+			url: getBaseUrl() + PATH_EXPORT,
+			header: buildHeader(),
+			timeout: 60000,
+			success: (res: any) => {
+				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
+					resolve(res.tempFilePath as string)
+				} else {
+					resolve('')
+				}
+			},
+			fail: (_err: any) => {
+				resolve('')
+			}
+		})
+	})
+}
+
+// ═══════════ 派生统计（性能卡 PE · 2026-09-04）═══════════
+// 后端单聚合查询端点，替代调用方 fetchTimeline(null) 全量拉取后前端派生（性能黑洞）。
+// 信封：{code:"OK", data:{...}}（backend/app/api/events.py event_stats / messages.py unread_count）
+
+/** 事件派生统计端点：GET /api/v1/events/stats（event_count/day_count/photo_count/unread_count） */
+export const PATH_STATS: string = '/api/v1/events/stats'
+
+/** 未读消息数端点：GET /api/v1/messages/unread-count（status=unread 单 count 查询） */
+export const PATH_UNREAD_COUNT: string = '/api/v1/messages/unread-count'
+
+/** 事件统计投影（uvue 对象铁律：class+constructor+new，对齐 HttpResult 先例） */
+export class EventStats {
+	eventCount: number
+	dayCount: number
+	photoCount: number
+	unreadCount: number
+
+	constructor(eventCount: number, dayCount: number, photoCount: number, unreadCount: number) {
+		this.eventCount = eventCount
+		this.dayCount = dayCount
+		this.photoCount = photoCount
+		this.unreadCount = unreadCount
+	}
+}
+
+/**
+ * GET /events/stats：事件派生统计（manage 统计卡消费）。
+ * 失败 resolve(null)（doRequest 已全局 toast），调用方判空保持旧值/0，不造假数据。
+ */
+export function fetchEventStats(): Promise<EventStats | null> {
+	return new Promise<EventStats | null>((resolve) => {
+		get(PATH_STATS).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(new EventStats(
+				d.getNumber('event_count') ?? 0,
+				d.getNumber('day_count') ?? 0,
+				d.getNumber('photo_count') ?? 0,
+				d.getNumber('unread_count') ?? 0
+			))
+		})
+	})
+}
+
+/** hero 副标题端点：GET /api/v1/stats/daily-summary（R9-7 · Q5 拍板） */
+export const PATH_DAILY_SUMMARY: string = '/api/v1/stats/daily-summary'
+
+/** hero 副标题投影（R9-7：count=事件关联 distinct 内容数；latest=最新非软删事件） */
+export class DailySummary {
+	count: number
+	latestEventText: string
+	latestEventTime: string
+
+	constructor(count: number, latestEventText: string, latestEventTime: string) {
+		this.count = count
+		this.latestEventText = latestEventText
+		this.latestEventTime = latestEventTime
+	}
+}
+
+/**
+ * GET /stats/daily-summary：hero 副标题数据源（onLoad 拉取替代本地计算）。
+ * 失败/空态 resolve(null)——调用方判空清空 hero 文案，不造假数据。
+ */
+export function fetchDailySummary(): Promise<DailySummary | null> {
+	return new Promise<DailySummary | null>((resolve) => {
+		get(PATH_DAILY_SUMMARY).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const cnt = d.getNumber('count') ?? 0
+			const text = d.getString('latest_event_text') ?? ''
+			const time = d.getString('latest_event_time') ?? ''
+			resolve(new DailySummary(cnt, text, time))
+		})
+	})
+}
+
+/**
+ * GET /messages/unread-count：未读数单查询（性能卡 PE：取代 play.uts fetchUnreadCount
+ * 游标翻全量累加的调用方迁移用，本卡不改 play.uts/messages.uvue——域外）。
+ * 失败返回 -1（与真 0 区分：调用方判 <0 诚实处理，不造假 0）。
+ */
+export function fetchUnreadCountSimple(): Promise<number> {
+	return new Promise<number>((resolve) => {
+		get(PATH_UNREAD_COUNT).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(-1)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(-1)
+				return
+			}
+			resolve(d.getNumber('count') ?? -1)
+		})
+	})
+}
+
 function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
 		let settled = false

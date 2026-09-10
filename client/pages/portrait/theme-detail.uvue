@@ -1,0 +1,441 @@
+<template>
+	<!-- ═══ 卡23 · F9a 主题详情页（canvas JSON 真值整体重写，2026-09-02 14:33 导出） ═══
+	     真值：uvue_gen/theme_detail_canvas.json（390x844 · 31 节点 · 帧 F9a）
+	     结构（逻辑 px ×1.9231→rpx）：底 #F8F7F4 / 标题 18·600 居中 y62 / 返回 22×22 @16,60 /
+	     结果提示 12·400 #8A7A6A y126 / 主题说明 11·400 #B3A696 y148 /
+	     三形态卡流 x20 w350 r20 p8（白卡 + 双层投影，多层阴影零先例→单层登记台账）：
+	     语音卡=音频条 h64 r12 #C4913C a0.14（玻璃播放钮 32 白a0.5+描边白a0.8+blur8+内阴影白a0.4
+	     + 锈红播放图标 5.5×6.5 + 金波形）+ 文字区 p8 gap3（标题 17·600 + 元信息 11）/
+	     文字卡=摘要块 r12 #C4913C a0.1 p12（金竖线 3×40 + 引文 14 #5A4C40）+ 元信息区 p8 /
+	     照片卡=双拼网格 h110 r8 gap4（占位 #E9DFCB/#E1D3B8）+ 标题 17·600 + 元信息 11 -->
+	<view class="page-root">
+		<!-- 导航（settings.uvue 二级页先例原值；标题 = 主题名） -->
+		<view class="nav-title">
+			<text class="nav-title-text">{{ themeName }}</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<scroll-view class="flow" scroll-y>
+			<!-- 结果提示（画布 y126「8 条记忆 · 6月2日至今」） -->
+			<text class="meta-count">{{ items.length }} 条记忆{{ rangeText != '' ? ' · ' + rangeText : '' }}</text>
+			<!-- 主题说明（画布 y148；「· 更新于昨天」无数据源省略，台账 卡23 F9a） -->
+			<text class="meta-sub">AI 从你的记忆里聚出来的主题流</text>
+
+			<!-- 记忆卡流（三形态：语音 / 照片 / 文字） -->
+			<view v-for="(ev, idx) in items" :key="ev.id" :class="idx == items.length - 1 ? 'card no-margin' : 'card'">
+				<!-- ① 语音卡：音频条（玻璃播放钮 + VoiceWave 金波形，detail 先例接线全局播放引擎） -->
+				<view v-if="ev.voice != null" class="voice-strip">
+					<view class="vplay-btn" @tap="onPlayTap(ev)">
+						<image v-if="!voiceIsActive(ev.voice.contentId)" class="vplay-icon" src="/static/icons/record-play.svg" />
+						<view v-else class="vpause-bars">
+							<view class="vpause-bar"></view>
+							<view class="vpause-bar"></view>
+						</view>
+					</view>
+					<view class="vwave">
+						<VoiceWave :heights="ev.voice.waveHeights" :waveform="waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+					</view>
+				</view>
+				<view v-if="ev.voice != null" class="voice-text-block">
+					<text class="card-title">{{ ev.title }}</text>
+					<text class="card-meta">{{ metaOf(ev) }}</text>
+				</view>
+				<!-- ② 照片卡：双图拼块（thumbnailUrl 直喂 :src，EventPhoto 先例；空 URL 占位暖块双色） -->
+				<view v-if="ev.voice == null && ev.photos.length > 0" class="photo-grid">
+					<view v-for="(ph, pIdx) in topPhotos(ev)" :key="ph.contentId" :class="pIdx == 0 ? 'photo-cell cell-a' : 'photo-cell'">
+						<image v-if="ph.thumbnailUrl != ''" class="photo-img" :src="ph.thumbnailUrl" mode="aspectFill" />
+						<view v-else :class="pIdx == 0 ? 'photo-ph ph-a' : 'photo-ph ph-b'"></view>
+					</view>
+				</view>
+				<text v-if="ev.voice == null && ev.photos.length > 0" class="card-title title-flush">{{ ev.title }}</text>
+				<text v-if="ev.voice == null && ev.photos.length > 0" class="card-meta meta-flush">{{ metaOf(ev) }}</text>
+				<!-- ③ 文字卡：引用块（左金竖条；L2 事件无 body 字段，引用文字 = 主题事件标题，台账 卡23 F9a） -->
+				<view v-if="ev.voice == null && ev.photos.length == 0" class="quote-block">
+					<view class="quote-bar"></view>
+					<text class="quote-text">{{ ev.title }}</text>
+				</view>
+				<view v-if="ev.voice == null && ev.photos.length == 0" class="text-meta-block">
+					<text class="card-meta">{{ metaOf(ev) }}</text>
+				</view>
+			</view>
+
+			<!-- 空态（主题下暂无 L2 事件；画布无空态帧，沿用既有交互必需形态） -->
+			<view v-if="items.length == 0 && !loading" class="empty-card">
+				<text class="empty-text">这个主题下还没有记忆</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	// BB3 补线（2026-09-09）：真实波形 fetchWaveform（三件套照 search/detail 逐字对齐）
+	import { fetchWaveform } from '@/utils/play'
+	import {
+		toggleVoice,
+		stopVoice,
+		isVoiceActive,
+		voiceProgressOf
+	} from '@/utils/audio_player'
+	import { EventPhoto } from '@/utils/timeline'
+
+	// ── 页面参数 ──
+	let themeName = ref('')
+	// ── 响应式状态 ──
+	let items = ref<Array<TimelineEvent>>([])
+	let loading = ref(true)
+	let rangeText = ref('')
+
+	// ═══ BB3 真实波形（contentId → 后端 /waveform 峰值；三件套照 search/detail 逐字对齐）═══
+	// waveformMap 非响应式缓存 + waveformVersion 计数驱动重渲染；null=未拉到→组件回退伪波形
+	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
+	let waveformVersion = ref(0)
+	function waveformOf(cid: string): Array<number> | null {
+		waveformVersion.value
+		return waveformMap.get(cid) ?? null
+	}
+	function loadWaveform(cid: string): void {
+		if (waveformMap.has(cid)) {
+			return
+		}
+		fetchWaveform(cid).then((b: Array<number> | null) => {
+			if (b != null && b.length >= 2) {
+				waveformMap.set(cid, b)
+				waveformVersion.value++
+			}
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const t = options['theme'] as string
+		if (t != '') {
+			themeName.value = decodeURIComponent(t)
+		}
+	})
+
+	onShow(() => {
+		loadItems()
+	})
+
+	onUnload(() => {
+		// W0-2 同规：离页停播，防语音跨页残留出声
+		stopVoice()
+	})
+
+	/** 拉回 L2 子集（P-5 收口 2026-09-04：server level=2 过滤窄化，替代全量 timeline 拉取）→ 前端按标题匹配，startTime 倒序 */
+	function loadItems(): void {
+		loading.value = true
+		fetchTimeline(2).then((events: Array<TimelineEvent>) => {
+			const picked: Array<TimelineEvent> = []
+			let minMs = 0 as number
+			for (let i = 0; i < events.length; i++) {
+				const ev = events[i]
+				if (ev.level === 2 && ev.title == themeName.value) {
+					picked.push(ev)
+					if (minMs == 0 || ev.startTime < minMs) {
+						minMs = ev.startTime
+					}
+				}
+			}
+			picked.sort((a: TimelineEvent, b: TimelineEvent): number => {
+				return b.startTime - a.startTime
+			})
+			items.value = picked
+			if (minMs > 0) {
+				rangeText.value = fmtMonthDay(minMs) + '至今'
+			} else {
+				rangeText.value = ''
+			}
+			loading.value = false
+			// BB3：数据就绪即批量拉真实波形（本页 L2 子集卡量小，对齐 detail 进页即拉；
+			// 同 contentId 有 waveformMap 去重，onPlayTap 再调零成本）
+			for (let i = 0; i < picked.length; i++) {
+				const v = picked[i].voice
+				if (v != null) {
+					loadWaveform(v.contentId)
+				}
+			}
+		})
+	}
+
+	/** meta「8月28日 07:42」（friendlyDay 同款拼接写法，月日不补零对齐画布） */
+	function fmtMonthDay(ms: number): string {
+		const d = new Date(ms)
+		return (d.getMonth() + 1) + '月' + d.getDate() + '日'
+	}
+	function metaOf(ev: TimelineEvent): string {
+		const d = new Date(ev.startTime)
+		const hh = d.getHours() < 10 ? '0' + d.getHours() : '' + d.getHours()
+		const mi = d.getMinutes() < 10 ? '0' + d.getMinutes() : '' + d.getMinutes()
+		let s = fmtMonthDay(ev.startTime) + ' ' + hh + ':' + mi
+		if (ev.voice != null) {
+			// 诚实化：EventVoice 无转写状态字段，画布「已转写」省略（台账 卡23 F9a）
+			s += ' · 语音 ' + ev.voice.duration
+		} else if (ev.photos.length > 0) {
+			s += ' · 照片 ' + ev.photos.length + '张'
+		} else {
+			s += ' · 文字记录'
+		}
+		return s
+	}
+	/** 照片卡前 2 张（画布双拼网格） */
+	function topPhotos(ev: TimelineEvent): Array<EventPhoto> {
+		const out: Array<EventPhoto> = []
+		for (let i = 0; i < ev.photos.length && i < 2; i++) {
+			out.push(ev.photos[i])
+		}
+		return out
+	}
+
+	// ── 语音播放（detail 先例：复用全局播放引擎，播放态三处一致） ──
+	function onPlayTap(ev: TimelineEvent): void {
+		if (ev.voice == null) {
+			return
+		}
+		loadWaveform(ev.voice.contentId) // BB3：兜底拉取（就绪批量已覆盖，Map 命中零成本）
+		toggleVoice(ev.voice.contentId)
+	}
+	function voiceIsActive(cid: string): boolean {
+		return isVoiceActive(cid)
+	}
+	function voiceProgressOfCard(cid: string): number {
+		return voiceProgressOf(cid)
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航：画布 标题 18px SemiBold y62 / 返回 22×22 @16,60 ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 115.4rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮 */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 内容流：画布卡 x20 → 左右 inset 38.5rpx ── */
+	.flow {
+		position: absolute;
+		/* absolute-ok: 滚动容器（锁视口） */
+		left: 0rpx;
+		right: 0rpx;
+		top: 211.5rpx;
+		bottom: 0rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	/* 64:196 结果提示：12px Regular #8A7A6A，y126（flow 顶 y110 → mt 30.8rpx） */
+	.meta-count {
+		margin-top: 30.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	/* 64:241 主题说明：11px Regular #B3A696，y148（上邻底 141 → gap7 = 13.5rpx） */
+	.meta-sub {
+		margin-top: 13.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 21.2rpx;
+		color: #B3A696;
+	}
+	/* ── 记忆卡：画布 w350 r20 p8 白卡；投影双层 (0,4,16,.06)+(0,1,3,.04) →
+	   多层 box-shadow 全项目零先例 → 取主层单影，次层降级（台账 卡23 F9a）；
+	   首卡上隙画布 9pt(17.3rpx) 与卡间 10pt(19.2rpx) 差 1pt → 统一 19.2rpx（台账） ── */
+	.card {
+		margin-top: 19.2rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		padding: 15.4rpx;
+		box-shadow: 0 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
+		flex-direction: column;
+	}
+	.no-margin {
+		margin-bottom: 0rpx;
+	}
+	/* 首卡贴 meta-sub（y148+13 → 170：gap9 = 17.3rpx） */
+	/* ── 语音卡 64:211 语音媒体：h64 r12 #C4913C a0.14 p14 gap12 ── */
+	.voice-strip {
+		height: 123.1rpx;
+		background-color: #C4913C24;
+		border-radius: 23.1rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+	}
+	/* 64:229 玻璃播放钮：32×32 白a0.5 + 描边白a0.8 + BACKGROUND_BLUR 8 + 内阴影白a0.4
+	   （backdrop-filter 有 TabBar 先例；inset box-shadow 按 CSS 支持清单纳入） */
+	.vplay-btn {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		border-radius: 30.8rpx;
+		background-color: rgba(255, 255, 255, 0.5);
+		border-width: 1.9rpx;
+		border-style: solid;
+		border-color: rgba(255, 255, 255, 0.8);
+		backdrop-filter: blur(8px);
+		box-shadow: inset 0 1.9rpx 3.9rpx rgba(255, 255, 255, 0.4);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+	}
+	/* 64:238/64:240 播放图标：5.5×6.5 锈红（库存 record-play.svg #B05A3A 同色同形） */
+	.vplay-icon {
+		width: 10.6rpx;
+		height: 12.5rpx;
+	}
+	/* 暂停态（画布无此形态，沿用既有两竖条交互形态，色随播放图标锈红） */
+	.vpause-bars {
+		flex-direction: row;
+	}
+	.vpause-bar {
+		width: 7.7rpx;
+		height: 23.1rpx;
+		border-radius: 3.9rpx;
+		background-color: #B05A3A;
+		margin-left: 5.8rpx;
+	}
+	/* 64:230 波形：x58（钮右 gap12=23.1rpx）h26→50rpx，VoiceWave 复用（detail 先例） */
+	.vwave {
+		flex: 1;
+		margin-left: 23.1rpx;
+		height: 50rpx;
+	}
+	/* 64:212 语音文字区：p8 gap3 → 元信息 mt 5.8rpx */
+	.voice-text-block {
+		padding: 15.4rpx;
+		flex-direction: column;
+	}
+	/* ── 照片卡 64:216 照片网格：gap4 → 首格 mr 7.7rpx；双格 flex 均分 h110 ── */
+	.photo-grid {
+		flex-direction: row;
+	}
+	.photo-cell {
+		flex: 1;
+		height: 211.5rpx;
+		border-radius: 15.4rpx;
+		overflow: hidden;
+	}
+	.cell-a {
+		margin-right: 7.7rpx;
+	}
+	.photo-img {
+		width: 317.3rpx;
+		height: 211.5rpx;
+	}
+	/* 64:236/64:237 画布照片占位双色 #E9DFCB / #E1D3B8 */
+	.photo-ph {
+		width: 317.3rpx;
+		height: 211.5rpx;
+	}
+	.ph-a {
+		background-color: #E9DFCB;
+	}
+	.ph-b {
+		background-color: #E1D3B8;
+	}
+	/* 64:217/218 照片卡标题/元信息：画布原值 y118/y139 = 网格后零间隙（真值），
+	   但峰宝拍板（2026-09-02 主窗口收口）：三节点零间距太拥挤，属画布生成缺陷，
+	   覆盖真值加呼吸间距（网格→标题 12pt / 标题→元信息 4pt），已登记 _diff_ledger.md */
+	.title-flush {
+		margin-top: 23.1rpx;
+	}
+	.meta-flush {
+		margin-top: 7.7rpx;
+	}
+	/* ── 文字卡 64:213 摘要块：r12 #C4913C a0.1 p12 gap10 ── */
+	.quote-block {
+		background-color: #C4913C1A;
+		border-radius: 23.1rpx;
+		padding: 23.1rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:233 引用竖线：3×40 r2 */
+	.quote-bar {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		border-radius: 3.9rpx;
+		background-color: #C4913C;
+	}
+	/* 64:234 摘要文本：14px Regular #5A4C40，竖线右 gap10=19.2rpx */
+	.quote-text {
+		flex: 1;
+		margin-left: 19.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 64:214 文字元信息区：p8 */
+	.text-meta-block {
+		padding: 15.4rpx;
+		flex-direction: column;
+	}
+	/* ── 卡内文字（64:231 标题 17·600 #3A2E25 / 64:232·235 元信息 11·400 #8A7A6A） ── */
+	.card-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
+	}
+	.card-meta {
+		margin-top: 5.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 空态（非画布帧，交互必需；值随卡族节奏） */
+	.empty-card {
+		margin-top: 19.2rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		padding: 61.5rpx;
+		box-shadow: 0 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
+		flex-direction: column;
+		align-items: center;
+	}
+	.empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: 23.1rpx;
+		color: #B3A696;
+	}
+</style>

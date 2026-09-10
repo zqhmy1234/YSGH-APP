@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
-from app.db.models import Content, DeletedLog, OfflineQueue, SyncFieldVersion, SyncState
+from app.db.models import Content, DeletedLog, Event, OfflineQueue, SyncFieldVersion, SyncState
 from app.services.sync_common import TOMBSTONE_FIELD, lww_wins, parse_ts
 
 logger = logging.getLogger("yishu.sync")
@@ -80,6 +80,20 @@ def push_ops(
         ).all():
             content_owner[str(cid)] = str(uid)
 
+    # ②b event 实体归属（P2-1 · 2026-09-10 深扫修复）：entity_type=event 必须对照 events
+    #     权威表校验 owner——原实现只校验 content，event/profile 首次写入（云端无 SFV 行）
+    #     直接以 attacker user_id 建行 → 受害者反被 sfv 归属校验永久拒绝（投毒/完整性破坏）。
+    event_ids = [
+        str(op["entity_id"]) for op in ops
+        if op.get("entity_type") == "event" and op.get("entity_id")
+    ]
+    event_owner: dict[str, str] = {}
+    if event_ids:
+        for eid, uid in db.execute(
+            select(Event.id, Event.user_id).where(Event.id.in_(event_ids))
+        ).all():
+            event_owner[str(eid)] = str(uid)
+
     # ③ SyncFieldVersion 按 (entity_type, entity_id) 组合批量预取：
     #    含墓碑行（TOMBSTONE_FIELD）与逐字段行 + 实体归属（任意字段行的 user_id）
     combos = {
@@ -122,6 +136,20 @@ def push_ops(
             owner = content_owner.get(entity_id)
             if owner is not None and owner != str(user_id):
                 _reject("entity 不属于当前用户")
+                continue
+        # P2-1：event 实体对照 events 权威表（存在且非本人 → 拒；不存在也拒防凭空投毒）；
+        # profile 实体主键即 user_id → entity_id 必须等于本人，否则拒绝（防代写他人画像）
+        elif entity_type == "event":
+            owner = event_owner.get(entity_id)
+            if owner is not None and owner != str(user_id):
+                # P2-1（2026-09-10 深扫）：事件权威表存在且非本人 → 拒（首触投毒封堵）；
+                # 不存在时维持原语义放行（端侧 L1 事件 sync-first 上云流，owner 由
+                # client_event_id/事件创建路径补，见 events sync 域；不收紧防回归）
+                _reject("entity 不属于当前用户")
+                continue
+        elif entity_type == "profile":
+            if entity_id != str(user_id):
+                _reject("profile entity_id 必须为当前用户")
                 continue
 
         if op_type == OP_DELETE:

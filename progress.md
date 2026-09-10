@@ -1,202 +1,76 @@
+> 🧹 **2026-09-04 整饬**：已完成/已闭环条目已压缩为「✅ 速查卡」（分支/SHA｜文件｜方法｜设计来源）；未实现/半通/待复验/待拍板条目保持原叙述。未闭环事项现行权威清单 = `_diff_ledger.md` 与 `_execution_plan_20260904.md` §1。
 > 📌 **当前状态速览（2026-08-29）**：收尾 Wave 1–4 全收口（17/17），真机 7 清单全达终态+补验。终值：**用户故事 ✅46/🟡7/❌0 · A 级 32 条 · 性能门禁 10/2/6 · 30s ✅6.0s**。
 > 数字唯一现行口径 = `AGENTS.md`「当前状态」节；术语/决策/待拍板 = `docs/决策台账.md`；缺陷台账（19 单：D-01~D-16、D-18、D-19、D-21）与环境事件（O-1/O-2）= `docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md` §4/§5。
 > **下一步 = 4b 修复批次（执行计划已定：`docs/4b修复批次执行计划_20260829.md`，P-0 拍板五项全落、P-1 隔离工作区已建）**：批次1 D-18/D-19（重打包复验）→ 批次2 D-16/D-07/D-08＋散单 D-05/D-10/D-14/D-21（08-29 拍板并批）→ 批次3 S2 校准（卡真值）+D-06（**等价复现验收，无需第二设备**，台账 §1.8）。
 > 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，仅加 [勘误] 注记。与速览冲突的旧数字以速览为准。
 
-## 2026-08-27 · 重构批次 G1（认证安全，基准 develop @ 5fcbd29，分支 techdebt/g1）
+## ✅ 速查卡 · 2026-08-27 · 重构批次 G1（认证安全）
 
-- **① refresh single-flight（R6#6，client/utils/auth.ts）**：模块级 `_refreshInflight` 共享 in-flight——并发 401 只触发一次 `/auth/refresh`，其余 await 同一 Promise，落定后清除（成败均清）；消除并发双轮换竞态（后端轮换本就是原子 single-use，双轮换必一 401）
-- **② logout/revoke 端点（R6#7，AUTH-006）**：新增 `POST /api/v1/auth/logout`（请求 `{refresh_token}`，幂等：token 无效/过期仍 200）→ 服务层 `logout()` 把 devices 行 `refresh_token_hash/refresh_token` 置 NULL（吊销后 refresh() 校验落 401 已吊销）；客户端 `auth.ts` 新增 `logout()` 调端点 + 清本地凭据（真实消费方：scripts/test_auth_singleflight.mjs 断言调用 + 路由登记）
-- **③ refresh_token HMAC 哈希列（R6#8）**：TD-P3 已加列核实接线后补强——`_hash_refresh_token` 由裸 SHA-256 升级为 **HMAC-SHA256 + 独立密钥 `refresh_token_hmac_key`（与 jwt_secret 隔离）+ `hmac$` 版本前缀**；新增 `_verify_refresh_token_hash`（现行 HMAC 校验 + 存量无前缀 SHA-256 迁移期兼容）；轮换 WHERE 用 OR(hmac, legacy) 匹配，原子 single-use 语义不削弱；生产强制非默认密钥（_apply_production_safety 新门禁 + 单测）
-- **④ SMS 验证码加盐（R6#9）**：`sms_codes.salt` 列（新迁移 f1a2b3c4d5e6 + schema.sql），send 侧 `sha256(salt:code)` 落库（随机盐 `secrets.token_hex(8)`），校验按行盐重算（存量无盐行走兼容分支）；原子消费（R2#8 条件 UPDATE）保留
-- **⑤ 通用限流中间件（R6#2/#3，backend/app/core/ratelimit.py 新增）**：Redis 固定窗口（INCR+EXPIRE，`yishu:rl:{scope}:ip|user:{key}`）按 client_ip/user 双维度，先覆盖 auth / ASR(含 guard) / 搜索三域；白名单（`rate_limit_whitelist`，trust_proxy 时读 X-Forwarded-For）；Redis 故障自动降级进程内 MemoryStore（**降级不 500**）；中间件置于 RequestID 内侧（main.py 最外层=RequestID→CORS→…→RateLimit）——**429 响应同样带 X-Request-ID，不破坏 request_id 链路**；429 信封 `{code: RATE_LIMITED, message, request_id, details:{scope, dimension}}`
-- **契约快照（只增不减）**：openapi 45→46 路径（新增 /api/v1/auth/logout；旧路径零消失）；errors.py ERROR_REGISTRY 零改动零消失；feature_list.json 零改动
-- **测试**：auth 域精准 **85+ passed**（test_auth_g1 新增 10 单测：HMAC 格式/密钥隔离/存量兼容/加盐；test_ratelimit 新增 9 单测：429/白名单/降级不500/非三域放行/disabled 短路/user 维度/request_id 保留；test_auth_db 新增 logout×2 + 加盐落库断言，适配 HMAC；test_security_p3/test_config_alias 适配）；**refresh single-flight 并发单测**：scripts/test_auth_singleflight.mjs（node --test，真实导入 client/utils/auth.ts，Promise.all 5 并发 → 1 次 refresh + logout 消费方断言，4/4 绿）
-- **验证**：快速门禁 EXIT=0；本地 alembic upgrade head=f1a2b3c4d5e6 应用
-- **⚠️ 集成登记**：main.py 含 G2 在途重构（create_app/安全响应头/healthz 收敛）+ G1 限流中间件接线（1 import + 中间件注册，RequestID 保持最外层）；main.py 属 G2 文件域，由集成 Agent 统一合并/提交，勿重复覆盖
-- 提交：见 techdebt/g1 分支（本地未 push；报告文件留集成 Agent 统一提交）
+✅ 认证安全四件套+限流中间件：techdebt/g1 @ 67f50f1（G 集成波并入 develop）｜client/utils/auth.ts + backend/app/core/ratelimit.py + auth 服务层 + 迁移 f1a2b3c4d5e6｜refresh single-flight 共享 in-flight（并发 401 只一次 refresh）+ /auth/logout 吊销（AUTH-006）+ refresh_token HMAC-SHA256 独立密钥（hmac$ 前缀+存量兼容）+ SMS 验证码加盐 + Redis 固定窗口限流（auth/ASR/搜索三域、白名单、降级不 500、429 带 X-Request-ID）｜设计来源：重构批次 F 提示词 R6（AUTH-006/R6#2/#3/#6-#9）
 
-## 2026-08-27 07:20 · 重构批次 F 第一波集成（6 Agent）+ 遗留 bug 修复
+## ✅ 速查卡 · 2026-08-27 07:20 · 重构批次 F 第一波集成（6 Agent）+ 遗留 bug 修复
 
-- **merge（4 个 --no-ff）**：F-Auth（d47684c）/F-Rag（284fd2b）/F-Asr（1a60fe2）/F-ClientA（0f64c73）/F-ClientB（5 commits）/F-Content（9f0b2f4）全部合入 develop；共享工作区导致的链式 SHA（auth→clientb#1→rag→asr/content/clientb#2-5）git 自动去重，index.uvue（clienta+clientb 双收口）ort 策略无冲突自动合并
-- **代码质量审核**：10 个 commit 逐条文件域复核零跨域；契约快照（openapi 45 路径/78 schemas）零 diff；tsc EXIT=0；快速门禁 EXIT=0；受影响域精准 227 passed
-- **O6 落实确认**（用户点名）：F-ClientB 4ca9fbf 完整落地——queue_store.ts 单 key（yishu_offline_queue）承载六字段契约，sync_client（批推）与 event_ops（confirm/merge/split 顺序）共享存储、路由差异保留在各消费方 flush；旧双 key 一次性迁移（仅读+删，升级不丢操作）；event_ops flush 统一走 retry.ts retryAsync 退避
-- **遗留 bug 修复**：`enqueue_idempotent`（R4#4）与 `enqueue_unique`（F4）的 job_id 拼接含非法字符（冒号/空格/中文）会在 RQ 2.x validate_job_id 抛 ValueError（真实 client_request_id 入队即炸）——新增 `_safe_job_id_part` 净化器统一处理 + 2 个回归测试（test_photo_content）
-- 契约快照 diff：docs/openapi.json、core/errors.py ERROR_REGISTRY 零消失
-- **CI 确认**：develop @ a64f60a → Actions run #41（33022074746）conclusion=success（F 批次第一波全绿；CDE 04:40 推送 #40 亦在其上顺延绿）
-- 下一步：F 批次波次 2 = **F-Events**（F3 聚合独立 per-user 任务 + F5 events.py 拆包），前置 F-Content 已合入，可开；提示词见 docs/重构批次F提示词_20260827.md F-Events 节
+✅ F 六 Agent 合入 develop：F-Auth d47684c / F-Rag 284fd2b / F-Asr 1a60fe2 / F-ClientA 0f64c73 / F-ClientB / F-Content 9f0b2f4｜main.py + openapi 45 路径零 diff｜10 commit 文件域复核零跨域，受影响域 227 passed；O6 queue_store.ts 单 key（yishu_offline_queue）六字段契约落地；enqueue job_id 净化器 `_safe_job_id_part` 修复 RQ 2.x ValueError；CI #41 全绿（develop @ a64f60a）｜设计来源：docs/重构批次F提示词_20260827.md
 
-## 2026-08-27 08:30 · 重构批次 F-Events（F3 聚合独立 per-user 任务 + F5 events.py 拆包）
+## ✅ 速查卡 · 2026-08-27 08:30 · 重构批次 F-Events（F3 聚合独立 per-user 任务 + F5 events.py 拆包）
 
-- **F5/R1#5 events.py 拆包**：`services/events.py` → `services/events/` 子包（aggregate.py 聚合 / sync.py 事件上云与拉取 / timeline.py 时间轴 / edit.py merge·split·confirm·set_cover 手动操作）；`__init__.py` 重导出原公开函数（外部 import 不变，含测试引用的私有函数）；聚合细节收敛在 aggregate.py 窄端口不外泄到 pipeline；纯搬移零行为改动（`git grep "import app.services.events"` 旧模块路径调用点=0）
-- **F3/R5-3 聚合独立 per-user 任务**：process_content 不再同步跑聚合——主提交后经 `core/queue.enqueue_unique` 按 user 级 key（`user:<uid>`）SETNX 去重合并入队 `run_user_aggregation`（自开 Session 独立执行、失败静默返回 error dict、幂等可重投）；同用户并发多内容只跑一次聚合（聚合任务扫描该用户全部未成候选内容，一次覆盖并发批次）；low 队列 DEFAULT_JOB_TIMEOUT；workers/worker.py 登记
-- **测试**：新增 `tests/test_aggregation.py`（F3 聚合专属：任务单测 full 落 L1 / 失败静默 / per-user 去重并发：同用户只入队一次、不同用户各自入队、user key 净化 / _write_upper_candidates 幂等：候选已落库即跳过重写）+ `tests/test_events.py`（包级/入队契约：process_content 恰一次 enqueue_unique 按 user 级 key + 参数透传、入队失败不否定主转写、RQ 模块路径可解析 + worker 登记）；test_pipeline 事件用例更新为入队契约断言
-- **验证**：受影响域精准 144 passed（event_ops/event_sync/event_items/event_sensitive/events/pipeline/contents/upload/content_upload/photo_content/queue/requeue_job）+ 快速门禁 EXIT=0 + app.main import 无环 + 契约快照（docs/openapi.json / core/errors.py / feature_list.json）零 diff
-- **环境**：Docker Desktop 起 yishu-redis/yishu-qdrant 容器（此前引擎未启动 → Redis ConnectionError/Qdrant 版本告警为环境问题，非代码回归）
-- 提交：c0b74d1（F5 拆包）+ 28ba960（F3），本地 develop 未 push；报告文件留集成 Agent 统一提交
+✅ events.py 拆包 + 聚合独立任务：develop @ c0b74d1+28ba960｜backend/app/services/events/ 子包（aggregate/sync/timeline/edit，`__init__` 重导出）+ core/queue.py + workers/worker.py｜process_content 主提交后经 enqueue_unique 按 user:<uid> SETNX 去重入队 run_user_aggregation（同用户并发只跑一次聚合、失败静默、幂等可重投）；受影响域 144 passed + 契约快照零 diff｜设计来源：重构批次 F 提示词（R1#5/R5-3）
 
-## 2026-08-27 06:50 · 重构批次 F-Content（F1 照片双轨收口 + F4 process_content job 级去重）
+## ✅ 速查卡 · 2026-08-27 06:50 · 重构批次 F-Content（F1 照片双轨收口 + F4 job 级去重）
 
-- **F1/P0-6 照片注册双轨收口**：抽 `services/photo_content.py` 唯一注册编排，参数化 `dedup_key`（perceptual_hash 409 / cos_key 幂等）/ `moderate` / `mode`（original/thumbnail_meta/update）；`api/contents.py::upload_photo` 与 `services/upload.py::register_photo_content` 只做协议适配，两套幂等键都保留；`_reflow_violation`/`_require_photo_bytes` 下沉 photo_content 单源
-- **F4/R5-4#5 job 级去重**：`core/queue.py` 新增 `enqueue_unique(func, key)`（job_id 下划线拼接 + Redis SETNX 原子预占位；同键不重复入队、既有 job failed 重建；queue_name/job_timeout 可覆盖），收敛 contents/upload/wechat/pipeline 的 process_content/thumbnail/emotion 入队点
-- **pipeline.py 尾段先入队后提交**：情绪任务在 done 主提交前入队（消除 commit→enqueue 间隙崩溃丢任务；同 content 键不重复入队；入队失败回写 enqueue_failed 审计标记 + requeue_job 兜底）
-- **测试**：新增 `tests/test_photo_content.py`（双幂等键各锚定 + enqueue_unique 同键不重复入队/失败重建/队列透传 4 单测 + original/thumbnail_meta/update/moderate 模式）；test_pipeline/test_upload 随入队机制下沉更新 monkeypatch 目标
-- **契约**：openapi.json `/contents/upload` 路径与字段不变（仅 docstring 注释级）；errors.py 幂等错误码无消失（CONTENT_002/UPLOAD_* 全在）
-- **验证**：受影响域精准测试 149 passed（test_upload/content_upload/contents/techdebt_p0/queue/sync/pipeline/wechat*/requeue_job/thumbnails/photo_content）+ 快速门禁 EXIT=0（首次 lint I001 修复 + RQ job_id 字符集教训已登记 lessons.md）
-- **遗留登记**：`enqueue_idempotent`（R4#4，classify/corrections 域）的冒号 job_id 在 RQ 2.x validate_job_id 下存在同一潜在不兼容（真实 client_request_id 入队会 ValueError），不在 F-Content 文件域，登记待归口（F-Auth/集成 Agent）
-- 提交：9f0b2f4 `refactor(content)`（分支 techdebt/f-content，未 push；报告文件留集成 Agent 统一提交）
+✅ 照片注册双轨收口 + job 级去重：techdebt/f-content @ 9f0b2f4（F 波并入 develop）｜backend/app/services/photo_content.py（新）+ core/queue.py + pipeline.py｜抽唯一注册编排（dedup_key 409/cos_key 幂等、moderate、original/thumbnail_meta/update 模式参数化）；enqueue_unique Redis SETNX 原子预占位收敛四域入队点；pipeline 尾段先入队后提交（消除 commit→enqueue 间隙丢任务）；受影响域 149 passed｜设计来源：重构批次 F 提示词（P0-6/R5-4#5/F4）
+- 遗留登记：`enqueue_idempotent`（R4#4，classify/corrections 域）冒号 job_id 潜在不兼容，登记待归口（已由后续 `_safe_job_id_part` 收口）
 
-## 2026-08-27 04:40 · 重构批次 CDE 三批集成 + 遗留项处理
+## ✅ 速查卡 · 2026-08-27 04:40 · 重构批次 CDE 三批集成 + 遗留项处理
 
-- **批次 C（客户端收敛 R3）**：C1 网络层统一（api.ts rawRequest 401 重放+5xx Sentry、event_sync 401 不静默丢批、O4/O5/O9）+ C2 收口与死代码（time.ts 消费切换/parseIsoMs 统一/标签单源/死导出清理，O1/O2/O7/O8/O10/O11/O12/O13）——全 client 域
-- **批次 D（测试基建 R8）**：D1 存量迁移+隔离（14 份 db_user 迁移 conftest 公共版、test_queue 独立 Redis /15、热词全局状态快照恢复、test_amap 定向删除、test_sync _eid 随机 UUID）+ D2 覆盖与提速（storage/event_aggregation 覆盖补强、参数化、_to_filter 提纯、correction mock、轮询替代固定 sleep）——全 backend/tests 域
-- **批次 E（契约与输入 R4/R6）**：E1 契约一致性（22 处裸码→ERR_*、uuid4_str 共享校验、服务层异常细分 404/409/413/422）+ E2 输入校验与幂等（client_generated_id 幂等键+部分唯一索引、schema 约束补齐、Interview 白名单、search 魔数/后缀白名单、enqueue_idempotent Redis SETNX 预占位）——schemas/api/services/migrations 域
-- **31 个 commit 逐条文件域复核通过**（无跨域污染；e53cb02 顺带 docs/lessons.md 属标准教训登记）
-- **集成遗留项处理**：O13 messages.uvue shortTime 委托 time.formatIsoShortTime；O11b search.uvue contentTypeCn 委托 search_api 单源；O11#11 profile.uvue 恒真守卫条件删除；test_correction db_user 迁移 conftest 公共版（R8#7 c4ecfac 合入后）；openapi.json 重导出（45 路径 78 schemas）；docs 提交（E1 执行记录 + D2/E2 四条 lessons）
-- **决策**：O6 双离线队列合并移交 F9（共享 queue_store.ts 属 F9 域，缺共享存储地基不宜半合并）；qcloud_cos.sts 登记已知问题（UPLOAD_005/008，STS 归口待团队子账号 ARN）；run_validation main() 保持不单测（CLI 入口，现有测试只覆盖纯函数，安全形态）
-- **TD-P3 schema.sql 漂移闭环**：57a9af1 已同步 devices 哈希列（refresh_token_hash/refresh_rotated_at），bb9c72e CI=success 确认 Full Gate 通过（cf9d480 失败根因已除）
-- **门禁**：快速门禁 ✅ + 精准域 439 passed / 1 deselected（2:27，排除 rag 模型组交 CI）
-- **推送**：12f1006（bb9c72e..12f1006，37 commits），CI run 33011027116 in_progress
+✅ C 客户端收敛 + D 测试基建 + E 契约与输入：31 commit 逐条文件域复核后 push develop @ 12f1006（CI run 33011027116）｜client api.ts·time.ts·search.uvue 等 + backend schemas/api/services/tests/migrations｜C1 网络层统一（rawRequest 401 重放+5xx Sentry）、C2 死代码收口、D1 存量测试迁移+D2 覆盖提速、E1 契约一致性（22 处裸码→ERR_*）、E2 client_generated_id 幂等键+部分唯一索引；精准域 439 passed；TD-P3 schema.sql 漂移闭环 57a9af1｜设计来源：docs/重构批次F提示词（R3/R8/R4/R6）
 
-## 2026-08-26 23:10 · 技术债 TD-P1B 性能与索引批次完成
+## ✅ 速查卡 · 2026-08-26 23:10 · 技术债 TD-P1B 性能与索引批次完成
 
-- **S6-1 aggregate_user 增量游标化（最大性能债）**：l2l3 只扫 30 天增量窗口内未成候选内容（不再全量重扫 400 条远古内容）；接线 `incremental_aggregate`（以"已落库 level>=2 候选"重建 previous 状态，新内容先匹配并入，失败回退本批候选不丢）；`_write_upper_candidates` 批量预载 + 已存在候选（成员组合相同）跳过 LLM 裁决与重查 → 批量导入 O(N²)（反复 LLM）→ 近线性
-- **S6-2 N+1 上提循环外**：`_l3_confirmed_exists` 预载合并进 `_write_upper_candidates`（用户标题/确认事件/成员一次查）；L3 linked/owned 检查合并 IN(cluster) 单条；`sync_client_events` 幂等 `client_event_id IN (...)` 批量 + photo_ids 归属按批合并
-- **S6-3 sync.push_ops 批量预取**：op_id 幂等查 / content 归属查 / SyncFieldVersion 按 (entity_type,entity_id) 组合 IN 预取（逐 op 冲突判定语义保留）
-- **S6-4/S6-6 4 个缺失索引**：`deleted_logs(cleanup_status,deleted_at)` / `offline_queue(user_id,id)` / `messages(user_id,id)` / `profile_l2_evidence(user_id,dimension)`（schema.sql + 迁移 a7b8c9d0e1f2，本地库 upgrade 后 `\d deleted_logs` 确认索引存在）
-- **S6-5 reconcile O(N×M)→O(N)**：client_items 先建 set(entity_id)；`_cloud_entities` 投影列只取所需（不再整行 ORM）
-- **S6-6 profile_annotator**：`get_or_create_profile` 提循环外（懒加载共享实例，批内只查/建一次）；`_trim_history` 合并单条 DELETE（子查询 LIMIT）；L2 evidence 索引
-- **S6-7 echo**：画像敏感一次加载复用（逐候选 N 次 → 每调用 1 次）；LLM 检测仅首候选（20 次 → ≤1 次）
-- **S6-8 correction.mark_global_candidates**：全表载入 → 单条 SQL 聚合（GROUP BY+HAVING COUNT(DISTINCT user_id)≥2）+ 批量 UPDATE
-- **S6-9 wechat `_corp_access_token` 进程内缓存**（TTL 7200s−200s 余量；40014/42001 失效清缓存重取一次）
-- **S6-10 storage cos/minio 进程级单例**（同 fake 模式，懒加载；reset 同步清空）
-- 验证：test_event_ops/test_event_sync/test_sync/test_reconcile/test_echo/test_profile_annotator/test_correction/test_pipeline/test_rag/test_wechat*/test_upload/test_cleanup_job/test_notify 等全绿（累计 82+110+62 passed）+ review_agent 快速门禁全绿
-- **遗留登记（明确不做）**：upload.py 流式合并（COS copy_object/append 依赖后端能力，P2 批次或另排）；pipeline.py patch_extra 样板收敛（P2B，文件域与 P1B 冲突，P1B 合入后再做）
-- 提交：7324e19 perf(techdebt-p1b)（pre-commit 快速门禁通过；提交同时带入了其他 Agent 已暂存的 CI/conftest/test-infra 文件（ci.yml/vector_store/conftest/test_event_ops/pytest.ini/api_smoke/test_agent），已在全量门禁覆盖内，无数据丢失；harness 文件 progress/feature_list 留待集成）
-## 2026-08-26 22:20 · Wave4 AgentK（B5d 后台域）集成 + J/H 代劳 + 决策落地
+✅ S6-1~S6-10 十项性能/索引优化：7324e19｜backend/app/services/events/aggregate.py·sync.py + core/storage.py + schema.sql + 迁移 a7b8c9d0e1f2 等｜聚合增量游标化（30 天窗口，O(N²)→近线性）、N+1 上提、sync.push_ops 批量预取、4 个缺失索引、reconcile O(N)、echo/画像/correction/企微 token/存储后端单例化｜设计来源：docs/技术债清理计划_20260826.md（P1B）
+- 遗留登记（明确不做）：upload.py 流式合并（P2 批次或另排）；pipeline.py patch_extra 样板收敛（P2B，文件域与 P1B 冲突，P1B 合入后再做）
+## ✅ 速查卡 · 2026-08-26 22:20 · Wave4 AgentK（B5d 后台域）集成 + J/H 代劳 + 决策落地
 
-- merge wave4-agentK（B5d 后台域：WorkManager 单队列 P0-P4 + dataSync 前台服务短命化 + attribution tag + 标准基座降级 pending/setInterval，nova 11 真机验证；自定义基座项待验）——client/uni_modules/yishu-background-tasks/ 新插件 19 文件 + yishu-photo-watch 3 文件
-- 代劳 J 遗留：test_notify 3 个 care 断言失败根因 = 测试依赖墙钟（22:00-05:00 深夜时段走 late_night）+ _care_streak_days 上界 sent_at<=now 的时钟一致性陷阱 → 测试固定非深夜时段 + 查询去掉上界（14 passed）
-- 代劳 H 建议：client api.ts/sync_client.ts 三处 res.data 强转加 typeof object 守卫（后端不可达裸值不再主线程 FATAL）
-- 4 决策项全部按推荐落地：① FinetuneJob 删 ORM 模型（表由基线迁移+schema.sql 建、reflow_global 裸 SQL 写，链占位迁移保留并说明）② presign 删除（STS 归口 /upload/sts；ContentUploadResult/CosPresign schema 一并删；OpenAPI 重导 45 路径）③ 短信 501 冻结（P0-1 已生效，确认登记）④ 依赖升版：python-multipart 0.0.18+/httpx 0.27.2+/Pillow 11+（实装 0.0.32/0.28.1/12.3.0）
-- 基线：502 passed / 19 deselected（升版后重跑）+ review_agent --full 全绿
-- K 遗留待验：自定义基座云打包验证 FGS/WorkManager 真实执行/attribution panel；K-2 后端 asr.py 每通道 max_duration 注入 + _CHANNELS 适配器工厂（排期）
+✅ B5d 后台域集成：merge wave4-agentK｜client/uni_modules/yishu-background-tasks/（新插件 19 文件）+ yishu-photo-watch 3 文件｜WorkManager 单队列 P0-P4 + dataSync 前台服务短命化 + attribution tag + 标准基座降级（nova 11 真机验证）；代劳 J 修 test_notify 时钟依赖（14 passed）、H 补 res.data object 守卫；4 决策项落地（FinetuneJob 删 ORM/presign 删/短信 501 冻结/依赖升版）；基线 502 passed + review_agent --full 全绿｜设计来源：docs/parallel-dev/ Agent K 任务卡（B5d）
+- K 遗留待验：自定义基座云打包验证 FGS/WorkManager 真实执行/attribution panel（→ 后续 D-18/D-19 揭示全基座失效，见收尾 Wave 3 条）；K-2 后端 asr.py 每通道 max_duration 注入 + _CHANNELS 适配器工厂（排期）
 
-## 2026-08-26 21:40 · 技术债清理 P0 批次完成（安全/正确性 8 项）
+## ✅ 速查卡 · 2026-08-26 21:40 · 技术债清理 P0 批次完成（安全/正确性 8 项）
 
-- 技术债全面侦察（8 个并行 subagent，报告 docs/技术债审查报告_20260826.md + 计划 docs/技术债清理计划_20260826.md）后启动 P0 执行批次
-- P0-1 短信 mock 生产门控（production→501 + 验证码 SHA-256 哈希）；P0-2 COS STS 路径级白名单 policy（photos/voice/thumbnails/{user_id}/*，防前缀逃逸）+ /upload/sts 生产门控；P0-3 上传魔数嗅探（file_magic.py）+ Image.MAX_IMAGE_PIXELS 40MP 炸弹防护；P0-4 process_content 非 voice 失败回写 failed+extra.error；P0-5 complete 建内容 photo 幂等对齐 voice + enqueue 失败不 500；P0-6 StorageError(code,retryable) 包装 + commit 失败 best-effort delete + 孤儿扫描登记；P0-7 错误码登记表（40+3 码唯一真源 + ERR_* 常量 + CONTENT_008/EVENT_005/UPLOAD_008 拆分）；P0-8 RQ job_timeout（ASR 600s）+ Retry(3,[10,30,90])
-- 新增 36 个测试（test_techdebt_p0.py 17 + 各套件补齐）；基线 pytest 502 passed / 19 deselected + review_agent --full 全绿
+✅ P0-1~P0-8 八项安全/正确性修复：502 passed + review_agent --full 全绿｜backend sms/STS 白名单/file_magic.py/pipeline/storage/errors.py/queue 等域｜短信 mock 生产 501+验证码哈希、COS STS 路径级白名单防前缀逃逸、上传魔数嗅探+40MP 炸弹防护、voice 失败回写、complete 幂等对齐、StorageError 包装+孤儿扫描登记、错误码登记表（40+3 码唯一真源）、RQ job_timeout+Retry(3)｜设计来源：docs/技术债审查报告_20260826.md + docs/技术债清理计划_20260826.md
 - 遗留登记：STS root ARN 降级待子账号 role、thumbnail_meta 移 worker、超龄 processing 重扫、孤儿对象扫描、分队列 worker 部署（均入代码注释）
-- 下一步：P1（配置契约 + 性能测试 2 个并行批次）→ P2（死代码 + 重复收敛）
 
-## 2026-08-26 20:20 · Wave 4 集成（J/L，K 未完成）
+## ✅ 速查卡 · 2026-08-26 20:20 · Wave 4 集成（J/L，K 未完成）
 
-- merge wave4-agentJ（ab6d447：ASR 消费域 J-1~J-8）+ wave4-agentL（a0fe630：M3 微信域）→ 集成接线 deb6e24
-- 集成接线：upload/complete voice 分支（register_photo_content，对象搬 voice/ 前缀）+ /contents voice cos_key 幂等 + 客户端 uploadVoicePersistent 优先 content_id + pipeline enrich_content_emotion 补 consume_emotion + OpenAPI 重导出 + test_pipeline fixture 补 Message 清理
-- 22:00 复盘调度登记（部署侧 cron 跑 backend/scripts/daily_review.py，幂等）
-- 基线：pytest 467 passed / 19 deselected + review_agent --full exit 0 全绿
-- 遗留：Agent K（B5d）完成后二次集成；WECHAT key 待申请（code2session 已接真实链路，未配保持 mock/501）
+✅ ASR 消费域 J-1~J-8 + M3 微信域合入：wave4-agentJ @ ab6d447 + wave4-agentL @ a0fe630 + 集成接线 deb6e24｜upload/complete voice 分支 + /contents voice cos_key 幂等 + pipeline enrich_content_emotion 补 consume_emotion + OpenAPI 重导出｜uploadVoicePersistent 优先 content_id；22:00 复盘登记部署侧 cron（backend/scripts/daily_review.py 幂等）；pytest 467 passed 全绿｜设计来源：docs/parallel-dev/10、12（Agent J/L 任务卡）
+- 遗留：WECHAT key 待申请（code2session 已接真实链路，未配保持 mock/501）
 
-## 2026-08-26 19:00 · CI 全链路修复完成（#8-#21）——CI #21 首次双绿
+## ✅ 速查卡 · 2026-08-26 19:00 · CI 全链路修复完成（#8-#21）——CI #21 首次双绿
 
-**状态**：CI #21 Fast + Full Gate 全绿｜本地验证 419 passed + api_smoke 6/6 + research 18 全过
+✅ CI #21 Fast + Full Gate 全绿：本地 419 passed + api_smoke 6/6 + research 18 全过｜.github/workflows + scripts/warm_hf_models.py + schema.sql/setup_pg.sql + CI 镜像｜7 根因链修复（PG 就绪重试循环/迁移链不自包含回退 schema.sql 建库/步骤级 env 密码内联/profile_annotation_pool 补齐/pgvector 扩展+镜像/qdrant 升 v1.19.0/HF 模型预热步骤），全部登记 docs/lessons.md（族4/6）｜设计来源：CI 失败日志逐条根因分析；建库源=schema.sql 决策（#6/#21 验证）
+- 决策留档：alembic 仅用于本地/生产增量；漂移检测另行设计（issue #2 修正）
 
-### 根因链（7 个，全部登记 docs/lessons.md）
-1. #8 postgres 容器就绪竞态（加 qdrant 后 psql 连接被拒）→ Init PG 加重试循环
-2. #9-#12 alembic 迁移链不自包含（baseline 仅 alter_column，假设表已由 schema.sql 预建）→ 回退 schema.sql 建库；**issue #2 方向修正**
-3. #13 步骤级 env PGPASSWORD 单密码覆盖多用户 psql（-U yishu_app 拿 admin 密码）→ 每条命令内联各自密码
-4. #15 schema.sql 缺 profile_annotation_pool（迁移 b0b1c2d3e4f5 建表未同步）→ 补齐，本地临时库验证 38 表
-5. #16 pgvector 扩展缺失 + 测试 FK 清理不完整（本地旧库 27 表/4 FK 掩盖）→ schema.sql/setup_pg.sql 加 CREATE EXTENSION + CI 镜像 pgvector/pgvector:pg16 + 测试 fixture 补子表清理
-6. #17-#18 qdrant server 1.9.7 与 client>=1.19 不兼容（api_smoke payload 404）→ 镜像升 v1.19.0
-7. #19-#20 CI 全新缓存 BGE-M3 现场下载失败（pipeline 测试 status=failed）→ Warm HF models 步骤（scripts/warm_hf_models.py 强制在线）+ 失败详情写 annotation（API 匿名可读）
+## ✅ 速查卡 · 2026-08-25 · PR 评论 5 项修复并更新现有 PR
 
-### 关键决策
-- CI 建库源 = schema.sql（#6/#21 验证）；alembic 仅用于本地/生产增量；漂移检测另行设计（issue #2 修正）
-- 本地库与 schema.sql 曾严重漂移（27 表/4 FK vs 38 表/20+ FK），本地全绿掩盖 FK 测试问题——测试 fixture 已补子表清理
+✅ PR#1（codex/asr-pipeline-hardening，后并入 develop）评论修复：rebase 对齐 origin/develop + numpy>=1.26 显式依赖 + SenseVoice 部署预置脚本与资产校验（缺 SENSEVOICE_MODEL_DIR 显式失败）+ DASHSCOPE_REGION Host 拼接（保留 BASE_URL 覆盖）+ 主转写/本地情绪拆两个 RQ 阶段（情绪失败不影响转写）；音频范围 49 passed｜设计来源：PR 团队审查评论
+- 待办：生产发布时执行 SenseVoice 模型预置步骤
 
-**下一步**：Wave 4（J/K/L 三 Agent 并行）｜issue #2 关闭文案已备
+## ✅ 速查卡 · 2026-08-25 · 第二波遗留全清 + 真机/模拟器验证 + RAG 管线审查
 
-## 2026-08-25 · PR 评论 5 项修复并更新现有 PR
-
-**状态**：分支已对齐 `origin/develop`｜PR base=`develop`｜音频范围 `49 passed`｜ruff/py_compile 通过
-
-1. 分支已 rebase 到 `develop`，冲突合并后保留音频改动和团队最新管线；现有 PR base 改为 `develop`。
-2. `numpy>=1.26` 已显式加入 requirements。
-3. 新增 SenseVoice 部署预置脚本与资产校验；生产缺少 `SENSEVOICE_MODEL_DIR` 时显式失败，禁止首个请求下载模型。
-4. 阿里云 workspace Host 按 `DASHSCOPE_REGION` 拼接，并保留 `DASHSCOPE_BASE_URL` 覆盖。
-5. 主转写与本地情绪拆成两个 RQ 阶段；情绪失败/入队失败不影响真实转写，`auto` 模式在主通道已有情绪时跳过本地推理。
-
-**下一步**：等待团队下一轮审查；生产发布时执行 SenseVoice 模型预置步骤。
-
-## 🔧 2026-08-25 · 第二波遗留全清 + 真机/模拟器验证 + RAG 管线审查
-
-**状态**：全量 pytest 254 passed（+2 回归测试）｜client 编译通过 + 模拟器/真机验证｜review_agent 待跑
-
-### 第二波遗留收尾（nova11 + 模拟器双端验证）
-1. **S-ST-1 分片上传真机链路打通**：修复 `uni.getFileSystemManager().getFileInfo` 在 uni-app x 沙箱读不了 MediaStore 绝对路径（真机实测报"读取文件信息失败"）→ 文件大小改从 MediaStore SIZE 列注入 PhotoItem；修复后 上传→端侧聚合→L1 事件上云 accepted 全通
-2. **S-MO-1 菜单真机验证**：菜单弹出确认（确认/合并/拆分/取消）；发现 ⋯ 被标题文本 z-order 覆盖（点下半部无效）→ card-ops 加 z-index + 标题右 padding；**双"取消"bug**（itemList 手动加"取消" + showActionSheet 原生自带 → 重复）→ 移除 itemList 里的"取消"
-3. **split UI 全链路**（后端 GET /events/{id}/items + 客户端选片面板 + POST split）：模拟器实测通过（items→split 200→timeline 刷新）
-4. **split/merge 时间窗 bug（autoflush=False）**：db.add(EventItem) 未落库时 _refresh_event_window 查不到新成员 → 拆出新事件 start_time=None → 时间轴分组到"1月1日" → merge/split 前加 db.flush()；+2 回归测试
-5. **EXIF 排查实锤**：MediaStore scan_file 提取 DateTimeOriginal（datetaken 正确）但**丢弃 GPSInfo**（latitude/longitude=NULL）→ 注入测试链路无 GPS；真实相机照片（相机直写 MediaStore）GPS 可用
-6. **AMAP 后端全链路 E2E**：login→init→chunk→complete(meta GPS)→worker→place=上海市浦东新区陆家嘴街道东方明珠广播电视塔（真实逆地理）
-7. **fs 存储后端新增**（FilesystemStorageBackend）：fake 是进程内单例，uvicorn/worker 跨进程读不到（复盘坑 24）→ 本地文件系统后端跨进程共享；.env STORAGE_BACKEND=fs
-8. **S-EM-1 模拟器**：Android 35 x86_64 system-image + AVD yishu_test 创建并启动成功（备用验证设备）
-9. **S-XV XView**：仍等自定义基座（SQLCipher 需云打包/本地打包）
-
-### RAG 管线系统性审查（docs/RAG管线审查报告_20260825.md）
-1. **recall@3=0.0841 低的根因**：指标分母=expected_label 类全集（15-20 条），Top-3 上限 3/类 ≈ 0.15-0.20，实测已达上限 50-70%——不是检索坏了（hit_rate@3=0.82 / precision@3=0.52 / mrr=0.77）
-2. **修复 3 个真 bug**：①rerank 自 8-24 起从未生效（CrossEncoder model_kwargs 参数在 ST 3.4.1 已移除 → 静默降级）→ automodel_args；②时间正则误伤（句中"上个月"被当过滤意图 → length 层空结果）→ 仅句首触发；③关键词精确命中被稠密噪声稀释 → _boost_exact_matches（词元全命中 ×1.8）
-3. **rerank 默认关闭**（rerank_enabled=false）：CPU 实测 ~850ms/对，50 候选 ≈ 40s 远超 P95<3s 门禁；GPU 部署时开启
-4. **修复后基准**：hit_rate@3=0.7273（门禁 PASS）｜length 层 0.5→1.0｜mrr 0.66
-5. **架构级短板**：描述性/释义查询召回不足（双编码器语义鸿沟，需 LLM 改写或 SetFit 类目路由）；评测集结构性缺陷（label 全集作分母 + 无 taken_at payload）
+✅ 八项遗留收尾（nova11 + 模拟器双端验证，全量 pytest 254 passed）：S-ST-1 分片上传真机链路（MediaStore SIZE 列注入绕 getFileInfo 沙箱限制）｜S-MO-1 菜单真机验证（z-index+移除 itemList 双"取消"）｜split 全链路（GET /events/{id}/items + 选片面板 + POST split）｜autoflush=False 时间窗 bug（merge/split 前加 db.flush()+2 回归测试）｜EXIF 排查实锤（scan_file 丢 GPSInfo，真实相机照片可用）｜AMAP 后端全链路 E2E（东方明珠真实逆地理）｜FilesystemStorageBackend 跨进程存储后端（.env STORAGE_BACKEND=fs）｜Android 35 模拟器 AVD yishu_test
+✅ RAG 管线系统性审查修复 3 真 bug：①rerank 自 8-24 从未生效（CrossEncoder model_kwargs 在 ST 3.4.1 已移除→automodel_args）②时间正则误伤改仅句首触发 ③关键词精确命中稀释→_boost_exact_matches（词元全命中 ×1.8）；rerank 默认关（CPU ~850ms/对超 P95<3s 门禁）；修复后 hit_rate@3=0.7273 门禁 PASS｜设计来源：docs/RAG管线审查报告_20260825.md
 
 ---
 
-## 🔧 2026-08-25 · RAG 测试体系核实修复 + AMAP 逆地理落地 + Sentry 客户端接线
+## ✅ 速查卡 · 2026-08-25 · RAG 测试体系核实 + AMAP 逆地理 + Sentry 接线 + 真值数据规格 v1 + S-ST-1/S-MO-1 + review_agent 内存优化
 
-**状态**：全量 pytest 247 passed（+9 test_amap）｜pytest -m rag 14/14 通过（修复后）｜client 编译成功｜review_agent 待跑
-
-### RAG 测试体系核实（第四问答复依据）
-1. **指标体系全貌**：research/rag_benchmark/metrics.py 实现 recall@k / hit_rate@k / precision@k / mrr / ndcg@3（k=1/3/5/10），分层（descriptive/keyword/typo/length）+ 行为层（temporal_acc/route_acc）+ overall 全量输出在 evaluation_report.json（hit_rate@3=0.8182 / mrr=0.7727 / ndcg@3=0.5668 / recall@3=0.0841 / route_acc=1.0 / temporal_acc=1.0 / overall_pass=true，11 查询，B+C 混合库 117 条）。门禁只取 hit_rate@3≥0.70（产品口径 Top3≥70%）+ route_acc/temporal_acc + P95<3s
-2. **完整测试套件答案**：默认 pytest 套件 238 项 addopts `-m "not rag"` **排除 RAG 重测试**；RAG 集成测试（test_rag.py/test_image_search.py）需单独 `pytest -m rag`（前置 Docker Qdrant + BGE-M3）
-3. **实测发现回归**：`pytest -m rag` 1 failed（test_dense_search_recall）——test_rag.py 与生产 yishu_contents 共用 collection，生产库有真实数据（08-24 真机 E2E）后测试点被挤出 Top-k → **修复**：改用独立 collection yishu_test_rag（与基准评测同隔离策略），修复后 14/14 通过
-4. **F5 缺口项核实**：①Qwen3-VL 图片塔已真实接线（image_caption + search_by_image + pipeline 写 image_vec）——feature_list 旧 evidence 过时；②corpus-A 500 张截图基准已完成（image_search_report.json：15 查询 hit_rate@3=1.0）——已存在；③双层 Rerank 第一层 bge-reranker 粗排已接线，**第二层 qwen-flash LLM 精排未实现=真实缺口**；④**新发现缺口**：以图搜图延迟 P95=7629ms 超 3s 门禁（未列入 feature_list）
-
-### AMAP 逆地理（高德 Key 落地）
-5. **services/external/amap.py**：geohash 精度 6 纯函数（与 geohash2 独立库交叉验证）+ regeo（httpx + with_retry 3 次退避）+ get_place（geo_cache 缓存优先 ≤30 天合规，mock 生产拒落库）
-6. **GeoCache 模型 + 迁移**：alembic 4d00dfec7b46 add_geo_cache 已应用，check 零漂移
-7. **pipeline._process_photo 接线**：photo GPS → contents.place（失败静默）
-8. **config 别名**：amap_api_key AliasChoices（AMAP_API_KEY / AMAP_WEB_API_KEY——Infisical 存量名）
-9. **验证**：test_amap 9 项全过；真实调用（MOCK_EXTERNAL_AI=false + infisical run）：外滩坐标 31.2304,121.4737 → 上海市黄浦区南京东路街道（免费额度内）
-
-### Sentry 客户端接线（SENTRY_DSN 落地）
-10. **Infisical 核实**：SENTRY_DSN（dev，命名无 _DEV/_PROD 后缀，us.sentry.io；DSN 为公开标识按 Sentry 官方惯例内嵌 client）——后端 main.py 生产环境 sentry_sdk 初始化已有；**客户端缺失** → 补齐
-11. **utils/sentry.ts**：轻量 Envelope 协议上报（uni.request POST /api/<project>/envelope/，零三方依赖、标准基座可用；@sentry/vue 因 uni-app x App 端无 DOM 不可用）；captureException/captureMessage/addBreadcrumb（环形缓冲 10 条）
-12. **接线**：App.uvue onLaunch initSentry + onError（UTS error17：生命周期参数须声明 any）；api.ts 5xx + 网络失败上报（4xx 不打扰）
-13. **编译**：HBuilderX CLI 编译通过（config.ts 曾被 PowerShell 编码破坏重写——教训：改 client 配置勿用 PS 写 UTF-8，用 write 工具）
-
-### 真值数据规格 v1（2026-08-25 续 · 峰宝 grill-me 拍板）
-19. **四个决策**：①数据来源=真实用户（beta W18 起采集，非团队自造）→ M1/M2 门禁在 beta 前仍以合成基准为准，真实数据成为 beta 期校准/上线验证层 ②搜索期望结果 expected_ids+expected_label 双轨 ③人脸打码+录音只收自述片段 ④JSON 交付
-20. **定位修正（峰宝 2026-08-25 复核）**：这是**给产品部的人工采集手册**——产品部是收集者（招募/访谈/授权导出 → AI 辅助整理 → 人工确认 → JSON 交付）；**不做自动采集管道**（明确不做 search_log 自动埋点）；技术侧仅提供可选辅助：export 初稿脚本 / 人脸打码脚本 / 评测 --real 模式
-21. **交付物**：docs/真值数据规格标准_v1.md（5 批字段级规格 + 人工采集操作流程 + 产品部怎么收指引）+ research/truth-data/ 模板（templates/*.example.json）+ scripts/validate_truth_data.py 校验器（产品部交付前自检，全绿入 manifest）
-
-### S-ST-1 分片上传 + 断点续传（2026-08-25 续）
-14. **后端集成（关键：否则分片链路与内容管线断裂）**：/upload/complete 接 meta → services/upload.py register_photo_content 建 contents 记录（cos_key）+ enqueue_high(process_content)，语义与 /contents/upload 对齐（taken_at ISO / gps 边界 / source 白名单）；返回 content_id
-15. **/upload/chunk 加 POST 别名**：uni-app x uni.uploadFile 不支持 PUT method（编译实测 No parameter named 'method'）——POST 语义与 PUT 一致（幂等+校验）
-16. **客户端 uploader.ts v2**：分片协议 init→chunk→complete + 断点续传（upload_id 持久化 uni storage 'yishu_pending_uploads' + GET /status 补缺片）+ GPS 入 meta（PhotoItem.lat/lng，联动 AMAP 逆地理）+ FileSystemManager.getFileInfo 取尺寸（uni.getFileInfo 在 uni-app x 不可用）；urlencoded 表单（后端 Form 字段，uni.request 发 UTSJSONObject 会变 JSON 不匹配）
-17. **分片粒度=单块**（chunk_size=file_size）：UTS 无可靠 ArrayBuffer 切片，MVP 照片 ≤20MB，>8MB 真分片留 Windows 波次（后端已支持任意 chunk_size）
-18. **验证**：test_upload 13 项全过（+2 集成测试）；全量 pytest 248 passed；HBuilderX 编译通过（200s）；OpenAPI 重导出 41 路径；真机 E2E（注入→init→chunk→complete→管线→时间轴）待峰宝 nova 11
-
-### S-MO-1 手动操作 UI（2026-08-25 续 · confirm + merge）
-22. **客户端 event_ops.ts**：confirmEvent（POST /events/confirm）+ mergeEvent（POST /events/merge，source→target）；后端已就绪（test_event_ops 7 项）
-23. **时间轴页集成**：L1/L2 卡片右上角 ⋯ 菜单（showActionSheet）——L1：确认这张卡/合并到上一张；L2：确认这个主题；确认后 reload；合并 target=相邻上一张 L1（getPrevL1Id 跳过 L2 组）；用户操作优先语义由后端保证（算法不覆盖）
-24. **split 后置**：客户端 timeline 无事件内容列表（EventOut 无 content_ids）→ 需后端补 GET /events/{id}/items 后做选片拆分 UI
-25. **编译**：HBuilderX 编译通过（47s 增量）；真机验证待峰宝（操作菜单点按 → 确认/合并 → 时间轴刷新）
-
-### review_agent 内存优化（2026-08-25 续）
-26. **根源**：smoke 单进程 SetFit fp32 2.2GB + BGE-M3 fp16 1.7GB + reranker fp32 ~1GB ≈ 5.5-6GB 峰值；可用内存 0.9GB 时 commit 被 SIGKILL
-27. **修复**：SetFit/reranker 改 fp16（实测 SetFit 加载 2.2GB→596MB，预测峰值~1.75GB；rerank ~1GB→~0.5GB；-m rag 85s→27s）；smoke 跳过 reranker（RERANKER_MODEL=__disabled__）；test_agent 内存探测 + OOM 友好提示（returncode<0 识别）+ 可用内存 <4GB 警告；教训登记（commit 前确保可用内存 ≥4GB；编译后清理 HBuilderX 残留）
+✅ RAG 测试体系核实：research/rag_benchmark/metrics.py 指标体系全貌（recall/hit_rate/precision/mrr/ndcg 分层+行为层）；默认套件 `-m "not rag"` 排除重测试、`pytest -m rag` 需 Docker Qdrant+BGE-M3；实测回归修复——test_rag 改独立 collection yishu_test_rag（与生产 yishu_contents 隔离），修复后 14/14 过；F5 缺口核实（Qwen3-VL 已接线/corpus-A 基准已存在/LLM 精排=真实缺口/以图搜图 P95=7629ms 超门禁）
+✅ AMAP 逆地理：backend/app/services/external/amap.py（geohash 精度 6 纯函数+regeo with_retry 3 次退避+get_place 缓存≤30 天合规）+ GeoCache 模型迁移 4d00dfec7b46 + pipeline._process_photo 接线 contents.place + amap_api_key AliasChoices；test_amap 9 项全过+真实调用验证（外滩→南京东路街道）
+✅ Sentry 客户端接线：client/utils/sentry.ts 轻量 Envelope 协议上报（uni.request POST，零三方依赖——@sentry/vue App 端无 DOM 不可用）+ App.uvue onLaunch initSentry/onError + api.ts 5xx+网络失败上报
+✅ 真值数据规格 v1（峰宝 grill-me 拍板）：docs/真值数据规格标准_v1.md（5 批字段级规格+人工采集操作流程）+ research/truth-data/ 模板 + scripts/validate_truth_data.py 校验器；定位=给产品部的人工采集手册，不做自动采集管道
+✅ S-ST-1 后端分片集成：/upload/complete 接 meta→register_photo_content 建 contents+enqueue_high（语义对齐 /contents/upload）+ /upload/chunk POST 别名（uni.uploadFile 不支持 PUT）+ client/utils/uploader.ts v2（init→chunk→complete+断点续传 uni storage+GPS 入 meta+urlencoded 表单）+ chunk_size=单块（UTS 无可靠 ArrayBuffer 切片）；test_upload 13 项全过+OpenAPI 重导 41 路径
+✅ S-MO-1 手动操作 UI：client/utils/event_ops.ts（confirmEvent/mergeEvent）+ 时间轴 L1/L2 卡片 ⋯ 菜单（确认/合并，target=相邻上一张 L1）；split 后置等 GET /events/{id}/items（本轮已补）
+✅ review_agent 内存优化：SetFit/reranker 改 fp16（2.2GB→596MB，峰值 5.5-6GB→~1.75GB）+ smoke 跳过 reranker + OOM 友好提示；教训=commit 前确保可用内存 ≥4GB
+设计来源：docs/parallel-dev/ 帧卡（S-ST-1/S-MO-1）+ 峰宝拍板记录（真值规格四决策）+ RAG 评测口径核实
 
 ### 遗留/待办
 - 以图搜图延迟优化（P95 7.6s→<3s）——F5 真实缺口
@@ -207,158 +81,46 @@
 
 ---
 
-## 🚀 客户端第三波（2026-08-24 晚 · T-NA/T-TX/T-AU/T-SR/T-PL 多入口+玩法层）
+## ✅ 速查卡 · 客户端第三波（2026-08-24 晚 · T-NA/T-TX/T-AU/T-SR/T-PL 多入口+玩法层）
 
-**状态**：✅ 全部真机验证通过（nova 11，提交 e6398cc）｜review_agent 全绿｜pytest 238 passed
-
-### 交付（15 任务 10 项真机验证 PASS）
-1. **T-NA-1 四宫格导航**（components/yishu-tabbar）：时间轴/记录/搜索/我的，reLaunch 切换，选中态锈红
-2. **T-TX-1/2 文字入口**（pages/record + utils/text_recorder.ts）：POST /contents(text) → 分类异步 job 轮询 → 标签展示 → 点标签三层裁决纠错（correction_log 回写）
-3. **T-AU-1/2/3 语音入口**（utils/voice.ts）：uni.getRecorderManager 录 wav → /asr/transcribe 转写 → 可编辑+情绪标签 → voice 入库
-4. **T-SR-1/2/3/4 搜索**（pages/search + utils/search_api.ts）：混合结果卡片 + trace 溯源（召回：语义+关键词 · 语义分） + uni.chooseMedia 以图搜图 + degraded 降级黄条
-5. **T-PL-1 回响卡片**（首页）：去年今日 GET /echo/today + dismiss 划掉（角贴+泛黄）
-6. **T-PL-2 冷启动访谈**（pages/interview）：三层披露 → 三问 → 复述确认 → 可跳过；画像 cold_start_done 生效
-7. **T-PL-3 消息中心**（pages/messages）：未读/全部过滤 + 单条已读 + 全部标为已读
-
-### 本波教训（docs/lessons.md +5）
-1. uni-app x App 端无 uni.chooseImage，用 uni.chooseMedia
-2. UTS setTimeout 自引用箭头函数不可用，轮询用模块级 function+done 回调
-3. /interview/questions data 是裸数组；/messages status 仅 unread/read/archived；搜索 trace 结构是 {matched,dense_score,...}
-4. uiautomator dump 对 uni-app x 自绘 UI 不可靠，真机定位用截图像素分析（#B05A3A）+ image 坐标交叉验证
-5. am start 启动会"未检测到应用资源"，必须 HBuilderX CLI launch；大进程并发（worker+review_agent+pytest）内存不足需先释放
+✅ 15 任务 10 项真机验证 PASS（nova 11，提交 e6398cc；pytest 238 passed）：components/yishu-tabbar 四宫格导航（reLaunch+锈红选中态）｜pages/record+utils/text_recorder.ts 文字入口（分类 job 轮询+点标签三层裁决纠错）｜utils/voice.ts 语音入口（uni.getRecorderManager→/asr/transcribe→可编辑+情绪标签）｜pages/search+utils/search_api.ts 搜索（混合结果+trace 溯源+uni.chooseMedia 以图搜图+degraded 黄条）｜首页回响卡片（GET /echo/today+dismiss）｜pages/interview 冷启动访谈（三层披露→三问→复述确认）｜pages/messages 消息中心（未读过滤+已读）｜设计来源：docs/parallel-dev/ 帧卡（T-NA~T-PL）
+- 本波 lessons +5（uni.chooseMedia/UTS setTimeout 自引用/接口结构/uiautomator 不可靠/HBuilderX CLI launch）已登记 docs/lessons.md
 
 ---
 
-## 🚀 客户端第二波 · 第二批（2026-08-24 晚 · S-AG-3/S-SY-4 客户端闭环）
+## ✅ 速查卡 · 客户端第二波 · 第二批（2026-08-24 晚 · S-AG-3/S-SY-4 客户端闭环）
 
-**状态**：客户端代码完成 ✅ 编译通过 ✅；真机 E2E 验证被环境阻塞（HBuilderX 弹窗 → 已解决；设备 USB offline → 待峰宝拔插）
-
-### 客户端（S-AG-3/4 + S-SY-4）
-1. **PhotoItem 增加 GPS**（interface.uts + app-android/index.uts）：MediaStore LATITUDE/LONGITUDE 读取（无 GPS=null，端侧按时间窗归组）
-2. **uploader.ts 返回 content_id**（UploadedPhoto[]）：上传响应解析 data.id，端侧聚合/事件上云依赖
-3. **S-AG-3 端侧聚合运行器**（client/utils/agg_runner.uts）：上传成功照片（本地元数据+content_id）→ UTS ST-DBSCAN（同 AGG-016 同参）→ L1 日卡片事件（client_event_id 幂等键）
-4. **S-SY-4 客户端事件上云**（client/utils/event_sync.ts）：POST /events/sync + 指数退避（2s/4s/8s/8s/8s）+ 4xx 停批 + client_event_id 幂等
-5. **index 页接线**：监听攒批 → 上传 → 端侧聚合 → 事件上云 → 刷新时间轴（B3-6 端侧 L0/L1 真值闭环）
-6. **编译验证**：HBuilderX 编译成功（多轮修复：TS 环境 UTSJSONObject 无 parse/getArray 泛型、无 any、签名类型）
-
-### 环境坑（教训已登记 docs/lessons.md +2）
-1. **HBuilderX 模态弹窗静默阻塞 CLI launch**（更新提示 + AI 介绍弹窗）→ computer-use 关弹窗后恢复
-2. **Windows 防火墙拦入站 8000**（设备 ping 不通本机）→ 改用 adb reverse USB 隧道（config.ts REAL_DEVICE_HOST=localhost）
-3. **设备 USB offline**（待峰宝拔插恢复后执行最终真机验证）
-
-### ✅ 真机 E2E 闭环验证（2026-08-24 21:27 · nova 11，全链路通过）
-1. **注入**：10+ 批测试照片 scan_file 注入（新目录 w2tN）→ 观察者触发
-2. **上传**：multipart 200 + content_id 解析（修复：uploadFile res.data 是 string，JS 引擎用 split 提取）
-3. **端侧聚合**：[yishu] 端侧聚合: 2 张 → 0 簇 → 1 个 L1 事件（UTS ST-DBSCAN 真机运行）
-4. **事件上云**：[yishu] 事件上云: accepted=1 dup=0 rejected=0（POST /events/sync，后端需重启加载新路由）
-5. **DB 落库**：events 表 generated_by=device + client_event_id 唯一（ev-1787578023265-857538）
-6. **时间轴渲染**：首页截图显示端侧提交的 L1 卡片（2026-08-24 · 1条 / 1张照片）
-7. **S-SY-5 前台触发**：App 重启后自动恢复监听（onLoad 检查权限自动 startWatch），无 CTA 也触发
-
-### 环境坑（本批再踩，教训 +3）
-1. **uni.uploadFile res.data 是 string**（与 uni.request 的 UTSJSONObject 不同）→ JS 引擎用字符串操作解析；诊断日志定位（解析失败被误判为上传失败数小时）
-2. **华为增强纯净模式拦截 HBuilderX 安装**（pure_enhanced_mode_state=1）→ 应用市场反复弹窗抢前台 + App 卡 D 状态 → settings put secure pure_enhanced_mode_state 0
-3. **端侧 EXIF 兜底对 PIL 写入的 EXIF 不生效**（ExifInterface getAttribute 返回 null 无异常）→ 真实相机照片 DATE_TAKEN 可靠；测试注入场景时间窗偏移（后端 EXIF 权威已兜底 contents）
-4. 设备时钟错位（显示 8/25 09:22，实际 8/24 21:21）——第一波已知，上线前校准
+✅ 端侧聚合+事件上云闭环（真机 E2E 2026-08-24 21:27 nova 11 全链路通过）：PhotoItem 增加 GPS（interface.uts+app-android/index.uts，MediaStore LATITUDE/LONGITUDE）｜uploader.ts 返回 content_id｜S-AG-3 端侧聚合运行器 client/utils/agg_runner.uts（UTS ST-DBSCAN 同 AGG-016 同参→L1 日卡片，client_event_id 幂等）｜S-SY-4 client/utils/event_sync.ts（POST /events/sync+指数退避 2/4/8s+4xx 停批）｜index 页接线（监听攒批→上传→聚合→上云→刷新）｜真机证据：10+ 批注入→multipart 200→端侧聚合 1 个 L1→上云 accepted=1→DB ev-1787578023265-857538→时间轴渲染+S-SY-5 前台自动恢复监听｜设计来源：docs/parallel-dev/ 帧卡（S-AG-3/S-SY-4/B3-6）
+- 本批环境坑 lessons 已登记 docs/lessons.md（uni.uploadFile res.data 是 string/华为增强纯净模式拦安装/端侧 EXIF 兜底对 PIL 写入不生效/设备时钟错位/HBuilderX 弹窗阻塞/防火墙→adb reverse）
 
 ### 遗留（后续波次）
 - S-XV XView（SQLCipher 随自定义基座波次，标准基座无三方依赖）；S-SY-4 离线 op_log 队列；S-EM-1 模拟器；S-ST-1 STS；S-MO-1 手动操作 UI
 - 端侧 EXIF 兼容性（PIL 写入格式）待查
 # Session Progress Log — 忆述光华
 
-## 2026-08-27 17:40 · 重构批次 H 集成（H1-H5 全并行 5 分支）
+## ✅ 速查卡 · 2026-08-27 17:40 · 重构批次 H 集成（H1-H5 全并行 5 分支）
 
-- **merge 顺序**（均从 18078e5 切出，`--no-ff`）：h1（models 拆包/event_aggregation 脚本迁移/pipeline 注册表/wechat 反转/PushChannel/upload 拆包）→ h2（CI 增强）→ h5（客户端收口）→ h3（测试杂项）→ h4（API 契约收口）
-- **共享工作树事故处理**：H3 首个 commit ddc8e29 误落 h4 分支（与 h3 的 232632d 等价）——两版仅 test_auth.py 不同（h4 含 R4#11 断言改造=超集）；已按 h4 版处理 test_auth（3 处 AUTH_099→010/011 取 h4，手机号 uuid 修复保持），test_error_registry/test_upload 取 h3 版（含 unit marker / M1 DoS 用例）
-- **merge 冲突处理**：test_queue.py 双 add 被 git 拼接成整块重复（F811 重复 fixture）→ 取 ruff 修正版（h3 133 行）；lessons.md 三处（h1/h3/h4）保留双方；test_error_registry add/add 取 h3
-- **openapi 重导**：H4 API 变更后按 docs/OpenAPI契约.md 命令重导，46 路径（arbitrate 已迁 /classify，契约文档已对齐）；errors 纯增 AUTH_010-013/MSG_003 零删除
-- **门禁**：全量非 rag **661 passed / 20 deselected**（基线 632→661，+29）＋ client tsc --noEmit EXIT=0 ＋ 快速门禁 EXIT=0；client 域 H5 无 pytest 靠 tsc+grep
-- **教训登记**：merge 双 add test 文件被拼接成整块重复——merge 后必跑全量 lint；写含中文文件一律用 git checkout 而非 PowerShell Set-Content（编码破坏教训复现）
-- **遗留**：HBuilderX 编译真机冒烟（H5 客户端行为等价，集成后补跑）；pip-audit-weekly 定时触发待 CI 观察；client tsc 非阻断试点
-- 推送：develop @ HEAD（openapi.json + progress + lessons 集成提交），CI 复验中
+✅ 五分支 --no-ff 合入 develop（h1 models 拆包+event_aggregation 脚本迁移+pipeline 注册表+wechat 反转+upload 拆包 / h2 CI 增强 / h5 客户端收口 / h3 测试杂项 / h4 API 契约收口）+ openapi 重导 46 路径（arbitrate 迁 /classify）+ errors 增 AUTH_010-013/MSG_003；共享工作树事故（H3 ddc8e29 误落 h4 分支、test_queue 双 add 拼接）按规则处置；全量非 rag 661 passed + tsc EXIT=0｜设计来源：docs/重构批次H 提示词
+- 遗留：HBuilderX 编译真机冒烟（H5 客户端行为等价，集成后补跑）；pip-audit-weekly 定时触发待 CI 观察；client tsc 非阻断试点
 
-## 2026-08-27 14:50 · 重构批次 G 集成（G1 认证安全 + G2 越权纵深）
+## ✅ 速查卡 · 2026-08-27 14:50 · 重构批次 G 集成（G1 认证安全 + G2 越权纵深）
 
-- **merge 顺序（共享工作树，两分支均从 5fcbd29 切出）**：`--no-ff techdebt/g1`（67f50f1，22 文件）→ `--no-ff techdebt/g2`（1563cde，7 文件），均无冲突；main.py 双方都动过，终态取 G2 提交的合并态超集（create_app + 安全头 + healthz 收敛 + G1 限流接线，与工作区 G1 副本哈希一致验证后丢弃）
-- **G1 认证安全**：refresh single-flight（client auth.ts 共享 in-flight，并发 401 只一次 refresh，node 单测 4/4）；POST /auth/logout（AUTH-006 吊销，坏 token 仍 200 幂等）；refresh_token HMAC-SHA256 + 独立密钥 refresh_token_hmac_key（hmac$ 版本前缀 + 兼容存量 SHA-256 + 轮换 OR(hmac,legacy) 原子）+ 生产强制非默认密钥门禁；SMS 验证码加盐（sms_codes.salt 迁移 f1a2b3c4d5e6 + schema.sql）；通用限流中间件（core/ratelimit.py，Redis 固定窗口按 client_ip/user，覆盖 auth/ASR/搜索三域，IP 白名单 + trust_proxy + Redis 故障 MemoryStore 降级 + 置 RequestID 内侧保 429 带 X-Request-ID + 429 信封 RATE_LIMITED）；conftest autouse 默认关限流防跨用例 flaky
-- **G2 越权与纵深**：wechat 回调 timestamp 新鲜度窗口（±300s 防重放，GET/POST 双入口经 gateway verify 生效）；安全响应头 + 生产关 /docs（create_app()，docs/openapi/redoc_url 生产置 None）；/healthz 收敛为 {status:ok}；sync_pull limit（limit<1 或 >500 → 422 SYNC_001，errors.py 登记）
-- **门禁**：受影响域精准 113 passed（auth_g1/ratelimit/auth_db/security_p3/config_alias/techdebt_p0/wechat/security_g2/sync）+ single-flight node 4/4 + 快速门禁 EXIT=0；契约只增不减（openapi 45→46 仅 +logout；errors +SYNC_001）
-- **教训登记**：G2 14:30 --full 失败为共享工作树混合在途代码假象（G1 未提交 + DB 未迁移）+ healthz 字段断言未同步 → 已登记 lessons 并解除阻断（集成先合并再复验、字段契约同步断言）
-- **遗留登记**：REFRESH_TOKEN_HMAC_KEY 生产部署需在 Infisical/.env 配独立强随机密钥；限流阈值/白名单按部署环境复核
-- 推送：progress.md + lessons.md 集成提交后 push develop，CI 复验中
+✅ techdebt/g1（67f50f1，22 文件）+ techdebt/g2（1563cde，7 文件）合入 develop：G1 = refresh single-flight//auth/logout/HMAC 哈希/加盐/限流中间件（详见 G1 速查卡）；G2 = wechat 回调 timestamp ±300s 防重放（GET/POST 双入口）+ 安全响应头+生产关 /docs（create_app）+ /healthz 收敛 {status:ok} + sync_pull limit 422 SYNC_001；受影响域精准 113 passed + single-flight node 4/4；契约只增不减（openapi 45→46 仅 +logout）｜设计来源：重构批次 G 提示词（R6/R7）
+- 遗留登记：REFRESH_TOKEN_HMAC_KEY 生产部署需在 Infisical/.env 配独立强随机密钥；限流阈值/白名单按部署环境复核
 
-## 🚀 客户端第二波 · 首批交付（2026-08-24 晚 · W5 起）
+## ✅ 速查卡 · 客户端第二波 · 首批交付（2026-08-24 晚 · W5 起）
 
-**状态**：S-SY-1 / S-SY-2 / S-AG-1 / S-AG-2 ✅（含真机验证）；剩余 S-XV/S-SY-4/5/6/S-ST/S-MO 按依赖序推进
+✅ 后端 S-SY-1 /api/v1/events/sync（client_event_id 幂等+部分唯一索引兜底+越权校验+L1 落库 generated_by=device+offline_queue 变更日志+云侧补 L2/L3 候选）+ S-SY-2 aggregate_user 重构（默认 mode="l2l3" 云侧只跑 L2/L3）+ 迁移 a1b2c3d4e5f6；test_event_sync 7 项+test_agg_reference 4 项（pytest 234 passed）
+✅ 客户端 S-AG-1 UTS ST-DBSCAN 算法层（client/utils/agg/：agg_config.uts 参数单一来源/st_dbscan.uts/pipeline.uts 连拍折叠+GPS 漂移置空）+ S-AG-2 AGG-016 一致性（scripts/gen_agg_fixtures.py Python 同参双跑→fixtures.uts 10 用例 57 照片 + pages/debug/agg-check 自检页），nova 11 真机自检 10/10 PASS｜设计来源：docs/parallel-dev/ 帧卡（B3-6/S-AG-1/2）+ AGG-016 参考实现
 
-### 后端（S-SY-1/2 全绿 · pytest 234 passed）
-1. **S-SY-1 `POST /api/v1/events/sync`**（B3-6 端侧 L0/L1 真值落云）：client_event_id 幂等（同用户部分唯一索引兜底并发）+ 照片归属校验（越权整条 rejected）+ 落库 L1（generated_by=device）+ 变更日志写 offline_queue（其他端增量拉取可见 → M4 端间一致）+ 受影响照片云侧补 L2/L3 候选
-2. **S-SY-2 aggregate_user 重构**：默认 mode="l2l3"（云侧只跑 L2/L3，caption/CI 打标保留 _process_photo；L1 由端侧提交）；mode="full" 保留第一波全量管线作基线迁移；修复 _write_upper_candidates 幂等检查按 level>=2（照片挂 L1 不再拦截 L2/L3 候选）
-3. **迁移**：events.client_event_id 列 + uq_events_user_client_event 部分唯一索引（alembic a1b2c3d4e5f6 已应用）
-4. **测试**：test_event_sync.py 7 项（幂等/越权/空列表/落库+变更日志/L2 触发/重发不重复/API+时间轴/并发唯一索引兜底）+ test_pipeline 聚合契约更新（云侧不再自动建 L1；full 模式基线回归）+ test_agg_reference.py 4 项（参考端语义锁）
+## ✅ 速查卡 · 真机 E2E 全链路验收（2026-08-24 下午 · nova 11 FOA-AL00）
 
-### 客户端（S-AG-1/2 ✅ 真机 10/10）
-5. **S-AG-1 UTS ST-DBSCAN 算法层**（client/utils/agg/）：agg_config.uts（参数单一来源 ↔ pipeline.py AGG_CONFIG）/ st_dbscan.uts（Photo/DayCard/haversineM/stDbscan/l1DailyAggregate，时区偏移参数化）/ pipeline.uts（RawPhoto/preprocess：连拍折叠+GPS 漂移置空）——纯计算层，无平台依赖
-6. **S-AG-2 AGG-016 一致性**：scripts/gen_agg_fixtures.py（Python 同参双跑 → 生成 fixtures.uts 10 用例 57 照片）+ pages/debug/agg-check 自检页（逐用例比对簇成员集合+日卡片）
-7. **真机验证（nova 11）**：HBuilderX 编译成功 → 实机运行自检页 **10/10 PASS**（连拍折叠/两天两簇/散片稀疏/无 GPS 归组/深夜归属/漂移修正/稀疏多天/单张/UTC 日界/30 张规模）——截图证据 .cowork-temp/agg7.png
-8. **恢复**：临时导航开关已回退（config.ts AGG_CHECK_ON_DEVICE=false），设备已恢复首页
+✅ 全链路通（B-UT/B-UP/B-F8/B-VA）：相册监听（ContentObserver）→ 游标去重 → 4s 静默窗口攒批 → multipart 上传 → 后端 EXIF → 云侧聚合 → F8 时间轴渲染｜当场修复四问题：首扫全量上传 9319 张存量相册隐私红线（游标初始化到 max(id)）、scan_file 不提取 EXIF（后端 PIL 权威解析）、并发双 ensureLogin 撞 devices 唯一约束（IntegrityError 兜底+客户端单飞）、fake 存储 512MB 上限误伤｜空状态/时间轴渲染截屏验证符合视觉规范；后端 EXIF 真值 taken_at=08-22(40)/08-23(10)｜设计来源：验收清单 B 系列 + 视觉规范 v1
+- 遗留说明（保留原叙述）：手机时钟/时区错乱→日标签偏移（设备时间正常后自愈，非代码缺陷）；L2 语义归并待真实数据（P2-07 已知）；30s 门禁服务端链路 4.2s+5.6s 单进程验证，设备侧受 WiFi/扫描节奏影响
 
-### 教训登记
-docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现再写断言）
+## ✅ 速查卡 · 客户端第一波（2026-08-24 · W3）
 
-### 下一批（按依赖序）
-- S-AG-3 Kotlin 桥接（相册读取/EXIF/定位 → 算法层输入）→ S-AG-4 增量触发
-- S-XV XView（SQLCipher 5 表 + 迁移 + 轻量 DAO）
-- S-SY-4/5/6 客户端同步协议（op_log 队列/退避/三路触发/LWW）
-- S-ST-1 STS 直传分片；S-MO-1 手动操作 UI
-
-## 📱 真机 E2E 全链路验收（2026-08-24 下午 · nova 11 FOA-AL00）
-
-**链路已全通**：相册监听（ContentObserver）→ 游标去重 → 4s 静默窗口攒批 → multipart 上传 → 后端 EXIF → 云侧聚合 → F8 时间轴渲染 ✅
-
-### 验收证据（B-UT/B-UP/B-F8/B-VA）
-1. **编译**：HBuilderX 5.15 CLI 全量编译通过（纯 UTS 插件 + utils + 页面，~30s/轮，多轮迭代修复）
-2. **运行**：标准调试基座安装→同步→启动成功（onLaunch 3s，页面渲染 234ms）
-3. **空状态**（B-F8-3）：截屏验证——标题/副标题/插画/文案/CTA 按钮，配色符合视觉规范 ✅
-4. **真实上传**：50 张测试照片 → 观察者分批发现（found 4/1/...）→ 上传 200 OK → 自动刷新时间轴 ✅
-5. **EXIF 真值**：后端 PIL 提取 DateTimeOriginal 覆盖客户端时间 → contents taken_at = 08-22(40)/08-23(10) ✅（曾实测 scan_file 污染 DATE_TAKEN → 后端 EXIF 修复）
-6. **时间轴渲染**（B-F8-1）：截屏验证 L1 日卡片（“2026-08-22 · 1条 / 40 张照片”等）双卡片结构正确、视觉规范落地 ✅
-7. **隐私防护**：首扫游标初始化到 max(id)（不导入存量相册）——事故教训已修复并验证（只收新照片）
-
-### 真机暴露问题（已修 + 教训登记）
-1. 首扫全量上传 9319 张存量相册（隐私红线）→ 游标初始化修复
-2. scan_file 不提取 EXIF → 后端 EXIF 权威解析（新增 pytest：EXIF 覆盖客户端时间）
-3. 并发双 ensureLogin 撞 devices 唯一约束（后端 500）→ _issue_tokens IntegrityError 兜底 + 客户端单飞
-4. fake 存储 512MB 容量上限触发（防护生效，误伤后续上传）→ 重启进程即恢复；真实联调用 minio/cos
-5. 标准基座权限以基座 manifest 为准；SDK31 用 READ_EXTERNAL_STORAGE（pm grant 验证）
-
-### 遗留说明
-- 手机时钟/时区错乱（设备显示 08-25 05:00）→ 日标签偏移一天；设备时间正常后自愈（非代码缺陷）
-- L2 语义归并待真实数据（P2-07 已知）；L2 候选结构在 50 张全链路验证中已存在
-- 30s 门禁：服务端链路 4.2s 上传 + 5.6s 管线（单进程验证）；设备侧受 WiFi/扫描节奏影响，观察者分批触发（4s 窗口）
-- 设备上测试照片目录已清理；后端 dev-client 测试用户数据已清
-
-## 🚀 客户端第一波（2026-08-24 · W3）
-
-**状态**：后端交付完成 ✅ / 客户端代码全部就绪（待 HBuilderX 编译 + 真机验收）
-
-### 后端（B-BE-1/2/3 ✅ 全绿）
-- 新增 `POST /api/v1/contents/upload`（multipart file + meta JSON）→ storage 存原件（cos_key）→ contents 落库（photo/processing）→ enqueue_high(process_content)；复用 409 去重 / moderate 护栏 / source 白名单 / GPS 边界
-- 校验：图片类型白名单（jpg/jpeg/png/webp/heic/heif）、空文件 422、超 20MB 413、坏 meta 422
-- 测试：`backend/tests/test_content_upload.py` 9 项新增全过（成功/去重/未授权/类型/空文件/超限/坏 meta/护栏/HEIC）
-- curl 冒烟：上传 200 → 落库；重复哈希 409 CONTENT_002 ✅
-- 全链路单进程验证（`.cowork-temp/verify_wave1_server_chain.py`）：50 张生成照片 → upload 4.2s → 管线 5.6s → timeline L1=3 日卡片（20/15/15 与真值一致）✅；L2 候选存在（cloud-proto，语义归并待真实数据，P2-07 已知）
-
-### 客户端（B-CL/B-UT/B-UP/B-F8 代码就绪，编译/真机待峰宝）
-- `client/` uni-app x 工程：manifest/pages/main.uts/App.uvue + pages/index/index.uvue（F8 时间轴）
-- utils：config.ts（baseURL 开关）/ auth.ts（mock 登录 + EncryptedSharedPreferences + 401 refresh）/ api.ts（统一请求+错误映射+全局 toast）/ uploader.ts（并发≤3+重试2+进度）/ timeline.ts（ISO 解析+日期分组）
-- uni_modules/yishu-photo-watch：UTS 插件（Hybrid Mode）——PhotoObserver.kt（ContentObserver + 游标去重 + 4s 静默窗口攒批）、SecurePrefs.kt（EncryptedSharedPreferences）、index.uts 桥接
-- 视觉规范 v1 落地：相纸白 #F6F1E7 / 墨褐 #3A2E25 / 锈红 #B05A3A、衬线标题、撕边卡片+底部投影、空状态（空白相纸 SVG）
-- `scripts/generate_test_photos.py`：50 张带 EXIF 拍摄时间测试照片（3 天 4 片段，L1/L2 真值已知），--push 注入 MediaScanner
-
-### Harness
-- ruff.toml 排除 client/；review_agent 三处扫描（syntax/secrets/todos）加 `_skip_path`（client 非 Python 工具链，B2 决策）
-- feature_list.json：F1/F8 置 in-progress + 证据更新
+✅ 工程骨架+首链路：client/ uni-app x 工程（manifest/pages/main.uts/App.uvue + pages/index/index.uvue F8 时间轴）｜utils 五件：config.ts（baseURL 开关）/auth.ts（mock 登录+EncryptedSharedPreferences+401 refresh）/api.ts（统一请求+错误映射+全局 toast）/uploader.ts（并发≤3+重试2+进度）/timeline.ts（ISO 解析+日期分组）｜uni_modules/yishu-photo-watch UTS 插件（PhotoObserver.kt ContentObserver+游标去重+4s 攒批、SecurePrefs.kt EncryptedSharedPreferences）｜视觉规范 v1（相纸白 #F6F1E7/墨褐 #3A2E25/锈红 #B05A3A、衬线标题、撕边卡片、空状态 SVG）｜scripts/generate_test_photos.py（50 张带 EXIF，3 天 4 片段 L1/L2 真值已知）｜后端 POST /api/v1/contents/upload（multipart+meta→cos_key→contents→enqueue_high；9 测试+curl 冒烟）+ 50 张单进程全链验证（上传 4.2s+管线 5.6s）｜Harness：ruff.toml 排除 client/、review_agent _skip_path、feature_list F1/F8 in-progress｜设计来源：docs/parallel-dev/ 帧卡（B-BE/B-CL/B-UT/B-UP/B-F8）+ 视觉规范 v1
 
 ### ⛔ 阻塞/待办（需峰宝/设备）
 1. ~~nova 11 adb unauthorized~~ ✅ 已授权（2026-08-24 下午真机 E2E 全链路验收完成）
@@ -373,42 +135,12 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 
 ## 📌 历史快照 · 当前状态（2026-08-20）——已被 2026-08-28 收尾终版取代（见文件头速览）
 
-**质量门禁**：pytest 215 passed（14 deselected，覆盖率 75.20%，2026-08-21 00:42 全量证据）｜ruff 全绿｜review_agent 全绿（2026-08-24 修复 research 段模块路径后恢复）｜教训登记 hook 生效
+✅ 三方审查修复 51 项 checklist（2026-08-20）：P0 安全+数据正确性 7/7（上传 IDOR 归属/护栏 URL 早退/wechat 鉴权/搜索 epoch 秒 payload/caption 先下载/mock 转写生产拒绝/护栏未配 key 默认拒发[用户拍板]）+ P1 技术债 17/17（时间 500/分片校验/CORS/纠错噪音闸门/错误契约/N+1/长录音 VAD 分段等）+ P2 架构重构 7/7（推理移 worker/worker 拆分 services/pipeline.py/单例收敛/Alembic 落地/asr 域游标统一/L2L3 候选落库+以图搜图接线）+ P3 顺手清理（死依赖/死代码/conftest.py/fake 容量上限）+ 设计文档同步（OpenAPI 契约异步化节/MVP方案_v3 变更记录）｜设计来源：review-report.md/refactor-plan.md（已归位 docs/）
+> ⚠️ P2-07 L2/L3 为候选级 draft 落库（generated_by=cloud-proto），LLM 语义归并待真实数据到位（**仍未闭环**）
 
-**测试/基础设施**：PG/Redis/Qdrant 本地运行中（Docker 重启后需手动 `docker start yishu-redis yishu-qdrant`）；BGE-M3 / SetFit / reranker-v2-m3 本地模型就绪；新增 webrtcvad-wheels（长录音分段）
+### ✅ 已完成功能（对照 MVP F1-F9，2026-08-20 时点，后端域）
 
-### 🔧 三方审查修复（2026-08-20 · 51 项 checklist）
-
-**P0 安全+数据正确性（7/7 ✅）**：上传 IDOR 归属校验｜敏感词护栏 URL 早退绕过｜wechat/delete 鉴权｜搜索时间过滤 epoch 秒 payload（Qdrant 实测修复）｜照片 caption 先下载再调用｜mock 转写生产拒绝入库｜护栏未配 key 默认拒发（用户拍板）
-
-**P1 技术债+偏离（17/17 ✅）**：同步 naive/aware 时间 500｜分片大小校验｜mock 凭证生产 501｜并发 IntegrityError 竞态｜CORS 白名单｜回响敏感双查（用户拍板：标记+LLM）｜纠错三道噪音闸门（≥3 次一致/3 天回改）｜错误契约统一 ApiError｜常量去重(sync_common/标签词表)｜模型路径 CWD 独立｜N+1 修复(时间轴/merge/回响)｜队列优先级(voice/photo 高优)｜敏感词打码映射修复｜server_version 用户级游标｜updated_at onupdate+interview 单事务｜长录音 VAD 分段(webrtcvad)｜测试质量(恒真断言/SetFit 评估口径)
-
-**P2 架构重构（7/7 ✅，2026-08-20）**：推理移 worker（classify/arbitrate 异步+job 轮询，search 并发信号量）｜worker 拆分（process_content 下沉 services/pipeline.py）｜research 包边界（event_aggregation 移入 backend，删 sys.path hack）｜单例收敛（security 函数内读/correction Qdrant 统一/fake 容量上限+reset）｜Alembic 落地（ORM 唯一权威，check 零漂移，FinetuneJob 纳入 ORM，遗留空表收敛）｜前缀/游标统一（asr 域拆分+guard 独立，删 cursor 死字段）｜事件 L2/L3 候选落库 + 以图搜图 image_vec 生产接线
-
-> ⚠️ P2-01 待办（用户确认时要求）：同步改设计文档（MVP方案_v3/B2/B5a）与 OpenAPI 契约（classify/arbitrate 改异步）
-> ⚠️ P2-07 L2/L3 为候选级 draft 落库（generated_by=cloud-proto），LLM 语义归并待真实数据到位
-
-**P3 顺手清理（部分完成 2026-08-20）**：未用依赖已删（openai/slowapi/datasketch/passlib/bcrypt/python-dotenv）｜死代码已删（token_is_valid/_PRESET_SENSITIVE_WORDS/_rule_check）｜conftest.py 建立（27 测试文件 sys.path 样板清除）｜storage fake 容量上限+reset。暂缓：状态枚举化（DB 迁移风险）、22:00 调度固化（待部署决策）、rag 测试 collection 隔离（待 CI 决策）
-
-**设计文档同步（2026-08-20，P2-01 契约变更）**：OpenAPI契约.md 新增「分类与裁决」异步化节（变更前→原因→变更后）+ ASR 域拆分说明 + 39 路径；MVP方案_v3.md 新增「实现变更记录」节（4 项技术变更）；开发决策清单 #9 补落地注记；docs/openapi.json 已重新导出（39 路径）
-
-> 详见 [review-report.md](file:///D:/GuangH-App/review-report.md) 与 [refactor-plan.md](file:///D:/GuangH-App/refactor-plan.md)
-
-### ✅ 已完成功能（对照 MVP F1-F9）
-
-| 功能 | 状态 | 说明 |
-|---|---|---|
-| F2 文字碎片输入 | ✅ 后端 | SetFit 5 类分类（classify_batch）+ 内容入库管线 |
-| F3 语音输入 | ✅ 后端 | FunASR 云端真实转写 + 本地 CPU SenseVoiceSmall 声学情绪 + 多格式解码 + 入库管线 |
-| F4 分类纠错 | ✅ 后端 | 三层裁决 + 共性纠错微调流水线（≥50 触发） |
-| F5 描述性搜索 | ✅ 后端 | BGE-M3+Qdrant RRF + NER + mixed 融合 + 以图搜图 + reranker-v2-m3；RAG 门禁 hit_rate@3=0.8182 / route_acc=1.0 / temporal_acc=1.0；文字搜图 hit_rate@3=1.0 |
-| F7 冷启动访谈 | ✅ 后端 | interview API + 画像扩展队列 |
-| P2 回响机制 | ✅ 后端 | 去年今日 + 敏感排除 + 每天≤1 |
-| B4 数据同步 | ✅ 后端 | LWW/软删/幂等/COS 分片续传/对账 |
-| 推送消息中心 | ✅ 后端 | messages + 复盘 22:00 + mock 通道 |
-| 微信"找" | ✅ 沙箱 | 消息解析→RAG→回复（真实企微凭证待办） |
-| 事件聚合 | ✅ 后端 | L1 日卡片落库 + 用户手动 merge/split/confirm |
-| 护栏 | ✅ 后端 | 开源词库 4 类 + 网址黑名单 1.45w + 号码打码 + LLM 检测 + contents 入库接线 |
+✅ F2 文字碎片/SetFit 分类｜F3 FunASR+SenseVoice 语音｜F4 三层裁决纠错｜F5 BGE-M3+Qdrant 描述性搜索（hit_rate@3=0.8182）｜F7 冷启动访谈｜P2 回响｜B4 LWW 同步/分片续传/对账｜消息中心+22:00 复盘｜微信"找"（沙箱）｜事件聚合 L1+手动 merge/split/confirm｜护栏（词库+网址黑名单+打码+LLM）——均为后端域 ✅，文件与方法细节见同期 git 历史与 review-report.md
 
 ### 📋 待办（后端可继续做 / 等团队数据）
 
@@ -435,150 +167,61 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 
 ## 最近会话日志
 
-## 2026-08-24 · 远程仓库核对 + review_agent 修复 + 文档台账清理
+## ✅ 速查卡 · 2026-08-24 · 远程仓库核对 + review_agent 修复 + 文档台账清理
 
-**已交付**：
-1. **远程仓库核对**（origin=zqhmy1234/YSGH-APP）：远程仅 main 分支，HEAD=3869111「MVP 后端全量交付（单提交快照）」，与本地 develop 同 commit，无他人新增修改；本地 7 个 feature/m1-* 分支与 tag v0.1.0-sprint1 均未推送
-2. **review_agent research 段修复**：test_agent.py run_research_validation 仍用旧路径 `research.event_aggregation`（P2-02 迁入 backend 后残留）→ 改 `app.services.event_aggregation.run_validation`；`--only research` 实测全过（497 张基准，EXIT=0）
-3. **文档台账清理**：pytest 数字统一为 215 passed（210/203/145 均为过期值）；去除 progress.md 重复标题；lessons.md 重复标题清理；feature_list/session-handoff 同步
+✅ 远程核对：origin=zqhmy1234/YSGH-APP 仅 main @ 3869111「MVP 后端全量交付」与本地 develop 同 commit，无他人改动｜review_agent research 段修复：test_agent.py run_research_validation 旧路径 `research.event_aggregation` → `app.services.event_aggregation.run_validation`（--only research 全过）｜台账清理：pytest 数字统一 215 passed/重复标题清理/feature_list·session-handoff 同步｜设计来源：.cowork-temp/test-report.json 证据核查
+## ✅ 速查卡 · 2026-08-25 · 本地声学情绪检测完成
 
-**发现并记录**：.cowork-temp/test-report.json（8-21 00:42）显示 review_agent 上次实际 passed=false（research 段 blocking），与文档"全绿"表述不符——本次已修复根因。
-## 2026-08-25 · 本地声学情绪检测完成
+✅ SenseVoiceSmall-onnx 本地 CPU 情绪通道（替代过时云端 sensevoice-v1 WAV 降级）：FFmpeg 统一解码 M4A/MP3/AAC/WAV→16kHz 单声道 float32 PCM｜7 类 logits 计算情绪置信度（<0.7 只记录不触发），独立保存 emotion_confidence/source/model/actionable（不再误存 ASR 置信度）｜降级边界：情绪失败留 sensevoice_emotion:* 审计但不抹真实转写，数字静音返回 no_speech｜生产 mock 护栏 MOCK_DISABLED｜真实验证：5 秒 M4A FunASR 转写+本地推理「平静」conf≈0.8741；定向测试 40 passed｜设计来源：B5a 语音设计；资产登记 backend/models/README.md
 
-**已完成**：
-1. **真实情绪通道**：移除过时的云端 `sensevoice-v1` WAV 降级实现，接入官方 `iic/SenseVoiceSmall-onnx` 量化模型，本地 CPU 4 线程懒加载；FunASR 云端转写成功后独立执行情绪增强，云端失败时 SenseVoice 仍可作为本地转写降级。
-2. **常见格式统一输入**：使用随依赖安装的 FFmpeg，将 M4A/MP3/AAC/WAV 等统一解码为 16kHz 单声道 float32 PCM，不再只有 WAV 能进入情绪检测。
-3. **可信置信度与落库**：从 SenseVoice 富转写第二个情绪查询位的 7 类 logits 计算情绪置信度；独立保存 `emotion_confidence/source/model/actionable`，不再把 ASR 文本置信度误存为情绪置信度；低于 0.7 只记录、不标记为可触发。
-4. **降级边界**：情绪模型失败会留下 `sensevoice_emotion:*` 审计错误，但不会抹掉已成功的云端真实转写；数字静音仍直接返回 `no_speech`，不产生情绪。
-5. **生产 mock 护栏**：生产环境即使误开全局 mock，也会返回 `MOCK_DISABLED`，不会生成或保存假转写。
+## ✅ 速查卡 · 2026-08-24 · ASR 多格式与入库状态收口
 
-**真实验证**：同一条 5 秒 M4A 已分别完成 FunASR 云端转写和 SenseVoiceSmall 本地 CPU 推理；本地判定为“平静”，情绪置信度约 `0.8741`。个人 Key 仅通过临时进程环境使用，未写入工作区或持久环境。
+✅ Fun-ASR Flash 主通道（fun-asr-flash-2026-06-15 Data URI，AAC/AMR/FLAC/M4A/MP3/OGG/OPUS/WAV/WebM/WMA 十格式）+ 四态状态语义（succeeded/no_speech/failed_retryable/failed_final，失败写 content.status=failed+审计，消灭"无文本但 done"假完成）+ VAD 分段（内部长 WAV 单段≤4 分钟，>8MB 压缩音频要求切分/转 WAV）+ 可审计字段（模型/通道/供应商 request id/SHA-256/usage/segments/errors）+ 生产不降级 mock｜验证：ASR 服务/API 23 项+语音入库 5 项+内容 API 8 项（monkeypatch，未做真实线上转写回归）｜设计来源：B5a 语音设计 + 状态语义四态口径
+- 待验收（未闭环）：配置临时 Key 后用真实多格式/空白录音/限流断网做线上验收；真实 WER 需团队 20-50 段标注录音校准
 
-**回归**：ASR/API + 语音入库 + 内容接口定向测试 `40 passed`；相关文件 ruff、py_compile 全绿。模型缓存与兼容分词资产已登记到 `backend/models/README.md`。
+## ✅ 速查卡 · 2026-08-20 02:5x · 教训强制 Hook + 生产兜底待办开发
 
-**提交状态**：音频范围验证与提交准备已完成；提交状态以 `git log/status` 为准，尚未 push。
-
-## 2026-08-24 · ASR 多格式与入库状态收口
-
-**已完成**：
-1. **主通道升级**：接入 Fun-ASR Flash（`fun-asr-flash-2026-06-15`）Data URI 调用，支持 AAC/AMR/FLAC/M4A/MP3/OGG/OPUS/WAV/WebM/WMA；保留 WAV 的 SenseVoice 情绪降级通道。
-2. **输入与长录音**：API 上传保留 8MB 上限；内部对象存储的长 WAV 允许进入 VAD 分段，单段最长 4 分钟；超过 8MB 的压缩音频明确要求切分或转 WAV，不再误走长录音逻辑。
-3. **状态语义修复**：正常文本为 `succeeded`；数字静音或供应商明确空文本为 `no_speech`；缺 Key、网络/限流/供应商异常为 `failed_retryable` 或 `failed_final`。失败会写入 `content.status=failed` 和审计信息，不再出现“无转写文本但 done”的假完成。
-4. **可审计与安全**：保留模型、通道、供应商 request id、音频格式、源文件 SHA-256、usage/segments/errors；生产模式不再降级为 mock 假文本；API Key 仍只从环境读取，本次未填写或落盘。
-
-**验证**：ASR 服务/API 23 项通过；语音入库管线 5 项通过；内容 API 8 项通过；相关文件 ruff + py_compile 全绿。所有供应商交互均使用 monkeypatch，**本次未配置 DASHSCOPE_API_KEY，未执行真实线上转写回归**。
-
-**待验收**：配置临时 Key 后，用真实 M4A/WAV/MP3、空白录音、限流/断网场景做线上验收；真实 WER 仍需团队提供 20-50 段标注录音校准。
-
-**提交状态**：尚未 commit、尚未 push。仓库强制全量门禁的本次报告为 15 failed / 1 error（非 ASR 基线：缺 BGE-M3/SetFit 本地模型、PG 缺 pgvector、research 旧导入入口、同步测试清理残留等），且 review_agent 的缺 pytest 判断把真实失败误标为 skip。为避免绕过门禁，本次 ASR 改动保留在独立分支，需先单独修复团队门禁或补齐其数 GB 模型环境后再提交。
-
-## 2026-08-20 02:5x · 教训强制 Hook + 生产兜底待办开发
-
-**已交付**：
-1. **教训登记程序化强制**（用户要求非提示词级）：scripts/lessons.py（add/recent/check_lessons，epoch 时间戳防时区漂移）+ review_agent 集成——检查失败 → 写 last-failure.json；下次通过前未登记教训 → 阻断 commit（pre-commit 无法绕过）；docs/lessons.md 已登记 6 条实战教训；闭环验证通过
-2. **外部 API 统一重试封装**（AGENTS.md #13 教训落地）：services/external/retry.py with_retry（3 次指数退避 + 线程池超时 + 可重试异常判定 5xx/10053/网络类）；应用到 dashscope（_chat_text/image_caption）+ tencent_ci（打标/审核）；test_retry 10 项
-3. **事件用户手动操作接线**（B3-5/AGG-013）：merge（成员转移+源软删+confirmed）/ split（拆出建新事件）/ confirm（转正改标题）+ EventEditLog 记录 + API 三端点（原 501）；用户操作优先——操作后 confirmed 不再被算法改动；test_event_ops 7 项
-4. **环境修复**：Docker 引擎未起（redis/qdrant 容器重建）+ PG 伪死（残留进程+postmaster.pid）→ 全量测试大面积失败排查（教训已登记）
-
-**验证**：pytest 190 全过 + ruff 全绿 + review_agent 全绿。
+✅ scripts/lessons.py（add/recent/check_lessons，epoch 时间戳防时区漂移）+ review_agent 集成——失败后未登记教训阻断 commit（pre-commit 不可绕）｜services/external/retry.py with_retry（3 次指数退避+线程池超时+可重试异常判定）应用到 dashscope（_chat_text/image_caption）+ tencent_ci（test_retry 10 项）｜事件用户手动操作接线（B3-5/AGG-013）：merge/split/confirm 三端点（原 501）+ EventEditLog + confirmed 不再被算法改动（test_event_ops 7 项）｜pytest 190 全过｜设计来源：AGENTS.md #13 教训 + B3 设计 + 用户「程序化强制」要求
 **待办**：①语音 COS 下载接存储层（worker 已留接口）②photo 生产 caption 真实调用验证 ③corpus-A 61 张 caption 补齐 ④上线评测集（50 条真实查询，等团队）⑤RAG 门禁调优（hit_rate 0.6667→0.70）
 
-## 2026-08-20 02:00 · AI 管线接线 + 模型清理 + 生产兜底审计
+## ✅ 速查卡 · 2026-08-20 02:00 · AI 管线接线 + 模型清理 + 生产兜底审计
 
-**已交付（用户拍板：P0 文本/语音 → P1 图片 → P2 事件聚合一起接，用户无感知失败）**：
-1. **process_content 全类型管线**（worker.py）：text→SetFit 分类；voice→ASR 转写+分类；photo→caption+CI 打标；全部→事件聚合。每步独立 try/except 静默失败（status 仍 done，明细入 extra.error）——替代原占位实现
-2. **事件聚合落库**（services/events.py + Event/EventItem ORM）：调 research pipeline（L0+L1）写 L1 日卡片 + event_items；同日去重合并（增量触发不拆事件，E2E 实测 3 条→1 事件）；events API timeline 返回真实数据（原 501）；merge/split/confirm 仍 501
-3. **E2E 实测**：text 9.6s（分类 5s+索引 4s）、photo 0.8s；3 条同天内容 → 1 个 L1 事件 items=3
-4. **关键 bug 修复**：classifier.py 漏设 HF_HUB_OFFLINE=1 → worker 里先于 embedding 加载时联网卡死（huggingface.co 10s×5 重试×多文件 = 2min+）；SetFit 单条冷启动 27s（warmup），批量 5 条 27.6s 摊薄——已加 classify_batch
-5. **C 盘清理**：HF 缓存 8.6GB→2.2GB（删 bge-m3 旧 snapshot 2.2GB + incomplete 1.65GB + grounding-dino 1.8GB + bert-base 841MB + 3 空壳）——用户确认删除
-6. **模型资产清单**：backend/models/README.md（在用/可删/下载源/加载位置）；AGENTS.md 环境教训 18-22 条（HF 缓存机制/进程管理/下载纪律）
-7. **生产兜底审计**：docs/生产兜底审计与交付差距盘点_20260820.md（已有兜底 5 项 + 缺口：管线已补、外部 API 统一重试/超时未做、降级契约未定）
-
-**验证**：pytest 173 全过 + ruff 全绿 + review_agent 全绿。
+✅ process_content 全类型管线（worker.py，替代占位实现）：text→SetFit 分类 / voice→ASR 转写+分类 / photo→caption+CI 打标，全部→事件聚合；每步独立 try/except 静默失败（status 仍 done，明细入 extra.error）｜事件聚合落库（services/events.py + Event/EventItem ORM，L0+L1 写 L1 日卡片+event_items，同日去重合并，timeline 返回真实数据）｜关键修复：classifier.py 漏设 HF_HUB_OFFLINE=1 联网卡死 + SetFit classify_batch｜C 盘 HF 缓存清理 8.6GB→2.2GB + backend/models/README.md 资产清单｜pytest 173 全过｜设计来源：用户拍板（P0 文本/语音→P1 图片→P2 事件聚合，用户无感知失败）+ docs/生产兜底审计与交付差距盘点_20260820.md
 **待办**：①外部 API 统一重试封装（dashscope/CI/OCR）②events merge/split/confirm 用户手动操作 ③语音 COS 下载接存储层 ④photo 生产 caption 真实调用（现 mock）⑤corpus-A 61 张 caption 补齐
 
 
-## 2026-08-25 · RAG 指标提升落地（4 PR）+ LLM 改写调研修复 + 测评报告
+## ✅ 速查卡 · 2026-08-25 · RAG 指标提升落地（4 PR）+ LLM 改写调研修复 + 测评报告
 
-**状态**：commit 4d6fca3（前一轮）+ 本轮待提交｜门禁 PASS｜17 项相关测试 + ruff 全绿
+✅ P1-A 类目路由（规则词表→content_class 过滤+空结果回退，descriptive hit_rate@3 0.5→1.0）+ P0-B 显式相关口径（evaluate_retrieval_explicit，产品口径 recall@3=0.9167）+ P0-D 命中梯度（≥50% 词元 ×1.3/全命中 ×1.8，keyword precision@3 0.44→0.78）+ P1-B2 外部测试集（T2Ranking 70 查询/88 段，run_eval --external）——commit 4d6fca3｜LLM 改写门控修复：prompt v2（短关键词原样返回）+ 双路 eff_filters + 类目路由跑原始查询 + 路由固定规则版 + llm_rewrite_enabled 默认开｜指标：B+C hit_rate@3 0.7273→0.9091、mrr 0.85；EXT recall@3=0.8857｜交付 docs/RAG测评报告_20260825.md + docs/README 索引｜设计来源：RAG 测评报告（review 委员口径）
 
-### RAG 提升落地（commit 4d6fca3）
-1. **P1-A 类目路由**（规则词表 → content_class 过滤 + 空结果回退）：descriptive 层 hit_rate@3 0.5→1.0
-2. **P0-B 显式相关口径**：evaluate_retrieval_explicit + 6 条查询补显式 id → 产品口径 recall@3=0.9167
-3. **P0-D 命中梯度**：≥50% 词元 ×1.3 / 全命中 ×1.8 → keyword precision@3 0.44→0.78
-4. **P1-B2 外部测试集**：T2Ranking 抽取 70 查询/88 段（≥60 达标），run_eval --external
-5. **指标**：B+C hit_rate@3 0.7273→0.9091、mrr 0.66→0.85、ndcg 0.42→0.84；EXT recall@3=0.8857、hit_rate@3=0.9143
+## ✅ 速查卡 · Wave 1 集成完成（2026-08-26 03:20）
 
-### LLM 改写调研与修复（本轮，待提交）
-- **现象**：替换式改写伤害（EXT recall 0.886→0.75，9/10 短查询被无谓改写）
-- **调研结论**：改写应是【有门控 + 加性】不是替代；双路召回首个实现有接线 bug（原查询路误用回退前 filters → 恒空）
-- **修复**：①prompt v2 门控（短关键词原样返回，只改错字/口语/描述性）②双路用 eff_filters（最后一次成功搜索的过滤器）③类目路由跑原始查询④路由固定规则版（LLM 路由误判"灯"为 image）⑤llm_rewrite_enabled 默认开
-- **验证（探针，未跑全量）**：EXT 8 查询 LLM 模式 7/8 = 规则基线；合成集 6 条全 HIT；买牛乃→买牛奶纠错生效
-- **附带修复**：dashscope 403（User 环境变量残留旧 key 覆盖 .env + SDK 不读 settings → _ensure_api_key）
+✅ wave1-agentA（B2 搜索 786f134）+ wave1-agentC（B5b 护栏 23b55f4）合入 + 集成接线（main.py 注册 profile_sensitive_router / photo 首入库 payload 后补刷新 vector_store.update_payload+build_payload / 搜索·以图搜图规则级敏感过滤 filter_sensitive_rule）｜真实 bug 修复：检索阶段 _to_filter 缺 user_id 全库召回跨用户污染（+回归测试）｜312 passed + api_smoke 6/6 + review_agent 全绿｜设计来源：docs/parallel-dev/00-02 任务卡（B2/B5b）
+- 待 key/环境：corpus-A 2 张 0 字节/审查拒绝；Qwen3-VL-Embedding 图片塔待开通（现 caption 路径+缓存）；NER LLM 兜底默认关
 
-### 交付
-- docs/RAG测评报告_20260825.md（测评全流程/数据构成/结果/发现）
-- docs/README.md 文档索引（第一轮整理）；refactor-plan/review-report 归位 docs/
+## ✅ 速查卡 · Wave 2 集成完成（2026-08-26 06:30）
 
-## Wave 1 集成完成（2026-08-26 03:20）
+✅ wave2-agentD（B3 云侧 7e8c142：L2 地点域连续 5km/12hr + LLM 归并裁决 qwen 真实通道验证 + L3 7 天窗/生命周期 + 封面选择人脸→质量→时间 + GPS 漂移 + confirmed 保护 + 增量先匹配后分裂 + OCR 内容维 + 15 新测试）+ wave2-agentE（B3 端侧+UI ae801a7：30min 保守开关 + 预处理去重 + L2 待确认区 UI + 封面/反向入口 + 30s 验收埋点 + AGG 双跑 14 用例 + 8 API 测试）+ 接线 fe1b376（云侧 AGG_CONFIG 对齐端侧 conservative_mode）｜341 passed｜设计来源：docs/parallel-dev/03-05 任务卡（B3）
+- 待办：Content.extra quality_score/face_count 无写入方（内容管线未接腾讯 CI 人脸标签，封面选择回退时间居中）——记录待后续
 
-- 两个并行 worktree（wave1-agentA / wave1-agentC）开发完成并经 review_agent 门禁（各自域内 62/68 passed）
-- 集成 Agent merge：786f134（A B2 搜索）+ 23b55f4（C B5b 护栏，lessons 冲突保留两边）
-- 集成接线：main.py 注册 profile_sensitive_router；photo 首入库 payload 后补刷新（vector_store.update_payload + pipeline_ext.payload.build_payload + pipeline.py 逆地理后一行）；搜索/以图搜图规则级敏感过滤（filter_sensitive_rule，B5b-1 🟢 转交项闭环）
-- 集成后全量：312 passed（基线 281 + 新增 31）+ 14/17 deselected（rag 重测试）+ api_smoke 6/6 + review_agent 全绿
-- 真实 bug 修复（A 发现）：检索阶段用户隔离缺失（_to_filter 无 user_id → 全库召回跨用户污染）——已修复并加回归测试
-- 待 key/环境：corpus-A 2 张 0 字节/审查拒绝；Qwen3-VL-Embedding 图片塔待开通（现 caption 路径 + 缓存）；NER LLM 兜底默认关
+## ✅ 速查卡 · Wave 3 集成完成（2026-08-26 14:30）
 
-## Wave 2 集成完成（2026-08-26 06:30）
-
-- 两个并行 worktree（wave2-agentD B3 云侧 / wave2-agentE B3 端侧+UI）开发完成并验收；Agent F（M1 补遗）仍在开发中（wave2-agentF worktree，基线 ab11507，与 D/E 文件域零重叠，不阻塞本次集成）
-- 集成 Agent merge：7e8c142（D：L2 地点域连续 5km/12hr + LLM 归并裁决（qwen 真实通道验证通过）+ L3 7 天窗/生命周期 + 封面选择（人脸→质量→时间）+ GPS 漂移完善 + confirmed 保护 + 增量先匹配后分裂 + OCR 内容维 + 15 新测试）+ ae801a7（E：30min 保守开关 + 预处理去重 + L2 待确认区 UI + 封面/反向入口 + 30s 验收埋点 + AGG 双跑 14 用例 + 8 API 测试；lessons 冲突保留两边三条记录）
-- 集成接线（fe1b376）：云侧 AGG_CONFIG 对齐端侧 30min 保守开关（conservative_mode → l0_eps_t_sec()，显式传参不受影响）；main.py 已含 event_items_router（E 在分支内注册，merge 保留）；修复 D 合并代码 B905 zip strict= lint（ruff 版本漂移，登记教训）
-- 集成后全量：341 passed 基线（见 fullgate-wave2.log）
-- 待办：Content.extra quality_score/face_count 无写入方（内容管线未接腾讯 CI 人脸标签，封面选择回退时间居中）——记录待后续；DASHSCOPE key 已配置，L2 归并真实 qwen 通道验证通过；托管护栏 llm_ops/guard_managed 待 Wave 2 F 实现
-
-## Wave 3 集成完成（2026-08-26 14:30）——下一步 Wave 4
-
-- 四个并行 worktree 全部完成并集成：F（M1 补遗，690596b）+ G（B4 后端，feb3a09）+ H（B4 客户端，0899ba6）+ I（B1 画像，1f958fe）；lessons.md 冲突 3 次均保留两边记录
-- 集成接线（f85a393）：main.py 注册 thumbnails_router（G）+ index.uvue 接 UploadStatusBanner 一行（H）+ 新迁移 c7d8e9f0a1b2（I 遗留项：profile_l2_evidence FK 补 ON DELETE CASCADE，dev 实删用户验证级联生效）+ schema.sql 同步
-- 顺手修复（用户授权）：lessons.py 台账日期固定 Asia/Shanghai（原 Python 运行时 localtime=UTC 慢 8 小时，标题日期混乱）+ 新增 docs/项目API密钥清单与获取.md（用户要求：必须写明白项目所需 API key 怎么获取、有哪些——config.py 为准全清单+获取途径+状态+别名，总纲挂链接）+ 登记对应教训
-- 全量门禁：**420 passed**（350 基线 + F 29 + G 23 + I 25）+ 19 deselected + 覆盖率 78.46% + api_smoke 6/6 + research 18 场景，review_agent --full 全绿
-- F 关键成果：LLM 精排第二层（仅真实判定换序，mock 原序）+ 托管护栏 qwen_response_check（moderate 托管优先 chat 兜底）+ 50 条真值评测集（hit_rate@3=0.8571；负样本误召回率 0.5714 真实缺口，待采集语料重校）+ 改写层 11/11
-- G 关键成果：缩略图管线（PIL→thumbnail_key→GET 端点懒生成）+ upload_mode/on_wifi 流量约束 + 微信媒体下载→COS + 30 天清理 job + COS 开通验证文档
-- H 关键成果：sync_client 字段级同步（六字段队列/op_id 幂等/增量拉取/reconcile/2h 定时）+ 流量约束（WiFi 原图/蜂窝暂缓）+ 指数退避 + 批量暂停/一键继续 + UploadStatusBanner（真机待补项归 Wave 4）
-- I 关键成果：枚举集 JSON 收尾入 git（L0 51 维全补 values_detail + L1 193 维 phrase/disclosure）+ profile_schema 加载器 + annotate 真实/mock 同构 + profile_annotator（双门槛/池/节流/查重/历史裁剪/证据锚点）+ 钩子接线 + 冷启动兴趣稀疏 5-10 维
+✅ 四 worktree 集成：F（M1 补遗 690596b：LLM 精排第二层仅真实判定换序 + 托管护栏 qwen_response_check + 50 条真值评测集 hit_rate@3=0.8571 + 改写层 11/11）+ G（B4 后端 feb3a09：缩略图管线 PIL→thumbnail_key→GET 懒生成 + upload_mode/on_wifi 流量约束 + 微信媒体下载→COS + 30 天清理 job）+ H（B4 客户端 0899ba6：sync_client 字段级同步六字段队列/op_id 幂等/增量拉取/reconcile/2h 定时 + 批量暂停/一键继续 + UploadStatusBanner）+ I（B1 画像 1f958fe：枚举集 JSON L0 51 维+L1 193 维 + profile_schema 加载器 + profile_annotator 双门槛/池/节流/查重 + 冷启动兴趣稀疏 5-10 维）+ 接线 f85a393 + 迁移 c7d8e9f0a1b2（profile_l2_evidence FK ON DELETE CASCADE）｜420 passed + 覆盖率 78.46% + api_smoke 6/6 + research 18｜设计来源：docs/parallel-dev/06-09 任务卡（B1/B4/M1）
 - 待 key/环境：COS/微信企微/Sentry 未配（代码先行 mock 测）；托管护栏实网验证待 key；B/C/D 采集语料落地后重跑评测基线；纠错测量需真实 correction_log 数据；真机 nova 11 补验（H 的 WiFi 原图/蜂窝暂缓完整相册链路 + 后台 2h 定时归 Wave 4 K）
-- 下一步：Wave 4（Agent J B5a 客户端 / Agent K B5d Android / Agent L M3 微信），任务卡 docs/parallel-dev/10/11/12
 
-## 收尾 Wave 1 集成完成（2026-08-27 21:45）——下一步：A3/D1 补做 + 性能 P0 + 真机补验
+## ✅ 速查卡 · 收尾 Wave 1 集成完成（2026-08-27 21:45）
 
-- 基线编译修复（39734fe）：UTS 5.15 全量编译 7 处存量错误（upload_protocol/uploader/event_ops/play/event_sync/sync_client/record.uvue）——resolve 模式 + 具名函数 + 显式类型锚；此前被增量编译 warm cache 掩盖，全量重编译即暴露（用户疑问根因）
-- 八分支集成：B3（list_objects/HMAC/COS 直连验证）→ B1（孤儿扫描 12 测试）→ B2（time_suspect/export/copy_library，678 passed）→ C1（压测报告）→ C2（文案库 40 条池）→ C3（隐私/归档/harness）→ A1（画像管理页）→ A2（设置页/导出/契约 hub）；lessons.md 冲突 5 次均保留双方
-- 集成接线（617028c）：main.py 注册 export router（B2 契约需求）；OpenAPI 重导 47 路径（46 零消失 + /api/v1/export + time_suspect 入 schema）
-- 集成后门禁：pytest 707 passed / 20 deselected（B1 fail-safe 用例适配 B3 已实现 list_objects 的现实）；客户端 9 页面全量编译通过（ready 148s）
-- 真机 nova 11（21:43）：应用启动成功，onLaunch 3.5s、ensureLogin true（adb reverse 隧道）、首页 onReady 453ms；画像管理页可达（635ms）、设置页可达（244ms，group-title view→text 样式修复）
-- 遗留：A3（时间存疑+纠错提示 UI）与 D1（真机 7 清单）未开工；压测 P0 未修复（DB 池 15 耗尽进程崩溃/SEARCH_CONCURRENCY=4 硬顶/BGE-M3 加载健壮性）；旧队列照片 upload/init 422（旧测试数据，新上传 api_smoke 验证正常）；设置页截图与导出闭环待用户目检
-## 收尾 Wave1 A3/D1 补集成完成（2026-08-27 23:59）——下一步：Wave 3 真机补验
+✅ 基线编译修复 39734fe（UTS 5.15 全量编译七处存量错误：upload_protocol/uploader/event_ops/play/event_sync/sync_client/record.uvue——增量编译 warm cache 掩盖教训）+ 八分支集成（B3 list_objects·HMAC·COS 直连 / B1 孤儿扫描 12 测试 / B2 time_suspect·export·copy_library / C1 压测报告 / C2 文案库 40 条池 / C3 隐私·归档·harness / A1 画像管理页 / A2 设置页·导出·契约 hub）+ 接线 617028c（export router，OpenAPI 47 路径）｜pytest 707 passed + 9 页面全量编译；真机 nova 11 启动/画像管理页/设置页可达｜设计来源：docs/parallel-dev-收尾/01-12 任务卡
+- 遗留：A3（时间存疑+纠错提示 UI）与 D1（真机 7 清单）未开工（次日补集成，见下条）；压测 P0 未修复（后续 6e7c6d7 修复）；旧队列照片 upload/init 422（旧测试数据，新上传 api_smoke 验证正常）；设置页截图与导出闭环待用户目检
+## ✅ 速查卡 · 收尾 Wave1 A3/D1 补集成完成（2026-08-27 23:59）
 
-- 补集成 2 分支：wrap1-agentA3（merge d45898d：SuspectBadge 角标组件 + index.uvue 日卡片/待确认卡两处接入 + record.uvue 连续纠错弹层接线 + text_recorder.ts 本地计数 + timeline.ts 最小承接）+ wrap1-agentD1（merge 6aea242：真机补验 7 清单 + README 前置总表 P1–P11 + adb_helpers.ps1 证据脚本，新增 930 行）；merge-base 在主轮之后，文件域零重叠，双 merge 零冲突、无 lessons 冲突
-- A3 必要偏差裁决（INT）：timeline.ts 属总表"全员只读"，A3 需承接后端 time_suspect 字段——类字段默认 false 不改构造函数签名、字段名走 contract.ts 常量 FIELD_TIME_SUSPECT 只读引用、L1 分组拷贝保留标记，向后兼容零回归 → **采信**
-- 集成后门禁：G1 pytest 712 passed / 20 deselected（基线持平）；G2 review_agent --full 全绿（syntax 258 文件 / lint / secrets / tests+api_smoke）；G3 客户端 --cleanCache 全量编译通过（198 class，SuspectBadge easycom 自动注册解析、onCorrectionSuccess 编进产物，cli exit 0）；G4 OpenAPI 静态核对 47 路径、基线 46 零消失、/api/v1/export + time_suspect 在（本轮零后端改动不重导）；G5 涉改域回归由 G1 覆盖（events/notify/storage 全绿）
-- 治理文档入库：docs/parallel-dev-收尾/ 19 份任务卡/规则/总表（此前长期 untracked）
-- 环境事故（已恢复）：C 盘 0 空闲 → ENOSPC 连锁故障（所有工具调用失败 + pytest 假死 exit 1）——pip cache purge + npm cache clean + 清 C:\WINDOWS\TEMP 过期项释放 9GB+ 后重跑全绿；教训已登记 lessons
-- A3 自验补记（audit 全文披露）：模拟器 E2E 已过——角标两态（true 显示/false 不渲染）+ D2 弹层文案 + 3 次纠错→D4 弹层→确认清零全链路（logcat+UI 树双证据，a3-evidence/ 存档）、状态机镜像测试 9/9；遗留：nova 11 真机冒烟归 Wave 3（checklist_06）；D4 弹层"确认"后无自定义分类管理页（18 号契约只定义弹层）→ 当前 toast"即将上线"，页面需求待产品拍板；dismissCorrectionPrompt()（取消=不再提示）hook 已就绪未接线，待产品决策
+✅ wrap1-agentA3（merge d45898d：SuspectBadge 角标组件 + index.uvue 日卡片/待确认卡接入 + record.uvue 连续纠错弹层接线 + text_recorder.ts 本地计数 + timeline.ts 最小承接 time_suspect——A3 偏差经 INT 裁决采信：类字段默认 false 不改构造签名/FIELD_TIME_SUSPECT 常量只读引用）+ wrap1-agentD1（merge 6aea242：真机补验 7 清单 + README 前置总表 P1–P11 + adb_helpers.ps1，+930 行）｜门禁 G1-G5 全过（pytest 712 passed / --cleanCache 198 class 编译 / OpenAPI 47 路径零消失）；治理文档 19 份入库；A3 模拟器 E2E 全链路（角标两态+D2/D4 弹层+纠错清零，logcat+UI 树双证据，状态机镜像测试 9/9）｜设计来源：docs/parallel-dev-收尾/（A3/D1 任务卡 + 18 号契约）
+- 遗留：nova 11 真机冒烟归 Wave 3（checklist_06）；D4 弹层"确认"后无自定义分类管理页（18 号契约只定义弹层）→ 当前 toast"即将上线"，页面需求待产品拍板；dismissCorrectionPrompt()（取消=不再提示）hook 已就绪未接线，待产品决策（09-01 定性 U3 悬置待重拍）
 
-## 收尾 Wave 4a 收口登记（2026-08-28）——代码侧记录闭环；真机证据归 Wave 3/4b
+## ✅ 速查卡 · 收尾 Wave 4a 收口登记（2026-08-28）——代码侧记录闭环
 
-- 交付物：`忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md`——4a 骨架版（◉§0/§1.1/§1.3/§1.4 完整版；○§1.2/§1.5 真机占位 [待 4b]；铁律：无 nova 11 实测不宣称 A 级）
-- 代码侧成果概览（全量与逐项溯源见 08 §1.1）：编译修复 39734fe（UTS 7 处存量错误）→ 十分支集成（主轮 8：5e1463b B3 / 794deae B1 / d119444 B2 / 6bf945f C1 / 5396b1e C2 / 98857df C3 / d97999b A1 / 6e2bbd0 A2；补轮 2：d45898d A3 / 6aea242 D1）→ 接线 617028c → P0-2 性能修复 6e7c6d7（DB 池耗尽转 503 / 搜索并发转 429+Retry-After / 模型加载健壮性；效果复验=远期待办 F1，本条不宣称达标）
-- 新页面收口：画像管理（US-40/41）/ 设置页+导出（US-42）/ 时间存疑角标（US-12）/ 纠错提示弹层（US-25）；后端契约：/api/v1/export + time_suspect + copy_library 加载机制（OpenAPI 47 路径零消失）
-- 文档/脚本资产：孤儿扫描（backend/app/workers/orphan_scan.py，12 测试）/ 文案库 40 条默认+骨架池（docs/copy_library/）/ 隐私政策定稿+部署就绪包（docs/隐私政策_定稿_20260828.md、docs/部署就绪包_20260828.md，待审阅）/ 负样本重校 harness（scripts/eval_negative_samples.py）/ 残留归档（backups/20260827_残留归档/）/ 压测报告（docs/压测报告_20260828.md）/ 内测包构建配置清单（docs/parallel-dev-收尾/20，新增交付物：三层根因+M1–M7+注入方案）
-- 门禁快照：pytest 712 passed / 20 deselected；review_agent --full 全绿（syntax 258 文件）；client --cleanCache 198 class 编译通过
-- feature_list 登记：代码侧 evidence 追加 6 条（F1 孤儿扫描 / F5 压测+P0-2 / F7 导出闭环 / P2-ECHO 文案库 / VERIFY 编译修复+门禁 / OPS-SECRETS B3 密钥-COS）；画像 UI/US-12/US-25/D1 清单已由 Wave2 INT 登记（76a4dbf），不重复
-- 状态列收口：任务卡 01–14→已集成；15→待用户执行（Wave 3）；16/21→进行中；19→已执行（00/17/18/20/22 不在清单内不动）
-- 红线自检：本波零代码改动（models.py/migrations/client/backend 未触碰）；15 号内容未读写结果；真机记录段未写；与 Wave 3 协调者登记以"不同条目/不同 key"天然隔离
-- 4b 待填空位（22 号）：§1.2 证据升级表 / §1.5 快照真机数字 / feature_list 真机 A 级 evidence / 30s 计时门禁判定
-- commit 偏好（用户已确认）：4a 不 commit 不 push，工作区保持与 Wave 3 并行可合并
+✅ 交付 08_收尾波次完成汇报（4a 骨架版，◉ 完整 §0/§1.1/§1.3/§1.4 + ○ 真机占位待 4b；铁律：无 nova 11 实测不宣称 A 级）｜代码侧链条：编译修复 39734fe → 十分支集成（5e1463b B3/794deae B1/d119444 B2/6bf945f C1/5396b1e C2/98857df C3/d97999b A1/6e2bbd0 A2 + 补轮 d45898d A3/6aea242 D1）→ 接线 617028c → P0-2 性能修复 6e7c6d7（DB 池耗尽转 503/搜索并发转 429+Retry-After/模型加载健壮性）｜新页面收口：画像管理 US-40/41、设置页+导出 US-42、时间存疑 US-12、纠错弹层 US-25；后端契约 /api/v1/export+time_suspect（47 路径零消失）｜资产：orphan_scan.py/文案库 docs/copy_library//隐私政策+部署就绪包/负样本重校 harness/压测报告/内测包构建配置清单 20 号｜门禁 712 passed+全绿；任务卡状态列收口；按用户确认 4a 不 commit 不 push（后随收口落库）｜设计来源：docs/parallel-dev-收尾/16/21/22（4a/4b 归档卡）
+- 4b 待填空位（22 号）：§1.2 证据升级表 / §1.5 快照真机数字 / feature_list 真机 A 级 evidence / 30s 计时门禁判定（已由 08 终版填写）
 
 ## 收尾 Wave 3 真机补验——清单 01 通过（2026-08-28 01:06-02:53）
 
@@ -604,21 +247,17 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 
 ## 收尾 Wave 完成（2026-08-28 4b 终版）——全部收口，宣布收尾波次完成
 
-- **快照终值**：功能代码 ~90%（代码侧缺口清零）/ 内测可达度 60–70%（三座大山不变）/ 用户故事 53 条 **✅41/🟡12/❌0**（A 级真机 **27 条**，+8）/ 性能门禁 18 项 **达标 10/部分 2/未达标 6** / **30s 计时门禁 🟡→✅（实测 6.0s≤30s）**
-- **真机 7 清单**：01✅（US-46/47/48→A 级）02❌（D-06 中断回调）03✅（30s 门禁过线 6.0s≤30s）04✅（US-06/07→A 级真实 qwen）05🟡（US-17/18/19→A 级转写/情绪实况，S2 待校准）06🟡（编译冒烟 A，①中文 IME 转人工）07🟡（云打包链路 A + 原生能力 D-18/D-19）；证据 `scripts/realdevice/evidence/` 50 文件
-- **Wave 3 新缺陷移交 4b 修复批次**：批次1=D-18（WorkManager 探测恒 false·正式包后台永不启用）/D-19（FGS manifest 未注册·保活全基座必死）；批次2=D-16（情绪"平静"伪造默认）/D-07 五连复现（短录音不落 COS 判死）/D-08（转写失败即弃段）；批次3=S2 开心类漏报校准 + D-06 机型适配；全 19 条台账见 tracker 19 §4
-- **交付物**：08 收尾波次完成汇报（终版：§1.2 证据升级表 + §1.5 快照终版 + §0 一页结论 + 附录 4 空位销项）；feature_list F1/F3/VERIFY 真机 A 级 evidence（f5c0c59）；状态列全目录收口（15/16/21/22 → 已完成）
-- **遗留（等待团队，映射 07 §8.1）**：① 产品部 B/C/D 真值 + A 批负样本 + E/F/G 排期 + 正式文案库 ② 运营/合规 三申请 + 隐私政策签字 ③ 负责人 企微/微信/短信/uni-push + 内测包 M1/M4/M6 ④ AI 远期待办 00 §7 F1–F7（F1 性能复测优先）
+✅ 收官快照（补验前时点值）：功能代码 ~90%（代码侧缺口清零）/ 内测可达度 60–70% / 用户故事 ✅41/🟡12/❌0（A 级 27）/ 性能门禁 10/2/6 / 30s 门禁 🟡→✅（实测 6.0s≤30s）；真机 7 清单 01✅（US-46/47/48→A）03✅ 04✅（US-06/07→A）、02❌（D-06）、05🟡（US-17/18/19→A，S2 待校准）、06🟡、07🟡（云打包链路 A+D-18/D-19）；交付 08 终版 + feature_list 真机 A 级 evidence（f5c0c59）+ 状态列全目录收口｜设计来源：docs/parallel-dev-收尾/22 + 08 文档
+- 缺陷移交 4b 修复批次（批次1 D-18/D-19 / 批次2 D-16/D-07/D-08 / 批次3 S2 校准+D-06 机型适配）——详见上节「收尾 Wave 3 真机补验·全波终局」与 tracker 19 §4（**多数至今未进 develop，见执行计划 §1 悬账**）
+- 遗留（等待团队，映射 07 §8.1）：① 产品部 B/C/D 真值 + A 批负样本 + E/F/G 排期 + 正式文案库 ② 运营/合规 三申请 + 隐私政策签字 ③ 负责人 企微/微信/短信/uni-push + 内测包 M1/M4/M6 ④ AI 远期待办 00 §7 F1–F7（F1 性能复测优先）
 
 > **[2026-08-29 整饬勘误]** 上条（收尾 Wave 完成 4b 终版）为补验前时点快照（✅41/🟡12、A 级 27）：随后补验 US-42（D-20 修复 f726942）与 US-12/25/40/41（6a7f0f9，cbc1751 同步 08/AGENTS）🟡→✅、A 级→**32**。现行唯一口径 = AGENTS.md「当前状态」节。
 
-## 2026-08-29 · harness 台账整饬（进度/说法/决策统一 + 错误经验汇编）
+## ✅ 速查卡 · 2026-08-29 · harness 台账整饬（进度/说法/决策统一 + 错误经验汇编）
 
-- **动机（债务清单）**：多窗口追加致台账漂移——①同一数字五个台账三个值（✅41 vs ✅46、A27 vs A32、"D-01~D-19" vs 实表含 D-21）②"Wave 4"双义（开发期 J/K/L vs 收尾归档 4a/4b）③session-handoff 头部滞留 08-25 ASR 会话"当前状态"④设计决策散在 handoff/progress 无登记簿。
-- **交付**：新建 `docs/决策台账.md`（§0 术语消歧：开发 Wave/收尾 Wave/4b 修复批次、F 前缀三族、D/O/等级/门禁三族；§1-3 基线后拍板 30+；§5 待拍板 6 项）；新建 `docs/lessons-主题索引.md`（131 条台账归 10 个根因族，族1 门禁卫生 ~19%、族7 数字口径债=本次直接起因）；`AGENTS.md` 状态节刷新+五处同步纪律+Windows 归二期标注；`docs/lessons.md` 环境陷阱区补录 24–33（真机期）；`session-handoff.md` 重写为现行交接（历史压缩，原文在 git）；`feature_list.json` VERIFY 终值口径+F6 过时说法补注；`init.sh` 检查清单挂台账。
-- **验证**：快速门禁 `python scripts/review_agent.py` EXIT=0（纯文档波零代码改动；全量门禁随 4b 修复批次落地后统一复跑）。
-- **事故与自纠（诚实记录）**：本会话 `lessons.py add` 因我给表头加指针行触发其「旧文件无表头→重建」分支，将台账 1199 行毁至 28 行并随 a6bb5a9 提交（diff stat -1191 暴露）→ HEAD~1 恢复+重放三处增补；add() 改**不销毁三分支**（本会话新教训 01:30 即其回归用例）；另 edit 工具落盘 CRLF 曾毁 init.sh 可执行性→二进制还原 LF+新建 `.gitattributes`（`*.sh/*.py eol=lf`）。主题索引因此新增族11（工具自毁）、§4.8 入决策台账。
-- **授权销项（同日续）**：用户拍板「授权你同步。过时的文档，空的旧的文件夹一律删」→ ①08 三处+02 全表同步终值（顺带修正 6a7f0f9 漏回填 02 的 US-12/25/40/41/42/48 六行+统计行+半通清单，02 顶部加同步注记）；②删 4 份孤立执行类文档（PR1_审查报告/RAG管线审查/RAG指标提升/生产兜底审计，先做引用核查：代码/测试/交付文档 live 引用的 46+ 处候选全部保留——refactor-plan·技术债三件套·批次F-H 提示词等）；③拔除 .wt 13 个旧 worktree+backend/.wt，清空目录 464 个（uploads 测试残留 300+/APK 尸检根树/truth-data 占位）；④backups/20260827_残留归档按 D8 拍板保留；⑤docs/README 索引二轮更新+旧「不删除」规改为「live 引用保留/授权删」；台账 §4.9/§5.6/AGENTS/handoff 同步。
+✅ 新建 docs/决策台账.md（§0 术语消歧 + §1-3 基线后拍板 30+ + §5 待拍板登记簿）+ docs/lessons-主题索引.md（131 条归 10 根因族）+ AGENTS.md 状态节刷新+五处同步纪律 + lessons 环境陷阱区补录 24-33 + session-handoff.md 重写 + feature_list.json/init.sh 口径统一；快速门禁 EXIT=0｜设计来源：用户整饬指令（五项债务清单：数字漂移/Wave 4 双义/handoff 滞留/决策无登记簿）
+- 事故与自纠（诚实记录，lessons 族11）：lessons.py add 表头指针行触发「重建」分支毁台账 1199→28 行（HEAD~1 恢复+add() 改不销毁三分支）；edit 工具 CRLF 毁 init.sh 可执行性（二进制还原 LF+新建 .gitattributes）
+- 授权销项（用户拍板「过时文档/空旧文件夹一律删」）：08/02 全表同步终值、删 4 份孤立执行类文档（引用核查后）、拔除 .wt 13 个旧 worktree+清空目录 464 个、docs/README 索引二轮更新
 
 
 ## 2026-08-29 04:3x · 4b 执行计划制定 + P-0 拍板闭环 + P-1 隔离工作区建成
@@ -646,19 +285,15 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **企微事件（负责人→用户→我）**：可信 IP=调用方出口 IP——实测本机 `61.171.241.17`（手机电信流量 CGNAT，会漂；校园网必变，换网即 `curl ip.sb` 报新 IP 可多配）。凭证 5 项：CORP_ID/TOKEN/AES_KEY 就绪，APPID/SECRET 待打包——US-31/32/33 卡点性质缩为「等打包+M1 服务器」（台账 §6/handoff 已登记 614a4df）。
 - **协作通知**：用户另派一 agent 做 DASHSCOPE 后端补充任务（独立分支）——已提醒避开 `api/asr.py`/`services/external/asr/`/`docs/openapi.json`（asr 域是我 R1 主战场；契约再生成归 R3 统一）。若其提交与 9922e4a channels 冲突，以契约增量合并为准。
 - **R1 剩余 = 全部冻结项**，等待第三窗迁移提交 → rebase → 统一编译 → R2 真机波。
-## 2026-08-29 14:3x · 百炼真实链路加固 + 验证矩阵（独立分支 feat/dashscope-backend-hardening，worktree `.wt/dashscope`）
+## ✅ 速查卡 · 2026-08-29 14:3x · 百炼真实链路加固 + 验证矩阵（feat/dashscope-backend-hardening，已 merge develop @ 5ed7c5c）
 
-- **背景**：用户通知 DASHSCOPE 双 Key 已在 Infisical 就绪（会话中恢复登录，token 9d+），要求完成需要这两个 key 的后端补充开发。域协调：全程避开他窗 in-flight 的 `api/asr.py`/`services/external/asr/`/`docs/openapi.json`。
-- **两处加固**（08-28 真实评测报告实证反推）：①`llm_ops/rerank.py` 解析三级兜底——标准解析失败→逐块正则打捞（截断尾块/全角标点，ans 未知前缀宁不判）→`_norm_ans` 中英文布尔归一，根治 `bool("false")==True` 静默错误换序 + 「解析失败回退原序」精排空转；②`rag/image.py` VL 重试耗尽→**过期缓存兜底**（08-28 评测以图搜图 2/10 miss=连接重置空结果），空 caption 不覆写缓存位。新增单测 7 项（rerank 形态 4 + caption 兜底 3）全绿。
-- **真实验证矩阵**（新 `scripts/check_dashscope_matrix.py`，9 链路）：**双通道各 9/9 pass**——Infisical 注入（14:24）与 .env 直读（14:23）：rewrite 1.1-1.3s / route 224-239ms / rerank 判定 4/4 置顶正确 0.73-2.25s（追加样本共 4 次调用解析零失败）/ guard chat+managed 双路径 / fail_closed 拒发实证 / **Qwen3-VL 真实照片 3.2-4.2s** / caption 缓存+过期兜底 / event_merge real conf 0.85。**零 403 workspace 复发**（lessons 08-25 旧病）。OPS-SECRETS「拿 Key 零代码切换」百炼域达成——全部由既有生产代码路径直出。
-- **验证与登记**：默认套件 **664 passed / 4 skipped**（EXIT=0；首轮 1 例 test_amap 偶发=与前台子集并发共跑测试库时序污染，复跑不复现，纪律入报告 §6）；ruff 涉改文件全绿；lessons 登记 1 条（LLM 输出契约漂移静默退化族）；证据 `docs/百炼真实链路验证与加固_20260829.md` + `.cowork-temp/dashscope_matrix_*.json`；feature_list F5/OPS-SECRETS evidence 追加。
-- **遗留登记（不擅改默认值）**：rerank 默认开 + 真实档 0.7-2.3s/查询对 P95<3s 的张力→GPU/异步策略评审再拍板；fun-asr 模型开通态+WER 基线属他窗 asr 域；answer_quality「真实生成答案」接线为下一候选。
+✅ 两处加固（08-28 真实评测报告实证反推）：llm_ops/rerank.py 解析三级兜底（标准解析→逐块正则打捞→_norm_ans 中英文布尔归一，根治 bool("false")==True 静默换序）+ rag/image.py VL 重试耗尽→过期缓存兜底（空 caption 不覆写缓存位）｜scripts/check_dashscope_matrix.py 9 链路真实矩阵：双通道（Infisical 注入/.env 直读）各 9/9 pass——rewrite/route/rerank 4/4 置顶 0.73-2.25s/guard chat+managed/fail_closed 拒发/Qwen3-VL 3.2-4.2s/caption 缓存兜底/event_merge conf 0.85；零 403 workspace 复发｜默认套件 664 passed｜设计来源：OPS-SECRETS「拿 Key 零代码切换」链路（证据 docs/百炼真实链路验证与加固_20260829.md）
+- 遗留登记（不擅改默认值）：rerank 默认开与真实档 P95<3s 的张力→GPU/异步策略评审再拍板；fun-asr 模型开通态+WER 基线属他窗 asr 域；answer_quality「真实生成答案」接线为下一候选
 
-## 2026-08-29 15:5x · DASHSCOPE 补充任务验收合入 + wrap1 迁移窗侦察
+## ✅ 速查卡 · 2026-08-29 15:5x · DASHSCOPE 补充任务验收合入 + wrap1 迁移窗侦察
 
-- **feat/dashscope-backend-hardening 验收并 merge 进 develop（`5ed7c5c`）**：F5 百炼真实链路两处加固（精排解析三级兜底 + VL 过期缓存兜底）+ `scripts/check_dashscope_matrix.py` 9 链路真实矩阵（**Infisical 注入与 .env 直读双路径 9/9**；LLM 精排 4/4 judged_n 正确、0.73–2.25s）+ 默认套件 664 绿；我方独立复跑 test_image_search+test_rag 34 passed/15 deselected ✓。**文件域纪律良好**（未碰 asr 域/openapi.json，报告 §4 自证）。append 区冲突两处（lessons/progress）双保留解冲；merge 后代码域与源分支 parity 零差异；被 merge 阻挡的 `rag/image.py` 他窗旧脏已抢救至 `.cowork-temp/salvage/image_py_main_dirty_20260829.patch`（1KB，可回放）。
-- **wrap1-agentA2-ui-restore 侦察（`efb183d`，未合）**：**5.24 迁移实质在该分支落地**（photo-watch 21 处 android 导入改 any / background-tasks SharedPreferences 修复 / CSS 选择器迁移 / Vapor main.uts 入口 /「编译成功+全页面截屏正常」）；且**顺带做了 D-21 四页 scroll-view 修复**。碰撞面：两插件 index.uts（撞我 R1-a D-18 重写）、record.uvue（撞 R1-c 守卫+D-22 客户端半）、schemas/event.py（不同区域，轻）、.gitignore（追加区）。**卫生问题**：~90MB 二进制入库（SarasaGothic 字体 ×3=69MB + 截图 13 张 + hero 原图 4.5MB）+ deploy_log ×4 + design_data/13k 行——且基线停在 677ea68（缺我全部 R1/记账/此 merge）。**结论：不可按现状 merge**，需先整备（二进制/日志/design_data 去留拍板）。
-- **fix/4b 策略**：暂不再 rebase（等 wrap1 处置定局后一次到位：迁移版上传链 + D-18/D-21/D-22 客户端半在统一基线上重放，同形热修两枚让位）。内存仍 ~1GB，编译窗口未到。
+✅ feat/dashscope-backend-hardening 验收并 merge develop @ 5ed7c5c：F5 百炼两处加固 + 9 链路真实矩阵（双路径 9/9）+ 默认套件 664 绿；独立复跑 test_image_search+test_rag 34 passed；文件域纪律良好（未碰 asr 域/openapi.json）；append 冲突双保留解冲；rag/image.py 旧脏抢救至 .cowork-temp/salvage patch｜wrap1-agentA2-ui-restore 侦察（efb183d，未合）：5.24 迁移实质落地（photo-watch 21 处 android 导入改 any/CSS 选择器迁移/Vapor 入口）+ 顺带 D-21 四页 scroll 修复；但 ~90MB 二进制入库+基线停在 677ea68 缺全部 R1——结论不可按现状 merge（后经整备于 09-01 合流 cea5025）｜设计来源：验收复跑证据 + 侦察报告
+- fix/4b 策略：暂不再 rebase，等 wrap1 处置定局后一次到位（已执行，见 09-01 rebase 条）
 
 ## 2026-08-29 16:3x · 暗物质审计：两单「修了没入库」补落 + 主区旧脏三重备份清空
 
@@ -668,16 +303,17 @@ docs/lessons.md +1：AGG-016 测试断言不得手写期望（先跑参考实现
 - **其他**：dashscope 分支验收并 merge（5ed7c5c，双路径 9/9+复跑 34 绿）；evidence/「证据留本地」铁律 .gitignore 恢复入库；主区 `import app.main` 冒烟 55 路由 OK；内存告警 0.65GB（暂停重活）。
 
 
-## 2026-09-01 · W10 峰宝九条验机反馈全落地（AI mock 数据 + 附件入口 + 画像页四改 + security 页冲突清理）
+## ✅ 速查卡 · 2026-09-01 · W10 峰宝九条验机反馈全落地（合流 cea5025 入 develop）
 
-- **背景**：峰宝人肉验机九条暴击（网络异常复发/AI 页无数据/画像页无数据/两页 SVG 丑/旧玻璃 TabBar/页头 44px/功能冲突/附件无入口），全部认领当日落地；详细对照表与差异降级登记 `_diff_ledger.md` §W10.4。
-- **网络异常（skill 修正）**：双根因实锤——多版本 adb 互杀（server 重启灭全部 reverse）+ monkey 拉活≠重启（网络栈失败态不复位）；`uvue-deploy-device-ops` skill 禁忌表旧「1.0.41」口径清除 + deploy_one.sh step2/3 顺序反转（reverse 先于启动 → force-stop 冷启动）+ FAIL 分支补全量日志输出（tail -4 吞编译错误描述盲区）。
-- **AI 对话页 mock（contract-first）**：业界调研五篇共识落成 mock 契约（`POST /api/v1/chat/messages → {reply}`，kind=bubble/plain+chips/cards/confirm/typing，B2 接线时 mock 层整体可删）；ai.uvue 全量重写 ~640 行——seed 8 条覆盖五形态族、onSend 本地闭环（typing 1.8s→四形态轮换）、附件面板浮层+入口钮；`USE_MOCK_CHAT=true` 显式登记（对齐 USE_MOCK_TIMELINE/USE_MOCK_DATA 先例）。
-- **画像管理页**：seed 三条敏感话题（id904 forbid/id905 mention/id906 review）GET 复核通过；TabBar 组件接入（删自绘玻璃 tabbar+emoji FAB）；页头 44→60px（padding-top 115.4rpx）；emoji→SVG 三枚。
-- **账号与安全页**：删「数据导出」「存储空间」两行+方法（功能冲突，归宿=未来存储与备份页）；三 emoji→SVG。
-- **uvue 编译失败一轮（实锤两枚新坑）**：type 字面量构造 `MemCard(title:...)` 与函数默认参数 `= []` 全项目零先例编译器不认 → class+constructor+new / 全参显式；顺带修 seed plain 调用参数错位（bullets 塞 cards 位）+ CSS `.a.b`/后代+`:first-child` 三处。教训沉淀 ardot-to-uvue-css-restore「UTS 编译器坑」节。
-- **画布同步三板 + 终审**：AI 输入条附件钮（clip SVG，发送钮右位）、画像页页头下移+新 TabBar 按 TabBar.uvue 规格重建（SVG 图标族+「我的」锈红 active）、security 页删两行（后续组 y-88 间距恒定）+三 SVG；截图终审通过；uvue 附件钮初版序写反已对照画布纠正。画布坑三枚沉淀 ardot-canvas-pitfalls（BACKGROUND_BLUR 写入拒绝且清空全字段/SVG rect+A 命令不支持/纯水平线段零面积 degenerate）。
-- **推包三轮收口（2026-09-01）**：ZS8sLT 编译失败（已修，见上）→ hqSTjw 编译同步实际成功但 `OUT=$(cli ...)` 命令替换被 HBuilderX.exe 继承 stdout 管道 EOF 永不来僵死 23 分钟（TaskStop 终止；deploy_one.sh step1 改后台+mktemp 重定向+10s×150 轮询，坑沉淀 uvue-deploy-device-ops 禁忌表）→ **fOeJLH 轮询版首战 1m57s 三步全绿**（同步成功/reverse 非空/force-stop 冷启动）。设备已跑最终版产物；真机复核清单交峰宝人肉验机（AI 页五形态+附件面板在发送钮右侧/画像页新 TabBar+seed 三条+60px 头/security 页单行+SVG）。遗留：四份画布快照（ai/ai_reply/portrait_manage/account_security）下会话开工前按 W9 重导。
+✅ 九条全落地（对照表与差异降级登记 _diff_ledger.md §W10.4）：网络异常双根因修正（多版本 adb 互杀灭 reverse + monkey 拉活≠重启网络栈不复位；deploy_one.sh step2/3 顺序反转 reverse 先于启动）｜ai.uvue 全量重写 ~640 行（contract-first mock 契约 POST /api/v1/chat/messages→{reply}，kind=bubble/plain+chips/cards/confirm/typing 五形态族 seed 8 条+onSend 本地闭环+附件面板浮层；USE_MOCK_CHAT=true 显式登记）｜画像管理页（TabBar 组件接入/页头 44→60px/emoji→SVG 三枚/seed 三条敏感话题 GET 复核）｜账号与安全页删「数据导出」「存储空间」两行+SVG｜uvue 编译两枚新坑沉淀（type 字面量构造 MemCard/函数默认参数=[]，沉淀 ardot-to-uvue-css-restore）｜画布同步三板+终审通过（画布坑三枚沉淀 ardot-canvas-pitfalls）｜推包三轮收口：fOeJLH 轮询版三步全绿 1m57s｜设计来源：uvue_gen/*_canvas.json（ai/ai_reply/portrait_manage/account_security）+ 峰宝九条验机记录 + 拍板 A（复盘语音贴底 MessageDetailSheet）
+- 遗留：四份画布快照（ai/ai_reply/portrait_manage/account_security）下会话开工前按 W9 重导；**ai.uvue 整页 mock 未接真链路（W5 mock 治理批，见执行计划 §1.1）**
+
+## ✅ 速查卡 · 2026-09-01 15:5x · 重估与放行：wrap1 合流波主账追平（A 批）+ fix/4b rebase（B 批）
+
+✅ A 批主账追平（用户放行）：全量侦察确认 08-30~09-01 跨窗活动（08-31 全页面系统审查 33 gap / 媒体票据 Valet Key 主区 8 文件 / 峰宝九条+W10.4 全量入库），**17 枚经 cea5025 跨日 merge 进 develop——5.24 迁移正式落地**（utils 21 文件 .ts→.uts/Vapor 启用/10 页零错零警+峰宝九条验机验收），origin 已同步；旧「客户端冻结待迁移」前提解除；待拍板 2→3 项（§5.8 AI mock 归宿）；审计报告抢救入库 docs/audit_20260831_*
+✅ B 批（同日 17:26）：fix/4b rebase 8/8 成功（热修两枚按拍板让位丢弃零残留/record.uvue 守卫 graft 进 RecordSheet/.gitignore 豁免与工程根 manifest 幸存 check-ignore 实测；备份 fix4b-pre-rebase@acce7ef）+ 受影响后端 9 套件 138 全绿 + 统一冷编译 12 页一次过 ready 105s（唯一 WARNING backdrop-filter=wrap1 画布保留项）；fix/4b 现 @ d09f639｜设计来源：用户放行 A+B 拍板（⚠️ fix/4b 修复至今未进 develop，见执行计划 §1 悬账）
+
+## 2026-09-01 19:0x · R1 尾段落地五枚 + 云打包发车 + 暗物质第三例（U3）
 
 ## 2026-09-01 15:5x · 重估与放行：wrap1 合流波主账追平（A 批）
 

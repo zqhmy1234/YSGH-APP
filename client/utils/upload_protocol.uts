@@ -10,7 +10,7 @@
  * 错误语义：协议层只透传 status（0=网络失败），4xx 停条 / 5xx 重试由调用方按业务决定。
  */
 import { getBaseUrl } from './config'
-import { getToken } from './auth'
+import { getToken, ensureLogin } from './auth'
 // R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析），
 // 本模块不再直接 uni.uploadFile；getBaseUrl 仍用于 formPost/init/complete。
 import { uploadFileHttp, HttpResult } from './api'
@@ -62,31 +62,46 @@ export function urlEncode(s: string): string {
 /** POST 表单（application/x-www-form-urlencoded；后端 Form 字段）→ UploadResp */
 export function formPost(path: string, body: string): Promise<UploadResp> {
 	return new Promise<UploadResp>((resolve) => {
-		const header: UTSJSONObject = {
-			'Content-Type': 'application/x-www-form-urlencoded'
-		}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
-		uni.request({
-			url: getBaseUrl() + path,
-			method: 'POST',
-			data: body,
-			header: header,
-			timeout: 30000,
-			success: (res) => {
-				if (res.statusCode === 200) {
-					resolve(new UploadResp(200, JSON.stringify(res.data)))
-				} else {
-					console.error('[yishu] upload form ' + res.statusCode + ' ' + path)
-					resolve(new UploadResp(res.statusCode, JSON.stringify(res.data)))
-				}
-			},
-			fail: () => {
-				console.error('[yishu] upload form NETWORK ' + path)
-				resolve(new UploadResp(0, ''))
+		// R7（2026-09-06）：401 重放补齐——本函数此前裸 uni.request 无 401 处理，token 过期后
+		// 上传链首次 init/complete 必 401（uvicorn 日志 4 次实锤），对齐 api.uts uploadFileHttp
+		// 的「401 → ensureLogin 刷新 → 重放一次」机制；仍 401 才透传给调用方（4xx 停条语义不变）
+		const sendOnce = (done: (resp: UploadResp) => void): void => {
+			const header: UTSJSONObject = {
+				'Content-Type': 'application/x-www-form-urlencoded'
 			}
+			const token = getToken()
+			if (token != '') {
+				header.set('Authorization', 'Bearer ' + token)
+			}
+			uni.request({
+				url: getBaseUrl() + path,
+				method: 'POST',
+				data: body,
+				header: header,
+				timeout: 30000,
+				success: (res) => {
+					done(new UploadResp(res.statusCode, JSON.stringify(res.data)))
+				},
+				fail: () => {
+					console.error('[yishu] upload form NETWORK ' + path)
+					done(new UploadResp(0, ''))
+				}
+			})
+		}
+		sendOnce((first: UploadResp) => {
+			if (first.status === 401) {
+				ensureLogin().then((ok: boolean) => {
+					if (!ok) {
+						resolve(first)
+						return
+					}
+					sendOnce((second: UploadResp) => {
+						resolve(second)
+					})
+				})
+				return
+			}
+			resolve(first)
 		})
 	})
 }
@@ -106,9 +121,29 @@ export function fieldOf(raw: string, key: string): string {
 	return end >= 0 ? rest.substring(0, end) : rest
 }
 
+/** R7（2026-09-06 峰宝真机批次）：后端 client_upload_id 白名单 ^[A-Za-z0-9_-]{1,255}$
+ *  （backend/app/api/upload.py:54）。历史实现把原始路径当 id 上送——图片链传
+ *  /storage/...jpg、长录音链传 voice|/storage/...wav，含 / . | 全部不匹配 →
+ *  POST /upload/init 恒 422，照片同步与长录音持久化两条链从未成功过（uvicorn 日志
+ *  连串 422 实锤）。统一在此清洗：非法字符→'_'，同一路径映射确定性 id（幂等语义保留）。
+ *  中文等非 ASCII 文件名清洗后可能退化成连续 '_'——极小概率撞 id；后端 complete 的
+ *  cos_key 幂等去重兜底，且断点续传走前端持久化的 upload_id（findPending），不依赖此处。 */
+function sanitizeUploadId(raw: string): string {
+	let out = ''
+	for (let i = 0; i < raw.length && out.length < 200; i++) {
+		const code = raw.charCodeAt(i)
+		if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (code >= 48 && code <= 57) || code == 95 || code == 45) {
+			out += raw.charAt(i)
+		} else {
+			out += '_'
+		}
+	}
+	return out == '' ? 'up-' + Date.now() : out
+}
+
 /** init：建上传任务（client_upload_id 幂等；单块协议 chunk_size=file_size，upload_mode 透传）→ UploadResp */
 export function initUpload(clientUploadId: string, fileName: string, fileSize: number, uploadMode: string): Promise<UploadResp> {
-	const body = FIELD_CLIENT_UPLOAD_ID + '=' + urlEncode(clientUploadId) +
+	const body = FIELD_CLIENT_UPLOAD_ID + '=' + urlEncode(sanitizeUploadId(clientUploadId)) +
 		'&' + FIELD_FILE_NAME + '=' + urlEncode(fileName) +
 		'&' + FIELD_FILE_SIZE + '=' + fileSize +
 		'&chunk_size=' + fileSize +

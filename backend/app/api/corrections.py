@@ -39,8 +39,17 @@ def create_correction(
         raise ApiError(ERR_CORR_002, "source 必须为 active/echo/org", http=422)
     # R6#13（安全纵深）：content_id 归属校验——写前查 contents 表存在且属当前用户，
     # 拒绝跨用户 content_id 写纠错记录（对齐 sync.push content_owner 预载；404 防 IDOR/脏引用）
-    owner = db.scalar(select(Content.user_id).where(Content.id == req.content_id))
-    if owner is None or str(owner) != str(user.id):
+    # 波D ② 补漏（2026-09-10 深扫）：原查询漏 deleted_at 过滤——本人已软删（回收站）内容
+    # 仍可被写纠错并回写 content_class，与全项目「deleted_at 内容对外不可达」契约相悖
+    # （同 P2-4 media/audio、P2-5 _batch_photo_ids 同族修复）。错误码保持 EVENT_005
+    # 不变——沿用本端点既有口径，不随过滤收敛改变对外契约。
+    content = db.scalar(
+        select(Content).where(
+            Content.id == req.content_id,
+            Content.deleted_at.is_(None),
+        )
+    )
+    if content is None or str(content.user_id) != str(user.id):
         raise ApiError(ERR_EVENT_005, "内容不存在或不属于当前用户", http=404)
     row = record_correction(
         db,
@@ -52,6 +61,12 @@ def create_correction(
         source=req.source,
         content_type=req.content_type,
     )
+    # D-22（08-29，P1 回写）：主动纠错即时同步权威字段 contents.content_class——
+    # 此前 corrections 只写 correction_log、从不回写，内容分类展示永久停旧值。
+    # 仅 active 来源回写；echo/org 属被动信号，须过服务层三道闸门后才影响层①，不动权威字段。
+    if req.source == "active" and content.content_class != req.new_label:
+        content.content_class = req.new_label
+        db.commit()
     return ApiResponse(
         data=CorrectionOut(
             id=row.id,

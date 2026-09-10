@@ -13,10 +13,33 @@ process_content(content_id)：按 content_type 分流处理，全部异步在 RQ
 - 状态机：processing → done/failed；空白语音以 done + audio_processing.no_speech 表达
 
 依赖方向：api → services.pipeline → services.*（单向，不再反向 import worker）。
+
+波D ①（2026-09-10）结构拆分（**只搬代码不改逻辑**，784 行 → 5 文件）：
+  - `pipeline_common.py`  logger / patch_extra / extra_get / _enqueue_user_aggregation（共享底座）
+  - `pipeline_audio.py`   _materialize_voice_audio / _cleanup_temporary_audio /
+                          _set_audio_processing / _set_emotion_enrichment /
+                          enrich_content_emotion（语音音频 + 本地情绪增强）
+  - `pipeline_photo.py`   _process_photo（照片处理器）
+  - `pipeline_tagging.py` tag_content（chips 自由标签 RQ 任务）
+  - `pipeline.py`（本文件）**冷冻核心** + 全量 re-export
+
+⚠️ 本文件为何不能再瘦身（拆分论证，非为指标硬切）：
+`tests/test_pipeline.py` 用**字符串 monkeypatch** 打在 `app.services.pipeline.<name>` 上——
+`_get_classifier` / `_index_content` / `_classify_content` / `_process_text` / `_process_photo`。
+CPython 的函数全局查找走**函数定义模块的 `__dict__`**，因此「被 patch 的名字」与其
+「调用方」必须**同模块共存**，否则 patch 静默失效（测试症状：真去加载 SetFit 大模型）。
+由此锁定四条同留约束：
+  1. `_classify_content`（patch 目标）+ `_process_text` / `_process_voice`（voice 测试打
+     `_classify_content` 期望生效的调用方）+ `_get_classifier` → 同留本文件；
+  2. `_index_content`（patch 目标）+ `_index_after_commit`（调用方）→ 同留本文件；
+  3. `_resolve_handler` 用 `globals().get(name)` 解析处理器名，其 globals 必须就是本模块，
+     故 `CONTENT_HANDLERS` / `register_content_handler` / 三个注册调用随其留驻；
+  4. `process_content` 调 `_resolve_handler` + `_index_after_commit`，且自身是 RQ pickle 路径
+     （`app/workers/worker.py: app.services.pipeline.process_content`）→ 留驻。
+剩余物理下限 ≈ 440 行，其中 `process_content` 单函数 222 行（六阶段编排，拆它即改逻辑）。
 """
 from __future__ import annotations
 
-import logging
 import uuid
 from collections.abc import Callable
 from functools import lru_cache
@@ -30,20 +53,25 @@ from app.core.config import settings
 from app.db.models import Content
 from app.db.session import SessionLocal
 
-logger = logging.getLogger("yishu.pipeline")
-
-
-def patch_extra(content: Content, **updates) -> None:
-    """extra JSON 列拷贝-合并-回写样板收敛（TD-P2B · S1-M6：原 7 处内联
-    `extra = dict(content.extra or {}); extra[...] = ...; content.extra = extra`）"""
-    extra = dict(content.extra or {})
-    extra.update(updates)
-    content.extra = extra
-
-
-def extra_get(content: Content, key: str, default=None):
-    """读取侧样板收敛：`(content.extra or {}).get(key, default)`"""
-    return (content.extra or {}).get(key, default)
+# 波D ①（2026-09-10）re-export：搬迁到卫星模块的符号在此回引，保持
+# `app.services.pipeline.<name>` 既有导入路径可用（monkeypatch 目标 / RQ pickle 路径 /
+# worker 预导入 / 测试 import 全部零改动）。本块同时承担"本文件自用"与"兼容再导出"，
+# 故整块标注 noqa: F401。
+from app.services.pipeline_audio import (  # noqa: F401
+    _cleanup_temporary_audio,
+    _materialize_voice_audio,
+    _set_audio_processing,
+    _set_emotion_enrichment,
+    enrich_content_emotion,
+)
+from app.services.pipeline_common import (  # noqa: F401
+    _enqueue_user_aggregation,
+    extra_get,
+    logger,
+    patch_extra,
+)
+from app.services.pipeline_photo import _process_photo  # noqa: F401
+from app.services.pipeline_tagging import tag_content  # noqa: F401
 
 
 @lru_cache(maxsize=1)
@@ -115,72 +143,6 @@ def _process_text(db: Session, content: Content) -> None:
         annotate_on_ingest(db, content)
 
 
-def _set_audio_processing(content: Content, payload: dict) -> None:
-    patch_extra(content, audio_processing=payload)
-    if payload.get("outcome") in {"succeeded", "no_speech", "mock"}:
-        content.extra.pop("error", None)
-
-
-def _materialize_voice_audio(content: Content) -> tuple[Path, Path | None]:
-    """把 COS 音频下载为临时文件；本地测试路径直接复用。"""
-    import tempfile
-
-    from app.services.external.asr import (
-        AsrError,
-        temporary_suffix,
-        validate_audio_bytes,
-    )
-
-    if content.cos_key:
-        from app.services.external.storage import get_storage_backend
-
-        try:
-            data = get_storage_backend().get_object(content.cos_key)
-        except Exception as exc:  # noqa: BLE001
-            raise AsrError(
-                "AUDIO_DOWNLOAD_FAILED",
-                "语音文件下载失败",
-                retryable=True,
-            ) from exc
-        filename = str(extra_get(content, "file_name") or content.cos_key)
-        # 内部对象存储允许长 WAV 进入 VAD 分段；API 直传仍保持 8MB 上限。
-        audio_format = validate_audio_bytes(data, filename, max_bytes=None)
-        with tempfile.NamedTemporaryFile(
-            suffix=temporary_suffix(audio_format), delete=False
-        ) as tmp:
-            tmp.write(data)
-            tmp_file = Path(tmp.name)
-        return tmp_file, tmp_file
-
-    if extra_get(content, "audio_path"):
-        return Path(content.extra["audio_path"]), None
-    raise AsrError("AUDIO_NOT_FOUND", "语音内容缺少可处理的音频文件")
-
-
-def _cleanup_temporary_audio(tmp_file: Path | None) -> None:
-    if tmp_file is None:
-        return
-    try:
-        tmp_file.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
-def _set_emotion_enrichment(
-    content: Content,
-    status: str,
-    *,
-    error: dict | None = None,
-) -> None:
-    detail = dict(extra_get(content, "audio_processing") or {})
-    detail["emotion_enrichment"] = status
-    if error is None:
-        detail.pop("emotion_error", None)
-    else:
-        detail["emotion_error"] = error
-    patch_extra(content, audio_processing=detail)
-
-
 def _process_voice(db: Session, content: Content) -> str:
     """语音主步骤：先完成转写；本地情绪由独立低优先级任务增强。"""
 
@@ -239,192 +201,6 @@ def _process_voice(db: Session, content: Content) -> str:
         _cleanup_temporary_audio(tmp_file)
 
 
-def enrich_content_emotion(content_id: str) -> dict:
-    """低优先级 RQ 任务：只增强情绪，不改变已完成的转写状态。"""
-    from app.services.external.asr import (
-        EMOTION_ACTION_THRESHOLD,
-        MODEL_SENSEVOICE,
-        AsrError,
-        infer_local_emotion,
-    )
-
-    db: Session = SessionLocal()
-    content: Content | None = None
-    tmp_file: Path | None = None
-    try:
-        content = db.get(Content, content_id)
-        if content is None:
-            return {"content_id": content_id, "status": "not-found"}
-        if content.content_type != "voice" or not (content.text or "").strip():
-            _set_emotion_enrichment(content, "skipped")
-            db.commit()
-            return {"content_id": content_id, "status": "skipped"}
-
-        current_source = str((content.emotion or {}).get("source") or "none")
-        mode = settings.asr_local_emotion_mode
-        if mode == "off" or (
-            mode == "auto" and current_source not in {"", "none"}
-        ):
-            _set_emotion_enrichment(content, "skipped")
-            db.commit()
-            return {
-                "content_id": content_id,
-                "status": "skipped",
-                "reason": "disabled" if mode == "off" else "primary-emotion-present",
-            }
-
-        _set_emotion_enrichment(content, "processing")
-        db.commit()
-        audio_path, tmp_file = _materialize_voice_audio(content)
-        local = infer_local_emotion(audio_path)
-        actionable = (
-            local.emotion != "平静"
-            and local.emotion_confidence >= EMOTION_ACTION_THRESHOLD
-        )
-        content.emotion = {
-            "emotion": local.emotion,
-            "confidence": local.emotion_confidence,
-            "source": "sensevoice_local",
-            "model": MODEL_SENSEVOICE,
-            "actionable": actionable,
-        }
-        detail = dict(extra_get(content, "audio_processing") or {})
-        detail.update(
-            {
-                "emotion": local.emotion,
-                "emotion_confidence": local.emotion_confidence,
-                "emotion_source": "sensevoice_local",
-                "emotion_model": MODEL_SENSEVOICE,
-                "emotion_actionable": actionable,
-                "emotion_enrichment": "succeeded",
-            }
-        )
-        detail.pop("emotion_error", None)
-        patch_extra(content, audio_processing=detail)
-        # B5a 集成（Wave4 AgentJ 需求 4）：本地情绪增强产出真情绪后，补触发
-        # 事件层联动（events.emotion）与关怀/voice_done 接线——否则初始 funasr
-        # 通道恒"平静"，enrich 才产出的真情绪不会联动（幂等安全，见 emotion.py 头注）
-        from app.services.pipeline_ext import consume_emotion
-
-        consume_emotion(db, content)
-        db.commit()
-        return {"content_id": content_id, "status": "succeeded"}
-    except AsrError as exc:
-        db.rollback()
-        target = db.get(Content, content_id)
-        if target is not None:
-            _set_emotion_enrichment(
-                target,
-                "failed",
-                error={"code": exc.code, "retryable": exc.retryable},
-            )
-            db.commit()
-        logger.warning("本地情绪增强失败 content=%s: %s", content_id, exc.code)
-        return {"content_id": content_id, "status": "failed", "error": exc.code}
-    except Exception as exc:  # noqa: BLE001 -- 情绪失败不回滚主转写
-        db.rollback()
-        target = db.get(Content, content_id)
-        if target is not None:
-            _set_emotion_enrichment(
-                target,
-                "failed",
-                error={"code": "LOCAL_EMOTION_PIPELINE_ERROR", "retryable": True},
-            )
-            db.commit()
-        logger.warning("本地情绪增强异常 content=%s: %s", content_id, type(exc).__name__)
-        return {
-            "content_id": content_id,
-            "status": "failed",
-            "error": "LOCAL_EMOTION_PIPELINE_ERROR",
-        }
-    finally:
-        _cleanup_temporary_audio(tmp_file)
-        db.close()
-
-
-def _process_photo(db: Session, content: Content) -> None:
-    """照片：image_caption 写 caption 入索引 + CI 打标（都失败静默）
-
-    审查 CRITICAL 修复：image_caption 需要本地文件路径，cos_key 是对象存储键——
-    先下载到临时文件再调用（与 _process_voice 一致），修复真实链路必然失败问题。
-    """
-    import tempfile
-
-    from app.services.external.dashscope import image_caption
-
-    # 取 COS 图片（cos_key）或本地路径（extra.image_path，测试用）
-    image_path = None
-    tmp_file = None
-    if content.cos_key:
-        try:
-            from app.services.external.storage import get_storage_backend
-
-            storage = get_storage_backend()
-            data = storage.get_object(content.cos_key)
-            tmp_file = Path(tempfile.gettempdir()) / f"yishu_photo_{content.id}.jpg"
-            tmp_file.write_bytes(data)
-            image_path = tmp_file
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("图片下载失败 content=%s: %s", content.id, exc)
-    elif extra_get(content, "image_path"):
-        image_path = Path(content.extra["image_path"])
-
-    try:
-        # 1. caption（图片塔；失败不影响照片浏览，仅不可搜）
-        #    Qdrant 索引（text_vec/image_vec）+ payload 补全 R2#1 后置到主提交
-        #    之后（_index_after_commit，此时 place/ci_tags 已就绪，无需 update_payload）
-        caption = None
-        if image_path is not None:
-            try:
-                caption = image_caption(str(image_path))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("图片 caption 失败 content=%s: %s", content.id, exc)
-        if caption:
-            content.text = caption
-
-        # 2. CI 打标（F1 L2 场景标签 / 搜索标签增强）
-        # 2026-08-26 真实 key 验证修复：CI 打标要求图片在 COS（image_key=COS key），
-        # fs 真实模式的本地路径不是 COS key → NoSuchKey 静默失效。
-        # 条件：cos 后端（真实打标）或 mock 模式（测试/沙箱，monkeypatch 或 mock 契约）才调用；
-        # fs 真实模式跳过（放行+日志），STORAGE_BACKEND=cos 上线后自动启用。
-        if settings.storage_backend == "cos" or settings.mock_external_ai:
-            try:
-                from app.services.external.tencent_ci import image_detect_label
-
-                if image_path is not None:
-                    tags = image_detect_label(str(image_path))
-                    if tags:
-                        patch_extra(content, ci_tags=tags)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
-        elif image_path is not None:
-            logger.info("CI 打标跳过（STORAGE_BACKEND=%s 且非 mock，图片不在 COS）", settings.storage_backend)
-
-        # Wave0 钩子：B5b 事件级敏感标记 + B1 画像标注（照片 caption/标签）
-        from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
-
-        mark_sensitive_on_ingest(db, content)
-        annotate_on_ingest(db, content)
-
-        # 3. 逆地理编码（高德 GPS→地名，geohash 缓存≤30 天；失败静默）
-        #    contents.place 供事件聚合/搜索地点过滤/展示用元数据。
-        if content.gps_lat is not None and content.gps_lng is not None and not content.place:
-            try:
-                from app.services.external.amap import get_place
-
-                place = get_place(db, content.gps_lat, content.gps_lng)
-                if place:
-                    content.place = place
-            except Exception as exc:  # noqa: BLE001 —— 逆地理失败不影响照片浏览
-                logger.warning("逆地理失败 content=%s: %s", content.id, exc)
-    finally:
-        if tmp_file is not None:
-            try:
-                tmp_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-
 # ---------------------------------------------------------------------------
 # 内容类型处理注册表（R1#7：内容类型 if/elif 分流收敛为注册表）
 #
@@ -435,6 +211,9 @@ def _process_photo(db: Session, content: Content) -> None:
 # 注册表存**处理器函数名**、分发时按当前模块属性解析——与旧内联 dict 每调用
 # 取模块全局的语义一致（测试 monkeypatch `_process_text` 后分发能取到替身），
 # 也允许运行时替换处理器实现。
+#
+# ⚠️ 波D ①：`_process_photo` 已迁至 pipeline_photo.py（本文件 re-export）；
+# 因 `_resolve_handler` 的 globals() 就是本模块，注册与派发语义不变。
 # ---------------------------------------------------------------------------
 CONTENT_HANDLERS: dict[str, str] = {}
 
@@ -485,34 +264,6 @@ def _index_after_commit(db: Session, content: Content) -> None:
         )
     except Exception as exc:  # noqa: BLE001 —— 图片向量失败不影响浏览
         logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
-
-
-def _enqueue_user_aggregation(user_id: str) -> str:
-    """F3/R5-3：按 user 级 key 入队聚合独立 RQ 任务（同用户同时多内容只跑一次）
-
-    core/queue.enqueue_unique 的 Redis SETNX 原子预占位做去重合并：
-      - job_id = run_user_aggregation_user_<uid>（确定性，同用户并发/重复触发不重复入队）
-      - 聚合任务扫描该用户全部未成候选内容（含本批并发内容），一次覆盖并发批次
-      - 放 low 队列（P2-P4 聚合/批量），DEFAULT_JOB_TIMEOUT（300s）
-
-    返回 "queued"（已入队）/ "enqueue_failed"（入队失败，调用方只记日志不否定主结果）。
-    """
-    try:
-        from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
-        from app.services.events import run_user_aggregation
-
-        enqueue_unique(
-            run_user_aggregation,
-            f"user:{user_id}",
-            str(user_id),
-            mode="l2l3",
-            queue_name=QUEUE_LOW,
-            job_timeout=DEFAULT_JOB_TIMEOUT,
-        )
-        return "queued"
-    except Exception as exc:  # noqa: BLE001 —— 入队失败不影响主转写结果
-        logger.warning("聚合任务入队失败 user=%s: %s", user_id, type(exc).__name__)
-        return "enqueue_failed"
 
 
 def process_content(content_id: str) -> dict:
@@ -601,6 +352,7 @@ def process_content(content_id: str) -> dict:
                 enqueue_unique(
                     enrich_content_emotion,
                     content_id,
+                    content_id,  # R9-B6：函数参数（key 只是去重键，缺 args = 零参秒死）
                     queue_name=QUEUE_LOW,
                     job_timeout=DEFAULT_JOB_TIMEOUT,
                 )
@@ -620,6 +372,33 @@ def process_content(content_id: str) -> dict:
                     error={"code": "EMOTION_ENQUEUE_FAILED", "retryable": True},
                 )
                 emotion_job_status = "enqueue_failed"
+
+        # BA3（AI 链批）挂钩：文本/语音类 chips 标签投低优先级 RQ 任务（tag_content）。
+        # 先入队后提交（同情绪任务 F4/R5-5 语义，消除 commit→enqueue 间隙崩溃丢任务；
+        # enqueue_unique 同 content 键去重，双投安全）。空白语音（no_speech）无文本不打标。
+        # 失败语义：入队失败仅 log + processed 标记，不否定主内容 done（打标是增强项）。
+        tags_job_status = None
+        if content.content_type in ("text", "voice") and processing_outcome != "no_speech":
+            try:
+                from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
+
+                enqueue_unique(
+                    tag_content,
+                    content_id,
+                    content_id,  # 函数参数（key 只是去重键，缺 args = 零参秒死）
+                    queue_name=QUEUE_LOW,
+                    job_timeout=DEFAULT_JOB_TIMEOUT,
+                )
+                tags_job_status = "queued"
+                processed.append("tags_queued")
+            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主结果
+                logger.warning(
+                    "AI 打标任务入队失败 content=%s: %s",
+                    content_id,
+                    type(exc).__name__,
+                )
+                tags_job_status = "enqueue_failed"
+                processed.append("tags_enqueue_failed")
 
         content.status = "done"
         # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
@@ -649,6 +428,7 @@ def process_content(content_id: str) -> dict:
             "processed": processed,
             "outcome": processing_outcome,
             "emotion_job": emotion_job_status,
+            "tags_job": tags_job_status,
             "agg_job": agg_job_status,
             "error": errors,
         }
