@@ -219,7 +219,12 @@
 	} from '@/utils/audio_player'
 	import { formatMonthDay, parseIsoMs } from '@/utils/time'
 	import { uploadBatch, UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader'
-	import { createPhotoWatch, PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
+	// 2026-09-11 D-19 修复：**行为入口** createPhotoWatch 走插件根（recorder 同款已验证路径，
+	// 原生 dex 纳入靠这一条）；纯数据类 PhotoItem 的声明家在 utssdk/interface.uts——
+	// 插件根代理不转发 interface 的再导出符号（实测：root 导入 PhotoItem 报
+	// "is not exported by ...?uts-proxy"），故二者分开 import。
+	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
+	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 	import { showErrorToast, fetchDailySummary, DailySummary } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'

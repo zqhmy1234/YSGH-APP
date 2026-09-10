@@ -1,3 +1,6 @@
 {
-  "minSdkVersion": "21"
+  "minSdkVersion": "21",
+  "dependencies": [
+    "androidx.work:work-runtime:2.9.1"
+  ]
 }

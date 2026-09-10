@@ -18,8 +18,9 @@
  *    故 UTS 侧先用 Class.forName 探测 BgTaskManager 是否存在。
  *  - UTS（本文件）：pending 队列/状态管理（SharedPreferences，标准基座可用）+ 反射薄层
  *    （仅当 BgTaskManager 存在时调用，否则安全降级 no-op）。
- *  - libs/*.jar：work-runtime 及其传递依赖（编译期 classpath，resolveLibs 纯文件机制，
- *    规避 HBuilderX config.json 依赖下载/类型生成在部分环境不生效的问题）。
+ *  - androidx.work：由 config.json 的 dependencies 声明（maven 解析完整传递闭包，含
+ *    Room 与 startup 的 manifest 合并）。2026-09-11 起取代原 libs 目录手工 jar 堆
+ *    （后者致 2688 条重复类 + 闭包缺 Room，详见差异台账 §PP）。
  *
  * 任务执行模型（两段式，保证不丢任务）：
  *  - WorkManager 到点唤醒（自定义基座）→ 原生 Worker 写 pending（SharedPreferences）
@@ -42,9 +43,9 @@ const WAKEUP_KEY = 'last_wakeup'
 
 let _initialized: boolean = false
 let _taskHandler: BackgroundTaskHandler | null = null
-let _appContext: Context | null = null
+let _appContext: android.content.Context | null = null
 
-function appContext(): Context {
+function appContext(): android.content.Context {
 	const cached = _appContext
 	if (cached != null) {
 		return cached
@@ -54,7 +55,7 @@ function appContext(): Context {
 	return created!
 }
 
-function prefs(): any {
+function prefs(): android.content.SharedPreferences {
 	return appContext().getSharedPreferences(PREFS_KEY, 0)
 }
 
@@ -192,7 +193,7 @@ export function initBackgroundTasks(hours: number): void {
 		return
 	}
 	try {
-		const ctxCls = Class.forName('android.content.Context') as Class<Context>
+		const ctxCls = Class.forName('android.content.Context') as Class<android.content.Context>
 		const initMethod = cls.getMethod('init', ctxCls)
 		initMethod.invoke(null, appContext())
 		const h = hours > 0 ? hours : 2

@@ -52,6 +52,7 @@ setBackgroundTaskHandler((taskType: string) => {
 
 ## 构建说明
 
-- 依赖 androidx.work 2.9.1：`utssdk/app-android/libs/*.jar`（本地依赖，官方路径）。
-- config.json 已删除（本环境依赖下载机制不生效；勿恢复，否则触发 broken 依赖下载）。
+- 依赖 androidx.work 2.9.1：`utssdk/app-android/config.json` 的 `dependencies` 声明，由 gradle 解析完整传递闭包（含 Room、含 startup 的 manifest 合并）。2026-09-11 起取代原 libs 手工 jar 堆。
+- ⚠️ **勿恢复 `libs/` 手工 jar 堆**：云打包实测 2688 条重复类（`:app:checkReleaseDuplicateClasses`，手工 jar 与 app/云端自带 androidx 整包撞车），且闭包缺 Room ⇒ WorkManager 运行期崩，而 `Class.forName` 探针仍报 True（假通过，比编译失败更隐蔽）。
+- 本地若「更新三方依赖」报 `zip file is empty`：根因是本机 gradle 发行版的 `gradle-base-ide-plugins-8.13.jar` 被截断为 0 字节，补齐该文件即可，**与本插件无关**，别据此判定"config.json 机制不生效"。
 - 原生 Kotlin（`BgBackground.kt`）仅在自定义基座（云打包）编译；标准基座由 UTS 层探测降级。

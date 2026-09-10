@@ -34,7 +34,10 @@ import { ensureLogin, DEVICE_ID } from './auth'
 import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
 import { isoLocal } from './time'
 // B5d 后台任务插件（Wave 4 K）：WorkManager 周期唤醒写 pending → 应用层 drain 消费（两段式）
-import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
+// 2026-09-11 D-18/D-19 修复：宿主 import 只到插件根（recorder 同款已验证路径）——deep path
+// 直引 app-android/index.uts 会让插件被当普通源码内联进宿主 JS 层，原生类不进 dex；
+// 根路径 import 才使插件作为 uni_module 走独立原生编译管线。
+import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks'
 // O15：sync 三端点路径统一走 contract.ts（与 OpenAPI 对齐）
 import { PATH_SYNC_PUSH, PATH_SYNC_PULL, PATH_SYNC_RECONCILE } from './contract'
 

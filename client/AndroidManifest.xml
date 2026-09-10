@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  忆述光华 · 工程级 AndroidManifest.xml（云打包 / 自定义基座 manifest 合并点）
+
+  D-19 修复（2026-09-11）：
+    yishu-photo-watch 插件的 dataSync 前台服务在本文件注册。
+    - 服务 FQN 由**实包定稿**，非猜测：本地模块编译产物
+      unpackage/cache/vapor/uts_standard_android/app-android/uts/uni_modules/yishu-photo-watch/classes.dex
+      实证类名为 uts.sdk.modules.yishuPhotoWatch.DataSyncService（UTS 插件默认命名空间规则）。
+    - 与 index.uts 的 SERVICE_CLASS_FQN 常量必须同步；改一处不改另一处 = 运行时
+      ClassNotFound（静默回退页面级监听，功能降级但无报错），故两处绑定维护。
+
+  为何放工程根而非插件目录：
+    - 官方口径「使用者的配置不放在插件下，而放在自己的项目下」；
+    - 插件 utssdk/app-android 下当前无插件级 AndroidManifest.xml；
+    - .gitignore 已为此路径开豁免（commit 0c5bc3d）。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 前台服务基础权限 + Android 14(API 34) 起 dataSync 类型必须显式声明 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 13+ 前台服务通知展示（未授予时 FGS 仍可运行，仅通知不展示） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!--
+          dataSync 前台服务（短命化：30min 最长存活 / 空闲 10min 自停；与录音 microphone 类型互斥）
+          exported=false：仅本应用内 startService
+        -->
+        <service
+            android:name="uts.sdk.modules.yishuPhotoWatch.DataSyncService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>

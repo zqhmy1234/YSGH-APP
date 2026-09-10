@@ -1,11 +1,18 @@
 /**
  * 忆述光华 · 后台任务队列（WorkManager）原生 Kotlin 实现（B5d · Wave4 Agent K）
  *
- * 为什么原生 Kotlin + libs jar（而非 UTS 静态引用）：
- *  UTS 编译器对第三方库类型（androidx.work）的 .d.ts 依赖 HBuilderX 的
- *  config.json 依赖下载机制（gradle + Jars2DtsGenerator）；该机制在部分环境
- *  （CLI 编译 / .wt worktree / CI）不生效导致 error18。libs/ 目录是纯文件机制：
- *  resolveLibs 直接把 libs 目录下全部 jar 加入 kotlinc classpath，任何环境可编译。
+ * 依赖来源（2026-09-11 变更，依据差异台账 §PP）：
+ *  androidx.work 由 config.json 的 "dependencies" 声明，交给 gradle 解析完整传递闭包。
+ *  此前走 libs 目录下的手工 jar 堆（12 个手抄 jar），已整体删除，原因两条均为实证：
+ *   ① 云打包 :app:checkReleaseDuplicateClasses 报 2688 条重复类——手工 jar 与 app/云端
+ *      自带的 androidx（core-1.13.1 / lifecycle-2.6.2 / annotation-1.8.1 …）整包撞车；
+ *   ② 手工堆闭包不全：全 libs 无 androidx 的 room 包（而 WorkDatabase 引用它 5 处），
+ *      jar 内也没有 AndroidManifest.xml 与 startup 组件 ⇒ WorkManager 不会自动初始化。
+ *      两者叠加的后果是"类探针 True 而功能不干活"，比编译失败更隐蔽。
+ *  当初改用 libs jar 的动机（config.json 机制在 CLI/worktree 下不生效）经复查属误判：
+ *  真因是本机 gradle 发行版的 gradle-base-ide-plugins-8.13.jar 被截断为 0 字节，
+ *  令"更新三方依赖"步骤报 zip file is empty；该步骤本身 non-fatal，
+ *  故当时被误读成"机制不支持"。该文件已于 2026-09-11 补齐，maven 路径本地可验证。
  *  注意：标准基座运行流程不编译原生 .kt（仅自定义基座/云打包编译），
  *  UTS 侧以 Class.forName 探测本类是否存在，不存在时安全降级。
  *
@@ -31,6 +38,7 @@ import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ListenableWorker
 import androidx.work.NetworkType
@@ -162,7 +170,7 @@ object BgTaskManager {
                     .build()
             )
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(NAME_PERIODIC, ExistingWorkPolicy.KEEP, periodic.build())
+                .enqueueUniquePeriodicWork(NAME_PERIODIC, ExistingPeriodicWorkPolicy.KEEP, periodic.build())
             Log.i(TAG, "2h 周期后台同步已注册（tag=$TAG_PHOTO）")
         } catch (t: Throwable) {
             Log.e(TAG, "initPeriodic 失败", t)

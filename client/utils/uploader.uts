@@ -26,6 +26,7 @@
  * 兼容：uploadBatch(items, onProgress) 原签名不变（opts 可选，默认 auto）。
  */
 import { ensureLogin } from './auth'
+// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 // F9/R1#10 职责分离：暂停控制器（pauseSync/resumeSync/连续失败阈值）消费共享 pause_controller.ts；
 // 网络恢复钩子 onNetworkRestored 仍由 sync_client 提供（同步链路补推用）

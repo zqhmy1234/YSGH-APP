@@ -2000,3 +2000,63 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **🔧 我自己修正 §MM 的判断③**：「MANAGER_CLASS='uni.UNIYISHU001.BgTaskManager' 硬编码假 appid=坐实 bug」——**过判**。手写混编 .kt 的 `package uni.UNIYISHU001` 声明会被 Kotlin 编译器原样保留（自定义包名不受 appid 改名影响，UNI2650A2A 只作用于 UTS 自动编译层类，如 class 缓存里 RecorderController 落 uni/UNI2650A2A/ 是 recorder **纯 UTS 层**的形态）→ .kt 产出类 FQN 与反射字符串**自洽**，该项降级为「待云包终验」而非既成 bug。bg-tasks 修复清单相应缩为 5 件：删死 jar、修注释嵌套毒、宿主根 import、Context 类型官方写法、manifest 注册 service（后三件本来就标了需云打包终验）。
 - **两颗确定雷的修复方案已验证可落地**（事故前实做成功过：字节级单行替换 diff 干净 + 注释复扫全闭合 + git rm 成功执行），只差一个不被环境炸的窗口重放：①BgBackground.kt 第 8 行 `libs/*.jar` → `libs 目录下全部 jar`（去嵌套注释毒）；②删 `libs/listenablefuture-1.0.jar`（689B 404 HTML 死件，.kt 零引用）。命令清单写入本段供新会话复制执行。
 - 本会话最终交付盘点（全在远程 develop）：recorder 根引用修复 `37793e5`（云包 dex 实证进包=根因机制闭环）+ §LL/§MM/§NN/§OO 诊断账 + gitignore 豁免/B905 `0c5bc3d` + 台账若干。bg/photo-watch 完整修复 = 交给新会话的标准工单（§MM+§OO 两段合读即全量上下文）。
+
+### §PP（2026-09-11 凌晨，B 段执行：代码侧全绿但云打包被 2688 重复类拦住；根因=手工 jar 堆，maven 机制本机实证可用）
+
+> 工单来源 `docs/工单_UTS插件修复_20260911.md` B 段。本节只记**取证结论与决策点**，未落地的改动不写成"已修"。
+
+- **代码侧已完成且本地门全绿**（终端 C 为「编译成功」，非"编译成功"字样以下的猜测）：bg-tasks 本地模块编译 ✅（仅 2 条非阻断 warning：`Condition is always 'true'`、`Number/Int` 装箱恒等比较）；photo-watch 本地模块编译 ✅。B1 第 1~2 步、B2 第 1~4 步代码改动全部落地，云打包已走到「正在提交到云端」。
+- **🔴 云端失败：`:app:checkReleaseDuplicateClasses`，2688 条重复类**。⚠️ **订正：先前口径「1347 条」是错的**——那是我按 `<br>` 计数得出的，不是重复类条数。本次用 `.cowork-temp/parse_dup.py` 对 HTML 转义日志做全量正则解析（`Duplicate class X found in modules A and B`）得 **2688**，脚本可复现，勿再沿用旧数。
+- **冲突对 9 组，全部是「我方 `libs/` 手工 jar ↔ app/云端 androidx」**（数=重复类数）：
+  | 我方手工 jar | 对方（app/云端） | 条数 |
+  |---|---|---|
+  | core-1.5.0-classes.jar | core-1.13.1.aar | 2004 |
+  | annotation-1.1.0.jar | annotation-jvm-1.8.1.jar | 236 |
+  | lifecycle-common-2.6.1.jar | lifecycle-common-2.6.2.jar | 144 |
+  | lifecycle-viewmodel-2.6.1-classes.jar | lifecycle-viewmodel-2.6.2.aar | 124 |
+  | lifecycle-livedata-2.6.1-classes.jar | lifecycle-livedata-2.6.2.aar | 52 |
+  | lifecycle-runtime-2.6.1-classes.jar | lifecycle-runtime-2.6.2.aar | 48 |
+  | core-common-2.1.0.jar | core-common-2.2.0.jar | 36 |
+  | lifecycle-livedata-core-2.6.1-classes.jar | lifecycle-livedata-core-2.6.2.aar | 28 |
+  | core-runtime-2.1.0-classes.jar | core-runtime-2.2.0.aar | 16 |
+  **12 个 jar 中 9 个冲突，3 个干净**：`sqlite-2.1.0-classes.jar`、`sqlite-framework-2.1.0-classes.jar`、`work-runtime-2.9.1-classes.jar` 未出现在任何冲突对（⇒ app/云端**没有** androidx.sqlite、**没有** androidx.work，这两个只能由我方提供）。
+- **🔴 关键发现①：jar 通路就算打过包，功能也是"假通过"（探针全 True 而活不干）**。python zipfile 实证：
+  - `work-runtime-2.9.1-classes.jar` 内 **无 `AndroidManifest.xml`、无 `androidx/startup/*`**（有 `WorkManagerInitializer.class`，无 `InitializationProvider.class`）⇒ WorkManager **不会自动初始化**；
+  - 全 12 个 jar **零 `androidx/room` 类**，而 `androidx/work/impl/WorkDatabase.class` 常量池中含 **5 处 `androidx/room` 引用** ⇒ 运行期构造 WorkManagerImpl 必 `NoClassDefFoundError`；
+  - 而 `isWorkManagerAvailable()` 只做 `Class.forName` ⇒ **探针返回 true，功能全哑**。工单 B1 第 5 步的 dex 判据本身**不足以证明功能可用**，必须补真机行为验。
+- **🟢 关键发现②：maven 依赖机制被本机工具链实证支持（这条推翻了 §NN/§OO 的"本地 gradle 残缺⇒只能云打包验"结论）**。逐份比对本轮 4 份编译实录：
+  - 基线 3 份（`base_bgtasks.txt`/`r1_`/`r2_`/`r3_`，config.json 只有 `minSdkVersion`）→ **均无**「正在更新三方依赖」字样；
+  - 唯一加了 `"dependencies": ["androidx.work:work-runtime:2.9.1"]` 的那份（`r4_bgtasks_dep.txt`）→ 第 3 行出现 `uni_module [yishu-background-tasks] 正在更新三方依赖...`。
+  ⇒ HBuilderX 5.24 **识别并处理**该字段（实测，非文档口径）。工单 B1 第 3 步的官方 maven 路线**可行**。
+- **🔴 关键发现③：r4 那次"依赖更新失败"不是机制不支持，是本机 gradle wrapper 发行版被截断——且它当时并未阻断编译**：
+  - r4 第 98 行仍是「项目 client（模块 yishu-background-tasks）编译成功」⇒ 步进是 non-fatal（当时 libs/ jar 兜住了符号）；
+  - 失败根因：`C:\Users\ghf\.gradle\wrapper\dists\gradle-8.13-bin\5xuhj0ry160q40clulazy9h7d\gradle-8.13\lib\plugins\gradle-base-ide-plugins-8.13.jar` = **0 字节** → `java.util.zip.ZipException: zip file is empty` → `Could not create service of type ClassLoaderRegistry`；
+  - 范围精测：**整个 dist 只此 1 个 jar 残缺**（另 2 个 0 字节文件是正常的 `.lck`/`.ok`），其余 jar 完好；**原始 `gradle-8.13-bin.zip` 已不在**（只剩 `.lck`+`.ok`），故只能重新下载 ~130MB 补齐；
+  - `C:\Users\ghf\.gradle\wrapper\dists\` 下另有 7.5.1 / 8.12.1 / 9.2.0 / 9.2.1 四套 dist，但**均不含** `gradle-base-ide-plugins-*.jar`（版本也对不上），无现成副本可搬。
+  ⇒ **修好这 1 个文件，maven 路线就能拿到 20~30s 的本地快验能力**，不必靠 9~50min 云打包试错。
+- **决策点（待峰宝拍板，未动一行）**：
+  1. **路线选择**：A＝删光 12 个手工 jar + `config.json` 声明 `androidx.work:work-runtime:2.9.1`（gradle 解析完整闭包：含 Room、含 `InitializationProvider` manifest 合并 ⇒ 自动初始化恢复、功能真可用、无重复类）｜B＝只删 9 个冲突 jar（**本地能编过、云端能打包，但缺 Room ⇒ 运维期必崩 = 探针假通过，已否决**）｜C＝手工补 room jar + 代码里手动 `WorkManager.initialize()`（零 gradle 依赖但手工闭包脆弱）。
+  2. **是否先补本地 gradle**（需下载 `gradle-8.13-bin.zip` ~130MB + 写入用户 home 的 `.gradle`，属工作区外写操作，需授权）。
+- **未闭环项登记（不写成已完成）**：B1/B2 云打包终验 ❌（被重复类拦住）；B3 六探针 dex 扫描 ❌（无新包可扫）；B4 关单 ❌（D-18/D-19 未关）。
+
+#### §PP-处置（2026-09-11 02:00-02:35，峰宝拍板「全删 12 jar 走 maven」+「补本地 gradle」后执行）
+
+**① 环境修复两件（都在工作区外，改了必须记账）**
+
+| 项 | 病灶 | 处置 | 证据 |
+|---|---|---|---|
+| 本地 gradle 发行版 | `C:\Users\ghf\.gradle\wrapper\dists\gradle-8.13-bin\5xuhj0ry160q40clulazy9h7d\gradle-8.13\lib\plugins\gradle-base-ide-plugins-8.13.jar` = 0 字节 | 下载官方 `gradle-8.13-bin.zip`（136,983,045 B，HTTP 200）只抽该成员覆盖（0 → **15,200 B / 19 条目**），原 0 字节件留 `.zerobyte.bak` | `.cowork-temp/fix_gradle_dist.py` 十步显式输出 |
+| gradle 代理配置 | `C:\Users\ghf\.gradle\gradle.properties` 把 http/https 代理指向 `127.0.0.1:7890`，**实测该端口零响应**；而直连 `dl.google.com` 与 `maven.aliyun.com` 均 **200 OK** ⇒ gradle 走死代理，所有仓库不可达，被 Gradle 报成 `Plugin com.android.application:8.2.2 was not found`（症状与真因完全不同层） | 注释掉 7 条 `systemProp.*proxy*`（**不改 28605**：那是本会话沙箱代理，硬编码会制造新故障）。备份 `.cowork-temp/gradle.properties.bak`（996 B） | 回读校验「仍生效的 proxy 行 = 0」；`.cowork-temp/fix_gradle_proxy.py` |
+
+⚠️ **这条要写进技能**：本机 gradle 类失败**先测代理端口连通性**，别被 Gradle「not found」的表层措辞带着去查仓库配置。
+
+**② 依赖机制切换（libs 手工 jar 堆 → maven）**
+
+- 12 个 jar 全部删除（先整目录镜像备份 `.cowork-temp/libs_backup_20260911/`，逐条打印结果，删后目录空、备份数量一致）；`config.json` 改为声明 `androidx.work:work-runtime:2.9.1`（保留 `minSdkVersion: 21`）。
+- 三处过期口径同步：`BgBackground.kt` 头注（**注意不得写 `libs` 后接 `/*`，会在 KDoc 内开嵌套注释——§NN 史前死因，本次改用文字表述**）、`index.uts:21`、`README.md:55`（原写着「config.json 已删除，勿恢复」，已改写并加「勿恢复 libs 手工 jar」警示）。
+- **本地模块编译重新全绿**：`正在更新三方依赖...`（02:31:32）→ `三方依赖更新完成`（02:33:22，**110 秒含下载**）→ `编译成功`（02:33:46），warning 仍是原来那 2 条非阻断项。⇒ **maven 路径端到端走通**，不再是推测。
+- **传递闭包实证（gradle 缓存，今日新下）**：`androidx.work/work-runtime`、`androidx.room`（room-common/**room-runtime 2.5.0** 237 KB/room-ktx）、`androidx.startup/startup-runtime`、`androidx.sqlite`（sqlite/sqlite-framework/sqlite-ktx）**全部解析到位**。
+- **自动初始化前提实证**：`work-runtime-2.9.1.aar`（1,838,630 B，02:33 新下）**内含 `AndroidManifest.xml` + `WorkManagerInitializer` + `androidx.startup` + `InitializationProvider`** ⇒ gradle 合并该 manifest 后 **WorkManager 自动初始化恢复**（jar 通路必然给不了的能力）；`startup-runtime-1.1.1.aar` 亦含 `InitializationProvider`。
+- **本地 dex 探针（新工具 `.cowork-temp/scan_dex.py`，python 逐字节，遵工单禁用 findstr）**：`client/unpackage/**` 3 个模块 dex 扫得 **B3 六探针 4/6** —— `yishuPhotoWatch` ✅、`DataSyncService` ✅、`uni/UNIYISHU001` ✅、`BgTaskManager` ✅（另 `uni/UNIYISHU001/BgTaskManager`、`uts/sdk/modules/yishuPhotoWatch/DataSyncService`、`androidx/work/ExistingPeriodicWorkPolicy` 全 ✅）；`yishuRecorder`/`RecorderController` ❌ 属**预期**（不在本次编译批次，recorder 已于 `37793e5` 独立验证过）。
+- ⚠️ **口径提醒（防误读）**：模块 dex 只含**本模块自身类**，依赖类不落模块 dex。因此 `androidx/room`、`androidx/startup`、`WorkManagerImpl` 在本地 dex **扫不到不是缺陷**；它们的可用性由上面 gradle 缓存 + AAR manifest 证据链支撑，最终仍需**云包 APK 全 dex + 真机行为**闭合。工单 B3 的判据本就是云包 APK，本段只是前置预验。
+- 云打包（`--iscustom true --android.packagename com.yishu.guanghua`）已发起，实录 `.cowork-temp/pack_r3_maven.txt`。**结果未出前，B3/B4 一律标未闭环。**

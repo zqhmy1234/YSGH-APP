@@ -271,7 +271,8 @@
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 	import { uploadBatch, UploadProgress, UploadedPhoto } from '@/utils/uploader'
-	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts'
+	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
+	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 
 	// ===== 对外事件 =====
 	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
