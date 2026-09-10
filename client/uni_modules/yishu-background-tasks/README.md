@@ -6,7 +6,7 @@
 
 | 函数 | 说明 |
 |---|---|
-| `isWorkManagerAvailable(): boolean` | `ClassLoader.getResource('androidx/work/WorkManager.class')` 探测；标准基座返回 false |
+| `isWorkManagerAvailable(): boolean` | 反射调 `BgTaskManager.isAvailable()`（Kotlin 侧用 `Class.forName` 判断）；标准基座返回 false。⚠️ 2026-09-11 修正：原 `ClassLoader.getResource('...class')` 在 Android 上**恒 null**（类在 dex 不在资源表），导致恒判 false、功能全哑 |
 | `initBackgroundTasks(hours: number): void` | 注册 hours 小时周期任务（自定义基座走 PeriodicWork；标准基座退化 setInterval 兜底）。幂等 |
 | `setBackgroundTaskHandler(cb: (taskType: string) => void): void` | 设置任务回调（含周期到点与 pending 队列 drain；注册即 drain 一次积压） |
 | `enqueueTask(taskType: string): void` | 入队。类型映射：`voice_transcribe`→P0、`sync_photo`→P1、`event_aggregate`→P2、`profile_fetch`→P3、`batch_import`→P4 |

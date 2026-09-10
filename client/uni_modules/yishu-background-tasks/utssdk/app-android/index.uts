@@ -62,28 +62,37 @@ function prefs(): android.content.SharedPreferences {
 // ---------- 原生 WorkManager 层探测（标准基座无 BgTaskManager → 降级） ----------
 
 /**
- * androidx.work 运行时类是否存在（自定义基座 true / 标准基座 false）。
- * 注意：不用 Class.forName 探测——其抛出的 ClassNotFoundException 是 Exception 类，
- * UTS 的 catch (e: Error) 只捕获 Error 类（Exception 声明被 UTS 禁用），异常会冒泡到
- * 运行时错误浮层。ClassLoader.getResource 对不存在的资源返回 null 且不抛异常。
+ * androidx.work 运行时是否可用（自定义基座 true / 标准基座 false）。
+ *
+ * ⚠️ 2026-09-11 修正（D-18 真根因，真机日志实证）：
+ * 原实现 `appContext().getClassLoader().getResource('androidx/work/WorkManager.class')`
+ * **在 Android 上恒返回 null** —— App 的类活在 dex 里，不是 classloader 的资源条目，
+ * getResource 只找 APK/jar 内的资源文件。后果：探测恒 false → initBackgroundTasks
+ * 永远走降级分支 → WorkManager 永不注册；而 dex / manifest 层全是绿的（典型"假通过"）。
+ *
+ * 正确做法 = Class.forName —— Kotlin 侧 `BgTaskManager.isAvailable()` 一直是这么写的，
+ * 只是被本函数原来的错误守卫挡住、从未被执行到。此处直接复用它的结论，不在 UTS 侧
+ * 重复实现同一判断（也避免依赖 catch 能否捕获 Exception 这一未验证的前提）。
  */
 function workManagerRuntimePresent(): boolean {
+	const cls = managerClass()
+	if (cls == null) {
+		return false
+	}
 	try {
-		const cl = appContext().getClassLoader()
-		return cl.getResource('androidx/work/WorkManager.class') != null
-	} catch (e: Error) {
+		const m = cls.getMethod('isAvailable')
+		const v = m.invoke(null)
+		return v != null && (v as Boolean) == true
+	} catch (e: Throwable) {
 		return false
 	}
 }
 
-/** 获取 BgTaskManager 类（仅在 androidx.work 存在时调用，此时类必然存在，不抛异常） */
+/** 获取 BgTaskManager 类（类不存在时返回 null） */
 function managerClass(): Class<any> | null {
-	if (!workManagerRuntimePresent()) {
-		return null
-	}
 	try {
 		return Class.forName(MANAGER_CLASS) as Class<any>
-	} catch (e: Error) {
+	} catch (e: Throwable) {
 		return null
 	}
 }
@@ -97,7 +106,7 @@ function invokeNoArg(methodName: string): any | null {
 	try {
 		const m = cls.getMethod(methodName)
 		return m.invoke(null)
-	} catch (e: Error) {
+	} catch (e: Throwable) {
 		console.error('[yishu] 反射调用 ' + methodName + ' 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
 		return null
 	}
@@ -113,7 +122,7 @@ function invokeString(methodName: string, arg: string): any | null {
 		const strCls = Class.forName('java.lang.String') as Class<string>
 		const m = cls.getMethod(methodName, strCls)
 		return m.invoke(null, arg)
-	} catch (e: Error) {
+	} catch (e: Throwable) {
 		console.error('[yishu] 反射调用 ' + methodName + ' 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
 		return null
 	}
@@ -182,7 +191,9 @@ export function initBackgroundTasks(hours: number): void {
 	if (_initialized) {
 		return
 	}
-	_initialized = true
+	// ⚠️ _initialized 只在**全部成功后**置位（2026-09-11 修正）。
+	// 原实现进门就置 true：一旦中段抛错，后续调用直接 return、永不重试，
+	// 表现为「首次启动偶发失败 = 该进程生命周期内后台调度彻底失效」。
 	if (!workManagerRuntimePresent()) {
 		console.log('[yishu] 后台任务：标准基座（无 WorkManager），降级 pending + setInterval 兜底')
 		return
@@ -197,11 +208,19 @@ export function initBackgroundTasks(hours: number): void {
 		const initMethod = cls.getMethod('init', ctxCls)
 		initMethod.invoke(null, appContext())
 		const h = hours > 0 ? hours : 2
-		const periodCls = Class.forName('java.lang.Integer') as Class<number>
-		const m = cls.getMethod('initPeriodic', periodCls)
+		// ⚠️ JVM 反射签名匹配（2026-09-11 修正，真机实测 NoSuchMethodException）：
+		// Kotlin `fun initPeriodic(hours: Int)` 在字节码里是**原始类型 int**，用
+		// `java.lang.Integer`（装箱类）做 getMethod 签名会失败——错误串长这样：
+		//   `uni.UNIYISHU001.BgTaskManager.initPeriodic [class java.lang.Integer]`
+		// 必须取 Integer.TYPE（等价 int.class）。引用类型（如 Context）不受影响，
+		// 这就是 init() 调用一直正常、只有 initPeriodic() 失败的原因。
+		const intCls = Class.forName('java.lang.Integer') as Class<any>
+		const intType = intCls.getField('TYPE').get(null) as Class<number>
+		const m = cls.getMethod('initPeriodic', intType)
 		m.invoke(null, h)
+		_initialized = true
 		console.log('[yishu] initBackgroundTasks ok（hours=' + h + '）')
-	} catch (e: Error) {
+	} catch (e: Throwable) {
 		console.error('[yishu] initBackgroundTasks 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
 	}
 }

@@ -9,6 +9,42 @@
 
 ---
 
+### 2026-09-11 05:23 · commit 77b51f7 · ts=1789075433
+- **错误**：云打包的自定义调试基座（--iscustom true）装真机后启动白屏、且设备 logcat 零输出，一度误判为插件缺陷
+- **根因**：自定义调试基座必须由 HBuilderX 推 JS 资源（cli launch --playground custom）；且华为设备默认屏蔽三方 App 的 logcat 输出，零日志不等于没跑
+- **修复**：用 cli launch app-android --playground custom --native-log true；deploy_one.sh 已加 PLAYGROUND/APP_PKG/APP_ID/NATIVE_LOG 支持
+- **相关文件**：C:/Users/ghf/.workbuddy/skills/uvue-deploy-device-ops/scripts/deploy_one.sh
+- **教训**：自定义基座不能独立启动；华为真机日志必须经 HBuilderX 原生通道取
+
+---
+
+### 2026-09-11 05:23 · commit 77b51f7 · ts=1789075431
+- **错误**：反射调 Kotlin fun initPeriodic(hours: Int) 抛 NoSuchMethodException，错误串 initPeriodic [class java.lang.Integer]
+- **根因**：Kotlin Int 在 JVM 字节码是原始类型 int，用装箱类 java.lang.Integer 匹配签名必失败；引用类型参数（Context）不受影响，故 init() 正常而 initPeriodic() 失败
+- **修复**：getMethod 第二参改 Class.forName('java.lang.Integer').getField('TYPE').get(null)（= int.class）
+- **相关文件**：client/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts
+- **教训**：JVM 反射匹配 Kotlin Int/Boolean 等原始类型参数必须用 Xxx.TYPE，不能用装箱类
+
+---
+
+### 2026-09-11 05:23 · commit 77b51f7 · ts=1789075430
+- **错误**：UTS 的 catch (e: Error) 编译成 Kotlin catch (e: UTSError)，抓不到 ClassNotFoundException / InvocationTargetException 等 Java 异常
+- **根因**：UTS 把 Error 映射为自有类型 UTSError；Java 异常继承自 Exception，不在该分支内（编译产物 index.kt 逐字可见）
+- **修复**：一律写 catch (e: Throwable) —— UTSError extends Throwable，是同时覆盖两者的安全超集；全项目 12 处已改（bg-tasks 4 + photo-watch 8）
+- **相关文件**：client/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts
+- **教训**：UTS 捕 Java 异常必须写 Throwable，写 Error 只捕 UTSError
+
+---
+
+### 2026-09-11 05:23 · commit 77b51f7 · ts=1789075428
+- **错误**：D-18 真机上 WorkManager 一个任务都没注册：UTS 探测函数 ClassLoader.getResource('androidx/work/WorkManager.class') 恒返回 null，initBackgroundTasks 永远走降级分支
+- **根因**：App 的类活在 dex 里，不是 classloader 的资源条目（getResource 只找 APK/jar 内资源文件）。该守卫挡在 initBackgroundTasks 最前面，把后面本已正确的 Class.forName 路径整体屏蔽 —— dex/manifest 层全绿而功能全哑
+- **修复**：改反射调 Kotlin 侧 BgTaskManager.isAvailable()（内部即 Class.forName），复用已验证正确的判断
+- **相关文件**：client/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts
+- **教训**：探测类是否存在只能用 Class.forName；getResource 对 dex 类恒 null。守卫写错会屏蔽正确的下游实现，且打包层证据全绿查不出来
+
+---
+
 ### 2026-09-11 02:47 · commit 698881d · ts=1789066062
 - **错误**：本地模块编译报 Plugin [id: 'com.android.application', version: '8.2.2'] was not found，误判为仓库不通/需换镜像源
 - **根因**：根因在 Gradle 之外：~/.gradle/gradle.properties 的 systemProp.*proxy* 指向 127.0.0.1:7890（已死端口，curl 经其零响应），而当时可用代理是 28605。Gradle 把『经死代理导致仓库不可达』报成『找不到插件』，症状与真因不在同一层

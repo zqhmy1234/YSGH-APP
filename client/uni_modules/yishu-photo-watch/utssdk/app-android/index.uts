@@ -96,7 +96,7 @@ function readExifTaken(path: string): Long {
 				return new Date(year, month - 1, day, hour, minute, second).getTime() as Long
 			}
 		}
-	} catch (e: Error) {
+	} catch (e: Throwable) {
 		// 读 EXIF 失败忽略，走 DATE_TAKEN/DATE_ADDED 回退（2026-08-24 真机：加日志定位端侧时间偏移根因）
 		console.error('[yishu] EXIF 读取失败 ' + path + ': ' + (e != null && e.message != null ? e.message : 'unknown'))
 	}
@@ -194,7 +194,7 @@ class PhotoObserver extends android.database.ContentObserver {
 				}
 				cursor.close()
 			}
-		} catch (e: Error) {
+		} catch (e: Throwable) {
 			console.error('[yishu] 相册查询失败: ' + (e != null ? e.message : 'unknown'))
 			return
 		}
@@ -229,7 +229,7 @@ function isDataSyncServiceRegistered(): boolean {
 		probe.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
 		const matches = appContext().getPackageManager().queryIntentServices(probe, 0)
 		return matches != null && matches.size > 0
-	} catch (e: Error) {
+	} catch (e: Throwable) {
 		// 查询失败按未注册处理（回退页面级监听）
 	}
 	return false
@@ -274,7 +274,7 @@ export class DataSyncService extends android.app.Service {
 			if (nm != null) {
 				nm.createNotificationChannel(channel)
 			}
-		} catch (e: Error) {
+		} catch (e: Throwable) {
 			console.error('[yishu] 通知渠道创建失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
 		}
 	}
@@ -303,7 +303,7 @@ export class DataSyncService extends android.app.Service {
 			_serviceRunning = true
 			_serviceStartedAt = Date.now() as Long
 			console.log('[yishu] dataSync 前台服务 startForeground（type=dataSync）')
-		} catch (e: Error) {
+		} catch (e: Throwable) {
 			console.error('[yishu] dataSync startForeground 失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
 			_serviceRunning = false
 		}
@@ -312,7 +312,7 @@ export class DataSyncService extends android.app.Service {
 	private stopForegroundInternal(): void {
 		try {
 			this.stopForeground(true)
-		} catch (e: Error) {
+		} catch (e: Throwable) {
 			console.error('[yishu] dataSync stopForeground 异常（忽略）: ' + (e != null && e.message != null ? e.message : 'unknown'))
 		}
 	}
@@ -395,7 +395,7 @@ class PhotoWatchImpl implements PhotoWatch {
 			intent.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
 			appContext().startService(intent)
 			console.log('[yishu] dataSync 前台服务启动（startService）')
-		} catch (e: Error) {
+		} catch (e: Throwable) {
 			// 服务未注册 / Android 12+ 后台启动限制 → 回退页面级监听（不崩）
 			console.error('[yishu] dataSync 服务启动失败（回退页面级监听）: ' + (e != null && e.message != null ? e.message : 'unknown'))
 			_serviceRunning = false
@@ -411,7 +411,7 @@ class PhotoWatchImpl implements PhotoWatch {
 			const intent = new android.content.Intent()
 			intent.setClassName(appContext().getPackageName(), SERVICE_CLASS_FQN)
 			appContext().stopService(intent)
-		} catch (e: Error) {
+		} catch (e: Throwable) {
 			console.error('[yishu] dataSync 服务停止异常（忽略）: ' + (e != null && e.message != null ? e.message : 'unknown'))
 		}
 		_serviceRunning = false

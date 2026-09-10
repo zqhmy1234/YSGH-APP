@@ -2127,3 +2127,70 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 
 - **B4 关单 ❌**：D-18/D-19 **仍未关闭**，缺真机行为验——① 照片拍完杀掉 App，后台同步是否续跑（FGS 活体）；② `isWorkManagerAvailable()` 是否真为 `true`（自动初始化是否真的发生）。
 - ⚠️ **工单 B4 的一处前提不成立**：B4 写「销 `docs/远期待办总账.md` 条目」，但全仓检索证实 **D-18/D-19 从未登记在该文件**——其正式记录在 `docs/parallel-dev-收尾/19_*.md` §4 缺陷台账 + `docs/4b_R2_出包卡点与D19根因诊断_20260901.md` + `docs/lessons.md` 第 29 条。**关单时应改销这三处，勿在总账里找不存在的条目。**
+
+#### §QQ · B4 真机复验（2026-09-11 04:45–05:25）—— **D-18 真根因挖出并修复**（双判据实证）
+
+> ⚠️ 本节推翻 §PP 的乐观结论：**打包层全绿 ≠ 功能可用**，B3 六探针 6/6 的同时，真机上 WorkManager **一个任务都没注册**。这正是 §PP 开头「探针假通过」预言的第二次现身，只是这次藏在**探测函数**里而不是依赖里。
+
+**① 前置阻塞：自定义调试基座装上后白屏（非缺陷，是用法）**
+
+| 现象 | 取证 | 结论 |
+|---|---|---|
+| 装 APK 后 App 白屏、零日志 | 截图深灰底无内容；`uiautomator dump` 仅 5 个空 text 节点 | 基座**必须由 HBuilderX 推 JS 资源** |
+| 但 APK 内资源完整 | `assets/apps/__UNI__2650A2A/www/` **202 条**，`app-service.js` 506,299 B | 资源在包内≠会自动加载 |
+| App 数据目录空 | `run-as .../apps/__UNI__2650A2A/` 无 `www` | 佐证未走推资源流程 |
+
+⇒ **正确姿势**：`cli launch app-android --playground custom`（"自定义基座仅支持云打包基座"）。
+⚠️ 设备上**两个包并存**：`io.dcloud.uniappx`（标准基座）与 `com.yishu.guanghua`（云包 manifest 里的包名）。测原生插件必须认准后者。
+⚠️ **华为设备三方 App 的 `Log.i` 默认不进 logcat**（零输出≠没跑）——用 `--native-log true` 走 HBuilderX 通道才能看到原生日志，这是本机唯一可靠手段。
+
+**② D-18 真根因（100% 定位，非推测）**
+
+`index.uts:70` 的探测函数：
+
+```ts
+// ❌ Android 上恒返回 null —— App 的类活在 dex 里，不是 classloader 的资源条目
+const cl = appContext().getClassLoader()
+return cl.getResource('androidx/work/WorkManager.class') != null
+```
+
+- 该守卫在 `initBackgroundTasks` **最前面**（:186），恒 false ⇒ 永远走"标准基座降级"分支 ⇒ WorkManager 永不注册；
+- 讽刺的是 `managerClass()` **本来就用了正确的 `Class.forName`**，只因被这道假守卫挡住，**那行代码从未被执行过**；
+- Kotlin 侧 `BgTaskManager.isAvailable()`（:143）一直是正确的 `Class.forName` —— 也就是说：**正确实现早就写好了，被错误的守卫整体屏蔽**；
+- 原注释交代了动机：「不用 Class.forName——其 ClassNotFoundException 是 Exception，UTS 的 catch (e: Error) 捕获不到」⇒ **为躲异常改用 getResource，结果引入恒 false**（典型 A→B 问题替换）。
+
+**③ 修复过程中连带挖出的三个同族缺陷（全部实测）**
+
+| # | 缺陷 | 实测证据 | 修法 |
+|---|---|---|---|
+| 1 | **UTS 的 `catch (e: Error)` 编译成 `catch (e: UTSError)`**，抓不到 Java 异常（ClassNotFoundException / InvocationTargetException 全是 Exception 系） | 编译产物 `index.kt` 逐字可见 | **改 `catch (e: Throwable)`** —— 编译产物就是 `catch (e: Throwable)`，且因 `UTSError extends Throwable`（否则 `catch (e: UTSError)` 不会被 Kotlin 接受）它是安全超集。**全项目 12 处 Error 全改**（bg-tasks 4 + photo-watch 8），0 残留 |
+| 2 | 反射取 Kotlin `fun initPeriodic(hours: Int)` 用 `java.lang.Integer` 找签名 ⇒ **NoSuchMethodException** | 真机日志：`initBackgroundTasks 失败: uni.UNIYISHU001.BgTaskManager.initPeriodic [class java.lang.Integer]` | Kotlin `Int` 在字节码是**原始类型 int**，必须 `Class.forName('java.lang.Integer').getField('TYPE').get(null)`（= `int.class`）。**引用类型（如 `Context`）不受影响**——这就是 `init()` 一直正常、只有 `initPeriodic()` 失败的原因 |
+| 3 | `_initialized` 进门就置 true | 代码 :194（原） | 中段抛错后后续调用直接 return、**该进程生命周期内永不重试**。改为**全部成功后才置位** |
+
+⭐ **铁律（新）**：能只改 `.uts`（JS 资源层）就绝不改 `.kt`——前者推包 2 分钟，后者**要重新云打包 4 分钟+重装**。本次三个缺陷全靠 UTS 侧绕过，Kotlin 一行未动。
+
+**④ 复验判据（双通道，其中一条不依赖 App 日志）**
+
+| 判据 | 证据 |
+|---|---|
+| App 日志（`--native-log` 通道） | `I yishu : BgTaskManager.init ok` → `I yishu : 2h 周期后台同步已注册（tag=sync_photo）` → `[yishu] initBackgroundTasks ok（hours=2）` |
+| **系统 JobScheduler（最强，绕开 App 日志）** | `JOB #u0a590/1: 6a08df4 com.yishu.guanghua/androidx.work.impl.background.systemjob.SystemJobService`；`Network type: NOT_METERED`（=代码 `NetworkType.UNMETERED`）；`Minimum latency: +1h59m49s`（=2h 周期）；`Satisfied constraints: CONNECTIVITY DEVICE_NOT_DOZING ...` |
+
+⇒ **UTS → 反射 → Kotlin → WorkManager → JobScheduler 全链路打通**，D-18 功能级修复（不再是"探针通过"）。
+
+**⑤ 修复前的对照（同一命令、同一设备）**
+
+| 时点 | 日志 | 后果 |
+|---|---|---|
+| 04:47（修复前） | `[yishu] 后台任务：标准基座（无 WorkManager），降级 pending + setInterval 兜底` | 零 job |
+| 05:21（修复后） | `BgTaskManager.init ok` + `2h 周期后台同步已注册` | JobScheduler 见 `#u0a590/1` |
+
+**⑥ ⚠️ 待峰宝执行的行为验（B4 剩余部分）**
+
+1. **手机连 WiFi**（JobScheduler 那条 job 的约束是 `NOT_METERED`；蜂窝下任务不会跑——这是代码里 `setRequiredNetworkType(NetworkType.UNMETERED)` 的既定设计）
+2. 在 `com.yishu.guanghua` 里**拍一张照片** → 杀掉 App → 等 2~5 分钟
+3. 观察：① 是否出现前台服务通知（`DataSyncService`，D-19）② 同步是否续跑
+4. `dumpsys activity services com.yishu.guanghua` 应能看到 `DataSyncService`（拍照前查到的是空的，属预期）
+5. D-19 侧已确认：`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` **granted=true**
+
+**⑦ 未闭环**：D-18 代码侧已修+双判据实证（**可关**，待峰宝确认）；D-19 待上述行为验；**两个插件的 `catch (e: Error)`→`Throwable` 改动尚未推包验证 recipe 之外的路径**（本次推包已含，实测无回归）。
