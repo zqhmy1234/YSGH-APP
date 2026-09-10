@@ -1814,3 +1814,11 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **⚠️ 误写主仓事故（已无痕纠正）**：波 B 四文件最初全写进 `D:/GuangH-App/backend/`（主仓=develop 工作区！第一定律 cwd 漂移又实锤——pytest/ruff 恰好都从主仓 backend 跑通造成"一切正常"假象，6 个 ImportError 才暴露）；处置=主仓 git checkout 四文件还原→git diff 提取 patch→工作树 git apply（两树四文件内容经行尾归一 diff 核实零分叉，patch 干净落地）→主仓 backend 恢复干净。教训=**编辑前 `pwd` 输出核对是硬前置**，跑测试成功不代表写对了树
 - **分支大清理（本地 26→4：develop/main/fix/4b/missing-pages-impl）**：techdebt×8 已并入 `-d` 删；m1×4+fix4b-v2+zzz+wrap1-agentA2-ui-restore（远程有保底/内容在 main 快照）删；**wrap1×11+feat/wtest4 先推 origin `archive/*` 再删本地**（A1 画像页+1、D1 真机波+44 为真未合内容且无远程跟踪，对象库正被环境吃——裸删可能永丢，GitHub 归档零损失）；fix/4b 暂留（D-18/19 原生之家+未合 develop，波 E merge 后删）
 - **计划文档进度回填**：docs/后端重构与性能优化计划_20260910.md 执行状态表（主仓 2e0d5c2）；波 C（fetchall 48 处+端点同步外呼）/波 D（巨文件+helper 收敛）/安全子 agent 深扫=下轮
+
+### §HH（2026-09-10 上午，安全深扫七项修复 + AST 盲区根治 + 波 C 收官，全推远程）
+
+- **波 C 收官（2c4968e）**：61 处 .all() 全量索引审计——诚实结论=绝大多数健康有界（rn 截断/in_/group_by/limit/cutoff）或架构性全量（reconcile），**不强改健康代码**；唯一真缺口=capsule_scan 全局热态扫描 → `(status,open_at) WHERE status='sealed'` 偏索引 migration b8c9d0e1f2a3（首版误复用在占 revision 致 alembic cycle，改正）；P1-4 端点阻塞判不成立结案（全同步 def+threadpool 隔离）；pg_fallback rows[:limit] 已收尾不修（GIN 全文索引化归波 D）
+- **安全深扫修复批次（6ca8b06，9 文件 179+）**：agent-4 深扫交付 0 P0/1 P1/6 P2（含 core 层增量三点），主线程全判后修 7 项——P1-1 企微回调 XML=公开端点未认证 DoS 面（defusedxml 换入+`_parse_xml` 统一收口：超长先拒/ParseError→ValueError **顺带堵既有缺口=畸形 XML 此前漏 500**+requirements 补声明）；P2-1 sync.push event 对照 events 权威表 owner（不存在维持 sync-first 语义放行防 L1 回归）/profile entity_id=本人；P2-3 胶囊到期=条件 UPDATE+RETURNING 原子领取（并发第二事务重求值命中 0）；P2-4 media/audio 补软删过滤对齐 _load_alive_content 同族（双侧钉桩：软删 404→恢复 200）；P2-5 _batch_photo_ids 补归属纵深；P2-6 票据失败日志 info→debug 去 key/uid；MEDIA_003 补登 _ERROR_SPECS。**全量 820 passed 零失败+ruff 全绿**；+P1-1 回归钉桩×3+P2-4 钉桩
+- **AST 盲区根治（a7c2738）**：test_error_registry `_raise_site_codes` 只认字面量 → ERR_MEDIA_003 常量形式漏登记一个月测试全绿（agent 发现）。扩面=ast.Name+ERR_ 前缀经 getattr(errors) 解析比对；自检实锤 54 码全扫到、残余=空。**新铁律：错误码漏登记从此必红**
+- P2-2（OTP 进程内存计数多副本放大）=登记待部署波迁 Redis，单进程下安全不改
+- ref 静默吞持续发作（本段三次 commit 两次滞后），loose 直写+双写通道 100% 有效；全链：2c4968e→6ca8b06→a7c2738 已推
