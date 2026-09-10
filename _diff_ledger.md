@@ -1945,3 +1945,11 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **AST 盲区根治（a7c2738）**：test_error_registry `_raise_site_codes` 只认字面量 → ERR_MEDIA_003 常量形式漏登记一个月测试全绿（agent 发现）。扩面=ast.Name+ERR_ 前缀经 getattr(errors) 解析比对；自检实锤 54 码全扫到、残余=空。**新铁律：错误码漏登记从此必红**
 - P2-2（OTP 进程内存计数多副本放大）=登记待部署波迁 Redis，单进程下安全不改
 - ref 静默吞持续发作（本段三次 commit 两次滞后），loose 直写+双写通道 100% 有效；全链：2c4968e→6ca8b06→a7c2738 已推
+
+### §II（2026-09-10 正午，P2-2 迁 Redis 落地 develop + 波 D 遗留三件全办，现场有重大更新）
+
+- **现场勘定（推翻交接假设）**：他窗已把波 E **本地 merge 完成**（develop=`cb52d22` 含波 D 全 8 枚，未 push）；merge-base 实证 merge 已发生非预演问题。P2-2 落点因此=主仓 develop（非工作树）。他窗在途件已收口（backend/ 脏文件=0）；主仓 `?? client/pages/ai|index|search|profile/` 四枚 uvue=**P4 删除后的磁盘物理残留**（git ls-tree develop=0 确证树里已无，`??` 孤儿占磁盘不占版本，可删）。
+- **P2-2（ad5d64f 已推 develop）**：新 `app/services/auth/otp_store.py`（OtpStore 接口+RedisOtpStore ZSET/INCR+EXPIRE(nx)/SET EX + MemoryOtpStore 原实现逐字搬入；get_backend 惰性探活、Redis 挂→warning 降级 Memory 不 500，与 core/ratelimit 同构）；providers 五私有函数委托后端（签名/常量/错误码/文案零变更行为全等；auth.py 跨模块 import 零感知）；conftest autouse 注入 Memory（测试逐字全等+零 Redis 写依赖）；test_otp_store_redis.py integration×5 含**跨实例共享计数**（两 store 实例=多 worker 视角，内存版本质缺陷的正面对销）+窗口不顺延 nx 实证+降级契约；容器不可用显式 skip 不假绿。验证：主仓 auth 域+钉桩 33 passed；**全量 832 passed 4 skipped 零失败**；blob 级核对 develop/feature 两被覆盖文件一致后才复制（防踩他方改动）。
+- **波 D 窗三件遗留全办**：①git-safety 技能补 3 坑（loose ref 二进制 wb 写/fsck trailingRefContent、备份严禁落 .git/refs/ 内被当 ref 扫、makedirs 多级目录——第 6 条系主窗 09-10 两次实锤追加）；②merge-tree 重算=已无必要（merge 已发生）；③「波 D 未 push」已补推（feature=558f16a 上远程）。
+- **环境新坑（SIGTERM 升级）**：本段 `rm`/复合写链连吃 3+ 次 SIGTERM 拦腰（含 rm 残留孤儿文件未删净=`?? backend/tests/test_otp_store_redis.py`，develop 有 blob 一致正本，留峰宝 shift+delete）；只读命令全正常。**教训候选：本环境删除类操作=最不稳通道，能 Edit 通道不 shell，能一步不链。**
+- 提交/远程终态：develop=`ad5d64f`（波 D 8+merge+P2-2 全在内）、feature=`558f16a`，双分支远程齐；工作树 develop 版=feature 版四文件 blob 一致后已还原（除上述孤儿）。
