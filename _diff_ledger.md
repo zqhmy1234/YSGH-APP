@@ -1962,6 +1962,14 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **账上下一站**：①轮盘录音 UI 补回（波 E 拍板挂账，资产=0944f89 可提取、验收四条已写死、零外部依赖——纯代码波随时可开）；②企微 TOKEN/AES_KEY 两把钥匙（峰宝）→ 波 1 微信实网；③真值数据波（峰宝素材/团队）；④D-18/D-19 云打包复验（峰宝 HBuilderX）。
 - 全链终态：develop=`e918443`（含整场战役+波D+P2-2+§II+收口）、feature=`1924073`、main=快照锚——**缺失页面实现战役至此版本史完全收拢主干**，feature 分支完成历史使命（删除时机留峰宝，远程有镜像零风险）。
 
+### §LL（2026-09-10 下午，云包 UTS 插件缺失诊断——含一次被叫停的 thrash，如实记）
+
+- **坐实的硬事实（python zipfile 全 dex 逐字节扫，工具可复现）**：三枚 yishu UTS 插件（recorder/photo-watch/background-tasks）的原生实现**均不在云打包 APK 的 dex**——两包（旧 android_debug.apk + 今日 vapor.apk）扫 `createRecorder`/`yishuRecorder`/`UNIYISHU001`/`BgTaskManager` 全零命中；对照组 hens-svg（DCloudUni 组件 + 自有类）**在** classes2/3.dex、`uts/sdk/modules/` 命名空间官方模块齐全 → **云包 UTS 编译链本身正常，只这三枚没进**。`app-service.js`（JS 层）有插件符号 → JS 编译进、原生没进。
+- **⚠️ 我的一次 thrash（已回退，记录以免重犯）**：调研子 agent 给"深 import 触发 tree-shaking"根因，我据此一次改了 9 处（6 宿主 import 改插件根 + 3 package.json android `√`）。**客户端编译门当场炸**：error18「找不到 Context / getClassLoader」+「failed to resolve ../../../yishu-background-tasks」——① 改根 import 后 UTS 编译器把 `@/uni_modules/B` 在**插件引插件**场景错写成 dist 相对路径解析失败；② 一旦按规范路径真正纳入原生编译，插件 `.uts` 里 `Context`（未 import android.content.Context）等原生符号暴露 error18——**说明这些插件 app-android/index.uts 从未经过严格原生编译校验**（深 import 下被当 JS 处理，原生体没编，故 error18 一直潜伏）。教训=一次动 9 变量不可归因，峰宝反对的试错我差点又犯，及时全量 git checkout 回退，**回退后编译门复验「项目 client 编译成功」**。
+- **真相比 D-18 报告更深且未闭环**：voice.uts:101 `createRecorder()`、photo-watch 有 DataSyncService——**运行时若真用这些插件，云包里必炸**；但峰宝 09-04/05 真机验过录音轮盘。二者不并立的唯一解释=真机当时跑**自定义调试基座**（含插件），而**云打包产物不含**（08-28 D-18/D-19 本就在"自定义基座能力"域）。**→ 这是需要 A/B 实证的问题，不是我能纯静态拍板修复的问题**。
+- **安全落地的（已 commit `0c5bc3d` 未回退，本就独立正确）**：① .gitignore 工程真源豁免三连（client/AndroidManifest.xml + nativeResources 可入库）——无论后续走 marker-asset 还是工程根 manifest 注册 service，都需要这个，且修正了 gitignore 否定规则必须后置的坑；② reinject B905 收口（全仓 ruff 首次零 error）。
+- **未解，需峰宝侧输入二选一**：A) 手机装今日 vapor.apk，实测「录音/相册后台监听」是否真坏（判"云包缺插件"是不是现网真 bug，还是仅调试基座才有）；B) 给一份"已知插件在包里"的历史 APK 作参照，我 diff 出编译配置差异。**在拿到 A/B 前，插件 import 路径/package.json 一律保持基线不动**（改了要么编译炸、要么无据盲改）。D-18/D-19 修复方案文档（调研 agent 产出）已存档待此前提解决后启用。
+
 ### §KK（2026-09-10 下午，收口三连：轮盘误报销账 + 云打包集成复验 + 分支/worktree 终清理）
 
 - **轮盘补回单=误报销账（46a96f6）**：波 E 裁决窗「分支侧零轮盘」不成立——现行 RecordSheet 即拍板轮盘终版（透明轮盘/DROP_SHADOW 白点/公转 9s+DOT_TRACK 向心+幽灵轨迹/「确定」钮四判据逐条实证），含峰宝 09-04/05 验机的 R3b/R3c 修复记录；VoiceWave 系播放侧组件被误认为录音侧。教训入总账：**merge 基底裁决必须打开文件看实内容，禁止靠 class 命名族推断功能归属**。
