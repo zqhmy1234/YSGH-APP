@@ -1961,3 +1961,10 @@ grep 复核：directPick 六处引用齐整（模板2+声明1+onMounted1+success
 - **untracked 分辨结论**（防误删）：`client/components/RecordSheet/CategoryChips.uvue`=零引用孤儿半成品（develop 树无、RecordSheet grep 零命中）→ 交峰宝认领/裁决；`client/static/icons/detail-*.svg`=磁盘 6 枚中 5 枚未入库（树/索引各 1），他窗在途资产不碰；磁盘残留四页 uvue+工作树孤儿测试文件=待峰宝 shift+delete（rm 通道 SIGTERM 实锤）。
 - **账上下一站**：①轮盘录音 UI 补回（波 E 拍板挂账，资产=0944f89 可提取、验收四条已写死、零外部依赖——纯代码波随时可开）；②企微 TOKEN/AES_KEY 两把钥匙（峰宝）→ 波 1 微信实网；③真值数据波（峰宝素材/团队）；④D-18/D-19 云打包复验（峰宝 HBuilderX）。
 - 全链终态：develop=`e918443`（含整场战役+波D+P2-2+§II+收口）、feature=`1924073`、main=快照锚——**缺失页面实现战役至此版本史完全收拢主干**，feature 分支完成历史使命（删除时机留峰宝，远程有镜像零风险）。
+
+### §KK（2026-09-10 下午，收口三连：轮盘误报销账 + 云打包集成复验 + 分支/worktree 终清理）
+
+- **轮盘补回单=误报销账（46a96f6）**：波 E 裁决窗「分支侧零轮盘」不成立——现行 RecordSheet 即拍板轮盘终版（透明轮盘/DROP_SHADOW 白点/公转 9s+DOT_TRACK 向心+幽灵轨迹/「确定」钮四判据逐条实证），含峰宝 09-04/05 验机的 R3b/R3c 修复记录；VoiceWave 系播放侧组件被误认为录音侧。教训入总账：**merge 基底裁决必须打开文件看实内容，禁止靠 class 命名族推断功能归属**。
+- **云打包集成复验 ✅**：`cli pack --iscustom true`（merge 后 develop 首包）排队 8 分 15:25:16 **打包成功**，落点 `client/unpackage/debug/android_debug_vapor.apk`（32,283,513B，SHA256 前缀 acdb1b9f；vapor 基座新命名，旧 23.6M debug 包原地保留）。dex 尸检：WorkManager ✅classes3.dex、FOREGROUND_SERVICE 权限 ✅；⚠️ `BgTaskManager` 类未扫到（08-28 包在 classes2.dex；源 `BgBackground.kt` 完整在库）——D-18/D-19 本就待修复波，该差异登记随波复验，不阻塞。**集成冒烟结论：全战役合入后的 develop 能出可安装云包。**
+- **版本史终清理（峰宝点头执行）**：①五枚磁盘残留=峰宝 shift+delete 先到（PowerShell 检测全 gone），我删前四重取证（check-ignore/树内/路由表/blob 正本）；②`feature/missing-pages-impl` 本地删（`-d` 安全通道过=全并入实证）；③`fix/4b` 先推 `origin/archive/fix-4b` 归档再 `-D`；④worktree remove 因孤儿文件已清显示 not a working tree（他窗已卸登记）→ `git worktree prune` 收净。本地分支终态=**develop+main 两枚**。⚠️ 峰宝 PowerShell 执行我给的 bash 命令报 not a git repository——`cd /d/` 系 bash 语法，教训：**给峰宝的命令必须 PowerShell 形态**。
+- **`.wt/missing-pages` 空壳（93M/944 文件）删除交峰宝手动**：全量哈希比对=925 与主仓一致、15 文档系壳侧较新快照（内容已随 §HH-§JJ 提交链入 develop，快照文件非正本）、4 独有=日志/pyc。git 视野已净（worktree list 只剩主仓），纯磁盘垃圾目录。本会话 rm 通道 SIGTERM、PowerShell Remove-Item 两次静默吞——删除三连通道全废，**shift+delete 收口**。`.wt/wechat-entry` 同候（若其窗亦已结束）。
