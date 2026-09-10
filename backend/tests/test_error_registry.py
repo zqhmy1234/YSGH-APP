@@ -18,7 +18,15 @@ BACKEND_APP = Path(__file__).resolve().parent.parent / "app"
 
 
 def _raise_site_codes() -> set[str]:
-    """AST 扫描 backend/app 全部 `ApiError("<CODE>"` 字面量（raise 处实际使用的码）"""
+    """AST 扫描 backend/app 全部 `ApiError("<CODE>"` 的码（raise 处实际使用）。
+
+    两种形式都要收（2026-09-10 教训：只认字面量的旧实现留了盲区——media.py 四处
+    `ApiError(ERR_MEDIA_003, ...)` 用常量名而非字面量，漏登记整整一个月测试全绿）：
+    1. ast.Constant：ApiError("MEDIA_001", ...) 字面量
+    2. ast.Name：ApiError(ERR_MEDIA_001, ...) 常量名 → 经 app.core.errors 解析为码值
+    """
+    import app.core.errors as E
+
     codes: set[str] = set()
     for py in BACKEND_APP.rglob("*.py"):
         tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
@@ -28,10 +36,14 @@ def _raise_site_codes() -> set[str]:
                 and isinstance(node.func, ast.Name)
                 and node.func.id == "ApiError"
                 and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
             ):
-                codes.add(node.args[0].value)
+                a0 = node.args[0]
+                if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
+                    codes.add(a0.value)
+                elif isinstance(a0, ast.Name) and a0.id.startswith("ERR_"):
+                    val = getattr(E, a0.id, None)
+                    if isinstance(val, str):
+                        codes.add(val)
     return codes
 
 
