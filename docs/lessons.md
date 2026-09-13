@@ -9,6 +9,51 @@
 
 ---
 
+### 2026-09-13 23:02 · commit f1a2843 · ts=1789311758
+- **错误**：修复阻断项后登记教训，但教训文本若含 password 赋值字面量会二次触发 pre-commit 密钥门禁；且每次失败提交刷新 last-failure.json 时间戳，导致早于最后一次失败的教训登记仍被阻断
+- **根因**：密钥扫描正则会匹配教训文本里的 password 赋值（password 后接引号包裹的值）；lessons 强制登记把 last-failure 时间戳作为放行条件，失败提交会持续前移该时间戳
+- **修复**：教训文本用 password 标志或属性等译述代替 password 赋值字面量；登记新教训必须在最后一次失败提交之后，且紧接成功提交
+- **相关文件**：scripts/review_agent.py / scripts/lessons.py
+- **教训**：pre-commit 门禁形成反馈闭环：密钥扫描与 lessons 登记互相制约，教训文本本身不得含可被密钥正则命中的模式；正确顺序是 修复到通过 然后登记新教训 然后立即提交
+
+---
+
+### 2026-09-13 22:59 · commit f1a2843 · ts=1789311591
+- **错误**：Android uiautomator UI 转储 XML（_verify_*/ui.xml、uidump_*.xml）提交时被 review_agent 密钥门禁判为疑似硬编码密钥而阻断
+- **根因**：密钥扫描正则匹配 password 赋值（password 后接引号包裹的值）模式，命中 UI 层级转储里密码输入框的 password 标志（属性名误命中，非真实凭证）；uiautomator dump 本质是调试证据，不该进源码库
+- **修复**：将 UI 转储 XML 移出本次提交仅保留 PNG 截图证据；确需入库则先脱敏 password 属性值
+- **相关文件**：scripts/review_agent.py / _verify_0905/ui.xml
+- **教训**：真机核验证据提交前需排除或脱敏含 password 属性的 UI dump XML；pre-commit 密钥门禁对此类产物属已知误报源
+
+---
+
+### 2026-09-11 05:58 · commit f1a2843 · ts=1789077503
+- **错误**：排查 SDK 版本适配错误时，缺一个能一锤定音的判据，容易停在「权限没给，让用户去授权」的错判上
+- **根因**：权限名是否属于本机 SDK 等级，光看 dumpsys 的 requested permissions 看不出来（声明了不等于本机存在）；仅凭 granted=false 无法区分「用户拒绝」与「该权限在本机物理不存在」
+- **修复**：判定铁证：adb shell pm grant <pkg> <perm>，若报 IllegalArgumentException: Unknown permission = 该权限在本设备 SDK 上不存在（不是用户拒授），必为代码里 SDK 分支判断错误。adbs/adb.exe 全路径 + timeout 前缀
+- **相关文件**：client/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts
+- **教训**：（无）
+
+---
+
+### 2026-09-11 05:58 · commit f1a2843 · ts=1789077483
+- **错误**：真机上整条相册监听→前台服务链路完全静默：无任何 [yishu] 打点、无异常日志、无 toast，表现成「功能没做」
+- **根因**：权限守卫写法是 if (isReadPermissionGranted()) { startWatch() } 且无 else 分支、无日志，同时 requestReadPermission() 定义在 interface.uts:69 / 实现于 index.uts:424 但全仓零调用点 → 未授权时静默跳过且永不申请权限 = 死锁。违反项目「返回结果不允许静默，必须显式声明原因」军规
+- **修复**：所有权限/能力守卫必须写 else 分支并打点（含当前权限名与 checkSelfPermission 返回值）；能力型 API 必须追到真实调用点三级核实（有接口≠有实现≠有触发）
+- **相关文件**：client/components/TabIndex/TabIndex.uvue
+- **教训**：（无）
+
+---
+
+### 2026-09-11 05:57 · commit f1a2843 · ts=1789077475
+- **错误**：D-18/D-19 修完后真机复验仍无前台服务通知、无 ServiceRecord、无通知渠道，一度疑为修复无效
+- **根因**：上游有更致命的阻断：yishu-photo-watch/utssdk/app-android/index.uts:32 的 const Build_VERSION_SDK_INT: Int = 33 是硬编码字面量（名字伪装成 android.os.Build.VERSION.SDK_INT，实际与设备无关）。设备 DKS9K23526028855 实为 Android 12 / SDK 31，readPermissionName() 恒走 >=33 分支返回 android.permission.READ_MEDIA_IMAGES（API 33 才引入），在 API 31 上该权限不存在 → checkSelfPermission 恒 DENIED → TabIndex 守卫 isReadPermissionGranted() 恒 false → startWatch() 永不执行 → PhotoWatchImpl.start() 永不执行 → dataSync 前台服务从未被 startService
+- **修复**：改 Build_VERSION_SDK_INT 为真读系统值（android.os.Build.VERSION.SDK_INT 或 uni.getSystemInfoSync().osAndroidAPILevel）；全仓禁止用常量名伪装系统 API，常量命名不得含 Build_/VERSION_ 前缀暗示
+- **相关文件**：client/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts
+- **教训**：（无）
+
+---
+
 ### 2026-09-11 05:23 · commit 77b51f7 · ts=1789075433
 - **错误**：云打包的自定义调试基座（--iscustom true）装真机后启动白屏、且设备 logcat 零输出，一度误判为插件缺陷
 - **根因**：自定义调试基座必须由 HBuilderX 推 JS 资源（cli launch --playground custom）；且华为设备默认屏蔽三方 App 的 logcat 输出，零日志不等于没跑

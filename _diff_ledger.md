@@ -2194,3 +2194,109 @@ return cl.getResource('androidx/work/WorkManager.class') != null
 5. D-19 侧已确认：`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` **granted=true**
 
 **⑦ 未闭环**：D-18 代码侧已修+双判据实证（**可关**，待峰宝确认）；D-19 待上述行为验；**两个插件的 `catch (e: Error)`→`Throwable` 改动尚未推包验证 recipe 之外的路径**（本次推包已含，实测无回归）。
+
+#### §QQ-2 · B4 行为验**未通过**：真阻断点比 D-18/D-19 更上游（2026-09-11 05:30–06:05）
+
+峰宝复验反馈：「**没有任何前台服务通知。同步不知道怎么看**」。
+
+**结论：不是功能坏了，是整条链路从未被触发。** D-18/D-19 的修复本身有效（§QQ 已双判据实证），但被一个更上游的缺陷**完全遮蔽**——行为验的失败与 D-18/D-19 无关。
+
+**① 四条根因**
+
+| # | 根因 | 位置 | 后果 |
+|---|---|---|---|
+| **RC-1 决定性** | `const Build_VERSION_SDK_INT: Int = 33` 是**硬编码字面量**（命名伪装成 `android.os.Build.VERSION.SDK_INT`，与设备无关） | `yishu-photo-watch/utssdk/app-android/index.uts:32` | 设备实为 **Android 12 / SDK 31** → `readPermissionName()` 恒走 `>=33` 分支返回 `READ_MEDIA_IMAGES`（API 33 才引入）→ 该权限在 API 31 **物理不存在** → `checkSelfPermission` 恒 DENIED |
+| **RC-2 死锁** | `requestReadPermission()` 定义于 `interface.uts:69` / `index.uts:424`，**全项目零调用点**；`TabIndex.uvue:339-346` 只有 `if (isReadPermissionGranted())`，**无 else、无日志** | `TabIndex.uvue` | 不授权 → 静默跳过 → 永不申请 → 永不授权。闭环死锁（违反「返回结果不允许静默」军规） |
+| RC-3 次因 | `POST_NOTIFICATIONS` `granted=false`（EMUI 将其做成运行时权限） | 设备侧 | 即使 FGS 起来，通知栏也不展示。本次已 adb 授予 true |
+| RC-4 系统性 | 全仓**零运行时权限申请范式**（`uni.authorize` / `requestSystemPermission` / `RECORD_AUDIO` 全部零命中） | `client/` 全域 | `RECORD_AUDIO` 同为 `granted=false` → 录音链路大概率同款死法（**未验，待单独排查**） |
+
+**② 断点位置**
+
+```
+onMounted ✅ → isReadPermissionGranted() ❌ false → ✂️（空分支，无日志）
+  → startWatch() 从未执行 → PhotoWatchImpl.start() 从未执行
+  → ensureDataSyncService() 从未执行 → DataSyncService 从未 startService
+  → 无通知渠道 / 无 ServiceRecord / 无通知
+```
+
+**③ 六条硬证据（互相自洽）**
+
+| # | 探针 | 结果 | 推断 |
+|---|---|---|---|
+| 1 | `[dbg-index] onLoad` | ✅ 有 | onMounted 确实执行 |
+| 2 | `[yishu] startWatch begin` | ❌ 无 | `startWatch()` 未被调用 |
+| 3 | `[dbg-index] photoWatch init failed` | ❌ 无 | try 未抛异常 ⇒ 是守卫返回 `false` 走了空分支 |
+| 4 | `[yishu] dataSync 前台服务启动（startService）` / `服务未注册` | ❌ 二者皆无 | `PhotoWatchImpl.start()` 从未执行 |
+| 5 | `dumpsys notification --noredact \| grep yishu_data_sync`；`dumpsys activity services com.yishu.guanghua` | 无渠道；**输出为空** | `createChannel()` 在 `onCreate` ⇒ 服务从未被创建 |
+| 6 | **铁证** `pm grant com.yishu.guanghua android.permission.READ_MEDIA_IMAGES` | `IllegalArgumentException: Unknown permission` | **不是用户拒授，是本机 SDK 上无此权限** ⇒ RC-1 坐实 |
+
+辅助：设备 `getprop ro.build.version.sdk` = **31**（Android 12，`ro.product.model` FOA-AL00）；媒体库最近条目为 `yishu_boot.png`（测试截图），无相机新照片——因链路早已断，对结论无影响。
+
+**④ 修复方案（全 `.uts`/`.uvue` 层 ⇒ `--playground custom` 推包 ~2 分钟，**不需**重新云打包）**
+
+- **F1（必须·根因）**：`Build_VERSION_SDK_INT` 改真读系统值（`android.os.Build.VERSION.SDK_INT` 或 `uni.getSystemInfoSync().osAndroidAPILevel`）；**全仓禁止常量名伪装系统 API**
+- **F2（必须·死锁）**：`TabIndex` 补 else 分支调 `requestReadPermission()`；并把 `requestReadPermission()` 由「跳系统设置页」升级为**真正系统弹窗** —— ⚠️ 项目**零先例**，API 选型待峰宝拍板（`UTSAndroid.requestSystemPermission` vs 维持跳设置页）
+- **F3（建议）**：`POST_NOTIFICATIONS` 动态申请（API 33+）
+
+**⑤ 「同步怎么看」——绕开通知直接问系统（本次可用判据）**
+
+```bash
+ADB="D:/HBuilderX/plugins/launcher-tools/tools/adbs/adb.exe"; D=DKS9K23526028855; P=com.yishu.guanghua
+timeout 25 "$ADB" -s $D shell "dumpsys activity services $P | grep -i -A6 DataSync"          # ① 前台服务活没活
+timeout 25 "$ADB" -s $D shell "dumpsys notification --noredact | grep -i yishu_data_sync"   # ② 渠道建没建（服务跑过必有）
+timeout 25 "$ADB" -s $D shell "dumpsys jobscheduler | grep -A20 'JOB #.*u0a590'"            # ③ 周期任务在册否
+```
+判据：①+② 皆命中 = 服务起来了；皆空 = 未触发（**本次即此**；③ 已在 §QQ-① 独立验过为绿）。
+
+**⑥ 状态变更**
+
+- D-18：代码侧已修 + 双判据实证 —— **可关**（本轮未受影响）
+- D-19：**行为验仍不可达**，需待 F1/F2 修复后重验；「manifest+dex 存在性」已绿，但「真被拉起」未证
+- **新增 RC-1/RC-2/RC-4 尚未分配 D 编号**，建议登记为 D-23（SDK 硬编码）/ D-24（权限请求死锁）/ D-25（全仓无权限申请范式）
+- `docs/lessons.md` 新增 3 条
+
+#### §QQ-3 · D-23 / D-24 修复实施（2026-09-11 06:10–07:55，方案 A 已拍板）
+
+峰宝拍板：F2 权限申请 API 选 **方案 A（`UTSAndroid.requestSystemPermission` 真实系统弹窗）**。
+
+**① 落地改动（3 文件，全在 `.uts`/`.uvue` 层 ⇒ 推包 ~2 分钟，不需重新云打包）**
+
+| 文件 | 改动 |
+|---|---|
+| `yishu-photo-watch/utssdk/app-android/index.uts` | ① 删 `const Build_VERSION_SDK_INT: Int = 33` → 新增运行时 `sdkInt()`（读 `android.os.Build.VERSION.SDK_INT`，失败返 0 走 legacy 分支）；6 处引用全部替换<br>② 新增 `listText(Array<string>)`（手写循环，规避 UTS Array 无 join 先例）<br>③ 新增 `class PermissionRequest`（终态守卫，保证回调**恰好一次** + 上报**复查后**的真实授予态）<br>④ `requestReadPermission` 重写为 5 参官方签名 + 三条错误边界显式打点<br>⑤ 新增 `getReadPermissionName()`<br>⑥ `isReadPermissionGranted()` 每次判定打点（含真实 SDK + 权限名） |
+| `yishu-photo-watch/utssdk/interface.uts` | `requestReadPermission(callback: PermissionResultCallback): void`（原无回调）；新增 `getReadPermissionName(): string`；新增具名类型别名 `PermissionResultCallback`（不写内联函数类型——与 `PhotoBatchCallback` 同款，内联在本项目无先例） |
+| `components/TabIndex/TabIndex.uvue` | `onMounted` 的权限守卫补 **else 分支**：显式打点 + 拉起系统授权框 + 回调驱动 `startWatch()`；`doNotAskAgain` 时不再打扰（仅日志） |
+
+**② 官方签名核实（不猜，查了权威源）**
+
+- 类型声明 `HBuilderX/plugins/uts-development-android/uts-types/app-android/io/dcloud/uts/UTSAndroid.d.ts:144`：
+  `requestSystemPermission(activity, permissions, success, fail, shallUnCheck): void` —— **5 参**，第 5 参 `boolean`
+- 官方文档 `docs/uts/utsandroid.md:1060`：`success: (allRight: boolean, grantedList: Array<string>) => void`；`fail: (doNotAskAgain: boolean, grantedList: Array<string>) => void`；`shallUnCheck` 默认 false
+- ⚠️ 文档明确：**用户"部分授予"时 success 与 fail 都会被调用** ⇒ 必须有一次性守卫，否则宿主重复 `startWatch()` 会重复注册 ContentObserver
+
+**③ `android.os.Build.VERSION.SDK_INT` 的写法依据（不赌）**
+
+- **本文件已有同构先例**：`android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI`（三级嵌套类 + 静态字段）—— 同一种形态，UTS 支持
+- 官方文档 `docs/native/use/androidcomm.md:73` 亦为 `Build.VERSION.SDK_INT >= 33`
+- 备选 `uni.getSystemInfoSync().osAndroidAPILevel` **已排除**：在 `builtin-dts` 与 UTS 类型集里均无该字段声明
+
+**④ 明确否决/推迟项（不静默丢弃）**
+
+- **F3（`POST_NOTIFICATIONS` 动态申请）本轮不做**，理由：① 本机已 adb 授予 `granted=true`，不阻塞 B4；② 通知权限属宿主域，塞进 `yishu-photo-watch`（相册监听域）是职责污染；③ 应随"通知体系"单独收口。**登记为 D-26 待办**。
+  ⚠️ 但风险已明确：Android 13+ 未授予该权限时 **FGS 仍运行、通知栏不显示**（只在任务管理器可见）——这正是本次"看不到通知"这类误判的温床，收口时须一并处理。
+- **RC-4（全仓零运行时权限申请范式）** 本轮只修了相册这一条；`RECORD_AUDIO` 同为 `granted=false`，**录音链路大概率同款死法**，登记为 **D-25**，需单独排查。
+
+**⑤ 静态自查已过**
+
+- `PhotoWatch` 的三个成员在 `PhotoWatchImpl` 全部实现；该接口**只有这一个实现类**（无 iOS 端）
+- 旧 `requestReadPermission()` 零调用点，已由新签名整体取代，无残留调用
+- 工作区地雷判据 `git status --short -- client | grep -c '^ D'` = **0**
+- 改动文件仅 3 个（`M`），分支 `develop` @ `f1a2843`
+
+**⑥ ⛔ 当前阻塞：本地模块编译未能执行**
+
+`cli.exe compile app-android --project ... --uni_module <模块>` 前置要求 **HBuilderX GUI 在运行**（`references/deploy-cli.md` §1 明载）。本次尝试：
+- 首次报 `未检测到已打开的HBuilderX` → 按 cli 自身提示执行 `cli open`，进程起来过（HBuilderX.exe 96MB）但 **~35s 后进程数回到 0**（沙箱内 GUI 进程不驻留）
+- 后台常驻方式重试同样归零 ⇒ **环境侧限制，非代码问题**
+
+⇒ 需峰宝手动打开 HBuilderX 后，再执行：先 `yishu-background-tasks`（被依赖方），后 `yishu-photo-watch`（依赖方），最后 `deploy_one.sh` 推包。
