@@ -340,6 +340,26 @@
 			const photoWatch = createPhotoWatch()
 			if (photoWatch.isReadPermissionGranted()) {
 				startWatch()
+			} else {
+				// 2026-09-11 D-24 修复：原实现此处**没有 else** —— 未授权时静默跳过，
+				// 且 requestReadPermission() 全项目零调用 = 永远拿不到授权（死锁），
+				// 全程零日志 ⇒ 真机表现成"什么都没发生"（无通知、无提示、无日志），
+				// 掩盖了 D-23（SDK 硬编码致权限名错误）整整一轮。
+				// 现在：显式打点（含真实 SDK 与权限名，用于区分"用户拒绝"与"本机无此权限"）
+				//      + 拉起真实系统授权框，并**保证回调**驱动后续决策。
+				console.log('[dbg-index] 相册读权限未授予，准备申请: perm=' + photoWatch.getReadPermissionName())
+				photoWatch.requestReadPermission((granted: boolean, doNotAskAgain: boolean): void => {
+					console.log('[dbg-index] 相册权限申请回调 granted=' + granted + ' doNotAskAgain=' + doNotAskAgain)
+					if (granted) {
+						startWatch()
+					} else if (doNotAskAgain) {
+						// 用户已勾选"不再询问"：不再重复弹窗/打扰，仅留日志（须去系统设置手动开）
+						console.log('[dbg-index] 相册权限被永久拒绝（不再询问），监听未启动；需到系统设置手动开启')
+					} else {
+						console.log('[dbg-index] 相册权限被拒，页面级监听未启动（下次进入会再次申请）')
+						uni.showToast({ title: '未获得相册权限，暂不自动监听新照片', icon: 'none' })
+					}
+				})
 			}
 		} catch (e) {
 			console.log('[dbg-index] photoWatch init failed (标准基座无原生插件，忽略): ' + e)

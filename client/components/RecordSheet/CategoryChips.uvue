@@ -1,0 +1,108 @@
+<template>
+	<view class="chip-row">
+		<view
+			v-for="cat in categories"
+			:key="cat.key"
+			class="chip"
+			:class="chipClass(cat.key)"
+			@tap="onSelect(cat.key)"
+		>
+			<text class="chip-text" :class="chipTextClass(cat.key)">{{ cat.label }}</text>
+		</view>
+		<view class="chip chip-add" @tap="onAdd">
+			<text class="chip-add-text">＋</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// 分类 chips 子组件（F1d / F1e 共用，禁止复制粘贴两份）
+	// variant='manual'（F1e 文字空态）：选中 = 白底 + 隐形描边 + Medium 灰字
+	// variant='ai'（F1d 语音标注态）：选中 = 琥珀底 + 琥珀描边 + Medium 琥珀字
+	type CategoryItem = {
+		key: string
+		label: string
+	}
+	const props = defineProps<{
+		categories: Array<CategoryItem>
+		selectedKey: string
+		variant: string
+	}>()
+	const emit = defineEmits(['select', 'add'])
+
+	function chipClass(key: string): string {
+		if (key != props.selectedKey) {
+			return ''
+		}
+		return props.variant == 'ai' ? 'chip-selected-ai' : 'chip-selected-manual'
+	}
+	function chipTextClass(key: string): string {
+		if (key != props.selectedKey) {
+			return ''
+		}
+		return props.variant == 'ai' ? 'chip-text-ai' : 'chip-text-manual'
+	}
+	function onSelect(key: string): void {
+		emit('select', key)
+	}
+	function onAdd(): void {
+		emit('add')
+	}
+</script>
+
+<style>
+	/* chips 行：gap 引擎静默丢弃 → 用 margin-right 换算（设计稿 chip 间距 12px = 23rpx） */
+	.chip-row {
+		flex-direction: row;
+		align-items: center;
+	}
+	.chip {
+		height: 69rpx;
+		padding-left: 30rpx;
+		padding-right: 30rpx;
+		background-color: #ffffff;
+		border-radius: 35rpx;
+		margin-right: 23rpx;
+		align-items: center;
+		justify-content: center;
+	}
+	/* F1e manual 选中态：白底 + 隐形描边（opacity 0）+ Medium 灰字 */
+	.chip-selected-manual {
+		border-width: 2rpx;
+		border-color: rgba(196, 145, 60, 0);
+		border-style: solid;
+	}
+	.chip-text-manual {
+		font-weight: 500;
+	}
+	/* F1d AI 预选选中态：琥珀底 #EDE4D4 + 琥珀描边 #C4913C + 琥珀字 #8A5A20 */
+	.chip-selected-ai {
+		background-color: #EDE4D4;
+		border-width: 2rpx;
+		border-color: #C4913C;
+		border-style: solid;
+	}
+	.chip-text-ai {
+		color: #8A5A20;
+		font-weight: 500;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27rpx;
+		color: #8A7A6A;
+	}
+	/* ＋ 添加 chip：固定窄宽 34px = 65rpx，圆角 17px = 33rpx */
+	.chip-add {
+		width: 65rpx;
+		height: 69rpx;
+		padding-left: 0;
+		padding-right: 0;
+		border-radius: 33rpx;
+		margin-right: 0;
+	}
+	.chip-add-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 31rpx;
+		color: #B3A696;
+	}
+</style>

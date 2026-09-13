@@ -18,18 +18,46 @@
  * 本文件按同名实现即可（重复导出曾触发编译器 overload panic）；
  * 类型单独具名再导出（error3：页面需从平台模块引用插件类型）。
  */
-import { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType } from '../interface.uts'
+import { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType, PermissionResultCallback } from '../interface.uts'
 import { initBackgroundTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 
 // 类型具名再导出（供页面从平台模块路径引用）
-export { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType } from '../interface.uts'
+export { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType, PermissionResultCallback } from '../interface.uts'
 
 /** 静默窗口：4s 无新照片变更 → 触发攒批回调（B-UT-4，3-5s 区间） */
 const DEBOUNCE_MS: Long = 4000
 const KEY_LAST_SEEN = 'last_seen_photo_id'
 const REQ_READ_MEDIA = 2001
 const ZERO_LONG: Long = 0
-const Build_VERSION_SDK_INT: Int = 33
+
+/**
+ * 设备实际 SDK 等级（运行时读取）。
+ *
+ * ⚠️ 2026-09-11 D-23 修复（本波最致命缺陷）：
+ * 原实现是 `const Build_VERSION_SDK_INT: Int = 33` —— 一个**硬编码字面量**，
+ * 只是**命名伪装**成 android.os.Build.VERSION.SDK_INT，与设备毫无关系。
+ * 后果链（实测设备 Android 12 / SDK 31）：
+ *   readPermissionName() 恒走 >=33 分支 → 返回 API 33 才引入的 READ_MEDIA_IMAGES
+ *   → 该权限在 API 31 上【物理不存在】（`pm grant` 报 Unknown permission，非用户拒授）
+ *   → checkSelfPermission 恒 PERMISSION_DENIED
+ *   → 宿主 `if (isReadPermissionGranted())` 恒 false
+ *   → PhotoWatch.start() 从未执行 → dataSync 前台服务从未被 startService
+ *   → 无通知渠道 / 无 ServiceRecord / 无通知（峰宝复验看到的"什么都没发生"）
+ *
+ * 写法依据：本文件已用同构写法 `android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI`
+ * （嵌套类 + 静态字段），UTS 支持；官方文档 native/use/androidcomm.md 亦为 `Build.VERSION.SDK_INT`。
+ *
+ * 读取失败返回 0（走 legacy 权限分支）：fail-safe —— 宁可用兼容性最好的旧权限，
+ * 也绝不"假装新版"去要一个本机不存在的权限。
+ */
+function sdkInt(): Int {
+	try {
+		return android.os.Build.VERSION.SDK_INT
+	} catch (e: Throwable) {
+		console.error('[yishu] 读取 Build.VERSION.SDK_INT 失败，按 legacy 分支处理: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		return 0
+	}
+}
 
 // ---------- B5d · dataSync 前台服务（短命化）常量 ----------
 
@@ -70,11 +98,28 @@ function prefs(): android.content.SharedPreferences {
 	return appContext().getSharedPreferences('yishu_photo_watch', 0)
 }
 
+/**
+ * 当前设备应请求的相册读权限名。
+ * ⚠️ 2026-09-11 D-23：分支依据 `sdkInt()`（真实设备 SDK），**不再是硬编码字面量**。
+ * 设备 Android 12/SDK 31 → READ_EXTERNAL_STORAGE；API 33+ → READ_MEDIA_IMAGES。
+ */
 function readPermissionName(): string {
-	if (Build_VERSION_SDK_INT >= 33) {
+	if (sdkInt() >= 33) {
 		return "android.permission.READ_MEDIA_IMAGES"
 	}
 	return "android.permission.READ_EXTERNAL_STORAGE"
+}
+
+/** Array<string> → "a,b"（UTS 的 Array 无 join 先例，手写循环最稳） */
+function listText(arr: Array<string>): string {
+	let s = ''
+	for (let i = 0; i < arr.length; i++) {
+		if (i > 0) {
+			s += ','
+		}
+		s += arr[i]
+	}
+	return s == '' ? '(空)' : s
 }
 
 /** EXIF DateTimeOriginal → epoch ms（EXIF 无时区=相机本地时间；设备本地即 +08） */
@@ -135,7 +180,7 @@ class PhotoObserver extends android.database.ContentObserver {
 			return
 		}
 		let lastSeen = prefs().getLong(KEY_LAST_SEEN, 0)
-		const collectionUri: android.net.Uri = Build_VERSION_SDK_INT >= 29
+		const collectionUri: android.net.Uri = sdkInt() >= 29
 			? android.provider.MediaStore.Images.Media.getContentUri("external")
 			: android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 		// projection/selectionArgs 传 null（UTSArray 与 Java Array 互转受限），
@@ -264,7 +309,7 @@ export class DataSyncService extends android.app.Service {
 	}
 
 	private createChannel(): void {
-		if (Build_VERSION_SDK_INT < 26) {
+		if (sdkInt() < 26) {
 			return
 		}
 		try {
@@ -281,7 +326,7 @@ export class DataSyncService extends android.app.Service {
 
 	private buildNotification(): android.app.Notification {
 		// API 26+ 必须挂 channelId，否则 startForeground 抛 RemoteServiceException（无通道）
-		const builder = Build_VERSION_SDK_INT >= 26
+		const builder = sdkInt() >= 26
 			? new android.app.Notification.Builder(this, CHANNEL_ID)
 			: new android.app.Notification.Builder(this)
 		builder.setContentTitle('忆述光华 · 数据同步中')
@@ -295,7 +340,7 @@ export class DataSyncService extends android.app.Service {
 	private startForegroundInternal(): void {
 		try {
 			const notification = this.buildNotification()
-			if (Build_VERSION_SDK_INT >= 34) {
+			if (sdkInt() >= 34) {
 				this.startForeground(NOTIF_ID, notification, 1 << 7)
 			} else {
 				this.startForeground(NOTIF_ID, notification)
@@ -337,6 +382,43 @@ export class DataSyncService extends android.app.Service {
 	}
 }
 
+// ---------- 权限申请终态守卫（D-24 配套） ----------
+
+/**
+ * 单次权限申请的终态守卫 —— 保证宿主回调**恰好被调用一次**，且上报**复查后的真实**授予态。
+ *
+ * 为什么需要（两个真实约束，非防御性编程）：
+ *  1. 官方文档明确：用户"部分授予"时 `success` 与 `fail` **都会被调用**。
+ *     宿主若据此重复 `startWatch()` 会重复注册 ContentObserver（并重复拉起前台服务）。
+ *  2. 回调参数是**系统自述**，未必等于最终态（如授权后用户立刻在后台撤销）。
+ *     统一以 `checkSelfPermission` **复查值**为准，杜绝"回调说 true 但实际 false"。
+ *
+ * 拒绝路径也**必须打点**（违反即 D-24 同类缺陷：静默 = 无从定位）。
+ */
+class PermissionRequest {
+	callback: PermissionResultCallback
+	perm: string
+	settled: boolean = false
+
+	constructor(callback: PermissionResultCallback, perm: string) {
+		this.callback = callback
+		this.perm = perm
+	}
+
+	/** 落地终态；重复到达一律打点忽略（不静默丢弃） */
+	settle(granted: boolean, doNotAskAgain: boolean, why: string): void {
+		if (this.settled) {
+			console.log('[yishu] 权限回调重复到达，已忽略 perm=' + this.perm + ' 来源=' + why)
+			return
+		}
+		this.settled = true
+		const real = appContext().checkSelfPermission(this.perm) == 0
+		console.log('[yishu] 权限申请终态 perm=' + this.perm + ' sdk=' + sdkInt()
+			+ ' 回调值=' + granted + ' 复查值=' + real + ' doNotAskAgain=' + doNotAskAgain + ' 来源=' + why)
+		this.callback(real, doNotAskAgain)
+	}
+}
+
 // ---------- PhotoWatch 实现 ----------
 
 class PhotoWatchImpl implements PhotoWatch {
@@ -354,7 +436,7 @@ class PhotoWatchImpl implements PhotoWatch {
 		if (!this.registered) {
 			const obs = this.observer
 			if (obs != null) {
-				const collectionUri: android.net.Uri = Build_VERSION_SDK_INT >= 29
+				const collectionUri: android.net.Uri = sdkInt() >= 29
 					? android.provider.MediaStore.Images.Media.getContentUri("external")
 					: android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 				appContext().getContentResolver().registerContentObserver(collectionUri, true, obs)
@@ -421,27 +503,55 @@ class PhotoWatchImpl implements PhotoWatch {
 		return prefs().getLong(KEY_LAST_SEEN, 0)
 	}
 
-	requestReadPermission(): void {
+	requestReadPermission(callback: PermissionResultCallback): void {
+		const perm = readPermissionName()
+		const req = new PermissionRequest(callback, perm)
+
+		// 错误边界①：Activity 未就绪（App 不在前台 / 启动早期）—— 显式声明原因，不静默返回
 		const activity = UTSAndroid.getUniActivity()
 		if (activity == null) {
+			req.settle(false, false, 'uniActivity 为 null（App 不在前台或 Activity 未就绪），未弹窗')
 			return
 		}
-		const perms: Array<string> = [readPermissionName()]
+
+		const perms: Array<string> = [perm]
+
+		// 错误边界②：已授予 —— 不弹窗，直接给终态
 		if (UTSAndroid.checkSystemPermissionGranted(activity, perms)) {
+			req.settle(true, false, '已授予，无需弹窗')
 			return
 		}
-		// 第一波简化：跳系统设置授权页（正式权限交互随自定义基座波次完善）
-		const intent = new android.content.Intent(
-			"android.settings.APPLICATION_DETAILS_SETTINGS",
-			android.net.Uri.parse('package:' + appContext().getPackageName())
-		)
-		intent.addFlags(0x10000000)
-		appContext().startActivity(intent)
+
+		console.log('[yishu] 拉起系统权限框 perm=' + perm + ' sdk=' + sdkInt())
+		try {
+			// 官方签名（UTSAndroid.d.ts:144）：(activity, permissions, success, fail, shallUnCheck)
+			// 第 5 参显式传 false（doc 默认值），避免依赖可选参数推断
+			UTSAndroid.requestSystemPermission(activity, perms,
+				(allRight: boolean, grantedList: Array<string>): void => {
+					req.settle(allRight, false, 'success(allRight=' + allRight + ' grantedList=' + listText(grantedList) + ')')
+				},
+				(doNotAskAgain: boolean, grantedList: Array<string>): void => {
+					req.settle(false, doNotAskAgain, 'fail(doNotAskAgain=' + doNotAskAgain + ' grantedList=' + listText(grantedList) + ')')
+				},
+				false)
+		} catch (e: Throwable) {
+			// 错误边界③：系统拒绝拉起（隐私协议未同意 / 组件不可用等）—— 显式声明原因
+			req.settle(false, false, 'requestSystemPermission 抛异常: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		}
+	}
+
+	/** 当前设备应请求的权限名（宿主打点用：区分"用户拒绝"与"本机无此权限"） */
+	getReadPermissionName(): string {
+		return readPermissionName()
 	}
 
 	isReadPermissionGranted(): boolean {
-		const granted = 0
-		return appContext().checkSelfPermission(readPermissionName()) == granted
+		const perm = readPermissionName()
+		const granted = appContext().checkSelfPermission(perm) == 0
+		// 不静默：每次守卫判定都打点（含真实 SDK 与权限名）。
+		// 本次 D-23 事故正是因此处零日志，导致真机"什么都没发生"而无法定位。
+		console.log('[yishu] 权限守卫 perm=' + perm + ' sdk=' + sdkInt() + ' granted=' + granted)
+		return granted
 	}
 
 	// ---------- B5d · microphone/dataSync 互斥（录音插件 Agent J 域调用） ----------

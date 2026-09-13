@@ -53,6 +53,13 @@ export class PhotoItem {
 /** 攒批回调：一批新照片（已按静默窗口去重） */
 export type PhotoBatchCallback = (items: Array<PhotoItem>) => void
 
+/**
+ * 权限申请结果回调（D-24 引入）。
+ * 契约：**恰好被调用一次** —— 五条路径全覆盖（已授予 / 授予 / 拒绝 / 永久拒绝 / 抛异常）。
+ * 采用具名别名而非内联函数类型：与 PhotoBatchCallback 同款（内联函数类型在本项目无先例）。
+ */
+export type PermissionResultCallback = (granted: boolean, doNotAskAgain: boolean) => void
+
 /** 前台服务当前激活类型（B5d §3 互斥状态查询） */
 export type ForegroundActiveType = 'microphone' | 'dataSync' | 'none' | 'unsupported'
 
@@ -65,10 +72,26 @@ export interface PhotoWatch {
 	stop(): void
 	/** 读取当前游标（last_seen photo _id，用于 UI 展示状态） */
 	getLastSeenId(): number
-	/** 请求相册读取权限（Android 13+ READ_MEDIA_IMAGES；弹系统框） */
-	requestReadPermission(): void
+	/**
+	 * 请求相册读取权限（弹系统框）。
+	 * 权限名按设备实际 SDK 选择：13+ → READ_MEDIA_IMAGES，以下 → READ_EXTERNAL_STORAGE。
+	 *
+	 * ⚠️ 2026-09-11 D-24：原签名 `requestReadPermission(): void`（无回调）在**全项目零调用点**，
+	 * 与宿主的 `if (isReadPermissionGranted())` 无 else 组合成死锁 —— 未授权时静默跳过且永不申请，
+	 * 且零日志。现改为**必传回调**：
+	 *   - callback **保证恰好被调用一次**（已授予 / 授予 / 拒绝 / 不弹窗 / 抛异常，五条路径均回调）；
+	 *   - 宿主据此决定是否启动监听，不允许静默。
+	 * @param callback (granted: 最终是否已授予读取权限, doNotAskAgain: 用户是否勾选"不再询问")
+	 */
+	requestReadPermission(callback: PermissionResultCallback): void
 	/** 相册读取权限是否已授予 */
 	isReadPermissionGranted(): boolean
+	/**
+	 * 当前设备应请求的相册读权限名（诊断用）。
+	 * ⚠️ 用途：区分「用户拒绝」与「本机 SDK 不存在该权限」——后者是代码缺陷，
+	 * 用户怎么授权都没用（D-23 实锤）。打点务必带上本值 + 实际 SDK 等级。
+	 */
+	getReadPermissionName(): string
 	/**
 	 * 录音状态互斥（B5d §3：microphone/dataSync 两前台服务类型不同时开）。
 	 * 录音插件（Agent J 域）在开始/结束录音时调用：
