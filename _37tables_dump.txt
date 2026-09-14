@@ -1,0 +1,839 @@
+忆述光华 MVP · 数据库表结构设计
+整理：技术部（海峰）｜依据：认证体系 + B1-B5-e 全部深度设计 + 两轮实体审计
+全局约定
+· 存储：PostgreSQL（JSONB 扩展字段 + 软删除全局模式）；向量库：VectorStore 抽象层（测试 Qdrant / 生产 Milvus，可切换）
+· 对象存储：MinIO（测试）/ 腾讯云 COS（生产），S3 兼容接口，测试与生产可无缝切换
+· 全文检索（BM25）：独立于关系库，用 Elasticsearch / OpenSearch 统一索引 memory_index（search_text + content_type 区分来源），实验阶段先用 rank_bm25 内存版；不占 PostgreSQL 35 表清单。
+· 队列 / 调度：定时任务用 APScheduler / Cron（每日 22:00 按用户时区），异步任务用数据库队列表（复用 ai_request_logs.status 与 offline_queue 通用模型），MVP 阶段不引入 Celery / RabbitMQ 消息队列中间件。
+· 软删除：所有业务表带 deleted_at + deleted_by（30 天物理清理，deleted_logs 对账）
+· 时间：统一 timestamptz（UTC 存储，展示转本地）
+· ID：bigserial 或 UUID（用户相关用 UUID，日志类 bigserial）
+· 审计：用户对画像 / 事件 / 标签的人工修改写入 audit_log（B1-6）
+一、用户与认证域（5 表）
+1. users – 用户表
+users (id, unionid, phone, nickname, avatar, status, created_at, updated_at, deleted_at, deleted_by)
+id: 用户唯一标识，主键
+unionid: 微信生态身份主键（Q1-6）
+phone: 备用登录手机号（可空）
+nickname: 昵称（展示）
+avatar: 头像（展示）
+status: 状态：1 正常 / 2 冻结
+created_at: 创建时间
+updated_at: 更新时间
+deleted_at: 软删除时间
+deleted_by: 删除人（软删除）
+外键：无；候选键 unionid / phone（唯一）
+2. user_wechat_bindings – 微信绑定表
+user_wechat_bindings (id, user_id, openid, channel, bound_at)
+id: 绑定记录ID，主键
+user_id: 所属用户（关联 users.id）
+file_id: 所属文件（关联 files.id，可空）
+openid: 微信 openid（一个 unionid 可多 openid）
+channel: 渠道：wechat_kf / wechat_app / miniprogram
+bound_at: 绑定时间
+外键：user_id REFERENCES users(id)，file_id REFERENCES files(id)
+3. devices – 设备表
+devices (id, user_id, device_id, platform, refresh_token, last_active_at)
+id: 设备记录ID，主键
+user_id: 所属用户（关联 users.id）
+device_id: 设备标识
+platform: 平台：android / windows
+refresh_token: 刷新令牌（可吊销，subagent 建议）
+last_active_at: 最近活跃时间
+外键：user_id REFERENCES users(id)；UNIQUE(user_id, device_id)
+4. sms_codes – 短信验证码表
+sms_codes (id, phone, code, expire_at, used_at, created_at)
+id: 记录ID，主键（防刷）
+phone: 手机号
+code: 验证码
+expire_at: 过期时间
+used_at: 使用时间
+created_at: 创建时间
+索引：(phone, created_at) 防刷
+5. audit_log – 审计日志表
+audit_log (id, user_id, actor, entity_type, entity_id, action, before, after, created_at)
+id: 日志ID，主键
+user_id: 关联用户
+actor: 操作者：user / ai
+entity_type: 实体类型：profile / event / tag / ...
+entity_id: 实体ID
+action: 操作动作
+before: 修改前快照
+after: 修改后快照
+created_at: 创建时间
+说明：B1-6 对话式修改记录（人工修改画像/事件/标签写入本表）
+二、文件与内容域（6 表）
+6. files – 文件表（新增）
+files (id, user_id, filename, mime_type, file_size, extension, storage_key, file_hash, status, parser, parser_version, error_message, created_at, updated_at, deleted_at, deleted_by)
+id: 文件唯一标识，主键
+user_id: 所属用户（关联 users.id）
+filename: 原始文件名
+mime_type: MIME 类型
+file_size: 文件大小（字节）
+extension: 扩展名
+storage_key: 对象存储键（{user_id}/{file_id}/original）
+file_hash: SHA256(file bytes)，文件级精确去重
+status: 解析状态：uploaded / parsing / parsed / partial / failed / unsupported
+parser: 解析器：docx / pdf / image / audio
+parser_version: 解析器版本
+error_message: 解析错误信息
+created_at: 创建时间
+updated_at: 更新时间
+deleted_at: 软删除时间
+deleted_by: 删除人（软删除）
+外键：user_id REFERENCES users(id)
+索引：UNIQUE(user_id, file_hash) WHERE file_hash IS NOT NULL｜(user_id, created_at)
+说明：文件原始层，与 contents 解耦（1:N），文件本体存 MinIO/COS
+7. contents – 内容表（核心表）
+contents (id, user_id, file_id, content_type, content_class, class_source, model_version, raw_text, text, normalized_text, summary, summary_strategy, taken_at, gps_lat, gps_lng, place, normalized_text_hash, image_phash, emotion, sensitive_tags, sensitive_status, text_vector_id, image_vector_id, cos_key, thumbnail_key, source, extra, status, created_at, updated_at, deleted_at, deleted_by)
+id: 内容唯一标识，主键
+user_id: 所属用户（关联 users.id）
+content_type: 物理类型：photo / text / voice / article
+content_class: 语义分类：待办 / 灵感 / 情绪 / 引用 / 混合
+class_source: 分类来源：setfit / llm / rule / user
+model_version: 分类模型版本（微调追溯，简化自 model_versions）
+raw_text: 原文 / OCR 结果 / 转写
+text: OCR 结果 / 转写 / 原文
+normalized_text: 归一化文本（去重用）
+summary: 长文本摘要
+summary_strategy: 摘要策略（passthrough / qwen-long / ...）
+taken_at: 拍摄 / 记录时间
+gps_lat: 纬度
+gps_lng: 经度
+place: 逆编码地名（geo_cache）
+normalized_text_hash: SHA256 归一化文本指纹（原 perceptual_hash 改名）
+image_phash: 图片感知哈希（预留，图片内容专用）
+emotion: 情绪 {value, confidence, source}（B5-a）
+sensitive_tags: 敏感话题标签（B5-b 内容级）
+sensitive_status: 敏感状态：正常 / 待复核 / 已遮蔽 / 已解除
+text_vector_id: 文本向量点引用（VectorStore 抽象，测试 Qdrant / 生产 Milvus）
+image_vector_id: 图像向量点引用（VectorStore 抽象，测试 Qdrant / 生产 Milvus）
+cos_key: 原件 COS 键
+thumbnail_key: 缩略图 COS 键
+source: 来源：wechat / app / windows / import
+extra: 扩展：EXIF / 时长 / 尺寸等差异字段
+status: 状态：processing / done / failed
+created_at: 创建时间
+updated_at: 更新时间
+deleted_at: 软删除时间
+deleted_by: 删除人（软删除）
+外键：user_id REFERENCES users(id)
+索引：UNIQUE(user_id, normalized_text_hash) WHERE normalized_text_hash IS NOT NULL｜(user_id, created_at)｜(user_id, content_type)｜(file_id)
+8. content_chunks – 内容切块表（新增）
+content_chunks (id, content_id, chunk_index, text, char_start, char_end, token_count, chunk_type, metadata, created_at)
+id: 切块唯一标识，主键
+content_id: 所属内容（关联 contents.id）
+chunk_index: 切块序号
+text: 切块文本
+char_start: 起始字符位置
+char_end: 结束字符位置
+token_count: Token 数
+chunk_type: 切块类型：paragraph / fixed / semantic
+metadata: 元数据
+created_at: 创建时间
+外键：content_id REFERENCES contents(id)
+唯一：UNIQUE(content_id, chunk_index)
+说明：RAG 切块层，contents 1:N chunks，向量下沉到 chunk 粒度
+9. tags – 标签表
+tags (id, user_id, name, kind, created_at)
+id: 标签ID，主键
+user_id: 所属用户（关联 users.id）
+name: 标签名
+kind: 标签来源：custom（用户自定义）/ l3_topic（L3 主题流自动生成，待确认）
+created_at: 创建时间
+外键：user_id REFERENCES users(id)；UNIQUE(user_id, name)
+10. content_tags – 内容标签表（多对多）
+content_tags (content_id, tag_id, confidence)
+content_id: 内容ID（关联 contents.id）
+tag_id: 标签ID（关联 tags.id）
+confidence: 标签置信度
+外键：content_id REFERENCES contents(id)，tag_id REFERENCES tags(id)
+唯一：UNIQUE(content_id, tag_id)（分歧 B 已定）
+11. voice_segments – 语音分段表
+voice_segments (id, content_id, seg_no, start_sec, end_sec, segment_text, segment_emotion)
+id: 分段ID，主键
+content_id: 所属内容（关联 contents.id）
+seg_no: 分段序号
+start_sec: 起始秒
+end_sec: 结束秒
+segment_text: 分段转写文本
+segment_emotion: 分段情绪（B5-a 长录音分段）
+外键：content_id REFERENCES contents(id)；UNIQUE(content_id, seg_no)
+三、事件域（4 表）
+12. events – 事件表
+events (id, user_id, level, parent_event_id, title, title_source, cover_content_id, start_time, end_time, place, emotion, sensitivity, confidence, status, generated_by, created_at, updated_at, deleted_at)
+id: 事件唯一标识，主键
+user_id: 所属用户（关联 users.id）
+level: 层级 0-3（四层模型）
+parent_event_id: 父事件ID（自引用外键）
+title: 事件标题
+title_source: 标题来源：llm / template / user
+cover_content_id: 封面内容ID
+start_time: 开始时间
+end_time: 结束时间
+place: 地点
+emotion: 情绪（主导 + 峰值，B5-a 段级合并）
+sensitivity: 敏感标记（B5-b）
+confidence: 置信度（B3-5，<0.7 待确认）
+status: 状态：draft / confirmed / rejected（用户背书）
+generated_by: 生成端：device（端侧 L0/L1）/ cloud（云侧 L2/L3）
+created_at: 创建时间
+updated_at: 更新时间
+deleted_at: 软删除时间
+外键：user_id REFERENCES users(id)，parent_event_id REFERENCES events(id)
+索引：(user_id, level)｜(user_id, start_time)
+标签：见 event_tags（多对多，与 content_tags 统一建模）
+13. event_items – 事件条目表
+event_items (content_id, event_id)
+content_id: 内容ID（关联 contents.id）
+event_id: 事件ID（关联 events.id）
+外键：content_id REFERENCES contents(id)，event_id REFERENCES events(id)
+唯一：UNIQUE(content_id, event_id)
+说明：不存 event_level，事件层级经 JOIN events.level 获取（消除传递依赖）；分歧 A 已定：photo_event 泛化，文字/语音也进事件
+14. event_tags – 事件标签表（多对多）
+event_tags (event_id, tag_id)
+event_id: 事件ID（关联 events.id）
+tag_id: 标签ID（关联 tags.id）
+外键：event_id REFERENCES events(id)，tag_id REFERENCES tags(id)
+唯一：UNIQUE(event_id, tag_id)
+说明：与 content_tags 统一建模，替代原 events.tags 的 JSONB 数组
+15. event_edit_log – 事件编辑日志表
+event_edit_log (id, event_id, user_id, action, detail, created_at)
+id: 日志ID，主键
+event_id: 事件ID
+user_id: 操作用户
+action: 操作：merge / split / confirm / rename
+detail: 操作详情（B3-5 用户合并/拆分/确认记录）
+created_at: 创建时间
+四、画像域（5 表）
+16. user_profile – 用户画像表
+user_profile (user_id, version, dimensions, token_usage, last_rebuilt_at)
+user_id: 用户ID（关联 users.id，1:1）
+version: 画像版本
+dimensions: 稀疏高维枚举维度（GIN 索引）
+token_usage: Token 用量
+last_rebuilt_at: 最近重建时间
+外键：user_id REFERENCES users(id)；索引：dimensions GIN 索引
+17. profile_dimension_history – 画像维度历史表
+profile_dimension_history (id, user_id, dimension, value, updated_at)
+id: 记录ID，主键
+user_id: 所属用户（关联 users.id）
+dimension: 维度名
+value: 维度值
+updated_at: 更新时间
+说明：B1 历史值按维度滚动裁剪，保留最近 10 条
+18. profile_sensitive – 画像敏感表
+profile_sensitive (id, user_id, topic, topic_hash, locked, added_at)
+id: 记录ID，主键
+user_id: 所属用户（关联 users.id）
+topic: 敏感主题（画像级，永不过期）
+topic_hash: HMAC 盲索引（加密后仍可精确匹配，待确认）
+locked: 用户显式标记锁定
+added_at: 添加时间
+外键：user_id REFERENCES users.id；UNIQUE(user_id, topic)
+19. profile_l2_evidence – L2 维度证据表
+profile_l2_evidence (id, user_id, dimension, evidence_content_ids, created_at)
+id: 记录ID，主键
+user_id: 所属用户（关联 users.id）
+dimension: 维度名
+evidence_content_ids: 证据内容ID数组（L2 维度证据）
+created_at: 创建时间
+外键：user_id REFERENCES users.id
+20. profile_dimension_pending – 画像维度扩展队列表
+profile_dimension_pending (id, user_id, dimension, raw_answer, count, status, created_at, updated_at)
+id: 记录ID，主键
+user_id: 所属用户（关联 users.id）
+dimension: 维度名（relation_core / life_events / values_priority）
+raw_answer: 未命中枚举的原始回答
+count: 同类累计数（同 user+dimension+raw 合并）
+status: 状态：pending / confirmed / rejected
+created_at: 创建时间
+updated_at: 更新时间
+外键：user_id REFERENCES users(id)
+唯一：UNIQUE(user_id, dimension, raw_answer)
+说明：B1 维度扩展队列（枚举无值→排队→累计人工确认）；count 为聚合冗余，靠唯一约束保证一致性
+五、纠错域（2 表）
+21. correction_log – 纠错日志表
+correction_log (id, user_id, content_id, content_embedding, old_label, new_label, source, confidence, is_global_candidate, created_at)
+id: 日志ID，主键
+user_id: 所属用户
+content_id: 内容ID
+content_embedding: 内容向量（向量索引）
+old_label: 旧标签
+new_label: 新标签
+source: 来源：active / echo / org
+confidence: 置信度
+is_global_candidate: 共性纠错候选标记
+created_at: 创建时间
+索引：content_embedding 向量索引；每用户 500 条上限
+22. sensitive_words – 敏感词表
+sensitive_words (id, word, level, user_id, created_at)
+id: 记录ID，主键
+word: 敏感词
+level: 词表来源层级：1 预置 / 2 画像驱动 / 3 违规回流（非敏感度分级）
+user_id: 用户ID（NULL 表示全局）
+created_at: 创建时间
+唯一：UNIQUE(word, user_id)
+六、模板与护栏域（2 表）
+23. question_templates – 提问模板表
+question_templates (id, type, category, template_text, slot_vars, status, usage_count, created_at)
+id: 模板ID，主键
+type: 类型：ask / echo / care
+category: 类别：photo / text / voice
+template_text: 模板文本
+slot_vars: 槽位变量数组
+status: 状态：active / frozen
+usage_count: 使用次数
+created_at: 创建时间
+说明：B5-b 骨架池 30-50 个，产品运营维护
+24. guardrail_logs – 护栏日志表
+guardrail_logs (id, user_id, content, engine, result, cost_tokens, created_at)
+id: 日志ID，主键
+user_id: 所属用户
+content: 校验内容
+engine: 引擎：rule / bailian
+result: 校验结果
+cost_tokens: Token 成本
+created_at: 创建时间
+说明：B5-b 审计 / 成本
+七、交互状态域（2 表）
+25. question_history – 提问历史表
+question_history (id, user_id, content_id, template_id, fingerprint, response, asked_at, send_status)
+id: 记录ID，主键
+user_id: 所属用户
+content_id: 内容ID
+template_id: 模板ID（关联 question_templates.id）
+fingerprint: 指纹（防换措辞绕过，subagent 建议）
+response: 回复文本
+asked_at: 提问时间
+send_status: 发送状态：sent / failed / read
+唯一：UNIQUE(user_id, fingerprint)；说明：B5-a 关怀节流 + Q40 频率控制
+26. echo_history – 回响历史表
+echo_history (id, user_id, event_id, shown_at, shown_date, action, fingerprint)
+id: 记录ID，主键
+user_id: 所属用户
+event_id: 事件ID
+shown_at: 展示时间
+shown_date: 展示日期（用于每日≤1条部分唯一索引）
+action: 动作：respond / dismiss / suppressed
+fingerprint: 指纹
+唯一：UNIQUE(user_id, event_id)
+部分唯一索引：UNIQUE(user_id, shown_date) WHERE action IS DISTINCT FROM 'dismiss'
+说明：回响每天 ≤1 条，划掉（dismiss）不计入每日配额
+八、同步域（4 表）
+27. sync_state – 同步状态表
+sync_state (id, user_id, device_id, cursor_version, last_sync_at)
+id: 记录ID，主键
+user_id: 所属用户
+device_id: 设备ID
+cursor_version: 游标版本（字段级 LWW，B4-2）
+last_sync_at: 最近同步时间
+唯一：UNIQUE(user_id, device_id)
+28. offline_queue – 离线队列表
+offline_queue (id, op_id, user_id, device_id, op_type, payload, status, retry_count)
+id: 记录ID，主键
+op_id: 操作ID（云端幂等去重）
+user_id: 所属用户
+device_id: 设备ID
+op_type: 操作类型
+payload: 操作载荷
+status: 状态
+retry_count: 重试次数
+唯一：UNIQUE(op_id)
+29. deleted_logs – 删除日志表
+deleted_logs (id, content_id, deleted_by, deleted_at, cleanup_status)
+id: 记录ID，主键
+content_id: 内容ID（故意无外键，内容可能已物理删）
+deleted_by: 删除人
+deleted_at: 删除时间
+cleanup_status: 清理状态（向量 / COS 是否已清，防孤儿资源）
+说明：软删除 30 天物理清理对账（subagent 建议）
+30. sync_field_versions – 字段级同步版本表
+sync_field_versions (entity_type, entity_id, field, user_id, value, updated_at, deleted)
+entity_type: 实体类型：content / event / profile
+entity_id: 实体ID
+field: 字段名：tags / title / place...
+user_id: 实体归属用户（关联 users.id，越权校验）
+value: 字段当前权威值
+updated_at: 字段最后写入时间（LWW）
+deleted: 实体级墓碑
+外键：user_id REFERENCES users(id)
+主键：PRIMARY KEY(entity_type, entity_id, field)
+说明：B4-2 字段级 LWW 权威存储；user_id / deleted 为实体级属性冗余（越权校验），属有意反规范化
+九、微信通道域（1 表）
+31. wechat_messages – 微信消息表
+wechat_messages (id, msg_id, user_id, msg_type, content, media_id, status, created_at)
+id: 记录ID，主键
+msg_id: 微信消息ID（幂等）
+user_id: 所属用户
+msg_type: 消息类型：text / image / link / voice
+content: 消息内容
+media_id: 媒体ID
+status: 状态：processed / failed
+created_at: 创建时间
+唯一：UNIQUE(msg_id)
+十、基础设施域（4 表）
+32. geo_cache – 逆地理缓存表
+geo_cache (geohash, place, city, updated_at)
+geohash: 地理哈希（精度 6），主键
+place: 地名
+city: 城市
+updated_at: 更新时间
+说明：B3-3 逆编码缓存；高德合规：缓存不超 30 天
+33. ai_request_logs – AI 请求日志表
+ai_request_logs (id, user_id, provider, engine, task_type, tokens, calls, cost_est, status, created_at)
+id: 日志ID，主键
+user_id: 所属用户
+provider: 服务商：aliyun / baidu / tencent / amap
+engine: 引擎
+task_type: 任务类型
+tokens: Token 数
+calls: 调用次数
+cost_est: 预估成本
+status: 状态（异步任务状态）
+created_at: 创建时间
+说明：成本归因 + 异步任务状态
+34. api_cost_stats – API 成本统计表
+api_cost_stats (id, provider, date, total_tokens, total_calls, total_cost)
+id: 记录ID，主键
+provider: 服务商
+date: 统计日期
+total_tokens: 总 Token
+total_calls: 总调用次数
+total_cost: 总成本
+说明：ai_request_logs 定时聚合视图；UNIQUE(provider, date)
+35. finetune_jobs – 微调任务表
+finetune_jobs (id, trigger, dataset_count, model, status, started_at, finished_at)
+id: 任务ID，主键
+trigger: 触发条件（≥50 条共性纠错，B5-c）
+dataset_count: 数据集规模
+model: 模型
+status: 状态
+started_at: 开始时间
+finished_at: 完成时间
+说明：B5-c 共性纠错微调
+十一、消息域（1 表）
+36. messages – 消息表
+messages (id, user_id, channel, msg_type, title, body, payload, status, sent_at, read_at)
+id: 消息ID，主键
+user_id: 所属用户（关联 users.id）
+channel: 渠道：in_app / push
+msg_type: 类型：daily_review / voice_done / care_followup / echo
+title: 标题
+body: 正文
+payload: 负载（跳转参数等）
+status: 状态：unread / read / archived
+sent_at: 发送时间
+read_at: 已读时间
+外键：user_id REFERENCES users(id)
+说明：S4-07 推送 + S4-08 消息中心同表；in_app 与 push 统一已读状态机
+十二、设置域（1 表）
+37. app_settings – 应用设置表
+app_settings (user_id, ai_engine, notification_prefs, cross_device_visible, import_sessions)
+user_id: 用户ID（关联 users.id，1:1）
+ai_engine: AI 引擎：cloud / ollama
+notification_prefs: 通知偏好（回响频率）
+cross_device_visible: 跨设备可见
+import_sessions: Windows 批量导入进度（可选云端）
+外键：user_id REFERENCES users(id)
+十三、向量库域（Qdrant，非关系库，2 集合）
+向量不落关系库，统一存 Qdrant 集合（经 VectorStore 抽象，测试 Qdrant / 生产 Milvus），关系表只存向量点 ID 引用（contents.text_vector_id / image_vector_id）。
+向量集合 1：content_text_vectors – 文本向量（Qdrant）
+id: 向量点 ID，对应 contents.text_vector_id
+vector: 1024 维向量（Qwen3-Embedding）
+payload: { user_id, content_id, content_type, text }（过滤 / 元数据）
+说明：语义检索主集合，contents 写入时同步 upsert，删除时随软删除走 deleted_logs 清理。
+向量集合 2：content_image_vectors – 图像向量（Qdrant，第二阶段可选）
+id: 向量点 ID，对应 contents.image_vector_id
+vector: 图像向量（CLIP）
+payload: { user_id, content_id, image_phash }
+说明：跨模态检索（不依赖 OCR）第二阶段启用；MVP 仅文本向量。
+附注：correction_log.content_embedding 暂用 pgvector（关系库内嵌），将来可统一迁移到本域 Qdrant。
+十四、对象存储域（MinIO / COS，非关系库，2 桶）
+大文件（照片原件 / 缩略图 / 录音 / 文章原文件）不落关系库，存对象存储（S3 兼容，测试 MinIO / 生产 COS），关系表只存对象 key 引用（contents.cos_key / thumbnail_key）。
+对象桶 1：originals – 原件桶（MinIO）
+对象 key：{user_id}/{content_id}/original
+内容：照片原图、录音原件、文章原文件
+对象桶 2：thumbnails – 缩略图桶（MinIO）
+对象 key：{user_id}/{content_id}/thumb
+内容：照片缩略图（前端列表 / 封面）
+说明：对象 key 由 contents.cos_key / thumbnail_key 引用；删除时 deleted_logs.cleanup_status 标记清理向量 / COS。
+统计
+37 张表（12 关系域）+ 2 向量集合（Qdrant）+ 2 对象桶（MinIO）：用户与认证域 5 / 文件与内容域 6 / 事件域 4 / 画像域 5 / 纠错域 2 / 模板与护栏域 2 / 交互状态域 2 / 同步域 4 / 微信通道域 1 / 基础设施域 4 / 消息域 1 / 设置域 1；向量库 Qdrant 2 集合；对象存储 MinIO 2 桶。
+关键索引
+· contents：UNIQUE(user_id, normalized_text_hash) WHERE normalized_text_hash IS NOT NULL｜(user_id, created_at)｜(user_id, content_type)｜(file_id)
+· events：(user_id, level)｜(user_id, start_time)
+· event_items：UNIQUE(content_id, event_id)
+· event_tags：UNIQUE(event_id, tag_id)
+· content_tags：UNIQUE(content_id, tag_id)
+· tags：UNIQUE(user_id, name)
+· wechat_messages：UNIQUE(msg_id)｜offline_queue：UNIQUE(op_id)
+· question_history：UNIQUE(user_id, fingerprint)
+· echo_history：UNIQUE(user_id, event_id)｜部分唯一索引(user_id, shown_date) WHERE action IS DISTINCT FROM 'dismiss'
+· sync_field_versions：PRIMARY KEY(entity_type, entity_id, field)
+· profile_dimension_pending：UNIQUE(user_id, dimension, raw_answer)
+· messages：(user_id, sent_at)
+· user_profile：dimensions GIN 索引｜correction_log：embedding 向量索引
+· geo_cache：PK(geohash)
+· files：UNIQUE(user_id, file_hash) WHERE file_hash IS NOT NULL｜(user_id, created_at)
+· content_chunks：UNIQUE(content_id, chunk_index)
+=== TABLE 0 (11 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 用户唯一标识，主键
+unionid ; text ; NOT NULL, UNIQUE ; 微信生态身份主键（Q1-6）
+phone ; text ; UNIQUE ; 备用登录手机号（可空）
+nickname ; text ;  ; 昵称（展示）
+avatar ; text ;  ; 头像（展示）
+status ; integer ; NOT NULL DEFAULT 1 ; 状态：1 正常 / 2 冻结
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+updated_at ; timestamptz ;  ; 更新时间
+deleted_at ; timestamptz ;  ; 软删除时间
+deleted_by ; uuid ;  ; 删除人（软删除）
+=== TABLE 1 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 绑定记录ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+openid ; text ; NOT NULL, UNIQUE ; 微信 openid（一个 unionid 可多 openid）
+channel ; text ; NOT NULL ; 渠道：wechat_kf / wechat_app / miniprogram
+bound_at ; timestamptz ; DEFAULT now() ; 绑定时间
+=== TABLE 2 (7 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 设备记录ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+device_id ; text ; NOT NULL ; 设备标识
+platform ; text ;  ; 平台：android / windows
+refresh_token ; text ;  ; 刷新令牌（可吊销，subagent 建议）
+last_active_at ; timestamptz ;  ; 最近活跃时间
+=== TABLE 3 (7 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键（防刷）
+phone ; text ; NOT NULL ; 手机号
+code ; text ; NOT NULL ; 验证码
+expire_at ; timestamptz ; NOT NULL ; 过期时间
+used_at ; timestamptz ;  ; 使用时间
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 4 (10 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 日志ID，主键
+user_id ; uuid ;  ; 关联用户
+actor ; text ;  ; 操作者：user / ai
+entity_type ; text ;  ; 实体类型：profile / event / tag / ...
+entity_id ; uuid ;  ; 实体ID
+action ; text ;  ; 操作动作
+before ; jsonb ;  ; 修改前快照
+after ; jsonb ;  ; 修改后快照
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 5 (17 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 文件唯一标识，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+filename ; text ;  ; 原始文件名
+mime_type ; text ;  ; MIME 类型
+file_size ; bigint ;  ; 文件大小（字节）
+extension ; text ;  ; 扩展名
+storage_key ; text ;  ; 对象存储键
+file_hash ; text ;  ; SHA256，文件级去重
+status ; text ; NOT NULL DEFAULT 'uploaded' ; 解析状态
+parser ; text ;  ; 解析器
+parser_version ; text ;  ; 解析器版本
+error_message ; text ;  ; 解析错误信息
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+updated_at ; timestamptz ;  ; 更新时间
+deleted_at ; timestamptz ;  ; 软删除时间
+deleted_by ; uuid ;  ; 删除人
+=== TABLE 6 (33 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 内容唯一标识，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+file_id ; uuid ; FOREIGN KEY ; 所属文件（关联 files.id，可空）
+content_type ; text ; NOT NULL ; 物理类型：photo / text / voice / article
+content_class ; text ;  ; 语义分类：待办 / 灵感 / 情绪 / 引用 / 混合
+class_source ; text ;  ; 分类来源：setfit / llm / rule / user
+model_version ; text ;  ; 分类模型版本
+raw_text ; text ;  ; 原文 / OCR 结果 / 转写
+text ; text ;  ; 脱敏 / 处理后的入库文本
+normalized_text ; text ;  ; 归一化文本（去重用）
+summary ; text ;  ; 长文本摘要
+summary_strategy ; text ;  ; 摘要策略
+taken_at ; timestamptz ;  ; 拍摄 / 记录时间
+gps_lat ; double precision ;  ; 纬度
+gps_lng ; double precision ;  ; 经度
+place ; text ;  ; 逆编码地名（geo_cache）
+normalized_text_hash ; text ;  ; SHA256 归一化文本指纹
+image_phash ; text ;  ; 图片感知哈希（预留）
+emotion ; jsonb ;  ; 情绪 {value, confidence, source}
+sensitive_tags ; jsonb ;  ; 敏感话题标签
+sensitive_status ; text ;  ; 敏感状态：正常 / 待复核 / 已遮蔽 / 已解除
+text_vector_id ; text ;  ; 文本向量点引用
+image_vector_id ; text ;  ; 图像向量点引用
+cos_key ; text ;  ; 原件对象键
+thumbnail_key ; text ;  ; 缩略图对象键
+source ; text ;  ; 来源：wechat / app / windows / import
+extra ; jsonb ;  ; 扩展：EXIF / 时长 / 尺寸
+status ; text ; NOT NULL DEFAULT 'processing' ; 状态：processing / done / failed
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+updated_at ; timestamptz ;  ; 更新时间
+deleted_at ; timestamptz ;  ; 软删除时间
+deleted_by ; uuid ;  ; 删除人（软删除）
+=== TABLE 7 (11 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 切块唯一标识，主键
+content_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属内容（关联 contents.id）
+chunk_index ; integer ; NOT NULL ; 切块序号
+text ; text ;  ; 切块文本
+char_start ; integer ;  ; 起始字符位置
+char_end ; integer ;  ; 结束字符位置
+token_count ; integer ;  ; Token 数
+chunk_type ; text ;  ; 切块类型
+metadata ; jsonb ;  ; 元数据
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 8 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigint ; PRIMARY KEY ; 标签ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+name ; text ; NOT NULL ; 标签名
+kind ; text ; DEFAULT 'custom' ; 标签来源：custom（用户自定义）/ l3_topic（L3 主题流自动生成，待确认）
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 9 (4 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+content_id ; uuid ; NOT NULL, FOREIGN KEY ; 内容ID（关联 contents.id）
+tag_id ; bigint ; NOT NULL, FOREIGN KEY ; 标签ID（关联 tags.id）
+confidence ; double precision ;  ; 标签置信度
+=== TABLE 10 (8 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 分段ID，主键
+content_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属内容（关联 contents.id）
+seg_no ; integer ; NOT NULL ; 分段序号
+start_sec ; double precision ;  ; 起始秒
+end_sec ; double precision ;  ; 结束秒
+segment_text ; text ;  ; 分段转写文本
+segment_emotion ; jsonb ;  ; 分段情绪（B5-a 长录音分段）
+=== TABLE 11 (19 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; uuid ; PRIMARY KEY ; 事件唯一标识，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+level ; integer ; NOT NULL ; 层级 0-3（四层模型）
+parent_event_id ; uuid ;  ; 父事件ID（自引用外键）
+title ; text ;  ; 事件标题
+title_source ; text ;  ; 标题来源：llm / template / user
+cover_content_id ; uuid ;  ; 封面内容ID
+start_time ; timestamptz ;  ; 开始时间
+end_time ; timestamptz ;  ; 结束时间
+place ; text ;  ; 地点
+emotion ; jsonb ;  ; 情绪（主导 + 峰值，B5-a 段级合并）
+sensitivity ; text ;  ; 敏感标记（B5-b）
+confidence ; double precision ;  ; 置信度（B3-5，<0.7 待确认）
+status ; text ; NOT NULL DEFAULT 'draft' ; 状态：draft / confirmed / rejected（用户背书）
+generated_by ; text ;  ; 生成端：device（端侧 L0/L1）/ cloud（云侧 L2/L3）
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+updated_at ; timestamptz ;  ; 更新时间
+deleted_at ; timestamptz ;  ; 软删除时间
+=== TABLE 12 (3 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+content_id ; uuid ; NOT NULL, FOREIGN KEY ; 内容ID（关联 contents.id）
+event_id ; uuid ; NOT NULL, FOREIGN KEY ; 事件ID（关联 events.id）
+=== TABLE 13 (3 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+event_id ; uuid ; NOT NULL, FOREIGN KEY ; 事件ID（关联 events.id）
+tag_id ; bigint ; NOT NULL, FOREIGN KEY ; 标签ID（关联 tags.id）
+=== TABLE 14 (7 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 日志ID，主键
+event_id ; uuid ; NOT NULL ; 事件ID
+user_id ; uuid ;  ; 操作用户
+action ; text ;  ; 操作：merge / split / confirm / rename
+detail ; jsonb ;  ; 操作详情（B3-5 用户合并/拆分/确认记录）
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 15 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+user_id ; uuid ; PRIMARY KEY, FOREIGN KEY ; 用户ID（关联 users.id，1:1）
+version ; integer ; DEFAULT 1 ; 画像版本
+dimensions ; jsonb ;  ; 稀疏高维枚举维度（GIN 索引）
+token_usage ; bigint ; DEFAULT 0 ; Token 用量
+last_rebuilt_at ; timestamptz ;  ; 最近重建时间
+=== TABLE 16 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+dimension ; text ; NOT NULL ; 维度名
+value ; jsonb ;  ; 维度值
+updated_at ; timestamptz ; DEFAULT now() ; 更新时间
+=== TABLE 17 (7 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+topic ; text ; NOT NULL ; 敏感主题（画像级，永不过期）
+topic_hash ; text ;  ; HMAC 盲索引（加密后仍可精确匹配，待确认）
+locked ; boolean ; DEFAULT false ; 用户显式标记锁定
+added_at ; timestamptz ; DEFAULT now() ; 添加时间
+=== TABLE 18 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+dimension ; text ; NOT NULL ; 维度名
+evidence_content_ids ; jsonb ;  ; 证据内容ID数组（L2 维度证据）
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 19 (9 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+dimension ; text ; NOT NULL ; 维度名（relation_core / life_events / values_priority）
+raw_answer ; text ; NOT NULL ; 未命中枚举的原始回答
+count ; integer ; DEFAULT 1 ; 同类累计数（同 user+dimension+raw 合并）
+status ; text ; DEFAULT 'pending' ; 状态：pending / confirmed / rejected
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+updated_at ; timestamptz ; DEFAULT now() ; 更新时间
+=== TABLE 20 (11 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 日志ID，主键
+user_id ; uuid ; NOT NULL ; 所属用户
+content_id ; uuid ;  ; 内容ID
+content_embedding ; vector(1024) ;  ; 内容向量（向量索引）
+old_label ; text ;  ; 旧标签
+new_label ; text ;  ; 新标签
+source ; text ;  ; 来源：active / echo / org
+confidence ; double precision ;  ; 置信度
+is_global_candidate ; boolean ; DEFAULT false ; 共性纠错候选标记
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 21 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+word ; text ; NOT NULL ; 敏感词
+level ; integer ;  ; 词表来源层级：1 预置 / 2 画像驱动 / 3 违规回流（非敏感度分级）
+user_id ; uuid ;  ; 用户ID（NULL 表示全局）
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 22 (9 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 模板ID，主键
+type ; text ; NOT NULL ; 类型：ask / echo / care
+category ; text ;  ; 类别：photo / text / voice
+template_text ; text ; NOT NULL ; 模板文本
+slot_vars ; jsonb ;  ; 槽位变量数组
+status ; text ; DEFAULT 'active' ; 状态：active / frozen
+usage_count ; bigint ; DEFAULT 0 ; 使用次数
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 23 (8 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 日志ID，主键
+user_id ; uuid ;  ; 所属用户
+content ; text ;  ; 校验内容
+engine ; text ;  ; 引擎：rule / bailian
+result ; jsonb ;  ; 校验结果
+cost_tokens ; integer ;  ; Token 成本
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 24 (9 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL ; 所属用户
+content_id ; uuid ;  ; 内容ID
+template_id ; bigint ;  ; 模板ID（关联 question_templates.id）
+fingerprint ; text ; NOT NULL ; 指纹（防换措辞绕过，subagent 建议）
+response ; text ;  ; 回复文本
+asked_at ; timestamptz ; DEFAULT now() ; 提问时间
+send_status ; text ;  ; 发送状态：sent / failed / read
+=== TABLE 25 (8 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL ; 所属用户
+event_id ; uuid ;  ; 事件ID
+shown_at ; timestamptz ; DEFAULT now() ; 展示时间
+shown_date ; date ;  ; 展示日期（用于每日≤1条部分唯一索引）
+action ; text ;  ; 动作：respond / dismiss / suppressed
+fingerprint ; text ;  ; 指纹
+=== TABLE 26 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+user_id ; uuid ; NOT NULL ; 所属用户
+device_id ; text ; NOT NULL ; 设备ID
+cursor_version ; bigint ; DEFAULT 0 ; 游标版本（字段级 LWW，B4-2）
+last_sync_at ; timestamptz ;  ; 最近同步时间
+=== TABLE 27 (9 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+op_id ; text ; NOT NULL, UNIQUE ; 操作ID（云端幂等去重）
+user_id ; uuid ; NOT NULL ; 所属用户
+device_id ; text ;  ; 设备ID
+op_type ; text ; NOT NULL ; 操作类型
+payload ; jsonb ;  ; 操作载荷
+status ; text ; DEFAULT 'pending' ; 状态
+retry_count ; integer ; DEFAULT 0 ; 重试次数
+=== TABLE 28 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+content_id ; uuid ; NOT NULL ; 内容ID（故意无外键，内容可能已物理删）
+deleted_by ; uuid ;  ; 删除人
+deleted_at ; timestamptz ; DEFAULT now() ; 删除时间
+cleanup_status ; text ; DEFAULT 'pending' ; 清理状态（向量 / COS 是否已清，防孤儿资源）
+=== TABLE 29 (8 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+entity_type ; text ; PRIMARY KEY ; 实体类型：content / event / profile
+entity_id ; uuid ; PRIMARY KEY ; 实体ID
+field ; text ; PRIMARY KEY ; 字段名：tags / title / place...
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 实体归属用户（关联 users.id，越权校验）
+value ; jsonb ;  ; 字段当前权威值
+updated_at ; timestamptz ; DEFAULT now() ; 字段最后写入时间（LWW）
+deleted ; boolean ; DEFAULT false ; 实体级墓碑
+=== TABLE 30 (9 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+msg_id ; text ; NOT NULL, UNIQUE ; 微信消息ID（幂等）
+user_id ; uuid ;  ; 所属用户
+msg_type ; text ;  ; 消息类型：text / image / link / voice
+content ; text ;  ; 消息内容
+media_id ; text ;  ; 媒体ID
+status ; text ; DEFAULT 'pending' ; 状态：processed / failed
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 31 (5 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+geohash ; text ; PRIMARY KEY ; 地理哈希（精度 6），主键
+place ; text ;  ; 地名
+city ; text ;  ; 城市
+updated_at ; timestamptz ;  ; 更新时间
+=== TABLE 32 (11 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 日志ID，主键
+user_id ; uuid ;  ; 所属用户
+provider ; text ;  ; 服务商：aliyun / baidu / tencent / amap
+engine ; text ;  ; 引擎
+task_type ; text ;  ; 任务类型
+tokens ; bigint ;  ; Token 数
+calls ; integer ;  ; 调用次数
+cost_est ; numeric ;  ; 预估成本
+status ; text ;  ; 状态（异步任务状态）
+created_at ; timestamptz ; DEFAULT now() ; 创建时间
+=== TABLE 33 (7 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 记录ID，主键
+provider ; text ; NOT NULL ; 服务商
+date ; date ; NOT NULL ; 统计日期
+total_tokens ; bigint ; DEFAULT 0 ; 总 Token
+total_calls ; bigint ; DEFAULT 0 ; 总调用次数
+total_cost ; numeric ; DEFAULT 0 ; 总成本
+=== TABLE 34 (8 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 任务ID，主键
+trigger ; text ;  ; 触发条件（≥50 条共性纠错，B5-c）
+dataset_count ; integer ;  ; 数据集规模
+model ; text ;  ; 模型
+status ; text ;  ; 状态
+started_at ; timestamptz ;  ; 开始时间
+finished_at ; timestamptz ;  ; 完成时间
+=== TABLE 35 (11 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+id ; bigserial ; PRIMARY KEY ; 消息ID，主键
+user_id ; uuid ; NOT NULL, FOREIGN KEY ; 所属用户（关联 users.id）
+channel ; text ; DEFAULT 'in_app' ; 渠道：in_app / push
+msg_type ; text ; NOT NULL ; 类型：daily_review / voice_done / care_followup / echo
+title ; text ; NOT NULL ; 标题
+body ; text ; NOT NULL ; 正文
+payload ; jsonb ; DEFAULT '{}' ; 负载（跳转参数等）
+status ; text ; DEFAULT 'unread' ; 状态：unread / read / archived
+sent_at ; timestamptz ; DEFAULT now() ; 发送时间
+read_at ; timestamptz ;  ; 已读时间
+=== TABLE 36 (6 rows) ===
+字段名 ; 数据类型 ; 约束 ; 说明
+user_id ; uuid ; PRIMARY KEY, FOREIGN KEY ; 用户ID（关联 users.id，1:1）
+ai_engine ; text ; DEFAULT 'cloud' ; AI 引擎：cloud / ollama
+notification_prefs ; jsonb ;  ; 通知偏好（回响频率）
+cross_device_visible ; boolean ; DEFAULT false ; 跨设备可见
+import_sessions ; jsonb ;  ; Windows 批量导入进度（可选云端）

@@ -1,0 +1,978 @@
+From 7b192c37b4cbc4f7a22ad9e77de31c29412cb590 Mon Sep 17 00:00:00 2001
+From: ZLY20 <zly20@local>
+Date: Fri, 4 Sep 2026 07:56:35 +0800
+Subject: [PATCH 1/3] =?UTF-8?q?feat(photo):=2037=20=E8=A1=A8=E5=AF=B9?=
+ =?UTF-8?q?=E9=BD=90=20+=20=E7=99=BE=E5=BA=A6OCR=20+=20=E6=9C=8D=E5=8A=A1?=
+ =?UTF-8?q?=E7=AB=AF=20pHash=20=E5=8E=BB=E9=87=8D=20+=20=E6=9C=AC=E6=9C=BA?=
+ =?UTF-8?q?=20docker-compose?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- v4 迁移 c0d1e2f3a4b5：新增 files/content_chunks；contents 增 file_id/raw_text/
+  normalized_text/summary/image_phash 等列，qdrant_*_id → *_vector_id 更名，
+  perceptual_hash → image_phash（存量自动拷贝）；correction_log 加 vector(1024)
+- OCR：services/external/ocr.py（百度 accurate_basic + 2000px 压缩防 216205），
+  pipeline._process_photo 接入 raw_text/text/normalized_text
+- pHash：services/perceptual_hash.py（imagehash），注册时服务端计算优先于客户端
+  哈希并去重 409；落 files 表（SHA256 file_hash + file_id）
+- 基础设施：docker-compose.yml（postgres16+pgvector/redis7/qdrant1.19/minio 双桶）
+---
+ backend/.env.example                          |   3 +
+ backend/app/api/contents.py                   |   6 +-
+ backend/app/db/models/__init__.py             |   4 +-
+ backend/app/db/models/content.py              | 121 ++++++++++++---
+ backend/app/services/external/ocr.py          |  87 +++++++++++
+ backend/app/services/perceptual_hash.py       |  42 ++++++
+ backend/app/services/photo_content.py         |  53 ++++++-
+ backend/app/services/pipeline.py              |  17 +++
+ backend/app/services/text_utils.py            |  21 +++
+ .../c0d1e2f3a4b5_add_v4_37tables_alignment.py | 142 ++++++++++++++++++
+ backend/requirements.txt                      |   4 +-
+ backend/sql/schema.sql                        |  69 ++++++++-
+ docker-compose.yml                            |  91 +++++++++++
+ 13 files changed, 621 insertions(+), 39 deletions(-)
+ create mode 100644 backend/app/services/external/ocr.py
+ create mode 100644 backend/app/services/perceptual_hash.py
+ create mode 100644 backend/app/services/text_utils.py
+ create mode 100644 backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py
+ create mode 100644 docker-compose.yml
+
+diff --git a/backend/.env.example b/backend/.env.example
+index 69be898..330dd5a 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -62,6 +62,9 @@ MINIO_ENDPOINT=localhost:9000
+ MINIO_ACCESS_KEY=minioadmin
+ MINIO_SECRET_KEY=minioadmin
+ MINIO_BUCKET=yishu-photos
++# D2 双桶（本机 docker-compose 自动创建 originals/thumbnails）
++MINIO_ORIGINALS_BUCKET=originals
++MINIO_THUMBNAILS_BUCKET=thumbnails
+ 
+ # --- 百度 OCR（决策 #2 图片塔/OCR）---
+ BAIDU_API_KEY=
+diff --git a/backend/app/api/contents.py b/backend/app/api/contents.py
+index a6071ed..79337c6 100644
+--- a/backend/app/api/contents.py
++++ b/backend/app/api/contents.py
+@@ -250,7 +250,7 @@ def create_content(
+         dup = db.execute(
+             select(Content).where(
+                 Content.user_id == user.id,
+-                Content.perceptual_hash == req.perceptual_hash,
++                Content.image_phash == req.perceptual_hash,
+                 Content.deleted_at.is_(None),
+             )
+         ).scalar_one_or_none()
+@@ -289,7 +289,7 @@ def create_content(
+         taken_at=req.taken_at,
+         gps_lat=req.gps_lat,
+         gps_lng=req.gps_lng,
+-        perceptual_hash=req.perceptual_hash,
++        image_phash=req.perceptual_hash,
+         client_generated_id=req.client_generated_id,
+         cos_key=req.cos_key,
+         thumbnail_key=req.thumbnail_key,
+@@ -318,7 +318,7 @@ def create_content(
+         dup = db.execute(
+             select(Content).where(
+                 Content.user_id == user.id,
+-                Content.perceptual_hash == req.perceptual_hash,
++                Content.image_phash == req.perceptual_hash,
+                 Content.deleted_at.is_(None),
+             )
+         ).scalar_one_or_none()
+diff --git a/backend/app/db/models/__init__.py b/backend/app/db/models/__init__.py
+index 71590cd..fc55e11 100644
+--- a/backend/app/db/models/__init__.py
++++ b/backend/app/db/models/__init__.py
+@@ -12,7 +12,7 @@ R1#16 拆包（2026-08-27）：按域拆为 models/ 子包——
+ （migrations/env.py / check_schema_drift 依赖此语义）。
+ """
+ from app.db.models.auth import Device, SmsCode, User
+-from app.db.models.content import Content, CorrectionLog
++from app.db.models.content import Content, ContentChunk, CorrectionLog, File
+ from app.db.models.echo import EchoHistory
+ from app.db.models.event import Event, EventEditLog, EventItem
+ from app.db.models.geo import GeoCache
+@@ -31,7 +31,9 @@ from app.db.models.wechat import WechatMessage
+ 
+ __all__ = [
+     "Content",
++    "ContentChunk",
+     "CorrectionLog",
++    "File",
+     "DeletedLog",
+     "Device",
+     "EchoHistory",
+diff --git a/backend/app/db/models/content.py b/backend/app/db/models/content.py
+index e05238a..8df5853 100644
+--- a/backend/app/db/models/content.py
++++ b/backend/app/db/models/content.py
+@@ -1,7 +1,17 @@
+-"""内容域 + 纠错域 ORM 模型（contents/correction_log，对齐 backend/sql/schema.sql）"""
++"""内容域 + 纠错域 ORM 模型（contents/files/content_chunks/correction_log，对齐 backend/sql/schema.sql）
++
++v4（2026-09-03 · 37 表对齐）：
++- contents：perceptual_hash → image_phash（API 仍收 perceptual_hash 字段，落 image_phash 列）；
++  qdrant_text_id/qdrant_image_id → text_vector_id/image_vector_id；新增 file_id/raw_text/
++  normalized_text/summary/summary_strategy/normalized_text_hash。
++- 去重唯一性：UNIQUE(user_id, image_phash) + UNIQUE(user_id, normalized_text_hash) 部分唯一索引。
++- 新增 files（文件原始层）、content_chunks（RAG 切块层，本轮建表不启用切块）。
++- correction_log：新增 content_embedding vector(1024)（pgvector）；qdrant_point_id 保留过渡。
++"""
+ from datetime import datetime
+ 
+-from sqlalchemy import BigInteger, DateTime, Float, Index, String, Text, UniqueConstraint, func
++from pgvector.sqlalchemy import Vector
++from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+ from sqlalchemy import text as sa_text
+ from sqlalchemy.dialects.postgresql import JSONB, UUID
+ from sqlalchemy.orm import Mapped, mapped_column
+@@ -10,20 +20,64 @@ from app.db.models._base import _uuid
+ from app.db.session import Base
+ 
+ 
++class File(Base):
++    """files 表（v4 新增 · 文件原始层，contents.file_id 1:N 指向）"""
++
++    __tablename__ = "files"
++    __table_args__ = (
++        Index(
++            "uq_files_user_hash",
++            "user_id",
++            "file_hash",
++            unique=True,
++            postgresql_where=sa_text("file_hash IS NOT NULL"),
++        ),
++    )
++
++    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
++    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
++    filename: Mapped[str | None] = mapped_column(String, nullable=True)
++    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
++    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
++    extension: Mapped[str | None] = mapped_column(String, nullable=True)
++    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
++    file_hash: Mapped[str | None] = mapped_column(String, nullable=True)
++    status: Mapped[str] = mapped_column(String, default="uploaded")
++    parser: Mapped[str | None] = mapped_column(String, nullable=True)
++    parser_version: Mapped[str | None] = mapped_column(String, nullable=True)
++    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
++    )
++    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
++    deleted_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
++
++
+ class Content(Base):
+     """contents 核心表（照片/文字/语音/文章统一入库，API-002）
+ 
+-    去重（Q16）：同用户 perceptual_hash 唯一（PG 多 NULL 不冲突，
+-    text/voice 无哈希不受约束）；修复：ORM 补唯一约束防并发双写（审查 MAJOR）。
+-
+-    R4#4（创建端点幂等键）：client_generated_id 为客户端生成的幂等键，
+-    (user_id, client_generated_id) 部分唯一索引（PG 多 NULL 不冲突 → 仅非空参与），
+-    photo/voice 既有幂等（perceptual_hash 409 / cos_key）保留为兜底。
++    去重（Q16，v4 拆分）：同用户 image_phash（图片）/ normalized_text_hash（文本）部分唯一；
++    保留 client_generated_id 幂等键（R4#4）。API 契约 perceptual_hash 字段继续接收，
++    服务层落 image_phash 列（旧数据迁移见 v4 migration：perceptual_hash → image_phash）。
+     """
+ 
+     __tablename__ = "contents"
+     __table_args__ = (
+-        UniqueConstraint("user_id", "perceptual_hash", name="uq_contents_user_hash"),
++        Index(
++            "uq_contents_user_image_phash",
++            "user_id",
++            "image_phash",
++            unique=True,
++            postgresql_where=sa_text("image_phash IS NOT NULL"),
++        ),
++        Index(
++            "uq_contents_user_text_hash",
++            "user_id",
++            "normalized_text_hash",
++            unique=True,
++            postgresql_where=sa_text("normalized_text_hash IS NOT NULL"),
++        ),
+         Index(
+             "uq_contents_user_client_generated_id",
+             "user_id",
+@@ -35,24 +89,30 @@ class Content(Base):
+ 
+     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
++    file_id: Mapped[str | None] = mapped_column(
++        UUID(as_uuid=False), ForeignKey("files.id"), nullable=True
++    )
+     content_type: Mapped[str] = mapped_column(String)
+     content_class: Mapped[str | None] = mapped_column(String, nullable=True)
+     class_source: Mapped[str | None] = mapped_column(String, nullable=True)
+     model_version: Mapped[str | None] = mapped_column(String, nullable=True)
++    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+     text: Mapped[str | None] = mapped_column(Text, nullable=True)
++    normalized_text: Mapped[str | None] = mapped_column(Text, nullable=True)
++    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
++    summary_strategy: Mapped[str | None] = mapped_column(String, nullable=True)
+     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+     gps_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+     gps_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+     place: Mapped[str | None] = mapped_column(String, nullable=True)
+-    perceptual_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+-    client_generated_id: Mapped[str | None] = mapped_column(
+-        String(64), nullable=True, index=False
+-    )  # R4#4 幂等键（客户端生成，同用户唯一）
++    normalized_text_hash: Mapped[str | None] = mapped_column(String, nullable=True)
++    image_phash: Mapped[str | None] = mapped_column(String, nullable=True)
++    client_generated_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=False)
+     emotion: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+     sensitive_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+     sensitive_status: Mapped[str] = mapped_column(String, default="正常")
+-    qdrant_text_id: Mapped[str | None] = mapped_column(String, nullable=True)
+-    qdrant_image_id: Mapped[str | None] = mapped_column(String, nullable=True)
++    text_vector_id: Mapped[str | None] = mapped_column(String, nullable=True)
++    image_vector_id: Mapped[str | None] = mapped_column(String, nullable=True)
+     cos_key: Mapped[str | None] = mapped_column(String, nullable=True)
+     thumbnail_key: Mapped[str | None] = mapped_column(String, nullable=True)
+     source: Mapped[str] = mapped_column(String, default="app")
+@@ -66,14 +126,32 @@ class Content(Base):
+     deleted_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+ 
+ 
++class ContentChunk(Base):
++    """content_chunks 表（v4 新增 · RAG 切块层，contents 1:N；本轮建表，切块默认关闭）"""
++
++    __tablename__ = "content_chunks"
++    __table_args__ = (
++        Index("uq_content_chunks_content_index", "content_id", "chunk_index", unique=True),
++    )
++
++    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
++    content_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("contents.id"), index=True)
++    chunk_index: Mapped[int] = mapped_column(Integer)
++    text: Mapped[str | None] = mapped_column(Text, nullable=True)
++    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
++    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
++    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
++    chunk_type: Mapped[str] = mapped_column(String, default="paragraph")
++    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
++
++
+ class CorrectionLog(Base):
+     """correction_log 表（B5-c 三层裁决第①层：个人规则数据源）
+ 
+-    对齐 schema.sql 纠错域：
+-    - content_embedding 按 schema 注记改为 qdrant_point_id（MVP 向量检索走 Qdrant，零新增）
+-    - 同内容多次纠错以最后一次为准（查询时按 content_id 取最新）
+-    - 保留最近 500 条/用户（超出由 service 层裁剪）
+-    - is_global_candidate：共性纠错标记（多用户一致 → 全局微调候选，≥50 触发）
++    v4：content_embedding vector(1024)（pgvector，37 表文档口径）已加列；
++    qdrant_point_id/content_type 保留过渡（MVP 纠错向量仍走 Qdrant corrections 集合，
++    切换 pgvector 检索属后续单独任务）。
+     """
+ 
+     __tablename__ = "correction_log"
+@@ -82,10 +160,11 @@ class CorrectionLog(Base):
+     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+     content_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+     content_type: Mapped[str] = mapped_column(String, default="text")
++    content_embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+     qdrant_point_id: Mapped[str | None] = mapped_column(String, nullable=True)
+     old_label: Mapped[str | None] = mapped_column(String, nullable=True)
+     new_label: Mapped[str] = mapped_column(String)
+     source: Mapped[str] = mapped_column(String, default="active")  # active / echo / org
+     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+     is_global_candidate: Mapped[bool] = mapped_column(default=False)
+-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+\ No newline at end of file
+diff --git a/backend/app/services/external/ocr.py b/backend/app/services/external/ocr.py
+new file mode 100644
+index 0000000..755a2c2
+--- /dev/null
++++ b/backend/app/services/external/ocr.py
+@@ -0,0 +1,87 @@
++"""百度 OCR 服务（v4 · 阶段 2：photo 管线 OCR 接入）
++
++迁自 photo_pipeline ocr_service.py（2026-08 实测 205 张链路）：
++- accurate_basic 高精度识别 + CHN_ENG
++- 大图前置压缩（最长边 2000px）规避百度 216205 input oversize
++- access_token 进程内缓存（过期前 10 分钟刷新）
++- 统一走 settings（.env BAIDU_API_KEY / BAIDU_SECRET_KEY），不硬编码密钥
++"""
++from __future__ import annotations
++
++import base64
++import io
++import logging
++import time
++
++import httpx
++from PIL import Image
++
++from app.core.config import settings
++from app.services.external.retry import with_retry
++
++logger = logging.getLogger("yishu.external.ocr")
++
++TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
++OCR_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
++OCR_LANGUAGE = "CHN_ENG"
++# 最长边上限（百度 OCR 图片大小限制；超限返回 216205）
++MAX_OCR_SIDE = 2000
++
++_token_cache: dict = {"token": None, "expire_at": 0.0}
++
++
++def get_access_token() -> str:
++    """百度 access_token（进程内缓存，过期前 600s 自动刷新）"""
++    api_key = (settings.baidu_api_key or "").strip()
++    secret_key = (settings.baidu_secret_key or "").strip()
++    if not api_key:
++        raise RuntimeError("未配置 BAIDU_API_KEY：请在 backend/.env 填写")
++    if not secret_key:
++        raise RuntimeError("未配置 BAIDU_SECRET_KEY：请在 backend/.env 填写")
++
++    now = time.time()
++    if _token_cache["token"] and now < _token_cache["expire_at"] - 600:
++        return _token_cache["token"]
++
++    resp = httpx.get(
++        TOKEN_URL,
++        params={
++            "grant_type": "client_credentials",
++            "client_id": api_key,
++            "client_secret": secret_key,
++        },
++        timeout=15,
++    )
++    resp.raise_for_status()
++    data = resp.json()
++    _token_cache["token"] = data["access_token"]
++    _token_cache["expire_at"] = now + float(data.get("expires_in", 2592000))
++    return _token_cache["token"]
++
++
++@with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
++def ocr_image(image_bytes: bytes) -> str:
++    """传入图片字节，返回识别文字（按行拼接，行间 \n）"""
++    prepared = _prepare_for_ocr(image_bytes)
++    params = {"access_token": get_access_token()}
++    payload = {
++        "image": base64.b64encode(prepared).decode("ascii"),
++        "language_type": OCR_LANGUAGE,
++    }
++    headers = {"Content-Type": "application/x-www-form-urlencoded"}
++    resp = httpx.post(OCR_URL, params=params, data=payload, headers=headers, timeout=45)
++    resp.raise_for_status()
++    data = resp.json()
++    if "error_code" in data:
++        raise RuntimeError(f"百度OCR错误 {data.get('error_code')}: {data.get('error_msg')}")
++    return "\n".join(item["words"] for item in data.get("words_result", []))
++
++
++def _prepare_for_ocr(data: bytes) -> bytes:
++    """转 RGB + 最长边压缩到 2000px + JPEG 重编码（防 216205 oversize）"""
++    img = Image.open(io.BytesIO(data)).convert("RGB")
++    if max(img.size) > MAX_OCR_SIDE:
++        img.thumbnail((MAX_OCR_SIDE, MAX_OCR_SIDE), Image.LANCZOS)
++    buf = io.BytesIO()
++    img.save(buf, format="JPEG", quality=90)
++    return buf.getvalue()
+\ No newline at end of file
+diff --git a/backend/app/services/perceptual_hash.py b/backend/app/services/perceptual_hash.py
+new file mode 100644
+index 0000000..b85264d
+--- /dev/null
++++ b/backend/app/services/perceptual_hash.py
+@@ -0,0 +1,42 @@
++"""图片感知哈希（v4 · 阶段 2：imagehash pHash 服务端去重）
++
++决策（用户拍板）：照片去重用 imagehash 库的 pHash——
++同一张照片（改尺寸/重命名/二次导入）pHash 近似，精确重复则相等；
++服务端计算后写入 contents.image_phash，撞同用户已有 → 409/跳过。
++"""
++from __future__ import annotations
++
++import io
++import logging
++
++import imagehash
++from PIL import Image
++
++logger = logging.getLogger("yishu.photo")
++
++# PIL 解压炸弹防护（与缩略图管线同口径：40MP 上限）
++MAX_IMAGE_PIXELS = 40_000_000
++
++
++def compute_phash(image_bytes: bytes) -> str:
++    """计算图片 pHash（64 位十六进制字符串）
++
++    失败（非图片/损坏/超尺寸/超时）抛 ValueError/Exception，调用方自行降级：
++    服务端 pHash 失败时回退客户端 perceptual_hash（旧契约兜底）。
++    """
++    Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
++    try:
++        img = Image.open(io.BytesIO(image_bytes))
++    except Image.DecompressionBombError as exc:
++        raise ValueError(f"图片尺寸超限（解压炸弹）: {MAX_IMAGE_PIXELS} 像素上限") from exc
++    except Exception as exc:  # noqa: BLE001 —— 不可解码
++        raise ValueError(f"图片解码失败: {type(exc).__name__}") from exc
++    if img.width * img.height > MAX_IMAGE_PIXELS:
++        raise ValueError(f"图片尺寸超限: {img.width}x{img.height} > {MAX_IMAGE_PIXELS} 像素")
++    try:
++        img.load()
++    except Exception as exc:  # noqa: BLE001
++        raise ValueError(f"图片解码失败: {type(exc).__name__}") from exc
++    if img.mode != "RGB":
++        img = img.convert("RGB")
++    return str(imagehash.phash(img))
+\ No newline at end of file
+diff --git a/backend/app/services/photo_content.py b/backend/app/services/photo_content.py
+index 85c2369..3834c80 100644
+--- a/backend/app/services/photo_content.py
++++ b/backend/app/services/photo_content.py
+@@ -29,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
+ from sqlalchemy.orm import Session
+ 
+ from app.core.queue import QUEUE_HIGH, enqueue_unique
+-from app.db.models import Content
++from app.db.models import Content, File
+ from app.services import thumbnails
+ from app.services.errors import ConflictError, NotFoundError, ValidationError
+ from app.services.external.storage import best_effort_delete, get_storage_backend
+@@ -52,7 +52,7 @@ def _query_by_hash(db: Session, user_id: str, perceptual_hash: str) -> Content |
+     return db.execute(
+         select(Content).where(
+             Content.user_id == user_id,
+-            Content.perceptual_hash == perceptual_hash,
++            Content.image_phash == perceptual_hash,
+             Content.deleted_at.is_(None),
+         )
+     ).scalar_one_or_none()
+@@ -237,18 +237,61 @@ def register_photo_content(
+         return str(existing.id)
+ 
+     # 5. original：新建真照片记录（multipart 传 data 落 storage / 分片用既有 cos_key）
++    raw_bytes = data
+     if data is not None:
+         cos_key = f"photos/{user_id}/{uuid.uuid4().hex}{ext}"
+         backend.put_object(cos_key, data)
+     else:
+         _require_photo_bytes(cos_key)  # P0-3：original 新建路径魔数校验
++        try:
++            raw_bytes = backend.get_object(cos_key)  # pHash/文件哈希需要原件字节
++        except Exception:  # noqa: BLE001 —— 读回失败仅影响 pHash/文件行，不影响注册
++            raw_bytes = None
++
++    # 5.1 服务端 pHash（v4 · imagehash，优先于客户端哈希；失败静默回退）
++    effective_phash = perceptual_hash
++    if raw_bytes is not None:
++        try:
++            from app.services.perceptual_hash import compute_phash
++
++            server_phash = compute_phash(raw_bytes)
++            if server_phash:
++                effective_phash = server_phash
++        except Exception as exc:  # noqa: BLE001 —— pHash 失败回退客户端哈希（旧契约兜底）
++            logger.warning("服务端 pHash 计算失败 user=%s: %s", user_id, exc)
++    if dedup_key == "perceptual_hash" and effective_phash:
++        dup = _query_by_hash(db, user_id, effective_phash)
++        if dup is not None:
++            raise DuplicateError("重复内容（感知哈希已存在）")
++
++    # 5.2 文件原始层落 files 表（v4 · 37 表：contents.file_id → files，SHA256 文件哈希）
++    file_id = None
++    if raw_bytes is not None:
++        import hashlib as _hashlib
++
++        file_rec = File(
++            user_id=user_id,
++            filename=None,
++            mime_type=None,
++            file_size=len(raw_bytes),
++            extension=(ext or "").lstrip(".") or None,
++            storage_key=cos_key,
++            file_hash=_hashlib.sha256(raw_bytes).hexdigest(),
++            status="uploaded",
++            parser="image",
++        )
++        db.add(file_rec)
++        db.flush()
++        file_id = file_rec.id
++
+     record = Content(
+         user_id=user_id,
+         content_type="photo",
++        file_id=file_id,
+         taken_at=taken_at,
+         gps_lat=photo_meta.gps_lat,
+         gps_lng=photo_meta.gps_lng,
+-        perceptual_hash=perceptual_hash,
++        image_phash=effective_phash,
+         cos_key=cos_key,
+         extra=extra,
+         source=photo_meta.source,
+@@ -262,8 +305,8 @@ def register_photo_content(
+         db.rollback()
+         # P0-6（审查 H-3）：对象已落存储但 DB 无记录 → 尽力删除防孤儿对象
+         best_effort_delete(cos_key)
+-        if dedup_key == "perceptual_hash" and perceptual_hash:
+-            dup = _query_by_hash(db, user_id, perceptual_hash)
++        if dedup_key == "perceptual_hash" and effective_phash:
++            dup = _query_by_hash(db, user_id, effective_phash)
+             if dup is not None:
+                 raise DuplicateError("重复内容（感知哈希已存在）") from None
+         raise
+diff --git a/backend/app/services/pipeline.py b/backend/app/services/pipeline.py
+index 6b03e67..096e8b9 100644
+--- a/backend/app/services/pipeline.py
++++ b/backend/app/services/pipeline.py
+@@ -382,6 +382,23 @@ def _process_photo(db: Session, content: Content) -> None:
+         if caption:
+             content.text = caption
+ 
++        # 1.5 OCR（v4 · 阶段 2：百度高精度 → contents.raw_text；失败静默，照片仍可浏览）
++        #     text 策略：OCR 非空则与 caption 并存（OCR\ncaption）；OCR 空则保持 caption。
++        #     normalized_text 归一化留痕；normalized_text_hash 照片不填（同 OCR 文本的
++        #     不同照片是合法内容，文本去重唯一约束保留给 text/voice，见 37 表注记）。
++        if image_path is not None:
++            try:
++                from app.services.external.ocr import ocr_image
++                from app.services.text_utils import normalize_text
++
++                ocr_text = ocr_image(image_path.read_bytes())
++                if ocr_text:
++                    content.raw_text = ocr_text
++                    content.text = f"{ocr_text}\n{content.text}" if content.text else ocr_text
++                    content.normalized_text = normalize_text(ocr_text) or None
++            except Exception as exc:  # noqa: BLE001 —— OCR 失败不影响照片浏览/搜索 caption
++                logger.warning("图片 OCR 失败 content=%s: %s", content.id, exc)
++
+         # 2. CI 打标（F1 L2 场景标签 / 搜索标签增强）
+         # 2026-08-26 真实 key 验证修复：CI 打标要求图片在 COS（image_key=COS key），
+         # fs 真实模式的本地路径不是 COS key → NoSuchKey 静默失效。
+diff --git a/backend/app/services/text_utils.py b/backend/app/services/text_utils.py
+new file mode 100644
+index 0000000..ba62067
+--- /dev/null
++++ b/backend/app/services/text_utils.py
+@@ -0,0 +1,21 @@
++"""文本归一化（v4 · 37 表 normalized_text / normalized_text_hash）"""
++from __future__ import annotations
++
++import hashlib
++import re
++import unicodedata
++
++_WS = re.compile(r"\s+")
++
++
++def normalize_text(text: str) -> str:
++    """归一化：NFKC（全角→半角等）+ 折叠空白 + 去首尾空白"""
++    if not text:
++        return ""
++    norm = unicodedata.normalize("NFKC", text)
++    return _WS.sub(" ", norm).strip()
++
++
++def text_hash(text: str) -> str:
++    """SHA256 归一化文本指纹（37 表 contents.normalized_text_hash）"""
++    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
+\ No newline at end of file
+diff --git a/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py b/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py
+new file mode 100644
+index 0000000..1ad04d9
+--- /dev/null
++++ b/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py
+@@ -0,0 +1,142 @@
++"""v4 · 37 表对齐（2026-09-03 · codex/photo-merge）
++
++依据：《忆述光华_数据库表结构(3).docx》（37 表）
++- 新增 files（文件原始层）、content_chunks（RAG 切块层，建表不启用切块）
++- contents：perceptual_hash → image_phash（拷存量后删列）；qdrant_text_id/qdrant_image_id
++  → text_vector_id/image_vector_id；新增 file_id/raw_text/normalized_text/summary/
++  summary_strategy/normalized_text_hash；去重唯一约束拆两个部分唯一索引
++- correction_log：新增 content_embedding vector(1024)（pgvector）+ HNSW 索引；
++  qdrant_point_id 保留过渡（纠错存储切换后续单独任务）
++
++Revision ID: c0d1e2f3a4b5
++Revises: f1a2b3c4d5e6
++Create Date: 2026-09-03
++"""
++import sqlalchemy as sa
++from alembic import op
++from pgvector.sqlalchemy import Vector
++
++# revision identifiers, used by Alembic.
++revision = "c0d1e2f3a4b5"
++down_revision = "f1a2b3c4d5e6"
++branch_labels = None
++depends_on = None
++
++
++def upgrade() -> None:
++    # 1. files 表（文件原始层）
++    op.create_table(
++        "files",
++        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
++        sa.Column("user_id", sa.Uuid(), nullable=False),
++        sa.Column("filename", sa.String(), nullable=True),
++        sa.Column("mime_type", sa.String(), nullable=True),
++        sa.Column("file_size", sa.BigInteger(), nullable=True),
++        sa.Column("extension", sa.String(), nullable=True),
++        sa.Column("storage_key", sa.String(), nullable=True),
++        sa.Column("file_hash", sa.String(), nullable=True),
++        sa.Column("status", sa.String(), nullable=False, server_default="uploaded"),
++        sa.Column("parser", sa.String(), nullable=True),
++        sa.Column("parser_version", sa.String(), nullable=True),
++        sa.Column("error_message", sa.String(), nullable=True),
++        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
++        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
++        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
++        sa.Column("deleted_by", sa.Uuid(), nullable=True),
++        sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
++    )
++    op.create_index("idx_files_user_created", "files", ["user_id", "created_at"])
++    op.execute(
++        "CREATE UNIQUE INDEX uq_files_user_hash ON files(user_id, file_hash) "
++        "WHERE file_hash IS NOT NULL"
++    )
++
++    # 2. contents 增列
++    op.add_column("contents", sa.Column("file_id", sa.Uuid(), nullable=True))
++    op.create_foreign_key("fk_contents_file", "contents", "files", ["file_id"], ["id"])
++    op.add_column("contents", sa.Column("raw_text", sa.Text(), nullable=True))
++    op.add_column("contents", sa.Column("normalized_text", sa.Text(), nullable=True))
++    op.add_column("contents", sa.Column("summary", sa.Text(), nullable=True))
++    op.add_column("contents", sa.Column("summary_strategy", sa.String(), nullable=True))
++    op.add_column("contents", sa.Column("normalized_text_hash", sa.String(), nullable=True))
++    op.add_column("contents", sa.Column("image_phash", sa.String(), nullable=True))
++
++    # 3. 数据迁移：perceptual_hash → image_phash（拷存量）
++    op.execute("UPDATE contents SET image_phash = perceptual_hash WHERE perceptual_hash IS NOT NULL")
++
++    # 4. 删旧约束/旧列，更名向量引用列
++    op.drop_constraint("uq_contents_user_hash", "contents", type_="unique")
++    op.drop_column("contents", "perceptual_hash")
++    op.alter_column("contents", "qdrant_text_id", new_column_name="text_vector_id")
++    op.alter_column("contents", "qdrant_image_id", new_column_name="image_vector_id")
++
++    # 5. 新部分唯一索引（去重：图片 pHash / 文本指纹）
++    op.execute(
++        "CREATE UNIQUE INDEX uq_contents_user_image_phash ON contents(user_id, image_phash) "
++        "WHERE image_phash IS NOT NULL"
++    )
++    op.execute(
++        "CREATE UNIQUE INDEX uq_contents_user_text_hash ON contents(user_id, normalized_text_hash) "
++        "WHERE normalized_text_hash IS NOT NULL"
++    )
++    op.create_index("idx_contents_file", "contents", ["file_id"])
++
++    # 6. content_chunks 表（RAG 切块层）
++    op.create_table(
++        "content_chunks",
++        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
++        sa.Column("content_id", sa.Uuid(), nullable=False),
++        sa.Column("chunk_index", sa.Integer(), nullable=False),
++        sa.Column("text", sa.Text(), nullable=True),
++        sa.Column("char_start", sa.Integer(), nullable=True),
++        sa.Column("char_end", sa.Integer(), nullable=True),
++        sa.Column("token_count", sa.Integer(), nullable=True),
++        sa.Column("chunk_type", sa.String(), nullable=False, server_default="paragraph"),
++        sa.Column("metadata", sa.JSON(), nullable=True),
++        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
++        sa.ForeignKeyConstraint(["content_id"], ["contents.id"]),
++        sa.UniqueConstraint("content_id", "chunk_index", name="uq_content_chunks_content_index"),
++    )
++
++    # 7. correction_log 向量列（pgvector）
++    op.add_column("correction_log", sa.Column("content_embedding", Vector(1024), nullable=True))
++    op.execute(
++        "CREATE INDEX IF NOT EXISTS idx_correction_log_embedding ON correction_log "
++        "USING hnsw (content_embedding vector_cosine_ops)"
++    )
++
++
++def downgrade() -> None:
++    # 7. correction_log 向量列回退
++    op.execute("DROP INDEX IF EXISTS idx_correction_log_embedding")
++    op.drop_column("correction_log", "content_embedding")
++
++    # 6. content_chunks 表回退
++    op.drop_table("content_chunks")
++
++    # 5. contents 新索引回退
++    op.drop_index("idx_contents_file", table_name="contents")
++    op.execute("DROP INDEX IF EXISTS uq_contents_user_text_hash")
++    op.execute("DROP INDEX IF EXISTS uq_contents_user_image_phash")
++
++    # 4. 列更名回退 + 恢复 perceptual_hash
++    op.alter_column("contents", "text_vector_id", new_column_name="qdrant_text_id")
++    op.alter_column("contents", "image_vector_id", new_column_name="qdrant_image_id")
++    op.add_column("contents", sa.Column("perceptual_hash", sa.String(), nullable=True))
++    op.execute("UPDATE contents SET perceptual_hash = image_phash WHERE image_phash IS NOT NULL")
++    op.create_unique_constraint("uq_contents_user_hash", "contents", ["user_id", "perceptual_hash"])
++
++    # 3. contents 新列回退
++    op.drop_column("contents", "image_phash")
++    op.drop_column("contents", "normalized_text_hash")
++    op.drop_column("contents", "summary_strategy")
++    op.drop_column("contents", "summary")
++    op.drop_column("contents", "normalized_text")
++    op.drop_column("contents", "raw_text")
++    op.drop_constraint("fk_contents_file", "contents", type_="foreignkey")
++    op.drop_column("contents", "file_id")
++
++    # 2. files 表回退（先删 content 外键已删，再删表）
++    op.drop_index("uq_files_user_hash", table_name="files")
++    op.drop_index("idx_files_user_created", table_name="files")
++    op.drop_table("files")
+\ No newline at end of file
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index 4e838c8..fde7972 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -13,6 +13,7 @@ python-multipart>=0.0.18  # CVE-2024-53981 需 >=0.0.18（2026-08-26 决策升
+ 
+ # --- 数据库 ---
+ sqlalchemy>=2.0
++pgvector>=0.3        # v4 37 表：correction_log.content_embedding vector(1024)（pgvector.sqlalchemy.Vector）
+ psycopg[binary]>=3.2
+ alembic>=1.13        # P2-05 迁移（ORM 唯一权威）
+ # pgvector 已移出：全仓无 Python import（vector 为服务端扩展，由 pgvector/pgvector:pg16
+@@ -50,7 +51,8 @@ cos-python-sdk-v5>=1.9.33
+ minio>=7.2.0
+ 
+ # --- 缩略图管线（B4 后端：PIL 生成，Wave3 AgentG；generate_test_photos 亦依赖）---
+-Pillow>=11.0.0        # EpsImagePlugin 系列 CVE 需 >=11；本服务处理用户上传图片（2026-08-26 决策升版）
++Pillow>=11.0.0
++imagehash>=4.3        # v4 照片去重：服务端 imagehash pHash（阶段 2）        # EpsImagePlugin 系列 CVE 需 >=11；本服务处理用户上传图片（2026-08-26 决策升版）
+ 
+ # --- 长录音 VAD 分段（B5a-2 · P1-16）---
+ webrtcvad-wheels>=2.0.10
+diff --git a/backend/sql/schema.sql b/backend/sql/schema.sql
+index 8da0c73..375336f 100644
+--- a/backend/sql/schema.sql
++++ b/backend/sql/schema.sql
+@@ -81,25 +81,52 @@ CREATE INDEX idx_audit_log_user ON audit_log(user_id, created_at);
+ 
+ -- ========== 2. 内容域（4 表） ==========
+ 
+-CREATE TABLE contents (                        -- 核心表
++CREATE TABLE files (                           -- 文件原始层（v4 新增）
++    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++    user_id       uuid NOT NULL REFERENCES users(id),
++    filename      text,                        -- 原始文件名
++    mime_type     text,                        -- MIME 类型
++    file_size     bigint,                      -- 文件大小（字节）
++    extension     text,                        -- 扩展名
++    storage_key   text,                        -- 对象存储键 {user_id}/{file_id}/original
++    file_hash     text,                        -- SHA256(file bytes)，文件级精确去重
++    status        text NOT NULL DEFAULT 'uploaded',  -- uploaded/parsing/parsed/partial/failed/unsupported
++    parser        text,                        -- 解析器 docx/pdf/image/audio
++    parser_version text,                       -- 解析器版本
++    error_message text,                        -- 解析错误信息
++    created_at    timestamptz NOT NULL DEFAULT now(),
++    updated_at    timestamptz NOT NULL DEFAULT now(),
++    deleted_at    timestamptz,
++    deleted_by    uuid
++);
++CREATE UNIQUE INDEX uq_files_user_hash ON files(user_id, file_hash) WHERE file_hash IS NOT NULL;
++CREATE INDEX idx_files_user_created ON files(user_id, created_at);
++
++CREATE TABLE contents (                        -- 核心表（v4 37 表对齐：raw_text/normalized_text/image_phash/text_vector_id 等）
+     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id         uuid NOT NULL REFERENCES users(id),
++    file_id         uuid REFERENCES files(id), -- v4：原始文件层（1:N，照片必须挂文件；text/voice 可空）
+     content_type    text NOT NULL,             -- photo / text / voice / article
+     content_class   text,                      -- 待办/灵感/情绪/引用/混合
+     class_source    text,                      -- setfit / llm / rule / user
+     model_version   text,                      -- 分类模型版本
+-    text            text,                      -- OCR 结果/转写/原文
++    raw_text        text,                      -- v4：原文 / OCR 结果 / 转写
++    text            text,                      -- OCR 结果 / 转写 / 原文
++    normalized_text text,                      -- v4：归一化文本（去重用）
++    summary         text,                      -- v4：文本摘要（D5：本轮默认 passthrough，不启用 LLM 摘要）
++    summary_strategy text,                     -- v4：摘要策略 passthrough / qwen-long / ...
+     taken_at        timestamptz,               -- 拍摄/记录时间
+     gps_lat         double precision,
+     gps_lng         double precision,
+     place           text,                      -- 逆编码地名（geo_cache）
+-    perceptual_hash text,                      -- 感知哈希去重（同用户唯一）
++    normalized_text_hash text,                 -- v4：SHA256 归一化文本指纹（文本去重，部分唯一）
++    image_phash     text,                      -- v4：图片感知哈希（原 perceptual_hash 迁移至此）
+     client_generated_id varchar(64),           -- 创建幂等键（R4#4，客户端生成，同用户唯一）
+     emotion         jsonb,                     -- {value, confidence, source}（B5-a）
+     sensitive_tags  jsonb,                     -- 敏感话题标签（B5-b 内容级）
+     sensitive_status text NOT NULL DEFAULT '正常',  -- 正常/待复核/已遮蔽/已解除
+-    qdrant_text_id  text,                      -- 向量点引用
+-    qdrant_image_id text,
++    text_vector_id  text,                      -- v4：文本向量点引用（原 qdrant_text_id 更名）
++    image_vector_id text,                      -- v4：图像向量点引用（原 qdrant_image_id 更名）
+     cos_key         text,                      -- 原件
+     thumbnail_key   text,                      -- 缩略图
+     source          text,                      -- wechat / app / windows / import
+@@ -108,14 +135,34 @@ CREATE TABLE contents (                        -- 核心表
+     created_at      timestamptz NOT NULL DEFAULT now(),
+     updated_at      timestamptz NOT NULL DEFAULT now(),
+     deleted_at      timestamptz,
+-    deleted_by      uuid,
+-    CONSTRAINT uq_contents_user_hash UNIQUE (user_id, perceptual_hash)
++    deleted_by      uuid
+ );
++-- v4：去重唯一性拆分为 图片 pHash 与 文本指纹 两个部分唯一索引（PG 多 NULL 不冲突）
++CREATE UNIQUE INDEX uq_contents_user_image_phash ON contents(user_id, image_phash) WHERE image_phash IS NOT NULL;
++CREATE UNIQUE INDEX uq_contents_user_text_hash ON contents(user_id, normalized_text_hash) WHERE normalized_text_hash IS NOT NULL;
+ CREATE UNIQUE INDEX uq_contents_user_client_generated_id ON contents(user_id, client_generated_id) WHERE client_generated_id IS NOT NULL;
+ CREATE INDEX idx_contents_user_created ON contents(user_id, created_at);
+ CREATE INDEX idx_contents_user_type ON contents(user_id, content_type);
+ CREATE INDEX idx_contents_taken_at ON contents(user_id, taken_at);
++CREATE INDEX idx_contents_file ON contents(file_id);
+ 
++-- ========== 2b. 文件与切块域（v4 · 37 表对齐新增 2 表） ==========
++
++
++
++CREATE TABLE content_chunks (                  -- RAG 切块层（v4 新增；本轮建表，切块默认关闭）
++    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++    content_id    uuid NOT NULL REFERENCES contents(id),
++    chunk_index   int NOT NULL,
++    text          text,
++    char_start    int,                         -- 起始字符位
++    char_end      int,                         -- 结束字符位
++    token_count   int,                         -- Token 数
++    chunk_type    text NOT NULL DEFAULT 'paragraph',  -- paragraph/fixed/semantic
++    metadata      jsonb,
++    created_at    timestamptz NOT NULL DEFAULT now(),
++    UNIQUE (content_id, chunk_index)
++);
+ CREATE TABLE tags (                            -- custom=用户自定义 / l3_topic=L3 主题流（v3 D1）
+     id            bigserial PRIMARY KEY,
+     user_id       uuid REFERENCES users(id),  -- NULL = 全局标签
+@@ -273,7 +320,8 @@ CREATE TABLE correction_log (
+     user_id          uuid NOT NULL REFERENCES users(id),
+     content_id       uuid REFERENCES contents(id),
+     content_type     text NOT NULL DEFAULT 'text',  -- photo/text/voice（B5-c-3：同类型先比）
+-    qdrant_point_id  text,                     -- MVP：纠错向量存 Qdrant corrections 集合
++    content_embedding vector(1024),            -- v4：内容向量（pgvector，37 表文档口径）
++    qdrant_point_id  text,                     -- 过渡保留：MVP 纠错向量仍走 Qdrant corrections 集合
+     old_label        text,
+     new_label        text,
+     source           text,                     -- active / echo / org
+@@ -512,3 +560,8 @@ CREATE TABLE app_settings (
+ --    为越权校验的有意反规范化（v3 评审三.2）。
+ -- 3. profile_sensitive.topic_hash 为 HMAC 盲索引预留列（加密 key 与索引 key 分离）。
+ -- ============================================================
++
++-- ========== v4 附注（2026-09-03 · 37 表对齐） ==========
++-- contents：perceptual_hash → image_phash（迁移脚本已拷存量）；qdrant_text_id/qdrant_image_id → text_vector_id/image_vector_id
++-- correction_log：content_embedding vector(1024) 已加列；qdrant_point_id/content_type 保留过渡（纠错存储切换后续单独做）
++CREATE INDEX idx_correction_log_embedding ON correction_log USING hnsw (content_embedding vector_cosine_ops);
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..85c371f
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,91 @@
++# 忆述光华 · 本机开发基础设施（阶段 0 · 2026-09-03）
++# 一条命令起齐 4 个服务：docker compose up -d
++# 本机开发用：后端代码在宿主机 uvicorn 直接跑，不打包后端镜像。
++# 注意：与本机其他项目容器（如 minio/mysql-db）互不干扰，统一使用 yishu- 前缀命名。
++name: yishu
++
++services:
++  postgres:
++    image: pgvector/pgvector:pg16
++    container_name: yishu-postgres
++    environment:
++      POSTGRES_USER: postgres
++      POSTGRES_PASSWORD: postgres
++      POSTGRES_DB: yishu
++    ports:
++      - "5432:5432"
++    volumes:
++      - pgdata:/var/lib/postgresql/data
++    healthcheck:
++      test: ["CMD-SHELL", "pg_isready -U postgres -d yishu"]
++      interval: 5s
++      timeout: 5s
++      retries: 15
++    restart: unless-stopped
++
++  redis:
++    image: redis:7-alpine
++    container_name: yishu-redis
++    ports:
++      - "6379:6379"
++    volumes:
++      - redisdata:/data
++    healthcheck:
++      test: ["CMD", "redis-cli", "ping"]
++      interval: 5s
++      timeout: 5s
++      retries: 15
++    restart: unless-stopped
++
++  qdrant:
++    image: qdrant/qdrant:v1.19.0
++    container_name: yishu-qdrant
++    ports:
++      - "6333:6333"
++      - "6334:6334"
++    volumes:
++      - qdrantdata:/qdrant/storage
++    restart: unless-stopped
++
++  minio:
++    image: minio/minio
++    container_name: yishu-minio
++    command: server /data --console-address ":9001"
++    environment:
++      MINIO_ROOT_USER: minioadmin
++      MINIO_ROOT_PASSWORD: minioadmin
++    ports:
++      - "9000:9000"
++      - "9001:9001"
++    volumes:
++      - miniodata:/data
++    restart: unless-stopped
++
++  # 一次性初始化：等待 MinIO 就绪后创建 originals / thumbnails 两桶（D2 决策）
++  minio-init:
++    image: minio/mc
++    container_name: yishu-minio-init
++    depends_on:
++      minio:
++        condition: service_started
++    entrypoint: ["/bin/sh", "-c"]
++    command:
++      - |
++        mc alias set local http://minio:9000 minioadmin minioadmin || true
++        for i in $$(seq 1 30); do
++          if mc ls local >/dev/null 2>&1; then break; fi
++          mc alias set local http://minio:9000 minioadmin minioadmin || true
++          echo "waiting for minio ($i/30)..."
++          sleep 2
++        done
++        mc mb -p local/originals || true
++        mc mb -p local/thumbnails || true
++        mc ls local
++        echo "buckets ready"
++    restart: "no"
++
++volumes:
++  pgdata:
++  redisdata:
++  qdrantdata:
++  miniodata:
+\ No newline at end of file
+-- 
+2.55.0.windows.4
+

@@ -1,0 +1,164 @@
+From 9f9943306f4e016d4bc2d56930320d62382664d0 Mon Sep 17 00:00:00 2001
+From: ZLY20 <zly20@local>
+Date: Fri, 4 Sep 2026 08:33:34 +0800
+Subject: [PATCH 2/3] =?UTF-8?q?feat(storage):=20MinIO=20=E5=8F=8C=E6=A1=B6?=
+ =?UTF-8?q?=E8=B7=AF=E7=94=B1=EF=BC=88D2=EF=BC=89=E2=80=94=E2=80=94origina?=
+ =?UTF-8?q?ls/thumbnails=20=E6=8C=89=20key=20=E9=A6=96=E6=AE=B5=E5=88=86?=
+ =?UTF-8?q?=E6=A1=B6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- config: minio_originals_bucket/minio_thumbnails_bucket（默认 originals/thumbnails）
+- MinioStorageBackend：thumbnails/ 前缀 → 缩略图桶，其余（photos/voice/wechat/uploads）
+  → 原件桶；旧单桶 minio_bucket 只读兼容（验收历史对象免搬）
+- 实测：photos/ 键仅落 originals，thumbnails/ 键仅落 thumbnails，旧 7.9MB 对象可读
+---
+ backend/app/core/config.py               |  5 +-
+ backend/app/services/external/storage.py | 72 +++++++++++++++++-------
+ 2 files changed, 57 insertions(+), 20 deletions(-)
+
+diff --git a/backend/app/core/config.py b/backend/app/core/config.py
+index 2e44409..eb3b9aa 100644
+--- a/backend/app/core/config.py
++++ b/backend/app/core/config.py
+@@ -83,7 +83,10 @@ class Settings(BaseSettings):
+     minio_endpoint: str = "localhost:9000"
+     minio_access_key: str = "minioadmin"
+     minio_secret_key: str = "minioadmin"
+-    minio_bucket: str = "yishu-photos"
++    minio_bucket: str = "yishu-photos"  # 兼容保留（历史单桶；minio 后端现按双桶路由）
++    # D2 双桶（2026-09-04）：缩略图桶 / 原件桶，key 首段路由（thumbnails/ → 缩略图桶，其余 → 原件桶）
++    minio_originals_bucket: str = "originals"
++    minio_thumbnails_bucket: str = "thumbnails"
+     baidu_api_key: str = Field(
+         "", validation_alias=AliasChoices("BAIDU_API_KEY", "BAIDU_OCR_API_KEY")
+     )
+diff --git a/backend/app/services/external/storage.py b/backend/app/services/external/storage.py
+index ca04036..fe422be 100644
+--- a/backend/app/services/external/storage.py
++++ b/backend/app/services/external/storage.py
+@@ -98,7 +98,13 @@ class FakeStorageBackend(StorageBackend):
+ 
+ 
+ class MinioStorageBackend(StorageBackend):
+-    """MinIO（本地模拟；S3 兼容）"""
++    """MinIO（本地模拟；S3 兼容）· D2 双桶路由（2026-09-04）
++
++    key 首段路由：thumbnails/... → 缩略图桶（minio_thumbnails_bucket）；
++    其余（photos/voice/wechat/uploads/...）→ 原件桶（minio_originals_bucket）。
++    旧单桶（minio_bucket，历史 yishu-photos）只读兼容：读不到时回查旧桶，
++    避免搬历史对象（本机 205 张验收数据直接可读）；写一律进双桶。
++    """
+ 
+     def __init__(self) -> None:
+         from minio import Minio
+@@ -109,17 +115,37 @@ class MinioStorageBackend(StorageBackend):
+             secret_key=settings.minio_secret_key,
+             secure=False,
+         )
+-        self._bucket = settings.minio_bucket
+-        if not self._client.bucket_exists(self._bucket):
+-            self._client.make_bucket(self._bucket)
++        self._orig = settings.minio_originals_bucket or "originals"
++        self._thumb = settings.minio_thumbnails_bucket or "thumbnails"
++        self._legacy = settings.minio_bucket or "yishu-photos"
++        for bucket in {self._orig, self._thumb, self._legacy}:
++            if not self._client.bucket_exists(bucket):
++                self._client.make_bucket(bucket)
++
++    def _bucket_for(self, key: str) -> str:
++        """按 key 首段路由（thumbnails/ → 缩略图桶，其余 → 原件桶）"""
++        return self._thumb if key.startswith("thumbnails/") else self._orig
++
++    def _read_from(self, bucket: str, key: str) -> bytes:
++        """从指定桶读对象；缺失抛 KeyError（供主桶→旧桶回退复用）"""
++        from minio import S3Error
++
++        try:
++            resp = self._client.get_object(bucket, key)
++            try:
++                return resp.read()
++            finally:
++                resp.close()
++                resp.release_conn()
++        except S3Error as exc:
++            raise KeyError(f"minio object not found: {bucket}/{key}") from exc
+ 
+     def put_object(self, key: str, data: bytes) -> None:
+         from minio import S3Error
+ 
++        bucket = self._bucket_for(key)
+         try:
+-            self._client.put_object(
+-                self._bucket, key, __import__("io").BytesIO(data), len(data)
+-            )
++            self._client.put_object(bucket, key, __import__("io").BytesIO(data), len(data))
+         except S3Error as exc:
+             raise StorageError(
+                 "MINIO_PUT_FAILED", f"minio put_object 失败: {exc}", retryable=True
+@@ -128,23 +154,26 @@ class MinioStorageBackend(StorageBackend):
+     def get_object(self, key: str) -> bytes:
+         from minio import S3Error
+ 
++        bucket = self._bucket_for(key)
+         try:
+-            resp = self._client.get_object(self._bucket, key)
+-            try:
+-                return resp.read()
+-            finally:
+-                resp.close()
+-                resp.release_conn()
+-        except S3Error as exc:
+-            raise KeyError(f"minio object not found: {key}") from exc
++            return self._read_from(bucket, key)
++        except KeyError:
++            # 旧单桶兼容：历史对象在 minio_bucket 下（免搬数据）
++            if self._legacy not in (self._orig, self._thumb):
++                try:
++                    return self._read_from(self._legacy, key)
++                except KeyError:
++                    pass
++            raise
+         except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+             raise StorageError(
+                 "MINIO_GET_FAILED", f"minio get_object 失败: {type(exc).__name__}", retryable=True
+             ) from exc
+ 
+     def delete_object(self, key: str) -> None:
++        bucket = self._bucket_for(key)
+         try:
+-            self._client.remove_object(self._bucket, key)
++            self._client.remove_object(bucket, key)
+         except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+             raise StorageError(
+                 "MINIO_DELETE_FAILED", f"minio delete_object 失败: {type(exc).__name__}", retryable=True
+@@ -153,17 +182,22 @@ class MinioStorageBackend(StorageBackend):
+     def object_exists(self, key: str) -> bool:
+         from minio import S3Error
+ 
++        bucket = self._bucket_for(key)
+         try:
+-            self._client.stat_object(self._bucket, key)
++            self._client.stat_object(bucket, key)
+             return True
+         except S3Error:
++            if self._legacy not in (self._orig, self._thumb):
++                try:
++                    self._client.stat_object(self._legacy, key)
++                    return True
++                except S3Error:
++                    return False
+             return False
+         except Exception as exc:  # noqa: BLE001 —— 统一包装（P0-6）
+             raise StorageError(
+                 "MINIO_STAT_FAILED", f"minio object_exists 失败: {type(exc).__name__}", retryable=True
+             ) from exc
+-
+-
+ class FilesystemStorageBackend(StorageBackend):
+     """本地文件系统后端（2026-08-25 · 跨进程共享）
+ 
+-- 
+2.55.0.windows.4
+

@@ -1,0 +1,46 @@
+可用物理内存: 12.0GB
+============================================================
+代码测试 Agent
+============================================================
+
+[❌] pytest
+    schema.py                             101     10    90%   81, 96, 98, 100, 103, 106, 108, 110, 130-131
+    backend\app\services\rag\__init__.py                                91     27    70%   125, 137-138, 150-151, 161-171, 177-189, 206-210, 241-242
+    backend\app\services\rag\image.py                                   74      6    92%   68-69, 114, 120, 137-138
+    backend\app\services\rag\intent.py                                  16      0   100%
+    backend\app\services\rag\pg_fallback.py                             44     10    77%   37, 43, 57, 59, 61, 63, 66, 70-72
+    backend\app\services\rag\recall.py                                  66      3    95%   114-115, 120
+    backend\app\services\rag\rewrite.py                                 82     20    76%   83-96, 108-109, 116, 118, 122, 133-134
+    backend\app\services\reconcile.py                                   40      1    98%   67
+    backend\app\services\rerank.py                                      60     43    28%   19-24, 42-46, 51-76, 85-103
+    backend\app\services\sync.py                                       142     16    89%   81, 110, 124-125, 131-132, 143-144, 161, 230-236
+
+[✅] api_smoke
+    [cleanup] 已清理测试 collection: ['test_yishu_contents']
+    真实用例冒烟:
+      [✅] healthz
+      [✅] auth-security
+      [✅] text-journey
+      [✅] photo-journey
+      [✅] dedup-409
+      [✅] timeline-structure
+    全部真实用例通过
+    D:\projects\ysgh_venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+
+[✅] research
+    -1', 'p5a-4-2', 'p5a-4-3', 'p5a-5-0', 'p5a-5-1', 'p5a-5-2', 'p5a-5-3', 'p5a-6-0', 'p5a-6-1', 'p5a-6-2', 'p5a-6-3'], 'cover_content_id': 'p5a-6-3', 'ocr_summary': None}, {'tag': '笔记', 'count': 28, 'total_photos': 28, 'time_range': ['2026-07-18T12:09:00+00:00', '2026-07-24T13:39:00+00:00'], 'cluster': ['p5a-0-0', 'p5a-0-1', 'p5a-0-2', 'p5a-0-3', 'p5a-1-0', 'p5a-1-1', 'p5a-1-2', 'p5a-1-3', 'p5a-2-0', 'p5a-2-1', 'p5a-2-2', 'p5a-2-3', 'p5a-3-0', 'p5a-3-1', 'p5a-3-2', 'p5a-3-3', 'p5a-4-0', 'p5a-4-1', 'p5a-4-2', 'p5a-4-3', 'p5a-5-0', 'p5a-5-1', 'p5a-5-2', 'p5a-5-3', 'p5a-6-0', 'p5a-6-1', 'p5a-6-2', 'p5a-6-3'], 'cover_content_id': 'p5a-6-3', 'ocr_summary': None}])
+    ✅ 场景6: 无 GPS 照片进日卡片 (进卡片=5/5)
+    ✅ 场景7: 20 连拍折叠为 1 组 (折叠组数=1)
+    ✅ 场景8: 稀疏日标记 is_sparse (稀疏日=3/3)
+    ✅ 场景11: 单点漂移不产生新簇 (p11 簇数=1)
+    ✅ 场景12: 系统性偏移整批成簇 (p12 簇数=1)
+    ✅ 场景10: 时间错乱不崩溃 (ok)
+    ✅ AGG-015: 增量后旧簇结构保留（不漂移） (旧簇23→保留24)
+    ✅ AGG-015: 新照片进入增量结果 (p13 进簇=12)
+    ✅ AGG-016: 同参双跑结果一致（端云同一配置源） (24 vs 24)
+
+[✅] cleanup_test_collections
+    removed: ['test_yishu_contents']
+
+============================================================
+❌ 测试未通过：pytest — 修复后重跑

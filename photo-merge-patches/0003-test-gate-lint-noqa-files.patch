@@ -1,0 +1,163 @@
+From 249da097958180f487db245aea9ebd2d3487aa63 Mon Sep 17 00:00:00 2001
+From: ZLY20 <zly20@local>
+Date: Sun, 6 Sep 2026 14:34:51 +0800
+Subject: [PATCH 3/3] =?UTF-8?q?test(gate):=20=E5=85=A8=E9=87=8F=E9=97=A8?=
+ =?UTF-8?q?=E7=A6=81=E5=85=A8=E7=BB=BF=E4=BF=AE=E5=A4=8D=E2=80=94=E2=80=94?=
+ =?UTF-8?q?lint=20=E6=8D=A2=E8=A1=8C/noqa=E3=80=81files=20=E6=B8=85?=
+ =?UTF-8?q?=E7=90=86=E9=93=BE=E3=80=81=E7=8E=AF=E5=A2=83=E6=95=99=E8=AE=AD?=
+ =?UTF-8?q?=E7=99=BB=E8=AE=B0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- ruff：新增模块补结尾换行；ocr TOKEN_URL 误报加 noqa S105
+- conftest：cleanup_user_data 补 content_chunks/files 删除（FK 顺序）
+- lessons：登记 venv 入仓/缺生成照片与 yishu_app 角色/FK 清理链三条教训
+- 全量门禁 review_agent --full 通过（syntax/lint/secrets/todos/tests）
+---
+ backend/app/db/models/content.py              |  2 +-
+ backend/app/services/external/ocr.py          |  4 +--
+ backend/app/services/external/storage.py      |  1 -
+ backend/app/services/perceptual_hash.py       |  2 +-
+ backend/app/services/text_utils.py            |  2 +-
+ .../c0d1e2f3a4b5_add_v4_37tables_alignment.py |  2 +-
+ backend/tests/conftest.py                     |  7 +++++
+ docs/lessons.md                               | 27 +++++++++++++++++++
+ 8 files changed, 40 insertions(+), 7 deletions(-)
+
+diff --git a/backend/app/db/models/content.py b/backend/app/db/models/content.py
+index 8df5853..867e06b 100644
+--- a/backend/app/db/models/content.py
++++ b/backend/app/db/models/content.py
+@@ -167,4 +167,4 @@ class CorrectionLog(Base):
+     source: Mapped[str] = mapped_column(String, default="active")  # active / echo / org
+     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+     is_global_candidate: Mapped[bool] = mapped_column(default=False)
+-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+\ No newline at end of file
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+diff --git a/backend/app/services/external/ocr.py b/backend/app/services/external/ocr.py
+index 755a2c2..09f57f4 100644
+--- a/backend/app/services/external/ocr.py
++++ b/backend/app/services/external/ocr.py
+@@ -21,7 +21,7 @@ from app.services.external.retry import with_retry
+ 
+ logger = logging.getLogger("yishu.external.ocr")
+ 
+-TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
++TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"  # noqa: S105 —— URL 常量非密钥
+ OCR_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
+ OCR_LANGUAGE = "CHN_ENG"
+ # 最长边上限（百度 OCR 图片大小限制；超限返回 216205）
+@@ -84,4 +84,4 @@ def _prepare_for_ocr(data: bytes) -> bytes:
+         img.thumbnail((MAX_OCR_SIDE, MAX_OCR_SIDE), Image.LANCZOS)
+     buf = io.BytesIO()
+     img.save(buf, format="JPEG", quality=90)
+-    return buf.getvalue()
+\ No newline at end of file
++    return buf.getvalue()
+diff --git a/backend/app/services/external/storage.py b/backend/app/services/external/storage.py
+index fe422be..174b14c 100644
+--- a/backend/app/services/external/storage.py
++++ b/backend/app/services/external/storage.py
+@@ -152,7 +152,6 @@ class MinioStorageBackend(StorageBackend):
+             ) from exc
+ 
+     def get_object(self, key: str) -> bytes:
+-        from minio import S3Error
+ 
+         bucket = self._bucket_for(key)
+         try:
+diff --git a/backend/app/services/perceptual_hash.py b/backend/app/services/perceptual_hash.py
+index b85264d..a4ab2a0 100644
+--- a/backend/app/services/perceptual_hash.py
++++ b/backend/app/services/perceptual_hash.py
+@@ -39,4 +39,4 @@ def compute_phash(image_bytes: bytes) -> str:
+         raise ValueError(f"图片解码失败: {type(exc).__name__}") from exc
+     if img.mode != "RGB":
+         img = img.convert("RGB")
+-    return str(imagehash.phash(img))
+\ No newline at end of file
++    return str(imagehash.phash(img))
+diff --git a/backend/app/services/text_utils.py b/backend/app/services/text_utils.py
+index ba62067..d46c6af 100644
+--- a/backend/app/services/text_utils.py
++++ b/backend/app/services/text_utils.py
+@@ -18,4 +18,4 @@ def normalize_text(text: str) -> str:
+ 
+ def text_hash(text: str) -> str:
+     """SHA256 归一化文本指纹（37 表 contents.normalized_text_hash）"""
+-    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
+\ No newline at end of file
++    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
+diff --git a/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py b/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py
+index 1ad04d9..8a2a5ca 100644
+--- a/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py
++++ b/backend/migrations/versions/c0d1e2f3a4b5_add_v4_37tables_alignment.py
+@@ -139,4 +139,4 @@ def downgrade() -> None:
+     # 2. files 表回退（先删 content 外键已删，再删表）
+     op.drop_index("uq_files_user_hash", table_name="files")
+     op.drop_index("idx_files_user_created", table_name="files")
+-    op.drop_table("files")
+\ No newline at end of file
++    op.drop_table("files")
+diff --git a/backend/tests/conftest.py b/backend/tests/conftest.py
+index 6a55952..f1d2de2 100644
+--- a/backend/tests/conftest.py
++++ b/backend/tests/conftest.py
+@@ -148,7 +148,14 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
+         ),
+         ("echo_history", "DELETE FROM echo_history WHERE user_id = :uid"),
+         ("messages", "DELETE FROM messages WHERE user_id = :uid"),
++        (
++            "content_chunks",
++            "DELETE FROM content_chunks WHERE content_id IN "
++            "(SELECT id FROM contents WHERE user_id = :uid)",
++        ),
+         ("contents", "DELETE FROM contents WHERE user_id = :uid"),
++        # v4（2026-09-04）：files 在 contents 之后、users 之前删除（contents.file_id → files；files.user_id → users）
++        ("files", "DELETE FROM files WHERE user_id = :uid"),
+         ("offline_queue", "DELETE FROM offline_queue WHERE user_id = :uid"),
+         ("sync_state", "DELETE FROM sync_state WHERE user_id = :uid"),
+         ("sync_field_versions", "DELETE FROM sync_field_versions WHERE user_id = :uid"),
+diff --git a/docs/lessons.md b/docs/lessons.md
+index 2a0681b..50b28b7 100644
+--- a/docs/lessons.md
++++ b/docs/lessons.md
+@@ -9,6 +9,33 @@
+ 
+ ---
+ 
++### 2026-09-06 14:29 · commit 9f99433 · ts=1788676197
++- **错误**：test_photo_content/test_upload 清理用户报 files_user_id_fkey 外键违规（6 errors）
++- **根因**：v4 新增 files/content_chunks 后，conftest cleanup_user_data 未同步删除顺序（files 引用用户、contents.file_id 引用 files）
++- **修复**：conftest 清理链补 content_chunks（contents 前）与 files（contents 后、users 前）
++- **相关文件**：backend/tests/conftest.py
++- **教训**：新增带外键子表必须同步测试清理链，否则用户删除被 FK 拦截
++
++---
++
++### 2026-09-06 14:29 · commit 9f99433 · ts=1788676196
++- **错误**：api_smoke photo-journey/timeline-structure 失败（timeline min() 空）
++- **根因**：冒烟依赖 .cowork-temp/test_photos 生成照片，本机未先跑 generate_test_photos.py；另 DB 用户非 yishu_app 使 test_db_connect 断言失败
++- **修复**：跑 generate_test_photos.py 生成 50 张；本地建 yishu_app 角色对齐 CI
++- **相关文件**：scripts/api_smoke_cases.py; backend/tests/test_db_integration.py
++- **教训**：跑全量门禁前须补齐生成照片与 yishu_app 库角色等环境前置
++
++---
++
++### 2026-09-06 14:29 · commit 9f99433 · ts=1788676196
++- **错误**：全量门禁 secrets/todo 误扫 .venv 内 site-packages（fsspec/httpx/hf_api 等假阳性密钥 70+ 处）
++- **根因**：验证用 venv 建在仓库内 backend/.venv，review_agent 全仓扫描不识别 gitignore
++- **修复**：venv 移至仓库外 D:\projects\ysgh_venv
++- **相关文件**：backend/.venv
++- **教训**：本地验证 venv 必须放在仓库目录外，否则全量门禁误扫报密钥假阳性
++
++---
++
+ ### 2026-09-01 15:28 · commit 36e0b64 · ts=1788247729
+ - **错误**：wrap1 合并解冲突脚本首版将 progress.md 从 680 行砍到 58 行（develop 侧 622 行记账差点丢失），lessons.md 同样被砍至 ~108 行
+ - **根因**：union 脚本只把两个冲突块拼进输出，冲突区之外的正文（out 列表）从未加入 merged；且无行数守恒校验，第一轮静默落盘
+-- 
+2.55.0.windows.4
+
