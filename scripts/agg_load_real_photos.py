@@ -2,7 +2,7 @@
 """真实照片基准加载器（开发辅助脚本 · R1#14 从 app/services/event_aggregation 迁入）
 
 用户指令（2026-08-16）：M1 Part 1 的 500 张测试照片基准改用真实截图
-（C:\\Users\\ghf\\Pictures\\Screenshots），不用生成器合成。
+（目录经 SCREENSHOT_DIR 指定，见下），不用生成器合成。
 
 - 截图命名编码真实时间戳：`屏幕截图 YYYY-MM-DD HHMMSS.png`
 - 截图无 GPS → 走 B3 矩阵 #6（无 GPS：按时间窗归组）路径，真实数据验证
@@ -29,7 +29,7 @@ from app.services.event_aggregation.pipeline import RawPhoto  # noqa: E402
 
 # 真实截图目录：仅从环境变量 SCREENSHOT_DIR 读取（个人路径不进仓库）。
 # 未设置时返回空列表（团队/CI 无真实截图 → 场景15 自动跳过；本机验证设
-# `SCREENSHOT_DIR=C:\Users\...\Screenshots` 后全量跑）
+# `SCREENSHOT_DIR=<你的截图目录>` 后全量跑）
 SCREENSHOT_DIR = Path(os.environ["SCREENSHOT_DIR"]) if os.environ.get("SCREENSHOT_DIR") else None
 _NAME_RE = re.compile(r"^屏幕截图 (\d{4}-\d{2}-\d{2}) (\d{6})\.png$")
 

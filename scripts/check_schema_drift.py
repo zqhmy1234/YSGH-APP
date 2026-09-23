@@ -52,8 +52,11 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 
 # 管理员连接（需 CREATEDB + 超级用户，用于建临时库/装 vector 扩展）。
-# 本地/CI 均为 postgres 超级用户：本地 setup_pg.sql 同款凭据；CI postgres service 同款。
-DEFAULT_ADMIN_URL = "postgresql+psycopg://postgres:admin@localhost:5432/postgres"
+# 凭据**不入仓库**（原内联默认 `postgres:admin` 已移除，2026-09-24 重构波 B7）：
+#   优先 `--admin-url`，其次环境变量 `DRIFT_ADMIN_URL`；两者皆空则显式报错退出。
+#   CI 走显式 `--admin-url`（见 .github/workflows/ci.yml）；
+#   本地示例：$env:DRIFT_ADMIN_URL="postgresql+psycopg://postgres:<你的密码>@localhost:5432/postgres"
+DEFAULT_ADMIN_URL = ""
 
 _TABLES_SKIP = {"alembic_version"}
 
@@ -303,6 +306,14 @@ def main() -> int:
     ap.add_argument("--backend-dir", default=str(ROOT / "backend"))
     ap.add_argument("--keep", action="store_true", help="保留临时库（调试）")
     args = ap.parse_args()
+
+    if not args.admin_url:
+        print(
+            "缺少管理员连接串：请用 --admin-url 或环境变量 DRIFT_ADMIN_URL 提供\n"
+            "（需 CREATEDB + 超级用户权限，用于建临时库/装 vector 扩展）",
+            file=sys.stderr,
+        )
+        return 2
 
     schema_sql_path = Path(args.schema_sql)
     backend_dir = Path(args.backend_dir)

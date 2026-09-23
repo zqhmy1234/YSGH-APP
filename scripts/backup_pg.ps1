@@ -5,12 +5,22 @@
 # 产物：backups/yishu_YYYYMMDD_HHMMSS.dump + WAL 归档说明
 
 param(
-    [string]$PGBin = "C:\Program Files\PostgreSQL\17\bin",
+    # PostgreSQL bin 目录：优先环境变量 PGBIN；否则自动探测本机已装版本（取最高版本）。
+    # 不再硬编码版本号默认值（原 "C:\Program Files\PostgreSQL\17\bin" 绑定机器与版本）。
+    [string]$PGBin = $(if ($env:PGBIN) { $env:PGBIN } else {
+            $c = Get-ChildItem "C:\Program Files\PostgreSQL\*\bin" -Directory -ErrorAction SilentlyContinue |
+                Sort-Object { [int]($_.Parent.Name -replace '\D', '') } -Descending | Select-Object -First 1
+            if ($c) { $c.FullName } else { "" }
+        }),
     [string]$BackupDir = "D:\GuangH-App\backups",
     [string]$DbName = "yishu",
     [string]$DbUser = "yishu_app",
     [string]$DbHost = "localhost"
 )
+
+if (-not $PGBin -or -not (Test-Path "$PGBin\pg_dump.exe")) {
+    throw "未找到 pg_dump：请设置 -PGBin 或环境变量 PGBIN（如 C:\Program Files\PostgreSQL\<版本>\bin）"
+}
 
 $ErrorActionPreference = "Stop"
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
