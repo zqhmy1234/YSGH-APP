@@ -387,3 +387,14 @@
 - 续：**B10-m**（`c9b10d7`）**`audit_security` 崩溃 + 白名单失效**（既有缺陷）——① `db/models` 早已拆包而代码仍直读 `models.py` ⇒ `FileNotFoundError` ⇒ **该安全审计根本无法跑完**（用 `git show HEAD:` 原始版本复跑同样崩）；② `_ALLOW_PATHS` 用仓库根相对前缀 ⇒ `backend/tests/…` 不匹配、"排除测试"意图**从未生效**；③ 统一合成值抑制口径。修复后**首次真正跑通**，`blocking` 由"跑不完"变为 **1**。
 - ⚠️ **重大运维发现（交运维/用户，非本波可修）**：`audit_security` 跑通后报 **最近备份距今 493.0h（≈20.5 天）**，**违反 RPO≤24h**；`key_management/transport/storage` 全 OK。此前该检查因崩溃**从未被评估**（D13-4 记的"RPO 检查恒通过"实为"压根没跑"）——建议尽快跑一次 `scripts/backup_pg.ps1` 并恢复每日备份。
 - 续（第六轮）：**B10-n**（`96c39f6`）**UTF-8 兜底同语义 20 处 → 单一实现**（D14-11）——同一段"把 stdout/stderr 切 UTF-8"的代码在 `scripts/*.py` 抄了 **20 处 / 16 文件**，且形态四分五裂（成对 hasattr 守卫 / 仅 stdout / 函数内 / `__import__` 变体 / `for _stream`+suppress / 无守卫裸调用）⇒ 想加一层兜底须改 20 处且必漏。新增 `scripts/gate_io.py::force_utf8()`（安全超集）并全量迁移。证据：`scripts/` 全目录 ruff 通过、17 改动脚本 py_compile 通过、**残留 reconfigure 仅剩 gate_io 自身**；门禁工具实跑全绿。
+- 续（第七轮）：**B10-o**（`e7e449b`）**退出码口径单一来源 + 修 `test_agent` 姊妹假绿**——① 口径与判定抽到 `scripts/gate_exit.py`（`ENV_ERR_PREFIX`+`classify_failure`），`review_agent`/`test_agent` 共用；② **又一个"报告全绿但测试从未跑"**：`test_agent` 在 pytest/pytest-cov 缺失时 `return True + [skip] 缺依赖` ⇒ 改为**环境错误（退出码 2）**默认阻断；③ `test_agent` 加 `env_blocked_sections` + 0/1/2 三态；④ `audit_harness` 排除集 `CLIENT_EXCLUDE_DIRS` 合并硬编码 2 处（D14-13 半）。证据：探针 4 例全对（含违规优先）+ 源码断言无旧写法；`scripts/` 全目录 ruff 通过；三工具实跑正常。
+
+## ⛔ 第七轮结束状态 · 剩余范围全部受阻（需用户动作或外部状态变化）
+
+- **B9 端口/边界收口**：验证测试依赖 **Qdrant**；**Docker Desktop 自本轮起连续多轮均未运行**（每轮 `docker ps` 均报引擎管道不存在，且 `Start-Process` 等待 90s×2 仍未就绪）⇒ **无法验证、不做**（遵循"未跑验证不许声称完成"）。
+- **B5 客户端拆分 / 客户端侧漂移（D04-3 等）**：需 HBuilderX **编译门**，本机不可用。
+- **B11 残余 6 项**（D02-7/9、D05-9、D07-14、D09-10、D04-3、D12-7）：多需 **`docs/决策台账.md §5.10` 的权威决策**（尤以 `schema.sql` vs ORM），或落在客户端 `.uts`（同样受编译门限制）。
+- **64 条功能与安全缺陷**（含 P0 10 条）：待用户拍板**归属波次**（另开功能波 / 并入 4b）。
+- **门禁域残余（低价值）**：`D14-12` subprocess 双实现（签名差异 + OOM 分支）、两工具**跨文件**目录排除清单、`D14-22` 报告 schema、`D14-23` CI schema-drift job 仅 schedule —— 均为外观/一致性级，已登记待后续顺手做。
+- **待环境验证（如实标注）**：`COV_THRESHOLD` 50→60 后实际覆盖率是否 ≥60，须 Docker 可用后跑 `--full`。
+- **待用户处置的运维事项**：**最近备份距今 ≈20.5 天（违反 RPO≤24h）**——由 `audit_security` 首次跑通后暴露。
