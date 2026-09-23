@@ -394,9 +394,16 @@ def audit_models() -> None:
 #   这类缺口**静态可查、零成本**，故门禁化。
 
 EXPORT_RE = re.compile(
-    r"^[ \t]*export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)",
+    r"^[ \t]*export\s+(?:default\s+)?(?:async\s+)?"
+    r"(?:function|const|let|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)",
     re.M,
 )
+# ⚠️ 2026-09-24（B10-f，D14-16）：覆盖面补全两处
+#   ① 声明形态：原只认 `function|const|let|class` ⇒ `export type/interface/enum/default` 全部漏扫
+#      （实测补上后 +5 个导出、其中零调用 0 个 ⇒ 不影响结论，但消除盲区）；
+#   ② 目录深度：`audit_exports` 原用 `utils_dir.glob("*.uts")`（**非递归**）⇒ `client/utils/agg/**`
+#      等子目录整体不在扫描面（实测补递归后 +29 个导出，其中 1 个零调用 `WALK_SPEED_MS`，
+#      与深审 D04-12 相互印证）。
 # ⚠️ 2026-09-24（B10-d）：原写法为 `^\s*export ...`——`\s` **包含换行**，于是 `^` 会先在前导
 #   空行处成立、`\s*` 吃掉落行，导致 `m.start()` 落在**空行**而非 `export` 行。后果：
 #   声明行号被记成空行号 ⇒ 下方"声明行自身不算引用"的排除失配 ⇒ 每个导出都把自身计成 1 处引用
@@ -420,7 +427,7 @@ def audit_exports() -> None:
 
     sources = _client_sources()
     decls: dict[str, list[str]] = {}   # 名字 → 声明位置
-    for f in sorted(utils_dir.glob("*.uts")):
+    for f in sorted(utils_dir.rglob("*.uts")):
         text = f.read_text(encoding="utf-8", errors="replace")
         for m in EXPORT_RE.finditer(text):
             line = text[: m.start()].count("\n") + 1

@@ -66,6 +66,11 @@
         "place": "client/utils/sync_client.uts:584",
         "reason": "深审 D08-10 已判定真死（唯一 1 处引用＝自身声明行，由同一假阴性造成）",
         "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+      },
+      "WALK_SPEED_MS": {
+        "place": "client/utils/agg/agg_config.uts:19",
+        "reason": "深审 D04-12 已判定零调用；此前因轴 4 **非递归**（只扫 client/utils/*.uts）而整体漏扫，B10-f 补 rglob 后露出",
+        "target": "编译门可用后：接线使用或删除该常量，随后删除本条"
       }
     },
     "reason": "轴 4（零调用能力导出）棘轮：存量 4 枚冻结、不阻断；B10-d 修正 EXPORT_RE 假阴性后由 0 露出为 4",

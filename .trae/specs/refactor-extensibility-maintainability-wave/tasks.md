@@ -65,6 +65,8 @@
 
 - [x] Task B10-e: filesize / dup 基线**僵尸豁免清算**（D14-4 的另一半）——原白名单只拦新增、从不检查条目是否失效（文件被删/改名/拆到阈值内 ⇒ 永久白条）。现：filesize 对 `set(allowlist) − 仍超阈` 报 CRITICAL；dup 对 `per_file` 已归零条目报 CRITICAL；存量下降报 WARN/INFO 要求同步下调基线。证据：先逐条对账（6 条 filesize / 21 条 dup per_file 全 `OK`、total 44=44）⇒ 不引入误红；双负向探针（client 阈值 800→3000 ⇒ **6 条**僵尸 CRITICAL；dup 塞不存在文件 ⇒ **1 条** CRITICAL）均 EXIT=1 且基线按原文精确还原
 
+- [x] Task B10-f: 轴 4 **覆盖面补全**（D14-16）——① `audit_exports` 原 `glob("*.uts")` **非递归** ⇒ `client/utils/agg/**` 等子目录整体漏扫；② `EXPORT_RE` 只认 `function|const|let|class` ⇒ `export type/interface/enum/default` 漏扫。修为 `rglob("*.uts")` + 正则补 `(?:default\s+)?` 与 `type|interface|enum`。证据：先量化（补递归 +29 导出、其中零调用 1 个＝`WALK_SPEED_MS`＝深审 D04-12；补 7 类 +5 导出、零调用 0）；修后导出 **298 → 332**、存量 5、无新增；子目录负向探针（追加零调用导出）→ CRITICAL 且**行号正确**，已还原；`all` 无 CRITICAL
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。
