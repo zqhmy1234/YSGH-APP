@@ -317,6 +317,22 @@ def _record_failure(checks: dict) -> None:
     }, ensure_ascii=False), encoding="utf-8")
 
 
+def check_structure() -> tuple[bool, str]:
+    """结构棘轮（文件体积 / 重复模式手抄）——2026-09-24 重构波 B1 接入提交门禁。
+
+    复用 `audit_harness` 的**纯计算**入口（不打印、不导入后端 app），快/全量两模式均秒级。
+    口径：**只拦新增**——存量超阈文件与既有重复计数在 `scripts/audit_harness_baseline.json`
+    冻结；新增超阈文件或重复模式总数上升 → 阻断。
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_harness import structure_findings
+
+    crit = structure_findings()
+    if crit:
+        return False, "结构棘轮新增违规：\n" + "\n".join(crit)
+    return True, "结构棘轮：无新增超阈文件 / 重复模式未上升"
+
+
 def check_lessons() -> tuple[bool, str]:
     """强制教训登记：上次失败后未登记 → 阻断 commit（2026-08-20 用户要求程序化强制）"""
     import sys as _sys
@@ -342,6 +358,7 @@ def main() -> int:
         "lint": check_lint(lint_files),
         "secrets": check_secrets(secret_files),
         "todos": check_todos(secret_files),
+        "structure": check_structure(),
     }
     if args.full and not args.skip_tests:
         checks["tests"] = run_tests()

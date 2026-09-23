@@ -1,0 +1,83 @@
+{
+  "_doc": [
+    "audit_harness 棘轮基线（ratchet baseline）——存量冻结，只允许收缩，不允许扩张。",
+    "规则：新增违规 = CRITICAL；存量超阈文件在 allowlist 内被豁免（但不得再增长，增长会 WARN）。",
+    "收缩方式：拆分/收敛后，把对应条目从本文件删除或下调计数（须与代码同 commit，便于回滚）。",
+    "建立于 2026-09-24（易扩展/易维护重构波 · 批次 B1）；台账见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md",
+    "禁止把本文件当万能豁免池：每条须有 reason 与 target（销项触发）。"
+  ],
+  "filesize": {
+    "thresholds": {
+      "backend_py": 600,
+      "client": 800
+    },
+    "allowlist": {
+      "backend/app/api/contents.py": {
+        "lines": 902,
+        "reason": "L-03 巨文件，内容域最热 API，含 8 处手抄软删过滤",
+        "target": "批次 B2 拆分为子包后删除本条（目标 ≤600）"
+      },
+      "client/components/RecordSheet/RecordSheet.uvue": {
+        "lines": 2208,
+        "reason": "L-01 全仓最大文件（script 1095 / style 857）",
+        "target": "批次 B5 拆分逻辑与样式后删除本条"
+      },
+      "client/components/TabIndex/TabIndex.uvue": {
+        "lines": 1740,
+        "reason": "L-02 script 848 行，时间轴主页逻辑/模板纠缠",
+        "target": "批次 B5"
+      },
+      "client/pages/detail/detail.uvue": {
+        "lines": 1165,
+        "reason": "L-08 详情页样式膨胀（style 592）",
+        "target": "批次 B5"
+      },
+      "client/components/TabAi/TabAi.uvue": {
+        "lines": 974,
+        "reason": "AI 页；含 USE_MOCK_CHAT 演示开关（已登记 B8）",
+        "target": "批次 B5"
+      },
+      "client/pages/favorites/favorites.uvue": {
+        "lines": 974,
+        "reason": "收藏页体量偏大",
+        "target": "批次 B5"
+      },
+      "client/pages/portrait/manage.uvue": {
+        "lines": 891,
+        "reason": "画像管理页体量偏大",
+        "target": "批次 B5"
+      }
+    }
+  },
+  "dup_patterns": {
+    "soft_delete_filter": {
+      "regex": "deleted_at\\.is_\\(None\\)",
+      "total": 44,
+      "per_file": {
+        "backend/app/api/contents.py": 8,
+        "backend/app/api/corrections.py": 1,
+        "backend/app/api/deps.py": 1,
+        "backend/app/api/events.py": 6,
+        "backend/app/api/event_items.py": 2,
+        "backend/app/api/media.py": 2,
+        "backend/app/api/stats.py": 3,
+        "backend/app/services/echo.py": 1,
+        "backend/app/services/notify.py": 1,
+        "backend/app/services/photo_content.py": 2,
+        "backend/app/workers/requeue_job.py": 1,
+        "backend/app/services/events/aggregate.py": 3,
+        "backend/app/services/events/aggregate_write.py": 3,
+        "backend/app/services/events/edit.py": 1,
+        "backend/app/services/events/sync.py": 1,
+        "backend/app/services/events/timeline.py": 1,
+        "backend/app/services/pipeline_ext/emotion.py": 1,
+        "backend/app/services/pipeline_ext/sensitive.py": 2,
+        "backend/app/services/rag/pg_fallback.py": 1,
+        "backend/app/services/rag/recall.py": 2,
+        "backend/app/services/upload/register.py": 1
+      },
+      "reason": "L-09 归属 helper 三分裂导致的手抄模式族；总数不得上升",
+      "target": "批次 B3 收敛 helper 后，同步下调 total/per_file"
+    }
+  }
+}

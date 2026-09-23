@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""harness 三轴审计（契约漂移 / 客户端漂移 / 模型使用率）
+"""harness 多轴审计（契约漂移 / 客户端漂移 / 模型使用率 / 导出可达性 / 文件体积 / 重复模式）
 
 背景（2026-09-23 系统性审计，见 docs/审计_未关闭缺陷_20260923.md）：
   审计发现三类"静默漂移"从未被任何门禁覆盖，且已各自造成误导：
@@ -12,6 +12,11 @@
      feature_list 自相矛盾 / client/README 陈旧目录树）。
   3. **模型使用率**：`app/db/models/` 定义的 ORM 类是否有业务引用——"建了表但没人用"
      属静默腐化，出问题时才被发现。
+  4. **导出可达性**：`client/utils` 导出却零调用＝"能力写了没接线"（图搜先例）。
+  5. **文件体积棘轮**（2026-09-24 重构波 B1）：巨型文件是改动风险放大器；
+     存量超阈进基线白名单，**新增超阈即 CRITICAL**（防新债，不阻断存量）。
+  6. **重复模式棘轮**（B1）：归属/软删过滤手抄（`deleted_at.is_(None)`）总数不得上升，
+     推动走公共 helper（详见 docs 台账 P2-2 族）。
 
 方法：
   · openapi：本地 `from app.main import app` 实时导出 paths，与 `docs/openapi.json` 做
@@ -24,13 +29,17 @@
     的出现次数；0 引用＝疑似未使用（**静态启发式，非结论**，ORM 字符串式引用需人工判）。
 
 用法：
-  python scripts/audit_harness.py openapi|client|models|all [-v]
+  python scripts/audit_harness.py openapi|client|models|exports|filesize|dups|all
   python scripts/audit_harness.py all --json out.json      # 供 CI/台账引用
 
 退出码：
   0 = 全部无 CRITICAL 发现
-  1 = 存在 CRITICAL（契约双向漂移有差 / 代码内死路由 / 模型 0 引用）
+  1 = 存在 CRITICAL（契约双向漂移有差 / 代码内死路由 / 模型 0 引用 /
+      零调用能力导出 / 新增超阈文件 / 重复模式总数上升）
   2 = 执行环境错误（后端不可导入且非 --skip-openapi 等）
+
+基线（棘轮）：`scripts/audit_harness_baseline.json`——存量超阈文件与重复模式计数在此冻结，
+只允许**收缩**；新增违规直接 CRITICAL。
 """
 from __future__ import annotations
 
@@ -54,9 +63,18 @@ for _stream in (sys.stdout, sys.stderr):
 CLIENT = REPO / "client"
 BACKEND = REPO / "backend"
 DOCS_OPENAPI = REPO / "docs" / "openapi.json"
+BASELINE_PATH = REPO / "scripts" / "audit_harness_baseline.json"
 
 CRITICAL: list[str] = []
 INFO: list[str] = []
+
+
+def _load_baseline() -> dict:
+    """棘轮基线（存量冻结）；缺失时返回空基线（此时任何超阈/重复都算新增）。"""
+    if not BASELINE_PATH.exists():
+        _say("WARN", f"未找到基线 {BASELINE_PATH.relative_to(REPO)} → 视基线为空")
+        return {}
+    return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 
 
 def _say(level: str, msg: str) -> None:
@@ -215,6 +233,9 @@ def audit_client() -> None:
             prefix = text[start_of_line: m.start()]
             line = text[: m.start()].count("\n") + 1
             in_comment = ("//" in prefix) or ("<!--" in prefix)
+            # 「原」标注＝已声明的历史沿革（按本轴自身建议），不再计入漂移
+            if in_comment and "原" in prefix:
+                continue
             entry = f"{f.relative_to(REPO)}:{line}  {target}（未注册）"
             (comment_refs if in_comment else dead_code).append(entry)
     if dead_code:
@@ -256,10 +277,17 @@ def audit_models() -> None:
         raise SystemExit(2)
 
     classes: dict[str, str] = {}
+    mirror_files: set[str] = set()
     for f in sorted(models_dir.glob("*.py")):
         if f.name.startswith("_"):
             continue
-        for m in re.finditer(r"^class\s+(\w+)\s*\(", f.read_text(encoding="utf-8"), re.M):
+        text = f.read_text(encoding="utf-8")
+        # 「镜像」标记＝该模块是**刻意镜像**（外部系统的表结构；仅为让 Base.metadata 与库
+        # 一致、防 alembic --autogenerate 误生成 DROP TABLE），由迁移与漂移守卫消费，
+        # 不参与本仓业务读写 → 0 引用属**预期**，不得判为"建了未用"（2026-09-24 B1 修假阳性）。
+        if "镜像" in text:
+            mirror_files.add(f.name)
+        for m in re.finditer(r"^class\s+(\w+)\s*\(", text, re.M):
             classes[m.group(1)] = f.name
     _say("INFO", f"模型类 {len(classes)} 个（分布在 {len({v for v in classes.values()})} 个文件）")
 
@@ -274,7 +302,8 @@ def audit_models() -> None:
             if re.search(rf"\b{re.escape(c)}\b", text):
                 usages[c].append(str(p.relative_to(REPO)))
 
-    zero = {c: f for c, f in classes.items() if not usages[c]}
+    zero = {c: f for c, f in classes.items() if not usages[c] and f not in mirror_files}
+    mirrored = {c: f for c, f in classes.items() if not usages[c] and f in mirror_files}
     low = {c: usages[c] for c, f in classes.items() if 0 < len(usages[c]) <= 2}
 
     if zero:
@@ -283,6 +312,10 @@ def audit_models() -> None:
             _say("  ", f"{c}（定义于 models/{f}）")
     else:
         _info("无 0 引用模型 ✓")
+    if mirrored:
+        _info(f"0 引用的**镜像**模型 {len(mirrored)} 个（刻意声明，非缺口）：")
+        for c, f in sorted(mirrored.items()):
+            _say("  ", f"{c}（models/{f}，镜像：仅为 metadata/alembic 一致 + 漂移守卫）")
     if low:
         _info(f"低引用（≤2 处）模型 {len(low)} 个，供人工判：")
         for c, files in sorted(low.items()):
@@ -364,11 +397,135 @@ def audit_exports() -> None:
             _say("  ", e)
 
 
+# ─────────────────── 轴 5：文件体积棘轮 ───────────────────
+#
+# 为什么需要：巨型文件是**改动风险放大器**（本仓 900~2200 行级文件已成常态）。
+# 棘轮口径（刻意不做"一夜全阻断"——那会被绕过）：存量超阈文件在 baseline 冻结、
+# **不阻断**；**新增超阈文件即 CRITICAL**（新债不得产生）；存量再增长则 WARN。
+
+FILESIZE_THRESHOLDS = {"backend_py": 600, "client": 800}
+
+
+def _iter_sized_sources() -> list[Path]:
+    out = list((BACKEND / "app").rglob("*.py"))
+    out += [
+        p
+        for p in CLIENT.rglob("*")
+        if p.is_file()
+        and p.suffix in {".uts", ".uvue"}
+        and not any(part in {"unpackage", "node_modules", ".hbuilderx"} for part in p.parts)
+    ]
+    return sorted(out)
+
+
+def _threshold_for(rel: str) -> int:
+    if rel.startswith("client/"):
+        return FILESIZE_THRESHOLDS["client"]
+    return FILESIZE_THRESHOLDS["backend_py"]
+
+
+def _filesize_findings() -> tuple[list[str], list[str], list[str]]:
+    """(新增超阈=CRITICAL, 存量超阈=INFO, 存量增长=WARN)"""
+    allow = _load_baseline().get("filesize", {}).get("allowlist", {})
+    crit: list[str] = []
+    info: list[str] = []
+    warn: list[str] = []
+    for p in _iter_sized_sources():
+        rel = p.relative_to(REPO).as_posix()
+        lines = len(p.read_text(encoding="utf-8", errors="replace").splitlines())
+        limit = _threshold_for(rel)
+        if lines <= limit:
+            continue
+        if rel in allow:
+            recorded = allow[rel]
+            recorded = int(recorded["lines"]) if isinstance(recorded, dict) else int(recorded)
+            if lines > recorded:
+                warn.append(f"{rel} 基线 {recorded} → {lines} 行（超阈且增长，应抽取而非加长）")
+            else:
+                info.append(f"{rel} {lines} 行（基线 {recorded}，超阈已冻结）")
+        else:
+            crit.append(f"{rel} {lines} 行 > 阈值 {limit}（新增超阈：拆分或显式申请基线）")
+    return crit, info, warn
+
+
+def audit_filesize() -> None:
+    print("== 轴 5 · 文件体积棘轮（backend/app *.py ≤600 / client *.uts|*.uvue ≤800）==")
+    crit, info, warn = _filesize_findings()
+    for m in crit:
+        _crit(m)
+    for m in warn:
+        _say("WARN", m)
+    if not crit:
+        _info(f"无新增超阈文件 ✓（存量超阈 {len(info)} 个已冻结）")
+    for m in info:
+        _say("  ", m)
+
+
+# ─────────────────── 轴 6：重复模式棘轮（归属/软删手抄） ───────────────────
+#
+# 为什么需要：`deleted_at.is_(None)` 手抄散落 20+ 文件＝同一语义抄 N 遍，新端点极易写漏
+# （P2-2 族根因）。棘轮口径：**总数不得上升**（推动走公共 helper），上升即 CRITICAL。
+
+DUP_PATTERNS = {"soft_delete_filter": r"deleted_at\.is_\(None\)"}
+
+
+def _dup_findings() -> tuple[list[str], list[str]]:
+    """(总数上升=CRITICAL, 现状=INFO)"""
+    base = _load_baseline().get("dup_patterns", {})
+    crit: list[str] = []
+    info: list[str] = []
+    for name, pattern in DUP_PATTERNS.items():
+        entry = base.get(name, {})
+        base_total = entry.get("total")
+        base_files: dict[str, int] = entry.get("per_file", {})
+        total = 0
+        growth: list[str] = []
+        for p in (BACKEND / "app").rglob("*.py"):
+            rel = p.relative_to(REPO).as_posix()
+            n = len(re.findall(pattern, p.read_text(encoding="utf-8", errors="replace")))
+            if not n:
+                continue
+            total += n
+            if n > int(base_files.get(rel, 0)):
+                growth.append(f"{rel} {base_files.get(rel, 0)} → {n} 处")
+        if base_total is None:
+            info.append(f"{name}: 基线缺失（当前 {total} 处）——请补基线")
+        elif total > int(base_total):
+            crit.append(
+                f"{name} 手抄总数 {base_total} → {total}（上升）；新增点：{'; '.join(growth)}"
+            )
+        else:
+            info.append(f"{name}: {total} 处（基线 {base_total}，未上升 ✓）")
+    return crit, info
+
+
+def audit_dups() -> None:
+    print("== 轴 6 · 重复模式棘轮（归属/软删手抄 `deleted_at.is_(None)`）==")
+    crit, info = _dup_findings()
+    for m in crit:
+        _crit(m)
+    if not crit:
+        _info("重复模式总数未上升 ✓")
+    for m in info:
+        _say("  ", m)
+
+
+def structure_findings() -> list[str]:
+    """公共入口：结构棘轮（体积 + 重复模式）的 CRITICAL 列表。
+
+    供 `review_agent` 等门禁复用——纯计算、不打印、不导入后端 app，秒级可跑。
+    """
+    return _filesize_findings()[0] + _dup_findings()[0]
+
+
 # ─────────────────────────── 入口 ───────────────────────────
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="harness 三轴审计（契约/客户端/模型）")
-    ap.add_argument("axis", choices=["openapi", "client", "models", "exports", "all"])
+    ap = argparse.ArgumentParser(description="harness 多轴审计（契约/客户端/模型/导出/体积/重复）")
+    ap.add_argument(
+        "axis",
+        choices=["openapi", "client", "models", "exports", "filesize", "dups", "all"],
+    )
     ap.add_argument("--skip-openapi", action="store_true", help="无后端环境时跳过契约轴")
     ap.add_argument("--json", metavar="PATH", help="把发现写入 JSON（供 CI/台账引用）")
     args = ap.parse_args()
@@ -381,6 +538,10 @@ def main() -> int:
         audit_models()
     if args.axis in {"exports", "all"}:
         audit_exports()
+    if args.axis in {"filesize", "all"}:
+        audit_filesize()
+    if args.axis in {"dups", "all"}:
+        audit_dups()
 
     print("\n" + "-" * 62)
     if CRITICAL:
