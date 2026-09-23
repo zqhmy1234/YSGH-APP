@@ -46,10 +46,10 @@ import sys
 from pathlib import Path
 
 # Windows 控制台 GBK 兼容（✅/❌ 为 Unicode）
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 # subprocess 输出按 UTF-8 解码（Windows 默认 GBK 会炸）
 SUB_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}

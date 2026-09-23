@@ -23,8 +23,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
 sys.path.insert(0, str(BACKEND_DIR))

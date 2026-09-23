@@ -11,10 +11,12 @@ import sys
 import traceback
 from pathlib import Path
 
+from gate_io import force_utf8  # noqa: E402
+
 # 必须最先强制在线（直接赋值，覆盖任何残留/默认）
 os.environ["HF_HUB_OFFLINE"] = "0"
 os.environ["TRANSFORMERS_OFFLINE"] = "0"
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+force_utf8()
 
 # 仓库用到的模型清单（model id → 预期缓存/路径）；CI 失败时据此快速定位缺哪个模型
 MODEL_PATHS: list[tuple[str, str, str]] = [

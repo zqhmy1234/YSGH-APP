@@ -76,3 +76,4 @@
 - [x] **B10-k 退出码口径统一**（D14-18）：`review_agent` 落地 0 通过 / 1 违规 / **2 环境错误**（`ENV_ERR_PREFIX` 打标 + 纯函数 `_classify_failure()`，违规优先）+ 报告 `env_blocked_checks` —— 证据：纯函数探针 5 例全对（含"违规+环境错误 → 违规优先"）；env 分支消息均以 `[环境错误]` 开头；CLI 实跑 `✅ 审核通过` 且退出码 0
 - [x] **B10-l 密钥模式集唯一来源**（D14-9）：`scripts/secret_patterns.py`（并集 16 条）被 `review_agent` 与 `audit_security` 共用 + `pragma: allowlist secret` 显式行内豁免 —— 证据：探针证明同源、**并集缺失 = `[]`**、四类形态全覆盖；放宽后当场暴露 4 处合成值误报并逐行标注；静态全绿、`test_guard_managed` 9 passed
 - [x] **B10-m `audit_security` 崩溃 + 白名单失效**（既有缺陷，实跑坐实）：修 `db/models` 拆包直读崩溃（`HEAD` 版本同样崩 ⇒ 非本轮引入）、`_ALLOW_PATHS` 改按路径段匹配、统一合成值抑制 —— 证据：**首次真正跑通**，`blocking` = **1**；⚠️ **真实发现交运维/用户**：**最近备份距今 493.0h（≈20.5 天）违反 RPO≤24h**（此前因崩溃从未被评估）
+- [x] **B10-n UTF-8 兜底统一**（D14-11）：新增 `scripts/gate_io.py::force_utf8()`，16 文件 / 20 处全迁移（6 种形态）—— 证据：`scripts/` 全目录 ruff 通过；17 脚本 `py_compile` 通过；残留 `reconfigure` 仅 `gate_io.py` 自身；门禁工具实跑全绿

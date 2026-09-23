@@ -27,6 +27,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from gate_io import force_utf8  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
@@ -36,10 +38,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 os.environ.setdefault("QDRANT_COLLECTION", "test_yishu_contents")
 
 # Windows 控制台 GBK 兼容（✅/❌ 为 Unicode）
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+force_utf8()
+force_utf8()
 
 from app.main import app  # noqa: E402
 from app.services.pipeline import process_content  # noqa: E402

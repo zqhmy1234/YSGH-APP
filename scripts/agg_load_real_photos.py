@@ -20,6 +20,8 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from gate_io import force_utf8  # noqa: E402
+
 # backend 入 path（从任意目录运行均可 import app.services.*；与 gen_agg_fixtures 同款）
 BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
 if str(BACKEND_DIR) not in sys.path:
@@ -135,8 +137,7 @@ def sample_500(
 
 
 def _print_stats(photos: list[RawPhoto]) -> None:
-    if hasattr(__import__("sys").stdout, "reconfigure"):
-        __import__("sys").stdout.reconfigure(encoding="utf-8", errors="replace")
+    force_utf8()
     print(f"总张数: {len(photos)}")
     print(f"时间范围: {photos[0].ts:%Y-%m-%d %H:%M} ~ {photos[-1].ts:%Y-%m-%d %H:%M}")
     months = Counter(p.ts.strftime("%Y-%m") for p in photos)

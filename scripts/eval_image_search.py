@@ -13,8 +13,9 @@ import sys
 import time
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 

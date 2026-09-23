@@ -42,12 +42,12 @@ import sys
 from pathlib import Path
 
 import psycopg
+
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
 from sqlalchemy import create_engine, inspect, make_url, text
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 

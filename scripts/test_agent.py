@@ -26,10 +26,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_DIR = ROOT / ".cowork-temp"

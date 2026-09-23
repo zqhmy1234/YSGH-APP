@@ -58,11 +58,10 @@ REPO = Path(__file__).resolve().parent.parent
 # 输出编码兜底：Windows 默认 GBK，`✓` 等符号会抛 UnicodeEncodeError 直接崩掉审计；
 # 且 CI/本仓工具链按 UTF-8 解码管道输出。故统一按 UTF-8 输出，不可编码字符降级为 ?，
 # 保证本脚本在任何终端/管道下都不会因编码问题失败。
-for _stream in (sys.stdout, sys.stderr):
-    # 无 reconfigure 的老环境降级为不动（ruff S110 不允许 try/except/pass，
-    # 故用 contextlib.suppress 表达同一语义）
-    with contextlib.suppress(Exception):
-        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 CLIENT = REPO / "client"
 BACKEND = REPO / "backend"
 DOCS_OPENAPI = REPO / "docs" / "openapi.json"

@@ -81,6 +81,8 @@
 
 - [x] Task B10-m: `audit_security` **崩溃 + 白名单失效**（既有缺陷）——① `db/models` 已拆包仍直读 `models.py` ⇒ `FileNotFoundError`（HEAD 版本同样崩）⇒ 该安全审计**从未跑通**；② `_ALLOW_PATHS` 用仓库根相对前缀 ⇒ `backend/tests/…` 不匹配、"排除测试"意图从未生效；③ 统一合成值抑制（`change-me`/`mock`/`allowlist secret`）。证据：修复后**首次真正跑通**，`blocking` = **1**，仅剩真实项 **最近备份距今 493.0h（≈20.5 天）违反 RPO≤24h**（交运维/用户）
 
+- [x] Task B10-n: UTF-8 兜底**同语义 20 处 → 单一实现**（D14-11）——新增 `scripts/gate_io.py::force_utf8()`（语义为各原处安全超集），**16 个文件 / 20 处**全迁移（含 6 种形态：成对守卫 / 仅 stdout / 函数内 / `__import__` 变体 / `for _stream`+suppress / 无守卫裸调用）。证据：`scripts/` 全目录 ruff `All checks passed`；17 个改动脚本 `py_compile` 全过；残留 `reconfigure` **仅剩 `gate_io.py` 自身**；门禁工具实跑全绿（`review_agent` ✅ / `audit_harness all` 无 CRITICAL / `lessons recent` 正常）
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

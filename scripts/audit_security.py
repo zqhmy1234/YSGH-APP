@@ -24,8 +24,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 BACKEND = REPO / "backend"
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 # 敏感值模式（排除测试与示例）
 #

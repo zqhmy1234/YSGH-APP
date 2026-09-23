@@ -24,6 +24,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from gate_io import force_utf8  # noqa: E402
+
 # backend 入 path（从任意目录运行均可 import app.services.*；与 gen_agg_fixtures 同款）
 BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
 if str(BACKEND_DIR) not in sys.path:
@@ -164,7 +166,6 @@ def generate() -> list[RawPhoto]:
 
 
 if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    force_utf8()
     _photos = generate()
     print(f"生成 {len(_photos)} 张模拟照片（B3 十类分布 + 边界用例）")
