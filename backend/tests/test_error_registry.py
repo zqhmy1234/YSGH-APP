@@ -6,6 +6,7 @@
   - raise 处码全部在表内（AST 扫描，防新码漏登记/撞号）
   - 已知拆分回归：CONTENT_003/008/007/EVENT_005
   - **门禁自校验**（D11-2）：反向探针证明"就地定义未登记"的码真能被抓到
+  - **反向棘轮**（D11-5）：登记但**从不 raise** 的码不得新增（基线冻结 3 枚存量，只允许收缩）
 
 D11-2（2026-09-24 重构波 B10-b）：修跨模块盲区
   旧实现只解析 `app.core.errors` 的 `ERR_*` 常量——**就地定义在他模块**的错误码
@@ -196,3 +197,64 @@ def test_error_registry_capsule_codes_registered():
     assert ERROR_REGISTRY["CAPSULE_002"].http == 404
     assert ERROR_REGISTRY["CAPSULE_003"].http == 409
     assert ERROR_REGISTRY["CAPSULE_004"].http == 409
+
+
+# ─────────────── D11-5 反向棘轮：注册但从不 raise（死登记）───────────────
+#
+# 为什么需要：上面的正向门禁只保证「raise 的码已登记」，对**反向**完全失明——
+# 一个码被登记却没有任何 raise 点（如 `AUTH_099` 在 R4#11 拆分后成为残留、
+# `CONTENT_004` / `CONTENT_011` 亦无 raise），会永久占位，使「登记表 = 可发生
+# 错误全集」这一承诺失真，并诱导运维/客户端按**不存在的码**写分支。
+#
+# 棘轮口径（同 B1）：**基线冻结存量、只拦新增**，且基线**只允许收缩**；
+# 每项必须带原因；真正删除该码或补上 raise 点后，必须从基线移除。
+
+DEAD_CODE_BASELINE: dict[str, str] = {
+    "AUTH_099": (
+        "R4#11（2026-08-27）把通用「认证服务未接入或上游不可用」拆为 AUTH_010/011/012 后"
+        "未删除的原码 → 纯残留，可直接删（销项触发：确认无外部消费方即删）"
+    ),
+    "CONTENT_004": (
+        "「STS 直传未接入（生产待实现）」501 占位；STS 直传链路已落地 → 无 raise 点"
+        "（销项触发：确认无外部消费方即删）"
+    ),
+    "CONTENT_011": (
+        "「收藏状态冲突（重复收藏/未收藏）」409 占位；收藏端点走幂等语义 → 无 raise 点"
+        "（销项触发：确认无外部消费方即删）"
+    ),
+}
+
+
+def _dead_registered_codes(registered, used) -> set[str]:
+    """纯函数：**已登记但从不被 raise** 的码集合（供断言与自校验复用）"""
+    return set(registered) - set(used)
+
+
+def test_no_new_dead_error_codes():
+    """反向棘轮（D11-5）：不得新增「注册但从不 raise」的码；基线只允许收缩
+
+    双向判定：
+      · 出现基线外的新死登记 → 红（要求删登记或补真实 raise 点）；
+      · 基线项已不再是死登记 → 也红（要求从基线移除，防僵尸豁免）。
+    """
+    from app.core.errors import ERROR_REGISTRY
+
+    dead = _dead_registered_codes(ERROR_REGISTRY, _raise_site_codes())
+    new_dead = sorted(dead - set(DEAD_CODE_BASELINE))
+    assert not new_dead, (
+        "新增了「已登记但从不被 raise」的错误码（登记表 → 失真）：\n"
+        + "\n".join(f"  {c}" for c in new_dead)
+        + "\n\n修法：删掉该登记，或补上真实 raise 点。"
+    )
+    shrunk = sorted(set(DEAD_CODE_BASELINE) - dead)
+    assert not shrunk, (
+        "以下 DEAD_CODE_BASELINE 项已不再是死登记（已删除或已补 raise），"
+        "请从基线移除（棘轮只允许收缩，禁止留僵尸豁免）：\n"
+        + "\n".join(f"  {c}" for c in shrunk)
+    )
+
+
+def test_dead_code_ratchet_selfcheck():
+    """自校验：反向棘轮的判定函数必须双向可用（防"永远绿"的空转）"""
+    assert _dead_registered_codes({"A", "B"}, {"A"}) == {"B"}, "未识别出死登记"
+    assert _dead_registered_codes({"A"}, {"A", "B"}) == set(), "误报死登记"

@@ -63,4 +63,6 @@
 - [x] **B11 安全子集**：D04-17 类型标注 / D13-28 docstring / D13-14 注释一致性 / D14-2 死配置（随 B10）
 - [x] 每批受影响测试绿 + **全量 `pytest backend/tests` 不红** —— 证据：**850 passed / 4 skipped**（较基线 848 = 新增 2 条门禁自检，零回归）；`audit_harness openapi` **67/67 完全对齐、无幽灵路径**
 - [x] 未以"未验证"冒充完成：**B9（端口/边界收口）、B10-b（门禁缺口补强）、B11 残余漂移、B12 剩余项、B5（编译门）** 均显式标注**待执行/顺延**并给出原因（ledger §8.2/§9.7）
+- [x] **B10-c 错误码反向棘轮**（D11-5）：新增 `test_no_new_dead_error_codes`（双向判定）+ `DEAD_CODE_BASELINE`（3 枚带原因/销项触发）—— 证据：实测 `registered − raised = 恰好 3 枚`（67 注册 / 64 使用）；**内存级负向探针**（模拟新增 `ZZZ_PROBE_999` → 判为基线外新增）证明非空转，且**不改任何业务文件**
+- [x] **D07-13 改判非缺陷**（复核修正深审结论）：实读 `validate()` **仅测试调用**、生产 `get_schema()` 不调它 ⇒ 属测试期契约断言，51/193 即规格契约 —— 证据：调用点实扫（`test_profile_annotator.py:48` vs `annotate.py:52`/`interview.py:144`/`profile_annotator.py:78,136`）；已回填 ledger §9.3 第 5 条
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：提交经 hook `[pre-commit] 审核通过`
