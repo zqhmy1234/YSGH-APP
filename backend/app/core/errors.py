@@ -68,6 +68,15 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("CORR_002", "source 非法", 422),
     ErrorSpec("CORR_003", "任务不存在或已过期", 404),
     ErrorSpec("CORR_004", "任务不属于当前用户（越权查询）", 403),
+    # 胶囊域（时间胶囊 BA2）——⚠️ 常量**就地定义于** app/api/capsules.py，本表为唯一登记真源。
+    # D11-2（2026-09-24 重构波 B10-b）：跨模块 AST 门禁旧实现只解析 core/errors 的 ERR_* 常量，
+    # 就地定义在他模块的码被静默丢弃 → capsules 4 枚漏登记而门禁全绿（缺陷 D11-1，P0）。本处补登闭环。
+    # http 与 capsules.py 各 raise 点**逐条一致**（001=422 / 002=404[经 deps.load_owned_entity] /
+    # 003=409 / 004=409）——登记错 http 会改变实际响应码。
+    ErrorSpec("CAPSULE_001", "open_at 非法（必须带时区且晚于当前时刻）", 422),
+    ErrorSpec("CAPSULE_002", "胶囊不存在或无权访问", 404),
+    ErrorSpec("CAPSULE_003", "胶囊未到期不可开启（附剩余天数）", 409),
+    ErrorSpec("CAPSULE_004", "已开启的胶囊不可撤销封存", 409),
     # 事件域
     ErrorSpec("EVENT_004", "事件不存在或不属于当前用户", 404),
     ErrorSpec("EVENT_005", "内容不存在或不属于当前用户", 404),

@@ -5,8 +5,20 @@
   - http 语义匹配：retryable 仅限 5xx；4xx 不可重试；消息非空
   - raise 处码全部在表内（AST 扫描，防新码漏登记/撞号）
   - 已知拆分回归：CONTENT_003/008/007/EVENT_005
+  - **门禁自校验**（D11-2）：反向探针证明"就地定义未登记"的码真能被抓到
+
+D11-2（2026-09-24 重构波 B10-b）：修跨模块盲区
+  旧实现只解析 `app.core.errors` 的 `ERR_*` 常量——**就地定义在他模块**的错误码
+  （如 `app/api/capsules.py` 的 `ERR_CAPSULE_001..004`）在 `getattr(E, ...)` 处取不到，
+  被**静默丢弃**，4 枚漏登记（缺陷 D11-1，P0）而门禁全绿。
+  现改为两段式：
+    ① 逐模块解析**本模块**的字符串常量（就地定义**优先**），再回落共享登记表模块；
+    ② 收集两类"被使用"的码——(a) `ApiError(<码>)` 首参（str 字面量或 ERR_* 名）
+       (b) 任意 `ERR_*` 标识符的**读引用**（覆盖经 helper 间接 raise 的形态，
+       如 capsules 把 `ERR_CAPSULE_002` 传给 `deps.load_owned_entity`）。
 """
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -16,34 +28,61 @@ pytestmark = pytest.mark.unit
 
 BACKEND_APP = Path(__file__).resolve().parent.parent / "app"
 
+_ERR_NAME_RE = re.compile(r"^ERR_[A-Z0-9_]+$")
 
-def _raise_site_codes() -> set[str]:
-    """AST 扫描 backend/app 全部 `ApiError("<CODE>"` 的码（raise 处实际使用）。
 
-    两种形式都要收（2026-09-10 教训：只认字面量的旧实现留了盲区——media.py 四处
-    `ApiError(ERR_MEDIA_003, ...)` 用常量名而非字面量，漏登记整整一个月测试全绿）：
-    1. ast.Constant：ApiError("MEDIA_001", ...) 字面量
-    2. ast.Name：ApiError(ERR_MEDIA_001, ...) 常量名 → 经 app.core.errors 解析为码值
+def _scan_source_codes(src: str, filename: str = "<memory>") -> set[str]:
+    """纯函数：从**一段源码**提取"被使用"的错误码集合（可单测 / 供反向探针）。
+
+    解析规则（见模块 docstring D11-2）：
+      · 本模块 module 级字符串常量（`ERR_X = "CODE"`，含 `AnnAssign`）→ 就地常量表；
+      · `ApiError(a0, ...)`：a0 为 str 字面量 → 直接取；a0 为 `ERR_*` 名 → 就地表**优先**、否则取共享表；
+      · 任意 `ERR_*` 名（Load 上下文，排除定义处的 Store）→ 同上解析（覆盖间接 raise 形态）。
     """
     import app.core.errors as E
 
+    tree = ast.parse(src, filename=filename)
+    local: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for tgt in targets:
+                if (
+                    isinstance(tgt, ast.Name)
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
+                    local[tgt.id] = node.value.value
+
+    codes: set[str] = set()
+
+    def _resolve(name: str) -> None:
+        val = local.get(name) or getattr(E, name, None)
+        if isinstance(val, str):
+            codes.add(val)
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ApiError"
+            and node.args
+        ):
+            a0 = node.args[0]
+            if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
+                codes.add(a0.value)
+            elif isinstance(a0, ast.Name) and _ERR_NAME_RE.match(a0.id):
+                _resolve(a0.id)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and _ERR_NAME_RE.match(node.id):
+            _resolve(node.id)
+    return codes
+
+
+def _raise_site_codes() -> set[str]:
+    """AST 扫描 backend/app 全部模块里"被使用"的错误码（直接/间接 raise + 常量读引用）"""
     codes: set[str] = set()
     for py in BACKEND_APP.rglob("*.py"):
-        tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "ApiError"
-                and node.args
-            ):
-                a0 = node.args[0]
-                if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
-                    codes.add(a0.value)
-                elif isinstance(a0, ast.Name) and a0.id.startswith("ERR_"):
-                    val = getattr(E, a0.id, None)
-                    if isinstance(val, str):
-                        codes.add(val)
+        codes |= _scan_source_codes(py.read_text(encoding="utf-8"), str(py))
     return codes
 
 
@@ -84,3 +123,76 @@ def test_error_registry_known_splits():
     assert ERROR_REGISTRY["CONTENT_008"].http == 422
     assert ERROR_REGISTRY["EVENT_005"].http == 404
     assert ERROR_REGISTRY["CONTENT_007"].http == 413  # 413 语义不再被 404 污染
+
+
+# ─────────────────── D11-2 门禁自校验（反向探针）───────────────────
+#
+# 为什么必须自校验：D11-1 的成因不是"漏登记"，而是**门禁不报**——就地定义在他模块
+# 的码被静默丢弃。若只补登记而不锁住"能抓到"的能力，下一次同样会再次全绿放过。
+
+_LOCAL_CODE_PROBE = """
+from app.core.errors import ApiError
+
+ERR_LOCAL_999 = "LOCAL_999"
+
+
+def _boom():
+    raise ApiError(ERR_LOCAL_999, "就地定义未登记探针", http=422)
+"""
+
+
+def test_error_registry_gate_detects_unregistered_local_code():
+    """自校验：门禁纯函数必须抓到"就地定义未登记"的码（D11-1 反向探针）。
+
+    复现 D11-1 的确切形态：`ERR_*` 常量**定义并使用于同一非 errors 模块**。
+    若 `_scan_source_codes` 退化为只认共享表常量，本测试即红。
+    """
+    from app.core.errors import ERROR_REGISTRY
+
+    used = _scan_source_codes(_LOCAL_CODE_PROBE, "<probe-local>")
+    assert "LOCAL_999" in used, "门禁未能解析模块内就地常量 → D11-1 跨模块盲区复发"
+    assert "LOCAL_999" not in ERROR_REGISTRY, "探针码不得已登记（否则无法证明门禁会红）"
+    assert used - set(ERROR_REGISTRY), "未登记码必须能被门禁判为缺口"
+
+
+def test_error_registry_gate_detects_naked_literal():
+    """自校验补强：`raise ApiError("CAPSULE_001", ...)` 裸字面量形态同样必须被收。"""
+    from app.core.errors import ERROR_REGISTRY
+
+    used = _scan_source_codes('raise ApiError("LOCAL_998", "裸字面量探针")', "<probe-literal>")
+    assert "LOCAL_998" in used
+    assert "LOCAL_998" not in ERROR_REGISTRY
+
+
+def test_error_registry_gate_detects_indirect_code():
+    """自校验补强：经 helper **间接** raise 的码也必须被收。
+
+    复现 capsules 的 `ERR_CAPSULE_002` 形态——码作为实参传给 `deps.load_owned_entity`，
+    由该 helper 内部 `raise ApiError(error_code, ...)`；只认 `ApiError(...)` 首参的旧实现
+    对此完全失明。
+    """
+    src = """
+from app.api.deps import load_owned_entity
+
+ERR_LOCAL_997 = "LOCAL_997"
+
+
+def f(db, model, i, u):
+    return load_owned_entity(db, model, i, u, ERR_LOCAL_997, "探针")
+"""
+    used = _scan_source_codes(src, "<probe-indirect>")
+    assert "LOCAL_997" in used, "门禁未能覆盖经 helper 间接 raise 的码"
+
+
+def test_error_registry_capsule_codes_registered():
+    """D11-2 闭环：capsule 域 4 枚就地错误码已补登记，且 http 与 raise 点**逐条一致**。
+
+    capsules.py 为显式带 http（001=422 / 002=404 / 003=409 / 004=409），
+    登记错 http 会静默改变实际响应码，故逐条断言。
+    """
+    from app.core.errors import ERROR_REGISTRY
+
+    assert ERROR_REGISTRY["CAPSULE_001"].http == 422
+    assert ERROR_REGISTRY["CAPSULE_002"].http == 404
+    assert ERROR_REGISTRY["CAPSULE_003"].http == 409
+    assert ERROR_REGISTRY["CAPSULE_004"].http == 409

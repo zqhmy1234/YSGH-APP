@@ -24,6 +24,8 @@
   · client：① 扫 `USE_MOCK_*` 赋值并清点真值 ② 从 `client/pages.json` 取已注册页面集，
     再扫 `client/**` 的 `/pages/x/y` 字面量——**按是否落在注释里分流**：
     注释内＝历史标注（INFO），代码内＝**死路由（CRITICAL）**
+    ②b 反向对拍（D12-9）：`pages.json` 声明的页面必须在 `client/` 有对应物理文件
+    （缺文件＝CRITICAL；此前只做"代码→声明"单向，声明了却没落文件完全无覆盖）
     ③ 扫 `.ts` 后缀引用（5.24 迁移后应为 `.uts`）。
   · models：正则取 `class X(` 类名，统计其在 `backend/app/**`（排除 models 定义处）
     的出现次数；0 引用＝疑似未使用（**静态启发式，非结论**，ORM 字符串式引用需人工判）。
@@ -34,8 +36,8 @@
 
 退出码：
   0 = 全部无 CRITICAL 发现
-  1 = 存在 CRITICAL（契约双向漂移有差 / 代码内死路由 / 模型 0 引用 /
-      零调用能力导出 / 新增超阈文件 / 重复模式总数上升）
+  1 = 存在 CRITICAL（契约双向漂移有差 / 代码内死路由 / pages.json 声明缺物理文件 /
+      模型 0 引用 / 零调用能力导出 / 新增超阈文件 / 重复模式总数上升）
   2 = 执行环境错误（后端不可导入且非 --skip-openapi 等）
 
 基线（棘轮）：`scripts/audit_harness_baseline.json`——存量超阈文件与重复模式计数在此冻结，
@@ -190,7 +192,38 @@ def _registered_pages() -> set[str]:
     return {p.lstrip("/") for p in re.findall(r'"path"\s*:\s*"([^"]+)"', raw)}
 
 
+# 页面物理文件后缀：uni-app x 主用 `.uvue`（`.vue`/`.nvue` 兜底），避免后缀误判成缺文件。
+PAGE_FILE_SUFFIXES = (".uvue", ".vue", ".nvue")
+
+
+def _declared_pages_missing_files() -> list[str]:
+    """`pages.json` 声明的页面 → 缺物理文件的清单（轴 2**反向**一侧，D12-9）。
+
+    正向（② 已有）：代码引用 `/pages/x/y` 必须已在 `pages.json` 注册；
+    反向（本函数）：`pages.json` 声明 `/pages/x/y` 必须在 `client/` 存在 `x/y.uvue`。
+    缺任一向都会漏：只做正向时，「改路径忘建文件 / 删文件忘改声明」零覆盖，
+    运行期表现为白屏或 `page not found`。
+    """
+    missing: list[str] = []
+    for page in sorted(_registered_pages()):
+        base = CLIENT / page
+        if any(base.with_suffix(sfx).is_file() for sfx in PAGE_FILE_SUFFIXES):
+            continue
+        missing.append(page)
+    return missing
+
+
 def audit_client() -> None:
+    """轴 2：客户端漂移（mock 开关 / 页面路径双向对拍 / .ts 残留）。
+
+    **扫描面判定（D12-9）：不纳入仓根 `uvue_gen/`。** 该目录是**生成物**
+    （`*_gen.uvue` 画布原型 + `*_preview.html` + `*_selfreview.png` + `*_canvas.json`，
+    共 232 文件），非编译进 app 的源码（app 源码根 = `client/`）。纳入会同时引入
+    ① 假阳性（原型里的 `index/press/record` 等命名并非注册路由）与
+    ② 假阴性（重新生成即可"漂"过门禁）；且生成物随时可被设计窗重刷，作为漂移基线不稳定。
+    故判定**不宜纳入**本轴。若后续确需覆盖生成物，应另立"生成物清单 + 白名单阈值"轴，
+    而非并入客户端源码漂移轴。同理，`unpackage`/`node_modules`/`.hbuilderx` 已在 `_client_sources` 排除。
+    """
     print("== 轴 2 · 客户端漂移（mock 开关 / 页面路径 / .ts 残留）==")
     sources = _client_sources()
     _say("INFO", f"扫描 {len(sources)} 个客户端源文件")
@@ -249,6 +282,16 @@ def audit_client() -> None:
         _info(f"注释内引用未注册页面（历史标注，建议标注「原」字样，{len(comment_refs)} 条）：")
         for e in sorted(set(comment_refs)):
             _say("  ", e)
+
+    # ②b 反向对拍（D12-9）：pages.json 声明的页面必须有物理文件
+    #     与 ② 配对成双向——② 抓"代码引用未注册"，本步抓"声明了却没落文件"。
+    missing_files = _declared_pages_missing_files()
+    if missing_files:
+        _crit(f"pages.json 声明但无物理文件（{len(missing_files)} 条）→ 运行时白屏/找不到页面：")
+        for p in missing_files:
+            _say("  ", f"{p}（缺 {p}.uvue）")
+    else:
+        _info(f"pages.json {len(pages)} 条声明均有物理文件 ✓")
 
     # ③ .ts 残留引用
     ts_re = re.compile(r"from\s+['\"][^'\"]+\.ts['\"]|['\"][^'\"]+\.ts['\"]\s*(?:,|\)|\})")

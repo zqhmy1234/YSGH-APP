@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 04:40 · commit 361e617 · ts=1790196052
+- **错误**：review_agent --full 的 tests 段报 13 failed（841 passed / 4 skipped），一度被当作代码回归风险
+- **根因**：失败全为 qdrant_client.ResponseHandlingException: timed out 与搜索类未命中，根因是 Docker Desktop 未运行（yishu-qdrant/yishu-redis 容器休眠），非代码问题；全量耗时 246s（正常 77s）亦为旁证
+- **修复**：先 docker ps 判容器可用性；不可用则只做改动面定向验证并如实标注环境受阻，禁止以环境失败推断代码回归、也禁止以定向绿冒充全量绿
+- **相关文件**：progress.md
+- **教训**：全量测试红先隔离环境（docker ps/耗时常数），再判定是否代码回归
+
+---
+
 ### 2026-09-24 03:46 · commit aa484ce · ts=1790192791
 - **错误**：backend/tests/test_authz_gate.py 的 OWNERSHIP_LOADERS 登记名 load_owned_capsule 与实际符号 api/capsules.py:45 _load_owned_capsule 拼写不符，导致 capsules loader 为门禁哑条目、从未被识别；且白名单存在性自检不校验 OWNERSHIP_LOADERS，哑条目永不被发现
 - **根因**：门禁用字符串精确匹配符号名，登记名靠人工抄写；且自检只覆盖 CREATION_WHITELIST/EXEMPT 子集
