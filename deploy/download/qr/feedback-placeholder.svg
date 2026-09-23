@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 264 264" width="264" height="264" role="img" aria-label="反馈群二维码待放入">
+  <title>反馈群二维码（待替换）</title>
+  <!-- 同 download-placeholder.svg：同名覆盖即生效，HTML 无需改动 -->
+  <rect x="4" y="4" width="256" height="256" rx="18" fill="#FFFFFF" stroke="#E4D9C8" stroke-width="2" stroke-dasharray="10 8" />
+
+  <g fill="none" stroke="#B05A3A" stroke-width="7" stroke-linecap="square">
+    <path d="M40 68 V44 H64" />
+    <path d="M200 44 H224 V68" />
+    <path d="M224 196 V220 H200" />
+    <path d="M64 220 H40 V196" />
+  </g>
+
+  <text x="132" y="118" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="600" fill="#B05A3A">反馈群</text>
+  <text x="132" y="148" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" fill="#6B5B4B">二维码</text>
+  <text x="132" y="174" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" fill="#6B5B4B">待放入</text>
+</svg>

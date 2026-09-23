@@ -15,7 +15,8 @@
     - 插件 utssdk/app-android 下当前无插件级 AndroidManifest.xml；
     - .gitignore 已为此路径开豁免（commit 0c5bc3d）。
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 前台服务基础权限 + Android 14(API 34) 起 dataSync 类型必须显式声明 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -23,7 +24,26 @@
     <!-- Android 13+ 前台服务通知展示（未授予时 FGS 仍可运行，仅通知不展示） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <application>
+    <!--
+      明文流量放行（内测期口径 · 2026-09-21 补齐）
+
+      为什么必须有：内测期后端是 `http://<公网IP>:8010`（省备案等待）。targetSdkVersion=34
+      时 Android 9+ **默认禁止明文**，release 包会把所有 http 请求直接拦掉（CLEARTEXT 错误）。
+
+      为什么此前一直没发现：**标准调试基座自带放行**，所以 dev/真机联调全程正常；
+      而 release 云打包用的是另一套基座 manifest → 现象只在**出包后**出现，
+      且表现为"所有页面全空"，极易被误判为后端/网络问题。
+      （五处文档——`config.uts` 注释 / `部署就绪包` §2.7 / `RUNBOOK` §5 / 规格核算书 /
+       `决策台账` §1.13——都把它写成"已生效"，但代码里从未实现；本次补齐以对齐文档。）
+
+      tools:replace：基座 manifest 若也声明了该属性，合并时会冲突报错——显式声明替换语义。
+
+      ⚠️ 上架前必须回收：切 HTTPS 域名后**删除本属性**（决策台账 §1.13）。
+      回收检查由 `deploy/scripts/preflight_pack.ps1` 在出包前提醒（PROD_BASE_URL 为 https 时告警）。
+    -->
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic">
         <!--
           dataSync 前台服务（短命化：30min 最长存活 / 空闲 10min 自停；与录音 microphone 类型互斥）
           exported=false：仅本应用内 startService

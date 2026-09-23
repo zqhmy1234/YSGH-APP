@@ -25,14 +25,17 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 3. 把本文「当前接口」的**路径数**改为该输出值，并核对各域表格路径与 `j['paths']` 一致。
 4. 事件域/上传域等状态列变更时同步更新本文件。
 
-> 当前门禁值：**46 路径**（2026-08-27 实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）→ 46（2026-08-27，G1 新增 /auth/logout 退出登录：devices 表吊销 refresh，AUTH-006）。
+> 当前门禁值：**64 路径**（2026-09-21 实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）→ 46（2026-08-27，G1 新增 /auth/logout 退出登录：devices 表吊销 refresh，AUTH-006）→ **64（2026-09-21，内测下发卡 S2 新增 /auth/device 设备码登录；同一次重导把此前积压未重导的 17 条路径一并拉齐，见下方「漂移纠正」）**。
+>
+> ⚠️ **2026-09-21 漂移事故（已纠正，必读）**：本次重导发现提交库里的 `docs/openapi.json` 停留在 **46 路径**，而代码真实导出是 **63 路径**（+本次新增 1 = 64）——**17 条路径自 2026-08-27 起新增后从未重导**，即 Snapshot 与代码静默漂移了一个月。本次重导 diff：**新增 18 / 消失 0**（「只增不减」纪律本身未被破坏），但漂移本身已违反「路由变更必须重导」的流程规则。明细与补录见下文「补录」节。
 
-## 当前接口（46 路径）
+## 当前接口（64 路径）
 
 ### 认证（/api/v1/auth）
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
 | POST | /wechat | 微信登录（code→unionid→token 对）| ✅ 真实 DB + 真实 code2session（Wave4-L；WECHAT_APPID/SECRET 未配时 mock/501 语义）|
+| POST | /device | 设备码登录（内测期临时通道，2026-09-21）：按 device_id 自助建档 → 与 /wechat 同构 TokenPair | ✅ 真实 DB（`ALLOW_DEVICE_LOGIN` 默认 false → 501 AUTH_014；**上架前必须置回 false**，见决策台账 §1.13）|
 | POST | /phone | 手机号验证码登录 | ✅ 真实 DB |
 | POST | /sms/send | 发验证码（6 位/5min/60s 防刷）| ✅ 真实 DB（发送走 mock）|
 | POST | /refresh | refresh 轮换（吊销校验）| ✅ 真实 DB |
@@ -158,6 +161,40 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 | GET | /healthz | 健康检查（含 env + mock_external_ai）|
 | GET | /docs | Swagger UI |
 
+## 补录：2026-09-21 重导补齐的历史积压路径（17 条 / 23 个操作）
+
+> 这 17 条路径**早已在代码中实现**（部分已被客户端调用），只是**从未重导进 `docs/openapi.json`**（漂移明细见上）。
+> 下表由 `openapi.json` 直接生成（方法 + 路径 + 操作 summary），**非凭印象补写**。
+> 各域表格的**逐域合并归后续批次**——本次只做「把缺失显式登记」，避免在一次交付里大范围改写本文。
+> 归属速记：胶囊域 4（BA2 时间胶囊）· 内容详情/PATCH/DELETE 3（W2）· 收藏 4（W2-2）· 回收站 3（W2-1）·
+> 媒体票据与音频 2（Valet Key）· 统计 2 · 导出 1（US-42）· 用户信息 1（BB1）。
+
+| 方法 | 路径 | 操作摘要（来自 openapi.json） |
+|---|---|---|
+| GET | /api/v1/capsules | List Capsules |
+| POST | /api/v1/capsules | Seal Capsule |
+| POST | /api/v1/capsules/scan | Trigger Scan |
+| DELETE | /api/v1/capsules/{capsule_id} | Delete Capsule |
+| POST | /api/v1/capsules/{capsule_id}/open | Open Capsule |
+| GET | /api/v1/contents/{content_id} | Get Content Detail |
+| PATCH | /api/v1/contents/{content_id} | Update Content Remark |
+| DELETE | /api/v1/contents/{content_id} | Delete Content |
+| GET | /api/v1/contents/{content_id}/favorite | Favorite Get |
+| POST | /api/v1/contents/{content_id}/favorite | Favorite Add |
+| DELETE | /api/v1/contents/{content_id}/favorite | Favorite Remove |
+| GET | /api/v1/contents/{content_id}/waveform | Get Content Waveform |
+| GET | /api/v1/events/stats | Event Stats |
+| GET | /api/v1/export | Export User Data |
+| GET | /api/v1/favorites | Favorites List |
+| GET | /api/v1/media/audio/{content_id} | Get Content Audio |
+| GET | /api/v1/media/{key} | Get Media |
+| GET | /api/v1/messages/unread-count | Unread Count |
+| GET | /api/v1/stats/daily-summary | Daily Summary |
+| GET | /api/v1/trash | Trash List |
+| DELETE | /api/v1/trash | Trash Clear |
+| POST | /api/v1/trash/{content_id}/restore | Trash Restore |
+| GET | /api/v1/users/me | Users Me |
+
 ## 认证示例
 
 ```bash
@@ -189,3 +226,5 @@ curl -X POST http://localhost:8000/api/v1/contents \
 - 未实现端点保持 mock 响应（明确错误码），消费方联调不受阻
 - **接口语义变更（2026-08-20）**：classify/arbitrate 由同步改异步（job_id 轮询模式）；搜索保持同步（P95<3s 门禁）但后端有并发上限（信号量 4）
 - **事件域已全部真实 DB（2026-08-26）**：timeline/sync/merge/split/confirm/items/cover 均为真实读写，不再 mock
+- **重导是人工步骤 = 漂移事故的根因（2026-09-21）**：`docs/openapi.json` 的再生靠本文 §使用方式 的内联命令，**既无脚本、也无 CI 校验，更没有「路径数只增不减」的自动化断言**（已核实 `scripts/review_agent.py` 不含 openapi 检查）。因此「改了路由忘了重导」不会被任何门禁拦住——实测已积压 **17 条**路径整一个月无人发现。**建议（本卡未实施，属 harness 改动需主窗拍板）**：把「重导 openapi.json + 路径数 before/after 比对 + 消失即红」加进提交前门禁或 CI。
+- **设备码通道是临时口径（2026-09-21）**：`POST /api/v1/auth/device` 由 `ALLOW_DEVICE_LOGIN` 门控（默认 false → 501 AUTH_014）。该端点**上架前应从契约与部署中一并回收**（决策台账 §1.13），消费方（客户端）不得将其作为长期登录方式依赖。

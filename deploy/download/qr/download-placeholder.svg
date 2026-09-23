@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 264 264" width="264" height="264" role="img" aria-label="下载二维码待放入">
+  <title>下载二维码（待替换）</title>
+  <!--
+    二维码占位件（卡 E1）：C3 出包后**用同名文件覆盖**即可生效，无需改 HTML。
+    为什么用占位文件而不是让 <img> 404 + onerror 兜底：
+    本页要求「零 JavaScript」，而 onerror 本质是 JS 属性；放一个永远能加载的占位件，
+    既满足零 JS，又不会在二维码未就绪时出现浏览器裂图图标。
+  -->
+  <rect x="4" y="4" width="256" height="256" rx="18" fill="#FFFFFF" stroke="#E4D9C8" stroke-width="2" stroke-dasharray="10 8" />
+
+  <!-- 四角定位框（暗示二维码） -->
+  <g fill="none" stroke="#C4913C" stroke-width="7" stroke-linecap="square">
+    <path d="M40 68 V44 H64" />
+    <path d="M200 44 H224 V68" />
+    <path d="M224 196 V220 H200" />
+    <path d="M64 220 H40 V196" />
+  </g>
+
+  <text x="132" y="122" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="600" fill="#8A6A3A">二维码</text>
+  <text x="132" y="152" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" fill="#6B5B4B">待放入</text>
+</svg>

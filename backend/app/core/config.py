@@ -117,6 +117,13 @@ class Settings(BaseSettings):
     wechat_appid: str = ""
     wechat_secret: str = ""
 
+    # 内测期设备码登录通道（2026-09-21 峰宝拍板：20 人内测零 UI 改动，按设备自助建档）。
+    # ⚠️ fail-closed：**默认 False**——开启后 /api/v1/auth/device 是一条「任意 device_id
+    #    自助注册」的入口，若默认放开等于永久留后门；关闭时返回 501 AUTH_014，
+    #    语义与「微信未配置 → 501 AUTH_011」「短信未接入 → 501 AUTH_010」完全对齐。
+    # 生命周期：内测期置 true → **上架前必须置回 false 并回收**（docs/决策台账.md §1.13）。
+    allow_device_login: bool = False
+
     # 用户内容安全审核（B5b #8 · Wave4-L）：适配器开关
     #   tencent_ci = 当前顶替（文本=规则预检+护栏 / 图片=CI image_audit）
     #   aliyun     = 上架前启用（阿里云内容安全增强版，需 AccessKey + 开通「内容安全」服务）

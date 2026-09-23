@@ -1,0 +1,49 @@
+# ============================================================================
+# 忆述光华 · 后端镜像（S1 卡）
+#
+# 构建上下文 = **仓库根**（compose 里 context: ..），因此 COPY 路径以 backend/ 起头。
+# 手工构建：
+#   docker build -f deploy/Dockerfile.backend -t yishu-backend:local .
+#
+# 设计取舍：
+#  - **不把模型烘进镜像**：BGE-M3(2.2G)+SetFit(1.1–2.2G)+SenseVoice ONNX 以只读挂载进入
+#    （deploy/docker-compose.yml 的 backend.volumes），否则镜像数 GB 且每次改代码重推。
+#  - **不写多进程**：CMD 固定 --workers 1。模型是进程内单例（lru_cache）不跨进程共享，
+#    每多一个 worker 即多一份 BGE-M3 ~1.2G → 16G 机器 OOM（docs/服务器规格核算_20260921.md §2）。
+#  - imageio-ffmpeg 自带静态 ffmpeg 二进制（音频解码无需 apt 装 ffmpeg）。
+# ============================================================================
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app \
+    # 离线加载模型（与 app/services/embedding.py:20 一致）——镜像内不联网拉模型
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
+# curl 供容器内 healthcheck/排障用。Pillow 官方 wheel 自带 libjpeg/zlib；
+# 若启动时报缺失系统库，再补 libjpeg62-turbo zlib1g libwebp7（此处刻意不预装，避免无谓体积）。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 依赖层单独缓存：requirements.txt 不变则不必重装
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
+
+# 业务代码（含 alembic.ini 与 migrations/，便于容器内跑迁移）
+COPY backend/ ./
+
+# 非 root 运行
+RUN useradd -r -u 10001 -m appuser \
+    && mkdir -p /app/models \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8010
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]

@@ -7,6 +7,7 @@ from app.services.auth.auth import (
     _hash_refresh_token,
     _issue_tokens,
     _rotate_refresh_token,
+    device_login,
     logout,
     phone_login,
     refresh,
@@ -14,8 +15,10 @@ from app.services.auth.auth import (
     wechat_login,
 )
 from app.services.auth.providers import (
+    DEVICE_UNIONID_PREFIX,
     AliyunSmsSender,
     AuthIdentity,
+    DeviceLoginProvider,
     LoginProvider,
     MockSmsSender,
     PhoneLoginProvider,
@@ -30,6 +33,7 @@ __all__ = [
     # 服务层入口（api 协议层调用）
     "wechat_login",
     "phone_login",
+    "device_login",
     "send_sms",
     "refresh",
     "logout",
@@ -43,6 +47,8 @@ __all__ = [
     "WechatLoginProvider",
     "PhoneLoginProvider",
     "SmsMockLoginProvider",
+    "DeviceLoginProvider",
+    "DEVICE_UNIONID_PREFIX",
     "get_login_provider",
     # 短信发送端口
     "SmsSender",

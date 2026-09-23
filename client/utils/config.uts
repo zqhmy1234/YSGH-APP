@@ -10,7 +10,9 @@
  *    客户端守卫因此 resolve(null)，表现为"接口全空但不报错"。改端口根治。
  *    联调前必须确认：curl --noproxy '*' http://127.0.0.1:8010/healthz 返回真 JSON。
  */
-export const ENV: string = 'dev' // 'dev' | 'prod'
+// ⚠️ 2026-09-21（C2 卡）：内测包必须为 'prod'——dev 分支的地址是 10.0.2.2/127.0.0.1 隧道地址，
+// 正式包发出去后连不上任何真实服务器（表现为"所有页面全空且不报错"）。
+export const ENV: string = 'prod' // 'dev' | 'prod'
 
 /** Sentry DSN（可观测双通道·客户端侧；DSN 为公开标识，Sentry 官方允许客户端明文内嵌——非机密） */
 export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o4511955023888384.ingest.us.sentry.io/4511958507388928'
@@ -20,10 +22,51 @@ export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o451
  *  - 局域网 IP：直接 WiFi 访问（依赖同网段 + 本机防火墙放行 8010）
  *  - 留空：走模拟器地址 10.0.2.2
  */
-export const REAL_DEVICE_HOST: string = 'localhost'
+// C2：prod 构建下必须留空——非空会让 getBaseUrl() 走进 dev 分支（真机隧道地址）。
+export const REAL_DEVICE_HOST: string = ''
 
 const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
-const PROD_BASE_URL: string = 'https://api.yishuguanghua.example.com'
+
+/**
+ * 生产基址（内测期 = 明文 IP + 端口 8010 · 2026-09-21 C2 卡）
+ *
+ * ⚠️ **出包前必须替换成真实公网地址**（形如 `http://1.2.3.4:8010`）：
+ *   - 端口保持 **8010**（与 dev 分支一致，避免端口漂移；8010 的由来见本文件头注释）；
+ *   - 内测期走明文：Android 9+ 默认禁明文，需配合 `client/AndroidManifest.xml` 的
+ *     `usesCleartextTraffic`；**上架前必须切 HTTPS 并移除该开关**（决策台账 §1.13）；
+ *   - 占位未替换时 `getBaseUrl()` 会 `console.error` 喊出来——因为"接口全空且不报错"
+ *     是最费排障时间的失败形态（与本文件头 8010 抢占事故同源教训）。
+ */
+const PROD_BASE_URL: string = 'http://<公网IP>:8010'
+
+/**
+ * 生产基址的"看起来没配好"标记词（2026-09-21 泛化）
+ *
+ * 原实现只认 `公网IP` 一个词。但真正的事故形态不止一种：
+ *  - 忘记替换模板占位（`<公网IP>`）
+ *  - 填了示例域名（`example.com`）或就地回退到 dev 地址（`localhost`/`127.0.0.1`/`10.0.2.2`）
+ * 这些都指向同一个后果——**接口全空且不报错**（本项目最贵的一类故障，见文件头 8010 事故）。
+ * 故改为特征词匹配，命中即 console.error 喊出来。
+ *
+ * 反例（不应告警）：`http://43.138.x.x:8010`、`https://api.memlight.cn`。
+ */
+const PLACEHOLDER_MARKERS: Array<string> = ['公网IP', 'example.com', 'localhost', '127.0.0.1', '10.0.2.2']
+
+/** 生产基址是否"明显没配好"（含非 http(s) 协议头的情况，如漏写 scheme） */
+function isProdBaseUrlSuspicious(url: string): boolean {
+	if (!url.startsWith('http://') && !url.startsWith('https://')) {
+		return true
+	}
+	for (let i = 0; i < PLACEHOLDER_MARKERS.length; i++) {
+		if (url.indexOf(PLACEHOLDER_MARKERS[i]) >= 0) {
+			return true
+		}
+	}
+	return false
+}
+
+/** 占位符告警只打一次（避免每请求刷屏） */
+let _prodBaseUrlWarned = false
 
 /** 调试：启动后自动进入 AGG-016 一致性自检页（仅 dev；验证完置回 false） */
 export const AGG_CHECK_ON_DEVICE: boolean = false
@@ -35,6 +78,12 @@ export const DEV_PAGE_ENABLED: boolean = ENV === 'dev'
 
 export function getBaseUrl(): string {
 	if (ENV === 'prod') {
+		if (!_prodBaseUrlWarned && isProdBaseUrlSuspicious(PROD_BASE_URL)) {
+			_prodBaseUrlWarned = true
+			console.error('[yishu] PROD_BASE_URL 疑似未配置好（' + PROD_BASE_URL
+				+ '）——请替换为真实公网地址后再出包，否则所有接口都会失败。'
+				+ '换址操作只有这一处（另服务端一处见 deploy/ONE_SWAP.md）')
+		}
 		return PROD_BASE_URL
 	}
 	if (REAL_DEVICE_HOST == 'localhost') {

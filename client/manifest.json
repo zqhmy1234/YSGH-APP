@@ -21,7 +21,8 @@
           "<uses-permission android:name=\"android.permission.INTERNET\"/>",
           "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
           "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>",
-          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>"
+          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>"
         ]
       }
     }
@@ -37,12 +38,28 @@
         "<uses-permission android:name=\"android.permission.INTERNET\"/>",
         "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
         "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>",
-        "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>"
+        "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+        "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>"
       ],
       "modules": {},
-      "icons": {},
+      "icons": {
+        "hdpi": "static/app-icon/icon-72.png",
+        "xhdpi": "static/app-icon/icon-96.png",
+        "xxhdpi": "static/app-icon/icon-144.png",
+        "xxxhdpi": "static/app-icon/icon-192.png"
+      },
       "splashScreens": {
-        "default": {}
+        "default": {
+          "xhdpi": "static/app-icon/splash-720x1280.png",
+          "xxhdpi": "static/app-icon/splash-1080x1920.png",
+          "xxxhdpi": "static/app-icon/splash-2160x3840.png"
+        },
+        "background": "#F8F7F4",
+        "icon": {
+          "xhdpi": "static/app-icon/splash-icon-480.png",
+          "xxhdpi": "static/app-icon/splash-icon-720.png",
+          "xxxhdpi": "static/app-icon/splash-icon-960.png"
+        }
       }
     }
   },

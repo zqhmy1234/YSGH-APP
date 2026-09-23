@@ -23,6 +23,14 @@ export type RecStopCallback = (path: string, durationMs: number) => void
 export type RecErrorCallback = (msg: string) => void
 export type RecInterruptedCallback = (autoPaused: boolean) => void
 
+/**
+ * 权限申请结果回调（D-25 引入 · 2026-09-21）。
+ * 契约：**恰好被调用一次** —— 五条路径全覆盖（已授予 / 授予 / 拒绝 / 永久拒绝 / 抛异常）。
+ * 与相册插件 `yishu-photo-watch` 的同名类型同契约（D-24 范式的录音侧复用；两插件不互相依赖，
+ * 故各自声明而非跨插件 import——`package.json` 的 `uni_modules.dependencies` 为空）。
+ */
+export type PermissionResultCallback = (granted: boolean, doNotAskAgain: boolean) => void
+
 /** 录音控制器（实现位于 app-android，工厂函数创建） */
 export interface RecorderController {
 	/** 开始录音（wav 16k 单声道 ≤30min）；onInterrupted=中断自动暂停回调（J-7）；
@@ -48,6 +56,28 @@ export interface RecorderController {
 	recordedMs(): number
 	/** 最近一次落盘文件路径 */
 	lastFile(): string
+
+	// ---------- 录音权限（D-25 修复 · 2026-09-21） ----------
+
+	/**
+	 * 录音权限（RECORD_AUDIO）是否已授予 —— 同步查询，**不弹窗**。
+	 *
+	 * 为什么放在插件里：Android 6+（本工程 minSdk=24）录音属危险权限，仅靠 manifest 声明
+	 * 不足以开麦，必须运行时申请并获授权。而全项目**零运行时权限申请范式**（D-25 登记的
+	 * 根因），录音因此必失败。相册插件已确立范式（`UTSAndroid.requestSystemPermission`），
+	 * 本插件照搬，保持"能力在哪一层、权限申请就在哪一层"。
+	 */
+	isRecordPermissionGranted(): boolean
+	/**
+	 * 请求录音权限（弹系统框）。
+	 *
+	 * @param callback (granted: **复查后**的真实授予态, doNotAskAgain: 用户是否勾选"不再询问")
+	 *   契约：恰好被调用一次。**不要**依赖系统回调自述值——"部分授予"时 success/fail 可能都触发，
+	 *   且回调后用户可能立刻在后台撤销，故终态统一以 `checkSelfPermission` 复查值为准。
+	 */
+	requestRecordPermission(callback: PermissionResultCallback): void
+	/** 当前设备应请求的录音权限名（诊断用：区分「用户拒绝」与「本机无此权限」） */
+	getRecordPermissionName(): string
 }
 
 /** 创建录音控制器实例（跨端工厂，平台目录实现） */

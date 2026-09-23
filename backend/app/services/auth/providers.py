@@ -5,6 +5,7 @@
     · WechatLoginProvider   —— 微信渠道（code → code2session → unionid；配置/生产/mock 三态）
     · PhoneLoginProvider    —— 真实手机号渠道（短信验证码校验：限流 + OTP + 原子消费）
     · SmsMockLoginProvider  —— sms-mock 渠道（dev/test 联调：验证码经 MockSmsSender 直返）
+    · DeviceLoginProvider   —— 设备码渠道（内测期临时通道；allow_device_login 关 → 501 AUTH_014）
   - SmsSender 端口：短信发送抽象
     · MockSmsSender    —— mock 直返验证码（联调用，零费用）
     · AliyunSmsSender  —— 真实通道占位（TODO T1 接入前 501，与 P0-1 生产门控一致）
@@ -34,6 +35,7 @@ from app.core.errors import (
     ERR_AUTH_011,
     ERR_AUTH_012,
     ERR_AUTH_013,
+    ERR_AUTH_014,
     ApiError,
 )
 from app.db.models import SmsCode
@@ -329,12 +331,58 @@ class WechatLoginProvider(LoginProvider):
         return AuthIdentity(unionid=unionid, device_id=req.device_id, platform="android")
 
 
+# ---------------- 设备码渠道（内测期临时通道 · 2026-09-21） ----------------
+
+# 设备码渠道的伪身份前缀：unionid = f"{DEVICE_UNIONID_PREFIX}{device_id}"。
+# 为什么可直接借用 unionid 列承载身份：User.unionid 是 String(unique) 且**无格式/长度约束**
+# （db/models/auth.py:18），且既有 mock 微信渠道早已产出 `mock-unionid-{code}` 这类任意前缀伪身份
+# （见下 WechatLoginProvider 的 mock 分支）——语义同构，不引入第二套用户生命周期：
+# 建档 / 并发唯一约束兜底 / 签发 / refresh 轮换 / 吊销 全部复用 _finish_login 收口。
+DEVICE_UNIONID_PREFIX = "device:"
+
+
+class DeviceLoginProvider(LoginProvider):
+    """设备码渠道：客户端按设备唯一标识自助建档（**内测期临时通道**）。
+
+    ⚠️ fail-closed 门控（`settings.allow_device_login`，**默认 False**）：
+        关闭时一律 501 AUTH_014，且**先门控后校验**——未启用时不泄露通道的参数校验差异。
+        语义对齐既有两条「未接入即拒绝」：微信未配置 → 501 AUTH_011（本文件 WechatLoginProvider）、
+        短信未接入 → 501 AUTH_010。
+    设计口径（2026-09-21 峰宝拍板）：20 人内测零 UI 改动，首次打开按 device_id 自动建档。
+    代价与约束：**同一 device_id 即同一账号**——「设备标识的稳定性」由客户端保证
+    （用 Android ID，而非框架 Storage 里生成的 deviceId；清缓存即换号会导致用户以为数据丢失），
+    见 docs/决策台账.md §1.13 与任务卡 C2。
+    """
+
+    name = "device"
+
+    def resolve_identity(self, db: Session, req, client_ip: str | None = None) -> AuthIdentity:
+        if not settings.allow_device_login:
+            raise ApiError(ERR_AUTH_014, "设备登录未开启（内测通道）", http=501)
+
+        device_id = (req.device_id or "").strip()
+        # 与 WechatLoginProvider 的空 code 同款收口（400 AUTH_001）。
+        # 不靠 pydantic 单独兜底——`min_length=1` 拦不住全空白串（"   "）。
+        if not device_id:
+            raise ApiError(ERR_AUTH_001, "device_id 不能为空", http=400)
+
+        return AuthIdentity(
+            unionid=f"{DEVICE_UNIONID_PREFIX}{device_id}",
+            device_id=device_id,
+            platform=req.platform or "android",
+        )
+
+
 def get_login_provider(channel: str) -> LoginProvider:
     """按配置选择登录渠道 provider（F8/R1#8 分发；真实消费方见 auth.auth 服务层）
+
+    ⚠️ 本函数是**全仓唯一的渠道分发点**（tests 中零引用）——新增渠道必须在此登记分支，
+    消费方一律经本函数取 provider，不得直接实例化具体 Provider 类。
 
     - "wechat"    → 微信渠道（WechatLoginProvider）
     - "phone"     → 手机号渠道；mock_external_ai=true 时短信通道退化为 sms-mock
     - "sms-mock"  → 显式指定 mock 渠道（dev/test 联调）
+    - "device"    → 设备码渠道（内测临时通道；allow_device_login=False 时 resolve 抛 501 AUTH_014）
     """
     if channel == "wechat":
         return WechatLoginProvider()
@@ -342,4 +390,6 @@ def get_login_provider(channel: str) -> LoginProvider:
         return SmsMockLoginProvider() if settings.mock_external_ai else PhoneLoginProvider()
     if channel == "sms-mock":
         return SmsMockLoginProvider()
+    if channel == "device":
+        return DeviceLoginProvider()
     raise ValueError(f"未知登录渠道: {channel!r}")

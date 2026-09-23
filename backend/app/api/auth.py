@@ -10,6 +10,9 @@
 微信 code2session（Wave4-L）：配置 WECHAT_APPID/WECHAT_SECRET 后走真实
 jscode2session（优先 unionid、回退 openid）；未配置时 dev/test 走 mock、production
 保持 501（不静默降级 mock 登录）。
+
+设备码登录（内测期临时通道 · 2026-09-21）：`ALLOW_DEVICE_LOGIN` 默认 false → 501 AUTH_014；
+内测期置 true 供 20 台设备自助建档，**上架前必须置回 false**（docs/决策台账.md §1.13）。
 """
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
@@ -17,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.api import make_router
 from app.db.session import get_db
 from app.schemas.auth import (
+    DeviceLoginRequest,
     LogoutOut,
     LogoutRequest,
     PhoneLoginRequest,
@@ -40,6 +44,17 @@ router = make_router(prefix="/api/v1/auth", tags=["auth"])
 def wechat_login(req: WechatLoginRequest, db: Session = Depends(get_db)):
     """微信登录：code 换 unionid → 建立/获取用户 → 签发 token 对（真实 DB）"""
     return ApiResponse(data=auth_service.wechat_login(db=db, req=req))
+
+
+@router.post("/device", response_model=ApiResponse[TokenPair])
+def device_login(req: DeviceLoginRequest, db: Session = Depends(get_db)):
+    """设备码登录（内测期临时通道，2026-09-21）：按 device_id 自助建档 → 签发 token 对。
+
+    fail-closed：`ALLOW_DEVICE_LOGIN` 未开启（默认）→ 501 AUTH_014，不静默降级为 mock/游客。
+    响应结构与 /wechat 完全同构（客户端零分支解析，refresh/吊销链路直接复用）。
+    限流沿用 auth 域既有 IP/用户双维中间件，不新增阈值。
+    """
+    return ApiResponse(data=auth_service.device_login(db=db, req=req))
 
 
 @router.post("/phone", response_model=ApiResponse[TokenPair])

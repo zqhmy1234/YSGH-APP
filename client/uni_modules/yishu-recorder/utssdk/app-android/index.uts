@@ -19,6 +19,7 @@ import {
 	RecStopCallback,
 	RecErrorCallback,
 	RecInterruptedCallback,
+	PermissionResultCallback,
 	REC_STATE_IDLE,
 	REC_STATE_RECORDING,
 	REC_STATE_INTERRUPTED,
@@ -32,6 +33,7 @@ export {
 	RecStopCallback,
 	RecErrorCallback,
 	RecInterruptedCallback,
+	PermissionResultCallback,
 	REC_STATE_IDLE,
 	REC_STATE_RECORDING,
 	REC_STATE_INTERRUPTED,
@@ -40,6 +42,81 @@ export {
 
 /** 录音上限（30min；后端 duration 到点自动 onStop 分段保存） */
 const MAX_RECORD_MS: number = 1800000
+
+// ---------- 录音权限（D-25 修复 · 2026-09-21） ----------
+
+/**
+ * 录音权限名。RECORD_AUDIO 自 API 1 起存在，**无 SDK 分支**（对比相册读权限在 API 33 前后
+ * 是两个不同权限名 → 需 `sdkInt()` 分支）。保留函数形态而非裸常量：与相册插件的
+ * `getReadPermissionName()` 同构，宿主打点时可一眼对比"应请求的权限名"与真实 SDK。
+ */
+const RECORD_PERMISSION = 'android.permission.RECORD_AUDIO'
+
+let _appContext: android.content.Context | null = null
+
+/** 应用 Context（缓存）——习语与 yishu-photo-watch 一致（UTSAndroid.getAppContext） */
+function appContext(): android.content.Context {
+	const cached = _appContext
+	if (cached != null) {
+		return cached
+	}
+	const created = UTSAndroid.getAppContext()
+	_appContext = created
+	return created!
+}
+
+/** 真实设备 SDK 等级（运行时读取；失败返回 0——仅用于打点，不作权限分支依据） */
+function sdkInt(): Int {
+	try {
+		return android.os.Build.VERSION.SDK_INT
+	} catch (e: Throwable) {
+		return 0
+	}
+}
+
+/** Array<string> → "a,b"（UTS 的 Array 无 join 先例，手写循环最稳；与相册插件同款） */
+function listText(arr: Array<string>): string {
+	let s = ''
+	for (let i = 0; i < arr.length; i++) {
+		if (i > 0) {
+			s += ','
+		}
+		s += arr[i]
+	}
+	return s == '' ? '(空)' : s
+}
+
+/**
+ * 单次权限申请的终态守卫 —— 保证宿主回调**恰好被调用一次**，且上报**复查后的真实**授予态。
+ *
+ * 与 `yishu-photo-watch` 的 `PermissionRequest` 同款（D-24 范式的录音侧复用）。两个真实约束：
+ *  1. 官方文档明确：用户"部分授予"时 `success` 与 `fail` **都会被调用**——无守卫会让宿主重复启动录音；
+ *  2. 回调参数是**系统自述**，未必等于最终态（用户授权后可能立刻在后台撤销）→ 一律复查。
+ * 拒绝路径也**必须打点**（违反即 D-24 同类缺陷：静默 = 无从定位）。
+ */
+class RecordPermissionRequest {
+	callback: PermissionResultCallback
+	perm: string
+	settled: boolean = false
+
+	constructor(callback: PermissionResultCallback, perm: string) {
+		this.callback = callback
+		this.perm = perm
+	}
+
+	/** 落地终态；重复到达一律打点忽略（不静默丢弃） */
+	settle(granted: boolean, doNotAskAgain: boolean, why: string): void {
+		if (this.settled) {
+			console.log('[yishu] 录音权限回调重复到达，已忽略 perm=' + this.perm + ' 来源=' + why)
+			return
+		}
+		this.settled = true
+		const real = appContext().checkSelfPermission(this.perm) == 0
+		console.log('[yishu] 录音权限申请终态 perm=' + this.perm + ' sdk=' + sdkInt()
+			+ ' 回调值=' + granted + ' 复查值=' + real + ' doNotAskAgain=' + doNotAskAgain + ' 来源=' + why)
+		this.callback(real, doNotAskAgain)
+	}
+}
 
 /** 录音管理器单例 */
 let _mgr: RecorderManager | null = null
@@ -184,6 +261,61 @@ class RecorderImpl implements RecorderController {
 
 	lastFile(): string {
 		return this._tempFile
+	}
+
+	// ---------- 录音权限（D-25 修复 · 2026-09-21） ----------
+
+	isRecordPermissionGranted(): boolean {
+		const perm = RECORD_PERMISSION
+		const granted = appContext().checkSelfPermission(perm) == 0
+		// 不静默：每次守卫判定都打点（含真实 SDK 与权限名）。
+		// D-23/D-24 事故正是因守卫处零日志，真机表现成"点了没反应"而无法定位。
+		console.log('[yishu] 录音权限守卫 perm=' + perm + ' sdk=' + sdkInt() + ' granted=' + granted)
+		return granted
+	}
+
+	getRecordPermissionName(): string {
+		return RECORD_PERMISSION
+	}
+
+	requestRecordPermission(callback: PermissionResultCallback): void {
+		const perm = RECORD_PERMISSION
+		const req = new RecordPermissionRequest(callback, perm)
+
+		// 错误边界①：Activity 未就绪（App 不在前台 / 启动早期）—— 显式声明原因，不静默返回
+		const activity = UTSAndroid.getUniActivity()
+		if (activity == null) {
+			req.settle(false, false, 'uniActivity 为 null（App 不在前台或 Activity 未就绪），未弹窗')
+			return
+		}
+
+		const perms: Array<string> = [perm]
+
+		// 错误边界②：已授予 —— 不弹窗，直接给终态
+		if (UTSAndroid.checkSystemPermissionGranted(activity, perms)) {
+			req.settle(true, false, '已授予，无需弹窗')
+			return
+		}
+
+		console.log('[yishu] 拉起系统权限框（录音）perm=' + perm + ' sdk=' + sdkInt())
+		try {
+			// 官方签名（UTSAndroid.d.ts:144）：(activity, permissions, success, fail, shallUnCheck)
+			// 第 5 参显式传 false（文档默认值），避免依赖可选参数推断。
+			// ⚠️ 结果回传由**框架代管**：框架内部完成 requestPermissions + onRequestPermissionsResult 匹配，
+			//    再分发到下面两个回调。故本插件**不需要**请求码常量、不需要覆写 Activity 回调
+			//    （相册插件里那个 REQ_READ_MEDIA=2001 是全项目零使用的死常量——不复刻该冗余）。
+			UTSAndroid.requestSystemPermission(activity, perms,
+				(allRight: boolean, grantedList: Array<string>): void => {
+					req.settle(allRight, false, 'success(allRight=' + allRight + ' grantedList=' + listText(grantedList) + ')')
+				},
+				(doNotAskAgain: boolean, grantedList: Array<string>): void => {
+					req.settle(false, doNotAskAgain, 'fail(doNotAskAgain=' + doNotAskAgain + ' grantedList=' + listText(grantedList) + ')')
+				},
+				false)
+		} catch (e: Throwable) {
+			// 错误边界③：系统拒绝拉起（隐私协议未同意 / 组件不可用等）—— 显式声明原因
+			req.settle(false, false, 'requestSystemPermission 抛异常: ' + (e != null && e.message != null ? e.message : 'unknown'))
+		}
 	}
 
 	_reset(): void {

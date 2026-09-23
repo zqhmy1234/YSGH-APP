@@ -340,3 +340,13 @@
 - **环境修复两件（工作区外，已备份可逆）**：`~/.gradle` 发行版 `gradle-base-ide-plugins-8.13.jar` 原为 **0 字节**（本地 maven 快验跑不起来的真因），从官方 zip 抽出补齐（0→15,200 B）｜`~/.gradle/gradle.properties` 代理指向 **127.0.0.1:7890 死端口**（Gradle 把它报成 `Plugin com.android.application was not found`，症状与真因不同层），改直连后本地「三方依赖更新完成 + 编译成功」
 - **教训登记三条**（`docs/lessons.md`，commit 698881d）：手工 classes-jar 探针假通过｜uni_modules 禁用 libs jar 堆叠（重复类 + 缺 manifest 合并）｜gradle 报「插件找不到」先测代理端口
 - **遗留（未闭环）**：**B4 关单 ❌** —— D-18/D-19 待真机行为验（照片拍完杀 App 后台同步是否续跑、`isWorkManagerAvailable()` 真值）。⚠️ 工单 B4「销 `docs/远期待办总账.md` 条目」前提不成立，D-18/D-19 实际登记在 tracker 19 §4 + `docs/4b_R2_出包卡点与D19根因诊断_20260901.md` + lessons 第 29 条，关单时改销这三处。台账权威 = `_diff_ledger.md` §PP/§PP-处置/§PP-终验。
+
+## 2026-09-21 · 内测下发准备（阶段0-3 + E1 + C3 可完成部分）
+
+- **结论：只差换址**。换址仅 2 处（客户端 config.uts 的 PROD_BASE_URL、服务器 deploy/.env 的 BASE_URL），清单见 deploy/ONE_SWAP.md；换完跑 deploy/scripts/preflight_pack.ps1，全绿（退出码 0）才允许打包。
+- **P0 补齐（暗物质族）**：usesCleartextTraffic 在五处文档被写成"已生效"，代码里从未实现 → 已补（client/AndroidManifest.xml，含 tools:replace）。调试基座自带放行，故只在出包后暴露（现象=所有页面全空）。
+- **出包前置门可执行化**：三条手敲 grep → deploy/scripts/preflight_pack.ps1（7 段检查，退出码即判据）。实测 1 FAIL，且唯一 FAIL 就是地址占位。
+- C3 可完成部分落成：图标 4 档 + 启动图 3 档 + Android12 Logo 3 档（10 PNG / 441KB；schema 取证过程见 docs/图标与签名证书_20260921.md）；自有签名证书已生成（仓库外存放），证书 MD5 48:D7:6D:BA:80:AC:66:CB:5E:CD:2B:8C:BE:99:25:FC。
+- 顺带修复：security.uvue 微信行「已绑定」失实 → 「未绑定」；auth.uts 畸形 200 响应由 null 强转崩溃改为优雅失败；config.uts 占位守卫泛化（特征词）。
+- 更正：logout() 并非零调用，settings.uvue → security.uvue 链路早已存在。
+- ⚠️ **本批全部改动仍在工作树未提交**（含 S1/S2/S3/C1/C2/C3/E1，30+ 项）。

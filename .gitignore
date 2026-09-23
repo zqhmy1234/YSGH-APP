@@ -156,3 +156,24 @@ backend/routes.txt
 
 # 审查/部署证据留本地（36e0b64 铁律延伸）
 review/out/
+
+# --- 部署工程运行时产物（S1 卡 · 2026-09-21）---
+# 数据卷 / 日志 / 真实环境文件：绝不入库
+deploy/data/
+deploy/logs/
+deploy/backup/
+deploy/.env
+# ⚠️ 与本文件上方 `.env.*` 通配的冲突（同 client/AndroidManifest.xml 被吞的 D-19 伴生雷）：
+#    `.env.*` 会连带吞掉**模板真源** deploy/.env.production.template（S3 卡交付物），
+#    导致「文件写了、git 里却不存在」= diff 审查永久盲区。故在本文件末尾白名单豁免（后匹配者胜）。
+# 验证：git check-ignore -v deploy/.env.production.template  → 应无输出（= 可入库）
+#       git check-ignore -v deploy/.env                     → 应输出命中（= 被忽略，正确）
+!deploy/.env.production.template
+!deploy/.env.template
+
+# --- 内测自有签名证书（C3 卡 · 2026-09-21）---
+# 真源存放在仓库之外：%USERPROFILE%\.yishu-signing\（keystore + 密码说明 + 导出证书）
+# 此处为防御性忽略：任何被误放进仓库的 keystore/私钥一律不得入库。
+# 注：`*.jks` 已由本文件第 14 行（密钥与隐私块）覆盖，此处补 keystore 后缀变体。
+*.keystore
+*.keystore.bak

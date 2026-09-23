@@ -9,6 +9,42 @@
 
 ---
 
+### 2026-09-23 17:57 · commit 65f40a3 · ts=1790157460
+- **错误**：用户要求 docs 全清，但实测该批文件中 3 件承载未关闭事项（19_wave3_真机补验跟踪表承载 D-18/D-19「已修待复验」、_B5a_B5d修正后待办承载 J-1/J-2/J-3 未闭环、P2诊断_O1O2 是 O-1 未定性的取证包），整批删除会制造暗物质
+- **根因**：「引用它们的都是已关闭项」这一前提未经验证；实测该批文件里的未关闭标记多为假阳性（卡12 命中的是界面文案「2 条记忆待补传」、15/22 是通用规则文本、00_总纲 只是配套清单），但确有 3 件是活登记簿
+- **修复**：删除前做在办事项承载性检查：grep 未关闭标记 + 逐件判性质 + 确认是否唯一来源；硬保留 3 件活件；活文档引用同步清扫，progress/_diff_ledger/lessons 等历史日志按历史事实保留不改
+- **相关文件**：docs/决策台账.md
+- **教训**：清理文档前必做在办事项承载性检查；承载未关闭项的活件不得随批删除
+
+---
+
+### 2026-09-23 17:57 · commit 65f40a3 · ts=1790157460
+- **错误**：批量删除时 git rm 的一个路径写错（docs/DIAGNOSIS_20260830.md 实际在仓库根），导致整批 31 个文件删除全部原子回滚，需重跑
+- **根因**：git rm 是原子的（任一 pathspec 不匹配即整批失败），而路径清单来自 grep 的截断输出，未按目录归属逐一核对
+- **修复**：批量删除前用 Test-Path 过滤出实际存在的路径再传给 git rm
+- **相关文件**：docs/
+- **教训**：批量 git rm 前先 Test-Path 过滤；git rm 原子失败会整批回滚
+
+---
+
+### 2026-09-23 17:57 · commit 65f40a3 · ts=1790157459
+- **错误**：官方文档拒绝给出 manifest 图标与启动图的 JSON 写法，且第一份文档的层级是错的（splashScreens.android.default），照抄会配出无效键
+- **根因**：官方明文建议在可视化界面操作，而可视化界面的产物格式只存在于工具自带的 schema 与插件源码里，不在文档正文
+- **修复**：从 HBuilderX 自带权威源取证：plugins/hbuilderx-language-services 下的 manifestUniAppx.json（键层级）、hx-language-pack-zh-cn/main.i18n.json（图标保存路径提示）、uniapp-extension/out/index.js（hookManifestJson 迁移逻辑）；结论是 icons 密度键为直接子键、splashScreens 子键为 default/background/icon/brand
+- **相关文件**：client/manifest.json
+- **教训**：官方文档拒绝给 schema 时，去工具自带的 schema、语言包、插件源码取证，别凭记忆拼键名
+
+---
+
+### 2026-09-23 17:57 · commit 65f40a3 · ts=1790157459
+- **错误**：文档声称已生效的配置项在代码里从未实现：usesCleartextTraffic 在五处文档（config.uts 注释/部署就绪包 §2.7/RUNBOOK §5/规格核算书/决策台账 §1.13）被写成已生效，实际 client/AndroidManifest.xml 中不存在
+- **根因**：只核文档不核代码；且标准调试基座自带明文放行，使该缺陷只在云打包出包后暴露，现象为所有页面全空且不报错
+- **修复**：client/AndroidManifest.xml 补 android:usesCleartextTraffic=true + tools:replace；出包前置门 deploy/scripts/preflight_pack.ps1 增加明文放行与 http 口径自洽检查
+- **相关文件**：client/AndroidManifest.xml
+- **教训**：凡「配置项已就绪/已生效」类宣称，唯一证据是 grep 代码，文档口径不可作为实现证据
+
+---
+
 ### 2026-09-13 23:02 · commit f1a2843 · ts=1789311758
 - **错误**：修复阻断项后登记教训，但教训文本若含 password 赋值字面量会二次触发 pre-commit 密钥门禁；且每次失败提交刷新 last-failure.json 时间戳，导致早于最后一次失败的教训登记仍被阻断
 - **根因**：密钥扫描正则会匹配教训文本里的 password 赋值（password 后接引号包裹的值）；lessons 强制登记把 last-failure 时间戳作为放行条件，失败提交会持续前移该时间戳

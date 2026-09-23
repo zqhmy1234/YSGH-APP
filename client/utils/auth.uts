@@ -20,16 +20,19 @@
  * 调用方用双参 then 即可。
  */
 import { getBaseUrl } from './config'
+import { getDeviceId, getDeviceIdSource } from './device_id'
+import { PATH_AUTH_DEVICE } from './contract'
 
 const KEY_ACCESS = 'yishu.auth.access_token'
 const KEY_REFRESH = 'yishu.auth.refresh_token'
 
-/**
- * 设备标识单例（P1-A 对齐 · 2026-08-27 C1 收口 R3 O3）：全客户端唯一导出源，
- * event_sync/sync_client 统一 import 此常量，消除 device_id 分裂
- * （'yishu-android-dev' vs 'nova11' 被当成两台设备的历史事故）。
- */
-export const DEVICE_ID: string = 'yishu-android-dev'
+// ⚠️ 2026-09-21（C2 卡）：原 `export const DEVICE_ID = 'yishu-android-dev'` **已删除**。
+//   理由：内测登录 = 设备码通道（后端 `unionid = "device:<device_id>"`，见卡 S2 冻结件），
+//   账号身份直接由它承载——硬编码常量会让 20 台设备撞进**同一个账号**（数据混在一起），
+//   而清缓存/换机时又完全无法区分。改为取真实设备标识。
+//   单源纪律保留、只是换了家：唯一入口 = `utils/device_id.uts` 的 `getDeviceId()`
+//   （原消费方 `sync_client` / `event_sync` 已同步改 import，避免重演"双源分裂"事故）。
+//   设备标识的稳定性口径（为什么不能直接用框架 deviceId）见 device_id.uts 文件头。
 
 // 降级实现（TD-P3 M5 登记）：uni storage 明文；恢复 EncryptedSharedPreferences 见文件头说明。
 // 统一入口封装成 *Secure，恢复时只改这三个函数即可。
@@ -51,13 +54,29 @@ export class AuthError extends Error {
 	}
 }
 
-/** 微信 mock 登录（dev 环境 code=dev-client，后端 MOCK 模式签发）
- * W7-401 加固：看门狗 10s——蒸汽模式下 uni.request 桥接可能吞回调（api.uts 同源教训），
+/** 设备码登录（内测通道 · 2026-09-21 C2 卡）
+ *
+ * 链路：`getDeviceId()` → POST /api/v1/auth/device {device_id, platform} → TokenPair
+ * （响应结构与 /auth/wechat 完全同构，refresh/登出链路零改动）。
+ *
+ * ⚠️ 设备标识为空时**诚实失败并终止**：绝不用随机 id 顶替——那会静默建出一个全新空账号，
+ * 用户看到的是"数据全没了"（本仓历史事故族）。
+ * ⚠️ 不使用 `utils/api.uts` 的 `showErrorToast`：api.uts 已 import 本文件（getToken/refreshToken），
+ * 反向 import 会形成循环依赖，故此处直接用 uni.showToast。
+ * W7-401 加固保留：看门狗 10s——蒸汽模式下 uni.request 桥接可能吞回调（api.uts 同源教训），
  * 超时按失败处理，保证 ensureLogin 有限时内落定。
  */
-export function wechatLogin(): Promise<boolean> {
-	console.log('[dbg-auth] wechatLogin fire POST /api/v1/auth/wechat')
+export function deviceLogin(): Promise<boolean> {
+	console.log('[dbg-auth] deviceLogin fire POST /api/v1/auth/device')
 	return new Promise<boolean>((resolve) => {
+		const deviceId = getDeviceId()
+		if (deviceId == '') {
+			// 诚实失败（不静默）：宁可提示用户重试，也不造一个假身份出来
+			console.log('[dbg-auth] deviceLogin 中止：设备标识为空（source=' + getDeviceIdSource() + '）')
+			uni.showToast({ title: '无法识别本机设备，请重启 App 后重试', icon: 'none' })
+			resolve(false)
+			return
+		}
 		let settled = false
 		const finish = (ok: boolean, why: string): void => {
 			if (settled) {
@@ -65,27 +84,37 @@ export function wechatLogin(): Promise<boolean> {
 			}
 			settled = true
 			clearTimeout(timer)
-			console.log('[dbg-auth] wechatLogin ' + why)
+			console.log('[dbg-auth] deviceLogin ' + why)
 			resolve(ok)
 		}
 		const timer = setTimeout(() => {
 			finish(false, 'watchdog timeout')
 		}, 10000)
 		uni.request({
-			url: getBaseUrl() + '/api/v1/auth/wechat',
+			url: getBaseUrl() + PATH_AUTH_DEVICE,
 			method: 'POST',
 			data: {
-				code: 'dev-client',
-				device_id: DEVICE_ID
+				device_id: deviceId,
+				platform: 'android'
 			},
 			success: (res) => {
 				if (res.statusCode === 200) {
 					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
 					if (data != null) {
-						setSecure(KEY_ACCESS, data.getString('access_token') as string)
-						setSecure(KEY_REFRESH, data.getString('refresh_token') as string)
-						finish(true, 'success status=200')
+						// 2026-09-21：原为 `getString('access_token') as string` 直接强转——
+						// 200 但 body 缺字段时 null 强转会**运行时崩**（不是优雅失败）。
+						// 与 `?? ''` 空值检查（项目既有写法）后判空：宁可诚实报失败，也不写空 token 进 storage
+						// （空 token 会让 ensureLogin 下一轮误判为"已登录"，变成更隐蔽的失败）。
+						const at = data.getString('access_token') ?? ''
+						const rt = data.getString('refresh_token') ?? ''
+						if (at != '' && rt != '') {
+							setSecure(KEY_ACCESS, at)
+							setSecure(KEY_REFRESH, rt)
+							finish(true, 'success status=200')
+							return
+						}
+						finish(false, 'malformed 200 body: token 字段缺失或为空')
 						return
 					}
 				}
@@ -126,7 +155,7 @@ export function ensureLogin(): Promise<boolean> {
 	console.log('[dbg-auth] ensureLogin: no token, inflight=' + (_loginInflight != null))
 	let p = _loginInflight
 	if (p == null) {
-		p = wechatLogin()
+		p = deviceLogin()
 		_loginInflight = p
 		p.then((ok: boolean) => {
 			_loginInflight = null
@@ -164,18 +193,18 @@ function doRefresh(): Promise<boolean> {
 		console.log('[dbg-auth] doRefresh, has_refresh=' + (rt != ''))
 		if (rt == '') {
 			// 无 refresh_token → 重新登录
-			wechatLogin().then((ok: boolean) => {
+			deviceLogin().then((ok: boolean) => {
 				resolve(ok)
 			})
 			return
 		}
 		// W7-401 自愈：refresh 失败（已轮换作废/过期/吊销）≠ 终局——
-		// 清 token 后降级重新登录（code=dev-client 映射同一种子用户，数据不丢）。
+		// 清 token 后降级重新登录（设备码通道：同一 device_id 映射同一账号，数据不丢）。
 		// 旧实现只 clearToken+resolve(false)，app 卡死在 401 循环无法自愈。
 		const fallbackLogin = (why: string): void => {
 			console.log('[dbg-auth] doRefresh ' + why + ' -> clearToken + re-login fallback')
 			clearToken()
-			wechatLogin().then((ok: boolean) => {
+			deviceLogin().then((ok: boolean) => {
 				resolve(ok)
 			})
 		}
@@ -193,7 +222,9 @@ function doRefresh(): Promise<boolean> {
 			method: 'POST',
 			data: {
 				refresh_token: rt,
-				device_id: DEVICE_ID
+				// 注：后端 RefreshRequest 只读 refresh_token（device_id 从 JWT payload 取），
+				// 此字段保留仅为对齐既有请求形状，不参与服务端判定。
+				device_id: getDeviceId()
 			},
 			success: (res) => {
 				console.log('[dbg-auth] doRefresh status=' + res.statusCode)

@@ -16,6 +16,9 @@
 // ═══════════ 端点路径（对齐 docs/openapi.json paths）═══════════
 
 export const PATH_AUTH_WECHAT: string = '/api/v1/auth/wechat'
+// 内测期设备码登录（2026-09-21 卡 S2 新增端点；C2 消费）。门控 ALLOW_DEVICE_LOGIN，
+// 关闭时 501 AUTH_014；**上架前回收**（决策台账 §1.13）。
+export const PATH_AUTH_DEVICE: string = '/api/v1/auth/device'
 export const PATH_AUTH_REFRESH: string = '/api/v1/auth/refresh'
 export const PATH_AUTH_LOGOUT: string = '/api/v1/auth/logout'
 export const PATH_CONTENTS: string = '/api/v1/contents'

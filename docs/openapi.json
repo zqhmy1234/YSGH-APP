@@ -48,6 +48,48 @@
         }
       }
     },
+    "/api/v1/auth/device": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Device Login",
+        "description": "设备码登录（内测期临时通道，2026-09-21）：按 device_id 自助建档 → 签发 token 对。\n\nfail-closed：`ALLOW_DEVICE_LOGIN` 未开启（默认）→ 501 AUTH_014，不静默降级为 mock/游客。\n响应结构与 /wechat 完全同构（客户端零分支解析，refresh/吊销链路直接复用）。\n限流沿用 auth 域既有 IP/用户双维中间件，不新增阈值。",
+        "operationId": "device_login_api_v1_auth_device_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TokenPair_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/phone": {
       "post": {
         "tags": [
@@ -323,6 +365,22 @@
         ],
         "parameters": [
           {
+            "name": "content_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Id"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -362,6 +420,356 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_Page_ContentOut__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contents/{content_id}": {
+      "get": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Get Content Detail",
+        "description": "内容详情（2026-09-09 缺口收口：客户端此前用 GET /contents?content_id= 列表过滤替代）\n\n归属/存在性：不存在 / 已软删 / 非本人 → 统一 404 CONTENT_010\n（复用 load_alive_content，与 favorite/PATCH/waveform 同口径：IDOR 不区分三种情形；\n软删条目回收站走 GET /api/v1/trash）。畸形 ID 同语义 404（uuid4_str，R4#2）。\n路由顺序：本路由定义在 GET \"\" （列表，L367）之后，空串与路径参数不歧义；\n与 GET /{content_id}/waveform（两段路径）不冲突。\n出参：_to_out 全字段 + photo 条目补缩略图票（_attach_thumb，与列表同兜底）。",
+        "operationId": "get_content_detail_api_v1_contents__content_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ContentOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Update Content Remark",
+        "description": "更新内容备注（BB1）：仅 remark 单字段（schema extra=\"forbid\"，越权字段 422）。\n\n归属校验复用 load_alive_content：非本人/已软删/不存在 → 404 CONTENT_010\n（IDOR 不区分三种情形）；畸形 ID 同语义 404（uuid4_str，R4#2）。",
+        "operationId": "update_content_remark_api_v1_contents__content_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentRemarkUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ContentOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Delete Content",
+        "description": "软删内容（W2-1）：置 deleted_at/deleted_by，30 天保留期后可被清理任务彻底清除",
+        "operationId": "delete_content_api_v1_contents__content_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ContentDeleteOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contents/{content_id}/favorite": {
+      "post": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Favorite Add",
+        "description": "收藏内容（W2-2）：extra.favorite_at 落 ISO 时间戳；重复收藏幂等返回既有态",
+        "operationId": "favorite_add_api_v1_contents__content_id__favorite_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FavoriteOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Favorite Remove",
+        "description": "取消收藏（W2-2）：extra.favorite_at 摘除；未收藏幂等返回 favorite=false",
+        "operationId": "favorite_remove_api_v1_contents__content_id__favorite_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FavoriteOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Favorite Get",
+        "description": "查询单条收藏态（W2-2：detail 页星标初始化用）",
+        "operationId": "favorite_get_api_v1_contents__content_id__favorite_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FavoriteOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contents/{content_id}/waveform": {
+      "get": {
+        "tags": [
+          "contents"
+        ],
+        "summary": "Get Content Waveform",
+        "description": "内容音频真实波形（BB3 · 2026-09-08 新增）\n\n客户端 VoiceWave 组件数据源：读语音原件 → 解析 WAV data chunk →\nbuckets 桶峰值（0..1 浮点，客户端映射到条高渲染）。\n\n- 归属校验：不存在/已删除/非本人 → 404 CONTENT_010（load_alive_content 同款 IDOR 防护）\n- 非语音内容 / cos_key 缺失 / 对象读取失败 / 非 PCM16 WAV → 404 MEDIA_003\n  「音频不可用」（与 media.get_content_audio 同口径：对外不区分原因防探测，\n  服务端日志留真因；显式错误码非静默）\n- buckets 参数由 FastAPI Query 校验（1..128，越界自动 422 信封）\n- 不缓存：语音 ≤60s 现算毫秒级，见上方 BB3 注释",
+        "operationId": "get_content_waveform_api_v1_contents__content_id__waveform_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "buckets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 128,
+              "minimum": 1,
+              "default": 28,
+              "title": "Buckets"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
                 }
               }
             }
@@ -525,6 +933,133 @@
         }
       }
     },
+    "/api/v1/trash": {
+      "get": {
+        "tags": [
+          "trash"
+        ],
+        "summary": "Trash List",
+        "description": "回收站列表（W2-1）：软删条目按删除时间倒序，days_left 由后端算好",
+        "operationId": "trash_list_api_v1_trash_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_TrashItemOut__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "trash"
+        ],
+        "summary": "Trash Clear",
+        "description": "回收站清空（W2-1）：当前用户全部软删条目硬删（不可逆；客户端 showModal 强确认）。\n\n降级登记（_diff_ledger）：Qdrant 向量/COS 原件清理未挂接——MVP 只删 DB 行，\n向量残留不影响正确性（查询按 contents 行驱动）；挂接挂远期账 A3。",
+        "operationId": "trash_clear_api_v1_trash_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TrashClearOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trash/{content_id}/restore": {
+      "post": {
+        "tags": [
+          "trash"
+        ],
+        "summary": "Trash Restore",
+        "description": "回收站恢复（W2-1）：清除 deleted_at/deleted_by，回到正常内容域",
+        "operationId": "trash_restore_api_v1_trash__content_id__restore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ContentDeleteOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/favorites": {
+      "get": {
+        "tags": [
+          "favorites"
+        ],
+        "summary": "Favorites List",
+        "description": "收藏列表（W2-2）：extra.favorite_at 非空且未删除，按收藏时间倒序 + 缩略图签票",
+        "operationId": "favorites_list_api_v1_favorites_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ContentOut__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contents/{content_id}/events": {
       "get": {
         "tags": [
@@ -617,6 +1152,168 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/media/audio/{content_id}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get Content Audio",
+        "description": "按 content_id 下发语音字节（Bearer 鉴权 · W0-1 2026-09-02 新增）\n\n契约（F5 组拍板「本组补端点」，供客户端 uni.downloadFile 带 header 就地播放）：\n- Bearer + content_id 定位（区别于上方票据直连的 /{key:path}）——token 只能走\n  header（api.uts:57），<audio>/<image> 带不上，故语音播放必须走本端点\n- 归属校验：他人内容/不存在 → 404 MEDIA_003（与 thumbnails 同口径，防 IDOR）\n- 非语音内容或 cos_key 缺失 → 404 MEDIA_003\n- Content-Type 按存储键扩展名（wav/m4a/aac 已在 media_url._CONTENT_TYPES）；\n  未知扩展名回落 application/octet-stream（不用 image/jpeg 兜底——那是图片表的语义）\n- Cache-Control: private, max-age=86400（语音入库后字节不变，可私有缓存）\n- 整文件直出（语音条 ≤60s，体积小）；真流式/Range 待 COS 后端切换时一并做\n\n⚠️ 路由声明顺序：必须位于 /{key:path} 兜底路由**之前**，否则被兜底捕获后\n因前缀白名单外的「audio/」键 401。",
+        "operationId": "get_content_audio_api_v1_media_audio__content_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/{key}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get Media",
+        "description": "按票据下发媒体字节（无 Bearer；票据自证）\n\n失败一律 401 MEDIA_001（不区分\"过期\"还是\"签名错\"——避免给攻击者反馈\n有效的 key + 过期时间组合，属 standard practice）。仅当票据有效但对象缺失时 404。",
+        "operationId": "get_media_api_v1_media__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exp"
+            }
+          },
+          {
+            "name": "uid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Uid"
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sig"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/stats": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Event Stats",
+        "description": "派生统计（性能卡 PG：单聚合查询，替代前端 fetchTimeline(null) 全量拉取派生）\n\n口径（事件域对齐 timeline：user_id + deleted_at IS NULL，services/events/timeline.py）：\n- event_count：非软删事件总数（含各 level/status）\n- day_count：非空 start_time 按天去重天数（对齐前端 dayKey(start_time)）\n- photo_count：事件经 event_items 关联的 distinct 照片数（content_type=photo，不截断）\n- unread_count：messages status=unread 条数（标量子查询并入本查询）",
+        "operationId": "event_stats_api_v1_events_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/events/timeline": {
@@ -1342,6 +2039,56 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/export": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export User Data",
+        "description": "全量数据导出（US-42）：contents + events + profile + corrections 元数据，\n不含图片二进制（url 为存储引用）。响应为 JSON 文件（Content-Disposition）。\n\n安全：需登录（get_current_user）；数据按当前用户隔离（services 层按 user_id\n过滤）；分块取数 + 每类上限截断（truncated）+ 每用户限流（超限 429）。同步返回。",
+        "operationId": "export_user_data_api_v1_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^json$",
+              "description": "导出格式（当前仅支持 json）",
+              "default": "json",
+              "title": "Format"
+            },
+            "description": "导出格式（当前仅支持 json）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/asr/transcribe": {
@@ -2091,13 +2838,40 @@
         }
       }
     },
+    "/api/v1/messages/unread-count": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Unread Count",
+        "description": "未读数（性能卡 PG：单 count 查询，替代前端 fetchUnreadCount 游标翻全量累加）\n\n口径：status == \"unread\"（messages 表无 is_read 字段，与列表/已读端点一致）。",
+        "operationId": "unread_count_api_v1_messages_unread_count_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/messages/{msg_id}/read": {
       "post": {
         "tags": [
           "messages"
         ],
         "summary": "Mark Read",
-        "description": "单条已读（越权访问他人消息 → 404 不泄露存在性）",
+        "description": "单条已读（越权访问他人消息 → 404 不泄露存在性）\n\n波D ② 收敛（2026-09-10）：归属校验统一走 load_owned_message（404 ERR_MSG_002），\n替代原「UPDATE 未命中 → 补查存在性」两段式判定。\n更新语句保留**原子 UPDATE**（where 含 status='unread'），不改写为「读-改-写」——\n避免并发下 TOCTOU 竞态；已 read 的本人消息幂等无操作（与原实现同）。\n对外语义与改造前逐字等价：状态码/错误码/文案/幂等行为均不变。",
         "operationId": "mark_read_api_v1_messages__msg_id__read_post",
         "security": [
           {
@@ -2164,6 +2938,201 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/capsules": {
+      "get": {
+        "tags": [
+          "capsules"
+        ],
+        "summary": "List Capsules",
+        "description": "胶囊列表（sealed/due/opened 全量，open_at 倒序）\n\n惰性触发到期扫描（capsule_scan.maybe_scan_due，30s 节流）：项目无进程内\n定时器（RQ worker 只消费队列），选型理由见 app/workers/capsule_scan.py 模块注释。",
+        "operationId": "list_capsules_api_v1_capsules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_CapsuleOut__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "capsules"
+        ],
+        "summary": "Seal Capsule",
+        "description": "封存记忆（BA2）：content 必须属当前用户且未删除；open_at 必须晚于 now",
+        "operationId": "seal_capsule_api_v1_capsules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapsuleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CapsuleOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/capsules/scan": {
+      "post": {
+        "tags": [
+          "capsules"
+        ],
+        "summary": "Trigger Scan",
+        "description": "手动触发到期扫描（不走节流；测试/运维补扫入口）",
+        "operationId": "trigger_scan_api_v1_capsules_scan_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/capsules/{capsule_id}/open": {
+      "post": {
+        "tags": [
+          "capsules"
+        ],
+        "summary": "Open Capsule",
+        "description": "开启胶囊（到期回看）：未到期 409 显式报剩余天数；已开启幂等返回现态",
+        "operationId": "open_capsule_api_v1_capsules__capsule_id__open_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capsule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capsule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CapsuleOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/capsules/{capsule_id}": {
+      "delete": {
+        "tags": [
+          "capsules"
+        ],
+        "summary": "Delete Capsule",
+        "description": "撤销封存（仅未开启可删；已开启 → 409）。被关联 content 不动（软删生态零侵入）",
+        "operationId": "delete_capsule_api_v1_capsules__capsule_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "capsule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Capsule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CapsuleDeleteOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/upload/init": {
@@ -2310,7 +3279,7 @@
           "upload"
         ],
         "summary": "Complete Upload",
-        "description": "合并分片 → 落最终对象 → 建/更新 contents 记录 + 入队管线（S-ST-1 集成）\n\nmeta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra,\n                    upload_mode, on_wifi, content_id?}，语义与 /contents/upload 对齐。\n\nWave3 AgentG（流量约束 B4 §6）：\n  - upload_mode=\"thumbnail_meta\"（蜂窝）：上传物即缩略图 → 只落 thumbnail_key\n    占位内容（original_pending），不进管线；WiFi 后再用本端点补传原件。\n  - upload_mode=\"original\" + content_id=<占位 id>：手动立即上传原图——\n    复用 complete 流程，把原件挂到既有占位内容并触发完整管线（与 photo 同链路）。",
+        "description": "合并分片 → 落最终对象 → 建/更新 contents 记录 + 入队管线（S-ST-1 集成）\n\nmeta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra,\n                    upload_mode, on_wifi, content_id?}，语义与 /contents/upload 对齐。\n\nA8（2026-09-09）：voice 分支（meta.content_type=voice）额外识别\n{duration_ms, text, emotion, remark}——remark 为用户备注（str，≤2000 字符，\n与 POST /contents 的 ContentCreate.remark 对齐），落 contents.remark。\n\nWave3 AgentG（流量约束 B4 §6）：\n  - upload_mode=\"thumbnail_meta\"（蜂窝）：上传物即缩略图 → 只落 thumbnail_key\n    占位内容（original_pending），不进管线；WiFi 后再用本端点补传原件。\n  - upload_mode=\"original\" + content_id=<占位 id>：手动立即上传原图——\n    复用 complete 流程，把原件挂到既有占位内容并触发完整管线（与 photo 同链路）。",
         "operationId": "complete_upload_api_v1_upload_complete_post",
         "requestBody": {
           "content": {
@@ -2413,6 +3382,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/stats/daily-summary": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Daily Summary",
+        "description": "hero 副标题三字段（count/latest_event_text/latest_event_time）\n\n口径（事件域对齐 /events/stats：user_id + deleted_at IS NULL）。\n无事件时返回 count=0 + 两个 None——前端判空清空 hero 文案（不造假）。",
+        "operationId": "daily_summary_api_v1_stats_daily_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/me": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Users Me",
+        "description": "当前用户信息（BB1-B4）：id/nickname/avatar + 掩码手机号（未绑定 → null）",
+        "operationId": "users_me_api_v1_users_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserMeOut_"
                 }
               }
             }
@@ -2541,6 +3564,68 @@
         "type": "object",
         "title": "ApiResponse[AsrTranscribeResponse]"
       },
+      "ApiResponse_CapsuleDeleteOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapsuleDeleteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[CapsuleDeleteOut]"
+      },
+      "ApiResponse_CapsuleOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapsuleOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[CapsuleOut]"
+      },
       "ApiResponse_ClassifyJobOut_": {
         "properties": {
           "code": {
@@ -2602,6 +3687,37 @@
         },
         "type": "object",
         "title": "ApiResponse[ClassifyJobQueued]"
+      },
+      "ApiResponse_ContentDeleteOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentDeleteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ContentDeleteOut]"
       },
       "ApiResponse_ContentOut_": {
         "properties": {
@@ -2788,6 +3904,37 @@
         },
         "type": "object",
         "title": "ApiResponse[EventSyncResult]"
+      },
+      "ApiResponse_FavoriteOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FavoriteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[FavoriteOut]"
       },
       "ApiResponse_GuardCheckResponse_": {
         "properties": {
@@ -3285,6 +4432,37 @@
         "type": "object",
         "title": "ApiResponse[TokenPair]"
       },
+      "ApiResponse_TrashClearOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrashClearOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[TrashClearOut]"
+      },
       "ApiResponse_UploadChunkOut_": {
         "properties": {
           "code": {
@@ -3409,6 +4587,37 @@
         "type": "object",
         "title": "ApiResponse[UploadStatusOut]"
       },
+      "ApiResponse_UserMeOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserMeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[UserMeOut]"
+      },
       "ApiResponse_WechatDeleteOut_": {
         "properties": {
           "code": {
@@ -3504,6 +4713,41 @@
         "type": "object",
         "title": "ApiResponse[dict]"
       },
+      "ApiResponse_list_CapsuleOut__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CapsuleOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[CapsuleOut]]"
+      },
       "ApiResponse_list_ContentEventOut__": {
         "properties": {
           "code": {
@@ -3538,6 +4782,41 @@
         },
         "type": "object",
         "title": "ApiResponse[list[ContentEventOut]]"
+      },
+      "ApiResponse_list_ContentOut__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContentOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[ContentOut]]"
       },
       "ApiResponse_list_EventItemOut__": {
         "properties": {
@@ -3679,6 +4958,41 @@
         "type": "object",
         "title": "ApiResponse[list[ProfileSensitiveOut]]"
       },
+      "ApiResponse_list_TrashItemOut__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TrashItemOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[TrashItemOut]]"
+      },
       "ArbitrateJobOut": {
         "properties": {
           "job_id": {
@@ -3767,6 +5081,31 @@
             ],
             "title": "Client Request Id",
             "description": "客户端请求幂等键（R4#4：重复提交返回同一 job，不重复入队）"
+          },
+          "content_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Id",
+            "description": "被裁决内容 ID（可选：层①按内容点核对最新用户意图）"
+          },
+          "preferred_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Label",
+            "description": "用户所选标签（可选：层②degraded 时以用户意图为准的兜底依据）"
           }
         },
         "type": "object",
@@ -3804,10 +5143,16 @@
             "description": "实际使用通道"
           },
           "emotion": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Emotion",
-            "description": "声学情绪标签（SenseVoice 通道产出）",
-            "default": "平静"
+            "description": "声学情绪标签（SenseVoice 通道产出）；None=未测得（D-16）"
           },
           "emotion_confidence": {
             "type": "number",
@@ -3970,7 +5315,7 @@
           "guardrail"
         ],
         "title": "AsrTranscribeResponse",
-        "description": "转写结果（真实、空白语音与开发 mock 同构）\n\n- outcome: succeeded / no_speech / mock\n- channel: funasr / sensevoice / local_vad / mock\n- emotion: 声学情绪（开心/难过/生气/惊讶/恐惧/厌恶/平静），B5-c 情绪关怀分层触发依据\n- guardrail: 内容安全审核结论（fail-safe：真实模式下不可用默认拦截）"
+        "description": "转写结果（真实、空白语音与开发 mock 同构）\n\n- outcome: succeeded / no_speech / mock\n- channel: funasr / sensevoice / local_vad / mock\n- emotion: 声学情绪（开心/难过/生气/惊讶/恐惧/厌恶/平静），B5-c 情绪关怀分层触发依据；null=未测得（D-16）\n- guardrail: 内容安全审核结论（fail-safe：真实模式下不可用默认拦截）"
       },
       "Body_complete_upload_api_v1_upload_complete_post": {
         "properties": {
@@ -4177,6 +5522,194 @@
         ],
         "title": "Body_upload_photo_api_v1_contents_upload_post"
       },
+      "CapsuleContentBrief": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content_type"
+        ],
+        "title": "CapsuleContentBrief",
+        "description": "胶囊关联记忆摘要（ContentOut 现成字段投影）"
+      },
+      "CapsuleCreate": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content Id",
+            "description": "被封存记忆 id（contents.id）"
+          },
+          "open_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Open At",
+            "description": "到期时间（必须晚于当前时刻）"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note",
+            "description": "给未来自己的话"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id",
+          "open_at"
+        ],
+        "title": "CapsuleCreate",
+        "description": "POST /capsules 入参：封存一条记忆到未来"
+      },
+      "CapsuleDeleteOut": {
+        "properties": {
+          "capsule_id": {
+            "type": "string",
+            "title": "Capsule Id"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "capsule_id",
+          "deleted"
+        ],
+        "title": "CapsuleDeleteOut",
+        "description": "DELETE /capsules/{id} 出参：撤销封存"
+      },
+      "CapsuleOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sealed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sealed At"
+          },
+          "open_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Open At"
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapsuleContentBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content_id",
+          "sealed_at",
+          "open_at",
+          "status"
+        ],
+        "title": "CapsuleOut",
+        "description": "胶囊出参（列表/详情/开启通用；status: sealed/due/opened）"
+      },
       "ClassScore": {
         "properties": {
           "label": {
@@ -4309,6 +5842,11 @@
             },
             "type": "array",
             "title": "Scores"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded",
+            "default": false
           }
         },
         "type": "object",
@@ -4517,6 +6055,32 @@
             "pattern": "^(app|windows|wechat|import)$",
             "title": "Source",
             "default": "app"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark",
+            "description": "用户备注（BA1：save 系接口可选上送）"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes",
+            "description": "声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）"
           }
         },
         "type": "object",
@@ -4524,6 +6088,38 @@
           "content_type"
         ],
         "title": "ContentCreate"
+      },
+      "ContentDeleteOut": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "permanent_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permanent At",
+            "description": "保留期截止（30 天后彻底清除）；恢复时为 null"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id",
+          "deleted"
+        ],
+        "title": "ContentDeleteOut",
+        "description": "软删出参（DELETE /api/v1/contents/{content_id}；W2-1）\n\npermanent_at：软删=保留期截止时间；restore 场景为 null。"
       },
       "ContentEventOut": {
         "properties": {
@@ -4730,6 +6326,84 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "original_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Url"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "tags_json": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags Json"
+          },
+          "ai_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Description"
           }
         },
         "type": "object",
@@ -4745,6 +6419,27 @@
           "created_at"
         ],
         "title": "ContentOut"
+      },
+      "ContentRemarkUpdate": {
+        "properties": {
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark",
+            "description": "用户备注；null=清除"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ContentRemarkUpdate",
+        "description": "内容备注更新入参（PATCH /api/v1/contents/{id}；BB1）\n\nextra=\"forbid\"：仅允许 remark 单字段，越权字段（status/user_id 等）显式 422；\nremark 可为 null（清除备注）。"
       },
       "CorrectionCreate": {
         "properties": {
@@ -4844,6 +6539,43 @@
           "source"
         ],
         "title": "CorrectionOut"
+      },
+      "DeviceLoginRequest": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Device Id",
+            "description": "客户端设备唯一 ID"
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Platform",
+            "description": "平台标识",
+            "default": "android"
+          },
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version",
+            "description": "客户端版本（排障用）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_id"
+        ],
+        "title": "DeviceLoginRequest",
+        "description": "设备码登录（内测期临时通道 · 2026-09-21）：客户端设备唯一标识 → 自助建档。\n\n门控：`ALLOW_DEVICE_LOGIN=false`（默认）时端点返回 501 AUTH_014，不静默降级。\ndevice_id 长度上限与 WechatLoginRequest.device_id 对齐（64），两者都是设备标识字段。"
       },
       "EchoDismissOut": {
         "properties": {
@@ -5012,6 +6744,17 @@
               }
             ],
             "title": "Place"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           }
         },
         "type": "object",
@@ -5185,6 +6928,65 @@
             "title": "Photo Count",
             "default": 0
           },
+          "photo_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Photo Ids",
+            "default": []
+          },
+          "photos": {
+            "items": {
+              "$ref": "#/components/schemas/EventPhotoOut"
+            },
+            "type": "array",
+            "title": "Photos",
+            "default": []
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "quote_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Source"
+          },
           "lifecycle": {
             "anyOf": [
               {
@@ -5215,6 +7017,76 @@
           "generated_by"
         ],
         "title": "EventOut"
+      },
+      "EventPhotoOut": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "original_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Url"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id"
+        ],
+        "title": "EventPhotoOut",
+        "description": "事件成员照片（Valet Key 票据直发 · 2026-09-04 补齐）\n\nthumbnail_url/original_url 为签名票据 URL（<image :src> 直连，免 header）；\ntaken_at/place/title 供客户端卡片展示。见 media_url.content_urls()。"
       },
       "EventSplitRequest": {
         "properties": {
@@ -5302,6 +7174,37 @@
         "type": "object",
         "title": "EventSyncResult",
         "description": "端侧事件提交结果（幂等 + 越权拒绝明细）"
+      },
+      "FavoriteOut": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "favorite": {
+            "type": "boolean",
+            "title": "Favorite"
+          },
+          "favorite_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Favorite At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id",
+          "favorite"
+        ],
+        "title": "FavoriteOut",
+        "description": "收藏切换出参（POST/DELETE /api/v1/contents/{content_id}/favorite；W2-2）\n\n持久化：contents.extra JSONB 键 favorite_at（ISO 字符串，零迁移）——\nfavorite=false 时 favorite_at=null。"
       },
       "GuardCheckRequest": {
         "properties": {
@@ -5516,6 +7419,17 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Payload"
+          },
+          "content_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Id"
           },
           "status": {
             "type": "string",
@@ -5862,6 +7776,17 @@
           "score": {
             "type": "number",
             "title": "Score"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           },
           "trace": {
             "additionalProperties": true,
@@ -6358,6 +8283,85 @@
         ],
         "title": "TokenPair"
       },
+      "TrashClearOut": {
+        "properties": {
+          "cleared": {
+            "type": "integer",
+            "title": "Cleared"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cleared"
+        ],
+        "title": "TrashClearOut",
+        "description": "回收站清空出参（DELETE /api/v1/trash）"
+      },
+      "TrashItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deleted At"
+          },
+          "days_left": {
+            "type": "integer",
+            "title": "Days Left",
+            "description": "距彻底清除剩余天数（向下取整，最小 0）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content_type",
+          "deleted_at",
+          "days_left"
+        ],
+        "title": "TrashItemOut",
+        "description": "回收站条目（GET /api/v1/trash；W2-1）"
+      },
       "UploadChunkOut": {
         "properties": {
           "status": {
@@ -6559,6 +8563,54 @@
         ],
         "title": "UserBrief"
       },
+      "UserMeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "avatar": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "掩码手机号（138****XXXX）；未绑定/非 11 位为 null"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "UserMeOut",
+        "description": "GET /api/v1/users/me 出参（BB1-B4）\n\n安全约束：phone 仅服务端掩码形态（138****XXXX）下发，完整手机号绝不出网；\n未绑定 / 非 11 位 → null。"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -6598,6 +8650,65 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VoiceInfo": {
+        "properties": {
+          "content_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "wave_heights": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Wave Heights",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "VoiceInfo",
+        "description": "语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）\n\nW0-2（2026-09-02）补 content_id：客户端就地播放唯一依赖此键\n（GET /api/v1/media/audio/{content_id}，Bearer 鉴权）；url 字段留空——\n音频走鉴权端点 + 临时文件（token 只能走 header 的硬约束），不发裸 URL。"
       },
       "WechatDeleteOut": {
         "properties": {

@@ -1,0 +1,161 @@
+# ============================================================================
+# 忆述光华 · 单机部署 · 三个依赖服务（S1 卡 · 2026-09-21）
+#
+# 用法（在仓库根执行，`deploy/.env` 会被自动加载——compose 的 project 目录 = 本文件所在目录）：
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml ps
+#   docker compose -f deploy/docker-compose.yml logs -f postgres
+#
+# ⚠️ 变量来源契约（与 S3 的 `deploy/.env.production.template` 共同维护，改一处须同步另一处）：
+#   `deploy/.env` 同时承担两个职责：
+#     ① 本文件插值（POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB/POSTGRES_PORT/QDRANT_* 等容器参数）
+#     ② 宿主侧后端进程的环境（DATABASE_URL/REDIS_URL/QDRANT_URL 等，见 S3 模板与 systemd unit）
+#   两份 URL 必须指向同一实例（宿主侧用 127.0.0.1:5432/6379/6333，容器内用服务名 postgres:5432）。
+#
+# ⚠️ 安全：三个服务的端口**一律绑 127.0.0.1**（不对公网暴露）。安全组只放行 22 与 8010。
+#   Qdrant 未配 API Key（应用侧 config 只有 qdrant_url、无 api_key 字段）——仅在内网绑定时可接受；
+#   若将来允许跨机访问，必须先加 QDRANT__SERVICE__API_KEY 并同步应用配置。
+#
+# ⚠️ 规格铁律（docs/服务器规格核算_20260921.md §2）：
+#   业务进程跑在**宿主**（systemd，见 deploy/systemd/），不跑在容器里——模型（BGE-M3/SetFit/SenseVoice）
+#   需预置在宿主磁盘并以单进程加载；每多一个进程即多一份 ~1.2G，16G 机器会 OOM。
+#   `app` profile 下的 backend 服务仅供**可复现/CI** 使用，当前单机方案默认不启用。
+# ============================================================================
+
+name: yishu
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + pgvector
+  # pgvector 扩展由镜像提供；扩展本身由 deploy/initdb/01-extensions.sql 在**首次初始化**时创建
+  # （已核实 backend/migrations/ 中零 `vector` 引用 → alembic 不会建扩展；而
+  #  backend/tests 有「扩展存在性」断言，故生产库必须有该扩展）。
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    container_name: yishu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未设置：请先在 deploy/.env 配置（bootstrap.sh 可自动生成）}
+      POSTGRES_DB: ${POSTGRES_DB:-yishu}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    # 用**列表形式**（exec）而非折叠字符串：archive_command 含空格与 `&&`，
+    # 字符串形式会被 /bin/sh -c 解析成两条命令（`&&` 被当 shell 运算符），必须避开 shell 解析。
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-50}
+      # WAL 归档（PITR，RPO ≤5min）：**默认 off**。开启见 deploy/RUNBOOK.md §6（含目录属主步骤与验证 SQL）。
+      # 默认关是刻意的：archive_command 失败会让 PG 持续保留 WAL 直至 pg_wal 打满磁盘。
+      - -c
+      - archive_mode=${PG_ARCHIVE_MODE:-off}
+      - -c
+      - "archive_command=${PG_ARCHIVE_COMMAND:-test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/wal-archive:/var/lib/postgresql/wal-archive
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-yishu}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # 上限=护栏（非占用量）：核算书 §2 给 PG 的估算为 0.4–0.6G，实测见核算书 §7 校验表
+    mem_limit: ${POSTGRES_MEM_LIMIT:-768m}
+    # WAL 归档（PITR，RPO ≤5min）：S3 卡已接线，**默认 off**（PG_ARCHIVE_MODE 未设 → archive_mode=off）。
+    # 开启前提：归档目录属主 = postgres(uid 999)（bootstrap.sh 在开关为 on 时会自动修正），
+    # 否则 archive_command 反复失败 → pg_wal 持续增长打满磁盘。步骤与验证见 deploy/RUNBOOK.md §6。
+
+  # ---------------------------------------------------------------------------
+  # Redis 7（AOF 持久化）
+  # `maxmemory-policy noeviction` 是**硬要求**：RQ 的队列数据被逐出会导致任务静默丢失。
+  # ---------------------------------------------------------------------------
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: yishu-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory ${REDIS_MAXMEMORY:-320mb}
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    mem_limit: ${REDIS_MEM_LIMIT:-384m}
+
+  # ---------------------------------------------------------------------------
+  # Qdrant（named vectors：BGE-M3 dense + sparse）
+  # 镜像 tag 用变量兜底为 latest：**首次 bring-up 成功后请把实际 tag/digest 回填到 deploy/.env**，
+  # 避免长期漂移（不在此处猜一个未必存在的具体版本号）。
+  # healthcheck 用官方 compose 示例的 bash /dev/tcp 探活（镜像自带 bash）。
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
+    container_name: yishu-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_HTTP_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", ":> /dev/tcp/localhost/6333"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: ${QDRANT_MEM_LIMIT:-768m}
+
+  # ---------------------------------------------------------------------------
+  # 可选：后端容器（profile=app）
+  # 当前单机方案默认**不用**（业务进程走 deploy/systemd/ 的宿主进程）；保留此服务用于：
+  #   ① CI/本地可复现环境  ② 将来多机拆分时的基线镜像
+  # 注意容器内访问依赖服务用**服务名**（POSTGRES_HOST=postgres 等），与宿主侧 127.0.0.1 不同。
+  # ---------------------------------------------------------------------------
+  backend:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    image: yishu-backend:local
+    container_name: yishu-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # 覆盖宿主侧 URL：容器内走服务名（S3 模板里的 127.0.0.1 形态仅对宿主进程有效）
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      QDRANT_HOST: qdrant
+    ports:
+      - "127.0.0.1:${API_PORT:-8010}:8010"
+    volumes:
+      # 模型资产以只读挂载进入（不烘进镜像，避免镜像膨胀到数 GB）
+      - ../backend/models:/app/models:ro
+      - ./data/hf-cache:/root/.cache/huggingface
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]
+    mem_limit: ${BACKEND_MEM_LIMIT:-6g}

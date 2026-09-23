@@ -44,6 +44,9 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("AUTH_011", "微信登录未接入（生产未配置微信应用）", 501),
     ErrorSpec("AUTH_012", "微信登录上游不可用（网络/HTTP 异常）", 502, retryable=True),
     ErrorSpec("AUTH_013", "微信登录响应异常（缺少 openid/unionid）", 502),
+    # 内测期设备码通道门控（2026-09-21）：与 AUTH_010/AUTH_011 同族——「未开启即拒绝」，
+    # 不静默降级。关闭态是**默认且上架后必须保持**的状态（docs/决策台账.md §1.13）。
+    ErrorSpec("AUTH_014", "设备登录未开启（内测通道）", 501),
     ErrorSpec("AUTH_099", "认证服务未接入或上游不可用（微信/短信）", 501),
     # ASR 域
     ErrorSpec("ASR_001", "音频参数校验失败", 422),
@@ -125,6 +128,7 @@ ERR_AUTH_010 = "AUTH_010"
 ERR_AUTH_011 = "AUTH_011"
 ERR_AUTH_012 = "AUTH_012"
 ERR_AUTH_013 = "AUTH_013"
+ERR_AUTH_014 = "AUTH_014"
 ERR_AUTH_099 = "AUTH_099"
 ERR_ASR_001 = "ASR_001"
 ERR_ASR_002 = "ASR_002"

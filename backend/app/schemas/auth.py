@@ -10,6 +10,18 @@ class WechatLoginRequest(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=64, description="客户端设备唯一 ID")
 
 
+class DeviceLoginRequest(BaseModel):
+    """设备码登录（内测期临时通道 · 2026-09-21）：客户端设备唯一标识 → 自助建档。
+
+    门控：`ALLOW_DEVICE_LOGIN=false`（默认）时端点返回 501 AUTH_014，不静默降级。
+    device_id 长度上限与 WechatLoginRequest.device_id 对齐（64），两者都是设备标识字段。
+    """
+
+    device_id: str = Field(..., min_length=1, max_length=64, description="客户端设备唯一 ID")
+    platform: str = Field("android", max_length=16, description="平台标识")
+    app_version: str | None = Field(None, max_length=32, description="客户端版本（排障用）")
+
+
 class PhoneLoginRequest(BaseModel):
     """手机号验证码登录（备用通道）"""
 

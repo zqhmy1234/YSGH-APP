@@ -1,0 +1,111 @@
+/**
+ * 设备唯一标识（C2 卡 · 2026-09-21）—— 全客户端**唯一**取值入口。
+ *
+ * 为什么需要它：账号身份 = 后端 `unionid = "device:<device_id>"`（POST /api/v1/auth/device）。
+ * 因此"这个 id 稳不稳"直接等于"用户会不会忽然变成新用户、看到数据全没了"。
+ *
+ * 取值链（**顺序即优先级**，每一步都打点，不静默）：
+ *   ① ANDROID_ID（原生插件 `yishu-device-id`）—— 权威源：清缓存/同签名重装均不变
+ *   ② 本地 storage 上次已知值 —— 插件临时不可用（如标准基座）时**不至于换号**
+ *   ③ 框架 `uni.getDeviceInfo().deviceId` —— 最弱：官方文档明载清空 Storage 即变，仅作兜底
+ *   ④ **仅 dev 构建**：本地持久化的 dev 设备 id —— 让标准调试基座（无原生插件）也能登录，
+ *      保住开发循环；`ENV='prod'` 的正式包**不会**走到这一步（正式包宁可显式失败，
+ *      也不静默造出一个新账号——那正是用户会误判"数据丢了"的场景）
+ *
+ * 消费方：`utils/auth.uts`（登录）、`utils/sync_client.uts`、`utils/event_sync.uts`
+ * （后两者原 import auth 的 `DEVICE_ID` 常量；2026-09-21 随本文件收口到此处，保持"单源"纪律）。
+ */
+import { createDeviceIdProvider } from '@/uni_modules/yishu-device-id'
+import { ENV } from './config'
+
+const KEY_CACHED_ID = 'yishu.device_id'
+const KEY_DEV_FALLBACK = 'yishu.device_id_dev_fallback'
+
+export const SOURCE_ANDROID_ID = 'android_id'
+export const SOURCE_STORAGE = 'storage'
+export const SOURCE_FRAMEWORK = 'framework'
+export const SOURCE_DEV_FALLBACK = 'dev_fallback'
+export const SOURCE_NONE = 'none'
+
+let _id = ''
+let _source = ''
+
+/** 当前取值来源（诊断/上报用；取值见上方 SOURCE_*） */
+export function getDeviceIdSource(): string {
+	return _source
+}
+
+/** dev 兜底设备 id（持久化随机串；仅 ENV!='prod' 启用，见文件头 ④） */
+function devFallbackId(): string {
+	let v = uni.getStorageSync(KEY_DEV_FALLBACK) as string
+	if (v == null || v == '') {
+		// 时间戳 + 随机后缀：dev 期足够唯一，且不引入额外依赖
+		v = 'dev-' + Date.now().toString() + '-' + Math.floor(Math.random() * 1000000).toString()
+		uni.setStorageSync(KEY_DEV_FALLBACK, v)
+		console.log('[yishu] device_id: 生成 dev 兜底标识（仅 dev 构建，正式包不会走到这里）')
+	}
+	return v
+}
+
+/**
+ * 设备唯一标识。取不到返回**空串** —— 调用方必须显式处理（登录链会诚实报错并终止，
+ * 不得用假 id 顶替：假 id 会静默建出一个全新空账号，用户以为"数据丢了"）。
+ */
+export function getDeviceId(): string {
+	if (_id != '') {
+		return _id
+	}
+
+	let id = ''
+	let source = SOURCE_NONE
+
+	// ① 权威源：ANDROID_ID
+	try {
+		id = createDeviceIdProvider().androidId()
+		if (id != '') {
+			source = SOURCE_ANDROID_ID
+		}
+	} catch (e: Throwable) {
+		console.log('[yishu] device_id: 原生插件不可用（标准基座？），走兜底链: '
+			+ (e != null && e.message != null ? e.message : 'unknown'))
+	}
+
+	// ② 上次已知值
+	if (id == '') {
+		const cached = uni.getStorageSync(KEY_CACHED_ID) as string
+		if (cached != null && cached != '') {
+			id = cached
+			source = SOURCE_STORAGE
+		}
+	}
+
+	// ③ 框架 deviceId（官方文档：清空 Storage 会变 → 仅兜底）
+	if (id == '') {
+		try {
+			const info = uni.getDeviceInfo({ filter: ['deviceId'] })
+			const fw = info.deviceId
+			if (fw != null && fw != '') {
+				id = fw
+				source = SOURCE_FRAMEWORK
+			}
+		} catch (e: Throwable) {
+			console.log('[yishu] device_id: 框架 getDeviceInfo 不可用: '
+				+ (e != null && e.message != null ? e.message : 'unknown'))
+		}
+	}
+
+	// ④ dev 专用兜底（保住标准基座下的开发循环；正式包不启用）
+	if (id == '' && ENV != 'prod') {
+		id = devFallbackId()
+		source = SOURCE_DEV_FALLBACK
+	}
+
+	_id = id
+	_source = id == '' ? SOURCE_NONE : source
+	if (id != '') {
+		uni.setStorageSync(KEY_CACHED_ID, id)
+	}
+	// 不静默：解析结果必打点（source 是排障第一现场——区分"真换了设备"与"插件没读到"）
+	console.log('[yishu] device_id 解析 source=' + _source + ' 命中=' + (id != '') + ' 长度=' + id.length)
+	return _id
+}

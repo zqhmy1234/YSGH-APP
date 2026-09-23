@@ -1,0 +1,65 @@
+/**
+ * 忆述光华 · 设备标识插件（Android 纯 UTS 实现 · C2 卡 · 2026-09-21）
+ *
+ * 职责：读 `Settings.Secure.ANDROID_ID` 并返回字符串（失败返回空串）。**仅此一件事**。
+ * 不新增系统权限：`Settings.Secure.ANDROID_ID` 的读取不需要任何 Android 权限。
+ *
+ * 习语对齐 `yishu-photo-watch`（本项目已验证可编译运行的形态）：
+ *   - `UTSAndroid.getAppContext()` + 缓存到模块级变量
+ *   - `appContext().getContentResolver()`
+ *   - 嵌套静态调用用全限定名（同 `android.provider.MediaStore.Images.Media.getContentUri`）
+ *
+ * 注意：**不在此处 `export * from '../interface.uts'`** —— 函数声明在 interface.uts，
+ * 本文件按同名实现即可；类型具名再导出。两个既有插件均有同款注释（重复导出曾触发编译器 overload panic）。
+ */
+import { DeviceIdProvider } from '../interface.uts'
+
+// 类型具名再导出（供页面/领域层从平台模块路径引用）
+export { DeviceIdProvider } from '../interface.uts'
+
+/** Settings.Secure 中 ANDROID_ID 的键名 */
+const KEY_ANDROID_ID = 'android_id'
+
+let _appContext: android.content.Context | null = null
+
+/** 应用 Context（缓存） */
+function appContext(): android.content.Context {
+	const cached = _appContext
+	if (cached != null) {
+		return cached
+	}
+	const created = UTSAndroid.getAppContext()
+	_appContext = created
+	return created!
+}
+
+class DeviceIdProviderImpl implements DeviceIdProvider {
+	androidId(): string {
+		try {
+			const raw = android.provider.Settings.Secure.getString(
+				appContext().getContentResolver(), KEY_ANDROID_ID)
+			const id = raw == null ? '' : raw
+			// 不静默：每次读取都打点。**只打长度与命中，不打明文**——设备标识属个人信息，
+			// 日志/上报不留原文（与 D-24「守卫处零日志导致真机现象无法定位」的教训对齐）。
+			console.log('[yishu] androidId 读取 命中=' + (id != '') + ' 长度=' + id.length)
+			return id
+		} catch (e: Throwable) {
+			// 失败不抛：调用方据此走兜底链（见 interface.uts 契约）
+			console.log('[yishu] androidId 读取失败（交由调用方走兜底链）: '
+				+ (e != null && e.message != null ? e.message : 'unknown'))
+			return ''
+		}
+	}
+}
+
+let _instance: DeviceIdProvider | null = null
+
+export function createDeviceIdProvider(): DeviceIdProvider {
+	const inst = _instance
+	if (inst == null) {
+		const created = new DeviceIdProviderImpl()
+		_instance = created
+		return created
+	}
+	return inst
+}

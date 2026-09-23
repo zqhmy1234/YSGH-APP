@@ -1,0 +1,38 @@
+/**
+ * 忆述光华 · 设备标识插件接口（C2 卡 · 2026-09-21）
+ *
+ * 为什么单独一个插件（而不是并进 recorder / photo-watch）：
+ *  1. **职责单一**：项目既有能力域隔离（photo-watch=相册监听 / recorder=录音 /
+ *     background-tasks=WorkManager）。设备标识是**隐私敏感**能力，独立成域后"谁在用它、
+ *     用在哪"一目了然，将来要整体替换（OAID）或**直接下线**（上架后若改微信/手机号登录）
+ *     只需删掉这一个目录。
+ *  2. **降低回归面**：recorder 刚经云包 dex 实证修复（37793e5）稳定下来，不宜再塞无关能力；
+ *     photo-watch 同属相册域，把设备标识塞进去是职责污染（该插件已有 D-26 类"通知权限塞进来"
+ *     的既有裁决：不塞）。
+ *  3. **零既有文件改动**：纯新增目录；并入任一既有插件都要动已实证的插件源码。
+ *  成本：多一份插件编译产物（几 KB dex 类），可忽略。
+ *
+ * 取值口径（**必须用 ANDROID_ID，不能用框架 deviceId**）：
+ *  官方文档明载 `uni.getDeviceInfo().deviceId`「由 uni-app 框架生成并存储，**清空 Storage 会导致改变**」
+ *  （doc.dcloud.net.cn/uni-app-x/api/get-device-info.html）→ 清缓存即换号；而账号身份 =
+ *  后端 `unionid = "device:<device_id>"`（POST /api/v1/auth/device，卡 S2 冻结件），
+ *  换号 = 用户看到"数据全没了"（本仓历史上已有同款实锤，见 `_resource_endpoint_matrix.md` §八）。
+ *  `Settings.Secure.ANDROID_ID` 自 Android 8.0 起按「设备 + 应用签名 + 用户」稳定：清缓存/重装不变，
+ *  正是内测期需要的稳定性。代价：它**属于个人信息**，须在隐私政策「收集的设备信息」条款声明
+ *  （决策台账 §1.13，本轮只登记不改政策正文）。
+ */
+
+/** 设备标识读取器（实现位于 app-android，工厂函数创建） */
+export interface DeviceIdProvider {
+	/**
+	 * 读取 Android ANDROID_ID（`Settings.Secure.ANDROID_ID`）。
+	 *
+	 * 契约：**失败一律返回空串，绝不抛异常** —— 调用方（`utils/device_id.uts`）据此走兜底链；
+	 * 若在此处抛错，会把启动链（onLaunch → ensureLogin）整个打断，现象是"打开就白屏"。
+	 * 读取**不需要任何系统权限**（故本插件不声明、不申请权限，也不改动 manifest.json）。
+	 */
+	androidId(): string
+}
+
+/** 创建设备标识读取器（跨端工厂，平台目录实现） */
+export function createDeviceIdProvider(): DeviceIdProvider

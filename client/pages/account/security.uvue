@@ -26,9 +26,12 @@
 						<image class="sec-icon-img" src="/static/icons/icon-chat.svg" />
 					</view>
 					<text class="sec-label">微信</text>
-					<view class="sec-badge"> <!-- 画布 41:180 绑定徽章 -->
-						<text class="sec-badge-text">已绑定</text>
-					</view>
+					<!-- 2026-09-21（C2 落地后诚实化）：内测期登录方式=设备码
+					     （后端 unionid="device:<device_id>"），微信**并未绑定**。
+					     原硬编码「已绑定」徽章是 wechatLogin（code=dev-client）时代的表述残留，
+					     会让用户误以为账号绑了微信。值守约：不显假状态——与手机号行「未绑定」一致。
+					     B5 微信绑定管理落地后按真实绑定态渲染并恢复徽章样式。 -->
+					<text class="sec-value">未绑定</text>
 					<text class="sec-arrow">›</text>
 				</view>
 			</view>
@@ -62,7 +65,8 @@
 // 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
 // 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
 // W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」）：手机号显「未绑定」不显假号 138****5678
-// （auth 本地仅 token、后端无 users/me）；微信徽章=当前登录方式；绑定管理 toast 措辞「即将上线」；
+// （auth 本地仅 token、后端无 users/me）；微信行**不再显示「已绑定」**——内测期登录=设备码、
+// 微信未绑定（2026-09-21 修正该处失实表述，与决策台账 §1.12① 口径一致）；绑定管理 toast 措辞「即将上线」；
 // W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
@@ -102,8 +106,9 @@
 	}
 
 	function onWechat(): void {
-		// W0-4：徽章「已绑定」反映当前登录方式=微信（wechatLogin 真链路）；解绑/换绑管理远期 B5
-		uni.showToast({ title: '微信绑定管理即将上线', icon: 'none' })
+		// 2026-09-21：内测期登录=设备码，微信未绑定 → 不再断言「已绑定」。
+		// 措辞要说清"现在是什么"，而不是只说"以后会有什么"——否则用户仍会以为已绑微信。
+		uni.showToast({ title: '内测期按设备自动建档，微信绑定暂未开放', icon: 'none', duration: 2500 })
 	}
 
 	function onPrivacy(): void {
@@ -237,21 +242,9 @@
 		font-size: 26.9rpx; /* 画布 fs14pt */
 		color: #B3A696;
 	}
-	/* 画布 41:180 绑定徽章：锈金 a0.10 底 + 锈金字，圆角 8pt=15.4rpx */
-	.sec-badge {
-		margin-left: 15.4rpx;
-		padding: 3.8rpx 11.5rpx;
-		border-radius: 15.4rpx;
-		background-color: rgba(196, 145, 60, 0.10);
-		flex-direction: row;
-		align-items: center;
-		overflow: hidden;
-	}
-	.sec-badge-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx; /* 画布 fs11pt */
-		color: #C4913C;
-	}
+	/* 画布 41:180 绑定徽章样式（.sec-badge / .sec-badge-text）已随「已绑定」失实表述一并移除
+	   （2026-09-21，理由见模板内注释）。B5 微信绑定管理落地后按真实绑定态恢复：
+	   规格为锈金 a0.10 底 + #C4913C 字 + 圆角 15.4rpx（画布真值 41:180）。 */
 	/* 退出/注销行：画布 h44pt=84.6rpx 文字居中 */
 	.sec-row-center {
 		width: 100%;

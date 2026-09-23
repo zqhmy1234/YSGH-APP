@@ -58,6 +58,19 @@ def wechat_login(db: Session, req) -> TokenPair:
     return _finish_login(db, identity)
 
 
+def device_login(db: Session, req) -> TokenPair:
+    """设备码登录（内测期临时通道 · 2026-09-21）：设备标识 → 伪 unionid → 建/查用户 → 签发 token 对。
+
+    门控与参数校验都在 provider 内（fail-closed：`allow_device_login` 关闭 → 501 AUTH_014）。
+    本函数只做编排，与 wechat_login 完全同构；**必须经 `get_login_provider("device")` 取 provider**
+    （而非直接 `DeviceLoginProvider()`）——`get_login_provider` 是全仓唯一的渠道分发点，
+    绕过它等于让分发分支形同虚设。
+    """
+    provider = get_login_provider("device")
+    identity = provider.resolve_identity(db, req, client_ip=None)
+    return _finish_login(db, identity)
+
+
 def phone_login(db: Session, req, client_ip: str | None) -> TokenPair:
     """手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）
 

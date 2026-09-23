@@ -1,0 +1,346 @@
+/* ============================================================================
+   忆述光华 · 内测下载页样式（卡 E1 · 2026-09-21）
+   ----------------------------------------------------------------------------
+   · 本文件是页面的**视觉唯一来源**：Tailwind 仅作提效（下面 @import），
+     CDN 不可达时版式与配色仍完整 —— 内测用户网络环境不可控，不能把页面押在 CDN 上。
+   · 零 JavaScript：折叠 FAQ 用原生 <details>，滚动渐显用 CSS animation-timeline。
+   · 色板与字号严格取自设计规格（不看感觉改）：
+       底 #F8F7F4 / 淡卡 #F6EFE3 / 白 #FFFFFF
+       品牌金 #C4913C / 锈红 #B05A3A / 深金 #8A6A3A
+       主文字 #3A2E25 / 次文字 #6B5B4B
+       H1 40px·700 / H2 20px·600 / 正文 16px·400
+   ============================================================================ */
+@import url('https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
+
+:root {
+  --bg: #F8F7F4;
+  --card-soft: #F6EFE3;
+  --white: #FFFFFF;
+  --gold: #C4913C;
+  --rust: #B05A3A;
+  --gold-deep: #8A6A3A;
+  --ink: #3A2E25;
+  --ink-sub: #6B5B4B;
+  --line: rgba(58, 46, 37, 0.10);
+
+  --font: "Sarasa Gothic SC", "Sarasa Gothic", -apple-system, BlinkMacSystemFont,
+          "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+
+  --radius: 16px;
+  --shadow-soft: 0 10px 30px rgba(58, 46, 37, 0.08);
+  --shadow-hover: 0 14px 36px rgba(58, 46, 37, 0.14);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.7;
+  /* 全站正文一律 16px/400；标题字号在各自类里覆写 */
+}
+
+a { color: var(--gold-deep); text-decoration: none; }
+a:hover { text-decoration: underline; }
+img { display: block; max-width: 100%; height: auto; }
+
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+/* 无障碍：仅屏读可见 */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ============================ ① 品牌区 ============================ */
+.brand { padding: 44px 0 0; }
+
+.brand-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.brand-version {
+  margin: 6px 0 0;
+  color: var(--gold-deep);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+
+.brand-tagline {
+  margin: 14px 0 0;
+  color: var(--ink-sub);
+  font-size: 16px;
+  max-width: 30em;
+}
+
+.brand-scope {
+  margin: 10px 0 0;
+  color: var(--rust);
+  font-size: 13px;
+}
+
+.brand-mark img {
+  width: 180px;
+  height: 180px;
+  /* 「浮起 + 柔和投影」 */
+  filter: drop-shadow(0 12px 26px rgba(58, 46, 37, 0.16));
+}
+
+/* 品牌金 → 锈红 细渐变线过渡 */
+.brand-rule {
+  height: 2px;
+  margin-top: 34px;
+  background: linear-gradient(90deg, rgba(196, 145, 60, 0) 0%, var(--gold) 22%, var(--rust) 78%, rgba(176, 90, 58, 0) 100%);
+}
+
+/* ============================ ② 下载区 ============================ */
+.card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 26px;
+}
+
+.download { margin-top: 30px; background: var(--card-soft); border-color: rgba(196, 145, 60, 0.22); }
+
+.download-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 26px;
+}
+
+.btn-primary {
+  display: inline-block;
+  width: 100%;
+  max-width: 380px;
+  padding: 16px 28px;
+  background: var(--gold);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+.btn-primary:hover {
+  background: var(--gold-deep);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+.btn-primary:active { transform: translateY(0); }
+
+.download-meta { margin: 12px 0 0; color: var(--ink-sub); font-size: 14px; }
+.meta-sep { margin: 0 6px; opacity: 0.5; }
+.download-note { margin: 6px 0 0; color: var(--rust); font-size: 13px; }
+
+.download-qr { text-align: center; }
+.download-qr img {
+  margin: 0 auto;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--white);
+}
+.qr-caption { margin: 8px 0 0; color: var(--ink-sub); font-size: 13px; }
+
+/* ============================ ③ 指引 + FAQ ============================ */
+.section { margin-top: 56px; }
+.section-gap { margin-top: 64px; }
+
+.section-title {
+  margin: 0 0 20px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.section-title-gap { margin-top: 44px; }
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.step {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.step:hover { transform: translateY(-3px); box-shadow: var(--shadow-soft); }
+
+.step-no {
+  display: inline-block;
+  width: 28px; height: 28px;
+  line-height: 28px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.step-title { margin: 12px 0 8px; font-size: 17px; font-weight: 600; }
+.step-body { margin: 0; color: var(--ink-sub); font-size: 15px; }
+.step-body b { color: var(--ink); }
+
+/* 折叠 FAQ：原生 <details>，零 JavaScript */
+.faq { display: grid; gap: 10px; }
+
+.faq details {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 20px;
+}
+
+.faq summary {
+  cursor: pointer;
+  padding: 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+";
+  color: var(--gold);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 400;
+}
+.faq details[open] summary::after { content: "−"; }
+
+.faq-body { padding: 0 0 18px; color: var(--ink-sub); font-size: 15px; }
+.faq-body p { margin: 0 0 10px; }
+.faq-body p:last-child { margin-bottom: 0; }
+.faq-body b { color: var(--ink); }
+
+/* ============================ ④ 反馈 + 须知 ============================ */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.card-title { margin: 0 0 12px; font-size: 20px; font-weight: 600; }
+
+.feedback-lead { margin: 0 0 16px; color: var(--ink-sub); font-size: 15px; }
+.feedback-qr { text-align: center; margin-bottom: 14px; }
+.feedback-qr img {
+  margin: 0 auto;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.feedback-mail { margin: 0; font-size: 15px; }
+.feedback-tip { margin: 12px 0 0; color: var(--ink-sub); font-size: 13px; }
+
+.notice { background: var(--card-soft); border-color: rgba(196, 145, 60, 0.22); }
+.notice-list { margin: 0; padding-left: 20px; color: var(--ink-sub); font-size: 15px; }
+.notice-list li { margin-bottom: 8px; }
+.notice-list li:last-child { margin-bottom: 0; }
+.notice-list b { color: var(--ink); }
+
+/* ============================ 页脚 ============================ */
+.footer {
+  margin-top: 72px;
+  padding: 28px 0 36px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+.footer-links { margin: 0 0 8px; font-size: 13px; }
+.footer-links a { color: var(--ink-sub); }
+.footer-legal { margin: 0; color: var(--ink-sub); font-size: 12px; opacity: 0.85; }
+
+/* ============================ 滚动渐显（无 JS） ============================
+   仅当「用户未要求减少动效」且「浏览器支持 CSS 滚动驱动动画」时才启用；
+   其余情况元素保持**默认可见**——绝不用 opacity:0 当初始态（那会在不支持的浏览器上白屏）。 */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: reveal-up linear both;
+      animation-timeline: view();
+      animation-range: entry 8% cover 26%;
+    }
+  }
+}
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ============================ 响应式 ============================ */
+@media (max-width: 860px) {
+  .steps { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 720px) {
+  /* 手机端首要目标：**一屏内看得到主按钮** —— 品牌区压紧、图标缩到标题右侧同行 */
+  .brand { padding-top: 26px; }
+
+  .brand-grid { grid-template-columns: 1fr auto; gap: 12px; }
+
+  .brand-title { font-size: 30px; }
+
+  .brand-tagline { margin-top: 10px; font-size: 15px; }
+
+  .brand-scope { margin-top: 8px; }
+
+  .brand-mark img { width: 72px; height: 72px; }
+
+  .brand-rule { margin-top: 20px; }
+
+  .download { margin-top: 20px; padding: 20px; }
+
+  .download-grid { grid-template-columns: 1fr; gap: 18px; }
+
+  .btn-primary { max-width: none; padding: 15px 20px; font-size: 17px; }
+
+  .download-qr { display: flex; flex-direction: column; align-items: center; }
+  .download-qr img { width: 110px; height: 110px; }
+
+  .section, .section-gap { margin-top: 40px; }
+
+  .steps { grid-template-columns: 1fr; }
+
+  .two-col { grid-template-columns: 1fr; }
+
+  .footer { margin-top: 48px; }
+}
+
+/* 极窄屏（≤380px）再收一档，保证按钮不被挤出首屏 */
+@media (max-width: 380px) {
+  .brand-title { font-size: 26px; }
+  .brand-mark img { width: 60px; height: 60px; }
+  .brand-tagline { font-size: 14px; }
+}

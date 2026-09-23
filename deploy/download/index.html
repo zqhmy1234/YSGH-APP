@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>忆述光华 · 内测版下载</title>
+<meta name="description" content="忆述光华内测版下载与安装指引。仅限受邀内测用户。" />
+<meta name="robots" content="noindex, nofollow" />
+
+<!--
+  ============================================================================
+  忆述光华 · 内测下载页（卡 E1 · 2026-09-21）
+  ----------------------------------------------------------------------------
+  · 纯静态：零 JavaScript（唯一无脚本实现见下）。折叠 FAQ 用原生 <details>，
+    滚动渐显用 CSS `animation-timeline: view()`（不支持的浏览器直接显示，不依赖脚本）。
+  · 视觉自足：Tailwind CDN 仅作提效；本页全部版式与配色由 style.css 承载，
+    CDN 不可达时页面**仍完整**（内测用户网络环境不可控）。
+  · 待替换点（C3 出包后）已用 HTML 注释 `[替换点]` 标出，共 5 处。
+  ============================================================================
+-->
+
+<link rel="stylesheet" href="style.css" />
+<link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
+</head>
+<body>
+
+<!-- ======================= ① 品牌区 ======================= -->
+<header class="brand">
+  <div class="wrap brand-grid">
+    <div class="brand-text">
+      <h1 class="brand-title">忆述光华</h1>
+      <p class="brand-version">内测版 v0.1.0</p>
+      <p class="brand-tagline">把散落的照片、文字与语音，整理成可以回看的记忆。</p>
+      <p class="brand-scope">仅限受邀内测用户 · 请勿转发下载链接</p>
+    </div>
+    <div class="brand-mark">
+      <img src="assets/app-icon.svg" alt="忆述光华 应用图标" width="180" height="180" />
+    </div>
+  </div>
+  <div class="brand-rule" role="presentation"></div>
+</header>
+
+<main class="wrap">
+
+  <!-- ======================= ② 下载区 ======================= -->
+  <section class="card download" aria-labelledby="dl-title">
+    <h2 id="dl-title" class="sr-only">下载内测版</h2>
+    <div class="download-grid">
+      <div class="download-main">
+        <!-- [替换点 1] APK 路径：C3 出包后把 APK 放到 deploy/download/apk/ 并确认文件名一致 -->
+        <a class="btn-primary" href="apk/yishu-beta-latest.apk" download>
+          下载内测版 APK
+        </a>
+        <!-- [替换点 2/3] 文件大小与更新日期：C3 出包后回填 -->
+        <p class="download-meta">
+          <span class="meta-file">Android · arm64 · 约 — MB</span>
+          <span class="meta-sep">·</span>
+          <span class="meta-date">更新于 —</span>
+        </p>
+        <p class="download-note">仅限受邀内测用户 · 安装前请先看下面的三步指引</p>
+      </div>
+      <div class="download-qr">
+        <!-- [替换点 4] 下载二维码：C3 出包后替换为指向本页/APK 的二维码图片 -->
+        <img src="qr/download-placeholder.svg" alt="下载二维码（待替换）" width="132" height="132" />
+        <p class="qr-caption">手机扫码打开本页</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= ③ 安装指引 + FAQ ======================= -->
+  <section class="section reveal" aria-labelledby="install-title">
+    <h2 id="install-title" class="section-title">三步装好</h2>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-no">1</span>
+        <h3 class="step-title">允许安装未知来源</h3>
+        <p class="step-body">下载完成后点击安装，系统若提示「禁止安装未知应用」，请在弹窗中点<b>设置</b> → 打开<b>允许来自此来源的应用</b>，返回再点一次安装。</p>
+      </li>
+      <li class="step">
+        <span class="step-no">2</span>
+        <h3 class="step-title">华为 / 荣耀机型先关「纯净模式」</h3>
+        <p class="step-body">EMUI / HarmonyOS 会拦截非应用市场来源的安装包。路径：<b>设置 → 系统和更新 → 纯净模式 → 退出</b>，然后再安装。装好可自行开启。</p>
+      </li>
+      <li class="step">
+        <span class="step-no">3</span>
+        <h3 class="step-title">首次打开授权麦克风与相册</h3>
+        <p class="step-body">录音与照片整理都需要授权。<b>麦克风权限只在第一次点录音时弹出</b>，请选「允许」；若误点拒绝，请到 <b>设置 → 应用 → 忆述光华 → 权限</b> 手动开启。</p>
+      </li>
+    </ol>
+
+    <h2 class="section-title section-title-gap">常见问题</h2>
+    <div class="faq">
+      <details>
+        <summary>装不上 / 提示「安装失败」怎么办？</summary>
+        <div class="faq-body">
+          <p>按顺序排查：① 是否已完成上面第 1 步（允许未知来源）；② 华为 / 荣耀是否退出了纯净模式；③ 下载是否中断（重新下载一次，注意文件大小与上方标注一致）；④ 手机上是否已装过同名的旧内测包——请先卸载旧版再装。</p>
+        </div>
+      </details>
+      <details>
+        <summary>录音没有声音 / 录进去是空的？</summary>
+        <div class="faq-body">
+          <p>绝大多数是麦克风权限没给。请到 <b>设置 → 应用 → 忆述光华 → 权限 → 麦克风</b> 打开后重试。</p>
+          <p>另外三种情况：① 开始录音后立刻结束（不足 0.5 秒）会被判定为「录音太短」并丢弃，请正常说一句话；② 录音时若来了电话，录音会被系统中断；③ 手机静音/勿扰模式不影响录音，但蓝牙耳机抢占麦克风会导致录不到，可先断开耳机再试。</p>
+        </div>
+      </details>
+      <details>
+        <summary>打开后一直进不去 / 一直空白？</summary>
+        <div class="faq-body">
+          <p>内测版连的是我们自己的测试服务器，需要在能正常上网的网络下使用。请依次检查：① 是否连了公司/校园内网或 VPN（可能拦住了我们的地址）；② 切换 Wi-Fi 与移动数据再试一次；③ 结束后重新打开 App。</p>
+          <p>内测版是<b>按设备自动建档</b>的：首次打开会为你单独建一个账号，不需要注册、也不需要输入邀请码。若换手机或重置系统，会变成一个新账号（旧数据不会丢，但需要在反馈群里联系我们处理）。</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ======================= ④ 反馈 + 内测须知 ======================= -->
+  <section class="section section-gap reveal" aria-labelledby="feedback-title">
+    <div class="two-col">
+      <div class="card feedback">
+        <h2 id="feedback-title" class="card-title">遇到问题这样反馈</h2>
+        <p class="feedback-lead">内测期问题优先走反馈群，我们会当天响应。</p>
+        <div class="feedback-qr">
+          <!-- [替换点 5] 反馈群二维码：内测群建立后替换 -->
+          <img src="qr/feedback-placeholder.svg" alt="反馈群二维码（待替换）" width="132" height="132" />
+          <p class="qr-caption">扫码进内测反馈群</p>
+        </div>
+        <p class="feedback-mail">
+          或邮件：<a href="mailto:beta@yishuguanghua.com">beta@yishuguanghua.com</a>
+        </p>
+        <p class="feedback-tip">反馈时请附上：机型、系统版本、出问题的页面、以及当时在做什么（有截图最好）。</p>
+      </div>
+
+      <div class="card notice">
+        <h2 class="card-title">内测须知</h2>
+        <ul class="notice-list">
+          <li>本版本<b>仅供内测</b>，功能与数据都可能随时调整。</li>
+          <li>数据仅在测试服务器留存，<b>存在丢失风险</b>，请勿把这里当作唯一备份。</li>
+          <li><b>请勿上传敏感内容</b>（证件、银行卡、他人隐私等）。</li>
+          <li>请勿转发下载链接与安装包，内测名额有限。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ======================= 页脚 ======================= -->
+<footer class="footer">
+  <div class="wrap">
+    <p class="footer-links">
+      <a href="#">隐私政策</a>
+      <span class="meta-sep">·</span>
+      <a href="#">用户协议</a>
+    </p>
+    <p class="footer-legal">
+      <span>备案号：待备案完成后填写</span>
+      <span class="meta-sep">·</span>
+      <span>© 2026 忆述光华</span>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

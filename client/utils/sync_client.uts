@@ -27,8 +27,11 @@
 // O5 收口：网络层统一走 api.ts 的 rawRequest（401 刷新重放 + 5xx Sentry 上报），
 // 本地复制的请求封装已删，不再直接依赖 getToken/refreshToken
 import { rawRequest, HttpResult } from './api'
-// O3 收口：DEVICE_ID 唯一来源收敛到 auth.ts（历史双源定义出过事故），此处 import 不再本地定义
-import { ensureLogin, DEVICE_ID } from './auth'
+// O3 收口 → 2026-09-21（C2 卡）迁移：device_id 唯一来源改为 utils/device_id.uts 的 getDeviceId()
+// （原单源 auth.ts 的 `DEVICE_ID='yishu-android-dev'` 硬编码常量已删除——内测登录按**真实设备标识**
+//  建档，常量会让 20 台设备撞进同一账号；历史"双源定义出事故"的教训是保持单源，故此处只 import 不定义）
+import { ensureLogin } from './auth'
+import { getDeviceId } from './device_id'
 // TD-P2B（S1-M3/M4 收口）：退避表 + 重试统一走 retry.ts、ISO 时间统一走 time.ts；
 // 此处保留导出别名（BACKOFF_MS/isoNow）兼容现有引用
 import { retryAsync, BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
@@ -310,7 +313,7 @@ function postBatch(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
 			return
 		}
 		const reqBody: UTSJSONObject = {
-			device_id: DEVICE_ID,
+			device_id: getDeviceId(),
 			ops: syncOps
 		}
 		rawRequest(PATH_SYNC_PUSH, 'POST', reqBody).then((hr: HttpResult) => {
@@ -445,7 +448,7 @@ export function pullIncremental(): Promise<PullOutcome> {
 				return
 			}
 			const since = readCursor()
-			rawRequest(PATH_SYNC_PULL + '?device_id=' + DEVICE_ID + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
+			rawRequest(PATH_SYNC_PULL + '?device_id=' + getDeviceId() + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
 				if (hr.status === 200) {
 					let changes: Array<UTSJSONObject> = []
 					let cursor = since

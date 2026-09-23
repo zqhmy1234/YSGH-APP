@@ -11,7 +11,9 @@
  * 5xx 由 rawRequest 统一 Sentry 上报。
  */
 import { rawRequest, HttpResult } from './api'
-import { ensureLogin, DEVICE_ID } from './auth'
+import { ensureLogin } from './auth'
+// 2026-09-21（C2 卡）：device_id 单源从 auth.ts 的 DEVICE_ID 常量迁到 device_id.uts（见该文件头）
+import { getDeviceId } from './device_id'
 import { retryAsync } from './retry'
 // O15：事件上云端点路径统一走 contract.ts（与 OpenAPI 对齐）
 import { PATH_EVENTS_SYNC } from './contract'
@@ -38,7 +40,7 @@ export class SyncOutcome {
 function postOnce(events: Array<UTSJSONObject>): Promise<SyncOutcome | null> {
 	return new Promise<SyncOutcome | null>((resolve) => {
 		const body: UTSJSONObject = {
-			device_id: DEVICE_ID,
+			device_id: getDeviceId(),
 			events: events
 		}
 		rawRequest(PATH_EVENTS_SYNC, 'POST', body).then((hr: HttpResult) => {

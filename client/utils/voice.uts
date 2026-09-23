@@ -122,11 +122,67 @@ export function setShouldResume(flag: boolean): void {
 	_controller.setShouldResume(flag)
 }
 
+// ---------- 录音权限前置（D-25 修复 · 2026-09-21） ----------
+// 背景：Android 6+（本工程 minSdk=24）录音属危险权限，**仅声明不够，必须运行时申请并获授权**。
+// 全项目此前零运行时权限申请代码（D-25 登记根因）→ 授予态恒 false → 录音必失败。
+// 注（2026-09-21 核实）：2026-08-28 云包尸检显示 APK 内**已含** RECORD_AUDIO（云打包按所用能力
+// 自动补，而 `git log -S RECORD_AUDIO -- client/manifest.json` 为空 = 从未声明过），
+// 因此本卡的实效不在"让权限进包"，而在"让它被真正授予"——即下面的运行时申请。
+
+/** 权限被拒（可再次弹窗）时的用户可读文案——经宿主既有 onError 通道展示，避免双 toast */
+const PERM_DENIED_MSG = '未获得麦克风权限，无法录音，请允许后重试'
+/** 永久拒绝（勾选"不再询问"）时的文案——必须指引去系统设置，否则用户会反复点却毫无反应 */
+const PERM_DENIED_FOREVER_MSG = '麦克风权限已被拒绝且不再询问，请到「系统设置 → 应用 → 忆述光华 → 权限」中手动开启'
+
+/** 最近一次权限被拒原因对应的文案（供 startRecord 的失败分支取用） */
+let _permDeniedMsg: string = PERM_DENIED_MSG
+
+/** 权限申请看门狗（ms）：框架回调未到达时不得无限挂起（挂起 = 录音按钮永久无响应且零提示） */
+const PERM_WATCHDOG_MS: number = 15000
+
+/**
+ * 确保录音权限已授予（幂等）：已授予直接 resolve(true)；未授予则弹系统框。
+ * resolve-only（永不 reject）——与本项目 Promise 约定一致；各失败路径均打点，不静默。
+ */
+export function ensureRecordPermission(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		const ctl = _controller
+		if (ctl.isRecordPermissionGranted()) {
+			resolve(true)
+			return
+		}
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-voice] ensureRecordPermission ' + why + ' -> granted=' + ok)
+			resolve(ok)
+		}
+		// 看门狗：Activity 被销毁 / 框架回调丢失时兜底，保证调用方有限时内落定（同 auth.uts 写法）
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout(' + PERM_WATCHDOG_MS + 'ms)')
+		}, PERM_WATCHDOG_MS)
+		ctl.requestRecordPermission((granted: boolean, doNotAskAgain: boolean): void => {
+			_permDeniedMsg = doNotAskAgain ? PERM_DENIED_FOREVER_MSG : PERM_DENIED_MSG
+			finish(granted, 'callback(granted=' + granted + ' doNotAskAgain=' + doNotAskAgain + ')')
+		})
+	})
+}
+
 /**
  * 开始录音（wav 16k 单声道，≤30min）。回调：
  *  onStart / onStop / onError（原有）
  *  onInterrupted(autoPaused)（J-7：中断已自动暂停）
  *  onAutoStop(path, durationMs)（J-7：30min 自动结束，落盘分段）
+ *
+ * ⚠️ 权限前置（D-25）：**未授权时先弹系统框，授权后才真正开录**；拒绝则走既有 onError 通道——
+ * 宿主两处调用点（RecordSheet / interview）在调用本函数前已置好"录音中"UI 态，onError 正是其既有
+ * 回滚路径（含 toast），因此无需改宿主即可完成状态回滚与提示（本卡白名单不含宿主文件）。
+ * 已知 UX 取舍：权限弹框期间宿主的秒表已开始走（仅首次录音遇到）；真实时长以插件 `recordedMs()`
+ * 为准（后端校验用后者），故只是显示偏前，非数据问题。
  */
 export function startRecord(
 	onStart: () => void,
@@ -135,7 +191,36 @@ export function startRecord(
 	onInterrupted: (autoPaused: boolean) => void,
 	onAutoStop: (path: string, durationMs: number) => void
 ): void {
-	_controller.start(onStart, onStop, onError, onInterrupted, onAutoStop)
+	// ① 已授权 / 权限 API 不可用（标准基座无原生插件）→ 保持**原同步路径**，行为与改造前完全一致：
+	//    标准基座下 isRecordPermissionGranted() 会抛 → permApiUnavailable → 直接调 start（其抛错由宿主
+	//    既有 try/catch 接管，仍能回滚 UI + 提示"当前基座不支持录音"）。
+	let alreadyGranted = false
+	let permApiUnavailable = false
+	try {
+		alreadyGranted = _controller.isRecordPermissionGranted()
+	} catch (e: Throwable) {
+		permApiUnavailable = true
+	}
+	if (alreadyGranted || permApiUnavailable) {
+		_controller.start(onStart, onStop, onError, onInterrupted, onAutoStop)
+		return
+	}
+
+	// ② 未授权 → 先申请；授权后开录，拒绝则走既有错误通道（宿主回滚 + 提示）
+	ensureRecordPermission().then((ok: boolean) => {
+		if (!ok) {
+			console.log('[dbg-voice] startRecord 中止：录音权限未授予')
+			onError(_permDeniedMsg)
+			return
+		}
+		try {
+			_controller.start(onStart, onStop, onError, onInterrupted, onAutoStop)
+		} catch (e: Throwable) {
+			// 授权后启动仍失败（录音器被占用等）：必须显式报错——宿主的 try/catch 只覆盖同步调用，
+			// 捕不到 Promise 回调里的异常，静默会变成"点了没反应"。
+			onError('录音启动失败：' + (e != null && e.message != null ? e.message : '未知错误'))
+		}
+	})
 }
 
 /** 停止录音（落盘当前分段） */
