@@ -114,6 +114,23 @@
 **未实现（诚实标注）**：SSE 真流式（需 agent 侧 SSE 输出）；`reply.kind` 的 `cards`/`confirm`
 （需 agent 侧结构化输出，当前只回纯文本 ⇒ 只会产生 `bubble`/`plain`）。
 
+**真代理端到端实证（2026-09-23，`_tmp/e2e_chat.ps1` 一次性跑通）**——这是单测覆盖不到的一跳
+（单测是"真 DB + 桩 agent"，本轮补上真 HTTP 那一段）：
+
+| 环节 | 实测 |
+|---|---|
+| 双服务 | agent `/health` ✓（`127.0.0.1:8300`，**仅本机**）· 后端 `/healthz` ✓（`8000`） |
+| 登录 | mock 微信 → `user_id=78e8c801…` ✓ |
+| **对话穿透** | 后端 → Agent → LLM → 工具 → 落库 → 回复：**✅ 成功，墙钟 56.3s**（`reply.kind=plain`，`latency_ms=56279`） |
+| 落库（本仓） | `chat_messages` **2 行**（user + assistant，`agent_latency_ms` 已记） |
+| **AG3 断言** | 该用户在**本仓 3 张表**有数据：`chat_messages` 2 · `devices` 1 · **`memories` 1** ⇒ **Agent 的工具确实写进我们自己的 Postgres**（非 Coze 侧）✓ |
+| 回复内容 | Agent 回："✅ 已保存 / 📝 内容：今天读完了《老人与海》第 12 章 / 🏷️ 分类：事件 / 😊 情绪：平静 / 🎯 主题：兴趣、学习"——**工具链路真的在跑** |
+
+**部署必做项（本轮新增）**：两侧 `.env` 都必须设 `AGENT_SERVICE_TOKEN` 且**一致**
+（agent 未配置时**启动即告警**；本机已生成写入，两侧 `.env` 均已 `git check-ignore` 确认忽略、
+密钥未进库）。`backend/app/core/config.py` 默认 `agent_service_timeout_s=180`——实测单轮 56s，
+余量充足但**不值得调小**（LLM 抖动 + 多轮工具调用会拉长）。
+
 ### AG3 · 数据层落我们自己的 Postgres（2026-09-23）
 
 **表结构与迁移（backend 侧）**
