@@ -18,6 +18,10 @@
 import { get, post, request, dataObj, dataArr, showErrorToast, fetchUnreadCountSimple } from './api'
 import { getBaseUrl } from './config'
 import { getToken } from './auth'
+// B12（2026-09-23）：离线操作入队——此前 enqueueDeleteOp/enqueueFieldOp 导出**零调用**，
+// 即"离线时删除/备注直接白丢"（轴 4 首查 CRITICAL）。离线判定用 uploader.getNetKind()。
+import { enqueueDeleteOp, enqueueFieldOp } from './sync_client'
+import { getNetKind } from './uploader'
 import {
 	PATH_MESSAGES,
 	PATH_ECHO_TODAY,
@@ -429,7 +433,19 @@ export function favoritesList(): Promise<Array<UTSJSONObject>> {
 export function deleteContent(contentId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
 		request('/api/v1/contents/' + contentId, 'DELETE', null).then((res: UTSJSONObject | null) => {
-			resolve(res != null)
+			if (res != null) {
+				resolve(true)
+				return
+			}
+			// B12（2026-09-23）：**离线不再白丢用户操作** —— 入队 delete 墓碑，联网后由
+			// `pushPendingOps` 幂等补发（op_id 幂等 + 软删幂等，重发无副作用）。
+			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 getNetKind()=='none' 改口**：
+			// 否则用户看到"删除失败"而操作其实已排队 = 状态与事实不符（detail.uvue 已同步改）。
+			if (getNetKind() == 'none') {
+				enqueueDeleteOp('content', contentId)
+				console.log('[yishu] 离线：删除已入队 content=' + contentId)
+			}
+			resolve(false)
 		})
 	})
 }
@@ -621,7 +637,17 @@ export function updateContentRemark(contentId: string, remark: string): Promise<
 	const body: UTSJSONObject = { remark: remark }
 	return new Promise<boolean>((resolve) => {
 		patchJson('/api/v1/contents/' + contentId, body).then((res: UTSJSONObject | null) => {
-			resolve(res != null)
+			if (res != null) {
+				resolve(true)
+				return
+			}
+			// B12：离线时备注同样入队（upsert_field），联网后补发；仍返回 false，
+			// 由调用方据 getNetKind()=='none' 改口（同 deleteContent 的注释口径）。
+			if (getNetKind() == 'none') {
+				enqueueFieldOp('content', contentId, 'remark', remark)
+				console.log('[yishu] 离线：备注已入队 content=' + contentId)
+			}
+			resolve(false)
 		})
 	})
 }

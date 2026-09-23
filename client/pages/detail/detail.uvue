@@ -147,6 +147,8 @@
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
 	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta, updateContentRemark, fetchWaveform } from '@/utils/play'
+	// B12：离线判定（play.ts 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
+	import { getNetKind } from '@/utils/uploader'
 	import { formatIsoShortTime } from '@/utils/time'
 	import {
 		toggleVoice,
@@ -459,6 +461,16 @@
 								// FE1（W2-1）：DELETE /api/v1/contents/{id} 软删 → 回收站 30 天保留，可恢复
 								deleteContent(contentId.value).then((ok: boolean) => {
 									if (!ok) {
+										// B12：离线时**删除已入队**（play.ts 侧 enqueueDeleteOp），故不能报"失败"。
+										// 本地墓碑 = 立即按已删处理并返回上一页（避免用户以为没删掉又点一次）；
+										// 队列条数在「存储与同步」页的同步卡可见（pendingSyncCount 已上屏）。
+										if (getNetKind() == 'none') {
+											uni.showToast({ title: '已离线：删除将在联网后自动完成', icon: 'none', duration: 2500 })
+											setTimeout(() => {
+												goBack()
+											}, 900)
+											return
+										}
 										uni.showToast({ title: '删除失败 · 请稍后重试', icon: 'none' })
 										return
 									}
@@ -540,6 +552,13 @@
 				}
 				updateContentRemark(contentId.value, v).then((ok: boolean) => {
 					if (!ok) {
+						// B12：离线时**备注已入队**（play.ts 侧 enqueueFieldOp），故不报"保存失败"；
+						// 本地态保持旧值不变（本函数一贯 response-first：成功才改本地显示），
+						// 联网后由同步链补发，队列条数在同步卡可见。
+						if (getNetKind() == 'none') {
+							uni.showToast({ title: '已离线：备注将在联网后同步', icon: 'none', duration: 2500 })
+							return
+						}
 						uni.showToast({ title: '云端保存失败 · 请稍后重试', icon: 'none' })
 						return
 					}
