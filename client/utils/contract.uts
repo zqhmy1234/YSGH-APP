@@ -27,6 +27,10 @@ export const PATH_SEARCH: string = '/api/v1/search'
 export const PATH_SEARCH_IMAGE: string = '/api/v1/search/image'
 export const PATH_EVENTS_SYNC: string = '/api/v1/events/sync'
 export const PATH_EVENTS_TIMELINE: string = '/api/v1/events/timeline'
+// AG6（2026-09-23）：AI 对话域（后端 AG5 已实现并把契约重导进 docs/openapi.json，67 路径对齐）
+// 注：`GET /api/v1/chat/replies/{id}` 的常量**故意不在此登记**——客户端当前无调用点
+// （POST 已内联返回完整回复），登记了就是一个零调用常量。加调用点时一并加（同 chat_api.uts 注释）。
+export const PATH_CHAT_MESSAGES: string = '/api/v1/chat/messages'
 export const PATH_EVENTS_CONFIRM: string = '/api/v1/events/confirm'
 export const PATH_EVENTS_MERGE: string = '/api/v1/events/merge'
 export const PATH_EVENTS_SPLIT: string = '/api/v1/events/split'

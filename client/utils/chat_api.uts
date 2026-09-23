@@ -1,0 +1,118 @@
+/**
+ * AI 对话域薄封装（AG6 · 对齐 backend/app/api/chat.py —— AG5 已实现且**真代理 E2E 跑通**）
+ *
+ * 后端契约（实证：docs/openapi.json 67 路径全对齐；scripts/e2e_agent_chat.ps1 真 E2E
+ * 实测端到端 56.3s，chat_messages 落库 2 行、Agent 工具写入本仓 memories 1 行）：
+ *   POST /api/v1/chat/messages  {conversation_id?, content, attachments?[]}
+ *        → data{ conversation_id, reply{ id, kind, text, chips[], cards[], created_at }, latency_ms }
+ *   GET  /api/v1/chat/replies/{reply_id} → data{ reply 同构 }
+ *   GET  /api/v1/chat/conversations/{id}/messages
+ *        → data{ conversation_id, messages[]{ id, role, kind, text, created_at } }（历史含 user 行）
+ *   统一 ApiResponse 信封 ⇒ dataObj(res) 取 data（与 capsule_api / search_api 同法）。
+ *
+ * 形态映射（**必须**，否则 TabAi 渲染走错分支）：
+ *   · 后端 reply.kind 目前只有 bubble | plain（agent 只回纯文本）；客户端 AiMsg.kind 同名 ⇒ 直接可用。
+ *   · plain 形态客户端要 `bullets`（要点数组），后端只给整段 text ⇒ 此处按「首行作标题、
+ *     其余非空行作要点」切分（多行正是 V3 SOP 确认块的形态，逐行成 bullet 恰好吻合）。
+ *   · 后端 kind=cards/confirm/typing **当前不会产生**（需 agent 侧结构化输出）⇒ 本模块**不臆造**：
+ *     契约里预留 ≠ 现在能回，写死假 cards 就是把演示数据又塞回真链路。
+ *
+ * 约定对齐 utils/api.uts：resolve-only 永不 reject；失败 resolve(null)，且 api 层**已全局
+ * showErrorToast**（含后端 message）⇒ 调用方**不重复 toast**（同 capsule_api 注释口径）。
+ */
+import { post, dataObj } from './api'
+import { PATH_CHAT_MESSAGES } from './contract'
+
+/** 一条智能体回复（客户端可用子集；chips/cards 待 agent 出结构化输出后再开） */
+export class ChatReply {
+	id: string
+	kind: string
+	text: string
+	bullets: Array<string>
+	constructor(id: string, kind: string, text: string, bullets: Array<string>) {
+		this.id = id
+		this.kind = kind
+		this.text = text
+		this.bullets = bullets
+	}
+}
+
+/** 发送结果：**必须回传 conversationId**——多轮上下文靠它（丢了就每轮失忆） */
+export class ChatSendResult {
+	conversationId: string
+	reply: ChatReply
+	constructor(conversationId: string, reply: ChatReply) {
+		this.conversationId = conversationId
+		this.reply = reply
+	}
+}
+
+/** 把整段纯文本切成非空行数组（plain 形态的 title/bullets 由此得来） */
+export function splitLines(text: string): Array<string> {
+	const out: Array<string> = []
+	const lines = text.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		const s = lines[i].trim()
+		if (s != '') {
+			out.push(s)
+		}
+	}
+	return out
+}
+
+/** 解析 reply 对象 → ChatReply；字段缺失不崩（防御：后端升级/降级期字段可能缺） */
+function parseReply(obj: UTSJSONObject | null): ChatReply | null {
+	if (obj == null) {
+		return null
+	}
+	const text = obj.getString('text') ?? ''
+	const kind = obj.getString('kind') ?? 'bubble'
+	// plain：首行作标题，其余行作要点；单行/非 plain 时 bullets 为空（页面另有渲染分支）
+	const lines = splitLines(text)
+	const bullets: Array<string> = []
+	if (kind == 'plain' && lines.length > 1) {
+		for (let i = 1; i < lines.length; i++) {
+			bullets.push(lines[i])
+		}
+	}
+	const title = lines.length > 0 ? lines[0] : text
+	return new ChatReply(obj.getString('id') ?? '', kind, title, bullets)
+}
+
+/**
+ * 发一条消息并取回复：POST /api/v1/chat/messages。
+ * 失败 resolve(null)（**不伪造回复**——调用方据此撤掉 typing 占位即可，绝不补一句假 AI 文本）。
+ */
+export function sendChatMessage(conversationId: string, content: string): Promise<ChatSendResult | null> {
+	const body: UTSJSONObject = { content: content }
+	if (conversationId != '') {
+		// 空串不发：后端对"显式传入但不存在"的会话返回 404（IDOR 防护），
+		// 而""不是合法 UUID ⇒ 会被判 404，故新建会话时必须**省略**该字段
+		body.set('conversation_id', conversationId)
+	}
+	return new Promise<ChatSendResult | null>((resolve) => {
+		post(PATH_CHAT_MESSAGES, body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const reply = parseReply(d.getJSON('reply'))
+			if (reply == null) {
+				resolve(null)
+				return
+			}
+			resolve(new ChatSendResult(d.getString('conversation_id') ?? '', reply))
+		})
+	})
+}
+
+// ⚠️ 这里**故意没有** `fetchChatReply`（GET /api/v1/chat/replies/{id} 的封装）。
+// 原因：POST 已内联返回完整回复 ⇒ 该函数当前零调用，而"零调用的能力导出"正是本仓
+// `audit_harness.py` 轴 4 判定为 CRITICAL 的缺陷形态（能力写了没接线，图搜先例）。
+// 我不能一边拿这条门禁查别人、一边自己塞一个零调用函数进来。
+// 真需要时（SSE 流式/断线重取，见排期 AG6 余项）连同**调用点**一起加，别只加壳。

@@ -9,7 +9,15 @@
 	     mock 开关：USE_MOCK_CHAT（2026-09-23 补真身——此前本行声称的常量在代码中**并不存在**，
 	          属无条件硬编码，既无法配置关闭、也不告知用户是演示数据，见台账 §7.1）：
 	          true  = 样张对话 + 本地闭环回复（内测期现状），页面顶部显式标注「内测演示数据」
-	          false = 不注入样张；发送时诚实提示「尚未接入」，**不伪造 AI 回复** -->
+	          false = 不注入样张；**走真端点** POST /api/v1/chat/messages（AG6 已接线，
+	                  封装见 utils/chat_api.uts）——失败时撤掉 typing 占位、由 api 层提示原因，
+	                  **绝不伪造 AI 回复**
+
+	     翻转前提（2026-09-23 AG6 登记的诚实边界）：后端 AG5 已就绪且真代理 E2E 跑通（56.3s、
+	     chat_messages/memories 落库实证），但 true→false 还需满足
+	       ① 本文件改动过编译门（已过）② 后端在**客户端可达的地址**上——内测包指向部署域名，
+	          当前只有本机 127.0.0.1:8000 ⇒ 上机前翻转只会得到"请求失败"（等于把演示数据换成错误提示）。
+	     两条都满足后：删本常量与 mock 层（seedMockMessages/buildMockReply/REPLY_KIND_ROTATION）。 -->
 	<view class="ai-root">
 		<view class="ai-header">
 			<text class="n2_336">AI</text>
@@ -154,8 +162,9 @@
 <script setup lang="uts">
 	import { onMounted, watch } from 'vue'
 	import { aiAttachOpen } from '@/utils/shell_state'
-	// AI 对话页（W10.4 数据驱动）：消息流全量 mock（形态族覆盖），onSend 本地闭环
-	// 契约见 template 头注释；B2 对话域接线后：messages 改真端点拉取，onSend 改 POST
+	import { sendChatMessage, ChatSendResult } from '@/utils/chat_api'
+	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
+	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
 	let draft = ref('') // AI 输入草稿
 	// attachOpen 上收 shell_state.aiAttachOpen（返回键优先级协同 shell 浮层；B10 P2）
@@ -206,6 +215,11 @@
 	// 现补真身并使三处接线点全部按其分支；**B2 对话域接线后本常量应删除**（改真端点）。
 	const USE_MOCK_CHAT: boolean = true
 
+	// 会话 ID（AG6）：后端按 conversation_id 存 thread（多轮上下文靠它，丢了就每轮失忆）；
+	// 落盘以便重启后接续同一会话（键名前缀与仓内既有 storage 键风格一致）
+	const CHAT_CONV_KEY = 'yishu_chat_conversation_id'
+	let conversationId = ref('')
+
 	// mock 相册图（static/images 现有资产）
 	const MOCK_IMGS = ['/static/images/img2_345.png', '/static/images/img2_140.png', '/static/images/img2_256.png', '/static/images/img2_74.png']
 
@@ -246,8 +260,31 @@
 			return
 		}
 		if (USE_MOCK_CHAT === false) {
-			// 诚实失败：**不伪造 AI 回复**——假回复会让用户以为智能体已上线（台账 §7.1）
-			uni.showToast({ title: '智能体尚未接入，内测期暂不支持对话', icon: 'none', duration: 2500 })
+			// 真端点（AG6）：本地即时上屏用户消息 + typing 占位，等 POST /api/v1/chat/messages
+			// （后端 AG5 已实现：JWT→可信 user_id、反代 Agent、失败返回 502/504 而**不伪造回复**）
+			draft.value = ''
+			const u2 = mkUser(t)
+			const tp2 = mkAi('typing', '正在翻你的回忆', [], [], [], [])
+			messages.value.push(u2)
+			messages.value.push(tp2)
+			scrollToBottom(tp2.id)
+			const tpId = tp2.id
+			sendChatMessage(conversationId.value, t).then((r: ChatSendResult | null) => {
+				removeById(tpId)
+				if (r == null) {
+					// **不伪造回复**：只撤掉 typing 占位。失败原因由 api 层全局 toast（带后端 message）
+					// 与 Sentry 承担；用户输入已上屏、可直接重发——比编一句假 AI 回复诚实，
+					// 也便于按后端日志复盘"问了但没答上"（chat_messages 里用户行仍在）
+					return
+				}
+				if (r.conversationId != '') {
+					conversationId.value = r.conversationId
+					uni.setStorageSync(CHAT_CONV_KEY, r.conversationId)
+				}
+				const ai = mkAi(r.reply.kind, r.reply.text, [], [], r.reply.bullets, [])
+				messages.value.push(ai)
+				scrollToBottom(ai.id)
+			})
 			return
 		}
 		draft.value = ''
@@ -312,7 +349,10 @@
 	// 行动确认卡按钮（mock：B2 接线后改 POST 确认接口）
 	function onConfirmAction(m: AiMsg, ok: boolean): void {
 		if (USE_MOCK_CHAT === false) {
-			uni.showToast({ title: '智能体尚未接入，该操作暂不可用', icon: 'none', duration: 2500 })
+			// 措辞更正（AG6）：智能体**已接入**，未实现的是"确认卡"这条交互流程本身
+			// （后端无 chat 域确认端点；确认卡目前只由 mock 生成，见文件头形态④）。
+			// 原话"智能体尚未接入"会误导用户以为整个 AI 不可用——失实文案与失实注释同罪。
+			uni.showToast({ title: '该操作暂未开放（内测）', icon: 'none', duration: 2500 })
 			return
 		}
 		removeById(m.id)
@@ -408,6 +448,12 @@
 		aiAttachOpen.value = false // 原页级初值：进组件即收起
 		if (USE_MOCK_CHAT) {
 			seedMockMessages()
+		} else {
+			// 接续上次会话（多轮上下文）；空串 ⇒ 首轮由后端新建会话
+			const saved = uni.getStorageSync(CHAT_CONV_KEY) as string
+			if (saved != null && saved != '') {
+				conversationId.value = saved
+			}
 		}
 		prefillDraftFrom(props.prefillTitle, props.prefillSummary)
 	})
