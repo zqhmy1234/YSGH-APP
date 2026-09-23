@@ -73,6 +73,8 @@
 
 - [ ] Task B10-i: 门禁域剩余项（**待执行**）——D14-18 退出码口径不一、D14-14/15 轴 2 假阳性、D14-9 密钥模式集双实现、D14-11/12/13 重复样板、D14-22 报告 schema、D14-23 schema-drift job 仅 schedule、D14-6 轴 1 字段级漂移
 
+- [x] Task B10-j: 轴 2 **注释判定**假阳性/假阴性（D14-14 / D14-15）——原用「本行前缀有无 `//`/`<!--`」的行级近似 ⇒ ① 块注释内页面引用被当**死路由**（误报 CRITICAL）② 多行 HTML 注释同样漏判 ③ `.ts` 残留不看注释（注释里写「原 './auth.ts'」也报 CRITICAL）④ **反向**：字符串 `http://x` 之后被判为注释 ⇒ **真死路由漏报**。改为字符级 `_comment_ranges()`（跳过字符串字面量）+ `_in_comment(offset)` 精确判定。证据：纯函数对照六例（块注释/多行 HTML/块注释 `.ts`：旧 False→新 True；`http://`：旧 True→新 False；真死路由两侧一致）；文件级负向探针（追加真实死路由）→ CRITICAL @ `shell_state.uts:25`、EXIT=1，已还原；轴 2 常规态无 CRITICAL
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

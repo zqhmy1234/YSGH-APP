@@ -213,6 +213,64 @@ def _declared_pages_missing_files() -> list[str]:
     return missing
 
 
+_STRING_QUOTES = {"'", '"', "`"}
+
+
+def _comment_ranges(text: str) -> list[tuple[int, int]]:
+    """返回文本中所有**注释区间** `[start, end)`（行注释 `//`、块注释 `/* */`、HTML `<!-- -->`）。
+
+    为什么需要（D14-14 / D14-15 · 2026-09-24 B10-j）：原实现用「本行前缀里有没有 `//`」
+    来判注释，属**行级近似**，产生两类假阳性/漏判：
+      · **块注释** `/* ... */` 内（该行没有 `//`）的页面引用被当成死路由 → 误报 CRITICAL；
+      · 多行 `<!-- ... -->`（HTML 注释）同样漏判；
+      · `.ts` 残留扫描**完全不看注释** ⇒ 注释里写「原 `'./auth.ts'`」（合法历史标注）也报 CRITICAL。
+    本函数做**字符级**扫描，并**跳过字符串字面量**（否则 `"http://x"` 里的 `//` 会被误当注释），
+    供上面两处按**偏移量**精确判定。
+    """
+    ranges: list[tuple[int, int]] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        two = text[i : i + 2]
+        if ch in _STRING_QUOTES:
+            quote = ch
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if two == "//":
+            j = text.find("\n", i)
+            j = n if j == -1 else j
+            ranges.append((i, j))
+            i = j
+            continue
+        if two == "/*":
+            j = text.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            ranges.append((i, j))
+            i = j
+            continue
+        if text[i : i + 4] == "<!--":
+            j = text.find("-->", i + 4)
+            j = n if j == -1 else j + 3
+            ranges.append((i, j))
+            i = j
+            continue
+        i += 1
+    return ranges
+
+
+def _in_comment(ranges: list[tuple[int, int]], offset: int) -> bool:
+    """该**字符偏移**是否落在任一注释区间内（精确判定，替代"本行有 //"的近似）"""
+    return any(s <= offset < e for s, e in ranges)
+
+
 def audit_client() -> None:
     """轴 2：客户端漂移（mock 开关 / 页面路径双向对拍 / .ts 残留）。
 
@@ -250,7 +308,7 @@ def audit_client() -> None:
     if mock_true:
         _info(f"发版检查清单要求 USE_MOCK_* 全部 =false —— 当前仍有 {len(mock_true)} 处未关闭（见 B8 远期待办）")
 
-    # ② 页面路径漂移（按是否在注释里分流）
+    # ② 页面路径漂移（按是否在**注释区间**分流；B10-j：改用字符级精确判定）
     pages = _registered_pages()
     page_re = re.compile(r"/pages/[A-Za-z0-9_]+/[A-Za-z0-9_-]+")
     dead_code: list[str] = []
@@ -259,16 +317,19 @@ def audit_client() -> None:
         if f.name == "pages.json":
             continue
         text = f.read_text(encoding="utf-8", errors="replace")
+        ranges = _comment_ranges(text)
         for m in page_re.finditer(text):
             target = m.group(0)
             if target.lstrip("/") in pages:  # 两侧均归一化后比较（见 _registered_pages 注）
                 continue
-            start_of_line = text.rfind("\n", 0, m.start()) + 1
-            prefix = text[start_of_line: m.start()]
             line = text[: m.start()].count("\n") + 1
-            in_comment = ("//" in prefix) or ("<!--" in prefix)
-            # 「原」标注＝已声明的历史沿革（按本轴自身建议），不再计入漂移
-            if in_comment and "原" in prefix:
+            in_comment = _in_comment(ranges, m.start())
+            # 「原」标注＝已声明的历史沿革（按本轴自身建议），不再计入漂移。
+            # 取**整行**文本判「原」（块注释内"原"未必在匹配点之前）。
+            line_start = text.rfind("\n", 0, m.start()) + 1
+            line_end = text.find("\n", m.start())
+            line_text = text[line_start : len(text) if line_end == -1 else line_end]
+            if in_comment and "原" in line_text:
                 continue
             entry = f"{f.relative_to(REPO)}:{line}  {target}（未注册）"
             (comment_refs if in_comment else dead_code).append(entry)
@@ -293,22 +354,29 @@ def audit_client() -> None:
     else:
         _info(f"pages.json {len(pages)} 条声明均有物理文件 ✓")
 
-    # ③ .ts 残留引用
+    # ③ .ts 残留引用（B10-j：跳过**注释区间**——注释里写"原 './auth.ts'"属合法历史标注）
     ts_re = re.compile(r"from\s+['\"][^'\"]+\.ts['\"]|['\"][^'\"]+\.ts['\"]\s*(?:,|\)|\})")
     ts_hits: list[str] = []
+    ts_in_comment: list[str] = []
     for f in sources:
         if f.suffix not in {".uts", ".uvue", ".ts", ".json"}:
             continue
         text = f.read_text(encoding="utf-8", errors="replace")
+        ranges = _comment_ranges(text)
         for m in ts_re.finditer(text):
             line = text[: m.start()].count("\n") + 1
-            ts_hits.append(f"{f.relative_to(REPO)}:{line}  {m.group(0).strip()}")
+            entry = f"{f.relative_to(REPO)}:{line}  {m.group(0).strip()}"
+            (ts_in_comment if _in_comment(ranges, m.start()) else ts_hits).append(entry)
     if ts_hits:
         _crit(f"残留 .ts 引用（5.24 迁移后应为 .uts，{len(ts_hits)} 条）：")
         for e in sorted(set(ts_hits)):
             _say("  ", e)
     else:
-        _info("无 .ts 残留引用 ✓")
+        _info("无 .ts 残留引用 ✓（代码内；注释内的历史标注已单独计）")
+    if ts_in_comment:
+        _info(f"注释内 .ts 提及 {len(ts_in_comment)} 条（历史标注，不计漂移）：")
+        for e in sorted(set(ts_in_comment)):
+            _say("  ", e)
 
 
 # ─────────────────────────── 轴 3：模型使用率 ───────────────────────────
