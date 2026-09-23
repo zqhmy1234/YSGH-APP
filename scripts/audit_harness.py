@@ -289,11 +289,86 @@ def audit_models() -> None:
             _say("  ", f"{c} → {', '.join(sorted(files))}")
 
 
+# ─────────────────────── 轴 4：导出-引用可达性 ───────────────────────
+#
+# 为什么需要（闭审计报告 §6.3 自列的未覆盖项）：
+#   `client/utils/**` 是能力层，**导出却零调用**只有一个含义——能力写了但没接线。
+#   图搜就是先例：`search_api.uts:252 export function searchByImage` 全仓无调用方，
+#   于是"多模态搜索"对用户完全触达不到，而任何文档都写着它"已实现"（台账 §7.3）。
+#   这类缺口**静态可查、零成本**，故门禁化。
+
+EXPORT_RE = re.compile(
+    r"^\s*export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)",
+    re.M,
+)
+
+# 允许"导出但暂无外部调用方"的白名单（每条须给理由，避免门禁被随手放宽）
+EXPORT_ALLOWLIST: dict[str, str] = {
+    # 供测试/脚本调用，或按契约预留的公开入口
+    "PATH_AUTH_DEVICE": "契约常量（contract.uts），按契约预留",
+}
+
+
+def audit_exports() -> None:
+    print("== 轴 4 · 导出-引用可达性（client/utils 零调用导出）==")
+    utils_dir = CLIENT / "utils"
+    if not utils_dir.is_dir():
+        _say("ERROR", "未找到 client/utils")
+        raise SystemExit(2)
+
+    sources = _client_sources()
+    decls: dict[str, list[str]] = {}   # 名字 → 声明位置
+    for f in sorted(utils_dir.glob("*.uts")):
+        text = f.read_text(encoding="utf-8", errors="replace")
+        for m in EXPORT_RE.finditer(text):
+            line = text[: m.start()].count("\n") + 1
+            decls.setdefault(m.group(1), []).append(f"{f.relative_to(REPO)}:{line}")
+
+    # 统计全仓引用（含本文件内部引用；排除声明行本身）
+    zero_cap: list[str] = []   # 零调用的**能力函数**（真信号：写了没接线）
+    zero_const: list[str] = [] # 零调用的**契约常量**（PATH_*/FIELD_*；属预留或端点未接线，需人工判）
+    low: list[str] = []
+    for name, places in sorted(decls.items()):
+        if name in EXPORT_ALLOWLIST:
+            continue
+        refs = 0
+        for f in sources:
+            text = f.read_text(encoding="utf-8", errors="replace")
+            for m in re.finditer(rf"\b{re.escape(name)}\b", text):
+                line = text[: m.start()].count("\n") + 1
+                if f"{f.relative_to(REPO)}:{line}" in places:
+                    continue          # 声明行自身不算引用
+                refs += 1
+        is_const = name.startswith("PATH_") or name.startswith("FIELD_") or "contract.uts" in places[0]
+        if refs == 0:
+            (zero_const if is_const else zero_cap).append(f"{name}（{places[0]}）")
+        elif refs <= 2:
+            low.append(f"{name}（{places[0]}）→ {refs} 处引用")
+
+    _say("INFO", f"client/utils 导出符号 {len(decls)} 个（白名单豁免 {len(EXPORT_ALLOWLIST)} 个）")
+    # 能力函数零调用＝"能力写了但没接线"，正是图搜那类缺口的形态（台账 §7.3）→ CRITICAL
+    if zero_cap:
+        _crit(f"零调用的**能力导出**（写了没接线，{len(zero_cap)} 个）—— 需确认是「预留」还是「漏接线」：")
+        for e in zero_cap:
+            _say("  ", e)
+    else:
+        _info("无零调用的能力导出 ✓")
+    # 契约常量零调用＝多为契约预留，或对应后端端点尚未接线 → 只作提示（避免噪音淹没真信号）
+    if zero_const:
+        _info(f"零调用的契约常量 {len(zero_const)} 个（PATH_*/FIELD_*，多为预留或端点未接线，供人工判）：")
+        for e in zero_const:
+            _say("  ", e)
+    if low:
+        _info(f"低引用（≤2 处）导出 {len(low)} 个，供人工判：")
+        for e in low:
+            _say("  ", e)
+
+
 # ─────────────────────────── 入口 ───────────────────────────
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="harness 三轴审计（契约/客户端/模型）")
-    ap.add_argument("axis", choices=["openapi", "client", "models", "all"])
+    ap.add_argument("axis", choices=["openapi", "client", "models", "exports", "all"])
     ap.add_argument("--skip-openapi", action="store_true", help="无后端环境时跳过契约轴")
     ap.add_argument("--json", metavar="PATH", help="把发现写入 JSON（供 CI/台账引用）")
     args = ap.parse_args()
@@ -304,6 +379,8 @@ def main() -> int:
         audit_client()
     if args.axis in {"models", "all"}:
         audit_models()
+    if args.axis in {"exports", "all"}:
+        audit_exports()
 
     print("\n" + "-" * 62)
     if CRITICAL:
