@@ -180,7 +180,7 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
  * 最近内容（搜索页进入时的默认列表）——2026-08-31 新增
  *
  * 为什么需要：后端 `SearchQuery.q` 要求 min_length=1，**不支持空词查询**；
- * 而 mock 关掉后搜索页进入时关键词为空 → 结果区一片空白，页面看着像坏了。
+ * 而搜索页进入时关键词为空 → 结果区一片空白，页面看着像坏了。
  * 改用 GET /api/v1/contents 拉最近内容兜底，用户一进页面就能看到自己的记忆。
  *
  * 与真实搜索的语义差异（调用方需知）：

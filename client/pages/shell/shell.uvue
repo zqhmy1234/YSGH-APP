@@ -4,7 +4,10 @@
 	     - 组件解析走 easycom（components/TabX/TabX.uvue 目录即组件名先例，P1 同款，无显式 import 先例）
 	     - 铁律 1：中央 + 只拉 RecordSheet 浮层（全壳唯一挂载），任何 tab 不跳页
 	     - 正式产品行为（峰宝拍板 2026-09-09）：跨 tab 连续播放 / 返回 tab 数据与滚动常驻
-	     - 老 pages/index|ai|search|profile 四页仍在 pages.json（老世界 reLaunch 兜底可达，P4 退役） -->
+	     - 老 pages/index|ai|search|profile 四页**已彻底退役**（2026-09-23 核实：既不在 pages.json，物理目录亦已删除）。
+	       四页内容整体搬迁为 components/Tab{Index,Ai,Search,Profile}（各组件头注有来源标注，处置记录见台账 §EE）；
+	       壳内兜底一律 reLaunch 回 /pages/shell/shell，**不存在指向老页的死路由**。 -->
+
 	<view class="shell-root">
 		<!-- ready 闸门：ensureLogin 完成前不挂载任何 tab 组件（组件 onMounted 即拉数据，
 		     须晚于 token 就绪；对齐老 index 页 onLoad 内 ensureLogin().then(拉数据) 串行语义。
