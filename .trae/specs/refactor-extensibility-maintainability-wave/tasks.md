@@ -69,6 +69,10 @@
 
 - [x] Task B10-g: 契约快照**再生脚本 + 一致性断言**（D14-7）——新增 `scripts/gen_openapi.py`（写入 / `--check`），接入 `review_agent` 的 `openapi_snapshot` 检查（0=一致放行 / 1=过期阻断 / 2=环境不可导入降级放行）。证据：`--check` 证明现有快照与后端**逐字节一致**（239518 字符，此前无任何机器能证）；负向探针（塞幽灵路径）→ `[FAIL]` + 精确定位「快照有而后端无（1）」EXIT=1、`review_agent` 阻断；再生还原后与 HEAD 逐字节一致
 
+- [x] Task B10-h: 门禁**静默转绿** + **覆盖率双阈值**（D14-19 / D14-8）——① 缺 ruff（`code==127`）/ 缺 pytest 此前**静默返回 True + [skip]**（报告全绿而 lint/测试从未执行）→ 改**默认阻断**，仅 `--allow-missing-tools` 时可见放宽（带 `[放宽]` 标记）；② 覆盖率阈值收敛为单一常量 `COV_THRESHOLD = 60`（此前本工具 50 vs CI 60 ⇒ 本地绿≠CI 绿）。证据：内存级探针（monkeypatch `run`、不改文件）证明 argv 阈值=60、缺工具默认 `ok=False`、放宽路径 ok=True。**待环境验证**：50→60 的实际覆盖率须 Docker 可用后跑 `--full` 确认
+
+- [ ] Task B10-i: 门禁域剩余项（**待执行**）——D14-18 退出码口径不一、D14-14/15 轴 2 假阳性、D14-9 密钥模式集双实现、D14-11/12/13 重复样板、D14-22 报告 schema、D14-23 schema-drift job 仅 schedule、D14-6 轴 1 字段级漂移
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

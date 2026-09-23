@@ -238,7 +238,21 @@ def check_syntax(files: list[str]) -> tuple[bool, str]:
     return (not errors), ("\n".join(errors) if errors else f"{len(files)} files compiled OK")
 
 
-def check_lint(files: list[str]) -> tuple[bool, str]:
+# ─── 门禁口径常量（单一来源）────────────────────────────────────────────────
+#
+# D14-8（2026-09-24 B10-h）：覆盖率阈值此前**双口径**——本工具硬编码 50，而 CI 的
+#   `test_agent --cov-threshold 60` 是 60 ⇒ 「本地 --full 绿」**不等于**「CI 绿」。
+#   现收敛为单一常量并取 CI 的值 60：**本地门禁不得比 CI 松**。
+COV_THRESHOLD = 60
+
+# D14-19（2026-09-24 B10-h）：缺工具（ruff / pytest 未安装）此前**静默转绿**
+#   （返回 True + "[skip]"）——报告全绿而实际什么都没检查，与"假门禁"同族。
+#   现改为**默认阻断**（环境不齐就不能声称"验证过"）；确需在缺工具环境跑通，
+#   必须显式传 `--allow-missing-tools`（有意识、可见地放行，而非静默）。
+ALLOW_MISSING_TOOLS = False
+
+
+def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
     """ruff check（若未安装则跳过并提示）；只查 git 已跟踪/本次提交文件
 
     2026-08-26：快模式只 lint 本次提交的 .py（排除有未暂存改动的），
@@ -248,20 +262,39 @@ def check_lint(files: list[str]) -> tuple[bool, str]:
         return True, "[skip] 无待检查 .py"
     code, out = run(["ruff", "check", *files])
     if code == 127:
-        return True, "[skip] ruff 未安装（pip install ruff 后启用）"
+        # D14-19：缺 ruff 不得静默放行（否则报告全绿而 lint 从未执行）
+        if allow_missing:
+            return True, "[放宽] ruff 未安装 → lint 未执行（--allow-missing-tools 显式放行）"
+        return False, (
+            "ruff 未安装 ⇒ lint **未执行**（环境不齐不得静默放行）\n"
+            "  安装：pip install ruff\n"
+            "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
+        )
     return (code == 0), out.strip() or "ruff clean"
 
 
-def run_tests() -> tuple[bool, str]:
+def run_tests(*, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
     """全量测试（仅 --full）：调用测试 Agent（pytest + api_smoke + research）"""
     code, out = run(
-        [sys.executable, str(ROOT / "scripts" / "test_agent.py"), "--cov-threshold", "50"],
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "test_agent.py"),
+            "--cov-threshold",
+            str(COV_THRESHOLD),
+        ],
         timeout=900,
     )
     if code == 0:
         return True, out.strip()[-1500:]
     if "No module named" in out and "pytest" in out:
-        return True, "[skip] pytest 未安装（pip install pytest pytest-cov httpx）"
+        # D14-19：缺 pytest 不得静默放行（否则报告全绿而全量测试从未执行）
+        if allow_missing:
+            return True, "[放宽] pytest 未安装 → 全量测试未执行（--allow-missing-tools 显式放行）"
+        return False, (
+            "pytest 未安装 ⇒ 全量测试 **未执行**（环境不齐不得静默放行）\n"
+            "  安装：pip install pytest pytest-cov httpx\n"
+            "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
+        )
     return (code == 0), out.strip()[-1500:]
 
 
@@ -416,14 +449,21 @@ def main() -> int:
     parser.add_argument("--path", default=str(ROOT), help="审核目录（兼容占位）")
     parser.add_argument("--full", action="store_true", help="全量门禁（仓库级扫描 + 全量测试）")
     parser.add_argument("--skip-tests", action="store_true", help="--full 时跳过全量测试（CI 快速静态层用）")
+    parser.add_argument(
+        "--allow-missing-tools",
+        action="store_true",
+        help="缺 ruff/pytest 时放行（默认阻断；D14-19：可见地放行，而非静默转绿）",
+    )
     args = parser.parse_args()
+
+    allow_missing = bool(args.allow_missing_tools)
 
     mode = "full" if args.full else "fast"
     syntax_files, lint_files, secret_files = _scope_files(args.full)
 
     checks = {
         "syntax": check_syntax(syntax_files),
-        "lint": check_lint(lint_files),
+        "lint": check_lint(lint_files, allow_missing=allow_missing),
         "secrets": check_secrets(secret_files),
         "todos": check_todos(secret_files),
         "structure": check_structure(),
@@ -432,7 +472,7 @@ def main() -> int:
         "openapi_snapshot": check_openapi_snapshot(),
     }
     if args.full and not args.skip_tests:
-        checks["tests"] = run_tests()
+        checks["tests"] = run_tests(allow_missing=allow_missing)
 
     blocking = {k: v for k, v in checks.items() if not v[0]}
     passed = not blocking

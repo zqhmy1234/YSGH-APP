@@ -70,3 +70,5 @@
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：提交经 hook `[pre-commit] 审核通过`
 - [x] **B10-f 轴 4 覆盖面补全**（D14-16）：`glob("*.uts")` → **`rglob("*.uts")`**（子目录不再漏扫）+ `EXPORT_RE` 补 `default`/`type`/`interface`/`enum` —— 证据：先量化（补递归 +29 导出、其中零调用 1＝`WALK_SPEED_MS`＝深审 D04-12；补 7 类 +5 导出、零调用 0）；修后导出 **298 → 332**、存量 5、无新增；**子目录负向探针**（追加零调用导出）→ CRITICAL 且行号正确、已还原
 - [x] **B10-g 契约快照再生 + 断言**（D14-7）：新增 `scripts/gen_openapi.py`（写入/`--check`）并接入 `review_agent` 的 `openapi_snapshot`（0 放行 / 1 阻断 / 2 环境降级）—— 证据：`--check` 证明现有快照与后端**逐字节一致**（239518 字符，此前无法证明）；负向探针（塞幽灵路径）→ `[FAIL]` 且精确指出「快照有而后端无（1）」、EXIT=1、门禁阻断；再生还原后与 HEAD 逐字节一致
+- [x] **B10-h 静默转绿 + 覆盖率双阈值**（D14-19 / D14-8）：缺 ruff/pytest 改为**默认阻断**（`--allow-missing-tools` 才可见放宽）；覆盖率阈值收敛为单一 `COV_THRESHOLD = 60` —— 证据：内存级探针（monkeypatch `run`、**不改文件**）证明 argv 阈值 = 60、缺 ruff/缺 pytest 默认 `ok=False`、放宽路径 `ok=True` 且带 `[放宽]` 标记
+- [ ] ⚠️ **待环境验证（如实标注，未以未验证冒充完成）**：`COV_THRESHOLD` 由 50 调为 60 后**实际覆盖率是否 ≥60 无法在本机确认**（Docker/Qdrant 未起，全量测试不可跑）—— 须 Docker 可用后跑一次 `--full`；CI 本就以 60 为准
