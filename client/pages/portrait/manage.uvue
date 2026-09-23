@@ -12,7 +12,7 @@
 		</view>
 	</view>
 
-		<scroll-view class="scroll">
+		<scroll-view class="scroll" direction="vertical">
 			<!-- 画像概览卡片（W6 拍板 2026-09-04：画像详情页未设计，整卡不可点；
 			     「画像详情页」已登记远期总账 B 类，出设计稿后再接） -->
 			<view class="profile-card">

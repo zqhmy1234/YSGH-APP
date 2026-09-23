@@ -26,7 +26,8 @@
 		<!-- 同步状态横幅 -->
 		<UploadStatusBanner />
 
-		<scroll-view class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
+		<scroll-view class="scroll" direction="vertical" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
 			<!-- 回响卡片（去年今日 · 角贴 + 泛黄）；W6 拍板：整卡 → 该记忆详情页 -->
 			<view v-if="echo != null" class="echo-card pressable" @tap="openEchoDetail">
 				<view class="echo-corner">
@@ -47,7 +48,11 @@
 			<!-- P-4 骨架屏：R9-D 修复——vapor 渲染器对「一次性 v-if 卸载」失效（09-07 真机 uiautomator+像素扫描
 			     实锤骨架整树残留、米黄 sk-line 从待确认区露出）。改为恒渲染 + 动态 class display:none 收起，
 			     走属性更新路径，不依赖节点卸载 -->
-			<view class="skeleton" :class="loaded ? 'sk-hidden' : ''" aria-label="加载中">
+			<!-- 2026-09-23 编译门清理：原 `aria-label="加载中"` 在 uni-app x 的 <view> 上**不受支持**
+			 （编译器原话：Property 'aria-label' is not supported）→ 属死属性（写了不生效）。
+			 骨架屏是纯装饰占位、无文本内容，暂无需无障碍标注；日后若需读屏支持，
+			 须走 uni-app x 实际支持的机制（不能沿用 HTML 的 aria-*）。 -->
+		<view class="skeleton" :class="loaded ? 'sk-hidden' : ''">
 				<view class="sk-card">
 					<view class="sk-line sk-day"></view>
 					<view class="sk-card-body">

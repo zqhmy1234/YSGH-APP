@@ -20,7 +20,11 @@
 		<view v-if="USE_MOCK_CHAT" class="demo-note">
 			<text class="demo-note-text">内测演示数据 · 智能体尚未接入后端</text>
 		</view>
-		<scroll-view class="n4_88" scroll-y :scroll-into-view="scrollInto">
+		<!-- 2026-09-23 编译门修复：`scroll-y` 在 uni-app x 的 <scroll-view> 上**不是受支持属性**
+		     （编译器原话：Property 'scroll-y' is not supported），正确写法是 `direction`。
+		     uni-app x 的 scroll-view 只定义 direction（none/vertical/horizontal/all）+ refresherEnabled
+		     （HBuilderX 自带 dts dom2/UniNativeScrollView.d.ts）。 -->
+		<scroll-view class="n4_88" direction="vertical" :scroll-into-view="scrollInto">
 			<view v-for="m in messages" :key="m.id" :id="'msg-' + m.id">
 				<!-- AI 消息组 -->
 				<view v-if="m.role === 'ai'" class="ai-group">
@@ -56,7 +60,10 @@
 					</view>
 					<!-- 形态③：记忆卡横滑组（画布 4:323，第二张露边示意滑动） -->
 					<view v-else-if="m.kind === 'cards'" class="cards-wrap">
-						<scroll-view class="cards-scroll" scroll-x>
+						<!-- 2026-09-23 编译门修复（**这是真缺陷，不只是警告**）：原 `scroll-x` 同样不受支持、被静默忽略
+					     → 该横滑组退化为默认方向，而画布 4:323 的设计是"第二张露边示意滑动"
+					     （横向可滑）。改 direction="horizontal" 才是设计意图。 -->
+					<scroll-view class="cards-scroll" direction="horizontal">
 							<view v-for="(cd, di) in m.cardList" :key="di" class="mem-card">
 								<image class="mem-thumb" :src="cd.img" mode="aspectFill" />
 								<text class="mem-title">{{ cd.title }}</text>

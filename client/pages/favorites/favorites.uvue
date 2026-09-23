@@ -35,7 +35,7 @@
 		<text v-if="loaded && allCards.length > 0" class="count-text">{{ countText() }}</text>
 
 		<!-- ═══ F4a 列表态（卡流，search 结果区先例：绝对定位滚动区） ═══ -->
-		<scroll-view v-if="loaded && allCards.length > 0" class="card-scroll" :show-scrollbar="false">
+		<scroll-view v-if="loaded && allCards.length > 0" class="card-scroll" direction="vertical" :show-scrollbar="false">
 			<!-- §P9：类型筛选 0 结果时给提示（原纯空白被误读为渲染缺陷；countText=总数为画布真值不动） -->
 			<view v-if="displayCards.length == 0" class="filter-empty">
 				<text class="filter-empty-text">该类型下暂无收藏</text>

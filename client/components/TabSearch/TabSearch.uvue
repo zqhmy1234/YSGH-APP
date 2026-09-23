@@ -16,7 +16,8 @@
 		</view>
 		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
 		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
-		<scroll-view class="n2-results" :show-scrollbar="false">
+		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
+		<scroll-view class="n2-results" direction="vertical" :show-scrollbar="false">
 			<view v-for="(item, idx) in voiceResults" :key="'v' + item.id" class="n2_588" @tap="openResult(item)">
 				<view class="n2_589"> <!-- 语音媒体 -->
 					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
