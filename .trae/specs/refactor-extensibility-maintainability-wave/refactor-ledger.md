@@ -151,6 +151,8 @@
 
 | **B10-n** UTF-8 兜底**同语义 20 处 → 单一实现**（D14-11 / D14-12 姊妹项） | ✅ 完成 | 原状：把 stdout/stderr 切到 UTF-8（Windows GBK 下 `✓`/`✅` 会 `UnicodeEncodeError` 直接崩）这 2~4 行，在 `scripts/*.py` 里**抄了 20 处 / 16 个文件**，且**形态四分五裂**：① `if hasattr(sys.stdout, "reconfigure")` 成对守卫；② 仅 stdout；③ 函数内同款；④ `__import__("sys").stdout` 变体；⑤ `for _stream in (...)` + `contextlib.suppress`（audit_harness）；⑥ **无守卫裸调用**（warm_hf_models）⇒ 想加一层兜底（如顺带设 `PYTHONIOENCODING`）得改 20 处且必漏。新增 `scripts/gate_io.py::force_utf8()` 作为唯一实现（语义为各原处的**安全超集**：stdout+stderr 都处理、无 `reconfigure` 时静默降级），16 个文件全部改为 `force_utf8()` | 迁移后：**`scripts/` 全目录 ruff `All checks passed`**；**17 个改动脚本 `py_compile` 全过**；**残留 `reconfigure` 仅剩 `gate_io.py` 自身**（grep 实证）。门禁工具实跑：`review_agent` ✅ 通过 / `audit_harness all` 无 CRITICAL / `lessons recent` 正常；10 个数据类脚本中文输出**正常无导入错误**（`--help` 场景各自因缺数据退出属其自身语义，非本次改动） |
 
+| **B10-o** 退出码口径**单一来源** + `test_agent` **姊妹假绿**（D14-18 残余 / D14-19 姊妹 / D14-13 半） | ✅ 完成 | ① 口径与判定函数抽到 **`scripts/gate_exit.py`**（`ENV_ERR_PREFIX` + `classify_failure()`），`review_agent` 与 `test_agent` **共用**（此前一方持有、一方缺失 ⇒ 同一"跑不了"语义不一致）；② 顺带发现并修 **`test_agent` 的姊妹假绿**：pytest/pytest-cov 缺失时 `return True, "[skip] 缺依赖"` ⇒ 报告全绿而**全量测试从未执行**（与 `review_agent` 缺 ruff 同族）→ 改为**环境错误**（统一前缀 ⇒ 退出码 **2**）默认阻断；③ `test_agent` 新增 `env_blocked_sections` 报告字段 + **0/1/2 三态**退出；④ `audit_harness` 内 `{"unpackage","node_modules",".hbuilderx"}` **硬编码 2 次** → 收敛为 `CLIENT_EXCLUDE_DIRS`（**D14-13 半**） | 探针：共享前缀/判定被两处共用（`R.ENV_ERR_PREFIX == GE.ENV_ERR_PREFIX`、`T.gate_exit is GE`）；`classify_failure` **4 例全对**（含"违规优先"）；`R._classify_failure` 与共享实现**等价**；**源码断言** `test_agent` 不再含 `[skip] 缺依赖` 且已改为环境错误。`scripts/` 全目录 ruff **通过**；`review_agent` ✅ / `test_agent --help` ✅ / `audit_harness all` 无 CRITICAL。**残余（如实登记）**：`D14-12` subprocess 双实现（签名差异 + OOM 提示分支）、两工具**跨文件**目录排除清单仍各持一套、`D14-22` 报告 schema 未统一、`D14-23` CI schema-drift job 仅 schedule |
+
 ### 8.1 棘轮状态（2026-09-24 第二轮执行后，第四轮更新）
 
 - `audit_harness all`：**无 CRITICAL**（INFO 16）；轴 5 存量超阈 **7 → 6 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）；**轴 4 零调用能力导出存量 5 个已冻结**（`AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`/`WALK_SPEED_MS`），且新增"僵尸豁免清算"。
@@ -278,6 +280,7 @@
 | B10-l | 密钥模式集**唯一来源**（D14-9） | B10 | 低 | ✅ **已完成**（见 §8.3；`scripts/secret_patterns.py` 并集 16 条，两处共用；新增 `pragma: allowlist secret` 显式行内豁免；并集无缺失、四类形态全覆盖） |
 | B10-m | `audit_security` **崩溃 + 白名单失效**（既有缺陷） | B10 | **中**（安全审计此前从未跑通） | ✅ **已完成**（见 §8.3；修崩溃（`db/models` 拆包）+ 白名单按路径段匹配 + 统一合成值抑制；首次跑通后**仅剩 1 项真实 ❌：最近备份距今 493.0h（≈20.5 天）违反 RPO≤24h —— 交运维/用户处置**） |
 | B10-n | UTF-8 兜底同语义多实现统一（D14-11） | B10 | 低 | ✅ **已完成**（见 §8.3；新增 `scripts/gate_io.py::force_utf8()`，**16 文件 / 20 处**全迁移；`scripts/` 全目录 ruff 通过、17 脚本 py_compile 通过、残留仅 gate_io 自身） |
+| B10-o | 退出码口径单一来源 + `test_agent` 姊妹假绿（D14-18 残余 / D14-19 姊妹 / D14-13 半） | B10 | 中（**又一个"报告全绿但测试从未跑"**） | ✅ **已完成**（见 §8.3；`scripts/gate_exit.py` 单一来源 + `test_agent` 缺依赖改环境错误（退出码 2）+ `audit_harness` 排除集合并；探针 4 例 + 源码断言） |
 | B9 | 端口/边界收口：L-03c 越级直连 + D05-16 第二套 Qdrant + D02-3 存储注册点 | — | 中 | ⏸ **待执行**（须专用窗口，逐点读码；不与 B2 混提） |
 | B5 | 客户端拆分 + 令牌收敛（L-01/02 + L-12/D12-1/3） | B1 + **编译门** | **高** | ⏸ 编译门不可用 → 顺延 |
 | — | **②子批：门禁缺口补强**（D11-2 错误码门禁跨模块盲区 + D11-1 漏登记、D12-9 轴 2 三向缺一向；D04-15 见下） | B10 | 低 | ✅ **已完成**（D11-2/D11-1/D12-9 已修并含反向探针；**D04-15 判定为阻塞**——被功能波 D04-1/2/3/4/5 阻塞，见 §8.3） |

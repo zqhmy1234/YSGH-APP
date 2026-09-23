@@ -26,7 +26,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import gate_exit  # noqa: E402
+
 # D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+# D14-18 / B10-o：退出码口径单一来源（scripts/gate_exit.py）
 from gate_io import force_utf8  # noqa: E402
 
 force_utf8()
@@ -211,7 +214,14 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
 
     if any("No module named pytest" in o or "No module named pytest-cov" in o for o in outputs):
         last = outputs[-1].strip().splitlines()[-1] if outputs[-1].strip() else "pytest"
-        return True, f"[skip] 缺依赖：{last}"
+        # D14-19 姊妹缺陷（B10-o）：此处此前**静默返回 True + [skip]** ⇒ 报告全绿，而全量测试
+        # **从未执行**（与 review_agent 缺 ruff/pytest 的假绿同族）。
+        # 现改为**环境错误**（统一前缀 ⇒ main() 映射为退出码 2），默认阻断、不再静默。
+        return False, (
+            f"{gate_exit.ENV_ERR_PREFIX} 缺测试依赖 ⇒ 全量测试**未执行**（环境不齐不得静默放行）\n"
+            f"  {last}\n"
+            "  安装：pip install pytest pytest-cov httpx"
+        )
 
     _emit_warnings(warnings)
     combined = "\n\n".join(outputs)
@@ -306,9 +316,13 @@ def main() -> int:
     # 每跑结束清理测试 collection（尽力而为，失败不阻断门禁）
     cleanup_ok, cleanup_out = run_cleanup_test_collections()
 
+    # D14-18（B10-o）：统一退出码口径——违规（代码问题）= 1，环境错误（无法判定）= 2。
+    env_blocked, real_fail = gate_exit.classify_failure(blocking)
+
     report = {
         "passed": passed,
         "blocking_sections": list(blocking.keys()),
+        "env_blocked_sections": env_blocked,
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in sections.items()},
         "cleanup_test_collections": {"ok": cleanup_ok, "output": cleanup_out},
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -331,8 +345,13 @@ def main() -> int:
     if passed:
         print("✅ 测试全部通过")
         return 0
-    print(f"❌ 测试未通过：{', '.join(blocking)} — 修复后重跑")
-    return 1
+    if env_blocked:
+        print(f"⚠️ 环境错误（非代码问题，本工具无法判定）：{', '.join(env_blocked)}")
+    if real_fail:
+        print(f"❌ 测试未通过：{', '.join(real_fail)} — 修复后重跑")
+        return 1
+    print("❌ 无法完成测试（环境不齐，本工具未真正判定）— 修好环境后重跑")
+    return 2
 
 
 if __name__ == "__main__":

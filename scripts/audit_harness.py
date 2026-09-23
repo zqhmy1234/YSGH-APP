@@ -170,13 +170,17 @@ def audit_openapi() -> None:
 
 CODE_SUFFIXES = {".uvue", ".uts", ".ts", ".js", ".json"}
 
+# 客户端**排除目录**（B10-o · D14-13 收敛）：此前这套集合在本文件内**硬编码 2 次**
+# （`_client_sources` 与 `_iter_sized_sources`）⇒ 加一个排除目录要改两处、必漏一处。
+CLIENT_EXCLUDE_DIRS = {"unpackage", "node_modules", ".hbuilderx"}
+
 
 def _client_sources() -> list[Path]:
     out: list[Path] = []
     for p in CLIENT.rglob("*"):
         if not p.is_file() or p.suffix not in CODE_SUFFIXES:
             continue
-        if any(part in {"unpackage", "node_modules", ".hbuilderx"} for part in p.parts):
+        if any(part in CLIENT_EXCLUDE_DIRS for part in p.parts):
             continue
         out.append(p)
     return out
@@ -593,7 +597,7 @@ def _iter_sized_sources() -> list[Path]:
         for p in CLIENT.rglob("*")
         if p.is_file()
         and p.suffix in {".uts", ".uvue"}
-        and not any(part in {"unpackage", "node_modules", ".hbuilderx"} for part in p.parts)
+        and not any(part in CLIENT_EXCLUDE_DIRS for part in p.parts)
     ]
     return sorted(out)
 

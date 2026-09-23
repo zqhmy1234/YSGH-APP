@@ -246,11 +246,10 @@ COV_THRESHOLD = 60
 #   必须显式传 `--allow-missing-tools`（有意识、可见地放行，而非静默）。
 ALLOW_MISSING_TOOLS = False
 
-# D14-18（2026-09-24 B10-k）：**统一退出码口径** 的落地约定——
-#   违规（代码问题）与「环境错误」（工具/依赖不可用，无法判定）必须可区分：
-#   前者退出码 1，后者退出码 2（非 0 一律阻断，但归因不同）。
-#   实现上用一个**消息前缀**给"环境错误型"检查打标（比加返回值维度更轻、且报告里可见）。
-ENV_ERR_PREFIX = "[环境错误]"
+# D14-18（2026-09-24 B10-k / B10-o）：**统一退出码口径**——违规（代码问题）= 1，
+# 环境错误（工具/依赖不可用，无法判定）= 2。
+# 口径与判定函数**单一来源** = scripts/gate_exit.py（与 test_agent 共用）。
+from gate_exit import ENV_ERR_PREFIX  # noqa: E402
 
 
 def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
@@ -452,19 +451,10 @@ def check_lessons() -> tuple[bool, str]:
 
 
 def _classify_failure(blocking: dict[str, tuple[bool, str]]) -> tuple[list[str], list[str]]:
-    """把失败检查分流为 `(环境错误, 违规)` —— D14-18 统一退出码口径的判定核心。
+    """退出码分流（环境错误 2 / 违规 1）——判定逻辑单一来源见 scripts/gate_exit.py（B10-o）。"""
+    from gate_exit import classify_failure
 
-    纯函数（可单测）：失败项的消息以 `ENV_ERR_PREFIX` 开头 = **环境错误**（工具/依赖不可用，
-    本工具无法判定）→ 退出码 2；其余 = **违规**（代码问题）→ 退出码 1。两者都阻断提交。
-    抽出为独立函数是为了让"退出码分流"本身可被探针直接验证，而不是埋在 main() 里。
-    """
-    env_blocked = sorted(
-        k for k, (ok, out) in blocking.items() if not ok and str(out).startswith(ENV_ERR_PREFIX)
-    )
-    real_fail = sorted(
-        k for k, (ok, out) in blocking.items() if not ok and not str(out).startswith(ENV_ERR_PREFIX)
-    )
-    return env_blocked, real_fail
+    return classify_failure(blocking)
 
 
 def main() -> int:

@@ -83,6 +83,8 @@
 
 - [x] Task B10-n: UTF-8 兜底**同语义 20 处 → 单一实现**（D14-11）——新增 `scripts/gate_io.py::force_utf8()`（语义为各原处安全超集），**16 个文件 / 20 处**全迁移（含 6 种形态：成对守卫 / 仅 stdout / 函数内 / `__import__` 变体 / `for _stream`+suppress / 无守卫裸调用）。证据：`scripts/` 全目录 ruff `All checks passed`；17 个改动脚本 `py_compile` 全过；残留 `reconfigure` **仅剩 `gate_io.py` 自身**；门禁工具实跑全绿（`review_agent` ✅ / `audit_harness all` 无 CRITICAL / `lessons recent` 正常）
 
+- [x] Task B10-o: 退出码口径**单一来源** + `test_agent` **姊妹假绿**（D14-18 残余 / D14-19 姊妹 / D14-13 半）——① 新增 `scripts/gate_exit.py`（`ENV_ERR_PREFIX` + `classify_failure()`），`review_agent`/`test_agent` 共用；② 修 `test_agent` 缺 pytest 依赖时 `return True, "[skip] 缺依赖"`（**报告全绿而全量测试从未执行**）→ 改为环境错误（退出码 2）默认阻断；③ `test_agent` 加 `env_blocked_sections` + 0/1/2 三态；④ `audit_harness` 排除集 `CLIENT_EXCLUDE_DIRS` 合并硬编码 2 处。证据：探针 4 例全对 + 源码断言无旧 `[skip] 缺依赖`；`scripts/` 全目录 ruff 通过；三工具实跑正常
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。
