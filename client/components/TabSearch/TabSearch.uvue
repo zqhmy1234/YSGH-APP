@@ -8,6 +8,13 @@
 			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
 				<input class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
 			</view>
+			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
+			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
+			     早已就绪，但用户完全触达不到——"多模态搜索"对用户等于不存在。
+			     复用既有 s-chip 样式类（不新增 CSS，避免样式回归面） -->
+			<view class="s-chip s-chip-ml" @tap="runImageSearch()">
+				<text class="s-chip-text">以图搜</text>
+			</view>
 		</view>
 		<view class="n2_397"> <!-- 筛选行（HEAD 交互接回：4 静态 chip→filters v-for + active 态） -->
 			<view v-for="(f, idx) in filters" :key="idx" class="s-chip" :class="{ 's-chip-active': idx === activeFilter, 's-chip-ml': idx > 0 }" @tap="setFilter(idx)">
@@ -67,7 +74,7 @@
 
 <script setup lang="uts">
 	import { ref, computed, watch, onMounted } from 'vue'
-	import { searchText, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { fetchWaveform } from '@/utils/play'
 	import { shortDate } from '@/utils/time'
 	import {
@@ -364,6 +371,39 @@
 			}
 			hits.value = out.hits
 			degraded.value = out.degraded
+		})
+	}
+
+	/**
+	 * 以图搜图（AG6 接线）：选一张图 → POST /api/v1/search/image（multipart）→ **复用同一结果区**。
+	 *  · 取消选图静默（入口取消＝什么都不做，口径同 RecordSheet.pickPhotos）；
+	 *  · 失败由封装 toast、结果置空（**不伪造命中**）；
+	 *  · 图搜无关键词 ⇒ 清空 keyword 并置 hasSearched，避免结果区回落到"输入关键词开始搜索"
+	 *    这种与事实不符的空态文案。
+	 * 拆两个 filterContentTypes 不适用：图搜由后端按图片语义检索，不走 activeFilter 的本地过滤链。
+	 */
+	function runImageSearch(): void {
+		uni.chooseImage({
+			count: 1,
+			sourceType: ['album', 'camera'],
+			success: (res) => {
+				const paths = res.tempFilePaths
+				if (paths.length === 0) {
+					return
+				}
+				loading.value = true
+				searchByImage(paths[0], 30).then((out) => {
+					loading.value = false
+					hasSearched.value = true
+					keyword.value = ''
+					if (out == null) {
+						hits.value = []
+						return
+					}
+					hits.value = out.hits
+					degraded.value = out.degraded
+				})
+			}
 		})
 	}
 
