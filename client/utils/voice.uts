@@ -21,6 +21,7 @@
 // R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
 // O15：asr/contents 端点路径统一走 contract.ts（与 OpenAPI 对齐）
 import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { addBreadcrumb } from './sentry'
 import { PATH_ASR_TRANSCRIBE, PATH_CONTENTS } from './contract'
 // TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
 // 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
@@ -238,9 +239,46 @@ export function resumeRecord(): void {
 	_controller.resume()
 }
 
-/** POST /asr/transcribe：上传 wav 转写（≤8MB 直传）；返回 AsrResult 或 null
- *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
+/**
+ * POST /asr/transcribe：上传 wav 转写（**≤8MB 直传**）；返回 AsrResult 或 null。
+ *
+ * B14 接线（2026-09-23）：`MAX_DIRECT_UPLOAD_BYTES` 此前**定义了却从未生效**（轴 4 实证：
+ * 该常量零引用）。后果具体而严重：J-4 已把录音上限从 3.5min 放开到 **30min**，
+ * 而 30min 的 16kHz/16bit 单声道 wav ≈ 57MB ≫ 8MB ⇒ 这类录音仍会被送去直传，
+ * 后端 `MAX_AUDIO_BYTES=8MB` 必然拒绝 ⇒ 用户得到一个语焉不详的失败，
+ * 而**本文件里已经写好的正确路径（`uploadVoicePersistent` 分片持久化）从未被走到**。
+ * 故此处按常量本义设闸：超限**不发直传**，明确告知并按失败返回（resolve null），
+ * 由调用方改走持久化链——而不是把大文件丢给后端换一个 413 回来。
+ * 大小拿不到时（getFileInfo fail）**按原行为继续直传**：不因元数据缺失阻断主链。
+ */
 export function transcribeWav(filePath: string): Promise<AsrResult | null> {
+	return new Promise<AsrResult | null>((resolve) => {
+		uni.getFileSystemManager().getFileInfo({
+			filePath: filePath,
+			success: (info) => {
+				if (info.size > MAX_DIRECT_UPLOAD_BYTES) {
+					uni.showToast({ title: '录音较长，改用分片上传转写', icon: 'none', duration: 2500 })
+					addBreadcrumb('voice', 'transcribe skipped: size=' + info.size + ' > ' + MAX_DIRECT_UPLOAD_BYTES)
+					resolve(null)
+					return
+				}
+				transcribeWavDirect(filePath).then((r: AsrResult | null) => {
+					resolve(r)
+				})
+			},
+			fail: () => {
+				// 拿不到大小：按原行为继续直传（不因元数据缺失阻断主链）
+				transcribeWavDirect(filePath).then((r: AsrResult | null) => {
+					resolve(r)
+				})
+			}
+		})
+	})
+}
+
+/** 直传真身（≤8MB 路径；R1#17：multipart 上传统一走 api.ts uploadFileHttp
+ *  —— 401 重放 + 5xx Sentry + 信封解析）。仅由 `transcribeWav` 在过大小时调用。 */
+function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 	return new Promise<AsrResult | null>((resolve) => {
 		uploadFileHttp(PATH_ASR_TRANSCRIBE + '?preferred=auto', filePath, 'file', null, 30000).then((hr: HttpResult) => {
 			if (hr.status === 200) {
