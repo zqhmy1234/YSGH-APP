@@ -93,6 +93,11 @@ def _skip_path(parts: tuple[str, ...]) -> bool:
 
     2026-08-26：加 .wt/（并行开发 worktree 副本——每个都是完整仓库，
     全量模式会重复扫 5 份 backend，静态门禁 150s→~30s）。
+
+    ⚠️ 2026-09-23 **临时**加 agent/（开发部同事交付的 Coze Agent 包，原样入库以便对照上游）：
+    该包 354 处 lint 违规（239 可自动修 + 115 需手动，含 S310/S110/DTZ005 等真问题），
+    其上不符合我们规范。**豁免是临时的**：改写批次（见 docs/待办处理排期_20260923.md「Agent 接线批」AG7）
+    完成后**必须删除本行**并全量收口 lint。登记：docs/决策台账.md §4.12。
     """
     return (
         ".git" in parts
@@ -100,6 +105,23 @@ def _skip_path(parts: tuple[str, ...]) -> bool:
         or "client" in parts
         or (".wt" in parts or (len(parts) > 0 and parts[0] == ".wt"))
     )
+
+
+def _lint_skip(path: str) -> bool:
+    """lint 步的**文件列表层**排除（`_skip_path` 只作用于语法步的目录遍历）。
+
+    为什么需要独立函数：`check_lint` 把文件**显式**传给 `ruff check <files>`，
+    而 **ruff 的 `config.exclude` 对命令行显式传入的文件不生效**（实测：仅配
+    ruff.toml 的 exclude 时，本次提交里的 agent/*.py 仍被 lint 拦下）。
+    故必须在列表层过滤。
+
+    ⚠️ 2026-09-23 **临时**纳入 agent/（交付包原样入库，理由与依据见 `agent/UPSTREAM.md`）：
+    上游 354 处违规；**仅豁免 lint**——语法与密钥扫描仍覆盖 agent/（实测通过：32 文件编译 OK、无硬编码密钥）。
+    **撤销待办 AG7**：改写批次完成后删除本函数的 agent 判断（与 ruff.toml 的 exclude 同步），
+    登记见 docs/决策台账.md §4.12 与排期「Agent 接线批」AG7。
+    """
+    p = path.replace("\\", "/")
+    return p == "agent" or p.startswith("agent/")
 
 
 def _git_files(cached: bool) -> list[str]:
@@ -144,7 +166,7 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
         staged = _staged_files()
         dirty = _dirty_files()
         # 已暂存但又有未暂存改动的文件跳过 lint（ruff 读工作区，可能 lint 到半成品）
-        lint = [f for f in staged if f.endswith(".py") and f not in dirty]
+        lint = [f for f in staged if f.endswith(".py") and f not in dirty and not _lint_skip(f)]
         return ([f for f in staged if f.endswith(".py")], lint, staged)
 
     syntax: list[str] = []
@@ -154,7 +176,11 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
     code, ls = run(["git", "ls-files", "--", "*.py"])
     tracked = [p for p in (ls.splitlines() if code == 0 and ls.strip() else []) if p.strip()]
     dirty = _dirty_files()
-    lint = [p for p in tracked if p not in dirty and p.replace("/", "\\") not in dirty]
+    lint = [
+        p
+        for p in tracked
+        if p not in dirty and p.replace("/", "\\") not in dirty and not _lint_skip(p)
+    ]
     secrets: list[str] = []
     for f in ROOT.rglob("*"):
         if not f.is_file():

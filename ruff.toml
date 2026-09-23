@@ -3,7 +3,14 @@
 line-length = 120
 
 # 客户端（uni-app x：UTS/Kotlin/uvue）不属于 Python 工具链（B2 决策，2026-08-24）
-exclude = ["client"]
+#
+# agent：开发部同事交付的 Coze Agent 包（2026-09-23 原样入库，依据见 agent/UPSTREAM.md）。
+#   ⚠️ **临时豁免**——上游 354 处违规（239 可自动修 + 115 手动，含 S310/S110/DTZ/PLW0603 等真问题）。
+#   注意：本 exclude 只对**目录遍历**生效；pre-commit 快模式是显式传文件给 ruff
+#   （`ruff check <files>`），故另有 `scripts/review_agent.py:_lint_skip()` 做列表层过滤。
+#   **撤销待办 AG7**：改写批次完成后删除本项与 `_lint_skip` 的 agent 判断（两处同步），
+#   登记见 docs/决策台账.md §4.12 与 docs/待办处理排期_20260923.md「Agent 接线批」。
+exclude = ["client", "agent"]
 
 [lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "DTZ", "BLE", "PLW"]
