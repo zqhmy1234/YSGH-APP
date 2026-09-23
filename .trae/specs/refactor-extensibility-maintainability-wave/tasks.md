@@ -63,6 +63,8 @@
 
 - [x] Task B10-d: 轴 4 `EXPORT_RE` **假阴性**修正 + 零调用能力导出棘轮——`^\s*export` 的 `\s` 含换行 ⇒ 匹配点落前导空行 ⇒ 声明行排除失配 ⇒ 每个导出把自身计成 1 引用 ⇒ **轴 4 长期假绿**（`zero_cap` 应为 4 却恒为 0；298 导出中 56 个声明行偏移）。修为 `^[ \t]*`；露出 4 枚真零调用能力导出（`AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`），按 B1 口径基线冻结 + 只拦新增 + 清算僵尸豁免。证据：双负向探针（新增导出 → CRITICAL 且**行号正确**；基线塞假条目 → 僵尸豁免 CRITICAL）均已还原；`all` 无 CRITICAL
 
+- [x] Task B10-e: filesize / dup 基线**僵尸豁免清算**（D14-4 的另一半）——原白名单只拦新增、从不检查条目是否失效（文件被删/改名/拆到阈值内 ⇒ 永久白条）。现：filesize 对 `set(allowlist) − 仍超阈` 报 CRITICAL；dup 对 `per_file` 已归零条目报 CRITICAL；存量下降报 WARN/INFO 要求同步下调基线。证据：先逐条对账（6 条 filesize / 21 条 dup per_file 全 `OK`、total 44=44）⇒ 不引入误红；双负向探针（client 阈值 800→3000 ⇒ **6 条**僵尸 CRITICAL；dup 塞不存在文件 ⇒ **1 条** CRITICAL）均 EXIT=1 且基线按原文精确还原
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

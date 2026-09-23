@@ -4,7 +4,8 @@
     "规则：新增违规 = CRITICAL；存量超阈文件在 allowlist 内被豁免（但不得再增长，增长会 WARN）。",
     "收缩方式：拆分/收敛后，把对应条目从本文件删除或下调计数（须与代码同 commit，便于回滚）。",
     "建立于 2026-09-24（易扩展/易维护重构波 · 批次 B1）；台账见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md",
-    "禁止把本文件当万能豁免池：每条须有 reason 与 target（销项触发）。"
+    "禁止把本文件当万能豁免池：每条须有 reason 与 target（销项触发）。",
+    "僵尸豁免清算（2026-09-24 B10-e）：基线条目若已不再违规（文件被删/改名/已拆到阈值内/计数已归零），门禁报 CRITICAL 要求删除该条——棘轮只许收缩，缩了要记账。"
   ],
   "filesize": {
     "thresholds": {

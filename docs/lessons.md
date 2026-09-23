@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 05:18 · commit 52d43a2 · ts=1790198295
+- **错误**：用 SearchReplace 编辑 markdown 表格时，old_str 只取了表格行的**行首前缀**（如仅 | **B10-d** 标题部分），导致该行剩余单元格被留在新文本之后，产生截断/错位行（本轮发生 2 次：refactor-ledger §8.3 与 tasks.md）
+- **根因**：old_str 仅匹配到行内一段而非完整行，替换后原行的后半段仍接在 new_str 末尾
+- **修复**：编辑整行/整段时，old_str 必须覆盖该行（或该段）的完整文本；或改用更小的唯一锚点（如行首标签 + 行尾短后缀）
+- **相关文件**：.trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md
+- **教训**：SearchReplace 的 old_str 必须覆盖完整行/段，禁止只取行首前缀（否则尾部残留会截断错位）
+
+---
+
 ### 2026-09-24 05:10 · commit b980ac0 · ts=1790197843
 - **错误**：做负向探针后用 git checkout -- <file> 还原，连带把同一文件上【尚未提交】的正式改动一起回滚（本次回滚掉了 audit_harness_baseline.json 新增的 exports 段）
 - **根因**：探针与正式改动落在同一文件，而 git checkout 以 HEAD 为基准，不区分二者

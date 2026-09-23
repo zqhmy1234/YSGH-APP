@@ -531,19 +531,21 @@ def _threshold_for(rel: str, thresholds: dict[str, int]) -> int:
 
 
 def _filesize_findings() -> tuple[list[str], list[str], list[str]]:
-    """(新增超阈=CRITICAL, 存量超阈=INFO, 存量增长=WARN)"""
+    """(新增超阈或僵尸豁免=CRITICAL, 存量超阈=INFO, 存量增长或基线过高=WARN)"""
     section = _load_baseline().get("filesize", {})
     allow = section.get("allowlist", {})
     thresholds = _filesize_thresholds(section)
     crit: list[str] = []
     info: list[str] = []
     warn: list[str] = []
+    seen: set[str] = set()
     for p in _iter_sized_sources():
         rel = p.relative_to(REPO).as_posix()
         lines = len(p.read_text(encoding="utf-8", errors="replace").splitlines())
         limit = _threshold_for(rel, thresholds)
         if lines <= limit:
             continue
+        seen.add(rel)
         if rel in allow:
             recorded = allow[rel]
             recorded = int(recorded["lines"]) if isinstance(recorded, dict) else int(recorded)
@@ -551,8 +553,20 @@ def _filesize_findings() -> tuple[list[str], list[str], list[str]]:
                 warn.append(f"{rel} 基线 {recorded} → {lines} 行（超阈且增长，应抽取而非加长）")
             else:
                 info.append(f"{rel} {lines} 行（基线 {recorded}，超阈已冻结）")
+                if lines < recorded:
+                    warn.append(
+                        f"{rel} 已从 {recorded} 降到 {lines} 行（仍超阈）"
+                        "——请下调基线计数（棘轮只许收缩，缩了要记账）"
+                    )
         else:
             crit.append(f"{rel} {lines} 行 > 阈值 {limit}（新增超阈：拆分或显式申请基线）")
+    # 僵尸豁免清算（D14-4 的一半 · 2026-09-24 B10-e）：基线条目若**已不再超阈**（含文件被删/改名/
+    # 已拆到阈值内），该豁免就成为"永久白条"——若不报错，基线会慢慢烂成万能豁免池，棘轮名存实亡。
+    for rel in sorted(set(allow) - seen):
+        crit.append(
+            f"基线 filesize.allowlist 的 {rel} 已不再超阈（文件被删/改名/已拆分到阈值内）"
+            "——请从基线删除该条"
+        )
     return crit, info, warn
 
 
@@ -588,12 +602,14 @@ def _dup_findings() -> tuple[list[str], list[str]]:
         base_total = entry.get("total")
         base_files: dict[str, int] = entry.get("per_file", {})
         total = 0
+        hits: dict[str, int] = {}
         growth: list[str] = []
         for p in (BACKEND / "app").rglob("*.py"):
             rel = p.relative_to(REPO).as_posix()
             n = len(re.findall(pattern, p.read_text(encoding="utf-8", errors="replace")))
             if not n:
                 continue
+            hits[rel] = n
             total += n
             if n > int(base_files.get(rel, 0)):
                 growth.append(f"{rel} {base_files.get(rel, 0)} → {n} 处")
@@ -610,8 +626,21 @@ def _dup_findings() -> tuple[list[str], list[str]]:
             if growth:
                 detail.append(f"单文件上升：{'; '.join(growth)}")
             crit.append(f"{name} 手抄上升（{'；'.join(detail)}）——推动走公共 helper")
+        elif total < int(base_total):
+            info.append(
+                f"{name}: {total} 处（基线 {base_total}，**已下降**）"
+                "——请同步下调基线 total 与 per_file（棘轮只许收缩，缩了要记账）"
+            )
         else:
             info.append(f"{name}: {total} 处（基线 {base_total}，未上升 ✓）")
+        # 僵尸豁免清算（B10-e，同轴 5 口径）：基线 per_file 中已**归零**的条目（文件被删/改名/
+        # 手抄已收敛掉）必须删除，否则是永久白条 —— 棘轮只许收缩。
+        for rel, recorded in sorted(base_files.items()):
+            if int(recorded) > 0 and rel not in hits:
+                crit.append(
+                    f"基线 dup_patterns.{name}.per_file 的 {rel} 已不再命中"
+                    f"（清零或文件被删/改名，原记 {recorded} 处）——请从基线删除该条"
+                )
     return crit, info
 
 

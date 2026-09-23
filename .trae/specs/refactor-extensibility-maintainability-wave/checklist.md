@@ -65,4 +65,6 @@
 - [x] 未以"未验证"冒充完成：**B9（端口/边界收口）、B10-b（门禁缺口补强）、B11 残余漂移、B12 剩余项、B5（编译门）** 均显式标注**待执行/顺延**并给出原因（ledger §8.2/§9.7）
 - [x] **B10-c 错误码反向棘轮**（D11-5）：新增 `test_no_new_dead_error_codes`（双向判定）+ `DEAD_CODE_BASELINE`（3 枚带原因/销项触发）—— 证据：实测 `registered − raised = 恰好 3 枚`（67 注册 / 64 使用）；**内存级负向探针**（模拟新增 `ZZZ_PROBE_999` → 判为基线外新增）证明非空转，且**不改任何业务文件**
 - [x] **D07-13 改判非缺陷**（复核修正深审结论）：实读 `validate()` **仅测试调用**、生产 `get_schema()` 不调它 ⇒ 属测试期契约断言，51/193 即规格契约 —— 证据：调用点实扫（`test_profile_annotator.py:48` vs `annotate.py:52`/`interview.py:144`/`profile_annotator.py:78,136`）；已回填 ledger §9.3 第 5 条
+- [x] **B10-d 轴 4 假阴性修正**：`^\s*export` 的 `\s` 含换行 ⇒ 声明行排除失配 ⇒ 每个导出把自身计 1 引用 ⇒ `zero_cap` **应为 4 却恒为 0**（轴 4 长期假绿）—— 证据：298 导出中 56 个声明行偏移；修为 `^[ \t]*` 后露出 4 枚（含 3 枚深审未涵盖的新发现）；负向探针（前导空行新增导出 → CRITICAL，**行号正确**）已还原
+- [x] **B10-e 基线僵尸豁免清算**（D14-4 的另一半，口径同轴 4）：filesize 对"已不再超阈"的基线条目报 CRITICAL；dup 对 `per_file` 已归零条目报 CRITICAL —— 证据：**先逐条对账**（6 filesize + 21 dup per_file 全 OK、total 44=44）确认不引入误红；双负向探针（阈值抬高 ⇒ 6 条僵尸 CRITICAL；塞不存在文件 ⇒ 1 条 CRITICAL）均 EXIT=1，基线按原文**精确还原**（断言 True）
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：提交经 hook `[pre-commit] 审核通过`
