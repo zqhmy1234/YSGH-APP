@@ -130,6 +130,7 @@
 | **D11-1** `CAPSULE_001..004` 漏登记 | ✅ 修复 | `app/core/errors.py` 补登记 4 枚，**http 与 raise 点逐条一致**（001=422 / 002=404 / 003=409 / 004=409）；`capsules.py` 就地常量与 raise **未改动**（只补登记） | 验证：`pytest test_error_registry + test_ba2_capsule` → **14 passed** |
 | **D12-9** 轴 2 三向缺一向 + 未扫生成物 | ✅ 修复（部分） | `audit_harness.py` 新增 `_declared_pages_missing_files`（**pages.json → 物理文件反向对拍**，缺失即 CRITICAL）；实证 `pages.json 16 条均有物理文件 ✓`；负向探针（加 phantom page）→ CRITICAL、EXIT=1，已还原 | `uvue_gen/` **判定不纳入**扫描面（仓根 232 个生成物，非 client 源码面，纳入会产假阳/假阴）——理由写入 `audit_client` docstring |
 | **D04-15** 双跑夹具未覆盖 `approx`/`corrected` | ⏸ **阻塞（不可在本波修复）** | 实证判定：服务端 `corrected` 把坐标**拉回众数格中心**、客户端 `pipeline.uts` **置空**，且速度参照不同（服务端用 `folded[i-1]` 原始坐标 / 客户端用可能已 null 的 `corrected` 末张 → 跳过）⇒ 级联差异。最小 4 点用例（F1@t0, F2@+20s, A@+30s, F2@+230s）：服务端簇 `['p2,p3,p4']` vs 客户端 `['p1,p2,p3,p4']`，归一后不等 ⇒ **补夹具必致双跑门禁变红** | **依赖关系明确**：D04-15 的修复**被 D04-1/2/3/4/5（端云对齐，属功能波）阻塞**——先由功能波对齐端云，再补夹具。这解释了"为何双跑全绿"：现有 `gps-drift-corrected` 夹具落 `degraded`（众数支持 1<2）恰与客户端 null **巧合同值** |
+| **D13-3** `check_env_template.py` 无门禁 + 模板真缺口 | ✅ **修复（原判"只登记"已升级为修复）** | 实跑确认真缺口 3 项 = `AGENT_SERVICE_BASE_URL/TIMEOUT_S/TOKEN`（真实 config 面：`core/config.py:64-68`，被 `services/external/agent.py:47-68,92` 实际使用）；**模板 §7 末补齐**（URL/TIMEOUT 生效行 = config 默认；TOKEN 保持**注释**态，守模板"必填不留空值"纪律）；`review_agent` 新增 **`env_template` 阻断式检查**（快/全量都跑）；CI full-gate 新增独立步骤（无 `continue-on-error`） | 验证：`check_env_template.py` → **EXIT 0**（`config 字段 73 ｜ 生效 59 ｜ 注释 39`）；`review_agent` → `[✅] env_template` + 审核通过。**反向探针**：临时删 `AGENT_SERVICE_BASE_URL=` → `[❌] env_template 真缺口: ['AGENT_SERVICE_BASE_URL']`、**EXIT 1**，已完全还原 |
 
 ### 8.1 棘轮状态（2026-09-24 第二轮执行后）
 
@@ -243,7 +244,7 @@
 | B2′ | B2 引发的门禁覆盖回归（`glob` 漏子包） | B2 | 低 | ✅ **已完成**（`rglob` + 子包覆盖自检） |
 | B3′ | L-09 三 helper 收敛（**同时修正门禁登记名 D06-2**） | B2 | 中（AST 门禁护航） | ✅ **已完成**（`load_owned_entity` 泛化 + 哑条目修正 + `test_ownership_loaders_all_exist`） |
 | B10 | 门禁加固：D14-1 轴 1–4 进自动门禁、D14-3/5 棘轮假阴/假阳、D14-2 | B1 | 低（纯工具） | ✅ **已完成**（`audit_axes` + CI `audit_harness all` + 双 gate + 豁免收窄；负向探针证明非空转）。D04-15/D11-2/D12-9 见下 |
-| B12 | 脚本/部署可移植性（域⑬）：D13-1/2/3/17/18/25/26、硬编码路径 6 处 | — | 低 | ⚠️ **部分完成**（D13-1/26 + 4 条路径已修；D13-3 实跑当前即失败→先补模板；其余只登记） |
+| B12 | 脚本/部署可移植性（域⑬）：D13-1/2/3/17/18/25/26、硬编码路径 6 处 | — | 低 | ⚠️ **基本完成**（D13-1 假门禁退役 / D13-3 模板补齐+接门禁 / D13-26 README / 4 条硬编码路径已修；**D13-2/17/18/25 仍只登记**——改即改部署行为或属一次性件） |
 | B11 | 声明漂移清零（结构类 P2 群） | — | 极低 | ⚠️ **部分完成**（D04-17/D13-28/D13-14/D14-2 已修；D02-7/9、D04-3、D05-9/15、D07-13/14、D09-10、D11-5、D12-7 仍待处置——多数需**决策**或属**死配置删除**，宜单独立项） |
 | B9 | 端口/边界收口：L-03c 越级直连 + D05-16 第二套 Qdrant + D02-3 存储注册点 | — | 中 | ⏸ **待执行**（须专用窗口，逐点读码；不与 B2 混提） |
 | B5 | 客户端拆分 + 令牌收敛（L-01/02 + L-12/D12-1/3） | B1 + **编译门** | **高** | ⏸ 编译门不可用 → 顺延 |

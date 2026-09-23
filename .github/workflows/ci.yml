@@ -231,6 +231,12 @@ jobs:
         # 注（B10 2026-09-24）：本步现已内含 structure（轴5/6）+ audit_axes（轴1-4）检查。
         run: python scripts/review_agent.py --full --skip-tests
 
+      - name: Check deploy env template ↔ config.py alignment (D13-3)
+        # B12-2（2026-09-24 重构波）：模板「与 config.py 字段逐一对齐」的承诺此前无门禁（缺陷 D13-3）。
+        # 复用 deploy/scripts/check_env_template.py（单一判据，勿在此重写规则）：真缺口（config 有、模板无）或过期项（模板有、config 已无）→ exit 1。
+        # 刻意**不加 continue-on-error**：漂移即 fail。
+        run: python deploy/scripts/check_env_template.py
+
       - name: Run harness audit (audit_harness 轴 1-6，失败即 fail)
         # B10（2026-09-24）：audit_harness 多轴审计纳入 CI（此前轴 1-4 零命中，缺陷 D14-1，P0）。
         # 轴 1 契约对拍需可导入的后端环境——本 job 已装全量依赖 + 起服务，环境满足；

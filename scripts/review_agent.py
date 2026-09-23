@@ -19,11 +19,12 @@
     5. lessons 强制登记检查（上次失败未登记 → 阻断）
     6. 结构棘轮 structure（轴 5/6：文件体积 / 重复模式，2026-09-24 B1 接入）
     7. 跨轴审计 audit_axes（轴 1-4：契约/客户端/模型/导出，2026-09-24 B10 接入，缺陷 D14-1）
+    8. 部署模板对齐 env_template（模板 ↔ config.py，2026-09-24 B12 接入，缺陷 D13-3）
   全量模式（--full，完成验收/集成/CI 用，即旧行为）：
     1-4 同快模式但扫描整个仓库（排除 client/ 工具链）
     5. 全量测试（pytest + api_smoke + research，经 scripts/test_agent.py）
     6. lessons 强制登记检查
-    7. 结构棘轮 + 跨轴审计（与快模式同源；全量模式下轴 1 契约对拍通常可跑）
+    7. 结构棘轮 + 跨轴审计 + 部署模板对齐（与快模式同源；全量模式下轴 1 契约对拍通常可跑）
 
 退出码：0 = 通过可提交；1 = 存在阻断项（禁止 commit，先修复）。
 
@@ -358,6 +359,25 @@ def check_audit_axes() -> tuple[bool, str]:
     return True, f"跨轴审计（契约/客户端/模型/导出）：无 CRITICAL；INFO {len(info)} 项{suffix}"
 
 
+def check_env_template() -> tuple[bool, str]:
+    """部署模板 ↔ config.py 对齐——2026-09-24 重构波 B12 接入门禁（缺陷 D13-3）。
+
+    背景：`deploy/.env.production.template` 声称「与 config.py 字段逐一对齐」，但该承诺
+    此前**只是口头**——判据脚本 `deploy/scripts/check_env_template.py` 早已存在，却从未被
+    任何门禁调用；于是新增 config 字段忘加模板（真缺口）或删字段留过期键（过期项）都无人发现。
+
+    口径：**复用该脚本的 main()，不在此重写判定规则**（单一判据，避免两处漂移）。
+    退出码 1 = 真缺口或过期项 → 阻断。纯文件扫描 + 导入 Settings.model_fields，快/全量均秒级。
+    """
+    script = ROOT / "deploy" / "scripts" / "check_env_template.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}（部署契约已失效）"
+    code, out = run([sys.executable, str(script)])
+    if code != 0:
+        return False, "env 模板与 config.py 漂移：\n" + out.strip()
+    return True, out.strip()
+
+
 def check_lessons() -> tuple[bool, str]:
     """强制教训登记：上次失败后未登记 → 阻断 commit（2026-08-20 用户要求程序化强制）"""
     import sys as _sys
@@ -385,6 +405,7 @@ def main() -> int:
         "todos": check_todos(secret_files),
         "structure": check_structure(),
         "audit_axes": check_audit_axes(),
+        "env_template": check_env_template(),
     }
     if args.full and not args.skip_tests:
         checks["tests"] = run_tests()
