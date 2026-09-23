@@ -177,3 +177,9 @@ deploy/.env
 # 注：`*.jks` 已由本文件第 14 行（密钥与隐私块）覆盖，此处补 keystore 后缀变体。
 *.keystore
 *.keystore.bak
+
+# --- 临时脚本/日志（一次性产物，不入库）---
+# 为什么：一次性产物（E2E 运行日志、临时修/导出脚本）不入档会一直显示为未跟踪噪音，
+# 并有被误 git add 进提交的风险（2026-09-23 实发生：_tmp/ag5_commit_msg.txt 被误入库）。
+# 可复用的工具请放 scripts/（如 scripts/e2e_agent_chat.ps1，AG5 真代理 E2E）。
+_tmp/
