@@ -12,7 +12,15 @@
   · 模型 ID `qwen3.8-flash`：上下文 1,000,000（maxInput 991,808 / maxOutput 131,072）；
     能力 TG + VU + Reasoning；features 含 function-calling / structured-outputs / cache；
     定价 输入 0.8、输出 2.7 元每百万 tokens。
-  · base_url 形态：`https://[workspace-id].<region>.maas.aliyuncs.com/compatible-mode/v1`
+  · base_url 三种形态（**按 key 类型配对，不可混用**）：
+      - **套餐专属 key（`sk-sp-`，Token Plan / Coding Plan）**：专属端点
+        `https://token-plan.<region>.maas.aliyuncs.com/compatible-mode/v1`
+        （官方 error-code.md：「…**必须配合各自的专属 Base URL 使用**，不可与通用 API Key/Base URL
+          混用（混用会返回本鉴权错误）」；实测：sk-sp- key 打公共端点 → 401 invalid_api_key）
+      - 空间级 key（`sk-ws-`）：**工作空间专属 Host**
+        `https://[workspace-id].<region>.maas.aliyuncs.com/compatible-mode/v1`（官方模型库示例即此形态）
+      - 通用 key（`sk-`）：**公共端点** `https://dashscope.aliyuncs.com/compatible-mode/v1`
+        （官方文档原文：「SDK 调用配置的 base_url：https://dashscope.aliyuncs.com/compatible-mode/v1」）
   · 推理开关：`extra_body={"enable_thinking": True}`（**不是** `thinking.type`，也不是
     顶层 `thinking`；官方示例即此写法）。
   · 业务空间级 key（`sk-ws-` 前缀）：HTTP 调用须带 header
@@ -30,6 +38,15 @@ logger = logging.getLogger("yishu.agent.llm")
 # 默认模型（用户 2026-09-23 指定；官方模型库实证存在于百炼模型广场）
 DEFAULT_MODEL = "qwen3.8-flash"
 DEFAULT_REGION = "cn-beijing"
+# 兼容模式公共端点（官方文档原文：「SDK 调用配置的 base_url：https://dashscope.aliyuncs.com/compatible-mode/v1」）
+PUBLIC_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# 套餐专属端点（Token Plan / Coding Plan）。官方 error-code.md 原文：
+#   「套餐专属 API Key（Coding Plan / Token Plan 团队版）…以 `sk-sp-` 开头的专属 API Key，
+#     **必须配合各自的专属 Base URL 使用**，不可与通用 API Key/Base URL 混用（混用会返回本鉴权错误）」
+#   Token Plan 的 OpenAI 兼容端点：https://token-plan.<region>.maas.aliyuncs.com/compatible-mode/v1
+# 实测印证：用 sk-sp- key 打公共端点 → 401 invalid_api_key（正是"混用"这条）。
+TOKEN_PLAN_KEY_PREFIX = "sk-sp-"  # noqa: S105 —— 这是 key **前缀**（公开约定），不是密钥本身
+TOKEN_PLAN_BASE_URL = "https://token-plan.{region}.maas.aliyuncs.com/compatible-mode/v1"  # noqa: S105 —— URL 模板，非凭据
 
 
 class LlmConfigError(RuntimeError):
@@ -88,14 +105,27 @@ def load_llm_settings() -> LlmSettings:
     region = (os.getenv("DASHSCOPE_REGION") or DEFAULT_REGION).strip()
 
     base_url = (os.getenv("DASHSCOPE_BASE_URL") or "").strip()
+    explicit_base_url = bool(base_url)
     if not base_url:
-        if not workspace_id:
-            raise LlmConfigError(
-                "未配置 DASHSCOPE_WORKSPACE_ID，且 DASHSCOPE_BASE_URL 为空 —— "
-                "两者至少给一个（业务空间级 key 必须带空间 ID，官方文档要求 HTTP 调用带 "
-                "X-DashScope-WorkSpace header）"
-            )
-        base_url = f"https://{workspace_id}.{region}.maas.aliyuncs.com/compatible-mode/v1"
+        if api_key.startswith(TOKEN_PLAN_KEY_PREFIX):
+            # 套餐专属 key（sk-sp-）：**必须**配专属端点（官方：混用返回鉴权错误）
+            base_url = TOKEN_PLAN_BASE_URL.format(region=region)
+        elif workspace_id:
+            # 空间级 key（sk-ws-）：官方要求走工作空间专属 Host 并带 X-DashScope-WorkSpace
+            base_url = f"https://{workspace_id}.{region}.maas.aliyuncs.com/compatible-mode/v1"
+        else:
+            # 通用 key：公共端点
+            base_url = PUBLIC_BASE_URL
+    # 配对校验：官方明确"不可混用"，混用会以鉴权错误收场。显式配置时只告警（让运维自己拍板），
+    # 自动推导时上面已保证配对，故此处仅覆盖"显式覆盖成了不匹配端点"这一种情况。
+    is_token_plan_url = "token-plan." in base_url
+    if explicit_base_url and api_key.startswith(TOKEN_PLAN_KEY_PREFIX) != is_token_plan_url:
+        logger.warning(
+            "百炼端点与 key 类型可能不匹配：key 前缀=%s，base_url=%s —— "
+            "官方要求套餐专属 key（sk-sp-）与 Token Plan 专属端点配对，混用会返回鉴权错误",
+            api_key[:6],
+            base_url,
+        )
 
     headers: dict[str, str] = {}
     if workspace_id:

@@ -88,6 +88,18 @@
 
 **遗留到后续批次**：`pyproject.toml` 依赖瘦身（等 AG4 Coze import 清零后一次做，避免"声明瘦了但 import 还在"）；`db.py`/`supabase_client.py`/`s3_storage.py` 的 Coze 调用（AG3/AG4）。
 
+**✅ Token Plan 账号实证（同日 · 用户提供凭证后）**：最终验收**用的是 Token Plan 账号**——
+key 指纹 `len=116 prefix=sk-sp- sha256[:8]=a5c42ad8`（用户 Windows 用户级环境变量），
+base_url 自动推导为 **`https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`**，
+真实调用返回 `model=qwen3.8-flash finish=stop 回复='收到' reasoning_content=有(63字) 用量=66/36`。
+
+**🔴 端点必须与 key 配对（本次最硬的坑，已固化进代码）**：官方 `error-code.md:1739` 原文——
+「**套餐专属 API Key（Coding Plan / Token Plan 团队版）**…以 `sk-sp-` 开头的专属 API Key，
+**必须配合各自的专属 Base URL 使用**，不可与通用 API Key/Base URL 混用（**混用会返回本鉴权错误**）」。
+实测印证：`sk-sp-` key 打公共端点 `dashscope.aliyuncs.com/compatible-mode/v1` ⇒ **401 invalid_api_key**。
+处置：`llm_provider` 按 key 前缀**自动推导**专属端点（sk-sp- → token-plan host；sk-ws- → 工作空间
+Host + `X-DashScope-WorkSpace` header；sk- → 公共端点），并对"显式覆盖成不匹配端点"记 WARNING。
+
 **⚠️ 账号口径更正（同日 · 用户指出）**：首次探针**误用了 `backend/.env` 的账号**——它不是 Token Plan 账号。
 危害形态值得单列：**填错账号不会报错**（两边都是有效 key，只是账号 / 额度 / 业务空间不同），
 探针照旧"调用成功"，于是产出的是一次**假通过**——比"报错"危险得多，因为它会被当成"配置已验证"。
