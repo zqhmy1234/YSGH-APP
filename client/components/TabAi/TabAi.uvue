@@ -6,11 +6,19 @@
 	     POST /api/v1/chat/messages   { conversation_id?, content, attachments?[] } → { reply }
 	     GET  /api/v1/chat/replies/:id（流式分片轮询/SSE，形态由 reply.kind 决定：
 	          bubble | plain+chips | cards | confirm | typing）
-	     mock 开关：USE_MOCK_CHAT = true（页内显式常量，联调铁律登记 _diff_ledger §W10.4） -->
+	     mock 开关：USE_MOCK_CHAT（2026-09-23 补真身——此前本行声称的常量在代码中**并不存在**，
+	          属无条件硬编码，既无法配置关闭、也不告知用户是演示数据，见台账 §7.1）：
+	          true  = 样张对话 + 本地闭环回复（内测期现状），页面顶部显式标注「内测演示数据」
+	          false = 不注入样张；发送时诚实提示「尚未接入」，**不伪造 AI 回复** -->
 	<view class="ai-root">
 		<view class="ai-header">
 			<text class="n2_336">AI</text>
 			<text class="n2_337">问问你的回忆</text>
+		</view>
+		<!-- 演示数据标注（2026-09-23）：内测期智能体尚未接入后端，必须显式告知，
+		     否则用户会把样张对话当成已上线的能力（台账 §7.1） -->
+		<view v-if="USE_MOCK_CHAT" class="demo-note">
+			<text class="demo-note-text">内测演示数据 · 智能体尚未接入后端</text>
 		</view>
 		<scroll-view class="n4_88" scroll-y :scroll-into-view="scrollInto">
 			<view v-for="m in messages" :key="m.id" :id="'msg-' + m.id">
@@ -184,6 +192,13 @@
 	let replyKindIdx = ref(0) // AI 回复形态轮换指针
 	const REPLY_KIND_ROTATION = ['bubble', 'plain', 'cards', 'confirm']
 
+	// ── 演示开关（2026-09-23 补真身）──────────────────────────────────────────
+	// 头注释自 08-01 起声称有本常量，但代码里**从未存在**（seedMockMessages/onSend/
+	// onConfirmAction 全部无条件走 mock）→ 后果：① 无法通过配置关闭 ② 用户无从得知是演示
+	// 数据，会把样张当成已上线的智能体（见 docs/决策台账.md §7.1）。
+	// 现补真身并使三处接线点全部按其分支；**B2 对话域接线后本常量应删除**（改真端点）。
+	const USE_MOCK_CHAT: boolean = true
+
 	// mock 相册图（static/images 现有资产）
 	const MOCK_IMGS = ['/static/images/img2_345.png', '/static/images/img2_140.png', '/static/images/img2_256.png', '/static/images/img2_74.png']
 
@@ -221,6 +236,11 @@
 	function onSend(): void {
 		const t = draft.value.trim()
 		if (t == '') {
+			return
+		}
+		if (USE_MOCK_CHAT === false) {
+			// 诚实失败：**不伪造 AI 回复**——假回复会让用户以为智能体已上线（台账 §7.1）
+			uni.showToast({ title: '智能体尚未接入，内测期暂不支持对话', icon: 'none', duration: 2500 })
 			return
 		}
 		draft.value = ''
@@ -284,6 +304,10 @@
 
 	// 行动确认卡按钮（mock：B2 接线后改 POST 确认接口）
 	function onConfirmAction(m: AiMsg, ok: boolean): void {
+		if (USE_MOCK_CHAT === false) {
+			uni.showToast({ title: '智能体尚未接入，该操作暂不可用', icon: 'none', duration: 2500 })
+			return
+		}
 		removeById(m.id)
 		if (ok) {
 			const ai = mkAi('bubble', '好，已把「湖边晨雾」收进 8 月时间胶囊。', [new MemCard('8 月时间胶囊', '已收录 12 条记忆', MOCK_IMGS[2])], [], [], [])
@@ -375,7 +399,9 @@
 	})
 	onMounted((): void => {
 		aiAttachOpen.value = false // 原页级初值：进组件即收起
-		seedMockMessages()
+		if (USE_MOCK_CHAT) {
+			seedMockMessages()
+		}
 		prefillDraftFrom(props.prefillTitle, props.prefillSummary)
 	})
 	watch((): number => props.savedSeq, (n: number): void => {
@@ -397,6 +423,25 @@
 		padding-top: 107.7rpx;
 		padding-left: 38.5rpx;
 		padding-right: 38.5rpx;
+	}
+	/* 演示数据标注（2026-09-23）：内测期智能体未接入后端，页面必须显式说明，
+	   避免用户把样张对话当成已上线能力（台账 §7.1）。淡卡底 #F6EFE3 + 锈红字，与
+	   security 页徽章同族色，不引入新视觉语言。 */
+	.demo-note {
+		margin-top: 15.4rpx;
+		margin-left: 38.5rpx;
+		margin-right: 38.5rpx;
+		padding: 11.5rpx 19.2rpx;
+		border-radius: 15.4rpx;
+		background-color: #F6EFE3;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.demo-note-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #B05A3A;
 	}
 	.n2_336 {
 		font-family: "Sarasa Gothic SC", sans-serif;
