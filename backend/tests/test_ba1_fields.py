@@ -40,12 +40,16 @@ def auth_headers(client):
 
 def test_migration_upgrade_head_and_columns_exist():
     """alembic upgrade head 在本机测试库幂等执行 + 6 个新列存在（验收#2）"""
+    from pathlib import Path
+
     from alembic import command
     from alembic.config import Config
     from app.db.session import SessionLocal
     from sqlalchemy import text
 
-    cfg = Config("alembic.ini")
+    # 2026-09-23 修复：原为 CWD 相对路径 `Config("alembic.ini")`（同
+    # test_c_guard_event_edit_log_seq 的说明）——从仓库根跑必挂，改为相对本文件解析。
+    cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     command.upgrade(cfg, "head")  # 已在 head → 幂等无操作
 
     db = SessionLocal()

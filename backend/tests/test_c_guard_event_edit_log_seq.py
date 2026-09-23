@@ -22,10 +22,17 @@ pytestmark = pytest.mark.integration
 
 
 def _upgrade_head():
+    from pathlib import Path
+
     from alembic import command
     from alembic.config import Config
 
-    cfg = Config("alembic.ini")
+    # 2026-09-23 修复：原为 CWD 相对路径 `Config("alembic.ini")` —— pytest 从仓库根启动时
+    # （`scripts/test_agent.py` 就是 `pytest backend/tests`，CWD=仓库根）该文件不在 CWD，
+    # Config 退化为空配置 → `alembic.util.exc.CommandError: No 'script_location' key found`。
+    # 本文件 3 例 + test_ba1_fields 1 例因此常年红（CI 从 backend/ 启动故未暴露）。
+    # 改为相对**本文件**解析 → 与 CWD 无关。
+    cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     command.upgrade(cfg, "head")
 
 
