@@ -67,6 +67,8 @@
 
 - [x] Task B10-f: 轴 4 **覆盖面补全**（D14-16）——① `audit_exports` 原 `glob("*.uts")` **非递归** ⇒ `client/utils/agg/**` 等子目录整体漏扫；② `EXPORT_RE` 只认 `function|const|let|class` ⇒ `export type/interface/enum/default` 漏扫。修为 `rglob("*.uts")` + 正则补 `(?:default\s+)?` 与 `type|interface|enum`。证据：先量化（补递归 +29 导出、其中零调用 1 个＝`WALK_SPEED_MS`＝深审 D04-12；补 7 类 +5 导出、零调用 0）；修后导出 **298 → 332**、存量 5、无新增；子目录负向探针（追加零调用导出）→ CRITICAL 且**行号正确**，已还原；`all` 无 CRITICAL
 
+- [x] Task B10-g: 契约快照**再生脚本 + 一致性断言**（D14-7）——新增 `scripts/gen_openapi.py`（写入 / `--check`），接入 `review_agent` 的 `openapi_snapshot` 检查（0=一致放行 / 1=过期阻断 / 2=环境不可导入降级放行）。证据：`--check` 证明现有快照与后端**逐字节一致**（239518 字符，此前无任何机器能证）；负向探针（塞幽灵路径）→ `[FAIL]` + 精确定位「快照有而后端无（1）」EXIT=1、`review_agent` 阻断；再生还原后与 HEAD 逐字节一致
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

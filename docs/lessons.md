@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 05:30 · commit 58bd68c · ts=1790199020
+- **错误**：B10-g 负向探针（往 docs/openapi.json 塞幽灵路径）使 review_agent 记录了一次失败，触发 lessons 强制登记；同时暴露出一个真实约束：契约快照的再生必须与后端导出**逐字节一致**
+- **根因**：快照文本格式（ensure_ascii=False / indent=2 / 末尾换行）若与后端导出不同，--check 会永远红；而人工手改快照还会引入字段级漂移（轴 1 只看路径级，看不见）
+- **修复**：再生一律走 scripts/gen_openapi.py（单一格式源）；探针后如需清理门禁失败态，改 .cowork-temp/last-failure.json 或补一条真实教训（本次选后者）
+- **相关文件**：scripts/gen_openapi.py
+- **教训**：契约快照只有单一再生入口（gen_openapi.py）才能保证逐字节可比；人工手改快照 = 字段级漂移且无人能证
+
+---
+
 ### 2026-09-24 05:25 · commit a21e999 · ts=1790198705
 - **错误**：给 EXPORT_RE 正则补 type/interface/enum 后单行 121 字符，触发 ruff E501（>120）被 pre-commit 门禁拦下
 - **根因**：长正则写成一整行字面量，未注意本仓 ruff 行宽上限 120

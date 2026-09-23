@@ -378,6 +378,29 @@ def check_env_template() -> tuple[bool, str]:
     return True, out.strip()
 
 
+def check_openapi_snapshot() -> tuple[bool, str]:
+    """契约快照 `docs/openapi.json` 是否与后端实现一致——2026-09-24 重构波 B10-g（缺陷 D14-7）。
+
+    背景：快照的再生此前是**人工步骤**（既无脚本、也无断言）⇒「文档里的契约」是否真等于
+    「代码里的契约」长期无法证明；`audit_harness` 轴 1 只做**路径级**双向对拍，字段级漂移
+    （schema/参数/状态码/描述）完全看不见。
+
+    口径：复用 `scripts/gen_openapi.py --check`（**单一判据**，不在此重写比对规则），
+    逐字节比对后端实时导出。
+    退出码映射：0=一致 → 放行；1=快照过期 → **阻断**；2=后端环境不可导入（缺依赖/环境变量）
+    → **降级放行并提示**（与 `audit_axes` 轴 1 的降级口径一致，避免把环境问题当代码问题）。
+    """
+    script = ROOT / "scripts" / "gen_openapi.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}（契约再生无法复现）"
+    code, out = run([sys.executable, str(script), "--check"])
+    if code == 0:
+        return True, out.strip()
+    if code == 2:
+        return True, "[降级] 后端环境不可导入，跳过契约快照一致性校验：\n" + out.strip()
+    return False, "契约快照已过期（请运行 python scripts/gen_openapi.py 重导）：\n" + out.strip()
+
+
 def check_lessons() -> tuple[bool, str]:
     """强制教训登记：上次失败后未登记 → 阻断 commit（2026-08-20 用户要求程序化强制）"""
     import sys as _sys
@@ -406,6 +429,7 @@ def main() -> int:
         "structure": check_structure(),
         "audit_axes": check_audit_axes(),
         "env_template": check_env_template(),
+        "openapi_snapshot": check_openapi_snapshot(),
     }
     if args.full and not args.skip_tests:
         checks["tests"] = run_tests()

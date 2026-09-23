@@ -69,3 +69,4 @@
 - [x] **B10-e 基线僵尸豁免清算**（D14-4 的另一半，口径同轴 4）：filesize 对"已不再超阈"的基线条目报 CRITICAL；dup 对 `per_file` 已归零条目报 CRITICAL —— 证据：**先逐条对账**（6 filesize + 21 dup per_file 全 OK、total 44=44）确认不引入误红；双负向探针（阈值抬高 ⇒ 6 条僵尸 CRITICAL；塞不存在文件 ⇒ 1 条 CRITICAL）均 EXIT=1，基线按原文**精确还原**（断言 True）
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：提交经 hook `[pre-commit] 审核通过`
 - [x] **B10-f 轴 4 覆盖面补全**（D14-16）：`glob("*.uts")` → **`rglob("*.uts")`**（子目录不再漏扫）+ `EXPORT_RE` 补 `default`/`type`/`interface`/`enum` —— 证据：先量化（补递归 +29 导出、其中零调用 1＝`WALK_SPEED_MS`＝深审 D04-12；补 7 类 +5 导出、零调用 0）；修后导出 **298 → 332**、存量 5、无新增；**子目录负向探针**（追加零调用导出）→ CRITICAL 且行号正确、已还原
+- [x] **B10-g 契约快照再生 + 断言**（D14-7）：新增 `scripts/gen_openapi.py`（写入/`--check`）并接入 `review_agent` 的 `openapi_snapshot`（0 放行 / 1 阻断 / 2 环境降级）—— 证据：`--check` 证明现有快照与后端**逐字节一致**（239518 字符，此前无法证明）；负向探针（塞幽灵路径）→ `[FAIL]` 且精确指出「快照有而后端无（1）」、EXIT=1、门禁阻断；再生还原后与 HEAD 逐字节一致
