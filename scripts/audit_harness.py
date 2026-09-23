@@ -394,9 +394,15 @@ def audit_models() -> None:
 #   这类缺口**静态可查、零成本**，故门禁化。
 
 EXPORT_RE = re.compile(
-    r"^\s*export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)",
+    r"^[ \t]*export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)",
     re.M,
 )
+# ⚠️ 2026-09-24（B10-d）：原写法为 `^\s*export ...`——`\s` **包含换行**，于是 `^` 会先在前导
+#   空行处成立、`\s*` 吃掉落行，导致 `m.start()` 落在**空行**而非 `export` 行。后果：
+#   声明行号被记成空行号 ⇒ 下方"声明行自身不算引用"的排除失配 ⇒ 每个导出都把自身计成 1 处引用
+#   ⇒ 真·零调用导出被降级进 `low` 而**永不报 CRITICAL**（假阴性，恰好会藏住图搜那类缺口）。
+#   实测影响面：298 个导出中 56 个声明行偏移 1 行；`zero_cap` 由「应为 4」被掩盖为 **0**。
+#   修为 `[ \t]*`（只吃横向空白）⇒ 匹配点=行首 ⇒ 排除生效、行号正确。
 
 # 允许"导出但暂无外部调用方"的白名单（每条须给理由，避免门禁被随手放宽）
 EXPORT_ALLOWLIST: dict[str, str] = {
@@ -421,8 +427,11 @@ def audit_exports() -> None:
             decls.setdefault(m.group(1), []).append(f"{f.relative_to(REPO)}:{line}")
 
     # 统计全仓引用（含本文件内部引用；排除声明行本身）
-    zero_cap: list[str] = []   # 零调用的**能力函数**（真信号：写了没接线）
-    zero_const: list[str] = [] # 零调用的**契约常量**（PATH_*/FIELD_*；属预留或端点未接线，需人工判）
+    base = _load_baseline().get("exports", {})
+    frozen = base.get("zero_cap_allowlist", {})   # 棘轮：存量零调用能力导出（只拦新增）
+
+    zero_cap: list[tuple[str, str]] = []   # 零调用的**能力函数**（真信号：写了没接线）
+    zero_const: list[tuple[str, str]] = [] # 零调用的**契约常量**（PATH_*/FIELD_*；属预留或端点未接线，需人工判）
     low: list[str] = []
     for name, places in sorted(decls.items()):
         if name in EXPORT_ALLOWLIST:
@@ -437,23 +446,40 @@ def audit_exports() -> None:
                 refs += 1
         is_const = name.startswith("PATH_") or name.startswith("FIELD_") or "contract.uts" in places[0]
         if refs == 0:
-            (zero_const if is_const else zero_cap).append(f"{name}（{places[0]}）")
+            (zero_const if is_const else zero_cap).append((name, places[0]))
         elif refs <= 2:
             low.append(f"{name}（{places[0]}）→ {refs} 处引用")
 
     _say("INFO", f"client/utils 导出符号 {len(decls)} 个（白名单豁免 {len(EXPORT_ALLOWLIST)} 个）")
-    # 能力函数零调用＝"能力写了但没接线"，正是图搜那类缺口的形态（台账 §7.3）→ CRITICAL
-    if zero_cap:
-        _crit(f"零调用的**能力导出**（写了没接线，{len(zero_cap)} 个）—— 需确认是「预留」还是「漏接线」：")
-        for e in zero_cap:
-            _say("  ", e)
+    # 能力函数零调用＝"能力写了但没接线"，正是图搜那类缺口的形态（台账 §7.3）→ CRITICAL。
+    # 棘轮（口径同轴 5/6）：存量违规在基线 `exports.zero_cap_allowlist` **冻结、不阻断**，
+    #   **只拦新增**；基线条目若已不再违规 → 亦报 CRITICAL（禁止僵尸豁免，棘轮只许收缩）。
+    frozen_names = set(frozen)
+    live_names = {n for n, _ in zero_cap}
+    new_zero = [(n, p) for n, p in zero_cap if n not in frozen_names]
+    kept = [(n, p) for n, p in zero_cap if n in frozen_names]
+    stale = sorted(frozen_names - live_names)
+
+    if new_zero:
+        _crit(f"**新增**零调用的能力导出（写了没接线，{len(new_zero)} 个）—— 需接线或删除导出：")
+        for n, p in new_zero:
+            _say("  ", f"{n}（{p}）")
     else:
-        _info("无零调用的能力导出 ✓")
+        _info("无**新增**零调用的能力导出 ✓")
+    if kept:
+        _info(f"存量零调用能力导出 {len(kept)} 个（基线冻结，销项触发见 baseline）：")
+        for n, p in kept:
+            _say("  ", f"{n}（{p}）")
+    if stale:
+        _crit(
+            f"基线 exports.zero_cap_allowlist 有 {len(stale)} 条已**不再违规**（僵尸豁免）"
+            f"——请从基线删除：{stale}"
+        )
     # 契约常量零调用＝多为契约预留，或对应后端端点尚未接线 → 只作提示（避免噪音淹没真信号）
     if zero_const:
         _info(f"零调用的契约常量 {len(zero_const)} 个（PATH_*/FIELD_*，多为预留或端点未接线，供人工判）：")
-        for e in zero_const:
-            _say("  ", e)
+        for n, p in zero_const:
+            _say("  ", f"{n}（{p}）")
     if low:
         _info(f"低引用（≤2 处）导出 {len(low)} 个，供人工判：")
         for e in low:

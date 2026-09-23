@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 05:10 · commit b980ac0 · ts=1790197843
+- **错误**：做负向探针后用 git checkout -- <file> 还原，连带把同一文件上【尚未提交】的正式改动一起回滚（本次回滚掉了 audit_harness_baseline.json 新增的 exports 段）
+- **根因**：探针与正式改动落在同一文件，而 git checkout 以 HEAD 为基准，不区分二者
+- **修复**：探针前先提交待留改动；或探针改在内存/临时副本上做；或还原时用精确反向编辑而非 checkout
+- **相关文件**：scripts/audit_harness_baseline.json
+- **教训**：未提交改动所在文件禁用 git checkout 还原探针：先提交，或把探针做在内存/副本上
+
+---
+
 ### 2026-09-24 04:40 · commit 361e617 · ts=1790196052
 - **错误**：review_agent --full 的 tests 段报 13 failed（841 passed / 4 skipped），一度被当作代码回归风险
 - **根因**：失败全为 qdrant_client.ResponseHandlingException: timed out 与搜索类未命中，根因是 Docker Desktop 未运行（yishu-qdrant/yishu-redis 容器休眠），非代码问题；全量耗时 246s（正常 77s）亦为旁证

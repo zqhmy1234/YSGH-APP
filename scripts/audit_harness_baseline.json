@@ -44,6 +44,32 @@
       }
     }
   },
+  "exports": {
+    "zero_cap_allowlist": {
+      "AuthError": {
+        "place": "client/utils/auth.uts:51",
+        "reason": "错误类型类导出，全仓零引用（仅 docs/审计_未关闭缺陷_20260923.md 提及）；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
+        "target": "编译门可用后：接线使用或删除该导出，随后删除本条（销项触发）"
+      },
+      "getRecorder": {
+        "place": "client/utils/voice.uts:104",
+        "reason": "录音工厂导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
+        "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+      },
+      "lastTempFile": {
+        "place": "client/utils/voice.uts:108",
+        "reason": "临时文件路径读取导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
+        "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+      },
+      "stopPeriodicSync": {
+        "place": "client/utils/sync_client.uts:584",
+        "reason": "深审 D08-10 已判定真死（唯一 1 处引用＝自身声明行，由同一假阴性造成）",
+        "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+      }
+    },
+    "reason": "轴 4（零调用能力导出）棘轮：存量 4 枚冻结、不阻断；B10-d 修正 EXPORT_RE 假阴性后由 0 露出为 4",
+    "target": "编译门可用后逐条接线/删除，把本 allowlist 收缩为空（棘轮只许收缩）"
+  },
   "dup_patterns": {
     "soft_delete_filter": {
       "regex": "deleted_at\\.is_\\(None\\)",

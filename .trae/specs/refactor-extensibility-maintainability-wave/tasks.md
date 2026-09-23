@@ -61,6 +61,8 @@
 
 - [x] Task B11-x: **D07-13 改判**——实读 `validate()` 仅测试调用（生产 `get_schema()` 不调它）⇒ 属测试期契约断言（51 L0 / 193 L1 即规格契约），**非缺陷**，保留不修（理由入 ledger §9.3 第 5 条）
 
+- [x] Task B10-d: 轴 4 `EXPORT_RE` **假阴性**修正 + 零调用能力导出棘轮——`^\s*export` 的 `\s` 含换行 ⇒ 匹配点落前导空行 ⇒ 声明行排除失配 ⇒ 每个导出把自身计成 1 引用 ⇒ **轴 4 长期假绿**（`zero_cap` 应为 4 却恒为 0；298 导出中 56 个声明行偏移）。修为 `^[ \t]*`；露出 4 枚真零调用能力导出（`AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`），按 B1 口径基线冻结 + 只拦新增 + 清算僵尸豁免。证据：双负向探针（新增导出 → CRITICAL 且**行号正确**；基线塞假条目 → 僵尸豁免 CRITICAL）均已还原；`all` 无 CRITICAL
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。
