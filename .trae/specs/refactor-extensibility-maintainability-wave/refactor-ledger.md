@@ -22,6 +22,13 @@
 | 真实 TODO | **仅 3 处 T1 短信/推送通道**（正当登记，非死码） | 模式扫描 |
 | 归属/软删手抄 `deleted_at.is_(None)` | **44 处 / 21 文件**（`contents.py` 8、`events.py` 6 最密） | 模式扫描 |
 | 波D 遗留 | services 三大巨文件（pipeline 708 / agg 615 / aggregate 516）**已拆并合入** | `git log`（`1ec8a15/b37dac7/2f14af0`） |
+| **在途业务文件（2026-09-24 复核）** | **0** —— AGENTS「第四窗媒体票据 8 文件在途」在本时点**均已入库**，勿碰名单可解除 | 14 份域报告一致记录 `git status --short` 仅 `?? .codebuddy/` |
+| **Phase A 深度审计规模** | 14 域 / **249 条** = 结构类 185 + 功能与安全缺陷 64（P0 17 / P1 111 / P2 121；候审 30） | `audit/_PHASEA_ROLLUP.md` + `audit/domain-01..14-*.md` |
+| 软删手抄计数（`backend/app`） | **44 处 / 21 文件**（生产口径，与旧台账一致）；含 tests/scripts 另计 5 处 → 全 `backend/` 49 处/25 文件 | `Select-String 'deleted_at\.is_\(None\)'` |
+| 错误码登记对拍 | **漏登记 4 枚**（CAPSULE_001..004 就地定义）、**死登记 3 枚**（AUTH_099/CONTENT_004/CONTENT_011） | `audit/domain-11` D11-1/D11-5 |
+| 设计令牌收敛度 | `design_tokens.json` **零代码引用**（机制覆盖率 0%）；763 处色字面量中 660 处靠人工抄写巧合相等 | `audit/domain-12` D12-1 |
+| 端云聚合一致性 | 共享参数 **8 项数值零漂移**，但 **语义/行为漂移 7 处**（B1–B7，含 L1 时区、预处理去重） | `audit/domain-04` + 汇总 §6.1 |
+| LWW 端云一致性 | 4 项规则中 **3 项不一致**（tie-break 客户端零判定、字段级无本地载体、软删双轨） | `audit/domain-08` + 汇总 §6.2 |
 
 ## 2. P0 · 巨文件（阻碍改动，最优先）
 
@@ -29,7 +36,9 @@
 |---|---|---|---|---|---|---|---|---|
 | L-01 | `client/components/RecordSheet/RecordSheet.uvue` **2208 行**（script 1095 / style 857 / tpl 251） | 巨文件 | P0 | 记录面板是本应用最高频交互；拆分后单点改动不再触碰 2 千行 | 高（交互核心，回归面大） | 纯移动+兼容 | 冷编译 0 error + 真机记录链路 | B5 |
 | L-02 | `client/components/TabIndex/TabIndex.uvue` script **848 行** | 巨文件 | P0 | 时间轴主页逻辑与模板纠缠 | 高 | 纯移动 | 冷编译 + 真机 | B5 |
-| L-03 | `backend/app/api/contents.py` **902 行**（手抄软删模式 8 处） | 巨文件+重复 | P0 | 内容域为后端最热 API；拆分+走 helper 降回归面 | 中（有 contents 测试族护航） | 纯移动+兼容再导出 | pytest contents/content_upload/photo_content + `audit_harness openapi` | B2 |
+| L-03 | `backend/app/api/contents.py` **902 行**（手抄软删模式 8 处）——深审确认**4 router 物理交错混居**（`router` / `profile_sensitive` / `favorites` / `trash` / waveform） | 巨文件+重复 | P0 | 内容域为后端最热 API；拆分+走 helper 降回归面 | 中（有 contents 测试族护航） | 纯移动+兼容再导出 | pytest contents/content_upload/photo_content + `audit_harness openapi` | B2（**最小方案已定，见 §9.4**） |
+| L-03b | `backend/app/api/events.py` **530 行**（软删手抄 6 处；`_batch_*` 同语义双实现、图片 URL 三写） | 巨文件+重复 | P1 | 事件域读写混杂 | 中 | 纯移动+兼容再导出 | pytest events/aggregation + openapi | B2 |
+| L-03c | `api/events.py:100` / `rag/rewrite.py:15` / `rag/image.py:44,52` / `api/upload.py:264` → **API 层与 rag 层越级直连**（绕过 `services/external` 端口 / `llm_ops` 门面） | 边界/依赖方向（FF1） | P1 | 端口抽象被架空，换厂商成本外溢 | 中 | 行为等价替换 | 静态 import 边 + pytest | 后续 |
 
 ## 3. P1 · 结构债
 
@@ -42,8 +51,9 @@
 | L-08 | `client/pages/detail/detail.uvue`（script 426 / style 592） | 巨文件 | P1 | 详情页样式膨胀 | 中 | 纯移动 | 冷编译 | B5 |
 | L-09 | **归属 helper 三分裂**：`api/capsules.py:45 _load_owned_capsule`（私有、api 层）· `api/deps.py:84 load_alive_content` · `api/messages.py:37 load_owned_message` → 命名/家/可见性三不一致 | 边界/未收敛 | P1 | 新端点无统一范式可循，易写漏（P2-2 根因）；收敛后扩展成本降 | 中 | 行为等价替换 | `pytest`（authz 族 + AST 门禁 `0efd838`） | B3 |
 | L-10 | `audit_harness.py` **无结构轴**（体积/重复/契约路径只增不减断言） | 门禁缺口 | P1 | 清账成果无法防回潮；`决策台账 §2.14` 建议未落地 | 低（纯新增） | 新增工具（零风险） | 已知样本自校验 | B1 |
-| L-11 | `audit_harness.py:280` 轴 3 把**镜像表**判为 CRITICAL：`KnowledgeCollection`/`MemoryCategory`（`models/memory_agent.py`）实为**刻意镜像**——docstring 明载"表若只存在于迁移、不进 `Base.metadata`，`--autogenerate` 会生成 DROP TABLE"，且有 `test_agent_schema_alignment.py` 守卫 | 门禁缺口 | P1 | 当前每跑一次轴 3 就有 1 条假 CRITICAL → **假阳性会污染台账**（先例 44 条假死路由） | 低 | 新增工具 | 自校验 + `alembic check` 仍绿 | B1 |
-| L-12 | 客户端 `.uvue` **style 块合计 7391 行 / 32 文件**，而 `client/design_tokens.json` 存在 → 设计令牌未收敛到样式 | 重复（候审） | P1 | 视觉一致性/改主题成本 | 中 | 行为等价替换（仅样式） | 冷编译 + 目视 | B5 |
+| L-11 | `audit_harness.py:280` 轴 3 把**镜像表**判为 CRITICAL：`KnowledgeCollection`/`MemoryCategory`（`models/memory_agent.py`）实为**刻意镜像**——docstring 明载"表若只存在于迁移、不进 `Base.metadata`，`--autogenerate` 会生成 DROP TABLE" | 门禁缺口 | P1 | 当前每跑一次轴 3 就有 1 条假 CRITICAL → **假阳性会污染台账**（先例 44 条假死路由） | 低 | 新增工具 | 自校验 + `alembic check` 仍绿 | B1（已做，见 §9.3 修正） |
+| ~~原 L-11 称有 `test_agent_schema_alignment.py` 守卫~~ | **更正（2026-09-24）**：该守卫文件**全仓 + git 全历史均不存在**（`Get-ChildItem -Recurse -Filter *alignment*` → 0；`git log --all --diff-filter=A` → 空）。B1 的镜像豁免当前**无任何自校验** | 声明漂移 | P1 | 幻影守卫使豁免失去正当性依据 | — | — | 补真实对拍测试 或 删该声明 | 后续窗口（见 §9.3） |
+| L-12 | 客户端 `.uvue` **style 块合计 7391 行 / 32 文件**，而 `client/design_tokens.json` 存在 → 设计令牌未收敛到样式（**深审升格，见 D12-1/D12-2/D12-3**） | 重复/令牌零覆盖 | **P0**（深审后升级） | 令牌机制覆盖率 **0%**（`design_tokens.json` 零代码引用）；763 处色字面量、660 处靠人工抄写巧合相等；令牌值本身也已漂移（26/56 去重值缺失） | 中 | 行为等价替换（仅样式；App 端样式不继承 ⇒ 须构建期注入） | 冷编译 + 目视 | B5 |
 
 ## 4. P2 · 顺手可清
 
@@ -93,7 +103,7 @@
 | 批次 | 条目 | 状态 | 证据 / 提交 | 备注 |
 |---|---|---|---|---|
 | B1 | L-10 结构轴 + L-11 镜像豁免 | ✅ 完成 | `6acd826`；`audit_harness all` → **无 CRITICAL**（原 1 条假阳性已消） | 新增轴 5 体积 / 轴 6 重复模式 + `review_agent` 接入 `structure` 检查；基线 `scripts/audit_harness_baseline.json`；负向探针（清空基线 → 体积 7 条 / dup 1 条 CRITICAL）证明非空转 |
-| B3 | L-09 归属校验覆盖 | ✅ 完成（**验证即达标，无代码改动**） | `pytest backend/tests/test_authz_gate.py -q` → **6 passed** | AST 门禁（`0efd838`）确认所有按 id 路由端点均经归属 helper、无漏网 —— **无缺口可补**。残余的"三 helper 命名/家收敛"（`deps.load_alive_content` / `messages.load_owned_message` / `capsules._load_owned_capsule`）属**质量改进**、非正确性缺口，登记为后续项（动它需同批改多个消费点，宜单独窗口） |
+| B3 | L-09 归属校验覆盖 | ⚠️ **结论修正（深审后）** | 原判据 `pytest backend/tests/test_authz_gate.py -q` → 6 passed；但域⑥ 实读发现**门禁哑条目**（`test_authz_gate.py:47` 登记名 `load_owned_capsule` ≠ 实际符号 `api/capsules.py:45 _load_owned_capsule`）→ `_ownership_evidence` 精确匹配失配，capsules loader **从未被门禁认出**，靠 `user.id` 属性访问兜底通过；`test_whitelist_and_exempt_entries_still_exist` 只校验 CREATION_WHITELIST/EXEMPT，**不校验 OWNERSHIP_LOADERS** ⇒ 哑条目永不被发现 | 原"验证即达标/无缺口"**不成立**：门禁存在覆盖盲点（D06-2）。归属三 helper 收敛（D06-1：`capsules._load_owned_capsule` / `deps.load_alive_content` / `messages.load_owned_message`，深审确认**语义相同**、测试对三者零 monkeypatch ⇒ 迁移安全）升级为**待办**，须同时修正门禁登记名 |
 | B6 | L-17 声明漂移 | ✅ 完成（**验证即达标，无代码改动**） | `audit_harness client` → **无注释内未注册页面引用** | 该两处注释原文已含「对齐**原** …」，B1 的「原」标注抑制生效；连同 §3.1 三则（09-23 已修）＝漂移清零 |
 | B7 | L-14/15/16 脚本可移植性/凭据卫生 | ✅ 完成 | `09708d7`；ruff 0 / py_compile 0 / 无凭据路径实测 exit 2 / `backup_pg.ps1` PowerShell 解析 0 错 | 个人绝对路径清理；PGBin 探测 + 显式报错；`check_schema_drift.py` 移除内联 `postgres:admin` 默认凭据 |
 | B4 | AG8 `alembic check` 漂移 | ⏸ **仅登记（未改）** | 实跑 `python -m alembic check`（DATABASE_URL=yishu_app@localhost/yishu）：漂移**量大且含破坏性项**（大量 `modify_type` TEXT↔String、多表 `remove_fk` / `remove_index`、索引改名） | 按 B4 预设口径「不确定则只登记不删」——**自动生成迁移会 DROP 外键/索引**，属可删数据/破坏约束的静默事故。**待拍板**：`schema.sql`（CI 建库源）与 ORM/alembic 谁是权威，再定"补 drop 迁移"或"ORM 补声明对齐" |
@@ -105,3 +115,123 @@
 - `audit_harness all`：**无 CRITICAL**（INFO 14）；轴 5 存量超阈 **7 个已冻结**；轴 6 `soft_delete_filter` **44 处未上升**。
 - 门禁接入：`review_agent` 新增 `structure` 检查（快/全量均跑，秒级）；既有 hook 自动覆盖，**未使用 `--no-verify`**。
 - 基线收缩触发：B2 拆分落地后删除 `contents.py` 条目；B3 收敛落地后下调 `soft_delete_filter` 计数。
+
+---
+
+## 9. Phase A 逐功能域深度审计结果（2026-09-24 · **本节覆盖 §2–§4 的浅层条目**）
+
+> **性质**：只读筛查产物，本波**不改运行时行为**。本节是 14 域深审的**权威汇总读数**；逐条明细与可复现证据在 `audit/_PHASEA_ROLLUP.md` 与 `audit/domain-01..14-*.md`（本节只做汇总与结论，不复制 249 条明细）。
+> **与 §2–§4 的关系**：§2–§4 为**浅层模式统计**（行数/grep 计数）；本节为**逐域深度审计**（真实重复/死码证明/依赖边/注册点/端云对照），**凡冲突以本节为准**。
+
+### 9.0 总览
+
+| 指标 | 值 |
+|---|---|
+| 域数 | 14（①认证设备 ②上传媒体 ③内容记录 ④事件聚合 ⑤检索RAG ⑥回响胶囊消息 ⑦画像访谈纠错 ⑧同步离线 ⑨微信 ⑩护栏安全 ⑪观测错误 ⑫客户端壳UI ⑬脚本部署 ⑭harness工具） |
+| 条目总数 | **249** = 结构类 **185** + 功能与安全缺陷 **64** |
+| 严重度 | P0 **17** ｜ P1 **111** ｜ P2 **121** |
+| 状态 | 确认（有直接代码证据）219 ｜ **候审 30**（启发式待人工/运行时复核） |
+| 优先处置清单 | P0+P1 = **128** 条 |
+
+**分类规则**（可复现）：**结构类**＝巨文件/重复/死码/边界依赖/声明漂移/门禁缺口/注册表与扩展成本（含扩展风险型 P0）；**功能与安全缺陷**＝有运行时正确性/安全性后果者（数据丢失/错值/500/丢操作/跨用户/伪造/污染/fail-open/幂等失效/软删口径错误/未接线不可达）→ **本波只登记，交功能波**。
+
+**各域条目分布**：①21 ②14 ③15 ④18 ⑤17 ⑥13 ⑦23 ⑧17 ⑨15 ⑩12 ⑪14 ⑫16 ⑬30 ⑭24。
+
+### 9.1 P0 清单（17 条，深审新增）
+
+| # | 编号 | 类别 | 位置 | 一句话 |
+|---|---|---|---|---|
+| 1 | D02-2 | 结 | `api/media.py:51`/`schemas/content.py:9`/`api/contents.py:130`/`storage.py:406`(+`wechat/service.py:251`) | 媒体键前缀白名单 **4 套独立字面量** + `wechat/` 命名空间漏网 → 微信原件经 `/media/{key}` 恒 401、`create_content` 恒 422 |
+| 2 | D04-1 | 功 | `event_aggregation/pipeline.py:95,161`+`agg_runner.uts:91` | 端云 L1 日界时区未对齐（云侧生产 tz=0/UTC）→ 沪区 00:00–07:59 照片落前一日 |
+| 3 | D04-2 | 功 | `agg_preprocess.py:23-93`×`client/utils/agg/pipeline.uts:36-49` | 端云预处理去重分叉（云侧生产无去重）；夹具用 Python 复制品垫背使双跑失去鉴别力 |
+| 4 | D04-15 | 结 | `scripts/gen_agg_fixtures.py:158-165`+`client/utils/agg/fixtures.uts` | 双跑夹具 13 用例无一覆盖 `approx`/`corrected` 分支 → B3/B4/B5 漂移全在覆盖外 |
+| 5 | D05-3 | 结 | `vector_store.py:337-398`×`rag/pg_fallback.py:50-66` | 过滤器翻译**双实现 + 未知键静默丢弃（无 else）**→ 漏隔离类键可跨用户召回 |
+| 6 | D07-1 | 功 | `deploy/Dockerfile.backend:39`+`docker-compose.yml:156-159` | 镜像无 `docs/` → 容器内 `get_schema()` 抛 `FileNotFoundError`（画像/访谈首调 500） |
+| 7 | D08-1 | 功 | `services/sync.py:155-185`×`api/contents.py:620-638` | 软删双轨：push delete 不写 `contents.deleted_at` → 离线删除后仍可见、30 天后突然物理消失 |
+| 8 | D08-2 | 功 | `api/contents.py:626-638`×`workers/cleanup_job.py:87-95` | REST 删除不写 `DeletedLog` → 30 天清理永不选中（UI 承诺未落地） |
+| 9 | D08-3 | 功 | `services/sync.py:206-220`×`client/utils/play.uts:647` | SFV 的 `value` 不投影回权威表 → 离线改备注上云成功但永不可见 |
+| 10 | D09-1 | 功 | `api/wechat.py:99`+`service.py:340,357` | 回调未传 `user_id` → 不下载媒体/不建 Content/不产记忆（F6 主链未跑） |
+| 11 | D09-2 | 功 | `service.py:251`+白名单 4 处 | `wechat/` 键不在白名单 → 微信图片原件恒 401 |
+| 12 | D10-1 | 功 | `dashscope.py:187`↔`api/contents.py:297`/`photo_content.py:180` | 护栏 fail-closed verdict **无 `action` 键** → 两调用点两 if 均不成立、**原文入库** |
+| 13 | D10-2 | 功 | `llm_ops/guard_managed.py:132-139` | 托管护栏**空响应判 `pass=True`**（唯一漏网 fail-open） |
+| 14 | D11-1 | 结 | `api/capsules.py:39-42,51,97,100,162,184` | `CAPSULE_001..004` **就地定义、未登记**进 `core/errors.py`（违反唯一真源） |
+| 15 | D12-1 | 结 | `client/design_tokens.json`×`client/**/*.uvue` | 令牌机制覆盖率 **0%**（763 处色字面量、660 处抄写命中）——同 L-12，不重复立项 |
+| 16 | D12-5 | 结 | `scripts_ardot2uvue.py:27`+`gen_design_data_v4.py:20` | 生成链 `ROOT_DIR`/`DESIGN_DIR` 硬编码本机路径、**不可复跑**；手写/生成边界无标记 |
+| 17 | D14-1 | 结 | `scripts/review_agent.py:328-330`+`ci.yml:48,370` | 审计轴 1–4（契约/客户端/模型/导出）**未进任何自动门禁**（仅轴 5+6 接入） |
+
+### 9.2 功能与安全缺陷（64 条 · **本波不修，交功能波**）
+
+**P0（10 条）**：D04-1、D04-2、D07-1、D08-1、D08-2、D08-3、D09-1、D09-2、D10-1、D10-2（见 §9.1）。
+**P1（36 条）**：D01-6/7、D02-4/5/6、D03-6/7、D04-4/5/6/13、D05-5/14、D06-5、D07-3/4/5/7/8/9/10/11/12/16、D08-5/6/7/8/9、D09-3/4/5/7/8、D10-5/6/7/8/9、D11-4。
+**P2（18 条）**：D01-16/17、D03-15、D05-17、D06-8/9/10、D07-17、D08-13/14/15、D09-12、D10-10/12。
+
+**给功能波的三个必修簇**（按后果排序，均属"MVP 允许缺失但不允许阉割"范畴）：
+1. **端云聚合同源（域④）**：D04-1/2 + 夹具覆盖缺口 D04-15 → 双跑门禁当前**无鉴别力**，端云"同源契约"实际已分叉。
+2. **软删 30 天承诺（域⑧）**：D08-1/2/3 → 用户可见路径上"彻底清除"与"离线改可见"两条承诺均未落地，且出现错序。
+3. **护栏 fail-safe（域⑩）+ 微信主链（域⑨）**：D10-1/2（放行）、D09-1/2（主链不通）→ 分别违反"fail-safe 默认拒发"与 F6 交付。
+
+> **登记口径**：本节 64 条即本波对功能波的**移交清单**；`refactor-ledger.md` §7「本波不覆盖」中的"功能性/安全缺陷"即指此表。
+
+### 9.3 与旧条目对账·修正（4 处，**以本节为准**）
+
+| # | 旧条目 | 深审结论 | 处置 |
+|---|---|---|---|
+| 1 | §1「软删手抄 44 处/21 文件」 vs 域③「49 处」 | **口径差异，二者皆真**：`backend/app` = **44/21**（旧台账准确，生产口径）；含 `tests`(4)/`scripts`(1) 另计 5 处 → 全 `backend/` 49/25 | 保留 44/21 为生产口径，另注 5 处非生产 |
+| 2 | §3 L-11「有 `test_agent_schema_alignment.py` 守卫」 | **守卫为幻影**：全仓 `*alignment*` 0 命中、git 全历史 0 命中（仅 3 处文档引用它）→ B1 镜像豁免**无自校验**，且 D14-5 另指其"整文件含'镜像'即全量豁免"仍留假阴性口子 | L-11 已就地更正；豁免正当性**待补真实对拍测试或删声明** |
+| 3 | §8 B3「验证即达标，无缺口」 | **不成立**：`test_authz_gate.py:47` 登记名 ≠ 实际符号 → capsules loader 哑条目（D06-2） | B3 已降级为"门禁覆盖有盲点"；三 helper 收敛升为待办 |
+| 4 | §3 L-12「P1 候审」 | **升 P0 确认**：令牌机制覆盖率 0%（D12-1），见 §9.1 #15 | 已就地升格；**同一条不重复立项** |
+| 附 | AGENTS「第四窗 8 文件在途＝勿碰」 | 深审 14 域一致记录**在途 = 0**、该批均已入库 | 勿碰名单**可解除**（已回填 §1） |
+
+### 9.4 B2 就绪：`contents.py` 拆分最小方案（域③专章）
+
+- **现状**：902 行，4 router **物理交错混居**（非顺序分块）——`router` / `profile_sensitive`(≈454-514) / `favorites`(≈641-689) / `trash`(≈690-814) / waveform(≈815-902)。
+- **天然拆法**：转 `api/contents/` 子包（沿用 `upload/` 先例），移出 `_routers` / `serializers` / `profile_sensitive` / `favorites` / `trash` / `waveform` **六文件 ≈382 行**，留守 `__init__.py` **≈520 行（<600 阈值 ⇒ 棘轮解除）**。
+- **硬约束（不改会静默失效）**：`upload_photo` 与 `create_content` **必须留在 `__init__.py` 顶层命名空间** —— 两条测试 monkeypatch 打在 `app.api.contents` 上，移走即静默失效。
+- **验证**：pytest（contents / content_upload / photo_content / aggregation）+ `audit_harness openapi` 路径无消失。
+- **共享私有符号**：`_to_out` / `_attach_thumb` 等被多 router 用 → 随子包内 `serializers` 模块安置并兼容再导出。
+
+### 9.5 跨域扩展成本（Top 6，全表见汇总 §5）
+
+| 排名 | 域 | 扩展场景 | 需改处数 | 根因 |
+|---|---|---|---|---|
+| 1 | ④事件聚合 | 新增一层聚合 / 换算法 | **19 处**（后端 11+端 6+脚本 1+门禁 1） | 无任何注册表，硬编码 4 层假设 |
+| 2 | ⑤检索 RAG | 替换向量库 / 新增召回 | **14 处** / 8 处 | 无 provider 接口、无单点扩展位 |
+| 3 | ⑫客户端壳 UI | 新增 1 个 Tab | **6 文件 / 12+ 点** | 无单一注册表（VALID_TABS+4 ref+模板+if 链+TabBar+自由串） |
+| 4 | ③内容记录 | 新增一类内容类型 | **≥11 处 + 2 契约注释** | 契约/前缀/展示维度无注册表（覆盖度≈1/4） |
+| 5 | ⑨微信 | 新增一类消息类型 | **9 处** | 白名单/字段抽取/扩展名/审核/映射散落 |
+| 6 | ⑧同步离线 | 新增一种可同步实体 | **后端 6 处 + 端 3 软点** | SFV 通用路径 vs 事件专用路径两套并行 |
+
+> **共同根因**：契约/注册表维度普遍缺位 —— 仅"处理器维度"类注册表（`CONTENT_HANDLERS`、`_ADAPTERS`）到位，**校验/前缀/展示/通道维度均散落硬编码**。
+
+### 9.6 端云一致性结论（域④ + 域⑧）
+
+- **聚合（域④）**：共享参数 **8 项数值零漂移**，但 **语义/行为漂移 7 处（B1–B7）**；**B1（L1 时区）/B2（预处理去重）是生产路径真实分叉**，且被夹具的"固定 tz=480 + Python 复制品去重"掩盖 ⇒ **门禁参数 ≠ 生产参数，"双跑全绿"不代表端云同源**。另有 3 项参数未登记进契约表，`AGG_CONFIG["night"]` 等为装饰性死配置。
+- **LWW（域⑧）**：4 项规则 **3 项不一致** —— ① tie-break 客户端**零 LWW 判定**（盲信服务端 `updated_at` 直接覆盖）；② 字段级能力**无本地载体**（客户端实体级镜像、`value` 丢弃）；③ 软删 **端口径分裂 + 服务端内部双轨**。`push_ops` 比较基准是"设备时钟 vs 设备时钟"，服务端时钟不参与判定。
+
+### 9.7 A7 待用户拍板（优先级与批次切分）
+
+**A. 结构类批次（本波可直接做，行为等价）**
+
+| 批次 | 内容 | 依赖 | 风险 | 状态 |
+|---|---|---|---|---|
+| B2 | L-03 `contents.py` 子包拆分（方案已定 §9.4）+ L-03b `events.py` | B1 | 中（测试护航） | **方案就绪，待执行** |
+| B3′ | L-09 三 helper 收敛（**同时修正门禁登记名 D06-2**） | B2 | 中（AST 门禁护航） | **就绪（安全，零 monkeypatch）** |
+| B9 | 端口/边界收口：L-03c 越级直连 + D05-16 第二套 Qdrant + D02-3 存储注册点 | — | 中 | **新增（深审首次立项）** |
+| B10 | 门禁加固：D14-1 轴 1–4 进自动门禁、D04-15 夹具补分支、D11-2 错误码门禁盲区、D14-3/4/5 棘轮假阴/假阳、D12-9 轴 2 缺一向 | B1 | 低（纯工具） | **新增（深审首次立项）** |
+| B11 | 声明漂移清零（结构类 P2 群）：D02-7/9、D04-3/17、D05-9/15、D07-13/14、D09-10、D11-5、D12-7、D13-14/15/21/22/23/24、D14-2 | — | 极低 | **新增** |
+| B12 | 脚本/部署可移植性（域⑬ P1/P2）：D13-1/2/3/17/18/25/26、硬编码路径 6 处 | — | 低 | **新增** |
+| B5 | 客户端拆分 + 令牌收敛（L-01/02 + L-12/D12-1/3） | B1 + **编译门** | **高** | ⏸ 编译门不可用 → 顺延 |
+
+**B. 功能与安全缺陷（64 条）→ 交功能波，不列入本波批次**（§9.2）。**需用户确认**是否另开"功能修复波"或并入 4b 修复批次。
+
+**C. 需用户拍板的三件事**
+1. `backend/sql/schema.sql`（CI 建库源）与 ORM/alembic **谁是权威**（承 §5 §AG8 与 B4 遗留）。
+2. 上述 **B 类 64 条功能缺陷**的归属波次（另开功能波 / 并入 4b）。
+3. **B5 客户端批次**是否继续顺延至编译门可用。
+
+### 9.8 深审方法与边界
+
+- **只读保证**：14 域审计 + 汇总**未修改任何业务代码**（各域报告一致记录 `git status` 仅新增审计目录）。
+- **检索工具限制**：本机 `Grep`(rg) 不可用时改用 PowerShell `Select-String`（语义等价、含行号），命令附于汇总 §4。
+- **未覆盖**：`agent/`（全波排除）、`client/uni_modules/**`、`client/unpackage/**`、`scripts/realdevice/evidence/**`（二进制/证据）、生产 crontab（仓库外）。
+- **候审 30 条**：语义判定类（D01-16/17、D04-13、D05-14、D06-5、D08-13、D10-8/9、D11-4/8/12、D14-16/17/24 等）落地前需人工/运行时复核。
