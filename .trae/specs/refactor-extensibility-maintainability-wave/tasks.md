@@ -77,6 +77,10 @@
 
 - [x] Task B10-k: 退出码口径**统一**（D14-18）——测绘发现 `audit_harness`/`check_schema_drift`/`gen_openapi` 用 2=环境错误，而 `review_agent`/`test_agent` 只有 0/1 ⇒ 环境问题被误报为「代码违规」。`review_agent` 落地 **0 通过 / 1 违规 / 2 环境错误**：`ENV_ERR_PREFIX` 打标 + 纯函数 `_classify_failure()` 分流（违规优先）+ 报告加 `env_blocked_checks`。证据：纯函数探针 5 例全对；env 分支消息均以 `[环境错误]` 开头；CLI 实跑退出码 0。残余（已登记）：`test_agent` 仍只产 0/1（仅加 docstring 交叉引用）
 
+- [x] Task B10-l: 密钥模式集**唯一来源**（D14-9）——新建 `scripts/secret_patterns.py`（并集 16 条），`review_agent`/`audit_security` 共用；配套 `pragma: allowlist secret` 显式行内豁免（刻意不用"整目录跳过 tests/"，避免放过真密钥）。证据：探针证明两处同源、**并集无缺失（[]）**、四类形态（腾讯云 AKID/DashScope 宽版/私钥宽版/GitHub PAT）均被提交门禁识别；放宽后暴露 `backend/tests` 4 处合成值误报 → 逐行标注；复跑静态全绿、受影响测试 9 passed
+
+- [x] Task B10-m: `audit_security` **崩溃 + 白名单失效**（既有缺陷）——① `db/models` 已拆包仍直读 `models.py` ⇒ `FileNotFoundError`（HEAD 版本同样崩）⇒ 该安全审计**从未跑通**；② `_ALLOW_PATHS` 用仓库根相对前缀 ⇒ `backend/tests/…` 不匹配、"排除测试"意图从未生效；③ 统一合成值抑制（`change-me`/`mock`/`allowlist secret`）。证据：修复后**首次真正跑通**，`blocking` = **1**，仅剩真实项 **最近备份距今 493.0h（≈20.5 天）违反 RPO≤24h**（交运维/用户）
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

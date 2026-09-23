@@ -59,24 +59,14 @@ REPORT_DIR = ROOT / ".cowork-temp"
 REPORT_PATH = REPORT_DIR / "review-report.json"
 
 # 阻断规则：匹配到这些模式的代码不允许提交
-SECRET_PATTERNS = [
-    "sk-[A-Za-z0-9]{20,}",        # OpenAI/DeepSeek 风格 key
-    "AKIA[0-9A-Z]{16}",           # AWS access key
-    "-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----",
-    "password\\s*=\\s*['\"][^'\"]+['\"]",
-    "secret\\s*=\\s*['\"][^'\"]{8,}['\"]",
-    # 2026-08-27（批次 H2 R7 · T9）：补齐常见密钥形态盲区
-    "ghp_[A-Za-z0-9]{36}",                       # GitHub PAT
-    "github_pat_[A-Za-z0-9_]{22,}",              # GitHub fine-grained PAT
-    "xox[baprs]-[A-Za-z0-9-]{10,}",              # Slack token
-    "AIza[0-9A-Za-z_-]{35}",                     # Google API key
-    "sk_live_[0-9a-zA-Z]{20,}",                  # Stripe secret key
-    "rk_live_[0-9a-zA-Z]{20,}",                  # Stripe restricted key
-    "glpat-[A-Za-z0-9-]{20,}",                   # GitLab PAT
-    # 通用配置键赋值（小写精确匹配，误报面已用仓库全量探测验证 = 0）
-    "(client_secret|access_token|api[_-]?key|secret_key|private_key)\\s*=\\s*['\"][^'\"]{8,}['\"]",
-]
-SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py"}
+#
+# D14-9（2026-09-24 B10-l）：模式集**唯一来源** = 同目录 secret_patterns.py（与
+#   scripts/audit_security.py 共用）。此前两处各维护一套且**互有缺口**
+#   （审计认得 AKID…/私钥宽版，提交门禁看不到）⇒ 同一份密钥可能被放行。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from secret_patterns import SECRET_PATTERNS  # noqa: E402
+
+SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py", "secret_patterns.py"}
 # 2026-08-27（T9）：补齐 client 工具链（已整目录排除）之外的文本类型盲区——
 # .txt/.properties/.ps1/.sh/.mjs/.bat/.xml/.gitignore/.example/.mako 均可能携带密钥
 TEXT_EXTS = (
@@ -328,6 +318,12 @@ def check_secrets(files: list[str]) -> tuple[bool, str]:
             except Exception:
                 continue
         for i, line in enumerate(content.splitlines(), 1):
+            # D14-9 配套（2026-09-24 B10-l）：**显式行内豁免**——行内含 `allowlist secret`
+            # （detect-secrets 业界惯例）即跳过。为什么不用"整目录跳过 tests/"：那会把
+            # **真密钥**连同合成值一起放过（静默盲区）；行内标记则让"这是合成值"在 diff 里
+            # **可见、可审计、可 grep**，且必须逐个显式标注。
+            if "allowlist secret" in line:
+                continue
             for pat in SECRET_PATTERNS:
                 if re.search(pat, line) and "change-me" not in line and "mock" not in line.lower():
                     findings.append(f"{rel}:{i}: 疑似密钥 {pat[:30]}...")

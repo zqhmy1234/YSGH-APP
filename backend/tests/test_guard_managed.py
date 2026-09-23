@@ -52,7 +52,9 @@ def test_qwen_response_check_pass(monkeypatch):
     from app.services.llm_ops import guard_managed as gm
 
     monkeypatch.setattr(gm, "_managed_available", lambda: True)
-    monkeypatch.setattr(gm.settings, "dashscope_api_key", "sk-fake-key-for-test")
+    monkeypatch.setattr(
+        gm.settings, "dashscope_api_key", "sk-fake-key-for-test"  # pragma: allowlist secret
+    )
     captured: dict = {}
 
     def _fake_post(url, headers, json, timeout):
@@ -76,7 +78,9 @@ def test_qwen_response_check_block(monkeypatch):
     from app.services.llm_ops import guard_managed as gm
 
     monkeypatch.setattr(gm, "_managed_available", lambda: True)
-    monkeypatch.setattr(gm.settings, "dashscope_api_key", "sk-fake-key-for-test")
+    monkeypatch.setattr(
+        gm.settings, "dashscope_api_key", "sk-fake-key-for-test"  # pragma: allowlist secret
+    )
 
     monkeypatch.setattr(
         httpx, "post",
@@ -95,7 +99,9 @@ def test_qwen_response_check_inspection_block(monkeypatch):
     from app.services.llm_ops import guard_managed as gm
 
     monkeypatch.setattr(gm, "_managed_available", lambda: True)
-    monkeypatch.setattr(gm.settings, "dashscope_api_key", "sk-fake-key-for-test")
+    monkeypatch.setattr(
+        gm.settings, "dashscope_api_key", "sk-fake-key-for-test"  # pragma: allowlist secret
+    )
 
     monkeypatch.setattr(
         httpx, "post",
@@ -114,7 +120,9 @@ def test_qwen_response_check_network_error_raises(monkeypatch):
     from app.services.llm_ops import guard_managed as gm
 
     monkeypatch.setattr(gm, "_managed_available", lambda: True)
-    monkeypatch.setattr(gm.settings, "dashscope_api_key", "sk-fake-key-for-test")
+    monkeypatch.setattr(
+        gm.settings, "dashscope_api_key", "sk-fake-key-for-test"  # pragma: allowlist secret
+    )
 
     def _boom(*args, **kwargs):
         raise httpx.ConnectError("conn refused")

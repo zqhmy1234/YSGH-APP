@@ -28,12 +28,54 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # 敏感值模式（排除测试与示例）
-_SECRET_PATTERNS = [
-    re.compile(r"\bsk-[A-Za-z0-9_\-]{16,}\b"),   # DashScope
-    re.compile(r"\bAKID[A-Za-z0-9]{10,}\b"),     # 腾讯云 SecretId
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),  # 私钥
-]
+#
+# D14-9（2026-09-24 B10-l）：模式集**唯一来源** = 同目录 secret_patterns.py（与
+#   scripts/review_agent.py 共用）。此前本工具与提交门禁各维护一套且互有缺口 ⇒
+#   两处会"互相放行"对方认得、自己没认出的形态（假安全感）。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from secret_patterns import SECRET_PATTERNS as _SECRET_PATTERN_SRC  # noqa: E402
+
+_SECRET_PATTERNS = [re.compile(p) for p in _SECRET_PATTERN_SRC]
 _ALLOW_PATHS = ("tests/", "research/", ".cowork-temp/", "checkpoints/", "models/", "backups/", "scripts/", "skills/")
+
+
+def _models_source() -> str:
+    """返回 `db/models` 的源码文本（D13-4 / B10-m 修复 · 2026-09-24）。
+
+    原实现直读 `BACKEND/app/db/models.py`。但该路径早已由**单文件拆为包**（`db/models/`），
+    于是本审计运行时抛 `FileNotFoundError` ⇒ **整个安全审计根本跑不完**（"RPO 检查恒通过"
+    的真相是它压根没执行；用 HEAD 原始版本复跑同样崩，属既有缺陷、非本轮引入）。
+    现兼容两种形态：包 → 递归拼接包内全部 `.py`；旧单文件 → 直读。
+    """
+    pkg = BACKEND / "app" / "db" / "models"
+    if pkg.is_dir():
+        return "\n".join(
+            f.read_text(encoding="utf-8", errors="ignore") for f in sorted(pkg.rglob("*.py"))
+        )
+    legacy = BACKEND / "app" / "db" / "models.py"
+    return legacy.read_text(encoding="utf-8", errors="ignore") if legacy.exists() else ""
+
+
+def _allowed(rel: str) -> bool:
+    """该路径是否属于「排除测试与示例」清单（B10-m 修正 · 2026-09-24）。
+
+    原实现用 `rel.startswith(p)` 套**仓库根相对**前缀（如 `tests/`），但扫描对象是
+    `BACKEND.rglob("*.py")` ⇒ `backend/tests/...` **不匹配** ⇒ 「排除测试」的意图
+    **从未生效**（实测把 `backend/tests/` 的两处合成值报成"硬编码密钥"）。
+    现改为**按路径段**匹配：任一段等于清单目录名即排除（与扫描深度无关）。
+    """
+    segs = set(rel.split("/"))
+    return any(p.rstrip("/") in segs for p in _ALLOW_PATHS)
+
+
+def _is_synthetic(line: str) -> bool:
+    """合成值抑制（与提交门禁 `review_agent.check_secrets` **同一套口径**）。
+
+    B10-l/B10-m 配套：`change-me`（默认值占位）、含 `mock`、以及**显式行内豁免**
+    `pragma: allowlist secret`（detect-secrets 惯例，diff 里可见可审计）。
+    """
+    low = line.lower()
+    return "change-me" in line or "mock" in low or "allowlist secret" in line
 
 
 def _check(name: str, ok: bool, detail: str, fail: bool = False) -> dict:
@@ -55,14 +97,18 @@ def audit() -> dict:
     leaked: list[str] = []
     for py in BACKEND.rglob("*.py"):
         rel = py.relative_to(REPO).as_posix()
-        if any(rel.startswith(p) for p in _ALLOW_PATHS):
+        if _allowed(rel):
             continue
-        text = py.read_text(encoding="utf-8", errors="ignore")
-        for pat in _SECRET_PATTERNS:
-            m = pat.search(text)
-            if m:
-                leaked.append(f"{rel}:{m.group(0)[:12]}…")
-                break
+        for line_no, line in enumerate(
+            py.read_text(encoding="utf-8", errors="ignore").splitlines(), 1
+        ):
+            if _is_synthetic(line):
+                continue
+            for pat in _SECRET_PATTERNS:
+                m = pat.search(line)
+                if m:
+                    leaked.append(f"{rel}:{line_no} {m.group(0)[:12]}…")
+                    break
     domains["key_management"].append(_check(
         "源码无硬编码密钥",
         not leaked,
@@ -86,7 +132,7 @@ def audit() -> dict:
     ))
 
     # ---- 3. 存储 ----
-    models_src = (BACKEND / "app/db/models.py").read_text(encoding="utf-8")
+    models_src = _models_source()
     domains["storage"].append(_check(
         "敏感状态字段存在（sensitive_status）",
         "sensitive_status" in models_src or "sensitive" in models_src.lower(),

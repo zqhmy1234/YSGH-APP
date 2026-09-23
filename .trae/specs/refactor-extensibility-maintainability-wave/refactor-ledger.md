@@ -146,9 +146,12 @@
 
 | **B10-k** 退出码口径**统一**（D14-18） | ✅ 完成（`review_agent` 侧；`test_agent` 仅登记） | 测绘：`audit_harness` / `check_schema_drift` / `gen_openapi` 用 **2 = 环境错误**，而 `review_agent` / `test_agent` **只有 0/1** ⇒ 「环境没配好」被**误报成「代码违规」**（归因错误）。现 `review_agent` 落地统一口径 **0 通过 / 1 违规 / 2 环境错误**：新增 `ENV_ERR_PREFIX` 给"环境错误型"检查打标；抽出**纯函数** `_classify_failure()` 做分流（**违规优先 → 1**，仅环境错误 → 2）；报告新增 `env_blocked_checks` 字段 | 纯函数探针 **5 例全对**（全通过 `([],[])` / 仅违规 `([],['lint'])` / 仅环境错误 `(['lint'],[])` / 违规+环境错误 → 违规优先 / 含 lessons）；`check_lint`/`run_tests` 的 env 分支消息**均以 `[环境错误]` 开头**；CLI 实跑 `✅ 审核通过` 且退出码 **0**。**残余（已如实登记）**：`test_agent` 仍只产 0/1（未改——避免未经验证的跨工具契约变更），已在其 docstring 加口径交叉引用 |
 
-### 8.1 棘轮状态（2026-09-24 第二轮执行后）
+| **B10-l** 密钥模式集**唯一来源**（D14-9） | ✅ 完成 | 原状：`review_agent`（提交门禁）与 `audit_security`（安全审计）**各维护一套**模式且**互有缺口**——审计认得 `AKID…`（腾讯云）/`\bsk-…\b` 宽版/私钥宽版，提交门禁**看不到**；提交门禁认得 `ghp_/sk_live_/glpat-` 等，审计不认 ⇒ **同一份密钥可能被其中一个放行**（假安全感）。新建 `scripts/secret_patterns.py` 作为**并集唯一来源**，两处共同 import；配套新增**显式行内豁免** `pragma: allowlist secret`（detect-secrets 惯例）——刻意**不**用"整目录跳过 tests/"（那会把真密钥一起放过） | 探针（**不落盘**）：共享模式 **16** 条；`review_agent.SECRET_PATTERNS` 与 `audit_security._SECRET_PATTERNS` **同为该来源**；**并集相对合并前两套缺失模式 = `[]`**（无覆盖率下降）；四类形态（腾讯云 AKID / DashScope 宽版 / 私钥宽版 / GitHub PAT）**均被提交门禁识别**。**真实误报被当场暴露**：放宽后在 `backend/tests/test_guard_managed.py` 命中 4 处 `sk-fake-key-…`（合成值）→ 逐行加 `pragma: allowlist secret` 标注；复跑 `--full --skip-tests` → **secrets ✅ 且静态全绿**；受影响测试 **9 passed** |
+| **B10-m** `audit_security` **直接崩溃 + 路径白名单失效**（既有缺陷，本轮坐实并修复） | ✅ 完成（**暴露 1 项真实运维发现**） | ① **崩溃**：`db/models` 早已由单文件**拆为包**，`:92` 仍按文件直读 ⇒ `FileNotFoundError` ⇒ **该安全审计根本无法跑完**（用 `git show HEAD:` 原始版本复跑同样崩 ⇒ 既有缺陷，非本轮引入）；修：`_models_source()` 兼容包/单文件（递归拼接）。② **白名单意图从未生效**：`_ALLOW_PATHS` 用**仓库根相对**前缀（`tests/`…），而扫描对象是 `backend.rglob` ⇒ `backend/tests/…` 不匹配 ⇒ "排除测试与示例"落空（实测把 `backend/tests/` 两处合成值报成"硬编码密钥"）；修：`_allowed()` 改**按路径段**匹配。③ 与提交门禁**统一合成值抑制口径**：`change-me` / 含 `mock` / 显式 `pragma: allowlist secret` | 首次真正跑通：`key_management` ✅（源码无硬编码密钥）/ `transport` ✅✅ / `storage` ✅✅ / `backup` **❌**。⚠️ **真实发现（交运维/用户）**：**最近备份距今 493.0h（≈20.5 天）**，违反 RPO≤24h —— 此前该检查因崩溃**从未被评估**（D13-4 记的"RPO 检查恒通过"实为"压根没跑"）。`blocking` 由崩溃前的"跑不完"变为 **1** 条（且是真实项） |
 
-- `audit_harness all`：**无 CRITICAL**（INFO 14）；轴 5 存量超阈 **7 → 6 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）。
+### 8.1 棘轮状态（2026-09-24 第二轮执行后，第四轮更新）
+
+- `audit_harness all`：**无 CRITICAL**（INFO 16）；轴 5 存量超阈 **7 → 6 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）；**轴 4 零调用能力导出存量 5 个已冻结**（`AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`/`WALK_SPEED_MS`），且新增"僵尸豁免清算"。
 - 门禁接入（**已消除三类"恒绿假门禁"**）：
   - `review_agent` 现含 `structure`（轴 5/6，B1）+ **`audit_axes`（轴 1–4，B10）**，快/全量均跑、秒级；
   - CI fast-gate：原「client tsc 试点」为**真恒绿**（`continue-on-error` + 末尾无条件 `exit 0`，且 `client/tsconfig*.json` 不存在、tsc 不认 `.uts`）→ **退役**，替换为阻断式 `audit_harness client`（B12/D13-1）；
@@ -270,6 +273,8 @@
 | B10-i | 门禁域**剩余项**（**待执行**）：D14-9 密钥模式集双实现、D14-11/12/13 重复样板、D14-22 报告 schema 未统一、D14-23 schema-drift job 仅 schedule + continue-on-error、D14-6 轴 1 字段级漂移未覆盖、D14-18 残余（`test_agent` 仍只产 0/1） | B10 | 低 | ⏸ **待执行**（均属门禁自身可靠性，可本地验证；按价值/风险逐个推进） |
 | B10-j | 轴 2 **注释判定**假阳性/假阴性（D14-14 / D14-15） | B10 | 低 | ✅ **已完成**（见 §8.3；改为字符级注释区间判定：消除块注释/多行 HTML 注释两类**误报**，并修掉字符串 `http://` 导致的**漏报**；注释内 `.ts` 提及单独计为 INFO） |
 | B10-k | 退出码口径**统一**（D14-18） | B10 | 低 | ✅ **已完成**（见 §8.3；`review_agent` 落地 0/1/2 三态 + `_classify_failure()` 纯函数分流 + 报告 `env_blocked_checks`；5 例探针全对） |
+| B10-l | 密钥模式集**唯一来源**（D14-9） | B10 | 低 | ✅ **已完成**（见 §8.3；`scripts/secret_patterns.py` 并集 16 条，两处共用；新增 `pragma: allowlist secret` 显式行内豁免；并集无缺失、四类形态全覆盖） |
+| B10-m | `audit_security` **崩溃 + 白名单失效**（既有缺陷） | B10 | **中**（安全审计此前从未跑通） | ✅ **已完成**（见 §8.3；修崩溃（`db/models` 拆包）+ 白名单按路径段匹配 + 统一合成值抑制；首次跑通后**仅剩 1 项真实 ❌：最近备份距今 493.0h（≈20.5 天）违反 RPO≤24h —— 交运维/用户处置**） |
 | B9 | 端口/边界收口：L-03c 越级直连 + D05-16 第二套 Qdrant + D02-3 存储注册点 | — | 中 | ⏸ **待执行**（须专用窗口，逐点读码；不与 B2 混提） |
 | B5 | 客户端拆分 + 令牌收敛（L-01/02 + L-12/D12-1/3） | B1 + **编译门** | **高** | ⏸ 编译门不可用 → 顺延 |
 | — | **②子批：门禁缺口补强**（D11-2 错误码门禁跨模块盲区 + D11-1 漏登记、D12-9 轴 2 三向缺一向；D04-15 见下） | B10 | 低 | ✅ **已完成**（D11-2/D11-1/D12-9 已修并含反向探针；**D04-15 判定为阻塞**——被功能波 D04-1/2/3/4/5 阻塞，见 §8.3） |
