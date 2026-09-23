@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-09-24 03:46 · commit aa484ce · ts=1790192791
+- **错误**：backend/tests/test_authz_gate.py 的 OWNERSHIP_LOADERS 登记名 load_owned_capsule 与实际符号 api/capsules.py:45 _load_owned_capsule 拼写不符，导致 capsules loader 为门禁哑条目、从未被识别；且白名单存在性自检不校验 OWNERSHIP_LOADERS，哑条目永不被发现
+- **根因**：门禁用字符串精确匹配符号名，登记名靠人工抄写；且自检只覆盖 CREATION_WHITELIST/EXEMPT 子集
+- **修复**：修正登记名并让自检覆盖全部登记表；或改为按 AST 实际符号名反射比对
+- **相关文件**：backend/tests/test_authz_gate.py
+- **教训**：门禁全绿不等于真覆盖：登记名与符号名必须由自检强制对齐，否则哑条目静默失效
+
+---
+
+### 2026-09-24 03:46 · commit aa484ce · ts=1790192791
+- **错误**：台账/AGENTS/决策台账 三处宣称存在 backend/tests/test_agent_schema_alignment.py 守卫镜像表豁免，实际该文件全仓与 git 全历史均不存在
+- **根因**：文档中的'已有守卫/已有测试'被当作既成事实反复转抄，从未实查文件存在性（Get-ChildItem/git log --diff-filter=A）
+- **修复**：删幻影声明；豁免逻辑要么补真实对拍测试要么收窄条件
+- **相关文件**：scripts/audit_harness.py
+- **教训**：任何'已有 X 守卫/测试'的论断必须先验证文件真实存在（含 git 全历史），不得跨文档转抄
+
+---
+
 ### 2026-09-24 01:27 · commit 5b92354 · ts=1790184426
 - **错误**：audit_harness 新增体积棘轮首次真实运行即 TypeError 崩溃：int() argument must be ... not 'dict'
 - **根因**：基线文件 allowlist 的值为结构化对象 {lines,reason,target}，而读取代码写的是 int(allow[rel])——两处 schema 未同步；且此前的负向探针只走了'基线为空'分支，未覆盖'基线存在'分支

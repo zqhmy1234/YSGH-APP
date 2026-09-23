@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import re
 import sys
@@ -269,6 +270,18 @@ def audit_client() -> None:
 
 # ─────────────────────────── 轴 3：模型使用率 ───────────────────────────
 
+# 类定义块（含 body）：从 `class X(` 到下一个 class 或文件末尾——用于**逐类**判定，
+# 不再按整文件一刀切（D14-5）。
+_CLASS_BLOCK_RE = re.compile(r"^class\s+(\w+)\s*\((?P<body>.*?)(?=^class\s|\Z)", re.M | re.S)
+_TABLENAME_RE = re.compile(r"__tablename__\s*=")
+
+
+def _module_docstring(text: str) -> str:
+    """取模块级 docstring（文件起始处的三引号块）；无则返回空串。"""
+    m = re.match(r'\s*(?P<q>"""|\'\'\')(?P<doc>.*?)(?P=q)', text, re.S)
+    return m.group("doc") if m else ""
+
+
 def audit_models() -> None:
     print("== 轴 3 · ORM 模型使用率（静态启发式）==")
     models_dir = BACKEND / "app" / "db" / "models"
@@ -277,18 +290,25 @@ def audit_models() -> None:
         raise SystemExit(2)
 
     classes: dict[str, str] = {}
-    mirror_files: set[str] = set()
+    mirror_tables: set[str] = set()
     for f in sorted(models_dir.glob("*.py")):
         if f.name.startswith("_"):
             continue
         text = f.read_text(encoding="utf-8")
-        # 「镜像」标记＝该模块是**刻意镜像**（外部系统的表结构；仅为让 Base.metadata 与库
+        # 「镜像表」判定——该模块是**刻意镜像**（外部系统的表结构；仅为让 Base.metadata 与库
         # 一致、防 alembic --autogenerate 误生成 DROP TABLE），由迁移与漂移守卫消费，
         # 不参与本仓业务读写 → 0 引用属**预期**，不得判为"建了未用"（2026-09-24 B1 修假阳性）。
-        if "镜像" in text:
-            mirror_files.add(f.name)
-        for m in re.finditer(r"^class\s+(\w+)\s*\(", text, re.M):
-            classes[m.group(1)] = f.name
+        # ⚠️ D14-5 收窄（2026-09-24 B10）：旧判据「文件**任意位置**出现『镜像』二字 →
+        #   该文件**全部类**豁免」过宽——① 触发过宽：类里一句无关的「镜像」描述即豁免整个
+        #   文件；② 范围过宽：同文件的**非表类**（枚举/mixin/工具）也被连带豁免。
+        #   现要求**两条同时成立**才豁免：模块 docstring 声明含「镜像」**且**该类自身是表
+        #   （声明了 `__tablename__`）；不满足者照常进入 0 引用检查。
+        is_mirror_module = "镜像" in _module_docstring(text)
+        for m in _CLASS_BLOCK_RE.finditer(text):
+            name = m.group(1)
+            classes[name] = f.name
+            if is_mirror_module and _TABLENAME_RE.search(m.group("body")):
+                mirror_tables.add(name)
     _say("INFO", f"模型类 {len(classes)} 个（分布在 {len({v for v in classes.values()})} 个文件）")
 
     scan_files = [
@@ -302,8 +322,8 @@ def audit_models() -> None:
             if re.search(rf"\b{re.escape(c)}\b", text):
                 usages[c].append(str(p.relative_to(REPO)))
 
-    zero = {c: f for c, f in classes.items() if not usages[c] and f not in mirror_files}
-    mirrored = {c: f for c, f in classes.items() if not usages[c] and f in mirror_files}
+    zero = {c: f for c, f in classes.items() if not usages[c] and c not in mirror_tables}
+    mirrored = {c: f for c, f in classes.items() if not usages[c] and c in mirror_tables}
     low = {c: usages[c] for c, f in classes.items() if 0 < len(usages[c]) <= 2}
 
     if zero:
@@ -313,7 +333,7 @@ def audit_models() -> None:
     else:
         _info("无 0 引用模型 ✓")
     if mirrored:
-        _info(f"0 引用的**镜像**模型 {len(mirrored)} 个（刻意声明，非缺口）：")
+        _info(f"0 引用的**镜像表**模型 {len(mirrored)} 个（刻意声明，非缺口）：")
         for c, f in sorted(mirrored.items()):
             _say("  ", f"{c}（models/{f}，镜像：仅为 metadata/alembic 一致 + 漂移守卫）")
     if low:
@@ -403,7 +423,24 @@ def audit_exports() -> None:
 # 棘轮口径（刻意不做"一夜全阻断"——那会被绕过）：存量超阈文件在 baseline 冻结、
 # **不阻断**；**新增超阈文件即 CRITICAL**（新债不得产生）；存量再增长则 WARN。
 
-FILESIZE_THRESHOLDS = {"backend_py": 600, "client": 800}
+# 体积阈值：**唯一配置源**是 `audit_harness_baseline.json` 的 `filesize.thresholds`；
+# 本字典仅为基线/字段缺失时的兜底默认。
+# ⚠️ D14-2（2026-09-24 B10）：该基线字段此前是**死配置**——代码硬编码同值、从不读取，
+#   改基线阈值不生效（看似可调、实则无效）。现由 `_filesize_thresholds` 真正读取。
+_DEFAULT_FILESIZE_THRESHOLDS = {"backend_py": 600, "client": 800}
+
+
+def _filesize_thresholds(section: dict | None = None) -> dict[str, int]:
+    """体积阈值：优先取基线 `filesize.thresholds`，缺失项回退默认。"""
+    if section is None:
+        section = _load_baseline().get("filesize", {})
+    conf = section.get("thresholds", {})
+    out = dict(_DEFAULT_FILESIZE_THRESHOLDS)
+    if isinstance(conf, dict):
+        for key, val in conf.items():
+            with contextlib.suppress(TypeError, ValueError):
+                out[str(key)] = int(val)
+    return out
 
 
 def _iter_sized_sources() -> list[Path]:
@@ -418,22 +455,24 @@ def _iter_sized_sources() -> list[Path]:
     return sorted(out)
 
 
-def _threshold_for(rel: str) -> int:
+def _threshold_for(rel: str, thresholds: dict[str, int]) -> int:
     if rel.startswith("client/"):
-        return FILESIZE_THRESHOLDS["client"]
-    return FILESIZE_THRESHOLDS["backend_py"]
+        return thresholds["client"]
+    return thresholds["backend_py"]
 
 
 def _filesize_findings() -> tuple[list[str], list[str], list[str]]:
     """(新增超阈=CRITICAL, 存量超阈=INFO, 存量增长=WARN)"""
-    allow = _load_baseline().get("filesize", {}).get("allowlist", {})
+    section = _load_baseline().get("filesize", {})
+    allow = section.get("allowlist", {})
+    thresholds = _filesize_thresholds(section)
     crit: list[str] = []
     info: list[str] = []
     warn: list[str] = []
     for p in _iter_sized_sources():
         rel = p.relative_to(REPO).as_posix()
         lines = len(p.read_text(encoding="utf-8", errors="replace").splitlines())
-        limit = _threshold_for(rel)
+        limit = _threshold_for(rel, thresholds)
         if lines <= limit:
             continue
         if rel in allow:
@@ -449,7 +488,8 @@ def _filesize_findings() -> tuple[list[str], list[str], list[str]]:
 
 
 def audit_filesize() -> None:
-    print("== 轴 5 · 文件体积棘轮（backend/app *.py ≤600 / client *.uts|*.uvue ≤800）==")
+    t = _filesize_thresholds()
+    print(f"== 轴 5 · 文件体积棘轮（backend/app *.py ≤{t['backend_py']} / client *.uts|*.uvue ≤{t['client']}）==")
     crit, info, warn = _filesize_findings()
     for m in crit:
         _crit(m)
@@ -488,12 +528,19 @@ def _dup_findings() -> tuple[list[str], list[str]]:
             total += n
             if n > int(base_files.get(rel, 0)):
                 growth.append(f"{rel} {base_files.get(rel, 0)} → {n} 处")
+        # 棘轮口径（D14-3 修正，2026-09-24 B10）：**总数**与**单文件**两条腿都要 gate。
+        # 旧版只 gate 总数 → 若「A 文件 +1 抵消 B 文件 -1」使总数不变，则新增的手抄点被
+        # 静默放行——per_file 白名单（base_files）形同虚设，与体积轴「新增即拦」不一致。
         if base_total is None:
             info.append(f"{name}: 基线缺失（当前 {total} 处）——请补基线")
-        elif total > int(base_total):
-            crit.append(
-                f"{name} 手抄总数 {base_total} → {total}（上升）；新增点：{'; '.join(growth)}"
-            )
+            continue
+        if total > int(base_total) or growth:
+            detail: list[str] = []
+            if total > int(base_total):
+                detail.append(f"总数 {base_total} → {total}")
+            if growth:
+                detail.append(f"单文件上升：{'; '.join(growth)}")
+            crit.append(f"{name} 手抄上升（{'；'.join(detail)}）——推动走公共 helper")
         else:
             info.append(f"{name}: {total} 处（基线 {base_total}，未上升 ✓）")
     return crit, info
@@ -516,6 +563,37 @@ def structure_findings() -> list[str]:
     供 `review_agent` 等门禁复用——纯计算、不打印、不导入后端 app，秒级可跑。
     """
     return _filesize_findings()[0] + _dup_findings()[0]
+
+
+def axes_findings() -> tuple[list[str], list[str], str]:
+    """公共入口：**轴 1-4**（契约 / 客户端 / 模型 / 导出）的 (CRITICAL, INFO, 备注)。
+
+    供 `review_agent` 等门禁复用（重构波 B10：此前门禁只覆盖轴 5/6，轴 1-4 仅能人工跑、
+    CI 零命中——缺陷 D14-1）。实现要点：
+      · 隔离模块全局 CRITICAL/INFO，调用各轴函数后原样还原，不污染 `main()` 的汇总；
+      · 屏蔽各轴 stdout（门禁侧只打印汇总，避免刷屏），由其返回值承载结论；
+      · **轴 1 需可导入的后端环境**（`from app.main import app`）：不可导入时降级为**跳过**
+        （不阻断，理由写入备注），与审计脚本「退出码 2＝环境错误（非发现）」的语义一致——
+        门禁只对**真发现**（CRITICAL）阻断，避免缺依赖环境把门禁变成假红灯。
+    """
+    global CRITICAL, INFO
+    saved_crit, saved_info = CRITICAL, INFO
+    CRITICAL, INFO = [], []
+    notes: list[str] = []
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            try:
+                audit_openapi()
+            except SystemExit:
+                notes.append("轴1 契约对拍跳过：后端 app 不可导入（缺依赖/环境）")
+            audit_client()
+            audit_models()
+            audit_exports()
+        crit, info = list(CRITICAL), list(INFO)
+    finally:
+        CRITICAL, INFO = saved_crit, saved_info
+    return crit, info, "；".join(notes)
 
 
 # ─────────────────────────── 入口 ───────────────────────────

@@ -51,3 +51,16 @@
 - [x] 审计发现的**功能性/安全缺陷 64 条只登记不修**，并分离为**移交功能波的清单** —— 证据：ledger §9.2（含 P0 10 条 + 三个必修簇），§7「本波不覆盖」已指向该表
 - [ ] **A7 提请用户拍板**：结构类批次（B2/B3′/B9/B10/B11/B12/B5）优先级 + 功能缺陷归属波次 + `schema.sql` vs ORM 权威 —— **待用户确认**（ledger §9.7）
 - [x] 在途文件复核：AGENTS「第四窗 8 文件勿碰名单」在本时点**均已入库**（在途=0），名单可解除 —— 证据：14 域报告一致记录 + `git status --short`
+
+## F. Phase B 第二轮执行（2026-09-24 · 深审后新增批次）
+
+- [x] **B2 巨文件拆分**：`backend/app/api/contents.py` → `api/contents/` 子包（`git mv` 保历史）—— 证据：`__init__.py` **902 → 524 行**（<600，轴 5 棘轮销项，存量超阈 7→6）；子模块 serializers 48 / profile_sensitive 89 / favorites 111 / trash 115 / waveform 115
+- [x] 拆分**行为等价**：AST 逐语句比对原 902 行 → **31/31 顶层语句文本完全一致**；`MAX_PHOTO_BYTES`/`enqueue_unique` 与 6 个核心端点留在 `__init__.py`（monkeypatch 面）；唯一可观测差异＝favorites logger 通道名变化（未改代码）
+- [x] B2 **门禁覆盖回归已修**（自查发现）：`test_authz_gate.py` `glob("*.py")` → `rglob("*.py")` —— 证据：候选 20+ → **29**；已扫到子包模块 `contents/{__init__,favorites,trash,waveform}.py`；新增 `test_scan_covers_subpackages` 防回归
+- [x] **B3′ 归属 helper 收敛 + 门禁哑条目修正**：`deps.load_owned_entity` 泛化 + 三处委托（错误码/文案/HTTP 逐字保留）；`OWNERSHIP_LOADERS` 修正真名 `_load_owned_capsule`、删 3 幻影预留项 —— 证据：新增 `test_ownership_loaders_all_exist`；自校验 `'load_owned_capsule' in live → False`
+- [x] **B10 门禁加固**：`audit_axes`（轴 1–4）接入 `review_agent`（快/全量）；CI full-gate 加阻断式 `audit_harness all`；重复模式总数+per_file 双 gate；镜像豁免收窄；体积阈值由基线驱动 —— 证据：负向探针 → `exports` **CRITICAL** + `review_agent` **退出码 1**，已还原
+- [x] **B12 部分**：**D13-1 恒绿假门禁退役**（原 CI client tsc 步骤：`continue-on-error: true` + 末尾**无条件 `exit 0`**，且 `client/tsconfig*.json` 不存在、tsc 不认 `.uts`）→ 替换为**阻断式** `audit_harness client`；D13-26 deploy/README 补齐；硬编码路径清 4 处（env + 显式默认 + 缺失报错）
+- [x] **B11 安全子集**：D04-17 类型标注 / D13-28 docstring / D13-14 注释一致性 / D14-2 死配置（随 B10）
+- [x] 每批受影响测试绿 + **全量 `pytest backend/tests` 不红** —— 证据：**850 passed / 4 skipped**（较基线 848 = 新增 2 条门禁自检，零回归）；`audit_harness openapi` **67/67 完全对齐、无幽灵路径**
+- [x] 未以"未验证"冒充完成：**B9（端口/边界收口）、B10-b（门禁缺口补强）、B11 残余漂移、B12 剩余项、B5（编译门）** 均显式标注**待执行/顺延**并给出原因（ledger §8.2/§9.7）
+- [x] 未使用 `--no-verify` 绕过门禁 —— 证据：提交经 hook `[pre-commit] 审核通过`

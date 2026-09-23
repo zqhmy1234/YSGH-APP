@@ -17,10 +17,13 @@
       见 `_repo_text_candidates`）。
     4. TODO/FIXME 计数报告（不阻断）
     5. lessons 强制登记检查（上次失败未登记 → 阻断）
+    6. 结构棘轮 structure（轴 5/6：文件体积 / 重复模式，2026-09-24 B1 接入）
+    7. 跨轴审计 audit_axes（轴 1-4：契约/客户端/模型/导出，2026-09-24 B10 接入，缺陷 D14-1）
   全量模式（--full，完成验收/集成/CI 用，即旧行为）：
     1-4 同快模式但扫描整个仓库（排除 client/ 工具链）
     5. 全量测试（pytest + api_smoke + research，经 scripts/test_agent.py）
     6. lessons 强制登记检查
+    7. 结构棘轮 + 跨轴审计（与快模式同源；全量模式下轴 1 契约对拍通常可跑）
 
 退出码：0 = 通过可提交；1 = 存在阻断项（禁止 commit，先修复）。
 
@@ -333,6 +336,28 @@ def check_structure() -> tuple[bool, str]:
     return True, "结构棘轮：无新增超阈文件 / 重复模式未上升"
 
 
+def check_audit_axes() -> tuple[bool, str]:
+    """跨轴审计（轴 1-4：契约 / 客户端 / 模型 / 导出）——2026-09-24 重构波 B10 接入门禁。
+
+    背景（缺陷 D14-1，P0）：`structure` 只覆盖轴 5/6，轴 1-4 仅能人工跑，
+    CI 0 命中——契约漂移 / 代码内死路由 / 0 引用模型 / 零调用能力导出四类静默腐化
+    从未被任何自动化门禁拦住。本检查复用 `audit_harness.axes_findings()`（纯调用，
+    不污染其 `main()`）。
+
+    口径：**只有 CRITICAL 阻断**（新增契约双向漂移 / 代码内死路由 / 0 引用模型 /
+    零调用能力导出）；INFO 仅报告。轴 1 需可导入后端环境，缺环境时**降级跳过**
+    （不阻断）——见 `axes_findings` 注释。快/全量模式均执行（轴 2/3/4 为纯文件扫描）。
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_harness import axes_findings
+
+    crit, info, note = axes_findings()
+    suffix = f"；{note}" if note else ""
+    if crit:
+        return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
+    return True, f"跨轴审计（契约/客户端/模型/导出）：无 CRITICAL；INFO {len(info)} 项{suffix}"
+
+
 def check_lessons() -> tuple[bool, str]:
     """强制教训登记：上次失败后未登记 → 阻断 commit（2026-08-20 用户要求程序化强制）"""
     import sys as _sys
@@ -359,6 +384,7 @@ def main() -> int:
         "secrets": check_secrets(secret_files),
         "todos": check_todos(secret_files),
         "structure": check_structure(),
+        "audit_axes": check_audit_axes(),
     }
     if args.full and not args.skip_tests:
         checks["tests"] = run_tests()

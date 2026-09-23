@@ -110,11 +110,27 @@
 | B2 | L-03 `contents.py` / L-07 `events.py` 拆分 | ⏸ **顺延（本会话未执行）** | 仅完成勘察：`contents.py` 实为 **4 router 混居**（`contents` / `profile_sensitive`（454-514）/ `favorites`（641-689）/ `trash`（690-814）/ waveform（815-902）） | 顺延理由（工程判断，非偷懒）：① 天然拆法＝转 `api/contents/` 子包（沿用 `upload/` 先例）；② 部分抽取（如只移 profile_sensitive）后 **902→~845 仍 >600**，棘轮不解除、纯增文件，收益为零；③ 完整 4-router 迁移≈900 行移动 + 多处 `_to_out`/`_attach_thumb` 共享符号与测试 monkeypatch 面，须**专用验证窗口**；④ 棘轮已冻结该文件，**不产生新债**。L-07 `events.py` 530 行**低于 600 阈值**，非棘轮项、优先级更低 |
 | B5 | L-01/02/04/05/06/08/12 客户端拆分 | ⏸ **顺延（用户拍板）** | — | 编译门（HBuilderX GUI + Docker）不可用 → 用户拍板顺延，避免"未验证改动堆进最脆弱链路" |
 
-### 8.1 本会话新增/变更的棘轮状态
+### 8.2 Phase B 深审后新增批次（2026-09-24 第二轮执行）
 
-- `audit_harness all`：**无 CRITICAL**（INFO 14）；轴 5 存量超阈 **7 个已冻结**；轴 6 `soft_delete_filter` **44 处未上升**。
-- 门禁接入：`review_agent` 新增 `structure` 检查（快/全量均跑，秒级）；既有 hook 自动覆盖，**未使用 `--no-verify`**。
-- 基线收缩触发：B2 拆分落地后删除 `contents.py` 条目；B3 收敛落地后下调 `soft_delete_filter` 计数。
+| 批次 | 条目 | 状态 | 证据 | 备注 |
+|---|---|---|---|---|
+| B2 | L-03 `contents.py` → `api/contents/` 子包 | ✅ 完成 | 拆 5 子模块（serializers 48 / profile_sensitive 89 / favorites 111 / trash 115 / waveform 115），`__init__.py` **902 → 524 行（<600 ⇒ 棘轮解除）**，`git mv` 保历史；`py_compile` 6 文件 0 错；`pytest` 受影响 89 passed；`audit_harness openapi` 67/67 对齐、无幽灵路径；轴 5 存量超阈 **7 → 6** | AST 逐语句比对：原 902 行 **31/31 顶层语句文本完全一致**，零缺失零 diff；`MAX_PHOTO_BYTES`/`enqueue_unique` 与 6 个核心端点**留在 `__init__.py`**（测试 monkeypatch 面）；唯一可观测差异＝favorites 模块 logger 通道名变为 `app.api.contents.favorites`（未改代码） |
+| B2′ | **B2 引发的门禁覆盖回归修复**（本波自查发现） | ✅ 完成 | `test_authz_gate.py` 由 `glob("*.py")` → **`rglob("*.py")`（含子包）**；候选 **20+ → 29**，子包模块 `contents/{__init__,favorites,trash,waveform}.py` 已被扫到；新增 `test_scan_covers_subpackages` 防回归 | 若不修：contents 全部端点**静默退出扫描面**，门禁"全绿"却不覆盖（D12-9「扫描面缺一向」同族）。另 `_router_var_names` 扩展为「本地 make_router ∪ import 的 router」以覆盖共享 router 端点 |
+| B3′ | L-09 三 helper 收敛 + D06-2 门禁哑条目 | ✅ 完成 | `deps.py` 新增泛化 `load_owned_entity`；`capsules._load_owned_capsule` / `messages.load_owned_message` / `load_alive_content` **三处委托**（错误码/文案/HTTP 逐字保留）；`OWNERSHIP_LOADERS` 修正 `load_owned_capsule` → **`_load_owned_capsule`**、删 3 个幻影预留项、加 `load_owned_entity`；新增 `test_ownership_loaders_all_exist`（登记名必须对应真实符号） | 自校验实证：`'load_owned_capsule' in live → False`（旧哑名会被拦）、`'_load_owned_capsule'/'load_owned_entity' → True`；`pytest test_authz_gate + contents + content_upload + echo` → **56 passed**；全量 `pytest backend/tests` → **850 passed / 4 skipped**（较基线 848 = 新增 2 条门禁自检，零回归） |
+| B10 | 门禁加固：D14-1 轴 1–4 进自动门禁 + D14-3/5 假阴假阳 + D14-2 | ✅ 完成 | `review_agent.py` 新增 `audit_axes` 检查（快/全量都跑）；`ci.yml` full-gate 新增**阻断式** `audit_harness all`；`audit_harness.py` 重复模式改**总数 + per_file 双 gate**、镜像豁免收窄为「模块 docstring 含"镜像" **且** 该类自身声明 `__tablename__`」、体积阈值改由基线 `filesize.thresholds` 驱动 | 负向探针：临时造零调用导出 → `audit_harness exports` 报 **CRITICAL**、`review_agent` **退出码 1**；已还原（`client/utils/config.uts` 无残留改动） |
+| B12 | 脚本/部署：D13-1 假门禁 + D13-26 + 硬编码路径 4 处 | ⚠️ **部分完成** | **D13-1 已修**：删除 CI「client tsc 试点」——核实其 `continue-on-error: true` + 脚本末尾**无条件 `exit 0`**（真恒绿假门禁，且 `client/tsconfig*.json` 根本不存在、tsc 不认 `.uts`），替换为**阻断式** `audit_harness client`；**D13-26 已修**（deploy/README 补齐 3 脚本）；**硬编码路径已清 4 处**（`smoke_cos_upload.py` / `backup_pg.ps1` / `reinject_missing_photos.py` / `seed_echo_today.py`，均改 env + 显式默认 + 缺失报错） | **D13-3 只登记**：实跑 `check_env_template.py` **当前即失败**（`AGENT_SERVICE_BASE_URL/TIMEOUT_S/TOKEN` config 有、模板缺）→ 按纪律**先补模板再挂门禁**，不接假绿调用；**D13-17/18/25/21/22/23/24/13、D13-6/7 只登记**（改动即改部署行为且本机不可验证／一次性死脚本） |
+| B11 | 声明漂移·安全子集 | ⚠️ **部分完成** | **已修 3 项**：D04-17（`tags: list[str] \| None`，仅类型标注）、D13-28（docstring 与代码对齐）、D13-14（注释写 `Token=***` 而代码明文 → 注释改为与代码一致） | **D13-14 附注**：该文件（`backend/scripts/wecom_sandbox.py`）**整体持有企微官方文档测试凭据**（Token/EncodingAESKey/corpid 明文，非生产密钥），根治须改 env 注入＝行为变更 → **移交后续**；其余漂移项（D02-7/9、D04-3、D05-9/15、D07-13/14、D09-10、D11-5、D12-7、D14-2✅）见 §9.7 状态 |
+| B9 | 端口/边界收口（L-03c 越级直连 / D05-16 第二套 Qdrant / D02-3 存储注册点） | ⏸ **待执行** | — | 深审首次立项；改动依赖方向与厂商调用点，**须专用窗口 + 逐点读码**（不可与 B2 同批混提） |
+
+### 8.1 棘轮状态（2026-09-24 第二轮执行后）
+
+- `audit_harness all`：**无 CRITICAL**（INFO 14）；轴 5 存量超阈 **7 → 6 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）。
+- 门禁接入（**已消除三类"恒绿假门禁"**）：
+  - `review_agent` 现含 `structure`（轴 5/6，B1）+ **`audit_axes`（轴 1–4，B10）**，快/全量均跑、秒级；
+  - CI fast-gate：原「client tsc 试点」为**真恒绿**（`continue-on-error` + 末尾无条件 `exit 0`，且 `client/tsconfig*.json` 不存在、tsc 不认 `.uts`）→ **退役**，替换为阻断式 `audit_harness client`（B12/D13-1）；
+  - CI full-gate：新增阻断式 `audit_harness all`（B10/D14-1，无 `continue-on-error`）。
+- 基线收缩触发：`contents.py` 条目**已移除**（B2 落地）；B3′ 收敛落地后**可下调** `soft_delete_filter` 计数（本批未下调——收敛只改 helper 结构、未减少调用点）。
+- hook 自动覆盖，**未使用 `--no-verify`**。
 
 ---
 
@@ -212,15 +228,17 @@
 
 **A. 结构类批次（本波可直接做，行为等价）**
 
-| 批次 | 内容 | 依赖 | 风险 | 状态 |
+| 批次 | 内容 | 依赖 | 风险 | 状态（2026-09-24 第二轮后） |
 |---|---|---|---|---|
-| B2 | L-03 `contents.py` 子包拆分（方案已定 §9.4）+ L-03b `events.py` | B1 | 中（测试护航） | **方案就绪，待执行** |
-| B3′ | L-09 三 helper 收敛（**同时修正门禁登记名 D06-2**） | B2 | 中（AST 门禁护航） | **就绪（安全，零 monkeypatch）** |
-| B9 | 端口/边界收口：L-03c 越级直连 + D05-16 第二套 Qdrant + D02-3 存储注册点 | — | 中 | **新增（深审首次立项）** |
-| B10 | 门禁加固：D14-1 轴 1–4 进自动门禁、D04-15 夹具补分支、D11-2 错误码门禁盲区、D14-3/4/5 棘轮假阴/假阳、D12-9 轴 2 缺一向 | B1 | 低（纯工具） | **新增（深审首次立项）** |
-| B11 | 声明漂移清零（结构类 P2 群）：D02-7/9、D04-3/17、D05-9/15、D07-13/14、D09-10、D11-5、D12-7、D13-14/15/21/22/23/24、D14-2 | — | 极低 | **新增** |
-| B12 | 脚本/部署可移植性（域⑬ P1/P2）：D13-1/2/3/17/18/25/26、硬编码路径 6 处 | — | 低 | **新增** |
+| B2 | L-03 `contents.py` 子包拆分（方案已定 §9.4）+ L-03b `events.py` | B1 | 中（测试护航） | ✅ **已完成**（`contents.py` → `api/contents/`，902→524 行；`events.py` 530 行 <600 阈、非棘轮项，仍登记未拆）。见 §8.2 |
+| B2′ | B2 引发的门禁覆盖回归（`glob` 漏子包） | B2 | 低 | ✅ **已完成**（`rglob` + 子包覆盖自检） |
+| B3′ | L-09 三 helper 收敛（**同时修正门禁登记名 D06-2**） | B2 | 中（AST 门禁护航） | ✅ **已完成**（`load_owned_entity` 泛化 + 哑条目修正 + `test_ownership_loaders_all_exist`） |
+| B10 | 门禁加固：D14-1 轴 1–4 进自动门禁、D14-3/5 棘轮假阴/假阳、D14-2 | B1 | 低（纯工具） | ✅ **已完成**（`audit_axes` + CI `audit_harness all` + 双 gate + 豁免收窄；负向探针证明非空转）。D04-15/D11-2/D12-9 见下 |
+| B12 | 脚本/部署可移植性（域⑬）：D13-1/2/3/17/18/25/26、硬编码路径 6 处 | — | 低 | ⚠️ **部分完成**（D13-1/26 + 4 条路径已修；D13-3 实跑当前即失败→先补模板；其余只登记） |
+| B11 | 声明漂移清零（结构类 P2 群） | — | 极低 | ⚠️ **部分完成**（D04-17/D13-28/D13-14/D14-2 已修；D02-7/9、D04-3、D05-9/15、D07-13/14、D09-10、D11-5、D12-7 仍待处置——多数需**决策**或属**死配置删除**，宜单独立项） |
+| B9 | 端口/边界收口：L-03c 越级直连 + D05-16 第二套 Qdrant + D02-3 存储注册点 | — | 中 | ⏸ **待执行**（须专用窗口，逐点读码；不与 B2 混提） |
 | B5 | 客户端拆分 + 令牌收敛（L-01/02 + L-12/D12-1/3） | B1 + **编译门** | **高** | ⏸ 编译门不可用 → 顺延 |
+| — | **②子批：门禁缺口补强**（D04-15 夹具补 `approx`/`corrected` 分支、D11-2 错误码 AST 门禁跨模块盲区、D12-9 轴 2 三向缺一向） | B10 | 低 | ⏸ **待执行**（深审新立项，属门禁自身可靠性） |
 
 **B. 功能与安全缺陷（64 条）→ 交功能波，不列入本波批次**（§9.2）。**需用户确认**是否另开"功能修复波"或并入 4b 修复批次。
 

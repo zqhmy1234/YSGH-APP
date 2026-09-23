@@ -3,7 +3,8 @@ seed_echo_today.py —— 去年今日回响数据注入（2026-09-05 峰宝拍�
 背景：消息中心回声卡走 GET /echo/today（取去年今日 taken_at 的内容），
      真机账号无 2025-09-05 内容 → 回响空 → USE_MOCK_ECHO 演示卡点击假 id → detail 404。
      正解=注入真数据后关演示开关。
-方案：从 C:/Users/ghf/Pictures/Screenshots 随机抽 6 张（全局 md5 防撞已有 cos_key），
+方案：从截图素材目录（默认 C:/Users/ghf/Pictures/Screenshots，可用 SCREENSHOT_DIR 覆盖）
+     随机抽 6 张（全局 md5 防撞已有 cos_key），
      落盘 fs 存储 + contents 行（taken_at=去年今日 09:00-14:00 本地错开）+ 缩略图生成，
      再跑 run_user_aggregation(mode="full") 把新照片挂上事件（timeline 一致）。
 用法：cd .wt/missing-pages/backend && FS_STORAGE_ROOT=D:/GuangH-App/backend/data/storage \
@@ -28,7 +29,9 @@ from app.services.thumbnails import generate_thumbnail
 from PIL import Image
 from sqlalchemy import text
 
-SRC_DIR = r"C:\Users\ghf\Pictures\Screenshots"
+# 素材源目录：优先环境变量 SCREENSHOT_DIR，未设时用显式默认（本机截图目录）；
+# 不存在时由 main() 明确报错退出（重构波 B12-4 · D13 硬编码路径族），不静默回退到空目录。
+SRC_DIR = os.environ.get("SCREENSHOT_DIR", r"C:\Users\ghf\Pictures\Screenshots")
 USER_PREFIX = "7e4b6a2a"
 ECHO_DATE = "2025-09-05"   # 去年今日默认值（echo 域按本地日界查询）；R7 起可用 --date 覆盖——
 # 教训（2026-09-06）：日期硬编码导致跨天后「去年今日」无数据，回声卡空转一整天
@@ -57,6 +60,10 @@ def main():
     storage_root = os.environ.get("FS_STORAGE_ROOT")
     if not storage_root:
         print("❌ 必须显式传 FS_STORAGE_ROOT（运行中服务的存储根），避免 cwd 相对路径落错盘")
+        sys.exit(1)
+
+    if not os.path.isdir(SRC_DIR):
+        print(f"❌ 截图素材目录不存在：{SRC_DIR}（用 SCREENSHOT_DIR 环境变量覆盖默认值）")
         sys.exit(1)
 
     db = SessionLocal()

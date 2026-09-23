@@ -28,7 +28,7 @@ class Photo:
     lat: float | None = None    # None = 无 GPS
     lng: float | None = None
     burst_group: int | None = None   # 连拍折叠组（预处理填充）
-    tags: list[str] = None           # 标签（预处理透传，L2/L3 归并用）
+    tags: list[str] | None = None    # 标签（预处理透传，L2/L3 归并用）
     ocr_text: str | None = None      # OCR 摘要（L2 内容维/LLM 归并元数据，B3 #6）
     quality: float | None = None     # 画面质量分 0-1（封面选择，B3-4）
     face_count: int | None = None    # 人脸数（腾讯 CI 人脸标签，封面"人脸优先"）

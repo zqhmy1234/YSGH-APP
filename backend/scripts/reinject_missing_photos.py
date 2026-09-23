@@ -1,7 +1,8 @@
 """
 reinject_missing_photos.py —— 照片原件缺失补注入（2026-09-04 峰宝拍板）
 背景：3c2a2342 用户 20 张照片原件历史缺失（DB 行+事件挂载在，盘上文件无）。
-方案：从 C:/Users/ghf/Pictures/Screenshots 随机抽取（排除 seed_demo 已用的 40 张），
+方案：从截图素材目录（默认 C:/Users/ghf/Pictures/Screenshots，可用 SCREENSHOT_DIR 覆盖）
+     随机抽取（排除 seed_demo 已用的 40 张），
      按原 cos_key 路径落盘（零 DB 结构改动）+ generate_thumbnail 重生成缩略图。
 用法：cd .wt/missing-pages/backend && FS_STORAGE_ROOT=D:/GuangH-App/backend/data/storage \
      python scripts/reinject_missing_photos.py [--user 3c2a2342] [--dry-run]
@@ -22,7 +23,9 @@ from app.services.thumbnails import generate_thumbnail
 from PIL import Image
 from sqlalchemy import text
 
-SRC_DIR = r"C:\Users\ghf\Pictures\Screenshots"
+# 素材源目录：优先环境变量 SCREENSHOT_DIR，未设时用显式默认（本机截图目录）；
+# 不存在时由 main() 明确报错退出（重构波 B12-4 · D13 硬编码路径族），不静默回退到空目录。
+SRC_DIR = os.environ.get("SCREENSHOT_DIR", r"C:\Users\ghf\Pictures\Screenshots")
 USER_PREFIX = "3c2a2342"
 SEED_DEMO_SEED = 20260831   # seed_demo.py 同种子：复算它用掉的 40 张，避免撞图
 SEED_DEMO_COUNT = 40
@@ -55,6 +58,10 @@ def main():
     storage_root = os.environ.get("FS_STORAGE_ROOT")
     if not storage_root:
         print("❌ 必须显式传 FS_STORAGE_ROOT（运行中服务的存储根），避免 cwd 相对路径落错盘")
+        sys.exit(1)
+
+    if not os.path.isdir(SRC_DIR):
+        print(f"❌ 截图素材目录不存在：{SRC_DIR}（用 SCREENSHOT_DIR 环境变量覆盖默认值）")
         sys.exit(1)
 
     db = SessionLocal()

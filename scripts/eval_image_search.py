@@ -1,7 +1,7 @@
 """corpus-A 文字搜图评估（RET-001 · B2-4）
 
 queries_image.json（build_image_index.py 生成）→ 每查询走生产检索链路
-（collection=yishu_benchmark + content_types=[image]）→ hit_rate@3 / latency。
+（collection=yishu_benchmark + content_types=["photo"]）→ hit_rate@3 / latency。
 
 用法：
   python scripts/eval_image_search.py

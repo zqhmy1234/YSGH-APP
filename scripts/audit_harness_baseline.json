@@ -12,11 +12,6 @@
       "client": 800
     },
     "allowlist": {
-      "backend/app/api/contents.py": {
-        "lines": 902,
-        "reason": "L-03 巨文件，内容域最热 API，含 8 处手抄软删过滤",
-        "target": "批次 B2 拆分为子包后删除本条（目标 ≤600）"
-      },
       "client/components/RecordSheet/RecordSheet.uvue": {
         "lines": 2208,
         "reason": "L-01 全仓最大文件（script 1095 / style 857）",
@@ -54,7 +49,8 @@
       "regex": "deleted_at\\.is_\\(None\\)",
       "total": 44,
       "per_file": {
-        "backend/app/api/contents.py": 8,
+        "backend/app/api/contents/__init__.py": 7,
+        "backend/app/api/contents/favorites.py": 1,
         "backend/app/api/corrections.py": 1,
         "backend/app/api/deps.py": 1,
         "backend/app/api/events.py": 6,

@@ -9,6 +9,8 @@
 #         建议 develop 也开 branch protection 要求两 job 通过，见 docs/项目API密钥清单与获取.md 同批讨论）
 # 2026-08-27（批次 H2 R7 增强）：client tsc 试点 / 模型路径 annotation / 覆盖率统一 60 +
 #   rag 计覆盖 / 缓存拆 key / docker exec psql / deselect 警告 / pip-audit 定时 / coverage.xml
+# 2026-09-24（B12-1）：client tsc 试点退役——5.24 迁移后 client/utils/** 全为 *.uts，tsc include
+#   匹配 0 文件（恒绿假门禁）；fast-gate 该步骤改为 audit_harness 轴 2（客户端漂移，真覆盖）。
 name: CI
 
 on:
@@ -47,157 +49,16 @@ jobs:
       - name: Run static gate (syntax/lint/secrets/todos, no tests)
         run: python scripts/review_agent.py --full --skip-tests
 
-      - name: Client tsc pilot (client/utils tsc --noEmit, 失败 annotation)
-        # T1（2026-08-27 批次 H2 R7）：client 目录类型自检试点，复用本地
-        # .cowork-temp/c2_tscheck 方案（临时 tsconfig + uni-app x 环境桩 env.d.ts，
-        # 覆盖 client/utils/*.ts 的 uni/UTSJSONObject/UTS 插件模块声明）。
-        # 非阻断（continue-on-error）：试点期失败仅 annotation（匿名 API 可读），
-        # 避免新型检查突发卡死主流水线；连续绿后可将 continue-on-error 移除转阻断。
-        continue-on-error: true
-        run: |
-          mkdir -p .cowork-temp/c2_tscheck
-          cat > .cowork-temp/c2_tscheck/tsconfig.json <<'JSON'
-          {
-          	"compilerOptions": {
-          		"target": "ES2020",
-          		"module": "ESNext",
-          		"moduleResolution": "bundler",
-          		"strict": true,
-          		"noEmit": true,
-          		"skipLibCheck": true,
-          		"types": [],
-          		"lib": ["ES2020"],
-          		"noUnusedLocals": false,
-          		"noUnusedParameters": false
-          	},
-          	"include": ["env.d.ts", "../../client/utils/*.ts"]
-          }
-          JSON
-          cat > .cowork-temp/c2_tscheck/env.d.ts <<'TS'
-          /**
-           * A3 批次类型自检环境桩（临时文件，不提交；仅供 tsc --noEmit 验证 client/utils/*.ts）
-           * uni-app x 运行时的 uni/UTSJSONObject 及 UTS 插件模块在此以最小签名声明。
-           */
-
-          // ---------- uni-app x 运行时全局 ----------
-          declare interface UniRequestSuccess {
-          	statusCode: number
-          	data: any
-          	header: any
-          }
-
-          declare const uni: {
-          	request(options: {
-          		url: string
-          		method?: string
-          		data?: any
-          		header?: any
-          		timeout?: number
-          		success?: (res: UniRequestSuccess) => void
-          		fail?: (err: any) => void
-          	}): void
-          	uploadFile(options: {
-          		url: string
-          		filePath?: string
-          		name?: string
-          		formData?: any
-          		header?: any
-          		timeout?: number
-          		success?: (res: UniRequestSuccess) => void
-          		fail?: (err: any) => void
-          	}): any
-          	getNetworkType(options: {
-          		success?: (res: { networkType: string }) => void
-          		fail?: (err: any) => void
-          	}): void
-          	getFileSystemManager(): {
-          		getFileInfo(options: {
-          			filePath: string
-          			success?: (info: { size: number }) => void
-          			fail?: (err: any) => void
-          		}): void
-          		[k: string]: any
-          	}
-          	getStorageSync(key: string): any
-          	setStorageSync(key: string, value: any): void
-          	removeStorageSync(key: string): void
-          	onNetworkStatusChange(cb: (res: { isConnected: boolean; networkType: string }) => void): void
-          	[k: string]: any
-          }
-          declare function getApp(): any
-          declare function getCurrentPages(): any[]
-
-          // ---------- 宿主环境（console/timer，ES lib 不包含） ----------
-          declare const console: {
-          	log(...args: any[]): void
-          	warn(...args: any[]): void
-          	error(...args: any[]): void
-          }
-          declare function setTimeout(cb: () => void, ms: number): number
-          declare function clearTimeout(t: number): void
-          declare function setInterval(cb: () => void, ms: number): number
-          declare function clearInterval(t: number): void
-
-          // ---------- UTSJSONObject（UTS 内置开放类型：对象字面量可直接赋值；实例方法经索引签名返回 any；静态 keys） ----------
-          declare type UTSJSONObject = {
-          	[key: string]: any
-          }
-          declare const UTSJSONObject: {
-          	keys(obj: UTSJSONObject): Array<string>
-          	parse?(s: string): UTSJSONObject
-          	[k: string]: any
-          }
-
-          // ---------- UTS 插件模块桩（与真实 .uts 导出签名一致） ----------
-
-          declare module '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts' {
-          	export function initBackgroundTasks(hours: number): void
-          	export function setBackgroundTaskHandler(cb: ((taskType: string) => void) | null): void
-          	export function drainPendingTasks(): void
-          	export function drainPendingTask(): string
-          	export function pendingTaskCount(): number
-          	export function enqueueTask(taskType: string): void
-          	export function lastWakeupAt(): string
-          	export function isWorkManagerAvailable(): boolean
-          }
-
-          declare module '@/uni_modules/yishu-photo-watch/utssdk/interface.uts' {
-          	export class PhotoItem {
-          		constructor(...args: any[])
-          		[key: string]: any
-          	}
-          }
-
-          declare module '@/uni_modules/yishu-recorder/utssdk/app-android/index.uts' {
-          	export class RecorderController {
-          		[key: string]: any
-          	}
-          	export function createRecorder(...args: any[]): RecorderController
-          }
-          TS
-          cd .cowork-temp/c2_tscheck
-          set +e
-          npx --yes -p typescript@5.5.4 tsc --noEmit -p tsconfig.json > tsc.log 2>&1
-          code=$?
-          set -e
-          python - "$code" <<'EOF'
-          import pathlib, re, sys
-          code = int(sys.argv[1])
-          log = pathlib.Path("tsc.log")
-          text = log.read_text(errors="replace") if log.exists() else ""
-          if code == 0:
-              print("::notice title=client-tsc::client/utils tsc --noEmit 通过（0 errors）")
-              sys.exit(0)
-          pat = re.compile(r'^(?P<file>[^(:]+\.ts)\((?P<line>\d+),(?P<col>\d+)\): error (?P<code>[A-Z0-9]+): (?P<msg>.*)$')
-          n = 0
-          for m in pat.finditer(text):
-              n += 1
-              print(f"::error file={m['file']},line={m['line']},col={m['col']}::{m['code']}: {m['msg'][:300]}")
-          print(f"::error title=client-tsc::{n} 个 tsc 错误（client/utils），原始输出如下")
-          print(text[-3000:])
-          sys.exit(0)
-          EOF
-          exit 0
+      - name: Client gate (audit_harness 轴 2 · 客户端漂移)
+        # B12-1（2026-09-24 重构波）：本步骤原为「client tsc 试点」——对 `client/utils/*.ts` 跑
+        #   `tsc --noEmit`。5.24 迁移已将 `client/utils/**` 全量改名为 `*.uts`，而 tsc 的 include
+        #   只解析 .ts/.tsx/.d.ts（allowJs 时为 .js），**不认 .uts**（TS 无此扩展，无等效配置），
+        #   故 include 匹配 0 文件；叠加 `continue-on-error: true` + 脚本末尾 `exit 0`
+        #   ⇒ 恒绿空转（假门禁，缺陷 D13-1）。原临时 tsconfig/env.d.ts 桩文件策略一并退役。
+        # 替代（真覆盖的等价门禁）：audit_harness 轴 2 —— 客户端漂移审计（USE_MOCK_* 清点 /
+        #   代码内死路由 / 5.24 迁移后 .ts 残留引用），纯文件扫描、无需后端依赖。
+        # **刻意不加 continue-on-error**：存在 CRITICAL 即 fail，不再保留任何恒绿门禁。
+        run: python scripts/audit_harness.py client
 
   full-gate:
     name: Full Gate（全量 pytest + api_smoke + research）
@@ -367,7 +228,16 @@ jobs:
         # T3（2026-08-27）：原 review_agent --full 内部以 50 阈值跑测试（review_agent 硬编码
         # --cov-threshold 50，不在本批次改动域）。拆为：本步静态门禁（--skip-tests）+ 下步
         # 测试门禁（test_agent --cov-threshold 60），使 CI 覆盖率阈值统一 60%。
+        # 注（B10 2026-09-24）：本步现已内含 structure（轴5/6）+ audit_axes（轴1-4）检查。
         run: python scripts/review_agent.py --full --skip-tests
+
+      - name: Run harness audit (audit_harness 轴 1-6，失败即 fail)
+        # B10（2026-09-24）：audit_harness 多轴审计纳入 CI（此前轴 1-4 零命中，缺陷 D14-1，P0）。
+        # 轴 1 契约对拍需可导入的后端环境——本 job 已装全量依赖 + 起服务，环境满足；
+        # 轴 2/3/4（客户端/模型/导出）为纯文件扫描，轴 5/6（体积/重复）为棘轮。
+        # 刻意**不加 continue-on-error**：存在 CRITICAL 即 fail（退出码 2 的环境错误同样 fail，
+        # 交人工处置）。与上一步 review_agent 的 audit_axes/structure 互为冗余兜底。
+        run: python scripts/audit_harness.py all
 
       - name: Run full tests + coverage (test_agent --cov-threshold 60)
         # T3/T8（2026-08-27）：60% 统一阈值 + rag 分组计入覆盖率（test_agent 内主套件 +

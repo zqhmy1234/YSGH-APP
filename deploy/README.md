@@ -17,7 +17,10 @@ deploy/
 │   ├── bootstrap.sh            # 一次性初始化（幂等）：目录 → 依赖服务 → 迁移 → 表断言
 │   ├── pull_models.sh          # 模型预置（幂等）：SenseVoice / BGE-M3 / SetFit 就位校验
 │   ├── healthcheck.sh          # 三依赖 + API + DB 表 自证
-│   └── deploy_one.sh           # 单命令部署（幂等）：bootstrap → models → systemd → healthcheck
+│   ├── deploy_one.sh           # 单命令部署（幂等）：bootstrap → models → systemd → healthcheck
+│   ├── backup_pg.sh            # PG 每日备份：dump(-Fc) + 非空/可读校验 + 按天轮转 + WAL 归档状态（§7 S3）
+│   ├── check_env_template.py   # 模板 ↔ config.py 一致性判据（§3 契约的唯一可复现校验，S3）
+│   └── preflight_pack.ps1      # 出包前置门：全绿才允许云打包（§7；含中文须以 UTF-8 BOM 保存）
 ├── data/                       # 【运行时生成，已 gitignore】PG/Redis/Qdrant 数据与 WAL
 ├── logs/                       # 【运行时生成，已 gitignore】
 ├── .env                        # 【不入库】容器参数 + 宿主后端环境（由 S3 的模板复制而来）

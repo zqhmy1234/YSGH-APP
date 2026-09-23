@@ -2,7 +2,7 @@
 
 与真实企微完全同协议（AES-256-CBC 加解密 + SHA1 签名 + XML 报文），
 仅凭证为官方文档测试值（path/90931）：
-  Token=*** / EncodingAESKey=jWmYm7qr5nMoAUwZRjGtBxmz3KA1tkAj3ykkR6q2B2C / corpid=wx5823bf96d3bd56c7
+  Token=QDG6eK / EncodingAESKey=jWmYm7qr5nMoAUwZRjGtBxmz3KA1tkAj3ykkR6q2B2C / corpid=wx5823bf96d3bd56c7
 
 用法：
   python scripts/wecom_sandbox.py verify <base_url>       # 模拟 URL 验证 GET

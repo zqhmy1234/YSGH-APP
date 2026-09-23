@@ -9,7 +9,12 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api import make_router
-from app.api.deps import PageParams, get_current_user, pagination_params
+from app.api.deps import (
+    PageParams,
+    get_current_user,
+    load_owned_entity,
+    pagination_params,
+)
 from app.core.errors import ERR_MSG_001, ERR_MSG_002, ERR_MSG_003, ApiError
 from app.db.models import Message, User
 from app.db.session import get_db
@@ -41,13 +46,10 @@ def load_owned_message(db: Session, user_id: str, msg_id: int) -> Message:
     补查存在性」两段式判定；收敛为显式 loader，供按 id 取消息的端点统一复用。
     语义与内联判定逐字等价：同一 where（id + user_id）、同一错误码 ERR_MSG_002、
     同一文案「消息不存在」、同一 HTTP 404（不区分「不存在」与「非本人」）。
+
+    B3′ 收敛（2026-09-24）：结构委托 `deps.load_owned_entity`——语义逐字不变。
     """
-    row = db.execute(
-        select(Message).where(Message.id == msg_id, Message.user_id == user_id)
-    ).scalar_one_or_none()
-    if row is None:
-        raise ApiError(ERR_MSG_002, "消息不存在", http=404)
-    return row
+    return load_owned_entity(db, Message, msg_id, user_id, ERR_MSG_002, "消息不存在")
 
 
 @router.get("", response_model=ApiResponse[Page[MessageOut]])

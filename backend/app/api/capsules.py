@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api import make_router
-from app.api.deps import get_current_user, load_alive_content
+from app.api.deps import get_current_user, load_alive_content, load_owned_entity
 from app.core.errors import ApiError
 from app.db.models import Capsule, Content, User
 from app.db.session import get_db
@@ -43,13 +43,14 @@ ERR_CAPSULE_004 = "CAPSULE_004"
 
 
 def _load_owned_capsule(db: Session, user_id: str, capsule_id: str) -> Capsule:
-    """取当前用户的胶囊；不存在/非本人 → 统一 404（IDOR 防护不区分两情形）"""
-    row = db.execute(
-        select(Capsule).where(Capsule.id == capsule_id, Capsule.user_id == user_id)
-    ).scalar_one_or_none()
-    if row is None:
-        raise ApiError(ERR_CAPSULE_002, "胶囊不存在或无权访问", http=404)
-    return row
+    """取当前用户的胶囊；不存在/非本人 → 统一 404（IDOR 防护不区分两情形）
+
+    B3′ 收敛（2026-09-24）：结构委托 `deps.load_owned_entity`；
+    错误码 CAPSULE_002 / 文案 / HTTP 404 逐字不变（capsule 无软删列，故不加 alive）。
+    """
+    return load_owned_entity(
+        db, Capsule, capsule_id, user_id, ERR_CAPSULE_002, "胶囊不存在或无权访问"
+    )
 
 
 def _content_brief(db: Session, content_id: str, user_id: str) -> CapsuleContentBrief | None:

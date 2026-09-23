@@ -12,7 +12,9 @@ param(
                 Sort-Object { [int]($_.Parent.Name -replace '\D', '') } -Descending | Select-Object -First 1
             if ($c) { $c.FullName } else { "" }
         }),
-    [string]$BackupDir = "D:\GuangH-App\backups",
+    # 备份目录：优先环境变量 BACKUP_DIR，未设时用显式默认（仓库根下 backups\）。
+    # 不再把 D:\GuangH-App\backups 写死为唯一取值（重构波 B12-4 · D13 硬编码路径族）；默认值保持与本机原值一致。
+    [string]$BackupDir = $(if ($env:BACKUP_DIR) { $env:BACKUP_DIR } else { "D:\GuangH-App\backups" }),
     [string]$DbName = "yishu",
     [string]$DbUser = "yishu_app",
     [string]$DbHost = "localhost"

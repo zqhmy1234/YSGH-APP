@@ -40,14 +40,20 @@ pytestmark = pytest.mark.unit
 API_DIR = pathlib.Path(__file__).resolve().parents[1] / "app" / "api"
 
 # 被门禁认可的「取本人既有实体」统一 loader（② 收敛产物 + 各域既有 loader）
+#
+# 2026-09-24 修正（深审 D06-2）：原表登记 `load_owned_capsule`，而实际符号是
+# `capsules.py::_load_owned_capsule`（带下划线）→ 精确匹配失配，该 loader **从未被
+# 门禁识别**，capsules 端点靠 `user.id` 兜底才勉强过门；且旧自检只覆盖白名单/EXEMPT，
+# 不覆盖本表 ⇒ 哑条目永不暴露。现改正登记名，并新增
+# `test_ownership_loaders_all_exist` 强制「登记名 = 真实符号」。
+# 同时移除旧表中的 3 个**幻影预留项**（load_owned_content/event/task 全仓无定义），
+# 它们正是「僵尸豁免」的温床。
 OWNERSHIP_LOADERS = frozenset(
     {
         "load_alive_content",      # deps.py（波D ② 提升；原 contents._load_alive_content）
-        "load_owned_content",      # 预留别名
-        "load_owned_capsule",      # capsules.py（既有，域内）
-        "load_owned_message",      # messages.py（波D ② 新建）
-        "load_owned_event",        # 预留（events 域现状由 services/events/edit._get_event 承担）
-        "load_owned_task",         # 预留（upload 域现状由 services/upload/protocol 承担）
+        "load_owned_entity",       # deps.py（B3′ 收敛的泛化 loader）
+        "_load_owned_capsule",     # capsules.py（域内 loader，B3′ 起委托 load_owned_entity）
+        "load_owned_message",      # messages.py（波D ② 新建，B3′ 起委托 load_owned_entity）
     }
 )
 
@@ -58,7 +64,7 @@ ID_METHODS = frozenset({"get", "patch", "put", "delete", "post"})
 # 白名单：非「按 id 操作既有实体」语义，逐条人工核对源码后登记
 # ---------------------------------------------------------------------------
 CREATION_WHITELIST = {
-    ("contents.py", "list_contents"): (
+    ("contents/__init__.py", "list_contents"): (
         "列表型：content_id 是**可选 query 过滤条件**（列表筛选），不是「取单个既有实体」；"
         "查询自带 user_id + deleted_at 过滤（L403-409）"
     ),
@@ -85,7 +91,13 @@ EXEMPT = {
 
 
 def _router_var_names(tree: ast.Module) -> set[str]:
-    """收集模块内由 make_router(...) 赋值的 router 变量名（含多 router 模块）"""
+    """收集模块内的 router 变量名：**本地 make_router(...) 赋值** ∪ **import 进来的 router**
+
+    子包化后（`contents/`，B2 2026-09-24）部分模块把端点注册在**共享 router** 上
+    （该对象由 `contents/serializers.py` 创建、被 `favorites.py` 等 import 进来）。
+    只认本地 make_router 赋值会让这些端点静默退出候选集 —— 同「覆盖静默缩小」形态。
+    故一并纳入以 `router` 结尾或恰为 `router` 的导入名。
+    """
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
@@ -94,6 +106,11 @@ def _router_var_names(tree: ast.Module) -> set[str]:
                 for tgt in node.targets:
                     if isinstance(tgt, ast.Name):
                         names.add(tgt.id)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                bound = alias.asname or alias.name
+                if bound == "router" or bound.endswith("_router"):
+                    names.add(bound)
     return names
 
 
@@ -154,12 +171,23 @@ def _ownership_evidence(func_node) -> str | None:
     return None
 
 
+def _api_modules() -> list[pathlib.Path]:
+    """app/api 下全部 .py —— **含子包**（跳过 __pycache__）
+
+    2026-09-24（B2 子包化后修）：原用 `API_DIR.glob("*.py")` 只扫顶层文件，
+    `contents.py` 转为 `contents/` 包后其全部端点**静默退出扫描面** —— 门禁仍「全绿」
+    而实际不覆盖（深审 D12-9「扫描面缺一向」同族）。统一改用 rglob。
+    """
+    return sorted(p for p in API_DIR.rglob("*.py") if "__pycache__" not in p.parts)
+
+
 def _all_candidates():
-    """全量候选（跨 app/api/*.py），供多个断言复用"""
+    """全量候选（跨 app/api 全部模块，含子包），供多个断言复用"""
     out = []
-    for module_path in sorted(API_DIR.glob("*.py")):
+    for module_path in _api_modules():
+        mod_name = module_path.relative_to(API_DIR).as_posix()
         for func_node, method, path in _iter_id_candidates(module_path):
-            out.append((module_path.name, func_node.name, method, path, func_node))
+            out.append((mod_name, func_node.name, method, path, func_node))
     return out
 
 
@@ -294,3 +322,58 @@ def test_scanner_covers_operational_post(tmp_path):
     )
     assert len(cands) == 1, "操作型 POST 未被纳入候选——门禁存在覆盖盲区"
     assert cands[0][1] == "post"
+
+
+# ---------------------------------------------------------------------------
+# 门禁覆盖自检（2026-09-24 新增）
+# 背景：B2 把 contents.py 子包化 → 旧 glob('*.py') 静默漏扫；OWNERSHIP_LOADERS 存在
+# 拼写不符的哑条目。二者共同形态＝「门禁全绿但实际不覆盖」，必须由自检兜住。
+# ---------------------------------------------------------------------------
+
+
+def _defined_or_imported_names() -> set[str]:
+    """app/api（含子包）内所有被定义或导入的函数名"""
+    names: set[str] = set()
+    for module_path in _api_modules():
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names.add(node.name)
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    names.add(alias.asname or alias.name.split(".")[-1])
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    names.add(alias.asname or alias.name.split(".")[-1])
+    return names
+
+
+def test_scan_covers_subpackages():
+    """防覆盖回归：候选必须来自 app/api 子包（如 `contents/`）
+
+    B2 子包化后若扫描仍用 `glob("*.py")`，子包端点会静默退出候选集——
+    归属校验门禁「全绿」却不覆盖任何 contents 端点。本断言使该形态立即红。
+    """
+    mods = {m for m, *_ in _all_candidates()}
+    subpkg_mods = sorted(m for m in mods if "/" in m)
+    assert subpkg_mods, (
+        f"扫描面未覆盖 app/api 子包（实得顶层模块：{sorted(mods)}）——"
+        "glob('*.py') 漏子包会让子包端点的归属校验完全失去门禁"
+    )
+
+
+def test_ownership_loaders_all_exist():
+    """防哑条目：OWNERSHIP_LOADERS 每个登记名都必须对应真实符号
+
+    先例（深审 D06-2）：登记名 `load_owned_capsule` 与实际符号 `_load_owned_capsule`
+    拼写不符 → 该 loader 从未被门禁识别；旧自检只覆盖白名单/EXEMPT，不覆盖本表，
+    故哑条目永不暴露。本断言让「登记名 ≠ 真实符号」立即红。
+    """
+    live = _defined_or_imported_names()
+    missing = sorted(n for n in OWNERSHIP_LOADERS if n not in live)
+    assert not missing, (
+        "以下 OWNERSHIP_LOADERS 登记名在 app/api（含子包）下找不到对应函数/导入"
+        "（哑条目，等价于该 loader 未被门禁认可）：\n"
+        + "\n".join(f"  {n}" for n in missing)
+        + "\n\n修法：改为真实符号名，或删除该预留项（禁止僵尸登记）。"
+    )

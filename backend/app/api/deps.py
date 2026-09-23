@@ -81,6 +81,36 @@ def get_current_user(
 # ---------------------------------------------------------------------------
 
 
+def load_owned_entity(
+    db: Session,
+    model,
+    entity_id,
+    user_id: str,
+    error_code: str,
+    message: str,
+    *,
+    alive: bool = False,
+    http: int = 404,
+):
+    """「按 id 取本人既有实体」的泛化 loader（B3′ 收敛 · 2026-09-24）
+
+    波D ② 只把 contents 域的 loader 提升到 deps.py；content / capsule / message
+    三域仍各留一份「同一 where 结构 + 同一 404 语义」的复制体（深审 D06-1）。
+    本函数收敛该结构：候选条件恒为 `id == entity_id AND user_id == user_id`
+    （`alive=True` 时附加 `deleted_at IS NULL`），未命中统一抛 404，
+    **不区分「不存在」与「非本人」**（IDOR 防护：不泄露存在性）。
+
+    错误码与文案由调用方逐字传入 —— 各域既有可观测语义（错误码/文案/HTTP）零变化。
+    """
+    conditions = [model.id == entity_id, model.user_id == user_id]
+    if alive:
+        conditions.append(model.deleted_at.is_(None))
+    row = db.execute(select(model).where(*conditions)).scalar_one_or_none()
+    if row is None:
+        raise ApiError(error_code, message, http=http)
+    return row
+
+
 def load_alive_content(db: Session, user_id: str, content_id: str):
     """取当前用户未删除内容；不存在/已删除/非本人 → 统一 404 CONTENT_010（IDOR 防护不区分三种情形）
 
@@ -89,14 +119,15 @@ def load_alive_content(db: Session, user_id: str, content_id: str):
     提升到 deps.py 作为「按 content_id 取本人既有实体」的唯一入口，供跨域复用
     （capsules.seal_capsule 同款语义——ERR_CONTENT_010 + 同名文案）。
     语义与提升前逐字等价：同一查询条件、同一错误码、同一 message、同一 HTTP 404。
+
+    B3′（2026-09-24）：结构委托 `load_owned_entity`（alive=True）——语义逐字不变。
     """
-    row = db.execute(
-        select(Content).where(
-            Content.id == content_id,
-            Content.user_id == user_id,
-            Content.deleted_at.is_(None),
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404)
-    return row
+    return load_owned_entity(
+        db,
+        Content,
+        content_id,
+        user_id,
+        ERR_CONTENT_010,
+        "内容不存在或无权访问",
+        alive=True,
+    )

@@ -40,11 +40,24 @@
   - [x] B1.2 契约路径只增不减断言（落实 `决策台账 §2.14` 建议）——**勘察后判定：轴 1 双向对拍已覆盖该意图**（后端有路由而契约缺 / 契约有而后端无 均 CRITICAL），不重复实现
   - [x] B1.3 声明漂移扫描（死路径/失实 mock 宣称）
 
-- [ ] Task B2: 后端巨文件拆分（测试护航，纯移动+兼容再导出）：`backend/app/api/contents.py`、`backend/app/api/events.py`。
-  - ⏸ **本会话顺延**（工程判断，ledger §8）：`contents.py` 为 4 router 混居，天然拆法＝转 `api/contents/` 子包；部分抽取不解除棘轮（902→~845 仍 >600）故收益为零；完整迁移≈900 行须专用验证窗口。`events.py` 530 行低于 600 阈值、非棘轮项。棘轮已冻结，不产生新债。
-  - [ ] B2.1 `contents.py` 拆分（沿用 `upload/` 子包先例，保持 import 兼容）
-  - [ ] B2.2 `events.py` 拆分
-  - [ ] B2.3 受影响测试绿 + 全量 pytest 不红 + `audit_harness openapi` 无消失
+- [x] Task B2: 后端巨文件拆分（测试护航，纯移动+兼容再导出）：`backend/app/api/contents.py`、`backend/app/api/events.py`。
+  - ✅ **2026-09-24 第二轮已执行 `contents.py` 拆分**（不再顺延）：`git mv` → `backend/app/api/contents/__init__.py`，移出 5 子模块（`serializers` 48 / `profile_sensitive` 89 / `favorites` 111 / `trash` 115 / `waveform` 115），`__init__.py` **902 → 524 行**（<600 ⇒ 轴 5 棘轮销项，存量超阈 7→6）。
+  - [x] B2.1 `contents.py` 拆分（沿用子包先例，保持 import 兼容 + monkeypatch 面不动）
+  - [ ] B2.2 `events.py` 拆分 —— **未拆**：530 行 < 600 阈值，非棘轮项、优先级低（仍登记）
+  - [x] B2.3 受影响测试绿 + 全量 pytest 不红 + `audit_harness openapi` 无消失 —— 证据：受影响 **89 passed**；全量 `pytest backend/tests` → **850 passed / 4 skipped**；`openapi` **67/67 完全对齐、无幽灵路径**
+  - [x] B2.4 **门禁覆盖回归修复（B2′）**：`test_authz_gate.py` `glob("*.py")` → `rglob("*.py")`（含子包）+ 新增 `test_scan_covers_subpackages` —— 证据：候选 20+ → **29**，已扫到 `contents/{__init__,favorites,trash,waveform}.py`
+
+- [x] Task B3′: 归属 helper 收敛 + 门禁哑条目修正（L-09 / D06-1 / D06-2）——`deps.load_owned_entity` 泛化，三 loader 委托，错误码/文案/HTTP 逐字保留；`OWNERSHIP_LOADERS` 修正为真实符号 `_load_owned_capsule`、删 3 个幻影预留项；新增 `test_ownership_loaders_all_exist`。证据：自校验 `load_owned_capsule in live → False`；`pytest test_authz_gate+contents+content_upload+echo` → **56 passed**
+
+- [x] Task B10: 门禁加固（D14-1 / D14-2 / D14-3 / D14-5）——`review_agent` 新增 `audit_axes`（轴 1–4，快/全量均跑）；CI full-gate 新增阻断式 `audit_harness all`；重复模式改总数+per_file 双 gate；镜像豁免收窄（docstring 含"镜像" ∧ 类自身有 `__tablename__`）；体积阈值改由基线驱动。证据：负向探针 → `exports` CRITICAL + `review_agent` 退出码 1，已还原
+
+- [ ] Task B10-b: 门禁缺口补强（深审新立项，待执行）——D04-15 双跑夹具补 `approx`/`corrected` 分支；D11-2 错误码 AST 门禁跨模块盲区；D12-9 轴 2 三向缺一向
+
+- [x] Task B12: 脚本/部署可移植性（**部分**）——D13-1 恒绿假门禁退役（CI client tsc 步骤 → 阻断式 `audit_harness client`）；D13-26 deploy/README 补齐；硬编码路径清 4 处（`smoke_cos_upload` / `backup_pg.ps1` / `reinject_missing_photos` / `seed_echo_today` 改 env+显式默认+缺失报错）。**D13-3 只登记**（实跑 `check_env_template.py` 当前即失败：`AGENT_SERVICE_*` config 有模板缺 → 先补模板再挂门禁）
+
+- [x] Task B11: 声明漂移清零（**安全子集**）——D04-17（类型标注）、D13-28（docstring 对齐）、D13-14（注释与代码一致）、D14-2（体积阈值死配置，随 B10 修复）。残余 D02-7/9、D04-3、D05-9/15、D07-13/14、D09-10、D11-5、D12-7 待处置（需决策/属死配置删除，宜单独立项）
+
+- [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。
   - ⚠️ **结论修正（2026-09-24 深审）**：原判「验证即达标、无缺口」**不成立**——`backend/tests/test_authz_gate.py:47` 登记名 `load_owned_capsule` ≠ 实际符号 `api/capsules.py:45 _load_owned_capsule` ⇒ capsules loader 为**门禁哑条目**（D06-2），靠 `user.id` 属性访问兜底过门。三 helper（D06-1）深审确认**语义相同**、测试零 monkeypatch ⇒ **收敛待办已就绪**，须同时修正门禁登记名。详见 ledger §9.3 与 `audit/domain-06`。
