@@ -75,6 +75,8 @@
 
 - [x] Task B10-j: 轴 2 **注释判定**假阳性/假阴性（D14-14 / D14-15）——原用「本行前缀有无 `//`/`<!--`」的行级近似 ⇒ ① 块注释内页面引用被当**死路由**（误报 CRITICAL）② 多行 HTML 注释同样漏判 ③ `.ts` 残留不看注释（注释里写「原 './auth.ts'」也报 CRITICAL）④ **反向**：字符串 `http://x` 之后被判为注释 ⇒ **真死路由漏报**。改为字符级 `_comment_ranges()`（跳过字符串字面量）+ `_in_comment(offset)` 精确判定。证据：纯函数对照六例（块注释/多行 HTML/块注释 `.ts`：旧 False→新 True；`http://`：旧 True→新 False；真死路由两侧一致）；文件级负向探针（追加真实死路由）→ CRITICAL @ `shell_state.uts:25`、EXIT=1，已还原；轴 2 常规态无 CRITICAL
 
+- [x] Task B10-k: 退出码口径**统一**（D14-18）——测绘发现 `audit_harness`/`check_schema_drift`/`gen_openapi` 用 2=环境错误，而 `review_agent`/`test_agent` 只有 0/1 ⇒ 环境问题被误报为「代码违规」。`review_agent` 落地 **0 通过 / 1 违规 / 2 环境错误**：`ENV_ERR_PREFIX` 打标 + 纯函数 `_classify_failure()` 分流（违规优先）+ 报告加 `env_blocked_checks`。证据：纯函数探针 5 例全对；env 分支消息均以 `[环境错误]` 开头；CLI 实跑退出码 0。残余（已登记）：`test_agent` 仍只产 0/1（仅加 docstring 交叉引用）
+
 - [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。

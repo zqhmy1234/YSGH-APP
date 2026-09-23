@@ -12,6 +12,9 @@
   python scripts/test_agent.py [--cov-threshold 70] [--only api|research]
 
 退出码：0 = 全部通过；1 = 有失败（禁止 commit）。
+（口径交叉引用 · D14-18：仓库内门禁工具的统一约定为 0=通过 / 1=违规 / 2=环境错误；
+ 本工具当前只产出 0/1，环境问题（如 pytest 缺失）表现为 1 —— 统一 2 属待办，
+ 详见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md §8.3。）
 报告：.cowork-temp/test-report.json
 """
 from __future__ import annotations

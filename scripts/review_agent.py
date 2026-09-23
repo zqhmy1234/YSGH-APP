@@ -26,7 +26,12 @@
     6. lessons 强制登记检查
     7. 结构棘轮 + 跨轴审计 + 部署模板对齐（与快模式同源；全量模式下轴 1 契约对拍通常可跑）
 
-退出码：0 = 通过可提交；1 = 存在阻断项（禁止 commit，先修复）。
+退出码（**统一口径**，与 `audit_harness` / `check_schema_drift` / `gen_openapi` 一致 · D14-18）：
+  0 = 通过（可提交）
+  1 = 存在**违规**阻断项（代码问题，须修复后再提交）
+  2 = **环境错误**（工具/依赖/后端不可用，本工具**无法真正判定**）
+      —— 与「违规」区分，避免把「环境没配好」误当成「代码有问题」；
+         调用方（git hook / CI）对**非 0 一律阻断**，但退出码可供快速归因。
 
 报告输出：.cowork-temp/review-report.json（每次覆盖）。
 """
@@ -251,6 +256,12 @@ COV_THRESHOLD = 60
 #   必须显式传 `--allow-missing-tools`（有意识、可见地放行，而非静默）。
 ALLOW_MISSING_TOOLS = False
 
+# D14-18（2026-09-24 B10-k）：**统一退出码口径** 的落地约定——
+#   违规（代码问题）与「环境错误」（工具/依赖不可用，无法判定）必须可区分：
+#   前者退出码 1，后者退出码 2（非 0 一律阻断，但归因不同）。
+#   实现上用一个**消息前缀**给"环境错误型"检查打标（比加返回值维度更轻、且报告里可见）。
+ENV_ERR_PREFIX = "[环境错误]"
+
 
 def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
     """ruff check（若未安装则跳过并提示）；只查 git 已跟踪/本次提交文件
@@ -266,7 +277,7 @@ def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -
         if allow_missing:
             return True, "[放宽] ruff 未安装 → lint 未执行（--allow-missing-tools 显式放行）"
         return False, (
-            "ruff 未安装 ⇒ lint **未执行**（环境不齐不得静默放行）\n"
+            f"{ENV_ERR_PREFIX} ruff 未安装 ⇒ lint **未执行**（环境不齐不得静默放行）\n"
             "  安装：pip install ruff\n"
             "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
         )
@@ -291,7 +302,7 @@ def run_tests(*, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
         if allow_missing:
             return True, "[放宽] pytest 未安装 → 全量测试未执行（--allow-missing-tools 显式放行）"
         return False, (
-            "pytest 未安装 ⇒ 全量测试 **未执行**（环境不齐不得静默放行）\n"
+            f"{ENV_ERR_PREFIX} pytest 未安装 ⇒ 全量测试 **未执行**（环境不齐不得静默放行）\n"
             "  安装：pip install pytest pytest-cov httpx\n"
             "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
         )
@@ -444,6 +455,22 @@ def check_lessons() -> tuple[bool, str]:
     return _check()
 
 
+def _classify_failure(blocking: dict[str, tuple[bool, str]]) -> tuple[list[str], list[str]]:
+    """把失败检查分流为 `(环境错误, 违规)` —— D14-18 统一退出码口径的判定核心。
+
+    纯函数（可单测）：失败项的消息以 `ENV_ERR_PREFIX` 开头 = **环境错误**（工具/依赖不可用，
+    本工具无法判定）→ 退出码 2；其余 = **违规**（代码问题）→ 退出码 1。两者都阻断提交。
+    抽出为独立函数是为了让"退出码分流"本身可被探针直接验证，而不是埋在 main() 里。
+    """
+    env_blocked = sorted(
+        k for k, (ok, out) in blocking.items() if not ok and str(out).startswith(ENV_ERR_PREFIX)
+    )
+    real_fail = sorted(
+        k for k, (ok, out) in blocking.items() if not ok and not str(out).startswith(ENV_ERR_PREFIX)
+    )
+    return env_blocked, real_fail
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pre-Commit 代码质量审核")
     parser.add_argument("--path", default=str(ROOT), help="审核目录（兼容占位）")
@@ -487,10 +514,14 @@ def main() -> int:
             passed = False
             blocking["lessons"] = (False, lessons_msg)
 
+    # D14-18：把「环境错误」从「违规」中分流（两者都阻断，但退出码不同：2 vs 1）
+    env_blocked, real_fail = _classify_failure(blocking)
+
     report = {
         "mode": mode,
         "passed": passed,
         "blocking_checks": list(blocking.keys()),
+        "env_blocked_checks": env_blocked,
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in checks.items()},
         "generated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
     }
@@ -520,8 +551,15 @@ def main() -> int:
     if passed:
         print("✅ 审核通过，可以提交")
         return 0
-    print(f"❌ 审核未通过：{', '.join(blocking)} — 修复后重跑，禁止 commit")
-    return 1
+    # D14-18：区分「违规」（代码问题 → 1）与「环境错误」（工具/依赖不可用 → 2）。
+    # 两者都阻断提交（非 0），但退出码不同可供 hook/CI/人工快速归因。
+    if env_blocked:
+        print(f"⚠️ 环境错误（非代码问题，本工具无法判定）：{', '.join(env_blocked)}")
+    if real_fail:
+        print(f"❌ 审核未通过：{', '.join(real_fail)} — 修复后重跑，禁止 commit")
+        return 1
+    print("❌ 无法完成审核（环境不齐，本工具未真正判定）— 修好环境后重跑，禁止 commit")
+    return 2
 
 
 if __name__ == "__main__":
