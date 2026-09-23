@@ -2,6 +2,12 @@
 
 > 依据：PR #1（codex/asr-pipeline-hardening，已 merge 进 develop）实际代码 vs 原 audit（audit_B5a_B5d_voice.md）。
 > 结论：**原 audit 中约 2/3 的 B5a 项已被 PR #1 解决**；以下仅列修正后仍待办项。
+>
+> ⚠️ **2026-09-23 逐项验码复核**：本表写于 08-26，此后 **J-1/J-2/J-3/J-4/J-5 五项均已实现（J-2/J-3 含专项测试）**，
+> J-6 的"`notify.py` 零调用方"亦不成立 ⇒ 原"未闭环"描述**与代码不符**（陈旧登记）。下表已按证据逐项更正；
+> **J-7（录音中断状态机 POC）未复核，仍按待办看待**。
+> **教训**：待办文档会与代码分叉——**引用前必须验码**。我自己在 09-23 的排期里曾据本表把 J-2/J-3 写成"待做"（已同步更正），
+> 这正是本项目反复栽的"信文档不信代码"。
 
 ## 已被 PR #1 解决（不再开发，仅验证）
 
@@ -20,12 +26,12 @@
 
 | # | 待办 | 说明 |
 |---|---|---|
-| J-1 | 音频事件 12 类取 3（笑声/静音/键盘环境音）读取与消费 | PR #1 未做（grep 无 laughter/keyboard/audio_event）；SenseVoice 已产 EMO 标签但未消费音频事件类 |
-| J-2 | 噪音降权（SNR 检测，噪音大时 audio 权重降为持平） | 全仓无 SNR 逻辑；低优先（输入分布兜底项） |
-| J-3 | 段级情绪合并对齐设计（时长最长段主导 + 峰值保留标记） | PR #1 现为"分段内取 max emotion_confidence"，设计要求"主导+峰值"双字段；对齐或文档化偏差 |
-| J-4 | 客户端长录音入口（>5min） | 服务端已支持（长 WAV 进 VAD），但客户端 voice.ts 仍限 3.5min、无音频持久化上传端点 → 长录音路径无入口 |
-| J-5 | events.emotion 写入（事件层情绪消费） | 模型字段存在（events.emotion jsonb）零写入；经 pipeline_ext/emotion.py 钩子联动 |
-| J-6 | 情绪关怀分层触发（SAD/ANGRY/深夜/频次递减、<0.7 不触发）+ 文案库 + voice_done 通知 + 22:00 复盘调度 | notify.py 仍为零调用方占位（care_followup 待产品部文案库）；触发逻辑需实现，文案留占位 |
+| J-1 | ~~音频事件 12 类取 3（笑声/静音/键盘环境音）读取与消费~~ **✅ 已实现（09-23 复核）** | `asr/emotion.py` 消费 `AUDIO_EVENT_LAUGHTER`（笑声提为"开心"）/`AUDIO_EVENT_SILENCE`（静音提示）经 `apply_audio_event_effects`；`transcriber.py:249-254` 跨段**去重并集**；`models.py:84-86` 三标记字段 |
+| J-2 | ~~噪音降权（SNR 检测，噪音大时 audio 权重降为持平）~~ **✅ 已实现（含专项测试）** | `asr/audio.py:estimate_snr`（帧能量分位数法）+ `NOISE_SNR_THRESHOLD_DB` + `emotion.py:_noise_weight`；接线 `transcriber.py:162-164`（**仅 WAV 参与**，压缩格式维持 high）；测试 `tests/test_asr.py:676-713`（干净→`high`／白噪→`equal`／非 16bit 或全零→`None` 不降权） |
+| J-3 | ~~段级情绪合并对齐（时长最长段主导 + 峰值保留标记）~~ **✅ 已实现（含专项测试）** | `asr/emotion.py:merge_segment_emotion` 输出 `dominant`(时长最长段) + `peak`(置信度最高段) + `segments` + `strategy=longest_dominant_peak`；接线 `transcriber.py:230-232`；单段路径 `single_segment_emotion_merge`；测试 `tests/test_asr.py:716-756`（含 B5a §3 的"4 分钟平静 + 30 秒哽咽 → 主导平静、峰值难过"示例） |
+| J-4 | ~~客户端长录音入口（>5min）~~ **✅ 描述已过期** | `uni_modules/yishu-recorder/utssdk/app-android/index.uts:44`：`MAX_RECORD_MS = 1800000` ＝ **30 分钟**（非原述 3.5min）；服务端长 WAV 分段（`_segments_for`）已就绪 |
+| J-5 | ~~events.emotion 写入（事件层情绪消费）~~ **✅ 已实现** | `pipeline_ext/emotion.py:_emotion_merge_from_content`（:37 定义）被 `:74` 调用，`:93 event.emotion = current` 落库（对齐 B5a §3 dominant/peak 结构） |
+| J-6 | ~~情绪关怀分层触发 + notify.py 零调用方占位~~ **⚠️ 部分过期（未全验）** | `notify.py` **已有真实调用方**：`pipeline_ext/emotion.py:112 maybe_notify_voice_done`、`:119 maybe_send_emotion_care`、`echo.py:306 create_message` ⇒ "零调用方占位"**不成立**。**未验部分**：分层触发条件（SAD/ANGRY/深夜/频次递减/<0.7 不触发）与产品部文案库是否落地，需细读 `notify.py` 后另判 |
 | J-7 | 录音中断状态机集成 UTS（RECORDING→INTERRUPTED→恢复/30min 自动结束；POC 服务按 wav 16k 契约重做） | POC（research/poc）仅 start/stop、m4a 格式与后端 wav 契约不符、未集成 client；POC-02 文档声称与事实不符需修正 |
 | K-1 | Android 前台服务（microphone/dataSync 互斥、短命化）+ WorkManager 队列（P0-P4、WiFi 约束）+ attribution tag 落地 | 全仓零实现；attribution tag 清单：sync_photo / voice_transcribe / event_aggregate / profile_fetch |
 | K-2 | ASR 适配器抽象化（配置化 max_duration、Hy ASR/讯飞通道） | 当前通道字典 + 写死常量 MIN/MAX_SEG_S；低优先 |
