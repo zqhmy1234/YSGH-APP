@@ -317,10 +317,12 @@ export function failedCount(): number {
 	return readLines(FAILED_KEY).length
 }
 
-/** 待上传总数（held 蜂窝暂缓 + failed 失败可重试），供 UploadStatusBanner 展示 */
-export function pendingPhotoCount(): number {
-	return heldCount() + failedCount()
-}
+// 2026-09-23（闭轴 4 首查项）：原 `pendingPhotoCount()`（= heldCount + failedCount，注释自称
+// "供 UploadStatusBanner 展示"）**已删除**。理由：横幅**刻意分开显示**两类状态——
+// "N 张照片待 WiFi 上传（可点立即上传原图）" vs "N 张照片上传失败，点击重试"（不同文案、
+// 不同按钮、不同 emit）。合并成一个数字会**丢掉"待上传"与"失败待重试"的区别**，
+// 而那正是用户该做不同操作的分界。它唯一的作用是让轴 4 多一条零调用记录 ⇒ 删除而非硬接。
+// 需要总数时在调用处现算（一行 `heldCount() + failedCount()`），别再引入同义封装。
 
 export function heldPhotos(): Array<PhotoItem> {
 	return parseAll(HELD_KEY)
