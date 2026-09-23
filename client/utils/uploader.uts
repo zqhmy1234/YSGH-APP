@@ -13,9 +13,19 @@
  *
  * Wave3 H 新增（B4 客户端 6 项中的 4 项）：
  *  - 流量约束（B4 §5）：uni.getNetworkType 判断——WiFi/有线传原图，蜂窝只传
- *    缩略图+元数据（调用 Agent G 的 upload_mode 参数；G 未完成前按契约 mock：
- *    蜂窝自动=暂缓原图入 held 队列，等 WiFi 或"立即上传原图"手动入口）；
- *    "立即上传原图" = continuePendingUploads() 手动入口。
+ *    缩略图+元数据；"立即上传原图" = continuePendingUploads() 手动入口。
+ *
+ *    ⚠️ 2026-09-23 取证更正（原注释写"G 未完成前按契约 mock"，与实况不符）：
+ *      · 后端契约**早已就绪**：`upload/protocol.py:28` 的 `VALID_UPLOAD_MODES` 已含
+ *        `thumbnail_meta`；`upload/register.py:43-49` 语义＝**上传物即缩略图**
+ *        （只落 thumbnail_key 占位 + `extra.original_pending=true`、不进管线），
+ *        WiFi 后凭 `meta.content_id` 用同一 complete 端点补传原件。
+ *      · 客户端**压缩能力也存在**：`uni.compressImage` 在 app-android 受支持
+ *        （HBuilderX 自带 dts `uni-media/utssdk/interface.d.ts` 的 @uniPlatform
+ *         含 "app":{"android":…}，已取证）。
+ *      ⇒ 真实拦阻 = **本文件从未接入压缩步骤**（见 resolveMode 的 thumbnail 分支），
+ *        属"未接线"而非"能力缺失"。接线任务已登记
+ *        `docs/待办处理排期_20260923.md`（需编译门 + 真机，故未在无验证条件下动上传管线）。
  *  - 指数退避重试：2s→4s→8s→8s→8s（5 次上限，复用 event_sync 模式）；
  *    4xx 停该条（参数/归属错误重试无意义）。
  *  - 批量失败暂停恢复：连续失败 ≥10 → pauseSync() 暂停剩余（保留队列）→
@@ -185,7 +195,7 @@ export function getNetKind(cb: (kind: NetKind) => void): void {
 
 /** 按请求模式 + 实际网络解析上传模式：
  *  - original：强制原图（WiFi 默认 / "立即上传原图"手动入口）
- *  - thumbnail：缩略图+元数据（Agent G upload_mode；G 未完成前按契约 mock=hold 暂缓）
+ *  - thumbnail：缩略图+元数据（**压缩步骤尚未接线** → 暂缓，见下）
  *  - auto：WiFi→original；蜂窝/none→hold（流量约束：蜂窝不自动传原图）
  *  - hold：一律暂缓
  * 返回 'original' | 'thumbnail' | 'hold' */
@@ -194,9 +204,12 @@ function resolveMode(mode: UploadMode, kind: NetKind): string {
 		return 'original'
 	}
 	if (mode == 'thumbnail') {
-		// 缩略图管线/upload_mode 未就绪（audit_B4_sync §1：全仓无缩略图生成）；
-		// 契约先行：暂缓入 held，Agent G 落地后此处改 init(upload_mode='thumbnail')。
-		console.log('[yishu] thumbnail 模式待 Agent G upload_mode 落地，暂缓上传')
+		// ⚠️ 2026-09-23 取证更正：原注释的理由（"管线未就绪 / audit_B4_sync §1 全仓无缩略图生成"）
+		// **不成立**——后端 `thumbnail_meta` 契约与客户端 `uni.compressImage`（app-android
+		// 受支持，HBuilderX dts 已取证）都已具备，缺的是"本函数到上传主流程之间从未接入压缩"。
+		// 接线完成前**保持 hold**：宁可如实暂缓，也不能上传原件冒充缩略图——后者会让后端把
+		// 3MB 原图登记成 thumbnail_key 占位（对象存储被占满，且用户拿不到原图）。
+		console.log('[yishu] thumbnail 模式尚未接线压缩步骤（非能力缺失，见文件头 2026-09-23 注），暂缓上传')
 		return 'hold'
 	}
 	if (mode == 'hold') {
@@ -207,7 +220,8 @@ function resolveMode(mode: UploadMode, kind: NetKind): string {
 		return 'original'
 	}
 	if (kind == 'cellular') {
-		console.log('[yishu] 蜂窝网络：只传缩略图+元数据（mock=暂缓原图，等 WiFi/手动）')
+		// 与 thumbnail 分支同因（压缩未接线）→ 蜂窝下先入 held，等 WiFi 或"立即上传原图"。
+		console.log('[yishu] 蜂窝网络：压缩步骤未接线 → 暂缓入 held（等 WiFi 或"立即上传原图"）')
 		return 'hold'
 	}
 	console.log('[yishu] 网络不可用（' + kind + '）：暂缓原图')
