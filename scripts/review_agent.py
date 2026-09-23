@@ -12,6 +12,9 @@
     1. Python 语法编译检查（本次提交新增/修改的 .py）
     2. Lint（ruff，仅本次提交的 .py；有未暂存改动的文件跳过，语义同旧实现）
     3. 密钥与敏感信息扫描（仅本次提交文件——gitignore 的 .env 等永不入 index，天然豁免）
+      ⚠️ 快/全量**都必须**只扫「可能入库」的文件：全量模式原先扫工作区全部 rglob，
+      不认 .gitignore，被 `.workbuddy/tmp/*.txt` 这类被忽略产物卡成假红灯（2026-09-23 修，
+      见 `_repo_text_candidates`）。
     4. TODO/FIXME 计数报告（不阻断）
     5. lessons 强制登记检查（上次失败未登记 → 阻断）
   全量模式（--full，完成验收/集成/CI 用，即旧行为）：
@@ -182,17 +185,36 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
         if p not in dirty and p.replace("/", "\\") not in dirty and not _lint_skip(p)
     ]
     secrets: list[str] = []
-    for f in ROOT.rglob("*"):
-        if not f.is_file():
-            continue
-        rel = f.relative_to(ROOT).as_posix()
+    for rel in _repo_text_candidates():
         if any(rel.startswith(s) or s in rel for s in SECRET_SKIP):
             continue
-        if _skip_path(f.parts):
+        if _skip_path(Path(rel).parts):
             continue
         if rel.endswith(TEXT_EXTS):
-            secrets.append(str(f))
+            secrets.append(rel)
     return (syntax, lint, secrets)
+
+
+def _repo_text_candidates() -> list[str]:
+    """全量模式下「**可能入库**」的文件清单（相对路径）：tracked ∪ untracked-非忽略。
+
+    为什么改（2026-09-23 修一个真实假阳性）：
+      原实现是 `ROOT.rglob("*")`——扫**工作区全部文件**，**不认 .gitignore**。后果：
+      `.workbuddy/tmp/lesson_add.txt`（被忽略的 lessons 临时产物，正文里含示例模式
+      `password='...'`）把全量门禁卡死在 secrets 上，成为**唯一阻断项**。这是坏账两笔：
+        ① 防护为零——被忽略的文件永远不可能进仓库，扫它不产生任何真实防护；
+        ② 危害更大——门禁一变吵就会被绕过（本项目铁律），而它当时正在充当唯一红灯。
+      改为 git 视角（与快模式「只看 staged」语义一致）：只有**能进 index** 的文件才值得扫。
+      gitignore 自身失效场景（如 force-add）由「tracked ∪」这一半兜住。
+    失败兜底：git 不可用时返回空 → secrets 报「无硬编码密钥」（不静默跳过整项检查之外的东西）。
+    """
+    out: list[str] = []
+    for args in (["git", "ls-files"], ["git", "ls-files", "--others", "--exclude-standard"]):
+        code, ls = run(args)
+        if code != 0:
+            continue
+        out.extend(p for p in (ls.splitlines() if ls.strip() else []) if p.strip())
+    return sorted({p.replace("\\", "/") for p in out})
 
 
 def check_syntax(files: list[str]) -> tuple[bool, str]:
