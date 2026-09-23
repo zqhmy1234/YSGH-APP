@@ -1,4 +1,10 @@
-from coze_coding_dev_sdk.database import Base
+"""ORM 声明（三表）——**去 Coze 改造点**：Base 由原 `coze_coding_dev_sdk.database.Base` 换为
+本项目自有基类（`storage/database/base.py`，见 agent/UPSTREAM.md 四-2）。
+
+施工要点（AG3）：这里的列定义可直接作为 alembic 迁移的规格；三表由 backend 的迁移统一创建
+（本服务不自行建表），user_id 口径与 backend 保持一致。
+"""
+from storage.database.base import Base
 
 from typing import Optional
 import datetime

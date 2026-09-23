@@ -36,10 +36,10 @@
 
 | # | Coze 依赖 | 出现位置（证据） | 替换为 | 状态 |
 |---|---|---|---|---|
-| 1 | `coze_workload_identity`（**所有 env + S3 token 都从它拉**） | `scripts/load_env.py:18-21`（根本不读 `.env`）、`storage/database/db.py:22-33`、`storage/database/supabase_client.py`、`storage/s3/s3_storage.py:63-82` | `python-dotenv` 读 `.env`；token 概念随 Supabase/S3 代理一并消失 | ⏳ |
-| 2 | `coze_coding_dev_sdk.database.Base` | `storage/database/shared/model.py:1` | 自有 `declarative_base`（新增 `storage/database/base.py`） | ⏳ |
+| 1 | `coze_workload_identity`（**所有 env + S3 token 都从它拉**） | `scripts/load_env.py:18-21`（根本不读 `.env`）、`storage/database/db.py:22-33`、`storage/database/supabase_client.py`、`storage/s3/s3_storage.py:63-82` | `python-dotenv` 读 `.env`；token 概念随 Supabase/S3 代理一并消失 | 🚧 AG2 完成 `scripts/load_env.py` 重写；`db.py` / `supabase_client.py` / `s3_storage.py` 待 AG3/AG4 |
+| 2 | `coze_coding_dev_sdk.database.Base` | `storage/database/shared/model.py:1` | 自有 `declarative_base`（新增 `storage/database/base.py`） | ✅ AG2 完成（`model.py` 已换源；三表 alembic 待 AG3） |
 | 3 | Supabase PostgREST（约 40 处 `client.table(...)`） | `tools/memory_tools.py`、`tools/url_fetch_tools.py:123/155/263/280`、`web/api_routes.py:58-84/116/173`、`services/wechat_service.py:90-102`、`services/daily_review_service.py:44-53` | SQLAlchemy repository（同三表，落我们 Postgres） | ⏳ |
-| 4 | Coze 模型网关（`COZE_INTEGRATION_MODEL_BASE_URL` + `coze` identity key；模型 `glm-4-7-251222`） | `agents/agent.py:74-90`；`config/agent_llm_config.json:12` | 百炼 OpenAI 兼容端点 + `DASHSCOPE_API_KEY` + 模型名可配 | ⏳ |
+| 4 | Coze 模型网关（`COZE_INTEGRATION_MODEL_BASE_URL` + `coze` identity key；模型 `glm-4-7-251222`） | `agents/agent.py:74-90`；`config/agent_llm_config.json:12` | 百炼 OpenAI 兼容端点 + `DASHSCOPE_API_KEY` + 模型名可配 | ✅ AG2 完成并**实测可用**（见六） |
 | 5 | `coze_coding_dev_sdk.ASRClient` | `tools/voice_tools.py:11,94`（且前置依赖**系统 ffmpeg**，见 `:34-45`） | 复用我们后端既有百炼 ASR（`backend/app/services/external/asr/`）；App 路径下语音本就走我们后端，此项可能整体不需要 | ⏳ |
 | 6 | `coze_coding_dev_sdk.FetchClient`（网页抽取） | `tools/url_fetch_tools.py:35` | 自建 httpx + 正文抽取（**后端目前无此能力**，需新增；`grep url_fetch/readability/html2text` 零命中） | ⏳ |
 | 7 | Coze S3 代理预签名（`${endpoint}/sign-url` + `x-storage-token`，region 硬编码 `cn-beijing`） | `storage/s3/s3_storage.py:233-289`、`tools/url_fetch_tools.py:204` | 复用 `backend/app/services/external/storage.py`（COS 原生 `presigned_get_object`） | ⏳ |
@@ -61,3 +61,36 @@
 5. **`/run` 的取消表是进程内 dict**（`main.py:62`）+ `workers=1`（`:659`）→ 横向扩容前必须处理。
 6. **无 CORS / 无限流 / 无请求体上限**（`main.py:287` 后无 middleware）→ 若被反代，网关侧补齐。
 7. **评测标准是文档、无脚本**：`docs/evaluation_standard.md` 有 8 维度加权评分与阈值（≥4.5 优秀），但仓库内**无配套自动评测脚本与测试集**（全仓仅 `tests/test_user_isolation.py` 一个测试）。
+
+## 六、改造差异记录（逐批追加）
+
+### AG2 · 去 Coze 核心（2026-09-23）
+
+**改动文件**
+
+| 文件 | 动作 | 说明 |
+|---|---|---|
+| `src/llm_provider.py` | **新增** | 模型接入**单一真源**：模型 id / base_url / 鉴权 header / 推理开关收成一处；缺 key **显式抛错**（不静默 mock）；`describe()` 可安全打印（**不含 key**） |
+| `.env.example` | **新增** | 去 Coze 后的环境变量**唯一真源**（上游那份列 `SUPABASE_*` 而代码读 `COZE_*`，见五-4） |
+| `scripts/load_env.py` | **重写** | `coze_workload_identity` → `python-dotenv` 读 `agent/.env`；缺 `.env` 时给可执行的补救提示（保留 `eval $(...)` 兼容） |
+| `src/storage/database/base.py` | **新增** | 自有 `DeclarativeBase`（SQLAlchemy 2.0 风格），替代 `coze_coding_dev_sdk.database.Base` |
+| `src/storage/database/shared/model.py` | 改 1 行 | Base 换源为自有基类；补注"三表由 backend 的 alembic 统一创建" |
+| `src/agents/agent.py` | 改 `build_agent` + import 块 | 模型改 `build_chat_model()`；**修正 thinking 键名 bug**（`thinking.type` → 官方 `enable_thinking`）；配置路径改相对本文件（不再依赖 `COZE_WORKSPACE_PATH`）；移除两处已成死引用的上游导入（`ChatOpenAI`、`coze_coding_utils...default_headers`） |
+| `config/agent_llm_config.json` | 改 2 键 | `model`: `glm-4-7-251222` → **`qwen3.8-flash`**；`thinking_type` → **`enable_thinking`**（与真实参数名对齐） |
+
+**对应映射表**：#1（部分）· #2（✅）· #4（✅）
+
+**实证（非纸面推断）**：真实调用一次 `qwen3.8-flash`——
+`model=qwen3.8-flash` / `finish_reason=stop` / 回复 `'收到'` / **`reasoning_content` 有 95 字**（证明 `enable_thinking` 真生效）/ 用量 prompt=66 completion=55。
+⇒ 四项外部事实（模型 ID、workspace 专属 base_url、`X-DashScope-WorkSpace` header、`enable_thinking`）**全部实测可用**；凭证取 `backend/.env`（空间级 key，`sk-ws-` 前缀，len=115）。
+
+**验证状态**：`py_compile` 5 文件通过；新增 3 文件 `ruff` 干净（⚠️ 因 `agent/` 在 lint 豁免名单内，须手工 `ruff check … --config ruff.toml`——**不可带 `--force-exclude`，否则会把显式传入的文件也排除，造成"假通过"**）。**未验证**：整链 import 与真跑（`langchain`/`langgraph` 尚未安装，属 AG5 的服务依赖）。
+
+**遗留到后续批次**：`pyproject.toml` 依赖瘦身（等 AG4 Coze import 清零后一次做，避免"声明瘦了但 import 还在"）；`db.py`/`supabase_client.py`/`s3_storage.py` 的 Coze 调用（AG3/AG4）。
+
+**⚠️ 账号口径更正（同日 · 用户指出）**：首次探针**误用了 `backend/.env` 的账号**——它不是 Token Plan 账号。
+危害形态值得单列：**填错账号不会报错**（两边都是有效 key，只是账号 / 额度 / 业务空间不同），
+探针照旧"调用成功"，于是产出的是一次**假通过**——比"报错"危险得多，因为它会被当成"配置已验证"。
+修正：`scripts/probe_model.py` **删除 `backend/.env` 回退**，来源收为两处——「`agent/.env` → 进程环境变量」，
+并**打印 key 与 workspace 的指纹**（长度 + 前缀 + sha256 前 8 位，不可逆、无泄漏）供每次核对账号；
+凭证缺失时**显式失败**（退出码 2）而不是回退到别的账号。
