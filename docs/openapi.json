@@ -3448,6 +3448,149 @@
         ]
       }
     },
+    "/api/v1/chat/messages": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Post Message",
+        "description": "发一条消息，返回智能体回复（非流式；失败不伪造）。",
+        "operationId": "post_message_api_v1_chat_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatMessageOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/chat/replies/{reply_id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Reply",
+        "description": "按 ID 取一条**本人**的智能体回复（客户端轮询/SSE 取回复的落点）。",
+        "operationId": "get_reply_api_v1_chat_replies__reply_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reply_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reply Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatReplyOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/conversations/{conversation_id}/messages": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get History",
+        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供\"问 AI 带上下文\"。",
+        "operationId": "get_history_api_v1_chat_conversations__conversation_id__messages_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatHistoryOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -3625,6 +3768,99 @@
         },
         "type": "object",
         "title": "ApiResponse[CapsuleOut]"
+      },
+      "ApiResponse_ChatHistoryOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatHistoryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ChatHistoryOut]"
+      },
+      "ApiResponse_ChatMessageOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatMessageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ChatMessageOut]"
+      },
+      "ApiResponse_ChatReplyOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatReplyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ChatReplyOut]"
       },
       "ApiResponse_ClassifyJobOut_": {
         "properties": {
@@ -5709,6 +5945,209 @@
         ],
         "title": "CapsuleOut",
         "description": "胶囊出参（列表/详情/开启通用；status: sealed/due/opened）"
+      },
+      "ChatAttachmentIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "voice",
+              "link",
+              "file"
+            ],
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Ref",
+            "description": "内容/对象引用（如 content_id 或 URL）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "title": "ChatAttachmentIn",
+        "description": "附件（契约里的 attachments[]）。MVP 仅记录，不解析内容。"
+      },
+      "ChatHistoryItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "assistant 侧为契约形态族；user 侧为 'user'"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "kind",
+          "text",
+          "created_at"
+        ],
+        "title": "ChatHistoryItemOut",
+        "description": "历史条目：**必须带 role** —— 历史里既有用户消息也有回复。\n\n为什么不复用 ChatReplyOut：后者的 `kind` 是**回复形态族**（bubble/plain/cards/…），\n而用户消息没有\"回复形态\"；把 `user` 塞进 ReplyKind 会让语义混淆\n（实测踩到：history 端点用 ChatReplyOut 序列化用户消息 → pydantic literal_error）。"
+      },
+      "ChatHistoryOut": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatHistoryItemOut"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "messages"
+        ],
+        "title": "ChatHistoryOut",
+        "description": "会话历史（供客户端进入会话时回填；按时间正序）。"
+      },
+      "ChatMessageIn": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id",
+            "description": "会话 ID（缺省新建）"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Content",
+            "description": "用户输入"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachmentIn"
+            },
+            "type": "array",
+            "title": "Attachments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ChatMessageIn",
+        "description": "用户一条消息。`conversation_id` 缺省＝新建会话。"
+      },
+      "ChatMessageOut": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "reply": {
+            "$ref": "#/components/schemas/ChatReplyOut"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms",
+            "description": "本后端观测到的端到端耗时（含 agent 单轮）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "reply",
+          "latency_ms"
+        ],
+        "title": "ChatMessageOut",
+        "description": "POST /chat/messages 响应。"
+      },
+      "ChatReplyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bubble",
+              "plain",
+              "cards",
+              "confirm",
+              "typing",
+              "plain+chips"
+            ],
+            "title": "Kind",
+            "default": "bubble"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "chips": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chips",
+            "description": "plain+chips 形态的快捷问题"
+          },
+          "cards": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Cards",
+            "description": "cards 形态的卡组"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "created_at"
+        ],
+        "title": "ChatReplyOut",
+        "description": "一条回复（POST 内联返回，亦可由 GET /replies/:id 取回）。"
       },
       "ClassScore": {
         "properties": {

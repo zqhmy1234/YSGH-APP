@@ -19,6 +19,7 @@ from app.api import (  # noqa: E501
     asr,
     auth,
     capsules,
+    chat,
     classify,
     contents,
     corrections,
@@ -138,6 +139,7 @@ def create_app() -> FastAPI:
     app.include_router(upload.router)
     app.include_router(stats.router)  # R9-7 hero 副标题 API 化（Q5 拍板）
     app.include_router(users.router)  # BB1 GET /api/v1/users/me（当前用户信息·手机号服务端掩码）
+    app.include_router(chat.router)  # AG5 AI 对话域（反代 Agent 服务；客户端 TabAi 契约）
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

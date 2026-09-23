@@ -114,6 +114,10 @@ _ERROR_SPECS: list[ErrorSpec] = [
     # 分类域
     ErrorSpec("CLASSIFY_002", "任务不存在或已过期", 404),
     ErrorSpec("CLASSIFY_003", "任务不属于当前用户（越权查询）", 403),
+    # 对话域（AG5：本后端反代 Agent 服务；agent 不可用属 5xx 类可重试错误）
+    ErrorSpec("CHAT_001", "Agent 服务不可用（连接失败或返回异常）", 502, retryable=True),
+    ErrorSpec("CHAT_002", "Agent 服务响应超时", 504, retryable=True),
+    ErrorSpec("CHAT_003", "会话或回复不存在（含越权访问他人会话）", 404),
 ]
 
 ERROR_REGISTRY: dict[str, ErrorSpec] = {spec.code: spec for spec in _ERROR_SPECS}
@@ -180,6 +184,9 @@ ERR_WECHAT_003 = "WECHAT_003"
 ERR_WECHAT_099 = "WECHAT_099"
 ERR_CLASSIFY_002 = "CLASSIFY_002"
 ERR_CLASSIFY_003 = "CLASSIFY_003"
+ERR_CHAT_001 = "CHAT_001"
+ERR_CHAT_002 = "CHAT_002"
+ERR_CHAT_003 = "CHAT_003"
 
 
 class ApiError(Exception):

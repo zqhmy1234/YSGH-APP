@@ -88,6 +88,32 @@
 
 **遗留到后续批次**：`pyproject.toml` 依赖瘦身（等 AG4 Coze import 清零后一次做，避免"声明瘦了但 import 还在"）；`db.py`/`supabase_client.py`/`s3_storage.py` 的 Coze 调用（AG3/AG4）。
 
+### AG5 · 后端契约与反代（2026-09-23）
+
+**动因**：客户端契约早已登记（`client/components/TabAi/TabAi.uvue:6-8`，09-01 拍板），
+但后端零实现 ⇒ AI 页只能用 mock。本批把契约接到 Agent 服务。
+
+| 文件（本仓 backend 侧） | 动作 | 说明 |
+|---|---|---|
+| `app/api/chat.py` | **新增** | 三端点：`POST /api/v1/chat/messages`（+ `GET /replies/{id}` + `GET /conversations/{id}/messages`） |
+| `app/services/external/agent.py` | **新增** | 调 Agent 服务的唯一出口：**user_id 只由本后端注入**（agent 自身不鉴权用户身份，故不得暴露公网） |
+| `app/db/models/chat.py` + 迁移 `b5c6d7e8f9a0` | **新增** | `chat_messages` 表（契约要求 `GET /replies/:id` ⇒ 回复必须可持久化；否则只能 404 或伪造） |
+| `app/core/errors.py` | 加 3 码 | `CHAT_001`（agent 不可用 502）/`CHAT_002`（超时 504）/`CHAT_003`（会话或回复不存在 404）——按本仓铁律**先入登记表**再引用 |
+| `app/core/config.py` | 加 3 项 | `agent_service_base_url` / `agent_service_token`（对应 agent 的 `AGENT_SERVICE_TOKEN`）/ `agent_service_timeout_s` |
+| `backend/tests/test_chat.py` | **新增** | 6 例：契约形状 · 可信注入 · **失败不伪造** · 超时 504 · **会话 IDOR 404 且不调 agent** · 历史正序 |
+
+**三条不可退让的断言**（本项目已被栽过的坑，均有专门用例）：
+  1. **user_id 必须来自 JWT**（agent 侧拿到的 user_id 由本后端注入，不信客户端）；
+  2. **失败不伪造回复**：agent 不可用时返回 502/504，**只留用户消息**（"问了但没答上"可复盘），绝不本地生成"看似 AI 的回答"；
+  3. **会话隔离**：他人/不存在的 `conversation_id` → 404，且**不得触发 agent 调用**（防枚举、防越权写入）。
+
+**刻意不套 `with_retry`**：本仓该装饰器对 5xx/超时重试，而对话调用**非幂等**——agent 经
+`save_memory` 等工具写库，超时重试会造成**重复落库**。故单次尝试 + 明确失败（宁可报错让人重问，
+也不产生脏数据）。这条已写进 `agent.py` 文件头，改动前须先读。
+
+**未实现（诚实标注）**：SSE 真流式（需 agent 侧 SSE 输出）；`reply.kind` 的 `cards`/`confirm`
+（需 agent 侧结构化输出，当前只回纯文本 ⇒ 只会产生 `bubble`/`plain`）。
+
 ### AG3 · 数据层落我们自己的 Postgres（2026-09-23）
 
 **表结构与迁移（backend 侧）**

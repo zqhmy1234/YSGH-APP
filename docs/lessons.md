@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-23 21:26 · commit c46d2ec · ts=1790169989
+- **错误**：往既有 import 块插入新模块后未自跑 ruff 就提交，被 I001（导入未排序）拦下
+- **根因**：main.py 的 app.api 导入块是按 isort 字母序排列的长列表；我按语义插入 chat 后仍被判未排序（isort 对同组内顺序有自己规则），而我在提交前没对改动文件跑 ruff——本仓 pre-commit 的 lint 会拦下任何此类问题，等于把门禁当第一道校验
+- **修复**：提交前对改动文件先跑 python -m ruff check <files> --fix（本次一行修好）；往长 import 块插模块时先跑 --fix 让其落位，不要凭直觉定位
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁是兜底不是第一道校验：改完任何 .py 先自跑 ruff（含 --fix），尤其新增 import；把失败留给门禁会浪费一轮往返，且触发 lessons 强制登记
+
+---
+
 ### 2026-09-23 20:16 · commit a4f498f · ts=1790165781
 - **错误**：已加临时 lint 豁免却仍被 lint 拦下，提交两次被拒
 - **根因**：两处认知叠加：① 按 client/ 先例把 agent 加进 _skip_path，但快模式的 lint 步并不走 _skip_path（它只作用于语法步的目录遍历）；② 补加 ruff.toml 的 exclude 仍无效——ruff 的 config.exclude 对命令行显式传入的文件不生效，而 pre-commit 快模式正是 ruff check <files> 显式传参

@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     # workspace 专属 Host 的地域；完整地址仍可用 DASHSCOPE_BASE_URL 覆盖。
     dashscope_region: str = Field("cn-beijing", pattern=r"^[a-z0-9-]+$")
     dashscope_base_url: str = ""
+
+    # ── Agent 服务（AG5 接线；独立进程，见 agent/UPSTREAM.md）──
+    # 本后端**反代**调用：客户端只认本后端（JWT 鉴权），user_id 只由本后端注入
+    # （agent 服务自身不鉴权用户身份 —— 见 UPSTREAM 五-1，故绝不可暴露公网）。
+    agent_service_base_url: str = "http://127.0.0.1:8300"
+    # 与 agent 服务的共享密钥（对应其 AGENT_SERVICE_TOKEN）；留空则不带该头
+    agent_service_token: str = ""
+    # 单轮对话超时（秒）：Agent 含多轮工具调用 + 推理，实测 76s 量级，故默认给足
+    agent_service_timeout_s: float = 180.0
     # auto=主通道已有情绪则跳过本地；always=强制本地覆盖；off=关闭本地增强。
     asr_local_emotion_mode: Literal["auto", "always", "off"] = "auto"
     # 生产必须指向部署阶段预置的 SenseVoice 目录，避免首个请求联网下载。
