@@ -5,7 +5,7 @@ HTTP 状态映射）。本服务不需要平台错误码，但**需要同一件�
 把异常归成("类别", http 状态, 是否可重试)，供 HTTP 层决定返回码与是否记 ERROR 级日志。
 
 刻意保留 "retryable" 概念：上游用它区分"该退避重试"与"该立刻失败"，
-本服务在调用百炼/抓取时同样需要（见 `platform/fetch.py`）。
+本服务在调用百炼/抓取时同样需要（见 `yishu/fetch.py`）。
 """
 from __future__ import annotations
 

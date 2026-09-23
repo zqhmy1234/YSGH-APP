@@ -124,7 +124,7 @@ def run_agent(query: str, user_id: str = "default", ctx=None, max_rounds: int = 
     :param max_rounds: 最大校验重试轮数（默认3轮）
     :return: Agent 执行结果
     """
-    from platform.context import new_context, request_context
+    from yishu.context import new_context, request_context
 
     agent = build_agent(ctx)
 

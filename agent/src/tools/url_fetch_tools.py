@@ -5,8 +5,8 @@
 import json
 import logging
 import os
-from platform.context import new_context, request_context
-from platform.db_errors import APIError
+from yishu.context import new_context, request_context
+from yishu.db_errors import APIError
 from typing import Any
 
 from langchain.tools import tool
@@ -32,10 +32,10 @@ def _init_fetch_client():
     """初始化链接内容提取客户端。
 
     去 Coze（2026-09-23 · AG4）：原 `coze_coding_dev_sdk.fetch.FetchClient`（平台代理抓取）
-    换为本地适配器 `platform/fetch.py`（httpx + bs4，**结果契约照上游逐字段对齐**，
+    换为本地适配器 `yishu/fetch.py`（httpx + bs4，**结果契约照上游逐字段对齐**，
     另加 SSRF 防护与体积/超时上限）。`ctx` 参数保留以兼容调用点。
     """
-    from platform.fetch import FetchClient
+    from yishu.fetch import FetchClient
 
     ctx = request_context.get() or new_context(method="fetch_url_content")
     return FetchClient(ctx=ctx)

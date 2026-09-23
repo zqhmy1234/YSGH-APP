@@ -1,7 +1,7 @@
 """数据层错误类型（替代 `postgrest.exceptions.APIError`）。
 
 为什么需要它：上游工具/服务大量写成
-    `from platform.db_errors import APIError` + `except APIError as e: ... e.message`
+    `from yishu.db_errors import APIError` + `except APIError as e: ... e.message`
 若本地薄层抛的是普通 `ValueError`/`RuntimeError`，这些 `except` 分支**不再命中**，
 异常会穿透到上层——行为静默改变（比报错更糟）。
 

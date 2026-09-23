@@ -1,701 +1,200 @@
-import argparse
-import asyncio
+"""忆光 Agent 服务入口（去 Coze 版 · 2026-09-23 AG4b）。
+
+**与上游 main.py 的关系**：上游把整个 Coze 平台外壳搬进来了——`/run`、`/stream_run`、
+`/async_run`、`/node_run/{id}`、`/graph_parameter`、`/cancel/{run_id}`、`/v1/chat/completions`，
+外加 `AsyncTaskRuntime`（Postgres 任务运行时）、`AgentStreamRunner`/`WorkflowStreamRunner`、
+`OpenAIChatHandler`、`graph_helper`、`log.parser`/`node_log`、`cozeloop` 上报。
+那些是 **Coze 平台自身的任务/流式/观测外壳**，与本系统无关，故**不重实现**；
+本文件只暴露我们真正需要的接口（记忆域对话 + 健康检查 + 记忆浏览 web 面）。
+
+**安全（上游最大的缺口，已在此补）**：
+  · 上游**无任何鉴权**，数据归属只认可伪造的 `X-User-Id`（见 agent/UPSTREAM.md 五-1）；
+  · 本服务**由我们后端反代调用**，`user_id` 只接受**后端注入**的请求体字段，
+    并要求共享密钥头 `X-Agent-Token`（环境变量 `AGENT_SERVICE_TOKEN`；未配置时启动即告警，
+    生产必须配置——本服务**不得直接暴露公网**）。
+"""
+from __future__ import annotations
+
+# ruff: noqa: E402 —— 本文件**刻意**先 `load_dotenv(agent/.env)` 再导入依赖模块：
+# `yishu.logging_setup` 在导入期读 `AGENT_LOG_LEVEL`、服务常量读 `AGENT_SERVICE_TOKEN`，
+# 若先导入后加载 .env，这些值会取到默认值（静默走错）。故此豁免是有理由的、非疏漏。
 import json
-import threading
-import traceback
 import logging
-import uuid
-from contextlib import asynccontextmanager
-from typing import Any, Dict, Iterable, AsyncIterable, AsyncGenerator, Optional
-import cozeloop
-import uvicorn
+import os
 import time
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END
-from langgraph.graph.state import CompiledStateGraph
-from platform.context import Context, new_context
-from coze_coding_utils.helper import graph_helper
-from coze_coding_utils.log.node_log import LOG_FILE
-from platform.context import request_context
-from platform.logging_setup import setup_logging
-from platform.logging_setup import LOG_LEVEL
-from platform.errors import ErrorClassifier, classify_error
-from coze_coding_utils.helper.stream_runner import AgentStreamRunner, WorkflowStreamRunner,agent_stream_handler,workflow_stream_handler, RunOpt
-from storage.database.db import get_session, get_engine
-from storage.memory.memory_saver import get_memory_saver
-from storage.database.shared.model import Base
-from coze_coding_utils.async_tasks import (
-    AsyncTaskRuntime,
-    AsyncTaskStorageError,
-    extract_biz_context,
-    parse_deadline_sec,
-)
-from coze_coding_utils.async_tasks import config as async_task_config
-from coze_coding_utils.async_tasks.headers import HEADER_X_RUN_ID as _ASYNC_HEADER_X_RUN_ID
-from platform.context import new_context as _new_async_ctx
-from sqlalchemy import event
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
 
-setup_logging(
-    log_file=LOG_FILE,
-    max_bytes=100 * 1024 * 1024, # 100MB
-    backup_count=5,
-    log_level=LOG_LEVEL,
-    use_json_format=True,
-    console_output=True
-)
+# ⚠️ 必须在读取任何环境常量**之前**加载 agent/.env（绝对路径，不依赖启动 CWD）
+from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
-from coze_coding_utils.helper.agent_helper import to_stream_input, to_client_message
-from coze_coding_utils.openai.handler import OpenAIChatHandler
-from coze_coding_utils.log.parser import LangGraphParser
-from coze_coding_utils.log.err_trace import extract_core_stack
-from coze_coding_utils.log.loop_trace import init_run_config, init_agent_config
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+
+from yishu.context import new_context, request_context
+from yishu.errors import classify_error
+from yishu.logging_setup import setup_logging
+
+from agents.agent import run_agent
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger("yishu.agent.service")
+
+SERVICE_TOKEN = os.getenv("AGENT_SERVICE_TOKEN", "").strip()
 
 
-# 超时配置常量
-TIMEOUT_SECONDS = 900  # 15分钟
+class ChatRequest(BaseModel):
+    """对话请求。
 
-class GraphService:
-    def __init__(self):
-        # 用于跟踪正在运行的任务（使用asyncio.Task）
-        self.running_tasks: Dict[str, asyncio.Task] = {}
-        # 错误分类器
-        self.error_classifier = ErrorClassifier()
-        # stream runner
-        self._agent_stream_runner = AgentStreamRunner()
-        self._workflow_stream_runner = WorkflowStreamRunner()
-        self._graph = None
-        self._graph_lock = threading.Lock()
+    `user_id` 由**我们后端**反代时注入（可信），客户端不得直连本服务。
+    """
 
-    def set_graph(self, graph) -> None:
-        """Inject the compiled graph used by sync endpoints. Called once from
-        lifespan with a no-checkpointer build, so /run /stream_run /node_run
-        never hit the checkpoint DB."""
-        self._graph = graph
-
-    def _get_graph(self, ctx=Context):
-        if self._graph is not None:
-            return self._graph
-        with self._graph_lock:
-            if self._graph is not None:
-                return self._graph
-            if graph_helper.is_agent_proj():
-                self._graph = graph_helper.get_agent_instance("agents.agent", ctx)
-            else:
-                self._graph = graph_helper.get_graph_instance("graphs.graph")
-            return self._graph
-
-    @staticmethod
-    def _sse_event(data: Any, event_id: Any = None) -> str:
-        id_line = f"id: {event_id}\n" if event_id else ""
-        return f"{id_line}event: message\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
-
-    def _get_stream_runner(self):
-        if graph_helper.is_agent_proj():
-            return self._agent_stream_runner
-        else:
-            return self._workflow_stream_runner
-
-    # 流式运行（原始迭代器）：本地调用使用
-    def stream(self, payload: Dict[str, Any], run_config: RunnableConfig, ctx=Context) -> Iterable[Any]:
-        graph = self._get_graph(ctx)
-        stream_runner = self._get_stream_runner()
-        for chunk in stream_runner.stream(payload, graph, run_config, ctx):
-            yield chunk
-
-    # 同步运行：本地/HTTP 通用
-    async def run(self, payload: Dict[str, Any], ctx=None) -> Dict[str, Any]:
-        if ctx is None:
-            ctx = new_context("run")
-
-        run_id = ctx.run_id
-        logger.info(f"Starting run with run_id: {run_id}")
-
-        try:
-            graph = self._get_graph(ctx)
-            # custom tracer
-            run_config = init_run_config(graph, ctx)
-            run_config.setdefault("configurable", {})["thread_id"] = ctx.run_id
-
-            # 直接调用，LangGraph会在当前任务上下文中执行
-            # 如果当前任务被取消，LangGraph的执行也会被取消
-            return await graph.ainvoke(payload, config=run_config, context=ctx)
-
-        except asyncio.CancelledError:
-            logger.info(f"Run {run_id} was cancelled")
-            return {"status": "cancelled", "run_id": run_id, "message": "Execution was cancelled"}
-        except Exception as e:
-            # 使用错误分类器分类错误
-            err = self.error_classifier.classify(e, {"node_name": "run", "run_id": run_id})
-            # 记录详细的错误信息和堆栈跟踪
-            logger.error(
-                f"Error in GraphService.run: [{err.code}] {err.message}\n"
-                f"Category: {err.category.name}\n"
-                f"Traceback:\n{extract_core_stack()}"
-            )
-            # 保留原始异常堆栈，便于上层返回真正的报错位置
-            raise
-        finally:
-            # 清理任务记录
-            self.running_tasks.pop(run_id, None)
-
-    # 流式运行（SSE 格式化）：HTTP 路由使用
-    async def stream_sse(self, payload: Dict[str, Any], ctx=None, run_opt: Optional[RunOpt] = None) -> AsyncGenerator[str, None]:
-        if ctx is None:
-            ctx = new_context(method="stream_sse")
-        if run_opt is None:
-            run_opt = RunOpt()
-
-        run_id = ctx.run_id
-        logger.info(f"Starting stream with run_id: {run_id}")
-        graph = self._get_graph(ctx)
-        if graph_helper.is_agent_proj():
-            run_config = init_agent_config(graph, ctx)
-        else:
-            run_config = init_run_config(graph, ctx)  # vibeflow
-
-        is_workflow = not graph_helper.is_agent_proj()
-
-        try:
-            async for chunk in self.astream(payload, graph, run_config=run_config, ctx=ctx, run_opt=run_opt):
-                if is_workflow and isinstance(chunk, tuple):
-                    event_id, data = chunk
-                    yield self._sse_event(data, event_id)
-                else:
-                    yield self._sse_event(chunk)
-        finally:
-            # 清理任务记录
-            self.running_tasks.pop(run_id, None)
-            cozeloop.flush()
-
-    # 取消执行 - 使用asyncio的标准方式
-    def cancel_run(self, run_id: str, ctx: Optional[Context] = None) -> Dict[str, Any]:
-        """
-        取消指定run_id的执行
-
-        使用asyncio.Task.cancel()来取消任务,这是标准的Python异步取消机制。
-        LangGraph会在节点之间检查CancelledError,实现优雅的取消。
-        """
-        logger.info(f"Attempting to cancel run_id: {run_id}")
-
-        # 查找对应的任务
-        if run_id in self.running_tasks:
-            task = self.running_tasks[run_id]
-            if not task.done():
-                # 使用asyncio的标准取消机制
-                # 这会在下一个await点抛出CancelledError
-                task.cancel()
-                logger.info(f"Cancellation requested for run_id: {run_id}")
-                return {
-                    "status": "success",
-                    "run_id": run_id,
-                    "message": "Cancellation signal sent, task will be cancelled at next await point"
-                }
-            else:
-                logger.info(f"Task already completed for run_id: {run_id}")
-                return {
-                    "status": "already_completed",
-                    "run_id": run_id,
-                    "message": "Task has already completed"
-                }
-        else:
-            logger.warning(f"No active task found for run_id: {run_id}")
-            return {
-                "status": "not_found",
-                "run_id": run_id,
-                "message": "No active task found with this run_id. Task may have already completed or run_id is invalid."
-            }
-
-    # 运行指定节点：本地/HTTP 通用
-    async def run_node(self, node_id: str, payload: Dict[str, Any], ctx=None) -> Any:
-        if ctx is None or Context.run_id == "":
-            ctx = new_context(method="node_run")
-
-        _graph = self._get_graph()
-        node_func, input_cls, output_cls = graph_helper.get_graph_node_func_with_inout(_graph.get_graph(), node_id)
-        if node_func is None or input_cls is None:
-            raise KeyError(f"node_id '{node_id}' not found")
-
-        parser = LangGraphParser(_graph)
-        metadata = parser.get_node_metadata(node_id) or {}
-
-        _g = StateGraph(input_cls, input_schema=input_cls, output_schema=output_cls)
-        _g.add_node("sn", node_func, metadata=metadata)
-        _g.set_entry_point("sn")
-        _g.add_edge("sn", END)
-        _graph = _g.compile()
-
-        run_config = init_run_config(_graph, ctx)
-        return await _graph.ainvoke(payload, config=run_config)
-
-    def graph_inout_schema(self) -> Any:
-        if graph_helper.is_agent_proj():
-            return {"input_schema": {}, "output_schema": {}}
-        builder = getattr(self._get_graph(), 'builder', None)
-        if builder is not None:
-            input_cls = getattr(builder, 'input_schema', None) or self.graph.get_input_schema()
-            output_cls = getattr(builder, 'output_schema', None) or self.graph.get_output_schema()
-        else:
-            logger.warning(f"No builder input schema found for graph_inout_schema, using graph input schema instead")
-            input_cls = self.graph.get_input_schema()
-            output_cls = self.graph.get_output_schema()
-
-        return {
-            "input_schema": input_cls.model_json_schema(), 
-            "output_schema": output_cls.model_json_schema(),
-            "code":0,
-            "msg":""
-        }
-
-    async def astream(self, payload: Dict[str, Any], graph: CompiledStateGraph, run_config: RunnableConfig, ctx=Context, run_opt: Optional[RunOpt] = None) -> AsyncIterable[Any]:
-        stream_runner = self._get_stream_runner()
-        async for chunk in stream_runner.astream(payload, graph, run_config, ctx, run_opt):
-            yield chunk
+    user_id: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=8000)
+    thread_id: str | None = Field(None, max_length=128, description="缺省=user_id（上游语义：按用户隔离上下文）")
 
 
-service = GraphService()
+class ChatResponse(BaseModel):
+    reply: str
+    user_id: str
+    thread_id: str
+    latency_ms: int
 
-async_runtime: Optional[AsyncTaskRuntime] = None
-async_graph: Optional[CompiledStateGraph] = None
+
+class HealthResponse(BaseModel):
+    status: str
+    model: str
+    db_configured: bool
+    auth_enabled: bool
+
+
+def _normalize_reply(result: Any) -> str:
+    """把 `run_agent_with_validation` 的返回规整成一段可回显文本。
+
+    实测（2026-09-23 冒烟）：上游返回的是 **LangGraph 状态**（`{"messages": [...]}`，
+    元素是 langchain 的 `HumanMessage`/`AIMessage` 等对象）——直接 `json.dumps` 会抛
+    `Object of type HumanMessage is not JSON serializable`（服务 500）。
+    故：① 优先取末条 AI 消息的 `content`；② 兜底 `json.dumps(default=str)` **永不因序列化失败而 500**。
+    待 AG5 把返回收敛为契约字段后，这里可退化为直接取值。
+    """
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        for key in ("reply", "content", "text", "message", "output"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        messages = result.get("messages")
+        if isinstance(messages, (list, tuple)):
+            for msg in reversed(messages):
+                content: Any = getattr(msg, "content", None)
+                if content is None and isinstance(msg, dict):
+                    content = msg.get("content")
+                if isinstance(content, str) and content.strip():
+                    return content
+                if isinstance(content, list):  # 多模态内容块列表
+                    parts = [b.get("text", "") for b in content if isinstance(b, dict)]
+                    joined = "".join(p for p in parts if p)
+                    if joined.strip():
+                        return joined
+        return json.dumps(result, ensure_ascii=False, default=str)
+    return str(result)
+
+
+def _require_token(provided: str | None) -> None:
+    """共享密钥校验（未配置时放行但已在启动日志告警——本地开发便利，生产必须配）。"""
+    if SERVICE_TOKEN and provided != SERVICE_TOKEN:
+        raise HTTPException(status_code=401, detail="X-Agent-Token 缺失或不匹配")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    engine = get_engine()
-    @event.listens_for(engine, "connect")
-    def _set_utc(dbapi_conn, _):
-        with dbapi_conn.cursor() as cur:
-            cur.execute("SET TIME ZONE 'UTC'")
-    checkpointer = get_memory_saver()
-    if graph_helper.is_agent_proj():
-        base = graph_helper.get_agent_instance("agents.agent", None)
-        sync_graph = base.builder.compile(checkpointer=checkpointer)
-    else:
-        base = graph_helper.get_graph_instance("graphs.graph")
-        sync_graph = base.builder.compile()
-    global async_graph, async_runtime
-    async_graph = base.builder.compile(checkpointer=checkpointer)
-    service.set_graph(sync_graph)
-    async_runtime = AsyncTaskRuntime(
-        session_factory=get_session, engine=engine,
-        graph=async_graph, checkpointer=checkpointer,
-    )
+    setup_logging()
+    model = os.getenv("AGENT_LLM_MODEL", "qwen3.8-flash")
+    db_configured = bool(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL"))
+    logger.info("忆光 Agent 服务启动：model=%s db_configured=%s", model, db_configured)
+    if not SERVICE_TOKEN:
+        logger.warning(
+            "未配置 AGENT_SERVICE_TOKEN —— 本服务将不校验 X-Agent-Token。"
+            "仅限本地开发；生产必须配置，且本服务不得直接暴露公网（user_id 必须来自后端注入）"
+        )
+    if not db_configured:
+        raise RuntimeError("未配置 DATABASE_URL —— 记忆域数据落我们自己的 Postgres，必须配置")
     yield
-    if async_runtime is not None:
-        await async_runtime.shutdown()
-
-app = FastAPI(lifespan=lifespan)
-
-# OpenAI 兼容接口处理器
-openai_handler = OpenAIChatHandler(service)
+    logger.info("忆光 Agent 服务停止")
 
 
-@app.post("/async_run")
-async def http_async_run(request: Request) -> dict:
-    try:
-        payload = await request.json()
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in http_async_run: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {extract_core_stack()}")
-    try:
-        deadline_sec = parse_deadline_sec(request.headers)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+app = FastAPI(title="忆光 Agent 服务", version="0.1.0", lifespan=lifespan)
 
-    # 一个 ID 走到底：task_id == run_id == thread_id == ctx.run_id == coze_run_id。
-    # 优先用上游 x-run-id；没传就生成 UUID。
-    run_id = request.headers.get(_ASYNC_HEADER_X_RUN_ID) or uuid.uuid4().hex
+# 记忆浏览 web 面（上游自带的演示/浏览用 API + 模板页；数据层已换成本地 Postgres）
+try:
+    from web.api_routes import router as web_router
 
-    # ctx 在 handler scope 构造，与同步 /run 路径一致；后面 new_context 默认会
-    # 给 run_id 一个新 UUID，同步路径也是显式覆盖（main.py /run 处），这里同理。
-    ctx = _new_async_ctx(method="async_run", headers=request.headers)
-    ctx.run_id = run_id
-    request_context.set(ctx)  # 与其他 HTTP endpoint 一致：让日志组件拿到 run_id 等信息
-    run_config = init_run_config(async_graph, ctx)
-    run_config["recursion_limit"] = async_task_config.RECURSION_LIMIT
-    run_config.setdefault("configurable", {})["thread_id"] = run_id
-
-    biz_context = extract_biz_context(request.headers) or {}
-    if graph_helper.is_agent_proj() and not (isinstance(payload, dict) and payload.get("messages")):
-        try:
-            client_msg, _ = to_client_message(payload)
-            payload = to_stream_input(client_msg)
-        except Exception as e:
-            error_response = service.error_classifier.get_error_response(
-                e, {"node_name": "http_async_run", "run_id": run_id})
-            logger.error(
-                f"failed to convert agent payload in http_async_run: "
-                f"[{error_response['error_code']}] {error_response['error_message']}, "
-                f"traceback: {traceback.format_exc()}", exc_info=True
-            )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error_code": error_response["error_code"],
-                    "error_message": error_response["error_message"],
-                    "stack_trace": extract_core_stack(),
-                },
-            )
-
-    try:
-        return await async_runtime.submit(
-            task_id=run_id,
-            payload=payload,
-            biz_context=biz_context,
-            deadline_sec=deadline_sec,
-            run_config=run_config,
-            ctx=ctx,
-        )
-    except AsyncTaskStorageError as e:
-        raise HTTPException(status_code=503,
-                            detail=f"async-task storage unavailable: {e}")
+    app.include_router(web_router)
+except Exception as exc:  # noqa: BLE001 —— 该面非核心链路，缺失不应拖垮服务启动
+    logger.warning("记忆浏览 web 面未挂载：%s", exc)
 
 
-@app.get("/task/{task_id}")
-async def http_get_task(task_id: str) -> dict:
-    try:
-        row = await async_runtime.get(task_id)
-    except AsyncTaskStorageError as e:
-        raise HTTPException(status_code=503,
-                            detail=f"async-task storage unavailable: {e}")
-    if row is None:
-        raise HTTPException(status_code=404, detail="task not found")
-    return row
-
-
-HEADER_X_RUN_ID = "x-run-id"
-@app.post("/run")
-async def http_run(request: Request) -> Dict[str, Any]:
-    global result
-    raw_body = await request.body()
-    try:
-        body_text = raw_body.decode("utf-8")
-    except Exception as e:
-        body_text = str(raw_body)
-        raise HTTPException(status_code=400,
-                            detail=f"Invalid JSON format: {body_text}, traceback: {traceback.format_exc()}, error: {e}")
-
-    ctx = new_context(method="run", headers=request.headers)
-    # 优先使用上游指定的 run_id，保证 cancel 能精确匹配
-    upstream_run_id = request.headers.get(HEADER_X_RUN_ID)
-    if upstream_run_id:
-        ctx.run_id = upstream_run_id
-    run_id = ctx.run_id
-    request_context.set(ctx)
-
-    logger.info(
-        f"Received request for /run: "
-        f"run_id={run_id}, "
-        f"query={dict(request.query_params)}, "
-        f"body={body_text}"
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        model=os.getenv("AGENT_LLM_MODEL", "qwen3.8-flash"),
+        db_configured=bool(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL")),
+        auth_enabled=bool(SERVICE_TOKEN),
     )
 
-    try:
-        payload = await request.json()
 
-        # 创建任务并记录 - 这是关键，让我们可以通过run_id取消任务
-        task = asyncio.create_task(service.run(payload, ctx))
-        service.running_tasks[run_id] = task
+@app.post("/v1/chat", response_model=ChatResponse)
+def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> ChatResponse:
+    """一次对话（非流式）。
 
-        try:
-            result = await asyncio.wait_for(task, timeout=float(TIMEOUT_SECONDS))
-        except asyncio.TimeoutError:
-            logger.error(f"Run execution timeout after {TIMEOUT_SECONDS}s for run_id: {run_id}")
-            task.cancel()
-            try:
-                result = await task
-            except asyncio.CancelledError:
-                return {
-                    "status": "timeout",
-                    "run_id": run_id,
-                    "message": f"Execution timeout: exceeded {TIMEOUT_SECONDS} seconds"
-                }
-
-        if not result:
-            result = {}
-        if isinstance(result, dict):
-            result["run_id"] = run_id
-        return result
-
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in http_run: {e}, traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"Invalid JSON format, {extract_core_stack()}")
-
-    except asyncio.CancelledError:
-        logger.info(f"Request cancelled for run_id: {run_id}")
-        result = {"status": "cancelled", "run_id": run_id, "message": "Execution was cancelled"}
-        return result
-
-    except Exception as e:
-        # 使用错误分类器获取错误信息
-        error_response = service.error_classifier.get_error_response(e, {"node_name": "http_run", "run_id": run_id})
-        logger.error(
-            f"Unexpected error in http_run: [{error_response['error_code']}] {error_response['error_message']}, "
-            f"traceback: {traceback.format_exc()}", exc_info=True
-        )
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error_code": error_response["error_code"],
-                "error_message": error_response["error_message"],
-                "stack_trace": extract_core_stack(),
-            }
-        )
-    finally:
-        cozeloop.flush()
-
-
-HEADER_X_WORKFLOW_STREAM_MODE = "x-workflow-stream-mode"
-
-
-def _register_task(run_id: str, task: asyncio.Task):
-    service.running_tasks[run_id] = task
-
-
-@app.post("/stream_run")
-async def http_stream_run(request: Request):
-    ctx = new_context(method="stream_run", headers=request.headers)
-    # 优先使用上游指定的 run_id，保证 cancel 能精确匹配
-    upstream_run_id = request.headers.get(HEADER_X_RUN_ID)
-    if upstream_run_id:
-        ctx.run_id = upstream_run_id
-    workflow_stream_mode = request.headers.get(HEADER_X_WORKFLOW_STREAM_MODE, "").lower()
-    workflow_debug = workflow_stream_mode == "debug"
-    request_context.set(ctx)
-    raw_body = await request.body()
-    try:
-        body_text = raw_body.decode("utf-8")
-    except Exception as e:
-        body_text = str(raw_body)
-        raise HTTPException(status_code=400,
-                            detail=f"Invalid JSON format: {body_text}, traceback: {extract_core_stack()}, error: {e}")
-    run_id = ctx.run_id
-    is_agent = graph_helper.is_agent_proj()
-    logger.info(
-        f"Received request for /stream_run: "
-        f"run_id={run_id}, "
-        f"is_agent_project={is_agent}, "
-        f"query={dict(request.query_params)}, "
-        f"body={body_text}"
-    )
-    try:
-        payload = await request.json()
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in http_stream_run: {e}, traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"Invalid JSON format:{extract_core_stack()}")
-
-    if is_agent:
-        stream_generator = agent_stream_handler(
-            payload=payload,
-            ctx=ctx,
-            run_id=run_id,
-            stream_sse_func=service.stream_sse,
-            sse_event_func=service._sse_event,
-            error_classifier=service.error_classifier,
-            register_task_func=_register_task,
-        )
-    else:
-        stream_generator = workflow_stream_handler(
-            payload=payload,
-            ctx=ctx,
-            run_id=run_id,
-            stream_sse_func=service.stream_sse,
-            sse_event_func=service._sse_event,
-            error_classifier=service.error_classifier,
-            register_task_func=_register_task,
-            run_opt=RunOpt(workflow_debug=workflow_debug),
-        )
-
-    response = StreamingResponse(stream_generator, media_type="text/event-stream")
-    return response
-
-@app.post("/cancel/{run_id}")
-async def http_cancel(run_id: str, request: Request):
+    多轮上下文：`thread_id` 缺省用 `user_id`，与上游 `run_agent` 的
+    `config={"configurable": {"thread_id": user_id}}` 一致——**上游 HTTP 面把 thread_id 设成
+    run_id 导致每次对话都是新的**（见 UPSTREAM 五-2），本接口刻意不沿用那个错误。
     """
-    取消指定run_id的执行
-
-    使用asyncio.Task.cancel()实现取消,这是Python标准的异步任务取消机制。
-    LangGraph会在节点之间的await点检查CancelledError,实现优雅取消。
-    """
-    ctx = new_context(method="cancel", headers=request.headers)
+    _require_token(x_agent_token)
+    started = time.monotonic()
+    thread_id = req.thread_id or req.user_id
+    # 可信注入：user_id 只来自请求体（由后端反代填入），并写入请求上下文供工具读取
+    ctx = new_context(method="chat", user_id=req.user_id, run_id=thread_id)
     request_context.set(ctx)
-    logger.info(f"Received cancel request for run_id: {run_id}")
-    result = service.cancel_run(run_id, ctx)
-    return result
-
-
-@app.post(path="/node_run/{node_id}")
-async def http_node_run(node_id: str, request: Request):
-    raw_body = await request.body()
     try:
-        body_text = raw_body.decode("utf-8")
-    except UnicodeDecodeError:
-        body_text = str(raw_body)
-        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {body_text}")
-    ctx = new_context(method="node_run", headers=request.headers)
-    request_context.set(ctx)
-    logger.info(
-        f"Received request for /node_run/{node_id}: "
-        f"query={dict(request.query_params)}, "
-        f"body={body_text}",
+        result = run_agent(req.message, user_id=req.user_id, ctx=ctx)
+    except Exception as exc:  # noqa: BLE001 —— 统一经分类器映射状态码
+        classified = classify_error(exc)
+        logger.exception("对话失败 kind=%s retryable=%s", classified.kind, classified.retryable)
+        return JSONResponse(  # type: ignore[return-value]
+            status_code=classified.http_status,
+            content={
+                "error": {"kind": classified.kind, "retryable": classified.retryable, "message": str(exc)},
+                "user_id": req.user_id,
+            },
+        )
+    latency_ms = int((time.monotonic() - started) * 1000)
+    logger.info("对话完成 user=%s thread=%s latency_ms=%d", req.user_id, thread_id, latency_ms)
+    return ChatResponse(
+        reply=_normalize_reply(result),
+        user_id=req.user_id,
+        thread_id=thread_id,
+        latency_ms=latency_ms,
     )
 
-    try:
-        payload = await request.json()
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in http_node_run: {e}, traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"Invalid JSON format:{extract_core_stack()}")
-    try:
-        return await service.run_node(node_id, payload, ctx)
-    except KeyError:
-        raise HTTPException(status_code=404,
-                            detail=f"node_id '{node_id}' not found or input miss required fields, traceback: {extract_core_stack()}")
-    except Exception as e:
-        # 使用错误分类器获取错误信息
-        error_response = service.error_classifier.get_error_response(e, {"node_name": node_id})
-        logger.error(
-            f"Unexpected error in http_node_run: [{error_response['error_code']}] {error_response['error_message']}, "
-            f"traceback: {traceback.format_exc()}", exc_info=True
-        )
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error_code": error_response["error_code"],
-                "error_message": error_response["error_message"],
-                "stack_trace": extract_core_stack(),
-            }
-        )
-    finally:
-        cozeloop.flush()
 
-
-@app.post("/v1/chat/completions")
-async def openai_chat_completions(request: Request):
-    """OpenAI Chat Completions API 兼容接口"""
-    ctx = new_context(method="openai_chat", headers=request.headers)
-    request_context.set(ctx)
-
-    logger.info(f"Received request for /v1/chat/completions: run_id={ctx.run_id}")
-
-    try:
-        payload = await request.json()
-        return await openai_handler.handle(payload, ctx)
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in openai_chat_completions: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON format")
-    finally:
-        cozeloop.flush()
-
-
-@app.get("/health")
-async def health_check():
-    try:
-        # 这里可以添加更多的健康检查逻辑
-        return {
-            "status": "ok",
-            "message": "Service is running",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-
-@app.get(path="/graph_parameter")
-async def http_graph_inout_parameter(request: Request):
-    return service.graph_inout_schema()
-
-
-# ==================== Web 前端路由 ====================
-from web.api_routes import router as web_api_router
-
-app.include_router(web_api_router)
-
-
-@app.get("/web")
-@app.get("/web/")
-async def web_ui():
-    """忆光 Web 前端页面"""
-    import os
-    html_path = os.path.join(
-        os.getenv("COZE_WORKSPACE_PATH", "/workspace/projects"),
-        "src", "web", "templates", "index.html"
+@app.exception_handler(Exception)
+async def unhandled(request: Request, exc: Exception) -> JSONResponse:  # pragma: no cover
+    classified = classify_error(exc)
+    logger.exception("未处理异常 kind=%s", classified.kind)
+    return JSONResponse(
+        status_code=classified.http_status,
+        content={"error": {"kind": classified.kind, "retryable": classified.retryable, "message": str(exc)}},
     )
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
-    # 注入 project_id
-    project_id = os.getenv("COZE_PROJECT_ID", "0")
-    html = html.replace("{{PROJECT_ID}}", project_id)
-    return HTMLResponse(html)
 
-
-@app.get("/")
-async def root_redirect():
-    """根路径重定向到 /web"""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/web")
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Start FastAPI server")
-    parser.add_argument("-m", type=str, default="http", help="Run mode, support http,flow,node")
-    parser.add_argument("-n", type=str, default="", help="Node ID for single node run")
-    parser.add_argument("-p", type=int, default=5000, help="HTTP server port")
-    parser.add_argument("-i", type=str, default="", help="Input JSON string for flow/node mode")
-    return parser.parse_args()
-
-
-def parse_input(input_str: str) -> Dict[str, Any]:
-    """Parse input string, support both JSON string and plain text"""
-    if not input_str:
-        return {"text": "你好"}
-
-    # Try to parse as JSON first
-    try:
-        return json.loads(input_str)
-    except json.JSONDecodeError:
-        # If not valid JSON, treat as plain text
-        return {"text": input_str}
-
-def start_http_server(port):
-    workers = 1
-    reload = False
-    if graph_helper.is_dev_env():
-        reload = True
-
-    logger.info(f"Start HTTP Server, Port: {port}, Workers: {workers}")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload, workers=workers)
 
 if __name__ == "__main__":
-    args = parse_args()
-    if args.m == "http":
-        start_http_server(args.p)
-    elif args.m == "flow":
-        payload = parse_input(args.i)
-        result = asyncio.run(service.run(payload))
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    elif args.m == "node" and args.n:
-        payload = parse_input(args.i)
-        result = asyncio.run(service.run_node(args.n, payload))
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    elif args.m == "agent":
-        agent_ctx = new_context(method="agent")
-        for chunk in service.stream(
-                {
-                    "type": "query",
-                    "session_id": "1",
-                    "message": "你好",
-                    "content": {
-                        "query": {
-                            "prompt": [
-                                {
-                                    "type": "text",
-                                    "content": {"text": "现在几点了？请调用工具获取当前时间"},
-                                }
-                            ]
-                        }
-                    },
-                },
-                run_config={"configurable": {"session_id": "1"}},
-                ctx=agent_ctx,
-        ):
-            print(chunk)
+    import uvicorn
+
+    port = int(os.getenv("AGENT_HTTP_PORT", "8300"))
+    uvicorn.run("main:app", host="127.0.0.1", port=port, workers=1)

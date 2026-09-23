@@ -9,8 +9,8 @@ import subprocess
 import tempfile
 
 from coze_coding_dev_sdk import ASRClient
-from platform.context import request_context
-from platform.context import new_context
+from yishu.context import request_context
+from yishu.context import new_context
 
 logger = logging.getLogger(__name__)
 
