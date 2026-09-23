@@ -16,8 +16,8 @@
   - `忆述光华_深度开发设计/01-05e` — 9 份深度设计定稿（B1 画像 / B2+02b RAG / B3 事件聚合 / B4 同步 / B5a-e 语音·护栏·纠错·后台·Windows）
   - `MVP完成度评估_20260827/` — 完成度评估九份（**02=用户故事目录（状态唯一来源）、07=08-27 基线汇报、08=收尾完成汇报**）
 - `AGENTS.md` / `feature_list.json` / `progress.md` / `init.sh` / `session-handoff.md` — harness 文件；配套权威：`docs/决策台账.md`（术语消歧+决策+待拍板唯一登记簿）、`docs/lessons.md`（错误与教训单一来源）、`docs/lessons-主题索引.md`（按根因族复盘索引）
-- `docs/parallel-dev/` — **开发期并行开发任务卡（「开发 Wave 1–4」，Agent A–L，2026-08-25~26，已结束）**：00 总纲（文件域所有权/波次/完成定义）→ 02–12 任务卡 → 13 集成规则 → `_B5a_B5d修正后待办.md`。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
-- `docs/parallel-dev-收尾/` — **收尾波次任务卡（「收尾 Wave 1–4」，2026-08-27~28，已全收口）**：00 总纲（17 项范围+远期待办 §7）→ 01–12 任务卡 → 13 集成 → 14 INT → 15 真机 SOP → 16/21/22 归档（4a/4b）→ 17–20 附表。**19 号跟踪表 §4＝缺陷台账（20 单：D-01~D-16、D-18~D-22；D-17 未启用；D-20 系补验修复单 f726942；D-22=08-29 P-2 诊断坐实 O-2 升单）与环境事件（O-1；O-2→D-22；O-3 暗物质审计；O-4 跨窗合流波）唯一来源**；各卡是历史记录，勿当待办入口。⚠️「开发 Wave 4」（J/K/L）≠「收尾 Wave 4」（4a/4b 归档），全库术语表见 `docs/决策台账.md` §0
+- `docs/parallel-dev/` — **开发期并行任务卡（「开发 Wave 1–4」，Agent A–L，2026-08-25~26，已结束）**。⚠️ **2026-09-23 harness 清理**：波次任务卡（00–13）与归档件已删（`git log --diff-filter=D` 可回看），**仅保留 `_B5a_B5d修正后待办.md`**——其中 J-1/J-2/J-3 三项待办**未闭环**，已登记 `docs/决策台账.md` §7。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
+- `docs/parallel-dev-收尾/` — **收尾波次任务卡（「收尾 Wave 1–4」，2026-08-27~28，已全收口）**。⚠️ **2026-09-23 harness 清理**：任务卡与归档件（00–16/17–23）已删（`git log --diff-filter=D` 可回看），**仅保留 `19_wave3_真机补验跟踪表.md`**——该表 §4＝**缺陷台账（20 单：D-01~D-16、D-18~D-22；D-17 未启用；D-20 系补验修复单 f726942；D-22=08-29 P-2 诊断坐实 O-2 升单）与环境事件（O-1；O-2→D-22；O-3 暗物质审计；O-4 跨窗合流波）的唯一来源**，**其中 D-18/D-19 仍为「已修待复验」＝未关闭**。各卡是历史记录，勿当待办入口。⚠️「开发 Wave 4」（J/K/L）≠「收尾 Wave 4」（4a/4b 归档），全库术语表见 `docs/决策台账.md` §0
 - `skills/infisical-secrets/SKILL.md` — Infisical 密钥链路 skill（所有外部 API Key 统一从这里取，2026-08-19 打通）
 - `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查 + **收尾 Wave 3 真机教训：adb reverse 铁律 / EMUI 纯净模式 / 云打包 CLI 参数 / D-18/D-19 原生探测坑·**5.24 迁移期多窗协调军规**；**改 client/ 代码前先读**，2026-08-24 沉淀、08-28 补录）
 - `skills/android-media-e2e/SKILL.md` — 真机 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位 + **收尾 Wave 3 沉淀：语音短录音链 / 情绪三层默认值 / 云打包验证**；F1 链路真机验收流程，2026-08-24 沉淀、08-28 补录）
@@ -25,7 +25,7 @@
 
 ## 当前状态（2026-08-29 · 收尾 Wave 1–4 全收口，下一步＝4b 修复批次）
 
-> **执行窗（2026-09-04）**：missing-pages 施工窗活跃于分支 feature/missing-pages-impl（工作树 .wt/missing-pages）。执行计划 _execution_plan_20260904.md（W0-W8 待批）；差异台账 _diff_ledger.md；画布真值 uvue_gen/*_canvas.json。已完成项已整饬为速查卡（分支/文件/方法/设计来源），未闭环项保持原叙述。
+> **执行窗（2026-09-04）· 已收口**：missing-pages 施工窗（分支 feature/missing-pages-impl，工作树 .wt/missing-pages）已完成并合流。执行计划 `_execution_plan_20260904.md` 已于 **2026-09-23 harness 清理**中删除（`git log --diff-filter=D` 可回看）；活文档保留：差异台账 `_diff_ledger.md`、画布真值 `uvue_gen/*_canvas.json`。
 
 > **一句话**：收尾 17 项全部完成（代码侧 13 + 真机 7 清单全达终态 + 4a/4b 文档收口）。**下一步=4b 修复批次**（真机挖出的缺陷修复+复验，非文档工作）。基线 develop，最新提交见 `git log --oneline -8`。
 
