@@ -3,18 +3,16 @@
 提供记忆的存储、搜索、分类等功能
 """
 import json
-import os
 import logging
-from typing import Optional, List, Any, Dict
+import os
 from datetime import datetime
+from platform.context import new_context, request_context
+from platform.db_errors import APIError
+from typing import Any
 
 from langchain.tools import tool
-from postgrest.exceptions import APIError
-
-from coze_coding_utils.log.write_log import request_context
-from coze_coding_utils.runtime_ctx.context import new_context
 from storage.database.supabase_client import get_supabase_client
-from tools.tag_rules import validate_memory_tags, validate_collection_tags
+from tools.tag_rules import validate_collection_tags, validate_memory_tags
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +44,12 @@ def _parse_content(content: Any) -> str:
 
 
 def _find_related_memories(client, user_id: str, exclude_id: int,
-                           category: Optional[str] = None,
-                           mood: Optional[str] = None,
-                           topics: Optional[List[str]] = None,
-                           limit: int = 3) -> List[Dict[str, Any]]:
+                           category: str | None = None,
+                           mood: str | None = None,
+                           topics: list[str] | None = None,
+                           limit: int = 3) -> list[dict[str, Any]]:
     """搜索与当前记忆相关的历史记忆（按分类、情绪、主题匹配）"""
-    related: List[Dict[str, Any]] = []
+    related: list[dict[str, Any]] = []
     try:
         query = client.table("memories").select(
             "id, content, mood, location, topics, created_at, memory_categories(name)"
@@ -62,7 +60,7 @@ def _find_related_memories(client, user_id: str, exclude_id: int,
 
         response = query.order("created_at", desc=True).limit(limit * 3).execute()
         raw = response.data if isinstance(response.data, list) else []
-        data: List[Dict[str, Any]] = [d for d in raw if isinstance(d, dict)]
+        data: list[dict[str, Any]] = [d for d in raw if isinstance(d, dict)]
 
         # 优先匹配同主题的
         if topics:
@@ -113,11 +111,11 @@ def _find_related_memories(client, user_id: str, exclude_id: int,
 
 
 def _find_related_collections(client, user_id: str, exclude_id: int,
-                               topics: Optional[List[str]] = None,
-                               content_type: Optional[str] = None,
-                               limit: int = 3) -> List[Dict[str, Any]]:
+                               topics: list[str] | None = None,
+                               content_type: str | None = None,
+                               limit: int = 3) -> list[dict[str, Any]]:
     """搜索与当前收藏相关的历史收藏（按主题、类型匹配）"""
-    related: List[Dict[str, Any]] = []
+    related: list[dict[str, Any]] = []
     try:
         query = client.table("knowledge_collections").select(
             "id, title, content_type, topics, created_at"
@@ -128,7 +126,7 @@ def _find_related_collections(client, user_id: str, exclude_id: int,
 
         response = query.order("created_at", desc=True).limit(limit * 3).execute()
         raw = response.data if isinstance(response.data, list) else []
-        data: List[Dict[str, Any]] = [d for d in raw if isinstance(d, dict)]
+        data: list[dict[str, Any]] = [d for d in raw if isinstance(d, dict)]
 
         # 优先匹配同主题的
         if topics:
@@ -168,12 +166,12 @@ def _find_related_collections(client, user_id: str, exclude_id: int,
 @tool
 def save_memory(
     content: str,
-    category: Optional[str] = None,
-    mood: Optional[str] = None,
-    topics: Optional[List[str]] = None,
-    location: Optional[str] = None,
-    people: Optional[List[str]] = None,
-    content_format: Optional[str] = None
+    category: str | None = None,
+    mood: str | None = None,
+    topics: list[str] | None = None,
+    location: str | None = None,
+    people: list[str] | None = None,
+    content_format: str | None = None
 ) -> str:
     """
     保存一条新的记忆到数据库中。
@@ -198,7 +196,7 @@ def save_memory(
     )
 
     # 构建记忆数据
-    memory_data: Dict[str, Any] = {
+    memory_data: dict[str, Any] = {
         "content": content,
         "mood": validated["mood"],
         "content_format": validated["content_format"],
@@ -217,12 +215,12 @@ def save_memory(
         try:
             cat_response = client.table("memory_categories").select("id").eq("name", cat_name).maybe_single().execute()
             if cat_response and cat_response.data:
-                cat_data: Dict[str, Any] = cat_response.data
+                cat_data: dict[str, Any] = cat_response.data
                 memory_data["category_id"] = cat_data["id"]
             else:
                 new_cat = client.table("memory_categories").insert({"name": cat_name}).execute()
                 if new_cat.data:
-                    new_cat_list: List[Dict[str, Any]] = new_cat.data
+                    new_cat_list: list[dict[str, Any]] = new_cat.data
                     memory_data["category_id"] = new_cat_list[0]["id"]
         except APIError as e:
             logger.warning(f"处理分类时出错: {e.message}")
@@ -230,7 +228,7 @@ def save_memory(
     try:
         response = client.table("memories").insert(memory_data).execute()
         if response.data:
-            response_list: List[Dict[str, Any]] = response.data
+            response_list: list[dict[str, Any]] = response.data
             memory_id = response_list[0]["id"]
             user_id = _get_user_id()
 
@@ -264,10 +262,10 @@ def save_memory(
 
 @tool
 def search_memories(
-    query: Optional[str] = None,
-    category: Optional[str] = None,
-    mood: Optional[str] = None,
-    topics: Optional[List[str]] = None,
+    query: str | None = None,
+    category: str | None = None,
+    mood: str | None = None,
+    topics: list[str] | None = None,
     limit: int = 10
 ) -> str:
     """
@@ -305,8 +303,8 @@ def search_memories(
 
         response = db_query.execute()
 
-        memories: List[Dict[str, Any]] = []
-        response_data: List[Dict[str, Any]] = response.data if response.data else []
+        memories: list[dict[str, Any]] = []
+        response_data: list[dict[str, Any]] = response.data if response.data else []
         for mem in response_data:
             cat_data = mem.get("memory_categories")
             category_name = None
@@ -367,8 +365,8 @@ def get_recent_memories(days: int = 7, limit: int = 20) -> str:
             .limit(min(limit, 100)) \
             .execute()
 
-        memories: List[Dict[str, Any]] = []
-        response_data: List[Dict[str, Any]] = response.data if response.data else []
+        memories: list[dict[str, Any]] = []
+        response_data: list[dict[str, Any]] = response.data if response.data else []
         for mem in response_data:
             cat_data = mem.get("memory_categories")
             cat_name = cat_data.get("name") if isinstance(cat_data, dict) else None
@@ -412,8 +410,8 @@ def get_memory_stats() -> str:
 
         # 获取分类统计
         categories_response = client.table("memory_categories").select("id, name").execute()
-        category_stats: List[Dict[str, Any]] = []
-        categories_data: List[Dict[str, Any]] = categories_response.data if categories_response.data else []
+        category_stats: list[dict[str, Any]] = []
+        categories_data: list[dict[str, Any]] = categories_response.data if categories_response.data else []
         for cat in categories_data:
             cat_memories = client.table("memories").select("id", count="exact").eq("user_id", user_id).eq("category_id", cat.get("id")).execute()
             category_stats.append({
@@ -423,16 +421,16 @@ def get_memory_stats() -> str:
 
         # 获取情绪分布（按用户隔离）
         mood_response = client.table("memories").select("mood").eq("user_id", user_id).execute()
-        mood_counts: Dict[str, int] = {}
-        mood_data: List[Dict[str, Any]] = mood_response.data if mood_response.data else []
+        mood_counts: dict[str, int] = {}
+        mood_data: list[dict[str, Any]] = mood_response.data if mood_response.data else []
         for mem in mood_data:
             mood = mem.get("mood") or "未标记"
             mood_counts[mood] = mood_counts.get(mood, 0) + 1
 
         # 获取主题分布
         topics_response = client.table("memories").select("topics").eq("user_id", user_id).execute()
-        topic_counts: Dict[str, int] = {}
-        topics_data: List[Dict[str, Any]] = topics_response.data if topics_response.data else []
+        topic_counts: dict[str, int] = {}
+        topics_data: list[dict[str, Any]] = topics_response.data if topics_response.data else []
         for mem in topics_data:
             mem_topics = mem.get("topics")
             if isinstance(mem_topics, list):
@@ -525,13 +523,13 @@ def delete_memory(memory_id: int) -> str:
 def save_knowledge_collection(
     content: str,
     content_type: str = "文章",
-    title: Optional[str] = None,
-    author: Optional[str] = None,
-    source: Optional[str] = None,
-    topics: Optional[List[str]] = None,
-    image_url: Optional[str] = None,
-    mood: Optional[str] = None,
-    content_format: Optional[str] = None
+    title: str | None = None,
+    author: str | None = None,
+    source: str | None = None,
+    topics: list[str] | None = None,
+    image_url: str | None = None,
+    mood: str | None = None,
+    content_format: str | None = None
 ) -> str:
     """
     收藏一条外部信息到知识库。
@@ -561,7 +559,7 @@ def save_knowledge_collection(
     )
 
     try:
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "content": content,
             "content_type": validated["content_type"],
             "content_format": validated["content_format"],
@@ -597,7 +595,7 @@ def save_knowledge_collection(
             )
 
             # 同时联想相关个人记忆（按主题匹配）
-            related_mems: List[Dict[str, Any]] = []
+            related_mems: list[dict[str, Any]] = []
             if validated["topics"]:
                 try:
                     mem_resp = client.table("memories").select(
@@ -605,7 +603,7 @@ def save_knowledge_collection(
                     ).eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
                     raw_data = mem_resp.data if isinstance(mem_resp.data, list) else []
                     topic_set = set(validated["topics"])
-                    related_mems: List[Dict[str, Any]] = []
+                    related_mems: list[dict[str, Any]] = []
                     for m in raw_data:
                         if not isinstance(m, dict):
                             continue
@@ -654,9 +652,9 @@ def save_knowledge_collection(
 
 @tool
 def search_knowledge_collections(
-    query: Optional[str] = None,
-    content_type: Optional[str] = None,
-    topics: Optional[List[str]] = None,
+    query: str | None = None,
+    content_type: str | None = None,
+    topics: list[str] | None = None,
     limit: int = 10
 ) -> str:
     """
@@ -683,7 +681,7 @@ def search_knowledge_collections(
 
         response = query_builder.order("created_at", desc=True).limit(limit).execute()
 
-        data: List[Dict[str, Any]] = response.data if response.data else []
+        data: list[dict[str, Any]] = response.data if response.data else []
 
         # 过滤topics（客户端过滤）
         filtered_data = data
@@ -705,7 +703,7 @@ def search_knowledge_collections(
 
 
 @tool
-def get_knowledge_summary(topics: Optional[List[str]] = None, days: int = 7) -> str:
+def get_knowledge_summary(topics: list[str] | None = None, days: int = 7) -> str:
     """
     获取知识库的总结，包括收藏数量、主题分布等。
 
@@ -726,19 +724,19 @@ def get_knowledge_summary(topics: Optional[List[str]] = None, days: int = 7) -> 
 
         if topics:
             response = query_builder.execute()
-            data: List[Dict[str, Any]] = response.data if response.data else []
+            data: list[dict[str, Any]] = response.data if response.data else []
             data = [
                 item for item in data
                 if isinstance(item.get("topics"), list) and any(t in item.get("topics", []) for t in topics)
             ]
         else:
             response = query_builder.execute()
-            data: List[Dict[str, Any]] = response.data if response.data else []
+            data: list[dict[str, Any]] = response.data if response.data else []
 
         # 统计
         total_count = len(data)
-        type_counts: Dict[str, int] = {}
-        topic_counts: Dict[str, int] = {}
+        type_counts: dict[str, int] = {}
+        topic_counts: dict[str, int] = {}
 
         for item in data:
             # 类型统计

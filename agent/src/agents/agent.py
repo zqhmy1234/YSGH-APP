@@ -8,35 +8,35 @@ from typing import Annotated
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
+from langchain_core.messages import AnyMessage, ToolMessage
 from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
-from langchain_core.messages import AnyMessage, ToolMessage
 
 # 去 Coze（2026-09-23）：模型接入收归 src/llm_provider（百炼 OpenAI 兼容端点，配置只认 .env）；
 # 同时移除两处已成死引用的上游导入——`ChatOpenAI`（原在此直接构造）与
 # `coze_coding_utils...default_headers`（原给 LLM 传 Coze 上下文头，现已无调用点）。
 from llm_provider import build_chat_model
 from storage.memory.memory_saver import get_memory_saver
-from utils.output_validator import run_agent_with_validation
 
 # 工具导入
 from tools.memory_tools import (
-    save_memory,
-    search_memories,
-    get_recent_memories,
-    get_memory_stats,
-    update_memory_summary,
     delete_memory,
+    get_knowledge_summary,
+    get_memory_stats,
+    get_recent_memories,
     save_knowledge_collection,
+    save_memory,
     search_knowledge_collections,
-    get_knowledge_summary
+    search_memories,
+    update_memory_summary,
 )
 from tools.url_fetch_tools import (
-    fetch_url_content,
     delete_knowledge_collection,
     export_knowledge_collections,
-    link_memory_to_collection
+    fetch_url_content,
+    link_memory_to_collection,
 )
+from utils.output_validator import run_agent_with_validation
 
 LLM_CONFIG = "config/agent_llm_config.json"
 
@@ -80,7 +80,7 @@ def build_agent(ctx=None):
       · 配置路径不再依赖 `COZE_WORKSPACE_PATH`，改为相对本文件解析（仓库内自洽）。
     """
     config_path = Path(__file__).resolve().parents[2] / LLM_CONFIG
-    with open(config_path, 'r', encoding='utf-8') as f:
+    with open(config_path, encoding='utf-8') as f:
         cfg = json.load(f)
 
     llm = build_chat_model()
@@ -124,8 +124,7 @@ def run_agent(query: str, user_id: str = "default", ctx=None, max_rounds: int = 
     :param max_rounds: 最大校验重试轮数（默认3轮）
     :return: Agent 执行结果
     """
-    from coze_coding_utils.log.write_log import request_context
-    from coze_coding_utils.runtime_ctx.context import new_context
+    from platform.context import new_context, request_context
 
     agent = build_agent(ctx)
 

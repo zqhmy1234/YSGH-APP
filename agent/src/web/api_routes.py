@@ -4,16 +4,12 @@
 提供记忆浏览、知识收藏浏览、统计概览等数据接口。
 前端页面通过这些 API 获取数据，对话功能复用 /stream_run 接口。
 """
-import json
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from platform.context import new_context, request_context
 
-from fastapi import APIRouter, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse
-
-from coze_coding_utils.log.write_log import request_context
-from coze_coding_utils.runtime_ctx.context import new_context
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
 from storage.database.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -102,7 +98,7 @@ async def get_dashboard(request: Request):
 @router.get("/memories")
 async def get_memories(
     request: Request,
-    category: Optional[str] = Query(None),
+    category: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -159,7 +155,7 @@ async def get_memories(
 @router.get("/collections")
 async def get_collections(
     request: Request,
-    content_type: Optional[str] = Query(None),
+    content_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):

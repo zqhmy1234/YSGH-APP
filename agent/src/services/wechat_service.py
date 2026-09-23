@@ -2,20 +2,18 @@
 企业微信智能机器人消息接收服务（WebSocket长连接模式）
 基于 wecom_aibot_sdk 的 WSClient 事件驱动模型
 """
-import os
 import asyncio
 import logging
+import os
 from datetime import datetime
+from platform.context import new_context, request_context
 from typing import Any
 
-from wecom_aibot_sdk import WSClient
-from supabase import Client
-
 from agents.agent import build_agent
-from tools.voice_tools import transcribe_voice
 from storage.database.supabase_client import get_supabase_client
-from coze_coding_utils.log.write_log import request_context
-from coze_coding_utils.runtime_ctx.context import new_context
+from supabase import Client
+from tools.voice_tools import transcribe_voice
+from wecom_aibot_sdk import WSClient
 
 logger = logging.getLogger(__name__)
 

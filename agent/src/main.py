@@ -15,12 +15,13 @@ from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
-from coze_coding_utils.runtime_ctx.context import new_context, Context
+from platform.context import Context, new_context
 from coze_coding_utils.helper import graph_helper
 from coze_coding_utils.log.node_log import LOG_FILE
-from coze_coding_utils.log.write_log import setup_logging, request_context
-from coze_coding_utils.log.config import LOG_LEVEL
-from coze_coding_utils.error.classifier import ErrorClassifier, classify_error
+from platform.context import request_context
+from platform.logging_setup import setup_logging
+from platform.logging_setup import LOG_LEVEL
+from platform.errors import ErrorClassifier, classify_error
 from coze_coding_utils.helper.stream_runner import AgentStreamRunner, WorkflowStreamRunner,agent_stream_handler,workflow_stream_handler, RunOpt
 from storage.database.db import get_session, get_engine
 from storage.memory.memory_saver import get_memory_saver
@@ -33,7 +34,7 @@ from coze_coding_utils.async_tasks import (
 )
 from coze_coding_utils.async_tasks import config as async_task_config
 from coze_coding_utils.async_tasks.headers import HEADER_X_RUN_ID as _ASYNC_HEADER_X_RUN_ID
-from coze_coding_utils.runtime_ctx.context import new_context as _new_async_ctx
+from platform.context import new_context as _new_async_ctx
 from sqlalchemy import event
 
 setup_logging(

@@ -41,9 +41,9 @@
 | 3 | Supabase PostgREST（约 40 处 `client.table(...)`） | `tools/memory_tools.py`、`tools/url_fetch_tools.py:123/155/263/280`、`web/api_routes.py:58-84/116/173`、`services/wechat_service.py:90-102`、`services/daily_review_service.py:44-53` | SQLAlchemy repository（同三表，落我们 Postgres） | ✅ AG3 完成（PostgREST 兼容薄层，25+ 调用点零改动；见六·AG3） |
 | 4 | Coze 模型网关（`COZE_INTEGRATION_MODEL_BASE_URL` + `coze` identity key；模型 `glm-4-7-251222`） | `agents/agent.py:74-90`；`config/agent_llm_config.json:12` | 百炼 OpenAI 兼容端点 + `DASHSCOPE_API_KEY` + 模型名可配 | ✅ AG2 完成并**实测可用**（见六） |
 | 5 | `coze_coding_dev_sdk.ASRClient` | `tools/voice_tools.py:11,94`（且前置依赖**系统 ffmpeg**，见 `:34-45`） | 复用我们后端既有百炼 ASR（`backend/app/services/external/asr/`）；App 路径下语音本就走我们后端，此项可能整体不需要 | ⏳ |
-| 6 | `coze_coding_dev_sdk.FetchClient`（网页抽取） | `tools/url_fetch_tools.py:35` | 自建 httpx + 正文抽取（**后端目前无此能力**，需新增；`grep url_fetch/readability/html2text` 零命中） | ⏳ |
+| 6 | `coze_coding_dev_sdk.FetchClient`（网页抽取） | `tools/url_fetch_tools.py:35` | 自建 httpx + 正文抽取（**后端目前无此能力**，需新增；`grep url_fetch/readability/html2text` 零命中） | 🚧 AG4：`platform/fetch.py` 已成（**结果契约照上游逐字段对齐** + SSRF 防护 + 体积/超时上限）；待切换 `url_fetch_tools._init_fetch_client` |
 | 7 | Coze S3 代理预签名（`${endpoint}/sign-url` + `x-storage-token`，region 硬编码 `cn-beijing`） | `storage/s3/s3_storage.py:233-289`、`tools/url_fetch_tools.py:204` | 复用 `backend/app/services/external/storage.py`（COS 原生 `presigned_get_object`） | ⏳ |
-| 8 | `coze_coding_utils`（context/request_context/stream_runner/async_tasks/log/错误分类） | `src/main.py:15-53` 等 | stdlib logging + **显式 user_id 注入**（`request_context` → 函数参数，消除隐式全局态） | ⏳ |
+| 8 | `coze_coding_utils`（context/request_context/stream_runner/async_tasks/log/错误分类） | `src/main.py:15-53` 等 | stdlib logging + **显式 user_id 注入**（`request_context` → 函数参数，消除隐式全局态） | 🚧 AG4 切片一：`platform/{context,logging_setup,errors}.py` 已成，**22 处导入已换**（含各 tool/service/web）；剩 `main.py` 的平台编排件（12 处）→ AG4b 整体替换 main.py |
 | 9 | `cozeloop`（观测上报） | `src/main.py:10` + 4 处 `cozeloop.flush()`（`:170/445/569/587`） | 移除（或接我们自己的日志口径） | ⏳ |
 | 10 | `wecom_aibot_sdk` | `src/main_wechat.py`、`services/wechat_service.py:67` | **本轮保留**（企微独立批次处理） | ➖ |
 | 11 | `langsmith`（LangChain 云追踪） | 依赖项 | 移除或置可选 | ⏳ |

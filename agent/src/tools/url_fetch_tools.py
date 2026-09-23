@@ -3,15 +3,13 @@
 提供链接内容提取、删除收藏、导出收藏等功能
 """
 import json
-import os
 import logging
-from typing import Optional, List, Any, Dict
+import os
+from platform.context import new_context, request_context
+from platform.db_errors import APIError
+from typing import Any
 
 from langchain.tools import tool
-from postgrest.exceptions import APIError
-
-from coze_coding_utils.log.write_log import request_context
-from coze_coding_utils.runtime_ctx.context import new_context
 from storage.database.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -31,8 +29,14 @@ def _get_user_id() -> str:
 
 
 def _init_fetch_client():
-    """初始化链接内容提取客户端"""
-    from coze_coding_dev_sdk.fetch import FetchClient
+    """初始化链接内容提取客户端。
+
+    去 Coze（2026-09-23 · AG4）：原 `coze_coding_dev_sdk.fetch.FetchClient`（平台代理抓取）
+    换为本地适配器 `platform/fetch.py`（httpx + bs4，**结果契约照上游逐字段对齐**，
+    另加 SSRF 防护与体积/超时上限）。`ctx` 参数保留以兼容调用点。
+    """
+    from platform.fetch import FetchClient
+
     ctx = request_context.get() or new_context(method="fetch_url_content")
     return FetchClient(ctx=ctx)
 
@@ -63,9 +67,9 @@ def fetch_url_content(url: str) -> str:
             }, ensure_ascii=False)
 
         # 提取文本内容
-        text_parts: List[str] = []
-        images: List[Dict[str, Any]] = []
-        links: List[str] = []
+        text_parts: list[str] = []
+        images: list[dict[str, Any]] = []
+        links: list[str] = []
 
         for item in response.content:
             if item.type == "text":
@@ -153,7 +157,7 @@ def export_knowledge_collections() -> str:
 
     try:
         response = client.table("knowledge_collections").select("*").eq("user_id", _get_user_id()).order("created_at", desc=True).execute()
-        collection_data: List[Dict[str, Any]] = response.data if response.data else []
+        collection_data: list[dict[str, Any]] = response.data if response.data else []
 
         if not collection_data:
             return json.dumps({
@@ -162,7 +166,7 @@ def export_knowledge_collections() -> str:
             }, ensure_ascii=False)
 
         # 生成 Markdown 内容
-        lines: List[str] = ["# 我的知识收藏", ""]
+        lines: list[str] = ["# 我的知识收藏", ""]
         lines.append(f"共 {len(collection_data)} 条收藏，导出时间：{__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
 
@@ -201,8 +205,9 @@ def export_knowledge_collections() -> str:
         markdown_content = "\n".join(lines)
 
         # 上传到对象存储
-        from coze_coding_dev_sdk.s3 import S3SyncStorage
         import os
+
+        from coze_coding_dev_sdk.s3 import S3SyncStorage
 
         storage = S3SyncStorage(
             endpoint_url=os.getenv("COZE_BUCKET_ENDPOINT_URL"),
@@ -268,7 +273,7 @@ def link_memory_to_collection(collection_id: int, memory_id: int) -> str:
                 "message": f"未找到ID为 {collection_id} 的收藏"
             }, ensure_ascii=False)
 
-        current_ids: List[int] = []
+        current_ids: list[int] = []
         item = response.data[0] if isinstance(response.data, list) else response.data
         existing = item.get("related_memory_ids") if isinstance(item, dict) else None
         if isinstance(existing, list):
