@@ -366,3 +366,12 @@
 - 处置：已尝试 `Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"` 并等待 90s×2 → 引擎管道仍未就绪（一度返回 500 Initializing）。**非代码问题**；下一会话须先起 Docker Desktop 再跑全量。
 - 影响面隔离：本次改动面＝`core/errors.py`（补登记 4 枚）+ `tests/test_error_registry.py`（门禁扩展）+ `scripts/audit_harness.py`（轴 2 反向对拍），**不触碰任何 Qdrant/检索代码**；改动面定向验证 `pytest test_error_registry + test_ba2_capsule` → **14 passed**；`audit_harness all` → 无 CRITICAL。
 - 备注：同一日内**首次** `pytest backend/tests` 曾 **850 passed / 4 skipped 全绿**（77s），随后 Docker 熄火 → 证明失败非本次改动引入。
+
+## ✅ 速查卡 · 2026-09-24（第三轮）· 门禁正确性收口（B10-b / B10-c / B10-d / D13-3）
+
+✅ 均为**纯本地可验证**的门禁巩固（Docker/Qdrant 不可用期间的可推进面）：
+- **B10-b**（`5690f99`）：**D11-2** 错误码 AST 门禁跨模块盲区修复（旧实现 `capsules.py → []` 静默丢弃，新实现 `→ CAPSULE_001..004`）＋ **D11-1（P0）闭环**（`core/errors.py` 补登记 4 枚，http 与 raise 逐条一致 422/404/409/409）＋ **D12-9** 轴 2 补 `pages.json → 物理文件` 反向对拍（`uvue_gen/` 判定不纳入，理由入 docstring）。
+- **D13-3**（`8555351`）：`check_env_template.py` 从「唯一判据但零门禁调用」变成**真门禁**——模板 §7 补齐 `AGENT_SERVICE_*`（TOKEN 守"必填不留空值"纪律保持注释），`review_agent` 新增 `env_template` 阻断式检查 + CI 独立步骤；反向探针证红。
+- **B10-c**（`b980ac0`）：**D11-5 反向棘轮**——`registered − raised = 恰好 3 枚`（67/64），新增 `test_no_new_dead_error_codes`（**双向**：新增死登记 → 红；基线项销项未移除 → 也红）＋ `DEAD_CODE_BASELINE`；内存级负向探针证明非空转（未改任何业务文件）。另 **D07-13 改判为非缺陷**（`validate()` 仅测试调用 ⇒ 测试期契约断言，非硬编码陷阱）。
+- **B10-d**（`cd712e0`）：**轴 4 `EXPORT_RE` 假阴性**（深审 249 条未涵盖的新发现）——`^\s*export` 的 `\s` **含换行** ⇒ 匹配点落前导空行 ⇒ 「声明行自身不算引用」排除失配 ⇒ **每个导出把自身计 1 引用** ⇒ `zero_cap` 应为 4 却**恒为 0**（**轴 4 长期假绿**；298 导出中 56 个声明行偏移）。修为 `^[ \t]*` 后**露出 4 枚真零调用能力导出**：`AuthError`(`auth.uts:51`)、`getRecorder`/`lastTempFile`(`voice.uts:104/108`)、`stopPeriodicSync`(`sync_client.uts:584`＝深审 D08-10)；前三枚为**深审未涵盖的新发现**（249 条计数下轮应 +3）。按 B1 口径加轴 4 棘轮（基线冻结存量 + 只拦新增 + **清算僵尸豁免**）；4 枚刻意不删（客户端 `.uts`，须编译门）。双负向探针（新增导出 → CRITICAL 且行号正确；基线塞假条目 → 僵尸豁免 CRITICAL）均已还原。
+｜教训新增 1 条（**未提交改动所在文件禁用 `git checkout` 还原探针**——本次曾把未提交的 baseline `exports` 段误回滚，已重新补回并提交）｜**待办不变**：B9（须 Qdrant 可验证）、B5（须编译门）、B11 残余 6 项（多需 §5.10 决策）、64 条功能缺陷归属
