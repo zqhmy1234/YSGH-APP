@@ -16,6 +16,7 @@
 // R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
 // O15：搜索端点路径统一走 contract.ts（与 OpenAPI 对齐）
 import { post, get, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { addBreadcrumb, captureMessage } from './sentry'
 import { resolveMediaUrl } from './config'
 import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_CONTENTS } from './contract'
 
@@ -240,9 +241,20 @@ export function searchText(query: string, limit: number, contentTypes: Array<str
 	if (contentTypes.length > 0) {
 		body.set('content_types', contentTypes)
 	}
+	// B13 面包屑（2026-09-23）：addBreadcrumb 此前**零调用**⇒ 上报事件到达时没有任何
+	// "之前发生了什么"的轨迹。**隐私纪律：只记长度/标签，绝不记用户原文**——面包屑随事件
+	// 发往 Sentry（外部服务），用户搜索词属于个人内容。
+	addBreadcrumb('search', 'text q_len=' + query.length + (contentTypes.length > 0 ? ' filtered' : ''))
 	return new Promise<SearchOutcome | null>((resolve) => {
 		post(PATH_SEARCH, body).then((res: UTSJSONObject | null) => {
-			resolve(parseSearch(res))
+			const out = parseSearch(res)
+			if (out != null && out.degraded) {
+				// 降级＝关键词检索退回兜底结果：用户会看到"有结果但不是想要的"，
+				// 而**没有任何异常抛出** ⇒ 只能靠消息事件上报，否则线上完全无迹可循
+				// （captureMessage 此前零调用，正是这类"非异常但用户可感"状态的唯一载体）
+				captureMessage('search degraded fallback', 'warning')
+			}
+			resolve(out)
 		})
 	})
 }
@@ -250,6 +262,8 @@ export function searchText(query: string, limit: number, contentTypes: Array<str
 /** POST /search/image：以图搜图（multipart）；返回 SearchOutcome 或 null
  *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
 export function searchByImage(filePath: string, limit: number): Promise<SearchOutcome | null> {
+	// B13 面包屑：只记动作与上限，不记文件路径（路径含用户隐私且对排障无增量信息）
+	addBreadcrumb('search', 'image upload limit=' + limit)
 	return new Promise<SearchOutcome | null>((resolve) => {
 		uploadFileHttp(PATH_SEARCH_IMAGE + '?limit=' + limit, filePath, 'file', null, 30000).then((hr: HttpResult) => {
 			if (hr.status === 200) {

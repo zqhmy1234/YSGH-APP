@@ -21,6 +21,7 @@
  * showErrorToast**（含后端 message）⇒ 调用方**不重复 toast**（同 capsule_api 注释口径）。
  */
 import { post, dataObj } from './api'
+import { addBreadcrumb } from './sentry'
 import { PATH_CHAT_MESSAGES } from './contract'
 
 /** 一条智能体回复（客户端可用子集；chips/cards 待 agent 出结构化输出后再开） */
@@ -90,6 +91,8 @@ export function sendChatMessage(conversationId: string, content: string): Promis
 		// 而""不是合法 UUID ⇒ 会被判 404，故新建会话时必须**省略**该字段
 		body.set('conversation_id', conversationId)
 	}
+	// B13 面包屑：只记"新建/续会话"与文本长度，**不记用户对 AI 说了什么**（隐私纪律同 search_api）
+	addBreadcrumb('chat', (conversationId == '' ? 'send new conversation' : 'send existing conversation') + ' len=' + content.length)
 	return new Promise<ChatSendResult | null>((resolve) => {
 		post(PATH_CHAT_MESSAGES, body).then((res: UTSJSONObject | null) => {
 			if (res == null) {
