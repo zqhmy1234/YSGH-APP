@@ -1,111 +1,27 @@
-import os
-from typing import Optional
+"""数据层客户端入口 —— 2026-09-23（AG3）**已由本地 SQLAlchemy 替换**。
 
-import httpx
-from supabase import create_client, Client, ClientOptions
+历史：上游此文件从 Coze workload identity 取 `COZE_SUPABASE_*` 凭据、经 httpx 建 Supabase
+（PostgREST）客户端并注入 Coze 埋点传输层（见 agent/UPSTREAM.md 四-3/四-9）。
+现状：用户拍板数据落**我们自己的 Postgres**，实现改为 `storage/database/local_client.py`
+（PostgREST 兼容薄层，SQLAlchemy 支撑）。
 
-_env_loaded = False
+**为什么保留同名函数**：上游 25+ 处业务调用（`tools/memory_tools.py`、`tools/url_fetch_tools.py`、
+`web/api_routes.py`、`services/{wechat,daily_review}_service.py`）都经 `get_supabase_client()`
+单入口取客户端；保名即可**零改动**切换到本地数据层，把风险集中在薄层单文件。
+新代码请用 `get_client()`；`get_supabase_client` 仅作兼容别名保留（更名收口见 UPSTREAM 六·AG4）。
+"""
+from __future__ import annotations
 
+from typing import Any
 
-def _load_env() -> None:
-    global _env_loaded
-
-    if _env_loaded or (os.getenv("COZE_SUPABASE_URL") and os.getenv("COZE_SUPABASE_ANON_KEY")):
-        return
-
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        if os.getenv("COZE_SUPABASE_URL") and os.getenv("COZE_SUPABASE_ANON_KEY"):
-            _env_loaded = True
-            return
-    except ImportError:
-        pass
-
-    try:
-        from coze_workload_identity import Client as WorkloadClient
-
-        client = WorkloadClient()
-        env_vars = client.get_project_env_vars()
-        client.close()
-
-        for env_var in env_vars:
-            if not os.getenv(env_var.key):
-                os.environ[env_var.key] = env_var.value
-
-        _env_loaded = True
-    except Exception:
-        pass
+from storage.database.local_client import LocalClient, create_local_client
 
 
-def get_supabase_credentials() -> tuple[str, str]:
-    _load_env()
-
-    url = os.getenv("COZE_SUPABASE_URL")
-    anon_key = os.getenv("COZE_SUPABASE_ANON_KEY")
-
-    if not url:
-        raise ValueError("COZE_SUPABASE_URL is not set")
-    if not anon_key:
-        raise ValueError("COZE_SUPABASE_ANON_KEY is not set")
-
-    return url, anon_key
+def get_client(*_args: Any, **_kwargs: Any) -> LocalClient:
+    """取本地数据层客户端（签名容忍上游的 `token=` 等实参，一律忽略）。"""
+    return create_local_client()
 
 
-def get_supabase_service_role_key() -> Optional[str]:
-    _load_env()
-    return os.getenv("COZE_SUPABASE_SERVICE_ROLE_KEY")
-
-
-def get_supabase_client(token: Optional[str] = None) -> Client:
-    url, anon_key = get_supabase_credentials()
-
-    if token:
-        key = anon_key
-    else:
-        service_role_key = get_supabase_service_role_key()
-        key = service_role_key if service_role_key else anon_key
-
-    # http2=True is set on HTTPTransport (not httpx.Client) because we provide
-    # a custom transport for report instrumentation wrapping.
-    transport: httpx.BaseTransport = httpx.HTTPTransport(http2=True)
-    try:
-        from coze_coding_dev_sdk.report import get_report_buffer, InstrumentedTransport
-
-        buffer = get_report_buffer()
-        print(f"[report] supabase-client: buffer = {bool(buffer)}")
-        if buffer:
-            transport = InstrumentedTransport(transport, buffer, source="supabase")
-            print("[report] supabase-client: InstrumentedTransport injected")
-    except Exception as e:
-        print(f"[report] supabase-client: setup failed: {e}")
-
-    http_client = httpx.Client(
-        transport=transport,
-        timeout=httpx.Timeout(
-            connect=20.0,
-            read=60.0,
-            write=60.0,
-            pool=10.0,
-        ),
-        limits=httpx.Limits(
-            max_connections=100,
-            max_keepalive_connections=20,
-            keepalive_expiry=30.0,
-        ),
-        follow_redirects=True,
-    )
-
-    if token:
-        options = ClientOptions(
-            httpx_client=http_client,
-            headers={"Authorization": f"Bearer {token}"},
-            auto_refresh_token=False,
-        )
-    else:
-        options = ClientOptions(
-            httpx_client=http_client,
-            auto_refresh_token=False,
-        )
-
-    return create_client(url, key, options=options)
+def get_supabase_client(token: str | None = None) -> LocalClient:  # 兼容别名
+    """**兼容别名**（上游调用点仍在用）—— 语义等价于 `get_client()`，`token` 被忽略。"""
+    return get_client(token=token)

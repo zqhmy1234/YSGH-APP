@@ -38,7 +38,7 @@
 |---|---|---|---|---|
 | 1 | `coze_workload_identity`（**所有 env + S3 token 都从它拉**） | `scripts/load_env.py:18-21`（根本不读 `.env`）、`storage/database/db.py:22-33`、`storage/database/supabase_client.py`、`storage/s3/s3_storage.py:63-82` | `python-dotenv` 读 `.env`；token 概念随 Supabase/S3 代理一并消失 | 🚧 AG2 完成 `scripts/load_env.py` 重写；`db.py` / `supabase_client.py` / `s3_storage.py` 待 AG3/AG4 |
 | 2 | `coze_coding_dev_sdk.database.Base` | `storage/database/shared/model.py:1` | 自有 `declarative_base`（新增 `storage/database/base.py`） | ✅ AG2 完成（`model.py` 已换源；三表 alembic 待 AG3） |
-| 3 | Supabase PostgREST（约 40 处 `client.table(...)`） | `tools/memory_tools.py`、`tools/url_fetch_tools.py:123/155/263/280`、`web/api_routes.py:58-84/116/173`、`services/wechat_service.py:90-102`、`services/daily_review_service.py:44-53` | SQLAlchemy repository（同三表，落我们 Postgres） | ⏳ |
+| 3 | Supabase PostgREST（约 40 处 `client.table(...)`） | `tools/memory_tools.py`、`tools/url_fetch_tools.py:123/155/263/280`、`web/api_routes.py:58-84/116/173`、`services/wechat_service.py:90-102`、`services/daily_review_service.py:44-53` | SQLAlchemy repository（同三表，落我们 Postgres） | ✅ AG3 完成（PostgREST 兼容薄层，25+ 调用点零改动；见六·AG3） |
 | 4 | Coze 模型网关（`COZE_INTEGRATION_MODEL_BASE_URL` + `coze` identity key；模型 `glm-4-7-251222`） | `agents/agent.py:74-90`；`config/agent_llm_config.json:12` | 百炼 OpenAI 兼容端点 + `DASHSCOPE_API_KEY` + 模型名可配 | ✅ AG2 完成并**实测可用**（见六） |
 | 5 | `coze_coding_dev_sdk.ASRClient` | `tools/voice_tools.py:11,94`（且前置依赖**系统 ffmpeg**，见 `:34-45`） | 复用我们后端既有百炼 ASR（`backend/app/services/external/asr/`）；App 路径下语音本就走我们后端，此项可能整体不需要 | ⏳ |
 | 6 | `coze_coding_dev_sdk.FetchClient`（网页抽取） | `tools/url_fetch_tools.py:35` | 自建 httpx + 正文抽取（**后端目前无此能力**，需新增；`grep url_fetch/readability/html2text` 零命中） | ⏳ |
@@ -87,6 +87,44 @@
 **验证状态**：`py_compile` 5 文件通过；新增 3 文件 `ruff` 干净（⚠️ 因 `agent/` 在 lint 豁免名单内，须手工 `ruff check … --config ruff.toml`——**不可带 `--force-exclude`，否则会把显式传入的文件也排除，造成"假通过"**）。**未验证**：整链 import 与真跑（`langchain`/`langgraph` 尚未安装，属 AG5 的服务依赖）。
 
 **遗留到后续批次**：`pyproject.toml` 依赖瘦身（等 AG4 Coze import 清零后一次做，避免"声明瘦了但 import 还在"）；`db.py`/`supabase_client.py`/`s3_storage.py` 的 Coze 调用（AG3/AG4）。
+
+### AG3 · 数据层落我们自己的 Postgres（2026-09-23）
+
+**表结构与迁移（backend 侧）**
+
+| 文件 | 动作 | 说明 |
+|---|---|---|
+| `backend/migrations/versions/a4b5c6d7e8f9_add_agent_memory_tables.py` | **新增** | 三表迁移（`memory_categories` / `memories` / `knowledge_collections`），与上游 ORM 逐列对齐；含索引与外键；带 `downgrade` |
+| `backend/app/db/models/memory_agent.py` | **新增** | **ORM 镜像**（`MemoryCategory` / `Memory` / `KnowledgeCollection`）——防 `--autogenerate` 把"库里有、metadata 没有"的表判为多余而生成 **DROP TABLE**（能删数据的静默事故） |
+| `backend/app/db/models/__init__.py` | 改 2 行 | 注册镜像模型（`Base.metadata` 可见） |
+
+**迁移父节点的坑（已固化教训）**：首次把 `down_revision` 写成**按文件时间看起来最新**的 `f2a3b4c5d6e7`，
+结果它与真 tip `b8c9d0e1f2a3` 分叉 ⇒ `alembic upgrade head` 报 **"Multiple head revisions are present"**。
+正解：**父节点只能由 `alembic heads` 判定**（真链：`f2a3b4c5d6e7 → b2a3c4d5e6f7 → … → c8d9e0f1a2b3 → b8c9d0e1f2a3`）。
+
+**数据层（agent 侧）**
+
+| 文件 | 动作 | 说明 |
+|---|---|---|
+| `src/storage/database/local_client.py` | **新增** | **PostgREST 兼容薄层**（SQLAlchemy 支撑）：`select/eq/neq/gt/gte/lt/lte/in_/order/limit/range/maybe_single/single/insert/update/delete` + `count="exact"` + 关系嵌入 `memory_categories(name)` → 嵌套 dict |
+| `src/storage/database/supabase_client.py` | **重写为入口** | 保名 `get_supabase_client()`（25+ 调用点**零改动**）+ 新增规范名 `get_client()`；移除该文件的全部 Coze/Supabase 依赖 |
+| `tests/test_local_client.py` | **新增** | AG3 验收测试（5 例）：落库往返 / count / ISO 时间过滤 / 排序分页 / 关系嵌入 / 带条件更新删除 / **两条安全护栏** |
+
+**为什么用薄层而不是逐个改写调用点**：25+ 处调用**全部经 `get_supabase_client()` 单入口**（已核），
+保名替换即可零改动切换；风险集中在薄层单文件（可单测）。**代价**：多一层适配，故在文件头写明"业务逻辑不动，
+替换点是薄层"，并在退场时逐批收敛（AG7 域）。
+
+**把 PostgREST 的宽松处刻意改严**（两处，防"最贵的一类故障"）：
+  ① 列名对 ORM 校验，**写错列名立即报错**（PostgREST 会 400，本地实现若不校验就静默返回空）；
+  ② **无条件的 update/delete 直接拒绝**（防全表事故）。
+
+**验证（实证）**：
+  · `alembic upgrade head` 成功（`Running upgrade b8c9d0e1f2a3 -> a4b5c6d7e8f9`），heads 恢复单一；
+  · schema 实证：`memory_categories` 5 列/3 索引 · `memories` 14 列/6 索引 · `knowledge_collections` 17 列/5 索引 · 外键在；
+  · 读写往返实证：插入分类+记忆（JSON 列原样）→ 联表读回 → 清理；
+  · `agent/tests/test_local_client.py` **5 passed**；
+  · **三表零漂移**（`alembic check` 只余两条 SERIAL 序列 INFO）。
+  · ⚠️ `alembic check` 整体**仍红**，但差异**全为既有漂移**（本地库 12+ 张 ORM 已不声明的遗留表 + `users`/`wechat_messages` 类型漂移）——已登记排期 **AG8**，与本批无关。
 
 **✅ Token Plan 账号实证（同日 · 用户提供凭证后）**：最终验收**用的是 Token Plan 账号**——
 key 指纹 `len=116 prefix=sk-sp- sha256[:8]=a5c42ad8`（用户 Windows 用户级环境变量），

@@ -17,6 +17,7 @@ from app.db.models.content import Content, CorrectionLog
 from app.db.models.echo import EchoHistory
 from app.db.models.event import Event, EventEditLog, EventItem
 from app.db.models.geo import GeoCache
+from app.db.models.memory_agent import KnowledgeCollection, Memory, MemoryCategory
 from app.db.models.message import Message
 from app.db.models.profile import (
     ProfileAnnotationPool,
@@ -41,6 +42,9 @@ __all__ = [
     "EventEditLog",
     "EventItem",
     "GeoCache",
+    "KnowledgeCollection",
+    "Memory",
+    "MemoryCategory",
     "Message",
     "OfflineQueue",
     "ProfileAnnotationPool",
