@@ -46,6 +46,20 @@
 ## 4. 缺陷单登记
 
 > 模板见 SOP §4。
+>
+> ⚠️ **核验入口变更（2026-09-23 独立核实）**：本表各行的 `fix/4b XXXXXXX` 式 commit 号**已大面积失效**——
+> `fix/4b` 分支经历 rebase 重写历史，旧 commit 成为不可达对象并被服务端 GC。实测下列 10 个 commit
+> **对象在仓库中不存在**：`d09f639` `f1f8a3c` `81424fb` `23e8604` `2a0194b` `381a210` `97eb795`
+> `8a0b27a` `992e4a` `6f43e87`。
+>
+> **修复的代码内容本身未丢失**——已逐项验证在 `develop` 主干（D-15/D-16/D-18/D-19/D-21 五项 ✅，
+> D-22 后端半 ✅）。**但请勿再用 commit 号作为核验入口**，改用「代码标记 + 文件路径」。
+> 详细复核位置见 `技术文档/忆述光华_接手待办与现状核实_20260923.md` §二。
+>
+> 另：**D-22 行「09-01 客户端半落地 23e8604」的记载与实际不符**——客户端侧
+> `agrees_with_user` 全仓零命中、`submitArbitrate` 零调用点、arbitrate 请求不含
+> `preferred_label`/`content_id`。后端 schema 注释自述「R2 客户端重构时消费，本波仅透传入 job」，
+> 实际状态=**客户端半未落地**。以该注释为准。
 
 | 编号 | 清单 | 归属 | 处置 |
 |---|---|---|---|
@@ -68,7 +82,7 @@
 | D-18 | 07 R7 | client/uni_modules/yishu-background-tasks index.uts:72-79 | 🔧 已修待复验（高危·后台调度永久静默失效；R1-a 8cb15b4，08-29）：`workManagerRuntimePresent()` 用 `ClassLoader.getResource('androidx/work/WorkManager.class')` 探测——Android class 全编进 dex，`.class` 资源永不存在→**恒 false**（云包 dex 尸检：work∈classes3、BgTaskManager∈classes2=打包成功仍判降级）。**正式包同样永不启用 WorkManager**，B5d 唤醒/周期/退避全废，仅靠 setInterval 假活。方向：改探测插件自带 marker asset（assets 对 getResource 有效且无异常），或验证 UTS `catch (e: any)` 兜 CNFE 后改 Class.forName；验收=重打包日志 `initBackgroundTasks ok`。**08-29 落地**：探测改 nativeResources 标记资产（`AssetManager.list('yishu')` 免异常判定，marker⇒classes 同包不变式）；R2 云打包 dex 尸检+日志复验 |
 | D-19 | 07 R7 | client/uni_modules/yishu-photo-watch（DataSyncService :255/:405） | 🔧 已修待复验（高危·FGS 保活全基座必死；R1-a 8cb15b4，08-29）：服务仅 UTS 源码定义，**无 manifest 注册**（插件无 config.json/manifest 片段——依赖走 libs/*.jar 纯文件；云包 manifest `<service>` 实测只有 WebSocketService），且 FOREGROUND_SERVICE* 权限缺失→startService 无对象可起；源码注释"标准基座自动回退"掩盖了**自定义基座/正式包同样不生效**的真相（老人场景=录音/同步无保活，省电查杀裸奔）。方向：UTS 插件 config.json 补 services 声明+manifest 权限，随 D-18 一并重打包复验（含会话 B FGS 通知项）。**08-29 真根因修正+落地**：08-28 单内「插件 manifest 已含声明」系写错合并点——**UTS 插件内 AndroidManifest.xml 不参与云打包合并**（ask.dcloud.net.cn/question/214927 实证），service+权限已迁**工程根 client/AndroidManifest.xml**（官方 3.6.0+ 合并点）；并抓获伴生雷：.gitignore 通配 `AndroidManifest.xml` 会吞工程根真源（08-28 Agent K 走位疑因）已豁免 |
 | D-21 | 4a/4b 真机复验 | client 页面滚动（index/manage） | 📋 移交 Wave4（UI 缺陷·两处滚动失效）：①画像管理页（manage.uvue）**整页无 scroll-view**——Tab1 51 个维度/Tab2 敏感话题内容超屏无法滚动（**08-29 侦察：wrap1-agentA2-ui-restore 分支已含 scroll-view 修复尝试（manage/messages/interview/record 四页+5.24 CSS 迁移），未入库——其 merge 后本单随 R2 复验关单**）；②时间轴（index.uvue）scroll-view 仅 `flex:1`、父容器 .page 无 flex 高度约束→uni-app x VDOM 下高度未定，scroll-y 不生效（真机两页均"不能向下滑动"复现）。方向：manage 补 scroll-view 容器 + 列表项固定高度；index .page 设 `display:flex;flex-direction:column` 且 scroll-view 显式高度（或 height:100vh 类），重编译真机复验可滚动 |【**09-01 状态变化**：修复已随 wrap1 合流入库 develop@cea5025（四页 scroll-view+manage 重建+统一 TabBar+Vapor 全量编译零错警+峰宝九条验机）——R2 真机复验关单】
-| D-22 | P-2 诊断（O-2 坐实升单） | client record.uvue + backend classifier/corrections | 🆕 新单（08-29，P-2 根因坐位置信 95%，docs/P2诊断_O1O2_20260829.md §2）：onTagTap 成功路径把**裁决回声当用户意图**——arbitrate 请求不含用户所点标签（契约缺口），finalLabel 覆盖乐观更新并以 new_label 写回 correction_log→层①永不学习；首次 mixed 后同文本相似度 1.0 命中旧 mixed 自我锁死（=「点任何标签恒混合」）。配套：classifier.py:44-69 SetFit 加载失败**静默降级恒 mixed conf=0.0**（与 D-16 同族伪装）；POST /corrections 不回写 contents.content_class；test mock 常量向量恒 sim=1.0 盲区。方向=P2 报告 §2.3 表（P0 record.uvue 用户意图立即落层①+arbitrate 仅参考回显、P0 classifier degraded 显式标记透传、P1 契约增量+回写、P2 回归用例）；污染 correction_log 清洗脚本 R3 走人工确认。**08-29 已拍板并批（§1.9）+ 后端半已落地**（fix/4b 81424fb：degraded 标记/active 回写 content_class/ArbitrateRequest 契约字段/测试盲区修复，91 测试全绿）；客户端半（record.uvue 意图重构）随 5.24 迁移 rebase 后实施 |【09-01 客户端半落地 fix/4b 23e8604：onTagTap 意图先流重构+仲裁纯参考回显（preferred_label/content_id 全链透传+agrees_with_user echo+degraded 忽略）——R2 真机纠错学习闭环复验+correction_log 污染清洗 R3】
+| D-22 | P-2 诊断（O-2 坐实升单） | client record.uvue + backend classifier/corrections | 🆕 新单（08-29，P-2 根因坐位置信 95%，docs/P2诊断_O1O2_20260829.md §2）：onTagTap 成功路径把**裁决回声当用户意图**——arbitrate 请求不含用户所点标签（契约缺口），finalLabel 覆盖乐观更新并以 new_label 写回 correction_log→层①永不学习；首次 mixed 后同文本相似度 1.0 命中旧 mixed 自我锁死（=「点任何标签恒混合」）。配套：classifier.py:44-69 SetFit 加载失败**静默降级恒 mixed conf=0.0**（与 D-16 同族伪装）；POST /corrections 不回写 contents.content_class；test mock 常量向量恒 sim=1.0 盲区。方向=P2 报告 §2.3 表（P0 record.uvue 用户意图立即落层①+arbitrate 仅参考回显、P0 classifier degraded 显式标记透传、P1 契约增量+回写、P2 回归用例）；污染 correction_log 清洗脚本 R3 走人工确认。**08-29 已拍板并批（§1.9）+ 后端半已落地**（fix/4b 81424fb：degraded 标记/active 回写 content_class/ArbitrateRequest 契约字段/测试盲区修复，91 测试全绿）；客户端半（record.uvue 意图重构）随 5.24 迁移 rebase 后实施 |【09-01 客户端半落地 fix/4b 23e8604：onTagTap 意图先流重构+仲裁纯参考回显（preferred_label/content_id 全链透传+agrees_with_user echo+degraded 忽略）——R2 真机纠错学习闭环复验+correction_log 污染清洗 R3】**❌ 2026-09-23 核实推翻：上述客户端半代码在仓库中查无实据（`agrees_with_user` 全仓零命中、`submitArbitrate` 零调用点、请求不含 preferred_label/content_id），且该 commit 对象不存在。后端 schema 自述「R2 客户端重构时消费」→ 实际=客户端半未落地，列入待办。详见 §4 顶部核实说明**】
 
 ## 5. 环境事件记录（本波内）
 
