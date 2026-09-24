@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 12:30 · commit eaf0163 · ts=1790224243
+- **错误**：uni-app x 的 uvue 样式外置能力（<style> 内 @import 外部 .css）此前无先例，容易想当然以为必须先装 scss 插件；且"编译通过"不足以证明 @import 生效（ucss 可能静默丢弃）
+- **根因**：本机 HBuilderX plugins/ 无 scss/sass 编译插件、本仓也无 lang=scss/@import/.scss 先例 ⇒ 能力边界未知；而 @import 若被丢弃，编译仍会"成功"（无 error），属静默失效
+- **修复**：先做最小探针：在真实 uvue 里加 @import 与 @import 引用的类；编译后再到编译产物 bytes（unpackage/dist/*/app-android/bytes/*.style.bytes）里检索该类名，命中才算被 ucss 真正处理；实测无需 scss 插件即可用（.uts 组合式函数亦验证可行）
+- **相关文件**：client/pages/detail/detail.uvue
+- **教训**：uvue 样式外置用 <style> 内 @import 外部 .css 即可，不必装 scss 插件；验证 @import 是否生效必须查编译产物 bytes 里的类名，编译通过 ≠ 样式生效
+
+---
+
 ### 2026-09-24 12:05 · commit 40fd672 · ts=1790222701
 - **错误**：拆分脚本改写调用点导入时丢/加错行首缩进：B5b 把 lead 恒取空串（m.group(0) 自 import 起）⇒ 后续生成的导入行无缩进；B5c 改为 lead=t[line_start:m.start()] 后，首行又被叠加一次 lead（原行缩进仍在原位）⇒ 首行缩进翻倍
 - **根因**：缩进应从「整行行首」取（rfind 换行），且替换时**首行不能再加 lead**（原行前导空白仍在），只有后续新增行需要补 lead；两轮都是在「替换串的定位」上想当然

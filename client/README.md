@@ -37,6 +37,7 @@ client/
 │   ├── voice.uts / audio_player.uts / text_recorder.uts
 │   ├── sync_{types,queue,local,pipeline,schedule}.uts / event_sync.uts / event_ops.uts / queue_store.uts   # 同步域于 B5b 按职责拆分
 │   └── contract.uts（端点/字段单一契约源）· shell_state.uts · pause_controller.uts · agg_runner.uts · time.uts
+├── styles/                       # 外置样式（B5d：detail.uvue 的 <style> 纯移动为 detail.css，uvue 侧 @import）
 └── uni_modules/                  # 4 个 UTS 插件（**无 .kt，已全 UTS**）
     ├── yishu-photo-watch/        # 相册监听 + dataSync 前台服务（utssdk/app-android/{config.json,index.uts}）
     ├── yishu-recorder/           # 录音（含运行时权限申请）

@@ -23,11 +23,6 @@
         "reason": "L-02 script 848 行，时间轴主页逻辑/模板纠缠",
         "target": "批次 B5"
       },
-      "client/pages/detail/detail.uvue": {
-        "lines": 1165,
-        "reason": "L-08 详情页样式膨胀（style 592）",
-        "target": "批次 B5"
-      },
       "client/components/TabAi/TabAi.uvue": {
         "lines": 974,
         "reason": "AI 页；含 USE_MOCK_CHAT 演示开关（已登记 B8）",
