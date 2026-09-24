@@ -122,7 +122,9 @@ class TencentCiContentSafety(ContentSafetyAdapter):
     name = "tencent_ci"
 
     def check_text(self, text: str) -> dict:
-        from app.services.external import moderate
+        # D10-3（2026-09-25）：改走策略入口（托管优先、chat 兜底）——此前直连
+        # `external.dashscope` 绕过选择器，"托管护栏优先"在微信文本链上不生效。
+        from app.services.llm_ops.moderate import moderate
 
         guard = moderate(text)
         if not guard["pass"]:

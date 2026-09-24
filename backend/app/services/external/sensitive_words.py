@@ -86,6 +86,14 @@ _EVENT_FALLBACK_WORDS = {
 _EVENT_REFLUX_WORDS: set[str] = set()
 _REFLUX_CATEGORY = "回流词"
 
+# 硬规则回流词（D10-5 · 2026-09-25）：**被 moderate/LLM 判定违规（reject）** 的词条。
+# 与 `_EVENT_REFLUX_WORDS`（软事件级：只影响"是否敏感话题"标记，不拒发）**刻意分开**：
+#   · 硬词 ⇒ `check_sensitive` 直接 `reject`，兑现 guard.py 声明的"自动入规则表、
+#     下一轮不必再调 LLM"（此前声明与实现不符：回流词只进软表，硬规则从不读）；
+#   · 软词 ⇒ 只有事件级标记（把"分手/离世"这类话题升级为拒发是**错误的**，
+#     审计 D10-5 明确警告过这个坑）。
+_HARD_REFLUX_WORDS: set[str] = set()
+
 
 # 网址黑名单：1.5 万域名，禁止子串匹配（太慢）→ 提取域名后集合 O(1) 查询
 _RE_URL_DOMAIN = re.compile(
@@ -137,8 +145,13 @@ def _load_event_words() -> dict[str, set[str]]:
     return result
 
 
-def add_violation_word(word: str, category: str | None = None) -> None:
-    """违规词热加入（B5b 回流）：进程内立即进入事件级规则判定。
+def add_violation_word(word: str, category: str | None = None, *, hard: bool = False) -> None:
+    """违规词热加入（B5b 回流）：进程内立即进入规则判定。
+
+    - `hard=False`（默认）：只进**事件级软表**（`_EVENT_REFLUX_WORDS` / 对应事件
+      类别），只影响"是否敏感话题"标记，**不**拒发（软话题本就不阻断入库）。
+    - `hard=True`：同时进**硬规则回流表**（`_HARD_REFLUX_WORDS`）⇒
+      `check_sensitive` 下一轮即 `reject`（被 LLM 判违规的词不必再调一次 LLM）。
 
     category 给定时同时并入对应事件类别（如 LLM 判"分手"类敏感），
     否则归入"回流词"独立类别。持久化由调用方写 sensitive_words(level=3)。
@@ -146,6 +159,8 @@ def add_violation_word(word: str, category: str | None = None) -> None:
     w = (word or "").strip()
     if not w:
         return
+    if hard:
+        _HARD_REFLUX_WORDS.add(w)
     if category and category in _load_event_words():
         _load_event_words()[category].add(w)
     else:
@@ -291,6 +306,15 @@ def check_sensitive(text: str) -> dict:
     #    审查 CRITICAL 修复：不再提前 return——与词表检测同时执行，reject 恒优先于 mask，
     #    防止"敏感词+黑名单网址"同现时 reject 语义被 URL 分支旁路。
     url_masked, url_hits = _check_urls(text)
+
+    # 0.5 硬规则回流词（D10-5）：被 moderate/LLM 判过违规的词，下一轮直接 reject
+    #     （reject 恒优先于 mask，故置于词表 mask 分支之前；命中即拒，理由明示来源）
+    hard_hits = sorted(w for w in _HARD_REFLUX_WORDS if w and w in normalized)
+    if hard_hits:
+        return {"pass": False, "action": "reject",
+                "reason": f"命中回流违规词: {hard_hits[0]}",
+                "masked_text": None, "matched": hard_hits,
+                "categories": [_REFLUX_CATEGORY]}
 
     # 1. 词表类检测
     matched: list[str] = []

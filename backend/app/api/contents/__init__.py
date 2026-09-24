@@ -288,15 +288,19 @@ def create_content(
             raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409)
 
     # 护栏检测（B5b · 2026-08-20 接入普通入库）：reject → 拒绝入库；mask → 打码后入库
-    from app.services.external.dashscope import moderate
+    # D10-3（2026-09-25）：改走**策略入口** `llm_ops.moderate`（托管优先、chat 兜底）
+    # —— 此前直连 `external.dashscope` 绕过策略选择器；D10-1：判定走 `verdict_action`
+    # （先看 pass），不再只认 `action` 键（缺键即静默放行 = fail-open）。
+    from app.services.llm_ops.moderate import moderate, verdict_action
 
     check_text = req.text or ""
     if check_text.strip():
         verdict = moderate(check_text)
-        if verdict.get("action") == "reject":
+        action = verdict_action(verdict)
+        if action == "reject":
             reflow_violation(db, verdict)
             raise ApiError(ERR_CONTENT_003, f"内容含敏感信息未保存：{verdict.get('reason', '')}", http=422)
-        if verdict.get("action") == "mask" and verdict.get("masked_text"):
+        if action == "mask" and verdict.get("masked_text"):
             req.text = verdict["masked_text"]
 
     # B5a 集成（Wave4 AgentJ 需求 1 配套）：voice 带 cos_key 时幂等——complete 已建 voice

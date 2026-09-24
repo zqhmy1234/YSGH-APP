@@ -171,13 +171,16 @@ def register_photo_content(
             return str(existing.id)
 
     # 2. 护栏 pre-check（multipart 路径；分片路径由管线 CI 审核覆盖）
+    #    D10-3（2026-09-25）：改走策略入口 `llm_ops.moderate`（托管优先、chat 兜底），
+    #    D10-1：判定走 `verdict_action`（pass=False 恒为 reject，不受 `action` 键缺失影响）。
     if moderate:
-        from app.services.external.dashscope import moderate as _moderate
+        from app.services.llm_ops.moderate import moderate as _moderate
+        from app.services.llm_ops.moderate import verdict_action as _action
 
         check_text = (meta_obj.get("text") or "").strip()
         if check_text:
             verdict = _moderate(check_text)
-            if verdict.get("action") == "reject":
+            if _action(verdict) == "reject":
                 reflow_violation(db, verdict)
                 raise ModerateRejectError(
                     f"内容含敏感信息未保存：{verdict.get('reason', '')}"

@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 02:10 · commit da8b318 · ts=1790273419
+- **错误**：护栏域两条 P0 fail-open（D10-1 判定契约分叉 / D10-2 托管空响应判放行）
+- **根因**：同一 moderate 语义存在**两套返回契约**且无类型约束（裸 dict）：dashscope.moderate 带 action/masked_text 而 llm_ops 选择器（托管）只带 pass/reason；调用方按 action 分派 ⇒ fail-closed 分支漏 action 键就变成原文入库（判拒发却放行）。托管侧则对 200+空 content 用 not blocked 判定 ⇒ 空字符串直接放行；既有测试只覆盖 PASS/BLOCK/400/网络异常四种，空响应与畸形 200 无覆盖。
+- **修复**：① dashscope fail-closed 两处补 action=reject；② 新增 llm_ops.moderate.verdict_action（pass 优先、缺键亦判 reject）+ 4 条主链改走策略入口并按 verdict_action 分派；③ 托管空/畸形响应改抛 RuntimeError 走 chat 兜底；④ 补 16 例回归 + 源码级防漂移断言（4 链不得直连 dashscope）
+- **相关文件**：backend/app/services/llm_ops/moderate.py
+- **教训**：「同一函数两套返回契约、消费方按可选键分派」是 fail-open 的标准温床：判定必须收敛为**一个函数**（pass 优先、缺键 fail-safe），并让所有调用方只经它判定
+
+---
+
 ### 2026-09-25 02:00 · commit ba9e4c8 · ts=1790272829
 - **错误**：D02-2/D09-2：媒体键前缀白名单在 5 处各写一份字面量，wechat/ 命名空间漏网
 - **根因**：同一「存储键命名空间」语义无单一来源——api/media.py、schemas/content.py、api/contents/__init__.py、services/external/storage.py、services/wechat/service.py 各自维护前缀字面量；且既有测试只覆盖 photos/ 命名空间，微信链路建 Content 用的是 wechat/ 键却从无测试打到 /media/{key} 端点（覆盖是伪造的：单测直调 service，绕过 HTTP 白名单）

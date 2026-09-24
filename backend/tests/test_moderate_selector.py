@@ -20,7 +20,12 @@ moderate_mod = importlib.import_module("app.services.llm_ops.moderate")
 
 
 def test_selector_managed_first(monkeypatch):
-    """托管可用 → 托管判定直接返回（不触发 chat 兜底）"""
+    """托管可用 → 托管判定直接返回（不触发 chat 兜底）
+
+    D10-1（2026-09-25）：选择器现在**归一 `action`**（托管契约原本无该键）
+    且先跑规则层——故不再断言"逐字等于托管原样返回"，改为断言语义等价
+    + `action` 必存在（这正是修复点：调用方按 action 分派）。
+    """
     managed_verdict = {
         "pass": False,
         "reason": "managed-block",
@@ -38,8 +43,11 @@ def test_selector_managed_first(monkeypatch):
 
     monkeypatch.setattr(moderate_mod, "qwen_response_check", _fake_managed)
     monkeypatch.setattr(moderate_mod.dashscope, "moderate", _fake_chat)
-    result = moderate_mod.moderate("违规内容")
-    assert result == managed_verdict
+    result = moderate_mod.moderate("一段普通内容")
+    assert result["pass"] is False
+    assert result["action"] == "reject", "托管拒发必须带 action（D10-1）"
+    assert result["reason"] == "managed-block"
+    assert result["detector"] == "managed"
     assert chat_calls["n"] == 0
 
 

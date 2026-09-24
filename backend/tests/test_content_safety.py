@@ -128,15 +128,20 @@ def test_rule_check_image_pass():
 
 
 def test_tencent_ci_check_text_uses_moderate(monkeypatch):
+    """D10-3：微信文本链走**策略入口** `llm_ops.moderate`（不再是 external.dashscope）。"""
+    import importlib
+
+    selector = importlib.import_module("app.services.llm_ops.moderate")
     monkeypatch.setattr(
-        "app.services.external.moderate",
+        selector,
+        "moderate",
         lambda text: {"pass": False, "reason": "guard", "matched": ["x"]},
     )
     r = get_content_safety("tencent_ci").check_text("bad")
     assert r["pass"] is False
     assert r["labels"] == ["x"]
 
-    monkeypatch.setattr("app.services.external.moderate", lambda text: {"pass": True, "reason": ""})
+    monkeypatch.setattr(selector, "moderate", lambda text: {"pass": True, "reason": ""})
     assert get_content_safety("tencent_ci").check_text("ok")["pass"] is True
 
 

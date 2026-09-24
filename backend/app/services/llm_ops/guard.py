@@ -14,6 +14,9 @@
    抓\"他说以后别联系了\"类表达；mock/未配 key → []，静默降级）。
 3. reflow_violation_words：违规词回流（检测违规 → sensitive_words level=3，
    自动入规则表；进程内经 sensitive_words.add_violation_word 热加入）。
+   D10-5（2026-09-25 修）：**无 category** 的调用 = moderate 违规词回流 ⇒ 进
+   **硬规则表**（`_HARD_REFLUX_WORDS`，下一轮 `check_sensitive` 直接 reject，
+   兑现"防重复调 LLM"）；带 category 的 = 软事件类别种子词 ⇒ 只进事件级软表。
 
 现有规则预检 + moderate 已由 base.moderate 提供，本模块只做扩展。
 """
@@ -190,7 +193,11 @@ def reflow_violation_words(
                 continue
             from app.services.external.sensitive_words import add_violation_word
 
-            add_violation_word(word, category)
+            # D10-5（2026-09-25）：**无 category** 的调用来自 moderate 违规词回流
+            # ⇒ 进硬规则表（下一轮 check_sensitive 直接 reject，不必再调 LLM）；
+            # 带 category 的来自 `reflow_llm_categories` 的**软**事件类别种子词
+            # ⇒ 只进事件级软表（升级为拒发是错的，见审计 D10-5）。
+            add_violation_word(word, category, hard=category is None)
             inserted += 1
         local.commit()
     finally:

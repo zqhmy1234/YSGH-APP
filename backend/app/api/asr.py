@@ -23,7 +23,7 @@ from app.services.external.asr import (
     transcribe,
     validate_audio_bytes,
 )
-from app.services.external.dashscope import moderate
+from app.services.llm_ops.moderate import moderate, verdict_action
 
 router = make_router(prefix="/api/v1/asr", tags=["asr"])
 # 护栏独立域（P2-06 前缀统一：guard/check 不属于 ASR 域，独立 /api/v1/guard）
@@ -85,12 +85,18 @@ def transcribe_audio(
             raise _asr_error(exc) from exc
 
         if result.outcome == "no_speech":
-            verdict = {"pass": True, "reason": "no-speech"}
+            verdict = {"pass": True, "reason": "no-speech", "action": "allow"}
         else:
             verdict = moderate(result.text)
+        # D10-12（2026-09-25）：规则层判 `mask`（号码/身份证/银行卡）时，回传**打码后**
+        # 文本——原实现只取 `pass`/`reason`，转写出的 PII 以**原文**返回客户端
+        # （打码只在后续 POST /contents 生效；纯转写消费场景拿到的就是裸 PII）。
+        resp_text = result.text
+        if verdict_action(verdict) == "mask" and verdict.get("masked_text"):
+            resp_text = verdict["masked_text"]
         return ApiResponse(
             data=AsrTranscribeResponse(
-                text=result.text,
+                text=resp_text,
                 outcome=result.outcome,  # type: ignore[arg-type]
                 channel=result.channel,  # type: ignore[arg-type]
                 emotion=result.emotion,

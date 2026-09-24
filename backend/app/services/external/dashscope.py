@@ -184,13 +184,18 @@ def moderate(text: str) -> dict:
         # 开发/测试 mock 保持放行（本地联调契约）。
         if settings.app_env == "production":
             logger.error("生产环境未配置 DASHSCOPE_API_KEY，护栏默认拒发（fail-closed）")
-            return {"pass": False, "reason": "guard-unavailable"}
+            # D10-1（2026-09-25 P0）：fail-closed 分支**必须带 `action`** ——
+            # 调用方（contents / photo_content）按 `action` 分派，缺键 ⇒ 既非 reject
+            # 也非 mask ⇒ 两条 if 均不成立 ⇒ **明确判"拒发"却原文入库**。
+            return {"pass": False, "reason": "guard-unavailable", "action": "reject",
+                    "matched": rule["matched"], "categories": rule["categories"]}
         logger.info("护栏 mock 放行（未配置百炼，规则预检已过）")
-        return {"pass": True, "reason": "mock"}
+        return {"pass": True, "reason": "mock", "action": "allow"}
     try:
         answer = _chat_text(_GUARD_SYSTEM, text, model=QWEN_GUARD).strip().upper()
         blocked = any(m in answer for m in _BLOCK_MARKERS) or answer == "BLOCK"
-        return {"pass": not blocked, "reason": "guard" if blocked else ""}
+        return {"pass": not blocked, "reason": "guard" if blocked else "",
+                "action": "reject" if blocked else "allow"}
     except Exception as exc:  # noqa: BLE001 —— fail-safe：不可用即拦截
         logger.warning("护栏调用失败，fail-safe 拦截: %s", exc)
-        return {"pass": False, "reason": "guard-unavailable"}
+        return {"pass": False, "reason": "guard-unavailable", "action": "reject"}

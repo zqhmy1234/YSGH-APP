@@ -130,6 +130,14 @@ def qwen_response_check(
             last_exc = RuntimeError(f"托管护栏响应解析失败: {exc}")
             continue
         answer = (content or "").strip().upper()
+        if not answer:
+            # D10-2（2026-09-25 P0）：200 但 content 为空/结构异常 ≠ 放行。
+            # 原实现 `"pass": not blocked` ⇒ 空响应（`""`）判 `pass=True`（**唯一漏网的
+            # fail-open**：同函数对非 200/审查拦截走 RuntimeError 兜底，只有这里放行）。
+            # 现按「不可用」处理 → 重试；耗尽后抛 RuntimeError ⇒ 调用方走 chat 兜底
+            # （生产无 key 时 dashscope.moderate 已 fail-closed 拒发）。
+            last_exc = RuntimeError("托管护栏返回空响应（无法判定，按不可用处理）")
+            continue
         blocked = any(m in answer for m in _BLOCK_MARKERS) or answer == "BLOCK"
         return {
             "pass": not blocked,
@@ -141,19 +149,17 @@ def qwen_response_check(
 
 
 def moderate_managed(text: str) -> dict:
-    """托管优先、chat 兜底 策略入口（B5b-1 定稿接线点）
+    """托管优先、chat 兜底 策略入口（B5b-1 定稿接线点）——**委托单一策略实现**。
 
-    1. 托管可用 → qwen_response_check（pass/reject 由托管判定）；
-    2. 托管不可用/异常 → dashscope.moderate 兜底（规则预检 + qwen-flash chat 双保险，
-       生产无 key 时 fail-closed 拒发）。
-    （重构 P0-1 解环：chat 兜底直接走 dashscope，不再 import llm_ops.base；
-     与 llm_ops/moderate.py 选择器策略一致。）
-    返回结构兼容 base.moderate：{"pass": bool, "reason": str, ...}。
+    D10-4（2026-09-25）：本函数与 `llm_ops/moderate.py::moderate` 曾是**同语义双实现**
+    （两者都是"try 托管 → except → dashscope.moderate"），差异只有一行 logger；
+    `tests/test_moderate_selector.py:80` 自己也把两者当"行为等价"一起断言。
+    现只保留**一处**策略实现（`llm_ops.moderate.moderate`，含 D10-1 契约归一与
+    规则层连续性），本函数退化为薄委托——生产代码零调用（仅测试/兼容入口），
+    但语义与策略入口恒等，不再有漂移面。
+
+    返回结构 `{"pass": bool, "reason": str, "action": str, ...}`（与选择器一致）。
     """
-    try:
-        return qwen_response_check(text)
-    except RuntimeError as exc:
-        logger.info("托管护栏不可用，chat 兜底: %s", exc)
-        from app.services.external.dashscope import moderate as _chat_moderate
+    from app.services.llm_ops.moderate import moderate as _selector
 
-        return _chat_moderate(text)
+    return _selector(text)

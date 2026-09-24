@@ -300,6 +300,9 @@ def _autouse_sensitive_words_state(monkeypatch):
     event_snapshot = {cat: set(words) for cat, words in event_words.items()}
     # 进程级回流词集合替换为全新 set：monkeypatch 用例结束后自动还原原集合
     monkeypatch.setattr(sw, "_EVENT_REFLUX_WORDS", set())
+    # D10-5（2026-09-25）：硬规则回流表同理（hard=True 回流会让 check_sensitive
+    # 直接 reject，跨用例残留会污染无关测试）
+    monkeypatch.setattr(sw, "_HARD_REFLUX_WORDS", set())
 
     yield
 
