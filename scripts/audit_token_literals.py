@@ -83,9 +83,33 @@ def _strip_var_fallbacks(code: str) -> str:
     return "".join(out)
 
 
+GEN_START = "/* >>> token-wave:generated:start"
+GEN_END = "/* <<< token-wave:generated:end"
+
+
+def _strip_generated(code: str) -> str:
+    """剔除**生成区**（标记之间的内容）。
+
+    为什么：令牌声明块由 `scripts/token_codemod.py` 从 `design_tokens.dtcg.json` 生成——
+    它是**产物**、不是手工硬编码（P2 登记的设计点②）。不剔除的话，生成一次就把棘轮顶红一次，
+    而"生成物"与"手工字面量"必须分开计，否则棘轮会逼着人不去生成。
+    """
+    out: list[str] = []
+    i = 0
+    while True:
+        k = code.find(GEN_START, i)
+        if k == -1:
+            out.append(code[i:])
+            return "".join(out)
+        end = code.find(GEN_END, k)
+        out.append(code[i:k])
+        i = len(code) if end == -1 else code.find("\n", end) + 1 or len(code)
+
+
 def _counts(text: str) -> dict[str, int]:
-    """注释剔除 → 回退值剔除 → 计数。渐变里的 rgba 不再重复计入 rgb（先剔渐变再数 rgb）。"""
-    code = _strip_var_fallbacks(strip_comments(text))
+    """去生成区 → 注释 → 回退值 → 计数（**顺序要紧**：`strip_comments` 会连标记注释一起删，
+    所以必须先去生成区，否则标记先消失、生成物照被计入）。渐变里的 rgba 不再重复计入 rgb。"""
+    code = _strip_var_fallbacks(strip_comments(_strip_generated(text)))
     grad = GRAD_RE.findall(code)
     rest = GRAD_RE.sub("", code)
     return {"hex": len(HEX_RE.findall(rest)), "rgb": len(RGB_RE.findall(rest)), "gradient": len(grad)}

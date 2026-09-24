@@ -213,6 +213,21 @@
 **分批方案（每批：改写 → 冷编译 → 产物取证 → 基线下调 → 独立提交；目视挂账）**：
 ① `styles/record-sheet.css`(397) ② `styles/detail.css`(284) ③ `styles/tab-index.css`(268) + `styles/tab-ai.css`(267) ④ `styles/favorites.css`(201) + `styles/portrait-manage.css`(155) ⑤ 31 个 `.uvue` 中体量前 10（`interview` 179 / `TabSearch` 168 / `TabProfile` 137 / `storage` 118 …）⑥ 其余 `.uvue`。
 
+### 4.4 P3 批次① 已落地（2026-09-25）：`styles/record-sheet.css`（397 → 改写 392）
+
+**前置（P2 登记的两个设计点，均已实现）**：① 声明块**由生成器产出**——`token_codemod.py --write-block` 把 `design_tokens.dtcg.json` 的**全部 325 个令牌**声明一次写进 `App.uvue` 的**生成区**（`/* >>> token-wave:generated:start */ … /* <<< …:end */`）；② 门禁认"**生成区**"——`audit_token_literals._strip_generated()` 在剔注释**之前**先剔除生成区（顺序要紧：`strip_comments` 会把标记注释一起删掉）。
+
+| 项 | 证据 |
+|---|---|
+| 改写 | `record-sheet.css` **改写 392 处**（计划 397；**5 处带符号尺寸按设计跳过**）；`RecordSheet.uvue` 根节点挂上 `tk-root`（`<view class="page tk-root">`） |
+| 冷编译 | ✅ `项目 client 编译成功`（38.8s） |
+| 产物取证 | `GenAppSharedData.style.bytes` **125 → 15267 字节**，含 `--a-record-55`/`--c-paper-50`/`--d-lattice-p390`/`tk-root` ⇒ **325 条声明进了 App 级产物**；`GenComponentsRecordSheetRecordSheetSharedData.style.bytes`（16941B）含 `var(--c-paper-50, #faf9f5)` 等 ⇒ **使用侧按 `var(令牌, 字面量)` 透传** |
+| 棘轮记账 | hex **633 → 552**、rgb **171 → 149**；`App.uvue` 条目归零（生成区被剔除）⇒ 基线按"缩了要记账"重写（35 文件） |
+| 全量复核 | `audit_harness all` **无 CRITICAL** |
+
+> 🛠 **当场抓到并修掉一个会致视觉回归的写器缺陷（留证）**：首轮把 `margin-left: -46rpx` 写成了 **`-var(--d-raw-r46, 46rpx)`** —— 值是 `-var(...)`，**非法 CSS、声明会被丢弃**；而它**编译不报、棘轮反而显示"字面量变少了"**。修法：写器加 `_signed()` 前置判断（回溯空白后为 `+/-` 则跳过、留字面量，全仓仅 16 处）；并加**写前自检** `re.findall(r"[-+]var\(")` 命中即**拒写**该文件。
+> **教训（已登记）**：**"零视觉风险"不能只靠"计数下降"来自证**——必须配"写后对**非法形态**的显式检查 + 产物 bytes 抽查 + 编译"三道。
+
 | 期 | 内容 | 依赖 | 可独立验收 |
 |---|---|---|---|
 | **P1** | 令牌集补全：DTCG 形态（`$value`/`$type`）+ **两层语义别名** + 750/390 基准与换算规则 + 补 `rgb()`/渐变/阴影建模 | 无（**纯数据**，不动样式） | ✅ 可先做 |

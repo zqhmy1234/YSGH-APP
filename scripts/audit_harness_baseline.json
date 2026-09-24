@@ -100,16 +100,11 @@
   "token_literals": {
     "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。",
     "total": {
-      "hex": 633,
-      "rgb": 171,
+      "hex": 552,
+      "rgb": 149,
       "gradient": 10
     },
     "per_file": {
-      "client/App.uvue": {
-        "hex": 6,
-        "rgb": 0,
-        "gradient": 0
-      },
       "client/pages/about/about.uvue": {
         "hex": 0,
         "rgb": 4,
@@ -271,8 +266,8 @@
         "gradient": 0
       },
       "client/styles/record-sheet.css": {
-        "hex": 76,
-        "rgb": 22,
+        "hex": 1,
+        "rgb": 0,
         "gradient": 0
       },
       "client/styles/tab-ai.css": {

@@ -217,6 +217,130 @@ def _iter_sources():
                 yield p
 
 
+GEN_START = "/* >>> token-wave:generated:start"
+GEN_END = "/* <<< token-wave:generated:end"
+
+
+def style_scope(text: str, suffix: str) -> tuple[int, int]:
+    """可改写区间：`.css` 取全文；`.uvue` **只取 `<style>` 区**（模板里的行内 style 属 P5 单独一簇）。"""
+    if suffix == ".css":
+        return 0, len(text)
+    m = re.search(r"<style[^>]*>", text)
+    if not m:
+        return 0, 0
+    e = text.rfind("</style>")
+    return m.end(), (e if e > m.end() else len(text))
+
+
+def _signed(scope: str, i: int) -> bool:
+    """该位置是否处于**符号**之后（`-46rpx` / `- 46rpx`）。
+
+    ⚠️ 必须跳过：把 `-46rpx` 改写成 `-var(--d-r46, 46rpx)` 是**非法 CSS**（值是 `-var(...)`），
+    声明会被丢弃 ⇒ 直接造成视觉回归（实测批次①当场撞到 `margin-left: -46rpx`）。
+    """
+    j = i - 1
+    while j >= 0 and scope[j] in " \t\r\n":
+        j -= 1
+    return j >= 0 and scope[j] in "-+"
+
+
+def rewrite_scope(scope: str, colors, dims, grads) -> tuple[str, int]:
+    """把区间内的字面量改写为 `var(--令牌, 原字面量)`。
+
+    逐位置扫描：**注释**与**已有的 `var(...)`** 整段原样复制（避免在注释里误改、避免二次包裹）。
+    """
+    out: list[str] = []
+    i = 0
+    n = 0
+    while i < len(scope):
+        if scope.startswith("/*", i):
+            j = scope.find("*/", i + 2)
+            j = len(scope) if j == -1 else j + 2
+            out.append(scope[i:j])
+            i = j
+            continue
+        if scope.startswith("var(", i):
+            j = i + 4
+            depth = 1
+            while j < len(scope) and depth:
+                if scope[j] == "(":
+                    depth += 1
+                elif scope[j] == ")":
+                    depth -= 1
+                j += 1
+            out.append(scope[i:j])
+            i = j
+            continue
+        if scope.startswith("linear-gradient(", i):
+            j = i + len("linear-gradient(")
+            depth = 1
+            while j < len(scope) and depth:
+                if scope[j] == "(":
+                    depth += 1
+                elif scope[j] == ")":
+                    depth -= 1
+                j += 1
+            lit = scope[i:j]
+            name = grads.get(norm_grad(lit))
+            if name:
+                out.append(f"var({name}, {lit})")
+                n += 1
+                i = j
+                continue
+        m = COLOR_RE.match(scope, i)
+        if m:
+            lit = m.group(0)
+            k = norm_color(lit)
+            name = colors.get(k) if k else None
+            if name:
+                out.append(f"var({name}, {lit})")
+                n += 1
+                i = m.end()
+                continue
+        m = RATIO_RE.match(scope, i)
+        if m and not _signed(scope, i):
+            lit = f"{m.group(1)}{m.group(2)}"
+            name = dims.get(lit)
+            if name:
+                out.append(f"var({name}, {lit})")
+                n += 1
+                i = m.end()
+                continue
+        out.append(scope[i])
+        i += 1
+    return "".join(out), n
+
+
+def emit_block(T) -> str:
+    """生成声明块（带生成区标记）。**所有**令牌都声明一次，供各页/组件引用。"""
+    lines = [f"\t{GEN_START}（由 scripts/token_codemod.py 从 design_tokens.dtcg.json 生成，勿手工编辑） */",
+             "\t.tk-root {"]
+    for path, raw in sorted(_leaves(T)):
+        lines.append(f"\t\t{var_name(path)}: {_resolve(T, raw)};")
+    lines += ["\t}", f"\t{GEN_END} */"]
+    return "\n".join(lines) + "\n"
+
+
+def update_app_block(text: str, block: str) -> str:
+    """把 App.uvue 的生成区替换为 block（首次则插到 `</style>` 前）。"""
+    k = text.find(GEN_START)
+    if k != -1:
+        e = text.find("\n", text.find(GEN_END, k))
+        return text[:k] + block.lstrip("\t") + text[e + 1 :]
+    i = text.rfind("</style>")
+    return text[:i] + block + text[i:]
+
+
+def ensure_root_class(text: str) -> tuple[str, bool]:
+    """给 `.uvue` 的**首个根元素**挂 `tk-root`（变量声明的作用载体）。"""
+    if re.search(r'class="[^"]*\btk-root\b', text):
+        return text, False
+    m = re.search(r'<view\s+class="([^"]*)"', text)
+    if not m:
+        return text, False
+    return text[: m.start(1)] + m.group(1) + " tk-root" + text[m.end(1) :], True
+
+
 def plan(only: str | None = None) -> dict:
     T = _load()
     colors, dims, grads, merged = build_index(T)
@@ -225,7 +349,9 @@ def plan(only: str | None = None) -> dict:
         rel = p.relative_to(ROOT).as_posix()
         if only and only not in rel:
             continue
-        code = _strip_var_fallbacks(strip_comments(p.read_text(encoding="utf-8", errors="replace")))
+        raw = p.read_text(encoding="utf-8", errors="replace")
+        s, e = style_scope(raw, p.suffix)
+        code = _strip_var_fallbacks(strip_comments(raw[s:e]))
         hits = {"hex": 0, "rgb": 0, "dim": 0, "gradient": 0}
         for c in COLOR_RE.findall(code):
             k = norm_color(c)
@@ -249,7 +375,45 @@ def plan(only: str | None = None) -> dict:
 
 
 def main() -> int:
-    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
+    args = sys.argv[1:]
+    T = _load()
+    colors, dims, grads, _merged = build_index(T)
+    if "--write-block" in args:
+        app = CLIENT / "App.uvue"
+        app.write_text(update_app_block(app.read_text(encoding="utf-8"), emit_block(T)), encoding="utf-8")
+        print("[write-block] App.uvue 的生成区已刷新（全部令牌声明一次）")
+        return 0
+    if "--write" in args:
+        files = [args[i + 1] for i, a in enumerate(args) if a == "--file" and i + 1 < len(args)]
+        class_on = args[args.index("--class-on") + 1] if "--class-on" in args else None
+        tot = 0
+        for rel in files:
+            p = ROOT / rel
+            t = p.read_text(encoding="utf-8")
+            s, e = style_scope(t, p.suffix)
+            new, n = rewrite_scope(t[s:e], colors, dims, grads)
+            t2 = t[:s] + new + t[e:]
+            bad = re.findall(r"[-+]var\(", t2)
+            if bad:
+                print(f"[FAIL] {rel}: 改写后出现非法 `-var(`/`+var(` {len(bad)} 处 —— **未写入**，请检查写器")
+                continue
+            line = f"[write] {rel}: 改写 {n} 处"
+            if p.suffix == ".uvue":
+                t2, added = ensure_root_class(t2)
+                if added:
+                    line += " · 根节点已挂 tk-root"
+            p.write_text(t2, encoding="utf-8")
+            print(line)
+            tot += n
+        if class_on:
+            p = ROOT / class_on
+            t2, added = ensure_root_class(p.read_text(encoding="utf-8"))
+            if added:
+                p.write_text(t2, encoding="utf-8")
+            print(f"[write] {class_on}: {'根节点已挂 tk-root' if added else '已含 tk-root（跳过）'}")
+        print(f"[write] 合计改写 {tot} 处")
+        return 0
+    only = args[args.index("--only") + 1] if "--only" in args else None
     r = plan(only)
     tot = {k: sum(v[k] for v in r["files"].values()) for k in ("hex", "rgb", "dim", "gradient")}
     print("== P3 改写计划（dry-run，未改动任何文件）==")

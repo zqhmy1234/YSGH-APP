@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page tk-root">
 		<!-- ═══════════ 模态遮罩（55% 暗色，压暗真实页面） ═══════════
 		     点遮罩 = 关闭浮层（原独立页无此交互，浮层化后必须补，否则只能靠系统返回键） -->
 		<view v-if="!directPick" class="scrim" @tap="onClose"></view>
