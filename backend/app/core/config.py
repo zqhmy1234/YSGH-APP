@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     agent_service_base_url: str = "http://127.0.0.1:8300"
     # 与 agent 服务的共享密钥（对应其 AGENT_SERVICE_TOKEN）；留空则不带该头
     agent_service_token: str = ""
+
+    # ── 本地自然日口径（功能修复波 D04-1 · 2026-09-25）──
+    # 云侧"本地日"的**单一来源**（见 app/core/timeutil.py）：L1 日聚合与"去年今日"回响都用它。
+    # **不读容器 TZ**（deploy 未设 TZ ⇒ 容器为 UTC；若沿用"服务器本地"则等于没修 D04-1）。
+    # 值＝IANA 名；MVP 面向单城（沪）故默认 Asia/Shanghai；跨时区用户需 per-user 偏移（待拍板）。
+    app_local_tz: str = "Asia/Shanghai"
     # 单轮对话超时（秒）：Agent 含多轮工具调用 + 推理，实测 76s 量级，故默认给足
     agent_service_timeout_s: float = 180.0
     # auto=主通道已有情绪则跳过本地；always=强制本地覆盖；off=关闭本地增强。

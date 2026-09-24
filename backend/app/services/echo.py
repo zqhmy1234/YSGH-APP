@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.timeutil import local_now
 from app.db.models import Content, EchoHistory, ProfileSensitive
 
 logger = logging.getLogger("yishu.echo")
@@ -37,8 +38,14 @@ def _fingerprint(content_id: str) -> str:
 
 def _local_now() -> datetime:
     """本地时间（日界按本地口径：修复审查 MINOR——原按 UTC 日界，本地 0:00-8:00
-    会被算到前一天）"""
-    return datetime.now().astimezone()
+    会被算到前一天）
+
+    2026-09-25（功能修复波 D04-1）：**改为委托 `app.core.timeutil.local_now()`**。
+    本函数原用 `datetime.now().astimezone()`＝**服务器本地**，在 UTC 容器里等于 UTC（修复无效）；
+    而事件聚合 L1 又另走 UTC 默认 ⇒ 「同一云侧两套日界」是 P0 缺陷 D04-1 的根因。
+    现云侧日界统一到 `APP_LOCAL_TZ`（单一来源，不依赖容器 TZ）。
+    """
+    return local_now()
 
 
 def profile_sensitive_blocked(db: Session, user_id: str, text: str) -> bool:

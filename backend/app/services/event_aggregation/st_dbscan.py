@@ -98,16 +98,29 @@ def st_dbscan(
 def l1_daily_aggregate(
     clusters: list[list[Photo]],
     noise: list[Photo],
-    tz_offset_minutes: int = 0,
+    tz_offset_minutes: int | None = None,
 ) -> list[dict]:
     """L1 日聚合：簇 + 散片 → 自然日卡片
 
     规则（B3-2）：自然日 0-24 时；深夜 23:30-1:00 连续拍摄归属前一天。
     输出：[{date, photos: [...], is_sparse}]，稀疏（1-2 张）标记并入日卡片（B3 #8）。
 
-    tz_offset_minutes（AGG-016 双跑）：日界按本地时区偏移计算（端侧传设备偏移）；
-    默认 0 = UTC（保持第一波口径，向后兼容）。
+    tz_offset_minutes（AGG-016 双跑 + **D04-1 修复**）：
+      · `None`（默认）⇒ 用**应用本地口径** `app.core.timeutil.local_utc_offset_minutes()`
+        （＝`APP_LOCAL_TZ`，默认 Asia/Shanghai，**不依赖容器 TZ**）；
+      · 显式 `0` ⇒ UTC 日界（测试/对照用，保持既有语义）；
+      · 端侧双跑传设备偏移（480）。
+
+    修复背景（功能修复波 D04-1，P0）：本参数原默认 `0` ⇒ 云侧生产走 **UTC 日界**，而
+    `services/echo` 的"本地日"另用服务器本地时间 ⇒ **同一云侧两套日界**，沪区 00:00–07:59
+    拍摄的照片在 L1 日卡片上落到**前一天**。现两者统一到 `app/core/timeutil.py` 单一来源。
     """
+    if tz_offset_minutes is None:
+        # 函数内局部 import：与下方 AGG_CONFIG 同理，避免模块级耦合（core 不反向依赖本包）。
+        from app.core.timeutil import local_utc_offset_minutes  # noqa: PLC0415
+
+        tz_offset_minutes = local_utc_offset_minutes()
+
     def bucket_day(ts: datetime) -> str:
         """自然日分桶；深夜 23:30-1:00 归属前一天（B3-2）
 

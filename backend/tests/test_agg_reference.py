@@ -9,6 +9,8 @@
 """
 from datetime import datetime, timedelta, timezone
 
+import pytest
+from app.core.timeutil import app_local_tz_name, local_now, local_utc_offset_minutes
 from app.services.event_aggregation.pipeline import RawPhoto, preprocess
 from app.services.event_aggregation.st_dbscan import l1_daily_aggregate, st_dbscan
 
@@ -36,6 +38,47 @@ def _run(photos):
     noise = [p for p in pts if p.id not in clustered]
     days = l1_daily_aggregate(clusters, noise, tz_offset_minutes=TZ)
     return clusters, days
+
+
+def test_day_boundary_defaults_to_app_local_tz_not_utc():
+    """D04-1（P0 修复锁）：`l1_daily_aggregate` 默认走**应用本地口径**，不再是 UTC 默认。
+
+    取证方式（审计 D04-1 建议口径）：同一张照片分别在"默认"与"显式 tz=0（UTC）"下跑 L1，
+    比较 `date` 字段 —— 两者必须**不同**（沪区 UTC+8）。
+    照片取本地 07:00（不在深夜规则 23:30–1:00 内，避免规则干扰）：
+      · 默认（app-local，+480）⇒ 07-18；· 显式 0（UTC）⇒ 前一日 07-17。
+    """
+    off = local_utc_offset_minutes()
+    if off == 0:
+        pytest.skip("APP_LOCAL_TZ 解析为 UTC（偏移 0）—— 本用例需非 UTC 口径才有鉴别力")
+
+    # 本地 07:00 → 真值瞬间（UTC）＝ 07:00 - off
+    ts = datetime(2026, 7, 18, 7, 0, tzinfo=timezone.utc) - timedelta(minutes=off)
+    photo = RawPhoto(id="p-local", ts=ts, lat=None, lng=None, tags=[])
+
+    default_days = l1_daily_aggregate([], [photo])
+    utc_days = l1_daily_aggregate([], [photo], tz_offset_minutes=0)
+
+    assert default_days[0]["date"] == "2026-07-18", "默认口径应落本地自然日"
+    assert utc_days[0]["date"] == "2026-07-17", "显式 0 仍为 UTC 日界（既有语义不可变）"
+
+
+def test_cloud_day_boundary_has_single_source():
+    """D04-1 结构性锁：云侧"本地日"只有**一个来源**（timeutil），echo 与聚合不得各走一套。
+
+    · `echo._local_now().utcoffset()` 必须等于 `local_utc_offset_minutes()`；
+    · `local_utc_offset_minutes()` 必须等于 `local_now().utcoffset()`（同一 tz，永不漂移）；
+    · 且**不依赖容器 TZ**：`APP_LOCAL_TZ` 生效时偏移应等于该时区偏移（Asia/Shanghai ⇒ 480）。
+    """
+    off_minutes = local_utc_offset_minutes()
+    assert int(local_now().utcoffset().total_seconds() // 60) == off_minutes
+
+    from app.services import echo
+
+    assert int(echo._local_now().utcoffset().total_seconds() // 60) == off_minutes
+
+    if app_local_tz_name() == "Asia/Shanghai":
+        assert off_minutes == 480, "Asia/Shanghai 无夏令时，偏移应为 480 分钟"
 
 
 def test_burst_fold_keeps_first_photo():

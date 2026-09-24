@@ -72,7 +72,46 @@
 - 8 项"静默漂移"类门禁继续生效（轴 1–8）；本波新增/触碰的开关类断言须留**反向探针**证据。
 - 需真机/凭证/合规的部分**显式挂账**，不冒充完成。
 
-## 4. 待办（下一步）
+## 5. A 段进度（完成即登记）
+
+| 缺陷 | 状态 | 证据 |
+|---|---|---|
+| **D04-1**（P0 · 云侧 L1 日界走 UTC，沪区 00:00–07:59 落前一天） | ✅ **已修 2026-09-25** | 见下 |
+
+### D04-1 修复记录（2026-09-25）
+
+**根因（比审计原文更深一层）**：不是"端云未对齐"这么简单，而是**云侧自己有两套日界口径**——
+`services/echo.py::_local_now()` 用 `datetime.now().astimezone()`（其 docstring 记录它修过同一个
+bug："原按 UTC 日界 ⇒ 本地 0:00-8:00 算前一天"），而 `event_aggregation/st_dbscan.py::l1_daily_aggregate`
+的 `tz_offset_minutes` **默认 0＝UTC**；且 `deploy/` **未设 TZ** ⇒ 容器为 UTC ⇒ 连 echo 那套
+"服务器本地"在容器里也等于 UTC（**等于没修**）。
+
+**修法（最小且不动调用方）**：
+1. 新增 `backend/app/core/timeutil.py` —— 云侧"本地自然日"的**单一来源**：
+   `APP_LOCAL_TZ`（默认 `Asia/Shanghai`）→ `local_now()` / `local_utc_offset_minutes()`；
+   **不读容器 TZ**。
+2. `config.py` 加 `app_local_tz`（+ `env_template` 门禁要求的模板项 `APP_LOCAL_TZ` 已同步）。
+3. `l1_daily_aggregate(tz_offset_minutes: int | None = None)`：**默认从 `0` 改为"应用本地口径"**，
+   显式 `0` 仍＝UTC（测试/对照语义不变）。⇒ `pipeline.aggregate` / `incremental_aggregate`
+   两处调用点**零改动**即自动走上正确口径。
+4. `echo._local_now()` **改为委托** `timeutil.local_now()` ⇒ 云侧日界只剩一个来源。
+
+**验收证据**：
+- 新增 `test_day_boundary_defaults_to_app_local_tz_not_utc`（审计建议口径：同批照片在"默认"与
+  "显式 0"下比较 `date`）＋ `test_cloud_day_boundary_has_single_source`（echo 与聚合偏移必须相等）。
+- `pytest backend/tests/test_agg_reference.py backend/tests/test_aggregation.py` → **18 passed**。
+- **反向探针**：把 `tz_offset_minutes = local_utc_offset_minutes()` 临时改成 `= 0` ⇒ 新用例**失败**
+  且报错正是 D04-1 症状（`assert '2026-07-17' == '2026-07-18'`）⇒ 用例非空转；字节级还原一致。
+- ruff 全过（含新文件）。
+
+**未覆盖（如实标注，属产品决策）**：真实**跨时区用户**需 per-user 偏移（端侧已在
+`aggregateToEvents(uploads, tzOffsetMin)` 传设备偏移，云侧无处可存）⇒ 已登记 `docs/决策台账.md` §5.10。
+本次先把"云侧不再自相矛盾 + 不依赖容器 TZ"这一层收敛掉（MVP 面向单城）。
+
+**余项**：D04-2（云侧生产无去重，夹具自造 `_dedup` 垫背）、D04-15（夹具未覆盖 `approx`/`corrected`
+分支）⇒ 两者互相咬合，需同批做（先对齐去重口径，再重生成夹具 + 端侧复跑）。
+
+## 6. 待办（下一步）
 
 1. **A 段**：按 `refactor-ledger.md` §9.2 的三簇优先级排期（端云聚合同源 → 软删 30 天 → 微信主链），逐条立项。
 2. **B 段**：② 图搜评测补建（RET-002）；③ RAG 负样本重校。
