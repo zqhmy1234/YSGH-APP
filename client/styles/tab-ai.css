@@ -505,3 +505,24 @@
 		font-size: var(--d-lattice-p14, 26.9rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
+
+/* 2026-09-25（Agent 接线补完）：真链空态 —— USE_MOCK_CHAT 翻 false 后、无历史时的诚实首页。
+   取值一律走令牌（带回退，视觉零风险）；无假数据、不预填示例对话。 */
+.ai-empty {
+	flex: 1;
+	justify-content: center;
+	align-items: center;
+	padding-top: var(--d-lattice-p20, 38.5rpx);
+	padding-left: var(--d-lattice-p20, 38.5rpx);
+	padding-right: var(--d-lattice-p20, 38.5rpx);
+}
+.ai-empty-title {
+	font-size: var(--d-lattice-p16, 30.8rpx);
+	font-weight: 600;
+	color: var(--c-ink-900, #3A2E25);
+}
+.ai-empty-sub {
+	margin-top: var(--d-raw-r16, 16rpx);
+	font-size: var(--d-raw-r26, 26rpx);
+	color: var(--c-ink-500, #8A7A6A);
+}

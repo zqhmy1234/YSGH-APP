@@ -33,6 +33,13 @@
 		     uni-app x 的 scroll-view 只定义 direction（none/vertical/horizontal/all）+ refresherEnabled
 		     （HBuilderX 自带 dts dom2/UniNativeScrollView.d.ts）。 -->
 		<scroll-view class="n4_88" direction="vertical" :scroll-into-view="scrollInto">
+			<!-- 2026-09-25（Agent 接线补完）：**真链空态**。`USE_MOCK_CHAT` 翻转为 false 后，
+			     全新用户（无历史）会看到一片空白 —— 那是我方翻开关引入的体验回归，故补一个
+			     **诚实空态**：无假数据、不预填示例对话；有历史时不显示（由 onMounted 回填填充）。 -->
+			<view v-if="messages.length == 0 && !USE_MOCK_CHAT" class="ai-empty">
+				<text class="ai-empty-title">和你的回忆聊聊</text>
+				<text class="ai-empty-sub">比如「帮我回顾这个月」「去年今日我在做什么」</text>
+			</view>
 			<view v-for="m in messages" :key="m.id" :id="'msg-' + m.id">
 				<!-- AI 消息组 -->
 				<view v-if="m.role === 'ai'" class="ai-group">
