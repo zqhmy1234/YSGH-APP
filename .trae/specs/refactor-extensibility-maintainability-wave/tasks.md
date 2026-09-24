@@ -105,7 +105,8 @@
   - [x] B5.2c `client/utils/uploader.uts` 628 行 → 6 模块（`uploader_{types,pending,net,queue,photo,batch}`）；8 调用点改写；冷编译 ✅（L-06）；**真机上传待设备**
   - [x] B5.2d 起点（金丝雀）`client/pages/detail/detail.uvue`（L-08）**样式外置**：`<style>` 591 行 → `client/styles/detail.css`（uvue 只留 `@import`）⇒ **1167 → 577 行**（轴 5 销项）；冷编译 ✅ + 产物类名取证；**能力探针实测**：ucss 支持 `@import`（**无需 scss 插件**）、`.uts` 组合式函数可被 uvue 引入
   - [x] B5.2e（样式半）`RecordSheet.uvue`（2209→**1354**）/ `TabIndex.uvue`（1742→**1065**）样式外置到 `client/styles/{record-sheet,tab-index}.css`；逐行一致 + 冷编译 ✅ + 产物类名取证；baseline 计数下调
-  - [ ] B5.2f（script 半）`RecordSheet`/`TabIndex`/`TabSearch` 的 script 抽 composable（**需真机验收**，待设备）；L-12 令牌收敛（**另立令牌波**）
+  - [ ] B5.2f（script 半）`RecordSheet`/`TabIndex`/`TabSearch` 的 script 抽 composable（本体冷编译+逐行等价可验；**L-01/L-02 的"真机记录链路"验收待设备**）
+  - [x] **决策**：L-12 令牌收敛 → ✅ **另立「令牌波」**（判为复杂，台账 §5.10 拍板 10.4）；64 条功能缺陷 → ✅ **另开「功能修复波」**（拍板 10.1）
 
 - [x] Task B6: 客户端声明漂移清理：`shell.uvue:7`、`search_api.uts:183`、`feature_list.json` 自相矛盾证据；`audit_harness client` 无新增漂移。
   - **结论：验证即达标**——三则已由 09-23 审计窗修复；残余两处注释原文含「对齐原 …」，B1 的「原」标注抑制生效 → 轴 2 无注释内未注册页面引用。

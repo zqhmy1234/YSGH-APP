@@ -97,5 +97,6 @@
 - [ ] ⚠️ **B5d 视觉复验待真机**（如实标注）：样式外置已由产物类名证明"被编译"，但**实际渲染效果未在真机看过**
 - [x] **B5.2e（样式半）`RecordSheet`/`TabIndex` 样式外置**：沿用 B5d 已证机制，整块 `<style>` 纯移动 ⇒ `RecordSheet` 2209→**1354**（style 858→`record-sheet.css`）、`TabIndex` 1742→**1065**（style 680→`tab-index.css`）—— 证据：两 css **逐行一致**（846 vs 846 / 655 vs 655）；**冷编译成功**；**产物取证**（`RecordSheet.style.bytes` 含 `scrim`/`grab`、`TabIndex.style.bytes` 含 `header-title`）；baseline 计数**下调**（2208→1354 / 1740→1065）、`audit_harness all` 无 CRITICAL
 - [ ] ⚠️ **B5.2f（script 半）未做**：`RecordSheet`(script 1097)/`TabIndex`(851) 的 script 抽 composable **需真机验收**（`adb` 无设备）⇒ L-01/L-02 **未闭环**；`favorites.uvue` 基线 974 vs 实际 975 为**先于本轮**的记账漂移（未上调，保持 WARN）
-- [ ] **B5.2f 剩余客户端拆分**：`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`（L-01/02，script 侧需抽 composable、**真机验收待设备**）；L-12 令牌收敛（**另立令牌波**）
+- [ ] **B5.2f 剩余客户端拆分**：`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`（L-01/02，script 侧抽 composable；本体可冷编译+逐行等价验证，**L-01/L-02 真机验收待设备**）
+- [x] **决策已拍板（2026-09-24）**：**L-12 令牌收敛 → 另立「令牌波」**（判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机；台账 §5.10 拍板 10.4）；**64 条功能缺陷 → 另开「功能修复波」**（拍板 10.1）；本波 §7 边界已同步
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：B5a/B5b 提交均经 hook `[pre-commit] 审核通过`
