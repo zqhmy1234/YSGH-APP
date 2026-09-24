@@ -1,0 +1,459 @@
+
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F8F7F4;
+	}
+	/* ── 导航（60:769 标题 / 60:827 返回；trash.uvue 先例：标题容器全宽居中，返回钮 z-index 置顶） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: 0rpx;
+		top: 119.2rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 34.6rpx;
+		color: #3A2E25;
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: 30.8rpx;
+		top: 115.4rpx;
+		width: 42.3rpx;
+		height: 42.3rpx;
+		z-index: 1;
+	}
+	/* ── 60:770 搜索胶囊（search n2_391 同款：居中描边→box-shadow 外环不内缩） ── */
+	.search-capsule {
+		position: absolute;
+		/* absolute-ok: 固定页头·搜索胶囊 */
+		left: 38.5rpx;
+		top: 230.8rpx;
+		width: 673.1rpx;
+		height: 92.3rpx;
+		flex-direction: row;
+		/* 无垂直 padding：图标 y15/h18 靠 align-items:center 居中（画布 60:770 pad=null，search 审计教训） */
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(176, 89, 59, 0.6), 0rpx 11.5rpx 34.6rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.capsule-icon {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.capsule-input-area {
+		flex: 1;
+		margin-left: 15.4rpx; /* 画布 60:770 gap=8pt：图标右缘 34 → 输入区 x42 */
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.capsule-input {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	/* ── 60:771 筛选行（chip 9pt 内边距=17.3rpx，search 先例） ── */
+	.chip-row {
+		position: absolute;
+		/* absolute-ok: 固定页头·筛选行 */
+		left: 38.5rpx;
+		top: 353.8rpx;
+		width: 673.1rpx;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 17.3rpx;
+		padding-right: 17.3rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		background-color: #FFFFFF;
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.chip-active {
+		background-color: rgba(176, 89, 59, 0.12);
+	}
+	/* 画布 60:771 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
+	.chip-ml {
+		margin-left: 15.4rpx;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	.chip-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		font-weight: 600;
+		color: #B05A3A;
+	}
+	/* ── 60:772 结果提示 ── */
+	.count-text {
+		position: absolute;
+		/* absolute-ok: 固定页头·条数提示 */
+		left: 38.5rpx;
+		top: 450rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #8A7A6A;
+	}
+	/* §P9 类型筛选 0 结果提示（滚动区内居中，非画布真值、UX 自洽样式） */
+	.filter-empty {
+		margin-top: 200rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.filter-empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.filter-empty-sub {
+		margin-top: 11.5rpx;
+		font-size: 23.1rpx;
+		color: #B3A696;
+	}
+	/* ── F4a 卡流滚动区（画布首卡 y258→496.2rpx；无 TabBar 底部避让） ── */
+	.card-scroll {
+		position: absolute;
+		/* absolute-ok: 结果卡流视口 */
+		left: 38.5rpx;
+		top: 496.2rpx;
+		bottom: 0rpx;
+		width: 673.1rpx;
+	}
+	/* ── 通用卡壳（60:776/777/829：白底 r20 pad8 双层阴影 y4/r16 a6% + y1/r3 a4%） ── */
+	.fav-card {
+		width: 673.1rpx;
+		flex-direction: column;
+		margin-bottom: 19.2rpx; /* 画布语音→文字卡间距：语音底 394→文字顶 404 = 10pt */
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	/* 画布文字→照片卡间距 24pt（404+111=515 → 539）；伪类禁 → 显式覆盖类（写在原类之后） */
+	.fav-card-text {
+		margin-bottom: 46.2rpx;
+	}
+	/* 60:835/837/839 星标角标 20pt 卡内 right12pt top16pt */
+	.fav-star {
+		position: absolute;
+		/* absolute-ok: 卡内收藏星标 */
+		right: 23.1rpx;
+		top: 30.8rpx;
+		width: 38.5rpx;
+		height: 38.5rpx;
+	}
+	/* ── 语音卡（60:790 媒体条：pad14 gap12 h64 r12 金底14%） ── */
+	.voice-media {
+		width: 100%;
+		height: 123.1rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		background-color: rgba(196, 145, 59, 0.14);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	/* 60:810 玻璃播放钮（画布 BACKGROUND_BLUR(8)+白50%+inset白40%+border白80%，search n2_591 同值先例） */
+	.glass-btn {
+		width: 61.5rpx;
+		height: 61.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: rgba(255, 255, 255, 0.5);
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4);
+		border-width: 1.9rpx;
+		border-color: rgba(255, 255, 255, 0.8);
+		border-radius: 30.8rpx;
+		overflow: hidden;
+	}
+	.play-icon {
+		width: 23.1rpx;
+		height: 23.1rpx;
+	}
+	.fav-pause-icon {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.fav-pause-bar {
+		width: 6rpx;
+		height: 20rpx;
+		background-color: #B05A3A;
+		border-radius: 2rpx;
+		margin-left: 4rpx;
+		margin-right: 4rpx;
+	}
+	/* 60:811 波形 200×26pt @(58,19)：x58=钮右缘46+gap12 */
+	.wave-box {
+		width: 384.6rpx;
+		height: 50rpx;
+		margin-left: 23.1rpx;
+		overflow: hidden;
+	}
+	.wave-img {
+		position: absolute;
+		/* absolute-ok: 波形 SVG 在框内 (4,3) 偏移 */
+		left: 7.7rpx;
+		top: 5.8rpx;
+		width: 369.2rpx;
+		height: 38.5rpx;
+	}
+	/* F5a 播放进度行（search 先例同值） */
+	.voice-progress-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-left: 15.4rpx;
+		margin-right: 15.4rpx;
+		margin-top: 11.5rpx; /* 画布 3pt 节奏 */
+	}
+	.voice-progress-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #8A7A6A;
+	}
+	.voice-track {
+		flex: 1;
+		height: 4rpx;
+		background-color: #E5DCC8;
+		border-radius: 2rpx;
+		margin-left: 12rpx;
+		margin-right: 12rpx;
+		overflow: hidden;
+	}
+	.voice-track-fill {
+		height: 4rpx;
+		background-color: #C4913C;
+		border-radius: 2rpx;
+	}
+	/* 60:791 语音文字区 pad8 gap3 */
+	.voice-text-area {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	/* 60:812/833 卡标题 17pt SemiBold */
+	.card-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 32.7rpx;
+		color: #3A2E25;
+	}
+	/* 照片卡标题：画布 60:833 紧贴网格零间隙（真值），峰宝拍板（2026-09-02）覆盖为
+	   网格→标题 12pt 呼吸间距（theme-detail title-flush 同族），已登记 _diff_ledger.md */
+	.card-title-photo {
+		margin-top: 23.1rpx;
+	}
+	/* 60:813/816/834 卡元信息 11pt #8A7A6A（gap3→margin 5.8rpx） */
+	.card-meta {
+		margin-top: 5.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 照片卡 meta：画布 60:834 原值零间隙，峰宝拍板（2026-09-02）覆盖为标题→元信息 4pt */
+	.card-meta-photo {
+		margin-top: 7.7rpx;
+	}
+	/* 文字卡 meta：区首子节点（uvue 无 :first-child 伪类 → 显式覆盖类，写在原类之后） */
+	.card-meta-first {
+		margin-top: 0rpx;
+	}
+	/* ── 文字卡（60:792 摘要块 pad12 gap10 r12 金底10%） ── */
+	.quote-block {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		padding-top: 23.1rpx;
+		padding-bottom: 23.1rpx;
+		background-color: rgba(196, 145, 59, 0.1);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	/* 60:814 引用竖线 3×40pt r2 */
+	.quote-bar {
+		width: 5.8rpx;
+		height: 76.9rpx;
+		background-color: #C4913C;
+		border-radius: 3.8rpx;
+		overflow: hidden;
+	}
+	/* 60:815 摘要文本 14pt #5A4C40 */
+	.quote-text {
+		flex: 1;
+		margin-left: 19.2rpx; /* 画布 60:792 gap=10pt：竖线右缘 15 → 文本 x25 */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 60:793 文字元信息区 pad8 */
+	.text-meta-area {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		overflow: hidden;
+	}
+	/* ── 照片卡（60:830 网格 gap4，双列 fill×110pt r8） ── */
+	.photo-grid {
+		width: 100%;
+		flex-direction: row;
+		overflow: hidden;
+	}
+	/* 60:831/832 照片格 fill×110pt r8（theme-detail photo-cell 先例：外格底色+内 image） */
+	.photo-cell {
+		flex: 1;
+		height: 211.5rpx;
+		border-radius: 15.4rpx;
+		overflow: hidden;
+	}
+	.photo-img {
+		width: 100%;
+		height: 211.5rpx;
+	}
+	/* 画布占位色 60:831/60:832（真图 URL 覆盖底色；空 URL=占位块） */
+	.photo-a {
+		background-color: #E9DFCB;
+	}
+	.photo-b {
+		margin-left: 7.7rpx; /* 画布 60:830 gap=4pt */
+		background-color: #E1D3B8;
+	}
+	/* ══════════ F4b 空态（60:841 帧，绝对定位同画布坐标） ══════════ */
+	.empty-wrap {
+		position: absolute;
+		/* absolute-ok: 空态整块（画布节点绝对坐标直移） */
+		left: 0rpx;
+		top: 0rpx;
+		bottom: 0rpx;
+		width: 750rpx;
+	}
+	/* 插画组合块 (135,258) 120×126pt（empty.uvue 同几何先例：太阳叠山湖） */
+	.empty-illus {
+		position: absolute;
+		/* absolute-ok: 空态插画 */
+		left: 259.6rpx;
+		top: 496.2rpx;
+		width: 240rpx;
+		height: 252rpx;
+	}
+	.empty-sun {
+		position: absolute;
+		/* absolute-ok: 插画内太阳 (191-135=56pt, 0) */
+		left: 112rpx;
+		top: 0rpx;
+		width: 120rpx;
+		height: 120rpx;
+	}
+	.empty-lake {
+		position: absolute;
+		/* absolute-ok: 插画内山湖 (0, 36pt) */
+		left: 0rpx;
+		top: 72rpx;
+		width: 240rpx;
+		height: 180rpx;
+	}
+	.empty-lake-img {
+		position: absolute;
+		/* absolute-ok: 山湖矢量 (12,12) 96×56pt */
+		left: 24rpx;
+		top: 24rpx;
+		width: 192rpx;
+		height: 112rpx;
+	}
+	/* 60:896 标题容器 全宽居中 @y418 */
+	.empty-title-row {
+		position: absolute;
+		/* absolute-ok: 空态标题行（全宽居中） */
+		left: 0rpx;
+		top: 804.2rpx;
+		width: 750rpx;
+		flex-direction: row;
+		justify-content: center;
+	}
+	.empty-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 42.3rpx;
+		color: #3A2E25;
+	}
+	/* 60:898 引导容器 @y460 gap4 */
+	.empty-guide {
+		position: absolute;
+		/* absolute-ok: 空态引导两行 */
+		left: 0rpx;
+		top: 884.6rpx;
+		width: 750rpx;
+		flex-direction: column;
+		align-items: center;
+	}
+	.guide-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	.guide-text-2 {
+		margin-top: 7.7rpx; /* 画布 60:898 gap=4pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #8A7A6A;
+	}
+	/* 60:901 主按钮 250×56pt @(70,538) r28 */
+	.empty-cta {
+		position: absolute;
+		/* absolute-ok: 空态主按钮 */
+		left: 134.6rpx;
+		top: 1034.6rpx;
+		width: 480.8rpx;
+		height: 107.7rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		box-shadow: 0rpx 11.5rpx 30.8rpx rgba(176, 89, 59, 0.3);
+		border-radius: 53.8rpx;
+		overflow: hidden;
+	}
+	.empty-cta-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 30.8rpx;
+		color: #FFFFFF;
+	}

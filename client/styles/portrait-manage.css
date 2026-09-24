@@ -1,0 +1,427 @@
+
+	.page {
+		flex: 1;
+		background-color: #f8f7f4;
+	}
+
+	.serif {
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
+	}
+
+	.header {
+		/* W10.4 下移（峰宝拍板 2026-09-01）：页标题/返回钮水平线距顶 44px→60px=115.4rpx
+		   （对齐 security 页页头真值 y60pt），以下内容随文档流自动下移 */
+		padding-top: 115.4rpx;
+		padding-bottom: 24rpx;
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+	}
+	.nav-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.back-btn {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.back-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.back-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #8a7a6a;
+		margin-left: 4rpx;
+	}
+	.header-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.header-right {
+		width: 80rpx;
+	}
+
+	.scroll {
+		flex: 1;
+		margin-bottom: 110px; /* 真机实锤修复：padding-bottom 240rpx 只在滚到底起效，
+		                         scroll-view 盒子仍通到屏底，任意滚动位内容都会铺进 TabBar 玻璃区；
+		                         改收盒子（TabBar fixed 高 110px），内容永不进 TabBar 区 */
+		padding-left: 40rpx;
+		padding-right: 40rpx;
+		padding-bottom: 40rpx;
+	}
+
+	/* 画像概览卡片 */
+	.profile-card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+	}
+	.profile-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+	.profile-avatar {
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 48rpx;
+		background-color: #b05a3a;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 24rpx;
+	}
+	.avatar-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 40rpx;
+		color: #ffffff;
+		font-weight: bold;
+	}
+	.profile-info {
+		flex: 1;
+	}
+	.profile-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #3a2e25;
+		font-weight: 600;
+	}
+	.profile-badge {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #c4913c;
+		background-color: #c4913c1a;
+		padding: 4rpx 16rpx;
+		border-radius: 16rpx;
+		align-self: flex-start;
+	}
+	.profile-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #8a7a6a;
+		line-height: 40rpx;
+		margin-bottom: 24rpx;
+	}
+	.profile-stats {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-around;
+		padding-top: 20rpx;
+		border-top-width: 1rpx;
+		border-top-color: #f0ebe3;
+		border-top-style: solid;
+	}
+	.stat-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+	.stat-number {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 36rpx;
+		color: #3a2e25;
+		font-weight: bold;
+	}
+	.stat-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+
+	/* 菜单卡片 */
+	.menu-card {
+		background-color: #ffffff;
+		border-radius: 40rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(58,46,37,0.06);
+	}
+	.menu-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 8rpx;
+	}
+	.menu-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		margin-bottom: 20rpx;
+	}
+
+	/* 性格标签 */
+	.tag-list {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.tag-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 12rpx 24rpx;
+		border-radius: 24rpx;
+		background-color: #f8f7f4;
+		margin-right: 16rpx;
+		margin-bottom: 12rpx;
+	}
+	.tag-active {
+		background-color: #c4913c1a;
+	}
+	.tag-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26rpx;
+		color: #3a2e25;
+	}
+	.tag-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: #c4913c;
+		font-weight: 500;
+	}
+	.tag-confidence {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-left: 8rpx;
+		font-size: 20rpx;
+		color: #b3a696;
+	}
+
+	/* 记忆主题 */
+	.theme-list {
+		display: flex;
+		flex-direction: column;
+	}
+	.theme-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	/* no-border 为独立覆盖类（模板按行尾条件追加 token）；uvue 禁复合选择器，
+	   原 .theme-item.no-border 复合写法引擎丢弃 → 统一改独立类，置于全部基类之后 */
+	.theme-icon {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+	.theme-icon-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+	}
+	.theme-info {
+		flex: 1;
+	}
+	.theme-name {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.theme-count {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.theme-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #b3a696;
+	}
+
+	/* 敏感画像管理（W10 画布 41:92）：话题名 fs14.5pt=27.9rpx、徽章 fs10.5pt=20rpx、
+	   行高 44pt 节奏用 padding 25rpx 近似（画布线两侧各 8pt 双间隙 → 上下 25rpx 单间隙，登记台账） */
+	.sens-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-top: 25rpx;
+		padding-bottom: 25rpx;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	.sens-name {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 27.9rpx;
+		color: #3a2e25;
+	}
+	.sens-badge-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 20rpx;
+		color: #8a7a6a; /* 静态默认（review 档同色）；运行时被 :style="badgeStyle(...)" 按处置级别覆盖 */
+		padding: 4.8rpx 11.5rpx;
+		border-radius: 15.4rpx;
+	}
+.sens-remove {
+	/* 热区 ≥44rpx（text@tap 清零军规 2026-09-06） */
+	margin-left: 19.2rpx;
+	width: 44rpx;
+	height: 44rpx;
+	justify-content: center;
+	align-items: center;
+}
+.sens-remove-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 23.1rpx;
+	color: #b3a696;
+}
+	.sens-add {
+		margin-top: 19.2rpx;
+		height: 77rpx;
+		border-radius: 23.1rpx;
+		background-color: #f8f7f4;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.sens-add-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8a7a6a;
+	}
+	/* 添加行展开态（画布无此形态，交互自洽样式：输入 + 确认钮） */
+	.sens-add-form {
+		margin-top: 19.2rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.sens-add-input {
+		flex: 1;
+		height: 77rpx;
+		padding-left: 23.1rpx;
+		padding-right: 23.1rpx;
+		border-radius: 23.1rpx;
+		background-color: #f8f7f4;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #3a2e25;
+	}
+	.sens-add-confirm {
+		margin-left: 15.4rpx;
+		height: 77rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		border-radius: 23.1rpx;
+		background-color: #b05a3a;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.sens-add-confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #ffffff;
+	}
+
+	/* 菜单行 */
+	.menu-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0ebe3;
+		border-bottom-style: solid;
+	}
+	/* 独立覆盖类：行尾去分隔线（theme-item/sens-row/menu-row 三族共用；
+	   写在全部基类之后，对齐 favorites card-meta-first 真机先例） */
+	.no-border {
+		border-bottom-width: 0rpx;
+	}
+	.menu-icon {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 28rpx;
+		background-color: #f8f7f4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+		font-size: 28rpx;
+	}
+	/* 独立覆盖类（原 .menu-icon.amber/.rust 复合写法引擎丢弃）：模板 token 不变 */
+	.amber {
+		background-color: #c4913c1a;
+	}
+	.rust {
+		background-color: #b05a3a1f;
+	}
+	/* W10.4：emoji → 同风格线性 SVG（20×20 线稿，显示 28rpx，色随行系） */
+	.menu-icon-img {
+		width: 28rpx;
+		height: 28rpx;
+	}
+	.menu-main {
+		flex: 1;
+	}
+	.menu-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 500;
+	}
+	.menu-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #8a7a6a;
+	}
+	.menu-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 32rpx;
+		color: #b3a696;
+	}
+
+	/* 关于画像 */
+	.about-card {
+		margin-top: 24rpx;
+		margin-bottom: 40rpx;
+		padding: 28rpx;
+	}
+	.about-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28rpx;
+		color: #3a2e25;
+		font-weight: 600;
+		margin-bottom: 12rpx;
+	}
+	.about-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 24rpx;
+		color: #8a7a6a;
+		line-height: 38rpx;
+	}
+
+	/* TabBar（W10.4）：自绘玻璃 TabBar 样式族已删，由 components/TabBar/TabBar.uvue 接管 */
+
+	/* 按压态动画 */
+	.pressable {
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+	

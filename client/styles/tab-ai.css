@@ -1,0 +1,507 @@
+
+
+	.ai-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: #F8F7F4;
+	}
+	.ai-header {
+		padding-top: 107.7rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+	}
+	/* 演示数据标注（2026-09-23）：内测期智能体未接入后端，页面必须显式说明，
+	   避免用户把样张对话当成已上线能力（台账 §7.1）。淡卡底 #F6EFE3 + 锈红字，与
+	   security 页徽章同族色，不引入新视觉语言。 */
+	.demo-note {
+		margin-top: 15.4rpx;
+		margin-left: 38.5rpx;
+		margin-right: 38.5rpx;
+		padding: 11.5rpx 19.2rpx;
+		border-radius: 15.4rpx;
+		background-color: #F6EFE3;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.demo-note-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 23.1rpx;
+		color: #B05A3A;
+	}
+	.n2_336 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		line-height: 92.3rpx; /* 画布 h48pt，锁行高 */
+		color: #3A2E25;
+	}
+	.n2_337 {
+		margin-top: 11.5rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25rpx;
+		color: #8A7A6A;
+	}
+	.n2_355 {
+		margin-left: 38.5rpx;
+		margin-right: 38.5rpx;
+		margin-bottom: 188.5rpx;
+		height: 100rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		background-color: rgba(255, 255, 255, 0.55);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_357 {
+		flex: 1;
+		height: 69.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	/* 附件入口钮（2026-09-01）：与发送钮同族 69.2rpx 圆钮，白底描边弱化、锈红 clip 点缀 */
+	.attach-btn {
+		width: 69.2rpx;
+		height: 69.2rpx;
+		margin-left: 15.4rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(58, 46, 37, 0.12);
+		border-radius: 34.6rpx;
+		overflow: hidden;
+	}
+	.attach-btn-icon {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.n2_358 {
+		width: 69.2rpx;
+		height: 69.2rpx;
+		margin-left: 15.4rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		border-radius: 34.6rpx;
+		overflow: hidden;
+	}
+	.n2_359 {
+		width: 30.8rpx;
+		height: 30.8rpx;
+	}
+	.n4_88 {
+		flex: 1;
+		margin-top: 46.2rpx;
+		padding-left: 38.5rpx;
+		padding-right: 38.5rpx;
+		flex-direction: column;
+	}
+	.ai-group {
+		width: 596.2rpx;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_339 {
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_341 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #5A4C40;
+	}
+	.n4_1 {
+		width: 46.2rpx;
+		height: 46.2rpx;
+		margin-left: 11.5rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B0593B;
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 5.8rpx 15.4rpx rgba(176, 89, 59, 0.3);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_2 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_342 {
+		width: 100%;
+		max-width: 500rpx;
+		margin-top: 15.4rpx;
+		flex-direction: column;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx 38.5rpx 38.5rpx 7.7rpx;
+		overflow: hidden;
+	}
+	.n2_343 {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		line-height: 44rpx;
+		color: #3A2E25;
+	}
+	.n2_344 {
+		width: 100%;
+		margin-top: 19.2rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #F8F7F4;
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_345 {
+		width: 92.3rpx;
+		height: 92.3rpx;
+	}
+	.n2_346 {
+		flex: 1;
+		margin-left: 19.2rpx;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_347 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.n2_348 {
+		margin-top: 3.8rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 形态②：直铺长答（画布 4:311 无气泡宽版） */
+	.plain-block {
+		width: 100%;
+		margin-top: 15.4rpx;
+		flex-direction: column;
+	}
+	.plain-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.plain-bullet {
+		margin-top: 19.2rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.plain-dot {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+	}
+	.plain-text {
+		flex: 1;
+		margin-left: 25rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		line-height: 44rpx;
+		color: #3A2E25;
+	}
+	/* 追问 chips（画布 4:334）：米灰底胶囊、墨棕次级字 */
+	.chips-row {
+		margin-top: 23.1rpx;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.chip {
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 17.3rpx;
+		padding-bottom: 17.3rpx;
+		margin-right: 15.4rpx;
+		margin-bottom: 11.5rpx;
+		background-color: #F0EBE3;
+		border-radius: 9999rpx;
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	/* 形态③：记忆卡横滑（画布 4:323，卡 160pt 宽、缩略 h90pt、第二张露边） */
+	.cards-wrap {
+		width: 100%;
+		margin-top: 15.4rpx;
+		flex-direction: column;
+	}
+	.cards-scroll {
+		width: 100%;
+		flex-direction: row;
+	}
+	.mem-card {
+		width: 307.7rpx;
+		margin-right: 23.1rpx;
+		flex-direction: column;
+		background-color: #FFFFFF;
+		border-radius: 23.1rpx;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		overflow: hidden;
+	}
+	.mem-thumb {
+		width: 307.7rpx;
+		height: 173.1rpx;
+	}
+	.mem-title {
+		margin-top: 15.4rpx;
+		margin-left: 15.4rpx;
+		margin-right: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.mem-meta {
+		margin-top: 3.8rpx;
+		margin-left: 15.4rpx;
+		margin-bottom: 15.4rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	/* 形态④：行动确认卡（画布 4:339） */
+	.confirm-card {
+		width: 100%;
+		margin-top: 15.4rpx;
+		padding: 26.9rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		flex-direction: column;
+	}
+	.confirm-row {
+		flex-direction: row;
+		align-items: center;
+	}
+	.confirm-star {
+		width: 46.2rpx;
+		height: 46.2rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: #B0593B;
+		border-radius: 23.1rpx;
+	}
+	.confirm-star-img {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.confirm-text {
+		flex: 1;
+		margin-left: 19.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 28.8rpx;
+		line-height: 42rpx;
+		color: #3A2E25;
+	}
+	.confirm-btns {
+		margin-top: 23.1rpx;
+		flex-direction: row;
+	}
+	.btn-ghost {
+		flex: 1;
+		height: 69.2rpx;
+		justify-content: center;
+		align-items: center;
+		background-color: #F8F7F4;
+		border-radius: 34.6rpx;
+	}
+	.btn-ghost-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #5A4C40;
+	}
+	.btn-primary {
+		flex: 1;
+		height: 69.2rpx;
+		margin-left: 15.4rpx;
+		justify-content: center;
+		align-items: center;
+		background-color: #B05A3A;
+		border-radius: 34.6rpx;
+	}
+	.btn-primary-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #FFFFFF;
+	}
+	/* 形态⑤：流式输出态（画布 4:349，三点透明度阶梯） */
+	.typing-row {
+		width: 100%;
+		margin-top: 15.4rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.typing-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		color: #8A7A6A;
+	}
+	/* uvue 仅支持单类选择器：三点透明度阶梯拆独立类（.typing-dot.d1 复合选择器不支持） */
+	.td-1 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		margin-left: 15.4rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+	}
+	.td-2 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		margin-left: 15.4rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+		opacity: 0.55;
+	}
+	.td-3 {
+		width: 9.6rpx;
+		height: 9.6rpx;
+		margin-left: 15.4rpx;
+		border-radius: 4.8rpx;
+		background-color: #B05A3A;
+		opacity: 0.25;
+	}
+	/* 用户消息行 */
+	.n2_349 {
+		width: 673.1rpx;
+		margin-top: 30.8rpx;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_350 {
+		max-width: 500rpx;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #AA5334;
+		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.3), 0rpx 7.7rpx 19.2rpx rgba(176, 89, 59, 0.25);
+		border-radius: 38.5rpx 38.5rpx 7.7rpx 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_351 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 30.8rpx;
+		line-height: 44rpx;
+		color: #FFFFFF;
+	}
+	/* 附件选择面板（画布 ai_typing 4:361 半屏形态：把手 + 标题 + 相册 2×3 + 两入口） */
+	.attach-scrim {
+		position: fixed;
+		/* absolute-ok: 全屏遮罩浮层（浮层白名单） */
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(42, 33, 26, 0.4);
+		z-index: 1000;
+	}
+	.attach-panel {
+		position: fixed;
+		/* absolute-ok: 底部半屏浮层面板（浮层白名单），z1000 与 RecordSheet 同层 */
+		left: 38.5rpx;
+		right: 38.5rpx;
+		bottom: 220rpx; /* 避让 TabBar（110px=220rpx 全高） */
+		padding-bottom: 34.6rpx;
+		background-color: #FFFFFF;
+		border-radius: 38.5rpx;
+		box-shadow: 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.18);
+		flex-direction: column;
+		align-items: center;
+		z-index: 1001;
+	}
+	.attach-handle {
+		margin-top: 23.1rpx;
+		width: 92.3rpx;
+		height: 9.6rpx;
+		border-radius: 4.8rpx;
+		background-color: #E5DED4;
+	}
+	.attach-title {
+		margin-top: 26.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: 28.8rpx;
+		color: #3A2E25;
+	}
+	.attach-grid {
+		margin-top: 30.8rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		width: 100%;
+		flex-direction: column;
+	}
+	.grid-row {
+		margin-top: 11.5rpx;
+		flex-direction: row;
+	}
+	.grid-thumb {
+		width: 192.3rpx;
+		height: 146.2rpx;
+		margin-left: 15.4rpx;
+		border-radius: 23.1rpx;
+		background-color: #F0EBE3;
+	}
+	/* uvue 不支持后代+伪类选择器，首元素用显式覆盖类（须置于 .grid-thumb 之后生效） */
+	.grid-thumb-first {
+		margin-left: 0;
+	}
+	.attach-entries {
+		margin-top: 26.9rpx;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		width: 100%;
+		flex-direction: row;
+	}
+	.attach-entry {
+		flex: 1;
+		height: 80.8rpx;
+		margin-left: 15.4rpx;
+		padding-left: 23.1rpx;
+		flex-direction: row;
+		align-items: center;
+		background-color: #F8F7F4;
+		border-radius: 23.1rpx;
+	}
+	.attach-entry-first {
+		margin-left: 0;
+	}
+	.attach-entry-icon {
+		width: 34.6rpx;
+		height: 34.6rpx;
+	}
+	.attach-entry-text {
+		margin-left: 19.2rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}

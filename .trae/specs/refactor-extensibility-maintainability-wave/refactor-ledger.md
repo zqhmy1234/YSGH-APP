@@ -39,9 +39,9 @@
 | L-03 | `backend/app/api/contents.py` **902 行**（手抄软删模式 8 处）——深审确认**4 router 物理交错混居**（`router` / `profile_sensitive` / `favorites` / `trash` / waveform） | 巨文件+重复 | P0 | 内容域为后端最热 API；拆分+走 helper 降回归面 | 中（有 contents 测试族护航） | 纯移动+兼容再导出 | pytest contents/content_upload/photo_content + `audit_harness openapi` | B2（**最小方案已定，见 §9.4**） |
 | L-03b | `backend/app/api/events.py` **530 行**（软删手抄 6 处；`_batch_*` 同语义双实现、图片 URL 三写） | 巨文件+重复 | P1 | 事件域读写混杂 | 中 | 纯移动+兼容再导出 | pytest events/aggregation + openapi | B2 |
 | L-03c | `api/events.py:100` / `rag/rewrite.py:15` / `rag/image.py:44,52` / `api/upload.py:264` → **API 层与 rag 层越级直连**（绕过 `services/external` 端口 / `llm_ops` 门面） | 边界/依赖方向（FF1） | P1 | 端口抽象被架空，换厂商成本外溢 | 中 | 行为等价替换 | 静态 import 边 + pytest | 后续 |
-| L-18 | `client/components/TabAi/TabAi.uvue` **974 行**（AI 对话页；含 `USE_MOCK_CHAT` 演示开关，已登记 B8） | 巨文件 | P1 | 补记（**轴 5 基线条目 ↔ 台账 1:1 补齐**，2026-09-25）：原仅存在于 `audit_harness_baseline.json`、台账无对应 L 号 ⇒ 账实两处口径漂移 | 中 | 纯移动（样式外置/抽 composable） | 冷编译 + 轴 5/6/7 | 后续客户端拆分波 |
-| L-19 | `client/pages/favorites/favorites.uvue` **957 行**（收藏页；已随 B5.2f-1 抽 `useWaveform`，975→957） | 巨文件 | P1 | 同上（补 L 号） | 中 | 纯移动 | 冷编译 + 轴 5/6/7 | 后续客户端拆分波 |
-| L-20 | `client/pages/portrait/manage.uvue` **891 行**（画像管理页） | 巨文件 | P1 | 同上（补 L 号） | 中 | 纯移动 | 冷编译 + 轴 5/6/7 | 后续客户端拆分波 |
+| L-18 | `client/components/TabAi/TabAi.uvue` （原 974 行；含 `USE_MOCK_CHAT` 演示开关，已登记 B8） | 巨文件 | P1 | ✅ **已销项 2026-09-25**：`<style>` 507 行**纯移动**到 `client/styles/tab-ai.css` ⇒ **974 → 469**（轴 5 条目删除） | 低（样式纯移动） | 纯移动 | 归一化字节全等 + 冷编译 + 产物 `style.bytes` 含 `ai-root`/`ai-header` | B5 |
+| L-19 | `client/pages/favorites/favorites.uvue` （原 957 行；已随 B5.2f-1 抽 `useWaveform`，975→957） | 巨文件 | P1 | ✅ **已销项 2026-09-25**：`<style>` 459 行**纯移动**到 `client/styles/favorites.css` ⇒ **957 → 500**（轴 5 条目删除） | 低 | 纯移动 | 同上（`page-root`/`nav-title`） | B5 |
+| L-20 | `client/pages/portrait/manage.uvue` （原 891 行） | 巨文件 | P1 | ✅ **已销项 2026-09-25**：`<style>` 427 行**纯移动**到 `client/styles/portrait-manage.css` ⇒ **891 → 466**（轴 5 条目删除） | 低 | 纯移动 | 同上（`page`/`serif`） | B5 |
 
 ## 3. P1 · 结构债
 
@@ -261,9 +261,16 @@
 | **缺陷（P0 回归，已修）** | ✅ 修复 | B5.2f-2e 把 `saving` 迁入 `useVoiceRecord.uts` 时，**方法体写了 `this.saving.value` 却漏声明 `saving` 字段** ⇒ 真机 `submitVoice` 必 `undefined.value` 崩溃 | **两道门同时失守**：① HBuilderX 编译报绿（GAP-1：编译只覆盖语法/解析，不覆盖符号解析）；② **轴 6 抓不到**——它只查「用了模块导出却没 import」，`this.<名>` 是**类成员访问**、不是跨模块符号。修复＝补 `saving = ref(false)`（恢复迁移前的并发保存守门） |
 | **新门禁：轴 7（`audit_class_members`）** | ✅ 完成（含负向探针） | `scripts/audit_class_members.py`：`client/**/*.uts|*.uvue` 的类，声明集＝类体**深度 0** 的字段/方法；覆盖**两个面**—— ① `this.<名>` 不在本类（GAP-2 原发形态）；② `const x = new Cls(…)` 之后 `x.<名>` 不在 `Cls`（实例指涉，L-02 抽 composable 后组件大量经实例调用）；**`extends` 类整体跳过**、同名变量非「全部赋值皆 `new Cls(`」则跳过（挡遮蔽误报，实测 `uploader_batch.uts` 的 `held`）；接入 `audit_harness` 新轴 `class_members`（含 `all`）+ `review_agent.check_audit_axes`（快/全量均跑） | ① 全仓 **76 类 0 误报**、3 个 `extends` 类跳过；② **反向探针两例**（删 `saving` 字段 → 报 `this.saving`；改 `pa.attachAll`→`pa.attachAllZZZ` → 报 `pa.attachAllZZZ`）**均 EXIT=1** 且**字节级还原**；③ 教训已登记 `docs/lessons.md`（GAP-2） |
 
+### 8.15 L-18/L-19/L-20 样式外置 → 🎯 **轴 5 filesize 棘轮清零**（2026-09-25 · 第十六轮）
+
+| 条目 | 状态 | 证据 | 备注 |
+|---|---|---|---|
+| **L-18 / L-19 / L-20** `TabAi.uvue` / `favorites.uvue` / `manage.uvue` 的 `<style>` 块 → `client/styles/{tab-ai,favorites,portrait-manage}.css` | ✅ 完成（结构 + 冷编译 + 产物取证） | 沿用 **B5d/B5.2e 已证机制**（整块 `<style>` 纯移动到 `client/styles/*.css`，uvue 侧只留 `@import`）——**零 script/运行时改动**（比抽 composable 风险更低） | ① **974 → 469 / 957 → 500 / 891 → 466**（三处均 <800）；② **等价性证明**：`当前 uvue + 还原 css` 与 `git show HEAD:<file>` **归一化后字节全等**（TabAi 工作区为 CRLF、git blob 为 LF，故须按行尾归一后比较——差值恰等于行数）；③ **冷编译成功**（ready in 67.8s）；④ **产物取证**：`GenComponentsTabAiTabAiSharedData.style.bytes` 含 `ai-root`/`ai-header`、`GenPagesFavoritesFavoritesSharedData.style.bytes` 含 `page-root`/`nav-title`、`GenPagesPortraitManageSharedData.style.bytes` 含 `page`/`serif` ⇒ `@import` 被真正处理（非静默丢弃） |
+| 🎯 **轴 5 基线 allowlist 清空** | ✅ 完成 | 三条条目按 gate 口径删除后：`audit_harness filesize` → `无新增超阈文件 ✓（**存量超阈 0 个**已冻结）`、**无 CRITICAL** | ⇒ 本波**全部巨文件类棘轮项清零**（`contents.py`/`detail.uvue` 早前已销项；`RecordSheet`/`TabIndex`/`TabAi`/`favorites`/`manage` 于本波销项），台账 §2 的 L-01/02/18/19/20 全部 ✅；**注意**：`L-03b/L-07 events.py` 530 行 <600 阈，本来就不是棘轮项 |
+
 ### 8.1 棘轮状态（2026-09-24 第二轮执行后，第五轮更新 · 含 B5b/B10-q）
 
-- **2026-09-25 更新（L-01 / L-02 均销项后）**：轴 5 存量超阈 **4 → 3**（`RecordSheet` 随 **L-01**（B5.2f-2e，753 行）销项、`TabIndex` 随 **L-02**（L-02b，738 行）销项；余 `TabAi` 974 / `favorites` 957 / `manage` 891 —— 三者已于 2026-09-25 补记 **L-18/L-19/L-20**，台账 ↔ 基线 1:1）；`audit_harness all` **无 CRITICAL**（INFO 18）；新增**轴 7 类成员解析**（`class_members`，见 §8.14）并接入 `review_agent` 快/全量；**`review_agent --full` 实跑 EXIT 0**（Docker/Qdrant 已起）：`syntax` 376 文件 ✅ / `lint` ✅ / `tests` ✅（pytest 主套件 + `-m rag` 分组，**覆盖率 84.59% ≥ 60**）/ `api_smoke` ✅ / `research` ✅ 18 场景 —— 承 §8.3 B10-h 的"覆盖率待环境验证"**就此解除**。
+- **2026-09-25 更新（L-01 / L-02 / L-18 / L-19 / L-20 全部销项后）**：轴 5 存量超阈 **4 → 3 → 0（allowlist 清空）**——`RecordSheet` 随 **L-01**（B5.2f-2e，753 行）、`TabIndex` 随 **L-02**（L-02b，738 行）、`TabAi`/`favorites`/`manage` 随 **L-18/19/20**（§8.15 样式外置，974→469 / 957→500 / 891→466）销项；`audit_harness all` **无 CRITICAL**；新增**轴 7 类成员解析**（`class_members`，见 §8.14）并接入 `review_agent` 快/全量；**`review_agent --full` 实跑 EXIT 0**（Docker/Qdrant 已起）：`syntax` 376 文件 ✅ / `lint` ✅ / `tests` ✅（pytest 主套件 + `-m rag` 分组，**覆盖率 84.59% ≥ 60**）/ `api_smoke` ✅ / `research` ✅ 18 场景 —— 承 §8.3 B10-h 的"覆盖率待环境验证"**就此解除**。
 - `audit_harness all`：**无 CRITICAL**（INFO 16）；轴 5 存量超阈 **7 → 6 → 5 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**；`client/pages/detail/detail.uvue` 随 **B5d** 样式外置**销项移除**，1167→577 行；`RecordSheet`/`TabIndex` 随 **B5.2e** 样式外置**下调计数**——2208→1354 / 1740→1065，条目**保留冻结**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）；**轴 4 零调用能力导出存量 9 个已冻结**（B10-d 露出 `AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`；B10-f 补递归露出 `WALK_SPEED_MS`；**B10-q 剔注释后新露出 4**：`AGG_CHECK_ON_DEVICE`/`invalidateTimelineCache`/`isIgnoredEvent`/`parseErrorString`），引用计数已**剔除注释**（B10-q），且新增"僵尸豁免清算"。
 - 门禁接入（**已消除三类"恒绿假门禁"**）：
   - `review_agent` 现含 `structure`（轴 5/6，B1）+ **`audit_axes`（轴 1–4，B10）**，快/全量均跑、秒级；

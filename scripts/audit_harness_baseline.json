@@ -12,23 +12,7 @@
       "backend_py": 600,
       "client": 800
     },
-    "allowlist": {
-      "client/components/TabAi/TabAi.uvue": {
-        "lines": 974,
-        "reason": "AI 页；含 USE_MOCK_CHAT 演示开关（已登记 B8）",
-        "target": "批次 B5"
-      },
-      "client/pages/favorites/favorites.uvue": {
-        "lines": 957,
-        "reason": "收藏页体量偏大；**已抽波形缓存 composable**（B5.2f-1：useWaveform，975→957）",
-        "target": "批次 B5 继续抽 composable / 样式外置后删除本条"
-      },
-      "client/pages/portrait/manage.uvue": {
-        "lines": 891,
-        "reason": "画像管理页体量偏大",
-        "target": "批次 B5"
-      }
-    }
+    "allowlist": {}
   },
   "exports": {
     "zero_cap_allowlist": {
