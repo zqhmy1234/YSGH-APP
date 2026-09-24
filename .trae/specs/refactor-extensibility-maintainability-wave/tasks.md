@@ -110,6 +110,8 @@
 
 - [x] Task B10-i: 门禁自身可靠性 4 项：`D14-23` CI schema-drift 去 `continue-on-error` / `D14-22` 统一机读 schema（新 `scripts/gate_report.py`）/ `D14-12` 收敛 subprocess 双实现（新 `scripts/gate_proc.py`）/ `D14-6` 判定已被 B10-g 覆盖。见 ledger §8.4。
 
+- [x] Task B11（第七轮）声明漂移残余：`D05-9` ✅（rerank 模型名单点化）/ `D02-7` ✅（photos 键布局单点化，新 `services/media_keys.py`）/ `D04-3` ✅（`night` 接线 + 删冗余 `gps_speed`）/ `D12-7` ✅（失效证据书面作废）/ `D02-9` ⏸ **登记未改**（属行为变更 → 功能波）。**余**：`D07-14`、`D09-10`。见 ledger §8.5。
+
 - [x] Task B6: 客户端声明漂移清理：`shell.uvue:7`、`search_api.uts:183`、`feature_list.json` 自相矛盾证据；`audit_harness client` 无新增漂移。
   - **结论：验证即达标**——三则已由 09-23 审计窗修复；残余两处注释原文含「对齐原 …」，B1 的「原」标注抑制生效 → 轴 2 无注释内未注册页面引用。
 

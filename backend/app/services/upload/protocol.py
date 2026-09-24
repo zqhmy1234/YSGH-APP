@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -21,6 +20,7 @@ from app.core.config import settings
 from app.db.models import UploadChunk, UploadTask
 from app.services.errors import ConflictError, NotFoundError, TooLargeError, ValidationError
 from app.services.external.storage import best_effort_delete, get_storage_backend
+from app.services.media_keys import photo_object_key
 
 logger = logging.getLogger("yishu.upload")
 
@@ -74,9 +74,8 @@ def discard_staging_for_task(db: Session, task: UploadTask, backend) -> int:
 
 
 def _final_key(user_id: str, file_name: str) -> str:
-    safe = "".join(c for c in file_name if c.isalnum() or c in "._-") or "file"
-    now = datetime.now(timezone.utc)
-    return f"photos/{user_id}/{now:%Y%m}/{uuid.uuid4().hex[:12]}_{safe}"
+    # D02-7（2026-09-24 重构波）：键布局**单点化**到 app.services.media_keys（与 multipart 路径共用）
+    return photo_object_key(user_id, file_name)
 
 
 def init_upload(

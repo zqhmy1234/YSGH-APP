@@ -21,7 +21,6 @@ register_photo_content）只做协议转换后委托本模块，两套幂等键�
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime
 
 from sqlalchemy import select
@@ -33,6 +32,7 @@ from app.db.models import Content
 from app.services import thumbnails
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 from app.services.external.storage import best_effort_delete, get_storage_backend
+from app.services.media_keys import photo_object_key
 from app.services.pipeline import process_content
 from app.services.upload_meta import PhotoMeta
 
@@ -246,7 +246,9 @@ def register_photo_content(
 
     # 5. original：新建真照片记录（multipart 传 data 落 storage / 分片用既有 cos_key）
     if data is not None:
-        cos_key = f"photos/{user_id}/{uuid.uuid4().hex}{ext}"
+        # D02-7（2026-09-24 重构波）：改走**唯一键布局**（原为 photos/{uid}/{hex32}{ext}，
+        #   无 yyyymm 段，与分片路径两套布局）。保留扩展名（content-type 派生依赖它）。
+        cos_key = photo_object_key(user_id, f"original{ext}")
         backend.put_object(cos_key, data)
     else:
         # P0-3：original 新建路径魔数校验（分片 complete 路径无 bytes 入参，

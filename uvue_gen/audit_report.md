@@ -1,5 +1,14 @@
 # UI 像素级还原对拍报告
 
+> ⚠️ **本报告已失效（2026-09-24 标注 · D12-7 声明漂移）**
+>
+> ① 所引「对拍器 `scripts_verify_layout.py`」**全仓不存在**（含 git 全历史）⇒ 结论**不可复现**；
+>    （全仓现存仅为 `scripts_ardot2uvue.py` / `scripts_assemble.py` / `gen_design_data_v4.py`）
+> ② 其覆盖的老页面（`index` / `search` / `profile` / `ai/*` / `press`）**已整体退役**——搬迁为
+>    `client/components/Tab{Index,Ai,Search,Profile}/`（见 `client/pages/shell/shell.uvue:7` 注）⇒ 对拍对象已不存在；
+> ③ 因此下文「合计：对拍 561 元素，超差 0（0.0%）」**不再作为任何验收依据**（原文保留仅供历史对照）；
+> ④ 现行像素/视觉验收走**真机**（见 `skills/android-media-e2e/SKILL.md`），不复用本报告口径。
+
 对拍器：scripts_verify_layout.py（容差 2px，单位 px，坐标已扣除 .phone 容器偏移）
 
 超差归类：转换器规则bug / 缺资产（img naturalWidth=0，见 uvue_gen/_missing_icons.json）/期望计算边界（flex 流式期望无法表达的布局，不参与对拍则不计超差）

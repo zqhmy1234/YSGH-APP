@@ -99,9 +99,17 @@
 - [ ] ⚠️ **B5.2f（script 半）未做**：`RecordSheet`(script 1097)/`TabIndex`(851) 的 script 抽 composable **需真机验收**（`adb` 无设备）⇒ L-01/L-02 **未闭环**；`favorites.uvue` 基线 974 vs 实际 975 为**先于本轮**的记账漂移（未上调，保持 WARN）
 - [ ] **B5.2f 剩余客户端拆分**：`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`（L-01/02，script 侧抽 composable；本体可冷编译+逐行等价验证，**L-01/L-02 真机验收待设备**）
 - [x] **决策已拍板（2026-09-24）**：**L-12 令牌收敛 → 另立「令牌波」**（判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机；台账 §5.10 拍板 10.4）；**64 条功能缺陷 → 另开「功能修复波」**（拍板 10.1）；本波 §7 边界已同步
-- [x] 未使用 `--no-verify` 绕过门禁 —— 证据：B5a/B5b 提交均经 hook `[pre-commit] 审核通过`
+- [x] 未使用 `--no-verify` 绕过门禁 —— 证据：本批提交经 hook `[pre-commit] 审核通过`
 
-## H. B10-i 门禁自身可靠性（2026-09-24 · 第六轮）
+## B11 声明漂移残余（2026-09-24 · 第七轮）
+
+- [x] **D05-9** rerank 模型名三方不一致 → 权威值 `bge-reranker-v2-m3`，改 **5 处陈旧值**（`rerank.py` docstring/:57 fallback、`warm_hf_models.py:25`、`ci.yml:289` 注解、`审计_未关闭缺陷` S3）；`:57` 删 fallback 字面量（单点化到 config，行为等价）—— 证据：`test_rag` **31 passed**；残留 `bge-reranker-base` 仅剩删改说明注释
+- [x] **D02-7** `photos/` 键布局两套 → 新增 `services/media_keys.py::photo_object_key` 单点化，`protocol._final_key` 委托 + `photo_content` multipart 路径改走同布局 —— 证据：`derive_thumbnail_key` 为 prefix 级（布局无关）；5 个测试文件 **80 passed**；测试注释同步
+- [x] **D04-3** `AGG_CONFIG["night"]`/`["gps_speed"]` 死配置 → `night` **接线**到 `st_dbscan`（值相同 ⇒ 行为等价）+ **删冗余 `gps_speed`** —— 证据：**内存级非空转探针**（改配置 22/30 → 22:45 也归前一天、23:45 变当天 ⇒ 确已接线；还原复原值）；聚合 3 文件 **31 passed**；⚠️ 接线暴露 `agg_types↔st_dbscan` **模块级循环依赖**（既有问题，已登记，本批用函数内局部 import 规避）
+- [x] **D12-7** `uvue_gen/audit_report.md` 死证据（引用不存在的对拍器）→ **文首加失效声明**（对拍器不存在/对象已退役/不作验收依据/现行走真机）—— 证据：全仓+全历史 0 命中该对拍器；原文保留供对照
+- [ ] ⏸ **D02-9 登记未改**（照片扩展名三表不一致）：收敛必改下发 MIME 或受理格式 ⇒ **行为变更**，越出本波边界；已在 `media_url`/`upload_meta`/`file_magic` 三处加交叉说明（漂移已书面化），修复移交**功能波**（§5.10 拍板 10.1）
+
+## B10-i 门禁自身可靠性（2026-09-24 · 第六轮）
 
 - [x] **D14-23** CI `schema-drift-weekly` **永绿**（`continue-on-error: true` + 仅 schedule）→ **去掉 `continue-on-error`**（本 job 仍仅 schedule/dispatch 触发、不进 push/PR，但**定时检出漂移即红=告警信号**，口径对齐同文件 `pip-audit-weekly`）—— 证据：`yaml.safe_load` 解析通过、目标 step 已无 `continue-on-error`、`if` 仍限定 `schedule/workflow_dispatch`
 - [x] **D14-22** 机读报告 schema 不统一 + 写盘无兜底 → 新增 `scripts/gate_report.py`（`SCHEMA_VERSION`/`COMMON_KEYS`/带兜底 `write_report`），三工具接入、**自有键全保留** —— 证据：`COMMON ok=True`；两工具实跑报告均含 `schema_version/generated_at/passed`；不可写路径 → `[WARN]` 且 `EXIT=0`（**原实现会崩**）

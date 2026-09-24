@@ -1,7 +1,7 @@
 """bge-reranker 粗排（B2 双层 Rerank 第一层 · WP-F 2026-08-19）
 
-本地 CrossEncoder（bge-reranker-base，中文），模型就绪自动启用；未就绪返回原序（不阻塞）。
-模型路径：settings.reranker_model（默认 backend/models/bge-reranker-base）。
+本地 CrossEncoder（bge-reranker-v2-m3，中文），模型就绪自动启用；未就绪返回原序（不阻塞）。
+模型路径：settings.reranker_model（**唯一来源**；config 默认 backend/models/bge-reranker-v2-m3）。
 加载策略：懒加载 + 进程级单例（首次调用加载，失败记日志降级）。
 """
 from __future__ import annotations
@@ -54,7 +54,12 @@ def _load_model():
 
     # 审查修复(P1-10)：模型路径基于 __file__ 解析，不依赖 CWD
     backend_dir = Path(__file__).resolve().parent.parent.parent
-    model_path = Path(settings.reranker_model or "bge-reranker-base")
+    # D05-9（2026-09-24 重构波）：**删除本处 fallback 字面量**——模型名单点化到 config
+    #   （settings.reranker_model 默认 "bge-reranker-v2-m3"，两套 env 模板亦同）。
+    #   原写 `or "bge-reranker-base"` 是**陈旧值**（与 config 不一致；历史上的 docstring 同名陈旧值
+    #   还曾误导 P0-2 把 v2-m3 误判为死重，见 _diff_ledger.md「教训=模型路径判定以 config 为准不注释」）。
+    #   行为等价：`RERANKER_MODEL` 被显式置空时，两分支在"模型目录缺失"下都走 `return None`（优雅降级）。
+    model_path = Path(settings.reranker_model)
     if not model_path.is_absolute():
         model_path = backend_dir / "models" / model_path
     if not (model_path / "config.json").exists():

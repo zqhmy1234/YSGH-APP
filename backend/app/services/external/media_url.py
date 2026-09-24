@@ -50,6 +50,15 @@ logger = logging.getLogger("yishu.media_url")
 MEDIA_PATH_PREFIX = "/api/v1/media/"
 
 # key 扩展名 → Content-Type（只覆盖项目实际会存的素材类型）
+#
+# ⚠️ D02-9（2026-09-24 重构波 · **登记未改**）：本项目照片扩展名有**三处表**
+#   —— 本表（MIME）/ `services/upload_meta.ALLOWED_PHOTO_EXTS`（受理白名单）/
+#   `services/file_magic`（魔数支持集），三者**已知不一致**：
+#     · `.heif` ∈ ALLOWED_PHOTO_EXTS，但**本表无映射** ⇒ `content_type_for` 回落 `image/jpeg`（MIME 失真）；
+#     · `.gif` 仅本表有（ALLOWED_PHOTO_EXTS 与 file_magic 均不含 GIF）。
+#   收敛需在「改下发 MIME（.heif→image/heif）」与「改受理格式（放开/收紧 .gif）」之间二选一，
+#   **两者都是行为变更**（且涉及客户端渲染/合规），故本波**只登记不改**（交功能波/拍板）。
+#   受理白名单的**唯一来源**是 `upload_meta.ALLOWED_PHOTO_EXTS`。
 _CONTENT_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",

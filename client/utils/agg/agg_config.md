@@ -15,14 +15,14 @@
 | L0 空间窗 | `L0_EPS_S_M` | `l0.eps_s_m` | 500.0（m） | |
 | L0 min_pts | `L0_MIN_PTS` | `l0.min_pts` | 3 | <3 张散片进 L1 日卡片 |
 | 连拍折叠阈值 | `BURST_GAP_SEC` | `burst_gap_sec` | 5.0（s） | <5s 间隔折叠为 1 时间点 |
-| 步行速度上限 | `WALK_SPEED_MS` | `gps_speed.walk_ms` | 6000/3600（m/s） | 速度校验下限 |
-| 驾车速度上限 | `DRIVE_SPEED_MS` | `gps_speed.drive_ms` | 120000/3600（m/s） | 漂移判定上限 |
+| 步行速度上限 | `WALK_SPEED_MS` | `WALK_SPEED_MS`（**模块常量，非 AGG_CONFIG 键**） | 6000/3600（m/s） | 速度校验下限；云侧 `agg_preprocess` 直接 import 常量（D04-3 已删除冗余的 `gps_speed` 键） |
+| 驾车速度上限 | `DRIVE_SPEED_MS` | `DRIVE_SPEED_MS`（同上，模块常量） | 120000/3600（m/s） | 漂移判定上限 |
 
 ## 云侧独有参数（端侧不参与，仅云侧 L2/L3 使用）
 
 | 语义 | 云侧键（pipeline.py AGG_CONFIG） | 值 | 说明 |
 |---|---|---|---|
-| 深夜归属起点 | `night.hour` / `night.minute` | 23 / 30 | L1 深夜 23:30-1:00 归属前一天（端侧 st_dbscan 独立实现同规则） |
+| 深夜归属起点 | `night.hour` / `night.minute` | 23 / 30 | L1 深夜 23:30-1:00 归属前一天（端侧 `st_dbscan.uts:bucketDay` 独立实现同规则）；云侧由 `st_dbscan._iso_day` **实际读取本键**（D04-3 接线，此前写了无人读） |
 | L2 最小跨天数 | `l2_min_days` | 2 | |
 | L2 最小照片数 | `l2_min_photos` | 10 | |
 | L2 地点域连续 | `l2_place.max_gap_km` / `max_gap_hours` | 5.0 / 12.0 | |

@@ -63,8 +63,11 @@ AGG_CONFIG = {
         "conservative_mode": CONSERVATIVE_MODE,  # 2026-08-26 集成接线：对齐端侧 agg_config.uts（AGG-016 双跑覆盖）
     },
     "burst_gap_sec": BURST_GAP_SEC,                     # 端侧 BURST_GAP_SEC
-    "gps_speed": {"walk_ms": WALK_SPEED_MS, "drive_ms": DRIVE_SPEED_MS},  # 端侧 WALK_SPEED_MS/DRIVE_SPEED_MS
-    "night": {"hour": NIGHT_HOUR, "minute": NIGHT_MIN},
+    # D04-3（2026-09-24 重构波）：**删除冗余键 `gps_speed`**——云侧消费方
+    # （`agg_preprocess.py:14,17,68,72`）**直接 import** `WALK_SPEED_MS`/`DRIVE_SPEED_MS` 常量，
+    # 从不读本键 ⇒ 属"写了没人读"的重复声明（改参数易漏改，破坏"统一参数源"可信度）。
+    # 两常量仍在 agg_types 单一来源、被真实消费；`agg_config.md` 已同步更正。
+    "night": {"hour": NIGHT_HOUR, "minute": NIGHT_MIN},  # ← 现由 st_dbscan._iso_day 实际读取（D04-3 接线）
     "l2_min_days": 2,
     "l2_min_photos": 10,
     "l2_place": {"max_gap_km": L2_MAX_GAP_KM, "max_gap_hours": L2_MAX_GAP_HOURS},

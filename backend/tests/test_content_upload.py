@@ -78,7 +78,7 @@ def test_upload_photo_success(client, auth_headers):
     assert data["content_type"] == "photo"
     assert data["status"] == "processing"
 
-    # storage 原件存在（fake 后端：cos_key 形如 photos/<user>/<hex>.jpg）
+    # storage 原件存在（fake 后端：cos_key 为**唯一布局** photos/<user>/<yyyymm>/<hex>_original.<ext>；D02-7）
     backend = get_storage_backend()
     assert isinstance(backend, FakeStorageBackend)
     keys = [k for k in backend._store if k.startswith("photos/")]

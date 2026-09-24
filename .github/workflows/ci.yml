@@ -286,7 +286,7 @@ jobs:
           bge = pathlib.Path(hub) / 'models--BAAI--bge-m3'
           print('::error title=model-paths::HF_HUB_CACHE=' + hub +
                 ' | BGE-M3 cached=' + ('YES' if bge.is_dir() else 'NO') +
-                ' | reranker=backend/models/bge-reranker-base' +
+                ' | reranker=backend/models/bge-reranker-v2-m3' +
                 ' | setfit=backend/models/setfit-classifier')
           for f in ['.cowork-temp/review-report.json', '.cowork-temp/test-report.json']:
               p = pathlib.Path(f)

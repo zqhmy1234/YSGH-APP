@@ -23,6 +23,9 @@ from app.services.sync_common import parse_ts
 
 # 照片上传共享常量（原 contents.py:60-64 定义、upload.py:256 内联元组——双份漂移源）
 MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB（API multipart 中转上限）
+# ⚠️ 受理白名单的**唯一来源**。D02-9（2026-09-24）：与 `external/media_url._CONTENT_TYPES`
+#   （MIME 表）及 `file_magic`（魔数集）存在已知差异（`.heif` 无 MIME 映射、`.gif` 仅 MIME 表有），
+#   收敛属**行为变更**，本波只登记不改（详见 media_url 处注释）。
 ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 PHOTO_SOURCES = ("app", "windows", "wechat", "import")
 

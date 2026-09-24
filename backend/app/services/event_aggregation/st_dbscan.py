@@ -115,8 +115,17 @@ def l1_daily_aggregate(
         00:00-00:59 也缺失处理。统一：23:30-23:59 / 00:00-00:59 / 01:00 整点 → 前一天。
         """
         shifted = ts + timedelta(minutes=tz_offset_minutes) if tz_offset_minutes else ts
+        # D04-3（2026-09-24 重构波）：深夜归属起点改为**读取 AGG_CONFIG["night"]**——
+        #   原为硬编码 23/30 字面量，而 `AGG_CONFIG["night"]` 写了却**无人读** ⇒ "统一参数源"名不副实。
+        #   接线后值与字面量完全相同（23/30）⇒ **行为等价**；端侧 `st_dbscan.uts:bucketDay`
+        #   独立实现同规则（AGG-016 端云一致）。
+        #   注：此处**函数内局部 import** 是刻意的——`agg_types.py:19` 反向 `from …st_dbscan import Photo`，
+        #   模块级 import 会构成**循环依赖**（已登记，属既有结构问题，见 ledger D04-3 附注）。
+        from app.services.event_aggregation.agg_types import AGG_CONFIG  # noqa: PLC0415
+
+        _night = AGG_CONFIG["night"]
         night_rule = (
-            (shifted.hour == 23 and shifted.minute >= 30)
+            (shifted.hour == _night["hour"] and shifted.minute >= _night["minute"])
             or shifted.hour == 0
             or (shifted.hour == 1 and shifted.minute == 0)
         )

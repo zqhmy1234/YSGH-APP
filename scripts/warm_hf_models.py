@@ -22,7 +22,7 @@ force_utf8()
 MODEL_PATHS: list[tuple[str, str, str]] = [
     ("BGE-M3 文本塔", "BAAI/bge-m3", "~/.cache/huggingface/hub/models--BAAI--bge-m3"),
     ("BGE-M3 sparse 投影", "BAAI/bge-m3 内文件", "sparse_linear.pt（BGE-M3 snapshots 下）"),
-    ("Reranker 粗排", "backend/models/bge-reranker-base", "仓库本地模型（非 HF）"),
+    ("Reranker 粗排", "backend/models/bge-reranker-v2-m3", "仓库本地模型（非 HF）"),
     ("SetFit 分类", "backend/models/setfit-classifier", "仓库本地模型（非 HF）"),
     ("SenseVoice(ONNX)", "funasr-onnx/modelscope", "~/.cache/modelscope 或 funasr 模型目录"),
 ]
