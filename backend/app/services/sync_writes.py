@@ -53,6 +53,9 @@ SERVER_DEVICE = "_server"
 # 服务端 → 客户端「取消删除」变更类型（客户端 applyChanges 按"非 delete ⇒ 存活"处理）
 OP_RESTORE = "restore"
 
+# 服务端 → 客户端「新建」变更类型（D08-18；客户端 applyChanges 只区分 delete，非 delete ⇒ 存活）
+OP_CREATE = "create"
+
 # ── content 域可同步字段白名单：字段名 → 期望值类型（D08-3）──
 # 当前客户端唯一在用的是 remark（client/utils/play_content.uts::updateContentRemark →
 # enqueueFieldOp('content', id, 'remark', ...)）。新增字段须在此登记（含类型），
@@ -276,6 +279,41 @@ def soft_delete_content(
         content=content,
         device_id=device_id,
     )
+
+
+def log_content_created(
+    db: Session,
+    user_id: str,
+    content_id: str,
+    *,
+    when: datetime | None = None,
+    device_id: str = SERVER_DEVICE,
+) -> str:
+    """**新建内容**的变更日志（D08-18 · 端间一致性）。
+
+    原状：变更日志只在 `push_ops`（客户端离线改/删）与 REST 改/删时写入，
+    **创建不写** ⇒
+      · 他端 `pull_changes` 无源（该实体永不出现在增量流里）；
+      · `reconcile` 的 `missing_on_client` 能报出差异，客户端却**没有可重放的 op**
+        ⇒ 用户在两台设备上都开了 App 时，A 端新建的记忆在 B 端"看不见也补不上"。
+
+    修法：创建路径统一调本函数（单一出口）。`updated_at` 用**服务端时钟**
+    （创建是服务端权威事件；客户端镜像只消费 `updated_at` 做展示/对账）。
+
+    本函数**自带提交**：调用时权威行已落库（各创建路径都先 commit），此处是创建后的
+    记账动作；记账失败不应回滚已建内容，但**必须让调用方看见**（不吞异常）。
+    """
+    op_id = log_change(
+        db,
+        user_id,
+        device_id,
+        op_type=OP_CREATE,
+        entity_type="content",
+        entity_id=str(content_id),
+        updated_at=when or datetime.now(timezone.utc),
+    )
+    db.commit()
+    return op_id
 
 
 def restore_content(

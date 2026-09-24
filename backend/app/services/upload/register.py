@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content
+from app.services import sync_writes
 from app.services.errors import NotFoundError, ValidationError
 from app.services.external.storage import best_effort_delete, get_storage_backend
 from app.services.photo_content import (
@@ -211,6 +212,8 @@ def _register_voice_content(
         best_effort_delete(voice_key, backend)
         raise
     db.refresh(record)
+    # D08-18（2026-09-25）：分片 complete 建 voice 内容也是"新建"，写变更日志供他端 pull
+    sync_writes.log_content_created(db, user_id, str(record.id))
     # F4：enqueue_unique 同 content 键不重复入队（safe：失败仅记日志，P0-5）
     # R9-B6：key 之后补函数参数（缺 args = process_content() 零参 TypeError 秒死）
     safe_enqueue_unique(process_content, str(record.id), str(record.id))

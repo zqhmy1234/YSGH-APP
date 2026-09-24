@@ -12,32 +12,17 @@
 import uuid
 
 import pytest
-from app.db.models import Content, User, WechatMessage
-from app.db.session import SessionLocal
+from app.db.models import Content, WechatMessage
 from app.services.external.storage import get_storage_backend
 from app.services.wechat.service import process_incoming
-from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
 
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"wxmedia-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(Content).where(
-        (Content.user_id == user.id) & (Content.source == "wechat")
-    ))
-    db.execute(sa_delete(WechatMessage).where(
-        WechatMessage.msg_id.like(f"wxm-{user.id}-%")
-    ))
-    db.delete(user)
-    db.commit()
-    db.close()
+# db_user 用 conftest 的**公共版本**（R8#2 既定方向）：
+# 原本地副本手工 sa_delete 三张表（Content(source=wechat)/WechatMessage/user），
+# 而 D08-18（2026-09-25）起"新建内容即写变更日志"会新增 `offline_queue` 行
+# —— 手工 teardown 漏了这张表，直接 FK 炸（`offline_queue_user_id_fkey`）。
+# 公共版按 user_id 全链删（30+ 表），不再需要随每张新表同步维护。
 
 
 def _media_msg(user, msg_type: str, media_id: str) -> dict:

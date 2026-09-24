@@ -374,6 +374,9 @@ def create_content(
             raise ApiError(ERR_CONTENT_002, "重复内容（感知哈希已存在）", http=409) from None
         raise
     db.refresh(record)
+    # D08-18（2026-09-25 · 端间一致性）：POST /contents 新建也写变更日志
+    # —— 原状创建不写 ⇒ 他端 pull 无源（reconcile 报 missing_on_client 却无 op 可重放）
+    sync_writes.log_content_created(db, user.id, str(record.id))
 
     # 入队异步 AI 管线（API-016；API 立即返回不阻塞）
     # 审查修复(P1-12)：voice/photo 用户等待 → 高优队列；text/article 低优

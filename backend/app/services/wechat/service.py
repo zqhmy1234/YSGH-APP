@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, WechatMessage
-from app.services import thumbnails
+from app.services import sync_writes, thumbnails
 from app.services.external.content_safety import get_content_safety
 from app.services.storage_keys import wechat_object_key
 from app.services.wechat import ports
@@ -306,6 +306,8 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
         best_effort_delete(cos_key)
         raise
     db.refresh(content)
+    # D08-18：媒体新建内容同样进变更日志（他端 pull 有源）
+    sync_writes.log_content_created(db, user_id, str(content.id))
 
     # F4：enqueue_unique 同 content 键不重复入队（safe：失败仅记日志，P0-5）
     # R9-B6：key 之后补函数参数（缺 args = 零参 TypeError 秒死）
@@ -385,6 +387,10 @@ def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict
         return result  # _process_media 已 commit
 
     db.commit()
+    # D08-18（2026-09-25）：微信侧新建内容同样写变更日志——同一账号的其它端
+    # （App/第二台设备）应能从增量流里学到这条记忆，而不是只在 REST 列表里偶然看到。
+    if result.get("content_id"):
+        sync_writes.log_content_created(db, user_id, result["content_id"])
     return result
 
 

@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.core.queue import QUEUE_HIGH, enqueue_unique
 from app.db.models import Content
-from app.services import thumbnails
+from app.services import sync_writes, thumbnails
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 from app.services.external.storage import best_effort_delete, get_storage_backend
 from app.services.media_keys import photo_object_key
@@ -220,6 +220,8 @@ def register_photo_content(
             best_effort_delete(thumbnail_key, backend)
             raise
         db.refresh(record)
+        # D08-18：新建即写变更日志（他端 pull 才有源；原状创建不写 ⇒ 端间不可收敛）
+        sync_writes.log_content_created(db, user_id, str(record.id))
         return str(record.id)
 
     # 4. update：content_id 指向 thumbnail_meta 占位内容 → 挂原件触发完整管线
@@ -288,5 +290,7 @@ def register_photo_content(
         best_effort_delete(cos_key)
         raise
     db.refresh(record)
+    # D08-18：新建即写变更日志（他端 pull 才有源）
+    sync_writes.log_content_created(db, user_id, str(record.id))
     _enqueue_pipeline(str(record.id), enqueue_thumbnail)
     return str(record.id)
