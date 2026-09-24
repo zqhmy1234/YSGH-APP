@@ -263,8 +263,8 @@
 		customVChipCls, customVChipTextCls
 	} from '@/utils/custom_labels'
 	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
-	import { createTextContentRemark, createVoiceContentRemark } from '@/utils/capsule_api'
-	import { transcribeWav, uploadVoicePersistent, recorderState, stopRecord } from '@/utils/voice'
+	import { createTextContentRemark } from '@/utils/capsule_api'
+	import { recorderState, stopRecord } from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 	import { VoiceRecorder } from '@/composables/useVoiceRecord'
 	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
@@ -328,7 +328,7 @@
 	let allLabels = ref(ALL_LABELS)
 	// 语音记录
 	// 单击/双击判定时间戳（峰宝 09-02 拍板：单击=暂停/继续，连点两下=结束；400ms 窗口）
-	let saving = ref(false)
+	// B5.2f-2e：saving 已随语音收尾迁入 composable（组件经 `const saving = vr.saving` 绑定）
 
 	const voiceDiag = computed((): string => {
 		const parts: Array<string> = []
@@ -716,7 +716,16 @@
 	// ===== 语音录音方法 =====
 	// recording 复位统一出口（4 处 false 赋值收敛，防漏关动画）
 	// B5.2f-2d（方案 A）：语音录制状态机整块进 composable；组件退化为薄绑定层（同一 ref 对象）
-	const vr = new VoiceRecorder(ra, onRecordStopped, () => { aiLabel.value = '' })
+	const vr = new VoiceRecorder(
+		ra,
+		() => { emit('saved') },
+		() => { emit('close') },
+		(s: string) => { voiceStage.value = s },
+		() => (manualLabel.value != '' ? manualLabel.value : aiLabel.value),
+		() => { aiLabel.value = '' },
+		() => remark.value.trim(),
+		() => { remark.value = ''; manualLabel.value = ''; aiLabel.value = '' }
+	)
 	const recording = vr.recording
 	const recordSeconds = vr.recordSeconds
 	const recordTimer = vr.recordTimer
@@ -729,159 +738,14 @@
 	const guardMsg = vr.guardMsg
 	const lastVoiceDuration = vr.lastVoiceDuration
 	const lastVoiceFile = vr.lastVoiceFile
+	const saving = vr.saving
+	function submitVoice(): void { vr.submitVoice() }
 	function setRecordingOff(): void { vr.setRecordingOff() }
 	function toggleRecord(): void { vr.toggleRecord() }
 	function pauseRecordNow(): void { vr.pauseRecordNow() }
 	function endFromTap(): void { vr.endFromTap() }
 	function resumeRecordNow(): void { vr.resumeRecordNow() }
 	function stopRecordNow(): void { vr.stopRecordNow() }
-	function onRecordStopped(path: string, durationMs: number): void {
-		setRecordingOff()
-		recState.value = 'idle'
-		if (recordTimer.value > 0) {
-			clearInterval(recordTimer.value)
-			recordTimer.value = 0
-		}
-		if (durationMs < 500) {
-			recordHint.value = '轻触中央圆点 · 开始录音'
-			showErrorToast(new Error('录音太短'))
-			return
-		}
-		lastVoiceDuration.value = durationMs
-		lastVoiceFile.value = path
-		transcribing.value = true
-		recordHint.value = '正在转写…'
-		if (durationMs >= 300000) {
-			// 长录音（>5min）：分段转写走持久上传，无标注态（画布无此帧）——诚实收栈
-			transcribing.value = false
-			recordHint.value = '轻触中央圆点 · 开始录音'
-			uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
-			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
-				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
-				uni.showToast({ title: '已记录', icon: 'success' })
-				emit('saved')
-				emit('close')
-			})
-			return
-		}
-		transcribeWav(path).then((res) => {
-			transcribing.value = false
-			if (res == null) {
-				recordHint.value = '轻触中央圆点 · 开始录音'
-				showErrorToast(new Error('转写失败，请重试'))
-				return
-			}
-			transcript.value = res.text
-			emotion.value = res.emotion
-			const hints: Array<string> = []
-			if (res.notOral) {
-				hints.push('疑似非口述（键盘/环境音）')
-			}
-			if (res.silenceHint) {
-				hints.push('检测到静音空段，可删除')
-			}
-			const merge = res.emotionMerge
-			if (merge != null) {
-				const dm = merge.getJSON('dominant')
-				if (dm != null) {
-					hints.push('主导情绪：' + (dm.getString('emotion') ?? '') + '（时长最长段）')
-				}
-			}
-			if (res.noiseWeight == 'equal') {
-				hints.push('噪音较大，情绪权重已降为持平')
-			}
-			voiceHints.value = hints.join('；')
-			if (!res.guardPassed) {
-				guardMsg.value = '内容未通过安全审核：' + res.guardReason
-			} else {
-				guardMsg.value = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
-			}
-			voiceStage.value = 'preview' // F1c
-		})
-	}
-	function submitVoice(): void {
-		const text = transcript.value.trim()
-		if (text == '') {
-			showErrorToast(new Error('转写内容为空'))
-			return
-		}
-		if (saving.value) {
-			return
-		}
-		saving.value = true
-		const picked = manualLabel.value != '' ? manualLabel.value : aiLabel.value
-		const duration = lastVoiceDuration.value
-		const vFile = lastVoiceFile.value
-		const emo = emotion.value
-		// BA1（FE2）：备注卡接真——remark 快照（保存成功后会清空，闭包内不能读 ref）
-		const remarkVal = remark.value.trim()
-		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链走分片上传——
-		// wav 先落对象存储（cos_key），后端 complete 直接建 voice content（本地转写 text
-		// 预填 + 入队 ASR 管线）。旧 saveVoiceContent(''cosKey) 只落文本不传文件，
-		// 造成「有转写无音频」恒不可播（28 条 failed=AUDIO_DOWNLOAD_FAILED 实锤）。
-		// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark → uploadVoicePersistent
-		// 透传 remarkVal，主链成功路径备注一次落库（不再仅降级链入库）。
-		if (vFile == '') {
-			// 无本地录音文件（异常路径，如实降级）：仅落文本，toast 显式告知无音频
-			createVoiceContentRemark(text, duration, remarkVal, '').then((contentId: string | null) => {
-				saving.value = false
-				if (contentId != null) {
-					afterVoiceSaved(contentId, text, picked, false)
-				} else {
-					showErrorToast(new Error('语音入库失败（无本地录音文件且文本入库未成功）'))
-				}
-			})
-			return
-		}
-		uploadVoicePersistent(vFile, duration, text, emo, remarkVal).then((res: UTSJSONObject | null) => {
-			let contentId: string | null = null
-			if (res != null) {
-				contentId = res.getString('content_id')
-			}
-			if (contentId != null && contentId != '') {
-				saving.value = false
-				afterVoiceSaved(contentId, text, picked, true)
-			} else {
-				// 音频上传失败（显式降级，不静默）：仅落转写文本，cos_key 留空 → 播放链
-				// 会诚实报「音频未上传」；toast 明说原因，峰宝铁律：不允许静默
-			console.error('[yishu] voice upload failed, fallback text-only save')
-			createVoiceContentRemark(text, duration, remarkVal, vFile).then((fbId: string | null) => {
-					saving.value = false
-					if (fbId != null) {
-						afterVoiceSaved(fbId, text, picked, false)
-					} else {
-						showErrorToast(new Error('语音保存失败（音频上传与文本入库均未成功）'))
-					}
-				})
-			}
-		})
-	}
-
-	/** 语音保存成功后的统一收尾（R9-B1 抽取）：手选分类纠正 + toast + 清态 + 收起浮层 */
-	function afterVoiceSaved(contentId: string, text: string, picked: string, audioOk: boolean): void {
-		if (picked != '' && picked.indexOf('custom:') != 0) {
-			// 手选分类 → 纠正端点真持久化（custom: 前缀 = 自定义分类跳过，后端白名单不支持——台账 A 类）
-			submitCorrection(contentId, text, picked, '').then((ok: boolean) => {
-				console.log('[yishu] voice manual correction ok=' + ok)
-			})
-		}
-		if (audioOk) {
-			uni.showToast({ title: '已记录', icon: 'success' })
-		} else {
-			// 降级路径显式告知：文本已存但音频没有（峰宝铁律：不允许静默）
-			uni.showToast({ title: '已存文本（音频未上传）', icon: 'none', duration: 2500 })
-		}
-		emit('saved')
-		transcript.value = ''
-		emotion.value = ''
-		guardMsg.value = ''
-		voiceHints.value = ''
-		remark.value = ''
-		manualLabel.value = ''
-		aiLabel.value = ''
-		voiceStage.value = 'record'
-		emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
-	}
 </script>
 
 <style>

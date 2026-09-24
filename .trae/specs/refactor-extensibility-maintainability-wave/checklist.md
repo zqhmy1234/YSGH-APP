@@ -105,8 +105,9 @@
 - [x] 🧭 **方案 A 已拍板并由用户确认**（2026-09-24）：L-01/L-02 剩余部分走「整块 view-model 进 composable」
 - [x] **B5.2f-2d（方案 A 子步 1 · 第十二轮）`RecordSheet` 语音录制状态机 → `useVoiceRecord`**：13 状态 ref + 6 状态机方法（163 行）迁入 composable（注入 `anim`/`onStopped`/`resetAiLabel`）；组件退化为薄绑定层（12 顶层绑定 + 6 薄包装）—— 证据：`RecordSheet` **1054 → 889（−165）**；冷编译 ✅；轴 6 0 违规；baseline 下调 1054→889
 - [x] 🛠 **同轮修掉 4 个自己制造的缺陷**：轴 6 抓到"瘦身 import 误删 `recorderState`/`stopRecord` 但 `closeForm()` 仍用"；类内误留 `function`；内部互调缺 `this.`；改写**旧索引切割**错位（`Unexpected token (885:0)`）；另有自写"未注入标识符体检"抓出 `aiLabel` 漏注入 —— 教训：生成式改写必须配「静态体检 + 真实编译 + 轴 6」三道
-- [ ] **B5.2f-2e（续）`RecordSheet` 剩余**：按同法迁 `onRecordStopped`/`submitVoice`/`afterVoiceSaved`（~150 行，预计 889 → ~740 可销轴 5 条目）
-- [ ] 🧭 **`TabIndex` 1046 → 800（差 −247）**：按方案 A 迁 L2/L3 归并 + 照片挂载两块
+- [x] **B5.2f-2e（方案 A 子步 2 · 第十三轮）语音收尾三函数迁入 → 🎯 L-01 销项**：`onRecordStopped`/`submitVoice`/`afterVoiceSaved`（147 行）+ `saving` 迁入 `useVoiceRecord`；撤销 `onStopped` 注入、新增 `emitSaved/emitClose/setVoiceStage/effLabel/remarkTrimmed/resetFormFields` 六项注入（逐一等价替换）—— 证据：`RecordSheet` **889 → 753（首次 <800）**；冷编译 ✅；轴 5 无 CRITICAL；**axis-5 baseline 条目按 gate 要求删除 ⇒ L-01 销项**；轴 6 0 违规
+- [x] 🔎 **GAP-1 再强化**：非法类成员语法 `this.afterVoiceSaved(...): void {` **编译仍报绿**（客户端编译门连类成员非法语法都放过；而 `saving` 重复声明属绑定级、被抓到）⇒ **"编译 0 error"不能作为结构正确性证据**
+- [ ] 🧭 **L-02（`TabIndex` 1046 → 800，差 −247）**：按方案 A 迁 L2/L3 归并 + 照片挂载两块；完成后销 axis-5 条目
 - [ ] ⚠️ **B5.2f 未闭环**：`RecordSheet` 1054 / `TabIndex` 1046 **仍 >800** ⇒ 需继续抽 script composable；**真机渲染复验待设备**（编译通过 ≠ 运行正确）
 - [x] **B5.2f-2a `RecordSheet` 圆点+轮盘动画 → `useRecordAnimations`**（第九轮）：新增 `client/composables/useRecordAnimations.uts`（`DotSpec`/`DotPt`/`RecordAnimations`；原模块级初始化移入构造器；`dotCls` 改入参 `recording`）；组件删 2 块 → `ra` + 顶层绑定 `dotPts` + `dotCls` 薄包装（**模板零改动**），轮盘 4 调用点改写 —— 证据：**冷编译成功**；残留旧调用名 **= 0**；`RecordSheet` 1354 → **1135（−219）**；baseline 下调 1354→1135
 - [x] **决策已拍板（2026-09-24）**：**L-12 令牌收敛 → 另立「令牌波」**（判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机；台账 §5.10 拍板 10.4）；**64 条功能缺陷 → 另开「功能修复波」**（拍板 10.1）；本波 §7 边界已同步

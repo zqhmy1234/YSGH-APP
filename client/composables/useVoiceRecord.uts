@@ -9,16 +9,18 @@
  *
  * 注入（组件侧仍持有的东西）：
  *   · `anim`：轮盘/圆点动画实例（暂停/恢复联动，原为组件内 `ra`）；
- *   · `onStopped`：组件侧 `onRecordStopped`（转写 / 长录音持久上传 / 收栈）——**暂留组件**；
+ *   · （2e 起）`onRecordStopped` 也已在类内，原先的 `onStopped` 注入**已撤销**；
  *   · `resetAiLabel`：清空组件 `aiLabel` 的动作（原 `aiLabel.value = ''` 一行，改回调等价）。
  *
  * 行为等价：状态为实例字段（组件用顶层绑定取同一 ref 对象，模板仍自动解包）；方法体逐字保留，
  * 仅把 `x.value`→`this.x.value`、`ra.`→`this.anim.`、内部互调→`this.<方法>`、`onRecordStopped(`→
- * `this.onStopped(`。
+ * `this.onRecordStopped(`。
  */
 import { ref } from 'vue'
 
 import { showErrorToast } from '@/utils/api'
+import { createVoiceContentRemark } from '@/utils/capsule_api'
+import { submitCorrection } from '@/utils/text_recorder'
 import {
 	pauseRecord,
 	recorderState,
@@ -26,7 +28,9 @@ import {
 	REC_STATE_PAUSED,
 	setShouldResume,
 	startRecord,
-	stopRecord
+	stopRecord,
+	transcribeWav,
+	uploadVoicePersistent
 } from '@/utils/voice'
 
 import { RecordAnimations } from '@/composables/useRecordAnimations'
@@ -48,17 +52,33 @@ export class VoiceRecorder {
 	lastVoiceFile = ref('')
 
 	private anim: RecordAnimations
-	private onStopped: (path: string, durationMs: number) => void
 	private resetAiLabel: () => void
+
+	private emitSaved: () => void
+	private emitClose: () => void
+	private setVoiceStage: (s: string) => void
+	private effLabel: () => string
+	private remarkTrimmed: () => string
+	private resetFormFields: () => void
 
 	constructor(
 		anim: RecordAnimations,
-		onStopped: (path: string, durationMs: number) => void,
-		resetAiLabel: () => void
+		emitSaved: () => void,
+		emitClose: () => void,
+		setVoiceStage: (s: string) => void,
+		effLabel: () => string,
+		resetAiLabel: () => void,
+		remarkTrimmed: () => string,
+		resetFormFields: () => void
 	) {
 		this.anim = anim
-		this.onStopped = onStopped
+		this.emitSaved = emitSaved
+		this.emitClose = emitClose
+		this.setVoiceStage = setVoiceStage
+		this.effLabel = effLabel
 		this.resetAiLabel = resetAiLabel
+		this.remarkTrimmed = remarkTrimmed
+		this.resetFormFields = resetFormFields
 	}
 
 	setRecordingOff(): void {
@@ -109,7 +129,7 @@ export class VoiceRecorder {
 					console.log('[yishu] record started')
 				},
 				(path: string, durationMs: number) => {
-					this.onStopped(path, durationMs)
+					this.onRecordStopped(path, durationMs)
 				},
 				(msg: string) => {
 					console.error('[yishu] record error: ' + msg)
@@ -147,7 +167,7 @@ export class VoiceRecorder {
 				},
 				(path: string, durationMs: number) => {
 					console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
-					this.onStopped(path, durationMs)
+					this.onRecordStopped(path, durationMs)
 				}
 			)
 			} catch (e) {
@@ -223,5 +243,151 @@ export class VoiceRecorder {
 				this.recordTimer.value = 0
 			}
 		}
+	}
+
+	onRecordStopped(path: string, durationMs: number): void {
+		this.setRecordingOff()
+		this.recState.value = 'idle'
+		if (this.recordTimer.value > 0) {
+			clearInterval(this.recordTimer.value)
+			this.recordTimer.value = 0
+		}
+		if (durationMs < 500) {
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			showErrorToast(new Error('录音太短'))
+			return
+		}
+		this.lastVoiceDuration.value = durationMs
+		this.lastVoiceFile.value = path
+		this.transcribing.value = true
+		this.recordHint.value = '正在转写…'
+		if (durationMs >= 300000) {
+			// 长录音（>5min）：分段转写走持久上传，无标注态（画布无此帧）——诚实收栈
+			this.transcribing.value = false
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
+			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
+				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+				uni.showToast({ title: '已记录', icon: 'success' })
+				this.emitSaved()
+				this.emitClose()
+			})
+			return
+		}
+		transcribeWav(path).then((res) => {
+			this.transcribing.value = false
+			if (res == null) {
+				this.recordHint.value = '轻触中央圆点 · 开始录音'
+				showErrorToast(new Error('转写失败，请重试'))
+				return
+			}
+			this.transcript.value = res.text
+			this.emotion.value = res.emotion
+			const hints: Array<string> = []
+			if (res.notOral) {
+				hints.push('疑似非口述（键盘/环境音）')
+			}
+			if (res.silenceHint) {
+				hints.push('检测到静音空段，可删除')
+			}
+			const merge = res.emotionMerge
+			if (merge != null) {
+				const dm = merge.getJSON('dominant')
+				if (dm != null) {
+					hints.push('主导情绪：' + (dm.getString('this.emotion') ?? '') + '（时长最长段）')
+				}
+			}
+			if (res.noiseWeight == 'equal') {
+				hints.push('噪音较大，情绪权重已降为持平')
+			}
+			this.voiceHints.value = hints.join('；')
+			if (!res.guardPassed) {
+				this.guardMsg.value = '内容未通过安全审核：' + res.guardReason
+			} else {
+				this.guardMsg.value = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
+			}
+			this.setVoiceStage('preview') // F1c
+		})
+	}
+	submitVoice(): void {
+		const text = this.transcript.value.trim()
+		if (text == '') {
+			showErrorToast(new Error('转写内容为空'))
+			return
+		}
+		if (this.saving.value) {
+			return
+		}
+		this.saving.value = true
+		const picked = this.effLabel()
+		const duration = this.lastVoiceDuration.value
+		const vFile = this.lastVoiceFile.value
+		const emo = this.emotion.value
+		// BA1（FE2）：备注卡接真——remark 快照（保存成功后会清空，闭包内不能读 ref）
+		const remarkVal = this.remarkTrimmed()
+		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链走分片上传——
+		// wav 先落对象存储（cos_key），后端 complete 直接建 voice content（本地转写 text
+		// 预填 + 入队 ASR 管线）。旧 saveVoiceContent(''cosKey) 只落文本不传文件，
+		// 造成「有转写无音频」恒不可播（28 条 failed=AUDIO_DOWNLOAD_FAILED 实锤）。
+		// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark → uploadVoicePersistent
+		// 透传 remarkVal，主链成功路径备注一次落库（不再仅降级链入库）。
+		if (vFile == '') {
+			// 无本地录音文件（异常路径，如实降级）：仅落文本，toast 显式告知无音频
+			createVoiceContentRemark(text, duration, remarkVal, '').then((contentId: string | null) => {
+				this.saving.value = false
+				if (contentId != null) {
+					this.afterVoiceSaved(contentId, text, picked, false)
+				} else {
+					showErrorToast(new Error('语音入库失败（无本地录音文件且文本入库未成功）'))
+				}
+			})
+			return
+		}
+		uploadVoicePersistent(vFile, duration, text, emo, remarkVal).then((res: UTSJSONObject | null) => {
+			let contentId: string | null = null
+			if (res != null) {
+				contentId = res.getString('content_id')
+			}
+			if (contentId != null && contentId != '') {
+				this.saving.value = false
+				this.afterVoiceSaved(contentId, text, picked, true)
+			} else {
+				// 音频上传失败（显式降级，不静默）：仅落转写文本，cos_key 留空 → 播放链
+				// 会诚实报「音频未上传」；toast 明说原因，峰宝铁律：不允许静默
+			console.error('[yishu] voice upload failed, fallback text-only save')
+			createVoiceContentRemark(text, duration, remarkVal, vFile).then((fbId: string | null) => {
+					this.saving.value = false
+					if (fbId != null) {
+						this.afterVoiceSaved(fbId, text, picked, false)
+					} else {
+						showErrorToast(new Error('语音保存失败（音频上传与文本入库均未成功）'))
+					}
+				})
+			}
+		})
+	}
+
+	/** 语音保存成功后的统一收尾（R9-B1 抽取）：手选分类纠正 + toast + 清态 + 收起浮层 */
+	afterVoiceSaved(contentId: string, text: string, picked: string, audioOk: boolean): void {
+		if (picked != '' && picked.indexOf('custom:') != 0) {
+			// 手选分类 → 纠正端点真持久化（custom: 前缀 = 自定义分类跳过，后端白名单不支持——台账 A 类）
+			submitCorrection(contentId, text, picked, '').then((ok: boolean) => {
+				console.log('[yishu] voice manual correction ok=' + ok)
+			})
+		}
+		if (audioOk) {
+			uni.showToast({ title: '已记录', icon: 'success' })
+		} else {
+			// 降级路径显式告知：文本已存但音频没有（峰宝铁律：不允许静默）
+			uni.showToast({ title: '已存文本（音频未上传）', icon: 'none', duration: 2500 })
+		}
+		this.emitSaved()
+		this.transcript.value = ''
+		this.emotion.value = ''
+		this.guardMsg.value = ''
+		this.voiceHints.value = ''
+		this.resetFormFields()
+		this.setVoiceStage('record')
+		this.emitClose() // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
 	}
 }
