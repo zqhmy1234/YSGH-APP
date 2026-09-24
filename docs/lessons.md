@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 02:20 · commit 2c1dc05 · ts=1790274003
+- **错误**：D05-3（P0）：检索过滤器翻译两套实现、未知键静默丢弃 ⇒ 隔离类键丢失即跨用户召回
+- **根因**：vector_store._to_filter 的 if/elif 链**链尾无 else**（未知键被静默忽略），rag/pg_fallback 又用逐个 filters.get 各写一份键集；两处键集靠人工对齐、无任何校验或日志。2026-08-26 刚给 _to_filter 补 user_id 就是该风险的现实证据。
+- **修复**：新增 services/search_filters.py 作键集唯一来源（FILTER_KEYS 7 键 + ISOLATION_KEYS + normalize_filters + assert_full_coverage）；两实现均先 normalize（未知键抛 UnknownFilterKey，fail-closed）+ 声明覆盖集并在运行期自检；rag._search_impl 在降级 try 之前校验（防被 except Exception 吞掉伪装成降级）；PG 侧隔离值以过滤器为准；新增 16 例测试（含每键都被真正消费、未知键抛错、跨用户隔离行为）
+- **相关文件**：backend/app/services/search_filters.py
+- **教训**：「静默丢弃未知条件」比抛错危险得多：过滤链的默认分支必须是报错，否则约束失效没有任何信号（隔离键尤甚）
+
+---
+
 ### 2026-09-25 02:10 · commit da8b318 · ts=1790273419
 - **错误**：护栏域两条 P0 fail-open（D10-1 判定契约分叉 / D10-2 托管空响应判放行）
 - **根因**：同一 moderate 语义存在**两套返回契约**且无类型约束（裸 dict）：dashscope.moderate 带 action/masked_text 而 llm_ops 选择器（托管）只带 pass/reason；调用方按 action 分派 ⇒ fail-closed 分支漏 action 键就变成原文入库（判拒发却放行）。托管侧则对 200+空 content 用 not blocked 判定 ⇒ 空字符串直接放行；既有测试只覆盖 PASS/BLOCK/400/网络异常四种，空响应与畸形 200 无覆盖。

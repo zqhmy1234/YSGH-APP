@@ -14,6 +14,11 @@ from sqlalchemy import select
 
 from app.db.models import Content
 from app.schemas.search import SearchQuery
+from app.services.search_filters import (
+    HANDLED_BY_PG,
+    assert_full_coverage,
+    normalize_filters,
+)
 
 logger = logging.getLogger("yishu.rag")
 
@@ -35,6 +40,11 @@ def _pg_fallback_search(
     """
     if db is None or user_id is None:
         return []
+    # D05-3（2026-09-25 · P0）：键集与未知键处置收敛到 services/search_filters.py
+    #  ——未知键抛 UnknownFilterKey（此前逐个 filters.get 静默忽略：隔离键丢失
+    #  即跨用户召回，且无任何日志）。
+    filters = normalize_filters(filters)
+    assert_full_coverage("rag.pg_fallback", HANDLED_BY_PG)
     tokens = [
         t for t in re.split(r"[\s,，。.！!？?、；;:：（）()「」『』【】\"'‘’]", rewritten or "")
         if len(t) >= 2
@@ -43,8 +53,11 @@ def _pg_fallback_search(
         return []
     from sqlalchemy import or_
 
+    # 用户隔离：过滤器里的 user_id 与入参同源；两者都给时以**过滤器**为准
+    # （隔离键必须是"我实际拿来过滤的那个值"，不能因为参数不同而被忽略 —— D05-3）
+    effective_uid = str(filters.get("user_id") or user_id)
     stmt = select(Content).where(
-        Content.user_id == user_id,
+        Content.user_id == effective_uid,
         Content.deleted_at.is_(None),
     )
     cts = filters.get("content_types")

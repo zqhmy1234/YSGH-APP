@@ -47,6 +47,7 @@ from app.services.rag.recall import (
 )
 from app.services.rag.rewrite import _TIME_PATTERNS, _rewrite_query
 from app.services.rerank import rerank, rerank_auto_enabled
+from app.services.search_filters import normalize_filters
 from app.services.vector_store import CONTENT_TYPE_PHOTO, get_store
 
 logger = logging.getLogger("yishu.rag")
@@ -104,6 +105,10 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 数据多时新用户内容被挤出 top-k（api_smoke 门禁暴露）。
     if user_id:
         filters["user_id"] = str(user_id)
+    # D05-3（2026-09-25 · P0）：**在降级 try 之前**校验过滤键——未知键抛
+    # UnknownFilterKey（fail-closed），否则会被下面的 `except Exception` 吞掉，
+    # 把"某个约束被静默丢弃"伪装成"Qdrant 降级、走 PG 兜底"。
+    filters = normalize_filters(filters)
 
     # 2. 路由（B2：路由决定检索范围——image 意图只搜图片 caption，文字搜图）
     intent = _route_query(rewritten)

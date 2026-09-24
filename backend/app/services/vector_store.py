@@ -19,6 +19,11 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
 from app.core.config import settings
+from app.services.search_filters import (
+    HANDLED_BY_QDRANT,
+    assert_full_coverage,
+    normalize_filters,
+)
 
 logger = logging.getLogger("yishu.rag")
 
@@ -340,11 +345,19 @@ class VectorStore:
 
         Qdrant Range 只接受数值——datetime 统一转 epoch 秒（int），
         payload 侧 taken_at 也应以 epoch 秒存储（与 ISO 字符串互斥）。
+
+        D05-3（2026-09-25 功能修复波 · P0）：键集与未知键处置收敛到
+        `services/search_filters.py`——未知键**抛 `UnknownFilterKey`**，不再
+        静默丢弃（隔离类键被丢弃 = 跨用户召回且无任何信号）。
         """
+        filters = normalize_filters(filters)
+        assert_full_coverage("vector_store._to_filter", HANDLED_BY_QDRANT)
         if not filters:
             return None
         must: list = []
+        handled: set[str] = set()
         for key, value in filters.items():
+            handled.add(key)
             if key == "content_types" and value:
                 # FIX-1（2026-08-26）：过滤值归一——"image" 别名映射为规范值 "photo"，
                 # 且请求 "photo" 时同时匹配遗留 "image" 点（旧数据不丢），
@@ -395,6 +408,10 @@ class VectorStore:
                     key="user_id",
                     match=models.MatchValue(value=str(value)),
                 ))
+        # D05-3：链尾不再静默——任何"键认识但分支没接"的情况立即报错
+        unhandled = sorted(set(filters) - handled)
+        if unhandled:  # pragma: no cover —— 由 test_search_filters 覆盖
+            raise AssertionError(f"_to_filter 未处理过滤键 {unhandled}")
         return models.Filter(must=must) if must else None
 
 
