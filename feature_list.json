@@ -96,7 +96,7 @@
     "B4 同步（跨端可见前置）"
    ],
    "status": "in-progress",
-   "evidence": "S4-01 回调通道完成（Sprint 4 线 A）：crypto/signature/gateway 协议 1:1（官方 path/90931 向量互操作）+ 收包验签解密 + msg_id 幂等入库 + 微信端软删本条 + wecom_sandbox 模拟；11 测试全过。待：S4-02 微信找（F5 RAG 已就绪，10s/3s 门禁）、S4-03 敏感识别接入、code2session 真实接入（待 appid/secret） | 开发 Wave4 AgentL 已接：code2session 真实实现（unionid 优先/errcode 映射，未配 key 保持 mock/501）+ 内容安全可插拔适配器（规则/腾讯CI/阿里Green，fail-safe 放行不丢消息）——上条『待 appid/secret』仅指生产实网验收；US-31/32/33 现卡企微凭证（团队项，决策台账 §6）",
+   "evidence": "S4-01 回调通道完成（Sprint 4 线 A）：crypto/signature/gateway 协议 1:1（官方 path/90931 向量互操作）+ 收包验签解密 + msg_id 幂等入库 + 微信端软删本条 + wecom_sandbox 模拟；11 测试全过。待：S4-02 微信找（F5 RAG 已就绪，10s/3s 门禁）、S4-03 敏感识别接入、code2session 真实接入（待 appid/secret） | 开发 Wave4 AgentL 已接：code2session 真实实现（unionid 优先/errcode 映射，未配 key 保持 mock/501）+ 内容安全可插拔适配器（规则/腾讯CI/阿里Green，fail-safe 放行不丢消息）——上条『待 appid/secret』仅指生产实网验收；US-31/32/33 现卡企微凭证（团队项，决策台账 §6） | D09 簇③ 微信主链收口（2026-09-25 功能修复波 · 提交 5f5c37c / da8b318）：① **回调侧缺的一半补上**——`user_wechat_bindings` 此前**从未映射 ORM**（baseline 迁移把它当遗留空表 DROP）⇒ 回调无 user_id 可查，F6 主链只落一行消息；现补 ORM + 幂等重建迁移 d9a0b1c2d3e4 + `services/wechat/binding.py`（resolve/bind/unbind，openid 冲突默认拒换绑）+ 回调按 `from_user` 解析 + 绑定/解绑端点（WECHAT_004/005）；② 媒体键白名单收敛单一来源并补 `wechat/` 命名空间（**此前微信原件经 /media/{key} 恒 401**）+ `.amr` → audio/amr；③ 微信「删掉」改走全局软删写路径（权威投影+审计日志+变更日志）；④ 回调用独立应用 Secret（原把回调 Token 当 corpsecret，gettoken 必 40001）+ `WECOM_*` 别名生效；⑤ 回调处理体 offload 线程池（原在事件循环里同步阻塞 30s）+ 缺 MsgId 由 500 改 403。证据：`tests/test_wechat_binding.py` 14 例 + `tests/test_storage_keys.py` 11 例。**如实标注**：微信客服 `openid → unionid` 自动解析（需客服 Secret）与微信侧「找」回复装配仍挂账，实网未验",
    "gate": "收+找 10s/3s；不丢消息 99.9%（M3 门禁）"
   },
   {

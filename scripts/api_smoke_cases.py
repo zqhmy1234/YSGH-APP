@@ -17,6 +17,9 @@
     不再写生产 yishu_contents；起始先尽力清理 test_ 库，用例不依赖跨跑残留。
   - api_smoke 与 pytest 各自隔离 → 门禁不再需要"api_smoke 先于 pytest"顺序 hack。
 
+外部 AI 档位（2026-09-25）：默认**强制 mock**（与本文件"mock 外部 AI"契约一致，
+详见下方 `SMOKE_REAL_AI` 处注释）；`SMOKE_REAL_AI=1` 时走真实链路。
+
 退出码：0 = 全部用例通过；1 = 有失败。
 """
 from __future__ import annotations
@@ -37,8 +40,22 @@ sys.path.insert(0, str(ROOT / "backend"))
 # 使 app.services.vector_store.default_collection() 读取到测试库名）。
 os.environ.setdefault("QDRANT_COLLECTION", "test_yishu_contents")
 
+# 外部 AI 档位（2026-09-25 功能修复波 · D10-1 收口后暴露）：
+#
+# 本冒烟的**契约是"用户旅程"**（本文档首行即写"mock 外部 AI"），但实现此前**没有**
+# 覆盖 `MOCK_EXTERNAL_AI`，于是继承了 `backend/.env` 的 `false` ⇒ 真实调百炼。
+# 在"护栏 fail-safe 默认拒发"（决策 #12）生效后，外部 key 失效（401）会让
+# `POST /contents` 正确地 **422 CONTENT_003**（拒发）——此时冒烟报红，报的其实是
+# **环境问题**（key 失效），而不是代码问题。反过来说：修 D10-1（fail-closed 分支补
+# `action`）之前，这里之所以"绿"，正是因为**护栏判了拒发却被静默放行**（原文入库）。
+#
+# 故：默认强制 mock（确定性、零外部依赖、与文档契约一致）；需要真实验证外部链路时
+# 显式 `SMOKE_REAL_AI=1`（此时若 key 失效，冒烟会红——那是**环境**信号，须先修 key；
+# 外部 key 健康度另有 `scripts/check_dashscope_matrix.py` 专测）。
+if os.environ.get("SMOKE_REAL_AI") != "1":
+    os.environ["MOCK_EXTERNAL_AI"] = "true"
+
 # Windows 控制台 GBK 兼容（✅/❌ 为 Unicode）
-force_utf8()
 force_utf8()
 
 from app.main import app  # noqa: E402

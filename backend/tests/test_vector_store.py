@@ -178,10 +178,19 @@ def test_to_filter_time_range_epoch_seconds():
     assert {c.range.lte for c in taken_conds if c.range.lte is not None} == {hi.timestamp()}
 
 
-def test_to_filter_unknown_key_ignored():
-    """未知过滤键静默忽略（不产生非法 Filter 条件）"""
-    f = VectorStore._to_filter({"unknown_key": "x"})
-    assert f is None  # 无有效 must 条件 → 不构造 Filter（全库召回）
+def test_to_filter_unknown_key_raises():
+    """未知过滤键 **抛错**（D05-3 · 2026-09-25 起）。
+
+    ⚠️ 原用例名 `test_to_filter_unknown_key_ignored` 断言"静默忽略"——正是把 D05-3
+    的分歧**固化成预期行为**（与簇② 那条教训同族：门禁把 bug 写成规格）。
+    静默丢弃的后果：任何**隔离类键**（如 `user_id` 拼错/新增未同步）都会不生效
+    ⇒ 跨用户召回且无任何信号。现口径＝未知键 fail-closed（`UnknownFilterKey`），
+    由 `tests/test_search_filters.py` 做完整契约覆盖。
+    """
+    from app.services.search_filters import UnknownFilterKey
+
+    with pytest.raises(UnknownFilterKey):
+        VectorStore._to_filter({"unknown_key": "x"})
 
 
 def test_to_filter_empty_filters_none():

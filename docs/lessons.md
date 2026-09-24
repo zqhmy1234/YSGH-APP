@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 03:28 · commit b7a6e04 · ts=1790278103
+- **错误**：D05-3/D10-1 修复后被两条既有断言拦下：一条门禁的绿是**靠 bug**换来的，另一条把 bug 写成了规格
+- **根因**：① scripts/api_smoke_cases.py 头注写「mock 外部 AI」，实现却**没有覆盖 MOCK_EXTERNAL_AI** ⇒ 继承 backend/.env 的真实 key；护栏 fail-closed（决策 #12）生效后，key 失效即 422 拒发 ⇒ 冒烟报红（报的是环境问题）。而修 D10-1 之前它为何绿？因为 fail-closed 分支缺 action 键 ⇒ 调用方两条 if 都不成立 ⇒ **护栏判了拒发却被静默放行、原文入库**——门禁的绿直接来自那个 P0 缺陷。② backend/tests/test_vector_store.py::test_to_filter_unknown_key_ignored 把「未知过滤键静默忽略」写成断言 ⇒ 与簇② 同族：既有测试把分歧固化成预期行为
+- **修复**：① 冒烟默认强制 MOCK_EXTERNAL_AI=true（与自身文档契约一致、零外部依赖），真实验证走 SMOKE_REAL_AI=1 显式开关 + 外部 key 健康度另由 check_dashscope_matrix.py 专测；② 该用例改名 test_to_filter_unknown_key_raises 并断言 UnknownFilterKey，注明原断言正是被固化的缺陷
+- **相关文件**：scripts/api_smoke_cases.py
+- **教训**：门禁报绿时必须问一句『它凭什么绿』：凡依赖外部 key/网络的门禁，其绿可能是环境侥幸或缺陷副产品；把『静默忽略/放行』写成断言＝把 bug 升级为规格
+
+---
+
 ### 2026-09-25 02:49 · commit adfd4e4 · ts=1790275786
 - **错误**：D09-1（P0）：微信客服回调不传 user_id ⇒ F6 主链（收→媒体→内容→记忆）整条不通，只落一行消息
 - **根因**：绑定载体根本不存在：user_wechat_bindings 表自 schema.sql 起就有，却从未映射 ORM ⇒ baseline 迁移按『ORM 未映射的遗留空表』把它 DROP 掉；回调侧于是无 user_id 可查（gateway 解析出的 from_user 全仓零消费方）。同类：D09-4 把回调 Token 当应用 Secret、D09-8 WECOM_* 变量被 extra=ignore 静默丢弃——三处都是『协议里是两个东西/两个名字，代码里当成一个』

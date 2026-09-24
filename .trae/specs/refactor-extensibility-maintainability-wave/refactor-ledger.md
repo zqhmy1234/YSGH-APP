@@ -304,6 +304,7 @@
 
 | # | 编号 | 类别 | 位置 | 一句话 |
 |---|---|---|---|---|
+| — | — | — | — | ⚠️ **处置状态（2026-09-25 功能修复波续执行后，见 `functional-fix-wave/spec.md` §4）**：**17 条 P0 全部处置** —— ①D02-2 ✅`da8b318` ②D04-1 ✅`e8aca5c` ③D04-2 ✅`7ae6069` ④D04-15 ✅`c7a19bc` ⑤D05-3 ✅`b1f2488` ⑥D07-1 ✅`adfd4e4` ⑦D08-1 ✅`ba9e4c8` ⑧D08-2 ✅`ba9e4c8` ⑨D08-3 ✅`ba9e4c8` ⑩D09-1 ✅`5f5c37c` ⑪D09-2 ✅`da8b318` ⑫D10-1 ✅`2c1dc05` ⑬D10-2 ✅`2c1dc05` ⑭D11-1 ✅（此前已登记，本会话复核：`errors.py:76-79` 四枚齐备） ⑮D12-1 ✅（令牌波 P1–P4 落地） ⑯D12-5 ✅`634b4b4` ⑰D14-1 ✅（`review_agent.audit_axes` 接入）。**剩余＝P1/P2（含客户端编译门项与凭证项，§9.2 仍为移交清单）** |
 | 1 | D02-2 | 结 | `api/media.py:51`/`schemas/content.py:9`/`api/contents.py:130`/`storage.py:406`(+`wechat/service.py:251`) | 媒体键前缀白名单 **4 套独立字面量** + `wechat/` 命名空间漏网 → 微信原件经 `/media/{key}` 恒 401、`create_content` 恒 422 |
 | 2 | D04-1 | 功 | `event_aggregation/pipeline.py:95,161`+`agg_runner.uts:91` | 端云 L1 日界时区未对齐（云侧生产 tz=0/UTC）→ 沪区 00:00–07:59 照片落前一日 |
 | 3 | D04-2 | 功 | `agg_preprocess.py:23-93`×`client/utils/agg/pipeline.uts:36-49` | 端云预处理去重分叉（云侧生产无去重）；夹具用 Python 复制品垫背使双跑失去鉴别力 |
@@ -331,6 +332,8 @@
 **P2（18 条）**：D01-16/17、D03-15、D05-17、D06-8/9/10、D07-17、D08-13/14/15、D09-12、D10-10/12。
 
 > 📌 **施工期新增（2026-09-25 · 功能波簇②施工中发现，2 条）**：
+> 0. **D08-18 ✅ 已修（`b7a6e04`，2026-09-25 续执行）**：REST/分片/微信**新建**内容现统一写变更日志
+>    （`sync_writes.log_content_created`，`op_type=create`）——原状创建不写 ⇒ 他端 pull 无源。
 > 1. **D08-1 更深一层（✅ 已修，并入 D08-1）**：`push_ops` 判"实体存在"**只认 SFV 行**，
 >    而照片经 REST/分片链路上云（`photo_content` / `upload/register`）**从不写 SFV 行**
 >    ⇒ 这类内容的**离线删除被误判 `entity 不存在` 而静默丢弃**（客户端只看到 `rejected`，
