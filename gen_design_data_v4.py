@@ -1,9 +1,18 @@
 """
-设计数据提取管线 v4（正源版）：
-使用 etree 直接遍历的解析器（已跑通并生成 design_gap_audit 的那套），
+设计数据提取管线 v4（正源版）
+
+⚠️ **一次性件（历史）· D12-5（2026-09-25 功能修复波）**
+
+本脚本属 08-24 设计还原期的**一次性提取器**，**不是可复跑管线**：
+  · 输入是设计稿 SVG 目录（外部素材，仓库内不存在）；
+  · 依赖 `.cowork-temp/svg_parse.py`（临时工作目录，未必随仓库分发）；
+  · 输出 `design_data_v4/*.json` 是**生成物**；手写页面代码**不读它**（生成为一次性参考）。
+⇒ 路径改为环境变量驱动（`DESIGN_SVG_DIR`），**缺输入即显式报错**（不再静默跳过全部文件、
+产出空 `_summary.json` 让人误以为"跑通了、只是没数据"）。
+
+原状：使用 etree 直接遍历的解析器（已跑通并生成 design_gap_audit 的那套），
 代替 svgelements 版 parse_svg_v2/v3（会崩 'Circle' object has no attribute 'r' 致 elements=0）。
 复用 .cowork-temp/svg_parse.py 的 parse_svg / cluster_text_runs。
-输出到 design_data_v4/。
 """
 import json
 import os
@@ -14,8 +23,9 @@ sys.path.insert(0, os.path.join(_HERE, '.cowork-temp'))
 
 from svg_parse import parse_svg, cluster_text_runs  # noqa: E402, I001
 
-DESIGN_DIR = r'C:\Users\ghf\Downloads\忆述光华 · W1 时间轴页方向小样'
-OUTPUT_DIR = os.path.join(_HERE, 'design_data_v4')
+# 输入目录：设计稿 SVG 所在（外部素材）——必须由环境变量提供（原为硬编码本机 Downloads 路径）
+DESIGN_DIR = os.environ.get('DESIGN_SVG_DIR', '')
+OUTPUT_DIR = os.environ.get('DESIGN_DATA_OUT') or os.path.join(_HERE, 'design_data_v4')
 
 CORE_PAGES = [
     ('定稿 · 精修高保真.svg', '01_时间轴主页'),
@@ -36,6 +46,11 @@ AUX_FILES = [
 
 
 def main():
+    if not DESIGN_DIR or not os.path.isdir(DESIGN_DIR):
+        raise SystemExit(
+            '缺少输入目录：请设置环境变量 DESIGN_SVG_DIR 指向设计稿 SVG 目录'
+            f'（当前值：{DESIGN_DIR!r}）'
+        )
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     summary = {}
     print('=== 正源解析 → design_data_v4 ===')

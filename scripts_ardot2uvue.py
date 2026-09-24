@@ -1,5 +1,16 @@
 """ardot → uvue 直转管道 v2（数据驱动完备版）
 
+⚠️ **一次性件（历史）· D12-5（2026-09-25 功能修复波）**
+
+本脚本是 08-24「像素级 UI 还原」波的**一次性代码生成器**，**不是可复跑管线**：
+  · 输入是当年从 ardot MCP 导出的一次性 JSON（外部产物，仓库内不存在）；
+  · 输出 `uvue_gen/*_gen.uvue` / `*_preview.html` 属**生成物**，已并入仓库与手写页面
+    混合存在（手写/生成边界以 `uvue_gen/` 为界）；
+  · 全仓（`docs/**` / `deploy/**` / 后端/客户端代码）**零引用**本脚本，也无调用链。
+
+因此：路径改为环境变量驱动（`ARDOT_JSON` 输入、`UVUE_GEN_ROOT` 输出根，默认=仓库根），
+**输入缺失时显式报错**而不是静默产出空件；保留本文件仅为历史审计与将来重跑参考。
+
 完备性保证（所有类型 × 所有属性 = 数据穷举驱动）：
   类型矩阵   : FRAME→view / TEXT→text / VECTOR|ELLIPSE|RECTANGLE→SVG image(裸矢量也导出)
   布局矩阵   : none→绝对定位 / vertical→column / horizontal→row
@@ -16,11 +27,11 @@ import json
 import os
 import sys
 
-SRC_FILE = os.environ.get('ARDOT_JSON') or os.path.join(
-    r'C://Users//ghf//.workbuddy//projects//d-GuangH-App',
-    '514ed5f4-4e5c-4545-9f95-f672df876976', 'tool-results',
-    'mcp-connector-proxy-ardot_batch_read-1788032327586-d99a04.txt')
-ROOT_DIR = r'D:/GuangH-App/.wt/wrap1-agentA2-ui-restore'
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# 输入：ardot 导出 JSON（一把一用，仓库内不存在 ⇒ 必须显式提供）
+SRC_FILE = os.environ.get('ARDOT_JSON') or os.path.join(_HERE, 'uvue_gen', 'ardot_export.json')
+# 输出根：默认仓库根（生成物落在 <root>/uvue_gen/）；原值指向已不存在的工作树（D12-5）
+ROOT_DIR = os.environ.get('UVUE_GEN_ROOT') or _HERE
 DESIGN_W = 390
 RPX_W = 750
 SCALE = RPX_W / DESIGN_W  # 1.9231 精确换算
@@ -28,6 +39,11 @@ STATUS_OFFSET = 44  # px，沉浸式状态栏补偿
 VEC_TYPES = ('VECTOR', 'ELLIPSE', 'RECTANGLE')
 
 def load_nodes():
+    if not os.path.exists(SRC_FILE):
+        raise SystemExit(
+            '缺少输入：请用环境变量 ARDOT_JSON 指向 ardot 导出的 JSON（一次性外部产物）。'
+            f' 当前查找路径：{SRC_FILE}'
+        )
     raw = open(SRC_FILE, encoding='utf-8').read()
     i = raw.find('{')
     obj = json.loads(raw[i:])
