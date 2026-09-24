@@ -14,14 +14,14 @@
     },
     "allowlist": {
       "client/components/RecordSheet/RecordSheet.uvue": {
-        "lines": 2208,
-        "reason": "L-01 全仓最大文件（script 1095 / style 857）",
-        "target": "批次 B5 拆分逻辑与样式后删除本条"
+        "lines": 1354,
+        "reason": "L-01 全仓最大文件；**已做样式外置**（B5.2e：style 858→record-sheet.css，2209→1354）；script 1097 行待抽 composable",
+        "target": "批次 B5 抽 script composable（需真机验收）后删除本条"
       },
       "client/components/TabIndex/TabIndex.uvue": {
-        "lines": 1740,
-        "reason": "L-02 script 848 行，时间轴主页逻辑/模板纠缠",
-        "target": "批次 B5"
+        "lines": 1065,
+        "reason": "L-02 时间轴主页逻辑/模板纠缠；**已做样式外置**（B5.2e：style 680→tab-index.css，1742→1065）；script 851 行待抽 composable",
+        "target": "批次 B5 抽 script composable（需真机验收）后删除本条"
       },
       "client/components/TabAi/TabAi.uvue": {
         "lines": 974,
