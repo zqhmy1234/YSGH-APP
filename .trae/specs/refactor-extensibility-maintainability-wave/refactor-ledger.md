@@ -324,6 +324,8 @@
 
 ### 9.2 功能与安全缺陷（64 条 · **本波不修，交功能波**）
 
+> 📌 **施工期新增 1 条（2026-09-25 · 交功能波受理，不并入下面 64 条的深审计数）**：`TabIndex.uvue` 模板（1–209 行）**已无**拆分面板与照片详情浮层，而脚本仍持有 `showSplitPanel`/`splitItems`/`splitLoading`/`confirmSplit`/`cancelSplit`/`toggleSplitItem`/`splitTimeText` 与 `showPhotoDetail`/`photoDetailPath`/`photoDetailEvents`/`photoDetailLoading`/`closePhotoDetail`/`jumpFromPhoto` ⇒ 卡片「⋯」可触发 `doSplit`，但**无节点渲染该面板**（用户点“拆分这张卡”无可见结果）= **功能缺口**。详见 `docs/决策台账.md` §4.15 **15.4** 与 §8.13。
+
 **P0（10 条）**：D04-1、D04-2、D07-1、D08-1、D08-2、D08-3、D09-1、D09-2、D10-1、D10-2（见 §9.1）。
 **P1（36 条）**：D01-6/7、D02-4/5/6、D03-6/7、D04-4/5/6/13、D05-5/14、D06-5、D07-3/4/5/7/8/9/10/11/12/16、D08-5/6/7/8/9、D09-3/4/5/7/8、D10-5/6/7/8/9、D11-4。
 **P2（18 条）**：D01-16/17、D03-15、D05-17、D06-8/9/10、D07-17、D08-13/14/15、D09-12、D10-10/12。
