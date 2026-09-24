@@ -14,9 +14,9 @@
     },
     "allowlist": {
       "client/components/RecordSheet/RecordSheet.uvue": {
-        "lines": 1354,
-        "reason": "L-01 全仓最大文件；**已做样式外置**（B5.2e：style 858→record-sheet.css，2209→1354）；script 1097 行待抽 composable",
-        "target": "批次 B5 抽 script composable（需真机验收）后删除本条"
+        "lines": 1135,
+        "reason": "L-01 全仓最大文件；**已做样式外置**（B5.2e：style 858→record-sheet.css，2209→1354）＋ **已抽圆点/轮盘动画 composable**（B5.2f-2a：useRecordAnimations，1354→1135）；script 仍大，待继续抽（自定义标签/语音流程等）",
+        "target": "批次 B5 继续抽 script composable（需真机验收）后删除本条"
       },
       "client/components/TabIndex/TabIndex.uvue": {
         "lines": 1046,

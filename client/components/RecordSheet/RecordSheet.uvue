@@ -297,188 +297,12 @@
 	let directPick = ref(props.initialMode == 'photo')
 
 	// ===== 轮盘圆点（R3 性能刀 2026-09-04：transform 单函数 translate + 预计算轨道表） =====
-	// §O P1 首刀真机实锤（01:32 截图）：:style 双函数 'rotate(a) translateX(r)' 中 rotate 被
-	// 静默丢弃——多函数组合不可靠；R2 改 left/top/width/height 数据驱动（视觉可用但逐帧触发
-	// layout reflow + 21 对象/tick 重建）。R3 按性能卡拍板折中：单函数 'translate(x, y)' 走
-	// GPU 合成（transform 不参与布局），尺寸/投影全部静态 CSS 类，tick 查轨道表推进 index
-	// 拼 tf 字符串（零三角函数、零对象重建）；:style 字符串绑定走 manage badgeStyle 先例。
-	// 轨迹=运行留痕的字面实现（峰宝拍板）：幽灵点 = 主点 t-150ms / t-300ms 时刻的真实位置采样
-	class DotSpec {
-		a: number = 0      // 极角 deg（打破均匀分布）
-		r: number = 0      // 轨道半径 rpx（距心距离不一）
-		dia: number = 0    // 点径 rpx（大小不一）
-		constructor(a: number, r: number, dia: number) {
-			this.a = a
-			this.r = r
-			this.dia = dia
-		}
-	}
-	// 档位（峰宝拍板：大小不一 dia20~56 / 错落有致 / 距心不一 r154~262）
-	const DOT_SPECS: Array<DotSpec> = [
-		new DotSpec(12, 262, 40),
-		new DotSpec(58, 172, 22),
-		new DotSpec(115, 246, 32),
-		new DotSpec(167, 154, 20),
-		new DotSpec(214, 238, 48),
-		new DotSpec(283, 182, 26),
-		new DotSpec(331, 214, 56)
-	]
-	const DOT_DURS = [3600, 4400, 5200, 4000, 4800, 3900, 5600]  // 每点向心振荡周期 ms
-	const DOT_CENTER = 289     // 轮盘圆心 rpx（577/2）
-	const DOT_INWARD = 90      // 向心行程 rpx
-	const DOT_STEPS = 60       // 轨道表档数（向心往返行程 2×90=180rpx / 60 ≈ 3rpx/档，肉眼连续）
-	// 渲染模型：21 点 = 7 主(kind0) + 7 幽灵a(kind1, t-150ms) + 7 幽灵b(kind2, t-300ms)
-	// R3：DotPt 预分配终身复用（tick 零 new）；尺寸走静态类 .wds*/.wgs*（d 只作向心半经补偿）
-	class DotPt {
-		kind: number = 0
-		d: number = 0     // 直径 rpx（幽灵=主点 75%）
-		tf: string = ''   // transform 单函数字符串（唯一逐帧变化量，:style 直接绑定）
-		constructor(kind: number, d: number) {
-			this.kind = kind
-			this.d = d
-		}
-	}
-	// 预计算：轨道半径表（三角波采样，与 animate direction:alternate 同形）+ cos/sin（极角恒定）
-	// 扁平一维存储：DOT_TRACK[i * DOT_STEPS + k] = 主点 i 第 k 档半径
-	const DOT_TRACK: Array<number> = []
-	const DOT_COS: Array<number> = []
-	const DOT_SIN: Array<number> = []
-	function buildDotTrack(): void {
-		for (let i = 0; i < DOT_SPECS.length; i++) {
-			const spec = DOT_SPECS[i]
-			const rad = spec.a * Math.PI / 180.0
-			DOT_COS.push(Math.cos(rad))
-			DOT_SIN.push(Math.sin(rad))
-			for (let k = 0; k < DOT_STEPS; k++) {
-				const ph = k * 1.0 / DOT_STEPS
-				const tri = ph < 0.5 ? ph * 2 : 2 - ph * 2
-				DOT_TRACK.push(spec.r - DOT_INWARD * tri)
-			}
-		}
-	}
-	let dotPts = ref<Array<DotPt>>([])
-	function buildDotPts(): void {
-		const arr: Array<DotPt> = []
-		for (let i = 0; i < DOT_SPECS.length; i++) {
-			const dia = DOT_SPECS[i].dia
-			arr.push(new DotPt(0, dia))
-			arr.push(new DotPt(1, dia * 0.75))
-			arr.push(new DotPt(2, dia * 0.75))
-		}
-		dotPts.value = arr
-	}
-	// R6（2026-09-05 峰宝验机反馈「圆点自身局部小抖动」）：旧 24Hz JS setInterval + Vue 响应式
-	// 逐 tick patch 21 节点，与父轮盘 60fps 原生公转（UniElement.animate）双时钟打架——
-	// JS tick 落在任意 vsync 相位 + Android 定时器漂移，圆点相对顺滑母盘呈现局部抖动。
-	// 修复：圆点改 UniElement.animate 三关键帧三角波（A→B→A，整周期 linear 无限循环，
-	// 不赌 direction:'alternate' 兼容性），与轮盘 rotate 同机制纯原生插值，抖动根除。
-	// 幽灵轨迹=主点 t-150/300ms 采样：setTimeout 延迟起播（同 duration → 恒定相位差）。
-	// keyframes 内 transform 取裸值（轮盘 'rotate(0deg)' 先例）；:style 才要完整声明（R3c 铁律）
-	let dotAnims: Array<UniAnimation> = []
-	let ghostTimers: Array<number> = []
-	let dotPaused = false
-
-	// t 时刻整套点位：查轨道表 index 推进（主点三角波向心振荡，幽灵滞后采样；零三角函数零重建）
-	// R3b 换算系数（峰宝验机 09-04 修复）：transform 值带 rpx 被原生端静默丢弃 → 21 点全部
-	// 塌缩到 (0,0)（视觉=只剩最大那颗+box-shadow 被轮盘 overflow 裁出 90° 直角）、幽灵轨迹同灭。
-	// 官方 transform 仅支持 px：拼 tf 前按 windowWidth/750 换算（§I A' 时代轮盘 animate 同款公式），
-	// 取整 px（点径 20~56rpx≈10~29px、档距≈3rpx，整数 px 视觉无损）。getSystemInfoSync 为
-	// uni-app x 官方支持 uni API，系数缓存一次零逐帧开销
-	let pxScale = 0
-	function getPxScale(): number {
-		if (pxScale == 0) {
-			pxScale = uni.getSystemInfoSync().windowWidth / 750.0
-		}
-		return pxScale
-	}
-	function dotRender(tMs: number): void {
-		const arr = dotPts.value
-		for (let i = 0; i < DOT_SPECS.length; i++) {
-			const dur = DOT_DURS[i]
-			const cx = DOT_COS[i]
-			const cy = DOT_SIN[i]
-			for (let k = 0; k < 3; k++) {
-				const lag = k == 1 ? 150 : (k == 2 ? 300 : 0)
-				const t = tMs - lag
-				const ph = ((t % dur) + dur) % dur / dur
-				const idx = Math.floor(ph * DOT_STEPS) % DOT_STEPS
-				const rT = DOT_TRACK[i * DOT_STEPS + idx]
-				const p = arr[i * 3 + k]
-				// 基点=轮盘左上角（.wdpt 静态钉 0,0），translate 一次到位：圆心位 + 半径偏移 - 半径补偿
-				// （R3c 09-05 真根因修复：R3b 只换了 px 单位没修绑定格式——:style 绑定的是
-				// 完整 CSS 声明串（manage badgeStyle 先例='color:#B05A3A;...'，带属性名），
-				// 裸 transform 值 'translate(...)' 缺属性名 → 原生端按非法 CSS 静默丢弃，
-				// 21 点全部无定位叠 (0,0)=峰宝看到的「只剩一个 90° 裁切阴影小圆」。
-				// 必须拼 'transform:translate(...);' 完整声明；px 换算保留（单位保险））
-				const s = getPxScale()
-				p.tf = 'transform:translate(' + Math.round((DOT_CENTER + cx * rT - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * rT - p.d / 2) * s) + 'px);'
-			}
-		}
-		// 同引用赋值不触发响应式 → slice 新数组身份（21 元素复用，仅 tf 变化被原生 patch）
-		dotPts.value = arr.slice()
-	}
+	// B5.2f-2：圆点动画收敛为共享组合式函数（唯一实现 client/composables/useRecordAnimations.uts）
+	const ra = new RecordAnimations()
+	const dotPts = ra.pts   // 顶层绑定：模板自动解包（ra.pts 不能直接在模板 v-for）
 	function dotCls(p: DotPt, i: number): string {
-		const mi = Math.floor(i / 3)
-		if (p.kind == 0) { return 'wd wdpt wds' + mi }
-		if (!recording.value) { return 'wd wdpt wg wgs' + mi }
-		return (p.kind == 1 ? 'wd wdpt wg wg-a wgs' : 'wd wdpt wg wg-b wgs') + mi
+		return ra.cls(p, i, recording.value)
 	}
-	function startDotAnims(): void {
-		stopDotAnims()
-		dotPaused = false
-		const s = getPxScale()
-		for (let i = 0; i < DOT_SPECS.length; i++) {
-			const spec = DOT_SPECS[i]
-			const rad = spec.a * Math.PI / 180.0
-			const cx = Math.cos(rad)
-			const cy = Math.sin(rad)
-			for (let k = 0; k < 3; k++) {
-				const p = dotPts.value[i * 3 + k]
-				const el = uni.getElementById('rs-dot' + (i * 3 + k))
-				if (el == null) { continue }
-				// 三关键帧三角波（与 DOT_TRACK 同形）：A→B→A，时长=DOT_DURS[i]=原整周期，linear
-				const lag = k == 1 ? 150 : (k == 2 ? 300 : 0)
-				if (lag == 0) {
-					el.animate([
-						{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' },
-						{ transform: 'translate(' + Math.round((DOT_CENTER + cx * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px)' },
-						{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' }
-					], { duration: DOT_DURS[i], iterations: Infinity, easing: 'linear' })
-				} else {
-					// 幽灵：延迟起播=主点 t-lag 位置采样（起播前静止在 r0 与主点重合出发）
-					const tid = setTimeout(() => {
-						const a = el.animate([
-							{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' },
-							{ transform: 'translate(' + Math.round((DOT_CENTER + cx * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * (spec.r - DOT_INWARD) - p.d / 2) * s) + 'px)' },
-							{ transform: 'translate(' + Math.round((DOT_CENTER + cx * spec.r - p.d / 2) * s) + 'px, ' + Math.round((DOT_CENTER + cy * spec.r - p.d / 2) * s) + 'px)' }
-						], { duration: DOT_DURS[i], iterations: Infinity, easing: 'linear' })
-						if (dotPaused) { a.pause() }
-						dotAnims.push(a)
-					}, lag) as number
-					ghostTimers.push(tid)
-				}
-			}
-		}
-	}
-	function pauseDotAnims(): void {
-		// 单击暂停：原生动画就地冻结（不复位）
-		dotPaused = true
-		for (const a of dotAnims) { a.pause() }
-	}
-	function resumeDotAnims(): void {
-		dotPaused = false
-		for (const a of dotAnims) { a.play() }
-	}
-	function stopDotAnims(): void {
-		for (const t of ghostTimers) { clearTimeout(t) }
-		ghostTimers = []
-		for (const a of dotAnims) { a.cancel() }
-		dotAnims = []
-		dotRender(0)   // 复位到初始轨道位（幽灵隐藏靠 .wg opacity）
-	}
-	buildDotTrack()
-	buildDotPts()
-	dotRender(0)   // 非录制态初始点位（主点静止在轨道点）
 
 	// ===== 响应式数据 =====
 	// 弹层 / 表单状态
@@ -993,53 +817,10 @@
 	}
 
 	// ===== 语音录音方法 =====
-	// 轮盘动画（§I A' 拍板：UniElement.animate()，官方 hello-uni-app-x animate 示例同款写法）
-	// 外层轮盘 rotate 360° 无限 linear；7 小圆点各自 translateX 向心，alternate 来回（轨迹痕迹=静态弧 wheel-trails，拍板降级预案）
-	let wheelAnim: UniAnimation | null = null
-	// §O P1-R2：wdAnims/WD_DURS 废弃（21 路 animate → DOT_DURS 数据时钟驱动）
-
-	// §O P1-R2：轮盘公转 UniElement.animate（rotate 单函数已真机实证）+ R6 圆点改同机制
-	// animate 三关键帧三角波（废弃 24Hz JS 时钟——双时钟打架=圆点局部抖动，见 R6 注释）
-	function startWheelAnims(): void {
-		const wheel = uni.getElementById('rs-wheel')
-		if (wheel != null) {
-			wheelAnim = wheel.animate([
-				{ transform: 'rotate(0deg)' },
-				{ transform: 'rotate(360deg)' }
-			], {
-				duration: 9000,
-				iterations: Infinity,
-				easing: 'linear'
-			})
-		}
-		startDotAnims()
-	}
-
-	function stopWheelAnims(): void {
-		wheelAnim?.cancel()
-		wheelAnim = null
-		stopDotAnims()
-	}
-
-	// 暂停/恢复轮盘动画（§M 手动暂停时轮盘同步停转；圆点动画同步冻结/续走）
-	function pauseWheelAnims(): void {
-		wheelAnim?.pause()
-		pauseDotAnims()
-	}
-	function resumeWheelAnims(): void {
-		// 峰宝 09-05 真机实锤（台账 §Y/§CC 续四）：UniAnimation.pause() 后 play() 不续播——
-		// 暂停时动画已失效复位，恢复时 a.play() 无效果=「继续录音动画没了」。
-		// 拍板方案 A：resume 改 stop + 全链重新 animate（rotate/圆点均为无限循环，
-		// 重头播放无跳变感）。已知边界：暂停帧不保证冻结在中途角度（pause 真机行为
-		// 不稳定），暂停视觉=静止轮盘+圆点回轨道位，恢复=重新起转。
-		stopWheelAnims()
-		startWheelAnims()
-	}
-
 	// recording 复位统一出口（4 处 false 赋值收敛，防漏关动画）
 	function setRecordingOff(): void {
 		recording.value = false
-		stopWheelAnims()
+		ra.stop()
 	}
 
 	function toggleRecord(): void {
@@ -1063,7 +844,7 @@
 		} else {
 			lastTapAt = 0
 			recording.value = true
-			startWheelAnims()
+			ra.start()
 			recordSeconds.value = 0
 			recState.value = 'idle'
 			recordHint.value = '轻触暂停 · 连点两次结束'
@@ -1115,7 +896,7 @@
 					// R7 补缺口：系统中断（来电/音频焦点/省电）时原生录音已自动暂停，但轮盘动画
 					// 与计时器此前不联动——轮盘继续转+计时继续跑，与手动暂停（§M：全联动）不一致。
 					// 对齐 pauseRecordNow 的联动集（轮盘/圆点动画 pause + 计时器冻结）
-					pauseWheelAnims()
+					ra.pause()
 					if (recordTimer.value > 0) {
 						clearInterval(recordTimer.value)
 						recordTimer.value = 0
@@ -1147,7 +928,7 @@
 		try {
 			pauseRecord()
 			recState.value = recorderState()
-			pauseWheelAnims()
+			ra.pause()
 			if (recordTimer.value > 0) {
 				clearInterval(recordTimer.value)
 				recordTimer.value = 0
@@ -1172,7 +953,7 @@
 		try {
 			resumeRecord()
 			recState.value = recorderState()
-			resumeWheelAnims()
+			ra.resume()
 			// 计时器随恢复重启（暂停期间已冻结）
 			if (recordTimer.value > 0) {
 				clearInterval(recordTimer.value)

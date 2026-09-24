@@ -99,7 +99,8 @@
 - [ ] ⚠️ **B5.2f（script 半）未做**：`RecordSheet`(script 1097)/`TabIndex`(851) 的 script 抽 composable **需真机验收**（`adb` 无设备）⇒ L-01/L-02 **未闭环**；`favorites.uvue` 基线 974 vs 实际 975 为**先于本轮**的记账漂移（未上调，保持 WARN）
 - [ ] **B5.2f 剩余客户端拆分**：`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`（L-01/02，script 侧抽 composable；主体可冷编译+逐行等价验证，**L-01/L-02 真机验收待设备**）
 - [x] **B5.2f-1 波形缓存 5 份同构副本 → `useWaveform` 组合式函数**（第八轮）：新增 `client/composables/useWaveform.uts::WaveformCache`，5 个组件（`TabIndex`/`TabSearch`/`detail`/`favorites`/`theme-detail`）改用它并移除多余 `fetchWaveform` import —— 证据：**等价性证明**（5 份块归一化后均为同一组 17 条逻辑行、composable 覆盖全部，缺失 `[]`）；**冷编译成功**（**首轮失败被当场抓到**：我的 import 重写脚本 `", ".join` 误写成 `" ".join` ⇒ detail 多符号 import 丢逗号 ⇒ `Unexpected token, expected ","`，已修）；行数合计 **−91**；轴 5 baseline **下调**（TabIndex 1065→1046 / favorites 974→957）、`audit_harness all` 无 CRITICAL
-- [ ] ⚠️ **B5.2f 未闭环**：`RecordSheet` 1354 / `TabIndex` 1046 **仍 >800** ⇒ 需继续抽 script composable；**真机渲染复验待设备**（编译通过 ≠ 运行正确）
+- [ ] ⚠️ **B5.2f 未闭环**：`RecordSheet` 1135 / `TabIndex` 1046 **仍 >800** ⇒ 需继续抽 script composable；**真机渲染复验待设备**（编译通过 ≠ 运行正确）
+- [x] **B5.2f-2a `RecordSheet` 圆点+轮盘动画 → `useRecordAnimations`**（第九轮）：新增 `client/composables/useRecordAnimations.uts`（`DotSpec`/`DotPt`/`RecordAnimations`；原模块级初始化移入构造器；`dotCls` 改入参 `recording`）；组件删 2 块 → `ra` + 顶层绑定 `dotPts` + `dotCls` 薄包装（**模板零改动**），轮盘 4 调用点改写 —— 证据：**冷编译成功**；残留旧调用名 **= 0**；`RecordSheet` 1354 → **1135（−219）**；baseline 下调 1354→1135
 - [x] **决策已拍板（2026-09-24）**：**L-12 令牌收敛 → 另立「令牌波」**（判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机；台账 §5.10 拍板 10.4）；**64 条功能缺陷 → 另开「功能修复波」**（拍板 10.1）；本波 §7 边界已同步
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：本批提交经 hook `[pre-commit] 审核通过`
 
