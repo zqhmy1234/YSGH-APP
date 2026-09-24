@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,6 +39,8 @@ from app.services.event_aggregation.st_dbscan import l1_daily_aggregate, st_dbsc
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "client" / "utils" / "agg" / "fixtures.uts"
+# 云侧双跑用的**冻结快照**（输入+期望；见 render_json 的说明：现场算期望会让门禁自证）
+DEFAULT_JSON_OUT = ROOT / "backend" / "tests" / "data" / "agg_fixtures.json"
 
 TZ_OFFSET_MIN = 480  # 上海（双跑同参）
 
@@ -256,6 +259,58 @@ def build_cases() -> list[dict]:
         "expected": _expected(photos, phash=phash),
     })
 
+    # ── D04-15（2026-09-25）：补 GPS 漂移三态用例 ────────────────────────────────────
+    # 审计指出：13 个用例里只有"超驾车上限且**无**众数"这一条被间接触达，`approx`（中速移动）
+    # 与 `corrected`（众数拉回）**完全没有覆盖** ⇒ 端云双跑全绿也不代表这三态同源。
+    # 三个用例都做成**可判定**：把对应分支关掉就会**改变簇结果**（不是"只改标签"）。
+
+    # 14. 单点漂移 → **corrected**：5 张在 A（同点、速度 0 ⇒ 可信），第 6 张跳到 ~8km 外且与上一张
+    #     仅隔 3min（≈163km/h > 驾车上限 120km/h）+ A 网格众数支持 5（≥2）⇒ 拉回 A 的网格中心。
+    #     可判定：若不拉回，该张离 A >500m ⇒ 由"1 簇 6 张"变成"1 簇 5 张 + 1 散片"。
+    #     ⚠️ 单位/偏移坑（实测踩过两回）：① `DRIVE_SPEED_MS = 120000/3600 = 33.3 **m/s**（=120km/h）`，
+    #     不是 33.3km/h；② 时间偏移是**逐张累积**的，p4 在 t0+1200s ⇒ p5 必须写 t0+1200+180 才是
+    #     "距上一张 3min"（写成 t0+1500+180 是距 p4 **8min** ⇒ 只有 61km/h ⇒ 落进 approx）。
+    t0 = local_ms(2026, 8, 25, 10, 0)
+    photos = [_p(f"p{i}", t0 + i * 300000, *A, ["聚餐"]) for i in range(5)]
+    photos.append(_p("p5", t0 + 4 * 300000 + 180000, *FAR, ["聚餐"]))
+    cases.append({
+        "name": "drift-corrected-single-point", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "expected": _expected(photos),
+    })
+
+    # 15. 中速移动 → **approx**：5 张在 A，3 张在 ~1.1km 外的 B2（与上一张隔 7min ⇒ ≈9.5km/h，
+    #     落在"步行 < v ≤ 驾车"区间）⇒ 坐标**保留**、仅标记 approx。
+    #     可判定：若被误当漂移拉回众数，B2 三张会并进 A 的簇 ⇒ "2 簇"变"1 簇 8 张"。
+    B2 = (31.2404, 121.4737)
+    t0 = local_ms(2026, 8, 25, 11, 0)
+    photos = [_p(f"p{i}", t0 + i * 300000, *A, ["旅行"]) for i in range(5)]
+    photos += [_p(f"q{i}", t0 + 5 * 300000 + 120000 + i * 60000, *B2, ["旅行"]) for i in range(3)]
+    cases.append({
+        "name": "drift-approx-moving", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "expected": _expected(photos),
+    })
+
+    # 16. 超物理速度 + **无众数可依** → **degraded**（坐标置空、不猜）：p0 在 A，p1 跳到 ~8km 外的 FAR
+    #     （超驾车上限，且全批**任一网格都只有 1 张** ⇒ 众数支持 <2）⇒ p1 坐标置空；
+    #     p2/p3 紧随其后（上一张已无坐标 ⇒ 不判速度）⇒ 坐标保留，但仅 2 张 < min_pts。
+    #     可判定：p1（无坐标）按**时间**被吸收进 p2/p3 的簇 ⇒ 1 簇 3 张；
+    #     若 degraded 失效（保留 FAR 坐标），p1 离 p2/p3 约 8km ⇒ 聚不起来 ⇒ **0 簇**。
+    #     ⚠️ 设计坑（实测踩过）：若 p1 的"原坐标"离 p2/p3 很近（<500m），保留坐标也会成同一簇 ⇒
+    #     该用例**失去鉴别力**（探针实测未抓到）。必须让"保留坐标"与"置空"两种走法**结果不同**。
+    t0 = local_ms(2026, 8, 26, 10, 0)
+    D0 = (31.2404, 121.4737)
+    D1 = (31.2414, 121.4747)   # 距 D0 约 146m（与 D0 不同网格）
+    photos = [
+        _p("p0", t0, *A, ["存疑"]),
+        _p("p1", t0 + 180000, *FAR, ["存疑"]),   # +3min（≈163km/h > 120km/h 上限）
+        _p("p2", t0 + 240000, *D0, ["存疑"]),
+        _p("p3", t0 + 300000, *D1, ["存疑"]),
+    ]
+    cases.append({
+        "name": "drift-degraded-no-mode", "tz": TZ_OFFSET_MIN,
+        "photos": photos, "expected": _expected(photos),
+    })
+
     return cases
 
 
@@ -299,20 +354,65 @@ def render_uts(cases: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_json(cases: list[dict]) -> dict:
+    """冻结快照（**云侧双跑**用）：输入与期望都落盘。
+
+    为什么必须单独一份冻结快照：云侧门禁若用 `build_cases()` **现场**算期望，则期望与实现来自
+    同一份代码 —— 关掉任意分支（如 corrected 不拉回）时输入侧与期望侧**一起变**，门禁**自证**、
+    抓不到回归（实测：三个分支探针全绿）。冻结后，云侧跑的是"**端侧那一份**输入/期望"，
+    分支被改坏就会与冻结期望不符 ⇒ 真有鉴别力。
+    """
+    out = []
+    for c in cases:
+        phash = c.get("phash", {}) or {}
+        out.append({
+            "name": c["name"],
+            "tz": c["tz"],
+            "conservative": bool(c.get("conservative", False)),
+            "photos": [
+                {
+                    "id": p.id,
+                    "ts_ms": int(p.ts.timestamp() * 1000),
+                    "lat": p.lat,
+                    "lng": p.lng,
+                    "tags": list(p.tags or []),
+                    "phash": phash.get(p.id) or "",
+                }
+                for p in c["photos"]
+            ],
+            "expected": {
+                "clusters": [list(cl) for cl in c["expected"]["clusters"]],
+                "days": [
+                    {"date": d["date"], "ids": list(d["ids"]), "is_sparse": bool(d["is_sparse"])}
+                    for d in c["expected"]["days"]
+                ],
+            },
+        })
+    return {"version": 1, "tz_offset_min": TZ_OFFSET_MIN, "cases": out}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--json-out", type=Path, default=DEFAULT_JSON_OUT)
     args = ap.parse_args()
 
     cases = build_cases()
     out = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render_uts(cases), encoding="utf-8")
+    json_out = args.json_out
+    json_out.parent.mkdir(parents=True, exist_ok=True)
+    json_out.write_text(
+        json.dumps(render_json(cases), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     total_photos = sum(len(c["photos"]) for c in cases)
     total_clusters = sum(len(c["expected"]["clusters"]) for c in cases)
     total_days = sum(len(c["expected"]["days"]) for c in cases)
     print(f"AGG-016 fixtures 生成完成: {len(cases)} 用例 / {total_photos} 照片 / "
-          f"{total_clusters} 期望簇 / {total_days} 期望日卡片 → {out}")
+          f"{total_clusters} 期望簇 / {total_days} 期望日卡片")
+    print(f"  · 端侧 UTS 夹具 → {out}")
+    print(f"  · 云侧冻结快照 → {json_out}")
     return 0
 
 

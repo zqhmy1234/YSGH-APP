@@ -5,7 +5,7 @@
 审计结论（D04-2/D04-15）：「AGG-016 双跑门禁**无鉴别力**，端云"同源契约"实际已分叉」。
 根因有三层：
 
-1. `scripts/gen_agg_fixtures.py` **只产出端侧 UTS 夹具**（`client/utils/agg/fixtures.uts`），
+1. `scripts/gen_agg_fixtures.py` 原本**只产出端侧 UTS 夹具**（`client/utils/agg/fixtures.uts`），
    **云侧没有任何夹具消费方** —— `test_agg_reference.py` 只是几处手写语义锁；
 2. 于是「12 项共享数值零漂移」的结论**建立在端侧单跑之上**；云侧缺去重（D04-2）、
    日界走 UTC（D04-1）这类分叉**不会被任何门禁发现**；
@@ -15,10 +15,19 @@
 变成真正的双跑门禁。比对语义与端侧 `client/utils/agg/agg_check.uts` **逐字对齐**：
 簇＝集合语义（簇内 id 排序 → 簇间排序 → `;` 连接）、日卡片＝`date|排序 id|稀疏标记`。
 
-夹具输入里的 `phash` 在生成器里是**旁挂字典**（`case["phash"]`，因为旧 `RawPhoto` 没有该字段）；
-D04-2 修好后云侧契约已补 `phash`，此处把它贴回 `RawPhoto` 后再跑 —— 这正是"重复照片"用例的输入。
+## ⚠️ 为什么必须跑**冻结快照**（而不是现场 `build_cases()`）
+
+第一版实现用 `build_cases()` 现场取输入与期望 —— 但生成器的期望是**调用云侧实现**算出来的
+（`_expected()` → `preprocess`/`st_dbscan`/`l1_daily_aggregate`）⇒ 关掉任一分支时"输入侧"与
+"期望侧"**一起变**，门禁**自证**、抓不到回归（实测：corrected/approx/degraded 三个分支探针全绿）。
+故生成器额外落盘 [`backend/tests/data/agg_fixtures.json`](file:///d:/GuangH-App/backend/tests/data/agg_fixtures.json)
+（**输入 + 期望**都冻结），本门禁跑**冻结输入**、比**冻结期望** ⇒ 分支改坏立刻不一致。
 """
 from __future__ import annotations
+
+import json
+import pathlib
+from datetime import datetime, timezone
 
 import pytest
 from app.services.event_aggregation.agg_types import (
@@ -31,9 +40,13 @@ from app.services.event_aggregation.agg_types import (
 from app.services.event_aggregation.pipeline import preprocess
 from app.services.event_aggregation.st_dbscan import l1_daily_aggregate, st_dbscan
 
-from scripts.gen_agg_fixtures import build_cases
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+SNAPSHOT_PATH = REPO_ROOT / "backend" / "tests" / "data" / "agg_fixtures.json"
 
-CASES = build_cases()
+with SNAPSHOT_PATH.open(encoding="utf-8") as fh:
+    SNAPSHOT = json.load(fh)
+
+CASES = SNAPSHOT["cases"]
 
 
 def _norm_clusters(clusters: list[list[str]]) -> str:
@@ -50,16 +63,15 @@ def _day_keys(days: list[dict]) -> str:
 
 
 def _run_cloud(case: dict) -> tuple[list[list], list[dict]]:
-    """用**云侧真实实现**跑一个夹具用例（参数口径与端侧 agg_check.uts 一致）。"""
-    phash_by_id = case.get("phash") or {}
+    """用**云侧真实实现**跑一个**冻结**夹具用例（参数口径与端侧 agg_check.uts 一致）。"""
     raws = [
         RawPhoto(
-            id=p.id,
-            ts=p.ts,
-            lat=p.lat,
-            lng=p.lng,
-            tags=list(p.tags or []),
-            phash=phash_by_id.get(p.id) or "",
+            id=p["id"],
+            ts=datetime.fromtimestamp(p["ts_ms"] / 1000, tz=timezone.utc),
+            lat=p["lat"],
+            lng=p["lng"],
+            tags=list(p["tags"]),
+            phash=p["phash"],
         )
         for p in case["photos"]
     ]
@@ -73,12 +85,12 @@ def _run_cloud(case: dict) -> tuple[list[list], list[dict]]:
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
-def test_cloud_matches_uts_fixture(case: dict) -> None:
+def test_cloud_matches_frozen_fixture(case: dict) -> None:
     clusters, days = _run_cloud(case)
 
     actual_clusters = [[p.id for p in cl] for cl in clusters]
     assert _norm_clusters(actual_clusters) == _norm_clusters(case["expected"]["clusters"]), (
-        f"[{case['name']}] 簇与夹具期望不一致（端云分叉）"
+        f"[{case['name']}] 簇与**冻结**期望不一致（端云分叉 / 分支回归）"
     )
 
     actual_days = [
@@ -86,23 +98,38 @@ def test_cloud_matches_uts_fixture(case: dict) -> None:
         for d in days
     ]
     assert _day_keys(actual_days) == _day_keys(case["expected"]["days"]), (
-        f"[{case['name']}] 日卡片与夹具期望不一致（端云分叉）"
+        f"[{case['name']}] 日卡片与**冻结**期望不一致（端云分叉 / 分支回归）"
     )
 
 
-def test_dedup_case_is_present_and_discriminating() -> None:
-    """D04-2 反向保护：夹具里必须**存在**"同哈希重复照片"用例，否则本门禁又会退化为空转。
+def test_frozen_snapshot_is_up_to_date() -> None:
+    """快照新鲜度：`build_cases()` 现在必须**逐字等于**冻结快照。
 
-    审计指出该场景此前无法被云侧表达（`RawPhoto` 无 `phash`）；本断言把「有重复哈希用例」
-    这件事本身钉住 —— 有人删掉/改名该用例时门禁会响。
+    两个作用：① 有人改了用例/实现却忘了重生成 ⇒ 立刻报（golden file 纪律）；
+    ② 反过来也是**分支回归**的探测器（生成器期望由实现算出，实现被改坏 ⇒ 与冻结值不符）。
+    """
+    from scripts.gen_agg_fixtures import build_cases, render_json
+
+    assert render_json(build_cases()) == SNAPSHOT, (
+        "夹具快照已过期：请重跑 `python scripts/gen_agg_fixtures.py`（并提交两份产物）"
+    )
+
+
+def test_drift_branches_are_covered() -> None:
+    """D04-15 反向保护：夹具里必须**存在**覆盖 frozen/approx/corrected/degraded 三态的用例。
+
+    这三态此前完全落在夹具覆盖之外（审计 D04-15）；本断言把"覆盖"这件事钉住 ——
+    有人删掉/改名这些用例时门禁会响（避免又退化成"端云双跑全绿但三态没人测"）。
     """
     names = [c["name"] for c in CASES]
-    assert any("dedup" in n for n in names), f"夹具缺失去重用例：{names}"
+    for must in ("drift-corrected-single-point", "drift-approx-moving", "drift-degraded-no-mode"):
+        assert must in names, f"夹具缺失漂移分支用例 {must}：{names}"
 
-    dedup_cases = [c for c in CASES if "dedup" in c["name"]]
-    exercised = False
-    for c in dedup_cases:
-        hashes = [p for p in (c.get("phash") or {}).values() if p]
-        if len(hashes) != len(set(hashes)):
-            exercised = True
-    assert exercised, "去重用例里没有**真实重复**的 phash ⇒ 该用例不构成去重鉴别"
+    # 去重用例亦须有**真实重复**哈希（否则该用例不构成去重鉴别）
+    dedup = [c for c in CASES if "dedup" in c["name"]]
+    assert dedup, "夹具缺失去重用例"
+    assert any(
+        len([p["phash"] for p in c["photos"] if p["phash"]])
+        != len({p["phash"] for p in c["photos"] if p["phash"]})
+        for c in dedup
+    ), "去重用例里没有真实重复的 phash ⇒ 不构成去重鉴别"

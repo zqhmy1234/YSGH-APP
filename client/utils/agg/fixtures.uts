@@ -174,4 +174,41 @@ export const AGG_FIXTURES: AggCase[] = [
 	], [
 		new AggExpectedDay('2026-08-24', ['p1', 'p3'], true),
 	]), false),
+	new AggCase('drift-corrected-single-point', 480, [
+		new AggPhoto('p0', 1787623200000, 31.2304, 121.4737, ['聚餐'], ''),
+		new AggPhoto('p1', 1787623500000, 31.2304, 121.4737, ['聚餐'], ''),
+		new AggPhoto('p2', 1787623800000, 31.2304, 121.4737, ['聚餐'], ''),
+		new AggPhoto('p3', 1787624100000, 31.2304, 121.4737, ['聚餐'], ''),
+		new AggPhoto('p4', 1787624400000, 31.2304, 121.4737, ['聚餐'], ''),
+		new AggPhoto('p5', 1787624580000, 31.3, 121.5, ['聚餐'], ''),
+	], new AggExpected([
+		['p0', 'p5', 'p4', 'p3', 'p2', 'p1'],
+	], [
+		new AggExpectedDay('2026-08-25', ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'], false),
+	]), false),
+	new AggCase('drift-approx-moving', 480, [
+		new AggPhoto('p0', 1787626800000, 31.2304, 121.4737, ['旅行'], ''),
+		new AggPhoto('p1', 1787627100000, 31.2304, 121.4737, ['旅行'], ''),
+		new AggPhoto('p2', 1787627400000, 31.2304, 121.4737, ['旅行'], ''),
+		new AggPhoto('p3', 1787627700000, 31.2304, 121.4737, ['旅行'], ''),
+		new AggPhoto('p4', 1787628000000, 31.2304, 121.4737, ['旅行'], ''),
+		new AggPhoto('q0', 1787628420000, 31.2404, 121.4737, ['旅行'], ''),
+		new AggPhoto('q1', 1787628480000, 31.2404, 121.4737, ['旅行'], ''),
+		new AggPhoto('q2', 1787628540000, 31.2404, 121.4737, ['旅行'], ''),
+	], new AggExpected([
+		['p0', 'p4', 'p3', 'p2', 'p1'],
+		['q0', 'q2', 'q1'],
+	], [
+		new AggExpectedDay('2026-08-25', ['p0', 'p1', 'p2', 'p3', 'p4', 'q0', 'q1', 'q2'], false),
+	]), false),
+	new AggCase('drift-degraded-no-mode', 480, [
+		new AggPhoto('p0', 1787709600000, 31.2304, 121.4737, ['存疑'], ''),
+		new AggPhoto('p1', 1787709780000, 31.3, 121.5, ['存疑'], ''),
+		new AggPhoto('p2', 1787709840000, 31.2404, 121.4737, ['存疑'], ''),
+		new AggPhoto('p3', 1787709900000, 31.2414, 121.4747, ['存疑'], ''),
+	], new AggExpected([
+		['p1', 'p3', 'p2'],
+	], [
+		new AggExpectedDay('2026-08-26', ['p0', 'p1', 'p2', 'p3'], false),
+	]), false),
 ]
