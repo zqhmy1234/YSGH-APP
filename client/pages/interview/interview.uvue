@@ -72,12 +72,7 @@
 <script setup lang="uts">
 	import { ref, computed } from 'vue'
 	import { onLoad, onUnload, onBackPress } from '@dcloudio/uni-app'
-	import {
-		fetchInterviewQuestions,
-		submitInterviewAnswers,
-		InterviewQuestion,
-		InterviewResult
-	} from '@/utils/play'
+	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play_interview'
 	import { startRecord, stopRecord, transcribeWav, AsrResult } from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
 

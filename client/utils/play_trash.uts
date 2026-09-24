@@ -1,0 +1,63 @@
+/**
+ * 玩法层 · 垃圾箱（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
+ *
+ * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * 对外导出：deleteContent, trashList, trashRestore, trashClear
+ */
+import { get, post, request, dataArr } from './api'
+import { enqueueDeleteOp } from './sync_client'
+import { getNetKind } from './uploader'
+
+export function deleteContent(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/contents/' + contentId, 'DELETE', null).then((res: UTSJSONObject | null) => {
+			if (res != null) {
+				resolve(true)
+				return
+			}
+			// B12（2026-09-23）：**离线不再白丢用户操作** —— 入队 delete 墓碑，联网后由
+			// `pushPendingOps` 幂等补发（op_id 幂等 + 软删幂等，重发无副作用）。
+			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 getNetKind()=='none' 改口**：
+			// 否则用户看到"删除失败"而操作其实已排队 = 状态与事实不符（detail.uvue 已同步改）。
+			if (getNetKind() == 'none') {
+				enqueueDeleteOp('content', contentId)
+				console.log('[yishu] 离线：删除已入队 content=' + contentId)
+			}
+			resolve(false)
+		})
+	})
+}
+
+/** GET /trash：回收站列表（TrashItemOut[]，days_left 后端算好）；失败/空 → 空数组（api 层已 toast） */
+export function trashList(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get('/api/v1/trash').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			resolve(dataArr(res))
+		})
+	})
+}
+
+/** POST /trash/{id}/restore：恢复单条；返回是否成功 */
+export function trashRestore(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/trash/' + contentId + '/restore', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** DELETE /trash：清空回收站（彻底删除不可逆）；返回是否成功 */
+export function trashClear(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/trash', 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** ContentOut AI 增量投影（FE1）：tags_json（string[]|null，打标异步可能 null）+ ai_description（string|null，照片 AI 描述）。
+ *  null 语义在调用方消化：tags 空=不显示 chips 区块、aiDescription 空=不显示描述行（不造假占位） */

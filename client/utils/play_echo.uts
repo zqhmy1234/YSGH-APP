@@ -1,0 +1,70 @@
+/**
+ * 玩法层 · 回响（T-PL-1）（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
+ *
+ * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * 对外导出：EchoCard, fetchTodayEcho, dismissEcho
+ */
+import { get, post, dataObj } from './api'
+import { PATH_ECHO_TODAY } from './contract'
+
+export class EchoCard {
+	contentId: string
+	contentType: string
+	text: string
+	takenAt: string
+	place: string
+	echoDate: string
+
+	constructor(contentId: string, contentType: string, text: string, takenAt: string, place: string, echoDate: string) {
+		this.contentId = contentId
+		this.contentType = contentType
+		this.text = text
+		this.takenAt = takenAt
+		this.place = place
+		this.echoDate = echoDate
+	}
+}
+
+/** GET /echo/today：去年今日回响（无则 null） */
+export function fetchTodayEcho(): Promise<EchoCard | null> {
+	return new Promise<EchoCard | null>((resolve) => {
+		get(PATH_ECHO_TODAY).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const contentId = d.getString('content_id')
+			if (contentId == null || contentId == '') {
+				resolve(null)
+				return
+			}
+			resolve(
+				new EchoCard(
+					contentId,
+					d.getString('content_type') ?? 'text',
+					d.getString('text') ?? '',
+					d.getString('taken_at') ?? '',
+					d.getString('place') ?? '',
+					d.getString('echo_date') ?? ''
+				)
+			)
+		})
+	})
+}
+
+/** POST /echo/{id}/dismiss：划掉（不再出现）；返回是否成功 */
+export function dismissEcho(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/echo/' + contentId + '/dismiss', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+// ═══════════ 冷启动访谈（T-PL-2）═══════════
+

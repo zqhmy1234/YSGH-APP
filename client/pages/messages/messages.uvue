@@ -63,16 +63,8 @@
 <script setup lang="uts">
 	import { ref, computed } from 'vue'
 	import { onShow } from '@dcloudio/uni-app'
-	import {
-		fetchMessages,
-		fetchUnreadCount,
-		markMessageRead,
-		markAllRead,
-		fetchTodayEcho,
-		dismissEcho,
-		EchoCard,
-		AppMessage
-	} from '@/utils/play'
+	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
+import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage } from '@/utils/play_messages'
 	import { formatIsoShortTime } from '@/utils/time'
 
 	// ── 响应式状态 ──

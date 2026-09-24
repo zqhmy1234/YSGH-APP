@@ -1,0 +1,53 @@
+/**
+ * 玩法层 · 收藏（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
+ *
+ * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * 对外导出：favoriteGet, favoriteAdd, favoriteRemove, favoritesList
+ */
+import { get, post, request, dataObj, dataArr } from './api'
+
+export function favoriteGet(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		get('/api/v1/contents/' + contentId + '/favorite').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(false)
+				return
+			}
+			const d = dataObj(res)
+			resolve(d != null && (d.getBoolean('favorite') ?? false))
+		})
+	})
+}
+
+/** POST /contents/{id}/favorite：收藏（幂等）；返回是否成功 */
+export function favoriteAdd(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/contents/' + contentId + '/favorite', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** DELETE /contents/{id}/favorite：取消收藏（幂等）；返回是否成功 */
+export function favoriteRemove(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/contents/' + contentId + '/favorite', 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** GET /favorites：收藏列表（ContentOut[]，按收藏时间倒序）；失败/空 → 空数组（api 层已 toast） */
+export function favoritesList(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get('/api/v1/favorites').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			resolve(dataArr(res))
+		})
+	})
+}
+
+/** DELETE /contents/{id}：软删（移入回收站 30 天保留）；返回是否成功 */

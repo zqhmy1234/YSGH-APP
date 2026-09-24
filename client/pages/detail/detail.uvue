@@ -146,7 +146,9 @@
 	import { ref } from 'vue'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
-	import { favoriteGet, favoriteAdd, favoriteRemove, deleteContent, fetchContentAiMeta, ContentAiMeta, updateContentRemark, fetchWaveform } from '@/utils/play'
+	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
+import { deleteContent } from '@/utils/play_trash'
+import { fetchContentAiMeta, ContentAiMeta, updateContentRemark, fetchWaveform } from '@/utils/play_content'
 	// B12：离线判定（play.ts 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
 	import { getNetKind } from '@/utils/uploader'
 	import { formatIsoShortTime } from '@/utils/time'

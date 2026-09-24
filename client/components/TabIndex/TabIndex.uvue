@@ -233,7 +233,8 @@
 	import { showErrorToast, fetchDailySummary, DailySummary } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
-	import { fetchTodayEcho, dismissEcho, EchoCard, fetchWaveform } from '@/utils/play'
+	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
+import { fetchWaveform } from '@/utils/play_content'
 	import {
 		confirmEvent,
 		mergeEvent,

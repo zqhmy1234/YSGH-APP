@@ -53,7 +53,7 @@
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
 	// FE1（W2-1）：回收站三端点统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
-	import { trashList, trashRestore, trashClear } from '@/utils/play'
+	import { trashList, trashRestore, trashClear } from '@/utils/play_trash'
 
 	class TrashItem {
 		id: string

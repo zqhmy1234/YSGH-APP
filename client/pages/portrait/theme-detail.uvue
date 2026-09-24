@@ -72,7 +72,7 @@
 <script setup lang="uts">
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
 	// BB3 补线（2026-09-09）：真实波形 fetchWaveform（三件套照 search/detail 逐字对齐）
-	import { fetchWaveform } from '@/utils/play'
+	import { fetchWaveform } from '@/utils/play_content'
 	import {
 		toggleVoice,
 		stopVoice,

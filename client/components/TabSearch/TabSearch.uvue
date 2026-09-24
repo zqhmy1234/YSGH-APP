@@ -75,7 +75,7 @@
 <script setup lang="uts">
 	import { ref, computed, watch, onMounted } from 'vue'
 	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
-	import { fetchWaveform } from '@/utils/play'
+	import { fetchWaveform } from '@/utils/play_content'
 	import { shortDate } from '@/utils/time'
 	import {
 		toggleVoice,

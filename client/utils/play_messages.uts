@@ -1,0 +1,182 @@
+/**
+ * 玩法层 · 消息中心（T-PL-3）（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
+ *
+ * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * 对外导出：AppMessage, MessagePage, fetchMessagePage, fetchMessages, fetchUnreadCount, markMessageRead, markAllRead
+ */
+import { get, post, dataObj, fetchUnreadCountSimple } from './api'
+import { PATH_MESSAGES, parsePageData } from './contract'
+
+export class AppMessage {
+	id: number
+	channel: string
+	msgType: string
+	title: string
+	body: string
+	status: string
+	sentAt: string
+	// R9 批次3（R9-1）：echo 消息 payload 快照（拍板 A-1：点击回放快照，不调 today 不占名额）。
+	// 仅 msgType=='echo' 时有值；echoContentId=='' 表示存量无 payload 消息（降级 toast）。
+	// 用 string 字段而非 UTSJSONObject class 字段——后者全项目零先例（uvue 编码先例铁律）
+	echoContentId: string
+	echoContentType: string
+	echoText: string
+	echoTakenAt: string
+	echoPlace: string
+	echoDate: string
+	// FE1 批：MessageOut.content_id（string|null，BA1 消息跳详情）——null/缺省解析为 ''，
+	// '' = 无关联内容（调用方保持既有就地展示路径）
+	contentId: string
+
+	constructor(id: number, channel: string, msgType: string, title: string, body: string, status: string, sentAt: string,
+		echoContentId: string = '', echoContentType: string = 'text', echoText: string = '', echoTakenAt: string = '', echoPlace: string = '', echoDate: string = '', contentId: string = '') {
+		this.id = id
+		this.channel = channel
+		this.msgType = msgType
+		this.title = title
+		this.body = body
+		this.status = status
+		this.sentAt = sentAt
+		this.echoContentId = echoContentId
+		this.echoContentType = echoContentType
+		this.echoText = echoText
+		this.echoTakenAt = echoTakenAt
+		this.echoPlace = echoPlace
+		this.echoDate = echoDate
+		this.contentId = contentId
+	}
+}
+
+/** 消息分页结果（O17：与后端 Page{items, cursor, has_more} 对齐） */
+export class MessagePage {
+	items: Array<AppMessage>
+	cursor: string
+	hasMore: boolean
+
+	constructor(items: Array<AppMessage>, cursor: string, hasMore: boolean) {
+		this.items = items
+		this.cursor = cursor
+		this.hasMore = hasMore
+	}
+}
+
+/** GET /messages 分页拉取（status 过滤 ''=全部/unread/read；limit 每页条数）。
+ *  O17：返回 cursor/has_more（不再丢弃分页契约字段）；失败空页（never reject） */
+export function fetchMessagePage(status: string, cursor: string, limit: number): Promise<MessagePage> {
+	// 后端 status 仅支持 unread/read/archived；'all' 视同全部（不传 status）
+	let query = '?limit=' + limit
+	if (status != '' && status != 'all') {
+		query += '&status=' + status
+	}
+	if (cursor != '') {
+		query += '&cursor=' + cursor
+	}
+	return new Promise<MessagePage>((resolve) => {
+		get(PATH_MESSAGES + query).then((res: UTSJSONObject | null) => {
+			const empty = new MessagePage([], '', false)
+			if (res == null) {
+				resolve(empty)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(empty)
+				return
+			}
+			const page = parsePageData(d)
+			if (page == null) {
+				resolve(empty)
+				return
+			}
+			const result: Array<AppMessage> = []
+			for (let i = 0; i < page.items.length; i++) {
+				const item = page.items[i] as UTSJSONObject
+				// R9 批次3：echo 消息 payload 快照提取（getJSON 先例 event_ops.uts:441；
+				// 非 echo 消息 payload 为空对象 → echoContentId='' 不影响）
+				let echoContentId = ''
+				let echoContentType = 'text'
+				let echoText = ''
+				let echoTakenAt = ''
+				let echoPlace = ''
+				let echoDate = ''
+				const p = item.getJSON('payload')
+				if (p != null) {
+					echoContentId = p.getString('content_id') ?? ''
+					echoContentType = p.getString('content_type') ?? 'text'
+					echoText = p.getString('text') ?? ''
+					echoTakenAt = p.getString('taken_at') ?? ''
+					echoPlace = p.getString('place') ?? ''
+					echoDate = p.getString('echo_date') ?? ''
+				}
+				result.push(
+					new AppMessage(
+						item.getNumber('id') as number,
+						item.getString('channel') ?? '',
+						item.getString('msg_type') ?? '',
+						item.getString('title') ?? '',
+						item.getString('body') ?? '',
+						item.getString('status') ?? '',
+						item.getString('sent_at') ?? '',
+						echoContentId,
+						echoContentType,
+						echoText,
+						echoTakenAt,
+						echoPlace,
+						echoDate,
+						// FE1：MessageOut.content_id（null → ''）
+						item.getString('content_id') ?? ''
+					)
+				)
+			}
+			resolve(new MessagePage(result, page.cursor, page.hasMore))
+		})
+	})
+}
+
+/** GET /messages 首屏（status 过滤 ''=全部/unread/read）；兼容旧调用方（取第一页 items）。
+ *  分页消费请用 fetchMessagePage（O17：含 cursor/has_more）；失败空数组 */
+export function fetchMessages(status: string): Promise<Array<AppMessage>> {
+	return new Promise<Array<AppMessage>>((resolve) => {
+		fetchMessagePage(status, '', 50).then((page: MessagePage) => {
+			resolve(page.items)
+		})
+	})
+}
+
+/** 未读数（P4 性能收口：改走 GET /messages/unread-count 单 count 查询，替代旧游标翻全量累加；
+ *  失败 -1 → 0 保持旧兼容语义；调用方 messages.uvue 仅作角标展示） */
+export function fetchUnreadCount(): Promise<number> {
+	return new Promise<number>((resolve) => {
+		fetchUnreadCountSimple().then((n: number) => {
+			resolve(n < 0 ? 0 : n)
+		})
+	})
+}
+
+/** POST /messages/{id}/read：单条已读；返回是否成功 */
+export function markMessageRead(msgId: number): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/messages/' + msgId + '/read', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** POST /messages/read-all：全部已读；返回是否成功 */
+export function markAllRead(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/messages/read-all', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+// ═══════════ 收藏 / 删除 / 回收站（FE1 批 · W2-1/W2-2 真端点）═══════════
+// 契约（backend app/api/contents.py 554-710 实证，信封 {code, message, data}）：
+//  GET/POST/DELETE /api/v1/contents/{id}/favorite → FavoriteOut{content_id, favorite, favorite_at}
+//  GET    /api/v1/favorites        → ContentOut[]
+//  DELETE /api/v1/contents/{id}    → ContentDeleteOut{content_id, deleted, permanent_at}（软删 30 天）
+//  GET    /api/v1/trash            → TrashItemOut[]{id, content_type, text, place, taken_at, deleted_at, days_left}
+//  POST   /api/v1/trash/{id}/restore；DELETE /api/v1/trash（清空）
+
+/** GET /contents/{id}/favorite：单条收藏态（detail 页星标初始化）；失败 false（api 层已全局 toast） */

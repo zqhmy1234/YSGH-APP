@@ -155,7 +155,7 @@
 <script setup lang="uts">
 	import { onLoad } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchInterviewProfile } from '@/utils/play'
+	import { fetchInterviewProfile } from '@/utils/play_interview'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
 	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
 

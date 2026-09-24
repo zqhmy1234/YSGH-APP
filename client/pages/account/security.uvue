@@ -71,7 +71,7 @@
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
 	import { logout } from '@/utils/auth'
-	import { fetchUsersMe } from '@/utils/play'
+	import { fetchUsersMe } from '@/utils/play_content'
 
 	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
 	let phoneText = ref('未绑定')
