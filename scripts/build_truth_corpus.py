@@ -25,7 +25,10 @@ import sys
 import uuid
 from pathlib import Path
 
-from gate_io import force_utf8  # noqa: E402
+try:  # 既支持直跑 python scripts/x.py，也支持被按包导入（from scripts.x import …）
+    from gate_io import force_utf8  # noqa: E402
+except ModuleNotFoundError:  # 仅「按包导入」路径会走到这里（sys.path 里没有 scripts/）
+    from scripts.gate_io import force_utf8  # noqa: E402
 
 force_utf8()
 
