@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
@@ -295,18 +297,8 @@ class CosStorageBackend(StorageBackend):
     """腾讯云 COS（生产；cos-python-sdk-v5）"""
 
     def __init__(self) -> None:
-        from qcloud_cos import CosConfig, CosS3Client
-
-        if not (settings.tencent_secret_id and settings.tencent_secret_key and settings.cos_bucket):
-            raise RuntimeError(
-                "COS 后端未配置：需要 TENCENT_SECRET_ID/TENCENT_SECRET_KEY/COS_BUCKET/COS_REGION"
-            )
-        config = CosConfig(
-            Region=settings.cos_region,
-            SecretId=settings.tencent_secret_id,
-            SecretKey=settings.tencent_secret_key,
-        )
-        self._client = CosS3Client(config)
+        # B9c/D02-13：客户端构造收敛到**唯一构造点**（与 tencent_ci 共用同一参数口径）
+        self._client = build_cos_raw_client()
         self._bucket = settings.cos_bucket
 
     def put_object(self, key: str, data: bytes) -> None:
@@ -425,20 +417,93 @@ def _build_sts_policy(user_id: str | None) -> dict:
     }
 
 
-_BACKENDS: dict[str, type[StorageBackend]] = {
-    "fake": FakeStorageBackend,
-    "fs": FilesystemStorageBackend,
-    "minio": MinioStorageBackend,
-    "cos": CosStorageBackend,
+@dataclass(frozen=True)
+class BackendSpec:
+    """一个存储后端的**注册项**（B9c / D02-3 · 2026-09-24 重构波）。
+
+    此前"新增一个存储后端"要改 **7 处**：注册表 + `_FAKE_INSTANCE`/`_MINIO_INSTANCE`/
+    `_COS_INSTANCE` 三个单例全局 + `reset_storage_backend` + `get_storage_backend` 的三段
+    `if key == ...` 分支 + `core/config.py` 字面量 + `deploy/.env.production.template`。
+    现把「构造方式 / 是否单例 / 取用守卫」都声明在**注册项**里 ⇒ **新增后端只改 `_BACKENDS` 1 行**
+    （配置与模板那两处仍属部署面，见台账 D02-3 残余说明）。
+
+    · factory   —— 无参构造函数
+    · singleton —— 是否**进程级单例**：fake 供分片跨调用合并；minio/cos 避免重复建外部连接
+                    客户端（S6-10）；fs 走本地文件系统无连接开销 ⇒ 每次新建（P2-04 语义不变）
+    · guard     —— 取用前的守卫（fake 容量保护）；None = 无
+    """
+
+    factory: Callable[[], StorageBackend]
+    singleton: bool = True
+    guard: Callable[[StorageBackend], None] | None = None
+
+
+def _guard_fake(backend: StorageBackend) -> None:
+    """fake 容量保护（审查修复 P1/m-14：误配 fake 上生产时防内存无限增长）"""
+    store = backend._store  # type: ignore[attr-defined]  # noqa: SLF001 —— 同模块内守卫
+    if len(store) >= FAKE_MAX_OBJECTS:
+        raise RuntimeError(f"fake 存储对象数超限（>{FAKE_MAX_OBJECTS}），检查是否误配 fake 上生产")
+    total = sum(len(v) for v in store.values())
+    if total >= FAKE_MAX_BYTES:
+        raise RuntimeError(
+            f"fake 存储容量超限（>{FAKE_MAX_BYTES // 1024 // 1024}MB），检查是否误配 fake 上生产"
+        )
+
+
+_BACKENDS: dict[str, BackendSpec] = {
+    "fake": BackendSpec(FakeStorageBackend, singleton=True, guard=_guard_fake),
+    "fs": BackendSpec(FilesystemStorageBackend, singleton=False),
+    "minio": BackendSpec(MinioStorageBackend),
+    "cos": BackendSpec(CosStorageBackend),
 }
 
-# fake 单例（进程内共享内存，供分片跨调用合并）
-_FAKE_INSTANCE = FakeStorageBackend()
+# 单例缓存（仅 singleton=True 的后端入驻）。B9c：原 `_FAKE_INSTANCE`/`_MINIO_INSTANCE`/
+# `_COS_INSTANCE` 三个全局收敛为**一个**按 key 索引的字典 —— 消除"每加一个后端就多一个全局"
+# 的结构债；fake 也改为**懒建**（构造仅是内存字典，与原"导入期即建"语义等价）。
+_INSTANCES: dict[str, StorageBackend] = {}
 
-# cos/minio 进程级单例（S6-10：与 fake 同模式——避免每次调用新建外部连接客户端
-# 造成连接/凭证握手开销；懒加载，首次 get 才建）
-_MINIO_INSTANCE: MinioStorageBackend | None = None
-_COS_INSTANCE: CosStorageBackend | None = None
+
+def build_cos_raw_client() -> object:
+    """构建 COS 原始客户端（**唯一构造点** · B9c / D02-13）。
+
+    此前 COS 客户端在**两处**各自构造：`CosStorageBackend.__init__` 与
+    `external/tencent_ci.py::_client`（CI 打标/图片审核用）——构造参数与校验条件相同、
+    仅报错文案不同 ⇒ 凭证/地域口径有两份，改一处必漏（即"新增存储后端需改 7 处"之一）。
+    现统一到此：`CosStorageBackend` 与 `tencent_ci` 均从此取。
+
+    不缓存（与 `tencent_ci` 原"每次调用新建"语义一致）；`CosStorageBackend` 自身仍是
+    进程级单例（由 `_BACKENDS` 注册项的 `singleton` 声明）⇒ 生产路径不会重复建客户端。
+    """
+    from qcloud_cos import CosConfig, CosS3Client
+
+    if not (settings.tencent_secret_id and settings.tencent_secret_key and settings.cos_bucket):
+        raise RuntimeError(
+            "COS 后端未配置：需要 TENCENT_SECRET_ID/TENCENT_SECRET_KEY/COS_BUCKET/COS_REGION"
+        )
+    return CosS3Client(
+        CosConfig(
+            Region=settings.cos_region,
+            SecretId=settings.tencent_secret_id,
+            SecretKey=settings.tencent_secret_key,
+        )
+    )
+
+
+def cos_sts_configured() -> bool:
+    """COS/STS 直传配置就绪判定（B9c / D02-13：**由 API 层移入存储层**）。
+
+    原先写在 `api/upload.py`，直读 COS 私有配置字段（`tencent_secret_id`/`cos_bucket`/
+    `cos_region`/`tencent_appid`/`tencent_sts_role_arn`）⇒ **API 层越界读存储适配器内部细节**。
+    这些字段属存储侧知识，故归位到此；API 只问"能不能走直传"。判定语义与原实现逐字相同。
+    """
+    return bool(
+        settings.tencent_secret_id
+        and settings.tencent_secret_key
+        and settings.cos_bucket
+        and settings.cos_region
+        and settings.tencent_appid
+        and settings.tencent_sts_role_arn
+    )
 
 # fake 容量上限（审查修复 P1/m-14：误配 fake 上生产时防内存无限增长）
 FAKE_MAX_OBJECTS = 10000
@@ -446,38 +511,36 @@ FAKE_MAX_BYTES = 512 * 1024 * 1024  # 512MB
 
 
 def reset_storage_backend() -> None:
-    """重置存储单例（P2-04：测试隔离——两测试间互不污染）"""
-    global _FAKE_INSTANCE, _MINIO_INSTANCE, _COS_INSTANCE  # noqa: PLW0603
-    _FAKE_INSTANCE = FakeStorageBackend()
-    _MINIO_INSTANCE = None
-    _COS_INSTANCE = None
+    """重置存储单例（P2-04：测试隔离——两测试间互不污染）
+
+    B9c：只清**一个**缓存字典（原需逐个 reset 三个全局）；下次取用时按注册项懒建。
+    """
+    _INSTANCES.clear()
 
 
 def get_storage_backend(name: str | None = None) -> StorageBackend:
     """存储后端工厂（按 settings.storage_backend 或显式 name）
 
-    fake/minio/cos 均为进程级单例（同一进程内共享实例；fake 供分片跨调用合并，
-    minio/cos 避免重复建外部客户端）；fs 每次新建（本地文件系统无外部连接开销）。
+    B9c（D02-3）：**新增一个存储后端 = 在 `_BACKENDS` 加 1 行**。
+    单例语义（fake/minio/cos 进程级共享；fs 每次新建）与取用守卫（fake 容量保护）
+    由注册项 `BackendSpec` 声明，本函数只做「解析 → 取/建 → 守卫」三步，不再有
+    按后端名分叉的 `if key == ...`（原三段分支 + 两个单例全局 + reset 的重置列表均已消除）。
+
+    语义与重构前**逐点等价**：
+      · fake：进程级共享（分片跨调用合并）＋ 每次取用都跑容量守卫；
+      · minio/cos：懒建进程级单例（避免重复建外部客户端，S6-10）；
+      · fs：每次新建（无外部连接开销）；
+      · 未知后端：`ValueError`（文案不变）。
     """
-    global _MINIO_INSTANCE, _COS_INSTANCE  # noqa: PLW0603
     key = (name or settings.storage_backend or "fake").lower()
-    if key not in _BACKENDS:
+    spec = _BACKENDS.get(key)
+    if spec is None:
         raise ValueError(f"未知存储后端: {key}（可选 {sorted(_BACKENDS)}）")
-    if key == "fake":
-        backend = _FAKE_INSTANCE
-        # 容量保护（审查修复）：超限拒绝写入并告警（防内存无界增长）
-        if len(backend._store) >= FAKE_MAX_OBJECTS:
-            raise RuntimeError(f"fake 存储对象数超限（>{FAKE_MAX_OBJECTS}），检查是否误配 fake 上生产")
-        total = sum(len(v) for v in backend._store.values())
-        if total >= FAKE_MAX_BYTES:
-            raise RuntimeError(f"fake 存储容量超限（>{FAKE_MAX_BYTES // 1024 // 1024}MB），检查是否误配 fake 上生产")
-        return backend
-    if key == "minio":
-        if _MINIO_INSTANCE is None:
-            _MINIO_INSTANCE = _BACKENDS["minio"]()
-        return _MINIO_INSTANCE
-    if key == "cos":
-        if _COS_INSTANCE is None:
-            _COS_INSTANCE = _BACKENDS["cos"]()
-        return _COS_INSTANCE
-    return _BACKENDS[key]()
+    backend = _INSTANCES.get(key)
+    if backend is None:
+        backend = spec.factory()
+        if spec.singleton:
+            _INSTANCES[key] = backend
+    if spec.guard is not None:
+        spec.guard(backend)
+    return backend

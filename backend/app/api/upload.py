@@ -38,7 +38,7 @@ from app.schemas.upload import (
 )
 from app.services import upload as upload_svc
 from app.services.errors import ConflictError, NotFoundError, TooLargeError
-from app.services.external.storage import get_storage_backend
+from app.services.external.storage import cos_sts_configured, get_storage_backend
 
 logger = logging.getLogger("yishu.upload")
 
@@ -241,7 +241,7 @@ def upload_sts(
         不再整桶通配
     """
     # 生产门控：COS/STS 未真配 → 501 显式告知走后端中转（防误配出假凭证）
-    if settings.app_env == "production" and not _cos_sts_configured():
+    if settings.app_env == "production" and not cos_sts_configured():
         raise ApiError(
             ERR_UPLOAD_008,
             "STS 直传未接入（生产未配置 COS/STS），请走后端中转上传",
@@ -259,15 +259,3 @@ def upload_sts(
         logger.warning("STS 获取失败: %s", exc)
         raise ApiError(ERR_UPLOAD_006, "STS 暂不可用，请走后端中转上传", http=503) from exc
     return ApiResponse(data=creds)
-
-
-def _cos_sts_configured() -> bool:
-    """COS/STS 直传配置就绪判定（生产门控用）：密钥/桶/地域/APPID/角色 ARN 齐全"""
-    return bool(
-        settings.tencent_secret_id
-        and settings.tencent_secret_key
-        and settings.cos_bucket
-        and settings.cos_region
-        and settings.tencent_appid
-        and settings.tencent_sts_role_arn
-    )

@@ -18,16 +18,17 @@ logger = logging.getLogger("yishu.tencent_ci")
 
 
 def _client():
-    from qcloud_cos import CosConfig, CosS3Client
+    """COS 客户端（B9c/D02-13：构造统一走 `storage.build_cos_raw_client` —— **唯一构造点**）
+
+    刻意保留本模块原有的前置校验与报错文案（"腾讯云未配置：TENCENT_SECRET_ID/
+    TENCENT_SECRET_KEY/COS_BUCKET"）——该文案被 `docs/项目API密钥清单与获取.md` 引作
+    api_smoke 的降级警告口径 ⇒ 保持**严格行为等价**（只统一"怎么造客户端"，不改对外文案）。
+    """
+    from app.services.external.storage import build_cos_raw_client
 
     if not (settings.tencent_secret_id and settings.tencent_secret_key and settings.cos_bucket):
         raise RuntimeError("腾讯云未配置：TENCENT_SECRET_ID/TENCENT_SECRET_KEY/COS_BUCKET")
-    config = CosConfig(
-        Region=settings.cos_region,
-        SecretId=settings.tencent_secret_id,
-        SecretKey=settings.tencent_secret_key,
-    )
-    return CosS3Client(config)
+    return build_cos_raw_client()
 
 
 @with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
