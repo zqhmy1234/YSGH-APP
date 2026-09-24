@@ -110,6 +110,7 @@
 - [ ] ⏸ **D02-9 登记未改**（照片扩展名三表不一致）：收敛必改下发 MIME 或受理格式 ⇒ **行为变更**，越出本波边界；已在 `media_url`/`upload_meta`/`file_magic` 三处加交叉说明（漂移已书面化），修复移交**功能波**（§5.10 拍板 10.1）
 - [x] **D09-10** `wechat_messages.status` 三方枚举/默认值不一致 → ORM 定义 **`WECHAT_MESSAGE_STATUSES`**（取值唯一来源）+ schema.sql **注释**对齐（**未改 DDL 默认值**——属漂移迁移，按 §5.10 拍板 10.3③ 待专用窗口）+ **新增防漂移门禁测试** —— 证据：`test_wechat.py` **23 passed**；**反向探针**（临插 `record.status = "zzz_probe_d0910"`）→ 该测试 **FAIL** 且精确列出未声明取值（探针还暴露首版门禁正则 `[a-z_]+` **漏数字**的盲点，已修为 `[a-z0-9_]+`）；探针**字节级还原**（`git status` 干净）
 - [ ] ⚠️ **登记（新发现）**：`wechat_messages.status` 的 **DDL 默认 `'processing'` ≠ ORM 默认 `"processed"`**——收敛需改 DDL ⇒ 属漂移迁移，待专用窗口（§5.10 拍板 10.3③）
+- [ ] ⏸ **D07-14 登记未改**（三套 dimensions 读路径）：实读澄清**云侧并无重复**（`display_dimensions` 已单点化；`export._profile_out` 是原始导出、非展示口径）；真正缺口是**跨语言平行实现**（客户端 `flattenDimensions` 用**英文 dim id** 作标签）⇒ 目标"不再泄漏英文 dim id"需先建 dim id→中文标签映射 = **UI 文案变更**，越出本波边界。已在两处 docstring **交叉说明**、仅注释未改逻辑 —— **B11 结构类项至此全部处置完毕**（4 修 + 1 加门禁 + 2 登记待功能波）
 
 ## B10-i 门禁自身可靠性（2026-09-24 · 第六轮）
 

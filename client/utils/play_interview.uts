@@ -62,7 +62,16 @@ export function fetchInterviewQuestions(): Promise<Array<InterviewQuestion>> {
 	})
 }
 
-/** 展平 {dim: [当前值]} → "relation_role：家人、伴侣；..." 摘要（P1-A 对齐：dimensions 是 dict） */
+/**
+ * 展平 {dim: [当前值]} → "relation_role：家人、伴侣；..." 摘要（P1-A 对齐：dimensions 是 dict）
+ *
+ * ⚠️ D07-14（2026-09-24 重构波 · **登记未改**）：本函数是**跨语言的平行实现**——
+ *   云侧同一"展示口径"由 `backend/app/services/profile_annotator.display_dimensions`
+ *   提供（该处已单点化：`interview.py` ×2 + 测试均复用它）。两端**无法共享代码**，只能对齐口径。
+ *   已知缺口：本实现直接用**英文 dim id** 作标签（如 `relation_role`），而 D07-14 的目标是
+ *   「**客户端不再泄漏英文 dim id**」⇒ 需先建立 dim id→中文标签映射，**属 UI 文案变更**
+ *   （越出本波"行为等价"边界），故本波**只登记不改**（交功能波 / 拍板）。
+ */
 function flattenDimensions(dim: UTSJSONObject | null): string {
 	if (dim == null) {
 		return ''

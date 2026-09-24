@@ -336,6 +336,11 @@ def display_dimensions(dimensions: dict) -> dict[str, list[str]]:
     """结构化 dimensions → {dim: [当前值]}（API 契约 / 复述展示用）
 
     兼容：单值维度取 value、集合型取 values[].value、旧扁平列表格式原样。
+
+    D07-14（2026-09-24 重构波）：本函数是**云侧唯一**的"展示口径"实现
+    （`interview.py` ×2 + 测试均复用；`export._profile_out` 走的是**原始结构化**导出，非展示口径）。
+    跨语言平行实现＝客户端 `utils/play_interview.uts::flattenDimensions`（UTS，同语义但用英文 dim id
+    作标签）；两端口径对齐需先有 dim id→中文标签映射，属 **UI 文案变更** ⇒ 本波只登记（见 ledger §8.5）。
     """
     out: dict[str, list[str]] = {}
     for dim, entry in (dimensions or {}).items():
