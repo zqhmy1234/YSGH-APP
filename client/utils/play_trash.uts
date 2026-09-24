@@ -5,7 +5,7 @@
  * 对外导出：deleteContent, trashList, trashRestore, trashClear
  */
 import { get, post, request, dataArr } from './api'
-import { enqueueDeleteOp } from './sync_client'
+import { enqueueDeleteOp } from './sync_queue'
 import { getNetKind } from './uploader'
 
 export function deleteContent(contentId: string): Promise<boolean> {

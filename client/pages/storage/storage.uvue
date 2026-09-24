@@ -96,7 +96,9 @@
 <script setup lang="uts">
 	import { ref } from 'vue'
 	import { onLoad, onShow } from '@dcloudio/uni-app'
-	import { pendingSyncCount, isSyncPaused, runSyncChain, getLastSyncAt } from '@/utils/sync_client'
+	import { pendingSyncCount, isSyncPaused } from '@/utils/sync_queue'
+	import { getLastSyncAt } from '@/utils/sync_pipeline'
+	import { runSyncChain } from '@/utils/sync_schedule'
 	import { pauseSync, resumeSync } from '@/utils/pause_controller'
 	import { fetchExportFilePath } from '@/utils/api'
 	import { fetchTotalBytes, fmtBytes } from '@/utils/capsule_api'

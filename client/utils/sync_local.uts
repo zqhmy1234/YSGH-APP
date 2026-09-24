@@ -1,0 +1,94 @@
+/**
+ * 同步域 · 本地状态（游标 / 镜像）（B5b 2026-09-24 重构波：自 utils/sync_client.uts 按职责拆出）
+ *
+ * 游标读写 + 本地镜像读写快照 + 拉取变更应用。
+ * 对外导出：readCursor, writeCursor, applyChanges, mirrorSnapshot
+ */
+import { CURSOR_KEY, MIRROR_KEY } from './sync_types'
+
+// ---------- 游标持久化 ----------
+
+export function readCursor(): number {
+	const raw = uni.getStorageSync(CURSOR_KEY) as string
+	if (raw == null || raw == '') {
+		return 0
+	}
+	const n = parseInt(raw)
+	return isNaN(n) ? 0 : n
+}
+
+export function writeCursor(cursor: number): void {
+	uni.setStorageSync(CURSOR_KEY, '' + cursor)
+}
+
+// ---------- 本地镜像（实体 updated_at/deleted 快照，供 reconcile 对账 + 差异提示） ----------
+
+function readMirror(): Array<string> {
+	const raw = uni.getStorageSync(MIRROR_KEY) as string
+	if (raw == null || raw == '') {
+		return []
+	}
+	const out: Array<string> = []
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			out.push(lines[i])
+		}
+	}
+	return out
+}
+
+function mirrorSet(entityId: string, updatedAtIso: string, deleted: boolean): void {
+	const lines = readMirror()
+	const line = entityId + '|' + updatedAtIso + '|' + (deleted ? '1' : '0')
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith(entityId + '|')) {
+			lines[i] = line
+			writeMirror(lines)
+			return
+		}
+	}
+	lines.push(line)
+	writeMirror(lines)
+}
+
+function writeMirror(lines: Array<string>): void {
+	uni.setStorageSync(MIRROR_KEY, lines.join('\n'))
+}
+
+/** 本地快照（reconcile 请求体 items）→ Array<{entity_id, updated_at, deleted}> */
+export function mirrorSnapshot(): Array<UTSJSONObject> {
+	const lines = readMirror()
+	const out: Array<UTSJSONObject> = []
+	for (let i = 0; i < lines.length; i++) {
+		const parts = lines[i].split('|')
+		if (parts.length < 3) {
+			continue
+		}
+		const it: UTSJSONObject = {
+			entity_id: parts[0],
+			updated_at: parts[1],
+			deleted: parts[2] == '1'
+		}
+		out.push(it)
+	}
+	return out
+}
+
+/** 拉取变更应用到本地镜像（字段级 value 明细消费：MVP 记录实体 updated_at/deleted，
+ *  供对账快照 + 差异提示；离线字段值库（本地 SQLite 实体表）随 XView 自定义基座落地） */
+export function applyChanges(changes: Array<UTSJSONObject>): void {
+	for (let i = 0; i < changes.length; i++) {
+		const ch = changes[i]
+		const entityId = ch.getString('entity_id') ?? ''
+		const updatedAt = ch.getString('updated_at') ?? ''
+		const opType = ch.getString('op_type') ?? ''
+		if (entityId == '') {
+			continue
+		}
+		const deleted = opType == 'delete'
+		if (updatedAt != '') {
+			mirrorSet(entityId, updatedAt, deleted)
+		}
+	}
+}

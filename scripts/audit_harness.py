@@ -504,7 +504,17 @@ def audit_exports() -> None:
             line = text[: m.start()].count("\n") + 1
             decls.setdefault(m.group(1), []).append(f"{f.relative_to(REPO)}:{line}")
 
-    # 统计全仓引用（含本文件内部引用；排除声明行本身）
+    # 统计全仓引用（含本文件内部引用；排除声明行本身；**排除注释**）
+    # ⚠️ 2026-09-24（B10-q）：B5b 拆分生成的模块头 doc 会列出「对外导出：…」，而原实现
+    #   用裸 \bname\b 全文本计数 ⇒ **注释里提到名字也算引用** ⇒ 真·零调用导出被注释掩盖
+    #   （与 B10-d 同族的假阴性；B5b 的 doc 头当场把它顶成"僵尸豁免"CRITICAL 才暴露）。
+    #   实测排除注释后多露出 4 枚真死码：AGG_CHECK_ON_DEVICE / invalidateTimelineCache /
+    #   isIgnoredEvent / parseErrorString。口径与轴 2（audit_client 的 _comment_ranges）一致。
+    #   顺带把"按名重读每份源文件"改为**预读缓存**（原为 导出数 × 文件数 次 read_text）。
+    sources_cache: list[tuple[object, str, list[tuple[int, int]]]] = []
+    for f in sources:
+        text = f.read_text(encoding="utf-8", errors="replace")
+        sources_cache.append((f, text, _comment_ranges(text)))
     base = _load_baseline().get("exports", {})
     frozen = base.get("zero_cap_allowlist", {})   # 棘轮：存量零调用能力导出（只拦新增）
 
@@ -515,12 +525,14 @@ def audit_exports() -> None:
         if name in EXPORT_ALLOWLIST:
             continue
         refs = 0
-        for f in sources:
-            text = f.read_text(encoding="utf-8", errors="replace")
-            for m in re.finditer(rf"\b{re.escape(name)}\b", text):
+        pat = re.compile(rf"\b{re.escape(name)}\b")
+        for f, text, ranges in sources_cache:
+            for m in pat.finditer(text):
                 line = text[: m.start()].count("\n") + 1
                 if f"{f.relative_to(REPO)}:{line}" in places:
                     continue          # 声明行自身不算引用
+                if _in_comment(ranges, m.start()):
+                    continue          # 注释内提及不算引用（B10-q）
                 refs += 1
         is_const = name.startswith("PATH_") or name.startswith("FIELD_") or "contract.uts" in places[0]
         if refs == 0:

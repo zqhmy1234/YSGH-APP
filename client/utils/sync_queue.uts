@@ -1,0 +1,94 @@
+/**
+ * 同步域 · 同步对外 API（入队 / 暂停与失败计数）（B5b 2026-09-24 重构波：自 utils/sync_client.uts 按职责拆出）
+ *
+ * enqueue* / pendingSyncCount + 暂停令牌与连续失败计数的对外薄封装。
+ * 对外导出：enqueueFieldOp, enqueueDeleteOp, pendingSyncCount, MAX_BATCH_FAILURES, subscribeSyncStatus, pauseSync, resumeSync, isSyncPaused, getPauseReason, registerConsecutiveFailure, resetConsecutiveFailures
+ */
+import { MAX_BATCH_FAILURES as SHARED_MAX_BATCH_FAILURES, SyncStatusListener, pauseSync as sharedPauseSync, resumeSync as sharedResumeSync, isSyncPaused as sharedIsSyncPaused, getPauseReason as sharedGetPauseReason, subscribeSyncStatus as sharedSubscribeSyncStatus, registerConsecutiveFailure as sharedRegisterConsecutiveFailure, resetConsecutiveFailures as sharedResetConsecutiveFailures, broadcastStatus as sharedBroadcastStatus } from './pause_controller'
+import { enqueueEntry, countPendingOfTypes } from './queue_store'
+import { SYNC_TYPES, isoNow } from './sync_types'
+
+// O6 双离线队列合并：队列存储单源 queue_store（sync/event 共用 yishu_offline_queue），
+// 路由差异保留在本文件 flush（sync push 批推）与 event_ops flush（confirm/merge/split 顺序）
+let _opSeq: number = 0
+function nextOpId(): string {
+	_opSeq++
+	return 'sync_' + Date.now().toString() + '_' + _opSeq.toString()
+}
+
+// ---------- 队列存储（F9/O6 合并：读写统一走 queue_store.ts 共享存储，本文件只留入队/批推路由） ----------
+
+/** 入队一条操作（六字段契约；存储共享 queue_store，行为与原 readQueue/writeQueue 等价） */
+function pushOp(opType: string, payload: UTSJSONObject): void {
+	const entry: UTSJSONObject = {
+		op_id: nextOpId(),
+		op_type: opType,
+		payload: payload,
+		status: 'pending',
+		created_at: isoNow(),
+		retry_count: 0
+	}
+	enqueueEntry(entry)
+	console.log('[yishu] sync enqueue ' + opType + ' queue=' + countPendingOfTypes(SYNC_TYPES))
+	sharedBroadcastStatus()
+}
+
+/** 字段级操作入队（upsert_field；value 支持 string/number/boolean，按类型标记存储防 UTS 读取歧义） */
+export function enqueueFieldOp(entityType: string, entityId: string, field: string, value: string | number | boolean, updatedAt: string = ''): void {
+	let valueType: string = 'string'
+	if (typeof value == 'number') {
+		valueType = 'number'
+	} else if (typeof value == 'boolean') {
+		valueType = 'boolean'
+	}
+	const payload: UTSJSONObject = {
+		entity_type: entityType,
+		entity_id: entityId,
+		field: field,
+		value: '' + value,
+		value_type: valueType,
+		updated_at: updatedAt != '' ? updatedAt : isoNow()
+	}
+	pushOp('upsert_field', payload)
+}
+
+/** 软删除操作入队（delete 墓碑） */
+export function enqueueDeleteOp(entityType: string, entityId: string, updatedAt: string = ''): void {
+	const payload: UTSJSONObject = {
+		entity_type: entityType,
+		entity_id: entityId,
+		updated_at: updatedAt != '' ? updatedAt : isoNow()
+	}
+	pushOp('delete', payload)
+}
+
+/** 待同步操作条数（pending，仅 sync 类型——共享队列按 op_type 过滤） */
+export function pendingSyncCount(): number {
+	return countPendingOfTypes(SYNC_TYPES)
+}
+
+// ---------- 暂停控制器（F9 职责分离：实现移至 pause_controller.ts，此处仅再导出兼容既有引用） ----------
+
+export const MAX_BATCH_FAILURES: number = SHARED_MAX_BATCH_FAILURES
+export function subscribeSyncStatus(cb: SyncStatusListener): void {
+	sharedSubscribeSyncStatus(cb)
+}
+export function pauseSync(reason: string): void {
+	sharedPauseSync(reason)
+}
+export function resumeSync(): void {
+	sharedResumeSync()
+}
+export function isSyncPaused(): boolean {
+	return sharedIsSyncPaused()
+}
+export function getPauseReason(): string {
+	return sharedGetPauseReason()
+}
+export function registerConsecutiveFailure(): void {
+	sharedRegisterConsecutiveFailure()
+}
+export function resetConsecutiveFailures(): void {
+	sharedResetConsecutiveFailures()
+}
+

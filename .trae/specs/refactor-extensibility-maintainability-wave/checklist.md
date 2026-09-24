@@ -81,3 +81,14 @@
 - [x] **B9a 事件域门面收口**（D04-16）：API 不再直连算法包 —— 证据：`44a837c`；ruff 通过；`test_event_sync + test_agg_reference` → **23 passed**；grep 复核 API→`event_aggregation` 直连 = 0
 - [x] **B9b rag 的 LLM 调用走 `llm_ops` 门面**（D05-13）：`rewrite_query` + 新增 `llm_ops.image_caption` —— 证据：`32b4a89`；5 个测试文件 **79 passed**；rag→`external.dashscope` 直连 = 0
 - [x] **B9c 存储注册表 + COS 唯一构造点**（D02-3 / D02-13）：新增后端只改 1 行；API 不再直读 COS 私有字段 —— 证据：`8286327`；**探针 8 项断言全过**（含 fake 容量守卫仍生效、源码断言唯一构造点）；4 个测试文件 **83 passed**
+
+## G. Phase B 第三/四轮（编译门恢复后 · 客户端 B5a/B5b）
+
+- [x] **B10-p 修 B10-n 引入的导入回归**（Docker 起后全量门禁当场抓到）：5 个"会被按包导入"的脚本 `from gate_io import …` 在其路径下 `sys.path` 无 `scripts/` → `ModuleNotFoundError`（pytest 收集中断）—— 证据：改双路径导入后「按包导入」冒烟五处全过、受影响测试 **21 passed**、`test_agent --only research` ✅；教训已登记（`py_compile`/`ruff` 查不出导入期缺模块）
+- [x] **编译门恢复**（用户手动启动 HBuilderX）：冷编译 `& D:\HBuilderX\cli.exe launch app-android --project "D:\GuangH-App\client" --compile true` → `项目 client 编译成功`；**B5 由"顺延"解除**
+- [x] **B5a `play.uts` 按域拆分**（L-04）：653 行 / 6 域 → 6 域模块（`play_echo` 70 / `play_interview` 125 / `play_messages` 182 / `play_favorite` 53 / `play_trash` 63 / `play_content` 181）；10 调用点改写 —— 证据：逐字节等价（6 模块体 == `HEAD:play.uts` 对应切片；导出 28=28；2 私有 helper 未外泄）+ 残留 grep = 空 + **冷编译成功（0 error）**；提交 `000101f`
+- [x] **B5b `sync_client.uts` 按职责拆分**（L-05）：705 行 → 5 模块（`sync_types` 77 / `sync_queue` 84 / `sync_local` 86 / `sync_pipeline` 291 / `sync_schedule` 101）；6 调用点改写（`App.uvue` 保相对路径）—— 证据：逐字节等价（5 模块体按原位置拼接 == `HEAD:sync_client.uts` 63–705，非空行 639 逐行一致、非空白行零丢弃；导出 22=22）+ 残留 import grep = 0 + **冷编译成功（ready in 170871ms，0 error）**；表面增量如实登记（6 常量 + 4 函数由私有改 `export`，`sync_local` 空导出若漏必编译失败、已复跑修正）
+- [x] ⚠️ **UTS 平台约束坐实**（影响拆分策略）：`client/utils/*.uts` **不支持** `export { … } from './x.uts'` 再导出（Rollup 视目标为 JS ⇒ `[plugin:uts] Expression expected`）∴ "门面兼容再导出"**不可行**，一律改为调用点按模块直接导入 —— 证据：B5a 首版门面编译失败实测；B5a/B5b 均以调用点改写落地
+- [x] **B10-q 轴 4 注释计数假阴性**（B10-d 残层 · 由 B5b 当场暴露）：`audit_exports` 裸 `\bname\b` 全文本计数**不剔注释** ⇒ 注释里提到导出名也算引用 ⇒ 真死码被掩盖；修为复用轴 2 的 `_comment_ranges()`/`_in_comment()` 剔除注释 + 预读缓存 —— 证据：**A/B 量化**零调用能力导出 **4 → 9**（新露出 `AGG_CHECK_ON_DEVICE`/`invalidateTimelineCache`/`isIgnoredEvent`/`parseErrorString`，逐枚 grep 证实代码零引用）；4 枚按棘轮冻结进 baseline；**反向探针**（导出仅在自己 doc 注释被提及）→ A 漏判（`zero_cap=4`）／B 捕获（`zero_cap=10`）且门禁 `[CRITICAL] 新增` @ `:6`、EXIT=1，已删探针；常规态 `无新增 ✓ / 存量 9 / 无 CRITICAL`；ruff 通过
+- [ ] **B5.2c 剩余客户端拆分**：`uploader.uts`（L-06）、`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`/`detail.uvue`（L-01/02/08）、L-12 令牌收敛（7391 处样式出现 vs `design_tokens.json`，**须视觉验证**）
+- [x] 未使用 `--no-verify` 绕过门禁 —— 证据：B5a/B5b 提交均经 hook `[pre-commit] 审核通过`

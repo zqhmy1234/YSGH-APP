@@ -2,7 +2,8 @@
 	import { onLaunch, onShow, onError } from '@dcloudio/uni-app'
 	import { ensureLogin } from './utils/auth'
 	import { initSentry, captureException } from './utils/sentry'
-	import { initSync, drainBackgroundTasks, reconcileNow } from './utils/sync_client'
+	import { reconcileNow } from './utils/sync_pipeline'
+	import { initSync, drainBackgroundTasks } from './utils/sync_schedule'
 
 	/** 加载自定义字体（官方文档 doc.dcloud.net.cn/uni-app-x/api/load-font-face.html）：
 	 *  - global:true 必传（onLaunch 时无页面 vm，非全局加载会在 Vapor 下抛 'vm' undefined）

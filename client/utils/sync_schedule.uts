@@ -1,0 +1,112 @@
+/**
+ * 同步域 · 链路与调度（2h 定时 / 后台任务 / 初始化）（B5b 2026-09-24 重构波：自 utils/sync_client.uts 按职责拆出）
+ *
+ * 完整同步链路 + 周期兜底 + 后台两段式 + 网络恢复钩子 + initSync。
+ * 对外导出：runSyncChain, startPeriodicSync, stopPeriodicSync, registerBackgroundSync, drainBackgroundTasks, NetRestoredListener, onNetworkRestored, initSync
+ */
+import { initBackgroundTasks, setBackgroundTaskHandler, drainPendingTasks } from '@/uni_modules/yishu-background-tasks'
+import { DEFAULT_SYNC_INTERVAL_MS, LAST_SYNC_KEY, PullOutcome, PushOutcome, SyncChainResult, isoNow } from './sync_types'
+import { isSyncPaused, pauseSync, resumeSync } from './sync_queue'
+import { pullIncremental, pushPendingOps } from './sync_pipeline'
+
+/** 完整同步链路：补推 → 增量拉取（暂停时直接返回） */
+export function runSyncChain(): Promise<SyncChainResult> {
+	return new Promise<SyncChainResult>((resolve) => {
+		if (isSyncPaused()) {
+			resolve(new SyncChainResult(0, 0, true, 0))
+			return
+		}
+		pushPendingOps().then((push: PushOutcome) => {
+			pullIncremental().then((pull: PullOutcome) => {
+				// B7（BB1）：链路跑完即落盘完成时刻（链路内逐段失败已有 console.error 与
+				// 暂停计数显式化；此处记录的是「最近一次完整跑链时刻」）
+				uni.setStorageSync(LAST_SYNC_KEY, isoNow())
+				resolve(new SyncChainResult(push.applied, pull.changes, isSyncPaused(), push.conflicts))
+			})
+		})
+	})
+}
+
+// ---------- 2h 定时兜底（App 存活期间 setInterval；后台 WorkManager 两段式：唤醒写 pending → 前台 drain 消费） ----------
+
+let _syncTimer: number | null = null
+
+export function startPeriodicSync(intervalMs: number = DEFAULT_SYNC_INTERVAL_MS): void {
+	if (_syncTimer != null) {
+		return
+	}
+	const ms = intervalMs > 0 ? intervalMs : DEFAULT_SYNC_INTERVAL_MS
+	_syncTimer = setInterval(() => {
+		if (!isSyncPaused()) {
+			console.log('[yishu] sync 2h 定时兜底触发')
+			runSyncChain()
+		}
+	}, ms)
+	console.log('[yishu] sync periodic started, interval=' + ms + 'ms')
+}
+
+export function stopPeriodicSync(): void {
+	if (_syncTimer != null) {
+		clearInterval(_syncTimer)
+		_syncTimer = null
+	}
+}
+
+/**
+ * 后台任务接线（B5d · P0-3 真接线，取代原纯日志 stub）：
+ *   - initBackgroundTasks(2)：注册 2h 周期 PeriodicWork（photo-watch.start() 亦引导，幂等可重复调；
+ *     标准基座无 androidx.work → 内部降级 pending 记录，App 存活期由上方 setInterval 兜底）
+ *   - setBackgroundTaskHandler：注册任务回调（注册即 drain 一次积压）；
+ *     WorkManager 到点/标准基座 enqueueTask 写入的 pending 由此派发执行
+ *   - 派发逻辑：统一 runSyncChain()（sync 周期 / voice_transcribe / sync_photo / 聚合 / 拉取等类型）；
+ *     照片续传由 uploader 自身 onNetworkRestored 钩子负责——uploader 已依赖本文件（pauseSync 等），
+ *     此处静态引用 uploader 会成环，故不在此接 continuePendingUploads
+ *   - App.onShow 消费积压：drainBackgroundTasks()（本文件导出，内部逐条让出主线程）
+ */
+export function registerBackgroundSync(): void {
+	initBackgroundTasks(2)
+	setBackgroundTaskHandler((taskType: string) => {
+		console.log('[yishu] sync_client 后台任务派发: ' + taskType)
+		runSyncChain()
+	})
+	console.log('[yishu] sync_client: 后台任务接线完成（WorkManager 周期 + pending drain 消费）')
+}
+
+/** 前台消费积压后台任务（App.onShow 调用；幂等空跑无害） */
+export function drainBackgroundTasks(): void {
+	drainPendingTasks()
+}
+
+/** 网络恢复钩子（uploader 注册：WiFi 恢复自动补传暂缓原图；与 sync_client 无循环依赖） */
+export type NetRestoredListener = () => void
+let _netRestoredListeners: Array<NetRestoredListener> = []
+
+export function onNetworkRestored(cb: NetRestoredListener): void {
+	_netRestoredListeners.push(cb)
+}
+
+/** 应用启动挂接：2h 定时 + 网络恢复即补推（幂等，App.onLaunch 调用一次） */
+export function initSync(): void {
+	startPeriodicSync()
+	// 标准基座无 androidx.work / UTSAndroid 全局 → registerBackgroundSync 抛 ReferenceError，
+	// 包 try/catch 降级为仅前台定时同步（插件自身已有标准基座降级分支，此处兜住调用链），不阻断启动
+	try {
+		registerBackgroundSync()
+	} catch (e) {
+		console.log('[yishu] sync registerBackgroundSync 标准基座降级: ' + e)
+	}
+	// 网络恢复（wifi/蜂窝/有线）→ 解除暂停并补跑同步链路（App 存活期间）
+	uni.onNetworkStatusChange((res) => {
+		if (res.isConnected) {
+			if (isSyncPaused()) {
+				resumeSync()
+			}
+			console.log('[yishu] sync network restored: ' + res.networkType)
+			runSyncChain()
+			for (let i = 0; i < _netRestoredListeners.length; i++) {
+				_netRestoredListeners[i]()
+			}
+		}
+	})
+}
+

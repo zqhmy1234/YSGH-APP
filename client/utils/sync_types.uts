@@ -1,0 +1,86 @@
+/**
+ * 同步域 · 同步域共享常量与结果类型（B5b 2026-09-24 重构波：自 utils/sync_client.uts 按职责拆出）
+ *
+ * 指数退避表 / 同步类型 / 游标·镜像·链路时刻 key / isoNow / 四个结果 DTO。
+ * 对外导出：BACKOFF_MS, isoNow, PushOutcome, PullOutcome, SyncChainResult, ReconcileReport, SYNC_TYPES, CURSOR_KEY, MIRROR_KEY, LAST_SYNC_KEY, PUSH_BATCH_SIZE, DEFAULT_SYNC_INTERVAL_MS
+ */
+import { BACKOFF_MS as SHARED_BACKOFF_MS } from './retry'
+import { isoLocal } from './time'
+
+/** 指数退避（S1-M3 收口：与 event_sync/uploader 共享 retry.ts：2s→4s→8s→8s→8s，5 次上限） */
+export const BACKOFF_MS: number[] = SHARED_BACKOFF_MS
+export const PUSH_BATCH_SIZE: number = 100
+export const DEFAULT_SYNC_INTERVAL_MS: number = 2 * 60 * 60 * 1000 // 2 小时定时兜底
+
+/** 同步类型操作（与 event_ops confirm/merge/split 区分，同队列按 op_type 路由） */
+export const SYNC_TYPES: Array<string> = ['upsert_field', 'delete']
+export const CURSOR_KEY: string = 'yishu_sync_cursor'
+export const MIRROR_KEY: string = 'yishu_sync_mirror'
+// B7（BB1）：同步链路完成时间落盘键（storage 页「上次同步」读真值）
+export const LAST_SYNC_KEY: string = 'yishu_last_sync_at'
+
+// ---------- 工具 ----------
+
+/** epoch ms → ISO8601 本地时间（S1-M4 收口：统一走 time.isoLocal；保留导出名兼容现有引用） */
+export function isoNow(): string {
+	return isoLocal(Date.now())
+}
+
+/** op_id 唯一后缀（同毫秒并发防碰撞） */
+// ---------- 结果类型 ----------
+
+export class PushOutcome {
+	applied: number
+	conflicts: number
+	rejected: number
+	remaining: number
+
+	constructor(applied: number, conflicts: number, rejected: number, remaining: number) {
+		this.applied = applied
+		this.conflicts = conflicts
+		this.rejected = rejected
+		this.remaining = remaining
+	}
+}
+
+export class PullOutcome {
+	changes: number
+	cursor: number
+	hasMore: boolean
+
+	constructor(changes: number, cursor: number, hasMore: boolean) {
+		this.changes = changes
+		this.cursor = cursor
+		this.hasMore = hasMore
+	}
+}
+
+export class SyncChainResult {
+	pushed: number
+	pulled: number
+	paused: boolean
+	conflicts: number
+
+	constructor(pushed: number, pulled: number, paused: boolean, conflicts: number) {
+		this.pushed = pushed
+		this.pulled = pulled
+		this.paused = paused
+		this.conflicts = conflicts
+	}
+}
+
+export class ReconcileReport {
+	needPush: number
+	needPull: number
+	divergent: number
+	missingOnCloud: number
+	missingOnClient: number
+
+	constructor(needPush: number, needPull: number, divergent: number, missingOnCloud: number, missingOnClient: number) {
+		this.needPush = needPush
+		this.needPull = needPull
+		this.divergent = divergent
+		this.missingOnCloud = missingOnCloud
+		this.missingOnClient = missingOnClient
+	}
+}

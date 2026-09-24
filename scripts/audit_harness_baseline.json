@@ -47,6 +47,11 @@
   },
   "exports": {
     "zero_cap_allowlist": {
+      "AGG_CHECK_ON_DEVICE": {
+        "place": "client/utils/config.uts:72",
+        "reason": "端上聚合自检开关，全仓零代码引用（仅 docs/_resource_endpoint_matrix.md:207 记为「入口缺失」）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+        "target": "接线使用或删除该常量，随后删除本条（销项触发）"
+      },
       "AuthError": {
         "place": "client/utils/auth.uts:51",
         "reason": "错误类型类导出，全仓零引用（仅 docs/审计_未关闭缺陷_20260923.md 提及）；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
@@ -57,14 +62,29 @@
         "reason": "录音工厂导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
         "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
       },
+      "invalidateTimelineCache": {
+        "place": "client/utils/timeline.uts:244",
+        "reason": "时间轴缓存失效导出，全仓零代码引用；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+        "target": "接线使用或删除该导出，随后删除本条"
+      },
+      "isIgnoredEvent": {
+        "place": "client/utils/event_ops.uts:196",
+        "reason": "事件忽略判定导出，全仓零代码引用；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+        "target": "接线使用或删除该导出，随后删除本条"
+      },
       "lastTempFile": {
         "place": "client/utils/voice.uts:108",
         "reason": "临时文件路径读取导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
         "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
       },
+      "parseErrorString": {
+        "place": "client/utils/api.uts:537",
+        "reason": "错误信封解析导出，全仓零代码引用（仅 docs/_resource_endpoint_matrix.md:222 与 search_api.uts:15 注释提及）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+        "target": "接线使用或删除该导出，随后删除本条"
+      },
       "stopPeriodicSync": {
-        "place": "client/utils/sync_client.uts:584",
-        "reason": "深审 D08-10 已判定真死（唯一 1 处引用＝自身声明行，由同一假阴性造成）",
+        "place": "client/utils/sync_schedule.uts:48",
+        "reason": "深审 D08-10 已判定真死（唯一 1 处引用＝自身声明行，由同一假阴性造成）；**B5b 拆分后新址**（原 client/utils/sync_client.uts:584 已随拆分删除）",
         "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
       },
       "WALK_SPEED_MS": {

@@ -99,8 +99,10 @@
   - **结论：走"只登记"分支**——实跑确认漂移量大且含**破坏性项**（多表 `remove_fk`/`remove_index`、大量 TEXT↔String）；自动生成迁移会破坏约束，**待拍板** schema.sql 与 ORM 谁是权威。
 
 - [ ] Task B5: 客户端巨文件拆分（**需编译门**）：`TabSearch.uvue`、`sync_client.uts`、`uploader.uts`；每拆一次跑冷编译 0 error。
-  - [x] B5.1 先探编译门可用性（HBuilderX GUI + Docker）；不可用则本任务顺延并登记 → **用户拍板：不可用，顺延**
-  - [ ] B5.2 逐个拆分 + 冷编译验证（**顺延**，待编译门可用）
+  - [x] B5.1 先探编译门可用性（HBuilderX GUI + Docker）→ 2026-09-24 **用户手动启动 HBuilderX，编译门恢复**（Docker 亦已起）
+  - [x] B5.2a `client/utils/play.uts` 653 行 → 6 域模块（`play_echo`/`play_interview`/`play_messages`/`play_favorite`/`play_trash`/`play_content`）；10 调用点改写；冷编译 ✅（L-04）
+  - [x] B5.2b `client/utils/sync_client.uts` 705 行 → 5 模块（`sync_types`/`sync_queue`/`sync_local`/`sync_pipeline`/`sync_schedule`）；6 调用点改写；冷编译 ✅（L-05）
+  - [ ] B5.2c 剩余：`uploader.uts`（L-06）、`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`/`detail.uvue`（L-01/02/08）、L-12 令牌收敛
 
 - [x] Task B6: 客户端声明漂移清理：`shell.uvue:7`、`search_api.uts:183`、`feature_list.json` 自相矛盾证据；`audit_harness client` 无新增漂移。
   - **结论：验证即达标**——三则已由 09-23 审计窗修复；残余两处注释原文含「对齐原 …」，B1 的「原」标注抑制生效 → 轴 2 无注释内未注册页面引用。

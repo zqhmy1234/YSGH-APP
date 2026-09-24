@@ -1,0 +1,307 @@
+/**
+ * 同步域 · 同步管线（push / pull / 对账）（B5b 2026-09-24 重构波：自 utils/sync_client.uts 按职责拆出）
+ *
+ * 批推与重试循环 + 增量拉取 + 对账快照。
+ * 对外导出：pushPendingOps, pullIncremental, reconcileNow, getLastSyncAt
+ */
+import { rawRequest, HttpResult } from './api'
+import { ensureLogin } from './auth'
+import { getDeviceId } from './device_id'
+import { retryAsync } from './retry'
+import { PATH_SYNC_PUSH, PATH_SYNC_PULL, PATH_SYNC_RECONCILE } from './contract'
+import { nextBatchOfTypes, removeByIds } from './queue_store'
+import { LAST_SYNC_KEY, PUSH_BATCH_SIZE, PullOutcome, PushOutcome, ReconcileReport, SYNC_TYPES } from './sync_types'
+import { isSyncPaused, pendingSyncCount, registerConsecutiveFailure, resetConsecutiveFailures } from './sync_queue'
+import { applyChanges, mirrorSnapshot, readCursor, writeCursor } from './sync_local'
+
+// ---------- HTTP ----------
+
+/** 单次 push 结果 */
+class PushBatchResult {
+	ok: boolean
+	applied: number
+	conflicts: number
+	rejected: number
+	is4xx: boolean
+
+	constructor(ok: boolean, applied: number, conflicts: number, rejected: number, is4xx: boolean) {
+		this.ok = ok
+		this.applied = applied
+		this.conflicts = conflicts
+		this.rejected = rejected
+		this.is4xx = is4xx
+	}
+}
+
+/** 单批提交（无重试）：ok=false 表示网络/5xx（可退避重试）或 4xx（is4xx=true 停批） */
+function postBatch(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
+	return new Promise<PushBatchResult>((resolve) => {
+		const syncOps: Array<UTSJSONObject> = []
+		for (let i = 0; i < ops.length; i++) {
+			const op = ops[i]
+			const payload = op.getJSON('payload')
+			if (payload == null) {
+				continue
+			}
+			const syncOp: UTSJSONObject = {
+				op_id: op.getString('op_id') ?? '',
+				op_type: op.getString('op_type') ?? 'upsert_field',
+				entity_type: payload.getString('entity_type') ?? 'content',
+				entity_id: payload.getString('entity_id') ?? ''
+			}
+			const field = payload.getString('field')
+			if (field != null && field != '') {
+				syncOp.set('field', field)
+			}
+			// value 按类型标记还原（string/number/boolean）
+			const valueType = payload.getString('value_type') ?? 'string'
+			const valueStr = payload.getString('value') ?? ''
+			if (valueType == 'number') {
+				syncOp.set('value', parseFloat(valueStr))
+			} else if (valueType == 'boolean') {
+				syncOp.set('value', valueStr == 'true')
+			} else {
+				syncOp.set('value', valueStr)
+			}
+			const updatedAt = payload.getString('updated_at')
+			if (updatedAt != null && updatedAt != '') {
+				syncOp.set('updated_at', updatedAt)
+			}
+			syncOps.push(syncOp)
+		}
+		if (syncOps.length === 0) {
+			resolve(new PushBatchResult(true, 0, 0, 0, false))
+			return
+		}
+		const reqBody: UTSJSONObject = {
+			device_id: getDeviceId(),
+			ops: syncOps
+		}
+		rawRequest(PATH_SYNC_PUSH, 'POST', reqBody).then((hr: HttpResult) => {
+			const status = hr.status
+			if (status === 200) {
+				let applied = 0
+				let conflicts = 0
+				let rejected = 0
+				if (hr.body != null) {
+					const d: UTSJSONObject | null = hr.body.getJSON('data')
+					if (d != null) {
+						const app = d.getArray('applied')
+						const conf = d.getArray('conflicts')
+						const rej = d.getArray('rejected')
+						applied = app != null ? app.length : 0
+						conflicts = conf != null ? conf.length : 0
+						rejected = rej != null ? rej.length : 0
+					}
+				}
+				resolve(new PushBatchResult(true, applied, conflicts, rejected, false))
+			} else if (status >= 400 && status < 500) {
+				console.error('[yishu] sync push 4xx=' + status)
+				resolve(new PushBatchResult(false, 0, 0, 0, true))
+			} else {
+				resolve(new PushBatchResult(false, 0, 0, 0, false))
+			}
+		})
+	})
+}
+
+/** 从队列移除一批 op（push 成功响应后整批出队——服务端已按 op_id 幂等去重；存储共享 queue_store） */
+function dropBatchFromQueue(ops: Array<UTSJSONObject>): void {
+	const dropIds: Array<string> = []
+	for (let i = 0; i < ops.length; i++) {
+		dropIds.push(ops[i].getString('op_id') ?? '')
+	}
+	removeByIds(dropIds)
+}
+
+/** 取下一批待 push 的 op（≤PUSH_BATCH_SIZE，仅 sync 类型——共享队列按 op_type 过滤） */
+function nextBatch(): Array<UTSJSONObject> {
+	return nextBatchOfTypes(SYNC_TYPES, PUSH_BATCH_SIZE)
+}
+
+/** 清空整批（4xx 不可重试：整批丢弃并记录） */
+function dropAll(ops: Array<UTSJSONObject>): void {
+	dropBatchFromQueue(ops)
+}
+
+/** 单批提交 + 退避重试（TD-P2B S1-M3 收口：统一走 retry.ts retryAsync）
+ *  网络/5xx → 重试（onFail 计数连续失败、暂停则中断）；4xx → isFatal 停批 */
+function postBatchWithRetry(ops: Array<UTSJSONObject>): Promise<PushBatchResult> {
+	return retryAsync<PushBatchResult>(
+		() => postBatch(ops).then((r: PushBatchResult): PushBatchResult | null => {
+			return r.ok || r.is4xx ? r : null
+		}),
+		(r: PushBatchResult | null): boolean => r != null && r.is4xx,
+		(_r: PushBatchResult | null, _attempt: number): boolean => {
+			registerConsecutiveFailure()
+			return isSyncPaused()
+		}
+	).then((r: PushBatchResult | null): PushBatchResult => {
+		if (r == null) {
+			return new PushBatchResult(false, 0, 0, 0, false)
+		}
+		return r
+	})
+}
+
+/** 队列主循环：逐批 push（每批内部退避重试），4xx 停批，连续失败≥N 暂停 */
+function flushQueueLoop(
+	applyAcc: number,
+	conflictAcc: number,
+	rejectAcc: number,
+	resolve: (r: PushOutcome) => void
+): void {
+	const ops = nextBatch()
+	if (ops.length === 0) {
+		resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
+		return
+	}
+	postBatchWithRetry(ops).then((r: PushBatchResult) => {
+		if (r.ok) {
+			resetConsecutiveFailures()
+			dropBatchFromQueue(ops)
+			if (r.conflicts > 0) {
+				console.warn('[yishu] sync push conflicts=' + r.conflicts + '（已保留云端版本）')
+			}
+			if (r.rejected > 0) {
+				console.warn('[yishu] sync push rejected=' + r.rejected + '（已丢弃）')
+			}
+			flushQueueLoop(applyAcc + r.applied, conflictAcc + r.conflicts, rejectAcc + r.rejected, resolve)
+			return
+		}
+		if (r.is4xx) {
+			console.error('[yishu] sync push 4xx 停整批（不可重试）')
+			dropAll(ops)
+			flushQueueLoop(applyAcc, conflictAcc, rejectAcc + ops.length, resolve)
+			return
+		}
+		// 网络/5xx：退避耗尽或暂停中断 → 保留队列待下轮（连续失败计数/暂停判定在 retryAsync.onFail）
+		console.error('[yishu] sync push 退避耗尽/暂停，剩余 ' + pendingSyncCount() + ' 条待下轮')
+		resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
+	})
+}
+
+/** 补推离线操作队列（op_id 幂等）→ 统计结果 */
+export function pushPendingOps(): Promise<PushOutcome> {
+	return new Promise<PushOutcome>((resolve) => {
+		if (pendingSyncCount() === 0) {
+			resolve(new PushOutcome(0, 0, 0, 0))
+			return
+		}
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				console.error('[yishu] sync push 前登录失败')
+				resolve(new PushOutcome(0, 0, 0, pendingSyncCount()))
+				return
+			}
+			flushQueueLoop(0, 0, 0, resolve)
+		})
+	})
+}
+
+/** 增量拉取（游标持久化 + 应用到本地镜像） */
+export function pullIncremental(): Promise<PullOutcome> {
+	return new Promise<PullOutcome>((resolve) => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				console.error('[yishu] sync pull 前登录失败')
+				resolve(new PullOutcome(0, readCursor(), false))
+				return
+			}
+			const since = readCursor()
+			rawRequest(PATH_SYNC_PULL + '?device_id=' + getDeviceId() + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
+				if (hr.status === 200) {
+					let changes: Array<UTSJSONObject> = []
+					let cursor = since
+					let hasMore = false
+					if (hr.body != null) {
+						const d: UTSJSONObject | null = hr.body.getJSON('data')
+						if (d != null) {
+							const arr = d.getArray('changes')
+							if (arr != null) {
+								changes = arr as Array<UTSJSONObject>
+							}
+							cursor = d.getNumber('cursor') as number
+							const hm = d.getBoolean('has_more')
+							hasMore = hm != null ? hm : false
+						}
+					}
+					applyChanges(changes)
+					writeCursor(cursor)
+					console.log('[yishu] sync pull since=' + since + ' -> cursor=' + cursor + ' changes=' + changes.length + ' hasMore=' + hasMore)
+					resolve(new PullOutcome(changes.length, cursor, hasMore))
+				} else {
+					console.error('[yishu] sync pull HTTP ' + hr.status)
+					resolve(new PullOutcome(0, since, false))
+				}
+			})
+		})
+	})
+}
+
+/** 端云对账（本地快照 → 差异报告；need_push 补推、need_pull 补拉） */
+export function reconcileNow(): Promise<ReconcileReport | null> {
+	return new Promise<ReconcileReport | null>((resolve) => {
+		const items = mirrorSnapshot()
+		if (items.length === 0) {
+			resolve(new ReconcileReport(0, 0, 0, 0, 0))
+			return
+		}
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				resolve(null)
+				return
+			}
+			const reqBody: UTSJSONObject = {
+				items: items
+			}
+			rawRequest(PATH_SYNC_RECONCILE, 'POST', reqBody).then((hr: HttpResult) => {
+				if (hr.status === 200 && hr.body != null) {
+					const d: UTSJSONObject | null = hr.body.getJSON('data')
+					if (d == null) {
+						resolve(null)
+						return
+					}
+					const summary = d.getJSON('summary')
+					let needPush = 0
+					let needPull = 0
+					if (summary != null) {
+						needPush = summary.getNumber('need_push') as number
+						needPull = summary.getNumber('need_pull') as number
+					}
+					const missingOnCloudArr = d.getArray('missing_on_cloud')
+					const missingOnClientArr = d.getArray('missing_on_client')
+					const divergentArr = d.getArray('divergent')
+					const report = new ReconcileReport(
+						needPush,
+						needPull,
+						divergentArr != null ? divergentArr.length : 0,
+						missingOnCloudArr != null ? missingOnCloudArr.length : 0,
+						missingOnClientArr != null ? missingOnClientArr.length : 0
+					)
+					console.log('[yishu] sync reconcile need_push=' + needPush + ' need_pull=' + needPull)
+					// 差异消费：need_push → 补推离线队列；need_pull → 补拉增量
+					if (needPush > 0) {
+						pushPendingOps()
+					}
+					if (needPull > 0) {
+						pullIncremental()
+					}
+					resolve(report)
+				} else {
+					console.error('[yishu] sync reconcile HTTP ' + hr.status)
+					resolve(null)
+				}
+			})
+		})
+	})
+}
+
+/** B7（BB1）：读上次同步链路完成时间（ISO 串）；无记录返回 ''（调用方显示「—」） */
+export function getLastSyncAt(): string {
+	const raw = uni.getStorageSync(LAST_SYNC_KEY) as string
+	if (raw == null) {
+		return ''
+	}
+	return raw
+}
