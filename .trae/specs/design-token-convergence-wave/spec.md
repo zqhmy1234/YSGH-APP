@@ -135,18 +135,18 @@
 
 ## 4. 分期草案（P1–P5）
 
-### 4.0 P1a 已完成（2026-09-25）：颜色 / 渐变 / 效果 / 字体 的 DTCG 令牌集
+### 4.0 P1 已完成（2026-09-25）：P1a 颜色面 + P1b 尺寸面
 
-**产物**：[`client/design_tokens.dtcg.json`](file:///d:/GuangH-App/client/design_tokens.dtcg.json) —— **143 个令牌叶子**、DTCG 形态（`$value`/`$type`/`$description` + `{path}` 别名）、14KB。
+**产物**：[`client/design_tokens.dtcg.json`](file:///d:/GuangH-App/client/design_tokens.dtcg.json) —— **321 个令牌叶子**、DTCG 形态（`$value`/`$type`/`$description` + `{path}` 别名）。
 
 | 组 | 内容 |
 |---|---|
-| `color`（primitive） | ink 4 阶 / paper 8 阶（含 `warm`） / sand 2 / rust 2 / amber 1 / olive 3 / slate 3 / surface 4 / record 1 / white / black / transparent —— **`$description` 内逐条写明实测次数与归并来源** |
+| `color`（primitive） | ink 4 阶 / paper 9 阶（含 `warm`） / sand 2 / rust 2 / amber 1 / olive 3 / slate 3 / surface 4 / record 1 / white / black / transparent —— **`$description` 内逐条写明实测次数与归并来源** |
 | `alpha`（透明阶梯） | **10 个族**（ink 14 档 / white 12 / rust 8 / amber 6 / olive 3 / slate 2 / green 2 / record 4 / paper 1 / black 1）——键名 `aNN` = 透明度百分位 |
 | `gradient` | **10 条**，值**全部取自实测**（含 2 条跨色相对角） |
 | `effect` | 5 条高频 shadow + 玻璃内高光 + 琥珀发光 + `glass-blur`（原 `card_shadow` 非法格式已淘汰） |
 | `font` | 2 族 + 4 字重（`bold` 与 `700` 收敛为数值档） |
-| `dimension` | 沿用既有 18 项（`$value` 为 rpx、`$extensions.canvasPx` 保留画布口径）——**P1b 会大幅补全** |
+| `dimension`（**P1b**） | **`lattice.pN` 113 条**（画布 N px 格 · 值取该格**最高频实测字符串**，非回算）+ **`raw.rN` 65 条**（rpx 原生整数 ≥2 次）+ 沿用既有 18 项（带 `$extensions.canvasPx`）—— **两族并存、不跨基归一**；**语义命名（space/radius/font-size）刻意留到 P3**（按调用点角色命名才准，过早命名会造新债） |
 | `semantic` | **18 个既有 color token 名**全部保留为**别名引用**（`text_primary → {color.ink.900}` …）⇒ 语义与色阶解耦，P3 迁移时调用方无需改名 |
 
 **覆盖度审计（脚本实测，回源比对）**：
@@ -156,6 +156,7 @@
 | hex | **760/762 = 99.7%** | `#f3e8dc`×1、`#f6ebe7`×1（各 1 次，按"散单保留为字面量"原则留待 P3 决定） |
 | `rgb()/rgba()` | **190/190 = 100%** | —（含 4 组 1~2/255 变体被归并：ink `(59,46,38)`、rust `(176,89,59)/(176,89,58)`、amber `(196,145,59)`、record `(25,20,15)/(42,33,26)`） |
 | 渐变 | **10/10 = 100%** | — |
+| **尺寸（rpx）** | **2637/2762 = 95.5%** | 33 种散单 / 44 处（如 `4.8rpx`×6、`14.4`×3、`27.9`×2、`16.5`×2、`19.5`×2、`858.5`×2 …）——多为一次性布局值，按"散单留字面量"处理 |
 
 > ⚠️ **两处自我纠错（留证 · 教训已登记）**：① 早先的渐变描述与**我第一版写的渐变令牌值**是"看着合理的推测值"，与实测不符（实测含跨色相对角）⇒ 已**全部改为实测生成**并加"色多集回源校验"；② 期间两次脚本缺陷（正则在内层括号截断、删空白后再抽色）曾产出**错误结论/坏值**，均由审计步骤当场抓出。
 

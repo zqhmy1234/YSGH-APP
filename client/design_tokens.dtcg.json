@@ -439,7 +439,7 @@
   },
   "dimension": {
     "$type": "dimension",
-    "$description": "尺寸面（P1b 会大幅补全）：**保留两族**、不跨基归一（spec §1.3/§7.3）。canvasPx＝画布口径追溯，$value＝代码口径 rpx。",
+    "$description": "尺寸面（P1b · 2026-09-25）：**保留两族、不跨基归一**（spec §1.3/§7.3）。`lattice.pN`＝画布 N px 格上的 rpx（**值直接取该格最高频的实测字符串**，非回算，保证零凭空）；`raw.rN`＝代码直写的 rpx 原生整数（≥2 次）。语义命名（space/radius/font-size）**刻意留到 P3** 按调用点角色定。",
     "page_width": {
       "$value": "750.0rpx",
       "$extensions": {
@@ -546,6 +546,722 @@
       "$value": "84.6rpx",
       "$extensions": {
         "canvasPx": 44
+      }
+    },
+    "lattice": {
+      "p0": {
+        "$value": "0rpx",
+        "$description": "画布 0px · 实测 ×148"
+      },
+      "p1": {
+        "$value": "1.9rpx",
+        "$description": "画布 1px · 实测 ×47（同格变体：2rpx×26）"
+      },
+      "p2": {
+        "$value": "3.8rpx",
+        "$description": "画布 2px · 实测 ×35（同格变体：3.9rpx×4）"
+      },
+      "p3": {
+        "$value": "5.8rpx",
+        "$description": "画布 3px · 实测 ×50"
+      },
+      "p4": {
+        "$value": "7.7rpx",
+        "$description": "画布 4px · 实测 ×53"
+      },
+      "p5": {
+        "$value": "9.6rpx",
+        "$description": "画布 5px · 实测 ×13"
+      },
+      "p6": {
+        "$value": "11.5rpx",
+        "$description": "画布 6px · 实测 ×83"
+      },
+      "p7": {
+        "$value": "13.5rpx",
+        "$description": "画布 7px · 实测 ×5"
+      },
+      "p8": {
+        "$value": "15.4rpx",
+        "$description": "画布 8px · 实测 ×117"
+      },
+      "p9": {
+        "$value": "17.3rpx",
+        "$description": "画布 9px · 实测 ×16"
+      },
+      "p10": {
+        "$value": "19.2rpx",
+        "$description": "画布 10px · 实测 ×45"
+      },
+      "p11": {
+        "$value": "21.2rpx",
+        "$description": "画布 11px · 实测 ×38"
+      },
+      "p12": {
+        "$value": "23.1rpx",
+        "$description": "画布 12px · 实测 ×203（同格变体：23rpx×9）"
+      },
+      "p13": {
+        "$value": "25rpx",
+        "$description": "画布 13px · 实测 ×45（同格变体：24.9rpx×1）"
+      },
+      "p14": {
+        "$value": "26.9rpx",
+        "$description": "画布 14px · 实测 ×134（同格变体：27rpx×9）"
+      },
+      "p15": {
+        "$value": "28.8rpx",
+        "$description": "画布 15px · 实测 ×32（同格变体：28.85rpx×1、28.9rpx×1）"
+      },
+      "p16": {
+        "$value": "30.8rpx",
+        "$description": "画布 16px · 实测 ×101（同格变体：30.7rpx×1）"
+      },
+      "p17": {
+        "$value": "32.7rpx",
+        "$description": "画布 17px · 实测 ×4"
+      },
+      "p18": {
+        "$value": "34.6rpx",
+        "$description": "画布 18px · 实测 ×52（同格变体：34.7rpx×2）"
+      },
+      "p19": {
+        "$value": "36.5rpx",
+        "$description": "画布 19px · 实测 ×2"
+      },
+      "p20": {
+        "$value": "38.5rpx",
+        "$description": "画布 20px · 实测 ×181"
+      },
+      "p21": {
+        "$value": "40.4rpx",
+        "$description": "画布 21px · 实测 ×4"
+      },
+      "p22": {
+        "$value": "42.3rpx",
+        "$description": "画布 22px · 实测 ×47"
+      },
+      "p24": {
+        "$value": "46.2rpx",
+        "$description": "画布 24px · 实测 ×22"
+      },
+      "p25": {
+        "$value": "48rpx",
+        "$description": "画布 25px · 实测 ×14（同格变体：48.1rpx×1）"
+      },
+      "p26": {
+        "$value": "50rpx",
+        "$description": "画布 26px · 实测 ×18"
+      },
+      "p27": {
+        "$value": "52rpx",
+        "$description": "画布 27px · 实测 ×3（同格变体：51.9rpx×1）"
+      },
+      "p28": {
+        "$value": "53.8rpx",
+        "$description": "画布 28px · 实测 ×16（同格变体：53.9rpx×1）"
+      },
+      "p30": {
+        "$value": "57.7rpx",
+        "$description": "画布 30px · 实测 ×5"
+      },
+      "p31": {
+        "$value": "59.6rpx",
+        "$description": "画布 31px · 实测 ×1"
+      },
+      "p32": {
+        "$value": "61.5rpx",
+        "$description": "画布 32px · 实测 ×19"
+      },
+      "p34": {
+        "$value": "65.4rpx",
+        "$description": "画布 34px · 实测 ×3"
+      },
+      "p36": {
+        "$value": "69.2rpx",
+        "$description": "画布 36px · 实测 ×15"
+      },
+      "p38": {
+        "$value": "73.1rpx",
+        "$description": "画布 38px · 实测 ×6"
+      },
+      "p40": {
+        "$value": "76.9rpx",
+        "$description": "画布 40px · 实测 ×16（同格变体：77rpx×15）"
+      },
+      "p42": {
+        "$value": "80.8rpx",
+        "$description": "画布 42px · 实测 ×2"
+      },
+      "p44": {
+        "$value": "84.6rpx",
+        "$description": "画布 44px · 实测 ×13"
+      },
+      "p46": {
+        "$value": "88.5rpx",
+        "$description": "画布 46px · 实测 ×5"
+      },
+      "p48": {
+        "$value": "92.3rpx",
+        "$description": "画布 48px · 实测 ×21"
+      },
+      "p52": {
+        "$value": "100rpx",
+        "$description": "画布 52px · 实测 ×10"
+      },
+      "p54": {
+        "$value": "103.8rpx",
+        "$description": "画布 54px · 实测 ×3"
+      },
+      "p55": {
+        "$value": "105.8rpx",
+        "$description": "画布 55px · 实测 ×3"
+      },
+      "p56": {
+        "$value": "107.7rpx",
+        "$description": "画布 56px · 实测 ×4"
+      },
+      "p60": {
+        "$value": "115.4rpx",
+        "$description": "画布 60px · 实测 ×29"
+      },
+      "p62": {
+        "$value": "119.2rpx",
+        "$description": "画布 62px · 实测 ×1"
+      },
+      "p64": {
+        "$value": "123.1rpx",
+        "$description": "画布 64px · 实测 ×11（同格变体：123rpx×5）"
+      },
+      "p70": {
+        "$value": "134.6rpx",
+        "$description": "画布 70px · 实测 ×2"
+      },
+      "p72": {
+        "$value": "138.5rpx",
+        "$description": "画布 72px · 实测 ×1"
+      },
+      "p76": {
+        "$value": "146.2rpx",
+        "$description": "画布 76px · 实测 ×2"
+      },
+      "p79": {
+        "$value": "152rpx",
+        "$description": "画布 79px · 实测 ×2"
+      },
+      "p80": {
+        "$value": "153.8rpx",
+        "$description": "画布 80px · 实测 ×3"
+      },
+      "p88": {
+        "$value": "169.2rpx",
+        "$description": "画布 88px · 实测 ×1"
+      },
+      "p90": {
+        "$value": "173.1rpx",
+        "$description": "画布 90px · 实测 ×2"
+      },
+      "p96": {
+        "$value": "184.6rpx",
+        "$description": "画布 96px · 实测 ×1"
+      },
+      "p98": {
+        "$value": "188.5rpx",
+        "$description": "画布 98px · 实测 ×3"
+      },
+      "p100": {
+        "$value": "192.3rpx",
+        "$description": "画布 100px · 实测 ×6"
+      },
+      "p104": {
+        "$value": "200rpx",
+        "$description": "画布 104px · 实测 ×4"
+      },
+      "p108": {
+        "$value": "207.7rpx",
+        "$description": "画布 108px · 实测 ×3"
+      },
+      "p110": {
+        "$value": "211.5rpx",
+        "$description": "画布 110px · 实测 ×15"
+      },
+      "p112": {
+        "$value": "215.4rpx",
+        "$description": "画布 112px · 实测 ×1"
+      },
+      "p120": {
+        "$value": "230.8rpx",
+        "$description": "画布 120px · 实测 ×2"
+      },
+      "p124": {
+        "$value": "238.5rpx",
+        "$description": "画布 124px · 实测 ×1"
+      },
+      "p125": {
+        "$value": "240.4rpx",
+        "$description": "画布 125px · 实测 ×1"
+      },
+      "p130": {
+        "$value": "250rpx",
+        "$description": "画布 130px · 实测 ×1"
+      },
+      "p131": {
+        "$value": "252rpx",
+        "$description": "画布 131px · 实测 ×2"
+      },
+      "p135": {
+        "$value": "259.6rpx",
+        "$description": "画布 135px · 实测 ×1"
+      },
+      "p138": {
+        "$value": "265.4rpx",
+        "$description": "画布 138px · 实测 ×1"
+      },
+      "p140": {
+        "$value": "269.2rpx",
+        "$description": "画布 140px · 实测 ×2"
+      },
+      "p141": {
+        "$value": "271.2rpx",
+        "$description": "画布 141px · 实测 ×1"
+      },
+      "p142": {
+        "$value": "273.1rpx",
+        "$description": "画布 142px · 实测 ×1"
+      },
+      "p150": {
+        "$value": "288.5rpx",
+        "$description": "画布 150px · 实测 ×1"
+      },
+      "p152": {
+        "$value": "292.3rpx",
+        "$description": "画布 152px · 实测 ×1"
+      },
+      "p156": {
+        "$value": "300rpx",
+        "$description": "画布 156px · 实测 ×3"
+      },
+      "p159": {
+        "$value": "305.8rpx",
+        "$description": "画布 159px · 实测 ×1"
+      },
+      "p160": {
+        "$value": "307.7rpx",
+        "$description": "画布 160px · 实测 ×2"
+      },
+      "p165": {
+        "$value": "317.3rpx",
+        "$description": "画布 165px · 实测 ×2"
+      },
+      "p170": {
+        "$value": "326.9rpx",
+        "$description": "画布 170px · 实测 ×1（同格变体：327rpx×1）"
+      },
+      "p172": {
+        "$value": "330.8rpx",
+        "$description": "画布 172px · 实测 ×1"
+      },
+      "p177": {
+        "$value": "340.4rpx",
+        "$description": "画布 177px · 实测 ×1"
+      },
+      "p184": {
+        "$value": "353.8rpx",
+        "$description": "画布 184px · 实测 ×2"
+      },
+      "p192": {
+        "$value": "369.2rpx",
+        "$description": "画布 192px · 实测 ×3"
+      },
+      "p200": {
+        "$value": "384.6rpx",
+        "$description": "画布 200px · 实测 ×3"
+      },
+      "p208": {
+        "$value": "400rpx",
+        "$description": "画布 208px · 实测 ×1"
+      },
+      "p220": {
+        "$value": "423.1rpx",
+        "$description": "画布 220px · 实测 ×2"
+      },
+      "p226": {
+        "$value": "434.6rpx",
+        "$description": "画布 226px · 实测 ×2"
+      },
+      "p234": {
+        "$value": "450rpx",
+        "$description": "画布 234px · 实测 ×4"
+      },
+      "p240": {
+        "$value": "461.5rpx",
+        "$description": "画布 240px · 实测 ×3"
+      },
+      "p250": {
+        "$value": "480.8rpx",
+        "$description": "画布 250px · 实测 ×3"
+      },
+      "p258": {
+        "$value": "496.2rpx",
+        "$description": "画布 258px · 实测 ×4"
+      },
+      "p260": {
+        "$value": "500rpx",
+        "$description": "画布 260px · 实测 ×5"
+      },
+      "p280": {
+        "$value": "538.5rpx",
+        "$description": "画布 280px · 实测 ×2"
+      },
+      "p300": {
+        "$value": "577rpx",
+        "$description": "画布 300px · 实测 ×4（同格变体：576.9rpx×3）"
+      },
+      "p310": {
+        "$value": "596.2rpx",
+        "$description": "画布 310px · 实测 ×1"
+      },
+      "p312": {
+        "$value": "600rpx",
+        "$description": "画布 312px · 实测 ×1"
+      },
+      "p330": {
+        "$value": "634.6rpx",
+        "$description": "画布 330px · 实测 ×1"
+      },
+      "p350": {
+        "$value": "673.1rpx",
+        "$description": "画布 350px · 实测 ×23（同格变体：673rpx×3）"
+      },
+      "p358": {
+        "$value": "688.5rpx",
+        "$description": "画布 358px · 实测 ×1"
+      },
+      "p360": {
+        "$value": "692.3rpx",
+        "$description": "画布 360px · 实测 ×1"
+      },
+      "p364": {
+        "$value": "700rpx",
+        "$description": "画布 364px · 实测 ×1"
+      },
+      "p376": {
+        "$value": "723.1rpx",
+        "$description": "画布 376px · 实测 ×1"
+      },
+      "p390": {
+        "$value": "750rpx",
+        "$description": "画布 390px · 实测 ×52"
+      },
+      "p412": {
+        "$value": "792.3rpx",
+        "$description": "画布 412px · 实测 ×1"
+      },
+      "p420": {
+        "$value": "807.7rpx",
+        "$description": "画布 420px · 实测 ×2"
+      },
+      "p436": {
+        "$value": "838.5rpx",
+        "$description": "画布 436px · 实测 ×1"
+      },
+      "p448": {
+        "$value": "861.5rpx",
+        "$description": "画布 448px · 实测 ×2"
+      },
+      "p460": {
+        "$value": "884.6rpx",
+        "$description": "画布 460px · 实测 ×1"
+      },
+      "p471": {
+        "$value": "905.8rpx",
+        "$description": "画布 471px · 实测 ×2"
+      },
+      "p513": {
+        "$value": "986.5rpx",
+        "$description": "画布 513px · 实测 ×3"
+      },
+      "p538": {
+        "$value": "1034.6rpx",
+        "$description": "画布 538px · 实测 ×1"
+      },
+      "p560": {
+        "$value": "1076.9rpx",
+        "$description": "画布 560px · 实测 ×1"
+      },
+      "p592": {
+        "$value": "1138.5rpx",
+        "$description": "画布 592px · 实测 ×1"
+      },
+      "p740": {
+        "$value": "1423.1rpx",
+        "$description": "画布 740px · 实测 ×1"
+      },
+      "p1100": {
+        "$value": "2115.4rpx",
+        "$description": "画布 1100px · 实测 ×1"
+      }
+    },
+    "raw": {
+      "r1": {
+        "$value": "1rpx",
+        "$description": "rpx 原生整数 · 实测 ×6"
+      },
+      "r3": {
+        "$value": "3rpx",
+        "$description": "rpx 原生整数 · 实测 ×7"
+      },
+      "r4": {
+        "$value": "4rpx",
+        "$description": "rpx 原生整数 · 实测 ×28"
+      },
+      "r5": {
+        "$value": "5rpx",
+        "$description": "rpx 原生整数 · 实测 ×9"
+      },
+      "r6": {
+        "$value": "6rpx",
+        "$description": "rpx 原生整数 · 实测 ×14"
+      },
+      "r7": {
+        "$value": "7rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r8": {
+        "$value": "8rpx",
+        "$description": "rpx 原生整数 · 实测 ×19"
+      },
+      "r9": {
+        "$value": "9rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r10": {
+        "$value": "10rpx",
+        "$description": "rpx 原生整数 · 实测 ×16"
+      },
+      "r12": {
+        "$value": "12rpx",
+        "$description": "rpx 原生整数 · 实测 ×34"
+      },
+      "r13": {
+        "$value": "13rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r14": {
+        "$value": "14rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r15": {
+        "$value": "15rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r16": {
+        "$value": "16rpx",
+        "$description": "rpx 原生整数 · 实测 ×45"
+      },
+      "r18": {
+        "$value": "18rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r19": {
+        "$value": "19rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r20": {
+        "$value": "20rpx",
+        "$description": "rpx 原生整数 · 实测 ×54"
+      },
+      "r21": {
+        "$value": "21rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r22": {
+        "$value": "22rpx",
+        "$description": "rpx 原生整数 · 实测 ×14"
+      },
+      "r24": {
+        "$value": "24rpx",
+        "$description": "rpx 原生整数 · 实测 ×78"
+      },
+      "r26": {
+        "$value": "26rpx",
+        "$description": "rpx 原生整数 · 实测 ×19"
+      },
+      "r28": {
+        "$value": "28rpx",
+        "$description": "rpx 原生整数 · 实测 ×29"
+      },
+      "r29": {
+        "$value": "29rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r30": {
+        "$value": "30rpx",
+        "$description": "rpx 原生整数 · 实测 ×21"
+      },
+      "r31": {
+        "$value": "31rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r32": {
+        "$value": "32rpx",
+        "$description": "rpx 原生整数 · 实测 ×40"
+      },
+      "r33": {
+        "$value": "33rpx",
+        "$description": "rpx 原生整数 · 实测 ×8"
+      },
+      "r34": {
+        "$value": "34rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r35": {
+        "$value": "35rpx",
+        "$description": "rpx 原生整数 · 实测 ×6"
+      },
+      "r36": {
+        "$value": "36rpx",
+        "$description": "rpx 原生整数 · 实测 ×16"
+      },
+      "r38": {
+        "$value": "38rpx",
+        "$description": "rpx 原生整数 · 实测 ×20"
+      },
+      "r40": {
+        "$value": "40rpx",
+        "$description": "rpx 原生整数 · 实测 ×35"
+      },
+      "r42": {
+        "$value": "42rpx",
+        "$description": "rpx 原生整数 · 实测 ×6"
+      },
+      "r44": {
+        "$value": "44rpx",
+        "$description": "rpx 原生整数 · 实测 ×19"
+      },
+      "r46": {
+        "$value": "46rpx",
+        "$description": "rpx 原生整数 · 实测 ×8"
+      },
+      "r56": {
+        "$value": "56rpx",
+        "$description": "rpx 原生整数 · 实测 ×8"
+      },
+      "r58": {
+        "$value": "58rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r60": {
+        "$value": "60rpx",
+        "$description": "rpx 原生整数 · 实测 ×21"
+      },
+      "r62": {
+        "$value": "62rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r64": {
+        "$value": "64rpx",
+        "$description": "rpx 原生整数 · 实测 ×7"
+      },
+      "r65": {
+        "$value": "65rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r69": {
+        "$value": "69rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r72": {
+        "$value": "72rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r90": {
+        "$value": "90rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r92": {
+        "$value": "92rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r96": {
+        "$value": "96rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r112": {
+        "$value": "112rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r115": {
+        "$value": "115rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r120": {
+        "$value": "120rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r134": {
+        "$value": "134rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r170": {
+        "$value": "170rpx",
+        "$description": "rpx 原生整数 · 实测 ×3"
+      },
+      "r180": {
+        "$value": "180rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r185": {
+        "$value": "185rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r190": {
+        "$value": "190rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r192": {
+        "$value": "192rpx",
+        "$description": "rpx 原生整数 · 实测 ×3"
+      },
+      "r220": {
+        "$value": "220rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r240": {
+        "$value": "240rpx",
+        "$description": "rpx 原生整数 · 实测 ×5"
+      },
+      "r269": {
+        "$value": "269rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r281": {
+        "$value": "281rpx",
+        "$description": "rpx 原生整数 · 实测 ×4"
+      },
+      "r420": {
+        "$value": "420rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r581": {
+        "$value": "581rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r654": {
+        "$value": "654rpx",
+        "$description": "rpx 原生整数 · 实测 ×18"
+      },
+      "r658": {
+        "$value": "658rpx",
+        "$description": "rpx 原生整数 · 实测 ×2"
+      },
+      "r821": {
+        "$value": "821rpx",
+        "$description": "rpx 原生整数 · 实测 ×3"
+      },
+      "r9999": {
+        "$value": "9999rpx",
+        "$description": "rpx 原生整数 · 实测 ×7"
       }
     }
   },
