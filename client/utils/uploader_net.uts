@@ -1,0 +1,67 @@
+/**
+ * 上传域 · 流量约束（网络类型 / 模式解析）（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * NetKind 枚举 / getNetKind 回调式探测 / resolveMode 模式解析。
+ * 对外导出：NetKind, getNetKind, resolveMode
+ */
+import { UploadMode } from './uploader_types'
+
+// ---------- 流量约束：网络类型判断 ----------
+
+/** 网络类型：wifi（wifi/ethernet 无限流量视为 wifi）/ cellular / none / unknown */
+export type NetKind = 'wifi' | 'cellular' | 'none' | 'unknown'
+
+/** uni.getNetworkType 回调式封装（uni-app x）；ethernet 有线视为 wifi */
+export function getNetKind(cb: (kind: NetKind) => void): void {
+	uni.getNetworkType({
+		success: (res) => {
+			const t = res.networkType
+			if (t == 'wifi' || t == 'ethernet') {
+				cb('wifi')
+			} else if (t == 'none' || t == '') {
+				cb('none')
+			} else {
+				cb('cellular') // 4g/5g/3g/2g/unknown 一律按蜂窝保守处理
+			}
+		},
+		fail: () => {
+			cb('unknown')
+		}
+	})
+}
+
+/** 按请求模式 + 实际网络解析上传模式：
+ *  - original：强制原图（WiFi 默认 / "立即上传原图"手动入口）
+ *  - thumbnail：缩略图+元数据（**压缩步骤尚未接线** → 暂缓，见下）
+ *  - auto：WiFi→original；蜂窝/none→hold（流量约束：蜂窝不自动传原图）
+ *  - hold：一律暂缓
+ * 返回 'original' | 'thumbnail' | 'hold' */
+export function resolveMode(mode: UploadMode, kind: NetKind): string {
+	if (mode == 'original') {
+		return 'original'
+	}
+	if (mode == 'thumbnail') {
+		// ⚠️ 2026-09-23 取证更正：原注释的理由（"管线未就绪 / audit_B4_sync §1 全仓无缩略图生成"）
+		// **不成立**——后端 `thumbnail_meta` 契约与客户端 `uni.compressImage`（app-android
+		// 受支持，HBuilderX dts 已取证）都已具备，缺的是"本函数到上传主流程之间从未接入压缩"。
+		// 接线完成前**保持 hold**：宁可如实暂缓，也不能上传原件冒充缩略图——后者会让后端把
+		// 3MB 原图登记成 thumbnail_key 占位（对象存储被占满，且用户拿不到原图）。
+		console.log('[yishu] thumbnail 模式尚未接线压缩步骤（非能力缺失，见文件头 2026-09-23 注），暂缓上传')
+		return 'hold'
+	}
+	if (mode == 'hold') {
+		return 'hold'
+	}
+	// auto
+	if (kind == 'wifi') {
+		return 'original'
+	}
+	if (kind == 'cellular') {
+		// 与 thumbnail 分支同因（压缩未接线）→ 蜂窝下先入 held，等 WiFi 或"立即上传原图"。
+		console.log('[yishu] 蜂窝网络：压缩步骤未接线 → 暂缓入 held（等 WiFi 或"立即上传原图"）')
+		return 'hold'
+	}
+	console.log('[yishu] 网络不可用（' + kind + '）：暂缓原图')
+	return 'hold'
+}
+

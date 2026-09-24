@@ -270,7 +270,8 @@
 		REC_STATE_PAUSED
 	} from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
-	import { uploadBatch, UploadProgress, UploadedPhoto } from '@/utils/uploader'
+	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
+	import { uploadBatch } from '@/utils/uploader_batch'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 

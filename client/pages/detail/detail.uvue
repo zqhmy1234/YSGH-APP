@@ -150,7 +150,7 @@
 import { deleteContent } from '@/utils/play_trash'
 import { fetchContentAiMeta, ContentAiMeta, updateContentRemark, fetchWaveform } from '@/utils/play_content'
 	// B12：离线判定（play.ts 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
-	import { getNetKind } from '@/utils/uploader'
+	import { getNetKind } from '@/utils/uploader_net'
 	import { formatIsoShortTime } from '@/utils/time'
 	import {
 		toggleVoice,

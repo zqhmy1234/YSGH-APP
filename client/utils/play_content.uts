@@ -8,7 +8,7 @@ import { get, request, dataObj } from './api'
 import { getBaseUrl } from './config'
 import { getToken } from './auth'
 import { enqueueFieldOp } from './sync_queue'
-import { getNetKind } from './uploader'
+import { getNetKind } from './uploader_net'
 import { PATH_WAVEFORM } from './contract'
 
 export class ContentAiMeta {

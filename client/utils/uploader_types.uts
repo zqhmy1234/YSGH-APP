@@ -1,0 +1,68 @@
+/**
+ * 上传域 · 类型与常量（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * 上传域共享常量 / 结果类型 / 上传模式枚举 / 4xx 判定 / ISO 兼容导出。
+ * 对外导出：FAILED_KEY, HELD_KEY, MAX_CONCURRENCY, PENDING_KEY, UploadMode, UploadOptions, UploadProgress, UploadedPhoto, is4xx, isoString
+ */
+import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+import { isoLocal } from './time'
+import { UploadPipeError } from './upload_pipeline'
+
+export const MAX_CONCURRENCY: number = 3
+
+/** 断点续传：path|uploadId 逐行存 uni storage（UTS 无可靠 JSON.parse，用分隔串） */
+export const PENDING_KEY: string = 'yishu_pending_uploads'
+/** 蜂窝暂缓原图：path|takenAt|width|height|size|lat|lng|id（等待 WiFi 或手动上传原图）
+ *  O14：追加 MediaStore id（版本化行格式；旧 7 段行兼容解析 id=0） */
+export const HELD_KEY: string = 'yishu_held_uploads'
+/** 重试耗尽失败项：同上格式（失败标红可点击重试） */
+export const FAILED_KEY: string = 'yishu_failed_uploads'
+
+export class UploadProgress {
+	done: number
+	total: number
+	failed: number
+
+	constructor(done: number, total: number, failed: number) {
+		this.done = done
+		this.total = total
+		this.failed = failed
+	}
+}
+
+/** 单张上传成功结果：本地照片 + 云侧 content_id（端侧聚合与事件上云用） */
+export class UploadedPhoto {
+	item: PhotoItem
+	contentId: string
+
+	constructor(item: PhotoItem, contentId: string) {
+		this.item = item
+		this.contentId = contentId
+	}
+}
+
+/** 上传模式（B4 流量约束） */
+export type UploadMode = 'auto' | 'original' | 'thumbnail' | 'hold'
+
+export class UploadOptions {
+	mode: UploadMode
+
+	constructor(mode: UploadMode = 'auto') {
+		this.mode = mode
+	}
+}
+
+/** 4xx 判定（O16 收口：4xx 停条判定统一走 upload_pipeline 的 UploadPipeError.permanent；
+ *  原 UploadHttpError 类已随协议请求下收而删除，无残留实例化） */
+export function is4xx(e: Error): boolean {
+	if (e instanceof UploadPipeError) {
+		return e.permanent
+	}
+	return false
+}
+
+/** epoch ms → ISO8601 本地时间（S1-M4 收口：统一走 time.isoLocal；保留导出名兼容 index.uvue 引用） */
+export function isoString(ms: number): string {
+	return isoLocal(ms)
+}
+

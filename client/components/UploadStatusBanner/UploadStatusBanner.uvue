@@ -17,7 +17,9 @@
 <script setup lang="uts">
 	import { onMounted, onBeforeUnmount, computed } from 'vue'
 	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
-	import { heldCount, failedCount, continuePendingUploads, getNetKind, NetKind } from '@/utils/uploader'
+	import { getNetKind, NetKind } from '@/utils/uploader_net'
+	import { heldCount, failedCount } from '@/utils/uploader_queue'
+	import { continuePendingUploads } from '@/utils/uploader_batch'
 
 	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
 

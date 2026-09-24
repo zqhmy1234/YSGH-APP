@@ -1,0 +1,105 @@
+/**
+ * 上传域 · 单张上传（状态机 + 退避重试）（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * uploadOne 断点续传单张 / uploadOnceResult / uploadWithRetry。
+ * 对外导出：uploadWithRetry
+ */
+import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+import { retryAsync } from './retry'
+import { runUploadPipeline, UploadSpec, UploadOutcome, UploadPipeError } from './upload_pipeline'
+import { is4xx, isoString } from './uploader_types'
+import { clearPending, findPending, savePending } from './uploader_pending'
+
+// ---------- 单张上传（O16 收口：init→status→chunk→complete 状态机统一走 upload_pipeline.ts，
+//          本文件只提供规格组装 + 断点 upload_id 持久化 + 4xx/网络语义映射） ----------
+
+/** 单张照片上传（含断点续传 + 4xx 区分）；成功 resolve content_id，失败 reject（4xx=UploadPipeError.permanent） */
+function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
+	return new Promise<string>((resolve, reject) => {
+		// 0. 文件大小（init 必填）——2026-08-25 真机修复：不再用 getFileSystemManager()
+		// .getFileInfo（uni-app x 沙箱读不了 MediaStore 绝对路径，必失败），改用
+		// MediaStore SIZE 列（emitIncremental 已注入 PhotoItem.size）。
+		const fileSize = item.size
+		if (fileSize <= 0) {
+			reject(new Error('文件大小为 0'))
+			return
+		}
+		const slashIdx = item.path.lastIndexOf('/')
+		const fileName = slashIdx >= 0 ? item.path.substring(slashIdx + 1) : item.path
+		// 1. 断点：已有 upload_id 直接复用（status 补传），否则 init（onNewUploadId 持久化）
+		const spec = new UploadSpec(item.path, fileName, fileSize, item.path, uploadMode, findPending(item.path))
+		const buildMeta = (): UTSJSONObject => {
+			const meta: UTSJSONObject = {
+				taken_at: isoString(item.takenAt),
+				source: 'app',
+				extra: {
+					width: item.width,
+					height: item.height
+				}
+			}
+			if (item.lat != null && item.lng != null) {
+				meta.set('gps_lat', '' + item.lat)
+				meta.set('gps_lng', '' + item.lng)
+			}
+			return meta
+		}
+		runUploadPipeline(
+			spec,
+			buildMeta,
+			(uploadId: string) => { savePending(item.path, uploadId) },
+			(uploadId: string) => { clearPending(item.path) }
+		).then((out: UploadOutcome) => {
+			resolve(out.contentId)
+		}, (e: Error) => {
+			reject(e)
+		})
+	})
+}
+
+/** 单次上传结果：ok=true+cid 成功 / ok=false 4xx 不可重试 / null 网络·5xx 可重试 */
+class UploadAttempt {
+	ok: boolean
+	cid: string
+
+	constructor(ok: boolean, cid: string) {
+		this.ok = ok
+		this.cid = cid
+	}
+}
+
+/** 单次上传（无重试）；4xx 停条由 retryAsync 的 isFatal 判定（TD-P2B 收口：统一走 retry.ts） */
+function uploadOnceResult(item: PhotoItem, uploadMode: string): Promise<UploadAttempt | null> {
+	return new Promise<UploadAttempt | null>((resolve) => {
+		uploadOne(item, uploadMode).then((cid: string) => {
+			resolve(new UploadAttempt(true, cid))
+		}, (e: Error) => {
+			const msg = e != null && e.message != null ? e.message : 'unknown'
+			console.error('[yishu] upload ERR path=' + item.path + ' msg=' + msg)
+			if (is4xx(e)) {
+				console.error('[yishu] 4xx 停该条（' + item.path + '）')
+				resolve(new UploadAttempt(false, ''))
+				return
+			}
+			resolve(null)
+		})
+	})
+}
+
+/** 指数退避重试（2s→4s→8s→8s→8s，5 次上限）；4xx 立即停该条 */
+export function uploadWithRetry(item: PhotoItem, uploadMode: string): Promise<string | null> {
+	return retryAsync<UploadAttempt>(
+		() => uploadOnceResult(item, uploadMode),
+		(r: UploadAttempt | null): boolean => r != null && !r.ok,
+		(_r: UploadAttempt | null, attempt: number): boolean => {
+			console.error('[yishu] upload retry attempt=' + attempt + ' path=' + item.path)
+			return false
+		}
+	).then((r: UploadAttempt | null) => {
+		if (r != null && r.ok) {
+			return r.cid
+		}
+		console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
+		return null
+	})
+}
+

@@ -1,0 +1,129 @@
+/**
+ * 上传域 · held / failed 持久队列（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * PhotoItem 行分隔存储 + 计数与列表（上传状态横幅数据源）。
+ * 对外导出：addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, removeFailed, removeHeld
+ */
+import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+import { FAILED_KEY, HELD_KEY } from './uploader_types'
+
+// ---------- held / failed 持久队列（PhotoItem 行分隔存储） ----------
+// O14：行格式追加 MediaStore id（第 8 段），parseEntry 兼容旧 7 段行（id=0）
+
+function entryOf(item: PhotoItem): string {
+	const la = item.lat != null ? '' + item.lat : ''
+	const ln = item.lng != null ? '' + item.lng : ''
+	return item.path + '|' + item.takenAt + '|' + item.width + '|' + item.height + '|' + item.size + '|' + la + '|' + ln + '|' + item.id
+}
+
+function parseEntry(line: string): PhotoItem | null {
+	const parts = line.split('|')
+	if (parts.length < 7) {
+		return null
+	}
+	const la = parts[5] == '' ? null : parseFloat(parts[5])
+	const ln = parts[6] == '' ? null : parseFloat(parts[6])
+	// 旧 7 段行（O14 前）无 id 段 → id=0；新行第 8 段为 MediaStore _id
+	const id = parts.length >= 8 && parts[7] != '' ? parseInt(parts[7]) : 0
+	return new PhotoItem(id, parts[0], parseInt(parts[1]), parseInt(parts[2]), parseInt(parts[3]), la, ln, parseInt(parts[4]))
+}
+
+function readLines(key: string): Array<string> {
+	const raw = uni.getStorageSync(key) as string
+	if (raw == null || raw == '') {
+		return []
+	}
+	const out: Array<string> = []
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			out.push(lines[i])
+		}
+	}
+	return out
+}
+
+function writeLines(key: string, lines: Array<string>): void {
+	uni.setStorageSync(key, lines.join('\n'))
+}
+
+function addEntry(key: string, line: string): void {
+	const lines = readLines(key)
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith(entryPath(line) + '|')) {
+			lines[i] = line
+			writeLines(key, lines)
+			return
+		}
+	}
+	lines.push(line)
+	writeLines(key, lines)
+}
+
+function removeEntry(key: string, path: string): void {
+	const lines = readLines(key)
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].startsWith(path + '|')) {
+			kept.push(lines[i])
+		}
+	}
+	writeLines(key, kept)
+}
+
+function entryPath(line: string): string {
+	const idx = line.indexOf('|')
+	return idx >= 0 ? line.substring(0, idx) : line
+}
+
+function parseAll(key: string): Array<PhotoItem> {
+	const lines = readLines(key)
+	const out: Array<PhotoItem> = []
+	for (let i = 0; i < lines.length; i++) {
+		const it = parseEntry(lines[i])
+		if (it != null) {
+			out.push(it)
+		}
+	}
+	return out
+}
+
+export function heldCount(): number {
+	return readLines(HELD_KEY).length
+}
+
+export function failedCount(): number {
+	return readLines(FAILED_KEY).length
+}
+
+// 2026-09-23（闭轴 4 首查项）：原 `pendingPhotoCount()`（= heldCount + failedCount，注释自称
+// "供 UploadStatusBanner 展示"）**已删除**。理由：横幅**刻意分开显示**两类状态——
+// "N 张照片待 WiFi 上传（可点立即上传原图）" vs "N 张照片上传失败，点击重试"（不同文案、
+// 不同按钮、不同 emit）。合并成一个数字会**丢掉"待上传"与"失败待重试"的区别**，
+// 而那正是用户该做不同操作的分界。它唯一的作用是让轴 4 多一条零调用记录 ⇒ 删除而非硬接。
+// 需要总数时在调用处现算（一行 `heldCount() + failedCount()`），别再引入同义封装。
+
+export function heldPhotos(): Array<PhotoItem> {
+	return parseAll(HELD_KEY)
+}
+
+export function failedPhotos(): Array<PhotoItem> {
+	return parseAll(FAILED_KEY)
+}
+
+export function addHeld(item: PhotoItem): void {
+	addEntry(HELD_KEY, entryOf(item))
+}
+
+export function removeHeld(path: string): void {
+	removeEntry(HELD_KEY, path)
+}
+
+export function addFailed(item: PhotoItem): void {
+	addEntry(FAILED_KEY, entryOf(item))
+}
+
+export function removeFailed(path: string): void {
+	removeEntry(FAILED_KEY, path)
+}
+

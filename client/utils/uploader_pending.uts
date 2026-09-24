@@ -1,0 +1,63 @@
+/**
+ * 上传域 · 断点续传持久化（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * path|uploadId 行分隔存储（UTS 无可靠 JSON.parse）：读/写/查/存/清。
+ * 对外导出：clearPending, findPending, savePending
+ */
+import { PENDING_KEY } from './uploader_types'
+
+// ---------- 断点续传持久化 ----------
+
+function readPending(): Array<string> {
+	const raw = uni.getStorageSync(PENDING_KEY)
+	if (raw == null || raw == '') {
+		return []
+	}
+	return (raw as string).split('\n')
+}
+
+function writePending(lines: Array<string>): void {
+	const clean: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			clean.push(lines[i])
+		}
+	}
+	uni.setStorageSync(PENDING_KEY, clean.join('\n'))
+}
+
+export function findPending(path: string): string {
+	const lines = readPending()
+	for (let i = 0; i < lines.length; i++) {
+		const parts = lines[i].split('|')
+		if (parts.length >= 2 && parts[0] == path) {
+			return parts[1]
+		}
+	}
+	return ''
+}
+
+export function savePending(path: string, uploadId: string): void {
+	const lines = readPending()
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith(path + '|')) {
+			lines[i] = path + '|' + uploadId
+			writePending(lines)
+			return
+		}
+	}
+	lines.push(path + '|' + uploadId)
+	writePending(lines)
+}
+
+export function clearPending(path: string): void {
+	const lines = readPending()
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].startsWith(path + '|')) {
+			kept.push(lines[i])
+		}
+	}
+	writePending(kept)
+}
+

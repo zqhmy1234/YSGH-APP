@@ -26,7 +26,7 @@
 import { post, get, dataObj, dataArr, fetchThumbnailPath } from './api'
 import { resolveMediaUrl } from './config'
 import { isoLocal, parseIsoMs } from './time'
-import { getNetKind, NetKind } from './uploader'
+import { getNetKind, NetKind } from './uploader_net'
 // O6/F9：队列存储单源 queue_store（与 sync_client 双离线队列合并单 key，路由差异保留）；
 // event flush 退避统一走 retry.ts retryAsync（2s→4s→8s→8s→8s，5 次上限）
 import { enqueueEntry, countPendingOfTypes, allPendingOfTypes, removeByIds, bumpRetryById } from './queue_store'

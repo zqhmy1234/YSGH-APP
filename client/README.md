@@ -27,15 +27,15 @@ client/
 │   └── privacy/ about/(+agreement) empty/ debug/agg-check
 ├── components/Tab{Index,Ai,Search,Profile}/   # 由老 pages/{index,ai,search,profile} 整体搬迁（老页已删除）
 ├── static/                       # 图标(icons/)、空态插画、字体(fonts/)、App 图标(app-icon/)、演示图
-├── utils/                        # 26 个 .uts（5.24 迁移后**无 .ts**）
+├── utils/                        # 41 个 .uts（顶层；另 agg/ 7 个）—— 5.24 迁移后**无 .ts**
 │   ├── config.uts                # baseURL 开关（ENV='prod' / PROD_BASE_URL）+ 占位守卫 + resolveMediaUrl
 │   ├── auth.uts                  # 设备码登录（/auth/device）+ token 存取 + refresh 单飞 + logout
 │   ├── device_id.uts             # 设备唯一标识取值链（ANDROID_ID → storage → 框架 → 仅 dev 兜底）
 │   ├── api.uts / retry.uts / log.uts / sentry.uts
-│   ├── uploader.uts / upload_pipeline.uts / upload_protocol.uts   # 批量上传（并发/重试/分片）
-│   ├── timeline.uts / search_api.uts / play.uts / capsule_api.uts
+│   ├── uploader_{types,pending,net,queue,photo,batch}.uts / upload_pipeline.uts / upload_protocol.uts   # 批量上传（并发/重试/分片；B5c 按分节拆 6 模块）
+│   ├── timeline.uts / search_api.uts / play_{echo,interview,messages,favorite,trash,content}.uts / capsule_api.uts   # play 于 B5a 按域拆分
 │   ├── voice.uts / audio_player.uts / text_recorder.uts
-│   ├── sync_client.uts / event_sync.uts / event_ops.uts / queue_store.uts
+│   ├── sync_{types,queue,local,pipeline,schedule}.uts / event_sync.uts / event_ops.uts / queue_store.uts   # 同步域于 B5b 按职责拆分
 │   └── contract.uts（端点/字段单一契约源）· shell_state.uts · pause_controller.uts · agg_runner.uts · time.uts
 └── uni_modules/                  # 4 个 UTS 插件（**无 .kt，已全 UTS**）
     ├── yishu-photo-watch/        # 相册监听 + dataSync 前台服务（utssdk/app-android/{config.json,index.uts}）

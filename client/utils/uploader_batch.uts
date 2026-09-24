@@ -1,0 +1,200 @@
+/**
+ * 上传域 · 并发池与批量入口（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * UploadPool ≤3 并发 / failWholeBatch / uploadBatch / continuePendingUploads / 网络恢复钩子。
+ * 对外导出：continuePendingUploads, uploadBatch
+ */
+import { ensureLogin } from './auth'
+import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+import { pauseSync, resumeSync, isSyncPaused, registerConsecutiveFailure, resetConsecutiveFailures, MAX_BATCH_FAILURES } from './pause_controller'
+import { onNetworkRestored } from './sync_schedule'
+import { MAX_CONCURRENCY, UploadMode, UploadOptions, UploadProgress, UploadedPhoto } from './uploader_types'
+import { NetKind, getNetKind, resolveMode } from './uploader_net'
+import { addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, removeFailed, removeHeld } from './uploader_queue'
+import { uploadWithRetry } from './uploader_photo'
+
+/** 并发池（游标式分配，天然实现 ≤3 并发；批量失败 ≥10 暂停剩余） */
+class UploadPool {
+	items: Array<PhotoItem>
+	onProgress: (p: UploadProgress) => void
+	resolve: (out: Array<UploadedPhoto>) => void
+	uploadMode: string = 'original'
+	index: number = 0
+	done: number = 0
+	failed: number = 0
+	consecutive: number = 0
+	total: number
+	results: Array<UploadedPhoto> = []
+
+	constructor(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (out: Array<UploadedPhoto>) => void) {
+		this.items = items
+		this.onProgress = onProgress
+		this.resolve = resolve
+		this.total = items.length
+	}
+
+	start(uploadMode: string): void {
+		this.uploadMode = uploadMode
+		const slots = this.total < MAX_CONCURRENCY ? this.total : MAX_CONCURRENCY
+		for (let s = 0; s < slots; s++) {
+			this.next()
+		}
+	}
+
+	/** 暂停：剩余项入 held 队列 + 提前返回已成功部分（横幅"继续上传"恢复） */
+	holdRemaining(): void {
+		for (let i = this.index; i < this.total; i++) {
+			addHeld(this.items[i])
+		}
+		this.resolve(this.results)
+	}
+
+	next(): void {
+		if (isSyncPaused()) {
+			this.holdRemaining()
+			return
+		}
+		const i = this.index
+		this.index++
+		if (i >= this.total) {
+			return
+		}
+		const item = this.items[i]
+		uploadWithRetry(item, this.uploadMode).then((cid: string | null) => {
+			if (cid != null) {
+				this.done++
+				this.consecutive = 0
+				this.results.push(new UploadedPhoto(item, cid))
+				resetConsecutiveFailures()
+			} else {
+				this.failed++
+				this.consecutive++
+				addFailed(item)
+				registerConsecutiveFailure()
+				if (this.consecutive >= MAX_BATCH_FAILURES) {
+					console.error('[yishu] 连续失败 ' + MAX_BATCH_FAILURES + ' 条，暂停剩余（横幅可继续）')
+					pauseSync('网络异常，已暂停同步')
+					this.holdRemaining()
+					return
+				}
+			}
+			const p = new UploadProgress(this.done, this.total, this.failed)
+			this.onProgress(p)
+			if (this.done + this.failed === this.total) {
+				this.resolve(this.results)
+			} else {
+				this.next()
+			}
+		})
+	}
+}
+
+/** 整批失败（登录失败/后端不可达）：全部入 failed 队列 + 连续失败计数（≥N 触发暂停横幅） */
+function failWholeBatch(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (out: Array<UploadedPhoto>) => void): void {
+	for (let i = 0; i < items.length; i++) {
+		addFailed(items[i])
+	}
+	for (let i = 0; i < items.length; i++) {
+		registerConsecutiveFailure()
+	}
+	const fail = new UploadProgress(0, items.length, items.length)
+	onProgress(fail)
+	resolve([])
+}
+
+/** 批量上传主入口（并发 ≤3）；成功项返回（上传前确保已登录）。
+ *  opts.mode：auto（WiFi 原图/蜂窝暂缓）/ original（强制原图）/ thumbnail / hold */
+export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) => void, opts: UploadOptions | null = null): Promise<Array<UploadedPhoto>> {
+	return new Promise<Array<UploadedPhoto>>((resolve) => {
+		if (items.length === 0) {
+			const empty = new UploadProgress(0, 0, 0)
+			onProgress(empty)
+			resolve([])
+			return
+		}
+		const mode: UploadMode = opts != null && opts.mode != null ? opts.mode : 'auto'
+		getNetKind((kind: NetKind) => {
+			const effective = resolveMode(mode, kind)
+			if (effective == 'hold') {
+				// 蜂窝/离线：暂缓入 held（流量约束），横幅展示"待 WiFi 上传/立即上传原图"
+				for (let i = 0; i < items.length; i++) {
+					addHeld(items[i])
+				}
+				const held = new UploadProgress(0, items.length, 0)
+				onProgress(held)
+				console.log('[yishu] 蜂窝/离线暂缓 ' + items.length + ' 张原图（held=' + heldCount() + '）')
+				resolve([])
+				return
+			}
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					console.error('[yishu] 上传前登录失败（后端不可达），整批入失败队列')
+					failWholeBatch(items, onProgress, resolve)
+					return
+				}
+				const pool = new UploadPool(items, onProgress, resolve)
+				pool.start(effective)
+			})
+		})
+	})
+}
+
+/** 一键继续：解除暂停 + 上传 held/failed 全部待处理照片（原图模式；B4 §5"立即上传原图"手动入口） */
+export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+	return new Promise<Array<UploadedPhoto>>((resolve) => {
+		resumeSync()
+		const held = heldPhotos()
+		const failed = failedPhotos()
+		const items: Array<PhotoItem> = []
+		for (let i = 0; i < held.length; i++) {
+			items.push(held[i])
+		}
+		for (let i = 0; i < failed.length; i++) {
+			items.push(failed[i])
+		}
+		if (items.length === 0) {
+			const empty = new UploadProgress(0, 0, 0)
+			onProgress(empty)
+			resolve([])
+			return
+		}
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				console.error('[yishu] 继续上传：登录失败（后端不可达）')
+				failWholeBatch(items, onProgress, resolve)
+				return
+			}
+			const pool = new UploadPool(items, onProgress, (out: Array<UploadedPhoto>) => {
+				// 成功后从 held/failed 队列移除（无论池是否因暂停提前返回，只清已成功项）
+				for (let i = 0; i < out.length; i++) {
+					removeHeld(out[i].item.path)
+					removeFailed(out[i].item.path)
+				}
+				resolve(out)
+			})
+			pool.start('original')
+		})
+	})
+}
+
+/** WiFi 恢复时自动补传暂缓原图（B4 §5 流量约束闭环：蜂窝暂缓 → 到 WiFi 自动续传）；
+ *  由 sync_client.onNetworkRestored 在网络恢复时调用，本文件模块加载时注册（无循环依赖）。 */
+function maybeUploadHeldOnWifi(): void {
+	if (heldCount() === 0 && failedCount() === 0) {
+		return
+	}
+	if (isSyncPaused()) {
+		return
+	}
+	getNetKind((kind: NetKind) => {
+		if (kind == 'wifi') {
+			console.log('[yishu] WiFi 恢复，自动补传暂缓原图（held=' + heldCount() + ' failed=' + failedCount() + '）')
+			continuePendingUploads(() => {})
+		}
+	})
+}
+
+// 模块加载时注册网络恢复钩子（sync_client 触发；App 启动经 index/profile 引入 uploader 即生效）
+onNetworkRestored((): void => {
+	maybeUploadHeldOnWifi()
+})

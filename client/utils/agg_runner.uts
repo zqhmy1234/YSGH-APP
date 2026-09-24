@@ -8,7 +8,7 @@
 import { L0_EPS_S_M, L0_MIN_PTS, l0EpsTsec } from '@/utils/agg/agg_config.uts'
 import { preprocess, RawPhoto } from '@/utils/agg/pipeline.uts'
 import { DayCard, Photo, l1DailyAggregate, stDbscan } from '@/utils/agg/st_dbscan.uts'
-import { UploadedPhoto } from '@/utils/uploader'
+import { UploadedPhoto } from '@/utils/uploader_types'
 
 /** 端侧 L1 事件（POST /events/sync 载荷） */
 export class ClientL1Event {
