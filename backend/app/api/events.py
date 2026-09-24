@@ -97,8 +97,7 @@ def timeline(
     L3 事件附加 lifecycle（活跃 30 天→静默→归档，读取时派生）。
     安全：需登录。
     """
-    from app.services.event_aggregation.pipeline import l3_lifecycle
-    from app.services.events import get_event_last_activity, get_timeline
+    from app.services.events import get_event_last_activity, get_timeline, l3_lifecycle
 
     events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
     event_ids = [e.id for e in events]

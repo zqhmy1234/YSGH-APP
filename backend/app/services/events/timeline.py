@@ -1,6 +1,14 @@
 """时间轴（F5/R1#5 拆包：services/events.py → services/events/timeline.py）
 
 职责：用户事件列表（F8 时间轴）+ 事件最近活动时间（L3 生命周期读取时派生）。
+
+B9a（2026-09-24 重构波）：**L3 生命周期衍生的对外门面**。
+`l3_lifecycle` 的实现在 `event_aggregation/agg_candidates.py`（算法包），但它的
+**消费方是 API 层**（`api/events.py` 读取时派生 L3 状态）。此前 API 直接
+`from app.services.event_aggregation.pipeline import l3_lifecycle` ⇒ **API 越级直连
+算法包**（跨层反向依赖，FF1 关注面）。现由本模块（事件域、职责本就含"L3 生命周期
+派生"）**再导出**，API 只依赖 `app.services.events` 门面。
+依赖方向：events 域 → 算法包（同域内 service→algorithm，方向正确）；算法包**不**反向依赖本模块。
 """
 from __future__ import annotations
 
@@ -11,8 +19,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, Event, EventItem
+from app.services.event_aggregation.agg_candidates import l3_lifecycle
 
 logger = logging.getLogger("yishu.events")
+
+__all__ = ["get_event_last_activity", "get_timeline", "l3_lifecycle"]
 
 
 def get_timeline(

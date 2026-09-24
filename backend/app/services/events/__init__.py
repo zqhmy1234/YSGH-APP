@@ -39,6 +39,7 @@ from app.services.events.sync import (
 from app.services.events.timeline import (
     get_event_last_activity,
     get_timeline,
+    l3_lifecycle,
 )
 
 __all__ = [
@@ -59,6 +60,8 @@ __all__ = [
     # timeline（时间轴）
     "get_timeline",
     "get_event_last_activity",
+    # timeline 再导出（B9a）：L3 生命周期衍生的对外门面（API 不再直连算法包）
+    "l3_lifecycle",
     # edit（用户手动操作）
     "get_event_items",
     "merge_events",
