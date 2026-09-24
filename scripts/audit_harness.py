@@ -776,6 +776,26 @@ def audit_client_imports_axis() -> None:
         INFO.append(f"[客户端导入] 客户端模块导出符号使用均有 import（扫描导出 {n} 个）")
 
 
+def audit_class_members_axis() -> None:
+    """轴 7：客户端 UTS 类成员「用了却没声明」（2026-09-25 · GAP-2 实测暴露）。
+
+    背景（实测）：B5.2f-2e 把 `saving` 迁入 `useVoiceRecord.uts` 时漏声明字段，方法体却写
+    `this.saving.value` —— 编译报绿（轴 6 只管跨模块 import，管不到类成员），真机必崩。
+    ⇒ 跨模块符号（轴 6）与类成员（本轴）是两道独立假绿面，须各自设防。
+    """
+    from audit_class_members import scan as _scan_class_members
+
+    violations, checked, skipped = _scan_class_members()
+    if violations:
+        for v in violations:
+            CRITICAL.append(
+                f"[类成员] {v['file']} class {v['class']} 的 this.{v['member']} 未声明"
+                "（编译不覆盖符号解析，真机 undefined 崩溃）"
+            )
+    else:
+        INFO.append(f"[类成员] 客户端 UTS 类成员解析一致（检查 {checked} 类，{skipped} 个 extends 类跳过）")
+
+
 def axes_findings() -> tuple[list[str], list[str], str]:
     """公共入口：**轴 1-4**（契约 / 客户端 / 模型 / 导出）的 (CRITICAL, INFO, 备注)。
 
@@ -813,7 +833,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="harness 多轴审计（契约/客户端/模型/导出/体积/重复）")
     ap.add_argument(
         "axis",
-        choices=["openapi", "client", "client_imports", "models", "exports", "filesize", "dups", "all"],
+        choices=[
+            "openapi", "client", "client_imports", "class_members",
+            "models", "exports", "filesize", "dups", "all",
+        ],
     )
     ap.add_argument("--skip-openapi", action="store_true", help="无后端环境时跳过契约轴")
     ap.add_argument("--json", metavar="PATH", help="把发现写入 JSON（供 CI/台账引用）")
@@ -825,6 +848,8 @@ def main() -> int:
         audit_client()
     if args.axis in {"client_imports", "all"}:
         audit_client_imports_axis()
+    if args.axis in {"class_members", "all"}:
+        audit_class_members_axis()
     if args.axis in {"models", "all"}:
         audit_models()
     if args.axis in {"exports", "all"}:

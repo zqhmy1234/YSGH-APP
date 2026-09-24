@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 16:27 · commit f333430 · ts=1790238423
+- **错误**：B5.2f-2e 把 saving 状态迁入 useVoiceRecord.uts 时方法体写了 this.saving.value 却漏声明 saving 字段：HBuilderX 编译报绿（GAP-1 只覆盖语法不覆盖符号解析），轴 6 也只查跨模块 import、管不到类成员——两道假绿面同时放过，真机 submitVoice 必 undefined 崩溃
+- **根因**：编译门不覆盖符号解析（GAP-1 已证）+ 静态门禁只覆盖『跨模块符号』维度，缺『类成员解析』维度；生成式改写缺少『类成员声明集 vs this.X 使用集』的静态体检
+- **修复**：补声明 saving = ref(false)；新增 scripts/audit_class_members.py（轴 7）+ 接入 audit_harness 与 review_agent 快/全量门禁；反向探针（删字段→两门禁均 EXIT=1，还原后字节一致）证明非空转
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-09-24 15:38 · commit 18fbeff · ts=1790235487
 - **错误**：pre-commit 门禁因 lint 阻断：新增 Python 脚本缺结尾换行；函数内的两个 import（audit_harness / audit_client_imports）被 ruff I001 判为 import 块未排序
 - **根因**：本仓 ruff 规则含 W292（文件末尾需换行）与 I001（import 块需按分组排序，函数内局部 import 同样适用）。惯例：新增脚本结尾必须留空行；同一函数内多条局部 import 需按字母序并保持同一分组。另注：门禁一旦失败就会写失败状态文件，后续提交前必须先登记教训——lint 修复循环里别忘了这一步。

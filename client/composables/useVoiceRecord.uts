@@ -50,6 +50,9 @@ export class VoiceRecorder {
 	guardMsg = ref('')
 	lastVoiceDuration = ref(0)
 	lastVoiceFile = ref('')
+	// GAP-2 修复（2026-09-25）：2e 迁入时**漏声明本字段**（方法体已写 `this.saving.value`），
+	// 而编译报绿（GAP-1）+ 轴 6 只管跨模块 import ⇒ 逃逸。现补声明，并新增轴 7 兜底。
+	saving = ref(false)
 
 	private anim: RecordAnimations
 	private resetAiLabel: () => void

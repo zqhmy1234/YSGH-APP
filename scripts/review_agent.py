@@ -377,6 +377,7 @@ def check_audit_axes() -> tuple[bool, str]:
     （不阻断）——见 `axes_findings` 注释。快/全量模式均执行（轴 2/3/4 为纯文件扫描）。
     """
     sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_class_members import scan as scan_class_members
     from audit_client_imports import scan as scan_client_imports
     from audit_harness import axes_findings
 
@@ -396,10 +397,24 @@ def check_audit_axes() -> tuple[bool, str]:
                          if not import_violations else
                          f"[客户端导入] {len(import_violations)} 处缺 import"]
 
+    # 轴 7（2026-09-25 · GAP-2 实测暴露）：客户端 UTS 类成员「用了却没声明」（`this.<名>`）。
+    # 背景：轴 6 只覆盖**跨模块符号**，「类成员访问」是另一道假绿面——`this.saving.value` 而类里
+    # 没有 saving 字段，编译照样报绿（实测）。口径：CRITICAL 阻断（与轴 6 同）。
+    member_violations, n_classes, _n_skipped = scan_class_members()
+    if member_violations:
+        crit = list(crit) + [
+            f"[类成员] {v['file']} class {v['class']} 的 this.{v['member']} 未声明"
+            "（编译不覆盖符号解析，真机 undefined 崩溃）"
+            for v in member_violations
+        ]
+    info = list(info) + [f"[类成员] 检查 {n_classes} 类，成员解析均一致"
+                         if not member_violations else
+                         f"[类成员] {len(member_violations)} 处成员未声明"]
+
     suffix = f"；{note}" if note else ""
     if crit:
         return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
-    return True, f"跨轴审计（契约/客户端/模型/导出/客户端导入）：无 CRITICAL；INFO {len(info)} 项{suffix}"
+    return True, f"跨轴审计（契约/客户端/模型/导出/客户端导入/类成员）：无 CRITICAL；INFO {len(info)} 项{suffix}"
 
 
 def check_env_template() -> tuple[bool, str]:
