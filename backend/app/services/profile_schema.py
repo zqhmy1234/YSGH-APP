@@ -149,6 +149,16 @@ def _load_level(js: dict, level: str) -> dict[str, DimensionSpec]:
 
 def _build_schema() -> EnumSchema:
     enum_dir = _enum_dir()
+    # D07-1（P0 · 2026-09-25 功能修复波）：枚举集缺失时给出**可执行**的错误
+    # （原实现直接 read_text 抛 FileNotFoundError —— 容器部署缺 docs/ 时只在
+    #  画像/访谈首调表现为 500，排查要翻栈才知道缺什么、该配哪个变量）。
+    missing = [name for name in (L0_FILENAME, L1_FILENAME) if not (enum_dir / name).exists()]
+    if missing:
+        raise RuntimeError(
+            f"画像维度枚举集缺失：{missing}（查找目录 = {enum_dir}）——"
+            "部署镜像须随包分发这两份 JSON，并设 PROFILE_ENUM_DIR 指向其目录"
+            "（deploy/Dockerfile.backend 已 COPY 到 /app/profile_enums）"
+        )
     l0 = _load_json(enum_dir / L0_FILENAME)
     l1 = _load_json(enum_dir / L1_FILENAME)
     dimensions: dict[str, DimensionSpec] = {}

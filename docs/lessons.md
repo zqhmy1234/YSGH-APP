@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 02:36 · commit b1f2488 · ts=1790274989
+- **错误**：D07-1（P0）：部署镜像缺 docs/ 画像枚举集 ⇒ 容器内画像/访谈首调 500（宿主侧开发完全看不出）
+- **根因**：运行时数据（画像枚举集 JSON）落在仓库根 docs/ 而非 backend/ 包内，而镜像只 COPY backend/ ⇒ 打包边界与运行时依赖边界不一致；且加载器直接 read_text 抛 FileNotFoundError、无启动自检 ⇒ 失败只在首个用户请求上暴露（错误现场远离根因）。
+- **修复**：Dockerfile 增加 COPY docs/画像维度枚举集_{l0.json,l1_骨架.json} /app/profile_enums/ + ENV PROFILE_ENUM_DIR；加载器缺件时报可执行错误（点名文件/目录/变量）；main.lifespan 启动自检 fail-fast；新增 5 例测试（含用同一 COPY 指令做真实镜像构建取证 + Dockerfile 源码级防漂移断言）
+- **相关文件**：deploy/Dockerfile.backend
+- **教训**：打包边界必须与运行时依赖边界一致：凡运行时 read 的**数据文件**都要有'随镜像分发'的显式动作 + 一条源码级防漂移断言，否则宿主全绿、部署即 500
+
+---
+
 ### 2026-09-25 02:20 · commit 2c1dc05 · ts=1790274003
 - **错误**：D05-3（P0）：检索过滤器翻译两套实现、未知键静默丢弃 ⇒ 隔离类键丢失即跨用户召回
 - **根因**：vector_store._to_filter 的 if/elif 链**链尾无 else**（未知键被静默忽略），rag/pg_fallback 又用逐个 filters.get 各写一份键集；两处键集靠人工对齐、无任何校验或日志。2026-08-26 刚给 _to_filter 补 user_id 就是该风险的现实证据。

@@ -38,6 +38,15 @@ RUN pip install -r requirements.txt
 # 业务代码（含 alembic.ini 与 migrations/，便于容器内跑迁移）
 COPY backend/ ./
 
+# 画像维度枚举集（D07-1 · P0，2026-09-25 功能修复波）：
+#   `services/profile_schema.py` 的枚举集 JSON 落在**仓库根 docs/**（`_DEFAULT_ENUM_DIR`），
+#   而上面只 COPY 了 backend/ ⇒ 容器内首次 `get_schema()` 抛 FileNotFoundError
+#   ⇒ 画像页 / 访谈 / 画像标注链路首调 **500**（宿主侧开发看不出，只有部署后才炸）。
+#   这里把两份枚举集随镜像分发，并用加载器**唯一承认**的覆盖口径 `PROFILE_ENUM_DIR`
+#   指向（不依赖 /app 之外的路径推断，避免 WORKDIR/PYTHONPATH 变化再次漂移）。
+COPY docs/画像维度枚举集_l0.json docs/画像维度枚举集_l1_骨架.json /app/profile_enums/
+ENV PROFILE_ENUM_DIR=/app/profile_enums
+
 # 非 root 运行
 RUN useradd -r -u 10001 -m appuser \
     && mkdir -p /app/models \

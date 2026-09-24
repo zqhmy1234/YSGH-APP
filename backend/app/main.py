@@ -10,6 +10,7 @@ G2/R6#11 加固（2026-08-27）：
 - 生产关闭文档暴露：app_env=production 时 docs_url/openapi_url/redoc_url 全置 None
 - G2/R6#15：/healthz 只暴露最小存活信息 {status: ok}（不泄露 env/mock/DB/版本明细）
 """
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -44,6 +45,8 @@ from app.core.errors import install_error_handlers
 from app.core.middleware import RequestIDMiddleware
 from app.core.ratelimit import RateLimitMiddleware  # G1/R6#2/#3：通用限流（auth/ASR/搜索）
 
+logger = logging.getLogger("yishu.main")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +54,14 @@ async def lifespan(app: FastAPI):
     if settings.sentry_dsn and settings.app_env == "production":
         import sentry_sdk
         sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.1)
+    # 启动自检（D07-1 · 2026-09-25 功能修复波）：画像枚举集必须在**启动时**就可用。
+    # 原状：只有第一次画像/访谈请求才触发加载 ⇒ 镜像漏 COPY docs/ 时表现为"用户侧 500"，
+    # 排查要从业务栈翻到 FileNotFoundError。现改为 **fail-fast**：缺失则启动失败
+    # （容器重启 + 明确日志指向 PROFILE_ENUM_DIR / Dockerfile COPY），不给用户看到 500。
+    from app.services.profile_schema import get_schema
+
+    schema = get_schema()
+    logger.info("画像枚举集已加载：L0 %d / L1 %d", schema.l0_count, schema.l1_count)
     yield
 
 
