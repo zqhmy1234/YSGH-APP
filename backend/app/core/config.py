@@ -124,9 +124,28 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
 
     # 企业微信客服回调（F6；未配置时回调验签必拒，配置后启用）
-    wechat_corp_id: str = ""
-    wechat_token: str = ""
-    wechat_encoding_aes_key: str = ""
+    #
+    # D09-8（2026-09-25 功能修复波）：三项均补 `WECOM_*` 别名——`docs/拿key后推进计划.md`
+    #   推荐注入的是 WECOM_CORP_ID/WECOM_TOKEN/WECOM_ENCODING_AES_KEY，而本文件原先只认
+    #   WECHAT_*，且 SettingsConfigDict(extra="ignore") 会**静默丢弃**别名变量 ⇒ 按文档
+    #   注入时 `_wechat_configured()` 恒 False、全部回调 503 且无任何告警。
+    wechat_corp_id: str = Field(
+        "", validation_alias=AliasChoices("WECHAT_CORP_ID", "WECOM_CORP_ID")
+    )
+    wechat_token: str = Field("", validation_alias=AliasChoices("WECHAT_TOKEN", "WECOM_TOKEN"))
+    wechat_encoding_aes_key: str = Field(
+        "", validation_alias=AliasChoices("WECHAT_ENCODING_AES_KEY", "WECOM_ENCODING_AES_KEY")
+    )
+    # D09-4（同日修复）：企微「回调 Token」（自定随机串）与「应用 Secret」（企微生成，
+    #   用于 gettoken）**不是同一个值**。原实现把 `wechat_token` 直接当 corpsecret 用
+    #   ⇒ 生产必然 40001 ⇒ 媒体链永久降级。这里独立成项；留空时仍回退 token
+    #   （兼容既有单值部署，回退时打 WARNING 指明后果）。
+    wechat_corp_secret: str = Field(
+        "",
+        validation_alias=AliasChoices(
+            "WECHAT_CORP_SECRET", "WECOM_CORP_SECRET", "WECHAT_APP_SECRET"
+        ),
+    )
     # 微信开放平台 code2session 登录（决策 #8；Wave4-L 接入，替换 mock unionid）——
     # 未配置时 dev/test 走 mock、production 保持 501（不静默降级 mock 登录）。
     wechat_appid: str = ""

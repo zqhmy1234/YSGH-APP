@@ -30,7 +30,7 @@ from app.db.models.profile import (
 )
 from app.db.models.sync import DeletedLog, OfflineQueue, SyncFieldVersion, SyncState
 from app.db.models.upload import UploadChunk, UploadTask
-from app.db.models.wechat import WechatMessage
+from app.db.models.wechat import UserWechatBinding, WechatMessage
 
 __all__ = [
     "Capsule",
@@ -61,5 +61,6 @@ __all__ = [
     "UploadTask",
     "User",
     "UserProfile",
+    "UserWechatBinding",
     "WechatMessage",
 ]

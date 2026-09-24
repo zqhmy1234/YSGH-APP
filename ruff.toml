@@ -31,6 +31,7 @@ known-first-party = ["scripts"]
 "backend/tests/**" = ["S101"]  # pytest 测试天然用 assert 断言
 "agent/tests/**" = ["S101"]    # 同上（Agent 交付包的测试目录，AG3 起纳入本仓测试链）
 "backend/tests/test_wechat.py" = ["S105"]  # 官方测试凭证（path/90931，非真实密钥）
+"backend/tests/test_wechat_binding.py" = ["S105"]  # 同上（D09 簇③ 复用官方测试凭证 + 占位值）
 "backend/tests/test_config_alias.py" = ["S105", "S106"]  # 密钥名测试占位值（old-key/ci-key 非真实）
 "backend/tests/test_auth.py" = ["S105"]  # Wave4-L code2session 测试占位凭证（wx-test-*/test-secret 非真实）
 "backend/tests/test_content_safety.py" = ["S105"]  # Wave4-L 适配器测试占位密钥（ak-test/sk-test 非真实）

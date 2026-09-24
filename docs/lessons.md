@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 02:49 · commit adfd4e4 · ts=1790275786
+- **错误**：D09-1（P0）：微信客服回调不传 user_id ⇒ F6 主链（收→媒体→内容→记忆）整条不通，只落一行消息
+- **根因**：绑定载体根本不存在：user_wechat_bindings 表自 schema.sql 起就有，却从未映射 ORM ⇒ baseline 迁移按『ORM 未映射的遗留空表』把它 DROP 掉；回调侧于是无 user_id 可查（gateway 解析出的 from_user 全仓零消费方）。同类：D09-4 把回调 Token 当应用 Secret、D09-8 WECOM_* 变量被 extra=ignore 静默丢弃——三处都是『协议里是两个东西/两个名字，代码里当成一个』
+- **修复**：补 UserWechatBinding ORM + 幂等重建迁移 d9a0b1c2d3e4 + services/wechat/binding.py（resolve/bind/list/unbind，openid 冲突默认拒换绑）+ 回调经 from_user 解析 user_id + 绑定/解绑端点 + 独立 wechat_corp_secret（回退时 WARNING）+ WECOM_* AliasChoices + 回调 offload 到线程池 + 缺 MsgId 改 403；新增 14 例测试（含绑定前后主链行为对比、409 防劫持、日志锚点、gettoken corpsecret 断言）
+- **相关文件**：backend/app/services/wechat/binding.py
+- **教训**：『表在 schema 里存在』不等于『运行时可用』：ORM 未映射的表会被迁移当遗留空表删掉，而业务代码会以为它一直在（P0 缺陷的完美潜伏）
+
+---
+
 ### 2026-09-25 02:36 · commit b1f2488 · ts=1790274989
 - **错误**：D07-1（P0）：部署镜像缺 docs/ 画像枚举集 ⇒ 容器内画像/访谈首调 500（宿主侧开发完全看不出）
 - **根因**：运行时数据（画像枚举集 JSON）落在仓库根 docs/ 而非 backend/ 包内，而镜像只 COPY backend/ ⇒ 打包边界与运行时依赖边界不一致；且加载器直接 read_text 抛 FileNotFoundError、无启动自检 ⇒ 失败只在首个用户请求上暴露（错误现场远离根因）。

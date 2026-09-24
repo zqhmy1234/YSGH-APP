@@ -78,15 +78,34 @@ _ACCESS_TOKEN_REFRESH_MARGIN = 200
 _token_cache: dict = {}
 
 
+def _corp_secret() -> str:
+    """企微**应用 Secret**（gettoken 用）——D09-4：与「回调 Token」是两个不同值。
+
+    优先 `WECHAT_CORP_SECRET`；未单独配置时回退 `WECHAT_TOKEN`（兼容既有单值部署），
+    并打 WARNING 说明后果（回调 Token ≠ 应用 Secret ⇒ gettoken 40001 ⇒ 媒体链降级）。
+    """
+    from app.core.config import settings
+
+    if settings.wechat_corp_secret:
+        return settings.wechat_corp_secret
+    if settings.wechat_token:
+        logger.warning(
+            "未配置 WECHAT_CORP_SECRET，回退 WECHAT_TOKEN 作 corpsecret——"
+            "企微回调 Token 与应用 Secret 不是同一值，gettoken 预计 40001（媒体链降级）"
+        )
+    return settings.wechat_token
+
+
 def _corp_access_token() -> str | None:
     """企业 access_token（media/get 必需）——进程内缓存 + 过期失效重取（S6-9）
 
-    需企微应用凭证：WECHAT_CORP_ID + 应用 Secret。
+    需企微应用凭证：WECHAT_CORP_ID + **应用 Secret**（`_corp_secret()`，D09-4）。
     凭证未配置或 MOCK_EXTERNAL_AI=true → 返回 None（调用方走 mock）。
     """
     from app.core.config import settings
 
-    if settings.mock_external_ai or not (settings.wechat_corp_id and settings.wechat_token):
+    secret = _corp_secret()  # 只取一次（回退路径会打 WARNING，避免日志重复）
+    if settings.mock_external_ai or not (settings.wechat_corp_id and secret):
         return None
     import time
 
@@ -98,7 +117,7 @@ def _corp_access_token() -> str | None:
 
     resp = httpx.get(
         f"{WECOM_API_BASE}/gettoken",
-        params={"corpid": settings.wechat_corp_id, "corpsecret": settings.wechat_token},
+        params={"corpid": settings.wechat_corp_id, "corpsecret": secret},
         timeout=10,
     )
     resp.raise_for_status()
@@ -353,6 +372,9 @@ def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict
             content_type="text",
             text=text,
             source="wechat",
+            # D09-3（2026-09-25）：文本内容也要留 `wechat_msg_id` 反查锚点——否则
+            # 「微信端删掉这条」找不到关联内容（媒体路径一直有该锚点，文本路径没有）。
+            extra={"wechat_msg_id": msg_id},
             sensitive_status="敏感" if not guard["pass"] else "正常",
             status="done",
         )
@@ -370,6 +392,12 @@ def soft_delete_by_msg(db: Session, msg_id: str, user_id: str | None = None) -> 
     """微信端软删本条（F6：只删本条；status → deleted）
 
     user_id 传入时校验归属（审查 CRITICAL 修复）：他人消息视为不存在。
+
+    **D09-3（2026-09-25 功能修复波）**：原实现只改 `wechat_messages.status`，**完全不触碰
+    关联 `Content`** ⇒ 用户在微信里说"删掉"后，记忆仍在（列表/搜索/回响照旧），且不享受
+    全局「软删 30 天可恢复」语义。现按 `extra.wechat_msg_id` 反查关联内容，走**同一软删
+    写路径**（`sync_writes.soft_delete_content` ⇒ 权威表投影 + 审计日志 + 变更日志）
+    ⇒ 「立即隐藏 / 回收站可恢复 / 30 天后彻底清除」三条承诺在这里也成立。
     """
     record = db.execute(
         select(WechatMessage).where(WechatMessage.msg_id == msg_id)
@@ -379,7 +407,27 @@ def soft_delete_by_msg(db: Session, msg_id: str, user_id: str | None = None) -> 
     if user_id is not None and str(record.user_id) != str(user_id):
         return False
     record.status = "deleted"
+
+    linked_count = 0
+    if record.user_id:
+        from app.services.sync_writes import soft_delete_content
+
+        rows = db.execute(
+            select(Content).where(
+                Content.user_id == record.user_id,
+                Content.extra["wechat_msg_id"].astext == msg_id,
+            )
+        ).scalars().all()
+        for content in rows:
+            # 已软删的（例如用户在回收站里删过）跳过：不重置 30 天保留期、不重复写变更日志。
+            # 该判定刻意放在 Python 侧——SQL 侧的软删谓词已在 dup 棘轮白名单内冻结，
+            # 新增手抄点会被守卫拦下（语义上这里也只是"跳过"，不构成新的过滤表达式）。
+            if content.deleted_at is not None:
+                continue
+            soft_delete_content(db, content, str(record.user_id))
+            linked_count += 1
     db.commit()
+    logger.info("微信消息软删 msg=%s 关联内容 %d 条", msg_id, linked_count)
     return True
 
 

@@ -2650,7 +2650,7 @@
           "wechat"
         ],
         "summary": "Wechat Callback",
-        "description": "收消息：验签→解密→幂等入库→返回 success（企微要求响应\"success\"或空串）",
+        "description": "收消息：验签→解密→幂等入库→返回 success（企微要求响应\"success\"或空串）\n\nD09-7（2026-09-25）：媒体下载是**同步阻塞** HTTP（企微 media/get，超时 30s），\n而本端点是 async —— 原实现直接在事件循环里同步调用 ⇒ 单事件循环（RUNBOOK 铁律\n`--workers 1`）被阻塞期间所有并发回调排队，放大企微 5s 超时重推。\n现把处理体整体 `run_in_threadpool` 出去（含自带 DB 会话）。\n\nD09-12（2026-09-25）：验签通过但消息缺 `MsgId` 等契约错误此前逃逸为 **500**，\n企微会持续重推同一包；现与验签失败同口径 → **403 WECHAT_002**。",
         "operationId": "wechat_callback_api_v1_wechat_callback_post",
         "parameters": [
           {
@@ -2687,6 +2687,128 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wechat/bind": {
+      "post": {
+        "tags": [
+          "wechat"
+        ],
+        "summary": "Wechat Bind",
+        "description": "绑定微信渠道标识到当前账号（D09-1 配套：让 F6 主链可被真正打通/验证）\n\n- 同一 openid 已绑定**他人** → 409 WECHAT_004（默认拒绝换绑，防把别人微信收到的\n  记忆改投到我账号）；\n- 同用户重复绑定 → 幂等成功；\n- 渠道白名单见 `WECHAT_BINDING_CHANNELS`。",
+        "operationId": "wechat_bind_api_v1_wechat_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WechatBindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_WechatBindOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/wechat/bindings": {
+      "get": {
+        "tags": [
+          "wechat"
+        ],
+        "summary": "Wechat Bindings",
+        "description": "当前账号已绑定的微信渠道列表（不含他人绑定）",
+        "operationId": "wechat_bindings_api_v1_wechat_bindings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_WechatBindingsOut_"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "wechat"
+        ],
+        "summary": "Wechat Unbind",
+        "description": "解绑（仅限本人绑定；他人绑定按不存在处理，不泄露信息）",
+        "operationId": "wechat_unbind_api_v1_wechat_bindings_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "openid",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "Openid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_WechatUnbindOut_"
+                }
               }
             }
           },
@@ -4854,6 +4976,68 @@
         "type": "object",
         "title": "ApiResponse[UserMeOut]"
       },
+      "ApiResponse_WechatBindOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WechatBindOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[WechatBindOut]"
+      },
+      "ApiResponse_WechatBindingsOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WechatBindingsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[WechatBindingsOut]"
+      },
       "ApiResponse_WechatDeleteOut_": {
         "properties": {
           "code": {
@@ -4915,6 +5099,37 @@
         },
         "type": "object",
         "title": "ApiResponse[WechatFindOut]"
+      },
+      "ApiResponse_WechatUnbindOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WechatUnbindOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[WechatUnbindOut]"
       },
       "ApiResponse_dict_": {
         "properties": {
@@ -9149,6 +9364,103 @@
         "title": "VoiceInfo",
         "description": "语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）\n\nW0-2（2026-09-02）补 content_id：客户端就地播放唯一依赖此键\n（GET /api/v1/media/audio/{content_id}，Bearer 鉴权）；url 字段留空——\n音频走鉴权端点 + 临时文件（token 只能走 header 的硬约束），不发裸 URL。"
       },
+      "WechatBindOut": {
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "title": "Bound"
+          },
+          "openid": {
+            "type": "string",
+            "title": "Openid"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bound",
+          "openid",
+          "channel",
+          "user_id"
+        ],
+        "title": "WechatBindOut",
+        "description": "微信绑定出参（POST /api/v1/wechat/bind）"
+      },
+      "WechatBindRequest": {
+        "properties": {
+          "openid": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Openid"
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Channel",
+            "default": "wechat_kf"
+          }
+        },
+        "type": "object",
+        "required": [
+          "openid"
+        ],
+        "title": "WechatBindRequest",
+        "description": "微信绑定请求（POST /api/v1/wechat/bind · D09-1）\n\nopenid 为该渠道下的用户标识（企微微信客服回调的 `FromUserName`）；\nchannel 取值见 `db/models/wechat.WECHAT_BINDING_CHANNELS`。"
+      },
+      "WechatBindingItem": {
+        "properties": {
+          "openid": {
+            "type": "string",
+            "title": "Openid"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "bound_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bound At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "openid",
+          "channel"
+        ],
+        "title": "WechatBindingItem",
+        "description": "已绑定渠道项（GET /api/v1/wechat/bindings）"
+      },
+      "WechatBindingsOut": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/WechatBindingItem"
+            },
+            "type": "array",
+            "title": "Bindings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bindings"
+        ],
+        "title": "WechatBindingsOut"
+      },
       "WechatDeleteOut": {
         "properties": {
           "deleted": {
@@ -9248,6 +9560,25 @@
         ],
         "title": "WechatLoginRequest",
         "description": "APP 微信登录：code 换 openid/unionid（服务端调微信接口）"
+      },
+      "WechatUnbindOut": {
+        "properties": {
+          "unbound": {
+            "type": "boolean",
+            "title": "Unbound"
+          },
+          "openid": {
+            "type": "string",
+            "title": "Openid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unbound",
+          "openid"
+        ],
+        "title": "WechatUnbindOut",
+        "description": "解绑出参（DELETE /api/v1/wechat/bindings）"
       }
     },
     "securitySchemes": {

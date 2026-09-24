@@ -119,6 +119,10 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("WECHAT_001", "企微 URL 验证失败", 403),
     ErrorSpec("WECHAT_002", "企微回调处理失败", 403),
     ErrorSpec("WECHAT_003", "消息不存在", 404),
+    # D09-1（2026-09-25 功能修复波）：绑定冲突——同一 openid 已绑定**其它**账号，
+    # 默认拒绝换绑（静默改绑会把别人微信收到的记忆改投到我的账号）
+    ErrorSpec("WECHAT_004", "该微信已绑定其它账号", 409),
+    ErrorSpec("WECHAT_005", "绑定参数非法（openid 为空或渠道未知）", 422),
     ErrorSpec("WECHAT_099", "微信回调未配置", 503, retryable=True),
     # 分类域
     ErrorSpec("CLASSIFY_002", "任务不存在或已过期", 404),
@@ -190,6 +194,8 @@ ERR_UPLOAD_010 = "UPLOAD_010"
 ERR_WECHAT_001 = "WECHAT_001"
 ERR_WECHAT_002 = "WECHAT_002"
 ERR_WECHAT_003 = "WECHAT_003"
+ERR_WECHAT_004 = "WECHAT_004"
+ERR_WECHAT_005 = "WECHAT_005"
 ERR_WECHAT_099 = "WECHAT_099"
 ERR_CLASSIFY_002 = "CLASSIFY_002"
 ERR_CLASSIFY_003 = "CLASSIFY_003"
