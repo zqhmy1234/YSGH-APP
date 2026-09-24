@@ -70,6 +70,10 @@ _CONTENT_TYPES = {
     ".mp3": "audio/mpeg",
     ".m4a": "audio/mp4",
     ".aac": "audio/aac",
+    # D09-14（2026-09-25 功能修复波 簇③）：企微语音原件固定 `.amr`
+    # （wechat/service._media_extension）——此前本表无映射 ⇒ 回落 image/jpeg，
+    # 微信语音以 `image/jpeg` 下发（客户端按图片处理，播放必失败）。
+    ".amr": "audio/amr",
 }
 
 

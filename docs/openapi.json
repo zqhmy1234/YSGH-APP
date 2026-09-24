@@ -6455,20 +6455,20 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(photos|voice|thumbnails)/"
+                "pattern": "^(photos|voice|thumbnails|wechat)/"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Cos Key",
-            "description": "照片原件（STS 直传后回调；仅 photos/voice/thumbnails/ 前缀）"
+            "description": "照片原件（STS 直传后回调；仅 photos/voice/thumbnails/wechat/ 前缀，且须为当前用户前缀）"
           },
           "thumbnail_key": {
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(photos|voice|thumbnails)/"
+                "pattern": "^(photos|voice|thumbnails|wechat)/"
               },
               {
                 "type": "null"

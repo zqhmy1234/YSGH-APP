@@ -73,6 +73,7 @@ from app.services.photo_content import (
     register_photo_content as photo_register,
 )
 from app.services.pipeline import process_content
+from app.services.storage_keys import user_scoped_prefixes
 from app.services.sync_common import parse_ts
 from app.services.upload_meta import (
     ALLOWED_PHOTO_EXTS,
@@ -118,11 +119,14 @@ def _extract_exif_datetime(data: bytes) -> datetime | None:
 def _validate_cos_key(db: Session, user_id: str, cos_key: str) -> None:
     """TD-P3 M4（审查中危）：create_content 自供 cos_key 归属/前缀/存在性校验
 
-    仅允许本用户前缀（photos|voice|thumbnails/{user_id}/）且对象已存在
-    （或已登记为本用户同 cos_key 内容——幂等回退），否则 422 CONTENT_009。
+    仅允许本用户前缀（`storage_keys.user_scoped_prefixes(uid)`，含 wechat/）
+    且对象已存在（或已登记为本用户同 cos_key 内容——幂等回退），否则 422 CONTENT_009。
     防跨租户对象拉进自己管线（M4：已知他人 key 可被处理留存）与任意 key 触发存储遍历。
+
+    D02-2/D09-2（2026-09-25）：前缀集合取自 `services/storage_keys.py` 单一来源；
+    补 `wechat/{uid}/` 以消除「微信原件不可入库」的潜伏 422（此前 4 处字面量各自维护）。
     """
-    allowed = (f"photos/{user_id}/", f"voice/{user_id}/", f"thumbnails/{user_id}/")
+    allowed = user_scoped_prefixes(user_id)
     if not cos_key.startswith(allowed):
         raise ApiError(ERR_CONTENT_009, "cos_key 非法或不属于当前用户", http=422)
     from app.services.external.storage import get_storage_backend

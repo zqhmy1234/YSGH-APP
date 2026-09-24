@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
+from app.services.storage_keys import UPLOAD_NAMESPACES
 
 logger = logging.getLogger("yishu.storage")
 
@@ -385,7 +386,8 @@ class CosStorageBackend(StorageBackend):
 def _build_sts_policy(user_id: str | None) -> dict:
     """构建路径级白名单 STS policy（P0-2；纯函数，单测直测）
 
-    仅允许当前用户前缀 photos/voice/thumbnails/{user_id}/*；
+    仅允许当前用户前缀 `UPLOAD_NAMESPACES/{user_id}/*`（D02-2：前缀集合
+    取自 `services/storage_keys.py` 单一来源，此前为本地字面量）；
     拒绝缺失 user_id 或含路径分隔符的 user_id（防前缀逃逸）。
     """
     if not user_id:
@@ -395,7 +397,7 @@ def _build_sts_policy(user_id: str | None) -> dict:
     resource = [
         f"qcs::cos:{settings.cos_region}:uid/{settings.tencent_appid}:"
         f"{settings.cos_bucket}/{prefix}/{user_id}/*"
-        for prefix in ("photos", "voice", "thumbnails")
+        for prefix in UPLOAD_NAMESPACES
     ]
     return {
         "version": "2.0",

@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 02:00 · commit ba9e4c8 · ts=1790272829
+- **错误**：D02-2/D09-2：媒体键前缀白名单在 5 处各写一份字面量，wechat/ 命名空间漏网
+- **根因**：同一「存储键命名空间」语义无单一来源——api/media.py、schemas/content.py、api/contents/__init__.py、services/external/storage.py、services/wechat/service.py 各自维护前缀字面量；且既有测试只覆盖 photos/ 命名空间，微信链路建 Content 用的是 wechat/ 键却从无测试打到 /media/{key} 端点（覆盖是伪造的：单测直调 service，绕过 HTTP 白名单）
+- **修复**：新增 services/storage_keys.py 作唯一来源（UPLOAD/SERVER/MEDIA/CONTENT 四组 + is_media_key_allowed/user_scoped_prefixes/wechat_object_key），5 处全部改为派生；新增 tests/test_storage_keys.py（11 例）含 wechat 原件 200、.amr MIME、白名单外仍 401、源码级反漂移断言（本地字面量必须消失）+ monkeypatch 反向探针（拿掉唯一来源的 wechat 立即 401）
+- **相关文件**：backend/app/services/storage_keys.py
+- **教训**：「同一个白名单写在 N 处」的修复必须同时补「源码级反漂移断言」——否则下一次有人图省事写回字面量，缺陷会以完全相同的方式复活
+
+---
+
 ### 2026-09-25 00:46 · commit c7a19bc · ts=1790268387
 - **错误**：软删『保留30天』承诺在用户路径上无法成立：REST DELETE 只置 contents.deleted_at 不写 deleted_logs（清理任务永不选中）；sync delete 只写 SFV 墓碑+deleted_logs 不置 deleted_at（REST 读仍存活、回收站不可见）；且离线字段写入只落 SFV 从不投影权威表（离线改备注用户永不可见）
 - **根因**：同一业务语义（软删/字段写）在 REST 与 sync 两处入口各自实现，没有单一写路径：权威表、同步账本、审计日志三者的写入分别散落；且既有门禁只断言『墓碑+deleted_logs』，把分歧固化成『预期行为』

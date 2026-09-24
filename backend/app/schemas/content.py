@@ -4,9 +4,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.storage_keys import CONTENT_KEY_PATTERN
+
 # R6#12（输入校验）：cos_key/thumbnail_key 仅允许本域前缀
 # （与 api/contents._validate_cos_key 运行时校验同源；防任意键入库污染/存储遍历）
-_STORAGE_KEY_PREFIX = r"^(photos|voice|thumbnails)/"
+# D02-2/D09-2（2026-09-25）：前缀集合收敛到 `services/storage_keys.py` 单一来源
+# （此前本处与 media/api/contents/storage/wechat 共 5 份字面量各自维护）。
+_STORAGE_KEY_PREFIX = CONTENT_KEY_PATTERN
 
 
 class ContentCreate(BaseModel):
@@ -24,7 +28,10 @@ class ContentCreate(BaseModel):
     perceptual_hash: str | None = None    # 去重（Q16）
     cos_key: str | None = Field(
         None, pattern=_STORAGE_KEY_PREFIX,
-        description="照片原件（STS 直传后回调；仅 photos/voice/thumbnails/ 前缀）",
+        description=(
+            "照片原件（STS 直传后回调；仅 photos/voice/thumbnails/wechat/ 前缀，"
+            "且须为当前用户前缀）"
+        ),
     )
     thumbnail_key: str | None = Field(
         None, pattern=_STORAGE_KEY_PREFIX,

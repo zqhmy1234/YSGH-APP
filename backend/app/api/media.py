@@ -14,7 +14,7 @@
 | 签发 | HMAC-SHA256(secret, key\\nexp\\nuid)，只有服务端能造 |
 | 时效 | 缩略图 24h / 原图 15m（config.media_*_ttl） |
 | 归属 | key 用户段必须匹配票据 uid（media_url.key_belongs_to_user） |
-| 前缀 | 只允许 photos/ voice/ thumbnails/ 三类键 |
+| 前缀 | 只允许 `services/storage_keys.py::MEDIA_NAMESPACES` 内的键（photos/ voice/ thumbnails/ wechat/） |
 | 路径 | 拒绝 `..` / 绝对路径 / 反斜杠（storage._safe_path，防目录遍历） |
 
 ⚠️ **本端点刻意不挂 `get_current_user`** —— 票据即凭证，这是 Valet Key 的定义。
@@ -42,13 +42,11 @@ from app.db.models import Content, User
 from app.db.session import get_db
 from app.services.external.media_url import content_type_for, verify_media
 from app.services.external.storage import StorageError, get_storage_backend
+from app.services.storage_keys import is_media_key_allowed
 
 logger = logging.getLogger("yishu.media")
 
 router = make_router(prefix="/api/v1/media", tags=["media"])
-
-# 允许下发的键前缀（与 schemas/content.py 的 _STORAGE_KEY_PREFIX 同源）
-_ALLOWED_PREFIXES = ("photos/", "voice/", "thumbnails/")
 
 
 @router.get("/audio/{content_id}")
@@ -121,7 +119,9 @@ def get_media(key: str, exp: int | None = None, uid: str | None = None, sig: str
     有效的 key + 过期时间组合，属 standard practice）。仅当票据有效但对象缺失时 404。
     """
     # 前缀白名单：即便签名有效，也不允许下发白名单外的键（防越权读其它命名空间）
-    if not key or not key.startswith(_ALLOWED_PREFIXES):
+    # D02-2/D09-2（2026-09-25）：白名单与其余 4 处收敛到 storage_keys 单一来源，
+    # 并补上 `wechat/` 命名空间（此前微信原件恒 401）。
+    if not is_media_key_allowed(key):
         raise ApiError(ERR_MEDIA_001, "媒体票据无效或已过期", http=401)
 
     ok, reason = verify_media(key, exp or 0, uid or "", sig or "")

@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Content, WechatMessage
 from app.services import thumbnails
 from app.services.external.content_safety import get_content_safety
+from app.services.storage_keys import wechat_object_key
 from app.services.wechat import ports
 
 logger = logging.getLogger("yishu.wechat")
@@ -248,7 +249,10 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
         db.commit()
         return {"media": "failed", "error": type(exc).__name__}
 
-    cos_key = f"wechat/{user_id}/{msg.get('msg_id')}{_media_extension(msg['msg_type'])}"
+    # D02-2/D09-2：`wechat/` 前缀由 storage_keys 单一来源给出（并已进票据下发白名单）
+    cos_key = wechat_object_key(
+        user_id, msg.get("msg_id"), _media_extension(msg["msg_type"])
+    )
     get_storage_backend().put_object(cos_key, data)
 
     # 图片敏感排除（S4-03：命中不进云端镜像）
