@@ -11,6 +11,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.core.timeutil import app_local_tz_name, local_now, local_utc_offset_minutes
+from app.services.event_aggregation.end_constants import (
+    cloud_constants,
+    compare_cloud_end,
+    read_end_constants,
+)
 from app.services.event_aggregation.pipeline import RawPhoto, preprocess
 from app.services.event_aggregation.st_dbscan import l1_daily_aggregate, st_dbscan
 
@@ -79,6 +84,21 @@ def test_cloud_day_boundary_has_single_source():
 
     if app_local_tz_name() == "Asia/Shanghai":
         assert off_minutes == 480, "Asia/Shanghai 无夏令时，偏移应为 480 分钟"
+
+
+def test_cloud_and_end_constants_match_via_source():
+    """D04-14 硬门禁：云侧聚合常量必须与**端侧真源** `client/utils/agg/agg_config.uts` 逐项一致。
+
+    背景：`run_validation` 原有的 AGG-016 断言是**常量自比**（`AGG_CONFIG[...] == 500.0`，恒真）
+    ＋ **自己跟自己跑**（确定性 ⇒ 恒真）⇒ 发现不了端云漂移、也发现不了有人改错单侧常量。
+    本测试读端侧文件做真实比对：任一侧改动 eps/阈值/速度上限而另一侧没跟 ⇒ 直接失败。
+    """
+    end = read_end_constants()
+    assert end is not None, "端侧 agg_config.uts 未找到（仓库内不应缺失）"
+    assert len(end) >= 6, f"端侧常量解析过少，疑似解析器失效（防空转）：{sorted(end)}"
+
+    mismatches = compare_cloud_end(cloud_constants(), end)
+    assert not mismatches, "端云常量不一致：" + "; ".join(mismatches)
 
 
 def test_burst_fold_keeps_first_photo():

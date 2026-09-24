@@ -8,7 +8,7 @@
   - 场景 11：单点漂移不产生新簇（B3-4）
   - 场景 12：系统性偏移整批成簇（不误拆）
   - 增量聚合：旧簇结构不漂移（AGG-015）
-  - 端云阈值一致性：同参双跑结果一致（AGG-016）
+  - 端云阈值一致性：**与端侧 `agg_config.uts` 逐项比对** + 云侧聚合幂等（AGG-016 · D04-14 修复后）
 """
 from __future__ import annotations
 
@@ -19,9 +19,13 @@ import time
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from app.services.event_aggregation.end_constants import (
+    cloud_constants,
+    compare_cloud_end,
+    read_end_constants,
+)
 from app.services.event_aggregation.generate_test_photos import generate
 from app.services.event_aggregation.pipeline import (
-    AGG_CONFIG,
     RawPhoto,
     aggregate,
     incremental_aggregate,
@@ -115,17 +119,40 @@ def main() -> None:
     p13_in_incr = sum(1 for cl in incr.l0_clusters for p in cl if p.id.startswith("p13-"))
     _check(failures, "AGG-015: 新照片进入增量结果", p13_in_incr >= 8, f"p13 进簇={p13_in_incr}")
 
-    # --- 端云阈值一致性（AGG-016）：同参双跑结果一致 ---
+    # --- 端云阈值一致性（AGG-016）：**与端侧真源逐项比对**（D04-14 修复 2026-09-25）---
+    # 原实现两条断言都是"假校验"：
+    #   ① `aggregate(photos)` 与 `aggregate(photos)` 比 —— **自己跟自己比**（确定性 ⇒ 恒真）；
+    #   ② `AGG_CONFIG["l0"]["eps_s_m"] == 500.0` —— **常量与字面量自比**（恒真）。
+    # 两者都发现不了端云漂移、也发现不了有人改错云侧常量（审计 D04-14）。
+    end_consts = read_end_constants()
+    if end_consts is None:
+        # 生产镜像可能不含 client/（同类问题见审计 D07-1）⇒ **显式标注"未比对"**，不当作通过
+        print("⚠️ AGG-016: 端侧 agg_config.uts 不在（生产镜像可能不含 client/）—— 本次**未比对**")
+    else:
+        mismatches = compare_cloud_end(cloud_constants(), end_consts)
+        _check(
+            failures,
+            "AGG-016: 端云常量逐项一致（读端侧 agg_config.uts）",
+            not mismatches,
+            "; ".join(mismatches) if mismatches else f"{len(end_consts)} 项端侧常量解析一致",
+        )
+        # 防空转：端侧解析结果必须非空且覆盖关键项（否则"0 项一致"也是绿的）
+        _check(
+            failures,
+            "AGG-016: 端侧常量解析非空（防空转）",
+            len(end_consts) >= 6,
+            f"解析 {len(end_consts)} 项",
+        )
+
+    # 幂等（原"同参双跑"的**正确**语义就只是幂等——没有端侧参与，不是端云比对）：
     run_a = aggregate(photos)
     run_b = aggregate(photos)
-    same = run_a.stats["l0_clusters"] == run_b.stats["l0_clusters"]
+    same = run_a.stats == run_b.stats and [
+        [p.id for p in cl] for cl in run_a.l0_clusters
+    ] == [[p.id for p in cl] for cl in run_b.l0_clusters]
     _check(
-        failures, "AGG-016: 同参双跑结果一致（端云同一配置源）", same,
-        f"{run_a.stats['l0_clusters']} vs {run_b.stats['l0_clusters']}",
-    )
-    _check(
-        failures, "AGG-016: 参数来自统一配置", AGG_CONFIG["l0"]["eps_s_m"] == 500.0,
-        str(AGG_CONFIG["l0"]),
+        failures, "AGG-016: 聚合幂等（同输入两次结果一致）", same,
+        f"L0 簇 {run_a.stats['l0_clusters']} vs {run_b.stats['l0_clusters']}",
     )
 
     # --- 场景 16：L3 7 天窗（B3-2：同标签 7 天内 ≥3 次（跨天）才成流）---

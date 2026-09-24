@@ -36,6 +36,11 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.services.event_aggregation.pipeline import RawPhoto  # noqa: E402
 
+try:  # core.timeutil 是云侧"本地日"单一来源（D04-1）；此处让数据锚点与口径解耦
+    from app.core.timeutil import local_utc_offset_minutes  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - 仅当以仓库外路径导入时命中
+    from backend.app.core.timeutil import local_utc_offset_minutes  # type: ignore  # noqa: E402
+
 HZ = (30.2500, 120.1600)   # 杭州
 KM = 0.009                   # 约 1km 纬度差
 
@@ -44,9 +49,23 @@ def _ts(base: datetime, minutes: float) -> datetime:
     return base + timedelta(minutes=minutes)
 
 
+def _local_base(y: int, m: int, d: int) -> datetime:
+    """**本地**正午对应的 UTC 瞬间（数据锚点）。
+
+    2026-09-25（D04-1 日界修复的**连带**）：锚点原为 `datetime(2026,7,10,12, tz=utc)`。
+    在"云侧日界＝UTC"的旧口径下每个场景都落在同一口径日内；D04-1 把日界改成**本地**口径后，
+    UTC 正午＝本地 20:00 ⇒ 场景 3（一日游跨 5 小时）会越过本地午夜，被切成 2+ 张日卡片，
+    与"单日连续移动"的场景意图不符。**这是数据摆放问题、不是聚合错**，故修数据：
+    按本地正午锚定 ⇒ 各场景都在同一**本地**自然日内，场景意图与日界口径无关。
+    """
+    return datetime(y, m, d, 12, 0, 0, tzinfo=timezone.utc) - timedelta(
+        minutes=local_utc_offset_minutes()
+    )
+
+
 def generate() -> list[RawPhoto]:
     photos: list[RawPhoto] = []
-    base = datetime(2026, 7, 10, 12, 0, 0, tzinfo=timezone.utc)
+    base = _local_base(2026, 7, 10)
 
     # --- 1. 短时单事件：一顿饭（同一地点 40 分钟，8 张）---
     for i in range(8):
@@ -111,11 +130,13 @@ def generate() -> list[RawPhoto]:
             photos.append(RawPhoto(id=f"p8-{d}-b", ts=_ts(t, 20), lat=HZ[0], lng=HZ[1], tags=["日常"]))
 
     # --- 9. 低质/重复：同哈希重复 3 张（去重由预处理感知哈希处理，原型标记）---
+    # 2026-09-25（D04-2 修复连带）：`RawPhoto` 已补 `phash` 字段 ⇒ 这组数据**真正**走感知去重
+    # （此前只能用 ocr_text 打标记，聚合时按 id 全保留 —— 与"同哈希只留首张"的原型意图不符）。
     t = base + timedelta(days=14)
     for i in range(3):
         photos.append(RawPhoto(
             id=f"p9-{i}", ts=_ts(t, i * 10), lat=HZ[0], lng=HZ[1],
-            tags=["重复"], ocr_text="DUP-HASH-001",
+            tags=["重复"], ocr_text="DUP-HASH-001", phash="DUP-HASH-001",
         ))
 
     # --- 10. 时间错乱（不覆盖，接受限制；仅测试不崩溃）---
