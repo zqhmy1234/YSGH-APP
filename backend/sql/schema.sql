@@ -399,7 +399,10 @@ CREATE TABLE wechat_messages (
     msg_type    text NOT NULL,                 -- text / image / link / voice
     content     text,
     media_id    text,
-    status      text NOT NULL DEFAULT 'processing',  -- processed / failed
+    status      text NOT NULL DEFAULT 'processing',  -- 取值集合见 db/models/wechat.py::WECHAT_MESSAGE_STATUSES
+                                                     -- （processing/processed/media_failed/sensitive/deleted；D09-10 声明对齐）
+                                                     -- ⚠️ 本 DDL 默认 'processing' 与 ORM 默认 "processed" 不同：
+                                                     -- 收敛需改 DDL ⇒ 属漂移迁移，登记待专用窗口（§5.10 拍板 10.3③）
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 

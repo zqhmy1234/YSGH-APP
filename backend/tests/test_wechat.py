@@ -351,3 +351,33 @@ def test_handle_message_oversized_body_rejected():
     big = "<xml><Encrypt>" + "A" * 110_000 + "</Encrypt></xml>"
     with pytest.raises(ValueError):
         handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", big)
+
+
+def test_wechat_message_status_writes_are_declared():
+    """D09-10 声明漂移门禁：`wechat_messages.status` 的**写入取值**必须 ⊆ ORM 唯一来源
+    `WECHAT_MESSAGE_STATUSES`（`db/models/wechat.py`）——防"服务端写了枚举外的新值 / 三处注释
+    再次漂移"（原状：ORM 注释 3 值、schema.sql 注释 2 值、service 实写 4~5 值）。
+
+    覆盖两种写入形态（都在 `services/wechat/service.py`）：
+      ① `record.status = "x"`（属主赋值）
+      ② `pg_insert(WechatMessage)....values(status="x")`（插入）
+    """
+    import re
+    from pathlib import Path
+
+    from app.db.models.wechat import WECHAT_MESSAGE_STATUSES
+
+    src = (
+        Path(__file__).resolve().parents[1] / "app" / "services" / "wechat" / "service.py"
+    ).read_text(encoding="utf-8")
+
+    assigned = set(re.findall(r'record\.status\s*=\s*"([a-z0-9_]+)"', src))
+    insert_block = re.search(r"pg_insert\(WechatMessage\)(.*?)on_conflict", src, re.S)
+    inserted = set(re.findall(r'status="([a-z0-9_]+)"', insert_block.group(1))) if insert_block else set()
+
+    written = assigned | inserted
+    assert written, "未扫描到任何 wechat_messages.status 写入点（扫描式疑似失效，勿静默通过）"
+    assert written <= set(WECHAT_MESSAGE_STATUSES), (
+        f"写入了未声明的 wechat_messages.status 取值：{sorted(written - set(WECHAT_MESSAGE_STATUSES))}；"
+        f"如属新增合法状态，请同步更新 db/models/wechat.py::WECHAT_MESSAGE_STATUSES 与 schema.sql 注释"
+    )
