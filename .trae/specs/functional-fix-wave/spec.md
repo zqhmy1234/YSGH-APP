@@ -77,6 +77,46 @@
 | 缺陷 | 状态 | 证据 |
 |---|---|---|
 | **D04-1**（P0 · 云侧 L1 日界走 UTC，沪区 00:00–07:59 落前一天） | ✅ **已修 2026-09-25** | 见下 |
+| **D04-2**（P0 · 预处理去重端云分叉 + 双跑门禁无鉴别力） | ✅ **已修 2026-09-25** | 见下 |
+| （随附）**AGG-016 门禁真身**：云侧此前**从不消费夹具** | ✅ **已补 2026-09-25** | 见 D04-2 记录 |
+
+### D04-2 + AGG-016 门禁修复记录（2026-09-25）
+
+**三层根因（比审计原文更完整）**：
+1. **契约缺字段**：端侧 `RawPhoto.phash` 早就有（`client/utils/agg/pipeline.uts:23`），
+   云侧 `agg_types.RawPhoto` **没有 phash** ⇒ 云侧连"同哈希重复照片"这组输入都**无法表达**。
+2. **实现缺步骤**：端侧 `preprocess` **首步**是 `dedup()`；云侧 `preprocess` 直接从排序开始
+   （只做连拍折叠 + GPS 漂移）⇒ 同一输入两端结果分叉。
+3. **门禁只跑一半（真身）**：`scripts/gen_agg_fixtures.py` **只产出端侧 UTS 夹具**
+   （`client/utils/agg/fixtures.uts`），**云侧没有任何夹具消费方** —— 所谓"端云双跑/12 项零漂移"
+   实际是**端侧单跑**；叠加 `run_validation` 那条常量自比的**恒真**断言（D04-14），
+   于是"已校验"的错觉成立，D04-2 这类分叉长期无人发现。
+
+**修法**：
+- `agg_types.RawPhoto` 补 `phash: str = ""`（契约对齐端侧；空串＝按 id 兜底）。
+- `agg_preprocess` 新增 `_dedup(photos)`（key＝phash 非空 ? phash : id；同 key 留**首张**、按输入序），
+  并置于 `preprocess` **首步** —— 与端侧**逐字同语义**（端侧：先按输入序去重、再排序）。
+- `services/events/aggregate._to_raw_photo` 补 `phash ← contents.perceptual_hash`（否则云侧去重
+  只能按永远唯一的 id **空转**）。
+- **新增 `backend/tests/test_agg_fixtures_parity.py`**：让**云侧真实实现**跑**同一份夹具**
+  （直接 `from scripts.gen_agg_fixtures import build_cases`，含 phash 回贴），比对语义与端侧
+  `agg_check.uts` 逐字对齐（簇＝集合语义、日卡＝`date|排序id|稀疏`）。⇒ AGG-016 从此是**真双跑**。
+
+**验收证据**：
+- `pytest backend/tests/test_agg_fixtures_parity.py test_agg_reference.py test_aggregation.py` → **33 passed**
+  （13 个夹具用例在云侧实现上逐条对上）+ 一条"去重用例存在且有真重复哈希"的**反向保护**断言。
+- **反向探针**：把云侧 `preprocess` 的去重撤掉（改回 `sorted(photos, …)`）⇒
+  `[dedup-phash-duplicate] 簇与夹具期望不一致（端云分叉）` **失败** ⇒ 门禁**有鉴别力**；字节级还原一致。
+- 后端相关面：`pytest backend/tests -k "agg or event"` → **137 passed**；另有 4 项
+  `test_ab_scenarios::TestS3Aggregation` 报 **Redis 连接失败**——**环境性**（Docker Desktop 守护进程
+  未运行 ⇒ `yishu-redis` 起不来，AGENTS 已记载"机器重启即眠"），与本次改动无关。
+
+**如实标注（不过度声称）**：`uq_contents_user_hash(user_id, perceptual_hash)` 已使**库内**同用户
+同哈希不可能并存 ⇒ 本项在当前生产路径上的收益主要是**契约与防线对齐**（对 `source='seed'`、
+非库来源、哈希后补等路径有实义），并**顺带把 AGG-016 门禁从"端侧单跑"变成真双跑**。
+
+**余项**：D04-14（`run_validation` 的 AGG-016 断言仍是常量自比恒真 —— 应改为与端侧
+`agg_config.uts` 真实比对）、D04-15（夹具仍无 `approx`/`corrected` 分支用例）。
 
 ### D04-1 修复记录（2026-09-25）
 

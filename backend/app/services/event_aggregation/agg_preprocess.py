@@ -20,14 +20,39 @@ from app.services.event_aggregation.agg_types import (
 from app.services.event_aggregation.st_dbscan import Photo, haversine_m
 
 
+def _dedup(photos: list[RawPhoto]) -> list[RawPhoto]:
+    """① 感知哈希去重（与端侧 `client/utils/agg/pipeline.uts::dedup` **同语义**）
+
+    D04-2（P0 · 功能修复波 2026-09-25）修复：**本函数此前不存在** —— 云侧 `preprocess` 直接从
+    排序开始（只做连拍折叠 + GPS 漂移），而端侧 `preprocess` 的**首步**就是去重 ⇒ 同用户同
+    感知哈希的重复照片在云侧被**双双保留**、端侧只留首张，两端聚合结果分叉。
+
+    为什么长期没被发现：AGG-016"端云双跑门禁"此前**只跑端侧**（`scripts/gen_agg_fixtures.py`
+    只产出 UTS 夹具），云侧没有任何夹具消费方 ⇒ 这道「12 项共享数值零漂移」的结论建立在
+    端侧单跑之上。现新增 `backend/tests/test_agg_fixtures_parity.py` 让云侧跑**同一份**夹具。
+
+    key = `phash` 非空 ? `phash` : `id`；同 key **只保留首张**（按输入序，与端侧同序）。
+    """
+    seen: set[str] = set()
+    kept: list[RawPhoto] = []
+    for p in photos:
+        key = p.phash if p.phash != "" else p.id
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(p)
+    return kept
+
+
 def preprocess(photos: list[RawPhoto]) -> list[Photo]:
-    """预处理：连拍折叠 + GPS 漂移修正（B3-2 #7 / B3-3）
+    """预处理：去重 → 连拍折叠 → GPS 漂移修正（B3-2 #7 / B3-3）
 
     连拍折叠：<5s 间隔折叠为 1 个时间点（保留首张，id 记 burst 组）
     漂移修正：速度校验（步行 6km/h / 驾车 120km/h 上限）→
       单点漂移取众数拉回（corrected）/ 系统性降级不猜（degraded）/ 移动中（approx）
     """
-    photos = sorted(photos, key=lambda p: p.ts)
+    # ① 去重先行（与端侧同序：**先按输入序去重，再排序**；设计 §3：去重(Q16) → 连拍折叠 → 漂移修正）
+    photos = sorted(_dedup(photos), key=lambda p: p.ts)
 
     # --- 连拍折叠 ---
     # 与原始序列的紧邻上一张比较（<5s 归入当前组），而非与折叠后末张比较

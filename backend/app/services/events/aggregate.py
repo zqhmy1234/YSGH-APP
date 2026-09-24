@@ -49,6 +49,11 @@ def _to_raw_photo(c: Content) -> dict:
 
     B3 #6 OCR 内容维：优先取 extra.ocr_text（腾讯 CI OCR），回退 caption text。
     B3-4 封面：extra.quality_score / extra.face_count（腾讯 CI 人脸标签，缺省 None）。
+
+    D04-2（功能修复波 2026-09-25）：补 `phash` ← `contents.perceptual_hash`。此前不传 ⇒ 云侧
+    `preprocess._dedup` 只能按 `id`（永远唯一）**空转**，与端侧"按文件哈希去重"名似而实异。
+    注（如实）：`uq_contents_user_hash(user_id, perceptual_hash)` 已使**库内同用户同哈希不可能并存**，
+    故本项主要是**契约与防线对齐**（对 `source='seed'` / 非库来源 / 哈希后补等路径仍有实义）。
     """
     extra = c.extra or {}
     return {
@@ -61,6 +66,7 @@ def _to_raw_photo(c: Content) -> dict:
         "quality": extra.get("quality_score"),
         "face_count": extra.get("face_count"),
         "source": c.source or "app",
+        "phash": c.perceptual_hash or "",
     }
 
 

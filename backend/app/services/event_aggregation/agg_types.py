@@ -90,6 +90,11 @@ class RawPhoto:
     quality: float | None = None                       # 画面质量分 0-1（B3-4 封面）
     face_count: int | None = None                      # 人脸数（B3-4 封面人脸优先）
     source: str = "app"
+    # D04-2（P0 · 功能修复波 2026-09-25）：**感知哈希**——端侧 `RawPhoto.phash` 早就有
+    # （`client/utils/agg/pipeline.uts:23`），云侧契约却一直缺这个字段 ⇒ 云侧既无法表达
+    # "同哈希重复照片"这组用例，`preprocess` 也就无从去重（与端侧首步去重分叉）。
+    # 空串＝不参与感知去重（按 id 兜底），与端侧语义一致。
+    phash: str = ""
 
 
 @dataclass
