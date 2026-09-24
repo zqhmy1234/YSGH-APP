@@ -18,7 +18,7 @@
 	       ① 本文件改动过编译门（已过）② 后端在**客户端可达的地址**上——内测包指向部署域名，
 	          当前只有本机 127.0.0.1:8000 ⇒ 上机前翻转只会得到"请求失败"（等于把演示数据换成错误提示）。
 	     两条都满足后：删本常量与 mock 层（seedMockMessages/buildMockReply/REPLY_KIND_ROTATION）。 -->
-	<view class="ai-root">
+	<view class="ai-root tk-root">
 		<view class="ai-header">
 			<text class="n2_336">AI</text>
 			<text class="n2_337">问问你的回忆</text>

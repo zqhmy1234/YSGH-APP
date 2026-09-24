@@ -100,9 +100,9 @@
   "token_literals": {
     "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。",
     "total": {
-      "hex": 552,
-      "rgb": 149,
-      "gradient": 10
+      "hex": 354,
+      "rgb": 82,
+      "gradient": 2
     },
     "per_file": {
       "client/pages/about/about.uvue": {
@@ -250,35 +250,10 @@
         "rgb": 0,
         "gradient": 0
       },
-      "client/styles/detail.css": {
-        "hex": 33,
-        "rgb": 24,
-        "gradient": 6
-      },
-      "client/styles/favorites.css": {
-        "hex": 26,
-        "rgb": 11,
-        "gradient": 0
-      },
-      "client/styles/portrait-manage.css": {
-        "hex": 45,
-        "rgb": 2,
-        "gradient": 0
-      },
       "client/styles/record-sheet.css": {
         "hex": 1,
         "rgb": 0,
         "gradient": 0
-      },
-      "client/styles/tab-ai.css": {
-        "hex": 42,
-        "rgb": 14,
-        "gradient": 0
-      },
-      "client/styles/tab-index.css": {
-        "hex": 52,
-        "rgb": 16,
-        "gradient": 2
       }
     },
     "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10",

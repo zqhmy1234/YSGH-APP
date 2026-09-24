@@ -1,6 +1,6 @@
 <template>
 	<!-- ardot 直转 v2：记忆详情页（帧 4:404）· 审计化生成 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- W9 流式重构：一页一个滚动根 —— page-root 锁视口，内容区进 scroll-view，
 		     玻璃操作条在滚动区外 absolute bottom 钉死视口底部（峰宝拍板：操作条固定不滑动） -->
 		<!-- §O P5（峰宝拍板）：玻璃顶栏移出滚动区钉死视口顶——page-root 锁视口，absolute 相对其定位
@@ -144,6 +144,7 @@
 
 <script setup lang="uts">
 	import { ref } from 'vue'
+
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'

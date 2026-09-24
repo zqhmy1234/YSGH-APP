@@ -7,7 +7,7 @@
      FE1（W2-2）：列表走 GET /api/v1/favorites 真端点（play.uts favoritesList）、取消收藏走
      DELETE /api/v1/contents/{id}/favorite（play.uts favoriteRemove）；端点空/失败回落本地
      favorite_ids × timeline 契约；USE_MOCK_FAVORITES 演示条目注入路径已移除（B8 清理项兑现）。 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 60:769 大标题「我的收藏」18pt SemiBold #3A2E25 @y62（trash/settings 二级页先例） -->
 		<view class="nav-title">
 			<text class="nav-title-text">我的收藏</text>

@@ -1,7 +1,7 @@
 <template>
 	<!-- B10 方案A P2：自 pages/index/index.uvue 整体搬迁；TabBar/RecordSheet 挂载与
 	     页级生命周期/ensureLogin 上收 shell（契约见 script），处置记录台账 §EE -->
-<view class="page">
+<view class="page tk-root">
 		<!-- 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） -->
 		<view class="hero-section">
 			<image class="hero-image" src="/static/hero-lake.jpg" mode="aspectFill" lazy-load="true" />
