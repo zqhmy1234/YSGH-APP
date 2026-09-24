@@ -29,7 +29,7 @@
 
 - [x] Task A6: 台账合并、去重、对账与排序：按 收益×风险×可回滚性 折为 P0/P1/P2 并给批次归属建议；对已登记项标注来源不重复立项。
 
-- [ ] Task A7: 提交台账给用户拍板（`NotifyUser`）：用户确认优先级与批次切分后方可进入 Phase B。
+- [x] Task A7: 提交台账给用户拍板（`NotifyUser`）——**已拍板（2026-09-24）**：ORM 为权威 / 64 条功能缺陷另开功能波 / B5 不再顺延；另拍板 L-12 另立令牌波。见 `docs/决策台账.md` §5.10 + ledger §9.7 C/D。
 
 ## Phase B — 分批执行（严格行为等价，逐批过门禁）
 
@@ -51,7 +51,7 @@
 
 - [x] Task B10: 门禁加固（D14-1 / D14-2 / D14-3 / D14-5）——`review_agent` 新增 `audit_axes`（轴 1–4，快/全量均跑）；CI full-gate 新增阻断式 `audit_harness all`；重复模式改总数+per_file 双 gate；镜像豁免收窄（docstring 含"镜像" ∧ 类自身有 `__tablename__`）；体积阈值改由基线驱动。证据：负向探针 → `exports` CRITICAL + `review_agent` 退出码 1，已还原
 
-- [ ] Task B10-b: 门禁缺口补强（深审新立项，待执行）——D04-15 双跑夹具补 `approx`/`corrected` 分支；D11-2 错误码 AST 门禁跨模块盲区；D12-9 轴 2 三向缺一向
+- [x] Task B10-b: 门禁缺口补强——**D11-2 ✅**（错误码 AST 跨模块盲区，旧实现 `capsules.py→[]` / 新实现 `['CAPSULE_001'..'004']`）/ **D11-1 ✅**（补登记 4 枚）/ **D12-9 ✅**（pages.json→物理文件反向对拍）；**D04-15 ⏸ 阻塞**（被功能波 D04-1/2/3/4/5 端云对齐阻塞——补夹具必致双跑门禁变红）。见 ledger §8.3
 
 - [x] Task B12: 脚本/部署可移植性（**部分**）——D13-1 恒绿假门禁退役（CI client tsc 步骤 → 阻断式 `audit_harness client`）；D13-26 deploy/README 补齐；硬编码路径清 4 处（`smoke_cos_upload` / `backup_pg.ps1` / `reinject_missing_photos` / `seed_echo_today` 改 env+显式默认+缺失报错）。**D13-3 只登记**（实跑 `check_env_template.py` 当前即失败：`AGENT_SERVICE_*` config 有模板缺 → 先补模板再挂门禁）
 
@@ -69,9 +69,9 @@
 
 - [x] Task B10-g: 契约快照**再生脚本 + 一致性断言**（D14-7）——新增 `scripts/gen_openapi.py`（写入 / `--check`），接入 `review_agent` 的 `openapi_snapshot` 检查（0=一致放行 / 1=过期阻断 / 2=环境不可导入降级放行）。证据：`--check` 证明现有快照与后端**逐字节一致**（239518 字符，此前无任何机器能证）；负向探针（塞幽灵路径）→ `[FAIL]` + 精确定位「快照有而后端无（1）」EXIT=1、`review_agent` 阻断；再生还原后与 HEAD 逐字节一致
 
-- [x] Task B10-h: 门禁**静默转绿** + **覆盖率双阈值**（D14-19 / D14-8）——① 缺 ruff（`code==127`）/ 缺 pytest 此前**静默返回 True + [skip]**（报告全绿而 lint/测试从未执行）→ 改**默认阻断**，仅 `--allow-missing-tools` 时可见放宽（带 `[放宽]` 标记）；② 覆盖率阈值收敛为单一常量 `COV_THRESHOLD = 60`（此前本工具 50 vs CI 60 ⇒ 本地绿≠CI 绿）。证据：内存级探针（monkeypatch `run`、不改文件）证明 argv 阈值=60、缺工具默认 `ok=False`、放宽路径 ok=True。**待环境验证**：50→60 的实际覆盖率须 Docker 可用后跑 `--full` 确认
+- [x] Task B10-h: 门禁**静默转绿** + **覆盖率双阈值**（D14-19 / D14-8）——① 缺 ruff（`code==127`）/ 缺 pytest 此前**静默返回 True + [skip]**（报告全绿而 lint/测试从未执行）→ 改**默认阻断**，仅 `--allow-missing-tools` 时可见放宽（带 `[放宽]` 标记）；② 覆盖率阈值收敛为单一常量 `COV_THRESHOLD = 60`（此前本工具 50 vs CI 60 ⇒ 本地绿≠CI 绿）。证据：内存级探针（monkeypatch `run`、不改文件）证明 argv 阈值=60、缺工具默认 `ok=False`、放宽路径 ok=True。**✅ 环境验证已解除（2026-09-25）**：Docker/Qdrant 起后 `review_agent --full` EXIT 0，覆盖率 **84.59% ≥ 60**（阈值达标）、api_smoke ✅、research ✅（18 场景）
 
-- [ ] Task B10-i: 门禁域剩余项（**待执行**）——D14-18 退出码口径不一、D14-14/15 轴 2 假阳性、D14-9 密钥模式集双实现、D14-11/12/13 重复样板、D14-22 报告 schema、D14-23 schema-drift job 仅 schedule、D14-6 轴 1 字段级漂移
+- [x] Task B10-i: 门禁域剩余项——**全部收口**（D14-18 退出码 0/1/2 统一、D14-14/15 轴 2 字符级注释判定、D14-9/11/12/13 单一来源化、D14-22 报告 schema、D14-23 去 `continue-on-error`、D14-6 判定已被 B10-g 覆盖）。见下方同项与 ledger §8.3/§8.4
 
 - [x] Task B10-j: 轴 2 **注释判定**假阳性/假阴性（D14-14 / D14-15）——原用「本行前缀有无 `//`/`<!--`」的行级近似 ⇒ ① 块注释内页面引用被当**死路由**（误报 CRITICAL）② 多行 HTML 注释同样漏判 ③ `.ts` 残留不看注释（注释里写「原 './auth.ts'」也报 CRITICAL）④ **反向**：字符串 `http://x` 之后被判为注释 ⇒ **真死路由漏报**。改为字符级 `_comment_ranges()`（跳过字符串字面量）+ `_in_comment(offset)` 精确判定。证据：纯函数对照六例（块注释/多行 HTML/块注释 `.ts`：旧 False→新 True；`http://`：旧 True→新 False；真死路由两侧一致）；文件级负向探针（追加真实死路由）→ CRITICAL @ `shell_state.uts:25`、EXIT=1，已还原；轴 2 常规态无 CRITICAL
 
@@ -98,7 +98,7 @@
 - [x] Task B4: AG8 `alembic check` 漂移治理：先证 N 张遗留表零引用，再决定"显式 drop 迁移"或"ORM 补声明对齐"；**不确定则只登记不删**。
   - **结论：走"只登记"分支**——实跑确认漂移量大且含**破坏性项**（多表 `remove_fk`/`remove_index`、大量 TEXT↔String）；自动生成迁移会破坏约束，**待拍板** schema.sql 与 ORM 谁是权威。
 
-- [ ] Task B5: 客户端巨文件拆分（**需编译门**）：`TabSearch.uvue`、`sync_client.uts`、`uploader.uts`；每拆一次跑冷编译 0 error。
+- [x] Task B5: 客户端巨文件拆分（**编译门已恢复**）——**L-04/L-05/L-06 ✅**（`play.uts` / `sync_client.uts` / `uploader.uts` 按域/职责拆分）· **L-08 ✅**（`detail.uvue` 样式外置）· **L-01 ✅**（`RecordSheet` 2209→**753**）· **L-02 ✅**（`TabIndex` 1046→**738**）；`TabSearch.uvue` 本就未超阈、无需处理；**L-12 令牌收敛 → 另立令牌波**（拍板 10.4）。证据见 §8.6–§8.14 与台账 §4.15。
   - [x] B5.1 先探编译门可用性（HBuilderX GUI + Docker）→ 2026-09-24 **用户手动启动 HBuilderX，编译门恢复**（Docker 亦已起）
   - [x] B5.2a `client/utils/play.uts` 653 行 → 6 域模块（`play_echo`/`play_interview`/`play_messages`/`play_favorite`/`play_trash`/`play_content`）；10 调用点改写；冷编译 ✅（L-04）
   - [x] B5.2b `client/utils/sync_client.uts` 705 行 → 5 模块（`sync_types`/`sync_queue`/`sync_local`/`sync_pipeline`/`sync_schedule`）；6 调用点改写；冷编译 ✅（L-05）

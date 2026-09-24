@@ -39,6 +39,9 @@
 | L-03 | `backend/app/api/contents.py` **902 行**（手抄软删模式 8 处）——深审确认**4 router 物理交错混居**（`router` / `profile_sensitive` / `favorites` / `trash` / waveform） | 巨文件+重复 | P0 | 内容域为后端最热 API；拆分+走 helper 降回归面 | 中（有 contents 测试族护航） | 纯移动+兼容再导出 | pytest contents/content_upload/photo_content + `audit_harness openapi` | B2（**最小方案已定，见 §9.4**） |
 | L-03b | `backend/app/api/events.py` **530 行**（软删手抄 6 处；`_batch_*` 同语义双实现、图片 URL 三写） | 巨文件+重复 | P1 | 事件域读写混杂 | 中 | 纯移动+兼容再导出 | pytest events/aggregation + openapi | B2 |
 | L-03c | `api/events.py:100` / `rag/rewrite.py:15` / `rag/image.py:44,52` / `api/upload.py:264` → **API 层与 rag 层越级直连**（绕过 `services/external` 端口 / `llm_ops` 门面） | 边界/依赖方向（FF1） | P1 | 端口抽象被架空，换厂商成本外溢 | 中 | 行为等价替换 | 静态 import 边 + pytest | 后续 |
+| L-18 | `client/components/TabAi/TabAi.uvue` **974 行**（AI 对话页；含 `USE_MOCK_CHAT` 演示开关，已登记 B8） | 巨文件 | P1 | 补记（**轴 5 基线条目 ↔ 台账 1:1 补齐**，2026-09-25）：原仅存在于 `audit_harness_baseline.json`、台账无对应 L 号 ⇒ 账实两处口径漂移 | 中 | 纯移动（样式外置/抽 composable） | 冷编译 + 轴 5/6/7 | 后续客户端拆分波 |
+| L-19 | `client/pages/favorites/favorites.uvue` **957 行**（收藏页；已随 B5.2f-1 抽 `useWaveform`，975→957） | 巨文件 | P1 | 同上（补 L 号） | 中 | 纯移动 | 冷编译 + 轴 5/6/7 | 后续客户端拆分波 |
+| L-20 | `client/pages/portrait/manage.uvue` **891 行**（画像管理页） | 巨文件 | P1 | 同上（补 L 号） | 中 | 纯移动 | 冷编译 + 轴 5/6/7 | 后续客户端拆分波 |
 
 ## 3. P1 · 结构债
 
@@ -260,7 +263,7 @@
 
 ### 8.1 棘轮状态（2026-09-24 第二轮执行后，第五轮更新 · 含 B5b/B10-q）
 
-- **2026-09-25 更新（L-01 / L-02 均销项后）**：轴 5 存量超阈 **4 → 3**（`RecordSheet` 随 **L-01**（B5.2f-2e，753 行）销项、`TabIndex` 随 **L-02**（L-02b，738 行）销项；余 `TabAi` 974 / `favorites` 957 / `manage` 891）；`audit_harness all` **无 CRITICAL**（INFO 18）；新增**轴 7 类成员解析**（`class_members`，见 §8.14）并接入 `review_agent` 快/全量。
+- **2026-09-25 更新（L-01 / L-02 均销项后）**：轴 5 存量超阈 **4 → 3**（`RecordSheet` 随 **L-01**（B5.2f-2e，753 行）销项、`TabIndex` 随 **L-02**（L-02b，738 行）销项；余 `TabAi` 974 / `favorites` 957 / `manage` 891 —— 三者已于 2026-09-25 补记 **L-18/L-19/L-20**，台账 ↔ 基线 1:1）；`audit_harness all` **无 CRITICAL**（INFO 18）；新增**轴 7 类成员解析**（`class_members`，见 §8.14）并接入 `review_agent` 快/全量；**`review_agent --full` 实跑 EXIT 0**（Docker/Qdrant 已起）：`syntax` 376 文件 ✅ / `lint` ✅ / `tests` ✅（pytest 主套件 + `-m rag` 分组，**覆盖率 84.59% ≥ 60**）/ `api_smoke` ✅ / `research` ✅ 18 场景 —— 承 §8.3 B10-h 的"覆盖率待环境验证"**就此解除**。
 - `audit_harness all`：**无 CRITICAL**（INFO 16）；轴 5 存量超阈 **7 → 6 → 5 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**；`client/pages/detail/detail.uvue` 随 **B5d** 样式外置**销项移除**，1167→577 行；`RecordSheet`/`TabIndex` 随 **B5.2e** 样式外置**下调计数**——2208→1354 / 1740→1065，条目**保留冻结**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）；**轴 4 零调用能力导出存量 9 个已冻结**（B10-d 露出 `AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`；B10-f 补递归露出 `WALK_SPEED_MS`；**B10-q 剔注释后新露出 4**：`AGG_CHECK_ON_DEVICE`/`invalidateTimelineCache`/`isIgnoredEvent`/`parseErrorString`），引用计数已**剔除注释**（B10-q），且新增"僵尸豁免清算"。
 - 门禁接入（**已消除三类"恒绿假门禁"**）：
   - `review_agent` 现含 `structure`（轴 5/6，B1）+ **`audit_axes`（轴 1–4，B10）**，快/全量均跑、秒级；
