@@ -144,7 +144,7 @@
 
 <script setup lang="uts">
 	import { ref } from 'vue'
-import { WaveformCache } from '@/composables/useWaveform'
+	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
 	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'

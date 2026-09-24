@@ -756,6 +756,26 @@ def structure_findings() -> list[str]:
     return _filesize_findings()[0] + _dup_findings()[0]
 
 
+def audit_client_imports_axis() -> None:
+    """轴 6：客户端模块导出符号「用了却没 import」（2026-09-24 · B5.2f 实测暴露）。
+
+    背景：HBuilderX CLI 的「项目 client 编译成功」**只覆盖语法/解析**，不覆盖符号解析——
+    `new RecordAnimations()` 写在 .uvue 里却完全没有 import，编译**仍报成功**（对比：import 丢逗号
+    这类语法错误会被 `[vue/compiler-sfc] Unexpected token` 抓到）。⇒ 必须有本轴静态补位。
+    """
+    from audit_client_imports import scan as _scan_client_imports
+
+    violations, n = _scan_client_imports()
+    if violations:
+        for v in violations:
+            CRITICAL.append(
+                f"[客户端导入] {v['file']} 使用了 {v['symbol']}"
+                f"（定义于 {', '.join(v['declared_in'])}）却缺少 import"
+            )
+    else:
+        INFO.append(f"[客户端导入] 客户端模块导出符号使用均有 import（扫描导出 {n} 个）")
+
+
 def axes_findings() -> tuple[list[str], list[str], str]:
     """公共入口：**轴 1-4**（契约 / 客户端 / 模型 / 导出）的 (CRITICAL, INFO, 备注)。
 
@@ -793,7 +813,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="harness 多轴审计（契约/客户端/模型/导出/体积/重复）")
     ap.add_argument(
         "axis",
-        choices=["openapi", "client", "models", "exports", "filesize", "dups", "all"],
+        choices=["openapi", "client", "client_imports", "models", "exports", "filesize", "dups", "all"],
     )
     ap.add_argument("--skip-openapi", action="store_true", help="无后端环境时跳过契约轴")
     ap.add_argument("--json", metavar="PATH", help="把发现写入 JSON（供 CI/台账引用）")
@@ -803,6 +823,8 @@ def main() -> int:
         audit_openapi()
     if args.axis in {"client", "all"}:
         audit_client()
+    if args.axis in {"client_imports", "all"}:
+        audit_client_imports_axis()
     if args.axis in {"models", "all"}:
         audit_models()
     if args.axis in {"exports", "all"}:

@@ -74,7 +74,7 @@
 
 <script setup lang="uts">
 	import { ref, computed, watch, onMounted } from 'vue'
-import { WaveformCache } from '@/composables/useWaveform'
+	import { WaveformCache } from '@/composables/useWaveform'
 	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
 	import {

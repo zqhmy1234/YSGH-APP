@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-09-24 15:38 · commit 18fbeff · ts=1790235487
+- **错误**：pre-commit 门禁因 lint 阻断：新增 Python 脚本缺结尾换行；函数内的两个 import（audit_harness / audit_client_imports）被 ruff I001 判为 import 块未排序
+- **根因**：本仓 ruff 规则含 W292（文件末尾需换行）与 I001（import 块需按分组排序，函数内局部 import 同样适用）。惯例：新增脚本结尾必须留空行；同一函数内多条局部 import 需按字母序并保持同一分组。另注：门禁一旦失败就会写失败状态文件，后续提交前必须先登记教训——lint 修复循环里别忘了这一步。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-09-24 15:34 · commit 18fbeff · ts=1790235245
+- **错误**：反向探针（故意让门禁变红以证明非空转）会写入 .cowork-temp 的失败状态文件，于是后续 review_agent 会按设计**再次要求登记教训**——若只登记了第一条实质教训，探针之后的提交会被 lessons 检查卡住（❌ 审核未通过：lessons）
+- **根因**：教训强制机制以「失败状态文件时间戳 vs lessons.md 最新条目时间」为准；探针造成的失败与真实失败在状态文件里无法区分。⇒ 每次跑反向探针后，要么补一条流程性教训，要么把探针放在该次提交之后；不可直接删除 .cowork-temp 状态文件（那是绕过门禁）。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-09-24 15:30 · commit 18fbeff · ts=1790235013
+- **错误**：HBuilderX 客户端「项目 client 编译成功」只覆盖语法/解析、不覆盖符号解析——.uvue 里 new RecordAnimations 完全没有任何 import 也报编译成功
+- **根因**：把「编译通过」当成跨模块引用成立的证据。B5.2f 实测：RecordAnimations/DotPt 与自定义标签 4 个类名助手共 8 处缺 import，冷编译全程「成功」；对比语法级错误（import 丢逗号）会被 [vue/compiler-sfc] Unexpected token 抓到 ⇒ 编译门的覆盖面＝语法，不含符号解析。补位：新增 scripts/audit_client_imports.py + audit_harness 轴 client_imports（含反向探针）。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-09-24 12:30 · commit eaf0163 · ts=1790224243
 - **错误**：uni-app x 的 uvue 样式外置能力（<style> 内 @import 外部 .css）此前无先例，容易想当然以为必须先装 scss 插件；且"编译通过"不足以证明 @import 生效（ucss 可能静默丢弃）
 - **根因**：本机 HBuilderX plugins/ 无 scss/sass 编译插件、本仓也无 lang=scss/@import/.scss 先例 ⇒ 能力边界未知；而 @import 若被丢弃，编译仍会"成功"（无 error），属静默失效

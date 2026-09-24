@@ -107,7 +107,9 @@
   - [x] B5.2e（样式半）`RecordSheet.uvue`（2209→**1354**）/ `TabIndex.uvue`（1742→**1065**）样式外置到 `client/styles/{record-sheet,tab-index}.css`；逐行一致 + 冷编译 ✅ + 产物类名取证；baseline 计数下调
   - [x] B5.2f-1（第八轮）波形缓存 **5 份同构副本 → `useWaveform` 组合式函数**：新增 `client/composables/useWaveform.uts`；5 组件改用；合计 **−91 行**；等价性证明 + 冷编译 ✅；baseline 下调（TabIndex 1065→1046 / favorites 974→957）
   - [x] B5.2f-2a（第九轮）`RecordSheet` 圆点+轮盘动画 → `useRecordAnimations`（1354→**1135**，−219）；冷编译 ✅；baseline 下调
-  - [ ] B5.2f-2b（续）`RecordSheet` 继续抽（自定义标签 ~95 / 语音录制流程 ~225 / 选图·文字提交 ~150）；`TabIndex` 抽 L2/L3 归并 + 照片挂载（~250）（**仍 >800，L-01/L-02 未闭环**；**真机验收待设备**）
+  - [x] B5.2f-2b（第十轮）`RecordSheet` 自定义标签助手 → `client/utils/custom_labels.uts`（1135→**1084**）；冷编译 ✅；baseline 下调
+  - [x] 🚨 GAP-1（第十轮 · 新发现并补门禁）：HBuilderX 编译**只覆盖语法不覆盖符号解析**（8 处缺 import 仍报"编译成功"）→ 新增 `scripts/audit_client_imports.py` + `audit_harness` 轴 `client_imports` + `review_agent.check_audit_axes` 接入（端到端反向探针证真红）
+  - [ ] B5.2f-2c（续）`RecordSheet` 继续抽（语音录制流程 ~225 / 选图·文字提交 ~150）；`TabIndex` 抽 L2/L3 归并 + 照片挂载（~250）（**仍 >800，L-01/L-02 未闭环**；**真机验收待设备**）
   - [x] **决策**：L-12 令牌收敛 → ✅ **另立「令牌波」**（判为复杂，台账 §5.10 拍板 10.4）；64 条功能缺陷 → ✅ **另开「功能修复波」**（拍板 10.1）
 
 - [x] Task B10-i: 门禁自身可靠性 4 项：`D14-23` CI schema-drift 去 `continue-on-error` / `D14-22` 统一机读 schema（新 `scripts/gate_report.py`）/ `D14-12` 收敛 subprocess 双实现（新 `scripts/gate_proc.py`）/ `D14-6` 判定已被 B10-g 覆盖。见 ledger §8.4。

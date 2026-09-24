@@ -211,7 +211,7 @@
 <script setup lang="uts">
 	// 卡PB R1：computed 显式引入（ref 沿页面现状未显式引入，避免重复声明）
 	import { computed, onMounted, watch } from 'vue'
-import { WaveformCache } from '@/composables/useWaveform'
+	import { WaveformCache } from '@/composables/useWaveform'
 	import { requestShellTab } from '@/utils/shell_state'
 	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {

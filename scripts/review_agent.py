@@ -377,13 +377,29 @@ def check_audit_axes() -> tuple[bool, str]:
     （不阻断）——见 `axes_findings` 注释。快/全量模式均执行（轴 2/3/4 为纯文件扫描）。
     """
     sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_client_imports import scan as scan_client_imports
     from audit_harness import axes_findings
 
     crit, info, note = axes_findings()
+
+    # 轴 6（2026-09-24 · B5.2f 实测暴露）：客户端模块导出符号「用了却没 import」。
+    # 背景：HBuilderX「编译成功」**只覆盖语法**，符号未解析也报成功 ⇒ 原有门禁全绿而代码是坏的。
+    # 口径：CRITICAL 阻断（与轴 1-4 同）。
+    import_violations, n_exports = scan_client_imports()
+    if import_violations:
+        crit = list(crit) + [
+            f"[客户端导入] {v['file']} 使用了 {v['symbol']}"
+            f"（定义于 {', '.join(v['declared_in'])}）却缺少 import"
+            for v in import_violations
+        ]
+    info = list(info) + [f"[客户端导入] 扫描导出 {n_exports} 个，符号使用均有 import"
+                         if not import_violations else
+                         f"[客户端导入] {len(import_violations)} 处缺 import"]
+
     suffix = f"；{note}" if note else ""
     if crit:
         return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
-    return True, f"跨轴审计（契约/客户端/模型/导出）：无 CRITICAL；INFO {len(info)} 项{suffix}"
+    return True, f"跨轴审计（契约/客户端/模型/导出/客户端导入）：无 CRITICAL；INFO {len(info)} 项{suffix}"
 
 
 def check_env_template() -> tuple[bool, str]:

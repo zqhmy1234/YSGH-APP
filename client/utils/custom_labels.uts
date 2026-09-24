@@ -1,0 +1,80 @@
+/**
+ * 自定义分类标签：**本地持久化 + 选中态类名**（B5.2f-2b · 2026-09-24 重构波）
+ *
+ * 自 `components/RecordSheet/RecordSheet.uvue` **纯移动**而来（原 `readCustomLabels` /
+ * `persistCustomLabels` / `isCustOn` + 4 个 chip 类名助手）。组件侧只保留 3 个 ref
+ * （`customLabels` / `plusOpen` / `newCat`）与 3 个改状态的函数
+ * （`confirmCustom` / `onCustChipTap` / `onPlusTap`）。
+ *
+ * 形态调整（无逻辑变更）：
+ *   · 原 `isCustOn(c)` 读组件 `manualLabel.value` ⇒ 改为**入参** `manual: string`；
+ *   · 函数名加域前缀（`custChipCls` → `customChipCls` 等），避免在组件里与"内建标签"助手混淆。
+ *
+ * 诚实边界（原注释保留）：后端 `corrections.py VALID_CLASSES` 白名单**不支持自由标签** ⇒
+ * 自定义选中时保存会跳过 `submitCorrection`（台账 A 类登记）。
+ *
+ * ⚠️ 选中语义**刻意不与内建标签对齐**：内建 chip 的有效选中 = 手选优先、未手选取 AI 预选；
+ *   自定义 chip 只看 `manualLabel == 'custom:' + 名称`（AI 从不预选自定义标签）——保持逐字等价。
+ */
+
+/** 本地存储键（逗号串） */
+export const CUSTOM_LABELS_KEY = 'custom_labels'
+
+/** 读取已存的自定义标签（兼容 逗号串 / 数组 / 空 / 异常 四种形态；原实现逐字保留） */
+export function readStoredCustomLabels(): Array<string> {
+	const out: Array<string> = []
+	try {
+		const raw = uni.getStorageSync(CUSTOM_LABELS_KEY)
+		if (raw == null) {
+			return out
+		}
+		if (typeof raw == 'string') {
+			const s = raw as string
+			if (s == '' || s == '[]') {
+				return out
+			}
+			const parts = s.split(',')
+			for (let i = 0; i < parts.length; i++) {
+				const p = parts[i].replace('[', '').replace(']', '').replace(' ', '')
+				if (p != '') {
+					out.push(p)
+				}
+			}
+			return out
+		}
+		const arr = raw as Array<string>
+		for (let i = 0; i < arr.length; i++) {
+			if (arr[i] != '') {
+				out.push(arr[i])
+			}
+		}
+		return out
+	} catch (e) {
+		return out
+	}
+}
+
+export function persistCustomLabels(labels: Array<string>): void {
+	uni.setStorageSync(CUSTOM_LABELS_KEY, labels.join(','))
+}
+
+/** 自定义标签是否处于选中态（key = `'custom:' + 名称`；只看手选，不看 AI 预选） */
+export function customOn(c: string, manual: string): boolean {
+	return manual == 'custom:' + c
+}
+
+export function customChipCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'chip-on' : ''
+}
+
+export function customChipTextCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'chip-on-text' : ''
+}
+
+export function customVChipCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'v-chip-on' : ''
+}
+
+export function customVChipTextCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'v-chip-on-text' : ''
+}

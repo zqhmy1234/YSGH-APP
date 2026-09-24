@@ -78,7 +78,7 @@
 		voiceProgressOf
 	} from '@/utils/audio_player'
 	import { EventPhoto } from '@/utils/timeline'
-import { WaveformCache } from '@/composables/useWaveform'
+	import { WaveformCache } from '@/composables/useWaveform'
 
 	// ── 页面参数 ──
 	let themeName = ref('')

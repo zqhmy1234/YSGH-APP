@@ -118,8 +118,8 @@
 							<view v-for="t in allLabels" :key="t.key" class="v-chip" :class="vChipCls(t.key)" @tap="onVChipTap(t.key)">
 								<text class="v-chip-text" :class="vChipTextCls(t.key)">{{ t.cn }}</text>
 							</view>
-							<view v-for="c in customLabels" :key="'c_' + c" class="v-chip" :class="custVChipCls(c)" @tap="onVChipTap('custom:' + c)">
-								<text class="v-chip-text" :class="custVChipTextCls(c)">{{ c }}</text>
+							<view v-for="c in customLabels" :key="'c_' + c" class="v-chip" :class="customVChipCls(c, manualLabel)" @tap="onVChipTap('custom:' + c)">
+								<text class="v-chip-text" :class="customVChipTextCls(c, manualLabel)">{{ c }}</text>
 							</view>
 							<view class="v-chip v-chip-plus" @tap="onPlusTap"><text class="v-chip-plus-text">＋</text></view>
 						</view>
@@ -202,8 +202,8 @@
 							<view v-for="t in allLabels" :key="t.key" class="chip" :class="manualLabel == t.key ? 'chip-on' : ''" @tap="onChipTap(t.key)">
 								<text class="chip-text" :class="manualLabel == t.key ? 'chip-on-text' : ''">{{ t.cn }}</text>
 							</view>
-							<view v-for="c in customLabels" :key="'c_' + c" class="chip" :class="custChipCls(c)" @tap="onCustChipTap(c)">
-								<text class="chip-text" :class="custChipTextCls(c)">{{ c }}</text>
+							<view v-for="c in customLabels" :key="'c_' + c" class="chip" :class="customChipCls(c, manualLabel)" @tap="onCustChipTap(c)">
+								<text class="chip-text" :class="customChipTextCls(c, manualLabel)">{{ c }}</text>
 							</view>
 							<view class="chip chip-plus" @tap="onPlusTap"><text class="chip-plus-text">＋</text></view>
 						</view>
@@ -256,6 +256,11 @@
 	// 手写 `import { onMounted } from '@dcloudio/uni-app'` 会编译失败
 	// （真机实锤 2026-08-31："onMounted" is not exported by "@dcloudio/uni-app/dist-x/uni-app.es.js"）。
 	import { ensureLogin } from '@/utils/auth'
+	import { RecordAnimations, DotPt } from '@/composables/useRecordAnimations'
+	import {
+		readStoredCustomLabels, persistCustomLabels, customChipCls, customChipTextCls,
+		customVChipCls, customVChipTextCls
+	} from '@/utils/custom_labels'
 	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
 	import { createTextContentRemark, createVoiceContentRemark } from '@/utils/capsule_api'
 	import {
@@ -374,7 +379,7 @@
 			}
 		})
 		// 自定义分类：进面板即读本地持久化（custom_labels 逗号串）
-		customLabels.value = readCustomLabels()
+		customLabels.value = readStoredCustomLabels()
 		// P6：宿主页带模式直达（空状态「拍下第一张」→ 直弹相机）
 		if (props.initialMode == 'photo') {
 			directPick.value = true   // 直达期间隐藏面板 UI，防「先闪面板再拉相机」
@@ -535,41 +540,6 @@
 	let customLabels = ref<Array<string>>([])
 	let plusOpen = ref(false)
 	let newCat = ref('')
-	function readCustomLabels(): Array<string> {
-		const out: Array<string> = []
-		try {
-			const raw = uni.getStorageSync('custom_labels')
-			if (raw == null) {
-				return out
-			}
-			if (typeof raw == 'string') {
-				const s = raw as string
-				if (s == '' || s == '[]') {
-					return out
-				}
-				const parts = s.split(',')
-				for (let i = 0; i < parts.length; i++) {
-					const p = parts[i].replace('[', '').replace(']', '').replace(' ', '')
-					if (p != '') {
-						out.push(p)
-					}
-				}
-				return out
-			}
-			const arr = raw as Array<string>
-			for (let i = 0; i < arr.length; i++) {
-				if (arr[i] != '') {
-					out.push(arr[i])
-				}
-			}
-			return out
-		} catch (e) {
-			return out
-		}
-	}
-	function persistCustomLabels(): void {
-		uni.setStorageSync('custom_labels', customLabels.value.join(','))
-	}
 	function confirmCustom(): void {
 		const name = newCat.value.replace(' ', '').trim()
 		if (name == '') {
@@ -594,26 +564,10 @@
 			return
 		}
 		customLabels.value.push(name)
-		persistCustomLabels()
+		persistCustomLabels(customLabels.value)
 		manualLabel.value = 'custom:' + name
 		newCat.value = ''
 		plusOpen.value = false
-	}
-	// 自定义 chip 选中态（key='custom:'+名称；复用手选覆盖/取消语义）
-	function isCustOn(c: string): boolean {
-		return manualLabel.value == 'custom:' + c
-	}
-	function custChipCls(c: string): string {
-		return isCustOn(c) ? 'chip-on' : ''
-	}
-	function custChipTextCls(c: string): string {
-		return isCustOn(c) ? 'chip-on-text' : ''
-	}
-	function custVChipCls(c: string): string {
-		return isCustOn(c) ? 'v-chip-on' : ''
-	}
-	function custVChipTextCls(c: string): string {
-		return isCustOn(c) ? 'v-chip-on-text' : ''
 	}
 	function onCustChipTap(c: string): void {
 		const key = 'custom:' + c

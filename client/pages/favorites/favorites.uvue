@@ -132,7 +132,7 @@
 
 <script setup lang="uts">
 	import { ref, computed } from 'vue'
-import { WaveformCache } from '@/composables/useWaveform'
+	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
 	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
