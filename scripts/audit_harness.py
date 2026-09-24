@@ -61,6 +61,9 @@ REPO = Path(__file__).resolve().parent.parent
 # D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
 from gate_io import force_utf8  # noqa: E402
 
+# D14-22（B10-i）：机读报告**统一 schema + 带兜底写入**的单一实现（与 review_agent/test_agent 共用）
+from gate_report import write_report  # noqa: E402
+
 force_utf8()
 CLIENT = REPO / "client"
 BACKEND = REPO / "backend"
@@ -817,11 +820,17 @@ def main() -> int:
     print("-" * 62)
 
     if args.json:
-        Path(args.json).write_text(
-            json.dumps({"critical": CRITICAL, "info": INFO}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        print(f"已写入 {args.json}")
+        # D14-22（B10-i）：原写 `{critical, info}`——与 review-report.json **键集无交集**，
+        #   且 write_text 无兜底（路径不可写即崩）。改为统一信封（schema_version/generated_at/passed）
+        #   + 带兜底写入；自有键（critical/info）保留。
+        if write_report(args.json, {
+            "tool": "audit_harness",
+            "passed": not CRITICAL,
+            "critical": CRITICAL,
+            "info": INFO,
+            "critical_count": len(CRITICAL),
+        }):
+            print(f"已写入 {args.json}")
 
     return 1 if CRITICAL else 0
 

@@ -19,7 +19,8 @@ on:
   pull_request:
     branches: [develop, main]
   # P0-4（2026-08-27）：schema.sql ↔ alembic 漂移检测 weekly 巡检（周一 03:00 UTC），
-  # 失败仅出 annotation，不参与 PR 门禁；支持 workflow_dispatch 手动触发。
+  # 定时 run 检出漂移即**红**（= 告警信号；D14-23 修正后已去掉 continue-on-error）；
+  # 不参与 PR 门禁（本 job 不由 push/PR 触发）；支持 workflow_dispatch 手动触发。
   # 同 schedule 触发 pip-audit-weekly（T7 依赖漏洞定时审计）。
   schedule:
     - cron: '0 3 * * 1'
@@ -316,7 +317,10 @@ jobs:
   # CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
   # 设计：脚本在临时库分别用 schema.sql 与 alembic head（失败回退 ORM metadata）建库，
   #       对比表集合/列/索引/外键/唯一约束/主键；退出码 1 = 检出漂移。
-  # 失败策略：continue-on-error 仅出 annotation，不阻断主流水线（避免拖慢 PR）。
+  # 失败策略（B10-i/D14-23 2026-09-24 修正）：**不再使用 continue-on-error**——
+  #       原设置使本 job 永绿，漂移无法产生任何信号；现改为「定时 run 漂移即红」
+  #       （= 告警信号，与同文件 pip-audit-weekly「发现即失败」口径一致）。
+  #       仍**不阻断 push/PR 主流水线**（本 job 仅 schedule/workflow_dispatch 触发，不拖慢 PR）。
   schema-drift-weekly:
     name: Schema Drift（weekly，schema.sql ↔ alembic）
     runs-on: ubuntu-latest
@@ -350,10 +354,12 @@ jobs:
       - name: Install deps (sqlalchemy/psycopg/alembic/pydantic——仅漂移检测所需，不装全量 requirements)
         run: pip install sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings
 
-      - name: Run schema drift check (漂移仅出 annotation，不阻断)
-        # P0-4：检出漂移 → 脚本 exit 1 + ::error:: annotation；continue-on-error 保证
-        # weekly job 失败不破坏主流水线状态（主流水线=fast-gate/full-gate，PR 不受影响）。
-        continue-on-error: true
+      - name: Run schema drift check (漂移即 fail —— 定时红为告警信号)
+        # P0-4：检出漂移 → 脚本 exit 1（+ ::error:: annotation）。
+        # B10-i/D14-23（2026-09-24 重构波）：本步骤原为 `continue-on-error: true` ⇒ **本 job 永绿**，
+        #   schema.sql ↔ alembic 漂移**无法产生任何信号**（与同文件 pip-audit-weekly 的
+        #   「发现即失败、红色定时 run 即告警」口径自相矛盾）。现**去掉 continue-on-error**：
+        #   本 job 仅 schedule/workflow_dispatch 触发 ⇒ 不阻断 push/PR，但定时漂移会变红告警。
         run: python scripts/check_schema_drift.py --admin-url postgresql+psycopg://postgres:admin@localhost:5432/postgres
 
   # ============================================================

@@ -20,8 +20,6 @@
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +29,12 @@ import gate_exit  # noqa: E402
 # D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
 # D14-18 / B10-o：退出码口径单一来源（scripts/gate_exit.py）
 from gate_io import force_utf8  # noqa: E402
+
+# D14-12（B10-i）：子进程包装**单一实现**（scripts/gate_proc.py，与 review_agent 共用）
+from gate_proc import run as _gate_run  # noqa: E402
+
+# D14-22（B10-i）：机读报告统一 schema + 带兜底写入（scripts/gate_report.py，三工具共用）
+from gate_report import write_report  # noqa: E402
 
 force_utf8()
 
@@ -46,23 +50,9 @@ SUB_ENV = {
 
 
 def run(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
-    sub_env = {**SUB_ENV, **(env or {})}
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd or ROOT,
-            timeout=600, encoding="utf-8", errors="replace", env=sub_env, check=False,
-        )
-        if proc.returncode < 0:
-            return proc.returncode, (
-                f"进程被杀（returncode={proc.returncode}，疑似内存不足 OOM）\n"
-                "  处理：释放内存（关 HBuilderX 编译残留/其他大进程）后重跑；"
-                "或 python scripts/test_agent.py --only research 分段验证"
-            )
-        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except FileNotFoundError:
-        return 127, f"command not found: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
+    """本工具的 `run` 仅**绑定自有差异**（超时 600 + 含 PYTHONPATH 的基础 env）；
+    子进程包装逻辑（UTF-8/错误分支/OOM 提示）已收敛到 scripts/gate_proc.py（D14-12 / B10-i）。"""
+    return _gate_run(cmd, cwd=cwd, timeout=600, env=env, base_env=SUB_ENV)
 
 
 def _free_memory_gb() -> float:
@@ -327,8 +317,9 @@ def main() -> int:
         "cleanup_test_collections": {"ok": cleanup_ok, "output": cleanup_out},
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    # D14-22（B10-i）：统一信封（schema_version/generated_at/passed）+ 带兜底写入；
+    # 自有键（blocking_sections/env_blocked_sections/details/cleanup_test_collections）保留。
+    write_report(REPORT_PATH, report)
 
     print("=" * 60)
     print("代码测试 Agent")

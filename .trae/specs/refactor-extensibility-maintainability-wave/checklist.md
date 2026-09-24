@@ -100,3 +100,11 @@
 - [ ] **B5.2f 剩余客户端拆分**：`TabSearch.uvue`/`TabIndex.uvue`/`RecordSheet.uvue`（L-01/02，script 侧抽 composable；本体可冷编译+逐行等价验证，**L-01/L-02 真机验收待设备**）
 - [x] **决策已拍板（2026-09-24）**：**L-12 令牌收敛 → 另立「令牌波」**（判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机；台账 §5.10 拍板 10.4）；**64 条功能缺陷 → 另开「功能修复波」**（拍板 10.1）；本波 §7 边界已同步
 - [x] 未使用 `--no-verify` 绕过门禁 —— 证据：B5a/B5b 提交均经 hook `[pre-commit] 审核通过`
+
+## H. B10-i 门禁自身可靠性（2026-09-24 · 第六轮）
+
+- [x] **D14-23** CI `schema-drift-weekly` **永绿**（`continue-on-error: true` + 仅 schedule）→ **去掉 `continue-on-error`**（本 job 仍仅 schedule/dispatch 触发、不进 push/PR，但**定时检出漂移即红=告警信号**，口径对齐同文件 `pip-audit-weekly`）—— 证据：`yaml.safe_load` 解析通过、目标 step 已无 `continue-on-error`、`if` 仍限定 `schedule/workflow_dispatch`
+- [x] **D14-22** 机读报告 schema 不统一 + 写盘无兜底 → 新增 `scripts/gate_report.py`（`SCHEMA_VERSION`/`COMMON_KEYS`/带兜底 `write_report`），三工具接入、**自有键全保留** —— 证据：`COMMON ok=True`；两工具实跑报告均含 `schema_version/generated_at/passed`；不可写路径 → `[WARN]` 且 `EXIT=0`（**原实现会崩**）
+- [x] **D14-12** subprocess 双实现（超时 300/600、env、OOM 分支各异）→ 新增 `scripts/gate_proc.py` 单一实现；`review_agent` 删本地 `run`、`test_agent` 改 2 行委托 —— 证据：行为探针（缺命令→127 / 超时→124）+ 源码断言（`review_agent` 无本地 `def run`、`test_agent` 无 `subprocess.run(`）+ 两工具实跑 ✅
+- [x] **D14-6** 轴 1"字段级漂移未覆盖" **判定已被 B10-g 覆盖**（**无需新增代码**）—— 证据：反向探针（临时给 `SyncPushResult` 加字段）→ 轴 1 仍报"路径与方法集完全对齐 ✓"、而 `openapi_snapshot` **`[FAIL]` 且明示"差异在字段级"**；探针已完全还原（`gen_openapi --check` 复绿）
+- [x] 未使用 `--no-verify` 绕过门禁 —— 证据：本批提交经 hook `[pre-commit] 审核通过`

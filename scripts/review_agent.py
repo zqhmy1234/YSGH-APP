@@ -39,9 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -49,10 +47,13 @@ from pathlib import Path
 # D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
 from gate_io import force_utf8  # noqa: E402
 
-force_utf8()
+# D14-12（B10-i）：子进程包装**单一实现**（scripts/gate_proc.py，与 test_agent 共用）
+from gate_proc import run  # noqa: E402
 
-# subprocess 输出按 UTF-8 解码（Windows 默认 GBK 会炸）
-SUB_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+# D14-22（B10-i）：机读报告统一 schema + 带兜底写入（scripts/gate_report.py，三工具共用）
+from gate_report import write_report  # noqa: E402
+
+force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_DIR = ROOT / ".cowork-temp"
@@ -75,19 +76,6 @@ TEXT_EXTS = (
     ".txt", ".properties", ".ps1", ".sh", ".mjs", ".bat", ".xml", ".gitignore",
     ".example", ".mako",
 )
-
-
-def run(cmd: list[str], cwd: Path | None = None, timeout: int = 300) -> tuple[int, str]:
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd or ROOT,
-            timeout=timeout, encoding="utf-8", errors="replace", env=SUB_ENV, check=False,
-        )
-        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except FileNotFoundError:
-        return 127, f"command not found: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
 
 
 def _skip_path(parts: tuple[str, ...]) -> bool:
@@ -511,8 +499,9 @@ def main() -> int:
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in checks.items()},
         "generated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
     }
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    # D14-22（B10-i）：统一信封（schema_version/generated_at/passed）+ 带兜底写入；
+    # 自有键（mode/blocking_checks/env_blocked_checks/details）保留（CI 依赖 details/blocking_checks）。
+    write_report(REPORT_PATH, report)
 
     print("=" * 60)
     print(f"Pre-Commit 代码质量审核（{'全量' if args.full else '快速'}模式）")
