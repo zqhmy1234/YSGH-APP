@@ -53,9 +53,39 @@ def _iter_sources():
                 yield p
 
 
+def _strip_var_fallbacks(code: str) -> str:
+    """把 `var(--x, 回退值)` 收敛为 `var(--x)`。
+
+    为什么：P2 试点采用「令牌 + 字面量回退」（`var(--c-ink-900, #3a2e25)`）——**回退值不算硬编码**，
+    它只是令牌不可解析时的兜底；不剔除的话，令牌化再彻底计数也不降，棘轮永远看不出进度。
+    括号配平（回退值里可能自带 `rgba(...)`）。
+    """
+    out: list[str] = []
+    i = 0
+    while True:
+        k = code.find("var(", i)
+        if k == -1:
+            out.append(code[i:])
+            break
+        out.append(code[i:k])
+        j = k + 4
+        depth = 1
+        while j < len(code) and depth:
+            if code[j] == "(":
+                depth += 1
+            elif code[j] == ")":
+                depth -= 1
+            j += 1
+        inner = code[k + 4 : j - 1]
+        name = inner.split(",", 1)[0].strip()
+        out.append(f"var({name})")
+        i = j
+    return "".join(out)
+
+
 def _counts(text: str) -> dict[str, int]:
-    """注释剔除后计数。渐变里的 rgba 不再重复计入 rgb（先剔渐变再数 rgb）。"""
-    code = strip_comments(text)
+    """注释剔除 → 回退值剔除 → 计数。渐变里的 rgba 不再重复计入 rgb（先剔渐变再数 rgb）。"""
+    code = _strip_var_fallbacks(strip_comments(text))
     grad = GRAD_RE.findall(code)
     rest = GRAD_RE.sub("", code)
     return {"hex": len(HEX_RE.findall(rest)), "rgb": len(RGB_RE.findall(rest)), "gradient": len(grad)}

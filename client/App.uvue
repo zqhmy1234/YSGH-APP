@@ -110,4 +110,13 @@
 	   漏写的 text 会退回系统字体，行高与字宽与设计稿不符。
 	   同理，:class 绑定的叠加类（如 TabBar 的 .text-active）也需各自
 	   独立声明 font-family / font-weight，不能依赖基础类。 */
+	/* 令牌波 P2 试点（2026-09-25）：由 client/design_tokens.dtcg.json 解析生成，勿手工改值 */
+	.tk-root {
+		--c-text-primary: #3a2e25;
+		--c-text-secondary: #8a7a6a;
+		--c-text-tertiary: #b3a696;
+		--c-bg-page: #f8f7f4;
+		--c-bg-card: #ffffff;
+		--c-paper-400: #ede5d5;
+	}
 </style>
