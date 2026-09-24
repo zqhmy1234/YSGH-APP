@@ -41,7 +41,7 @@ def _cached_image_caption(image_path: str) -> str:
             digest = hashlib.sha256(f.read()).hexdigest()
     except OSError:
         # 路径不可读（含测试注入的假路径）→ 跳过缓存，直接透传（保持原契约）
-        from app.services.external.dashscope import image_caption as _vl_caption
+        from app.services.llm_ops import image_caption as _vl_caption
 
         return _vl_caption(image_path).strip()
     now = time.time()
@@ -49,7 +49,7 @@ def _cached_image_caption(image_path: str) -> str:
         hit = _caption_cache.get(digest)
         if hit and now - hit[0] < _CAPTION_CACHE_TTL_SECONDS:
             return hit[1]
-    from app.services.external.dashscope import image_caption as _vl_caption
+    from app.services.llm_ops import image_caption as _vl_caption
 
     stale = hit[1] if hit else ""  # hit 存在即已过 TTL —— 失败时的兜底素材
     try:

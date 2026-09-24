@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
 from app.schemas.search import SearchQuery
-from app.services.external import rewrite_query
+from app.services.llm_ops import rewrite_query
 from app.services.ner import extract_entities
 
 # 时间表达规则（"去年夏天" → 时间范围；MVP 简化）

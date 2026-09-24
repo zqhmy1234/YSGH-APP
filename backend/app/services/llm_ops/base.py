@@ -28,6 +28,18 @@ def rewrite_query(q: str) -> str:
     return dashscope.rewrite_query(q)
 
 
+def image_caption(image_path: str, prompt: str | None = None) -> str:
+    """VL 图片塔（Qwen3-VL）转发 —— B9b：rag 不再直连 external.dashscope。
+
+    `prompt=None` 时不传第二参，**沿用 dashscope 的默认提示词**（避免在此重复字面量而漂移）。
+    转发用**属性访问**（`dashscope.image_caption`）⇒ 测试对 dashscope 模块的打桩仍生效
+    （test_image_search / test_pipeline / test_ba3_ai_chain 均如此打桩）。
+    """
+    if prompt is None:
+        return dashscope.image_caption(image_path)
+    return dashscope.image_caption(image_path, prompt)
+
+
 def route_query(q: str) -> str:
     return dashscope.route_query(q)
 

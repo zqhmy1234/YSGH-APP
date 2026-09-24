@@ -10,6 +10,7 @@
 """
 from app.services.llm_ops.base import (
     chat_text,
+    image_caption,
     llm_available,
     moderate,
     rewrite_query,
@@ -18,6 +19,7 @@ from app.services.llm_ops.base import (
 
 __all__ = [
     "chat_text",
+    "image_caption",
     "llm_available",
     "moderate",
     "rewrite_query",
