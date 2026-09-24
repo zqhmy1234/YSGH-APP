@@ -256,6 +256,7 @@
 	// 手写 `import { onMounted } from '@dcloudio/uni-app'` 会编译失败
 	// （真机实锤 2026-08-31："onMounted" is not exported by "@dcloudio/uni-app/dist-x/uni-app.es.js"）。
 	import { ensureLogin } from '@/utils/auth'
+	import { fmtRecTime, recSecFromMs, cellCls, imgCls } from '@/utils/record_ui'
 	import { RecordAnimations, DotPt } from '@/composables/useRecordAnimations'
 	import {
 		readStoredCustomLabels, persistCustomLabels, customChipCls, customChipTextCls,
@@ -393,43 +394,7 @@
 		}
 	})
 
-	// ===== 模板取值封装（uvue 模板不直接绑跨模块复杂表达式） =====
-	function fmtRecTime(sec: number): string {
-		const m = Math.floor(sec / 60)
-		const s = sec % 60
-		const sm = s < 10 ? '0' + s : '' + s
-		const fm = m < 10 ? '0' + m : '' + m
-		return fm + ':' + sm
-	}
-	function recSecFromMs(ms: number): number {
-		return Math.round(ms / 1000)
-	}
-	// F1g-k 网格档位：1 图 302×226 / 2 图两列 146 / 3 图三列 96 / 4 图田字 146 / 5+ 三列 96（pt×1.9231 → rpx）
-	// 列尾零右边距：uvue flex 换行把尾随 margin 计入行宽——2 列 (281+19)×2=600>581 曾致 4 张单列、
-	// 3 列 (185+13)×3=594>581 曾致 5-9 张只剩两列（真机实锤 2026-09-02）
-	// 峰宝 09-02 拍板：形态按「照片数+加号格」总数套，放弃 F1g 单图大图形态（差异台账 §N）——
-	// 1 图+加号=两列(281) / 2+加号=三列(185) / 3+加号=田字(281) / 4+加号起=三列；9 张满无加号格
-	function cellCls(i: number, n: number): string {
-		const total = n + ((n < 9) ? 1 : 0)
-		let cls = ''
-		if (total == 2 || total == 4) {
-			cls = 'pc-b'
-		} else {
-			cls = 'pc-c'
-		}
-		const cols = (total == 2 || total == 4) ? 2 : 3
-		if ((i + 1) % cols == 0 || i == total - 1) {
-			cls = cls + ' pc-nor'
-		}
-		return cls
-	}
-	function imgCls(n: number): string {
-		const total = n + ((n < 9) ? 1 : 0)
-		if (total == 2 || total == 4) {
-			return 'pimg-b'
-		}
-		return 'pimg-c'
-	}
+	// B5.2f-2c：模板取值封装（fmtRecTime/recSecFromMs/cellCls/imgCls）外置到 utils/record_ui.uts
 	function setInfoTime(): void {
 		const d = new Date()
 		const h = d.getHours()
