@@ -60,6 +60,7 @@ from app.schemas.content import (
     ContentOut,
     ContentRemarkUpdate,
 )
+from app.services import sync_writes
 from app.services.errors import NotFoundError
 from app.services.external.storage import get_storage_backend
 from app.services.file_magic import is_photo_bytes
@@ -485,7 +486,34 @@ def update_content_remark(
     except NotFoundError:
         raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404) from None
     row = load_alive_content(db, user.id, content_id)
+    now = datetime.now(timezone.utc)
     row.remark = req.remark
+    # 双向写穿（功能修复波 簇② Q2 拍板）：REST 权威写入**同时**落同步账本 + 变更日志。
+    # ① SFV：为后续**离线编辑**建立 LWW 基准——缺它则离线旧备注在 LWW 下"看起来更新"
+    #    从而盖掉这次在线新备注（原实现 REST 不写 SFV ⇒ 基准缺失）；
+    # ② 变更日志：他端 pull 到这次修改。
+    # ⚠️ 如实标注：客户端镜像当前**丢弃 value**（D08-4/P1 未修）⇒「他端自动收敛」要到
+    #    D08-4 落地才真正生效，本次只保证**云端**权威版本与 LWW 基准正确。
+    sync_writes.write_field_version(
+        db,
+        user.id,
+        entity_type="content",
+        entity_id=str(row.id),
+        field="remark",
+        value=req.remark,
+        updated_at=now,
+    )
+    sync_writes.log_change(
+        db,
+        user.id,
+        sync_writes.SERVER_DEVICE,
+        op_type="upsert_field",
+        entity_type="content",
+        entity_id=str(row.id),
+        updated_at=now,
+        field="remark",
+        value=req.remark,
+    )
     db.commit()
     db.refresh(row)
     return ApiResponse(data=_to_out(row))
@@ -497,11 +525,20 @@ def delete_content(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """软删内容（W2-1）：置 deleted_at/deleted_by，30 天保留期后可被清理任务彻底清除"""
+    """软删内容（W2-1 + 功能修复波 簇② D08-1/2）：走**单一软删写路径** `sync_writes`
+
+    原实现只置 `contents.deleted_at/deleted_by`（不写 `deleted_logs`）⇒ 清理任务
+    只认 `deleted_logs` ⇒ **永不彻底清除**，"保留 30 天"承诺在用户路径上未落地。
+    `sync_writes.soft_delete_content` 一次做齐四件事：
+      ① 置权威表 `deleted_at/deleted_by`（对所有读路径立即 404、回收站可见可恢复）
+      ② 写 SFV 墓碑（同步各端）
+      ③ **幂等**写 `deleted_logs`（30 天清理真的会选中它）
+      ④ 写变更日志（他端 pull 到 delete）
+    与 sync `push_ops` 的删除分支**同调同一组原语**（单一软删语义路径）。
+    """
     row = load_alive_content(db, user.id, content_id)
     now = datetime.now(timezone.utc)
-    row.deleted_at = now
-    row.deleted_by = user.id
+    sync_writes.soft_delete_content(db, row, user.id, change_ts=now, anchor=now)
     db.commit()
     return ApiResponse(
         data=ContentDeleteOut(

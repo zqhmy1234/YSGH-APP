@@ -24,6 +24,7 @@ from app.schemas.content import (
     TrashClearOut,
     TrashItemOut,
 )
+from app.services import sync_writes
 
 trash_router = make_router(prefix="/api/v1/trash", tags=["trash"])
 
@@ -72,7 +73,15 @@ def trash_restore(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """回收站恢复（W2-1）：清除 deleted_at/deleted_by，回到正常内容域"""
+    """回收站恢复（W2-1 + 功能修复波 簇② D08-1/2 连带）：清权威表 + **反向清墓碑**
+    + 中和审计日志
+
+    `sync_writes.restore_content` 反向做齐三件事，缺一不可：
+      ① 清 `contents.deleted_at/deleted_by`（回到正常内容域）
+      ② 删 SFV 墓碑（否则同步域仍判该实体已删，他端 pull 到墓碑会再删一次）
+      ③ pending `deleted_logs` → `restored`（否则 30 天后清理任务会把**已恢复**的内容
+         彻底物理删除 —— 比不修更糟），并记一条"取消删除"变更日志供他端上抬镜像
+    """
     row = db.execute(
         select(Content).where(
             Content.id == content_id,
@@ -82,8 +91,7 @@ def trash_restore(
     ).scalar_one_or_none()
     if row is None:
         raise ApiError(ERR_CONTENT_010, "回收站中不存在该内容或无权访问", http=404)
-    row.deleted_at = None
-    row.deleted_by = None
+    sync_writes.restore_content(db, row, user.id)
     db.commit()
     return ApiResponse(data=ContentDeleteOut(content_id=row.id, deleted=False, permanent_at=None))
 
@@ -111,5 +119,8 @@ def trash_clear(
     for row in rows:
         db.delete(row)
         cleared += 1
+    # 簇② 连带：硬删后清尾同步账本（删 SFV 行 + pending 审计日志标 done），
+    # 否则 30 天后 run_cleanup 仍会选中悬空 pending 行空转一轮。
+    sync_writes.hard_delete_records(db, [str(r.id) for r in rows])
     db.commit()
     return ApiResponse(data=TrashClearOut(cleared=cleared))

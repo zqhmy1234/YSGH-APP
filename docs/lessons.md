@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 00:46 · commit c7a19bc · ts=1790268387
+- **错误**：软删『保留30天』承诺在用户路径上无法成立：REST DELETE 只置 contents.deleted_at 不写 deleted_logs（清理任务永不选中）；sync delete 只写 SFV 墓碑+deleted_logs 不置 deleted_at（REST 读仍存活、回收站不可见）；且离线字段写入只落 SFV 从不投影权威表（离线改备注用户永不可见）
+- **根因**：同一业务语义（软删/字段写）在 REST 与 sync 两处入口各自实现，没有单一写路径：权威表、同步账本、审计日志三者的写入分别散落；且既有门禁只断言『墓碑+deleted_logs』，把分歧固化成『预期行为』
+- **修复**：新增 services/sync_writes.py 作为单一写入语义路径（finalize_soft_delete / project_field / restore_content / hard_delete_records），REST DELETE·PATCH 与 push_ops 同调这些原语；补 deleted_logs 幂等、restore 反向清墓碑+中和审计日志、白名单字段投影 + 冲突不写变更日志
+- **相关文件**：backend/app/services/sync_writes.py, backend/app/services/sync.py, backend/app/api/contents/__init__.py, backend/app/api/contents/trash.py
+- **教训**：多入口写同一业务状态时，必须先把该状态的写入收敛成单一函数；否则两条轨道各自『半对』，任何一致性断言都会把分歧固化成预期行为
+
+---
+
 ### 2026-09-24 23:44 · commit da38127 · ts=1790264645
 - **错误**：AGG-016 云侧夹具回归的**第一版是自证门禁**：它用 build_cases() 现场取输入与期望，而生成器的期望正是**调用云侧实现**算出来的 => 关掉任一分支时输入侧与期望侧一起变，三个分支探针（corrected/approx/degraded）**全绿**却什么都没抓到；另外我设计的 degraded 用例里 p1 原坐标离 p2/p3 太近（保留坐标也会成同一簇）=> 该用例本身没有鉴别力
 - **根因**：① 金标准（期望值）与被测实现同源 => 门禁退化为'自己跟自己比'（与 D04-14 的恒真断言同族）；② 用例设计只看'状态标签被设成什么'，没验证'两种走法结果必须不同'；③ 速度常量单位坑：DRIVE_SPEED_MS=120000/3600=33.3 **m/s**（=120km/h），被误当 33.3km/h => 8km/10min(48km/h) 落进 approx 而非 corrected

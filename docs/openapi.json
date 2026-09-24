@@ -545,7 +545,7 @@
           "contents"
         ],
         "summary": "Delete Content",
-        "description": "软删内容（W2-1）：置 deleted_at/deleted_by，30 天保留期后可被清理任务彻底清除",
+        "description": "软删内容（W2-1 + 功能修复波 簇② D08-1/2）：走**单一软删写路径** `sync_writes`\n\n原实现只置 `contents.deleted_at/deleted_by`（不写 `deleted_logs`）⇒ 清理任务\n只认 `deleted_logs` ⇒ **永不彻底清除**，\"保留 30 天\"承诺在用户路径上未落地。\n`sync_writes.soft_delete_content` 一次做齐四件事：\n  ① 置权威表 `deleted_at/deleted_by`（对所有读路径立即 404、回收站可见可恢复）\n  ② 写 SFV 墓碑（同步各端）\n  ③ **幂等**写 `deleted_logs`（30 天清理真的会选中它）\n  ④ 写变更日志（他端 pull 到 delete）\n与 sync `push_ops` 的删除分支**同调同一组原语**（单一软删语义路径）。",
         "operationId": "delete_content_api_v1_contents__content_id__delete",
         "security": [
           {
@@ -991,7 +991,7 @@
           "trash"
         ],
         "summary": "Trash Restore",
-        "description": "回收站恢复（W2-1）：清除 deleted_at/deleted_by，回到正常内容域",
+        "description": "回收站恢复（W2-1 + 功能修复波 簇② D08-1/2 连带）：清权威表 + **反向清墓碑**\n+ 中和审计日志\n\n`sync_writes.restore_content` 反向做齐三件事，缺一不可：\n  ① 清 `contents.deleted_at/deleted_by`（回到正常内容域）\n  ② 删 SFV 墓碑（否则同步域仍判该实体已删，他端 pull 到墓碑会再删一次）\n  ③ pending `deleted_logs` → `restored`（否则 30 天后清理任务会把**已恢复**的内容\n     彻底物理删除 —— 比不修更糟），并记一条\"取消删除\"变更日志供他端上抬镜像",
         "operationId": "trash_restore_api_v1_trash__content_id__restore_post",
         "security": [
           {
