@@ -104,7 +104,7 @@
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
 								</view>
 								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
 									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
@@ -173,7 +173,7 @@
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
 								</view>
 								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
 									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
@@ -211,6 +211,7 @@
 <script setup lang="uts">
 	// 卡PB R1：computed 显式引入（ref 沿页面现状未显式引入，避免重复声明）
 	import { computed, onMounted, watch } from 'vue'
+import { WaveformCache } from '@/composables/useWaveform'
 	import { requestShellTab } from '@/utils/shell_state'
 	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
@@ -235,7 +236,6 @@
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
-import { fetchWaveform } from '@/utils/play_content'
 	import {
 		confirmEvent,
 		mergeEvent,
@@ -400,31 +400,12 @@ import { fetchWaveform } from '@/utils/play_content'
 			return
 		}
 		// BB3：播放入口懒拉真实波形（列表不为每卡预拉；组件内 waveform prop 真值优先）
-		loadWaveform(voice.contentId)
+		wf.loadWaveform(voice.contentId)
 		toggleVoice(voice.contentId)
 	}
 
-	// ═══ BB3 真实波形（contentId → 后端 /waveform 峰值数组）═══
-	// waveformMap 非响应式缓存（照 photoUrlById 先例）；waveformVersion 计数器驱动重渲染：
-	// waveformOf 被模板调用时读 version 建立响应式依赖，拉取落表后 version++ → 模板重取。
-	// 语义：null = 未拉到（懒加载未触发/404 非语音非 WAV）→ VoiceWave 组件回退 heights 伪波形（静默）
-	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
-	let waveformVersion = ref(0)
-	function waveformOf(cid: string): Array<number> | null {
-		waveformVersion.value
-		return waveformMap.get(cid) ?? null
-	}
-	function loadWaveform(cid: string): void {
-		if (waveformMap.has(cid)) {
-			return
-		}
-		fetchWaveform(cid).then((b: Array<number> | null) => {
-			if (b != null && b.length >= 2) {
-				waveformMap.set(cid, b)
-				waveformVersion.value++
-			}
-		})
-	}
+	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
+	const wf = new WaveformCache()
 	// 模板取值封装（uvue 模板不直接绑跨模块 ref）
 	function voiceIsActive(cid: string): boolean {
 		return isVoiceActive(cid)

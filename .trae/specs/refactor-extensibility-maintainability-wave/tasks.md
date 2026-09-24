@@ -105,7 +105,8 @@
   - [x] B5.2c `client/utils/uploader.uts` 628 行 → 6 模块（`uploader_{types,pending,net,queue,photo,batch}`）；8 调用点改写；冷编译 ✅（L-06）；**真机上传待设备**
   - [x] B5.2d 起点（金丝雀）`client/pages/detail/detail.uvue`（L-08）**样式外置**：`<style>` 591 行 → `client/styles/detail.css`（uvue 只留 `@import`）⇒ **1167 → 577 行**（轴 5 销项）；冷编译 ✅ + 产物类名取证；**能力探针实测**：ucss 支持 `@import`（**无需 scss 插件**）、`.uts` 组合式函数可被 uvue 引入
   - [x] B5.2e（样式半）`RecordSheet.uvue`（2209→**1354**）/ `TabIndex.uvue`（1742→**1065**）样式外置到 `client/styles/{record-sheet,tab-index}.css`；逐行一致 + 冷编译 ✅ + 产物类名取证；baseline 计数下调
-  - [ ] B5.2f（script 半）`RecordSheet`/`TabIndex`/`TabSearch` 的 script 抽 composable（本体冷编译+逐行等价可验；**L-01/L-02 的"真机记录链路"验收待设备**）
+  - [x] B5.2f-1（第八轮）波形缓存 **5 份同构副本 → `useWaveform` 组合式函数**：新增 `client/composables/useWaveform.uts`；5 组件改用；合计 **−91 行**；等价性证明 + 冷编译 ✅；baseline 下调（TabIndex 1065→1046 / favorites 974→957）
+  - [ ] B5.2f-2（续）`RecordSheet`(script 1097)/`TabIndex`(851)/`TabSearch`(379) 继续抽 composable（**仍 >800，L-01/L-02 未闭环**；**真机验收待设备**）
   - [x] **决策**：L-12 令牌收敛 → ✅ **另立「令牌波」**（判为复杂，台账 §5.10 拍板 10.4）；64 条功能缺陷 → ✅ **另开「功能修复波」**（拍板 10.1）
 
 - [x] Task B10-i: 门禁自身可靠性 4 项：`D14-23` CI schema-drift 去 `continue-on-error` / `D14-22` 统一机读 schema（新 `scripts/gate_report.py`）/ `D14-12` 收敛 subprocess 双实现（新 `scripts/gate_proc.py`）/ `D14-6` 判定已被 B10-g 覆盖。见 ledger §8.4。

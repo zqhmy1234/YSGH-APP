@@ -35,7 +35,7 @@
 						</view>
 					</view>
 					<view class="vwave">
-						<VoiceWave :heights="ev.voice.waveHeights" :waveform="waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+						<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
 					</view>
 				</view>
 				<view v-if="ev.voice != null" class="voice-text-block">
@@ -71,8 +71,6 @@
 
 <script setup lang="uts">
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
-	// BB3 补线（2026-09-09）：真实波形 fetchWaveform（三件套照 search/detail 逐字对齐）
-	import { fetchWaveform } from '@/utils/play_content'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -80,6 +78,7 @@
 		voiceProgressOf
 	} from '@/utils/audio_player'
 	import { EventPhoto } from '@/utils/timeline'
+import { WaveformCache } from '@/composables/useWaveform'
 
 	// ── 页面参数 ──
 	let themeName = ref('')
@@ -88,25 +87,8 @@
 	let loading = ref(true)
 	let rangeText = ref('')
 
-	// ═══ BB3 真实波形（contentId → 后端 /waveform 峰值；三件套照 search/detail 逐字对齐）═══
-	// waveformMap 非响应式缓存 + waveformVersion 计数驱动重渲染；null=未拉到→组件回退伪波形
-	let waveformMap: Map<string, Array<number>> = new Map<string, Array<number>>()
-	let waveformVersion = ref(0)
-	function waveformOf(cid: string): Array<number> | null {
-		waveformVersion.value
-		return waveformMap.get(cid) ?? null
-	}
-	function loadWaveform(cid: string): void {
-		if (waveformMap.has(cid)) {
-			return
-		}
-		fetchWaveform(cid).then((b: Array<number> | null) => {
-			if (b != null && b.length >= 2) {
-				waveformMap.set(cid, b)
-				waveformVersion.value++
-			}
-		})
-	}
+	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
+	const wf = new WaveformCache()
 
 	onLoad((options: OnLoadOptions) => {
 		const t = options['theme'] as string
@@ -150,11 +132,11 @@
 			}
 			loading.value = false
 			// BB3：数据就绪即批量拉真实波形（本页 L2 子集卡量小，对齐 detail 进页即拉；
-			// 同 contentId 有 waveformMap 去重，onPlayTap 再调零成本）
+			// 同 contentId 由 useWaveform 的 WaveformCache 去重，onPlayTap 再调零成本）
 			for (let i = 0; i < picked.length; i++) {
 				const v = picked[i].voice
 				if (v != null) {
-					loadWaveform(v.contentId)
+					wf.loadWaveform(v.contentId)
 				}
 			}
 		})
@@ -194,7 +176,7 @@
 		if (ev.voice == null) {
 			return
 		}
-		loadWaveform(ev.voice.contentId) // BB3：兜底拉取（就绪批量已覆盖，Map 命中零成本）
+		wf.loadWaveform(ev.voice.contentId) // BB3：兜底拉取（就绪批量已覆盖，Map 命中零成本）
 		toggleVoice(ev.voice.contentId)
 	}
 	function voiceIsActive(cid: string): boolean {
