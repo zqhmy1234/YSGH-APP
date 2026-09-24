@@ -796,6 +796,25 @@ def audit_class_members_axis() -> None:
         INFO.append(f"[类成员] 客户端 UTS 类成员解析一致（检查 {checked} 类，{skipped} 个 extends 类跳过）")
 
 
+def audit_token_literals_axis() -> None:
+    """轴 8：客户端硬编码色字面量棘轮（令牌波 P4 · 2026-09-25）。
+
+    背景：令牌波开工实测——样式里 hex 638 次 / `rgb()/rgba()` 171 次 / 渐变 10 种（**代码口径**，已剔注释），
+    而 `design_tokens.dtcg.json` 在样式里被引用 **0 次**。令牌化（P3）是逐域长活；没有尺子就会
+    「一边收敛一边长新字面量」。棘轮口径同轴 5/6：三类总数任一上升、或任一文件任一计数上升 ⇒ CRITICAL；
+    下降 ⇒ WARN（要求同步下调基线）；基线 per_file 归零 ⇒ CRITICAL（僵尸豁免清算）。
+    """
+    from audit_token_literals import findings as _findings
+
+    crit, warn, info = _findings()
+    for m in crit:
+        CRITICAL.append(m)
+    for m in warn:
+        _say("WARN", m)
+    for m in info:
+        INFO.append(m)
+
+
 def axes_findings() -> tuple[list[str], list[str], str]:
     """公共入口：**轴 1-4**（契约 / 客户端 / 模型 / 导出）的 (CRITICAL, INFO, 备注)。
 
@@ -834,7 +853,7 @@ def main() -> int:
     ap.add_argument(
         "axis",
         choices=[
-            "openapi", "client", "client_imports", "class_members",
+            "openapi", "client", "client_imports", "class_members", "token_literals",
             "models", "exports", "filesize", "dups", "all",
         ],
     )
@@ -850,6 +869,8 @@ def main() -> int:
         audit_client_imports_axis()
     if args.axis in {"class_members", "all"}:
         audit_class_members_axis()
+    if args.axis in {"token_literals", "all"}:
+        audit_token_literals_axis()
     if args.axis in {"models", "all"}:
         audit_models()
     if args.axis in {"exports", "all"}:

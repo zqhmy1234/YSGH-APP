@@ -411,10 +411,20 @@ def check_audit_axes() -> tuple[bool, str]:
                          if not member_violations else
                          f"[类成员] {len(member_violations)} 处成员未声明"]
 
+    # 轴 8（2026-09-25 · 令牌波 P4）：客户端硬编码色字面量棘轮（hex/rgb/渐变，只许减不许增）。
+    # 背景：令牌开工实测代码口径 hex 638 / rgb 171 / 渐变 10，而令牌在样式里被引用 0 次；
+    # 令牌化是逐域长活，没有棘轮就会「一边收敛一边长新字面量」。口径：CRITICAL 阻断（同轴 1-7）。
+    from audit_token_literals import findings as token_literal_findings
+
+    tl_crit, tl_warn, tl_info = token_literal_findings()
+    crit = list(crit) + tl_crit
+    info = list(info) + tl_info + tl_warn
+
     suffix = f"；{note}" if note else ""
     if crit:
         return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
-    return True, f"跨轴审计（契约/客户端/模型/导出/客户端导入/类成员）：无 CRITICAL；INFO {len(info)} 项{suffix}"
+    axes = "契约/客户端/模型/导出/客户端导入/类成员/令牌字面量"
+    return True, f"跨轴审计（{axes}）：无 CRITICAL；INFO {len(info)} 项{suffix}"
 
 
 def check_env_template() -> tuple[bool, str]:
