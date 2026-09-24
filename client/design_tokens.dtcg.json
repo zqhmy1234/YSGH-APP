@@ -1,0 +1,610 @@
+{
+  "$description": "忆述光华 · 设计令牌（DTCG 形态 · 令牌波 P1a · 2026-09-25）。源=全仓实测清单（见 .trae/specs/design-token-convergence-wave/spec.md §1.2/§1.3）；终端为 uni-app x App(Android) 单端。 归并原则：同族 1/255 级色差视为视觉等效并归一；散单（出现 1~3 次）保留为字面量、待 P3 决定是否建令牌。",
+  "color": {
+    "$type": "color",
+    "$description": "原始色阶（primitive）。$description 内为实测出现次数与归并来源。",
+    "ink": {
+      "900": {
+        "$value": "#3a2e25",
+        "$description": "text_primary · 152 次（归并 #3b2e26×2）"
+      },
+      "700": {
+        "$value": "#5a4c40",
+        "$description": "text_muted · 15 次"
+      },
+      "500": {
+        "$value": "#8a7a6a",
+        "$description": "text_secondary · 94 次"
+      },
+      "300": {
+        "$value": "#b3a696",
+        "$description": "text_tertiary · 88 次（归并 #b2a696×1）"
+      }
+    },
+    "paper": {
+      "50": {
+        "$value": "#faf9f5",
+        "$description": "record_panel · 17 次"
+      },
+      "100": {
+        "$value": "#f8f7f4",
+        "$description": "bg_page / photo_overlay_bottom · 42 次"
+      },
+      "200": {
+        "$value": "#f6f1e7",
+        "$description": "6 次（归并 #f6efe3×2 / #faf6ee / #fbf7ef / #fbf4e4）"
+      },
+      "300": {
+        "$value": "#f0ebe3",
+        "$description": "7 次（归并 #f0ebe2 / #efeae2 / #efe9dd×2）"
+      },
+      "400": {
+        "$value": "#ede5d5",
+        "$description": "14 次（归并 #ede4d4×2 / #ede5d8 / #ebe3d4）"
+      },
+      "500": {
+        "$value": "#e9dfcb",
+        "$description": "6 次"
+      },
+      "600": {
+        "$value": "#e5dcc8",
+        "$description": "9 次（归并 #e5ded4 / #e5ded2）"
+      },
+      "700": {
+        "$value": "#e1d3b8",
+        "$description": "6 次"
+      },
+      "warm": {
+        "$value": "#fff7ef",
+        "$description": "3 次 · 暖白散单"
+      }
+    },
+    "sand": {
+      "300": {
+        "$value": "#e3cca8",
+        "$description": "3 次 · 实色暖渐起点"
+      },
+      "500": {
+        "$value": "#c7ad87",
+        "$description": "3 次 · 实色暖渐终点"
+      }
+    },
+    "rust": {
+      "500": {
+        "$value": "#b05a3a",
+        "$description": "accent_rust · 93 次（归并 #b0593b×3 / #af5a39 / #aa5334）"
+      },
+      "700": {
+        "$value": "#8a5a20",
+        "$description": "3 次 · 深棕"
+      }
+    },
+    "amber": {
+      "500": {
+        "$value": "#c4913c",
+        "$description": "accent_amber · 56 次"
+      }
+    },
+    "olive": {
+      "400": {
+        "$value": "#7c9a6d",
+        "$description": "1 次"
+      },
+      "500": {
+        "$value": "#7a8c5a",
+        "$description": "2 次 · 情绪/标签点睛"
+      },
+      "100": {
+        "$value": "#eaf3e3",
+        "$description": "1 次 · 浅底"
+      }
+    },
+    "slate": {
+      "300": {
+        "$value": "#b0bfc7",
+        "$description": "1 次"
+      },
+      "500": {
+        "$value": "#4e7d8c",
+        "$description": "1 次 · 情绪点睛"
+      },
+      "100": {
+        "$value": "#e8eef0",
+        "$description": "1 次 · 浅底"
+      }
+    },
+    "surface": {
+      "neutral": {
+        "$value": "#d8d0c6",
+        "$description": "2 次（归并 #d8cfc2）"
+      },
+      "neutralD": {
+        "$value": "#6b5d4f",
+        "$description": "2 次 · 深中性"
+      },
+      "blush": {
+        "$value": "#f7e3df",
+        "$description": "1 次"
+      },
+      "sage": {
+        "$value": "#ecefe8",
+        "$description": "1 次"
+      }
+    },
+    "record": {
+      "ink": {
+        "$value": "#1a140f",
+        "$description": "record_bg · 1 次（rgba(26,20,15,α) 同族）"
+      }
+    },
+    "white": {
+      "$value": "#ffffff",
+      "$description": "bg_card · 94 次"
+    },
+    "black": {
+      "$value": "#000000"
+    },
+    "transparent": {
+      "$value": "rgba(0,0,0,0)"
+    }
+  },
+  "gradient": {
+    "$type": "gradient",
+    "$description": "实测 10 种（百分之百取自实测：括号配平提取 + 只切顶层逗号 + 停靠点写显式 0%/100%；已回源逐条校验色多集一致）。",
+    "veil-sand-sand": {
+      "$value": "linear-gradient(tobottom, #E3CCA8 0%, #C7AD87 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-green-green": {
+      "$value": "linear-gradient(tobottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-paper-sand": {
+      "$value": "linear-gradient(tobottom, rgba(248,247,244,0) 0%, #f8f7f4 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-paper-paper": {
+      "$value": "linear-gradient(tobottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-paper-paper-2": {
+      "$value": "linear-gradient(tobottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-ink-ink": {
+      "$value": "linear-gradient(tobottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-ink-ink-2": {
+      "$value": "linear-gradient(tobottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-ink-ink-2-3": {
+      "$value": "linear-gradient(tobottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-olive-amber-diag": {
+      "$value": "linear-gradient(tobottomright, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    },
+    "veil-slate-olive-diag": {
+      "$value": "linear-gradient(tobottomright, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%)",
+      "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
+    }
+  },
+  "effect": {
+    "$type": "other",
+    "$description": "阴影/模糊（实测 box-shadow 41 种，取高频 5 条 + 玻璃模糊；其余散单归并或留待 P3 建令牌）。",
+    "shadow-card": {
+      "$value": "0rpx 5.8rpx 23.1rpx rgba(58,46,37,0.05)",
+      "$description": "高频 11 次"
+    },
+    "shadow-card-hair": {
+      "$value": "0rpx 7.7rpx 30.8rpx rgba(58,46,37,0.06), 0rpx 1.9rpx 5.8rpx rgba(58,46,37,0.04)",
+      "$description": "高频 9 次"
+    },
+    "shadow-soft": {
+      "$value": "0rpx 3.8rpx 15.4rpx rgba(58,46,37,0.05)",
+      "$description": "4 次"
+    },
+    "shadow-inset-hi": {
+      "$value": "inset 0rpx 1.9rpx 3.8rpx rgba(255,255,255,0.4)",
+      "$description": "玻璃内高光 2 次"
+    },
+    "glow-amber": {
+      "$value": "0rpx 0rpx 38.5rpx rgba(196,145,60,0.2), 0rpx 0rpx 19.2rpx rgba(196,145,60,0.35), 0rpx 0rpx 7.7rpx rgba(196,145,60,0.5)",
+      "$description": "琥珀发光 2 次"
+    },
+    "glass-blur": {
+      "$value": "16px",
+      "$description": "原 glass_blur"
+    }
+  },
+  "font": {
+    "$type": "other",
+    "$description": "字体族 / 字重（实测 2 族、5 档；bold 与 700 同义并存 ⇒ 统一到数值档）。",
+    "sans": {
+      "$value": "\"Sarasa Gothic SC\", sans-serif"
+    },
+    "serif": {
+      "$value": "\"Sarasa Gothic SC\", \"Noto Serif CJK SC\", serif"
+    },
+    "weight": {
+      "regular": {
+        "$value": "400"
+      },
+      "medium": {
+        "$value": "500"
+      },
+      "semibold": {
+        "$value": "600"
+      },
+      "bold": {
+        "$value": "700"
+      }
+    }
+  },
+  "alpha": {
+    "$type": "color",
+    "$description": "透明阶梯（实测 rgb()/rgba() 190 处 / 72 种）。族键＝该族 hex primitive 的**规范 RGB**；已归并的 1/255 变体见各 $description。",
+    "ink": {
+      "$description": "归并 rgba(59,46,38,α)→(58,46,37)；另 (42,33,26,α) 亦归入",
+      "a04": {
+        "$value": "rgba(58,46,37,0.04)"
+      },
+      "a05": {
+        "$value": "rgba(58,46,37,0.05)"
+      },
+      "a06": {
+        "$value": "rgba(58,46,37,0.06)"
+      },
+      "a08": {
+        "$value": "rgba(58,46,37,0.08)"
+      },
+      "a10": {
+        "$value": "rgba(58,46,37,0.1)"
+      },
+      "a12": {
+        "$value": "rgba(58,46,37,0.12)"
+      },
+      "a15": {
+        "$value": "rgba(58,46,37,0.15)"
+      },
+      "a16": {
+        "$value": "rgba(58,46,37,0.16)"
+      },
+      "a18": {
+        "$value": "rgba(58,46,37,0.18)"
+      },
+      "a25": {
+        "$value": "rgba(58,46,37,0.25)"
+      },
+      "a30": {
+        "$value": "rgba(58,46,37,0.3)"
+      },
+      "a35": {
+        "$value": "rgba(58,46,37,0.35)"
+      },
+      "a40": {
+        "$value": "rgba(58,46,37,0.4)"
+      },
+      "a60": {
+        "$value": "rgba(58,46,37,0.6)"
+      }
+    },
+    "white": {
+      "$description": "—",
+      "a30": {
+        "$value": "rgba(255,255,255,0.3)"
+      },
+      "a32": {
+        "$value": "rgba(255,255,255,0.32)"
+      },
+      "a35": {
+        "$value": "rgba(255,255,255,0.35)"
+      },
+      "a40": {
+        "$value": "rgba(255,255,255,0.4)"
+      },
+      "a45": {
+        "$value": "rgba(255,255,255,0.45)"
+      },
+      "a50": {
+        "$value": "rgba(255,255,255,0.5)"
+      },
+      "a55": {
+        "$value": "rgba(255,255,255,0.55)"
+      },
+      "a60": {
+        "$value": "rgba(255,255,255,0.6)"
+      },
+      "a65": {
+        "$value": "rgba(255,255,255,0.65)"
+      },
+      "a70": {
+        "$value": "rgba(255,255,255,0.7)"
+      },
+      "a80": {
+        "$value": "rgba(255,255,255,0.8)"
+      },
+      "a85": {
+        "$value": "rgba(255,255,255,0.85)"
+      }
+    },
+    "rust": {
+      "$description": "归并 rgba(176,89,59,α) 与 rgba(176,89,58,α) → (176,90,58)（注意：hex #b05a3a=(176,90,58) 与代码里的 rgba(176,89,59/58) 本身就差 1~2）",
+      "a06": {
+        "$value": "rgba(176,90,58,0.06)"
+      },
+      "a10": {
+        "$value": "rgba(176,90,58,0.1)"
+      },
+      "a12": {
+        "$value": "rgba(176,90,58,0.12)"
+      },
+      "a25": {
+        "$value": "rgba(176,90,58,0.25)"
+      },
+      "a30": {
+        "$value": "rgba(176,90,58,0.3)"
+      },
+      "a35": {
+        "$value": "rgba(176,90,58,0.35)"
+      },
+      "a45": {
+        "$value": "rgba(176,90,58,0.45)"
+      },
+      "a60": {
+        "$value": "rgba(176,90,58,0.6)"
+      }
+    },
+    "amber": {
+      "$description": "归并 rgba(196,145,59,α)→(196,145,60)",
+      "a10": {
+        "$value": "rgba(196,145,60,0.1)"
+      },
+      "a12": {
+        "$value": "rgba(196,145,60,0.12)"
+      },
+      "a14": {
+        "$value": "rgba(196,145,60,0.14)"
+      },
+      "a20": {
+        "$value": "rgba(196,145,60,0.2)"
+      },
+      "a35": {
+        "$value": "rgba(196,145,60,0.35)"
+      },
+      "a50": {
+        "$value": "rgba(196,145,60,0.5)"
+      }
+    },
+    "olive": {
+      "$description": "—",
+      "a14": {
+        "$value": "rgba(122,140,90,0.14)"
+      },
+      "a15": {
+        "$value": "rgba(122,140,90,0.15)"
+      },
+      "a30": {
+        "$value": "rgba(122,140,90,0.3)"
+      }
+    },
+    "slate": {
+      "$description": "—",
+      "a13": {
+        "$value": "rgba(78,125,140,0.13)"
+      },
+      "a28": {
+        "$value": "rgba(78,125,140,0.28)"
+      }
+    },
+    "green": {
+      "$description": "—",
+      "a12": {
+        "$value": "rgba(217,227,203,0.12)"
+      },
+      "a60": {
+        "$value": "rgba(217,227,203,0.6)"
+      }
+    },
+    "record": {
+      "$description": "归并 rgba(25,20,15,α)→(26,20,15)",
+      "a15": {
+        "$value": "rgba(26,20,15,0.15)"
+      },
+      "a45": {
+        "$value": "rgba(26,20,15,0.45)"
+      },
+      "a50": {
+        "$value": "rgba(26,20,15,0.5)"
+      },
+      "a55": {
+        "$value": "rgba(26,20,15,0.55)"
+      }
+    },
+    "paper": {
+      "$description": "—",
+      "a60": {
+        "$value": "rgba(248,247,244,0.6)"
+      }
+    },
+    "black": {
+      "$description": "—",
+      "a07": {
+        "$value": "rgba(0,0,0,0.07)"
+      }
+    }
+  },
+  "dimension": {
+    "$type": "dimension",
+    "$description": "尺寸面（P1b 会大幅补全）：**保留两族**、不跨基归一（spec §1.3/§7.3）。canvasPx＝画布口径追溯，$value＝代码口径 rpx。",
+    "page_width": {
+      "$value": "750.0rpx",
+      "$extensions": {
+        "canvasPx": 390
+      }
+    },
+    "page_height": {
+      "$value": "1623.1rpx",
+      "$extensions": {
+        "canvasPx": 844
+      }
+    },
+    "card_margin_x": {
+      "$value": "38.5rpx",
+      "$extensions": {
+        "canvasPx": 20
+      }
+    },
+    "card_width": {
+      "$value": "673.1rpx",
+      "$extensions": {
+        "canvasPx": 350
+      }
+    },
+    "card_radius": {
+      "$value": "38.5rpx",
+      "$extensions": {
+        "canvasPx": 20
+      }
+    },
+    "card_radius_small": {
+      "$value": "23.1rpx",
+      "$extensions": {
+        "canvasPx": 12
+      }
+    },
+    "tabbar_width": {
+      "$value": "673.1rpx",
+      "$extensions": {
+        "canvasPx": 350
+      }
+    },
+    "tabbar_height": {
+      "$value": "119.2rpx",
+      "$extensions": {
+        "canvasPx": 62
+      }
+    },
+    "tabbar_radius": {
+      "$value": "59.6rpx",
+      "$extensions": {
+        "canvasPx": 31
+      }
+    },
+    "tabbar_y": {
+      "$value": "1446.2rpx",
+      "$extensions": {
+        "canvasPx": 752
+      }
+    },
+    "fab_size": {
+      "$value": "107.7rpx",
+      "$extensions": {
+        "canvasPx": 56
+      }
+    },
+    "fab_radius": {
+      "$value": "53.8rpx",
+      "$extensions": {
+        "canvasPx": 28
+      }
+    },
+    "search_width": {
+      "$value": "673.1rpx",
+      "$extensions": {
+        "canvasPx": 350
+      }
+    },
+    "search_height": {
+      "$value": "88.5rpx",
+      "$extensions": {
+        "canvasPx": 46
+      }
+    },
+    "search_radius": {
+      "$value": "44.2rpx",
+      "$extensions": {
+        "canvasPx": 23
+      }
+    },
+    "photo_hero_height": {
+      "$value": "576.9rpx",
+      "$extensions": {
+        "canvasPx": 300
+      }
+    },
+    "safe_bottom": {
+      "$value": "65.4rpx",
+      "$extensions": {
+        "canvasPx": 34
+      }
+    },
+    "status_bar_height": {
+      "$value": "84.6rpx",
+      "$extensions": {
+        "canvasPx": 44
+      }
+    }
+  },
+  "semantic": {
+    "$type": "color",
+    "$description": "语义层（对外契约名）：沿用仓库既有 18 个 color token 名，值改为别名引用 ⇒ 语义与色阶解耦。",
+    "text_primary": {
+      "$value": "{color.ink.900}"
+    },
+    "text_secondary": {
+      "$value": "{color.ink.500}"
+    },
+    "text_tertiary": {
+      "$value": "{color.ink.300}"
+    },
+    "text_muted": {
+      "$value": "{color.ink.700}"
+    },
+    "bg_page": {
+      "$value": "{color.paper.100}"
+    },
+    "bg_card": {
+      "$value": "{color.white}"
+    },
+    "bg_glass": {
+      "$value": "{alpha.white.a55}"
+    },
+    "bg_glass_light": {
+      "$value": "{alpha.white.a32}"
+    },
+    "bg_glass_strong": {
+      "$value": "{alpha.white.a80}"
+    },
+    "accent_rust": {
+      "$value": "{color.rust.500}"
+    },
+    "accent_rust_light": {
+      "$value": "{alpha.rust.a12}"
+    },
+    "accent_amber": {
+      "$value": "{color.amber.500}"
+    },
+    "accent_amber_light": {
+      "$value": "{alpha.amber.a14}"
+    },
+    "accent_amber_faint": {
+      "$value": "{alpha.amber.a10}"
+    },
+    "photo_overlay_top": {
+      "$value": "{alpha.black.a07}"
+    },
+    "photo_overlay_bottom": {
+      "$value": "{color.paper.100}"
+    },
+    "record_bg": {
+      "$value": "{color.record.ink}"
+    },
+    "record_panel": {
+      "$value": "{color.paper.50}"
+    }
+  }
+}
