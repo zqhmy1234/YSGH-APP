@@ -78,3 +78,6 @@
 - [x] **B10-m `audit_security` 崩溃 + 白名单失效**（既有缺陷，实跑坐实）：修 `db/models` 拆包直读崩溃（`HEAD` 版本同样崩 ⇒ 非本轮引入）、`_ALLOW_PATHS` 改按路径段匹配、统一合成值抑制 —— 证据：**首次真正跑通**，`blocking` = **1**；⚠️ **真实发现交运维/用户**：**最近备份距今 493.0h（≈20.5 天）违反 RPO≤24h**（此前因崩溃从未被评估）
 - [x] **B10-n UTF-8 兜底统一**（D14-11）：新增 `scripts/gate_io.py::force_utf8()`，16 文件 / 20 处全迁移（6 种形态）—— 证据：`scripts/` 全目录 ruff 通过；17 脚本 `py_compile` 通过；残留 `reconfigure` 仅 `gate_io.py` 自身；门禁工具实跑全绿
 - [x] **B10-o 退出码口径单一来源 + `test_agent` 姊妹假绿**（D14-18 残余 / D14-19 姊妹 / D14-13 半）：`scripts/gate_exit.py` 被两工具共用；`test_agent` 缺依赖由**静默 True**改为**环境错误（退出码 2）**；`audit_harness` 排除集合并 —— 证据：探针 `classify_failure` 4 例全对（含违规优先）、`R.ENV_ERR_PREFIX == GE.ENV_ERR_PREFIX`、`T.gate_exit is GE`、源码断言无 `[skip] 缺依赖`；三工具实跑正常
+- [x] **B9a 事件域门面收口**（D04-16）：API 不再直连算法包 —— 证据：`44a837c`；ruff 通过；`test_event_sync + test_agg_reference` → **23 passed**；grep 复核 API→`event_aggregation` 直连 = 0
+- [x] **B9b rag 的 LLM 调用走 `llm_ops` 门面**（D05-13）：`rewrite_query` + 新增 `llm_ops.image_caption` —— 证据：`32b4a89`；5 个测试文件 **79 passed**；rag→`external.dashscope` 直连 = 0
+- [x] **B9c 存储注册表 + COS 唯一构造点**（D02-3 / D02-13）：新增后端只改 1 行；API 不再直读 COS 私有字段 —— 证据：`8286327`；**探针 8 项断言全过**（含 fake 容量守卫仍生效、源码断言唯一构造点）；4 个测试文件 **83 passed**

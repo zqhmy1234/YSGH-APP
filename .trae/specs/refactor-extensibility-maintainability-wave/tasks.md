@@ -85,7 +85,12 @@
 
 - [x] Task B10-o: 退出码口径**单一来源** + `test_agent` **姊妹假绿**（D14-18 残余 / D14-19 姊妹 / D14-13 半）——① 新增 `scripts/gate_exit.py`（`ENV_ERR_PREFIX` + `classify_failure()`），`review_agent`/`test_agent` 共用；② 修 `test_agent` 缺 pytest 依赖时 `return True, "[skip] 缺依赖"`（**报告全绿而全量测试从未执行**）→ 改为环境错误（退出码 2）默认阻断；③ `test_agent` 加 `env_blocked_sections` + 0/1/2 三态；④ `audit_harness` 排除集 `CLIENT_EXCLUDE_DIRS` 合并硬编码 2 处。证据：探针 4 例全对 + 源码断言无旧 `[skip] 缺依赖`；`scripts/` 全目录 ruff 通过；三工具实跑正常
 
-- [ ] Task B9: 端口/边界收口（**待执行**）——L-03c API/rag 层越级直连；D05-16 `correction.py` 自建第二套 Qdrant；D02-3 存储后端注册点（含 api 层硬编码 COS）
+- [x] Task B9: 端口/边界收口（**已完成，三项子批**）
+  - [x] B9a 事件域门面收口（D04-16）：`l3_lifecycle` 由 `events/timeline.py` 再导出，API 只依赖 `app.services.events` 门面（API→算法包直连清零）。证据：`44a837c`；ruff 通过；`pytest test_event_sync + test_agg_reference` → **23 passed**
+  - [x] B9b rag 的 LLM 调用走 `llm_ops` 门面（D05-13）：`rewrite_query` 改从 `llm_ops` 导入；新增 `llm_ops.image_caption` 转发并替换 rag 两处直连。证据：`32b4a89`；ruff 通过；5 个相关测试文件 → **79 passed**；rag 对 `external.dashscope` 直连清零
+  - [x] B9c 存储注册表 + COS 唯一构造点（D02-3/D02-13）：`BackendSpec` 注册项（新增后端**只改 1 行**）+ 三单例全局收敛为一个字典 + `build_cos_raw_client()` 唯一构造点 + `cos_sts_configured()` 归位存储层（API 不再直读 COS 私有字段）。证据：`8286327`；ruff 通过；**探针 8 项断言全过**；4 个测试文件 → **83 passed**
+  - [x] **D05-16 改判**：`correction._get_store()` 已用共享 `get_qdrant_client()`（P2-04）⇒「自建第二套 Qdrant」表述已过时；残余"裸调用未走 `VectorStore` 门面"是无收益间接层，且会**变更 collection schema**（行为变更）⇒ 登记不改。D07-21（函数级导入、无真实循环）P2 登记不改。
+  - **登记残余**：rag 3 条非 LLM 适配器引用（需另立内容安全域/媒体域门面）；`config.py` Literal 与 `deploy` env 模板两处部署面校验
 
 - [x] Task B3: 后端归属校验/软删过滤收敛全覆盖核对（沿用 `0efd838` AST 门禁）：确认所有按 id 路由端点均经 helper，补齐缺口。
   - ⚠️ **结论修正（2026-09-24 深审）**：原判「验证即达标、无缺口」**不成立**——`backend/tests/test_authz_gate.py:47` 登记名 `load_owned_capsule` ≠ 实际符号 `api/capsules.py:45 _load_owned_capsule` ⇒ capsules loader 为**门禁哑条目**（D06-2），靠 `user.id` 属性访问兜底过门。三 helper（D06-1）深审确认**语义相同**、测试零 monkeypatch ⇒ **收敛待办已就绪**，须同时修正门禁登记名。详见 ledger §9.3 与 `audit/domain-06`。

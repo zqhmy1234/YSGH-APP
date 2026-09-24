@@ -398,3 +398,14 @@
 - **门禁域残余（低价值）**：`D14-12` subprocess 双实现（签名差异 + OOM 分支）、两工具**跨文件**目录排除清单、`D14-22` 报告 schema、`D14-23` CI schema-drift job 仅 schedule —— 均为外观/一致性级，已登记待后续顺手做。
 - **待环境验证（如实标注）**：`COV_THRESHOLD` 50→60 后实际覆盖率是否 ≥60，须 Docker 可用后跑 `--full`。
 - **待用户处置的运维事项**：**最近备份距今 ≈20.5 天（违反 RPO≤24h）**——由 `audit_security` 首次跑通后暴露。
+
+## ✅ 第八轮 · Docker 启动后：解除阻塞 + 完成 B9（端口/边界收口）
+
+- **环境解锁**：Docker Desktop 由 `starting` 变为就绪（重启一次后）→ `yishu-redis` / `yishu-qdrant` Up；**Qdrant HTTP 200**（`yishu_contents`/`corrections`/`yishu_test_rag` 等集合齐备）⇒ 全量测试与 B9 验证面恢复可用。
+- **B10-p 修导入回归**（Docker 起后全量门禁当场抓到）：B10-n 把样板抽成同目录 `gate_io` 后，**5 个会被后端按包导入**（`from scripts.x import …`）的脚本在该路径下 `sys.path` 无 `scripts/` ⇒ `ModuleNotFoundError` ⇒ **pytest 收集中断 + research 段崩**。修：双路径导入。证据：五处按包导入冒烟全成功、受影响测试 **21 passed**、research ✅。**教训已登记**：`py_compile`/`ruff` 查不出导入期缺模块。
+- **B9a**（`44a837c`）事件域门面收口：`l3_lifecycle` 由 `events/timeline.py` 再导出 ⇒ **API 层不再直连算法包**（D04-16）。证据：`test_event_sync + test_agg_reference` **23 passed**；API→`event_aggregation` 直连 = 0。
+- **B9b**（`32b4a89`）rag 的 LLM 调用全走 `llm_ops` 门面：`rewrite_query` 改导入 + 新增 `llm_ops.image_caption` 转发（`prompt=None` 沿默认提示词免漂移；属性访问转发保住测试打桩面）⇒ rag→`external.dashscope` 直连归零（D05-13）。证据：5 文件 **79 passed**。
+- **B9c**（`8286327`）存储后端**注册表** + COS **唯一构造点**（D02-3/D02-13）：`BackendSpec` 注册项 ⇒ **新增后端只改 1 行**（原 7 处）；三单例全局收敛为一个 `_INSTANCES`；`build_cos_raw_client()` 唯一构造点；`cos_sts_configured()` 归位存储层 ⇒ **API 不再直读 COS 私有字段**。证据：**探针 8 项断言全过**（含 fake 容量守卫仍生效、源码断言唯一构造点）；4 文件 **83 passed**。
+- **D05-16 改判**：`correction._get_store()` 早已用共享 `get_qdrant_client()`（P2-04）⇒「自建第二套 Qdrant」已过时；残余"裸调用未走门面"是无收益间接层且会**变更 collection schema**（行为变更）⇒ 登记不改。
+- **验收（第八轮末）**：**全量 pytest 856 passed / 4 skipped / 20 deselected（EXIT=0）**；**`review_agent --full` ✅ 全绿（EXIT=0）**，含 `tests`（pytest + api_smoke + research）与 `openapi_snapshot`；**覆盖率 84.10% ≥ 60%**（阈值 50→60 收紧已实证）。工作树干净；门禁钩子全程生效、未用 `--no-verify`。
+- **B9 收口后仍待办**：B5（需 HBuilderX 编译门）；B11 残余 6 项（多需 `决策台账 §5.10` 拍板）；**64 条功能与安全缺陷**待拍板归属波次；门禁域低价值残余（D14-12/22/23）；**运维：备份超期 ≈20.5 天（RPO≤24h）**。
