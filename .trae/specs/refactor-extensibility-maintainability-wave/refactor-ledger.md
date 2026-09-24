@@ -100,7 +100,7 @@
 
 - `agent/`（独立改写批次）、`research/`（评测语料）；功能性/安全缺陷（§2.15、RAG 重校、推送真实通道、图搜评测）→ 交**功能波**（2026-09-24 已拍板，§5.10 拍板 10.1）。
 - 架构边界变更（如需调整依赖方向/拆服务）→ 另开 `architecture-decisions` ADR。
-- **L-12 设计令牌收敛 → 另立「令牌波」**（2026-09-24 已拍板，§5.10 拍板 10.4；判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机）。
+- **L-12 设计令牌收敛 → 另立「令牌波」**（2026-09-24 已拍板，§5.10 拍板 10.4；判为复杂：规模/令牌值漂移/App 端样式不继承需构建期注入/验收须目视真机）。**该波已于 2026-09-25 开波（用户拍板"方案文档先行"）：方案见 `.trae/specs/design-token-convergence-wave/spec.md`**（输入分布实测 + 平台能力 + A/B/C 对比 + P1–P5 分期 + **6 项待拍板**；未拍板前不动令牌/样式代码）。
 
 ## 8. 执行结果（2026-09-24 回填）
 
@@ -252,7 +252,7 @@
 | 条目 | 状态 | 证据 | 备注 |
 |---|---|---|---|
 | **L-02b** 拆分四态（`showSplitPanel`/`splitEventId`/`splitItems`/`splitLoading`）+ 13 方法（`onCardOps`/`doConfirm`/`confirmPending`/`ignorePending`/`patchEventById`/`removeEventById`/`getPrevL1Id`/`doMerge`/`doSplit`/`toggleSplitItem`/`confirmSplit`/`cancelSplit`/`splitTimeText`）→ `useEventOps::EventOps` | ✅ 完成（结构 + 冷编译 + 轴 5/6/7） | 注入四个**取值函数**（不能传快照）：`getCurrent`（组件 `currentEvents` 是 `let`、会被整组浅替换）+ `render`（原 `renderFromEvents`）+ `refresh`（原 `refreshSilently`）+ `getDays`（原 `days.value`）；组件只留 `onCardOps`/`confirmPending`/`ignorePending` 三个模板入口薄包装 | ① `TabIndex.uvue` **899 → 738**（累计 **1046 → 738，−308**）；② **冷编译成功**（36.8s）；③ 轴 5 **无 CRITICAL**；④ **axis-5 baseline 条目按 gate 要求删除 ⇒ L-02 销项**；⑤ 轴 6/7 **0 违规** |
-| 👁 **观察（登记 · 非本波修）** | 📌 交功能波 | 模板内**已无**拆分面板与照片详情浮层 ⇒ `showSplitPanel`/`splitItems`/`splitLoading`/`confirmSplit`/`cancelSplit`/`toggleSplitItem`/`splitTimeText` 与 `showPhotoDetail`/`photoDetailPath`/`photoDetailEvents`/`photoDetailLoading`/`closePhotoDetail`/`jumpFromPhoto` 均为**模板不可达的 UI 状态**——用户仍可经卡片「⋯」面板触发 `doSplit`（其会置 `showSplitPanel=true`），但**无任何节点渲染该面板** ⇒ 属**功能缺口**（非结构债），已从结构域移交功能修复波 | 本波**只做纯移动**、不改行为，故按原样搬迁并留此登记（避免"搬迁即修"越界） |
+| 👁 **观察（2026-09-25 用户已裁决：不恢复）** | ✅ 已裁决 | 模板内**已无**拆分面板与照片详情浮层，而脚本仍持有相关状态与方法 | **用户裁决「不恢复」**：git 取证显示删除发生在 **2026-08-29 `cd41f18`「像素级UI还原」**（该提交重写本页 817 行、未新建任何面板子组件），且 `uvue_gen/index_canvas.json` **亦无这两帧** ⇒ 与画布口径一致、属**有意为之**；**非本次 L-02 所致**（L-02 只动 `<script>`，当时模板同样无此节点）；悬空逻辑无害，不再列为待办。取证见 `docs/决策台账.md` §4.15 15.4 |
 
 ### 8.14 🚨 GAP-2：**类成员**是第二道编译假绿面 → 修 P0 回归 + 新增轴 7（2026-09-25）
 
@@ -324,7 +324,7 @@
 
 ### 9.2 功能与安全缺陷（64 条 · **本波不修，交功能波**）
 
-> 📌 **施工期新增 1 条（2026-09-25 · 交功能波受理，不并入下面 64 条的深审计数）**：`TabIndex.uvue` 模板（1–209 行）**已无**拆分面板与照片详情浮层，而脚本仍持有 `showSplitPanel`/`splitItems`/`splitLoading`/`confirmSplit`/`cancelSplit`/`toggleSplitItem`/`splitTimeText` 与 `showPhotoDetail`/`photoDetailPath`/`photoDetailEvents`/`photoDetailLoading`/`closePhotoDetail`/`jumpFromPhoto` ⇒ 卡片「⋯」可触发 `doSplit`，但**无节点渲染该面板**（用户点“拆分这张卡”无可见结果）= **功能缺口**。详见 `docs/决策台账.md` §4.15 **15.4** 与 §8.13。
+> 📌 **施工期新增 1 条（2026-09-25）→ 已由用户裁决「不修」，不再交功能波受理**：`TabIndex.uvue` 模板已无拆分面板与照片详情浮层，脚本仍持有 `showSplitPanel`/`splitItems`/`splitLoading`/`confirmSplit`/`cancelSplit`/`toggleSplitItem`/`splitTimeText` 与 `showPhotoDetail`/`photoDetailPath`/`photoDetailEvents`/`photoDetailLoading`/`closePhotoDetail`/`jumpFromPhoto`。**git 取证**：模板节点由 08-24 `24b205f` 引入、08-26 `a42d51d` 扩展，**08-29 `cd41f18`「像素级UI还原」删除**（未迁移、未新建子组件），`7b831fc`/`e2e3c26` 照搬；**本次 L-02 只动 `<script>`、未碰模板**。**裁决理由**：删除与 `uvue_gen/index_canvas.json`（亦无此两帧）口径一致＝有意为之；悬空逻辑无害。详见 `docs/决策台账.md` §4.15 **15.4**。
 
 **P0（10 条）**：D04-1、D04-2、D07-1、D08-1、D08-2、D08-3、D09-1、D09-2、D10-1、D10-2（见 §9.1）。
 **P1（36 条）**：D01-6/7、D02-4/5/6、D03-6/7、D04-4/5/6/13、D05-5/14、D06-5、D07-3/4/5/7/8/9/10/11/12/16、D08-5/6/7/8/9、D09-3/4/5/7/8、D10-5/6/7/8/9、D11-4。

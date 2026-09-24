@@ -447,3 +447,14 @@
 - **本波结构类清单已清（终态）**：**L-01**（`RecordSheet` 753）/ **L-02**（`TabIndex` 738）/ **L-18/19/20**（`TabAi` 469 / `favorites` 500 / `manage` 466）**全部销项**，轴 5 存量超阈 **4 → 3 → 0（allowlist 清空）**。**仍待真机（不可用）**：B5c 上传、B5d/B5.2e/B5.2f 全子步的渲染/波形/动画/录音保存全链路、**L-01/L-02/L-18/19/20 运行验收**。**另立波**：L-12 令牌波、64 条功能修复波。
 - ✅ **全量门禁实跑（2026-09-25 · Docker/Qdrant 已起）**：`python scripts/review_agent.py --full` → **EXIT 0 / ✅ 审核通过**（`.cowork-temp/test-report.json` `passed=true`、`blocking_sections=[]`、`env_blocked_sections=[]`）：`syntax` **376 文件 ✅** / `lint` ✅ / `secrets` ✅ / `structure` 无 CRITICAL / `audit_axes` 无 CRITICAL / `env_template` ✅ / `openapi_snapshot` ✅（239518 字符逐字节一致）/ `tests` ✅（pytest 主套件 + `-m rag` 分组 `--cov-append`，**“Required test coverage of 60% reached. Total coverage: 84.59%”**）/ `api_smoke` ✅ / `research` ✅ 18 场景。⇒ **承 §8.3 B10-h 的「覆盖率 50→60 待环境验证」就此解除**（此前"无法确认"的如实标注现由实测取代）。
 - 🧹 **文档口径对账（同轮，防"多窗口漂移"）**：清掉 4 处**已过期**的待办勾选（`checklist` A7 拍板项 / B5.2f"未做" / `tasks` A7 / B10-b / B10-i / B5 巨文件拆分），并把 `review_agent --full` 的实测读数回填 checklist/tasks/ledger。**说明**：这些是**状态记账漂移**（工作早已完成却仍显示待办），非新工作量；按 AGENTS「改任何全局数字必须多处同步」纪律一次性校正。
+
+## ✅ 第十一轮 · 令牌波开波（方案先行）+ 三裁决登记（2026-09-25）
+
+- 🧭 **用户三裁决已落定并登记**（决策台账新 **§4.16**）：① **TabIndex 悬空面板＝不恢复**（git 取证：08-29 `cd41f18`「像素级UI还原」重写本页时删掉的模板节点，未迁移未新建组件，且 `index_canvas.json` 亦无此两帧＝有意为之；**非本次重构所致**，悬空逻辑无害）② **客户端↔Agent 接线 → 归「功能修复波」** ③ 波次顺序 **先令牌波、再功能修复波**。
+- 📄 **令牌波开波（用户拍板"方案文档先行"）**：产出 `.trae/specs/design-token-convergence-wave/spec.md`。
+  - **输入分布（本轮实测）**：38 个样式承载文件（32 内联 `<style>` + 6 已外置 css）＝**7400 行**；hex **762 次/56 种** + `rgb()/rgba()` **190 处** + 渐变 **10 处** ⇒ **~962 个颜色位点**；模板动态 `:style=` **19 处**；`var(--` **0 次**；`design_tokens.json` 仅 **52 个叶子值**。
+  - **五个结构性差异**（比数字更关键）：① tokens.dimensions 是 **390 画布 px** 而代码是 **750 rpx**（非 1:1）② 令牌集**完全没建模** rgb/渐变/阴影 ③ 只有单层"用途色"、**无语义别名层** ④ 19 处动态绑定需单独一簇 ⑤ `effects.card_shadow` 非合法 CSS。
+  - **平台能力**：✅ App ucss **支持 `var()`**，官方示范的声明位是 **`app.uvue` 里的 class**（`:root`/`page` 不可用、本仓 0 处尝试）；⚠️ 本仓实锤 **App 端样式不继承**（`App.uvue:95-113`"勿改回"注释）⇒ **V1 变量作用域 / V2 跨文件可见性未验证＝方案成败点**；⚠️ `theme.json` 只管 pages.json/tabbar。
+  - **前沿**：**W3C DTCG Format Module 2025.10**（2025-10-28）已成首个稳定标准（`$value`/`$type`+路径别名），SD v4/Terrazzo/Figma 均读写；但本仓 tokens **非 DTCG 形态**；单端项目**不建议引 SD 本体**（自写 ~100 行转换器更省）。
+  - **方案对比 A/B/C + P1–P5 分期**已写入文档；**6 项待拍板**（DTCG 与否 / 探针优先 / 基准 750rpx vs 390px / 分期 / dark mode / P3 目视挂账）。
+- ⚠️ **如实标注**：P3 的**目视真机验收**依赖设备（`adb` 无设备）⇒ 门禁/编译/产物取证可做，**目视挂账**；未拍板前**不动任何令牌/样式代码**。
