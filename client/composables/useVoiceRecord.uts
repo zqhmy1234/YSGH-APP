@@ -1,0 +1,227 @@
+/**
+ * 语音录制状态机（B5.2f-2d · 2026-09-24 重构波 · **方案 A：整块 view-model 进 composable**）
+ *
+ * 自 `components/RecordSheet/RecordSheet.uvue` **纯移动**而来：
+ *   · 13 个语音状态 ref（recording/recordSeconds/recordTimer/recState/lastTapAt/recordHint/
+ *     voiceHints/transcribing/transcript/emotion/guardMsg/lastVoiceDuration/lastVoiceFile）；
+ *   · 6 个状态机方法（setRecordingOff / toggleRecord / pauseRecordNow / endFromTap /
+ *     resumeRecordNow / stopRecordNow）—— 注释与真机实锤记录**逐字保留**。
+ *
+ * 注入（组件侧仍持有的东西）：
+ *   · `anim`：轮盘/圆点动画实例（暂停/恢复联动，原为组件内 `ra`）；
+ *   · `onStopped`：组件侧 `onRecordStopped`（转写 / 长录音持久上传 / 收栈）——**暂留组件**；
+ *   · `resetAiLabel`：清空组件 `aiLabel` 的动作（原 `aiLabel.value = ''` 一行，改回调等价）。
+ *
+ * 行为等价：状态为实例字段（组件用顶层绑定取同一 ref 对象，模板仍自动解包）；方法体逐字保留，
+ * 仅把 `x.value`→`this.x.value`、`ra.`→`this.anim.`、内部互调→`this.<方法>`、`onRecordStopped(`→
+ * `this.onStopped(`。
+ */
+import { ref } from 'vue'
+
+import { showErrorToast } from '@/utils/api'
+import {
+	pauseRecord,
+	recorderState,
+	resumeRecord,
+	REC_STATE_PAUSED,
+	setShouldResume,
+	startRecord,
+	stopRecord
+} from '@/utils/voice'
+
+import { RecordAnimations } from '@/composables/useRecordAnimations'
+
+
+export class VoiceRecorder {
+	recording = ref(false)
+	recordSeconds = ref(0)
+	recordTimer = ref(0)
+	recState = ref('idle')
+	lastTapAt: number = 0
+	recordHint = ref('轻触中央圆点 · 开始录音')
+	voiceHints = ref('')
+	transcribing = ref(false)
+	transcript = ref('')
+	emotion = ref('')
+	guardMsg = ref('')
+	lastVoiceDuration = ref(0)
+	lastVoiceFile = ref('')
+
+	private anim: RecordAnimations
+	private onStopped: (path: string, durationMs: number) => void
+	private resetAiLabel: () => void
+
+	constructor(
+		anim: RecordAnimations,
+		onStopped: (path: string, durationMs: number) => void,
+		resetAiLabel: () => void
+	) {
+		this.anim = anim
+		this.onStopped = onStopped
+		this.resetAiLabel = resetAiLabel
+	}
+
+	setRecordingOff(): void {
+		this.recording.value = false
+		this.anim.stop()
+	}
+
+	toggleRecord(): void {
+		if (this.transcribing.value) {
+			return
+		}
+		if (this.recording.value) {
+			// 峰宝 09-02 拍板：单击=暂停/继续（立即生效，无 300ms 等待），连点两下=结束录音
+			const now = Date.now()
+			if (this.lastTapAt > 0 && now - this.lastTapAt < 400) {
+				this.lastTapAt = 0
+				this.endFromTap()
+			} else {
+				this.lastTapAt = now
+				if (this.recState.value == REC_STATE_PAUSED) {
+					this.resumeRecordNow()
+				} else {
+					this.pauseRecordNow()
+				}
+			}
+		} else {
+			this.lastTapAt = 0
+			this.recording.value = true
+			this.anim.start()
+			this.recordSeconds.value = 0
+			this.recState.value = 'idle'
+			this.recordHint.value = '轻触暂停 · 连点两次结束'
+			this.transcript.value = ''
+			this.resetAiLabel()
+			this.emotion.value = ''
+			this.guardMsg.value = ''
+			this.voiceHints.value = ''
+			this.lastVoiceFile.value = ''
+			setShouldResume(true)
+			this.recordTimer.value = setInterval(() => {
+				this.recordSeconds.value++
+			}, 1000) as number
+			// 原生录音插件在标准基座缺失（UTSAndroid is not defined）→ 同步抛出会让状态机卡死，
+			// 导致「录音中关不掉表单」。必须兜底：失败即回滚状态 + 提示。
+			try {
+			startRecord(
+				() => {
+					console.log('[yishu] record started')
+				},
+				(path: string, durationMs: number) => {
+					this.onStopped(path, durationMs)
+				},
+				(msg: string) => {
+					console.error('[yishu] record error: ' + msg)
+					this.setRecordingOff()
+					this.recState.value = 'idle'
+					this.recordHint.value = '轻触中央圆点 · 开始录音'
+					if (this.recordTimer.value > 0) {
+						clearInterval(this.recordTimer.value)
+						this.recordTimer.value = 0
+					}
+					// R7（2026-09-06）：Android RecorderManager 的 errMsg 是系统原文（如 "other errors"），
+					// 用户看不懂。按常见根因翻译；无法识别时给可行动建议。常见触发：
+					// 上次录音未正确释放（强退路径）后立刻再录 / 麦克风被系统占用 / 快速 start-stop 竞态。
+					const m = msg.toLowerCase()
+					if (m.indexOf('other') >= 0 || m.indexOf('fail') >= 0) {
+						showErrorToast(new Error('录音器未就绪（可能被上次录音占用），请重试一次；仍失败请杀掉 App 重开'))
+					} else if (m.indexOf('permission') >= 0 || m.indexOf('denied') >= 0) {
+						showErrorToast(new Error('麦克风权限未开启，请在系统设置中允许'))
+					} else {
+						showErrorToast(new Error('录音失败：' + msg))
+					}
+				},
+				(autoPaused: boolean) => {
+					console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
+					this.recState.value = recorderState()
+					this.recordHint.value = '录音被中断，已暂停'
+					// R7 补缺口：系统中断（来电/音频焦点/省电）时原生录音已自动暂停，但轮盘动画
+					// 与计时器此前不联动——轮盘继续转+计时继续跑，与手动暂停（§M：全联动）不一致。
+					// 对齐 pauseRecordNow 的联动集（轮盘/圆点动画 pause + 计时器冻结）
+					this.anim.pause()
+					if (this.recordTimer.value > 0) {
+						clearInterval(this.recordTimer.value)
+						this.recordTimer.value = 0
+					}
+				},
+				(path: string, durationMs: number) => {
+					console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
+					this.onStopped(path, durationMs)
+				}
+			)
+			} catch (e) {
+				console.log('[yishu] startRecord failed (标准基座无原生录音插件，状态回滚): ' + e)
+				this.setRecordingOff()
+				this.recState.value = 'idle'
+				this.recordHint.value = '轻触中央圆点 · 开始录音'
+				if (this.recordTimer.value > 0) {
+					clearInterval(this.recordTimer.value)
+					this.recordTimer.value = 0
+				}
+				// 铁律 10.8：能力不可用必须给 toast。只改 recordHint 文案用户看不见
+				// （真机 2026-08-31 峰宝复验：「点麦克风不会有任何提示」）
+				uni.showToast({ title: '当前基座不支持录音，请改用自定义基座', icon: 'none' })
+			}
+		}
+	}
+	// §M 手动暂停（方案 B，峰宝 2026-09-02 拍板）：原生已暂停，UI 计时器冻结 + 轮盘停转，
+	// 恢复入口复用 interrupt-bar「继续录音」
+	pauseRecordNow(): void {
+		try {
+			pauseRecord()
+			this.recState.value = recorderState()
+			this.anim.pause()
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+				this.recordTimer.value = 0
+			}
+			this.recordHint.value = '已暂停 · 轻触继续'
+		} catch (e) {
+			console.log('[yishu] pauseRecord failed (标准基座无原生插件，忽略): ' + e)
+		}
+	}
+	// 双击结束：第一击可能已把原生录音置为暂停，先恢复原生态再停（stopped 回调统一走 onRecordStopped）
+	endFromTap(): void {
+		if (this.recState.value == REC_STATE_PAUSED) {
+			try {
+				resumeRecord()
+			} catch (e) {
+				console.log('[yishu] endFromTap resumeRecord failed (忽略): ' + e)
+			}
+		}
+		this.stopRecordNow()
+	}
+	resumeRecordNow(): void {
+		try {
+			resumeRecord()
+			this.recState.value = recorderState()
+			this.anim.resume()
+			// 计时器随恢复重启（暂停期间已冻结）
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+			}
+			this.recordTimer.value = setInterval(() => {
+				this.recordSeconds.value++
+			}, 1000) as number
+			this.recordHint.value = this.recState.value == REC_STATE_PAUSED ? '录音被中断，已暂停' : '轻触暂停 · 连点两次结束'
+		} catch (e) {
+			console.log('[yishu] resumeRecord failed (标准基座无原生插件，忽略): ' + e)
+		}
+	}
+	stopRecordNow(): void {
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[yishu] stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 兜底：原生不可用也要把 UI 状态复位，否则「录音中」永远退不出去
+			this.setRecordingOff()
+			this.recState.value = 'idle'
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+				this.recordTimer.value = 0
+			}
+		}
+	}
+}

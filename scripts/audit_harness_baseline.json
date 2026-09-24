@@ -14,9 +14,9 @@
     },
     "allowlist": {
       "client/components/RecordSheet/RecordSheet.uvue": {
-        "lines": 1054,
-        "reason": "L-01 全仓最大文件；**已做样式外置**（B5.2e：2209→1354）＋ **圆点/轮盘动画 composable**（B5.2f-2a：→1135）＋ **自定义标签助手外置**（B5.2f-2b：→1089，含新增 import）＋ **模板取值封装外置**（B5.2f-2c：record_ui →1054）；剩余 script 为**表单编排逻辑**（照片/文字/语音三段），抽离需重新分配状态归属 ⇒ 与真机验证同批",
-        "target": "批次 B5：剩余抽取需状态归属重构（与真机验收同批）；完成后删除本条"
+        "lines": 889,
+        "reason": "L-01 全仓最大文件；已做 样式外置（B5.2e 2209→1354）＋ 圆点/轮盘动画 composable（B5.2f-2a →1135）＋ 自定义标签助手（B5.2f-2b →1089）＋ 模板取值封装（B5.2f-2c →1054）＋ **语音录制状态机整块进 composable**（B5.2f-2d 方案A →889）；剩 onRecordStopped/submitVoice/afterVoiceSaved（~150 行）待同法迁移",
+        "target": "批次 B5：继续按方案 A 迁剩余语音收尾函数（与真机验收同批）；完成后删除本条"
       },
       "client/components/TabIndex/TabIndex.uvue": {
         "lines": 1046,

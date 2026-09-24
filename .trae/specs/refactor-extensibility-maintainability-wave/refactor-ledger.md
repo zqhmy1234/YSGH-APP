@@ -221,6 +221,15 @@
 | **B5.2f-2c** `RecordSheet` **模板取值封装**（4 个无状态纯函数）外置 | ✅ 完成（结构 + 冷编译） | 新增 `client/utils/record_ui.uts`（`fmtRecTime` / `recSecFromMs` / `cellCls` / `imgCls`；原设计注释与峰爸拍板记录**逐字保留**）；`setInfoTime`（写组件 `infoTime` ref）**留在组件内**；模板按名调用 ⇒ **模板零改动** | ① `RecordSheet.uvue` **1089 → 1054（−35）**——同时**消除**上一轮我新增 import 造成的 +5 增长 `[WARN] …应抽取而非加长`；② **冷编译成功**；③ 轴 6 扫描 0 违规；④ baseline 按棘轮**下调** 1084→1054（gate 自己提示"缩了要记账"） |
 | 🧭 **B5.2f 剩余部分**（`RecordSheet` 1054→800 需 −254；`TabIndex` 1046→800 需 −247） | ⏸ **需设计决策 + 真机同批**（**妥善停在边界，未硬做**） | 实测剩余 script **全部是表单编排逻辑**（照片/文字/语音三段、L2/L3 归并），依赖组件状态（`photos`/`photoSizes`/`recording`/`recSec`/`transcript`/`emotion`/`days`… **10+ 个 ref**）与 `emit`/动画实例。继续抽**必须重新分配状态归属**：**方案 A** 整块 view-model 移入 composable（组件退回薄绑定层）；**方案 B** 拆子组件（模板+逻辑同迁，改 props/emits）。两者**都不再是「纯移动」**，且运行期行为（录音中断/上传/归并/动画）**只有真机可验** | 依用户规则「探索性/创造性设计前必须先探讨」，**未擅自开工**；已提请决策（见 progress）。风险权衡：**方案 A** 改动面集中在 script、模板几乎不动、回归面较小但"状态归属"属结构性变更；**方案 B** 结构最清晰但模板搬运量大、props/emits 契约易漏 ⇒ 更依赖真机逐路径验收 |
 
+### 8.10 B5.2f-2d（**方案 A** 子步 1）：语音录制状态机整块进 composable（2026-09-24 · 第十二轮）
+
+> **决策**：用户 2026-09-24 拍板 **方案 A —— 整块 view-model 进 composable（组件退化为薄绑定层）**（见 progress/本表 8.9 的选项说明）。
+
+| 条目 | 状态 | 证据 | 备注 |
+|---|---|---|---|
+| **B5.2f-2d** `RecordSheet` **语音录制状态机**（13 状态 + 6 方法，163 行）→ `useVoiceRecord::VoiceRecorder` | ✅ 完成（结构 + 冷编译 + 轴 6） | 新增 `client/composables/useVoiceRecord.uts`：13 个语音 ref 成为**实例字段**，6 个状态机方法（`setRecordingOff`/`toggleRecord`/`pauseRecordNow`/`endFromTap`/`resumeRecordNow`/`stopRecordNow`）为类方法（注释与真机实锤记录**逐字保留**）；注入 `anim`（轮盘/圆点动画实例）、`onStopped`（组件 `onRecordStopped`，**暂留**）、`resetAiLabel`（等价替换原 `aiLabel.value = ''`）。组件退化为薄绑定层：12 个顶层 `const x = vr.x`（**Ref 必须顶层绑定才会被模板解包**）+ 6 个薄包装 | ① `RecordSheet.uvue` **1054 → 889（−165）**；② **冷编译 `项目 client 编译成功`**；③ 轴 6 扫描 0 违规；④ baseline 下调 1054→889 | 
+| 🛠 **同轮修掉 4 个自己制造的缺陷**（留证；这是"生成式改写"的教训） | ✅ 全部修复 | ① **轴 6 真抓到回归**：组件 voice import 瘦身时误删 `recorderState`/`stopRecord`，而 `closeForm()` 仍在用（force-release 路径）→ 轴 6 **立即点名两处**；② 生成的类内方法误留 `function` 关键字；③ 内部方法互调未加 `this.`（运行期会变未定义调用）；④ 组件改写**先删声明、再用旧索引切割** ⇒ 错位（编译 `Unexpected token (885:0)`）。另：自写的"可疑未注入标识符体检"**主动抓出 `aiLabel` 漏注入**（否则会静默引用未定义符号） | **教训**：「生成式改写必须配 ①静态体检（未注入标识符）②真实编译 ③轴 6 导入检查」三道；**轴 6 在本轮已产生真实战功**（抓到我自己引入的回归）。**未闭环**：`RecordSheet` 889（差 −89）⇒ 需同法迁 `onRecordStopped`/`submitVoice`/`afterVoiceSaved`（~150 行）；`TabIndex` 1046（差 −247）；**运行期（录音状态机全链路）只有真机可验** |
+
 ### 8.1 棘轮状态（2026-09-24 第二轮执行后，第五轮更新 · 含 B5b/B10-q）
 
 - `audit_harness all`：**无 CRITICAL**（INFO 16）；轴 5 存量超阈 **7 → 6 → 5 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**；`client/pages/detail/detail.uvue` 随 **B5d** 样式外置**销项移除**，1167→577 行；`RecordSheet`/`TabIndex` 随 **B5.2e** 样式外置**下调计数**——2208→1354 / 1740→1065，条目**保留冻结**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）；**轴 4 零调用能力导出存量 9 个已冻结**（B10-d 露出 `AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`；B10-f 补递归露出 `WALK_SPEED_MS`；**B10-q 剔注释后新露出 4**：`AGG_CHECK_ON_DEVICE`/`invalidateTimelineCache`/`isIgnoredEvent`/`parseErrorString`），引用计数已**剔除注释**（B10-q），且新增"僵尸豁免清算"。
