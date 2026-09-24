@@ -1,7 +1,7 @@
 <template>
 	<!-- B10 方案A 金丝雀：自 pages/profile/profile.uvue 整体搬迁（模板/样式零改动；TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE） -->
 <!-- ardot 直转 v2：我的页（帧 2:448）· 审计化生成 -->
-	<view class="profile-root">
+	<view class="profile-root tk-root">
 		<view class="n2_452"> <!-- 头像 -->
 			<text class="n2_453">峰</text> <!-- 头像字 -->
 		</view>
@@ -176,75 +176,75 @@
 		flex: 1;
 		flex-direction: column;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	/* 列表流式容器：组1/组2 依次入流，组间距 margin 表达（画布组1 y=250px=480.8rpx、组间距 38px=73.1rpx）。
 	   头部四块（头像/昵称/签名/统计卡）为静态内容保留 absolute 定位，不参与流。 */
 	.list-flow {
-		margin-top: 480.8rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
+		margin-top: var(--d-lattice-p250, 480.8rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: column;
 	}
 	.n2_452 {
 		position: absolute;
 		/* absolute-ok: 静态头部·头像（内容永不增长，画布锚点） */
-		left: 38.5rpx;
-		top: 123.1rpx;
-		width: 123.1rpx;
-		height: 123.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p64, 123.1rpx);
+		width: var(--d-lattice-p64, 123.1rpx);
+		height: var(--d-lattice-p64, 123.1rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
-		background-color: #C4913C;
-		border-radius: 61.5rpx;
+		background-color: var(--c-amber-500, #C4913C);
+		border-radius: var(--d-lattice-p32, 61.5rpx);
 		overflow: hidden;
 	}
 	.n2_453 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 46.2rpx;
-		color: #FFFFFF;
+		font-size: var(--d-lattice-p24, 46.2rpx);
+		color: var(--c-white, #FFFFFF);
 	}
 	.n2_454 {
 		position: absolute;
 		/* absolute-ok: 静态头部·昵称（同上） */
-		left: 188.5rpx;
-		top: 138.5rpx;
-		width: 84.6rpx;
+		left: var(--d-lattice-p98, 188.5rpx);
+		top: var(--d-lattice-p72, 138.5rpx);
+		width: var(--d-status_bar_height, 84.6rpx);
 		height: 51.9rpx;
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		font-size: 42.3rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_455 {
 		position: absolute;
 		/* absolute-ok: 静态头部·签名行（同上） */
-		left: 188.5rpx;
-		top: 200rpx;
-		width: 369.2rpx;
-		height: 28.8rpx;
+		left: var(--d-lattice-p98, 188.5rpx);
+		top: var(--d-lattice-p104, 200rpx);
+		width: var(--d-lattice-p192, 369.2rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n2_456 {
 		position: absolute;
 		/* absolute-ok: 静态头部·统计卡（同上） */
-		left: 38.5rpx;
-		top: 292.3rpx;
-		width: 673.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p152, 292.3rpx);
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		padding-left: 34.6rpx;
-		padding-right: 34.6rpx;
-		padding-top: 34.6rpx;
-		padding-bottom: 34.6rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
-		border-radius: 38.5rpx;
+		padding-left: var(--d-lattice-p18, 34.6rpx);
+		padding-right: var(--d-lattice-p18, 34.6rpx);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-bottom: var(--d-lattice-p18, 34.6rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n2_457 {
@@ -254,15 +254,15 @@
 	.n2_458 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		font-size: 42.3rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_459 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 		/* uvue App端不支持flex gap（官方能力边界），画布 gap=3.8rpx 改子元素margin */
-		margin-top: 3.8rpx;
+		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}
 	.n2_460 {
 		flex-direction: column;
@@ -271,15 +271,15 @@
 	.n2_461 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		font-size: 42.3rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_462 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
-		margin-top: 3.8rpx;
+		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}
 	.n2_463 {
 		flex-direction: column;
@@ -288,170 +288,170 @@
 	.n2_464 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		font-size: 42.3rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_465 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
-		margin-top: 3.8rpx;
+		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}
 	.n2_466 {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 11.5rpx;
-		padding-right: 11.5rpx;
-		padding-top: 11.5rpx;
-		padding-bottom: 11.5rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
-		border-radius: 38.5rpx;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n2_467 {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_468 {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	.n2_472 {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 	}
 	.n2_473 {
-		width: 26.9rpx;
-		height: 26.9rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
 	}
 	.n2_475 {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_476 {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	.n2_478 {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 	}
 	.n2_479 {
-		width: 26.9rpx;
-		height: 26.9rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
 	}
 	.n2_481 {
 		/* 流式重构：原 absolute top:746.2 写死（加行即重叠的根因），改 margin-top 跟组1底部走 */
-		margin-top: 73.1rpx;
+		margin-top: var(--d-lattice-p38, 73.1rpx);
 		width: 100%;
 		flex-direction: column;
-		padding-left: 11.5rpx;
-		padding-right: 11.5rpx;
-		padding-top: 11.5rpx;
-		padding-bottom: 11.5rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
-		border-radius: 38.5rpx;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n2_482 {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_483 {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	.n2_486 {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 	}
 	.n2_487 {
-		width: 26.9rpx;
-		height: 26.9rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
 	}
 	.n2_489 {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_490 {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	.n2_493 {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 	}
 	.n2_494 {
-		width: 26.9rpx;
-		height: 26.9rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
 	}
 	.n2_496 {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_550 {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	.n2_501 {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 	}
 	.n2_502 {
-		width: 26.9rpx;
-		height: 26.9rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
 	}
 </style>

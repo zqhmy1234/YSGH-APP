@@ -6,7 +6,7 @@
 	     选项列表 gap=8px→15.4rpx；视觉语言对齐详情页定稿（峰宝 09-03 拍板）：
 	     弹层暖底 #FAF9F5 / 摘要行白卡+双投影 / 选中态锈红 #B05A3A（描边+勾选圆）/
 	     未选卡白底淡投影 / 主按钮锈红；几何未变，仅色彩与投影改版 -->
-	<view class="sheet-root">
+	<view class="sheet-root tk-root">
 		<view class="scrim" @tap="onClose"></view>
 		<view class="sheet">
 			<view class="head-row">
@@ -159,7 +159,7 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet/ShareSheet 同款铁律） */
 		z-index: 1000;
@@ -168,28 +168,28 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* 画布 63:52 真值：暖黑 a=0.40 */
-		background-color: rgba(59, 46, 38, 0.4);
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
 		z-index: 10;
 	}
 	.sheet {
 		position: absolute;
 		bottom: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		/* 画布 63:53 弹层顶 y=331 → 高 513 逻辑 = 986.5rpx；内容驱动 + 下限兜底 */
-		min-height: 986.5rpx;
+		min-height: var(--d-lattice-p513, 986.5rpx);
 		/* 重设计：白 → 暖底 #FAF9F5（§W 补刀：§U 批此刀被写竞争吞掉，34270a3 入库的是残缺版） */
-		background-color: #FAF9F5;
+		background-color: var(--c-paper-50, #FAF9F5);
 		/* 承载形状圆角（§W 峰宝拍板）：顶圆角对齐 RecordSheet 弹层 77rpx 家族语言，底缘贴屏 */
 		border-top-left-radius: 77rpx;
 		border-top-right-radius: 77rpx;
-		padding-top: 34.6rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-bottom: 53.8rpx;
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
 		z-index: 20;
 		flex-direction: column;
 	}
@@ -201,16 +201,16 @@
 	}
 	.head-title {
 		/* 画布 63:55：y 相对头行 +4px */
-		margin-top: 7.7rpx;
+		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.head-close {
 		/* 热区 ≥60rpx 方形 + 居中（峰宝拍板：可点区域必须大于字形） */
-		width: 60rpx;
-		height: 60rpx;
+		width: var(--d-raw-r60, 60rpx);
+		height: var(--d-raw-r60, 60rpx);
 		justify-content: center;
 		align-items: center;
 		/* 补偿原 padding 10rpx 的视觉位置 */
@@ -218,65 +218,65 @@
 	}
 	.head-close-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 42.3rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-300, #B3A696);
 		/* 文字在 60rpx 热区内略微上移对齐原视觉基线 */
 		margin-top: -4rpx;
 	}
 	.summary-row {
 		width: 100%;
-		margin-top: 30.8rpx;
-		height: 100rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p52, 100rpx);
 		/* 重设计：白卡 + 双投影（画布 y4/blur16/a0.06 + y1/blur3/a0.04 → rpx；messages 卡同款语言） */
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		border-radius: 23.1rpx;
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		flex-direction: row;
 		align-items: center;
-		padding-left: 26.9rpx;
-		padding-right: 26.9rpx;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
 		overflow: hidden;
 	}
 	.summary-star {
-		width: 26.9rpx;
-		height: 26.9rpx;
-		margin-right: 15.4rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
 	}
 	.summary-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 25rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.section-label {
-		margin-top: 30.8rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.opt-list {
 		width: 100%;
-		margin-top: 30.8rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
 		flex-direction: column;
 	}
 	.opt {
 		width: 100%;
-		height: 100rpx;
-		background-color: #FFFFFF;
-		border-width: 1.9rpx;
-		border-color: #EDE5D5;
-		border-radius: 23.1rpx;
+		height: var(--d-lattice-p52, 100rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--c-paper-400, #EDE5D5);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		padding-left: 26.9rpx;
-		padding-right: 26.9rpx;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
 		overflow: hidden;
 	}
 	/* 选中态叠加类（只覆盖描边色 = chip 系合法先例；须写在 .opt 之后；§W 补刀锈红） */
 	.opt-on {
-		border-color: #B05A3A;
+		border-color: var(--c-rust-500, #B05A3A);
 	}
 	.opt-texts {
 		flex-direction: column;
@@ -284,59 +284,59 @@
 	.opt-main {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 26.9rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.opt-sub {
 		/* 画布选项内 gap=2px → margin（gap 引擎丢弃） */
-		margin-top: 3.8rpx;
+		margin-top: var(--d-lattice-p2, 3.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.opt-check {
-		width: 30.8rpx;
-		height: 30.8rpx;
-		border-radius: 15.4rpx;
+		width: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p16, 30.8rpx);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
 		/* §W 补刀：勾选圆锈红（§U 批被写竞争吞掉） */
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
 	}
 	/* 白勾：画布 63:69 真矢量导出（2026-09-02 export_nodes，替代原 CSS rotate 实现） */
 	.opt-check-mark {
-		width: 13.5rpx;
-		height: 9rpx;
+		width: var(--d-lattice-p7, 13.5rpx);
+		height: var(--d-raw-r9, 9rpx);
 	}
 	.opt-circle {
-		width: 28.8rpx;
-		height: 28.8rpx;
+		width: var(--d-lattice-p15, 28.8rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
 		border-radius: 14.4rpx;
-		border-width: 1.9rpx;
-		border-color: #B3A696;
-		background-color: rgba(0, 0, 0, 0);
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--c-ink-300, #B3A696);
+		background-color: var(--c-transparent, rgba(0, 0, 0, 0));
 	}
 	.note-text {
-		margin-top: 30.8rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
 		width: 100%;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	.main-btn {
 		width: 100%;
-		margin-top: 30.8rpx;
-		height: 92.3rpx;
-		border-radius: 46.2rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
 		/* 重设计：主按钮琥珀→锈红 #B05A3A（画布 63:87 改版真值，对齐全 app 主按钮体系） */
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
 	}
 	.main-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #FFFFFF;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
 	}
 </style>

@@ -8,7 +8,7 @@
 	     + 锈红播放图标 5.5×6.5 + 金波形）+ 文字区 p8 gap3（标题 17·600 + 元信息 11）/
 	     文字卡=摘要块 r12 #C4913C a0.1 p12（金竖线 3×40 + 引文 14 #5A4C40）+ 元信息区 p8 /
 	     照片卡=双拼网格 h110 r8 gap4（占位 #E9DFCB/#E1D3B8）+ 标题 17·600 + 元信息 11 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 导航（settings.uvue 二级页先例原值；标题 = 主题名） -->
 		<view class="nav-title">
 			<text class="nav-title-text">{{ themeName }}</text>
@@ -201,15 +201,15 @@
 	.page-root {
 		flex: 1;
 		flex-direction: column;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	/* ── 导航：画布 标题 18px SemiBold y62 / 返回 22×22 @16,60 ── */
 	.nav-title {
 		position: absolute;
 		/* absolute-ok: 固定页头·标题容器（全宽居中） */
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -218,83 +218,83 @@
 	.nav-title-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.nav-back {
 		position: absolute;
 		/* absolute-ok: 固定页头·返回钮 */
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		z-index: 1;
 	}
 	/* ── 内容流：画布卡 x20 → 左右 inset 38.5rpx ── */
 	.flow {
 		position: absolute;
 		/* absolute-ok: 滚动容器（锁视口） */
-		left: 0rpx;
-		right: 0rpx;
-		top: 211.5rpx;
-		bottom: 0rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		right: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p110, 211.5rpx);
+		bottom: var(--d-lattice-p0, 0rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: column;
 	}
 	/* 64:196 结果提示：12px Regular #8A7A6A，y126（flow 顶 y110 → mt 30.8rpx） */
 	.meta-count {
-		margin-top: 30.8rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* 64:241 主题说明：11px Regular #B3A696，y148（上邻底 141 → gap7 = 13.5rpx） */
 	.meta-sub {
-		margin-top: 13.5rpx;
+		margin-top: var(--d-lattice-p7, 13.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	/* ── 记忆卡：画布 w350 r20 p8 白卡；投影双层 (0,4,16,.06)+(0,1,3,.04) →
 	   多层 box-shadow 全项目零先例 → 取主层单影，次层降级（台账 卡23 F9a）；
 	   首卡上隙画布 9pt(17.3rpx) 与卡间 10pt(19.2rpx) 差 1pt → 统一 19.2rpx（台账） ── */
 	.card {
-		margin-top: 19.2rpx;
-		background-color: #FFFFFF;
-		border-radius: 38.5rpx;
-		padding: 15.4rpx;
-		box-shadow: 0 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		padding: var(--d-lattice-p8, 15.4rpx);
+		box-shadow: 0 var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06));
 		flex-direction: column;
 	}
 	.no-margin {
-		margin-bottom: 0rpx;
+		margin-bottom: var(--d-lattice-p0, 0rpx);
 	}
 	/* 首卡贴 meta-sub（y148+13 → 170：gap9 = 17.3rpx） */
 	/* ── 语音卡 64:211 语音媒体：h64 r12 #C4913C a0.14 p14 gap12 ── */
 	.voice-strip {
-		height: 123.1rpx;
-		background-color: #C4913C24;
-		border-radius: 23.1rpx;
+		height: var(--d-lattice-p64, 123.1rpx);
+		background-color: var(--a-amber-14, #C4913C24);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		flex-direction: row;
 		align-items: center;
-		padding-left: 26.9rpx;
-		padding-right: 26.9rpx;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
 	}
 	/* 64:229 玻璃播放钮：32×32 白a0.5 + 描边白a0.8 + BACKGROUND_BLUR 8 + 内阴影白a0.4
 	   （backdrop-filter 有 TabBar 先例；inset box-shadow 按 CSS 支持清单纳入） */
 	.vplay-btn {
-		width: 61.5rpx;
-		height: 61.5rpx;
-		border-radius: 30.8rpx;
-		background-color: rgba(255, 255, 255, 0.5);
-		border-width: 1.9rpx;
+		width: var(--d-lattice-p32, 61.5rpx);
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--a-white-50, rgba(255, 255, 255, 0.5));
+		border-width: var(--d-lattice-p1, 1.9rpx);
 		border-style: solid;
-		border-color: rgba(255, 255, 255, 0.8);
+		border-color: var(--a-white-80, rgba(255, 255, 255, 0.8));
 		backdrop-filter: blur(8px);
-		box-shadow: inset 0 1.9rpx 3.9rpx rgba(255, 255, 255, 0.4);
+		box-shadow: inset 0 var(--d-lattice-p1, 1.9rpx) 3.9rpx var(--a-white-40, rgba(255, 255, 255, 0.4));
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -309,21 +309,21 @@
 		flex-direction: row;
 	}
 	.vpause-bar {
-		width: 7.7rpx;
-		height: 23.1rpx;
+		width: var(--d-lattice-p4, 7.7rpx);
+		height: var(--d-card_radius_small, 23.1rpx);
 		border-radius: 3.9rpx;
-		background-color: #B05A3A;
-		margin-left: 5.8rpx;
+		background-color: var(--c-rust-500, #B05A3A);
+		margin-left: var(--d-lattice-p3, 5.8rpx);
 	}
 	/* 64:230 波形：x58（钮右 gap12=23.1rpx）h26→50rpx，VoiceWave 复用（detail 先例） */
 	.vwave {
 		flex: 1;
-		margin-left: 23.1rpx;
-		height: 50rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		height: var(--d-lattice-p26, 50rpx);
 	}
 	/* 64:212 语音文字区：p8 gap3 → 元信息 mt 5.8rpx */
 	.voice-text-block {
-		padding: 15.4rpx;
+		padding: var(--d-lattice-p8, 15.4rpx);
 		flex-direction: column;
 	}
 	/* ── 照片卡 64:216 照片网格：gap4 → 首格 mr 7.7rpx；双格 flex 均分 h110 ── */
@@ -332,94 +332,94 @@
 	}
 	.photo-cell {
 		flex: 1;
-		height: 211.5rpx;
-		border-radius: 15.4rpx;
+		height: var(--d-lattice-p110, 211.5rpx);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
 		overflow: hidden;
 	}
 	.cell-a {
-		margin-right: 7.7rpx;
+		margin-right: var(--d-lattice-p4, 7.7rpx);
 	}
 	.photo-img {
-		width: 317.3rpx;
-		height: 211.5rpx;
+		width: var(--d-lattice-p165, 317.3rpx);
+		height: var(--d-lattice-p110, 211.5rpx);
 	}
 	/* 64:236/64:237 画布照片占位双色 #E9DFCB / #E1D3B8 */
 	.photo-ph {
-		width: 317.3rpx;
-		height: 211.5rpx;
+		width: var(--d-lattice-p165, 317.3rpx);
+		height: var(--d-lattice-p110, 211.5rpx);
 	}
 	.ph-a {
-		background-color: #E9DFCB;
+		background-color: var(--c-paper-500, #E9DFCB);
 	}
 	.ph-b {
-		background-color: #E1D3B8;
+		background-color: var(--c-paper-700, #E1D3B8);
 	}
 	/* 64:217/218 照片卡标题/元信息：画布原值 y118/y139 = 网格后零间隙（真值），
 	   但峰宝拍板（2026-09-02 主窗口收口）：三节点零间距太拥挤，属画布生成缺陷，
 	   覆盖真值加呼吸间距（网格→标题 12pt / 标题→元信息 4pt），已登记 _diff_ledger.md */
 	.title-flush {
-		margin-top: 23.1rpx;
+		margin-top: var(--d-card_radius_small, 23.1rpx);
 	}
 	.meta-flush {
-		margin-top: 7.7rpx;
+		margin-top: var(--d-lattice-p4, 7.7rpx);
 	}
 	/* ── 文字卡 64:213 摘要块：r12 #C4913C a0.1 p12 gap10 ── */
 	.quote-block {
-		background-color: #C4913C1A;
-		border-radius: 23.1rpx;
-		padding: 23.1rpx;
+		background-color: var(--a-amber-10, #C4913C1A);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		padding: var(--d-card_radius_small, 23.1rpx);
 		flex-direction: row;
 		align-items: center;
 	}
 	/* 64:233 引用竖线：3×40 r2 */
 	.quote-bar {
-		width: 5.8rpx;
-		height: 76.9rpx;
+		width: var(--d-lattice-p3, 5.8rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
 		border-radius: 3.9rpx;
-		background-color: #C4913C;
+		background-color: var(--c-amber-500, #C4913C);
 	}
 	/* 64:234 摘要文本：14px Regular #5A4C40，竖线右 gap10=19.2rpx */
 	.quote-text {
 		flex: 1;
-		margin-left: 19.2rpx;
+		margin-left: var(--d-lattice-p10, 19.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 26.9rpx;
-		color: #5A4C40;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-700, #5A4C40);
 	}
 	/* 64:214 文字元信息区：p8 */
 	.text-meta-block {
-		padding: 15.4rpx;
+		padding: var(--d-lattice-p8, 15.4rpx);
 		flex-direction: column;
 	}
 	/* ── 卡内文字（64:231 标题 17·600 #3A2E25 / 64:232·235 元信息 11·400 #8A7A6A） ── */
 	.card-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 32.7rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p17, 32.7rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.card-meta {
-		margin-top: 5.8rpx;
+		margin-top: var(--d-lattice-p3, 5.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* 空态（非画布帧，交互必需；值随卡族节奏） */
 	.empty-card {
-		margin-top: 19.2rpx;
-		background-color: #FFFFFF;
-		border-radius: 38.5rpx;
-		padding: 61.5rpx;
-		box-shadow: 0 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06);
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		padding: var(--d-lattice-p32, 61.5rpx);
+		box-shadow: 0 var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06));
 		flex-direction: column;
 		align-items: center;
 	}
 	.empty-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 23.1rpx;
-		color: #B3A696;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

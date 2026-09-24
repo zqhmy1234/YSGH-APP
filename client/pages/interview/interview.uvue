@@ -1,6 +1,6 @@
 <template>
 	<!-- ardot 直转 v2：冷启动访谈（帧 4:167）· 审计化生成 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 光斑：画布为 GRADIENT_RADIAL，uvue App 端不支持 radial-gradient，
 		     改用预混 SVG 圆盘（_genspot.py 生成，纯 <circle fill> 零透明度属性；
 		     三光斑经程序验证两两零重叠，且正下方是纯色底 #F8F7F4，可安全预混） -->
@@ -318,34 +318,34 @@
 	.page-root {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	.n4_198 {
 		position: absolute;
 		left: -115.4rpx;
-		top: 76.9rpx;
-		width: 538.5rpx;
-		height: 538.5rpx;
+		top: var(--d-lattice-p40, 76.9rpx);
+		width: var(--d-lattice-p280, 538.5rpx);
+		height: var(--d-lattice-p280, 538.5rpx);
 	}
 	.n4_199 {
 		position: absolute;
-		left: 423.1rpx;
-		top: 326.9rpx;
-		width: 500rpx;
-		height: 500rpx;
+		left: var(--d-lattice-p220, 423.1rpx);
+		top: var(--d-lattice-p170, 326.9rpx);
+		width: var(--d-lattice-p260, 500rpx);
+		height: var(--d-lattice-p260, 500rpx);
 	}
 	.n4_200 {
 		position: absolute;
-		left: 57.7rpx;
-		top: 634.6rpx;
-		width: 461.5rpx;
-		height: 461.5rpx;
+		left: var(--d-lattice-p30, 57.7rpx);
+		top: var(--d-lattice-p330, 634.6rpx);
+		width: var(--d-lattice-p240, 461.5rpx);
+		height: var(--d-lattice-p240, 461.5rpx);
 	}
 	.n4_171 {
 		position: absolute;
-		left: 0rpx;
-		top: 123.1rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p64, 123.1rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		/* 画布 4:171 gap=6pt → 11.5rpx，换到非首子节点 margin-left
@@ -354,35 +354,35 @@
 		overflow: hidden;
 	}
 	.dot {
-		width: 15.4rpx;
-		height: 15.4rpx;
-		margin-left: 11.5rpx; /* 画布 4:171 gap=6pt */
-		background-color: #E5DED2;
-		border-radius: 7.7rpx;
+		width: var(--d-lattice-p8, 15.4rpx);
+		height: var(--d-lattice-p8, 15.4rpx);
+		margin-left: var(--d-lattice-p6, 11.5rpx); /* 画布 4:171 gap=6pt */
+		background-color: var(--c-paper-600, #E5DED2);
+		border-radius: var(--d-lattice-p4, 7.7rpx);
 		overflow: hidden;
 	}
 	/* v-for 首点：margin 归零，否则三个点整体右偏 11.5rpx、不再居中于 750rpx */
 	.dot-first {
-		margin-left: 0rpx;
+		margin-left: var(--d-lattice-p0, 0rpx);
 	}
 	.dot-active {
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 	}
 	.n4_175 {
 		position: absolute;
-		left: 340.4rpx;
-		top: 184.6rpx;
-		width: 69.2rpx;
-		height: 69.2rpx;
+		left: var(--d-lattice-p177, 340.4rpx);
+		top: var(--d-lattice-p96, 184.6rpx);
+		width: var(--d-lattice-p36, 69.2rpx);
+		height: var(--d-lattice-p36, 69.2rpx);
 		/* 画布 3 层同心发光：r20/a.2 + r10/a.35 + r4/a.5 */
-		box-shadow: 0rpx 0rpx 38.5rpx rgba(196, 145, 60, 0.2), 0rpx 0rpx 19.2rpx rgba(196, 145, 60, 0.35), 0rpx 0rpx 7.7rpx rgba(196, 145, 60, 0.5);
-		border-radius: 34.6rpx;
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-card_margin_x, 38.5rpx) var(--a-amber-20, rgba(196, 145, 60, 0.2)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p10, 19.2rpx) var(--a-amber-35, rgba(196, 145, 60, 0.35)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--a-amber-50, rgba(196, 145, 60, 0.5));
+		border-radius: var(--d-lattice-p18, 34.6rpx);
 	}
 	.n4_177 {
 		position: absolute;
-		left: 0rpx;
-		top: 273.1rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p142, 273.1rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -391,14 +391,14 @@
 	.n4_178 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		font-size: 38.5rpx;
-		color: #3A2E25;
+		font-size: var(--d-card_margin_x, 38.5rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_179 {
 		position: absolute;
-		left: 0rpx;
-		top: 330.8rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p172, 330.8rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -406,105 +406,105 @@
 	}
 	.n4_180 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n4_181 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 423.1rpx;
-		width: 673.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p220, 423.1rpx);
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: column;
 		/* 画布 4:181 gap=10pt → 19.2rpx，换到非首子节点 margin-top
 		   （uvue App 端丢弃 gap；子节点纵向序：编号→问题→引导，两段间距各 10pt 已由坐标验证） */
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-top: 38.5rpx;
-		padding-bottom: 38.5rpx;
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
 		/* 毛玻璃：画布为 BACKGROUND_BLUR(16) + fill 白 a0.55；
 		   转换器曾统一降级成 0.72，此处按画布还原 */
-		background-color: rgba(255, 255, 255, 0.55);
+		background-color: var(--a-white-55, rgba(255, 255, 255, 0.55));
 		/* 画布效果共 4 层：stroke 白a.6（居中描边→改外环免内缩）
 		   + INNER_SHADOW 白a.4 + DROP r16 a.06 + DROP r3 a.04 */
-		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.6), inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4), 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		border-radius: 38.5rpx;
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-white-60, rgba(255, 255, 255, 0.6)), inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-40, rgba(255, 255, 255, 0.4)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n4_182 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 21.2rpx;
-		color: #C4913C;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
 	}
 	.n4_183 {
 		width: 100%;
-		margin-top: 19.2rpx; /* 画布 4:181 gap=10pt（编号→问题） */
+		margin-top: var(--d-lattice-p10, 19.2rpx); /* 画布 4:181 gap=10pt（编号→问题） */
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 38.5rpx;
-		color: #3A2E25;
+		font-size: var(--d-card_margin_x, 38.5rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_184 {
 		width: 100%;
-		margin-top: 19.2rpx; /* 画布 4:181 gap=10pt（问题→引导） */
+		margin-top: var(--d-lattice-p10, 19.2rpx); /* 画布 4:181 gap=10pt（问题→引导） */
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* 上一答情绪 chip（对齐 RecordSheet v-chip 胶囊形；画布未画此态） */
 	.emo-chip {
-		margin-top: 19.2rpx; /* 与卡内 gap 一致（画布 4:181 gap=10pt） */
+		margin-top: var(--d-lattice-p10, 19.2rpx); /* 与卡内 gap 一致（画布 4:181 gap=10pt） */
 		align-self: flex-start;
 		padding-left: 23rpx;
 		padding-right: 23rpx;
-		height: 46.2rpx;
+		height: var(--d-lattice-p24, 46.2rpx);
 		flex-direction: row;
 		align-items: center;
-		background-color: rgba(176, 89, 59, 0.1);
-		border-radius: 23.1rpx;
+		background-color: var(--a-rust-10, rgba(176, 89, 59, 0.1));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.emo-chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #B05A3A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.n4_185 {
 		position: absolute;
-		left: 271.2rpx;
-		top: 838.5rpx;
-		width: 207.7rpx;
-		height: 207.7rpx;
-		background-color: rgba(176, 89, 59, 0.12);
+		left: var(--d-lattice-p141, 271.2rpx);
+		top: var(--d-lattice-p436, 838.5rpx);
+		width: var(--d-lattice-p108, 207.7rpx);
+		height: var(--d-lattice-p108, 207.7rpx);
+		background-color: var(--a-rust-12, rgba(176, 89, 59, 0.12));
 		/* 画布 INNER_SHADOW 顶部白色高光 a0.5 */
-		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.5);
-		border-radius: 103.8rpx;
+		box-shadow: inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-50, rgba(255, 255, 255, 0.5));
+		border-radius: var(--d-lattice-p54, 103.8rpx);
 		overflow: hidden;
 	}
 	.n4_186 {
 		position: absolute;
-		left: 42.3rpx;
-		top: 42.3rpx;
-		width: 123.1rpx;
-		height: 123.1rpx;
+		left: var(--d-lattice-p22, 42.3rpx);
+		top: var(--d-lattice-p22, 42.3rpx);
+		width: var(--d-lattice-p64, 123.1rpx);
+		height: var(--d-lattice-p64, 123.1rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 		/* 画布 INNER_SHADOW 白a.35 + DROP 下拉投影 */
-		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.35), 0rpx 15.4rpx 53.8rpx rgba(176, 89, 59, 0.45);
-		border-radius: 61.5rpx;
+		box-shadow: inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-35, rgba(255, 255, 255, 0.35)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-fab_radius, 53.8rpx) var(--a-rust-45, rgba(176, 89, 59, 0.45));
+		border-radius: var(--d-lattice-p32, 61.5rpx);
 		overflow: hidden;
 	}
 	.n4_187 {
-		width: 50rpx;
-		height: 50rpx;
+		width: var(--d-lattice-p26, 50rpx);
+		height: var(--d-lattice-p26, 50rpx);
 	}
 	.n4_189 {
 		position: absolute;
-		left: 0rpx;
-		top: 1076.9rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p560, 1076.9rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -512,27 +512,27 @@
 	}
 .n4_190 {
 	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
-	padding: 11.5rpx 0rpx;
+	padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
 	align-items: center;
 }
 .n4_190-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 600;
-	font-size: 26.9rpx;
-	color: #5A4C40;
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	color: var(--c-ink-700, #5A4C40);
 }
 	/* 录音中提示变锈红（画布未画此态，沿用 HEAD 版） */
 	.hint-recording {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 26.9rpx;
-		color: #B05A3A;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.n4_191 {
 		position: absolute;
-		left: 0rpx;
-		top: 1138.5rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p592, 1138.5rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -541,14 +541,14 @@
 	.n4_192 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 26.9rpx;
-		color: #B05A3A;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.n4_193 {
 		position: absolute;
-		left: 0rpx;
-		top: 1423.1rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p740, 1423.1rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -556,34 +556,34 @@
 	}
 	.n4_194 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	.n4_201 {
 		position: absolute;
-		left: 240.4rpx;
-		top: 807.7rpx;
-		width: 269.2rpx;
-		height: 269.2rpx;
-		background-color: rgba(176, 89, 59, 0.06);
-		border-radius: 134.6rpx;
+		left: var(--d-lattice-p125, 240.4rpx);
+		top: var(--d-lattice-p420, 807.7rpx);
+		width: var(--d-lattice-p140, 269.2rpx);
+		height: var(--d-lattice-p140, 269.2rpx);
+		background-color: var(--a-rust-06, rgba(176, 89, 59, 0.06));
+		border-radius: var(--d-lattice-p70, 134.6rpx);
 		overflow: hidden;
 	}
 	/* ↓ 完成卡「开始使用」按钮 + 文字回答弹层（画布未画此二态，沿用 HEAD 版已验证样式；
 	   uvue 样式不继承，text 类逐个带 font-family） */
 	.start-btn {
-		margin-top: 32rpx;
+		margin-top: var(--d-raw-r32, 32rpx);
 		height: 76rpx;
-		border-radius: 38rpx;
-		background-color: #B05A3A;
+		border-radius: var(--d-raw-r38, 38rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 	}
 	.start-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 30rpx;
-		color: #F8F7F4;
+		font-size: var(--d-raw-r30, 30rpx);
+		color: var(--c-paper-100, #F8F7F4);
 		font-weight: 600;
 	}
 	.text-modal {
@@ -603,48 +603,48 @@
 		top: 0;
 		right: 0;
 		bottom: 0;
-		background-color: rgba(58, 46, 37, 0.35);
+		background-color: var(--a-ink-35, rgba(58, 46, 37, 0.35));
 	}
 	.modal-card {
 		width: 620rpx;
-		background-color: #FFFFFF;
-		border-radius: 32rpx;
-		padding: 40rpx;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-raw-r32, 32rpx);
+		padding: var(--d-raw-r40, 40rpx);
 		z-index: 1;
-		box-shadow: 0 16rpx 48rpx rgba(58, 46, 37, 0.18);
+		box-shadow: 0 var(--d-raw-r16, 16rpx) var(--d-lattice-p25, 48rpx) var(--a-ink-18, rgba(58, 46, 37, 0.18));
 	}
 	.modal-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 34rpx;
+		font-size: var(--d-raw-r34, 34rpx);
 		font-weight: bold;
-		color: #3A2E25;
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.modal-input {
-		margin-top: 24rpx;
+		margin-top: var(--d-raw-r24, 24rpx);
 		width: 540rpx;
-		min-height: 180rpx;
-		background-color: #F8F7F4;
-		border-radius: 20rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
-		color: #3A2E25;
+		min-height: var(--d-raw-r180, 180rpx);
+		background-color: var(--c-paper-100, #F8F7F4);
+		border-radius: var(--d-raw-r20, 20rpx);
+		padding: var(--d-raw-r24, 24rpx);
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.modal-placeholder {
-		color: #B3A696;
+		color: var(--c-ink-300, #B3A696);
 	}
 	.modal-actions {
-		margin-top: 28rpx;
+		margin-top: var(--d-raw-r28, 28rpx);
 		display: flex;
 		flex-direction: row;
 		justify-content: flex-end;
 	}
 	.modal-btn {
-		margin-left: 20rpx;
-		padding-left: 44rpx;
-		padding-right: 44rpx;
-		height: 72rpx;
-		border-radius: 36rpx;
-		background-color: #B05A3A;
+		margin-left: var(--d-raw-r20, 20rpx);
+		padding-left: var(--d-raw-r44, 44rpx);
+		padding-right: var(--d-raw-r44, 44rpx);
+		height: var(--d-raw-r72, 72rpx);
+		border-radius: var(--d-raw-r36, 36rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -652,17 +652,17 @@
 	.modal-btn-ghost {
 		background-color: transparent;
 		border-width: 2rpx;
-		border-color: #B05A3A;
+		border-color: var(--c-rust-500, #B05A3A);
 		border-style: solid;
 	}
 	.modal-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28rpx;
-		color: #F8F7F4;
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-paper-100, #F8F7F4);
 	}
 	.ghost-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28rpx;
-		color: #B05A3A;
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 </style>

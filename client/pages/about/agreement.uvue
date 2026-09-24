@@ -5,7 +5,7 @@
 	     文案性质：草稿 v0.1，待峰宝审定稿；定稿后仅替换 script 内 blocks 文本，版式不动
 	     结构：导航标题+返回（goBack 回落先例同 privacy）/ 全文单卡滚动，
 	       7 节：服务说明 / 数据收集范围 / 数据存储与安全 / 用户权利 / 未成年人保护 / 协议变更与生效 / 联系渠道 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
 		<view class="nav-title">
 			<text class="nav-title-text">用户协议</text>
@@ -88,15 +88,15 @@
 	.page-root {
 		flex: 1;
 		flex-direction: column;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	/* ── 导航（settings.uvue 二级页先例原值，复用 privacy.uvue） ── */
 	.nav-title {
 		position: absolute;
 		/* absolute-ok: 固定页头·标题容器（全宽居中） */
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -105,77 +105,77 @@
 	.nav-title-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.nav-back {
 		position: absolute;
 		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		z-index: 1;
 	}
 	/* ── 内容卡（privacy.uvue 原值；本页无 chips 行，滚动区上移 300→192.3rpx，取 about 页品牌区起点同值） ── */
 	.body-scroll {
 		flex: 1;
-		margin-top: 192.3rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-bottom: 60rpx;
+		margin-top: var(--d-lattice-p100, 192.3rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-raw-r60, 60rpx);
 	}
 	.card {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-top: 38.5rpx;
-		padding-bottom: 38.5rpx;
-		background-color: #FFFFFF;
-		border-radius: 30.8rpx;
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
 	}
 	.sec-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.blk-h {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 25rpx;
-		color: #3A2E25;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.blk-p {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		line-height: 40.4rpx;
-		color: #6B5D4F;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p21, 40.4rpx);
+		color: var(--c-surface-neutralD, #6B5D4F);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.blk-b {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 25rpx;
-		line-height: 40.4rpx;
-		color: #3A2E25;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p21, 40.4rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.card-divider {
-		height: 1.9rpx;
-		background-color: #EDE5D5;
-		margin-top: 26.9rpx;
+		height: var(--d-lattice-p1, 1.9rpx);
+		background-color: var(--c-paper-400, #EDE5D5);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.next-link {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 25rpx;
-		color: #C4913C;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-amber-500, #C4913C);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.next-link-end {
-		color: #B3A696;
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

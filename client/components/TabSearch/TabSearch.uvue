@@ -1,7 +1,7 @@
 <template>
 	<!-- B10 方案A 金丝雀：自 pages/search/search.uvue 整体搬迁（模板/样式零改动；TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE） -->
 <!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
-	<view class="search-root">
+	<view class="search-root tk-root">
 		<text class="n2_390">搜索</text> <!-- 大标题 -->
 		<view class="n2_391"> <!-- 搜索胶囊 -->
 			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
@@ -438,25 +438,25 @@
 	.search-root {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	.n2_390 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 107.7rpx;
-		width: 153.8rpx;
-		height: 92.3rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-fab_size, 107.7rpx);
+		width: var(--d-lattice-p80, 153.8rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: bold;
-		font-size: 76.9rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p40, 76.9rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_391 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 230.8rpx;
-		width: 673.1rpx;
-		height: 92.3rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p120, 230.8rpx);
+		width: var(--d-card_width, 673.1rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
 		flex-direction: row;
 		/* ⚠️ 无垂直 padding：画布 2:391 paddingTop/Bottom 均为 null，
 		   子元素靠 y 居中（搜索图标 y=15/h=18 → 上下各 15pt，容器 h=48pt）。
@@ -464,22 +464,22 @@
 		   装不下 34.6rpx 的搜索图标 → 被裁（全项目同类审计 2026-08-31 抓到）。
 		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
 		align-items: center;
-		padding-left: 30.8rpx;
-		padding-right: 30.8rpx;
-		background-color: #FFFFFF;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
 		/* 画布 stroke 为居中描边；uvue 下 border-width 会内缩 content box 1px，
 		   改用 box-shadow 外环 0 0 0 1.9rpx 等价还原（不内缩子元素） */
-		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(176, 89, 59, 0.6), 0rpx 11.5rpx 34.6rpx rgba(59, 46, 38, 0.08);
-		border-radius: 9999rpx;
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-rust-60, rgba(176, 89, 59, 0.6)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p18, 34.6rpx) var(--a-ink-08, rgba(59, 46, 38, 0.08));
+		border-radius: var(--d-raw-r9999, 9999rpx);
 		overflow: hidden;
 	}
 	.n2_392 {
-		width: 34.6rpx;
-		height: 34.6rpx;
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
 	}
 	.n2_395 {
 		flex: 1;
-		margin-left: 15.4rpx; /* 画布 2:391 gap=8pt：图标右缘 34 → 输入区 x42 */
+		margin-left: var(--d-lattice-p8, 15.4rpx); /* 画布 2:391 gap=8pt：图标右缘 34 → 输入区 x42 */
 		flex-direction: row;
 		align-items: center;
 		overflow: hidden;
@@ -487,14 +487,14 @@
 	.n2_396 {
 		width: 100%;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_397 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 353.8rpx;
-		width: 673.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p184, 353.8rpx);
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: row;
 		align-items: center;
 		overflow: hidden;
@@ -503,109 +503,109 @@
 	.s-chip {
 		flex-direction: row;
 		align-items: center;
-		padding-left: 17.3rpx;
-		padding-right: 17.3rpx;
-		padding-top: 17.3rpx;
-		padding-bottom: 17.3rpx;
-		background-color: #FFFFFF;
-		border-radius: 9999rpx;
+		padding-left: var(--d-lattice-p9, 17.3rpx);
+		padding-right: var(--d-lattice-p9, 17.3rpx);
+		padding-top: var(--d-lattice-p9, 17.3rpx);
+		padding-bottom: var(--d-lattice-p9, 17.3rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-raw-r9999, 9999rpx);
 		overflow: hidden;
 	}
 	.s-chip-active {
-		background-color: rgba(176, 89, 59, 0.12);
+		background-color: var(--a-rust-12, rgba(176, 89, 59, 0.12));
 	}
 	/* 画布 2:397 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
 	.s-chip-ml {
-		margin-left: 15.4rpx;
+		margin-left: var(--d-lattice-p8, 15.4rpx);
 	}
 	.s-chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.s-chip-text-active {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
+		font-size: var(--d-card_radius_small, 23.1rpx);
 		font-weight: 600;
-		color: #B05A3A;
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.n2_406 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 450rpx;
-		width: 305.8rpx;
-		height: 28.8rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p234, 450rpx);
+		width: var(--d-lattice-p159, 305.8rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n2-results {
 		position: absolute;
-		left: 38.5rpx;
-		top: 496.2rpx;
-		bottom: 169.2rpx; /* TabBar 高度避让 */
-		width: 673.1rpx;
-		background-color: #F8F7F4;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p258, 496.2rpx);
+		bottom: var(--d-lattice-p88, 169.2rpx); /* TabBar 高度避让 */
+		width: var(--d-card_width, 673.1rpx);
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	.n2_588 {
-		width: 673.1rpx;
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: column;
-		margin-bottom: 23.1rpx;
-		padding-left: 15.4rpx;
-		padding-right: 15.4rpx;
-		padding-top: 15.4rpx;
-		padding-bottom: 15.4rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		border-radius: 38.5rpx;
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n2_589 {
 		width: 100%;
-		height: 123.1rpx;
+		height: var(--d-lattice-p64, 123.1rpx);
 		flex-direction: row;
 		/* ⚠️ 无垂直 padding：画布 2:589 paddingTop/Bottom 均为 null，
 		   子元素靠 y 居中（玻璃播放钮 y=16/h=32 → 上下各 16pt，容器 h=64pt）。
 		   此前误补 padding-top/bottom=26.9rpx → 播放钮底部越出可视区被 overflow 裁掉。
 		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
 		align-items: center;
-		padding-left: 26.9rpx;
-		padding-right: 26.9rpx;
-		background-color: rgba(196, 145, 59, 0.14);
-		border-radius: 23.1rpx;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		background-color: var(--a-amber-14, rgba(196, 145, 59, 0.14));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_591 {
-		width: 61.5rpx;
-		height: 61.5rpx;
+		width: var(--d-lattice-p32, 61.5rpx);
+		height: var(--d-lattice-p32, 61.5rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
 		/* 毛玻璃：画布 BLUR(8) + fill 白 a0.50（原被降级成 0.72） */
-		background-color: rgba(255, 255, 255, 0.5);
+		background-color: var(--a-white-50, rgba(255, 255, 255, 0.5));
 		/* 补画布 INNER_SHADOW 白a.4；两轴居中故保留 border */
-		box-shadow: inset 0rpx 1.9rpx 3.8rpx rgba(255, 255, 255, 0.4);
-		border-width: 1.9rpx;
-		border-color: rgba(255, 255, 255, 0.8);
-		border-radius: 30.8rpx;
+		box-shadow: inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-40, rgba(255, 255, 255, 0.4));
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--a-white-80, rgba(255, 255, 255, 0.8));
+		border-radius: var(--d-lattice-p16, 30.8rpx);
 		overflow: hidden;
 	}
 	.n2_595 {
-		width: 23.1rpx;
-		height: 23.1rpx;
+		width: var(--d-card_radius_small, 23.1rpx);
+		height: var(--d-card_radius_small, 23.1rpx);
 	}
 	.n2_592 {
-		width: 384.6rpx;
-		height: 50rpx;
-		margin-left: 23.1rpx; /* 画布 2:589 gap=12pt：播放钮右缘 46 → 波形 x58 */
+		width: var(--d-lattice-p200, 384.6rpx);
+		height: var(--d-lattice-p26, 50rpx);
+		margin-left: var(--d-card_radius_small, 23.1rpx); /* 画布 2:589 gap=12pt：播放钮右缘 46 → 波形 x58 */
 		overflow: hidden;
 	}
 	.n2_596 {
 		position: absolute;
-		left: 7.7rpx;
-		top: 5.8rpx;
-		width: 369.2rpx;
-		height: 38.5rpx;
+		left: var(--d-lattice-p4, 7.7rpx);
+		top: var(--d-lattice-p3, 5.8rpx);
+		width: var(--d-lattice-p192, 369.2rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	/* W0-2 播放态（F5a 规范）：暂停形 + 进度行 */
 	.search-pause-icon {
@@ -615,130 +615,130 @@
 		justify-content: center;
 	}
 	.search-pause-bar {
-		width: 6rpx;
-		height: 20rpx;
-		background-color: #B05A3A;
+		width: var(--d-raw-r6, 6rpx);
+		height: var(--d-raw-r20, 20rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		border-radius: 2rpx;
-		margin-left: 4rpx;
-		margin-right: 4rpx;
+		margin-left: var(--d-raw-r4, 4rpx);
+		margin-right: var(--d-raw-r4, 4rpx);
 	}
 	.svp-row {
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		margin-left: 15.4rpx;
-		margin-right: 15.4rpx;
-		margin-top: 11.5rpx; /* 画布 3pt 节奏 */
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		margin-top: var(--d-lattice-p6, 11.5rpx); /* 画布 3pt 节奏 */
 	}
 	.svp-time {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 20rpx;
-		color: #8A7A6A;
+		font-size: var(--d-raw-r20, 20rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.svp-track {
 		flex: 1;
-		height: 4rpx;
-		background-color: #E5DCC8;
+		height: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-paper-600, #E5DCC8);
 		border-radius: 2rpx;
-		margin-left: 12rpx;
-		margin-right: 12rpx;
+		margin-left: var(--d-raw-r12, 12rpx);
+		margin-right: var(--d-raw-r12, 12rpx);
 		overflow: hidden;
 	}
 	.svp-track-fill {
-		height: 4rpx;
-		background-color: #C4913C;
+		height: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-amber-500, #C4913C);
 		border-radius: 2rpx;
 	}
 	.n2_590 {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 15.4rpx;
-		padding-right: 15.4rpx;
-		padding-top: 15.4rpx;
-		padding-bottom: 15.4rpx;
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
 		overflow: hidden;
 	}
 	.n2_593 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 32.7rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p17, 32.7rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n2_594 {
-		margin-top: 5.8rpx; /* 画布 2:590 gap=3pt */
+		margin-top: var(--d-lattice-p3, 5.8rpx); /* 画布 2:590 gap=3pt */
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n2_598 {
-		width: 673.1rpx;
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: column;
-		margin-bottom: 23.1rpx;
-		padding-left: 15.4rpx;
-		padding-right: 15.4rpx;
-		padding-top: 15.4rpx;
-		padding-bottom: 15.4rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		border-radius: 38.5rpx;
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n2-result-photo {
 		width: 100%;
 		height: 320rpx;
-		margin-bottom: 15.4rpx;
-		border-radius: 23.1rpx;
-		background-color: #EFEAE2;
+		margin-bottom: var(--d-lattice-p8, 15.4rpx);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-paper-300, #EFEAE2);
 	}
 	.n2_599 {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
-		background-color: rgba(196, 145, 59, 0.1);
-		border-radius: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--a-amber-10, rgba(196, 145, 59, 0.1));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n2_601 {
-		width: 5.8rpx;
-		height: 76.9rpx;
-		background-color: #C4913C;
-		border-radius: 3.8rpx;
+		width: var(--d-lattice-p3, 5.8rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
+		background-color: var(--c-amber-500, #C4913C);
+		border-radius: var(--d-lattice-p2, 3.8rpx);
 		overflow: hidden;
 	}
 	.n2_602 {
 		flex: 1;
-		margin-left: 19.2rpx; /* 画布 2:599 gap=10pt：竖线右缘 15 → 文本 x25 */
+		margin-left: var(--d-lattice-p10, 19.2rpx); /* 画布 2:599 gap=10pt：竖线右缘 15 → 文本 x25 */
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 26.9rpx;
-		color: #5A4C40;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-700, #5A4C40);
 	}
 	.n2_600 {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 15.4rpx;
-		padding-right: 15.4rpx;
-		padding-top: 15.4rpx;
-		padding-bottom: 15.4rpx;
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
 		overflow: hidden;
 	}
 	.n2_603 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n2-empty {
 		flex-direction: row;
 		justify-content: center;
-		padding-top: 61.5rpx;
-		padding-bottom: 61.5rpx;
+		padding-top: var(--d-lattice-p32, 61.5rpx);
+		padding-bottom: var(--d-lattice-p32, 61.5rpx);
 	}
 	.n2-empty-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 26.9rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

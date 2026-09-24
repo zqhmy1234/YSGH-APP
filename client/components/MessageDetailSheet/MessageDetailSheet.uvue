@@ -4,7 +4,7 @@
 	     视觉 = §V 重设计令牌：暖白 #FAF9F5 + 顶圆角 24rpx + 深棕文字 + 类型徽章（沿用消息行 tint 家族）。
 	     Props 只传基本类型（UTS 组件边界规则，EchoSheet 同款）。
 	     正文完整展示；「查看关联记忆」CTA 挂总账 A10（消息↔内容 ID 未接线）——不放假按钮 -->
-	<view class="sheet-root">
+	<view class="sheet-root tk-root">
 		<view class="scrim" @tap="onClose"></view>
 		<view class="sheet">
 			<view class="head-row">
@@ -80,7 +80,7 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* z-index 1000 > TabBar 999（RecordSheet 同款铁律） */
 		z-index: 1000;
@@ -90,9 +90,9 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
-		background-color: rgba(59, 46, 38, 0.4);
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
 		z-index: 10;
 	}
 	/* 弹层：§V 令牌（暖白 #FAF9F5 + 顶圆角 24rpx，EchoSheet 重设计同款）；
@@ -101,14 +101,14 @@
 		position: absolute;
 		bottom: 0;
 		left: 0;
-		width: 750rpx;
-		background-color: #FAF9F5;
-		border-top-left-radius: 24rpx;
-		border-top-right-radius: 24rpx;
-		padding-top: 34.6rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-bottom: 53.8rpx;
+		width: var(--d-lattice-p390, 750rpx);
+		background-color: var(--c-paper-50, #FAF9F5);
+		border-top-left-radius: var(--d-raw-r24, 24rpx);
+		border-top-right-radius: var(--d-raw-r24, 24rpx);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
 		z-index: 20;
 		flex-direction: column;
 	}
@@ -121,59 +121,59 @@
 	.badge {
 		flex-direction: row;
 		align-items: center;
-		height: 61.5rpx;
-		border-radius: 30.8rpx;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
 	}
 	.badge-icon {
-		width: 32rpx;
-		height: 32rpx;
+		width: var(--d-raw-r32, 32rpx);
+		height: var(--d-raw-r32, 32rpx);
 	}
 	.badge-text {
-		margin-left: 9.6rpx;
+		margin-left: var(--d-lattice-p5, 9.6rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
 		font-size: 24.9rpx;
-		color: #3A2E25;
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* × 关闭：EchoSheet 64:46 同值 */
 .head-close {
 	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06） */
-	width: 60rpx;
-	height: 60rpx;
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
 	justify-content: center;
 	align-items: center;
 }
 .head-close-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 400;
-	font-size: 42.3rpx;
-	color: #B3A696;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
 }
 	/* 标题 16px SemiBold 深棕 */
 	.sheet-title {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 完整时间 11px 灰棕 */
 	.sheet-time {
-		margin-top: 7.7rpx;
+		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* 正文 15px lh24 深棕（完整正文，长文本自然换行） */
 	.sheet-body {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
 		font-size: 28.9rpx;
-		line-height: 46.2rpx;
-		color: #3A2E25;
+		line-height: var(--d-lattice-p24, 46.2rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 </style>

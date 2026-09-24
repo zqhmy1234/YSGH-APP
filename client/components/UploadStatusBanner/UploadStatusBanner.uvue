@@ -4,7 +4,7 @@
 	     自包含：直接读 sync_client + uploader 模块状态，宿主页只需一行 <UploadStatusBanner />。
 	     优先级：暂停 > 蜂窝暂缓原图 > 失败可重试 > 上传中。 -->
 	<view v-if="show" class="banner" :class="bannerClass">
-		<view class="banner-main" @tap="onBannerTap">
+		<view class="banner-main tk-root" @tap="onBannerTap">
 			<text class="banner-icon">{{ icon }}</text>
 			<text class="banner-text">{{ text }}</text>
 		</view>
@@ -122,27 +122,27 @@
 
 <style>
 	.banner {
-		margin-left: 32rpx;
-		margin-right: 32rpx;
-		margin-top: 16rpx;
-		border-radius: 12rpx;
-		padding: 20rpx 28rpx;
+		margin-left: var(--d-raw-r32, 32rpx);
+		margin-right: var(--d-raw-r32, 32rpx);
+		margin-top: var(--d-raw-r16, 16rpx);
+		border-radius: var(--d-raw-r12, 12rpx);
+		padding: var(--d-raw-r20, 20rpx) var(--d-raw-r28, 28rpx);
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
 	}
 	.banner-paused {
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 	}
 	.banner-held {
-		background-color: #3A2E25;
+		background-color: var(--c-ink-900, #3A2E25);
 	}
 	.banner-failed {
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 	}
 	.banner-uploading {
-		background-color: #3A2E25;
+		background-color: var(--c-ink-900, #3A2E25);
 		opacity: 0.85;
 	}
 	.banner-main {
@@ -154,29 +154,29 @@
 	/* uvue App 端样式不继承，text 类需各自声明 font-family */
 	.banner-icon {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		color: #F6F1E7;
-		font-size: 30rpx;
-		margin-right: 16rpx;
+		color: var(--c-paper-200, #F6F1E7);
+		font-size: var(--d-raw-r30, 30rpx);
+		margin-right: var(--d-raw-r16, 16rpx);
 	}
 	.banner-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		color: #F6F1E7;
-		font-size: 26rpx;
+		color: var(--c-paper-200, #F6F1E7);
+		font-size: var(--d-raw-r26, 26rpx);
 		flex: 1;
 	}
 	.banner-action {
-		margin-left: 20rpx;
-		padding-left: 28rpx;
-		padding-right: 28rpx;
-		padding-top: 10rpx;
-		padding-bottom: 10rpx;
-		background-color: #FBF7EF;
-		border-radius: 28rpx;
+		margin-left: var(--d-raw-r20, 20rpx);
+		padding-left: var(--d-raw-r28, 28rpx);
+		padding-right: var(--d-raw-r28, 28rpx);
+		padding-top: var(--d-raw-r10, 10rpx);
+		padding-bottom: var(--d-raw-r10, 10rpx);
+		background-color: var(--c-paper-200, #FBF7EF);
+		border-radius: var(--d-raw-r28, 28rpx);
 	}
 	.banner-action-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		color: #B05A3A;
-		font-size: 24rpx;
+		color: var(--c-rust-500, #B05A3A);
+		font-size: var(--d-raw-r24, 24rpx);
 		font-weight: bold;
 	}
 </style>

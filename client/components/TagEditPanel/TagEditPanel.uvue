@@ -13,7 +13,7 @@
      土黄 #EDE5D5 全清（chips/添加行改白卡+投影）、琥珀金 #C4913C 全换锈红 #B05A3A（主按钮/固定钮/锁描边）；
      锁图标换画布 64:276 导出真件 tag-lock-rust.svg（storage-lock.svg 三处共用金锁不动）；画布改后截图
      uvue_gen/panel_redesign_shots/F9b_tagedit_after.png -->
-	<view class="sheet-root">
+	<view class="sheet-root tk-root">
 		<view class="scrim" @tap="onClose"></view>
 		<view class="sheet">
 			<view class="head-row">
@@ -154,7 +154,7 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet 同款铁律） */
 		z-index: 1000;
@@ -164,9 +164,9 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
-		background-color: rgba(59, 46, 38, 0.4);
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
 		z-index: 10;
 	}
 	/* 64:254 编辑标签弹层：y398（min-height 446px=858.5rpx 兜底）；padding 20/20/18/28；
@@ -175,13 +175,13 @@
 		position: absolute;
 		bottom: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		min-height: 858.5rpx;
-		background-color: #FAF9F5;
-		padding-top: 34.6rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-bottom: 53.8rpx;
+		background-color: var(--c-paper-50, #FAF9F5);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
 		z-index: 20;
 		flex-direction: column;
 	}
@@ -191,52 +191,52 @@
 		justify-content: space-between;
 	}
 	.head-title {
-		margin-top: 7.7rpx;
+		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 64:257 关闭：22px Regular #B3A696，字形 ×（U+00D7） */
 .head-close {
 	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06） */
-	width: 60rpx;
-	height: 60rpx;
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
 	justify-content: center;
 	align-items: center;
 }
 .head-close-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 400;
-	font-size: 42.3rpx;
-	color: #B3A696;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
 }
 	/* 64:258/64:272 节标：12px Medium #8A7A6A；纵向 gap14 → 非首子元素 mt 26.9rpx */
 	.section-label {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* 64:259/64:273 标签区：弹层子元素统一 gap14 → mt 26.9rpx；wrap 内 chip 右 15.4rpx
 	   （flex-wrap 有 manage tag-list 先例；chip 不带 margin-bottom —— 画布全部单行，
 	   多行换行时上下行无间距，降级登记台账 卡24 F9b） */
 	.chip-area {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
 	/* 64:260 AIchip：h32 r16 白底+淡投影（§U：土黄 #EDE5D5 → 白卡；投影画布 y1 r4 a0.06 → 1.9/7.7rpx） */
 	.ai-chip {
-		height: 61.5rpx;
-		border-radius: 30.8rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 1.9rpx 7.7rpx rgba(59, 46, 38, 0.06);
-		padding-left: 23.1rpx;
-		padding-right: 15.4rpx;
-		margin-right: 15.4rpx;
-		margin-bottom: 15.4rpx;
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p4, 7.7rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06));
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		margin-bottom: var(--d-lattice-p8, 15.4rpx);
 		flex-direction: row;
 		align-items: center;
 	}
@@ -244,35 +244,35 @@
 	.ai-chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 25rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 64:262 删钮 ×：14px Regular #B3A696，gap4 → ml 7.7rpx */
 .ai-chip-del {
 	/* 热区 ≥44rpx（text@tap 清零军规 2026-09-06） */
-	margin-left: 7.7rpx;
-	width: 44rpx;
-	height: 44rpx;
+	margin-left: var(--d-lattice-p4, 7.7rpx);
+	width: var(--d-raw-r44, 44rpx);
+	height: var(--d-raw-r44, 44rpx);
 	justify-content: center;
 	align-items: center;
 }
 .ai-chip-del-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 400;
-	font-size: 26.9rpx;
-	color: #B3A696;
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	color: var(--c-ink-300, #B3A696);
 }
 	/* 64:274 lockedchip：白底 + 描边 #B05A3A 1pt=1.9rpx（§U：金→锈红对齐详情页令牌），p-l12 p-r10 gap5，无 × */
 	.locked-chip {
-		height: 61.5rpx;
-		border-radius: 30.8rpx;
-		background-color: #FFFFFF;
-		border-width: 1.9rpx;
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-width: var(--d-lattice-p1, 1.9rpx);
 		border-style: solid;
-		border-color: #B05A3A;
-		padding-left: 23.1rpx;
-		padding-right: 19.2rpx;
-		margin-right: 15.4rpx;
+		border-color: var(--c-rust-500, #B05A3A);
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-lattice-p10, 19.2rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
 		flex-direction: row;
 		align-items: center;
 	}
@@ -280,24 +280,24 @@
 	.locked-chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 25rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 64:276 锁图标：12×12 → 23.1rpx（§U 换画布 64:276 导出真件 tag-lock-rust.svg #AF5A39） */
 	.locked-icon {
-		width: 23.1rpx;
-		height: 23.1rpx;
-		margin-left: 9.6rpx;
+		width: var(--d-card_radius_small, 23.1rpx);
+		height: var(--d-card_radius_small, 23.1rpx);
+		margin-left: var(--d-lattice-p5, 9.6rpx);
 	}
 	/* 64:279 添加行：h44 r22 白底+双投影（§U：土黄→白卡；投影画布 y4 r16 a0.06 + y1 r3 a0.04 → 7.7/30.8 + 1.9/5.8rpx） */
 	.add-row {
-		margin-top: 26.9rpx;
-		height: 84.6rpx;
-		border-radius: 42.3rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		padding-left: 26.9rpx;
-		padding-right: 11.5rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-status_bar_height, 84.6rpx);
+		border-radius: var(--d-lattice-p22, 42.3rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
 		flex-direction: row;
 		align-items: center;
 	}
@@ -306,15 +306,15 @@
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 25rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 64:281 添加按钮：60×32 r16 #B05A3A（§U：金→锈红） */
 	.add-btn {
-		width: 115.4rpx;
-		height: 61.5rpx;
-		border-radius: 30.8rpx;
-		background-color: #B05A3A;
+		width: var(--d-lattice-p60, 115.4rpx);
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
 	}
@@ -322,23 +322,23 @@
 	.add-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 23.1rpx;
-		color: #FFFFFF;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-white, #FFFFFF);
 	}
 	/* 64:283 锁定说明：11px Regular #B3A696 */
 	.lock-hint {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	/* 64:284 主按钮：h48 r24 #B05A3A（§U：金→锈红；stretch 撑满 padding 内宽） */
 	.main-btn {
-		margin-top: 26.9rpx;
-		height: 92.3rpx;
-		border-radius: 46.2rpx;
-		background-color: #B05A3A;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
 	}
@@ -346,7 +346,7 @@
 	.main-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #FFFFFF;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
 	}
 </style>

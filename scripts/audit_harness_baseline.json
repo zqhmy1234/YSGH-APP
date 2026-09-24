@@ -100,23 +100,13 @@
   "token_literals": {
     "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。",
     "total": {
-      "hex": 354,
-      "rgb": 82,
-      "gradient": 2
+      "hex": 67,
+      "rgb": 4,
+      "gradient": 0
     },
     "per_file": {
-      "client/pages/about/about.uvue": {
-        "hex": 0,
-        "rgb": 4,
-        "gradient": 0
-      },
-      "client/pages/about/agreement.uvue": {
-        "hex": 10,
-        "rgb": 0,
-        "gradient": 0
-      },
       "client/pages/account/security.uvue": {
-        "hex": 11,
+        "hex": 1,
         "rgb": 0,
         "gradient": 0
       },
@@ -126,8 +116,8 @@
         "gradient": 0
       },
       "client/pages/empty/empty.uvue": {
-        "hex": 9,
-        "rgb": 1,
+        "hex": 3,
+        "rgb": 0,
         "gradient": 0
       },
       "client/pages/favorites/favorites.uvue": {
@@ -135,84 +125,54 @@
         "rgb": 0,
         "gradient": 0
       },
-      "client/pages/interview/interview.uvue": {
-        "hex": 25,
-        "rgb": 16,
-        "gradient": 0
-      },
-      "client/pages/messages/messages.uvue": {
-        "hex": 14,
-        "rgb": 5,
-        "gradient": 1
-      },
       "client/pages/portrait/manage.uvue": {
         "hex": 1,
         "rgb": 0,
         "gradient": 0
       },
       "client/pages/portrait/theme-detail.uvue": {
-        "hex": 27,
-        "rgb": 5,
-        "gradient": 0
-      },
-      "client/pages/privacy/privacy.uvue": {
-        "hex": 14,
+        "hex": 11,
         "rgb": 0,
         "gradient": 0
       },
       "client/pages/settings/settings.uvue": {
-        "hex": 12,
-        "rgb": 5,
+        "hex": 0,
+        "rgb": 1,
         "gradient": 0
       },
-      "client/pages/shell/shell.uvue": {
+      "client/pages/storage/trash.uvue": {
         "hex": 1,
         "rgb": 0,
         "gradient": 0
       },
-      "client/pages/storage/storage.uvue": {
-        "hex": 26,
-        "rgb": 2,
-        "gradient": 0
-      },
-      "client/pages/storage/trash.uvue": {
-        "hex": 16,
-        "rgb": 2,
-        "gradient": 0
-      },
-      "client/pages/debug/agg-check/agg-check.uvue": {
-        "hex": 10,
+      "client/components/CapsuleSheet/CapsuleSheet.uvue": {
+        "hex": 2,
         "rgb": 0,
         "gradient": 0
       },
-      "client/components/CapsuleSheet/CapsuleSheet.uvue": {
-        "hex": 18,
-        "rgb": 4,
-        "gradient": 0
-      },
       "client/components/EchoSheet/EchoSheet.uvue": {
-        "hex": 21,
-        "rgb": 2,
-        "gradient": 1
-      },
-      "client/components/MessageDetailSheet/MessageDetailSheet.uvue": {
-        "hex": 7,
-        "rgb": 2,
-        "gradient": 0
-      },
-      "client/components/PortraitPrivacyPanel/PortraitPrivacyPanel.uvue": {
-        "hex": 16,
-        "rgb": 3,
-        "gradient": 0
-      },
-      "client/components/RecordSheet/CategoryChips.uvue": {
-        "hex": 9,
+        "hex": 12,
         "rgb": 1,
         "gradient": 0
       },
+      "client/components/MessageDetailSheet/MessageDetailSheet.uvue": {
+        "hex": 1,
+        "rgb": 1,
+        "gradient": 0
+      },
+      "client/components/PortraitPrivacyPanel/PortraitPrivacyPanel.uvue": {
+        "hex": 6,
+        "rgb": 0,
+        "gradient": 0
+      },
+      "client/components/RecordSheet/CategoryChips.uvue": {
+        "hex": 3,
+        "rgb": 0,
+        "gradient": 0
+      },
       "client/components/ShareSheet/ShareSheet.uvue": {
-        "hex": 13,
-        "rgb": 4,
+        "hex": 1,
+        "rgb": 0,
         "gradient": 0
       },
       "client/components/TabAi/TabAi.uvue": {
@@ -220,34 +180,19 @@
         "rgb": 0,
         "gradient": 0
       },
-      "client/components/TabBar/TabBar.uvue": {
-        "hex": 3,
-        "rgb": 6,
-        "gradient": 0
-      },
       "client/components/TabIndex/TabIndex.uvue": {
         "hex": 2,
         "rgb": 0,
         "gradient": 0
       },
-      "client/components/TabProfile/TabProfile.uvue": {
-        "hex": 19,
-        "rgb": 3,
-        "gradient": 0
-      },
       "client/components/TabSearch/TabSearch.uvue": {
-        "hex": 23,
-        "rgb": 12,
+        "hex": 1,
+        "rgb": 0,
         "gradient": 0
       },
       "client/components/TagEditPanel/TagEditPanel.uvue": {
-        "hex": 32,
-        "rgb": 5,
-        "gradient": 0
-      },
-      "client/components/UploadStatusBanner/UploadStatusBanner.uvue": {
-        "hex": 8,
-        "rgb": 0,
+        "hex": 15,
+        "rgb": 1,
         "gradient": 0
       },
       "client/styles/record-sheet.css": {

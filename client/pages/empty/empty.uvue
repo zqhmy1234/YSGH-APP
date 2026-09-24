@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page tk-root">
 		<!-- 空状态独立页：画布 2:284~2:311「补充态·空状态」帧 390×600（×2rpx 直换，独立页面非时间轴内嵌态） -->
 		<view class="center-empty">
 			<!-- 插画组合：组合框 (135,90) 120×126pt，太阳 (56,0) 60×60pt（SVG 已烘焙整帧含留白），山湖 (0,36) 120×90pt -->
@@ -74,7 +74,7 @@
 	.page {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #f8f7f4;
+		background-color: var(--c-paper-100, #f8f7f4);
 		justify-content: center;
 	}
 	.center-empty {
@@ -85,83 +85,83 @@
 	/* 画布 2:301/2:303 插画组合：组合框 120×126pt，太阳 60pt，山湖 120×90pt */
 	.empty-illus {
 		position: relative;
-		width: 240rpx;
-		height: 252rpx;
+		width: var(--d-raw-r240, 240rpx);
+		height: var(--d-lattice-p131, 252rpx);
 	}
 	/* 画布 2:301 太阳帧 60×60pt=120rpx；SVG 原生 60×60px 已含 16px 环心留白，直接铺满 */
 	.empty-sun {
 		position: absolute;
-		left: 112rpx;
+		left: var(--d-raw-r112, 112rpx);
 		top: 0;
-		width: 120rpx;
-		height: 120rpx;
+		width: var(--d-raw-r120, 120rpx);
+		height: var(--d-raw-r120, 120rpx);
 	}
 	.empty-lake {
 		position: absolute;
 		left: 0;
-		top: 72rpx;
-		width: 240rpx;
-		height: 180rpx;
+		top: var(--d-raw-r72, 72rpx);
+		width: var(--d-raw-r240, 240rpx);
+		height: var(--d-raw-r180, 180rpx);
 	}
 	.empty-lake-img {
 		position: absolute;
-		left: 24rpx;
-		top: 24rpx;
-		width: 192rpx;
-		height: 112rpx;
+		left: var(--d-raw-r24, 24rpx);
+		top: var(--d-raw-r24, 24rpx);
+		width: var(--d-raw-r192, 192rpx);
+		height: var(--d-raw-r112, 112rpx);
 	}
 	/* 画布 2:306 标题 22 SemiBold #3A2E25 @y250，间隔 34pt */
 	.empty-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 68rpx;
-		font-size: 44rpx;
-		line-height: 62rpx;
-		color: #3a2e25;
+		font-size: var(--d-raw-r44, 44rpx);
+		line-height: var(--d-raw-r62, 62rpx);
+		color: var(--c-ink-900, #3a2e25);
 		font-weight: 600;
 	}
 	/* 画布 2:308/2:309 引导 14pt #8A7A6A @y292/y313（行距 21pt） */
 	.empty-desc {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		margin-top: 22rpx;
-		font-size: 28rpx;
-		color: #8a7a6a;
+		margin-top: var(--d-raw-r22, 22rpx);
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-500, #8a7a6a);
 		text-align: center;
-		line-height: 42rpx;
+		line-height: var(--d-raw-r42, 42rpx);
 	}
 	.empty-desc2 {
 		margin-top: 0;
 	}
 	/* 画布 2:284 主按钮 250×56 圆角28 阴影(0,6,16,a0.3) @y370，距引导底 36pt */
 	.empty-cta {
-		margin-top: 72rpx;
-		width: 500rpx;
-		height: 112rpx;
+		margin-top: var(--d-raw-r72, 72rpx);
+		width: var(--d-lattice-p260, 500rpx);
+		height: var(--d-raw-r112, 112rpx);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background-color: #b05a3a;
-		border-radius: 56rpx;
-		box-shadow: 0 12rpx 32rpx rgba(176, 89, 58, 0.3);
+		background-color: var(--c-rust-500, #b05a3a);
+		border-radius: var(--d-raw-r56, 56rpx);
+		box-shadow: 0 var(--d-raw-r12, 12rpx) var(--d-raw-r32, 32rpx) var(--a-rust-30, rgba(176, 89, 58, 0.3));
 	}
 	.empty-cta-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		color: #ffffff;
-		font-size: 32rpx;
+		color: var(--c-white, #ffffff);
+		font-size: var(--d-raw-r32, 32rpx);
 		font-weight: 600;
 	}
 	/* 画布 2:311 备选 14 SemiBold #B05A3A @y452，距按钮 26pt */
 .empty-voice {
 	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
 	font-family: "Sarasa Gothic SC", sans-serif;
-	margin-top: 52rpx;
-	padding: 11.5rpx 0rpx;
+	margin-top: var(--d-lattice-p27, 52rpx);
+	padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
 	align-items: center;
 }
 .empty-voice-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
-	font-size: 28rpx;
+	font-size: var(--d-raw-r28, 28rpx);
 	font-weight: 600;
-	color: #b05a3a;
+	color: var(--c-rust-500, #b05a3a);
 }
 	.pressable {
 		font-family: "Sarasa Gothic SC", sans-serif;

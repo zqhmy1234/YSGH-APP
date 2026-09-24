@@ -4,7 +4,7 @@
 	     默认态：全部 idleColor —— detail 帧(F5b) 真值 #E5DCC8；index/search 现传 #C4913C（属其帧卡范围）
 	     活动态：已播段 playedColor #C4913C、未播段 idleColor #E5DCC8（F5a 拍板色值），
 	     当前根 bar 呼吸缩放（UniElement.animate，RecordSheet 轮盘同款真机先例） -->
-	<view class="wave">
+	<view class="wave tk-root">
 		<view
 			v-for="(s, i) in barStyles"
 			:key="i"
@@ -210,13 +210,13 @@
 		flex: 1;
 		flex-direction: row;
 		align-items: center;
-		height: 53.8rpx;
+		height: var(--d-fab_radius, 53.8rpx);
 		overflow: hidden;
 	}
 	.wave-bar {
-		width: 7.7rpx;
-		border-radius: 3.8rpx;
-		margin-right: 5.8rpx;
+		width: var(--d-lattice-p4, 7.7rpx);
+		border-radius: var(--d-lattice-p2, 3.8rpx);
+		margin-right: var(--d-lattice-p3, 5.8rpx);
 	}
 	/* 呼吸缩放（F5a「波形跳动」）B9 已接线：目标 bar 由 watch(liveBarIdx/voicePlaying)
 	   驱动 UniElement.animate scaleY 1↔0.5（RecordSheet 真机先例机制）；本类保留作语义标记 */

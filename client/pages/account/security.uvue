@@ -3,7 +3,7 @@
 	     无 TabBar（画布真值）；W10.4：emoji 图标全部换同风格线性 SVG（icon-phone/chat/shield）；
 	     「数据导出」「存储空间」两行移出（与「我的」页「存储与备份」功能冲突，峰宝拍板
 	     2026-09-01：统一归未来「存储与备份」页，画布同步删） -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 铁律 11.5：同层 absolute 兄弟按 DOM 顺序绘制，返回图标必须排在标题容器**之后**，
 		     否则被全宽 750rpx 的标题容器盖住 → @tap 收不到事件（settings 页真机实锤先例） -->
 		<view class="n41_166"> <!-- 画布 41:166 标题容器 -->
@@ -149,23 +149,23 @@
 		flex: 1;
 		flex-direction: column;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	.n41_164 {
 		position: absolute;
 		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束，settings 同款位置） */
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		z-index: 1;
 	}
 	.n41_166 {
 		position: absolute;
 		/* absolute-ok: 固定页头·标题容器（全宽居中，画布 41:166 y60pt） */
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -174,73 +174,73 @@
 	.n41_167 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 列表流式容器：画布组1 y110pt=211.5rpx；左右页边距 20pt=38.5rpx（组宽 350pt ✓） */
 	.list-flow {
-		margin-top: 211.5rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
+		margin-top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: column;
 	}
 	/* 组卡同构：白底圆角 20pt=38.5rpx，内衬 6pt=11.5rpx（画布 41:169/183/200/204） */
 	.sec-group {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 11.5rpx;
-		padding-right: 11.5rpx;
-		padding-top: 11.5rpx;
-		padding-bottom: 11.5rpx;
-		background-color: #FFFFFF;
-		border-radius: 38.5rpx;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	/* 画布组间距 38pt=73.1rpx（组1底 210 → 组2 y248；组2底 392 → 组3 y430，两处一致） */
 	.group-gap {
-		margin-top: 73.1rpx;
+		margin-top: var(--d-lattice-p38, 73.1rpx);
 	}
 	/* 行基类：图标 x12pt（相对行）→ 左右衬 23.1rpx，行高 44pt 节奏 = 23.1×2 + 内容 38.5 */
 	.sec-row {
 		width: 100%;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	/* 画布 41:171 图标圈 20×20 无底色 → 纯定位容器 */
 	.sec-icon {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 	}
 	/* W10.4：emoji → 同风格线性 SVG（画布 icon 容器 20×20pt=38.5rpx，SVG 20×20 内含留白） */
 	.sec-icon-img {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	.sec-label {
 		flex: 1;
-		margin-left: 23.1rpx; /* 画布文字 x44 - 图标底 32 = 12pt */
+		margin-left: var(--d-card_radius_small, 23.1rpx); /* 画布文字 x44 - 图标底 32 = 12pt */
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx; /* 画布 fs15pt */
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx); /* 画布 fs15pt */
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.sec-value {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx; /* 画布 fs13pt */
-		color: #B3A696;
+		font-size: var(--d-lattice-p13, 25rpx); /* 画布 fs13pt */
+		color: var(--c-ink-300, #B3A696);
 	}
 	.sec-arrow {
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 26.9rpx; /* 画布 fs14pt */
-		color: #B3A696;
+		font-size: var(--d-lattice-p14, 26.9rpx); /* 画布 fs14pt */
+		color: var(--c-ink-300, #B3A696);
 	}
 	/* 画布 41:180 绑定徽章样式（.sec-badge / .sec-badge-text）已随「已绑定」失实表述一并移除
 	   （2026-09-21，理由见模板内注释）。B5 微信绑定管理落地后按真实绑定态恢复：
@@ -248,39 +248,39 @@
 	/* 退出/注销行：画布 h44pt=84.6rpx 文字居中 */
 	.sec-row-center {
 		width: 100%;
-		height: 84.6rpx;
+		height: var(--d-status_bar_height, 84.6rpx);
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 	}
 	.sec-logout-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.sec-delete-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 28.8rpx;
-		color: #B05A3A;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 	/* 画布 41:203 危险区标签：x26pt（页边距 20 + 组衬 6）→ 组卡左缘内 11.5rpx */
 	.sec-danger-label {
-		margin-top: 100rpx; /* 组3底 486 → y538，间距 52pt=100rpx */
-		margin-left: 11.5rpx;
+		margin-top: var(--d-lattice-p52, 100rpx); /* 组3底 486 → y538，间距 52pt=100rpx */
+		margin-left: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx; /* 画布 fs12pt */
-		color: #B3A696;
+		font-size: var(--d-card_radius_small, 23.1rpx); /* 画布 fs12pt */
+		color: var(--c-ink-300, #B3A696);
 	}
 	/* 画布标签底 553 → 组4 y560，间距 7pt=13.5rpx */
 	.group-delete {
-		margin-top: 13.5rpx;
+		margin-top: var(--d-lattice-p7, 13.5rpx);
 	}
 	/* 画布 41:207 危险说明：组4底 616 → y628，间距 12pt=23.1rpx，全宽居中 */
 	.sec-danger-note {
-		margin-top: 23.1rpx;
+		margin-top: var(--d-card_radius_small, 23.1rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx; /* 画布 fs11pt */
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx); /* 画布 fs11pt */
+		color: var(--c-ink-300, #B3A696);
 		text-align: center;
 	}
 </style>

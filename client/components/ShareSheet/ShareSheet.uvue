@@ -7,7 +7,7 @@
 	     （RecordSheet/EchoSheet 同款 fixed + z-index 1000 范式，盖 TabBar 999）。
 	     画布 63:10：弹层顶 y=417 → min-height 821rpx；弹层 gap=16px→30.8rpx margin；
 	     遮罩 63:9 = rgba(59,46,38,0.4)；画布「底页(弱化)」由宿主 detail 真实页面呈现，不属于本组件 -->
-	<view class="sheet-root">
+	<view class="sheet-root tk-root">
 		<view class="scrim" @tap="onClose"></view>
 		<view class="sheet">
 			<view class="head-row">
@@ -96,7 +96,7 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet 同款铁律） */
 		z-index: 1000;
@@ -105,28 +105,28 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* 画布 63:9 真值：暖黑 a=0.40 */
-		background-color: rgba(59, 46, 38, 0.4);
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
 		z-index: 10;
 	}
 	.sheet {
 		position: absolute;
 		bottom: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		/* 画布 63:10 弹层顶 y=417 → 高 427 逻辑 = 821rpx；内容驱动 + 下限兜底 */
-		min-height: 821rpx;
+		min-height: var(--d-raw-r821, 821rpx);
 		/* 重设计：白 → 暖底 #FAF9F5（CapsuleSheet 同款） */
-		background-color: #FAF9F5;
+		background-color: var(--c-paper-50, #FAF9F5);
 		/* 承载形状圆角（§W 峰宝拍板）：顶圆角对齐 RecordSheet 弹层 77rpx 家族语言，底缘贴屏 */
 		border-top-left-radius: 77rpx;
 		border-top-right-radius: 77rpx;
 		/* 画布无圆角声明（§W 拍板覆盖画布，快照已回写），底缘贴屏 */
-		padding-top: 34.6rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
 		padding-bottom: 48.1rpx;
 		z-index: 20;
 		flex-direction: column;
@@ -139,45 +139,45 @@
 	}
 	.head-title {
 		/* 画布 63:12：y 相对头行 +4px */
-		margin-top: 7.7rpx;
+		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 .head-close {
 	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06），补偿原 padding 10rpx */
-	width: 60rpx;
-	height: 60rpx;
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
 	justify-content: center;
 	align-items: center;
 	margin-right: -10rpx;
 }
 .head-close-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
-	font-size: 42.3rpx;
-	color: #B3A696;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
 }
 	.preview-card {
 		width: 100%;
-		margin-top: 30.8rpx;
-		background-color: #FFFFFF;
-		border-radius: 30.8rpx;
-		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		padding-left: 26.9rpx;
-		padding-right: 26.9rpx;
-		padding-top: 26.9rpx;
-		padding-bottom: 26.9rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		padding-top: var(--d-lattice-p14, 26.9rpx);
+		padding-bottom: var(--d-lattice-p14, 26.9rpx);
 	}
 	.preview-grid {
 		width: 100%;
-		height: 211.5rpx;
+		height: var(--d-lattice-p110, 211.5rpx);
 		flex-direction: row;
 	}
 	.preview-photo {
 		flex: 1;
-		background-color: #E9DFCB;
-		border-radius: 15.4rpx;
+		background-color: var(--c-paper-500, #E9DFCB);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
 		overflow: hidden;
 	}
 	.preview-photo-img {
@@ -186,81 +186,81 @@
 	}
 	.preview-photo2 {
 		flex: 1;
-		margin-left: 7.7rpx;
-		background-color: #E1D3B8;
-		border-radius: 15.4rpx;
+		margin-left: var(--d-lattice-p4, 7.7rpx);
+		background-color: var(--c-paper-700, #E1D3B8);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
 		overflow: hidden;
 	}
 	.preview-title {
-		margin-top: 19.2rpx;
+		margin-top: var(--d-lattice-p10, 19.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.brand-row {
-		margin-top: 19.2rpx;
+		margin-top: var(--d-lattice-p10, 19.2rpx);
 		flex-direction: row;
 		align-items: center;
 	}
 	.brand-star {
-		width: 26.9rpx;
-		height: 26.9rpx;
-		margin-right: 11.5rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-right: var(--d-lattice-p6, 11.5rpx);
 	}
 	.brand-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 19.2rpx;
+		font-size: var(--d-lattice-p10, 19.2rpx);
 		/* 重设计：金棕 → 锈红 */
-		color: #B05A3A;
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.main-btn {
 		width: 100%;
-		margin-top: 30.8rpx;
-		height: 92.3rpx;
-		border-radius: 46.2rpx;
-		background-color: #B05A3A;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
 	}
 	.main-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #FFFFFF;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
 	}
 	.items-row {
 		width: 100%;
-		margin-top: 30.8rpx;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
 		flex-direction: row;
 	}
 	.share-item {
-		width: 173.1rpx;
+		width: var(--d-lattice-p90, 173.1rpx);
 		flex-direction: column;
 		align-items: center;
 	}
 	.item-mid {
 		/* 画布项间距 40px → margin（gap 引擎丢弃） */
-		margin-left: 76.9rpx;
+		margin-left: var(--d-lattice-p40, 76.9rpx);
 	}
 	.item-icon {
-		width: 92.3rpx;
-		height: 92.3rpx;
-		border-radius: 46.2rpx;
+		width: var(--d-lattice-p48, 92.3rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
 		/* 重设计：淡底 → 白底+淡投影（4:404 令牌，pt→rpx：y2/blur8/a0.05） */
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p2, 3.8rpx) var(--d-lattice-p8, 15.4rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
 		justify-content: center;
 		align-items: center;
 	}
 	.item-icon-img {
-		width: 42.3rpx;
-		height: 42.3rpx;
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 	}
 	.item-label {
-		margin-top: 11.5rpx;
+		margin-top: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

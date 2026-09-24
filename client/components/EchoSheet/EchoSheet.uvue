@@ -8,7 +8,7 @@
 	     金星标签行 14×14 #C4913C + 标签 11·500 #C4913C（暖金家族色保留）/ 摘要 15·400 lh24 #3A2E25 /
 	     日期地点 11·400 #8A7A6A / 主按钮 h48 r24 #B05A3A（§V 金→锈红）/ 「今年不再提醒」12·400 #B3A696 居中
 	     §V（2026-09-03 峰宝验机拍板）：弹层底白→#FAF9F5 + 顶圆角 24rpx 恢复 + 渐变暖化 + 主按钮锈红，画布 64:43 子树已同步改。 -->
-	<view class="sheet-root">
+	<view class="sheet-root tk-root">
 		<view class="scrim" @tap="onClose"></view>
 		<view class="sheet">
 			<view class="head-row">
@@ -116,7 +116,7 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
 		/* z-index 1000 > TabBar 999（RecordSheet 同款铁律） */
 		z-index: 1000;
@@ -126,9 +126,9 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
-		background-color: rgba(59, 46, 38, 0.4);
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
 		z-index: 10;
 	}
 	/* 64:43 回响弹层：暖白底 #FAF9F5（§V 拍板：白板与 App 色彩系统冲突，对齐详情页令牌），y=373（hug≈471px=905.8rpx 兜底）；padding 20/20/18/28；
@@ -137,15 +137,15 @@
 		position: absolute;
 		bottom: 0;
 		left: 0;
-		width: 750rpx;
-		min-height: 905.8rpx;
-		background-color: #FAF9F5;
-		border-top-left-radius: 24rpx;
-		border-top-right-radius: 24rpx;
-		padding-top: 34.6rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-bottom: 53.8rpx;
+		width: var(--d-lattice-p390, 750rpx);
+		min-height: var(--d-lattice-p471, 905.8rpx);
+		background-color: var(--c-paper-50, #FAF9F5);
+		border-top-left-radius: var(--d-raw-r24, 24rpx);
+		border-top-right-radius: var(--d-raw-r24, 24rpx);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
 		z-index: 20;
 		flex-direction: column;
 	}
@@ -156,75 +156,75 @@
 	}
 	/* 64:45：16px SemiBold #3A2E25，y 偏移 4px → margin-top 7.7rpx */
 	.head-title {
-		margin-top: 7.7rpx;
+		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 64:46：22px Regular #B3A696，字形 ×（U+00D7，非 ✕） */
 .head-close {
 	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06）：view 承载，text 纯展示 */
-	width: 60rpx;
-	height: 60rpx;
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
 	justify-content: center;
 	align-items: center;
 }
 .head-close-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 400;
-	font-size: 42.3rpx;
-	color: #B3A696;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
 }
 	/* 64:47 照片主图：h200 r12；渐变 [[0,1,0],[-1,0,1]] 求逆 → to bottom；§V 拍板暖化：#E3CCA8→#C7AD87（原 #B0BFC7 青灰冷调与 App 色彩系统冲突，画布 2026-09-03 已同步改） */
 	.photo-ph {
-		margin-top: 26.9rpx;
-		height: 384.6rpx;
-		border-radius: 23.1rpx;
-		background-image: linear-gradient(to bottom, #E3CCA8, #C7AD87);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p200, 384.6rpx);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		background-image: var(--g-veil-sand-sand, linear-gradient(to bottom, #E3CCA8, #C7AD87));
 	}
 	/* 64:48 回响标签行：gap6 → 星芒 margin-right 11.5rpx */
 	.date-row {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		flex-direction: row;
 		align-items: center;
 	}
 	/* 64:49 标签星芒：14×14 → 26.9rpx；金星复用现有 about-star.svg（#C4913C 四芒星，白名单禁新增文件） */
 	.date-star {
-		width: 26.9rpx;
-		height: 26.9rpx;
-		margin-right: 11.5rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-right: var(--d-lattice-p6, 11.5rpx);
 	}
 	/* 64:51：11px Medium #C4913C（旧版锈红 600 为 PNG 路线误值，按 JSON 纠正） */
 	.date-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: 21.2rpx;
-		color: #C4913C;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
 	}
 	/* 64:52 摘要文字：15px Regular lh24 #3A2E25 */
 	.body-text {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 28.8rpx;
-		color: #3A2E25;
-		line-height: 46.2rpx;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		line-height: var(--d-lattice-p24, 46.2rpx);
 	}
 	/* 64:53 日期地点：11px Regular #8A7A6A */
 	.meta-text {
-		margin-top: 26.9rpx;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 21.2rpx;
-		color: #8A7A6A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* 64:54 主按钮：h48 r24，§V 拍板金→锈红 #B05A3A（对齐 F7/F9b 重设计主按钮令牌），fill_container（stretch 撑满 padding 内宽 673rpx） */
 	.main-btn {
-		margin-top: 26.9rpx;
-		height: 92.3rpx;
-		border-radius: 46.2rpx;
-		background-color: #B05A3A;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
 	}
@@ -232,21 +232,21 @@
 	.main-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #FFFFFF;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
 	}
 	/* 64:56 划掉：12px Regular #B3A696，fill_container + textAlign CENTER */
 .dismiss-btn {
 	/* text@tap 清零军规：view 承载热区，text 纯展示 */
-	margin-top: 26.9rpx;
+	margin-top: var(--d-lattice-p14, 26.9rpx);
 	justify-content: center;
 	align-items: center;
-	padding: 15.4rpx 0rpx;
+	padding: var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p0, 0rpx);
 }
 .dismiss-btn-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 400;
-	font-size: 23.1rpx;
-	color: #B3A696;
+	font-size: var(--d-card_radius_small, 23.1rpx);
+	color: var(--c-ink-300, #B3A696);
 }
 </style>

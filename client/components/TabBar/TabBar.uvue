@@ -1,5 +1,5 @@
 <template>
-	<view class="tabbar-container">
+	<view class="tabbar-container tk-root">
 		<!-- TabBar 背景 -->
 		<view class="tabbar-bg">
 			<!-- 时间轴 -->
@@ -144,12 +144,12 @@
 		height: 62px;
 		/* 毛玻璃：画布 BLUR(20) + fill 白 a0.55（backdrop-filter 真机实测生效后保留） */
 		backdrop-filter: blur(20px);
-		background-color: rgba(255, 255, 255, 0.55);
+		background-color: var(--a-white-55, rgba(255, 255, 255, 0.55));
 		border-radius: 36px;
 		/* justify-content 为 space-around（非 center），border 内缩会让各 item
 		   位移量不一致，故用 box-shadow 外环代替 border（1px = 1.9rpx）。
 		   阴影按画布还原：外环白a.65 + INNER 白a.45 + DROP y10 blur28 a.1 */
-		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.65), inset 0 1px 2px rgba(255, 255, 255, 0.45), 0 10px 28px rgba(59, 46, 38, 0.1);
+		box-shadow: 0 0 0 1px var(--a-white-65, rgba(255, 255, 255, 0.65)), inset 0 1px 2px var(--a-white-45, rgba(255, 255, 255, 0.45)), 0 10px 28px var(--a-ink-10, rgba(59, 46, 38, 0.1));
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-around;
@@ -185,7 +185,7 @@
 	.tabbar-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 10px;
-		color: #B3A696;
+		color: var(--c-ink-300, #B3A696);
 		/* 画布：图标0..20、标签y=23 → 间距3px（uvue不支持flex gap，用margin实现） */
 		margin-top: 3px;
 	}
@@ -194,7 +194,7 @@
 	.text-active {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		color: #B05A3A;
+		color: var(--c-rust-500, #B05A3A);
 	}
 
 	.tabbar-fab {
@@ -206,11 +206,11 @@
 		bottom: 48px;
 		width: 56px;
 		height: 56px;
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 		border-radius: 28px;
 		align-items: center;
 		justify-content: center;
 		/* 画布：INNER_SHADOW 白a.35 + DROP y6 blur16 a.35（6px=11.5rpx, 16px=30.8rpx） */
-		box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 6px 16px rgba(176, 89, 59, 0.35);
+		box-shadow: inset 0 1px 2px var(--a-white-35, rgba(255, 255, 255, 0.35)), 0 6px var(--e-glass-blur, 16px) var(--a-rust-35, rgba(176, 89, 59, 0.35));
 	}
 </style>

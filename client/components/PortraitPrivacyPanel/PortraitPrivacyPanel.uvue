@@ -8,7 +8,7 @@
 	     #B05A3A p3 内阴影白a0.3，滑块 22 白 影 0,1,3,.25）/ 说明 11·400 #B3A696 y232 /
 	     组2（y250 同款卡）：行 h44（敏感话题管理→管理 › 13·400 #B3A696；清除画像数据→不可恢复 13·400 #B05A3A）/
 	     说明 11·400 #B3A696 y356 -->
-	<view class="panel-root">
+	<view class="panel-root tk-root">
 		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="onClose" />
 		<view class="nav-title">
 			<text class="nav-title-text">画像隐私设置</text>
@@ -110,9 +110,9 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		width: 750rpx;
+		width: var(--d-lattice-p390, 750rpx);
 		height: 100%;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 		z-index: 1000;
 		flex-direction: column;
 	}
@@ -120,9 +120,9 @@
 	.nav-title {
 		position: absolute;
 		/* absolute-ok: 固定页头·标题容器（全宽居中） */
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -131,102 +131,102 @@
 	.nav-title-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.nav-back {
 		position: absolute;
 		/* absolute-ok: 固定页头·返回钮（关面板） */
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		z-index: 1;
 	}
 	/* 内容流：画布组 x20 → 左右 inset 38.5rpx，组1 y110 */
 	.flow {
 		position: absolute;
 		/* absolute-ok: 内容容器（内容短，无需滚动） */
-		left: 0rpx;
-		right: 0rpx;
-		top: 211.5rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		right: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: column;
 	}
 	/* 64:291/64:292 组卡：白底 r20 p6 影 (0,3,12,.05) */
 	.group-card {
-		background-color: #FFFFFF;
-		border-radius: 38.5rpx;
-		padding: 11.5rpx;
-		box-shadow: 0 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		padding: var(--d-lattice-p6, 11.5rpx);
+		box-shadow: 0 var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
 		flex-direction: column;
 	}
 	/* 组2 y250：说明 y232+13=245 → gap5=9.6rpx */
 	.group-2 {
-		margin-top: 9.6rpx;
+		margin-top: var(--d-lattice-p5, 9.6rpx);
 	}
 	/* ── 行：p12 图标20 文字15 值13；开关行 h52 / 值行 h44 ── */
 	.row {
-		padding: 23.1rpx;
+		padding: var(--d-card_radius_small, 23.1rpx);
 		flex-direction: row;
 		align-items: center;
 	}
 	/* 64:299 行图标：20×20 → 38.5rpx（库存 svg 见台账：眼睛无库存降级 icon-chat） */
 	.row-icon {
-		width: 38.5rpx;
-		height: 38.5rpx;
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
 	}
 	/* 64:300 行文字：15px Regular #3A2E25，图标右 gap12=23.1rpx */
 	.row-text {
 		flex: 1;
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	/* 64:307/64:310 行值：13px Regular；管理 › #B3A696 / 不可恢复 #B05A3A */
 	.row-value {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 25rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	.value-danger {
-		color: #B05A3A;
+		color: var(--c-rust-500, #B05A3A);
 	}
 	/* ── 64:318 开关：46×28 r14 p3，开 #B05A3A（滑块靠右 x21）/ 关降级 #D8D0C6（画布只有开态），
 	   滑块 22 白圆 影 0,1,3,.25；INNER_SHADOW 白a0.3 纳入 inset ── */
 	.switch {
-		width: 88.5rpx;
-		height: 53.8rpx;
-		border-radius: 26.9rpx;
-		padding: 5.8rpx;
-		box-shadow: inset 0 1.9rpx 3.9rpx rgba(255, 255, 255, 0.3);
+		width: var(--d-search_height, 88.5rpx);
+		height: var(--d-fab_radius, 53.8rpx);
+		border-radius: var(--d-lattice-p14, 26.9rpx);
+		padding: var(--d-lattice-p3, 5.8rpx);
+		box-shadow: inset 0 var(--d-lattice-p1, 1.9rpx) 3.9rpx var(--a-white-30, rgba(255, 255, 255, 0.3));
 		flex-direction: row;
 	}
 	.switch-on {
-		background-color: #B05A3A;
+		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: flex-end;
 	}
 	.switch-off {
-		background-color: #D8D0C6;
+		background-color: var(--c-surface-neutral, #D8D0C6);
 		justify-content: flex-start;
 	}
 	.switch-knob {
-		width: 42.3rpx;
-		height: 42.3rpx;
-		border-radius: 21.2rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0 1.9rpx 5.8rpx rgba(59, 46, 38, 0.25);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		border-radius: var(--d-lattice-p11, 21.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: 0 var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-25, rgba(59, 46, 38, 0.25));
 	}
 	/* ── 说明：11px Regular #B3A696（组1 底 226→232 gap6=11.5rpx / 组2 底 350→356 同） ── */
 	.group-hint {
-		margin-top: 11.5rpx;
+		margin-top: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

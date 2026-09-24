@@ -5,7 +5,7 @@
 	     状态栏 9:41/电池=系统自绘（画布节点不还原，同全库先例）。
 	     FE1（W2-1）：GET /api/v1/trash + restore + 清空全走真端点（play.uts 封装），
 	     USE_MOCK_TRASH 演示数据注入路径已移除；空列表=诚实空态。 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 铁律 11.5：返回图标排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
 		<view class="nav-title">
 			<text class="nav-title-text">回收站</text>
@@ -188,15 +188,15 @@
 		flex: 1;
 		flex-direction: column;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	/* ── 导航（60:633 标题 / 60:632 返回，settings.uvue 二级页先例） ── */
 	.nav-title {
 		position: absolute;
 		/* absolute-ok: 固定页头·标题容器（全宽居中） */
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -205,58 +205,58 @@
 	.nav-title-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.nav-back {
 		position: absolute;
 		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		z-index: 1;
 	}
 	/* ── 流（60:634 说明横幅 → 60:636 列表 → 60:671 清空行 → 60:673 清空说明） ── */
 	.list-flow {
-		margin-top: 215.4rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
+		margin-top: var(--d-lattice-p112, 215.4rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: column;
 	}
 	.hint-line {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 23.1rpx;
-		line-height: 30.8rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		line-height: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* ── 回收站列表卡（60:636：白底 · 圆角 20pt · 阴影 y3/r12 · 内边距 6pt） ── */
 	.card {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 11.5rpx;
-		padding-right: 11.5rpx;
-		padding-top: 11.5rpx;
-		padding-bottom: 11.5rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
-		border-radius: 38.5rpx;
-		margin-top: 38.5rpx;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		margin-top: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.trow {
 		flex-direction: row;
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 	}
 	.tico {
-		width: 76.9rpx;
-		height: 76.9rpx;
-		border-radius: 38.5rpx;
+		width: var(--d-lattice-p40, 76.9rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -266,71 +266,71 @@
 		background-color: #F6EBE7;
 	}
 	.tico-voice {
-		background-color: #ECEFE8;
+		background-color: var(--c-surface-sage, #ECEFE8);
 	}
 	.tico-text {
-		background-color: #E8EEF0;
+		background-color: var(--c-slate-100, #E8EEF0);
 	}
 	.tico-img {
-		width: 34.6rpx;
-		height: 34.6rpx;
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
 	}
 	.tmain {
 		flex: 1;
 		flex-direction: column;
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 	}
 	.ttitle {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.tmeta {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
-		margin-top: 3.8rpx;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}
 	/* R4：view 热区容器（padding 扩大点击面积，负 margin 抵消布局位移） */
 	.trestore-btn {
-		padding-left: 20rpx;
-		padding-right: 20rpx;
-		padding-top: 24rpx;
-		padding-bottom: 24rpx;
+		padding-left: var(--d-raw-r20, 20rpx);
+		padding-right: var(--d-raw-r20, 20rpx);
+		padding-top: var(--d-raw-r24, 24rpx);
+		padding-bottom: var(--d-raw-r24, 24rpx);
 		margin-right: -20rpx;
 		margin-top: -24rpx;
 		margin-bottom: -24rpx;
 	}
 	.trestore {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #C4913C;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
 	}
 	/* ── 清空行（60:671：白底 · 圆角 14pt · 高 48pt；文字 60:672 居中） ── */
 	.clear-btn {
 		width: 100%;
-		height: 92.3rpx;
-		background-color: #FFFFFF;
-		border-radius: 26.9rpx;
+		height: var(--d-lattice-p48, 92.3rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p14, 26.9rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
-		margin-top: 92.3rpx;
+		margin-top: var(--d-lattice-p48, 92.3rpx);
 	}
 	.clear-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 26.9rpx;
-		color: #B05A3A;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.clear-hint {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 		text-align: center;
 		width: 100%;
-		margin-top: 15.4rpx;
+		margin-top: var(--d-lattice-p8, 15.4rpx);
 	}
 	/* ── 空态（自造，画布无空态帧；真数据空时兜底展示） ── */
 	.empty-card {
@@ -338,29 +338,29 @@
 		flex-direction: column;
 		justify-content: center;
 		align-items: center;
-		padding-top: 90rpx;
-		padding-bottom: 90rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
-		border-radius: 38.5rpx;
-		margin-top: 38.5rpx;
+		padding-top: var(--d-raw-r90, 90rpx);
+		padding-bottom: var(--d-raw-r90, 90rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		margin-top: var(--d-card_margin_x, 38.5rpx);
 	}
 	.empty-icon {
-		width: 56rpx;
-		height: 56rpx;
+		width: var(--d-raw-r56, 56rpx);
+		height: var(--d-raw-r56, 56rpx);
 		opacity: 0.4;
 	}
 	.empty-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 26rpx;
-		color: #B3A696;
-		margin-top: 24rpx;
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-300, #B3A696);
+		margin-top: var(--d-raw-r24, 24rpx);
 	}
 	.empty-sub {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 20rpx;
-		color: #B3A696;
-		margin-top: 12rpx;
+		font-size: var(--d-raw-r20, 20rpx);
+		color: var(--c-ink-300, #B3A696);
+		margin-top: var(--d-raw-r12, 12rpx);
 		opacity: 0.8;
 	}
 </style>

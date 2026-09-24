@@ -5,7 +5,7 @@
 	     交互：chips 切换章节 / 「下一节 ←」组间跳转（保留 W1-2 接线）
 	     降级（台账登记）：假状态栏时间+电池移除（detail 先例，navigationStyle:custom 沉浸式，系统渲染真实时钟）；
 	           引言/您的权利/第三方 正文无帧真值 → 复用草稿 v0.1 文案（收集章节已按帧重排） -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
 		<view class="nav-title">
 			<text class="nav-title-text">隐私政策</text>
@@ -134,15 +134,15 @@
 	.page-root {
 		flex: 1;
 		flex-direction: column;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	/* ── 导航（settings.uvue 二级页先例原值；F3a 标题 18pt=34.6rpx） ── */
 	.nav-title {
 		position: absolute;
 		/* absolute-ok: 固定页头·标题容器（全宽居中） */
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -151,24 +151,24 @@
 	.nav-title-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.nav-back {
 		position: absolute;
 		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		z-index: 1;
 	}
 	/* ── 章节 chips（F3a y108：高 32px=61.5rpx，圆角 16px=30.8rpx，间距 gap8px=15.4rpx；行起 x20=38.5rpx） ── */
 	.chips-row {
 		position: absolute;
 		/* absolute-ok: 固定筛选行（随内容滚动会失去锚点语义） */
-		left: 38.5rpx;
-		top: 207.7rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p108, 207.7rpx);
 		width: 673rpx;
 		flex-direction: row;
 		align-items: center;
@@ -177,90 +177,90 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
-		height: 61.5rpx;
-		border-radius: 30.8rpx;
-		background-color: #FFFFFF;
-		margin-right: 15.4rpx;
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
 	}
 	.chip-on {
-		background-color: #3A2E25;
+		background-color: var(--c-ink-900, #3A2E25);
 	}
 	.chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.chip-text-on {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
 		font-weight: 500;
-		color: #FFFFFF;
+		color: var(--c-white, #FFFFFF);
 	}
 	/* ── 内容卡（F3a 卡顶 y156=300rpx；页边距 20px=38.5rpx；卡内 gap14px=26.9rpx 换 margin） ── */
 	.body-scroll {
 		flex: 1;
-		margin-top: 300rpx;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-bottom: 60rpx;
+		margin-top: var(--d-lattice-p156, 300rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-raw-r60, 60rpx);
 	}
 	.card {
 		width: 100%;
 		flex-direction: column;
-		padding-left: 38.5rpx;
-		padding-right: 38.5rpx;
-		padding-top: 38.5rpx;
-		padding-bottom: 38.5rpx;
-		background-color: #FFFFFF;
-		border-radius: 30.8rpx;
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
 	}
 	.sec-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.blk-h {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 25rpx;
-		color: #3A2E25;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.blk-p {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 25rpx;
-		line-height: 40.4rpx;
-		color: #6B5D4F;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p21, 40.4rpx);
+		color: var(--c-surface-neutralD, #6B5D4F);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.blk-b {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 25rpx;
-		line-height: 40.4rpx;
-		color: #3A2E25;
-		margin-top: 26.9rpx;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p21, 40.4rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 	.card-divider {
-		height: 1.9rpx;
-		background-color: #EDE5D5;
-		margin-top: 26.9rpx;
+		height: var(--d-lattice-p1, 1.9rpx);
+		background-color: var(--c-paper-400, #EDE5D5);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
 	}
 .next-link {
 	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
 	font-family: "Sarasa Gothic SC", sans-serif;
-	padding: 11.5rpx 0rpx;
-	margin-top: 26.9rpx;
+	padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
+	margin-top: var(--d-lattice-p14, 26.9rpx);
 	align-items: center;
 }
 .next-link-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-weight: 500;
-	font-size: 25rpx;
-	color: #C4913C;
+	font-size: var(--d-lattice-p13, 25rpx);
+	color: var(--c-amber-500, #C4913C);
 }
 	.next-link-end {
-		color: #B3A696;
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

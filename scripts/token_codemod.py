@@ -374,6 +374,59 @@ def plan(only: str | None = None) -> dict:
     return res
 
 
+def _non_generated_ranges(scope: str) -> list[tuple[int, int]]:
+    """区间内**排除生成区**的子区间列表。
+
+    ⚠️ 必须排除：生成区是写器自己的产物（`--x: #abc;`），若被再改一次会变成
+    `--x: var(--x, #abc);` —— **自引用环**，该自定义属性在计算期失效 ⇒ 令牌整体形同虚设。
+    """
+    out: list[tuple[int, int]] = []
+    i = 0
+    while True:
+        k = scope.find(GEN_START, i)
+        if k == -1:
+            out.append((i, len(scope)))
+            return out
+        if k > i:
+            out.append((i, k))
+        e = scope.find(GEN_END, k)
+        i = len(scope) if e == -1 else scope.find("\n", e) + 1 or len(scope)
+
+
+def write_files(files, colors, dims, grads) -> int:
+    """对给定相对路径逐个改写（`.uvue` 同时挂根类 + 写前自检）。返回改写总处数。"""
+    tot = 0
+    for rel in files:
+        p = ROOT / rel
+        t = p.read_text(encoding="utf-8")
+        s, e = style_scope(t, p.suffix)
+        scope = t[s:e]
+        parts: list[str] = []
+        n = 0
+        cur = 0
+        for a, b in _non_generated_ranges(scope):
+            parts.append(scope[cur:a])            # 生成区原样保留
+            new, k = rewrite_scope(scope[a:b], colors, dims, grads)
+            parts.append(new)
+            n += k
+            cur = b
+        parts.append(scope[cur:])
+        t2 = t[:s] + "".join(parts) + t[e:]
+        bad = re.findall(r"[-+]var\(", t2)
+        if bad:
+            print(f"[FAIL] {rel}: 改写后出现非法 `-var(`/`+var(` {len(bad)} 处 —— **未写入**，请检查写器")
+            continue
+        line = f"[write] {rel}: 改写 {n} 处"
+        if p.suffix == ".uvue":
+            t2, added = ensure_root_class(t2)
+            if added:
+                line += " · 根节点已挂 tk-root"
+        p.write_text(t2, encoding="utf-8")
+        print(line)
+        tot += n
+    return tot
+
+
 def main() -> int:
     args = sys.argv[1:]
     T = _load()
@@ -383,28 +436,15 @@ def main() -> int:
         app.write_text(update_app_block(app.read_text(encoding="utf-8"), emit_block(T)), encoding="utf-8")
         print("[write-block] App.uvue 的生成区已刷新（全部令牌声明一次）")
         return 0
+    if "--write-uvue-all" in args:
+        files = [f for f in plan().get("files", {}) if f.endswith(".uvue")]
+        print(f"[write-uvue-all] 目标 {len(files)} 个 .uvue")
+        print(f"[write] 合计改写 {write_files(files, colors, dims, grads)} 处")
+        return 0
     if "--write" in args:
         files = [args[i + 1] for i, a in enumerate(args) if a == "--file" and i + 1 < len(args)]
+        tot = write_files(files, colors, dims, grads)
         class_on = args[args.index("--class-on") + 1] if "--class-on" in args else None
-        tot = 0
-        for rel in files:
-            p = ROOT / rel
-            t = p.read_text(encoding="utf-8")
-            s, e = style_scope(t, p.suffix)
-            new, n = rewrite_scope(t[s:e], colors, dims, grads)
-            t2 = t[:s] + new + t[e:]
-            bad = re.findall(r"[-+]var\(", t2)
-            if bad:
-                print(f"[FAIL] {rel}: 改写后出现非法 `-var(`/`+var(` {len(bad)} 处 —— **未写入**，请检查写器")
-                continue
-            line = f"[write] {rel}: 改写 {n} 处"
-            if p.suffix == ".uvue":
-                t2, added = ensure_root_class(t2)
-                if added:
-                    line += " · 根节点已挂 tk-root"
-            p.write_text(t2, encoding="utf-8")
-            print(line)
-            tot += n
         if class_on:
             p = ROOT / class_on
             t2, added = ensure_root_class(p.read_text(encoding="utf-8"))

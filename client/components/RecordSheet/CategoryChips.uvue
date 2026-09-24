@@ -1,5 +1,5 @@
 <template>
-	<view class="chip-row">
+	<view class="chip-row tk-root">
 		<view
 			v-for="cat in categories"
 			:key="cat.key"
@@ -57,11 +57,11 @@
 		align-items: center;
 	}
 	.chip {
-		height: 69rpx;
-		padding-left: 30rpx;
-		padding-right: 30rpx;
-		background-color: #ffffff;
-		border-radius: 35rpx;
+		height: var(--d-raw-r69, 69rpx);
+		padding-left: var(--d-raw-r30, 30rpx);
+		padding-right: var(--d-raw-r30, 30rpx);
+		background-color: var(--c-white, #ffffff);
+		border-radius: var(--d-raw-r35, 35rpx);
 		margin-right: 23rpx;
 		align-items: center;
 		justify-content: center;
@@ -69,7 +69,7 @@
 	/* F1e manual 选中态：白底 + 隐形描边（opacity 0）+ Medium 灰字 */
 	.chip-selected-manual {
 		border-width: 2rpx;
-		border-color: rgba(196, 145, 60, 0);
+		border-color: var(--c-transparent, rgba(196, 145, 60, 0));
 		border-style: solid;
 	}
 	.chip-text-manual {
@@ -77,32 +77,32 @@
 	}
 	/* F1d AI 预选选中态：琥珀底 #EDE4D4 + 琥珀描边 #C4913C + 琥珀字 #8A5A20 */
 	.chip-selected-ai {
-		background-color: #EDE4D4;
+		background-color: var(--c-paper-400, #EDE4D4);
 		border-width: 2rpx;
-		border-color: #C4913C;
+		border-color: var(--c-amber-500, #C4913C);
 		border-style: solid;
 	}
 	.chip-text-ai {
-		color: #8A5A20;
+		color: var(--c-rust-700, #8A5A20);
 		font-weight: 500;
 	}
 	.chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: 27rpx;
-		color: #8A7A6A;
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* ＋ 添加 chip：固定窄宽 34px = 65rpx，圆角 17px = 33rpx */
 	.chip-add {
-		width: 65rpx;
-		height: 69rpx;
+		width: var(--d-raw-r65, 65rpx);
+		height: var(--d-raw-r69, 69rpx);
 		padding-left: 0;
 		padding-right: 0;
-		border-radius: 33rpx;
+		border-radius: var(--d-raw-r33, 33rpx);
 		margin-right: 0;
 	}
 	.chip-add-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 31rpx;
-		color: #B3A696;
+		font-size: var(--d-raw-r31, 31rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 </style>

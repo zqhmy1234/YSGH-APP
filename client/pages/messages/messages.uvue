@@ -1,6 +1,6 @@
 <template>
 	<!-- ardot 直转 v2：消息中心（帧 4:89）· 审计化生成 -->
-	<view class="page-root">
+	<view class="page-root tk-root">
 		<!-- 铁律 11.5：同层 absolute 兄弟按 DOM 顺序绘制，返回图标必须排在标题容器**之后**，
 		     否则被全宽 750rpx 的 .n4_95 盖住 → @tap 收不到事件（真机 2026-08-31：返回键完全点不动） -->
 		<view class="n4_95"> <!-- 标题容器 -->
@@ -358,22 +358,22 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	.page-root {
 		flex: 1;
 		font-family: "Sarasa Gothic SC", sans-serif;
-		background-color: #F8F7F4;
+		background-color: var(--c-paper-100, #F8F7F4);
 	}
 	.n4_93 {
 		position: absolute;
-		left: 30.8rpx;
-		top: 115.4rpx;
-		width: 42.3rpx;
-		height: 42.3rpx;
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
 		/* 双保险：除 DOM 后置外再加 z-index，确保热区不被全宽标题容器吃掉 */
 		z-index: 1;
 	}
 	.n4_95 {
 		position: absolute;
-		left: 0rpx;
-		top: 115.4rpx;
-		width: 750rpx;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
@@ -382,59 +382,59 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	.n4_96 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 34.6rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_97 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 211.5rpx;
-		width: 46.2rpx;
-		height: 28.8rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p110, 211.5rpx);
+		width: var(--d-lattice-p24, 46.2rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 23.1rpx;		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* R7 小接线：「全部已读」按钮（view 承载 @tap，R4 text@tap 热区教训）——
 	   右上角与「今天」分组标题同行；padding 扩热区 + 负 margin 抵消位移 */
 	.readall-btn {
 		position: absolute;
-		right: 38.5rpx;
+		right: var(--d-card_margin_x, 38.5rpx);
 		top: 199.5rpx;
-		padding: 20rpx 16rpx;
+		padding: var(--d-raw-r20, 20rpx) var(--d-raw-r16, 16rpx);
 		margin: -20rpx -16rpx;
 	}
 	.readall-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 23.1rpx;
-		color: #C4913C;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-amber-500, #C4913C);
 	}
 	.n4_98 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 265.4rpx;
-		width: 673.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p138, 265.4rpx);
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: column;
-		padding-left: 15.4rpx;
-		padding-right: 15.4rpx;
-		padding-top: 15.4rpx;
-		padding-bottom: 15.4rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 7.7rpx 30.8rpx rgba(59, 46, 38, 0.06), 0rpx 1.9rpx 5.8rpx rgba(59, 46, 38, 0.04);
-		border-radius: 38.5rpx;
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n4_99 {
 		width: 100%;
 		flex-direction: column;
 		/* 画布 gap=6px（11.5rpx）→ uvue App 端 gap 不支持，换非首子元素 margin-top（.n4_104/.n4_105） */
-		padding-left: 26.9rpx;
-		padding-right: 26.9rpx;
-		padding-top: 26.9rpx;
-		padding-bottom: 26.9rpx;
-		background-image: linear-gradient(to bottom, rgba(217, 227, 203, 0.6), rgba(217, 227, 203, 0.12));
-		border-radius: 23.1rpx;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		padding-top: var(--d-lattice-p14, 26.9rpx);
+		padding-bottom: var(--d-lattice-p14, 26.9rpx);
+		background-image: var(--g-veil-green-green, linear-gradient(to bottom, rgba(217, 227, 203, 0.6), rgba(217, 227, 203, 0.12)));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n4_100 {
@@ -445,44 +445,44 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		overflow: hidden;
 	}
 	.n4_101 {
-		width: 26.9rpx;
-		height: 26.9rpx;
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
 	}
 	.n4_103 {
-		margin-left: 11.5rpx;
+		margin-left: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 21.2rpx;
-		color: #7A8C5A;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-olive-500, #7A8C5A);
 	}
 	.n4_104 {
 		width: 100%;
-		margin-top: 11.5rpx;
+		margin-top: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 30.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_105 {
 		width: 100%;
-		margin-top: 11.5rpx;
+		margin-top: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #5A4C40;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-700, #5A4C40);
 	}
 	.n4_106 {
 		position: absolute;
-		left: 38.5rpx;
-		top: 576.9rpx;
-		width: 673.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-photo_hero_height, 576.9rpx);
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: column;
-		padding-left: 11.5rpx;
-		padding-right: 11.5rpx;
-		padding-top: 11.5rpx;
-		padding-bottom: 11.5rpx;
-		background-color: #FFFFFF;
-		box-shadow: 0rpx 5.8rpx 23.1rpx rgba(59, 46, 38, 0.05);
-		border-radius: 38.5rpx;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n4_107 {
@@ -490,29 +490,29 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		flex-direction: row;
 		/* 画布 gap=12px（23.1rpx）→ 换 .n4_111 / .n4-unread-dot margin-left */
 		align-items: center;
-		padding-left: 23.1rpx;
-		padding-right: 23.1rpx;
-		padding-top: 23.1rpx;
-		padding-bottom: 23.1rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
 		overflow: hidden;
 	}
 	.n4_108 {
-		width: 76.9rpx;
-		height: 76.9rpx;
+		width: var(--d-lattice-p40, 76.9rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
 		flex-direction: row;
 		justify-content: center;
 		align-items: center;
-		background-color: rgba(176, 89, 59, 0.12);
-		border-radius: 38.5rpx;
+		background-color: var(--a-rust-12, rgba(176, 89, 59, 0.12));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
 	}
 	.n4_109 {
-		width: 34.6rpx;
-		height: 34.6rpx;
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
 	}
 	.n4_111 {
 		flex: 1;
-		margin-left: 23.1rpx;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
 		flex-direction: column;
 		/* 画布 gap=2px（3.8rpx）→ 换 .n4_113 margin-top */
 		overflow: hidden;
@@ -526,43 +526,43 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	.n4_112 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: 28.8rpx;
-		color: #3A2E25;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_113 {
 		width: 100%;
-		margin-top: 3.8rpx;
+		margin-top: var(--d-lattice-p2, 3.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 23.1rpx;
-		color: #8A7A6A;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n4_114 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 21.2rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	.n4-unread-dot {
-		width: 14rpx;
-		height: 14rpx;
-		margin-left: 23.1rpx;
-		background-color: #B0593B;
-		border-radius: 7rpx;
+		width: var(--d-raw-r14, 14rpx);
+		height: var(--d-raw-r14, 14rpx);
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-rust-500, #B0593B);
+		border-radius: var(--d-raw-r7, 7rpx);
 		flex-shrink: 0;
 	}
 	.n4-empty {
 		position: absolute;
-		left: 38.5rpx;
-		top: 576.9rpx;
-		width: 673.1rpx;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-photo_hero_height, 576.9rpx);
+		width: var(--d-card_width, 673.1rpx);
 		flex-direction: row;
 		justify-content: center;
-		padding-top: 61.5rpx;
-		padding-bottom: 61.5rpx;
+		padding-top: var(--d-lattice-p32, 61.5rpx);
+		padding-bottom: var(--d-lattice-p32, 61.5rpx);
 	}
 	.n4-empty-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: 26.9rpx;
-		color: #B3A696;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-300, #B3A696);
 	}
 	/* W1-3：就地展开区已废弃（§V 拍板 2026-09-03：太简陋 → MessageDetailSheet 贴底弹层），CSS 一并移除 */
 	.n4-msgwrap {
