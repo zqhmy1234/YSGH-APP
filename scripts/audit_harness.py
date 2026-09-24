@@ -314,6 +314,14 @@ def audit_client() -> None:
     if mock_true:
         _info(f"发版检查清单要求 USE_MOCK_* 全部 =false —— 当前仍有 {len(mock_true)} 处未关闭（见 B8 远期待办）")
 
+    # ①b **Agent 接线锁**（2026-09-25 · 功能修复波）：`USE_MOCK_CHAT` 必须为 false。
+    # 为什么单独锁这一个：客户端↔Agent 接线已于 2026-09-25 完成（TabAi.onSend → chat_api
+    # sendChatMessage → POST /api/v1/chat/messages → 后端反代 agent 服务，失败**不伪造回复**）。
+    # 该开关一旦被翻回 true，产品立刻退回"样张对话"占位态（正是 09-23 审计指出的原始问题），
+    # 且外观上不易察觉 ⇒ 用 CRITICAL 把"接线完成"这个事实钉住。
+    if any(e.rsplit("  ", 1)[-1] == "USE_MOCK_CHAT = true" for e in mock_true):
+        _crit("USE_MOCK_CHAT 被翻回 true —— Agent 接线锁被破坏（产品会退回演示样张；见 决策台账 §4.16）")
+
     # ② 页面路径漂移（按是否在**注释区间**分流；B10-j：改用字符级精确判定）
     pages = _registered_pages()
     page_re = re.compile(r"/pages/[A-Za-z0-9_]+/[A-Za-z0-9_-]+")

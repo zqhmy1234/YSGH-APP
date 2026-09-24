@@ -162,7 +162,7 @@
 <script setup lang="uts">
 	import { onMounted, watch } from 'vue'
 	import { aiAttachOpen } from '@/utils/shell_state'
-	import { sendChatMessage, ChatSendResult } from '@/utils/chat_api'
+	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem } from '@/utils/chat_api'
 	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
 	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
@@ -208,12 +208,18 @@
 	let replyKindIdx = ref(0) // AI 回复形态轮换指针
 	const REPLY_KIND_ROTATION = ['bubble', 'plain', 'cards', 'confirm']
 
-	// ── 演示开关（2026-09-23 补真身）──────────────────────────────────────────
+	// ── 演示开关（2026-09-23 补真身；2026-09-25 **接线完成后翻转为 false**）────────────
 	// 头注释自 08-01 起声称有本常量，但代码里**从未存在**（seedMockMessages/onSend/
 	// onConfirmAction 全部无条件走 mock）→ 后果：① 无法通过配置关闭 ② 用户无从得知是演示
 	// 数据，会把样张当成已上线的智能体（见 docs/决策台账.md §7.1）。
-	// 现补真身并使三处接线点全部按其分支；**B2 对话域接线后本常量应删除**（改真端点）。
-	const USE_MOCK_CHAT: boolean = true
+	//
+	// **2026-09-25（功能修复波 · Agent 接线）**：客户端真端点已接（onSend → chat_api
+	// sendChatMessage → POST /api/v1/chat/messages → 后端反代 agent 服务），故默认值翻转为
+	// **false**（＝生产口径）。`true` 仅供演示/录屏（此时页面顶部显示「内测演示数据」标注）。
+	// **门禁锁定**：`audit_harness client` 断言本常量为 false —— 防止"接线回退成占位"。
+	// 为什么 mock 分支**未删除**：其形态族（cards/confirm）后端 agent 尚未产出，删掉会让这些
+	// 形态的模板成为**不可达 UI**（正是本仓已判定为"缺口"的那类）；保留为演示设施而非产品路径。
+	const USE_MOCK_CHAT: boolean = false
 
 	// 会话 ID（AG6）：后端按 conversation_id 存 thread（多轮上下文靠它，丢了就每轮失忆）；
 	// 落盘以便重启后接续同一会话（键名前缀与仓内既有 storage 键风格一致）
@@ -453,6 +459,28 @@
 			const saved = uni.getStorageSync(CHAT_CONV_KEY) as string
 			if (saved != null && saved != '') {
 				conversationId.value = saved
+				// 2026-09-25（接线补完）：**回填历史**。后端 docstring 明确要求"客户端进入会话时
+				// 回填"，而此前只恢复了会话 ID ⇒ 重启后会话虽接续、界面却空白（像丢了历史）。
+				// 失败/空保持空列表 —— **不伪造历史**（同 onSend 的失败口径）。
+				fetchChatHistory(saved).then((items: Array<ChatHistoryItem> | null) => {
+					if (items == null || items.length == 0) {
+						return
+					}
+					const seq: Array<AiMsg> = []
+					for (let i = 0; i < items.length; i++) {
+						const it = items[i]
+						if (it.role == 'user') {
+							seq.push(mkUser(it.text))
+						} else {
+							// 形态用后端下发的 kind（当前只可能是 'bubble'/'plain'，见 api/chat.py
+							// `_kind_for`）；未知一律退回 'bubble' —— 不猜 cards/confirm，避免伪造结构
+							const k = (it.kind == 'plain' || it.kind == 'bubble') ? it.kind : 'bubble'
+							seq.push(mkAi(k, it.text, [], [], [], []))
+						}
+					}
+					messages.value = seq
+					scrollToBottom(seq[seq.length - 1].id)
+				})
 			}
 		}
 		prefillDraftFrom(props.prefillTitle, props.prefillSummary)

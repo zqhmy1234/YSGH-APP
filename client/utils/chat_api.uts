@@ -20,9 +20,9 @@
  * 约定对齐 utils/api.uts：resolve-only 永不 reject；失败 resolve(null)，且 api 层**已全局
  * showErrorToast**（含后端 message）⇒ 调用方**不重复 toast**（同 capsule_api 注释口径）。
  */
-import { post, dataObj } from './api'
+import { post, get, dataObj, dataArr } from './api'
 import { addBreadcrumb } from './sentry'
-import { PATH_CHAT_MESSAGES } from './contract'
+import { PATH_CHAT_MESSAGES, PATH_CHAT_CONVERSATION_MESSAGES } from './contract'
 
 /** 一条智能体回复（客户端可用子集；chips/cards 待 agent 出结构化输出后再开） */
 export class ChatReply {
@@ -119,3 +119,62 @@ export function sendChatMessage(conversationId: string, content: string): Promis
 // `audit_harness.py` 轴 4 判定为 CRITICAL 的缺陷形态（能力写了没接线，图搜先例）。
 // 我不能一边拿这条门禁查别人、一边自己塞一个零调用函数进来。
 // 真需要时（SSE 流式/断线重取，见排期 AG6 余项）连同**调用点**一起加，别只加壳。
+
+/** 历史消息项（后端 `ChatHistoryItemOut` 的客户端子集） */
+export class ChatHistoryItem {
+	id: string
+	role: string
+	kind: string
+	text: string
+
+	constructor(id: string, role: string, kind: string, text: string) {
+		this.id = id
+		this.role = role
+		this.kind = kind
+		this.text = text
+	}
+}
+
+/**
+ * 取会话历史（时间正序）：`GET /api/v1/chat/conversations/{id}/messages`。
+ *
+ * 2026-09-25（功能修复波 · Agent 接线补完）：后端**早已实现**该端点并在 docstring 里要求
+ * "客户端进入会话时回填"，但客户端**从未调用** —— 后果是重启后会话虽接续（conversationId
+ * 已落盘）、界面却空白（用户以为历史丢了）。
+ * 失败 `resolve(null)`：调用方保持空列表即可，**不伪造历史**。
+ */
+export function fetchChatHistory(conversationId: string): Promise<Array<ChatHistoryItem> | null> {
+	if (conversationId == '') {
+		return new Promise<Array<ChatHistoryItem> | null>((resolve) => {
+			resolve(null)
+		})
+	}
+	const path = PATH_CHAT_CONVERSATION_MESSAGES.replace('{id}', conversationId)
+	// B13 面包屑口径同 sendChatMessage：只记"取历史"，不记内容
+	addBreadcrumb('chat', 'fetch history')
+	return new Promise<Array<ChatHistoryItem> | null>((resolve) => {
+		get(path).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const arr = dataArr(d)
+			const out: Array<ChatHistoryItem> = []
+			for (let i = 0; i < arr.length; i++) {
+				const o = arr[i]
+				out.push(new ChatHistoryItem(
+					o.getString('id') ?? '',
+					o.getString('role') ?? '',
+					o.getString('kind') ?? '',
+					o.getString('text') ?? ''
+				))
+			}
+			resolve(out)
+		})
+	})
+}

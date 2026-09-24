@@ -1,0 +1,75 @@
+# 功能修复波（Functional Fix Wave）· 方案与登记 · 2026-09-25 开波
+
+> **开波依据**：用户 2026-09-24 拍板「64 条功能与安全缺陷 → 另开功能修复波」（`docs/决策台账.md` §5.10 拍板 10.1），
+> 并于 2026-09-25 追加指令：**「将客户端与 Agent 接线纳入下一个波中。完成接线」** + **「先开始令牌波，再功能修复波」**。
+> **本文件的定位**：本波的**入口与登记簿**（不复制缺陷清单——清单单一来源见 `refactor-ledger.md` §9.2，避免两处漂移）。
+
+---
+
+## 1. 范围（三段，来源各不相同，勿混）
+
+| 段 | 内容 | 单一来源 | 状态 |
+|---|---|---|---|
+| **A. 功能与安全缺陷 64 条** | P0 10 / P1 36 / P2 18（含端云聚合同源、软删 30 天承诺、微信主链三簇） | `refactor-ledger.md` §9.2（+ §9.1 P0 清单） | ⏸ 待启动逐条 |
+| **B. 能力缺口（非缺陷）** | ① 产品 Agent 曾"全 mock" ② 图搜**评测基线**缺失（RET-002；现有 `eval_image_search.py` 是 RET-001 文字搜图）③ RAG 负样本误召回 0.5714 | `docs/决策台账.md` §7.1/§7.2/§7.3 + `docs/审计_未关闭缺陷_20260923.md` | 🔄 ①见 §2 已闭环；②③ 待办 |
+| **C. 施工期新增** | ① `TabIndex` 悬空面板（已裁决**不修**）② 令牌波**刻意留残**（尺寸同格变体/物理 px/无令牌散单） | `docs/决策台账.md` §4.15 15.4 / 令牌波 spec §4.3 | ✅ 均已裁决/分类，**非本波待办** |
+
+## 2. 第 1 项：客户端 ↔ Agent 接线（**已完成** · 2026-09-25）
+
+**为什么它在 B 段**：09-23 审计判定「产品 Agent 全 mock」＝能力缺口；用户指令要求**纳入本波并完成接线**。
+
+### 2.1 接线链（逐段取证）
+
+| 段 | 载体 | 状态 |
+|---|---|---|
+| 客户端 UI | `client/components/TabAi/TabAi.uvue` | ✅ `USE_MOCK_CHAT` **翻转为 false**（2026-09-25） |
+| 客户端 API | `client/utils/chat_api.uts` | ✅ `sendChatMessage`（POST /chat/messages）+ **新增 `fetchChatHistory`**（GET /chat/conversations/{id}/messages） |
+| 契约常量 | `client/utils/contract.uts` | ✅ 新增 `PATH_CHAT_CONVERSATION_MESSAGES`（**与调用点同时登记**，避免零调用常量） |
+| 后端入口 | `backend/app/api/chat.py` | ✅ `POST /messages`、`GET /replies/{id}`、**`GET /conversations/{id}/messages`** 三个端点齐备 |
+| 后端外呼 | `backend/app/services/external/agent.py` | ✅ `call_agent_chat` → `{AGENT_SERVICE_BASE_URL}/v1/chat`（`X-Agent-Token` 可选）+ `health()` |
+| 外部 Agent 服务 | `agent/`（在库内，`src/main.py:150` 实现 `POST /v1/chat`） | ⚠️ **本机 Windows 起不来**（见 §2.3） |
+
+### 2.2 本次补完的**真实缺口**（此前"接线"只做了一半）
+
+- **缺口 1：开关未翻转**。`USE_MOCK_CHAT` 一直是 `true` ⇒ 产品实际运行在"样张对话"占位态
+  （09-23 审计的原始问题）。已翻转，并加**门禁锁**：`audit_harness client` 断言该常量为 `false`
+  （翻回即 CRITICAL）。**反向探针**：临时改回 true → `audit_harness client` **EXIT=1** 并精确点名；
+  字节级还原后复绿。
+- **缺口 2：历史从不回填**。后端 `GET /conversations/{id}/messages` 的 docstring 明确写着
+  「客户端进入会话时回填」，但客户端**从未调用** ⇒ 重启后会话虽接续（`conversationId` 已落盘）、
+  **界面空白**（用户以为历史丢了）。已补：`fetchChatHistory` + `TabAi.onMounted` 回填
+  （role→user/ai 映射；形态用后端下发 `kind`（当前仅 `bubble`/`plain`），未知退回 `bubble`——
+  **不猜 cards/confirm**；失败/空保持空列表，**不伪造历史**）。
+
+### 2.3 运行时依赖（**如实标注，未验证项**）
+
+- `AGENT_SERVICE_BASE_URL` 默认 `http://127.0.0.1:8300`（`config.py`），模板项同名（`deploy/.env.production.template`）；
+  `agent/.env` 的 `AGENT_HTTP_PORT=8300` 与之一致 ⇒ **端口口径对齐**。
+- ⚠️ **本机无法端到端跑通**：`agent/pyproject.toml` 依赖 `dbus-python` / `PyGObject` / `pycairo`
+  —— **Linux-only**，Windows 上 `uv sync` 必失败 ⇒ 服务起不来（实测 8300 端口拒绝、`agent.health()`
+  返回 `reachable=false`）。⇒ **后端↔agent 的真实外呼未在本机验证**，需在 Linux devbox/部署环境或
+  「已部署 agent 的后端 + 真机客户端」上验证。**不得以"编译通过"冒充运行验证。**
+- 失败语义（设计如此，非缺陷）：agent 不可达 → 后端 502/504 → 客户端撤 typing 占位 + toast，
+  **绝不补一句假 AI 文本**（`test_agent_unavailable_no_fake_reply` 覆盖）。
+
+### 2.4 验收证据
+
+| 项 | 证据 |
+|---|---|
+| 客户端编译 | ✅ `项目 client 编译成功`（59.7s） |
+| 后端契约测试 | ✅ `pytest backend/tests/test_chat.py` → **7 passed**（含 happy path 落库对拍 / agent 不可用不伪造 / 超时映射 504 / IDOR 404 / **历史端点**） |
+| 静态门禁 | ✅ `audit_harness all` **无 CRITICAL**；轴 4：新导出 `fetchChatHistory` **有 2 处引用**（非零调用） |
+| 接线锁 | ✅ 反向探针（翻回 true → EXIT=1）+ 字节级还原 |
+
+## 3. 本波工作纪律（沿用结构重构波的既有门禁）
+
+- 每项独立提交；改动涉及客户端须**冷编译**、涉及后端须**跑对应 pytest**；完成声明前 `review_agent --full`。
+- **禁止伪造**：能力不可用/数据缺失一律显式失败或诚实空态（本波已两次用到该口径：不伪造回复、不伪造历史）。
+- 8 项"静默漂移"类门禁继续生效（轴 1–8）；本波新增/触碰的开关类断言须留**反向探针**证据。
+- 需真机/凭证/合规的部分**显式挂账**，不冒充完成。
+
+## 4. 待办（下一步）
+
+1. **A 段**：按 `refactor-ledger.md` §9.2 的三簇优先级排期（端云聚合同源 → 软删 30 天 → 微信主链），逐条立项。
+2. **B 段**：② 图搜评测补建（RET-002）；③ RAG 负样本重校。
+3. **运行时验证**：在可运行 agent 服务的环境上跑一次端到端（真机或 Linux devbox），回填 §2.3 的未验证项。

@@ -31,6 +31,12 @@ export const PATH_EVENTS_TIMELINE: string = '/api/v1/events/timeline'
 // 注：`GET /api/v1/chat/replies/{id}` 的常量**故意不在此登记**——客户端当前无调用点
 // （POST 已内联返回完整回复），登记了就是一个零调用常量。加调用点时一并加（同 chat_api.uts 注释）。
 export const PATH_CHAT_MESSAGES: string = '/api/v1/chat/messages'
+// 2026-09-25（功能修复波 · Agent 接线补完）：会话历史回填路径。
+// 后端**早已实现**该端点且 docstring 明确写着"客户端进入会话时回填"（backend/app/api/chat.py:166），
+// 但客户端此前**从未调用** ⇒ 重启后会话虽接续（conversationId 已落盘）、界面却空白。
+// 注：与上面 `replies/{id}` 的处理不同——本条**有调用点**（TabAi.onMounted → chat_api.fetchChatHistory），
+// 故按"能力与调用点同时登记"的纪律落进契约（零调用常量会被轴 4 判为 CRITICAL）。
+export const PATH_CHAT_CONVERSATION_MESSAGES: string = '/api/v1/chat/conversations/{id}/messages'
 export const PATH_EVENTS_CONFIRM: string = '/api/v1/events/confirm'
 export const PATH_EVENTS_MERGE: string = '/api/v1/events/merge'
 export const PATH_EVENTS_SPLIT: string = '/api/v1/events/split'
