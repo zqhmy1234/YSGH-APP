@@ -1,0 +1,234 @@
+/**
+ * 事件卡片操作 / 确认 / 合并 / 拆分（L-02b · 2026-09-25 重构波 · **方案 A：整块 view-model 进 composable**）
+ *
+ * 自 `components/TabIndex/TabIndex.uvue` **纯移动**而来：
+ *   · 状态：拆分面板四态（showSplitPanel / splitEventId / splitItems / splitLoading）；
+ *   · 方法：onCardOps（动作面板）/ doConfirm / confirmPending / ignorePending /
+ *     patchEventById / removeEventById / getPrevL1Id / doMerge / doSplit /
+ *     toggleSplitItem / confirmSplit / cancelSplit / splitTimeText —— 注释与「2026-08-31 修复」
+ *     这类真机实锤记录**逐字保留**。
+ *
+ * 注入（仍属组件渲染管线核心、不随本 composable 搬走的东西）：
+ *   · `getCurrent`：读当前渲染数据源——组件里 `currentEvents` 是 `let`、会被**整组浅替换**，
+ *     故传**取值函数**而非数组快照（传快照会在下次刷新后指向旧数组）；
+ *   · `render`：整组浅替换渲染出口（原 `renderFromEvents`）；
+ *   · `refresh`：无闪屏静默刷新（原 `refreshSilently`）；
+ *   · `getDays`：读日组（原 `days.value`，`getPrevL1Id` 用）。
+ *
+ * 行为等价：状态为实例字段（组件经顶层绑定取同一 ref 对象）；方法体逐字保留，仅把
+ * `x.value`→`this.x.value`、`currentEvents`→`this.getCurrent()`、`renderFromEvents(currentEvents)`
+ * →`this.render(evs)`、`refreshSilently()`→`this.refresh()`、`days.value`→`this.getDays()`、
+ * 内部互调→`this.<方法>`。
+ */
+import { ref } from 'vue'
+
+import {
+	confirmEvent,
+	mergeEvent,
+	fetchEventItems,
+	splitEvent,
+	SplitItem,
+	ignoreEventLocally
+} from '@/utils/event_ops'
+import { formatMonthDay } from '@/utils/time'
+import { TimelineEvent, DayGroup } from '@/utils/timeline'
+
+export class EventOps {
+	showSplitPanel = ref(false)
+	splitEventId = ref('')
+	splitItems = ref<Array<SplitItem>>([])
+	splitLoading = ref(false)
+
+	private getCurrent: () => Array<TimelineEvent>
+	private render: (evs: Array<TimelineEvent>) => void
+	private refresh: () => void
+	private getDays: () => Array<DayGroup>
+
+	constructor(
+		getCurrent: () => Array<TimelineEvent>,
+		render: (evs: Array<TimelineEvent>) => void,
+		refresh: () => void,
+		getDays: () => Array<DayGroup>
+	) {
+		this.getCurrent = getCurrent
+		this.render = render
+		this.refresh = refresh
+		this.getDays = getDays
+	}
+
+	onCardOps(ev: TimelineEvent, dayIdx: number): void {
+		if (ev.level === 1) {
+			const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
+			uni.showActionSheet({
+				itemList: items,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						this.doConfirm(ev)
+					} else if (res.tapIndex === 1) {
+						this.doMerge(ev, dayIdx)
+					} else if (res.tapIndex === 2) {
+						this.doSplit(ev)
+					}
+				},
+				fail: () => {}
+			})
+		} else {
+			const items2: Array<string> = ['确认这个主题']
+			uni.showActionSheet({
+				itemList: items2,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						this.doConfirm(ev)
+					}
+				},
+				fail: () => {}
+			})
+		}
+	}
+	// 卡PA R2：按事件 id 定位局部替换单事件对象（改 currentEvents=缓存同引用 → 整组浅替换触发）
+	patchEventById(eventId: string, mutate: (ev: TimelineEvent) => void): void {
+		const evs = this.getCurrent()
+		for (let i = 0; i < evs.length; i++) {
+			if (evs[i].id == eventId) {
+				mutate(evs[i])
+				break
+			}
+		}
+		this.render(evs)
+	}
+	// 卡PA R2：结构性变化（合并=事件消失）按 id splice 掉（同数组改动直接同步缓存）
+	removeEventById(eventId: string): void {
+		const evs = this.getCurrent()
+		for (let i = 0; i < evs.length; i++) {
+			if (evs[i].id == eventId) {
+				evs.splice(i, 1)
+				break
+			}
+		}
+		this.render(evs)
+	}
+	doConfirm(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+				// 卡PA R2：本地补丁 status，confirmed 自动离开待确认区落入日组
+				this.patchEventById(ev.id, (e: TimelineEvent): void => { e.status = 'confirmed' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+		})
+	}
+	getPrevL1Id(dayIdx: number): string {
+		// 修复（2026-08-31）：原写 days.value[i].events.level / .events.id —— events 是数组，
+		// 属性访问恒 undefined → 本函数永远返回空串 → 「合并到上一张」功能整体失效。
+		// 正解：向前逐日找第一张 L1 事件。
+		const days = this.getDays()
+		for (let i = dayIdx - 1; i >= 0; i--) {
+			const evs = days[i].events
+			for (let j = 0; j < evs.length; j++) {
+				if (evs[j].level === 1) {
+					return evs[j].id
+				}
+			}
+		}
+		return ''
+	}
+	doMerge(ev: TimelineEvent, dayIdx: number): void {
+		const targetId = this.getPrevL1Id(dayIdx)
+		if (targetId == '') {
+			uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
+			return
+		}
+		mergeEvent(ev.id, targetId).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已合并', icon: 'none' })
+				// 卡PA R2：合并后源卡消失 → 按 id 局部移除（目标卡计数待下次 TTL 刷新自愈）
+				this.removeEventById(ev.id)
+			} else {
+				uni.showToast({ title: '合并失败', icon: 'none' })
+			}
+		})
+	}
+
+	// 拆分
+	doSplit(ev: TimelineEvent): void {
+		this.splitLoading.value = true
+		this.showSplitPanel.value = true
+		this.splitEventId.value = ev.id
+		this.splitItems.value = []
+		fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
+			this.splitLoading.value = false
+			this.splitItems.value = items
+			if (items.length < 2) {
+				uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
+			}
+		})
+	}
+	toggleSplitItem(idx: number): void {
+		const items = this.splitItems.value
+		if (idx < 0 || idx >= items.length) {
+			return
+		}
+		const it = items[idx]
+		it.selected = !it.selected
+		items[idx] = it
+		this.splitItems.value = items
+	}
+	confirmSplit(): void {
+		const items = this.splitItems.value
+		const ids: Array<string> = []
+		for (let i = 0; i < items.length; i++) {
+			if (items[i].selected) {
+				ids.push(items[i].contentId)
+			}
+		}
+		if (ids.length == 0) {
+			uni.showToast({ title: '至少选择一条', icon: 'none' })
+			return
+		}
+		if (ids.length >= items.length) {
+			uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
+			return
+		}
+		splitEvent(this.splitEventId.value, ids).then((ok: boolean) => {
+			this.showSplitPanel.value = false
+			if (ok) {
+				uni.showToast({ title: '已拆分', icon: 'none' })
+			} else {
+				uni.showToast({ title: '拆分失败', icon: 'none' })
+			}
+			// 卡PA R2（拍板采纳的偏差方案）：拆分产生服务端新事件 id，本地无法合成 →
+			// 无闪屏后台静默刷新（不清 days、不回退加载态），刷新完浅替换
+			this.refresh()
+		})
+	}
+	cancelSplit(): void {
+		this.showSplitPanel.value = false
+		this.splitItems.value = []
+	}
+	splitTimeText(ts: number): string {
+		if (ts <= 0) {
+			return '时间未知'
+		}
+		return formatMonthDay(ts)
+	}
+
+	// 待确认
+	confirmPending(ev: TimelineEvent): void {
+		confirmEvent(ev.id).then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '已确认', icon: 'none' })
+				// 卡PA R2：本地补丁 status，confirmed 自动离开待确认区落入日组
+				this.patchEventById(ev.id, (e: TimelineEvent): void => { e.status = 'confirmed' })
+			} else {
+				uni.showToast({ title: '确认失败', icon: 'none' })
+			}
+		})
+	}
+	ignorePending(ev: TimelineEvent): void {
+		ignoreEventLocally(ev.id)
+		uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
+		// 卡PA R2：本地补丁后直接重渲染（loadIgnoredIds 每次现读，忽略表即时生效）
+		this.render(this.getCurrent())
+	}
+}

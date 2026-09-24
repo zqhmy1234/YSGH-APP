@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-24 17:37 · commit dac0625 · ts=1790242654
+- **错误**：新轴 7（类成员解析）扩展「实例指涉」检查后首跑即误报：uploader_batch.uts 里同名局部变量 held 既是 const held = new UploadProgress(...) 又是 const held = heldPhotos() 数组，仅按变量名映射类实例把 held.length 判成 UploadProgress 未声明成员
+- **根因**：静态检查按『变量名 → 类』映射时忽略遮蔽/复用：同名变量在同一文件可被不同类型复用，按名映射必然误报（误报会直接把真门禁变成假红灯）
+- **修复**：实例映射加约束：该变量的**每一处赋值**的 RHS 都必须是 new <该类>(，否则整条跳过；修后全仓 76 类 0 误报；负向探针（pa.attachAll→pa.attachAllZZZ）仍能抓到实例面违规
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-09-24 16:27 · commit f333430 · ts=1790238423
 - **错误**：B5.2f-2e 把 saving 状态迁入 useVoiceRecord.uts 时方法体写了 this.saving.value 却漏声明 saving 字段：HBuilderX 编译报绿（GAP-1 只覆盖语法不覆盖符号解析），轴 6 也只查跨模块 import、管不到类成员——两道假绿面同时放过，真机 submitVoice 必 undefined 崩溃
 - **根因**：编译门不覆盖符号解析（GAP-1 已证）+ 静态门禁只覆盖『跨模块符号』维度，缺『类成员解析』维度；生成式改写缺少『类成员声明集 vs this.X 使用集』的静态体检

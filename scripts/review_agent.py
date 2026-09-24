@@ -403,7 +403,7 @@ def check_audit_axes() -> tuple[bool, str]:
     member_violations, n_classes, _n_skipped = scan_class_members()
     if member_violations:
         crit = list(crit) + [
-            f"[类成员] {v['file']} class {v['class']} 的 this.{v['member']} 未声明"
+            f"[类成员] {v['file']} class {v['class']} 的 {v['kind']}{v['member']} 未声明"
             "（编译不覆盖符号解析，真机 undefined 崩溃）"
             for v in member_violations
         ]

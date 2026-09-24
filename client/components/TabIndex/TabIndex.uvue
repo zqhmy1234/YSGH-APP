@@ -212,6 +212,8 @@
 	// 卡PB R1：computed 显式引入（ref 沿页面现状未显式引入，避免重复声明）
 	import { computed, onMounted, watch } from 'vue'
 	import { WaveformCache } from '@/composables/useWaveform'
+	import { PhotoAttach } from '@/composables/usePhotoAttach'
+	import { EventOps } from '@/composables/useEventOps'
 	import { requestShellTab } from '@/utils/shell_state'
 	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
@@ -223,7 +225,7 @@
 		voiceTotalSecValue,
 		fmtVoiceTime
 	} from '@/utils/audio_player'
-	import { formatMonthDay, parseIsoMs } from '@/utils/time'
+	import { parseIsoMs } from '@/utils/time'
 	import { UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader_types'
 	import { uploadBatch } from '@/utils/uploader_batch'
 	// 2026-09-11 D-19 修复：**行为入口** createPhotoWatch 走插件根（recorder 同款已验证路径，
@@ -237,31 +239,13 @@
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
 	import {
-		confirmEvent,
-		mergeEvent,
-		fetchEventItems,
-		splitEvent,
-		SplitItem,
 		flushOpQueue,
 		pendingOpCount,
-		fetchContentEvents,
 		ContentEventRef,
-		ignoreEventLocally,
 		EventPhotoEntry,
 		mapAcceptedToClientIds
 	} from '@/utils/event_ops'
 	import { recordGrantTime, recordFirstDayRender } from '@/utils/agg/perf_timing.uts'
-
-	/** 会话照片映射项：content_id → 本地路径（封面/照片条/反向入口显示用） */
-	class PhotoPathEntry {
-		contentId: string
-		path: string
-
-		constructor(contentId: string, path: string) {
-			this.contentId = contentId
-			this.path = path
-		}
-	}
 
 	// 响应式数据（uvue script setup 裸 let 非响应式，必须 ref —— 真机实锤：数据到位但界面停在加载态）
 	let loaded = ref(false)
@@ -273,33 +257,22 @@
 	let uploadTotal = ref(0)
 	let uploadFailed = ref(0)
 	let echo = ref<EchoCard | null>(null)
-	let showSplitPanel = ref(false)
-	let splitEventId = ref('')
-	let splitItems = ref<Array<SplitItem>>([])
-	let splitLoading = ref(false)
 	// R8：hero 副标题数据驱动（画布口径：sub1=「N月 · X 条新记忆」sub2=最新记忆摘要 · M月dd日 HH:mm）
 	let heroSub1 = ref('')
 	let heroSub2 = ref('')
-	let showPhotoDetail = ref(false)
-	let photoDetailPath = ref('')
-	let photoDetailEvents = ref<Array<ContentEventRef>>([])
-	let photoDetailLoading = ref(false)
-	let localPhotoPath = ref<Array<PhotoPathEntry>>([])
-	let eventPhotoIds = ref<Array<EventPhotoEntry>>([])
-	/**
-	 * content_id → 服务端缩略图 URL（Valet Key 票据，已 resolve 成绝对 URL）
-	 *
-	 * 为什么需要：`<image :src>` 带不了 Authorization header，历史照片此前只能靠
-	 * 「本次会话刚上传」的本地路径显示，冷启动必然空白。服务端现在随 timeline
-	 * 下发票据 URL，这里建索引供 photoPathOf() 回退。
-	 * 非响应式：attachPhotos() 在 days.value 赋值之后、渲染之前填充，无需触发额外更新。
-	 */
-	let photoUrlById: Map<string, string> = new Map<string, string>()
-	/** 卡PA R4：content_id → 本地路径 O(1) 查表（对齐 photoUrlById 先例；非响应式，
-	 *  handleBatch push 后同步 set，photoPathOf 不再线性扫描 localPhotoPath 数组） */
-	let localPhotoPathMap: Map<string, string> = new Map<string, string>()
+	// L-02a（方案 A · 2026-09-25）：照片挂载/照片详情（状态 + 索引表 + 7 方法）整块进
+	// `usePhotoAttach`；组件经 `pa` 访问同一 ref 对象，模板绑 `onPhotoTap` 由下方薄包装转发。
+	const pa = new PhotoAttach()
 	// 卡PA D2/R2：当前渲染数据源（与 timeline.uts 缓存同数组引用，本地补丁直接同步缓存）
 	let currentEvents: Array<TimelineEvent> = []
+	// L-02b（方案 A · 2026-09-25）：卡片操作/确认/合并/拆分整块进 `useEventOps`；注入
+	// 「取值函数」（currentEvents 是 let、会被整组浅替换，不能传快照）+ 渲染/刷新出口 + 日组读取。
+	const eo = new EventOps(
+		() => currentEvents,
+		(evs: Array<TimelineEvent>) => { renderFromEvents(evs) },
+		() => { refreshSilently() },
+		() => days.value
+	)
 	// 卡PA R2：上次成功拉取时间（onShow TTL 内不重拉）
 	let lastFetchAt = 0
 	// 卡PA R2：页面存活守卫（缩略图后台批次回调在 onUnload 后不再触发渲染）
@@ -468,7 +441,7 @@
 	function renderFromEvents(events: Array<TimelineEvent>): void {
 		const firstRender = !loaded.value
 		days.value = groupDays(events)
-		attachPhotos()
+		pa.attachAll(days.value, pendingEvents.value)
 		loaded.value = true
 		refreshing.value = false
 		// P-4 内容出现时间埋点：onLoad → 首帧内容上屏（logcat [perf] 行）
@@ -579,159 +552,10 @@
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + card.contentId })
 	}
 
-	// 卡片操作
+	// L-02b：卡片操作 / 确认 / 合并 / 拆分已整块进 `useEventOps`（见 composable 头注）；
+	// 组件只留模板入口的薄包装（转发到同一实例，行为等价）。
 	function onCardOps(ev: TimelineEvent, dayIdx: number): void {
-		if (ev.level === 1) {
-			const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
-			uni.showActionSheet({
-				itemList: items,
-				success: (res) => {
-					if (res.tapIndex === 0) {
-						doConfirm(ev)
-					} else if (res.tapIndex === 1) {
-						doMerge(ev, dayIdx)
-					} else if (res.tapIndex === 2) {
-						doSplit(ev)
-					}
-				},
-				fail: () => {}
-			})
-		} else {
-			const items2: Array<string> = ['确认这个主题']
-			uni.showActionSheet({
-				itemList: items2,
-				success: (res) => {
-					if (res.tapIndex === 0) {
-						doConfirm(ev)
-					}
-				},
-				fail: () => {}
-			})
-		}
-	}
-	// 卡PA R2：按事件 id 定位局部替换单事件对象（改 currentEvents=缓存同引用 → 整组浅替换触发）
-	function patchEventById(eventId: string, mutate: (ev: TimelineEvent) => void): void {
-		for (let i = 0; i < currentEvents.length; i++) {
-			if (currentEvents[i].id == eventId) {
-				mutate(currentEvents[i])
-				break
-			}
-		}
-		renderFromEvents(currentEvents)
-	}
-	// 卡PA R2：结构性变化（合并=事件消失）按 id splice 掉（同数组改动直接同步缓存）
-	function removeEventById(eventId: string): void {
-		for (let i = 0; i < currentEvents.length; i++) {
-			if (currentEvents[i].id == eventId) {
-				currentEvents.splice(i, 1)
-				break
-			}
-		}
-		renderFromEvents(currentEvents)
-	}
-	function doConfirm(ev: TimelineEvent): void {
-		confirmEvent(ev.id).then((ok: boolean) => {
-			if (ok) {
-				uni.showToast({ title: '已确认', icon: 'none' })
-				// 卡PA R2：本地补丁 status，confirmed 自动离开待确认区落入日组
-				patchEventById(ev.id, (e: TimelineEvent): void => { e.status = 'confirmed' })
-			} else {
-				uni.showToast({ title: '确认失败', icon: 'none' })
-			}
-		})
-	}
-	function getPrevL1Id(dayIdx: number): string {
-		// 修复（2026-08-31）：原写 days.value[i].events.level / .events.id —— events 是数组，
-		// 属性访问恒 undefined → 本函数永远返回空串 → 「合并到上一张」功能整体失效。
-		// 正解：向前逐日找第一张 L1 事件。
-		for (let i = dayIdx - 1; i >= 0; i--) {
-			const evs = days.value[i].events
-			for (let j = 0; j < evs.length; j++) {
-				if (evs[j].level === 1) {
-					return evs[j].id
-				}
-			}
-		}
-		return ''
-	}
-	function doMerge(ev: TimelineEvent, dayIdx: number): void {
-		const targetId = getPrevL1Id(dayIdx)
-		if (targetId == '') {
-			uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
-			return
-		}
-		mergeEvent(ev.id, targetId).then((ok: boolean) => {
-			if (ok) {
-				uni.showToast({ title: '已合并', icon: 'none' })
-				// 卡PA R2：合并后源卡消失 → 按 id 局部移除（目标卡计数待下次 TTL 刷新自愈）
-				removeEventById(ev.id)
-			} else {
-				uni.showToast({ title: '合并失败', icon: 'none' })
-			}
-		})
-	}
-
-	// 拆分
-	function doSplit(ev: TimelineEvent): void {
-		splitLoading.value = true
-		showSplitPanel.value = true
-		splitEventId.value = ev.id
-		splitItems.value = []
-		fetchEventItems(ev.id).then((items: Array<SplitItem>) => {
-			splitLoading.value = false
-			splitItems.value = items
-			if (items.length < 2) {
-				uni.showToast({ title: '成员不足，无法拆分', icon: 'none' })
-			}
-		})
-	}
-	function toggleSplitItem(idx: number): void {
-		const items = splitItems.value
-		if (idx < 0 || idx >= items.length) {
-			return
-		}
-		const it = items[idx]
-		it.selected = !it.selected
-		items[idx] = it
-		splitItems.value = items
-	}
-	function confirmSplit(): void {
-		const items = splitItems.value
-		const ids: Array<string> = []
-		for (let i = 0; i < items.length; i++) {
-			if (items[i].selected) {
-				ids.push(items[i].contentId)
-			}
-		}
-		if (ids.length == 0) {
-			uni.showToast({ title: '至少选择一条', icon: 'none' })
-			return
-		}
-		if (ids.length >= items.length) {
-			uni.showToast({ title: '需至少留一条在原卡', icon: 'none' })
-			return
-		}
-		splitEvent(splitEventId.value, ids).then((ok: boolean) => {
-			showSplitPanel.value = false
-			if (ok) {
-				uni.showToast({ title: '已拆分', icon: 'none' })
-			} else {
-				uni.showToast({ title: '拆分失败', icon: 'none' })
-			}
-			// 卡PA R2（拍板采纳的偏差方案）：拆分产生服务端新事件 id，本地无法合成 →
-			// 无闪屏后台静默刷新（不清 days、不回退加载态），刷新完浅替换
-			refreshSilently()
-		})
-	}
-	function cancelSplit(): void {
-		showSplitPanel.value = false
-		splitItems.value = []
-	}
-	function splitTimeText(ts: number): string {
-		if (ts <= 0) {
-			return '时间未知'
-		}
-		return formatMonthDay(ts)
+		eo.onCardOps(ev, dayIdx)
 	}
 
 	// 回响
@@ -770,13 +594,6 @@
 		pendingEvents.value = result.pending
 		return result.groups
 	}
-	/**
-	 * 照片显示路径：本地优先 → 服务端票据 URL 回退（2026-08-31 修复）
-	 *
-	 * 本地：本次会话上传的照片（localPhotoPath，零延迟、离线可用）
-	 * 服务端：timeline 下发的缩略图 URL（历史照片的唯一来源；此前缺这一层回退，
-	 *       导致冷启动时 <image :src=""> 恒空 —— "卡片没照片"的直接根因之一）
-	 */
 	// RecordSheet 保存成功回调：后台静默刷新（卡PA R2：新录入产生服务端新事件 id，
 	// 本地无法合成 → 无闪屏 refreshSilently，刷新完浅替换让刚录入的记忆上屏）
 	// R8 补刷：后端 AI 管线为异步（转写后分类/聚合秒~分钟级，2026-09-06 实测曾因
@@ -792,142 +609,18 @@
 		}, 12000)
 	}
 
-	// 卡PA R4：photoPathOf 改双 Map O(1) 查表（原对 localPhotoPath 线性扫描）。
-	// 本地：本次会话上传的照片（localPhotoPathMap，零延迟、离线可用）
-	// 服务端：timeline 下发的缩略图 URL（photoUrlById，历史照片的唯一来源）
-	function photoPathOf(contentId: string): string {
-		const local = localPhotoPathMap.get(contentId)
-		if (local != null) {
-			return local
-		}
-		const remote = photoUrlById.get(contentId)
-		return remote == null ? '' : remote
-	}
-	function lookupEventPhotos(eventId: string): Array<string> {
-		for (let i = 0; i < eventPhotoIds.value.length; i++) {
-			if (eventPhotoIds.value[i].eventId == eventId) {
-				return eventPhotoIds.value[i].contentIds
-			}
-		}
-		return []
-	}
-	/**
-	 * 单事件挂载照片（服务端优先，本地会话补充）——2026-08-31 重写
-	 *
-	 * 三层取值顺序：本地路径（刚上传）＞ 服务端票据 URL（历史照片）＞ 空。
-	 */
-	function attachEventPhotos(ev: TimelineEvent): void {
-		// ① 先把服务端下发的成员 URL 收进全局表，供 photoPathOf() 回退。
-		//    必须在算封面之前：封面的第三顺位回退依赖这张表。
-		for (let k = 0; k < ev.photos.length; k++) {
-			const ph = ev.photos[k]
-			if (ph.thumbnailUrl != '') {
-				photoUrlById.set(ph.contentId, ph.thumbnailUrl)
-			}
-		}
-		// ② photoIds：服务端已下发则**保留**（timeline 按 taken_at 排好序）。
-		//    ⚠️ 原代码无条件 `ev.photoIds = lookupEventPhotos(ev.id)` —— 本地表在
-		//    冷启动/未上传时是空数组，会把服务端填好的值覆盖成空 → 照片条恒空。
-		//    这是"卡片没照片"最直接的那一层。
-		if (ev.photoIds.length == 0) {
-			ev.photoIds = lookupEventPhotos(ev.id)
-		}
-		// ③ 封面：本地路径 → 服务端 cover_url → 首图
-		let cover = photoPathOf(ev.coverContentId)
-		if (cover == '' && ev.coverUrl != '') {
-			cover = ev.coverUrl
-		}
-		if (cover == '' && ev.photoIds.length > 0) {
-			cover = photoPathOf(ev.photoIds[0])
-		}
-		ev.coverPath = cover
-		// 卡PA R4：视图字段组装期预计算（v-for 模板内零 photoPathOf/renderPhotoIds 调用）。
-		// 过滤口径沿卡E01「有多少是多少」：photoPathOf 为空串的 cid 不进渲染列表；
-		// photoCount 是后端 timeline 字段不改语义，meta 展示值对齐实际可渲染数。
-		const renderIds: Array<string> = []
-		const renderPaths: Array<string> = []
-		for (let k = 0; k < ev.photoIds.length; k++) {
-			const p = photoPathOf(ev.photoIds[k])
-			if (p != '') {
-				renderIds.push(ev.photoIds[k])
-				renderPaths.push(p)
-			}
-		}
-		ev.renderPhotoIds = renderIds
-		ev.renderPhotoPaths = renderPaths
-		ev.hasRenderablePhotos = renderIds.length > 0
-		ev.photoCountText = renderIds.length.toFixed(0) + ' 张照片'
-	}
-
-	function attachPhotos(): void {
-		let strips = 0
-		let covers = 0
-		let remote = 0
-		photoUrlById = new Map<string, string>()
-		for (let i = 0; i < days.value.length; i++) {
-			const g = days.value[i]
-			for (let j = 0; j < g.events.length; j++) {
-				const ev = g.events[j]
-				attachEventPhotos(ev)
-				remote += ev.photos.length
-				if (ev.photoIds.length > 0) {
-					strips++
-				}
-				if (ev.coverPath != '') {
-					covers++
-				}
-			}
-		}
-		for (let j = 0; j < pendingEvents.value.length; j++) {
-			const ev = pendingEvents.value[j]
-			attachEventPhotos(ev)
-			remote += ev.photos.length
-			if (ev.photoIds.length > 0) {
-				strips++
-			}
-			if (ev.coverPath != '') {
-				covers++
-			}
-		}
-		console.log('[yishu] attachPhotos: days=' + days.value.length + ' pending=' + pendingEvents.value.length + ' localPaths=' + localPhotoPath.value.length + ' eventPhotoIds=' + eventPhotoIds.value.length + ' serverPhotos=' + remote + ' strips=' + strips + ' covers=' + covers)
-	}
-
-	// 照片详情
+	// L-02a：照片路径 / 挂载 / 照片详情已整块进 `usePhotoAttach`（见 composable 头注）；
+	// 组件只留模板入口的薄包装（转发到同一实例，行为等价）。
 	function onPhotoTap(contentId: string): void {
-		showPhotoDetail.value = true
-		photoDetailLoading.value = true
-		photoDetailPath.value = photoPathOf(contentId)
-		photoDetailEvents.value = []
-		fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
-			photoDetailLoading.value = false
-			photoDetailEvents.value = evs
-		})
-	}
-	function closePhotoDetail(): void {
-		showPhotoDetail.value = false
-		photoDetailEvents.value = []
-	}
-	function jumpFromPhoto(_idx: number): void {
-		closePhotoDetail()
+		pa.onPhotoTap(contentId)
 	}
 
-	// 待确认
+	// 待确认（L-02b：逻辑进 `useEventOps`，此处仅模板入口薄包装）
 	function confirmPending(ev: TimelineEvent): void {
-		confirmEvent(ev.id).then((ok: boolean) => {
-			if (ok) {
-				uni.showToast({ title: '已确认', icon: 'none' })
-				// 卡PA R2：本地补丁 status，confirmed 自动离开待确认区落入日组
-				patchEventById(ev.id, (e: TimelineEvent): void => { e.status = 'confirmed' })
-			} else {
-				uni.showToast({ title: '确认失败', icon: 'none' })
-			}
-		})
+		eo.confirmPending(ev)
 	}
 	function ignorePending(ev: TimelineEvent): void {
-		ignoreEventLocally(ev.id)
-		uni.showToast({ title: '已忽略（本机隐藏）', icon: 'none' })
-		// 卡PA R2：本地补丁后直接重渲染（loadIgnoredIds 每次现读，忽略表即时生效）
-		renderFromEvents(currentEvents)
+		eo.ignorePending(ev)
 	}
 
 	// 工具方法
@@ -997,9 +690,8 @@
 			}
 			if (uploaded.length > 0) {
 				for (let i = 0; i < uploaded.length; i++) {
-					localPhotoPath.value.push(new PhotoPathEntry(uploaded[i].contentId, uploaded[i].item.path))
-					// 卡PA R4：同步 O(1) 查表（photoPathOf 不再线性扫描）
-					localPhotoPathMap.set(uploaded[i].contentId, uploaded[i].item.path)
+					// L-02a：本地路径入列（数组 push + O(1) 查表 set 同进同出）已收敛进 composable
+					pa.addLocalPath(uploaded[i].contentId, uploaded[i].item.path)
 				}
 				const tz = -new Date().getTimezoneOffset()
 				const agg = aggregateToEvents(uploaded, tz)
@@ -1021,9 +713,9 @@
 							console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
 							const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
 							for (let m = 0; m < mapped.length; m++) {
-								eventPhotoIds.value.push(mapped[m])
+								pa.addEventPhoto(mapped[m])
 							}
-							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + eventPhotoIds.value.length)
+							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + pa.eventPhotoIds.value.length)
 						} else {
 							console.error('[yishu] 事件上云失败（重试耗尽）')
 							uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })

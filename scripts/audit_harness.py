@@ -789,7 +789,7 @@ def audit_class_members_axis() -> None:
     if violations:
         for v in violations:
             CRITICAL.append(
-                f"[类成员] {v['file']} class {v['class']} 的 this.{v['member']} 未声明"
+                f"[类成员] {v['file']} class {v['class']} 的 {v['kind']}{v['member']} 未声明"
                 "（编译不覆盖符号解析，真机 undefined 崩溃）"
             )
     else:

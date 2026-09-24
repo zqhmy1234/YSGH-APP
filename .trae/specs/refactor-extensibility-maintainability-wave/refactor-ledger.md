@@ -238,8 +238,29 @@
 | 🔎 **GAP-1 再获一个强化数据点** | ⚠️ 记录 | 我的整文件正则把**方法声明**也改成了 `this.afterVoiceSaved(contentId: string, …): void {`（**非法类成员语法**），而 **`项目 client 编译成功` 依旧报绿**！⇒ 与 GAP-1 一致：客户端编译门**连类成员的非法语法都能放过**（只有 `[vue/compiler-sfc] Unexpected token` 那类**解析级**错误才会红） | 由我自己的静态检查（grep 方法声明/互调）抓出并修复。**强化结论：客户端侧"编译 0 error"不能作为任何结构正确性证据**——必须配 轴 6（导入）+ 静态结构检查 + **真机** |
 | 🛠 另一处自查捕获 | ✅ 修复 | `saving` 原声明留在组件 + 我又加了 `const saving = vr.saving` ⇒ 编译报 `Identifier 'saving' has already been declared`（**这次编译抓到了**——重复声明属解析/绑定级） | 已在组件删除原声明并留注释 | 
 
+### 8.12 L-02a（方案 A 子步 3）：`TabIndex` 照片路径 / 挂载 / 照片详情 → `usePhotoAttach`（2026-09-25 · 第十四轮）
+
+| 条目 | 状态 | 证据 | 备注 |
+|---|---|---|---|
+| **L-02a** `PhotoPathEntry` + 照片五态（`localPhotoPath`/`eventPhotoIds`/`showPhotoDetail`/`photoDetailPath`/`photoDetailEvents`/`photoDetailLoading`）+ 两张**非响应式索引表**（`photoUrlById` 服务端票据 URL、`localPhotoPathMap` O(1) 本地查表）+ 7 方法 → `usePhotoAttach::PhotoAttach` | ✅ 完成（结构 + 冷编译 + 轴 6/7） | `photoPathOf`/`lookupEventPhotos`/`attachEventPhotos`/`onPhotoTap`/`closePhotoDetail`/`jumpFromPhoto` 直迁（注释与「2026-08-31 重写」实锤记录**逐字保留**）；`attachPhotos()` 更名 **`attachAll(days, pending)`** —— 原读组件 `days.value`/`pendingEvents.value` 两个 ref，改为**入参**（渲染管线核心留在组件，时序零改动）；新增 `addLocalPath`/`addEventPhoto` 把 `handleBatch` 里「数组 push + O(1) 查表 set」两处**同语义写入**收纳为一个方法 | ① `TabIndex.uvue` **1046 → 899（−147）**；② **冷编译 `项目 client 编译成功`**（ready in 48708ms）；③ 轴 6（导入）**0 违规**；④ 轴 7（类成员）**0 违规** |
+
+### 8.13 L-02b（方案 A 子步 4）：`TabIndex` 卡片操作 / 拆分 → `useEventOps` → 🎯 **L-02 销项**（2026-09-25 · 第十五轮）
+
+| 条目 | 状态 | 证据 | 备注 |
+|---|---|---|---|
+| **L-02b** 拆分四态（`showSplitPanel`/`splitEventId`/`splitItems`/`splitLoading`）+ 13 方法（`onCardOps`/`doConfirm`/`confirmPending`/`ignorePending`/`patchEventById`/`removeEventById`/`getPrevL1Id`/`doMerge`/`doSplit`/`toggleSplitItem`/`confirmSplit`/`cancelSplit`/`splitTimeText`）→ `useEventOps::EventOps` | ✅ 完成（结构 + 冷编译 + 轴 5/6/7） | 注入四个**取值函数**（不能传快照）：`getCurrent`（组件 `currentEvents` 是 `let`、会被整组浅替换）+ `render`（原 `renderFromEvents`）+ `refresh`（原 `refreshSilently`）+ `getDays`（原 `days.value`）；组件只留 `onCardOps`/`confirmPending`/`ignorePending` 三个模板入口薄包装 | ① `TabIndex.uvue` **899 → 738**（累计 **1046 → 738，−308**）；② **冷编译成功**（36.8s）；③ 轴 5 **无 CRITICAL**；④ **axis-5 baseline 条目按 gate 要求删除 ⇒ L-02 销项**；⑤ 轴 6/7 **0 违规** |
+| 👁 **观察（登记 · 非本波修）** | 📌 交功能波 | 模板内**已无**拆分面板与照片详情浮层 ⇒ `showSplitPanel`/`splitItems`/`splitLoading`/`confirmSplit`/`cancelSplit`/`toggleSplitItem`/`splitTimeText` 与 `showPhotoDetail`/`photoDetailPath`/`photoDetailEvents`/`photoDetailLoading`/`closePhotoDetail`/`jumpFromPhoto` 均为**模板不可达的 UI 状态**——用户仍可经卡片「⋯」面板触发 `doSplit`（其会置 `showSplitPanel=true`），但**无任何节点渲染该面板** ⇒ 属**功能缺口**（非结构债），已从结构域移交功能修复波 | 本波**只做纯移动**、不改行为，故按原样搬迁并留此登记（避免"搬迁即修"越界） |
+
+### 8.14 🚨 GAP-2：**类成员**是第二道编译假绿面 → 修 P0 回归 + 新增轴 7（2026-09-25）
+
+| 条目 | 状态 | 证据 | 备注 |
+|---|---|---|---|
+| **缺陷（P0 回归，已修）** | ✅ 修复 | B5.2f-2e 把 `saving` 迁入 `useVoiceRecord.uts` 时，**方法体写了 `this.saving.value` 却漏声明 `saving` 字段** ⇒ 真机 `submitVoice` 必 `undefined.value` 崩溃 | **两道门同时失守**：① HBuilderX 编译报绿（GAP-1：编译只覆盖语法/解析，不覆盖符号解析）；② **轴 6 抓不到**——它只查「用了模块导出却没 import」，`this.<名>` 是**类成员访问**、不是跨模块符号。修复＝补 `saving = ref(false)`（恢复迁移前的并发保存守门） |
+| **新门禁：轴 7（`audit_class_members`）** | ✅ 完成（含负向探针） | `scripts/audit_class_members.py`：`client/**/*.uts|*.uvue` 的类，声明集＝类体**深度 0** 的字段/方法；覆盖**两个面**—— ① `this.<名>` 不在本类（GAP-2 原发形态）；② `const x = new Cls(…)` 之后 `x.<名>` 不在 `Cls`（实例指涉，L-02 抽 composable 后组件大量经实例调用）；**`extends` 类整体跳过**、同名变量非「全部赋值皆 `new Cls(`」则跳过（挡遮蔽误报，实测 `uploader_batch.uts` 的 `held`）；接入 `audit_harness` 新轴 `class_members`（含 `all`）+ `review_agent.check_audit_axes`（快/全量均跑） | ① 全仓 **76 类 0 误报**、3 个 `extends` 类跳过；② **反向探针两例**（删 `saving` 字段 → 报 `this.saving`；改 `pa.attachAll`→`pa.attachAllZZZ` → 报 `pa.attachAllZZZ`）**均 EXIT=1** 且**字节级还原**；③ 教训已登记 `docs/lessons.md`（GAP-2） |
+
 ### 8.1 棘轮状态（2026-09-24 第二轮执行后，第五轮更新 · 含 B5b/B10-q）
 
+- **2026-09-25 更新（L-01 / L-02 均销项后）**：轴 5 存量超阈 **4 → 3**（`RecordSheet` 随 **L-01**（B5.2f-2e，753 行）销项、`TabIndex` 随 **L-02**（L-02b，738 行）销项；余 `TabAi` 974 / `favorites` 957 / `manage` 891）；`audit_harness all` **无 CRITICAL**（INFO 18）；新增**轴 7 类成员解析**（`class_members`，见 §8.14）并接入 `review_agent` 快/全量。
 - `audit_harness all`：**无 CRITICAL**（INFO 16）；轴 5 存量超阈 **7 → 6 → 5 个已冻结**（`contents.py` 条目随 B2 拆分**销项移除**；`client/pages/detail/detail.uvue` 随 **B5d** 样式外置**销项移除**，1167→577 行；`RecordSheet`/`TabIndex` 随 **B5.2e** 样式外置**下调计数**——2208→1354 / 1740→1065，条目**保留冻结**）；轴 6 `soft_delete_filter` 总数 **44 处未上升**，且**新增 per_file 双 gate**（总数与分布任一上升即 CRITICAL）；**轴 4 零调用能力导出存量 9 个已冻结**（B10-d 露出 `AuthError`/`getRecorder`/`lastTempFile`/`stopPeriodicSync`；B10-f 补递归露出 `WALK_SPEED_MS`；**B10-q 剔注释后新露出 4**：`AGG_CHECK_ON_DEVICE`/`invalidateTimelineCache`/`isIgnoredEvent`/`parseErrorString`），引用计数已**剔除注释**（B10-q），且新增"僵尸豁免清算"。
 - 门禁接入（**已消除三类"恒绿假门禁"**）：
   - `review_agent` 现含 `structure`（轴 5/6，B1）+ **`audit_axes`（轴 1–4，B10）**，快/全量均跑、秒级；

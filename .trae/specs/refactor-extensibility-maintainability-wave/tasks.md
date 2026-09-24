@@ -109,7 +109,10 @@
   - [x] B5.2f-2a（第九轮）`RecordSheet` 圆点+轮盘动画 → `useRecordAnimations`（1354→**1135**，−219）；冷编译 ✅；baseline 下调
   - [x] B5.2f-2b（第十轮）`RecordSheet` 自定义标签助手 → `client/utils/custom_labels.uts`（1135→**1084**）；冷编译 ✅；baseline 下调
   - [x] 🚨 GAP-1（第十轮 · 新发现并补门禁）：HBuilderX 编译**只覆盖语法不覆盖符号解析**（8 处缺 import 仍报"编译成功"）→ 新增 `scripts/audit_client_imports.py` + `audit_harness` 轴 `client_imports` + `review_agent.check_audit_axes` 接入（端到端反向探针证真红）
-  - [ ] B5.2f-2c（续）`RecordSheet` 继续抽（语音录制流程 ~225 / 选图·文字提交 ~150）；`TabIndex` 抽 L2/L3 归并 + 照片挂载（~250）（**仍 >800，L-01/L-02 未闭环**；**真机验收待设备**）
+  - [x] B5.2f-2d/2e（第十二/十三轮 · 方案 A 子步 1/2）`RecordSheet` 语音状态机 + 收尾三函数 → `useVoiceRecord`（1054→889→**753**）；**L-01 销项**；冷编译 ✅；轴 5/6 ✅
+  - [x] 🚨 **GAP-2（2026-09-25 · 新发现并补门禁 + 修 P0 回归）**：`useVoiceRecord.uts` **`this.saving` 用了却没声明**（编译报绿 + 轴 6 抓不到 ⇒ 真机必崩），修复＝补 `saving = ref(false)`；新增 `scripts/audit_class_members.py`（**轴 7**：①`this.<名>` ②`const x = new Cls(…)` 后 `x.<名>`）+ 接入 `audit_harness` 轴 `class_members` 与 `review_agent`（快/全量）；全仓 **76 类 0 误报**、**反向探针两例 EXIT=1 且字节还原**
+  - [x] B5.2f-2f（第十四/十五轮 · 方案 A 子步 3/4）`TabIndex` 拆两块 → `usePhotoAttach`（照片路径/挂载/详情，1046→**899**）+ `useEventOps`（卡片操作/拆分，899→**738**，累计 −308）；两子步各冷编译 ✅ + 轴 5/6/7 ✅；**L-02 销项**（axis-5 条目删除，存量超阈 4→3）；👁 顺带登记"拆分面板/照片详情浮层**模板不可达**"= 功能缺口（交功能波）
+  - [ ] ⚠️ **真机运行验收待设备**（`adb` 无设备）：B5c 上传、B5d/B5.2e/B5.2f 全子步的渲染/波形/动画/录音保存全链路、**L-01/L-02 运行验收**（不得以冷编译冒充）
   - [x] **决策**：L-12 令牌收敛 → ✅ **另立「令牌波」**（判为复杂，台账 §5.10 拍板 10.4）；64 条功能缺陷 → ✅ **另开「功能修复波」**（拍板 10.1）
 
 - [x] Task B10-i: 门禁自身可靠性 4 项：`D14-23` CI schema-drift 去 `continue-on-error` / `D14-22` 统一机读 schema（新 `scripts/gate_report.py`）/ `D14-12` 收敛 subprocess 双实现（新 `scripts/gate_proc.py`）/ `D14-6` 判定已被 B10-g 覆盖。见 ledger §8.4。
