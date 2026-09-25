@@ -296,7 +296,14 @@ function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 					return
 				}
 				const g = d.getJSON('guardrail')
-				const passed = g != null ? (g.getBoolean('passed') ?? true) : true
+				// D10-10（2026-09-25 功能修复波）：缺失/取不到一律按**未通过**处理。
+				// 原写法 `?? true` / 整体 `: true` 是**客户端唯一一处 fail-open 默认值**：
+				// 字段漂移或老服务端不返回 `guardrail` 时，"未审核"会被显示成"已通过"
+				// （与后端 fail-safe「默认拒发」口径相反）。
+				const passed = g != null ? (g.getBoolean('passed') ?? false) : false
+				const guardReason = g != null
+					? (g.getString('reason') ?? '')
+					: '服务端未返回审核结果（按未通过处理）'
 				// B5a J-1/J-3：音频事件 / 段级情绪合并 / 噪音标记
 				const merge = d.getJSON('emotion_merge')
 				const ae = d.getArray('audio_events') as Array<string> | null
@@ -320,7 +327,7 @@ function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 						(d.getNumber('duration_ms') as number) ?? 0,
 						d.getBoolean('mock') ?? false,
 						passed,
-						g != null ? (g.getString('reason') ?? '') : ''
+						guardReason
 					)
 				)
 				return
