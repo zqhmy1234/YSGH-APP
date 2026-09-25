@@ -283,7 +283,28 @@ def run_tests(*, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
             "  安装：pip install pytest pytest-cov httpx\n"
             "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
         )
-    return (code == 0), out.strip()[-1500:]
+    if code != 0:
+        # 2026-09-25：失败时把「失败用例」显式置顶。
+        # 教训（实付代价：4 轮才定位到失败用例名）：`-q --cov-report=term-missing` 的输出
+        # 尾部是**覆盖率表**，`FAILED ...` 摘要被挤出 tail 切片；报告 JSON 里也没有结构化字段
+        # （键名是 details 而非 sections，猜键又白跑一轮）⇒ 最后只能全量重跑 pytest 才看到名字。
+        # 现：test_agent 已在报告里给 `failed_tests`（单一来源），这里直接展示，无需二次抽取。
+        fails = _failed_tests_from_report()
+        head = (
+            "[失败用例（单一来源＝.cowork-temp/test-report.json 的 failed_tests）]\n"
+            + ("\n".join(f"  {f}" for f in fails) if fails else "  （报告未产出 failed_tests，见下方原始输出）")
+        )
+        return False, head + "\n\n[测试输出·尾部]\n" + out.strip()[-1200:]
+    return True, out.strip()[-1500:]
+
+
+def _failed_tests_from_report() -> list[str]:
+    """读测试报告的结构化失败用例清单（test_agent 抽取，避免各工具各写一套解析）"""
+    try:
+        data = json.loads((REPORT_DIR / "test-report.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 —— 报告缺失/损坏不阻断，退回原始输出
+        return []
+    return [str(x) for x in (data.get("failed_tests") or [])]
 
 
 def check_secrets(files: list[str]) -> tuple[bool, str]:

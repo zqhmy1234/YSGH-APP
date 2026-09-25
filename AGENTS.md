@@ -125,7 +125,10 @@ infisical secrets --env=dev --silent
 **快/全量拆分（2026-08-26，用户拍板——原每次 commit 全量跑 5 分钟）**：
 
 1. **快速门禁（commit 时，秒级）**：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）——只检查本次提交涉及的文件：Python 语法编译 / ruff lint / 密钥扫描 / TODO 统计 / lessons 强制登记。
-2. **全量门禁（完成验收 / 集成 / CI 前必跑）**：`python scripts/review_agent.py --full`——仓库级语法/lint/密钥扫描 + 全量测试（test_agent：pytest + API 冒烟 + 原型验证，覆盖率阈值 50%）。**每个 Agent 完成声明 DoD 前、以及集成 Agent merge 后，必须跑一次 `--full`。**
+2. **全量门禁（完成验收 / 集成 / CI 前必跑）**：`python scripts/review_agent.py --full`——仓库级语法/lint/密钥扫描 + 全量测试（test_agent：pytest + API 冒烟 + 原型验证，覆盖率阈值 60%，口径单一来源 `scripts/gate_exit`/`review_agent.COV_THRESHOLD`）。**每个 Agent 完成声明 DoD 前、以及集成 Agent merge 后，必须跑一次 `--full`。**
+   - **门禁报红时的定位口径（2026-09-25 立规 · 教训见 `docs/lessons.md`）**：直接读**结构化失败用例清单**——
+     `python -c "import json;d=json.load(open('.cowork-temp/test-report.json',encoding='utf-8'));print(d['failed_tests'])"`；
+     门禁输出本身也已把 `[失败用例（先看这里）]` 置顶。**禁止**靠"重跑全量套件"去定位用例名（≈2 分钟/次的无谓开销），也**禁止**猜报告键名（机读键固定为 `failed_tests` / `blocking_sections` / `details`）。
 3. 退出码 0 = 通过可提交；退出码 1 = 存在阻断项 → 修复后重跑，直到通过
 4. 报告输出：`.cowork-temp/review-report.json` + `.cowork-temp/test-report.json`（证据留档）
 5. 修复流程：按报告逐项修复 → 重跑 `python scripts/review_agent.py` → 全绿才 `git commit`

@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 21:49 · commit 1b4da1b · ts=1790344175
+- **错误**：门禁报红却看不到失败用例名，花了 4 轮（看门禁输出→猜报告键→报告里找 FAILED→全量重跑 107s）才定位到 test_ba3_ai_chain 那条
+- **根因**：① pytest 输出顺序是「进度 → 失败摘要 → 覆盖率表（上百行）」，而 test_agent 与 review_agent 两处都做**尾部切片**（[-3500:]/[-1500:]）⇒ 恰好把 FAILED 行切掉，留下与失败无关的覆盖率噪音；② 报告 JSON 只有非结构化的 output 字段，没有 failed_tests；③ review_agent 只打印 tests 段前 8 行（还是噪音）
+- **修复**：test_agent 新增 extract_failed_tests()（去重保序）→ 失败时把摘要**置顶**返回 + 报告写 failed_tests 字段；review_agent 失败时读该字段并置顶展示（单一来源）；AGENTS 增「门禁报红定位口径」硬规矩；新增 backend/tests/test_gate_failure_digest.py 4 例（含'失败行被覆盖率表挤出'的回归断言）
+- **相关文件**：scripts/test_agent.py
+- **教训**：凡是**尾部切片**展示机器输出，都要先问'关键结论在哪一段'——摘要常在中部、尾巴是噪音；宁可结构化成字段，也不要让人从一坨 log 里找一行
+
+---
+
 ### 2026-09-25 21:24 · commit 56dac34 · ts=1790342651
 - **错误**：D10-8 给照片描述加确定性抽样（读 content.id）后，全量门禁红在一条与本次改动无关的老测试上：test_ba3_ai_chain 用 SimpleNamespace(extra={}) 当假内容对象，没有 id
 - **根因**：单元测试替身只补了被测代码'当时用到'的字段（extra），一旦被测代码新增字段访问（id）就炸；这类失败与业务语义无关，纯属替身比真实对象（ORM Content）更瘦

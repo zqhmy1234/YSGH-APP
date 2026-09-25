@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -131,6 +132,34 @@ def _emit_warnings(warnings: list[str]) -> None:
         print(f"[deselect 警告] {w}")
 
 
+# pytest 失败摘要行（`-q` 模式）：`FAILED path::nodeid` / `ERROR path::nodeid`。
+# 末尾可带 ` - 简短原因`（--tb=short 时 pytest 会附一行摘要）。
+_FAILED_LINE_RE = re.compile(r"^(?P<kind>FAILED|ERROR)\s+(?P<node>\S+)(?P<rest>.*)$", re.MULTILINE)
+
+
+def extract_failed_tests(output: str) -> list[str]:
+    """从 pytest 输出里抽出失败/错误用例（**去重保序**，返回 `FAILED path::nodeid`）。
+
+    为什么单列一个函数（2026-09-25 教训 · 实付代价：**4 轮才定位到失败用例名**）：
+      ① `-q --tb=short --cov ... --cov-report=term-missing` 的输出里，
+         **失败摘要在前、覆盖率表在后（百来行）**；
+      ② 原实现只回传 `combined[-3500:]`（**尾部切片**）⇒ 失败用例名被覆盖率表**挤出**，
+         门禁展示的恰好是"与失败原因无关的覆盖率噪音"；
+      ③ 于是使用者只能：读 JSON（同样只有尾部）→ 翻 `sections` 键（键名是 `details`，白跑一轮）
+         → 全量重跑 pytest（107s）才看到名字。
+    ⇒ 现在把摘要**提到返回串最前面**（见 `run_pytest`），并写进报告 `failed_tests` 字段。
+    """
+    seen: list[str] = []
+    for line in output.splitlines():
+        m = _FAILED_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        item = f"{m.group('kind')} {m.group('node')}"
+        if item not in seen:
+            seen.append(item)
+    return seen
+
+
 def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     """pytest 全量 + 覆盖率（2026-08-25：测试环境封闭——覆盖 MOCK/STORAGE_BACKEND
 
@@ -215,7 +244,17 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
 
     _emit_warnings(warnings)
     combined = "\n\n".join(outputs)
-    return (not failed), combined.strip()[-3500:]
+    if not failed:
+        return True, combined.strip()[-3500:]
+    # 失败时**摘要置顶**（见 extract_failed_tests 的教训注释）：门禁第一眼就该看到用例名，
+    # 而不是被覆盖率表淹没。原始输出仍保留尾部（含最后一个 traceback 片段）供下钻。
+    failures = extract_failed_tests(combined)
+    head = "[失败用例（先看这里；原始输出见下方「原始输出·尾部」）]\n" + (
+        "\n".join(f"  {x}" for x in failures)
+        if failures
+        else "  （未在输出中匹配到 FAILED/ERROR 行——请直接看下方原始输出或报告 JSON）"
+    )
+    return False, head + "\n\n[原始输出·尾部]\n" + combined.strip()[-2500:]
 
 
 def run_api_smoke() -> tuple[bool, str]:
@@ -313,6 +352,8 @@ def main() -> int:
         "passed": passed,
         "blocking_sections": list(blocking.keys()),
         "env_blocked_sections": env_blocked,
+        # 机读面也直给失败用例（2026-09-25）：使用方读 JSON 时不必再"字符串里找 FAILED"
+        "failed_tests": extract_failed_tests(sections["pytest"][1]) if not sections["pytest"][0] else [],
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in sections.items()},
         "cleanup_test_collections": {"ok": cleanup_ok, "output": cleanup_out},
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
