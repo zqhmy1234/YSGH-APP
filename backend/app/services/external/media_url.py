@@ -51,13 +51,17 @@ MEDIA_PATH_PREFIX = "/api/v1/media/"
 
 # key 扩展名 → Content-Type（只覆盖项目实际会存的素材类型）
 #
-# ⚠️ D02-9（2026-09-24 重构波 · **登记未改**）：本项目照片扩展名有**三处表**
-#   —— 本表（MIME）/ `services/upload_meta.ALLOWED_PHOTO_EXTS`（受理白名单）/
+# ⚠️ D02-9（2026-09-24 重构波 / 2026-09-25 功能修复波 **部分收口**）：本项目照片扩展名有
+#   **三处表** —— 本表（MIME）/ `services/upload_meta.ALLOWED_PHOTO_EXTS`（受理白名单）/
 #   `services/file_magic`（魔数支持集），三者**已知不一致**：
-#     · `.heif` ∈ ALLOWED_PHOTO_EXTS，但**本表无映射** ⇒ `content_type_for` 回落 `image/jpeg`（MIME 失真）；
-#     · `.gif` 仅本表有（ALLOWED_PHOTO_EXTS 与 file_magic 均不含 GIF）。
-#   收敛需在「改下发 MIME（.heif→image/heif）」与「改受理格式（放开/收紧 .gif）」之间二选一，
-#   **两者都是行为变更**（且涉及客户端渲染/合规），故本波**只登记不改**（交功能波/拍板）。
+#     · `.heif` ∈ ALLOWED_PHOTO_EXTS，但**本表原无映射** ⇒ `content_type_for` 回落 `image/jpeg`：
+#       **已修（2026-09-25）** —— 补 `.heif → image/heif`（纯失真修复，零风险；`image/*` 前缀判定不变，
+#       Android 侧解码器本就看字节）。这是"三表不一致"里唯一**不需要产品拍板**的部分。
+#     · `.gif` 仅本表有（ALLOWED_PHOTO_EXTS 与 file_magic 均不含 GIF）⇒ 本表条目当前是**不可达条目**
+#       （受理层根本不放行，录不进 GIF）。**保留但登记**：是否支持动图属产品面（见下）。
+#   **剩余（待产品拍板，登记 `docs/决策台账.md` + functional-fix-wave/spec.md §4）**：
+#     ① 是否**放开 `.gif` 受理**（需 `file_magic` 补 GIF87a/89a 魔数 + 缩略图管线取首帧）；
+#     ② 是否**收紧 `.heif` 受理**（与客户端/解码能力对齐）。
 #   受理白名单的**唯一来源**是 `upload_meta.ALLOWED_PHOTO_EXTS`。
 _CONTENT_TYPES = {
     ".jpg": "image/jpeg",
@@ -66,6 +70,7 @@ _CONTENT_TYPES = {
     ".webp": "image/webp",
     ".gif": "image/gif",
     ".heic": "image/heic",
+    ".heif": "image/heif",
     ".wav": "audio/wav",
     ".mp3": "audio/mpeg",
     ".m4a": "audio/mp4",

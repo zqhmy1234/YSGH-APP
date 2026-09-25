@@ -115,6 +115,23 @@ def test_amr_has_audio_content_type():
     assert content_type_for("wechat/U1/M1.amr") == "audio/amr"
 
 
+def test_heif_has_own_mime_and_upload_exts_subset_of_mime_table():
+    """D02-9（2026-09-25 部分收口）：受理白名单里的每个照片扩展名都必须有 MIME 映射。
+
+    原状：`.heif` ∈ `ALLOWED_PHOTO_EXTS` 但本表无映射 ⇒ `content_type_for` 回落
+    `image/jpeg`（下发 MIME 与字节不符）。本断言把"两表不一致"变成**机器可查**：
+    以后往受理面加扩展名而忘了补 MIME，测试即红。
+    （`.gif` 方向的不一致**刻意不在本断言内**：GIF 是否受理属产品决策，见 media_url 注释。）
+    """
+    from app.services.external.media_url import _CONTENT_TYPES
+    from app.services.upload_meta import ALLOWED_PHOTO_EXTS
+
+    assert content_type_for("photos/U1/202609/a.heif") == "image/heif"
+    assert content_type_for("photos/U1/202609/a.HEIF") == "image/heif"  # 大小写不敏感
+    missing = sorted(e for e in ALLOWED_PHOTO_EXTS if e not in _CONTENT_TYPES)
+    assert missing == [], f"受理白名单里这些扩展名缺 MIME 映射（会回落 image/jpeg）: {missing}"
+
+
 # ---------------------------------------------------------------------------
 # 2. 同源：五处均派生于 storage_keys（防再漂移）
 # ---------------------------------------------------------------------------
