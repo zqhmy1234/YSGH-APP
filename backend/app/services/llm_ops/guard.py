@@ -63,6 +63,9 @@ class DetectionResult:
     categories: list[str] = field(default_factory=list)
     matched: list[str] = field(default_factory=list)
     detail: str = ""
+    # D10-9（2026-09-25）：检测器是否**真正给出结论**——
+    # False = 不可用/调用失败（"没检出来"与"检出为空"必须区分，否则 fail-open）
+    ok: bool = True
 
 
 class SensitiveDetector(ABC):
@@ -111,7 +114,7 @@ class ManagedDetector(SensitiveDetector):
 
     def detect(self, text: str) -> DetectionResult:
         if not self.available():
-            return DetectionResult(detector=self.name, pass_=True, detail="unavailable")
+            return DetectionResult(detector=self.name, pass_=True, detail="unavailable", ok=False)
         try:
             answer = chat_text(_EVENT_GUARD_SYSTEM, text).strip()
             categories = _parse_categories(answer)
@@ -122,9 +125,9 @@ class ManagedDetector(SensitiveDetector):
                 matched=[],
                 detail="llm",
             )
-        except Exception as exc:  # noqa: BLE001 —— 补漏失败静默降级（不阻断入库）
-            logger.warning("事件敏感 LLM 补漏失败，降级放行: %s", exc)
-            return DetectionResult(detector=self.name, pass_=True, detail=f"error:{exc}")
+        except Exception as exc:  # noqa: BLE001 —— 补漏失败不再"静默放行"（D10-9）
+            logger.warning("事件敏感 LLM 补漏失败（调用方按保守路径处理）: %s", exc)
+            return DetectionResult(detector=self.name, pass_=True, detail=f"error:{exc}", ok=False)
 
 
 def _parse_categories(answer: str) -> list[str]:
@@ -142,10 +145,37 @@ def detect_event_sensitive(text: str) -> list[str]:
     """事件级敏感 LLM 补漏入口：规则未命中时调用，返回类别名列表。
 
     - mock / 未配 key → []（规则层已兜底，本地联调确定性）
-    - LLM 异常 → []（静默降级，不阻断内容入库）
+    - LLM 异常 → []（**不阻断内容入库**；但调用方若关心"是否真的检出为空"，
+      应改用 `detect_event_sensitive_status` —— 见 D10-9）
     """
     result = ManagedDetector().detect(text)
     return result.categories
+
+
+def detect_event_sensitive_status(text: str) -> tuple[list[str], bool]:
+    """事件级补漏入口（带**可用性**信号）：返回 (类别列表, ok)。
+
+    D10-9（2026-09-25 功能修复波 · 用户拍板「按建议来」）：
+
+    「**检出为空**」与「**没能检**」是两件事，此前被混为一谈（都返回 `[]`）——
+    后者会让"分手/离世"这类**软话题**在 LLM 不可用时被当成"内容正常"，
+    进而被回响/关怀追问**主动提及**（用户最不想被戳的点）。
+
+    `ok=False` 的含义 = 软话题检测**未真正跑通**（未配 key 或调用异常），
+    此时调用方应走**保守路径**：不主动提及（回响/推送不提这条），
+    但**不阻断入库、也不影响被动检索**（用户自己翻看照常）。
+
+    ⚠️ **mock 模式例外**：`settings.mock_external_ai=True`（本地开发/测试）
+    时一律返回 `ok=True` —— mock 本就代表"假装可用"，否则会把整库内容标成
+    待复核、污染开发数据并让全量测试漂移（这是"全链 fail-closed"（选项 B）
+    的真实副作用，故不采用）。
+    """
+    from app.core.config import settings
+
+    result = ManagedDetector().detect(text)
+    if settings.mock_external_ai:
+        return result.categories, True
+    return result.categories, result.ok
 
 
 def reflow_violation_words(

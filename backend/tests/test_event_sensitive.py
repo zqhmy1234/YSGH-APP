@@ -81,7 +81,10 @@ def test_llm_fallback_when_rule_misses(db_user, monkeypatch):
     c = _content(db, user.id, "他说我们到此为止吧，那天雨很大")
     import app.services.pipeline_ext.sensitive as ext_sensitive
 
-    monkeypatch.setattr(ext_sensitive, "detect_event_sensitive", lambda text: ["分手"])
+    # D10-9（2026-09-25）：调用点从 `detect_event_sensitive` 换成带**可用性**信号的
+    # `detect_event_sensitive_status`（返回 `(类别, ok)`）——"检出为空"与"没能检"
+    # 必须可区分，故 patch 点随之更新（语义仍为"LLM 判出分手"）。
+    monkeypatch.setattr(ext_sensitive, "detect_event_sensitive_status", lambda text: (["分手"], True))
     _mark(db, c)
     assert c.sensitive_status == "敏感"
     assert c.sensitive_tags["source"] == "llm"
@@ -134,7 +137,8 @@ def test_reflow_llm_categories_writes_level3(db_user, monkeypatch):
     c = _content(db, user.id, "他说我们到此为止吧")
     import app.services.pipeline_ext.sensitive as ext_sensitive
 
-    monkeypatch.setattr(ext_sensitive, "detect_event_sensitive", lambda text: ["分手"])
+    # D10-9：patch 点改为带可用性信号的 `detect_event_sensitive_status`
+    monkeypatch.setattr(ext_sensitive, "detect_event_sensitive_status", lambda text: (["分手"], True))
     _mark(db, c)
     rows = db.query(SensitiveWord).filter(
         SensitiveWord.word == "分手", SensitiveWord.user_id.is_(None)

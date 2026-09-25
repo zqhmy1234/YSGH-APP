@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 20:47 · commit 3aa4f70 · ts=1790340432
+- **错误**：‘检出为空’与‘没能检’被当成同一件事：软话题检测器不可用时返回 []，下游把‘没检出来’读成‘内容正常’
+- **根因**：D10-9：ManagedDetector.detect 的两条降级分支（unavailable / except）都返回 pass_=True 且**不携带任何‘我没跑通’的信号**，detect_event_sensitive 于是也返回 []；调用方 pipeline_ext/sensitive 无法区分两种 []，echo 第二查又只走硬规则 ⇒ 软话题（分手/离世）在故障期被主动提及。同类根因已第三次出现：门禁假绿（api_smoke 靠 fail-open 绿）、静默放行（D10-1 action 缺失）、本次（不可用≠无命中）
+- **修复**：DetectionResult 增 ok 字段；新增 detect_event_sensitive_status() 返回 (类别, ok)；pipeline_ext 在 ok=False 时把内容标 sensitive_status='待复核'（主动提及路径天然跳过：echo 判 != 正常、notify 只取正常/空）；mock 模式视为可用，避免把开发库整库标脏。软话题词表同步扩容做规则层兜底
+- **相关文件**：backend/app/services/llm_ops/guard.py
+- **教训**：降级返回值必须携带‘降级’这一事实本身：把不可用折叠成空结果，等于把‘拿不准’翻译成‘没问题’——凡是 fail-open 的写法，都要问一句‘下游怎么区分失败与无结果’
+
+---
+
 ### 2026-09-25 03:28 · commit b7a6e04 · ts=1790278103
 - **错误**：D05-3/D10-1 修复后被两条既有断言拦下：一条门禁的绿是**靠 bug**换来的，另一条把 bug 写成了规格
 - **根因**：① scripts/api_smoke_cases.py 头注写「mock 外部 AI」，实现却**没有覆盖 MOCK_EXTERNAL_AI** ⇒ 继承 backend/.env 的真实 key；护栏 fail-closed（决策 #12）生效后，key 失效即 422 拒发 ⇒ 冒烟报红（报的是环境问题）。而修 D10-1 之前它为何绿？因为 fail-closed 分支缺 action 键 ⇒ 调用方两条 if 都不成立 ⇒ **护栏判了拒发却被静默放行、原文入库**——门禁的绿直接来自那个 P0 缺陷。② backend/tests/test_vector_store.py::test_to_filter_unknown_key_ignored 把「未知过滤键静默忽略」写成断言 ⇒ 与簇② 同族：既有测试把分歧固化成预期行为
