@@ -131,6 +131,9 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("CHAT_001", "Agent 服务不可用（连接失败或返回异常）", 502, retryable=True),
     ErrorSpec("CHAT_002", "Agent 服务响应超时", 504, retryable=True),
     ErrorSpec("CHAT_003", "会话或回复不存在（含越权访问他人会话）", 404),
+    # D10-8（2026-09-25）：生成态输出护栏拦截（**不落库、不返回该文本**；
+    # 与"agent 不可用不伪造回复"同族口径——宁可不答，也不给未过审文本）
+    ErrorSpec("CHAT_004", "AI 回复未通过安全审核，已拦截", 422),
 ]
 
 ERROR_REGISTRY: dict[str, ErrorSpec] = {spec.code: spec for spec in _ERROR_SPECS}
@@ -202,6 +205,7 @@ ERR_CLASSIFY_003 = "CLASSIFY_003"
 ERR_CHAT_001 = "CHAT_001"
 ERR_CHAT_002 = "CHAT_002"
 ERR_CHAT_003 = "CHAT_003"
+ERR_CHAT_004 = "CHAT_004"
 
 
 class ApiError(Exception):

@@ -57,6 +57,20 @@ def _llm_verdict(candidate: dict) -> dict:
         confidence = 0.6
     confidence = max(0.0, min(1.0, confidence))
     title = str(data.get("title") or "").strip() or _fallback_title(candidate)
+    # D10-8（2026-09-25）：**事件名/描述要展示在时间轴卡片上** ⇒ 生成态护栏（规则层）。
+    # 命中不阻断聚合（会破坏 L2 归并链），而是退回**确定性标题**（`_fallback_title`，
+    # 由标签/时间派生、不含模型自由文本）——"宁可用朴素标题，也不展示未过审文本"。
+    from app.services.llm_ops.output_guard import screen_generated
+
+    # ⚠️ 变量名刻意避开 `verdict`——上面已有同名**字符串**（LLM 裁决），
+    #    复用同名会把下面的 `"verdict": ... if verdict == "merge"` 恒判为 split
+    #    （本波实测踩过：测试当场抓到，见 lessons 2026-09-25）。
+    screen = screen_generated(title)
+    if not screen["pass"]:
+        logger.warning(
+            "L2 归并标题未通过生成态护栏（%s），退回确定性标题", screen["reason"] or screen["action"]
+        )
+        title = _fallback_title(candidate)
     return {
         **candidate,
         "verdict": "merge" if verdict == "merge" else "split",

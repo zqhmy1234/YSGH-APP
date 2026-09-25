@@ -144,6 +144,22 @@ def generate_photo_description(content: Content, image_path: str | None = None) 
 
     if not raw:
         raise AiTaggingError("LLM_PARSE_FAILED", "照片描述输出为空")
+
+    # D10-8（2026-09-25 用户拍板「按建议来」）：**生成态输出护栏**
+    # 规则层全量 + LLM 级**确定性抽样**（成本控制：默认 10% ⇒ 100 用户×30 张/天
+    # ≈300 次/天，而非全量 3000 次）。命中即**不落库**（抛错 ⇒ 调用方按既有
+    # "描述跳过"路径处理，不写入 ai_description）——与"绝不把未过审文本展示给用户"一致。
+    from app.core.config import settings
+    from app.services.llm_ops.output_guard import sampled, screen_generated
+
+    verdict = screen_generated(
+        raw, deep=sampled(str(content.id), settings.generated_guard_sample_rate)
+    )
+    if not verdict["pass"]:
+        raise AiTaggingError(
+            "OUTPUT_BLOCKED",
+            f"照片描述未通过生成态护栏（{verdict['detector']}:{verdict['reason'] or verdict['action']}），已丢弃",
+        )
     return raw[:MAX_DESC_LEN]
 
 

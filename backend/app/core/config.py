@@ -163,6 +163,13 @@ class Settings(BaseSettings):
     #   aliyun     = 上架前启用（阿里云内容安全增强版，需 AccessKey + 开通「内容安全」服务）
     #   off        = 不调外部审核（文本仅本地规则、图片默认放行；调用方自行决定）
     content_safety_provider: Literal["tencent_ci", "aliyun", "off"] = "tencent_ci"
+    # 生成态输出护栏（D10-8 · 2026-09-25 用户拍板「按建议来」）：
+    # 四条用户可见生成链（照片 AI 描述 / 事件标题 / 画像开放值 / 对话回复）的审核档位——
+    # 规则层（本地词表，零成本）**全量**生效；LLM 级只用于两处：
+    #   ① 对话回复：每次一问一答 1 次（直接对用户可见，量小）；
+    #   ② 照片描述：**按本比例确定性抽样**（哈希稳定，同一照片不会"这次审下次不审"）。
+    # 0 = 照片描述不走 LLM（只规则层）；1 = 全量走（100 用户 × 30 张/天 ≈ 3000 次/天）。
+    generated_guard_sample_rate: float = 0.1
     # 阿里云内容安全（Green）AccessKey——⚠️ 不是百炼 DashScope key，需阿里云账号
     # AccessKey + 开通「内容安全」服务（2026-08-26 监控确认：百炼 key ≠ 内容安全 key）。
     # 别名读取兼容 Infisical 存量名。

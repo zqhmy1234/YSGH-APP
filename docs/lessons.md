@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 20:52 · commit 58e2a71 · ts=1790340755
+- **错误**：自己新写的护栏代码里复用了同名局部变量 verdict：先存 LLM 裁决字符串、后存护栏结果 dict ⇒ 下一行 'merge' if verdict == 'merge' else 'split' 恒为 split（所有 L2 事件都会被判拆分）
+- **根因**：D10-8 接入事件归并链时，把护栏结果变量命名为 verdict，与函数内既有同名变量（LLM 裁决）冲突；Python 不报错、ruff 也不报（同作用域重赋值合法）⇒ 属'静默语义劫持'，与 GAP-1/GAP-2 同族（编译/静态检查覆盖不到的语义面）
+- **修复**：改名 screen（并加注释说明为何不叫 verdict）；新增的 11 例测试中有 1 例断言 '不阻断归并本身'（verdict 仍为 merge）⇒ 当场抓到；若只断言 title 就会漏过
+- **相关文件**：backend/app/services/llm_ops/event_merge.py
+- **教训**：接新逻辑时不要复用函数内既有变量名：静默重赋值既无编译错也无 lint 错，只能靠'断言完整语义'的测试抓——所以测试要断言'没被破坏的东西'，不只断言'新加的东西'
+
+---
+
 ### 2026-09-25 20:47 · commit 3aa4f70 · ts=1790340432
 - **错误**：‘检出为空’与‘没能检’被当成同一件事：软话题检测器不可用时返回 []，下游把‘没检出来’读成‘内容正常’
 - **根因**：D10-9：ManagedDetector.detect 的两条降级分支（unavailable / except）都返回 pass_=True 且**不携带任何‘我没跑通’的信号**，detect_event_sensitive 于是也返回 []；调用方 pipeline_ext/sensitive 无法区分两种 []，echo 第二查又只走硬规则 ⇒ 软话题（分手/离世）在故障期被主动提及。同类根因已第三次出现：门禁假绿（api_smoke 靠 fail-open 绿）、静默放行（D10-1 action 缺失）、本次（不可用≠无命中）

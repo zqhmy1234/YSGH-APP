@@ -97,6 +97,13 @@ def _normalize_hits(hits, pool: list[DimensionSpec]) -> list[dict]:
         conf = _to_confidence(hit.get("confidence"))
         if conf < 0.6:
             continue
+        # D10-8（2026-09-25）：画像**开放新值**（枚举集外、模型自由生成、展示在画像页）
+        # ⇒ 生成态护栏（规则层）。命中**只丢这一条**（不丢整批、不阻断标注管线）。
+        from app.services.llm_ops.output_guard import screen_generated
+
+        if not screen_generated(value)["pass"]:
+            logger.warning("画像开放值未通过生成态护栏，已丢弃 dimension=%s", dim)
+            continue
         out.append({"dimension": dim, "enum_value": value, "confidence": conf})
         if len(out) >= _MAX_HITS:
             break

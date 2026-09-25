@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.api import make_router
 from app.api.deps import get_current_user
-from app.core.errors import ERR_CHAT_001, ERR_CHAT_002, ERR_CHAT_003, ApiError
+from app.core.errors import ERR_CHAT_001, ERR_CHAT_002, ERR_CHAT_003, ERR_CHAT_004, ApiError
 from app.db.models import ChatMessage, User
 from app.db.session import get_db
 from app.schemas.chat import (
@@ -41,6 +41,7 @@ from app.schemas.chat import (
 )
 from app.schemas.common import ApiResponse
 from app.services.external.agent import AgentServiceError, call_agent_chat
+from app.services.llm_ops.output_guard import screen_generated
 
 logger = logging.getLogger("yishu.api.chat")
 
@@ -117,6 +118,20 @@ def post_message(
         code = ERR_CHAT_002 if exc.http_status == 504 else ERR_CHAT_001
         logger.warning("agent 调用失败 user=%s conv=%s kind=%s", user.id, conversation_id, exc.kind)
         raise ApiError(code, str(exc), http=exc.http_status) from exc
+
+    # 2.5) 生成态输出护栏（D10-8 · 2026-09-25 用户拍板「按建议来」）：
+    # Agent 回复**直接展示在对话页**且量小 ⇒ 走**完整链路**（规则层 + LLM 级）。
+    # 命中 ⇒ **不落库、不返回该文本**（复用 §2.3 既定口径：agent 不可用时不伪造回复，
+    # 这里同样绝不把未过审文本推给用户）；用户消息已落库，可复盘"问了但被拦"。
+    verdict = screen_generated(result.text, deep=True)
+    if not verdict["pass"]:
+        logger.warning(
+            "agent 回复未通过生成态护栏 user=%s conv=%s detector=%s",
+            user.id,
+            conversation_id,
+            verdict["detector"],
+        )
+        raise ApiError(ERR_CHAT_004, "AI 回复未通过安全审核，已拦截", http=422)
 
     # 3) 落回复
     reply_row = ChatMessage(
