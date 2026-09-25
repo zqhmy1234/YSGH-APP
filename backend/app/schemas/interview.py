@@ -54,3 +54,18 @@ class InterviewProfileOut(BaseModel):
     dimensions: dict[str, list[str]]
     version: int
     cold_start_done: bool
+
+
+class ProfileClearOut(BaseModel):
+    """画像清除出参（DELETE /api/v1/interview/profile · D07-12）。
+
+    `cleared` 逐表回报删除行数（客户端可如实告诉用户"删掉了什么"），
+    `sensitive_topics_kept` = **刻意保留**的敏感话题条数（那是"别再提这个话题"的
+    保护性数据，清除画像不应连带移除保护——见 `services/profile_admin` 模块说明）。
+    """
+
+    cleared: dict[str, int] = Field(
+        default_factory=dict, description="逐表删除行数（表名 → 行数）"
+    )
+    sensitive_topics_kept: int = Field(0, description="保留的敏感话题条数（保护性数据）")
+    total: int = Field(0, description="本次删除总行数")

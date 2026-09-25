@@ -4,7 +4,7 @@
  * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
  * 对外导出：InterviewQuestion, InterviewResult, fetchInterviewQuestions, submitInterviewAnswers, fetchInterviewProfile
  */
-import { get, post, dataObj } from './api'
+import { get, post, request, dataObj } from './api'
 import { PATH_INTERVIEW_QUESTIONS, PATH_INTERVIEW_ANSWERS, PATH_INTERVIEW_PROFILE } from './contract'
 
 export class InterviewQuestion {
@@ -113,6 +113,23 @@ export function submitInterviewAnswers(answers: UTSJSONObject): Promise<Intervie
 					d.getString('confirmation') ?? ''
 				)
 			)
+		})
+	})
+}
+
+/** DELETE /interview/profile：**清除云端画像**（D07-12 · 2026-09-25 功能修复波）。
+ *
+ * 契约（backend app/api/interview.py）：删除画像维度值 / 维度历史 / 未命中枚举原始回答 /
+ * 低置信候选池 / **证据锚点**；**保留**敏感话题（"别再提这些话题"的保护性数据），
+ * 保留条数在响应 `data.sensitive_topics_kept` 里如实回报；幂等（无数据也 200）。
+ *
+ * 返回 Promise<boolean>：true=云端已清除；false=失败（api 层已 toast，调用方**不得**
+ * 声称"已清除"——此前该面板只能清本地、弹窗文案却承诺删云端，属失实宣称）。
+ */
+export function clearInterviewProfile(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request(PATH_INTERVIEW_PROFILE, 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
 		})
 	})
 }

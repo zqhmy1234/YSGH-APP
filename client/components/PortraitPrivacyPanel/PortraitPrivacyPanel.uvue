@@ -48,13 +48,15 @@
 					<text class="row-value value-danger">不可恢复</text>
 				</view>
 			</view>
-			<!-- 64:321 说明-清除 -->
-			<text class="group-hint">清除将删除全部画像维度与证据锚点，需二次确认且不可恢复</text>
+			<!-- 64:321 说明-清除（D07-12：文案与真实行为对齐——云端真删；敏感话题保留） -->
+			<text class="group-hint">清除将删除云端的全部画像维度与证据锚点，需二次确认且不可恢复；「敏感话题」设置会保留</text>
 		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
+	import { clearInterviewProfile } from '@/utils/play_interview'
+
 	const emit = defineEmits(['close', 'cleared'])
 
 	// ── 开关本地态（真端点待后端登记台账，卡25 交互接线；settings.uvue 字符串 storage 先例，
@@ -77,24 +79,37 @@
 	}
 
 	/** 清除画像数据：二次强确认（confirm 先例 = manage onRemoveSensitive showModal）。
-	 *  MVP 本地清空：隐私开关 / locked 标签 / AI 标签编辑覆盖全部置空并复位开关；
-	 *  后端画像清除端点未登记（台账 卡25 F9c），不伪造远端清除成功 */
+	 *
+	 *  D07-12（2026-09-25 功能修复波 · 用户拍板「按建议来」）：**先调云端真删除**
+	 *  （`DELETE /api/v1/interview/profile`），成功后再清本地覆盖态。
+	 *  - 失败（网络/服务端）⇒ 只 toast 失败并**保留**本地态（**绝不声称"已清除"**）；
+	 *  - 成功后本地清空：隐私开关 / locked 标签 / AI 标签编辑覆盖，并复位开关；
+	 *  - 云端保留的「敏感话题」在确认弹窗里**提前说明**（不承诺删掉它）。
+	 */
 	function onClearPortrait(): void {
 		uni.showModal({
 			title: '清除画像数据',
-			content: '将删除全部画像维度与证据锚点，此操作不可恢复。确定清除吗？',
+			content: '将删除云端的全部画像维度与证据锚点，此操作不可恢复；「敏感话题」设置会保留。确定清除吗？',
 			success: (res) => {
-				if (res.confirm) {
+				if (!res.confirm) {
+					return
+				}
+				clearInterviewProfile().then((ok: boolean) => {
+					if (!ok) {
+						// 失败不伪装成功（与"不伪造远端清除"同族口径）；api 层已给出错误提示
+						uni.showToast({ title: '清除失败，请稍后重试', icon: 'none' })
+						return
+					}
 					uni.setStorageSync('privacy_ai_chat', '')
 					uni.setStorageSync('privacy_echo', '')
 					uni.setStorageSync('portrait_locked_tags', '')
 					uni.setStorageSync('portrait_ai_tags_edited', '')
 					aiOn.value = true
 					echoOn.value = true
-					uni.showToast({ title: '画像数据已清除（本地）', icon: 'none' })
+					uni.showToast({ title: '画像数据已清除', icon: 'none' })
 					emit('cleared')
 					onClose()
-				}
+				})
 			}
 		})
 	}

@@ -90,6 +90,7 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 | GET | /questions | 产品部三问（最重要的人/人生转折/最骄傲的事）| 固定 |
 | POST | /answers | 提交答案 → 画像维度激活 + 复述确认（dimensions 为 {dim: [当前值]} dict）| ✅ 真实 DB |
 | GET | /profile | 画像（冷启动状态；dimensions 同 dict 格式）| ✅ 真实 DB |
+| DELETE | /profile | **清除本人画像**（D07-12）：真删维度值/历史/未命中答案/低置信池/**证据锚点**；**保留**敏感话题（保护性数据，响应 `sensitive_topics_kept` 如实回报）；幂等 | ✅ 真实 DB |
 
 ### 同步（/api/v1/sync，需 Bearer token）
 | 方法 | 路径 | 说明 | 状态 |
