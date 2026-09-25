@@ -166,7 +166,11 @@ class TestGeneratePhotoDescription:
             "app.services.ai_tagging._vision",
             lambda path, prompt: "西湖边荷花盛开，远山如黛，游客众多，天气晴朗，一派夏日风光景象，湖面波光粼粼",
         )
-        desc = generate_photo_description(SimpleNamespace(extra={}), image_path="data/tmp/ai_tag_probe.jpg")
+        # D10-8（2026-09-25）：生成态护栏按 `content.id` 做**确定性抽样** ⇒ 假对象需带上
+        # 它替代的真实字段（ORM 的 Content.id 恒有；此处补上以免测试替身比真实对象更"瘦"）
+        desc = generate_photo_description(
+            SimpleNamespace(id="probe-content", extra={}), image_path="data/tmp/ai_tag_probe.jpg"
+        )
         assert 0 < len(desc) <= MAX_DESC_LEN
 
     def test_not_configured_explicit_path(self, monkeypatch):

@@ -130,6 +130,13 @@ def test_heif_has_own_mime_and_upload_exts_subset_of_mime_table():
     assert content_type_for("photos/U1/202609/a.HEIF") == "image/heif"  # 大小写不敏感
     missing = sorted(e for e in ALLOWED_PHOTO_EXTS if e not in _CONTENT_TYPES)
     assert missing == [], f"受理白名单里这些扩展名缺 MIME 映射（会回落 image/jpeg）: {missing}"
+    # D02-9 收口（2026-09-25 拍板「按建议来」+ 库内实测分布）：GIF 不支持 ⇒
+    # MIME 表不保留**不可达条目**（受理层两条链路都不产出 `.gif` 键）。
+    # 若将来要放开 GIF：先补 `file_magic` 魔数 + 缩略图取首帧，再连同本行一起开。
+    assert ".gif" not in _CONTENT_TYPES, "GIF 未支持受理，MIME 表不应留不可达条目"
+    # 反向：实测有 194 个 `.heic` 在用（iPhone）⇒ 受理面与 MIME 面都必须保留 HEIF 族
+    assert {".heic", ".heif"} <= set(_CONTENT_TYPES)
+    assert {".heic", ".heif"} <= ALLOWED_PHOTO_EXTS
 
 
 # ---------------------------------------------------------------------------

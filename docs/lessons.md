@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-09-25 21:24 · commit 56dac34 · ts=1790342651
+- **错误**：D10-8 给照片描述加确定性抽样（读 content.id）后，全量门禁红在一条与本次改动无关的老测试上：test_ba3_ai_chain 用 SimpleNamespace(extra={}) 当假内容对象，没有 id
+- **根因**：单元测试替身只补了被测代码'当时用到'的字段（extra），一旦被测代码新增字段访问（id）就炸；这类失败与业务语义无关，纯属替身比真实对象（ORM Content）更瘦
+- **修复**：给该替身补 id='probe-content'（并在注释里说明'假对象不应比真实对象更瘦'）；保留生产代码的严格 content.id（不做 getattr 兜底——那会把真 bug 藏起来）
+- **相关文件**：backend/tests/test_ba3_ai_chain.py
+- **教训**：改生产代码新增字段访问时，先搜一遍测试替身（SimpleNamespace/fake dict）：**给替身补齐字段**，不要用 getattr 兜底把缺失掩盖掉
+
+---
+
 ### 2026-09-25 21:07 · commit ce71eb7 · ts=1790341679
 - **错误**：新增 DELETE /api/v1/interview/profile 后轴 1 报「同路径方法不一致（1 条）」：契约快照重导了、但契约**文档表**没同步
 - **根因**：本仓有两条契约登记面：机器面 docs/openapi.json（有 gen_openapi --check 兜）与**人读面** docs/OpenAPI契约.md 的路径/方法表格（无生成器，须手改）。新增路由只想到重导快照，漏了手改文档 ⇒ 轴 1 拿文档表对拍后端路由，当场报出
