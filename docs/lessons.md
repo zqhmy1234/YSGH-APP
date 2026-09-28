@@ -189,6 +189,15 @@
 
 ---
 
+### 2026-09-24 17:10 · commit 1308550 · ts=1790241055
+- **错误**：编辑 backend/scripts/*.py 时把文档字符串里的 C:/Users/ghf/Pictures/Screenshots 改写成 C:\Users\ghf\Pictures\Screenshots（正斜杠改反斜杠），导致两个脚本直接 SyntaxError: (unicode error) unicodeescape ... truncated \UXXXXXXXX escape，review_agent 门禁 syntax 项失败
+- **根因**：Python 模块 docstring 是普通（非 raw）字符串字面量，其中的 \U 会被当作 Unicode 转义序列（\UXXXXXXXX）解析；Windows 路径 C:\Users\... 正好以 \U 开头，且后续不是 8 位十六进制 → 语法错误。同理 \N、\x 等也会中招
+- **修复**：docstring / 普通字符串里写 Windows 路径一律用正斜杠（C:/Users/...）或双反斜杠；只有 r"..." 原始字符串才能安全地用单反斜杠。修复后用 python -m py_compile 与 ruff 双重验证
+- **相关文件**：backend/scripts/seed_echo_today.py, backend/scripts/reinject_missing_photos.py
+- **教训**：在 Python 非 raw 字符串（含 docstring）里写 Windows 反斜杠路径 = 语法错误；路径一律用正斜杠
+
+---
+
 ### 2026-09-24 16:27 · commit f333430 · ts=1790238423
 - **错误**：B5.2f-2e 把 saving 状态迁入 useVoiceRecord.uts 时方法体写了 this.saving.value 却漏声明 saving 字段：HBuilderX 编译报绿（GAP-1 只覆盖语法不覆盖符号解析），轴 6 也只查跨模块 import、管不到类成员——两道假绿面同时放过，真机 submitVoice 必 undefined 崩溃
 - **根因**：编译门不覆盖符号解析（GAP-1 已证）+ 静态门禁只覆盖『跨模块符号』维度，缺『类成员解析』维度；生成式改写缺少『类成员声明集 vs this.X 使用集』的静态体检
@@ -502,9 +511,6 @@
 - **修复**：client/AndroidManifest.xml 补 android:usesCleartextTraffic=true + tools:replace；出包前置门 deploy/scripts/preflight_pack.ps1 增加明文放行与 http 口径自洽检查
 - **相关文件**：client/AndroidManifest.xml
 - **教训**：凡「配置项已就绪/已生效」类宣称，唯一证据是 grep 代码，文档口径不可作为实现证据
-
----
-
 ### 2026-09-13 23:02 · commit f1a2843 · ts=1789311758
 - **错误**：修复阻断项后登记教训，但教训文本若含 password 赋值字面量会二次触发 pre-commit 密钥门禁；且每次失败提交刷新 last-failure.json 时间戳，导致早于最后一次失败的教训登记仍被阻断
 - **根因**：密钥扫描正则会匹配教训文本里的 password 赋值（password 后接引号包裹的值）；lessons 强制登记把 last-failure 时间戳作为放行条件，失败提交会持续前移该时间戳
