@@ -19,7 +19,7 @@
 # ⚠️ 两种拓扑，按需选一种（服务名不冲突，可共存）：
 #
 #   【A · 容器化】← 本项目实际采用的部署方式（2026-09-28 用户拍板）
-#     业务进程也跑容器：`--profile app` 起 backend + worker 两个容器。
+#     业务进程也跑容器：`--profile app` 起 backend + worker + agent 三个容器。
 #     配套：宿主 nginx 监听 8010 → 反代到本机的 API_UPSTREAM_PORT（默认 8011）。
 #     对宿主的要求最低：**宿主不需要 Python**（依赖与迁移都在镜像/容器里）。
 #     ⚠️ 内存账必须重算：模型是**进程内单例、不跨进程共享**，两个业务进程各吃一份
@@ -171,6 +171,10 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-yishu}
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
+      # 2026-09-28（agent 接线）：反代目标必须写成**服务名**。
+      #   `.env` 里是 http://127.0.0.1:8300（宿主视角，拓扑 B 用），但容器内 127.0.0.1
+      #   是它自己 ⇒ 照抄就又是一次「静默连不上」（与上面三个 URL 同一类坑）。
+      AGENT_SERVICE_BASE_URL: http://agent:8300
     volumes: &app-volumes
       # 模型资产以只读挂载进入（不烘进镜像，避免镜像膨胀到数 GB）
       - ../backend/models:/app/models:ro
@@ -210,3 +214,53 @@ services:
     depends_on: *app-depends
     command: ["python", "-m", "app.workers.worker", "high", "low"]
     mem_limit: ${WORKER_MEM_LIMIT:-4g}
+
+  # ---------------------------------------------------------------------------
+  # Agent 服务（AG5 接线；2026-09-28 新增）—— 拓扑 A 下的必需组件（内测要「AI 对话页」）
+  #   后端 `POST /api/v1/chat/messages` 反代调它（唯一出口：
+  #   backend/app/services/external/agent.py → POST /v1/chat + GET /health）。
+  #   缺它的后果：对话接口返回 502/504（后端刻意**不伪造回复**），客户端 AI 对话页拿不到回复。
+  #
+  #   ⚠️ 四条必须理解的差异，否则必然踩（前三条都是"静默"型）：
+  #   1. **不 publish 端口**：agent 自身**不鉴权用户身份**，只校验一个共享 token
+  #      （agent/src/main.py:106-109 比对 X-Agent-Token），且它另有 /api/* 管理面
+  #      **完全不校验 token**（agent/src/web/api_routes.py）⇒ 绝不可对外暴露。
+  #      对外入口只有 宿主 nginx → backend，客户端只认后端的 JWT。
+  #   2. **DATABASE_URL 必须是「不带 +psycopg」的形态**：agent 的
+  #      src/storage/memory/memory_saver.py:37 把这个串**直接交给 `psycopg.connect()`**，
+  #      而 psycopg3 只认 `postgresql://` / `postgres://` 前缀。给 `postgresql+psycopg://`
+  #      （backend 的写法）会让 langgraph checkpointer 被 except 吞掉并**静默降级成
+  #      内存态 MemorySaver**（只有一行 warning "data will not persist across restarts"）
+  #      ⇒ 多轮上下文不跨重启持久化，而接口一切正常。故此处刻意与 backend 写法不同。
+  #   3. **百炼 key 必须与后端是不同账号**：两边变量名都叫 DASHSCOPE_API_KEY，
+  #      若直接复用，agent 会拿后端账号的 key 去调（**不会报错** —— 两边都是有效 key），
+  #      只是走错账号的配额/端点。故 .env 里用 AGENT_DASHSCOPE_API_KEY 单独存放，
+  #      在这里改名注入。（上游 .env.example:11-15 明确要求 Token Plan 账号。）
+  #   4. 不需要 Redis / Qdrant（agent/src 对 REDIS_/QDRANT_ 零命中），也不需要模型卷
+  #      （模型走远端百炼 API）—— 与 backend/worker 的挂载刻意不同。
+  # ---------------------------------------------------------------------------
+  agent:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agent
+    image: yishu-agent:local
+    container_name: yishu-agent
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: *app-envfile
+    environment:
+      # 见上面第 2 条：**不带 +psycopg**
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-yishu}
+      # 与 backend 侧**同名同值**（backend 读 AGENT_SERVICE_TOKEN 并发 X-Agent-Token 头）。
+      # 缺失即拒绝启动（fail-closed）：这个 token 由 bootstrap.sh 自动生成，不需要人工去要。
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?AGENT_SERVICE_TOKEN 未设置：backend 与 agent 必须共享同一值（bootstrap.sh 会自动生成）}
+      # 见上面第 3 条：改名注入 **另一个账号** 的 key
+      DASHSCOPE_API_KEY: ${AGENT_DASHSCOPE_API_KEY:?AGENT_DASHSCOPE_API_KEY 未设置：agent 必须用与后端不同的百炼账号 key（见 deploy/.env.production.template §7）}
+      DASHSCOPE_WORKSPACE_ID: ${AGENT_DASHSCOPE_WORKSPACE_ID:-}
+      DASHSCOPE_REGION: ${AGENT_DASHSCOPE_REGION:-cn-beijing}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # agent 是薄 API 层（无本地模型、无 torch），内存需求远低于 backend/worker
+    mem_limit: ${AGENT_MEM_LIMIT:-768m}

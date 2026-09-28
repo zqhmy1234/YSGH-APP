@@ -67,6 +67,19 @@ if [[ ! -f "${DEPLOY_DIR}/.env" ]]; then
 	else
 		PG_PW="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 	fi
+	# 2026-09-28：AGENT_SERVICE_TOKEN 也在这里生成。
+	#   它是 backend ↔ agent 之间的**共享密钥**（backend 发 X-Agent-Token 头，agent 校验），
+	#   两侧必须同名同值 —— 放在同一个 .env 里就天然满足，不会配歪。
+	#   它是**自洽**的随机串（不依赖任何外部账号），所以交给脚本生成最合适；
+	#   compose 里用 ${AGENT_SERVICE_TOKEN:?...} 强制要求非空，此处生成即满足，无需人工去要。
+	#   ⚠️ 但 agent 的百炼 key（AGENT_DASHSCOPE_API_KEY）**必须人工提供**（另一个账号），
+	#      本最小版不生成它 ⇒ 跑 `--profile app` 时 compose 会以明确信息拒绝启动，这是预期。
+	AGENT_TOKEN=""
+	if command -v openssl >/dev/null 2>&1; then
+		AGENT_TOKEN="$(openssl rand -hex 32)"
+	else
+		AGENT_TOKEN="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+	fi
 	cat > "${DEPLOY_DIR}/.env" <<EOF
 # 本文件由 bootstrap.sh 自动生成（最小版：仅够拉起三个依赖服务）
 # 生产部署请用 deploy/.env.production.template 的完整版本覆盖（见 S3 卡 / deploy/RUNBOOK.md）
@@ -78,6 +91,8 @@ REDIS_PORT=6379
 QDRANT_HTTP_PORT=6333
 QDRANT_GRPC_PORT=6334
 API_PORT=8010
+# backend ↔ agent 共享密钥（两侧同名同值；见 docker-compose.yml 的 agent 服务）
+AGENT_SERVICE_TOKEN=${AGENT_TOKEN}
 EOF
 	chmod 600 "${DEPLOY_DIR}/.env"
 	log "已生成 deploy/.env（权限 600）"
@@ -157,12 +172,19 @@ cat <<'NEXT'
 [bootstrap] 完成（三个依赖服务 + 数据库就绪）。下一步按你选的拓扑走：
 
   【A · 容器化】← 本项目采用的部署方式（2026-09-28 拍板）
+    0) 在 deploy/.env 里补 agent 的百炼 key（🔴 **必须与后端不同账号**）：
+         AGENT_DASHSCOPE_API_KEY=<Token Plan 账号的百炼 key>
+       （AGENT_SERVICE_TOKEN 本脚本已自动生成，两侧同名同值、不用管；
+         缺 AGENT_DASHSCOPE_API_KEY 时 compose 会以明确信息拒绝启动 —— 这是刻意的 fail-closed）
     1) bash deploy/scripts/pull_models.sh        # 预置 SenseVoice / BGE-M3 / 校验 SetFit
     2) docker compose -f deploy/docker-compose.yml --profile app up -d --build
-                                                 # 起 backend(宿主 127.0.0.1:API_UPSTREAM_PORT) + worker
+                                                 # 起 backend(宿主 127.0.0.1:API_UPSTREAM_PORT)
+                                                 #   + worker + agent（agent **不对外暴露端口**）
     3) 宿主 nginx：监听 8010 → 反代 127.0.0.1:8011
        cp deploy/nginx/ysg.conf /etc/nginx/conf.d/ && nginx -t && systemctl reload nginx
     4) bash deploy/scripts/healthcheck.sh        # 三依赖 + API + DB 表 自证
+       # 另可单独验 agent（AI 对话页依赖它；返回 db_configured:true 才算通）：
+       #   docker compose -f deploy/docker-compose.yml exec agent curl -fsS http://127.0.0.1:8300/health
 
   【B · 宿主 systemd】← 仓库原作者方案，仍然可用
     1) bash deploy/scripts/pull_models.sh

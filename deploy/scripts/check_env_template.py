@@ -33,6 +33,14 @@ NON_CONFIG_EXACT = {
     "API_UPSTREAM_PORT",
     "BACKEND_MEM_LIMIT",
     "WORKER_MEM_LIMIT",
+    # 2026-09-28 新增（AG5 · agent 服务接线）：下面 4 个是 **agent 服务自己的**配置，
+    # 不是本后端 config.py 的字段 —— 它们放在同一份 .env 里，只因 compose 要从这里读插值。
+    # （注意 AGENT_SERVICE_BASE_URL / AGENT_SERVICE_TOKEN / AGENT_SERVICE_TIMEOUT_S
+    #  **不在此列** —— 那三个是 backend 的 config 字段，由 config.py 兜底校验，别误加。）
+    "AGENT_DASHSCOPE_API_KEY",
+    "AGENT_DASHSCOPE_WORKSPACE_ID",
+    "AGENT_DASHSCOPE_REGION",
+    "AGENT_MEM_LIMIT",
 }
 
 _KEY_RE = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
