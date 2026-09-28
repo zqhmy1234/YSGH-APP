@@ -1,4 +1,27 @@
 -- ============================================================
+-- ⚠️ 本文件**不是建库权威**，不要用它新建后端库（2026-09-24 标注）
+--
+-- 定位：**只读参考 + CI 测试库建库源**。
+--   · CI 的 full-gate 用它建测试库（`.github/workflows/ci.yml:353`）
+--   · CI 另有 weekly 漂移巡检比对它与 alembic 链（schema-drift-weekly job）
+--   ⚠️ 因此本文件**不能删**，改动前请先确认上述两处仍可用。
+--
+-- 为什么不能拿它建后端库（2026-09-24 实测）：
+--   1. **缺 `capsules` 表**（`grep -ci capsule` = 0），而 capsules 被 6 个后端文件
+--      引用（api/capsules.py、db/models/capsule.py…）→ 建出来胶囊功能全废
+--   2. 它是**中间态快照**：有 `client_event_id`（比某条迁移新）却缺 `capsules`
+--      （比另一条迁移旧）—— 与 alembic 链**双向都不可叠加**：
+--        · 空库直接 `alembic upgrade head` → `relation "contents" does not exist`
+--        · 先跑本文件再 `alembic upgrade head` → `DuplicateColumn: client_event_id`
+--   3. 表数 38，但后端实际需要 **37**（= 25 张 ORM 表 + 11 张裸 SQL 表 + alembic_version）
+--
+-- ✅ 正确的建库方式：`python scripts/init_db.py`
+--    说明见脚本头注释与本仓 `docs/` / 技术文档「建库文档」
+--
+-- 权威关系（P2-05）：ORM（`app/db/models/`，唯一权威）
+--                 > alembic 迁移链（`backend/migrations/`）
+--                 > 本文件（只读参考）
+-- ============================================================
 -- 忆述光华 MVP · PostgreSQL Schema v3（38 表 11 域）
 -- 依据：《忆述光华_数据库Schema_v3.md》（2026-08-18 权威版）
 -- 全局约定：
