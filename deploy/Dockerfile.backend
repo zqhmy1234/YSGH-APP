@@ -38,6 +38,17 @@ RUN pip install -r requirements.txt
 # 业务代码（含 alembic.ini 与 migrations/，便于容器内跑迁移）
 COPY backend/ ./
 
+# 建库脚本（2026-09-28 新增）—— 路线 B 的关键一环：
+#   `scripts/init_db.py` 在**仓库根**，不在 backend/ 下，故上面的 COPY 覆盖不到它；
+#   而容器化部署的前提是"**宿主不需要 Python**"，所以建库必须能在容器里跑。
+#   落在 /app/init_db.py 是刻意的 —— 脚本内部按自身位置推断 _BACKEND_DIR=/app，
+#   从而找到 /app/sql/schema.sql（第③步抽裸 SQL 表要用）。
+#   用法（由 deploy/scripts/bootstrap.sh 调用，管理员串只在这一次 run 里注入）：
+#     docker compose -f deploy/docker-compose.yml run --rm \
+#       -e YSG_ADMIN_DATABASE_URL=postgresql://<超级用户>:<口令>@postgres:5432/postgres \
+#       backend python /app/init_db.py
+COPY scripts/init_db.py /app/init_db.py
+
 # 画像维度枚举集（D07-1 · P0，2026-09-25 功能修复波）：
 #   `services/profile_schema.py` 的枚举集 JSON 落在**仓库根 docs/**（`_DEFAULT_ENUM_DIR`），
 #   而上面只 COPY 了 backend/ ⇒ 容器内首次 `get_schema()` 抛 FileNotFoundError

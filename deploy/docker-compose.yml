@@ -16,13 +16,31 @@
 #   Qdrant 未配 API Key（应用侧 config 只有 qdrant_url、无 api_key 字段）——仅在内网绑定时可接受；
 #   若将来允许跨机访问，必须先加 QDRANT__SERVICE__API_KEY 并同步应用配置。
 #
-# ⚠️ 规格铁律（docs/服务器规格核算_20260921.md §2）：
-#   业务进程跑在**宿主**（systemd，见 deploy/systemd/），不跑在容器里——模型（BGE-M3/SetFit/SenseVoice）
-#   需预置在宿主磁盘并以单进程加载；每多一个进程即多一份 ~1.2G，16G 机器会 OOM。
-#   `app` profile 下的 backend 服务仅供**可复现/CI** 使用，当前单机方案默认不启用。
+# ⚠️ 两种拓扑，按需选一种（服务名不冲突，可共存）：
+#
+#   【A · 容器化】← 本项目实际采用的部署方式（2026-09-28 用户拍板）
+#     业务进程也跑容器：`--profile app` 起 backend + worker 两个容器。
+#     配套：宿主 nginx 监听 8010 → 反代到本机的 API_UPSTREAM_PORT（默认 8011）。
+#     对宿主的要求最低：**宿主不需要 Python**（依赖与迁移都在镜像/容器里）。
+#     ⚠️ 内存账必须重算：模型是**进程内单例、不跨进程共享**，两个业务进程各吃一份
+#        BGE-M3(~1.2G)；16G 机器够不够以实测为准（docs/服务器规格核算_20260921.md §7）。
+#
+#   【B · 宿主 systemd】← 仓库原作者的方案（见 deploy/systemd/），仍然可用
+#     业务进程跑宿主（yishu-api / yishu-worker），容器只承载下面三个依赖服务。
+#     对宿主的要求更高：Python 3.11 + venv + 4-8G 依赖（见 deploy/RUNBOOK.md §1.1）。
+#
+#   两套拓扑**共用**下面 postgres/redis/qdrant 三个服务；backend/worker 只在 A 下启用。
 # ============================================================================
 
 name: yishu
+
+# 日志轮转锚点：容器日志若不轮转会把 60G 系统盘涨满（本文件原本没有任何 logging 配置）。
+# 用法：各服务写 `logging: *default-logging`。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # ---------------------------------------------------------------------------
@@ -35,6 +53,7 @@ services:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     container_name: yishu-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未设置：请先在 deploy/.env 配置（bootstrap.sh 可自动生成）}
@@ -82,6 +101,7 @@ services:
     image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: yishu-redis
     restart: unless-stopped
+    logging: *default-logging
     command: >
       redis-server
       --appendonly yes
@@ -102,14 +122,17 @@ services:
 
   # ---------------------------------------------------------------------------
   # Qdrant（named vectors：BGE-M3 dense + sparse）
-  # 镜像 tag 用变量兜底为 latest：**首次 bring-up 成功后请把实际 tag/digest 回填到 deploy/.env**，
-  # 避免长期漂移（不在此处猜一个未必存在的具体版本号）。
+  # 镜像 tag **已钉死为 v1.19.0**（2026-09-28 改）——理由：CI 钉的是同一版本
+  # （.github/workflows/ci.yml），且 backend/requirements.txt 要求 qdrant-client>=1.19；
+  # 旧 server 与新 client 不兼容会导致 payload 刷新 404（docs/lessons.md 有事故记录）。
+  # 原写法兜底 `latest` 会让"上机时装到什么版本"不可复现。要变更请显式改 QDRANT_IMAGE。
   # healthcheck 用官方 compose 示例的 bash /dev/tcp 探活（镜像自带 bash）。
   # ---------------------------------------------------------------------------
   qdrant:
-    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.19.0}
     container_name: yishu-qdrant
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "127.0.0.1:${QDRANT_HTTP_PORT:-6333}:6333"
       - "127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334"
@@ -124,10 +147,14 @@ services:
     mem_limit: ${QDRANT_MEM_LIMIT:-768m}
 
   # ---------------------------------------------------------------------------
-  # 可选：后端容器（profile=app）
-  # 当前单机方案默认**不用**（业务进程走 deploy/systemd/ 的宿主进程）；保留此服务用于：
-  #   ① CI/本地可复现环境  ② 将来多机拆分时的基线镜像
-  # 注意容器内访问依赖服务用**服务名**（POSTGRES_HOST=postgres 等），与宿主侧 127.0.0.1 不同。
+  # 业务进程容器（profile=app）—— 拓扑 A 使用；拓扑 B（宿主 systemd）下不启用
+  #
+  # 🔴 2026-09-28 修正：原写法用 POSTGRES_HOST/REDIS_HOST/QDRANT_HOST 覆写连接，
+  #   但**应用根本不读这三个变量**（backend/app 零引用；config.py 只有
+  #   database_url / redis_url / qdrant_url 三个整串字段）⇒ 容器会拿 .env 里的
+  #   宿主形态 URL（127.0.0.1）去连，而 127.0.0.1 在容器内是它自己 ⇒ 连不上。
+  #   而且**症状是静默的**：容器正常起、/healthz 也返回 200（引擎惰性连接、healthz 不碰库），
+  #   直到第一个碰库的请求才失败。现改为**显式覆写三个 URL**（值用服务名）。
   # ---------------------------------------------------------------------------
   backend:
     profiles: ["app"]
@@ -137,25 +164,49 @@ services:
     image: yishu-backend:local
     container_name: yishu-backend
     restart: unless-stopped
-    depends_on:
+    logging: *default-logging
+    env_file: &app-envfile
+      - .env
+    environment: &app-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-yishu}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+    volumes: &app-volumes
+      # 模型资产以只读挂载进入（不烘进镜像，避免镜像膨胀到数 GB）
+      - ../backend/models:/app/models:ro
+      - ./data/hf-cache:/root/.cache/huggingface
+    depends_on: &app-depends
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      # 覆盖宿主侧 URL：容器内走服务名（S3 模板里的 127.0.0.1 形态仅对宿主进程有效）
-      POSTGRES_HOST: postgres
-      REDIS_HOST: redis
-      QDRANT_HOST: qdrant
+    # 宿主 nginx 监听 8010 → 反代到 API_UPSTREAM_PORT（默认 8011）。
+    # 不让容器直接占 8010 是给 nginx 留位置：将来切 HTTPS / 限制上传体积 / 透传真实 IP 都要它。
     ports:
-      - "127.0.0.1:${API_PORT:-8010}:8010"
-    volumes:
-      # 模型资产以只读挂载进入（不烘进镜像，避免镜像膨胀到数 GB）
-      - ../backend/models:/app/models:ro
-      - ./data/hf-cache:/root/.cache/huggingface
+      - "127.0.0.1:${API_UPSTREAM_PORT:-8011}:8010"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]
     mem_limit: ${BACKEND_MEM_LIMIT:-6g}
+
+  # ---------------------------------------------------------------------------
+  # RQ worker（2026-09-28 新增）—— 拓扑 A 下的**必需**组件，原文件整个漏了
+  #   没有它：管线只入队不消费 ⇒ 内容永远 processing、向量库永远为空、检索永远无结果，
+  #   而且**不报错**（这是最容易误判成"代码坏了"的一类静默失效）。
+  #   必须用 `python -m app.workers.worker`（worker.py 里 with_scheduler=True 是
+  #   RQ Retry 真正生效的前提），不要用裸 `rq worker`。
+  #   worker 也要吃模型（分类/嵌入），故与 backend 挂**同一份**模型与 HF 缓存。
+  #   ⚠️ 两个业务进程 = 两份 BGE-M3（进程内单例不可共享），内存上限务必上机实测。
+  # ---------------------------------------------------------------------------
+  worker:
+    profiles: ["app"]
+    image: yishu-backend:local
+    container_name: yishu-worker
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: *app-envfile
+    environment: *app-env
+    volumes: *app-volumes
+    depends_on: *app-depends
+    command: ["python", "-m", "app.workers.worker", "high", "low"]
+    mem_limit: ${WORKER_MEM_LIMIT:-4g}

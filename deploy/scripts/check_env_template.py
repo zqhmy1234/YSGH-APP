@@ -25,7 +25,13 @@ TEMPLATE = ROOT / "deploy" / ".env.production.template"
 
 # 这些键属于「非 config」——compose 容器参数 与 待接 key 备忘，config.py 里没有它们是**正确的**
 NON_CONFIG_PREFIXES = ("POSTGRES_", "REDIS_", "QDRANT_", "PG_", "SMS_", "UNI_PUSH_")
-NON_CONFIG_EXACT = {"API_PORT"}
+NON_CONFIG_EXACT = {
+    "API_PORT",
+    # 2026-09-28 新增（拓扑 A · 容器化）：宿主 nginx 与容器的端口分工、两个业务容器的内存护栏
+    "API_UPSTREAM_PORT",
+    "BACKEND_MEM_LIMIT",
+    "WORKER_MEM_LIMIT",
+}
 
 _KEY_RE = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
 
