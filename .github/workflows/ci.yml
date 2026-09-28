@@ -194,46 +194,28 @@ jobs:
               print(f"::warning file=backend/requirements.txt::{len(vulns)} 个已知漏洞: {'; '.join(items)}")
           EOF
 
-      - name: Init PostgreSQL (yishu 隔离库 + schema, docker exec psql)
-        # T5（2026-08-27 批次 H2 R7）：PG 就绪/迁移校验改 docker exec psql 形态——
-        #   免 apt-get install postgresql-client（省时、免 apt 网络依赖）；psql/pg_isready
-        #   由 pgvector 镜像自带，`docker exec` 直接进 service 容器执行。
-        # #13 教训（多用户密码内联）：每条命令用 `-e PGPASSWORD=<该用户密码>` 内联，
-        #   绝不收敛成步骤级单一 env 密码（曾致 -U yishu_app 拿 admin 密码认证失败 exit 2）。
-        # 注：这些是 CI 容器内测试密码（非生产密钥），明文在仓库无新增泄露面。
+      - name: Init PostgreSQL（yishu 隔离库 + 全量 schema，走 scripts/init_db.py 权威路径）
+        # 2026-09-28 重构：原步骤用 `setup_pg.sql + schema.sql` 手工建库，并靠
+        #   `docker ps -qf "name=postgres"` 猜 service 容器句柄 —— 两处都是坑：
+        #   ① 句柄取不到 ⇒ 整步死在第一步、后面 16 个步骤从未跑过（届时日志里没有任何
+        #      docker 报错，只是没有该名字的运行中容器）。
+        #   ② 就算取到了，建出来的库**相对 ORM 权威是残缺的**：schema.sql 缺 5 张 ORM 表
+        #      （capsules / chat_messages / knowledge_collections / memories / memory_categories）
+        #      与 5 个 contents 列（duration / remark / size_bytes / tags_json / ai_description），
+        #      实测 api_smoke 挂 `column contents.duration does not exist`、
+        #      test_db_integration::test_schema_tables_present 报缺表。
+        #      —— 这不是意外：`backend/sql/schema.sql` 自己的头部（2026-09-24）就写着
+        #      「不是建库权威，不要用它新建后端库」「✅ 正确的建库方式：python scripts/init_db.py」，
+        #      而本步骤恰恰在做它明令禁止的事。
+        #   现改为直接调 `scripts/init_db.py`（= ORM create_all + 裸 SQL 表 + alembic stamp），
+        #   与本地/服务器**同源** —— 「本地全绿 CI 必挂」这一整类漂移事故从结构上消失。
+        #   · 角色名/密码/库名由它从 job 级 `DATABASE_URL` 解析（两侧自动一致，无需再内联密码）
+        #   · pgvector 非 trusted 扩展由它改用**超级用户连目标库**创建（自己踩过这个坑并记在注释里）
+        #   · 超级用户连接串用 `--admin-url` 传（service 容器口径 postgres/admin）
+        #   不再需要 docker exec / pg_isready / psql —— service 容器已把 5432 映射到 runner。
         run: |
-          # 2026-09-28：原写法 `docker ps -qf "name=postgres"` 是**按名字猜 service 容器**——
-          #   它默默假设 Actions 给容器起的名字里含 "postgres"。实测整步就死在这里（CID 为空、
-          #   且现场没有任何 docker 报错，说明 daemon 正常、只是没有叫这个名字的运行中容器）。
-          #   改为三级取句柄，逐级兜底，并在彻底取不到时**打印现场**（含已退出容器），
-          #   不再让下一次失败继续是「盲猜」（教训：CI 疑难失败先加诊断再猜）。
-          CID="${{ job.services.postgres.id }}"
-          if [ -z "$CID" ]; then
-            CID=$(docker ps -qf "name=postgres" | head -n1)
-          fi
-          if [ -z "$CID" ]; then
-            CID=$(docker ps -qf "ancestor=pgvector/pgvector:pg16" | head -n1)
-          fi
-          if [ -z "$CID" ]; then
-            echo "::error::postgres service 容器未找到（job.services.postgres.id / name=postgres / ancestor=pgvector 三级均为空）"
-            echo "--- docker ps -a 现场（含已退出容器）---"
-            docker ps -a --format 'table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}'
-            echo "--- 本地镜像 ---"
-            docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | head -n 20
-            exit 1
-          fi
-          echo "postgres container: $CID"
-          for i in $(seq 1 20); do
-            docker exec "$CID" pg_isready -U postgres >/dev/null 2>&1 && { echo "postgres ready (try $i)"; break; }
-            echo "[$i] postgres 未就绪，5s 后重试..."
-            sleep 5
-          done
-          # setup_pg.sql：建角色 yishu_app + 建库 yishu + 授权 + vector 扩展（\connect yishu 收尾）
-          docker exec -i -e PGPASSWORD=admin "$CID" psql -U postgres -v ON_ERROR_STOP=1 < scripts/setup_pg.sql
-          # pgvector 非 trusted 扩展需超级用户安装（yishu_app 无权限）；schema.sql 里 IF NOT EXISTS 幂等跳过
-          docker exec -e PGPASSWORD=admin "$CID" psql -U postgres -d yishu -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector"
-          docker exec -i -e PGPASSWORD=yishu_app_2026 "$CID" psql -U yishu_app -d yishu -v ON_ERROR_STOP=1 < backend/sql/schema.sql
-          docker exec -e PGPASSWORD=yishu_app_2026 "$CID" psql -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
+          python scripts/init_db.py \
+            --admin-url 'postgresql+psycopg://postgres:admin@localhost:5432/postgres'
 
       - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
         run: python scripts/generate_test_photos.py
