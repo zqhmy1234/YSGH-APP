@@ -15,10 +15,14 @@
 
 【本脚本做的 5 步】—— 2026-09-24 实测跑通的配方，现固化成一条命令
   ① 超级用户建角色 + 建库 + vector 扩展（等价 scripts/setup_pg.sql）
-  ② ORM `Base.metadata.create_all`              → 25 张（列定义权威）
-  ③ 从 `backend/sql/schema.sql` 抽 14 张裸 SQL 表 → 补 profile_l2_evidence 等
+  ② ORM `Base.metadata.create_all`              → 全部 ORM 表（列定义权威）
+  ③ 从 `backend/sql/schema.sql` 抽**裸 SQL 表**  → 补 profile_l2_evidence 等
+     （清单见下方 NON_ORM_TABLES —— 只列"有代码用但没有 ORM 模型"的表）
   ④ 最后两条**幂等**迁移的 SQL                    → capsules 索引 + event_edit_log 序列自愈
-  ⑤ `alembic stamp head`                        → 版本标记对齐（b8c9d0e1f2a3）
+  ⑤ `alembic stamp head`                        → 版本标记对齐（head 动态取，不写死）
+
+  ⚠️ 本文件**刻意不写死表数与 head 值** —— 它们随 ORM/迁移演进（曾因写死 25/14/b8c9d0e1f2a3
+     而在三次代码推进后全部过期）。实际数字由脚本运行时打印：结尾的「冒烟检查」会报表数。
 
 【用法】
     cd backend && python ../scripts/init_db.py                  # 建库（幂等，已有则跳过）
@@ -64,16 +68,22 @@ INFRA_ENV_PATH = _REPO_ROOT.parent / "infra" / "docker" / ".env"
 # 有代码在用、但**没有 ORM 模型**的表 —— 代码用裸 SQL 读写它们，所以
 # `Base.metadata.create_all` 建不出来（典型：profile_l2_evidence，见
 # backend/app/services/profile_annotator.py:278 的 INSERT）。
-# 这 11 张从 schema.sql 抽取 DDL 单独建。
+# 这 10 张从 schema.sql 抽取 DDL 单独建。
 #
 # ⚠️ 刻意**不含** app_settings / question_history / question_templates 三张 ——
 #   它们虽在 schema.sql 里有 DDL，但 (a) backend/app 里零引用、(b) 同时出现在
 #   baseline 迁移的 _LEGACY_EMPTY_TABLES 待删清单里。建了是死表，会让库表数与
-#   迁移链目标态不一致（37 → 40）。
+#   迁移链目标态不一致。
+#
+# ⚠️ `user_wechat_bindings` 已于 2026-09-25 补上 ORM 模型（db/models/wechat.py:67）
+#   → **必须从本清单移除**，否则 `create_all` 已建过它、这里的 `CREATE TABLE`
+#   （schema.sql 里没有 IF NOT EXISTS）必然报 already exists。更糟的是：在 2026-09-28
+#   修复 SAVEPOINT 之前，这一条失败会把整个事务毒化，导致其余 15 条**全部静默失效**。
+#   → 教训：本清单必须与 ORM 保持同步；新增 ORM 模型后要回来删对应条目。
 NON_ORM_TABLES: tuple[str, ...] = (
     "ai_request_logs", "api_cost_stats", "audit_log",
     "content_tags", "event_tags", "finetune_jobs", "guardrail_logs",
-    "profile_l2_evidence", "tags", "user_wechat_bindings", "voice_segments",
+    "profile_l2_evidence", "tags", "voice_segments",
 )
 
 # 迁移链里最后两条 —— 写成了**幂等自愈**（CREATE ... IF NOT EXISTS + 条件 setval），
@@ -98,6 +108,24 @@ _SMOKE_TABLES = (
 
 def _log(msg: str) -> None:
     print(msg, flush=True)
+
+
+def _tolerate_console_encoding() -> None:
+    """让 stdout/stderr 在中/日文 Windows 的 GBK 控制台下不再因 ✓ / ✗ 之类字符崩溃。
+
+    CP936（GBK）编码不含 U+2713/U+2717，直接 print 会抛
+    `UnicodeEncodeError: 'gbk' codec can't encode character '\\u2713'`，
+    且**恰好发生在建库中途**（角色/库刚建好、表还没建）—— 新人会以为脚本坏了。
+    这里把换不出去的字符降级成 `?`，保住进度与后续步骤。
+
+    注：若终端本身是 UTF-8（`PYTHONIOENCODING=utf-8` 或 Windows Terminal 设了 UTF-8），
+    本函数是空操作，符号正常显示。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):  # 非常规流（重定向到已关闭句柄等）
+            pass
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -334,17 +362,36 @@ def step3_non_orm_tables(dry_run: bool) -> tuple[int, int]:
             _log(f"    would create [{kind}] {name}")
         return (len(stmts), 0)
 
-    ok = skipped = 0
+    ok = benign = skipped = 0
+    fatal: list[str] = []
     engine = create_engine(settings.database_url)
     with engine.begin() as conn:
         for name, kind, stmt in stmts:
             try:
-                conn.execute(text(stmt))
+                # ⚠️ 每条语句必须各自一个 SAVEPOINT：否则单条失败会把**整个事务**标记为
+                # aborted，后续每条都报 `InFailedSqlTransaction` —— 那不是"跳过一条"，
+                # 而是"整批静默失效"（2026-09-28 实测：16 条全废、库只剩 31 张表）。
+                with conn.begin_nested():
+                    conn.execute(text(stmt))
                 ok += 1
             except Exception as exc:  # noqa: BLE001 —— 单条失败不中断整批（与项目其他脚本一致）
+                msg = str(exc)
+                if "already exists" in msg:
+                    benign += 1  # 重跑本脚本时的正常情况（DDL 没有 IF NOT EXISTS）
+                    continue
                 skipped += 1
-                _log(f"    [跳过] [{kind}] {name}: {str(exc)[:80]}")
-    return (ok, skipped)
+                if kind == "TABLE":
+                    fatal.append(f"{name}: {msg[:90]}")
+                _log(f"    [失败] [{kind}] {name}: {msg[:90]}")
+
+    if fatal:
+        # 表建不出来就是库不完整，必须**响亮地失败**，不能靠后面的冒烟检查兜（它只抽样 7 张）
+        raise SystemExit(
+            f"✗ 有 {len(fatal)} 张表创建失败，库不完整：\n    " + "\n    ".join(fatal)
+            + "\n  → 若报「already exists」之外的原因，多半是 ORM 模型与 schema.sql 已经分叉："
+              "该表若已有 ORM 模型，请从 NON_ORM_TABLES 里移除。"
+        )
+    return (ok + benign, skipped)
 
 
 def step4_idempotent_migrations(dry_run: bool) -> None:
@@ -397,6 +444,7 @@ def verify() -> bool:
 
 
 def main() -> int:
+    _tolerate_console_encoding()
     parser = argparse.ArgumentParser(
         description="忆述光华 · 一键建库（替代跑不通的 `alembic upgrade head`）"
     )
