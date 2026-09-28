@@ -7,7 +7,9 @@
 
 用法（仓库根）：
     python deploy/scripts/check_env_template.py
-退出码：0 = 对齐；1 = 存在真缺口或过期项（输出会逐条列出）。
+退出码（D14-18 统一口径，与 gen_openapi.py / audit_harness 一致）：
+    0 = 对齐；1 = 存在真缺口或过期项（输出会逐条列出）；
+    2 = **后端环境不可导入**（缺依赖 / 环境变量），本工具*无法判定* —— 不得当作「漂移」。
 
 判定规则：
   · **真缺口**（阻断）：config 有该字段，但模板里既没有生效行也没有注释行 → 部署时会漏配。
@@ -53,7 +55,18 @@ def main() -> int:
         (commented if is_comment else active).add(m.group(1).upper())
 
     sys.path.insert(0, str(ROOT / "backend"))
-    from app.core.config import Settings  # noqa: E402  延迟导入：先做文件存在性检查
+    try:
+        from app.core.config import Settings  # noqa: E402  延迟导入：先做文件存在性检查
+    except Exception as exc:  # noqa: BLE001
+        # 退出码 2 = 环境错误（本工具的既定口径），**不是**模板漂移。
+        # 为什么必须显式区分：`config.py` 依赖 pydantic / pydantic-settings，而 CI 的 fast-gate
+        # 只 `pip install ruff`（无后端依赖）⇒ 裸 ImportError 会以 exit 1 冒泡，调用方
+        # `review_agent.check_env_template()` 把「非 0」一律判成「env 模板与 config.py 漂移」
+        # ⇒ **环境缺失被伪装成代码问题**（2026-09-28 实测：fast-gate 连续红在此假象上，
+        # 真因只是缺 pydantic；同一 job 里的 openapi_snapshot 遇同因已能降级，此处不能更宽）。
+        print(f"[SKIP] 后端环境不可导入，无法读取 config 字段：{type(exc).__name__}: {exc}")
+        print("      → 需 pydantic + pydantic-settings，且 backend/ 位于仓库内（退出码 2 = 环境错误）")
+        return 2
 
     fields = {k.upper() for k in Settings.model_fields}
 

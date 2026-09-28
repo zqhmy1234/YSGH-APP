@@ -44,8 +44,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install ruff + env_template 判据的最小依赖
+        # 2026-09-28：`review_agent` 的 env_template 检查调用 deploy/scripts/check_env_template.py，
+        #   后者要 `import app.core.config`；config.py 只依赖 pydantic / pydantic-settings
+        #   （Settings 全部字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env 即可实例化）。
+        #   此前只 `pip install ruff` ⇒ 该检查恒因 ModuleNotFoundError 报「模板漂移」而**假红**，
+        #   真因是环境缺依赖、与模板内容无关。只补这两个包，不装全量 requirements。
+        run: pip install ruff pydantic pydantic-settings
 
       - name: Run static gate (syntax/lint/secrets/todos, no tests)
         run: python scripts/review_agent.py --full --skip-tests
@@ -197,9 +202,24 @@ jobs:
         #   绝不收敛成步骤级单一 env 密码（曾致 -U yishu_app 拿 admin 密码认证失败 exit 2）。
         # 注：这些是 CI 容器内测试密码（非生产密钥），明文在仓库无新增泄露面。
         run: |
-          CID=$(docker ps -qf "name=postgres" | head -n1)
+          # 2026-09-28：原写法 `docker ps -qf "name=postgres"` 是**按名字猜 service 容器**——
+          #   它默默假设 Actions 给容器起的名字里含 "postgres"。实测整步就死在这里（CID 为空、
+          #   且现场没有任何 docker 报错，说明 daemon 正常、只是没有叫这个名字的运行中容器）。
+          #   改为三级取句柄，逐级兜底，并在彻底取不到时**打印现场**（含已退出容器），
+          #   不再让下一次失败继续是「盲猜」（教训：CI 疑难失败先加诊断再猜）。
+          CID="${{ job.services.postgres.id }}"
           if [ -z "$CID" ]; then
-            echo "::error::postgres service 容器未找到（docker ps 过滤 name=postgres）"
+            CID=$(docker ps -qf "name=postgres" | head -n1)
+          fi
+          if [ -z "$CID" ]; then
+            CID=$(docker ps -qf "ancestor=pgvector/pgvector:pg16" | head -n1)
+          fi
+          if [ -z "$CID" ]; then
+            echo "::error::postgres service 容器未找到（job.services.postgres.id / name=postgres / ancestor=pgvector 三级均为空）"
+            echo "--- docker ps -a 现场（含已退出容器）---"
+            docker ps -a --format 'table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}'
+            echo "--- 本地镜像 ---"
+            docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | head -n 20
             exit 1
           fi
           echo "postgres container: $CID"

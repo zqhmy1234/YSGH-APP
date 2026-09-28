@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-09-28 18:46 · commit 951840e · ts=1790592360
+- **错误**：CI full-gate 第一步 Init PostgreSQL 即失败：docker ps -qf "name=postgres" 取到空 CID，报「postgres service 容器未找到」；日志里没有任何 docker 报错 ⇒ daemon 正常，只是没有该名字的运行中容器
+- **根因**：原写法按「容器名里含 postgres」猜 service 容器的句柄，是对 Actions 容器命名约定的隐式假设（T5 2026-08-27 引入，此后未见通过记录）；命名一旦不符就取不到，且失败分支不打印现场，只能盲猜
+- **修复**：改用官方 job context 的稳定句柄 ${{ job.services.postgres.id }}，再按 name=postgres / ancestor=pgvector/pgvector:pg16 两级兜底；三级皆空时先打印 docker ps -a 与 docker images 现场再 exit 1。本地已验证 YAML 合法（full-gate 17 步 / 3 个 service 正常解析）
+- **相关文件**：.github/workflows/ci.yml
+- **教训**：CI 里引用 service 容器要用 ${{ job.services.<name>.id }}，不要按容器名 grep；失败分支必须先打印现场（docker ps -a），否则下一次失败仍然是盲猜
+
+---
+
+### 2026-09-28 18:45 · commit 951840e · ts=1790592344
+- **错误**：CI fast-gate 恒红：review_agent 报「env 模板与 config.py 漂移」，而日志正文其实是一条 ModuleNotFoundError: No module named pydantic（2026-09-28 run 36396272905）
+- **根因**：deploy/scripts/check_env_template.py 要 import app.core.config（依赖 pydantic / pydantic-settings），但 fast-gate 只 pip install ruff；裸 ImportError 以 exit 1 冒泡，而 scripts/review_agent.py 把「退出码非 0」一律判成「模板漂移」⇒ 环境缺失被伪装成代码问题。同一 job 里的 openapi_snapshot 遇同一原因已能降级（gen_openapi.py 退出码 2），只有这一项没遵守 D14-18 口径
+- **修复**：① check_env_template.py 采纳 D14-18：导入失败 return 2 并打印 [SKIP] + 异常类名，不再裸崩；② review_agent.check_env_template() 对 2 降级放行（照抄 check_openapi_snapshot 的映射）；③ fast-gate 的 pip install 补 pydantic + pydantic-settings，让该检查真跑（Settings 全字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env）。实测：有依赖 exit 0 / 无依赖 exit 2 且门禁显示 [降级]
+- **相关文件**：deploy/scripts/check_env_template.py, scripts/review_agent.py, .github/workflows/ci.yml
+- **教训**：给门禁加「需要 import 业务包」的检查时，必须同时定义「环境不可用」的退出码并让调用方降级放行；否则任何缺依赖都会变成恒假红，把真问题淹没在噪音里
+
+---
+
 ### 2026-09-25 21:49 · commit 1b4da1b · ts=1790344175
 - **错误**：门禁报红却看不到失败用例名，花了 4 轮（看门禁输出→猜报告键→报告里找 FAILED→全量重跑 107s）才定位到 test_ba3_ai_chain 那条
 - **根因**：① pytest 输出顺序是「进度 → 失败摘要 → 覆盖率表（上百行）」，而 test_agent 与 review_agent 两处都做**尾部切片**（[-3500:]/[-1500:]）⇒ 恰好把 FAILED 行切掉，留下与失败无关的覆盖率噪音；② 报告 JSON 只有非结构化的 output 字段，没有 failed_tests；③ review_agent 只打印 tests 段前 8 行（还是噪音）
