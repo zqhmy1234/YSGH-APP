@@ -155,10 +155,18 @@ du -sh backend/models ~/.cache/huggingface                   # 5 磁盘分账
 | 每日 22:00 | 每日复盘生成 | `python backend/scripts/daily_review.py` | 幂等；**决策台账 §2.6**：系统 cron 而非代码内调度 |
 | 每日 03:30 | PG 备份 | `bash deploy/scripts/backup_pg.sh` | 见 `deploy/scripts/backup_pg.sh` 头部 cron 示例；RPO ≤24h |
 | 每日（低峰） | 30 天软删物理清理 | `backend/app/workers/cleanup_job.py` | **首跑先 dry-run** 确认影响范围 |
+| **每小时** | **失败/卡死任务重投** | `cd backend && python -m app.workers.requeue_job --older-than-seconds 3600 --limit 100` | 建议挂每小时第 7 分。🔴 不挂它：失败/卡死的任务**永久停在队列里**，且**不报错**（总账 A-1 那类静默失效） |
+| **每日 08:05** | **胶囊到期扫描（补扫兜底）** | `cd backend && python -c "from app.db.session import SessionLocal; from app.workers.capsule_scan import scan_due_capsules; db=SessionLocal(); print('due:', scan_due_capsules(db)); db.close()"` | 它**已内置惰性触发**（`GET /api/v1/capsules` 顺带扫描，30s 节流），故**不是静默失效**；此行只是兜底 |
 | 每周 | 孤儿对象扫描 | `orphan_scan` | **首跑先 dry-run** |
 | 每月/季度 | 恢复演练 | 见 `backup_pg.sh` 末尾附录 | 季度全流程演练（RTO ≤4h） |
 
+> ⚠️ **完整清单是 4 条 job**（复盘 / 清理 / **重投** / **胶囊补扫**）—— 本表原先漏了后两条，
+> 2026-09-29 补。容器拓扑（A）下的对应写法见 `技术文档/03_环境与运维/忆述光华_Docker生产部署文档_20260923.md` §8。
+
 验证：`crontab -l`；`tail -20 deploy/logs/backup.log` 出现「备份完成」+「归档结构完整」。
+
+> ⚠️ **cron 的两个必写项**（漏了表现为「手动跑通、cron 里不跑」）：
+> `SHELL=/bin/bash` 与 `PATH=/usr/local/bin:/usr/bin:/bin`（cron 的 PATH 极简，找不到 `docker`/`python`）。
 
 ---
 
