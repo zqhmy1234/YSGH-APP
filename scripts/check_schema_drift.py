@@ -2,7 +2,7 @@
 """schema.sql ↔ alembic 迁移链结构漂移检测（重构侦察 P0-4 / issue #2 落地）
 
 背景（lessons.md:97 已明确解法，本脚本落地）：
-  - ⚠️ **本行原文为「CI 建库源 = backend/sql/schema.sql」，该前提已于 2026-09-28 失效**（CI 改走 `scripts/init_db.py`）。本脚本当前的定位、A 侧何时才能换成 init_db.py 的产物 —— **见本文件末尾「口径变更（2026-09-29）」**。
+  - ⚠️ 本行原文「CI 建库源 = backend/sql/schema.sql」**已于 2026-09-28 失效**（CI 改走 init_db.py）→ 见文末「口径变更」
   - 历史漂移事故：#8 profile_annotation_pool 缺表、#16 27→38 表/FK/vector 扩展、
     alembic stamp ≠ 建表（本地库 26 表 vs schema.sql 38 表严重不符）
 
@@ -342,7 +342,8 @@ def main() -> int:
             _drop_temp_db(args.admin_url, db_a)
             _drop_temp_db(args.admin_url, db_b)
 
-    print(f"A 侧（schema.sql —— 已于 2026-09-28 退役为**非建库源**，仍是 init_db.py 第③步的 DDL 来源）：{len(side_a)} 表；{side_a_note}")
+    a_label = "schema.sql —— 已于 2026-09-28 退役为非建库源，仍是 init_db.py 第③步的 DDL 来源"
+    print(f"A 侧（{a_label}）：{len(side_a)} 表；{side_a_note}")
     print(f"B 侧（alembic head，失败则回退 ORM metadata）：{len(side_b)} 表")
     for note in notes_b:
         print(f"  NOTE: {note}")
