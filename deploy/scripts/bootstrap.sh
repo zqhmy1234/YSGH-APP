@@ -55,8 +55,13 @@ mkdir -p \
 	"${DEPLOY_DIR}/data/redis" \
 	"${DEPLOY_DIR}/data/qdrant" \
 	"${DEPLOY_DIR}/data/wal-archive" \
+	"${DEPLOY_DIR}/data/hf-cache" \
 	"${DEPLOY_DIR}/backup/pg" \
 	"${DEPLOY_DIR}/logs"
+# ⚠️ data/hf-cache 是**拓扑 A 的 HF 缓存落点**（compose 把它挂到容器 /root/.cache/huggingface）。
+#    在这里建它有两个作用：① 让容器首启前卷目录已存在（属主正确，避免 Docker 以 root 创建）；
+#    ② 作为 deploy/scripts/pull_models.sh 判定拓扑的**信号**（存在 ⇒ 拓扑 A）。
+#    ⇒ 因此**必须先跑本脚本，再跑 pull_models.sh**，否则模型会下到宿主 $HOME 而容器读不到。
 
 # ---------- 2. deploy/.env（缺失时生成最小版） ----------
 if [[ ! -f "${DEPLOY_DIR}/.env" ]]; then
