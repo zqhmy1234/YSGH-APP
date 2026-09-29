@@ -2,12 +2,12 @@
 """schema.sql ↔ alembic 迁移链结构漂移检测（重构侦察 P0-4 / issue #2 落地）
 
 背景（lessons.md:97 已明确解法，本脚本落地）：
-  - CI 建库源 = backend/sql/schema.sql；本地/生产走 alembic 迁移链——两链无强制对齐
+  - ⚠️ **本行原文为「CI 建库源 = backend/sql/schema.sql」，该前提已于 2026-09-28 失效**（CI 改走 `scripts/init_db.py`）。本脚本当前的定位、A 侧何时才能换成 init_db.py 的产物 —— **见本文件末尾「口径变更（2026-09-29）」**。
   - 历史漂移事故：#8 profile_annotation_pool 缺表、#16 27→38 表/FK/vector 扩展、
     alembic stamp ≠ 建表（本地库 26 表 vs schema.sql 38 表严重不符）
 
 方法：
-  A 侧（CI 建库源）：临时库执行 schema.sql → SQLAlchemy Inspector 提取结构
+  A 侧（schema.sql —— 已于 2026-09-28 退役为非建库源，见文末「口径变更」）：临时库执行 → 提取结构
   B 侧（alembic head）：临时库执行 `alembic upgrade head`；
       若基线迁移不自包含（已知 431bcaa8bd54 仅 alter_column，从空库无法自举，
       lessons #9-#12 记录在案），回退到 ORM metadata（env.py target_metadata，
@@ -240,7 +240,7 @@ def _compare(a: dict, b: dict) -> tuple[list[str], list[str]]:
 
     # 表集合
     for t in sorted(set(a) - set(b)):
-        blocking.append(f"[表集合] {t} 仅存在于 schema.sql 侧（CI 建库源），alembic head 无此表")
+        blocking.append(f"[表集合] {t} 仅存在于 schema.sql 侧，alembic head 无此表")
     for t in sorted(set(b) - set(a)):
         blocking.append(f"[表集合] {t} 仅存在于 alembic head 侧（迁移链建），schema.sql 无此表")
 
@@ -342,8 +342,8 @@ def main() -> int:
             _drop_temp_db(args.admin_url, db_a)
             _drop_temp_db(args.admin_url, db_b)
 
-    print(f"A 侧（CI 建库源 schema.sql）：{len(side_a)} 表；{side_a_note}")
-    print(f"B 侧（alembic head）：{len(side_b)} 表")
+    print(f"A 侧（schema.sql —— 已于 2026-09-28 退役为**非建库源**，仍是 init_db.py 第③步的 DDL 来源）：{len(side_a)} 表；{side_a_note}")
+    print(f"B 侧（alembic head，失败则回退 ORM metadata）：{len(side_b)} 表")
     for note in notes_b:
         print(f"  NOTE: {note}")
 
@@ -370,3 +370,35 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ==============================================================================
+# 口径变更（2026-09-29 登记）—— 勿按旧描述理解本脚本（正文 line 5 已改为指针）
+#
+# 放在文件末尾是刻意的：多份文档/脚本按**行号**引用本文件的 190/214/305 等位置，
+# 在 docstring 里插段落会整体位移、连带作废那批引用。故正文只留一行指针，详解落在此处。
+#
+# 【旧前提】设计时（2026-08-27）：「CI 建库源 = backend/sql/schema.sql」，本地/生产走
+#           alembic 迁移链；两链无强制对齐 —— 故做 A(schema.sql) ↔ B(alembic) 结构对比。
+#
+# 【现状】2026-09-28 起 **CI 建库已改走 `scripts/init_db.py`**（= ORM `create_all`
+#         + 从 schema.sql 抽 10 张无 ORM 模型表的裸 SQL DDL + `alembic stamp head`），
+#         与本地/生产**同一条路径** ⇒ **A 侧（schema.sql）不再是任何环境的建库源**。
+#         见 .github/workflows/ci.yml 的 fast/full gate「Init PostgreSQL」步骤。
+#
+# 【schema.sql 并未完全退役】它仍是 `init_db.py` 第③步（那 10 张表）的 DDL 来源。
+#         故本脚本仍有**部分**价值 —— 只是它报出的绝大多数 BLOCKING 属于
+#         「schema.sql 作为**中间态快照**已过时」，而非「构建链有缺口」。
+#
+# 【🔴 A 侧暂不改为 init_db.py 的产物】B 侧在「基线迁移自包含」（B-1 任务）落地前
+#         **只能回退 ORM metadata**（见 `_build_alembic_side`），而
+#             A(init_db) = ORM create_all  ∪  10 张裸 SQL 表   ⊇   B(ORM)
+#         ⇒ 换上去只会得到 10 条「仅 A 侧存在」的**假阳性**，而「仅 B 侧存在」恒为空
+#           —— 结构上**无法产生任何真信号**（比现状更糟：全是噪音）。
+#
+# 【恢复有意义的前提】B-1 落地（baseline 自包含 → `alembic upgrade head` 能从空库跑通
+#         → B 侧 = 真迁移链）。**届时**再把 A 侧换成 init_db.py 的产物，才是同源同口径对比。
+#
+# 【在那之前怎么读本 job 的红】定时红**属实**（A 侧快照确实与迁移链不一致），
+#         但它**不代表构建链有缺口** —— 别照旧描述去查「schema.sql 漂移」。
+# ==============================================================================

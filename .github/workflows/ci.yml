@@ -315,8 +315,13 @@ jobs:
 
   # ============================================================
   # P0-4（2026-08-27）：schema.sql ↔ alembic 迁移链漂移检测（weekly）
-  # 背景：CI 建库源 = schema.sql，本地/生产走 alembic，两链无强制对齐——#8~#19 系列
-  # CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
+  # 背景：本 job 设计时 CI 建库源 = schema.sql，本地/生产走 alembic，两链无强制对齐
+  #       ——#8~#19 系列 CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
+  # ⚠️ 口径变更（2026-09-29 登记）：**2026-09-28 起 CI 建库已改走 `scripts/init_db.py`**
+  #       （见本文件 fast/full gate 的 Init PostgreSQL 步骤），A 侧（schema.sql）**不再是
+  #       任何环境的建库源**。故本 job 报出的 BLOCKING 多数是「schema.sql 作为中间态快照已
+  #       过时」而非「构建链有缺口」——**定时红属实，但别按旧描述去查**。
+  #       A 侧改为 init_db.py 产物的前提是 B-1（baseline 自包含）落地，理由见脚本头「口径变更」。
   # 设计：脚本在临时库分别用 schema.sql 与 alembic head（失败回退 ORM metadata）建库，
   #       对比表集合/列/索引/外键/唯一约束/主键；退出码 1 = 检出漂移。
   # 失败策略（B10-i/D14-23 2026-09-24 修正）：**不再使用 continue-on-error**——
