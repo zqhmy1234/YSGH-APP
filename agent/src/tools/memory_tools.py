@@ -4,17 +4,37 @@
 """
 import json
 import logging
-from datetime import date, datetime
+import os
+import re
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
 from langchain.tools import tool
 from storage.database.supabase_client import get_supabase_client
-from tools.tag_rules import validate_collection_tags, validate_memory_tags
+from tools.tag_rules import coerce_str_list, validate_collection_tags, validate_memory_tags
 from yishu.context import new_context, request_context
 from yishu.db_errors import APIError
 
 logger = logging.getLogger(__name__)
+
+# ── 判重口径（与 utils/output_validator._check_duplicate_tool_calls 对齐）──
+# LLM 反复调 save_memory 时，**每次的 content 往往不是逐字相同**：实测尾部常被
+# 追加时间/语气词（如"（10月5日）""，我记下来了。"），于是
+#   · 逐字相等去重 → 永不命中 → 每次真写库 → 模型以为没存成功 → 继续调
+#     → LangGraph 递归上限耗尽（GraphRecursionError，实测 12s 后炸）
+#   · 而 validator 按 `content[:50]` 判重 → 判为 terminal，但那是**事后**判定，
+#     循环已经发生、垃圾记忆已经写入、延迟已经付出去了。
+# 结论：判重必须做在**工具层**（唯一能事中终止循环的位置），且前缀长度须与
+# validator 同口径，否则两层各判各的，永远对不上。
+DEDUP_PREFIX_LEN = 50
+# 前缀过短（如"今天"两个字）时做近似去重会误伤真实的不同记忆，低于此长度不启用。
+DEDUP_MIN_PREFIX = 12
+# 公共前缀阈值：尾部仅差日期/标点时（"…红叶特别美（10月5日）" vs "…红叶特别美（10月6日）"）
+# 双向 startswith 都不成立，用公共前缀兜住。
+NEAR_PREFIX_LEN = 20
+# 窗口内最多回看多少条做比较（同一用户 10 分钟内不可能攒出上百条）
+DEDUP_SCAN_LIMIT = 50
 
 
 def _get_client():
@@ -46,6 +66,108 @@ def _get_user_id() -> str:
 
     log_audit("user_id_missing_reject", tool="memory_tools")
     raise PermissionError("缺少 user_id，拒绝执行记忆操作（防止跨用户串档）")
+
+
+def _dedup_window_minutes() -> int:
+    """前缀近似去重的时间窗（分钟）。设 0 可关闭第二级去重。"""
+    try:
+        return max(0, int(os.getenv("AGENT_DEDUP_WINDOW_MIN", "10")))
+    except (TypeError, ValueError):
+        return 10
+
+
+def _norm(text: str) -> str:
+    """归一化判重文本：去所有空白（LLM 重试的差异常是换行/空格这类排版噪声）。"""
+    return re.sub(r"\s+", "", text or "")
+
+
+def _common_prefix_len(a: str, b: str) -> int:
+    """公共前缀长度（只看前 `DEDUP_PREFIX_LEN` 字：超出这个范围仍相同就不算同一条，
+    否则两条开头雷同的长记忆会被误判为重复）。"""
+    limit = min(len(a), len(b), DEDUP_PREFIX_LEN)
+    i = 0
+    while i < limit and a[i] == b[i]:
+        i += 1
+    return i
+
+
+def _row_id(row: Any) -> Any:
+    return row.get("id") if isinstance(row, dict) else None
+
+
+def _find_existing_memory(client, user_id: str, content: str) -> tuple[Any, str]:
+    """两级判重：先逐字相等，再「时间窗内 + 前缀近似」。
+
+    返回 `(memory_id, match_kind)`；未命中时 `(None, "")`。
+    match_kind 取值 `exact` / `prefix` / `near`，供日志区分是哪一级拦下的。
+
+    ## 为什么第二级不能用 SQL `ilike` 前缀匹配（实测踩坑）
+
+    最初实现是 `ilike("content", _pg_pattern(new_content) + "*")`，**永远匹配不到**：
+    LLM 重试时是把内容**变长**（在尾部追加时间/语气词），DB 里存的是**变长前**那条，
+    即旧内容是新内容的**真前缀**。用"长的新内容"去前缀匹配"短的旧内容"方向相反，
+    必然落空——而且它**不报错**，只是静默返回空，表现为"判重像是没生效"。
+    故改为：窗口内取最近若干条，在 Python 侧做**双向**前缀比较。
+
+    判定三级（`min_len` 均为两者的较短长度）：
+      · `prefix` —— 一方是另一方的前缀（覆盖"尾部追加"与"截短"两个方向）
+      · `near`  —— 公共前缀 ≥ `NEAR_PREFIX_LEN`（覆盖"尾部只差一个日期/标点"）
+      · 都不满足 ⇒ 视为不同内容，正常写入
+
+    ⚠️ **近似去重的固有取舍**：窗口内提交两条开头相同的长记忆会被判为重复。
+    用时间窗（默认 10 分钟）把误伤面压到"同一次交互内的重复提交"这一现实场景；
+    真要关掉设 `AGENT_DEDUP_WINDOW_MIN=0`。取舍理由：漏写一条记忆用户还能再存一次，
+    而循环不终止会让整轮对话撞递归上限后炸掉。
+    """
+    rows = getattr(
+        client.table("memories").select("id").eq("user_id", user_id).eq("content", content).limit(1).execute(),
+        "data",
+        None,
+    )
+    if rows:
+        return _row_id(rows[0]), "exact"
+
+    window = _dedup_window_minutes()
+    new_norm = _norm(content)
+    if window <= 0 or len(new_norm) < DEDUP_MIN_PREFIX:
+        return None, ""
+
+    since = (datetime.now(timezone.utc) - timedelta(minutes=window)).isoformat()
+    recent = getattr(
+        client.table("memories")
+        .select("id, content")
+        .eq("user_id", user_id)
+        .gte("created_at", since)
+        .order("created_at", desc=True)
+        .limit(DEDUP_SCAN_LIMIT)
+        .execute(),
+        "data",
+        None,
+    )
+    rows_in_window = len(recent or [])
+    for row in recent or []:
+        old_norm = _norm((row or {}).get("content") or "")
+        min_len = min(len(old_norm), len(new_norm))
+        if min_len < DEDUP_MIN_PREFIX:
+            continue
+        if old_norm.startswith(new_norm) or new_norm.startswith(old_norm):
+            return _row_id(row), "prefix"
+        if _common_prefix_len(old_norm, new_norm) >= NEAR_PREFIX_LEN:
+            return _row_id(row), "near"
+
+    # 未命中也要留痕：判重"看起来没生效"是本轮最难查的问题之一
+    # （曾因 ilike 方向写反而长期静默失效，日志里什么都不留）。
+    # 只记长度与候选数，**不记内容**（隐私纪律同 observability 模块）。
+    from yishu.observability import log_event
+
+    log_event(
+        "save_memory_dedup_miss",
+        level=logging.DEBUG,
+        content_len=len(content),
+        window_min=window,
+        rows_in_window=rows_in_window,
+    )
+    return None, ""
 
 
 def _parse_content(content: Any) -> str:
@@ -271,9 +393,9 @@ def save_memory(
     content: str,
     category: str | None = None,
     mood: str | None = None,
-    topics: list[str] | None = None,
+    topics: str | list[str] | None = None,
     location: str | None = None,
-    people: list[str] | None = None,
+    people: str | list[str] | None = None,
     content_format: str | None = None
 ) -> str:
     """
@@ -293,26 +415,45 @@ def save_memory(
     """
     client = _get_client()
 
-    # ---- 幂等：同用户同内容已存在则直接返回，不重复写库（2026-10-04 性能 P0）----
+    # 参数宽松化（2026-10-05）：模型经常把数组参数传成 JSON 字符串
+    # （`'["旅行","兴趣"]'`）。归一化**必须放在函数体里**——放宽签名只是让它
+    # 能进来，解析只能在这里做（pydantic 已在更早一层放过它了）。
+    topics = coerce_str_list(topics)
+    people = coerce_str_list(people)
+
+    # 入口埋点（2026-10-05）：只记**长度与参数个数**，不记内容（隐私纪律）。
+    # 加这条的直接原因：一次「判重看起来没生效」的排查耗时很久——因为
+    # `tool_done` 记的是 ToolMessage 的 str() 长度，既分不清是工具返回还是
+    # 异常兜底，也无法区分"判重未命中"与"压根没执行到判重"。
+    from yishu.observability import log_event as _log_enter
+
+    _log_enter(
+        "save_memory_enter",
+        content_len=len(content or ""),
+        has_category=bool(category),
+        has_mood=bool(mood),
+        topics_n=len(topics or []),
+    )
+
+    # ---- 幂等：两级判重，同用户已有等价内容则直接返回，不重复写库 ----
     # 为什么必须在这里挡：LLM 收不到"已经存过了"的信号时，会**反复调用同一个
     # save_memory**——实测单轮 16~28 次、输入 token 涨到 15K、耗时 32~66s。
     # 工具层幂等是唯一能真正终止循环的位置（改 prompt 或降 max_rounds 都只是
     # 降低概率，LLM 仍可能在别处重试）。
+    # 2026-10-05：逐字相等这一级**不够**——LLM 重试时 content 常带尾部差异
+    # （时间/语气词），逐字去重永不命中，循环照旧撞 recursion_limit
+    # （实测 GraphRecursionError@12.2s）。故增第二级前缀近似，见 _find_existing_memory。
     try:
-        dup = (
-            client.table("memories")
-            .select("id")
-            .eq("user_id", _get_user_id())
-            .eq("content", content)
-            .limit(1)
-            .execute()
-        )
-        dup_rows = getattr(dup, "data", None)
-        if dup_rows:
-            existing_id = dup_rows[0].get("id") if isinstance(dup_rows[0], dict) else None
+        existing_id, match_kind = _find_existing_memory(client, _get_user_id(), content)
+        if existing_id:
             from yishu.observability import log_event
 
-            log_event("save_memory_dedup", existing_id=existing_id, content_len=len(content))
+            log_event(
+                "save_memory_dedup",
+                existing_id=existing_id,
+                match=match_kind,
+                content_len=len(content),
+            )
             return json.dumps(
                 {
                     "success": True,
@@ -681,7 +822,7 @@ def save_knowledge_collection(
     title: str | None = None,
     author: str | None = None,
     source: str | None = None,
-    topics: list[str] | None = None,
+    topics: str | list[str] | None = None,
     image_url: str | None = None,
     mood: str | None = None,
     content_format: str | None = None
@@ -706,6 +847,9 @@ def save_knowledge_collection(
         保存结果的JSON字符串
     """
     client = _get_client()
+
+    # 参数宽松化（2026-10-05）：同 save_memory，模型会把数组传成 JSON 字符串
+    topics = coerce_str_list(topics)
 
     # V3标签校验与归一化
     validated = validate_collection_tags(

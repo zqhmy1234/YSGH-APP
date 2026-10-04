@@ -9,6 +9,51 @@
 
 ---
 
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143774
+- **错误**：agent 测试结论取决于跑它那台机器当时继承了什么环境变量：load_dotenv override=False 让陈旧的系统级 DASHSCOPE_API_KEY 优先于 .env，拼出 token-plan key 加 workspace header 的非法组合，CI 绿而本地 400
+- **根因**：测试目录没有环境隔离入口，agent/.env 不是唯一真相源
+- **修复**：新增 agent/tests/conftest.py 在 collection 阶段清掉继承的 DASHSCOPE_* 再 load_dotenv，口径与 scripts/local_run.ps1 一致；另修 llm_provider：key 为 sk-sp- 时丢弃 DASHSCOPE_WORKSPACE_ID 并告警（Token Plan key 不绑定业务空间，带该头必然 400）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143773
+- **错误**：同一会话(thread_id)反复 GraphRecursionError：上一次异常中断在 Postgres checkpoint 里留下悬空 tool_calls（有 AIMessage.tool_calls 但无对应 ToolMessage），下次恢复时被重放，每轮白跑工具直到撞递归上限，该会话从此每次都失败
+- **根因**：checkpointer 持久化了中断状态却无人清理；递归上限错误只被当作模型问题，掩盖了会话状态已损坏这一事实
+- **修复**：新增 agents.agent.heal_dangling_tool_calls 在 invoke 前补齐悬空 tool_call_id 的占位 ToolMessage（保留痕迹比删历史安全）；output_validator 捕获 GraphRecursionError 后用 _salvage_partial_reply 取回最后一条有文本的 AI 回复并标记 recursion_salvaged，宁可返回不完整结果也不让整轮报废
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143768
+- **错误**：判重第二级用 SQL 前缀匹配 ilike 永远命中不了：LLM 重试是把内容变长（尾部追加），库里存的是变长前那条，即旧内容是新内容的真前缀；用长内容去前缀匹配短内容方向相反，且不报错只静默返回空
+- **根因**：只想当然地按新内容去前缀匹配已有内容，没有考虑两侧长度关系；ilike 静默返回空让失败表现得像没生效，日志里什么都不留
+- **修复**：改为取时间窗内最近若干条在 Python 侧做双向 startswith 加公共前缀判定（prefix/near 两级），未命中也记 save_memory_dedup_miss 含窗口内候选数；单测覆盖尾部追加、截短、排版噪声与真不同内容不误伤
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143763
+- **错误**：Agent 工具的数组参数被模型传成 JSON 字符串（topics 传字符串而非数组）导致整条保存链路不可用：pydantic 在进入函数体之前就抛 ValidationError，函数体一行都没执行；LangChain 又把该异常包成 ToolMessage 返回，LLM 拿不到可修正指引而反复重试，单轮 5 次、12~25 秒后撞递归上限
+- **根因**：工具签名对模型过严（只接受真数组）；而 LangChain 把工具异常包成返回值，使 middleware 的 except 分支永远抓不到，工具失败在日志中完全不可见，只表现为模型在循环
+- **修复**：新增 tag_rules.coerce_str_list 归一化畸形入参，并把签名放宽为 str 或 list 联合类型（放宽签名是前提，否则解析代码根本执行不到）；handle_tool_errors 改为从返回值识别 Error invoking tool 并记 tool_failed 与 err_head；tool_done 补 arg_keys/args_len 埋点以区分没执行与执行后失败
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:55 · commit 5232c37 · ts=1791143752
+- **错误**：delete_file 误删整个文件：只想删一行 import json，却把 agent/tests/test_user_isolation.py 整个删掉
+- **根因**：把'删除一行'误用为'删除文件'这一整文件级工具；对小范围改动选了粒度最大的工具
+- **修复**：git checkout -- <path> 立即恢复；小范围改动一律用 replace_in_file 精确替换，先读文件再改；delete_file 只在确知要移除整个文件时使用
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-10-05 01:48 · commit 91709f8 · ts=1791136091
 - **错误**：验证 SSRF 修复时连做了三次假验证：① 测试服务器跑在 127.0.0.1，被初始检查就拦，重定向分支压根没执行；② mock 按 host:port 放行，但被测函数只传 hostname（不含端口）永不匹配；③ mock 放行 127.0.0.1 后，重定向到同 host 不同端口也被放行
 - **根因**：_is_public_host 收的是 hostname（不含端口），凭端口做白名单在语义上不成立；而「同一 hostname 不同端口」本身也不是 SSRF 攻击向量，测试设计错了

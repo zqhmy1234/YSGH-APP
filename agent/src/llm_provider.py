@@ -93,8 +93,8 @@ def load_llm_settings() -> LlmSettings:
       AGENT_LLM_MODEL         默认 qwen3.8-flash
       AGENT_ENABLE_THINKING   默认 true（qwen3.8-flash 支持推理；关掉可降延迟）
       AGENT_LLM_TEMPERATURE   默认 0.7
-      AGENT_LLM_MAX_TOKENS    默认 4096
-      AGENT_LLM_TIMEOUT       默认 600（秒）
+      AGENT_LLM_MAX_TOKENS    默认 2048
+      AGENT_LLM_TIMEOUT       默认 120（秒）
     """
     api_key = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
     if not api_key:
@@ -130,8 +130,28 @@ def load_llm_settings() -> LlmSettings:
 
     headers: dict[str, str] = {}
     if workspace_id:
-        # 业务空间级 key（sk-ws-）必须显式带此 header；公共 key 带上亦无副作用
-        headers["X-DashScope-WorkSpace"] = workspace_id
+        # ⚠️ 2026-10-05 修**真实 400**：`sk-sp-`（Token Plan）key **不绑定业务空间**，
+        # 带上 X-DashScope-WorkSpace 必然被拒：
+        #   400 The X-DashScope-WorkSpace header value must match the workspace bound to the API key.
+        # 触发路径不是"有人手误"这么简单——`load_dotenv(override=False)` 让**进程环境变量优先于
+        # .env**，于是陈旧的系统级 `sk-sp-` key（进程）会与 .env 里的 `DASHSCOPE_WORKSPACE_ID`
+        # （文件）**拼成一份从未有人写过的 Frankenstein 配置**：token-plan 端点 + workspace header。
+        # 此前"公共 key 带上 header 亦无副作用"的假设只对 `sk-` 成立，对 `sk-sp-` 是错的。
+        # 处置：丢弃 workspace_id（token-plan 端点 + header 是确定的坏组合）并**显式告警**，
+        # 让"配置被陈旧环境变量污染"这件事在日志里可见，而不是等 400 猜原因。
+        if api_key.startswith(TOKEN_PLAN_KEY_PREFIX):
+            logger.warning(
+                "丢弃 DASHSCOPE_WORKSPACE_ID=%s：key 前缀=%s（Token Plan 套餐）不绑定业务空间，"
+                "带 X-DashScope-WorkSpace 头会被百炼拒为 400。"
+                "常见成因：进程里残留了另一套 DASHSCOPE_API_KEY，而 .env 里的 workspace 仍被读入"
+                "（load_dotenv override=False ⇒ 进程环境变量优先，两边被拼成一份非法组合）。"
+                "排查：清掉继承来的 DASHSCOPE_* 后重启（见 scripts/local_run.ps1）",
+                workspace_id[:8],
+                api_key[:6],
+            )
+        else:
+            # 业务空间级 key（sk-ws-）必须显式带此 header；公共 key（sk-）带上亦无副作用
+            headers["X-DashScope-WorkSpace"] = workspace_id
 
     settings = LlmSettings(
         api_key=api_key,

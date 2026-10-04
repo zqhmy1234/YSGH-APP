@@ -194,6 +194,26 @@ class OutputValidator:
         return ""
 
 
+def _salvage_partial_reply(agent, config) -> tuple[str, list] | tuple[None, None]:
+    """从 checkpoint 里捞回「最后一条有文本的 AI 回复」。
+
+    撞 `recursion_limit` 时对话通常已经产生了可用回复（工具链跑了几轮），
+    直接把异常抛出去等于把这段回复与已完成的副作用一起丢掉。用它兜底，
+    取不到就返回 `(None, None)` 由调用方决定重抛。
+    """
+    try:
+        state = agent.get_state(config)
+    except Exception:  # noqa: BLE001 —— 取不到就交还调用方重抛
+        return None, None
+    messages = list((state.values or {}).get("messages") or [])
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            text = msg.content if isinstance(msg.content, str) else ""
+            if text.strip():
+                return text, messages
+    return None, None
+
+
 def run_agent_with_validation(
     agent,
     query: str,
@@ -219,6 +239,7 @@ def run_agent_with_validation(
     import time
 
     from langchain_core.messages import HumanMessage
+    from langgraph.errors import GraphRecursionError
     from yishu.observability import log_event, timed
 
     if max_rounds is None:
@@ -295,11 +316,31 @@ def run_agent_with_validation(
             input_content = query
 
         # 调用 Agent（耗时/token/工具数在此归因）
-        with timed("agent_invoke", log_ok=False, round=round_num) as t:
-            result = current_agent.invoke(
-                {"messages": [HumanMessage(content=input_content)]},
-                config,
+        try:
+            with timed("agent_invoke", log_ok=False, round=round_num) as t:
+                result = current_agent.invoke(
+                    {"messages": [HumanMessage(content=input_content)]},
+                    config,
+                )
+        except GraphRecursionError as exc:
+            # 兜底而不是让它冒成 500（2026-10-05）：撞 recursion_limit 时对话里
+            # **通常已经有可用的 AI 回复**（工具链跑了几轮，回复在最后一条
+            # AIMessage 里）。直接抛异常等于把这段回复和已完成的副作用一起丢掉，
+            # 用户侧表现为「一句话反复重发都是同一个错」。
+            # 这里取回最后一条有文本的 AIMessage 作为回复，并把「本轮未正常收尾」
+            # 显式记进结构化日志——宁可返回不完整的结果，也不让整轮对话报废。
+            log_event(
+                "agent_recursion_exhausted",
+                level=logging.WARNING,
+                round=round_num,
+                exc_detail=str(exc)[:120],
             )
+            salvaged = _salvage_partial_reply(current_agent, config)
+            if salvaged and salvaged[0]:
+                reply_text, messages = salvaged
+                log_event("agent_partial_reply_salvaged", round=round_num, reply_len=len(reply_text))
+                return _finish({"messages": messages}, "recursion_salvaged")
+            raise
         llm_calls += 1
         _accumulate_usage(usage_total, result)
         round_messages = result.get("messages", [])

@@ -9,7 +9,6 @@
 """
 import sys
 import os
-import json
 
 # 设置工作目录
 sys.path.insert(0, os.path.join(os.getenv("COZE_WORKSPACE_PATH", "/workspace/projects"), "src"))

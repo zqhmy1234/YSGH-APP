@@ -11,7 +11,7 @@ from typing import Annotated, Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
-from langchain_core.messages import AnyMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
 
@@ -73,15 +73,21 @@ def handle_tool_errors(request, handler):
     「操作遇到问题」，不知道发生了什么，于是反复重试**同一个**工具——实测单轮
     `save_memory` 被调 16 次、耗时 32s、输入 token 涨到 13K、最后撞递归上限。
     记 tool 名 + 异常类型是定位这类循环的唯一线索。
+
+    2026-10-05：补**成功路径**埋点。此前只有 `tool_error`，于是"模型到底调了
+    几次工具、哪一次开始重复"在日志里完全不可见——排查 GraphRecursionError
+    时只能靠 validator 的事后判定反推。工具名/耗时/结果是这类循环的直接证据。
     """
+    tool_name = "unknown"
     try:
-        return handler(request)
+        tool_name = (request.tool_call or {}).get("name", "unknown")
+    except Exception:  # noqa: BLE001,S110 —— 取名字失败不能连带影响主流程
+        pass
+
+    started = time.perf_counter()
+    try:
+        result = handler(request)
     except Exception as e:  # noqa: BLE001 —— 兜底转消息，故意的宽 catch
-        tool_name = "unknown"
-        try:
-            tool_name = (request.tool_call or {}).get("name", "unknown")
-        except Exception:  # noqa: BLE001,S110 —— 取名字失败不能连带影响主流程
-            pass
         from yishu.observability import log_event
 
         log_event(
@@ -89,12 +95,44 @@ def handle_tool_errors(request, handler):
             level=logging.WARNING,
             tool=tool_name,
             exc_type=type(e).__name__,
+            latency_ms=int((time.perf_counter() - started) * 1000),
             detail=str(e)[:150],
         )
         return ToolMessage(
             content=f"操作遇到问题：{str(e)}。请检查输入后重试。",
             tool_call_id=request.tool_call["id"]
         )
+
+    from yishu.observability import log_event
+
+    # 结果只记长度与"是否被判为重复"，**不记内容**（记忆正文属隐私，纪律同 observability 模块）。
+    # arg_keys/args_len 记的是**参数名与总长度**——用于区分"工具没执行"与
+    # "执行了但参数被中途截断"，同样不泄露参数值。
+    _args = (request.tool_call or {}).get("args") or {}
+    result_text = str(result)
+    # ⚠️ 2026-10-05 关键发现：`handler(request)` **不会**因为工具抛异常而抛出去——
+    # LangChain 在更内层就把异常格式化成了 `ToolMessage("Error invoking tool ...")`。
+    # 于是上面那个 `except Exception` + `tool_error` 埋点**是死代码**（一次都没触发过），
+    # 工具失败在日志里完全不可见，只表现为 LLM 反复重试直到撞递归上限。
+    # 因此必须从返回值里识别这层包装，否则这类故障永远查不出来。
+    is_error = "Error invoking tool" in result_text or "操作遇到问题" in result_text
+    log_event(
+        "tool_failed" if is_error else "tool_done",
+        level=logging.ERROR if is_error else logging.INFO,
+        tool=tool_name,
+        latency_ms=int((time.perf_counter() - started) * 1000),
+        result_len=len(result_text),
+        arg_keys=",".join(sorted(_args)) if isinstance(_args, dict) else "?",
+        args_len=len(str(_args)),
+        # 错误摘要截到 200 字：足够看出"哪类错"（参数校验/DB/权限），又不至于把
+        # 整段入参回显进日志。
+        err_head=result_text[-200:].replace("\n", " ") if is_error else "",
+        # 默认空。排查"工具到底返回了什么"时才设 AGENT_DEBUG_TOOL_RESULT=1——
+        # 隐私纪律要求默认不落内容，但这一个开关的缺失曾让"空 ToolMessage"
+        # 这类事实无法确认，只能靠 result_len 反推。
+        preview=(result_text[:400] if os.getenv("AGENT_DEBUG_TOOL_RESULT") == "1" else ""),
+    )
+    return result
 
 
 def build_agent(ctx=None):
@@ -272,4 +310,79 @@ def run_agent(query: str, user_id: str = "", ctx=None, max_rounds: int | None = 
         "configurable": {"thread_id": thread_id},
         "recursion_limit": recursion_limit,
     }
+    heal_dangling_tool_calls(agent, config)
     return run_agent_with_validation(agent, query, config, max_rounds)
+
+
+def heal_dangling_tool_calls(agent, config) -> int:
+    """补齐 checkpoint 里「有 tool_calls 却没有对应 ToolMessage」的消息，返回补了几条。
+
+    ## 为什么必须有这一步（2026-10-05，实测）
+
+    LangGraph 的 checkpointer 按 `thread_id` **持久化**每轮消息。上一次运行若在
+    工具执行途中异常结束（递归上限 / LLM 超时 / 进程被杀 / 断网），checkpoint 里
+    会残留：
+
+        AIMessage(tool_calls=[{id: "call_1", name: "save_memory", ...}])   ← 有发起
+        （没有对应的 ToolMessage）                                        ← 无结果
+
+    这些 tool_calls **从未拿到结果**。下一次同 `thread_id` 的请求恢复历史后，
+    LangGraph 会**重放**它们，于是每轮都在白跑工具、还没等模型反应就撞
+    `recursion_limit`。用户侧表现是**该会话从此每次都失败**——同一句话重发多次
+    都是同一个错，而且看起来"像模型问题"，极难定位。
+
+    实测：同一 `user_A` 会话在修掉工具层判重后仍稳定 `GraphRecursionError`，
+    原因就是早先失败运行留下的悬空 tool_calls 被反复重放。
+
+    处置：给每个悬空 `tool_call_id` 补一条说明性的 ToolMessage（保留痕迹比删除
+    历史更安全，删除要动 checkpoint 的 next 指针，风险更高）。
+    """
+    try:
+        state = agent.get_state(config)
+    except Exception as exc:  # noqa: BLE001 —— 拿不到状态不该阻断正常请求
+        from yishu.observability import log_event
+
+        log_event(
+            "checkpoint_read_failed",
+            level=logging.WARNING,
+            exc_type=type(exc).__name__,
+        )
+        return 0
+
+    messages = list((state.values or {}).get("messages") or [])
+    if not messages:
+        return 0
+
+    answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage) and m.tool_call_id}
+    patch: list[ToolMessage] = []
+    for msg in messages:
+        if not isinstance(msg, AIMessage) or not msg.tool_calls:
+            continue
+        for tc in msg.tool_calls:
+            call_id = tc.get("id")
+            if call_id and call_id not in answered:
+                patch.append(
+                    ToolMessage(
+                        content="（上一轮该工具调用未完成，结果不可用；如仍需该操作请重新发起）",
+                        tool_call_id=call_id,
+                        name=tc.get("name", ""),
+                    )
+                )
+                answered.add(call_id)
+    if not patch:
+        return 0
+
+    from yishu.observability import log_event
+
+    try:
+        agent.update_state(config, {"messages": patch})
+    except Exception as exc:  # noqa: BLE001 —— 补不上就靠 invoke 兜底
+        log_event(
+            "checkpoint_heal_failed",
+            level=logging.WARNING,
+            exc_type=type(exc).__name__,
+            dangling=len(patch),
+        )
+        return 0
+    log_event("checkpoint_healed", dangling=len(patch), thread_id=str(config.get("configurable", {}).get("thread_id", ""))[:40])
+    return len(patch)
