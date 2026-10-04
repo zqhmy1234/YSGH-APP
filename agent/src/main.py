@@ -39,6 +39,7 @@ from agents.agent import run_agent
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from storage.memory.memory_saver import current_checkpointer_kind
 
 logger = logging.getLogger("yishu.agent.service")
 
@@ -68,6 +69,11 @@ class HealthResponse(BaseModel):
     model: str
     db_configured: bool
     auth_enabled: bool
+    # 2026-10-04 新增：checkpointer 的**真实**类型。
+    # 为什么必须暴露：降级到 MemorySaver 时服务**照常 200、对话照常往返**，
+    # 只是一轮轮都是新会话（用户以为有记忆、实际每次失忆）——这是最典型的
+    # 「看起来正常实际是假的」。探活接口不报出来，就没有任何人能发现。
+    checkpointer: str = "未初始化"
 
 
 def _normalize_reply(result: Any) -> str:
@@ -139,11 +145,13 @@ except Exception as exc:  # noqa: BLE001 —— 该面非核心链路，缺失�
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
+    #只读单例既有状态：**探活不得触发建连/建表**（否则 /health 变成会改状态的接口）
     return HealthResponse(
         status="ok",
         model=os.getenv("AGENT_LLM_MODEL", "qwen3.8-flash"),
         db_configured=bool(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL")),
         auth_enabled=bool(SERVICE_TOKEN),
+        checkpointer=current_checkpointer_kind(),
     )
 
 
