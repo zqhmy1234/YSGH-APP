@@ -42,7 +42,7 @@
 			</view>
 			<!-- 64:279 添加行：输入 + 固定（新标签进 locked 区） -->
 			<view class="add-row">
-				<input class="add-input" v-model="newTag" placeholder="添加你眼中的自己…" placeholder-style="color:#B3A696;font-size:25rpx;" :maxlength="12" confirm-type="done" @confirm="addLocked" />
+				<input :adjust-position="true" class="add-input" v-model="newTag" placeholder="添加你眼中的自己…" placeholder-style="color:#B3A696;font-size:25rpx;" :maxlength="12" confirm-type="done" @confirm="addLocked" />
 				<view class="add-btn" @tap="addLocked">
 					<text class="add-btn-text">固定</text>
 				</view>

@@ -239,7 +239,8 @@ export function fetchUnreadCountSimple(): Promise<number> {
 	})
 }
 
-function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<UTSJSONObject | null> {
+function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean,
+	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
 		let settled = false
 		const finish = (val: UTSJSONObject | null): void => {
@@ -250,12 +251,20 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			clearTimeout(timer)
 			resolve(val)
 		}
+		// 2026-10-04：看门狗超时此前**完全静默**（只 console.log + resolve(null)）——
+		// 用户侧表现为「AI 一点反应都没有」，既不知道失败也不知道在等什么。
+		// 现补Sentry 上报 + 可读 toast，与 onFail 分支同口径。
+		// `timeoutMs <= 0` 表示用默认；长耗时端点（如 AI 对话，实测 6~14s、后端上限 180s）
+		// 必须显式传更大的值，否则会在后端还在算的时候就先判失败。
+		const budget = timeoutMs > 0 ? timeoutMs : REQUEST_TIMEOUT_MS
 		// 5.24 蒸汽模式下 uni.request 的 timeout 参数与 GET 传 data:{} 空对象可能被桥接吞掉
 		// （不派发、不回调），故 timeout 改 JS 层看门狗、GET 且无 body 时省略 data 键与 Content-Type
 		const timer = setTimeout(() => {
 			console.log('[watchdog] timeout ' + path)
+			captureException('watchdog timeout after ' + budget + 'ms: ' + path, 'api.network', null)
+			showErrorToast(new ApiError('TIMEOUT', '请求超时（' + budget + 'ms），请稍后重试'))
 			finish(null)
-		}, REQUEST_TIMEOUT_MS + 5000)
+		}, budget + 5000)
 		console.log('[dbg-req] fire ' + method + ' ' + getBaseUrl() + path)
 		const onSuccess = (res: any): void => {
 			console.log('[dbg-req] ok ' + path + ' status=' + res.statusCode + ' (' + typeof res.statusCode + ')')
@@ -291,7 +300,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 				console.log('[dbg-req] 401-branch-enter ' + path)
 				refreshToken().then((ok: boolean) => {
 					if (ok) {
-						doRequest(path, method, data, true).then((b: UTSJSONObject | null) => {
+						doRequest(path, method, data, true, timeoutMs).then((b: UTSJSONObject | null) => {
 							finish(b)
 						})
 					} else {
@@ -343,9 +352,11 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 	})
 }
 
-/** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject */
-export function request(path: string, method: Method, data: UTSJSONObject | null): Promise<UTSJSONObject | null> {
-	return doRequest(path, method, data, false)
+/** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject。
+ *  `timeoutMs` 仅供**确实长耗时**的端点覆盖（如 AI 对话）；默认 0 =走REQUEST_TIMEOUT_MS。 */
+export function request(path: string, method: Method, data: UTSJSONObject | null,
+	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return doRequest(path, method, data, false, timeoutMs)
 }
 
 function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<HttpResult> {
@@ -497,8 +508,8 @@ export function get(path: string): Promise<UTSJSONObject | null> {
 	return request(path, 'GET', null)
 }
 
-export function post(path: string, data: UTSJSONObject): Promise<UTSJSONObject | null> {
-	return request(path, 'POST', data)
+export function post(path: string, data: UTSJSONObject, timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return request(path, 'POST', data, timeoutMs)
 }
 
 /** 取信封 data 字段（对象）；body 为空返回 null */

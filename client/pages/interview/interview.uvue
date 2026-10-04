@@ -55,7 +55,7 @@
 			<view class="modal-mask" @tap="closeTextModal"></view>
 			<view class="modal-card">
 				<text class="modal-title">用文字回答</text>
-				<textarea class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
+				<textarea :adjust-position="true" class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
 				<view class="modal-actions">
 					<view class="modal-btn modal-btn-ghost" @tap="closeTextModal">
 						<text class="modal-btn-text ghost-text">取消</text>

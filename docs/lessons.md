@@ -9,6 +9,105 @@
 
 ---
 
+### 2026-10-04 20:28 · commit d70ab37 · ts=1791116914
+- **错误**：新增测试与脚本后 pre-commit 被 ruff 拦下：I001 import 未排序、UP031 printf 格式化字符串、E501 行超 120
+- **根因**：通过 PowerShell here-string 写 Python 文件时，无法预估 ruff 的 I001/UP031 规则命中；且 E501 会在 --fix 改写后行长度变化时二次触发，需复检
+- **修复**：提交前先跑 python -m ruff check --fix --unsafe-fixes（UP031 转f-string 安全可自动修），再对 E501 手工折行；本次把 130+ 字符的 sum(...) 内联表达式抽成 _dir_mb() 辅助函数，同时消除两处重复
+- **相关文件**：backend/scripts/prep_models.py
+- **教训**：提交前对新增文件先跑 ruff --fix --unsafe-fixes；长表达式抽函数比折行更耐改
+
+---
+
+### 2026-10-04 20:07 · commit 4686320 · ts=1791115627
+- **错误**：两个软敏感降级用例（test_detector_unavailable_marks_pending_recheck / test_pending_recheck_blocks_active_mention）长期假绿：它们只mock 了 mock_external_ai=False，把「检测器不可用」的前提交给环境
+- **根因**：本机 shell 长期有陈旧 DASHSCOPE key ⇒ 百炼 401 ⇒ llm_available()假性返回 False ⇒ 恰好满足「检测器不可用」⇒ 用例通过。也就是说它测的是「环境恰好坏了」，而非它声称要测的 D10-9 降级分支；单跑与全量跑结果不一致（外部 LLM 可用性漂移）
+- **修复**：显式 monkeypatch guard.llm_available → False 制造「检测器不可用」，让用例真正测到降级分支，且与本机有无 key 无关（同文件 test_llm_error_also_marks_pending_recheck 已是这个写法）
+- **相关文件**：backend/tests/test_soft_sensitive_degraded.py
+- **教训**：测试的前置条件必须由 monkeypatch 构造，不能依赖运行环境；靠「环境恰好坏」通过的是假绿
+
+---
+
+### 2026-10-04 20:07 · commit 4686320 · ts=1791115626
+- **错误**：本机 backend/models/ 与 HF 缓存均为空，BGE-M3 缺失，导致 4 个检索相关测试集体失败（test_search_basic / test_output_search_hits_content / test_photo_writes_image_vec / test_arbitrate_degraded_passthrough）
+- **根因**：四个失败根因完全同源：BGE-M3 不可用 ⇒ Qdrant 写入与检索降级（degraded=true、hits=[]）。危害是它**静默**：检索降级不抛错、只打一条 WARNING，接口照常 200 返回空结果，看起来像「搜索功能坏了」或「用户数据没搜到」，极易误判成检索逻辑 bug。而 models/README.md 声称各模型「在用、禁止删除」，与磁盘实际（仅剩 README 本体）严重脱节
+- **修复**：① embedding.py 改为本地目录优先（backend/models/bge-m3 有 config.json 就用它，否则回退 HF repo id），彻底摆脱对 hf 可达性的依赖；② 新增 backend/scripts/prep_models.py（ModelScope 源、带重试、清理 .incomplete、幂等）作为构建/部署前置；③ 修正 models/README.md 的位置与下载源，并写明「检索类失败先查模型是否在位」
+- **相关文件**：backend/app/services/embedding.py
+- **教训**：外部模型缺失时链路会静默降级而非报错；排查检索类失败第一步是确认模型在位，别先怀疑逻辑
+
+---
+
+### 2026-10-04 19:31 · commit 4686320 · ts=1791113511
+- **错误**：客户端 api.uts 的看门狗超时分支只 console.log 后 resolve(null)，既不 toast 也不上报 Sentry；且默认 20s 与后端 agent 上限 180s 口径矛盾（实测单轮 6-43s）
+- **根因**：5.24 蒸汽模式下 uni.request 的 timeout 参数可能被桥接吞掉，所以改用 JS 层看门狗；但补看门狗时只补了「兜住不挂起」的一半，漏了「失败要让人知道」的一半。慢失败在客户端侧表现为静默，用户看到的是「AI 没反应」而非错误
+- **修复**：看门狗超时补captureException + 可读 toast（与 onFail 同口径）；request/post 增加可选 timeoutMs 透传，chat_api 显式给 90s（覆盖实测区间且远小于后端 180s，让 504 仍能由后端如实返回）
+- **相关文件**：client/utils/api.uts
+- **教训**：兜底分支必须同时具备「不挂起」和「可观测」；只做前者等于把失败变成静默
+
+---
+
+### 2026-10-04 19:31 · commit 4686320 · ts=1791113502
+- **错误**：改 client/manifest.json 加定位权限时用文本字符串替换，把两行写成裸 manifest 片段（漏了最外层引号），JSON 解析报 Invalid control character at line 25
+- **根因**：权限字符串自身含转义引号（android:name 后带转义的双引号），文本级替换无法正确处理嵌套引号；且 json 报错指向 control character，与真实原因（引号缺失）完全不符，把排查方向带偏
+- **修复**：git checkout 回退后改为 json.load 改结构再 json.dumps，写前用 json.loads 自检。凡含转义引号的 JSON 一律走解析-序列化，禁止文本替换
+- **相关文件**：client/manifest.json
+- **教训**：含转义引号的 JSON 禁止文本级替换
+
+---
+
+### 2026-10-04 19:29 · commit 4686320 · ts=1791113355
+- **错误**：Token Plan 套餐 key（sk-sp-）在专属端点下调 qwen3.8-flash 返回 403 AccessDenied.Unpurchased，换qwen3-max/qwen-plus/deepseek/glm 等候选全部 model_not_found
+- **根因**：套餐专属端点只暴露套餐内已开通模型；key 有效、端点正确，是「套餐未开通该模型」这一层，不是代码或配置错误。token-plan 端点下不存在「换个模型就好」这条路
+- **修复**：agent 改用与 backend 同一套工作空间级 key（sk-ws-，本就同库同账号），实测 qwen3.8-flash 可用；同步改写 agent/.env.example 的账号口径说明（推翻 2026-09-23 的「必须用 Token Plan key」）
+- **相关文件**：agent/.env.example
+- **教训**：外部服务报「无权限/未开通」时，先确认是套餐层还是代码层，换模型前先查该端点暴露的模型清单
+
+---
+
+### 2026-10-04 19:29 · commit 4686320 · ts=1791113355
+- **错误**：诊断用的临时脚本命名为 _tmp/bisect.py，运行时遮蔽 stdlib 的 bisect 模块，导致 import random 连锁失败报 tempfile 循环导入
+- **根因**：Python 会把脚本所在目录加入 sys.path[0]，同名文件遮蔽标准库；且错误发生在 import 阶段深层栈里，与真实文件名毫无关联，极难联想到
+- **修复**：诊断脚本改用无冲突前缀（probe_xxx.py）；排查 import 异常时先怀疑 sys.path 遮蔽
+- **相关文件**：-
+- **教训**：临时脚本命名必须避开 stdlib 名称
+
+---
+
+### 2026-10-04 19:29 · commit 4686320 · ts=1791113355
+- **错误**：agent 的 DATABASE_URL 是 SQLAlchemy 形态 postgresql+psycopg://，而 checkpointer 走原生 psycopg 驱动，驱动后缀不被接受，建连即抛 ProgrammingError
+- **根因**：同一份配置被两套栈消费：ORM 走 SQLAlchemy（需要 +psycopg 驱动标记），而 langgraph checkpointer 直接用原生 psycopg（拒绝该后缀）。缺一个规范化入口，每处调用方各自绕过
+- **修复**：新增 as_native_psycopg_url() 作为唯一入口，在获取 db_url 时统一剥离驱动后缀，不动 .env；调用方不再各自处理
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：同一配置被两套栈消费时，必须有一个显式规范化入口，不能让每个调用方各自绕过
+
+---
+
+### 2026-10-04 19:17 · commit 4686320 · ts=1791112657
+- **错误**：process_content 的处理器在 db.begin_nested()（SAVEPOINT）内跑，_process_text 里把逆地理补全放在 mark_sensitive/annotate 之后 ⇒ place 恒为空，只留一行 geo_cache 读取失败的 WARNING
+- **根因**：mark_sensitive_on_ingest / annotate_on_ingest 内部会 commit，提交后外层 transaction 已关闭；随后执行的 get_place 读 geo_cache 撞 InvalidRequestError: Can't operate on closed transaction inside context manager，被pipeline_ext 包装器except 吞掉。危害等级高：它不报错、不失败，只让功能静默失效，极易被误判成「高德不稳定」
+- **修复**：把 enrich_place_on_ingest 移到三个处理器（text/voice/photo）里所有会commit 的钩子之前；新增源码级不变量测试锁住顺序（inspect.getsource 比对调用位置），防止后续有人把钩子挪回去
+- **相关文件**：backend/app/services/pipeline.py
+- **教训**：同事务内钩子有顺序依赖：会 commit 的钩子必须排在需要读库/写缓存的钩子之后，否则后者静默失败；此类顺序必须用测试锁住，不能靠注释
+
+---
+
+### 2026-10-04 19:17 · commit 4686320 · ts=1791112657
+- **错误**：agent 的 checkpointer 用 AsyncConnectionPool + AsyncPostgresSaver，而 /v1/chat 是同步 def端点（threadpool 无 running loop）⇒ 创建时抛 AsyncConnectionPool open with no running loop，静默降级 MemorySaver
+- **根因**：同步调用链（agent.invoke）与异步 checkpointer 天然不匹配；降级只打 WARNING、不报错，且 MemorySaver 语义与 PostgresSaver 完全兼容 ⇒ 服务 200、对话照常往返，但每轮都是新会话（用户以为有记忆、实际每次失忆），仅日志里两行 WARNING
+- **修复**：改用同步 PostgresSaver（与 invoke 匹配，无需事件循环）；长驻连接需单独建并在连接级设 search_path；降级结果不再写入单例字段（否则启动时DB 抖一下即永久失忆不可恢复）；/health 新增 checkpointer 字段暴露真实类型，把静默降级变可见
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：凡「服务正常但行为可疑」，先查有没有静默降级路径；降级必须可观测（探活接口暴露），否则永远查不到
+
+---
+
+### 2026-10-04 19:13 · commit 4686320 · ts=1791112424
+- **错误**：本机 shell 长期存在陈旧系统级 DASHSCOPE_API_KEY（旧 Token Plan sk-sp- key），而项目全部配置用 load_dotenv(override=False)（进程环境变量优先于 .env）⇒ 改了 .env 也不生效
+- **根因**：dotenv 的 override=False 是为容器/K8s 注入留的设计口，但本机 shell 环境变量成了隐形高优先级真源。连锁三处假象：① agent 用旧 key⇒base_url 被推成 token-plan 端点 ⇒ 400 header 与 workspace 不匹配；② 同一变量污染 pytest ⇒ 403 AccessDenied.Unpurchased 被误判为「套餐没开通」；③ 污染后端护栏 ⇒ 401 ⇒ fail-closed ⇒ 每一句 AI 回复被拦成 422，表现为「AI 极不稳定」。铁律：启动任何服务/测试前先清 DASHSCOPE_*，启动脚本固化清理（agent/scripts/local_run.ps1）
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-09-25 21:49 · commit 1b4da1b · ts=1790344175
 - **错误**：门禁报红却看不到失败用例名，花了 4 轮（看门禁输出→猜报告键→报告里找 FAILED→全量重跑 107s）才定位到 test_ba3_ai_chain 那条
 - **根因**：① pytest 输出顺序是「进度 → 失败摘要 → 覆盖率表（上百行）」，而 test_agent 与 review_agent 两处都做**尾部切片**（[-3500:]/[-1500:]）⇒ 恰好把 FAILED 行切掉，留下与失败无关的覆盖率噪音；② 报告 JSON 只有非结构化的 output 字段，没有 failed_tests；③ review_agent 只打印 tests 段前 8 行（还是噪音）

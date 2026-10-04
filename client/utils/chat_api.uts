@@ -94,7 +94,11 @@ export function sendChatMessage(conversationId: string, content: string): Promis
 	// B13 面包屑：只记"新建/续会话"与文本长度，**不记用户对 AI 说了什么**（隐私纪律同 search_api）
 	addBreadcrumb('chat', (conversationId == '' ? 'send new conversation' : 'send existing conversation') + ' len=' + content.length)
 	return new Promise<ChatSendResult | null>((resolve) => {
-		post(PATH_CHAT_MESSAGES, body).then((res: UTSJSONObject | null) => {
+		// 2026-10-04：显式给足超时。默认看门狗 20s，而后端 agent 调用上限 180s
+		// （`agent_service_timeout_s`），实测单轮 6~14s、首轮（含建checkpointer 连接）可到 40s+
+		// ⇒ 沿用 20s 会在后端还在算的时候就先判失败，表现为「AI 没反应」。
+		// 取 90s：覆盖实测区间且远小于后端 180s 上限，让 504 仍能由后端如实返回。
+		post(PATH_CHAT_MESSAGES, body, 90000).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return

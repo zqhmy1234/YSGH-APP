@@ -125,7 +125,7 @@
 			</view>
 		</scroll-view>
 		<view class="n2_355">
-			<input class="n2_357" v-model="draft" placeholder="问点什么…" placeholder-style="color:#B3A696;font-size:26.9rpx;" :maxlength="200" confirm-type="send" @confirm="onSend" />
+			<input :adjust-position="true" class="n2_357" v-model="draft" placeholder="问点什么…" placeholder-style="color:#B3A696;font-size:26.9rpx;" :maxlength="200" confirm-type="send" @confirm="onSend" />
 			<view class="n2_358" @tap="onSend">
 				<image class="n2_359" src="/static/icons/i2_359.svg" />
 			</view>

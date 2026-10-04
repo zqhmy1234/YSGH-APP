@@ -6,7 +6,7 @@
 		<view class="n2_391"> <!-- 搜索胶囊 -->
 			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
 			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
-				<input class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
+				<input :adjust-position="true" class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
 			</view>
 			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
 			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
@@ -486,6 +486,13 @@
 	}
 	.n2_396 {
 		width: 100%;
+		/* 2026-10-04真机修复「看不见自己输入的文字」：原生 <input> 未显式给高度时，
+		   在 .n2_391（定高 92.3rpx + overflow:hidden）里被竖向裁切，只剩半行 →
+		   用户能聚焦、能打字，却看不到字。
+		   高度取与 AI 页输入框同格（--d-lattice-p36 = 69.2rpx，见 styles/tab-ai.css），
+		   配合 line-height 让文字在框内垂直居中。 */
+		height: var(--d-lattice-p36, 69.2rpx);
+		line-height: var(--d-lattice-p36, 69.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p15, 28.8rpx);
 		color: var(--c-ink-900, #3A2E25);
