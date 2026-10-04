@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 
 # 限制线程数（必须在 torch import 前设置）
 os.environ.setdefault("OMP_NUM_THREADS", "4")
@@ -24,16 +25,27 @@ from sentence_transformers import SentenceTransformer  # noqa: E402
 
 logger = logging.getLogger("yishu.rag")
 
-MODEL_NAME = "BAAI/bge-m3"
-
+# BGE-M3 的 HF repo id（本地缺模型时的回退目标）
+MODEL_REPO = "BAAI/bge-m3"
+# 本地模型目录（backend/models/bge-m3，.gitignore 已排除 ⇒ 不入库）。
+# 为什么优先本地：① 离线可用，不受 huggingface.co / hf-mirror 可达性影响
+# （本机实测两者 SSL 均被中断，2026-10-04）；② 免掉每次启动的 HEAD 校验超时。
+# 获取方式见 backend/models/README.md（ModelScope 源，国内可达）。
+_LOCAL_DIR = Path(__file__).resolve().parents[2] / "models" / "bge-m3"
+MODEL_NAME = str(_LOCAL_DIR) if (_LOCAL_DIR / "config.json").is_file() else MODEL_REPO
 
 torch.set_num_threads(4)
 
 
 @lru_cache(maxsize=1)
 def get_model() -> SentenceTransformer:
-    """加载 BGE-M3（fp16，~1.2GB 内存；单例缓存）"""
-    logger.info("加载 BGE-M3 模型...")
+    """加载 BGE-M3（fp16，~1.2GB 内存；单例缓存）
+
+    模型来源二选一（按`MODEL_NAME` 自动判定，无需改配置）：
+      · 本地目录 `backend/models/bge-m3/config.json` 存在 → 用它（离线，推荐）
+      · 否则回退 HF repo id `BAAI/bge-m3`（需HF_HUB_OFFLINE=0 且网络可达）
+    """
+    logger.info("加载 BGE-M3 模型: %s", MODEL_NAME)
     return SentenceTransformer(MODEL_NAME, model_kwargs={"torch_dtype": torch.float16})
 
 
@@ -50,10 +62,17 @@ def _get_sparse_linear() -> torch.nn.Linear:
 
     sentence-transformers 3.x 移除了 SparseEmbedding 模块，但模型快照仍带
     sparse_linear.pt —— 手动加载，按官方公式 sparse = relu(linear(token_emb))。
-    """
-    from huggingface_hub import hf_hub_download
 
-    path = hf_hub_download(MODEL_NAME, "sparse_linear.pt", local_files_only=True)
+    本地目录模式下直接读文件（`hf_hub_download` 只认 HF 缓存/在线 repo，
+    对`backend/models/bge-m3` 这种本地路径无效）。
+    """
+    local_pt = _LOCAL_DIR / "sparse_linear.pt"
+    if local_pt.is_file():
+        path = str(local_pt)
+    else:
+        from huggingface_hub import hf_hub_download
+
+        path = hf_hub_download(MODEL_REPO, "sparse_linear.pt", local_files_only=True)
     state = torch.load(path, map_location="cpu", weights_only=True)
     lin = torch.nn.Linear(1024, 1)
     lin.load_state_dict(state)

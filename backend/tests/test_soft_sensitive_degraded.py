@@ -98,10 +98,19 @@ def test_no_rule_text_really_hits_nothing():
 
 
 def test_detector_unavailable_marks_pending_recheck(db_user, monkeypatch):
-    """真实模式 + 未配 key（检测器不可用）⇒ 待复核 + source=degraded。"""
+    """检测器不可用 ⇒ 待复核 + source=degraded。
+
+    2026-10-04 修正：原先只 mock 了 `mock_external_ai=False`，把「检测器不可用」
+    这个前提交给环境——本机恰有陈旧 DASHSCOPE key ⇒ 百炼 401 ⇒ 假性不可用，
+    于是本用例长期**假绿**（靠环境污染撑着）；环境一清理就红。
+    现显式 mock `llm_available=False`，真正测到 D10-9 的降级分支，
+    且与「本机有没有配 key」无关（单跑/全量跑结果一致）。
+    """
     from app.core.config import settings
+    from app.services.llm_ops import guard
 
     monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(guard, "llm_available", lambda: False)
     db, user = db_user
     c = _content(db, user.id, _NO_RULE_TEXT)
     _mark(db, c)
@@ -112,11 +121,17 @@ def test_detector_unavailable_marks_pending_recheck(db_user, monkeypatch):
 
 
 def test_pending_recheck_blocks_active_mention(db_user, monkeypatch):
-    """待复核内容必须被**主动提及**路径拦住（回响双查 / 推送过滤）。"""
+    """待复核内容必须被**主动提及**路径拦住（回响双查 / 推送过滤）。
+
+    2026-10-04 修正：同上一条——「检测器不可用」必须显式 mock，
+    不能再交给环境（详见 test_detector_unavailable_marks_pending_recheck）。
+    """
     from app.core.config import settings
     from app.services.echo import _is_sensitive
+    from app.services.llm_ops import guard
 
     monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(guard, "llm_available", lambda: False)
     db, user = db_user
     c = _content(db, user.id, _NO_RULE_TEXT)
     _mark(db, c)
