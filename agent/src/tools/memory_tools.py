@@ -4,31 +4,48 @@
 """
 import json
 import logging
-import os
-from datetime import datetime
-from yishu.context import new_context, request_context
-from yishu.db_errors import APIError
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from langchain.tools import tool
 from storage.database.supabase_client import get_supabase_client
 from tools.tag_rules import validate_collection_tags, validate_memory_tags
+from yishu.context import new_context, request_context
+from yishu.db_errors import APIError
 
 logger = logging.getLogger(__name__)
 
 
 def _get_client():
     """获取Supabase客户端"""
-    ctx = request_context.get() or new_context(method="memory_tool")
+    request_context.get() or new_context(method="memory_tool")
     return get_supabase_client()
 
 
 def _get_user_id() -> str:
-    """从请求上下文获取当前用户ID，用于数据隔离"""
+    """从请求上下文取当前 user_id（**fail-closed**，2026-10-04）。
+
+    原实现：`return os.getenv("COZE_USER_ID", "default")` —— 上下文缺失时
+    回落到一个**全局共享**的 user_id。后果不是「拿不到数据」，而是
+    **所有用户的数据混进同一个身份**：
+      · `save_memory` 写进公共桶；
+      · `search_memories` / `get_recent_memories` /
+        `export_knowledge_collections` 等 13 处 `.eq("user_id", ...)`
+        全部作用在公共桶上 ⇒ **跨用户串档**。
+      · 更隐蔽的是它**不报错**：没有用户维度的审计日志，静默就是常态。
+
+    现在缺失即抛错拒绝执行。`yishu/context.current_user_id` 早已是同样口径
+    （其 docstring 明确写了「不读环境变量冒充用户」），但本文件仍在用旧写法，
+    同一仓库自相矛盾——统一到 fail-closed。
+    """
     ctx = request_context.get()
     if ctx and ctx.user_id:
         return ctx.user_id
-    return os.getenv("COZE_USER_ID", "default")
+    from yishu.observability import log_audit
+
+    log_audit("user_id_missing_reject", tool="memory_tools")
+    raise PermissionError("缺少 user_id，拒绝执行记忆操作（防止跨用户串档）")
 
 
 def _parse_content(content: Any) -> str:
@@ -48,15 +65,40 @@ def _find_related_memories(client, user_id: str, exclude_id: int,
                            mood: str | None = None,
                            topics: list[str] | None = None,
                            limit: int = 3) -> list[dict[str, Any]]:
-    """搜索与当前记忆相关的历史记忆（按分类、情绪、主题匹配）"""
+    """搜索与当前记忆相关的历史记忆（按分类、情绪、主题匹配）
+
+    2026-10-04 修复（性能 P0，根因）：
+      原实现 `select("..., memory_categories(name)")` 用的是 **Supabase/PostgREST 的
+      外键嵌入语法**。去 Coze 迁移后数据层换成了原生 SQLAlchemy（`local_client`），
+      它把这段**当成列名直拼**⇒ SQL 报错「列 memory_categories.name 不存在」。
+
+      失败被 `except` 吞掉只打 warning ⇒ `save_memory` 每次都返回
+      `related_memories: []`，而返回体本身是 `success: true`——
+      LLM据此判断"信息不完整"，于是**反复调用同一个 save_memory**：
+      实测单轮 16~18 次、耗时 32~64s、输入 token 涨到 13K、最后撞递归上限。
+      **一个静默的 SQL 错误 ⇒ 32 秒延迟。**
+
+      修法：`memories` 表本来就有 `category_id` 列，直接按它过滤，无需 join。
+    """
     related: list[dict[str, Any]] = []
     try:
         query = client.table("memories").select(
-            "id, content, mood, location, topics, created_at, memory_categories(name)"
+            "id, content, mood, location, topics, created_at, category_id"
         ).eq("user_id", user_id).neq("id", exclude_id)
 
         if category:
-            query = query.eq("memory_categories.name", category)
+            # 分类名 → id（一次极小的查询），再按 category_id 过滤
+            cat_resp = (
+                client.table("memory_categories")
+                .select("id")
+                .eq("name", category)
+                .limit(1)
+                .execute()
+            )
+            cat_rows = getattr(cat_resp, "data", None)
+            cat_id = cat_rows[0].get("id") if cat_rows else None
+            if cat_id is not None:
+                query = query.eq("category_id", cat_id)
 
         response = query.order("created_at", desc=True).limit(limit * 3).execute()
         raw = response.data if isinstance(response.data, list) else []
@@ -104,10 +146,71 @@ def _find_related_memories(client, user_id: str, exclude_id: int,
                 "location": item.get("location"),
                 "created_at": item.get("created_at"),
             })
-        return result
+        return _jsonable(result)
     except Exception as e:
-        logger.warning(f"联想相关记忆失败: {e}")
+        # 2026-10-04：这个 except 曾经让「PostgREST 嵌入语法不被支持」这个硬错误
+        # 静默了多久无从查证——只有一行 warning，且调用方拿到的是空列表而非错误。
+        # 升级为结构化事件，让这类"能力性缺失"在日志里显形。
+        from yishu.observability import log_event
+
+        log_event(
+            "related_memories_failed",
+            level=logging.WARNING,
+            user_id=user_id,
+            exc_type=type(e).__name__,
+            detail=str(e)[:150],
+        )
+        logger.warning("联想相关记忆失败: %s", e)
         return []
+
+
+def _category_id(client, name: str) -> Any:
+    """分类名 → category_id（2026-10-04）。
+
+    `memories` 表存的是 `category_id`，分类名在 `memory_categories.name`。
+    迁移前用 PostgREST 关联语法跨表过滤，迁移后失效 ⇒ 按 id 过滤才可靠。
+    """
+    try:
+        resp = (
+            client.table("memory_categories").select("id").eq("name", name).limit(1).execute()
+        )
+        rows = getattr(resp, "data", None)
+        return rows[0].get("id") if rows else None
+    except Exception as exc:  # noqa: BLE001 —— 取 id 失败不该阻断查询
+        from yishu.observability import log_event
+
+        log_event(
+            "category_lookup_failed",
+            level=logging.WARNING,
+            exc_type=type(exc).__name__,
+            detail=str(exc)[:100],
+        )
+        return None
+
+
+def _jsonable(value: Any) -> Any:
+    """把 DB 取出的非 JSON 原生类型（datetime/date/Decimal）转成字符串。
+
+    2026-10-04 踩坑：`created_at` 从 SQLAlchemy 取出是 `datetime`，
+    `save_memory` 末尾的 `json.dumps(...)` 直接抛
+    `TypeError: Object of type datetime is not JSON serializable`
+    ⇒ 工具失败 ⇒ LLM 反复重试同一个工具。
+
+    这与上面那个 SQL 错误**互相掩盖**：关联查询坏时返回空列表、json 不崩；
+    关联查询修好后 json 崩——修一个暴露另一个。
+
+    统一在**数据源头**（联想函数返回值）归一化，
+    避免在 24 处 `json.dumps` 逐个加 `default=str`。
+    """
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def _find_related_collections(client, user_id: str, exclude_id: int,
@@ -189,6 +292,51 @@ def save_memory(
         保存结果的JSON字符串，包含记忆ID、标签信息和相关历史记忆
     """
     client = _get_client()
+
+    # ---- 幂等：同用户同内容已存在则直接返回，不重复写库（2026-10-04 性能 P0）----
+    # 为什么必须在这里挡：LLM 收不到"已经存过了"的信号时，会**反复调用同一个
+    # save_memory**——实测单轮 16~28 次、输入 token 涨到 15K、耗时 32~66s。
+    # 工具层幂等是唯一能真正终止循环的位置（改 prompt 或降 max_rounds 都只是
+    # 降低概率，LLM 仍可能在别处重试）。
+    try:
+        dup = (
+            client.table("memories")
+            .select("id")
+            .eq("user_id", _get_user_id())
+            .eq("content", content)
+            .limit(1)
+            .execute()
+        )
+        dup_rows = getattr(dup, "data", None)
+        if dup_rows:
+            existing_id = dup_rows[0].get("id") if isinstance(dup_rows[0], dict) else None
+            from yishu.observability import log_event
+
+            log_event("save_memory_dedup", existing_id=existing_id, content_len=len(content))
+            return json.dumps(
+                {
+                    "success": True,
+                    "duplicate": True,
+                    "memory_id": existing_id,
+                    "message": (
+                        f"这条内容已经保存过了（ID: {existing_id}），无需重复保存。请直接回复用户。"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+    except Exception as exc:  # noqa: BLE001 —— 去重是优化，不该因它阻断正常保存
+        from yishu.observability import log_event
+
+        # 隔离失败（缺 user_id）**必须重抛**：吞掉它会让审计日志显示成
+        # 「去重失败」这种无害告警，而真实问题是 fail-closed 被绕过。
+        if isinstance(exc, PermissionError):
+            raise
+        log_event(
+            "save_memory_dedup_failed",
+            level=logging.WARNING,
+            exc_type=type(exc).__name__,
+            detail=str(exc)[:100],
+        )
 
     # V3标签校验与归一化
     validated = validate_memory_tags(
@@ -291,12 +439,19 @@ def search_memories(
 
         # 应用过滤条件
         if category:
-            db_query = db_query.eq("memory_categories.name", category)
+            # 2026-10-04：同 `_find_related_memories` 的修复——原用 PostgREST 关联
+            # 语法 `memory_categories(name)` + `.eq("memory_categories.name", ...)`，
+            # 在原生 SQLAlchemy 后端下要么被当列名报错、要么过滤失效。
+            cat_id = _category_id(client, category)
+            if cat_id is not None:
+                db_query = db_query.eq("category_id", cat_id)
         if mood:
             db_query = db_query.eq("mood", mood)
         if query:
-            # 使用ilike进行模糊搜索
-            db_query = db_query.ilike("content", f"%{query}%")
+            # 2026-10-04：统一为 **PostgREST 语义**——`ilike` 内部把 `*` 转成 SQL
+            # 通配并转义用户输入里的 `%`/`_`。原代码传 `%{query}%` 会被当成
+            # 「字面量百分号」而匹配不到任何东西（搜索功能实际一直是坏的）。
+            db_query = db_query.ilike("content", f"*{query}*")
 
         # 按时间倒序，限制数量
         db_query = db_query.order("created_at", desc=True).limit(min(limit, 50))

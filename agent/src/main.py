@@ -31,19 +31,53 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
-from yishu.context import new_context, request_context
-from yishu.errors import classify_error
-from yishu.logging_setup import setup_logging
-
 from agents.agent import run_agent
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from storage.memory.memory_saver import current_checkpointer_kind
+from yishu.context import new_context, request_context
+from yishu.errors import classify_error
+from yishu.logging_setup import setup_logging
+from yishu.observability import (
+    bind_request_id,
+    log_event,
+    new_request_id,
+    reset_request_id,
+)
 
 logger = logging.getLogger("yishu.agent.service")
 
 SERVICE_TOKEN = os.getenv("AGENT_SERVICE_TOKEN", "").strip()
+
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _env_true(key: str, default: bool = False) -> bool:
+    """读布尔环境变量（口径统一，避免各处自己写 truthy 判断）。"""
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in _TRUTHY
+
+
+def _is_production() -> bool:
+    """是否生产环境（决定鉴权/降级类配置是否 fail-closed）。"""
+    return _env_true("APP_ENV_PRODUCTION") or os.getenv("APP_ENV", "").strip().lower() in {
+        "production",
+        "prod",
+    }
+
+
+def _agent_summary_fields(summary: dict) -> dict:
+    """把 agent 运行时摘要摊平成可安全入日志的标量字段。
+
+    只取计数/开关类（工具数、是否单例等），**不取任何 prompt 或工具入参**
+    —— 隐私纪律见 yishu/observability 模块 docstring。
+    """
+    return {
+        f"agent_{k}": v for k, v in (summary or {}).items() if isinstance(v, (int, float, bool))
+    }
 
 
 class ChatRequest(BaseModel):
@@ -121,13 +155,37 @@ async def lifespan(app: FastAPI):
     model = os.getenv("AGENT_LLM_MODEL", "qwen3.8-flash")
     db_configured = bool(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL"))
     logger.info("忆光 Agent 服务启动：model=%s db_configured=%s", model, db_configured)
-    if not SERVICE_TOKEN:
-        logger.warning(
-            "未配置 AGENT_SERVICE_TOKEN —— 本服务将不校验 X-Agent-Token。"
-            "仅限本地开发；生产必须配置，且本服务不得直接暴露公网（user_id 必须来自后端注入）"
-        )
     if not db_configured:
         raise RuntimeError("未配置 DATABASE_URL —— 记忆域数据落我们自己的 Postgres，必须配置")
+    # 启动自检（2026-10-04）：把「配错了但能跑」的配置全部显式打出来。
+    # 目的是让**延迟与安全口径可核对**——优化前后对比要看的就是这些值。
+    from agents.agent import agent_runtime_summary
+
+    log_event(
+        "startup_config",
+        model=model,
+        checkpointer=current_checkpointer_kind(),
+        auth_enabled=bool(SERVICE_TOKEN),
+        enable_thinking=_env_true("AGENT_ENABLE_THINKING", False),
+        max_tokens=int(os.getenv("AGENT_LLM_MAX_TOKENS", "2048")),
+        llm_timeout_s=int(float(os.getenv("AGENT_LLM_TIMEOUT", "120"))),
+        validator_max_rounds=int(os.getenv("AGENT_MAX_ROUNDS", "2")),
+        validator_budget_s=float(os.getenv("AGENT_VALIDATOR_BUDGET_S", "20")),
+        rate_limit_rpm=int(os.getenv("AGENT_RATE_LIMIT_RPM", "30")),
+        web_panel=WEB_PANEL_MOUNTED,
+        **_agent_summary_fields(agent_runtime_summary()),
+    )
+    if not SERVICE_TOKEN:
+        msg = (
+            "未配置 AGENT_SERVICE_TOKEN —— 本服务将不校验 X-Agent-Token。"
+            "仅限本地开发；生产必须配置，且本服务不得直接暴露公网"
+        )
+        if _is_production():
+            # 生产 fail-closed：启动即拒绝，不给"忘了配也能起"留机会
+            raise RuntimeError(
+                f"{msg}（检测到 APP_ENV=production，拒绝以fail-open 方式启动）"
+            )
+        logger.warning(msg)
     yield
     logger.info("忆光 Agent 服务停止")
 
@@ -135,10 +193,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="忆光 Agent 服务", version="0.1.0", lifespan=lifespan)
 
 # 记忆浏览 web 面（上游自带的演示/浏览用 API + 模板页；数据层已换成本地 Postgres）
+WEB_PANEL_MOUNTED = False
 try:
     from web.api_routes import router as web_router
 
     app.include_router(web_router)
+    WEB_PANEL_MOUNTED = True
 except Exception as exc:  # noqa: BLE001 —— 该面非核心链路，缺失不应拖垮服务启动
     logger.warning("记忆浏览 web 面未挂载：%s", exc)
 
@@ -162,33 +222,78 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
     多轮上下文：`thread_id` 缺省用 `user_id`，与上游 `run_agent` 的
     `config={"configurable": {"thread_id": user_id}}` 一致——**上游 HTTP 面把 thread_id 设成
     run_id 导致每次对话都是新的**（见 UPSTREAM 五-2），本接口刻意不沿用那个错误。
+
+    埋点（2026-10-04）：入口/出口都带 `rid`，与 LLM/工具/校验层日志串联。
+    **不记录消息正文**，只记长度（隐私纪律见 yishu/observability 模块 docstring）。
     """
     _require_token(x_agent_token)
     started = time.monotonic()
     thread_id = req.thread_id or req.user_id
-    # 可信注入：user_id 只来自请求体（由后端反代填入），并写入请求上下文供工具读取
-    ctx = new_context(method="chat", user_id=req.user_id, run_id=thread_id)
-    request_context.set(ctx)
+    rid_token = bind_request_id(new_request_id())
     try:
-        result = run_agent(req.message, user_id=req.user_id, ctx=ctx)
-    except Exception as exc:  # noqa: BLE001 —— 统一经分类器映射状态码
-        classified = classify_error(exc)
-        logger.exception("对话失败 kind=%s retryable=%s", classified.kind, classified.retryable)
-        return JSONResponse(  # type: ignore[return-value]
-            status_code=classified.http_status,
-            content={
-                "error": {"kind": classified.kind, "retryable": classified.retryable, "message": str(exc)},
-                "user_id": req.user_id,
-            },
+        # 可信注入：user_id 只来自请求体（由后端反代填入），并写入请求上下文供工具读取
+        ctx = new_context(method="chat", user_id=req.user_id, run_id=thread_id)
+        request_context.set(ctx)
+        log_event(
+            "chat_start",
+            user_id=req.user_id,
+            thread_id=thread_id,
+            msg_len=len(req.message or ""),
+            thread_explicit=req.thread_id is not None,
         )
-    latency_ms = int((time.monotonic() - started) * 1000)
-    logger.info("对话完成 user=%s thread=%s latency_ms=%d", req.user_id, thread_id, latency_ms)
-    return ChatResponse(
-        reply=_normalize_reply(result),
-        user_id=req.user_id,
-        thread_id=thread_id,
-        latency_ms=latency_ms,
-    )
+        try:
+            result = run_agent(req.message, user_id=req.user_id, ctx=ctx)
+        except Exception as exc:  # noqa: BLE001 —— 统一经分类器映射状态码
+            classified = classify_error(exc)
+            latency_ms = int((time.monotonic() - started) * 1000)
+            log_event(
+                "chat_error",
+                level=logging.ERROR,
+                user_id=req.user_id,
+                thread_id=thread_id,
+                kind=classified.kind,
+                retryable=classified.retryable,
+                latency_ms=latency_ms,
+                exc_type=type(exc).__name__,
+            )
+            logger.exception("对话失败 kind=%s retryable=%s", classified.kind, classified.retryable)
+            return JSONResponse(  # type: ignore[return-value]
+                status_code=classified.http_status,
+                content={
+                    "error": {
+                        "kind": classified.kind,
+                        "retryable": classified.retryable,
+                        "message": str(exc),
+                    },
+                    "user_id": req.user_id,
+                },
+            )
+        latency_ms = int((time.monotonic() - started) * 1000)
+        # 诊断字段：把 agent 内部统计带出来，便于回答"时间花在哪"
+        diag = result.get("_diag") if isinstance(result, dict) else None
+        diag = diag or {}
+        log_event(
+            "chat_done",
+            user_id=req.user_id,
+            thread_id=thread_id,
+            latency_ms=latency_ms,
+            reply_len=len(_normalize_reply(result)),
+            rounds=diag.get("rounds"),
+            llm_calls=diag.get("llm_calls"),
+            tool_calls=diag.get("tool_calls"),
+            tool_dist=diag.get("tool_dist"),
+            validator_status=diag.get("status"),
+            agent_ms=diag.get("agent_ms"),
+            usage=diag.get("usage"),
+        )
+        return ChatResponse(
+            reply=_normalize_reply(result),
+            user_id=req.user_id,
+            thread_id=thread_id,
+            latency_ms=latency_ms,
+        )
+    finally:
+        reset_request_id(rid_token)
 
 
 @app.exception_handler(Exception)

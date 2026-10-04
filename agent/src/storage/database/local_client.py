@@ -20,11 +20,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import create_engine, delete, func, insert, select, update
+from sqlalchemy import and_, create_engine, delete, func, insert, or_, select, update
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, sessionmaker
 from storage.database.shared.model import KnowledgeCollections, Memories, MemoryCategories
@@ -78,6 +79,69 @@ def _model_for(table: str) -> Any:
     return model
 
 
+def _pg_pattern(value: Any) -> str:
+    """PostgREST 的 `*` 通配 → SQL 的 `%`（并转义用户输入里的 `%` / `_`）。"""
+    text = str(value)
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").replace("*", "%")
+
+
+def _parse_dot_condition(query: Any, spec: str) -> Any:
+    """解析 PostgREST 点号条件：`column.op.value`，如 `content.ilike.*灯*`。
+
+    op 支持 eq/neq/gt/gte/lt/lte/like/ilike；解析不出就返回 None（调用方丢弃），
+    不抛异常——避免一个写错的条件语法把整条查询打断。
+    """
+    parts = spec.split(".", 2)
+    if len(parts) != 3:
+        return None
+    column, op, raw = parts
+    attr = query._column(column)  # noqa: SLF001 —— 同模块内部协作
+    if attr is None:
+        return None
+    value = query._coerce(column, raw)  # noqa: SLF001
+    if op == "eq":
+        return attr == value
+    if op == "neq":
+        return attr != value
+    if op == "gt":
+        return attr > value
+    if op == "gte":
+        return attr >= value
+    if op == "lt":
+        return attr < value
+    if op == "lte":
+        return attr <= value
+    if op == "like":
+        return attr.like(value)
+    if op == "ilike":
+        return attr.ilike(_pg_pattern(value), escape="\\")
+    return None
+
+
+def _db_value(value: Any) -> Any:
+    """把 DB 取出的非 JSON 原生类型转成 JSON 安全的值（2026-10-04）。
+
+    在**数据出口**统一处理，而不是让每个工具各自 json.dumps(default=str)：
+    SQLAlchemy 取出的 created_at/updated_at 是 datetime，金额类是 Decimal，
+    直接进 json.dumps 会抛 TypeError: Object of type datetime is not JSON serializable。
+
+    这个坑的真实代价（实测）：工具抛异常 -> LLM 看不到原因 -> **反复重试同一个工具**
+    -> 单轮 16~28 次、输入 token 涨到 15K、耗时 32~66s、最后撞递归上限。
+    修一处不够——**每个返回 DB 数据的工具都会踩**，所以在出口一次解决。
+    """
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"<bytes:{len(bytes(value))}>"
+    if isinstance(value, dict):
+        return {k: _db_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_db_value(v) for v in value]
+    return value
+
+
 def _parse_embed(spec: str) -> tuple[str, list[str]] | None:
     """解析关系嵌入写法 `memory_categories(name, id)` → ('memory_categories', ['name','id'])。"""
     if "(" not in spec:
@@ -99,6 +163,8 @@ class LocalTableQuery:
         self._select: list[str] = ["*"]
         self._count_exact = False
         self._filters: list[tuple[str, str, Any]] = []
+        self._or: list[tuple[str, ...]] = []
+        self._and: list[tuple[str, ...]] = []
         self._order: list[tuple[str, bool]] = []
         self._limit: int | None = None
         self._offset: int | None = None
@@ -150,6 +216,32 @@ class LocalTableQuery:
 
     def in_(self, column: str, values: list[Any]) -> LocalTableQuery:
         return self._add(column, "in", values)
+
+    # ── 文本匹配与逻辑组合（2026-10-04 补）──
+    # 迁移遗留：`search_memories` 用了 Supabase/PostgREST 的 `ilike`，
+    # local_client 没实现 ⇒ **AttributeError** ⇒ 工具失败 ⇒ LLM 重试 ⇒
+    # 单轮 16~28 次调用、耗时 32~66s（与 datetime/关联语法两个缺陷叠加放大）。
+    # 核心搜索功能实际一直是坏的，只是被 `handle_tool_errors` 兜住不报错。
+    def like(self, column: str, pattern: str) -> LocalTableQuery:
+        return self._add(column, "like", pattern)
+
+    def ilike(self, column: str, pattern: str) -> LocalTableQuery:
+        """PostgREST 语义：大小写不敏感 + 通配符（`*` 转 SQL `%%`）。"""
+        return self._add(column, "ilike", pattern)
+
+    def contains(self, column: str, value: Any) -> LocalTableQuery:
+        """PostgREST 语义：数组/JSONB 包含（`value` 为标量时按 JSON 包含处理）。"""
+        return self._add(column, "contains", value)
+
+    def or_(self, *conditions: str) -> LocalTableQuery:
+        """PostgREST 语义：或条件，形如 ``or_("a.eq.1,b.eq.2")``（点号语法）。"""
+        self._or.append(conditions)
+        return self
+
+    def and_(self, *conditions: str) -> LocalTableQuery:
+        """PostgREST 语义：与条件，形如 ``and_("a.eq.1")``。"""
+        self._and.append(conditions)
+        return self
 
     # ── 排序/分页/单行 ──
     def order(self, column: str, desc: bool = False) -> LocalTableQuery:
@@ -240,6 +332,26 @@ class LocalTableQuery:
                 conds.append(attr <= value)
             elif op == "in":
                 conds.append(attr.in_(value))
+            elif op == "like":
+                conds.append(attr.like(value))
+            elif op == "ilike":
+                # PostgREST 用 `*` 作通配；SQLAlchemy 用 `%`。同时补上 escape，
+                # 否则用户查询里含 `%` / `_` 会被当通配符（`台灯` 之外的输入都能命中）。
+                conds.append(attr.ilike(_pg_pattern(value), escape="\\"))
+            elif op == "contains":
+                # JSONB/数组包含：PostgREST 的 contains 对标 PG 的 `@>`
+                conds.append(getattr(attr, "contains", None) and attr.contains(value) or attr == value)
+        # or_ / and_ 组合（PostgREST 点号语法）："a.eq.1,b.eq.2"
+        for group in self._or:
+            ors = [_parse_dot_condition(self, c) for c in group]
+            ors = [x for x in ors if x is not None]
+            if ors:
+                conds.append(or_(*ors))
+        for group in self._and:
+            ands = [_parse_dot_condition(self, c) for c in group]
+            ands = [x for x in ands if x is not None]
+            if ands:
+                conds.append(and_(*ands))
         return conds
 
     # ── 内部：行 → dict（含关系嵌入）──
@@ -256,9 +368,9 @@ class LocalTableQuery:
         for name in wanted:
             if not hasattr(row, name):
                 raise ValueError(f"表 {self.table} 上不存在列 {name!r}")
-            out[name] = getattr(row, name)
+            out[name] = _db_value(getattr(row, name))
         if not wanted and "*" not in self._select:
-            out = {c.name: getattr(row, c.name) for c in self.model.__table__.columns}
+            out = {c.name: _db_value(getattr(row, c.name)) for c in self.model.__table__.columns}
         # 关系嵌入：memory_categories(name) → {"memory_categories": {"name": ...}}（无关联时 None）
         for spec in self._select:
             embed = _parse_embed(spec)

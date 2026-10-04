@@ -4,13 +4,12 @@
 """
 import json
 import logging
-import os
-from yishu.context import new_context, request_context
-from yishu.db_errors import APIError
 from typing import Any
 
 from langchain.tools import tool
 from storage.database.supabase_client import get_supabase_client
+from yishu.context import new_context, request_context
+from yishu.db_errors import APIError
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +20,21 @@ def _get_client():
 
 
 def _get_user_id() -> str:
-    """从请求上下文获取当前用户ID，用于数据隔离"""
+    """从请求上下文取当前 user_id（**fail-closed**，2026-10-04）。
+
+    与 `tools/memory_tools._get_user_id` **必须同口径**：原实现同样回落到
+    `os.getenv("COZE_USER_ID", "default")` 这个全局共享身份，一旦上下文缺失，
+    `delete_knowledge_collection` / `export_knowledge_collections` /
+    `link_memory_to_collection` 会作用在**所有人的**收藏上（跨用户串档），
+    而且不报错。两个文件必须一起改，否则修一边等于没修。
+    """
     ctx = request_context.get()
     if ctx and ctx.user_id:
         return ctx.user_id
-    return os.getenv("COZE_USER_ID", "default")
+    from yishu.observability import log_audit
+
+    log_audit("user_id_missing_reject", tool="url_fetch_tools")
+    raise PermissionError("缺少 user_id，拒绝执行收藏操作（防止跨用户串档）")
 
 
 def _init_fetch_client():

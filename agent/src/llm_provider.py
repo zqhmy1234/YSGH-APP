@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 logger = logging.getLogger("yishu.agent.llm")
 
@@ -136,16 +137,39 @@ def load_llm_settings() -> LlmSettings:
         api_key=api_key,
         base_url=base_url,
         model=(os.getenv("AGENT_LLM_MODEL") or DEFAULT_MODEL).strip(),
+        # 2026-10-04 性能：**A/B 实测后保持默认开启**（推翻了我"关掉能降延迟"的假设）。
+        # 同一 prompt、同一环境各跑 3 次：
+        #   thinking=OFF → 25.3 / 17.5 / 14.5s，平均 19.1s
+        #   thinking=ON  → 20.0 / 11.4 / 11.7s，平均 14.4s
+        # 开着**反而更快**：推理模式帮模型判断"这条已经存过了"，从而少走工具循环
+        # （工具循环才是延迟主因，单次 LLM 多花的那点时间不划算）。
+        # 保持可关：设 AGENT_ENABLE_THINKING=0 可关闭做对照实验。
         enable_thinking=_env_bool("AGENT_ENABLE_THINKING", True),
         temperature=float(os.getenv("AGENT_LLM_TEMPERATURE") or 0.7),
-        max_tokens=int(os.getenv("AGENT_LLM_MAX_TOKENS") or 4096),
-        timeout=float(os.getenv("AGENT_LLM_TIMEOUT") or 600),
+        # 4096 -> 2048：实测回复均为百字内短文本，上限过大只会在失控时拖长等待
+        max_tokens=int(os.getenv("AGENT_LLM_MAX_TOKENS") or 2048),
+        # 600 -> 120 秒：单次调用超过 2 分钟基本等于挂了，快速失败好过长时间挂起
+        timeout=float(os.getenv("AGENT_LLM_TIMEOUT") or 120),
         extra_headers=headers,
     )
     return settings
 
 
+def reset_llm_cache() -> None:
+    """清空模型客户端缓存（改了 LLM 相关环境变量后调用）。"""
+    build_chat_model.cache_clear()
+    logger.info("LLM 客户端缓存已清空")
+
+
+@lru_cache(maxsize=2)
 def build_chat_model(settings: LlmSettings | None = None, streaming: bool = True):
+    """构建模型客户端（**带缓存**）。
+
+    2026-10-04 性能：原实现每次调用都新建 `ChatOpenAI` ⇒ 每次都新建 httpx 连接池
+    ⇒ TLS 握手与连接建立**完全无法复用**（agent 侧每请求调一次，实测明显开销）。
+    现在按 (settings, streaming) 缓存复用。调用方一律走默认 `settings=None`
+    （配置读一次即可），采样参数变更后调 `reset_llm_cache()`。
+    """
     """构建 langchain `ChatOpenAI`（百炼 OpenAI 兼容端点）。
 
     注意：`extra_body` 用官方的 `enable_thinking`（上游误写成 `{"thinking": {"type": ...}}`，
