@@ -23,6 +23,7 @@
 import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
 import { addBreadcrumb } from './sentry'
 import { PATH_ASR_TRANSCRIBE, PATH_CONTENTS } from './contract'
+import { applyGpsToBody, getLastFix, Fix } from './location'
 // TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
 // 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
 import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
@@ -340,13 +341,18 @@ function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 	})
 }
 
-/** POST /contents：语音内容入库（voice 类型，可选携带 cos_key 长音频）；返回 content_id 或 null */
+/** POST /contents：语音内容入库（voice 类型，可选携带 cos_key 长音频）；返回 content_id 或 null
+ *
+ *  `fix`（2026-10-04）：本次记录的定位，与文字/照片同口径（见 utils/location.uts）。
+ *  为 null 时不写 gps 键，绝不用占位坐标。
+ */
 export function saveVoiceContent(
 	text: string,
 	durationMs: number,
 	emotion: string,
 	cosKey: string = '',
-	filePath: string = ''
+	filePath: string = '',
+	fix: Fix | null = null
 ): Promise<string | null> {
 	const extra: UTSJSONObject = {
 		duration_ms: durationMs
@@ -364,6 +370,7 @@ export function saveVoiceContent(
 		// J-4：长录音音频已落对象存储 → 带 cos_key，管线据此下载转写（>5min 走 VAD）
 		body.set('cos_key', cosKey)
 	}
+	applyGpsToBody(body, fix)
 	return new Promise<string | null>((resolve) => {
 		post(PATH_CONTENTS, body).then((res: UTSJSONObject | null) => {
 			if (res == null) {
@@ -474,7 +481,7 @@ export function uploadVoicePersistent(
 								resolve(out)
 								return
 							}
-							saveVoiceContent('', durationMs, '', fileKey, filePath).then((contentId: string | null) => {
+							saveVoiceContent('', durationMs, '', fileKey, filePath, getLastFix()).then((contentId: string | null) => {
 								if (contentId == null) {
 									showErrorToast(new Error('长录音内容入库失败'))
 									resolve(null)

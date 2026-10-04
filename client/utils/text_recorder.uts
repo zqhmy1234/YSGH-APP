@@ -74,7 +74,11 @@ export function labelCn(label: string): string {
 	return v != null ? v : label
 }
 
-/** POST /contents：文字入库（text 类型）；返回 content_id 或 null */
+/** POST /contents：文字入库（text 类型）；返回 content_id 或 null
+ *
+ *  说明：记录面板的真实入库走 `capsule_api.createTextContentRemark`（本函数零调用），
+ *  定位统一由 `utils/location.applyGpsToBody` 在各提交点注入，此处保持原样。
+ */
 export function createTextContent(text: string): Promise<string | null> {
 	const body: UTSJSONObject = {
 		content_type: 'text',

@@ -106,7 +106,7 @@
 					<view class="v-body">
 						<!-- 转写内容（节标 13pt #8A7A6A；白卡 654x250 radius 38rpx，可改字纠正） -->
 						<text class="v-sec v-sec-first">转写内容</text>
-						<textarea class="v-trans" v-model="transcript" :maxlength="2000" />
+						<textarea :adjust-position="true" class="v-trans" v-model="transcript" :maxlength="2000" />
 						<text v-if="voiceDiag != ''" class="v-diag">{{ voiceDiag }}</text>
 
 						<!-- 分类（AI 已预选 · 点标签可纠正；chips=ALL_LABELS 真实枚举） -->
@@ -124,7 +124,7 @@
 							<view class="v-chip v-chip-plus" @tap="onPlusTap"><text class="v-chip-plus-text">＋</text></view>
 						</view>
 						<view v-if="plusOpen" class="plus-editor">
-							<input class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
+							<input :adjust-position="true" class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
 							<view class="plus-ok" @tap="confirmCustom"><text class="plus-ok-text">添加</text></view>
 						</view>
 
@@ -143,13 +143,16 @@
 								<view class="v-ico">
 									<view class="v-ico-pin"></view>
 								</view>
-								<text class="v-info-text">{{ locationText }}</text>
+								<!-- 2026-10-04：定位状态诚实化。拿不到就不显示这一行，
+								     不用任何占位地名（原为写死的「上海 · 江边」）。 -->
+								<text v-if="locateState == 'locating'" class="v-info-text">定位中…</text>
+								<text v-else-if="locateState == 'ok'" class="v-info-text">已记录当前位置</text>
 							</view>
-						</view>
+							</view>
 
-						<!-- 备注（BA1 已接真：remark 随保存接口入库，ContentOut 回显） -->
-						<text class="v-sec">备注</text>
-						<textarea class="v-remark" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+							<!-- 备注（BA1 已接真：remark 随保存接口入库，ContentOut 回显） -->
+							<text class="v-sec">备注</text>
+						<textarea :adjust-position="true" class="v-remark" v-model="remark" placeholder="补充几句…" :maxlength="200" />
 					</view>
 				</scroll-view>
 				<view class="v-save" @tap="onSave"><text class="v-save-text">保存</text></view>
@@ -184,8 +187,8 @@
 						<!-- 转写内容（F1d，可改字纠正）/ 正文（F1e） -->
 						<template v-else>
 							<text class="sec-label sec-label-first">{{ formMode == 'voice' ? '转写内容' : '正文' }}</text>
-							<textarea v-if="formMode == 'voice'" class="a-input" v-model="transcript" :maxlength="2000" />
-							<textarea v-else class="a-input" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="1000" />
+							<textarea :adjust-position="true" v-if="formMode == 'voice'" class="a-input" v-model="transcript" :maxlength="2000" />
+							<textarea :adjust-position="true" v-else class="a-input" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="1000" />
 							<view v-if="formMode == 'text' && draft != ''" class="counter-wrap">
 								<text class="counter-row">{{ draft.length }}/1000</text>
 							</view>
@@ -209,7 +212,7 @@
 						</view>
 						<!-- 自定义分类输入行（点＋展开；本地持久化 custom_labels，后端 corrections 白名单不支持自由标签——台账 A 类） -->
 						<view v-if="plusOpen" class="plus-editor">
-							<input class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
+							<input :adjust-position="true" class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
 							<view class="plus-ok" @tap="confirmCustom"><text class="plus-ok-text">添加</text></view>
 						</view>
 
@@ -228,14 +231,16 @@
 								<view class="v-ico">
 									<view class="v-ico-pin"></view>
 								</view>
-								<text class="v-info-text">{{ locationText }}</text>
+								<!-- 2026-10-04：同上，诚实化定位状态（无值即不显示）。 -->
+								<text v-if="locateState == 'locating'" class="v-info-text">定位中…</text>
+								<text v-else-if="locateState == 'ok'" class="v-info-text">已记录当前位置</text>
 							</view>
-						</view>
+							</view>
 
-						<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；BA1 已接真随保存入库） -->
-						<template v-if="formMode != 'photo'">
+							<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；BA1 已接真随保存入库） -->
+							<template v-if="formMode != 'photo'">
 							<text class="sec-label sec-label-gap">备注</text>
-							<textarea class="remark-input" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+							<textarea :adjust-position="true" class="remark-input" v-model="remark" placeholder="补充几句…" :maxlength="200" />
 						</template>
 
 						<!-- 确定钮（画布真值：随内容流置于信息卡之后，非固定底栏） -->
@@ -265,6 +270,7 @@
 	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
 	import { createTextContentRemark } from '@/utils/capsule_api'
 	import { recorderState, stopRecord } from '@/utils/voice'
+	import { getCurrentFix, setLastFix, Fix, LocateState } from '@/utils/location'
 	import { showErrorToast } from '@/utils/api'
 	import { VoiceRecorder } from '@/composables/useVoiceRecord'
 	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
@@ -311,9 +317,14 @@
 	let manualLabel = ref('')
 	// F1d 语音补录信息态：AI 预选分类（进入标注态真实打标，hint「AI 已预选 · 点标签可纠正」）
 	let aiLabel = ref('')
-	// F1d 信息卡地点行：无定位服务 → USE_MOCK 演示值（00 公共铁律 §5；发版前 grep 清理，台账 B6）
-	const USE_MOCK_LOCATION = true
-	let locationText = ref(USE_MOCK_LOCATION ? '上海 · 江边' : '')
+	// F1d信息卡地点行（2026-10-04 补真链路）：**删除写死的「上海 · 江边」演示值**。
+	// 此前是 `const USE_MOCK_LOCATION = true` + 字面量，全客户端零 uni.getLocation 调用，
+	// 于是「用户开着定位服务」与代码无关，界面那行字恒为「上海 · 江边」。
+	// 现在：打开面板时真取一次定位，拿到坐标就随内容提交（后端逆地理产出 place）；
+	// 拿不到就**留空**（见下模板 v-if）——定位是增强项，编造地名比没有地名更糟。
+	// 台账 B6（发版前 grep 清理演示值）由此闭环。
+	const locateState = ref<LocateState>('idle')
+	let currentFix: Fix | null = null
 	let remark = ref('')
 	// 照片（F1g-k 多图）
 	let photos = ref<Array<string>>([])
@@ -364,6 +375,15 @@
 			directPick.value = true   // 直达期间隐藏面板 UI，防「先闪面板再拉相机」
 			openMode('photo')
 		}
+		// 2026-10-04：进面板即取一次定位（替换原写死的「上海 · 江边」）。
+		// 拿到就存进 utils/location 的模块单例，由文字/语音提交点读取；
+		// **拿不到就什么都不做**（不提示、不重试、不回落假值）——
+		// 定位是增强项，界面显示「定位中…」后自行收场为空行。
+		getCurrentFix((s: LocateState): void => {
+			locateState.value = s
+		}).then((fix: Fix | null): void => {
+			setLastFix(fix)
+		})
 	})
 	onUnmounted(() => {
 		if (recordTimer.value > 0) {

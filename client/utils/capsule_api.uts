@@ -18,6 +18,7 @@
  * showErrorToast（后端 message 显式展示，调用方不重复 toast）。
  */
 import { get, post, dataObj, PATH_DAILY_SUMMARY } from './api'
+import { applyGpsToBody, getLastFix } from './location'
 
 /** 胶囊端点（BA2 批）：POST /api/v1/capsules */
 export const PATH_CAPSULES: string = '/api/v1/capsules'
@@ -58,6 +59,8 @@ export function createTextContentRemark(text: string, remark: string): Promise<s
 	if (remark != '') {
 		body.set('remark', remark)
 	}
+	// 2026-10-04：注入本次定位（有值才写 gps 键；无值不写，绝不写占位坐标）
+	applyGpsToBody(body, getLastFix())
 	return new Promise<string | null>((resolve) => {
 		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
 			if (res == null) {

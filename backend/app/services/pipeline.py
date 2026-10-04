@@ -135,10 +135,24 @@ def _classify_content(db: Session, content: Content, text: str) -> None:
 def _process_text(db: Session, content: Content) -> None:
     if content.text:
         _classify_content(db, content, content.text)
-        # Wave0 钩子：B5b 敏感标记 + B1 画像标注
+        # Wave0 钩子：B5b 敏感标记 + B1 画像标注 + 地点补全（2026-10-04）
         # （Qdrant 索引 R2#1 后置到主提交之后，见 _index_after_commit）
-        from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
+        from app.services.pipeline_ext import (
+            annotate_on_ingest,
+            enrich_place_on_ingest,
+            mark_sensitive_on_ingest,
+        )
 
+        # ⚠️ 顺序要求（2026-10-04 实测）：地名补全**必须最先**跑。
+        # `mark_sensitive_on_ingest` / `annotate_on_ingest` 内部会 commit，
+        # 而本处理器运行在 `process_content` 的 `db.begin_nested()`（SAVEPOINT）里——
+        # 它们提交后外层 transaction 已关闭，再执行需要读 `geo_cache` 的逆地理
+        # 会撞 `InvalidRequestError: Can't operate on closed transaction`，
+        # 结果 place 恒为空（实测复现）。同理 `pipeline_photo` 里逆地理也移到了最前。
+        try:
+            enrich_place_on_ingest(db, content)
+        except Exception as exc:  # noqa: BLE001 —— 地点是增强项，失败不阻塞入库
+            logger.warning("地名补全失败 content=%s: %s", content.id, exc)
         mark_sensitive_on_ingest(db, content)
         annotate_on_ingest(db, content)
 
@@ -189,9 +203,18 @@ def _process_voice(db: Session, content: Content) -> str:
             ),
         }
         _classify_content(db, content, result.text)
-        # Wave0 钩子：B1 画像标注（语音语义内容）+ B5a 情绪消费
-        from app.services.pipeline_ext import annotate_on_ingest, consume_emotion
+        # Wave0 钩子：B1 画像标注（语音语义内容）+ B5a 情绪消费 + 地点补全（2026-10-04）
+        from app.services.pipeline_ext import (
+            annotate_on_ingest,
+            consume_emotion,
+            enrich_place_on_ingest,
+        )
 
+        # ⚠️ 顺序要求同 `_process_text`：必须先于会 commit 的钩子（见那里注释）
+        try:
+            enrich_place_on_ingest(db, content)
+        except Exception as exc:  # noqa: BLE001 —— 地点是增强项，失败不阻塞转写入库
+            logger.warning("地名补全失败 content=%s: %s", content.id, exc)
         annotate_on_ingest(db, content)
         consume_emotion(db, content)
         # Qdrant 索引 R2#1 后置到主提交之后（_index_after_commit）——索引失败

@@ -96,20 +96,21 @@ def _process_photo(db: Session, content: Content) -> None:
         # Wave0 钩子：B5b 事件级敏感标记 + B1 画像标注（照片 caption/标签）
         from app.services.pipeline_ext import annotate_on_ingest, mark_sensitive_on_ingest
 
-        mark_sensitive_on_ingest(db, content)
-        annotate_on_ingest(db, content)
-
         # 3. 逆地理编码（高德 GPS→地名，geohash 缓存≤30 天；失败静默）
         #    contents.place 供事件聚合/搜索地点过滤/展示用元数据。
-        if content.gps_lat is not None and content.gps_lng is not None and not content.place:
-            try:
-                from app.services.external.amap import get_place
+        #    2026-10-04：实现收敛到 pipeline_ext.place（照片/文字/语音共用单一来源）。
+        #    ⚠️ 顺序：**必须先于**下面两个钩子——它们内部会 commit，而本处理器运行在
+        #    `process_content` 的 SAVEPOINT 里，提交后外层 transaction 关闭，
+        #    逆地理读`geo_cache` 会撞 InvalidRequestError（place 恒空的真因，已实测）。
+        try:
+            from app.services.pipeline_ext import enrich_place_on_ingest
 
-                place = get_place(db, content.gps_lat, content.gps_lng)
-                if place:
-                    content.place = place
-            except Exception as exc:  # noqa: BLE001 —— 逆地理失败不影响照片浏览
-                logger.warning("逆地理失败 content=%s: %s", content.id, exc)
+            enrich_place_on_ingest(db, content)
+        except Exception as exc:  # noqa: BLE001 —— 逆地理失败不影响照片浏览
+            logger.warning("逆地理失败 content=%s: %s", content.id, exc)
+
+        mark_sensitive_on_ingest(db, content)
+        annotate_on_ingest(db, content)
     finally:
         if tmp_file is not None:
             try:
