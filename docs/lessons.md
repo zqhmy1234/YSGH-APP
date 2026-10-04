@@ -9,6 +9,60 @@
 
 ---
 
+### 2026-10-05 01:48 · commit 91709f8 · ts=1791136091
+- **错误**：验证 SSRF 修复时连做了三次假验证：① 测试服务器跑在 127.0.0.1，被初始检查就拦，重定向分支压根没执行；② mock 按 host:port 放行，但被测函数只传 hostname（不含端口）永不匹配；③ mock 放行 127.0.0.1 后，重定向到同 host 不同端口也被放行
+- **根因**：_is_public_host 收的是 hostname（不含端口），凭端口做白名单在语义上不成立；而「同一 hostname 不同端口」本身也不是 SSRF 攻击向量，测试设计错了
+- **修复**：改为可断言的单元验证：① 直接断言 _is_public_host 对 10 类内网/保留地址返回 False；② 用调用计数证明重定向每一跳都复校验（序列 [a.test, a.test, 127.0.0.1]）；③ 死循环被跳数上限截断
+- **相关文件**：agent/src/yishu/fetch.py
+- **教训**：安全修复的测试若依赖 mock，必须先确认 mock 的粒度与被测函数一致；否则会出现「假通过」和「假失败」，比不测更危险
+
+---
+
+### 2026-10-05 01:48 · commit 91709f8 · ts=1791136090
+- **错误**：fetch.py 只校验初始 URL 就 follow_redirects=True，重定向目标从不复校验 ⇒ https://evil.example/r 302 到 http://127.0.0.1:8300/api/memories 可读内网响应体（agent 与数据库同机，泄漏面直接是全部记忆）
+- **根因**：SSRF 防护只做在入口，重定向是逐跳的——每一跳都是新的目标，都要独立校验。另外无跳数上限，重定向环会自打死循环
+- **修复**：改 follow_redirects=False 手动逐跳跟随，每跳复校验 scheme + _is_public_host（DNS 每次都重新解析），加 _MAX_REDIRECTS=5 上限
+- **相关文件**：agent/src/yishu/fetch.py
+- **教训**：SSRF/重定向类防护必须逐跳校验，不能只校验入口 URL；redirect 跟随要手动做并设跳数上限
+
+---
+
+### 2026-10-05 01:48 · commit 91709f8 · ts=1791136090
+- **错误**：agent/web/api_routes.py 的 4 个记忆浏览端点（/api/memories /dashboard /collections /categories）完全无 token 校验，且 user_id 取自客户端可控的 X-User-Id header 或 ?user_id= 查询参数
+- **根因**：任何人 curl "http://<host>:8300/api/memories?user_id=<受害者uuid>" 即可读到他人全部记忆（原文/情绪/标签/位置）。它不报错、只会安静地泄漏数据。根因是 main.py 与 api_routes.py 各写了一套鉴权，而后者那套压根没写；且 _get_user_id_from_request 末尾还有 os.getenv("COZE_USER_ID","default") 兜底——与 memory_tools 同款漏洞
+- **修复**：新建 yishu/security.py 作为鉴权/校验/限流的单一来源（require_token / validate_user_id / validate_thread_id / RateLimiter）；api_routes 用 router 级 dependencies=[Depends(require_auth)] 挂载（而非逐端点加，新端点默认受保护）；user_id 格式白名单校验并删掉环境变量兜底；生产未配 token 启动即拒
+- **相关文件**：agent/src/yishu/security.py
+- **教训**：同一服务的多个入口必须共用一套鉴权；逐端点加鉴权必然漏，应挂在 router/依赖层。user_id 缺失一律拒绝，绝不回落共享默认值
+
+---
+
+### 2026-10-05 00:22 · commit 3a8651f · ts=1791130967
+- **错误**：统计工具调用次数时误把跨轮累积的 messages 全量统计，报出 tool_calls=40 而库里只有 1 条记忆
+- **根因**：result messages 是累积的（checkpointer 会带回历史），第二轮统计把第一轮的再数一遍，埋点失真
+- **修复**：用 prev_msg_count 只统计本轮新增切片；dict 类型字段改为展开 k=v（折成 <dict:1> 等于没埋点）
+- **相关文件**：agent/src/utils/output_validator.py
+- **教训**：有状态累积的数据源（checkpointer/历史消息）统计增量必须用切片，折成汇总就失去意义
+
+---
+
+### 2026-10-05 00:22 · commit 3a8651f · ts=1791130967
+- **错误**：agent 单次对话 32~66 秒，埋点归因发现 LLM 反复调用同一个 save_memory（单轮 16~28 次）、输入 token涨到 15K、最后撞 GraphRecursionError
+- **根因**：四个去 Coze 迁移遗留缺陷叠加：① select 里的 memory_categories(name) 是 PostgREST 外键嵌入语法，迁到原生 SQLAlchemy 后被当列名 -> SQL 报错被 except 吞掉 -> related_memories 恒为空；② json.dumps 遇 datetime 抛 TypeError（联想修好后才暴露，与①互相掩盖）；③ local_client 缺 ilike，search_memories 这个核心功能一直坏；④ save_memory 无幂等，LLM 收不到已存信号就反复调。工具失败被 handle_tool_errors 转成通用文案且零日志，LLM 看不到原因
+- **修复**：① 改按 category_id 过滤；② 在 local_client._row_to_dict 数据出口统一把 datetime/date/Decimal 转 JSON 安全值（一次修好所有工具）；③ 补 ilike/like/contains/or_/and_ 并统一为 PostgREST 星号语义；④ save_memory 加同用户同内容幂等；⑤ recursion_limit 25->10 快速失败；⑥ 新增 observability.py 结构化埋点，handle_tool_errors 记 tool 名与异常类型
+- **相关文件**：-
+- **教训**：迁移数据层时必须逐个核对 ORM/查询 API 的语义差异（嵌入语法、通配符、类型序列化）；工具失败必须留痕，否则 LLM 会因看不到原因而无限重试
+
+---
+
+### 2026-10-05 00:22 · commit 3a8651f · ts=1791130955
+- **错误**：统计工具调用次数时误把跨轮累积的 messages 全量统计，报出 tool_calls=40 而库里只有 1 条记忆
+- **根因**：result[messages] 是累积的（checkpointer 会带回历史），第二轮统计把第一轮的再数一遍，埋点失真
+- **修复**：用 prev_msg_count 只统计本轮新增切片；dict 类型字段改为展开 k=v（折成 <dict:1> 等于没埋点）
+- **相关文件**：agent/src/utils/output_validator.py
+- **教训**：有状态累积的数据源（checkpointer/历史消息）统计增量必须用切片，折成汇总就失去意义
+
+---
+
 ### 2026-10-04 22:17 · commit 5fcb70e · ts=1791123452
 - **错误**：HBuilderX CLI 云打包：在 --config 的 json 里写 keystore 嵌套字段被静默忽略，日志显示「类型: Android云端证书」，产出的是 DCloud 共享证书的包
 - **根因**：CLI 只认 android.androidpacktype / certalias / certfile / certpassword / storepassword 这组专用参数；json 里自造 keystore 结构不报错也不生效，属于「失败无提示」类型。且云端证书与自有证书产物都能通过 apksigner verify，只有比对证书指纹才发现

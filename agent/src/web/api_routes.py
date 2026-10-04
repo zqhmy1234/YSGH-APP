@@ -6,15 +6,14 @@
 """
 import logging
 from datetime import datetime, timedelta
-from yishu.context import new_context, request_context
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from storage.database.supabase_client import get_supabase_client
+from yishu.context import new_context, request_context
+from yishu.security import RateLimiter, require_token, validate_user_id
 
 logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api")
 
 # L1-A 记忆分类
 MEMORY_CATEGORIES = ["全部", "情绪", "事件", "想法", "灵感", "人物", "地点", "待分类"]
@@ -22,17 +21,59 @@ MEMORY_CATEGORIES = ["全部", "情绪", "事件", "想法", "灵感", "人物",
 # L1-B 收藏分类
 COLLECTION_TYPES = ["全部", "文章", "帖子", "观点", "数据", "图片", "其他"]
 
+# 限流器（进程内，按 user_id 滑动窗口；实例化一次随 app 生命周期）
+_RATE_LIMITER = RateLimiter.from_env()
+
+
+async def require_auth(
+    request: Request,
+    x_agent_token: str | None = Header(default=None),
+) -> str:
+    """**本router 全局鉴权 + 限流**（2026-10-04 安全加固）。
+
+    为什么必须加：此前的 4 个端点（`/dashboard` `/memories` `/collections` `/categories`）
+    **完全没有 token 校验**，而 `user_id` 取自客户端可控的
+    `X-User-Id` header 或 `?user_id=` 查询参数，于是：
+
+        curl "http://<host>:8300/api/memories?user_id=<受害者的 uuid>"
+
+    即可读到**任何人**的全部记忆（原文、情绪、标签、位置）。它不报错、
+    只会安静地泄漏数据——这是本项目目前最严重的越权点。
+
+    用 `dependencies=[Depends(require_auth)]` 挂到 router 上而不是逐个端点重复，
+    是为了**新加端点时默认受保护**（逐个加的必然漏）。
+    """
+    require_token(x_agent_token)
+    user_id = _get_user_id_from_request(request)
+    user_id = validate_user_id(user_id)
+    allowed, _remaining = _RATE_LIMITER.check(user_id)
+    if not allowed:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+    _ensure_ctx(user_id)
+    return user_id
+
+
+# 挂到整个 router：新端点自动受保护
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
+
 
 def _get_user_id_from_request(request: Request) -> str:
-    """从请求中获取用户ID（优先 header，兜底查询参数，再兜底环境变量）"""
+    """取 user_id：header → 查询参数 →（已由 require_auth 注入的）上下文。
+
+    ⚠️ 2026-10-04 删除了原来的 `os.getenv("COZE_USER_ID", "default")` 兜底。
+    那个兜底与 `memory_tools` / `url_fetch_tools` 的同款漏洞一致：上下文缺失时
+    落到**全局共享**身份，于是「拿不到用户」不是报错，而是**读到别人数据**。
+    现在缺失即由 `validate_user_id` 返 400 —— fail-closed。
+    """
     user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
-    if not user_id:
-        ctx = request_context.get()
-        if ctx and ctx.user_id:
-            return ctx.user_id
-        import os
-        return os.getenv("COZE_USER_ID", "default")
-    return user_id
+    if user_id:
+        return user_id.strip()
+    ctx = request_context.get()
+    if ctx and ctx.user_id:
+        return ctx.user_id
+    return ""
 
 
 def _ensure_ctx(user_id: str):

@@ -45,6 +45,13 @@ from yishu.observability import (
     new_request_id,
     reset_request_id,
 )
+from yishu.security import (
+    RateLimiter,
+    assert_production_token_config,
+    require_token,
+    validate_thread_id,
+    validate_user_id,
+)
 
 logger = logging.getLogger("yishu.agent.service")
 
@@ -144,9 +151,13 @@ def _normalize_reply(result: Any) -> str:
 
 
 def _require_token(provided: str | None) -> None:
-    """共享密钥校验（未配置时放行但已在启动日志告警——本地开发便利，生产必须配）。"""
-    if SERVICE_TOKEN and provided != SERVICE_TOKEN:
-        raise HTTPException(status_code=401, detail="X-Agent-Token 缺失或不匹配")
+    """共享密钥校验（已收敛到 `yishu.security.require_token`，两处口径必须一致）。
+
+    2026-10-04：原先本函数与 `web/api_routes.py` 各写一套，而**后者那套完全没有校验**
+    ⇒ `/api/memories?user_id=<任意 uuid>` 可读任何人记忆。现统一到 `yishu.security`，
+    规则只有一份，加固不会漏掉旁路。
+    """
+    require_token(provided)
 
 
 @asynccontextmanager
@@ -161,36 +172,43 @@ async def lifespan(app: FastAPI):
     # 目的是让**延迟与安全口径可核对**——优化前后对比要看的就是这些值。
     from agents.agent import agent_runtime_summary
 
+    # ⚠️ 这里的默认值必须与 `llm_provider.load_llm_settings` 实际口径**一致**，
+    # 否则启动日志会说 thinking=False 而运行时是 True（2026-10-04 曾出现此不一致：
+    # A/B 实测证明 thinking 默认应为 True，见 llm_provider 的 A/B 数据）。
+    from llm_provider import load_llm_settings
+
+    llm_settings = load_llm_settings()
     log_event(
         "startup_config",
         model=model,
         checkpointer=current_checkpointer_kind(),
         auth_enabled=bool(SERVICE_TOKEN),
-        enable_thinking=_env_true("AGENT_ENABLE_THINKING", False),
-        max_tokens=int(os.getenv("AGENT_LLM_MAX_TOKENS", "2048")),
-        llm_timeout_s=int(float(os.getenv("AGENT_LLM_TIMEOUT", "120"))),
+        enable_thinking=llm_settings.enable_thinking,
+        max_tokens=llm_settings.max_tokens,
+        llm_timeout_s=int(llm_settings.timeout),
         validator_max_rounds=int(os.getenv("AGENT_MAX_ROUNDS", "2")),
         validator_budget_s=float(os.getenv("AGENT_VALIDATOR_BUDGET_S", "20")),
         rate_limit_rpm=int(os.getenv("AGENT_RATE_LIMIT_RPM", "30")),
         web_panel=WEB_PANEL_MOUNTED,
         **_agent_summary_fields(agent_runtime_summary()),
     )
+    # 生产鉴权 fail-closed：启动即拒绝，不给「忘了配也能起」留机会。
+    # 规则已收敛到 yishu.security（与 web/api_routes.py 共用同一份）。
+    assert_production_token_config()
     if not SERVICE_TOKEN:
-        msg = (
-            "未配置 AGENT_SERVICE_TOKEN —— 本服务将不校验 X-Agent-Token。"
-            "仅限本地开发；生产必须配置，且本服务不得直接暴露公网"
+        logger.warning(
+            "未配置 AGENT_SERVICE_TOKEN —— 本服务不校验 X-Agent-Token。"
+            "仅限本地开发；生产（APP_ENV=production）会拒绝启动，"
+            "且本服务不得直接暴露公网"
         )
-        if _is_production():
-            # 生产 fail-closed：启动即拒绝，不给"忘了配也能起"留机会
-            raise RuntimeError(
-                f"{msg}（检测到 APP_ENV=production，拒绝以fail-open 方式启动）"
-            )
-        logger.warning(msg)
     yield
     logger.info("忆光 Agent 服务停止")
 
 
 app = FastAPI(title="忆光 Agent 服务", version="0.1.0", lifespan=lifespan)
+
+# 对话限流（进程内按 user_id 滑动窗口；阈值 AGENT_RATE_LIMIT_RPM，默认 30/分钟）
+_CHAT_RATE_LIMITER = RateLimiter.from_env()
 
 # 记忆浏览 web 面（上游自带的演示/浏览用 API + 模板页；数据层已换成本地 Postgres）
 WEB_PANEL_MOUNTED = False
@@ -228,28 +246,41 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
     """
     _require_token(x_agent_token)
     started = time.monotonic()
-    thread_id = req.thread_id or req.user_id
     rid_token = bind_request_id(new_request_id())
     try:
+        # 2026-10-04 安全加固：格式 + 归属校验，缺一即拒（fail-closed）。
+        # `user_id` 虽只由后端反代注入，仍校验格式——它会进 SQL `.eq("user_id", ...)`
+        # 与日志，脏值会同时污染两处。
+        # `thread_id` 校验归属：checkpointer 按 thread_id 存 checkpoint，不校验归属时
+        # A 用户指定 B 的 thread_id 就能读到 B 的对话历史（agent 实测第 2 轮会准确
+        # 复述第 1 轮内容——正是「记忆正常」的表现，也正是泄漏面）。
+        user_id = validate_user_id(req.user_id)
+        thread_id = validate_thread_id(req.thread_id, user_id)
+        # 按 user_id 限流：单用户狂刷会直接打爆 LLM 配额与账单。
+        # 超限返回 429（如实告知「稍后再试」）而不是静默丢弃。
+        allowed, remaining = _CHAT_RATE_LIMITER.check(user_id)
+        if not allowed:
+            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+        log_event("chat_rate_ok", user_id=user_id, remaining=remaining)
         # 可信注入：user_id 只来自请求体（由后端反代填入），并写入请求上下文供工具读取
-        ctx = new_context(method="chat", user_id=req.user_id, run_id=thread_id)
+        ctx = new_context(method="chat", user_id=user_id, run_id=thread_id)
         request_context.set(ctx)
         log_event(
             "chat_start",
-            user_id=req.user_id,
+            user_id=user_id,
             thread_id=thread_id,
             msg_len=len(req.message or ""),
             thread_explicit=req.thread_id is not None,
         )
         try:
-            result = run_agent(req.message, user_id=req.user_id, ctx=ctx)
+            result = run_agent(req.message, user_id=user_id, ctx=ctx)
         except Exception as exc:  # noqa: BLE001 —— 统一经分类器映射状态码
             classified = classify_error(exc)
             latency_ms = int((time.monotonic() - started) * 1000)
             log_event(
                 "chat_error",
                 level=logging.ERROR,
-                user_id=req.user_id,
+                user_id=user_id,
                 thread_id=thread_id,
                 kind=classified.kind,
                 retryable=classified.retryable,
@@ -265,7 +296,7 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
                         "retryable": classified.retryable,
                         "message": str(exc),
                     },
-                    "user_id": req.user_id,
+                    "user_id": user_id,
                 },
             )
         latency_ms = int((time.monotonic() - started) * 1000)
@@ -274,7 +305,7 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
         diag = diag or {}
         log_event(
             "chat_done",
-            user_id=req.user_id,
+            user_id=user_id,
             thread_id=thread_id,
             latency_ms=latency_ms,
             reply_len=len(_normalize_reply(result)),
@@ -288,7 +319,7 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
         )
         return ChatResponse(
             reply=_normalize_reply(result),
-            user_id=req.user_id,
+            user_id=user_id,
             thread_id=thread_id,
             latency_ms=latency_ms,
         )

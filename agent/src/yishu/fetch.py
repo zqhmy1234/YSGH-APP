@@ -30,6 +30,9 @@ logger = logging.getLogger("yishu.agent.fetch")
 
 _MAX_BYTES = 2 * 1024 * 1024
 _TIMEOUT_S = 20.0
+# 手动跟随重定向的最大跳数（2026-10-04 SSRF 加固）。浏览器上限通常 20，
+# 这里取 5——正常站点 1~2 跳足够，5 跳以上多半是跳转农场/恶意链。
+_MAX_REDIRECTS = 5
 _UA = (
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0 Mobile Safari/537.36 yishu-agent/1.0"
@@ -113,13 +116,52 @@ class FetchClient:
                 url=url,
             )
 
+        # 2026-10-04 安全加固：**手动逐跳跟随重定向，每跳复校验**。
+        # 原实现 `follow_redirects=True` 只校验初始 URL，于是：
+        #     https://evil.example/r → 302 Location: http://127.0.0.1:8300/api/memories?user_id=…
+        # httpx 会自动跟过去，把**内网响应体**回给 agent → 回给用户 = 完整 SSRF
+        # （本机实测 agent 与后端同机，内网即数据库与记忆服务）。
         try:
             with httpx.Client(
-                follow_redirects=True,
+                follow_redirects=False,  # ← 关键：不让库自动跳
                 timeout=_TIMEOUT_S,
                 headers={"User-Agent": _UA, "Accept-Language": "zh-CN,zh;q=0.9"},
             ) as client:
-                resp = client.get(url)
+                current = url
+                resp = None
+                for _hop in range(_MAX_REDIRECTS + 1):
+                    resp = client.get(current)
+                    if resp.status_code not in (301, 302, 303, 307, 308):
+                        break
+                    location = resp.headers.get("location", "")
+                    if not location:
+                        break
+                    nxt = urljoin(current, location)
+                    nxt_parsed = urlparse(nxt)
+                    # 每一跳都重新校验：scheme + 公网地址
+                    if nxt_parsed.scheme not in ("http", "https") or not nxt_parsed.hostname:
+                        return FetchResult(
+                            status_code=403,
+                            status_message="重定向目标协议非法（SSRF 防护）",
+                            url=url,
+                        )
+                    if not _is_public_host(nxt_parsed.hostname):
+                        return FetchResult(
+                            status_code=403,
+                            status_message=(
+                                "拒绝跟随重定向到非公网地址（SSRF 防护）："
+                                f"{nxt_parsed.hostname}"
+                            ),
+                            url=url,
+                        )
+                    current = nxt
+                else:
+                    return FetchResult(
+                        status_code=403,
+                        status_message=f"重定向跳数超过 {_MAX_REDIRECTS}（SSRF 防护）",
+                        url=url,
+                    )
+                assert resp is not None  # noqa: S101 —— 循环体必赋值
         except httpx.TimeoutException:
             return FetchResult(status_code=504, status_message="抓取超时", url=url)
         except httpx.HTTPError as exc:
