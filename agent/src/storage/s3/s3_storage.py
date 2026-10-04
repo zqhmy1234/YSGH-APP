@@ -343,9 +343,46 @@ class S3SyncStorage:
         - bucket: 目标桶；为空时取环境变量或实例默认值
         - timeout: HTTP 请求超时时间（秒，默认 30）
         返回：最终写入的对象 key
+
+        ⚠️ 2026-10-05 安全加固：原实现是**完全裸奔的出网请求**——
+          · 无 scheme 白名单，而 `urllib.request` 默认 opener 含 `FileHandler`
+            ⇒ `file:///etc/passwd` 会被读出来**并上传到 S3**（LFI → 外泄，
+            之后还能用 `generate_presigned_url` 取回）；
+          · 无环回/内网/`169.254.169.254` 校验 ⇒ SSRF；
+          · `urlopen` 默认**跟随重定向**且跳转后不复校验；
+          · 无响应体积上限。
+        同仓 `yishu/fetch.py` 已有成熟实现，此处至少补齐「scheme 白名单 +
+        显式禁用 FileHandler + 内网拦截」三道，避免这具死代码一被接上就是高危面。
         """
+        import ipaddress
+        import socket
         import urllib.request as urllib_request
-        from urllib.parse import urlparse, unquote
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(
+                f"upload_from_url 仅支持 http/https，收到 {parsed.scheme!r}"
+                "（禁用 file:// 等本地协议，防本地文件被上传外泄）"
+            )
+        try:
+            infos = socket.getaddrinfo(parsed.hostname or "", None)
+        except OSError as exc:
+            raise ValueError(f"upload_from_url 无法解析目标主机：{parsed.hostname!r}") from exc
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+                or ip in ipaddress.ip_network("100.64.0.0/10")
+            ):
+                raise ValueError(
+                    f"upload_from_url 拒绝内网/环回/保留地址（SSRF 防护）：{parsed.hostname!r}"
+                )
         try:
             request = urllib_request.Request(url)
             with urllib_request.urlopen(request, timeout=timeout) as resp:

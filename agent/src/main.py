@@ -48,6 +48,7 @@ from yishu.observability import (
 from yishu.security import (
     RateLimiter,
     assert_production_token_config,
+    is_production,
     require_token,
     validate_thread_id,
     validate_user_id,
@@ -69,11 +70,17 @@ def _env_true(key: str, default: bool = False) -> bool:
 
 
 def _is_production() -> bool:
-    """是否生产环境（决定鉴权/降级类配置是否 fail-closed）。"""
-    return _env_true("APP_ENV_PRODUCTION") or os.getenv("APP_ENV", "").strip().lower() in {
-        "production",
-        "prod",
-    }
+    """是否生产环境。
+
+    ⚠️ 2026-10-05：本函数原先是**独立实现**（认 `APP_ENV_PRODUCTION` 或 `APP_ENV`），
+    而真正决定 fail-closed 的 `yishu.security.is_production()` 只认 `APP_ENV`。
+    两处口径不一致的后果不是"多认一种环境"，而是**告警文案与实际行为相反**：
+    只设 `APP_ENV_PRODUCTION=true` 时，本函数为真 ⇒ 启动告警里写
+    「生产会拒绝启动」，而 `assert_production_token_config()` 实际**不会**拒绝。
+    运维据此以为已 fail-closed，实际仍裸奔——比没有告警更危险。
+    故此处不再自建判定，统一取 security 的那一份（单一真相源）。
+    """
+    return is_production()
 
 
 def _agent_summary_fields(summary: dict) -> dict:
@@ -148,6 +155,25 @@ def _normalize_reply(result: Any) -> str:
                         return joined
         return json.dumps(result, ensure_ascii=False, default=str)
     return str(result)
+
+
+def _client_message(classified) -> str:
+    """把错误类别映射成**可对外**的中文文案（不含异常原文）。
+
+    为什么必须有这一层：`/v1/chat` 由我们后端反代调用，但**不保证**只有它能调用；
+    而异常原文（DB DSN、绝对路径、SQL）对调用方没有任何价值，只有风险。
+    非生产环境返回 `debug_hint` 只是类别名，同样不含内部信息。
+    """
+    messages = {
+        "config": "服务配置不完整，请联系管理员",
+        "auth": "请求未通过身份校验",
+        "rate_limit": "请求过于频繁，请稍后再试",
+        "timeout": "处理超时，请稍后重试",
+        "upstream": "上游服务暂时不可用，请稍后重试",
+        "bad_input": "请求内容不合法",
+        "internal": "服务内部错误，请稍后重试",
+    }
+    return messages.get(classified.kind, "服务内部错误，请稍后重试")
 
 
 def _require_token(provided: str | None) -> None:
@@ -294,7 +320,12 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
                     "error": {
                         "kind": classified.kind,
                         "retryable": classified.retryable,
-                        "message": str(exc),
+                        # ⚠️ 2026-10-05 安全：原先回显 `str(exc)`。异常原文里可能带
+                        # 数据库 DSN（含密码）、服务器文件绝对路径、SQL 片段——而这个
+                        # 响应体会**原样进入我们后端的日志**，再间接流向客户端。
+                        # 改为「固定文案 + 错误类别」；排查所需细节已由上面的
+                        # `logger.exception` 完整落盘，日志侧不丢信息。
+                        "message": _client_message(classified),
                     },
                     "user_id": user_id,
                 },
@@ -333,7 +364,14 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:  # pragma
     logger.exception("未处理异常 kind=%s", classified.kind)
     return JSONResponse(
         status_code=classified.http_status,
-        content={"error": {"kind": classified.kind, "retryable": classified.retryable, "message": str(exc)}},
+        content={
+            "error": {
+                "kind": classified.kind,
+                "retryable": classified.retryable,
+                # 同 /v1/chat：异常原文只进日志，不进响应体（可能含 DSN/绝对路径）
+                "message": _client_message(classified),
+            }
+        },
     )
 
 

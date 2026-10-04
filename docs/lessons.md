@@ -9,6 +9,42 @@
 
 ---
 
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145188
+- **错误**：fetch.py 的 2MB 响应体上限形同虚设：resp.content 会先把整个响应体读进内存，之后才切片截断；构造 500MB 响应即可单次工具调用打爆进程内存
+- **根因**：把事后截断当成了事前限制——httpx 的 client.get 是全量读取，截断发生在数据已经在内存之后
+- **修复**：改 client.stream 边读边累计字节，超限立刻中断连接并返回 413；顺带补 100.64.0.0/10（CGNAT，Python ipaddress 的 is_private 对它返回 False 可绕过）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145186
+- **错误**：生产判定两处口径不一致：main._is_production 认 APP_ENV_PRODUCTION 或 APP_ENV，而真正决定 fail-closed 的 security.is_production 只认 APP_ENV ⇒ 只设 APP_ENV_PRODUCTION 时告警文案说生产会拒绝启动，实际不会
+- **根因**：同一业务判定被复制成两份实现，两边慢慢分叉；更糟的是不一致方向是告警比实际更严格，会让运维误以为已 fail-closed
+- **修复**：main._is_production 改为直接调 security.is_production（单一真相源），不再自建判定
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145180
+- **错误**：敏感字段日志守卫可被命名一行绕过：_SAFE_SUFFIXES 含 _id/_ids 且先于敏感词判定直接 return，导致 secret_id / api_key_id / token_value_id 全部放行
+- **根因**：把量词后缀（_len/_count/_ms）与标识符后缀（_id）混在同一张后缀白名单里，而 _id 类字段名并不天然安全——真正的判据是具体键名，不是结尾字符
+- **修复**：拆成 _SAFE_QUANT_SUFFIXES（量词，安全）与 _SAFE_ID_KEYS（标识符显式白名单），_id 类必须命中具体键名才放行
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145177
+- **错误**：Agent 错误响应把 str(exc) 原样回显：异常里可能带数据库 DSN（含密码）、服务器绝对路径、SQL 片段，而该响应体会进入我们后端日志再流向客户端
+- **根因**：把异常对象直接塞进 API 响应，没有区分内部细节与对外文案；错误分类器只产出 kind/http_status/retryable，不产出用户可读文案，缺的那层没人补
+- **修复**：新增 main._client_message 按 kind 映射固定中文文案，异常原文只经 logger.exception 落盘；/v1/chat 与全局异常处理器两处都改（漏一处就等于没改）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-10-05 03:56 · commit 5232c37 · ts=1791143774
 - **错误**：agent 测试结论取决于跑它那台机器当时继承了什么环境变量：load_dotenv override=False 让陈旧的系统级 DASHSCOPE_API_KEY 优先于 .env，拼出 token-plan key 加 workspace header 的非法组合，CI 绿而本地 400
 - **根因**：测试目录没有环境隔离入口，agent/.env 不是唯一真相源

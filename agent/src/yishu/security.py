@@ -176,6 +176,10 @@ class RateLimiter:
 
     def check(self, user_id: str) -> tuple[bool, int]:
         """返回 `(是否放行, 剩余额度)`；超限记审计并让调用方返回 429。"""
+        # 顺带回收长期不活跃的桶：原先 `forget_idle` 只有定义、全仓无调用方，
+        # ⇒ user_id 维度内存单调增长（每个见过的新用户一个 deque，永不释放）。
+        # 挂在每次 check 上是最省事的触发点（无需后台线程，且请求驱动的回收时机足够）。
+        self.forget_idle()
         now = time.monotonic()
         cutoff = now - self.window_s
         bucket = self._buckets.get(user_id)

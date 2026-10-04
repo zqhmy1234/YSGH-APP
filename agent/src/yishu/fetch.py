@@ -79,6 +79,11 @@ def _is_public_host(host: str) -> bool:
             ip = ipaddress.ip_address(raw)
         except ValueError:
             return False
+        # 100.64.0.0/10（CGNAT / 部分云厂商内网段）：Python `ipaddress` 的
+        # `is_private` 对它返回 **False**（RFC 6598 是共享地址空间，不是私网），
+        # 所以只判 is_private 会被绕过 —— 而云厂商的元数据/内部服务常落在这段。
+        if ip in ipaddress.ip_network("100.64.0.0/10"):
+            return False
         if (
             ip.is_private
             or ip.is_loopback
@@ -128,60 +133,83 @@ class FetchClient:
                 headers={"User-Agent": _UA, "Accept-Language": "zh-CN,zh;q=0.9"},
             ) as client:
                 current = url
-                resp = None
+                raw = b""
+                final_url = url
+                status_code = 0
+                content_type_header = ""
                 for _hop in range(_MAX_REDIRECTS + 1):
-                    resp = client.get(current)
-                    if resp.status_code not in (301, 302, 303, 307, 308):
+                    # ⚠️ 2026-10-05 安全/可用性：原先是 `client.get(current)` —— httpx 会把
+                    # **整个响应体先读进内存**，之后再用 `resp.content[:_MAX_BYTES]`
+                    # 截断。那样 2MB 上限是**事后**生效，起不到保护作用：构造一个
+                    # 500MB 响应就能把进程内存打爆（单次工具调用即可）。
+                    # 改为流式读取 + 边读边计数，超限立刻中断连接。
+                    with client.stream("GET", current) as candidate:
+                        if candidate.status_code in (301, 302, 303, 307, 308):
+                            location = candidate.headers.get("location", "")
+                            nxt = urljoin(current, location) if location else ""
+                            nxt_parsed = urlparse(nxt) if nxt else None
+                            # 每一跳都重新校验：scheme + 公网地址
+                            if not nxt or nxt_parsed is None or nxt_parsed.scheme not in ("http", "https") or not nxt_parsed.hostname:
+                                return FetchResult(
+                                    status_code=403,
+                                    status_message="重定向目标协议非法（SSRF 防护）",
+                                    url=url,
+                                )
+                            if not _is_public_host(nxt_parsed.hostname):
+                                return FetchResult(
+                                    status_code=403,
+                                    status_message=(
+                                        "拒绝跟随重定向到非公网地址（SSRF 防护）："
+                                        f"{nxt_parsed.hostname}"
+                                    ),
+                                    url=url,
+                                )
+                            current = nxt
+                            continue
+                        # 非重定向：流式收正文，超限即断
+                        resp = candidate
+                        chunks: list[bytes] = []
+                        total = 0
+                        for chunk in candidate.iter_bytes():
+                            total += len(chunk)
+                            if total > _MAX_BYTES:
+                                return FetchResult(
+                                    status_code=413,
+                                    status_message=f"响应体超过 {_MAX_BYTES} 字节上限（已中断）",
+                                    url=url,
+                                )
+                            chunks.append(chunk)
+                        raw = b"".join(chunks)
+                        final_url = str(candidate.url)
+                        status_code = candidate.status_code
+                        content_type_header = candidate.headers.get("content-type", "")
                         break
-                    location = resp.headers.get("location", "")
-                    if not location:
-                        break
-                    nxt = urljoin(current, location)
-                    nxt_parsed = urlparse(nxt)
-                    # 每一跳都重新校验：scheme + 公网地址
-                    if nxt_parsed.scheme not in ("http", "https") or not nxt_parsed.hostname:
-                        return FetchResult(
-                            status_code=403,
-                            status_message="重定向目标协议非法（SSRF 防护）",
-                            url=url,
-                        )
-                    if not _is_public_host(nxt_parsed.hostname):
-                        return FetchResult(
-                            status_code=403,
-                            status_message=(
-                                "拒绝跟随重定向到非公网地址（SSRF 防护）："
-                                f"{nxt_parsed.hostname}"
-                            ),
-                            url=url,
-                        )
-                    current = nxt
                 else:
                     return FetchResult(
                         status_code=403,
                         status_message=f"重定向跳数超过 {_MAX_REDIRECTS}（SSRF 防护）",
                         url=url,
                     )
-                assert resp is not None  # noqa: S101 —— 循环体必赋值
+                assert raw is not None  # noqa: S101 —— 循环体必赋值
         except httpx.TimeoutException:
             return FetchResult(status_code=504, status_message="抓取超时", url=url)
         except httpx.HTTPError as exc:
             return FetchResult(status_code=502, status_message=f"网络错误：{exc}", url=url)
 
-        if resp.status_code >= 400:
-            return FetchResult(status_code=resp.status_code, status_message=f"HTTP {resp.status_code}", url=url)
-        raw = resp.content[:_MAX_BYTES]
-        ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+        if status_code >= 400:
+            return FetchResult(status_code=status_code, status_message=f"HTTP {status_code}", url=url)
+        ctype = (content_type_header or "").split(";")[0].strip().lower()
         filetype = ctype or None
 
         if ctype and not (ctype.startswith("text/") or ctype in ("application/xhtml+xml",)):
             return FetchResult(
                 status_code=415,
                 status_message=f"暂不支持的内容类型：{ctype}",
-                url=str(resp.url),
+                url=final_url,
                 filetype=filetype,
             )
 
-        return self._extract(str(resp.url), raw, filetype)
+        return self._extract(final_url, raw, filetype)
 
     def _extract(self, url: str, raw: bytes, filetype: str | None) -> FetchResult:
         """从 HTML 抽取标题/正文/图片/链接（bs4 + lxml）。"""

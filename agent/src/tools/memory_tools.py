@@ -974,11 +974,15 @@ def search_knowledge_collections(
         query_builder = client.table("knowledge_collections").select("*").eq("user_id", _get_user_id())
 
         if query:
-            query_builder = query_builder.ilike("content", f"%{query}%")
+            # PostgREST 语义：`*` 才是通配。原先传 `%{query}%` 会被 `_pg_pattern`
+            # 转义成字面量 `\%...\%` ⇒ 永远匹配不到（收藏搜索实际一直是坏的）。
+            query_builder = query_builder.ilike("content", f"*{query}*")
         if content_type:
             query_builder = query_builder.eq("content_type", content_type)
 
-        response = query_builder.order("created_at", desc=True).limit(limit).execute()
+        # limit 必须夹紧：模型可以传 10^6 级别的值，无上限会把整表拉进内存
+        # （与 search_memories 的 min(limit, 50) 保持同一口径）。
+        response = query_builder.order("created_at", desc=True).limit(min(int(limit), 50)).execute()
 
         data: list[dict[str, Any]] = response.data if response.data else []
 

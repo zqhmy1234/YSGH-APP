@@ -70,15 +70,39 @@ class SensitiveFieldError(ValueError):
     """试图把敏感字段写进结构化日志（开发期就该炸，而不是泄露到日志文件）。"""
 
 
-# 允许放行的量词后缀：这些字段只暴露「标识 + 数量」，不含内容本身。
+# 允许放行的**量词**后缀：这些字段只暴露「数量/耗时/时间戳」，不含内容本身。
 # 2026-10-04 实测踩坑：content_len 被敏感词 content 误伤 => 抛异常被上层
-# except 吞掉 => 幂等逻辑静默失效。长度/计数/ID 类安全且必要，不该被拦。
-_SAFE_SUFFIXES = ("_len", "_id", "_ids", "_count", "_ms", "_chars", "_at")
+# except 吞掉 => 幂等逻辑静默失效。长度/计数类安全且必要，不该被拦。
+_SAFE_QUANT_SUFFIXES = ("_len", "_count", "_ms", "_chars", "_at")
+
+# 允许放行的**标识符**键：必须是白名单，而不是"凡以 _id 结尾就放行"。
+# 2026-10-05 安全修复：原实现把 _id/_ids 放进后缀白名单且**先于**敏感词判定直接
+# return ⇒ `secret_id` / `api_key_id` / `token_value_id` 这类命名一行就能绕过守卫。
+# 守卫可被命名绕过等于没有守卫，故改为显式列举。
+_SAFE_ID_KEYS: frozenset[str] = frozenset(
+    {
+        "user_id",
+        "thread_id",
+        "request_id",
+        "rid",
+        "memory_id",
+        "collection_id",
+        "category_id",
+        "call_id",
+        "tool_call_id",
+        "existing_id",
+        "trace_id",
+    }
+)
 
 
 def _reject_sensitive(key: str) -> None:
     low = key.lower()
-    if low.endswith(_SAFE_SUFFIXES):
+    # 量词后缀先放行（它们在语义上不可能承载内容）
+    if low.endswith(_SAFE_QUANT_SUFFIXES):
+        return
+    # 标识符走**显式白名单**，而不是后缀匹配
+    if low in _SAFE_ID_KEYS or low.endswith("_ids") and low[:-4] in _SAFE_ID_KEYS:
         return
     for part in _FORBIDDEN_KEY_PARTS:
         if part in low:
