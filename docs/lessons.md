@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-04 22:17 · commit 5fcb70e · ts=1791123452
+- **错误**：HBuilderX CLI 云打包：在 --config 的 json 里写 keystore 嵌套字段被静默忽略，日志显示「类型: Android云端证书」，产出的是 DCloud 共享证书的包
+- **根因**：CLI 只认 android.androidpacktype / certalias / certfile / certpassword / storepassword 这组专用参数；json 里自造 keystore 结构不报错也不生效，属于「失败无提示」类型。且云端证书与自有证书产物都能通过 apksigner verify，只有比对证书指纹才发现
+- **修复**：config 里必须写 androidpacktype=0（自有证书）+ 四个 cert* 字段；出包后必做四项尸检，其中 apksigner --print-certs 的 DN/MD5/SHA1/SHA256 与 docs/图标与签名证书_20260921.md §五登记值逐项比对。已沉淀为 skills/apk-cloud-release/SKILL.md 的铁律 §2
+- **相关文件**：skills/apk-cloud-release/SKILL.md
+- **教训**：打包/发布类工具的参数别名与嵌套结构必须以 --help 为准；「不报错但产出错配置」要用产物反查（指纹/内容比对），不能只看是否成功退出
+
+---
+
 ### 2026-10-04 20:28 · commit d70ab37 · ts=1791116914
 - **错误**：新增测试与脚本后 pre-commit 被 ruff 拦下：I001 import 未排序、UP031 printf 格式化字符串、E501 行超 120
 - **根因**：通过 PowerShell here-string 写 Python 文件时，无法预估 ruff 的 I001/UP031 规则命中；且 E501 会在 --fix 改写后行长度变化时二次触发，需复检

@@ -21,6 +21,7 @@
 - `skills/infisical-secrets/SKILL.md` — Infisical 密钥链路 skill（所有外部 API Key 统一从这里取，2026-08-19 打通）
 - `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查 + **收尾 Wave 3 真机教训：adb reverse 铁律 / EMUI 纯净模式 / 云打包 CLI 参数 / D-18/D-19 原生探测坑·**5.24 迁移期多窗协调军规**；**改 client/ 代码前先读**，2026-08-24 沉淀、08-28 补录）
 - `skills/android-media-e2e/SKILL.md` — 真机 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位 + **收尾 Wave 3 沉淀：语音短录音链 / 情绪三层默认值 / 云打包验证**；F1 链路真机验收流程，2026-08-24 沉淀、08-28 补录）
+- `skills/apk-cloud-release/SKILL.md` — **Android 云打包与出包** skill（前置静态门 → 确认后端地址可达 → HBuilderX CLI 云打包自有证书 → 四项尸检：签名指纹 / 包内地址 / 权限 / apksigner → 部署分发路径）。含 2026-10-04 实测踩出的五个坑：**签名参数走错会静默用 DCloud 共享证书（已装用户装不上新包、只能卸载重装）**、口令必须走仓库外 config、临时隧道地址重启即失效、HBuilderX 单队列并发互杀、**本机 SSL 失败不等于隧道死（须云端视角验证）**；另附「装了却用不了」必查项（内测登录开关 / RQ worker / agent 服务 / 队列积压）。参数速查与故障对照见同目录 `reference.md`。2026-10-04 沉淀
 - `DSH插件选型与安装方案.md` — 本机 DSH 环境文档（与产品无关）
 
 ## 当前状态（2026-08-29 · 收尾 Wave 1–4 全收口，下一步＝4b 修复批次）
