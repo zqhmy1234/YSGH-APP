@@ -394,6 +394,110 @@ def _category_id(client, name: str) -> Any:
         return None
 
 
+def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
+    """调 backend 的 RAG 检索，把 App 侧记忆（contents）也纳入 agent 的搜索面。
+
+    ## 为什么要有这一层（W2 检索升级 · 见 docs/功能对齐计划_20261006.md）
+
+    agent 的 `search_memories` 原本只有 ILIKE 模糊匹配，而 backend 的描述性搜索
+    是设计 M1 门禁的承载方（BGE-M3 dense+sparse RRF + 精排，Top3≥70% / P95<3s）。
+    同一个"帮我找一下…"，AI 页与 App 搜索页两副本领——用户在 App 里存的图文，
+    在 AI 对话里居然搜不到。本函数把 backend 的检索结果接进来，两条来源合并。
+
+    ## 降级策略（必须诚实标注）
+
+    **这条调用是"增强"不是"依赖"**：backend 不可达 / 未配置服务间通道 / 超时 /
+    被关开关，全部**静默降级为只搜本地表**，并记一条 WARNING。理由：
+    对话不能因为一个增强检索挂掉；而"没配 token"在本地开发是常态
+    （backend 的 `agent_service_token` 默认空串，此时 backend 侧 503 fail-closed）。
+
+    ## 鉴权
+
+    带 `X-Agent-Token`（与 backend 的 `agent_service_token` 同值）+
+    `X-On-Behalf-Of: <user_id>`。backend 侧 `deps.agent_service_user` 校验
+    令牌（恒定时间比较）并确认代执行用户真实存在。
+
+    ## 开关与超时
+
+    `AGENT_BACKEND_SEARCH=0` 可整体关闭（默认开）；
+    `AGENT_BACKEND_SEARCH_TIMEOUT_S` 默认 6s——backend 正常 1~3s，超时即降级，
+    不让一次增强检索把整轮对话拖死。**同一轮只调一次**（调用方保证），
+    backend 有全局并发信号量，高频调用会排队。
+    """
+    import os
+
+    if os.getenv("AGENT_BACKEND_SEARCH", "1").strip().lower() in {"0", "false", "no"}:
+        return []
+    # 默认 8010＝生产约定（deploy/.env.production.template:34 `API_PORT=8010`，
+    # 与 `agent_service_base_url=http://127.0.0.1:8300` 同机互信的口径一致）。
+    # **本地开发** backend 默认起在 8000，需显式设 AGENT_BACKEND_BASE_URL；
+    # 指错端口只会走降级路径（本地结果照常返回），不会失败。
+    base = (os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/")
+    token = (os.getenv("AGENT_BACKEND_TOKEN") or os.getenv("AGENT_SERVICE_TOKEN") or "").strip()
+    if not base or not token:
+        # 未配置服务间通道：这是本地开发的常态，INFO 即可，别刷 WARNING
+        from yishu.observability import log_event
+
+        log_event("backend_search_skipped", reason="未配置服务间令牌")
+        return []
+    try:
+        timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
+    except (TypeError, ValueError):
+        timeout = 6.0
+
+    import httpx
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(
+                f"{base}/api/v1/search/agent",
+                json={"q": query[:200], "limit": max(1, min(int(limit), 10))},
+                headers={
+                    "X-Agent-Token": token,
+                    "X-On-Behalf-Of": _get_user_id(),
+                },
+            )
+        if resp.status_code != 200:
+            from yishu.observability import log_event
+
+            log_event(
+                "backend_search_failed",
+                level=logging.WARNING,
+                status=resp.status_code,
+                detail=resp.text[:120],
+            )
+            return []
+        payload = resp.json().get("data") or {}
+        hits = payload.get("hits") or []
+        out: list[dict[str, Any]] = []
+        for hit in hits[: max(1, min(int(limit), 10))]:
+            # SearchHit 字段：content_id/content_type/text/taken_at/place/score
+            # （backend/app/schemas/search.py:19-31）。**没有**情绪/标签——agent
+            # 需要时拿 content_id 二次补查，本函数不为此扩 backend 契约。
+            out.append({
+                "source": "app_contents",
+                "id": hit.get("content_id"),
+                "content": hit.get("text"),
+                "taken_at": hit.get("taken_at"),
+                "location": hit.get("place"),
+                "score": hit.get("score"),
+            })
+        from yishu.observability import log_event
+
+        log_event("backend_search_ok", hits=len(out), latency_ms=payload.get("latency_ms"))
+        return out
+    except Exception as exc:  # noqa: BLE001 —— 增强检索失败绝不能拖垮对话
+        from yishu.observability import log_event
+
+        log_event(
+            "backend_search_failed",
+            level=logging.WARNING,
+            exc_type=type(exc).__name__,
+            detail=str(exc)[:120],
+        )
+        return []
+
+
 def _jsonable(value: Any) -> Any:
     """把 DB 取出的非 JSON 原生类型（datetime/date/Decimal）转成字符串。
 
@@ -731,10 +835,45 @@ def search_memories(
             topic_set = set(topics)
             memories = [m for m in memories if isinstance(m.get("topics"), list) and topic_set & set(m["topics"])]
 
+        # ── 合并 backend 检索（W2 检索升级，2026-10-06）──
+        # 本地表（memories，AI 页写入）+ backend RAG（contents，App 全链写入）
+        # 两路合并。**本地检索先于 backend**：本地失败不应影响 backend 结果。
+        # 去重键用「归一化正文前 50 字」——两套 ID 体系（int vs UUID）没有交集，
+        # 同一句话在两边各存一份时（W1 打通前）靠内容判同。
+        try:
+            backend_hits = _backend_rag_search(query or "", min(int(limit) + 5, 15))
+        except Exception as exc:  # noqa: BLE001 —— 双保险：合并层自身的意外也不许炸
+            backend_hits = []
+            logger.warning("backend 检索合并失败: %s", exc)
+        if backend_hits:
+            from yishu.observability import log_event
+
+            log_event("search_merged", local=len(memories), backend=len(backend_hits))
+            seen = {re.sub(r"\s+", "", (m.get("content") or ""))[:50] for m in memories}
+            merged_note = False
+            for hit in backend_hits:
+                key = re.sub(r"\s+", "", (hit.get("content") or ""))[:50]
+                if key and key in seen:
+                    continue
+                seen.add(key)
+                # 话题过滤对 backend 命中同样生效（topics 在 SearchHit 里没有，
+                # 故指定 topics 时 backend 命中一律跳过——不能给模型未过滤的数据）
+                if topics:
+                    continue
+                memories.append(hit)
+                merged_note = True
+            if merged_note:
+                memories = memories[: min(int(limit), 50)]
+
         return json.dumps({
             "success": True,
             "count": len(memories),
-            "memories": memories
+            "memories": memories,
+            "_hint": (
+                "若某条记忆的 source 是 app_contents，表示它在用户 App 里（图文/语音等），"
+                "提及来源时说「你在 App 里记录过」，不要说成是 AI 对话记录。"
+                if any(m.get("source") == "app_contents" for m in memories) else ""
+            ),
         }, ensure_ascii=False)
 
     except APIError as e:

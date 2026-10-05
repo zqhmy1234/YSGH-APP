@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-06 06:53 · commit 56893f4 · ts=1791240829
+- **错误**：pre-commit 被 lint 卡住：ruff S105 把 _AGENT_TOKEN_HEADER = "X-Agent-Token" 判为「硬编码密码」。同批还有一处导入排序 I001。
+- **根因**：S105 按变量名匹配：名字含 token/secret/password/api_key 的变量被赋字符串字面量即报警。我把 HTTP 头的名字命名为 _AGENT_TOKEN_HEADER，字面量是头名不是凭据值——但静态扫描只看名字与赋值形态，不读注释。命名里带 token 就必然撞上这条规则。
+- **修复**：常量改名 _HDR_AGENT_AUTH / _HDR_AGENT_USER（描述「认证头」而不含 token 字样），并在注释里写明为什么不用带 token 的名字；导入排序用 ruff --fix。
+- **相关文件**：backend/app/api/deps.py
+- **教训**：给常量命名时要想清楚它会被哪类自动检查看到：含 token/secret/password 的名字会让安全扫描器把「头名」「配置键名」都当成凭据值。要么换名，要么准备好为每个误报写 noqa——前者更省事，也让真正的硬编码密码更容易被看见。
+
+---
+
+### 2026-10-06 06:12 · commit 56893f4 · ts=1791238377
+- **错误**：新写的 schema 漂移守卫首跑就红，报告 agent 三张表（memories/knowledge_collections/memory_categories）会被 autogenerate DROP TABLE——但 alembic check 明明没报它们。两个工具给出矛盾结论，必有一个在说谎。
+- **根因**：我的测试用 compare_metadata 时只 import 了 Base，没有 import app.db.models。模型模块不被 import，它的表就永远不会注册进 Base.metadata，于是 compare_metadata 眼里「库里有、metadata 没有」＝多余表＝DROP。而 migrations/env.py:22 一直有一行 import app.db.models 并注释「注册全部模型到 Base.metadata」——我没看 env.py 就自己写了一套对拍。
+- **修复**：测试里补 import app.db.models（noqa F401），并把这次踩坑写进守卫的 agent 三表断言注释——下次有人看到同样的红，第一排查点就是这行 import。
+- **相关文件**：backend/tests/test_schema_drift_guard.py
+- **教训**：复用框架机制时，先读框架自己的装配代码（env.py / conftest / 入口模块），看它额外 import 了什么。「模型存在」和「模型被注册」是两件事，后者不成立时前者毫无意义。两个工具结论矛盾时，先找两者装配路径的差异，而不是怀疑哪个坏了。
+
+---
+
 ### 2026-10-06 03:21 · commit 6313e25 · ts=1791228094
 - **错误**：守卫测试连踩三个静默失效的坑：路径层级算成 parents[3] 落到盘根，整个守卫被 skip 而绿灯依旧；解析 backend 模型时 text.index("class Memory") 前缀匹配命中 class MemoryCategory，把分类表的列当成记忆表的列；给被测函数做 monkeypatch 时整个替换掉它，把它内部的 try/except 也绕过，测出来的是假场景。
 - **根因**：三个坑同根：都没有先验证「这个测试真的在测我以为的东西」。skip 与假红都是测试失效，而 skip 更隐蔽——不报错、不告警，绿灯一直亮着。
