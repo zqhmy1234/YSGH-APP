@@ -25,6 +25,50 @@ COLLECTION_TYPES = ["全部", "文章", "帖子", "观点", "数据", "图片", 
 _RATE_LIMITER = RateLimiter.from_env()
 
 
+def _category_id(client, name: str):
+    """分类名 → `category_id`（2026-10-05）。
+
+    `memories` 表存的是 `category_id`，分类名在 `memory_categories.name`。
+    与 `tools/memory_tools._category_id` 是**同一件事**的两处实现——之所以各留一份，
+    是因为这一层（web 面）不能 import 工具层（工具层会拉起 langchain 工具注册）。
+    改动时两处必须一起改。
+
+    ⚠️ 为什么不能用 PostgREST 的**关系路径过滤**（`eq("memory_categories.name", x)`）：
+    本仓数据层是 `local_client` 薄层，没有括号的 `a.b` 会被当作**列名**直拼
+    （`getattr(Memories, "memory_categories.name")` → None），于是抛
+    `ValueError: 表 memories 上不存在列 ...` ⇒ 该端点**必然 500**
+    （被下面的 `except` 转成 500 响应，属在线故障）。实测确认。
+    """
+    try:
+        resp = (
+            client.table("memory_categories").select("id").eq("name", name).limit(1).execute()
+        )
+        rows = getattr(resp, "data", None)
+        return rows[0].get("id") if rows else None
+    except Exception as exc:  # noqa: BLE001 —— 取 id 失败不该阻断列表查询
+        logger.warning("分类查询失败: %s", exc)
+        return None
+
+
+def _error_response(context: str, exc: Exception, *, status: int = 500) -> JSONResponse:
+    """统一的错误响应：**把异常原文留在日志、不回显给调用方**（2026-10-05）。
+
+    ## 为什么必须统一收口
+
+    `str(e)` 里可能有数据库 DSN（含密码）、服务器绝对路径、SQL 片段、内部表/列名。
+    这个响应体会被前端展示、并进入我们后端的日志。`main.py` 早已按这条口径
+    收口（见那里的注释），但本 web 面的 3 个端点**漏了**——同一仓库两套口径，
+    正是"加固不会漏掉旁路"的反面案例，故收敛成一个函数。
+
+    排查所需细节由 `logger.exception` 完整落盘，日志侧不丢信息。
+    """
+    logger.exception("%s 失败", context)
+    return JSONResponse(
+        {"success": False, "message": f"{context}失败，请稍后重试"},
+        status_code=status,
+    )
+
+
 async def require_auth(
     request: Request,
     x_agent_token: str | None = Header(default=None),
@@ -132,8 +176,7 @@ async def get_dashboard(request: Request):
             }
         })
     except Exception as e:
-        logger.error(f"获取仪表盘数据失败: {e}")
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+        return _error_response("获取仪表盘数据", e)
 
 
 @router.get("/memories")
@@ -156,7 +199,19 @@ async def get_memories(
         ).eq("user_id", user_id)
 
         if category and category != "全部":
-            query = query.eq("memory_categories.name", category)
+            # 关系路径过滤在本薄层必抛 ValueError（见 `_category_id` 说明），
+            # 改为「先查 id 再按 category_id 过滤」。
+            cat_id = _category_id(client, category)
+            if cat_id is not None:
+                query = query.eq("category_id", cat_id)
+            else:
+                # 分类名不存在 ⇒ 该分类下必然无数据，直接返回空集，
+                # 而不是退化成"不过滤"（那会把全部记忆当成该分类返回）
+                return JSONResponse({
+                    "success": True,
+                    "data": [],
+                    "pagination": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
+                })
 
         query = query.order("created_at", desc=True).range(offset, offset + page_size - 1)
         response = query.execute()
@@ -189,8 +244,7 @@ async def get_memories(
             }
         })
     except Exception as e:
-        logger.error(f"获取记忆列表失败: {e}")
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+        return _error_response("获取记忆列表", e)
 
 
 @router.get("/collections")
@@ -241,8 +295,7 @@ async def get_collections(
             }
         })
     except Exception as e:
-        logger.error(f"获取收藏列表失败: {e}")
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+        return _error_response("获取收藏列表", e)
 
 
 @router.get("/categories")

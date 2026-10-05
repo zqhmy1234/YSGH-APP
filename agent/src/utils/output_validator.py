@@ -244,6 +244,25 @@ def run_agent_with_validation(
 
     if max_rounds is None:
         max_rounds = _env_int("AGENT_MAX_ROUNDS", 2)
+    # 夹紧到 >= 1（2026-10-05 修复）：`for round_num in range(1, max_rounds + 1)`
+    # 在 max_rounds<=0 时**一次都不执行**，循环尾的 `return _finish(result, ...)`
+    # 于是引用从未绑定的 `result` ⇒ `UnboundLocalError` ⇒ 整个请求 500。
+    # 实测复现：`AGENT_MAX_ROUNDS=0 python -c "run_agent_with_validation(...)"`
+    # → UnboundLocalError: cannot access local variable 'result'。
+    # 配错一个环境变量就让对话全挂，且日志里只有一行看不懂的 UnboundLocalError，
+    # 比"少校验一轮"糟糕得多；夹紧后最坏也只是回到单轮（既有默认行为）。
+    try:
+        max_rounds = int(max_rounds)
+    except (TypeError, ValueError):
+        max_rounds = 2
+    if max_rounds < 1:
+        log_event(
+            "validator_rounds_clamped",
+            level=logging.WARNING,
+            requested_rounds=max_rounds,
+            applied_rounds=1,
+        )
+        max_rounds = 1
 
     validator = OutputValidator()
     feedback = None

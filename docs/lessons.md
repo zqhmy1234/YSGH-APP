@@ -9,6 +9,78 @@
 
 ---
 
+### 2026-10-06 03:21 · commit 6313e25 · ts=1791228094
+- **错误**：守卫测试连踩三个静默失效的坑：路径层级算成 parents[3] 落到盘根，整个守卫被 skip 而绿灯依旧；解析 backend 模型时 text.index("class Memory") 前缀匹配命中 class MemoryCategory，把分类表的列当成记忆表的列；给被测函数做 monkeypatch 时整个替换掉它，把它内部的 try/except 也绕过，测出来的是假场景。
+- **根因**：三个坑同根：都没有先验证「这个测试真的在测我以为的东西」。skip 与假红都是测试失效，而 skip 更隐蔽——不报错、不告警，绿灯一直亮着。
+- **修复**：「仓库里有 backend/ 却找不到镜像模型」改为硬失败 pytest.fail，只有真没有 backend/ 才 skip；class 定位改用词边界正则；测内部兜底时直接调用被测函数并给它一个会抛错的依赖，而不是替换函数本身。
+- **相关文件**：agent/tests/test_agent_schema_alignment.py
+- **教训**：skip 是测试的假阴性：绿灯不代表守卫在工作。新写守卫必须先证明它能红——故意制造一次违规看它报不报。凡是从路径、名字、字符串推导测试对象的地方，先打印确认解析到的是不是想测的那个。
+
+---
+
+### 2026-10-06 02:19 · commit 6313e25 · ts=1791224379
+- **错误**：三处文档/迁移注释都声称存在 test_agent_schema_alignment.py 这个 schema 漂移守卫，全仓搜索却是 0 命中——它从未被创建。同一轮里，agent ORM 与后端镜像 ORM 的「两处必须同时改」没有任何自动检查，我补 mood/幂等键时就真的漏了在 __table_args__ 里声明部分唯一索引，alembic check 报 removed index（autogenerate 会生成 DROP INDEX）才被兜住。
+- **根因**：注释里写了测试名，但没人写测试；而「文档说有」会让人在需要时直接去找它、找不到就跳过，而不是怀疑它不存在。守卫缺失的风险被一层「有守卫」的假象盖住了。
+- **修复**：补上 test_agent_schema_alignment.py：agent ORM 与真实库逐列双向对拍；幂等索引必须在库里与两处 ORM 都声明（含谓词一致）；用文本解析比对 agent 与 backend 两处 ORM 的列集合；关键列类型族对拍。连不上库时 skip 而不是假红。
+- **相关文件**：agent/tests/test_agent_schema_alignment.py
+- **教训**：文档声称存在的守卫，比明确承认没有的守卫更危险——它让人放弃了自己再设防线。引用一个不存在的测试名时，第一反应应该是把它建出来，而不是假设它在别处。
+
+---
+
+### 2026-10-06 01:00 · commit 6313e25 · ts=1791219628
+- **错误**：一次普通的数据类型错误就能把用户的私密记忆正文送进 LLM 上下文。实测触发的异常原文含三段敏感内容：SQL 语句 INSERT INTO memories (content, importance, user_id ...) VALUES (...)；绑定参数 parameters，其中 content 字段就是用户正文（实测值形如「我的银行卡密码是 123456」）；以及 psycopg 驱动错误详情。这段文本被 LangChain 包成 ToolMessage 进模型上下文，模型可能原样复述给用户。
+- **根因**：两层叠加。第一层：storage/database/local_client.py 抛的是裸 SQLAlchemy 异常，它的 str() 天然带 [SQL: ...] 与 [parameters: {...}]，而 parameters 里就是用户正文。第二层：上游 25 处以上的调用点都写 except APIError，但 APIError 是 ValueError 的子类、SQLAlchemy 异常不是它，于是那些 except 分支一次都没命中过（实测 isinstance(e, APIError) 为 False）——异常既没被转成友好提示、也没被脱敏，直接穿透到工具边界。同一轮提交刚把 /v1/chat 加固成「异常原文只进日志」，但工具这条路径绕过了它。
+- **修复**：在数据层的唯一出口 execute() 收口：SQLAlchemyError 一律转成脱敏后的 APIError（对外只给「类别 + 稍后重试」），全量细节含 SQL 与绑定参数只进日志，并单独打 exc_type；已是 APIError 的不重复包装；原有「拒绝全表更新/删除」「列名写错显式报错」两条护栏保留。这样那 14 处 except APIError 才真正生效。注意 SQLAlchemy 的 str(exc) 以 orig 的 repr 开头、不含类名，想按 DataError/IntegrityError 这类关键字 grep 日志必须单独打 type(exc).__name__。
+- **相关文件**：agent/src/storage/database/local_client.py
+- **教训**：「异常原文只进日志」这条纪律要在每一个通往模型的入口落实，不能只在 HTTP 响应层做。工具返回值与异常会被包装成 ToolMessage 喂回 LLM，那是一条独立的泄漏通道。另外，写 except X 之前先确认它真的会抛 X——一个永不命中的 except 分支比没有它更危险，因为它让「错误已被处理」看起来成立。
+
+---
+
+### 2026-10-06 00:28 · commit 6313e25 · ts=1791217706
+- **错误**：上一轮把 SSRF/LFI 防护加在 agent/src/storage/s3/s3_storage.py 上，但那个文件是 Coze 交付包里带进来的**零调用方死副本**；同一功能的**活路径** url_fetch_tools.py 走的是 coze_coding_dev_sdk.s3.S3SyncStorage（另一个类，未加固）。而该 SDK 与 coze_workload_identity 在本项目均未安装，导出收藏这个工具必然失败，且它被 system prompt 明确宣传、LLM 一定会去调。
+- **根因**：按文件名/局部相似性判断「哪里是攻击面」，而没有先做调用图核实。同名的死副本与活路径共存时，加固死副本会产生"已经防住了"的错觉，风险反而更高。
+- **修复**：删掉零调用方的死副本（改动前必须确认全仓无 import 方，注意活路径可能 import 的是同名第三方包）。活路径的必然失败问题单列：export_knowledge_collections 与 main_wechat→wechat_service→voice_tools(ASRClient) 两条链都依赖未安装的 Coze SDK。
+- **相关文件**：agent/src/tools/url_fetch_tools.py
+- **教训**：加固之前先确认那行代码**真的在跑**。凭名字选中加固目标，可能给死代码做安全投资，同时放过活路径；而"同名死副本 + 未加固活路径"比"只有活路径"更危险，因为它制造了已防住的错觉。判断可达性只看调用图，不看文件名。
+
+---
+
+### 2026-10-06 00:28 · commit 6313e25 · ts=1791217706
+- **错误**：/health 长期显示 pool=?/4，池状态解析不出来。原因是我写的键名 connections_size 在 psycopg_pool 的 get_stats() 返回里根本不存在（真实键是 pool_size / pool_max）。
+- **根因**：单测里用自己编的 dict 当 get_stats() 返回值做断言，桩与真实返回值不一致时测试照样绿；键名取不到只回落到 ? ，不报错不告警，所以只有真机跑一次 /health 才看得见。
+- **修复**：改用真实键 pool_size/pool_max 并把 connections_lost（累计丢弃的坏连接数）一并暴露——它是「DB 在反复断连」的早期信号。测试改成用从真实运行池上原样抄下来的 get_stats() dict 做断言。
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：凡是解析外部返回值的代码，桩测试必须用**真实抓取过**的样本做夹具，不能自己编一份。自己编的 dict 只能验证「我的代码能读我编的键」，而真实世界的坑恰恰在于键名根本不存在——这类错误不抛异常，只静默降级成占位符。
+
+---
+
+### 2026-10-06 00:28 · commit 6313e25 · ts=1791217705
+- **错误**：为堵一个不存在的漏洞而改敏感词守卫的判定顺序，结果打掉真实埋点：把「量词后缀 → 标识符 → 敏感词」改成「敏感词优先」后，memory_tools 的 save_memory_dedup_miss(content_len=...) 命中敏感词 content 而抛 SensitiveFieldError，被上层 except 吞掉 ⇒ 判重日志静默失效；4 个存量测试（test_dedup_levels 等）当场变红。
+- **根因**：把「量词后缀豁免」当成了命名绕过口。实际上 _len/_count/_ms/_chars/_at 的值是长度/计数/耗时/时间戳，结构上装不下秘密——secret_at 存的是时间戳不是密钥，它不是绕过。真正需要防的 _id 类（secret_id）早已由 _SAFE_ID_KEYS 显式白名单堵住。改之前没有先问「这个后缀到底豁免了什么语义」。
+- **修复**：回退到原顺序，并把「顺序即契约」与这次回退的原因写进 _reject_sensitive 的注释，同时补 test_quantifier_suffix_fields_are_exempt_by_construction 与 test_content_len_must_not_be_rejected 两条护栏，防止后人再"优化"这个顺序。
+- **相关文件**：agent/src/yishu/observability.py
+- **教训**：改安全守卫前必须先说清「它豁免了什么语义」。凭直觉收紧一个判定，最容易打掉的不是攻击面而是真实埋点——而埋点失效是静默的（异常被 except 吞掉）。存量测试变红不是噪音，是它正在阻止你把日志埋点打瞎。
+
+---
+
+### 2026-10-05 12:48 · commit 6313e25 · ts=1791175717
+- **错误**：配错一个环境变量 AGENT_MAX_ROUNDS=0，整个 /v1/chat 直接 500，日志里只有一行看不懂的 UnboundLocalError: cannot access local variable 'result' where it is not associated with a value。
+- **根因**：run_agent_with_validation 的重试循环是 for round_num in range(1, max_rounds + 1)：max_rounds<=0 时循环一次都不执行，而循环之后的 return _finish(result, ...) 引用了一个只在循环体内绑定的局部变量 result ⇒ 未绑定即使用。既有 _env_int 只做类型转换、不校验下界，负数同样穿透。
+- **修复**：入口处把 max_rounds 夹紧到 >=1（非法值回落 2），并记 validator_rounds_clamped 事件留痕。这类『配置值直接当循环上界』的写法，边界必须显式夹紧——错误配置的代价不该是 500。
+- **相关文件**：agent/src/utils/output_validator.py
+- **教训**：凡是『配置值直接充当 range/切片上界』的地方，都要显式夹紧并留痕。0 与负数的含义通常是『不限制』或『未配置』，而不是『一次都不执行』；把『未配置』翻译成崩溃，是配置健壮性里最常见也最没必要的一种失败。
+
+---
+
+### 2026-10-05 12:48 · commit 6313e25 · ts=1791175683
+- **错误**：agent 的 checkpointer 用一条永不重建的长驻 psycopg 连接，DB 重启或网络抖动一次后，进程生命周期内再也不重连 ⇒ 对话记忆静默持续失败（服务照常 200、对话照常往返，用户以为有记忆，实际每轮都是新会话）。且 /health 仍报 PostgresSaver（持久化），降级与否都看不出来。
+- **根因**：两处叠加：① _conn 单连接被 _checkpointer 缓存永久持有，psycopg 不会自己重连，而缓存没有任何失效机制；② /health 只报 saver 的类型、不报连接可用性，「类型对但连接已死」这形态在类型字段里不可见。真正根因是「单连接」这个选择本身——只要是一条连接，就必然存在「断了不重建」的窗口。
+- **修复**：改用 psycopg_pool.ConnectionPool（langgraph 官方支持：_internal.Conn = Connection | ConnectionPool）。三处关键参数缺一不可：① configure 回调里逐条 SET search_path TO memory —— 它是连接级变量，只在启动时设一次必然漏掉池里后续新建的连接，漏设那条一被用来读 checkpoint 就报 relation "checkpoints" does not exist，且时有时无像偶发故障；② kwargs={"prepare_threshold": 0} —— 预编译语句绑定在具体连接上，池换连接后服务端已无该语句，报 prepared statement does not exist；③ check=ConnectionPool.check_connection —— 在每次 checkout 时探活，坏连接当场丢弃重建，这才是断连自愈的实现（不设则池完全不探活）。另：/health 的 checkpointer 字段附只读池统计；lifespan 退出时关池（psycopg_pool 有后台 worker 线程，不 close 会泄漏）；建表失败时必须能 close 已建池，否则每次 DB 抖一下就漏一组线程。
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：「连得上」不等于「断了能自己好」。任何持有长生命周期的外部资源（DB 连接、HTTP client、队列句柄），验收标准不是首次成功，而是故障后能否自愈；而自愈必须在架构层选对容器（池/客户端），事后补一个重试是补不上的。真机对照实验结论：掐断全部后端后，池下一次读写即恢复（connections_lost=2），单连接则永久 OperationalError。
+
+---
+
 ### 2026-10-05 04:19 · commit dfafac3 · ts=1791145188
 - **错误**：fetch.py 的 2MB 响应体上限形同虚设：resp.content 会先把整个响应体读进内存，之后才切片截断；构造 500MB 响应即可单次工具调用打爆进程内存
 - **根因**：把事后截断当成了事前限制——httpx 的 client.get 是全量读取，截断发生在数据已经在内存之后

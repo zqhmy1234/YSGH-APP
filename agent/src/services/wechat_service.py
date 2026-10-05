@@ -11,8 +11,24 @@ from typing import Any
 
 from agents.agent import build_agent
 from storage.database.supabase_client import get_supabase_client
-from supabase import Client
-from tools.voice_tools import transcribe_voice
+# ⚠️ 2026-10-06：原 `from supabase import Client`。`supabase` 从未在本包声明，
+# 它只是 `coze-coding-dev-sdk` 的**传递依赖**（uv.lock:2456）——删掉 coze 包时
+# 它会一并消失，这条 import 就成了第二个 ImportError（实测会让 `main_wechat.py`
+# 进程起不来）。且 `get_supabase_client()` 早已返回 `LocalClient`，类型标注跟着
+# 换到本地数据层才是真实的形状。
+from storage.database.local_client import LocalClient
+# ⚠️ 2026-10-06：删除了 `from tools.voice_tools import transcribe_voice`。
+# 该函数依赖 `coze_coding_dev_sdk.ASRClient`（Coze 私有包，本项目**装不上**——
+# 它的依赖链含 pycairo/dbus-python/PyGObject 三个 Linux-only 库，Windows 上
+# `uv sync` 整体失败），是 agent 里最后一个 Coze 运行时 import。
+#
+# **更重要的理由**：语音转写在本项目**早有承载方**——设计（B5a）指定的
+# FunASR/SenseVoice 双通道已落在 `backend/app/services/external/asr/`，
+# App 侧走 `POST /api/v1/asr/transcribe`（`client/utils/voice.uts`）。
+# agent 这条 ASR 是**第三套**、单通道、无情绪、无 VAD，且 `main_wechat.py`
+# 未出现在任何 deploy/启动脚本里（不在生产链路上）。
+# 让一个未接线的进程继续 import 一个装不上的包，只会让"整条企微链起不来"
+# 这种硬故障披着 ImportError 的外衣。
 from wecom_aibot_sdk import WSClient
 
 logger = logging.getLogger(__name__)
@@ -36,10 +52,10 @@ class WeChatMemoryService:
     def __init__(self):
         self.agent = None
         self.client: WSClient | None = None
-        self._db: Client | None = None
+        self._db: LocalClient | None = None
 
     @property
-    def db(self) -> Client:
+    def db(self) -> LocalClient:
         if self._db is None:
             self._db = get_supabase_client()
         return self._db
@@ -108,7 +124,22 @@ class WeChatMemoryService:
                 logger.info(f"新用户已记录: {user_id} ({user_name})")
 
         except Exception as e:
-            logger.warning(f"记录用户信息失败: {e}")
+            # ⚠️ 2026-10-06：升级为**结构化事件**，并点破真实原因。
+            # 此前这里只有一行 `logger.warning`，而实际根因是
+            # `wechat_users` 这张表在本仓**根本不存在**（alembic 迁移与
+            # `schema.sql` 都没有，连库 `to_regclass` 返回 NULL，实测确认）
+            # ⇒ 用户的企微身份**永远静默落不了库**，后续"每日回顾推送给谁"
+            # 也就永远查不到人。一行 warning 会让这被当成偶发网络抖动。
+            from yishu.observability import log_event
+
+            log_event(
+                "wechat_record_user_failed",
+                level=logging.ERROR,
+                exc_type=type(e).__name__,
+                detail=str(e)[:150],
+                hint="wechat_users 表不存在（agent 无建表迁移）或 local_client 白名单未收录",
+            )
+            logger.error("记录用户信息失败: %s", e)
 
     async def _on_text(self, frame: dict[str, Any]):
         """处理文本消息"""
@@ -159,21 +190,24 @@ class WeChatMemoryService:
                 return
 
             # 2. ASR 语音转文字
-            recognized_text = transcribe_voice(audio_bytes, user_id, filename)
+            # ⚠️ 2026-10-06：企微机器人**暂不承接**语音转写，原因见文件头注释。
+            # 设计里的语音承载方是后端（FunASR/SenseVoice 双通道，已实现），
+            # App 也走那条链。这里诚实回告，而不是调一个装不上的 SDK。
+            from yishu.observability import log_event
 
-            if not recognized_text or not recognized_text.strip():
-                await self._reply_text(frame, "语音识别结果为空，请重新清晰地发送语音 🎤")
-                return
-
-            logger.info(f"语音识别结果: {recognized_text[:80]}")
-
-            # 3. 将识别的文字交给 Agent 处理（添加语音标记，让 Agent 使用 voice 内容形式）
-            agent_input = f"[语音输入] {recognized_text}"
-            reply = await self._process_message(agent_input, user_id)
-
-            # 4. 回复用户（附带识别原文，方便用户确认）
-            full_reply = f"🎤 语音识别：{recognized_text}\n\n{reply}"
-            await self._reply_text(frame, full_reply)
+            log_event(
+                "wechat_voice_unsupported",
+                level=logging.WARNING,
+                user_id=user_id,
+                audio_len=len(audio_bytes),
+                hint="语音转写由 backend /api/v1/asr/transcribe 承载（B5a 设计）",
+            )
+            await self._reply_text(
+                frame,
+                "语音消息我暂时还听不懂 🎤\n"
+                "可以用文字直接告诉我，或到 App 里用语音记录（App 的语音会正常转写）。",
+            )
+            return
 
         except Exception as e:
             logger.error(f"语音处理失败: {e}", exc_info=True)

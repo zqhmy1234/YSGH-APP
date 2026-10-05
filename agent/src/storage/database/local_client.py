@@ -25,10 +25,16 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import and_, create_engine, delete, func, insert, or_, select, update
+from sqlalchemy import and_, create_engine, delete, func, or_, select, update
 from sqlalchemy import inspect as sa_inspect
+# ⚠️ `on_conflict_do_nothing()` 只在 **PG 方言**的 insert 上有，通用的
+# `sqlalchemy.insert()` 没有 —— 用错的话在运行期才炸
+# （`'Insert' object has no attribute 'on_conflict_do_nothing'`，已实测）。
+# 本仓的库就是 PostgreSQL，直接引方言版本。
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 from storage.database.shared.model import KnowledgeCollections, Memories, MemoryCategories
+from yishu.db_errors import APIError
 
 logger = logging.getLogger("yishu.agent.db")
 
@@ -169,6 +175,7 @@ class LocalTableQuery:
         self._limit: int | None = None
         self._offset: int | None = None
         self._single: str | None = None
+        self._on_conflict_nothing = False
 
     # ── 动作 ──
     def select(self, columns: str = "*", count: str | None = None) -> LocalTableQuery:
@@ -189,6 +196,30 @@ class LocalTableQuery:
 
     def delete(self) -> LocalTableQuery:
         self.action = "delete"
+        return self
+
+    def on_conflict_do_nothing(self) -> LocalTableQuery:
+        """让 `insert` 变成 `INSERT ... ON CONFLICT DO NOTHING`（2026-10-06）。
+
+        ## 为什么需要它
+
+        `save_memory` 的判重是「先 SELECT 再 INSERT」，两个语句分属两个事务，
+        并发下两个同内容请求都能通过 SELECT ⇒ 各写一条（实测库里已有同内容
+        4 条的行）。唯一的原子修法是**把判重交给数据库**：
+        `memories` 上有部分唯一索引 `uq_memories_user_hash_bucket`
+        （见迁移 `f2c3d4e5a6b7`），配合 `ON CONFLICT DO NOTHING` 即可让
+        第二次写入**静默不插**，再由调用方回查拿到既有行。
+
+        ## 为什么不带冲突目标
+
+        刻意**不传 `index_elements`**。目标是那条**部分**唯一索引
+        （`WHERE content_hash IS NOT NULL AND dedup_bucket IS NOT NULL`），
+        而用 `index_elements` 指定目标时 PostgreSQL 要求同时给出匹配的
+        `index_where` 才能推断出该索引——多一个必须与迁移逐字对齐的字符串，
+        就多一处会静默漂移的地方。不指定目标时，`ON CONFLICT DO NOTHING`
+        对**任何**唯一约束冲突都生效，语义正是我们要的"插不进去就算了"。
+        """
+        self._on_conflict_nothing = True
         return self
 
     # ── 过滤 ──
@@ -386,6 +417,51 @@ class LocalTableQuery:
         return out
 
     def execute(self) -> LocalResponse:
+        """执行查询；**所有数据层异常在此收口为 `APIError`**（2026-10-05）。
+
+        ## 为什么这个收口是安全项，不是风格问题
+
+        上游 25+ 处调用点都写成 `except APIError as e:`（工具层据此返回友好提示、
+        并把失败记进日志）。但本薄层此前抛的是**裸 SQLAlchemy 异常**，而
+        `APIError` 是 `ValueError` 子类、SQLAlchemy 异常不是 ⇒ **那些 except
+        分支一次都没命中过**（实测：`isinstance(e, APIError)` 为 False）。
+
+        后果不是"少了个友好提示"，而是**用户数据外泄**。实测触发的原文：
+
+            (psycopg.errors.InvalidTextRepresentation) 无效的类型 integer 输入语法
+            [SQL: INSERT INTO memories (content, importance, user_id, ...) VALUES (...)]
+            [parameters: {'content': '我的银行卡密码...', 'user_id': '...'}]
+
+        这段文本会被 LangChain 包成 ToolMessage **进 LLM 上下文**，
+        模型完全可能把它复述给用户 —— 也就是说一次类型错误就能把
+        **SQL 语句 + 记忆正文**送到模型里（而 `/v1/chat` 刚被加固成"异常原文
+        只进日志"，工具这条路径却绕过了它）。
+
+        修法：在唯一的数据出口把异常**分类并脱敏**——日志留全量（含 SQL/参数，
+        供排查），对外只给「类别 + 可读中文」。这样 14 处 `except APIError`
+        设计上想要的形态才真正成立。
+        """
+        from sqlalchemy.exc import SQLAlchemyError
+
+        try:
+            return self._execute_inner()
+        except APIError:
+            raise  # 已是本层脱敏过的错误，不重复包装
+        except SQLAlchemyError as exc:
+            # 全量细节只进日志：SQL 语句、绑定参数（**含用户正文**）、驱动原文。
+            # `exc_type` 必须单独打：SQLAlchemy 的 `str(exc)` 以 `orig` 的 repr 开头，
+            # **不含类名**（实测 `(builtins.RuntimeError) ...`），只打 exc 的话
+            # 想按 "DataError" / "IntegrityError" grep 日志是 grep 不到的。
+            logger.error(
+                "数据层错误 table=%s action=%s exc_type=%s exc=%s",
+                self.table, self.action, type(exc).__name__, exc,
+            )
+            raise APIError(
+                f"数据访问失败（{type(exc).__name__}），请稍后重试",
+                code=type(exc).__name__,
+            ) from None  # `from None`：不让原始 traceback 随异常链继续传播
+
+    def _execute_inner(self) -> LocalResponse:
         factory = _session_factory()
         with factory() as session:
             if self.action == "select":
@@ -417,7 +493,11 @@ class LocalTableQuery:
             if self.action == "insert":
                 payloads = self._payload if isinstance(self._payload, list) else [self._payload]
                 payloads = [self._normalize_payload(p) for p in payloads]
-                stmt = insert(self.model).returning(self.model)
+                stmt = pg_insert(self.model).returning(self.model)
+                if self._on_conflict_nothing:
+                    # 冲突（唯一索引命中）⇒ 不插、不报错、`returning` 返回空集。
+                    # 调用方据此判断"已存在"，再回查既有行（见 `on_conflict_do_nothing`）。
+                    stmt = stmt.on_conflict_do_nothing()
                 result = session.execute(stmt, payloads)
                 data = [self._row_to_dict(session, r) for r in result.scalars().all()]
                 session.commit()

@@ -4,6 +4,7 @@
 """
 import json
 import logging
+import os
 from typing import Any
 
 from langchain.tools import tool
@@ -17,6 +18,43 @@ logger = logging.getLogger(__name__)
 def _get_client():
     """获取Supabase客户端"""
     return get_supabase_client()
+
+
+def _export_unavailable_reason() -> str:
+    """导出功能是否可用；**空串表示可用**，否则返回不可用原因（2026-10-05 新增）。
+
+    ## 为什么必须在入口预检
+
+    `export_knowledge_collections` 依赖 Coze 平台的两样东西：
+      · 私有包 `coze_coding_dev_sdk`（提供 `S3SyncStorage`）
+      · 环境变量 `COZE_BUCKET_ENDPOINT_URL` / `COZE_BUCKET_NAME`
+
+    去 Coze 改造后这两样在本项目**都不存在** ⇒ 这个工具**必然失败**。
+    而它同时满足两个"会被调用"的条件：
+      · 挂在 `build_agent` 的工具列表里；
+      · 被 system prompt 明确宣传（"用户需要导出收藏时使用"）。
+    于是用户一说"导出我的收藏"，LLM 就会调它、拿到一个含内部模块路径的报错、
+    然后**可能反复重试** —— 这正是 save_memory 曾经单轮 32~66s 的同一根因族：
+    **一个静默/必然失败的工具挂在列表里 = 延迟炸弹**。
+
+    预检把"必然失败"提前成"立刻给出可读结论"，不让用户干等一整轮 agent 循环。
+    预检成本是一次 import 尝试 + 两次字典查，可忽略。
+
+    ## 判定顺序
+
+    先查依赖再查配置：缺依赖时即便配了凭据也用不了（配置是必要条件而非充分条件），
+    报"缺依赖"对运维更有指向性。
+    """
+    try:
+        import coze_coding_dev_sdk.s3  # noqa: F401 —— 仅探测可用性
+    except ImportError:
+        # ⚠️ 2026-10-06：**不要把内部包名写进 reason**。reason 会拼进返回体，
+        # 返回体会作为 ToolMessage 进 LLM 上下文——把私有包名喂给模型
+        # 毫无价值且属于内部信息外泄。给运维看的细节走日志（见调用点 log_event）。
+        return "导出所需的存储依赖未安装"
+    if not os.getenv("COZE_BUCKET_ENDPOINT_URL") or not os.getenv("COZE_BUCKET_NAME"):
+        return "未配置对象存储（COZE_BUCKET_ENDPOINT_URL / COZE_BUCKET_NAME）"
+    return ""
 
 
 def _get_user_id() -> str:
@@ -162,6 +200,32 @@ def export_knowledge_collections() -> str:
     Returns:
         导出结果的JSON字符串，包含下载链接
     """
+    # 入口预检（2026-10-05）：依赖缺失时**立刻**返回可读结论，不走后续 DB 查询与
+    # 一轮 agent 循环。返回 JSON（而不是抛异常）是刻意的——抛异常会被包装成
+    # ToolMessage 喂回 LLM，模型倾向于"再试一次"从而放大延迟；返回一个明确的
+    # success=False 能让它直接如实转述给用户。详见 `_export_unavailable_reason`。
+    unavailable = _export_unavailable_reason()
+    if unavailable:
+        from yishu.observability import log_event
+
+        # 给运维的细节（具体缺哪个包/哪个变量）走日志；给模型/用户的 reason 是脱敏后的。
+        logger.warning("导出工具不可用: %s", unavailable)
+        log_event(
+            "tool_unavailable",
+            level=logging.WARNING,
+            tool="export_knowledge_collections",
+            reason=unavailable,
+        )
+        return json.dumps({
+            "success": False,
+            "unavailable": True,
+            "message": (
+                f"导出功能当前不可用（{unavailable}）。"
+                "请如实告知用户：收藏内容仍完整保存在知识库中、可随时在应用内查看，"
+                "暂时不支持导出为文件；不要说成'导出失败'，也不要重试本工具。"
+            ),
+        }, ensure_ascii=False)
+
     client = _get_client()
 
     try:
@@ -250,8 +314,13 @@ def export_knowledge_collections() -> str:
         logger.error(f"导出知识收藏失败: {e.message}")
         raise Exception(f"导出知识收藏失败: {e.message}")
     except Exception as e:
-        logger.error(f"导出知识收藏失败: {e}")
-        raise Exception(f"导出知识收藏失败: {str(e)}")
+        # ⚠️ 2026-10-05 安全：原先 `raise Exception(f"...{str(e)}")` —— 这个 message
+        # 会被 LangChain 包成 ToolMessage **进 LLM 上下文**，模型可能复述给用户，
+        # 而 str(e) 里可能有 DSN、绝对路径、内部模块名。只保留异常类型名：
+        # 足够让模型区分"配置问题/权限问题/网络问题"，又不带内部信息。
+        # 细节已由上面一行 logger.error 完整落盘，日志侧不丢信息。
+        logger.error("导出知识收藏失败: %s", e)
+        raise Exception(f"导出知识收藏失败（{type(e).__name__}），请稍后重试")
 
 
 @tool

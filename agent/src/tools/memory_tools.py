@@ -2,10 +2,12 @@
 忆光 - 记忆管理工具
 提供记忆的存储、搜索、分类等功能
 """
+import hashlib
 import json
 import logging
 import os
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -74,6 +76,50 @@ def _dedup_window_minutes() -> int:
         return max(0, int(os.getenv("AGENT_DEDUP_WINDOW_MIN", "10")))
     except (TypeError, ValueError):
         return 10
+
+
+def _idempotency_key(content: str, window_min: int) -> tuple[str | None, int | None]:
+    """算 DB 层的幂等键 `(content_hash, dedup_bucket)`（2026-10-06）。
+
+    ## 为什么需要（这是"两事务判重"的原子替代）
+
+    上面 `_find_existing_memory` 是「先 SELECT 再 INSERT」，两句分属两个事务，
+    并发下两个同内容请求都能通过 SELECT ⇒ 各写一条。实测库里已有同内容 **4 条**
+    的行（`test-idempot…` 用户），所以这不是理论风险。
+
+    DB 侧靠 `memories` 上的**部分唯一索引** `uq_memories_user_hash_bucket`
+    （迁移 `f2c3d4e5a6b7`）拦下第二次写入，本函数负责算出那两个键。
+
+    ## 为什么哈希「前 50 字」而不是全文
+
+    与 `DEDUP_PREFIX_LEN` 同口径，理由见上面那段注释：LLM 重试是把内容**变长**
+    （尾部追加时间/语气词），**全内容哈希抓不住**，前缀哈希才抓得住——
+    这正是当初 `ilike` 判重方向写反而长期静默失效的同一个坑。
+
+    ## 为什么带时间桶而不是纯哈希
+
+    纯哈希唯一 = **永久封禁**「以后再记一次同样的话」（实测 `UniqueViolation`）。
+    桶随窗口推进，旧的重复行落进旧桶、不再参与判定 ⇒ 隔一段时间可正常再记。
+    桶宽取自同一环境变量，所以 Python 判重与 DB 幂等**窗口口径一致**。
+
+    ## 诚实标注的两个边界
+
+    · **跨桶边界**：相差 1 秒但分属两桶的两次写入，DB 侧不会拦（Python 判重仍覆盖）。
+      DB 约束的职责只是关掉**并发**窗口，不是替代 Python 的近似判重。
+    · **窗口设 0** 时返回 `(None, None)` ⇒ 不参与 DB 幂等（与"关闭第二级去重"语义一致），
+      因为桶宽为 0 会让所有写入落进同一个桶，那就退化成永久封禁了。
+    """
+    if window_min <= 0:
+        return None, None
+    normalized = _norm(content)
+    if len(normalized) < DEDUP_MIN_PREFIX:
+        # 太短的内容（"今天"这类）做前缀幂等会误伤真实的不同记忆，
+        # 与 `_find_existing_memory` 的 `DEDUP_MIN_PREFIX` 门槛保持一致。
+        return None, None
+    prefix = normalized[:DEDUP_PREFIX_LEN]
+    content_hash = hashlib.sha256(prefix.encode("utf-8")).hexdigest()
+    bucket = int(time.time() // (window_min * 60))
+    return content_hash, bucket
 
 
 def _norm(text: str) -> str:
@@ -168,6 +214,44 @@ def _find_existing_memory(client, user_id: str, content: str) -> tuple[Any, str]
         rows_in_window=rows_in_window,
     )
     return None, ""
+
+
+def _find_by_idempotency_key(client, user_id: str, content_hash: str | None,
+                             dedup_bucket: int | None) -> Any:
+    """按幂等键回查既有行 id（`ON CONFLICT DO NOTHING` 命中后用它拿 id）。
+
+    为什么必须回查而不是直接说"重复了"：调用方（LLM）需要 `memory_id` 才能
+    自然地回复用户，而 `ON CONFLICT DO NOTHING` 只告诉"没插进去"、不给 id。
+    回查条件与唯一索引**逐列一致**（user_id + content_hash + dedup_bucket），
+    所以至多命中一行。
+
+    取不到就返回 `None`（仍然是 `duplicate: True`）——"没拿到 id"不该把一次
+    成功的去重变成失败。
+    """
+    if content_hash is None or dedup_bucket is None:
+        return None
+    try:
+        rows = getattr(
+            client.table("memories")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("content_hash", content_hash)
+            .eq("dedup_bucket", dedup_bucket)
+            .limit(1)
+            .execute(),
+            "data",
+            None,
+        )
+        return _row_id(rows[0]) if rows else None
+    except Exception as exc:  # noqa: BLE001 —— 回查失败不影响"已去重"这个结论
+        from yishu.observability import log_event
+
+        log_event(
+            "dedup_lookup_failed",
+            level=logging.WARNING,
+            exc_type=type(exc).__name__,
+        )
+        return None
 
 
 def _parse_content(content: Any) -> str:
@@ -491,6 +575,16 @@ def save_memory(
         "content_format": validated["content_format"],
         "user_id": _get_user_id(),
     }
+
+    # DB 层幂等键（2026-10-06）：上面那个 SELECT 判重与下面的 INSERT **分属两个事务**，
+    # 并发下都判"不存在"就各写一条。把键写进行里，靠部分唯一索引
+    # `uq_memories_user_hash_bucket` + `ON CONFLICT DO NOTHING` 原子拦下第二次。
+    # 键算不出来（内容太短 / 窗口关闭）时为 None，该行不参与 DB 幂等 —— 与
+    # Python 判重的门槛保持一致，不引入新的误伤。
+    idem_hash, idem_bucket = _idempotency_key(content, _dedup_window_minutes())
+    if idem_hash is not None:
+        memory_data["content_hash"] = idem_hash
+        memory_data["dedup_bucket"] = idem_bucket
     if location:
         memory_data["location"] = location
     if people:
@@ -515,7 +609,20 @@ def save_memory(
             logger.warning(f"处理分类时出错: {e.message}")
 
     try:
-        response = client.table("memories").insert(memory_data).execute()
+        response = client.table("memories").insert(memory_data).on_conflict_do_nothing().execute()
+        if not response.data:
+            # `ON CONFLICT DO NOTHING` 命中 ⇒ 并发下**另一个请求刚好先写进去了**。
+            # 这不是错误：回查那把幂等键对应的既有行并如实返回，语义与
+            # 上面 Python 判重命中时完全一致（都是 success/duplicate）。
+            existing = _find_by_idempotency_key(client, memory_data.get("user_id"), idem_hash, idem_bucket)
+            return json.dumps({
+                "success": True,
+                "duplicate": True,
+                "memory_id": existing,
+                "message": (
+                    f"这条内容已经保存过了（ID: {existing}），无需重复保存。请直接回复用户。"
+                ),
+            }, ensure_ascii=False)
         if response.data:
             response_list: list[dict[str, Any]] = response.data
             memory_id = response_list[0]["id"]
@@ -651,7 +758,11 @@ def get_recent_memories(days: int = 7, limit: int = 20) -> str:
 
     try:
         from datetime import timedelta
-        cutoff_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        # 2026-10-06：改用 aware UTC。旧 `utcnow()` 已弃用，且它给的是 **naive**
+        # datetime——而 `created_at` 列是 timestamptz（DateTime(True)），naive 值
+        # 会被 PG 按会话时区解释，与 `_find_existing_memory` 里用的
+        # `now(timezone.utc)` 两套口径并存，跨机器部署时是隐患。
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         response = client.table("memories") \
             .select("id, content, summary, mood, topics, category_id, created_at, memory_categories(name)") \

@@ -111,7 +111,17 @@ class Memories(Base):
         Index('ix_memories_created_at', 'created_at'),
         Index('ix_memories_importance', 'importance'),
         Index('ix_memories_mood', 'mood'),
-        Index('ix_memories_user_id', 'user_id')
+        Index('ix_memories_user_id', 'user_id'),
+        # ── 判重幂等：部分唯一索引（2026-10-06 迁移 f2c3d4e5a6b7）──
+        # ⚠️ 必须在此声明，否则 `alembic check` / `--autogenerate` 会把它判为
+        # "库里有、metadata 没有" 的**多余索引**并生成 `DROP INDEX`（实测已复现）。
+        # 谓词必须与迁移里的 `WHERE` **逐字一致**，否则同样被判漂移。
+        Index(
+            'uq_memories_user_hash_bucket',
+            'user_id', 'content_hash', 'dedup_bucket',
+            unique=True,
+            postgresql_where=text("content_hash IS NOT NULL AND dedup_bucket IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -128,6 +138,12 @@ class Memories(Base):
     content_format: Mapped[Optional[str]] = mapped_column(String(20), server_default=text("'text'"), comment='内容形式：text/image/voice/link')
     topics: Mapped[Optional[dict]] = mapped_column(JSON, comment='L3主题领域列表')
     updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True))
+    # ── 判重幂等键（2026-10-06，迁移 f2c3d4e5a6b7）──
+    # 与 `dedup_bucket` 组成**部分唯一索引**，把"判重与写入分属两个事务"的
+    # TOCTOU 关掉。哈希口径与 `memory_tools.DEDUP_PREFIX_LEN` 一致（归一化后取前 50 字）
+    # —— 因为 LLM 重试是把内容**变长**（尾部追加时间/语气词），全内容哈希抓不住。
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), comment='归一化内容前50字的sha256（判重幂等键）')
+    dedup_bucket: Mapped[Optional[int]] = mapped_column(Integer, comment='判重时间桶=epoch//(窗口分钟×60)')
 
     category: Mapped[Optional['MemoryCategories']] = relationship('MemoryCategories', back_populates='memories')
 
@@ -160,3 +176,7 @@ class KnowledgeCollections(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(True), nullable=False, server_default=text('now()'))
     content_format: Mapped[Optional[str]] = mapped_column(String(20), server_default=text("'text'"), comment='内容形式：text/image/voice/link')
     updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True))
+    # L2 情绪（八选一，**收藏库可选**）—— 2026-10-06 迁移 e1b2c3d4f5a6 补列。
+    # 此前只有 memories 有 mood，而标签体系 SOP 与 `save_knowledge_collection`
+    # 都支持收藏带情绪 ⇒ 带情绪的收藏必然写入失败（列不存在）。补列的更多说明见迁移文件。
+    mood: Mapped[Optional[str]] = mapped_column(String(20), comment='L2 情绪状态（八选一，收藏库可选）')

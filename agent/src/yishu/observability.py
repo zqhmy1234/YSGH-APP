@@ -98,11 +98,24 @@ _SAFE_ID_KEYS: frozenset[str] = frozenset(
 
 def _reject_sensitive(key: str) -> None:
     low = key.lower()
-    # 量词后缀先放行（它们在语义上不可能承载内容）
+    # ⚠️ 2026-10-05 一次被回退的"修正"（记下来，别重做）：
+    # 曾把顺序改成「敏感词优先 → 量词后缀 → 标识符」，理由是想堵`secret_at` 这类
+    # 命名绕过。**那是把一个非问题当问题修，反而打坏了真实埋点** ——
+    # `memory_tools` 的 `save_memory_dedup_miss(content_len=...)` 命中敏感词 `content`
+    # ⇒ 抛 SensitiveFieldError ⇒ 被上层 except 吞掉 ⇒ **判重日志静默失效**，
+    # 4 个存量测试当场变红（test_dedup_levels 等）。
+    #
+    # 为什么原顺序是对的：量词后缀（_len/_count/_ms/_chars/_at）的值是
+    # 长度/计数/耗时/时间戳，**结构上就装不下秘密**；`secret_at` 存的是时间戳，
+    # 不是密钥，它不是绕过。真正需要防的「命名绕过」是 `_id` 那一类
+    # —— `secret_id` 曾一行放行，而 id 里确实可能塞进任意标识，
+    # 那个已经用**显式白名单** `_SAFE_ID_KEYS` 堵住了。
+    #
+    # 顺序即契约，改动前先想清楚"后缀豁免到底豁免了什么语义"。
     if low.endswith(_SAFE_QUANT_SUFFIXES):
         return
     # 标识符走**显式白名单**，而不是后缀匹配
-    if low in _SAFE_ID_KEYS or low.endswith("_ids") and low[:-4] in _SAFE_ID_KEYS:
+    if low in _SAFE_ID_KEYS or (low.endswith("_ids") and low[:-4] in _SAFE_ID_KEYS):
         return
     for part in _FORBIDDEN_KEY_PARTS:
         if part in low:

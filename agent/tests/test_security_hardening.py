@@ -5,8 +5,15 @@
 1. 错误响应不再回显异常原文（可能含数据库 DSN、绝对路径、SQL）。
 2. 敏感字段守卫不再被 `_id` 命名绕过（`secret_id` 这类名字曾一行放行）。
 3. 限流桶会被回收（`forget_idle` 曾只有定义、全仓无调用方）。
-4. `upload_from_url` 拒绝 `file://` 与内网地址。
-5. 收藏搜索的 `ilike` 通配口径与 limit 夹紧。
+4. 收藏搜索的 `ilike` 通配口径与limit 夹紧。
+5. 敏感词守卫的判定顺序（量词后缀不得成为绕过口）。
+6. `user_id` / `thread_id` 正则用 `fullmatch`（`$` 会放过结尾换行）。
+
+⚠️ 原第4 项「`upload_from_url` 拒绝 file:// 与内网地址」已随
+`storage/s3/s3_storage.py` 一起删除（2026-10-05 第二个窗口）：
+该文件是 **Coze 原有**的零调用方死副本，加固它等于给没人用的代码做安全投资。
+真正的出网面是 `yishu/fetch.py`，其SSRF 防护由
+`test_memory_resilience.py` 与 fetch 自身的重定向逐跳复校验覆盖。
 """
 from __future__ import annotations
 
@@ -51,6 +58,66 @@ def test_safe_identifier_and_quantifier_fields_allowed(key: str):
     log_event("probe", **{key: "x" if key.endswith(("id", "ids")) else 1})
 
 
+@pytest.mark.parametrize(
+    "key", ["secret_at", "api_key_at", "password_count", "secret_ms", "authorization_len"]
+)
+def test_quantifier_suffix_fields_are_exempt_by_construction(key: str):
+    """量词后缀豁免是**语义正确**的，不是绕过。
+
+    `_len`/`_count`/`_ms`/`_chars`/`_at` 的值是长度/计数/耗时/时间戳，
+    结构上装不下秘密 —— `secret_at` 存的是时间戳，不是密钥。
+
+    ⚠️ 本用例是一次**回退**留下的护栏：2026-10-05 曾把判定顺序改成
+    「敏感词优先」，想让 `secret_at` 也被拦，结果打死了真实埋点
+    `memory_tools.save_memory_dedup_miss(content_len=...)`（命中 `content`），
+    4 个存量测试当场变红、判重日志静默失效。
+    真正需要防的命名绕过是 `_id`（`secret_id` 曾一行放行），
+    那个已由 `_SAFE_ID_KEYS` **显式白名单**堵住；不要动这张表的判定顺序。
+    """
+    log_event("probe", **{key: 1})
+
+
+def test_content_len_must_not_be_rejected():
+    """`content_len` 是生产代码在用的真实埋点字段，被误伤就会让判重日志静默失效。"""
+    log_event("save_memory_dedup_miss", content_len=42, window_min=10, rows_in_window=3)
+
+
+@pytest.mark.parametrize("key", ["secret", "secret_value", "password", "api_key",
+                                 "token_value", "prompt", "raw", "authorization"])
+def test_sensitive_words_are_still_rejected(key: str):
+    """量词豁免不得扩大到整个敏感词表。"""
+    with pytest.raises(SensitiveFieldError):
+        log_event("probe", **{key: "whatever"})
+
+
+# ── 3b. 标识符/值校验必须用 fullmatch ───────────────────────────────
+def test_identifier_regexes_are_anchored_with_fullmatch_semantics():
+    """`^...$` 只锚定**末尾**：`re.match(r"^[A-Za-z0-9_-]+$", "abc\\n")` 为真。
+
+    注意**通过 `validate_*` 观察不到这个差异**——那两个函数都先 `.strip()`，
+    换行已被去掉。本用例直接锁正则契约，断言的是"以后有人把 fullmatch
+    改回 match 会被发现"，属于防御性护栏而非当前可观测行为。
+    """
+    from yishu.security import _THREAD_ID_RE, _USER_ID_RE
+
+    assert _USER_ID_RE.fullmatch("abc\n") is None
+    assert _THREAD_ID_RE.fullmatch("t\n") is None
+    # 正常值仍然通过（别把护栏做成误伤源）
+    assert _USER_ID_RE.fullmatch("550e8400-e29b-41d4-a716-446655440000")
+    assert _THREAD_ID_RE.fullmatch("user-1:session-9")
+
+
+@pytest.mark.parametrize("bad", ["a/b", "a\\b", "a.b", "a b", "", "x" * 65, "../etc"])
+def test_user_id_format_rejects_unsafe_values(bad: str):
+    """路径穿越 / SQL 片段 / 超长 / 空值一律 400。"""
+    from fastapi import HTTPException
+
+    from yishu.security import validate_user_id
+
+    with pytest.raises(HTTPException):
+        validate_user_id(bad)
+
+
 # ── 3. 限流桶回收 ──────────────────────────────────────────────────
 def test_rate_limiter_reclaims_idle_buckets():
     """无命中记录的桶（长期不活跃）应被回收，而不是随 user_id 无限增长。"""
@@ -89,23 +156,7 @@ def test_rate_limiter_check_triggers_reclaim(monkeypatch):
     assert calls["n"] >= 1
 
 
-# ── 4. upload_from_url 的 SSRF/LFI 防护 ────────────────────────────
-def test_upload_from_url_rejects_file_scheme():
-    """`file://` 曾能把 /etc/passwd 读出来并上传到 S3（再经预签名 URL 外泄）。"""
-    from storage.s3.s3_storage import S3SyncStorage
-
-    with pytest.raises(ValueError, match="仅支持 http/https"):
-        S3SyncStorage.upload_from_url(object(), url="file:///etc/passwd")
-
-
-def test_upload_from_url_rejects_internal_addresses():
-    from storage.s3.s3_storage import S3SyncStorage
-
-    with pytest.raises(ValueError, match="拒绝内网|无法解析"):
-        S3SyncStorage.upload_from_url(object(), url="http://127.0.0.1:8300/api/memories")
-
-
-# ── 5. 收藏搜索口径 ────────────────────────────────────────────────
+# ── 4. 收藏搜索口径 ────────────────────────────────────────────────
 def test_collection_search_uses_postgrest_wildcard(monkeypatch):
     """`%{query}%` 会被 `_pg_pattern` 转义成字面量 ⇒ 收藏搜索实际一直是坏的。"""
     import tools.memory_tools as mt

@@ -9,7 +9,10 @@ from datetime import datetime
 from typing import Any
 
 from storage.database.supabase_client import get_supabase_client
-from supabase import Client
+# ⚠️ 2026-10-06：原 `from supabase import Client`。`supabase` 从未在本包声明，
+# 只是 `coze-coding-dev-sdk` 的传递依赖——删 coze 包时会一并消失 ⇒ 第二个
+# ImportError。`get_supabase_client()` 早已返回 `LocalClient`，类型标注随之对齐。
+from storage.database.local_client import LocalClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ MOOD_EMOJI = {
 }
 
 
-def _get_db() -> Client:
+def _get_db() -> LocalClient:
     return get_supabase_client()
 
 

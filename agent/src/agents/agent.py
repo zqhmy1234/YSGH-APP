@@ -35,9 +35,10 @@ from tools.memory_tools import (
 )
 from tools.url_fetch_tools import (
     delete_knowledge_collection,
-    export_knowledge_collections,
     fetch_url_content,
     link_memory_to_collection,
+    # `export_knowledge_collections` 已随工具列表摘除（见 _TOOL_LIST 说明）；
+    # 恢复时须在此补 import，并把该函数加回 _TOOL_LIST 与 prompt 的工具清单。
 )
 from utils.output_validator import run_agent_with_validation
 
@@ -99,7 +100,16 @@ def handle_tool_errors(request, handler):
             detail=str(e)[:150],
         )
         return ToolMessage(
-            content=f"操作遇到问题：{str(e)}。请检查输入后重试。",
+            # ⚠️ 2026-10-05 安全加固：原先回显 `str(e)`。异常原文里可能有数据库 DSN
+            # （含密码）、服务器绝对路径、SQL 片段；而**工具结果会进 LLM 上下文**，
+            # 模型完全可能把它复述给用户 —— 那等于绕过了 `/v1/chat` 刚做好的
+            # "异常原文只进日志不进响应"。两处口径必须一致。
+            # 只给**异常类型名**：足够让模型区分「参数非法 / 无权限 / DB 故障」
+            # 并给出不同反应，又不带任何内部信息；细节已由上面 tool_error 落盘。
+            content=(
+                f"操作遇到问题（{type(e).__name__}）。"
+                "请检查入参是否合法后重试；若反复出现，请告知用户稍后再试。"
+            ),
             tool_call_id=request.tool_call["id"]
         )
 
@@ -135,6 +145,42 @@ def handle_tool_errors(request, handler):
     return result
 
 
+def _TOOL_LIST() -> list:
+    """Agent 可用工具的**单一真源**（2026-10-06）。
+
+    为什么要单独一个函数：`build_agent` 与 `agent_runtime_summary`（/health 与
+    启动日志用）都要知道工具集。此前列表内联在 build_agent 里、摘掉一个工具后
+    summary 里硬编码的 `13` 就与真实对不上——运维按启动日志排查时会被误导。
+    单一真源 + `len()` 取数，两处永远一致。
+
+    ⚠️ 2026-10-06：`export_knowledge_collections` 已从本列表与 system prompt
+    **双双摘除**（详见 docs/功能对齐计划_20261006.md W2）。
+    它依赖的 Coze 私有包与 COZE_BUCKET_* 在本项目都不存在 ⇒ 被宣传就必被调用、
+    被调用就必失败（预检只能让它"体面地失败"，用户依旧拿不到任何东西）。
+    现状：prompt 不再宣传 ⇒ LLM 不会调它 ⇒ 不再有失败轮次。
+    **恢复路径**：接上 COS（backend/app/services/external/storage.py 有现成
+    presigned 实现）后，把该函数加回这里，并同步改回 agent_llm_config.json 的
+    工具清单。**函数本体保留在 tools/url_fetch_tools.py，勿删。**
+    """
+    return [
+        # ── 记忆域（设计内：F1/F2 的对话侧承载）──
+        save_memory,
+        search_memories,
+        get_recent_memories,
+        get_memory_stats,
+        update_memory_summary,
+        delete_memory,
+        # ── 知识收藏域（Coze 原生能力，设计外；本轮保留但 prompt 不再承诺导出）──
+        save_knowledge_collection,
+        search_knowledge_collections,
+        get_knowledge_summary,
+        delete_knowledge_collection,
+        link_memory_to_collection,
+        # ── 链接抓取（自建 yishu/fetch，含 SSRF 防护）──
+        fetch_url_content,
+    ]
+
+
 def build_agent(ctx=None):
     """构建忆光记忆助手 Agent（去 Coze 版：模型接入见 src/llm_provider.py）。
 
@@ -168,22 +214,7 @@ def build_agent(ctx=None):
 
     llm = build_chat_model()
 
-    # 定义Agent可用的工具
-    tools = [
-        save_memory,
-        search_memories,
-        get_recent_memories,
-        get_memory_stats,
-        update_memory_summary,
-        delete_memory,
-        save_knowledge_collection,
-        search_knowledge_collections,
-        get_knowledge_summary,
-        fetch_url_content,
-        delete_knowledge_collection,
-        export_knowledge_collections,
-        link_memory_to_collection
-    ]
+    tools = _TOOL_LIST()
 
     agent = create_agent(
         model=llm,
@@ -255,7 +286,9 @@ def agent_runtime_summary() -> dict:
     工具数、模型、是否走单例、checkpointer 类型，都是排延迟问题时第一时间要看的。
     """
     return {
-        "tools": 13,
+        # 2026-10-06：改为**实测值**而非硬编码——工具列表一变这里就错
+        # （曾因摘掉 export 后仍是 13，启动日志与真实工具数对不上）。
+        "tools": len(_TOOL_LIST()),
         "model": os.getenv("AGENT_LLM_MODEL", "qwen3.8-flash"),
         "prompt_path": LLM_CONFIG,
         "agent_cached": _AGENT_CACHE is not None,

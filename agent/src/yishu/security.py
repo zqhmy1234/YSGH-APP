@@ -31,8 +31,14 @@ from fastapi import HTTPException
 
 # user_id 允许的字符集：UUID（后端主用）、短横线/下划线（测试与自定义账号）。
 # **刻意排除** `.` `/` `\` 空格与控制字符——防路径穿越、防日志注入、防注入 SQL 片段。
-_USER_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-_THREAD_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+#
+# ⚠️ 2026-10-05：改用 `re.fullmatch` 而非 `^...$`。`$` 只在字符串**末尾**匹配，
+# 前面若有结尾换行会被放过：`re.match(r"^[A-Za-z0-9_-]+$", "abc\n")` 返回真。
+# 当前两个调用点都先 `.strip()`，所以这条路径实际已被缓解——但那属于
+# "依赖调用方记得 strip"，哪天有人去掉 strip 就直接失守。
+# 校验函数自己站住，比指望每个调用点都记得清理干净靠得住。
+_USER_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_THREAD_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 
 
 def is_production() -> bool:
@@ -89,7 +95,7 @@ def validate_user_id(raw: str | None) -> str:
     value = (raw or "").strip()
     if not value:
         raise HTTPException(status_code=400, detail="缺少 user_id")
-    if not _USER_ID_RE.match(value):
+    if not _USER_ID_RE.fullmatch(value):
         # 不回显原值：避免把探测载荷写进日志/响应
         raise HTTPException(status_code=400, detail="user_id 格式非法")
     return value
@@ -110,7 +116,7 @@ def validate_thread_id(raw: str | None, user_id: str) -> str:
     设 `AGENT_THREAD_ID_STRICT=0` 临时放宽——**每次放宽都会记审计**。
     """
     value = (raw or "").strip() or user_id
-    if not _THREAD_ID_RE.match(value):
+    if not _THREAD_ID_RE.fullmatch(value):
         raise HTTPException(status_code=400, detail="thread_id 格式非法")
 
     strict = (os.getenv("AGENT_THREAD_ID_STRICT", "1") or "1").strip() not in {

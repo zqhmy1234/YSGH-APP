@@ -35,7 +35,7 @@ from agents.agent import run_agent
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from storage.memory.memory_saver import current_checkpointer_kind
+from storage.memory.memory_saver import close_memory_pool, current_checkpointer_kind
 from yishu.context import new_context, request_context
 from yishu.errors import classify_error
 from yishu.logging_setup import setup_logging
@@ -228,6 +228,10 @@ async def lifespan(app: FastAPI):
             "且本服务不得直接暴露公网"
         )
     yield
+    # 退出前关掉 checkpointer 连接池：psycopg_pool 有后台 worker 线程
+    # （num_workers，默认 3）会一直维护池大小，不 close 就等于泄漏。
+    # 单连接时代不需要这一步，是池化后新增的义务（见 memory_saver.close_memory_pool）。
+    close_memory_pool()
     logger.info("忆光 Agent 服务停止")
 
 
