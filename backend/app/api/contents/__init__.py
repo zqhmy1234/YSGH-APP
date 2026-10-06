@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.api.contents.serializers import _attach_thumb, _to_out, router
 from app.api.deps import (
     PageParams,
+    find_alive_content_by_cgid,
     get_current_user,
     load_alive_content,
     pagination_params,
@@ -259,14 +260,10 @@ def create_content(
     # R4#4（创建端点幂等键）：同用户 client_generated_id 已存在 → 幂等返回既有记录
     # （双击/网络重试不重复入库；photo/voice 既有幂等——perceptual_hash 409 / cos_key——
     #  保留为兜底，见下方去重与 voice 分支）
+    # 2026-10-06：查询收敛到 deps.find_alive_content_by_cgid（W1 agent 镜像删除是
+    # 第三处同款，棘轮 soft_delete_filter 手抄上升被推破后三处共用一个 helper）。
     if req.client_generated_id:
-        existing = db.scalar(
-            select(Content).where(
-                Content.user_id == user.id,
-                Content.client_generated_id == req.client_generated_id,
-                Content.deleted_at.is_(None),
-            )
-        )
+        existing = find_alive_content_by_cgid(db, user.id, req.client_generated_id)
         if existing is not None:
             return ApiResponse(data=_to_out(existing))
 
@@ -353,13 +350,7 @@ def create_content(
         db.rollback()
         # R4#4：并发同 client_generated_id → 唯一约束冲突 → 幂等返回既有记录
         if req.client_generated_id:
-            dup = db.execute(
-                select(Content).where(
-                    Content.user_id == user.id,
-                    Content.client_generated_id == req.client_generated_id,
-                    Content.deleted_at.is_(None),
-                )
-            ).scalar_one_or_none()
+            dup = find_alive_content_by_cgid(db, user.id, req.client_generated_id)
             if dup is not None:
                 return ApiResponse(data=_to_out(dup))
         # 审查修复(P1-04)：并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409
@@ -566,6 +557,10 @@ def delete_content(
 # upload → "" → GET "" → GET/{content_id} → PATCH → DELETE → favorite×3 → waveform。
 # 四个 router 在此再导出（main.py 依赖 `from app.api.contents import ...` 三 router 与
 # `contents.router`；测试依赖 profile_sensitive_router）。
+from app.api.contents.agent import (  # noqa: E402, F401 —— W1 记忆镜像端点
+    create_content_for_agent,  # noqa: E402, F401
+    delete_content_for_agent_by_cgid,  # noqa: E402, F401
+)
 from app.api.contents.favorites import favorites_router  # noqa: E402, F401
 from app.api.contents.profile_sensitive import profile_sensitive_router  # noqa: E402, F401
 from app.api.contents.trash import trash_router  # noqa: E402, F401

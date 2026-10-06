@@ -52,9 +52,20 @@ def test_sensitive_guard_not_bypassed_by_id_suffix(key: str):
         log_event("probe", **{key: "whatever"})
 
 
-@pytest.mark.parametrize("key", ["user_id", "thread_id", "memory_id", "msg_len", "latency_ms"])
+@pytest.mark.parametrize(
+    "key",
+    ["user_id", "thread_id", "memory_id", "msg_len", "latency_ms",
+     # W1 镜像链路要对账 contents 行的 UUID，content_id 必须可记
+     "content_id"],
+)
 def test_safe_identifier_and_quantifier_fields_allowed(key: str):
-    """正常的标识符/量词字段不能被误伤（误伤会逼调用方吞掉异常→埋点静默失效）。"""
+    """正常的标识符/量词字段不能被误伤（误伤会逼调用方吞掉异常→埋点静默失效）。
+
+    `content_id` 是 2026-10-06 加入白名单的：它是 contents 行的 **UUID 标识符**，
+    W1 镜像链路（mirror_ok）要对账它。实测教训：没加白名单时，镜像本身成功、
+    但 `log_event(mirror_ok, content_id=...)` 抛 SensitiveFieldError 被上层吞掉
+    ⇒ 日志里这条镜像"凭空消失"，对账无从下手。
+    """
     log_event("probe", **{key: "x" if key.endswith(("id", "ids")) else 1})
 
 

@@ -38,7 +38,10 @@ class ContentCreate(BaseModel):
         description="缩略图键（thumbnails/ 前缀）",
     )
     extra: dict[str, Any] | None = None   # EXIF/时长/尺寸
-    source: str = Field("app", pattern=r"^(app|windows|wechat|import)$")
+    # W1 记忆域打通（2026-10-06）：新增 `agent` —— AI 对话页经服务间通道镜像写入。
+    # 与 app/windows/wechat/import 平级，仅作来源标注；已核实无任何消费方按
+    # source 枚举值过滤（rag/pipeline/sync_writes 均不依赖）。
+    source: str = Field("app", pattern=r"^(app|windows|wechat|import|agent)$")
     remark: str | None = Field(
         None, max_length=2000, description="用户备注（BA1：save 系接口可选上送）"
     )

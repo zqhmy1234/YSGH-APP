@@ -68,12 +68,12 @@
   "dup_patterns": {
     "soft_delete_filter": {
       "regex": "deleted_at\\.is_\\(None\\)",
-      "total": 44,
+      "total": 43,
       "per_file": {
-        "backend/app/api/contents/__init__.py": 7,
+        "backend/app/api/contents/__init__.py": 5,
         "backend/app/api/contents/favorites.py": 1,
         "backend/app/api/corrections.py": 1,
-        "backend/app/api/deps.py": 1,
+        "backend/app/api/deps.py": 2,
         "backend/app/api/events.py": 6,
         "backend/app/api/event_items.py": 2,
         "backend/app/api/media.py": 2,
@@ -93,8 +93,8 @@
         "backend/app/services/rag/recall.py": 2,
         "backend/app/services/upload/register.py": 1
       },
-      "reason": "L-09 归属 helper 三分裂导致的手抄模式族；总数不得上升",
-      "target": "批次 B3 收敛 helper 后，同步下调 total/per_file"
+      "reason": "L-09 收敛 helper 后的最新分场；2026-10-06 W1 记忆镜像删除是第三处同款查询，三处（create_content 幂等预查 / IntegrityError 回滚重查 / agent 镜像删除）收敛到 deps.find_alive_content_by_cgid，total 44→43、contents/__init__ 7→5、deps 1→2",
+      "target": "维持 total≤43；新增软删过滤一律走 find_alive_content_by_cgid，不再手抄"
     }
   },
   "token_literals": {

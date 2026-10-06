@@ -6762,7 +6762,7 @@
           },
           "source": {
             "type": "string",
-            "pattern": "^(app|windows|wechat|import)$",
+            "pattern": "^(app|windows|wechat|import|agent)$",
             "title": "Source",
             "default": "app"
           },

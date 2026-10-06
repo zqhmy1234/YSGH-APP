@@ -7,6 +7,7 @@
 #   3 pgvector 扩展存在                     4 关键表存在（迁移已生效）
 #   5 Redis PONG（RQ 队列后端）             6 Qdrant /healthz（REST 探活）
 #   7 API /healthz == {"status":"ok"}
+#   8 Agent /health 含 "status":"ok"（W4 部署接线 · 2026-10-06）
 #
 # 用法（仓库根）：bash deploy/scripts/healthcheck.sh
 # 退出码：0=全绿；1=有 FAIL（输出末尾列出失败项，供 RUNBOOK 排障表引用）
@@ -108,7 +109,18 @@ else
 	report "7 API /healthz" 1 "响应 '${api_body:-<无响应>}'（systemd: systemctl status yishu-api）"
 fi
 
-printf '=== 结果：%d/7 PASS ===\n' "${pass_count}"
+# 8. Agent 服务（W4 部署接线 · 2026-10-06）
+# 只探进程存活（/health 不触发建连）；checkpointer/降级状态看它的启动日志与
+# /health 响应里的 checkpointer 字段（MemorySaver=降级、PostgresSaver=持久化）。
+AGENT_URL="${AGENT_URL:-http://127.0.0.1:8300}"
+agent_body="$(curl -s --max-time 5 "${AGENT_URL}/health" 2>/dev/null || true)"
+if [[ "${agent_body}" == *'"status":"ok"'* ]]; then
+	report "8 Agent /health" 0 "${agent_body:0:120}"
+else
+	report "8 Agent /health" 1 "响应 '${agent_body:-<无响应>}'（systemd: systemctl status yishu-agent）"
+fi
+
+printf '=== 结果：%d/8 PASS ===\n' "${pass_count}"
 if [[ "${#fail_items[@]}" -gt 0 ]]; then
 	printf '失败项：\n'
 	for i in "${fail_items[@]}"; do printf '  - %s\n' "${i}"; done

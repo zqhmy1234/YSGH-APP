@@ -498,6 +498,150 @@ def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
         return []
 
 
+def _backend_base_and_token() -> tuple[str, str]:
+    """backend 地址与服务间令牌（W2 检索与 W1 镜像共用同一配置）。"""
+    import os
+
+    base = (os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/")
+    # 默认 8010＝生产约定（deploy API_PORT=8010）；本地开发 backend 起在 8000 需显式设。
+    token = (os.getenv("AGENT_BACKEND_TOKEN") or os.getenv("AGENT_SERVICE_TOKEN") or "").strip()
+    return base, token
+
+
+def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
+                          topics: list[str] | None, people: list[str] | None,
+                          location: str | None, category: str | None) -> None:
+    """把 agent 记忆**镜像**成 App 的正式 contents（W1 记忆域打通）。
+
+    ## 为什么必须镜像（否则 Agent 的记忆是假的）
+
+    AI 页保存的记忆此前只进 agent 自己的 `memories` 表，App 的时间轴/检索/回响
+    完全看不见——用户对 Agent 说「记一下我今天去了香山」，换到 App 里**什么都没有**。
+    这正是功能对齐计划 W1 的核心缺口，也触碰项目铁律「假状态比错误更贵」。
+
+    ## 镜像后的效果
+
+    走 backend `POST /api/v1/contents/agent`（内部直接复用 App 的创建函数体），
+    记忆会：过护栏 → 进 contents 表 → RQ 管线异步向量化 → **时间轴/检索/回响全通**。
+    `client_generated_id = agent-memory-{memory_id}` 是确定性键：backend 原生幂等
+    （重复调用返回既有记录），且删除时能按它找回。
+
+    ## 降级策略（与 W2 检索同款）
+
+    backend 不可达/未配置/超时/护栏拒收 ⇒ **记日志后继续**——agent 自己的
+    `memories` 行已经写成功，镜像失败不回滚它（回滚会让"保存"这个用户可见
+    动作因为增强功能失败而整体失败，那是更糟的取舍）。护栏拒收（422）会
+    记 WARNING 并保留 agent 侧记忆——App 侧不留敏感内容是**有意的**。
+
+    ## 已知边界（诚实标注）
+
+    · `mood/topics/people/category` 在 contents 没有直接对应列，放 `extra`
+      （JSONB，会随管线进 Qdrant payload）——App UI 暂不展示它们。
+    · 镜像到可检索有延迟（RQ low 队列异步向量化，正常秒级~十秒级）。
+      与 App 自身创建的语义一致，不是镜像特有的问题。
+    """
+    import os
+
+    if os.getenv("AGENT_MIRROR_TO_APP", "1").strip().lower() in {"0", "false", "no"}:
+        return
+    base, token = _backend_base_and_token()
+    if not token:
+        from yishu.observability import log_event
+
+        log_event("mirror_skipped", memory_id=memory_id, reason="未配置服务间令牌")
+        return
+    try:
+        timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
+    except (TypeError, ValueError):
+        timeout = 6.0
+
+    import httpx
+
+    body = {
+        "content_type": "text",
+        "text": content,
+        "source": "agent",
+        "client_generated_id": f"agent-memory-{memory_id}",
+        "extra": {
+            "agent_memory_id": memory_id,
+            "mood": mood,
+            "topics": topics or [],
+            "people": people or [],
+            "category": category,
+        },
+    }
+    if location:
+        body["remark"] = f"地点：{location}"[:2000]
+
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.post(
+            f"{base}/api/v1/contents/agent",
+            json=body,
+            headers={"X-Agent-Token": token, "X-On-Behalf-Of": _get_user_id()},
+        )
+    from yishu.observability import log_event
+
+    if resp.status_code == 200:
+        cid = (resp.json().get("data") or {}).get("id")
+        log_event("mirror_ok", memory_id=memory_id, content_id=cid)
+        return
+    # 422 = 护栏拒收（App 侧不留敏感内容，有意为之）；其余按失败处理
+    level = logging.WARNING if resp.status_code == 422 else logging.ERROR
+    log_event(
+        "mirror_failed",
+        level=level,
+        memory_id=memory_id,
+        status=resp.status_code,
+        detail=resp.text[:120],
+    )
+
+
+def _unmirror_memory_from_app(memory_id: Any) -> None:
+    """删除 agent 记忆时同步删 App 侧镜像（幂等：没镜像过也不报错）。"""
+    import os
+
+    if os.getenv("AGENT_MIRROR_TO_APP", "1").strip().lower() in {"0", "false", "no"}:
+        return
+    base, token = _backend_base_and_token()
+    if not token:
+        return
+    try:
+        timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
+    except (TypeError, ValueError):
+        timeout = 6.0
+    try:
+        import httpx
+
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.delete(
+                f"{base}/api/v1/contents/agent/by-cgid/agent-memory-{memory_id}",
+                headers={"X-Agent-Token": token, "X-On-Behalf-Of": _get_user_id()},
+            )
+        from yishu.observability import log_event
+
+        if resp.status_code == 200:
+            deleted = (resp.json().get("data") or {}).get("deleted")
+            log_event("unmirror_ok", memory_id=memory_id, deleted=bool(deleted))
+        else:
+            log_event(
+                "unmirror_failed",
+                level=logging.WARNING,
+                memory_id=memory_id,
+                status=resp.status_code,
+                detail=resp.text[:100],
+            )
+    except Exception as exc:  # noqa: BLE001 —— 镜像删除失败不阻断本地删除
+        from yishu.observability import log_event
+
+        log_event(
+            "unmirror_failed",
+            level=logging.WARNING,
+            memory_id=memory_id,
+            exc_type=type(exc).__name__,
+            detail=str(exc)[:100],
+        )
+
+
 def _jsonable(value: Any) -> Any:
     """把 DB 取出的非 JSON 原生类型（datetime/date/Decimal）转成字符串。
 
@@ -740,6 +884,18 @@ def save_memory(
                 topics=topics,
                 limit=3
             )
+
+            # ── W1 记忆域打通：镜像成 App 正式 contents ──
+            # 不放 try 外：镜像失败只记日志，**绝不**让"保存"这个用户可见动作失败
+            # （上面那行已 commit 到本地表；镜像属于增强）。
+            try:
+                _mirror_memory_to_app(
+                    memory_id, content,
+                    mood=validated["mood"], topics=topics, people=people,
+                    location=location, category=validated["category"],
+                )
+            except Exception as exc:  # noqa: BLE001 —— 双保险
+                logger.warning("记忆镜像失败(不影响保存): %s", exc)
 
             return json.dumps({
                 "success": True,
@@ -1050,6 +1206,11 @@ def delete_memory(memory_id: int) -> str:
         response = client.table("memories").delete().eq("id", memory_id).eq("user_id", _get_user_id()).execute()
 
         if response.data:
+            # ── W1：同步删 App 侧镜像（幂等；失败只记日志不阻断本地删除）──
+            try:
+                _unmirror_memory_from_app(memory_id)
+            except Exception as exc:  # noqa: BLE001 —— 双保险
+                logger.warning("记忆镜像删除失败(不影响删除): %s", exc)
             return json.dumps({
                 "success": True,
                 "message": f"记忆 {memory_id} 已删除"

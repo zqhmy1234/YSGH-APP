@@ -92,6 +92,10 @@ _SAFE_ID_KEYS: frozenset[str] = frozenset(
         "tool_call_id",
         "existing_id",
         "trace_id",
+        # 2026-10-06：contents 行的 UUID 标识符（W1 镜像链路需要记它才能对账）。
+        # 它虽含敏感词 "content"，但语义是**标识符**（UUID），不是内容值——
+        # 这正是本白名单存在的意义：按**具体键名**逐个放行，而不是按后缀放行。
+        "content_id",
     }
 )
 

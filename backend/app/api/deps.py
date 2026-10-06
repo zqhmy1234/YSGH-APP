@@ -194,3 +194,25 @@ def load_alive_content(db: Session, user_id: str, content_id: str):
         "内容不存在或无权访问",
         alive=True,
     )
+
+
+def find_alive_content_by_cgid(
+    db: Session, user_id: str, client_generated_id: str
+) -> Content | None:
+    """「同用户 + 同幂等键 + 未删除」的 content 查询（W1/W2 · 2026-10-06）。
+
+    为什么收成一个 helper：这个"软删过滤"三元组此前在 `create_content` 里
+    手抄了两遍（幂等预查 + IntegrityError 回滚重查），agent 镜像删除又是第三处
+    —— `audit_harness.DUP_PATTERNS.soft_delete_filter` 的棘轮（手抄总数不得上升）
+    正是被新端点推破的（44 → 45，CRITICAL）。收敛后三处共用，手抄净减 1。
+
+    返回 None 表示「无在册记录」——调用方按各自语义处理（create 幂等返回既有、
+    agent 镜像删除视为已删）。
+    """
+    return db.scalar(
+        select(Content).where(
+            Content.user_id == user_id,
+            Content.client_generated_id == client_generated_id,
+            Content.deleted_at.is_(None),
+        )
+    )

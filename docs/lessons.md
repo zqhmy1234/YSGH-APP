@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-06 17:25 · commit 3e1cea7 · ts=1791278746
+- **错误**：pre-commit 被两项拦下：①结构棘轮 soft_delete_filter 手抄上升（deps.py 1→2）——我给 agent 镜像删除端点手写了第四处同款的 deleted_at.is_(None) 查询，而同样的查询在 create_content 里已经手抄了两遍；②openapi 快照不一致——我给 ContentCreate.source 枚举加了 agent 值，但没重新生成快照。
+- **根因**：写新端点时按「最直接的写法」查询数据，没有先找有没有既有 helper——而棘轮存在的理由（audit_harness 注释）恰是「同一语义手抄 20+ 文件＝新端点极易写漏（P2-2 族根因）」。openapi 快照则是改了请求 schema 忘了它有快照对拍。
+- **修复**：把三处同款查询（create_content 幂等预查 / IntegrityError 回滚重查 / agent 镜像删除）收敛到 deps.find_alive_content_by_cgid，total 44→43、棘轮转为达标并更新基线说明；openapi 用 scripts/gen_openapi.py 重生成。两者都是棘轮设计预期的产出——它把「新端点抄第 N 遍」从事后 review 拦截提前到了 commit 时。
+- **相关文件**：backend/app/api/contents/agent.py
+- **教训**：棘轮拦下的不是形式主义：新增端点前先问「这个查询/语义仓库里是不是已经有了」。另外凡改请求/响应 schema，openapi 快照必须重生成——它是 App 与 backend 契约的单一对拍物。
+
+---
+
 ### 2026-10-06 06:53 · commit 56893f4 · ts=1791240829
 - **错误**：pre-commit 被 lint 卡住：ruff S105 把 _AGENT_TOKEN_HEADER = "X-Agent-Token" 判为「硬编码密码」。同批还有一处导入排序 I001。
 - **根因**：S105 按变量名匹配：名字含 token/secret/password/api_key 的变量被赋字符串字面量即报警。我把 HTTP 头的名字命名为 _AGENT_TOKEN_HEADER，字面量是头名不是凭据值——但静态扫描只看名字与赋值形态，不读注释。命名里带 token 就必然撞上这条规则。

@@ -218,6 +218,27 @@ async def lifespan(app: FastAPI):
         web_panel=WEB_PANEL_MOUNTED,
         **_agent_summary_fields(agent_runtime_summary()),
     )
+    # backend 可达性自检（W2/W1 依赖，2026-10-06）：
+    # 检索合并（W2）与记忆镜像（W1）都走 backend；它不可达时两者静默降级，
+    # 表现为「对话正常但搜不到 App 记忆 / 记忆不进时间轴」——正是最危险的
+    # 「看起来正常实际是假的」。启动时探一次 /healthz（2s 超时），不可达只
+    # WARNING 不阻断（降级路径已保证对话可用），让运维在启动日志里就能看到。
+    _backend_base = (os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/")
+    try:
+        import httpx
+
+        with httpx.Client(timeout=2.0) as _probe:
+            _resp = _probe.get(f"{_backend_base}/healthz")
+        backend_ok = _resp.status_code == 200
+    except Exception as _exc:  # noqa: BLE001 —— 探活失败本身不该影响启动
+        backend_ok = False
+        logger.info("backend 探活异常: %s", type(_exc).__name__)
+    log_event(
+        "startup_backend_reachable",
+        backend_base=_backend_base,
+        ok=backend_ok,
+        hint=None if backend_ok else "检索合并/记忆镜像将降级；检查 backend 是否已启动",
+    )
     # 生产鉴权 fail-closed：启动即拒绝，不给「忘了配也能起」留机会。
     # 规则已收敛到 yishu.security（与 web/api_routes.py 共用同一份）。
     assert_production_token_config()
