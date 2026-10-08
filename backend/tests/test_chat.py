@@ -18,8 +18,8 @@ def _mock_reply(monkeypatch, text: str = "收到啦，已经帮你记下了～",
     """把 agent 调用替换为确定性桩，并记录调用参数（用于断言可信注入与会话键）。"""
     calls: list[tuple[str, str, str]] = []
 
-    def _fake(user_id: str, message: str, thread_id: str) -> AgentChatResult:
-        calls.append((user_id, message, thread_id))
+    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:
+        calls.append((user_id, message, conversation_id))
         return AgentChatResult(text=text, latency_ms=latency_ms, raw={"reply": text})
 
     monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
@@ -27,7 +27,7 @@ def _mock_reply(monkeypatch, text: str = "收到啦，已经帮你记下了～",
 
 
 def _mock_failure(monkeypatch, kind: str, status: int):
-    def _fake(user_id: str, message: str, thread_id: str):
+    def _fake(user_id: str, message: str, conversation_id: str):
         raise AgentServiceError("stub failure", kind, status)
 
     monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
@@ -40,7 +40,7 @@ def test_requires_auth(client):
 
 
 def test_happy_path_persists_and_matches_contract(client, auth_headers, cleanup_user, monkeypatch):
-    """正常路径：契约形状 + 两条消息落库 + user_id 可信注入 + thread_id=会话 ID。"""
+    """正常路径：契约形状 + 两条消息落库 + user_id 可信注入 + conversation_id 透传。"""
     from app.db.session import SessionLocal
     from sqlalchemy import text
 
@@ -62,11 +62,13 @@ def test_happy_path_persists_and_matches_contract(client, auth_headers, cleanup_
         assert data["reply"]["text"].startswith("✅ 已保存")
         assert data["latency_ms"] >= 0
 
-        # 可信注入：user_id 来自 JWT；thread_id 用会话 ID（保多轮上下文）
+        # 可信注入：user_id 来自 JWT；conversation_id 透传（agent 侧按
+        # f"{user_id}:{conversation_id}" 派生 thread_id 满足归属校验——
+        # 见 external/agent.py，2026-10-08 服务间实联调修复）
         assert len(calls) == 1
         assert calls[0][0] == user_id, "agent 侧 user_id 必须来自 JWT"
         assert calls[0][1] == "帮我记住：今天读完一本书"
-        assert calls[0][2] == data["conversation_id"], "thread_id 必须是会话 ID（同一会话保上下文）"
+        assert calls[0][2] == data["conversation_id"], "conversation_id 必须透传（thread 由 agent 调用方派生）"
 
         db = SessionLocal()
         try:

@@ -9,6 +9,42 @@
 
 ---
 
+### 2026-10-09 00:36 · commit 7a788e6 · ts=1791477407
+- **错误**：lessons 自我触发循环：教训正文引用了违规字面量（仿 sk- 长串），被 secrets 门禁再次拦截；且门禁失败时间戳晚于教训登记时间，时序规则又要求再登记一轮
+- **根因**：门禁扫描范围含 lessons.md 自身，而时序规则以最近一次失败时间为基准
+- **修复**：把 lessons.md:13 的仿真 key 字面量改为变形描述；本条即为解循环的当次登记
+- **相关文件**：docs/lessons.md
+- **教训**：教训条目里引用违规样本必须变形（截断/替换字符），否则修 A 引 B 无穷循环；遇到 lessons 时序阻断，先修掉正文里的违规源再补登一条当次教训即可解
+
+---
+
+### 2026-10-09 00:25 · commit 7a788e6 · ts=1791476718
+- **错误**：secrets 门禁拦截：测试里的假 key（两个 sk- 前缀、后缀各 16/17 字符的仿真串）匹配宽版模式被判疑似密钥，禁止 commit
+- **根因**：假造的凭据为了'长得像真的'用了真实 key 的完整形态，恰好撞上宽版模式；门禁无法区分真假，按设计一律拦
+- **修复**：假 key 改用短哨兵值（sk-ds / sk-dash），语义仍是'凭据形态'但不达长度阈值；教训：测试里的伪造凭据用短哨兵而非仿真长串
+- **相关文件**：agent/tests/test_llm_provider_multivendor.py
+- **教训**：伪造凭据只要'形似'就会撞模式——长度也是模式的一部分；哨兵值要短到不触发阈值
+
+---
+
+### 2026-10-08 23:31 · commit 7a788e6 · ts=1791473461
+- **错误**：服务间首次真实联调即 403「thread_id 不属于当前用户」——backend 把 conversation_id 直接当 thread_id 传给 agent，而 agent 的归属校验要求 thread_id 必须由 user_id 派生
+- **根因**：两边的 thread_id 语义在各自单测里都自洽：backend 测试 mock 掉 call_agent_chat 只验落库，agent 测试用 user_id 派生 thread_id 正好过校验——没有任何一个测试覆盖「backend 真实传参形态 × agent 真实校验规则」的交集。集成缺陷只有真实联调能暴露
+- **修复**：external/agent.call_agent_chat 内按 agent 规则派生 thread_id=f"{user_id}:{conversation_id}"：① 满足归属校验；② 派生串含 user_id，跨用户同 uuid 也不共享上下文；③ 同会话派生串稳定保多轮上下文。不动 agent 的安全边界
+- **相关文件**：backend/app/services/external/agent.py
+- **教训**：两个模块各自测试全绿 ≠ 集成正确：跨服务参数的「生成方约定」与「消费方校验」必须在真实链路上对拍一次；安全校验规则要写进调用方的对接文档而不是只在自己代码里
+
+---
+
+### 2026-10-08 23:31 · commit 7a788e6 · ts=1791473460
+- **错误**：给 build_chat_model 传自造 LlmSettings 的单元测试炸 TypeError: unhashable type——生产从未报错
+- **根因**：build_chat_model 挂了 @lru_cache（按 (settings, streaming) 缓存），而 LlmSettings 是普通（非 frozen）dataclass：生成 __eq__ 后 __hash__ 被置 None ⇒ 传实例即 unhashable。生产恒用默认 settings=None 调用，缓存键是 ()，缺陷被默认参数掩盖
+- **修复**：LlmSettings 显式定义 __hash__（全字段 + 排序后的 extra_headers 元组）；测试 fixture 前后调 reset_llm_cache() 防自造 settings 污染缓存
+- **相关文件**：agent/src/llm_provider.py
+- **教训**：给可能被 lru_cache 缓存的函数传自定义对象时，先确认它可哈希；默认参数路径全绿不代表带参路径活着——能传参的入口迟早有人传
+
+---
+
 ### 2026-10-08 21:06 · commit cd4f79f · ts=1791464777
 - **错误**：ContentCreate.tags 的契约测试红：传含空串的列表直接 ValidationError（String should have at least 1 character），而设计语义是『strip 后为空的条目应被丢弃，整个请求不该失败』
 - **根因**：把『剔除空条目』写进了 StringConstraints(min_length=1)——pydantic v2 里约束校验先于 field_validator 执行，空串在到达 validator 之前就被 422 了。『清洗后丢弃』和『拒绝请求』是两种不同的失败语义，放错了层

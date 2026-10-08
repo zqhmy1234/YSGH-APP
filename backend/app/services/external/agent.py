@@ -50,13 +50,22 @@ def _headers() -> dict[str, str]:
     return headers
 
 
-def call_agent_chat(user_id: str, message: str, thread_id: str) -> AgentChatResult:
+def call_agent_chat(user_id: str, message: str, conversation_id: str) -> AgentChatResult:
     """调 agent 服务跑一轮对话，返回其回复文本。
 
-    `thread_id` 用作 agent 侧的会话键（上游语义：同一 thread_id 保多轮上下文）。
-    本后端传 **conversation_id**（而非 user_id）——一个用户可有多个会话，
+    `conversation_id` 用作 agent 侧的会话键素材——一个用户可有多个会话，
     且上游 HTTP 面曾把 thread_id 设成 run_id 导致"每次对话都失忆"（见 UPSTREAM 五-2）。
+
+    ⚠️ thread_id 派生规则（2026-10-08 服务间实联调修复）：agent 侧有**归属校验**
+    （`agent/src/yishu/security.py::validate_thread_id`）——thread_id 必须等于
+    user_id 或以 `{user_id}:` 开头，否则 403「thread_id 不属于当前用户」。
+    本后端此前直接传 conversation_id（独立 uuid）⇒ 首次真实联调即被拒。
+    按 `f"{user_id}:{conversation_id}"` 派生后：① 满足派生规则天然过校验；
+    ② 不同用户的相同 conversation uuid 也绝不共享上下文（派生串含 user_id）；
+    ③ 同一会话派生串稳定 ⇒ 多轮上下文保持。本链路此前从未真实跑通过，
+    无存量 thread 数据，改派生规则零迁移成本。
     """
+    thread_id = f"{user_id}:{conversation_id}"
     url = f"{settings.agent_service_base_url.rstrip('/')}/v1/chat"
     payload = {"user_id": user_id, "message": message, "thread_id": thread_id}
     started = time.monotonic()

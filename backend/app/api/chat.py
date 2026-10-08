@@ -113,7 +113,7 @@ def post_message(
 
     # 2) 调 agent（**单次尝试**：见 services/external/agent.py 的幂等性说明，不套重试）
     try:
-        result = call_agent_chat(user_id=str(user.id), message=req.content, thread_id=conversation_id)
+        result = call_agent_chat(user_id=str(user.id), message=req.content, conversation_id=conversation_id)
     except AgentServiceError as exc:
         code = ERR_CHAT_002 if exc.http_status == 504 else ERR_CHAT_001
         logger.warning("agent 调用失败 user=%s conv=%s kind=%s", user.id, conversation_id, exc.kind)
