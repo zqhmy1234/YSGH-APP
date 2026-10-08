@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-08 21:06 · commit cd4f79f · ts=1791464777
+- **错误**：ContentCreate.tags 的契约测试红：传含空串的列表直接 ValidationError（String should have at least 1 character），而设计语义是『strip 后为空的条目应被丢弃，整个请求不该失败』
+- **根因**：把『剔除空条目』写进了 StringConstraints(min_length=1)——pydantic v2 里约束校验先于 field_validator 执行，空串在到达 validator 之前就被 422 了。『清洗后丢弃』和『拒绝请求』是两种不同的失败语义，放错了层
+- **修复**：约束层只保留 strip_whitespace + max_length（防滥用上限），min_length 删除；去空/去重/全空归 None 的清洗语义全部移进 field_validator，并加注释说明为什么不能依赖 min_length
+- **相关文件**：backend/app/schemas/content.py
+- **教训**：pydantic 里『拒绝』用约束（constraints），『清洗』用 validator——validator 永远看不到不满足约束的输入；写契约前先想清楚脏数据该 422 还是被消化
+
+---
+
+### 2026-10-08 21:06 · commit cd4f79f · ts=1791464777
+- **错误**：W6 迁移首跑失败：DROP TABLE IF EXISTS tags 被 CannotDropTable 挡住——event_tags 上还挂着指向 tags 的 FK（event_tags_tag_id_fkey），而迁移里 tags 排在 event_tags 前面
+- **根因**：把『保留表没有 FK 指向被删表』误当成『这批表之间也没有依赖』。DROP 顺序只看被删表之间的 FK 方向：junction/子表（content_tags/event_tags/question_history）必须先删，被引用表（tags/question_templates）后删。schema.sql 里这些 FK 都写在被删表的建表块内，静态扫『REFERENCES tags』全落在将删区域，掩盖了执行期的依赖关系
+- **修复**：迁移内 LEGACY_TABLES 重排为依赖序（content_tags/event_tags/voice_segments/question_history 先删，tags 最后），并在注释里写明首跑踩坑。alembic 每个迁移默认事务性 DDL，失败已自动回滚，重跑即干净
+- **相关文件**：backend/migrations/versions/b7c8d9e0f1a2_w6_drop_legacy_tables.py
+- **教训**：批量 DROP 前先查 pg_constraint 里被删表集合内部的 FK 方向图，顺序=拓扑序；不要把『对外无依赖』和『组内无依赖』混为一谈
+
+---
+
 ### 2026-10-06 17:25 · commit 3e1cea7 · ts=1791278746
 - **错误**：pre-commit 被两项拦下：①结构棘轮 soft_delete_filter 手抄上升（deps.py 1→2）——我给 agent 镜像删除端点手写了第四处同款的 deleted_at.is_(None) 查询，而同样的查询在 create_content 里已经手抄了两遍；②openapi 快照不一致——我给 ContentCreate.source 枚举加了 agent 值，但没重新生成快照。
 - **根因**：写新端点时按「最直接的写法」查询数据，没有先找有没有既有 helper——而棘轮存在的理由（audit_harness 注释）恰是「同一语义手抄 20+ 文件＝新端点极易写漏（P2-2 族根因）」。openapi 快照则是改了请求 schema 忘了它有快照对拍。

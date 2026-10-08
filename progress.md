@@ -503,3 +503,11 @@
 ⚠️ **如实登记未证实项**：① **安心打包是否真生效无法从 APK 反证**（传统打包产物签名同样是自有证书；CLI help 标 `--safemode` "仅适用于 uni-app 项目"而本项目是 uni-app x）② 真机冷启动目视 + 端到端联网**未验**（无设备）③ 下载页二维码仍占位。
 🚨 **临时地址口径（务必知悉）**：隧道地址一改（cloudflared 重启）**已分发 APK 立刻连不上后端**（"所有页面全空且不报错"，本项目最贵失败形态）；依赖本机常驻（Docker Desktop＋native PG＋`yishu-redis`＋uvicorn＋cloudflared）⇒ **服务器到货后必须按 `ONE_SWAP.md` 重出包，旧包不会自动恢复**。
 📌 同日另两件事：① **自有证书交接给同事**（台账 2.23 / 证书文档 §九，含"传统打包会传证书须选安心打包"取证与风险更正——此前"泄露会被顶掉"表述有误，Android 强制同签名才能覆盖升级）② **三天后换证**（触发条件：上架前 / 参与超约 10 人 / 疑似泄密）。
+## ✅ 速查卡 · 2026-10-08 · 收尾批：合并远程 + W5 删企微链 + W6 legacy 表清理 + W3 主题映射
+
+✅ **合并远程**：origin/develop 前进 14 提交（服务器容器化拓扑含 Dockerfile.agent / CI 建库修复 / RAG 基线）已合并 c41f469，冲突仅 lessons.md（append/append 双侧保留）｜合并后 agent 167 passed + backend 漂移守卫/微信套件 46 passed。
+✅ **W5 删链**（df97cb3）：agent 企微智能机器人链四文件 + wecom-aibot-sdk + WECHAT_BOT_*/REVIEW_* 配置 + wechat_integration.md 整体删除；企微唯一入口=backend 微信客服（代码完备只差填配置）。台账 2.25。
+✅ **W6 清理**（6e014ca）：迁移 b7c8d9e0f1a2 幂等 DROP 11 张零引用 legacy 表（真库实测全部 0 行）；schema.sql 同步 38→27；drift 守卫白名单 13→2（保留 profile_l2_evidence / finetune_jobs）；conftest 清理链收敛。台账 2.26。
+✅ **W3 映射**（cd4f79f）：ContentCreate 加可选 tags（仅 source=agent 落库 tags_json）+ 管线打标改 merge_tags 合并语义（防预置主题被 LLM 覆写冲掉）+ agent 镜像发 body.tags——App 详情页 chips 从此可见 AI 打的主题。openapi 快照同步。台账 2.27。
+✅ **验证**：agent 169 passed / backend 1004 passed 零失败；docs/决策台账.md 补 2.25/2.26/2.27；10-04 出包批 5 文件已先期独立入库（7bcb9a9）。
+⚠️ **push 归用户**：本地 ahead 18+，验证绿后由用户自行 git push（台账 2.22 纪律）。
