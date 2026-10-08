@@ -30,26 +30,16 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import create_engine
 
-# 已知漂移（2026-10-06 由本测试的 compare_metadata **实测**得出，非人工枚举——
-# 首跑暴露的真实集合比文档里记的 26 处更准）。**改动本清单必须说明原因**：
-# 新增 = 库里新出现无模型表；移除 = 已补模型或已确认清理。
+# 已知漂移（**改动本清单必须说明原因**）：新增 = 库里新出现无模型表；
+# 移除 = 已补模型或已确认清理。2026-10-08 W6：11 张零引用 legacy 表
+# （question_history/question_templates/guardrail_logs/audit_log/ai_request_logs/
+# api_cost_stats/app_settings/tags/event_tags/content_tags/voice_segments）
+# 已随迁移 DROP，清单从 13 收敛到 2。剩下两张**有意保留无模型**：
+#   · profile_l2_evidence —— 业务活着（profile_annotator 写 / profile_admin 清），
+#     profile_admin.py:68-69 已拍板「无 ORM ⇒ 清除同样走 raw SQL」
+#   · finetune_jobs —— 外部进程 reflow_global.py（B5-c 纠错回流）的记录载体
 KNOWN_DRIFT_TABLES = {
-    # ── 问答/模板域 ──
-    "question_history",
-    "question_templates",
-    # ── 护栏/审计/成本 ──
-    "guardrail_logs",
-    "audit_log",
-    "ai_request_logs",
-    "api_cost_stats",
-    "app_settings",
-    # ── 标签/事件/画像 ──
-    "tags",
-    "event_tags",
-    "content_tags",
     "profile_l2_evidence",
-    # ── 语音/微调 ──
-    "voice_segments",
     "finetune_jobs",
 }
 
