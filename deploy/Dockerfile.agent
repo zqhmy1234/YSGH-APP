@@ -1,0 +1,103 @@
+# ============================================================================
+# 忆述光华 · Agent 服务镜像（AG5 接线；2026-09-28 新增）
+#
+# 构建上下文 = **仓库根**（compose 里 context: ..），因此 COPY 路径以 agent/ 起头。
+# 手工构建：
+#   docker build -f deploy/Dockerfile.agent -t yishu-agent:local .
+#
+# 【这个服务是干什么的】后端 `POST /api/v1/chat/messages` 反代调用它（见
+#   backend/app/services/external/agent.py）。客户端只认后端的 JWT，**agent 自身不鉴权用户身份**
+#   ⇒ 它绝不可暴露公网（下游只放行容器内网；compose 里刻意**不 publish 端口**）。
+#
+# 【为什么要单独一个镜像、单独一个 Python 版本】
+#   agent/pyproject.toml:5 要求 `requires-python = ">=3.12"`，而后端镜像是 python:3.11-slim
+#   （deploy/Dockerfile.backend:15）。两者不能共用一个基础镜像，刻意保持两个 Dockerfile。
+#
+# 【与本项目其它镜像的差异】
+#  - 用 **uv** 而不是 pip：agent 是 uv 项目（有 uv.lock），装法与 backend/requirements.txt 不同。
+#  - **不挂任何模型卷**：agent 的模型走远端百炼 API（agent/src/llm_provider.py），
+#    本地零模型文件 ⇒ 不需要 backend 那种 `backend/models:ro` 挂载。
+#  - 不需要 Redis / Qdrant（agent/src 全量 grep 对 REDIS_/QDRANT_ 零命中）。
+# ============================================================================
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 国内构建加速：默认走阿里云 Debian 镜像。
+#   理由与本项目既有口径一致——agent/pyproject.toml:47-49 已把 PyPI 默认源钉成
+#   mirrors.aliyun.com（国内直连 deb.debian.org 拉一次 Packages 索引要 9.6MB，
+#   实测能卡住数分钟甚至超时；5Mbps 的服务器更甚）。
+#   用 ARG 而非写死：境外/CI 构建可 `--build-arg DEBIAN_MIRROR=deb.debian.org` 覆盖。
+#   Debian 12+ 的源在 /etc/apt/sources.list.d/debian.sources（不是老的 sources.list），
+#   故按文件存在性择一替换；替换失败不致命（`|| true`，退回原源继续）。
+ARG DEBIAN_MIRROR=mirrors.aliyun.com
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    elif [ -f /etc/apt/sources.list ]; then \
+      sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
+    fi
+
+# curl 供容器内 HEALTHCHECK 用（探 agent 自己的 /health）。
+# 刻意**不装** cairo/dbus/gobject 的编译链 —— 理由见下面的 uv sync 注释。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv：优先用官方镜像取二进制；此处用 pip 装，省一次基础镜像拉取（装法与 agent/scripts/setup.sh 的 uv 口径一致）
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# 依赖层单独缓存：pyproject.toml / uv.lock 不变则不必重装
+COPY agent/pyproject.toml agent/uv.lock ./
+
+# 🔴 刻意跳过三个包：pycairo / dbus-python / PyGObject（agent/pyproject.toml:39-41）
+#
+#   为什么必须显式跳过：这三个在 Linux 上**只有 sdist、没有 wheel**
+#   （uv.lock 里 pycairo 只有 win32/win_amd64/win_arm64 的 wheel；dbus-python 与 PyGObject 仅 sdist）
+#   ⇒ 不跳过就要现编译，得再装 gcc / pkg-config / meson / ninja + libcairo2-dev /
+#   libdbus-1-dev / libglib2.0-dev / libgirepository1.0-dev，镜像与构建时间都显著膨胀。
+#
+#   为什么跳过是安全的（**已实测核对，不是猜**）：这三者在 `agent/src/` 下
+#   `import cairo` / `from gi` / `import dbus` **零命中**——它们是上游 Coze 模板带进来的传递需求，
+#   本服务运行时不碰。（`agent/UPSTREAM.md` 记录了上游改造过程中这三个包导致的平台问题。）
+#
+#   ⚠️ 将来若 agent 代码开始用 cairo/gi/dbus（例如做图片渲染或 Linux 桌面集成），
+#   这一行必须删掉，并补上上面那串 -dev 包 —— 否则症状是**运行时** ImportError。
+RUN uv sync --frozen --no-dev \
+      --no-install-package pycairo \
+      --no-install-package dbus-python \
+      --no-install-package PyGObject
+
+# 业务代码。注意只拷服务真正需要的两处：
+#   src/    —— FastAPI 应用（main.py / main_wechat.py / agents / services / storage / tools …）
+#   config/ —— agent_llm_config.json，**必须进镜像**：
+#              agent/src/agents/agent.py:82 按 `Path(__file__).resolve().parents[2] / LLM_CONFIG`
+#              解析 ⇒ /app/src/agents/agent.py 的 parents[2] = /app ⇒ 期望 /app/config/agent_llm_config.json。
+#              （tests/ 与 scripts/ 是开发期资产，不进镜像。）
+COPY agent/src/ ./src/
+COPY agent/config/ ./config/
+
+# 非 root 运行（与 deploy/Dockerfile.backend:62-65 同口径，uid 也保持一致以免卷属主互相打架）
+RUN useradd -r -u 10001 -m appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8300
+
+# 探活走 agent 自己的 /health（**不是** /healthz —— 那是后端的）。
+# /health 不校验 token（agent/src/main.py:140-147），可安全用作容器 healthcheck。
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+    CMD curl -fsS http://127.0.0.1:8300/health >/dev/null || exit 1
+
+# 🔴 必须用 uvicorn CLI 显式 `--host 0.0.0.0`，**不能**照搬 `python src/main.py`：
+#   agent/src/main.py:200 的 `uvicorn.run(..., host="127.0.0.1")` 是**硬编码**的
+#   —— 在容器里那样起只会绑 loopback，同网络的 backend 容器**连不上**（且要等第一个
+#   对话请求才暴露，属于本项目反复踩到的"静默连不上"同一类坑）。
+#   `--app-dir src` 对应 pyproject 的 `pythonpath = ["src"]`（agent 内部是无前缀顶层
+#   import：agents.* / yishu.* / storage.*），故运行时 src/ 必须在 sys.path 上。
+CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8300", "--app-dir", "src"]

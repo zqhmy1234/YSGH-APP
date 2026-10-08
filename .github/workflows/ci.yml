@@ -44,8 +44,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install ruff + env_template 判据的最小依赖
+        # 2026-09-28：`review_agent` 的 env_template 检查调用 deploy/scripts/check_env_template.py，
+        #   后者要 `import app.core.config`；config.py 只依赖 pydantic / pydantic-settings
+        #   （Settings 全部字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env 即可实例化）。
+        #   此前只 `pip install ruff` ⇒ 该检查恒因 ModuleNotFoundError 报「模板漂移」而**假红**，
+        #   真因是环境缺依赖、与模板内容无关。只补这两个包，不装全量 requirements。
+        run: pip install ruff pydantic pydantic-settings
 
       - name: Run static gate (syntax/lint/secrets/todos, no tests)
         run: python scripts/review_agent.py --full --skip-tests
@@ -189,31 +194,28 @@ jobs:
               print(f"::warning file=backend/requirements.txt::{len(vulns)} 个已知漏洞: {'; '.join(items)}")
           EOF
 
-      - name: Init PostgreSQL (yishu 隔离库 + schema, docker exec psql)
-        # T5（2026-08-27 批次 H2 R7）：PG 就绪/迁移校验改 docker exec psql 形态——
-        #   免 apt-get install postgresql-client（省时、免 apt 网络依赖）；psql/pg_isready
-        #   由 pgvector 镜像自带，`docker exec` 直接进 service 容器执行。
-        # #13 教训（多用户密码内联）：每条命令用 `-e PGPASSWORD=<该用户密码>` 内联，
-        #   绝不收敛成步骤级单一 env 密码（曾致 -U yishu_app 拿 admin 密码认证失败 exit 2）。
-        # 注：这些是 CI 容器内测试密码（非生产密钥），明文在仓库无新增泄露面。
+      - name: Init PostgreSQL（yishu 隔离库 + 全量 schema，走 scripts/init_db.py 权威路径）
+        # 2026-09-28 重构：原步骤用 `setup_pg.sql + schema.sql` 手工建库，并靠
+        #   `docker ps -qf "name=postgres"` 猜 service 容器句柄 —— 两处都是坑：
+        #   ① 句柄取不到 ⇒ 整步死在第一步、后面 16 个步骤从未跑过（届时日志里没有任何
+        #      docker 报错，只是没有该名字的运行中容器）。
+        #   ② 就算取到了，建出来的库**相对 ORM 权威是残缺的**：schema.sql 缺 5 张 ORM 表
+        #      （capsules / chat_messages / knowledge_collections / memories / memory_categories）
+        #      与 5 个 contents 列（duration / remark / size_bytes / tags_json / ai_description），
+        #      实测 api_smoke 挂 `column contents.duration does not exist`、
+        #      test_db_integration::test_schema_tables_present 报缺表。
+        #      —— 这不是意外：`backend/sql/schema.sql` 自己的头部（2026-09-24）就写着
+        #      「不是建库权威，不要用它新建后端库」「✅ 正确的建库方式：python scripts/init_db.py」，
+        #      而本步骤恰恰在做它明令禁止的事。
+        #   现改为直接调 `scripts/init_db.py`（= ORM create_all + 裸 SQL 表 + alembic stamp），
+        #   与本地/服务器**同源** —— 「本地全绿 CI 必挂」这一整类漂移事故从结构上消失。
+        #   · 角色名/密码/库名由它从 job 级 `DATABASE_URL` 解析（两侧自动一致，无需再内联密码）
+        #   · pgvector 非 trusted 扩展由它改用**超级用户连目标库**创建（自己踩过这个坑并记在注释里）
+        #   · 超级用户连接串用 `--admin-url` 传（service 容器口径 postgres/admin）
+        #   不再需要 docker exec / pg_isready / psql —— service 容器已把 5432 映射到 runner。
         run: |
-          CID=$(docker ps -qf "name=postgres" | head -n1)
-          if [ -z "$CID" ]; then
-            echo "::error::postgres service 容器未找到（docker ps 过滤 name=postgres）"
-            exit 1
-          fi
-          echo "postgres container: $CID"
-          for i in $(seq 1 20); do
-            docker exec "$CID" pg_isready -U postgres >/dev/null 2>&1 && { echo "postgres ready (try $i)"; break; }
-            echo "[$i] postgres 未就绪，5s 后重试..."
-            sleep 5
-          done
-          # setup_pg.sql：建角色 yishu_app + 建库 yishu + 授权 + vector 扩展（\connect yishu 收尾）
-          docker exec -i -e PGPASSWORD=admin "$CID" psql -U postgres -v ON_ERROR_STOP=1 < scripts/setup_pg.sql
-          # pgvector 非 trusted 扩展需超级用户安装（yishu_app 无权限）；schema.sql 里 IF NOT EXISTS 幂等跳过
-          docker exec -e PGPASSWORD=admin "$CID" psql -U postgres -d yishu -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector"
-          docker exec -i -e PGPASSWORD=yishu_app_2026 "$CID" psql -U yishu_app -d yishu -v ON_ERROR_STOP=1 < backend/sql/schema.sql
-          docker exec -e PGPASSWORD=yishu_app_2026 "$CID" psql -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
+          python scripts/init_db.py \
+            --admin-url 'postgresql+psycopg://postgres:admin@localhost:5432/postgres'
 
       - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
         run: python scripts/generate_test_photos.py
@@ -313,8 +315,13 @@ jobs:
 
   # ============================================================
   # P0-4（2026-08-27）：schema.sql ↔ alembic 迁移链漂移检测（weekly）
-  # 背景：CI 建库源 = schema.sql，本地/生产走 alembic，两链无强制对齐——#8~#19 系列
-  # CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
+  # 背景：本 job 设计时 CI 建库源 = schema.sql，本地/生产走 alembic，两链无强制对齐
+  #       ——#8~#19 系列 CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
+  # ⚠️ 口径变更（2026-09-29 登记）：**2026-09-28 起 CI 建库已改走 `scripts/init_db.py`**
+  #       （见本文件 fast/full gate 的 Init PostgreSQL 步骤），A 侧（schema.sql）**不再是
+  #       任何环境的建库源**。故本 job 报出的 BLOCKING 多数是「schema.sql 作为中间态快照已
+  #       过时」而非「构建链有缺口」——**定时红属实，但别按旧描述去查**。
+  #       A 侧改为 init_db.py 产物的前提是 B-1（baseline 自包含）落地，理由见脚本头「口径变更」。
   # 设计：脚本在临时库分别用 schema.sql 与 alembic head（失败回退 ORM metadata）建库，
   #       对比表集合/列/索引/外键/唯一约束/主键；退出码 1 = 检出漂移。
   # 失败策略（B10-i/D14-23 2026-09-24 修正）：**不再使用 continue-on-error**——

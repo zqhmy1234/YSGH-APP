@@ -11,6 +11,9 @@ official: false
 
 > 目标：改 client/ 代码后，用最短循环（编译 ~30s / 真机 ~1min）验证并修复，踩过的坑不重踩。
 > 配套：《docs/client/07_第一波复盘总结_20260824.md》（坑根因全景）、docs/lessons.md（强制教训台账）。
+>
+> **📁 路径约定（本文不写死绝对路径）**：`<仓库>` = 本仓库根目录（本机为 `D:\YishuGuanghua\YSGH-APP`，仅作对照）、
+> `<HBuilderX>` = HBuilderX 安装目录（本机为 `D:\HBuilderX`）。**照抄含尖括号的命令会报路径不存在，这是刻意的。**
 
 ## 适用场景
 
@@ -21,17 +24,25 @@ official: false
 
 ## 前置条件
 
-- HBuilderX 5.15 已装（D:\HBuilderX）；JDK17 / Android SDK / adb 就绪
+- HBuilderX 已装（`<HBuilderX>`；**版本对齐 5.24.x，5.15 是最低线，别升 5.25**）；JDK17 / Android SDK / adb 就绪
 - 真机 nova 11（FOA-AL00）已 USB 调试授权（`adb devices` 显示 device 而非 unauthorized）
-- 项目已导入 HBuilderX（`cli project open --path D:\GuangH-App\client`；重装后需重导）
-- 后端 dev 服务跑着（真机联调：`uvicorn app.main:app --host 0.0.0.0 --port 8000`；client/utils/config.ts 的 REAL_DEVICE_HOST 填电脑局域网 IP）
+- 项目已导入 HBuilderX（`cli project open --path "<仓库>\client"`；重装后需重导）
+- 后端 dev 服务跑着：
+  ```bash
+  # 🔴 端口必须 8010 —— 8000 会被 HBuilderX launcher 的 httpServer.js 抢占：
+  # 该桩对任何路径返回 HTTP 200 + 裸字符串 "404" → 客户端守卫 resolve(null) → 「接口全空但不报错」
+  cd <仓库>/backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8010
+  ```
+  真机联调还需 `adb reverse tcp:8010 tcp:8010`（**每次 `cli launch` 后都要补**），
+  并把 `client/utils/config.uts` 的 `REAL_DEVICE_HOST` 设为 `'localhost'`（走 USB 隧道）或电脑局域网 IP（走 WiFi）。
+  > ⚠️ 是 **`.uts`** 不是 `.ts`（HBuilderX 5.25 前禁止 import 外部 `.ts`/`.js`，全仓已改名）。
 
 ## 标准流程
 
 ### 1. 编译验证（不碰真机，~30s/轮）
 
 ```powershell
-& D:\HBuilderX\cli.exe launch app-android --project "D:\GuangH-App\client" --compile true
+& <HBuilderX>\cli.exe launch app-android --project "<仓库>\client" --compile true
 ```
 
 - 只看结尾：`项目 client 编译成功` = 过；`[plugin:uni:app-uts] 编译失败` = 按第 4 节速查表修
@@ -43,7 +54,7 @@ official: false
 ### 2. 真机运行（~1min）
 
 ```powershell
-& D:\HBuilderX\cli.exe launch app-android --project "D:\GuangH-App\client" --deviceId "DKS9K23526028855"
+& <HBuilderX>\cli.exe launch app-android --project "<仓库>\client" --deviceId "<设备号>"
 ```
 
 - 首次会装/更新调试基座（约 200MB，装完可能"手机无响应"——手动拉起基座后重跑即可）

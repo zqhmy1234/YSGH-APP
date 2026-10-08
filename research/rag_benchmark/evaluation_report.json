@@ -4,6 +4,11 @@
     "note": "RAG 全分布测评"
   },
   "corpora": {},
+  "rewrite_check": {
+    "n": 11,
+    "accuracy": 1.0,
+    "failed": []
+  },
   "truth": {
     "queries": 50,
     "sources": [

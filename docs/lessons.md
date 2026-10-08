@@ -351,6 +351,42 @@
 
 ---
 
+### 2026-09-28 19:31 · commit c1f4350 · ts=1790595099
+- **错误**：裸 SQL 插 contents 报 NotNullViolation: null value in column "sensitive_status"（test_ba1_fields::test_stats_daily_summary_total_bytes）。同一用例在旧的 schema.sql 建库源上是通过的。
+- **根因**：ORM 模型只写了 Python 侧 default=（如 content.py:59 sensitive_status: default="正常"），没有 server_default；而 schema.sql 有 95 处 DDL DEFAULT、迁移链也有 83 处 server_default。create_all 只认 server_default，所以 scripts/init_db.py 建出来的库**没有 DDL 默认值** —— 裸 SQL 一旦省略这些 NOT NULL 列就必挂。实测缺口 34 列 / 17 张表（contents 的 id/status/sensitive_status、messages 的 channel/payload/status、profile_sensitive、upload_tasks、user_profile、users、devices…）。schema.sql 那条链因为自带 DDL 默认值，把这层问题掩盖了一个月；CI 一直没跑到测试步骤，所以直到 2026-09-28 把建库源换成 init_db.py 才暴露。另有一条更硬的冲突：contents.source 在 ORM 是 NOT NULL、在 schema.sql 里可空（漂移报告列为 BLOCKING 可空性漂移）。
+- **修复**：① 修用例：裸 SQL 必须显式提供 NOT NULL 列（补 sensitive_status 与 source）—— ORM 是 P2-05 声明的唯一权威，故改用例而不是迁就旧建库源。② 34 列 server_default 缺口登记为 B-1 债：B-1 的『ORM 成为唯一权威』必须包含 server_default 补齐，否则权威是残缺的。注意加 server_default 不改变 ORM 路径行为（Python 侧 default 优先），只让 DDL 与 schema.sql/迁移链对齐。
+- **相关文件**：backend/tests/test_ba1_fields.py, backend/app/db/models/content.py, backend/sql/schema.sql, scripts/init_db.py
+- **教训**：『ORM 是唯一权威』的前提是 ORM 携带完整的 server_default；否则 create_all 建出的库与 schema.sql/迁移链语义并不等价，任何裸 SQL 写入路径会静默依赖一个不存在的默认值。收敛建库链时，必须同时审计 server_default 覆盖度（本例 34 列），不能只看表与列的存在性。
+
+---
+
+### 2026-09-28 19:30 · commit c1f4350 · ts=1790595058
+- **错误**：CI full-gate 测试步骤大面失败：api_smoke 报 column contents.duration does not exist、test_db_integration::test_schema_tables_present 报缺表、主套件大量 E/F；覆盖率 40.43% 未达阈值 60%
+- **根因**：CI 的 Init PostgreSQL 用 backend/sql/schema.sql 建测试库，而该文件自己的头部（2026-09-24）就写明「不是建库权威，不要用它新建后端库」「缺 capsules 表…建出来胶囊功能全废」「正确方式是 python scripts/init_db.py」——CI 恰在做它明令禁止的事。check_schema_drift 实测：schema.sql 相对 ORM 权威缺 5 张表（capsules/chat_messages/knowledge_collections/memories/memory_categories）与 5 个 contents 列（duration/remark/size_bytes/tags_json/ai_description），另有 83 条 BLOCKING 漂移。注意：该 job 因 Init PG 取不到容器句柄已停摆约一个月，这是全量测试很久以来第一次真跑，故漂移得以累积到肉眼可见
+- **修复**：CI 的 Init PG 改为直接调 scripts/init_db.py（= ORM create_all + 裸 SQL 表 + alembic stamp），角色/密码/库名由它从 job 级 DATABASE_URL 解析，超级用户用 --admin-url 传，pgvector 扩展由它用超级用户建；CI/本地/服务器三链从此同源。实测（一次性 pgvector:pg17 容器 + CI 原样命令）：41 表、exit 0 ；全套 987 passed / 0 failed、api_smoke/research 全绿、覆盖率 40.43% → 85.94%
+- **相关文件**：.github/workflows/ci.yml, backend/tests/test_ba1_fields.py, scripts/init_db.py
+- **教训**：门禁的建库源必须与"项目自己文档声明的权威"一致；当检测器（check_schema_drift）长期红而无人受理时，要先查它的触发条件是不是根本没覆盖活跃分支。另：覆盖率骤降/大面失败先怀疑环境与建库，别急着调阈值——本例 40% 是坏库的副产品，修好后是 86%
+
+---
+
+### 2026-09-28 18:46 · commit 951840e · ts=1790592360
+- **错误**：CI full-gate 第一步 Init PostgreSQL 即失败：docker ps -qf "name=postgres" 取到空 CID，报「postgres service 容器未找到」；日志里没有任何 docker 报错 ⇒ daemon 正常，只是没有该名字的运行中容器
+- **根因**：原写法按「容器名里含 postgres」猜 service 容器的句柄，是对 Actions 容器命名约定的隐式假设（T5 2026-08-27 引入，此后未见通过记录）；命名一旦不符就取不到，且失败分支不打印现场，只能盲猜
+- **修复**：改用官方 job context 的稳定句柄 ${{ job.services.postgres.id }}，再按 name=postgres / ancestor=pgvector/pgvector:pg16 两级兜底；三级皆空时先打印 docker ps -a 与 docker images 现场再 exit 1。本地已验证 YAML 合法（full-gate 17 步 / 3 个 service 正常解析）
+- **相关文件**：.github/workflows/ci.yml
+- **教训**：CI 里引用 service 容器要用 ${{ job.services.<name>.id }}，不要按容器名 grep；失败分支必须先打印现场（docker ps -a），否则下一次失败仍然是盲猜
+
+---
+
+### 2026-09-28 18:45 · commit 951840e · ts=1790592344
+- **错误**：CI fast-gate 恒红：review_agent 报「env 模板与 config.py 漂移」，而日志正文其实是一条 ModuleNotFoundError: No module named pydantic（2026-09-28 run 36396272905）
+- **根因**：deploy/scripts/check_env_template.py 要 import app.core.config（依赖 pydantic / pydantic-settings），但 fast-gate 只 pip install ruff；裸 ImportError 以 exit 1 冒泡，而 scripts/review_agent.py 把「退出码非 0」一律判成「模板漂移」⇒ 环境缺失被伪装成代码问题。同一 job 里的 openapi_snapshot 遇同一原因已能降级（gen_openapi.py 退出码 2），只有这一项没遵守 D14-18 口径
+- **修复**：① check_env_template.py 采纳 D14-18：导入失败 return 2 并打印 [SKIP] + 异常类名，不再裸崩；② review_agent.check_env_template() 对 2 降级放行（照抄 check_openapi_snapshot 的映射）；③ fast-gate 的 pip install 补 pydantic + pydantic-settings，让该检查真跑（Settings 全字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env）。实测：有依赖 exit 0 / 无依赖 exit 2 且门禁显示 [降级]
+- **相关文件**：deploy/scripts/check_env_template.py, scripts/review_agent.py, .github/workflows/ci.yml
+- **教训**：给门禁加「需要 import 业务包」的检查时，必须同时定义「环境不可用」的退出码并让调用方降级放行；否则任何缺依赖都会变成恒假红，把真问题淹没在噪音里
+
+---
+
 ### 2026-09-25 21:49 · commit 1b4da1b · ts=1790344175
 - **错误**：门禁报红却看不到失败用例名，花了 4 轮（看门禁输出→猜报告键→报告里找 FAILED→全量重跑 107s）才定位到 test_ba3_ai_chain 那条
 - **根因**：① pytest 输出顺序是「进度 → 失败摘要 → 覆盖率表（上百行）」，而 test_agent 与 review_agent 两处都做**尾部切片**（[-3500:]/[-1500:]）⇒ 恰好把 FAILED 行切掉，留下与失败无关的覆盖率噪音；② 报告 JSON 只有非结构化的 output 字段，没有 failed_tests；③ review_agent 只打印 tests 段前 8 行（还是噪音）
@@ -528,6 +564,15 @@
 - **修复**：实例映射加约束：该变量的**每一处赋值**的 RHS 都必须是 new <该类>(，否则整条跳过；修后全仓 76 类 0 误报；负向探针（pa.attachAll→pa.attachAllZZZ）仍能抓到实例面违规
 - **相关文件**：-
 - **教训**：（无）
+
+---
+
+### 2026-09-24 17:10 · commit 1308550 · ts=1790241055
+- **错误**：编辑 backend/scripts/*.py 时把文档字符串里的 C:/Users/ghf/Pictures/Screenshots 改写成 C:\Users\ghf\Pictures\Screenshots（正斜杠改反斜杠），导致两个脚本直接 SyntaxError: (unicode error) unicodeescape ... truncated \UXXXXXXXX escape，review_agent 门禁 syntax 项失败
+- **根因**：Python 模块 docstring 是普通（非 raw）字符串字面量，其中的 \U 会被当作 Unicode 转义序列（\UXXXXXXXX）解析；Windows 路径 C:\Users\... 正好以 \U 开头，且后续不是 8 位十六进制 → 语法错误。同理 \N、\x 等也会中招
+- **修复**：docstring / 普通字符串里写 Windows 路径一律用正斜杠（C:/Users/...）或双反斜杠；只有 r"..." 原始字符串才能安全地用单反斜杠。修复后用 python -m py_compile 与 ruff 双重验证
+- **相关文件**：backend/scripts/seed_echo_today.py, backend/scripts/reinject_missing_photos.py
+- **教训**：在 Python 非 raw 字符串（含 docstring）里写 Windows 反斜杠路径 = 语法错误；路径一律用正斜杠
 
 ---
 
@@ -844,9 +889,6 @@
 - **修复**：client/AndroidManifest.xml 补 android:usesCleartextTraffic=true + tools:replace；出包前置门 deploy/scripts/preflight_pack.ps1 增加明文放行与 http 口径自洽检查
 - **相关文件**：client/AndroidManifest.xml
 - **教训**：凡「配置项已就绪/已生效」类宣称，唯一证据是 grep 代码，文档口径不可作为实现证据
-
----
-
 ### 2026-09-13 23:02 · commit f1a2843 · ts=1789311758
 - **错误**：修复阻断项后登记教训，但教训文本若含 password 赋值字面量会二次触发 pre-commit 密钥门禁；且每次失败提交刷新 last-failure.json 时间戳，导致早于最后一次失败的教训登记仍被阻断
 - **根因**：密钥扫描正则会匹配教训文本里的 password 赋值（password 后接引号包裹的值）；lessons 强制登记把 last-failure 时间戳作为放行条件，失败提交会持续前移该时间戳

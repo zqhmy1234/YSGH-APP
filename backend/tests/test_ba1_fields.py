@@ -188,8 +188,15 @@ def test_stats_daily_summary_total_bytes(client, auth_headers, cleanup_user):
         for size in (100, 250):
             db.execute(
                 sa_text(
-                    "INSERT INTO contents (id, user_id, content_type, status, created_at, updated_at, size_bytes) "
-                    "VALUES (:cid, :uid, 'text', 'done', now(), now(), :size)"
+                    # sensitive_status / source 是 NOT NULL —— 这里必须**显式提供**。
+                    # 2026-09-28：本用例原先省略它们，靠 CI 旧建库源（schema.sql）的 DDL 默认值
+                    # （`sensitive_status text NOT NULL DEFAULT '正常'`）侥幸通过；改走
+                    # `scripts/init_db.py`（ORM 为唯一权威，只有 Python 侧 default、无 server_default）
+                    # 后，裸 SQL 省略 NOT NULL 列会直接 NotNullViolation。ORM 才是权威，
+                    # 故修正本用例而非迁就建库源。
+                    "INSERT INTO contents (id, user_id, content_type, status, created_at, updated_at, "
+                    "size_bytes, sensitive_status, source) "
+                    "VALUES (:cid, :uid, 'text', 'done', now(), now(), :size, '正常', 'app')"
                 ),
                 {"cid": str(uuid.uuid4()), "uid": user_id, "size": size},
             )

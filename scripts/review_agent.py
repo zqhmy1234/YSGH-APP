@@ -456,15 +456,20 @@ def check_env_template() -> tuple[bool, str]:
     任何门禁调用；于是新增 config 字段忘加模板（真缺口）或删字段留过期键（过期项）都无人发现。
 
     口径：**复用该脚本的 main()，不在此重写判定规则**（单一判据，避免两处漂移）。
-    退出码 1 = 真缺口或过期项 → 阻断。纯文件扫描 + 导入 Settings.model_fields，快/全量均秒级。
+    退出码映射：0=对齐 → 放行；1=真缺口或过期项 → **阻断**；2=后端环境不可导入（缺依赖/环境变量）
+    → **降级放行并提示**（与 check_openapi_snapshot 同一口径 —— 该脚本要 import app.core.config，
+    fast-gate 没装后端依赖；若把环境缺失判成漂移，就是**恒假红**：2026-09-28 实测该步在
+    fast-gate 连续报「漂移」，真因只是缺 pydantic，与模板内容毫无关系）。
     """
     script = ROOT / "deploy" / "scripts" / "check_env_template.py"
     if not script.exists():
         return False, f"判据脚本缺失：{script.relative_to(ROOT)}（部署契约已失效）"
     code, out = run([sys.executable, str(script)])
-    if code != 0:
-        return False, "env 模板与 config.py 漂移：\n" + out.strip()
-    return True, out.strip()
+    if code == 0:
+        return True, out.strip()
+    if code == 2:
+        return True, "[降级] 后端环境不可导入，跳过部署模板一致性校验：\n" + out.strip()
+    return False, "env 模板与 config.py 漂移：\n" + out.strip()
 
 
 def check_openapi_snapshot() -> tuple[bool, str]:
