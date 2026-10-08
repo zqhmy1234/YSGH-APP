@@ -1,8 +1,8 @@
 """内容契约（contents 表：照片/文字/语音/文章统一入库）"""
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.services.storage_keys import CONTENT_KEY_PATTERN
 
@@ -49,6 +49,32 @@ class ContentCreate(BaseModel):
         None, ge=0,
         description="声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）",
     )
+    # W3（2026-10-08）：agent 镜像的预置 chips 标签（L3 十三主题）——写 contents.tags_json，
+    # App 详情页 AI 注释卡直接展示（此前 topics 只进 extra，App 完全看不见）。
+    # **仅 source=agent 生效**（App 公开端点不因此扩面，见 create_content 的落库条件）；
+    # 管线打标（pipeline_tagging.tag_content）对已有 tags_json 是**合并**不是覆写，
+    # 所以这里预置的标签不会被 worker 的 LLM 标签冲掉。
+    tags: list[Annotated[str, StringConstraints(strip_whitespace=True, max_length=32)]] | None = Field(
+        None, max_length=10,
+        description="预置 chips 标签（服务间镜像专用）：≤10 条、单条 ≤32 字，自动去重去空",
+    )
+
+    @field_validator("tags")
+    @classmethod
+    def _dedupe_tags(cls, v: list[str] | None) -> list[str] | None:
+        """去空、去重、保序；全空则归 None（与「未传」同形态，不占存储）。
+
+        注意空串的剔除必须在这里做而不能靠 StringConstraints 的 min_length：
+        约束校验先于 validator，`min_length=1` 会把「纯空格条目」直接 422——
+        而语义上 strip 后为空的条目应该是被丢弃，不是让整个请求失败。
+        """
+        if not v:
+            return None
+        out: list[str] = []
+        for t in v:
+            if t and t not in out:
+                out.append(t)
+        return out or None
 
 
 class ContentOut(BaseModel):

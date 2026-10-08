@@ -6791,6 +6791,23 @@
             ],
             "title": "Size Bytes",
             "description": "声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "type": "array",
+                "maxItems": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "预置 chips 标签（服务间镜像专用）：≤10 条、单条 ≤32 字，自动去重去空"
           }
         },
         "type": "object",

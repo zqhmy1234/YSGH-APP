@@ -326,6 +326,10 @@ def create_content(
         thumbnail_key=req.thumbnail_key,
         extra=req.extra,
         source=req.source,
+        # W3（2026-10-08）：agent 镜像的预置 chips（L3 主题）→ tags_json。
+        # **仅服务间来源生效**：App 公开端点不因新增字段扩面（老客户端不发 tags，
+        # 即便误发也被此处忽略）。管线打标是合并语义，预置标签不会被冲掉。
+        tags_json=req.tags if req.source == "agent" else None,
         status="processing",   # AI 管线完成后回写 done（异步）
         # BA1（迁移 f2a3b4c5d6e7）：用户备注（save 系可选上送）
         remark=req.remark,

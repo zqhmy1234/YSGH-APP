@@ -535,8 +535,9 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
 
     ## 已知边界（诚实标注）
 
-    · `mood/topics/people/category` 在 contents 没有直接对应列，放 `extra`
-      （JSONB，会随管线进 Qdrant payload）——App UI 暂不展示它们。
+    · `topics` 已升出 extra 进契约 `tags` 字段 → contents.tags_json，App 详情页
+      chips 可见（2026-10-08 W3）；`mood/people/category` 在 contents 仍无直接
+      对应列，留在 `extra`（JSONB，会随管线进 Qdrant payload）——App UI 暂不展示。
     · 镜像到可检索有延迟（RQ low 队列异步向量化，正常秒级~十秒级）。
       与 App 自身创建的语义一致，不是镜像特有的问题。
     """
@@ -572,6 +573,11 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
     }
     if location:
         body["remark"] = f"地点：{location}"[:2000]
+    # W3（2026-10-08）：L3 主题升出 extra → 契约 tags 字段。topics 只放 extra 时
+    # App 完全看不见（客户端只展示 tags_json）；backend 侧仅对 source=agent 落库
+    # 到 tags_json（App 详情页 chips），且管线打标是合并语义，不会被冲掉。
+    if topics:
+        body["tags"] = list(topics)
 
     with httpx.Client(timeout=timeout) as client:
         resp = client.post(
