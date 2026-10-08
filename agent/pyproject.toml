@@ -21,7 +21,6 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.0,<4",
     "psycopg[binary]>=3.3,<4",
     "psycopg-pool>=3.3,<4",
-    "wecom-aibot-sdk>=1.0.8",
 ]
 
 # ── 依赖瘦身记录（2026-10-06，删前逐个核实过全仓 0 使用点）──
@@ -30,6 +29,9 @@ dependencies = [
 #   export 预检改造移除）。
 # 删 Linux-only 3 个：pycairo / dbus-python / PyGObject —— Windows 装不上，
 #   是 `uv sync` 整体失败的根因。
+# 删 wecom-aibot-sdk 1 个（2026-10-08 W5 拍板）：企微智能机器人链四文件整体删除
+#   （main_wechat / wechat_service / daily_review_service / wechat_push_tools），
+#   企微唯一入口 = backend「微信客服」；该包全仓唯一 import 点随链消失。
 # 删零使用 11 个（含大小写不敏感全仓复查 + 模板引擎核实）：
 #   boto3（原属已删的 s3_storage）、opencv-python、pandas、psycopg2-binary
 #   （本仓统一 psycopg 3，URL 是 postgresql+psycopg://）、pypdf、docx2python、
