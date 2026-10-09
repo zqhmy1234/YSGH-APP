@@ -74,6 +74,26 @@
 				</view>
 			</view>
 
+			<!-- 壳内空态（2026-10-09 真机首测定案）：时间轴空时**就地渲染拍照首页内容**，
+			     不再 redirectTo('/pages/empty/empty')——那会销毁整个壳（AI 对话状态丢失、
+			     切 tab 闪屏、二段式跳转三宗罪同根）。视觉与 empty 页一致（画布 2:284 空状态帧）。
+			     CTA 经 shell_state 桥拉起全壳唯一 RecordSheet（铁律：中央 + 是全壳唯一挂载）。 -->
+			<view v-if="emptyState" class="empty-home">
+				<view class="empty-illus">
+					<image class="empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
+					<view class="empty-lake"><image class="empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
+				</view>
+				<text class="empty-title">还没有回忆</text>
+				<text class="empty-desc">拍一张照片，或说几句话</text>
+				<text class="empty-desc empty-desc2">你的回忆会住在这里</text>
+				<view class="empty-cta pressable" @tap="emptyTakeFirst">
+					<text class="empty-cta-text">拍下第一张</text>
+				</view>
+				<view class="empty-voice pressable" @tap="emptyVoice">
+					<text class="empty-voice-text">或者，录一段语音</text>
+				</view>
+			</view>
+
 			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对，无条件渲染；未加载时本就是空壳） -->
 			<view class="feed">
 				<!-- L2 待确认区 -->
@@ -214,7 +234,7 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { PhotoAttach } from '@/composables/usePhotoAttach'
 	import { EventOps } from '@/composables/useEventOps'
-	import { requestShellTab } from '@/utils/shell_state'
+	import { requestShellTab, shellSheetSeq, shellSheetMode } from '@/utils/shell_state'
 	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
 		toggleVoice,
@@ -252,6 +272,19 @@
 	let refreshing = ref(false)
 	let days = ref<Array<DayGroup>>([])
 	let pendingEvents = ref<Array<TimelineEvent>>([])
+	// 壳内空态（2026-10-09）：时间轴空时渲染拍照首页引导（替代原 redirectTo empty 整页跳转）
+	let emptyState = ref(false)
+
+	// 空态 CTA（经 shell_state 桥拉起全壳唯一 RecordSheet；'photo'=直达拍照流，同 empty 页口径）
+	function emptyTakeFirst(): void {
+		shellSheetMode.value = 'photo'
+		shellSheetSeq.value = shellSheetSeq.value + 1
+	}
+
+	function emptyVoice(): void {
+		shellSheetMode.value = ''
+		shellSheetSeq.value = shellSheetSeq.value + 1
+	}
 	let uploading = ref(false)
 	let uploadDone = ref(0)
 	let uploadTotal = ref(0)
@@ -485,7 +518,7 @@
 		lastFetchAt = Date.now()
 		renderFromEvents(events)
 		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
-		// 不能当「真·空状态」踢进 empty 页——失败标记位成立时延迟重试一次，仍空才跳。
+		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才进空态。
 		if (days.value.length === 0 && pendingEvents.value.length === 0) {
 			if (wasLastFetchFailed() && !emptyRetryDone) {
 				emptyRetryDone = true
@@ -493,11 +526,15 @@
 				setTimeout(() => { fetchAll() }, 2500)
 				return
 			}
-			console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
-			uni.redirectTo({ url: '/pages/empty/empty' })
+			// ⚠️ 2026-10-09 真机首测定案：空态改为**壳内渲染**（本组件 emptyState 视图，
+			// 视觉=empty 页），不再 redirectTo('/pages/empty/empty')——整页跳转会销毁壳
+			// （AI 对话状态丢失、切 tab 闪屏、二段式跳转三宗罪同根），违反 B10 铁律
+			// 「壳内零 redirectTo」。产品语义不变：空时间轴用户看到的仍是拍照首页引导。
+			emptyState.value = true
 			return
 		}
 		emptyRetryDone = false
+		emptyState.value = false
 		if (days.value.length > 0 || pendingEvents.value.length > 0) {
 			recordFirstDayRender()
 		}

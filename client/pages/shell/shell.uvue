@@ -17,7 +17,7 @@
 		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
 		<TabProfile v-if="ready && everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
 		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
-		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onSaved" />
+		<RecordSheet v-if="sheetOpen" :initial-mode="sheetMode" @close="onSheetClose" @saved="onSaved" />
 	</view>
 </template>
 
@@ -25,23 +25,25 @@
 	import { ref, watch } from 'vue'
 	import { onLoad, onBackPress } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
-	import { shellActiveTab, shellNavSeq, shellNavTab, shellNavQuery, aiAttachOpen } from '@/utils/shell_state'
+	import { shellActiveTab, shellNavSeq, shellNavTab, shellNavQuery, aiAttachOpen, shellSheetSeq, shellSheetMode } from '@/utils/shell_state'
 
 	const VALID_TABS = ['index', 'ai', 'search', 'profile']
 
 	let ready = ref(false)        // ensureLogin 完成闸门（见模板注释）
 	let activeTab = ref('index')   // P2 终态：index 常驻启动（对齐原 pages[0] 语义）
-	// ⚠️ everIndex 初始改 false（2026-10-09 真机首测实锤）：原 ref(true) 会让壳在
-	// ?tab=profile 等**非 index 入口**时连 TabIndex 一起挂载——新账号时间轴为空 ⇒
-	// TabIndex 的空态 redirectTo('/pages/empty/empty') 把**整个壳**顶掉，用户点
-	// 「我的」被弹回拍照首页且循环往复（老世界无此问题：profile 是独立页，不挂时间轴）。
-	// 改为在 activate('index') 时置位：启动默认落 index（语义不变），直入其他 tab
-	// 时时间轴不挂载、不触发空态跳转。空态 redirectTo 本身保留（产品语义，峰宝拍板口径）。
-	let everIndex = ref(false)
+	// ⚠️ 2026-10-09 真机首测后的定案：everIndex 恢复 B10 原设计 ref(true)（启动即挂载，
+	// 保住「四 tab 零销毁零创建=闪屏物理消失」不变量与 AI 对话跨 tab 存活）。
+	// 弹回循环的真根因不在 everIndex，而在 TabIndex 空态的 `redirectTo(empty)` 整页跳转
+	// （违反 B10 铁律「壳内零 redirectTo」——它把整个壳销毁重建，AI 对话状态随之丢失）。
+	// 已改为**壳内空态**（TabIndex emptyState，见 TabIndex.uvue），redirectTo(empty) 移除；
+	// empty 页面文件按拍板保留不删。曾试过 everIndex=false 懒挂载：首切 tab 必现挂载闪屏
+	// （用户实测「很久之前就被解决的屏闪」回归），已回退。
+	let everIndex = ref(true)
 	let everAi = ref(false)
 	let everSearch = ref(false)
 	let everProfile = ref(false)
 	let sheetOpen = ref(false)
+	let sheetMode = ref('')        // RecordSheet initial-mode（空态 CTA「拍下第一张」直达拍照流；Tab 经 shell_state 桥请求）
 	let searchType = ref('')       // ?type=photo/voice/text 透传 TabSearch（原 onLoad options 契约）
 	let aiTitle = ref('')          // ?memTitle= url 通道透传 TabAi（manage→theme-detail 同族先例兼容）
 	let aiSummary = ref('')        // ?memSummary= 同上
@@ -95,9 +97,6 @@
 		if (tab == 'profile') {
 			everProfile.value = true
 		}
-		if (tab == 'index') {
-			everIndex.value = true // 与其余三 tab 同款懒挂载（首启默认落 index，此处即启动路径）
-		}
 		activeTab.value = tab
 		shellActiveTab.value = tab // 组件侧可读当前激活 tab（shell_state 桥）
 		if (tab == 'profile') {
@@ -131,7 +130,24 @@
 	})
 
 	function openSheet(): void {
+		sheetMode.value = ''
 		sheetOpen.value = true
+	}
+
+	// 组件请求拉起全局 RecordSheet（TabIndex 空态 CTA → shell_state 桥；seq+watch 同款模式）
+	watch((): number => shellSheetSeq.value, (n: number): void => {
+		if (n <= 0) {
+			return
+		}
+		sheetMode.value = shellSheetMode.value
+		shellSheetMode.value = ''
+		shellSheetSeq.value = 0
+		sheetOpen.value = true
+	})
+
+	function onSheetClose(): void {
+		sheetOpen.value = false
+		sheetMode.value = ''
 	}
 
 	function onSaved(): void {
