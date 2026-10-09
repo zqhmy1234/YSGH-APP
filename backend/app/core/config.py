@@ -208,6 +208,24 @@ class Settings(BaseSettings):
     rerank_auto_enable: bool = False
     # 重排候选上限（防 CPU 延迟爆表；默认 20 → ~17s，仍超门禁，仅建议 GPU 用）
     rerank_max_candidates: int = 20
+
+    # R-1 拒答地板（2026-10-09）：召回层稠密相似度低于此地板的命中整条剔除；
+    # 若全部低于地板 → 搜索返回空结果（「答不出来就不答」）。
+    #
+    # 为什么需要：此前管线里**没有任何拒答路径** —— rerank_min_score=0.0 且 rerank
+    # 默认关闭，LLM 精排又明确「绝不增删候选」，所以只要不触发 filter，非空查询必然
+    # 返回 top-k，负样本 100% 误召回（门禁 negative_error_rate ≤0.05，实测 0.5714）。
+    # 注意这是【召回层】地板，与 rerank_min_score（bge-reranker 重排层）不是一件事。
+    #
+    # ⚠️ 默认 0.0 = 关闭，即保持改动前的行为。`0.0` 与「地板为 0」等价：
+    # 稠密分恒 ≥0，所以 0.0 不会剔除任何结果。
+    # ⚠️ 标定现状：2026-10-09 用 50 条真值 + 12 条负样本实测 —— 在当前 117 条
+    # **合成语料**上正负样本的 top1 稠密分几乎完全重叠（负 0.4888~0.6907，
+    # 正 0.4399~1.0000），**任何阈值都无法在误召回 ≤0.05 的同时保住 hit_rate@3**。
+    # 换成词汇覆盖、头部区分度等信号同样不可分（语料含大量占位文本）。
+    # ⇒ 本项要真正达标，前置是 §2.1#3「扩真实语料」，不是再调代码。
+    #   标定工具与完整权衡表：<仓库>/research/rag_benchmark/r1_calibrate.py
+    retrieval_min_dense_score: float = 0.0
     # 第二层 LLM 精排（Wave2-F 2026-08-26，B2-1 Ilya 方案）：
     # 总开关默认开，运行时再按 llm_available（无 key / mock → 原序返回）自门控。
     # 管线：bge 粗排 top-50→top-10（rerank_llm_candidates）→ qwen-flash 判"能否
