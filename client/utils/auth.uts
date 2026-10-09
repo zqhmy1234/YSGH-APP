@@ -237,11 +237,21 @@ function doRefresh(): Promise<boolean> {
 					const body = res.data as UTSJSONObject
 					const data = body.getJSON('data')
 					if (data != null) {
-						setSecure(KEY_ACCESS, data.getString('access_token') as string)
-						setSecure(KEY_REFRESH, data.getString('refresh_token') as string)
-						console.log('[dbg-auth] doRefresh success, tokens rotated')
-						resolve(true)
-						return
+						// ⚠️ 2026-10-09 修漏网强转（真机首测静态审查发现）：getString 缺字段返回
+						// null，`as string` 强转 null 会**运行时崩**（进程死亡）——deviceLogin:109-110
+						// 已修过同型问题（2026-09-21），此处是漏修副本。与 `?? ''` 判空后诚实
+						// 走 fallbackLogin：空 token 绝不写进 storage（否则下一轮误判"已登录"，
+						// 变成更隐蔽的失败）。
+						const at = data.getString('access_token') ?? ''
+						const rt = data.getString('refresh_token') ?? ''
+						if (at != '' && rt != '') {
+							setSecure(KEY_ACCESS, at)
+							setSecure(KEY_REFRESH, rt)
+							console.log('[dbg-auth] doRefresh success, tokens rotated')
+							resolve(true)
+							return
+						}
+						console.log('[dbg-auth] doRefresh malformed 200 body: token 字段缺失或为空')
 					}
 				}
 				fallbackLogin('fail status=' + res.statusCode)

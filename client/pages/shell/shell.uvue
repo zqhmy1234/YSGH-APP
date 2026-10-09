@@ -31,7 +31,13 @@
 
 	let ready = ref(false)        // ensureLogin 完成闸门（见模板注释）
 	let activeTab = ref('index')   // P2 终态：index 常驻启动（对齐原 pages[0] 语义）
-	let everIndex = ref(true)
+	// ⚠️ everIndex 初始改 false（2026-10-09 真机首测实锤）：原 ref(true) 会让壳在
+	// ?tab=profile 等**非 index 入口**时连 TabIndex 一起挂载——新账号时间轴为空 ⇒
+	// TabIndex 的空态 redirectTo('/pages/empty/empty') 把**整个壳**顶掉，用户点
+	// 「我的」被弹回拍照首页且循环往复（老世界无此问题：profile 是独立页，不挂时间轴）。
+	// 改为在 activate('index') 时置位：启动默认落 index（语义不变），直入其他 tab
+	// 时时间轴不挂载、不触发空态跳转。空态 redirectTo 本身保留（产品语义，峰宝拍板口径）。
+	let everIndex = ref(false)
 	let everAi = ref(false)
 	let everSearch = ref(false)
 	let everProfile = ref(false)
@@ -88,6 +94,9 @@
 		}
 		if (tab == 'profile') {
 			everProfile.value = true
+		}
+		if (tab == 'index') {
+			everIndex.value = true // 与其余三 tab 同款懒挂载（首启默认落 index，此处即启动路径）
 		}
 		activeTab.value = tab
 		shellActiveTab.value = tab // 组件侧可读当前激活 tab（shell_state 桥）
