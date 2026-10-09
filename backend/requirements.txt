@@ -37,6 +37,9 @@ imageio-ffmpeg>=0.6      # M4A/MP3/AAC 等统一解码为 16kHz 单声道
 sentry-sdk[fastapi]>=2.13
 
 # --- 工具 ---
+# 产品部标注表 → 真值 JSON（scripts/convert_truth_xlsx.py + 其单测）。
+# 本服务运行时不 import 它，只在这两个脚本里用。
+openpyxl>=3.1
 
 # --- RAG（B2：Qdrant + BGE-M3，M1 Part 2）---
 qdrant-client>=1.19
