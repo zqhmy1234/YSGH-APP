@@ -58,7 +58,10 @@ force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "research" / "truth-data"
-XLSX_DIR_DEFAULT = ROOT.parent  # 产品部 xlsx 落在工作区根（仓库外，永不进 git）
+# 产品部 xlsx 落在 <工作区>/真值数据/标注表/（仓库外，永不进 git）
+# 2026-10-09：原先直接放在工作区根，太乱，整批挪进了 真值数据/ 目录。
+# 目录约定见 <工作区>/真值数据/README.md；换了位置用 --xlsx-dir 指过去即可。
+XLSX_DIR_DEFAULT = ROOT.parent / "真值数据" / "标注表"
 SALT_FILE = DATA_DIR / ".salt"
 
 # ---------------------------------------------------------------- 常量与枚举
@@ -1143,7 +1146,8 @@ def write_reports(results: list[BatchResult], ctx: Ctx, dry_run: bool) -> tuple[
         }
 
     lines = ["# 真值转换阻断清单", "",
-             "来源：产品部 xlsx（工作区根，仓库外）｜由 `scripts/convert_truth_xlsx.py` 生成", ""]
+             "来源：产品部 xlsx（<工作区>/真值数据/标注表/，仓库外）"
+             "｜由 `scripts/convert_truth_xlsx.py` 生成", ""]
     for res in results:
         status = "✅ 已转出" if res.converted else "⚠️ 仅骨架"
         lines.append(f"## 批 {res.batch.upper()} — {status}"

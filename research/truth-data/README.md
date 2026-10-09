@@ -35,8 +35,13 @@ truth-data/
 
 ## 产品部现在交的是 xlsx（不是 JSON）→ 先跑转换脚本
 
-产品部交付的是 **xlsx 标注表**（放在**工作区根**，仓库外）。xlsx → JSON 这一步
+产品部交付的是 **xlsx 标注表**（放在 **`<工作区>/真值数据/标注表/`**，仓库外；
+原始素材放同级的 `真值数据/素材/`）。xlsx → JSON 这一步
 由 `scripts/convert_truth_xlsx.py` 完成 —— **不要手工往这里贴 JSON**。
+
+> 2026-10-09 起，这批数据从 `<工作区>` 根目录整体挪进了 `真值数据/`，目录说明见
+> `<工作区>/真值数据/README.md`。脚本默认路径已同步（改前是工作区根）；
+> 如果换了位置，用 `--xlsx-dir` 指过去。
 
 ```bash
 export TRUTH_HASH_SALT='<本地随机串>'      # 或用 --init-salt 生成 ./.salt（已 gitignore）
