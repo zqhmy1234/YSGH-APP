@@ -6,6 +6,8 @@
 """
 
 
+from datetime import UTC
+
 import pytest
 from app.services.vector_store import COLLECTION, VectorStore
 from qdrant_client.http import models
@@ -167,10 +169,10 @@ def test_to_filter_time_range_epoch_seconds():
     必须转 .timestamp() 数值——此前时间过滤静默不命中。
     time_from/time_to 各生成一条 taken_at FieldCondition（gte/lte 分置）。
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    lo = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    hi = datetime(2026, 12, 31, tzinfo=timezone.utc)
+    lo = datetime(2026, 1, 1, tzinfo=UTC)
+    hi = datetime(2026, 12, 31, tzinfo=UTC)
     f = VectorStore._to_filter({"time_from": lo, "time_to": hi})
     taken_conds = [c for c in f.must if c.key == "taken_at"]
     assert len(taken_conds) == 2

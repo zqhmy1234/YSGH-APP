@@ -10,7 +10,7 @@
 前置：PG yishu 库；入队走 monkeypatch（不碰真实 Redis）
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, User
@@ -63,7 +63,7 @@ def _age(db, content: Content, hours: float) -> None:
     db.execute(
         sa_update(Content)
         .where(Content.id == content.id)
-        .values(updated_at=datetime.now(timezone.utc) - timedelta(hours=hours))
+        .values(updated_at=datetime.now(UTC) - timedelta(hours=hours))
     )
     db.commit()
     db.refresh(content)
@@ -195,7 +195,7 @@ def test_real_query_only_picks_stale(db_user, monkeypatch):
     db.execute(
         sa_update(Content)
         .where(Content.id == stale.id)
-        .values(updated_at=datetime(2000, 1, 1, tzinfo=timezone.utc))
+        .values(updated_at=datetime(2000, 1, 1, tzinfo=UTC))
     )
     db.commit()
     calls = _collector(monkeypatch)

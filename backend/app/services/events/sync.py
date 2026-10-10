@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -89,7 +89,7 @@ def sync_client_events(
         if isinstance(start_ts, str):
             start_ts = datetime.fromisoformat(start_ts)
         if start_ts is not None and start_ts.tzinfo is None:
-            start_ts = start_ts.replace(tzinfo=timezone.utc)  # 客户端未带时区 → 按 UTC 归一
+            start_ts = start_ts.replace(tzinfo=UTC)  # 客户端未带时区 → 按 UTC 归一
         end_ts = item.get("end_time")
         if isinstance(end_ts, str):
             end_ts = datetime.fromisoformat(end_ts)

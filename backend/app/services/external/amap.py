@@ -12,7 +12,7 @@ Mock：MOCK_EXTERNAL_AI=true 或未配 key → regeo 抛 RuntimeError（调用�
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -136,7 +136,7 @@ def get_place(db, lat: float, lng: float) -> str | None:
         logger.warning("geo_cache 读取失败 %s: %s", gh, exc)
         row = None
     if row is not None and row.updated_at is not None:
-        age = datetime.now(timezone.utc) - row.updated_at
+        age = datetime.now(UTC) - row.updated_at
         if age <= timedelta(days=GEO_CACHE_MAX_DAYS) and row.place:
             return row.place
 

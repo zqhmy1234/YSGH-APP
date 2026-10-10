@@ -17,7 +17,7 @@
 """
 import io as _io
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, File, Form, UploadFile
@@ -445,7 +445,7 @@ def list_contents(
     if has_more and page_items:
         last = page_items[-1]
         # UTC 无 + 号格式，避免 URL 中 + 被解析为空格；拼接 id 兜底同秒
-        ts_str = last.created_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        ts_str = last.created_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
         next_cursor = f"{ts_str}|{last.id}"
 
     return ApiResponse(
@@ -497,7 +497,7 @@ def update_content_remark(
     except NotFoundError:
         raise ApiError(ERR_CONTENT_010, "内容不存在或无权访问", http=404) from None
     row = load_alive_content(db, user.id, content_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     row.remark = req.remark
     # 双向写穿（功能修复波 簇② Q2 拍板）：REST 权威写入**同时**落同步账本 + 变更日志。
     # ① SFV：为后续**离线编辑**建立 LWW 基准——缺它则离线旧备注在 LWW 下"看起来更新"
@@ -548,7 +548,7 @@ def delete_content(
     与 sync `push_ops` 的删除分支**同调同一组原语**（单一软删语义路径）。
     """
     row = load_alive_content(db, user.id, content_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sync_writes.soft_delete_content(db, row, user.id, change_ts=now, anchor=now)
     db.commit()
     return ApiResponse(

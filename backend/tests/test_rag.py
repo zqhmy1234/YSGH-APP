@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from app.db.models import Content, Event, EventItem, User
@@ -256,13 +256,13 @@ def test_time_filter_actually_filters(indexed_store):
     此前 payload 存 ISO 字符串而 _to_filter 用数值 Range → Qdrant 类型不匹配
     静默不命中（恒空结果）。本测试验证：带时间过滤检索能命中对应语料。
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     store = indexed_store
     dense, sparse = encode_query("回忆")
     # 2026 年时间窗（语料中 rag-002/004/005 落在 2026 年）
-    lo = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    hi = datetime(2026, 12, 31, tzinfo=timezone.utc)
+    lo = datetime(2026, 1, 1, tzinfo=UTC)
+    hi = datetime(2026, 12, 31, tzinfo=UTC)
     hits_2026 = store.search(
         dense, sparse,
         filters={"time_from": lo, "time_to": hi},
@@ -273,8 +273,8 @@ def test_time_filter_actually_filters(indexed_store):
     assert ids_2026, "2026 年时间窗不应为空（修复前恒空）"
     assert not any(pid == "rag-001" for pid in ids_2026), "2025 年语料不应出现在 2026 时间窗"
     # 反向：2025 年时间窗应命中 rag-001/003
-    lo25 = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    hi25 = datetime(2025, 12, 31, tzinfo=timezone.utc)
+    lo25 = datetime(2025, 1, 1, tzinfo=UTC)
+    hi25 = datetime(2025, 12, 31, tzinfo=UTC)
     hits_2025 = store.search(
         dense, sparse,
         filters={"time_from": lo25, "time_to": hi25},
@@ -855,7 +855,6 @@ def test_search_llm_rerank_wiring_judged(indexed_store, monkeypatch):
 def test_assemble_hits_filters_deleted_failed_and_foreign():
     """_assemble_hits DB 回查闸门：done 保留；软删/failed/他人内容整条剔除；
     非 UUID 测试点与无 DB 模式照常放行（不回归 rag-001 类用例）。"""
-    from datetime import timezone
 
     from app.services.rag.recall import _assemble_hits
 
@@ -869,7 +868,7 @@ def test_assemble_hits_filters_deleted_failed_and_foreign():
     try:
         c_done = Content(user_id=u1.id, content_type="text", text="正常内容", status="done", source="app")
         c_del = Content(user_id=u1.id, content_type="text", text="已软删内容", status="done", source="app",
-                        deleted_at=datetime.now(timezone.utc))
+                        deleted_at=datetime.now(UTC))
         c_failed = Content(user_id=u1.id, content_type="text", text="失败内容", status="failed", source="app")
         c_foreign = Content(user_id=u2.id, content_type="text", text="他人内容", status="done", source="app")
         db.add_all([c_done, c_del, c_failed, c_foreign])

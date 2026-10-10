@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 try:  # 既支持直跑 python scripts/x.py，也支持被按包导入（from scripts.x import …）
@@ -53,12 +53,12 @@ MIN_PTS = 3
 
 def local_ms(y: int, m: int, d: int, hh: int, mm: int, ss: int = 0) -> int:
     """本地墙钟（UTC+8 语义）→ epoch ms。fixture 时间按上海本地日界构造。"""
-    dt = datetime(y, m, d, hh, mm, ss, tzinfo=timezone.utc) - timedelta(minutes=TZ_OFFSET_MIN)
+    dt = datetime(y, m, d, hh, mm, ss, tzinfo=UTC) - timedelta(minutes=TZ_OFFSET_MIN)
     return int(dt.timestamp() * 1000)
 
 
 def _p(pid: str, ms: int, lat: float | None, lng: float | None, tags: list[str] | None = None) -> RawPhoto:
-    return RawPhoto(id=pid, ts=datetime.fromtimestamp(ms / 1000, tz=timezone.utc), lat=lat, lng=lng, tags=tags or [])
+    return RawPhoto(id=pid, ts=datetime.fromtimestamp(ms / 1000, tz=UTC), lat=lat, lng=lng, tags=tags or [])
 
 
 def _dedup(photos: list[RawPhoto], phash: dict[str, str]) -> list[RawPhoto]:
@@ -183,7 +183,7 @@ def build_cases() -> list[dict]:
     cases.append({"name": "single-photo", "tz": TZ_OFFSET_MIN, "photos": photos, "expected": _expected(photos)})
 
     # 9. UTC 日界（tz=0）：23:40 UTC 不触发深夜规则（本地=UTC 时无偏移）
-    t0 = datetime(2026, 8, 24, 23, 40, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 24, 23, 40, tzinfo=UTC)
     photos = [
         _p("p1", int(t0.timestamp() * 1000), *A),
         _p("p2", int((t0 + timedelta(minutes=10)).timestamp() * 1000), *A),

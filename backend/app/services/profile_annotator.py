@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -155,7 +155,7 @@ def apply_annotation(
         profile = get_or_create_profile(db, user_id)
     dims = dict(profile.dimensions or {})
     entry = dims.get(dimension)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now_iso = now.isoformat()
 
     # 同日同维度节流（高频用户；用户主动作答 / 批内同维不节流）

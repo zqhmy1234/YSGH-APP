@@ -21,7 +21,7 @@ test_event_aggregation_scripts 使用；B3-4/AGG-009/010/016 素材）。
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 try:  # 既支持直跑 python scripts/x.py，也支持被按包导入（from scripts.x import …）
@@ -58,7 +58,7 @@ def _local_base(y: int, m: int, d: int) -> datetime:
     与"单日连续移动"的场景意图不符。**这是数据摆放问题、不是聚合错**，故修数据：
     按本地正午锚定 ⇒ 各场景都在同一**本地**自然日内，场景意图与日界口径无关。
     """
-    return datetime(y, m, d, 12, 0, 0, tzinfo=timezone.utc) - timedelta(
+    return datetime(y, m, d, 12, 0, 0, tzinfo=UTC) - timedelta(
         minutes=local_utc_offset_minutes()
     )
 

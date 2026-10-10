@@ -32,7 +32,7 @@ from __future__ import annotations
 import argparse
 import logging
 import shutil
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import func, select, text
@@ -80,7 +80,7 @@ def run_cleanup(older_than_days: int = 30, limit: int = 500, dry_run: bool = Fal
     - skipped_not_due: 未到期 pending 数（仅用于调度观测）
     """
     db: Session = SessionLocal()
-    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+    cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
     cleaned = failed = 0
     not_due = 0
     try:
@@ -177,7 +177,7 @@ def _reap_orphan_dirs(db: Session, older_than_days: int) -> dict:
                 mt = max(mt, f.stat().st_mtime)
             except OSError:
                 pass
-        return (datetime.now(timezone.utc) - datetime.fromtimestamp(mt, tz=timezone.utc)).total_seconds() / 86400
+        return (datetime.now(UTC) - datetime.fromtimestamp(mt, tz=UTC)).total_seconds() / 86400
 
     orphan = leftover = 0
     for d in uploads.iterdir():
@@ -209,7 +209,7 @@ def run_upload_reaper(older_than_days: int = 7, limit: int = 200, dry_run: bool 
     """
     db: Session = SessionLocal()
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+        cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
         report = _reap_stale_tasks(db, cutoff, limit, dry_run)
         if dry_run:
             report.update({"orphan_dirs": 0, "leftover_dirs": 0, "skipped_backend": False})

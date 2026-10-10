@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -86,7 +86,7 @@ def _pg_fallback_search(
 
     def _rank(c: Content) -> tuple[int, datetime]:
         text = c.text or ""
-        return (sum(1 for t in tokens if t in text), c.taken_at or datetime.min.replace(tzinfo=timezone.utc))
+        return (sum(1 for t in tokens if t in text), c.taken_at or datetime.min.replace(tzinfo=UTC))
 
     rows.sort(key=_rank, reverse=True)
     out = []

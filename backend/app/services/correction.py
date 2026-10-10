@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -89,7 +89,7 @@ def record_correction(
                     "new_label": new_label,
                     "source": source,
                     "text": text,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 },
             )
         ],
@@ -177,7 +177,7 @@ def _recent_revert(
     db: Session, user_id: str, old_label: str, new_label: str, content_type: str
 ) -> bool:
     """回改检测：3 天内是否存在反向纠错 (new→old)——若存在说明用户在来回改，当前方向不生效"""
-    window_start = datetime.now(timezone.utc) - timedelta(days=REVERT_WINDOW_DAYS)
+    window_start = datetime.now(UTC) - timedelta(days=REVERT_WINDOW_DAYS)
     cnt = db.scalar(
         select(func.count())
         .select_from(CorrectionLog)

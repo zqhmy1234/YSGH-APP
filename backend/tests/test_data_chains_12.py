@@ -9,7 +9,7 @@
   - 每个断言显式判失败原因，不允许静默通过
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event, EventItem, User
@@ -99,7 +99,7 @@ class TestL2TimelineChain:
     def test_produce_events_with_items(self, db_user):
         """产生：Event + EventItem 落库且成员可查"""
         db, user = db_user
-        start = datetime.now(timezone.utc) - timedelta(days=1)
+        start = datetime.now(UTC) - timedelta(days=1)
         c = _text_content(db, str(user.id), "L2链成员内容")
         ev = _event(db, str(user.id), 1, start)
         db.add(EventItem(content_id=c.id, event_id=ev.id))
@@ -112,7 +112,7 @@ class TestL2TimelineChain:
     def test_process_timeline_aggregates(self, client, auth_headers, db):
         """处理：GET /events/timeline 200 且聚合返回本用户事件"""
         uid, headers = auth_headers("l2t")
-        start = datetime.now(timezone.utc) - timedelta(days=2)
+        start = datetime.now(UTC) - timedelta(days=2)
         c = _text_content(db, uid, "L2聚合断言内容")
         ev = _event(db, uid, 1, start, title="L2聚合断言事件")
         db.add(EventItem(content_id=c.id, event_id=ev.id))
@@ -520,7 +520,7 @@ class TestL12SyncChain:
             "entity_id": eid,
             "field": "title",
             "value": "L12同步产生断言",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }]
         res = push_ops(db, str(user.id), "l12-dev", ops)
         db.commit()
@@ -538,7 +538,7 @@ class TestL12SyncChain:
             "entity_id": eid,
             "field": "title",
             "value": "L12增量断言",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }]
         push_ops(db, str(user.id), "l12-dev", ops)
         db.commit()

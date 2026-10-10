@@ -9,6 +9,7 @@
 前置：PG yishu 库（同 test_queue）
 """
 import uuid
+from datetime import UTC
 
 import pytest
 from app.db.models import Content, Event, EventItem
@@ -465,7 +466,7 @@ class TestEventAggregation:
         F3/R5-3：聚合已从 process_content 拆为独立 per-user RQ 任务——管线只负责
         按 user 级 key 入队（enqueue_unique 去重合并），不再同步跑聚合写库。
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from app.services.external.storage import get_storage_backend
 
@@ -473,7 +474,7 @@ class TestEventAggregation:
         backend = get_storage_backend()
         backend.put_object("photos/u/a.jpg", b"fake")
         backend.put_object("photos/u/b.jpg", b"fake")
-        ts = datetime.now(timezone.utc) - timedelta(hours=3)
+        ts = datetime.now(UTC) - timedelta(hours=3)
         c1 = _content(db, user.id, "photo", cos_key="photos/u/a.jpg", taken_at=ts)
         c2 = _content(db, user.id, "photo", cos_key="photos/u/b.jpg", taken_at=ts + timedelta(minutes=10))
         monkeypatch.setattr(
@@ -505,12 +506,12 @@ class TestEventAggregation:
 
     def test_aggregate_user_full_mode_creates_l1_baseline(self, db_user):
         """full 模式（基线迁移/遗留路径）仍产生 L1 日卡片（第一波行为不删）"""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from app.services.events import aggregate_user
 
         db, user = db_user
-        ts = datetime.now(timezone.utc) - timedelta(hours=3)
+        ts = datetime.now(UTC) - timedelta(hours=3)
         _content(db, user.id, "photo", taken_at=ts)
         _content(db, user.id, "photo", taken_at=ts + timedelta(minutes=10))
         r = aggregate_user(db, user.id, mode="full")

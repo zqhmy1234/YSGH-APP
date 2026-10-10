@@ -39,7 +39,7 @@ REST 端点与 `push_ops` 两处**同调这些原语**；唯一差异是 SFV 墓
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
@@ -238,7 +238,7 @@ def finalize_soft_delete(
 
     调用方必须先写好 SFV 墓碑（REST 经 `upsert_tombstone`；`push_ops` 经批内映射）。
     """
-    anchor = anchor or datetime.now(timezone.utc)
+    anchor = anchor or datetime.now(UTC)
     if entity_type == "content" and content is not None:
         # D08-1：权威表置删 ⇒ REST 列表/详情立即 404，回收站可见可恢复
         content.deleted_at = anchor
@@ -267,7 +267,7 @@ def soft_delete_content(
     device_id: str = SERVER_DEVICE,
 ) -> None:
     """REST `DELETE /contents/{id}` 的单一软删入口（写墓碑 + `finalize_soft_delete`）"""
-    change_ts = change_ts or datetime.now(timezone.utc)
+    change_ts = change_ts or datetime.now(UTC)
     upsert_tombstone(db, "content", str(content.id), user_id, change_ts)
     finalize_soft_delete(
         db,
@@ -310,7 +310,7 @@ def log_content_created(
         op_type=OP_CREATE,
         entity_type="content",
         entity_id=str(content_id),
-        updated_at=when or datetime.now(timezone.utc),
+        updated_at=when or datetime.now(UTC),
     )
     db.commit()
     return op_id
@@ -331,7 +331,7 @@ def restore_content(
       - pending 审计日志 → `restored`：否则 30 天后 `run_cleanup` 会**把已恢复的内容
         彻底物理删除**（比不修更糟）。
     """
-    when = when or datetime.now(timezone.utc)
+    when = when or datetime.now(UTC)
     content.deleted_at = None
     content.deleted_by = None
     entity_id = str(content.id)

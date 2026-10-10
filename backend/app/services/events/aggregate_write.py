@@ -14,7 +14,7 @@ tests/test_event_ops.py）零改动。
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -44,7 +44,7 @@ def _write_l1_days(db: Session, user_id: str, l1_days: list[dict]) -> int:
         existing = None
         if day_key:
             try:
-                day_start = datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                day_start = datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=UTC)
             except ValueError:
                 day_start = None
             if day_start is not None:

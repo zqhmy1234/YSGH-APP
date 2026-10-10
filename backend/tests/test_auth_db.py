@@ -11,6 +11,7 @@ R8#1（2026-08-27）：跨运行污染修复
 """
 import hashlib
 import uuid
+from datetime import UTC
 
 import pytest
 from app.db.models import Device, SmsCode, User
@@ -293,14 +294,14 @@ def test_phone_code_atomic_consume_single_use(db):
     先提交者 rowcount=1 消费成功，后者 rowcount=0（该码已被消费 → 401 语义）。
     """
     import hashlib
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     phone = _phone()
     code = "654321"
     sms = SmsCode(
         phone=phone,
         code=hashlib.sha256(code.encode("utf-8")).hexdigest(),
-        expire_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        expire_at=datetime.now(UTC) + timedelta(minutes=5),
     )
     db.add(sms)
     db.commit()
@@ -314,7 +315,7 @@ def test_phone_code_atomic_consume_single_use(db):
         r2 = s2.execute(select(SmsCode).where(SmsCode.id == sms.id)).scalar_one()
         assert r1.used_at is None and r2.used_at is None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         n1 = s1.execute(
             sa_update(SmsCode)
             .where(SmsCode.id == sms.id, SmsCode.used_at.is_(None))

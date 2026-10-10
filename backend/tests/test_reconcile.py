@@ -9,7 +9,7 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.services.reconcile import reconcile_snapshot
@@ -24,7 +24,7 @@ def _eid() -> str:
 
 
 def _ts(days: int) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 def test_empty_reconcile(db_user):

@@ -11,7 +11,7 @@ CAPSULE_003 未到期开启 / CAPSULE_004 已开启不可撤销。
 （capsule 域错误码就地定义于本模块——core/errors.py 属共享域，避免越批文件域）
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Depends
 from sqlalchemy import select
@@ -96,7 +96,7 @@ def seal_capsule(
     """封存记忆（BA2）：content 必须属当前用户且未删除；open_at 必须晚于 now"""
     if body.open_at.tzinfo is None:  # 裸时间按 UTC 解释（客户端契约带 tz；防御显式报错）
         raise ApiError(ERR_CAPSULE_001, "open_at 必须带时区信息", http=422)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if body.open_at <= now:
         raise ApiError(ERR_CAPSULE_001, "open_at 必须晚于当前时刻", http=422)
     # 波D ② 收敛（2026-09-10）：复用 deps.load_alive_content——原内联查询与其逐字等价
@@ -155,8 +155,8 @@ def open_capsule(
 ):
     """开启胶囊（到期回看）：未到期 409 显式报剩余天数；已开启幂等返回现态"""
     cap = _load_owned_capsule(db, user.id, capsule_id)
-    now = datetime.now(timezone.utc)
-    open_at = cap.open_at if cap.open_at.tzinfo else cap.open_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    open_at = cap.open_at if cap.open_at.tzinfo else cap.open_at.replace(tzinfo=UTC)
     if open_at > now:
         remaining_seconds = int((open_at - now).total_seconds())
         remaining_days = max(1, (open_at - now).days + (1 if (open_at - now).seconds else 0))

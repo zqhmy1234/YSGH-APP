@@ -10,6 +10,7 @@ F3 聚合专属测试（任务单测 / per-user 去重并发 / _write_upper_cand
 前置：PG yishu 库（db_user 公共 fixture）
 """
 import uuid
+from datetime import UTC
 
 import pytest
 from app.db.models import Content
@@ -109,7 +110,7 @@ def test_aggregation_task_importable_for_rq():
 
 def test_timeline_voice_duration_formatted(db_user):
     """timeline 出参 voice.duration == "0:05"（构造 duration=5s 语音挂进事件）"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.core.security import create_access_token
     from app.db.models import Event, EventItem
@@ -117,7 +118,7 @@ def test_timeline_voice_duration_formatted(db_user):
     from fastapi.testclient import TestClient
 
     db, user = db_user
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     event = Event(user_id=user.id, level=1, title="A6", start_time=now, status="confirmed")
     db.add(event)
     voice = Content(
@@ -147,7 +148,7 @@ def test_timeline_voice_duration_formatted(db_user):
 
 def test_timeline_voice_duration_none_when_absent(db_user):
     """A6：内容 duration 列为空 → voice.duration 下发 None（客户端显示空）"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.core.security import create_access_token
     from app.db.models import Event, EventItem
@@ -155,7 +156,7 @@ def test_timeline_voice_duration_none_when_absent(db_user):
     from fastapi.testclient import TestClient
 
     db, user = db_user
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     event = Event(user_id=user.id, level=1, title="A6空", start_time=now, status="confirmed")
     db.add(event)
     voice = Content(

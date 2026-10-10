@@ -32,7 +32,7 @@ import argparse
 import json
 import random
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -50,7 +50,7 @@ def _collect_samples(db, days: int, content_type: str | None) -> list[dict]:
     from app.db.models import Content, CorrectionLog
     from sqlalchemy import select
 
-    window_start = datetime.now(timezone.utc) - timedelta(days=days)
+    window_start = datetime.now(UTC) - timedelta(days=days)
     stmt = (
         select(CorrectionLog, Content.text)
         .outerjoin(Content, Content.id == CorrectionLog.content_id)

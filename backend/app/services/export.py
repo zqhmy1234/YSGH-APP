@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -172,7 +172,7 @@ def build_export_payload(db: Session, user_id: str) -> dict:
 
     return {
         "schema_version": "1.0",
-        "exported_at": datetime.now(timezone.utc),
+        "exported_at": datetime.now(UTC),
         "user_id_hashed": _hash_user_id(user_id),
         "contents": [_content_out(c) for c in contents],
         "events": [_event_out(e, member_map) for e in events],

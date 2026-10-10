@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -167,7 +167,7 @@ def _queue_unmapped(db: Session, user_id: str, answers: dict[str, str], hits: li
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_pdp_user_dim_raw",
-            set_={"count": ProfileDimensionPending.count + 1, "updated_at": datetime.now(timezone.utc)},
+            set_={"count": ProfileDimensionPending.count + 1, "updated_at": datetime.now(UTC)},
         )
         db.execute(stmt)
 

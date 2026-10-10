@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def photo_object_key(user_id: str, file_name: str) -> str:
@@ -24,5 +24,5 @@ def photo_object_key(user_id: str, file_name: str) -> str:
     `file_name` 会被清洗为 `[A-Za-z0-9._-]`（其余剔除）；全被剔除时回退 `file`。
     """
     safe = "".join(c for c in file_name if c.isalnum() or c in "._-") or "file"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return f"photos/{user_id}/{now:%Y%m}/{uuid.uuid4().hex[:12]}_{safe}"

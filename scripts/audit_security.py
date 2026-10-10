@@ -18,7 +18,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -155,7 +155,7 @@ def audit() -> dict:
     ))
     dumps = sorted((REPO / "backups").glob("*.dump")) if (REPO / "backups").exists() else []
     newest = max((d.stat().st_mtime for d in dumps), default=0)
-    age_hours = (datetime.now(timezone.utc).timestamp() - newest) / 3600 if newest else float("inf")
+    age_hours = (datetime.now(UTC).timestamp() - newest) / 3600 if newest else float("inf")
     domains["backup"].append(_check(
         "最近备份新鲜度（RPO≤24h）",
         age_hours <= 24,
@@ -165,7 +165,7 @@ def audit() -> dict:
     if age_hours > 24 and newest > 0:
         blocking += 1
 
-    return {"domains": domains, "blocking": blocking, "generated_at": datetime.now(timezone.utc).isoformat()}
+    return {"domains": domains, "blocking": blocking, "generated_at": datetime.now(UTC).isoformat()}
 
 
 def main() -> int:

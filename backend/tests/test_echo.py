@@ -11,7 +11,7 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from app.db.models import Content, EchoHistory, ProfileSensitive
@@ -164,7 +164,7 @@ def test_echo_local_day_limit_boundary(db_user, monkeypatch):
             user_id=user.id,
             event_id=None,
             action="respond",
-            shown_at=datetime(2026, 1, 1, 16, 10, tzinfo=timezone.utc),
+            shown_at=datetime(2026, 1, 1, 16, 10, tzinfo=UTC),
             shown_date="2026-01-02",
         )
     )

@@ -56,7 +56,11 @@ jobs:
         #   规则集自己变了。仓库跑的是 Python 3.11，但 ruff.toml 从未声明 target-version，
         #   这正是它会被上游静默改动的根因。
         #   钉 0.16.8 = 与开发机一致、也是本仓最后一次 lint 全绿的版本。
-        #   **升级 ruff 时须先本地跑 `ruff check .` 看有无新增命中，再改这里的版本号。**
+        #   ✅ 根因已另行修复（同日）：ruff.toml 已显式声明 `target-version = "py311"`，
+        #      规则集从此与本仓真实 Python 绑定，不再随 ruff 版本静默漂移；
+        #      并 `ruff --fix` 清掉了那 154 处。**0.16.8 与 0.17.0 现已双双全绿**，
+        #      故本行可直接升 0.17.0（已实测），只是为与开发机保持一致暂留 0.16.8。
+        #   **升级 ruff 时仍须先本地跑 `ruff check .` 看有无新增命中，再改这里的版本号。**
         #   与下方 full-gate 的同一行**必须保持一致**（两处一起改）。
         run: pip install ruff==0.16.8 pydantic pydantic-settings
 

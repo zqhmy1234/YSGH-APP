@@ -5,7 +5,7 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event, EventEditLog, EventItem, User
@@ -26,7 +26,7 @@ def _event(db, user_id: str, level: int = 1) -> Event:
 def _content(db, user_id: str, ev: Event, ts=None) -> Content:
     c = Content(
         id=str(uuid.uuid4()), user_id=user_id, content_type="photo",
-        taken_at=ts or datetime.now(timezone.utc) - timedelta(hours=1),
+        taken_at=ts or datetime.now(UTC) - timedelta(hours=1),
         status="done", source="app",
     )
     db.add(c)
@@ -72,7 +72,7 @@ class TestMerge:
         db, user = db_user
         t = _event(db, user.id)
         s = _event(db, user.id)
-        base = datetime.now(timezone.utc) - timedelta(hours=3)
+        base = datetime.now(UTC) - timedelta(hours=3)
         tc = _content(db, user.id, t, ts=base)
         sc = _content(db, user.id, s, ts=base + timedelta(hours=2))
         t.title_source = "template"  # 触发 _refresh_event_window 重算标题
@@ -143,7 +143,7 @@ class TestSplit:
 
         db, user = db_user
         ev = _event(db, user.id)
-        base = datetime.now(timezone.utc) - timedelta(hours=3)
+        base = datetime.now(UTC) - timedelta(hours=3)
         c1 = _content(db, user.id, ev, ts=base)
         c2 = _content(db, user.id, ev, ts=base + timedelta(hours=1))
         c3 = _content(db, user.id, ev, ts=base + timedelta(hours=2))
@@ -213,8 +213,8 @@ class TestEventItems:
 
         db, user = db_user
         ev = _event(db, user.id)
-        c1 = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=2))
-        c2 = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=1))
+        c1 = _content(db, user.id, ev, ts=datetime.now(UTC) - timedelta(hours=2))
+        c2 = _content(db, user.id, ev, ts=datetime.now(UTC) - timedelta(hours=1))
         c1.text = "第一张照片的caption"
         c2.text = "第二张照片的caption"
         db.commit()
@@ -230,8 +230,8 @@ class TestEventItems:
 
         db, user = db_user
         ev = _event(db, user.id)
-        c_done = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=2))
-        c_proc = _content(db, user.id, ev, ts=datetime.now(timezone.utc) - timedelta(hours=1))
+        c_done = _content(db, user.id, ev, ts=datetime.now(UTC) - timedelta(hours=2))
+        c_proc = _content(db, user.id, ev, ts=datetime.now(UTC) - timedelta(hours=1))
         c_done.content_type = "voice"
         c_done.status = "done"
         c_done.text = "已完成转写的语音"
@@ -330,7 +330,7 @@ class TestConfirmedProtection:
         db.add(confirmed)
         db.commit()
         c = Content(id=str(uuid.uuid4()), user_id=user.id, content_type="photo",
-                    taken_at=datetime.now(timezone.utc), status="done", source="app")
+                    taken_at=datetime.now(UTC), status="done", source="app")
         db.add(c)
         db.add(EventItem(content_id=c.id, event_id=confirmed.id))
         db.commit()
@@ -347,7 +347,7 @@ class TestConfirmedProtection:
         from app.services.events import _write_l1_days
 
         db, user = db_user
-        base = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
         ev = Event(
             user_id=user.id, level=1, title="自定义标题", title_source="user",
             status="confirmed", confidence=1.0, generated_by="user",

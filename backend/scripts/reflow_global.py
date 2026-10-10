@@ -19,8 +19,8 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import UTC
 from datetime import datetime as _datetime
-from datetime import timezone
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -44,7 +44,7 @@ def _backup_model(model_dir: Path, backup_root: Path, keep: int = KEEP_BACKUPS) 
         return None
     backup_root.mkdir(parents=True, exist_ok=True)
     # 微秒时间戳：同秒多次调用不碰撞（备份名可排序，用于 keep 裁剪）
-    stamp = _datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    stamp = _datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     dest = backup_root / f"setfit-classifier-{stamp}"
     # 防同微秒重复调用碰撞（2026-08-24 门禁 flaky：测试内两次备份同微秒 → FileExistsError）
     suffix = 1

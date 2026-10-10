@@ -2,6 +2,19 @@
 # 规则集：bug 检测 + 未使用代码 + 安全 + 格式
 line-length = 120
 
+# 目标 Python 版本 —— **必须显式声明**（2026-10-10 补，缺陷 D17-1）
+#
+# 为什么必须写死：不写时 ruff 只能靠 pyproject 的 requires-python 推断，而**本仓没有
+# pyproject.toml**，于是 target-version 一直走 ruff 自己的默认值 —— 这个默认值会随
+# ruff 版本**静默变化**。2026-10-10 正是如此：ruff 0.17.0 改了默认推断，UP017
+# (`datetime.UTC`) 在本仓 66 个文件 154 处突然报红，而代码一行没动。
+# 显式声明后，规则集与本仓真实 Python 绑定，不再随工具版本漂移。
+#
+# 取值依据（三处一致，勿单一改动）：CI `.github/workflows/ci.yml` python-version 3.11、
+# `deploy/Dockerfile.backend` FROM python:3.11-slim、本机 conda 环境 3.11。
+# 注意：agent/ 是独立 py3.12 项目，但已在下方 exclude 中排除，本项对它无影响。
+target-version = "py311"
+
 # 客户端（uni-app x：UTS/Kotlin/uvue）不属于 Python 工具链（B2 决策，2026-08-24）
 #
 # agent：开发部同事交付的 Coze Agent 包（2026-09-23 原样入库，依据见 agent/UPSTREAM.md）。

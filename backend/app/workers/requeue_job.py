@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -121,7 +121,7 @@ def run_requeue(
     - failed: 单行处置异常数（保留原状，下轮重试）
     """
     db: Session = SessionLocal()
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
+    cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
     requeued = finalized = skipped_final = failed = 0
     try:
         candidates = _stale_candidates(db, cutoff, limit)

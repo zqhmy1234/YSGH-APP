@@ -10,6 +10,7 @@
 """
 import hashlib
 import uuid
+from datetime import UTC
 
 import pytest
 from app.db.models import Content, CorrectionLog, User
@@ -298,7 +299,7 @@ def test_correction_soft_deleted_content_rejected(db_user, mock_encode):
       ② 恢复（deleted_at 清空）→ 200（证明 404 归因软删，而非归属/参数等其他原因）
     错误码 EVENT_005 保持不变（本端点既有口径，不随过滤收敛改变）。
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.api import deps
     from app.main import app
@@ -309,7 +310,7 @@ def test_correction_soft_deleted_content_rejected(db_user, mock_encode):
     _make_content(
         db, user.id, cid,
         text="回收站里的纠错内容",
-        deleted_at=datetime.now(timezone.utc),
+        deleted_at=datetime.now(UTC),
     )
     client = TestClient(app)
     app.dependency_overrides[deps.get_current_user] = lambda: user

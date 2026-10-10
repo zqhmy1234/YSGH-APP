@@ -15,7 +15,7 @@ run_user_aggregation（F3 独立 per-user RQ 任务）；event_aggregation 底�
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -111,7 +111,7 @@ def aggregate_user(
     if mode != "full":
         # S6-1 增量游标化：l2l3 只扫增量窗口内的未成候选内容，不再全量重扫远古内容
         stmt = stmt.where(
-            Content.created_at >= datetime.now(timezone.utc) - timedelta(days=_AGG_WINDOW_DAYS)
+            Content.created_at >= datetime.now(UTC) - timedelta(days=_AGG_WINDOW_DAYS)
         )
     contents = db.execute(stmt).scalars().all()
     if not contents:

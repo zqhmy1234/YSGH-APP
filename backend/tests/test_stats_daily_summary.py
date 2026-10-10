@@ -4,7 +4,7 @@
   产生 = 事件+成员内容落库 / 处理 = 聚合口径正确 / 输出 = API 字段对齐 + 空态诚实
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.session import SessionLocal
@@ -60,7 +60,7 @@ class TestDailySummaryChain:
         """产生：两条事件（一新一旧）+ 成员内容落库"""
         db, user = db_user
         uid = str(user.id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ev_old, _ = _mk_event_with_content(db, uid, "旧事件", now - timedelta(days=3), "旧内容")
         ev_new, _ = _mk_event_with_content(db, uid, "新事件", now - timedelta(hours=1), "新内容")
         assert ev_old.id and ev_new.id
@@ -71,7 +71,7 @@ class TestDailySummaryChain:
 
         db, user = db_user
         uid = str(user.id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _mk_event_with_content(db, uid, "旧事件", now - timedelta(days=3), "旧内容A")
         _mk_event_with_content(db, uid, "旧事件2", now - timedelta(days=2), "旧内容B")
         ev_new, _ = _mk_event_with_content(db, uid, "最新事件", now - timedelta(hours=1), "新内容C")
@@ -102,7 +102,7 @@ class TestDailySummaryChain:
         d0 = r0.json()["data"]
         assert d0["count"] == 0 and d0["latest_event_text"] is None, f"空态不诚实: {d0}"
         # 建数据后再验
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _mk_event_with_content(db, uid, "详情链最新", now - timedelta(minutes=30), "内容X")
         r = client.get("/api/v1/stats/daily-summary", headers=headers)
         assert r.status_code == 200, r.text

@@ -21,7 +21,7 @@ import hashlib
 import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -191,7 +191,7 @@ def _verify_sms_code(db: Session, req, client_ip: str | None) -> str:
     if _otp_in_cooldown(req.phone):
         raise ApiError(ERR_AUTH_004, "验证码错误次数过多，请稍后再试", http=429)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     record = db.execute(
         select(SmsCode).where(
             SmsCode.phone == req.phone,

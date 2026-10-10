@@ -328,7 +328,7 @@ def _check_rewrite_case(case: dict, now=None) -> bool:
 def _now(now) -> object:
     import datetime as _dt
 
-    return now if now is not None else _dt.datetime.now(_dt.timezone.utc).astimezone()
+    return now if now is not None else _dt.datetime.now(_dt.UTC).astimezone()
 
 
 def _eval_rewrite(cases_path: Path) -> dict:

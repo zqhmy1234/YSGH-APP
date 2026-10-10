@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.services.search_filters import (
@@ -88,8 +88,8 @@ def test_to_filter_handles_every_declared_key(key):
 
     values = {
         "content_types": ["photo"],
-        "time_from": datetime(2026, 1, 1, tzinfo=timezone.utc),
-        "time_to": datetime(2026, 2, 1, tzinfo=timezone.utc),
+        "time_from": datetime(2026, 1, 1, tzinfo=UTC),
+        "time_to": datetime(2026, 2, 1, tzinfo=UTC),
         "place": "苏州",
         "tag": "小张",
         "content_class": "travel",
@@ -163,7 +163,7 @@ def test_pg_fallback_time_and_type_filters(db_user):
 
     db, user = db_user
     word = f"对拍探针{uuid.uuid4().hex[:6]}"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old = Content(
         user_id=user.id, content_type="text", text=f"{word} 旧", source="app",
         status="confirmed", taken_at=now - timedelta(days=30),

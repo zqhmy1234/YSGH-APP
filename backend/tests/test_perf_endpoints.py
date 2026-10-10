@@ -8,7 +8,7 @@ fixture 风格对齐 conftest.py（client / auth_headers / cleanup_user）+
 test_export.py（pytestmark=integration + SessionLocal 落库）。
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event, EventItem, Message
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 def _seed(db, user_id: str, other_id: str) -> None:
     """落库：3 个有效事件（2 天）+ 1 个软删事件 + 4 照片/1 文字 + 未读/已读消息"""
-    day = datetime(2026, 9, 1, 10, 0, 0, tzinfo=timezone.utc)
+    day = datetime(2026, 9, 1, 10, 0, 0, tzinfo=UTC)
     ev_same_day_1 = Event(id=str(uuid.uuid4()), user_id=user_id, start_time=day, status="confirmed")
     ev_same_day_2 = Event(  # 同天 → day_count 不重复计
         id=str(uuid.uuid4()), user_id=user_id, start_time=day + timedelta(hours=2), status="confirmed"
@@ -28,7 +28,7 @@ def _seed(db, user_id: str, other_id: str) -> None:
         id=str(uuid.uuid4()), user_id=user_id, start_time=day + timedelta(days=1), status="confirmed"
     )
     ev_deleted = Event(
-        id=str(uuid.uuid4()), user_id=user_id, start_time=day, deleted_at=datetime.now(timezone.utc)
+        id=str(uuid.uuid4()), user_id=user_id, start_time=day, deleted_at=datetime.now(UTC)
     )
     photo_a = Content(id=str(uuid.uuid4()), user_id=user_id, content_type="photo", status="done")
     photo_b = Content(id=str(uuid.uuid4()), user_id=user_id, content_type="photo", status="done")
