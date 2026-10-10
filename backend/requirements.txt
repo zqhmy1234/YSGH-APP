@@ -29,6 +29,12 @@ pyjwt>=2.9
 httpx>=0.27.2        # CVE-2024-40635 需 >=0.27.2；核心依赖（code2session/amap/content_safety/guard/wechat 均在用）
 dashscope>=1.20          # 阿里云百炼（qwen/护栏）
 numpy>=1.26              # 音频 PCM 解码与 SenseVoice logits 后处理（直接依赖）
+                         # ⚠️ 实际被钉在 1.26.x：funasr-onnx 声明 numpy<=1.26.4（硬顶，勿升 2.x）
+pyarrow<26               # 上限必须钉（2026-10-10 CI 实测）：pyarrow 26 起在运行时断言
+                         # numpy>=2（PYPI 元数据里**不声明**，故 pip 会欣然解出坏组合），
+                         # 而 numpy 被 funasr-onnx 顶在 <=1.26.4 ⇒ 26 一进来就 ImportError。
+                         # 症状是 CI 的 warm_hf_models.py 预热失败（sentence-transformers
+                         # → datasets → pyarrow 这条 eager import 链）。25.0.1 配 numpy 1.26.4 已实测可 import。
 funasr-onnx>=0.4.2       # SenseVoiceSmall 本地 CPU 情绪识别
 modelscope>=1.20         # SenseVoiceSmall-ONNX 模型下载与缓存
 imageio-ffmpeg>=0.6      # M4A/MP3/AAC 等统一解码为 16kHz 单声道

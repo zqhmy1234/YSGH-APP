@@ -50,7 +50,15 @@ jobs:
         #   （Settings 全部字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env 即可实例化）。
         #   此前只 `pip install ruff` ⇒ 该检查恒因 ModuleNotFoundError 报「模板漂移」而**假红**，
         #   真因是环境缺依赖、与模板内容无关。只补这两个包，不装全量 requirements。
-        run: pip install ruff pydantic pydantic-settings
+        # ruff 必须**钉版本**：2026-10-10 实测 `pip install ruff`（不钉）装到了 0.17.0，
+        #   而 0.17.0 改了「无 pyproject/requires-python 时 target-version 的默认推断」，
+        #   于是 UP017(datetime.UTC) 在本仓 66 个文件 154 处突然报红 —— 代码一行没动，
+        #   规则集自己变了。仓库跑的是 Python 3.11，但 ruff.toml 从未声明 target-version，
+        #   这正是它会被上游静默改动的根因。
+        #   钉 0.16.8 = 与开发机一致、也是本仓最后一次 lint 全绿的版本。
+        #   **升级 ruff 时须先本地跑 `ruff check .` 看有无新增命中，再改这里的版本号。**
+        #   与下方 full-gate 的同一行**必须保持一致**（两处一起改）。
+        run: pip install ruff==0.16.8 pydantic pydantic-settings
 
       - name: Run static gate (syntax/lint/secrets/todos, no tests)
         run: python scripts/review_agent.py --full --skip-tests
@@ -154,7 +162,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r backend/requirements.txt
-          pip install pytest pytest-cov httpx ruff
+          pip install pytest pytest-cov httpx ruff==0.16.8   # 钉版本的理由见上方 fast-gate 同名步骤；两处必须一致
 
       - name: Dependency vulnerability scan (pip-audit, non-blocking annotation)
         # TD-P2A（2026-08-26）：依赖扫描入 CI（技术债清理计划 P3-60）。
