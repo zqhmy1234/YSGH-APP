@@ -335,6 +335,13 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 		}
 		const onFail = (): void => {
 			console.log('[dbg-req] FAIL ' + path)
+			// 🚨 2026-10-11 静态审查修复：**必须先判 settled**。
+			// 看门狗（budget+5000ms）先判超时后会 resolve(null)，而 uni.request 的 fail
+			// 回调可能随后迟到 ⇒ 用户连收两个 toast（"请求超时" + "网络异常"）、Sentry 双报。
+			// 重构前看门狗是静默的（只有 log），不存在该竞态；补上 toast 后必须同步补守卫。
+			if (settled) {
+				return
+			}
 			captureException('network fail: ' + path + hostTag(), 'api.network', null)
 			showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
 			finish(null)

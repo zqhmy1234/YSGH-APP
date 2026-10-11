@@ -678,40 +678,48 @@
 		color: var(--c-ink-500, #8a7a6a);
 	}
 
-	/* ── 壳内空态（2026-10-09）：视觉=empty 页（画布 2:284 空状态帧），就地渲染不跳页 ── */
-	.empty-home {
+	/* ── 壳内空态（2026-10-09）：视觉=empty 页（画布 2:284 空状态帧），就地渲染不跳页 ──
+	   🚨 2026-10-11 静态审查修复：类名统一加 `ti-` 前缀（TabIndex）。
+	   原实现直接沿用 empty 页的 `.empty-*` 类名，而 uni-app x 的 `<style>` 是**全局**的
+	   ⇒ 与 `pages/empty/empty.uvue` 内联的 `.empty-*`、`styles/favorites.css` 的
+	   `.empty-*`（**absolute 定位 + 完全不同的几何**：`.empty-illus{position:absolute;left/top}`
+	   `.empty-cta{width:480.8rpx;height:107.7rpx}`）三方同名，胜出者取决于样式表合并顺序
+	   （不受仓库控制）⇒ 空态插画/CTA 可能被 favorites 版的绝对定位钉死、错位到屏外。
+	   加前缀后三处彻底隔离，各页各管自己的空态。（改名前几何已与 empty 页逐值对齐，
+	   改名不改值 ⇒ 无视觉变化。） */
+	.ti-empty-home {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		padding: 60rpx 0 120rpx 0;
 	}
-	.empty-illus {
+	.ti-empty-illus {
 		position: relative;
 		width: var(--d-raw-r240, 240rpx);
 		height: var(--d-lattice-p131, 252rpx);
 	}
-	.empty-sun {
+	.ti-empty-sun {
 		position: absolute;
 		left: var(--d-raw-r112, 112rpx);
 		top: 0;
 		width: var(--d-raw-r120, 120rpx);
 		height: var(--d-raw-r120, 120rpx);
 	}
-	.empty-lake {
+	.ti-empty-lake {
 		position: absolute;
 		left: 0;
 		top: var(--d-raw-r72, 72rpx);
 		width: var(--d-raw-r240, 240rpx);
 		height: var(--d-raw-r180, 180rpx);
 	}
-	.empty-lake-img {
+	.ti-empty-lake-img {
 		position: absolute;
 		left: var(--d-raw-r24, 24rpx);
 		top: var(--d-raw-r24, 24rpx);
 		width: var(--d-raw-r192, 192rpx);
 		height: var(--d-raw-r112, 112rpx);
 	}
-	.empty-title {
+	.ti-empty-title {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: 68rpx;
 		font-size: var(--d-raw-r44, 44rpx);
@@ -719,7 +727,7 @@
 		color: var(--c-ink-900, #3a2e25);
 		font-weight: 600;
 	}
-	.empty-desc {
+	.ti-empty-desc {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: var(--d-raw-r22, 22rpx);
 		font-size: var(--d-raw-r28, 28rpx);
@@ -727,10 +735,10 @@
 		text-align: center;
 		line-height: var(--d-raw-r42, 42rpx);
 	}
-	.empty-desc2 {
+	.ti-empty-desc2 {
 		margin-top: 0;
 	}
-	.empty-cta {
+	.ti-empty-cta {
 		margin-top: var(--d-raw-r72, 72rpx);
 		width: var(--d-lattice-p260, 500rpx);
 		height: var(--d-raw-r112, 112rpx);
@@ -741,19 +749,19 @@
 		border-radius: var(--d-raw-r56, 56rpx);
 		box-shadow: 0 var(--d-raw-r12, 12rpx) var(--d-raw-r32, 32rpx) var(--a-rust-30, rgba(176, 89, 58, 0.3));
 	}
-	.empty-cta-text {
+	.ti-empty-cta-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		color: var(--c-white, #ffffff);
 		font-size: var(--d-raw-r32, 32rpx);
 		font-weight: 600;
 	}
-	.empty-voice {
+	.ti-empty-voice {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: var(--d-lattice-p27, 52rpx);
 		padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
 		align-items: center;
 	}
-	.empty-voice-text {
+	.ti-empty-voice-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-raw-r28, 28rpx);
 		font-weight: 600;

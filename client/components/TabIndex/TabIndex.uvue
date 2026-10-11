@@ -86,19 +86,19 @@
 			     09-07 骨架屏实锤），且下方 feed 因 R9-D 是无条件渲染 ⇒ v-if 空态块与 feed 必然
 			     叠渲染（真机实拍：空态引导和日卡片挤在一页）。改走骨架屏同款「恒渲染 + class
 			     display:none」互斥，走属性更新路径，不依赖节点卸载。 -->
-			<view class="empty-home" :class="emptyState ? '' : 'ui-hidden'">
-				<view class="empty-illus">
-					<image class="empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
-					<view class="empty-lake"><image class="empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
+			<view class="ti-empty-home" :class="emptyState ? '' : 'ui-hidden'">
+				<view class="ti-empty-illus">
+					<image class="ti-empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
+					<view class="ti-empty-lake"><image class="ti-empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
 				</view>
-				<text class="empty-title">还没有回忆</text>
-				<text class="empty-desc">拍一张照片，或说几句话</text>
-				<text class="empty-desc empty-desc2">你的回忆会住在这里</text>
-				<view class="empty-cta pressable" @tap="emptyTakeFirst">
-					<text class="empty-cta-text">拍下第一张</text>
+				<text class="ti-empty-title">还没有回忆</text>
+				<text class="ti-empty-desc">拍一张照片，或说几句话</text>
+				<text class="ti-empty-desc ti-empty-desc2">你的回忆会住在这里</text>
+				<view class="ti-empty-cta pressable" @tap="emptyTakeFirst">
+					<text class="ti-empty-cta-text">拍下第一张</text>
 				</view>
-				<view class="empty-voice pressable" @tap="emptyVoice">
-					<text class="empty-voice-text">或者，录一段语音</text>
+				<view class="ti-empty-voice pressable" @tap="emptyVoice">
+					<text class="ti-empty-voice-text">或者，录一段语音</text>
 				</view>
 			</view>
 

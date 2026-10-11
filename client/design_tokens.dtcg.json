@@ -152,43 +152,43 @@
     "$type": "gradient",
     "$description": "实测 10 种（百分之百取自实测：括号配平提取 + 只切顶层逗号 + 停靠点写显式 0%/100%；已回源逐条校验色多集一致）。",
     "veil-sand-sand": {
-      "$value": "linear-gradient(tobottom, #E3CCA8 0%, #C7AD87 100%)",
+      "$value": "linear-gradient(to bottom, #E3CCA8 0%, #C7AD87 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-green-green": {
-      "$value": "linear-gradient(tobottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-paper-sand": {
-      "$value": "linear-gradient(tobottom, rgba(248,247,244,0) 0%, #f8f7f4 100%)",
+      "$value": "linear-gradient(to bottom, rgba(248,247,244,0) 0%, #f8f7f4 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-paper-paper": {
-      "$value": "linear-gradient(tobottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-paper-paper-2": {
-      "$value": "linear-gradient(tobottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-ink-ink": {
-      "$value": "linear-gradient(tobottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-ink-ink-2": {
-      "$value": "linear-gradient(tobottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-ink-ink-2-3": {
-      "$value": "linear-gradient(tobottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-olive-amber-diag": {
-      "$value": "linear-gradient(tobottomright, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%)",
+      "$value": "linear-gradient(to bottom right, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-slate-olive-diag": {
-      "$value": "linear-gradient(tobottomright, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%)",
+      "$value": "linear-gradient(to bottom right, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     }
   },

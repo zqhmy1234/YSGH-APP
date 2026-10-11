@@ -394,8 +394,11 @@
 		// 原实现只清展示用计时器（recordTimer）——而 shell 的返回键分支只把 `sheetOpen=false`，
 		// 组件随即被 `v-if` 卸载（未走 onClose 路径）⇒ **录音中按返回键时原生录音可能仍在后台
 		// 继续**（表现为"面板关了还在录"；再打开面板状态错乱、时长与文件对不上）。
+		// ⚠️ 必须用 `abandonRecording`（只停不保存）而非 `stopRecordNow`：后者会走原生
+		// onStop → onRecordStopped 的**保存链**（转写/上传/emitSaved）⇒ 卸载时会变成
+		// "边退出边把这段录音存下来"，而用户按返回的意图是取消（2026-10-11 二轮修正）。
 		if (recording.value) {
-			vr.stopRecordNow()
+			vr.abandonRecording()
 		}
 	})
 

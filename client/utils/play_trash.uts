@@ -6,7 +6,7 @@
  */
 import { get, post, request, dataArr } from './api'
 import { enqueueDeleteOp } from './sync_queue'
-import { getNetKind } from './uploader_net'
+import { currentNetKind } from './uploader_net'
 
 export function deleteContent(contentId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
@@ -17,9 +17,12 @@ export function deleteContent(contentId: string): Promise<boolean> {
 			}
 			// B12（2026-09-23）：**离线不再白丢用户操作** —— 入队 delete 墓碑，联网后由
 			// `pushPendingOps` 幂等补发（op_id 幂等 + 软删幂等，重发无副作用）。
-			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 getNetKind()=='none' 改口**：
+			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 `currentNetKind()=='none'` 改口**：
 			// 否则用户看到"删除失败"而操作其实已排队 = 状态与事实不符（detail.uvue 已同步改）。
-			if (getNetKind() == 'none') {
+			// 🚨 2026-10-11 静态审查修复：原写 `getNetKind() == 'none'` —— getNetKind 是
+			// **回调式且返回 void**，`void == 'none'` 恒假 ⇒ 本分支永不进入（入队从未发生）。
+			// 改为同步缓存读 `currentNetKind()`（由 uploader_net 的网络监听维护）。
+			if (currentNetKind() == 'none') {
 				enqueueDeleteOp('content', contentId)
 				console.log('[yishu] 离线：删除已入队 content=' + contentId)
 			}

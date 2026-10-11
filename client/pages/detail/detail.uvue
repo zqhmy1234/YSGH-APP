@@ -151,8 +151,11 @@
 	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
 import { deleteContent } from '@/utils/play_trash'
 import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/play_content'
-	// B12：离线判定（play.ts 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
-	import { getNetKind } from '@/utils/uploader_net'
+	// B12：离线判定（play_* 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
+	// 🚨 2026-10-11 静态审查修复：原用 `getNetKind()`（回调式、返回 void）做同步判断 ⇒
+	// `void == 'none'` 恒假，改口分支永不进入（用户仍看到"失败"而操作其实已排队）。
+	// 改用同步缓存读 `currentNetKind()`（见 uploader_net 注释）。
+	import { currentNetKind } from '@/utils/uploader_net'
 	import { formatIsoShortTime } from '@/utils/time'
 	import {
 		toggleVoice,
@@ -448,7 +451,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 										// B12：离线时**删除已入队**（play.ts 侧 enqueueDeleteOp），故不能报"失败"。
 										// 本地墓碑 = 立即按已删处理并返回上一页（避免用户以为没删掉又点一次）；
 										// 队列条数在「存储与同步」页的同步卡可见（pendingSyncCount 已上屏）。
-										if (getNetKind() == 'none') {
+										if (currentNetKind() == 'none') {
 											uni.showToast({ title: '已离线：删除将在联网后自动完成', icon: 'none', duration: 2500 })
 											setTimeout(() => {
 												goBack()
@@ -539,7 +542,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 						// B12：离线时**备注已入队**（play.ts 侧 enqueueFieldOp），故不报"保存失败"；
 						// 本地态保持旧值不变（本函数一贯 response-first：成功才改本地显示），
 						// 联网后由同步链补发，队列条数在同步卡可见。
-						if (getNetKind() == 'none') {
+						if (currentNetKind() == 'none') {
 							uni.showToast({ title: '已离线：备注将在联网后同步', icon: 'none', duration: 2500 })
 							return
 						}

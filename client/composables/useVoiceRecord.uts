@@ -56,6 +56,11 @@ export class VoiceRecorder {
 
 	private anim: RecordAnimations
 	private resetAiLabel: () => void
+	/** 「放弃本次录音」标记（2026-10-11 静态审查）：组件卸载/关面板时置位 ⇒ 原生 onStop
+	 *  回调走 onRecordStopped 时**只复位状态，不进入转写/上传/保存链**。
+	 *  为什么需要：卸载时若直接 stopRecordNow，原生回调会带着时长进保存链 ⇒
+	 *  「录音中按返回键」会变成"边退出边把这段录音存下来"（用户意图是取消）。 */
+	private abandonFlag: boolean = false
 
 	private emitSaved: () => void
 	private emitClose: () => void
@@ -248,12 +253,48 @@ export class VoiceRecorder {
 		}
 	}
 
+	/**
+	 * 放弃本次录音（**只停，不转写/不上传/不保存**）——组件卸载/面板关闭时用。
+	 *
+	 * 2026-10-11 静态审查：修复"卸载时停录音会顺带保存"——先置 `abandonFlag`，
+	 * 原生 onStop 回调进入 `onRecordStopped` 时即走早退分支。
+	 * 与 `stopRecordNow` 的区别只在语义：后者是"用户主动结束并要求处理"（进保存链）。
+	 */
+	abandonRecording(): void {
+		if (!this.recording.value) {
+			return
+		}
+		this.abandonFlag = true
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[yishu] abandon stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 原生不可用：没有回调，直接自行复位
+			this.abandonFlag = false
+			this.setRecordingOff()
+			this.recState.value = 'idle'
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+				this.recordTimer.value = 0
+			}
+		}
+	}
+
 	onRecordStopped(path: string, durationMs: number): void {
 		this.setRecordingOff()
 		this.recState.value = 'idle'
 		if (this.recordTimer.value > 0) {
 			clearInterval(this.recordTimer.value)
 			this.recordTimer.value = 0
+		}
+		// 🚨 2026-10-11 静态审查：放弃态（组件卸载中调 abandonRecording）**只复位、不进保存链**。
+		// 否则「录音中按返回键关闭面板」会触发转写+上传+保存（用户意图是取消）。
+		if (this.abandonFlag) {
+			this.abandonFlag = false
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			console.log('[yishu] 放弃态：录音已停止，不上传不保存')
+			return
 		}
 		if (durationMs < 500) {
 			this.recordHint.value = '轻触中央圆点 · 开始录音'
@@ -297,7 +338,10 @@ export class VoiceRecorder {
 			if (merge != null) {
 				const dm = merge.getJSON('dominant')
 				if (dm != null) {
-					hints.push('主导情绪：' + (dm.getString('this.emotion') ?? '') + '（时长最长段）')
+					// 🚨 2026-10-11 静态审查修复：原为 `dm.getString('this.emotion')` ——
+					// 搬迁时「x.value → this.x.value」的批量替换**误伤了字符串字面量**
+					// （emotion 是后端 JSON 键，不是 JS 成员），导致主导情绪永远取空。
+					hints.push('主导情绪：' + (dm.getString('emotion') ?? '') + '（时长最长段）')
 				}
 			}
 			if (res.noiseWeight == 'equal') {

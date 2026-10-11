@@ -9,6 +9,51 @@
 
 ---
 
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716858
+- **错误**：上轮为修「录音中卸载不停录音」而调 stopRecordNow，导致卸载时顺带进入转写/上传/保存链（按返回键=取消，却把录音存了下来）
+- **根因**：停止函数有两个语义（用户主动结束并要求处理 vs 放弃/卸载），原实现只有前者；修复时只看了「有没有停」，没看「停之后的回调链会做什么」——修复引入的新调用路径没有重新走一遍该函数的全部副作用
+- **修复**：useVoiceRecord 新增 abandonRecording()（置放弃标记 + stopRecord，onRecordStopped 早退只复位状态）；RecordSheet 卸载改调它
+- **相关文件**：client/composables/useVoiceRecord.uts · components/RecordSheet/RecordSheet.uvue
+- **教训**：复用停止/关闭类函数前先读它的全部副作用：清理路径要的是只停不做，不能直接调停并处理的那个
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：壳内空态（10-09 新增）沿用 empty 页的 .empty-* 类名，与 empty.uvue 内联 + favorites.css 三方同名且几何互斥（absolute vs in-flow）
+- **根因**：uvue 的 style 与外置 css 都是全局作用域，而「视觉复用某页样式」的惯用做法是直接抄类名；三方同名后胜出者取决于样式表合并顺序（不受仓库控制）⇒ 元素错位只在真机某一路径暴露
+- **修复**：壳内空态整族类名加 ti- 前缀隔离（改名不改值）；新增同类样式前先全仓搜类名占用
+- **相关文件**：client/styles/tab-index.css · components/TabIndex/TabIndex.uvue
+- **教训**：uvue 样式全局：跨文件复用视觉必须换前缀，不能直接沿用相近页面类名（同名类胜负不可控）
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：令牌集里 12 条渐变值是非法 CSS（linear-gradient(tobottom, …) 缺空格）——若运行时 var() 生效则所有渐变整条失效
+- **根因**：令牌值由脚本从设计源提取生成，生成后没有回源合法性校验；tobottom 这种拼写错误在生成器里合法通过，而所有使用点的回退值都是正确的 to bottom（两套值不一致且门禁视为等价）
+- **修复**：修 design_tokens.dtcg.json 12 处并重跑 token_codemod --write-block；令牌生成链补「值合法性」校验（渐变方向/颜色语法）
+- **相关文件**：client/design_tokens.dtcg.json · scripts/token_codemod.py
+- **教训**：令牌/codegen 产物同样需要合法性校验：回退值正确会掩盖令牌值非法，一旦运行时取令牌值即整体失效
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：B12「离线不白丢用户操作」四处分支永不进入：写成 if (getNetKind() == 'none')，而该函数是回调式且返回 void
+- **根因**：把回调式 API 当同步函数用：void 与字符串比较恒假（逻辑永不成立），且按同步签名传参在运行期是无定义回调；uni-app x 编译器对函数 arity 宽松（不传回调也能编过）⇒ 编译门全绿而功能静默失效
+- **修复**：uploader_net 新增同步缓存读 currentNetKind()（由 uni.onNetworkStatusChange 监听 + 首次探测维护），四处调用点改用之；并在 getNetKind 签名注释里钉死「必须传回调」
+- **相关文件**：client/utils/uploader_net.uts · play_trash.uts · play_content.uts · pages/detail/detail.uvue
+- **教训**：回调式 API 不得当同步用：变量参与比较前先看返回类型（void 比较恒假）；需要同步读就维护受监听驱动的缓存，并把调用契约写进函数注释
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：重构搬迁后「主导情绪」诊断行永远为空：useVoiceRecord 里写成 dm.getString('this.emotion')
+- **根因**：搬迁时做「x.value → this.x.value」的批量替换，误伤了字符串字面量（emotion 是后端 JSON 键，被当成成员访问改了名）；这类错误编译期合法、运行期只表现为取值恒空（无异常无日志）
+- **修复**：改回 dm.getString('emotion')；并明确：批量替换脚本必须先切掉字符串/注释区间（引号配平）再替换
+- **相关文件**：client/composables/useVoiceRecord.uts
+- **教训**：codemod/批量替换前先切掉字符串与注释区间：改成员访问的规则会静默改坏 JSON 键、路径、文案
+
+---
+
 ### 2026-10-11 16:36 · commit c356781 · ts=1791707777
 - **错误**：门禁 lint 报 UP037：局部变量类型注解写成字符串形式（queue.Queue[tuple[str, Any] | None] 带引号）
 - **根因**：写带 PEP 604 联合的泛型注解时习惯性加引号（怕运行期求值），但本文件顶部已有 from __future__ import annotations——字符串注解此时纯属多余，ruff UP037 直接判违规

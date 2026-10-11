@@ -8,7 +8,7 @@ import { get, request, dataObj } from './api'
 import { getBaseUrl } from './config'
 import { getToken } from './auth'
 import { enqueueFieldOp } from './sync_queue'
-import { getNetKind } from './uploader_net'
+import { currentNetKind } from './uploader_net'
 import { PATH_WAVEFORM } from './contract'
 
 export class ContentAiMeta {
@@ -170,8 +170,10 @@ export function updateContentRemark(contentId: string, remark: string): Promise<
 				return
 			}
 			// B12：离线时备注同样入队（upsert_field），联网后补发；仍返回 false，
-			// 由调用方据 getNetKind()=='none' 改口（同 deleteContent 的注释口径）。
-			if (getNetKind() == 'none') {
+			// 由调用方据 `currentNetKind()=='none'` 改口（同 deleteContent 的注释口径）。
+			// 🚨 2026-10-11 静态审查修复：原 `getNetKind() == 'none'` 恒假（回调式 void 返回，
+			// 详见 uploader_net.currentNetKind 注释）⇒ 入队从未发生。
+			if (currentNetKind() == 'none') {
 				enqueueFieldOp('content', contentId, 'remark', remark)
 				console.log('[yishu] 离线：备注已入队 content=' + contentId)
 			}
