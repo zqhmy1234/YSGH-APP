@@ -71,6 +71,32 @@ function isProdBaseUrlSuspicious(url: string): boolean {
 
 /** 占位符告警只打一次（避免每请求刷屏） */
 let _prodBaseUrlWarned = false
+/** dev 配置出现在打包产物的告警位（同样只喊一次） */
+let _devEnvInPackageWarned = false
+
+/**
+ * 运行时判定：当前是否运行在 **HBuilderX 开发载体**上（标准基座）。
+ *
+ * 见 `getBaseUrl` 里 2026-10-11 的根治注释——本函数是"打包产物绝不允许连本机回环"
+ * 这条闸门的判据。依据是 Android 包名：
+ *   · 标准基座 = `io.dcloud.uniappx`（HBuilderX 运行到手机的载体；编译日志里的
+ *     `/pidof io.dcloud.uniappx` 亦可佐证）
+ *   · 云打包调试基座 / 正式包 = manifest.json 里配置的自定义包名 ⇒ 一律 **不是** 开发载体
+ * ⚠️ 取不到包名（API 不可用/异常）时**保守返回 false**：安全侧宁可走生产地址，
+ * 也绝不让打包产物连上 `127.0.0.1`（那正是"新包全挂"的形态）。
+ * ⚠️ 本 API 在 5.24/5.26 dts 的收录情况以**编译门**为准（编不过就换 `uni.getSystemInfoSync()`
+ * 的等价字段——同 lessons 的"dts 缺 API ≠ 不可用，先编译探针"口径）。
+ */
+function isDevCarrier(): boolean {
+	try {
+		const info = uni.getAppBaseInfo()
+		const pkg = info.packageName ?? ''
+		return pkg == 'io.dcloud.uniappx' || pkg == 'io.dcloud.HBuilder'
+	} catch (e) {
+		console.log('[yishu] isDevCarrier 探测失败（按打包产物处理，安全侧）: ' + e)
+		return false
+	}
+}
 
 /** dev 调试页常驻开关（O20）：非 dev 构建（ENV='prod'）自动关闭——
  *  值为 ENV 派生，生产构建无需人工改；dev 构建下 profile"关于"区展示调试入口。
@@ -85,6 +111,26 @@ export function getBaseUrl(): string {
 			console.error('[yishu] PROD_BASE_URL 疑似未配置好（' + PROD_BASE_URL
 				+ '）——请替换为真实公网地址后再出包，否则所有接口都会失败。'
 				+ '换址操作只有这一处（另服务端一处见 deploy/ONE_SWAP.md）')
+		}
+		return PROD_BASE_URL
+	}
+	// ═══ 2026-10-11 环境根治（**新包整体不可用的头号根因**）═══════
+	// 背景实锤：ENV 是**编译期常量、随代码提交**——10-09 真机联调把它从 'prod' 改成
+	// 'dev' 并随「壳内空态重构」一起提交（c356781），出包时忘改回 ⇒ 正式包内
+	// getBaseUrl() 返回 `http://127.0.0.1:8010`（**手机自己的回环地址**，什么都没有）
+	// ⇒ 所有接口全挂、每个页面都取不到数据；release 包 console 又不可见 ⇒
+	// 表现为"各个页面都无法正常体验、数据流被切断"这种整体性、无从下手的故障
+	// （与文件头 8010 抢占事故同源：本项目最贵的一类）。
+	// 修法（不只改回常量，根治漂移）：**打包产物一律不允许走 dev 地址**——
+	// 只有 HBuilderX 开发载体（标准基座）才认 dev 分支；其余（云打包调试基座/正式包）
+	// 即便 ENV 误留 'dev' 也强制走 PROD_BASE_URL。这样"忘改 ENV"从"新包全挂"
+	// 降级为"新包照常可用"，同时真机联调完全不受影响。
+	if (!isDevCarrier()) {
+		if (!_devEnvInPackageWarned) {
+			_devEnvInPackageWarned = true
+			console.error('[yishu] ⚠️ ENV=\'dev\' 出现在**打包产物**中：已强制改用 PROD_BASE_URL'
+				+ '（防止正式包连本机回环 127.0.0.1 导致全站接口空）。'
+				+ '若是联调请用 HBuilderX 标准基座运行；若是出包请把 ENV 改回 \'prod\' 并跑 preflight。')
 		}
 		return PROD_BASE_URL
 	}
