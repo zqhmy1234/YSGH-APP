@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-12 00:24 · commit bbb1c3e · ts=1791735851
+- **错误**：pre-commit（hook 经 Git Bash 调 python）报 openapi_snapshot 失败，但同一时刻手动 python scripts/review_agent.py 与 python scripts/gen_openapi.py --check 均为 [OK]
+- **根因**：待查，已排除两点：Git Bash 与 PowerShell 用的是同一个解释器（which python → Python313）；gen_openapi 本身可正常导出。怀疑为字节级快照比对在 hook 并发场景下的间歇性不稳定（或与 .cowork-temp 报告写入竞争）
+- **修复**：重跑即通过；后续建议把 openapi 比对改为结构化（键序/空白不敏感）并做复现实验证
+- **相关文件**：scripts/review_agent.py（check_openapi_snapshot）
+- **教训**：字节级快照比对对键序/环境敏感 ⇒ 间歇红会消耗门禁公信力，能结构化就别字节比对
+
+---
+
+### 2026-10-12 00:24 · commit bbb1c3e · ts=1791735851
+- **错误**：批量脚本替换 docstring 文本后引入 183 字符长行，pre-commit 的 ruff E501 拦下提交（scripts/test_agent.py:16）
+- **根因**：用 Python 脚本做批量文本替换时只校验'替换命中/内容正确'，没有跑 lint；docstring 段落原本行宽不受约束，插入长句即越 120
+- **修复**：拆行（1 行→2 行）；习惯：任何脚本化改 .py 之后先跑 python -m ruff check <files> 再提交
+- **相关文件**：scripts/test_agent.py:16
+- **教训**：脚本批量改 .py 文本后必须紧接着跑 ruff——否则会在提交环节才被拦，浪费一整轮
+
+---
+
 ### 2026-10-11 19:47 · commit c85d174 · ts=1791719270
 - **错误**：令牌化把 11 处声明挂上了值不等的令牌（Δ3~16/255）：用户气泡底 #AA5334→#b05a3a、遮罩 rgba(42,33,26,0.4)→ink-40、骨架屏 #EFE9DD→paper-300 等
 - **根因**：codemod 的令牌匹配按「近似色」归一（以为同一设计色在不同文件的手写差异应统一），但 3~16/255 的差异已不是取色误差而是不同颜色；且回退值保留了原值，使差异只在「var() 生效」时才显现——两套值并存让问题被门禁与肉眼同时忽略
