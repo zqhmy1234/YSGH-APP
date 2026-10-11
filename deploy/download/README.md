@@ -38,7 +38,7 @@ cd deploy/download && python -m http.server 8080
 | 1 | 主按钮 `href` | `apk/yishu-beta-latest.apk` | 把 APK 按**固定文件名**放进 `apk/` 即自动生效（无需改 HTML） |
 | 2 | 「约 29.5 MB」 | 占位 | 回填真实文件大小 |
 | 3 | 「更新于 2026-10-07」 | 占位 | 回填出包日期 |
-| 4 | `qr/download-placeholder.svg` | 占位件 | **同名覆盖**为真实二维码图片（改后缀需同步改 HTML） |
+| 4 | `qr/download-placeholder.svg` | ✅ 2026-10-11 已覆盖 | **同名覆盖**为真实二维码图片（改后缀需同步改 HTML）；已指向 CloudBase 静态托管公网地址 `https://ysgh-download-d0gpfcbls03b205d5-1470386035.tcloudbaseapp.com/` |
 | 5 | `qr/feedback-placeholder.svg` | 占位件 | 同上（内测反馈群建好后） |
 
 页脚还有两处**待备案完成后**填写：备案号、隐私政策 / 用户协议链接（当前是 `#` 占位）。
@@ -61,5 +61,15 @@ cd deploy/download && python -m http.server 8080
 
 ## 部署
 
-由主窗用 Cloud Studio 集成部署本目录（静态服务）后拿到公网地址。**部署前请先确认 5 处替换点已回填**，
-否则用户看到的是「约 — MB」和占位二维码。
+**当前线上（2026-10-11 已上线）**：腾讯云 CloudBase 静态网站托管（环境 `ysgh-download`，免费体验版），
+公网地址 `https://ysgh-download-d0gpfcbls03b205d5-1470386035.tcloudbaseapp.com/`。
+
+- 部署方式：CloudBase 控制台 → 静态网站托管 → 网站部署 → 本地项目上传（zip 代码包）
+- 配置：项目框架=其他；安装命令/构建命令=留空；构建产物目录=`.`；部署路径=`/`
+- **zip 打包必须用正斜杠分隔符**（Windows `Compress-Archive` 默认反斜杠会导致云端解压失败，
+  日志报 `code.zip appears to use backslashes as path separators`；用 Python `zipfile` 打包或替换分隔符）
+- 更新页面/APK：重新上传 zip 覆盖即可（同名文件覆盖）；更新单个二维码可走「文件管理」上传同名文件
+- 默认域名仅限开发测试（有访问频率限制）；正式对外建议绑定已备案自定义域名
+- 原 Cloud Studio 集成部署方案因仓库私有（不支持从 Git 导入私有仓库）弃用
+
+**部署前请先确认 5 处替换点已回填**，否则用户看到的是「约 — MB」和占位二维码。
