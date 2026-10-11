@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-10-12 01:21 · commit 43a3664 · ts=1791739274
+- **错误**：ngrok 免费版对判定为浏览器的请求返回拦截页（ERR_NGROK_6024）：本机 curl 与模拟浏览器 UA 的请求都拿到警告页 HTML 而非真响应；带 ngrok-skip-browser-warning 头才拿到真 JSON
+- **根因**：ngrok 免费版按 User-Agent 判定浏览器并插入 interstitial；判定主要看 UA 是否含 Mozilla（实测 Accept: image/* 仍被拦，说明与 Accept 无关）
+- **修复**：所有 API 请求统一走 api.uts 的 buildHeader（已含该头）；image 组件无法加自定义头，靠 Android 原生 UA（OkHttp/Glide，通常不含 Mozilla）放行，并列为出包验收硬项真机验证
+- **相关文件**：client/utils/api.uts / client/utils/http_headers.uts
+- **教训**：免费隧道带拦截页：凡不能自定义头的通道（图片/音视频）都要单独真机验证，不能假设与 API 同权
+
+---
+
+### 2026-10-12 01:21 · commit 43a3664 · ts=1791739267
+- **错误**：pack.ps1 两个自伤：①§1 跑客户端编译门会唤醒 HBuilderX，§2 紧接着做'5 秒 CPU 不增长'判定 ⇒ 每次必判自己忙、永远打不了包；②完成判定匹配裸'打包成功'，撞上日志提示语'打包成功后会自动返回下载链接' ⇒ 刚提交云端就'完成'并提前退出
+- **根因**：①同一脚本内先后依赖相互矛盾的状态（先让它忙、再要求空闲）；②用 substring 匹配日志终态，而日志里存在含同关键词的**过程性提示语**
+- **修复**：①改为轮询等待空闲（最多 90s）②只认真正终态 '安装包下载地址'
+- **相关文件**：scripts/dev/pack.ps1
+- **教训**：门禁/脚本里的'前置条件检查'必须考虑它自己刚刚制造的状态；用关键词判终态要排除同词的过程性提示
+
+---
+
+### 2026-10-12 01:21 · commit 43a3664 · ts=1791739267
+- **错误**：用 Python 脚本批量 replace 后 write_bytes(encode('utf-8')) 重写 .ps1，丢掉了 UTF-8 BOM ⇒ Windows PowerShell 5.1 按 ANSI 解码中文 ⇒ 语法错误（tunnel.ps1 报 Unexpected token '}'）
+- **根因**：脚本作者的便利写法（读=utf-8-sig / 写=utf-8）不对称；BOM 在读写往返中被静默丢弃，而错误现象（Unexpected token）与真实原因（编码）看起来毫无关系
+- **修复**：统一补回 BOM（[System.IO.File]::WriteAllBytes(BOM+bytes)）；更好：改 .ps1 一律用编辑器的 replace_in_file（保留原编码），不用 Python 脚本重写
+- **相关文件**：scripts/dev/tunnel.ps1 / deploy/scripts/preflight_pack.ps1 / scripts/dev/pack.ps1
+- **教训**：含中文的 .ps1 必须保持 UTF-8 BOM：脚本化改写后立即跑一次语法检查，别等到运行时才发现
+
+---
+
 ### 2026-10-12 00:24 · commit bbb1c3e · ts=1791735851
 - **错误**：pre-commit（hook 经 Git Bash 调 python）报 openapi_snapshot 失败，但同一时刻手动 python scripts/review_agent.py 与 python scripts/gen_openapi.py --check 均为 [OK]
 - **根因**：待查，已排除两点：Git Bash 与 PowerShell 用的是同一个解释器（which python → Python313）；gen_openapi 本身可正常导出。怀疑为字节级快照比对在 hook 并发场景下的间歇性不稳定（或与 .cowork-temp 报告写入竞争）

@@ -194,3 +194,5 @@ config/mcporter.json
 # write_base_url.ps1 / pack.ps1 读取）。它是环境产物而非源码：随隧道重启与换机器而变，
 # 入库只会让别的机器拿到一个连不上的地址 ⇒ 一律忽略。
 deploy/.tunnel-url
+# 2026-10-12 补：隧道**模式**记录（static/quick/random），与地址文件同类（本机运行产物）
+deploy/.tunnel-mode

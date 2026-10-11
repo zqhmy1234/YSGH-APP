@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   忆述光华 · 出包链一键化（2026-10-11）
 
@@ -101,19 +101,38 @@ else {
     }
 
     # 单实例空闲预检：cli pack 与其它窗口的 cli pack/launch 并发会互杀（2026-10-04 实测）
+    #
+    # ⚠️ 2026-10-12 修一个**自锁缺陷**：本文件 §1 刚跑过客户端编译门（会唤醒 HBuilderX 并让它忙一阵），
+    #    紧接着这里做"5 秒 CPU 不增长"的一次性判定 ⇒ **每次都会判自己忙**、永远打不了包。
+    #    改为**轮询等待空闲**（最多 90 秒）：既保留防并发保护，又不会自我阻断。
+    $idle = $false
     $hx = Get-Process HBuilderX -ErrorAction SilentlyContinue
-    if ($hx) {
-        $cpu1 = ($hx | Measure-Object -Property CPU -Sum).Sum
-        Start-Sleep -Seconds 5
-        $hx2 = Get-Process HBuilderX -ErrorAction SilentlyContinue
-        $cpu2 = ($hx2 | Measure-Object -Property CPU -Sum).Sum
-        if ($cpu2 -gt ($cpu1 + 1)) {
-            Bad 'HBuilderX 正在忙（CPU 5 秒内持续增长）' '等它空闲（或关掉正在跑的运行/打包任务）再出包，否则并发会互杀'
+    if (-not $hx) {
+        $idle = $true
+        Info 'HBuilderX 未运行（cli 会自行拉起）'
+    }
+    else {
+        for ($i = 1; $i -le 18; $i++) {
+            $h1 = Get-Process HBuilderX -ErrorAction SilentlyContinue
+            if (-not $h1) { $idle = $true; break }
+            $c1 = ($h1 | Measure-Object -Property CPU -Sum).Sum
+            Start-Sleep -Seconds 5
+            $h2 = Get-Process HBuilderX -ErrorAction SilentlyContinue
+            if (-not $h2) { $idle = $true; break }
+            $c2 = ($h2 | Measure-Object -Property CPU -Sum).Sum
+            $delta = $c2 - $c1
+            if ($delta -lt 1.0) {
+                $idle = $true
+                Info ("HBuilderX 已空闲（第 {0} 次探测，5 秒 CPU 增量 {1:N2}）" -f $i, $delta)
+                break
+            }
+            Info ("HBuilderX 仍忙（第 {0}/18 次，5 秒 CPU 增量 {1:N2}）—— 编译门刚跑完属正常，继续等…" -f $i, $delta)
+        }
+        if (-not $idle) {
+            Bad 'HBuilderX 持续繁忙（等待 90 秒仍未空闲）' '关掉正在跑的运行/打包/索引任务再出包，否则并发会互杀'
             exit 1
         }
-        Info 'HBuilderX 存在且空闲（单实例并发预检通过）'
     }
-    else { Info 'HBuilderX 未运行（cli 会自行拉起）' }
 
     # 口令文件（仓库外；键值形式 path/alias/passwd）
     $pwFile = Get-ChildItem (Join-Path $SigningDir 'keystore-password-*.txt') -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -155,9 +174,14 @@ else {
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 10
         if (Test-Path $packLog) {
-            $hit = Select-String -Path $packLog -Pattern '打包成功|安装包下载地址' -ErrorAction SilentlyContinue | Select-Object -Last 1
+            # ⚠️ 2026-10-12 修误判：**不能匹配裸 `打包成功`**——日志里有一句提示语
+            #    「打包成功后会自动返回下载链接」，会让脚本在**刚提交云端时**就认为完成并提前退出
+            #    （实测踩到：01:17 提交、01:18 就"完成"，实际云端才刚开始打包）。
+            #    只认真正的终态：`安装包下载地址`（打包完成返回）或显式失败。
+            $hit = Select-String -Path $packLog -Pattern '安装包下载地址|download_url|打包失败' -ErrorAction SilentlyContinue | Select-Object -Last 1
             if ($hit) { $doneLine = $hit.Line.Trim(); break }
-            $failHit = Select-String -Path $packLog -Pattern '打包失败|错误' -ErrorAction SilentlyContinue | Select-Object -Last 1
+            # 真失败的判据：出现 `打包失败` 或云端返回 error（不要用裸"错误"——日志里有"错误码"之类的正常提示）
+            $failHit = Select-String -Path $packLog -Pattern '打包失败|打包步骤.*失败' -ErrorAction SilentlyContinue | Select-Object -Last 1
             if ($failHit) { Bad ("云打包失败：" + $failHit.Line.Trim()) "看 $packLog"; Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue; exit 1 }
         }
     }
@@ -241,9 +265,14 @@ if ($Deploy) {
         Info "旧包已备份：$(Split-Path $bak -Leaf)"
     }
     Copy-Item $apkPath $dist -Force
-    $sha = (Get-FileHash $dist -Algorithm SHA256).Hash
+    # ⚠️ 2026-10-12：原实现直接 `(Get-FileHash $dist).Hash` 插值 ⇒ 偶发拿到空值
+    #    （刚拷完文件仍被占用/索引未刷新时会抛，而 ErrorActionPreference=Continue 让它**静默**变成空串，
+    #     表现为交付说明里 `SHA256 =` 后面什么都没有 —— 而 sha256 是交付三项里唯一可校验的一项）。
+    $sha = ''
+    try { $sha = (Get-FileHash $dist -Algorithm SHA256).Hash }
+    catch { Warn2 "哈希计算失败（文件可能仍被占用）：$($_.Exception.Message)" }
     Ok "已投放 $dist"
-    Ok "SHA256 = $sha"
+    if ($sha) { Ok "SHA256 = $sha" } else { Warn2 'SHA256 未取到 —— 请稍后手工核对（Get-FileHash）再交付' }
     Write-Host '  还需人工：回填 deploy/download/index.html 的文件大小/更新日期，并确认二维码' -ForegroundColor Yellow
 }
 else {

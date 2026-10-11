@@ -70,8 +70,23 @@ pwsh -File deploy\scripts\preflight_pack.ps1 -AllowTunnel
   也强制走 `PROD_BASE_URL`。这条是「忘改 ENV ⇒ 新包全站不可用」事故的根治（见 `docs/决策台账.md` §4.18）。
 - API 请求统一带 `ngrok-skip-browser-warning` 头（`api.uts` 的 `buildHeader`）：ngrok 免费版
   会对"类浏览器 UA"插入拦截页；uni-app 默认 UA 含 `Mozilla` ⇒ 不带此头时请求会拿到 HTML。
-- **`<image>`/音频走 `uni.downloadFile({header})`**（同 `buildHeader`）⇒ 同样带得上该头，
-  故图片通路不受拦截页影响。
+- ⚠️ **拦截页实测（2026-10-12）**：本机 `Invoke-WebRequest`（默认 UA）与**手工模拟 Android
+  浏览器 UA** 的请求，都拿到警告页 HTML（`ERR_NGROK_6024`）；带 `ngrok-skip-browser-warning`
+  头才拿到真 JSON。⇒ **判定主要看 UA 是否含 `Mozilla`，与 `Accept` 无关**。
+  **推论**：`<image>` / 音视频等**无法添加自定义头**的通道**不受我们控制** —— 只能指望
+  Android 原生 http 栈（OkHttp/Glide）的 UA 不含 `Mozilla` 而放行。音频已改走
+  `uni.downloadFile({header})`（可控 ✓）；**`<image>` 仍不可控**，故：
+  **必须把"真机图片是否正常显示"列为出包验收硬项**。若图片全裂，二选一：
+  ① 媒体改走 `uni.downloadFile({header})` + 本地路径显示（改动面较大）；
+  ② 换 **cloudflared named tunnel** 或 ngrok 付费（去掉拦截页）。
+- **隧道模式记录**：`tunnel.ps1` 会把 `static`/`quick`/`random` 写进 `deploy/.tunnel-mode`，
+  `preflight` 读它 + 与 `deploy/.tunnel-url` 比对做判定 —— 因为**光看域名后缀判不出会不会换址**
+  （`ngrok http 8010 --url=<域名>` 固定，`ngrok http 8010` 拿到随机地址，两者形态一样），
+  而后缀本身也换过（`.io` → `.app` → **`.dev`**，2026-10-12 实测为 `.dev`）。
+- **`pack.ps1` 的两个已知坑（已修，但复现时要知道）**：① §1 的编译门会唤醒 HBuilderX，
+  而 §2 要求"HBuilderX 空闲"⇒ 原实现一次性判定会**自锁**（已改轮询等待 90s）；
+  ② 完成判定**不能匹配裸「打包成功」**——日志里有提示语「打包成功**后会自动返回**下载链接」，
+  会让脚本刚提交云端就"完成"退出（已改只认「安装包下载地址」）。
 
 ## 流程
 

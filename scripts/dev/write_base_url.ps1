@@ -11,7 +11,7 @@
   用法：
       # 出包态：ENV='prod' + REAL_DEVICE_HOST='' + PROD_BASE_URL=<隧道地址>
       pwsh -File scripts\dev\write_base_url.ps1                     # 地址取自 deploy\.tunnel-url
-      pwsh -File scripts\dev\write_base_url.ps1 -BaseUrl https://xxx.ngrok-free.app
+      pwsh -File scripts\dev\write_base_url.ps1 -BaseUrl https://xxx.ngrok-free.dev
 
       # 真机联调态（adb reverse + 标准基座）：ENV='dev' + REAL_DEVICE_HOST='localhost'
       pwsh -File scripts\dev\write_base_url.ps1 -Restore
@@ -79,7 +79,7 @@ else {
         exit 1
     }
     if ($BaseUrl -notmatch '^https?://') {
-        Bad "地址必须以 http(s):// 开头：$BaseUrl" '隧道地址形如 https://xxx.ngrok-free.app（不带结尾斜杠）'
+        Bad "地址必须以 http(s):// 开头：$BaseUrl" '隧道地址形如 https://xxx.ngrok-free.dev（不带结尾斜杠）'
         exit 1
     }
     $BaseUrl = $BaseUrl.TrimEnd('/')

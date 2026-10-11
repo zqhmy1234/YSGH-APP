@@ -108,12 +108,38 @@ try {
             #     ⇒ **合法**，等同普通公网地址，直接 Pass（已从占位词表移除）
             #   · 临时隧道（cloudflared quick tunnel 等，重启即换址）⇒ 默认 FAIL；
             #     显式 `-AllowTunnel` 时降为 WARN + 交付提醒（应急可用，但必须告知测试同学）
+            # 更可靠的判据（2026-10-12）：**读 tunnel.ps1 记录的模式**与地址，而不是猜域名后缀。
+            #   · 后缀写死会过期——ngrok 免费版静态域名从 `.io` → `.app` → **`.dev`** 换过好几轮
+            #     （本机实测 `xxx.ngrok-free.dev`），按后缀列白名单必然要跟着改；
+            #   · 更要命的是：`ngrok http 8010` **不带** `--url` 时拿到的是**随机地址**，
+            #     与静态域名长得一模一样 ⇒ 黑名单根本判不出来。
+            $modeFile = Join-Path $RepoRoot 'deploy\.tunnel-mode'
+            $urlRecFile = Join-Path $RepoRoot 'deploy\.tunnel-url'
+            $tunnelMode = if (Test-Path $modeFile) { (Get-Content $modeFile -Raw).Trim() } else { '' }
+            $recordedUrl = if (Test-Path $urlRecFile) { (Get-Content $urlRecFile -Raw).Trim() } else { '' }
+            $matchesRecord = ($recordedUrl -ne '') -and ($prodBase.TrimEnd('/') -eq $recordedUrl.TrimEnd('/'))
+            $isRecordedStatic = $matchesRecord -and ($tunnelMode -eq 'static')
+            $isRecordedVolatile = $matchesRecord -and ($tunnelMode -in @('quick', 'random'))
+
             $ephemeralTunnels = @('trycloudflare.com', 'loca.lt', 'localtunnel.me', 'serveo.net')
             $hitEphemeral = @($ephemeralTunnels | Where-Object { $prodBase -like "*$_*" })
 
             if ($reasons.Count -gt 0) {
                 Fail ("PROD_BASE_URL = '$prodBase' —— " + ($reasons -join '；')) `
                     '改成真实公网地址（形如 http://43.x.x.x:8010）或固定地址隧道（https://xxx.ngrok-free.app）。换址清单见 deploy/ONE_SWAP.md'
+            }
+            elseif ($isRecordedStatic) {
+                Pass "PROD_BASE_URL = '$prodBase'（**固定地址隧道** · 已与 deploy\.tunnel-url 核对，模式 static ⇒ 重启不换址）"
+            }
+            elseif ($isRecordedVolatile) {
+                $why = if ($tunnelMode -eq 'random') { 'ngrok 未指定静态域名 ⇒ 免费版随机地址' } else { 'cloudflared 快速隧道' }
+                if ($AllowTunnel) {
+                    Warn "PROD_BASE_URL 是**会变的隧道地址**（$why）：重启即换址 ⇒ 已分发 APK 会立刻全部连不上。内测应急可接受，**交付时必须写明**"
+                    Pass "PROD_BASE_URL = '$prodBase'（可变态隧道 · 已显式放行）"
+                }
+                else {
+                    Fail "PROD_BASE_URL 是**会变的隧道地址**（$why）" '固定地址方案：pwsh -File scripts\dev\tunnel.ps1 -StaticDomain <你的静态域名>；确要应急请显式加 -AllowTunnel'
+                }
             }
             elseif ($hitEphemeral.Count -gt 0) {
                 if ($AllowTunnel) {

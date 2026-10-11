@@ -11,7 +11,7 @@
 
   用法：
       # 起隧道并打印公网 URL（推荐：ngrok 静态域名，地址永久固定 ⇒ 隧道重启不用重出包）
-      pwsh -File scripts\dev\tunnel.ps1 -Provider ngrok -StaticDomain yishu.ngrok-free.app
+      pwsh -File scripts\dev\tunnel.ps1 -Provider ngrok -StaticDomain xxx.ngrok-free.dev
 
       # 只看当前已经在跑的隧道（不起新的）
       pwsh -File scripts\dev\tunnel.ps1 -QueryOnly
@@ -45,6 +45,13 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $here '..\..')).Path
 }
 $urlFile = Join-Path $RepoRoot 'deploy\.tunnel-url'
+# 隧道**模式**记录（2026-10-12 实操补）：`static`＝地址永久固定（ngrok 静态域名 /
+# named tunnel 自有域名）/ `quick`＝cloudflared 快速隧道 / `random`＝ngrok 未指定域名
+# （免费版给随机地址，**重启即换**）。
+# 为什么记它：光看地址**判不出**会不会换址——`ngrok http 8010 --url=<域名>` 是固定的，
+# 而 `ngrok http 8010`（不带 --url）拿到的是随机地址，两者域名形态一模一样。
+# preflight 读本文件才能给出准确判定（不误拦固定地址、也不放过随机地址）。
+$modeFile = Join-Path $RepoRoot 'deploy\.tunnel-mode'
 
 function Info($m) { Write-Host "  [INFO] $m" -ForegroundColor Gray }
 function Ok($m) { Write-Host "  [ OK ] $m" -ForegroundColor Green }
@@ -158,10 +165,22 @@ if (-not $url) {
 # 落盘供后续脚本（write_base_url.ps1 / pack.ps1）读取
 Set-Content -Path $urlFile -Value $url -Encoding ASCII
 Ok "公网地址：$url"
-Info "已写入 $urlFile（不入库）"
-if ($url -match 'trycloudflare\.com') {
-    Write-Host '  [WARN] 这是**临时隧道**地址：重启即换址 ⇒ 已分发 APK 会立刻全部连不上。' -ForegroundColor Yellow
-    Write-Host '         内测期请用 ngrok 静态域名（-StaticDomain）或 named tunnel 固定地址。' -ForegroundColor Yellow
+# 记录隧道模式 + 与地址一并落盘（供 preflight / status 做准确判定）
+$tunnelMode = if ($Provider -eq 'ngrok') {
+    if ([string]::IsNullOrWhiteSpace($StaticDomain)) { 'random' } else { 'static' }
+}
+else { 'quick' }
+[System.IO.File]::WriteAllText($modeFile, $tunnelMode, [System.Text.UTF8Encoding]::new($false))
+Info "已写入 $urlFile 与 $modeFile（模式：$tunnelMode；均不入库）"
+if ($tunnelMode -ne 'static') {
+    if ($tunnelMode -eq 'random') {
+        Write-Host '  [WARN] ngrok 未指定静态域名 ⇒ 这是**随机地址**（免费版每次重启都换）。' -ForegroundColor Yellow
+        Write-Host '         重新起：pwsh -File scripts\dev\tunnel.ps1 -StaticDomain xxx.ngrok-free.dev' -ForegroundColor Yellow
+    }
+    else {
+        Write-Host '  [WARN] 这是**临时隧道**地址：重启即换址 ⇒ 已分发 APK 会立刻全部连不上。' -ForegroundColor Yellow
+        Write-Host '         内测期请用 ngrok 静态域名（-StaticDomain）或 named tunnel 固定地址。' -ForegroundColor Yellow
+    }
 }
 Write-Host ''
 exit 0

@@ -25,16 +25,23 @@
 
 ## 下一步（按优先级）
 
-1. **用户领取 ngrok 静态域名 + authtoken**（阻塞 1）→ `ngrok config add-authtoken <token>`
-2. 打通出包链：`scripts/dev/tunnel.ps1 -Provider ngrok -StaticDomain <域名>` →
-   `write_base_url.ps1` → `preflight_pack.ps1 -AllowTunnel` → `scripts/dev/pack.ps1 -Deploy`
-3. **云打包出新 APK → 无数据线真机验收**：空态页 / 时间轴 / AI 对话 / 画像四页往返
-4. 百炼凭据续期后关掉 `MOCK_EXTERNAL_AI`（当前审核链走 mock 直通，仅过渡）
+1. **等云打包完成**（2026-10-12 01:17 已提交云端，类型＝Android 自有证书）→ 下载 APK →
+   `pack.ps1 -SkipPack -Apk <apk> -Deploy`（尸检 + 投放 `deploy/download/`）
+2. **真机验收（无数据线）**：安装 APK，重点验证 **图片是否正常**（见阻塞 1）、
+   空态页 / 时间轴 / AI 对话 / 画像四页往返
+3. 百炼凭据续期后关掉 `MOCK_EXTERNAL_AI`（当前审核链走 mock 直通，仅过渡）
+
+**已完成**：静态域名 `coleslaw-absence-harvest.ngrok-free.dev`（永久固定）已领取并配置
+（`ngrok config add-authtoken` 完成）；隧道已起；三件套已切出包态；前置门 **8 节全绿**（含新增的
+「固定地址隧道 · 已与 .tunnel-url 核对」判定与客户端编译门 43s）。
 
 ## 阻塞
 
-1. **ngrok 静态域名 + authtoken 需用户手工领取**（本机只有 Tabbit 非标准 Chromium，
-   浏览器自动化 relay 不认它 ⇒ 无法代领）。拿到后：`ngrok config add-authtoken <token>`
+1. 🟡 **图片通路待真机验证**（ngrok 免费版拦截页）：实测本机带浏览器 UA 的请求会拿到警告页 HTML；
+   `ngrok-skip-browser-warning` 头可过（API 已统一带），但 **`<image>` 组件无法加自定义头** ⇒
+   只能靠 Android 原生 UA（通常不含 Mozilla）放行。**若真机图片全裂**，二选一：
+   ① 媒体改走 `uni.downloadFile({header})` + 本地路径显示（改动面较大）；
+   ② 换 cloudflared named tunnel / ngrok 付费（去掉拦截页）。
 2. agent 侧 LLM 暂用系统变量注入的 DeepSeek key（`deepseek-ugsimulator`）；
    百炼 Token Plan 到期未续 ⇒ 护栏/生成链走 mock（`MOCK_EXTERNAL_AI=true`）
 

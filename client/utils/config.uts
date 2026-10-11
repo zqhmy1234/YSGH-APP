@@ -37,7 +37,7 @@ const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
  *   - 占位未替换时 `getBaseUrl()` 会 `console.error` 喊出来——因为"接口全空且不报错"
  *     是最费排障时间的失败形态（与本文件头 8010 抢占事故同源教训）。
  */
-const PROD_BASE_URL: string = 'https://weighted-promotions-britannica-miller.trycloudflare.com'
+const PROD_BASE_URL: string = 'https://coleslaw-absence-harvest.ngrok-free.dev'
 
 /**
  * 生产基址的"看起来没配好"标记词（2026-09-21 泛化）

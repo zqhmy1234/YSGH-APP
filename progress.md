@@ -581,3 +581,37 @@
 **验证**：客户端编译门 **63.4s 通过**（含 `http_headers.uts` 新增与 auth/audio/api 改动）；
 `python scripts/review_agent.py --full --skip-tests` **12 项全绿**（含新增 4 项）；
 harness 外部审计 **76 → 100/100**。
+
+## ✅ 速查卡 · 2026-10-12 · 固定地址出包链跑通（第二版内测 APK 已投放）
+
+✅ **浏览器代领（替代手工）**：本机没有标准 Chromium（只有非标准路径的 Tabbit），autoglm relay 不认它。
+改走 **Tabbit 自带的 LocalAgent**（`%LOCALAPPDATA%\Tabbit\LocalAgent\bin\tabbit-cli.exe`，Playwright 运行时）：
+`create` → `nodejs --task X --request-id Y`（stdin 喂 JS，**Windows 用 `Get-Content -Raw -Encoding UTF8 | & $cli`**，
+cmd 重定向会报"文件名语法不正确"）→ 领到静态域名 + authtoken → `finish`。
+**这条路以后可复用**：任何"需要用户已登录的网页操作"都能让 Agent 自己干，不必再让人手工。
+
+✅ **固定地址打通**：静态域名 **`coleslaw-absence-harvest.ngrok-free.dev`**（注意后缀是 **`.dev`**，
+不是代码/文档里原先假定的 `.app`——ngrok 换过后缀）。`ngrok config add-authtoken` 已配；
+`tunnel.ps1` 起隧道成功（本机管理 API 4040 抓 URL）。
+
+✅ **端到端出包链一次跑通**（这是本轮的真正目标）：
+`tunnel.ps1`（static 模式）→ `write_base_url.ps1`（三件套切出包态）→ `preflight_pack.ps1 -AllowTunnel`
+（**8 节全绿**，含新增的「固定地址隧道 · 已与 .tunnel-url 核对，模式 static」判定与客户端编译门 43s）
+→ 云打包（**类型＝Android 自有证书**）→ 下载 26.8MB → 尸检（签名 SHA256 `cfb43629…22f2`
+**与 `docs/图标与签名证书_20260921.md` §五 登记值逐字节一致**；四项权限齐备）→ 投放
+`deploy/download/apk/yishu-beta-latest.apk`（旧包已备份）→ 回填下载页（26.8MB / 2026-10-12）。
+
+✅ **修掉三个"自己写的东西伤自己"**（都在本轮实测暴露，已修并入教训台账）：
+① **脚本化改 .ps1 丢 BOM** ⇒ PowerShell 5.1 中文乱码 ⇒ 语法错误（tunnel.ps1 报 Unexpected token）；
+② **`pack.ps1` 自锁**：§1 编译门唤醒 HBuilderX，§2 又要求它"5 秒 CPU 不增长" ⇒ 必判自己忙 ⇒ 改轮询等待；
+③ **`pack.ps1` 完成误判**：正则匹配裸「打包成功」撞上提示语「打包成功**后会自动返回**下载链接」
+⇒ 刚提交云端就"完成"退出 ⇒ 改只认「安装包下载地址」。另修 SHA256 静默空值。
+
+✅ **新增"隧道模式"记录**（`deploy/.tunnel-mode`）：光看域名后缀判不出"重启会不会换址"
+（`ngrok http 8010 --url=<域名>` 固定 vs 不带 --url 得随机地址，形态一样；后缀还换过 `.io`→`.app`→`.dev`）
+⇒ `tunnel.ps1` 记模式，`preflight` 读模式+比对地址做准确判定。
+
+⚠️ **遗留（真机验收硬项）**：**ngrok 免费版拦截页**（`ERR_NGROK_6024`）实测存在——带浏览器 UA 的请求
+会拿到警告页 HTML，带 `ngrok-skip-browser-warning` 头才拿到真响应。API 已统一带头 ✓；但 **`<image>`
+无法加自定义头**，只能指望 Android 原生 UA（不含 Mozilla）放行。**装包后第一件事就是看图片是否正常**；
+若全裂，改媒体走 `uni.downloadFile({header})` 或换 named tunnel。
