@@ -20,7 +20,7 @@
 			<!-- 60:778 搜索图标 18pt（复用 i2_392：同几何 圆9.75+柄4.125 #B05A3A） -->
 			<image class="capsule-icon" src="/static/icons/i2_392.svg" />
 			<view class="capsule-input-area">
-				<input class="capsule-input" v-model="keyword" placeholder="在收藏中搜索" placeholder-style="color:#B2A696;font-size:28.8rpx" />
+				<input class="capsule-input" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="在收藏中搜索" placeholder-style="color:#B2A696;font-size:28.8rpx" />
 			</view>
 		</view>
 
