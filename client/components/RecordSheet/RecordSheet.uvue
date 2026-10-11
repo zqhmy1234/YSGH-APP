@@ -650,6 +650,17 @@
 			uni.hideLoading()
 			photoUploading.value = false
 			if (uploaded.length > 0) {
+				// A7 手选分类接线（2026-09-26 补）：照片态保存时若有手选分类（非 custom: 前缀），
+				// 对每张成功上传照片登记纠错（content_type='photo'）→ 后端回写 contents.content_class
+				const picked = manualLabel.value
+				if (picked != '' && picked.indexOf('custom:') != 0) {
+					for (let i = 0; i < uploaded.length; i++) {
+						// text 参数用于纠错向量化；照片无转写文本，以路径占位（后端 schema min_length=1 约束）
+						submitCorrection(uploaded[i].contentId, uploaded[i].item.path, picked, '', 'photo').then((ok: boolean) => {
+							console.log('[yishu] photo manual correction ok=' + ok)
+						})
+					}
+				}
 				uni.showToast({ title: '已记录', icon: 'success' })
 				emit('saved')
 				photos.value = []
