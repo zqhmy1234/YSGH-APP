@@ -108,7 +108,25 @@
 		savedSeq: { type: Number, default: 0 }
 	})
 	onMounted((): void => {
-		const t = props.typeQuery
+		applyTypeQuery(props.typeQuery)
+		loadRecent()
+	})
+	// 🚨 2026-10-11 静态审查修复：**必须 watch typeQuery**。
+	// 本组件在壳内**常驻不销毁**（shell 用 v-if 首次挂载 + v-show 切换），而原实现只在
+	// onMounted 读一次 prop ⇒ 「先进过搜索 tab → 回"我的"点类型入口 → 再进搜索」时
+	// `typeQuery` 变了但没人响应，筛选器**停留在上次的值**（用户以为点了没反应）。
+	// 注：本项既有缺口非本次重构引入，但同属 seq 桥"看似完整实则有洞"一类。
+	watch((): string => props.typeQuery, (t: string): void => {
+		applyTypeQuery(t)
+	})
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
+	})
+
+	/** 承接 ?type= 预设筛选（photo/voice/text → 1/2/3；'' 或其他值不动，避免误清用户手选） */
+	function applyTypeQuery(t: string): void {
 		if (t == 'photo') {
 			activeFilter.value = 1
 		} else if (t == 'voice') {
@@ -116,13 +134,7 @@
 		} else if (t == 'text') {
 			activeFilter.value = 3
 		}
-		loadRecent()
-	})
-	watch((): number => props.savedSeq, (n: number): void => {
-		if (n > 0) {
-			onRecordSaved()
-		}
-	})
+	}
 
 	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
 	class VoiceResult {

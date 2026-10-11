@@ -27,6 +27,19 @@ export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 const REQUEST_TIMEOUT_MS: number = 15000
 
+/**
+ * Sentry 上报的 host 后缀（2026-10-11 静态审查 · 环境差异专题）。
+ *
+ * 为什么必须带：本项目最贵故障形态是「接口全空且不报错」（dev 地址误进生产包 / 隧道失效 /
+ * 明文被拦），而 release 包 **console 不可见** ⇒ Sentry 是唯一出口。原上报只带 `path`
+ * （如 `network fail: /api/v1/events/timeline`）——出包后**无法判断客户端连的是哪个 host**，
+ * 排查只能靠猜（是 prod 域名没换？隧道挂了？还是被 Android 明文策略拦了？）。
+ * host 为公开地址、非敏感信息（Sentry DSN 本身即明文内嵌，同口径）。
+ */
+function hostTag(): string {
+	return ' @' + getBaseUrl()
+}
+
 /** 底层原始响应（O5 收口）：status（0=网络失败）+ body（对象守卫后的信封，null=非对象/裸值） */
 export class HttpResult {
 	status: number
@@ -48,7 +61,13 @@ export function showErrorToast(err: Error | null): void {
 	})
 }
 
-function buildHeader(): UTSJSONObject {
+/**
+ * 请求头（Authorization + JSON）。
+ * 2026-10-09 起对外导出：流式通道（chat_api 的 `enableChunked` 分支）绕开了本模块的
+ * `doRequest`，必须复用**同一份**头构造——各写一份的话，迟早出现"流式请求忘了带 token"
+ * 这类只在某一条路径上失效的问题。
+ */
+export function buildHeader(): UTSJSONObject {
 	const header: UTSJSONObject = {
 		'Content-Type': 'application/json'
 	}
@@ -261,7 +280,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 		// （不派发、不回调），故 timeout 改 JS 层看门狗、GET 且无 body 时省略 data 键与 Content-Type
 		const timer = setTimeout(() => {
 			console.log('[watchdog] timeout ' + path)
-			captureException('watchdog timeout after ' + budget + 'ms: ' + path, 'api.network', null)
+			captureException('watchdog timeout after ' + budget + 'ms: ' + path + hostTag(), 'api.network', null)
 			showErrorToast(new ApiError('TIMEOUT', '请求超时（' + budget + 'ms），请稍后重试'))
 			finish(null)
 		}, budget + 5000)
@@ -280,7 +299,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			}
 			// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
 			if (res.statusCode >= 500) {
-				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
 			}
 			// 2026-09-01 正式修复（根因实锤于诊断日志）：401/非200 时后端 data 可能非 JSON 对象，
 			// 旧写法 fallback `({} as UTSJSONObject)` 在蒸汽模式（纯 JS）下是裸 JS 对象——
@@ -316,7 +335,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 		}
 		const onFail = (): void => {
 			console.log('[dbg-req] FAIL ' + path)
-			captureException('network fail: ' + path, 'api.network', null)
+			captureException('network fail: ' + path + hostTag(), 'api.network', null)
 			showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
 			finish(null)
 		}
@@ -382,7 +401,7 @@ function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, 
 				: null
 			// 5xx 服务端异常 → Sentry 上报（与 request 同噪音闸门；4xx 业务错误不打扰）
 			if (res.statusCode >= 500) {
-				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
 			}
 			// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
 			if (res.statusCode === 401 && !retried) {
@@ -401,7 +420,7 @@ function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, 
 			finish(new HttpResult(res.statusCode, body))
 		}
 		const onFail = (): void => {
-			captureException('network fail: ' + path, 'api.network', null)
+			captureException('network fail: ' + path + hostTag(), 'api.network', null)
 			finish(new HttpResult(0, null))
 		}
 		if (method === 'GET') {
@@ -473,7 +492,7 @@ function doUploadFileHttp(
 				const body = parseEnvelopeString(raw)
 				// 5xx 服务端异常 → Sentry 上报（与 rawRequest 同噪音闸门）
 				if (res.statusCode >= 500) {
-					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+					captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
 				}
 				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
 				if (res.statusCode === 401 && !retried) {
@@ -492,7 +511,7 @@ function doUploadFileHttp(
 				resolve(new HttpResult(res.statusCode, body))
 			},
 			fail: () => {
-				captureException('network fail: ' + path, 'api.network', null)
+				captureException('network fail: ' + path + hostTag(), 'api.network', null)
 				resolve(new HttpResult(0, null))
 			}
 		})

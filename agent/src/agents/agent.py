@@ -295,15 +295,15 @@ def agent_runtime_summary() -> dict:
     }
 
 
-def run_agent(query: str, user_id: str = "", ctx=None, max_rounds: int | None = None):
-    """
-    带输出校验的 Agent 调用入口
+def _prepare_run(user_id: str, ctx):
+    """`run_agent` / `run_agent_stream` 的**公共前置**：访问控制 + agent 单例 + 运行配置。
 
-    :param query: 用户输入
-    :param user_id: 用户标识（用于数据隔离和对话隔离）
-    :param ctx: 请求上下文
-    :param max_rounds: 最大校验重试轮数；None = 用 `AGENT_MAX_ROUNDS`（默认 2）
-    :return: Agent 执行结果（含 `_diag` 诊断字段）
+    为什么必须抽出一份（2026-10-09）：两条入口（同步/流式）各写一份的话，
+    `user_id` 守卫早晚有一份被改漏——而它是「跨用户串档」的唯一防线
+    （缺失时 `save_memory` 写进公共身份、`search_memories` 能搜到别人的记忆）。
+    同理 thread_id 派生与悬空 tool_call 修复也必须两处一致。
+
+    返回 `(agent, config)`；调用方只管跑（`invoke` 或 `stream`）。
     """
     from yishu.context import new_context, request_context
 
@@ -344,7 +344,36 @@ def run_agent(query: str, user_id: str = "", ctx=None, max_rounds: int | None = 
         "recursion_limit": recursion_limit,
     }
     heal_dangling_tool_calls(agent, config)
+    return agent, config
+
+
+def run_agent(query: str, user_id: str = "", ctx=None, max_rounds: int | None = None):
+    """
+    带输出校验的 Agent 调用入口
+
+    :param query: 用户输入
+    :param user_id: 用户标识（用于数据隔离和对话隔离）
+    :param ctx: 请求上下文
+    :param max_rounds: 最大校验重试轮数；None = 用 `AGENT_MAX_ROUNDS`（默认 2）
+    :return: Agent 执行结果（含 `_diag` 诊断字段）
+    """
+    agent, config = _prepare_run(user_id, ctx)
     return run_agent_with_validation(agent, query, config, max_rounds)
+
+
+def run_agent_stream(query: str, user_id: str = "", ctx=None, max_rounds: int | None = None):
+    """**流式版** `run_agent`（生成器）：逐条产出 `(kind, payload)` 事件。
+
+    事件语义见 `utils.output_validator.stream_agent_with_validation` 的 docstring
+    （delta / tool / replace / final）；这里只做「与同步版共用同一份前置」的委派。
+
+    为什么要独立入口而不是给 `run_agent` 加参数：同步调用方（校验重试轮、测试、
+    脚本）依赖 `run_agent` **返回 dict** 的契约；把它改成生成器会静默破坏所有调用点。
+    """
+    from utils.output_validator import stream_agent_with_validation
+
+    agent, config = _prepare_run(user_id, ctx)
+    yield from stream_agent_with_validation(agent, query, config, max_rounds)
 
 
 def heal_dangling_tool_calls(agent, config) -> int:

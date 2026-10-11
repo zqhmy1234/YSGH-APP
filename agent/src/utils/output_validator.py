@@ -10,9 +10,11 @@
 5. 语言限制 - 必须使用中文回复，禁止使用英文
 """
 
+import json
 import logging
 import os
 import re
+from typing import Any
 
 from langchain_core.messages import AIMessage, AnyMessage
 
@@ -293,6 +295,8 @@ def run_agent_with_validation(
             "usage": dict(usage_total),
             "status": status,
         }
+        # 结构化附加（cards/chips）：与流式版**同一实现**（build_reply_meta），两端形态必须一致
+        result["_meta"] = build_reply_meta(result.get("messages") or [])
         return result
 
     for round_num in range(1, max_rounds + 1):
@@ -508,3 +512,373 @@ def _accumulate_usage(total: dict, result: dict) -> None:
             for k, v in extract_usage(m).items():
                 total[k] = total.get(k, 0) + v
             return
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 流式运行器（AG6 余项 · 2026-10-09）
+#
+# 与同步版 `run_agent_with_validation` 的关系：**同一套校验口径**（同一 OutputValidator、
+# 同一 `_classify_issues` 分级、同一预算/轮数夹紧），差别只在「第 1 轮用 `.stream()` 边出边推」。
+#
+# 为什么**必须**复用同一套口径而不是另写一份：同步版的两条不可退让行为
+#   ① 重复工具调用**不可重试**（记忆已写入，重跑只会再写一次）；
+#   ② 预算耗尽不再重试（宁可返回不完美文本，也不让用户干等）
+# 是踩过坑得来的（见本文件上方注释）。流式版若自建口径，两条都会静默失效。
+#
+# ⚠️ 与同步版的一个**刻意差异**：校验发生在**流之后**。也就是说预览可能先于校验推送
+# 出去（被拦文本的"泄漏窗口"）。三道处置（缺一不可）：
+#   · 上游（backend）对预览串做**规则层**门控（screen_generated(deep=False)），
+#     规则层命中即中断流——已推送的前缀必然是过了规则层的；
+#   · 客户端预览**带"生成中"水印**，终稿事件到达后**整体替换**（不是追加）；
+#   · 终稿仍走**完整链路**（规则层 + LLM 级）护栏，未过审 ⇒ 不落库、不返回（CHAT_004）。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _chunk_text(chunk: Any) -> str:
+    """取流式分片的**正文**文本（跳过 tool_call 空分片与思维链）。
+
+    为什么不取 `additional_kwargs`：百炼/DeepSeek 的思维链落在
+    `additional_kwargs["reasoning_content"]`（部分版本叫 `thinking`）——它是模型的内部
+    推理过程，**不得**进用户预览：既是隐私面（可能复述记忆正文），也是体验噪音
+    （用户看到大段自我盘算）。只推 `content`。
+    """
+    content = getattr(chunk, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):  # 多模态内容块：只拼 text 块
+        parts = [b.get("text", "") for b in content if isinstance(b, dict)]
+        return "".join(p for p in parts if p)
+    return ""
+
+
+def _tool_events_from_update(payload: Any) -> list[dict[str, str]]:
+    """从 `stream_mode="updates"` 的更新块里抽工具状态事件（started/done）。
+
+    形态：`{node_name: {"messages": [AIMessage(tool_calls=[...]) | ToolMessage]}}`。
+    **不假设节点名**（"model"/"tools"/"agent" 随 langchain 版本变），只认消息本身——
+    节点名是内部实现，靠它做判断等于把版本升级变成故障。
+    """
+    events: list[dict[str, str]] = []
+    if not isinstance(payload, dict):
+        return events
+    for _node, update in payload.items():
+        if not isinstance(update, dict):
+            continue
+        msgs = update.get("messages")
+        if not isinstance(msgs, (list, tuple)):
+            continue
+        for msg in msgs:
+            for tc in getattr(msg, "tool_calls", None) or []:
+                name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+                events.append({"phase": "started", "name": str(name or "")})
+            if getattr(msg, "type", "") == "tool":
+                events.append({"phase": "done", "name": str(getattr(msg, "name", "") or "")})
+    return events
+
+
+def _last_ai_text(messages: list) -> str:
+    """取最后一条**有正文**的 AI 消息（同 `_salvage_partial_reply` 的取值口径）。"""
+    for msg in (messages or [])[::-1]:
+        if isinstance(msg, AIMessage):
+            text = msg.content if isinstance(msg.content, str) else ""
+            if text.strip():
+                return text
+    return ""
+
+
+# 卡片标题最大字数（超出截断加省略号）。20~24 字是手机卡片一行半的容量，
+# 再长会把卡片撑成两行、横滑组看起来像列表；完整正文仍在 chat_messages.content 里（不丢）。
+_MAX_CARD_TITLE = 22
+
+
+def _clip(text: str, limit: int = _MAX_CARD_TITLE) -> str:
+    clean = " ".join((text or "").split())
+    if len(clean) <= limit:
+        return clean
+    return clean[: limit - 1] + "…"
+
+
+def _tool_json(content: object) -> dict:
+    """ToolMessage 内容是 JSON 字符串时解析为 dict（否则 `{}`）。
+
+    `save_memory` 成功分支返回 `json.dumps({success, memory_id, category, mood, topics, …})`
+    （见 tools/memory_tools.py）；异常兜底路径返回的是中文提示句 ⇒ 解析失败即"不是结构化结果"。
+    """
+    if not isinstance(content, str):
+        return {}
+    text = content.strip()
+    if not text.startswith("{"):
+        return {}
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_reply_meta(messages: list) -> dict:
+    """从**本轮消息**里抽结构化附加（`cards` / `chips`）——不猜提示词协议、不解析自然语言。
+
+    数据来源是 `save_memory` 的 ToolMessage（机器可读的成功结果）。为什么从**工具结果**取、
+    而不是从回复文本里正则抽：
+      · 文本是给 LLM 复述用的自由格式，抽取必然脆弱（模型换一句措辞就崩）；
+      · 工具结果才是"到底存进去了没"的真相——文本写着"已保存"而工具其实是
+        `duplicate`/失败，正是本项目最忌讳的假状态（宁可不出卡，也不出一张假卡）。
+    故：`success != True` 或 `duplicate == True` 的调用**一律不产卡**。
+
+    ⚠️ 已知边界：校验重试轮用的是**无工具** agent，若第 1 轮已保存、第 2 轮只重写文本，
+    则切片里看不到那次 `save_memory` ⇒ 该轮不出卡（宁缺勿假；卡片的正文仍在 content 里）。
+    """
+    round_messages = _messages_since_last_human(messages)
+    args_by_call: dict[str, dict] = {}
+    for msg in round_messages or []:
+        if isinstance(msg, AIMessage):
+            for tc in getattr(msg, "tool_calls", None) or []:
+                if isinstance(tc, dict) and tc.get("name") == "save_memory":
+                    call_args = tc.get("args")
+                    args_by_call[str(tc.get("id") or "")] = call_args if isinstance(call_args, dict) else {}
+
+    cards: list[dict] = []
+    seen: set[str] = set()
+    for msg in round_messages or []:
+        if getattr(msg, "type", "") != "tool":
+            continue
+        if getattr(msg, "name", "") != "save_memory":
+            continue
+        data = _tool_json(getattr(msg, "content", ""))
+        if not data or not data.get("success") or data.get("duplicate"):
+            continue
+        args = args_by_call.get(str(getattr(msg, "tool_call_id", "") or "")) or {}
+        content = str(args.get("content") or data.get("content") or "")
+        category = str(data.get("category") or args.get("category") or "")
+        mood = str(data.get("mood") or args.get("mood") or "")
+        raw_topics = data.get("topics") or args.get("topics") or []
+        if isinstance(raw_topics, str):
+            raw_topics = [raw_topics]
+        topics = [str(t) for t in raw_topics if str(t).strip()] if isinstance(raw_topics, list) else []
+        title = _clip(content)
+        meta_parts = [p for p in (category, mood, topics[0] if topics else "") if p]
+        # 去重键用**展示字段**（不带 memory_id：id 属内部标识，不该出现在给客户端的结构化数据里）
+        key = f"{title}|{' · '.join(meta_parts)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        cards.append(
+            {
+                "title": title,
+                "meta": " · ".join(meta_parts),
+                "img": "",  # 文字记忆没有缩略图：留空串，客户端按空串跳过图片（不猜占位图）
+                "category": category,
+                "mood": mood,
+                "topics": topics,
+            }
+        )
+
+    chips: list[str] = []
+    if cards:
+        # 追问建议**由卡片本身派生**（而不是写死两句客套话）：用户刚存了「旅行」主题，
+        # 最可能的下一步就是"看看这个主题还有什么"。
+        first_topics = cards[0].get("topics") or []
+        chips.append(f"看看「{first_topics[0]}」相关的记忆" if first_topics else "看看相关的记忆")
+        chips.append("再帮我记一条")
+    return {"cards": cards, "chips": chips}
+
+
+def _resolve_max_rounds(max_rounds: int | None) -> int:
+    """轮数夹紧（口径同同步版：`AGENT_MAX_ROUNDS` 默认 2，且夹到 >= 1）。"""
+    if max_rounds is None:
+        max_rounds = _env_int("AGENT_MAX_ROUNDS", 2)
+    try:
+        max_rounds = int(max_rounds)
+    except (TypeError, ValueError):
+        max_rounds = 2
+    return max(max_rounds, 1)
+
+
+def _resolve_budget_s() -> float:
+    try:
+        return float(os.getenv("AGENT_VALIDATOR_BUDGET_S", "20"))
+    except (TypeError, ValueError):
+        return 20.0
+
+
+def stream_agent_with_validation(
+    agent,
+    query: str,
+    config: dict,
+    max_rounds: int | None = None,
+):
+    """带输出校验的**流式** Agent 运行器（生成器）。
+
+    产出的事件（`(kind, payload)`），上游 `main.py` 逐条翻成 SSE 帧：
+      · `("delta", str)`  —— 第 1 轮的 token 增量（预览用，**不是**终稿）
+      · `("tool", {"phase": "started"|"done", "name": str})` —— 工具状态（供 UI 显示"在翻记忆"）
+      · `("replace", str)` —— 校验重试后的**整段替换**文本（预览作废，客户端须整体覆盖）
+      · `("final", {...})` —— 终稿结果（含 `_diag`，形状与同步版一致，可直接喂 `_normalize_reply`）
+
+    ⚠️ 事件顺序契约：`final` **最后且仅一条**；`replace` 只可能出现在 `final` 之前。
+    """
+    import time
+
+    from langchain_core.messages import HumanMessage
+    from langgraph.errors import GraphRecursionError
+    from yishu.observability import log_event
+
+    max_rounds = _resolve_max_rounds(max_rounds)
+    budget_s = _resolve_budget_s()
+    validator = OutputValidator()
+    started = time.perf_counter()
+    stats: dict[str, Any] = {
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "tool_dist": {},
+        "usage": {"tokens_in": 0, "tokens_out": 0, "tokens_total": 0},
+    }
+    rounds_used = 1
+
+    def _accumulate_round(messages: list) -> None:
+        """按**本轮**切片累加诊断（切分口径同同步版：最后一条 human 消息之后）。"""
+        new_messages = _messages_since_last_human(messages)
+        stats["llm_calls"] += 1
+        stats["tool_calls"] += _count_tool_messages(new_messages)
+        for name, n in tool_call_distribution(new_messages).items():
+            stats["tool_dist"][name] = stats["tool_dist"].get(name, 0) + n
+        _accumulate_usage(stats["usage"], {"messages": new_messages})
+
+    def _finish(messages: list, status: str) -> dict:
+        return {
+            "messages": messages,
+            # 结构化附加（cards/chips）：与非流式版同一实现，两端形态必须一致
+            "_meta": build_reply_meta(messages),
+            "_diag": {
+                "rounds": rounds_used,
+                "llm_calls": stats["llm_calls"],
+                "tool_calls": stats["tool_calls"],
+                "tool_dist": dict(stats["tool_dist"]),
+                "validator_rounds": max(rounds_used - 1, 0),
+                "agent_ms": int((time.perf_counter() - started) * 1000),
+                "usage": dict(stats["usage"]),
+                "status": status,
+                "streamed": True,
+            },
+        }
+
+    log_event("stream_round_start", round=1, max_rounds=max_rounds)
+    streamed_len = 0
+    try:
+        # `stream_mode` 传列表 ⇒ 逐条产出 `(mode, payload)`：
+        #   messages → (message_chunk, metadata)：token 增量
+        #   updates  → {node: state_update}：工具起止（messages 模式看不到 ToolMessage）
+        for mode, payload in agent.stream(
+            {"messages": [HumanMessage(content=query)]},
+            config,
+            stream_mode=["messages", "updates"],
+        ):
+            if mode == "messages":
+                chunk, _meta = payload
+                text = _chunk_text(chunk)
+                if text:
+                    streamed_len += len(text)
+                    yield ("delta", text)
+                continue
+            for event in _tool_events_from_update(payload):
+                yield ("tool", event)
+    except GraphRecursionError as exc:
+        # 兜底口径同同步版：撞递归上限时对话里通常已有可用回复，取回它而不是抛 500
+        log_event(
+            "stream_recursion_exhausted",
+            level=logging.WARNING,
+            round=1,
+            exc_detail=str(exc)[:120],
+        )
+        salvaged = _salvage_partial_reply(agent, config)
+        if salvaged and salvaged[0]:
+            reply_text, messages = salvaged
+            log_event("stream_partial_reply_salvaged", round=1, reply_len=len(reply_text))
+            _accumulate_round(messages)
+            yield ("replace", reply_text)
+            yield ("final", _finish(messages, "recursion_salvaged"))
+            return
+        raise
+
+    state = agent.get_state(config)
+    messages = list((state.values or {}).get("messages") or [])
+    _accumulate_round(messages)
+    ai_reply = _last_ai_text(messages)
+    log_event(
+        "stream_round_done",
+        round=1,
+        reply_len=len(ai_reply),
+        streamed_len=streamed_len,
+        tool_calls=stats["tool_calls"],
+    )
+    if not ai_reply:
+        log_event("stream_empty_reply", level=logging.WARNING)
+        yield ("final", _finish(messages, "empty_messages"))
+        return
+
+    passed, issues = validator.validate(ai_reply, messages)
+    if passed:
+        log_event("validator_pass", round=1, reply_len=len(ai_reply), streamed=True)
+        yield ("final", _finish(messages, "passed"))
+        return
+
+    retryable, reason = _classify_issues(issues)
+    elapsed_s = time.perf_counter() - started
+    budget_left = budget_s - elapsed_s
+    will_retry = max_rounds > rounds_used and retryable and budget_left > _MIN_RETRY_BUDGET_S
+    log_event(
+        "validator_fail",
+        level=logging.WARNING,
+        round=1,
+        issues=issues[:120],
+        reply_len=len(ai_reply),
+        retryable=retryable,
+        reason=reason,
+        budget_left_s=int(budget_left),
+        will_retry=will_retry,
+        streamed=True,
+    )
+    if not will_retry:
+        if not retryable:
+            status = f"terminal:{reason}"
+        elif budget_left <= _MIN_RETRY_BUDGET_S:
+            status = "budget_exhausted"
+        else:
+            status = "max_rounds"
+        yield ("final", _finish(messages, status))
+        return
+
+    # ── 重试轮：无工具 agent + **非流式** ──
+    # 同同步版理由：带工具重试 = 再跑一遍完整工具链（写库副作用 + 数十秒）。
+    # 非流式：重试轮的文本要**整段替换**预览，本来也没有"逐字"的意义。
+    retry_agent = agent
+    try:
+        from agents.agent import build_agent_no_tools
+
+        retry_agent = build_agent_no_tools()
+    except Exception as exc:  # noqa: BLE001 —— 拿不到就退回带工具 agent
+        log_event("no_tools_agent_unavailable", level=logging.WARNING, exc_type=type(exc).__name__)
+
+    rounds_used = 2
+    input_content = (
+        f"{query}\n\n"
+        f"[校验反馈] 上一次回复存在以下问题：{issues}。"
+        f"请修正这些问题后重新回复用户，不要提及校验过程。"
+    )
+    log_event("stream_retry_round_start", round=2, has_feedback=True)
+    result2 = retry_agent.invoke({"messages": [HumanMessage(content=input_content)]}, config)
+    messages2 = list(result2.get("messages") or [])
+    _accumulate_round(messages2)
+    text2 = _last_ai_text(messages2)
+    if text2:
+        yield ("replace", text2)
+    passed2, issues2 = validator.validate(text2, messages2)
+    log_event(
+        "stream_retry_round_done",
+        round=2,
+        reply_len=len(text2),
+        passed=passed2,
+        issues=issues2[:120],
+    )
+    yield ("final", _finish(messages2, "passed" if passed2 else "rounds_exhausted"))

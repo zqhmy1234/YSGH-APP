@@ -201,3 +201,44 @@ def test_empty_content_rejected(client, auth_headers):
     _, headers = auth_headers("chat6")
     resp = client.post("/api/v1/chat/messages", json={"content": ""}, headers=headers)
     assert resp.status_code == 422
+
+
+def test_cards_kind_from_agent_meta(client, auth_headers, cleanup_user, monkeypatch):
+    """非流式端点也要把 agent 的结构化附加映射成 `kind=cards`（与流式端点同形态）。
+
+    为什么要单独钉：两个端点各自有一份 kind/payload 组装逻辑，只测其中一个，
+    另一个就会在"改了 agent 的 meta 字段名"时静默降级成纯文本（形态不一致，
+    同一条回复走不同端点长得不一样）。
+    """
+    from app.services.external.agent import AgentChatResult
+
+    user_id, headers = auth_headers("chat7")
+
+    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:  # noqa: ARG001
+        return AgentChatResult(
+            text="已经帮你记下了",
+            latency_ms=11,
+            raw={"reply": "已经帮你记下了"},
+            meta={
+                "cards": [{"title": "湖边散步", "meta": "情绪 · 开心", "img": "", "topics": ["生活"]}],
+                "chips": ["看看「生活」相关的记忆"],
+            },
+        )
+
+    monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
+    try:
+        resp = client.post("/api/v1/chat/messages", json={"content": "记一下"}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        reply = resp.json()["data"]["reply"]
+        assert reply["kind"] == "cards"
+        assert reply["cards"][0]["title"] == "湖边散步"
+        assert reply["chips"] == ["看看「生活」相关的记忆"]
+    finally:
+        from app.db.session import SessionLocal
+
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()

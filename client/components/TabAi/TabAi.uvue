@@ -2,16 +2,18 @@
 	<!-- B10 方案A P2：自 pages/ai/ai.uvue 整体搬迁；TabBar/RecordSheet 挂载与浮层态上收 shell，
 	     attachOpen 经 shell_state 共享（返回键协同）；处置记录台账 §EE -->
 <!-- ardot 直转 v2：AI 对话页（帧 2:332）· W10.4 数据驱动改造（2026-09-01 峰宝拍板）
-	     mock 契约（contract-first，B2 对话域接线时按此换真端点，mock 层整体可删）：
-	     POST /api/v1/chat/messages   { conversation_id?, content, attachments?[] } → { reply }
-	     GET  /api/v1/chat/replies/:id（流式分片轮询/SSE，形态由 reply.kind 决定：
-	          bubble | plain+chips | cards | confirm | typing）
-	     mock 开关：USE_MOCK_CHAT（2026-09-23 补真身——此前本行声称的常量在代码中**并不存在**，
-	          属无条件硬编码，既无法配置关闭、也不告知用户是演示数据，见台账 §7.1）：
-	          true  = 样张对话 + 本地闭环回复（内测期现状），页面顶部显式标注「内测演示数据」
-	          false = 不注入样张；**走真端点** POST /api/v1/chat/messages（AG6 已接线，
-	                  封装见 utils/chat_api.uts）——失败时撤掉 typing 占位、由 api 层提示原因，
-	                  **绝不伪造 AI 回复**
+     真端点契约（2026-10-09 起为**流式**；封装见 utils/chat_api.uts）：
+     POST /api/v1/chat/messages/stream   { conversation_id?, content, attachments?[] }
+          → text/event-stream：status / preview / tool / replace / done / error
+          （preview 为**累计全文**；客户端逐帧覆盖渲染 typing 气泡 ⇒ 逐字效果）
+     GET  /api/v1/chat/conversations/{id}/messages（进入会话回填历史）
+     GET  /api/v1/chat/replies/:id（客户端当前无调用点；断线重取预留，contract.uts 有登记）
+     注：非流式 POST /api/v1/chat/messages 仍在后端保留（脚本/降级路径），客户端不再走它。
+     mock 开关：USE_MOCK_CHAT（2026-09-23 补真身——此前本行声称的常量在代码中**并不存在**，
+          属无条件硬编码，既无法配置关闭、也不告知用户是演示数据，见台账 §7.1）：
+          true  = 样张对话 + 本地闭环回复（仅演示/录屏），页面顶部显式标注「内测演示数据」
+          false = 不注入样张；**走真端点**（流式，AG6 接线 + 2026-10-09 流式化）——失败时
+                  撤掉 typing 占位、由 api 层提示原因，**绝不伪造 AI 回复**
 
 	     翻转前提（2026-09-23 AG6 登记的诚实边界）：后端 AG5 已就绪且真代理 E2E 跑通（56.3s、
 	     chat_messages/memories 落库实证），但 true→false 还需满足
@@ -75,12 +77,18 @@
 					</view>
 					<!-- 形态③：记忆卡横滑组（画布 4:323，第二张露边示意滑动） -->
 					<view v-else-if="m.kind === 'cards'" class="cards-wrap">
+						<!-- 引导文案（2026-10-09 结构化回复）：卡片是 agent 正文的**结构化投影**，
+						     但正文里可能有卡片装不下的信息（如"这让我想起你 X 月也记过类似的事"），
+						     整段丢掉会让用户觉得答非所问 ⇒ 正文保留为一行引导语，卡片在下 -->
+						<text v-if="m.text != ''" class="cards-lead">{{ m.text }}</text>
 						<!-- 2026-09-23 编译门修复（**这是真缺陷，不只是警告**）：原 `scroll-x` 同样不受支持、被静默忽略
 					     → 该横滑组退化为默认方向，而画布 4:323 的设计是"第二张露边示意滑动"
 					     （横向可滑）。改 direction="horizontal" 才是设计意图。 -->
 					<scroll-view class="cards-scroll" direction="horizontal">
 							<view v-for="(cd, di) in m.cardList" :key="di" class="mem-card">
-								<image class="mem-thumb" :src="cd.img" mode="aspectFill" />
+								<!-- 2026-10-09：文字记忆没有缩略图（agent 卡片 img 为空串）⇒ 跳过图片，
+								     否则是一块空白碎图（比没有更难看，也让人以为加载失败） -->
+								<image v-if="cd.img != ''" class="mem-thumb" :src="cd.img" mode="aspectFill" />
 								<text class="mem-title">{{ cd.title }}</text>
 								<text class="mem-meta">{{ cd.meta }}</text>
 							</view>
@@ -108,9 +116,11 @@
 							</view>
 						</view>
 					</view>
-					<!-- 形态⑤：流式输出态（画布 4:349；点透明度阶梯模拟渐隐，App 端 keyframes 支持有限） -->
+					<!-- 形态⑤：流式输出态（画布 4:349；点透明度阶梯模拟渐隐，App 端 keyframes 支持有限）
+					     2026-10-09（AG6 余项）：文案改为**实时**——流式预览到达后显示累计全文（逐字效果），
+					     工具阶段（无正文可推时）显示"正在翻你的记忆…"，都没有才退回占位文案 -->
 					<view v-else-if="m.kind === 'typing'" class="typing-row">
-						<text class="typing-text">{{ m.text }}</text>
+						<text class="typing-text">{{ typingDisplay(m) }}</text>
 					<view class="td-1" />
 					<view class="td-2" />
 					<view class="td-3" />
@@ -169,7 +179,7 @@
 <script setup lang="uts">
 	import { onMounted, watch } from 'vue'
 	import { aiAttachOpen } from '@/utils/shell_state'
-	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem } from '@/utils/chat_api'
+	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem, ChatCard, chatStreamText, chatStreamTool, chatStreamActive, CHAT_CONV_STORAGE_KEY } from '@/utils/chat_api'
 	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
 	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
@@ -229,8 +239,10 @@
 	const USE_MOCK_CHAT: boolean = false
 
 	// 会话 ID（AG6）：后端按 conversation_id 存 thread（多轮上下文靠它，丢了就每轮失忆）；
-	// 落盘以便重启后接续同一会话（键名前缀与仓内既有 storage 键风格一致）
-	const CHAT_CONV_KEY = 'yishu_chat_conversation_id'
+	// 落盘以便重启后接续同一会话。
+	// 2026-10-11：键改为从 chat_api 导入（**单一来源**）——该键的"陈旧会话自愈"逻辑在
+	// chat_api 内部（CHAT_003 ⇒ 清键 + 新会话重发），两处各写字符串迟早漂移。
+	const CHAT_CONV_KEY = CHAT_CONV_STORAGE_KEY
 	let conversationId = ref('')
 
 	// mock 相册图（static/images 现有资产）
@@ -272,6 +284,12 @@
 		if (t == '') {
 			return
 		}
+		if (chatStreamActive.value) {
+			// 上一轮还在生成：**不并发发第二条**。流式预览走模块级共享 ref（chatStreamText），
+			// 两轮流同时进行会互相串写，界面会出现"两段回复夹杂"这种最难解释的现象。
+			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+			return
+		}
 		if (USE_MOCK_CHAT === false) {
 			// 真端点（AG6）：本地即时上屏用户消息 + typing 占位，等 POST /api/v1/chat/messages
 			// （后端 AG5 已实现：JWT→可信 user_id、反代 Agent、失败返回 502/504 而**不伪造回复**）
@@ -284,6 +302,8 @@
 			const tpId = tp2.id
 			sendChatMessage(conversationId.value, t).then((r: ChatSendResult | null) => {
 				removeById(tpId)
+				// 预览用完即清：它是**模块级共享**状态，留着会让下一轮的占位气泡先闪出上一轮的尾句
+				chatStreamText.value = ''
 				if (r == null) {
 					// **不伪造回复**：只撤掉 typing 占位。失败原因由 api 层全局 toast（带后端 message）
 					// 与 Sentry 承担；用户输入已上屏、可直接重发——比编一句假 AI 回复诚实，
@@ -294,7 +314,7 @@
 					conversationId.value = r.conversationId
 					uni.setStorageSync(CHAT_CONV_KEY, r.conversationId)
 				}
-				const ai = mkAi(r.reply.kind, r.reply.text, [], [], r.reply.bullets, [])
+				const ai = mkAi(r.reply.kind, r.reply.text, [], r.reply.chips, r.reply.bullets, toMemCards(r.reply.cards))
 				messages.value.push(ai)
 				scrollToBottom(ai.id)
 			})
@@ -302,7 +322,11 @@
 		}
 		draft.value = ''
 		const u = mkUser(t)
-		const tp = mkAi('typing', '正在翻你的回忆', [])
+		// 2026-10-11 静态审查 A4：补齐 6 参（签名 (kind,text,cards,chips,bullets,cardList)）。
+		// 原为 3 参调用——当前 USE_MOCK_CHAT=false 恒不可达，但一旦翻回 true，
+		// 后四参为 undefined，模板 `m.cards.length` 类读取会崩（且 UTS 严格模式下
+		// 参数个数不符属编译期错误，是潜伏的"翻转即炸"）。
+		const tp = mkAi('typing', '正在翻你的回忆', [], [], [], [])
 		messages.value.push(u)
 		messages.value.push(tp)
 		scrollToBottom(tp.id)
@@ -333,6 +357,46 @@
 		return mkAi('bubble', '翻到了——那天你拍了 4 张照片、留了 1 段 37 秒的语音，都在「湖边」这个主题下面。想听那段语音的转写吗？', [], [], [], [])
 	}
 
+	// 结构化卡片 → 视图模型（2026-10-09）：agent 侧 save_memory 的投影，img 可能为空串
+	//（文字记忆没有缩略图 ⇒ 模板按空串跳过图片，不渲染占位碎图）
+	function toMemCards(list: Array<ChatCard>): Array<MemCard> {
+		const out: Array<MemCard> = []
+		for (let i = 0; i < list.length; i++) {
+			out.push(new MemCard(list[i].title, list[i].meta, list[i].img))
+		}
+		return out
+	}
+
+	// typing 气泡文案（2026-10-09 流式）：预览累计全文 > 工具阶段提示 > 原始占位文案。
+	// 优先级这么排的理由：有正文时就该看正文（逐字效果），正文还没出但工具在跑时给一句人话，
+	// 两者都没有（如 mock 分支/首帧未到）才退回占位——**任何情况都不编造内容**。
+	function typingDisplay(m: AiMsg): string {
+		if (chatStreamText.value != '') {
+			return chatStreamText.value
+		}
+		if (chatStreamTool.value != '') {
+			return '正在' + toolLabel(chatStreamTool.value) + '…'
+		}
+		return m.text
+	}
+
+	// 工具名 → 用户可读短句（工具名是英文标识符，直接展示等于把实现细节推给用户）
+	function toolLabel(name: string): string {
+		if (name == 'search_memories' || name == 'get_recent_memories') {
+			return '翻你的记忆'
+		}
+		if (name == 'save_memory' || name == 'save_knowledge_collection') {
+			return '记下这条'
+		}
+		if (name == 'get_memory_stats' || name == 'get_knowledge_summary') {
+			return '整理数据'
+		}
+		if (name == 'fetch_url_content') {
+			return '读取这个链接'
+		}
+		return '处理'
+	}
+
 	// 移除 typing 占位（uts 数组无 filter 先例，手写重建最稳）
 	function removeById(id: number): void {
 		const src = messages.value
@@ -352,6 +416,22 @@
 			scrollInto.value = 'msg-' + id
 		}, 50)
 	}
+
+	// 流式预览增长时跟随滚动（2026-10-11 交互审查 B5）：typing 气泡在逐字长高，而滚动
+	// 锚点 id 不变 ⇒ 不主动滚，长回复的字会涨到屏幕外（用户感觉"字停住了"）。
+	// 节流 400ms：preview 帧可达每秒数十帧，无节流会让 scroll-into-view 高频抖动。
+	let lastStreamScrollAt = 0
+	watch((): string => chatStreamText.value, (): void => {
+		const now = Date.now()
+		if (now - lastStreamScrollAt < 400) {
+			return
+		}
+		lastStreamScrollAt = now
+		const n = messages.value.length
+		if (n > 0) {
+			scrollToBottom(messages.value[n - 1].id)
+		}
+	})
 
 	// chips 点击 = 快捷追问当作输入发送（体验闭环）
 	function onChipTap(c: string): void {
@@ -479,10 +559,15 @@
 						if (it.role == 'user') {
 							seq.push(mkUser(it.text))
 						} else {
-							// 形态用后端下发的 kind（当前只可能是 'bubble'/'plain'，见 api/chat.py
-							// `_kind_for`）；未知一律退回 'bubble' —— 不猜 cards/confirm，避免伪造结构
-							const k = (it.kind == 'plain' || it.kind == 'bubble') ? it.kind : 'bubble'
-							seq.push(mkAi(k, it.text, [], [], [], []))
+							// 形态用后端下发的 kind（见 api/chat.py `_kind_for`：bubble | plain | cards）；
+							// 未知一律退回 'bubble' —— 不猜 confirm/typing，避免伪造结构。
+							// ⚠️ kind=cards 但 cards 为空 ⇒ 退回 'plain'：否则渲染出一个空卡组（看不见内容）。
+							const cl = toMemCards(it.cards)
+							let k = (it.kind == 'plain' || it.kind == 'bubble' || it.kind == 'cards') ? it.kind : 'bubble'
+							if (k == 'cards' && cl.length == 0) {
+								k = 'plain'
+							}
+							seq.push(mkAi(k, it.text, [], it.chips, [], cl))
 						}
 					}
 					messages.value = seq

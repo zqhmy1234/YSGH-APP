@@ -135,6 +135,7 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { resolveMediaUrl } from '@/utils/config'
 	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
 	import { favoritesList, favoriteRemove } from '@/utils/play_favorite'
 	import {
@@ -295,7 +296,12 @@
 					const txt = o.getString('text') ?? ''
 					const place = o.getString('place') ?? ''
 					const takenAt = o.getString('taken_at') ?? ''
-					const thumb = o.getString('thumbnail_url') ?? ''
+					// 🚨 2026-10-11 静态审查修复：必须走 `resolveMediaUrl` 收口。
+				// 后端下发的图片 URL 有两种形态：绝对 URL（COS 预签名，直用）/ 相对路径
+				// （`/api/v1/media/...`，fs/minio 口径，须拼当前 getBaseUrl()）——本处原样塞进
+				// `<image :src>` ⇒ 相对路径形态下**图片必裂且静默**（无日志、无占位，只是空白）。
+				// 同仓正确的两处先例：timeline.uts / search_api.uts / event_ops.uts 均用该函数。
+				const thumb = resolveMediaUrl(o.getString('thumbnail_url'))
 					// meta：taken_at 前 10 位 →「M月D日 · 类型 · 已收藏」（fmtFavTime 面向 Event.startTime，此处直接截 ISO）
 					let day = ''
 					if (takenAt.length >= 10) {

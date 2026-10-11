@@ -173,10 +173,11 @@
 		padding-right: var(--d-raw-r40, 40rpx);
 	}
 
-	/* P-4 骨架屏（2026-09-04）：暖白系占位块，模拟日卡版式；纯静态零动画开销 */
-	.sk-hidden {
-		display: none;
-	}
+	/* ⚠️ 隐藏类 .sk-hidden / .ui-hidden 已统一移至**本文件末尾**（2026-10-11）：
+	   两者均为单类选择器（特异性 0,1,0）与 .skeleton{display:flex} / .empty-home{display:flex}
+	   同特异性 ⇒ 按 CSS 层叠「同特异性后定义者胜」，放在前面会被后面的 display:flex 覆盖
+	   （空态/骨架屏会永远藏不住）。放在文件末尾则无论编译器按何种顺序裁决都安全。
+	   详见文件末尾同名块注释。 */
 	.skeleton {
 		padding-left: var(--d-raw-r40, 40rpx);
 		padding-right: var(--d-raw-r40, 40rpx);
@@ -757,5 +758,22 @@
 		font-size: var(--d-raw-r28, 28rpx);
 		font-weight: 600;
 		color: var(--c-rust-500, #b05a3a);
+	}
+
+	/* ═══ 隐藏类（**必须留在文件末尾**，2026-10-11 静态审查）═══
+	   为什么放在最后：这两个类是"恒渲染 + class 收起"路径（R9-D：vapor 对 v-if 整树
+	   卸载失效，只能走属性更新）。它们与 .skeleton{display:flex}（骨架屏）/
+	   .empty-home{display:flex}（壳内空态）**特异性完全相同**（单类 0,1,0），
+	   而 uni-app x 的样式合并顺序不受我们控制 ⇒ 若这些隐藏类定义在布局类**之前**，
+	   一旦编译器按"后定义者胜"裁决，display:flex 会覆盖 display:none，
+	   表现为「有数据时骨架屏残留 / 空态插画一直挂在时间轴上方」——两个都是真机上
+	   一眼可见且极易被误诊为"渲染 bug"的故障（09-07 骨架残留就是这么来的）。
+	   放在文件末尾 ⇒ 无论顺序如何裁决，隐藏类永远最后生效。
+	   ⚠️ 新增任何 display:* 的类都必须加在本块**之前**。 */
+	.sk-hidden {
+		display: none;
+	}
+	.ui-hidden {
+		display: none;
 	}
 

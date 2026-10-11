@@ -253,6 +253,15 @@
 		width: 100%;
 		flex-direction: row;
 	}
+	/* 卡片组上方的引导文案（2026-10-09 · 结构化回复）：正文是卡片的来源，
+	   卡片装不下的信息（如关联的历史记忆）也在这句话里，故保留一行 */
+	.cards-lead {
+		margin-top: var(--d-lattice-p8, 15.4rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		line-height: var(--d-raw-r44, 44rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
 	.mem-card {
 		width: var(--d-lattice-p160, 307.7rpx);
 		margin-right: var(--d-card_radius_small, 23.1rpx);
@@ -360,6 +369,9 @@
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p16, 30.8rpx);
 		color: var(--c-ink-500, #8A7A6A);
+		/* 2026-10-11（视觉审查 B4）：本元素内容从"短占位文案"变为**流式累计全文**，
+		   不加 flex:1 时长文本会把右侧三点挤出 .typing-row（row 布局）或被压成极窄列折行 */
+		flex: 1;
 	}
 	/* uvue 仅支持单类选择器：三点透明度阶梯拆独立类（.typing-dot.d1 复合选择器不支持） */
 	.td-1 {

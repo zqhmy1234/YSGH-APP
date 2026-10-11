@@ -11,8 +11,12 @@
 			<view class="hero-content">
 				<text class="hero-title serif">回忆</text>
 				<!-- R8：数据驱动化（此前硬编码画布示意文案「八月 · 28 条新记忆/清晨的湖边」= 峰宝 09-06 投诉的模板 UI 之一） -->
-				<text class="hero-sub1">{{ heroSub1 }}</text>
-				<text class="hero-sub2">{{ heroSub2 }}</text>
+				<!-- ⚠️ 2026-10-11（视觉审查）：空态时隐藏副标题——hero 的「暂无新记忆」与壳内空态
+				     的「还没有回忆」会同屏出现两条空文案（两处都在说"这里没东西"）。空态块自己
+				     已带完整引导语义，hero 副标题此时是冗余噪音。走 ui-hidden（class 属性更新
+				     路径，非 v-if——同 R9-D 约束）。 -->
+				<text class="hero-sub1" :class="emptyState ? 'ui-hidden' : ''">{{ heroSub1 }}</text>
+				<text class="hero-sub2" :class="emptyState ? 'ui-hidden' : ''">{{ heroSub2 }}</text>
 			</view>
 		</view>
 
@@ -77,8 +81,12 @@
 			<!-- 壳内空态（2026-10-09 真机首测定案）：时间轴空时**就地渲染拍照首页内容**，
 			     不再 redirectTo('/pages/empty/empty')——那会销毁整个壳（AI 对话状态丢失、
 			     切 tab 闪屏、二段式跳转三宗罪同根）。视觉与 empty 页一致（画布 2:284 空状态帧）。
-			     CTA 经 shell_state 桥拉起全壳唯一 RecordSheet（铁律：中央 + 是全壳唯一挂载）。 -->
-			<view v-if="emptyState" class="empty-home">
+			     CTA 经 shell_state 桥拉起全壳唯一 RecordSheet（铁律：中央 + 是全壳唯一挂载）。
+			     ⚠️ 2026-10-09 修复：不得用 v-if 控制——vapor 对「v-if 整树卸载」失效（R9-D 同坑，
+			     09-07 骨架屏实锤），且下方 feed 因 R9-D 是无条件渲染 ⇒ v-if 空态块与 feed 必然
+			     叠渲染（真机实拍：空态引导和日卡片挤在一页）。改走骨架屏同款「恒渲染 + class
+			     display:none」互斥，走属性更新路径，不依赖节点卸载。 -->
+			<view class="empty-home" :class="emptyState ? '' : 'ui-hidden'">
 				<view class="empty-illus">
 					<image class="empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
 					<view class="empty-lake"><image class="empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
@@ -94,8 +102,9 @@
 				</view>
 			</view>
 
-			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对，无条件渲染；未加载时本就是空壳） -->
-			<view class="feed">
+			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对恒渲染；空态互斥经
+			     ui-hidden class 走属性更新，见上方空态块注释） -->
+			<view class="feed" :class="emptyState ? 'ui-hidden' : ''">
 				<!-- L2 待确认区 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
@@ -152,7 +161,10 @@
 								<text class="pending-btn-text">忽略</text>
 							</view>
 							<view class="pending-btn pending-btn-solid pressable" @tap="confirmPending(ev)">
-								<text class="pending-btn-text">确认</text>
+								<!-- 2026-10-11 静态审查 #11：主按钮需白字类（`.pending-btn-text` 是深棕
+								     #3a2e25，配 rust 实底后对比度极低、视觉像禁用态；而白字类
+								     `.pending-btn-text-solid` 此前零使用者 = 规则写了没人用） -->
+								<text class="pending-btn-text pending-btn-text-solid">确认</text>
 							</view>
 						</view>
 					</view>
@@ -254,10 +266,10 @@
 	// "is not exported by ...?uts-proxy"），故二者分开 import。
 	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
-	import { showErrorToast, fetchDailySummary, DailySummary } from '@/utils/api'
+	import { showErrorToast, ApiError, fetchDailySummary, DailySummary } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
-	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
+	import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
 	import {
 		flushOpQueue,
 		pendingOpCount,
@@ -352,6 +364,7 @@
 		try {
 			const photoWatch = createPhotoWatch()
 			if (photoWatch.isReadPermissionGranted()) {
+				watchStarted = true
 				startWatch()
 			} else {
 				// 2026-09-11 D-24 修复：原实现此处**没有 else** —— 未授权时静默跳过，
@@ -364,6 +377,7 @@
 				photoWatch.requestReadPermission((granted: boolean, doNotAskAgain: boolean): void => {
 					console.log('[dbg-index] 相册权限申请回调 granted=' + granted + ' doNotAskAgain=' + doNotAskAgain)
 					if (granted) {
+						watchStarted = true
 						startWatch()
 					} else if (doNotAskAgain) {
 						// 用户已勾选"不再询问"：不再重复弹窗/打扰，仅留日志（须去系统设置手动开）
@@ -379,6 +393,9 @@
 		}
 	})
 	watch((): number => props.shownSeq, (n: number): void => {
+		// 2026-10-11 静态审查 #7：切回首页时**幂等复查**相册监听（用户去系统设置开权限后
+		// 不杀进程也能生效）。成本 = 一次 checkSelfPermission + 日志，无权限框打扰。
+		recheckWatchQuiet()
 		// 原 onShow 体逐字（TTL 内不重拉，过期后台静默刷新）
 		if (!loaded.value) {
 			return
@@ -445,7 +462,8 @@
 		})
 	}
 	// 本地 mock 时间轴注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
-	// events==0 直接走诚实空态（fetch 失败重试一次后跳 /pages/empty/empty），
+	// events==0 直接走诚实空态（fetch 失败重试一次后仍空 ⇒ 壳内 emptyState 渲染，
+	// **不再跳 /pages/empty/empty**——整页跳转会销毁壳，见本文件空态块注释），
 	// 不再注入 ev-m1~m4 假 id 数据。
 
 	// 空状态重试去重：瞬态失败重试一次的守门位（成功后复位）
@@ -455,9 +473,30 @@
 		console.log('[dbg-index] fetchAll -> fetchTimelineAsync')
 		fetchTimelineAsync(null, onThumbBatch).then((events: Array<TimelineEvent>) => {
 			console.log('[dbg-index] fetchTimeline resolved: ' + events.length + ' events')
+			// 🚨 2026-10-11 静态审查 #1 修复：**失败结果不得覆盖已渲染数据**。
+			// `fetchTimelineAsync` 用「空数组」表达失败（resolve([])），原实现无条件
+			// `applyFetchedEvents(events)` ⇒ 下拉刷新遇断网/502/401 时：①时间轴卡片整片消失
+			// （且 emptyState 仍 false ⇒ 连"还没有回忆"引导都没有 = 一片空白）②回响卡被抹掉
+			// ③2.5s 重试再失败 ⇒ 显示假空态「还没有回忆」（用户以为云端记忆丢了）。
+			// `refreshSilently` 一直有同款守卫（同语义两条路径必须同守卫），唯独此处漏了。
+			if (wasLastFetchFailed()) {
+				console.log('[dbg-index] fetchTimeline failed -> keep current UI')
+				// 首拉失败也要收起骨架屏与下拉转圈（否则骨架永驻/转圈不停）：
+				// 失败态下"骨架收起 + 保持现状"与 refreshSilently 的语义一致。
+				loaded.value = true
+				refreshing.value = false
+				return
+			}
 			applyFetchedEvents(events)
 		})
 		fetchTodayEcho().then((card: EchoCard | null) => {
+			// 🚨 2026-10-11 静态审查 #1 配套：区分"请求失败"与"真无回响"（二者都是 null）。
+			// 失败 ⇒ **保持现状**（断网下拉刷新不该把用户正在看的回响卡抹掉）；
+			// 真无回响（跨天/名额耗尽）⇒ 清空（R7 口径：防旧卡残留指向已删内容，见 messages.uvue）。
+			if (card == null && wasLastEchoFailed()) {
+				console.log('[dbg-index] echo fetch failed -> keep current card')
+				return
+			}
 			echo.value = card
 		})
 	}
@@ -477,6 +516,15 @@
 		pa.attachAll(days.value, pendingEvents.value)
 		loaded.value = true
 		refreshing.value = false
+		// 🚨 2026-10-11 静态审查 #2 修复：`emptyState` 是**派生状态**，必须收敛在渲染出口。
+		// 原实现只在 applyFetchedEvents 内重算，而 days/pending 还能被其它路径改变
+		// （useEventOps 经 render 出口的 ignorePending / patchEventById / removeEventById）
+		// ⇒ 已确证复现：新用户唯一一条事件是待确认态 → 点「忽略」→ days 与 pending 同时为空，
+		// 但 emptyState 仍为 false ⇒ feed 无内容 + 空态块被 ui-hidden 藏住 = **整页白屏**
+		// （无引导、无 CTA，只能靠下拉刷新自愈）。
+		// ⚠️ 本收敛与 #1「失败结果不进入本函数」是**配套**的：先有 #1 才有无条件收敛
+		// （否则失败时的空数组会立刻显示假空态）。
+		emptyState.value = days.value.length === 0 && pendingEvents.value.length === 0
 		// P-4 内容出现时间埋点：onLoad → 首帧内容上屏（logcat [perf] 行）
 		if (firstRender) {
 			console.log('[perf] index content-visible at ' + Date.now())
@@ -513,28 +561,32 @@
 	}
 
 	// 卡PA D2/R2：拉取结果统一渲染入口（更新数据源引用 + lastFetchAt + 空状态守门）
+	// 注（2026-10-11）：本函数现在**只被成功路径调用**（fetchAll / refreshSilently 都有
+	// wasLastFetchFailed 守卫）⇒ lastFetchAt 天然只在成功时写（原"失败也写"使失败后
+	// 60s TTL 内切 tab 不再补刷，属 #13）。
 	function applyFetchedEvents(events: Array<TimelineEvent>): void {
 		currentEvents = events
 		lastFetchAt = Date.now()
-		renderFromEvents(events)
+		renderFromEvents(events)   // emptyState 已在渲染出口收敛（#2）
 		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
-		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才进空态。
+		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才认空态。
 		if (days.value.length === 0 && pendingEvents.value.length === 0) {
 			if (wasLastFetchFailed() && !emptyRetryDone) {
+				// 失败未确认：先收回刚收敛出来的空态，重试一次再定性（否则"还没有回忆"
+				// 会先闪一下，再被 2.5s 后的重试结果改写）
+				emptyState.value = false
 				emptyRetryDone = true
 				console.log('[dbg-index] timeline fetch failed -> retry in 2.5s')
 				setTimeout(() => { fetchAll() }, 2500)
 				return
 			}
-			// ⚠️ 2026-10-09 真机首测定案：空态改为**壳内渲染**（本组件 emptyState 视图，
-			// 视觉=empty 页），不再 redirectTo('/pages/empty/empty')——整页跳转会销毁壳
-			// （AI 对话状态丢失、切 tab 闪屏、二段式跳转三宗罪同根），违反 B10 铁律
-			// 「壳内零 redirectTo」。产品语义不变：空时间轴用户看到的仍是拍照首页引导。
-			emptyState.value = true
+			emptyRetryDone = false
+			// ⚠️ 2026-10-09 真机首测定案：空态为**壳内渲染**（emptyState 视图，视觉=empty 页），
+			// 不 redirectTo('/pages/empty/empty')（B10 铁律「壳内零 redirectTo」）。
+			// 空态置位已由 renderFromEvents 收敛，此处直接返回。
 			return
 		}
 		emptyRetryDone = false
-		emptyState.value = false
 		if (days.value.length > 0 || pendingEvents.value.length > 0) {
 			recordFirstDayRender()
 		}
@@ -602,10 +654,16 @@
 			return
 		}
 		dismissEcho(card.contentId).then((ok: boolean) => {
-			echo.value = null
-			if (ok) {
-				uni.showToast({ title: '已划掉', icon: 'none' })
+			// 🚨 2026-10-11 静态审查 #6 修复：失败**不得**乐观隐藏。
+			// 原实现无论成败都 `echo.value = null` ⇒ 断网点"划掉"：卡片消失（像成功了），
+			// 但服务端没记录 ⇒ 下次 fetchAll（下拉刷新/切 tab）卡片**复活**——
+			// "划掉了又回来"比"划不掉"更像灵异事件，且无任何提示。
+			if (!ok) {
+				showErrorToast(new ApiError('ECHO_DISMISS', '划掉失败，请稍后重试', 0))
+				return
 			}
+			echo.value = null
+			uni.showToast({ title: '已划掉', icon: 'none' })
 		})
 	}
 
@@ -646,10 +704,20 @@
 		}, 12000)
 	}
 
-	// L-02a：照片路径 / 挂载 / 照片详情已整块进 `usePhotoAttach`（见 composable 头注）；
-	// 组件只留模板入口的薄包装（转发到同一实例，行为等价）。
+	// L-02a：照片路径 / 挂载 已整块进 `usePhotoAttach`（见 composable 头注）。
+	// 🚨 2026-10-11 静态审查 #3 修复：照片点按改为**直达内容详情页**。
+	// 原实现转发到 `pa.onPhotoTap`——它只设置 `showPhotoDetail` 等四态，而**模板中根本没有
+	// 消费它们的照片详情面板**（`photo-detail-panel` 在全仓 0 命中，`tab-index.css:631-659`
+	// 的 `.photo-detail-*` 规则零使用者）⇒ 用户点照片**零反馈**，且照片条带 `.stop`
+	// （连整卡进详情都不触发）——"点得动但没反应"的最差形态。
+	// 保守修法：收口到**既有可用路径**（详情页），不新造 UI；面板若后续要做，
+	// `pa.onPhotoTap` 四态仍在（届时把本函数换回转发即可）。
 	function onPhotoTap(contentId: string): void {
-		pa.onPhotoTap(contentId)
+		if (contentId == '') {
+			uni.showToast({ title: '这张照片暂无可查看的内容', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + contentId })
 	}
 
 	// 待确认（L-02b：逻辑进 `useEventOps`，此处仅模板入口薄包装）
@@ -697,6 +765,33 @@
 	}
 
 	// 相册监听
+	// 2026-10-11 静态审查 #7/#12：两个进程级标志（组件在壳内常驻、不销毁 ⇒ 等价会话级）
+	//  · watchStarted：监听是否已启动 —— 供"切回首页时幂等复查"用（#7）
+	//  · watchNotified：启动 toast 是否已提示过（#12：原实现每次冷启动都弹一次无意义提示）
+	let watchStarted = false
+	let watchNotified = false
+
+	/** 幂等复查：**已授权但监听未启动**时补启动（不弹权限框、不打扰）。
+	 *
+	 * #7 背景：壳架构下 TabIndex 只挂载一次（everIndex 恒 true + v-show），原实现只在
+	 * onMounted 初始化一次监听 ⇒「首次拒绝权限 → 去系统设置打开 → 回 App」时监听永不启动
+	 * （旧注释"下次进入会再次申请"在壳架构下不成立）。挂在切回首页的 watch 上做廉价复查。 */
+	function recheckWatchQuiet(): void {
+		if (watchStarted) {
+			return
+		}
+		try {
+			const pw = createPhotoWatch()
+			if (pw.isReadPermissionGranted()) {
+				console.log('[dbg-index] recheck: 权限已就绪，补启动相册监听')
+				watchStarted = true
+				startWatch()
+			}
+		} catch (e) {
+			// 标准基座无原生插件：忽略（onMounted 已打点）
+		}
+	}
+
 	function startWatch(): void {
 		console.log('[yishu] startWatch begin')
 		recordGrantTime()
@@ -709,7 +804,11 @@
 			handleBatch(items)
 		})
 		console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
-		uni.showToast({ title: '已开始监听相册', icon: 'none' })
+		// #12：只提示一次——老用户每次冷启动都吃一次「已开始监听相册」是纯噪音
+		if (!watchNotified) {
+			watchNotified = true
+			uni.showToast({ title: '已开始监听相册', icon: 'none' })
+		}
 	}
 	function handleBatch(items: Array<PhotoItem>): void {
 		uploading.value = true

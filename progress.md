@@ -511,3 +511,13 @@
 ✅ **W3 映射**（cd4f79f）：ContentCreate 加可选 tags（仅 source=agent 落库 tags_json）+ 管线打标改 merge_tags 合并语义（防预置主题被 LLM 覆写冲掉）+ agent 镜像发 body.tags——App 详情页 chips 从此可见 AI 打的主题。openapi 快照同步。台账 2.27。
 ✅ **验证**：agent 169 passed / backend 1004 passed 零失败；docs/决策台账.md 补 2.25/2.26/2.27；10-04 出包批 5 文件已先期独立入库（7bcb9a9）。
 ⚠️ **push 归用户**：本地 ahead 18+，验证绿后由用户自行 git push（台账 2.22 纪律）。
+
+## ✅ 速查卡 · 2026-10-09 · 对话域收尾：SSE 流式 + 结构化回复（AG6 余项）
+
+✅ **任务一 · 流式**：agent `POST /v1/chat/stream`（SSE：`status`/`delta`/`tool`/`replace`/`done`/`error`；流式源 `agent.stream(stream_mode=["messages","updates"])`，校验仍在流之后）｜backend `POST /api/v1/chat/messages/stream`（推**累计全文** preview + 逐段过**规则层**护栏、命中即中断不外泄 + 终稿仍走 `deep=True` 且不落库不返回）｜client `chat_api.sendChatMessage` 改走 SSE（`enableChunked` + `onChunkReceived`，分块 ArrayBuffer 自解 UTF-8；`success` 整段兜底）→ TabAi typing 气泡逐字（工具阶段显示"正在翻你的记忆…"）。
+✅ **任务二 · 结构化**：agent `build_reply_meta` 从 `save_memory` 的**工具结果**派生 cards/chips（duplicate/失败一律不产卡）→ backend `kind=cards` + `payload` 落库 → 客户端记忆卡横滑组 + chips（img 空串跳过图片、卡片组保留一行正文引导）；历史回填同带 cards/chips。
+📊 **验证**：agent **185 passed**（新增：事件序/整段替换/不可重试/结构化派生/端点帧契约）｜backend **1017 passed 4 skipped 0 failed**（覆盖率 85.52%；新增 10：SSE 帧契约/预览不泄漏/终稿拦截/提前结束不落空回复/越权不调 agent/结构化/适配器 done 守卫）｜**全量门禁 `review_agent --full` 绿**（syntax 473 files / lint / secrets / structure / audit_axes 无 CRITICAL / env_template / openapi_snapshot / tests 全过）｜客户端**编译成功**（16 页，2 条 CSS warning 属既有他组件）｜联调实测（**非 A 级**，无三要素）：agent 直连首帧 39ms、首个正文 token 2057ms、done 2604ms；backend 端到端 status 38ms / 首 preview 1295ms / 65 preview 帧 / done 2449ms；结构化 `kind=cards` 1 卡 2 chips（非流式与历史端点同形）。
+🧹 **顺带修两单存量失败**（与本批无关但卡门禁，已入 lessons）：`test_generated_output_guard` 两例（本地假 Result 类缺 `meta` + 第 3 参名写成 `thread_id`，10-08 改签名后即红无人发现）→ 改回真实 `AgentChatResult`；`test_amap::test_get_place_dev_mock_fallback`（geo_cache 有 30 天内真实缓存行 ⇒ 走缓存命中而非 mock 回退）→ 加 autouse 前置定向清理。联调残留数据已清理（4 个冒烟用户 + 65 行 agent checkpoint）。
+⚠️ **真机三要素待补**：执行到真机步时 USB 设备掉线（`adb devices` 空，重起 adb server 仍不可见）⇒「≤1.5s 首字 / 护栏拦截无预览泄漏 / agent 宕机不伪造」三条**无 A 级证据**，登记 `docs/决策台账.md` §2.30（**如实标注，不算完成**）。⚠️ 首字延迟由 LLM TTFT 支配（实测 1.3~2.1s，百炼 thinking 开启时更晚）⇒「≤1.5s」是贴边指标，观感兜底 = 立即 `status` 帧 + 工具态文案。
+🧯 **踩坑两条（已入 `docs/lessons.md`）**：① Starlette 把同步生成器的每次 `next()` 派发到线程池（每次新 contextvars 快照）⇒ `request_context.set` 不跨 yield 存续、`reset_request_id` 抛"different Context" → 改为「整轮 agent 跑在一个工作线程 + 队列，生成器只格式化」；② 5.24 的 dts 里没有 `enableChunked`/`onChunkReceived`/`TextDecoder`，但**编译器实测接受**（30 行探针法）⇒ 平台能力以编译/真机实测为准。
+📌 **本批边界**：未碰 `client/` 其他域与 `backend/` 其他域；`docs/交接_流式输出与对话UI_20261009.md` 的工作区改动（用户改写为纯文本）**未动**。openapi 快照已重导；决策登记台账 §2.28/§2.29/§2.30。

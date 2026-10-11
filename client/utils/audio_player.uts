@@ -221,7 +221,14 @@ export function toggleVoice(contentId: string): void {
 		return
 	}
 	ensurePool()
-	if (voiceCurrentId.value == contentId && activeIdx >= 0) {
+	// 🚨 2026-10-11 静态审查 #5 修复：同条判定必须**带槽位自校验**。
+	// 为什么：`startPlay` 在**下载开始**时就把 `voiceCurrentId` 设成本条（:302），
+	// 而此刻 `activeIdx` 仍指向**上一条**的槽 ⇒ 仅凭 `voiceCurrentId == contentId`
+	// 会把"下载中再点同一条"误判为"同条续播"，于是 `enqueueStep('play', activeIdx)`
+	// **出声的是上一条的音频**；紧接着本条下载完成 → `playFile` 轮转到新槽起播
+	// ⇒ **两条音频同时出声**（违反本模块头注"全局同一时刻只播一条"）。
+	// 复现：播 A（已出声）→ 点 B（进入下载）→ 立即再点 B。
+	if (voiceCurrentId.value == contentId && activeIdx >= 0 && slotCid[activeIdx] == contentId) {
 		if (voicePlaying.value) {
 			// 🔴 v5.1 暂停归零修复（峰宝二次报「点暂停波形+进度条直接归零」）：
 			// Android pause() 后 MediaPlayer 的 currentTime 会瞬时回 0——33ms 时钟若继续
@@ -233,6 +240,12 @@ export function toggleVoice(contentId: string): void {
 			startProgressClock()
 			enqueueStep('play', activeIdx, '')
 		}
+		return
+	}
+	// 下载中的同一条：**忽略重复点击**（UI 已有 loading 态）。
+	// 若放行到下面的"换条"逻辑会重新发一次 downloadFile，而两次下载的回调都会因
+	// `voiceCurrentId == contentId` 校验通过而各起播一次 ⇒ 同样造成双声道。
+	if (voiceCurrentId.value == contentId && voiceLoading.value) {
 		return
 	}
 	// 换条：先确保旧出声槽进队暂停（清队列也不能丢它），再重置 JS 态起新

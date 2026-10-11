@@ -1,14 +1,15 @@
 /**
  * AI 对话域薄封装（AG6 · 对齐 backend/app/api/chat.py —— AG5 已实现且**真代理 E2E 跑通**）
  *
- * 后端契约（实证：docs/openapi.json 67 路径全对齐；scripts/e2e_agent_chat.ps1 真 E2E
+ * 后端契约（实证：docs/openapi.json 全路径对齐；scripts/e2e_agent_chat.ps1 真 E2E
  * 实测端到端 56.3s，chat_messages 落库 2 行、Agent 工具写入本仓 memories 1 行）：
- *   POST /api/v1/chat/messages  {conversation_id?, content, attachments?[]}
- *        → data{ conversation_id, reply{ id, kind, text, chips[], cards[], created_at }, latency_ms }
+ *   POST /api/v1/chat/messages/stream  {conversation_id?, content, attachments?[]}
+ *        → **text/event-stream**：status / preview / tool / replace / done / error
+ *   POST /api/v1/chat/messages（非流式）→ data{ conversation_id, reply{…}, latency_ms }
+ *        —— 客户端已不再走它（保留给脚本与降级路径；单测在 backend/tests/test_chat.py）
  *   GET  /api/v1/chat/replies/{reply_id} → data{ reply 同构 }
  *   GET  /api/v1/chat/conversations/{id}/messages
  *        → data{ conversation_id, messages[]{ id, role, kind, text, created_at } }（历史含 user 行）
- *   统一 ApiResponse 信封 ⇒ dataObj(res) 取 data（与 capsule_api / search_api 同法）。
  *
  * 形态映射（**必须**，否则 TabAi 渲染走错分支）：
  *   · 后端 reply.kind 目前只有 bubble | plain（agent 只回纯文本）；客户端 AiMsg.kind 同名 ⇒ 直接可用。
@@ -17,24 +18,56 @@
  *   · 后端 kind=cards/confirm/typing **当前不会产生**（需 agent 侧结构化输出）⇒ 本模块**不臆造**：
  *     契约里预留 ≠ 现在能回，写死假 cards 就是把演示数据又塞回真链路。
  *
- * 约定对齐 utils/api.uts：resolve-only 永不 reject；失败 resolve(null)，且 api 层**已全局
- * showErrorToast**（含后端 message）⇒ 调用方**不重复 toast**（同 capsule_api 注释口径）。
+ * ── 流式通道（AG6 余项 · 2026-10-09）──
+ * 客户端**唯一**对话入口 `sendChatMessage` 已从非流式切到 SSE：
+ *   · 传输 = `uni.request({enableChunked: true})` + `RequestTask.onChunkReceived`（分块 ArrayBuffer）；
+ *     已实测 **5.24 编译通过**（`enableChunked`/`onChunkReceived` 未收录进 5.24 的 dts，
+ *     一度担心像 `scroll-y` 那样被编译器拒——实测能编过，结论落 docs/lessons.md）。
+ *   · 预览走**模块级 ref**（`chatStreamText` 等，同 audio_player.uts 的 voiceProgress 先例），
+ *     TabAi 直接绑 ref 渲染"逐字"，本模块不传回调（UTS 导出函数带函数类型参数零先例，不冒险）。
+ *   · **兜底**：蒸汽模式桥接可能吞掉 chunk 回调 ⇒ `success` 里对整段响应体再解析一次
+ *     （拿不到 `done` 帧就如实返回 null，绝不把预览当终稿）。
+ *
+ * 约定对齐 utils/api.uts：resolve-only 永不 reject；失败 resolve(null) 并**已 showErrorToast**
+ * ⇒ 调用方**不重复 toast**（同 capsule_api 注释口径）。401 单飞刷新重放一次（流式通道绕开了
+ * `doRequest`，故在此显式对齐同一语义）。
  */
-import { post, get, dataObj, dataArr } from './api'
-import { addBreadcrumb } from './sentry'
-import { PATH_CHAT_MESSAGES, PATH_CHAT_CONVERSATION_MESSAGES } from './contract'
+import { ref } from 'vue'
+import { get, dataObj, buildHeader, showErrorToast, ApiError } from './api'
+import { refreshToken, clearToken } from './auth'
+import { getBaseUrl } from './config'
+import { addBreadcrumb, captureException } from './sentry'
+import { PATH_CHAT_MESSAGES_STREAM, PATH_CHAT_CONVERSATION_MESSAGES } from './contract'
 
-/** 一条智能体回复（客户端可用子集；chips/cards 待 agent 出结构化输出后再开） */
+/** 记忆卡片（agent 侧 `save_memory` 结构化投影；img 为空串=文字记忆无缩略图） */
+export class ChatCard {
+	title: string
+	meta: string
+	img: string
+	topics: Array<string>
+	constructor(title: string, meta: string, img: string, topics: Array<string>) {
+		this.title = title
+		this.meta = meta
+		this.img = img
+		this.topics = topics
+	}
+}
+
+/** 一条智能体回复（客户端可用子集） */
 export class ChatReply {
 	id: string
 	kind: string
 	text: string
 	bullets: Array<string>
-	constructor(id: string, kind: string, text: string, bullets: Array<string>) {
+	chips: Array<string>
+	cards: Array<ChatCard>
+	constructor(id: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<ChatCard>) {
 		this.id = id
 		this.kind = kind
 		this.text = text
 		this.bullets = bullets
+		this.chips = chips
+		this.cards = cards
 	}
 }
 
@@ -61,6 +94,41 @@ export function splitLines(text: string): Array<string> {
 	return out
 }
 
+/** 解析字符串数组字段（元素非字符串一律丢弃——UTS 强转 null/数字会崩或污染渲染） */
+function parseStringArray(arr: Array<any> | null): Array<string> {
+	const out: Array<string> = []
+	if (arr == null) {
+		return out
+	}
+	for (let i = 0; i < arr.length; i++) {
+		const v = arr[i]
+		if (typeof v == 'string') {
+			out.push(v as string)
+		}
+	}
+	return out
+}
+
+/** 解析 cards 字段（元素是对象；缺 title/meta/img 一律回退空串，绝不强转 null） */
+function parseCards(arr: Array<any> | null): Array<ChatCard> {
+	const out: Array<ChatCard> = []
+	if (arr == null) {
+		return out
+	}
+	for (let i = 0; i < arr.length; i++) {
+		const v = arr[i]
+		if (v instanceof UTSJSONObject) {
+			out.push(new ChatCard(
+				v.getString('title') ?? '',
+				v.getString('meta') ?? '',
+				v.getString('img') ?? '',
+				parseStringArray(v.getArray('topics'))
+			))
+		}
+	}
+	return out
+}
+
 /** 解析 reply 对象 → ChatReply；字段缺失不崩（防御：后端升级/降级期字段可能缺） */
 function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 	if (obj == null) {
@@ -77,43 +145,392 @@ function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 		}
 	}
 	const title = lines.length > 0 ? lines[0] : text
-	return new ChatReply(obj.getString('id') ?? '', kind, title, bullets)
+	return new ChatReply(
+		obj.getString('id') ?? '',
+		kind,
+		title,
+		bullets,
+		parseStringArray(obj.getArray('chips')),
+		parseCards(obj.getArray('cards'))
+	)
+}
+
+// ═══════════ 流式通道（AG6 余项 · 2026-10-09）═══════════
+
+/** 流式预览文本（**累计全文**，不是增量）；TabAi 的 typing 气泡直接读它渲染"逐字" */
+export let chatStreamText = ref('')
+/** 是否有一轮流式正在进行（TabAi 据此决定 typing 气泡的去留） */
+export let chatStreamActive = ref(false)
+/** 工具状态文案（后端 `tool` 帧的 name；空串 = 没有工具在跑） */
+export let chatStreamTool = ref('')
+
+/** 流式总超时（与旧非流式通道同口径 90s；后端 agent 上限 180s，须留出让后端如实 504 的余量） */
+const STREAM_TIMEOUT_MS: number = 90000
+
+/**
+ * 会话 id 的本地存储键（**单一来源**：TabAi 也 import 本常量，勿再各自写字符串）。
+ * 2026-10-11 静态审查 A3：陈旧会话 id 的自愈逻辑在本文件内（见 streamChatOnce 的 404 分支），
+ * 故键必须与写入方同源——两处各写一份字符串迟早漂移。
+ */
+export const CHAT_CONV_STORAGE_KEY = 'yishu_chat_conversation_id'
+
+/** UTF-8 解码结果：text = 解出的文本；usedBytes = 消耗的字节数（其后是不完整的尾部） */
+class Utf8Decoded {
+	text: string
+	usedBytes: number
+	constructor(text: string, usedBytes: number) {
+		this.text = text
+		this.usedBytes = usedBytes
+	}
 }
 
 /**
- * 发一条消息并取回复：POST /api/v1/chat/messages。
+ * 字节数组 → UTF-8 文本（**不依赖 TextDecoder**：uni-app x 未提供该全局对象，已核对 5.24 dts）。
+ *
+ * 做法：逐字节拼 `%XX` 再交 `decodeURIComponent`（本项目既有用例：shell.uvue 用后者解 url query）。
+ * ⚠️ 流式场景的真问题：一个汉字占 3 字节，可能被切在两个 chunk 之间，整串解码会抛 URIError。
+ * 故从尾部最多回退 3 字节重试，并把回退掉的字节数交给调用方（`usedBytes`）——下一个 chunk 到达时补全。
+ * 这也解释了为什么本模块每次都把**累积字节整体**解码、而不做"逐块解码再拼"：
+ * 后者一旦碰上半个汉字就会产出乱码，且这种乱码只在中文长回复的特定字节切分下出现（极难复现）。
+ */
+function decodeUtf8(bytes: Uint8Array): Utf8Decoded {
+	let end = bytes.length
+	const floor = end > 4 ? end - 4 : 0
+	while (end > floor) {
+		try {
+			let pct = ''
+			for (let i = 0; i < end; i++) {
+				const b = bytes[i]
+				pct += '%' + (b < 16 ? '0' : '') + b.toString(16)
+			}
+			return new Utf8Decoded(decodeURIComponent(pct), end)
+		} catch (e) {
+			end = end - 1
+		}
+	}
+	// 兜底（正常流不会走到）：连"回退 3 字节"都解不开 ⇒ 流里有**非法字节**（真损坏）。
+	// 此时只**丢弃 1 个字节**并保留其余，让同一块里合法的后续内容还能被解出来；
+	// 早期版本这里返回 `('', bytes.length)`（整块丢弃）——那会把可读文本一并吃掉，
+	// 表现是"偶发少一段回复"，比丢一个坏字节严重得多。
+	return new Utf8Decoded('', bytes.length > 0 ? 1 : 0)
+}
+
+/** 一条 SSE 帧（event + 单行 data） */
+class SseFrame {
+	event: string
+	data: string
+	constructor(event: string, data: string) {
+		this.event = event
+		this.data = data
+	}
+}
+
+/**
+ * 解析一条 SSE 帧文本（`event: x` + `data: {...}` 两行）。
+ * 注释帧（`: ping`）在调用方已按"没有 event/data"跳过；未知事件**忽略**（协议向前兼容）。
+ */
+function parseSseFrame(raw: string): SseFrame {
+	let event = ''
+	let data = ''
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim()
+		if (line.startsWith('event:')) {
+			event = line.substring(6).trim()
+		} else if (line.startsWith('data:')) {
+			data = line.substring(5).trim()
+		}
+	}
+	return new SseFrame(event, data)
+}
+
+/**
+ * 发一条消息并**流式**取回复：POST /api/v1/chat/messages/stream。
+ *
  * 失败 resolve(null)（**不伪造回复**——调用方据此撤掉 typing 占位即可，绝不补一句假 AI 文本）。
+ * 预览期间把累计全文写进 `chatStreamText`（TabAi 绑它渲染），终稿由本函数返回值给出。
+ * ⚠️ 同一时刻只允许一轮（并发调用会串写共享 ref），调用方（TabAi）在 `chatStreamActive` 为真时不再发起。
  */
 export function sendChatMessage(conversationId: string, content: string): Promise<ChatSendResult | null> {
+	// B13 面包屑：只记"新建/续会话"与文本长度，**不记用户对 AI 说了什么**（隐私纪律同 search_api）
+	addBreadcrumb('chat', (conversationId == '' ? 'stream new conversation' : 'stream existing conversation') + ' len=' + content.length)
+	chatStreamText.value = ''
+	chatStreamTool.value = ''
+	chatStreamActive.value = true
+	return streamChatOnce(conversationId, content, false, false)
+}
+
+function streamChatOnce(conversationId: string, content: string, retried: boolean, newConvTried: boolean): Promise<ChatSendResult | null> {
 	const body: UTSJSONObject = { content: content }
 	if (conversationId != '') {
 		// 空串不发：后端对"显式传入但不存在"的会话返回 404（IDOR 防护），
 		// 而""不是合法 UUID ⇒ 会被判 404，故新建会话时必须**省略**该字段
 		body.set('conversation_id', conversationId)
 	}
-	// B13 面包屑：只记"新建/续会话"与文本长度，**不记用户对 AI 说了什么**（隐私纪律同 search_api）
-	addBreadcrumb('chat', (conversationId == '' ? 'send new conversation' : 'send existing conversation') + ' len=' + content.length)
 	return new Promise<ChatSendResult | null>((resolve) => {
-		// 2026-10-04：显式给足超时。默认看门狗 20s，而后端 agent 调用上限 180s
-		// （`agent_service_timeout_s`），实测单轮 6~14s、首轮（含建checkpointer 连接）可到 40s+
-		// ⇒ 沿用 20s 会在后端还在算的时候就先判失败，表现为「AI 没反应」。
-		// 取 90s：覆盖实测区间且远小于后端 180s 上限，让 504 仍能由后端如实返回。
-		post(PATH_CHAT_MESSAGES, body, 90000).then((res: UTSJSONObject | null) => {
-			if (res == null) {
-				resolve(null)
+		let settled = false
+		let consumed = 0 // 已消费到 `decoded` 的哪个字符位置（帧可能跨 chunk，按位置推进才不重不漏）
+		let decoded = ''
+		let chunkSeen = false
+		let pending = new Uint8Array(0) // 未成完整字符的尾部字节（≤3）
+		// 打点：release 包里 console 不可见，故这些只在 HBuilderX 真机运行时看得到
+		// （首字延迟是流式唯一的硬指标，没它就只能靠截图肉眼看，拿不出证据）
+		const t0 = Date.now()
+		let firstPreviewLogged = false
+		let frameCount = 0
+		let chunkCount = 0
+
+		const finish = (result: ChatSendResult | null, abortConn: boolean): void => {
+			if (settled) {
 				return
 			}
-			const d = dataObj(res)
-			if (d == null) {
-				resolve(null)
-				return
+			settled = true
+			// 🚨 2026-10-11 静态审查 A1 修复（**本批引入的回归**）：这里必须是「**取消**看门狗」，
+			// 而初版写法是 `resetWatchdog()` —— 那是「先 clear 再**新建**一个 90s 定时器」，
+			// 于是**每次成功回复结束后约 90s，都会凭空弹出一次「AI 回复超时，请稍后重试」**
+			// （用户已拿到回复，却收到超时提示；真机必现，静置 90s 即可复现）。
+			// 对照：api.uts 的同类 finish 用的是 clearTimeout —— 本文件是当时唯一的孤例。
+			if (watchdog >= 0) {
+				clearTimeout(watchdog)
+				watchdog = -1
 			}
-			const reply = parseReply(d.getJSON('reply'))
-			if (reply == null) {
-				resolve(null)
-				return
+			chatStreamActive.value = false
+			chatStreamTool.value = ''
+			resolve(result)
+			// 2026-10-11：判失败时主动断开连接——原实现看门狗超时后请求仍挂在后台继续
+			// 收数据（连接白占、数据白收）。A-1 修复后 backend 断连也会跑完落库，客户端
+			// 侧更没有理由继续挂着。fail 回调以 settled 挡掉 abort 引发的二次 toast。
+			if (abortConn) {
+				try {
+					task.abort()
+				} catch (e) {
+					// 连接可能已自然结束：abort 抛错无害，忽略
+				}
 			}
-			resolve(new ChatSendResult(d.getString('conversation_id') ?? '', reply))
+		}
+		// ⚠️ 2026-10-11 B-3（三层超时口径矛盾）：看门狗从「总时长」改「**idle 时长**」。
+		// 原 90s 总超时 < agent 单轮实测 56~76s + 校验重试轮可破 90s（backend 上限 180s），
+		// 正常长回复必被错杀——注释自称"留出让后端如实 504 的余量"，实际余量是负的。
+		// 改法：**每收到一帧就续命**，真卡死（连续 90s 无任何帧）才判超时；总时长上限
+		// 交还给 backend 的 180s。
+		// ⚠️ 但前提是**真的有保活帧**（2026-10-11 静态审查 B3 实锤：初版注释断言"backend
+		// 每 10s 一条 ping"是**幻觉**——agent 侧的 `: ping` 注释帧在 backend 适配器
+		// `_iter_sse` 里就被按 `line.startswith(':')` 丢弃，从未到达客户端；当时 backend
+		// 自身也不发任何心跳）。若没有心跳，idle 看门狗等价于"连续 90s 无正文帧即超时"，
+		// 长思考/工具静默轮会被误杀。⇒ **backend 已在 `_frames` 补 5s 保活注释帧**
+		// （chat.py 的 `_KEEPALIVE_INTERVAL_S`），本看门狗与之配套，改一侧必须对侧同改。
+		let watchdog = -1
+		const resetWatchdog = (): void => {
+			if (watchdog >= 0) {
+				clearTimeout(watchdog)
+			}
+			watchdog = setTimeout(() => {
+				console.log('[dbg-chat] stream watchdog timeout (idle ' + STREAM_TIMEOUT_MS + 'ms)')
+				showErrorToast(new ApiError('TIMEOUT', 'AI 回复超时，请稍后重试'))
+				finish(null, true)
+			}, STREAM_TIMEOUT_MS)
+		}
+		resetWatchdog()
+
+		const handleFrame = (raw: string): void => {
+			// 2026-10-11：单帧解析失败（半截 JSON/异常数据）只丢这一帧，**绝不让异常冒出
+			// onChunkReceived 回调**——否则当前 chunk 里排在后面的帧全部陪葬，表现为
+			// "回复偶尔缺一段"这种最难复现的丢帧。帧到达同时喂看门狗（B-3 idle 续命）。
+			try {
+				resetWatchdog()
+				const f = parseSseFrame(raw)
+				frameCount = frameCount + 1
+				if (f.event == 'preview' || f.event == 'replace') {
+					if (!firstPreviewLogged) {
+						firstPreviewLogged = true
+						console.log('[dbg-chat] first preview at ' + (Date.now() - t0) + 'ms (chunks=' + chunkCount + ')')
+					}
+					// replace = 校验重试后的整段替换（预览作废）；两者都是"**当前应显示的全文**"
+					const obj = JSON.parse(f.data) as UTSJSONObject
+					chatStreamText.value = obj.getString('text') ?? ''
+					return
+				}
+				if (f.event == 'tool') {
+					const obj = JSON.parse(f.data) as UTSJSONObject
+					// 2026-10-11 静态审查 C1：工具**结束**（phase=done）必须清空工具文案——
+					// 否则"工具已跑完、正文还没到"的窗口里，typing 气泡继续显示
+					// 「正在翻你的记忆…」（残留文案），用户以为工具卡住了。
+					chatStreamTool.value = obj.getString('phase') == 'done' ? '' : (obj.getString('name') ?? '')
+					return
+				}
+				if (f.event == 'done') {
+					const obj = JSON.parse(f.data) as UTSJSONObject
+					const reply = parseReply(obj.getJSON('reply'))
+					if (reply == null) {
+						// 2026-10-11 静态审查 C2：终稿帧到了但解析不出回复 ⇒ 必须提示。
+						// 静默 finish(null) 会让用户看到"字打完了却什么都没有"，比报错更费解。
+						showErrorToast(new ApiError('CHAT_001', 'AI 回复未完成，请重试', 0))
+						finish(null, false)
+						return
+					}
+					console.log('[dbg-chat] done at ' + (Date.now() - t0) + 'ms (frames=' + frameCount + ', chunks=' + chunkCount + ')')
+					finish(new ChatSendResult(obj.getString('conversation_id') ?? '', reply), false)
+					return
+				}
+				if (f.event == 'error') {
+					// 后端在流内报错（HTTP 头已发出，改不了状态码）：CHAT_001/002/004
+					const obj = JSON.parse(f.data) as UTSJSONObject
+					showErrorToast(new ApiError(
+						obj.getString('code') ?? 'UNKNOWN',
+						obj.getString('message') ?? 'AI 回复失败，请稍后重试',
+						0
+					))
+					finish(null, true)
+				}
+				// status/ping 等其余事件：忽略（但已喂过看门狗）
+			} catch (e) {
+				console.log('[dbg-chat] frame parse failed: ' + raw.substring(0, 120))
+			}
+		}
+
+		const consumeFrames = (): void => {
+			while (!settled) {
+				const idx = decoded.indexOf('\n\n', consumed)
+				if (idx < 0) {
+					return // 还有半帧没到齐：等下一个 chunk
+				}
+				const raw = decoded.substring(consumed, idx)
+				consumed = idx + 2
+				handleFrame(raw)
+			}
+		}
+
+		const appendBytes = (bytes: Uint8Array): void => {
+			const total = pending.length + bytes.length
+			const merged = new Uint8Array(total)
+			for (let i = 0; i < pending.length; i++) {
+				merged[i] = pending[i]
+			}
+			for (let i = 0; i < bytes.length; i++) {
+				merged[pending.length + i] = bytes[i]
+			}
+			const dec = decodeUtf8(merged)
+			pending = merged.slice(dec.usedBytes)
+			decoded += dec.text
+			consumeFrames()
+		}
+
+		const task = uni.request({
+			url: getBaseUrl() + PATH_CHAT_MESSAGES_STREAM,
+			method: 'POST',
+			data: body,
+			header: buildHeader(),
+			responseType: 'arraybuffer',
+			enableChunked: true,
+			success: (res: any) => {
+				const status = typeof res.statusCode == 'number' ? (res.statusCode as number) : 0
+				// 🚨 2026-10-11 静态审查 A3 修复：陈旧会话 id 的**自愈**。
+				// 背景：会话 id 是**设备级**存储（不随用户切换清理），而后端对未知/他人会话
+				// 一律 404 CHAT_003（IDOR 防护）。换账号 / 后端库重置后，本地这条 id 必然失效，
+				// 而原实现只 toast 不重置 ⇒ **此后每一条消息都 404**（永久砖，只能清 App 数据）。
+				// 自愈：仅对 CHAT_003 ⇒ 清掉本地会话 id + 以**新会话**重发一次（仅一次，防循环）。
+				// 其他 404（如路径错误）不自愈，避免掩盖真问题。
+				if (status == 404 && !newConvTried) {
+					let code404 = ''
+					if (res.data instanceof UTSJSONObject) {
+						code404 = res.data.getString('code') ?? ''
+					}
+					if (code404 == 'CHAT_003') {
+						console.log('[dbg-chat] stale conversation -> retry as new conversation')
+						uni.removeStorageSync(CHAT_CONV_STORAGE_KEY)
+						if (watchdog >= 0) {
+							clearTimeout(watchdog)
+							watchdog = -1
+						}
+						streamChatOnce('', content, retried, true).then((r: ChatSendResult | null) => {
+							finish(r, false)
+						})
+						return
+					}
+				}
+				if (status == 401 && !retried) {
+					// 401 单飞刷新重放一次（语义与 api.uts.doRequest 一致；本通道绕开了它，故在此复刻）。
+					// 🚨 2026-10-11 静态审查 B2 修复：外层看门狗必须**彻底停掉（交接给内层）**，
+					// 初版只 resetWatchdog() 续命一次远远不够——重放的帧只会喂**内层**自己的
+					// 看门狗，外层 90s 到点仍会误杀一次本来正常的重放，且 abort 打在**已结束的
+					// 外层 task** 上（内层连接纹丝不动）。后果：正常回复被判失败 + 后端继续落库
+					// ⇒ 历史里出现用户没见过的回复。
+					if (watchdog >= 0) {
+						clearTimeout(watchdog)
+						watchdog = -1
+					}
+					refreshToken().then((ok: boolean) => {
+						if (ok) {
+							streamChatOnce(conversationId, content, true, newConvTried).then((r: ChatSendResult | null) => {
+								finish(r, false)
+							})
+						} else {
+							clearToken()
+							showErrorToast(new ApiError('AUTH_005', '登录已过期，请重新登录', 401))
+							finish(null, false)
+						}
+					})
+					return
+				}
+				if (status != 200) {
+					// 非 200：响应体是**普通 JSON 错误信封**（不是 SSE）⇒ 同 api.uts 口径取 code/message
+					let code = 'HTTP_' + status
+					let msg = 'AI 回复失败（HTTP ' + status + '）'
+					if (res.data instanceof UTSJSONObject) {
+						code = res.data.getString('code') ?? code
+						msg = res.data.getString('message') ?? msg
+					}
+					showErrorToast(new ApiError(code, msg, status))
+					finish(null, false)
+					return
+				}
+				if (!chunkSeen && res.data != null) {
+					// **兜底**：蒸汽模式桥接可能吞掉 chunk 回调（api.uts:260 / auth.uts:66 两处自证同族坑）。
+					// 此时整段响应体仍会到 success，解析它至少能拿到 done 帧——只是没有"逐字"效果。
+					try {
+						appendBytes(new Uint8Array(res.data as ArrayBuffer))
+					} catch (e) {
+						decoded += res.data as string
+						consumeFrames()
+					}
+				}
+				// 走到这里仍没 settled ⇒ 没有 done 帧：**如实失败**，绝不拿预览当终稿。
+				// ⚠️ 但**不能立刻判失败**：部分平台的 chunk 回调可能排在 success 之后，
+				// 立即收尾会把"已经在途的终稿帧"丢掉（表现为"文字渲染完了却没显示回复"的偶发丢帧）。
+				// 留 400ms 让在途分片落地，之后仍无 done 才认失败。
+				setTimeout(() => {
+					// 2026-10-11（交互审查 B1）：这是全链路**唯一静默失败**分支——HTTP 200、
+					// 已渲染若干预览、但流里始终没有 done 帧（后端中途挂/中间层截断）。
+					// 其它失败（看门狗/非 200/流内 error/网络）都有 toast；唯独这里若静默，
+					// 用户看到"字打了一半凭空消失"且无任何提示，比报错更费解。补诚实提示。
+					if (!settled) {
+						showErrorToast(new ApiError('CHAT_001', 'AI 回复未完成，请重试', 0))
+					}
+					finish(null, false)
+				}, 400)
+			},
+			fail: (_err: any) => {
+				// 2026-10-11：finish(null, true) 的主动 abort 会走到这里（fail: request:fail abort）
+				// ——已 settled（toast 已弹过）⇒ 直接吞掉，不二次报错。
+				if (settled) {
+					return
+				}
+				captureException('network fail: chat stream @' + getBaseUrl(), 'api.network', null)
+				showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
+				finish(null, false)
+			}
+		})
+		task.onChunkReceived((res: any) => {
+			chunkSeen = true
+			chunkCount = chunkCount + 1
+			try {
+				appendBytes(new Uint8Array(res.data as ArrayBuffer))
+			} catch (e) {
+				// 2026-10-11（P-5 防御）：enableChunked/onChunkReceived 不在 5.24 dts，
+				// res.data 的运行时类型（ArrayBuffer?）未经验证——形态不符时丢这个 chunk
+				// 并留痕，绝不让异常冒进 uni 回调栈（炸掉后续所有 chunk）。
+				console.log('[dbg-chat] chunk decode failed: ' + e)
+			}
 		})
 	})
 }
@@ -130,12 +547,16 @@ export class ChatHistoryItem {
 	role: string
 	kind: string
 	text: string
+	chips: Array<string>
+	cards: Array<ChatCard>
 
-	constructor(id: string, role: string, kind: string, text: string) {
+	constructor(id: string, role: string, kind: string, text: string, chips: Array<string>, cards: Array<ChatCard>) {
 		this.id = id
 		this.role = role
 		this.kind = kind
 		this.text = text
+		this.chips = chips
+		this.cards = cards
 	}
 }
 
@@ -167,16 +588,29 @@ export function fetchChatHistory(conversationId: string): Promise<Array<ChatHist
 				resolve(null)
 				return
 			}
-			const arr = dataArr(d)
+			// 🚨 2026-10-11 静态审查 A2 修复：后端 `ChatHistoryOut` 把数组放在 **data.messages**，
+			// 而初版读的 `dataArr(d)` 取的是 `data.data`（该键不存在）⇒ 恒得空数组：
+			// **历史回填自 2026-09-25"接线补完"以来从未生效过**（用户重启 App 后会话永远空白，
+			// 与 TabAi 注释声称的"已回填"完全相反）。
+			// 后端实证：backend/app/schemas/chat.py（ChatHistoryOut.messages）、
+			// backend/tests/test_chat.py 断言 hist.json()["data"]["messages"]。
+			const arrAny = d.getArray('messages')
 			const out: Array<ChatHistoryItem> = []
-			for (let i = 0; i < arr.length; i++) {
-				const o = arr[i]
-				out.push(new ChatHistoryItem(
-					o.getString('id') ?? '',
-					o.getString('role') ?? '',
-					o.getString('kind') ?? '',
-					o.getString('text') ?? ''
-				))
+			if (arrAny != null) {
+				// 显式转 UTSJSONObject（**不能留 any**：UTS 里在 `any` 上调方法是历史
+				// FATAL 坑——"数组上调 UTSJSONObject 方法致 Promise 永不 resolve"同源）
+				const arr = arrAny as Array<UTSJSONObject>
+				for (let i = 0; i < arr.length; i++) {
+					const o = arr[i]
+					out.push(new ChatHistoryItem(
+						o.getString('id') ?? '',
+						o.getString('role') ?? '',
+						o.getString('kind') ?? '',
+						o.getString('text') ?? '',
+						parseStringArray(o.getArray('chips')),
+						parseCards(o.getArray('cards'))
+					))
+				}
 			}
 			resolve(out)
 		})

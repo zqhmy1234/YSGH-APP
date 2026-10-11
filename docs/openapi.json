@@ -3642,6 +3642,51 @@
         ]
       }
     },
+    "/api/v1/chat/messages/stream": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Post Message Stream",
+        "description": "发一条消息并**流式**取回复（SSE · AG6 余项 2026-10-09）。\n\n与 `POST /messages` 的关系：**同一套鉴权 / 会话隔离 / 护栏 / 落库口径**，\n差别只在传输形态。非流式端点保留（脚本、降级路径与既有测试都在用）。\n\n帧格式（`event:` + 单行 JSON `data:`）：\n  · `status`  {\"stage\":\"accepted\"}                       —— 链路已接（首帧，立即）\n  · `preview` {\"text\":\"<累计全文>\"}                       —— **累计**而非增量\n  · `tool`    {\"phase\":\"started\"|\"done\",\"name\":…}         —— 工具状态（UI\"在翻记忆\"）\n  · `replace` {\"text\":\"<整段>\"}                           —— 校验重试 ⇒ 预览作废覆盖\n  · `done`    {\"conversation_id\",\"reply\":{…},\"latency_ms\"} —— **终稿**（客户端以此收尾）\n  · `error`   {\"code\",\"message\"}                          —— CHAT_001/002/004/INTERNAL_ERROR\n\n为什么 `preview` 推**累计全文**而不是增量分片：客户端侧桥接（蒸汽模式）可能丢帧，\n增量一旦丢一帧，拼出来的回复就是**错字**（比慢更糟）；累计帧每帧自洽，\n丢帧只表现为\"晚一拍\"，下一帧就追平。代价是每秒多几百字节，值得。\n\n⚠️ 三条不可退让的事在流式形态下仍然成立（本端点全部复杂度都在这上面）：\n  1. **用户消息先落库**——agent 失败也留痕（同非流式口径）；\n  2. **预览必须过规则层**：每累积一段就跑 `rule_screen`，命中即中断推流并结束。\n     已推出去的前缀必然是过了规则层的 ⇒「护栏拦截不得泄漏预览」成立；\n  3. **终稿仍走完整链路**（规则层 + LLM 级）：不过审 ⇒ **不落库、不返回该文本**（CHAT_004）。",
+        "operationId": "post_message_stream_api_v1_chat_messages_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chat/replies/{reply_id}": {
       "get": {
         "tags": [
@@ -6270,6 +6315,21 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "chips": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chips"
+          },
+          "cards": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Cards"
           }
         },
         "type": "object",

@@ -9,6 +9,87 @@
 
 ---
 
+### 2026-10-11 16:36 · commit c356781 · ts=1791707777
+- **错误**：门禁 lint 报 UP037：局部变量类型注解写成字符串形式（queue.Queue[tuple[str, Any] | None] 带引号）
+- **根因**：写带 PEP 604 联合的泛型注解时习惯性加引号（怕运行期求值），但本文件顶部已有 from __future__ import annotations——字符串注解此时纯属多余，ruff UP037 直接判违规
+- **修复**：去掉引号改为直接注解；提交前对新增注解先确认文件是否已启用 from __future__ import annotations
+- **相关文件**：backend/app/api/chat.py
+- **教训**：写类型注解前先看文件是否有 from __future__ import annotations：有则不得再用字符串注解（ruff UP037）
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：环境差异三连：dev/prod 换后端后本地状态（同步游标/镜像/会话 id/对账节流）无命名空间沿用旧值 ⇒ 时间轴假空、会话 404；Sentry 报文不含 host ⇒ 生产「接口全空」故障零可定位；App 启动日志硬编码 env=dev
+- **根因**：环境切换被当成「改一个常量」而非「换一套数据域」：本地存储键无后端维度、可观测性上报缺 host、日志打点用字面量——三者都只在 prod 真实故障时才暴露，而 dev 联调（本机服务全在跑）永远掩盖
+- **修复**：加 ensureEnvFingerprint（启动最先执行，地址变更即清绑定旧后端的键）；api/chat 的网络类 Sentry 上报统一附 hostTag()；App.uvue 打印真实 ENV；preflight 补临时隧道域名拦截
+- **相关文件**：client/utils/config.uts · client/utils/api.uts · client/App.uvue · deploy/scripts/preflight_pack.ps1
+- **教训**：环境差异要按「数据域 + 可观测性 + 日志」三件套排查：本地状态须有环境维度，生产故障的唯一出口（Sentry/release 日志）必须自带 host 与真实环境标识
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：模板入口承诺了不存在的面板：照片条点击（usePhotoAttach 只 setState）、「拆分这张卡」（useEventOps 同）均无 UI 消费者，用户点击零反馈
+- **根因**：样式与状态先写、面板模板后写（或从未写）：tab-index.css 的 .photo-detail-*/.split-* 规则与 composable 的四态全仓零消费者，但入口（@tap）已挂 ⇒ 「点得动但没反应」——静态门禁只看类名成对性，查不出「CSS 有规则 + 状态有写入 + 模板无消费者」这一型
+- **修复**：收口入口到既有可用路径（照片点击直达详情页；拆分项从 action sheet 移除），状态保留待面板落地
+- **相关文件**：client/components/TabIndex/TabIndex.uvue
+- **教训**：新增交互入口必须同时有 UI 消费者；发现「CSS 规则/状态变量零使用者但有 @tap 入口」= 一条隐藏的哑入口，优先收口而非补 UI
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：下拉刷新遇断网：时间轴卡片整片消失、回响卡被抹掉、2.5s 后显示「还没有回忆」假空态（用户以为云端记忆丢了）
+- **根因**：fetchTimelineAsync 用空数组表达失败，而 fetchAll 无 wasLastFetchFailed 守卫（refreshSilently 有同款守卫）——同语义两条路径只有一条守；派生状态 emptyState 又只在 applyFetchedEvents 一个入口重算，days/pending 被 useEventOps 的 render 出口改动时（如忽略最后一条待确认）不重算 ⇒ 白屏
+- **修复**：fetchAll 补失败守卫（失败保持现状 + 收起骨架/转圈）；emptyState 收敛移到渲染出口 renderFromEvents（与守卫配套，避免失败时空数组立刻显示假空态）
+- **相关文件**：client/components/TabIndex/TabIndex.uvue
+- **教训**：失败结果不得覆盖已渲染数据：同语义的多条取数路径必须有同款守卫；派生状态必须收敛在渲染出口而非某个入口
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：历史回填自 2026-09-25「接线补完」以来从未生效：客户端读 dataArr(d)（取 data.data）而后端把数组放在 data.messages
+- **根因**：跨端字段名只对拍「成功路径」不核对信封层级：实现完成时测的是「有新回复」链路，重启回填（读历史）链路从未被端到端跑过，注释却按预期写了「已回填」
+- **修复**：改读 d.getArray('messages') 并显式 as Array<UTSJSONObject>（避免 any 上调方法的历史 FATAL）；以 backend/schemas/chat.py 与 backend/tests 断言为契约证据
+- **相关文件**：client/utils/chat_api.uts
+- **教训**：跨端契约必须逐字段对拍（含信封层级）；「功能已接线」的注释不能替代一次端到端跑通
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：看门狗收尾写成 resetWatchdog()（重新武装定时器）而非 clearTimeout：每次成功回复后约 90s 凭空弹出「AI 回复超时」
+- **根因**：本批把「总超时」改「idle 续命」时，收尾语义从「取消」误写成「重置」——resetWatchdog 是先 clear 再新建一个 90s 定时器，回调无条件 toast；而 api.uts 的同类 finish 用的是 clearTimeout，本文件成孤例（改超时逻辑时只检查了「有没有取消」没检查「取消后又武装」）
+- **修复**：finish 内改显式 clearTimeout(watchdog) + watchdog = -1；并给 finish/401 重放加「超时权交接」注释（外层停表、内层自持）
+- **相关文件**：client/utils/chat_api.uts
+- **教训**：定时器类收尾只认 clearTimeout；改超时策略后必须检查「收尾路径是否又武装了定时器」——重置与取消是两件事
+
+---
+
+### 2026-10-09 16:10 · commit c356781 · ts=1791533447
+- **错误**：全量门禁 3 例变红但均与本批改动无关：test_generated_output_guard 两例（monkeypatch 的本地假结果类缺 meta 字段、第 3 参名写成 thread_id）与 test_amap 的 mock 回退用例（geo_cache 内有 30 天内的真实缓存行，走缓存命中而非 mock 回退）
+- **根因**：① 测试里的本地假类/假签名会随真实 dataclass 与调用签名演进而静默过期（10-08 改签名 ccbd3b8 后这两例就已经红了，无人发现）；② 依赖库状态的集成用例（缓存优先的服务）没有前置状态清理，本机真实联调/api_smoke 写入的数据把它染红
+- **修复**：假结果类改用真实 AgentChatResult（加字段即编译期暴露）；参数名与真实签名对齐；test_amap 增 autouse 前置 fixture 定向清理本文件测试坐标的 geo_cache 行（不清整表，同 R8#13 口径）
+- **相关文件**：backend/tests/test_generated_output_guard.py · backend/tests/test_amap.py
+- **教训**：门禁变红先分辨「我改坏的 / 存量 / 环境数据」：测试替身必须与真实类型同构，依赖状态的服务用例必须自带状态清理
+
+---
+
+### 2026-10-09 15:26 · commit c356781 · ts=1791530814
+- **错误**：uni-app x 5.24 的 dts 里没有 enableChunked / onChunkReceived / TextDecoder，误判为不支持
+- **根因**：IDE 用的 language-services dts 与编译器实际类型源不同步（app-android 类型从 @uni-x/app-android.d.ts 解析，且未随包分发全部 API）
+- **修复**：写 30 行探针文件实测编译：enableChunked/onChunkReceived/Uint8Array 全部编过（与 scroll-y 被编译器拒不同）；ArrayBuffer→UTF-8 用逐字节 %XX + decodeURIComponent（无 TextDecoder），跨 chunk 半字符用回退≤3字节 + 累积重解码处理
+- **相关文件**：client/utils/chat_api.uts
+- **教训**：dts 缺 API 不等于不可用：先编译探针，再决定架构
+
+---
+
+### 2026-10-09 15:26 · commit c356781 · ts=1791530814
+- **错误**：agent 侧 SSE 端点在生成器内 set 的 ContextVar 与 request_id 跨 yield 失效：logger/工具层拿不到 user_id，收尾 reset_request_id 抛 ValueError: was created in a different Context
+- **根因**：Starlette 把同步 StreamingResponse 生成器的每次 next() 派发到线程池（anyio to_thread），每次调用都取一份新的 contextvars 快照 ⇒ 生成器内 set 的值不跨 yield 保留，token 也无法在另一个上下文里 reset
+- **修复**：整轮 agent 运行放进一个工作线程（queue.Queue + threading.Thread，worker 内 set ctx/rid 并在 finally 回收 token），生成器体只做字符串格式化，不依赖 ContextVar
+- **相关文件**：agent/src/main.py:chat_stream
+- **教训**：同步生成器 + ContextVar 是危险组合：跨 yield 的上下文不保留，必须在单线程内完成需要上下文的全部工作
+
+---
+
 ### 2026-10-09 00:36 · commit 7a788e6 · ts=1791477407
 - **错误**：lessons 自我触发循环：教训正文引用了违规字面量（仿 sk- 长串），被 secrets 门禁再次拦截；且门禁失败时间戳晚于教训登记时间，时序规则又要求再登记一轮
 - **根因**：门禁扫描范围含 lessons.md 自身，而时序规则以最近一次失败时间为基准

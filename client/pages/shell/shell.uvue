@@ -51,6 +51,18 @@
 	let profileShownSeq = ref(0)   // 切到 profile 广播（组件 watch → 原页级 onShow 等价）
 	let indexShownSeq = ref(0)     // 切到 index 广播（原页级 onShow TTL 刷新等价；首挂由 onMounted 拉）
 
+	/** 安全解码（2026-10-11 静态审查 #7）：畸形编码（如 `?memTitle=%E4%`）会让
+	 * `decodeURIComponent` 抛 URIError，而 onLoad 体内抛异常 ⇒ 后面的 ensureLogin
+	 * **不会执行** ⇒ ready 永不置位 ⇒ **永久空白首屏**（只留 TabBar）。故必须收口。 */
+	function safeDecode(s: string): string {
+		try {
+			return decodeURIComponent(s)
+		} catch (e) {
+			console.log('[shell] decodeURIComponent failed, fallen back to raw: ' + s)
+			return ''
+		}
+	}
+
 	onLoad((options : OnLoadOptions) => {
 		const t = options['tab'] ?? ''
 		const ty = options['type'] ?? ''
@@ -58,12 +70,14 @@
 		const rt = options['memTitle']
 		const rs = options['memSummary']
 		let hasPrefill = false
-		if (rt != null) {
-			aiTitle.value = decodeURIComponent(rt as string)
+		// ⚠️ 判空必须是 `!= ''`：原写法 `!= null` 把**空串**也算作"有预填"（2026-10-11 #8），
+		// 于是 `?memTitle=` 会莫名其妙把用户带到 AI tab。
+		if (rt != null && rt != '') {
+			aiTitle.value = safeDecode(rt as string)
 			hasPrefill = true
 		}
-		if (rs != null) {
-			aiSummary.value = decodeURIComponent(rs as string)
+		if (rs != null && rs != '') {
+			aiSummary.value = safeDecode(rs as string)
 			hasPrefill = true
 		}
 		if (ty != '') {
@@ -81,13 +95,30 @@
 			activate(activeTab.value)
 		}
 		// token 就绪后放行组件挂载（对齐老 index onLoad 内 ensureLogin().then(拉数据) 串行语义）
-		ensureLogin().then((ok: boolean) => {
-			console.log('[shell] ensureLogin -> ' + ok + '，放行 tab 组件挂载')
+		// 🚨 2026-10-11 静态审查 A 级修复：**必须兜住异常并保证最终放行**。
+		// 原实现裸调 `ensureLogin().then(...)`：只要它同步抛（storage/插件异常）或链条中断，
+		// `ready` 就永不置位 ⇒ 四 tab 全被 `v-if="ready && everX"` 挡在门外 ⇒
+		// **永久空白首屏**（只剩 TabBar，无任何错误提示）。本项目既定口径是 fail-open
+		// （见 App.uvue 的 ensureLogin 预热：失败也继续），此处补齐同一口径。
+		try {
+			ensureLogin().then((ok: boolean) => {
+				console.log('[shell] ensureLogin -> ' + ok + '，放行 tab 组件挂载')
+				ready.value = true
+			})
+		} catch (e) {
+			console.log('[shell] ensureLogin threw -> 仍放行（fail-open）: ' + e)
 			ready.value = true
-		})
+		}
 	})
 
 	function activate(tab: string): void {
+		// 🚨 2026-10-11 静态审查 #2（跳转维度）修复：**切离 AI tab 时关掉附件面板**。
+		// 原实现只在 `onBackPress` 且 `activeTab=='ai'` 时复位 `aiAttachOpen` ⇒ 用户
+		// 「AI 开附件面板 → 切到"我的" → 按返回键」时：①返回键不再管这个面板（走默认退出 App）
+		// ②切回 AI 时面板**还开着**（残留 true）。切 tab 即收面板是唯一自洽语义。
+		if (activeTab.value == 'ai' && tab != 'ai') {
+			aiAttachOpen.value = false
+		}
 		if (tab == 'ai') {
 			everAi.value = true
 		}
@@ -161,6 +192,10 @@
 	onBackPress((): boolean => {
 		if (sheetOpen.value) {
 			sheetOpen.value = false
+			// 2026-10-11（跳转审查）：返回键关浮层未复位 mode（只有 onSheetClose 复位）——
+			// 残留的 'photo' 会让"下次打开"被误判为直达拍照。当前被"所有重开路径都重设
+			// mode"（openSheet / 空态 CTA）掩盖，属防御性缺口，一并补上保持两处对称。
+			sheetMode.value = ''
 			return true
 		}
 		if (activeTab.value == 'ai' && aiAttachOpen.value) {

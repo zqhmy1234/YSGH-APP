@@ -38,6 +38,26 @@ def _ensure_mock_mode():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clean_test_geo_cache():
+    """用例前先清掉**本文件测试坐标**的缓存行（定向，不清整表）。
+
+    为什么必须清（2026-10-09 补）：`get_place` 是**缓存优先**，而本文件用的坐标（外滩）
+    正是真实联调验证用过的坐标——2026-08-25 的真实调用、api_smoke 的照片管线都可能往
+    `geo_cache` 写一条**30 天内**的缓存行。只要有这样一行，"regeo 抛错 ⇒ mock 回退"这条
+    路径根本不会被执行，用例会拿到真实地名而失败：同一份代码在不同机器/不同时点红绿不同。
+    这是**测试对库状态的隐式依赖**（不是产品缺陷）；定向清理让用例只依赖代码，
+    与 teardown 的"按 key 定向删除"（R8#13）同一口径。
+    """
+    db = SessionLocal()
+    try:
+        db.execute(sa_delete(GeoCache).where(GeoCache.geohash.in_(_test_geohashes())))
+        db.commit()
+    finally:
+        db.close()
+    yield
+
+
 @pytest.fixture()
 def db():
     session = SessionLocal()

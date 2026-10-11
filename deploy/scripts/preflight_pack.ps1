@@ -94,6 +94,14 @@ try {
             foreach ($marker in @('example.com', 'localhost', '127.0.0.1', '10.0.2.2')) {
                 if ($prodBase -like "*$marker*") { $reasons += "命中占位/回退词 $marker" }
             }
+            # 2026-10-11 静态审查补：**临时隧道域名**（cloudflared quick tunnel / ngrok / localtunnel 等）
+            # 也是"看着能用、随时失效"——隧道重启即换域名，已分发 APK 立刻全部连不上（表现为
+            # "所有页面全空且不报错"）。原门禁只认占位词 ⇒ 拿隧道地址出包能过门（盲区实锤）。
+            foreach ($tunnel in @('trycloudflare.com', 'ngrok.io', 'ngrok-free.app', 'loca.lt', 'localtunnel.me', 'serveo.net')) {
+                if ($prodBase -like "*$tunnel*") {
+                    $reasons += "命中临时隧道域名 $tunnel（重启即换址，已分发 APK 会立刻失效）"
+                }
+            }
             if ($reasons.Count -gt 0) {
                 Fail ("PROD_BASE_URL = '$prodBase' —— " + ($reasons -join '；')) `
                     '改成真实公网地址（形如 http://43.x.x.x:8010 或 https://api.你的域名）。换址清单见 deploy/ONE_SWAP.md'

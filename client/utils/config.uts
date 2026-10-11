@@ -50,7 +50,11 @@ const PROD_BASE_URL: string = 'https://weighted-promotions-britannica-miller.try
  *
  * 反例（不应告警）：`http://43.138.x.x:8010`、`https://api.memlight.cn`。
  */
-const PLACEHOLDER_MARKERS: Array<string> = ['公网IP', 'example.com', 'localhost', '127.0.0.1', '10.0.2.2']
+const PLACEHOLDER_MARKERS: Array<string> = ['公网IP', 'example.com', 'localhost', '127.0.0.1', '10.0.2.2',
+	// 2026-10-11 静态审查：**临时隧道域名**同样属"看起来配好了、其实随时失效"——
+	// cloudflared quick tunnel 重启即换域名 ⇒ 已分发 APK 立刻全部连不上（10-04 台账已记该口径）。
+	// 原 marker 表不含它们 ⇒ 拿临时隧道出包时 `console.error` 不喊、preflight 也放行（盲区）。
+	'trycloudflare.com', 'ngrok.io', 'ngrok-free.app', 'loca.lt', 'localtunnel.me', 'serveo.net']
 
 /** 生产基址是否"明显没配好"（含非 http(s) 协议头的情况，如漏写 scheme） */
 function isProdBaseUrlSuspicious(url: string): boolean {
@@ -68,12 +72,10 @@ function isProdBaseUrlSuspicious(url: string): boolean {
 /** 占位符告警只打一次（避免每请求刷屏） */
 let _prodBaseUrlWarned = false
 
-/** 调试：启动后自动进入 AGG-016 一致性自检页（仅 dev；验证完置回 false） */
-export const AGG_CHECK_ON_DEVICE: boolean = false
-
 /** dev 调试页常驻开关（O20）：非 dev 构建（ENV='prod'）自动关闭——
  *  值为 ENV 派生，生产构建无需人工改；dev 构建下 profile"关于"区展示调试入口。
- *  注意：AGG_CHECK_ON_DEVICE 是"启动自动进页"的一次性开关，本开关是"页面/入口常驻"总闸。 */
+ *  （2026-10-11 静态审查：原同区的 `AGG_CHECK_ON_DEVICE` 已**删除**——全仓零消费者，
+ *   注释声称的"启动自动进自检页"从未接线，是误导后人的死开关；自检页入口由本开关控制。） */
 export const DEV_PAGE_ENABLED: boolean = ENV === 'dev'
 
 export function getBaseUrl(): string {
@@ -113,6 +115,52 @@ export function getBaseUrl(): string {
  * @param url 后端下发的 thumbnail_url / original_url / cover_url
  * @return 可直接喂给 <image :src> 的 URL；空值返回空串（模板侧用 != '' 判空）
  */
+/**
+ * 环境指纹守卫（2026-10-11 静态审查 · 环境差异专题）。
+ *
+ * 问题：本地存储里有一批**强绑定后端实例**的状态——同步游标 / 对账镜像 / 会话 id /
+ * 对账节流时间 / 离线队列等。它们**没有环境命名空间**，也没有任何"换后端即失效"的逻辑
+ * （全仓零 `clearStorageSync` 调用）。于是 dev↔prod 切换（或指向另一台后端）后：
+ *   · `yishu_sync_cursor` 拿旧 seq 喂新后端 ⇒ 增量拉取范围错位 ⇒ 时间轴假空/假旧
+ *   · `yishu_chat_conversation_id` 指向新后端不存在的会话 ⇒ 每条消息 404（另有自愈，见 chat_api）
+ *   · `reconcile_last_at` 处于 24h 节流窗口 ⇒ 换端后当天跳过对账
+ * 表现统统是"数据没了 / 显示不对但没有任何报错"——本项目最贵的一类故障。
+ *
+ * 做法：持久化一枚"当前后端指纹"（= getBaseUrl()），启动时比对；不一致即清掉上述
+ * 绑定旧后端的状态（**不动 token 与 device_id**：前者 401 有自愈链，后者是设备身份，
+ * 跨环境复用可让同一设备在新后端命中同一账号）。
+ */
+export function ensureEnvFingerprint(): void {
+	const KEY = 'yishu_env_fingerprint'
+	const cur = getBaseUrl()
+	let prev = ''
+	try {
+		prev = uni.getStorageSync(KEY) as string
+	} catch (e) {
+		prev = ''
+	}
+	if (prev == null || prev == '') {
+		uni.setStorageSync(KEY, cur)
+		return
+	}
+	if (prev == cur) {
+		return
+	}
+	// 换后端：清掉一切"绑定了旧后端"的本地状态（清单见函数头注释；新增此类键须同步登记）
+	const keys: Array<string> = [
+		'yishu_sync_cursor', 'yishu_sync_mirror', 'yishu_last_sync_at', 'yishu_sync_paused',
+		'yishu_chat_conversation_id', 'reconcile_last_at',
+		'yishu_offline_queue', 'yishu_sync_op_queue', 'yishu_op_log',
+		'yishu_pending_uploads', 'yishu_held_uploads', 'yishu_failed_uploads',
+		'yishu_ignored_events'
+	]
+	for (let i = 0; i < keys.length; i++) {
+		uni.removeStorageSync(keys[i])
+	}
+	uni.setStorageSync(KEY, cur)
+	console.log('[yishu] 后端地址变更（' + prev + ' → ' + cur + '），已清理绑定旧后端的本地状态')
+}
+
 export function resolveMediaUrl(url: string | null): string {
 	if (url == null) {
 		return ''

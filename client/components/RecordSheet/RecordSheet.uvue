@@ -390,6 +390,13 @@
 			clearInterval(recordTimer.value)
 			recordTimer.value = 0
 		}
+		// 🚨 2026-10-11 静态审查 #1（跳转维度）修复：录音中卸载必须**真正停止录音**。
+		// 原实现只清展示用计时器（recordTimer）——而 shell 的返回键分支只把 `sheetOpen=false`，
+		// 组件随即被 `v-if` 卸载（未走 onClose 路径）⇒ **录音中按返回键时原生录音可能仍在后台
+		// 继续**（表现为"面板关了还在录"；再打开面板状态错乱、时长与文件对不上）。
+		if (recording.value) {
+			vr.stopRecordNow()
+		}
 	})
 
 	// B5.2f-2c：模板取值封装（fmtRecTime/recSecFromMs/cellCls/imgCls）外置到 utils/record_ui.uts

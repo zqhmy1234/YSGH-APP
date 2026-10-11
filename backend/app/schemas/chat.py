@@ -63,6 +63,10 @@ class ChatHistoryItemOut(BaseModel):
     kind: str = Field(..., description="assistant 侧为契约形态族；user 侧为 'user'")
     text: str
     created_at: str
+    # 结构化附加（2026-10-09）：历史回填也要带上 chips/cards —— 否则"重启 App 后卡片变纯文本"，
+    # 同一条回复在不同时间点长得不一样（用户会以为数据坏了）。用户行恒为空。
+    chips: list[str] = Field(default_factory=list)
+    cards: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ChatHistoryOut(BaseModel):
