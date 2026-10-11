@@ -25,6 +25,8 @@
 import { ref } from 'vue'
 import { getToken } from './auth'
 import { getBaseUrl } from './config'
+// 2026-10-11：音频下载同样要出网通用头（ngrok 拦截页会挡掉 downloadFile）⇒ 复用统一头工厂
+import { buildHeader } from './api'
 
 // ── 全局播放状态（三处页面共享绑定）──
 export let voiceCurrentId = ref('') // 正在加载/播放的 content_id；'' = 空闲
@@ -324,14 +326,9 @@ function startPlay(contentId: string): void {
 		return
 	}
 	voiceLoading.value = true
-	const header: UTSJSONObject = {}
-	const token = getToken()
-	if (token != '') {
-		header.set('Authorization', 'Bearer ' + token)
-	}
 	uni.downloadFile({
 		url: getBaseUrl() + '/api/v1/media/audio/' + contentId,
-		header: header,
+		header: buildHeader(''),
 		timeout: 30000,
 		success: (res: any) => {
 			voiceLoading.value = false

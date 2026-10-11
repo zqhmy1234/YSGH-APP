@@ -13,29 +13,38 @@
   - `忆述光华_数据库Schema设计.md` — 28 表 10 域
   - `忆述光华_外部API清单与成本.md` — 17 项外部依赖 + 服务器调研
   - `忆述光华_产品部验收标准更新转达稿.md` — 产品部确认项
-  - `忆述光华_深度开发设计/01-05e` — 9 份深度设计定稿（B1 画像 / B2+02b RAG / B3 事件聚合 / B4 同步 / B5a-e 语音·护栏·纠错·后台·Windows）
+  - `忆述光华_深度开发设计/01-05e` — 10 份深度设计定稿（B1 画像 / B2+02b RAG / B3 事件聚合 / B4 同步 / B5a-e 语音·护栏·纠错·后台·Windows）
   - `MVP完成度评估_20260827/` — 完成度评估九份（**02=用户故事目录（状态唯一来源）、07=08-27 基线汇报、08=收尾完成汇报**）
 - `AGENTS.md` / `feature_list.json` / `progress.md` / `init.sh` / `session-handoff.md` — harness 文件；配套权威：`docs/决策台账.md`（术语消歧+决策+待拍板唯一登记簿）、`docs/lessons.md`（错误与教训单一来源）、`docs/lessons-主题索引.md`（按根因族复盘索引）
 - `docs/parallel-dev/` — **开发期并行任务卡（「开发 Wave 1–4」，Agent A–L，2026-08-25~26，已结束）**。⚠️ **2026-09-23 harness 清理**：波次任务卡（00–13）与归档件已删（`git log --diff-filter=D` 可回看），**仅保留 `_B5a_B5d修正后待办.md`**——其中 J-1/J-2/J-3 三项待办**未闭环**，已登记 `docs/决策台账.md` §7。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
 - `docs/parallel-dev-收尾/` — **收尾波次任务卡（「收尾 Wave 1–4」，2026-08-27~28，已全收口）**。⚠️ **2026-09-23 harness 清理**：任务卡与归档件（00–16/17–23）已删（`git log --diff-filter=D` 可回看），**仅保留 `19_wave3_真机补验跟踪表.md`**——该表 §4＝**缺陷台账（20 单：D-01~D-16、D-18~D-22；D-17 未启用；D-20 系补验修复单 f726942；D-22=08-29 P-2 诊断坐实 O-2 升单）与环境事件（O-1；O-2→D-22；O-3 暗物质审计；O-4 跨窗合流波）的唯一来源**，**其中 D-18/D-19 仍为「已修待复验」＝未关闭**。各卡是历史记录，勿当待办入口。⚠️「开发 Wave 4」（J/K/L）≠「收尾 Wave 4」（4a/4b 归档），全库术语表见 `docs/决策台账.md` §0
+- `backend/` — FastAPI 后端（`app/api` · `app/services` · `app/workers`；**端口 8010**）
+- `client/` — uni-app x 客户端（`pages` / `components` / `utils`(.uts) / `styles` / `uni_modules`；**改前先读 `skills/hbuilderx-uniappx-runloop/`**）
+- `agent/` — LangGraph Agent 服务（`src/main.py`；**规范端口 8300**）
+- `deploy/` — 部署与出包（`ONE_SWAP.md` 换址 · `RUNBOOK.md` · `scripts/preflight_pack.ps1` 出包前置门 · `download/` 分发页）
+- `scripts/` — 门禁与工具（`review_agent.py` 提交门禁 · `test_agent.py` · `client_compile_gate.py` 客户端编译门 · `dev/` 本机联调脚本 · `realdevice/` 真机证据）
+- `skills/` — 领域知识（`infisical-secrets` / `hbuilderx-uniappx-runloop` / `android-media-e2e` / `apk-cloud-release`）
+- `docs/` — 决策台账（§5 待拍板 / §7 未关闭缺陷）· lessons · 各批次交接件
+- `.trae/specs/` — 波次任务书（design-token / functional-fix / refactor-extensibility）
+- `uvue_gen/` · `design_data*/` · `design_gap_audit/` — **生成物/设计数据，勿手改**
+- `review/` · `_verify_*` — 视觉与真机验收证据，**勿清**
 - `skills/infisical-secrets/SKILL.md` — Infisical 密钥链路 skill（所有外部 API Key 统一从这里取，2026-08-19 打通）
 - `skills/hbuilderx-uniappx-runloop/SKILL.md` — 客户端开发主循环 skill（HBuilderX CLI 编译→真机运行→验证 + UTS 编译错误速查表 + 环境排查 + **收尾 Wave 3 真机教训：adb reverse 铁律 / EMUI 纯净模式 / 云打包 CLI 参数 / D-18/D-19 原生探测坑·**5.24 迁移期多窗协调军规**；**改 client/ 代码前先读**，2026-08-24 沉淀、08-28 补录）
 - `skills/android-media-e2e/SKILL.md` — 真机 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位 + **收尾 Wave 3 沉淀：语音短录音链 / 情绪三层默认值 / 云打包验证**；F1 链路真机验收流程，2026-08-24 沉淀、08-28 补录）
+- `skills/harness-gate-maintenance/SKILL.md` — **harness 与门禁维护手册**（改门禁 / 加检查轴 / 动 STATE·progress·feature_list·handoff·init 前读；含两条铁律：新增门禁必须先做**负向探针自校验**、**运维域问题不阻断提交**）。2026-10-11 沉淀
+- `skills/sse-streaming-integration/SKILL.md` — **对话域 SSE 流式对接范式**（三层帧协议 / StreamingResponse 生成器与 `contextvars` 陷阱 / **断连不丢回复**的后台线程+队列 / 客户端 `enableChunked` 手写 UTF-8 解码 / cards·chips 协议）。2026-10-11 沉淀
 - `skills/apk-cloud-release/SKILL.md` — **Android 云打包与出包** skill（前置静态门 → 确认后端地址可达 → HBuilderX CLI 云打包自有证书 → 四项尸检：签名指纹 / 包内地址 / 权限 / apksigner → 部署分发路径）。含 2026-10-04 实测踩出的五个坑：**签名参数走错会静默用 DCloud 共享证书（已装用户装不上新包、只能卸载重装）**、口令必须走仓库外 config、临时隧道地址重启即失效、HBuilderX 单队列并发互杀、**本机 SSL 失败不等于隧道死（须云端视角验证）**；另附「装了却用不了」必查项（内测登录开关 / RQ worker / agent 服务 / 队列积压）。参数速查与故障对照见同目录 `reference.md`。2026-10-04 沉淀
-- `DSH插件选型与安装方案.md` — 本机 DSH 环境文档（与产品无关）
 
-## 当前状态（2026-08-29 · 收尾 Wave 1–4 全收口，下一步＝4b 修复批次）
+## 当前状态
 
-> **执行窗（2026-09-04）· 已收口**：missing-pages 施工窗（分支 feature/missing-pages-impl，工作树 .wt/missing-pages）已完成并合流。执行计划 `_execution_plan_20260904.md` 已于 **2026-09-23 harness 清理**中删除（`git log --diff-filter=D` 可回看）；活文档保留：差异台账 `_diff_ledger.md`、画布真值 `uvue_gen/*_canvas.json`。
-
-> **一句话**：收尾 17 项全部完成（代码侧 13 + 真机 7 清单全达终态 + 4a/4b 文档收口）。**下一步=4b 修复批次**（真机挖出的缺陷修复+复验，非文档工作）。基线 develop，最新提交见 `git log --oneline -8`。
-
-- **完成度快照（终版，详见 `忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md`）**：功能代码 ~90%（代码侧缺口清零）｜内测可达度 60–70%（三座大山不变：外部凭证/真实数据/合规三申请）｜用户故事 **✅46/🟡7/❌0**（A 级真机 **32 条**）｜性能门禁 18 项 **达标 10/部分 2/未达标 6**（30s 计时 ✅ 实测 6.0s≤30s）。剩余 🟡7=**US-20/21/31/32/33/44/52**（卡点：D-06 录音中断×2、D-16 修复复验×1[文案库卡点已 08-29 拍板解除]、企微/微信凭证×3、内容合规×1）。
-- **真机 7 清单终判**：01 蜂窝链路 ✅（US-46/47/48→A）/ 02 录音中断 ❌（D-06，来电待补 P6）/ 03 首批 30s ✅ / 04 L2/L3 归并 ✅（US-06/07→A）/ 05 转写情绪 🟡（US-17/18/19→A，S2 待校准）/ 06 编译冒烟 🟡（①②中文 IME 转人工）/ 07 云打包 🟡（链路 A + D-18/D-19）；补验：US-42（D-20 修复后）/12/25/40/41 →A。证据 `scripts/realdevice/evidence/` 50 文件。**08 附录/progress/handoff 中"4b 终版 ✅41/A27"为补验前时点值，已被本条取代。**
-- **4b 修复批次（下一步）**：批次1＝D-18（WorkManager 探测恒 false）/D-19（FGS manifest 未注册）原生能力对，重打包复验；批次2＝D-16（情绪"平静"伪造；✅08-29 R1-c 已修待复验）/D-07（短录音不落 COS 判死）/D-08（弃段）语音链＋D-22（O-2 坐实，纠错恒 mixed；✅08-29 拍板并批，后端半 81424fb 已修待复验）；批次3＝S2 情绪校准＋D-06 机型适配；**散单已拍板并批（08-29 §1.6/§1.9）**：D-05/D-10/D-14/D-21＋D-12 改进＝客户端半**已解冻（09-01 rebase 完成 d09f639，编译门已过）**；D-21 scroll 修复已随合流入库待 R2 复验关单；D-09 遗留✅已落地（/api/v1/asr/channels 9922e4a）。修复方向/验收口径见 tracker 19 §4。
-- **⚠️ 已知环境项**：O-1 uvicorn 搜索嵌入 exit 1（08-29 P-2 诊断：**版本漂移证伪**，非原生 AV，疑外部终止/内存压力——取证包+stage2 条件复现见 `docs/P2诊断_O1O2_20260829.md`，tracker 19 §5）；客户端编译门待他窗 **UTS 5.24 迁移**落地（develop 干净基线在 5.24 下编不过，此前「编译通过」均为脏工作区假象，lessons 08-29；08-29 午后更新：wrap1-agentA2-ui-restore 分支已带全套迁移修复并报「编译成功+全页面正常」，09-01 **迁移已落地**：wrap1 波 17 枚经 cea5025 跨天真 merge 入 develop（utils 21 文件 .ts→.uts、Vapor 启用、10 页零错零警+峰宝九条验机验收）；编译门已重启并通过：09-01 rebase 8/8+受影响后端 138 测试全绿+12 页冷编译一次过（fix/4b 现 @ d09f639），R2 真机波就绪；⚠️测试依赖 Docker Desktop 需运行（yishu-redis/yishu-qdrant 容器，机器重启即眠））；EMUI 纯净模式拦 adb install 且零错误提示（先关纯净模式再装）。
-- **🌑 暗物质审计（08-29，tracker O-3）**：主区旧脏清空时审出两单「已修+复验过但从未入库」（D-02/D-03 修复组、文案库 v1 基线），均已补落 fix/4b（8a0b27a/7589775/acce7ef）；**新铁律：任何「已修」判定必须含 git 入库存在性检查**（新文件未 add 不可能被 diff 审查发现）。他窗残余未提交工作存 `salvage/main-worktree-dirty-20260829` 分支（认领前禁删）；wrap1 已于 09-01 合流收口（cea5025）但其 worktree 仍活跃迭代 uvue_gen（不碰）；**第四窗（媒体票据 Valet Key）主区 8 文件在途未提交=新勿碰名单**（media.py/media_url.py+events/config/errors/main/content-schema/storage）。
-- **📐 数字口径规范**：用户故事统计**两维**——状态（✅/🟡/❌）×证据级（C/B/A）**不可合并**；跨文档数字回源 `02_用户故事全目录与打通核实.md` 表格（08-29 经用户授权全表同步至终值 ✅46/🟡7/❌0，旧统计行笔误已订正）。汇报"打通数变化"须带**基线时点+逐条列出移动**。**改任何全局数字必须五处同步：AGENTS 本节 + 08 文档（需授权）+ progress.md 头部速览 + session-handoff.md 速览 + feature_list.json 相关 evidence**——多窗口漂移是本项目的最大文档债（教训见 lessons 08-28 20:53；术语族定义见 `docs/决策台账.md` §0）。
+> ⚠️ **本节已改为指针（2026-10-11）**：「现在我们到哪了」的**唯一来源是 [`STATE.md`](STATE.md)**。
+> 历史上本节自持数字（停在 2026-08-29，落后 43 天、跨 12 批变更），且与 `progress.md` /
+> `session-handoff.md` / `feature_list.json` 各写一份 ⇒ 新会话按启动流程走**必然先读到旧真相**
+> （实测：会去修早已收口的「4b 修复批次」）。**任何"下一步 / 阻塞 / 全局数字"只写在 `STATE.md`，
+> 其余文档只准引用。**
+>
+> 考古用历史快照（2026-08-29 时点，**已作废**）：收尾 Wave 1–4 全收口；用户故事 ✅46/🟡7/❌0；
+> A 级真机 32 条；下一步曾是"4b 修复批次"。原文见 `git log -p -- AGENTS.md`。
 
 ## 技术栈（已拍板，勿重开决策）
 
@@ -56,22 +65,24 @@ AI      FunASR/SenseVoice 双通道 + SetFit 分类 + qwen-flash 画像标注 + 
 开始写代码前：
 
 1. 确认工作目录 `pwd`（应为 D:\GuangH-App）
-2. 通读本文件
-3. 读 `docs/决策台账.md`（术语+决策+待拍板对齐）与 `忆述光华_交付文档/忆述光华_开工总结.md`（全局）
-4. 跑 `./init.sh` 验证环境健康
-5. 读 `feature_list.json` 看当前特性状态
-6. `git log --oneline -5` 看最近提交
-7. 需要外部 Key 时按 `skills/infisical-secrets/SKILL.md` 操作：`infisical secrets --env=dev`（列名）/ `infisical secrets get <NAME> --plain --silent`（取单条）/ `infisical run --env=dev -- <命令>`（注入运行）
-8. **客户端开发（client/）**：先读 `skills/hbuilderx-uniappx-runloop/SKILL.md`（编译/真机/UTS 避坑）；真机相册链路验收按 `skills/android-media-e2e/SKILL.md`（测试照片注入/权限/验证）
+2. **读 [`STATE.md`](STATE.md)** —— 唯一「当前状态」：正在做什么 / 下一步 / 阻塞 / 关键数字
+3. 通读本文件（规则与技术栈）
+4. 读 `docs/决策台账.md` —— **重点 §5 待拍板与 §7 未关闭缺陷**（新会话最容易漏掉的两节）
+5. 跑 `./init.ps1`（Windows）或 `./init.sh`（bash）验证环境健康
+6. 读 `feature_list.json` 看当前特性状态（**约定：只允许 1 条 `in-progress`**）
+7. `git log --oneline -5` 看最近提交，并与 `STATE.md` 记录的 HEAD 对照（不一致 ⇒ 状态可能已漂移）
+8. 需要外部 Key 时按 `skills/infisical-secrets/SKILL.md` 操作：`infisical secrets --env=dev`（列名）/ `infisical secrets get <NAME> --plain --silent`（取单条）/ `infisical run --env=dev -- <命令>`（注入运行）
+9. **客户端开发（client/）**：先读 `skills/hbuilderx-uniappx-runloop/SKILL.md`（编译/真机/UTS 避坑）；真机相册链路验收按 `skills/android-media-e2e/SKILL.md`（测试照片注入/权限/验证）
+10. **改门禁或 harness 文件前**：读 `skills/harness-gate-maintenance/SKILL.md`（含"负向探针自校验"与"运维域不阻断"两条铁律）
 
 基线验证失败必须先修复，再开新范围。
 
 ## Working Rules
 
-- **一次只做一个特性**：从 `feature_list.json` 选一个未完成特性
+- **一次只做一个特性（One feature at a time）**：从 `feature_list.json` 选一个未完成特性
 - **必须有验证**：未跑验证命令不许声称完成
 - **更新产物**：会话结束前更新 `progress.md` 和 `feature_list.json`；决策/口径/待拍板有变化同步 `docs/决策台账.md`
-- **不越界**：不修改与当前特性无关的文件
+- **不越界（Stay in scope）**：不修改与当前特性无关的文件
 - **密钥纪律**：外部 API Key/凭证只经 Infisical 获取（skills/infisical-secrets/SKILL.md），永不硬编码/提交/聊天明文；Key 值回显属违规
 - **交付文档只读**：`忆述光华_交付文档/` 是定稿参考，修改需用户明确同意
 - **留干净状态**：下个会话必须能直接跑 `./init.sh`
@@ -105,12 +116,13 @@ AI      FunASR/SenseVoice 双通道 + SetFit 分类 + qwen-flash 画像标注 + 
 3. 决策/口径变化登记 `docs/决策台账.md`；踩坑登记 `python scripts/lessons.py add`
 4. 记录未解决风险/阻塞
 5. 安全状态后提交（描述性 commit message）
-6. 仓库保持 `./init.sh` 可立即运行
+6. 仓库保持 **restartable（clean）**：下个会话能直接跑 `./init.ps1` / `./init.sh`；**Next steps** 见 `STATE.md`
 
 ## Verification Commands
 
 ```bash
-./init.sh
+./init.ps1          # Windows（PowerShell）
+./init.sh           # bash
 ```
 
 外部 Key 可用性检查（输出含明文，注意屏幕安全，勿外发）：
@@ -119,18 +131,27 @@ AI      FunASR/SenseVoice 双通道 + SetFit 分类 + qwen-flash 画像标注 + 
 infisical secrets --env=dev --silent
 ```
 
+客户端与出包相关（`client/` 改动必跑第一条）：
+
+```bash
+python scripts/client_compile_gate.py                     # uni-app x 编译门（20~56s；缺 HBuilderX 时 --strict 才判环境错误）
+pwsh -File scripts/dev/status.ps1                         # 本机联调全栈状态（Docker/backend/agent/worker/隧道/出包态）
+pwsh -File deploy/scripts/preflight_pack.ps1 -AllowTunnel  # 出包前置门（全绿才允许云打包）
+```
+
+
 ## Pre-Commit Review Gate（提交前审核，强制）
 
 **任何 commit 之前必须通过代码质量审核 Agent，修复到通过为止，禁止带阻断项提交。**
 
 **快/全量拆分（2026-08-26，用户拍板——原每次 commit 全量跑 5 分钟）**：
 
-1. **快速门禁（commit 时，秒级）**：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）——只检查本次提交涉及的文件：Python 语法编译 / ruff lint / 密钥扫描 / TODO 统计 / lessons 强制登记。
+1. **快速门禁（commit 时，秒级）**：`python scripts/review_agent.py`（git hook 自动触发；手动跑亦可）——本次提交涉及的文件：Python 语法编译 / ruff lint / **密钥扫描（2026-10-11 起**含 `client/` 的 `.uts/.uvue`**）** / TODO 统计 / **structure（体积与重复棘轮）** / **audit_axes（契约·客户端·模型·导出四轴）** / **env_template** / **openapi_snapshot（契约字节级）** / **port_consistency（2026-10-11 新增）** / **harness_state（STATE.md 新鲜度，WARN 不阻断）** / lessons 强制登记。
 2. **全量门禁（完成验收 / 集成 / CI 前必跑）**：`python scripts/review_agent.py --full`——仓库级语法/lint/密钥扫描 + 全量测试（test_agent：pytest + API 冒烟 + 原型验证，覆盖率阈值 60%，口径单一来源 `scripts/gate_exit`/`review_agent.COV_THRESHOLD`）。**每个 Agent 完成声明 DoD 前、以及集成 Agent merge 后，必须跑一次 `--full`。**
    - **门禁报红时的定位口径（2026-09-25 立规 · 教训见 `docs/lessons.md`）**：直接读**结构化失败用例清单**——
      `python -c "import json;d=json.load(open('.cowork-temp/test-report.json',encoding='utf-8'));print(d['failed_tests'])"`；
      门禁输出本身也已把 `[失败用例（先看这里）]` 置顶。**禁止**靠"重跑全量套件"去定位用例名（≈2 分钟/次的无谓开销），也**禁止**猜报告键名（机读键固定为 `failed_tests` / `blocking_sections` / `details`）。
-3. 退出码 0 = 通过可提交；退出码 1 = 存在阻断项 → 修复后重跑，直到通过
+3. 退出码 **0** = 通过可提交；**1** = 存在阻断项（代码违规）→ 修复后重跑；**2** = **环境错误**（工具/依赖不可用，门禁未真正判定）——判定单一来源见 `scripts/gate_exit.py`。`--full` 时另含 **`client_compile`（uni-app x 编译门，2026-10-11 新增）** 与 **`audit_security`（数据安全四域；backup 域超期只告警不阻断）**；`--skip-tests` 可只跑静态层，`--skip-client-compile` 跳过编译门（缺 HBuilderX 会自动降级放行）。
 4. 报告输出：`.cowork-temp/review-report.json` + `.cowork-temp/test-report.json`（证据留档）
 5. 修复流程：按报告逐项修复 → 重跑 `python scripts/review_agent.py` → 全绿才 `git commit`
 6. hook 安装：`git config core.hooksPath .githooks`（仓库内 hook，见 .githooks/pre-commit）

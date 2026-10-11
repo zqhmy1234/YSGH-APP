@@ -22,6 +22,9 @@
 import { getBaseUrl } from './config'
 import { getDeviceId, getDeviceIdSource } from './device_id'
 import { PATH_AUTH_DEVICE } from './contract'
+// 2026-10-11 固定地址模式：出网通用头下沉到零依赖模块（本文件不能 import api.uts ——
+// 那是反向依赖，见 http_headers.uts 头注释）。登录/刷新/登出必须带上，否则 ngrok 下收拦截页。
+import { commonHeader } from './http_headers'
 
 const KEY_ACCESS = 'yishu.auth.access_token'
 const KEY_REFRESH = 'yishu.auth.refresh_token'
@@ -93,6 +96,7 @@ export function deviceLogin(): Promise<boolean> {
 		uni.request({
 			url: getBaseUrl() + PATH_AUTH_DEVICE,
 			method: 'POST',
+			header: commonHeader(),
 			data: {
 				device_id: deviceId,
 				platform: 'android'
@@ -220,6 +224,7 @@ function doRefresh(): Promise<boolean> {
 		uni.request({
 			url: getBaseUrl() + '/api/v1/auth/refresh',
 			method: 'POST',
+			header: commonHeader(),
 			data: {
 				refresh_token: rt,
 				// 注：后端 RefreshRequest 只读 refresh_token（device_id 从 JWT payload 取），
@@ -278,6 +283,7 @@ export function logout(): Promise<boolean> {
 		uni.request({
 			url: getBaseUrl() + '/api/v1/auth/logout',
 			method: 'POST',
+			header: commonHeader(),
 			data: {
 				refresh_token: getRefreshToken()
 			},

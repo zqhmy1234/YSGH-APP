@@ -1,4 +1,4 @@
-# 忆述光华 Harness 初始化（Windows PowerShell 版，等价于 init.sh）
+﻿# 忆述光华 Harness 初始化（Windows PowerShell 版，等价于 init.sh）
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -33,11 +33,37 @@ foreach ($f in $docs) {
   else { Write-Host "  MISSING  $f"; $missing = $true }
 }
 
-# 2. Harness 文件检查
+# 2. Harness 文件检查（2026-10-11：与 init.sh **逐项对等**——原两版清单不一致，
+#    ps1 少查台账/lessons/主题索引三个关键文档；新增 STATE.md：唯一「当前状态」载体）
 Write-Host "--- 检查 harness 文件 ---"
-foreach ($f in @("AGENTS.md", "feature_list.json", "progress.md", "init.sh", "session-handoff.md")) {
+foreach ($f in @(
+    "AGENTS.md", "STATE.md", "feature_list.json", "progress.md", "session-handoff.md",
+    "init.sh", "init.ps1",
+    "docs/决策台账.md", "docs/lessons.md", "docs/lessons-主题索引.md"
+  )) {
   if (Test-Path $f) { Write-Host "  OK  $f" }
   else { Write-Host "  MISSING  $f"; $missing = $true }
+}
+
+# 2.5 STATE.md 新鲜度（**软告警，不阻断**）——2026-10-11 新增：
+# 状态文件漂移是本项目最大的文档债（AGENTS.md 的「当前状态」曾停在 43 天前）。
+# 这里只提示，不阻断：漂移要靠"每次启动都看得见"来治，而不是靠拦人。
+Write-Host "--- STATE.md 新鲜度 ---"
+if (Test-Path STATE.md) {
+  $sm = Select-String -Path STATE.md -Pattern "最后更新[^0-9]*([0-9]{4}-[0-9]{2}-[0-9]{2})" | Select-Object -First 1
+  $headDate = (git log -1 --format=%cs 2>$null)
+  if ($sm) {
+    $stateDate = $sm.Matches[0].Groups[1].Value
+    if ($headDate -and $stateDate -lt $headDate) {
+      Write-Host "  WARN   STATE.md 最后更新 $stateDate 早于最新提交 $headDate —— 状态可能已漂移，请更新 STATE.md" -ForegroundColor Yellow
+    } else {
+      Write-Host "  OK  STATE.md 最后更新 $stateDate"
+    }
+  } else {
+    Write-Host "  WARN   STATE.md 缺『最后更新: YYYY-MM-DD』行" -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "  WARN   STATE.md 不存在（当前状态无唯一载体）" -ForegroundColor Yellow
 }
 
 # 3. Git 状态
@@ -57,6 +83,7 @@ if ($missing) {
 Write-Host "=== 初始化通过 ==="
 Write-Host ""
 Write-Host "下一步："
-Write-Host "1. 读 feature_list.json 看特性状态"
-Write-Host "2. 选一个未完成特性，只实现该特性"
-Write-Host "3. 完成前重跑本脚本验证"
+Write-Host "1. 读 STATE.md —— 唯一「当前状态」（正在做什么 / 下一步 / 阻塞 / 关键数字）"
+Write-Host "2. 读 docs/决策台账.md §5 待拍板与 §7 未关闭缺陷"
+Write-Host "3. 读 feature_list.json 看特性状态（约定只允许 1 条 in-progress）"
+Write-Host "4. 完成前重跑本脚本 + python scripts/review_agent.py --full 验证"

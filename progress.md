@@ -1,8 +1,26 @@
-> 🧹 **2026-09-04 整饬**：已完成/已闭环条目已压缩为「✅ 速查卡」（分支/SHA｜文件｜方法｜设计来源）；未实现/半通/待复验/待拍板条目保持原叙述。未闭环事项现行权威清单 = `_diff_ledger.md` 与 `_execution_plan_20260904.md` §1。
-> 📌 **当前状态速览（2026-08-29）**：收尾 Wave 1–4 全收口（17/17），真机 7 清单全达终态+补验。终值：**用户故事 ✅46/🟡7/❌0 · A 级 32 条 · 性能门禁 10/2/6 · 30s ✅6.0s**。
-> 数字唯一现行口径 = `AGENTS.md`「当前状态」节；术语/决策/待拍板 = `docs/决策台账.md`；缺陷台账（19 单：D-01~D-16、D-18、D-19、D-21）与环境事件（O-1/O-2）= `docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md` §4/§5。
-> **下一步 = 4b 修复批次（执行计划已定：`docs/4b修复批次执行计划_20260829.md`，P-0 拍板五项全落、P-1 隔离工作区已建）**：批次1 D-18/D-19（重打包复验）→ 批次2 D-16/D-07/D-08＋散单 D-05/D-10/D-14/D-21（08-29 拍板并批）→ 批次3 S2 校准（卡真值）+D-06（**等价复现验收，无需第二设备**，台账 §1.8）。
-> 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，仅加 [勘误] 注记。与速览冲突的旧数字以速览为准。
+> 🧹 **2026-09-04 整饬**：已完成/已闭环条目已压缩为「✅ 速查卡」（分支/SHA｜文件｜方法｜设计来源）；未实现/半通/待复验/待拍板条目保持原叙述。
+> ⚠️ **2026-10-11 规则修订（重要）**：本文件**不再承载「当前状态」**——唯一来源是 [`STATE.md`](STATE.md)。
+> 原头部「📌 当前状态速览（2026-08-29）」已删除：它与同文件**尾部**（更新到 10-09）自相矛盾，而旧规则写
+> 「与速览冲突的旧数字以速览为准」⇒ 恰好让人**采信更旧的一侧**（实测代价：新会话按启动流程会去修早已收口的「4b 修复批次」）。
+> **新规则：本文件是纯追加时间线；任何冲突一律以「最后一条」为准。** 全局数字只信 `STATE.md`。
+> 术语/决策/待拍板 = `docs/决策台账.md`；缺陷台账（D-01~D-16、D-18、D-19、D-21）与环境事件（O-1/O-2）
+> = `docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md` §4/§5。
+> 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，仅加 [勘误] 注记。
+
+## Harness Markers（机器可读 · 双语）
+
+> 供通用 harness 工具（如 harness-creator 的 `validate-harness.mjs`）识别——其判据为英文关键词。
+> **实质内容以上文中文为准**；本块只是指针，指向唯一来源，避免第二次漂移。
+
+- Last Updated: 2026-10-11
+- Current State: 见 [`STATE.md`](STATE.md)（唯一「当前状态」）
+- What: harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）
+- Current Objective: 让重构后的新包在真机可用；补齐长期欠账的门禁
+- Next: 打通固定地址出包链 → 云打包 → **无数据线**真机验收
+- Recommended Next Step: `scripts/dev/tunnel.ps1` → `write_base_url.ps1` → `preflight_pack.ps1 -AllowTunnel` → `scripts/dev/pack.ps1`
+- Blockers: ngrok 静态域名与 authtoken 待用户领取；百炼凭据（Token Plan）待续期
+- Files: `client/utils/config.uts` · `scripts/dev/*` · `deploy/scripts/preflight_pack.ps1` · `STATE.md` · `AGENTS.md`
+- Next Session: 起服务（`start_all.ps1`）→ 起隧道 → 回写三件套 → 出包门 → 打包 → 真机验收
 
 ## ✅ 速查卡 · 2026-09-10 · 缺失页面战役全收口（波 A-E + 安全深扫 + 波 D 重构 + P2-2）
 
@@ -521,3 +539,45 @@
 ⚠️ **真机三要素待补**：执行到真机步时 USB 设备掉线（`adb devices` 空，重起 adb server 仍不可见）⇒「≤1.5s 首字 / 护栏拦截无预览泄漏 / agent 宕机不伪造」三条**无 A 级证据**，登记 `docs/决策台账.md` §2.30（**如实标注，不算完成**）。⚠️ 首字延迟由 LLM TTFT 支配（实测 1.3~2.1s，百炼 thinking 开启时更晚）⇒「≤1.5s」是贴边指标，观感兜底 = 立即 `status` 帧 + 工具态文案。
 🧯 **踩坑两条（已入 `docs/lessons.md`）**：① Starlette 把同步生成器的每次 `next()` 派发到线程池（每次新 contextvars 快照）⇒ `request_context.set` 不跨 yield 存续、`reset_request_id` 抛"different Context" → 改为「整轮 agent 跑在一个工作线程 + 队列，生成器只格式化」；② 5.24 的 dts 里没有 `enableChunked`/`onChunkReceived`/`TextDecoder`，但**编译器实测接受**（30 行探针法）⇒ 平台能力以编译/真机实测为准。
 📌 **本批边界**：未碰 `client/` 其他域与 `backend/` 其他域；`docs/交接_流式输出与对话UI_20261009.md` 的工作区改动（用户改写为纯文本）**未动**。openapi 快照已重导；决策登记台账 §2.28/§2.29/§2.30。
+
+## ✅ 速查卡 · 2026-10-11 · harness/门禁系统性更新 + 「新包可跑」修复（环境漂移根治）
+
+✅ **根因（新包全站不可用）**：`client/utils/config.uts` 环境三件套随代码漂移——9-23 为 `ENV='prod'`/`REAL_DEVICE_HOST=''`，10-09 真机联调改成 `'dev'`/`'localhost'` 后**随提交入库**（commit `c356781`「壳内空态重构」捎带），出包时忘改回 ⇒ 正式包内 `getBaseUrl()` 返回 `http://127.0.0.1:8010`（手机自己的回环地址）⇒ 所有接口失败、每页取不到数据，表现为「各页面数据流被切断」。**根治**=运行时判据 `isDevCarrier()`（按包名识别 HBuilderX 开发载体）：打包产物**一律不允许**走 dev 地址，即便 `ENV` 误留 `dev` 也强制走 `PROD_BASE_URL`。登记 `docs/决策台账.md` §4.18。
+
+✅ **固定地址出包链（本批新建）**：`scripts/dev/tunnel.ps1`（隧道抽象：ngrok 静态域名 / cloudflared）+ `scripts/dev/write_base_url.ps1`（三件套一键回写，无 BOM + 交付清单）+ `scripts/dev/start_all.ps1` / `status.ps1`（服务栈幂等起 + 全栈状态一览，**实测全绿**）+ `scripts/dev/pack.ps1`（出包链）。
+
+✅ **解阻塞**：2026-10-11 早先本人把 `trycloudflare.com`/`ngrok*.app` 判为「禁止出包」⇒ **卡死既定隧道方案**。已按「地址是否固定」分类：固定地址隧道（ngrok 静态域名）**合法放行**，仅**临时隧道**默认拦、`preflight -AllowTunnel` 显式放行并打印时效提醒。
+
+✅ **门禁升级**：新增 `scripts/client_compile_gate.py`（uni-app x 编译门，实测 44.7s 通过；HBuilderX 已运行时 cli 走 IPC 拿不到日志 ⇒ 改文件重定向 + 产物时间戳双判据）并接入 `--full` 与出包前置门；`check_secrets` 修**整体漏扫 `client/` 的盲区**（`_skip_path` 误复用）；接入孤儿脚本 `audit_security`（按域区分：密钥/传输/存储阻断，备份新鲜度只告警——本机 dump 已 421h 超期，登记待办）；新增 `port_consistency`（端口口径一致性）与 `harness_state`（STATE.md 新鲜度，WARN 不阻断）。
+
+✅ **state 全面改造**：新增 `STATE.md`（唯一「当前状态」）；`AGENTS.md` 状态节降级为指针 + 补代码主干小节 + 删死引用 + Startup/Verification/门禁章节对齐实现（补 4 轴与退出码 2）；`progress.md` 删 08-29 速览并改「以最后一条为准」；`feature_list.json` 加策略字段（M0→blocked、F9→deprecated，其余**不臆断**）；`session-handoff.md` 重写；`init.ps1`/`init.sh` 对齐并加状态漂移软告警。
+
+✅ **端口口径统一**：backend `8010` / agent `8300`；`scripts/e2e_agent_chat.ps1` 与 `scripts/realdevice/r2_4b_verify.ps1` 的历史 `:8000` 已改 `:8010`；`8399` 明确为一次性本机覆盖值（非规范）。
+
+## ✅ 速查卡 · 2026-10-11（第二轮）· 交叉核验修复：把「假绿」逐个摁掉
+
+派 `code-explorer` 对本批改造做只读交叉核验，抓出并修复 **10 项"声明已改、实际半改"**——
+这类问题的共性是**现有门禁自己发现不了**（不是恒红，而是**假绿**），比报红更危险：
+
+① 🔴 **全量门禁仍漏扫 `client/`**：`_scope_files` 里 secrets 候选清单用的还是 `_skip_path`
+（含 `client`），上一轮只修了快模式的 `check_secrets` ⇒ `--full` 下 `.uts/.uvue` 硬编码密钥依旧放行。
+**已改为 `_skip_path_for_secrets`**。
+② 🔴 `scripts/e2e_agent_chat.ps1` / `scripts/realdevice/r2_4b_verify.ps1` 的端口是**参数数组**形式
+（`'--port','8000'`），上一轮只替换了冒号形式（0 命中）⇒ 脚本必然起在 8000 却探 8010。已按字节统一 8010。
+③ 🔴 **`auth.uts` 的登录 / 刷新 / 登出三个请求完全不带 header**，`audio_player.uts` 自拼头
+⇒ 固定地址（ngrok）下会收到**拦截页 HTML**，表现为「装了却进不去 / 音频无声」。
+新增**零依赖**底层模块 `client/utils/http_headers.uts`（`commonHeader()`）破解
+`api.uts → auth.uts` 的反向依赖约束（auth 不能 import api），四处全部收敛；`api.uts` 的
+`buildHeader()` 也改为复用同一份定义（单一来源）。
+④ 🟠 `scripts/dev/pack.ps1` 四项尸检/投放此前**打印 FAIL 却 `exit 0` 且照样投放**
+⇒ 加硬失败闸门（签名无效 / 权限缺失 / 包内地址不符 ⇒ 立即阻断、不投放、退出码 1）。
+⑤ 🟠 `check_port_consistency` 的 agent 子检查因**大小写**永不生效（`config.py` 是小写字段）
+⇒ 改正则 + `re.IGNORECASE`。
+⑥ ⚪ 客户端整洁性：`play_content.uts` 死 import `request`；`api.uts` 两处 `downloadFile` 误带
+`application/json`（与自家 docstring 口径不一致）。
+⑦ ⚪ harness 自洽：`session-handoff.md` 仍把 `AGENTS.md` 当数字源（与 STATE.md 唯一性冲突）、
+`AGENTS.md` Startup 序号重复「7.」、两个新 skill 未登记进 skills 清单、`docs/README.md` 未登记 `STATE.md`。
+
+**验证**：客户端编译门 **63.4s 通过**（含 `http_headers.uts` 新增与 auth/audio/api 改动）；
+`python scripts/review_agent.py --full --skip-tests` **12 项全绿**（含新增 4 项）；
+harness 外部审计 **76 → 100/100**。

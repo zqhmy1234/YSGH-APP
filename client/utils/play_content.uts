@@ -4,7 +4,7 @@
  * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
  * 对外导出：ContentAiMeta, fetchContentAiMeta, fetchWaveform, fetchUsersMe, updateContentRemark
  */
-import { get, request, dataObj } from './api'
+import { get, dataObj, buildHeader } from './api'
 import { getBaseUrl } from './config'
 import { getToken } from './auth'
 import { enqueueFieldOp } from './sync_queue'
@@ -64,11 +64,7 @@ export function fetchContentAiMeta(contentId: string): Promise<ContentAiMeta | n
 export function fetchWaveform(contentId: string): Promise<Array<number> | null> {
 	return new Promise<Array<number> | null>((resolve) => {
 		const path = PATH_WAVEFORM.replace('{id}', contentId) + '?buckets=28'
-		const header: UTSJSONObject = {}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
+		const header: UTSJSONObject = buildHeader('')
 		const onSuccess = (res: any): void => {
 			if (res.statusCode != 200) {
 				console.warn('[play] fetchWaveform HTTP ' + res.statusCode + ' ' + contentId)
@@ -127,11 +123,7 @@ export function fetchUsersMe(): Promise<UTSJSONObject | null> {
  *  非 200/网络失败 → resolve null（不静默：调用方显式 toast；对象守卫对齐 api.uts 2026-08-26 先例） */
 function patchJson(path: string, data: UTSJSONObject): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
-		const header: UTSJSONObject = { 'Content-Type': 'application/json' }
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
+		const header: UTSJSONObject = buildHeader()
 		const onSuccess = (res: any): void => {
 			if (res.statusCode != 200) {
 				console.error('[yishu] patchJson HTTP ' + res.statusCode + ' ' + path)

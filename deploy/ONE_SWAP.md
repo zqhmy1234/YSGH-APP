@@ -47,12 +47,39 @@ $c = [regex]::Replace($c, "const PROD_BASE_URL: string = '[^']*'", "const PROD_B
 Select-String -Path $p -Pattern 'const PROD_BASE_URL'
 ```
 
-**不要改的**：
-- `ENV` 已是 `'prod'` ✓
-- `REAL_DEVICE_HOST` 已是 `''` ✓
+**不要改的**（⚠️ 2026-10-11 更正：本节原文称「`ENV` 已是 `'prod'` ✓、`REAL_DEVICE_HOST` 已是 `''` ✓」，
+**与实况不符**——当时两者实为 `'dev'` / `'localhost'`（10-09 真机联调改后随代码提交）。按旧文照做而漏改，
+就是**新包全站不可用**的直接原因：包内 `getBaseUrl()` 返回 `127.0.0.1:8010`，所有接口全挂且难懂。
+**别再靠人工记这两项**，用一键脚本 + 前置门把关）：
+
+```powershell
+pwsh -File scripts\dev\write_base_url.ps1     # 出包态：ENV='prod' + REAL_DEVICE_HOST='' + PROD_BASE_URL=<隧道地址>
+pwsh -File scripts\dev\write_base_url.ps1 -Restore   # 联调态：ENV='dev' + REAL_DEVICE_HOST='localhost'
+```
+
+- `ENV` / `REAL_DEVICE_HOST`：**出包必须是 `'prod'` / `''`**（preflight §1 会拦）；
+  另有运行时双保险 `isDevCarrier()`（`config.uts`）：即便 `ENV` 误留 `dev`，**打包产物也强制走 `PROD_BASE_URL`**。
 - **端口固定 8010**：8000 会被 HBuilderX launcher 的 node 桩抢占（该桩对任何路径都返回 200 + 裸字符串 "404"，客户端守卫因此静默 resolve(null)，表现为"接口全空但不报错"）——8010 的由来见 `config.uts` 文件头。
 
 ---
+
+### 1.0 隧道模式（内测期**实际采用**：以本机为后端载体，手机装 APK 免数据线）
+
+> 服务器到货前，内测包连的是**本机**：用隧道把 `127.0.0.1:8010` 暴露成公网 https 地址。
+> **地址必须固定**——临时隧道（`*.trycloudflare.com` 等）一重启就换址，已分发 APK 立刻全部连不上。
+> 内测期选定 **ngrok 免费静态域名**（`xxxx.ngrok-free.app`，永久固定、零成本、无需买域名）。
+
+```powershell
+pwsh -File scripts\dev\start_all.ps1                                 # 起服务栈（backend 8010 / agent 8300 / worker / Docker）
+pwsh -File scripts\dev\tunnel.ps1 -Provider ngrok -StaticDomain <你的静态域名>   # 起隧道并抓公网地址
+pwsh -File scripts\dev\write_base_url.ps1                            # 一键回写三件套（UTF-8 无 BOM）
+pwsh -File scripts\dev\status.ps1                                    # 全栈自检（服务/隧道/出包态/登录开关）
+pwsh -File deploy\scripts\preflight_pack.ps1 -AllowTunnel            # 前置门（含客户端编译门）
+pwsh -File scripts\dev\pack.ps1 -AllowTunnel -Deploy                 # 打包 → 四项尸检 → 投放分发页
+```
+
+口径与踩坑细节见 `skills/apk-cloud-release/SKILL.md`「固定地址模式」章节。
+下面的 §1 是**手工换址**版本（服务器到货后按 IP/域名换址时用）；能用脚本就别手改。
 
 ## 2. 处 2 · 服务端（在服务器上改，不在仓库里改）
 

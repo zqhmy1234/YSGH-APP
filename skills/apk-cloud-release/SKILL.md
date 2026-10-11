@@ -31,6 +31,48 @@ disable-model-invocation: true
 5. **临时隧道地址会变**：`cloudflared tunnel --url ...` 每次重启换随机域名，**已分发的 APK
    立刻全空且不报错**（本项目最贵故障形态）。服务器到货前务必把「隧道在跑」写进交付说明。
 
+## 固定地址模式（2026-10-11 起 · **内测期既定方案**）
+
+> 目标：手机装 APK 即可测，**不需要数据线**。做法＝以**本机为后端载体**，用**固定地址隧道**
+> 把 `127.0.0.1:8010` 暴露成公网 https 地址。**地址必须固定**，否则隧道一重启，
+> 已分发的 APK 全部连不上（"所有页面全空且不报错"，本项目最贵故障形态）。
+
+**选定实现**：**ngrok 免费静态域名**（`xxxx.ngrok-free.app`，永久固定、零成本、无需买域名）。
+提供方可切换（cloudflared named tunnel 等），抽象在 `scripts/dev/tunnel.ps1`。
+
+### 一条链（全部脚本化）
+
+```powershell
+# 1) 起本机服务栈（Docker + backend 8010 + worker + agent 8300），健康探针失败会如实报错
+pwsh -File scripts\dev\start_all.ps1
+
+# 2) 起隧道（拿到固定公网地址，落 deploy/.tunnel-url；上游不健康会直接拦下不白起）
+pwsh -File scripts\dev\tunnel.ps1 -Provider ngrok -StaticDomain <你的静态域名>
+
+# 3) 一键回写出包三件套（ENV='prod' / REAL_DEVICE_HOST='' / PROD_BASE_URL=<隧道地址>）
+pwsh -File scripts\dev\write_base_url.ps1
+#    切换回真机联调态： write_base_url.ps1 -Restore  （ENV='dev' + localhost + adb reverse）
+
+# 4) 出包前置门（**注意 -AllowTunnel**：固定地址隧道合法，但显式声明"本包依赖外部隧道"）
+pwsh -File deploy\scripts\preflight_pack.ps1 -AllowTunnel
+
+# 5) 云打包 + 四项尸检 + 投放（见 §3/§4/§5；或走 scripts\dev\pack.ps1 一键链）
+```
+
+### 口径澄清（2026-10-11 修正，勿再踩）
+
+- **`preflight` 的隧道判定按「地址是否固定」分类**：固定地址隧道（`*.ngrok-free.app`、
+  named tunnel 自有域名）**合法放行**；**临时隧道**（`*.trycloudflare.com` / `loca.lt` /
+  `localtunnel` / `serveo`）默认 **FAIL**，加 `-AllowTunnel` 才降为 WARN 并打印时效提醒。
+  初版曾把 ngrok 域名一并判 FAIL ⇒ **把既定方案卡死**（出不了包）。
+- `client/utils/config.uts` 的 `PLACEHOLDER_MARKERS` 同理**不再含 ngrok 域名**（只留临时隧道词）。
+- `isDevCarrier()`（`config.uts`）：**打包产物一律不允许走 dev 地址**——即便 `ENV` 误留 `'dev'`，
+  也强制走 `PROD_BASE_URL`。这条是「忘改 ENV ⇒ 新包全站不可用」事故的根治（见 `docs/决策台账.md` §4.18）。
+- API 请求统一带 `ngrok-skip-browser-warning` 头（`api.uts` 的 `buildHeader`）：ngrok 免费版
+  会对"类浏览器 UA"插入拦截页；uni-app 默认 UA 含 `Mozilla` ⇒ 不带此头时请求会拿到 HTML。
+- **`<image>`/音频走 `uni.downloadFile({header})`**（同 `buildHeader`）⇒ 同样带得上该头，
+  故图片通路不受拦截页影响。
+
 ## 流程
 
 ### 1. 前置门

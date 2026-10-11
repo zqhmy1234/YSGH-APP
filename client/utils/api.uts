@@ -67,10 +67,32 @@ export function showErrorToast(err: Error | null): void {
  * `doRequest`，必须复用**同一份**头构造——各写一份的话，迟早出现"流式请求忘了带 token"
  * 这类只在某一条路径上失效的问题。
  */
-export function buildHeader(): UTSJSONObject {
-	const header: UTSJSONObject = {
-		'Content-Type': 'application/json'
+/**
+ * 统一请求头工厂（2026-10-11 重写 · 固定地址模式）
+ *
+ * **所有**出网请求（`uni.request` / `uni.downloadFile` / `uni.uploadFile`）的 header 都从这里取，
+ * 认证头与出网通用头的增删因此只需改这一处。
+ *
+ * ⚠️ 为什么必须重写：原实现只有 `buildHeader()`（写死 Content-Type: application/json），
+ * 而 **GET 分支各自手拼 header**（只塞 Authorization）。2026-10-11 加"隧道跳过头"时，
+ * 全部 GET 请求（时间轴/回响/历史/波形/未读数——后端查询的主力）会被漏掉 ⇒ 走 ngrok
+ * 免费版隧道时 GET 收到拦截页 HTML ⇒ 表现为"接口全空、报错难懂"（本项目最贵故障形态的变体）。
+ * 统一后，**新增任何出网头都不可能再漏掉某一类方法**。
+ *
+ * @param contentType 传 `''` 表示不带 Content-Type：
+ *   · GET（保持"贴近裸调用可通"的历史形态）
+ *   · uni.uploadFile（其 multipart 边界由 SDK 依据 formData 自动设置，手写反而会破坏）
+ */
+export function buildHeader(contentType: string = 'application/json'): UTSJSONObject {
+	const header: UTSJSONObject = {}
+	if (contentType != '') {
+		header.set('Content-Type', contentType)
 	}
+	// 固定地址模式（内测期"以本机为后端载体"）：ngrok 免费版对**判定为浏览器**的请求插入
+	// 拦截页（interstitial，HTML）。uni-app 的默认 UA 含 `Mozilla` ⇒ 不带此头时 GET 会被拦。
+	// 本头是 ngrok 官方开关；对正式服务器 / COS 预签名 / 自建反代**完全无副作用**（未知头被忽略），
+	// 故常驻，不随隧道提供方切换而增删。
+	header.set('ngrok-skip-browser-warning', 'true')
 	const token = getToken()
 	if (token != '') {
 		header.set('Authorization', 'Bearer ' + token)
@@ -97,7 +119,8 @@ export function fetchThumbnailPath(contentId: string): Promise<string> {
 	return new Promise<string>((resolve) => {
 		uni.downloadFile({
 			url: getBaseUrl() + '/api/v1/thumbnails/' + contentId,
-			header: buildHeader(),
+			// 纯 GET：不带 Content-Type（与 buildHeader 的 docstring 口径一致）
+			header: buildHeader(''),
 			timeout: 30000,
 			success: (res: any) => {
 				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
@@ -129,7 +152,7 @@ export function fetchExportFilePath(): Promise<string> {
 	return new Promise<string>((resolve) => {
 		uni.downloadFile({
 			url: getBaseUrl() + PATH_EXPORT,
-			header: buildHeader(),
+			header: buildHeader(''),
 			timeout: 60000,
 			success: (res: any) => {
 				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
@@ -350,16 +373,13 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			console.log('[dbg-req] complete ' + path)
 		}
 		if (method === 'GET') {
-			// GET 无 body：省略 data 键 + 仅带 Authorization（去 Content-Type），贴近裸调用可通形态
-			const header: UTSJSONObject = {}
-			const token = getToken()
-			if (token != '') {
-				header.set('Authorization', 'Bearer ' + token)
-			}
+			// GET 无 body：省略 Content-Type，贴近裸调用可通形态。
+			// 2026-10-11：改走 buildHeader('') —— 原手拼实现只塞 Authorization，会漏掉出网通用头
+			// （如 ngrok-skip-browser-warning），见 buildHeader 的注释。
 			uni.request({
 				url: getBaseUrl() + path,
 				method: 'GET',
-				header: header,
+				header: buildHeader(''),
 				complete: onComplete,
 				success: onSuccess,
 				fail: onFail
@@ -431,15 +451,11 @@ function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, 
 			finish(new HttpResult(0, null))
 		}
 		if (method === 'GET') {
-			const header: UTSJSONObject = {}
-			const token = getToken()
-			if (token != '') {
-				header.set('Authorization', 'Bearer ' + token)
-			}
+			// 2026-10-11：走头工厂（原手拼会漏掉出网通用头，见 buildHeader 注释）
 			uni.request({
 				url: getBaseUrl() + path,
 				method: 'GET',
-				header: header,
+				header: buildHeader(''),
 				success: onSuccess,
 				fail: onFail
 			})
@@ -481,11 +497,7 @@ function doUploadFileHttp(
 	retried: boolean
 ): Promise<HttpResult> {
 	return new Promise<HttpResult>((resolve) => {
-		const header: UTSJSONObject = {}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
+		const header: UTSJSONObject = buildHeader('')
 		uni.uploadFile({
 			url: getBaseUrl() + path,
 			filePath: filePath,

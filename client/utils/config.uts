@@ -51,10 +51,13 @@ const PROD_BASE_URL: string = 'https://weighted-promotions-britannica-miller.try
  * 反例（不应告警）：`http://43.138.x.x:8010`、`https://api.memlight.cn`。
  */
 const PLACEHOLDER_MARKERS: Array<string> = ['公网IP', 'example.com', 'localhost', '127.0.0.1', '10.0.2.2',
-	// 2026-10-11 静态审查：**临时隧道域名**同样属"看起来配好了、其实随时失效"——
-	// cloudflared quick tunnel 重启即换域名 ⇒ 已分发 APK 立刻全部连不上（10-04 台账已记该口径）。
-	// 原 marker 表不含它们 ⇒ 拿临时隧道出包时 `console.error` 不喊、preflight 也放行（盲区）。
-	'trycloudflare.com', 'ngrok.io', 'ngrok-free.app', 'loca.lt', 'localtunnel.me', 'serveo.net']
+	// 2026-10-11 **修正**：只有**临时**隧道域名才是"看起来配好了、其实随时失效"
+	// （cloudflared quick tunnel 重启即换随机域名 ⇒ 已分发 APK 立刻全部连不上）。
+	// ⚠️ 但**固定地址的隧道**——ngrok 静态域名（`*.ngrok-free.app`）与 cloudflared named tunnel
+	// 绑定的自有域名——是内测期**既定方案**（手机装 APK 直连本机后端、不需要数据线），
+	// 地址永久不变 ⇒ **不得列入本表**，否则出包前置门与运行时会误报（初版把 ngrok 域名也列进来，
+	// 等于把既定方案判成"配错了"）。故此处只保留**临时**隧道特征词。
+	'trycloudflare.com', 'loca.lt', 'localtunnel.me', 'serveo.net']
 
 /** 生产基址是否"明显没配好"（含非 http(s) 协议头的情况，如漏写 scheme） */
 function isProdBaseUrlSuspicious(url: string): boolean {

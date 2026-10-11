@@ -11,7 +11,9 @@
  * 调用方保留业务编排：uploader 批量并发池 + held/failed 队列 / voice 录音状态机。
  */
 import { getBaseUrl } from './config'
-import { getToken } from './auth'
+// 2026-10-11 固定地址模式：出网头统一走 api.uts 的 buildHeader（含 ngrok-skip-browser-warning，
+// 见 api.uts 的 buildHeader 注释）。本文件此前的 statusMissing 自拼 header，会漏掉通用头。
+import { buildHeader } from './api'
 import { initUpload, putChunk, completeUpload, fieldOf, UploadResp } from './upload_protocol'
 import { PATH_UPLOAD_STATUS, FIELD_UPLOAD_ID, FIELD_MISSING_CHUNKS, FIELD_FILE_KEY, FIELD_CONTENT_ID } from './contract'
 
@@ -82,11 +84,7 @@ function initFor(spec: UploadSpec): Promise<string> {
 /** 查断点状态：缺失分片 true（缺 0 或空数组=已完成）；非 200 视为需补传（交给 chunk 暴露真实错误） */
 function statusMissing(uploadId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
-		const header: UTSJSONObject = {}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
+		const header: UTSJSONObject = buildHeader('')
 		uni.request({
 			url: getBaseUrl() + PATH_UPLOAD_STATUS + '?upload_id=' + uploadId,
 			method: 'GET',

@@ -1,19 +1,39 @@
 # Session Handoff — 忆述光华（交接说明）
 
-> **版本**：2026-09-13 交接版（重写）。目标：接手者 15 分钟上手。
-> **当前分支**：`develop`｜**检出后 HEAD**：`5a8cf69`（= 本说明自身的重写提交）｜**代码基线**：`713055f`（client UTS 改动）
-> 历史交接全文见 git / `progress.md` 同期条目；本文件不滚雪球。
+> **版本**：2026-10-11 交接版 ｜ **分支**：`feature/agent-closeout-20261008` ｜ **HEAD**：`bbb1c3e`
+> ⚠️ **本文件不承担「当前状态」**——那是 [`STATE.md`](STATE.md)（下一步/阻塞/关键数字的唯一来源）。
+> 本文件只回答两件事：**接手前必须知道的纪律红线**（§1 起，长期有效）、**上一次交接做了什么**（§0）。
+> 历史交接全文见 git / `progress.md`；本文件不滚雪球。
+## 0. 本次交接（2026-10-11）
 
-## 0. 本次交接做了什么（git 已推送，可核实）
+**主题**：harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）。
 
-- `39fa54c → 713055f` 已 fast-forward 推送到 `origin/develop`，共 5 个提交（含 3 个本次交接前的本地提交）。
-- 本次新增 2 个提交：
-  - `d6979f5` **chore(handoff)**：harness/docs/数据/核验证据未入库部分快照（非 client）。
-  - `713055f` **fix(client)**：`TabIndex` / `CategoryChips` / `photo-watch` UTS 改动。
-- **故意未提交**（非项目必要，且部分触发门禁）：
-  - 根目录游离文件 `+`（某次探针输出残留，非项目文件）。
-  - `_verify_0905/ui.xml`、`_verify_0905/uidump_0907.xml`：Android uiautomator UI 转储，含 `password` 属性（UI 层级转储里密码输入框的标志）被 pre-commit 密钥门禁误报；64 张 PNG 已完整覆盖其视觉证据，不损失信息。
-- **harness 文档全部 tracked 并已随推送上传**：`AGENTS.md` / `feature_list.json` / `progress.md` / `init.sh` / `init.ps1` / `session-handoff.md` / `docs/决策台账.md` / `docs/lessons.md`。
+- 🔴 **最重要的结论**：重构后"新包各页面不可用、数据流被切断"的**头号根因**是
+  `client/utils/config.uts` 的环境三件套随代码漂移（10-09 把 `ENV` 改 `dev` 并提交，
+  出包忘改回）⇒ 正式包连 `127.0.0.1:8010`。已用运行时判据 `isDevCarrier()` 根治，
+  并把三件套切换脚本化（`scripts/dev/write_base_url.ps1`）。详见 `docs/决策台账.md` §4.18。
+- 新增本机联调工具链：`scripts/dev/{tunnel,write_base_url,start_all,status}.ps1`
+  （**`start_all`/`status` 已实测**：一键起 Docker+backend+worker+agent，全栈状态一览）。
+- 门禁升级：新增客户端编译门 `scripts/client_compile_gate.py` 并接入 `--full` 与出包前置门；
+  修 `check_secrets` **漏扫 `client/`** 的盲区；接入孤儿脚本 `audit_security`（备份域只告警）；
+  新增 `port_consistency` 与 `harness_state` 两个检查。
+- state 改造：新增 `STATE.md`；`AGENTS.md` 状态节降级为指针并补齐仓库结构/门禁口径；
+  `progress.md` 去掉自相矛盾的 08-29 速览（改「以最后一条为准」）；`feature_list.json` 加策略字段。
+- **未提交**：`tracked` 之外的工作区改动（本批）按 §1.1 纪律**逐路径 add**，禁 `git add -A`。
+## Harness Markers（机器可读 · 双语）
+
+> 供通用 harness 工具（如 harness-creator 的 `validate-harness.mjs`）识别——其判据为英文关键词。
+> **实质内容以上文中文为准**；本块只是指针，指向唯一来源，避免第二次漂移。
+
+- Last Updated: 2026-10-11
+- Current State: 见 [`STATE.md`](STATE.md)（唯一「当前状态」）
+- What: harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）
+- Current Objective: 让重构后的新包在真机可用；补齐长期欠账的门禁
+- Next: 打通固定地址出包链 → 云打包 → **无数据线**真机验收
+- Recommended Next Step: `scripts/dev/tunnel.ps1` → `write_base_url.ps1` → `preflight_pack.ps1 -AllowTunnel` → `scripts/dev/pack.ps1`
+- Blockers: ngrok 静态域名与 authtoken 待用户领取；百炼凭据（Token Plan）待续期
+- Files: `client/utils/config.uts` · `scripts/dev/*` · `deploy/scripts/preflight_pack.ps1` · `STATE.md` · `AGENTS.md`
+- Next Session: 起服务（`start_all.ps1`）→ 起隧道 → 回写三件套 → 出包门 → 打包 → 真机验收
 
 ## 1. 🔴 工作区红线（新同学必读，本次亲踩）
 
@@ -42,7 +62,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| `AGENTS.md`「当前状态」节 | 数字唯一现行口径（用户故事 ✅46/🟡7/❌0 等） |
+| `STATE.md`（唯一「当前状态」；2026-10-11 起 AGENTS.md 已降级为指针） | 数字唯一现行口径（用户故事 ✅46/🟡7/❌0 等） |
 | `docs/决策台账.md` | 术语消歧 + 决策 + **待拍板唯一登记簿** |
 | `docs/远期待办总账.md` | A 后端契约缺口 / B 客户端远期 / C 验收悬账 / P 性能 / R9 类 |
 | `progress.md` | 已完成项速查卡 |
