@@ -170,7 +170,7 @@
 		padding-right: var(--d-raw-r28, 28rpx);
 		padding-top: var(--d-raw-r10, 10rpx);
 		padding-bottom: var(--d-raw-r10, 10rpx);
-		background-color: var(--c-paper-200, #FBF7EF);
+		background-color: #FBF7EF;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ8，属令牌化误映射 */
 		border-radius: var(--d-raw-r28, 28rpx);
 	}
 	.banner-action-text {

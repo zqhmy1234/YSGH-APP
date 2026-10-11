@@ -196,7 +196,7 @@
 		flex-direction: column;
 	}
 	.sk-line {
-		background-color: var(--c-paper-300, #EFE9DD);
+		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
 		border-radius: var(--d-raw-r10, 10rpx);
 	}
 	.sk-day {
@@ -222,7 +222,7 @@
 		width: var(--d-raw-r190, 190rpx);
 		height: var(--d-raw-r190, 190rpx);
 		border-radius: var(--d-raw-r16, 16rpx);
-		background-color: var(--c-paper-300, #EFE9DD);
+		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
 		margin-right: var(--d-raw-r16, 16rpx);
 	}
 	.muted {
@@ -524,7 +524,7 @@
 
 	/* 回响卡片（去年今日 · 角贴 + 泛黄） */
 	.echo-card {
-		background-color: var(--c-paper-200, #faf6ee);
+		background-color: #faf6ee;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ7，属令牌化误映射 */
 		border-radius: var(--d-raw-r24, 24rpx);
 		padding: var(--d-raw-r32, 32rpx);
 		margin: var(--d-raw-r24, 24rpx) var(--d-raw-r40, 40rpx);

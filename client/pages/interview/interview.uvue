@@ -357,7 +357,7 @@
 		width: var(--d-lattice-p8, 15.4rpx);
 		height: var(--d-lattice-p8, 15.4rpx);
 		margin-left: var(--d-lattice-p6, 11.5rpx); /* 画布 4:171 gap=6pt */
-		background-color: var(--c-paper-600, #E5DED2);
+		background-color: #E5DED2;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-600 的值与本处原色差 Δ10，属令牌化误映射 */
 		border-radius: var(--d-lattice-p4, 7.7rpx);
 		overflow: hidden;
 	}
