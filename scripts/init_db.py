@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """忆述光华 · 一键建库（B-1 配套）
 
 【为什么需要这个脚本】
