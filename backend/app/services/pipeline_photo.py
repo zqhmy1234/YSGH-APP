@@ -60,6 +60,24 @@ def _process_photo(db: Session, content: Content) -> None:
         if caption:
             content.text = caption
 
+        # 1.5 OCR（PHOTO-1 · 2026-09-26：照片中的文字 → 可检索内容）
+        #    百度 accurate_basic（CHN_ENG）识别照片内文字（菜单/收据/路牌/屏幕笔记），
+        #    写 extra.ocr_text（聚合链路 B3#6 消费：_ocr_summary 对无 GPS 照片生效），
+        #    并拼入 content.text（OCR\ncaption 并存，主提交后 _index_after_commit 索引进 Qdrant）。
+        #    失败语义同 caption：显式记录后仅跳过 OCR 增强，照片主流程不受影响
+        #    （OcrNotConfiguredError 为「配置缺失」显式路径，log 可查）。
+        if image_path is not None:
+            try:
+                from app.services.external.baidu_ocr import ocr_image
+
+                ocr_text = ocr_image(image_path.read_bytes())
+                if ocr_text:
+                    patch_extra(content, ocr_text=ocr_text)
+                    content.text = f"{ocr_text}\n{content.text}" if content.text else ocr_text
+                    logger.info("照片 OCR 成功 content=%s（%d 字）", content.id, len(ocr_text))
+            except Exception as exc:  # noqa: BLE001 —— OCR 失败不影响照片浏览/搜索 caption
+                logger.warning("照片 OCR 失败 content=%s: %s", content.id, exc)
+
         # 2. CI 打标（F1 L2 场景标签 / 搜索标签增强）
         # 2026-08-26 真实 key 验证修复：CI 打标要求图片在 COS（image_key=COS key），
         # fs 真实模式的本地路径不是 COS key → NoSuchKey 静默失效。
