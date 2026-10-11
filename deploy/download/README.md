@@ -36,8 +36,8 @@ cd deploy/download && python -m http.server 8080
 | # | 位置 | 现状 | 出包后 |
 |---|---|---|---|
 | 1 | 主按钮 `href` | `apk/yishu-beta-latest.apk` | 把 APK 按**固定文件名**放进 `apk/` 即自动生效（无需改 HTML） |
-| 2 | 「约 — MB」 | 占位 | 回填真实文件大小 |
-| 3 | 「更新于 —」 | 占位 | 回填出包日期 |
+| 2 | 「约 29.5 MB」 | 占位 | 回填真实文件大小 |
+| 3 | 「更新于 2026-10-07」 | 占位 | 回填出包日期 |
 | 4 | `qr/download-placeholder.svg` | 占位件 | **同名覆盖**为真实二维码图片（改后缀需同步改 HTML） |
 | 5 | `qr/feedback-placeholder.svg` | 占位件 | 同上（内测反馈群建好后） |
 
