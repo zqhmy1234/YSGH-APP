@@ -6,15 +6,8 @@
 #         → 等健康 → **容器内跑 scripts/init_db.py 建库** → 断言关键表存在 → 打印下一步
 # 不做：不下载模型（那是 pull_models.sh）、不装 systemd（那是 deploy_one.sh）
 #
-# 🔴 2026-09-28 修正：本脚本原来跑 `alembic upgrade head` 建库，那是**跑不通的** ——
-#    baseline 迁移 431bcaa8bd54 的 upgrade() 只做 ALTER + DROP 遗留表、**不建表**，
-#    它假设核心表（users/contents/events…）已由 schema.sql 建过 ⇒ 空库上第一条
-#    alter_column('contents') 就报 relation "contents" does not exist；
-#    而 set -euo pipefail 会让脚本**死在下面那句「关键表齐全 ✅」之前**，
-#    即 RUNBOOK §1.3 写的验证判据在全新服务器上**根本不可达**。
-#    （项目自己的脚本早已承认：scripts/check_schema_drift.py:190,214）
-#    现改为在**容器内**跑 scripts/init_db.py（ORM create_all + 10 张无模型表 + stamp head），
-#    于是**宿主不需要任何 Python** —— 这正是容器化部署的前提。
+# B-1：容器内 init_db.py 准备角色/扩展后运行 Alembic；空库由 ORM 自举，
+# 已有库应用增量迁移。宿主不需要 Python。
 #
 # 幂等契约（验收项）：重复执行不重建目录、不重复迁移、不产生重复容器。
 # 用法（仓库根）：bash deploy/scripts/bootstrap.sh
@@ -147,18 +140,16 @@ log "确保 pgvector 扩展存在（幂等）"
 PG_PW="$(grep -E '^POSTGRES_PASSWORD=' "${DEPLOY_DIR}/.env" | tail -1 | cut -d= -f2- || true)"
 [[ -n "${PG_PW}" ]] || die "deploy/.env 里没有 POSTGRES_PASSWORD，无法建库。"
 
-log "建库 / 补表（容器内 python /app/init_db.py，幂等）"
+log "建角色/扩展并运行 Alembic（容器内 python /app/init_db.py，幂等）"
 "${COMPOSE[@]}" --profile app run --rm -T \
 	-e "YSG_ADMIN_DATABASE_URL=postgresql://${PG_USER}:${PG_PW}@postgres:5432/postgres" \
 	backend python /app/init_db.py
 
 # ---------- 6. 表存在性断言（与 init_db.py 自带的冒烟检查互为独立证据） ----------
-# 断言表里特意补上 profile_sensitive / profile_l2_evidence：后者**没有 ORM 模型**、
-# 由代码裸 SQL 写入（profile_annotator.py:278）—— 2026-09-28 那次"16 条 DDL 静默全废"
-# 正是它没建成；只抽样 ORM 表会漏掉这一类。
+# B-1 将 profile_l2_evidence / finetune_jobs 纳入 ORM；仍独立核对关键业务表。
 log "断言关键表存在"
 missing=""
-for t in users devices contents events event_items sync_state profile_sensitive profile_l2_evidence; do
+for t in users devices contents events event_items sync_state profile_sensitive profile_l2_evidence finetune_jobs; do
 	found="$("${COMPOSE[@]}" exec -T postgres psql -U "${PG_USER}" -d "${PG_DB}" -tAc \
 		"SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='${t}'" | tr -d '[:space:]')"
 	[[ "${found}" == "1" ]] || missing="${missing} ${t}"

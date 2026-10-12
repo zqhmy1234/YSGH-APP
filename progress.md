@@ -492,3 +492,16 @@
 - 🐞 **过程中被抓到的两处自身缺陷**（均已登记 lessons）：① 我自己在 `event_merge` 复用变量名 `verdict` ⇒ 归并恒判 split（新测试断言"不阻断归并"当场抓到）；② 契约两处登记面只同步了 `openapi.json`、漏了人读的 `OpenAPI契约.md` 表 ⇒ 轴 1 报"同路径方法不一致"。
 - 🛠 **环境**：HBuilderX 中途退出 ⇒ 由 CLI 拉起重启（冷编译 ✅）；Docker 引擎中途停止 ⇒ 拉起 Docker Desktop 恢复 redis/qdrant（否则 pytest 连接失败）。
 - ⚠️ **未验证（如实标注）**：无真机（`adb devices` 空）⇒ 客户端改动仅到"编译 + 产物取证"级；画像清除按钮的真机点击链路未目视。
+
+## 2026-10-12 · 后端 B-1 schema 漂移修复（验证中）
+
+- 用户拍板：13 张无 ORM 表中补齐正在使用的 profile_l2_evidence、finetune_jobs；其余 11 张退出新建库 schema。已有库的旧表与数据保留。
+- 已实现：ORM 补 2 表与 34 处 server_default；新增安全增量迁移；空库 Alembic 从 ORM 建库并登记 head；init_db.py 改用 Alembic；漂移脚本对比 ORM 与空库 Alembic，默认值纳入阻断。schema.sql 删除退休表 DDL。
+- 已验证：空库 alembic upgrade head、alembic check 成功；漂移检查 ORM 32 表 / Alembic 32 表、BLOCKING 0 / INFO 0；隔离临时库从既有 `d9a0b1c2d3e4` 版本升级成功，用户行和旧 audit_log 行保留，2 张在用表存在，默认值与 head 正确；ruff、compileall、git diff --check 通过。
+- 回归：`test_ba1_fields.py::test_stats_daily_summary_total_bytes` 1 passed；`pytest --collect-only` 成功收集 991 项；快速 `review_agent.py` 通过。按授权仅在 D 盘 `.venv` 补了 qdrant-client、torch、sentence-transformers、defusedxml、cryptography、Pillow 等缺失测试依赖。
+- 全量门禁未通过，故本特性仍为进行中：`review_agent.py --full` 的主 pytest 段 600 秒超时；Qdrant 返回 502，HF 模型缓存不可用，SetFit 缺失；ruff 0.17 对 61 个本次未改文件报 151 条 UP017。审核脚本另有“任意缺模块误称 pytest 未安装”的诊断缺陷，已修判据但尚未重跑全量。Windows 本机无 WSL 发行版，`bash ./init.sh` 无法启动；PowerShell 等价 harness 文件检查已通过。不得据此宣称全量验证完成。
+- 用户要求的单次加倍重试（2026-10-12 17:07 +08:00 报告）：仅在进程内把 `test_agent` 每段超时从 600 秒改为 1200 秒，设置 `NO_PROXY=localhost,127.0.0.1,::1`，仓库默认值未改。主 pytest 仍在 1200 秒超时；API 冒烟 healthz/auth-security/dedup-409 通过，text-journey 搜索未命中、photo-journey 缺测试照片、timeline-structure 空集合失败；research 通过。报告 `.cowork-temp/test-report.json`：`blocking_sections=[pytest,api_smoke]`、`failed_tests=[]`（超时没有用例名）。本轮日志显示 BGE-M3 缓存缺失、SetFit 未安装、HF 下载不可达；全量仍未通过，不再重跑。
+- 任务书逐条复核：空库自举、漂移 0、默认值覆盖差 0、人工表清单退场均达成；现存版本化库的隔离迁移已验。但任务书建议的“自包含初始迁移”未按字面实现（采用 `env.py` 空库 ORM 自举），无 `alembic_version` 的非空旧库被安全拒绝而非自动迁移；任务书点名的两份旧新人文档未回写（当前只新增仓库内 `docs/B1_数据库建库与迁移.md`）。因此不应宣称任务书全部收口。
+- 用户明确要求将上述阶段性代码与未完成原因提交并推送到 `develop`；本次推送是进度留档，不改变 `feature_list.json` 的 `in-progress` 状态或全量门禁结论。
+- 推送前 `git fetch origin develop` 发现远端前进 16 个提交，其中 `3bdae67` 已清理旧文件的 UP017、`fd4c6da` 已钉 Ruff 版本；上述 Ruff 失败是本地旧基线测试时的历史证据，同步远端后不再按“待 B-1 修复项”归属。pytest 1200 秒超时和 API 冒烟失败仍未解决。
+- 本次推送结果：B-1 的 26 个文件已选择性暂存（未含工作区原有 `.gitignore` 改动）；首次快速审核因未激活虚拟环境而找不到 `ruff`，激活后代码检查均通过，已按门禁要求登记教训。但登记后的 `git add docs/lessons.md` 写入 `.git` 所需的提权请求被拒绝，无法完成复验、提交、合并远端 16 个提交或推送。当前 `develop` 仍仅在本地工作区，GitHub 上未收到本轮改动。

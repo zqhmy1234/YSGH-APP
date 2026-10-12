@@ -1,7 +1,8 @@
 """同步域 ORM 模型（sync_state/offline_queue/deleted_logs/sync_field_versions，对齐 backend/sql/schema.sql）"""
+
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,7 +17,7 @@ class SyncState(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     device_id: Mapped[str] = mapped_column(String)
-    cursor_version: Mapped[int] = mapped_column(BigInteger, default=0)
+    cursor_version: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -40,8 +41,8 @@ class OfflineQueue(Base):
     device_id: Mapped[str] = mapped_column(String)
     op_type: Mapped[str] = mapped_column(String)
     payload: Mapped[dict] = mapped_column(JSONB)
-    status: Mapped[str] = mapped_column(String, default="done")
-    retry_count: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String, default="done", server_default=text("'pending'"))
+    retry_count: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -57,7 +58,7 @@ class DeletedLog(Base):
     content_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
     deleted_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    cleanup_status: Mapped[str] = mapped_column(String, default="pending")
+    cleanup_status: Mapped[str] = mapped_column(String, default="pending", server_default=text("'pending'"))
 
 
 class SyncFieldVersion(Base):
@@ -79,4 +80,4 @@ class SyncFieldVersion(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    deleted: Mapped[bool] = mapped_column(default=False)
+    deleted: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
