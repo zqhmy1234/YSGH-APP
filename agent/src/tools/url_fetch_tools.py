@@ -148,9 +148,14 @@ def fetch_url_content(url: str) -> str:
 
     except Exception as e:
         logger.error(f"链接内容提取失败: {e}")
+        # 2026-10-14（台账 §7.21 · 批次 8 审计）：**回给模型的 message 不带异常原文**。
+        # 原样带 `str(e)` 会把底层库/路径细节（乃至配置片段）送进模型上下文；同仓已按
+        # `type(exc).__name__` 加固（agents/agent.py:103-112、本文件 :317-323、
+        # storage/local_client.py:429-462），此处是漏网的一处 ⇒ 只回异常类型名，
+        # 细节保留在服务端日志（上面那行 logger.error 已带全量）。
         return json.dumps({
             "success": False,
-            "message": f"链接内容提取失败: {str(e)}",
+            "message": f"链接内容提取失败（{type(e).__name__}）",
             "url": url
         }, ensure_ascii=False)
 

@@ -178,6 +178,21 @@ def download_media(media_id: str, msg_type: str) -> bytes:
     """
     token = _corp_access_token()
     if token is None:
+        # 2026-10-14（台账 §7.19 · 批次 8 审计 A1）：**生产环境绝不产出 mock 媒体**。
+        # 上面 docstring 写「真实模式绝不混入 mock」，但代码里**没有任何生产守卫**：漏配
+        # WECHAT_CORP_ID/Secret 时这里会返回 64×64 纯紫 JPEG / 0.1s 静音 WAV，而调用方
+        # `_process_media` 会把它们当**真实记忆**走 process_content 落库（HTTP 200、
+        # 时间轴出现假照片/假语音，用户与运维零感知）。
+        # 同仓 ASR（external/asr/transcriber.py:100-107）与高德（external/amap.py:151-158）
+        # 在 production 都显式拒绝 mock ⇒ 此处补齐同一口径：**宁可失败，不可造假**。
+        from app.core.config import settings
+
+        if settings.app_env == "production":
+            raise RuntimeError(
+                "WECHAT_MEDIA_UNAVAILABLE: 生产环境缺少企微凭证"
+                "（WECHAT_CORP_ID / 应用 Secret），拒绝返回 mock 媒体"
+                "（防止假图片/假语音被当成真实记忆入库）"
+            )
         return _mock_image_bytes() if msg_type == "image" else _mock_voice_bytes()
 
     import httpx

@@ -93,6 +93,17 @@ def _index_content(db: Session, content: Content, text: str | None = None) -> No
 
     payload_text = text or content.text
     if not payload_text:
+        # 2026-10-14（台账 §7.20 · 批次 8 审计 A2）：**跳过索引必须留痕**。
+        # 本函数在 `process_content` 把 status 置 done 并**主提交之后**才被调用
+        # （:426-428 → :444），此处静默 return 让调用方拿到 {"status": "done"}，
+        # 而这条内容其实**没有任何向量** ⇒ 文本检索永远命中不到它，且无日志、无计数
+        # （照片 caption 失败时 content.text 为 None 是常见触发路径）。
+        # 口径同 §7.12：降级要可观测，不静默。
+        logger.info(
+            "跳过向量索引（无可索引文本）content=%s type=%s",
+            content.id,
+            content.content_type,
+        )
         return
     dense = encode_dense([payload_text])[0]
     sparse = encode_sparse([payload_text])[0]
@@ -271,6 +282,14 @@ def _index_after_commit(db: Session, content: Content) -> None:
     """
     text = content.text
     if not text:
+        # 同 §7.20：无文本时 text_vec 与 image_vec **都写不了**（image_vec 走的是
+        # BGE-M3(caption) 同一替代路径，见 `vector_store.upsert_image_vec` docstring）⇒
+        # 该内容对文本检索与**以图搜图均不可见**。原实现静默 return，只留下"已 done"的假象。
+        logger.info(
+            "主提交后索引跳过（content.text 为空）content=%s type=%s",
+            content.id,
+            content.content_type,
+        )
         return
     _index_content(db, content, text)
     if content.content_type != "photo":

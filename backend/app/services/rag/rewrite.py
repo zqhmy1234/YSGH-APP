@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,10 @@ from app.core.config import settings
 from app.schemas.search import SearchQuery
 from app.services.llm_ops import rewrite_query
 from app.services.ner import extract_entities
+
+# 2026-10-14（台账 §7.21 · 批次 8 审计 A3）：本模块此前**完全没有日志设施**，
+# 于是「LLM 查询改写失败静默回退规则改写」连一条 debug 都留不下来。
+logger = logging.getLogger("yishu.rag")
 
 # 时间表达规则（"去年夏天" → 时间范围；MVP 简化）
 # 2026-08-26（audit #17）扩充：去年夏天/上上周/三年前/前年/上周/前天。
@@ -107,8 +112,12 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
             llm_q = rewrite_query(rewritten)
             if llm_q:
                 rewritten = llm_q
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            # 2026-10-14（台账 §7.21 · 批次 8 审计 A3）：原为 `pass` —— **一点痕迹都没有**。
+            # 降级本身是设计（规则改写兜底，见上方注释与 config 中"默认关"的理由），
+            # 但开关打开后若 LLM 长期不可用，检索召回会持续退化，而**日志/健康检查/返回体
+            # 全无信号**，只能靠人工比对。口径同 §7.12：降级要可观测，不静默。
+            logger.warning("LLM 查询改写失败，回退规则改写: %s", exc)
 
     if q.content_types:
         filters["content_types"] = q.content_types
