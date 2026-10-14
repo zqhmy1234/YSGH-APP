@@ -535,7 +535,10 @@
 	const props = defineProps({
 		prefillTitle: { type: String, default: '' },
 		prefillSummary: { type: String, default: '' },
-		savedSeq: { type: Number, default: 0 }
+		savedSeq: { type: Number, default: 0 },
+		// RC-10（2026-10-14）：shell 每次切到 ai tab 时 ++ —— 回壳改走**栈内回退**后本组件
+		// 不再重挂，上下文预填需靠这条"切到本 tab"广播来重读（见下方 watch）。
+		shownSeq: { type: Number, default: 0 }
 	})
 	onMounted((): void => {
 		aiAttachOpen.value = false // 原页级初值：进组件即收起
@@ -581,6 +584,13 @@
 		if (n > 0) {
 			onRecordSaved()
 		}
+	})
+	// RC-10 配套（2026-10-14 · 台账 §4.20 批次 5）：切到本 tab 时重读上下文预填三键
+	// （由 `detail.askAI` 写入）。为什么必须：回壳由 redirectTo（重建整个壳、本组件随之重挂）
+	// 改为**栈内回退**后，本组件不会再挂载 ⇒ 仅靠 onMounted 里那次调用会**漏掉预填**。
+	// `prefillDraftFrom('','')` 在无存储时早退，故本 watch 幂等（不会覆盖用户草稿）。
+	watch((): number => props.shownSeq, (): void => {
+		prefillDraftFrom('', '')
 	})
 </script>
 

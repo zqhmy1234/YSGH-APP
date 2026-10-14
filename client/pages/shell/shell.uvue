@@ -13,7 +13,7 @@
 		     须晚于 token 就绪；对齐老 index 页 onLoad 内 ensureLogin().then(拉数据) 串行语义。
 		     失败也放行——api.uts 401 自愈重登兜底，不卡白屏） -->
 		<TabIndex v-if="ready && everIndex" v-show="activeTab == 'index'" :shown-seq="indexShownSeq" :saved-seq="savedSeq" />
-		<TabAi v-if="ready && everAi" v-show="activeTab == 'ai'" :prefill-title="aiTitle" :prefill-summary="aiSummary" :saved-seq="savedSeq" />
+		<TabAi v-if="ready && everAi" v-show="activeTab == 'ai'" :prefill-title="aiTitle" :prefill-summary="aiSummary" :saved-seq="savedSeq" :shown-seq="aiShownSeq" />
 		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
 		<TabProfile v-if="ready && everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
 		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
@@ -50,6 +50,9 @@
 	let savedSeq = ref(0)          // 记录保存成功广播（组件 watch → 原 @saved 语义）
 	let profileShownSeq = ref(0)   // 切到 profile 广播（组件 watch → 原页级 onShow 等价）
 	let indexShownSeq = ref(0)     // 切到 index 广播（原页级 onShow TTL 刷新等价；首挂由 onMounted 拉）
+	// 2026-10-14（台账 §4.20 批次 5 · RC-10）：切到 ai 广播——回壳由 redirectTo（重建整个壳、
+	// TabAi 随之重挂）改为**栈内回退**后，TabAi 不再挂载 ⇒ 需靠本广播触发重读上下文预填。
+	let aiShownSeq = ref(0)
 
 	/** 安全解码（2026-10-11 静态审查 #7）：畸形编码（如 `?memTitle=%E4%`）会让
 	 * `decodeURIComponent` 抛 URIError，而 onLoad 体内抛异常 ⇒ 后面的 ensureLogin
@@ -135,6 +138,10 @@
 		}
 		if (tab == 'index') {
 			indexShownSeq.value = indexShownSeq.value + 1 // 首挂时组件未 mount 收不到 watch，语义安全
+		}
+		if (tab == 'ai') {
+			// RC-10：切到 AI 时广播一次，让 TabAi 重读上下文预填（回壳不再重挂本组件）
+			aiShownSeq.value = aiShownSeq.value + 1
 		}
 	}
 

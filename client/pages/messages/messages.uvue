@@ -66,6 +66,7 @@
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
 import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage } from '@/utils/play_messages'
 	import { formatIsoShortTime } from '@/utils/time'
+	import { backToShell } from '@/utils/shell_state'
 
 	// ── 响应式状态 ──
 	let unreadCount = ref(0)
@@ -254,9 +255,10 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			allMessages.value = arr.slice()
 		}
 		if (msg.msgType == 'care_followup') {
-			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页），
-			// 全库扫描发现于 B10 回退残留扫描；项目跨页导航先例为 redirectTo
-			uni.redirectTo({ url: '/pages/shell/shell?tab=ai' })
+			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页）。
+			// 2026-10-14（台账 §4.20 批次 5 · RC-10）：改走**栈内回退**——原 redirectTo 会销毁本页并
+			// **重建整个壳**（白屏 1~2s + 四个 tab 重挂 + TabIndex 的 60s TTL 失效）；壳本就在栈里。
+			backToShell('ai', '')
 			return
 		}
 		if (msg.msgType == 'echo') {
