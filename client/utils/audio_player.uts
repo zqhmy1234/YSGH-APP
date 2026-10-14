@@ -307,8 +307,21 @@ function startProgressClock(): void {
 		if (total > 0) {
 			voiceTotalSec.value = Math.round(total)
 			voiceCurSec.value = Math.round(cur)
-			const p = cur / total
-			voiceProgress.value = p > 1 ? 1 : p
+			const raw = cur / total
+			const p = raw > 1 ? 1 : raw
+			// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-1）：**相等守卫 + 1% 粒度**。
+			// 为什么：本时钟 33ms 一跳（30Hz），而 `voiceProgress` 是**每跳都在变的浮点数**
+			// ⇒ 每跳都触发一次响应式通知 ⇒ 时间轴里所有语音卡的模板（`voiceProgressOfCard(cid)`
+			// 之类的**模板函数调用**，每卡 4~6 个）与进度条 `:style="{width:%}"` 全部重算重排。
+			// 50 张照片的列表里只要有一张语音卡在播，就是**每秒 30 次全列表重算**（用户感知即
+			// "滑动不丝滑/点击没反应"）。
+			// 现改为：**只有变化 ≥1% 才写**。1% 细于波形染色条的单条粒度（28 条 ≈ 3.6%/条），
+			// 视觉上无差别，但写入频次降到原来的 1/10 量级（60s 音频 ≈ 1.7 次/秒）。
+			// 注：`voiceCurSec` 用 `Math.round` ⇒ 同一秒内重复赋同值，Vue 的 ref 同值不触发，
+			// 故它本就不是热点；真正的热点只有 `voiceProgress`。
+			if (Math.abs(p - voiceProgress.value) >= 0.01 || p >= 1.0) {
+				voiceProgress.value = p
+			}
 		}
 	}, 33)
 }
