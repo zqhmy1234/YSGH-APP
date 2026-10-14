@@ -7238,9 +7238,9 @@
           "text": {
             "type": "string",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Text",
-            "description": "内容文本（用于向量化）"
+            "description": "内容文本（用于向量化）；照片等无文本内容可留空",
+            "default": ""
           },
           "new_label": {
             "type": "string",
@@ -7275,7 +7275,6 @@
         "type": "object",
         "required": [
           "content_id",
-          "text",
           "new_label"
         ],
         "title": "CorrectionCreate"

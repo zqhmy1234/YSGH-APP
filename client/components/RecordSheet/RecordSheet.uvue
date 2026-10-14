@@ -196,10 +196,10 @@
 							<text v-if="formMode == 'voice' && voiceDiag != ''" class="diag-line">{{ voiceDiag }}</text>
 						</template>
 
-						<!-- 分类 chips（照片态 hint=AI 已预选 · 点标签可纠正（F1g-k 真值）；写几句=选一个合适的分类（F1e 真值）） -->
+						<!-- 分类 chips（照片态文案 2026-10-14 更正：「AI 已预选」是假状态，见台账 §7.17） -->
 						<view class="sec-row">
 							<text class="sec-row-label">分类</text>
-							<text class="sec-row-hint">{{ formMode == 'photo' ? 'AI 已预选 · 点标签可纠正' : '选一个合适的分类' }}</text>
+							<text class="sec-row-hint">{{ formMode == 'photo' ? '选一个分类（保存时按你的选择记录）' : '选一个合适的分类' }}</text>
 						</view>
 						<view class="chips">
 							<view v-for="t in allLabels" :key="t.key" class="chip" :class="manualLabel == t.key ? 'chip-on' : ''" @tap="onChipTap(t.key)">
@@ -621,8 +621,9 @@
 				formMode.value = 'photo'
 				formTitle.value = '照片'
 				setInfoTime()
-				// 画布 F1g-k「AI 已预选」：默认选中首枚（真实照片打标接入前为演示预选，USE_MOCK 登记台账）
-				manualLabel.value = 'todo'
+				// 2026-10-14（台账 §7.17）：删除「默认选中首枚」演示预选——原来把「待办」
+				// 当照片默认分类，并配合「AI 已预选」文案构成假状态（此刻 AI 还没跑）。
+				manualLabel.value = ''
 			},
 			fail: () => {
 				// 取消选择：静默（入口场景留面板 / 续选场景留表单），不给误导 toast
@@ -671,11 +672,7 @@
 		uni.showLoading({ title: '上传中…', mask: true })
 		const now = Date.now()
 		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
-		// 2026-10-14（台账 §4.20 / 审计 §2）：**带上本次定位**。原实现第 6/7 参硬编码
-		// `null`，而 `uploader_photo.buildMeta` 只在 lat/lng 非空时才写 gps_lat/gps_lng
-		// ⇒ 手动拍照/选图**恒定不带地点**（文字/语音两个提交点都带了）——这就是
-		// 「拍照上传的定位功能没有起效」的直接成因。
-		// 取不到定位时仍传 null（诚实缺省，**绝不回落假坐标**）；后端另有 EXIF GPS 兜底。
+		// 2026-10-14（台账 §4.20）：带上本次定位（原硬编码 null ⇒ 照片恒定不带地点）。
 		const fix = getLastFix()
 		const fixLat: number | null = fix != null ? fix.lat : null
 		const fixLng: number | null = fix != null ? fix.lng : null
@@ -684,10 +681,21 @@
 			const sz = i < photoSizes.value.length ? photoSizes.value[i] : 0
 			items.push(new PhotoItem(-(now + i), photos.value[i], now, 0, 0, fixLat, fixLng, sz))
 		}
+		// 2026-10-14（台账 §7.17）：提交前快照手选分类——原实现只清空、**从不提交**。
+		const picked = manualLabel.value
 		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()
 			photoUploading.value = false
 			if (uploaded.length > 0) {
+				// 逐张提交手选分类（无文本 ⇒ text 空串；custom: 前缀后端不支持 ⇒ 跳过）。
+
+				if (picked != '' && picked.indexOf('custom:') != 0) {
+					for (let i = 0; i < uploaded.length; i++) {
+						submitCorrection(uploaded[i].contentId, '', picked, '', 'photo').then((ok: boolean) => {
+							console.log('[yishu] photo manual correction ok=' + ok)
+						})
+					}
+				}
 				uni.showToast({ title: '已记录', icon: 'success' })
 				emit('saved')
 				photos.value = []
@@ -735,7 +743,7 @@
 			submitClassify(text).then((jobId: string | null) => {
 				if (picked != '' && picked.indexOf('custom:') != 0) {
 					// 手选分类优先：直接登记纠正，不等 AI 结果（custom: 前缀 = 自定义分类，后端白名单不支持——台账 A 类）
-					submitCorrection(cid, text, picked, '').then((ok: boolean) => {
+					submitCorrection(cid, text, picked, '', 'text').then((ok: boolean) => {
 						console.log('[yishu] manual correction ok=' + ok)
 					})
 					return

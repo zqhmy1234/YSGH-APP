@@ -418,7 +418,7 @@ export class VoiceRecorder {
 	afterVoiceSaved(contentId: string, text: string, picked: string, audioOk: boolean): void {
 		if (picked != '' && picked.indexOf('custom:') != 0) {
 			// 手选分类 → 纠正端点真持久化（custom: 前缀 = 自定义分类跳过，后端白名单不支持——台账 A 类）
-			submitCorrection(contentId, text, picked, '').then((ok: boolean) => {
+			submitCorrection(contentId, text, picked, '', 'voice').then((ok: boolean) => {
 				console.log('[yishu] voice manual correction ok=' + ok)
 			})
 		}

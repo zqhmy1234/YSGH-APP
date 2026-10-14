@@ -189,15 +189,24 @@ function parseClassifyResult(r: UTSJSONObject): ClassifyResult {
 	)
 }
 
-/** POST /corrections：记录用户主动纠错（T-TX-2 数据源①）；返回是否成功 */
-export function submitCorrection(contentId: string, text: string, newLabel: string, oldLabel: string): Promise<boolean> {
+/**
+ * POST /corrections：记录用户主动纠错（T-TX-2 数据源①）；返回是否成功。
+ *
+ * `contentType`（2026-10-14 新增 · 台账 §7.17）：此前**硬编码 `'text'`** ⇒ 照片纠错
+ * 会被后端记成 text 类型（层①个人规则按内容类型分流时会错档）。照片传 `'photo'`、
+ * 语音传 `'voice'`。
+ *
+ * 另：照片在保存时点**没有文本**，故照片传空串——后端已放宽 `text` 为可空，
+ * 空文本时跳过向量化、仍照常回写权威分类（`backend/app/schemas/correction.py`）。
+ */
+export function submitCorrection(contentId: string, text: string, newLabel: string, oldLabel: string, contentType: string): Promise<boolean> {
 	const body: UTSJSONObject = {
 		content_id: contentId,
 		text: text,
 		new_label: newLabel,
 		old_label: oldLabel,
 		source: 'active',
-		content_type: 'text'
+		content_type: contentType
 	}
 	return new Promise<boolean>((resolve) => {
 		post('/api/v1/corrections', body).then((res: UTSJSONObject | null) => {

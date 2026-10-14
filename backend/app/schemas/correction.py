@@ -4,7 +4,19 @@ from pydantic import BaseModel, Field
 
 class CorrectionCreate(BaseModel):
     content_id: str = Field(..., description="被纠错内容 ID")
-    text: str = Field(..., min_length=1, max_length=2000, description="内容文本（用于向量化）")
+    # ⚠️ 2026-10-14（台账 §7.17）：`text` 由「必填且 ≥1 字符」放宽为「可留空」。
+    # 背景：照片在**保存时点没有文本**（caption 由上传后的管线产出），而用户在记录
+    # 面板手选的分类要立即生效 ⇒ 原契约让照片纠错**根本无法提交**；唯一的"绕过"是
+    # 塞一段假文本，那会把噪声写进层①个人规则向量库（本项目已被 O-2「纠错恒混合」
+    # 咬过一次，不能再往同类数据里掺假）。
+    # 新语义：`text` 只用于**向量化**（`services/correction.record_correction` 的
+    # Qdrant 写入）；为空时**跳过向量**，仍写 correction_log 并**照常回写
+    # `contents.content_class`** —— 即"用户可见的分类纠正"完全不受影响。
+    text: str = Field(
+        "",
+        max_length=2000,
+        description="内容文本（用于向量化）；照片等无文本内容可留空",
+    )
     new_label: str = Field(..., description="纠正后的分类：todo/idea/emotion/quote/mixed")
     old_label: str | None = Field(None, description="原分类（模型给出的）")
     source: str = Field("active", description="active=主动纠错 / echo=回响确认 / org=整理联动")

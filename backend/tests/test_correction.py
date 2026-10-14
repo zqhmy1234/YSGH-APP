@@ -286,6 +286,26 @@ def test_correction_active_writes_back_content_class(db_user, mock_encode):
         app.dependency_overrides.clear()
 
 
+def test_record_correction_without_text_skips_vector(db_user, mock_encode):
+    """台账 §7.17：照片纠错（**无文本**）⇒ 跳过向量化但仍落库。
+
+    为什么必须有这条：照片在保存时点没有文本（caption 由上传后的管线产出），而
+    `record_correction` 会 `encode_dense([text])` 向量化 ⇒ 若照旧执行，要么抛错、
+    要么写入一条**由空串生成的噪声向量**污染层①个人规则（O-2 教训）。
+    断言「落库但无 qdrant 点」就是钉住这个取舍；分类回写由 API 层照常完成。
+    """
+    db, user = db_user
+    cid = _new_cid()
+    _make_content(db, user.id, cid)
+    row = record_correction(
+        db, user.id, content_id=cid,
+        text="", new_label="emotion", old_label="mixed", content_type="photo",
+    )
+    assert row.id > 0
+    assert row.qdrant_point_id is None
+    assert row.content_type == "photo"
+
+
 def test_correction_soft_deleted_content_rejected(db_user, mock_encode):
     """波D ② 补漏（2026-09-10 深扫）：本人已软删（回收站）内容 → 写纠错 404 EVENT_005。
 
