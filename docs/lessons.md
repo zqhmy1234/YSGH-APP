@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-10-14 11:53 · commit 8c5a702 · ts=1791949988
+- **错误**：提交时被 pre-commit 的 lint 轴拦下（I001 import 未排序），而我手跑 review_agent 时是绿的
+- **根因**：review_agent 快模式的扫描范围取「已跟踪文件的改动」，untracked 的新文件在首次 git add 前不在范围内 ⇒ 手跑绿灯无法覆盖即将新增的文件，预检强度与提交时不符
+- **修复**：新增文件先 git add 再跑门禁；ruff check --fix 修 I001 后复验全绿
+- **相关文件**：backend/tests/test_photo_exif.py
+- **教训**：预检门禁必须在与 hook 相同的状态下跑（先 git add 再跑）；手跑绿不等于提交绿
+
+---
+
+### 2026-10-14 11:45 · commit 8c5a702 · ts=1791949545
+- **错误**：客户端编译门把「HBuilderX 未启动、编译根本没跑」判为 ok（假通过）：产物实为两天前的旧件
+- **根因**：两处缺陷叠加：① _artifact_touched_since 拿 time.monotonic()（量级 1e5）与文件 st_mtime（Unix 纪元 1.7e9）比大小 ⇒ mt > started 恒真，空日志一律判「产物已更新 ⇒ 成功」；② cli launch --compile true 在 HBuilderX 未启动时根本不编译，只打印「未检测到已打开的HBuilderX」就退出
+- **修复**：改墙上时钟 time.time() 作起点；新增 NEED_OPEN_MARKERS 识别该拒绝语并按环境错误报（不得降级为通过）；调用前用 ensure_hbuilderx_open 自动 cli open 拉起
+- **相关文件**：scripts/client_compile_gate.py
+- **教训**：凡用副作用旁证成功的判据，必须同基准比较时间且配一次负向探针（不满足条件时能判红）；CLI 工具的「静默不做事」必须与「做事成功」显式区分
+
+---
+
+### 2026-10-14 11:45 · commit 8c5a702 · ts=1791949545
+- **错误**：本次提交被 structure 轴拦下：backend/app/api/contents/__init__.py 达 642 行 > 棘轮阈值 600（新增超阈）
+- **根因**：为照片定位补 EXIF GPS 助手时直接在 API 层内联 ~70 行（含 PIL 重依赖），没先看该文件的棘轮阈值——把新增代码当成了与结构无关的事
+- **修复**：把 EXIF 助手（拍摄时间 + GPS + DMS 转换 + MAX_IMAGE_PIXELS）下沉到 app/services/photo_exif.py，API 层改为 import；顺带清掉因此失效的 io/Any 导入
+- **相关文件**：backend/app/services/photo_exif.py
+- **教训**：改既有大文件前先读结构棘轮阈值；与 HTTP 无关的纯函数（尤其带重依赖的）默认放 services 层，不要内联进 API 文件
+
+---
+
 ### 2026-10-12 01:21 · commit 43a3664 · ts=1791739274
 - **错误**：ngrok 免费版对判定为浏览器的请求返回拦截页（ERR_NGROK_6024）：本机 curl 与模拟浏览器 UA 的请求都拿到警告页 HTML 而非真响应；带 ngrok-skip-browser-warning 头才拿到真 JSON
 - **根因**：ngrok 免费版按 User-Agent 判定浏览器并插入 interstitial；判定主要看 UA 是否含 Mozilla（实测 Accept: image/* 仍被拦，说明与 Accept 无关）

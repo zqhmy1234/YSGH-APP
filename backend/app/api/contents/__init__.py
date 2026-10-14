@@ -15,7 +15,6 @@
 其余端点见 serializers / profile_sensitive / favorites / trash / waveform 子模块，
 `router` / `profile_sensitive_router` / `favorites_router` / `trash_router` 在文件末尾再导出。
 """
-import io as _io
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -73,6 +72,7 @@ from app.services.photo_content import (
 from app.services.photo_content import (
     register_photo_content as photo_register,
 )
+from app.services.photo_exif import extract_exif_datetime, extract_exif_gps
 from app.services.pipeline import process_content
 from app.services.storage_keys import user_scoped_prefixes
 from app.services.sync_common import parse_ts
@@ -88,33 +88,11 @@ logger = logging.getLogger("yishu.contents")
 # 照片上传共享常量（TD-P2B · S1-H2 收口：MAX_PHOTO_BYTES/ALLOWED_PHOTO_EXTS 收敛到
 # services/upload_meta.py，与分片链路 register_photo_content 同源；此处保留模块级名字
 # 供 upload_photo 引用与测试 monkeypatch（test_content_upload 缩小上限用））
-# PIL 解压炸弹防护（P0-3 · 审查 H3）：40MP 上限（超限拒绝解码）
-_MAX_IMAGE_PIXELS = 40_000_000
-
-
-def _extract_exif_datetime(data: bytes) -> datetime | None:
-    """从照片字节提取 EXIF DateTimeOriginal（相机拍摄时间真值）
-
-    客户端 DATE_TAKEN 可能被 MediaProvider 写成扫描时间（2026-08-24 真机实测），
-    故以后端 EXIF 解析为准：EXIF 无时区=相机本地时间（本设备 +08），
-    显式按 UTC+08:00 解释，与客户端 isoString(+08:00) 一致。
-    P0-3（审查 H3）：Image.open 前设 MAX_IMAGE_PIXELS 防解压炸弹（getexif 虽不
-    解码像素，但 open 阶段的尺寸检查会触发 DecompressionBombError）。
-    """
-    try:
-        from PIL import Image
-
-        Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
-        img = Image.open(_io.BytesIO(data))
-        exif = img.getexif()
-        raw = exif.get(36867)  # DateTimeOriginal
-        if raw:
-            return datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S").replace(
-                tzinfo=timezone(timedelta(hours=8))
-            )
-    except Exception:  # noqa: BLE001 —— 非 JPEG/无 EXIF 静默降级
-        return None
-    return None
+# ⚠️ 2026-10-14：`_MAX_IMAGE_PIXELS` 与两个 EXIF 助手（拍摄时间 / GPS）已**下沉**到
+# `app/services/photo_exif.py` —— 本文件在新增 EXIF GPS 兜底后达 642 行、越过结构
+# 棘轮阈值 600（被结构轴拦截）。拆分不只是为过门禁：EXIF 解析与 HTTP 无关、依赖 PIL
+# 重库，本就属 services 层；分片上传路径将来也可直接复用。
+# 注意 `MAX_PHOTO_BYTES` 相关的 monkeypatch 锚点**仍留在本模块**（测试依赖，勿一并搬走）。
 
 
 def _validate_cos_key(db: Session, user_id: str, cos_key: str) -> None:
@@ -221,7 +199,15 @@ def upload_photo(
     #       moderate 护栏 → 原件落 storage → 建记录 → enqueue_unique 入队，
     #       统一委托 services/photo_content.py（参数化 dedup_key/moderate/mode）。
     #       EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）。
-    exif_taken = _extract_exif_datetime(data)
+    exif_taken = extract_exif_datetime(data)
+    # 2026-10-14（台账 §4.20 / 审计 §2）：客户端**没带** GPS 时，用照片自身的 EXIF GPS 兜底。
+    # 此前这条路径从不带地点（客户端把经纬度硬编码为 null，后端也不看 EXIF）——这是
+    # 「拍照上传的定位功能没有起效」的直接成因。EXIF 为 WGS84；转 GCJ-02 统一在
+    # `amap.get_place` 入口做（单一转换点）。
+    if photo_meta.gps_lat is None or photo_meta.gps_lng is None:
+        exif_gps = extract_exif_gps(data)
+        if exif_gps is not None:
+            photo_meta.gps_lat, photo_meta.gps_lng = exif_gps
     ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
     try:
         content_id = photo_register(

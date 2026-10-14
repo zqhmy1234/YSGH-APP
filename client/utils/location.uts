@@ -68,8 +68,18 @@ export function getCurrentFix(onState?: (s: LocateState) => void): Promise<Fix |
 		}, LOCATE_TIMEOUT_MS)
 
 		uni.getLocation({
-			// wgs84 = GPS 原始坐标；后端按WGS84 解释后交给高德 regeo
+			// wgs84 = GPS 原始坐标（国际标准，与照片 EXIF 同源）
+			// ⚠️ 2026-10-14 更正：原文写「后端按 WGS84 解释后交给高德 regeo」，而高德
+			// REST regeo 的 location **只认 GCJ-02**（无 coordsys 参数可切换）⇒ 少了
+			// 转换会让地名系统性偏移 300~700 米。转换已在后端统一做：
+			// `backend/app/services/external/amap.py:get_place` 入口调 `gcj02.wgs84_to_gcj02`
+			// （单一转换点）。
 			type: 'wgs84',
+			// 2026-10-14：显式请求高精度定位。Android 12 起系统默认可能只给「粗略位置」
+			// （蜂窝 / Wi-Fi 级，误差百米~公里级）——不请求高精度时，界面照样显示
+			// 「已记录当前位置」，而那个坐标粗到没有意义。
+			isHighAccuracy: true,
+			highAccuracyExpireTime: 4000,
 			success: (res: any): void => {
 				const lat = res != null ? res.latitude : null
 				const lng = res != null ? res.longitude : null
@@ -119,7 +129,12 @@ export function applyGpsToBody(body: UTSJSONObject, fix: Fix | null): void {
 // 为什么用单例而不是逐层传参：一次记录有**三个**入库提交点，且分属不同模块——
 //   ① 文字（`capsule_api.createTextContentRemark`，由 RecordSheet 直接调）
 //   ② 语音（`voice.uts:484` 的 `saveVoiceContent`，在 useVoiceRecord 链路深处）
-//   ③ 照片（`uploader_photo.uts` 自带照片 GPS，与本单例无关）
+//   ③ 照片（`RecordSheet.savePhoto` → `PhotoItem.lat/lng`）
+// ⚠️ 2026-10-14 更正（台账 §4.20 / 审计 §2）：原文对 ③ 写「`uploader_photo.uts`
+// 自带照片 GPS，与本单例无关」——**该前提是错的**。手动拍照/选图（`uni.chooseImage`）
+// 既拿不到 MediaStore id、也不解析 EXIF，`savePhoto` 当时把经纬度**硬编码为 null**，
+// 结果三个提交点里**只有照片恒定不带地点**（这就是"拍照上传的定位功能没有起效"）。
+// 现 ③ 与其他两点一样读本单例；后端另有 EXIF GPS 兜底（`api/contents/_extract_exif_gps`）。
 // 逐层加参数会把 Fix 穿过 4~5 个文件、且每处都要记得传——漏一处就静默丢坐标。
 // 单例由「打开记录面板时取一次」写入、由各提交点读取，漏读的代价是「没带地点」
 // （诚实缺省），而不是「传了假值」。

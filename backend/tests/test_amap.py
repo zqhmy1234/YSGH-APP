@@ -27,8 +27,18 @@ pytestmark = pytest.mark.integration
 _TEST_COORDS = [(31.2304, 121.4737)]
 
 
+def _test_gcj() -> list[tuple[float, float]]:
+    """测试坐标 → **服务内部坐标系**（GCJ-02）。
+
+    2026-10-14：`get_place` 入口会把入参（WGS84）转成 GCJ-02 后**再**算缓存键，
+    故本文件构造缓存键必须同口径，否则造出的行永远不命中（如实用例会因此变红）
+    ——这正是"坐标系必须单一"的佐证。
+    """
+    return [amap_svc.wgs84_to_gcj02(lat, lng) for lat, lng in _TEST_COORDS]
+
+
 def _test_geohashes() -> list[str]:
-    return [amap_svc.encode_geohash(lat, lng) for lat, lng in _TEST_COORDS]
+    return [amap_svc.encode_geohash(lat, lng) for lat, lng in _test_gcj()]
 
 
 @pytest.fixture(autouse=True)
@@ -134,7 +144,7 @@ def test_get_place_cache_hit_no_api(db, monkeypatch):
         raise AssertionError("缓存命中不应调 API")
 
     monkeypatch.setattr(amap_svc, "regeo", boom)
-    db.add(GeoCache(geohash=amap_svc.encode_geohash(31.2304, 121.4737), place="上海外滩"))
+    db.add(GeoCache(geohash=_test_geohashes()[0], place="上海外滩"))
     db.commit()
 
     assert amap_svc.get_place(db, 31.2304, 121.4737) == "上海外滩"
@@ -150,7 +160,7 @@ def test_get_place_cache_expired_refetch(db, monkeypatch):
 
     monkeypatch.setattr(amap_svc, "regeo", fake_regeo)
     stale = GeoCache(
-        geohash=amap_svc.encode_geohash(31.2304, 121.4737),
+        geohash=_test_geohashes()[0],
         place="旧地点",
         updated_at=datetime.now(timezone.utc) - timedelta(days=31),
     )

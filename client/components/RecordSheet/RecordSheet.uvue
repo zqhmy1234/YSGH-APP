@@ -270,7 +270,7 @@
 	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
 	import { createTextContentRemark } from '@/utils/capsule_api'
 	import { recorderState, stopRecord } from '@/utils/voice'
-	import { getCurrentFix, setLastFix, Fix, LocateState } from '@/utils/location'
+	import { getCurrentFix, getLastFix, setLastFix, Fix, LocateState } from '@/utils/location'
 	import { showErrorToast } from '@/utils/api'
 	import { VoiceRecorder } from '@/composables/useVoiceRecord'
 	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
@@ -671,10 +671,18 @@
 		uni.showLoading({ title: '上传中…', mask: true })
 		const now = Date.now()
 		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
+		// 2026-10-14（台账 §4.20 / 审计 §2）：**带上本次定位**。原实现第 6/7 参硬编码
+		// `null`，而 `uploader_photo.buildMeta` 只在 lat/lng 非空时才写 gps_lat/gps_lng
+		// ⇒ 手动拍照/选图**恒定不带地点**（文字/语音两个提交点都带了）——这就是
+		// 「拍照上传的定位功能没有起效」的直接成因。
+		// 取不到定位时仍传 null（诚实缺省，**绝不回落假坐标**）；后端另有 EXIF GPS 兜底。
+		const fix = getLastFix()
+		const fixLat: number | null = fix != null ? fix.lat : null
+		const fixLng: number | null = fix != null ? fix.lng : null
 		const items: Array<PhotoItem> = []
 		for (let i = 0; i < photos.value.length; i++) {
 			const sz = i < photoSizes.value.length ? photoSizes.value[i] : 0
-			items.push(new PhotoItem(-(now + i), photos.value[i], now, 0, 0, null, null, sz))
+			items.push(new PhotoItem(-(now + i), photos.value[i], now, 0, 0, fixLat, fixLng, sz))
 		}
 		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()

@@ -59,6 +59,9 @@ CLI_CANDIDATES = tuple(
 
 OK_MARKERS = ("编译成功", "ready in")
 FAIL_HINTS = ("编译失败", "语法错误", "SyntaxError", "Unexpected token", "未找到", "Cannot find")
+# HBuilderX 未启动时 cli 的拒绝语（2026-10-14 实测）：它**不编译**、打印一句就退出。
+# 必须单独识别为"无法编译"——否则空日志会掉进产物旁证分支（那正是曾经假通过的入口）。
+NEED_OPEN_MARKERS = ("未检测到已打开的HBuilderX", "请先执行cli open")
 
 
 def find_cli() -> Path | None:
@@ -67,6 +70,48 @@ def find_cli() -> Path | None:
         if p.exists():
             return p
     return None
+
+
+def _hbuilderx_running() -> bool:
+    """HBuilderX 主进程是否在跑。探测失败**保守返回 True**（不阻断主判定）。"""
+    if sys.platform != "win32":
+        return True
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq HBuilderX.exe", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        ).stdout
+        return "HBuilderX.exe" in out
+    except Exception:  # noqa: BLE001 —— 探测失败不影响编译主流程
+        return True
+
+
+def ensure_hbuilderx_open(cli: Path) -> str:
+    """确保 HBuilderX 已启动；返回空串 = 就绪，否则返回**未就绪原因**。
+
+    ## 为什么必须有这一步（2026-10-14 实测，一次真实的假通过）
+
+    `cli launch ... --compile true` 在 HBuilderX **未启动**时只打印一句
+    「未检测到已打开的HBuilderX，请先执行cli open启动HBuilderX后再重试」就立即退出，
+    **什么也不编译**（实测日志仅 1 行）。而当时门禁靠"产物时间戳旁证"兜底，
+    该旁证又因 `time.monotonic()` 与文件 mtime 量级不可比而**恒真** ⇒ 空日志被判
+    「编译成功」。两步叠加的后果：**门禁从来没在 HBuilderX 未启动的机器上真正编译过**。
+    """
+    if _hbuilderx_running():
+        return ""
+    try:
+        subprocess.run([str(cli), "open"], capture_output=True, timeout=90, check=False)
+    except Exception as exc:  # noqa: BLE001 —— 拉起失败由调用方按环境错误处理
+        return f"cli open 调用失败：{exc}"
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if _hbuilderx_running():
+            return ""
+        time.sleep(2)
+    return "HBuilderX 启动超时（60s 内未检测到进程）"
 
 
 def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
@@ -89,8 +134,23 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
             "设置环境变量 HBUILDERX_CLI 指向它，或在有 HBuilderX 的机器上跑。",
         )
 
+    # 2026-10-14：HBuilderX 未启动时 `cli launch` **不编译**（只打印一句就走），
+    # 必须先把它拉起来；拉不起来就如实报环境错误，**绝不**降级成"通过"。
+    not_ready = ensure_hbuilderx_open(cli)
+    if not_ready:
+        return (
+            "skip",
+            ENV_ERR_PREFIX + f" HBuilderX 未就绪（{not_ready}）：编译**未执行**（不是通过）。"
+            "请手动开一次 HBuilderX（或设 HBUILDERX_CLI 指向可用实例）后重跑。",
+        )
+
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
+    # ⚠️ 2026-10-14：产物时间戳旁证必须用**墙上时钟**比较。原实现把 `time.monotonic()`
+    # （开机以来秒数，量级 1e5）直接与文件 `st_mtime`（Unix 纪元，量级 1.7e9）比大小，
+    # `mt > started` **恒为真** ⇒ 只要日志为空就判"产物已更新 ⇒ 成功"，
+    # **假通过的编译门**（2026-10-14 实测：产物实为两天前的旧件却报 ok）。
+    started_wall = time.time()
     # ⚠️ 为什么用「重定向到文件」而不是 `capture_output=True`（2026-10-11 实测）：
     # HBuilderX **已启动**时，`cli launch ...` 会把命令**委派给现有实例**然后立即返回——
     # 此时子进程 stdout 只有一行 `HBuilderX Version: 5.26`，编译日志根本不出现在管道里
@@ -111,6 +171,15 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
     out = LOG_PATH.read_text(encoding="utf-8", errors="replace") if LOG_PATH.exists() else ""
     elapsed = time.monotonic() - started
 
+    # ⚠️ 2026-10-14：HBuilderX 未启动时 cli **不编译**，只打印下面这句并立即退出。
+    # 必须先识别它——否则空日志会掉进"产物旁证"分支，而那正是曾经假通过的入口。
+    if any(m in out for m in NEED_OPEN_MARKERS):
+        return (
+            "skip",
+            ENV_ERR_PREFIX + " HBuilderX 未启动：编译**未执行**（不是通过）。"
+            "需先 `cli open`（本门已尝试自动拉起但未成功）后重跑。",
+        )
+
     ok = any(m in out for m in OK_MARKERS)
     bad = any(h in out for h in FAIL_HINTS)
 
@@ -121,11 +190,13 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
 
     # 双判据兜底：cli 委派给现有实例时日志可能**写在 HBuilderX 自己的日志里**而本文件为空。
     # 此时看**编译产物**是否在本次调用后更新过（编译成功必然触碰 unpackage/dist/dev）。
-    touched = _artifact_touched_since(started)
+    # ⚠️ 时间基准必须是**墙上时钟**（见 `started_wall` 处注释：原来传 monotonic 导致恒真 ⇒ 假通过）。
+    touched = _artifact_touched_since(started_wall)
     if touched and not bad:
         return (
             "ok",
-            f"未捕获到编译日志（cli 委派给运行中的 HBuilderX），但编译产物已在本次调用后更新（{touched}）⇒ 判为成功",
+            "未捕获到编译日志（cli 委派给运行中的 HBuilderX），但编译产物已在本次调用后更新"
+            f"（{touched}）⇒ 判为成功",
         )
 
     if code == -1:
@@ -134,20 +205,29 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
     tail = "\n".join([ln for ln in out.splitlines() if ln.strip()][-12:]) or "（日志为空）"
     if bad:
         return "fail", f"客户端编译失败（退出码 {code}）：\n{tail}"
-    return "fail", f"编译结果无法判定（无成功标记，退出码 {code}）：\n{tail}"
+    return (
+        "fail",
+        f"编译结果**无法判定**（无成功标记、产物也未更新 ⇒ 按「未验证」处理，退出码 {code}）：\n{tail}",
+    )
 
 
-def _artifact_touched_since(started: float) -> str:
-    """编译产物是否在 `started` 之后被写过（返回最早被写文件的相对路径，否则空串）。
+def _artifact_touched_since(started_wall: float) -> str:
+    """编译产物是否在 `started_wall` 之后被写过；返回 `"<相对路径> @ <时间>"`，否则空串。
 
     用途：HBuilderX 已运行时 cli 走 IPC，日志不进我们的管道 ⇒ 用"产物被重新生成"
     作为编译发生的旁证。只扫一层关键目录，避免全量遍历拖慢门禁。
+
+    ⚠️ 2026-10-14 修（一次**真实的假通过**）：形参原先传的是 `time.monotonic()`
+    （开机以来秒数，量级 1e5），而文件 `st_mtime` 是 Unix 纪元（量级 1.7e9）⇒
+    `mt > started` **恒为真** ⇒ 只要日志为空就判"产物已更新 ⇒ 编译成功"。
+    实测：HBuilderX 未启动（编译根本没跑、产物是两天前的旧件）时门禁仍报 ok。
+    现改传 `time.time()`（墙上时钟），并回显命中文件与时间，便于人工核对。
     """
     dist = CLIENT / "unpackage" / "dist" / "dev" / "app-android"
     if not dist.exists():
         return ""
     newest = ""
-    newest_mtime = started
+    newest_mtime = started_wall
     try:
         for p in dist.rglob("*"):
             if not p.is_file():
@@ -155,7 +235,8 @@ def _artifact_touched_since(started: float) -> str:
             mt = p.stat().st_mtime
             if mt > newest_mtime:
                 newest_mtime = mt
-                newest = str(p.relative_to(CLIENT))
+                stamp = time.strftime("%m-%d %H:%M:%S", time.localtime(mt))
+                newest = f"{p.relative_to(CLIENT)} @ {stamp}"
     except Exception:  # noqa: BLE001 —— 旁证失败不影响主判定
         return ""
     return newest
