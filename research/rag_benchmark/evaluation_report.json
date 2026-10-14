@@ -3,7 +3,50 @@
     "version": 2,
     "note": "RAG 全分布测评"
   },
-  "corpora": {},
+  "corpora": {
+    "scale": {
+      "collection": "yishu_benchmark_scale",
+      "size": 1000,
+      "n_queries": 50,
+      "index_ms": 548804,
+      "p95_ms": 292.1,
+      "gate_p95": true,
+      "mock_external_ai": true,
+      "rerank_enabled": false
+    },
+    "scale_curve": [
+      {
+        "collection": "yishu_benchmark_scale",
+        "size": 100,
+        "n_queries": 50,
+        "index_ms": 55218,
+        "p95_ms": 280.2,
+        "gate_p95": true,
+        "mock_external_ai": true,
+        "rerank_enabled": false
+      },
+      {
+        "collection": "yishu_benchmark_scale",
+        "size": 500,
+        "n_queries": 50,
+        "index_ms": 286307,
+        "p95_ms": 285.7,
+        "gate_p95": true,
+        "mock_external_ai": true,
+        "rerank_enabled": false
+      },
+      {
+        "collection": "yishu_benchmark_scale",
+        "size": 1000,
+        "n_queries": 50,
+        "index_ms": 548804,
+        "p95_ms": 292.1,
+        "gate_p95": true,
+        "mock_external_ai": true,
+        "rerank_enabled": false
+      }
+    ]
+  },
   "rewrite_check": {
     "n": 11,
     "accuracy": 1.0,

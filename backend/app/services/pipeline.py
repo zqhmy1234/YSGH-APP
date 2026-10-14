@@ -236,6 +236,39 @@ def _resolve_handler(content_type: str) -> Callable[..., Any] | None:
     return globals().get(name)
 
 
+def _resolve_photo_local(content: Content) -> tuple[str | None, Path | None]:
+    """尽力拿到照片的本地文件路径（供 vision 图片塔回源）—— R-4 · 2026-10-14
+
+    为什么在这里回源：`_process_photo` 退出时已把临时图片 `unlink`（见 pipeline_photo），
+    到索引阶段本地文件已不在，只剩持久字段 `content.cos_key`。
+
+    ⚠️ 只有 `dashscope_vision` 后端需要图片；`bge_caption` 后端只用 caption，
+       这里直接返回 `(None, None)` 省掉一次无谓的 COS 下载。
+
+    返回 `(路径, 需清理的临时文件)`；找不到时返回 `(None, None)` —— 调用方据此降级
+    走 caption 文本嵌入（同空间），而不是让这张照片永久不可搜图。
+    """
+    if settings.image_tower_backend != "dashscope_vision":
+        return None, None
+    extra_path = extra_get(content, "image_path")  # 测试注入的本地路径
+    if extra_path:
+        return str(extra_path), None
+    if not content.cos_key:
+        return None, None
+    try:
+        import tempfile
+
+        from app.services.external.storage import get_storage_backend
+
+        data = get_storage_backend().get_object(content.cos_key)
+        tmp = Path(tempfile.gettempdir()) / f"yishu_imgvec_{content.id}.jpg"
+        tmp.write_bytes(data)
+        return str(tmp), tmp
+    except Exception as exc:  # noqa: BLE001 —— 回源失败则降级用 caption 嵌入，不冒泡
+        logger.warning("图片回源失败（将降级用 caption 嵌入）content=%s: %s", content.id, exc)
+        return None, None
+
+
 def _index_after_commit(db: Session, content: Content) -> None:
     """主提交后的 Qdrant 索引（R2#1：Qdrant 写后置到 DB 提交之后）
 
@@ -253,14 +286,22 @@ def _index_after_commit(db: Session, content: Content) -> None:
     if content.content_type != "photo":
         return
     try:
-        from app.services.embedding import encode_dense
+        from app.services.image_tower import encode_image_vector
         from app.services.vector_store import get_store
 
-        img_vec = encode_dense([text])[0]
+        # R-4：图片向量统一走图片塔适配层（默认 bge_caption，与改动前等价）；
+        # vision 后端需要图片本体，这里按 cos_key 回源（拿不到则降级用 caption 嵌入）。
+        image_path, tmp = _resolve_photo_local(content)
+        try:
+            img_vec, space = encode_image_vector(image_path=image_path, caption=text)
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)  # noqa: B018 —— 清理回源临时文件
         get_store().upsert_image_vec(
             str(content.id),
             img_vec,
-            payload={"text": text, "content_type": "photo"},
+            # `image_space` 供检索端做向量空间隔离（见 vector_store._with_image_space）
+            payload={"text": text, "content_type": "photo", "image_space": space},
         )
     except Exception as exc:  # noqa: BLE001 —— 图片向量失败不影响浏览
         logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)

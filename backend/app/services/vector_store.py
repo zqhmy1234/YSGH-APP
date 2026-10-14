@@ -283,13 +283,17 @@ class VectorStore:
         limit: int = 50,
         collection: str | None = None,
     ) -> list[dict]:
-        """以图搜图：image_vec 相似检索（图片查询向量 → 最相似图片）"""
+        """以图搜图：image_vec 相似检索（图片查询向量 → 最相似图片）
+
+        R-4（2026-10-14）：追加**图片向量空间隔离**条件（见 `_with_image_space`）——
+        caption 空间与 vision 空间的向量余弦分不可比，混检会静默返回垃圾。
+        """
         col = collection or default_collection()
         hits = self.client.query_points(
             collection_name=col,
             query=vec,
             using=IMAGE_VEC_NAME,
-            query_filter=self._to_filter(filters),
+            query_filter=self._with_image_space(self._to_filter(filters)),
             limit=limit,
         ).points
         result = []
@@ -303,6 +307,37 @@ class VectorStore:
                 "text": payload.get("text"),
             })
         return result
+
+    @staticmethod
+    def _with_image_space(user_filter: models.Filter | None) -> models.Filter:
+        """给以图搜图查询追加「图片向量空间」隔离条件（R-4 · 2026-10-14）
+
+        为什么需要：`image_vec` 同一槽位里可能同时存在两种**互不相通**的向量空间
+        （`bge_caption` = BGE-M3(caption)，`vision` = tongyi-embedding-vision-plus）。
+        它们的余弦分不可比，混在一起检索会**静默返回垃圾**（不报错、不崩溃，只是排序全错）。
+
+        取值语义（沿用仓库对旧数据的 fail-open 传统，同 `CONTENT_TYPE_ALIASES`）：
+          - `image_space == 当前空间`  → 命中
+          - `image_space` 字段**缺失**  → 命中（旧点没有这个键，按兼容处理，**不丢数据**）
+          - `image_space == 其它空间`  → 排除
+
+        ⚠️ 因此**切换顺序不可颠倒**：必须先跑 `scripts/rebuild_image_index.py` 把点全部
+        重灌进新空间，**再**改 `image_tower_backend` —— 这样稳态下「缺失集」为空，隔离干净。
+        若先切配置，过渡窗口内旧点仍会被检到，排序质量暂时下降（非崩溃）。
+
+        本条件在 `search_image` 内部构造、**不进用户 filters dict**，因此无需登记
+        `search_filters.HANDLED_BY_QDRANT` 的 fail-closed 白名单，用户过滤契约零变化。
+        """
+        from app.services.image_tower import IMAGE_SPACE_KEY, current_image_space  # 延迟 import 破环
+
+        space_cond = models.Filter(should=[
+            models.FieldCondition(key=IMAGE_SPACE_KEY, match=models.MatchValue(value=current_image_space())),
+            models.IsEmptyCondition(is_empty=models.PayloadField(key=IMAGE_SPACE_KEY)),
+        ])
+        if user_filter is None:
+            return models.Filter(must=[space_cond])
+        # 把用户过滤器整体嵌进 must —— 保留其 should/must_not 语义，无需逐字段搬运
+        return models.Filter(must=[user_filter, space_cond])
 
     @staticmethod
     def _rrf_fuse(dense_hits, sparse_hits, limit: int = 50, k: int = 60) -> list[dict]:

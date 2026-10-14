@@ -22,6 +22,10 @@ logger = logging.getLogger("yishu.external")
 QWEN_FLASH = "qwen-flash"            # 文本：改写/路由/精排
 QWEN_VL = "qwen3-vl-plus"            # 图片塔
 QWEN_GUARD = "qwen-flash"            # 护栏（内容安全）——qwen-guard 不存在（400 实测），B5b 托管护栏接入前用 qwen-flash
+# R-4 真·图片塔（多模态 embedding）。**必须用带日期的快照**：无版本号的
+# tongyi-embedding-vision-plus 默认 1152 维，放不进本仓 image_vec(1024) 槽位；
+# 快照版支持 dimension 参数（官方支持 64~1152）。见 image_tower.py 头部说明。
+QWEN_VISION_EMBED = "tongyi-embedding-vision-plus-2026-03-06"
 # 注：B5b 定稿为百炼托管护栏（qwen_response_check，header X-DashScope-DataInspection
 # 自动匹配），qwen-guard 为 chat 模型兜底；接入托管前先用规则预检 + chat 模型双保险。
 
@@ -137,6 +141,68 @@ def image_caption(image_path: str, prompt: str = "用一句话中文描述这张
         raise RuntimeError(f"dashscope {QWEN_VL} 调用失败: {resp.status_code} {resp.message}")
     parts = resp.output.choices[0].message.content
     return "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+
+
+def _extract_embedding(resp) -> list[float]:
+    """从多模态向量响应里取第一条向量。
+
+    响应形态（官方文档）：`output.embeddings[i]` = `{index, embedding, type}`，
+    `type` ∈ text/image/video/multi_images。
+    """
+    items = resp.output["embeddings"]
+    if not items:
+        raise RuntimeError("dashscope 多模态向量返回空 embeddings")
+    return [float(x) for x in items[0]["embedding"]]
+
+
+@with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
+def embed_image(image_path: str, *, dimension: int = 1024) -> list[float]:
+    """R-4 真图片塔：图片 → 向量（tongyi-embedding-vision-plus 多模态 embedding）
+
+    ⚠️ **本函数尚未在真实账号上验证过**（百炼「多模态向量」未开通）。开通后须先核对：
+      ① 该接口是否接受 `workspace=`（MultiModalConversation 接受，embedding 侧待确认）；
+      ② `dimension=1024` 是否被接受、返回长度是否恰为 1024（**零切换成立的前提**）；
+      ③ `input=[{"image": "file://..."}]` 的本地文件 URL 形态是否支持；
+      ④ 文本输入与图片输入是否落在同一向量空间（`embed_text_in_vision` 依赖此点）。
+    """
+    if not _llm_available():
+        raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
+    from dashscope import MultiModalEmbedding
+
+    _ensure_api_key()
+    resp = MultiModalEmbedding.call(
+        model=QWEN_VISION_EMBED,
+        input=[{"image": f"file://{image_path}"}],
+        dimension=dimension,
+        workspace=settings.dashscope_workspace_id or None,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"dashscope {QWEN_VISION_EMBED} 调用失败: {resp.status_code} {resp.message}")
+    return _extract_embedding(resp)
+
+
+@with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
+def embed_text_in_vision(text: str, *, dimension: int = 1024) -> list[float]:
+    """真图片塔的**文本通道** —— 与 `embed_image` 同一模型、同一空间。
+
+    用途：索引侧拿不到图片文件时（生产 `_index_after_commit` 时临时文件已删），
+    用 caption 走文本输入补齐，避免该照片永久不可搜图。**不是跨空间混入。**
+    同上：未在真实账号验证（见 `embed_image` 的核对清单）。
+    """
+    if not _llm_available():
+        raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
+    from dashscope import MultiModalEmbedding
+
+    _ensure_api_key()
+    resp = MultiModalEmbedding.call(
+        model=QWEN_VISION_EMBED,
+        input=[{"text": text}],
+        dimension=dimension,
+        workspace=settings.dashscope_workspace_id or None,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"dashscope {QWEN_VISION_EMBED} 调用失败: {resp.status_code} {resp.message}")
+    return _extract_embedding(resp)
 
 
 def moderate(text: str) -> dict:

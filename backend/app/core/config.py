@@ -226,6 +226,22 @@ class Settings(BaseSettings):
     # ⇒ 本项要真正达标，前置是 §2.1#3「扩真实语料」，不是再调代码。
     #   标定工具与完整权衡表：<仓库>/research/rag_benchmark/r1_calibrate.py
     retrieval_min_dense_score: float = 0.0
+
+    # R-4 图片塔适配层（2026-10-14）：`image_vec`（以图搜图命名向量）用哪种模型出向量。
+    #   bge_caption      = 现状：图片 → Qwen3-VL caption → BGE-M3 文本塔编码
+    #                      （B2-4 允许的**替代路径**，等于用文本塔冒充图片塔）
+    #   dashscope_vision = 设计指定方案：图片 → tongyi-embedding-vision-plus 直接出向量
+    # ⚠️ 两者是**互不相通的向量空间**，余弦分不可比 —— 切换时必须先用
+    #    `scripts/rebuild_image_index.py` 把已有图片点重灌，**再**改这里；
+    #    检索端按 payload `image_space` 隔离（旧点无该键时按缺失兼容，不丢）。
+    # ⚠️ `dashscope_vision` 依赖百炼「多模态向量」开通（当前未开通），
+    #    未开通时该分支会抛错、由调用方降级（照片仍可被 text_vec 搜到）。
+    image_tower_backend: Literal["bge_caption", "dashscope_vision"] = "bge_caption"
+    # 视觉嵌入维度 —— **必须等于 vector_store.VECTOR_SIZE（1024）**，否则写入 Qdrant
+    # 报维度不符。官方支持 64~1152（默认 1152），这里显式取 1024 以复用既有槽位。
+    # 依据：https://help.aliyun.com/zh/model-studio/multimodal-embedding-api-reference
+    image_tower_dimension: int = 1024
+
     # 第二层 LLM 精排（Wave2-F 2026-08-26，B2-1 Ilya 方案）：
     # 总开关默认开，运行时再按 llm_available（无 key / mock → 原序返回）自门控。
     # 管线：bge 粗排 top-50→top-10（rerank_llm_candidates）→ qwen-flash 判"能否
