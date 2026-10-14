@@ -38,10 +38,13 @@ from sqlalchemy import create_engine
 #   · profile_l2_evidence —— 业务活着（profile_annotator 写 / profile_admin 清），
 #     profile_admin.py:68-69 已拍板「无 ORM ⇒ 清除同样走 raw SQL」
 #   · finetune_jobs —— 外部进程 reflow_global.py（B5-c 纠错回流）的记录载体
-KNOWN_DRIFT_TABLES = {
-    "profile_l2_evidence",
-    "finetune_jobs",
-}
+# 2026-10-15（合并 origin/develop 的 B-1 后）：**清单清空**——原先这两张"**有意无模型**"的
+# 裸 SQL 表（本仓 2026-10-10 的决策，见 `backend/sql/schema.sql` 头部与台账）已被上游 B-1
+# 补上 ORM 模型（`app/db/models/finetune.py:11 FinetuneJob`、
+# `app/db/models/profile.py:91 ProfileL2Evidence`）⇒ **不再构成漂移**。
+# 清空后本测试的语义变成"库里不存在任何无模型表"= 理想态 ✓。
+# ⚠️ 将来若再出现"有意无模型"的表，必须在此写明理由与销项触发（本清单即豁免池）。
+KNOWN_DRIFT_TABLES: set[str] = set()
 
 
 @pytest.fixture(scope="module")
