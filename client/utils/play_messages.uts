@@ -153,6 +153,33 @@ export function fetchUnreadCount(): Promise<number> {
 	})
 }
 
+// ── 列表缓存（2026-10-14 · 台账 §4.20 ⑭）────────────────────────────────────
+// 消息页每次进入（`onShow`）要 `fetchMessages` + `fetchUnreadCount` + `/echo/today` 三个往返，
+// 而**页面实例随返回销毁** ⇒ 页内 ref 无处存活，再进入必然空窗等一次网络（用户感知
+// 「每次跳转都要等数据」）。缓存放**本模块**：`.uts` 是模块作用域、跨页面实例存活；
+// ⚠️ `<script setup>` 顶层变量是"每实例"的，**做不到**这件事（这正是子页无法秒出的共性原因）。
+let _cachedMessages: Array<AppMessage> = []
+let _cachedUnread: number = -1 // -1 = 尚未有过真值
+
+/** 成功拉到列表后回填（供下次进入先渲染） */
+export function putCachedMessages(list: Array<AppMessage>): void {
+	_cachedMessages = list
+}
+
+/** 上次消息列表；从未拉到过则为空数组（调用方据此决定是否先渲染） */
+export function getCachedMessages(): Array<AppMessage> {
+	return _cachedMessages
+}
+
+export function putCachedUnread(n: number): void {
+	_cachedUnread = n
+}
+
+/** 上次未读数；-1 = 尚未有过真值（不要拿它当 0 用） */
+export function getCachedUnread(): number {
+	return _cachedUnread
+}
+
 /** POST /messages/{id}/read：单条已读；返回是否成功 */
 export function markMessageRead(msgId: number): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {

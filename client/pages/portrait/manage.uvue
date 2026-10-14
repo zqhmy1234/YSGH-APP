@@ -156,7 +156,7 @@
 	import { onLoad } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import { fetchInterviewProfile } from '@/utils/play_interview'
-	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
 	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
 
 	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影）
@@ -262,6 +262,40 @@
 	// 加载统计（性能卡 PE 2026-09-04）：统计卡改 GET /events/stats 单聚合端点（api.uts fetchEventStats），
 	// 原 fetchTimeline(null) 全量拉取 + 全事件缩略图触发已删（性能黑洞）。
 	// 记忆主题列表仍需 L2 事件明细（标题/条数派生），窄化为 fetchTimeline(2) 仅拉 L2 子集（server level 过滤）。
+	/** 从 L2 事件派生主题列表（原 `loadStats` 内联体抽出：供"缓存命中"与"走网络"两条路径共用） */
+	function applyThemes(events: Array<TimelineEvent>): void {
+		// 主题数 = L2 事件总数（口径与原 level===2 计数一致）
+		totalThemes.value = events.length
+		// 从 L2 事件派生记忆主题（MVP：取高频 L2 事件标题）——派生逻辑不变，数据源窄化为 L2
+		const themeMap: Map<string, number> = new Map<string, number>()
+		for (let i = 0; i < events.length; i++) {
+			const ev = events[i]
+			if (ev.level === 2 && ev.title != '') {
+				const count = themeMap.get(ev.title)
+				if (count != null) {
+					themeMap.set(ev.title, count + 1)
+				} else {
+					themeMap.set(ev.title, 1)
+				}
+			}
+		}
+		const themeList: Array<any> = []
+		const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
+		const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
+		const themeKeys = themeMap.keys()
+		for (let i = 0; i < Math.min(4, themeKeys.length); i++) {
+			const name = themeKeys[i]
+			const count = themeMap.get(name) ?? 0
+			themeList.push({
+				name: name,
+				count: count,
+				icon: icons[i % icons.length],
+				color: colors[i % colors.length]
+			})
+		}
+		themes.value = themeList
+	}
+
 	function loadStats(): void {
 		fetchEventStats().then((s: EventStats | null) => {
 			if (s != null) {
@@ -270,38 +304,18 @@
 			}
 			// s==null：请求失败（doRequest 已全局 toast），统计保持 0 不造假
 		})
-		fetchTimeline(2).then((events: Array<TimelineEvent>) => {
-			// 主题数 = L2 事件总数（口径与原 level===2 计数一致）
-			totalThemes.value = events.length
-			// 从 L2 事件派生记忆主题（MVP：取高频 L2 事件标题）——派生逻辑不变，数据源窄化为 L2
-			const themeMap: Map<string, number> = new Map<string, number>()
-			for (let i = 0; i < events.length; i++) {
-				const ev = events[i]
-				if (ev.level === 2 && ev.title != '') {
-					const count = themeMap.get(ev.title)
-					if (count != null) {
-						themeMap.set(ev.title, count + 1)
-					} else {
-						themeMap.set(ev.title, 1)
-					}
-				}
-			}
-			const themeList: Array<any> = []
-			const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
-			const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
-			const themeKeys = themeMap.keys()
-			for (let i = 0; i < Math.min(4, themeKeys.length); i++) {
-				const name = themeKeys[i]
-				const count = themeMap.get(name) ?? 0
-				themeList.push({
-					name: name,
-					count: count,
-					icon: icons[i % icons.length],
-					color: colors[i % colors.length]
-				})
-			}
-			themes.value = themeList
-		})
+		// 2026-10-14（台账 §4.20 ⑭ · 用户反馈「每次跳转都要等数据」）：主题列表优先复用
+		// **时间轴模块已有缓存**（`getCachedTimeline`，60s 内有效）——用户进入本页多半是刚从
+		// 时间轴/我的页过来，缓存基本必命中 ⇒ **零请求、零等待**即可派生主题；
+		// 未命中才走 `fetchTimeline(2)`（原路径）。
+		const hit = getCachedTimeline()
+		if (hit != null) {
+			applyThemes(hit.events)
+		} else {
+			fetchTimeline(2).then((events: Array<TimelineEvent>) => {
+				applyThemes(events)
+			})
+		}
 	}
 
 	// ── 敏感画像管理（W10 画布 41:92；端点契约见 backend/app/api/contents.py profile_sensitive_router）──

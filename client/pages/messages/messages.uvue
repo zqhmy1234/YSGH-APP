@@ -64,7 +64,7 @@
 	import { ref, computed } from 'vue'
 	import { onShow } from '@dcloudio/uni-app'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
-import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage } from '@/utils/play_messages'
+import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage, putCachedMessages, getCachedMessages, putCachedUnread, getCachedUnread } from '@/utils/play_messages'
 	import { formatIsoShortTime } from '@/utils/time'
 	import { backToShell } from '@/utils/shell_state'
 
@@ -205,15 +205,18 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		}
 	}
 
-	/** 加载消息列表 + 未读数 + 今日回响（onShow 每次进入刷新） */
+	/** 加载消息列表 + 未读数（onShow 每次进入刷新）；结果回填模块级缓存供下次进入秒出 */
 	function loadMessages(): void {
 		fetchMessages('').then((list: Array<AppMessage>) => {
 			allMessages.value = list
+			putCachedMessages(list)
 		})
 		fetchUnreadCount().then((n: number) => {
 			unreadCount.value = n
+			putCachedUnread(n)
 		})
-		loadEcho()
+		// 2026-10-14（台账 §4.20 ⑭）：原有的 `loadEcho()` 已删——`onShow` 里本就紧跟一次
+		// `loadEcho()`，同一进入路径下 `/echo/today` 被请求两次（纯重复请求）。
 	}
 
 	/** 今日回响：真端点（GET /echo/today）。回响卡点击假 id 触发 detail 404 的演示路径已随
@@ -227,6 +230,18 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	}
 
 	onShow(() => {
+		// 2026-10-14（台账 §4.20 ⑭ · 用户反馈「每次跳转都要等数据」）：**先渲染上次列表再刷新**。
+		// 本页实例随返回销毁 ⇒ 页内 ref 不存活，原实现每次进入都从空列表开始、要等三个往返
+		// 回来才出现内容。现用**模块级**缓存（`play_messages.uts` 作用域，跨页面实例存活）
+		// 先把上次内容铺上，再照常拉最新；失败保持缓存内容（不清空）。
+		const cached = getCachedMessages()
+		if (cached.length > 0) {
+			allMessages.value = cached
+		}
+		const cu = getCachedUnread()
+		if (cu >= 0) {
+			unreadCount.value = cu
+		}
 		loadMessages()
 		// R7（2026-09-06）：onShow 同步刷新回声卡——本页常驻不销毁（redirectTo 切 tab），
 		// 跨天后旧卡残留（峰宝实锤：昨天 9-5 的卡今天还在，名额已耗尽点击无响应）；
