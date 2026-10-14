@@ -12,6 +12,7 @@
  * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
  */
 import { post, get, dataObj } from './api'
+import { PATH_CLASSIFY, PATH_CORRECTIONS } from './contract'
 // O19：全量响应（含用户 text）脱敏后再落日志——res 可能含提交文本，不得整段刷 logcat
 import { redactLog } from './log'
 
@@ -107,7 +108,7 @@ export function submitClassify(text: string): Promise<string | null> {
 		text: text
 	}
 	return new Promise<string | null>((resolve) => {
-		post('/api/v1/classify', body).then((res: UTSJSONObject | null) => {
+		post(PATH_CLASSIFY, body).then((res: UTSJSONObject | null) => {
 			if (res == null) {
 				resolve(null)
 				return
@@ -137,7 +138,7 @@ function pollClassifyTick(
 	done: (r: ClassifyResult | null) => void
 ): void {
 	const next = count + 1
-	get('/api/v1/classify/jobs/' + jobId).then((res: UTSJSONObject | null) => {
+	get(PATH_CLASSIFY + '/jobs/' + jobId).then((res: UTSJSONObject | null) => {
 		// O19：全量响应脱敏后落日志（原整段 toJSONString 刷 logcat，含用户 text）
 		console.log('[yishu] pollClassify tick ' + next + ' res=' + (res != null ? redactLog(res.toJSONString()) : 'null'))
 		if (res == null) {
@@ -209,7 +210,7 @@ export function submitCorrection(contentId: string, text: string, newLabel: stri
 		content_type: contentType
 	}
 	return new Promise<boolean>((resolve) => {
-		post('/api/v1/corrections', body).then((res: UTSJSONObject | null) => {
+		post(PATH_CORRECTIONS, body).then((res: UTSJSONObject | null) => {
 			resolve(res != null)
 		})
 	})

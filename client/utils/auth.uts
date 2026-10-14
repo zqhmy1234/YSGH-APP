@@ -21,7 +21,7 @@
  */
 import { getBaseUrl } from './config'
 import { getDeviceId, getDeviceIdSource } from './device_id'
-import { PATH_AUTH_DEVICE } from './contract'
+import { PATH_AUTH_DEVICE, PATH_AUTH_REFRESH, PATH_AUTH_LOGOUT } from './contract'
 // 2026-10-11 固定地址模式：出网通用头下沉到零依赖模块（本文件不能 import api.uts ——
 // 那是反向依赖，见 http_headers.uts 头注释）。登录/刷新/登出必须带上，否则 ngrok 下收拦截页。
 import { commonHeader } from './http_headers'
@@ -222,7 +222,7 @@ function doRefresh(): Promise<boolean> {
 			fallbackLogin('watchdog timeout(8s)')
 		}, 8000)
 		uni.request({
-			url: getBaseUrl() + '/api/v1/auth/refresh',
+			url: getBaseUrl() + PATH_AUTH_REFRESH,
 			method: 'POST',
 			header: commonHeader(),
 			data: {
@@ -281,7 +281,7 @@ function doRefresh(): Promise<boolean> {
 export function logout(): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
 		uni.request({
-			url: getBaseUrl() + '/api/v1/auth/logout',
+			url: getBaseUrl() + PATH_AUTH_LOGOUT,
 			method: 'POST',
 			header: commonHeader(),
 			data: {

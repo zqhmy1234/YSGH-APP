@@ -7,6 +7,7 @@
  */
 import { get, dataArr, fetchThumbnailPath } from './api'
 import { resolveMediaUrl } from './config'
+import { PATH_EVENTS_TIMELINE } from './contract'
 import { parseIsoMs, dayKey, friendlyDay } from './time'
 import { genWaveHeights } from './audio_player'
 
@@ -377,7 +378,10 @@ export function parseTimelineEvents(body: UTSJSONObject): Array<TimelineEvent> {
 }
 
 export function fetchTimelineAsync(level: number | null, onBatch: () => void): Promise<Array<TimelineEvent>> {
-	const path = level == null ? '/api/v1/events/timeline' : '/api/v1/events/timeline?level=' + level
+	// 2026-10-14（台账 §4.20 ⑪ 第 10 轴）：原为**字面量** `'/api/v1/events/timeline'`，
+	// 而契约常量 `PATH_EVENTS_TIMELINE` 声明后零引用 ⇒ 两处会各自漂移（后端改路径时
+	// 契约改了、这里不动 ⇒ 请求打到不存在的路径）。改用契约常量为**单一事实源**。
+	const path = level == null ? PATH_EVENTS_TIMELINE : PATH_EVENTS_TIMELINE + '?level=' + level
 	return new Promise<Array<TimelineEvent>>((resolve) => {
 		get(path).then((body: UTSJSONObject | null) => {
 			if (body == null) {

@@ -495,10 +495,37 @@ def check_audit_axes() -> tuple[bool, str]:
         else f"[storage 无消费者] {len(sk_violations)} 个键无消费者"
     ]
 
+    # 轴 10（2026-10-14 · 台账 §4.20 ⑪ 第 10 轴）：客户端「契约路径常量声明了却没人用」。
+    # 背景：RC-A 族「定义即交付错觉」——`contract.uts` 是端点路径的**单一事实源**，而实测
+    # 9 个路径常量声明后零引用、调用点各自写字面量（`timeline.uts:380` 与
+    # `PATH_EVENTS_TIMELINE` 就是典型）⇒ 后端改路径时两处**各自漂移**，而这类缺陷编译能过、
+    # 类型能过、人工 review 也滑过（声明与使用分散在不同文件）。
+    # 口径：CRITICAL 阻断（同轴 1-9）；豁免必须在 `ALLOW_UNUSED` 写明理由；规则自带负向探针。
+    from audit_contract_const import scan as scan_contract_const
+    from audit_contract_const import selftest as contract_const_selftest
+
+    if contract_const_selftest(verbose=False) != 0:
+        crit = list(crit) + [
+            "[契约常量未使用] 规则自检失败（负向探针未通过）⇒ 本门禁不可信，"
+            "请修 scripts/audit_contract_const.py"
+        ]
+    cc_violations, cc_stats = scan_contract_const()
+    if cc_violations:
+        crit = list(crit) + [
+            f"[契约常量未使用] {v['name']} = {v['value']}（定义于 {v['defined_in']}）{v['note']}"
+            for v in cc_violations
+        ]
+    info = list(info) + [
+        f"[契约常量未使用] 扫描 {cc_stats.get('files', 0)} 文件 / 路径常量 "
+        f"{cc_stats.get('declared', 0)} 个，豁免 {cc_stats.get('allowed', 0)}"
+        if not cc_violations
+        else f"[契约常量未使用] {len(cc_violations)} 个常量零引用"
+    ]
+
     suffix = f"；{note}" if note else ""
     if crit:
         return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
-    axes = "契约/客户端/模型/导出/客户端导入/类成员/令牌字面量/storage 无消费者"
+    axes = "契约/客户端/模型/导出/客户端导入/类成员/令牌字面量/storage 无消费者/契约常量未使用"
     return True, f"跨轴审计（{axes}）：无 CRITICAL；INFO {len(info)} 项{suffix}"
 
 
