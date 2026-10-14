@@ -58,6 +58,10 @@ def push_ops(
     applied: list[dict] = []
     conflicts: list[dict] = []
     rejected: list[dict] = []
+    # 2026-10-14（台账 §7.24 · 批次 8 续审）：幂等跳过的 op 单列一处 —— 使
+    # applied/conflicts/rejected/duplicates 构成**完备划分**（原实现让跳过项落在三列表之外，
+    # 客户端无法区分"重试成功"与"被丢弃"，见下方 `continue` 处注释）。
+    duplicates: list[dict] = []
 
     # ── S6-3 批量预取 ──
     # ① 幂等：本用户已存在的 op_id 集合（一次查）
@@ -127,6 +131,12 @@ def push_ops(
         op_id = op.get("op_id")
         # 幂等：同用户 op_id 已存在 → 跳过（网络重试同一操作只执行一次）
         if op_id in existing_op_ids:
+            # 2026-10-14（台账 §7.24 · 批次 8 续审）：**幂等跳过必须出现在回包里**。
+            # 原实现只 `continue` ⇒ 该 op 不在 applied/conflicts/rejected 任何一处，而接口
+            # 返回 HTTP 200 ⇒ 客户端**无法区分**"之前已应用过（网络重试）"与"被丢弃/没生效"。
+            # 现单列 `duplicates`，与另外三列一起构成**完备划分**（命名与语义先例：`events/sync`
+            # 端点早已用 accepted/duplicates/rejected 三列）。
+            duplicates.append({"op_id": op_id, "entity_id": str(op.get("entity_id") or "")})
             continue
 
         entity_type = op.get("entity_type", "content")
@@ -216,6 +226,13 @@ def push_ops(
         else:
             field = op.get("field")
             if not field:
+                # 2026-10-14（台账 §7.24 · 批次 8 续审）：**缺 field 必须进 rejected**。
+                # `schemas/sync.py` 里 `field` 是可选的 ⇒ 这一支能通过请求校验；原实现直接
+                # `continue` ⇒ op 既不在 applied、也不在 conflicts/rejected，接口仍 200 ⇒
+                # 用户"离线改了备注"返回成功、云端毫无变化且无任何可观测信号
+                # （最贵的"200 但没生效"）。同文件既有的白名单拒绝（"字段不可同步"）与
+                # 值类型拒绝（"字段值类型不符"）都走 `_reject`，本处补齐同一口径。
+                _reject("缺少 field（upsert_field 必须带 field）")
                 continue
             content_row = content_by_id.get(entity_id) if entity_type == "content" else None
             # D08-3：对**存在权威行**的 content，白名单外字段显式拒绝——否则 SFV 记账
@@ -285,7 +302,13 @@ def push_ops(
 
     db.commit()
     server_version = _max_version(db, user_id)
-    return {"applied": applied, "conflicts": conflicts, "rejected": rejected, "server_version": server_version}
+    return {
+        "applied": applied,
+        "conflicts": conflicts,
+        "rejected": rejected,
+        "duplicates": duplicates,
+        "server_version": server_version,
+    }
 
 
 def push_ops_safe(db: Session, user_id: str, device_id: str, ops: list[dict]) -> dict:
@@ -316,7 +339,13 @@ def _push_ops_per_op(db: Session, user_id: str, device_id: str, ops: list[dict])
     """
     from sqlalchemy.exc import IntegrityError
 
-    merged: dict = {"applied": [], "conflicts": [], "rejected": [], "server_version": 0}
+    merged: dict = {
+        "applied": [],
+        "conflicts": [],
+        "rejected": [],
+        "duplicates": [],
+        "server_version": 0,
+    }
     for op in ops:
         try:
             result = push_ops(db, user_id, device_id, [op])
@@ -333,6 +362,7 @@ def _push_ops_per_op(db: Session, user_id: str, device_id: str, ops: list[dict])
         merged["applied"].extend(result["applied"])
         merged["conflicts"].extend(result["conflicts"])
         merged["rejected"].extend(result["rejected"])
+        merged["duplicates"].extend(result.get("duplicates", []))
         merged["server_version"] = max(merged["server_version"], result["server_version"])
     return merged
 

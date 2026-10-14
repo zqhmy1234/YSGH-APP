@@ -33,6 +33,44 @@ def _ts(days: int = 0, hours: int = 0) -> str:
     return (datetime.now(timezone.utc) + timedelta(days=days, hours=hours)).isoformat()
 
 
+def test_push_missing_field_is_rejected(db_user):
+    """§7.24：`upsert_field` 缺 `field`（该字段在 schema 里**可选**）⇒ 必须进 **rejected**。
+
+    背景：原实现直接 `continue` ⇒ 该 op 不在 applied/conflicts/rejected 任何一处，接口却返回
+    HTTP 200 ⇒ 用户"离线改了备注"得到成功，**云端毫无变化且无任何可观测信号**（最贵的
+    "200 但没生效"）。同文件既有的字段白名单/值类型拒绝都走 `_reject`，本处对齐同一口径。
+    """
+    db, user = db_user
+    r = push_ops(db, user.id, DEVICE, [{
+        "op_id": f"nf-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+        "entity_id": _eid(), "value": "没有 field", "updated_at": _ts(),
+    }])
+    assert r["applied"] == [], r
+    assert len(r["rejected"]) == 1, r
+    assert "field" in r["rejected"][0]["reason"], r
+
+
+def test_push_duplicate_op_id_lands_in_duplicates(db_user):
+    """§7.24：幂等跳过的 op **必须出现在回包里**（`duplicates`）。
+
+    否则客户端拿 200 却无法区分"之前已应用过（网络重试成功）"与"被丢弃/没生效（真故障）"——
+    applied/conflicts/rejected/duplicates 四列才构成完备划分。
+    """
+    db, user = db_user
+    op = {
+        "op_id": f"dup-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+        "entity_id": _eid(), "field": "title", "value": "第一次", "updated_at": _ts(),
+    }
+    r1 = push_ops(db, user.id, DEVICE, [op])
+    assert len(r1["applied"]) == 1, r1
+    assert r1["duplicates"] == [], r1
+
+    r2 = push_ops(db, user.id, DEVICE, [op])  # 重发同一 op_id
+    assert r2["applied"] == [], r2
+    assert len(r2["duplicates"]) == 1, r2
+    assert r2["duplicates"][0]["op_id"] == op["op_id"], r2
+
+
 def test_push_idempotent_by_op_id(db_user):
     """op_id 幂等：同一操作重发只应用一次"""
     db, user = db_user

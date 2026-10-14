@@ -251,6 +251,28 @@ def create_content(
     if req.client_generated_id:
         existing = find_alive_content_by_cgid(db, user.id, req.client_generated_id)
         if existing is not None:
+            # 2026-10-14（台账 §7.25② · 批次 8 续审）：**幂等早退要负责"卡住的自愈"**。
+            # 入队发生在主提交（status="processing"）**之后**（见下方 :362-376）⇒ 若那一步失败
+            # （RQ/worker 抖动），客户端重试同 `client_generated_id` 只会拿到既有记录、
+            # **永不重新入队** ⇒ 该内容永久停在 `processing`（AI 管线永不执行）且无任何告警。
+            # 现按 status 分流：仍 processing ⇒ 补一次入队。安全性：`enqueue_unique` 按
+            # content 键去重，`process_content` 按 content_id 幂等（其 docstring 明示
+            # "重投/超龄重扫重跑安全"）⇒ 重复入队不会产生重复数据。
+            if existing.status == "processing":
+                logger.warning(
+                    "幂等命中但内容仍处 processing ⇒ 补入队（疑似上次入队失败）content=%s",
+                    existing.id,
+                )
+                if existing.content_type in ("voice", "photo"):
+                    enqueue_unique(process_content, str(existing.id), str(existing.id))
+                else:
+                    enqueue_unique(
+                        process_content,
+                        str(existing.id),
+                        str(existing.id),
+                        queue_name=QUEUE_LOW,
+                        job_timeout=DEFAULT_JOB_TIMEOUT,
+                    )
             return ApiResponse(data=_to_out(existing))
 
     # TD-P3 M4（审查中危）：自供 cos_key 归属/前缀/存在性校验（防跨租户对象拉取）

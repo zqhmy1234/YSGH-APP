@@ -8961,6 +8961,15 @@
             "title": "Rejected",
             "default": []
           },
+          "duplicates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Duplicates",
+            "default": []
+          },
           "server_version": {
             "type": "integer",
             "title": "Server Version"

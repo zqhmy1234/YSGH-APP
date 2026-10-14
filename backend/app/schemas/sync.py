@@ -63,6 +63,10 @@ class SyncPushResult(BaseModel):
     applied: list[dict]
     conflicts: list[dict]
     rejected: list[dict] = []   # 越权/非法操作被拒（安全修复：实体归属校验）
+    # 2026-10-14（台账 §7.24 · 批次 8 续审）：幂等跳过的 op（同 op_id 重发）单列一处 ——
+    # 使 applied/conflicts/rejected/duplicates 构成**完备划分**。原实现把跳过的 op 丢在三列
+    # 之外，客户端拿 200 却无法区分"重试成功"与"没生效"。默认空 ⇒ 老客户端读不到也不受影响。
+    duplicates: list[dict] = []
     server_version: int
 
 
