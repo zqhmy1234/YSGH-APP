@@ -467,10 +467,38 @@ def check_audit_axes() -> tuple[bool, str]:
     crit = list(crit) + tl_crit
     info = list(info) + tl_info + tl_warn
 
+    # 轴 9（2026-10-14 · 台账 §4.20 批次 7 / §7.18）：客户端 storage 键「写入但无消费者」。
+    # 背景：§7.18 的**假开关族**（privacy_ai_chat / privacy_echo / settings_notify_on /
+    # settings_theme_index / settings_cache_cleared）都是「UI 会记住状态、但全仓没人读」——
+    # 编译能过、类型能过、人工 review 也滑过（写与读分散在不同文件），唯一机械判据就是
+    # **写了却从来没人读**；其中两枚属**合规空承诺**（"关闭后不再引用你的画像"）。
+    # 口径：CRITICAL 阻断；规则**自带负向探针**，自检不过同样阻断——门禁不可信比没有更糟。
+    from audit_storage_keys import scan as scan_storage_keys
+    from audit_storage_keys import selftest as storage_keys_selftest
+
+    if storage_keys_selftest(verbose=False) != 0:
+        crit = list(crit) + [
+            "[storage 无消费者] 规则自检失败（负向探针未通过）⇒ 本门禁不可信，"
+            "请修 scripts/audit_storage_keys.py"
+        ]
+    sk_violations, sk_stats = scan_storage_keys()
+    if sk_violations:
+        crit = list(crit) + [
+            f"[storage 无消费者] {v['key']}（写于 {', '.join(v['written_in'])})"
+            + (f" {v['note']}" if v["note"] else "")
+            for v in sk_violations
+        ]
+    info = list(info) + [
+        f"[storage 无消费者] 写键 {sk_stats.get('write_keys', 0)} / 读键 "
+        f"{sk_stats.get('read_keys', 0)}，解析不出 {sk_stats.get('dynamic_sites', 0)} 处"
+        if not sk_violations
+        else f"[storage 无消费者] {len(sk_violations)} 个键无消费者"
+    ]
+
     suffix = f"；{note}" if note else ""
     if crit:
         return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
-    axes = "契约/客户端/模型/导出/客户端导入/类成员/令牌字面量"
+    axes = "契约/客户端/模型/导出/客户端导入/类成员/令牌字面量/storage 无消费者"
     return True, f"跨轴审计（{axes}）：无 CRITICAL；INFO {len(info)} 项{suffix}"
 
 

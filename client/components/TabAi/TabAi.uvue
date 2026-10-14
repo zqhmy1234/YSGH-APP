@@ -410,11 +410,23 @@
 	}
 
 	// 锚点滚动：scroll-into-view 指向最新消息 id（不支持时静默无滚动，不阻塞）
+	//
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-8）：**只在"锚点未变"时才清空重设**。
+	// 原实现无条件 `=''` → 50ms 后设值 ⇒ **每次滚动都两轮布局**，而流式期间滚动很频繁。
+	// 而"同值不触发"实际只发生在**同一锚点重复滚**时（打字机气泡长高、消息 id 不变）；
+	// 锚点变化（新消息上屏）时直接赋值必然触发，无需清空。
 	function scrollToBottom(id: number): void {
-		scrollInto.value = ''
-		setTimeout(() => {
-			scrollInto.value = 'msg-' + id
-		}, 50)
+		const target = 'msg-' + id
+		if (scrollInto.value == target) {
+			// 同锚点重复滚：同值不触发 ⇒ 必须"先清再设"（两轮布局不可避免，但已限在此分支）
+			scrollInto.value = ''
+			setTimeout((): void => {
+				scrollInto.value = target
+			}, 50)
+			return
+		}
+		// 锚点变化：一次赋值即可（省掉清空与 50ms 延迟）
+		scrollInto.value = target
 	}
 
 	// 流式预览增长时跟随滚动（2026-10-11 交互审查 B5）：typing 气泡在逐字长高，而滚动

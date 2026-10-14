@@ -164,6 +164,47 @@ export let chatStreamActive = ref(false)
 /** 工具状态文案（后端 `tool` 帧的 name；空串 = 没有工具在跑） */
 export let chatStreamTool = ref('')
 
+// ═══════════ 流式文本合并（2026-10-14 · 台账 §4.20 批次 5 · RC-8）═══════════
+//
+// ## 为什么
+//
+// 预览帧的到达频率是"每个 token / 每个 chunk"（实测每秒可达数十帧）。原实现**每帧直接写**
+// `chatStreamText`（TabAi 的 typing 气泡绑它渲染）⇒ **每帧一次 TabAi 重渲染**，而打字机气泡
+// 处在 `v-for` 的消息列表内 ⇒ **整列表跟着重渲染**（长会话下即"打字时卡顿、输入滞涩"）。
+//
+// ## 做法
+//
+// **合帧落定**：新文本先暂存到**非响应式**变量，最多每 80ms 落一次 ref。
+// 80ms ≈ 12.5Hz，对"逐字"观感足够（人眼对 12Hz 以上的文本增长基本连续），
+// 而重渲染次数降到原来的 1/N（N ≈ 帧率 / 12.5）。
+//
+// ## 安全边界（必须成对，否则出现"回复闪回"）
+//
+//  · 每轮**开始**（`sendChatMessage`）与**结束**（该 promise settle）都要 `cancelStreamTextFlush()`：
+//    否则调用方（TabAi 收到终稿后）清空 ref 之后，残留的定时器会把**上一轮的尾句写回去**；
+//  · `replace` 帧（校验重试后的整段替换）与 `preview` 同走这一入口，天然覆盖。
+let pendingStreamText = ''
+let streamFlushTimer = 0
+
+function stageStreamText(t: string): void {
+	pendingStreamText = t
+	if (streamFlushTimer != 0) {
+		return // 本窗口已排队，由它统一落定
+	}
+	streamFlushTimer = setTimeout((): void => {
+		streamFlushTimer = 0
+		chatStreamText.value = pendingStreamText
+	}, 80)
+}
+
+function cancelStreamTextFlush(): void {
+	if (streamFlushTimer != 0) {
+		clearTimeout(streamFlushTimer)
+		streamFlushTimer = 0
+	}
+	pendingStreamText = ''
+}
+
 /** 流式总超时（与旧非流式通道同口径 90s；后端 agent 上限 180s，须留出让后端如实 504 的余量） */
 const STREAM_TIMEOUT_MS: number = 90000
 
@@ -254,10 +295,19 @@ function parseSseFrame(raw: string): SseFrame {
 export function sendChatMessage(conversationId: string, content: string): Promise<ChatSendResult | null> {
 	// B13 面包屑：只记"新建/续会话"与文本长度，**不记用户对 AI 说了什么**（隐私纪律同 search_api）
 	addBreadcrumb('chat', (conversationId == '' ? 'stream new conversation' : 'stream existing conversation') + ' len=' + content.length)
+	// 2026-10-14（RC-8）：先取消上一轮**可能残留**的合帧定时器——否则它会把这轮开头的内容
+	// 或上一轮的尾句写到清空之后（"回复闪回"）。
+	cancelStreamTextFlush()
 	chatStreamText.value = ''
 	chatStreamTool.value = ''
 	chatStreamActive.value = true
-	return streamChatOnce(conversationId, content, false, false)
+	return streamChatOnce(conversationId, content, false, false).then((r: ChatSendResult | null) => {
+		// 本轮结束（成功/失败/超时都走这里）：同样取消待落定的窗口。
+		// 终稿由返回值 `r` 承载（TabAi 据此上屏并清空 `chatStreamText`），故此处**无需**补落——
+		// 若强行落定，反而会在"调用方已清空"之后写入旧文本。
+		cancelStreamTextFlush()
+		return r
+	})
 }
 
 function streamChatOnce(conversationId: string, content: string, retried: boolean, newConvTried: boolean): Promise<ChatSendResult | null> {
@@ -346,8 +396,9 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 						console.log('[dbg-chat] first preview at ' + (Date.now() - t0) + 'ms (chunks=' + chunkCount + ')')
 					}
 					// replace = 校验重试后的整段替换（预览作废）；两者都是"**当前应显示的全文**"
+					// 2026-10-14（RC-8）：改走**合帧落定**（80ms 窗口），不再每帧直接写 ref。
 					const obj = JSON.parse(f.data) as UTSJSONObject
-					chatStreamText.value = obj.getString('text') ?? ''
+					stageStreamText(obj.getString('text') ?? '')
 					return
 				}
 				if (f.event == 'tool') {
