@@ -34,7 +34,7 @@ import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import quote
 
@@ -191,7 +191,7 @@ def _aliyun_common_params(action: str) -> dict:
         "SignatureMethod": "HMAC-SHA1",
         "SignatureNonce": str(uuid.uuid4()),
         "SignatureVersion": "1.0",
-        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "Timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 

@@ -125,6 +125,10 @@
 					<view class="td-2" />
 					<view class="td-3" />
 					</view>
+					<!-- 形态⑥：发送失败重试卡（2026-10-07 客户端加固）：保留原文，一键重发 -->
+					<view v-else-if="m.kind === 'failed'" class="fail-card pressable" @tap="onRetry(m)">
+						<text class="fail-text">发送失败 · 点此重试</text>
+					</view>
 				</view>
 				<!-- 用户消息行 -->
 				<view v-else class="n2_349">
@@ -305,9 +309,12 @@
 				// 预览用完即清：它是**模块级共享**状态，留着会让下一轮的占位气泡先闪出上一轮的尾句
 				chatStreamText.value = ''
 				if (r == null) {
-					// **不伪造回复**：只撤掉 typing 占位。失败原因由 api 层全局 toast（带后端 message）
-					// 与 Sentry 承担；用户输入已上屏、可直接重发——比编一句假 AI 回复诚实，
-					// 也便于按后端日志复盘"问了但没答上"（chat_messages 里用户行仍在）
+					// **不伪造回复**（项目铁律）：不编假 AI 回复，但必须给用户可操作出口——
+					// 插入「发送失败 · 点此重试」卡（2026-10-07 加固），保留原文一键重发；
+					// 失败原因仍由 api 层全局 toast（带后端 message）与 Sentry 承担
+					const failMsg = mkAi('failed', t, [], [], [], [])
+					messages.value.push(failMsg)
+					scrollToBottom(failMsg.id)
 					return
 				}
 				if (r.conversationId != '') {
@@ -340,6 +347,17 @@
 			messages.value.push(ai)
 			scrollToBottom(ai.id)
 		}, 1800)
+	}
+
+	// 重试发送（2026-10-07 加固）：撤掉失败卡 → 用原文走真端点重发（复用 onSend 完整链路）
+	function onRetry(m: AiMsg): void {
+		const text = m.text
+		if (text == '') {
+			return
+		}
+		removeById(m.id)
+		draft.value = text
+		onSend()
 	}
 
 	// mock 回复生成器（B2 接线后删除）

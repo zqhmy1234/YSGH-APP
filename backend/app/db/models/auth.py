@@ -1,7 +1,8 @@
 """认证域 ORM 模型（users/devices/sms_codes，对齐 backend/sql/schema.sql）"""
+
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,12 +15,14 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()")
+    )
     unionid: Mapped[str | None] = mapped_column(String, unique=True)
     phone: Mapped[str | None] = mapped_column(String, unique=True)
     nickname: Mapped[str | None] = mapped_column(String)
     avatar: Mapped[str | None] = mapped_column(String)
-    status: Mapped[int] = mapped_column(BigInteger, default=1)
+    status: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -37,7 +40,9 @@ class Device(Base):
     __tablename__ = "devices"
     __table_args__ = (UniqueConstraint("user_id", "device_id", name="uq_devices_user_device"),)
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()")
+    )
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     device_id: Mapped[str] = mapped_column(String)
     platform: Mapped[str] = mapped_column(String)

@@ -17,6 +17,7 @@ failed=AUDIO_DOWNLOAD_FAILED、cos_key=NULL 恒不可播。R9-B1 修复：客户
 import io
 import uuid
 import wave
+from datetime import UTC
 
 import pytest
 from app.db.session import SessionLocal
@@ -265,7 +266,7 @@ class TestL5AudioReadChain:
         「deleted_at 内容对外不可达」一致性契约；恢复（deleted_at 清空）后可播。
         本用例先断软删态 404，再模拟恢复断 200，钉死两侧语义。
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from app.db.models import Content
         from app.services.external.storage import get_storage_backend
@@ -280,7 +281,7 @@ class TestL5AudioReadChain:
             source="app",
             status="confirmed",
             cos_key=cos_key,
-            deleted_at=datetime.now(timezone.utc),
+            deleted_at=datetime.now(UTC),
         )
         db.add(row)
         db.commit()

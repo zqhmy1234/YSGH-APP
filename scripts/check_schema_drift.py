@@ -1,36 +1,11 @@
 #!/usr/bin/env python3
-"""schema.sql ↔ alembic 迁移链结构漂移检测（重构侦察 P0-4 / issue #2 落地）
+"""Compare fresh ORM and Alembic schemas in isolated temporary databases.
 
-背景（lessons.md:97 已明确解法，本脚本落地）：
-  - ⚠️ 本行原文「CI 建库源 = backend/sql/schema.sql」**已于 2026-09-28 失效**（CI 改走 init_db.py）→ 见文末「口径变更」
-  - 历史漂移事故：#8 profile_annotation_pool 缺表、#16 27→38 表/FK/vector 扩展、
-    alembic stamp ≠ 建表（本地库 26 表 vs schema.sql 38 表严重不符）
-
-方法：
-  A 侧（schema.sql —— 已于 2026-09-28 退役为非建库源，见文末「口径变更」）：临时库执行 → 提取结构
-  B 侧（alembic head）：临时库执行 `alembic upgrade head`；
-      若基线迁移不自包含（已知 431bcaa8bd54 仅 alter_column，从空库无法自举，
-      lessons #9-#12 记录在案），回退到 ORM metadata（env.py target_metadata，
-      `alembic check` 零漂移已验证 ORM == 迁移链目标态），并登记一条 CRITICAL 发现
-  → 对比表集合 / 列（名·类型·可空）/ 索引（列集·唯一·where）/ 外键（列集·引用·级联）
-    / 唯一约束（列集）/ 主键（列集）；列默认值差异仅 INFO 不阻断
-    （ORM Python 侧默认 vs schema.sql DDL 默认 = 已知允许差异）
-
-归一化（排除已知允许差异）：
-  - 类型别名：TEXT/VARCHAR/CHARACTER VARYING（无长度）↔ string；VARCHAR(n) ↔ string(n)；
-    TIMESTAMP WITH TIME ZONE ↔ timestamptz；DOUBLE PRECISION ↔ double
-  - 顺序无关：列序/索引列序/表序全部排序后比较
-  - 索引/约束命名差异（idx_/ix_/uq_/_key 前缀）不阻断——结构一致即视为对齐
-
-用法：
-  python scripts/check_schema_drift.py [--admin-url URL] [--schema-sql PATH]
-      [--backend-dir PATH] [--keep]
-
-退出码：
-  0 = 无结构漂移（两链对齐）
-  1 = 检出结构漂移（CI weekly job 出 annotation，不阻断主流水线）
-  2 = 执行环境错误（连不上库 / 建库失败 / schema.sql 执行失败）
+The historical baseline cannot upgrade an empty database by itself. B-1 adds
+an empty-database bootstrap in Alembic env.py. This check requires that path
+to succeed; it never falls back to ORM after an Alembic failure.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,8 +15,6 @@ import secrets
 import subprocess
 import sys
 from pathlib import Path
-
-import psycopg
 
 # D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
 from gate_io import force_utf8  # noqa: E402
@@ -111,29 +84,15 @@ def _sqlalchemy_url(admin_url: str, dbname: str) -> str:
     return make_url(admin_url).set(database=dbname).render_as_string(hide_password=False)
 
 
-def _psycopg_dsn(admin_url: str, dbname: str) -> str:
-    """admin URL → psycopg 直连 DSN（替换目标库名，去掉 +psycopg 方言后缀）。"""
-    return _sqlalchemy_url(admin_url, dbname).replace("postgresql+psycopg://", "postgresql://")
-
-
-def _run_schema_sql(admin_url: str, dbname: str, schema_sql: str) -> None:
-    """在临时库执行 schema.sql（psycopg 简单协议支持多语句；超级用户可建 vector 扩展）。"""
-    conn = psycopg.connect(_psycopg_dsn(admin_url, dbname), autocommit=True)
-    try:
-        conn.execute(schema_sql)
-    finally:
-        conn.close()
-
-
 def _create_temp_db(admin_url: str, dbname: str) -> None:
-    eng = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    eng = create_engine(admin_url, isolation_level="AUTOCOMMIT", connect_args={"connect_timeout": 5})
     with eng.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{dbname}"'))
     eng.dispose()
 
 
 def _drop_temp_db(admin_url: str, dbname: str) -> None:
-    eng = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    eng = create_engine(admin_url, isolation_level="AUTOCOMMIT", connect_args={"connect_timeout": 5})
     with eng.connect() as conn:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{dbname}"'))
     eng.dispose()
@@ -141,7 +100,7 @@ def _drop_temp_db(admin_url: str, dbname: str) -> None:
 
 def _introspect(admin_url: str, dbname: str) -> dict:
     """提取指定库的结构（表→列/主键/唯一约束/索引/外键），全部归一化排序。"""
-    eng = create_engine(_sqlalchemy_url(admin_url, dbname))
+    eng = create_engine(_sqlalchemy_url(admin_url, dbname), connect_args={"connect_timeout": 5})
     insp = inspect(eng)
     out: dict[str, dict] = {}
     for table in sorted(insp.get_table_names()):
@@ -186,12 +145,23 @@ def _introspect(admin_url: str, dbname: str) -> dict:
     return out
 
 
-def _build_alembic_side(admin_url: str, dbname: str, backend_dir: Path) -> tuple[dict, list[str]]:
-    """B 侧：先尝试 `alembic upgrade head`；失败（基线非自包含）回退 ORM metadata。
+def _build_orm_side(admin_url: str, dbname: str, backend_dir: Path) -> dict:
+    """Build the authoritative schema directly from ORM metadata."""
+    _create_temp_db(admin_url, dbname)
+    sys.path.insert(0, str(backend_dir))
+    import app.db.models  # noqa: F401 -- register every mapped table
+    from app.db.session import Base
 
-    返回 (结构, notes)。notes 记录回退原因等非结构信息。
-    """
-    notes: list[str] = []
+    engine = create_engine(_sqlalchemy_url(admin_url, dbname), connect_args={"connect_timeout": 5})
+    try:
+        Base.metadata.create_all(engine)
+    finally:
+        engine.dispose()
+    return _introspect(admin_url, dbname)
+
+
+def _build_alembic_side(admin_url: str, dbname: str, backend_dir: Path) -> dict:
+    """Require `alembic upgrade head` to bootstrap an empty database."""
     _create_temp_db(admin_url, dbname)
     env = {**os.environ, "DATABASE_URL": _sqlalchemy_url(admin_url, dbname), "PYTHONPATH": str(backend_dir)}
     proc = subprocess.run(
@@ -202,96 +172,71 @@ def _build_alembic_side(admin_url: str, dbname: str, backend_dir: Path) -> tuple
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=600,
-        check=False,  # noqa: PLW1510 —— 返回码由调用方判读（成功/失败回退两条路径）
+        timeout=180,
+        check=False,
     )
-    if proc.returncode == 0:
-        notes.append("alembic upgrade head 从空库成功（迁移链自包含）")
-        return _introspect(admin_url, dbname), notes
-
-    tail = (proc.stdout + proc.stderr).strip().splitlines()[-3:]
-    notes.append(
-        "alembic upgrade head 从空库失败（基线迁移 431bcaa8bd54 非自包含，"
-        "仅 alter_column 假设表已由 schema.sql 预建——lessons #9-#12 已知问题）；"
-        "回退 ORM metadata（P2-05 声明唯一权威，env.py target_metadata，alembic check 校验 DB↔ORM）。"
-        f" 失败尾部: {' | '.join(tail)}"
-    )
-    # alembic 可能残留 alembic_version 表 → 重建临时库再 create_all
-    _drop_temp_db(admin_url, dbname)
-    _create_temp_db(admin_url, dbname)
-    sys.path.insert(0, str(backend_dir))
-    os.environ["DATABASE_URL"] = _sqlalchemy_url(admin_url, dbname)
-    import app.db.models  # noqa: F401 —— 注册全部模型
-    from app.db.session import Base
-
-    eng = create_engine(_sqlalchemy_url(admin_url, dbname))
-    Base.metadata.create_all(eng)
-    eng.dispose()
-    return _introspect(admin_url, dbname), notes
+    if proc.returncode:
+        # Do not print stderr: configuration errors may include a credential URL.
+        raise RuntimeError(f"alembic upgrade head failed (exit {proc.returncode})")
+    return _introspect(admin_url, dbname)
 
 
 # ---------------------------------------------------------------- 对比
 
 
 def _compare(a: dict, b: dict) -> tuple[list[str], list[str]]:
-    """对比 A(schema.sql) vs B(alembic head)。返回 (blocking, info)。"""
+    """对比 A(ORM) vs B(alembic head)。返回 (blocking, info)。"""
     blocking: list[str] = []
     info: list[str] = []
 
     # 表集合
     for t in sorted(set(a) - set(b)):
-        blocking.append(f"[表集合] {t} 仅存在于 schema.sql 侧，alembic head 无此表")
+        blocking.append(f"[表集合] {t} 仅存在于 ORM 侧，alembic head 无此表")
     for t in sorted(set(b) - set(a)):
-        blocking.append(f"[表集合] {t} 仅存在于 alembic head 侧（迁移链建），schema.sql 无此表")
+        blocking.append(f"[表集合] {t} 仅存在于 alembic head 侧（迁移链建），ORM 无此表")
 
     for t in sorted(set(a) & set(b)):
         ca, cb = a[t]["columns"], b[t]["columns"]
         # 列集合 + 类型/可空
         for col in sorted(set(ca) - set(cb)):
-            blocking.append(f"[列] {t}.{col} 仅存在于 schema.sql 侧")
+            blocking.append(f"[列] {t}.{col} 仅存在于 ORM 侧")
         for col in sorted(set(cb) - set(ca)):
-            blocking.append(f"[列] {t}.{col} 仅存在于 alembic head 侧（迁移新增，schema.sql 未同步）")
+            blocking.append(f"[列] {t}.{col} 仅存在于 alembic head 侧（迁移新增，ORM 未同步）")
         for col in sorted(set(ca) & set(cb)):
             ta, tb_ = ca[col], cb[col]
             if ta[0] != tb_[0]:
-                blocking.append(f"[列] {t}.{col} 类型漂移：schema.sql={ta[0]} vs alembic={tb_[0]}")
+                blocking.append(f"[列] {t}.{col} 类型漂移：ORM={ta[0]} vs alembic={tb_[0]}")
             if ta[1] != tb_[1]:
                 blocking.append(
-                    f"[列] {t}.{col} 可空性漂移：schema.sql={'NULL' if ta[1] else 'NOT NULL'} "
+                    f"[列] {t}.{col} 可空性漂移：ORM={'NULL' if ta[1] else 'NOT NULL'} "
                     f"vs alembic={'NULL' if tb_[1] else 'NOT NULL'}"
                 )
             if ta[2] != tb_[2]:
-                info.append(f"[默认值] {t}.{col} 默认值不同：schema.sql={ta[2]} vs alembic={tb_[2]}")
+                blocking.append(f"[默认值] {t}.{col} 默认值不同：ORM={ta[2]} vs alembic={tb_[2]}")
         # 主键
         if a[t]["pk"] != b[t]["pk"]:
-            blocking.append(
-                f"[主键] {t} 主键漂移：schema.sql={sorted(a[t]['pk'])} vs alembic={sorted(b[t]['pk'])}"
-            )
+            blocking.append(f"[主键] {t} 主键漂移：ORM={sorted(a[t]['pk'])} vs alembic={sorted(b[t]['pk'])}")
         # 唯一约束（列集）
         for u in sorted(map(sorted, a[t]["uniques"])):
             if frozenset(u) not in b[t]["uniques"]:
-                blocking.append(f"[唯一约束] {t}{tuple(u)} 仅存在于 schema.sql 侧")
+                blocking.append(f"[唯一约束] {t}{tuple(u)} 仅存在于 ORM 侧")
         for u in sorted(map(sorted, b[t]["uniques"])):
             if frozenset(u) not in a[t]["uniques"]:
                 blocking.append(f"[唯一约束] {t}{tuple(u)} 仅存在于 alembic head 侧")
         # 索引（列集+唯一+where；命名差异不阻断）
         for ix in sorted(a[t]["indexes"], key=str):
             if ix not in b[t]["indexes"]:
-                blocking.append(
-                    f"[索引] {t} schema.sql 侧有 alembic 侧无：列={ix[0]} unique={ix[1]} where={ix[2]!r}"
-                )
+                blocking.append(f"[索引] {t} ORM 侧有 alembic 侧无：列={ix[0]} unique={ix[1]} where={ix[2]!r}")
         for ix in sorted(b[t]["indexes"], key=str):
             if ix not in a[t]["indexes"]:
-                blocking.append(
-                    f"[索引] {t} alembic 侧有 schema.sql 侧无：列={ix[0]} unique={ix[1]} where={ix[2]!r}"
-                )
+                blocking.append(f"[索引] {t} alembic 侧有 ORM 侧无：列={ix[0]} unique={ix[1]} where={ix[2]!r}")
         # 外键（列集+引用+级联；命名差异不阻断）
         for fk in sorted(a[t]["fks"], key=str):
             if fk not in b[t]["fks"]:
-                blocking.append(f"[外键] {t} schema.sql 侧有 alembic 侧无：{fk}")
+                blocking.append(f"[外键] {t} ORM 侧有 alembic 侧无：{fk}")
         for fk in sorted(b[t]["fks"], key=str):
             if fk not in a[t]["fks"]:
-                blocking.append(f"[外键] {t} alembic 侧有 schema.sql 侧无：{fk}")
+                blocking.append(f"[外键] {t} alembic 侧有 ORM 侧无：{fk}")
 
     return blocking, info
 
@@ -300,106 +245,46 @@ def _compare(a: dict, b: dict) -> tuple[list[str], list[str]]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="schema.sql ↔ alembic 迁移链结构漂移检测")
+    ap = argparse.ArgumentParser(description="ORM versus fresh Alembic schema drift check")
     ap.add_argument("--admin-url", default=os.environ.get("DRIFT_ADMIN_URL", DEFAULT_ADMIN_URL))
-    ap.add_argument("--schema-sql", default=str(ROOT / "backend/sql/schema.sql"))
     ap.add_argument("--backend-dir", default=str(ROOT / "backend"))
-    ap.add_argument("--keep", action="store_true", help="保留临时库（调试）")
+    ap.add_argument("--keep", action="store_true", help="keep temporary databases for debugging")
     args = ap.parse_args()
-
     if not args.admin_url:
-        print(
-            "缺少管理员连接串：请用 --admin-url 或环境变量 DRIFT_ADMIN_URL 提供\n"
-            "（需 CREATEDB + 超级用户权限，用于建临时库/装 vector 扩展）",
-            file=sys.stderr,
-        )
-        return 2
-
-    schema_sql_path = Path(args.schema_sql)
-    backend_dir = Path(args.backend_dir)
-    if not schema_sql_path.exists():
-        print(f"ERROR: schema.sql 不存在: {schema_sql_path}")
+        print("ERROR: provide --admin-url or DRIFT_ADMIN_URL", file=sys.stderr)
         return 2
 
     suffix = secrets.token_hex(4)
-    db_a = f"yishu_drift_schema_{suffix}"
-    db_b = f"yishu_drift_alembic_{suffix}"
-
+    db_orm = f"yishu_drift_orm_{suffix}"
+    db_alembic = f"yishu_drift_alembic_{suffix}"
     try:
-        # A 侧：schema.sql 建库
-        _create_temp_db(args.admin_url, db_a)
-        _run_schema_sql(args.admin_url, db_a, schema_sql_path.read_text(encoding="utf-8"))
-        side_a = _introspect(args.admin_url, db_a)
-        side_a_note = "schema.sql 从空库建库成功"
-
-        # B 侧：alembic upgrade head（失败回退 ORM metadata）
-        side_b, notes_b = _build_alembic_side(args.admin_url, db_b, backend_dir)
-    except Exception as exc:  # noqa: BLE001 —— 环境错误统一 exit 2
-        print(f"ERROR: 提取失败（环境错误）: {exc!r}")
+        print("Building ORM temporary database...", flush=True)
+        side_orm = _build_orm_side(args.admin_url, db_orm, Path(args.backend_dir))
+        print("Building Alembic temporary database...", flush=True)
+        side_alembic = _build_alembic_side(args.admin_url, db_alembic, Path(args.backend_dir))
+    except Exception as exc:  # noqa: BLE001 -- environment failure is exit 2
+        print(f"ERROR: schema build failed: {type(exc).__name__}", file=sys.stderr)
         return 2
     finally:
         if not args.keep:
-            _drop_temp_db(args.admin_url, db_a)
-            _drop_temp_db(args.admin_url, db_b)
+            for dbname in (db_orm, db_alembic):
+                try:
+                    _drop_temp_db(args.admin_url, dbname)
+                except Exception as exc:  # noqa: BLE001 -- preserve the original failure
+                    print(f"WARNING: temporary database cleanup failed: {type(exc).__name__}", file=sys.stderr)
 
-    a_label = "schema.sql —— 已于 2026-09-28 退役为非建库源，仍是 init_db.py 第③步的 DDL 来源"
-    print(f"A 侧（{a_label}）：{len(side_a)} 表；{side_a_note}")
-    print(f"B 侧（alembic head，失败则回退 ORM metadata）：{len(side_b)} 表")
-    for note in notes_b:
-        print(f"  NOTE: {note}")
-
-    blocking, info = _compare(side_a, side_b)
-
-    print()
-    print(f"===== 漂移检出：BLOCKING {len(blocking)} 条 / INFO {len(info)} 条 =====")
+    blocking, info = _compare(side_orm, side_alembic)
+    print(f"ORM: {len(side_orm)} tables; Alembic: {len(side_alembic)} tables")
+    print(f"BLOCKING {len(blocking)} / INFO {len(info)}")
     for line in blocking:
         print(f"  BLOCKING {line}")
     for line in info:
-        print(f"  INFO     {line}")
-
-    # GitHub Actions annotation（weekly job 失败仅出 annotation，不阻断主流水线）
+        print(f"  INFO {line}")
     if os.environ.get("GITHUB_ACTIONS") == "true":
         for line in blocking[:100]:
-            print(f"::error::漂移 {line}")
-        for line in info[:100]:
-            print(f"::warning::漂移(INFO) {line}")
-        if blocking:
-            print(f"::error::schema.sql ↔ alembic 漂移共 {len(blocking)} 条 BLOCKING，详见日志")
-
+            print(f"::error::schema drift {line}")
     return 1 if blocking else 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-# ==============================================================================
-# 口径变更（2026-09-29 登记）—— 勿按旧描述理解本脚本（正文 line 5 已改为指针）
-#
-# 放在文件末尾是刻意的：多份文档/脚本按**行号**引用本文件的 190/214/305 等位置，
-# 在 docstring 里插段落会整体位移、连带作废那批引用。故正文只留一行指针，详解落在此处。
-#
-# 【旧前提】设计时（2026-08-27）：「CI 建库源 = backend/sql/schema.sql」，本地/生产走
-#           alembic 迁移链；两链无强制对齐 —— 故做 A(schema.sql) ↔ B(alembic) 结构对比。
-#
-# 【现状】2026-09-28 起 **CI 建库已改走 `scripts/init_db.py`**（= ORM `create_all`
-#         + 从 schema.sql 抽 10 张无 ORM 模型表的裸 SQL DDL + `alembic stamp head`），
-#         与本地/生产**同一条路径** ⇒ **A 侧（schema.sql）不再是任何环境的建库源**。
-#         见 .github/workflows/ci.yml 的 fast/full gate「Init PostgreSQL」步骤。
-#
-# 【schema.sql 并未完全退役】它仍是 `init_db.py` 第③步（那 10 张表）的 DDL 来源。
-#         故本脚本仍有**部分**价值 —— 只是它报出的绝大多数 BLOCKING 属于
-#         「schema.sql 作为**中间态快照**已过时」，而非「构建链有缺口」。
-#
-# 【🔴 A 侧暂不改为 init_db.py 的产物】B 侧在「基线迁移自包含」（B-1 任务）落地前
-#         **只能回退 ORM metadata**（见 `_build_alembic_side`），而
-#             A(init_db) = ORM create_all  ∪  10 张裸 SQL 表   ⊇   B(ORM)
-#         ⇒ 换上去只会得到 10 条「仅 A 侧存在」的**假阳性**，而「仅 B 侧存在」恒为空
-#           —— 结构上**无法产生任何真信号**（比现状更糟：全是噪音）。
-#
-# 【恢复有意义的前提】B-1 落地（baseline 自包含 → `alembic upgrade head` 能从空库跑通
-#         → B 侧 = 真迁移链）。**届时**再把 A 侧换成 init_db.py 的产物，才是同源同口径对比。
-#
-# 【在那之前怎么读本 job 的红】定时红**属实**（A 侧快照确实与迁移链不一致），
-#         但它**不代表构建链有缺口** —— 别照旧描述去查「schema.sql 漂移」。
-# ==============================================================================

@@ -7,7 +7,7 @@
   - GPS 漂移：超速坐标置空，仍按时间归组
   - 无 GPS 按时间窗归组；散片并入日卡片（is_sparse）
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.core.timeutil import app_local_tz_name, local_now, local_utc_offset_minutes
@@ -25,14 +25,14 @@ TZ = 480  # 上海（与夹具生成同参）
 def _p(pid: str, ms: int, lat=None, lng=None, tags=None) -> RawPhoto:
     return RawPhoto(
         id=pid,
-        ts=datetime.fromtimestamp(ms / 1000, tz=timezone.utc),
+        ts=datetime.fromtimestamp(ms / 1000, tz=UTC),
         lat=lat, lng=lng, tags=tags or [],
     )
 
 
 def _local_ms(y: int, m: int, d: int, hh: int, mm: int) -> int:
     """本地墙钟（UTC+8）→ epoch ms"""
-    dt = datetime(y, m, d, hh, mm, tzinfo=timezone.utc) - timedelta(minutes=TZ)
+    dt = datetime(y, m, d, hh, mm, tzinfo=UTC) - timedelta(minutes=TZ)
     return int(dt.timestamp() * 1000)
 
 
@@ -58,7 +58,7 @@ def test_day_boundary_defaults_to_app_local_tz_not_utc():
         pytest.skip("APP_LOCAL_TZ 解析为 UTC（偏移 0）—— 本用例需非 UTC 口径才有鉴别力")
 
     # 本地 07:00 → 真值瞬间（UTC）＝ 07:00 - off
-    ts = datetime(2026, 7, 18, 7, 0, tzinfo=timezone.utc) - timedelta(minutes=off)
+    ts = datetime(2026, 7, 18, 7, 0, tzinfo=UTC) - timedelta(minutes=off)
     photo = RawPhoto(id="p-local", ts=ts, lat=None, lng=None, tags=[])
 
     default_days = l1_daily_aggregate([], [photo])
@@ -135,7 +135,7 @@ def test_night_boundary_attributed_to_prev_day_with_tz():
 
 def test_utc_bucket_no_shift():
     """tz=0（UTC 日界）：深夜规则按墙钟生效——23:40 UTC 归属前一天 2026-08-23"""
-    t0 = datetime(2026, 8, 24, 23, 40, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 24, 23, 40, tzinfo=UTC)
     photos = [_p("p1", int(t0.timestamp() * 1000), 31.2304, 121.4737)]
     pts = preprocess(photos)
     days = l1_daily_aggregate([], pts, tz_offset_minutes=0)
@@ -168,7 +168,7 @@ def _pc(pid: str, ts: datetime, lat=None, lng=None, tags=None, **kw) -> RawPhoto
 
 def test_gps_single_point_mode_correction_pulls_back():
     """B3-3 单点漂移众数纠正：6 张众数 + 1 张 100km 外（超物理上限）→ 拉回众数格中心"""
-    t0 = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
     photos = [_pc(f"m{i}", t0 + timedelta(minutes=i * 2), 31.2304, 121.4737) for i in range(6)]
     photos.append(_pc("drift", t0 + timedelta(seconds=10), 31.90, 122.10))
     pts = preprocess(photos)
@@ -184,7 +184,7 @@ def test_l2_place_continuity_trigger():
     """B3-2 L2 地点域连续触发：跨天移动 ≤5km/12hr → 候选；>5km 断裂 → 不候选"""
     from app.services.event_aggregation.pipeline import l2_candidates
 
-    t0 = datetime(2026, 8, 24, 10, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
     # 连续组：3 天每天 4 张，每天移动 3km（标签各不相同 → 无主导标签，靠地点域连续）
     near = []
     for day in range(3):
@@ -212,7 +212,7 @@ def test_l3_seven_day_window():
     """B3-2 L3 7 天窗：同标签 7 天内 ≥3 次（跨天）成流；超出 7 天窗不计数"""
     from app.services.event_aggregation.pipeline import l3_candidates
 
-    t0 = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 1, 9, 0, tzinfo=UTC)
     within = [_pc(f"w{i}", t0 + timedelta(days=i), 31.23, 121.47, tags=["备考"]) for i in range(3)]
     outside = [_pc(f"o{i}", t0 + timedelta(days=i * 10), 31.23, 121.47, tags=["散落"]) for i in range(3)]
     cands = l3_candidates(within + outside)
@@ -224,22 +224,21 @@ def test_l3_seven_day_window():
 
 def test_l3_lifecycle_states():
     """B3-2 L3 生命周期：活跃(≤30 天)→静默(30-90 天)→归档(>90 天)"""
-    from datetime import timezone
 
     from app.services.event_aggregation.pipeline import l3_lifecycle
 
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    last = datetime(2026, 1, 10, tzinfo=timezone.utc)
-    assert l3_lifecycle(start, last, now=datetime(2026, 1, 20, tzinfo=timezone.utc))["state"] == "active"
-    assert l3_lifecycle(start, last, now=datetime(2026, 2, 20, tzinfo=timezone.utc))["state"] == "silent"
-    assert l3_lifecycle(start, last, now=datetime(2026, 5, 1, tzinfo=timezone.utc))["state"] == "archived"
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    last = datetime(2026, 1, 10, tzinfo=UTC)
+    assert l3_lifecycle(start, last, now=datetime(2026, 1, 20, tzinfo=UTC))["state"] == "active"
+    assert l3_lifecycle(start, last, now=datetime(2026, 2, 20, tzinfo=UTC))["state"] == "silent"
+    assert l3_lifecycle(start, last, now=datetime(2026, 5, 1, tzinfo=UTC))["state"] == "archived"
 
 
 def test_cover_face_priority_and_centering():
     """B3-4 封面：人脸优先 + 质量分；L2 时间居中 / L3 不居中"""
     from app.services.event_aggregation.pipeline import _pick_cover
 
-    t0 = datetime(2026, 8, 24, 10, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
     photos = [
         _pc("a", t0 + timedelta(minutes=0), 31.23, 121.47, quality=0.3),
         _pc("b", t0 + timedelta(minutes=30), 31.23, 121.47, quality=0.5),
@@ -262,7 +261,7 @@ def test_incremental_match_first_then_split():
     """B3-6 增量先匹配后分裂：新照片并入现有簇（时间窗+地点邻近），超限才独立成簇"""
     from app.services.event_aggregation.pipeline import aggregate, incremental_aggregate
 
-    t0 = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
     base = [_pc(f"b{i}", t0 + timedelta(minutes=i * 10), 31.2304, 121.4737) for i in range(3)]
     r1 = aggregate(base)
     assert len(r1.l0_clusters) == 1

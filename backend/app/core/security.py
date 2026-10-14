@@ -1,6 +1,6 @@
 """JWT 认证（决策 #8：access 2h + refresh 30d，自建）"""
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -11,7 +11,7 @@ from app.core.config import settings
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _jwt_params() -> tuple[str, str]:

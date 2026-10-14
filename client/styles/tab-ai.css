@@ -48,6 +48,7 @@
 		margin-right: var(--d-card_margin_x, 38.5rpx);
 		margin-bottom: var(--d-lattice-p98, 188.5rpx);
 		height: var(--d-lattice-p52, 100rpx);
+		flex-shrink: 0;
 		flex-direction: row;
 		align-items: center;
 		padding-left: var(--d-lattice-p16, 30.8rpx);
@@ -98,6 +99,7 @@
 	}
 	.n4_88 {
 		flex: 1;
+		min-height: 240rpx;
 		margin-top: var(--d-lattice-p24, 46.2rpx);
 		padding-left: var(--d-card_margin_x, 38.5rpx);
 		padding-right: var(--d-card_margin_x, 38.5rpx);
@@ -537,4 +539,20 @@
 	margin-top: var(--d-raw-r16, 16rpx);
 	font-size: var(--d-raw-r26, 26rpx);
 	color: var(--c-ink-500, #8A7A6A);
+}
+/* 发送失败重试卡（2026-10-07 客户端加固）：不伪造回复，但给用户一键重发出口 */
+.fail-card {
+	margin-top: var(--d-lattice-p8, 15.4rpx);
+	margin-left: var(--d-card_margin_x, 38.5rpx);
+	padding-top: var(--d-lattice-p10, 19.2rpx);
+	padding-bottom: var(--d-lattice-p10, 19.2rpx);
+	padding-left: var(--d-lattice-p16, 30.8rpx);
+	padding-right: var(--d-lattice-p16, 30.8rpx);
+	align-self: flex-start;
+	background-color: var(--a-white-55, rgba(255, 255, 255, 0.55));
+	border-radius: var(--d-lattice-p14, 26.9rpx);
+}
+.fail-text {
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	color: var(--c-rust-600, #B05A3A);
 }

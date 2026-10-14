@@ -12,7 +12,7 @@
 前置：PG yishu 库（db_user 公共 fixture；纯 mock Redis 的去重用例不需要 DB）
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event
@@ -26,7 +26,7 @@ def _content(db, user_id: str, ts: datetime | None = None, tags: list[str] | Non
         id=str(uuid.uuid4()),
         user_id=user_id,
         content_type="photo",
-        taken_at=ts or (datetime.now(timezone.utc) - timedelta(hours=1)),
+        taken_at=ts or (datetime.now(UTC) - timedelta(hours=1)),
         status="done",
         source="app",
         extra={"ci_tags": tags} if tags else None,
@@ -46,7 +46,7 @@ def test_run_user_aggregation_task_aggregates(db_user):
     from app.services.events import run_user_aggregation
 
     db, user = db_user
-    base = datetime.now(timezone.utc) - timedelta(hours=3)
+    base = datetime.now(UTC) - timedelta(hours=3)
     _content(db, user.id, ts=base)
     _content(db, user.id, ts=base + timedelta(minutes=10))
 
@@ -157,7 +157,7 @@ def test_write_upper_candidates_idempotent(db_user):
     from app.services.events import _l2l3_candidates_from_photos, _write_upper_candidates
 
     db, user = db_user
-    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     contents = [
         _content(db, user.id, ts=base + timedelta(days=d, minutes=i * 5), tags=["美食"])
         for d in range(2) for i in range(6)   # 跨 2 天 12 张同标签 → L2 候选

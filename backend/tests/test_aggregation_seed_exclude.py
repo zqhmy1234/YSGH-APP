@@ -14,7 +14,7 @@
 前置：PG yishu 库（db_user 公共 fixture，对齐 test_aggregation.py 先例）
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event, EventItem
@@ -28,7 +28,7 @@ def _content(db, user_id: str, ts: datetime | None = None, source: str = "app") 
         id=str(uuid.uuid4()),
         user_id=user_id,
         content_type="photo",
-        taken_at=ts or (datetime.now(timezone.utc) - timedelta(hours=1)),
+        taken_at=ts or (datetime.now(UTC) - timedelta(hours=1)),
         status="done",
         source=source,
     )
@@ -53,7 +53,7 @@ def test_l2l3_skips_seed_content(db_user):
     from app.services.events import aggregate_user
 
     db, user = db_user
-    ts = datetime.now(timezone.utc) - timedelta(hours=2)
+    ts = datetime.now(UTC) - timedelta(hours=2)
     _content(db, user.id, ts=ts, source="seed")
     _content(db, user.id, ts=ts + timedelta(minutes=5), source="app")
 
@@ -69,7 +69,7 @@ def test_full_mode_skips_seed_content(db_user):
 
     db, user = db_user
     uid = str(user.id)  # run_user_aggregation 自开 Session，先缓存（对齐 test_aggregation.py 先例）
-    seed_ts = datetime.now(timezone.utc) - timedelta(hours=2)
+    seed_ts = datetime.now(UTC) - timedelta(hours=2)
     app_ts = seed_ts + timedelta(minutes=5)
     _content(db, user.id, ts=seed_ts, source="seed")
     _content(db, user.id, ts=app_ts, source="app")
@@ -124,7 +124,7 @@ def test_real_data_unaffected_by_seed_filter(db_user):
     from app.services.events import aggregate_user
 
     db, user = db_user
-    ts = datetime.now(timezone.utc) - timedelta(hours=48)
+    ts = datetime.now(UTC) - timedelta(hours=48)
     # 跨 2 天 12 张同标签（对齐 test_aggregation.py test_write_upper_candidates 构造）
     for d in range(2):
         for i in range(6):

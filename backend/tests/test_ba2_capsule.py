@@ -11,7 +11,7 @@
 前置：本地 PostgreSQL yishu 库 + Redis（对齐 tests/test_ba1_fields.py 前置）
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.main import app
@@ -98,7 +98,7 @@ def test_seal_list_open_full_flow(client, auth_headers, cleanup_user):
     content_id = _make_content(client, headers)
 
     # 封存：1 小时后开启
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     r = client.post(
         "/api/v1/capsules",
         json={"content_id": content_id, "open_at": future, "note": "给未来的我"},
@@ -175,7 +175,7 @@ def test_due_scan_message_and_idempotent(client, auth_headers, cleanup_user):
     _register(user_id)
     content_id = _make_content(client, headers, "BA2 幂等推送用例")
 
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     r = client.post(
         "/api/v1/capsules",
         json={"content_id": content_id, "open_at": future},
@@ -241,7 +241,7 @@ def test_lazy_scan_on_list(client, auth_headers, cleanup_user):
     user_id, headers = auth_headers("ba2-lazy")
     _register(user_id)
     content_id = _make_content(client, headers)
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     r = client.post(
         "/api/v1/capsules", json={"content_id": content_id, "open_at": future}, headers=headers
     )
@@ -283,8 +283,8 @@ def test_seal_guards(client, auth_headers, cleanup_user):
     user_id, headers = auth_headers("ba2-guard")
     _register(user_id)
     content_id = _make_content(client, headers)
-    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
 
     # open_at 在过去 → 422
     r = client.post(
@@ -311,7 +311,7 @@ def test_delete_sealed_capsule(client, auth_headers, cleanup_user):
     user_id, headers = auth_headers("ba2-del")
     _register(user_id)
     content_id = _make_content(client, headers)
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     r = client.post(
         "/api/v1/capsules", json={"content_id": content_id, "open_at": future}, headers=headers
     )

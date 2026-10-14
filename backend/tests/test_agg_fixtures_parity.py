@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from app.services.event_aggregation.agg_types import (
@@ -67,7 +67,7 @@ def _run_cloud(case: dict) -> tuple[list[list], list[dict]]:
     raws = [
         RawPhoto(
             id=p["id"],
-            ts=datetime.fromtimestamp(p["ts_ms"] / 1000, tz=timezone.utc),
+            ts=datetime.fromtimestamp(p["ts_ms"] / 1000, tz=UTC),
             lat=p["lat"],
             lng=p["lng"],
             tags=list(p["tags"]),

@@ -10,7 +10,7 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import DeletedLog, SyncFieldVersion, User
@@ -30,7 +30,7 @@ def _eid() -> str:
 
 
 def _ts(days: int = 0, hours: int = 0) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days, hours=hours)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days, hours=hours)).isoformat()
 
 
 def test_push_missing_field_is_rejected(db_user):

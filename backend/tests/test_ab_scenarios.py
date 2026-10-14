@@ -55,7 +55,7 @@ storage 走 fake（backend/conftest.py _force_test_env autouse 强制）。
 import json
 import struct
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 
 import app.api.contents as contents_api
 import app.core.queue as queue_mod
@@ -438,7 +438,7 @@ class TestS2CapsuleLifecycle:
         """公共前奏：用户 + 文本内容 + 封存（+1h，带 note）→ 快照"""
         user_id, headers = auth_headers("s2")
         content_id = _mk_text(client, headers, "S2 给一年后的自己")
-        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
         r = client.post(
             "/api/v1/capsules",
             json={"content_id": content_id, "open_at": future, "note": "给未来的我"},
@@ -575,7 +575,7 @@ class TestS2CapsuleLifecycle:
     def test_cancel_sealed_keeps_first(self, capsule, client):
         """撤销：未开启可删（列表只剩第一条；出参 deleted=true）"""
         content_id2 = _mk_text(client, capsule["headers"], "S2 第二条封存")
-        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        future = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
         r = client.post(
             "/api/v1/capsules",
             json={"content_id": content_id2, "open_at": future},
@@ -606,7 +606,7 @@ class TestS3Aggregation:
         """公共前奏：3 条语音（base-2d ×2、base-1d ×1）同 content_class=mixed
         （7 天窗 ≥3 次跨 2 天 → 首轮聚合建 L3）→ 快照"""
         user_id, headers = auth_headers("s3")
-        base = datetime.now(timezone.utc) - timedelta(hours=2)
+        base = datetime.now(UTC) - timedelta(hours=2)
         ids1 = [
             _mk_voice(client, headers, user_id, base - timedelta(days=2)),
             _mk_voice(client, headers, user_id, base - timedelta(days=2) + timedelta(hours=2)),

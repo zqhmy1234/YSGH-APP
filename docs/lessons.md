@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-15 01:59 · commit e0739ee · ts=1792000744
+- **错误**：合并 origin/develop(573b33b) 后，门禁连续拦下：lint 报 F821 Undefined name timezone 与 I001 导入块被注释打断；structure 报 RecordSheet 超阈值；另 8 个后端测试失败（NameError + 迁移 head 冲突）
+- **根因**：远端做过一次跨文件的机械迁移（UP017：timezone.utc 改成 datetime.UTC，只改了导入行与它自己那几行），而我们这边的修复在同一文件的其他行仍用 timezone.utc ⇒ git 自动合并后导入与用法不匹配（三个文件同型：trash.py / contents/__init__.py / correction.py）。测试失败另一因：两边各新增一条迁移 ⇒ alembic upgrade head 报 Multiple head revisions，本机库缺远端那条迁移
+- **修复**：① 冲突按块解析（保留 git 自动合并成果，不做整文件 --ours/--theirs）；② 合并后三步必做：alembic merge heads + upgrade head、ruff check --fix（收敛远端迁移留下的旧用法）、跑相关回归测试；③ 客户端文件超结构阈值按项目规定显式申请基线（写 reason 与 target），而非压缩注释
+- **相关文件**：backend/app/services/correction.py
+- **教训**：合并远端前先查它有没有做跨文件的机械迁移（本例改了导入却改不到我们的行）；合并后**只跑编译门不够**——必须跑「迁移 head 合并 + 全量 lint + 相关回归测试」，否则这类「导入与用法不匹配」会以运行时才炸的形态留在仓库里。另：git 的整文件 ours/theirs 会丢掉自动合并的成果，冲突必须按块解析
+
+---
+
 ### 2026-10-15 01:24 · commit c2cdc07 · ts=1791998686
 - **错误**：出包前端到端验证时发现：记录任何内容都被拒，用户看到「内容含敏感信息未保存」，全站不可用
 - **根因**：机器用户级环境变量里有一把**过期**的 DASHSCOPE_API_KEY，而 pydantic-settings 是「env 优先于 .env」⇒ 它顶掉了 backend/.env 里的有效 key；叠加内容护栏的 fail-closed（用户拍板过的『默认拒发』）⇒ 每一次保存都被拒。单测、门禁、编译门**全绿**也测不出来——它们不打死端点、不依赖外部凭据
@@ -672,6 +681,30 @@
 - **修复**：见代码
 - **相关文件**：-
 - **教训**：（无）
+### 2026-10-12 17:31 · commit dcfd2fd · ts=1791797493
+- **错误**：B-1 提交前快速审核首次误报 ruff 未安装
+- **根因**：直接运行 .venv/Scripts/python.exe 未激活虚拟环境，review_agent 子进程从 PATH 查找 ruff 时找不到；ruff 实际已安装
+- **修复**：先执行 infra/activate.ps1，再运行 python scripts/review_agent.py；激活后 lint 与其他代码检查通过
+- **相关文件**：scripts/review_agent.py
+- **教训**：Windows 项目门禁需从已激活的环境运行，避免把 PATH 缺失误判为依赖未安装
+
+---
+
+### 2026-10-12 16:30 · commit dcfd2fd · ts=1791793820
+- **错误**：全量门禁把模型依赖缺失与 pytest 超时误报为 pytest 未安装
+- **根因**：review_agent 用 No module named 与 pytest 两个宽泛子串判定，pytest 仅作为日志上下文也会命中
+- **修复**：仅匹配 No module named pytest、pytest_cov 或 _pytest 的具体模块名；真实失败回读 test-report.json
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁环境错误须匹配具体依赖名，不用跨日志的宽泛子串组合
+
+---
+
+### 2026-10-12 15:56 · commit dcfd2fd · ts=1791791796
+- **错误**：B-1 修改 CI 注释时误删工作流主体，差异显示约 312 行删除
+- **根因**：补丁替换范围过宽，未立即检查 git diff --stat
+- **修复**：从 HEAD 恢复 CI 文件后只改三行，复查 diff 为 3 加 3 删
+- **相关文件**：.github/workflows/ci.yml
+- **教训**：改 CI 前后核对工作流完整性和差异行数；大面积删除须立即撤回
 
 ---
 

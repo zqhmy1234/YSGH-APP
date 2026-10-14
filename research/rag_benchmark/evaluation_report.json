@@ -159,6 +159,7 @@
     "gates": {
       "hit_rate@3": 0.8571,
       "gate_hit_rate@3": true,
+      "n_queries": 21,
       "negative_error_rate": 0.5714,
       "gate_negative_error_rate": false,
       "threshold_hit_rate@3": 0.7,

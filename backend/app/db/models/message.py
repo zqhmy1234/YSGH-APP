@@ -1,7 +1,8 @@
 """消息/推送域 ORM 模型（messages，对齐 backend/sql/schema.sql）"""
+
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, Text, func
+from sqlalchemy import BigInteger, DateTime, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,14 +21,18 @@ class Message(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
-    channel: Mapped[str] = mapped_column(String, default="in_app")  # in_app / push
+    channel: Mapped[str] = mapped_column(String, default="in_app", server_default=text("'in_app'"))  # in_app / push
     msg_type: Mapped[str] = mapped_column(String)  # daily_review / voice_done / care_followup / echo
     title: Mapped[str] = mapped_column(String)
     body: Mapped[str] = mapped_column(Text)
     # BA1（迁移 f2a3b4c5d6e7）：关联内容（voice_done/echo 等消息跳详情用）；
     # 口径对齐 payload.content_id（notify.create_message 落库点同步写入）
     content_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
-    payload: Mapped[dict] = mapped_column(JSONB, default=dict)  # 附加数据（内容 id / 语音 id / 模板标记）
-    status: Mapped[str] = mapped_column(String, default="unread")  # unread / read / archived
+    payload: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'")
+    )  # 附加数据（内容 id / 语音 id / 模板标记）
+    status: Mapped[str] = mapped_column(
+        String, default="unread", server_default=text("'unread'")
+    )  # unread / read / archived
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

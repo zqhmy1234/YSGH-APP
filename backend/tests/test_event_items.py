@@ -10,7 +10,7 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event, EventItem, User
@@ -23,7 +23,7 @@ def _content(db, user_id: str, ts=None, content_type: str = "photo") -> Content:
         id=str(uuid.uuid4()),
         user_id=user_id,
         content_type=content_type,
-        taken_at=ts or datetime.now(timezone.utc) - timedelta(hours=1),
+        taken_at=ts or datetime.now(UTC) - timedelta(hours=1),
         status="done",
         source="app",
     )
@@ -61,7 +61,7 @@ class TestContentEventsService:
         from app.api.event_items import get_content_events
 
         db, user = db_user
-        base = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
+        base = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
         c = _content(db, user.id, ts=base)
         ev_l2 = _event(db, user.id, 2, base)          # start = base
         ev_l1 = _event(db, user.id, 1, base + timedelta(hours=3))  # start = base+3h（更新）
@@ -79,7 +79,7 @@ class TestContentEventsService:
         from app.api.event_items import get_content_events
 
         db, user = db_user
-        ev = _event(db, user.id, 1, datetime.now(timezone.utc))
+        ev = _event(db, user.id, 1, datetime.now(UTC))
         p1 = _content(db, user.id)
         p2 = _content(db, user.id)
         t1 = _content(db, user.id, content_type="text")
@@ -121,15 +121,15 @@ class TestContentEventsService:
 
     def test_deleted_event_excluded(self, db_user):
         """软删事件不参与反向查询（软删 30 天规则）"""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from app.api.event_items import get_content_events
 
         db, user = db_user
         c = _content(db, user.id)
-        ev = _event(db, user.id, 1, datetime.now(timezone.utc) - timedelta(hours=5))
+        ev = _event(db, user.id, 1, datetime.now(UTC) - timedelta(hours=5))
         _link(db, c, ev)
-        ev.deleted_at = datetime.now(timezone.utc)
+        ev.deleted_at = datetime.now(UTC)
         db.commit()
 
         out = get_content_events(db, str(user.id), c.id)
@@ -160,7 +160,7 @@ class TestContentEventsApi:
         client = TestClient(app)
         headers = {"Authorization": "Bearer " + create_access_token(str(user.id))}
 
-        base = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
+        base = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
         c = _content(db, user.id, ts=base)
         ev = _event(db, user.id, 2, base)
         _link(db, c, ev)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.core.config import settings
 from app.schemas.search import SearchQuery
@@ -46,7 +46,7 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
     """
     filters: dict = {}
     rewritten = q.q
-    now = datetime.now(timezone.utc).astimezone()
+    now = datetime.now(UTC).astimezone()
 
     # 修复（2026-08-25 RAG 审查）：时间表达只在【句首】才算时间过滤意图。
     # 此前 pattern.search 任意位置命中即加 time 过滤并删词——"记得明天下午之前把

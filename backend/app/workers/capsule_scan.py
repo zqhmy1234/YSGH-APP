@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -49,7 +49,7 @@ def scan_due_capsules(db: Session, now: datetime | None = None) -> int:
 
     返回本轮产出的到期消息数。
     """
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     # ① 原子领取：条件 UPDATE 只翻 sealed→due，RETURNING 取本轮真正抢到归属的行
     claimed = db.execute(
         update(Capsule)

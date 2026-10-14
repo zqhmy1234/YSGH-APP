@@ -1,10 +1,7 @@
 -- ============================================================
--- ⚠️ 本文件**不是建库权威**，不要用它新建后端库（2026-09-24 标注）
---
--- 定位：**只读参考 + CI 测试库建库源**。
---   · CI 的 full-gate 用它建测试库（`.github/workflows/ci.yml:353`）
---   · CI 另有 weekly 漂移巡检比对它与 alembic 链（schema-drift-weekly job）
---   ⚠️ 因此本文件**不能删**，改动前请先确认上述两处仍可用。
+-- ⚠️ 历史参考，不用于建库或漂移门禁（B-1，2026-10-12）。
+-- 新库执行 alembic upgrade head；权威结构在 app/db/models/。
+-- 已从本参考快照移除 11 张无业务读写的旧表；已有库不删表、不删数据。
 --
 -- 为什么不能拿它建后端库（2026-09-24 实测）：
 --   1. **缺 `capsules` 表**（`grep -ci capsule` = 0），而 capsules 被 6 个后端文件
@@ -13,17 +10,16 @@
 --      （比另一条迁移旧）—— 与 alembic 链**双向都不可叠加**：
 --        · 空库直接 `alembic upgrade head` → `relation "contents" does not exist`
 --        · 先跑本文件再 `alembic upgrade head` → `DuplicateColumn: client_event_id`
---   3. 表数 27（2026-10-08 W6 DROP 11 张零引用 legacy 后），后端实际需要
---      **28**（= 25 张 ORM 表 + profile_l2_evidence / finetune_jobs 2 张裸 SQL 表 + alembic_version）
+--   3. 本文件保留历史字段/索引差异，不保证与当前 ORM 完全一致。
 --
--- ✅ 正确的建库方式：`python scripts/init_db.py`
+-- ✅ 正确的建库方式：`alembic upgrade head`（init_db.py 仅封装角色/扩展准备）
 --    说明见脚本头注释与本仓 `docs/` / 技术文档「建库文档」
 --
 -- 权威关系（P2-05）：ORM（`app/db/models/`，唯一权威）
 --                 > alembic 迁移链（`backend/migrations/`）
 --                 > 本文件（只读参考）
 -- ============================================================
--- 忆述光华 MVP · PostgreSQL Schema v3（27 表，2026-10-08 W6 清理后）
+-- 忆述光华 MVP · PostgreSQL Schema v3（历史参考，当前 27 表 10 域）
 -- 依据：《忆述光华_数据库Schema_v3.md》（2026-08-18 权威版）
 -- 全局约定：
 --   软删除：业务表带 deleted_at + deleted_by（B4-2，30 天物理清理）
@@ -38,16 +34,12 @@
 --   e. echo_history 不建 UNIQUE(user_id, event_id)（PG 多 NULL 不冲突，无效约束）
 -- 2026-08-26：38 表（补 profile_annotation_pool 等 Wave0 迁移表）+ CREATE EXTENSION vector
 --   （CI 从零建库缺 pgvector 扩展致 test_vector_extension 挂；镜像需 pgvector/pgvector:pg16）
--- 2026-10-08：W6 清理 DROP 11 张零引用 legacy 表（audit_log/tags/content_tags/
---   voice_segments/event_tags/question_templates/guardrail_logs/question_history/
---   ai_request_logs/api_cost_stats/app_settings——建表先行、代码未落地的残留；
---   迁移 b7c8d9e0f1a2），表数 38→27。profile_l2_evidence / finetune_jobs 保留（有意无模型）
 -- ============================================================
 
 -- pgvector 扩展（v3 后无向量列，预留纠错向量/同步；本地/CI/生产统一在此建）
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- ========== 1. 用户与认证域（5 表） ==========
+-- ========== 1. 用户与认证域（4 表） ==========
 
 CREATE TABLE users (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -94,7 +86,8 @@ CREATE TABLE sms_codes (                       -- 防刷
 );
 CREATE INDEX idx_sms_codes_phone_created ON sms_codes(phone, created_at);
 
--- ========== 2. 内容域（4 表） ==========
+
+-- ========== 2. 内容域（1 表） ==========
 
 CREATE TABLE contents (                        -- 核心表
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -131,7 +124,10 @@ CREATE INDEX idx_contents_user_created ON contents(user_id, created_at);
 CREATE INDEX idx_contents_user_type ON contents(user_id, content_type);
 CREATE INDEX idx_contents_taken_at ON contents(user_id, taken_at);
 
--- ========== 3. 事件域（4 表） ==========
+
+
+
+-- ========== 3. 事件域（3 表） ==========
 
 CREATE TABLE events (                          -- 四层模型 L0-L3
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,6 +163,7 @@ CREATE TABLE event_items (                     -- photo_event 泛化（分歧 A�
 );
 CREATE INDEX idx_event_items_event ON event_items(event_id);
 
+
 CREATE TABLE event_edit_log (                  -- B3-5 用户合并/拆分/确认
     id          bigserial PRIMARY KEY,
     event_id    uuid NOT NULL REFERENCES events(id),
@@ -176,7 +173,7 @@ CREATE TABLE event_edit_log (                  -- B3-5 用户合并/拆分/确�
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- ========== 4. 画像域（5 表） ==========
+-- ========== 4. 画像域（6 表） ==========
 
 CREATE TABLE user_profile (
     user_id           uuid PRIMARY KEY REFERENCES users(id),
@@ -270,8 +267,12 @@ CREATE TABLE sensitive_words (                 -- 三层词表（v3 F1：来源�
     UNIQUE (word, user_id)
 );
 
--- ========== 7. 交互状态域（1 表，防重复触发关键） ==========
--- （模板与护栏域 2 表、question_history 已于 2026-10-08 W6 迁移 DROP——零代码引用 legacy）
+-- ========== 6. 模板与护栏域（已退休） ==========
+
+
+
+-- ========== 7. 交互状态域（1 表） ==========
+
 
 CREATE TABLE echo_history (                    -- 回响每天≤1条/划掉不再出现（v3 E1）
     id          bigserial PRIMARY KEY,
@@ -390,7 +391,7 @@ CREATE TABLE geo_cache (                       -- B3-3 逆编码缓存（高德�
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- （ai_request_logs / api_cost_stats 已于 2026-10-08 W6 迁移 DROP——成本归因未实现的零引用 legacy）
+
 
 CREATE TABLE finetune_jobs (                   -- B5-c 共性纠错微调
     id            bigserial PRIMARY KEY,
@@ -419,7 +420,8 @@ CREATE TABLE messages (                        -- 统一消息中心：in-app + 
 CREATE INDEX idx_messages_user_sent ON messages(user_id, sent_at DESC);
 CREATE INDEX idx_messages_user_id ON messages(user_id, id);  -- 消息按 id 分页/游标（S6-4）
 
--- （设置域 app_settings 已于 2026-10-08 W6 迁移 DROP——v3 用户偏好未实现的零引用 legacy）
+-- ========== 12. 设置域（已退休） ==========
+
 
 -- ============================================================
 -- 说明：

@@ -50,7 +50,19 @@ jobs:
         #   （Settings 全部字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env 即可实例化）。
         #   此前只 `pip install ruff` ⇒ 该检查恒因 ModuleNotFoundError 报「模板漂移」而**假红**，
         #   真因是环境缺依赖、与模板内容无关。只补这两个包，不装全量 requirements。
-        run: pip install ruff pydantic pydantic-settings
+        # ruff 必须**钉版本**：2026-10-10 实测 `pip install ruff`（不钉）装到了 0.17.0，
+        #   而 0.17.0 改了「无 pyproject/requires-python 时 target-version 的默认推断」，
+        #   于是 UP017(datetime.UTC) 在本仓 66 个文件 154 处突然报红 —— 代码一行没动，
+        #   规则集自己变了。仓库跑的是 Python 3.11，但 ruff.toml 从未声明 target-version，
+        #   这正是它会被上游静默改动的根因。
+        #   钉 0.16.8 = 与开发机一致、也是本仓最后一次 lint 全绿的版本。
+        #   ✅ 根因已另行修复（同日）：ruff.toml 已显式声明 `target-version = "py311"`，
+        #      规则集从此与本仓真实 Python 绑定，不再随 ruff 版本静默漂移；
+        #      并 `ruff --fix` 清掉了那 154 处。**0.16.8 与 0.17.0 现已双双全绿**，
+        #      故本行可直接升 0.17.0（已实测），只是为与开发机保持一致暂留 0.16.8。
+        #   **升级 ruff 时仍须先本地跑 `ruff check .` 看有无新增命中，再改这里的版本号。**
+        #   与下方 full-gate 的同一行**必须保持一致**（两处一起改）。
+        run: pip install ruff==0.16.8 pydantic pydantic-settings
 
       - name: Run static gate (syntax/lint/secrets/todos, no tests)
         run: python scripts/review_agent.py --full --skip-tests
@@ -154,7 +166,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r backend/requirements.txt
-          pip install pytest pytest-cov httpx ruff
+          pip install pytest pytest-cov httpx ruff==0.16.8   # 钉版本的理由见上方 fast-gate 同名步骤；两处必须一致
 
       - name: Dependency vulnerability scan (pip-audit, non-blocking annotation)
         # TD-P2A（2026-08-26）：依赖扫描入 CI（技术债清理计划 P3-60）。
@@ -207,7 +219,7 @@ jobs:
         #      —— 这不是意外：`backend/sql/schema.sql` 自己的头部（2026-09-24）就写着
         #      「不是建库权威，不要用它新建后端库」「✅ 正确的建库方式：python scripts/init_db.py」，
         #      而本步骤恰恰在做它明令禁止的事。
-        #   现改为直接调 `scripts/init_db.py`（= ORM create_all + 裸 SQL 表 + alembic stamp），
+        #   B-1 后 `scripts/init_db.py` 负责角色/扩展，建表交给 Alembic；空库由 ORM 自举，已有库走增量迁移。
         #   与本地/服务器**同源** —— 「本地全绿 CI 必挂」这一整类漂移事故从结构上消失。
         #   · 角色名/密码/库名由它从 job 级 `DATABASE_URL` 解析（两侧自动一致，无需再内联密码）
         #   · pgvector 非 trusted 扩展由它改用**超级用户连目标库**创建（自己踩过这个坑并记在注释里）
@@ -329,7 +341,7 @@ jobs:
   #       （= 告警信号，与同文件 pip-audit-weekly「发现即失败」口径一致）。
   #       仍**不阻断 push/PR 主流水线**（本 job 仅 schedule/workflow_dispatch 触发，不拖慢 PR）。
   schema-drift-weekly:
-    name: Schema Drift（weekly，schema.sql ↔ alembic）
+    name: Schema Drift（weekly，ORM ↔ alembic）
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # 仅 schedule/workflow_dispatch 触发（不参与 push/PR 门禁）；
@@ -361,7 +373,7 @@ jobs:
       - name: Install deps (sqlalchemy/psycopg/alembic/pydantic——仅漂移检测所需，不装全量 requirements)
         run: pip install sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings
 
-      - name: Run schema drift check (漂移即 fail —— 定时红为告警信号)
+      - name: Run ORM versus Alembic schema drift check
         # P0-4：检出漂移 → 脚本 exit 1（+ ::error:: annotation）。
         # B10-i/D14-23（2026-09-24 重构波）：本步骤原为 `continue-on-error: true` ⇒ **本 job 永绿**，
         #   schema.sql ↔ alembic 漂移**无法产生任何信号**（与同文件 pip-audit-weekly 的

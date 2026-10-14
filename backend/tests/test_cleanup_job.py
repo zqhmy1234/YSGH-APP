@@ -9,7 +9,7 @@
 前置：PG yishu 库（fake 存储由 conftest autouse 强制）
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, DeletedLog, SyncFieldVersion
@@ -37,7 +37,7 @@ def _due_tombstone(db, user, days_ago: int = 40):
         thumbnail_key=thumb_key,
         source="app",
         status="done",
-        deleted_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+        deleted_at=datetime.now(UTC) - timedelta(days=days_ago),
     )
     db.add(content)
     db.flush()  # 先拿 id
@@ -51,13 +51,13 @@ def _due_tombstone(db, user, days_ago: int = 40):
                 user_id=user.id,
                 value={"title": "x"} if field == "title" else None,
                 deleted=field == "*",
-                updated_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+                updated_at=datetime.now(UTC) - timedelta(days=days_ago),
             )
         )
     log = DeletedLog(
         content_id=str(content.id),
         deleted_by=user.id,
-        deleted_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+        deleted_at=datetime.now(UTC) - timedelta(days=days_ago),
         cleanup_status="pending",
     )
     db.add(log)

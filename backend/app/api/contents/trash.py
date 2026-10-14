@@ -7,7 +7,7 @@
 本模块由原单文件 app/api/contents.py 拆出（重构波 B2），端点逻辑未变。
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Depends
 from sqlalchemy import select
@@ -40,7 +40,7 @@ def trash_list(
     user: User = Depends(get_current_user),
 ):
     """回收站列表（W2-1）：软删条目按删除时间倒序，days_left 由后端算好"""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = (
         db.execute(
             select(Content)
@@ -56,7 +56,7 @@ def trash_list(
         if deleted is None:  # 理论不可达（查询已过滤）；防御
             continue
         if deleted.tzinfo is None:
-            deleted = deleted.replace(tzinfo=timezone.utc)
+            deleted = deleted.replace(tzinfo=UTC)
         days_left = max(0, TRASH_RETENTION_DAYS - (now - deleted).days)
         items.append(
             TrashItemOut(

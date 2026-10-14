@@ -328,7 +328,7 @@ def _check_rewrite_case(case: dict, now=None) -> bool:
 def _now(now) -> object:
     import datetime as _dt
 
-    return now if now is not None else _dt.datetime.now(_dt.timezone.utc).astimezone()
+    return now if now is not None else _dt.datetime.now(_dt.UTC).astimezone()
 
 
 def _eval_rewrite(cases_path: Path) -> dict:
@@ -402,11 +402,17 @@ def _run_truth_eval(args, report: dict) -> dict:
     overall = res["overall"]
     hr3 = overall["retrieval"].get("hit_rate@3", 0.0) if overall.get("retrieval") else 0.0
     neg_rate = overall["negative_error_rate"]
-    gate_hr = hr3 >= GATE["hit_rate@3"] or overall["retrieval"].get("n_queries", 0) == 0
+    # 假绿修复（2026-10-09）：原式 `hr3 >= 阈值 or n_queries == 0` 把「没测到任何查询」
+    # 当成 PASS —— 于是 `--truth-a`（数据不足）这类场景会打印「门禁 ✅ PASS」并输出
+    # hit_rate@3=0.0，看起来像"过了"。现改为：无可测查询 → gate 置 None（无法判定），
+    # 且不计入通过（overall_ok 为 False）。报告里同时保留 n_queries 便于区分两种 0.0。
+    n_q = (overall.get("retrieval") or {}).get("n_queries", 0)
+    gate_hr = (hr3 >= GATE["hit_rate@3"]) if n_q else None
     gate_neg = neg_rate <= GATE["negative_error_rate"]
     truth_gates = {
         "hit_rate@3": hr3,
         "gate_hit_rate@3": gate_hr,
+        "n_queries": n_q,
         "negative_error_rate": neg_rate,
         "gate_negative_error_rate": gate_neg,
         "threshold_hit_rate@3": GATE["hit_rate@3"],
@@ -415,7 +421,9 @@ def _run_truth_eval(args, report: dict) -> dict:
     report["truth"] = {"queries": len(queries), "sources": sources,
                        "corpus_size": len(items), "layers": res["layers"],
                        "overall": overall, "gates": truth_gates}
-    print(f"[truth] 检索 hit_rate@3={hr3}（门禁 ≥{GATE['hit_rate@3']}）"
+    hr_txt = (f"hit_rate@3={hr3}（门禁 ≥{GATE['hit_rate@3']}）" if n_q
+              else "hit_rate@3 无法判定（n_queries=0，没有可测查询）")
+    print(f"[truth] 检索 {hr_txt}"
           f" | 负样本误召回率={neg_rate}（门禁 ≤{GATE['negative_error_rate']}）")
     for layer, lr in res["layers"].items():
         r = lr.get("retrieval")
@@ -428,9 +436,12 @@ def _run_truth_eval(args, report: dict) -> dict:
     if "cross_modal" in overall:
         cm = overall["cross_modal"]
         print(f"[truth] 跨模态 route: 多模态命中 {cm['multi_modal_hit']}/{cm['n']}（acc={cm['acc']}）")
-    overall_ok = gate_hr and gate_neg
+    # gate_hr 为 None（无可测查询）时显式算作未通过 —— 不能让 None 顺着 and 传下去，
+    # 否则返回值可能是 None 而不是 bool，调用方按 exit code 判断时会落到意外分支。
+    overall_ok = bool(gate_hr) and bool(gate_neg)
+    hr_mark = "⏭️ 无法判定" if gate_hr is None else ("✅" if gate_hr else "❌")
     print(f"[truth] 门禁: {'✅ PASS' if overall_ok else '❌ FAIL'}"
-          f"（hit_rate@3 {'✅' if gate_hr else '❌'} | 负样本误召回 {'✅' if gate_neg else '❌'}）")
+          f"（hit_rate@3 {hr_mark} | 负样本误召回 {'✅' if gate_neg else '❌'}）")
     return overall_ok
 
 

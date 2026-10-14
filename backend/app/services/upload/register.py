@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -140,7 +140,7 @@ def _register_voice_content(
     raw_extra = meta.get("extra")
     file_name = raw_extra.get("file_name", "audio") if isinstance(raw_extra, dict) else "audio"
     safe = "".join(c for c in str(file_name) if c.isalnum() or c in "._-") or "audio"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     voice_key = f"voice/{user_id}/{now:%Y%m}/{uuid.uuid4().hex[:12]}_{safe}"
     backend.put_object(voice_key, data)
     try:

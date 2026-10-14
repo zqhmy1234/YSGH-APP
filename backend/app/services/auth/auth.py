@@ -19,7 +19,7 @@ import hashlib
 import hmac
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -86,7 +86,7 @@ def send_sms(db: Session, req, client_ip: str | None) -> dict:
 
     TD-P3 M2（审查中危）：send 侧 IP+phone 双层限流（防短信轰炸洪泛）。
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # P0-1（审查 H1）：生产环境禁止 mock 验证码直返（任意手机号可接管账户）——
     # 与 wechat_login 的"生产未接入 → 501"对齐；真实短信通道（TODO T1）接入前
@@ -214,7 +214,7 @@ def logout(db: Session, refresh_token: str) -> dict:
         .values(
             refresh_token_hash=None,
             refresh_token=None,
-            last_active_at=datetime.now(timezone.utc),
+            last_active_at=datetime.now(UTC),
         )
     )
     db.commit()
@@ -331,7 +331,7 @@ def _rotate_refresh_token(
     """
     access = create_access_token(user.id, device_id)
     refresh = create_refresh_token(user.id, device_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     new_hash = _hash_refresh_token(refresh)
 
     if device.refresh_token_hash:
@@ -417,7 +417,7 @@ def _store_refresh_token(device: Device, refresh: str) -> None:
     - refresh_token 明文列写入后清空（迁移期遗留明文行由 refresh() 回退兼容）
     - refresh_rotated_at 记录最后轮换时间（可观测 / 后续按需做过期策略）
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     device.refresh_token_hash = _hash_refresh_token(refresh)
     device.refresh_token = None
     device.refresh_rotated_at = now

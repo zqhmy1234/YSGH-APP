@@ -10,7 +10,7 @@
   - get_place：None 坐标直接返回 None
 前置：PG yishu 库（geo_cache 表，alembic 迁移后存在）
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.core.config import settings
@@ -162,7 +162,7 @@ def test_get_place_cache_expired_refetch(db, monkeypatch):
     stale = GeoCache(
         geohash=_test_geohashes()[0],
         place="旧地点",
-        updated_at=datetime.now(timezone.utc) - timedelta(days=31),
+        updated_at=datetime.now(UTC) - timedelta(days=31),
     )
     db.add(stale)
     db.commit()

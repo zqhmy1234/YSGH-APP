@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -87,7 +87,7 @@ def merge_events(db: Session, user_id: str, target_id: str, source_ids: list[str
                 target_cids.add(it.content_id)
                 moved += 1
         # 源事件软删（保留痕迹，可审计）
-        src.deleted_at = datetime.now(timezone.utc)
+        src.deleted_at = datetime.now(UTC)
         src.deleted_by = user_id
     # 更新时间窗覆盖合并范围
     if moved:

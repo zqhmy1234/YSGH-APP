@@ -12,7 +12,7 @@ fail-closed 语义：token 未配置 ⇒ 503，错 token ⇒ 401，代执行用�
 由 `app/api/contents/__init__.py` 在**末尾**导入——与 favorites/trash/waveform
 同款拆包模式，保证路由注册顺序。
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -76,7 +76,7 @@ def delete_content_for_agent_by_cgid(
     agent 侧删除不该因为"镜像本就不存在"而失败。
     """
     row = find_alive_content_by_cgid(db, user.id, client_generated_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if row is None:
         return ApiResponse(data=ContentDeleteOut(content_id="", deleted=False, permanent_at=now))
     sync_writes.soft_delete_content(db, row, user.id, change_ts=now, anchor=now)

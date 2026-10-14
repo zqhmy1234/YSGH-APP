@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ def _cloud_entities(db: Session, user_id: str) -> dict[str, dict]:
     for row in rows:
         ent = entities.setdefault(
             row.entity_id,
-            {"updated_at": datetime.min.replace(tzinfo=timezone.utc), "deleted": False, "fields": {}},
+            {"updated_at": datetime.min.replace(tzinfo=UTC), "deleted": False, "fields": {}},
         )
         ts = row.updated_at
         if lww_wins(ent["updated_at"], ts):
@@ -65,7 +65,7 @@ def reconcile_snapshot(
         entity_id = item.get("entity_id")
         if not entity_id:
             continue
-        client_ts = parse_ts(item.get("updated_at")) or datetime.min.replace(tzinfo=timezone.utc)
+        client_ts = parse_ts(item.get("updated_at")) or datetime.min.replace(tzinfo=UTC)
         client_deleted = bool(item.get("deleted"))
         cloud_ent = cloud.get(entity_id)
         if cloud_ent is None:

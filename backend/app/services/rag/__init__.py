@@ -199,6 +199,20 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 4. 溯源组装（RET-016：每条结果可解释命中字段）
     hits = _assemble_hits(raw_hits, q.limit, db, user_id)
 
+    # 4.1 R-1 拒答地板（2026-10-09）：召回层稠密相似度低于地板的命中整条剔除；
+    #     全部低于地板 → 空结果，即「答不出来就不答」。门禁 negative_error_rate ≤0.05。
+    #     这是召回层闸门，位置刻意选在 rerank 之前：既省掉注定被丢弃候选的重排开销，
+    #     也避免「LLM 精排绝不增删候选」把该拒的候选又救回来。
+    #     默认 0.0 = 关闭（保持改动前行为）；标定口径见 config.retrieval_min_dense_score。
+    #     注意判据用 trace["dense_score"]（稠密余弦），**不是** h.score（RRF 融合分，
+    #     量级 ~0.016 且只反映名次，与相关性无关，不能用来设阈值）。
+    if settings.retrieval_min_dense_score > 0 and hits:
+        floor = settings.retrieval_min_dense_score
+        kept = [h for h in hits if h.trace.get("dense_score", 0.0) >= floor]
+        if len(kept) != len(hits):
+            logger.info("R-1 拒答地板 %.3f：%d → %d 条", floor, len(hits), len(kept))
+        hits = kept
+
     latency_ms = int((time.perf_counter() - start) * 1000)
 
     # 4.5 双层 Rerank 第一层（bge-reranker 粗排 + 低相关过滤；

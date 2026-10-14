@@ -9,7 +9,7 @@ test_correction.py（pytestmark=integration + SessionLocal 落库）。
 注：export router 已在 main.py 注册（卡E03 域内接线），直接用 client 走全链鉴权。
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, CorrectionLog, Event, EventItem, UserProfile
@@ -30,7 +30,7 @@ def _clean_buckets():
 
 def _seed_full(db, user_id: str) -> None:
     """满库：contents(2) / events(1+成员2) / corrections(2) / profile(1)"""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     c1 = Content(
         id=str(uuid.uuid4()), user_id=user_id, content_type="text", text="备忘标题",
         taken_at=now - timedelta(hours=1), status="done", source="app",

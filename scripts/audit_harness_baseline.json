@@ -17,6 +17,11 @@
         "lines": 874,
         "reason": "2026-10-11 静态审查修复批：该文件原 786 行（距阈值 14 行），本批为 12 处确证缺陷（失败覆盖已渲染数据/emptyState 派生状态漏收敛/语音双声道/划掉回响失败乐观隐藏/照片与拆分入口指向不存在的面板/权限复查/toast 频次等）补写**根因注释**（每处含复现序列与行号证据），+88 行。压缩注释会丢失后人复踩所需的证据链，故显式申请。",
         "target": "把渲染出口/监听链拆到 composables（同 usePhotoAttach/useEventOps 先例）后，行数自然回落，删除本条（销项触发）"
+      },
+      "client/components/RecordSheet/RecordSheet.uvue": {
+        "lines": 834,
+        "reason": "2026-10-15 合并 origin/develop（573b33b）引入 NEW-01 修复：记录面板上传路径补端侧 L1 聚合 + 事件上云（+27 行）。不补则该路径「内容入库但无事件」→ 时间轴 events=0 → 客户端被锁死在空态页（新用户永远出不来），属**功能必需**；合并后 834 行 > 阈值 800，故显式申请基线。",
+        "target": "把「上传成功 → 聚合 → /events/sync 上云」块抽到 composables（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
       }
     }
   },

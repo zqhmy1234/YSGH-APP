@@ -304,6 +304,8 @@
 	/* 64:280 输入：13px #B3A696 占位（输入本体 #3A2E25） */
 	.add-input {
 		flex: 1;
+		/* 2026-10-07 同类缺陷修复：input 无显式高度会被父级裁字（父容器 add-row 高 84.6rpx） */
+		height: var(--d-lattice-p36, 69.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 400;
 		font-size: var(--d-lattice-p13, 25rpx);

@@ -11,7 +11,7 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.db.models import Content, Event, EventItem, OfflineQueue, User
@@ -38,7 +38,7 @@ def _photo(db, user_id: str, taken_at: datetime, tags: list[str] | None = None) 
 
 
 def _ts(days: int = 0, hours: int = 0) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days, hours=hours)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days, hours=hours)).isoformat()
 
 
 def _client_event(cid: str, photo_ids: list[str], start: str | None = None, **kw) -> dict:
@@ -58,7 +58,7 @@ def test_sync_idempotent_by_client_event_id(db_user):
     from app.services.events import sync_client_events
 
     db, user = db_user
-    pid = _photo(db, user.id, datetime.now(timezone.utc))
+    pid = _photo(db, user.id, datetime.now(UTC))
     ev = _client_event(f"ev-{uuid.uuid4().hex[:8]}", [pid], _ts())
     r1 = sync_client_events(db, user.id, DEVICE, [ev])
     r2 = sync_client_events(db, user.id, DEVICE, [ev])  # 重发
@@ -81,7 +81,7 @@ def test_sync_rejects_foreign_photo(db_user, cleanup_user):
     db.commit()
     db.refresh(other)
     try:
-        pid = _photo(db, other.id, datetime.now(timezone.utc))
+        pid = _photo(db, other.id, datetime.now(UTC))
         ev = _client_event(f"ev-{uuid.uuid4().hex[:8]}", [pid], _ts())
         r = sync_client_events(db, user.id, DEVICE, [ev])
         assert len(r["rejected"]) == 1
@@ -115,7 +115,7 @@ def test_sync_creates_l1_device_event_with_changelog(db_user):
     from app.services.events import sync_client_events
 
     db, user = db_user
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     pids = [_photo(db, user.id, now + timedelta(minutes=i)) for i in range(3)]
     ev = _client_event("ev-full", pids, now.isoformat(), title="2026-08-24 · 3条", place="测试地")
     r = sync_client_events(db, user.id, DEVICE, [ev])
@@ -146,7 +146,7 @@ def test_sync_triggers_l2_candidates(db_user):
     from app.services.events import sync_client_events
 
     db, user = db_user
-    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     pids = []
     for day in range(2):
         for i in range(6):  # 12 张跨 2 天，同标签
@@ -171,7 +171,7 @@ def test_sync_idempotent_does_not_resync_l2(db_user):
     from app.services.events import sync_client_events
 
     db, user = db_user
-    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     pids = [_photo(db, user.id, base + timedelta(days=d, minutes=i * 5), tags=["旅行"])
             for d in range(2) for i in range(6)]
     ev = _client_event("ev-l2b", pids, base.isoformat())
@@ -205,7 +205,7 @@ def test_sync_via_api_and_timeline(db_user):
     api_user = db.execute(
         select(User).where(User.unionid == f"mock-unionid-{code}")
     ).scalar_one()
-    pid = _photo(db, str(api_user.id), datetime.now(timezone.utc))
+    pid = _photo(db, str(api_user.id), datetime.now(UTC))
     ev = _client_event("ev-api", [pid], _ts())
     r = client.post("/api/v1/events/sync", json={"device_id": DEVICE, "events": [ev]}, headers=headers)
     assert r.status_code == 200, r.text
@@ -224,14 +224,14 @@ def test_sync_concurrent_same_client_event_id(db_user):
     from sqlalchemy.exc import IntegrityError
 
     db, user = db_user
-    pid = _photo(db, user.id, datetime.now(timezone.utc))
+    pid = _photo(db, user.id, datetime.now(UTC))
     ev = _client_event("ev-race", [pid], _ts())
     r1 = sync_client_events(db, user.id, DEVICE, [ev])
     assert len(r1["accepted"]) == 1
     # 模拟并发竞态：第二条请求绕过幂等检查直接插入 → 唯一索引必须拦截
     db.add(Event(
         user_id=user.id, level=1, title="并发副本", generated_by="device",
-        client_event_id="ev-race", start_time=datetime.now(timezone.utc),
+        client_event_id="ev-race", start_time=datetime.now(UTC),
     ))
     with pytest.raises(IntegrityError):
         db.commit()
@@ -250,7 +250,7 @@ def test_sync_l2_mock_verdict_promotes_tag_consistent(db_user):
     from app.services.events import sync_client_events
 
     db, user = db_user
-    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     pids = [_photo(db, user.id, base + timedelta(days=d, minutes=i * 5), tags=["美食"])
             for d in range(2) for i in range(6)]
     r = sync_client_events(db, user.id, DEVICE, [_client_event("ev-promote", pids, base.isoformat())])
@@ -268,7 +268,7 @@ def test_sync_l2_nontag_stays_pending(db_user):
     from app.services.events import get_timeline, sync_client_events
 
     db, user = db_user
-    base = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     pids = [_photo(db, user.id, base + timedelta(days=d, minutes=i * 5))
             for d in range(2) for i in range(6)]   # 无标签无 GPS → 内容维/时间维候选
     r = sync_client_events(db, user.id, DEVICE, [_client_event("ev-pending", pids, base.isoformat())])
@@ -286,7 +286,7 @@ def test_sync_creates_l3_stream_with_members(db_user):
     from app.services.events import get_event_last_activity, sync_client_events
 
     db, user = db_user
-    base = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 8, 1, 9, 0, tzinfo=UTC)
     pids = [_photo(db, user.id, base + timedelta(days=d), tags=["备考"]) for d in range(3)]
     r = sync_client_events(db, user.id, DEVICE, [_client_event("ev-l3", pids, base.isoformat())])
     assert r["upper_items"] >= 3
@@ -314,7 +314,7 @@ def test_l3_lifecycle_via_timeline_api(db_user):
     token = r.json()["data"]["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     api_user = db.execute(select(User).where(User.unionid == f"mock-unionid-{code}")).scalar_one()
-    old = datetime(2024, 1, 1, 9, 0, tzinfo=timezone.utc)
+    old = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)
     pids = [_photo(db, str(api_user.id), old + timedelta(days=d), tags=["旧流"]) for d in range(3)]
     ev = Event(
         user_id=api_user.id, level=3, title="标签 · 旧流", title_source="template",

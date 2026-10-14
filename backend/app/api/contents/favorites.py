@@ -10,7 +10,7 @@
 本模块由原单文件 app/api/contents.py 拆出（重构波 B2），端点逻辑未变。
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Depends
 from sqlalchemy import select
@@ -40,7 +40,7 @@ def favorite_add(
     extra = dict(row.extra or {})
     existing = extra.get("favorite_at")
     if existing is None:
-        extra["favorite_at"] = datetime.now(timezone.utc).isoformat()
+        extra["favorite_at"] = datetime.now(UTC).isoformat()
         row.extra = extra
         db.commit()
         existing = row.extra["favorite_at"]

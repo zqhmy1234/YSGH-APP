@@ -141,8 +141,15 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
         ("devices", "DELETE FROM devices WHERE user_id = :uid"),
         ("user_wechat_bindings", "DELETE FROM user_wechat_bindings WHERE user_id = :uid"),
     ]
+    # B-1: fresh ORM databases omit retired tables. Existing databases may
+    # still contain them, so keep their cleanup SQL but skip absent tables.
+    existing_tables = set(
+        db.execute(sa_text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")).scalars()
+    )
     cleaned: list[str] = []
     for name, sql in sqls:
+        if name.split("(", 1)[0] not in existing_tables:
+            continue
         # SAVEPOINT（begin_nested）：单表删除失败仅回滚本语句，
         # 不连带丢弃此前已执行的删除（尽力而为，缺失表不阻断）。
         try:

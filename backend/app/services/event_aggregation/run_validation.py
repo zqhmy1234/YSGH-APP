@@ -19,6 +19,8 @@ import time
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from datetime import UTC
+
 from app.services.event_aggregation.end_constants import (
     cloud_constants,
     compare_cloud_end,
@@ -157,9 +159,8 @@ def main() -> None:
 
     # --- 场景 16：L3 7 天窗（B3-2：同标签 7 天内 ≥3 次（跨天）才成流）---
     from datetime import datetime, timedelta
-    from datetime import timezone as _tz
 
-    _base16 = datetime(2026, 7, 1, 9, 0, tzinfo=_tz.utc)
+    _base16 = datetime(2026, 7, 1, 9, 0, tzinfo=UTC)
     _within = [RawPhoto(id=f"w{i}", ts=_base16 + timedelta(days=i), tags=["研途"]) for i in range(3)]
     _spread = [RawPhoto(id=f"s{i}", ts=_base16 + timedelta(days=i * 10), tags=["散记"]) for i in range(3)]
     _l3_tags = {c["tag"] for c in l3_candidates(_within + _spread)}
@@ -169,7 +170,7 @@ def main() -> None:
     )
 
     # --- 场景 17：GPS 单点众数纠正（B3-3：众数拉回，不产生新簇）---
-    _t17 = datetime(2026, 7, 10, 12, 0, tzinfo=_tz.utc)
+    _t17 = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
     _gz = [
         RawPhoto(id=f"g{i}", ts=_t17 + timedelta(minutes=i * 2), lat=30.25, lng=120.16)
         for i in range(6)
@@ -184,7 +185,7 @@ def main() -> None:
     )
 
     # --- 场景 18：增量"先匹配后分裂"（B3-6：邻近并入现有簇 / 远处超限才分裂）---
-    _t18 = datetime(2026, 7, 20, 12, 0, tzinfo=_tz.utc)
+    _t18 = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
     _base18 = [
         RawPhoto(id=f"b{i}", ts=_t18 + timedelta(minutes=i * 10), lat=30.25, lng=120.16)
         for i in range(3)

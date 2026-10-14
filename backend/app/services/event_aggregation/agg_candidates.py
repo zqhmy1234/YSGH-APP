@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.services.event_aggregation.agg_types import (
     AGG_CONFIG,
@@ -38,7 +38,7 @@ def l3_lifecycle(
       silent    30-90 天无活动（静默降级：不再主动聚合，可恢复）
       archived  90 天无活动（归档：仅历史可见）
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if last_activity is None:
         last_activity = start_ts or now
     idle_days = 0

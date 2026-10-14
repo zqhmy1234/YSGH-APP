@@ -294,7 +294,7 @@ def run_tests(*, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
     )
     if code == 0:
         return True, out.strip()[-1500:]
-    if "No module named" in out and "pytest" in out:
+    if re.search(r"No module named ['\"]?(?:pytest|pytest_cov|_pytest)\b", out):
         # D14-19：缺 pytest 不得静默放行（否则报告全绿而全量测试从未执行）
         if allow_missing:
             return True, "[放宽] pytest 未安装 → 全量测试未执行（--allow-missing-tools 显式放行）"
