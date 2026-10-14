@@ -54,3 +54,33 @@ def purge_objects(targets: list[tuple[str, str, str]]) -> tuple[int, list[str]]:
                 failed += 1
                 logger.warning("清尾：对象删除失败 key=%s: %s", key, exc)
     return done, ([f"对象未清理 {failed} 个"] if failed else [])
+
+
+def delete_dependent_rows(db, content_ids: list[str]) -> int:
+    """删**外键引用 `contents` 的从属行**——必须在硬删 contents **之前**调用（2026-10-15 · 台账 §7.28）。
+
+    ## 为什么必须有
+
+    端到端验证实测抓到：**只要用户对某条内容"纠错过"**（纠错链会写 `correction_log`），
+    该内容进回收站后"清空回收站"就 **500**（`correction_log.content_id → contents.id` 的外键
+    是 **NO ACTION**，DB 实证 `confdeltype='a'`；**全库只有这一张表引用 contents**）。
+    同一序列里"提交纠错 → 清空"必挂、"不提交纠错 → 清空"必过 —— 这就是判据。
+
+    ## 口径
+
+    纠错记录含**用户原文**（`correction_log.text`）⇒ 彻底清除时**一并删除**：既消除 500，
+    也符合"彻底清除"的隐私承诺（否则内容删了、纠错原文还在库里，与用户对"清空"的理解不符）。
+
+    ⚠️ 只删这一张表是因为**实测全库只有它引用 `contents`**；将来若新增引用表，
+    必须在此同步补上（否则同一 500 会以"某功能用完就删不掉"的形态复现）。
+    """
+    from sqlalchemy import bindparam, text
+
+    ids = [str(i) for i in content_ids]
+    if not ids:
+        return 0
+    stmt = text("DELETE FROM correction_log WHERE content_id::text IN :ids").bindparams(
+        bindparam("ids", expanding=True)
+    )
+    result = db.execute(stmt, {"ids": ids})
+    return int(result.rowcount or 0)

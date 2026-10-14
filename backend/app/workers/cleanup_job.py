@@ -64,6 +64,9 @@ def _delete_content_objects(db: Session, content_id: str) -> None:
     from app.services import content_purge
 
     content_purge.purge_vectors([str(content.id)])
+    # 2026-10-15（台账 §7.28）：**同一根因的另一处**——`correction_log` 是 NO ACTION 外键，
+    # 30 天物理清理删"被纠错过"的内容同样会 500 ⇒ 先删从属行（共用同一 helper）。
+    content_purge.delete_dependent_rows(db, [str(content.id)])
     # 物理删 contents 行
     db.delete(content)
 

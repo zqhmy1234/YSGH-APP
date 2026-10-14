@@ -58,6 +58,24 @@ class Settings(BaseSettings):
     dashscope_region: str = Field("cn-beijing", pattern=r"^[a-z0-9-]+$")
     dashscope_base_url: str = ""
 
+    # ── LLM 供应商选择（2026-10-15 · 台账 §7.27）──────────────────────────────
+    # 背景：当日实测机器上一把过期的 `DASHSCOPE_API_KEY`（用户级环境变量）**顶掉了**
+    # backend/.env 里有效的 key，而内容护栏是 fail-closed ⇒ **所有内容保存失败**
+    # （用户看到"内容含敏感信息未保存"）。故文本类调用不再绑定单一供应商。
+    #
+    # 文本类调用（内容护栏 / 查询改写 / 意图路由）走哪个供应商：
+    #   dashscope（默认，qwen-flash，经 dashscope SDK）｜deepseek（OpenAI 兼容端点）。
+    # ⚠️ **视觉调用（照片 caption）恒走 dashscope**——DeepSeek 无视觉模型，
+    # 见 `external/dashscope.image_caption` 的注释。
+    llm_provider: str = Field("dashscope", pattern=r"^(dashscope|deepseek)$")
+    # DeepSeek（OpenAI 兼容）：别名同时收标准名与本机历史变量名 `deepseek-ugsimulator`
+    # （2026-10-15：用户机上就是这个名字；用别名收编，免去改机器环境）。
+    deepseek_api_key: str = Field(
+        "", validation_alias=AliasChoices("DEEPSEEK_API_KEY", "deepseek-ugsimulator")
+    )
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-chat"
+
     # ── Agent 服务（AG5 接线；独立进程，见 agent/UPSTREAM.md）──
     # 本后端**反代**调用：客户端只认本后端（JWT 鉴权），user_id 只由本后端注入
     # （agent 服务自身不鉴权用户身份 —— 见 UPSTREAM 五-1，故绝不可暴露公网）。

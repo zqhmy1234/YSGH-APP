@@ -438,6 +438,43 @@ def test_trash_clear_cleans_ledger(db_user, as_user):
     assert all(lg.cleanup_status != "pending" for lg in logs), logs
 
 
+def test_trash_clear_after_correction_log(db_user, as_user):
+    """§7.28：内容被**纠错过**（`correction_log` 有行）⇒ 清空回收站**必须仍成功**。
+
+    原状：`correction_log.content_id → contents.id` 是 **NO ACTION** 外键（DB 实证
+    `confdeltype='a'`），硬删该内容直接外键冲突 ⇒ 接口 **500** —— 端到端验证实测抓到
+    （同一序列"提交纠错 → 清空"必挂、"不提交纠错"必过）。
+    """
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    c = _make_content(db, user, content_type="text")
+    cid = str(c.id)
+    db.commit()
+
+    cli = TestClient(as_user(user))
+    # 用户手选分类（纠错链写 correction_log）
+    r = cli.post(
+        "/api/v1/corrections",
+        json={"content_id": cid, "text": "纠错原文", "new_label": "idea",
+              "old_label": "mixed", "source": "active", "content_type": "text"},
+    )
+    assert r.status_code == 200, r.text
+
+    assert cli.delete(f"/api/v1/contents/{cid}").status_code == 200
+    rc = cli.request("DELETE", "/api/v1/trash")
+    assert rc.status_code == 200, f"有纠错记录时清空回收站不得 500：{rc.text}"
+    assert rc.json()["data"]["cleared"] >= 1, rc.text
+
+    db.expire_all()
+    assert _fetch(db, cid) is None, "内容应已硬删"
+    # 纠错记录含用户原文 ⇒ 彻底清除时一并删（隐私口径）
+    left = db.execute(
+        text("SELECT count(*) FROM correction_log WHERE content_id::text = :c"), {"c": cid}
+    ).scalar()
+    assert left == 0, "纠错记录（含用户原文）应随彻底清除一并删除"
+
+
 def test_trash_clear_purges_vectors_and_objects(db_user, as_user, vector_collection):
     """§7.25①：清空回收站必须**连云端一起清**（Qdrant 向量 + 对象存储原件/缩略图）。
 

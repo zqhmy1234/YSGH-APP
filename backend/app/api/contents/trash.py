@@ -125,6 +125,9 @@ def trash_clear(
     purge_targets: list[tuple[str, str, str]] = [
         (str(r.id), r.cos_key or "", r.thumbnail_key or "") for r in rows
     ]
+    # 2026-10-15（台账 §7.28）：**先删从属行**——`correction_log` 对 `contents` 是 NO ACTION
+    # 外键，用户"纠错过"的内容硬删会 500（端到端验证实测：提交纠错的序列必挂）。
+    content_purge.delete_dependent_rows(db, [t[0] for t in purge_targets])
     cleared = 0
     for row in rows:
         db.delete(row)
