@@ -146,6 +146,20 @@ export class TimelineEvent {
 	renderPhotoPaths: Array<string>
 	hasRenderablePhotos: boolean
 	photoCountText: string
+	// ── RC-5（2026-10-14）播放态快照：由页面在「组装期 / 播放 tick / 切回本 tab」写入，
+	//    模板**只读字段、零函数调用**（同 `TabSearch.syncActiveCard` 范式）。
+	//    为什么放进卡片：原模板每卡 4~6 次函数调用，且**两处 `v-if` 直接依赖函数调用**
+	//    （平台对 `v-if` 整树卸载处理不稳），而一次 tick 的整表重渲染会重算**全部**语音卡。 ──
+	/** 本卡是否为"正在播放（含暂停）"的那张（同一时刻至多一张为 true） */
+	voiceActive: boolean
+	/** 播放中（false=暂停；仅 voiceActive 时有意义） */
+	voicePlaying: boolean
+	/** 播放进度 0..1（仅 voiceActive 时有意义） */
+	voiceProgress: number
+	/** 已播时长文本 m:ss（仅 voiceActive 时有意义） */
+	voiceCurText: string
+	/** 总时长文本 m:ss（仅 voiceActive 时有意义） */
+	voiceTotalText: string
 
 	constructor(
 		id: string,
@@ -186,6 +200,11 @@ export class TimelineEvent {
 		this.renderPhotoPaths = []
 		this.hasRenderablePhotos = false
 		this.photoCountText = ''
+		this.voiceActive = false
+		this.voicePlaying = false
+		this.voiceProgress = 0
+		this.voiceCurText = ''
+		this.voiceTotalText = ''
 	}
 
 	/** 服务端下发的缩略图 URL（本地无图时用它回退）；查不到返回空串 */

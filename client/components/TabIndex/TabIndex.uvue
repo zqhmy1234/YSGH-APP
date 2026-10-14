@@ -125,7 +125,7 @@
 						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列（W0-2 播放态：钮变暂停 + 已播金/未播米 + 进度行） -->
 						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
 							<view class="voice-play-btn">
-								<view v-if="voiceIsActive(ev.voice.contentId) && voiceIsPlaying()" class="voice-pause-icon">
+								<view v-if="ev.voiceActive && ev.voicePlaying" class="voice-pause-icon">
 									<view class="voice-pause-bar"></view>
 									<view class="voice-pause-bar"></view>
 								</view>
@@ -133,18 +133,18 @@
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="ev.voiceActive" :progress="ev.voiceProgress" idle-color="#C4913C" />
 								</view>
-								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
-									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+								<view v-if="ev.voiceActive" class="voice-progress-row">
+									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
 									<view class="voice-track">
-										<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(ev.voice.contentId) * 100) + '%' }"></view>
+										<view class="voice-track-fill" :style="{ width: (ev.voiceProgress * 100) + '%' }"></view>
 									</view>
-									<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
+									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
 								</view>
 								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
 									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ voiceIsActive(ev.voice.contentId) ? voiceTotalSecText() : ev.voice.duration }}</text>
+									<text class="voice-duration">{{ ev.voiceActive ? ev.voiceTotalText : ev.voice.duration }}</text>
 								</view>
 							</view>
 						</view>
@@ -197,7 +197,7 @@
 						<!-- 语音卡（W0-2 播放态，同待确认区卡） -->
 						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
 							<view class="voice-play-btn">
-								<view v-if="voiceIsActive(ev.voice.contentId) && voiceIsPlaying()" class="voice-pause-icon">
+								<view v-if="ev.voiceActive && ev.voicePlaying" class="voice-pause-icon">
 									<view class="voice-pause-bar"></view>
 									<view class="voice-pause-bar"></view>
 								</view>
@@ -205,18 +205,18 @@
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="ev.voiceActive" :progress="ev.voiceProgress" idle-color="#C4913C" />
 								</view>
-								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
-									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+								<view v-if="ev.voiceActive" class="voice-progress-row">
+									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
 									<view class="voice-track">
-										<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(ev.voice.contentId) * 100) + '%' }"></view>
+										<view class="voice-track-fill" :style="{ width: (ev.voiceProgress * 100) + '%' }"></view>
 									</view>
-									<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
+									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
 								</view>
 								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
 									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ voiceIsActive(ev.voice.contentId) ? voiceTotalSecText() : ev.voice.duration }}</text>
+									<text class="voice-duration">{{ ev.voiceActive ? ev.voiceTotalText : ev.voice.duration }}</text>
 								</view>
 							</view>
 						</view>
@@ -246,15 +246,15 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { PhotoAttach } from '@/composables/usePhotoAttach'
 	import { EventOps } from '@/composables/useEventOps'
-	import { requestShellTab, shellSheetSeq, shellSheetMode } from '@/utils/shell_state'
+	import { requestShellTab, shellSheetSeq, shellSheetMode, shellActiveTab } from '@/utils/shell_state'
 	import { fetchTimelineAsync, getCachedTimeline, getSnapshotTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
 		toggleVoice,
-		isVoiceActive,
-		isVoicePlaying,
-		voiceProgressOf,
-		voiceCurSecValue,
-		voiceTotalSecValue,
+		voiceCurrentId,
+		voicePlaying,
+		voiceProgress,
+		voiceCurSec,
+		voiceTotalSec,
 		fmtVoiceTime
 	} from '@/utils/audio_player'
 	import { parseIsoMs } from '@/utils/time'
@@ -440,22 +440,123 @@
 
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
 	const wf = new WaveformCache()
-	// 模板取值封装（uvue 模板不直接绑跨模块 ref）
-	function voiceIsActive(cid: string): boolean {
-		return isVoiceActive(cid)
+
+	/**
+	 * RC-5（2026-10-14 · 台账 §4.20）：把播放态写进「正在播放那张卡」的**预计算字段**。
+	 *
+	 * 原实现是模板里每卡 4~6 次函数调用（`voiceIsActive` / `voiceIsPlaying` /
+	 * `voiceProgressOfCard` / `voiceCurSecText` / `voiceTotalSecText`），其中**两处 `v-if`
+	 * 直接依赖函数调用**——平台对 `v-if` 整树卸载处理不稳（`skills/hbuilderx-uniappx-
+	 * runloop/SKILL.md:97-106`），且一次 tick 的整表重渲染会把**全部**语音卡的这些函数重算一遍。
+	 * 现改为「组装期 / tick 写卡片字段、模板只读字段」，与 `TabSearch.syncActiveCard`
+	 * （RC-1/RC-2 批次已落地的同款范式）保持一致。
+	 *
+	 * 三条要点（缺一不可）：
+	 *  ① **相等守卫**：值没变不写，只有真值变化的卡走更新路径；
+	 *  ② 真变过就 `days`/`pendingEvents` **整组浅替换**（`slice()`）——`buildDayGroups` 会
+	 *     **新建**卡片对象，且 uvue 对"就地改字段"能否驱动重渲染不作保证 ⇒ 用一次廉价
+	 *     slice 换**确定性重渲染**（`days.value` 整组替换本就是本页既有操作，见 `renderFromEvents`）；
+	 *  ③ **渲染出口补同步**：每次 `renderFromEvents` 后调一次（见该函数内注释）。
+	 */
+	function syncVoiceCards(): void {
+		const cid = voiceCurrentId.value
+		const playing = voicePlaying.value
+		const prog = voiceProgress.value
+		const cur = fmtVoiceTime(voiceCurSec.value)
+		const total = fmtVoiceTime(voiceTotalSec.value)
+		let changed = false
+		// 两处渲染源都要覆盖：待确认区 + 日卡片（同为 TimelineEvent）
+		const pend = pendingEvents.value
+		for (let i = 0; i < pend.length; i++) {
+			if (applyVoiceState(pend[i], cid, playing, prog, cur, total)) {
+				changed = true
+			}
+		}
+		const ds = days.value
+		for (let d = 0; d < ds.length; d++) {
+			const evs = ds[d].events
+			for (let i = 0; i < evs.length; i++) {
+				if (applyVoiceState(evs[i], cid, playing, prog, cur, total)) {
+					changed = true
+				}
+			}
+		}
+		if (changed) {
+			days.value = ds.slice()
+			pendingEvents.value = pend.slice()
+		}
 	}
-	function voiceIsPlaying(): boolean {
-		return isVoicePlaying()
+
+	/** 把当前播放态写进一张卡；返回"是否发生了变化"（相等守卫，无变化零写入） */
+	function applyVoiceState(
+		ev: TimelineEvent,
+		cid: string,
+		playing: boolean,
+		prog: number,
+		cur: string,
+		total: string
+	): boolean {
+		const v = ev.voice
+		if (v == null) {
+			return false // 无语音成员：本卡不参与播放态
+		}
+		const isActive = v.contentId == cid
+		let changed = false
+		if (ev.voiceActive != isActive) {
+			ev.voiceActive = isActive
+			changed = true
+		}
+		if (isActive) {
+			if (ev.voicePlaying != playing) {
+				ev.voicePlaying = playing
+				changed = true
+			}
+			if (ev.voiceProgress != prog) {
+				ev.voiceProgress = prog
+				changed = true
+			}
+			if (ev.voiceCurText != cur) {
+				ev.voiceCurText = cur
+				changed = true
+			}
+			if (ev.voiceTotalText != total) {
+				ev.voiceTotalText = total
+				changed = true
+			}
+		} else if (ev.voicePlaying || ev.voiceProgress != 0 || ev.voiceCurText != '' || ev.voiceTotalText != '') {
+			// 退出活动态：清干净（否则旧卡残留进度条/时长）
+			ev.voicePlaying = false
+			ev.voiceProgress = 0
+			ev.voiceCurText = ''
+			ev.voiceTotalText = ''
+			changed = true
+		}
+		return changed
 	}
-	function voiceProgressOfCard(cid: string): number {
-		return voiceProgressOf(cid)
+
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncVoiceCards。
+	// 可见性守卫（RC-2 同款）：本组件在壳内**常驻**（shell 用 `v-show` 切换，组件不销毁）⇒ 隐藏时
+	// 这些 watch 仍被全局 ref 驱动，重算+整组浅替换纯属空转。切回本 tab 时补一次同步对齐。
+	function syncVoiceCardsIfVisible(): void {
+		if (shellActiveTab.value != 'index') {
+			return
+		}
+		syncVoiceCards()
 	}
-	function voiceCurSecText(): string {
-		return fmtVoiceTime(voiceCurSecValue())
-	}
-	function voiceTotalSecText(): string {
-		return fmtVoiceTime(voiceTotalSecValue())
-	}
+	watch(voiceCurrentId, (): void => {
+		syncVoiceCardsIfVisible()
+	})
+	watch(voicePlaying, (): void => {
+		syncVoiceCardsIfVisible()
+	})
+	watch(voiceProgress, (): void => {
+		syncVoiceCardsIfVisible()
+	})
+	watch(shellActiveTab, (t: string): void => {
+		if (t == 'index') {
+			syncVoiceCards()
+		}
+	})
 
 	// 数据加载
 	// P-4（2026-09-04 峰宝拍板）：首拉不被离线队列阻塞——fetchAll 立即走；
@@ -540,6 +641,10 @@
 		const firstRender = !loaded.value
 		days.value = groupDays(events)
 		pa.attachAll(days.value, pendingEvents.value)
+		// RC-5（2026-10-14）：`buildDayGroups` **新建**卡片对象（播放态字段回到初值）⇒ 每次渲染
+		// 出口补一次同步，否则"正在播放/已暂停"在重渲染后会显示成"未播放"
+		// （同 `TabSearch.rebuildVoice → syncActiveCard`）。
+		syncVoiceCards()
 		loaded.value = true
 		refreshing.value = false
 		// 🚨 2026-10-11 静态审查 #2 修复：`emptyState` 是**派生状态**，必须收敛在渲染出口。
