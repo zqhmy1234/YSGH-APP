@@ -9110,6 +9110,26 @@
           "cleared": {
             "type": "integer",
             "title": "Cleared"
+          },
+          "vectors_purged": {
+            "type": "integer",
+            "title": "Vectors Purged",
+            "description": "请求删除的向量条数（Qdrant 不回逐点结果）",
+            "default": 0
+          },
+          "objects_purged": {
+            "type": "integer",
+            "title": "Objects Purged",
+            "description": "实际删除的对象存储原件/缩略图个数",
+            "default": 0
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "清尾失败项；空=全部清干净"
           }
         },
         "type": "object",
@@ -9117,7 +9137,7 @@
           "cleared"
         ],
         "title": "TrashClearOut",
-        "description": "回收站清空出参（DELETE /api/v1/trash）"
+        "description": "回收站清空出参（DELETE /api/v1/trash）\n\n2026-10-14（台账 §7.25①）：新增云端清尾计数与告警——原实现只删 DB 行（Qdrant 向量 /\n对象存储原件残留），接口却只回 `cleared` ⇒ 用户以为\"彻底清空\"（**隐私承诺相关**）。\n新字段均有默认值 ⇒ 老客户端读不到也不受影响（向后兼容）。"
       },
       "TrashItemOut": {
         "properties": {

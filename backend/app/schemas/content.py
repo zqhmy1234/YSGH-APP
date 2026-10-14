@@ -198,6 +198,14 @@ class TrashItemOut(BaseModel):
 
 
 class TrashClearOut(BaseModel):
-    """回收站清空出参（DELETE /api/v1/trash）"""
+    """回收站清空出参（DELETE /api/v1/trash）
+
+    2026-10-14（台账 §7.25①）：新增云端清尾计数与告警——原实现只删 DB 行（Qdrant 向量 /
+    对象存储原件残留），接口却只回 `cleared` ⇒ 用户以为"彻底清空"（**隐私承诺相关**）。
+    新字段均有默认值 ⇒ 老客户端读不到也不受影响（向后兼容）。
+    """
 
     cleared: int
+    vectors_purged: int = Field(0, description="请求删除的向量条数（Qdrant 不回逐点结果）")
+    objects_purged: int = Field(0, description="实际删除的对象存储原件/缩略图个数")
+    warnings: list[str] = Field(default_factory=list, description="清尾失败项；空=全部清干净")

@@ -184,6 +184,30 @@ class VectorStore:
             points=[point_id_for(content_id)],
         )
 
+    def delete_content_vectors(
+        self,
+        content_ids: list[str],
+        collection: str | None = None,
+    ) -> int:
+        """按 content_id 删点位（回收站彻底清除用；2026-10-14 · 台账 §7.25①）。
+
+        为什么必须有：`api/contents/trash.py` 的"清空回收站"原实现**只删 DB 行**，
+        Qdrant 向量与 COS 原件原样残留 ⇒ 用户以为"回收站已清空"，实际数据仍在向量库与
+        对象存储里（**隐私承诺相关**）。
+
+        幂等：点位不存在时 Qdrant 静默忽略（重跑安全）；返回**请求删除的条数**
+        （Qdrant 的 delete 不回逐点结果，故不谎报"实际删了几个点"）。
+        """
+        if not content_ids:
+            return 0
+        col = collection or default_collection()
+        self.ensure_collection(col)
+        self.client.delete(
+            collection_name=col,
+            points_selector=[point_id_for(cid) for cid in content_ids],
+        )
+        return len(content_ids)
+
     def upsert_content(
         self,
         content_id: str,

@@ -6,6 +6,7 @@
 
 本模块由原单文件 app/api/contents.py 拆出（重构波 B2），端点逻辑未变。
 """
+import logging
 from datetime import datetime, timezone
 
 from fastapi import Depends
@@ -24,9 +25,13 @@ from app.schemas.content import (
     TrashClearOut,
     TrashItemOut,
 )
-from app.services import sync_writes
+from app.services import content_purge, sync_writes
 
 trash_router = make_router(prefix="/api/v1/trash", tags=["trash"])
+
+# 2026-10-14（台账 §7.25①）：本模块此前无日志设施，而清空回收站的**云端清尾**
+# （向量/原件）是尽力而为的 ⇒ 失败必须留痕。
+logger = logging.getLogger("yishu.trash")
 
 
 @trash_router.get("", response_model=ApiResponse[list[TrashItemOut]])
@@ -115,12 +120,41 @@ def trash_clear(
         .scalars()
         .all()
     )
+    # ⚠️ 清尾所需的 key 必须**在删除/提交之前**取出：ORM 行一旦被 delete+commit，再读属性会
+    # 抛 `ObjectDeletedError`（2026-10-14 被新用例当场抓到——那会让接口在"DB 已删"之后 500）。
+    purge_targets: list[tuple[str, str, str]] = [
+        (str(r.id), r.cos_key or "", r.thumbnail_key or "") for r in rows
+    ]
     cleared = 0
     for row in rows:
         db.delete(row)
         cleared += 1
     # 簇② 连带：硬删后清尾同步账本（删 SFV 行 + pending 审计日志标 done），
     # 否则 30 天后 run_cleanup 仍会选中悬空 pending 行空转一轮。
-    sync_writes.hard_delete_records(db, [str(r.id) for r in rows])
+    ids = [t[0] for t in purge_targets]
+    sync_writes.hard_delete_records(db, ids)
     db.commit()
-    return ApiResponse(data=TrashClearOut(cleared=cleared))
+
+    # 2026-10-14（台账 §7.25① · 批次 8 收口）：**真清空**。原实现只删 DB 行，Qdrant 向量与
+    # 对象存储原件原样残留 ⇒ 用户以为"回收站已清空"，实际数据仍可被检索命中、仍占着存储
+    # （**隐私承诺相关**）。清尾抽到 `services/content_purge.py`（30 天清理任务同一根因共用）。
+    # ⚠️ 刻意放在 **DB 提交之后**：主提交失败时绝不能先去毁向量/原件；提交后清尾失败只留孤儿
+    # （即原状），并如实回包 `warnings` —— 不假装"全部清干净"。
+    warnings: list[str] = []
+    vectors_purged = 0
+    objects_purged = 0
+    if ids:
+        vectors_purged, vw = content_purge.purge_vectors(ids)
+        warnings.extend(vw)
+        objects_purged, ow = content_purge.purge_objects(purge_targets)
+        warnings.extend(ow)
+    if warnings:
+        logger.warning("回收站清空：云端清尾未完全成功 %s", warnings)
+    return ApiResponse(
+        data=TrashClearOut(
+            cleared=cleared,
+            vectors_purged=vectors_purged,
+            objects_purged=objects_purged,
+            warnings=warnings,
+        )
+    )

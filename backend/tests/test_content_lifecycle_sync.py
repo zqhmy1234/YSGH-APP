@@ -436,3 +436,51 @@ def test_trash_clear_cleans_ledger(db_user, as_user):
     ).scalars().all() == []
     logs = db.execute(select(DeletedLog).where(DeletedLog.content_id == cid)).scalars().all()
     assert all(lg.cleanup_status != "pending" for lg in logs), logs
+
+
+def test_trash_clear_purges_vectors_and_objects(db_user, as_user, vector_collection):
+    """§7.25①：清空回收站必须**连云端一起清**（Qdrant 向量 + 对象存储原件/缩略图）。
+
+    原实现只删 DB 行 ⇒ 用户以为"彻底清空"，实测数据仍可被检索命中、仍占着对象存储
+    （**隐私承诺相关**）。本用例把三处都钉住：DB 行 / 向量点位 / 两个对象。
+    """
+    from app.services.external.storage import get_storage_backend
+    from app.services.vector_store import default_collection, get_store, point_id_for
+
+    db, user = db_user
+    c = _make_content(db, user, content_type="photo")
+    cid = str(c.id)
+    cos_key = f"test-trash/{cid}.jpg"
+    thumb_key = f"test-trash/{cid}_thumb.jpg"
+    c.cos_key = cos_key
+    c.thumbnail_key = thumb_key
+    db.commit()
+
+    storage = get_storage_backend()
+    storage.put_object(cos_key, b"orig")
+    storage.put_object(thumb_key, b"thumb")
+    assert storage.object_exists(cos_key)
+
+    store = get_store()
+    store.upsert_content(cid, "回收站清空用例", [0.01] * 1024, {1: 1.0}, {"content_type": "photo"})
+    pid = point_id_for(cid)
+    assert store.client.retrieve(collection_name=default_collection(), ids=[pid]) != []
+
+    from fastapi.testclient import TestClient
+
+    cli = TestClient(as_user(user))
+    assert cli.delete(f"/api/v1/contents/{cid}").status_code == 200
+    r = cli.request("DELETE", "/api/v1/trash")
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["warnings"] == [], data  # 清尾全成功 ⇒ 不得有告警
+    assert data["vectors_purged"] == 1, data
+    assert data["objects_purged"] == 2, data
+
+    db.expire_all()
+    assert _fetch(db, cid) is None, "DB 行应已硬删"
+    assert not storage.object_exists(cos_key), "原件应已删除"
+    assert not storage.object_exists(thumb_key), "缩略图应已删除"
+    assert store.client.retrieve(
+        collection_name=default_collection(), ids=[pid]
+    ) == [], "向量应已删除（否则检索仍会命中已被删除的内容）"
