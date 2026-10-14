@@ -502,11 +502,26 @@
 	}
 
 	// 卡PA D1：缩略图后台批次落地回调 → 整组 days.value 浅替换（改数据+一次性赋值，禁逐条 push）
+	// ⚠️ 2026-10-14（台账 §4.20 批次 5 · RC-3）：**同帧合并**。缩略图池每 4 张回调一次
+	// （步长在 `timeline.uts` 的缩略图池），而本回调一次要做「groupDays 全量重建 +
+	// `pa.attachAll`（内含 `new Map()` 重建）+ `days.value` 整组替换」——50 张照片即十余次
+	// 整树重建挤在几百毫秒内 ⇒ 列表掉帧、点击无响应（用户感知为"滑动不丝滑"）。
+	// 现改为 16ms 窗口内**只渲染一次**（同帧合并）；尾批必定落帧，数据不丢。
+	let thumbBatchTimer = 0
 	function onThumbBatch(): void {
 		if (!pageAlive.value || !loaded.value) {
 			return
 		}
-		renderFromEvents(currentEvents)
+		if (thumbBatchTimer != 0) {
+			return // 本帧已排队，由它统一渲染（避免重复整树重建）
+		}
+		thumbBatchTimer = setTimeout((): void => {
+			thumbBatchTimer = 0
+			if (!pageAlive.value || !loaded.value) {
+				return // 卸载/未加载：丢弃本帧渲染（同原守卫）
+			}
+			renderFromEvents(currentEvents)
+		}, 16)
 	}
 
 	// 卡PA D2：渲染出口（days/pending 整组浅替换；不清空、不回退加载态防闪屏）
