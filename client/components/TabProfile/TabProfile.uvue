@@ -103,7 +103,38 @@
 		lastLoadMs = now
 		loadProfileStats()
 	}
+	// 2026-10-14（台账 §4.20 · 用户反馈"每次跳转都要等数据"）：**统计数字持久缓存**。
+	// 原实现切到「我的」时三个统计从初值起、要等 `fetchRecentContents(100, [])` 回来才有数字
+	// （用户感知"先空一会"）。现进入先用上次计数渲染（秒出），再由 `loadProfileStats` 覆盖。
+	// 只存 3 个整数——**无用户文本、无序列化风险**；读写失败一律静默（绝不因缓存影响主流程）。
+	const PROFILE_STATS_KEY = 'yishu_profile_stats'
+	function restoreProfileStats(): void {
+		try {
+			const raw = uni.getStorageSync(PROFILE_STATS_KEY) as string
+			if (raw == '') {
+				return
+			}
+			const parts = raw.split(',')
+			if (parts.length != 3) {
+				return
+			}
+			statMemories.value = parseInt(parts[0])
+			statPhotos.value = parseInt(parts[1])
+			statVoices.value = parseInt(parts[2])
+		} catch (e) {
+			console.log('[dbg-profile] 统计缓存回放失败（忽略）: ' + e)
+		}
+	}
+	function persistProfileStats(): void {
+		try {
+			uni.setStorageSync(PROFILE_STATS_KEY,
+				'' + statMemories.value + ',' + statPhotos.value + ',' + statVoices.value)
+		} catch (e) {
+			console.log('[dbg-profile] 统计缓存写入失败（忽略）: ' + e)
+		}
+	}
 	onMounted((): void => {
+		restoreProfileStats()
 		loadProfileStatsIfStale()
 	})
 	watch((): number => props.shownSeq, (n: number): void => {
@@ -135,6 +166,7 @@
 			statMemories.value = out.hits.length
 			statPhotos.value = photos
 			statVoices.value = voices
+			persistProfileStats()
 		})
 	}
 

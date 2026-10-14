@@ -75,6 +75,7 @@
 	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play_interview'
 	import { startRecord, stopRecord, transcribeWav, AsrResult } from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
+	import { backToShell } from '@/utils/shell_state'
 
 	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
 	const fallbackQuestions: Array<InterviewQuestion> = [
@@ -301,16 +302,19 @@
 	}
 
 	// 跳过访谈
+	// 🚨 2026-10-14（台账 §4.20）：原用 `reLaunch` 回首页 ⇒ **重建整个壳**（四个 tab 重挂 +
+	// 时间轴/画像的内存缓存与 TTL 一并作废 ⇒ 回首页要重拉数据）。改走 `backToShell`：
+	// 栈内有壳就零销毁切回 index；深链直入（栈内无壳）时它内部自会 `reLaunch` 兜底。
 	function skipInterview(): void {
 		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
 		setTimeout(() => {
-			uni.reLaunch({ url: '/pages/shell/shell' })
+			backToShell('index', '')
 		}, 600)
 	}
 
 	// 完成 → 进入时间轴
 	function goHome(): void {
-		uni.reLaunch({ url: '/pages/shell/shell' })
+		backToShell('index', '')
 	}
 </script>
 

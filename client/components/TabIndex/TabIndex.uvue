@@ -247,7 +247,7 @@
 	import { PhotoAttach } from '@/composables/usePhotoAttach'
 	import { EventOps } from '@/composables/useEventOps'
 	import { requestShellTab, shellSheetSeq, shellSheetMode } from '@/utils/shell_state'
-	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
+	import { fetchTimelineAsync, getCachedTimeline, getSnapshotTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
 		toggleVoice,
 		isVoiceActive,
@@ -359,7 +359,18 @@
 			applyFetchedEvents(hit.events)
 			refreshSilently()
 		} else {
-			reload()
+			// 冷启动：内存缓存必空（模块级数组随进程销毁）⇒ 先用**持久快照**立刻出画面，
+			// 再静默刷新覆盖（2026-10-14 · 用户反馈"每次打开都要等一会数据才出现"）。
+			// 快照缺失/过旧（>7 天）/解析失败都返回 null ⇒ 此时才走全量拉取（reload）。
+			const snap = getSnapshotTimeline()
+			if (snap != null) {
+				const ageH = ((Date.now() - snap.fetchedAt) / 3600000).toFixed(1)
+				console.log('[dbg-index] timeline snapshot hit, age=' + ageH + 'h -> instant render')
+				applyFetchedEvents(snap.events)
+				refreshSilently()
+			} else {
+				reload()
+			}
 		}
 		try {
 			const photoWatch = createPhotoWatch()

@@ -427,14 +427,18 @@
 	 * 后端 /search 的 q 要求非空（SearchRequest min_length=1），空词语义搜索发不出去，
 	 * 所以「刚进页面还什么都没搜」时用最近内容兜底，结果区不再空白。
 	 * score 恒为 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
+	 *
+	 * 2026-10-14（台账 §4.20 · 用户现场反馈「每次跳转都要等一会数据才出现」）：
+	 * **后台刷新不再清空已显示结果**。原实现无条件 `loading.value = true` ⇒ 即便列表里
+	 * 已有结果（刚保存记录触发的刷新、或切回本 tab），界面也会先退回「搜索中…」再重画，
+	 * 用户感知就是"每次都重新加载一遍"。现口径与 `TabIndex` 的 stale-while-revalidate
+	 * **一致**：只有当前**没有**结果时才显示加载态；有结果就静默替换（失败也不清空）。
 	 */
-	// RecordSheet 保存成功回调：刷新最近内容兜底列表
-	function onRecordSaved(): void {
-		loadRecent()
-	}
-
 	function loadRecent(): void {
-		loading.value = true
+		const hasData = hits.value.length > 0
+		if (!hasData) {
+			loading.value = true
+		}
 		fetchRecentContents(30, filterContentTypes()).then((out) => {
 			loading.value = false
 			if (out == null || out.hits.length == 0) {

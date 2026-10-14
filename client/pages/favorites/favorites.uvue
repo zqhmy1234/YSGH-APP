@@ -138,6 +138,7 @@
 	import { resolveMediaUrl } from '@/utils/config'
 	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
 	import { favoritesList, favoriteRemove } from '@/utils/play_favorite'
+	import { backToShell } from '@/utils/shell_state'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -486,8 +487,12 @@
 	}
 
 	function goTimeline(): void {
-		// F4b 主按钮「去时间轴逛逛」→ 时间轴首页（index 非 navigateTo 可达的普通栈页，reLaunch 复位）
-		uni.reLaunch({ url: '/pages/shell/shell' })
+		// F4b 主按钮「去时间轴逛逛」。
+		// 🚨 2026-10-14（台账 §4.20 · 用户现场反馈「每次跳转都要等数据」）：原实现 `reLaunch`
+		// **重建整个壳** ⇒ 四个 tab 全部重挂、`TabIndex`/`TabProfile` 的内存缓存与 60s TTL
+		// 一并作废 ⇒ 回首页必须重新拉一次时间轴（用户感知即"每次跳转都慢"）。
+		// 壳本来就在栈里 ⇒ 改走 `backToShell`（栈内回退 + 零销毁切到 index）。
+		backToShell('index', '')
 	}
 
 	function goBack(): void {
