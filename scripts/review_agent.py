@@ -526,6 +526,30 @@ def check_env_template() -> tuple[bool, str]:
     return False, "env 模板与 config.py 漂移：\n" + out.strip()
 
 
+def check_agg_equivalence() -> tuple[bool, str]:
+    """端侧 L0 聚类（ST-DBSCAN）**剪枝版 ↔ 仓库参考端逐位等价**校验——2026-10-14（台账 §4.20 RC-7）。
+
+    背景：`client/utils/agg/st_dbscan.uts` 是端侧 L0 聚类核心，2026-10-14 为解 O(n²) 卡主线程做了
+    "语义逐位等价"的剪枝（时间窗 + 空间盒 + 团快路）。这类优化最危险的失效模式是**悄悄改变边界点
+    归属**——编译能过、常规测试也不一定覆盖（端侧断言依赖真机 agg-check 页）。
+    口径：复用 `scripts/bench_st_dbscan.py --quick`（**单一判据**，不在此重写比对规则）：它把剪枝版
+    与仓库 Python 参考端在边界 + 随机模糊用例上逐位对拍。
+    退出码映射：0=全等 → 放行；1=存在不等 → **阻断**；2=环境错误（脚本缺失/导入失败）→ 降级放行。
+    仅 `--full` 跑（quick 也要数秒，预提交不该背这个）。
+    """
+    script = ROOT / "scripts" / "bench_st_dbscan.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}（等价性无法复现）"
+    code, out = run([sys.executable, str(script), "--quick"])
+    text = out.strip()
+    if code == 0:
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        return True, lines[-1] if lines else "ST-DBSCAN 剪枝版与参考端逐位等价"
+    if code == 2:
+        return True, "[降级] 无法运行等价性基准（环境问题）：\n" + text[-500:]
+    return False, "ST-DBSCAN 剪枝版与参考端**不等价**（簇列表不一致）：\n" + text[-800:]
+
+
 def check_openapi_snapshot() -> tuple[bool, str]:
     """契约快照 `docs/openapi.json` 是否与后端实现一致——2026-09-24 重构波 B10-g（缺陷 D14-7）。
 
@@ -803,6 +827,8 @@ def main() -> int:
     if args.full:
         # 2026-10-11 新增：数据安全审计（此前是孤儿脚本，无任何调用方）
         checks["audit_security"] = check_audit_security()
+        # 2026-10-14 新增：端侧 L0 聚类剪枝版的逐位等价性（台账 §4.20 RC-7；仅全量，数秒）
+        checks["agg_equivalence"] = check_agg_equivalence()
         # 客户端编译门：仅全量（单次 20~56s，放进每次 commit 不可接受）；缺 HBuilderX 自动降级放行
         if not args.skip_client_compile:
             checks["client_compile"] = check_client_compile()
