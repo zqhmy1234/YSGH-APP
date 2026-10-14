@@ -57,3 +57,71 @@ def test_index_after_commit_logs_when_text_is_empty(caplog):
         _index_after_commit(None, content)
 
     assert any("索引跳过" in r.getMessage() for r in caplog.records), caplog.text
+
+
+# ── §7.22（批次 8 续审）：**生产环境不得用规则猜测冒充 LLM 输出** ──────────────
+# 两处 mock 通道（画像标注 / L2 归并）原本都没有生产守卫，而它们的产物会**入库并展示**：
+# 前者写进 `user_profile.dimensions` 并在画像页展示；后者按 `confidence >= 0.7` 把事件**转正**。
+
+
+class _StubSpec:
+    """`annotate` 只用到 spec 的四个属性（duck typing），故无需构造真实维度对象。"""
+
+    def __init__(self) -> None:
+        self.id = "test_dim"
+        self.values = ["喝茶"]
+        self.aliases: dict[str, str] = {}
+        self.multi_value = False
+
+
+def _stub_annotate_env(monkeypatch, ann, app_env: str) -> None:
+    """把 annotate 的外部依赖全部打桩：LLM 不可用 + 标注池用桩 + 环境指定。"""
+    monkeypatch.setattr(ann, "llm_available", lambda: False)
+    monkeypatch.setattr(ann, "get_schema", lambda: None)
+    monkeypatch.setattr(ann, "_pool_for", lambda schema, hint: [_StubSpec()])
+    monkeypatch.setattr(settings, "app_env", app_env)
+
+
+def test_annotate_refuses_mock_in_production(monkeypatch):
+    """§7.22：生产 + LLM 不可用 ⇒ **返回空**（不产出画像命中），绝不返回规则猜测。"""
+    from app.services.llm_ops import annotate as ann
+
+    _stub_annotate_env(monkeypatch, ann, "production")
+
+    assert ann.annotate("今天和妈妈喝茶") == []
+
+
+def test_annotate_mock_still_available_outside_production(monkeypatch):
+    """§7.22 的另一半：非生产保持原 mock 通道（冷启动与测试依赖它）。"""
+    from app.services.llm_ops import annotate as ann
+
+    _stub_annotate_env(monkeypatch, ann, "development")
+
+    hits = ann.annotate("今天和妈妈喝茶")
+    assert len(hits) == 1
+    assert hits[0]["enum_value"] == "喝茶"
+
+
+def test_event_merge_mock_not_promoted_in_production(monkeypatch):
+    """§7.22：生产 + LLM 不可用 ⇒ confidence 压到 0（**不转正**，候选只进「待确认」）。
+
+    调用方按 `confidence >= 0.7` 转正 ⇒ 断言必须低于该门槛，否则这条用例形同虚设。
+    """
+    from app.services.llm_ops import event_merge as em
+
+    monkeypatch.setattr(em, "llm_available", lambda: False)
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    out = em.merge_verdict({"tag": "旅行", "tag_hint": [], "time_range": [], "place_hint": ""})
+    assert out["confidence"] < 0.7
+
+
+def test_event_merge_mock_keeps_legacy_confidence_outside_production(monkeypatch):
+    """§7.22：非生产保持原值（有标签 0.8）——冻结的是"生产不造假"，不是改掉 mock 语义。"""
+    from app.services.llm_ops import event_merge as em
+
+    monkeypatch.setattr(em, "llm_available", lambda: False)
+    monkeypatch.setattr(settings, "app_env", "development")
+
+    out = em.merge_verdict({"tag": "旅行", "tag_hint": [], "time_range": [], "place_hint": ""})
+    assert out["confidence"] == 0.8

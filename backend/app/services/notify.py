@@ -171,6 +171,10 @@ def _coerce_content_id(value) -> str | None:
     try:
         uuid.UUID(value.strip())
     except ValueError:
+        # 2026-10-14（台账 §7.23 · 批次 8 续审）：**非法值置 None 要留痕**。原为静默返回 None ⇒
+        # 消息的 `content_id` 出参为空、客户端「跳转详情」入口静默失效，而日志里毫无线索
+        # （无法区分"消息本就没有关联内容"与"关联值被丢弃"）。口径同 §7.20。
+        logger.warning("消息 payload.content_id 非 UUID，已置空：%r", value)
         return None
     return value.strip()
 

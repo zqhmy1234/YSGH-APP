@@ -6,12 +6,18 @@
   （循环导入），故共享 router 落在本模块。
 - `_to_out` / `_attach_thumb`：出参映射与 photo 缩略图签票兜底（列表/详情/收藏共用）。
 """
+import logging
+
 from app.api import make_router
 from app.db.models import Content
 from app.schemas.content import ContentOut
 from app.services.external.media_url import content_urls
 
 router = make_router(prefix="/api/v1/contents", tags=["contents"])
+
+# 2026-10-14（台账 §7.23 · 批次 8 续审）：本模块此前**没有日志设施**，于是缩略图签票失败
+# 只能 `except Exception: pass` 静默吞掉（同仓同款容错 recall/favorites 都记日志）。
+logger = logging.getLogger("yishu.contents")
 
 
 def _to_out(c: Content) -> ContentOut:
@@ -43,6 +49,10 @@ def _attach_thumb(item: ContentOut, c: Content, user_id: str) -> ContentOut:
         try:
             _orig, thumb = content_urls(None, c.thumbnail_key, user_id)
             item.thumbnail_url = thumb
-        except Exception:  # noqa: BLE001, S110 —— 票失败降级无图，不影响列表主链路（recall/favorites 同款容错）
-            pass
+        except Exception as exc:  # noqa: BLE001 —— 票失败降级无图，不影响列表主链路（同款容错）
+            # 2026-10-14（台账 §7.23 · 批次 8 续审）：**原为 `pass`（零日志、零计数）**。
+            # 签票失败会让列表/详情/收藏的 `thumbnail_url` 全站静默为空（客户端表现为空白图），
+            # 而 storage/签名配置类故障因此**没有任何可观测信号**。同仓 recall/favorites 同款
+            # 容错都记日志 ⇒ 此处补齐（口径同 §7.20：降级要可观测）。
+            logger.warning("缩略图签票失败，降级无图 content=%s: %s", c.id, exc)
     return item

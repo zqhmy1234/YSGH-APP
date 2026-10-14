@@ -24,6 +24,11 @@ logger = logging.getLogger("yishu.pipeline_ext.profile")
 
 def annotate_on_ingest(db: Session, content: Content) -> None:
     if not (content and (content.text or "").strip()):
+        # 2026-10-14（台账 §7.23 · 批次 8 续审）：**跳过必须留痕**（原为静默 return）。
+        # 本钩子在内容主提交后被 pipeline 调用 ⇒ 没文本（照片 caption 未产出 / 语音转写为空）
+        # 时画像标注静默不发生，而管线状态仍显示成功 ⇒ "这条记忆为什么没进画像"无从判断。
+        # 口径同 §7.20/§7.12：降级要可观测，不静默。
+        logger.info("[画像标注] 跳过：内容无文本 content=%s", getattr(content, "id", None))
         return
     from app.services.profile_annotator import annotate_content
 

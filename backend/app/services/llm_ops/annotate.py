@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+from app.core.config import settings
 from app.services.llm_ops.base import chat_text, llm_available
 from app.services.llm_ops.parsing import extract_json_object
 from app.services.profile_schema import DimensionSpec, EnumSchema, get_schema
@@ -56,8 +57,21 @@ def annotate(
     if llm_available():
         try:
             return _llm_annotate(text, pool)
-        except Exception as exc:  # noqa: BLE001 —— LLM 失败降级 mock（不阻断标注管线）
-            logger.warning("画像标注 LLM 调用失败，降级 mock: %s", exc)
+        except Exception as exc:  # noqa: BLE001 —— LLM 失败降级（不阻断标注管线）
+            logger.warning("画像标注 LLM 调用失败，降级: %s", exc)
+    # 2026-10-14（台账 §7.22 · 批次 8 续审）：**生产环境不得用规则猜测冒充画像标注**。
+    # `_mock_annotate` 是"种子值 + 别名子串匹配"的确定性猜测（confidence 恒 0.85），其返回值
+    # 经 `profile_annotator` 写进 `user_profile.dimensions` / `profile_annotation_pool` 并在
+    # 画像页展示 ⇒ 生产漏配 `DASHSCOPE_API_KEY` 时，"AI 对我的画像判断"其实是子串匹配的结果。
+    # 同仓护栏（`external/dashscope.py:182-193`）在 production + 不可用时 fail-closed，此处取
+    # 同一口径的「**不编造**」：返回空（这条内容不产生画像命中）+ error 级日志。
+    # 非生产（dev/test/联调）保持原 mock 通道——冷启动与测试依赖它（见 `confidence` 形参）。
+    if settings.app_env == "production":
+        logger.error(
+            "生产环境 LLM 不可用（未配 DASHSCOPE_API_KEY 或调用失败），画像标注不产出结果"
+            "（拒绝用规则猜测冒充 LLM 输出）"
+        )
+        return []
     return _mock_annotate(text, pool, confidence=confidence)
 
 
