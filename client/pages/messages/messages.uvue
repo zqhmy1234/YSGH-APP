@@ -67,6 +67,7 @@
 import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage, putCachedMessages, getCachedMessages, putCachedUnread, getCachedUnread } from '@/utils/play_messages'
 	import { formatIsoShortTime } from '@/utils/time'
 	import { backToShell } from '@/utils/shell_state'
+	import { openCapsule, listCapsules } from '@/utils/capsule_api'
 
 	// ── 响应式状态 ──
 	let unreadCount = ref(0)
@@ -248,6 +249,14 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		// fetchTodayEcho null 时不清空旧卡？——清。旧卡 contentId 指向的内容可能已被删，
 		// 点「重温」必失败；诚实回落「今天没有回响」
 		loadEcho()
+		// 2026-10-15（台账 §4.20 ㉕）：**触发胶囊到期扫描**。
+		// 后端把惰性扫描挂在 `GET /capsules` 上（`capsule_scan.maybe_scan_due`，30s 节流；
+		// 项目无进程内定时器，`api/capsules.py:117-137` 明写「惰性触发入口（GET /capsules
+		// 顺带执行）」）⇒ **必须由客户端调它**，否则「封存 → 到期 → 产消息」整条链永不启动
+		// （修复前实测：全仓零调用，封存进去就再也没消息）。
+		// 放消息页：到期提醒的消费端就在这里；不 await、不占首屏渲染路径（缓存优先渲染已先执行）、
+		// 失败静默（api 层已 toast，且此调用只为触发服务端扫描，不作为本页数据源）。
+		listCapsules()
 	})
 
 	/** 消息类型路由（W1-3 拍板：关怀→AI 页 / 回响→弹层 / 复盘·语音完成→就地展开 / 其余仅标已读） */
@@ -278,6 +287,20 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		}
 		if (msg.msgType == 'echo') {
 			openEchoFromMessage(msg)
+			return
+		}
+		if (msg.msgType == 'capsule_due') {
+			// 2026-10-15（台账 §4.20 ㉕）：**胶囊到期 → 先开启、再看内容**。
+			// 后端契约（`api/capsules.py:150-173`）：open **幂等**（已 opened 返回现态），
+			// 未到期 409（message 带剩余天数，api 层已 toast 显式原因）⇒ 此处不拦截、不伪造成功。
+			// 原实现完全没调 open ⇒ 胶囊在库里**永远停在 due**、客户端也拿不到「打开胶囊」这个动作。
+			// 顺序：先开（服务端状态推进），再跳详情（内容本体与是否开启无关，失败了也照样能看）。
+			if (msg.capsuleId != '') {
+				openCapsule(msg.capsuleId)
+			}
+			if (msg.contentId != '') {
+				uni.navigateTo({ url: '/pages/detail/detail?contentId=' + msg.contentId })
+			}
 			return
 		}
 		// FE1（BA1）：MessageOut.content_id 非空 → 直达关联记忆详情（跳转写法同 onEchoReplay 先例）；
