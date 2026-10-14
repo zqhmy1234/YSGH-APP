@@ -87,12 +87,28 @@
 		shownSeq: { type: Number, default: 0 },
 		savedSeq: { type: Number, default: 0 }
 	})
-	onMounted((): void => {
+	// 2026-10-14（台账 §4.20 批次 5 · RC-4）：**切 tab 加 60s TTL**。
+	// 原实现每次切到「我的」tab 都 `loadProfileStats()` ⇒ `fetchRecentContents(100, [])`
+	// ——**一次拉 100 条内容重算全部统计**。用户在四个 tab 间来回点，就是连续打接口 +
+	// 每次重算（掉帧）。口径与 `TabIndex` 的 `SHOW_REFRESH_TTL`（60000）一致：TTL 内切回不重拉。
+	// 注意：记录保存成功（`savedSeq` → `onRecordSaved`）走的是**直调** `loadProfileStats()`，
+	// 不受本 TTL 影响——保存后必须立刻反映新数据。
+	const PROFILE_TTL: number = 60000
+	let lastLoadMs = 0
+	function loadProfileStatsIfStale(): void {
+		const now = Date.now()
+		if (lastLoadMs != 0 && now - lastLoadMs < PROFILE_TTL) {
+			return // TTL 内：沿用已有数据（不闪、不打接口）
+		}
+		lastLoadMs = now
 		loadProfileStats()
+	}
+	onMounted((): void => {
+		loadProfileStatsIfStale()
 	})
 	watch((): number => props.shownSeq, (n: number): void => {
 		if (n > 0) {
-			loadProfileStats()
+			loadProfileStatsIfStale()
 		}
 	})
 	watch((): number => props.savedSeq, (n: number): void => {

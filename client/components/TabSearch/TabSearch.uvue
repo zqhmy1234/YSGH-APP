@@ -77,6 +77,7 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
+	import { shellActiveTab } from '@/utils/shell_state'
 	import {
 		toggleVoice,
 		fmtVoiceTime,
@@ -287,11 +288,28 @@
 	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncActiveCard
 	watch(hits, (): void => { rebuildVoice() })
 	watch(activeFilter, (): void => { rebuildVoice() })
-	watch(voiceCurrentId, (): void => { syncActiveCard() })
-	watch(voicePlaying, (): void => { syncActiveCard() })
-	watch(voiceProgress, (): void => { syncActiveCard() })
-	watch(voiceCurSec, (): void => { syncActiveCard() })
-	watch(voiceTotalSec, (): void => { syncActiveCard() })
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-2）：**可见性守卫**。本组件在壳内**常驻**
+	// （shell 用 `v-show` 切换，组件不销毁）⇒ 隐藏时这些 watch 仍被 audio_player 的全局 ref
+	// 驱动，而 `syncActiveCard()` 要遍历**全部**语音结果卡重算播放态——纯空转
+	// （配合 RC-1 的 1% 粒度后已由 30Hz 降到约 1.7Hz，但仍是"看不见却在算"）。
+	// 现改为：**只有壳的当前 tab 就是 search 时才重算**；切回本 tab 时补一次同步（见下方 watch）。
+	function syncActiveCardIfVisible(): void {
+		if (shellActiveTab.value != 'search') {
+			return
+		}
+		syncActiveCard()
+	}
+	watch(voiceCurrentId, (): void => { syncActiveCardIfVisible() })
+	watch(voicePlaying, (): void => { syncActiveCardIfVisible() })
+	watch(voiceProgress, (): void => { syncActiveCardIfVisible() })
+	watch(voiceCurSec, (): void => { syncActiveCardIfVisible() })
+	watch(voiceTotalSec, (): void => { syncActiveCardIfVisible() })
+	// 切回本 tab 时补同步一次（隐藏期间被守卫跳过的变更需在此对齐，否则进度条会等下一跳才出现）
+	watch(shellActiveTab, (t: string): void => {
+		if (t == 'search') {
+			syncActiveCard()
+		}
+	})
 
 	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
 	let textResults = computed((): Array<TextResult> => {
