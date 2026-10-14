@@ -5,61 +5,83 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-10-11
-**分支**：`feature/agent-closeout-20261008` ｜ **最近提交**：`bbb1c3e`（工作区另有在途批次，见下）
+**最后更新**：2026-10-14
+**分支**：`feature/agent-closeout-20261008` ｜ **最近提交**：`2881269`（本日已提交 4 批）
 
 ## 正在做什么
 
-**harness / 门禁系统性更新 +「新包可跑」修复** —— 代码与文档侧**已全部交付**（见 `docs/决策台账.md`
-§4.18 与 §4.19），现在**卡在一步外部依赖**：ngrok 静态域名与 authtoken 需用户领取（阻塞 1）。
+**接线缺口与性能根因修复**（计划 10 批 · 决策与进展见 `docs/决策台账.md` §4.20 与 §7.12~§7.17）——
+已落成 4 批：
 
-**已交付要点**（细节见台账 §4.19）：
-- 环境漂移根治（§4.18）：`isDevCarrier()` 强制打包产物走 `PROD_BASE_URL`；三件套一键回写脚本
-- 解阻塞：隧道判定按「固定 / 临时」分类，固定地址（ngrok 静态域名）**合法放行**，`preflight -AllowTunnel` 显式声明
-- 出包链脚本化：`scripts/dev/{tunnel,write_base_url,start_all,status,pack}.ps1`（**start_all/status 实测全绿**）
-- 门禁补 4 项：客户端编译门（`--full` + 出包门）、`client/` 纳入密钥扫描（**含全量模式**）、
-  `audit_security` 接入（备份域只告警）、`port_consistency`、`harness_state`
-- state 改造：`STATE.md` 落地；外部审计 `validate-harness.mjs` **76 → 100/100**
-- 客户端出网头统一到 `buildHeader()`/`commonHeader()`（含 **auth 登录链**与 **audio 下载**——
-  此前不带通用头，ngrok 拦截页会导致「装了却进不去」）
+| 批 | 提交 | 内容 |
+|---|---|---|
+| 0 基线 | `3766f3e` | 四路只读审计 **47 条带行号证据**落盘 `docs/审计_接线缺口与性能根因_20261014.md`；台账补 §7.12~§7.16 |
+| 1 静默降级 | `8c5a702` | 服务间**令牌指纹对账**、镜像/RAG 降级**计数**、`agent.health()` 首个调用方（`scripts/dev/health_probe.py`）、`status.ps1` 增检出 |
+| 2 定位 | `b8d57ac` | 照片定位端到端 + **坐标系系统性偏移根治** + EXIF GPS 兜底 + **编译门假通过修复** |
+| 3 分类 | `2881269` | 照片手选分类端到端（含契约放宽 `text` 可空）+ 删「AI 已预选」假状态 |
+
+**本波已修的头号根因**（细节见台账 §4.20）：
+
+1. **坐标系系统性偏移（不报错，只表现为"地点不准"）**：坐标来源全是 WGS84（客户端
+   `type:'wgs84'`、照片 EXIF），而高德 REST regeo **只认 GCJ-02**，全后端**零转换**
+   ⇒ 地名偏 **300~700 米**且无任何报错。实测偏移 上海 481m / 北京 555m。
+   已在 `services/external/amap.get_place` 入口设**单一转换点**（入库仍存 WGS84）。
+2. **编译门假通过（影响所有 client 改动的门禁可信度）**：`_artifact_touched_since` 用
+   `time.monotonic()`（量级 1e5）与文件 `st_mtime`（Unix 纪元 1.7e9）比大小 ⇒ **恒真**；
+   叠加 `cli launch --compile true` 在 HBuilderX **未启动**时**根本不编译**（只打印
+   「未检测到已打开的HBuilderX」）⇒ 门禁在"编译从未发生"时报 `ok`。已修（墙上时钟 +
+   识别该拒绝语按环境错误报 + 调用前 `cli open` 自动拉起）。修后三次**真**编译
+   （88s / 56s / 103s）均留可核日志。
+3. **镜像/RAG 静默降级**：`if not token: return` 无日志、无计数 ⇒ 表现为"AI 说已记住、
+   出卡，但时间轴空白"。已加降级计数 + 两侧令牌指纹对账（**跨服务不一致启动即可见**）。
 
 ## 下一步（按优先级）
 
-1. **等云打包完成**（2026-10-12 01:17 已提交云端，类型＝Android 自有证书）→ 下载 APK →
-   `pack.ps1 -SkipPack -Apk <apk> -Deploy`（尸检 + 投放 `deploy/download/`）
-2. **真机验收（无数据线）**：安装 APK，重点验证 **图片是否正常**（见阻塞 1）、
-   空态页 / 时间轴 / AI 对话 / 画像四页往返
-3. 百炼凭据续期后关掉 `MOCK_EXTERNAL_AI`（当前审核链走 mock 直通，仅过渡）
-
-**已完成**：静态域名 `coleslaw-absence-harvest.ngrok-free.dev`（永久固定）已领取并配置
-（`ngrok config add-authtoken` 完成）；隧道已起；三件套已切出包态；前置门 **8 节全绿**（含新增的
-「固定地址隧道 · 已与 .tunnel-url 核对」判定与客户端编译门 43s）。
+1. **批次 4**：假开关诚实化——隐私开关（`privacy_ai_chat`/`privacy_echo`）接真消费者、
+   `settings` 三键、胶囊列表入口、EchoSheet 真图、无法自闭环的占位入口隐藏
+2. **批次 5/6**：UI 流畅度 12 条根因——播放态**模板函数插值 × 33ms 时钟**、缩略图**整树重建**
+   与分页只增不减、隐藏 tab **30Hz 空转**、回壳 `redirectTo` 白屏等（详见审计文档 §3）
+3. **批次 7**：把本轮根因**固化为门禁规则**（storage 键"写入无消费者"、契约常量零调用、
+   模板函数插值、`if not token: return` 型静默降级扫描）+ 台账/教训/STATE 收尾
+4. **多模态余项（批 3.5）**：蜂窝省流上传五步（**须有真机验证条件**，见阻塞 3）、
+   `attachments` 契约三层（client→backend→agent）、ShareSheet
+5. **真机验收**：装 APK 后按四组清单验——图片是否裂 / 定位是否落库 / 流畅度 / 附件可用性
 
 ## 阻塞
 
-1. 🟡 **图片通路待真机验证**（ngrok 免费版拦截页）：实测本机带浏览器 UA 的请求会拿到警告页 HTML；
-   `ngrok-skip-browser-warning` 头可过（API 已统一带），但 **`<image>` 组件无法加自定义头** ⇒
-   只能靠 Android 原生 UA（通常不含 Mozilla）放行。**若真机图片全裂**，二选一：
-   ① 媒体改走 `uni.downloadFile({header})` + 本地路径显示（改动面较大）；
-   ② 换 cloudflared named tunnel / ngrok 付费（去掉拦截页）。
-2. agent 侧 LLM 暂用系统变量注入的 DeepSeek key（`deepseek-ugsimulator`）；
-   百炼 Token Plan 到期未续 ⇒ 护栏/生成链走 mock（`MOCK_EXTERNAL_AI=true`）
+1. 🟡 **图片通路待真机验证**（ngrok 免费版拦截页 `ERR_NGROK_6024`）：带浏览器 UA 的请求会
+   拿到警告页 HTML；`ngrok-skip-browser-warning` 头可过（API 已统一带），但 **`<image>` 组件
+   无法加自定义头** ⇒ 只能靠 Android 原生 UA（通常不含 Mozilla）放行。若真机图片全裂，二选一：
+   ① 媒体改走 `uni.downloadFile({header})` + 本地路径显示（改动面较大）；② 换 cloudflared
+   named tunnel / ngrok 付费（去掉拦截页）。
+2. agent 侧 LLM 暂用系统变量注入的 DeepSeek key（`deepseek-ugsimulator`）；百炼 Token Plan
+   到期未续 ⇒ 护栏/生成链走 mock（`MOCK_EXTERNAL_AI=true`）。
+3. 🟡 **上传管线类修复受"验证条件"限制**：蜂窝省流上传等改动按 2026-09-23 既定纪律需
+   「编译门 **+ 真机验证条件**」才可动；当前手机侧不可验 ⇒ 已如实挂账（台账 §4.20 批次 3 节），
+   **不得以"未验证的改动"填补**。
 
 ## 权威指针（想知道 X 去哪看）
 
 | 想知道 | 去哪 |
 |---|---|
 | 为什么这么决策 / 待拍板 / 未关闭缺陷 | `docs/决策台账.md`（§5 待拍板 · §7 未关闭） |
+| 本波四类问题的带行号证据（47 条） | `docs/审计_接线缺口与性能根因_20261014.md` |
 | 踩过什么坑（带 commit 时间戳） | `docs/lessons.md` |
 | 最近发生了什么（流水，**以最后一条为准**） | `progress.md` |
-| 能力清单（用户故事维度，只允许 1 条 in-progress） | `feature_list.json` |
+| 能力清单（用户故事维度） | `feature_list.json`（**并行开发**，非"同时只做一条"） |
 | 现在能不能测 / 服务起没起 | `pwsh -File scripts\dev\status.ps1` |
 | 怎么出包 / 换址 / 联调 | `skills/apk-cloud-release/`、`deploy/ONE_SWAP.md`、`scripts/dev/` |
 | 客户端避坑（编译/真机/UTS） | `skills/hbuilderx-uniappx-runloop/` |
 
 ## 关键数字（唯一口径）
 
-- **用户故事**：✅46 / 🟡7 / ❌0；A 级真机证据 **32** 条（口径基线 **2026-08-29**，尚未按 9–10 月变更重算）
-- **测试**：agent 185 passed ｜ backend 1017 passed / 4 skipped（需 Docker redis/qdrant 在跑）
-- **未关闭重大缺陷**：见 `docs/决策台账.md` §7（RAG 整体门禁 FAIL / 推送全 mock / 蜂窝上传恒 hold 等）
+- **用户故事**：✅46 / 🟡7 / ❌0；A 级真机证据 **32** 条（口径基线 **2026-08-29**，
+  **仍未按 9–10 月变更重算**）
+- **测试（2026-10-14 实测）**：agent **194 passed**；backend 受影响子集全绿
+  （坐标系 4 + 高德 9 + EXIF 10 + 地点富化 6 + 上传/注册 33 + 纠错新增 1）；
+  全量 `1017 passed` 的口径需 Docker redis/qdrant 在跑——**本机 Docker 未启时相关用例为环境失败**（非代码问题）
+- **门禁（2026-10-14）**：`review_agent.py` 全绿；客户端编译门**真编译**通过
+  （注意：HBuilderX 须先 `cli open`，门禁已自动拉起；产物时间戳旁证已于本日修正为墙上时钟）
+- **未关闭重大缺陷**：见 §7 —— RAG 负样本误召回 0.5714 / 推送全 mock / 图搜"无图片查询评测" /
+  蜂窝上传恒 hold / 照片分类已修待真机（§7.17）等
 - **端口口径**：backend `8010` ｜ agent `8300`（历史 `8399` 仅一次性本机覆盖，`8000` 为旧值）

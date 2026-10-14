@@ -12,7 +12,7 @@
 > 供通用 harness 工具（如 harness-creator 的 `validate-harness.mjs`）识别——其判据为英文关键词。
 > **实质内容以上文中文为准**；本块只是指针，指向唯一来源，避免第二次漂移。
 
-- Last Updated: 2026-10-11
+- Last Updated: 2026-10-14
 - Current State: 见 [`STATE.md`](STATE.md)（唯一「当前状态」）
 - What: harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）
 - Current Objective: 让重构后的新包在真机可用；补齐长期欠账的门禁
@@ -615,3 +615,46 @@ cmd 重定向会报"文件名语法不正确"）→ 领到静态域名 + authtok
 会拿到警告页 HTML，带 `ngrok-skip-browser-warning` 头才拿到真响应。API 已统一带头 ✓；但 **`<image>`
 无法加自定义头**，只能指望 Android 原生 UA（不含 Mozilla）放行。**装包后第一件事就是看图片是否正常**；
 若全裂，改媒体走 `uni.downloadFile({header})` 或换 named tunnel。
+
+---
+
+## 2026-10-14 · 接线缺口与性能根因修复（批次 0~3）
+
+**触发**：真机体验反馈「Agent 模块诸多前后端接线未完成；客户端定义的多模态上传按钮未接线；
+拍照上传定位未起效；UI 流畅度需深度优化」+「都要找到深层次根本原因」。
+
+**方法**：先做四路**只读**专项审计（门禁体系 / 后端接线 / 客户端 UI 性能 / agent 三方对账），
+把 **47 条带行号证据**落盘 `docs/审计_接线缺口与性能根因_20261014.md`，再按**根因族**分批修——
+不逐个症状打补丁。
+
+✅ **批 1（`8c5a702`）静默降级显性化**：新增 `agent/src/yishu/degradation.py`（线程安全降级计数 +
+告警）与 `backend/app/core/diagnostics.py`（可选令牌指纹）；镜像/RAG 的 `if not token: return` 不再
+无声（其中一处**连日志都没有**）；`agent.health()` 首次有调用方（`scripts/dev/health_probe.py`，
+三态退出码）；`status.ps1` 增「跨服务令牌对账 + agent 可达」一节；agent 测试 185 → **194 passed**。
+
+✅ **批 2（`b8d57ac`）照片定位端到端**：`RecordSheet.savePhoto` 原把经纬度**硬编码 null**（三个提交点
+唯独照片不带地点）⇒ 改读定位单例；补 `isHighAccuracy`；**坐标系统一转换**（新增
+`services/external/gcj02.py`，`amap.get_place` 单一转换点——此前 WGS84 直接喂高德，偏 **300~700m**
+且不报错，实测 481m/555m）；EXIF GPS 兜底下沉为 `services/photo_exif.py`（顺带解决 API 文件越棘轮阈值）。
+
+🔴 **顺带修掉一个「门禁假通过」（重要，影响所有 client 改动）**：`scripts/client_compile_gate.py`
+的产物旁证用 `time.monotonic()`（量级 1e5）与文件 `st_mtime`（Unix 纪元 1.7e9）比大小 ⇒ **恒真**；
+叠加 `cli launch --compile true` 在 HBuilderX **未启动**时**根本不编译**（只打印「未检测到已打开的
+HBuilderX」）⇒ HBuilderX 未启动、产物是两天前旧件时门禁仍报 `ok`。已修：墙上时钟 + 识别该拒绝语
+（按环境错误报）+ 调用前 `cli open` 自动拉起。**教训：凡"用副作用旁证成功"的判据，必须同基准比时间
+且配一次负向探针。**
+
+✅ **批 3（`2881269`）照片分类端到端**：`savePhoto` 原只**清空** `manualLabel`、从不提交（文字/语音
+两个提交点都提交了）⇒ 保存时逐张提交；删掉「默认选中首项 + AI 已预选」的**假状态**；契约放宽
+`CorrectionCreate.text` 可空（空文本**跳过向量化**、仍写日志并回写权威分类——不塞假文本污染层①向量库）；
+`submitCorrection` 增 `contentType`（照片 `photo` / 语音 `voice`；此前硬编码 `text`）。
+
+⚠️ **同批核正两处台账声明**：① §7.3「图搜客户端零接线」**已过期**（`TabSearch.uvue:11/388` 已接线，
+以 §7.8 为准）；② 新增 §7.17 记「照片分类被静默丢弃 + 假预选」。
+
+📌 **未做完（有前置条件，不做无验证的改动）**：蜂窝省流上传五步（属上传管线，按 09-23 纪律须
+「编译门 **+ 真机验证条件**」）、`attachments` 契约三层（须三端同改 + `uni.chooseFile` 编译探针）、
+ShareSheet（须真机验"保存到相册"）。
+
+**state 刷新**：`STATE.md` 已更新到本日真相（三个头号根因 + 下一步 + 三条阻塞）；`feature_list.json`
+登记「10 条 in-progress 是**如实**状态，不得以改状态消除 WARN」。

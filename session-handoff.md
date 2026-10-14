@@ -1,38 +1,42 @@
 # Session Handoff — 忆述光华（交接说明）
 
-> **版本**：2026-10-11 交接版 ｜ **分支**：`feature/agent-closeout-20261008` ｜ **HEAD**：`bbb1c3e`
+> **版本**：2026-10-14 交接版 ｜ **分支**：`feature/agent-closeout-20261008` ｜ **HEAD**：`2881269`
 > ⚠️ **本文件不承担「当前状态」**——那是 [`STATE.md`](STATE.md)（下一步/阻塞/关键数字的唯一来源）。
 > 本文件只回答两件事：**接手前必须知道的纪律红线**（§1 起，长期有效）、**上一次交接做了什么**（§0）。
 > 历史交接全文见 git / `progress.md`；本文件不滚雪球。
-## 0. 本次交接（2026-10-11）
+## 0. 本次交接（2026-10-14）
 
-**主题**：harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）。
+**主题**：接线缺口与性能根因修复（批次 0~3 已提交）。
 
-- 🔴 **最重要的结论**：重构后"新包各页面不可用、数据流被切断"的**头号根因**是
-  `client/utils/config.uts` 的环境三件套随代码漂移（10-09 把 `ENV` 改 `dev` 并提交，
-  出包忘改回）⇒ 正式包连 `127.0.0.1:8010`。已用运行时判据 `isDevCarrier()` 根治，
-  并把三件套切换脚本化（`scripts/dev/write_base_url.ps1`）。详见 `docs/决策台账.md` §4.18。
-- 新增本机联调工具链：`scripts/dev/{tunnel,write_base_url,start_all,status}.ps1`
-  （**`start_all`/`status` 已实测**：一键起 Docker+backend+worker+agent，全栈状态一览）。
-- 门禁升级：新增客户端编译门 `scripts/client_compile_gate.py` 并接入 `--full` 与出包前置门；
-  修 `check_secrets` **漏扫 `client/`** 的盲区；接入孤儿脚本 `audit_security`（备份域只告警）；
-  新增 `port_consistency` 与 `harness_state` 两个检查。
-- state 改造：新增 `STATE.md`；`AGENTS.md` 状态节降级为指针并补齐仓库结构/门禁口径；
-  `progress.md` 去掉自相矛盾的 08-29 速览（改「以最后一条为准」）；`feature_list.json` 加策略字段。
-- **未提交**：`tracked` 之外的工作区改动（本批）按 §1.1 纪律**逐路径 add**，禁 `git add -A`。
+- 🔴 **本波三个头号根因**（细节见 `docs/决策台账.md` §4.20）：
+  ① **坐标系系统性偏移**——客户端 GPS 与照片 EXIF 均为 WGS84，而高德 regeo 只认 GCJ-02，
+     全后端**零转换** ⇒ 地名偏 300~700m 且**不报错**（实测 481m/555m）。已在
+     `services/external/amap.get_place` 设**单一转换点**（入库仍存 WGS84）。
+  ② **编译门假通过**（影响所有 client 改动的可信度）——产物旁证用 `time.monotonic()` 与文件
+     `st_mtime` 比大小 ⇒ 恒真；叠加 `cli launch --compile true` 在 HBuilderX 未启动时**不编译**
+     ⇒ 门禁在"编译从未发生"时报 `ok`。已修；**注意 HBuilderX 须先 `cli open`（门禁已自动拉起）**。
+  ③ **镜像/RAG 静默降级**——`if not token: return` 无日志 ⇒ 表现为"AI 说已记住、出卡，
+     但时间轴空白"。已加降级计数 + 两侧**令牌指纹对账**（启动即可见）。
+- 照片定位（三段断点）与照片分类（两端断点）两条"点了没用"的链路已端到端打通；含契约放宽
+  `CorrectionCreate.text` 可空（空文本**跳过向量化**、仍回写权威分类——**不塞假文本**污染层①向量库）。
+- 审计基线（47 条带行号证据）：`docs/审计_接线缺口与性能根因_20261014.md`。
+- **未做完**（有前置条件，不做无验证的改动）：蜂窝省流上传五步（须「编译门 **+ 真机验证条件**」）、
+  `attachments` 契约三层、ShareSheet；假开关诚实化与流畅度 12 条根因待后续批次。
+- **未提交**：无（本批 4 次提交均过门禁；push 留用户）。
+
 ## Harness Markers（机器可读 · 双语）
 
 > 供通用 harness 工具（如 harness-creator 的 `validate-harness.mjs`）识别——其判据为英文关键词。
 > **实质内容以上文中文为准**；本块只是指针，指向唯一来源，避免第二次漂移。
 
-- Last Updated: 2026-10-11
+- Last Updated: 2026-10-14
 - Current State: 见 [`STATE.md`](STATE.md)（唯一「当前状态」）
-- What: harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）
-- Current Objective: 让重构后的新包在真机可用；补齐长期欠账的门禁
-- Next: 打通固定地址出包链 → 云打包 → **无数据线**真机验收
-- Recommended Next Step: `scripts/dev/tunnel.ps1` → `write_base_url.ps1` → `preflight_pack.ps1 -AllowTunnel` → `scripts/dev/pack.ps1`
-- Blockers: ngrok 静态域名与 authtoken 待用户领取；百炼凭据（Token Plan）待续期
-- Files: `client/utils/config.uts` · `scripts/dev/*` · `deploy/scripts/preflight_pack.ps1` · `STATE.md` · `AGENTS.md`
+- What: 接线缺口与性能根因修复（照片定位/分类接线、静默降级显性化、编译门假通过修复）
+- Current Objective: 让"定义了却没接线"的功能真正可用，并让门禁不再假通过
+- Next: 批次 4（假开关诚实化）→ 批次 5/6（UI 流畅度 12 条根因）→ 批次 7（根因固化为门禁）
+- Recommended Next Step: 读 `docs/决策台账.md` §4.20 末节 + `docs/审计_接线缺口与性能根因_20261014.md`
+- Blockers: 上传管线类修复须真机验证条件；ngrok 拦截页待真机验图片；百炼凭据待续期
+- Files: `docs/审计_接线缺口与性能根因_20261014.md` · `backend/app/services/external/{gcj02,amap}.py` · `backend/app/services/photo_exif.py` · `scripts/client_compile_gate.py` · `STATE.md`
 - Next Session: 起服务（`start_all.ps1`）→ 起隧道 → 回写三件套 → 出包门 → 打包 → 真机验收
 
 ## 1. 🔴 工作区红线（新同学必读，本次亲踩）

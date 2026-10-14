@@ -145,6 +145,7 @@
  "policy": {
   "scope": "本文件只覆盖 **MVP 用户故事能力清单**（F/M 系列）。维护类工作（结构重构 / 门禁 / 出包 / harness）由 STATE.md 与 docs/决策台账.md 承载。",
   "one_in_progress": "约定：同时只允许 1 条 in-progress —— 由门户检查 harness_state 提示（WARN，不阻断）。",
+  "one_in_progress_note": "2026-10-14 如实说明：本文件现存 10 条 in-progress，**明知不满足**上述约定，且**不打算用改状态来「满足」它**——MVP 阶段 F1~F8 / P2-ECHO / OPS-SECRETS 是**并行推进**的（每条 evidence 尾部都写明余项：L2 待真实数据、情绪 S2 开心漏报 0.496 待校准、RAG 负样本误召回 0.5714 未达标、微信实网未验、密钥链接待申请项…），把它们改成 done/blocked 属**编造状态**（本项目最贵的一类）。「同时只做一条」的真实含义是**单个会话内的执行纪律**，由 STATE.md 的「正在做什么」承载；harness_state 的 WARN 应按此理解，**不得以改状态消除**。",
   "evidence": "每条 evidence 只保留**最近一次**结论 + 指针；历史流水写 progress.md（追加式）。",
   "status_enum": [
    "not-started",
@@ -153,6 +154,6 @@
    "done",
    "deprecated"
   ],
-  "updated_at": "2026-10-11"
+  "updated_at": "2026-10-14"
  }
 }
