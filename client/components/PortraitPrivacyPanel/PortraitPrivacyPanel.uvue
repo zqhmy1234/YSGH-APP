@@ -15,27 +15,14 @@
 		</view>
 
 		<view class="flow">
-			<!-- 64:291 组1：两行画像使用开关 -->
-			<view class="group-card">
-				<view class="row">
-					<image class="row-icon" src="/static/icons/i64_299.svg" />
-					<text class="row-text">AI 对话使用画像</text>
-					<view :class="aiOn ? 'switch switch-on' : 'switch switch-off'" @tap="toggleAi">
-						<view class="switch-knob"></view>
-					</view>
-				</view>
-				<view class="row">
-					<image class="row-icon" src="/static/icons/i64_302.svg" />
-					<text class="row-text">回响使用画像</text>
-					<view :class="echoOn ? 'switch switch-on' : 'switch switch-off'" @tap="toggleEcho">
-						<view class="switch-knob"></view>
-					</view>
-				</view>
-			</view>
-			<!-- 64:320 说明-参与程度（W1-5：尾部补诚实标注——开关仅本地生效，画像消费端点未接，禁假称云端完成） -->
-			<text class="group-hint">关闭后对应功能只使用记忆内容本身，不再引用你的画像（本地生效，云端同步待接入）</text>
+			<!-- 2026-10-14（台账 §7.18）：原「组1 · AI 对话使用画像 / 回响使用画像」两枚开关**已移除**。
+			     判定依据：两个键（privacy_ai_chat / privacy_echo）写入 storage 后**全仓零读取**，
+			     且 agent 侧**根本没有画像能力**（无画像工具/上下文，见审计 §4）⇒ 不存在可接的消费者，
+			     "关闭后不再引用你的画像"是**空承诺**（合规相关，不能靠"本地生效"的措辞掩盖）。
+			     重新启用条件（服务端偏好字段 + 两端真消费）见台账 §7.18。
+			     （相关样式 .switch/.row-icon 等暂留，随下次样式整饬清理。） -->
 
-			<!-- 64:292 组2：敏感话题管理 + 清除画像数据 -->
+			<!-- 64:292 组2：敏感话题管理 + 清除画像数据（两者均为真链路，保留） -->
 			<view class="group-card group-2">
 				<view class="row" @tap="onManageSensitive">
 					<image class="row-icon" src="/static/icons/i64_305.svg" />
@@ -59,19 +46,8 @@
 
 	const emit = defineEmits(['close', 'cleared'])
 
-	// ── 开关本地态（真端点待后端登记台账，卡25 交互接线；settings.uvue 字符串 storage 先例，
-	//    默认开 = 键缺省/空 均视为开） ──
-	let aiOn = ref(uni.getStorageSync('privacy_ai_chat') != '0')
-	let echoOn = ref(uni.getStorageSync('privacy_echo') != '0')
-
-	function toggleAi(): void {
-		aiOn.value = !aiOn.value
-		uni.setStorageSync('privacy_ai_chat', aiOn.value ? '1' : '0')
-	}
-	function toggleEcho(): void {
-		echoOn.value = !echoOn.value
-		uni.setStorageSync('privacy_echo', echoOn.value ? '1' : '0')
-	}
+	// 2026-10-14（台账 §7.18）：原 `aiOn` / `echoOn` 两枚开关及其 storage 写入**已移除**——
+	// 键写入后零消费者、服务端亦无对应语义（详见模板顶部注释与台账 §7.18）。
 
 	/** 管理 ›：收起面板回宿主页（敏感画像管理卡片就在 manage 页内，无独立二级页） */
 	function onManageSensitive(): void {
@@ -83,7 +59,7 @@
 	 *  D07-12（2026-09-25 功能修复波 · 用户拍板「按建议来」）：**先调云端真删除**
 	 *  （`DELETE /api/v1/interview/profile`），成功后再清本地覆盖态。
 	 *  - 失败（网络/服务端）⇒ 只 toast 失败并**保留**本地态（**绝不声称"已清除"**）；
-	 *  - 成功后本地清空：隐私开关 / locked 标签 / AI 标签编辑覆盖，并复位开关；
+	 *  - 成功后本地清空：locked 标签 / AI 标签编辑覆盖（隐私开关已于 2026-10-14 移除，见 §7.18）；
 	 *  - 云端保留的「敏感话题」在确认弹窗里**提前说明**（不承诺删掉它）。
 	 */
 	function onClearPortrait(): void {
@@ -100,12 +76,8 @@
 						uni.showToast({ title: '清除失败，请稍后重试', icon: 'none' })
 						return
 					}
-					uni.setStorageSync('privacy_ai_chat', '')
-					uni.setStorageSync('privacy_echo', '')
 					uni.setStorageSync('portrait_locked_tags', '')
 					uni.setStorageSync('portrait_ai_tags_edited', '')
-					aiOn.value = true
-					echoOn.value = true
 					uni.showToast({ title: '画像数据已清除', icon: 'none' })
 					emit('cleared')
 					onClose()
