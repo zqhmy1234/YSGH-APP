@@ -41,6 +41,7 @@ from app.api.event_items import router as event_items_router
 from app.api.media import router as media_router  # 媒体票据下发（Valet Key · 2026-08-31）
 from app.api.thumbnails import router as thumbnails_router  # B4 缩略图（Wave3 AgentG 提供，集成接线）
 from app.core.config import settings
+from app.core.diagnostics import log_agent_channel_config  # 服务间通道启动自检（2026-10-14）
 from app.core.errors import install_error_handlers
 from app.core.middleware import RequestIDMiddleware
 from app.core.ratelimit import RateLimitMiddleware  # G1/R6#2/#3：通用限流（auth/ASR/搜索）
@@ -62,6 +63,10 @@ async def lifespan(app: FastAPI):
 
     schema = get_schema()
     logger.info("画像枚举集已加载：L0 %d / L1 %d", schema.l0_count, schema.l1_count)
+    # 服务间通道自检（2026-10-14 · 台账 §7.12）：打印 backend→agent 地址与**令牌指纹**，
+    # 使"两侧是否同一把密钥"在启动日志里就能直接对账。不一致时的形态是
+    # 「AI 页照常能聊、记忆却不落 App」，而两侧日志都只显示"已配置"，无从判断。
+    log_agent_channel_config()
     yield
 
 

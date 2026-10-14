@@ -15,8 +15,10 @@ from typing import Any
 from langchain.tools import tool
 from storage.database.supabase_client import get_supabase_client
 from tools.tag_rules import coerce_str_list, validate_collection_tags, validate_memory_tags
+from yishu import degradation
 from yishu.context import new_context, request_context
 from yishu.db_errors import APIError
+from yishu.security import backend_channel_token
 
 logger = logging.getLogger(__name__)
 
@@ -407,9 +409,14 @@ def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
     ## 降级策略（必须诚实标注）
 
     **这条调用是"增强"不是"依赖"**：backend 不可达 / 未配置服务间通道 / 超时 /
-    被关开关，全部**静默降级为只搜本地表**，并记一条 WARNING。理由：
-    对话不能因为一个增强检索挂掉；而"没配 token"在本地开发是常态
-    （backend 的 `agent_service_token` 默认空串，此时 backend 侧 503 fail-closed）。
+    被关开关，全部**降级为只搜本地表**。理由：对话不能因为一个增强检索挂掉；
+    而"没配 token"在本地开发是常态（backend 的 `agent_service_token` 默认空串，
+    此时 backend 侧 503 fail-closed）。
+
+    ⚠️ 2026-10-14 更正（台账 §7.12）：原文写"并记一条 **WARNING**"，而实现是 **INFO**
+    （代码注释的理由是"别刷 WARNING"）——生产里 INFO 往往根本不被采集 ⇒ 降级等于
+    **隐形**。现改走 `_note_degrade`：**计数**（`/health` 的 `degradation` 可查）
+    ＋ **首次 WARNING、之后 INFO**。故"静默降级"二字已不成立，特此更正。
 
     ## 鉴权
 
@@ -427,18 +434,22 @@ def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
     import os
 
     if os.getenv("AGENT_BACKEND_SEARCH", "1").strip().lower() in {"0", "false", "no"}:
+        # 显式关掉也是"降级为只搜本地表"，必须**可见**：否则用户表现是"App 里的图文
+        # 在 AI 对话里搜不到"，而没人知道是自己把开关关了（台账 §7.12）。
+        _note_degrade("search_api_disabled")
         return []
     # 默认 8010＝生产约定（deploy/.env.production.template:34 `API_PORT=8010`，
     # 与 `agent_service_base_url=http://127.0.0.1:8300` 同机互信的口径一致）。
     # **本地开发** backend 默认起在 8000，需显式设 AGENT_BACKEND_BASE_URL；
     # 指错端口只会走降级路径（本地结果照常返回），不会失败。
     base = (os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/")
-    token = (os.getenv("AGENT_BACKEND_TOKEN") or os.getenv("AGENT_SERVICE_TOKEN") or "").strip()
+    token = backend_channel_token()
     if not base or not token:
-        # 未配置服务间通道：这是本地开发的常态，INFO 即可，别刷 WARNING
-        from yishu.observability import log_event
-
-        log_event("backend_search_skipped", reason="未配置服务间令牌")
+        # ⚠️ 2026-10-14（台账 §7.12）：原文注释"本地开发的常态，INFO 即可，别刷
+        # WARNING"与本函数 docstring 声称的 WARNING 相矛盾，且生产未配 token 时
+        # **完全隐形**（用户表现＝"App 里的图文在 AI 对话里搜不到"）。
+        # 现走 _note_degrade：首次 WARNING + 计数进 /health。
+        _note_degrade("search_skipped_no_token")
         return []
     try:
         timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
@@ -458,14 +469,7 @@ def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
                 },
             )
         if resp.status_code != 200:
-            from yishu.observability import log_event
-
-            log_event(
-                "backend_search_failed",
-                level=logging.WARNING,
-                status=resp.status_code,
-                detail=resp.text[:120],
-            )
+            _note_degrade("search_failed", status=resp.status_code, detail=resp.text[:120])
             return []
         payload = resp.json().get("data") or {}
         hits = payload.get("hits") or []
@@ -487,15 +491,26 @@ def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
         log_event("backend_search_ok", hits=len(out), latency_ms=payload.get("latency_ms"))
         return out
     except Exception as exc:  # noqa: BLE001 —— 增强检索失败绝不能拖垮对话
-        from yishu.observability import log_event
-
-        log_event(
-            "backend_search_failed",
-            level=logging.WARNING,
-            exc_type=type(exc).__name__,
-            detail=str(exc)[:120],
-        )
+        _note_degrade("search_failed", exc_type=type(exc).__name__, detail=str(exc)[:120])
         return []
+
+
+def _note_degrade(reason: str, *, first_level: int = logging.WARNING, **fields: Any) -> None:
+    """记一次增强路径降级：**计数 + 日志**（首次 `first_level`，之后 INFO）。
+
+    **为什么需要它（台账 §7.12）**：早先实现对降级的处置是"只记一条 INFO 日志"
+    甚至**裸 `return`**，于是用户侧的形态是「AI 说已记住、卡片也出了，但 App 时间轴 /
+    检索一片空白」，而**没有任何人被告知**。这里做两件事：
+
+      ① 计数（进 `yishu.degradation`，由 `/health` 的 `degradation` 字段暴露）；
+      ② 打日志——**首次用 `first_level`**（运维在启动或首次发生时必定看见），之后降为
+         INFO 防止每轮对话刷屏。旧代码写"别刷 WARNING"的顾虑，用"只刷一次"满足，
+         而不是"永不告警"。
+    """
+    first = degradation.note(reason)
+    from yishu.observability import log_event
+
+    log_event(f"degrade_{reason}", level=first_level if first else logging.INFO, **fields)
 
 
 def _backend_base_and_token() -> tuple[str, str]:
@@ -504,7 +519,8 @@ def _backend_base_and_token() -> tuple[str, str]:
 
     base = (os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/")
     # 默认 8010＝生产约定（deploy API_PORT=8010）；本地开发 backend 起在 8000 需显式设。
-    token = (os.getenv("AGENT_BACKEND_TOKEN") or os.getenv("AGENT_SERVICE_TOKEN") or "").strip()
+    # 令牌口径收敛到 `yishu.security.backend_channel_token`（唯一真源，防两处漂移）。
+    token = backend_channel_token()
     return base, token
 
 
@@ -528,10 +544,16 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
 
     ## 降级策略（与 W2 检索同款）
 
-    backend 不可达/未配置/超时/护栏拒收 ⇒ **记日志后继续**——agent 自己的
+    backend 不可达/未配置/超时/护栏拒收 ⇒ **记降级后继续**——agent 自己的
     `memories` 行已经写成功，镜像失败不回滚它（回滚会让"保存"这个用户可见
-    动作因为增强功能失败而整体失败，那是更糟的取舍）。护栏拒收（422）会
-    记 WARNING 并保留 agent 侧记忆——App 侧不留敏感内容是**有意的**。
+    动作因为增强功能失败而整体失败，那是更糟的取舍）。护栏拒收（422）保留
+    agent 侧记忆——App 侧不留敏感内容是**有意的**。
+
+    ⚠️ 2026-10-14 更正（台账 §7.12）：原写"记日志后继续"，而实现里有两处
+    **完全不记**（裸 `return`）或只记 INFO——生产里等于隐形。现统一走
+    `_note_degrade`：**计数**（`/health` 的 `degradation` 可查）＋ 首次告警。
+    另注一处文档与实现不符：本函数的 httpx 调用**自身不捕获异常**，
+    兜底在调用方（`save_memory` 处的 try/except 双保险）——一并更正。
 
     ## 已知边界（诚实标注）
 
@@ -544,12 +566,14 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
     import os
 
     if os.getenv("AGENT_MIRROR_TO_APP", "1").strip().lower() in {"0", "false", "no"}:
+        _note_degrade("mirror_api_disabled", memory_id=memory_id)
         return
     base, token = _backend_base_and_token()
     if not token:
-        from yishu.observability import log_event
-
-        log_event("mirror_skipped", memory_id=memory_id, reason="未配置服务间令牌")
+        # ⚠️ 2026-10-14（台账 §7.12）：原为 INFO 级 `mirror_skipped`——生产里 INFO
+        # 往往根本不被采集 ⇒ **记忆不进 App 时间轴而无人知晓**（用户看到"AI 说已记住，
+        # 换到 App 却什么都没有"）。现走 _note_degrade：首次 WARNING + 计数进 /health。
+        _note_degrade("mirror_skipped_no_token", memory_id=memory_id)
         return
     try:
         timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
@@ -591,15 +615,19 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
         cid = (resp.json().get("data") or {}).get("id")
         log_event("mirror_ok", memory_id=memory_id, content_id=cid)
         return
-    # 422 = 护栏拒收（App 侧不留敏感内容，有意为之）；其余按失败处理
-    level = logging.WARNING if resp.status_code == 422 else logging.ERROR
-    log_event(
-        "mirror_failed",
-        level=level,
-        memory_id=memory_id,
-        status=resp.status_code,
-        detail=resp.text[:120],
-    )
+    # 422 = 护栏拒收（App 侧不留敏感内容，**有意为之**，不是故障）；其余按失败处理。
+    # 两者都要计数：前者意味着"这条记忆只在 agent 里、App 永远看不到"（用户会以为
+    # 保存失败或丢失），后者是真故障。见 _note_degrade。
+    if resp.status_code == 422:
+        _note_degrade("mirror_guard_rejected", first_level=logging.INFO, memory_id=memory_id)
+    else:
+        _note_degrade(
+            "mirror_failed",
+            first_level=logging.ERROR,
+            memory_id=memory_id,
+            status=resp.status_code,
+            detail=resp.text[:120],
+        )
 
 
 def _unmirror_memory_from_app(memory_id: Any) -> None:
@@ -607,9 +635,14 @@ def _unmirror_memory_from_app(memory_id: Any) -> None:
     import os
 
     if os.getenv("AGENT_MIRROR_TO_APP", "1").strip().lower() in {"0", "false", "no"}:
+        _note_degrade("unmirror_api_disabled", memory_id=memory_id)
         return
     base, token = _backend_base_and_token()
     if not token:
+        # ⚠️ 2026-10-14（台账 §7.12）：旧实现这里是**完全静默的裸 `return`**——
+        # 结果是"agent 里的记忆删掉了、App 侧镜像却还留着"，用户看到的是
+        # **删不掉的内容**，而且没有任何线索。降级可以，隐形不行。
+        _note_degrade("unmirror_skipped_no_token", memory_id=memory_id)
         return
     try:
         timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
@@ -629,19 +662,15 @@ def _unmirror_memory_from_app(memory_id: Any) -> None:
             deleted = (resp.json().get("data") or {}).get("deleted")
             log_event("unmirror_ok", memory_id=memory_id, deleted=bool(deleted))
         else:
-            log_event(
+            _note_degrade(
                 "unmirror_failed",
-                level=logging.WARNING,
                 memory_id=memory_id,
                 status=resp.status_code,
                 detail=resp.text[:100],
             )
     except Exception as exc:  # noqa: BLE001 —— 镜像删除失败不阻断本地删除
-        from yishu.observability import log_event
-
-        log_event(
+        _note_degrade(
             "unmirror_failed",
-            level=logging.WARNING,
             memory_id=memory_id,
             exc_type=type(exc).__name__,
             detail=str(exc)[:100],

@@ -21,6 +21,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import time
@@ -47,6 +48,32 @@ def is_production() -> bool:
 
 def service_token() -> str:
     return (os.getenv("AGENT_SERVICE_TOKEN", "") or "").strip()
+
+
+def backend_channel_token() -> str:
+    """**agent → backend 方向**的共享密钥（W1 记忆镜像 / W2 检索合并用）。
+
+    口径：`AGENT_BACKEND_TOKEN` 优先，未设则回落 `AGENT_SERVICE_TOKEN`。
+    本函数是这条口径的**唯一真源**——`tools/memory_tools.py:_backend_base_and_token`
+    原先自行拼了同一表达式，两处各写一份迟早漂移（2026-10-14 收敛）。
+    """
+    return (os.getenv("AGENT_BACKEND_TOKEN") or os.getenv("AGENT_SERVICE_TOKEN") or "").strip()
+
+
+def token_fingerprint(raw: str | None = None) -> str:
+    """令牌指纹（sha256 前 8 位十六进制）；空值返回 `"(空)"`。
+
+    **用途（台账 §7.12）**：两侧日志对账。backend 的 `agent_service_token` 与 agent 的
+    `AGENT_SERVICE_TOKEN` / `AGENT_BACKEND_TOKEN` 必须是**同一个值**，否则一侧 503/401、
+    另一侧**静默降级**（AI 说"已记住"，App 时间轴却空白），而两侧日志都只显示"已配置"，
+    无从判断。指纹不可逆，且**只进日志**——不会进 `/health` 等对外响应，
+    避免把弱密钥变成可离线爆破的预言机。
+    """
+    value = (raw if raw is not None else service_token()) or ""
+    value = value.strip()
+    if not value:
+        return "(空)"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
 
 
 def require_token(provided: str | None) -> None:

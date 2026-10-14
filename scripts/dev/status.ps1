@@ -100,6 +100,28 @@ else {
 Row '内测登录开关' (@(Select-String -Path (Join-Path $RepoRoot 'backend\.env') -Pattern '^ALLOW_DEVICE_LOGIN=true' -ErrorAction SilentlyContinue).Count -gt 0) 'backend/.env ALLOW_DEVICE_LOGIN=true'
 
 Write-Host ''
+Write-Host '── 服务间接线（台账 §7.12：静默降级显性化）──' -ForegroundColor Cyan
+# 为什么单独一段：上面只回答"端口通不通"，回答不了"通着却不干活"——
+# backend 与 agent 的共享密钥是否同一把、W1 镜像/W2 检索是否在持续降级。
+# 这三条都是"接口 200 但功能是假的"（AI 说已记住、App 时间轴却空白）。
+$probe = Join-Path $RepoRoot 'scripts\dev\health_probe.py'
+if (Test-Path $probe) {
+    try {
+        & python $probe
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '  [MISS] 服务间接线存在不一致（上方 [FAIL]）' -ForegroundColor Red
+            $missing++
+        }
+    }
+    catch {
+        Write-Host '  [WARN] 未找到可用的 python，跳过接线探针' -ForegroundColor Yellow
+    }
+}
+else {
+    Write-Host '  [INFO] scripts\dev\health_probe.py 不存在（跳过）' -ForegroundColor Yellow
+}
+
+Write-Host ''
 if ($missing -eq 0) {
     Write-Host '  ✅ 全栈就绪，可以真机测试' -ForegroundColor Green
     exit 0

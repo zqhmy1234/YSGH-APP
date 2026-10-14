@@ -39,6 +39,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from storage.memory.memory_saver import close_memory_pool, current_checkpointer_kind
+from yishu import degradation
 from yishu.context import new_context, request_context
 from yishu.errors import classify_error
 from yishu.logging_setup import setup_logging
@@ -51,8 +52,10 @@ from yishu.observability import (
 from yishu.security import (
     RateLimiter,
     assert_production_token_config,
+    backend_channel_token,
     is_production,
     require_token,
+    token_fingerprint,
     validate_thread_id,
     validate_user_id,
 )
@@ -134,6 +137,15 @@ class HealthResponse(BaseModel):
     # 只是一轮轮都是新会话（用户以为有记忆、实际每次失忆）——这是最典型的
     # 「看起来正常实际是假的」。探活接口不报出来，就没有任何人能发现。
     checkpointer: str = "未初始化"
+    # ── 2026-10-14 新增（台账 §7.12「静默降级显性化」）─────────────────────────
+    # 与 checkpointer 同因：W1 记忆镜像 / W2 检索合并失败时**照常 200、对话照常
+    # 往返**，只是记忆不进 App 时间轴、App 里的图文 AI 也搜不到——探活接口不报
+    # 出来，就没有任何人能发现。`degradation.total` 非 0 即代表有路径正在降级。
+    inbound_token_fp: str = ""           # 本服务校验用的 AGENT_SERVICE_TOKEN 指纹
+    backend_token_configured: bool = False
+    backend_token_fp: str = ""           # agent→backend 令牌指纹（与 backend 启动日志对账）
+    backend_base_url: str = ""
+    degradation: dict[str, Any] = Field(default_factory=dict)
 
 
 def _normalize_reply(result: Any) -> str:
@@ -244,6 +256,20 @@ async def lifespan(app: FastAPI):
         validator_budget_s=float(os.getenv("AGENT_VALIDATOR_BUDGET_S", "20")),
         rate_limit_rpm=int(os.getenv("AGENT_RATE_LIMIT_RPM", "30")),
         web_panel=WEB_PANEL_MOUNTED,
+        # ── 2026-10-14（台账 §7.12）：服务间通道指纹 ─────────────────────────
+        # 把入站（AGENT_SERVICE_TOKEN）与出站（AGENT_BACKEND_TOKEN 回落同类键）
+        # 的**指纹**打进启动日志：与 backend 启动日志的 fp 比对，即可判定
+        # "两侧是不是同一把密钥"，不必去猜。两侧不一致时 W1/W2 会**静默降级**，
+        # 而两边日志都只显示"已配置"——那正是要消灭的形态。
+        # 指纹不可逆（sha256 前 8 位）且只进日志，不进任何对外响应。
+        # ⚠️ 字段名不得含 `token_value` 类禁止词（`yishu.observability._reject_sensitive`
+        # 会**抛异常**而非跳过）；`*_token_fp` 经核对是安全的。
+        inbound_token_fp=token_fingerprint(),
+        backend_token_configured=bool(backend_channel_token()),
+        backend_token_fp=token_fingerprint(backend_channel_token()),
+        backend_base_url=(
+            os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010"
+        ).strip().rstrip("/"),
         **_agent_summary_fields(agent_runtime_summary()),
     )
     # backend 可达性自检（W2/W1 依赖，2026-10-06）：
@@ -303,12 +329,21 @@ except Exception as exc:  # noqa: BLE001 —— 该面非核心链路，缺失�
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     #只读单例既有状态：**探活不得触发建连/建表**（否则 /health 变成会改状态的接口）
+    outbound_token = backend_channel_token()
     return HealthResponse(
         status="ok",
         model=os.getenv("AGENT_LLM_MODEL", "qwen3.8-flash"),
         db_configured=bool(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL")),
         auth_enabled=bool(SERVICE_TOKEN),
         checkpointer=current_checkpointer_kind(),
+        # 2026-10-14（台账 §7.12）：把"增强路径是否在降级"变成可探活的事实。
+        inbound_token_fp=token_fingerprint(),
+        backend_token_configured=bool(outbound_token),
+        backend_token_fp=token_fingerprint(outbound_token),
+        backend_base_url=(
+            os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010"
+        ).strip().rstrip("/"),
+        degradation=degradation.snapshot(),
     )
 
 
