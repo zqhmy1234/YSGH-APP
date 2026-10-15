@@ -2775,6 +2775,33 @@
         ]
       }
     },
+    "/api/v1/wechat/bind-code": {
+      "post": {
+        "tags": [
+          "wechat"
+        ],
+        "summary": "Wechat Bind Code",
+        "description": "签发**微信绑定码**（2026-10-15 · 台账 §4.20 ㉖）。\n\n为什么需要它：F6「微信入口」要先知道用户的微信 **openid**，而 openid 只存在企微侧、\nApp 无从获取（后端此前也没有任何\"绑定码/扫码\"流程 ⇒ 功能在产品级不可完成）。\n现流程：App 领码 → 用户在自己的微信里给忆述发「绑定 <码>」→ 回调侧消费码建绑定。\n\n码**6 位数字、10 分钟有效、单次使用**；同账号重发即作废旧码。\n**只回本次码与有效期**（不返回历史码/剩余次数，最小信息）。",
+        "operationId": "wechat_bind_code_api_v1_wechat_bind_code_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/wechat/bindings": {
       "get": {
         "tags": [

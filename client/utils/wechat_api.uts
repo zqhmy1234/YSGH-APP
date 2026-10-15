@@ -1,0 +1,70 @@
+/**
+ * 微信绑定薄封装（2026-10-15 · 台账 §4.20 ㉖ · 用户拍板"做绑定码流程"）。
+ *
+ * ## 为什么有这套（产品级缺口补齐）
+ *
+ * F6「微信入口」（把微信里发的照片/语音变成记忆）要先知道用户的微信 **openid**，而
+ * openid 只存在企微侧、App **无从获取** ⇒ 光有入口也绑不上。后端此前也没有任何
+ * "绑定码/扫码"流程。现流程（后端 `services/wechat/bind_code.py` 有完整说明）：
+ *
+ *   ① App（已登录）领 6 位码（`issueBindCode`，10 分钟有效、单次使用）；
+ *   ② 用户在自己的微信里给忆述发「绑定 <码>」；
+ *   ③ 企微回调消费码 → 建立 openid ↔ 账号 绑定 ⇒ 此后微信消息成为记忆。
+ *
+ * 本模块只做**取码 / 查绑定 / 解绑**三件事（绑定关系的建立发生在服务端回调侧，
+ * 客户端不参与）——刻意不给"手动填 openid"的封装：那既不合规，也无法验证。
+ *
+ * 约定对齐 utils/api.uts：resolve-only 永不 reject；失败原因由 api 层全局 toast 显式给出。
+ */
+import { get, post, request, dataArr, dataObj } from './api'
+
+/** 微信端点（后端 api/wechat.py）：绑定码 / 绑定列表 / 解绑 */
+export const PATH_WECHAT: string = '/api/v1/wechat'
+
+/**
+ * 领绑定码：POST /api/v1/wechat/bind-code → `{code, expires_in}`。
+ * 同账号重发会**作废旧码**（后端语义）；返回过期秒数供 UI 提示，失败 resolve(null)。
+ */
+export function issueBindCode(): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		post(PATH_WECHAT + '/bind-code', {}).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			resolve(dataObj(res))
+		})
+	})
+}
+
+/** 已绑定列表：GET /api/v1/wechat/bindings → `{bindings: [{openid, channel, bound_at?}]}`。
+ *  绑定发生在服务端回调侧（用户在微信里发码），故 App 侧靠**拉列表**确认是否绑上 ✓。
+ *  失败 resolve([])（与"确实没绑定"区分靠调用方结合 toast；本页仅用于展示与决定动作）。 */
+export function listWechatBindings(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get(PATH_WECHAT + '/bindings').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve([])
+				return
+			}
+			resolve(dataArr(d))
+		})
+	})
+}
+
+/** 解绑：DELETE /api/v1/wechat/bindings?openid=…（仅限本人绑定；不存在 404 由 api 层 toast）。
+ *  成功 true。注意：解绑只断开关联，**不删除**已入库的记忆（软删生态零侵入）。 */
+export function unbindWechat(openid: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request(PATH_WECHAT + '/bindings?openid=' + encodeURIComponent(openid), 'DELETE', null).then(
+			(res: UTSJSONObject | null) => {
+				resolve(res != null)
+			}
+		)
+	})
+}

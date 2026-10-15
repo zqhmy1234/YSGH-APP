@@ -14,6 +14,16 @@
 				<text class="n4_144">账号与安全</text> <!-- 文字 -->
 				<image class="n4_145" src="/static/icons/i4_145.svg" /> <!-- icon: 箭头 -->
 			</view>
+			<!-- 2026-10-15（台账 §4.20 ㉖ · 用户拍板"做绑定码流程"）：微信绑定行。
+			     F6「微信入口」要先把用户微信 openid 与账号关联，而 openid 只存在企微侧 ——
+			     故流程为「App 领码 → 用户在微信里发码 → 服务端回调建绑定」。本行复用
+			     `.n4_140/.n4_141/.n4_144/.n4_145` 既有行样式（**不新增视觉元素**，守画布真值纪律），
+			     码用系统弹窗展示（6 位数字，用户手打到微信即可，无需复制）。 -->
+			<view class="n4_140" @tap="onWechatBind"> <!-- 行-微信绑定 -->
+				<image class="n4_141" src="/static/icons/i4_141.svg" /> <!-- icon: 图标 -->
+				<text class="n4_144">微信绑定{{ wechatBound ? ' · 已绑定' : '' }}</text> <!-- 文字 -->
+				<image class="n4_145" src="/static/icons/i4_145.svg" /> <!-- icon: 箭头 -->
+			</view>
 			<!-- 2026-10-14（台账 §7.18）：原三行已移除，**全部是假开关**——
 			     · 「通知偏好」：依赖推送通道（服务端 MOCK_PUSH 全 mock，见台账 §7.4），键零消费者；
 			     · 「深色模式」：应用无深色实现（全站画布色为浅色单套），键零消费者；
@@ -28,6 +38,9 @@
 </template>
 
 <script setup lang="uts">
+	// 2026-10-15（台账 §4.20 ㉖）：微信绑定三端点（取码/查绑定/解绑）——原全客户端零调用。
+	import { issueBindCode, listWechatBindings, unbindWechat } from '@/utils/wechat_api'
+	import { onMounted } from 'vue'
 	// 2026-10-14（台账 §7.18）：本页原含三枚假开关（通知偏好 / 深色模式 / 清理缓存），
 	// 已按本波口径移除（判定依据见模板内注释）；现仅保留真跳转的「账号与安全」。
 	// 因此也不再有本地偏好状态与 onLoad 读取。
@@ -46,6 +59,73 @@
 	function goAccount(): void {
 		// W10：账号与安全页落地，toast 占位改真跳转（navigateTo 入栈，security 返回键可达）
 		uni.navigateTo({ url: '/pages/account/security' })
+	}
+
+	// ── 微信绑定（2026-10-15 · 台账 §4.20 ㉖）──────────────────────────────────
+	// 绑定关系**由服务端回调侧建立**（用户在微信里发码 ⇒ `/wechat/callback` 消费码），
+	// 客户端不参与绑定动作本身 ⇒ 本页只做三件事：领码、拉列表确认、解绑。
+	let wechatBound = ref(false)
+	let wechatOpenid = ref('')
+
+	function refreshWechat(): void {
+		listWechatBindings().then((rows: Array<UTSJSONObject>) => {
+			if (rows.length == 0) {
+				wechatBound.value = false
+				wechatOpenid.value = ''
+				return
+			}
+			wechatBound.value = true
+			wechatOpenid.value = rows[0].getString('openid') ?? ''
+		})
+	}
+
+	onMounted((): void => {
+		refreshWechat()
+	})
+
+	/**
+	 * 微信绑定入口：
+	 * - **未绑定** ⇒ 领 6 位码并用系统弹窗展示（不新增视觉元素；码是数字，手打到微信即可，
+	 *   无需复制）⇒ 用户发完点「我已发送」后复查一次列表（成功即显示「已绑定」）；
+	 * - **已绑定** ⇒ 二次确认后解绑（只断开关联；已入库记忆不受影响，后端零侵入 ✓）。
+	 */
+	function onWechatBind(): void {
+		if (wechatBound.value) {
+			uni.showModal({
+				title: '微信绑定',
+				content: '解绑后，微信里再发的照片/语音不再进入你的忆述（已入库的记忆不受影响）。',
+				confirmText: '解绑',
+				confirmColor: '#B05A3A',
+				success: (res) => {
+					if (!res.confirm || wechatOpenid.value == '') {
+						return
+					}
+					unbindWechat(wechatOpenid.value).then((ok: boolean) => {
+						if (ok) {
+							uni.showToast({ title: '已解绑', icon: 'success' })
+							refreshWechat()
+						}
+					})
+				}
+			})
+			return
+		}
+		issueBindCode().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				return // 失败原因已由 api 层全局 toast 显式给出
+			}
+			const code = d.getString('code') ?? ''
+			const mins = Math.round((d.getNumber('expires_in') ?? 600) / 60)
+			uni.showModal({
+				title: '微信绑定',
+				content: '请在微信里给「忆述」发送：绑定 ' + code + '（' + mins + ' 分钟内有效）。发完点「我已发送」。',
+				confirmText: '我已发送',
+				showCancel: false,
+				success: (): void => {
+					refreshWechat()
+				}
+			})
+		})
 	}
 
 </script>

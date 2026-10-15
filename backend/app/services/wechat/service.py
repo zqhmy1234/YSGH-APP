@@ -332,6 +332,48 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
     return {"media": "ok", "cos_key": cos_key, "content_id": str(content.id)}
 
 
+def bind_by_code(db: Session, msg: dict) -> str | None:
+    """未绑定用户发来**绑定码** ⇒ 建立 openid ↔ 账号 绑定；返回 user_id（无码/失败 → None）。
+
+    2026-10-15（台账 §4.20 ㉖）：F6「微信入口」的**产品级缺口补齐** —— openid 只存在企微侧、
+    App 无从获取，故由 App 领码、用户在自己的微信里把码发回来（完整流程见
+    `services/wechat/bind_code.py` 模块注释）。
+
+    口径：
+      - 只处理 text；码必须是**纯 6 位数字**片段（宽松匹配会把普通聊天里的数字误当码 ⇒ **不误绑**）；
+      - **不做换绑**：该 openid 已绑他人时 `bind_wechat` 抛 `AlreadyBoundToOtherUser`
+        （静默换绑 = 把别人微信收到的记忆改投到我账号，既定纪律禁止）⇒ 拒绝并留日志；
+      - 成功/失败都**不在此处写内容**：调用方对码消息按"只记录"处理，既不让绑定指令变成一条记忆，
+        也保住 `msg_id` 幂等（企微重推不会二次消费）。
+    """
+    if msg.get("msg_type") != "text":
+        return None
+    from app.services.wechat import bind_code as bc
+    from app.services.wechat.binding import (
+        DEFAULT_CHANNEL,
+        AlreadyBoundToOtherUser,
+        bind,
+        normalize_openid,
+    )
+
+    openid = normalize_openid(msg.get("from_user"))
+    if not openid:
+        return None
+    user_id = bc.consume_code(msg.get("content"))
+    if user_id is None:
+        return None
+    try:
+        bind(db, user_id, openid, DEFAULT_CHANNEL)
+    except AlreadyBoundToOtherUser:
+        logger.warning("绑定码命中但 openid 已绑他人，拒绝换绑 openid=%s", openid)
+        return None
+    except ValueError as exc:
+        logger.warning("绑定码绑定失败 openid=%s: %s", openid, exc)
+        return None
+    logger.info("微信绑定成功（绑定码）user=%s openid=%s", user_id, openid)
+    return user_id
+
+
 def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict:
     """处理企微回调消息（幂等：msg_id 已存在则跳过）
 
