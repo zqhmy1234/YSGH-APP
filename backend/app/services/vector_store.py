@@ -233,7 +233,14 @@ class VectorStore:
                     values=list(sparse.values()),
                 ),
             },
-            {"content_id": content_id, **payload},
+            # 2026-10-15（台账 §7.33）：**`text` 必须进 payload**。它本是本函数的形参、却
+            # 从未落进 payload ⇒ `_rrf_fuse` 填的 `text` 恒为 None ⇒
+            # `recall._boost_exact_matches` 读 `hit["text"]` 永远拿不到词元 ⇒
+            # **"精确命中提升"（×1.8/×1.3）对文字/语音内容永不触发**（只有走
+            # `upsert_image_vec` 的照片点自带 text 才不受影响）——注释与实现不一致的典型。
+            # 截断到 400 字符：payload 要进 Qdrant，全文回灌会让点体积膨胀；词元包含判断
+            # 用前 400 字足够，且远小于 Qdrant payload 上限。
+            {"content_id": content_id, "text": (text or "")[:400], **payload},
         )
 
     def search(
