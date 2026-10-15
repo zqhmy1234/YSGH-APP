@@ -1,4 +1,5 @@
 """微信域 ORM 模型（wechat_messages / user_wechat_bindings，对齐 backend/sql/schema.sql）"""
+
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func, text
@@ -15,11 +16,11 @@ from app.db.session import Base
 # 本次**只对齐"取值集合"的声明**，不改任何默认值/行为）。
 # 服务端实际写入点见 `services/wechat/service.py`（processing/processed/media_failed/sensitive/deleted）。
 WECHAT_MESSAGE_STATUSES: tuple[str, ...] = (
-    "processing",    # DDL 默认值（schema.sql）；当前代码路径均显式写入，故通常不落此值
-    "processed",     # 处理完成（正常）
+    "processing",  # DDL 默认值（schema.sql）；当前代码路径均显式写入，故通常不落此值
+    "processed",  # 处理完成（正常）
     "media_failed",  # 企微媒体下载失败
-    "sensitive",     # 内容安全命中（不进云端镜像）
-    "deleted",       # 用户软删本条（F6：只删本条）
+    "sensitive",  # 内容安全命中（不进云端镜像）
+    "deleted",  # 用户软删本条（F6：只删本条）
 )
 
 
@@ -34,14 +35,16 @@ class WechatMessage(Base):
     msg_type: Mapped[str] = mapped_column(String)  # text / image / link / voice
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     media_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="processed")  # 取值见 WECHAT_MESSAGE_STATUSES（上）
+    status: Mapped[str] = mapped_column(
+        String, default="processed", server_default=text("'processing'")
+    )  # 取值见 WECHAT_MESSAGE_STATUSES（上）
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # 微信客服会话渠道取值（`user_wechat_bindings.channel` 唯一来源）
 WECHAT_BINDING_CHANNELS: tuple[str, ...] = (
-    "wechat_kf",    # 企微「微信客服」（F6 主链，回调 FromUserName 即本渠道 openid）
-    "wechat_app",   # 微信开放平台 App/小程序登录（unionid）
+    "wechat_kf",  # 企微「微信客服」（F6 主链，回调 FromUserName 即本渠道 openid）
+    "wechat_app",  # 微信开放平台 App/小程序登录（unionid）
     "miniprogram",  # 小程序
 )
 
@@ -66,12 +69,8 @@ class UserWechatBinding(Base):
 
     __tablename__ = "user_wechat_bindings"
 
-    id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()")
-    )
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     openid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     channel: Mapped[str] = mapped_column(Text, nullable=False)  # 取值见 WECHAT_BINDING_CHANNELS
-    bound_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

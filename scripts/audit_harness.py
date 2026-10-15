@@ -415,6 +415,7 @@ def audit_models() -> None:
         raise SystemExit(2)
 
     classes: dict[str, str] = {}
+    table_names: dict[str, str] = {}
     mirror_tables: set[str] = set()
     for f in sorted(models_dir.glob("*.py")):
         if f.name.startswith("_"):
@@ -432,12 +433,15 @@ def audit_models() -> None:
         for m in _CLASS_BLOCK_RE.finditer(text):
             name = m.group(1)
             classes[name] = f.name
+            table = re.search(r"__tablename__\s*=\s*['\"](\w+)['\"]", m.group("body"))
+            if table:
+                table_names[name] = table.group(1)
             if is_mirror_module and _TABLENAME_RE.search(m.group("body")):
                 mirror_tables.add(name)
     _say("INFO", f"模型类 {len(classes)} 个（分布在 {len({v for v in classes.values()})} 个文件）")
 
     scan_files = [
-        p for p in (BACKEND / "app").rglob("*.py")
+        p for root in (BACKEND / "app", BACKEND / "scripts") for p in root.rglob("*.py")
         if models_dir not in p.parents and p.name != "__init__.py"
     ]
     usages: dict[str, list[str]] = {c: [] for c in classes}
@@ -445,6 +449,13 @@ def audit_models() -> None:
         text = p.read_text(encoding="utf-8", errors="replace")
         for c in classes:
             if re.search(rf"\b{re.escape(c)}\b", text):
+                usages[c].append(str(p.relative_to(REPO)))
+            # Some active tables are intentionally accessed with raw SQL. Count
+            # an actual DML table reference, not a mention in a comment or doc.
+            elif c in table_names and re.search(
+                rf"\b(?:FROM|JOIN|INTO|UPDATE)\s+{re.escape(table_names[c])}\b",
+                text, re.I,
+            ):
                 usages[c].append(str(p.relative_to(REPO)))
 
     zero = {c: f for c, f in classes.items() if not usages[c] and c not in mirror_tables}

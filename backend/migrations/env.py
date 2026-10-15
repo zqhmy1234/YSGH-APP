@@ -7,12 +7,15 @@
     python -m alembic upgrade head                         # 应用
     python -m alembic check                                # 校验 ORM 与迁移零漂移
 """
+
 import sys
 from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import engine_from_config, inspect, pool, text
 
 # 确保 backend/ 在 sys.path（从任意目录执行 alembic 均可导入 app）
 _BACKEND = Path(__file__).resolve().parent.parent
@@ -30,9 +33,43 @@ if config.config_file_name is not None:
     # 导致迁移测试之后的用例日志全灭（2026-09-07 BA3 合跑污染实锤）
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# ConfigParser treats '%' in URL-encoded passwords as interpolation syntax.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
+
+
+def _is_upgrade_request() -> bool:
+    """Only an explicit upgrade may initialize an empty database."""
+    cmd = getattr(getattr(config, "cmd_opts", None), "cmd", None)
+    return bool(config.attributes.get("bootstrap_empty_on_upgrade")) or bool(cmd and cmd[0].__name__ == "upgrade")
+
+
+def _bootstrap_empty_database(connection) -> None:
+    """Create the current ORM schema without replaying the pre-ORM baseline.
+
+    The historical first migration ALTERs tables that it did not create. It
+    cannot run on an empty database, and changing it would rewrite applied
+    history. This path is restricted to a genuinely table-free database; old
+    databases still traverse their existing migration chain.
+    """
+    if not _is_upgrade_request():
+        return
+    tables = set(inspect(connection).get_table_names())
+    if tables:
+        if "alembic_version" not in tables:
+            raise RuntimeError(
+                "Nonempty database has no alembic_version; inspect and migrate it manually"
+            )
+        if connection.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).scalar() is None:
+            raise RuntimeError("Nonempty database has no recorded Alembic revision")
+        connection.rollback()  # release inspection's implicit transaction
+        return
+    connection.rollback()  # inspection starts an implicit transaction
+    script = ScriptDirectory.from_config(config)
+    with connection.begin():
+        target_metadata.create_all(connection)
+        MigrationContext.configure(connection).stamp(script, script.get_current_head())
 
 
 def run_migrations_offline() -> None:
@@ -44,6 +81,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        compare_server_default=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -57,10 +95,12 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        _bootstrap_empty_database(connection)
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            compare_server_default=True,
         )
         with context.begin_transaction():
             context.run_migrations()

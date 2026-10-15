@@ -1,7 +1,8 @@
 """画像域 + 敏感词域 ORM 模型（B1/B5b，对齐 backend/sql/schema.sql）"""
+
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,9 +15,9 @@ class UserProfile(Base):
     __tablename__ = "user_profile"
 
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
-    version: Mapped[int] = mapped_column(default=1)
-    dimensions: Mapped[dict] = mapped_column(JSONB, default=dict)
-    token_usage: Mapped[int] = mapped_column(BigInteger, default=0)
+    version: Mapped[int] = mapped_column(default=1, server_default=text("1"))
+    dimensions: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'"))
+    token_usage: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     last_rebuilt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -45,16 +46,16 @@ class ProfileDimensionPending(Base):
     """
 
     __tablename__ = "profile_dimension_pending"
-    __table_args__ = (
-        UniqueConstraint("user_id", "dimension", "raw_answer", name="uq_pdp_user_dim_raw"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "dimension", "raw_answer", name="uq_pdp_user_dim_raw"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     dimension: Mapped[str] = mapped_column(String)  # relation_core / life_events / values_priority
     raw_answer: Mapped[str] = mapped_column(String)  # 未命中枚举的原始回答
-    count: Mapped[int] = mapped_column(BigInteger, default=1)  # 同类累计
-    status: Mapped[str] = mapped_column(String, default="pending")  # pending / confirmed / rejected
+    count: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))  # 同类累计
+    status: Mapped[str] = mapped_column(
+        String, default="pending", server_default=text("'pending'")
+    )  # pending / confirmed / rejected
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -70,21 +71,36 @@ class ProfileSensitive(Base):
     """
 
     __tablename__ = "profile_sensitive"
-    __table_args__ = (
-        UniqueConstraint("user_id", "topic", name="profile_sensitive_user_id_topic_key"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "topic", name="profile_sensitive_user_id_topic_key"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     topic: Mapped[str] = mapped_column(String)
     topic_hash: Mapped[str | None] = mapped_column(String, nullable=True)  # HMAC 盲索引预留
-    disposition: Mapped[str] = mapped_column(String, default="forbid")  # allow/mention/caution/review/forbid
-    evidence: Mapped[list] = mapped_column(JSONB, default=list)
-    locked: Mapped[bool] = mapped_column(default=False)  # 用户显式标记
+    disposition: Mapped[str] = mapped_column(
+        String, default="forbid", server_default=text("'forbid'")
+    )  # allow/mention/caution/review/forbid
+    evidence: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'"))
+    locked: Mapped[bool] = mapped_column(default=False, server_default=text("false"))  # 用户显式标记
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ProfileL2Evidence(Base):
+    """画像内容级证据；标注与清除服务使用原生 SQL 读写。"""
+
+    __tablename__ = "profile_l2_evidence"
+    __table_args__ = (Index("idx_l2_evidence_user_dim", "user_id", "dimension"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    dimension: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_content_ids: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class SensitiveWord(Base):
@@ -94,9 +110,7 @@ class SensitiveWord(Base):
     """
 
     __tablename__ = "sensitive_words"
-    __table_args__ = (
-        UniqueConstraint("word", "user_id", name="sensitive_words_word_user_id_key"),
-    )
+    __table_args__ = (UniqueConstraint("word", "user_id", name="sensitive_words_word_user_id_key"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     word: Mapped[str] = mapped_column(String)
@@ -120,6 +134,8 @@ class ProfileAnnotationPool(Base):
     raw_text: Mapped[str] = mapped_column(String)
     dimension: Mapped[str | None] = mapped_column(String, nullable=True)
     candidate_value: Mapped[str | None] = mapped_column(String, nullable=True)
-    confidence: Mapped[float] = mapped_column(default=0.0)
-    status: Mapped[str] = mapped_column(String, default="pending")  # pending/reviewed/confirmed/discarded
+    confidence: Mapped[float] = mapped_column(default=0.0, server_default=text("0"))
+    status: Mapped[str] = mapped_column(
+        String, default="pending", server_default=text("'pending'")
+    )  # pending/reviewed/confirmed/discarded
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

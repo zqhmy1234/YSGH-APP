@@ -62,6 +62,8 @@
 	}
 	.capsule-input {
 		width: 100%;
+		/* 2026-10-07 同类缺陷修复：input 无显式高度会被父级 overflow:hidden 裁字（光标可见、字符不可见） */
+		height: var(--d-lattice-p36, 69.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p15, 28.8rpx);
 		color: var(--c-ink-900, #3A2E25);

@@ -1,10 +1,7 @@
 -- ============================================================
--- ⚠️ 本文件**不是建库权威**，不要用它新建后端库（2026-09-24 标注）
---
--- 定位：**只读参考 + CI 测试库建库源**。
---   · CI 的 full-gate 用它建测试库（`.github/workflows/ci.yml:353`）
---   · CI 另有 weekly 漂移巡检比对它与 alembic 链（schema-drift-weekly job）
---   ⚠️ 因此本文件**不能删**，改动前请先确认上述两处仍可用。
+-- ⚠️ 历史参考，不用于建库或漂移门禁（B-1，2026-10-12）。
+-- 新库执行 alembic upgrade head；权威结构在 app/db/models/。
+-- 已从本参考快照移除 11 张无业务读写的旧表；已有库不删表、不删数据。
 --
 -- 为什么不能拿它建后端库（2026-09-24 实测）：
 --   1. **缺 `capsules` 表**（`grep -ci capsule` = 0），而 capsules 被 6 个后端文件
@@ -13,16 +10,16 @@
 --      （比另一条迁移旧）—— 与 alembic 链**双向都不可叠加**：
 --        · 空库直接 `alembic upgrade head` → `relation "contents" does not exist`
 --        · 先跑本文件再 `alembic upgrade head` → `DuplicateColumn: client_event_id`
---   3. 表数 38，但后端实际需要 **37**（= 25 张 ORM 表 + 11 张裸 SQL 表 + alembic_version）
+--   3. 本文件保留历史字段/索引差异，不保证与当前 ORM 完全一致。
 --
--- ✅ 正确的建库方式：`python scripts/init_db.py`
+-- ✅ 正确的建库方式：`alembic upgrade head`（init_db.py 仅封装角色/扩展准备）
 --    说明见脚本头注释与本仓 `docs/` / 技术文档「建库文档」
 --
 -- 权威关系（P2-05）：ORM（`app/db/models/`，唯一权威）
 --                 > alembic 迁移链（`backend/migrations/`）
 --                 > 本文件（只读参考）
 -- ============================================================
--- 忆述光华 MVP · PostgreSQL Schema v3（38 表 11 域）
+-- 忆述光华 MVP · PostgreSQL Schema v3（历史参考，当前 27 表 10 域）
 -- 依据：《忆述光华_数据库Schema_v3.md》（2026-08-18 权威版）
 -- 全局约定：
 --   软删除：业务表带 deleted_at + deleted_by（B4-2，30 天物理清理）
@@ -42,7 +39,7 @@
 -- pgvector 扩展（v3 后无向量列，预留纠错向量/同步；本地/CI/生产统一在此建）
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- ========== 1. 用户与认证域（5 表） ==========
+-- ========== 1. 用户与认证域（4 表） ==========
 
 CREATE TABLE users (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -89,20 +86,8 @@ CREATE TABLE sms_codes (                       -- 防刷
 );
 CREATE INDEX idx_sms_codes_phone_created ON sms_codes(phone, created_at);
 
-CREATE TABLE audit_log (                       -- B1-6 对话式修改记录
-    id            bigserial PRIMARY KEY,
-    user_id       uuid REFERENCES users(id),
-    actor         text NOT NULL,               -- user / ai
-    entity_type   text NOT NULL,               -- profile / event / tag / ...
-    entity_id     uuid,
-    action        text NOT NULL,
-    before        jsonb,
-    after         jsonb,
-    created_at    timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_audit_log_user ON audit_log(user_id, created_at);
 
--- ========== 2. 内容域（4 表） ==========
+-- ========== 2. 内容域（1 表） ==========
 
 CREATE TABLE contents (                        -- 核心表
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -139,37 +124,10 @@ CREATE INDEX idx_contents_user_created ON contents(user_id, created_at);
 CREATE INDEX idx_contents_user_type ON contents(user_id, content_type);
 CREATE INDEX idx_contents_taken_at ON contents(user_id, taken_at);
 
-CREATE TABLE tags (                            -- custom=用户自定义 / l3_topic=L3 主题流（v3 D1）
-    id            bigserial PRIMARY KEY,
-    user_id       uuid REFERENCES users(id),  -- NULL = 全局标签
-    name          text NOT NULL,
-    kind          text NOT NULL DEFAULT 'custom',
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (user_id, name)
-);
 
-CREATE TABLE content_tags (                    -- 多对多（分歧 B）
-    content_id   uuid NOT NULL REFERENCES contents(id),
-    tag_id       bigint NOT NULL REFERENCES tags(id),
-    confidence   double precision,
-    created_at   timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (content_id, tag_id)
-);
-CREATE INDEX idx_content_tags_tag ON content_tags(tag_id);
 
-CREATE TABLE voice_segments (                  -- B5-a 长录音分段
-    id            bigserial PRIMARY KEY,
-    content_id    uuid NOT NULL REFERENCES contents(id),
-    seg_no        int NOT NULL,
-    start_sec     double precision,
-    end_sec       double precision,
-    segment_text  text,
-    segment_emotion jsonb,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (content_id, seg_no)
-);
 
--- ========== 3. 事件域（4 表） ==========
+-- ========== 3. 事件域（3 表） ==========
 
 CREATE TABLE events (                          -- 四层模型 L0-L3
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -205,12 +163,6 @@ CREATE TABLE event_items (                     -- photo_event 泛化（分歧 A�
 );
 CREATE INDEX idx_event_items_event ON event_items(event_id);
 
-CREATE TABLE event_tags (                      -- 事件标签多对多（v3：替代 events.tags JSONB）
-    event_id   uuid NOT NULL REFERENCES events(id),
-    tag_id     bigint NOT NULL REFERENCES tags(id),
-    PRIMARY KEY (event_id, tag_id)
-);
-CREATE INDEX idx_event_tags_tag ON event_tags(tag_id);
 
 CREATE TABLE event_edit_log (                  -- B3-5 用户合并/拆分/确认
     id          bigserial PRIMARY KEY,
@@ -221,7 +173,7 @@ CREATE TABLE event_edit_log (                  -- B3-5 用户合并/拆分/确�
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- ========== 4. 画像域（5 表） ==========
+-- ========== 4. 画像域（6 表） ==========
 
 CREATE TABLE user_profile (
     user_id           uuid PRIMARY KEY REFERENCES users(id),
@@ -315,42 +267,12 @@ CREATE TABLE sensitive_words (                 -- 三层词表（v3 F1：来源�
     UNIQUE (word, user_id)
 );
 
--- ========== 6. 模板与护栏域（2 表） ==========
+-- ========== 6. 模板与护栏域（已退休） ==========
 
-CREATE TABLE question_templates (              -- B5-b 骨架池 30-50 个
-    id            bigserial PRIMARY KEY,
-    type          text NOT NULL,               -- ask / echo / care
-    category      text NOT NULL,               -- photo / text / voice
-    template_text text NOT NULL,
-    slot_vars     jsonb NOT NULL DEFAULT '[]',
-    status        text NOT NULL DEFAULT 'active',  -- active / frozen
-    usage_count   int NOT NULL DEFAULT 0,
-    created_at    timestamptz NOT NULL DEFAULT now()
-);
 
-CREATE TABLE guardrail_logs (                  -- B5-b 审计/成本
-    id          bigserial PRIMARY KEY,
-    user_id     uuid REFERENCES users(id),
-    content     text,
-    engine      text NOT NULL,                 -- rule / bailian
-    result      jsonb,
-    cost_tokens int NOT NULL DEFAULT 0,
-    created_at  timestamptz NOT NULL DEFAULT now()
-);
 
--- ========== 7. 交互状态域（2 表，防重复触发关键） ==========
+-- ========== 7. 交互状态域（1 表） ==========
 
-CREATE TABLE question_history (                -- B5-a 关怀节流 + Q40 频率控制
-    id          bigserial PRIMARY KEY,
-    user_id     uuid NOT NULL REFERENCES users(id),
-    content_id  uuid REFERENCES contents(id),
-    template_id bigint REFERENCES question_templates(id),
-    fingerprint text NOT NULL,                 -- 防换措辞绕过
-    response    text,
-    asked_at    timestamptz NOT NULL DEFAULT now(),
-    send_status text NOT NULL DEFAULT 'sent',  -- sent / failed / read
-    UNIQUE (user_id, fingerprint)
-);
 
 CREATE TABLE echo_history (                    -- 回响每天≤1条/划掉不再出现（v3 E1）
     id          bigserial PRIMARY KEY,
@@ -469,29 +391,7 @@ CREATE TABLE geo_cache (                       -- B3-3 逆编码缓存（高德�
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE ai_request_logs (                 -- 成本归因 + 异步任务状态
-    id          bigserial PRIMARY KEY,
-    user_id     uuid REFERENCES users(id),
-    provider    text NOT NULL,                 -- aliyun/baidu/tencent/amap
-    engine      text NOT NULL,
-    task_type   text NOT NULL,
-    tokens      bigint NOT NULL DEFAULT 0,
-    calls       int NOT NULL DEFAULT 1,
-    cost_est    numeric NOT NULL DEFAULT 0,
-    status      text NOT NULL DEFAULT 'done',
-    created_at  timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_ai_logs_provider_date ON ai_request_logs(provider, created_at);
 
-CREATE TABLE api_cost_stats (                  -- ai_request_logs 定时聚合视图
-    id          bigserial PRIMARY KEY,
-    provider    text NOT NULL,
-    stat_date   date NOT NULL,
-    total_tokens bigint NOT NULL DEFAULT 0,
-    total_calls bigint NOT NULL DEFAULT 0,
-    total_cost  numeric NOT NULL DEFAULT 0,
-    UNIQUE (provider, stat_date)
-);
 
 CREATE TABLE finetune_jobs (                   -- B5-c 共性纠错微调
     id            bigserial PRIMARY KEY,
@@ -520,15 +420,8 @@ CREATE TABLE messages (                        -- 统一消息中心：in-app + 
 CREATE INDEX idx_messages_user_sent ON messages(user_id, sent_at DESC);
 CREATE INDEX idx_messages_user_id ON messages(user_id, id);  -- 消息按 id 分页/游标（S6-4）
 
--- ========== 12. 设置域（1 表） ==========
+-- ========== 12. 设置域（已退休） ==========
 
-CREATE TABLE app_settings (
-    user_id              uuid PRIMARY KEY REFERENCES users(id),
-    ai_engine            text NOT NULL DEFAULT 'cloud',  -- cloud / ollama
-    notification_prefs   jsonb NOT NULL DEFAULT '{}',    -- 回响频率等
-    cross_device_visible bool NOT NULL DEFAULT false,    -- v3：隐私默认关
-    import_sessions      jsonb NOT NULL DEFAULT '{}'     -- Windows 批量导入进度
-);
 
 -- ============================================================
 -- 说明：

@@ -131,6 +131,15 @@
    "evidence": "实现：fix/4b @ 3b2faec（真机清单 05/07 入库）+ feature/missing-pages-impl @ 677ea68（终值口径回源）｜scripts/realdevice/ 清单脚本 + 忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md §1.2（判定）｜真机 nova 11 七清单终态判定（2026-08-28：✅3/❌1/🟡3），缺陷 19 单见 docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md §4，证据 50 文件按「证据留本地」铁律留存 evidence/（.gitignore 不入库）；现行唯一口径=AGENTS.md「当前状态」+ docs/决策台账.md，下一步=4b 修复批次（散单 D-05/D-10/D-14/D-21 待并批）"
   },
   {
+   "id": "BACKEND-B1-SCHEMA",
+   "name": "后端 B-1 schema 漂移修复",
+   "description": "ORM 作为新库权威；空库 Alembic 自举；已有库安全迁移；13 张无 ORM 表逐表处置",
+   "dependencies": ["M0"],
+   "status": "in-progress",
+   "evidence": "2026-10-12：用户批准 2 张在用表补 ORM、11 张退休且已有数据保留。已补 34 处 server_default、新增增量迁移、空库 Alembic bootstrap、漂移门禁与建库脚本单链化。空库 upgrade/check 通过；漂移检查 ORM 32 表/Alembic 32 表、BLOCKING 0/INFO 0；隔离既有 d9a0b1c2d3e4 版本库升级后 users 与 audit_log 哨兵行保留，2 张在用表存在；定向回归 1 passed，测试收集 991 项，快速审核通过。全量审核未过：主 pytest 段 600 秒超时；按用户要求单次加倍至 1200 秒重试后仍超时，API 冒烟 3 项失败（搜索空、测试照片缺失、时间轴空集合），research 通过。BGE-M3 缓存缺失、SetFit 缺失；ruff 0.17 在 61 个未改文件报 151 条 UP017。用户要求阶段性推送到 develop，状态仍为进行中，待旧库覆盖与全量门禁收口。",
+   "gate": "空库 upgrade/check、漂移 0 阻断、旧库数据保留、项目 pytest 与全量审核门禁"
+  },
+  {
    "id": "OPS-SECRETS",
    "name": "密钥管理链路（Infisical，横切 OPS）",
    "description": "所有外部 API Key 与凭证集中存 Infisical（组织 Yishuguanghua / 项目 yishu-backend / 环境 dev+staging+prod）；命令行链路：winget 装 CLI → infisical login（浏览器授权）→ infisical init → secrets 列出/取单条/run 注入；流程固化于 skills/infisical-secrets/SKILL.md",

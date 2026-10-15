@@ -458,6 +458,51 @@ class TestPhotoPipeline:
         assert c.status == "done"
         assert c.text is None  # caption 失败未回写
 
+    def test_photo_ocr_writes_ocr_text_and_merges(self, db_user, monkeypatch):
+        """PHOTO-1：百度 OCR 成功 → extra.ocr_text 写入 + content.text 拼入（OCR\ncaption）"""
+        db, user = db_user
+        self._seed_photo()
+        c = _content(db, user.id, "photo", cos_key="photos/u/1.jpg")
+        from app.services.external import dashscope as ds_mod
+
+        monkeypatch.setattr(ds_mod, "image_caption", lambda k: "西湖边的荷花")
+        monkeypatch.setattr(
+            "app.services.external.baidu_ocr.ocr_image",
+            lambda b: "宫保鸡丁 38元\n鱼香肉丝 32元",
+        )
+        from app.services.pipeline import process_content
+
+        r = process_content(str(c.id))
+        assert r["status"] == "done"
+        db.refresh(c)
+        assert c.status == "done"
+        assert (c.extra or {}).get("ocr_text") == "宫保鸡丁 38元\n鱼香肉丝 32元"
+        # text = OCR\ncaption（caption 也在；顺序不影响检索）
+        assert c.text.startswith("宫保鸡丁 38元")
+        assert "西湖边的荷花" in c.text
+
+    def test_photo_ocr_failure_silent(self, db_user, monkeypatch):
+        """PHOTO-1：OCR 失败 → 照片仍 done（增强项不阻断主流程），text 保持 caption"""
+        db, user = db_user
+        self._seed_photo()
+        c = _content(db, user.id, "photo", cos_key="photos/u/1.jpg")
+        from app.services.external import dashscope as ds_mod
+
+        monkeypatch.setattr(ds_mod, "image_caption", lambda k: "西湖边的荷花")
+
+        def boom(b):
+            raise RuntimeError("百度 OCR 不可用")
+
+        monkeypatch.setattr("app.services.external.baidu_ocr.ocr_image", boom)
+        from app.services.pipeline import process_content
+
+        r = process_content(str(c.id))
+        assert r["status"] == "done"
+        db.refresh(c)
+        assert c.status == "done"
+        assert c.text == "西湖边的荷花"  # caption 未被 OCR 覆盖
+        assert "ocr_text" not in (c.extra or {})  # 失败不写残缺值
+
 
 class TestEventAggregation:
     def test_process_content_cloud_only_l2l3(self, db_user, monkeypatch):

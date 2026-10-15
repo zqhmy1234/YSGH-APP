@@ -185,15 +185,17 @@ function parseClassifyResult(r: UTSJSONObject): ClassifyResult {
 	)
 }
 
-/** POST /corrections：记录用户主动纠错（T-TX-2 数据源①）；返回是否成功 */
-export function submitCorrection(contentId: string, text: string, newLabel: string, oldLabel: string): Promise<boolean> {
+/** POST /corrections：记录用户主动纠错（T-TX-2 数据源①）；返回是否成功
+ *  contentType：photo/text/voice（默认 text；A7 照片手选分类传 'photo'，个人规则层按类型匹配）
+ */
+export function submitCorrection(contentId: string, text: string, newLabel: string, oldLabel: string, contentType: string = 'text'): Promise<boolean> {
 	const body: UTSJSONObject = {
 		content_id: contentId,
 		text: text,
 		new_label: newLabel,
 		old_label: oldLabel,
 		source: 'active',
-		content_type: 'text'
+		content_type: contentType
 	}
 	return new Promise<boolean>((resolve) => {
 		post('/api/v1/corrections', body).then((res: UTSJSONObject | null) => {

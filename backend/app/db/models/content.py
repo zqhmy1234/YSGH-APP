@@ -1,4 +1,5 @@
 """内容域 + 纠错域 ORM 模型（contents/correction_log，对齐 backend/sql/schema.sql）"""
+
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String, Text, UniqueConstraint, func
@@ -33,7 +34,9 @@ class Content(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=sa_text("gen_random_uuid()")
+    )
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     content_type: Mapped[str] = mapped_column(String)
     content_class: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -56,14 +59,14 @@ class Content(Base):
     ai_description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 预留照片 AI 描述
     emotion: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     sensitive_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    sensitive_status: Mapped[str] = mapped_column(String, default="正常")
+    sensitive_status: Mapped[str] = mapped_column(String, default="正常", server_default=sa_text("'正常'"))
     qdrant_text_id: Mapped[str | None] = mapped_column(String, nullable=True)
     qdrant_image_id: Mapped[str | None] = mapped_column(String, nullable=True)
     cos_key: Mapped[str | None] = mapped_column(String, nullable=True)
     thumbnail_key: Mapped[str | None] = mapped_column(String, nullable=True)
     source: Mapped[str] = mapped_column(String, default="app")
     extra: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="processing")
+    status: Mapped[str] = mapped_column(String, default="processing", server_default=sa_text("'processing'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -87,11 +90,11 @@ class CorrectionLog(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
     content_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
-    content_type: Mapped[str] = mapped_column(String, default="text")
+    content_type: Mapped[str] = mapped_column(String, default="text", server_default=sa_text("'text'"))
     qdrant_point_id: Mapped[str | None] = mapped_column(String, nullable=True)
     old_label: Mapped[str | None] = mapped_column(String, nullable=True)
     new_label: Mapped[str] = mapped_column(String)
     source: Mapped[str] = mapped_column(String, default="active")  # active / echo / org
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    is_global_candidate: Mapped[bool] = mapped_column(default=False)
+    is_global_candidate: Mapped[bool] = mapped_column(default=False, server_default=sa_text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

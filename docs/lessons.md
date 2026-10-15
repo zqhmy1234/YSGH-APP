@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-10-12 17:31 · commit dcfd2fd · ts=1791797493
+- **错误**：B-1 提交前快速审核首次误报 ruff 未安装
+- **根因**：直接运行 .venv/Scripts/python.exe 未激活虚拟环境，review_agent 子进程从 PATH 查找 ruff 时找不到；ruff 实际已安装
+- **修复**：先执行 infra/activate.ps1，再运行 python scripts/review_agent.py；激活后 lint 与其他代码检查通过
+- **相关文件**：scripts/review_agent.py
+- **教训**：Windows 项目门禁需从已激活的环境运行，避免把 PATH 缺失误判为依赖未安装
+
+---
+
+### 2026-10-12 16:30 · commit dcfd2fd · ts=1791793820
+- **错误**：全量门禁把模型依赖缺失与 pytest 超时误报为 pytest 未安装
+- **根因**：review_agent 用 No module named 与 pytest 两个宽泛子串判定，pytest 仅作为日志上下文也会命中
+- **修复**：仅匹配 No module named pytest、pytest_cov 或 _pytest 的具体模块名；真实失败回读 test-report.json
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁环境错误须匹配具体依赖名，不用跨日志的宽泛子串组合
+
+---
+
+### 2026-10-12 15:56 · commit dcfd2fd · ts=1791791796
+- **错误**：B-1 修改 CI 注释时误删工作流主体，差异显示约 312 行删除
+- **根因**：补丁替换范围过宽，未立即检查 git diff --stat
+- **修复**：从 HEAD 恢复 CI 文件后只改三行，复查 diff 为 3 加 3 删
+- **相关文件**：.github/workflows/ci.yml
+- **教训**：改 CI 前后核对工作流完整性和差异行数；大面积删除须立即撤回
+
+---
+
 ### 2026-09-28 19:31 · commit c1f4350 · ts=1790595099
 - **错误**：裸 SQL 插 contents 报 NotNullViolation: null value in column "sensitive_status"（test_ba1_fields::test_stats_daily_summary_total_bytes）。同一用例在旧的 schema.sql 建库源上是通过的。
 - **根因**：ORM 模型只写了 Python 侧 default=（如 content.py:59 sensitive_status: default="正常"），没有 server_default；而 schema.sql 有 95 处 DDL DEFAULT、迁移链也有 83 处 server_default。create_all 只认 server_default，所以 scripts/init_db.py 建出来的库**没有 DDL 默认值** —— 裸 SQL 一旦省略这些 NOT NULL 列就必挂。实测缺口 34 列 / 17 张表（contents 的 id/status/sensitive_status、messages 的 channel/payload/status、profile_sensitive、upload_tasks、user_profile、users、devices…）。schema.sql 那条链因为自带 DDL 默认值，把这层问题掩盖了一个月；CI 一直没跑到测试步骤，所以直到 2026-09-28 把建库源换成 init_db.py 才暴露。另有一条更硬的冲突：contents.source 在 ORM 是 NOT NULL、在 schema.sql 里可空（漂移报告列为 BLOCKING 可空性漂移）。

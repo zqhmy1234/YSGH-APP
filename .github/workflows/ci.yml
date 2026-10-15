@@ -219,7 +219,7 @@ jobs:
         #      —— 这不是意外：`backend/sql/schema.sql` 自己的头部（2026-09-24）就写着
         #      「不是建库权威，不要用它新建后端库」「✅ 正确的建库方式：python scripts/init_db.py」，
         #      而本步骤恰恰在做它明令禁止的事。
-        #   现改为直接调 `scripts/init_db.py`（= ORM create_all + 裸 SQL 表 + alembic stamp），
+        #   B-1 后 `scripts/init_db.py` 负责角色/扩展，建表交给 Alembic；空库由 ORM 自举，已有库走增量迁移。
         #   与本地/服务器**同源** —— 「本地全绿 CI 必挂」这一整类漂移事故从结构上消失。
         #   · 角色名/密码/库名由它从 job 级 `DATABASE_URL` 解析（两侧自动一致，无需再内联密码）
         #   · pgvector 非 trusted 扩展由它改用**超级用户连目标库**创建（自己踩过这个坑并记在注释里）
@@ -341,7 +341,7 @@ jobs:
   #       （= 告警信号，与同文件 pip-audit-weekly「发现即失败」口径一致）。
   #       仍**不阻断 push/PR 主流水线**（本 job 仅 schedule/workflow_dispatch 触发，不拖慢 PR）。
   schema-drift-weekly:
-    name: Schema Drift（weekly，schema.sql ↔ alembic）
+    name: Schema Drift（weekly，ORM ↔ alembic）
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # 仅 schedule/workflow_dispatch 触发（不参与 push/PR 门禁）；
@@ -373,7 +373,7 @@ jobs:
       - name: Install deps (sqlalchemy/psycopg/alembic/pydantic——仅漂移检测所需，不装全量 requirements)
         run: pip install sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings
 
-      - name: Run schema drift check (漂移即 fail —— 定时红为告警信号)
+      - name: Run ORM versus Alembic schema drift check
         # P0-4：检出漂移 → 脚本 exit 1（+ ::error:: annotation）。
         # B10-i/D14-23（2026-09-24 重构波）：本步骤原为 `continue-on-error: true` ⇒ **本 job 永绿**，
         #   schema.sql ↔ alembic 漂移**无法产生任何信号**（与同文件 pip-audit-weekly 的
