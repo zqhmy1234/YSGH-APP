@@ -101,6 +101,11 @@ class AuthIdentity:
     phone: str | None = None
     device_id: str = "phone-login"
     platform: str = "android"
+    # 2026-10-15（台账 §7.29）：微信渠道专用 —— 授权登录**同时**要建立渠道绑定，而绑定表
+    # `user_wechat_bindings` 的键是 **openid**（不是 unionid，见 schema.sql:57「一个 unionid
+    # 多 openid」），原实现只带 unionid ⇒ 拿不到可写绑定的键。非微信渠道保持默认值（不建绑定）。
+    wechat_openid: str | None = None
+    wechat_channel: str = ""
 
 
 class LoginProvider(ABC):
@@ -270,7 +275,19 @@ def _wechat_configured() -> bool:
     return bool(settings.wechat_appid and settings.wechat_secret)
 
 
-def _wechat_code2session(code: str) -> str:
+class WechatCode2Session:
+    """`jscode2session` 解析结果（2026-10-15 · 台账 §7.29）。
+
+    **为什么要带 openid**：绑定表以 openid 为键（一个 unionid 多 openid），授权登录原先
+    只取 unionid ⇒ 拿不到可写绑定的键，"授权即完成绑定"这一步无从落地。
+    """
+
+    def __init__(self, openid: str, unionid: str) -> None:
+        self.openid = openid
+        self.unionid = unionid
+
+
+def _wechat_code2session(code: str) -> WechatCode2Session:
     """调微信开放平台 code2session 换 openid/unionid（AUTH-001 unionid 三端一致）
 
     GET {url}?appid=..&secret=..&js_code=..&grant_type=authorization_code
@@ -279,7 +296,7 @@ def _wechat_code2session(code: str) -> str:
     失败语义（不静默降级 mock）：
       - 业务错误（errcode≠0，如 40029 code 无效/已过期、40163 已使用）→ 401 AUTH_001
       - 上游网络/HTTP 异常 → 502 AUTH_012（R4#11：AUTH_099 拆分——上游不可用）
-      - 响应缺少 openid/unionid → 502 AUTH_013（R4#11：响应协议异常）
+      - 响应缺少 openid → 502 AUTH_013（R4#11：响应协议异常）
     """
     import httpx
 
@@ -303,10 +320,11 @@ def _wechat_code2session(code: str) -> str:
         raise ApiError(
             ERR_AUTH_001, f"微信 code 无效或已过期: {data.get('errmsg')}", http=401
         )
-    unionid = data.get("unionid") or data.get("openid")
-    if not unionid:
-        raise ApiError(ERR_AUTH_013, "微信登录响应缺少 openid/unionid", http=502)
-    return str(unionid)
+    openid = data.get("openid")
+    if not openid:
+        raise ApiError(ERR_AUTH_013, "微信登录响应缺少 openid", http=502)
+    unionid = data.get("unionid") or openid
+    return WechatCode2Session(openid=str(openid), unionid=str(unionid))
 
 
 class WechatLoginProvider(LoginProvider):
@@ -319,16 +337,28 @@ class WechatLoginProvider(LoginProvider):
             raise ApiError(ERR_AUTH_001, "code 不能为空", http=400)
 
         if _wechat_configured():
-            unionid = _wechat_code2session(req.code)
-        elif settings.app_env == "production":
+            ident = _wechat_code2session(req.code)
+            return AuthIdentity(
+                unionid=ident.unionid,
+                device_id=req.device_id,
+                platform="android",
+                wechat_openid=ident.openid,
+                wechat_channel=settings.wechat_login_channel,
+            )
+        if settings.app_env == "production":
             # 安全修复（审查 CRITICAL）：生产环境未接入微信时拒绝登录，
             # 不允许任意 code 创建 mock 用户（认证形同虚设）
             raise ApiError(ERR_AUTH_011, "微信登录未接入", http=501)
-        else:
-            # 仅开发/测试环境允许 mock（联调用）
-            unionid = f"mock-unionid-{req.code}"
-
-        return AuthIdentity(unionid=unionid, device_id=req.device_id, platform="android")
+        # 仅开发/测试环境允许 mock（联调用）
+        # 2026-10-15（台账 §7.29）：**openid 与 unionid 一起伪造** —— 让"授权登录即建绑定"
+        # 这条链在 dev 也能端到端验证（否则只能等真凭证到位才第一次跑，风险后置）。
+        return AuthIdentity(
+            unionid=f"mock-unionid-{req.code}",
+            device_id=req.device_id,
+            platform="android",
+            wechat_openid=f"mock-openid-{req.code}",
+            wechat_channel=settings.wechat_login_channel,
+        )
 
 
 # ---------------- 设备码渠道（内测期临时通道 · 2026-09-21） ----------------

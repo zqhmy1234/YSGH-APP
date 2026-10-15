@@ -436,3 +436,88 @@ def test_trash_clear_cleans_ledger(db_user, as_user):
     ).scalars().all() == []
     logs = db.execute(select(DeletedLog).where(DeletedLog.content_id == cid)).scalars().all()
     assert all(lg.cleanup_status != "pending" for lg in logs), logs
+
+
+def test_trash_clear_after_correction_log(db_user, as_user):
+    """§7.28：内容被**纠错过**（`correction_log` 有行）⇒ 清空回收站**必须仍成功**。
+
+    原状：`correction_log.content_id → contents.id` 是 **NO ACTION** 外键（DB 实证
+    `confdeltype='a'`），硬删该内容直接外键冲突 ⇒ 接口 **500** —— 端到端验证实测抓到
+    （同一序列"提交纠错 → 清空"必挂、"不提交纠错"必过）。
+    """
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    c = _make_content(db, user, content_type="text")
+    cid = str(c.id)
+    db.commit()
+
+    cli = TestClient(as_user(user))
+    # 用户手选分类（纠错链写 correction_log）
+    r = cli.post(
+        "/api/v1/corrections",
+        json={"content_id": cid, "text": "纠错原文", "new_label": "idea",
+              "old_label": "mixed", "source": "active", "content_type": "text"},
+    )
+    assert r.status_code == 200, r.text
+
+    assert cli.delete(f"/api/v1/contents/{cid}").status_code == 200
+    rc = cli.request("DELETE", "/api/v1/trash")
+    assert rc.status_code == 200, f"有纠错记录时清空回收站不得 500：{rc.text}"
+    assert rc.json()["data"]["cleared"] >= 1, rc.text
+
+    db.expire_all()
+    assert _fetch(db, cid) is None, "内容应已硬删"
+    # 纠错记录含用户原文 ⇒ 彻底清除时一并删（隐私口径）
+    left = db.execute(
+        text("SELECT count(*) FROM correction_log WHERE content_id::text = :c"), {"c": cid}
+    ).scalar()
+    assert left == 0, "纠错记录（含用户原文）应随彻底清除一并删除"
+
+
+def test_trash_clear_purges_vectors_and_objects(db_user, as_user, vector_collection):
+    """§7.25①：清空回收站必须**连云端一起清**（Qdrant 向量 + 对象存储原件/缩略图）。
+
+    原实现只删 DB 行 ⇒ 用户以为"彻底清空"，实测数据仍可被检索命中、仍占着对象存储
+    （**隐私承诺相关**）。本用例把三处都钉住：DB 行 / 向量点位 / 两个对象。
+    """
+    from app.services.external.storage import get_storage_backend
+    from app.services.vector_store import default_collection, get_store, point_id_for
+
+    db, user = db_user
+    c = _make_content(db, user, content_type="photo")
+    cid = str(c.id)
+    cos_key = f"test-trash/{cid}.jpg"
+    thumb_key = f"test-trash/{cid}_thumb.jpg"
+    c.cos_key = cos_key
+    c.thumbnail_key = thumb_key
+    db.commit()
+
+    storage = get_storage_backend()
+    storage.put_object(cos_key, b"orig")
+    storage.put_object(thumb_key, b"thumb")
+    assert storage.object_exists(cos_key)
+
+    store = get_store()
+    store.upsert_content(cid, "回收站清空用例", [0.01] * 1024, {1: 1.0}, {"content_type": "photo"})
+    pid = point_id_for(cid)
+    assert store.client.retrieve(collection_name=default_collection(), ids=[pid]) != []
+
+    from fastapi.testclient import TestClient
+
+    cli = TestClient(as_user(user))
+    assert cli.delete(f"/api/v1/contents/{cid}").status_code == 200
+    r = cli.request("DELETE", "/api/v1/trash")
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["warnings"] == [], data  # 清尾全成功 ⇒ 不得有告警
+    assert data["vectors_purged"] == 1, data
+    assert data["objects_purged"] == 2, data
+
+    db.expire_all()
+    assert _fetch(db, cid) is None, "DB 行应已硬删"
+    assert not storage.object_exists(cos_key), "原件应已删除"
+    assert not storage.object_exists(thumb_key), "缩略图应已删除"
+    assert store.client.retrieve(
+        collection_name=default_collection(), ids=[pid]
+    ) == [], "向量应已删除（否则检索仍会命中已被删除的内容）"

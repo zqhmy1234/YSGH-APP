@@ -65,17 +65,243 @@ function isNeighbor(a: Photo, b: Photo, epsTsec: number, epsS_m: number): boolea
 	return haversineM(a.lat, a.lng, b.lat, b.lng) <= epsS_m
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 性能优化（2026-10-14 · 台账 §4.20 批次 5 · RC-7）：语义**逐位等价**的剪枝
+//
+// 旧实现是**双重全表扫描**（外层每个未访问点扫全表、簇内每个新点再扫全表）⇒ O(n²) 次
+// `isNeighbor`（每次含 haversine 的 sin/cos/asin）。而 `agg_runner` 在**上传完成回调里
+// 同步调用**它（UTS 无 worker）⇒ n 一大就卡死 JS 线程。
+//
+// 三层优化（都不改判定，只少看几个不可能的点）：
+//   ① **时间窗剪枝**：邻居的必要条件是 |Δt| ≤ εt ⇒ 按下标按 ts 排序 + 双指针求窗，
+//      只在窗内找候选（窗宽 w ≪ n）。
+//   ② **空间盒预筛**：窗内两点**都有 GPS** 时先用保守经纬度盒挡掉明显超距者（免算 haversine）。
+//   ③ **团快路**：整窗若能**被证明两两皆邻居**（时间跨度 ≤ εt 且 GPS 子集落在"半盒"内，
+//      见 `collectNeighbors` 注释的界推导），则 O(k) 直接给出全集，免 O(k²) 判定。
+//      —— 这条专治"同一地点连续拍摄"（真实相册常见；时间窗与空间盒对它都无效）。
+//   候选最后按**原始下标升序**回排：DBSCAN 的边界点归属依赖遍历顺序，顺序不变才逐位等价。
+//
+// 取证：`scripts/bench_st_dbscan.py`（↔ 仓库 Python 参考端 139 用例逐位对拍 + 判定次数计量）。
+// ⚠️ 写法约束（血泪）：**不要在函数内定义函数**（箭头闭包 + 联合返回类型 `number[] | null`
+//    实测会把 UTS 编译器**卡死**，300s+ 无输出；改回模块级函数后 49.6s 正常）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 每度纬度下界（赤道）⇒ 用它换算的度阈值最大 ⇒ 盒最大（保守，只多留不误杀） */
+const LAT_M_PER_DEG = 110574.0
+/** 团快路"半盒"系数：0.49×(111694/110574 + 111320/110574) ≈ 0.99 < 1（详见 ③ 的推导） */
+const CLIQUE_HALF_BOX = 0.49
+/** 候选判定次数 / 团快路命中次数（诊断用；模块级而非闭包变量——见上方写法约束） */
+let lastCandidateTotal = 0
+let lastCliqueHits = 0
+
 /**
- * ST-DBSCAN：返回簇列表；散片（噪声）不返回（由调用方并入 L1）
- * 复杂度 O(n²)；万级需网格索引（后续优化，与 Python 原型注释一致）
+ * 收集 i 的邻居下标（**升序**）：时间窗内 + 空间盒预筛 + 团快路，最终判定走原 `isNeighbor`。
+ *
+ * 团快路判据（充分条件，O(k) 可查）：候选（含 i）① 时间跨度 ≤ εt；
+ * ② 有 GPS 的那部分落在"半盒"内（Δlat ≤ 0.49·latDeg，Δlng ≤ 0.49·latDeg/cos）——则
+ *   · 任意两点 |Δt| ≤ εt（由 ①）；
+ *   · 任意两点都有 GPS 时，球面距离 ≤ 沿子午线 + 沿纬线（路径界）
+ *     ≈ 0.49·εs·(111694/110574) + 0.49·εs·(111320/110574) ≤ 0.99·εs < εs（由 ②）；
+ *   · 任一点无 GPS 时按 B3 矩阵 #6 只看时间窗（由 ①）。
+ * ⇒ 候选集即完整邻居集。cos 取子集内 |lat| **较小**者（cos 更大 ⇒ 纬线弧更长 ⇒ 更保守）。
  */
+function collectNeighbors(
+	photos: Photo[], order: number[], rankOf: number[], winLo: number[], winHi: number[],
+	i: number, epsTsec: number, epsS_m: number
+): number[] {
+	const latDeg = epsS_m / LAT_M_PER_DEG
+	const r = rankOf[i]
+	const a = photos[i]
+	const aLat = a.lat
+	const aLng = a.lng
+	const hasA = aLat != null && aLng != null
+
+	// ── ③ 团快路：先用一趟 O(k) 扫描求时间跨度与 GPS 包围盒 ──
+	let minTs = a.ts
+	let maxTs = a.ts
+	let minLat = 90.0
+	let maxLat = -90.0
+	let minLng = 180.0
+	let maxLng = -180.0
+	let anyGps = false
+	if (aLat != null && aLng != null) {
+		minLat = aLat
+		maxLat = aLat
+		minLng = aLng
+		maxLng = aLng
+		anyGps = true
+	}
+	let cliqueOk = true
+	for (let k = winLo[r]; k <= winHi[r]; k++) {
+		const j = order[k]
+		if (j == i) {
+			continue
+		}
+		const b = photos[j]
+		if (b.ts < minTs) {
+			minTs = b.ts
+		}
+		if (b.ts > maxTs) {
+			maxTs = b.ts
+		}
+		const bLat = b.lat
+		const bLng = b.lng
+		if (bLat != null && bLng != null) {
+			if (!anyGps) {
+				minLat = bLat
+				maxLat = bLat
+				minLng = bLng
+				maxLng = bLng
+				anyGps = true
+			} else {
+				if (bLat < minLat) {
+					minLat = bLat
+				}
+				if (bLat > maxLat) {
+					maxLat = bLat
+				}
+				if (bLng < minLng) {
+					minLng = bLng
+				}
+				if (bLng > maxLng) {
+					maxLng = bLng
+				}
+			}
+		}
+	}
+	if (maxTs - minTs > epsTsec * 1000.0 - 1.0) {
+		cliqueOk = false
+	}
+	if (cliqueOk && anyGps) {
+		const absLatA = Math.abs(minLat)
+		const absLatB = Math.abs(maxLat)
+		const absMin = absLatA < absLatB ? absLatA : absLatB
+		let cosRef = Math.cos(absMin * Math.PI / 180.0)
+		if (cosRef < 0.01) {
+			cosRef = 0.01
+		}
+		if (maxLat - minLat > latDeg * CLIQUE_HALF_BOX) {
+			cliqueOk = false
+		}
+		if (maxLng - minLng > latDeg / cosRef * CLIQUE_HALF_BOX) {
+			cliqueOk = false
+		}
+	}
+
+	const out: number[] = []
+	if (cliqueOk) {
+		lastCliqueHits++
+		for (let k = winLo[r]; k <= winHi[r]; k++) {
+			const j = order[k]
+			if (j != i) {
+				out.push(j)
+			}
+		}
+		out.sort((x: number, y: number): number => {
+			return x - y
+		})
+		return out
+	}
+
+	// ── ①② 常规路径：空间盒预筛 + 原判定 ──
+	let cosLat = 1.0
+	if (hasA) {
+		cosLat = Math.cos((aLat as number) * Math.PI / 180.0)
+		if (cosLat < 0.01) {
+			cosLat = 0.01
+		}
+	}
+	const lngDeg = latDeg / cosLat
+	for (let k = winLo[r]; k <= winHi[r]; k++) {
+		const j = order[k]
+		if (j == i) {
+			continue
+		}
+		lastCandidateTotal++
+		if (hasA) {
+			const b = photos[j]
+			const bLat = b.lat
+			const bLng = b.lng
+			if (bLat != null && bLng != null) {
+				if (Math.abs(bLat - (aLat as number)) > latDeg) {
+					continue
+				}
+				let dl = Math.abs(bLng - (aLng as number))
+				if (dl > 180.0) {
+					dl = 360.0 - dl // 跨 ±180 经线
+				}
+				if (dl > lngDeg) {
+					continue
+				}
+			}
+		}
+		if (isNeighbor(a, photos[j], epsTsec, epsS_m)) {
+			out.push(j)
+		}
+	}
+	out.sort((x: number, y: number): number => {
+		return x - y
+	})
+	return out
+}
+
+/** ST-DBSCAN：返回簇列表；散片（噪声）不返回（由调用方并入 L1）。语义与旧实现逐位等价。 */
 export function stDbscan(photos: Photo[], epsTsec: number, epsS_m: number, minPts: number): Photo[][] {
 	const n = photos.length
+	const clusters: Photo[][] = []
+	if (n == 0) {
+		return clusters
+	}
+	const t0 = Date.now()
+	lastCandidateTotal = 0
+	lastCliqueHits = 0
+
 	const visited: boolean[] = []
 	for (let i = 0; i < n; i++) {
 		visited.push(false)
 	}
-	const clusters: Photo[][] = []
+
+	// ① 按 ts 排序 + 双指针时间窗（order[winLo[r] .. winHi[r]] 是时间候选的**超集**）
+	const order: number[] = []
+	for (let i = 0; i < n; i++) {
+		order.push(i)
+	}
+	order.sort((a: number, b: number): number => {
+		const ta = photos[a].ts
+		const tb = photos[b].ts
+		return ta < tb ? -1 : (ta > tb ? 1 : 0)
+	})
+	const rankOf: number[] = []
+	for (let i = 0; i < n; i++) {
+		rankOf.push(0)
+	}
+	for (let r = 0; r < n; r++) {
+		rankOf[order[r]] = r
+	}
+	// εt 上浮 1ms：时间窗只需是保守超集，真正的 |Δt| 判定仍在 isNeighbor 内
+	const epsTms = epsTsec * 1000.0 + 1.0
+	const winLo: number[] = []
+	const winHi: number[] = []
+	for (let i = 0; i < n; i++) {
+		winLo.push(0)
+		winHi.push(n - 1)
+	}
+	let lo = 0
+	let hi = 0
+	for (let r = 0; r < n; r++) {
+		const t = photos[order[r]].ts
+		while (photos[order[lo]].ts < t - epsTms) {
+			lo++
+		}
+		if (hi < r) {
+			hi = r
+		}
+		while (hi + 1 < n && photos[order[hi + 1]].ts <= t + epsTms) {
+			hi++
+		}
+		winLo[r] = lo
+		winHi[r] = hi
+	}
 
 	for (let i = 0; i < n; i++) {
 		if (visited[i]) {
@@ -83,15 +309,7 @@ export function stDbscan(photos: Photo[], epsTsec: number, epsS_m: number, minPt
 		}
 		visited[i] = true
 		const seed = photos[i]
-		const neighbors: number[] = []
-		for (let j = 0; j < n; j++) {
-			if (j == i) {
-				continue
-			}
-			if (isNeighbor(seed, photos[j], epsTsec, epsS_m)) {
-				neighbors.push(j)
-			}
-		}
+		const neighbors = collectNeighbors(photos, order, rankOf, winLo, winHi, i, epsTsec, epsS_m)
 		if (neighbors.length < minPts - 1) {
 			continue // 噪声：散片 → L1 日卡片（B3-2 min_pts=3）
 		}
@@ -108,15 +326,7 @@ export function stDbscan(photos: Photo[], epsTsec: number, epsS_m: number, minPt
 			}
 			visited[j] = true
 			cluster.push(photos[j])
-			const jn: number[] = []
-			for (let k = 0; k < n; k++) {
-				if (k == j) {
-					continue
-				}
-				if (isNeighbor(photos[j], photos[k], epsTsec, epsS_m)) {
-					jn.push(k)
-				}
-			}
+			const jn = collectNeighbors(photos, order, rankOf, winLo, winHi, j, epsTsec, epsS_m)
 			if (jn.length >= minPts - 1) {
 				for (let q = 0; q < jn.length; q++) {
 					const k = jn[q]
@@ -127,6 +337,17 @@ export function stDbscan(photos: Photo[], epsTsec: number, epsS_m: number, minPt
 			}
 		}
 		clusters.push(cluster)
+	}
+	// 性能埋点（logcat [yishu-agg]）：n / 实际判定次数 / 全扫基准 / 团快路命中 / 耗时
+	console.log('[yishu-agg] stDbscan n=' + n + ' 判定=' + lastCandidateTotal
+		+ ' 团快路命中=' + lastCliqueHits + ' 全扫基准=' + (n * (n - 1))
+		+ ' 耗时=' + (Date.now() - t0) + 'ms')
+	// 「算法性能要保证」需要一个**会喊的界**：折叠后单一 60min 窗内可达点数上界≈720
+	// （preprocess 的 <5s 连拍折叠，3600/5）⇒ 正常判定次数应在十万量级以下。
+	const CANDIDATE_WARN = 200000
+	if (lastCandidateTotal > CANDIDATE_WARN) {
+		console.warn('[yishu-agg] stDbscan 判定次数异常偏大：' + lastCandidateTotal
+			+ '（阈值 ' + CANDIDATE_WARN + '）——请检查连拍折叠与输入规模（依据见 docs/决策台账.md §4.20 RC-7）')
 	}
 	return clusters
 }

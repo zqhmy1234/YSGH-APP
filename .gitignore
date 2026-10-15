@@ -184,6 +184,19 @@ deploy/.env
 # 可复用的工具请放 scripts/（如 scripts/e2e_agent_chat.ps1，AG5 真代理 E2E）。
 _tmp/
 
+# --- mcporter 本地配置（浏览器自动化工具在项目根生成的注册文件）---
+# mcporter 会把 MCP server 注册写到"当前目录/config/mcporter.json"（本机环境产物，
+# 含本机绝对路径），与源码无关，一律忽略。
+config/mcporter.json
+
+# --- 隧道地址文件（固定地址模式 · 2026-10-11）---
+# deploy/.tunnel-url 记录**本机当前**的隧道公网地址（由 scripts/dev/tunnel.ps1 写入，
+# write_base_url.ps1 / pack.ps1 读取）。它是环境产物而非源码：随隧道重启与换机器而变，
+# 入库只会让别的机器拿到一个连不上的地址 ⇒ 一律忽略。
+deploy/.tunnel-url
+# 2026-10-12 补：隧道**模式**记录（static/quick/random），与地址文件同类（本机运行产物）
+deploy/.tunnel-mode
+
 # --- 内测下载页 APK 投放目录（C3 卡 · 2026-10-11）---
 # ⚠️ 与上方第 40 行 `*.apk`（Gradle/Android 构建产物忽略）的冲突：
 #    `deploy/download/apk/` 是内测投放目录，页面主按钮固定引用 `apk/yishu-beta-latest.apk`。

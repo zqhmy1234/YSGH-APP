@@ -1,8 +1,26 @@
-> 🧹 **2026-09-04 整饬**：已完成/已闭环条目已压缩为「✅ 速查卡」（分支/SHA｜文件｜方法｜设计来源）；未实现/半通/待复验/待拍板条目保持原叙述。未闭环事项现行权威清单 = `_diff_ledger.md` 与 `_execution_plan_20260904.md` §1。
-> 📌 **当前状态速览（2026-08-29）**：收尾 Wave 1–4 全收口（17/17），真机 7 清单全达终态+补验。终值：**用户故事 ✅46/🟡7/❌0 · A 级 32 条 · 性能门禁 10/2/6 · 30s ✅6.0s**。
-> 数字唯一现行口径 = `AGENTS.md`「当前状态」节；术语/决策/待拍板 = `docs/决策台账.md`；缺陷台账（19 单：D-01~D-16、D-18、D-19、D-21）与环境事件（O-1/O-2）= `docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md` §4/§5。
-> **下一步 = 4b 修复批次（执行计划已定：`docs/4b修复批次执行计划_20260829.md`，P-0 拍板五项全落、P-1 隔离工作区已建）**：批次1 D-18/D-19（重打包复验）→ 批次2 D-16/D-07/D-08＋散单 D-05/D-10/D-14/D-21（08-29 拍板并批）→ 批次3 S2 校准（卡真值）+D-06（**等价复现验收，无需第二设备**，台账 §1.8）。
-> 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，仅加 [勘误] 注记。与速览冲突的旧数字以速览为准。
+> 🧹 **2026-09-04 整饬**：已完成/已闭环条目已压缩为「✅ 速查卡」（分支/SHA｜文件｜方法｜设计来源）；未实现/半通/待复验/待拍板条目保持原叙述。
+> ⚠️ **2026-10-11 规则修订（重要）**：本文件**不再承载「当前状态」**——唯一来源是 [`STATE.md`](STATE.md)。
+> 原头部「📌 当前状态速览（2026-08-29）」已删除：它与同文件**尾部**（更新到 10-09）自相矛盾，而旧规则写
+> 「与速览冲突的旧数字以速览为准」⇒ 恰好让人**采信更旧的一侧**（实测代价：新会话按启动流程会去修早已收口的「4b 修复批次」）。
+> **新规则：本文件是纯追加时间线；任何冲突一律以「最后一条」为准。** 全局数字只信 `STATE.md`。
+> 术语/决策/待拍板 = `docs/决策台账.md`；缺陷台账（D-01~D-16、D-18、D-19、D-21）与环境事件（O-1/O-2）
+> = `docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md` §4/§5。
+> 本文件为**时间线日志**（新旧混排属历史演进），新条目追加在**末尾**；历史条目只读保留，仅加 [勘误] 注记。
+
+## Harness Markers（机器可读 · 双语）
+
+> 供通用 harness 工具（如 harness-creator 的 `validate-harness.mjs`）识别——其判据为英文关键词。
+> **实质内容以上文中文为准**；本块只是指针，指向唯一来源，避免第二次漂移。
+
+- Last Updated: 2026-10-14
+- Current State: 见 [`STATE.md`](STATE.md)（唯一「当前状态」）
+- What: harness / 门禁系统性更新 + 「新包可跑」修复（环境配置漂移根治）
+- Current Objective: 让重构后的新包在真机可用；补齐长期欠账的门禁
+- Next: 打通固定地址出包链 → 云打包 → **无数据线**真机验收
+- Recommended Next Step: `scripts/dev/tunnel.ps1` → `write_base_url.ps1` → `preflight_pack.ps1 -AllowTunnel` → `scripts/dev/pack.ps1`
+- Blockers: ngrok 静态域名与 authtoken 待用户领取；百炼凭据（Token Plan）待续期
+- Files: `client/utils/config.uts` · `scripts/dev/*` · `deploy/scripts/preflight_pack.ps1` · `STATE.md` · `AGENTS.md`
+- Next Session: 起服务（`start_all.ps1`）→ 起隧道 → 回写三件套 → 出包门 → 打包 → 真机验收
 
 ## ✅ 速查卡 · 2026-09-10 · 缺失页面战役全收口（波 A-E + 安全深扫 + 波 D 重构 + P2-2）
 
@@ -445,7 +463,7 @@
 - 👁 **L-02b 顺带发现（登记交功能波，非本波修）**：模板内**已无**拆分面板与照片详情浮层 ⇒ `showSplitPanel`/`splitItems`/`splitLoading`/`confirmSplit`/`cancelSplit`/`toggleSplitItem`/`splitTimeText` 与 `showPhotoDetail`/`photoDetail*`/`closePhotoDetail`/`jumpFromPhoto` 均属**模板不可达 UI 状态**（用户仍可经卡片「⋯」触发 `doSplit`，但无节点渲染该面板）= **功能缺口**。本波只纯移动，按原样搬迁 + 留此登记（避免"搬迁即修"越界）。
 - 🎯 **L-18/L-19/L-20 样式外置 ⇒ 轴 5 filesize 棘轮清零（第十六轮）**：`TabAi.uvue` 974→**469**（style 507 行 → `client/styles/tab-ai.css`）/ `favorites.uvue` 957→**500**（style 459 → `favorites.css`）/ `manage.uvue` 891→**466**（style 427 → `portrait-manage.css`）——沿用 **B5d/B5.2e 已证机制**（整块 `<style>` **纯移动** + uvue 侧只留 `@import`），**零 script/运行时改动**（比抽 composable 风险更低，故优先选它）。证据：① **等价性**＝「当前 uvue + 还原 css」与 `git show HEAD:<file>` **按行尾归一后字节全等**（TabAi 工作区 CRLF、git blob LF，差值恰＝行数；**教训：字节比对前必须归一化行尾，否则会得出假"不等"**）；② **冷编译成功**（ready in 67.8s）；③ **产物取证**＝`GenComponentsTabAiTabAiSharedData.style.bytes` 含 `ai-root`/`ai-header`、`GenPagesFavoritesFavoritesSharedData.style.bytes` 含 `page-root`/`nav-title`、`GenPagesPortraitManageSharedData.style.bytes` 含 `page`/`serif` ⇒ `@import` 被真正处理；④ **三条 baseline 条目删除 ⇒ `audit_harness filesize` 报「存量超阈 0 个」**。
 - **本波结构类清单已清（终态）**：**L-01**（`RecordSheet` 753）/ **L-02**（`TabIndex` 738）/ **L-18/19/20**（`TabAi` 469 / `favorites` 500 / `manage` 466）**全部销项**，轴 5 存量超阈 **4 → 3 → 0（allowlist 清空）**。**仍待真机（不可用）**：B5c 上传、B5d/B5.2e/B5.2f 全子步的渲染/波形/动画/录音保存全链路、**L-01/L-02/L-18/19/20 运行验收**。**另立波**：L-12 令牌波、64 条功能修复波。
-- ✅ **全量门禁实跑（2026-09-25 · Docker/Qdrant 已起）**：`python scripts/review_agent.py --full` → **EXIT 0 / ✅ 审核通过**（`.cowork-temp/test-report.json` `passed=true`、`blocking_sections=[]`、`env_blocked_sections=[]`）：`syntax` **376 文件 ✅** / `lint` ✅ / `secrets` ✅ / `structure` 无 CRITICAL / `audit_axes` 无 CRITICAL / `env_template` ✅ / `openapi_snapshot` ✅（239518 字符逐字节一致）/ `tests` ✅（pytest 主套件 + `-m rag` 分组 `--cov-append`，**“Required test coverage of 60% reached. Total coverage: 84.59%”**）/ `api_smoke` ✅ / `research` ✅ 18 场景。⇒ **承 §8.3 B10-h 的「覆盖率 50→60 待环境验证」就此解除**（此前"无法确认"的如实标注现由实测取代）。
+- ✅ **全量门禁实跑（2026-09-25 · Docker/Qdrant 已起）**：`python scripts/review_agent.py --full` → **EXIT 0 / ✅ 审核通过**（`.cowork-temp/test-report.json` `passed=true`、`blocking_sections=[]`、`env_blocked_sections=[]`）：`syntax` **376 文件 ✅** / `lint` ✅ / `secrets` ✅ / `structure` 无 CRITICAL / `audit_axes` 无 CRITICAL / `env_template` ✅ / `openapi_snapshot` ✅（239518 字符逐字节一致）/ `tests` ✅（pytest 主套件 + `-m rag` 分组 `--cov-append`，**"Required test coverage of 60% reached. Total coverage: 84.59%"**）/ `api_smoke` ✅ / `research` ✅ 18 场景。⇒ **承 §8.3 B10-h 的「覆盖率 50→60 待环境验证」就此解除**（此前"无法确认"的如实标注现由实测取代）。
 - 🧹 **文档口径对账（同轮，防"多窗口漂移"）**：清掉 4 处**已过期**的待办勾选（`checklist` A7 拍板项 / B5.2f"未做" / `tasks` A7 / B10-b / B10-i / B5 巨文件拆分），并把 `review_agent --full` 的实测读数回填 checklist/tasks/ledger。**说明**：这些是**状态记账漂移**（工作早已完成却仍显示待办），非新工作量；按 AGENTS「改任何全局数字必须多处同步」纪律一次性校正。
 
 ## ✅ 第十一轮 · 令牌波开波（方案先行）+ 三裁决登记（2026-09-25）
@@ -493,6 +511,153 @@
 - 🛠 **环境**：HBuilderX 中途退出 ⇒ 由 CLI 拉起重启（冷编译 ✅）；Docker 引擎中途停止 ⇒ 拉起 Docker Desktop 恢复 redis/qdrant（否则 pytest 连接失败）。
 - ⚠️ **未验证（如实标注）**：无真机（`adb devices` 空）⇒ 客户端改动仅到"编译 + 产物取证"级；画像清除按钮的真机点击链路未目视。
 
+## ✅ 速查卡 · 2026-10-04 · 首版内测 APK 出包成功（C3 挂起项全部收口）
+
+✅ **产物**：`deploy/download/apk/yishu-beta-latest.apk` 28,021,436 字节 = 26.7 MB，sha256 `9C67C78C…FCE2`（`.gitignore:40 *.apk` 已忽略，不入库）｜`com.yishu.guanghua` versionCode100/0.1.0，minSdk24/targetSdk34，**单 ABI `arm64-v8a`**，签名 v2+v3，`apksigner verify` **退出码 0**。
+✅ **地址卡点解冻**：`cloudflared tunnel --url http://127.0.0.1:8010` → `https://metadata-bacon-most-represent.trycloudflare.com`，`config.uts:PROD_BASE_URL` 换址后**前置门复跑全绿**（0 FAIL，1 WARN＝https 下仍留 `usesCleartextTraffic`，上架前回收）。公网回探 `/healthz`＝真 JSON、`/docs`＝"忆述光华 API" Swagger（**非** 8010 抢占那种 200+裸"404" 桩）。
+✅ **§七 四项尸检**：图标 6 档密度均指向**真实 res 文件**（`res/_J/mS/ly/hW.png`）⇒ **C3 §二"图标仍为默认"残余风险已消除**；签名 MD5/SHA1/SHA256 **三项与 §五 登记全对**；`RECORD_AUDIO` 落地，且 `FOREGROUND_SERVICE`(+`DATA_SYNC`)/`RECEIVE_BOOT_COMPLETED`（**D-19/D-18 修复项**）**已在包内**。
+🔧 **CLI 关键发现**：`pack --config` 的 JSON 必须**「嵌套 + 原生类型」**（`android.*` 为真嵌套对象；布尔须原生 `true`，给字符串 `"true"` 会报 `参数 json 类型为boolean 值必须为true或false`）。错格式的报错是 DCloud 通用误导文案 **`打包参数无法解析，请关闭电脑上安装的加密软件、杀毒软件等软件后`**——**与杀毒软件无关**。口令必须走 `--config`（命令行会进进程列表/CI 日志），配置**放仓库外 + 用完即删**（已删）。
+🛠 **环境实况 4 处与既有文档偏差（均实测）**：① Docker 29.4.2 **compose 插件不可用**，独立 `docker-compose.exe` 是 **v1 不认顶层 `name:`** ⇒ 按 compose 同参数 `docker run` 起 Redis（`noeviction`/320MiB/384m/只绑回环）② **PG 未起容器**：本机**原生 PG 17.10 已占 5432**（`deploy/README.md` §8.2 早已登记），`yishu` 库 44 表 + `vector` 扩展齐备 ③ Qdrant 沿用无挂载裸容器但**内含 9 个真实 collection**（`yishu_contents`/`yishu_test_rag`）⇒ **检索有数据非空索引** ④ 工程此前**未导入** HBuilderX，`cli project open --path` 后可用。
+⚠️ **如实登记未证实项**：① **安心打包是否真生效无法从 APK 反证**（传统打包产物签名同样是自有证书；CLI help 标 `--safemode` "仅适用于 uni-app 项目"而本项目是 uni-app x）② 真机冷启动目视 + 端到端联网**未验**（无设备）③ 下载页二维码仍占位。
+🚨 **临时地址口径（务必知悉）**：隧道地址一改（cloudflared 重启）**已分发 APK 立刻连不上后端**（"所有页面全空且不报错"，本项目最贵失败形态）；依赖本机常驻（Docker Desktop＋native PG＋`yishu-redis`＋uvicorn＋cloudflared）⇒ **服务器到货后必须按 `ONE_SWAP.md` 重出包，旧包不会自动恢复**。
+📌 同日另两件事：① **自有证书交接给同事**（台账 2.23 / 证书文档 §九，含"传统打包会传证书须选安心打包"取证与风险更正——此前"泄露会被顶掉"表述有误，Android 强制同签名才能覆盖升级）② **三天后换证**（触发条件：上架前 / 参与超约 10 人 / 疑似泄密）。
+## ✅ 速查卡 · 2026-10-08 · 收尾批：合并远程 + W5 删企微链 + W6 legacy 表清理 + W3 主题映射
+
+✅ **合并远程**：origin/develop 前进 14 提交（服务器容器化拓扑含 Dockerfile.agent / CI 建库修复 / RAG 基线）已合并 c41f469，冲突仅 lessons.md（append/append 双侧保留）｜合并后 agent 167 passed + backend 漂移守卫/微信套件 46 passed。
+✅ **W5 删链**（df97cb3）：agent 企微智能机器人链四文件 + wecom-aibot-sdk + WECHAT_BOT_*/REVIEW_* 配置 + wechat_integration.md 整体删除；企微唯一入口=backend 微信客服（代码完备只差填配置）。台账 2.25。
+✅ **W6 清理**（6e014ca）：迁移 b7c8d9e0f1a2 幂等 DROP 11 张零引用 legacy 表（真库实测全部 0 行）；schema.sql 同步 38→27；drift 守卫白名单 13→2（保留 profile_l2_evidence / finetune_jobs）；conftest 清理链收敛。台账 2.26。
+✅ **W3 映射**（cd4f79f）：ContentCreate 加可选 tags（仅 source=agent 落库 tags_json）+ 管线打标改 merge_tags 合并语义（防预置主题被 LLM 覆写冲掉）+ agent 镜像发 body.tags——App 详情页 chips 从此可见 AI 打的主题。openapi 快照同步。台账 2.27。
+✅ **验证**：agent 169 passed / backend 1004 passed 零失败；docs/决策台账.md 补 2.25/2.26/2.27；10-04 出包批 5 文件已先期独立入库（7bcb9a9）。
+⚠️ **push 归用户**：本地 ahead 18+，验证绿后由用户自行 git push（台账 2.22 纪律）。
+
+## ✅ 速查卡 · 2026-10-09 · 对话域收尾：SSE 流式 + 结构化回复（AG6 余项）
+
+✅ **任务一 · 流式**：agent `POST /v1/chat/stream`（SSE：`status`/`delta`/`tool`/`replace`/`done`/`error`；流式源 `agent.stream(stream_mode=["messages","updates"])`，校验仍在流之后）｜backend `POST /api/v1/chat/messages/stream`（推**累计全文** preview + 逐段过**规则层**护栏、命中即中断不外泄 + 终稿仍走 `deep=True` 且不落库不返回）｜client `chat_api.sendChatMessage` 改走 SSE（`enableChunked` + `onChunkReceived`，分块 ArrayBuffer 自解 UTF-8；`success` 整段兜底）→ TabAi typing 气泡逐字（工具阶段显示"正在翻你的记忆…"）。
+✅ **任务二 · 结构化**：agent `build_reply_meta` 从 `save_memory` 的**工具结果**派生 cards/chips（duplicate/失败一律不产卡）→ backend `kind=cards` + `payload` 落库 → 客户端记忆卡横滑组 + chips（img 空串跳过图片、卡片组保留一行正文引导）；历史回填同带 cards/chips。
+📊 **验证**：agent **185 passed**（新增：事件序/整段替换/不可重试/结构化派生/端点帧契约）｜backend **1017 passed 4 skipped 0 failed**（覆盖率 85.52%；新增 10：SSE 帧契约/预览不泄漏/终稿拦截/提前结束不落空回复/越权不调 agent/结构化/适配器 done 守卫）｜**全量门禁 `review_agent --full` 绿**（syntax 473 files / lint / secrets / structure / audit_axes 无 CRITICAL / env_template / openapi_snapshot / tests 全过）｜客户端**编译成功**（16 页，2 条 CSS warning 属既有他组件）｜联调实测（**非 A 级**，无三要素）：agent 直连首帧 39ms、首个正文 token 2057ms、done 2604ms；backend 端到端 status 38ms / 首 preview 1295ms / 65 preview 帧 / done 2449ms；结构化 `kind=cards` 1 卡 2 chips（非流式与历史端点同形）。
+🧹 **顺带修两单存量失败**（与本批无关但卡门禁，已入 lessons）：`test_generated_output_guard` 两例（本地假 Result 类缺 `meta` + 第 3 参名写成 `thread_id`，10-08 改签名后即红无人发现）→ 改回真实 `AgentChatResult`；`test_amap::test_get_place_dev_mock_fallback`（geo_cache 有 30 天内真实缓存行 ⇒ 走缓存命中而非 mock 回退）→ 加 autouse 前置定向清理。联调残留数据已清理（4 个冒烟用户 + 65 行 agent checkpoint）。
+⚠️ **真机三要素待补**：执行到真机步时 USB 设备掉线（`adb devices` 空，重起 adb server 仍不可见）⇒「≤1.5s 首字 / 护栏拦截无预览泄漏 / agent 宕机不伪造」三条**无 A 级证据**，登记 `docs/决策台账.md` §2.30（**如实标注，不算完成**）。⚠️ 首字延迟由 LLM TTFT 支配（实测 1.3~2.1s，百炼 thinking 开启时更晚）⇒「≤1.5s」是贴边指标，观感兜底 = 立即 `status` 帧 + 工具态文案。
+🧯 **踩坑两条（已入 `docs/lessons.md`）**：① Starlette 把同步生成器的每次 `next()` 派发到线程池（每次新 contextvars 快照）⇒ `request_context.set` 不跨 yield 存续、`reset_request_id` 抛"different Context" → 改为「整轮 agent 跑在一个工作线程 + 队列，生成器只格式化」；② 5.24 的 dts 里没有 `enableChunked`/`onChunkReceived`/`TextDecoder`，但**编译器实测接受**（30 行探针法）⇒ 平台能力以编译/真机实测为准。
+📌 **本批边界**：未碰 `client/` 其他域与 `backend/` 其他域；`docs/交接_流式输出与对话UI_20261009.md` 的工作区改动（用户改写为纯文本）**未动**。openapi 快照已重导；决策登记台账 §2.28/§2.29/§2.30。
+
+## ✅ 速查卡 · 2026-10-11 · harness/门禁系统性更新 + 「新包可跑」修复（环境漂移根治）
+
+✅ **根因（新包全站不可用）**：`client/utils/config.uts` 环境三件套随代码漂移——9-23 为 `ENV='prod'`/`REAL_DEVICE_HOST=''`，10-09 真机联调改成 `'dev'`/`'localhost'` 后**随提交入库**（commit `c356781`「壳内空态重构」捎带），出包时忘改回 ⇒ 正式包内 `getBaseUrl()` 返回 `http://127.0.0.1:8010`（手机自己的回环地址）⇒ 所有接口失败、每页取不到数据，表现为「各页面数据流被切断」。**根治**=运行时判据 `isDevCarrier()`（按包名识别 HBuilderX 开发载体）：打包产物**一律不允许**走 dev 地址，即便 `ENV` 误留 `dev` 也强制走 `PROD_BASE_URL`。登记 `docs/决策台账.md` §4.18。
+
+✅ **固定地址出包链（本批新建）**：`scripts/dev/tunnel.ps1`（隧道抽象：ngrok 静态域名 / cloudflared）+ `scripts/dev/write_base_url.ps1`（三件套一键回写，无 BOM + 交付清单）+ `scripts/dev/start_all.ps1` / `status.ps1`（服务栈幂等起 + 全栈状态一览，**实测全绿**）+ `scripts/dev/pack.ps1`（出包链）。
+
+✅ **解阻塞**：2026-10-11 早先本人把 `trycloudflare.com`/`ngrok*.app` 判为「禁止出包」⇒ **卡死既定隧道方案**。已按「地址是否固定」分类：固定地址隧道（ngrok 静态域名）**合法放行**，仅**临时隧道**默认拦、`preflight -AllowTunnel` 显式放行并打印时效提醒。
+
+✅ **门禁升级**：新增 `scripts/client_compile_gate.py`（uni-app x 编译门，实测 44.7s 通过；HBuilderX 已运行时 cli 走 IPC 拿不到日志 ⇒ 改文件重定向 + 产物时间戳双判据）并接入 `--full` 与出包前置门；`check_secrets` 修**整体漏扫 `client/` 的盲区**（`_skip_path` 误复用）；接入孤儿脚本 `audit_security`（按域区分：密钥/传输/存储阻断，备份新鲜度只告警——本机 dump 已 421h 超期，登记待办）；新增 `port_consistency`（端口口径一致性）与 `harness_state`（STATE.md 新鲜度，WARN 不阻断）。
+
+✅ **state 全面改造**：新增 `STATE.md`（唯一「当前状态」）；`AGENTS.md` 状态节降级为指针 + 补代码主干小节 + 删死引用 + Startup/Verification/门禁章节对齐实现（补 4 轴与退出码 2）；`progress.md` 删 08-29 速览并改「以最后一条为准」；`feature_list.json` 加策略字段（M0→blocked、F9→deprecated，其余**不臆断**）；`session-handoff.md` 重写；`init.ps1`/`init.sh` 对齐并加状态漂移软告警。
+
+✅ **端口口径统一**：backend `8010` / agent `8300`；`scripts/e2e_agent_chat.ps1` 与 `scripts/realdevice/r2_4b_verify.ps1` 的历史 `:8000` 已改 `:8010`；`8399` 明确为一次性本机覆盖值（非规范）。
+
+## ✅ 速查卡 · 2026-10-11（第二轮）· 交叉核验修复：把「假绿」逐个摁掉
+
+派 `code-explorer` 对本批改造做只读交叉核验，抓出并修复 **10 项"声明已改、实际半改"**——
+这类问题的共性是**现有门禁自己发现不了**（不是恒红，而是**假绿**），比报红更危险：
+
+① 🔴 **全量门禁仍漏扫 `client/`**：`_scope_files` 里 secrets 候选清单用的还是 `_skip_path`
+（含 `client`），上一轮只修了快模式的 `check_secrets` ⇒ `--full` 下 `.uts/.uvue` 硬编码密钥依旧放行。
+**已改为 `_skip_path_for_secrets`**。
+② 🔴 `scripts/e2e_agent_chat.ps1` / `scripts/realdevice/r2_4b_verify.ps1` 的端口是**参数数组**形式
+（`'--port','8000'`），上一轮只替换了冒号形式（0 命中）⇒ 脚本必然起在 8000 却探 8010。已按字节统一 8010。
+③ 🔴 **`auth.uts` 的登录 / 刷新 / 登出三个请求完全不带 header**，`audio_player.uts` 自拼头
+⇒ 固定地址（ngrok）下会收到**拦截页 HTML**，表现为「装了却进不去 / 音频无声」。
+新增**零依赖**底层模块 `client/utils/http_headers.uts`（`commonHeader()`）破解
+`api.uts → auth.uts` 的反向依赖约束（auth 不能 import api），四处全部收敛；`api.uts` 的
+`buildHeader()` 也改为复用同一份定义（单一来源）。
+④ 🟠 `scripts/dev/pack.ps1` 四项尸检/投放此前**打印 FAIL 却 `exit 0` 且照样投放**
+⇒ 加硬失败闸门（签名无效 / 权限缺失 / 包内地址不符 ⇒ 立即阻断、不投放、退出码 1）。
+⑤ 🟠 `check_port_consistency` 的 agent 子检查因**大小写**永不生效（`config.py` 是小写字段）
+⇒ 改正则 + `re.IGNORECASE`。
+⑥ ⚪ 客户端整洁性：`play_content.uts` 死 import `request`；`api.uts` 两处 `downloadFile` 误带
+`application/json`（与自家 docstring 口径不一致）。
+⑦ ⚪ harness 自洽：`session-handoff.md` 仍把 `AGENTS.md` 当数字源（与 STATE.md 唯一性冲突）、
+`AGENTS.md` Startup 序号重复「7.」、两个新 skill 未登记进 skills 清单、`docs/README.md` 未登记 `STATE.md`。
+
+**验证**：客户端编译门 **63.4s 通过**（含 `http_headers.uts` 新增与 auth/audio/api 改动）；
+`python scripts/review_agent.py --full --skip-tests` **12 项全绿**（含新增 4 项）；
+harness 外部审计 **76 → 100/100**。
+
+## ✅ 速查卡 · 2026-10-12 · 固定地址出包链跑通（第二版内测 APK 已投放）
+
+✅ **浏览器代领（替代手工）**：本机没有标准 Chromium（只有非标准路径的 Tabbit），autoglm relay 不认它。
+改走 **Tabbit 自带的 LocalAgent**（`%LOCALAPPDATA%\Tabbit\LocalAgent\bin\tabbit-cli.exe`，Playwright 运行时）：
+`create` → `nodejs --task X --request-id Y`（stdin 喂 JS，**Windows 用 `Get-Content -Raw -Encoding UTF8 | & $cli`**，
+cmd 重定向会报"文件名语法不正确"）→ 领到静态域名 + authtoken → `finish`。
+**这条路以后可复用**：任何"需要用户已登录的网页操作"都能让 Agent 自己干，不必再让人手工。
+
+✅ **固定地址打通**：静态域名 **`coleslaw-absence-harvest.ngrok-free.dev`**（注意后缀是 **`.dev`**，
+不是代码/文档里原先假定的 `.app`——ngrok 换过后缀）。`ngrok config add-authtoken` 已配；
+`tunnel.ps1` 起隧道成功（本机管理 API 4040 抓 URL）。
+
+✅ **端到端出包链一次跑通**（这是本轮的真正目标）：
+`tunnel.ps1`（static 模式）→ `write_base_url.ps1`（三件套切出包态）→ `preflight_pack.ps1 -AllowTunnel`
+（**8 节全绿**，含新增的「固定地址隧道 · 已与 .tunnel-url 核对，模式 static」判定与客户端编译门 43s）
+→ 云打包（**类型＝Android 自有证书**）→ 下载 26.8MB → 尸检（签名 SHA256 `cfb43629…22f2`
+**与 `docs/图标与签名证书_20260921.md` §五 登记值逐字节一致**；四项权限齐备）→ 投放
+`deploy/download/apk/yishu-beta-latest.apk`（旧包已备份）→ 回填下载页（26.8MB / 2026-10-12）。
+
+✅ **修掉三个"自己写的东西伤自己"**（都在本轮实测暴露，已修并入教训台账）：
+① **脚本化改 .ps1 丢 BOM** ⇒ PowerShell 5.1 中文乱码 ⇒ 语法错误（tunnel.ps1 报 Unexpected token）；
+② **`pack.ps1` 自锁**：§1 编译门唤醒 HBuilderX，§2 又要求它"5 秒 CPU 不增长" ⇒ 必判自己忙 ⇒ 改轮询等待；
+③ **`pack.ps1` 完成误判**：正则匹配裸「打包成功」撞上提示语「打包成功**后会自动返回**下载链接」
+⇒ 刚提交云端就"完成"退出 ⇒ 改只认「安装包下载地址」。另修 SHA256 静默空值。
+
+✅ **新增"隧道模式"记录**（`deploy/.tunnel-mode`）：光看域名后缀判不出"重启会不会换址"
+（`ngrok http 8010 --url=<域名>` 固定 vs 不带 --url 得随机地址，形态一样；后缀还换过 `.io`→`.app`→`.dev`）
+⇒ `tunnel.ps1` 记模式，`preflight` 读模式+比对地址做准确判定。
+
+⚠️ **遗留（真机验收硬项）**：**ngrok 免费版拦截页**（`ERR_NGROK_6024`）实测存在——带浏览器 UA 的请求
+会拿到警告页 HTML，带 `ngrok-skip-browser-warning` 头才拿到真响应。API 已统一带头 ✓；但 **`<image>`
+无法加自定义头**，只能指望 Android 原生 UA（不含 Mozilla）放行。**装包后第一件事就是看图片是否正常**；
+若全裂，改媒体走 `uni.downloadFile({header})` 或换 named tunnel。
+
+---
+
+## 2026-10-14 · 接线缺口与性能根因修复（批次 0~3）
+
+**触发**：真机体验反馈「Agent 模块诸多前后端接线未完成；客户端定义的多模态上传按钮未接线；
+拍照上传定位未起效；UI 流畅度需深度优化」+「都要找到深层次根本原因」。
+
+**方法**：先做四路**只读**专项审计（门禁体系 / 后端接线 / 客户端 UI 性能 / agent 三方对账），
+把 **47 条带行号证据**落盘 `docs/审计_接线缺口与性能根因_20261014.md`，再按**根因族**分批修——
+不逐个症状打补丁。
+
+✅ **批 1（`8c5a702`）静默降级显性化**：新增 `agent/src/yishu/degradation.py`（线程安全降级计数 +
+告警）与 `backend/app/core/diagnostics.py`（可选令牌指纹）；镜像/RAG 的 `if not token: return` 不再
+无声（其中一处**连日志都没有**）；`agent.health()` 首次有调用方（`scripts/dev/health_probe.py`，
+三态退出码）；`status.ps1` 增「跨服务令牌对账 + agent 可达」一节；agent 测试 185 → **194 passed**。
+
+✅ **批 2（`b8d57ac`）照片定位端到端**：`RecordSheet.savePhoto` 原把经纬度**硬编码 null**（三个提交点
+唯独照片不带地点）⇒ 改读定位单例；补 `isHighAccuracy`；**坐标系统一转换**（新增
+`services/external/gcj02.py`，`amap.get_place` 单一转换点——此前 WGS84 直接喂高德，偏 **300~700m**
+且不报错，实测 481m/555m）；EXIF GPS 兜底下沉为 `services/photo_exif.py`（顺带解决 API 文件越棘轮阈值）。
+
+🔴 **顺带修掉一个「门禁假通过」（重要，影响所有 client 改动）**：`scripts/client_compile_gate.py`
+的产物旁证用 `time.monotonic()`（量级 1e5）与文件 `st_mtime`（Unix 纪元 1.7e9）比大小 ⇒ **恒真**；
+叠加 `cli launch --compile true` 在 HBuilderX **未启动**时**根本不编译**（只打印「未检测到已打开的
+HBuilderX」）⇒ HBuilderX 未启动、产物是两天前旧件时门禁仍报 `ok`。已修：墙上时钟 + 识别该拒绝语
+（按环境错误报）+ 调用前 `cli open` 自动拉起。**教训：凡"用副作用旁证成功"的判据，必须同基准比时间
+且配一次负向探针。**
+
+✅ **批 3（`2881269`）照片分类端到端**：`savePhoto` 原只**清空** `manualLabel`、从不提交（文字/语音
+两个提交点都提交了）⇒ 保存时逐张提交；删掉「默认选中首项 + AI 已预选」的**假状态**；契约放宽
+`CorrectionCreate.text` 可空（空文本**跳过向量化**、仍写日志并回写权威分类——不塞假文本污染层①向量库）；
+`submitCorrection` 增 `contentType`（照片 `photo` / 语音 `voice`；此前硬编码 `text`）。
+
+⚠️ **同批核正两处台账声明**：① §7.3「图搜客户端零接线」**已过期**（`TabSearch.uvue:11/388` 已接线，
+以 §7.8 为准）；② 新增 §7.17 记「照片分类被静默丢弃 + 假预选」。
+
+📌 **未做完（有前置条件，不做无验证的改动）**：蜂窝省流上传五步（属上传管线，按 09-23 纪律须
+「编译门 **+ 真机验证条件**」）、`attachments` 契约三层（须三端同改 + `uni.chooseFile` 编译探针）、
+ShareSheet（须真机验"保存到相册"）。
+
+**state 刷新**：`STATE.md` 已更新到本日真相（三个头号根因 + 下一步 + 三条阻塞）；`feature_list.json`
+登记「10 条 in-progress 是**如实**状态，不得以改状态消除 WARN」。
 ## 2026-10-12 · 后端 B-1 schema 漂移修复（验证中）
 
 - 用户拍板：13 张无 ORM 表中补齐正在使用的 profile_l2_evidence、finetune_jobs；其余 11 张退出新建库 schema。已有库的旧表与数据保留。
@@ -505,3 +670,17 @@
 - 用户明确要求将上述阶段性代码与未完成原因提交并推送到 `develop`；本次推送是进度留档，不改变 `feature_list.json` 的 `in-progress` 状态或全量门禁结论。
 - 推送前 `git fetch origin develop` 发现远端前进 16 个提交，其中 `3bdae67` 已清理旧文件的 UP017、`fd4c6da` 已钉 Ruff 版本；上述 Ruff 失败是本地旧基线测试时的历史证据，同步远端后不再按“待 B-1 修复项”归属。pytest 1200 秒超时和 API 冒烟失败仍未解决。
 - 本次推送结果：B-1 的 26 个文件已选择性暂存（未含工作区原有 `.gitignore` 改动）；首次快速审核因未激活虚拟环境而找不到 `ruff`，激活后代码检查均通过，已按门禁要求登记教训。但登记后的 `git add docs/lessons.md` 写入 `.git` 所需的提权请求被拒绝，无法完成复验、提交、合并远端 16 个提交或推送。当前 `develop` 仍仅在本地工作区，GitHub 上未收到本轮改动。
+
+## 2026-10-15 · 合并 develop + 功能接线 + 真机 6 修 + 产品方向重定（harness 同步）
+
+**本日收尾**：`STATE.md` 已更新到本日真相（唯一状态来源）；决策细节落 `docs/决策台账.md` §4.20 ㉓~㉘；本节只记流水。
+
+- 合并 `origin/develop`(573b33b) ⇒ `bb28602`：14 冲突**逐块**解决（非整文件 ours/theirs）+ `alembic merge heads`（两边各加一条迁移）+ 修远端 UP017 机械迁移留下的**同型错**（`trash.py` / `contents/__init__.py` / `correction.py` 的 `timezone` ⇒ NameError）；49 测试 / 编译门 / 门禁全绿。
+- `backend/sql/schema.sql` 取舍**核实**（用户质疑驱动）⇒ `efdc20c` + 教训 `3d13fb8`：表列 27=27 **零差异**、我方改动全在、`ci.yml` 自述一致 ⇒ 取远端正确；**但**漂移清单因此过期（两张表已被上游 B-1 补模型）⇒ 守卫判红、清单清空。
+- 功能接线：**时间胶囊闭环** `58c22a7`（列表/开启/撤销；原"封存是单程票"，且惰性到期扫描本就靠客户端 GET 触发）；**微信绑定 unionid 对齐** `3301643`/`671f685`/`224aa59`/`0b6447b`（授权登录即建绑定 + 客服 openid→unionid 解析 + 客户端授权优先/绑定码兜底 + 销项 `PATH_AUTH_WECHAT` 虚假豁免）。
+- 出包与投放 `d1d4de4`（SHA256 `B4A6D4B5…32C2`）；⚠️ **该包不含本日后续 4 个修复** ⇒ 出新包前需重跑端到端。
+- **真机反馈 6 修** `b3e0212`/`c4311a6`/`9cfe2c8`/`f94fcf6`：搜索清空不复位（`clearKeyword` 是死代码）/ 微信绑定点不动（`uni.login` 同步抛错 ⇒ Promise 静默卡死）/ 设置回环（我引入的）/ AI 流式 DSML-JSON 泄漏（单点剥离 + 10 条正反向不变量）/ 上传失败无日志 500 + 时间轴失败态与真空分离 / **搜索索引时窗**（刚记的搜不到；含"精确命中提升是死代码"）。
+- **产品方向重定**（grill 三轮，用户逐条同意）：时间轴改 **entry 流** + 「今天」锚点 + 记录后**立刻可见**（时间轴读 `contents`）+ **回顾位**（那年今日/每日回顾）+ **搜索形态重做**（描述式 + AI 回答卡 + 用户维度筛选 + 可解释 + 历史）+ 隐私措辞补「时间轴」+ **如实不宣称多模态语义聚合**（无真视觉塔）。
+- **门禁三轴各拦一次，均已处置**：`env_template`（新增 config 字段 ⇒ 同批补部署模板）、`structure`（`TabSearch` 813>800 ⇒ 显式申请基线，附 reason/target）、`lessons`（前次失败 ⇒ 登记教训）。
+- **自我纠错两处**：引用了不存在的样式类（等于偷偷新增视觉元素）⇒ 改回既有 `ui-hidden`；在 except 链尾插分支时**吃掉两个端点的 return** ⇒ ruff F841 当场抓到。
+- 接线审计工具 `scripts/audit_client_wiring.py` 沉淀（含 `--selftest`）；判据校准：初版 32 条"疑似无接线"里 **31 条假阳性**（"一行委托"写法 + 排除词缺词边界）⇒ 收敛到 0。

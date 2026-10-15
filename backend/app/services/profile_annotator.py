@@ -47,6 +47,10 @@ def annotate_content(db: Session, content, *, schema: EnumSchema | None = None) 
     """
     text_value = (content.text or "").strip()
     if not text_value:
+        # 2026-10-14（台账 §7.23 · 批次 8 续审）：**跳过必须留痕**（原为静默 return）。
+        # 返回的 `{"applied": 0, "pooled": 0}` 与"跑了但没命中"**无法区分** ⇒ 无从判断这条
+        # 内容到底有没有进过标注。口径同 §7.20：降级要可观测，不静默。
+        logger.info("[画像标注] 跳过：内容无文本 content=%s", getattr(content, "id", None))
         return {"applied": 0, "pooled": 0}
     hits = annotate(text_value, schema=schema)
     return record_hits(

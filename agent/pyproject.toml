@@ -1,7 +1,7 @@
 [project]
-name = "vibe-coding"
+name = "yishu-agent"
 version = "0.1.0"
-description = "Coze Vibe Coding project"
+description = "忆光 Agent 服务（去 Coze 版）——个人记忆助手，数据落我们自己的 Postgres"
 requires-python = ">=3.12"
 dependencies = [
     "langchain==1.0.3",
@@ -14,33 +14,30 @@ dependencies = [
     "fastapi>=0.121,<1",
     "uvicorn>=0.38,<1",
     "pydantic>=2.12,<3",
-    "Jinja2>=3.1,<4",
-    "coze-coding-utils>=0.2.8",
-    "coze-workload-identity>=0.1.4,<1",
-    "opencv-python>=4.12,<5",
-    "pandas>=2.2,<3",
     "Pillow>=10.3,<11",
-    "cozeloop>=0.1.25,<1",
     "alembic>=1.16,<2",
     "SQLAlchemy>=2.0,<3",
     "python-dotenv>=1.2,<2",
-    "psycopg2-binary>=2.9,<3",
-    "boto3>=1.40,<2",
     "langgraph-checkpoint-postgres>=3.0,<4",
     "psycopg[binary]>=3.3,<4",
     "psycopg-pool>=3.3,<4",
-    "pypdf>=6.4,<7",
-    "docx2python>=3.5,<4",
-    "openpyxl>=3.1,<4",
-    "python-pptx>=1.0,<2",
-    "coze-coding-dev-sdk>=0.5.25",
-    "rich>=14,<15",
-    "chardet>=5.2,<6",
-    "pycairo==1.29.0",
-    "dbus-python==1.3.2",
-    "PyGObject==3.48.2",
-    "wecom-aibot-sdk>=1.0.8",
 ]
+
+# ── 依赖瘦身记录（2026-10-06，删前逐个核实过全仓 0 使用点）──
+# 删 Coze 私有包 4 个：coze-coding-utils / coze-workload-identity / cozeloop
+#   （源码零 import）+ coze-coding-dev-sdk（仅存的两个调用点已随 voice_tools /
+#   export 预检改造移除）。
+# 删 Linux-only 3 个：pycairo / dbus-python / PyGObject —— Windows 装不上，
+#   是 `uv sync` 整体失败的根因。
+# 删 wecom-aibot-sdk 1 个（2026-10-08 W5 拍板）：企微智能机器人链四文件整体删除
+#   （main_wechat / wechat_service / daily_review_service / wechat_push_tools），
+#   企微唯一入口 = backend「微信客服」；该包全仓唯一 import 点随链消失。
+# 删零使用 11 个（含大小写不敏感全仓复查 + 模板引擎核实）：
+#   boto3（原属已删的 s3_storage）、opencv-python、pandas、psycopg2-binary
+#   （本仓统一 psycopg 3，URL 是 postgresql+psycopg://）、pypdf、docx2python、
+#   openpyxl、python-pptx、chardet、rich、Jinja2（web 面 index.html 无任何
+#   Python 引用，非 Jinja2 渲染）。
+# 若将来要接文档解析/表格导出，按需加回，别凭"可能用到"预装。
 
 [tool.uv]
 # 使用阿里云镜像作为默认源，替代 pypi.org

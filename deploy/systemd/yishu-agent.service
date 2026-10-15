@@ -1,0 +1,50 @@
+# 忆述光华 · Agent 服务（W4 部署接线 · 2026-10-06，见 docs/功能对齐计划_20261006.md）
+# ⚠️ 本文件是**模板**：`@DEPLOY_ROOT@` / `@RUN_USER@` 占位符由 `deploy/scripts/deploy_one.sh`
+#    渲染到 /etc/systemd/system/ 后再 daemon-reload。**不要把本文件直接软链到 systemd 目录**。
+#
+# ⚠️ 尚未接入 deploy_one.sh 的 install_systemd 清单（该脚本只装 api / worker）——
+#    接线时需把 `yishu-agent.service` 加进它的渲染列表，并确认 agent/.venv 已建
+#    （`cd agent && uv sync --frozen`；ExecStart 指向它的 python）。
+#
+# 单进程铁律（与 yishu-api.service 同款）：--workers 1 不是"省资源"而是**硬约束**——
+# agent 是进程内单例（agent 缓存 / checkpointer 连接池 / 进程内限流器），多 worker
+# 会各自建池、限流各自为政。**且必须绑 127.0.0.1**：agent 自身不鉴权用户身份
+# （user_id 由 backend 反代注入，见 agent/UPSTREAM.md 五-1），暴露公网＝任何人可
+# 读写他人记忆。
+#
+# 端口口径：8300（与 deploy/.env.production.template:121 的
+# AGENT_SERVICE_BASE_URL=http://127.0.0.1:8300 一致）。
+
+[Unit]
+Description=忆述光华 Agent 服务 (uvicorn, workers=1, 127.0.0.1 only)
+Documentation=file://@DEPLOY_ROOT@/deploy/README.md
+After=network-online.target docker.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@RUN_USER@
+Group=@RUN_USER@
+WorkingDirectory=@DEPLOY_ROOT@/agent/src
+# 环境与 backend 共用同一份 deploy/.env（DATABASE_URL / AGENT_SERVICE_TOKEN /
+# AGENT_BACKEND_BASE_URL 等都在里面）——**这是有意的**：两个服务必须持有同一个
+# AGENT_SERVICE_TOKEN 值，服务间互信才成立（backend→agent 反代 + agent→backend 检索）。
+EnvironmentFile=@DEPLOY_ROOT@/deploy/.env
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=@DEPLOY_ROOT@/agent/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8300 --workers 1
+
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+StandardOutput=append:@DEPLOY_ROOT@/deploy/logs/agent.log
+StandardError=append:@DEPLOY_ROOT@/deploy/logs/agent.log
+
+# 不设 MemoryHigh/MemoryMax：agent 无本地大模型（LLM 走百炼 API），
+# 常驻主要是 langchain/langgraph + 少量连接池；设硬限反而容易在
+# 对话峰值被 OOM Killer 杀掉，现场比 systemd 记账难定位。需要时再按实测加。
+
+[Install]
+WantedBy=multi-user.target

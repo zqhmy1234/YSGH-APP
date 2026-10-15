@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="uts">
-	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -106,39 +106,67 @@
 		stopVoice()
 	})
 
-	/** 拉回 L2 子集（P-5 收口 2026-09-04：server level=2 过滤窄化，替代全量 timeline 拉取）→ 前端按标题匹配，startTime 倒序 */
+	/** 按主题筛出 L2 子集（P-5 收口 2026-09-04：server level=2 过滤窄化，替代全量 timeline 拉取）→ startTime 倒序 */
+	function applyPicked(events: Array<TimelineEvent>): void {
+		const picked: Array<TimelineEvent> = []
+		let minMs = 0 as number
+		for (let i = 0; i < events.length; i++) {
+			const ev = events[i]
+			if (ev.level === 2 && ev.title == themeName.value) {
+				picked.push(ev)
+				if (minMs == 0 || ev.startTime < minMs) {
+					minMs = ev.startTime
+				}
+			}
+		}
+		picked.sort((a: TimelineEvent, b: TimelineEvent): number => {
+			return b.startTime - a.startTime
+		})
+		items.value = picked
+		if (minMs > 0) {
+			rangeText.value = fmtMonthDay(minMs) + '至今'
+		} else {
+			rangeText.value = ''
+		}
+		// BB3：数据就绪即批量拉真实波形（本页 L2 子集卡量小，对齐 detail 进页即拉；
+		// 同 contentId 由 useWaveform 的 WaveformCache 去重，onPlayTap 再调零成本）
+		for (let i = 0; i < picked.length; i++) {
+			const v = picked[i].voice
+			if (v != null) {
+				wf.loadWaveform(v.contentId)
+			}
+		}
+	}
+
+	/**
+	 * 进入本页取数（P-5 收口起：只拉 L2 子集）。
+	 *
+	 * 2026-10-14（台账 §4.20 ⑭ · 用户反馈「每次跳转都要等一会数据才出现」）：本页 `onShow`
+	 * **每次**都会调用它（含从内容详情栈返回），而原实现无条件 `loading=true` +
+	 * `fetchTimeline(2)` ⇒ ①列表先被清空转圈再重画；②每次进入都等一次网络。
+	 * 现先复用**时间轴模块已有的缓存**（`getCachedTimeline`，60s 内有效——用户几乎总是刚从
+	 * 时间轴/我的页过来，缓存基本必命中）：**零请求、零等待**地本地筛出本主题子集，再后台
+	 * 静默刷新（不置 loading、不清空列表）；未命中才走网络并显示加载态。
+	 * 两条路径互相增益：`fetchTimeline(2)` 的结果本身就回写同一缓存。
+	 */
 	function loadItems(): void {
+		const hit = getCachedTimeline()
+		if (hit != null) {
+			applyPicked(hit.events)
+			refreshQuietly()
+			return
+		}
 		loading.value = true
 		fetchTimeline(2).then((events: Array<TimelineEvent>) => {
-			const picked: Array<TimelineEvent> = []
-			let minMs = 0 as number
-			for (let i = 0; i < events.length; i++) {
-				const ev = events[i]
-				if (ev.level === 2 && ev.title == themeName.value) {
-					picked.push(ev)
-					if (minMs == 0 || ev.startTime < minMs) {
-						minMs = ev.startTime
-					}
-				}
-			}
-			picked.sort((a: TimelineEvent, b: TimelineEvent): number => {
-				return b.startTime - a.startTime
-			})
-			items.value = picked
-			if (minMs > 0) {
-				rangeText.value = fmtMonthDay(minMs) + '至今'
-			} else {
-				rangeText.value = ''
-			}
+			applyPicked(events)
 			loading.value = false
-			// BB3：数据就绪即批量拉真实波形（本页 L2 子集卡量小，对齐 detail 进页即拉；
-			// 同 contentId 由 useWaveform 的 WaveformCache 去重，onPlayTap 再调零成本）
-			for (let i = 0; i < picked.length; i++) {
-				const v = picked[i].voice
-				if (v != null) {
-					wf.loadWaveform(v.contentId)
-				}
-			}
+		})
+	}
+
+	/** 后台静默刷新：不置 loading、不清空已显示列表（失败保持原样） */
+	function refreshQuietly(): void {
+		fetchTimeline(2).then((events: Array<TimelineEvent>) => {
+			applyPicked(events)
 		})
 	}
 

@@ -221,7 +221,12 @@ export function pullIncremental(): Promise<PullOutcome> {
 							if (arr != null) {
 								changes = arr as Array<UTSJSONObject>
 							}
-							cursor = d.getNumber('cursor') as number
+							// ⚠️ 2026-10-09 修漏网强转：getNumber 缺字段返回 null，`as number` 强转
+							// null 会运行时崩（与 auth.uts doRefresh 同型，真机首测静态审查发现）。
+							// cursor 缺失时保持 since 不推进（本轮变更照常应用，游标不前移，
+							// 下轮拉取重复拉到同批——幂等，好过崩溃后游标错乱）。
+							const c = d.getNumber('cursor') ?? since
+							cursor = c
 							const hm = d.getBoolean('has_more')
 							hasMore = hm != null ? hm : false
 						}

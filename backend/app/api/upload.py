@@ -165,6 +165,22 @@ def _upload_chunk_impl(
         raise ApiError(ERR_UPLOAD_009, exc.message, http=409) from exc
     except ValueError as exc:
         raise ApiError(ERR_UPLOAD_003, _exc_msg(exc), http=422) from exc
+    except Exception as exc:  # noqa: BLE001 —— 兜底留痕后原样抛出（错误语义不变）
+        # 2026-10-15（真机反馈「6 张照片上传失败，点击重试没反应」· 台账 §7.32）：
+        # **存储/未知异常必须留痕**。原实现只映射业务异常，`StorageError`（fs/cos 后端写失败）
+        # 一路冒到全局 handler 变成**无日志的 500** ⇒ 客户端把它当"网络失败"反复退避、
+        # 最终计 failed，而**服务端一行记录都没有** —— 这正是"失败查不出原因"的元问题 ✗。
+        logger.warning(
+            "上传分片失败(存储/未知) upload_id=%s chunk=%s bytes=%d: %s: %s",
+            upload_id,
+            chunk_index,
+            len(data),
+            type(exc).__name__,
+            _exc_msg(exc),
+        )
+        raise
+    # ⚠️ 2026-10-15：本行曾在补日志时被误删（ruff F841 当场抓到 `result` 未被使用）
+    # —— 少了它端点会返回 None。教训：在 except 链尾插分支时，**必须把原 return 补回**。
     return ApiResponse(data=result)
 
 
@@ -208,6 +224,18 @@ def complete_upload(
     except ValueError as exc:
         # 建内容参数校验（ValidationError 及防御性兜底原始 ValueError）→ 422 UPLOAD_004
         raise ApiError(ERR_UPLOAD_004, _exc_msg(exc), http=422) from exc
+    except Exception as exc:  # noqa: BLE001 —— 兜底留痕后原样抛出（错误语义不变）
+        # 2026-10-15（台账 §7.32）：合并/落对象/建内容任一环的存储异常都要留痕，
+        # 否则又是"客户端反复重试、服务端零日志"（同 chunk 分支，见其上注释）。
+        logger.warning(
+            "上传完成失败(存储/未知) upload_id=%s user=%s: %s: %s",
+            upload_id,
+            user.id,
+            type(exc).__name__,
+            _exc_msg(exc),
+        )
+        raise
+    # ⚠️ 同 chunk 分支：补日志时曾误删本 return（端点会返回 None）——必须成对检查。
     return ApiResponse(data=result)
 
 

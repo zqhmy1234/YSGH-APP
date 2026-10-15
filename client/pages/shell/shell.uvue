@@ -13,11 +13,11 @@
 		     须晚于 token 就绪；对齐老 index 页 onLoad 内 ensureLogin().then(拉数据) 串行语义。
 		     失败也放行——api.uts 401 自愈重登兜底，不卡白屏） -->
 		<TabIndex v-if="ready && everIndex" v-show="activeTab == 'index'" :shown-seq="indexShownSeq" :saved-seq="savedSeq" />
-		<TabAi v-if="ready && everAi" v-show="activeTab == 'ai'" :prefill-title="aiTitle" :prefill-summary="aiSummary" :saved-seq="savedSeq" />
+		<TabAi v-if="ready && everAi" v-show="activeTab == 'ai'" :prefill-title="aiTitle" :prefill-summary="aiSummary" :saved-seq="savedSeq" :shown-seq="aiShownSeq" />
 		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
 		<TabProfile v-if="ready && everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
 		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
-		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onSaved" />
+		<RecordSheet v-if="sheetOpen" :initial-mode="sheetMode" @close="onSheetClose" @saved="onSaved" />
 	</view>
 </template>
 
@@ -25,23 +25,46 @@
 	import { ref, watch } from 'vue'
 	import { onLoad, onBackPress } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
-	import { shellActiveTab, shellNavSeq, shellNavTab, shellNavQuery, aiAttachOpen } from '@/utils/shell_state'
+	import { shellActiveTab, shellNavSeq, shellNavTab, shellNavQuery, aiAttachOpen, shellSheetSeq, shellSheetMode } from '@/utils/shell_state'
 
 	const VALID_TABS = ['index', 'ai', 'search', 'profile']
 
 	let ready = ref(false)        // ensureLogin 完成闸门（见模板注释）
 	let activeTab = ref('index')   // P2 终态：index 常驻启动（对齐原 pages[0] 语义）
+	// ⚠️ 2026-10-09 真机首测后的定案：everIndex 恢复 B10 原设计 ref(true)（启动即挂载，
+	// 保住「四 tab 零销毁零创建=闪屏物理消失」不变量与 AI 对话跨 tab 存活）。
+	// 弹回循环的真根因不在 everIndex，而在 TabIndex 空态的 `redirectTo(empty)` 整页跳转
+	// （违反 B10 铁律「壳内零 redirectTo」——它把整个壳销毁重建，AI 对话状态随之丢失）。
+	// 已改为**壳内空态**（TabIndex emptyState，见 TabIndex.uvue），redirectTo(empty) 移除；
+	// empty 页面文件按拍板保留不删。曾试过 everIndex=false 懒挂载：首切 tab 必现挂载闪屏
+	// （用户实测「很久之前就被解决的屏闪」回归），已回退。
 	let everIndex = ref(true)
 	let everAi = ref(false)
 	let everSearch = ref(false)
 	let everProfile = ref(false)
 	let sheetOpen = ref(false)
+	let sheetMode = ref('')        // RecordSheet initial-mode（空态 CTA「拍下第一张」直达拍照流；Tab 经 shell_state 桥请求）
 	let searchType = ref('')       // ?type=photo/voice/text 透传 TabSearch（原 onLoad options 契约）
 	let aiTitle = ref('')          // ?memTitle= url 通道透传 TabAi（manage→theme-detail 同族先例兼容）
 	let aiSummary = ref('')        // ?memSummary= 同上
 	let savedSeq = ref(0)          // 记录保存成功广播（组件 watch → 原 @saved 语义）
 	let profileShownSeq = ref(0)   // 切到 profile 广播（组件 watch → 原页级 onShow 等价）
 	let indexShownSeq = ref(0)     // 切到 index 广播（原页级 onShow TTL 刷新等价；首挂由 onMounted 拉）
+	// 2026-10-14（台账 §4.20 批次 5 · RC-10）：切到 ai 广播——回壳由 redirectTo（重建整个壳、
+	// TabAi 随之重挂）改为**栈内回退**后，TabAi 不再挂载 ⇒ 需靠本广播触发重读上下文预填。
+	let aiShownSeq = ref(0)
+
+	/** 安全解码（2026-10-11 静态审查 #7）：畸形编码（如 `?memTitle=%E4%`）会让
+	 * `decodeURIComponent` 抛 URIError，而 onLoad 体内抛异常 ⇒ 后面的 ensureLogin
+	 * **不会执行** ⇒ ready 永不置位 ⇒ **永久空白首屏**（只留 TabBar）。故必须收口。 */
+	function safeDecode(s: string): string {
+		try {
+			return decodeURIComponent(s)
+		} catch (e) {
+			console.log('[shell] decodeURIComponent failed, fallen back to raw: ' + s)
+			return ''
+		}
+	}
 
 	onLoad((options : OnLoadOptions) => {
 		const t = options['tab'] ?? ''
@@ -50,12 +73,14 @@
 		const rt = options['memTitle']
 		const rs = options['memSummary']
 		let hasPrefill = false
-		if (rt != null) {
-			aiTitle.value = decodeURIComponent(rt as string)
+		// ⚠️ 判空必须是 `!= ''`：原写法 `!= null` 把**空串**也算作"有预填"（2026-10-11 #8），
+		// 于是 `?memTitle=` 会莫名其妙把用户带到 AI tab。
+		if (rt != null && rt != '') {
+			aiTitle.value = safeDecode(rt as string)
 			hasPrefill = true
 		}
-		if (rs != null) {
-			aiSummary.value = decodeURIComponent(rs as string)
+		if (rs != null && rs != '') {
+			aiSummary.value = safeDecode(rs as string)
 			hasPrefill = true
 		}
 		if (ty != '') {
@@ -73,13 +98,30 @@
 			activate(activeTab.value)
 		}
 		// token 就绪后放行组件挂载（对齐老 index onLoad 内 ensureLogin().then(拉数据) 串行语义）
-		ensureLogin().then((ok: boolean) => {
-			console.log('[shell] ensureLogin -> ' + ok + '，放行 tab 组件挂载')
+		// 🚨 2026-10-11 静态审查 A 级修复：**必须兜住异常并保证最终放行**。
+		// 原实现裸调 `ensureLogin().then(...)`：只要它同步抛（storage/插件异常）或链条中断，
+		// `ready` 就永不置位 ⇒ 四 tab 全被 `v-if="ready && everX"` 挡在门外 ⇒
+		// **永久空白首屏**（只剩 TabBar，无任何错误提示）。本项目既定口径是 fail-open
+		// （见 App.uvue 的 ensureLogin 预热：失败也继续），此处补齐同一口径。
+		try {
+			ensureLogin().then((ok: boolean) => {
+				console.log('[shell] ensureLogin -> ' + ok + '，放行 tab 组件挂载')
+				ready.value = true
+			})
+		} catch (e) {
+			console.log('[shell] ensureLogin threw -> 仍放行（fail-open）: ' + e)
 			ready.value = true
-		})
+		}
 	})
 
 	function activate(tab: string): void {
+		// 🚨 2026-10-11 静态审查 #2（跳转维度）修复：**切离 AI tab 时关掉附件面板**。
+		// 原实现只在 `onBackPress` 且 `activeTab=='ai'` 时复位 `aiAttachOpen` ⇒ 用户
+		// 「AI 开附件面板 → 切到"我的" → 按返回键」时：①返回键不再管这个面板（走默认退出 App）
+		// ②切回 AI 时面板**还开着**（残留 true）。切 tab 即收面板是唯一自洽语义。
+		if (activeTab.value == 'ai' && tab != 'ai') {
+			aiAttachOpen.value = false
+		}
 		if (tab == 'ai') {
 			everAi.value = true
 		}
@@ -96,6 +138,10 @@
 		}
 		if (tab == 'index') {
 			indexShownSeq.value = indexShownSeq.value + 1 // 首挂时组件未 mount 收不到 watch，语义安全
+		}
+		if (tab == 'ai') {
+			// RC-10：切到 AI 时广播一次，让 TabAi 重读上下文预填（回壳不再重挂本组件）
+			aiShownSeq.value = aiShownSeq.value + 1
 		}
 	}
 
@@ -122,7 +168,24 @@
 	})
 
 	function openSheet(): void {
+		sheetMode.value = ''
 		sheetOpen.value = true
+	}
+
+	// 组件请求拉起全局 RecordSheet（TabIndex 空态 CTA → shell_state 桥；seq+watch 同款模式）
+	watch((): number => shellSheetSeq.value, (n: number): void => {
+		if (n <= 0) {
+			return
+		}
+		sheetMode.value = shellSheetMode.value
+		shellSheetMode.value = ''
+		shellSheetSeq.value = 0
+		sheetOpen.value = true
+	})
+
+	function onSheetClose(): void {
+		sheetOpen.value = false
+		sheetMode.value = ''
 	}
 
 	function onSaved(): void {
@@ -136,6 +199,10 @@
 	onBackPress((): boolean => {
 		if (sheetOpen.value) {
 			sheetOpen.value = false
+			// 2026-10-11（跳转审查）：返回键关浮层未复位 mode（只有 onSheetClose 复位）——
+			// 残留的 'photo' 会让"下次打开"被误判为直达拍照。当前被"所有重开路径都重设
+			// mode"（openSheet / 空态 CTA）掩盖，属防御性缺口，一并补上保持两处对称。
+			sheetMode.value = ''
 			return true
 		}
 		if (activeTab.value == 'ai' && aiAttachOpen.value) {

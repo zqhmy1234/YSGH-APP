@@ -481,7 +481,7 @@
 		border-width: var(--d-raw-r3, 3rpx);
 		border-style: solid;
 		border-color: var(--c-amber-500, #c4913c);
-		background-color: var(--c-paper-200, #fbf4e4);
+		background-color: #fbf4e4;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ5，属令牌化误映射 */
 	}
 	.chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -823,7 +823,7 @@
 		color: var(--c-white, #ffffff);
 	}
 	.pplus {
-		background-color: var(--c-paper-400, #ede5d8);
+		background-color: #ede5d8;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-400 的值与本处原色差 Δ3，属令牌化误映射 */
 		border-radius: var(--d-raw-r16, 16rpx);
 		align-items: center;
 		justify-content: center;

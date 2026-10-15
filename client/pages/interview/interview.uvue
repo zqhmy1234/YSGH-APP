@@ -55,7 +55,7 @@
 			<view class="modal-mask" @tap="closeTextModal"></view>
 			<view class="modal-card">
 				<text class="modal-title">用文字回答</text>
-				<textarea class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
+				<textarea :adjust-position="true" class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
 				<view class="modal-actions">
 					<view class="modal-btn modal-btn-ghost" @tap="closeTextModal">
 						<text class="modal-btn-text ghost-text">取消</text>
@@ -75,6 +75,7 @@
 	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play_interview'
 	import { startRecord, stopRecord, transcribeWav, AsrResult } from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
+	import { backToShell } from '@/utils/shell_state'
 
 	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
 	const fallbackQuestions: Array<InterviewQuestion> = [
@@ -301,16 +302,19 @@
 	}
 
 	// 跳过访谈
+	// 🚨 2026-10-14（台账 §4.20）：原用 `reLaunch` 回首页 ⇒ **重建整个壳**（四个 tab 重挂 +
+	// 时间轴/画像的内存缓存与 TTL 一并作废 ⇒ 回首页要重拉数据）。改走 `backToShell`：
+	// 栈内有壳就零销毁切回 index；深链直入（栈内无壳）时它内部自会 `reLaunch` 兜底。
 	function skipInterview(): void {
 		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
 		setTimeout(() => {
-			uni.reLaunch({ url: '/pages/shell/shell' })
+			backToShell('index', '')
 		}, 600)
 	}
 
 	// 完成 → 进入时间轴
 	function goHome(): void {
-		uni.reLaunch({ url: '/pages/shell/shell' })
+		backToShell('index', '')
 	}
 </script>
 
@@ -357,7 +361,7 @@
 		width: var(--d-lattice-p8, 15.4rpx);
 		height: var(--d-lattice-p8, 15.4rpx);
 		margin-left: var(--d-lattice-p6, 11.5rpx); /* 画布 4:171 gap=6pt */
-		background-color: var(--c-paper-600, #E5DED2);
+		background-color: #E5DED2;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-600 的值与本处原色差 Δ10，属令牌化误映射 */
 		border-radius: var(--d-lattice-p4, 7.7rpx);
 		overflow: hidden;
 	}

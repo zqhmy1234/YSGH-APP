@@ -7,6 +7,7 @@
  */
 import { get, dataArr, fetchThumbnailPath } from './api'
 import { resolveMediaUrl } from './config'
+import { PATH_EVENTS_TIMELINE } from './contract'
 import { parseIsoMs, dayKey, friendlyDay } from './time'
 import { genWaveHeights } from './audio_player'
 
@@ -145,6 +146,20 @@ export class TimelineEvent {
 	renderPhotoPaths: Array<string>
 	hasRenderablePhotos: boolean
 	photoCountText: string
+	// ── RC-5（2026-10-14）播放态快照：由页面在「组装期 / 播放 tick / 切回本 tab」写入，
+	//    模板**只读字段、零函数调用**（同 `TabSearch.syncActiveCard` 范式）。
+	//    为什么放进卡片：原模板每卡 4~6 次函数调用，且**两处 `v-if` 直接依赖函数调用**
+	//    （平台对 `v-if` 整树卸载处理不稳），而一次 tick 的整表重渲染会重算**全部**语音卡。 ──
+	/** 本卡是否为"正在播放（含暂停）"的那张（同一时刻至多一张为 true） */
+	voiceActive: boolean
+	/** 播放中（false=暂停；仅 voiceActive 时有意义） */
+	voicePlaying: boolean
+	/** 播放进度 0..1（仅 voiceActive 时有意义） */
+	voiceProgress: number
+	/** 已播时长文本 m:ss（仅 voiceActive 时有意义） */
+	voiceCurText: string
+	/** 总时长文本 m:ss（仅 voiceActive 时有意义） */
+	voiceTotalText: string
 
 	constructor(
 		id: string,
@@ -185,6 +200,11 @@ export class TimelineEvent {
 		this.renderPhotoPaths = []
 		this.hasRenderablePhotos = false
 		this.photoCountText = ''
+		this.voiceActive = false
+		this.voicePlaying = false
+		this.voiceProgress = 0
+		this.voiceCurText = ''
+		this.voiceTotalText = ''
 	}
 
 	/** 服务端下发的缩略图 URL（本地无图时用它回退）；查不到返回空串 */
@@ -246,6 +266,58 @@ export function invalidateTimelineCache(): void {
 	_cacheAt = 0
 }
 
+// ── 冷启动持久快照（2026-10-14 · 台账 §4.20；用户现场反馈「每次打开/跳转都要等数据」）──
+// 上面那套缓存是**模块级内存数组**，随进程销毁 ⇒ **冷启动必定无缓存**、必等一次网络往返
+// （用户感知：打开 App 先"空一会儿"才出内容）。现把服务端**原始响应**持久化：
+// 冷启动先立刻用上次快照渲染（哪怕已过期），再由紧随的 `refreshSilently()` 覆盖。
+//  · 为什么存原始响应而不是事件数组：回放走 `parseTimelineEvents` **同一解析器**，
+//    不引入第二套反序列化（加字段只改一处，class 实例由构造器正确产生）；
+//  · 口径：时间轴是**历史记忆**，旧 ≠ 错（只会更少不会更假）；真变更由静默刷新纠正；
+//  · 失败一律静默（读/写/解析任一环节出问题都退回"走网络"），绝不因缓存让 App 起不来。
+const SNAPSHOT_KEY = 'yishu_timeline_snapshot'
+const SNAPSHOT_AT_KEY = 'yishu_timeline_snapshot_at'
+/** 快照最长接受年龄：7 天（再旧就不用了，宁等一次网络） */
+const SNAPSHOT_MAX_AGE_MS: number = 7 * 24 * 3600 * 1000
+
+function persistTimelineSnapshot(body: UTSJSONObject): void {
+	try {
+		uni.setStorageSync(SNAPSHOT_KEY, JSON.stringify(body))
+		uni.setStorageSync(SNAPSHOT_AT_KEY, '' + Date.now())
+	} catch (e) {
+		console.log('[dbg-index] timeline 快照持久化失败（忽略）: ' + e)
+	}
+}
+
+/**
+ * 冷启动快照（仅在**内存缓存未命中**时才有意义）。
+ *
+ * 与 `getCachedTimeline` 的分工：那个看 60s TTL，服务"切页免重拉"；本函数**不看 60s**，
+ * 只受 `SNAPSHOT_MAX_AGE_MS` 约束——首屏"立刻有东西"比"数据绝对新鲜"更重要，
+ * 新鲜度交给紧随其后的静默刷新。
+ */
+export function getSnapshotTimeline(): TimelineCacheHit | null {
+	try {
+		const raw = uni.getStorageSync(SNAPSHOT_KEY) as string
+		const atRaw = uni.getStorageSync(SNAPSHOT_AT_KEY) as string
+		if (raw == '' || atRaw == '') {
+			return null
+		}
+		const at = parseInt(atRaw)
+		if (at <= 0 || Date.now() - at > SNAPSHOT_MAX_AGE_MS) {
+			return null
+		}
+		const body = JSON.parse(raw) as UTSJSONObject
+		const events = parseTimelineEvents(body)
+		if (events.length == 0) {
+			return null
+		}
+		return new TimelineCacheHit(events, at)
+	} catch (e) {
+		console.log('[dbg-index] timeline 快照回放失败（忽略，走网络）: ' + e)
+		return null
+	}
+}
+
 /** 兼容出口（favorites/manage/theme-detail 三页调用）：委托 fetchTimelineAsync，缩略图后台静默补齐 */
 export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent>> {
 	return fetchTimelineAsync(level, (): void => {})
@@ -256,8 +328,79 @@ export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent
  * 缩略图下载转 ThumbnailPool 后台 ≤3 并发，逐批 onBatch 通知页面整组浅替换。
  * onBatch 由页面传入（首拉/静默刷新），fetchTimeline 兼容出口传空函数。
  */
+/**
+ * 解析 timeline 响应 → 事件列表（2026-10-14 从 `fetchTimelineAsync` 内联体**抽出**）。
+ *
+ * 抽出的唯一目的：让**冷启动持久快照回放**（`getSnapshotTimeline`）能用**同一解析器**——
+ * 存的是服务端**原始响应**，回放走这里 ⇒ 不引入第二套反序列化（加字段只改一处），
+ * 且 `TimelineEvent` 等 class 实例由构造器正确产生（不是裸对象）。
+ */
+export function parseTimelineEvents(body: UTSJSONObject): Array<TimelineEvent> {
+	const arr = dataArr(body)
+	const result: Array<TimelineEvent> = []
+	for (let i = 0; i < arr.length; i++) {
+		const item = arr[i]
+		const ev = new TimelineEvent(
+			item.getString('id') as string,
+			item.getNumber('level') as number,
+			item.getString('title') ?? '',
+			item.getString('title_source') ?? '',
+			parseIsoMs(item.getString('start_time') ?? ''),
+			parseIsoMs(item.getString('end_time') ?? ''),
+			item.getString('place') ?? '',
+			item.getJSON('emotion'),
+			item.getNumber('photo_count') as number,
+			item.getNumber('content_count') as number,
+			item.getString('status') ?? 'draft',
+			item.getNumber('confidence') as number,
+			item.getString('cover_content_id') ?? ''
+		)
+		// 图片下发（Valet Key）：服务端已批量下发成员照片与封面 URL，
+		// 客户端直接建索引——冷启动不再依赖上传回调，照片条开箱即渲染。
+		ev.photos = parsePhotos(item)
+		for (let k = 0; k < ev.photos.length; k++) {
+			const ph = ev.photos[k]
+			if (ph.thumbnailUrl != '') {
+				ev.photoUrlMap.set(ph.contentId, ph.thumbnailUrl)
+			}
+		}
+		// photoIds：服务端成员优先；为空再保留本地会话填充（上传回调）的值
+		if (ev.photos.length > 0) {
+			const ids: Array<string> = []
+			for (let k = 0; k < ev.photos.length; k++) {
+				ids.push(ev.photos[k].contentId)
+			}
+			ev.photoIds = ids
+		}
+		// photo_ids 过渡管线（Valet Key 落地前的拍板方案 2026-09-02）：
+		// 服务端暂只下发 photo_ids（无 photos[] URL），先落 photoIds
+		// 让照片条立即可渲染判定，本地路径由后台缩略图并发池补齐（卡PA D1）。
+		if (ev.photos.length == 0 && ev.photoIds.length == 0) {
+			// 项目先例 event_ops.uts:224：getArray(...) as Array<string> | null 后下标取值。
+			// 禁忌实录：曾写 pidArr.getString(pk)（数组上调 UTSJSONObject 方法）——
+			// 运行时异常 → fetchTimeline Promise 永不 resolve → 加载态永久卡死。
+			const pidArr = item.getArray('photo_ids') as Array<string> | null
+			if (pidArr != null) {
+				for (let pk = 0; pk < pidArr.length; pk++) {
+					const cid = pidArr[pk]
+					if (cid != '') {
+						ev.photoIds.push(cid)
+					}
+				}
+			}
+		}
+		ev.coverUrl = resolveMediaUrl(item.getString('cover_url'))
+		ev.voice = parseVoice(item)
+		result.push(ev)
+	}
+	return result
+}
+
 export function fetchTimelineAsync(level: number | null, onBatch: () => void): Promise<Array<TimelineEvent>> {
-	const path = level == null ? '/api/v1/events/timeline' : '/api/v1/events/timeline?level=' + level
+	// 2026-10-14（台账 §4.20 ⑪ 第 10 轴）：原为**字面量** `'/api/v1/events/timeline'`，
+	// 而契约常量 `PATH_EVENTS_TIMELINE` 声明后零引用 ⇒ 两处会各自漂移（后端改路径时
+	// 契约改了、这里不动 ⇒ 请求打到不存在的路径）。改用契约常量为**单一事实源**。
+	const path = level == null ? PATH_EVENTS_TIMELINE : PATH_EVENTS_TIMELINE + '?level=' + level
 	return new Promise<Array<TimelineEvent>>((resolve) => {
 		get(path).then((body: UTSJSONObject | null) => {
 			if (body == null) {
@@ -266,65 +409,11 @@ export function fetchTimelineAsync(level: number | null, onBatch: () => void): P
 				return
 			}
 			_lastFetchFailed = false
-			const arr = dataArr(body)
-			const result: Array<TimelineEvent> = []
-			for (let i = 0; i < arr.length; i++) {
-				const item = arr[i]
-				const ev = new TimelineEvent(
-					item.getString('id') as string,
-					item.getNumber('level') as number,
-					item.getString('title') ?? '',
-					item.getString('title_source') ?? '',
-					parseIsoMs(item.getString('start_time') ?? ''),
-					parseIsoMs(item.getString('end_time') ?? ''),
-					item.getString('place') ?? '',
-					item.getJSON('emotion'),
-					item.getNumber('photo_count') as number,
-					item.getNumber('content_count') as number,
-					item.getString('status') ?? 'draft',
-					item.getNumber('confidence') as number,
-					item.getString('cover_content_id') ?? ''
-				)
-				// 图片下发（Valet Key）：服务端已批量下发成员照片与封面 URL，
-				// 客户端直接建索引——冷启动不再依赖上传回调，照片条开箱即渲染。
-				ev.photos = parsePhotos(item)
-				for (let k = 0; k < ev.photos.length; k++) {
-					const ph = ev.photos[k]
-					if (ph.thumbnailUrl != '') {
-						ev.photoUrlMap.set(ph.contentId, ph.thumbnailUrl)
-					}
-				}
-				// photoIds：服务端成员优先；为空再保留本地会话填充（上传回调）的值
-				if (ev.photos.length > 0) {
-					const ids: Array<string> = []
-					for (let k = 0; k < ev.photos.length; k++) {
-						ids.push(ev.photos[k].contentId)
-					}
-					ev.photoIds = ids
-				}
-				// photo_ids 过渡管线（Valet Key 落地前的拍板方案 2026-09-02）：
-				// 服务端暂只下发 photo_ids（无 photos[] URL），先落 photoIds
-				// 让照片条立即可渲染判定，本地路径由后台缩略图并发池补齐（卡PA D1）。
-				if (ev.photos.length == 0 && ev.photoIds.length == 0) {
-					// 项目先例 event_ops.uts:224：getArray(...) as Array<string> | null 后下标取值。
-					// 禁忌实录：曾写 pidArr.getString(pk)（数组上调 UTSJSONObject 方法）——
-					// 运行时异常 → fetchTimeline Promise 永不 resolve → 加载态永久卡死。
-					const pidArr = item.getArray('photo_ids') as Array<string> | null
-					if (pidArr != null) {
-						for (let pk = 0; pk < pidArr.length; pk++) {
-							const cid = pidArr[pk]
-							if (cid != '') {
-								ev.photoIds.push(cid)
-							}
-						}
-					}
-				}
-				ev.coverUrl = resolveMediaUrl(item.getString('cover_url'))
-				ev.voice = parseVoice(item)
-				result.push(ev)
-			}
+			const result = parseTimelineEvents(body)
 			// 卡PA D2：成功结果入缓存（与页面 currentEvents 同数组引用，本地补丁直接同步）
 			putTimelineCache(result)
+			// 冷启动持久快照（失败静默，不影响主流程；理由见 getSnapshotTimeline 注释）
+			persistTimelineSnapshot(body)
 			// 卡PA D1：立即 resolve 返回（不等缩略图），补图转后台并发池
 			resolve(result)
 			startThumbnailEnrich(result, onBatch)

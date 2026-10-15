@@ -108,6 +108,14 @@ def _ingest_callback_message(msg: dict) -> dict:
     """
     with SessionLocal() as db:
         user_id = resolve_user_id(db, msg.get("from_user"))
+        if user_id is None:
+            # 2026-10-15（台账 §4.20 ㉖）：**未绑定 + 发来绑定码** ⇒ 建立绑定（F6 微信入口的入口）。
+            # 绑定成功也不把这条消息当内容 —— 它是"指令"不是记忆，按既有"未绑定只记录"路径落
+            # wechat_messages（保 msg_id 幂等 ⇒ 企微重推不会二次消费/二次建绑定）。
+            from app.services.wechat.service import bind_by_code
+
+            if bind_by_code(db, msg) is not None:
+                return process_incoming(db, msg, user_id=None)
         return process_incoming(db, msg, user_id=user_id)
 
 
@@ -170,6 +178,23 @@ def wechat_bind(
         "channel": row.channel,
         "user_id": str(row.user_id),
     })
+
+
+@router.post("/bind-code", response_model=ApiResponse[dict])
+def wechat_bind_code(user: User = Depends(get_current_user)):
+    """签发**微信绑定码**（2026-10-15 · 台账 §4.20 ㉖）。
+
+    为什么需要它：F6「微信入口」要先知道用户的微信 **openid**，而 openid 只存在企微侧、
+    App 无从获取（后端此前也没有任何"绑定码/扫码"流程 ⇒ 功能在产品级不可完成）。
+    现流程：App 领码 → 用户在自己的微信里给忆述发「绑定 <码>」→ 回调侧消费码建绑定。
+
+    码**6 位数字、10 分钟有效、单次使用**；同账号重发即作废旧码。
+    **只回本次码与有效期**（不返回历史码/剩余次数，最小信息）。
+    """
+    from app.services.wechat.bind_code import CODE_TTL_SECONDS, issue_code
+
+    code = issue_code(str(user.id))
+    return ApiResponse(data={"code": code, "expires_in": CODE_TTL_SECONDS})
 
 
 @router.get("/bindings", response_model=ApiResponse[WechatBindingsOut])

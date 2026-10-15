@@ -26,12 +26,11 @@
 						<image class="sec-icon-img" src="/static/icons/icon-chat.svg" />
 					</view>
 					<text class="sec-label">微信</text>
-					<!-- 2026-09-21（C2 落地后诚实化）：内测期登录方式=设备码
-					     （后端 unionid="device:<device_id>"），微信**并未绑定**。
-					     原硬编码「已绑定」徽章是 wechatLogin（code=dev-client）时代的表述残留，
-					     会让用户误以为账号绑了微信。值守约：不显假状态——与手机号行「未绑定」一致。
-					     B5 微信绑定管理落地后按真实绑定态渲染并恢复徽章样式。 -->
-					<text class="sec-value">未绑定</text>
+					<!-- 2026-10-15（台账 §7.29）：**接真实绑定态**。原为硬编码「未绑定」+ 点击 toast
+					     "微信绑定暂未开放"——而绑定管理**已落地**（设置页：微信授权优先、绑定码兜底），
+					     两页口径矛盾。现本行改为 `GET /wechat/bindings` 真值渲染，点击跳设置页去绑定/解绑。
+					     徽章样式（画布 41:180）按 2026-09-21 的决定**暂不恢复**：纯文本与手机号行一致。 -->
+					<text class="sec-value">{{ wechatText }}</text>
 					<text class="sec-arrow">›</text>
 				</view>
 			</view>
@@ -65,18 +64,71 @@
 // 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
 // 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
 // W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」）：手机号显「未绑定」不显假号 138****5678
-// （auth 本地仅 token、后端无 users/me）；微信行**不再显示「已绑定」**——内测期登录=设备码、
-// 微信未绑定（2026-09-21 修正该处失实表述，与决策台账 §1.12① 口径一致）；绑定管理 toast 措辞「即将上线」；
+// ——B4 后已接 `GET /users/me` 真值（服务端掩码下发）；失败/未绑定仍显「未绑定」，不显假号 ✓；
+// 微信行（2026-10-15 · 台账 §7.29）：**接真实绑定态**（`GET /wechat/bindings`）并**就地绑定/解绑** ——
+// 未绑定 ⇒ `wechatLogin()` 拉起微信授权（失败自动回落绑定码通道）；已绑定 ⇒ 二次确认解绑；
+// ⚠️ 本注释取代两处已过期表述：① 「微信行不再显示『已绑定』」（2026-09-21 当时正确，但 10-15 起绑定
+// 能力已落地、改为真值渲染 ✓）；② 「绑定管理 toast 措辞『即将上线』」（现已有真入口 ✓）。
+// 另修一处回环：原先点本行跳 settings 中间页，与 settings 的「账号与安全」行互跳成死循环（用户实测 ✗）⇒ 已改为就地处理。
 // W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
 	import { logout } from '@/utils/auth'
 	import { fetchUsersMe } from '@/utils/play_content'
+	import { listWechatBindings, issueBindCode, unbindWechat } from '@/utils/wechat_api'
+	import { wechatLogin } from '@/utils/auth'
 
 	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
 	let phoneText = ref('未绑定')
+	// 2026-10-15（台账 §7.29）：微信**绑定态**接真值（`GET /wechat/bindings`）；默认「未绑定」，
+	// 拉取失败保持默认（不显假状态 —— 同手机号行口径）。
+	let wechatText = ref('未绑定')
+	// 2026-10-15（真机反馈后复修）：本页**就地绑定/解绑**。原先点这一行会跳 settings 中间页，
+	// 与 settings 的「账号与安全」行互跳 ⇒ 我的→设置→账号与安全→设置 死循环 ✗（用户实测）。
+	let wechatBound = ref(false)
+	let wechatOpenid = ref('')
+
+	/** 拉真绑定态（进页调用；绑定动作由服务端回调侧完成，客户端只做"领码/授权/解绑"） */
+	function refreshWechat(): void {
+		listWechatBindings().then((rows: Array<UTSJSONObject>) => {
+			if (rows.length == 0) {
+				wechatBound.value = false
+				wechatText.value = '未绑定'
+				wechatOpenid.value = ''
+				return
+			}
+			wechatBound.value = true
+			wechatText.value = '已绑定'
+			wechatOpenid.value = rows[0].getString('openid') ?? ''
+		})
+	}
+
+	/**
+	 * 绑定码通道（资质未到位时的兜底）：领 6 位码 → 系统弹窗展示（不新增视觉元素；
+	 * 数字手打到微信即可）→ 用户发完点「我已发送」复查一次。
+	 */
+	function showBindCodeFlow(): void {
+		issueBindCode().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				return // 失败原因已由 api 层全局 toast 显式给出
+			}
+			const code = d.getString('code') ?? ''
+			const mins = Math.round((d.getNumber('expires_in') ?? 600) / 60)
+			uni.showModal({
+				title: '微信绑定',
+				content: '请在微信里给「忆述」发送：绑定 ' + code + '（' + mins + ' 分钟内有效）。发完点「我已发送」。',
+				confirmText: '我已发送',
+				showCancel: false,
+				success: (): void => {
+					refreshWechat()
+				}
+			})
+		})
+	}
 
 	onLoad(() => {
+		// 2026-10-15（台账 §7.29）：微信绑定态真值（失败保持「未绑定」，不 toast 打扰）
+		refreshWechat()
 		fetchUsersMe().then((d: UTSJSONObject | null) => {
 			if (d == null) {
 				// 不静默：失败显式 toast，保持「未绑定」降级显示
@@ -105,10 +157,47 @@
 		uni.showToast({ title: '手机号绑定即将上线', icon: 'none' })
 	}
 
+	/**
+	 * 微信行：**就地**完成绑定/解绑（2026-10-15 · 真机反馈「又跳到那个中间页」后复修）。
+	 *
+	 * - 已绑定 ⇒ 二次确认后解绑（只断开关联，已入库记忆零侵入 ✓）；
+	 * - 未绑定 ⇒ **授权优先**：`wechatLogin()` 拉起微信授权（`uni.login` → `/auth/wechat`，
+	 *   服务端 code2session 换 unionid+openid 并**同时建立渠道绑定**）⇒ 授权即完成；
+	 *   授权不可用（未配开放平台 AppID / manifest 未开微信模块，**属外部资质前置**）⇒
+	 *   **自动回落绑定码通道**，不把用户卡在死路上（与设置页同一口径）。
+	 * ⚠️ 不再跳 settings 中间页（那会形成 我的→设置→本页→设置 的回环 ✗）。
+	 */
 	function onWechat(): void {
-		// 2026-09-21：内测期登录=设备码，微信未绑定 → 不再断言「已绑定」。
-		// 措辞要说清"现在是什么"，而不是只说"以后会有什么"——否则用户仍会以为已绑微信。
-		uni.showToast({ title: '内测期按设备自动建档，微信绑定暂未开放', icon: 'none', duration: 2500 })
+		if (wechatBound.value) {
+			uni.showModal({
+				title: '微信绑定',
+				content: '解绑后，微信里再发的照片/语音不再进入你的忆述（已入库的记忆不受影响）。',
+				confirmText: '解绑',
+				confirmColor: '#B05A3A',
+				success: (res) => {
+					if (!res.confirm || wechatOpenid.value == '') {
+						return
+					}
+					unbindWechat(wechatOpenid.value).then((ok: boolean) => {
+						if (ok) {
+							uni.showToast({ title: '已解绑', icon: 'success' })
+							refreshWechat()
+						}
+					})
+				}
+			})
+			return
+		}
+		wechatLogin().then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '微信授权成功 · 已绑定', icon: 'success' })
+				refreshWechat()
+				return
+			}
+			// 授权不可用（资质未到位/未装微信）⇒ 回落绑定码通道
+			console.log('[yishu] 微信授权不可用 ⇒ 回落绑定码通道')
+			showBindCodeFlow()
+		})
 	}
 
 	function onPrivacy(): void {

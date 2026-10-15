@@ -16,7 +16,12 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$RepoRoot = ''
+    [string]$RepoRoot = '',
+    # 2026-10-11：**固定地址隧道模式**显式开关（见 §1 的隧道判定）。
+    # 内测期既定方案是"以本机为后端载体"：ngrok 静态域名（永久固定）或 cloudflared 隧道
+    # 把 127.0.0.1:8010 暴露成公网 https 地址，手机装 APK 即可测、不需要数据线。
+    # 默认（不传）仍拦截所有隧道域名以防误用；显式传入即放行并打印时效提醒。
+    [switch]$AllowTunnel
 )
 
 # 仓库根解析：不能写进 param 默认值 —— Windows PowerShell 5.1 在绑定参数时
@@ -94,9 +99,58 @@ try {
             foreach ($marker in @('example.com', 'localhost', '127.0.0.1', '10.0.2.2')) {
                 if ($prodBase -like "*$marker*") { $reasons += "命中占位/回退词 $marker" }
             }
+            # ── 隧道域名判定（2026-10-11 **修正**：不再一刀切 FAIL）──────────────────
+            # 背景：内测期既定方案是「**以本机为后端载体**」——手机装 APK 直连本机后端，
+            # 不需要数据线；它的实现天然是隧道。初版把**所有**隧道域名判成 FAIL ⇒ 直接把
+            # 既定方案卡死（既出不了包，也拿不到"地址会失效"的正确提醒）。
+            # 现按「地址是否固定」分两类：
+            #   · 固定地址隧道（ngrok 静态域名 `*.ngrok-free.app` / named tunnel 自有域名）
+            #     ⇒ **合法**，等同普通公网地址，直接 Pass（已从占位词表移除）
+            #   · 临时隧道（cloudflared quick tunnel 等，重启即换址）⇒ 默认 FAIL；
+            #     显式 `-AllowTunnel` 时降为 WARN + 交付提醒（应急可用，但必须告知测试同学）
+            # 更可靠的判据（2026-10-12）：**读 tunnel.ps1 记录的模式**与地址，而不是猜域名后缀。
+            #   · 后缀写死会过期——ngrok 免费版静态域名从 `.io` → `.app` → **`.dev`** 换过好几轮
+            #     （本机实测 `xxx.ngrok-free.dev`），按后缀列白名单必然要跟着改；
+            #   · 更要命的是：`ngrok http 8010` **不带** `--url` 时拿到的是**随机地址**，
+            #     与静态域名长得一模一样 ⇒ 黑名单根本判不出来。
+            $modeFile = Join-Path $RepoRoot 'deploy\.tunnel-mode'
+            $urlRecFile = Join-Path $RepoRoot 'deploy\.tunnel-url'
+            $tunnelMode = if (Test-Path $modeFile) { (Get-Content $modeFile -Raw).Trim() } else { '' }
+            $recordedUrl = if (Test-Path $urlRecFile) { (Get-Content $urlRecFile -Raw).Trim() } else { '' }
+            $matchesRecord = ($recordedUrl -ne '') -and ($prodBase.TrimEnd('/') -eq $recordedUrl.TrimEnd('/'))
+            $isRecordedStatic = $matchesRecord -and ($tunnelMode -eq 'static')
+            $isRecordedVolatile = $matchesRecord -and ($tunnelMode -in @('quick', 'random'))
+
+            $ephemeralTunnels = @('trycloudflare.com', 'loca.lt', 'localtunnel.me', 'serveo.net')
+            $hitEphemeral = @($ephemeralTunnels | Where-Object { $prodBase -like "*$_*" })
+
             if ($reasons.Count -gt 0) {
                 Fail ("PROD_BASE_URL = '$prodBase' —— " + ($reasons -join '；')) `
-                    '改成真实公网地址（形如 http://43.x.x.x:8010 或 https://api.你的域名）。换址清单见 deploy/ONE_SWAP.md'
+                    '改成真实公网地址（形如 http://43.x.x.x:8010）或固定地址隧道（https://xxx.ngrok-free.app）。换址清单见 deploy/ONE_SWAP.md'
+            }
+            elseif ($isRecordedStatic) {
+                Pass "PROD_BASE_URL = '$prodBase'（**固定地址隧道** · 已与 deploy\.tunnel-url 核对，模式 static ⇒ 重启不换址）"
+            }
+            elseif ($isRecordedVolatile) {
+                $why = if ($tunnelMode -eq 'random') { 'ngrok 未指定静态域名 ⇒ 免费版随机地址' } else { 'cloudflared 快速隧道' }
+                if ($AllowTunnel) {
+                    Warn "PROD_BASE_URL 是**会变的隧道地址**（$why）：重启即换址 ⇒ 已分发 APK 会立刻全部连不上。内测应急可接受，**交付时必须写明**"
+                    Pass "PROD_BASE_URL = '$prodBase'（可变态隧道 · 已显式放行）"
+                }
+                else {
+                    Fail "PROD_BASE_URL 是**会变的隧道地址**（$why）" '固定地址方案：pwsh -File scripts\dev\tunnel.ps1 -StaticDomain <你的静态域名>；确要应急请显式加 -AllowTunnel'
+                }
+            }
+            elseif ($hitEphemeral.Count -gt 0) {
+                if ($AllowTunnel) {
+                    Warn ("PROD_BASE_URL 是**临时隧道**地址（命中 $($hitEphemeral -join ' / ')）：隧道重启即换址 ⇒ 已分发 APK 会立刻全部连不上。内测应急可接受，**交付时必须写明**")
+                    Note '想要地址永久固定（隧道重启不用重出包）请改用：pwsh -File scripts\dev\tunnel.ps1 -Provider ngrok -StaticDomain <你的静态域名>'
+                    Pass "PROD_BASE_URL = '$prodBase'（临时隧道 · 已显式放行）"
+                }
+                else {
+                    Fail ("PROD_BASE_URL = '$prodBase' 命中**临时隧道**域名：" + ($hitEphemeral -join ' / ')) `
+                        '固定地址方案：pwsh -File scripts\dev\tunnel.ps1 -Provider ngrok -StaticDomain <你的静态域名>；确要临时隧道应急请显式加 -AllowTunnel'
+                }
             }
             else { Pass "PROD_BASE_URL = '$prodBase'" }
         }
@@ -212,6 +266,47 @@ try {
         }
         else { Pass '下载页无残留占位' }
         if ($dl -match 'placeholder\.svg') { Note '下载页二维码仍是占位图 —— 出包后同名覆盖即可' }
+    }
+
+    # ─────────────────────────── 8. 客户端编译门（2026-10-11 新增）───────────────────────────
+    # 为什么放进出包门（而不只在 review_agent --full）：出包是**最后一次能拦住低级错误的机会**。
+    # 静态轴（导入 / 类成员 / 死路由 / 令牌）都是启发式；**编译不过的包绝不该打**——
+    # 花 20~56s 换掉一次"装上去才发现全崩"的废包，是本项目性价比最高的一步。
+    # 缺 HBuilderX ⇒ FAIL（出包机必须能编译）；脚本自身用 --strict 表达这一口径。
+    Section '8. 客户端编译门（uni-app x）'
+    $gateScript = Join-Path $RepoRoot 'scripts\client_compile_gate.py'
+    if (-not (Test-Path $gateScript)) {
+        Fail '缺少 scripts/client_compile_gate.py' '该文件是出包门的一部分，不应删除'
+    }
+    else {
+        $raw = ''
+        $code = 1
+        try {
+            $raw = (& python $gateScript --json --strict 2>&1 | Out-String).Trim()
+            $code = $LASTEXITCODE
+        }
+        catch {
+            $raw = "调用 python 失败：$($_.Exception.Message)"
+        }
+        $status = ''
+        $detail = $raw
+        try {
+            $j = $raw | ConvertFrom-Json
+            if ($j.status) { $status = $j.status }
+            if ($j.detail) { $detail = $j.detail }
+        }
+        catch { }
+        switch ($status) {
+            'ok' { Pass $detail }
+            'fail' {
+                Fail '客户端编译未通过' '先修编译错误再打包；本地快速复现：python scripts/client_compile_gate.py'
+                Write-Host ("         " + ($detail -split "`n" | Select-Object -First 6 | Out-String).Trim()) -ForegroundColor DarkGray
+            }
+            default {
+                if ($code -eq 0) { Pass $detail }
+                else { Fail "客户端编译门未通过（exit=$code）：$detail" '出包机必须能编译客户端（设置 HBUILDERX_CLI 指向 cli.exe）' }
+            }
+        }
     }
 
     # ─────────────────────────── 汇总 ───────────────────────────

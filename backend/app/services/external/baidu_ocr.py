@@ -24,7 +24,7 @@ from app.services.external.retry import with_retry
 
 logger = logging.getLogger("yishu.external.ocr")
 
-TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
+TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"  # noqa: S105 —— 接口地址，非口令（名字含 TOKEN 触发误报）
 OCR_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
 OCR_LANGUAGE = "CHN_ENG"
 # 最长边上限（百度 OCR 图片大小限制；超限返回 216205）

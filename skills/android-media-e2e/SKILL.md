@@ -23,10 +23,10 @@ official: false
 
 ```powershell
 # P1 后端在线
-Invoke-WebRequest http://127.0.0.1:8000/healthz          # 或 uvicorn 起于 Python313\Scripts
-# P2 隧道三连（cli launch 启动/退出都会弄丢 reverse tcp:8000，每次 launch 后必做！）
-adb -s <SER> reverse tcp:8000 tcp:8000
-adb -s <SER> shell "curl -s -m 3 http://127.0.0.1:8000/healthz"   # 必须 {"status":"ok"}
+Invoke-WebRequest http://127.0.0.1:8010/healthz          # 或 uvicorn 起于 Python313\Scripts
+# P2 隧道三连（cli launch 启动/退出都会弄丢 reverse tcp:8010，每次 launch 后必做！）
+adb -s <SER> reverse tcp:8010 tcp:8010
+adb -s <SER> shell "curl -s -m 3 http://127.0.0.1:8010/healthz"   # 必须 {"status":"ok"}
 # P3 屏幕常亮 + 前台
 adb -s <SER> shell "svc power stayon usb; input keyevent KEYCODE_WAKEUP"
 # P4 worker 活着（L2/L3 取证依赖 process_content 完成）
@@ -134,7 +134,7 @@ python .cowork-temp/ui_parse.py .cowork-temp/x.xml    # 输出 "text [[bounds]]"
 - **UTS 基座能力探测不得用 `getResource('*.class')`**（D-18）：Android class 全编进 dex，`.class` 资源恒不存在 → 恒 false。云包是否含原生类用 `findstr /m /c:<类名> classes*.dex` 尸检；探测改插件自带 marker asset（assets 对 getResource 有效无异常）或 `catch (e: any)` 包 Class.forName。
 - **UTS Service 必须 manifest 注册**（D-19）：`class X extends Service` 只在源码里、插件无 config.json/AndroidManifest 片段 → 云包 manifest 无该 service → startService 必死；"标准基座自动回退"注释掩盖了全基座失效。检查：`aapt dump xmltree android_debug.apk AndroidManifest.xml | Select-String service`。
 - **语音短录音入库链路**（D-07/D-16/D-17 同族）：≤8MB 直传转写成功但**音频不落 COS** → 管线 AUDIO_NOT_FOUND 判死（contents.failed、text 幸存、voice_segments 空）；原 wav 可从 `Android/data/<pkg>/cache/uni-recorder/` 抽回做 PC 回放补证。情绪三层默认值（models/schemas/客户端 `?? '平静'`）把"未测出"伪造成"平静"，识别失败与真平静 UI 不可分。
-- **adb reverse 会随 cli launch 退出/任何 HBuilderX adb 操作丢**（本日 11 次）：每次 launch 后固定补 `adb reverse tcp:8000 tcp:8000` + 设备侧 curl healthz；检测到"HTTP 0/网络异常"先查隧道三连。
+- **adb reverse 会随 cli launch 退出/任何 HBuilderX adb 操作丢**（本日 11 次）：每次 launch 后固定补 `adb reverse tcp:8010 tcp:8010` + 设备侧 curl healthz；检测到"HTTP 0/网络异常"先查隧道三连。
 - **测试环境隔离铁律**：跑门禁前 `Remove-Item Env:QDRANT_COLLECTION`（手动复现用的环境变量会泄漏进 pytest 弄挂隔离测试）；真实外部调用（AMap 等）会留缓存行污染测试 fixture（geo_cache 按测试坐标同 geohash 短路 mock）——失败第一问先清环境残留。
 - **review_agent secrets 会误报 uiautomator XML**：AX 树 EditText 自带 `password` 属性（值 false）命中正则 → 证据 XML 用后即删（PNG 才是证据），或措辞避开 `password=` 字面。
 - **云打包 CLI 参数**：`--ignoreWarnings true` 必须显式布尔值；`--playground custom` 切自定义基座运行（配 `--native-log true` 收原生日志）；打包成功日志会本地落 `client/unpackage/debug/android_debug.apk`。

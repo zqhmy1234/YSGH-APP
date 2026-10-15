@@ -11,7 +11,11 @@ import { UploadMode } from './uploader_types'
 /** 网络类型：wifi（wifi/ethernet 无限流量视为 wifi）/ cellular / none / unknown */
 export type NetKind = 'wifi' | 'cellular' | 'none' | 'unknown'
 
-/** uni.getNetworkType 回调式封装（uni-app x）；ethernet 有线视为 wifi */
+/** uni.getNetworkType 回调式封装（uni-app x）；ethernet 有线视为 wifi
+ *
+ * ⚠️ **必须传回调**——本函数返回 void，`if (getNetKind() == 'none')` 这类同步判断恒为假
+ * （2026-10-11 静态审查实锤：B12 离线改口批在 4 处按同步签名调用过，见下方 currentNetKind 注释）。
+ * 需要同步判断的场合请用 `currentNetKind()`。 */
 export function getNetKind(cb: (kind: NetKind) => void): void {
 	uni.getNetworkType({
 		success: (res) => {
@@ -29,6 +33,64 @@ export function getNetKind(cb: (kind: NetKind) => void): void {
 		}
 	})
 }
+
+// ═══════════ 同步网络状态缓存（2026-10-11 静态审查新增）═══════════
+
+/** 最近一次已知网络类型（同步可读）。由「模块加载时的首次探测」与「网络变化监听」共同维护。 */
+let _lastNetKind: NetKind = 'unknown'
+let _netWatchBound = false
+
+/**
+ * 同步读「最近已知」的网络类型。
+ *
+ * 为什么需要它（真实缺陷背景）：B12「离线不白丢用户操作」批在 4 处写了
+ * `if (getNetKind() == 'none') { 改口为"已离线，联网后自动完成" }`——而 `getNetKind` 是
+ * **回调式且返回 void**，`void == 'none'` 恒假 ⇒ 离线分支**永不进入**，用户看到的仍是
+ * 「删除失败」而操作其实已入队（正是该批注释要避免的"状态与事实不符"）；
+ * 同时按同步签名传参（不传 cb）在运行时是 undefined 回调，网络探测成功时调用即抛。
+ *
+ * ⚠️ 语义边界（重要）：本函数是**缓存值**，初始 `'unknown'`——模块加载时自动绑
+ * `uni.onNetworkStatusChange` 并首次探测，此后随网络事件更新。
+ * 因此：**只能判 `currentNetKind() == 'none'`（确定离线），不得用 `!= 'wifi'` 当离线**
+ * （unknown 会被误判成离线 ⇒ 把"未知"当成"已排队"，同样是与事实不符）。
+ * 若需即时准确值，请用回调式 `getNetKind(cb)`。
+ */
+export function currentNetKind(): NetKind {
+	return _lastNetKind
+}
+
+/** 主动刷新缓存（幂等；模块加载时自动调用一次） */
+export function refreshNetKind(): void {
+	getNetKind((kind: NetKind) => {
+		_lastNetKind = kind
+	})
+}
+
+/** 绑定网络变化监听（幂等）——与 sync_schedule 的「网络恢复补跑」监听互补：
+ *  这里只维护 cache，不触发任何业务副作用。 */
+function _bindNetWatch(): void {
+	if (_netWatchBound) {
+		return
+	}
+	_netWatchBound = true
+	try {
+		uni.onNetworkStatusChange((res) => {
+			if (!res.isConnected) {
+				_lastNetKind = 'none'
+				return
+			}
+			const t = res.networkType
+			_lastNetKind = (t == 'wifi' || t == 'ethernet') ? 'wifi' : 'cellular'
+		})
+	} catch (e) {
+		// 标准基座/不支持该 API 时降级为「仅首次探测」（幂等失败不影响主链）
+		console.log('[yishu] onNetworkStatusChange 注册失败（降级为仅首次探测）: ' + e)
+	}
+	refreshNetKind()
+}
+
+// 模块加载即初始化（utt 顶层语句在本仓已有先例：uploader_batch 的网络恢复注册）
+_bindNetWatch()
 
 /** 按请求模式 + 实际网络解析上传模式：
  *  - original：强制原图（WiFi 默认 / "立即上传原图"手动入口）

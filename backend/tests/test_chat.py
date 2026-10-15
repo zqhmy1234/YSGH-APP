@@ -18,8 +18,8 @@ def _mock_reply(monkeypatch, text: str = "收到啦，已经帮你记下了～",
     """把 agent 调用替换为确定性桩，并记录调用参数（用于断言可信注入与会话键）。"""
     calls: list[tuple[str, str, str]] = []
 
-    def _fake(user_id: str, message: str, thread_id: str) -> AgentChatResult:
-        calls.append((user_id, message, thread_id))
+    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:
+        calls.append((user_id, message, conversation_id))
         return AgentChatResult(text=text, latency_ms=latency_ms, raw={"reply": text})
 
     monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
@@ -27,7 +27,7 @@ def _mock_reply(monkeypatch, text: str = "收到啦，已经帮你记下了～",
 
 
 def _mock_failure(monkeypatch, kind: str, status: int):
-    def _fake(user_id: str, message: str, thread_id: str):
+    def _fake(user_id: str, message: str, conversation_id: str):
         raise AgentServiceError("stub failure", kind, status)
 
     monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
@@ -40,7 +40,7 @@ def test_requires_auth(client):
 
 
 def test_happy_path_persists_and_matches_contract(client, auth_headers, cleanup_user, monkeypatch):
-    """正常路径：契约形状 + 两条消息落库 + user_id 可信注入 + thread_id=会话 ID。"""
+    """正常路径：契约形状 + 两条消息落库 + user_id 可信注入 + conversation_id 透传。"""
     from app.db.session import SessionLocal
     from sqlalchemy import text
 
@@ -62,11 +62,13 @@ def test_happy_path_persists_and_matches_contract(client, auth_headers, cleanup_
         assert data["reply"]["text"].startswith("✅ 已保存")
         assert data["latency_ms"] >= 0
 
-        # 可信注入：user_id 来自 JWT；thread_id 用会话 ID（保多轮上下文）
+        # 可信注入：user_id 来自 JWT；conversation_id 透传（agent 侧按
+        # f"{user_id}:{conversation_id}" 派生 thread_id 满足归属校验——
+        # 见 external/agent.py，2026-10-08 服务间实联调修复）
         assert len(calls) == 1
         assert calls[0][0] == user_id, "agent 侧 user_id 必须来自 JWT"
         assert calls[0][1] == "帮我记住：今天读完一本书"
-        assert calls[0][2] == data["conversation_id"], "thread_id 必须是会话 ID（同一会话保上下文）"
+        assert calls[0][2] == data["conversation_id"], "conversation_id 必须透传（thread 由 agent 调用方派生）"
 
         db = SessionLocal()
         try:
@@ -199,3 +201,44 @@ def test_empty_content_rejected(client, auth_headers):
     _, headers = auth_headers("chat6")
     resp = client.post("/api/v1/chat/messages", json={"content": ""}, headers=headers)
     assert resp.status_code == 422
+
+
+def test_cards_kind_from_agent_meta(client, auth_headers, cleanup_user, monkeypatch):
+    """非流式端点也要把 agent 的结构化附加映射成 `kind=cards`（与流式端点同形态）。
+
+    为什么要单独钉：两个端点各自有一份 kind/payload 组装逻辑，只测其中一个，
+    另一个就会在"改了 agent 的 meta 字段名"时静默降级成纯文本（形态不一致，
+    同一条回复走不同端点长得不一样）。
+    """
+    from app.services.external.agent import AgentChatResult
+
+    user_id, headers = auth_headers("chat7")
+
+    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:  # noqa: ARG001
+        return AgentChatResult(
+            text="已经帮你记下了",
+            latency_ms=11,
+            raw={"reply": "已经帮你记下了"},
+            meta={
+                "cards": [{"title": "湖边散步", "meta": "情绪 · 开心", "img": "", "topics": ["生活"]}],
+                "chips": ["看看「生活」相关的记忆"],
+            },
+        )
+
+    monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
+    try:
+        resp = client.post("/api/v1/chat/messages", json={"content": "记一下"}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        reply = resp.json()["data"]["reply"]
+        assert reply["kind"] == "cards"
+        assert reply["cards"][0]["title"] == "湖边散步"
+        assert reply["chips"] == ["看看「生活」相关的记忆"]
+    finally:
+        from app.db.session import SessionLocal
+
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()

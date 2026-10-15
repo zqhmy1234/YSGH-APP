@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+from app.core.config import settings
 from app.services.llm_ops.base import chat_text, llm_available
 from app.services.llm_ops.parsing import extract_json_object
 
@@ -40,8 +41,20 @@ def merge_verdict(candidate: dict) -> dict:
     if llm_available():
         try:
             return _llm_verdict(candidate)
-        except Exception as exc:  # noqa: BLE001 —— 失败降级 mock（不阻断聚合）
-            logger.warning("L2 归并 LLM 调用失败，降级 mock: %s", exc)
+        except Exception as exc:  # noqa: BLE001 —— 失败降级（不阻断聚合）
+            logger.warning("L2 归并 LLM 调用失败，降级: %s", exc)
+    # 2026-10-14（台账 §7.22 · 批次 8 续审）：**生产环境不得让"规则猜测"冒充裁决**。
+    # `_mock_verdict` 的 verdict 恒为 `"merge"`、有标签时 confidence 0.8 ⇒ 调用方
+    # （`events/aggregate_write.py`）按 `confidence >= 0.7` **直接转正** ⇒ 生产漏配 key 时
+    # 用户时间轴会凭空多出"已确认"的合并事件（假事件转正）。
+    # 取同仓 fail-closed 的「不编造」口径：production 下把 confidence 压到 0 ⇒ 候选只进
+    # 「待确认」交由用户判断，**不替用户下"已判定合并"的结论**。非生产保持原值（测试依赖）。
+    if settings.app_env == "production":
+        logger.error(
+            "生产环境 LLM 不可用（未配 DASHSCOPE_API_KEY 或调用失败），L2 归并不产出裁决"
+            "（候选转「待确认」，拒绝用规则猜测冒充 LLM 判定）"
+        )
+        return _mock_verdict(candidate, conservative=True)
     return _mock_verdict(candidate)
 
 
@@ -80,12 +93,16 @@ def _llm_verdict(candidate: dict) -> dict:
     }
 
 
-def _mock_verdict(candidate: dict) -> dict:
-    """确定性规则裁决（mock / 无 key / LLM 失败兜底；与真实输出同构）"""
+def _mock_verdict(candidate: dict, *, conservative: bool = False) -> dict:
+    """确定性规则裁决（mock / 无 key / LLM 失败兜底；与真实输出同构）
+
+    `conservative=True`（生产不可用时的口径，见 `merge_verdict`）：confidence 压到 **0**，
+    使候选**只进「待确认」不转正**——宁可让用户确认，也不替他下"AI 已判定合并"的结论。
+    """
     tag = candidate.get("tag")
     tag_hint = candidate.get("tag_hint") or []
     has_tag = bool(tag) or bool(tag_hint)
-    confidence = 0.8 if has_tag else 0.6
+    confidence = 0.0 if conservative else (0.8 if has_tag else 0.6)
     return {
         **candidate,
         "verdict": "merge",

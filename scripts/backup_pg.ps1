@@ -1,4 +1,4 @@
-# 忆述光华 · PostgreSQL 备份脚本（S1-08 / 决策 #13）
+﻿# 忆述光华 · PostgreSQL 备份脚本（S1-08 / 决策 #13）
 # 目标：RPO≤24h（WAL 后 ≤5min）、RTO≤4h（DR-001/005/006）
 # 用法：设置环境变量后运行（Windows PowerShell）：
 #   $env:PGPASSWORD="***"; .\scripts\backup_pg.ps1

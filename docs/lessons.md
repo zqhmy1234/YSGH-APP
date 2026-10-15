@@ -9,6 +9,714 @@
 
 ---
 
+### 2026-10-15 17:51 · commit d1d4de4 · ts=1792057860
+- **错误**：修完搜索页卡死（+26 行）后，门禁 structure 判红：client/components/TabSearch/TabSearch.uvue 813 行 > 阈值 800
+- **根因**：我改前没量【该文件距阈值还剩多少行】。本仓客户端阈值 800，而 TabSearch 原本 787 行（只剩 13 行余量）⇒ 补状态转移逻辑加根因注释必然顶过。机制本身允许【显式申请基线】，但申请应当是评估后的决定，而不是撞墙后的补救（本轮因此白跑一次 38s 编译门）
+- **修复**：按机制显式申请基线（reason=真机缺陷功能必需；target=把搜索状态机抽到 composables/useSearchState.uts 后销项）；并把【改前量余量】固化成动作
+- **相关文件**：client/components/TabSearch/TabSearch.uvue
+- **教训**：改客户端大文件前先算一笔账：当前行数 + 预计新增 对比 800，然后再决定是【顺手抽一层 composable】还是【显式申请基线】。当前贴着阈值的三份都在基线里：TabIndex 874、RecordSheet 834、TabSearch 813 —— 碰它们等于一定会触发 structure 轴，要提前规划拆分层，而不是修完再说
+
+---
+
+### 2026-10-15 14:03 · commit 3301643 · ts=1792044229
+- **错误**：新增后端 config 字段（WECHAT_LOGIN_CHANNEL / WECHAT_KF_SECRET）后，门禁 env_template 轴判红、提交被拦——而这是同一坑**第二次**（上一次是 LLM_PROVIDER / DEEPSEEK_* 那批）
+- **根因**：本仓的部署模板漂移检查（deploy/scripts/check_env_template.py）要求 config.py 的每个可配置字段都在 deploy/.env.production.template 里有对应条目；我改配置时只盯着代码与测试，没把模板当成同一次改动的一部分（知识上知道，动作上没形成习惯）
+- **修复**：同批补模板两键（含用途注释：渠道取值、以及未配即安全降级的口径），复跑门禁通过
+- **相关文件**：deploy/.env.production.template
+- **教训**：本仓把【配置项】当作契约的一部分：改 backend/app/core/config.py 必须**同批**改 deploy/.env.production.template 并写清取值与降级口径，否则门禁必拦、白跑一轮。已踩两次 ⇒ 固化成动作：凡编辑 config.py，保存后立刻打开模板补同名字段，再跑门禁
+
+---
+
+### 2026-10-15 03:27 · commit 3d13fb8 · ts=1792006045
+- **错误**：胶囊接线批次里，我先把三个 API 封装（listCapsules/openCapsule/deleteCapsule）补进 capsule_api.uts，UI 调用点打算稍后再接，结果门禁 audit_axes 当场判红：新增零调用的能力导出 1 个（deleteCapsule）
+- **根因**：这是门禁按设计工作：本仓的「零调用能力导出轴」就是防「写了没接线」。我当时的顺序假设是「先落 API 层、再落 UI」，而本仓不允许把导出留在无调用点的状态（那就是新债）
+- **修复**：把 deleteCapsule 与 openCapsule 真正接进 CapsuleSheet 的撤销/打开入口（进面板查列表 → 已有封存则显示状态并给出动作；复用既有画布样式不新增视觉元素），复跑门禁通过
+- **相关文件**：client/components/CapsuleSheet/CapsuleSheet.uvue
+- **教训**：两件事：① 本仓不允许「先落 API 封装、UI 稍后接」的半成品提交——零调用导出轴会当场判红。正确顺序是同一个提交里把调用点一起落；若确实要分两步，第二步必须趁热立刻做，否则就是需要清账的新债。② 判断「一个功能的接线是否完整」要按【设计闭环】查，而不是按【文件是否被引用】查：胶囊的设计闭环是 封存 → 到期 → 产消息 → 打开 → 回看，本次真正的缺口不在【进】（封存早已接好），而在【出】——列表/开启/撤销三个端点在全客户端零调用，且惰性到期扫描本来就靠客户端 GET 列表触发，所以修复前整条链从未启动
+
+---
+
+### 2026-10-15 02:09 · commit efdc20c · ts=1792001372
+- **错误**：合并 origin/develop 时，backend/sql/schema.sql 我【只凭远端自己的注释】（自称历史参考、不用于建库）就取了远端版本，未做任何实质核对；用户质疑后才补做四层核实，并发现一处真影响（漂移清单过期导致 test_schema_drift_guard 判红）
+- **根因**：我把冲突取舍当成纯文本问题，而这文件是【知识载体】——我们自己的【有意无模型】决策、域表数、CI 用法都写在里面。只读一方的自述不足以判断取舍：自述可能已过期，也可能是它方的立场而非事实
+- **修复**：取舍前后都做【实质核对四件套】：① 两侧结构集合差异（表名与列集合逐表比对）；② 我方在该文件的具体改动是否还在（按历史 commit 抽查关键词，如 devices 两列、幂等键、迁移文件名）；③ 谁在引用它（全仓 grep + CI 工作流），确认真实角色；④ 跑与它相关的门禁与测试（本例 3 条守卫用例，红的那条正是真影响）
+- **相关文件**：backend/sql/schema.sql
+- **教训**：合并里【注释型/文档型】文件最容易被误判为无风险：它们承载的是决策与用法，取错时代码照样能跑，但后人会按错的知识行事（本例差点丢掉的是本仓对表与建库方式的既有结论）。规则：取舍前先做结构集合差异 + 引用者 + 相关门禁三项核对，再决定 ours/theirs/union；事后把核对结果写进台账（证据链，不写结论）
+
+---
+
+### 2026-10-15 01:59 · commit e0739ee · ts=1792000744
+- **错误**：合并 origin/develop(573b33b) 后，门禁连续拦下：lint 报 F821 Undefined name timezone 与 I001 导入块被注释打断；structure 报 RecordSheet 超阈值；另 8 个后端测试失败（NameError + 迁移 head 冲突）
+- **根因**：远端做过一次跨文件的机械迁移（UP017：timezone.utc 改成 datetime.UTC，只改了导入行与它自己那几行），而我们这边的修复在同一文件的其他行仍用 timezone.utc ⇒ git 自动合并后导入与用法不匹配（三个文件同型：trash.py / contents/__init__.py / correction.py）。测试失败另一因：两边各新增一条迁移 ⇒ alembic upgrade head 报 Multiple head revisions，本机库缺远端那条迁移
+- **修复**：① 冲突按块解析（保留 git 自动合并成果，不做整文件 --ours/--theirs）；② 合并后三步必做：alembic merge heads + upgrade head、ruff check --fix（收敛远端迁移留下的旧用法）、跑相关回归测试；③ 客户端文件超结构阈值按项目规定显式申请基线（写 reason 与 target），而非压缩注释
+- **相关文件**：backend/app/services/correction.py
+- **教训**：合并远端前先查它有没有做跨文件的机械迁移（本例改了导入却改不到我们的行）；合并后**只跑编译门不够**——必须跑「迁移 head 合并 + 全量 lint + 相关回归测试」，否则这类「导入与用法不匹配」会以运行时才炸的形态留在仓库里。另：git 的整文件 ours/theirs 会丢掉自动合并的成果，冲突必须按块解析
+
+---
+
+### 2026-10-15 01:24 · commit c2cdc07 · ts=1791998686
+- **错误**：出包前端到端验证时发现：记录任何内容都被拒，用户看到「内容含敏感信息未保存」，全站不可用
+- **根因**：机器用户级环境变量里有一把**过期**的 DASHSCOPE_API_KEY，而 pydantic-settings 是「env 优先于 .env」⇒ 它顶掉了 backend/.env 里的有效 key；叠加内容护栏的 fail-closed（用户拍板过的『默认拒发』）⇒ 每一次保存都被拒。单测、门禁、编译门**全绿**也测不出来——它们不打死端点、不依赖外部凭据
+- **修复**：① 删用户级旧变量（注意：SetEnvironmentVariable(...,null,'User') 当时**未生效**，改用 Remove-ItemProperty HKCU:\Environment 直删）；② 新增 LLM_PROVIDER 与 OpenAI 兼容 provider（DeepSeek，key 用 AliasChoices 收编本机历史变量名），后端不再被单一供应商 key 卡死；③ 补 4 条离线单测 + 端到端脚本覆盖『记录内容』这一步（台账 7.27）
+- **相关文件**：backend/app/services/external/dashscope.py
+- **教训**：凡『外部凭据 + fail-closed 护栏』的组合，必须有一条**真端点端到端**用例兜底——本仓的门禁/单测/编译门在 key 失效这类环境问题上会全绿，唯一能发现它的是端到端。排查凭据类问题时的第一动作：确认**进程实际拿到的是哪一把 key**（看长度与尾号），不要相信配置文件里写的那把（它可能被环境变量顶掉）
+
+---
+
+### 2026-10-14 20:30 · commit 38e2f06 · ts=1791981051
+- **错误**：第 10 轴（契约常量未使用）的**端到端负向探针**（故意在 contract.uts 注入 PATH_SELFTEST_DEAD）触发了 audit_axes 判红后，门禁转报 lessons 轴拦下
+- **根因**：lessons 轴的判据是『最近一次门禁失败之后有没有登记新教训』，而**负向探针天生就是一次真实失败**——那正是它存在的意义（证明规则能判红）⇒ 两个机制在设计上必然冲突，不是谁写错了
+- **修复**：按口径收尾：登记本条**探针专用**教训说明该失败是自证的探针而非回归；git checkout 还原注入行；复跑确认 audit_axes 恢复通过
+- **相关文件**：scripts/audit_contract_const.py
+- **教训**：凡『故意制造失败以证明能判红』的负向探针，都要先把代价算进去：它一定会触发以失败为判据的下游机制（本项目是 lessons 轴）。做探针前先想好收尾三件套——登记说明、还原注入、复跑验证，别让它变成一次说不清的红色
+
+---
+
+### 2026-10-14 15:39 · commit 407dc56 · ts=1791963555
+- **错误**：我把「编译超时」误判为「我的 UTS 代码把编译器卡死」，据此回退了三轮代码（白费时间与改动）
+- **根因**：编译门 300s 超时 + 日志看似停在某页 + 产物目录为空 ⇒ 直接推定为编译器 hang；实际日志时间戳一直在推进（逐页逐组件），真因是 HBuilderX 冷缓存且上一次长编译在中途被 kill，导致下一次触发超长全量编译（同一文件后来 34.5s、230s 均编译成功）
+- **修复**：复核日志的推进性（时间戳是否前进、是否仍有新的页面/组件行）→ 用更长超时（如 900s）复跑确认；不要中途 kill 编译（会让缓存半废、下一次更慢）
+- **相关文件**：client/utils/agg/st_dbscan.uts
+- **教训**：「超时」不等于「卡死」更不等于「代码有问题」：先证明日志是否仍在推进，再用更长超时复跑；推定根因前必须有一个能证伪的判据
+
+---
+
+### 2026-10-14 14:26 · commit c9d1ed3 · ts=1791959172
+- **错误**：（故意的端到端负向探针）向 client 注入只写不读的键后门禁按预期拦下；但还原后 lessons 轴仍阻断提交
+- **根因**：门禁的 lessons 机制记录"上次失败未登记"，它无法区分真失败与为验证而故意注入的坏样本；我此前只做了规则内部 selftest（逻辑自检），缺真实注入的端到端验证
+- **修复**：登记探针结论：新门禁接入后必须做一次真实注入验证（注入→拦下→还原→放行）；当前仓库实扫 0 违规
+- **相关文件**：scripts/audit_storage_keys.py
+- **教训**：新门禁接入后，除规则自检外必须做一次端到端反向验证（注入坏样本确认真能判红、还原后能放行）——规则写对了但没接上会长期潜伏；另注意 lessons 轴会把探针失败也记作失败
+
+---
+
+### 2026-10-14 13:22 · commit 3426fd3 · ts=1791955379
+- **错误**：STATE.md 的刷新内容没进提交：同一消息里发起的 replace_in_file 与依赖它的 git add/commit 并行执行，提交先跑、编辑后落盘
+- **根因**：把编辑文件与提交该文件放在同一条消息的两个工具调用里——我默认它们按书写顺序串行，实测并非如此（工具调用可并行），于是提交漏掉了尚未落盘的文件
+- **修复**：改为：编辑返回后再发起提交（跨消息）；或把该文件的操作收敛进同一条 shell 命令串联执行
+- **相关文件**：STATE.md
+- **教训**：凡 B 依赖 A 的产物这类工具调用，不得放进同一条消息——尤其编辑然后提交/门禁这一对；提交前用 git status 核对清单
+
+---
+
+### 2026-10-14 12:15 · commit b8d57ac · ts=1791951302
+- **错误**：本批再次被 structure 轴拦下：client/components/RecordSheet/RecordSheet.uvue 达 811 行 > 阈值 800
+- **根因**：该文件本已逼近阈值（约 780 行），而我为解释两处修复内联了 33 行注释 ⇒ 越阈。根因与上一条同族：动手前没核查目标文件的棘轮余量
+- **修复**：不申请基线（那会侵蚀棘轮），把长注释压缩为「指针 + 台账 §4.20/§7.17」；文件回到 799 行
+- **相关文件**：client/components/RecordSheet/RecordSheet.uvue
+- **教训**：向逼近阈值的文件里写解释性长注释同样会触发棘轮——动手前先看该文件余量；长依据写台账、代码只留指针
+
+---
+
+### 2026-10-14 11:53 · commit 8c5a702 · ts=1791949988
+- **错误**：提交时被 pre-commit 的 lint 轴拦下（I001 import 未排序），而我手跑 review_agent 时是绿的
+- **根因**：review_agent 快模式的扫描范围取「已跟踪文件的改动」，untracked 的新文件在首次 git add 前不在范围内 ⇒ 手跑绿灯无法覆盖即将新增的文件，预检强度与提交时不符
+- **修复**：新增文件先 git add 再跑门禁；ruff check --fix 修 I001 后复验全绿
+- **相关文件**：backend/tests/test_photo_exif.py
+- **教训**：预检门禁必须在与 hook 相同的状态下跑（先 git add 再跑）；手跑绿不等于提交绿
+
+---
+
+### 2026-10-14 11:45 · commit 8c5a702 · ts=1791949545
+- **错误**：客户端编译门把「HBuilderX 未启动、编译根本没跑」判为 ok（假通过）：产物实为两天前的旧件
+- **根因**：两处缺陷叠加：① _artifact_touched_since 拿 time.monotonic()（量级 1e5）与文件 st_mtime（Unix 纪元 1.7e9）比大小 ⇒ mt > started 恒真，空日志一律判「产物已更新 ⇒ 成功」；② cli launch --compile true 在 HBuilderX 未启动时根本不编译，只打印「未检测到已打开的HBuilderX」就退出
+- **修复**：改墙上时钟 time.time() 作起点；新增 NEED_OPEN_MARKERS 识别该拒绝语并按环境错误报（不得降级为通过）；调用前用 ensure_hbuilderx_open 自动 cli open 拉起
+- **相关文件**：scripts/client_compile_gate.py
+- **教训**：凡用副作用旁证成功的判据，必须同基准比较时间且配一次负向探针（不满足条件时能判红）；CLI 工具的「静默不做事」必须与「做事成功」显式区分
+
+---
+
+### 2026-10-14 11:45 · commit 8c5a702 · ts=1791949545
+- **错误**：本次提交被 structure 轴拦下：backend/app/api/contents/__init__.py 达 642 行 > 棘轮阈值 600（新增超阈）
+- **根因**：为照片定位补 EXIF GPS 助手时直接在 API 层内联 ~70 行（含 PIL 重依赖），没先看该文件的棘轮阈值——把新增代码当成了与结构无关的事
+- **修复**：把 EXIF 助手（拍摄时间 + GPS + DMS 转换 + MAX_IMAGE_PIXELS）下沉到 app/services/photo_exif.py，API 层改为 import；顺带清掉因此失效的 io/Any 导入
+- **相关文件**：backend/app/services/photo_exif.py
+- **教训**：改既有大文件前先读结构棘轮阈值；与 HTTP 无关的纯函数（尤其带重依赖的）默认放 services 层，不要内联进 API 文件
+
+---
+
+### 2026-10-12 01:21 · commit 43a3664 · ts=1791739274
+- **错误**：ngrok 免费版对判定为浏览器的请求返回拦截页（ERR_NGROK_6024）：本机 curl 与模拟浏览器 UA 的请求都拿到警告页 HTML 而非真响应；带 ngrok-skip-browser-warning 头才拿到真 JSON
+- **根因**：ngrok 免费版按 User-Agent 判定浏览器并插入 interstitial；判定主要看 UA 是否含 Mozilla（实测 Accept: image/* 仍被拦，说明与 Accept 无关）
+- **修复**：所有 API 请求统一走 api.uts 的 buildHeader（已含该头）；image 组件无法加自定义头，靠 Android 原生 UA（OkHttp/Glide，通常不含 Mozilla）放行，并列为出包验收硬项真机验证
+- **相关文件**：client/utils/api.uts / client/utils/http_headers.uts
+- **教训**：免费隧道带拦截页：凡不能自定义头的通道（图片/音视频）都要单独真机验证，不能假设与 API 同权
+
+---
+
+### 2026-10-12 01:21 · commit 43a3664 · ts=1791739267
+- **错误**：pack.ps1 两个自伤：①§1 跑客户端编译门会唤醒 HBuilderX，§2 紧接着做'5 秒 CPU 不增长'判定 ⇒ 每次必判自己忙、永远打不了包；②完成判定匹配裸'打包成功'，撞上日志提示语'打包成功后会自动返回下载链接' ⇒ 刚提交云端就'完成'并提前退出
+- **根因**：①同一脚本内先后依赖相互矛盾的状态（先让它忙、再要求空闲）；②用 substring 匹配日志终态，而日志里存在含同关键词的**过程性提示语**
+- **修复**：①改为轮询等待空闲（最多 90s）②只认真正终态 '安装包下载地址'
+- **相关文件**：scripts/dev/pack.ps1
+- **教训**：门禁/脚本里的'前置条件检查'必须考虑它自己刚刚制造的状态；用关键词判终态要排除同词的过程性提示
+
+---
+
+### 2026-10-12 01:21 · commit 43a3664 · ts=1791739267
+- **错误**：用 Python 脚本批量 replace 后 write_bytes(encode('utf-8')) 重写 .ps1，丢掉了 UTF-8 BOM ⇒ Windows PowerShell 5.1 按 ANSI 解码中文 ⇒ 语法错误（tunnel.ps1 报 Unexpected token '}'）
+- **根因**：脚本作者的便利写法（读=utf-8-sig / 写=utf-8）不对称；BOM 在读写往返中被静默丢弃，而错误现象（Unexpected token）与真实原因（编码）看起来毫无关系
+- **修复**：统一补回 BOM（[System.IO.File]::WriteAllBytes(BOM+bytes)）；更好：改 .ps1 一律用编辑器的 replace_in_file（保留原编码），不用 Python 脚本重写
+- **相关文件**：scripts/dev/tunnel.ps1 / deploy/scripts/preflight_pack.ps1 / scripts/dev/pack.ps1
+- **教训**：含中文的 .ps1 必须保持 UTF-8 BOM：脚本化改写后立即跑一次语法检查，别等到运行时才发现
+
+---
+
+### 2026-10-12 00:24 · commit bbb1c3e · ts=1791735851
+- **错误**：pre-commit（hook 经 Git Bash 调 python）报 openapi_snapshot 失败，但同一时刻手动 python scripts/review_agent.py 与 python scripts/gen_openapi.py --check 均为 [OK]
+- **根因**：待查，已排除两点：Git Bash 与 PowerShell 用的是同一个解释器（which python → Python313）；gen_openapi 本身可正常导出。怀疑为字节级快照比对在 hook 并发场景下的间歇性不稳定（或与 .cowork-temp 报告写入竞争）
+- **修复**：重跑即通过；后续建议把 openapi 比对改为结构化（键序/空白不敏感）并做复现实验证
+- **相关文件**：scripts/review_agent.py（check_openapi_snapshot）
+- **教训**：字节级快照比对对键序/环境敏感 ⇒ 间歇红会消耗门禁公信力，能结构化就别字节比对
+
+---
+
+### 2026-10-12 00:24 · commit bbb1c3e · ts=1791735851
+- **错误**：批量脚本替换 docstring 文本后引入 183 字符长行，pre-commit 的 ruff E501 拦下提交（scripts/test_agent.py:16）
+- **根因**：用 Python 脚本做批量文本替换时只校验'替换命中/内容正确'，没有跑 lint；docstring 段落原本行宽不受约束，插入长句即越 120
+- **修复**：拆行（1 行→2 行）；习惯：任何脚本化改 .py 之后先跑 python -m ruff check <files> 再提交
+- **相关文件**：scripts/test_agent.py:16
+- **教训**：脚本批量改 .py 文本后必须紧接着跑 ruff——否则会在提交环节才被拦，浪费一整轮
+
+---
+
+### 2026-10-11 19:47 · commit c85d174 · ts=1791719270
+- **错误**：令牌化把 11 处声明挂上了值不等的令牌（Δ3~16/255）：用户气泡底 #AA5334→#b05a3a、遮罩 rgba(42,33,26,0.4)→ink-40、骨架屏 #EFE9DD→paper-300 等
+- **根因**：codemod 的令牌匹配按「近似色」归一（以为同一设计色在不同文件的手写差异应统一），但 3~16/255 的差异已不是取色误差而是不同颜色；且回退值保留了原值，使差异只在「var() 生效」时才显现——两套值并存让问题被门禁与肉眼同时忽略
+- **修复**：按「一切以重构前为准」把 11 处写回 9-23 原字面量（加注释标明来源与色差）；token_literals 棘轮按机制登记上调（reason 写明是还原而非新增，target 给出补入等值令牌后的销项路径）
+- **相关文件**：client/styles/{tab-ai,tab-index,record-sheet,detail}.css · UploadStatusBanner.uvue · interview.uvue
+- **教训**：codegen 的「近似归一」必须设阈值（≤1/255 才可归并）；回退值与令牌值并存时，两者不等就是潜在视觉差异，需按真源逐条裁决
+
+---
+
+### 2026-10-11 19:47 · commit c85d174 · ts=1791719270
+- **错误**：「重构后问题多」的前两轮审查基线取错（拿 10-04 出包批当重构前），只覆盖 182+1463 行，漏掉 9-24/25 四合一重构的 84 文件 / +11974-8287 行
+- **根因**：把「最近一次改动」当成了「重构起点」——而重构（样式外置/令牌化/按域拆分/composable 抽取）发生在 9-24~25，基线必须是 e3da50a（9-23）；同时用人工抽样读 diff 代替机械穷举，看不到「值不等但回退值相等」这类只有展开 var() 才能暴露的差异
+- **修复**：以 e3da50a 为基线导出全量快照，写三个对照脚本：①样式声明级（var 按回退值/令牌值双展开 + 色差分级）②脚本成员级（全仓判定真丢失 vs 搬迁）③令牌全域一致性（能否改令牌值整体恢复）；机械账目：真改值 0 / 误映射 11（已还原）/ 真丢失 0 / 保真 2722
+- **相关文件**：.cowork-temp/audit_css2.py · audit_js2.py · audit_token_safe.py
+- **教训**：重构审查先定「重构起点提交」为基线，再机械穷举对照（声明级/成员级）；人工抽样只能作补充，且 var()/别名类间接引用必须展开后比对
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716858
+- **错误**：上轮为修「录音中卸载不停录音」而调 stopRecordNow，导致卸载时顺带进入转写/上传/保存链（按返回键=取消，却把录音存了下来）
+- **根因**：停止函数有两个语义（用户主动结束并要求处理 vs 放弃/卸载），原实现只有前者；修复时只看了「有没有停」，没看「停之后的回调链会做什么」——修复引入的新调用路径没有重新走一遍该函数的全部副作用
+- **修复**：useVoiceRecord 新增 abandonRecording()（置放弃标记 + stopRecord，onRecordStopped 早退只复位状态）；RecordSheet 卸载改调它
+- **相关文件**：client/composables/useVoiceRecord.uts · components/RecordSheet/RecordSheet.uvue
+- **教训**：复用停止/关闭类函数前先读它的全部副作用：清理路径要的是只停不做，不能直接调停并处理的那个
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：壳内空态（10-09 新增）沿用 empty 页的 .empty-* 类名，与 empty.uvue 内联 + favorites.css 三方同名且几何互斥（absolute vs in-flow）
+- **根因**：uvue 的 style 与外置 css 都是全局作用域，而「视觉复用某页样式」的惯用做法是直接抄类名；三方同名后胜出者取决于样式表合并顺序（不受仓库控制）⇒ 元素错位只在真机某一路径暴露
+- **修复**：壳内空态整族类名加 ti- 前缀隔离（改名不改值）；新增同类样式前先全仓搜类名占用
+- **相关文件**：client/styles/tab-index.css · components/TabIndex/TabIndex.uvue
+- **教训**：uvue 样式全局：跨文件复用视觉必须换前缀，不能直接沿用相近页面类名（同名类胜负不可控）
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：令牌集里 12 条渐变值是非法 CSS（linear-gradient(tobottom, …) 缺空格）——若运行时 var() 生效则所有渐变整条失效
+- **根因**：令牌值由脚本从设计源提取生成，生成后没有回源合法性校验；tobottom 这种拼写错误在生成器里合法通过，而所有使用点的回退值都是正确的 to bottom（两套值不一致且门禁视为等价）
+- **修复**：修 design_tokens.dtcg.json 12 处并重跑 token_codemod --write-block；令牌生成链补「值合法性」校验（渐变方向/颜色语法）
+- **相关文件**：client/design_tokens.dtcg.json · scripts/token_codemod.py
+- **教训**：令牌/codegen 产物同样需要合法性校验：回退值正确会掩盖令牌值非法，一旦运行时取令牌值即整体失效
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：B12「离线不白丢用户操作」四处分支永不进入：写成 if (getNetKind() == 'none')，而该函数是回调式且返回 void
+- **根因**：把回调式 API 当同步函数用：void 与字符串比较恒假（逻辑永不成立），且按同步签名传参在运行期是无定义回调；uni-app x 编译器对函数 arity 宽松（不传回调也能编过）⇒ 编译门全绿而功能静默失效
+- **修复**：uploader_net 新增同步缓存读 currentNetKind()（由 uni.onNetworkStatusChange 监听 + 首次探测维护），四处调用点改用之；并在 getNetKind 签名注释里钉死「必须传回调」
+- **相关文件**：client/utils/uploader_net.uts · play_trash.uts · play_content.uts · pages/detail/detail.uvue
+- **教训**：回调式 API 不得当同步用：变量参与比较前先看返回类型（void 比较恒假）；需要同步读就维护受监听驱动的缓存，并把调用契约写进函数注释
+
+---
+
+### 2026-10-11 19:07 · commit 2c7172f · ts=1791716857
+- **错误**：重构搬迁后「主导情绪」诊断行永远为空：useVoiceRecord 里写成 dm.getString('this.emotion')
+- **根因**：搬迁时做「x.value → this.x.value」的批量替换，误伤了字符串字面量（emotion 是后端 JSON 键，被当成成员访问改了名）；这类错误编译期合法、运行期只表现为取值恒空（无异常无日志）
+- **修复**：改回 dm.getString('emotion')；并明确：批量替换脚本必须先切掉字符串/注释区间（引号配平）再替换
+- **相关文件**：client/composables/useVoiceRecord.uts
+- **教训**：codemod/批量替换前先切掉字符串与注释区间：改成员访问的规则会静默改坏 JSON 键、路径、文案
+
+---
+
+### 2026-10-11 16:36 · commit c356781 · ts=1791707777
+- **错误**：门禁 lint 报 UP037：局部变量类型注解写成字符串形式（queue.Queue[tuple[str, Any] | None] 带引号）
+- **根因**：写带 PEP 604 联合的泛型注解时习惯性加引号（怕运行期求值），但本文件顶部已有 from __future__ import annotations——字符串注解此时纯属多余，ruff UP037 直接判违规
+- **修复**：去掉引号改为直接注解；提交前对新增注解先确认文件是否已启用 from __future__ import annotations
+- **相关文件**：backend/app/api/chat.py
+- **教训**：写类型注解前先看文件是否有 from __future__ import annotations：有则不得再用字符串注解（ruff UP037）
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：环境差异三连：dev/prod 换后端后本地状态（同步游标/镜像/会话 id/对账节流）无命名空间沿用旧值 ⇒ 时间轴假空、会话 404；Sentry 报文不含 host ⇒ 生产「接口全空」故障零可定位；App 启动日志硬编码 env=dev
+- **根因**：环境切换被当成「改一个常量」而非「换一套数据域」：本地存储键无后端维度、可观测性上报缺 host、日志打点用字面量——三者都只在 prod 真实故障时才暴露，而 dev 联调（本机服务全在跑）永远掩盖
+- **修复**：加 ensureEnvFingerprint（启动最先执行，地址变更即清绑定旧后端的键）；api/chat 的网络类 Sentry 上报统一附 hostTag()；App.uvue 打印真实 ENV；preflight 补临时隧道域名拦截
+- **相关文件**：client/utils/config.uts · client/utils/api.uts · client/App.uvue · deploy/scripts/preflight_pack.ps1
+- **教训**：环境差异要按「数据域 + 可观测性 + 日志」三件套排查：本地状态须有环境维度，生产故障的唯一出口（Sentry/release 日志）必须自带 host 与真实环境标识
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：模板入口承诺了不存在的面板：照片条点击（usePhotoAttach 只 setState）、「拆分这张卡」（useEventOps 同）均无 UI 消费者，用户点击零反馈
+- **根因**：样式与状态先写、面板模板后写（或从未写）：tab-index.css 的 .photo-detail-*/.split-* 规则与 composable 的四态全仓零消费者，但入口（@tap）已挂 ⇒ 「点得动但没反应」——静态门禁只看类名成对性，查不出「CSS 有规则 + 状态有写入 + 模板无消费者」这一型
+- **修复**：收口入口到既有可用路径（照片点击直达详情页；拆分项从 action sheet 移除），状态保留待面板落地
+- **相关文件**：client/components/TabIndex/TabIndex.uvue
+- **教训**：新增交互入口必须同时有 UI 消费者；发现「CSS 规则/状态变量零使用者但有 @tap 入口」= 一条隐藏的哑入口，优先收口而非补 UI
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：下拉刷新遇断网：时间轴卡片整片消失、回响卡被抹掉、2.5s 后显示「还没有回忆」假空态（用户以为云端记忆丢了）
+- **根因**：fetchTimelineAsync 用空数组表达失败，而 fetchAll 无 wasLastFetchFailed 守卫（refreshSilently 有同款守卫）——同语义两条路径只有一条守；派生状态 emptyState 又只在 applyFetchedEvents 一个入口重算，days/pending 被 useEventOps 的 render 出口改动时（如忽略最后一条待确认）不重算 ⇒ 白屏
+- **修复**：fetchAll 补失败守卫（失败保持现状 + 收起骨架/转圈）；emptyState 收敛移到渲染出口 renderFromEvents（与守卫配套，避免失败时空数组立刻显示假空态）
+- **相关文件**：client/components/TabIndex/TabIndex.uvue
+- **教训**：失败结果不得覆盖已渲染数据：同语义的多条取数路径必须有同款守卫；派生状态必须收敛在渲染出口而非某个入口
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：历史回填自 2026-09-25「接线补完」以来从未生效：客户端读 dataArr(d)（取 data.data）而后端把数组放在 data.messages
+- **根因**：跨端字段名只对拍「成功路径」不核对信封层级：实现完成时测的是「有新回复」链路，重启回填（读历史）链路从未被端到端跑过，注释却按预期写了「已回填」
+- **修复**：改读 d.getArray('messages') 并显式 as Array<UTSJSONObject>（避免 any 上调方法的历史 FATAL）；以 backend/schemas/chat.py 与 backend/tests 断言为契约证据
+- **相关文件**：client/utils/chat_api.uts
+- **教训**：跨端契约必须逐字段对拍（含信封层级）；「功能已接线」的注释不能替代一次端到端跑通
+
+---
+
+### 2026-10-11 16:17 · commit c356781 · ts=1791706632
+- **错误**：看门狗收尾写成 resetWatchdog()（重新武装定时器）而非 clearTimeout：每次成功回复后约 90s 凭空弹出「AI 回复超时」
+- **根因**：本批把「总超时」改「idle 续命」时，收尾语义从「取消」误写成「重置」——resetWatchdog 是先 clear 再新建一个 90s 定时器，回调无条件 toast；而 api.uts 的同类 finish 用的是 clearTimeout，本文件成孤例（改超时逻辑时只检查了「有没有取消」没检查「取消后又武装」）
+- **修复**：finish 内改显式 clearTimeout(watchdog) + watchdog = -1；并给 finish/401 重放加「超时权交接」注释（外层停表、内层自持）
+- **相关文件**：client/utils/chat_api.uts
+- **教训**：定时器类收尾只认 clearTimeout；改超时策略后必须检查「收尾路径是否又武装了定时器」——重置与取消是两件事
+
+---
+
+### 2026-10-09 16:10 · commit c356781 · ts=1791533447
+- **错误**：全量门禁 3 例变红但均与本批改动无关：test_generated_output_guard 两例（monkeypatch 的本地假结果类缺 meta 字段、第 3 参名写成 thread_id）与 test_amap 的 mock 回退用例（geo_cache 内有 30 天内的真实缓存行，走缓存命中而非 mock 回退）
+- **根因**：① 测试里的本地假类/假签名会随真实 dataclass 与调用签名演进而静默过期（10-08 改签名 ccbd3b8 后这两例就已经红了，无人发现）；② 依赖库状态的集成用例（缓存优先的服务）没有前置状态清理，本机真实联调/api_smoke 写入的数据把它染红
+- **修复**：假结果类改用真实 AgentChatResult（加字段即编译期暴露）；参数名与真实签名对齐；test_amap 增 autouse 前置 fixture 定向清理本文件测试坐标的 geo_cache 行（不清整表，同 R8#13 口径）
+- **相关文件**：backend/tests/test_generated_output_guard.py · backend/tests/test_amap.py
+- **教训**：门禁变红先分辨「我改坏的 / 存量 / 环境数据」：测试替身必须与真实类型同构，依赖状态的服务用例必须自带状态清理
+
+---
+
+### 2026-10-09 15:26 · commit c356781 · ts=1791530814
+- **错误**：uni-app x 5.24 的 dts 里没有 enableChunked / onChunkReceived / TextDecoder，误判为不支持
+- **根因**：IDE 用的 language-services dts 与编译器实际类型源不同步（app-android 类型从 @uni-x/app-android.d.ts 解析，且未随包分发全部 API）
+- **修复**：写 30 行探针文件实测编译：enableChunked/onChunkReceived/Uint8Array 全部编过（与 scroll-y 被编译器拒不同）；ArrayBuffer→UTF-8 用逐字节 %XX + decodeURIComponent（无 TextDecoder），跨 chunk 半字符用回退≤3字节 + 累积重解码处理
+- **相关文件**：client/utils/chat_api.uts
+- **教训**：dts 缺 API 不等于不可用：先编译探针，再决定架构
+
+---
+
+### 2026-10-09 15:26 · commit c356781 · ts=1791530814
+- **错误**：agent 侧 SSE 端点在生成器内 set 的 ContextVar 与 request_id 跨 yield 失效：logger/工具层拿不到 user_id，收尾 reset_request_id 抛 ValueError: was created in a different Context
+- **根因**：Starlette 把同步 StreamingResponse 生成器的每次 next() 派发到线程池（anyio to_thread），每次调用都取一份新的 contextvars 快照 ⇒ 生成器内 set 的值不跨 yield 保留，token 也无法在另一个上下文里 reset
+- **修复**：整轮 agent 运行放进一个工作线程（queue.Queue + threading.Thread，worker 内 set ctx/rid 并在 finally 回收 token），生成器体只做字符串格式化，不依赖 ContextVar
+- **相关文件**：agent/src/main.py:chat_stream
+- **教训**：同步生成器 + ContextVar 是危险组合：跨 yield 的上下文不保留，必须在单线程内完成需要上下文的全部工作
+
+---
+
+### 2026-10-09 00:36 · commit 7a788e6 · ts=1791477407
+- **错误**：lessons 自我触发循环：教训正文引用了违规字面量（仿 sk- 长串），被 secrets 门禁再次拦截；且门禁失败时间戳晚于教训登记时间，时序规则又要求再登记一轮
+- **根因**：门禁扫描范围含 lessons.md 自身，而时序规则以最近一次失败时间为基准
+- **修复**：把 lessons.md:13 的仿真 key 字面量改为变形描述；本条即为解循环的当次登记
+- **相关文件**：docs/lessons.md
+- **教训**：教训条目里引用违规样本必须变形（截断/替换字符），否则修 A 引 B 无穷循环；遇到 lessons 时序阻断，先修掉正文里的违规源再补登一条当次教训即可解
+
+---
+
+### 2026-10-09 00:25 · commit 7a788e6 · ts=1791476718
+- **错误**：secrets 门禁拦截：测试里的假 key（两个 sk- 前缀、后缀各 16/17 字符的仿真串）匹配宽版模式被判疑似密钥，禁止 commit
+- **根因**：假造的凭据为了'长得像真的'用了真实 key 的完整形态，恰好撞上宽版模式；门禁无法区分真假，按设计一律拦
+- **修复**：假 key 改用短哨兵值（sk-ds / sk-dash），语义仍是'凭据形态'但不达长度阈值；教训：测试里的伪造凭据用短哨兵而非仿真长串
+- **相关文件**：agent/tests/test_llm_provider_multivendor.py
+- **教训**：伪造凭据只要'形似'就会撞模式——长度也是模式的一部分；哨兵值要短到不触发阈值
+
+---
+
+### 2026-10-08 23:31 · commit 7a788e6 · ts=1791473461
+- **错误**：服务间首次真实联调即 403「thread_id 不属于当前用户」——backend 把 conversation_id 直接当 thread_id 传给 agent，而 agent 的归属校验要求 thread_id 必须由 user_id 派生
+- **根因**：两边的 thread_id 语义在各自单测里都自洽：backend 测试 mock 掉 call_agent_chat 只验落库，agent 测试用 user_id 派生 thread_id 正好过校验——没有任何一个测试覆盖「backend 真实传参形态 × agent 真实校验规则」的交集。集成缺陷只有真实联调能暴露
+- **修复**：external/agent.call_agent_chat 内按 agent 规则派生 thread_id=f"{user_id}:{conversation_id}"：① 满足归属校验；② 派生串含 user_id，跨用户同 uuid 也不共享上下文；③ 同会话派生串稳定保多轮上下文。不动 agent 的安全边界
+- **相关文件**：backend/app/services/external/agent.py
+- **教训**：两个模块各自测试全绿 ≠ 集成正确：跨服务参数的「生成方约定」与「消费方校验」必须在真实链路上对拍一次；安全校验规则要写进调用方的对接文档而不是只在自己代码里
+
+---
+
+### 2026-10-08 23:31 · commit 7a788e6 · ts=1791473460
+- **错误**：给 build_chat_model 传自造 LlmSettings 的单元测试炸 TypeError: unhashable type——生产从未报错
+- **根因**：build_chat_model 挂了 @lru_cache（按 (settings, streaming) 缓存），而 LlmSettings 是普通（非 frozen）dataclass：生成 __eq__ 后 __hash__ 被置 None ⇒ 传实例即 unhashable。生产恒用默认 settings=None 调用，缓存键是 ()，缺陷被默认参数掩盖
+- **修复**：LlmSettings 显式定义 __hash__（全字段 + 排序后的 extra_headers 元组）；测试 fixture 前后调 reset_llm_cache() 防自造 settings 污染缓存
+- **相关文件**：agent/src/llm_provider.py
+- **教训**：给可能被 lru_cache 缓存的函数传自定义对象时，先确认它可哈希；默认参数路径全绿不代表带参路径活着——能传参的入口迟早有人传
+
+---
+
+### 2026-10-08 21:06 · commit cd4f79f · ts=1791464777
+- **错误**：ContentCreate.tags 的契约测试红：传含空串的列表直接 ValidationError（String should have at least 1 character），而设计语义是『strip 后为空的条目应被丢弃，整个请求不该失败』
+- **根因**：把『剔除空条目』写进了 StringConstraints(min_length=1)——pydantic v2 里约束校验先于 field_validator 执行，空串在到达 validator 之前就被 422 了。『清洗后丢弃』和『拒绝请求』是两种不同的失败语义，放错了层
+- **修复**：约束层只保留 strip_whitespace + max_length（防滥用上限），min_length 删除；去空/去重/全空归 None 的清洗语义全部移进 field_validator，并加注释说明为什么不能依赖 min_length
+- **相关文件**：backend/app/schemas/content.py
+- **教训**：pydantic 里『拒绝』用约束（constraints），『清洗』用 validator——validator 永远看不到不满足约束的输入；写契约前先想清楚脏数据该 422 还是被消化
+
+---
+
+### 2026-10-08 21:06 · commit cd4f79f · ts=1791464777
+- **错误**：W6 迁移首跑失败：DROP TABLE IF EXISTS tags 被 CannotDropTable 挡住——event_tags 上还挂着指向 tags 的 FK（event_tags_tag_id_fkey），而迁移里 tags 排在 event_tags 前面
+- **根因**：把『保留表没有 FK 指向被删表』误当成『这批表之间也没有依赖』。DROP 顺序只看被删表之间的 FK 方向：junction/子表（content_tags/event_tags/question_history）必须先删，被引用表（tags/question_templates）后删。schema.sql 里这些 FK 都写在被删表的建表块内，静态扫『REFERENCES tags』全落在将删区域，掩盖了执行期的依赖关系
+- **修复**：迁移内 LEGACY_TABLES 重排为依赖序（content_tags/event_tags/voice_segments/question_history 先删，tags 最后），并在注释里写明首跑踩坑。alembic 每个迁移默认事务性 DDL，失败已自动回滚，重跑即干净
+- **相关文件**：backend/migrations/versions/b7c8d9e0f1a2_w6_drop_legacy_tables.py
+- **教训**：批量 DROP 前先查 pg_constraint 里被删表集合内部的 FK 方向图，顺序=拓扑序；不要把『对外无依赖』和『组内无依赖』混为一谈
+
+---
+
+### 2026-10-06 17:25 · commit 3e1cea7 · ts=1791278746
+- **错误**：pre-commit 被两项拦下：①结构棘轮 soft_delete_filter 手抄上升（deps.py 1→2）——我给 agent 镜像删除端点手写了第四处同款的 deleted_at.is_(None) 查询，而同样的查询在 create_content 里已经手抄了两遍；②openapi 快照不一致——我给 ContentCreate.source 枚举加了 agent 值，但没重新生成快照。
+- **根因**：写新端点时按「最直接的写法」查询数据，没有先找有没有既有 helper——而棘轮存在的理由（audit_harness 注释）恰是「同一语义手抄 20+ 文件＝新端点极易写漏（P2-2 族根因）」。openapi 快照则是改了请求 schema 忘了它有快照对拍。
+- **修复**：把三处同款查询（create_content 幂等预查 / IntegrityError 回滚重查 / agent 镜像删除）收敛到 deps.find_alive_content_by_cgid，total 44→43、棘轮转为达标并更新基线说明；openapi 用 scripts/gen_openapi.py 重生成。两者都是棘轮设计预期的产出——它把「新端点抄第 N 遍」从事后 review 拦截提前到了 commit 时。
+- **相关文件**：backend/app/api/contents/agent.py
+- **教训**：棘轮拦下的不是形式主义：新增端点前先问「这个查询/语义仓库里是不是已经有了」。另外凡改请求/响应 schema，openapi 快照必须重生成——它是 App 与 backend 契约的单一对拍物。
+
+---
+
+### 2026-10-06 06:53 · commit 56893f4 · ts=1791240829
+- **错误**：pre-commit 被 lint 卡住：ruff S105 把 _AGENT_TOKEN_HEADER = "X-Agent-Token" 判为「硬编码密码」。同批还有一处导入排序 I001。
+- **根因**：S105 按变量名匹配：名字含 token/secret/password/api_key 的变量被赋字符串字面量即报警。我把 HTTP 头的名字命名为 _AGENT_TOKEN_HEADER，字面量是头名不是凭据值——但静态扫描只看名字与赋值形态，不读注释。命名里带 token 就必然撞上这条规则。
+- **修复**：常量改名 _HDR_AGENT_AUTH / _HDR_AGENT_USER（描述「认证头」而不含 token 字样），并在注释里写明为什么不用带 token 的名字；导入排序用 ruff --fix。
+- **相关文件**：backend/app/api/deps.py
+- **教训**：给常量命名时要想清楚它会被哪类自动检查看到：含 token/secret/password 的名字会让安全扫描器把「头名」「配置键名」都当成凭据值。要么换名，要么准备好为每个误报写 noqa——前者更省事，也让真正的硬编码密码更容易被看见。
+
+---
+
+### 2026-10-06 06:12 · commit 56893f4 · ts=1791238377
+- **错误**：新写的 schema 漂移守卫首跑就红，报告 agent 三张表（memories/knowledge_collections/memory_categories）会被 autogenerate DROP TABLE——但 alembic check 明明没报它们。两个工具给出矛盾结论，必有一个在说谎。
+- **根因**：我的测试用 compare_metadata 时只 import 了 Base，没有 import app.db.models。模型模块不被 import，它的表就永远不会注册进 Base.metadata，于是 compare_metadata 眼里「库里有、metadata 没有」＝多余表＝DROP。而 migrations/env.py:22 一直有一行 import app.db.models 并注释「注册全部模型到 Base.metadata」——我没看 env.py 就自己写了一套对拍。
+- **修复**：测试里补 import app.db.models（noqa F401），并把这次踩坑写进守卫的 agent 三表断言注释——下次有人看到同样的红，第一排查点就是这行 import。
+- **相关文件**：backend/tests/test_schema_drift_guard.py
+- **教训**：复用框架机制时，先读框架自己的装配代码（env.py / conftest / 入口模块），看它额外 import 了什么。「模型存在」和「模型被注册」是两件事，后者不成立时前者毫无意义。两个工具结论矛盾时，先找两者装配路径的差异，而不是怀疑哪个坏了。
+
+---
+
+### 2026-10-06 03:21 · commit 6313e25 · ts=1791228094
+- **错误**：守卫测试连踩三个静默失效的坑：路径层级算成 parents[3] 落到盘根，整个守卫被 skip 而绿灯依旧；解析 backend 模型时 text.index("class Memory") 前缀匹配命中 class MemoryCategory，把分类表的列当成记忆表的列；给被测函数做 monkeypatch 时整个替换掉它，把它内部的 try/except 也绕过，测出来的是假场景。
+- **根因**：三个坑同根：都没有先验证「这个测试真的在测我以为的东西」。skip 与假红都是测试失效，而 skip 更隐蔽——不报错、不告警，绿灯一直亮着。
+- **修复**：「仓库里有 backend/ 却找不到镜像模型」改为硬失败 pytest.fail，只有真没有 backend/ 才 skip；class 定位改用词边界正则；测内部兜底时直接调用被测函数并给它一个会抛错的依赖，而不是替换函数本身。
+- **相关文件**：agent/tests/test_agent_schema_alignment.py
+- **教训**：skip 是测试的假阴性：绿灯不代表守卫在工作。新写守卫必须先证明它能红——故意制造一次违规看它报不报。凡是从路径、名字、字符串推导测试对象的地方，先打印确认解析到的是不是想测的那个。
+
+---
+
+### 2026-10-06 02:19 · commit 6313e25 · ts=1791224379
+- **错误**：三处文档/迁移注释都声称存在 test_agent_schema_alignment.py 这个 schema 漂移守卫，全仓搜索却是 0 命中——它从未被创建。同一轮里，agent ORM 与后端镜像 ORM 的「两处必须同时改」没有任何自动检查，我补 mood/幂等键时就真的漏了在 __table_args__ 里声明部分唯一索引，alembic check 报 removed index（autogenerate 会生成 DROP INDEX）才被兜住。
+- **根因**：注释里写了测试名，但没人写测试；而「文档说有」会让人在需要时直接去找它、找不到就跳过，而不是怀疑它不存在。守卫缺失的风险被一层「有守卫」的假象盖住了。
+- **修复**：补上 test_agent_schema_alignment.py：agent ORM 与真实库逐列双向对拍；幂等索引必须在库里与两处 ORM 都声明（含谓词一致）；用文本解析比对 agent 与 backend 两处 ORM 的列集合；关键列类型族对拍。连不上库时 skip 而不是假红。
+- **相关文件**：agent/tests/test_agent_schema_alignment.py
+- **教训**：文档声称存在的守卫，比明确承认没有的守卫更危险——它让人放弃了自己再设防线。引用一个不存在的测试名时，第一反应应该是把它建出来，而不是假设它在别处。
+
+---
+
+### 2026-10-06 01:00 · commit 6313e25 · ts=1791219628
+- **错误**：一次普通的数据类型错误就能把用户的私密记忆正文送进 LLM 上下文。实测触发的异常原文含三段敏感内容：SQL 语句 INSERT INTO memories (content, importance, user_id ...) VALUES (...)；绑定参数 parameters，其中 content 字段就是用户正文（实测值形如「我的银行卡密码是 123456」）；以及 psycopg 驱动错误详情。这段文本被 LangChain 包成 ToolMessage 进模型上下文，模型可能原样复述给用户。
+- **根因**：两层叠加。第一层：storage/database/local_client.py 抛的是裸 SQLAlchemy 异常，它的 str() 天然带 [SQL: ...] 与 [parameters: {...}]，而 parameters 里就是用户正文。第二层：上游 25 处以上的调用点都写 except APIError，但 APIError 是 ValueError 的子类、SQLAlchemy 异常不是它，于是那些 except 分支一次都没命中过（实测 isinstance(e, APIError) 为 False）——异常既没被转成友好提示、也没被脱敏，直接穿透到工具边界。同一轮提交刚把 /v1/chat 加固成「异常原文只进日志」，但工具这条路径绕过了它。
+- **修复**：在数据层的唯一出口 execute() 收口：SQLAlchemyError 一律转成脱敏后的 APIError（对外只给「类别 + 稍后重试」），全量细节含 SQL 与绑定参数只进日志，并单独打 exc_type；已是 APIError 的不重复包装；原有「拒绝全表更新/删除」「列名写错显式报错」两条护栏保留。这样那 14 处 except APIError 才真正生效。注意 SQLAlchemy 的 str(exc) 以 orig 的 repr 开头、不含类名，想按 DataError/IntegrityError 这类关键字 grep 日志必须单独打 type(exc).__name__。
+- **相关文件**：agent/src/storage/database/local_client.py
+- **教训**：「异常原文只进日志」这条纪律要在每一个通往模型的入口落实，不能只在 HTTP 响应层做。工具返回值与异常会被包装成 ToolMessage 喂回 LLM，那是一条独立的泄漏通道。另外，写 except X 之前先确认它真的会抛 X——一个永不命中的 except 分支比没有它更危险，因为它让「错误已被处理」看起来成立。
+
+---
+
+### 2026-10-06 00:28 · commit 6313e25 · ts=1791217706
+- **错误**：上一轮把 SSRF/LFI 防护加在 agent/src/storage/s3/s3_storage.py 上，但那个文件是 Coze 交付包里带进来的**零调用方死副本**；同一功能的**活路径** url_fetch_tools.py 走的是 coze_coding_dev_sdk.s3.S3SyncStorage（另一个类，未加固）。而该 SDK 与 coze_workload_identity 在本项目均未安装，导出收藏这个工具必然失败，且它被 system prompt 明确宣传、LLM 一定会去调。
+- **根因**：按文件名/局部相似性判断「哪里是攻击面」，而没有先做调用图核实。同名的死副本与活路径共存时，加固死副本会产生"已经防住了"的错觉，风险反而更高。
+- **修复**：删掉零调用方的死副本（改动前必须确认全仓无 import 方，注意活路径可能 import 的是同名第三方包）。活路径的必然失败问题单列：export_knowledge_collections 与 main_wechat→wechat_service→voice_tools(ASRClient) 两条链都依赖未安装的 Coze SDK。
+- **相关文件**：agent/src/tools/url_fetch_tools.py
+- **教训**：加固之前先确认那行代码**真的在跑**。凭名字选中加固目标，可能给死代码做安全投资，同时放过活路径；而"同名死副本 + 未加固活路径"比"只有活路径"更危险，因为它制造了已防住的错觉。判断可达性只看调用图，不看文件名。
+
+---
+
+### 2026-10-06 00:28 · commit 6313e25 · ts=1791217706
+- **错误**：/health 长期显示 pool=?/4，池状态解析不出来。原因是我写的键名 connections_size 在 psycopg_pool 的 get_stats() 返回里根本不存在（真实键是 pool_size / pool_max）。
+- **根因**：单测里用自己编的 dict 当 get_stats() 返回值做断言，桩与真实返回值不一致时测试照样绿；键名取不到只回落到 ? ，不报错不告警，所以只有真机跑一次 /health 才看得见。
+- **修复**：改用真实键 pool_size/pool_max 并把 connections_lost（累计丢弃的坏连接数）一并暴露——它是「DB 在反复断连」的早期信号。测试改成用从真实运行池上原样抄下来的 get_stats() dict 做断言。
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：凡是解析外部返回值的代码，桩测试必须用**真实抓取过**的样本做夹具，不能自己编一份。自己编的 dict 只能验证「我的代码能读我编的键」，而真实世界的坑恰恰在于键名根本不存在——这类错误不抛异常，只静默降级成占位符。
+
+---
+
+### 2026-10-06 00:28 · commit 6313e25 · ts=1791217705
+- **错误**：为堵一个不存在的漏洞而改敏感词守卫的判定顺序，结果打掉真实埋点：把「量词后缀 → 标识符 → 敏感词」改成「敏感词优先」后，memory_tools 的 save_memory_dedup_miss(content_len=...) 命中敏感词 content 而抛 SensitiveFieldError，被上层 except 吞掉 ⇒ 判重日志静默失效；4 个存量测试（test_dedup_levels 等）当场变红。
+- **根因**：把「量词后缀豁免」当成了命名绕过口。实际上 _len/_count/_ms/_chars/_at 的值是长度/计数/耗时/时间戳，结构上装不下秘密——secret_at 存的是时间戳不是密钥，它不是绕过。真正需要防的 _id 类（secret_id）早已由 _SAFE_ID_KEYS 显式白名单堵住。改之前没有先问「这个后缀到底豁免了什么语义」。
+- **修复**：回退到原顺序，并把「顺序即契约」与这次回退的原因写进 _reject_sensitive 的注释，同时补 test_quantifier_suffix_fields_are_exempt_by_construction 与 test_content_len_must_not_be_rejected 两条护栏，防止后人再"优化"这个顺序。
+- **相关文件**：agent/src/yishu/observability.py
+- **教训**：改安全守卫前必须先说清「它豁免了什么语义」。凭直觉收紧一个判定，最容易打掉的不是攻击面而是真实埋点——而埋点失效是静默的（异常被 except 吞掉）。存量测试变红不是噪音，是它正在阻止你把日志埋点打瞎。
+
+---
+
+### 2026-10-05 12:48 · commit 6313e25 · ts=1791175717
+- **错误**：配错一个环境变量 AGENT_MAX_ROUNDS=0，整个 /v1/chat 直接 500，日志里只有一行看不懂的 UnboundLocalError: cannot access local variable 'result' where it is not associated with a value。
+- **根因**：run_agent_with_validation 的重试循环是 for round_num in range(1, max_rounds + 1)：max_rounds<=0 时循环一次都不执行，而循环之后的 return _finish(result, ...) 引用了一个只在循环体内绑定的局部变量 result ⇒ 未绑定即使用。既有 _env_int 只做类型转换、不校验下界，负数同样穿透。
+- **修复**：入口处把 max_rounds 夹紧到 >=1（非法值回落 2），并记 validator_rounds_clamped 事件留痕。这类『配置值直接当循环上界』的写法，边界必须显式夹紧——错误配置的代价不该是 500。
+- **相关文件**：agent/src/utils/output_validator.py
+- **教训**：凡是『配置值直接充当 range/切片上界』的地方，都要显式夹紧并留痕。0 与负数的含义通常是『不限制』或『未配置』，而不是『一次都不执行』；把『未配置』翻译成崩溃，是配置健壮性里最常见也最没必要的一种失败。
+
+---
+
+### 2026-10-05 12:48 · commit 6313e25 · ts=1791175683
+- **错误**：agent 的 checkpointer 用一条永不重建的长驻 psycopg 连接，DB 重启或网络抖动一次后，进程生命周期内再也不重连 ⇒ 对话记忆静默持续失败（服务照常 200、对话照常往返，用户以为有记忆，实际每轮都是新会话）。且 /health 仍报 PostgresSaver（持久化），降级与否都看不出来。
+- **根因**：两处叠加：① _conn 单连接被 _checkpointer 缓存永久持有，psycopg 不会自己重连，而缓存没有任何失效机制；② /health 只报 saver 的类型、不报连接可用性，「类型对但连接已死」这形态在类型字段里不可见。真正根因是「单连接」这个选择本身——只要是一条连接，就必然存在「断了不重建」的窗口。
+- **修复**：改用 psycopg_pool.ConnectionPool（langgraph 官方支持：_internal.Conn = Connection | ConnectionPool）。三处关键参数缺一不可：① configure 回调里逐条 SET search_path TO memory —— 它是连接级变量，只在启动时设一次必然漏掉池里后续新建的连接，漏设那条一被用来读 checkpoint 就报 relation "checkpoints" does not exist，且时有时无像偶发故障；② kwargs={"prepare_threshold": 0} —— 预编译语句绑定在具体连接上，池换连接后服务端已无该语句，报 prepared statement does not exist；③ check=ConnectionPool.check_connection —— 在每次 checkout 时探活，坏连接当场丢弃重建，这才是断连自愈的实现（不设则池完全不探活）。另：/health 的 checkpointer 字段附只读池统计；lifespan 退出时关池（psycopg_pool 有后台 worker 线程，不 close 会泄漏）；建表失败时必须能 close 已建池，否则每次 DB 抖一下就漏一组线程。
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：「连得上」不等于「断了能自己好」。任何持有长生命周期的外部资源（DB 连接、HTTP client、队列句柄），验收标准不是首次成功，而是故障后能否自愈；而自愈必须在架构层选对容器（池/客户端），事后补一个重试是补不上的。真机对照实验结论：掐断全部后端后，池下一次读写即恢复（connections_lost=2），单连接则永久 OperationalError。
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145188
+- **错误**：fetch.py 的 2MB 响应体上限形同虚设：resp.content 会先把整个响应体读进内存，之后才切片截断；构造 500MB 响应即可单次工具调用打爆进程内存
+- **根因**：把事后截断当成了事前限制——httpx 的 client.get 是全量读取，截断发生在数据已经在内存之后
+- **修复**：改 client.stream 边读边累计字节，超限立刻中断连接并返回 413；顺带补 100.64.0.0/10（CGNAT，Python ipaddress 的 is_private 对它返回 False 可绕过）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145186
+- **错误**：生产判定两处口径不一致：main._is_production 认 APP_ENV_PRODUCTION 或 APP_ENV，而真正决定 fail-closed 的 security.is_production 只认 APP_ENV ⇒ 只设 APP_ENV_PRODUCTION 时告警文案说生产会拒绝启动，实际不会
+- **根因**：同一业务判定被复制成两份实现，两边慢慢分叉；更糟的是不一致方向是告警比实际更严格，会让运维误以为已 fail-closed
+- **修复**：main._is_production 改为直接调 security.is_production（单一真相源），不再自建判定
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145180
+- **错误**：敏感字段日志守卫可被命名一行绕过：_SAFE_SUFFIXES 含 _id/_ids 且先于敏感词判定直接 return，导致 secret_id / api_key_id / token_value_id 全部放行
+- **根因**：把量词后缀（_len/_count/_ms）与标识符后缀（_id）混在同一张后缀白名单里，而 _id 类字段名并不天然安全——真正的判据是具体键名，不是结尾字符
+- **修复**：拆成 _SAFE_QUANT_SUFFIXES（量词，安全）与 _SAFE_ID_KEYS（标识符显式白名单），_id 类必须命中具体键名才放行
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 04:19 · commit dfafac3 · ts=1791145177
+- **错误**：Agent 错误响应把 str(exc) 原样回显：异常里可能带数据库 DSN（含密码）、服务器绝对路径、SQL 片段，而该响应体会进入我们后端日志再流向客户端
+- **根因**：把异常对象直接塞进 API 响应，没有区分内部细节与对外文案；错误分类器只产出 kind/http_status/retryable，不产出用户可读文案，缺的那层没人补
+- **修复**：新增 main._client_message 按 kind 映射固定中文文案，异常原文只经 logger.exception 落盘；/v1/chat 与全局异常处理器两处都改（漏一处就等于没改）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143774
+- **错误**：agent 测试结论取决于跑它那台机器当时继承了什么环境变量：load_dotenv override=False 让陈旧的系统级 DASHSCOPE_API_KEY 优先于 .env，拼出 token-plan key 加 workspace header 的非法组合，CI 绿而本地 400
+- **根因**：测试目录没有环境隔离入口，agent/.env 不是唯一真相源
+- **修复**：新增 agent/tests/conftest.py 在 collection 阶段清掉继承的 DASHSCOPE_* 再 load_dotenv，口径与 scripts/local_run.ps1 一致；另修 llm_provider：key 为 sk-sp- 时丢弃 DASHSCOPE_WORKSPACE_ID 并告警（Token Plan key 不绑定业务空间，带该头必然 400）
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143773
+- **错误**：同一会话(thread_id)反复 GraphRecursionError：上一次异常中断在 Postgres checkpoint 里留下悬空 tool_calls（有 AIMessage.tool_calls 但无对应 ToolMessage），下次恢复时被重放，每轮白跑工具直到撞递归上限，该会话从此每次都失败
+- **根因**：checkpointer 持久化了中断状态却无人清理；递归上限错误只被当作模型问题，掩盖了会话状态已损坏这一事实
+- **修复**：新增 agents.agent.heal_dangling_tool_calls 在 invoke 前补齐悬空 tool_call_id 的占位 ToolMessage（保留痕迹比删历史安全）；output_validator 捕获 GraphRecursionError 后用 _salvage_partial_reply 取回最后一条有文本的 AI 回复并标记 recursion_salvaged，宁可返回不完整结果也不让整轮报废
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143768
+- **错误**：判重第二级用 SQL 前缀匹配 ilike 永远命中不了：LLM 重试是把内容变长（尾部追加），库里存的是变长前那条，即旧内容是新内容的真前缀；用长内容去前缀匹配短内容方向相反，且不报错只静默返回空
+- **根因**：只想当然地按新内容去前缀匹配已有内容，没有考虑两侧长度关系；ilike 静默返回空让失败表现得像没生效，日志里什么都不留
+- **修复**：改为取时间窗内最近若干条在 Python 侧做双向 startswith 加公共前缀判定（prefix/near 两级），未命中也记 save_memory_dedup_miss 含窗口内候选数；单测覆盖尾部追加、截短、排版噪声与真不同内容不误伤
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:56 · commit 5232c37 · ts=1791143763
+- **错误**：Agent 工具的数组参数被模型传成 JSON 字符串（topics 传字符串而非数组）导致整条保存链路不可用：pydantic 在进入函数体之前就抛 ValidationError，函数体一行都没执行；LangChain 又把该异常包成 ToolMessage 返回，LLM 拿不到可修正指引而反复重试，单轮 5 次、12~25 秒后撞递归上限
+- **根因**：工具签名对模型过严（只接受真数组）；而 LangChain 把工具异常包成返回值，使 middleware 的 except 分支永远抓不到，工具失败在日志中完全不可见，只表现为模型在循环
+- **修复**：新增 tag_rules.coerce_str_list 归一化畸形入参，并把签名放宽为 str 或 list 联合类型（放宽签名是前提，否则解析代码根本执行不到）；handle_tool_errors 改为从返回值识别 Error invoking tool 并记 tool_failed 与 err_head；tool_done 补 arg_keys/args_len 埋点以区分没执行与执行后失败
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 03:55 · commit 5232c37 · ts=1791143752
+- **错误**：delete_file 误删整个文件：只想删一行 import json，却把 agent/tests/test_user_isolation.py 整个删掉
+- **根因**：把'删除一行'误用为'删除文件'这一整文件级工具；对小范围改动选了粒度最大的工具
+- **修复**：git checkout -- <path> 立即恢复；小范围改动一律用 replace_in_file 精确替换，先读文件再改；delete_file 只在确知要移除整个文件时使用
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-05 01:48 · commit 91709f8 · ts=1791136091
+- **错误**：验证 SSRF 修复时连做了三次假验证：① 测试服务器跑在 127.0.0.1，被初始检查就拦，重定向分支压根没执行；② mock 按 host:port 放行，但被测函数只传 hostname（不含端口）永不匹配；③ mock 放行 127.0.0.1 后，重定向到同 host 不同端口也被放行
+- **根因**：_is_public_host 收的是 hostname（不含端口），凭端口做白名单在语义上不成立；而「同一 hostname 不同端口」本身也不是 SSRF 攻击向量，测试设计错了
+- **修复**：改为可断言的单元验证：① 直接断言 _is_public_host 对 10 类内网/保留地址返回 False；② 用调用计数证明重定向每一跳都复校验（序列 [a.test, a.test, 127.0.0.1]）；③ 死循环被跳数上限截断
+- **相关文件**：agent/src/yishu/fetch.py
+- **教训**：安全修复的测试若依赖 mock，必须先确认 mock 的粒度与被测函数一致；否则会出现「假通过」和「假失败」，比不测更危险
+
+---
+
+### 2026-10-05 01:48 · commit 91709f8 · ts=1791136090
+- **错误**：fetch.py 只校验初始 URL 就 follow_redirects=True，重定向目标从不复校验 ⇒ https://evil.example/r 302 到 http://127.0.0.1:8300/api/memories 可读内网响应体（agent 与数据库同机，泄漏面直接是全部记忆）
+- **根因**：SSRF 防护只做在入口，重定向是逐跳的——每一跳都是新的目标，都要独立校验。另外无跳数上限，重定向环会自打死循环
+- **修复**：改 follow_redirects=False 手动逐跳跟随，每跳复校验 scheme + _is_public_host（DNS 每次都重新解析），加 _MAX_REDIRECTS=5 上限
+- **相关文件**：agent/src/yishu/fetch.py
+- **教训**：SSRF/重定向类防护必须逐跳校验，不能只校验入口 URL；redirect 跟随要手动做并设跳数上限
+
+---
+
+### 2026-10-05 01:48 · commit 91709f8 · ts=1791136090
+- **错误**：agent/web/api_routes.py 的 4 个记忆浏览端点（/api/memories /dashboard /collections /categories）完全无 token 校验，且 user_id 取自客户端可控的 X-User-Id header 或 ?user_id= 查询参数
+- **根因**：任何人 curl "http://<host>:8300/api/memories?user_id=<受害者uuid>" 即可读到他人全部记忆（原文/情绪/标签/位置）。它不报错、只会安静地泄漏数据。根因是 main.py 与 api_routes.py 各写了一套鉴权，而后者那套压根没写；且 _get_user_id_from_request 末尾还有 os.getenv("COZE_USER_ID","default") 兜底——与 memory_tools 同款漏洞
+- **修复**：新建 yishu/security.py 作为鉴权/校验/限流的单一来源（require_token / validate_user_id / validate_thread_id / RateLimiter）；api_routes 用 router 级 dependencies=[Depends(require_auth)] 挂载（而非逐端点加，新端点默认受保护）；user_id 格式白名单校验并删掉环境变量兜底；生产未配 token 启动即拒
+- **相关文件**：agent/src/yishu/security.py
+- **教训**：同一服务的多个入口必须共用一套鉴权；逐端点加鉴权必然漏，应挂在 router/依赖层。user_id 缺失一律拒绝，绝不回落共享默认值
+
+---
+
+### 2026-10-05 00:22 · commit 3a8651f · ts=1791130967
+- **错误**：统计工具调用次数时误把跨轮累积的 messages 全量统计，报出 tool_calls=40 而库里只有 1 条记忆
+- **根因**：result messages 是累积的（checkpointer 会带回历史），第二轮统计把第一轮的再数一遍，埋点失真
+- **修复**：用 prev_msg_count 只统计本轮新增切片；dict 类型字段改为展开 k=v（折成 <dict:1> 等于没埋点）
+- **相关文件**：agent/src/utils/output_validator.py
+- **教训**：有状态累积的数据源（checkpointer/历史消息）统计增量必须用切片，折成汇总就失去意义
+
+---
+
+### 2026-10-05 00:22 · commit 3a8651f · ts=1791130967
+- **错误**：agent 单次对话 32~66 秒，埋点归因发现 LLM 反复调用同一个 save_memory（单轮 16~28 次）、输入 token涨到 15K、最后撞 GraphRecursionError
+- **根因**：四个去 Coze 迁移遗留缺陷叠加：① select 里的 memory_categories(name) 是 PostgREST 外键嵌入语法，迁到原生 SQLAlchemy 后被当列名 -> SQL 报错被 except 吞掉 -> related_memories 恒为空；② json.dumps 遇 datetime 抛 TypeError（联想修好后才暴露，与①互相掩盖）；③ local_client 缺 ilike，search_memories 这个核心功能一直坏；④ save_memory 无幂等，LLM 收不到已存信号就反复调。工具失败被 handle_tool_errors 转成通用文案且零日志，LLM 看不到原因
+- **修复**：① 改按 category_id 过滤；② 在 local_client._row_to_dict 数据出口统一把 datetime/date/Decimal 转 JSON 安全值（一次修好所有工具）；③ 补 ilike/like/contains/or_/and_ 并统一为 PostgREST 星号语义；④ save_memory 加同用户同内容幂等；⑤ recursion_limit 25->10 快速失败；⑥ 新增 observability.py 结构化埋点，handle_tool_errors 记 tool 名与异常类型
+- **相关文件**：-
+- **教训**：迁移数据层时必须逐个核对 ORM/查询 API 的语义差异（嵌入语法、通配符、类型序列化）；工具失败必须留痕，否则 LLM 会因看不到原因而无限重试
+
+---
+
+### 2026-10-05 00:22 · commit 3a8651f · ts=1791130955
+- **错误**：统计工具调用次数时误把跨轮累积的 messages 全量统计，报出 tool_calls=40 而库里只有 1 条记忆
+- **根因**：result[messages] 是累积的（checkpointer 会带回历史），第二轮统计把第一轮的再数一遍，埋点失真
+- **修复**：用 prev_msg_count 只统计本轮新增切片；dict 类型字段改为展开 k=v（折成 <dict:1> 等于没埋点）
+- **相关文件**：agent/src/utils/output_validator.py
+- **教训**：有状态累积的数据源（checkpointer/历史消息）统计增量必须用切片，折成汇总就失去意义
+
+---
+
+### 2026-10-04 22:17 · commit 5fcb70e · ts=1791123452
+- **错误**：HBuilderX CLI 云打包：在 --config 的 json 里写 keystore 嵌套字段被静默忽略，日志显示「类型: Android云端证书」，产出的是 DCloud 共享证书的包
+- **根因**：CLI 只认 android.androidpacktype / certalias / certfile / certpassword / storepassword 这组专用参数；json 里自造 keystore 结构不报错也不生效，属于「失败无提示」类型。且云端证书与自有证书产物都能通过 apksigner verify，只有比对证书指纹才发现
+- **修复**：config 里必须写 androidpacktype=0（自有证书）+ 四个 cert* 字段；出包后必做四项尸检，其中 apksigner --print-certs 的 DN/MD5/SHA1/SHA256 与 docs/图标与签名证书_20260921.md §五登记值逐项比对。已沉淀为 skills/apk-cloud-release/SKILL.md 的铁律 §2
+- **相关文件**：skills/apk-cloud-release/SKILL.md
+- **教训**：打包/发布类工具的参数别名与嵌套结构必须以 --help 为准；「不报错但产出错配置」要用产物反查（指纹/内容比对），不能只看是否成功退出
+
+---
+
+### 2026-10-04 20:28 · commit d70ab37 · ts=1791116914
+- **错误**：新增测试与脚本后 pre-commit 被 ruff 拦下：I001 import 未排序、UP031 printf 格式化字符串、E501 行超 120
+- **根因**：通过 PowerShell here-string 写 Python 文件时，无法预估 ruff 的 I001/UP031 规则命中；且 E501 会在 --fix 改写后行长度变化时二次触发，需复检
+- **修复**：提交前先跑 python -m ruff check --fix --unsafe-fixes（UP031 转f-string 安全可自动修），再对 E501 手工折行；本次把 130+ 字符的 sum(...) 内联表达式抽成 _dir_mb() 辅助函数，同时消除两处重复
+- **相关文件**：backend/scripts/prep_models.py
+- **教训**：提交前对新增文件先跑 ruff --fix --unsafe-fixes；长表达式抽函数比折行更耐改
+
+---
+
+### 2026-10-04 20:07 · commit 4686320 · ts=1791115627
+- **错误**：两个软敏感降级用例（test_detector_unavailable_marks_pending_recheck / test_pending_recheck_blocks_active_mention）长期假绿：它们只mock 了 mock_external_ai=False，把「检测器不可用」的前提交给环境
+- **根因**：本机 shell 长期有陈旧 DASHSCOPE key ⇒ 百炼 401 ⇒ llm_available()假性返回 False ⇒ 恰好满足「检测器不可用」⇒ 用例通过。也就是说它测的是「环境恰好坏了」，而非它声称要测的 D10-9 降级分支；单跑与全量跑结果不一致（外部 LLM 可用性漂移）
+- **修复**：显式 monkeypatch guard.llm_available → False 制造「检测器不可用」，让用例真正测到降级分支，且与本机有无 key 无关（同文件 test_llm_error_also_marks_pending_recheck 已是这个写法）
+- **相关文件**：backend/tests/test_soft_sensitive_degraded.py
+- **教训**：测试的前置条件必须由 monkeypatch 构造，不能依赖运行环境；靠「环境恰好坏」通过的是假绿
+
+---
+
+### 2026-10-04 20:07 · commit 4686320 · ts=1791115626
+- **错误**：本机 backend/models/ 与 HF 缓存均为空，BGE-M3 缺失，导致 4 个检索相关测试集体失败（test_search_basic / test_output_search_hits_content / test_photo_writes_image_vec / test_arbitrate_degraded_passthrough）
+- **根因**：四个失败根因完全同源：BGE-M3 不可用 ⇒ Qdrant 写入与检索降级（degraded=true、hits=[]）。危害是它**静默**：检索降级不抛错、只打一条 WARNING，接口照常 200 返回空结果，看起来像「搜索功能坏了」或「用户数据没搜到」，极易误判成检索逻辑 bug。而 models/README.md 声称各模型「在用、禁止删除」，与磁盘实际（仅剩 README 本体）严重脱节
+- **修复**：① embedding.py 改为本地目录优先（backend/models/bge-m3 有 config.json 就用它，否则回退 HF repo id），彻底摆脱对 hf 可达性的依赖；② 新增 backend/scripts/prep_models.py（ModelScope 源、带重试、清理 .incomplete、幂等）作为构建/部署前置；③ 修正 models/README.md 的位置与下载源，并写明「检索类失败先查模型是否在位」
+- **相关文件**：backend/app/services/embedding.py
+- **教训**：外部模型缺失时链路会静默降级而非报错；排查检索类失败第一步是确认模型在位，别先怀疑逻辑
+
+---
+
+### 2026-10-04 19:31 · commit 4686320 · ts=1791113511
+- **错误**：客户端 api.uts 的看门狗超时分支只 console.log 后 resolve(null)，既不 toast 也不上报 Sentry；且默认 20s 与后端 agent 上限 180s 口径矛盾（实测单轮 6-43s）
+- **根因**：5.24 蒸汽模式下 uni.request 的 timeout 参数可能被桥接吞掉，所以改用 JS 层看门狗；但补看门狗时只补了「兜住不挂起」的一半，漏了「失败要让人知道」的一半。慢失败在客户端侧表现为静默，用户看到的是「AI 没反应」而非错误
+- **修复**：看门狗超时补captureException + 可读 toast（与 onFail 同口径）；request/post 增加可选 timeoutMs 透传，chat_api 显式给 90s（覆盖实测区间且远小于后端 180s，让 504 仍能由后端如实返回）
+- **相关文件**：client/utils/api.uts
+- **教训**：兜底分支必须同时具备「不挂起」和「可观测」；只做前者等于把失败变成静默
+
+---
+
+### 2026-10-04 19:31 · commit 4686320 · ts=1791113502
+- **错误**：改 client/manifest.json 加定位权限时用文本字符串替换，把两行写成裸 manifest 片段（漏了最外层引号），JSON 解析报 Invalid control character at line 25
+- **根因**：权限字符串自身含转义引号（android:name 后带转义的双引号），文本级替换无法正确处理嵌套引号；且 json 报错指向 control character，与真实原因（引号缺失）完全不符，把排查方向带偏
+- **修复**：git checkout 回退后改为 json.load 改结构再 json.dumps，写前用 json.loads 自检。凡含转义引号的 JSON 一律走解析-序列化，禁止文本替换
+- **相关文件**：client/manifest.json
+- **教训**：含转义引号的 JSON 禁止文本级替换
+
+---
+
+### 2026-10-04 19:29 · commit 4686320 · ts=1791113355
+- **错误**：Token Plan 套餐 key（sk-sp-）在专属端点下调 qwen3.8-flash 返回 403 AccessDenied.Unpurchased，换qwen3-max/qwen-plus/deepseek/glm 等候选全部 model_not_found
+- **根因**：套餐专属端点只暴露套餐内已开通模型；key 有效、端点正确，是「套餐未开通该模型」这一层，不是代码或配置错误。token-plan 端点下不存在「换个模型就好」这条路
+- **修复**：agent 改用与 backend 同一套工作空间级 key（sk-ws-，本就同库同账号），实测 qwen3.8-flash 可用；同步改写 agent/.env.example 的账号口径说明（推翻 2026-09-23 的「必须用 Token Plan key」）
+- **相关文件**：agent/.env.example
+- **教训**：外部服务报「无权限/未开通」时，先确认是套餐层还是代码层，换模型前先查该端点暴露的模型清单
+
+---
+
+### 2026-10-04 19:29 · commit 4686320 · ts=1791113355
+- **错误**：诊断用的临时脚本命名为 _tmp/bisect.py，运行时遮蔽 stdlib 的 bisect 模块，导致 import random 连锁失败报 tempfile 循环导入
+- **根因**：Python 会把脚本所在目录加入 sys.path[0]，同名文件遮蔽标准库；且错误发生在 import 阶段深层栈里，与真实文件名毫无关联，极难联想到
+- **修复**：诊断脚本改用无冲突前缀（probe_xxx.py）；排查 import 异常时先怀疑 sys.path 遮蔽
+- **相关文件**：-
+- **教训**：临时脚本命名必须避开 stdlib 名称
+
+---
+
+### 2026-10-04 19:29 · commit 4686320 · ts=1791113355
+- **错误**：agent 的 DATABASE_URL 是 SQLAlchemy 形态 postgresql+psycopg://，而 checkpointer 走原生 psycopg 驱动，驱动后缀不被接受，建连即抛 ProgrammingError
+- **根因**：同一份配置被两套栈消费：ORM 走 SQLAlchemy（需要 +psycopg 驱动标记），而 langgraph checkpointer 直接用原生 psycopg（拒绝该后缀）。缺一个规范化入口，每处调用方各自绕过
+- **修复**：新增 as_native_psycopg_url() 作为唯一入口，在获取 db_url 时统一剥离驱动后缀，不动 .env；调用方不再各自处理
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：同一配置被两套栈消费时，必须有一个显式规范化入口，不能让每个调用方各自绕过
+
+---
+
+### 2026-10-04 19:17 · commit 4686320 · ts=1791112657
+- **错误**：process_content 的处理器在 db.begin_nested()（SAVEPOINT）内跑，_process_text 里把逆地理补全放在 mark_sensitive/annotate 之后 ⇒ place 恒为空，只留一行 geo_cache 读取失败的 WARNING
+- **根因**：mark_sensitive_on_ingest / annotate_on_ingest 内部会 commit，提交后外层 transaction 已关闭；随后执行的 get_place 读 geo_cache 撞 InvalidRequestError: Can't operate on closed transaction inside context manager，被pipeline_ext 包装器except 吞掉。危害等级高：它不报错、不失败，只让功能静默失效，极易被误判成「高德不稳定」
+- **修复**：把 enrich_place_on_ingest 移到三个处理器（text/voice/photo）里所有会commit 的钩子之前；新增源码级不变量测试锁住顺序（inspect.getsource 比对调用位置），防止后续有人把钩子挪回去
+- **相关文件**：backend/app/services/pipeline.py
+- **教训**：同事务内钩子有顺序依赖：会 commit 的钩子必须排在需要读库/写缓存的钩子之后，否则后者静默失败；此类顺序必须用测试锁住，不能靠注释
+
+---
+
+### 2026-10-04 19:17 · commit 4686320 · ts=1791112657
+- **错误**：agent 的 checkpointer 用 AsyncConnectionPool + AsyncPostgresSaver，而 /v1/chat 是同步 def端点（threadpool 无 running loop）⇒ 创建时抛 AsyncConnectionPool open with no running loop，静默降级 MemorySaver
+- **根因**：同步调用链（agent.invoke）与异步 checkpointer 天然不匹配；降级只打 WARNING、不报错，且 MemorySaver 语义与 PostgresSaver 完全兼容 ⇒ 服务 200、对话照常往返，但每轮都是新会话（用户以为有记忆、实际每次失忆），仅日志里两行 WARNING
+- **修复**：改用同步 PostgresSaver（与 invoke 匹配，无需事件循环）；长驻连接需单独建并在连接级设 search_path；降级结果不再写入单例字段（否则启动时DB 抖一下即永久失忆不可恢复）；/health 新增 checkpointer 字段暴露真实类型，把静默降级变可见
+- **相关文件**：agent/src/storage/memory/memory_saver.py
+- **教训**：凡「服务正常但行为可疑」，先查有没有静默降级路径；降级必须可观测（探活接口暴露），否则永远查不到
+
+---
+
+### 2026-10-04 19:13 · commit 4686320 · ts=1791112424
+- **错误**：本机 shell 长期存在陈旧系统级 DASHSCOPE_API_KEY（旧 Token Plan sk-sp- key），而项目全部配置用 load_dotenv(override=False)（进程环境变量优先于 .env）⇒ 改了 .env 也不生效
+- **根因**：dotenv 的 override=False 是为容器/K8s 注入留的设计口，但本机 shell 环境变量成了隐形高优先级真源。连锁三处假象：① agent 用旧 key⇒base_url 被推成 token-plan 端点 ⇒ 400 header 与 workspace 不匹配；② 同一变量污染 pytest ⇒ 403 AccessDenied.Unpurchased 被误判为「套餐没开通」；③ 污染后端护栏 ⇒ 401 ⇒ fail-closed ⇒ 每一句 AI 回复被拦成 422，表现为「AI 极不稳定」。铁律：启动任何服务/测试前先清 DASHSCOPE_*，启动脚本固化清理（agent/scripts/local_run.ps1）
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
 ### 2026-10-12 17:31 · commit dcfd2fd · ts=1791797493
 - **错误**：B-1 提交前快速审核首次误报 ruff 未安装
 - **根因**：直接运行 .venv/Scripts/python.exe 未激活虚拟环境，review_agent 子进程从 PATH 查找 ruff 时找不到；ruff 实际已安装

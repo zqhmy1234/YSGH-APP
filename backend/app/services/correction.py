@@ -70,30 +70,43 @@ def record_correction(
 
     生命周期（B5-c-1）：同内容多次纠错以最后一次为准（Qdrant 同点覆盖；
     DB 查询取最新）；保留最近 MAX_PER_USER 条/用户。
-    """
-    store = _get_store()
-    dense = encode_dense([text])[0]
-    pid = _point_id(user_id, content_id)
 
-    store.upsert(
-        collection_name=CORRECTION_COLLECTION,
-        points=[
-            models.PointStruct(
-                id=pid,
-                vector={"text_vec": dense},
-                payload={
-                    "user_id": user_id,
-                    "content_id": content_id,
-                    "content_type": content_type,
-                    "old_label": old_label,
-                    "new_label": new_label,
-                    "source": source,
-                    "text": text,
-                    "created_at": datetime.now(UTC).isoformat(),
-                },
-            )
-        ],
-    )
+    **空文本（2026-10-14 · 台账 §7.17）**：照片在保存时点没有文本（caption 由上传后
+    的管线产出），故允许 `text` 为空 ⇒ **跳过向量化**、仍写 correction_log。
+    层①的"相似纠错命中"本就依赖文本相似度，没有文本时该信号**不存在**（不是降级）；
+    调用方对 `contents.content_class` 的回写照旧，故用户可见的分类纠正不受影响。
+    ⚠️ 不得用假文本占位——那会把噪声写进个人规则向量库（O-2「纠错恒混合」教训）。
+    """
+    pid: str | None = None
+    if text.strip():
+        store = _get_store()
+        dense = encode_dense([text])[0]
+        pid = _point_id(user_id, content_id)
+        store.upsert(
+            collection_name=CORRECTION_COLLECTION,
+            points=[
+                models.PointStruct(
+                    id=pid,
+                    vector={"text_vec": dense},
+                    payload={
+                        "user_id": user_id,
+                        "content_id": content_id,
+                        "content_type": content_type,
+                        "old_label": old_label,
+                        "new_label": new_label,
+                        "source": source,
+                        "text": text,
+                        "created_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+            ],
+        )
+    else:
+        logger.info(
+            "纠错无文本 ⇒ 跳过向量化（仍写日志并回写分类）content_id=%s type=%s",
+            content_id,
+            content_type,
+        )
 
     # DB 落库（同 content 旧记录逻辑上被新记录取代）
     row = CorrectionLog(

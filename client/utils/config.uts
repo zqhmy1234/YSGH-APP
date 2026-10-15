@@ -12,7 +12,7 @@
  */
 // ⚠️ 2026-09-21（C2 卡）：内测包必须为 'prod'——dev 分支的地址是 10.0.2.2/127.0.0.1 隧道地址，
 // 正式包发出去后连不上任何真实服务器（表现为"所有页面全空且不报错"）。
-export const ENV: string = 'prod' // 'dev' | 'prod'
+export const ENV: string = 'dev' // 'dev' | 'prod'（2026-10-09 真机联调切 dev；出包前必须改回 'prod' 并跑 preflight 门）
 
 /** Sentry DSN（可观测双通道·客户端侧；DSN 为公开标识，Sentry 官方允许客户端明文内嵌——非机密） */
 export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o4511955023888384.ingest.us.sentry.io/4511958507388928'
@@ -23,7 +23,7 @@ export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o451
  *  - 留空：走模拟器地址 10.0.2.2
  */
 // C2：prod 构建下必须留空——非空会让 getBaseUrl() 走进 dev 分支（真机隧道地址）。
-export const REAL_DEVICE_HOST: string = ''
+export const REAL_DEVICE_HOST: string = 'localhost' // adb reverse tcp:8010 tcp:8010（真机联调最稳路径，见 getBaseUrl）
 
 const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
 
@@ -37,7 +37,7 @@ const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
  *   - 占位未替换时 `getBaseUrl()` 会 `console.error` 喊出来——因为"接口全空且不报错"
  *     是最费排障时间的失败形态（与本文件头 8010 抢占事故同源教训）。
  */
-const PROD_BASE_URL: string = 'http://<公网IP>:8010'
+const PROD_BASE_URL: string = 'https://coleslaw-absence-harvest.ngrok-free.dev'
 
 /**
  * 生产基址的"看起来没配好"标记词（2026-09-21 泛化）
@@ -50,7 +50,14 @@ const PROD_BASE_URL: string = 'http://<公网IP>:8010'
  *
  * 反例（不应告警）：`http://43.138.x.x:8010`、`https://api.memlight.cn`。
  */
-const PLACEHOLDER_MARKERS: Array<string> = ['公网IP', 'example.com', 'localhost', '127.0.0.1', '10.0.2.2']
+const PLACEHOLDER_MARKERS: Array<string> = ['公网IP', 'example.com', 'localhost', '127.0.0.1', '10.0.2.2',
+	// 2026-10-11 **修正**：只有**临时**隧道域名才是"看起来配好了、其实随时失效"
+	// （cloudflared quick tunnel 重启即换随机域名 ⇒ 已分发 APK 立刻全部连不上）。
+	// ⚠️ 但**固定地址的隧道**——ngrok 静态域名（`*.ngrok-free.app`）与 cloudflared named tunnel
+	// 绑定的自有域名——是内测期**既定方案**（手机装 APK 直连本机后端、不需要数据线），
+	// 地址永久不变 ⇒ **不得列入本表**，否则出包前置门与运行时会误报（初版把 ngrok 域名也列进来，
+	// 等于把既定方案判成"配错了"）。故此处只保留**临时**隧道特征词。
+	'trycloudflare.com', 'loca.lt', 'localtunnel.me', 'serveo.net']
 
 /** 生产基址是否"明显没配好"（含非 http(s) 协议头的情况，如漏写 scheme） */
 function isProdBaseUrlSuspicious(url: string): boolean {
@@ -67,13 +74,37 @@ function isProdBaseUrlSuspicious(url: string): boolean {
 
 /** 占位符告警只打一次（避免每请求刷屏） */
 let _prodBaseUrlWarned = false
+/** dev 配置出现在打包产物的告警位（同样只喊一次） */
+let _devEnvInPackageWarned = false
 
-/** 调试：启动后自动进入 AGG-016 一致性自检页（仅 dev；验证完置回 false） */
-export const AGG_CHECK_ON_DEVICE: boolean = false
+/**
+ * 运行时判定：当前是否运行在 **HBuilderX 开发载体**上（标准基座）。
+ *
+ * 见 `getBaseUrl` 里 2026-10-11 的根治注释——本函数是"打包产物绝不允许连本机回环"
+ * 这条闸门的判据。依据是 Android 包名：
+ *   · 标准基座 = `io.dcloud.uniappx`（HBuilderX 运行到手机的载体；编译日志里的
+ *     `/pidof io.dcloud.uniappx` 亦可佐证）
+ *   · 云打包调试基座 / 正式包 = manifest.json 里配置的自定义包名 ⇒ 一律 **不是** 开发载体
+ * ⚠️ 取不到包名（API 不可用/异常）时**保守返回 false**：安全侧宁可走生产地址，
+ * 也绝不让打包产物连上 `127.0.0.1`（那正是"新包全挂"的形态）。
+ * ⚠️ 本 API 在 5.24/5.26 dts 的收录情况以**编译门**为准（编不过就换 `uni.getSystemInfoSync()`
+ * 的等价字段——同 lessons 的"dts 缺 API ≠ 不可用，先编译探针"口径）。
+ */
+function isDevCarrier(): boolean {
+	try {
+		const info = uni.getAppBaseInfo()
+		const pkg = info.packageName ?? ''
+		return pkg == 'io.dcloud.uniappx' || pkg == 'io.dcloud.HBuilder'
+	} catch (e) {
+		console.log('[yishu] isDevCarrier 探测失败（按打包产物处理，安全侧）: ' + e)
+		return false
+	}
+}
 
 /** dev 调试页常驻开关（O20）：非 dev 构建（ENV='prod'）自动关闭——
  *  值为 ENV 派生，生产构建无需人工改；dev 构建下 profile"关于"区展示调试入口。
- *  注意：AGG_CHECK_ON_DEVICE 是"启动自动进页"的一次性开关，本开关是"页面/入口常驻"总闸。 */
+ *  （2026-10-11 静态审查：原同区的 `AGG_CHECK_ON_DEVICE` 已**删除**——全仓零消费者，
+ *   注释声称的"启动自动进自检页"从未接线，是误导后人的死开关；自检页入口由本开关控制。） */
 export const DEV_PAGE_ENABLED: boolean = ENV === 'dev'
 
 export function getBaseUrl(): string {
@@ -83,6 +114,26 @@ export function getBaseUrl(): string {
 			console.error('[yishu] PROD_BASE_URL 疑似未配置好（' + PROD_BASE_URL
 				+ '）——请替换为真实公网地址后再出包，否则所有接口都会失败。'
 				+ '换址操作只有这一处（另服务端一处见 deploy/ONE_SWAP.md）')
+		}
+		return PROD_BASE_URL
+	}
+	// ═══ 2026-10-11 环境根治（**新包整体不可用的头号根因**）═══════
+	// 背景实锤：ENV 是**编译期常量、随代码提交**——10-09 真机联调把它从 'prod' 改成
+	// 'dev' 并随「壳内空态重构」一起提交（c356781），出包时忘改回 ⇒ 正式包内
+	// getBaseUrl() 返回 `http://127.0.0.1:8010`（**手机自己的回环地址**，什么都没有）
+	// ⇒ 所有接口全挂、每个页面都取不到数据；release 包 console 又不可见 ⇒
+	// 表现为"各个页面都无法正常体验、数据流被切断"这种整体性、无从下手的故障
+	// （与文件头 8010 抢占事故同源：本项目最贵的一类）。
+	// 修法（不只改回常量，根治漂移）：**打包产物一律不允许走 dev 地址**——
+	// 只有 HBuilderX 开发载体（标准基座）才认 dev 分支；其余（云打包调试基座/正式包）
+	// 即便 ENV 误留 'dev' 也强制走 PROD_BASE_URL。这样"忘改 ENV"从"新包全挂"
+	// 降级为"新包照常可用"，同时真机联调完全不受影响。
+	if (!isDevCarrier()) {
+		if (!_devEnvInPackageWarned) {
+			_devEnvInPackageWarned = true
+			console.error('[yishu] ⚠️ ENV=\'dev\' 出现在**打包产物**中：已强制改用 PROD_BASE_URL'
+				+ '（防止正式包连本机回环 127.0.0.1 导致全站接口空）。'
+				+ '若是联调请用 HBuilderX 标准基座运行；若是出包请把 ENV 改回 \'prod\' 并跑 preflight。')
 		}
 		return PROD_BASE_URL
 	}
@@ -113,6 +164,52 @@ export function getBaseUrl(): string {
  * @param url 后端下发的 thumbnail_url / original_url / cover_url
  * @return 可直接喂给 <image :src> 的 URL；空值返回空串（模板侧用 != '' 判空）
  */
+/**
+ * 环境指纹守卫（2026-10-11 静态审查 · 环境差异专题）。
+ *
+ * 问题：本地存储里有一批**强绑定后端实例**的状态——同步游标 / 对账镜像 / 会话 id /
+ * 对账节流时间 / 离线队列等。它们**没有环境命名空间**，也没有任何"换后端即失效"的逻辑
+ * （全仓零 `clearStorageSync` 调用）。于是 dev↔prod 切换（或指向另一台后端）后：
+ *   · `yishu_sync_cursor` 拿旧 seq 喂新后端 ⇒ 增量拉取范围错位 ⇒ 时间轴假空/假旧
+ *   · `yishu_chat_conversation_id` 指向新后端不存在的会话 ⇒ 每条消息 404（另有自愈，见 chat_api）
+ *   · `reconcile_last_at` 处于 24h 节流窗口 ⇒ 换端后当天跳过对账
+ * 表现统统是"数据没了 / 显示不对但没有任何报错"——本项目最贵的一类故障。
+ *
+ * 做法：持久化一枚"当前后端指纹"（= getBaseUrl()），启动时比对；不一致即清掉上述
+ * 绑定旧后端的状态（**不动 token 与 device_id**：前者 401 有自愈链，后者是设备身份，
+ * 跨环境复用可让同一设备在新后端命中同一账号）。
+ */
+export function ensureEnvFingerprint(): void {
+	const KEY = 'yishu_env_fingerprint'
+	const cur = getBaseUrl()
+	let prev = ''
+	try {
+		prev = uni.getStorageSync(KEY) as string
+	} catch (e) {
+		prev = ''
+	}
+	if (prev == null || prev == '') {
+		uni.setStorageSync(KEY, cur)
+		return
+	}
+	if (prev == cur) {
+		return
+	}
+	// 换后端：清掉一切"绑定了旧后端"的本地状态（清单见函数头注释；新增此类键须同步登记）
+	const keys: Array<string> = [
+		'yishu_sync_cursor', 'yishu_sync_mirror', 'yishu_last_sync_at', 'yishu_sync_paused',
+		'yishu_chat_conversation_id', 'reconcile_last_at',
+		'yishu_offline_queue', 'yishu_sync_op_queue', 'yishu_op_log',
+		'yishu_pending_uploads', 'yishu_held_uploads', 'yishu_failed_uploads',
+		'yishu_ignored_events'
+	]
+	for (let i = 0; i < keys.length; i++) {
+		uni.removeStorageSync(keys[i])
+	}
+	uni.setStorageSync(KEY, cur)
+	console.log('[yishu] 后端地址变更（' + prev + ' → ' + cur + '），已清理绑定旧后端的本地状态')
+}
+
 export function resolveMediaUrl(url: string | null): string {
 	if (url == null) {
 		return ''

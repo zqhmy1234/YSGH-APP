@@ -65,7 +65,7 @@ fi
 if [[ "${SKIP_SYSTEMD}" == "1" ]]; then
 	log "3. systemd 安装 —— SKIP_SYSTEMD=1，跳过"
 else
-	log "3. 安装并重启 systemd 服务（api / worker）"
+	log "3. 安装并重启 systemd 服务（api / worker / agent）"
 	install_systemd() {
 		local src="$1" name="$2"
 		# 占位符渲染（模板里的 @DEPLOY_ROOT@ / @RUN_USER@）
@@ -76,12 +76,20 @@ else
 	}
 	install_systemd "${DEPLOY_DIR}/systemd/yishu-api.service" "yishu-api.service"
 	install_systemd "${DEPLOY_DIR}/systemd/yishu-worker.service" "yishu-worker.service"
+	# W4 部署接线（2026-10-06，docs/功能对齐计划_20261006.md）：agent 服务此前
+	# 没有任何部署单元——本机能跑、线上不存在，「客户端↔Agent 接线完成」的
+	# 验收前提就是它在线上。前置：agent/.venv（uv sync --frozen；依赖含
+	# langchain/langgraph，与 backend 的 venv 互不通用）。
+	if [[ ! -x "${REPO_ROOT}/agent/.venv/bin/python" ]]; then
+		warn "agent/.venv 不存在——yishu-agent 会启动失败；先 cd agent && uv sync --frozen"
+	fi
+	install_systemd "${DEPLOY_DIR}/systemd/yishu-agent.service" "yishu-agent.service"
 	sudo systemctl daemon-reload
 	# enable 一次（重复 enable 无副作用）；随后统一 restart（避免 enable --now 与 restart 叠加）
-	sudo systemctl enable yishu-api.service yishu-worker.service >/dev/null
-	sudo systemctl restart yishu-api.service yishu-worker.service
+	sudo systemctl enable yishu-api.service yishu-worker.service yishu-agent.service >/dev/null
+	sudo systemctl restart yishu-api.service yishu-worker.service yishu-agent.service
 	sleep 3
-	sudo systemctl --no-pager --lines=0 status yishu-api.service yishu-worker.service || true
+	sudo systemctl --no-pager --lines=0 status yishu-api.service yishu-worker.service yishu-agent.service || true
 fi
 
 log "4. 自证（healthcheck.sh）"

@@ -58,7 +58,12 @@ export class EventOps {
 
 	onCardOps(ev: TimelineEvent, dayIdx: number): void {
 		if (ev.level === 1) {
-			const items: Array<string> = ['确认这张卡', '合并到上一张', '拆分这张卡']
+			// 🚨 2026-10-11 静态审查 #4：**移除「拆分这张卡」**——它承诺了一个做不到的操作。
+			// `doSplit` 只设 `showSplitPanel/splitEventId/splitItems` 四态，而模板中**没有任何
+			// 拆分面板**消费它们（`split-panel`/`split-item` 等类名在 components/ 与 pages/
+			// 全仓 0 命中，`tab-index.css:593-628` 的 `.split-*` 规则零使用者）⇒ 用户点它
+			// 毫无反应（仅成员<2 时一个 toast）。面板落地前不摆入口——"点击无反应"是最差形态。
+			const items: Array<string> = ['确认这张卡', '合并到上一张']
 			uni.showActionSheet({
 				itemList: items,
 				success: (res) => {
@@ -66,8 +71,6 @@ export class EventOps {
 						this.doConfirm(ev)
 					} else if (res.tapIndex === 1) {
 						this.doMerge(ev, dayIdx)
-					} else if (res.tapIndex === 2) {
-						this.doSplit(ev)
 					}
 				},
 				fail: () => {}

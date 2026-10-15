@@ -1,8 +1,8 @@
 """内容契约（contents 表：照片/文字/语音/文章统一入库）"""
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.services.storage_keys import CONTENT_KEY_PATTERN
 
@@ -38,7 +38,10 @@ class ContentCreate(BaseModel):
         description="缩略图键（thumbnails/ 前缀）",
     )
     extra: dict[str, Any] | None = None   # EXIF/时长/尺寸
-    source: str = Field("app", pattern=r"^(app|windows|wechat|import)$")
+    # W1 记忆域打通（2026-10-06）：新增 `agent` —— AI 对话页经服务间通道镜像写入。
+    # 与 app/windows/wechat/import 平级，仅作来源标注；已核实无任何消费方按
+    # source 枚举值过滤（rag/pipeline/sync_writes 均不依赖）。
+    source: str = Field("app", pattern=r"^(app|windows|wechat|import|agent)$")
     remark: str | None = Field(
         None, max_length=2000, description="用户备注（BA1：save 系接口可选上送）"
     )
@@ -46,6 +49,32 @@ class ContentCreate(BaseModel):
         None, ge=0,
         description="声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）",
     )
+    # W3（2026-10-08）：agent 镜像的预置 chips 标签（L3 十三主题）——写 contents.tags_json，
+    # App 详情页 AI 注释卡直接展示（此前 topics 只进 extra，App 完全看不见）。
+    # **仅 source=agent 生效**（App 公开端点不因此扩面，见 create_content 的落库条件）；
+    # 管线打标（pipeline_tagging.tag_content）对已有 tags_json 是**合并**不是覆写，
+    # 所以这里预置的标签不会被 worker 的 LLM 标签冲掉。
+    tags: list[Annotated[str, StringConstraints(strip_whitespace=True, max_length=32)]] | None = Field(
+        None, max_length=10,
+        description="预置 chips 标签（服务间镜像专用）：≤10 条、单条 ≤32 字，自动去重去空",
+    )
+
+    @field_validator("tags")
+    @classmethod
+    def _dedupe_tags(cls, v: list[str] | None) -> list[str] | None:
+        """去空、去重、保序；全空则归 None（与「未传」同形态，不占存储）。
+
+        注意空串的剔除必须在这里做而不能靠 StringConstraints 的 min_length：
+        约束校验先于 validator，`min_length=1` 会把「纯空格条目」直接 422——
+        而语义上 strip 后为空的条目应该是被丢弃，不是让整个请求失败。
+        """
+        if not v:
+            return None
+        out: list[str] = []
+        for t in v:
+            if t and t not in out:
+                out.append(t)
+        return out or None
 
 
 class ContentOut(BaseModel):
@@ -169,6 +198,14 @@ class TrashItemOut(BaseModel):
 
 
 class TrashClearOut(BaseModel):
-    """回收站清空出参（DELETE /api/v1/trash）"""
+    """回收站清空出参（DELETE /api/v1/trash）
+
+    2026-10-14（台账 §7.25①）：新增云端清尾计数与告警——原实现只删 DB 行（Qdrant 向量 /
+    对象存储原件残留），接口却只回 `cleared` ⇒ 用户以为"彻底清空"（**隐私承诺相关**）。
+    新字段均有默认值 ⇒ 老客户端读不到也不受影响（向后兼容）。
+    """
 
     cleared: int
+    vectors_purged: int = Field(0, description="请求删除的向量条数（Qdrant 不回逐点结果）")
+    objects_purged: int = Field(0, description="实际删除的对象存储原件/缩略图个数")
+    warnings: list[str] = Field(default_factory=list, description="清尾失败项；空=全部清干净")

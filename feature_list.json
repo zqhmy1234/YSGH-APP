@@ -5,9 +5,10 @@
    "name": "M0 工程地基（W1-2）",
    "description": "POC 五测（相册监听/前台录音/attribution tag/SQLCipher/聚合 spike）+ 28 表 schema + OpenAPI 契约与 mock + 四端工程骨架 + 企微认证/备案/软著申请提交",
    "dependencies": [],
-   "status": "in-progress",
+   "status": "blocked",
    "evidence": "POC 五测全部 PASS → D7 结论 GO（docs/D7_POC结论.md，2026-08-17 正式化）；OpenAPI 契约 14 路径 + mock；CI 接入（.github/workflows/ci.yml，S2-05）；合规三申请待提交",
-   "gate": "POC 五测 D7 结论 + 契约发布 + 合规申请提交（全局 Gate，失败→切原生 Kotlin/Flutter）"
+   "gate": "POC 五测 D7 结论 + 契约发布 + 合规申请提交（全局 Gate，失败→切原生 Kotlin/Flutter）",
+   "status_note": "POC 五测已 GO/契约已发布；剩余为**外部阻塞**（合规三申请提交），非本仓可推进"
   },
   {
    "id": "F1",
@@ -106,9 +107,10 @@
    "dependencies": [
     "M0"
    ],
-   "status": "not-started",
+   "status": "deprecated",
    "evidence": "（2026-08-26 拍板）桌面端 F9 已移出 MVP 归二期，不阻塞 MVP 内测；Electron+sidecar 架构已定稿（开发决策清单）。",
-   "gate": "OCR 置信度门控 + 断电续传正确（M4 联调）"
+   "gate": "OCR 置信度门控 + 断电续传正确（M4 联调）",
+   "status_note": "2026-08-26 拍板移出 MVP（桌面端 Electron/sidecar 归二期）⇒ 本期不做，已废弃"
   },
   {
    "id": "P2-ECHO",
@@ -148,5 +150,19 @@
    "evidence": "2026-08-19 打通：CLI v0.43.122 安装 + 登录（组织账号）+ 关联 yishu-backend（workspaceId 见本地 .infisical.json（不入库））+ dev/prod 各 10 条 Secrets 可列出/可取单条/可注入（infisical run 实测注入 10 条）；skill 已固化（skills/infisical-secrets/SKILL.md）并登记 harness。执行推进（14:4x）：①config.py 腾讯云密钥 AliasChoices 别名读取 + dashscope_workspace_id（test_config_alias 6 测试）②百炼探测可用（check_dashscope.py --force 真实调用成功，qwen-flash）③S5-03 COS 分片上传/断电续传（upload_tasks+upload_chunks 表迁移 20260819 + storage.py 抽象 fake/minio/cos + services/upload.py 状态机 + api/upload.py 5 路由；test_upload 10 测试）④S5-04 端云对账（services/reconcile.py + /sync/reconcile；test_reconcile 6 测试）⑤CI 图片标签+内容审核（tencent_ci.py；test_tencent_ci 6 测试）⑥微信找沙箱链路（find_memories + /wechat/find；test_wechat_find 4 测试）⑦数据安全审计（audit_security.py 四域 JSON 输出全绿；备份 RPO 恢复≤24h）。RAG 调优暂停（用户拍板：数据量不足）；路由过滤修复已保留（route_acc 0.5→1.0），reranker 模型 bge-reranker-base 已下载接线。全量 pytest 215 passed（2026-08-21 全量证据；145/210/203 为中间值，勿引用）。待办：①腾讯云密钥命名已别名兼容（Infisical 存量名不变）②STS_ROLE_ARN root 改子账号角色（用户搁置）③staging 环境填充④缺失项申请：WECHAT_APPID/SECRET、WECOM_CORP_ID/TOKEN/AES_KEY | 高德 + Sentry 落地（2026-08-25）：AMAP_WEB_API_KEY（dev 已存，32 位 Web 服务 Key）→ 逆地理服务完成（services/external/amap.py：geohash 精度 6 纯函数 + geo_cache 表迁移 4d00dfec7b46 + 缓存≤30 天合规 + mock 生产拒落库 + with_retry；pipeline._process_photo 接线写 contents.place；test_amap 9 项全过；真实调用验证：外滩坐标 → 上海市黄浦区南京东路街道）；SENTRY_DSN（dev 已存，命名无 _DEV/_PROD 后缀，us.sentry.io）→ 后端 main.py 生产环境 sentry_sdk 初始化已有（traces_sample_rate=0.1）+ 客户端轻量信封上报完成（utils/sentry.ts：Envelope 协议 uni.request 直传 /api/<project>/envelope/，零三方依赖标准基座可用；App.uvue onError + api.ts 5xx/网络错误上报；HBuilderX 编译通过；DSN 为公开标识按 Sentry 官方惯例内嵌）。注意：Infisical 存量名 SENTRY_DSN / AMAP_WEB_API_KEY 与文档命名不一致，config.py 已别名兼容（test_config_alias 覆盖） | S-ST-1 分片上传客户端 + complete 集成（2026-08-25）：后端 /upload/complete 接 meta 建 contents 记录 + 入队管线（services/upload.py register_photo_content，语义与 /contents/upload 对齐：taken_at ISO/gps 边界/source 白名单；否则分片链路与内容管线断裂）；/upload/chunk 加 POST 别名（uni-app x uni.uploadFile 不支持 PUT method）；test_upload 13 项全过（+2 集成测试）；客户端 uploader.ts v2 重写——分片协议（init→chunk→complete）+ 断点续传（upload_id 持久化 uni storage + GET /status 补缺片）+ GPS 入 meta（PhotoItem.lat/lng）+ FileSystemManager.getFileInfo 取尺寸（uni.getFileInfo uni-app x 不可用）；HBuilderX 编译通过；分片粒度=单块（UTS 无可靠 ArrayBuffer 切片，MVP 照片 ≤20MB，>8MB 真分片留 Windows 波次）；OpenAPI 重导出 41 路径；真机 E2E 验证待峰宝（nova 11） | 2026-08-29 DASHSCOPE 双 Key 真实档验证：infisical run --env=dev 注入路径实测 9 链路全过（scripts/check_dashscope_matrix.py，含 Qwen3-VL 图片塔真实调用 + 护栏 fail_closed 门控），百炼域\"拿 Key 零代码切换\"达成；密钥零回显零入库",
    "gate": "拿 Key 零代码切换：真实调用（RAG 图片塔/ASR 转写/COS 分片）跑通且无密钥落盘"
   }
- ]
+ ],
+ "policy": {
+  "scope": "本文件只覆盖 **MVP 用户故事能力清单**（F/M 系列）。维护类工作（结构重构 / 门禁 / 出包 / harness）由 STATE.md 与 docs/决策台账.md 承载。",
+  "one_in_progress": "约定：同时只允许 1 条 in-progress —— 由门户检查 harness_state 提示（WARN，不阻断）。",
+  "one_in_progress_note": "2026-10-14 如实说明：本文件现存 10 条 in-progress，**明知不满足**上述约定，且**不打算用改状态来「满足」它**——MVP 阶段 F1~F8 / P2-ECHO / OPS-SECRETS 是**并行推进**的（每条 evidence 尾部都写明余项：L2 待真实数据、情绪 S2 开心漏报 0.496 待校准、RAG 负样本误召回 0.5714 未达标、微信实网未验、密钥链接待申请项…），把它们改成 done/blocked 属**编造状态**（本项目最贵的一类）。「同时只做一条」的真实含义是**单个会话内的执行纪律**，由 STATE.md 的「正在做什么」承载；harness_state 的 WARN 应按此理解，**不得以改状态消除**。",
+  "evidence": "每条 evidence 只保留**最近一次**结论 + 指针；历史流水写 progress.md（追加式）。",
+  "status_enum": [
+   "not-started",
+   "in-progress",
+   "blocked",
+   "done",
+   "deprecated"
+  ],
+  "updated_at": "2026-10-14"
+ }
 }

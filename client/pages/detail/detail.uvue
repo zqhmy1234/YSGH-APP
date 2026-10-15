@@ -151,9 +151,13 @@
 	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
 import { deleteContent } from '@/utils/play_trash'
 import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/play_content'
-	// B12：离线判定（play.ts 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
-	import { getNetKind } from '@/utils/uploader_net'
+	// B12：离线判定（play_* 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
+	// 🚨 2026-10-11 静态审查修复：原用 `getNetKind()`（回调式、返回 void）做同步判断 ⇒
+	// `void == 'none'` 恒假，改口分支永不进入（用户仍看到"失败"而操作其实已排队）。
+	// 改用同步缓存读 `currentNetKind()`（见 uploader_net 注释）。
+	import { currentNetKind } from '@/utils/uploader_net'
 	import { formatIsoShortTime } from '@/utils/time'
+	import { backToShell } from '@/utils/shell_state'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -448,7 +452,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 										// B12：离线时**删除已入队**（play.ts 侧 enqueueDeleteOp），故不能报"失败"。
 										// 本地墓碑 = 立即按已删处理并返回上一页（避免用户以为没删掉又点一次）；
 										// 队列条数在「存储与同步」页的同步卡可见（pendingSyncCount 已上屏）。
-										if (getNetKind() == 'none') {
+										if (currentNetKind() == 'none') {
 											uni.showToast({ title: '已离线：删除将在联网后自动完成', icon: 'none', duration: 2500 })
 											setTimeout(() => {
 												goBack()
@@ -476,17 +480,20 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 
 	// 底部操作栏
 	function askAI(): void {
-		// B10 已回退（原生 tabBar 证伪），redirectTo 跳 AI 页恢复
 		// B1（BB1）上下文预填：当前记忆标题/正文/内容 id 以 storage 暂存（跳转传参最稳形态，
 		// 对齐 favorite_ids 等字符串 storage 先例；标题可能含特殊字符不宜 url query）。
-		// 参数契约（供 BB2 接收端 ai.uvue 消费，读后应 removeStorageSync 清除）：
+		// 参数契约（供 TabAi 消费，**读后即清**，见 TabAi.prefillDraftFrom）：
 		//   yishu_ai_context_title     string  记忆标题（正文首句截断 ≤14 字，空=''）
 		//   yishu_ai_context_body      string  记忆正文全文（空=''）
 		//   yishu_ai_context_content_id string 内容 id（可回查详情，空=''）
 		uni.setStorageSync('yishu_ai_context_title', memTitle.value)
 		uni.setStorageSync('yishu_ai_context_body', memBody.value)
 		uni.setStorageSync('yishu_ai_context_content_id', contentId.value)
-		uni.redirectTo({ url: '/pages/shell/shell?tab=ai' })
+		// 2026-10-14（台账 §4.20 批次 5 · RC-10）：原为 `uni.redirectTo('/pages/shell/shell?tab=ai')`
+		// —— 那会**销毁本页并重建整个壳**（白屏 1~2s + 四个 tab 全部重挂 + TabIndex 的 60s TTL 失效）。
+		// 壳本来就在栈里 ⇒ 改走**栈内回退**：先经桥请求切到 ai（壳 watch → 零销毁切 tab），再 navigateBack。
+		// 预填不丢：存储三键照写，由 TabAi 在"切到本 tab"广播（shell 的 aiShownSeq）时重读。
+		backToShell('ai', '')
 	}
 	function addCapsule(): void {
 		// 卡22 接线：拉起时间胶囊弹层（浮层不跳页）；FE1 起入口为真实面板（封存端点 POST /api/v1/capsules
@@ -539,7 +546,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 						// B12：离线时**备注已入队**（play.ts 侧 enqueueFieldOp），故不报"保存失败"；
 						// 本地态保持旧值不变（本函数一贯 response-first：成功才改本地显示），
 						// 联网后由同步链补发，队列条数在同步卡可见。
-						if (getNetKind() == 'none') {
+						if (currentNetKind() == 'none') {
 							uni.showToast({ title: '已离线：备注将在联网后同步', icon: 'none', duration: 2500 })
 							return
 						}

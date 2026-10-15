@@ -1,12 +1,8 @@
 #!/bin/bash
 set -eo pipefail
 
-# 初始化目录
-if [ "$COZE_PROJECT_ENV" = "DEV" ]; then
-  if [ ! -d "${COZE_WORKSPACE_PATH}/assets" ]; then
-    mkdir -p "${COZE_WORKSPACE_PATH}/assets"
-  fi
-fi
+# 2026-10-06：删除了 Coze devbox 的目录初始化块（读 COZE_PROJECT_ENV /
+# COZE_WORKSPACE_PATH 在本项目下永远为空，纯空跑）。
 
 # uv 安装依赖
 if [ -n "$PIP_TARGET" ]; then

@@ -20,7 +20,7 @@
 			<!-- 60:778 搜索图标 18pt（复用 i2_392：同几何 圆9.75+柄4.125 #B05A3A） -->
 			<image class="capsule-icon" src="/static/icons/i2_392.svg" />
 			<view class="capsule-input-area">
-				<input class="capsule-input" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="在收藏中搜索" placeholder-style="color:#B2A696;font-size:28.8rpx" />
+				<input :adjust-position="true" class="capsule-input" v-model="keyword" placeholder="在收藏中搜索" placeholder-style="color:#B2A696;font-size:28.8rpx" />
 			</view>
 		</view>
 
@@ -135,8 +135,10 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
+	import { resolveMediaUrl } from '@/utils/config'
 	// FE1（W2-2）：收藏列表/取消收藏统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
 	import { favoritesList, favoriteRemove } from '@/utils/play_favorite'
+	import { backToShell } from '@/utils/shell_state'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -295,7 +297,12 @@
 					const txt = o.getString('text') ?? ''
 					const place = o.getString('place') ?? ''
 					const takenAt = o.getString('taken_at') ?? ''
-					const thumb = o.getString('thumbnail_url') ?? ''
+					// 🚨 2026-10-11 静态审查修复：必须走 `resolveMediaUrl` 收口。
+				// 后端下发的图片 URL 有两种形态：绝对 URL（COS 预签名，直用）/ 相对路径
+				// （`/api/v1/media/...`，fs/minio 口径，须拼当前 getBaseUrl()）——本处原样塞进
+				// `<image :src>` ⇒ 相对路径形态下**图片必裂且静默**（无日志、无占位，只是空白）。
+				// 同仓正确的两处先例：timeline.uts / search_api.uts / event_ops.uts 均用该函数。
+				const thumb = resolveMediaUrl(o.getString('thumbnail_url'))
 					// meta：taken_at 前 10 位 →「M月D日 · 类型 · 已收藏」（fmtFavTime 面向 Event.startTime，此处直接截 ISO）
 					let day = ''
 					if (takenAt.length >= 10) {
@@ -480,8 +487,12 @@
 	}
 
 	function goTimeline(): void {
-		// F4b 主按钮「去时间轴逛逛」→ 时间轴首页（index 非 navigateTo 可达的普通栈页，reLaunch 复位）
-		uni.reLaunch({ url: '/pages/shell/shell' })
+		// F4b 主按钮「去时间轴逛逛」。
+		// 🚨 2026-10-14（台账 §4.20 · 用户现场反馈「每次跳转都要等数据」）：原实现 `reLaunch`
+		// **重建整个壳** ⇒ 四个 tab 全部重挂、`TabIndex`/`TabProfile` 的内存缓存与 60s TTL
+		// 一并作废 ⇒ 回首页必须重新拉一次时间轴（用户感知即"每次跳转都慢"）。
+		// 壳本来就在栈里 ⇒ 改走 `backToShell`（栈内回退 + 零销毁切到 index）。
+		backToShell('index', '')
 	}
 
 	function goBack(): void {

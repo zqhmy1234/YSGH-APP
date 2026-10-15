@@ -50,6 +50,16 @@ class Memory(Base):
         Index("ix_memories_importance", "importance"),
         Index("ix_memories_mood", "mood"),
         Index("ix_memories_user_id", "user_id"),
+        # ── 判重幂等：部分唯一索引（2026-10-06 迁移 f2c3d4e5a6b7）──
+        # ⚠️ 必须在此声明，否则 `alembic check` / `--autogenerate` 会把它判为
+        # "库里有、metadata 没有" 的多余索引并生成 `DROP INDEX`（实测已复现）。
+        # 谓词必须与迁移里的 `WHERE` 逐字一致，否则同样被判漂移。
+        Index(
+            "uq_memories_user_hash_bucket",
+            "user_id", "content_hash", "dedup_bucket",
+            unique=True,
+            postgresql_where=sa_text("content_hash IS NOT NULL AND dedup_bucket IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -74,6 +84,18 @@ class Memory(Base):
     )
     topics: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="L3主题领域列表")
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ── 判重幂等键（2026-10-06，迁移 f2c3d4e5a6b7）──
+    # 与 `dedup_bucket` 组成**部分唯一索引**（WHERE 两者均非 NULL），关掉
+    # 「SELECT 判重 → INSERT 写入」这两事务之间的 TOCTOU。
+    # 口径与 `agent/src/tools/memory_tools.DEDUP_PREFIX_LEN` 一致：归一化内容**前 50 字**
+    # 的 sha256 —— LLM 重试是把内容变长，全内容哈希抓不住。
+    # ⚠️ 与 `agent/src/storage/database/shared/model.py` 必须同时改（见 a4b5c6d7e8f9 文件头）。
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="归一化内容前50字的sha256（判重幂等键）"
+    )
+    dedup_bucket: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="判重时间桶=epoch//(窗口分钟×60)"
+    )
 
 
 class KnowledgeCollection(Base):
@@ -114,3 +136,10 @@ class KnowledgeCollection(Base):
         String(20), server_default=sa_text("'text'"), nullable=True, comment="内容形式：text/image/voice/link"
     )
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # L2 情绪（八选一，**收藏库可选**）—— 2026-10-06 迁移 e1b2c3d4f5a6 补列。
+    # 此前只有 memories 有 mood，而标签体系 SOP 与 `save_knowledge_collection`
+    # 都支持收藏带情绪 ⇒ 带情绪的收藏必然写入失败（列不存在）。
+    # ⚠️ 与 `agent/src/storage/database/shared/model.py` 必须同时改（见 a4b5c6d7e8f9 文件头）。
+    mood: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="L2 情绪状态（八选一，收藏库可选）"
+    )

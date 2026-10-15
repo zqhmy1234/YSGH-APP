@@ -152,43 +152,43 @@
     "$type": "gradient",
     "$description": "实测 10 种（百分之百取自实测：括号配平提取 + 只切顶层逗号 + 停靠点写显式 0%/100%；已回源逐条校验色多集一致）。",
     "veil-sand-sand": {
-      "$value": "linear-gradient(tobottom, #E3CCA8 0%, #C7AD87 100%)",
+      "$value": "linear-gradient(to bottom, #E3CCA8 0%, #C7AD87 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-green-green": {
-      "$value": "linear-gradient(tobottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-paper-sand": {
-      "$value": "linear-gradient(tobottom, rgba(248,247,244,0) 0%, #f8f7f4 100%)",
+      "$value": "linear-gradient(to bottom, rgba(248,247,244,0) 0%, #f8f7f4 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-paper-paper": {
-      "$value": "linear-gradient(tobottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-paper-paper-2": {
-      "$value": "linear-gradient(tobottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-ink-ink": {
-      "$value": "linear-gradient(tobottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-ink-ink-2": {
-      "$value": "linear-gradient(tobottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-ink-ink-2-3": {
-      "$value": "linear-gradient(tobottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%)",
+      "$value": "linear-gradient(to bottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-olive-amber-diag": {
-      "$value": "linear-gradient(tobottomright, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%)",
+      "$value": "linear-gradient(to bottom right, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     },
     "veil-slate-olive-diag": {
-      "$value": "linear-gradient(tobottomright, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%)",
+      "$value": "linear-gradient(to bottom right, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%)",
       "$description": "实测 ×1（停靠点写显式 0%/100%；括号配平提取）"
     }
   },
@@ -248,7 +248,7 @@
     "$type": "color",
     "$description": "透明阶梯（实测 rgb()/rgba() 190 处 / 72 种）。族键＝该族 hex primitive 的**规范 RGB**；已归并的 1/255 变体见各 $description。",
     "ink": {
-      "$description": "归并 rgba(59,46,38,α)→(58,46,37)；另 (42,33,26,α) 亦归入",
+      "$description": "归并 rgba(59,46,38,α)→(58,46,37)。2026-10-11 已按 9-23（重构前）基线逐文件机械核对：该族归并共 9 处使用点，色差 Δ1/255（8bit 量化级、视觉不可辨），且令牌值取自画布实测真源 ⇒ **保留归并**（改回字面量需动 9 处使用点且与真源相悖，可维护成本更高）。另注：原描述中「(42,33,26,α) 亦归入」**已撤销**——该值（附层遮罩 .attach-scrim）与 ink-40 差 Δ16，属肉眼可辨的不同颜色，已于同日恢复为原字面量 rgba(42,33,26,0.4)，见 styles/tab-ai.css",
       "a04": {
         "$value": "rgba(58,46,37,0.04)"
       },
