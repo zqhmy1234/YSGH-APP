@@ -151,15 +151,20 @@ jobs:
           restore-keys: |
             pip-${{ runner.os }}-
 
-      - name: HF model cache · BGE-M3（T4：按模型拆 key，避免任一消费文件变更牵连全量）
-        # 原单一 ~/.cache/huggingface + hashFiles(embedding,rerank,classifier)：任一文件变更
-        # 即整库 key 失效（restore-keys 兜底最近缓存仍免重下，但大缓存易被 7 天/10GB eviction
-        # 挤占）。拆为 BGE-M3 单独条目：仅 key 其消费方 embedding.py（rerank/setfit 均为仓库
-        # 本地模型，不走 HF），模型内容稳定跨 commit 复用；restore-keys 按 commit 演进兜底。
+      - name: HF model cache · BGE-M3（2026-10-15：key 改绑**模型版本**，不再随 embedding.py 内容变）
+        # 历史沿革：T4 拆 key 时的口径是 `hf-bge-m3-<os>-hashFiles(embedding.py)` ✗ ——
+        #   **改一行 embedding.py（哪怕只是加注释）就让 2.2GB 缓存失效**，冷启动重新下载
+        #   是 CI 超时/步骤失败的首要嫌疑（实测冷态比热态慢 2.9~3.8 倍；见台账 §4.20 ㉙）。
+        #   而注释自己写的是"模型内容稳定跨 commit 复用" ⇒ key 与其意图相矛盾 ✗。
+        # 现口径：key 只绑**模型自身版本** `v1` + runner.os ⇒ 模型不变即复用；
+        #   **换模型 / 换 revision 时把 v1 → v2**（显式、可审计，而不是被文件内容无声牵连）。
+        # 完整性：cache 只在步骤成功时保存；`warm_hf_models.py` 那步会显式下载并验证，
+        #   缓存若损坏会在那里**明确报错**（不会静默产出模糊的测试失败）。
+        # rerank / setfit 均为仓库内本地模型、不走 HF，故本条目只覆盖 BGE-M3。
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub/models--BAAI--bge-m3
-          key: hf-bge-m3-${{ runner.os }}-${{ hashFiles('backend/app/services/embedding.py') }}
+          key: hf-bge-m3-${{ runner.os }}-v1
           restore-keys: |
             hf-bge-m3-${{ runner.os }}-
 
