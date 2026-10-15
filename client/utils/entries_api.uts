@@ -1,0 +1,115 @@
+/**
+ * 「今天」的 entry（记录）—— 2026-10-15 · 台账 §4.20 ㉘「entry 流」第一刀。
+ *
+ * ## 为什么需要它（真机反馈的头号问题）
+ *
+ * 用户实测：「记录一条文字，时间轴没有出现任何东西」「冷启动时 App 时间轴没有任何内容」。
+ * 根因（代码 + 真库双证）：**时间轴只读 `events`，而文字内容不产 event**（端侧 L1 聚合
+ * `aggregateToEvents` 的入参就是**照片数组** `Array<UploadedPhoto>`；云侧默认只跑 L2/L3，
+ * 且其规则依赖标签/GPS/照片张数）⇒ 文字在时间轴上**永远不可见** ✗；同时 `emptyState`
+ * 由 `days/pending` 推导 ⇒ 明明有内容却显示空态「还没有回忆」✗。
+ *
+ * ## 口径（grill 三轮后用户已拍板，见台账 §4.20 ㉘）
+ *
+ * 1. **记录后立刻可见**是硬要求 ⇒ 实现口径＝**读 `contents`**（服务端事实，跨设备/重启都在 ✓），
+ *    而不是等事件聚合（那是"照片中心"的老路 ✗）；也不做客户端本地草稿（会出现"本地有、别处没有"✗）。
+ * 2. **本刀只收文字**：照片已由日卡可见（再放进本块就是**重复展示** ✗）；**语音留到下一批**
+ *    （它要接播放管道/波形，属独立工作面 ✗ 不在本刀里硬塞）。
+ * 3. 时间用 `created_at`（记录时刻）；文字目前**没有 `taken_at`**（后端不赋值 ✗）⇒ 不假装有。
+ *
+ * ## 与 `search_api.fetchRecentContents` 的关系
+ *
+ * 同一个端点（`GET /api/v1/contents`：`Page[ContentOut]`、游标分页、limit 1..100），
+ * 但**用途不同**：那个给搜索页做"最近内容"列表（含照片、不做日期切分）；
+ * 本模块只服务时间轴的「今天」块 ⇒ 独立命名空间，避免两处口径互相牵制 ✓。
+ * 该端点**没有日期过滤参数** ⇒ 由本模块按**本地日期**就地筛（拉 50 条足够覆盖单日记录量 ✓）。
+ */
+import { get, dataObj, PATH_CONTENTS } from './api'
+import { parseIsoMs } from './time'
+
+/** 时间轴「今天」块里的一条记录（第一刀：仅文字） */
+export class TodayEntry {
+	id: string
+	kind: string        // 'text'（下一批扩 'voice'）
+	text: string
+	timeLabel: string   // HH:mm（本地时区）
+	place: string
+
+	constructor(id: string, kind: string, text: string, timeLabel: string, place: string) {
+		this.id = id
+		this.kind = kind
+		this.text = text
+		this.timeLabel = timeLabel
+		this.place = place
+	}
+}
+
+/** 本地日期键（YYYY-M-D，**本地时区**）——用于"是否今天"判定；不用 UTC（会跨零点错切 ✗） */
+function localDayKey(ms: number): string {
+	const d = new Date(ms)
+	return d.getFullYear().toString() + '-' + (d.getMonth() + 1).toString() + '-' + d.getDate().toString()
+}
+
+/** HH:mm（本地时区，补零） */
+function hhmm(ms: number): string {
+	const d = new Date(ms)
+	let h = d.getHours().toString()
+	if (h.length < 2) {
+		h = '0' + h
+	}
+	let m = d.getMinutes().toString()
+	if (m.length < 2) {
+		m = '0' + m
+	}
+	return h + ':' + m
+}
+
+/**
+ * 拉今天的文字记录（倒序）。失败 resolve([])（api 层已全局 toast；本块属增强信息，
+ * **不因它失败而报错**——时间轴主内容仍由 `events` 负责 ✓）。
+ */
+export function fetchTodayEntries(): Promise<Array<TodayEntry>> {
+	return new Promise<Array<TodayEntry>>((resolve) => {
+		get(PATH_CONTENTS + '?limit=50').then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve([])
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve([])
+				return
+			}
+			const todayKey = localDayKey(Date.now())
+			const out: Array<TodayEntry> = []
+			const raw = d.getArray('items')
+			if (raw != null) {
+				const arr = raw as Array<UTSJSONObject>
+				for (let i = 0; i < arr.length; i++) {
+					const c = arr[i]
+					// 本刀只收文字（照片由日卡可见；语音待播放管道，见模块注释）
+					if ((c.getString('content_type') ?? '') != 'text') {
+						continue
+					}
+					const text = c.getString('text') ?? ''
+					if (text == '') {
+						continue // 空文字不占一行（诚实：没有内容就不假装有卡片）
+					}
+					// 时刻：文字没有 taken_at（后端不赋值）⇒ 用 created_at；解析失败则跳过（不猜时间）
+					const ms = parseIsoMs(c.getString('created_at') ?? '')
+					if (ms <= 0 || localDayKey(ms) != todayKey) {
+						continue
+					}
+					out.push(new TodayEntry(
+						c.getString('id') ?? '',
+						'text',
+						text,
+						hhmm(ms),
+						c.getString('place') ?? ''
+					))
+				}
+			}
+			resolve(out)
+		})
+	})
+}

@@ -86,7 +86,10 @@
 			     09-07 骨架屏实锤），且下方 feed 因 R9-D 是无条件渲染 ⇒ v-if 空态块与 feed 必然
 			     叠渲染（真机实拍：空态引导和日卡片挤在一页）。改走骨架屏同款「恒渲染 + class
 			     display:none」互斥，走属性更新路径，不依赖节点卸载。 -->
-			<view class="ti-empty-home" :class="emptyState ? '' : 'ui-hidden'">
+			<!-- 2026-10-15：空态与 feed 的显示条件补上「今天没有 entry」——
+			     只看 events 判空会把"今天记了文字（还没聚合成事件）"误判成空 ✗
+			     （真机反馈原话：明明有数据却显示空态）。有 entry 时：两者都让位给下方「今天」块 ✓。 -->
+			<view class="ti-empty-home" :class="(emptyState && todayEntries.length === 0) ? '' : 'ui-hidden'">
 				<view class="ti-empty-illus">
 					<image class="ti-empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
 					<view class="ti-empty-lake"><image class="ti-empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
@@ -106,9 +109,36 @@
 				</view>
 			</view>
 
+			<!-- 2026-10-15（台账 §4.20 ㉘ · 「今天」块 / entry 流第一刀）：
+			     ① **照片不进本块**（已由日卡可见 ⇒ 放进来就是重复展示 ✗）；
+			     ② **今天没有记录也渲染本块**（一行静默引导替代"整页空态"，治真机反馈
+			        「冷启动时 App 时间轴没有任何内容」✗）；
+			     ③ **零新增视觉元素**：日头复用 `.day-block/.day-head/.day-title/.day-line`；
+			        文字卡复用**为文字卡预留的** `.quote-card`（左侧琥珀引用竖线 + 引言体，
+			        与事件卡里的 quote 同款）；元信息复用 `.quote-source`/`.muted` ✓；
+			     ④ 本块放在 `.feed` **之外**：`.feed` 在 emptyState 时整体 ui-hidden，
+			        只记文字（无照片事件）的用户否则会连它一起看不到 ✗。 -->
+			<view class="day-block">
+				<view class="day-head">
+					<text class="day-title serif">今天</text>
+					<view class="day-line"></view>
+				</view>
+				<text v-if="todayEntries.length === 0" class="pending-sub muted">今天还没有记录 · 点下方的 + 记一笔</text>
+				<view v-for="e in todayEntries" :key="'te-' + e.id" class="card pressable" @tap="openEntry(e)">
+					<view class="quote-card">
+						<view class="quote-line"></view>
+						<view class="quote-content">
+							<text class="quote-text serif">{{ e.text }}</text>
+							<text class="quote-source">{{ e.timeLabel }}{{ e.place != '' ? ' · ' + e.place : '' }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
 			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对恒渲染；空态互斥经
-			     ui-hidden class 走属性更新，见上方空态块注释） -->
-			<view class="feed" :class="emptyState ? 'ui-hidden' : ''">
+			     ui-hidden class 走属性更新，见上方空态块注释）。2026-10-15：显示条件补
+			     `todayEntries.length === 0`（理由见上方「今天」块注释 ④）。 -->
+			<view class="feed" :class="(emptyState && todayEntries.length === 0) ? 'ui-hidden' : ''">
 				<!-- L2 待确认区 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
@@ -273,7 +303,10 @@
 	import { showErrorToast, ApiError, fetchDailySummary, DailySummary } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
-	import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
+		// 2026-10-15（台账 §4.20 ㉘ · 「今天」块）：今天的**文字记录** —— 读 contents 而非 events
+	//（文字不产 event，详见模块注释）
+	import { fetchTodayEntries, TodayEntry } from '@/utils/entries_api'
+import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
 	import {
 		flushOpQueue,
 		pendingOpCount,
@@ -720,6 +753,10 @@
 	function applyFetchedEvents(events: Array<TimelineEvent>): void {
 		currentEvents = events
 		lastFetchAt = Date.now()
+		// 2026-10-15（台账 §4.20 ㉘）：「今天」块与主时间轴**同一刷新节拍** —— 下拉刷新、
+		// 回壳补刷、`reload()` 全都汇到本函数（成功路径）⇒ 一个钩子覆盖所有刷新来源，
+		// 不额外引监听、不重复造节拍 ✓。取数失败 resolve([])，不影响主内容 ✓。
+		loadTodayEntries()
 		renderFromEvents(events)   // emptyState 已在渲染出口收敛（#2）
 		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
 		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才认空态。
@@ -771,6 +808,26 @@
 
 	// 整卡进详情：detail 页要的是 **contentId**，而 TimelineEvent.id 是 event id，不能直接用。
 	// 取数优先级：封面 content_id → 照片条第一张 → 都没有则提示（避免跳进空白详情页）
+	// ── 「今天」块（2026-10-15 · 台账 §4.20 ㉘ · entry 流第一刀）──────────────────────────
+	// 为什么：真机反馈「记录一条文字，时间轴没有任何东西」——根因是**文字不产 event**
+	//（端侧聚合只收照片 / 云侧 L2L3 依赖标签与 GPS），而本页只读 events ⇒ 文字**永远不可见** ✗。
+	// 现按 grill 后拍板的口径：**直接读 contents**（服务端事实、跨设备与重启都在 ✓），
+	// 记录后立刻可见；今天没有记录时**也渲染本块**（一行静默引导替代"整页空态"，治冷启动空白 ✗）。
+	// ⚠️ 本块**不能放在 `.feed` 里**：`.feed` 在 emptyState 时被整体 ui-hidden ⇒ 只记文字
+	//（无照片事件）的用户会连它一起看不到 ✗ —— 故同时把空态/feed 的显示条件补上
+	// `todayEntries.length === 0`（见模板注释）。
+	let todayEntries = ref<Array<TodayEntry>>([])
+
+	function loadTodayEntries(): void {
+		fetchTodayEntries().then((rows: Array<TodayEntry>) => {
+			todayEntries.value = rows
+		})
+	}
+
+	function openEntry(e: TodayEntry): void {
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + e.id })
+	}
+
 	function openDetail(ev: TimelineEvent): void {
 		let cid = ev.coverContentId
 		if (cid == '' && ev.photoIds.length > 0) {
