@@ -176,16 +176,27 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
         lint = [f for f in staged if f.endswith(".py") and f not in dirty and not _lint_skip(f)]
         return ([f for f in staged if f.endswith(".py")], lint, staged)
 
-    syntax: list[str] = []
-    for p in ROOT.rglob("*.py"):
-        if not _skip_path(p.parts):
-            syntax.append(str(p.relative_to(ROOT)))
-    code, ls = run(["git", "ls-files", "--", "*.py"])
-    tracked = [p for p in (ls.splitlines() if code == 0 and ls.strip() else []) if p.strip()]
+    # 2026-10-15（台账 §4.20 ㉙ · 用户转述「工作群说 CI 红了，是同事的代码有问题？」）：
+    # **语法/lint 轴也改走「git 视角」**。原实现 syntax 用 `ROOT.rglob("*.py") + _skip_path()`，
+    # 而 `_skip_path` 只排除 `.git/.cowork-temp/client/.wt`，**不认 `.gitignore`** ⇒ 产出目录里
+    # 被忽略的坏 .py（实测 `out/harvest/merge_and_table.py`，而它**从未入库**）会把门禁卡成
+    # **假红**：开发者没碰它，却被告知「syntax 不过」（本次复现：唯一阻断项就是它 ✗）。
+    # 同一坑本仓已踩三次 ⇒ 现统一口径：**候选文件一律来自 git**（tracked ∪ untracked-非忽略，
+    # 见 `_repo_text_candidates()`，它天然尊重 .gitignore），目录排除只留给 git 覆盖不到的场景
+    # （`client/` 非 Python 工具链；`.cowork-temp`/`.wt` 为双保险）。
+    # ⚠️ 关键：`untracked-非忽略` 这一半保住了「新增但未提交的 .py 也要过语法」的既有语义 ✓。
+    py_candidates: list[str] = []
+    for rel in _repo_text_candidates():
+        if not rel.endswith(".py"):
+            continue
+        if _skip_path(Path(rel).parts):
+            continue
+        py_candidates.append(rel)
+    syntax = list(py_candidates)
     dirty = _dirty_files()
     lint = [
         p
-        for p in tracked
+        for p in py_candidates
         if p not in dirty and p.replace("/", "\\") not in dirty and not _lint_skip(p)
     ]
     secrets: list[str] = []
@@ -815,6 +826,72 @@ def _classify_failure(blocking: dict[str, tuple[bool, str]]) -> tuple[list[str],
     return classify_failure(blocking)
 
 
+def _ci_pinned_version(tool: str) -> str:
+    """从 CI 工作流解析某工具的钉版（`tool==X.Y.Z`）；解析不到返回空串"""
+    try:
+        text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(rf"{re.escape(tool)}==([\d.]+)", text)
+    return m.group(1) if m else ""
+
+
+def check_tool_versions(*, full: bool = False) -> tuple[bool, str]:
+    """**本地工具版本必须与 CI 钉版一致**（2026-10-15 · 台账 §4.20 ㉙）。
+
+    依据：`ci.yml` 两处 `ruff==X`（`:65`/`:169`，注释明确要求两处一致）；实测本机
+    `ruff 0.15.22` vs CI `0.16.8` ⇒ **本地 lint 结论与 CI 不可比**，是"本地绿 / CI 红"
+    这类争议的**结构性来源**（ruff 0.17 曾变更 target-version 默认推断，故本项目钉版）。
+    口径（对齐 B10 系列既定铁律）：**快模式只 WARN（不阻断日常提交）**；
+    `--full`（集成/CI 前）**阻断**并给出安装命令 —— 环境不齐不得静默转绿，但也不该拦住提交。
+    """
+    code, out = run(["ruff", "--version"])
+    if code == 127:
+        return True, "[WARN] 未安装 ruff ⇒ 无法核对版本（lint 轴会另行报环境错误）"
+    ci = _ci_pinned_version("ruff")
+    if ci == "":
+        return True, "[WARN] 未能从 .github/workflows/ci.yml 解析 ruff 钉版（跳过核对）"
+    m = re.search(r"ruff\s+([\d.]+)", out)
+    local = m.group(1) if m else ""
+    if local == "":
+        return True, "[WARN] 未能解析本机 ruff 版本（跳过核对）"
+    if local == ci:
+        return True, f"ruff {local} 与 CI 钉版一致 ✓"
+    msg = (
+        f"{ENV_ERR_PREFIX} 本机 ruff {local} ≠ CI 钉版 {ci} ⇒ **本地 lint 结论不能代表 CI**\n"
+        f"  对齐：pip install ruff=={ci}"
+    )
+    if full:
+        return False, msg
+    return True, "[WARN] " + msg.replace("\n", " ")
+
+
+def selftest() -> int:
+    """**负向探针**（2026-10-15 · 台账 §4.20 ㉙）—— 证明"语法轴走 git 视角"这条修复真生效。
+
+    做法：在**被 `.gitignore` 忽略的产出目录 `out/`** 里放一个**语法就是坏的** .py，
+    断言它**不进入语法/lint 候选集**、且 `check_syntax` 仍通过。
+    修复前它会进候选集 ⇒ 门禁假红（这正是 2026-10-15 在工作区复现出的那个红 ✓）。
+    """
+    probe = ROOT / "out" / "__selftest_broken__.py"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text("def f(:\n", encoding="utf-8")
+    try:
+        syntax_files, lint_files, _ = _scope_files(True)
+        rel = probe.relative_to(ROOT).as_posix()
+        if rel in syntax_files or rel in lint_files:
+            print(f"[FAIL] 探针失败：被忽略的 {rel} 仍进入候选集（假红未修 ✗）")
+            return 1
+        ok, msg = check_syntax(syntax_files)
+        if not ok:
+            print(f"[FAIL] 探针失败：候选集里出现坏文件（那是真问题，不该有）\n{msg}")
+            return 1
+        print(f"[OK] 探针通过：被忽略的坏 .py 不进候选集；{len(syntax_files)} 个候选文件编译 OK")
+        return 0
+    finally:
+        probe.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pre-Commit 代码质量审核")
     parser.add_argument("--path", default=str(ROOT), help="审核目录（兼容占位）")
@@ -830,7 +907,15 @@ def main() -> int:
         action="store_true",
         help="--full 时跳过客户端编译门（uni-app x 编译 20~56s；缺 HBuilderX 时会自动降级放行，无需本开关）",
     )
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="负向探针自校验（台账 §4.20 ㉙：被忽略的坏 .py 不得影响语法/lint 轴）",
+    )
     args = parser.parse_args()
+
+    if args.selftest:
+        return selftest()
 
     allow_missing = bool(args.allow_missing_tools)
 
@@ -842,6 +927,9 @@ def main() -> int:
         "lint": check_lint(lint_files, allow_missing=allow_missing),
         "secrets": check_secrets(secret_files),
         "todos": check_todos(secret_files),
+        # 2026-10-15 新增（台账 §4.20 ㉙）：工具版本与 CI 钉版一致性 ——
+        # 快模式只 WARN（不阻断提交）；--full 阻断（环境不齐不得静默转绿）
+        "tool_versions": check_tool_versions(full=mode == "full"),
         "structure": check_structure(),
         "audit_axes": check_audit_axes(),
         "env_template": check_env_template(),

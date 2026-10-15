@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-15 21:47 · commit 3cb7d6b · ts=1792072042
+- **错误**：本地 review_agent --full 判红，唯一阻断项是 syntax，红在被 .gitignore 忽略的产出目录里的生成脚本（out/harvest/merge_and_table.py）；同时本机 ruff 0.15.22 与 CI 钉版 0.16.8 不一致，导致本地 lint 结论不能代表 CI
+- **根因**：两件同族：① 门禁的 syntax/lint 轴用 ROOT.rglob + _skip_path，不认 .gitignore（secrets 轴 2026-09-23 已改走 git 视角，语法/lint 轴漏改）⇒ 被忽略的产物能造成假红；② 本地与 CI 的工具版本没有一致性约束，谁也没发现两边差一个大版本
+- **修复**：① syntax/lint 候选改走 _repo_text_candidates()（tracked ∪ untracked-非忽略，天然尊重 .gitignore），并加 --selftest 负向探针（在 out/ 放语法坏的 .py，断言不进候选集）；② 新增 tool_versions 轴：从 ci.yml 解析 ruff 钉版与本机比对，快模式 WARN、--full 阻断且退出码 2（环境错误不冤枉代码）；③ 本机对齐 ruff==0.16.8（对齐后全仓 lint All checks passed）
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁判红先问三句：它点名的文件能不能进仓库（git ls-files）？本地工具版本与 CI 是否同一个？这次红是冷启动还是稳态？——本次三问各命中一次（假红/版本漂移/冷热混淆）。凡按目录遍历找文件的检查一律走 git 视角并配负向探针；本地与 CI 的工具版本必须可核对（现已自动化为 tool_versions 轴）
+
+---
+
 ### 2026-10-15 21:37 · commit 2016fbf · ts=1792071452
 - **错误**：本地跑 review_agent --full --skip-tests 时门禁判红 syntax（唯一阻断项），红在一个产出目录里、且被 .gitignore 的生成脚本 out/harvest/merge_and_table.py；而同一套代码提交时是绿的 ⇒ 红与代码无关。同时该次静态全量跑了 268s（CI 注释宣称 fast-gate 约 30s）
 - **根因**：① syntax/lint 轴在全量模式下用 ROOT.rglob('*.py') + _skip_path()，而 _skip_path 只排除 .git/.cowork-temp/client/.wt ⇒ 不认 .gitignore ⇒ 任何 ignored 目录里的坏 .py 都会造成假红。同一坑此前已修过两次（secrets 轴 2026-09-23 改走 git 视角 _repo_text_candidates()；.wt/ 排除也是为性能后加的）但语法/lint 轴的 rglob 一直没跟上；② 性能：audit_harness all 122s + gen_openapi --check 36s 是主头；③ 版本：本机 ruff 0.15.22 vs CI 钉 0.16.8 ⇒ 本地 lint 结论与 CI 不可比
