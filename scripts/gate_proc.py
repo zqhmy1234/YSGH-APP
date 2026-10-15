@@ -53,5 +53,13 @@ def run(
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
     except FileNotFoundError:
         return 127, f"command not found: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
+    except subprocess.TimeoutExpired as exc:
+        # Keep the last progress lines so a timed-out pytest run identifies the
+        # test it reached instead of leaving only an unhelpful "timeout".
+        def _decoded(value: bytes | str | None) -> str:
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return value or ""
+
+        partial = _decoded(exc.stdout) + _decoded(exc.stderr)
+        return 124, f"timeout after {timeout}s\n" + partial[-3500:]

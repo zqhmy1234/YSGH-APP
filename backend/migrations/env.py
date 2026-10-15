@@ -24,7 +24,7 @@ if str(_BACKEND) not in sys.path:
 
 import app.db.models  # noqa: E402,F401 —— 注册全部模型到 Base.metadata
 from app.core.config import settings  # noqa: E402
-from app.db.session import Base  # noqa: E402
+from app.db.session import DB_CONNECT_ARGS, Base  # noqa: E402
 
 config = context.config
 
@@ -93,6 +93,7 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=DB_CONNECT_ARGS,
     )
     with connectable.connect() as connection:
         _bootstrap_empty_database(connection)

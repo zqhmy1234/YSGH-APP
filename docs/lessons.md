@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-15 18:07 · commit 573b33b · ts=1792058840
+- **错误**：全量审核扫描 14132 个 Python 文件并漏报缺失测试依赖
+- **根因**：语法检查递归扫入忽略的 Hugging Face 缓存；Ruff 命令依赖 PATH；虚拟环境未装 requirements 已声明的 openpyxl、COS SDK 和 webrtcvad。
+- **修复**：语法扫描改为 Git 可见文件，Ruff 绑定当前 Python 模块；补齐虚拟环境依赖，超时报告保留部分 pytest 输出。
+- **相关文件**：scripts/review_agent.py; scripts/gate_proc.py; backend/requirements.txt
+- **教训**：门禁扫描范围与可入库文件一致，工具依赖和模型资产应在全量运行前预检。
+
+---
+
+### 2026-10-15 18:07 · commit 573b33b · ts=1792058839
+- **错误**：全量 pytest 长时等待且 RAG 搜索 P95 超 3 秒
+- **根因**：Windows 上 localhost 优先尝试不可用的 IPv6 回环；PostgreSQL 与 Qdrant 每次连接额外等待数秒。
+- **修复**：仅 Windows 本机 localhost 连接使用 127.0.0.1，并给 PostgreSQL 连接设置 5 秒超时；定向复验数据库与 RAG 延迟。
+- **相关文件**：backend/app/db/session.py; backend/migrations/env.py; backend/app/services/vector_store.py
+- **教训**：本机端口可连不代表协议请求低延迟；性能门禁应测连接实耗时。
+
+---
+
 ### 2026-10-15 17:51 · commit d1d4de4 · ts=1792057860
 - **错误**：修完搜索页卡死（+26 行）后，门禁 structure 判红：client/components/TabSearch/TabSearch.uvue 813 行 > 阈值 800
 - **根因**：我改前没量【该文件距阈值还剩多少行】。本仓客户端阈值 800，而 TabSearch 原本 787 行（只剩 13 行余量）⇒ 补状态转移逻辑加根因注释必然顶过。机制本身允许【显式申请基线】，但申请应当是评估后的决定，而不是撞墙后的补救（本轮因此白跑一次 38s 编译门）

@@ -684,3 +684,14 @@ ShareSheet（须真机验"保存到相册"）。
 - **门禁三轴各拦一次，均已处置**：`env_template`（新增 config 字段 ⇒ 同批补部署模板）、`structure`（`TabSearch` 813>800 ⇒ 显式申请基线，附 reason/target）、`lessons`（前次失败 ⇒ 登记教训）。
 - **自我纠错两处**：引用了不存在的样式类（等于偷偷新增视觉元素）⇒ 改回既有 `ui-hidden`；在 except 链尾插分支时**吃掉两个端点的 return** ⇒ ruff F841 当场抓到。
 - 接线审计工具 `scripts/audit_client_wiring.py` 沉淀（含 `--selftest`）；判据校准：初版 32 条"疑似无接线"里 **31 条假阳性**（"一行委托"写法 + 排除词缺词边界）⇒ 收敛到 0。
+
+- 后续授权后已完成推送：快速审核复跑通过；B-1 阶段性提交经变基接到 `origin/develop` 的 16 个新提交之后，`scripts/init_db.py` 文件开头冲突已解决且语法、ruff、diff 检查通过；`573b33b` 已由 `git push origin develop` 推送到 GitHub。全量门禁仍未通过，B-1 仍为 `in-progress`；工作区原有 `.gitignore` 的 `/infra/` 忽略规则已恢复且未进入提交。
+- 上条推送成功记录拟单独提交时，最新 `develop` 的快速门禁报 `audit_axes` 令牌 hex 字面量基线 67→70：`TabSearch.uvue`、`TagEditPanel.uvue`、`favorites.uvue` 各增 1，均非本次 B-1 修改。故这条收尾记录暂留本地，未再提交或推送；已推送的 B-1 主提交 `573b33b` 不受影响。
+
+## 2026-10-15 · B-1 全量验证修复
+
+- 已执行 `git fetch origin develop`：本地与远端均为 `573b33b`（领先/落后 `0/0`），无需合并。
+- 修复全量门禁的实际阻断：API 冒烟自动生成测试照片；Windows 的 PostgreSQL/Qdrant `localhost` 连接优先 IPv4；全量语法扫描只检查 Git 可见文件，避开忽略的模型缓存；Ruff 使用当前 Python 环境；修正数据库集成测试中写死的旧库名；恢复三个客户端输入控件的令牌审计基线。审核运行时保留超时输出和测试进度，便于定位。
+- 本机补齐 BGE-M3 缓存、项目依赖 `openpyxl`/`cos-python-sdk-v5`/`webrtcvad-wheels`，Ruff 对齐项目钉住的 0.16.8；当前测试库安装 `vector` 扩展。上述依赖/缓存/扩展为本机环境操作，未提交仓库。SetFit 与外部 API 凭证仍未配置，测试按现有降级路径通过。
+- `review_agent.py --full` 于 18:12 +08:00 退出码 0：语法 396 文件、lint、密钥、结构、跨轴审计、环境模板、OpenAPI 快照、pytest（主套件与 RAG 分组）、API 冒烟 6/6、research 全通过；覆盖率 85.81%（门槛 60%）；`.cowork-temp/test-report.json` 的 `failed_tests=[]`、`blocking_sections=[]`。`init.sh` 经 Git Bash 运行通过；本机 WSL Bash 仍不可用。
+- B-1 保持 `in-progress`：任务书建议的自包含初始迁移、无版本号非空旧库迁移与指定旧文档回写尚未收口。此次全量失败根因是测试数据、依赖及本机连接配置，不是 B-1 schema 真值缺失。

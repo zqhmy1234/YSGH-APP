@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import uuid
 from functools import lru_cache
+from urllib.parse import urlsplit, urlunsplit
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -69,6 +71,18 @@ def is_test_collection(name: str) -> bool:
     return bool(name) and name.startswith(TEST_COLLECTION_PREFIX)
 
 
+def _client_url(url: str) -> str:
+    """Avoid the slow IPv6 localhost fallback on Windows loopback clients."""
+    if sys.platform != "win32":
+        return url
+    parts = urlsplit(url)
+    if parts.hostname != "localhost":
+        return url
+    host_start = parts.netloc.rfind("@") + 1
+    netloc = parts.netloc[:host_start] + "127.0.0.1" + parts.netloc[host_start + len("localhost"):]
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 def cleanup_test_collections(client: QdrantClient | None = None) -> list[str]:
     """清理全部 test_ 前缀的测试 collection（尽力而为，失败不阻断）
 
@@ -76,7 +90,7 @@ def cleanup_test_collections(client: QdrantClient | None = None) -> list[str]:
     不抛异常——避免清理失败阻断提交（TD-P1C 验收）。
     """
     try:
-        c = client or QdrantClient(url=settings.qdrant_url)
+        c = client or QdrantClient(url=_client_url(settings.qdrant_url))
         names = [col.name for col in c.get_collections().collections]
         removed: list[str] = []
         for name in names:
@@ -108,7 +122,7 @@ class VectorStore:
 
     def __init__(self, url: str | None = None):
         # 修复：Qdrant 地址从配置读取（原硬编码 localhost:6333）
-        self.client = QdrantClient(url=url or settings.qdrant_url)
+        self.client = QdrantClient(url=_client_url(url or settings.qdrant_url))
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
@@ -491,4 +505,4 @@ def get_store() -> VectorStore:
 def get_qdrant_client() -> QdrantClient:
     """Qdrant 客户端统一单例（P2-04 收敛：correction/vector_store 共用同一连接，
     消除 correction._correction_store 手写 global 的第二套单例）"""
-    return QdrantClient(url=settings.qdrant_url)
+    return QdrantClient(url=_client_url(settings.qdrant_url))

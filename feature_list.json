@@ -138,7 +138,7 @@
    "description": "ORM 作为新库权威；空库 Alembic 自举；已有库安全迁移；13 张无 ORM 表逐表处置",
    "dependencies": ["M0"],
    "status": "in-progress",
-   "evidence": "2026-10-12：用户批准 2 张在用表补 ORM、11 张退休且已有数据保留。已补 34 处 server_default、新增增量迁移、空库 Alembic bootstrap、漂移门禁与建库脚本单链化。空库 upgrade/check 通过；漂移检查 ORM 32 表/Alembic 32 表、BLOCKING 0/INFO 0；隔离既有 d9a0b1c2d3e4 版本库升级后 users 与 audit_log 哨兵行保留，2 张在用表存在；定向回归 1 passed，测试收集 991 项，快速审核通过。全量审核未过：主 pytest 段 600 秒超时；按用户要求单次加倍至 1200 秒重试后仍超时，API 冒烟 3 项失败（搜索空、测试照片缺失、时间轴空集合），research 通过。BGE-M3 缓存缺失、SetFit 缺失；ruff 0.17 在 61 个未改文件报 151 条 UP017。用户要求阶段性推送到 develop，状态仍为进行中，待旧库覆盖与全量门禁收口。",
+   "evidence": "2026-10-12：用户批准 2 张在用表补 ORM、11 张退休且已有数据保留。已补 34 处 server_default、新增增量迁移、空库 Alembic bootstrap、漂移门禁与建库脚本单链化。空库 upgrade/check 通过；漂移检查 ORM 32 表/Alembic 32 表、BLOCKING 0/INFO 0；隔离既有 d9a0b1c2d3e4 版本库升级后 users 与 audit_log 哨兵行保留，2 张在用表存在。阶段性代码已推送 develop @ 573b33b。2026-10-15：git fetch 核对本地与 origin/develop 均为 573b33b；修复全量审核所需的测试照片自动生成、Windows localhost 数据库与 Qdrant 连接延迟、审核扫描忽略缓存、测试依赖及本机 vector 扩展等问题。review_agent.py --full 退出码 0，syntax/lint/secrets/audit_axes/pytest/API 冒烟/research 全通过，覆盖率 85.81%，failed_tests 与 blocking_sections 均为空。B-1 仍为进行中：任务书建议的自包含初始迁移、无版本号非空旧库迁移与指定旧文档回写尚未收口；历史全量失败为当时环境及测试链路问题，并非数据库真值缺失。",
    "gate": "空库 upgrade/check、漂移 0 阻断、旧库数据保留、项目 pytest 与全量审核门禁"
   },
   {

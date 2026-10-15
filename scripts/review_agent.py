@@ -176,10 +176,12 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
         lint = [f for f in staged if f.endswith(".py") and f not in dirty and not _lint_skip(f)]
         return ([f for f in staged if f.endswith(".py")], lint, staged)
 
-    syntax: list[str] = []
-    for p in ROOT.rglob("*.py"):
-        if not _skip_path(p.parts):
-            syntax.append(str(p.relative_to(ROOT)))
+    # Match the git-visible scan scope. Recursive traversal of ignored model
+    # caches can compile thousands of third-party files and stall the gate.
+    syntax = [
+        p for p in _repo_text_candidates()
+        if p.endswith(".py") and not _skip_path(Path(p).parts)
+    ]
     code, ls = run(["git", "ls-files", "--", "*.py"])
     tracked = [p for p in (ls.splitlines() if code == 0 and ls.strip() else []) if p.strip()]
     dirty = _dirty_files()
@@ -268,8 +270,8 @@ def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -
     """
     if not files:
         return True, "[skip] 无待检查 .py"
-    code, out = run(["ruff", "check", *files])
-    if code == 127:
+    code, out = run([sys.executable, "-m", "ruff", "check", *files])
+    if code == 127 or "No module named ruff" in out:
         # D14-19：缺 ruff 不得静默放行（否则报告全绿而 lint 从未执行）
         if allow_missing:
             return True, "[放宽] ruff 未安装 → lint 未执行（--allow-missing-tools 显式放行）"
