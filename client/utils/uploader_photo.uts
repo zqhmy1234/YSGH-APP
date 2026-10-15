@@ -8,6 +8,7 @@ import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 import { retryAsync } from './retry'
 import { runUploadPipeline, UploadSpec, UploadOutcome, UploadPipeError } from './upload_pipeline'
 import { is4xx, isoString } from './uploader_types'
+import { setLastUploadError } from './uploader_queue'
 import { clearPending, findPending, savePending } from './uploader_pending'
 
 // ---------- 单张上传（O16 收口：init→status→chunk→complete 状态机统一走 upload_pipeline.ts，
@@ -75,6 +76,9 @@ function uploadOnceResult(item: PhotoItem, uploadMode: string): Promise<UploadAt
 		}, (e: Error) => {
 			const msg = e != null && e.message != null ? e.message : 'unknown'
 			console.error('[yishu] upload ERR path=' + item.path + ' msg=' + msg)
+			// 2026-10-16（真机反馈「6 张失败、点了重试没反应」）：**失败原因要给用户看** ——
+			// 原先只 console ✗ ⇒ 设备上不可见，用户与我们双双无法判断是"服务端拒绝"还是"连不上"。
+			setLastUploadError(is4xx(e) ? ('这条被服务端拒绝：' + msg) : ('网络或服务异常：' + msg))
 			if (is4xx(e)) {
 				console.error('[yishu] 4xx 停该条（' + item.path + '）')
 				resolve(new UploadAttempt(false, ''))
@@ -99,6 +103,8 @@ export function uploadWithRetry(item: PhotoItem, uploadMode: string): Promise<st
 			return r.cid
 		}
 		console.error('[yishu] 退避耗尽（' + item.path + '，upload_id 已留存待续传）')
+		// 2026-10-16：退避耗尽的原因单独成一类（与「4xx 被拒」「连不上服务端」区分）
+		setLastUploadError('多次重试仍未成功（网络不稳定或服务端不可用），可稍后再试')
 		return null
 	})
 }

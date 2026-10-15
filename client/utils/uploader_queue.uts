@@ -127,3 +127,29 @@ export function removeFailed(path: string): void {
 	removeEntry(FAILED_KEY, path)
 }
 
+// ── 最近一次上传失败的原因（2026-10-16 · 真机反馈「6 张照片上传失败，点击重试也没任何反应」）──
+//
+// 为什么必须有它：失败链**知道**原因 —— `uploader_photo.uts` 用 `is4xx(e)` 区分
+// 「服务端拒绝该条（4xx，重试无意义）」与「网络/服务异常（可重试）」并拿到 `e.message`；
+// `uploader_batch.uploadBatch` 在上传前 `ensureLogin()` 失败时走 `failWholeBatch`（整批未上传）。
+// 但**全都只写 console.error** ✗ ⇒ 设备上完全不可见：用户不知道为何失败、点重试后也判断不出
+// 有没有变化，我们也没法从真机取证（本仓铁律：失败/降级要可观测，静默 = 查不出原因 ✗✗）。
+// 存一行短文本（**给用户看**的口径，不是堆栈），供失败明细弹窗与重试结果提示消费。
+const LAST_ERROR_KEY: string = 'yishu_upload_last_error'
+
+/** 记录最近一次上传失败原因（短、可读；由失败点调用，覆盖式写入） */
+export function setLastUploadError(reason: string): void {
+	uni.setStorageSync(LAST_ERROR_KEY, reason)
+}
+
+/** 最近一次上传失败原因（无则空串） */
+export function lastUploadError(): string {
+	const raw = uni.getStorageSync(LAST_ERROR_KEY) as string
+	return raw != null ? raw : ''
+}
+
+/** 清除失败原因（全部重试成功、或用户手动清空失败队列时调用） */
+export function clearLastUploadError(): void {
+	uni.setStorageSync(LAST_ERROR_KEY, '')
+}
+

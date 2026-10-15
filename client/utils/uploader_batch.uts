@@ -10,7 +10,7 @@ import { pauseSync, resumeSync, isSyncPaused, registerConsecutiveFailure, resetC
 import { onNetworkRestored } from './sync_schedule'
 import { MAX_CONCURRENCY, UploadMode, UploadOptions, UploadProgress, UploadedPhoto } from './uploader_types'
 import { NetKind, getNetKind, resolveMode } from './uploader_net'
-import { addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, removeFailed, removeHeld } from './uploader_queue'
+import { addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, removeFailed, removeHeld, setLastUploadError } from './uploader_queue'
 import { uploadWithRetry } from './uploader_photo'
 
 /** 并发池（游标式分配，天然实现 ≤3 并发；批量失败 ≥10 暂停剩余） */
@@ -94,6 +94,10 @@ function failWholeBatch(items: Array<PhotoItem>, onProgress: (p: UploadProgress)
 	for (let i = 0; i < items.length; i++) {
 		addFailed(items[i])
 	}
+	// 2026-10-16（真机反馈「不知道是哪六张、点了重试没反应」）：整批失败（上传前 `ensureLogin()`
+	// 不通过 = 后端不可达 / 登录态失效）**最有诊断价值**，原先只 console.error ✗ ⇒ 设备上不可见。
+	// 本函数是两处登录失败调用点（uploadBatch 与 continuePendingUploads）的唯一汇聚点 ✓。
+	setLastUploadError('连不上服务端（登录态失效或后端不可达）⇒ 整批 ' + items.length.toString() + ' 张未上传')
 	for (let i = 0; i < items.length; i++) {
 		registerConsecutiveFailure()
 	}

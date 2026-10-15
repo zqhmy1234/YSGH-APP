@@ -19,7 +19,7 @@
 	import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
 	import { getNetKind, NetKind } from '@/utils/uploader_net'
-	import { heldCount, failedCount } from '@/utils/uploader_queue'
+	import { heldCount, failedCount, failedPhotos, removeFailed, lastUploadError, clearLastUploadError } from '@/utils/uploader_queue'
 	import { continuePendingUploads } from '@/utils/uploader_batch'
 
 	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
@@ -105,9 +105,58 @@
 	}
 	function onBannerTap(): void {
 		if (failed.value > 0 && !paused.value) {
-			doContinue('retry-failed')
+			// 2026-10-16（真机反馈「我也不知道是哪六张、点了重试也没任何反应」）：
+			// 点横幅**不再闷头直接重试**，先给"是哪几张 + 为什么失败"的明细，
+			// 由用户在弹窗里决定「重试」还是「清除记录」✓。
+			showFailedDetail()
 		}
 	}
+
+	/**
+	 * 失败明细弹窗：文件名（前 5 张）+ 最近一次失败原因 + 两个动作。
+	 *
+	 * 「清除记录」是**必需**的：若失败是永久性的（例如该文件在相册里已不可读），
+	 * 否则红条会永远挂着、每次重试都白跑 ✗（真机现象就是"数字恒为 6"）。
+	 */
+	function showFailedDetail(): void {
+		const items = failedPhotos()
+		const why = lastUploadError()
+		const names: Array<string> = []
+		const max = items.length > 5 ? 5 : items.length
+		for (let i = 0; i < max; i++) {
+			const segs = items[i].path.split('/')
+			names.push(segs[segs.length - 1])
+		}
+		let content = items.length.toString() + ' 张照片上传失败'
+		if (names.length > 0) {
+			content = content + '：' + names.join('、')
+			if (items.length > names.length) {
+				content = content + ' 等'
+			}
+		}
+		if (why != '') {
+			content = content + '\n原因：' + why
+		}
+		uni.showModal({
+			title: '上传失败明细',
+			content: content,
+			confirmText: '重试',
+			cancelText: '清除记录',
+			success: (res) => {
+				if (res.confirm) {
+					doContinue('retry-failed')
+					return
+				}
+				for (let i = 0; i < items.length; i++) {
+					removeFailed(items[i].path)
+				}
+				clearLastUploadError()
+				refresh()
+				uni.showToast({ title: '已清除失败记录', icon: 'none' })
+			}
+		})
+	}
+
 	function onActionTap(): void {
 		if (paused.value) {
 			doContinue('continue-upload')
@@ -126,6 +175,23 @@
 		}).then(() => {
 			uploading.value = false
 			refresh()
+			// 2026-10-16（真机反馈「点了重试没任何反应」）：**结果必须可见** ——
+			// 原先重试完只有横幅闪一下"正在上传…"再弹回"6 张失败"（数字不变、零提示）
+			// ⇒ 用户无法判断到底做了什么 ✗。现给确定结论，仍失败则附**原因** ✓。
+			if (evt == 'retry-failed' || evt == 'continue-upload' || evt == 'upload-original') {
+				const left = failedCount()
+				if (left > 0) {
+					const why = lastUploadError()
+					uni.showToast({
+						title: '仍失败 ' + left.toString() + ' 张' + (why != '' ? '：' + why : ''),
+						icon: 'none',
+						duration: 3000
+					})
+				} else {
+					uni.showToast({ title: '已全部上传成功', icon: 'success' })
+					clearLastUploadError()
+				}
+			}
 		})
 	}
 </script>
