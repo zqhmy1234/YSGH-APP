@@ -40,6 +40,7 @@
 <script setup lang="uts">
 	// 2026-10-15（台账 §4.20 ㉖）：微信绑定三端点（取码/查绑定/解绑）——原全客户端零调用。
 	import { issueBindCode, listWechatBindings, unbindWechat } from '@/utils/wechat_api'
+	import { wechatLogin } from '@/utils/auth'
 	import { onMounted } from 'vue'
 	// 2026-10-14（台账 §7.18）：本页原含三枚假开关（通知偏好 / 深色模式 / 清理缓存），
 	// 已按本波口径移除（判定依据见模板内注释）；现仅保留真跳转的「账号与安全」。
@@ -84,10 +85,13 @@
 	})
 
 	/**
-	 * 微信绑定入口：
-	 * - **未绑定** ⇒ 领 6 位码并用系统弹窗展示（不新增视觉元素；码是数字，手打到微信即可，
-	 *   无需复制）⇒ 用户发完点「我已发送」后复查一次列表（成功即显示「已绑定」）；
-	 * - **已绑定** ⇒ 二次确认后解绑（只断开关联；已入库记忆不受影响，后端零侵入 ✓）。
+	 * 微信绑定入口（2026-10-15 · 台账 §7.29 重构为「unionid 对齐」）：
+	 * - **已绑定** ⇒ 二次确认后解绑（只断开关联；已入库记忆不受影响，后端零侵入 ✓）；
+	 * - **未绑定** ⇒ **授权优先**：`wechatLogin()` 拉起微信授权（uni.login → POST /auth/wechat），
+	 *   后端 code2session 换 **unionid（主键）+ openid（绑定表键）** ⇒ **授权即完成绑定** ——
+	 *   这才是成熟形态（用户不出产品、一个码也不用打）；授权不可用（未配开放平台 AppID /
+	 *   manifest 未开微信模块，**属外部资质前置**）⇒ **自动回落「绑定码」通道**（内测可用），
+	 *   不把用户卡在死路上。
 	 */
 	function onWechatBind(): void {
 		if (wechatBound.value) {
@@ -110,6 +114,24 @@
 			})
 			return
 		}
+		wechatLogin().then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '微信授权成功 · 已绑定', icon: 'success' })
+				refreshWechat()
+				return
+			}
+			// 授权不可用（资质未到位/未装微信）⇒ 回落绑定码通道，不把用户卡死
+			console.log('[yishu] 微信授权不可用 ⇒ 回落绑定码通道')
+			showBindCodeFlow()
+		})
+	}
+
+	/**
+	 * 绑定码通道（**内测兜底**，2026-10-15 起降级为备用）：
+	 * 领 6 位码 + 系统弹窗展示（不新增视觉元素；数字手打到微信即可）⇒ 用户发完点「我已发送」后
+	 * 复查一次列表。权威流程是上面的微信授权；本通道在拿到开放平台 AppID 之前保证功能可用。
+	 */
+	function showBindCodeFlow(): void {
 		issueBindCode().then((d: UTSJSONObject | null) => {
 			if (d == null) {
 				return // 失败原因已由 api 层全局 toast 显式给出

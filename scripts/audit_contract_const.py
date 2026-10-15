@@ -43,13 +43,12 @@ CLIENT = REPO / "client"
 SKIP_PARTS = {"unpackage", "uni_modules"}
 
 # 显式豁免：**契约镜像但客户端确实无调用点**的常量（每条必须写理由）
-ALLOW_UNUSED: dict[str, str] = {
-    "PATH_AUTH_WECHAT": (
-        "契约镜像：微信登录是**后端专用流程**（客户端走设备码登录 PATH_AUTH_DEVICE，"
-        "见 contract.uts:19-21 注释与台账 §1.13），客户端不发起该请求。"
-        "保留以对齐 openapi 契约。"
-    ),
-}
+# 2026-10-15（台账 §7.29 · unionid 对齐重构）：`PATH_AUTH_WECHAT` 的豁免已**销项** ——
+# 客户端接上了微信授权登录（`utils/auth.uts::wechatLogin`：uni.login → POST /auth/wechat），
+# 该常量不再"声明未使用"。⚠️ 原豁免理由（"微信登录是后端专用流程、客户端走设备码"）
+# **本身是错的**：它把"客户端没接"当成了"不该接"，正是这次要修的产品缺口。
+# 棘轮口径：销项后必须删除条目（否则门禁报"僵尸豁免"CRITICAL）。
+ALLOW_UNUSED: dict[str, str] = {}
 
 DECL_RE = re.compile(
     r"(?:export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*(?::\s*[A-Za-z_|\[\]\s]+)?=\s*(['\"])(/[^'\"]*)\2"

@@ -21,7 +21,7 @@
  */
 import { getBaseUrl } from './config'
 import { getDeviceId, getDeviceIdSource } from './device_id'
-import { PATH_AUTH_DEVICE, PATH_AUTH_REFRESH, PATH_AUTH_LOGOUT } from './contract'
+import { PATH_AUTH_DEVICE, PATH_AUTH_REFRESH, PATH_AUTH_LOGOUT, PATH_AUTH_WECHAT } from './contract'
 // 2026-10-11 固定地址模式：出网通用头下沉到零依赖模块（本文件不能 import api.uts ——
 // 那是反向依赖，见 http_headers.uts 头注释）。登录/刷新/登出必须带上，否则 ngrok 下收拦截页。
 import { commonHeader } from './http_headers'
@@ -126,6 +126,81 @@ export function deviceLogin(): Promise<boolean> {
 			},
 			fail: () => {
 				finish(false, 'network FAIL')
+			}
+		})
+	})
+}
+
+/**
+ * 微信**授权登录**（2026-10-15 · 台账 §7.29「unionid 对齐」）
+ *
+ * 链路：`uni.login({provider:'weixin'})` → code → `POST /api/v1/auth/wechat {code, device_id}`
+ * → 后端 code2session 换 **unionid（用户主键）+ openid（绑定表键）** → **授权即完成绑定**
+ *（企微侧凭 unionid 解析对齐，用户不需要手打任何码）。
+ *
+ * ⚠️ **前置资质**：需 manifest 打开微信 SDK 模块 + 配 `WECHAT_APPID/SECRET`；未配置时
+ * `uni.login` 必 fail ⇒ 本函数**诚实返回 false**（调用方回落「绑定码」通道，内测照样可用）。
+ * ⚠️ 与 deviceLogin 同款：看门狗 10s；200 但字段缺失按失败（不写空 token 进 storage）；
+ * 不走 `utils/api.uts`（反向 import 会形成循环依赖）。
+ */
+export function wechatLogin(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-auth] wechatLogin ' + why)
+			resolve(ok)
+		}
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout')
+		}, 10000)
+		uni.login({
+			provider: 'weixin',
+			success: (lr) => {
+				const code = lr.code ?? ''
+				if (code == '') {
+					finish(false, 'uni.login 未返回 code')
+					return
+				}
+				uni.request({
+					url: getBaseUrl() + PATH_AUTH_WECHAT,
+					method: 'POST',
+					header: commonHeader(),
+					data: {
+						code: code,
+						device_id: getDeviceId()
+					},
+					success: (res) => {
+						if (res.statusCode === 200) {
+							const body = res.data as UTSJSONObject
+							const data = body.getJSON('data')
+							if (data != null) {
+								const at = data.getString('access_token') ?? ''
+								const rt = data.getString('refresh_token') ?? ''
+								if (at != '' && rt != '') {
+									setSecure(KEY_ACCESS, at)
+									setSecure(KEY_REFRESH, rt)
+									finish(true, 'success status=200')
+									return
+								}
+								finish(false, 'malformed 200 body: token 字段缺失或为空')
+								return
+							}
+						}
+						finish(false, 'fail status=' + res.statusCode)
+					},
+					fail: () => {
+						finish(false, 'network FAIL')
+					}
+				})
+			},
+			fail: () => {
+				// 未配微信 SDK/AppID 时必现（资质到位前属预期路径，调用方回落绑定码）
+				finish(false, 'uni.login FAIL（未配微信 SDK/AppID）')
 			}
 		})
 	})
