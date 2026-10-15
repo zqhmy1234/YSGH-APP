@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-15 21:37 · commit 2016fbf · ts=1792071452
+- **错误**：本地跑 review_agent --full --skip-tests 时门禁判红 syntax（唯一阻断项），红在一个产出目录里、且被 .gitignore 的生成脚本 out/harvest/merge_and_table.py；而同一套代码提交时是绿的 ⇒ 红与代码无关。同时该次静态全量跑了 268s（CI 注释宣称 fast-gate 约 30s）
+- **根因**：① syntax/lint 轴在全量模式下用 ROOT.rglob('*.py') + _skip_path()，而 _skip_path 只排除 .git/.cowork-temp/client/.wt ⇒ 不认 .gitignore ⇒ 任何 ignored 目录里的坏 .py 都会造成假红。同一坑此前已修过两次（secrets 轴 2026-09-23 改走 git 视角 _repo_text_candidates()；.wt/ 排除也是为性能后加的）但语法/lint 轴的 rglob 一直没跟上；② 性能：audit_harness all 122s + gen_openapi --check 36s 是主头；③ 版本：本机 ruff 0.15.22 vs CI 钉 0.16.8 ⇒ 本地 lint 结论与 CI 不可比
+- **修复**：先登记结论与判读规则（台账 4.20 ㉙ + STATE 权威指针区加一行），修复列入规划：syntax/lint 改 git 视角（配负向探针：工作区放一个语法坏的 ignored 文件，断言门禁不受影响）、版本一致性、性能增量化
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁判红的第一件事不是看代码，而是问：它点名的文件能不能进仓库——git ls-files 为空就是门禁假红，与提交者无关。本项目已三次踩同一族（secrets 假红、.wt/ 重复扫、syntax 扫产物）⇒ 凡按目录遍历找文件的检查一律走 git 视角（tracked ∪ untracked-非忽略），且每条都要配负向探针。另：本地与 CI 的工具版本必须钉成同一个，否则本地绿不能说明 CI 绿（本机 ruff 0.15.22 / CI 0.16.8）
+
+---
+
 ### 2026-10-15 17:51 · commit d1d4de4 · ts=1792057860
 - **错误**：修完搜索页卡死（+26 行）后，门禁 structure 判红：client/components/TabSearch/TabSearch.uvue 813 行 > 阈值 800
 - **根因**：我改前没量【该文件距阈值还剩多少行】。本仓客户端阈值 800，而 TabSearch 原本 787 行（只剩 13 行余量）⇒ 补状态转移逻辑加根因注释必然顶过。机制本身允许【显式申请基线】，但申请应当是评估后的决定，而不是撞墙后的补救（本轮因此白跑一次 38s 编译门）

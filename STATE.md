@@ -68,6 +68,7 @@
 | 最近发生了什么（流水，**以最后一条为准**） | `progress.md` |
 | 能力清单（用户故事维度） | `feature_list.json`（**并行开发**，非"同时只做一条"；10 条 in-progress 为**如实**状态，不得以改状态消除 WARN） |
 | 接线是否完整（按钮↔端点双向审计） | `python scripts/audit_client_wiring.py`（自带 `--selftest` 负向探针） |
+| **CI 红了，是代码问题还是门禁问题？** | `docs/决策台账.md` §4.20 ㉙ —— **判读规则四条**（先查它点名的文件是否入库 / 再查 job 30min 与每段 600s 预算与 HF 缓存 / 本地绿 CI 红先比 ruff 与镜像版本 / 只有"单 PR 红、develop 绿"才是代码问题） |
 | 现在能不能测 / 服务起没起 | `pwsh -File scripts\dev\status.ps1` |
 | 怎么出包 / 换址 / 联调 | `skills/apk-cloud-release/`、`deploy/ONE_SWAP.md`、`scripts/dev/` |
 | 客户端避坑（编译/真机/UTS） | `skills/hbuilderx-uniappx-runloop/` |
