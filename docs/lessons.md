@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-15 14:03 · commit 3301643 · ts=1792044229
+- **错误**：新增后端 config 字段（WECHAT_LOGIN_CHANNEL / WECHAT_KF_SECRET）后，门禁 env_template 轴判红、提交被拦——而这是同一坑**第二次**（上一次是 LLM_PROVIDER / DEEPSEEK_* 那批）
+- **根因**：本仓的部署模板漂移检查（deploy/scripts/check_env_template.py）要求 config.py 的每个可配置字段都在 deploy/.env.production.template 里有对应条目；我改配置时只盯着代码与测试，没把模板当成同一次改动的一部分（知识上知道，动作上没形成习惯）
+- **修复**：同批补模板两键（含用途注释：渠道取值、以及未配即安全降级的口径），复跑门禁通过
+- **相关文件**：deploy/.env.production.template
+- **教训**：本仓把【配置项】当作契约的一部分：改 backend/app/core/config.py 必须**同批**改 deploy/.env.production.template 并写清取值与降级口径，否则门禁必拦、白跑一轮。已踩两次 ⇒ 固化成动作：凡编辑 config.py，保存后立刻打开模板补同名字段，再跑门禁
+
+---
+
 ### 2026-10-15 03:27 · commit 3d13fb8 · ts=1792006045
 - **错误**：胶囊接线批次里，我先把三个 API 封装（listCapsules/openCapsule/deleteCapsule）补进 capsule_api.uts，UI 调用点打算稍后再接，结果门禁 audit_axes 当场判红：新增零调用的能力导出 1 个（deleteCapsule）
 - **根因**：这是门禁按设计工作：本仓的「零调用能力导出轴」就是防「写了没接线」。我当时的顺序假设是「先落 API 层、再落 UI」，而本仓不允许把导出留在无调用点的状态（那就是新债）

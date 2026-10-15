@@ -76,6 +76,17 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
 
+    # ── 微信绑定（2026-10-15 · 台账 §7.29）────────────────────────────────────
+    # 授权登录（uni.login → code2session）成功后写入 `user_wechat_bindings` 用的**渠道**值：
+    #   · wechat_app  —— 微信开放平台「移动应用」授权（决策 #8 的"APP 微信登录"）
+    #   · miniprogram —— 小程序 wx.login（`/sns/jscode2session` 就是小程序端点）
+    # ⚠️ 必须与 `db/models/wechat.WECHAT_BINDING_CHANNELS` 白名单一致（bind() 会校验）。
+    wechat_login_channel: str = Field("wechat_app", pattern=r"^(wechat_app|miniprogram)$")
+    # 企微「微信客服」Secret —— 用于 `cgi-bin/kf/customer/batchget` 把**客服侧 openid 解析成
+    # unionid**（绑定的另一半：App 侧授权拿 unionid ⇄ 企微侧解析拿 unionid ⇄ 同一 user）。
+    # 未配置 ⇒ 该解析**安全降级为不解析**（回调仍 200、消息仍记录，只是不归属）。
+    wechat_kf_secret: str = ""
+
     # ── Agent 服务（AG5 接线；独立进程，见 agent/UPSTREAM.md）──
     # 本后端**反代**调用：客户端只认本后端（JWT 鉴权），user_id 只由本后端注入
     # （agent 服务自身不鉴权用户身份 —— 见 UPSTREAM 五-1，故绝不可暴露公网）。
