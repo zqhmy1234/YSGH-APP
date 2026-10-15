@@ -695,3 +695,11 @@ ShareSheet（须真机验"保存到相册"）。
 - 本机补齐 BGE-M3 缓存、项目依赖 `openpyxl`/`cos-python-sdk-v5`/`webrtcvad-wheels`，Ruff 对齐项目钉住的 0.16.8；当前测试库安装 `vector` 扩展。上述依赖/缓存/扩展为本机环境操作，未提交仓库。SetFit 与外部 API 凭证仍未配置，测试按现有降级路径通过。
 - `review_agent.py --full` 于 18:12 +08:00 退出码 0：语法 396 文件、lint、密钥、结构、跨轴审计、环境模板、OpenAPI 快照、pytest（主套件与 RAG 分组）、API 冒烟 6/6、research 全通过；覆盖率 85.81%（门槛 60%）；`.cowork-temp/test-report.json` 的 `failed_tests=[]`、`blocking_sections=[]`。`init.sh` 经 Git Bash 运行通过；本机 WSL Bash 仍不可用。
 - B-1 保持 `in-progress`：任务书建议的自包含初始迁移、无版本号非空旧库迁移与指定旧文档回写尚未收口。此次全量失败根因是测试数据、依赖及本机连接配置，不是 B-1 schema 真值缺失。
+
+## 2026-10-15 · 接入队友最新 develop 并复验 B-1 修复
+
+- `git fetch origin develop` 取得远端 `401b03b`：自 `573b33b` 起前进 78 个提交，涵盖 Agent、微信绑定、检索、客户端与门禁。把本地修复提交变基后为 `09a26f4`；11 个文件重叠，6 个文件有文本冲突，已逐块保留双方有效改动。百度 OCR 常量误报由队友先修，未重复提交；三个客户端输入同时保留新键盘/搜索行为和颜色令牌修复。原有 `.gitignore` 的 `/infra/` 本地改动已从暂存恢复，未纳入修复提交。
+- 死机后 Docker 未运行；恢复本机 PostgreSQL/Qdrant/Redis。Windows 系统代理使 Python HTTP 客户端访问 127.0.0.1 得到 502（直接请求 200）；全量进程设 `NO_PROXY=127.0.0.1,localhost,::1`。旧 pytest 临时目录 ACL 异常，改用独立 `--basetemp`。定向 RAG、ASR 均通过。
+- 队友新增“微信登录即建绑定”后，一条认证测试的手工 teardown 漏删绑定子行、触发外键错误；改为复用 `cleanup_user` 公共清理链，认证定向测试通过。
+- 最终 `review_agent.py --full` 于 22:22 +08:00 退出码 0：语法 444 文件、lint/密钥/结构/契约/安全审计/聚合等价性、pytest 主套件与 RAG、API 冒烟、research 全通过；覆盖率 85.34%，`failed_tests=[]`、`blocking_sections=[]`。本机缺 HBuilderX CLI，客户端编译轴为明确的降级放行；队友批次已有编译证据，当前冲突合并后的三个输入框未在本机重编译。
+- B-1 仍为 `in-progress`，其尚未收口项不因本次门禁通过而改变；当前状态与下一步回源 `STATE.md`。

@@ -431,7 +431,7 @@ def test_otp_below_threshold_still_allows_success(client):
 
 
 @pytest.mark.integration
-def test_refresh_token_stored_as_hash(client):
+def test_refresh_token_stored_as_hash(client, cleanup_user):
     """devices.refresh_token 清空、refresh_token_hash 落 HMAC-SHA256（M6/L2 + G1/R6#8）"""
     from app.db.models import Device, User
     from app.services.auth.auth import _hash_refresh_token
@@ -459,7 +459,12 @@ def test_refresh_token_stored_as_hash(client):
         r2 = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
         assert r2.status_code == 200, r2.text
     finally:
-        db.execute(sa_delete(Device).where(Device.device_id == "p3-hash-dev"))
+        user_id = db.execute(
+            select(User.id).where(User.unionid == f"mock-unionid-{code}")
+        ).scalar_one_or_none()
+        if user_id is not None:
+            # 微信登录也会创建绑定行；沿用公共清理链处理全部子表。
+            cleanup_user(db, user_id)
         db.execute(sa_delete(User).where(User.unionid == f"mock-unionid-{code}"))
         db.commit()
         db.close()

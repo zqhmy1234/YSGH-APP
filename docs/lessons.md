@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-15 22:14 · commit 09a26f4 · ts=1792073662
+- **错误**：认证刷新令牌测试在微信绑定落库后清理用户触发外键错误
+- **根因**：旧测试仅删除 device 和 user，队友新增授权即建绑定后留下 user_wechat_bindings 子行
+- **修复**：测试 teardown 调用公共 cleanup_user fixture 清理全部关联子表，定向复验通过
+- **相关文件**：backend/tests/test_auth_db.py
+- **教训**：（无）
+
+---
+
+### 2026-10-15 22:14 · commit 09a26f4 · ts=1792073655
+- **错误**：合并后全量门禁中 Python Qdrant 请求返回 502，且 pytest 临时目录拒绝访问
+- **根因**：Windows 系统代理代理了 127.0.0.1 请求；旧 pytest 临时目录 ACL 异常；重启后 Docker 测试服务未启动
+- **修复**：先恢复 Docker，再为测试进程设置 NO_PROXY=127.0.0.1,localhost,::1 与独立 basetemp，分段探活后复验
+- **相关文件**：scripts/test_agent.py
+- **教训**：（无）
+
+---
+
 ### 2026-10-15 18:07 · commit 573b33b · ts=1792058840
 - **错误**：全量审核扫描 14132 个 Python 文件并漏报缺失测试依赖
 - **根因**：语法检查递归扫入忽略的 Hugging Face 缓存；Ruff 命令依赖 PATH；虚拟环境未装 requirements 已声明的 openpyxl、COS SDK 和 webrtcvad。
