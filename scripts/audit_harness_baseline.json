@@ -146,11 +146,6 @@
         "rgb": 0,
         "gradient": 0
       },
-      "client/pages/settings/settings.uvue": {
-        "hex": 0,
-        "rgb": 1,
-        "gradient": 0
-      },
       "client/pages/storage/trash.uvue": {
         "hex": 1,
         "rgb": 0,

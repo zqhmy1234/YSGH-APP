@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-16 07:50 · commit 9f69319 · ts=1792108205
+- **错误**：删除已退役的 settings 中间页（删文件 + pages.json 收敛）后，门禁 audit_axes 判红：基线 per_file 的 client/pages/settings/settings.uvue 已归零（文件删除/改名/已令牌化）——请从基线删除该条
+- **根因**：退役动作少收了一条尾巴：scripts/audit_harness_baseline.json 按文件登记的条目会随文件消失而归零，棘轮检查把它当『僵尸基线』判红。机制是对的（基线只许收缩），错在我做退役时只想到代码与路由，没想到基线文件
+- **修复**：从基线删除该条（只许收缩），门禁复跑通过
+- **相关文件**：scripts/audit_harness_baseline.json
+- **教训**：本仓凡『删文件 / 改名 / 清空某文件』的退役动作，必须同时查三张账：① 引用（谁还跳它 / import 它）② 注册表（pages.json / 路由 / 导出清单）③ 基线（audit_harness_baseline.json 的 per_file、audit_contract_const 的 ALLOW_UNUSED 豁免等——归零即红）。本次前两张查了、第三张漏了 ⇒ 白跑一轮门禁
+
+---
+
 ### 2026-10-15 23:54 · commit d4b589b · ts=1792079641
 - **错误**：提交「那年今日」时门禁判红 openapi_snapshot，报「契约快照已过期（请运行 python scripts/gen_openapi.py 重导）：timeout」；而同一工作区手动复跑同一检查是 [OK] 一致（256544 字符）——即红与代码无关
 - **根因**：该检查内部用 run() 调 gen_openapi.py --check（要 import 整个后端 app，实测冷启动 36.1s/热 18.2s）；run() 有超时，超时返回非零码且输出恰为 'timeout'，而 check_openapi_snapshot 的兜底分支把『所有非 0 非 2』一律判成『快照过期』⇒ 把**门禁自己的超时**误报成**开发者的契约漂移**。触发条件是机器同时跑重活（客户端编译门/云打包）

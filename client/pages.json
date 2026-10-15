@@ -50,14 +50,6 @@
 			}
 		},
 		{
-			"path": "pages/settings/settings",
-			"style": {
-				"navigationBarTitleText": "设置",
-				"navigationStyle": "custom",
-				"enablePullDownRefresh": false
-			}
-		},
-		{
 			"path": "pages/account/security",
 			"style": {
 				"navigationBarTitleText": "账号与安全",
