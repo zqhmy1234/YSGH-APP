@@ -158,51 +158,63 @@ export function wechatLogin(): Promise<boolean> {
 		const timer = setTimeout(() => {
 			finish(false, 'watchdog timeout')
 		}, 10000)
-		uni.login({
-			provider: 'weixin',
-			success: (lr) => {
-				const code = lr.code ?? ''
-				if (code == '') {
-					finish(false, 'uni.login 未返回 code')
-					return
-				}
-				uni.request({
-					url: getBaseUrl() + PATH_AUTH_WECHAT,
-					method: 'POST',
-					header: commonHeader(),
-					data: {
-						code: code,
-						device_id: getDeviceId()
-					},
-					success: (res) => {
-						if (res.statusCode === 200) {
-							const body = res.data as UTSJSONObject
-							const data = body.getJSON('data')
-							if (data != null) {
-								const at = data.getString('access_token') ?? ''
-								const rt = data.getString('refresh_token') ?? ''
-								if (at != '' && rt != '') {
-									setSecure(KEY_ACCESS, at)
-									setSecure(KEY_REFRESH, rt)
-									finish(true, 'success status=200')
+		// 2026-10-15（真机反馈「点微信绑定毫无反应」· 台账 §7.29 复修）：
+		// **必须用 try/catch 包住 `uni.login`** —— 未装微信 SDK / 未配开放平台 AppID 时，
+		// `uni.login` 可能**同步抛错**；同步抛错会让 `new Promise` 直接 **reject**，而本函数
+		// 只写 `resolve`（调用方只挂 `.then`）⇒ Promise **永久不决议**：既不拉起授权、也不给
+		// 绑定码，用户观感就是"点了没反应" ✗（真机实测即此形态，原先的 10s 看门狗也救不了
+		// —— 同步抛错发生在注册回调之前）。
+		// 现任何同步异常都转成正常失败 ⇒ **必然**走调用方的「绑定码」兜底 ✓；
+		// 另：若 `uni.login` 既不回调 success 也不回调 fail，仍由上方 10s 看门狗兜底 ✓。
+		try {
+			uni.login({
+				provider: 'weixin',
+				success: (lr) => {
+					const code = lr.code ?? ''
+					if (code == '') {
+						finish(false, 'uni.login 未返回 code')
+						return
+					}
+					uni.request({
+						url: getBaseUrl() + PATH_AUTH_WECHAT,
+						method: 'POST',
+						header: commonHeader(),
+						data: {
+							code: code,
+							device_id: getDeviceId()
+						},
+						success: (res) => {
+							if (res.statusCode === 200) {
+								const body = res.data as UTSJSONObject
+								const data = body.getJSON('data')
+								if (data != null) {
+									const at = data.getString('access_token') ?? ''
+									const rt = data.getString('refresh_token') ?? ''
+									if (at != '' && rt != '') {
+										setSecure(KEY_ACCESS, at)
+										setSecure(KEY_REFRESH, rt)
+										finish(true, 'success status=200')
+										return
+									}
+									finish(false, 'malformed 200 body: token 字段缺失或为空')
 									return
 								}
-								finish(false, 'malformed 200 body: token 字段缺失或为空')
-								return
 							}
+							finish(false, 'fail status=' + res.statusCode)
+						},
+						fail: () => {
+							finish(false, 'network FAIL')
 						}
-						finish(false, 'fail status=' + res.statusCode)
-					},
-					fail: () => {
-						finish(false, 'network FAIL')
-					}
-				})
-			},
-			fail: () => {
-				// 未配微信 SDK/AppID 时必现（资质到位前属预期路径，调用方回落绑定码）
-				finish(false, 'uni.login FAIL（未配微信 SDK/AppID）')
-			}
-		})
+					})
+				},
+				fail: () => {
+					// 未配微信 SDK/AppID 时必现（资质到位前属预期路径，调用方回落绑定码）
+					finish(false, 'uni.login FAIL（未配微信 SDK/AppID）')
+				}
+			})
+		} catch (e) {
+			finish(false, 'uni.login 同步抛错（多为未配微信模块/AppID）')
+		}
 	})
 }
 

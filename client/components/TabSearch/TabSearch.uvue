@@ -6,7 +6,9 @@
 		<view class="n2_391"> <!-- 搜索胶囊 -->
 			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
 			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
-				<input :adjust-position="true" class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
+				<!-- 2026-10-15（真机反馈「删掉关键词后页面动不了」）：补 `@input`，让「输入清空」
+				     有状态转移（原实现只有 v-model + @confirm，删字到空时 hasSearched/hits 全不动 ✗） -->
+				<input :adjust-position="true" class="n2_396" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="doSearch" />
 			</view>
 			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
 			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
@@ -365,10 +367,36 @@
 		hasSearched.value = false
 	}
 
+	/**
+	 * 输入清空 ⇒ **复位到默认列表**（2026-10-15 · 真机反馈「删掉买菜后页面动不了」）。
+	 *
+	 * 根因（代码实证）：本页只有 `v-model` + `@confirm`，删字到空**没有任何状态转移** ——
+	 * `hasSearched` 仍为 true、`hits` 仍是上次结果 ⇒ 结果区永久停在「共 N 条结果」，
+	 * 而本该负责复位的 `clearKeyword()` 是**死代码**（全仓零调用 ✗）。
+	 * 现接上 `@input`：输入变空且此前搜过 ⇒ 复位 + 用「最近内容」兜底（与 onMounted 同源）。
+	 */
+	function onKeywordInput(): void {
+		if (keyword.value.trim() != '') {
+			return
+		}
+		if (!hasSearched.value) {
+			return // 本就没搜过：保持默认列表，不做无谓请求
+		}
+		clearKeyword()
+		loadRecent()
+	}
+
 	/** 发起描述性搜索（resolve-only，失败由封装 toast） */
 	function runSearch(): void {
 		const q = keyword.value.trim()
 		if (q == '') {
+			// 2026-10-15：空串**不再只弹 toast 就 return**（那会把页面留在上次的结果态，
+			// 用户观感即"卡死"✗）。已搜过 ⇒ 复位回默认列表；从未搜过 ⇒ 保留提示。
+			if (hasSearched.value) {
+				clearKeyword()
+				loadRecent()
+				return
+			}
 			uni.showToast({ title: '请输入搜索关键词', icon: 'none' })
 			return
 		}

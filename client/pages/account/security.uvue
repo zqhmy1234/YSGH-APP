@@ -71,21 +71,60 @@
 	import { onLoad } from '@dcloudio/uni-app'
 	import { logout } from '@/utils/auth'
 	import { fetchUsersMe } from '@/utils/play_content'
-	import { listWechatBindings } from '@/utils/wechat_api'
+	import { listWechatBindings, issueBindCode, unbindWechat } from '@/utils/wechat_api'
+	import { wechatLogin } from '@/utils/auth'
 
 	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
 	let phoneText = ref('未绑定')
 	// 2026-10-15（台账 §7.29）：微信**绑定态**接真值（`GET /wechat/bindings`）；默认「未绑定」，
 	// 拉取失败保持默认（不显假状态 —— 同手机号行口径）。
 	let wechatText = ref('未绑定')
+	// 2026-10-15（真机反馈后复修）：本页**就地绑定/解绑**。原先点这一行会跳 settings 中间页，
+	// 与 settings 的「账号与安全」行互跳 ⇒ 我的→设置→账号与安全→设置 死循环 ✗（用户实测）。
+	let wechatBound = ref(false)
+	let wechatOpenid = ref('')
+
+	/** 拉真绑定态（进页调用；绑定动作由服务端回调侧完成，客户端只做"领码/授权/解绑"） */
+	function refreshWechat(): void {
+		listWechatBindings().then((rows: Array<UTSJSONObject>) => {
+			if (rows.length == 0) {
+				wechatBound.value = false
+				wechatText.value = '未绑定'
+				wechatOpenid.value = ''
+				return
+			}
+			wechatBound.value = true
+			wechatText.value = '已绑定'
+			wechatOpenid.value = rows[0].getString('openid') ?? ''
+		})
+	}
+
+	/**
+	 * 绑定码通道（资质未到位时的兜底）：领 6 位码 → 系统弹窗展示（不新增视觉元素；
+	 * 数字手打到微信即可）→ 用户发完点「我已发送」复查一次。
+	 */
+	function showBindCodeFlow(): void {
+		issueBindCode().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				return // 失败原因已由 api 层全局 toast 显式给出
+			}
+			const code = d.getString('code') ?? ''
+			const mins = Math.round((d.getNumber('expires_in') ?? 600) / 60)
+			uni.showModal({
+				title: '微信绑定',
+				content: '请在微信里给「忆述」发送：绑定 ' + code + '（' + mins + ' 分钟内有效）。发完点「我已发送」。',
+				confirmText: '我已发送',
+				showCancel: false,
+				success: (): void => {
+					refreshWechat()
+				}
+			})
+		})
+	}
 
 	onLoad(() => {
 		// 2026-10-15（台账 §7.29）：微信绑定态真值（失败保持「未绑定」，不 toast 打扰）
-		listWechatBindings().then((rows: Array<UTSJSONObject>) => {
-			if (rows.length > 0) {
-				wechatText.value = '已绑定'
-			}
-		})
+		refreshWechat()
 		fetchUsersMe().then((d: UTSJSONObject | null) => {
 			if (d == null) {
 				// 不静默：失败显式 toast，保持「未绑定」降级显示
@@ -114,10 +153,47 @@
 		uni.showToast({ title: '手机号绑定即将上线', icon: 'none' })
 	}
 
+	/**
+	 * 微信行：**就地**完成绑定/解绑（2026-10-15 · 真机反馈「又跳到那个中间页」后复修）。
+	 *
+	 * - 已绑定 ⇒ 二次确认后解绑（只断开关联，已入库记忆零侵入 ✓）；
+	 * - 未绑定 ⇒ **授权优先**：`wechatLogin()` 拉起微信授权（`uni.login` → `/auth/wechat`，
+	 *   服务端 code2session 换 unionid+openid 并**同时建立渠道绑定**）⇒ 授权即完成；
+	 *   授权不可用（未配开放平台 AppID / manifest 未开微信模块，**属外部资质前置**）⇒
+	 *   **自动回落绑定码通道**，不把用户卡在死路上（与设置页同一口径）。
+	 * ⚠️ 不再跳 settings 中间页（那会形成 我的→设置→本页→设置 的回环 ✗）。
+	 */
 	function onWechat(): void {
-		// 2026-10-15（台账 §7.29）：绑定能力**已落地**（设置页「微信绑定」：微信授权优先、
-		// 未配资质时自动回落绑定码）⇒ 本行不再 toast "暂未开放"（与事实不符 ✗），改跳**真入口**。
-		uni.navigateTo({ url: '/pages/settings/settings' })
+		if (wechatBound.value) {
+			uni.showModal({
+				title: '微信绑定',
+				content: '解绑后，微信里再发的照片/语音不再进入你的忆述（已入库的记忆不受影响）。',
+				confirmText: '解绑',
+				confirmColor: '#B05A3A',
+				success: (res) => {
+					if (!res.confirm || wechatOpenid.value == '') {
+						return
+					}
+					unbindWechat(wechatOpenid.value).then((ok: boolean) => {
+						if (ok) {
+							uni.showToast({ title: '已解绑', icon: 'success' })
+							refreshWechat()
+						}
+					})
+				}
+			})
+			return
+		}
+		wechatLogin().then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: '微信授权成功 · 已绑定', icon: 'success' })
+				refreshWechat()
+				return
+			}
+			// 授权不可用（资质未到位/未装微信）⇒ 回落绑定码通道
+			console.log('[yishu] 微信授权不可用 ⇒ 回落绑定码通道')
+			showBindCodeFlow()
+		})
 	}
 
 	function onPrivacy(): void {

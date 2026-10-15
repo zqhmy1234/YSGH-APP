@@ -196,9 +196,11 @@
 		uni.navigateTo({ url: '/pages/favorites/favorites' })
 	}
 
-	// 菜单：设置（pages.json 已注册 pages/settings/settings）
+	// 菜单：设置 ⇒ **直达账号与安全**（2026-10-15 · 真机反馈「点设置为什么中间还要有一页」：
+	// 原路径是 我的 → settings（仅两行）→ account/security，白多一次跳转；
+	// 现按用户口径直连，settings 页随之退役（见台账 §7.30））
 	function goSettings(): void {
-		uni.navigateTo({ url: '/pages/settings/settings' })
+		uni.navigateTo({ url: '/pages/account/security' })
 	}
 
 	// 菜单：存储与备份（W0-4 错绑修复：原 goPrivacy 误绑此行；W1-1 页面已落地改真跳转）

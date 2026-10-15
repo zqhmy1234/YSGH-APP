@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-15 17:51 · commit d1d4de4 · ts=1792057860
+- **错误**：修完搜索页卡死（+26 行）后，门禁 structure 判红：client/components/TabSearch/TabSearch.uvue 813 行 > 阈值 800
+- **根因**：我改前没量【该文件距阈值还剩多少行】。本仓客户端阈值 800，而 TabSearch 原本 787 行（只剩 13 行余量）⇒ 补状态转移逻辑加根因注释必然顶过。机制本身允许【显式申请基线】，但申请应当是评估后的决定，而不是撞墙后的补救（本轮因此白跑一次 38s 编译门）
+- **修复**：按机制显式申请基线（reason=真机缺陷功能必需；target=把搜索状态机抽到 composables/useSearchState.uts 后销项）；并把【改前量余量】固化成动作
+- **相关文件**：client/components/TabSearch/TabSearch.uvue
+- **教训**：改客户端大文件前先算一笔账：当前行数 + 预计新增 对比 800，然后再决定是【顺手抽一层 composable】还是【显式申请基线】。当前贴着阈值的三份都在基线里：TabIndex 874、RecordSheet 834、TabSearch 813 —— 碰它们等于一定会触发 structure 轴，要提前规划拆分层，而不是修完再说
+
+---
+
 ### 2026-10-15 14:03 · commit 3301643 · ts=1792044229
 - **错误**：新增后端 config 字段（WECHAT_LOGIN_CHANNEL / WECHAT_KF_SECRET）后，门禁 env_template 轴判红、提交被拦——而这是同一坑**第二次**（上一次是 LLM_PROVIDER / DEEPSEEK_* 那批）
 - **根因**：本仓的部署模板漂移检查（deploy/scripts/check_env_template.py）要求 config.py 的每个可配置字段都在 deploy/.env.production.template 里有对应条目；我改配置时只盯着代码与测试，没把模板当成同一次改动的一部分（知识上知道，动作上没形成习惯）
