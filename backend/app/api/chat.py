@@ -291,6 +291,15 @@ def post_message_stream(
         def _consume_and_persist() -> None:
             started = time.monotonic()
             preview = ""
+            # 2026-10-15（真机反馈「AI 对话冒出 JSON 中间消息」· 台账 §7.31）：
+            # **原始累积与可见文本分离**。DeepSeek 会往 `delta.content` 写原生 DSML 工具
+            # 调用标记、且标记**可能跨帧**（半截在本帧、后半截在下帧）⇒ 若直接对累计串做
+            # 剥离并覆盖，已剥掉的半截标记就再也认不出来，下一帧补全后会漏给用户 ✗。
+            # 故：`raw_preview` 存原文（用于识别跨帧标记），每次**全量**剥成 `preview` 再推送
+            #（`strip_model_markup` 幂等 ⇒ 每帧重剥安全）。
+            from app.services.model_text import strip_model_markup
+
+            raw_preview = ""
             final_text = ""
             agent_latency_ms: int | None = None
             final_meta: dict | None = None
@@ -302,7 +311,9 @@ def post_message_stream(
                     user_id=user_id, message=req.content, conversation_id=conversation_id
                 ):
                     if kind == "delta":
-                        preview += str(payload)
+                        raw_preview += str(payload)
+                        # 每次对**累计原文**全量剥离 ⇒ 跨帧标记也能正确消掉（幂等）
+                        preview = strip_model_markup(raw_preview)
                         verdict = rule_screen(preview)
                         if not verdict["pass"]:
                             logger.warning(
@@ -328,7 +339,8 @@ def post_message_stream(
                         # 被整体绕过（重试轮命中敏感词照样推到客户端屏幕）。命中即中断，同 delta。
                         # 另外 preview 基准置为 replace 全文（而非清空）：若 replace 之后再来
                         # delta（当前 agent 实现不会，防御性），累计文本不丢 replace 前缀。
-                        preview = str(payload)
+                        raw_preview = str(payload)
+                        preview = strip_model_markup(raw_preview)
                         verdict = rule_screen(preview)
                         if not verdict["pass"]:
                             logger.warning(
@@ -347,7 +359,8 @@ def post_message_stream(
                         _offer(("replace", {"text": preview}))
                     elif kind == "done":
                         data = payload if isinstance(payload, dict) else {}
-                        final_text = str(data.get("reply") or "")
+                        # 终稿同样剥（它既进 `done` 帧、**也会落库** ⇒ 库里不能留标记）
+                        final_text = strip_model_markup(str(data.get("reply") or ""))
                         raw_latency = data.get("latency_ms")
                         agent_latency_ms = raw_latency if isinstance(raw_latency, int) else None
                         raw_meta = data.get("meta")
