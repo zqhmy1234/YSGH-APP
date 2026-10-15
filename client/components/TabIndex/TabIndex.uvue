@@ -91,13 +91,17 @@
 					<image class="ti-empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
 					<view class="ti-empty-lake"><image class="ti-empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
 				</view>
-				<text class="ti-empty-title">还没有回忆</text>
-				<text class="ti-empty-desc">拍一张照片，或说几句话</text>
-				<text class="ti-empty-desc ti-empty-desc2">你的回忆会住在这里</text>
-				<view class="ti-empty-cta pressable" @tap="emptyTakeFirst">
+				<!-- 2026-10-15（真机反馈后修）：**失败与真·空分开**（见 script 内 loadFailed 注释）。
+				     失败时不再说「还没有回忆」（那是假空态 ✗，会让人以为云端记忆丢了），
+				     也不再露出"拍下第一张"的 CTA（数据可能在云端，不该引导用户重新记 ✗）。
+				     用 v-if 会踩本文件既有的 R9-D 坑（整树卸载失效）⇒ 仍走 ui-hidden class 互斥。 -->
+				<text class="ti-empty-title">{{ loadFailed ? '加载失败' : '还没有回忆' }}</text>
+				<text class="ti-empty-desc">{{ loadFailed ? '网络或服务暂时不可用' : '拍一张照片，或说几句话' }}</text>
+				<text class="ti-empty-desc ti-empty-desc2">{{ loadFailed ? '下拉可重试' : '你的回忆会住在这里' }}</text>
+				<view class="ti-empty-cta pressable" :class="loadFailed ? 'ui-hidden' : ''" @tap="emptyTakeFirst">
 					<text class="ti-empty-cta-text">拍下第一张</text>
 				</view>
-				<view class="ti-empty-voice pressable" @tap="emptyVoice">
+				<view class="ti-empty-voice pressable" :class="loadFailed ? 'ui-hidden' : ''" @tap="emptyVoice">
 					<text class="ti-empty-voice-text">或者，录一段语音</text>
 				</view>
 			</view>
@@ -286,6 +290,14 @@
 	let pendingEvents = ref<Array<TimelineEvent>>([])
 	// 壳内空态（2026-10-09）：时间轴空时渲染拍照首页引导（替代原 redirectTo empty 整页跳转）
 	let emptyState = ref(false)
+	// 2026-10-15（真机反馈「空状态页不该嵌在有状态页里」+ 首拉失败整屏空白）：
+	// **"加载失败" 与 "真·空" 必须分开**。原实现只有 emptyState 一个派生量：
+	//   · 首拉失败时走 `loaded = true`（收起骨架）而 emptyState 仍 false ⇒ 空态块被
+	//     `ui-hidden` 藏住、feed 又无内容 = **整屏空白**（无引导、无 CTA）✗；
+	//   · 反过来，一旦把失败也收敛成空态，就会显示「还没有回忆」——那是**假空态** ✗
+	//     （用户会以为云端记忆丢了）。
+	// 故单列 loadFailed：失败且有旧数据 ⇒ 保持旧数据（不打扰）；失败且无任何数据 ⇒ 如实显示失败态。
+	let loadFailed = ref(false)
 
 	// 空态 CTA（经 shell_state 桥拉起全壳唯一 RecordSheet；'photo'=直达拍照流，同 empty 页口径）
 	function emptyTakeFirst(): void {
@@ -597,6 +609,13 @@
 				// 失败态下"骨架收起 + 保持现状"与 refreshSilently 的语义一致。
 				loaded.value = true
 				refreshing.value = false
+				// 2026-10-15（真机反馈后修）：**无任何可显示内容时，把"失败"如实标出来**。
+				// 原实现只收起骨架屏就 return ⇒ 空态块被 ui-hidden 藏住、feed 又没内容
+				// = **整屏空白**（无引导、无 CTA、用户以为 App 坏了）✗。
+				// 有旧数据时**保持原样**（断网不该把正在看的记忆抹掉，同 #1 守卫口径）。
+				if (days.value.length === 0 && pendingEvents.value.length === 0) {
+					loadFailed.value = true
+				}
 				return
 			}
 			applyFetchedEvents(events)
@@ -656,6 +675,9 @@
 		// ⚠️ 本收敛与 #1「失败结果不进入本函数」是**配套**的：先有 #1 才有无条件收敛
 		// （否则失败时的空数组会立刻显示假空态）。
 		emptyState.value = days.value.length === 0 && pendingEvents.value.length === 0
+		// 渲染出口 = 本次**拿到了真实结果**（失败路径有 wasLastFetchFailed 守卫，不进入本函数）
+		// ⇒ 清掉失败标记（否则下一次失败前会一直显示"加载失败"）✓
+		loadFailed.value = false
 		// P-4 内容出现时间埋点：onLoad → 首帧内容上屏（logcat [perf] 行）
 		if (firstRender) {
 			console.log('[perf] index content-visible at ' + Date.now())
