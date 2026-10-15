@@ -26,6 +26,7 @@
  */
 import { get, dataObj, PATH_CONTENTS } from './api'
 import { parseIsoMs } from './time'
+import { TimelineEvent } from './timeline'
 
 /** 时间轴「今天」块里的一条记录（第一刀：仅文字） */
 export class TodayEntry {
@@ -42,6 +43,81 @@ export class TodayEntry {
 		this.timeLabel = timeLabel
 		this.place = place
 	}
+}
+
+/**
+ * 回顾位「那年今日」的一行（2026-10-15 · 台账 §4.20 ㉘ · 批次 C 第一刀）。
+ *
+ * 视图字段**组装期预计算**（沿用卡PA R4 口径：模板零函数调用 ✓）——
+ * 尤其是"N 年前的今天"这类需要 `new Date()` 的标签，**绝不能**放进模板里现算（会逐帧重算 ✗）。
+ */
+export class LookbackRow {
+	contentId: string   // 点击进详情的 contentId（与 openDetail 同口径：封面优先、首图回退）
+	yearLabel: string   // "1 年前的今天" / "3 年前的今天"
+	title: string
+	metaText: string    // 如 "主题 · 12 张"（无信息则空串，模板据此不渲染该行）
+	coverUrl: string    // 服务端票据 URL（**不用本地路径**：往年的原件/缩略图可能已被清理 ✗）
+
+	constructor(contentId: string, yearLabel: string, title: string, metaText: string, coverUrl: string) {
+		this.contentId = contentId
+		this.yearLabel = yearLabel
+		this.title = title
+		this.metaText = metaText
+		this.coverUrl = coverUrl
+	}
+}
+
+/**
+ * 从**全量事件**里挑出"往年的今天"（同月同日、年份更早），每年最多 3 条。
+ *
+ * 为什么客户端算：时间轴事件接口**不带时间窗**（一次给全量），"哪年的同一天"是个纯本地判定
+ * ⇒ 不新增端点、不改契约、不动后端 ✓（在野 APK 也不受影响 ✓）。
+ * 口径：① 只取 level ≤ 2（与时间轴可见层级一致，L3 主题流不在时间轴渲染 ✗）；
+ *      ② **有才出现**（空数组 ⇒ 调用方整块不渲染，绝不占位 ✗）；
+ *      ③ 每年最多 3 条：防"那年今天有 40 条"把首屏撑爆 ✗（长尾可按年展开，属下一批）。
+ */
+export function buildLookback(events: Array<TimelineEvent>): Array<LookbackRow> {
+	const now = new Date()
+	const m = now.getMonth()
+	const d = now.getDate()
+	const y = now.getFullYear()
+	const perYear = new Map<number, number>()
+	const out: Array<LookbackRow> = []
+	for (let i = 0; i < events.length; i++) {
+		const ev = events[i]
+		if (ev.level > 2 || ev.startTime <= 0) {
+			continue
+		}
+		const t = new Date(ev.startTime)
+		const yr = t.getFullYear()
+		if (t.getMonth() != m || t.getDate() != d || yr >= y) {
+			continue
+		}
+		const n = perYear.get(yr) ?? 0
+		if (n >= 3) {
+			continue
+		}
+		perYear.set(yr, n + 1)
+		let cid = ev.coverContentId
+		if (cid == '' && ev.photoIds.length > 0) {
+			cid = ev.photoIds[0]
+		}
+		let meta = ''
+		if (ev.level == 2) {
+			meta = '主题'
+		}
+		if (ev.photoCount > 0) {
+			meta = meta == '' ? (ev.photoCount.toString() + ' 张') : (meta + ' · ' + ev.photoCount.toString() + ' 张')
+		}
+		out.push(new LookbackRow(
+			cid,
+			(y - yr).toString() + ' 年前的今天',
+			ev.title,
+			meta,
+			ev.coverUrl
+		))
+	}
+	return out
 }
 
 /** 本地日期键（YYYY-M-D，**本地时区**）——用于"是否今天"判定；不用 UTC（会跨零点错切 ✗） */

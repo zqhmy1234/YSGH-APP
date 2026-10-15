@@ -603,9 +603,25 @@ def check_openapi_snapshot() -> tuple[bool, str]:
     script = ROOT / "scripts" / "gen_openapi.py"
     if not script.exists():
         return False, f"判据脚本缺失：{script.relative_to(ROOT)}（契约再生无法复现）"
-    code, out = run([sys.executable, str(script), "--check"])
+    # 2026-10-15（台账 §4.20 ㉙）：**给足超时** —— 本检查要 import 整个后端 app，
+    # 实测冷启动 36.1s / 热 18.2s（见台账性能节）；原实现用 `run()` 的默认超时，
+    # 在机器同时跑客户端编译门/云打包时会被顶爆 ✗。
+    code, out = run([sys.executable, str(script), "--check"], timeout=300)
     if code == 0:
         return True, out.strip()
+    txt = out.strip()
+    # 2026-10-15：**超时不是契约漂移** —— 原实现把 `run()` 的超时（输出恰为 "timeout"）
+    # 当成 exit 1，于是报「契约快照已过期（请重导）」✗✗：把**门禁自己的超时**说成
+    # **开发者的快照过期**，这正是"红得莫名其妙、还被算在自己头上"的那一类事故。
+    # 实测取证：报红那次输出 `…重导）：timeout`；同一工作区手动复跑
+    # `python scripts/gen_openapi.py --check` = `[OK] 一致（256544 字符）` ✓。
+    # 现按本仓铁律 3 处置：**环境不可用 = [环境错误] 前缀（退出码 2）**，既不放行也不误判 ✓。
+    if txt.lower() == "timeout" or "timed out" in txt.lower():
+        return False, (
+            f"{ENV_ERR_PREFIX} 契约快照校验**超时**（子进程未在 300s 内返回）⇒ 本次**未判定**，"
+            "**不是**快照漂移\n"
+            "  重跑本门禁即可；若持续超时，先看是否有并发重活（客户端编译门 / 云打包 / 测试）"
+        )
     if code == 2:
         return True, "[降级] 后端环境不可导入，跳过契约快照一致性校验：\n" + out.strip()
     return False, "契约快照已过期（请运行 python scripts/gen_openapi.py 重导）：\n" + out.strip()

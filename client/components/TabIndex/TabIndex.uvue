@@ -135,6 +135,32 @@
 				</view>
 			</view>
 
+			<!-- 回顾位「那年今日」（2026-10-15 · 台账 §4.20 ㉘ · 批次 C 第一刀）：
+			     ① **有才出现**（`v-if` 在整块上：无匹配就不渲染 —— 这是"不占位"的口径 ✓；
+			        注意与本文件 R9-D 的"空态/feed 互斥"不同：那里是**常驻两态**，这里是**可缺席块**，
+			        块内没有别的兄弟需要互斥，v-if 不会造成叠渲染 ✗✓）；
+			     ② 视觉零新增：日头复用 `.day-block/.day-head/.day-title/.day-line`，行复用
+			        `.card` + `.cover-wrap/.cover-img` + `.card-title` + `.card-meta/.meta-item`
+			        （与时间轴事件卡**同款原子** ⇒ 一眼看出是"同一种东西的不同时间" ✓）；
+			     ③ 封面用 `coverUrl`（服务端票据）而**不是本地路径**：往年的原件/缩略图可能已被
+			        清理，本地路径会裂图 ✗。 -->
+			<view v-if="lookbackRows.length > 0" class="day-block">
+				<view class="day-head">
+					<text class="day-title serif">那年今日</text>
+					<view class="day-line"></view>
+				</view>
+				<view v-for="r in lookbackRows" :key="'lb-' + r.contentId + r.yearLabel" class="card pressable" @tap="openLookback(r)">
+					<view v-if="r.coverUrl != ''" class="cover-wrap">
+						<image class="cover-img" :src="r.coverUrl" mode="aspectFill" lazy-load="true" />
+					</view>
+					<text class="card-title serif title-l2">{{ r.title }}</text>
+					<view class="card-meta">
+						<text class="meta-item">{{ r.yearLabel }}</text>
+						<text v-if="r.metaText != ''" class="meta-item rust">{{ r.metaText }}</text>
+					</view>
+				</view>
+			</view>
+
 			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对恒渲染；空态互斥经
 			     ui-hidden class 走属性更新，见上方空态块注释）。2026-10-15：显示条件补
 			     `todayEntries.length === 0`（理由见上方「今天」块注释 ④）。 -->
@@ -305,7 +331,7 @@
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 		// 2026-10-15（台账 §4.20 ㉘ · 「今天」块）：今天的**文字记录** —— 读 contents 而非 events
 	//（文字不产 event，详见模块注释）
-	import { fetchTodayEntries, TodayEntry } from '@/utils/entries_api'
+	import { fetchTodayEntries, TodayEntry, buildLookback, LookbackRow } from '@/utils/entries_api'
 import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
 	import {
 		flushOpQueue,
@@ -757,6 +783,10 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 		// 回壳补刷、`reload()` 全都汇到本函数（成功路径）⇒ 一个钩子覆盖所有刷新来源，
 		// 不额外引监听、不重复造节拍 ✓。取数失败 resolve([])，不影响主内容 ✓。
 		loadTodayEntries()
+		// 2026-10-15（台账 §4.20 ㉘ · 批次 C）：「那年今日」——**纯本地判定**（全量 events 已在手；
+		// 接口不带时间窗 ⇒ 不新增端点、不改契约、在野 APK 不受影响 ✓）；每年最多 3 条在
+		// `buildLookback` 内部限流 ✓；无匹配则为空数组 ⇒ 模板整块不渲染（不占位 ✗）。
+		lookbackRows.value = buildLookback(events)
 		renderFromEvents(events)   // emptyState 已在渲染出口收敛（#2）
 		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
 		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才认空态。
@@ -818,6 +848,14 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	// `todayEntries.length === 0`（见模板注释）。
 	let todayEntries = ref<Array<TodayEntry>>([])
 
+	// ── 回顾位「那年今日」（2026-10-15 · 台账 §4.20 ㉘ · 批次 C 第一刀）────────────────────
+	// 为什么放在「今天」块正下方：记忆产品的价值一半在"**它替我想起来**"（友商实证：Day One
+	// 的 On This Day、Google/Apple Memories、朋友圈那年今日、flomo 每日回顾 ✓），而我们此前
+	// 只有 AI 回响卡一种形态 ✗。口径：**有才出现**（空数组则整块不渲染，绝不占位 ✗）；
+	// 数据源＝`applyFetchedEvents` 拿到的**全量 events**（接口不带时间窗 ⇒ 纯本地判定，
+	// 不新增端点/契约 ✓）；视图字段在 `buildLookback` 里预计算（模板零函数调用 ✓）。
+	let lookbackRows = ref<Array<LookbackRow>>([])
+
 	function loadTodayEntries(): void {
 		fetchTodayEntries().then((rows: Array<TodayEntry>) => {
 			todayEntries.value = rows
@@ -826,6 +864,15 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 
 	function openEntry(e: TodayEntry): void {
 		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + e.id })
+	}
+
+	/** 回顾位点击 → 与 `openDetail` 同口径（封面优先、首图回退）；无可查看内容时诚实 toast */
+	function openLookback(r: LookbackRow): void {
+		if (r.contentId == '') {
+			uni.showToast({ title: '这条记忆暂无可查看的内容', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + r.contentId })
 	}
 
 	function openDetail(ev: TimelineEvent): void {
