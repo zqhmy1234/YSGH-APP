@@ -217,20 +217,40 @@ def scan_endpoints() -> tuple[list[dict], dict]:
     const_vals = re.findall(r"PATH_[A-Z0-9_]+\s*(?::\s*string)?\s*=\s*'([^']+)'", raw)
     blob = raw + "\n" + "\n".join(const_vals)
     unused: list[dict] = []
+    tentative: list[dict] = []
     for path, ops in sorted(paths.items()):
         # `/api/v1/contents/{content_id}/events` → 正则：参数段归一为任意非斜杠串
-        # 同时容纳"前缀拼接"写法（`'/api/v1/messages/' + id + '/read'`）⇒ 只匹配到参数段之前
         # ⚠️ 替换串里不能出现 `\s`（re.sub 会把 `\` 当转义 ⇒ 报 "bad escape \s"），
         # 故用不含转义的等价字符类 `[^/"' ]`（路径段本就不含空格）。
         pat = re.sub(r"\{[^}]+\}", "[^/\"' ]+", re.escape(path))
         if re.search(pat, blob):
             continue
+        # 2026-10-15 收紧（**这条口径曾漏报真缺口**）：`/api/v1/capsules/{id}/open` 与
+        # `/api/v1/capsules/{id}` 曾因「前缀 = /api/v1/capsules 命中 PATH_CAPSULES」被判为
+        # 已引用，而客户端当时**根本没有** 调用它们的代码 ⇒ 真缺口被掩盖（后来是人工细查才
+        # 发现"封存单程票"）。
+        # 现分两类：
+        #  · **结尾是字面段**（如 `/open`、`/scan`、`/read`）⇒ 必须能在客户端找到该字样
+        #    （`'/open'` / `"/open"` / `/open'` 等拼接形态）才算引用 ⇒ 精确 ✓
+        #  · **结尾是占位段**（如 `/capsules/{capsule_id}`）⇒ 前缀命中只能说明"可能"，单列
+        #    `tentative`（待人工确认），**不再静默算作已引用** ✓
+        last = path.rsplit("/", 1)[-1]
         prefix = path.split("{")[0].rstrip("/")
-        if len(prefix) > 8 and prefix in blob:
-            # 前缀命中（客户端拼接调用）⇒ 视为已引用，但标注出来供人工确认
+        hit_prefix = len(prefix) > 8 and prefix in blob
+        if not last.startswith("{"):
+            if hit_prefix and ("'" + last + "'" in blob or '"' + last + '"' in blob or "/" + last + "'" in blob):
+                continue
+        elif hit_prefix:
+            tentative.append({"path": path, "methods": sorted(ops.keys()),
+                              "why": "前缀命中但结尾是占位段，无法确证调用"})
             continue
         unused.append({"path": path, "methods": sorted(ops.keys())})
-    return unused, {"paths": len(paths), "client_files": len(files), "const_vals": len(const_vals)}
+    return unused, {
+        "paths": len(paths),
+        "client_files": len(files),
+        "const_vals": len(const_vals),
+        "tentative": tentative,
+    }
 
 
 def selftest(verbose: bool = True) -> int:
@@ -307,6 +327,10 @@ def main() -> int:
         print(f"  - [{f['kind']}] {f['file']}:{f['line']} {f['name']} — {f['detail']}")
     print(f"\n[B] 端点 {e_stats['paths']} 条 · **客户端零引用 {len(e_findings)}**")
     for e in e_findings:
+        print(f"  - {'/'.join(e['methods']).upper():16s} {e['path']}")
+    tent = e_stats.get("tentative") or []
+    print(f"\n[B2] 前缀命中但**无法确证**（结尾是占位段）：{len(tent)} 条（需人工确认，勿直接当已接线）")
+    for e in tent:
         print(f"  - {'/'.join(e['methods']).upper():16s} {e['path']}")
     return 1 if h_findings else 0
 
