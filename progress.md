@@ -711,3 +711,4 @@ ShareSheet（须真机验"保存到相册"）。
 - 新增离线回归，覆盖 DeepSeek 配置下“仅有百炼 key”能调用三个视觉入口、“仅有 DeepSeek key”三个入口均在 SDK 前拒绝，以及 mock 关闭视觉调用。定向套件 `test_llm_provider.py`、`test_image_search.py`、`test_image_tower.py` 为 **28 passed**（5 deselected）。
 - 首轮全量门禁测试轴因本机默认 Pytest 临时目录权限与 HF 缓存位置报错；改用仓库内 `TEMP/TMP` 和已预热的 `HF_HOME` 后，失败的 5 个用例定向复验 **5 passed**，全量测试轴 `failed_tests=[]`、`blocking_sections=[]`。环境教训已登记 `docs/lessons.md`。
 - 最终 `python scripts/review_agent.py --full` **退出码 0**：语法、lint、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全、聚合等价、pytest/API 冒烟/research 均通过；覆盖率 **85.52%**。本机缺 HBuilderX CLI，客户端编译轴明确降级放行；本次没有改客户端代码。`pwsh -File ./init.ps1` 通过。
+- 按部长缺陷说明的「自验」条件补验：测试进程配置 `LLM_PROVIDER=deepseek`、仅设置非真实的百炼测试 key、DeepSeek key 为空、`MOCK_EXTERNAL_AI=false`，先断言配置实际生效，再在 `backend/` 跑指定的 `test_image_search.py` 与 `test_image_tower.py`。结果 **17 passed / 5 deselected / 0 failed**；因本机 Pytest 默认临时目录无权限，命令附加 `--basetemp` 与 `-p no:cacheprovider`，不改变测试选择。此项为离线测试，未验证真实百炼账号调用。

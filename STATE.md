@@ -78,7 +78,7 @@
 
 - **用户故事**：✅46 / 🟡7 / ❌0；A 级真机证据 **32** 条（口径基线 **2026-08-29**，**仍未按 9–10 月变更重算**）
 - **测试（2026-10-15 实测）**：微信链路 **21 passed**（绑定码 8 + 授权登录建绑定 3 + unionid 对齐 4 + 媒体 6）；`model_text` 不变量 **10 passed**；上传 **34 passed**；`-k "search or rag"` **117 passed**；新增索引时窗用例 **1 passed**；生命周期+同步 **27 passed**（10-14）
-- **视觉守卫（2026-10-16 实测）**：独立百炼 key 判定已覆盖三个视觉入口；离线定向 **28 passed**（5 deselected）。`review_agent.py --full` 退出码 **0**，覆盖率 **85.52%**，`failed_tests=[]`、`blocking_sections=[]`；本机缺 HBuilderX CLI，客户端编译轴降级放行。详见 `progress.md` 末尾记录。
+- **视觉守卫（2026-10-16 实测）**：独立百炼 key 判定已覆盖三个视觉入口；离线定向 **28 passed**（5 deselected）。按缺陷说明的 DeepSeek + 仅百炼测试 key 条件补跑指定两份测试：**17 passed / 5 deselected / 0 failed**。`review_agent.py --full` 退出码 **0**，覆盖率 **85.52%**，`failed_tests=[]`、`blocking_sections=[]`；本机缺 HBuilderX CLI，客户端编译轴降级放行。详见 `progress.md` 末尾记录。
 - **门禁（2026-10-15）**：队友批次的 `review_agent.py` 全绿；本日三轴各拦过一次并**均已按纪律处置**——`env_template`（新增 config 字段 ⇒ 同批补部署模板）、`structure`（`TabSearch` 813>800 ⇒ 显式申请基线）、`lessons`（前次失败 ⇒ 登记教训）；队友环境的客户端编译门**真编译**多次通过（38s / 49s / 56s / 91s，均有日志）。本机 `develop` 接入 B-1 全量验证修复后，22:22 复跑 `review_agent.py --full` 退出码 0、覆盖率 85.34%、失败/阻断项 0；本机缺 HBuilderX CLI，客户端编译轴明确降级放行，未在本机重编译。
 - **出包前端到端（用户视角）**：合并**前**曾 17/17 全绿；合并后重跑**未跑全**（脚本侧两处挂住 + 当次 ⑤"搜索未命中"⇒ **根因已定位并修复** `f94fcf6`：向量写入晚于 `done` 提交的时间窗 + 检索无 DB 兜底）；**结论：新包前需再跑一次完整端到端**
 - **未关闭重大缺陷**：见 §7（RAG 负样本误召回 0.5714 / 推送全 mock / 图搜"无图片查询评测"等）
