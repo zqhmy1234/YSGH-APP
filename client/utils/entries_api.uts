@@ -1,5 +1,5 @@
 /**
- * 「今天」的 entry（记录）—— 2026-10-15 · 台账 §4.20 ㉘「entry 流」第一刀。
+ * 「今天」的 entry（记录）—— 2026-10-15 · 台账 §4.20 ㉘「entry 流」第一刀（10-16 扩面到照片）。
  *
  * ## 为什么需要它（真机反馈的头号问题）
  *
@@ -13,35 +13,51 @@
  *
  * 1. **记录后立刻可见**是硬要求 ⇒ 实现口径＝**读 `contents`**（服务端事实，跨设备/重启都在 ✓），
  *    而不是等事件聚合（那是"照片中心"的老路 ✗）；也不做客户端本地草稿（会出现"本地有、别处没有"✗）。
- * 2. **本刀只收文字**：照片已由日卡可见（再放进本块就是**重复展示** ✗）；**语音留到下一批**
- *    （它要接播放管道/波形，属独立工作面 ✗ 不在本刀里硬塞）。
- * 3. 时间用 `created_at`（记录时刻）；文字目前**没有 `taken_at`**（后端不赋值 ✗）⇒ 不假装有。
+ * 2. **收文字 + 照片**（2026-10-16 扩面）：第一刀只收文字时，今天的照片只能绕"日卡片/事件"
+ *    一大圈才看得到，且**当天刚拍、还没聚合成事件**的照片在「今天」块里是**缺席**的 ✗
+ *    （用户要的是"今天完整的记录流"）。现补上照片 ⇒ 文字/照片同构进「今天」块；
+ *    **语音仍留到下一批**（要接播放管道/波形，属独立工作面 ✗）。
+ * 3. 文字时间用 `created_at`（文字**没有 `taken_at`**，后端不赋值 ⇒ 不假装有 ✗）；
+ *    照片以 **`taken_at` 拍摄时刻优先、缺失回退 `created_at`**：见 `fetchTodayEntries` 内注释
+ *    （与事件日分组同一时间轴 ⇒ 是下面第 4 条"零重复"口径成立的前提）。
+ * 4. **去重口径（用户明确要求）**：今天的照片**只出现在「今天」块**；时间轴下方的历史区
+ *    （`TabIndex.visibleDays`）**只显示今天之前**的日组 ⇒ 同一张照片天然不会出现两次 ✓。
+ * 5. **排列＝日记式正序（早上 → 现在）**：用户视角"回看今天"是从头读到尾（Day One/flomo 同款），
+ *    倒序只适合"翻旧账"✗。排序时刻用 `TodayEntry.orderMs`（组装期预计算，模板零函数调用 ✓）。
  *
  * ## 与 `search_api.fetchRecentContents` 的关系
  *
  * 同一个端点（`GET /api/v1/contents`：`Page[ContentOut]`、游标分页、limit 1..100），
- * 但**用途不同**：那个给搜索页做"最近内容"列表（含照片、不做日期切分）；
+ * 但**用途不同**：那个给搜索页做"最近内容"列表（含各类型、不做日期切分）；
  * 本模块只服务时间轴的「今天」块 ⇒ 独立命名空间，避免两处口径互相牵制 ✓。
  * 该端点**没有日期过滤参数** ⇒ 由本模块按**本地日期**就地筛（拉 50 条足够覆盖单日记录量 ✓）。
  */
-import { get, dataObj, PATH_CONTENTS } from './api'
-import { parseIsoMs } from './time'
+import { get, dataObj } from './api'
+// 2026-10-16 修正：PATH_CONTENTS 定义在 `contract.uts`，此前从 `./api` 导入是**悬空导出**
+// （`api.uts` 不 re-export contract）——按 search_api/voice 的既有正确写法收到 `./contract` ✓。
+import { PATH_CONTENTS } from './contract'
+import { parseIsoMs, dayKey } from './time'
+import { resolveMediaUrl } from './config'
 import { TimelineEvent } from './timeline'
 
-/** 时间轴「今天」块里的一条记录（第一刀：仅文字） */
+/** 时间轴「今天」块里的一条记录（2026-10-16：文字 + 照片；语音待下一批） */
 export class TodayEntry {
 	id: string
-	kind: string        // 'text'（下一批扩 'voice'）
-	text: string
+	kind: string        // 'text' | 'photo'（下一批扩 'voice'）
+	text: string        // 文字正文；照片为空串（照片没有 caption，不假装有 ✗）
+	photoUrl: string    // 照片缩略图票据 URL（已 resolve，可直接喂 <image :src>）；文字为空串
 	timeLabel: string   // HH:mm（本地时区）
 	place: string
+	orderMs: number     // 排序用的时刻（仅供数组排序，不下发到视图）
 
-	constructor(id: string, kind: string, text: string, timeLabel: string, place: string) {
+	constructor(id: string, kind: string, text: string, photoUrl: string, timeLabel: string, place: string, orderMs: number) {
 		this.id = id
 		this.kind = kind
 		this.text = text
+		this.photoUrl = photoUrl
 		this.timeLabel = timeLabel
 		this.place = place
+		this.orderMs = orderMs
 	}
 }
 
@@ -120,11 +136,9 @@ export function buildLookback(events: Array<TimelineEvent>): Array<LookbackRow> 
 	return out
 }
 
-/** 本地日期键（YYYY-M-D，**本地时区**）——用于"是否今天"判定；不用 UTC（会跨零点错切 ✗） */
-function localDayKey(ms: number): string {
-	const d = new Date(ms)
-	return d.getFullYear().toString() + '-' + (d.getMonth() + 1).toString() + '-' + d.getDate().toString()
-}
+// 「是否今天」判定统一用 `time.dayKey`（yyyy-mm-dd，**本地时区**）——与 `timeline.buildDayGroups`
+// 的日分组键**同源**；此前本模块自持一份 `localDayKey`（未补零），两处口径各写各的 ✗。
+// 不用 UTC（会跨零点错切 ✗）。不再自持重复实现。
 
 /** HH:mm（本地时区，补零） */
 function hhmm(ms: number): string {
@@ -141,50 +155,110 @@ function hhmm(ms: number): string {
 }
 
 /**
- * 拉今天的文字记录（倒序）。失败 resolve([])（api 层已全局 toast；本块属增强信息，
- * **不因它失败而报错**——时间轴主内容仍由 `events` 负责 ✓）。
+ * 最近一次 `fetchTodayEntries` 是否**请求失败**（2026-10-16 复核补 · 沿 `timeline.wasLastFetchFailed`
+ * 与 `play_echo.wasLastEchoFailed` 先例）。
+ *
+ * 为什么必须区分（与 2026-10-11 静态审查 #1 对 events / echo 的修复同一族，当时漏了本条通路）：
+ * 本函数 `resolve([])` 有**两种语义**——①请求失败（网络/鉴权瞬态）②"今天真的没有记录"。
+ * 调用方若一律覆盖 `todayEntries`，则**一次失败的下拉刷新就会把用户正在看的今天的文字/照片
+ * 整块抹掉**（"今天"块退回"今天还没有记录"）；而只记文字（不产 event）的用户，更会因此翻成
+ * 假空态「还没有回忆」✗ —— 正是本轮要治的那类事故。
+ */
+let _lastEntriesFailed = false
+
+/** 读最近一次 `fetchTodayEntries` 的失败标志（调用方应在拿到数组后立即读；口径同上） */
+export function wasLastEntriesFetchFailed(): boolean {
+	return _lastEntriesFailed
+}
+
+/**
+ * 拉今天的记录（文字 + 照片，正序）。失败 resolve([])（api 层已全局 toast；本块属增强信息，
+ * **不因它失败而报错**——时间轴主内容仍由 `events` 负责 ✓；失败与"真无记录"用上方标志区分）。
  */
 export function fetchTodayEntries(): Promise<Array<TodayEntry>> {
 	return new Promise<Array<TodayEntry>>((resolve) => {
+		// 已知上限与截断语义（2026-10-16 用户裁决 · 接受）：本端点**没有日期过滤参数**，只按
+		// `created_at desc` 取最近 50 条 ⇒ 单日记录与其它类型交错超过 50 条时，更早的今天条目会
+		// **被静默截断**（不报错、不提示；表现=「今天」块少几条）。单日 >50 条极罕见，用户已接受 ✓；
+		// 若日后须严守，正确修法是**服务端加日期参数**（如 ?day=yyyy-mm-dd）而非调大 limit ✗。
 		get(PATH_CONTENTS + '?limit=50').then((body: UTSJSONObject | null) => {
 			if (body == null) {
+				// 失败（连接/鉴权瞬态）：与"真无记录"同为 [] ⇒ 置标志供调用方区分（见上方注释）
+				_lastEntriesFailed = true
 				resolve([])
 				return
 			}
 			const d = dataObj(body)
 			if (d == null) {
+				_lastEntriesFailed = true
 				resolve([])
 				return
 			}
-			const todayKey = localDayKey(Date.now())
+			// 拿到可解析的信封 = 成功（后续 items 为空只表示"今天没有记录"，**不算失败** ✓）
+			_lastEntriesFailed = false
+			const todayKey = dayKey(Date.now())
 			const out: Array<TodayEntry> = []
 			const raw = d.getArray('items')
 			if (raw != null) {
 				const arr = raw as Array<UTSJSONObject>
 				for (let i = 0; i < arr.length; i++) {
 					const c = arr[i]
-					// 本刀只收文字（照片由日卡可见；语音待播放管道，见模块注释）
-					if ((c.getString('content_type') ?? '') != 'text') {
-						continue
+					const ct = c.getString('content_type') ?? ''
+					if (ct == 'text') {
+						const text = c.getString('text') ?? ''
+						if (text == '') {
+							continue // 空文字不占一行（诚实：没有内容就不假装有卡片 ✓）
+						}
+						// 文字：时刻＝`created_at`（文字没有 taken_at，后端不赋值 ⇒ 不假装有 ✓）
+						const ms = parseIsoMs(c.getString('created_at') ?? '')
+						if (ms <= 0 || dayKey(ms) != todayKey) {
+							continue
+						}
+						out.push(new TodayEntry(
+							c.getString('id') ?? '',
+							'text',
+							text,
+							'',
+							hhmm(ms),
+							c.getString('place') ?? '',
+							ms
+						))
+					} else if (ct == 'photo') {
+						// 照片：图片 URL 用服务端已下发的**缩略图票据**（thumbnail_url），
+						// 经 resolveMediaUrl 拼直连地址（<image :src> 带不了 Bearer header ✓）。
+						// 无票据（原件未上传的占位 / 已被清理）⇒ 本张**跳过**：不给"没有图的照片卡"
+						// （诚实：展示不了就不占一行 ✓）。
+						const url = resolveMediaUrl(c.getString('thumbnail_url'))
+						if (url == '') {
+							continue
+						}
+						// 🚨 去重口径的关键（见模块注释 4）：照片用 **`taken_at` 拍摄时刻**判定"是否今天"，
+						// 与 `buildDayGroups` 的事件日分组**同一时间轴**（事件 startTime 也取自照片时刻）
+						// ⇒ 一张"今天的照片+它所在的今天事件"要么一起进「今天」块、要么一起被历史区排除，
+						// 不会"照片在「今天」块、事件又在历史区"重复出现 ✓。
+						// 缺失 taken_at（早期数据）才回退 created_at（记录时刻）。
+						let ms = parseIsoMs(c.getString('taken_at') ?? '')
+						if (ms <= 0) {
+							ms = parseIsoMs(c.getString('created_at') ?? '')
+						}
+						if (ms <= 0 || dayKey(ms) != todayKey) {
+							continue
+						}
+						out.push(new TodayEntry(
+							c.getString('id') ?? '',
+							'photo',
+							'',
+							url,
+							hhmm(ms),
+							c.getString('place') ?? '',
+							ms
+						))
 					}
-					const text = c.getString('text') ?? ''
-					if (text == '') {
-						continue // 空文字不占一行（诚实：没有内容就不假装有卡片）
-					}
-					// 时刻：文字没有 taken_at（后端不赋值）⇒ 用 created_at；解析失败则跳过（不猜时间）
-					const ms = parseIsoMs(c.getString('created_at') ?? '')
-					if (ms <= 0 || localDayKey(ms) != todayKey) {
-						continue
-					}
-					out.push(new TodayEntry(
-						c.getString('id') ?? '',
-						'text',
-						text,
-						hhmm(ms),
-						c.getString('place') ?? ''
-					))
+					// 其余 content_type（voice/article）不在本刀（见模块注释 2）
 				}
 			}
+			// 日记式正序（早上 → 现在），理由见模块注释 5
+			out.sort((a: TodayEntry, b: TodayEntry): number => a.orderMs - b.orderMs)
 			resolve(out)
 		})
 	})

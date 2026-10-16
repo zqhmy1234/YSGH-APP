@@ -11,12 +11,13 @@
 			<view class="hero-content">
 				<text class="hero-title serif">回忆</text>
 				<!-- R8：数据驱动化（此前硬编码画布示意文案「八月 · 28 条新记忆/清晨的湖边」= 峰宝 09-06 投诉的模板 UI 之一） -->
-				<!-- ⚠️ 2026-10-11（视觉审查）：空态时隐藏副标题——hero 的「暂无新记忆」与壳内空态
-				     的「还没有回忆」会同屏出现两条空文案（两处都在说"这里没东西"）。空态块自己
-				     已带完整引导语义，hero 副标题此时是冗余噪音。走 ui-hidden（class 属性更新
-				     路径，非 v-if——同 R9-D 约束）。 -->
-				<text class="hero-sub1" :class="emptyState ? 'ui-hidden' : ''">{{ heroSub1 }}</text>
-				<text class="hero-sub2" :class="emptyState ? 'ui-hidden' : ''">{{ heroSub2 }}</text>
+				<!-- ⚠️ 2026-10-11（视觉审查）/ 2026-10-16 更新：空态时隐藏副标题——hero 的「暂无新记忆」
+				     与壳内空态的「还没有回忆」会同屏出现两条空文案（两处都在说"这里没东西"）。空态块
+				     自己已带完整引导语义，hero 副标题此时是冗余噪音。判定由 `emptyState` 换成
+				     `showEmpty`（= 真·空 **或** 失败态，且今天也无 entry），与本页三态口径同源 ✓。
+				     走 ui-hidden（class 属性更新路径，非 v-if——同 R9-D 约束）。 -->
+				<text class="hero-sub1" :class="showEmpty ? 'ui-hidden' : ''">{{ heroSub1 }}</text>
+				<text class="hero-sub2" :class="showEmpty ? 'ui-hidden' : ''">{{ heroSub2 }}</text>
 			</view>
 		</view>
 
@@ -56,7 +57,7 @@
 			 （编译器原话：Property 'aria-label' is not supported）→ 属死属性（写了不生效）。
 			 骨架屏是纯装饰占位、无文本内容，暂无需无障碍标注；日后若需读屏支持，
 			 须走 uni-app x 实际支持的机制（不能沿用 HTML 的 aria-*）。 -->
-		<view class="skeleton" :class="loaded ? 'sk-hidden' : ''">
+		<view class="skeleton" :class="loading ? '' : 'sk-hidden'">
 				<view class="sk-card">
 					<view class="sk-line sk-day"></view>
 					<view class="sk-card-body">
@@ -88,8 +89,13 @@
 			     display:none」互斥，走属性更新路径，不依赖节点卸载。 -->
 			<!-- 2026-10-15：空态与 feed 的显示条件补上「今天没有 entry」——
 			     只看 events 判空会把"今天记了文字（还没聚合成事件）"误判成空 ✗
-			     （真机反馈原话：明明有数据却显示空态）。有 entry 时：两者都让位给下方「今天」块 ✓。 -->
-			<view class="ti-empty-home" :class="(emptyState && todayEntries.length === 0) ? '' : 'ui-hidden'">
+			     （真机反馈原话：明明有数据却显示空态）。
+			     2026-10-16（三态显式化）：本块可见条件收敛成**单一 computed `showEmpty`**
+			     （=`loaded && todayLoaded && (emptyState || loadFailed) && todayEntries.length===0`），
+			     与骨架屏（`loading = !loaded || !todayLoaded`）、feed /「今天」块（`!showEmpty && !loading`）
+			     三者**互斥**——此前三者各用不同表达式判显隐，加载期骨架与 feed 会同时可见 = 用户看到的
+			     "页面在闪" ✗；`todayLoaded` 的置位分支清单见 `showEmpty` 定义处注释（B1~B6）✓。 -->
+			<view class="ti-empty-home" :class="showEmpty ? '' : 'ui-hidden'">
 				<view class="ti-empty-illus">
 					<image class="ti-empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
 					<view class="ti-empty-lake"><image class="ti-empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
@@ -109,28 +115,48 @@
 				</view>
 			</view>
 
-			<!-- 2026-10-15（台账 §4.20 ㉘ · 「今天」块 / entry 流第一刀）：
-			     ① **照片不进本块**（已由日卡可见 ⇒ 放进来就是重复展示 ✗）；
+			<!-- 2026-10-15（台账 §4.20 ㉘ · 「今天」块 / entry 流第一刀）/ 2026-10-16 扩面到照片：
+			     ① **收文字 + 照片**（2026-10-16）：今天**刚拍、还没聚合成事件**的照片此前在「今天」
+			        块里是**缺席**的（用户要的是"今天完整的记录流"），现补上——照片 entry 与文字卡
+			        **同构**；语音留待下一批（要接播放管道/波形，属独立工作面 ✗）；
 			     ② **今天没有记录也渲染本块**（一行静默引导替代"整页空态"，治真机反馈
-			        「冷启动时 App 时间轴没有任何内容」✗）；
+			        「冷启动时 App 时间轴没有任何内容」✗）——但**真·空/失败**时整块让位给上方空态块；
 			     ③ **零新增视觉元素**：日头复用 `.day-block/.day-head/.day-title/.day-line`；
-			        文字卡复用**为文字卡预留的** `.quote-card`（左侧琥珀引用竖线 + 引言体，
-			        与事件卡里的 quote 同款）；元信息复用 `.quote-source`/`.muted` ✓；
-			     ④ 本块放在 `.feed` **之外**：`.feed` 在 emptyState 时整体 ui-hidden，
-			        只记文字（无照片事件）的用户否则会连它一起看不到 ✗。 -->
-			<view class="day-block">
+			        文字卡复用**为文字卡预留的** `.quote-card`（左侧琥珀引用竖线 + 引言体）；
+			        照片封面复用 `.cover-wrap/.cover-img`（与「那年今日」行/事件卡同款）；
+			        照片元信息复用 `.card-meta/.meta-item`；文字元信息复用 `.quote-source`/`.muted` ✓；
+			     ④ **去重口径（用户明确要求）**：今天的照片**只出现在本块**；下方按天的历史区
+			        只显示**今天之前**（见 `historyDays` 过滤 + `fetchTodayEntries` 的 taken_at 注释）
+			        ⇒ 同一张照片天然不会出现两次 ✓；
+			     ⑤ **排列＝日记式正序（早上 → 现在）**：正序才像"回看今天"从头读到尾（Day One/flomo
+			        同款）；排序在 `fetchTodayEntries` 组装期完成（模板零函数调用 ✓）；
+			     ⑥ 本块放在 `.feed` **之外**：`.feed` 只在有事件时可见，只记了文字/照片（还没聚合）
+			        的用户否则会连它一起看不到 ✗；
+			     ⑦ 显隐走 `loading`/`showEmpty` 两派生量（2026-10-16 用户裁决）：`loading`（含
+			        `!todayLoaded`）期间本块隐藏 ⇒ 不再出现"空态先闪一下再被今天记录顶掉"✗。 -->
+			<view class="day-block" :class="(showEmpty || loading) ? 'ui-hidden' : ''">
 				<view class="day-head">
 					<text class="day-title serif">今天</text>
 					<view class="day-line"></view>
 				</view>
 				<text v-if="todayEntries.length === 0" class="pending-sub muted">今天还没有记录 · 点下方的 + 记一笔</text>
 				<view v-for="e in todayEntries" :key="'te-' + e.id" class="card pressable" @tap="openEntry(e)">
-					<view class="quote-card">
+					<!-- 文字 entry：复用为文字预留的引用卡（左侧琥珀竖线 + 引言体） -->
+					<view v-if="e.kind === 'text'" class="quote-card">
 						<view class="quote-line"></view>
 						<view class="quote-content">
 							<text class="quote-text serif">{{ e.text }}</text>
 							<text class="quote-source">{{ e.timeLabel }}{{ e.place != '' ? ' · ' + e.place : '' }}</text>
 						</view>
+					</view>
+					<!-- 照片 entry：封面复用 `.cover-wrap/.cover-img`（同「那年今日」行/事件卡），
+					     图片走服务端 thumbnail_url 票据（在 entries_api 内 resolveMediaUrl 拼直连） -->
+					<view v-if="e.kind === 'photo'" class="cover-wrap">
+						<image class="cover-img" :src="e.photoUrl" mode="aspectFill" lazy-load="true" />
+					</view>
+					<view v-if="e.kind === 'photo'" class="card-meta">
+						<text class="meta-item">{{ e.timeLabel }}</text>
+						<text v-if="e.place != ''" class="meta-item">{{ e.place }}</text>
 					</view>
 				</view>
 			</view>
@@ -163,9 +189,16 @@
 
 			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对恒渲染；空态互斥经
 			     ui-hidden class 走属性更新，见上方空态块注释）。2026-10-15：显示条件补
-			     `todayEntries.length === 0`（理由见上方「今天」块注释 ④）。 -->
-			<view class="feed" :class="(emptyState && todayEntries.length === 0) ? 'ui-hidden' : ''">
+			     `todayEntries.length === 0`（理由见上方「今天」块注释）；2026-10-16：与骨架屏、
+			     「今天」块统一用 `loading`/`showEmpty` 判显隐（`loading = !loaded || !todayLoaded`）
+			     ⇒ 三态互斥不叠渲染 ✓。
+			     ⚠️ 日卡列表数据源 `visibleDays` 已排除「今天」的日组（去重口径，见其定义处）。 -->
+			<view class="feed" :class="(showEmpty || loading) ? 'ui-hidden' : ''">
 				<!-- L2 待确认区 -->
+				<!-- 2026-10-16（用户裁决 · 采纳"待确认区不做日期过滤"）：本区是"**待用户确认**"的
+				     **动作队列**，不是按天的历史区 ⇒ 过滤会把**今天的确认入口一起藏掉** ✗；
+				     代价（今天的 pending 卡与上方「今天」块的 entry 可能同图）用户已判定**可接受** ✓。
+				     按产品决定，**「待确认区」移出主视区属后续批次**（本批不动 —— 这是**有意的**，非漏改）。 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
 					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
@@ -292,8 +325,8 @@
 				</view>
 
 				<!-- 卡PB R1：尾部加载更多（点一次多 20 组；触底自动加载按卡面不做） -->
-				<view v-if="visibleDayCount < days.length" class="load-more pressable" @tap="loadMoreDays">
-					<text class="load-more-text">加载更多 · 还有 {{ days.length - visibleDayCount }} 组</text>
+				<view v-if="visibleDayCount < historyDayCount" class="load-more pressable" @tap="loadMoreDays">
+					<text class="load-more-text">加载更多 · 还有 {{ historyDayCount - visibleDayCount }} 组</text>
 				</view>
 			</view>
 		</scroll-view>
@@ -317,7 +350,9 @@
 		voiceTotalSec,
 		fmtVoiceTime
 	} from '@/utils/audio_player'
-	import { parseIsoMs } from '@/utils/time'
+	// 2026-10-16（去重口径）：日分组键统一走 `time.dayKey`（本地时区）——历史区过滤「今天」的
+	// 日组要用它，与 `entries_api`/`timeline.buildDayGroups` **同源** ✓。
+	import { parseIsoMs, dayKey } from '@/utils/time'
 	import { UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader_types'
 	import { uploadBatch } from '@/utils/uploader_batch'
 	// 2026-09-11 D-19 修复：**行为入口** createPhotoWatch 走插件根（recorder 同款已验证路径，
@@ -331,7 +366,7 @@
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 		// 2026-10-15（台账 §4.20 ㉘ · 「今天」块）：今天的**文字记录** —— 读 contents 而非 events
 	//（文字不产 event，详见模块注释）
-	import { fetchTodayEntries, TodayEntry, buildLookback, LookbackRow } from '@/utils/entries_api'
+	import { fetchTodayEntries, wasLastEntriesFetchFailed, TodayEntry, buildLookback, LookbackRow } from '@/utils/entries_api'
 import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
 	import {
 		flushOpQueue,
@@ -344,6 +379,12 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 
 	// 响应式数据（uvue script setup 裸 let 非响应式，必须 ref —— 真机实锤：数据到位但界面停在加载态）
 	let loaded = ref(false)
+	// 2026-10-16（用户裁决 · 批准修冷启动空态闪现）：**今天记录（contents）是否已出结果**。
+	// 与 `loaded`（时间轴 events 就绪）合起来才是真正的"加载中"（见 `loading`）——`showEmpty` 依赖
+	// `todayEntries`，而它是**异步填充**的：只看 `loaded` 会让"只记文字、无事件"的用户在 contents
+	// 返回前**闪现一次「还没有回忆」** ✗（一 RTT）。本标志**单调**（一旦 true 不再回 false），
+	// 故下拉刷新不会重出骨架（刷新态走 `refreshing` 转圈）✓。
+	let todayLoaded = ref(false)
 	let refreshing = ref(false)
 	let days = ref<Array<DayGroup>>([])
 	let pendingEvents = ref<Array<TimelineEvent>>([])
@@ -402,8 +443,21 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	let visibleDayCount = ref(20)
 	const LOAD_MORE_STEP: number = 20
 	// 卡PB R1：可见日组窗口（computed 先例：favorites/search 页同款写法）
+	// 🚨 2026-10-16（去重口径 · 用户明确要求）：历史区**只显示今天之前**的日组——
+	// 「今天」的内容由上方「今天」块（读 `contents`）**独占**；若日分组里再出现今天的事件卡片，
+	// 同一张今天的照片会**出现两次** ✗。事件日分组键 = `dayKey(startTime)`（见 buildDayGroups），
+	// 与本处 `dayKey(Date.now())` 同源 ⇒ 排除 `d.key == 今天` 即可 ✓。
+	let historyDays = computed((): Array<DayGroup> => {
+		const today = dayKey(Date.now())
+		return days.value.filter((d: DayGroup): boolean => d.key != today)
+	})
 	let visibleDays = computed((): Array<DayGroup> => {
-		return days.value.slice(0, visibleDayCount.value)
+		return historyDays.value.slice(0, visibleDayCount.value)
+	})
+	// 历史区总日组数（已排除今天）——「加载更多」的剩余数用它，**不能**用 `days.length`
+	// （含今天会多算一组，按钮"还有 N 组"会虚高 ✗）
+	let historyDayCount = computed((): number => {
+		return historyDays.value.length
 	})
 
 	// 生命周期
@@ -668,6 +722,9 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 				// 失败态下"骨架收起 + 保持现状"与 refreshSilently 的语义一致。
 				loaded.value = true
 				refreshing.value = false
+				// 2026-10-16（三态 · 分支 B2）：本支**不调** loadTodayEntries（失败不该再去拉今天记录）⇒
+				// 必须显式置 `todayLoaded`，否则 `loading` 恒真 = **骨架永驻** ✗（用户裁决的硬要求）。
+				todayLoaded.value = true
 				// 2026-10-15（真机反馈后修）：**无任何可显示内容时，把"失败"如实标出来**。
 				// 原实现只收起骨架屏就 return ⇒ 空态块被 ui-hidden 藏住、feed 又没内容
 				// = **整屏空白**（无引导、无 CTA、用户以为 App 坏了）✗。
@@ -848,6 +905,38 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	// `todayEntries.length === 0`（见模板注释）。
 	let todayEntries = ref<Array<TodayEntry>>([])
 
+	// 🚨 2026-10-16（三态显式化）：本页此前「骨架屏 / 空态 / feed」各自用不同表达式判显隐
+	// （骨架看 `loaded`，空态/feed 看 `emptyState`）⇒ **加载期骨架与 feed 会同时可见**
+	// = 真机反馈的"页面在闪"✗。现收敛成**两条派生量**（`loading` / `showEmpty`），三态互斥：
+	//   · loading = `!loaded || !todayLoaded`              → 只显示骨架屏
+	//   · empty   = `showEmpty`                           → 只显示空态块（loadFailed 文案在块内切换）
+	//   · data    = `!loading && !showEmpty`              → 显示「今天」块 + feed
+	// 互斥的算术保证：`showEmpty` 要求 `loaded && todayLoaded` ⇒ `showEmpty ⇒ !loading` ✓；
+	// 「今天」块 / feed 用 `(showEmpty || loading)` 判藏 ⇒ 与骨架、空态**都不同屏** ✓。
+	//
+	// ⚠️ 2026-10-16（用户裁决 · 批准修冷启动空态闪现）：`todayLoaded`（见其 ref 注释）必须**全覆盖
+	// 置位**，否则 `loading` 恒真 = **骨架永驻** ✗（比不修更糟）。已逐分支排查（清单 + 每支如何置位）：
+	//   B1 fetchAll 成功 → applyFetchedEvents → `loadTodayEntries()`（其 then **无条件**置 todayLoaded）
+	//      + `renderFromEvents` 置 loaded ✓
+	//   B2 fetchAll 失败（wasLastFetchFailed）→ 本支**显式置 todayLoaded=true**（原实现此支不调
+	//      loadTodayEntries ⇒ 必永驻 ✗）+ loaded=true，并按下方 loadFailed 口径如实标失败 ✓
+	//   B3 applyFetchedEvents 内"失败重试"支（emptyRetryDone）→ loadTodayEntries 已在函数入口调用 ✓
+	//   B4 onMounted 缓存 / 持久快照命中 → applyFetchedEvents（同 B1）✓；两者都未命中 → reload→fetchAll（B1/B2）✓
+	//   B5 refreshSilently 各早返回（pageAlive=false / wasLastFetchFailed）→ **不置位**，但它只在首拉
+	//      成功后才被调用（首拉恒走 B1/B2），彼时 loaded/todayLoaded 已 true ✓；且 pageAlive 在壳内
+	//      本组件**恒 true**（壳不销毁本页）✓
+	//   B6 EventOps 渲染出口（renderFromEvents）→ loaded 已 true、todayLoaded 已 true（B1 已置）✓
+	// `todayLoaded` **单调不回退** ⇒ 下拉刷新不重出骨架（刷新态走 `refreshing` 转圈）✓。
+	// 条件保留「今天也没有任何 entry」：只看 events 会把"今天记了文字/照片（还没聚合）"误判成空 ✗。
+	// `loadFailed` 并入可见条件 = 修复"首拉失败 → 空态被 ui-hidden 藏住 + feed 又无内容 = 整屏空白"✗
+	// （失败文案由空态块内部按 loadFailed 切换，**不是假空态** ✓，失败语义不丢）。
+	let loading = computed((): boolean => {
+		return !loaded.value || !todayLoaded.value
+	})
+	let showEmpty = computed((): boolean => {
+		return loaded.value && todayLoaded.value && (emptyState.value || loadFailed.value) && todayEntries.value.length === 0
+	})
+
 	// ── 回顾位「那年今日」（2026-10-15 · 台账 §4.20 ㉘ · 批次 C 第一刀）────────────────────
 	// 为什么放在「今天」块正下方：记忆产品的价值一半在"**它替我想起来**"（友商实证：Day One
 	// 的 On This Day、Google/Apple Memories、朋友圈那年今日、flomo 每日回顾 ✓），而我们此前
@@ -858,6 +947,21 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 
 	function loadTodayEntries(): void {
 		fetchTodayEntries().then((rows: Array<TodayEntry>) => {
+			// 2026-10-16（三态 · 分支 B1）：**无条件先置位**——`fetchTodayEntries` 的 Promise 恒 resolve
+			// （`get()` 失败也 resolve null ⇒ 本函数失败也 resolve []）⇒ 此处置位保证 `loading` 一定收敛，
+			// **不会因下方失败守卫而漏置**（漏置 = 骨架永驻 ✗）。必须在守卫**之前**置。
+			todayLoaded.value = true
+			// 🚨 2026-10-16（复核补 · 沿 10-11 静态审查 #1 对 events / echo 的同一口径）：
+			// **失败结果不得覆盖已渲染的今天记录**。`fetchTodayEntries` 用空数组表达"请求失败"与
+			// "今天真的没有记录"两种情形 ⇒ 原实现无条件覆盖，则**断网下拉刷新会把用户正在看的
+			// 今天的文字/照片整块抹掉**（"今天"块退回"今天还没有记录"）；只记文字（不产 event）
+			// 的用户更会翻成假空态「还没有回忆」（`showEmpty` 依赖 `todayEntries`）✗。
+			// 失败保持现状、成功才覆盖 ✓；首拉失败时 todayEntries 本就为空，最终显隐仍由下方
+			// `showEmpty`（events/loadFailed 口径）统一裁决，不新增分支、不新增监听 ✓。
+			if (wasLastEntriesFetchFailed()) {
+				console.log('[dbg-index] today entries fetch failed -> keep current')
+				return
+			}
 			todayEntries.value = rows
 		})
 	}
