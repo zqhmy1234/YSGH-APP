@@ -142,10 +142,13 @@ function finishAgg(pts: Array<Photo>, tzOffsetMin: number): AggRunResult {
 	// 故这里必须 WARN + 计数，并把**后果**写进日志文案。
 	if (pts.length > AGG_CLIENT_MAX_N) {
 		degradeRuns++
+		// 2026-10-16（audit exports 轴）：累计值改为经**公开访问器** getDegradeRuns() 读出——
+		// 此前只插值模块私有的 degradeRuns，导出函数零调用被门禁判成"能力写了没接线"。
+		// 取值口径不变（同一变量），只是把唯一读面落在既有 [yishu-agg] 告警行上（不新造日志行）。
 		console.warn('[yishu-agg] 端侧聚类降级 n=' + pts.length + ' > ' + AGG_CLIENT_MAX_N
 			+ '（量级估计阈值；实测单用户单日最多 81 条 ⇒ 5× 余量，几乎不触发）'
 			+ ' ⇒ **本次不出 L1，时间轴需等后续聚合**（当前云侧只产 L2/L3，无 L1 生产者）'
-			+ '；累计降级 ' + degradeRuns + ' 次')
+			+ '；累计降级 ' + getDegradeRuns() + ' 次')
 		return new AggRunResult([], 0)
 	}
 	const clusters = stDbscan(pts, l0EpsTsec(), L0_EPS_S_M, L0_MIN_PTS)

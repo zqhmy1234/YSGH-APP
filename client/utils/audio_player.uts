@@ -162,30 +162,12 @@ function drainOne(): void {
 	}
 }
 
-// ── 模板取值封装（uvue 模板不直接绑跨模块 ref，统一走函数）──
-
-/** 该条语音是否处于「加载中/播放中/暂停中」任一活动态 */
-export function isVoiceActive(contentId: string): boolean {
-	return voiceCurrentId.value == contentId
-}
-
-/** 全局是否正在出声 */
-export function isVoicePlaying(): boolean {
-	return voicePlaying.value
-}
-
-/** 该条进度 0..1（非活动条恒 0） */
-export function voiceProgressOf(contentId: string): number {
-	return isVoiceActive(contentId) ? voiceProgress.value : 0
-}
-
-export function voiceCurSecValue(): number {
-	return voiceCurSec.value
-}
-
-export function voiceTotalSecValue(): number {
-	return voiceTotalSec.value
-}
+// ── 取值封装（2026-10-16 清空）──
+// isVoiceActive / isVoicePlaying / voiceProgressOf / voiceCurSecValue / voiceTotalSecValue
+// 五个模板取值包装已删：三处模板（index/search/detail）改为**直接绑 ref**、不再走函数取值
+// （见 detail.uvue:375 · 台账 §4.20 批次 5 RC-1）后，它们成**搬迁残留的死导出**，audit exports
+// 轴判"零调用能力"——全仓（含 .uvue 模板）零代码调用，仅存注释提及。
+// 注：isVoiceActive 原被 voiceProgressOf（同为死导出）调用，删其后亦零引用，一并删除。
 
 /** 秒 → m:ss（F5a 进度行格式 0:12 / 0:32） */
 export function fmtVoiceTime(sec: number): string {
