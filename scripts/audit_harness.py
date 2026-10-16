@@ -51,6 +51,7 @@ import io
 import json
 import re
 import sys
+from bisect import bisect_right
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -445,18 +446,33 @@ def audit_models() -> None:
         if models_dir not in p.parents and p.name != "__init__.py"
     ]
     usages: dict[str, list[str]] = {c: [] for c in classes}
+    # 2026-10-16 性能（实测）：原实现对每个模型类在每份文件上各跑一次 `re.search`
+    #   （约 100 类 × ~190 文件 = 10627 次整文件正则，cProfile 3.4s 全耗在 re.search）。
+    #   改为每份文件只做一遍 `\w+` 词元扫描 + 名表查表 = O(corpus)；与 `\b{cls}\b`
+    #   对纯标识符类名逐位等价（同轴 4 的 token 口径，由 `--selftest` 守卫）。
+    names_set = set(classes)
+    token_re = re.compile(r"\w+")
     for p in scan_files:
         text = p.read_text(encoding="utf-8", errors="replace")
+        rel = str(p.relative_to(REPO))
+        hit: set[str] = set()
+        for m in token_re.finditer(text):
+            tok = m.group(0)
+            if tok in names_set and tok not in hit:
+                hit.add(tok)
+        for c in hit:
+            usages[c].append(rel)
+        # Some active tables are intentionally accessed with raw SQL. Count
+        # an actual DML table reference, not a mention in a comment or doc.
+        # （仅对未被类名命中的类做兜底 —— 与旧实现 `elif` 分支的触发条件一致）
         for c in classes:
-            if re.search(rf"\b{re.escape(c)}\b", text):
-                usages[c].append(str(p.relative_to(REPO)))
-            # Some active tables are intentionally accessed with raw SQL. Count
-            # an actual DML table reference, not a mention in a comment or doc.
-            elif c in table_names and re.search(
+            if c in hit:
+                continue
+            if c in table_names and re.search(
                 rf"\b(?:FROM|JOIN|INTO|UPDATE)\s+{re.escape(table_names[c])}\b",
                 text, re.I,
             ):
-                usages[c].append(str(p.relative_to(REPO)))
+                usages[c].append(rel)
 
     zero = {c: f for c, f in classes.items() if not usages[c] and c not in mirror_tables}
     mirrored = {c: f for c, f in classes.items() if not usages[c] and c in mirror_tables}
@@ -511,6 +527,20 @@ EXPORT_ALLOWLIST: dict[str, str] = {
 }
 
 
+def _line_starts(text: str) -> list[int]:
+    """每行起始字符偏移（升序），配合 `bisect_right` 把「偏移 → 1-based 行号」降到 O(log n)。
+
+    为什么（2026-10-16）：exports 轴原用 `text[:m.start()].count("\\n") + 1` 逐匹配数行号，
+    每次匹配都要**切一份前缀子串**再扫 —— 属 O(corpus) 级开销（见 audit_exports 性能注）。
+    """
+    starts = [0]
+    idx = text.find("\n")
+    while idx != -1:
+        starts.append(idx + 1)
+        idx = text.find("\n", idx + 1)
+    return starts
+
+
 def audit_exports() -> None:
     print("== 轴 4 · 导出-引用可达性（client/utils 零调用导出）==")
     utils_dir = CLIENT / "utils"
@@ -533,12 +563,49 @@ def audit_exports() -> None:
     #   实测排除注释后多露出 4 枚真死码：AGG_CHECK_ON_DEVICE / invalidateTimelineCache /
     #   isIgnoredEvent / parseErrorString。口径与轴 2（audit_client 的 _comment_ranges）一致。
     #   顺带把"按名重读每份源文件"改为**预读缓存**（原为 导出数 × 文件数 次 read_text）。
-    sources_cache: list[tuple[object, str, list[tuple[int, int]]]] = []
+    sources_cache: list[tuple[Path, str, list[tuple[int, int]], list[int], str]] = []
     for f in sources:
         text = f.read_text(encoding="utf-8", errors="replace")
-        sources_cache.append((f, text, _comment_ranges(text)))
+        sources_cache.append(
+            (f, text, _comment_ranges(text), _line_starts(text), str(f.relative_to(REPO)))
+        )
     base = _load_baseline().get("exports", {})
     frozen = base.get("zero_cap_allowlist", {})   # 棘轮：存量零调用能力导出（只拦新增）
+
+    # 2026-10-16 性能（实测）：原实现是「导出名 × 源文件」双循环 —— 413 名 × 112 文件 =
+    #   46144 次 `finditer`（每次整文件扫描），实测 **19.7s**，而真实命中只有 3236 处：
+    #   成本全在「对每个名字把整个语料重扫一遍」= O(names × corpus)，与命中数无关。
+    #   现改为**每份源文件只扫一遍**：取全部 `\w+` 词元，O(1) 查名表 = O(corpus)。
+    #   等价性：`\w+` 词元 == `\b` 词边界所限定的整词；对**纯标识符**名（所有客户端导出都是）
+    #   两法逐位等价，含 Unicode 相邻字符（`\w` 含中文）与 `$`/`_` 相邻等边界 —— 由
+    #   `_selftest_export_scan()` 守卫（`--selftest` 可复现）。
+    #   行号亦由 `text[:off].count("\n")`（每次前缀切片）改为预计算换行偏移 + `bisect_right`。
+    refs_by_name: dict[str, int] = {n: 0 for n in decls if n not in EXPORT_ALLOWLIST}
+    names_set = set(refs_by_name)
+    token_re = re.compile(r"\w+")
+    for _f, text, ranges, starts, rel in sources_cache:
+        for m in token_re.finditer(text):
+            tok = m.group(0)
+            if tok not in names_set:
+                continue
+            line = bisect_right(starts, m.start())
+            if f"{rel}:{line}" in decls[tok]:
+                continue          # 声明行自身不算引用
+            if _in_comment(ranges, m.start()):
+                continue          # 注释内提及不算引用（B10-q）
+            refs_by_name[tok] += 1
+    # 非纯 \w 的导出名（含 `$` 等，`\w+` 抓不到）退回逐名 `\b` 扫描，保证零漏计。
+    exotic = [n for n in names_set if not n.isidentifier()]
+    for name in exotic:
+        pat = re.compile(rf"\b{re.escape(name)}\b")
+        for _f, text, ranges, starts, rel in sources_cache:
+            for m in pat.finditer(text):
+                line = bisect_right(starts, m.start())
+                if f"{rel}:{line}" in decls[name]:
+                    continue
+                if _in_comment(ranges, m.start()):
+                    continue
+                refs_by_name[name] += 1
 
     zero_cap: list[tuple[str, str]] = []   # 零调用的**能力函数**（真信号：写了没接线）
     zero_const: list[tuple[str, str]] = [] # 零调用的**契约常量**（PATH_*/FIELD_*；属预留或端点未接线，需人工判）
@@ -546,16 +613,7 @@ def audit_exports() -> None:
     for name, places in sorted(decls.items()):
         if name in EXPORT_ALLOWLIST:
             continue
-        refs = 0
-        pat = re.compile(rf"\b{re.escape(name)}\b")
-        for f, text, ranges in sources_cache:
-            for m in pat.finditer(text):
-                line = text[: m.start()].count("\n") + 1
-                if f"{f.relative_to(REPO)}:{line}" in places:
-                    continue          # 声明行自身不算引用
-                if _in_comment(ranges, m.start()):
-                    continue          # 注释内提及不算引用（B10-q）
-                refs += 1
+        refs = refs_by_name[name]
         is_const = name.startswith("PATH_") or name.startswith("FIELD_") or "contract.uts" in places[0]
         if refs == 0:
             (zero_const if is_const else zero_cap).append((name, places[0]))
@@ -867,18 +925,67 @@ def axes_findings() -> tuple[list[str], list[str], str]:
 
 # ─────────────────────────── 入口 ───────────────────────────
 
+def _selftest_export_scan() -> int:
+    """**等价性守卫**：证明「按 `\\w+` 词元扫描」与「按 `\\b{name}\\b` 扫描」对纯标识符名逐位等价。
+
+    为什么需要（2026-10-16）：exports/models 两轴为提速把「逐名×逐文件重扫」改成了
+    「逐文件单遍 `\\w+` 词元扫描」（见 audit_exports / audit_models 性能注）。这类等价替换
+    一旦在边界上偏了（`$`/下划线/Unicode 相邻字符），会**静默**把零调用导出误判或漏判
+    —— 真信号要么噪声爆表、要么被掩盖。本探针用一组覆盖上述边界的合成语料断言两法全等；
+    不等即返回 1（门禁不可信比没有门禁更糟）。改 `token_re` 会被本探针当场感知。
+    """
+    names = ["foo", "fooBar", "bar", "_baz", "PATH_A", "café"]
+    cases = [
+        "foo fooBar bar _baz PATH_A café",          # 纯词
+        "$foo$ foo-bar foo_bar fooFoo",             # `$` 分隔 / 连字符 / 下划线粘连
+        "中foo 中fooBar 中bar",                      # Unicode 相邻（`\w` 含中文 ⇒ 不应命中）
+        "foo.bar foo(bar) [foo] 'foo'",             # 标点分隔
+        "xPATH_Ax PATH_AB xbar bar_",               # 前后缀粘连
+    ]
+    token_re = re.compile(r"\w+")
+    bad: list[str] = []
+    for text in cases:
+        tok = {n: 0 for n in names}
+        for m in token_re.finditer(text):
+            t = m.group(0)
+            if t in tok:
+                tok[t] += 1
+        for n in names:
+            ref = len(re.findall(rf"\b{re.escape(n)}\b", text))
+            if tok[n] != ref:
+                bad.append(f"{text!r} · 名 {n}: token={tok[n]} vs \\b={ref}")
+    if bad:
+        print("[FAIL] 词元扫描与 \\b 扫描**不等价**（轴 4/3 提速的等价前提被破坏）：")
+        for b in bad:
+            print("  ", b)
+        return 1
+    print(f"[OK] 词元扫描与 \\b 扫描等价（{len(cases)} 组边界语料 × {len(names)} 名全等）")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="harness 多轴审计（契约/客户端/模型/导出/体积/重复）")
     ap.add_argument(
         "axis",
+        nargs="?",
         choices=[
             "openapi", "client", "client_imports", "class_members", "token_literals",
             "models", "exports", "filesize", "dups", "all",
         ],
+        help="审计轴（与 --selftest 二选一）",
     )
     ap.add_argument("--skip-openapi", action="store_true", help="无后端环境时跳过契约轴")
     ap.add_argument("--json", metavar="PATH", help="把发现写入 JSON（供 CI/台账引用）")
+    ap.add_argument(
+        "--selftest", action="store_true",
+        help="等价性守卫：词元扫描 vs \\b 扫描（轴 3/4 提速前提）",
+    )
     args = ap.parse_args()
+
+    if args.selftest:
+        return _selftest_export_scan()
+    if args.axis is None:
+        ap.error("需要指定 axis（或 --selftest）")
 
     if args.axis in {"openapi", "all"} and not args.skip_openapi:
         audit_openapi()

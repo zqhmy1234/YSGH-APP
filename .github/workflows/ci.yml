@@ -1,7 +1,11 @@
 # 忆述光华 · CI（S2-05 收尾项，对齐 S1-04「CI 接入（lint+单测+构建检查，main 保护）」）
 # 策略（2026-08-26 重构：快 + 拦截 + 高质量）：
 #   双层并行：
-#     - fast-gate：静态全仓门禁（语法/lint/密钥/TODO，~30s）——PR/推送即时反馈
+#     - fast-gate：静态全仓门禁（语法/lint/密钥/TODO）——PR/推送即时反馈
+#       ⚠️ 2026-10-16：原注释宣称「~30s」**与实测不符**（差 ~2×，冷启动曾测到 ~268s ⇒ 差 ~9×）。
+#       按实测更正：本 job 内容 = `review_agent --full --skip-tests`（本机热态 ≈53s；其中
+#       `import app.main` ~23s 为最大单项）+ `audit_harness client`（≈1s）；CI 冷启动会显著更慢
+#       （pip/HF 缓存与 Python 首次导入均未预热）。勿再回到无实测依据的数字。
 #     - full-gate：全量门禁（pytest 全量 + api_smoke + research + 覆盖率）——最终把关
 #   服务：postgres（yishu 隔离库）+ redis（RQ 队列）+ qdrant（向量库，全量覆盖不 deselect）
 #   缓存：pip 缓存（拆 key + restore-keys 兜底增量）；HF 模型缓存（BGE-M3 按模型拆 key）
@@ -278,6 +282,10 @@ jobs:
         # 写 test_ 前缀隔离 collection（QDRANT_COLLECTION），不碰生产 yishu_contents。
         # T3（2026-08-27）：追加 --cov-append + xml——rag 用例计入覆盖率（与 test_agent 的
         # rag 段幂等合并），最终 .cowork-temp/coverage.xml 反映合并后覆盖（T8 产物）。
+        # ⚠️ 2026-10-16（口径诚实化 · 协调者批准）：**此步在 `MOCK_EXTERNAL_AI=true` 下运行**
+        #   （见本 job 级 env）⇒ LLM 精排 / 搜索回答等外部往返被 mock 成零耗时 ⇒ **不覆盖真实
+        #   LLM 的尾延迟**；RET-018 的 P95<3s **不能仅凭本步结论**（真 P95 需服务器 + 真 key 压测）。
+        #   本仓反复吃亏的形态就是"门禁绿 ≠ 承诺成立" ⇒ 把边界写在门禁旁边，勿再误读。
         env:
           QDRANT_COLLECTION: test_yishu_contents
         run: python -m pytest backend/tests -m rag -q --tb=short --cov=backend/app --cov-append --cov-report=xml:.cowork-temp/coverage.xml

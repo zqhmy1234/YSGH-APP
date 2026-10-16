@@ -102,12 +102,20 @@ def module_exports() -> dict[str, list[str]]:
 def scan() -> tuple[list[dict], int]:
     """返回 (违规列表, 扫描的导出符号数)。供本脚本 CLI 与 `audit_harness` 轴共用。"""
     exports = module_exports()
+    # 2026-10-16 性能（实测 8.8s → ~1s；协调者批准扩权）：热点在此前那行
+    #   `p in list(MODULE_DIRS[x].rglob("*"))` —— **在循环体内对每个源文件重算两次整目录
+    #   遍历**（client/ 源文件数百个 ⇒ 上千次目录递归）。提为**循环外一次的集合**，
+    #   成员判定语义不变（Path 相等/哈希一致）。只改执行方式，判据与输出逐字节一致。
+    module_files: set[Path] = set()
+    for d in MODULE_DIRS:
+        if d.exists():
+            module_files.update(d.rglob("*"))
     violations: list[dict] = []
     for p in iter_client_sources():
         if any(s in p.parts for s in SKIP_DIRS):
             continue
         # 模块自身不算（它就是定义处）
-        if p in list(MODULE_DIRS[0].rglob("*")) or p in list(MODULE_DIRS[1].rglob("*")):
+        if p in module_files:
             continue
         text = p.read_text(encoding="utf-8", errors="replace")
         code = strip_comments(text)

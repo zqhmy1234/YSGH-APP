@@ -38,6 +38,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import sys
@@ -66,6 +68,14 @@ REPORT_PATH = REPORT_DIR / "review-report.json"
 #   （审计认得 AKID…/私钥宽版，提交门禁看不到）⇒ 同一份密钥可能被放行。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from secret_patterns import SECRET_PATTERNS  # noqa: E402
+
+# 2026-10-16 性能（实测）：`check_secrets` 原在**每一行**上跑全部 SECRET_PATTERNS
+#   （全量模式 1328 文件 → 实测 14.95s）。新增一条「任一模式」合成正则做**行级预筛**：
+#   不命中直接跳过（绝大多数行），命中才逐条跑原正则产出 finding ⇒ 判据/输出逐条不变。
+_SECRET_COMPILED: list[tuple[str, re.Pattern]] = [(p, re.compile(p)) for p in SECRET_PATTERNS]
+_SECRET_ANY: re.Pattern | None = (
+    re.compile("|".join(f"(?:{p})" for p in SECRET_PATTERNS)) if SECRET_PATTERNS else None
+)
 
 SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py", "secret_patterns.py"}
 # 2026-08-27（T9）：补齐 client 工具链（已整目录排除）之外的文本类型盲区——
@@ -375,8 +385,15 @@ def check_secrets(files: list[str]) -> tuple[bool, str]:
             # **可见、可审计、可 grep**，且必须逐个显式标注。
             if "allowlist secret" in line:
                 continue
-            for pat in SECRET_PATTERNS:
-                if re.search(pat, line) and "change-me" not in line and "mock" not in line.lower():
+            # 2026-10-16：把**行级常量条件**（与具体 pat 无关）前置到行级判定——与旧实现
+            #   「逐 pattern 检查同一条件」等价，但让绝大多数行在进入逐条循环前即被排除。
+            if "change-me" in line or "mock" in line.lower():
+                continue
+            # 行级预筛：一条合成正则不命中 ⇒ 16 条原正则必然全不命中（等价，见 _SECRET_ANY）。
+            if _SECRET_ANY is not None and not _SECRET_ANY.search(line):
+                continue
+            for pat, cpat in _SECRET_COMPILED:
+                if cpat.search(line):
                     findings.append(f"{rel}:{i}: 疑似密钥 {pat[:30]}...")
     return (not findings), ("\n".join(findings) if findings else "无硬编码密钥")
 
@@ -609,28 +626,38 @@ def check_openapi_snapshot() -> tuple[bool, str]:
     script = ROOT / "scripts" / "gen_openapi.py"
     if not script.exists():
         return False, f"判据脚本缺失：{script.relative_to(ROOT)}（契约再生无法复现）"
-    # 2026-10-15（台账 §4.20 ㉙）：**给足超时** —— 本检查要 import 整个后端 app，
-    # 实测冷启动 36.1s / 热 18.2s（见台账性能节）；原实现用 `run()` 的默认超时，
-    # 在机器同时跑客户端编译门/云打包时会被顶爆 ✗。
-    code, out = run([sys.executable, str(script), "--check"], timeout=300)
-    if code == 0:
-        return True, out.strip()
-    txt = out.strip()
-    # 2026-10-15：**超时不是契约漂移** —— 原实现把 `run()` 的超时（输出恰为 "timeout"）
-    # 当成 exit 1，于是报「契约快照已过期（请重导）」✗✗：把**门禁自己的超时**说成
-    # **开发者的快照过期**，这正是"红得莫名其妙、还被算在自己头上"的那一类事故。
-    # 实测取证：报红那次输出 `…重导）：timeout`；同一工作区手动复跑
-    # `python scripts/gen_openapi.py --check` = `[OK] 一致（256544 字符）` ✓。
-    # 现按本仓铁律 3 处置：**环境不可用 = [环境错误] 前缀（退出码 2）**，既不放行也不误判 ✓。
-    if txt.lower() == "timeout" or "timed out" in txt.lower():
-        return False, (
-            f"{ENV_ERR_PREFIX} 契约快照校验**超时**（子进程未在 300s 内返回）⇒ 本次**未判定**，"
-            "**不是**快照漂移\n"
-            "  重跑本门禁即可；若持续超时，先看是否有并发重活（客户端编译门 / 云打包 / 测试）"
+    # 2026-10-16（性能 · 执行方式变更，**判据不变**）：复用**进程内已导入的 app**。
+    #   本检查与上方 `check_audit_axes` 的轴 1 都需要 `from app.main import app`，而该导入
+    #   实测 **38s**（瓶颈＝app.services.embedding → sentence_transformers/torch/sklearn）。
+    #   原实现以**子进程**再跑一遍 `gen_openapi --check` ⇒ 把整个后端 app **导入第二遍**
+    #   （实测 32.2s）＝ 静态门禁白烧 ~32s。现改为**进程内**调用：`checks` 中 `audit_axes`
+    #   先于本项求值，其已把 `app.main` 导入并缓存于 `sys.modules` ⇒ `render()` 命中缓存、
+    #   秒级返回。渲染（`gen_openapi.render`）、比对（逐字节 `==`）、diff 提示
+    #   （`gen_openapi._diff_hint`）、降级口径**全部复用同一脚本**，无判定规则重写。
+    #   并发保护：子进程 300s 超时原用于防挂起；现由「轴 1 已先完成 app 导入」替代——
+    #   若 app 导入会挂，在轴 1 就已挂，本项不引入新的挂起面（且不再有"超时被误报成
+    #   快照过期"的旧坑）。
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gen_openapi
+
+    try:
+        fresh = gen_openapi.render()
+    except Exception as exc:  # noqa: BLE001 —— 环境不可导入 = 降级（对齐原 exit 2 语义）
+        return True, (
+            "[降级] 后端环境不可导入，跳过契约快照一致性校验：\n"
+            f"  {type(exc).__name__}: {exc}"
         )
-    if code == 2:
-        return True, "[降级] 后端环境不可导入，跳过契约快照一致性校验：\n" + out.strip()
-    return False, "契约快照已过期（请运行 python scripts/gen_openapi.py 重导）：\n" + out.strip()
+    target = gen_openapi.TARGET
+    current = target.read_text(encoding="utf-8") if target.exists() else ""
+    rel = target.relative_to(ROOT).as_posix()
+    if current == fresh:
+        return True, f"[OK] {rel} 与后端实现一致（{len(fresh)} 字符）"
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        gen_openapi._diff_hint(current, fresh)
+    return False, (
+        f"契约快照已过期（请运行 python scripts/gen_openapi.py 重导）：\n{buf.getvalue().rstrip()}"
+    )
 
 
 def check_client_compile() -> tuple[bool, str]:
