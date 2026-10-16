@@ -283,6 +283,27 @@
 	justify-content: center;
 	align-items: center;
 }
+/* 敏感话题行尾「依据 N 条记忆」（2026-10-16 画像可解释）：meta 族真值——theme-detail
+   .card-meta 同款 21.2rpx #8A7A6A（--d-lattice-p11 / --c-ink-500），零新视觉元素 */
+.sens-evidence {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: var(--d-lattice-p11, 21.2rpx);
+	color: var(--c-ink-500, #8a7a6a);
+	/* 与右邻处置徽章间隔（gap→margin 铁律） */
+	margin-right: var(--d-lattice-p10, 19.2rpx);
+}
+/* 列表空态「暂无…」文本行（2026-10-16 空态统一）：字号/色取 theme-detail .empty-text 同款
+   真值（23.1rpx #B3A696）。类名必须 pm- 前缀隔离——empty-text 已被 theme-detail/messages/
+   favorites/TabSearch/RecordSheet 五处占用且几何互斥（2026-10-11 同名类全局冲突实锤教训，
+   见 docs/lessons.md），不得直接复用该名 */
+.pm-list-empty {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: var(--d-card_radius_small, 23.1rpx);
+	color: var(--c-ink-300, #b3a696);
+	/* 垂直节奏对齐 theme-item 行（padding 20rpx 0） */
+	padding-top: var(--d-raw-r20, 20rpx);
+	padding-bottom: var(--d-raw-r20, 20rpx);
+}
 .sens-remove-text {
 	font-family: "Sarasa Gothic SC", sans-serif;
 	font-size: var(--d-card_radius_small, 23.1rpx);

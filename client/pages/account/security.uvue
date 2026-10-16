@@ -37,6 +37,17 @@
 					<text class="sec-value">{{ wechatText }}</text>
 					<text class="sec-arrow">›</text>
 				</view>
+				<!-- 2026-10-16：消息通知**状态占位行**——调研已证后端无偏好字段，**绝不造假开关** ✗。
+				     口径对齐本日「清假入口」批次：不可点、无箭头 = 纯状态展示，非假入口（假入口的定义是
+				     「有点击行为却无真实目标」，本行无 @tap）；值如实写「暂未开放」，等后端偏好字段立项后
+				     再改为真开关。图标复用 storage-bell.svg（全仓唯一既有铃铛线性 SVG，零新增视觉资产）。 -->
+				<view class="sec-row">
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/storage-bell.svg" />
+					</view>
+					<text class="sec-label">消息通知</text>
+					<text class="sec-value">暂未开放</text>
+				</view>
 			</view>
 			<!-- 2026-10-16（清假入口批次 · 裁决后隐藏）：原 41:183 组·数据与隐私（唯一行＝「隐私权限」）**整组移除**——
 			     该行点击仅弹「隐私权限设置即将上线」占位 toast、无目标页，属同类占位入口。

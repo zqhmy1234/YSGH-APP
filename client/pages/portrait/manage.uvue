@@ -52,7 +52,10 @@
 						<text class="tag-confidence">{{ tag.confidence }}%</text>
 					</view>
 				</view>
-			</view>
+				<!-- 空态「暂无…」行（2026-10-16 空态统一，theme-detail 纯文本块同款真值）：闸 = !loading
+				     （loadProfile 出口收敛）——加载期不显空文案，防「假空态」闪现（口径同 TabIndex showEmpty） -->
+				<text v-if="!loading && personalityTags.length == 0" class="pm-list-empty">暂无性格标签</text>
+				</view>
 
 			<!-- 记忆主题卡片 -->
 			<view class="menu-card">
@@ -70,6 +73,9 @@
 						<text class="theme-arrow">›</text>
 					</view>
 				</view>
+				<!-- 空态「暂无…」行（2026-10-16 空态统一）：闸 = themesLoaded——主题派生自时间轴缓存/网络
+				     两条路径，applyThemes 出口统一置位（含 fetch 失败 resolve [] 的诚实空） -->
+				<text v-if="themesLoaded && themes.length == 0" class="pm-list-empty">暂无记忆主题</text>
 			</view>
 
 			<!-- 敏感画像管理卡片（W10 画布 41:92 新增，承接 /api/v1/profile/sensitive 三端点） -->
@@ -79,9 +85,16 @@
 				<view class="sens-list">
 					<view v-for="(s, sIdx) in sensitiveTopics" :key="s.topic" :class="sIdx === sensitiveTopics.length - 1 ? 'sens-row no-border' : 'sens-row'">
 						<text class="sens-name">{{ s.topic }}</text>
+						<!-- 2026-10-16 画像可解释：渲染后端已下发的 evidence[]（GET /profile/sensitive 出参即含，
+						     schema evidence=list[str]，条数=来源记忆数；只显示条数不显原文——原文是敏感原话，
+						     行内展开既挤又二次暴露）。样式 = theme-detail .card-meta 同款 meta 族（.sens-evidence） -->
+						<text v-if="s.evidenceCount > 0" class="sens-evidence">依据 {{ s.evidenceCount }} 条记忆</text>
 						<text class="sens-badge-text" :style="badgeStyle(s.disposition)">{{ dispositionLabel(s.disposition) }}</text>
 						<view class="sens-remove" @tap="onRemoveSensitive(s)"><text class="sens-remove-text">✕</text></view>
 					</view>
+					<!-- 空态「暂无…」行（2026-10-16 空态统一）：闸 = sensLoaded——get() 失败也 resolve null，
+					     置位覆盖失败支，失败不显假空（与统计卡「保持 0 不造假」同口径，故仅闸加载完成） -->
+					<text v-if="sensLoaded && sensitiveTopics.length == 0" class="pm-list-empty">暂无敏感话题</text>
 				</view>
 				<!-- 添加行：点击就地展开输入形态（后端 upsert 默认 forbid，MVP 不做级别选择） -->
 				<view v-if="!adding" class="sens-add pressable" @tap="adding = true">
@@ -159,10 +172,13 @@
 	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
 	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
 
-	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影）
+	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影；
+	// 2026-10-16 画像可解释：补 evidenceCount——后端出参 evidence=list[str]（来源记忆原话），
+	// UI 只消费条数，行尾渲染「依据 N 条记忆」）
 	type SensTopic = {
 		topic: string
 		disposition: string
+		evidenceCount: number
 	}
 
 	// 响应式数据
@@ -174,6 +190,11 @@
 	let loading = ref(true)
 	let personalityTags = ref<Array<any>>([])
 	let themes = ref<Array<any>>([])
+	// 2026-10-16 空态防闪现闸（口径同 TabIndex showEmpty——加载期显「暂无…」= 假空态）：
+	// themesLoaded 在 applyThemes 出口置位（缓存命中/走网络两条路径都经它，含失败 resolve [] 的诚实空）；
+	// sensLoaded 在 loadSensitive 回调入口置位（get() 失败也 resolve null，同样覆盖）
+	let themesLoaded = ref(false)
+	let sensLoaded = ref(false)
 	// 敏感画像管理（W10 画布 41:92 新增）
 	let sensitiveTopics = ref<Array<SensTopic>>([])
 	let adding = ref(false) // 添加行展开态（就地展开输入，不弹窗）
@@ -294,6 +315,8 @@
 			})
 		}
 		themes.value = themeList
+		// 2026-10-16：主题空态闸置位（applyThemes 是缓存/网络两路径的共同出口）
+		themesLoaded.value = true
 	}
 
 	function loadStats(): void {
@@ -345,6 +368,9 @@
 	// GET /api/v1/profile/sensitive：列出全部话题（后端按更新时间倒序）
 	function loadSensitive(): void {
 		get('/api/v1/profile/sensitive').then((body: UTSJSONObject | null) => {
+			// 2026-10-16：空态闸在回调入口置位——get() 失败也 resolve null，覆盖失败支
+			// （失败不显假空：与统计卡「保持 0 不造假」同口径，失败时列表与空态都不渲染）
+			sensLoaded.value = true
 			if (body == null) {
 				return
 			}
@@ -357,7 +383,10 @@
 				const it = arr[i]
 				const topic = it.getString('topic')
 				if (topic != null && topic != '') {
-					list.push({ topic: topic, disposition: it.getString('disposition') ?? 'forbid' })
+					// evidence=list[str]（schema ProfileSensitiveOut），取条数供行尾「依据 N 条记忆」
+					const evArr = it.getJSONArray('evidence')
+					const evCount = evArr != null ? evArr.length : 0
+					list.push({ topic: topic, disposition: it.getString('disposition') ?? 'forbid', evidenceCount: evCount })
 				}
 			}
 			sensitiveTopics.value = list
