@@ -39,7 +39,8 @@
 		<view class="n4_flow">
 			<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
 			<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': !voicePlayable }">
-				<view v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
+				<!-- 2026-10-16（RC-F）：播放钮暂停态改读预计算属性（mainActive && mainPlaying），零函数调用 -->
+				<view v-if="mainActive && mainPlaying" class="n4_vbtn-pause">
 					<view class="n4_vbtn-pause-bar"></view>
 					<view class="n4_vbtn-pause-bar"></view>
 				</view>
@@ -48,16 +49,21 @@
 			<view class="n4_vcol">
 				<text v-if="voiceNote != ''" class="n4_vnote">{{ voiceNote }}</text>
 				<view class="n4_vwave">
-					<VoiceWave :heights="detailWave" :waveform="wf.waveformOf(contentId)" :active="voiceIsActive(contentId)" :progress="voiceProgressOfCard(contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+					<!-- 2026-10-16（RC-F）：播放态改读**预计算属性**（mainActive/mainProgress/mainCurText/
+					     mainTotalText），模板零函数调用（原 voiceIsActive()/voiceProgressOfCard()/
+					     voiceCurSecText()/voiceTotalSecText() 每次 tick 全页重算）。waveform 仍走
+					     `wf.waveformOf`——与 TabSearch 先例一致，只在波形落表时 version++，非 tick 热点。 -->
+					<VoiceWave :heights="detailWave" :waveform="wf.waveformOf(contentId)" :active="mainActive" :progress="mainProgress" idle-color="#E5DCC8" played-color="#C4913C" />
 				</view>
-				<view v-if="voiceIsActive(contentId)" class="n4_vprog">
-					<text class="n4_vprog-cur">{{ voiceCurSecText() }}</text>
+				<view v-if="mainActive" class="n4_vprog">
+					<text class="n4_vprog-cur">{{ mainCurText }}</text>
 					<view class="n4_vtrack">
-						<view class="n4_vtrack-fill" :style="{ width: (voiceProgressOfCard(contentId) * 100) + '%' }"></view>
+						<!-- 2026-10-16（RC-F）：进度填充 `width:%`→`transform:scaleX()`（合成层，免每 tick 重排） -->
+						<view class="n4_vtrack-fill" :style="'transform:scaleX(' + mainProgress + ');transform-origin:left;'"></view>
 					</view>
-					<text class="n4_vprog-total">{{ voiceTotalSecText() }}</text>
+					<text class="n4_vprog-total">{{ mainTotalText }}</text>
 				</view>
-				<text v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vtitle-playing">正在播放 · {{ memTitle }}</text>
+				<text v-if="mainActive && mainPlaying" class="n4_vtitle-playing">正在播放 · {{ memTitle }}</text>
 				<text v-else class="n4_vtitle">{{ memTitle }}</text>
 			</view>
 		</view>
@@ -102,7 +108,7 @@
 			<view v-for="(v, vi) in eventVoices" :key="vi" class="n4_evt-card"
 				@tap="onPlayEventVoice(v)">
 				<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': v.status != 'done' }">
-					<view v-if="voiceIsActive(v.contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
+					<view v-if="v.active && v.playing" class="n4_vbtn-pause">
 						<view class="n4_vbtn-pause-bar"></view>
 						<view class="n4_vbtn-pause-bar"></view>
 					</view>
@@ -111,9 +117,11 @@
 				<view class="n4_evt-col">
 					<text v-if="v.status != 'done'" class="n4_vnote">{{ v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放' }}</text>
 					<view class="n4_evt-wave">
-						<VoiceWave :heights="evtWaveOf(v.contentId)" :waveform="wf.waveformOf(v.contentId)" :active="voiceIsActive(v.contentId)" :progress="voiceProgressOfCard(v.contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+						<!-- 2026-10-16（RC-F）：波形高度/标题在组装期预计算进 `v.wave`/`v.title`；播放态读
+						     `v.active`/`v.playing`/`v.progress`（syncVoiceState 相等守卫写入）——模板零函数调用 -->
+						<VoiceWave :heights="v.wave" :waveform="wf.waveformOf(v.contentId)" :active="v.active" :progress="v.progress" idle-color="#E5DCC8" played-color="#C4913C" />
 					</view>
-					<text class="n4_evt-name">{{ evtTitleOf(v) }}</text>
+					<text class="n4_evt-name">{{ v.title }}</text>
 				</view>
 			</view>
 		</template>
@@ -143,7 +151,7 @@
 </template>
 
 <script setup lang="uts">
-	import { ref } from 'vue'
+	import { ref, watch } from 'vue'
 
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
@@ -161,11 +169,11 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	import {
 		toggleVoice,
 		stopVoice,
-		isVoiceActive,
-		isVoicePlaying,
-		voiceProgressOf,
-		voiceCurSecValue,
-		voiceTotalSecValue,
+		voiceCurrentId,
+		voicePlaying,
+		voiceProgress,
+		voiceCurSec,
+		voiceTotalSec,
 		fmtVoiceTime,
 		genWaveHeights
 	} from '@/utils/audio_player'
@@ -183,12 +191,42 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
 	let heroSrc = ref('/static/images/img4_406.png')
 	let relatedList = ref<Array<ContentEventRef>>([])
+
+	/** 事件级语音卡视图模型（2026-10-16 · RC-F）：组装期预计算波形/标题，播放态由 syncVoiceState
+	 *  相等守卫写入——模板只读字段、零函数调用（类声明先例：TabSearch.VoiceResult）。 */
+	class EvtVoice {
+		contentId: string
+		status: string
+		wave: Array<number>
+		title: string
+		active: boolean
+		playing: boolean
+		progress: number
+		constructor(contentId: string, status: string, wave: Array<number>, title: string) {
+			this.contentId = contentId
+			this.status = status
+			this.wave = wave
+			this.title = title
+			this.active = false
+			this.playing = false
+			this.progress = 0
+		}
+	}
+
 	// R9 批次4（Q3 拍板）：事件级语音成员——「这条记忆里的声音」区块数据源
 	// （当前内容所属第一个事件内的 voice 成员，排除自身）；空数组=区块隐藏
-	let eventVoices = ref<Array<SplitItem>>([])
+	// 2026-10-16（RC-F）：由 `SplitItem` 裸数组改为本页私有视图模型 `EvtVoice`——SplitItem 是
+	// utils 契约（不在本批改动边界内），用本页私有类承载波形/标题/播放态视图字段。
+	let eventVoices = ref<Array<EvtVoice>>([])
 	// W0-2 · F5b：语音记忆才显示语音卡；波形由 contentId 确定性生成（与 index/search 同源 genWaveHeights）
 	let isVoice = ref(false)
 	let detailWave = ref<Array<number>>([])
+	// 2026-10-16（RC-F）：主语音卡播放态——写入时预计算（见 syncVoiceState），模板只读（零函数调用）
+	let mainActive = ref(false)
+	let mainPlaying = ref(false)
+	let mainProgress = ref(0)
+	let mainCurText = ref('')
+	let mainTotalText = ref('')
 
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
 	const wf = new WaveformCache()
@@ -230,6 +268,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 			return
 		}
 		contentId.value = id
+		// RC-F：contentId 落地后补一次播放态同步（进页时若全局正好在播本内容，主卡立即显示播放态）
+		syncVoiceState()
 		// FE1 真端点（W2-2）：GET /contents/{id}/favorite 查单条收藏态初始化星标；
 		// 失败 false（api 层已全局 toast），不再读本地 favorite_ids（列表页回落契约不受影响）
 		favoriteGet(id).then((favd: boolean) => {
@@ -292,10 +332,10 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 			// 生日前歌案例：photo 详情无语音卡，但事件里聚了跑步语音——事件级声音在这里补齐
 			if (evs.length > 0 && evs[0].id != '') {
 				fetchEventItems(evs[0].id).then((items: Array<SplitItem>) => {
-					const voices: Array<SplitItem> = []
+					const voices: Array<EvtVoice> = []
 					for (let i = 0; i < items.length; i++) {
 						if (items[i].contentType == 'voice' && items[i].contentId != id) {
-							voices.push(items[i])
+							voices.push(toEvtVoice(items[i]))
 						}
 					}
 					eventVoices.value = voices
@@ -303,6 +343,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 					for (let i = 0; i < voices.length; i++) {
 						wf.loadWaveform(voices[i].contentId)
 					}
+					// RC-F：区块数据落地后补一次播放态同步（否则"进页时正在播的成员卡"不显示播放态）
+					syncVoiceState()
 				})
 			}
 		})
@@ -326,27 +368,88 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		}
 		toggleVoice(contentId.value)
 	}
-	// 模板取值封装（uvue 模板不直接绑跨模块 ref，对齐 index/search wrapper 先例）
-	function voiceIsActive(cid: string): boolean {
-		return isVoiceActive(cid)
+	// ── 播放态预计算（2026-10-16 · RC-F）──────────────────────────────────────────
+	// 范式照 `TabSearch.syncActiveCard` / `TabIndex.syncVoiceCards`：**数据写入时**把全局播放态写进
+	// 「正在播放那张卡」的预计算属性，模板只读字段 ⇒ 零函数调用；且**相等守卫**保证值没变不写
+	// ⇒ 未变的卡零响应式通知、零重渲染。
+	// 此前详情页模板每 tick 调 6 个取值函数（voiceIsActive/voiceIsPlaying/voiceProgressOfCard/
+	// voiceCurSecText/voiceTotalSecText/evtWaveOf…），而 audio_player 的 33ms 时钟会写全局 ref
+	// ⇒ 每次写都整页重算。现收敛为单源 watch（见文件末），tick 驱动面只剩「活动卡」。
+	function applyMainVoiceState(cid: string, playing: boolean, prog: number, cur: string, total: string): void {
+		const isActive = cid != '' && cid == contentId.value
+		if (mainActive.value != isActive) {
+			mainActive.value = isActive
+		}
+		if (isActive) {
+			if (mainPlaying.value != playing) { mainPlaying.value = playing }
+			if (mainProgress.value != prog) { mainProgress.value = prog }
+			if (mainCurText.value != cur) { mainCurText.value = cur }
+			if (mainTotalText.value != total) { mainTotalText.value = total }
+		} else if (mainPlaying.value || mainProgress.value != 0 || mainCurText.value != '' || mainTotalText.value != '') {
+			// 退出活动态：清干净（否则旧卡残留进度行/时长）
+			mainPlaying.value = false
+			mainProgress.value = 0
+			mainCurText.value = ''
+			mainTotalText.value = ''
+		}
 	}
-	function voiceIsPlaying(): boolean {
-		return isVoicePlaying()
+
+	/** 事件级卡：写 active/playing/progress；返回"是否变化"（相等守卫，无变化零写入） */
+	function applyEventVoiceState(v: EvtVoice, cid: string, playing: boolean, prog: number): boolean {
+		const isActive = v.contentId != '' && v.contentId == cid
+		let changed = false
+		if (v.active != isActive) {
+			v.active = isActive
+			changed = true
+		}
+		if (isActive) {
+			if (v.playing != playing) {
+				v.playing = playing
+				changed = true
+			}
+			if (v.progress != prog) {
+				v.progress = prog
+				changed = true
+			}
+		} else if (v.playing || v.progress != 0) {
+			v.playing = false
+			v.progress = 0
+			changed = true
+		}
+		return changed
 	}
-	function voiceProgressOfCard(cid: string): number {
-		return voiceProgressOf(cid)
+
+	/** 汇总入口：主语音卡 + 事件级语音卡逐张套用；有变才 slice 重建数组引用（确定性重渲染） */
+	function syncVoiceState(): void {
+		const cid = voiceCurrentId.value
+		const playing = voicePlaying.value
+		const prog = voiceProgress.value
+		const cur = fmtVoiceTime(voiceCurSec.value)
+		const total = fmtVoiceTime(voiceTotalSec.value)
+		applyMainVoiceState(cid, playing, prog, cur, total)
+		const arr = eventVoices.value
+		let changed = false
+		for (let i = 0; i < arr.length; i++) {
+			if (applyEventVoiceState(arr[i], cid, playing, prog)) {
+				changed = true
+			}
+		}
+		if (changed) {
+			eventVoices.value = arr.slice()
+		}
 	}
-	function voiceCurSecText(): string {
-		return fmtVoiceTime(voiceCurSecValue())
-	}
-	function voiceTotalSecText(): string {
-		return fmtVoiceTime(voiceTotalSecValue())
-	}
+
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncVoiceState
+	watch(voiceCurrentId, (): void => { syncVoiceState() })
+	watch(voicePlaying, (): void => { syncVoiceState() })
+	watch(voiceProgress, (): void => { syncVoiceState() })
+	watch(voiceCurSec, (): void => { syncVoiceState() })
+	watch(voiceTotalSec, (): void => { syncVoiceState() })
 
 	// ═══ R9 批次4：事件级语音卡（「这条记忆里的声音」）═══
 	// D4 流式重构（2026-09-09）：区块随 n4_flow 普通流排布，evtSectionTop/evtCardTop 绝对定位函数已删
 	/** 成员卡播放：processing/failed 显式 toast（Q2 拍板），绝不静默；done → 全局引擎 */
-	function onPlayEventVoice(v: SplitItem): void {
+	function onPlayEventVoice(v: EvtVoice): void {
 		if (v.status != 'done') {
 			uni.showToast({
 				title: v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放',
@@ -356,14 +459,12 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		}
 		toggleVoice(v.contentId)
 	}
-	/** 成员卡波形：contentId 确定性生成（与 index/search/detail 大卡同源） */
-	function evtWaveOf(cid: string): Array<number> {
-		return genWaveHeights(cid, 20)
-	}
-	/** 成员标题：转写文本截断；空文本（未转写）给中性占位 */
-	function evtTitleOf(v: SplitItem): string {
-		const t = (v.title ?? '').trim()
-		return t == '' ? '一段声音' : (t.length > 18 ? t.substring(0, 18) + '…' : t)
+	/** SplitItem(voice) → EvtVoice：波形确定性生成（与 index/search/detail 大卡同源 genWaveHeights）、
+	 *  标题转写文本截断（空文本给中性占位）——两者原是**模板函数调用**，现移到组装期预计算。 */
+	function toEvtVoice(it: SplitItem): EvtVoice {
+		const t = (it.title ?? '').trim()
+		const title = t == '' ? '一段声音' : (t.length > 18 ? t.substring(0, 18) + '…' : t)
+		return new EvtVoice(it.contentId, it.status, genWaveHeights(it.contentId, 20), title)
 	}
 
 	function goBack(): void {

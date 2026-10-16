@@ -53,9 +53,34 @@ export class ChatCard {
 	}
 }
 
+/**
+ * 对话附件（2026-10-16「附件契约最小可用」· 台账 §7.14 / 审计 A1-A3·D7 销项）。
+ *
+ * 三层一致：本类 → `backend/app/schemas/chat.py::ChatAttachment` → `agent/src/main.py::ChatRequest.attachments`。
+ *
+ * 图片通路（端到端）：选图（`uni.chooseImage`）→ **既有上传链**（`upload_pipeline.runUploadPipeline`，
+ * 只调用不改）落库 → `contentId` → 由本类随消息上行 → 后端读既有 caption 字段转成文本提示给 AI。
+ * **没有 contentId 就不构造附件**：上传失败必须如实提示用户（见 TabAi.onPickImage 的失败分支）。
+ */
+export class ChatAttachment {
+	/** 'image' | 'file'（与后端 Literal 对齐；本轮只有 image 有真通路） */
+	kind: string
+	/** 已落库内容 id（上传链 complete 返回；后端据此读 caption） */
+	contentId: string
+	/** 展示名（file 用；image 用文件名） */
+	name: string
+	/** 字节数 */
+	size: number
+	constructor(kind: string, contentId: string, name: string, size: number) {
+		this.kind = kind
+		this.contentId = contentId
+		this.name = name
+		this.size = size
+	}
+}
+
 /** 一条智能体回复（客户端可用子集） */
-export class ChatReply {
-	id: string
+export class ChatReply {	id: string
 	kind: string
 	text: string
 	bullets: Array<string>
@@ -292,16 +317,17 @@ function parseSseFrame(raw: string): SseFrame {
  * 预览期间把累计全文写进 `chatStreamText`（TabAi 绑它渲染），终稿由本函数返回值给出。
  * ⚠️ 同一时刻只允许一轮（并发调用会串写共享 ref），调用方（TabAi）在 `chatStreamActive` 为真时不再发起。
  */
-export function sendChatMessage(conversationId: string, content: string): Promise<ChatSendResult | null> {
-	// B13 面包屑：只记"新建/续会话"与文本长度，**不记用户对 AI 说了什么**（隐私纪律同 search_api）
-	addBreadcrumb('chat', (conversationId == '' ? 'stream new conversation' : 'stream existing conversation') + ' len=' + content.length)
+export function sendChatMessage(conversationId: string, content: string, attachments: Array<ChatAttachment>, includeProfile: boolean): Promise<ChatSendResult | null> {
+	// B13 面包屑：只记"新建/续会话"、文本长度与**附件条数**（隐私纪律同 search_api：
+	// 不记用户对 AI 说了什么，也不记附件名/路径）
+	addBreadcrumb('chat', (conversationId == '' ? 'stream new conversation' : 'stream existing conversation') + ' len=' + content.length + ' att=' + attachments.length)
 	// 2026-10-14（RC-8）：先取消上一轮**可能残留**的合帧定时器——否则它会把这轮开头的内容
 	// 或上一轮的尾句写到清空之后（"回复闪回"）。
 	cancelStreamTextFlush()
 	chatStreamText.value = ''
 	chatStreamTool.value = ''
 	chatStreamActive.value = true
-	return streamChatOnce(conversationId, content, false, false).then((r: ChatSendResult | null) => {
+	return streamChatOnce(conversationId, content, attachments, includeProfile, false, false).then((r: ChatSendResult | null) => {
 		// 本轮结束（成功/失败/超时都走这里）：同样取消待落定的窗口。
 		// 终稿由返回值 `r` 承载（TabAi 据此上屏并清空 `chatStreamText`），故此处**无需**补落——
 		// 若强行落定，反而会在"调用方已清空"之后写入旧文本。
@@ -310,13 +336,37 @@ export function sendChatMessage(conversationId: string, content: string): Promis
 	})
 }
 
-function streamChatOnce(conversationId: string, content: string, retried: boolean, newConvTried: boolean): Promise<ChatSendResult | null> {
+function streamChatOnce(conversationId: string, content: string, attachments: Array<ChatAttachment>, includeProfile: boolean, retried: boolean, newConvTried: boolean): Promise<ChatSendResult | null> {
 	const body: UTSJSONObject = { content: content }
 	if (conversationId != '') {
 		// 空串不发：后端对"显式传入但不存在"的会话返回 404（IDOR 防护），
 		// 而""不是合法 UUID ⇒ 会被判 404，故新建会话时必须**省略**该字段
 		body.set('conversation_id', conversationId)
 	}
+	// 2026-10-16（附件契约最小可用）：附件数组（`attachments[].content_id` 与后端 schema 逐字对齐）。
+	// 空数组**不发该键**：请求体形状与接入前一致（后端 default_factory 兜底，零回归）。
+	if (attachments.length > 0) {
+		const arr: Array<UTSJSONObject> = []
+		for (let i = 0; i < attachments.length; i++) {
+			const a = attachments[i]
+			const o: UTSJSONObject = { kind: a.kind, content_id: a.contentId }
+			if (a.name != '') {
+				o.set('name', a.name)
+			}
+			if (a.size > 0) {
+				o.set('size', a.size)
+			}
+			arr.push(o)
+		}
+		body.set('attachments', arr)
+	}
+	// `include_profile`（2026-10-16）：**契约能力，当前无 UI 消费者**——原来那两枚隐私开关
+	// （privacy_ai_chat / privacy_echo）已于 2026-10-14 因"全仓零读零写"**整行移除**（台账 §7.18），
+	// 故本页**恒传 true**；参数化只为"将来重开开关时只改这一处，不动三层链路"。
+	// ⚠️ **不要为它补一个 UI 开关**：没有真消费者时那只会造出**新的空承诺**（本批正在治的病）。
+	// 后端**必须真的按它行事**（false ⇒ 不携带画像上下文）：组装见
+	// backend/app/services/chat_context.py `profile_context`，取值点见 backend/app/api/chat.py。
+	body.set('include_profile', includeProfile)
 	return new Promise<ChatSendResult | null>((resolve) => {
 		let settled = false
 		let consumed = 0 // 已消费到 `decoded` 的哪个字符位置（帧可能跨 chunk，按位置推进才不重不漏）
@@ -493,7 +543,7 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 							clearTimeout(watchdog)
 							watchdog = -1
 						}
-						streamChatOnce('', content, retried, true).then((r: ChatSendResult | null) => {
+						streamChatOnce('', content, attachments, includeProfile, retried, true).then((r: ChatSendResult | null) => {
 							finish(r, false)
 						})
 						return
@@ -512,7 +562,7 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 					}
 					refreshToken().then((ok: boolean) => {
 						if (ok) {
-							streamChatOnce(conversationId, content, true, newConvTried).then((r: ChatSendResult | null) => {
+							streamChatOnce(conversationId, content, attachments, includeProfile, true, newConvTried).then((r: ChatSendResult | null) => {
 								finish(r, false)
 							})
 						} else {

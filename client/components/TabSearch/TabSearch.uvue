@@ -198,9 +198,31 @@
 	watch((): string => props.typeQuery, (t: string): void => {
 		ss.applyTypeQuery(t)
 	})
+	/**
+	 * 「记录保存成功」补刷（2026-10-16 · 批次 6 · RC-2：可见性守卫 + 修一处裸调用）。
+	 *
+	 * ① **可见性守卫**：本组件在壳内**常驻**（shell 用 `v-show` 切换，不销毁），而 `savedSeq`
+	 *    是**全局广播**（在任意 tab 里记一笔都会 ++）⇒ 不加守卫时，用户在时间轴保存会让**隐藏的
+	 *    搜索页**偷偷发一次网络请求（后台空转）。判据与上方 5 个播放态 watch 的
+	 *    `syncActiveCardIfVisible` **完全一致**（同一个 `shellActiveTab`）。
+	 * ② **修裸调用**：原 `onRecordSaved()` 在本文件**从未定义**（2026-10-16 搜索形态改造把状态机
+	 *    抽进 `useSearchState` 时该回调没有随之迁移）⇒ 一旦触发必抛 ReferenceError。
+	 *    现按语义显式分流：已搜索过 → 重跑当前查询（结果集里应有新内容）；未搜索过 → 刷新
+	 *    「最近内容」兜底列表（与 `onMounted` 同一入口）。
+	 */
+	function refreshOnSaved(): void {
+		if (shellActiveTab.value != 'search') {
+			return // 隐藏标签页：不后台空转（对齐 syncActiveCardIfVisible）
+		}
+		if (ss.hasSearched.value) {
+			ss.runSearch()
+		} else {
+			ss.loadRecent()
+		}
+	}
 	watch((): number => props.savedSeq, (n: number): void => {
 		if (n > 0) {
-			onRecordSaved()
+			refreshOnSaved()
 		}
 	})
 

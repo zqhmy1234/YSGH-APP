@@ -60,38 +60,45 @@ function photoHashOf(u: UploadedPhoto): string {
 }
 
 /**
- * 端侧聚合：上传成功照片 → L0（ST-DBSCAN）→ L1 日卡片事件
- * @param uploads 上传成功结果（本地元数据 + content_id）
- * @param tzOffsetMin 设备本地时区偏移（分钟；日界按本地自然日）
+ * 端侧聚类**降级阈值**（数值为**量级估计**，非实测标定）（2026-10-16 · 批次 6 · RC-7）。
+ *
+ * 语义：`pts.length > AGG_CLIENT_MAX_N` ⇒ **跳过**端侧 ST-DBSCAN（O(n²) 且 UTS 无 worker，
+ * 大 n 同步跑会一次性独占主线程），**本次不产端侧 L1**。O(n²) 只在大 n 致命，故"大 n 降级"
+ * 与"小 n 端侧跑（保住拍照即出日卡）"是同一枚硬币的两面（方向经复核确认）。
+ *
+ * ⚠️ **后果必须知道（不许静默）**：本仓**云侧只产 L2/L3，没有 L1 生产者**
+ * （`backend/app/services/events/aggregate.py:82-84`）⇒ 跳过就等于**当天时间轴空**
+ * ⇒ 降级分支必须 **WARN + 计数**（`degradeRuns` / `getDegradeRuns()`）并写明这一后果。
+ *
+ * 为什么**几乎永不触发**（实测依据）：真库观测**单用户单日最多 81 条**照片 ⇒ 400 有 **5× 余量**。
+ * 阈值数值本身是**量级估计**（同 `st_dbscan` 的 `CANDIDATE_WARN=200000` 与「60min 窗内可达
+ * 点数上界≈720（<5s 连拍折叠）」同源量级），**非实测标定**。
+ *
+ * ❗遗留**产品决策**：「端侧硬顶（降级）以上是否需要云端产 L1」——**现在没有 L1 生产者**，
+ *   所以降级即空白；是否补后端 L1 生产者、或改由端侧无条件跑，由产品/协调者定，本文件不擅自决定。
  */
-export function aggregateToEvents(uploads: Array<UploadedPhoto>, tzOffsetMin: number): AggRunResult {
-	// 1. 组装算法层输入（photo id = content_id；ts = 本地拍摄时间；phash = 文件身份键）
+export const AGG_CLIENT_MAX_N: number = 400
+/** 降级次数（越顶跳过时 ++，配合 WARN 使用；`getDegradeRuns()` 可核对是否真被触发） */
+let degradeRuns = 0
+export function getDegradeRuns(): number {
+	return degradeRuns
+}
+/** 分片粒度：组装阶段每片处理多少张（片间 `setTimeout(0)` 让出主线程） */
+const AGG_CHUNK_N: number = 50
+
+/** 组装算法层输入（photo id = content_id；ts = 本地拍摄时间；phash = 文件身份键） */
+function buildRaws(uploads: Array<UploadedPhoto>): Array<RawPhoto> {
 	const raws: RawPhoto[] = []
 	for (let i = 0; i < uploads.length; i++) {
 		const u = uploads[i]
 		raws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, [], photoHashOf(u)))
 	}
+	return raws
+}
 
-	// 2. 预处理（含去重） → L0 → L1（与 AGG-016 同参；时间窗取生效配置）
-	const pts = preprocess(raws)
-	const clusters = stDbscan(pts, l0EpsTsec(), L0_EPS_S_M, L0_MIN_PTS)
-	const clustered: Set<string> = new Set<string>()
-	for (let i = 0; i < clusters.length; i++) {
-		const cl = clusters[i]
-		for (let j = 0; j < cl.length; j++) {
-			clustered.add(cl[j].id)
-		}
-	}
-	const noise: Photo[] = []
-	for (let i = 0; i < pts.length; i++) {
-		if (!clustered.has(pts[i].id)) {
-			noise.push(pts[i])
-		}
-	}
-	const days = l1DailyAggregate(clusters, noise, tzOffsetMin)
-
-	// 3. 日卡片 → L1 事件（title 用卡片日期；时间窗取成员首末）
-	const events: ClientL1Event[] = []
+/** 日卡片 → L1 事件（title 用卡片日期；时间窗取成员首末） */
+function buildEventsFromDays(days: Array<DayCard>): Array<ClientL1Event> {
+	const events: Array<ClientL1Event> = []
 	for (let i = 0; i < days.length; i++) {
 		const d = days[i]
 		if (d.photos.length === 0) {
@@ -118,6 +125,124 @@ export function aggregateToEvents(uploads: Array<UploadedPhoto>, tzOffsetMin: nu
 			ids
 		))
 	}
-	console.log('[yishu] 端侧聚合: ' + uploads.length + ' 张 → ' + clusters.length + ' 簇 → ' + events.length + ' 个 L1 事件')
+	return events
+}
+
+/**
+ * 预处理 → L0 → L1 → 事件（同步入口的核心；同步/分片两个入口共用）。
+ *
+ * **分片不切聚类本体**（2026-10-16 · 批次 6 · RC-7）：ST-DBSCAN 是**连通分量**算法（簇靠链式
+ * 扩展，可能跨任意时间距离），切输入会改变簇归属 ⇒ 废掉 RC-7 用 `scripts/bench_st_dbscan.py`
+ * 挣来的**逐位等价**保证。故分片只作用在**组装阶段**（见 `chunkStep`），聚类一律整体跑；
+ * 规模靠 `AGG_CLIENT_MAX_N` 兜底：越顶**降级（跳过）**并 WARN + 计数，后果见该常量注释。
+ */
+function finishAgg(pts: Array<Photo>, tzOffsetMin: number): AggRunResult {
+	// ⚠️ 降级分支（可观测性是硬要求，**不许静默**）：跳过端侧聚类 = **本次不出 L1**，
+	// 而云侧没有 L1 生产者（见 AGG_CLIENT_MAX_N 注释）⇒ 当天时间轴要等客户端重跑/后续策略。
+	// 故这里必须 WARN + 计数，并把**后果**写进日志文案。
+	if (pts.length > AGG_CLIENT_MAX_N) {
+		degradeRuns++
+		console.warn('[yishu-agg] 端侧聚类降级 n=' + pts.length + ' > ' + AGG_CLIENT_MAX_N
+			+ '（量级估计阈值；实测单用户单日最多 81 条 ⇒ 5× 余量，几乎不触发）'
+			+ ' ⇒ **本次不出 L1，时间轴需等后续聚合**（当前云侧只产 L2/L3，无 L1 生产者）'
+			+ '；累计降级 ' + degradeRuns + ' 次')
+		return new AggRunResult([], 0)
+	}
+	const clusters = stDbscan(pts, l0EpsTsec(), L0_EPS_S_M, L0_MIN_PTS)
+	const clustered: Set<string> = new Set<string>()
+	for (let i = 0; i < clusters.length; i++) {
+		const cl = clusters[i]
+		for (let j = 0; j < cl.length; j++) {
+			clustered.add(cl[j].id)
+		}
+	}
+	const noise: Photo[] = []
+	for (let i = 0; i < pts.length; i++) {
+		if (!clustered.has(pts[i].id)) {
+			noise.push(pts[i])
+		}
+	}
+	const days = l1DailyAggregate(clusters, noise, tzOffsetMin)
+	const events = buildEventsFromDays(days)
+	console.log('[yishu] 端侧聚合: ' + pts.length + ' 点 → ' + clusters.length + ' 簇 → ' + events.length + ' 个 L1 事件')
 	return new AggRunResult(events, clusters.length)
+}
+
+/**
+ * 端侧聚合（**同步**入口）：小批量调用走它（`RecordSheet` 用户自选最多 9 张）。
+ * 相册监听那种可能上百张的批量请走 `aggregateToEventsChunked`（分片，不独占主线程）。
+ * @param uploads 上传成功结果（本地元数据 + content_id）
+ * @param tzOffsetMin 设备本地时区偏移（分钟；日界按本地自然日）
+ */
+export function aggregateToEvents(uploads: Array<UploadedPhoto>, tzOffsetMin: number): AggRunResult {
+	return finishAgg(preprocess(buildRaws(uploads)), tzOffsetMin)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 分片版（2026-10-16 · 批次 6 · RC-7「分片」）
+//
+// 为什么需要：上传完成回调里一次可能来上百张；组装 + 预处理 + 聚类 + 日聚合整段同步跑，
+// 在无 worker 的 UTS 上就是一次性独占主线程。处置：**组装阶段按 AGG_CHUNK_N 切片，片间
+// `setTimeout(0)` 让出主线程**（时间切片，让宿主有机会处理输入/绘制），使单次占用有界；
+// 聚类本体因上面的逐位等价约束**整体跑**，规模由 AGG_CLIENT_MAX_N 界住。
+//
+// 埋点**复用**（不新造）：`st_dbscan` 内既有 `[yishu-agg] stDbscan n=… 判定=… 耗时=…` 行，
+// 以及 `perf_timing.uts` 的「授权→首批日卡片渲染」（recordGrantTime → recordFirstDayRender
+// 恰好夹住本段：startWatch 记前者、applyFetchedEvents 记后者）。
+//
+// ⚠️ 写法约束（沿 st_dbscan 的血泪）：**不在函数内定义函数**（内层函数声明曾把 UTS 编译器
+//    卡死 300s+）⇒ 分片状态挂模块级变量，步进函数 `chunkStep` 也是模块级的。
+// ─────────────────────────────────────────────────────────────────────────────
+let chunkUploads: Array<UploadedPhoto> = []
+let chunkRaws: Array<RawPhoto> = []
+let chunkIdx: number = 0
+let chunkTz: number = 0
+let chunkCb: ((r: AggRunResult) => void) | null = null
+
+/** 组装一片 → 未完则 `setTimeout(0)` 续下一片（让出主线程）；完则跑下游并回调 */
+function chunkStep(): void {
+	const n = chunkUploads.length
+	const end = chunkIdx + AGG_CHUNK_N < n ? chunkIdx + AGG_CHUNK_N : n
+	for (let i = chunkIdx; i < end; i++) {
+		const u = chunkUploads[i]
+		chunkRaws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, [], photoHashOf(u)))
+	}
+	chunkIdx = end
+	if (chunkIdx < n) {
+		setTimeout((): void => { chunkStep() }, 0)
+		return
+	}
+	const cb = chunkCb
+	const tz = chunkTz
+	const raws = chunkRaws
+	// 先清状态再回调（回调里可能再次触发上传完成 → 重入本模块）
+	chunkCb = null
+	chunkUploads = []
+	chunkRaws = []
+	chunkIdx = 0
+	if (cb != null) {
+		cb(finishAgg(preprocess(raws), tz))
+	}
+}
+
+/**
+ * 端侧聚合（**分片**入口）：上传完成回调请用此入口。
+ *
+ * @param onDone 结果回调（异步；空输入也会回调，结果为 0 事件）
+ */
+export function aggregateToEventsChunked(
+	uploads: Array<UploadedPhoto>,
+	tzOffsetMin: number,
+	onDone: (r: AggRunResult) => void
+): void {
+	if (uploads.length == 0) {
+		onDone(new AggRunResult([], 0))
+		return
+	}
+	chunkUploads = uploads
+	chunkRaws = []
+	chunkIdx = 0
+	chunkTz = tzOffsetMin
+	chunkCb = onDone
+	chunkStep()
 }

@@ -16,19 +16,45 @@ from pydantic import BaseModel, Field
 ReplyKind = Literal["bubble", "plain", "cards", "confirm", "typing", "plain+chips"]
 
 
-class ChatAttachmentIn(BaseModel):
-    """附件（契约里的 attachments[]）。MVP 仅记录，不解析内容。"""
+class ChatAttachment(BaseModel):
+    """附件（对话请求 `attachments[]` · 2026-10-16「附件契约最小可用」冻结形状）。
 
-    kind: Literal["image", "voice", "link", "file"]
-    ref: str = Field(..., max_length=512, description="内容/对象引用（如 content_id 或 URL）")
+    三层一致：客户端 `utils/chat_api.uts::ChatAttachment` → 本模型 → agent `ChatRequest.attachments`。
+    为什么不叫旧名 `ChatAttachmentIn`/不用旧字段 `ref`：旧形状（kind/ref 四枚举）**自 08-01 起
+    无任何调用方构造**（客户端从不构造、agent 也无该字段，见台账 §7.14）——按本仓既有口径
+    「契约里预留 ≠ 现在能用」，收窄为图片通路**真实用到**的字段形态（审计 A3/D7 的销项）。
+    为什么是 `content_id`：图片先走**既有上传链**落库拿到 content_id，caption 由本后端用既有字段读
+    （不新调视觉模型，见 api/chat.py `_content_caption`）。
+    """
+
+    kind: Literal["image", "file"]
+    content_id: str | None = Field(None, max_length=64, description="已落库内容的 id（上传链 complete 返回）")
+    name: str | None = Field(None, max_length=255, description="展示名/文件名（file 用）")
+    size: int | None = Field(None, ge=0, description="字节数（展示用，不参与业务判定）")
 
 
 class ChatMessageIn(BaseModel):
-    """用户一条消息。`conversation_id` 缺省＝新建会话。"""
+    """用户一条消息（后端「发送请求」；契约文档里亦称 `ChatSendRequest`，指同一模型）。
+
+    `conversation_id` 缺省＝新建会话。
+    `include_profile`（2026-10-16）：**契约能力，当前无 UI 消费者**——原来那两枚隐私开关
+    （privacy_ai_chat / privacy_echo）已于 2026-10-14 因"全仓零读零写"**整行移除**（台账 §7.18），
+    故客户端恒传 True；字段保留是为了"将来重开开关时不再动三层链路"。
+    ⚠️ **不要为它补 UI 开关**（没有真消费者就是新的空承诺）。
+    后端**必须真的按它行事**：False ⇒ 不携带画像上下文（取值点在 api/chat.py，
+    组装逻辑见 services/chat_context.py `profile_context`）。默认 True = 既有行为。
+    """
 
     conversation_id: str | None = Field(None, max_length=64, description="会话 ID（缺省新建）")
     content: str = Field(..., min_length=1, max_length=8000, description="用户输入")
-    attachments: list[ChatAttachmentIn] = Field(default_factory=list)
+    attachments: list[ChatAttachment] = Field(default_factory=list)
+    include_profile: bool = Field(
+        True,
+        description=(
+            "是否允许后端把用户画像上下文随本轮消息带给 AI（缺省 True＝既有行为）。"
+            "当前无 UI 消费者（原隐私开关 2026-10-14 整行移除），保留为契约能力。"
+        ),
+    )
 
 
 class ChatReplyOut(BaseModel):

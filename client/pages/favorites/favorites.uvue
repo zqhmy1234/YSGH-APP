@@ -32,7 +32,7 @@
 		</view>
 
 		<!-- 60:772 结果提示「12 条收藏」12pt #8A7A6A @(20,234)（动态条数） -->
-		<text v-if="loaded && allCards.length > 0" class="count-text">{{ countText() }}</text>
+		<text v-if="loaded && allCards.length > 0" class="count-text">{{ countLabel }}</text>
 
 		<!-- ═══ F4a 列表态（卡流，search 结果区先例：绝对定位滚动区） ═══ -->
 		<scroll-view v-if="loaded && allCards.length > 0" class="card-scroll" direction="vertical" :show-scrollbar="false">
@@ -48,25 +48,27 @@
 					<view class="voice-media">
 						<!-- 60:810 玻璃播放钮 32pt r16 白50%+inset白40%+border白80% -->
 						<view class="glass-btn" @tap.stop="playVoice(item)">
-							<view v-if="voiceIsActive(item.contentId) && voiceIsPlaying()" class="fav-pause-icon">
+							<view v-if="item.active && item.playing" class="fav-pause-icon">
 								<view class="fav-pause-bar"></view>
 								<view class="fav-pause-bar"></view>
 							</view>
 							<!-- 60:824/60:826 播放图标 12pt（复用 i2_595：同三角 5.5×6.5 #B05A3A） -->
 							<image v-else class="play-icon" src="/static/icons/i2_595.svg" />
 						</view>
-						<!-- 60:811 波形 200×26pt @(58,19)：空闲=画布 SVG（60:825 与 i2_596 同源实证）；活动=VoiceWave+进度行（search F5a 先例） -->
-						<VoiceWave v-if="voiceIsActive(item.contentId)" class="wave-box" :heights="item.waveHeights" :waveform="wf.waveformOf(item.contentId)" :active="true" :progress="voiceProgressOfCard(item.contentId)" />
+						<!-- 60:811 波形 200×26pt @(58,19)：空闲=画布 SVG（60:825 与 i2_596 同源实证）；活动=VoiceWave+进度行（search F5a 先例）
+						     2026-10-16（RC-F）：播放态改读 FavCard 预计算字段（item.active/item.progress）——模板零函数调用 -->
+						<VoiceWave v-if="item.active" class="wave-box" :heights="item.waveHeights" :waveform="wf.waveformOf(item.contentId)" :active="true" :progress="item.progress" />
 						<view v-else class="wave-box">
 							<image class="wave-img" src="/static/icons/i2_596.svg" />
 						</view>
 					</view>
-					<view v-if="voiceIsActive(item.contentId)" class="voice-progress-row">
-						<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+					<view v-if="item.active" class="voice-progress-row">
+						<text class="voice-progress-time">{{ item.curText }}</text>
 						<view class="voice-track">
-							<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(item.contentId) * 100) + '%' }"></view>
+							<!-- 2026-10-16（RC-F）：进度填充 `width:%`→`transform:scaleX()`（合成层，免每 tick 重排） -->
+							<view class="voice-track-fill" :style="'transform:scaleX(' + item.progress + ');transform-origin:left;'"></view>
 						</view>
-						<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
+						<text class="voice-progress-time">{{ item.totalText }}</text>
 					</view>
 					<!-- 60:791 语音文字区 pad8 gap3 -->
 					<view class="voice-text-area">
@@ -131,7 +133,7 @@
 </template>
 
 <script setup lang="uts">
-	import { ref, computed } from 'vue'
+	import { ref, computed, watch } from 'vue'
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 	import { fetchTimeline, TimelineEvent } from '@/utils/timeline'
@@ -142,11 +144,11 @@
 	import {
 		toggleVoice,
 		stopVoice,
-		isVoiceActive,
-		isVoicePlaying,
-		voiceProgressOf,
-		voiceCurSecValue,
-		voiceTotalSecValue,
+		voiceCurrentId,
+		voicePlaying,
+		voiceProgress,
+		voiceCurSec,
+		voiceTotalSec,
 		fmtVoiceTime
 	} from '@/utils/audio_player'
 
@@ -163,6 +165,13 @@
 		contentId: string // 跳详情 + 播放引擎键
 		waveHeights: Array<number>
 		photos: Array<string> // 照片卡缩略 URL（空串=画布占位色块）
+		// 2026-10-16（RC-F）：播放态快照——由 syncActiveCard 只写「正在播放那张卡」的这些字段，
+		// 模板只读（零函数调用）；相等守卫 ⇒ 未变的卡零写入零重渲染（同 TabSearch.VoiceResult 范式）
+		active: boolean
+		playing: boolean
+		progress: number
+		curText: string
+		totalText: string
 
 		constructor(
 			id: string,
@@ -182,6 +191,11 @@
 			this.contentId = contentId
 			this.waveHeights = waveHeights
 			this.photos = photos
+			this.active = false
+			this.playing = false
+			this.progress = 0
+			this.curText = ''
+			this.totalText = ''
 		}
 	}
 
@@ -407,30 +421,71 @@
 		activeFilter.value = idx
 	}
 
-	function countText(): string {
-		// §P9：筛选激活时显示筛选后条数（总数配 0 张卡=误导；全部档维持画布真值 favTotal）
+	// §P9：筛选激活时显示筛选后条数（总数配 0 张卡=误导；全部档维持画布真值 favTotal）。
+	// 2026-10-16（RC-F）：由**模板函数调用** `countText()` 改 computed（模板只读属性）。
+	let countLabel = computed((): string => {
 		if (activeFilter.value != 0) {
 			return displayCards.value.length + ' 条收藏'
 		}
 		return favTotal.value + ' 条收藏'
+	})
+
+	// ── 播放态预计算（2026-10-16 · RC-F）──────────────────────────────────────────
+	// 范式照 `TabSearch.syncActiveCard` / `TabIndex.syncVoiceCards`：**数据写入时**把全局播放态写进
+	// 「正在播放那张卡」，模板只读字段（零函数调用）；**相等守卫**保证值没变不写 ⇒ 未变的卡零
+	// 响应式通知。此前收藏列表模板每卡 5 次取值函数调用（voiceIsActive/voiceIsPlaying/
+	// voiceProgressOfCard/voiceCurSecText/voiceTotalSecText），audio_player 33ms 时钟一写就整列表重算。
+	function applyCardVoiceState(c: FavCard, cid: string, playing: boolean, prog: number, cur: string, total: string): boolean {
+		const isActive = c.contentId != '' && c.contentId == cid
+		let changed = false
+		if (c.active != isActive) {
+			c.active = isActive
+			changed = true
+		}
+		if (isActive) {
+			if (c.playing != playing) { c.playing = playing; changed = true }
+			if (c.progress != prog) { c.progress = prog; changed = true }
+			if (c.curText != cur) { c.curText = cur; changed = true }
+			if (c.totalText != total) { c.totalText = total; changed = true }
+		} else if (c.playing || c.progress != 0 || c.curText != '' || c.totalText != '') {
+			// 退出活动态：清干净（否则旧卡残留进度行/时长）
+			c.playing = false
+			c.progress = 0
+			c.curText = ''
+			c.totalText = ''
+			changed = true
+		}
+		return changed
 	}
 
-	// ── 播放引擎接线（search 先例三处一致）──
-	function voiceIsActive(id: string): boolean {
-		return isVoiceActive(id)
+	function syncActiveCard(): void {
+		const cid = voiceCurrentId.value
+		const playing = voicePlaying.value
+		const prog = voiceProgress.value
+		const cur = fmtVoiceTime(voiceCurSec.value)
+		const total = fmtVoiceTime(voiceTotalSec.value)
+		const arr = allCards.value
+		let changed = false
+		for (let i = 0; i < arr.length; i++) {
+			if (applyCardVoiceState(arr[i], cid, playing, prog, cur, total)) {
+				changed = true
+			}
+		}
+		// displayCards（computed）复用 allCards 的**同一批对象引用** ⇒ 就地改字段即驱动渲染；
+		// 仅在确有变化时 slice 一次重建引用（与 TabIndex「整组浅替换」同口径，确定性重渲染）
+		if (changed) {
+			allCards.value = arr.slice()
+		}
 	}
-	function voiceIsPlaying(): boolean {
-		return isVoicePlaying()
-	}
-	function voiceProgressOfCard(id: string): number {
-		return voiceProgressOf(id)
-	}
-	function voiceCurSecText(): string {
-		return fmtVoiceTime(voiceCurSecValue())
-	}
-	function voiceTotalSecText(): string {
-		return fmtVoiceTime(voiceTotalSecValue())
-	}
+
+	// 列表重建后补一次同步（新卡回默认播放态，需按当前全局播放态对齐）
+	watch(allCards, (): void => { syncActiveCard() })
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch，tick 驱动面收敛到 syncActiveCard
+	watch(voiceCurrentId, (): void => { syncActiveCard() })
+	watch(voicePlaying, (): void => { syncActiveCard() })
+	watch(voiceProgress, (): void => { syncActiveCard() })
+	watch(voiceCurSec, (): void => { syncActiveCard() })
+	watch(voiceTotalSec, (): void => { syncActiveCard() })
 
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
 	const wf = new WaveformCache()

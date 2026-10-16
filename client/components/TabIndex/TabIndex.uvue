@@ -208,7 +208,9 @@
 						</view>
 						<text class="card-title serif title-l2">{{ ev.title }}</text>
 						<view class="card-meta">
-							<text class="meta-item">{{ levelText(ev.level) }}</text>
+							<!-- 2026-10-16（RC-F 性能）：层级文案改查表（`levelLabels[ev.level]`），去掉模板函数调用
+						     ——列表每次整树重渲染时不再逐卡调 `levelText()`（原实现每 tick 全列表重算） -->
+						<text class="meta-item">{{ levelLabels[ev.level] }}</text>
 							<!-- 卡PA R4：视图字段组装期预计算（卡E01 计数口径不变），模板零函数调用 -->
 							<text v-if="ev.hasRenderablePhotos" class="meta-item rust">{{ ev.photoCountText }}</text>
 						</view>
@@ -231,7 +233,12 @@
 								<view v-if="ev.voiceActive" class="voice-progress-row">
 									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
 									<view class="voice-track">
-										<view class="voice-track-fill" :style="{ width: (ev.voiceProgress * 100) + '%' }"></view>
+										<!-- 2026-10-16（RC-F 播放态性能）：进度填充由 `width:%` 改 `transform:scaleX()`。
+										     `width` 是**布局属性**，每 tick 改动都会触发布局重排；`transform` 走**合成层**，
+										     只重绘不重排。值取自卡属性 `voiceProgress`（组装期/tick 预计算进卡片，
+										     模板零函数调用——见 `syncVoiceCards`）。类仍是既有 `.voice-track-fill`
+										     （零新增视觉元素），`transform-origin:left` 走内联样式（不动共享 CSS）。 -->
+										<view class="voice-track-fill" :style="'transform:scaleX(' + ev.voiceProgress + ');transform-origin:left;'"></view>
 									</view>
 									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
 								</view>
@@ -280,7 +287,9 @@
 						</view>
 						<text class="card-title serif">{{ ev.title }}</text>
 						<view class="card-meta">
-							<text class="meta-item">{{ levelText(ev.level) }}</text>
+							<!-- 2026-10-16（RC-F 性能）：层级文案改查表（`levelLabels[ev.level]`），去掉模板函数调用
+						     ——列表每次整树重渲染时不再逐卡调 `levelText()`（原实现每 tick 全列表重算） -->
+						<text class="meta-item">{{ levelLabels[ev.level] }}</text>
 							<!-- 卡PA R4：视图字段组装期预计算（卡E01 计数口径不变），模板零函数调用 -->
 							<text v-if="ev.hasRenderablePhotos" class="meta-item rust">{{ ev.photoCountText }}</text>
 						</view>
@@ -303,7 +312,12 @@
 								<view v-if="ev.voiceActive" class="voice-progress-row">
 									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
 									<view class="voice-track">
-										<view class="voice-track-fill" :style="{ width: (ev.voiceProgress * 100) + '%' }"></view>
+										<!-- 2026-10-16（RC-F 播放态性能）：进度填充由 `width:%` 改 `transform:scaleX()`。
+										     `width` 是**布局属性**，每 tick 改动都会触发布局重排；`transform` 走**合成层**，
+										     只重绘不重排。值取自卡属性 `voiceProgress`（组装期/tick 预计算进卡片，
+										     模板零函数调用——见 `syncVoiceCards`）。类仍是既有 `.voice-track-fill`
+										     （零新增视觉元素），`transform-origin:left` 走内联样式（不动共享 CSS）。 -->
+										<view class="voice-track-fill" :style="'transform:scaleX(' + ev.voiceProgress + ');transform-origin:left;'"></view>
 									</view>
 									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
 								</view>
@@ -362,7 +376,7 @@
 	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 	import { showErrorToast, ApiError, fetchDailySummary, DailySummary } from '@/utils/api'
-	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
+	import { aggregateToEventsChunked, AggRunResult } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 		// 2026-10-15（台账 §4.20 ㉘ · 「今天」块）：今天的**文字记录** —— 读 contents 而非 events
 	//（文字不产 event，详见模块注释）
@@ -371,7 +385,6 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	import {
 		flushOpQueue,
 		pendingOpCount,
-		ContentEventRef,
 		EventPhotoEntry,
 		mapAcceptedToClientIds
 	} from '@/utils/event_ops'
@@ -440,8 +453,15 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	// 协同铁律：缓存命中/refreshSilently/patchEventById 都是 days.value 整组浅替换，
 	// visibleDayCount 不参与替换保持原值，visibleDays 每次渲染从 days 现切（不缓存 slice 结果），
 	// 因此分批对闪屏缓存刷新路径零改动。
-	let visibleDayCount = ref(20)
+	const DAY_PAGE_INITIAL: number = 20
+	let visibleDayCount = ref(DAY_PAGE_INITIAL)
 	const LOAD_MORE_STEP: number = 20
+	// RC-3b（2026-10-16 · 批次 6）：**分页窗口复位位**。`visibleDayCount` 只增不减 ⇒ 点过
+	// 「加载更多」后，每次整组浅替换（60s 回壳补刷 / 缩略图补图 / 下拉刷新）都要重渲染越来越多的
+	// 日组，代价**随使用时长单调增长**。现由 `onRefresh`（用户显式下拉刷新）置位，
+	// `applyFetchedEvents`（唯一的"拿到真实结果"出口）成功时消费并复位。
+	// 为什么不在静默刷新里复位：那会把用户已经拉出来的窗口在每次回壳补刷时抽走（列表跳变）。
+	let resetPagingOnNextRender = false
 	// 卡PB R1：可见日组窗口（computed 先例：favorites/search 页同款写法）
 	// 🚨 2026-10-16（去重口径 · 用户明确要求）：历史区**只显示今天之前**的日组——
 	// 「今天」的内容由上方「今天」块（读 `contents`）**独占**；若日分组里再出现今天的事件卡片，
@@ -767,8 +787,52 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 			if (!pageAlive.value || !loaded.value) {
 				return // 卸载/未加载：丢弃本帧渲染（同原守卫）
 			}
-			renderFromEvents(currentEvents)
+			patchThumbsInPlace()
 		}, 16)
+	}
+
+	/**
+	 * RC-3（2026-10-16 · 批次 6）：缩略图**按内容标识增量补丁**（替代整组重建）。
+	 *
+	 * 病根：缩略图池每 4 张回调一次 → `renderFromEvents` → `groupDays`（`buildDayGroups` 为
+	 * **每个** L1 `new TimelineEvent` 拷贝）→ `pa.attachAll`（`new Map()` + 逐卡重挂 + 一条长
+	 * console.log）→ `days.value` 整组替换。一批 4 张图引发「O(全量卡) 的对象新建 + 重挂」，
+	 * 50 张照片即十余次，挤在几百毫秒内 ⇒ 掉帧、点击无响应。
+	 *
+	 * 现按 `useEventOps.patchEventById` 的同一范式（**定位单卡 → 就地改 → 一次性通知**），
+	 * 差异只是"定位条件"由事件 id 换成"本卡还有图没上屏"：
+	 *   · 只对 `photos.length != renderPhotoPaths.length` 的卡重挂——缩略图池往 `ev.photos`
+	 *     push（共享数组引用），而 `renderPhotoPaths` 只在 `attachEventPhotos` 里重算 ⇒
+	 *     两者不等 ⇔ 有新图未上屏（**充分**判据；重复 content_id 的极端数据只会多挂一次，
+	 *     无正确性问题）；
+	 *   · 未变的卡**零 JS 工作**，`groupDays`/`attachAll`（含长日志）**完全不再参与补图路径**；
+	 *   · 全部补完只做**一次** `days.value` 浅替换（`slice()` = O(n) 引用复制，非重建）通知渲染。
+	 */
+	function patchThumbsInPlace(): void {
+		let patched = 0
+		const ds = days.value
+		for (let d = 0; d < ds.length; d++) {
+			const evs = ds[d].events
+			for (let i = 0; i < evs.length; i++) {
+				const ev = evs[i]
+				if (ev.photos.length != ev.renderPhotoPaths.length) {
+					pa.attachEventPhotos(ev)
+					patched++
+				}
+			}
+		}
+		const pend = pendingEvents.value
+		for (let i = 0; i < pend.length; i++) {
+			const ev = pend[i]
+			if (ev.photos.length != ev.renderPhotoPaths.length) {
+				pa.attachEventPhotos(ev)
+				patched++
+			}
+		}
+		if (patched > 0) {
+			days.value = ds.slice()
+			console.log('[dbg-index] 缩略图增量补丁: patched=' + patched + '/' + ds.length + ' 日组（未走 groupDays/attachAll）')
+		}
 	}
 
 	// 卡PA D2：渲染出口（days/pending 整组浅替换；不清空、不回退加载态防闪屏）
@@ -845,6 +909,14 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 		// `buildLookback` 内部限流 ✓；无匹配则为空数组 ⇒ 模板整块不渲染（不占位 ✗）。
 		lookbackRows.value = buildLookback(events)
 		renderFromEvents(events)   // emptyState 已在渲染出口收敛（#2）
+		// RC-3b（2026-10-16 · 批次 6）：**下拉刷新成功**才复位分页窗口（标志由 onRefresh 置位）。
+		// 本函数是唯一的"拿到真实结果"出口（失败路径有 wasLastFetchFailed 守卫、不进入）⇒ 放在
+		// 这里即"成功时消费"；失败时标志保留给下一次成功（语义 = 最近一次成功刷新已复位）。
+		if (resetPagingOnNextRender) {
+			resetPagingOnNextRender = false
+			visibleDayCount.value = DAY_PAGE_INITIAL
+			console.log('[dbg-index] 下拉刷新成功 → 分页窗口复位为 ' + DAY_PAGE_INITIAL)
+		}
 		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
 		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才认空态。
 		if (days.value.length === 0 && pendingEvents.value.length === 0) {
@@ -1090,32 +1162,17 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	}
 
 	// 工具方法
-	function levelText(level: number): string {
-		if (level === 1) {
-			return '日卡片'
-		} else if (level === 2) {
-			return '主题'
-		} else if (level === 3) {
-			return '主题流'
-		}
-		return '瞬间'
-	}
-	function levelTag(level: number): string {
-		if (level === 1) {
-			return '日卡'
-		} else if (level === 2) {
-			return '主题'
-		} else if (level === 3) {
-			return '主题流'
-		}
-		return '瞬间'
-	}
-	function belongsMeta(ref: ContentEventRef): string {
-		const st = ref.status == 'confirmed' ? '已确认' : (ref.status == 'rejected' ? '已忽略' : '待确认')
-		return ref.photoCount.toFixed(0) + '张 · ' + st
-	}
+	// 2026-10-16（RC-F）：`levelText(level)` 函数改为**查表常量**——模板用 `levelLabels[ev.level]`
+	// 直取，零函数调用（列表整树重渲染时不再逐卡调用）。索引即 level，0 与旧实现的兜底同为
+	// 「瞬间」（buildDayGroups 实际只产 L1/L2/L3，见其实现——不存在 >3 的取值）。
+	const levelLabels: Array<string> = ['瞬间', '日卡片', '主题', '主题流']
+	// 2026-10-16（RC-G 死代码清理）：原 `levelTag(level)`（返回日卡/主题/主题流/瞬间）与
+	// `belongsMeta(ref: ContentEventRef)`（返回「N张 · 状态」）**全仓零调用**（模板只用
+	// `levelText`），已删——连带 `ContentEventRef` 导入（它在本文件仅作 belongsMeta 的签名类型）。
 	function onRefresh(): void {
 		refreshing.value = true
+		// RC-3b：下拉刷新 = 用户显式"重新加载" → 请求一次分页窗口复位（成功路径才消费）
+		resetPagingOnNextRender = true
 		reload()
 	}
 
@@ -1191,40 +1248,50 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 					pa.addLocalPath(uploaded[i].contentId, uploaded[i].item.path)
 				}
 				const tz = -new Date().getTimezoneOffset()
-				const agg = aggregateToEvents(uploaded, tz)
-				const events: Array<UTSJSONObject> = []
-				for (let i = 0; i < agg.events.length; i++) {
-					const ev = agg.events[i]
-					const obj: UTSJSONObject = {
-						client_event_id: ev.clientEventId,
-						title: ev.title,
-						start_time: isoString(ev.startTime),
-						end_time: isoString(ev.endTime),
-						photo_ids: ev.photoIds
-					}
-					events.push(obj)
-				}
-				if (events.length > 0) {
-					syncClientEvents(events).then((out: SyncOutcome | null) => {
-						if (out != null) {
-							console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
-							const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
-							for (let m = 0; m < mapped.length; m++) {
-								pa.addEventPhoto(mapped[m])
-							}
-							console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + pa.eventPhotoIds.value.length)
-						} else {
-							console.error('[yishu] 事件上云失败（重试耗尽）')
-							uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
+				// RC-7（2026-10-16 · 批次 6）：**分片**跑端侧聚合（片间 setTimeout(0) 让出主线程）。
+				// 原 `aggregateToEvents` 整段同步跑：相册首次授权那种上百张会在"上传完成回调"里
+				// 一次性独占主线程（UTS 无 worker）⇒ 掉帧、点不动。分片版只切**组装阶段**；聚类本体
+				// 整体跑（逐位等价约束），规模由 agg_runner 的 AGG_CLIENT_MAX_N 兜底：越顶**降级跳过**
+				// （WARN+计数，且文案写明后果——云侧无 L1 生产者 ⇒ 本次不出 L1，见其常量注释）。
+				aggregateToEventsChunked(uploaded, tz, (agg: AggRunResult): void => {
+					const events: Array<UTSJSONObject> = []
+					for (let i = 0; i < agg.events.length; i++) {
+						const ev = agg.events[i]
+						const obj: UTSJSONObject = {
+							client_event_id: ev.clientEventId,
+							title: ev.title,
+							start_time: isoString(ev.startTime),
+							end_time: isoString(ev.endTime),
+							photo_ids: ev.photoIds
 						}
-						// 卡PA R2（拍板采纳的偏差方案）：上传产生服务端新事件，本地无法合成 →
-						// 无闪屏后台静默刷新
-						refreshSilently()
-					})
-					return
-				}
+						events.push(obj)
+					}
+					if (events.length > 0) {
+						syncClientEvents(events).then((out: SyncOutcome | null) => {
+							if (out != null) {
+								console.log('[yishu] 事件上云: accepted=' + out.accepted + ' dup=' + out.duplicates + ' rejected=' + out.rejected)
+								const mapped: Array<EventPhotoEntry> = mapAcceptedToClientIds(events, out.acceptedEvents)
+								for (let m = 0; m < mapped.length; m++) {
+									pa.addEventPhoto(mapped[m])
+								}
+								console.log('[yishu] photoMap: clientEvents=' + events.length + ' accepted=' + out.acceptedEvents.length + ' mappedServerEvents=' + pa.eventPhotoIds.value.length)
+							} else {
+								console.error('[yishu] 事件上云失败（重试耗尽）')
+								uni.showToast({ title: '事件同步失败，稍后重试', icon: 'none' })
+							}
+							// 卡PA R2（拍板采纳的偏差方案）：上传产生服务端新事件，本地无法合成 →
+							// 无闪屏后台静默刷新
+							refreshSilently()
+						})
+						return
+					}
+					// 卡PA R2：同上，上传完成走无闪屏静默刷新
+					refreshSilently()
+				})
+				// 聚合已转异步（分片）：本回调到此为止，后续刷新由上面的分片回调负责
+				return
 			}
-			// 卡PA R2：同上，上传完成走无闪屏静默刷新
+			// 卡PA R2：同上，上传完成走无闪屏静默刷新（uploaded 为空时的原有出口）
 			refreshSilently()
 		})
 	}

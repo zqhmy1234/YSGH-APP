@@ -114,6 +114,13 @@ class ChatRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=64)
     message: str = Field(..., min_length=1, max_length=8000)
     thread_id: str | None = Field(None, max_length=128, description="缺省=user_id（上游语义：按用户隔离上下文）")
+    # 2026-10-16（附件契约最小可用 · 台账 §7.14）：**仅字段透传** —— 不解析附件、不新增
+    # 视觉理解工具。附件对 AI 的**实际作用**由后端组装的 `message` 承载（backend/app/api/chat.py
+    # `_attachment_hint`：读既有 caption 字段转成文本提示），本字段只用于三层契约一致 + 可观测。
+    # 只记**条数**（chat_start/chat_stream_start），绝不记附件内容/路径（隐私纪律同 observability）。
+    attachments: list[dict] = Field(
+        default_factory=list, description="附件透传（不解析；内容以文本并入 message）"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -385,6 +392,8 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
             thread_id=thread_id,
             msg_len=len(req.message or ""),
             thread_explicit=req.thread_id is not None,
+            # 附件只记条数（内容由后端并入 message；不记路径/名称等个人信息）
+            attachments=len(req.attachments),
         )
         try:
             result = run_agent(req.message, user_id=user_id, ctx=ctx)
@@ -529,6 +538,8 @@ def chat_stream(req: ChatRequest, x_agent_token: str | None = Header(default=Non
                     thread_id=thread_id,
                     msg_len=len(req.message or ""),
                     thread_explicit=req.thread_id is not None,
+                    # 同 chat_start：附件只记条数
+                    attachments=len(req.attachments),
                 )
                 for item in run_agent_stream(req.message, user_id=user_id, ctx=ctx):
                     if stop.is_set():

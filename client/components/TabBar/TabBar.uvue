@@ -69,60 +69,37 @@
 	// B10 回退（2026-09-03 峰宝真机证伪）：原生 tabBar 注册 + hideTabBar 在 app-uvue Android
 	// 不干净生效——原生条仍渲染在最底（截实锤），页面视口/层级被打乱且交互失效。
 	// 回退 redirectTo（切换闪屏问题回到 B 类待拍板：剩单页组件化/glassEffect 两案）
-	const goIndex = () => {
-		if (props.active !== 'index') {
+	/**
+	 * 切 tab / 回退的**单一来源**（2026-10-16 · RC-F）。
+	 *
+	 * 语义（三条分支，全仓唯一实现）：
+	 *  ① 目标 ≠ 当前：壳内嵌（embedded）→ `emit('tab')` 交壳 v-show 切换（零销毁零创建）；
+	 *     老世界（无壳）→ `backToShell` = 先请求切 tab 再**栈内回退**（栈深不足时它自带
+	 *     reLaunch 兜底，见 shell_state.uts）——原 `redirectTo` 会销毁当前页并**重建整个壳**
+	 *     ⇒ 白屏 1~2s ✗（RC-10 已修，此处收敛为单点）。
+	 *  ② 目标 = 当前且本页是该 tab 域子页（subpage）：`navigateBack` 回域主页
+	 *     （栈内必有主页，back 必达；画像管理页点「我的」回不去即此前该路径缺失所致）。
+	 *  ③ 目标 = 当前且就是域主页：无操作（维持原「本域 tab 不再跳」语义）。
+	 *
+	 * 为什么收敛成一支：原四个 goX 各自抄一份上述三分支（4 处 backToShell + 3 处
+	 * navigateBack），任一处改动都可能漏改其余 ⇒ 行为漂移。现四个入口仅传 target。
+	 */
+	const goTab = (target: string): void => {
+		if (props.active !== target) {
 			if (props.embedded) {
-				emit('tab', 'index') // B10 方案A：壳层 v-show 切换（零销毁零创建）
+				emit('tab', target) // B10 方案A：壳层 v-show 切换（零销毁零创建）
 			} else {
-				// RC-10（2026-10-14）：改走**栈内回退**（原 redirectTo 会销毁当前页并重建整个壳）
-				backToShell('index', '')
-			}
-		} else if (props.subpage == true) {
-			// §O P2：子页点本域 tab = 返回域主页（栈内必有主页，back 必达）
-			uni.navigateBack()
-		}
-	}
-
-	const goAI = () => {
-		if (props.active !== 'ai') {
-			if (props.embedded) {
-				emit('tab', 'ai') // B10 方案A：壳层 v-show 切换（零销毁零创建）
-			} else {
-				// RC-10（2026-10-14）：改走**栈内回退**（原 redirectTo 会销毁当前页并重建整个壳）
-				backToShell('ai', '')
-			}
-		} else if (props.subpage == true) {
-			uni.navigateBack()
-		}
-	}
-
-	const goSearch = () => {
-		if (props.active !== 'search') {
-			if (props.embedded) {
-				emit('tab', 'search') // B10 方案A：壳层 v-show 切换（零销毁零创建）
-			} else {
-				// RC-10（2026-10-14）：改走**栈内回退**（原 redirectTo 会销毁当前页并重建整个壳）
-				backToShell('search', '')
+				backToShell(target, '')
 			}
 		} else if (props.subpage == true) {
 			uni.navigateBack()
 		}
 	}
 
-	const goProfile = () => {
-		if (props.active !== 'profile') {
-			if (props.embedded) {
-				emit('tab', 'profile') // B10 方案A：壳层 v-show 切换（零销毁零创建）
-			} else {
-				// RC-10（2026-10-14）：改走**栈内回退**（原 redirectTo 会销毁当前页并重建整个壳）
-				backToShell('profile', '')
-			}
-		} else if (props.subpage == true) {
-			// §O P2 修复：画像管理页点「我的」回不去的根因——active==='profile' 直接 return。
-			// 子页（manage 等 navigateTo 压栈）应 navigateBack 回 profile 主页
-			uni.navigateBack()
-		}
-	}
+	const goIndex = () => { goTab('index') }
+	const goAI = () => { goTab('ai') }
+	const goSearch = () => { goTab('search') }
+	const goProfile = () => { goTab('profile') }
 
 	const goRecord = () => {
 		// 不跳页：交给宿主页拉起 RecordSheet 浮层（保持当前页面不动）

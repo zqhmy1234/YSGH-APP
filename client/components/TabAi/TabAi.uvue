@@ -3,9 +3,13 @@
 	     attachOpen 经 shell_state 共享（返回键协同）；处置记录台账 §EE -->
 <!-- ardot 直转 v2：AI 对话页（帧 2:332）· W10.4 数据驱动改造（2026-09-01 峰宝拍板）
      真端点契约（2026-10-09 起为**流式**；封装见 utils/chat_api.uts）：
-     POST /api/v1/chat/messages/stream   { conversation_id?, content, attachments?[] }
+     POST /api/v1/chat/messages/stream   { conversation_id?, content, attachments?[], include_profile? }
           → text/event-stream：status / preview / tool / replace / done / error
           （preview 为**累计全文**；客户端逐帧覆盖渲染 typing 气泡 ⇒ 逐字效果）
+     2026-10-16「附件契约最小可用」：`attachments[]` **不再是空契约**——附件面板「图片」真选图、
+         走既有上传链落库拿 content_id 后随消息上行（见 onPickImage/uploadOneImage/sendNow）；
+         `include_profile` 为**契约能力**（当前无 UI 消费者：原隐私开关 2026-10-14 整行移除，
+        台账 §7.18）——客户端恒 true；后端必须真的按它行事（false ⇒ 不携带画像上下文）。
      GET  /api/v1/chat/conversations/{id}/messages（进入会话回填历史）
      GET  /api/v1/chat/replies/:id（客户端当前无调用点；断线重取预留，contract.uts 有登记）
      注：非流式 POST /api/v1/chat/messages 仍在后端保留（脚本/降级路径），客户端不再走它。
@@ -154,20 +158,22 @@
 		<view v-if="attachShown()" class="attach-panel">
 			<view class="attach-handle" />
 			<text class="attach-title">添加附件</text>
-			<view class="attach-grid">
+			<!-- 已选附件预览（2026-10-16 附件契约最小可用）：此处原为 **2×3 六张静态 mock 图**
+			     （img2_345.png 等）——用户从未选过、`@tap` 也没有（审计 A2/A3：「无 attachments 通路」）
+			     ⇒ **已删**。现渲染**用户真实选中的图片**（上传成功才有，见 onPickImage），
+			     复用既有 `.attach-grid/.grid-row/.grid-thumb` 类，零新增视觉元素；未选图则整块不渲染。 -->
+			<view v-if="pickedImages.length > 0" class="attach-grid">
 				<view class="grid-row">
-					<image class="grid-thumb grid-thumb-first" src="/static/images/img2_345.png" mode="aspectFill" />
-					<image class="grid-thumb" src="/static/images/img2_140.png" mode="aspectFill" />
-					<image class="grid-thumb" src="/static/images/img2_256.png" mode="aspectFill" />
-				</view>
-				<view class="grid-row">
-					<image class="grid-thumb grid-thumb-first" src="/static/images/img2_74.png" mode="aspectFill" />
-					<image class="grid-thumb" src="/static/images/img4_406.png" mode="aspectFill" />
-					<image class="grid-thumb" src="/static/images/img2_16.png" mode="aspectFill" />
+					<image v-for="(pi, idx) in pickedImages" :key="idx" class="grid-thumb" :class="idx === 0 ? 'grid-thumb-first' : ''" :src="pi.previewPath" mode="aspectFill" />
 				</view>
 			</view>
 			<view class="attach-entries">
-				<view class="attach-entry attach-entry-first pressable" @tap="onAttachEntry('文件')">
+				<!-- 图片（2026-10-16）：**真通路**——选图 → 既有上传链落库拿 contentId → 随消息上行 -->
+				<view class="attach-entry attach-entry-first pressable" @tap="onPickImage">
+					<image class="attach-entry-icon" src="/static/icons/record-gallery.svg" />
+					<text class="attach-entry-text">图片</text>
+				</view>
+				<view class="attach-entry pressable" @tap="onAttachEntry('文件')">
 					<image class="attach-entry-icon" src="/static/icons/icon-file.svg" />
 					<text class="attach-entry-text">文件</text>
 				</view>
@@ -183,7 +189,15 @@
 <script setup lang="uts">
 	import { onMounted, watch } from 'vue'
 	import { aiAttachOpen } from '@/utils/shell_state'
-	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem, ChatCard, chatStreamText, chatStreamTool, chatStreamActive, CHAT_CONV_STORAGE_KEY } from '@/utils/chat_api'
+	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem, ChatCard, ChatAttachment, chatStreamText, chatStreamTool, chatStreamActive, CHAT_CONV_STORAGE_KEY } from '@/utils/chat_api'
+	// 图片附件走**既有上传链**（2026-10-16 附件契约最小可用）：只**调用**，不修改
+	// （upload_pipeline.uts 不在本任务边界内，禁改）。
+	// 为什么不用 uploadBatch / uploadWithRetry：那两个入口吃 `PhotoItem`（MediaStore id、拍摄时间、
+	// 宽高、SIZE 列），而 `uni.chooseImage` 给的是**沙箱临时文件**（没有 MediaStore 元数据，
+	// `uploader_photo.uploadOne` 也会因 size<=0 直接 reject）；`runUploadPipeline` + `UploadSpec`
+	// 只要 path/name/size，是这条链对"非相册来源文件"的既有入口（voice 链同款用法），
+	// init→status→chunk→complete 三段状态机一字不改。
+	import { runUploadPipeline, UploadSpec, UploadOutcome } from '@/utils/upload_pipeline'
 	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
 	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
@@ -212,7 +226,10 @@
 		chips: Array<string> // 尾部快捷追问
 		cards: Array<MemCard> // bubble 内嵌卡（0/1 张）；cards 横滑时用 cardList
 		cardList: Array<MemCard>
-		constructor(id: number, role: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<MemCard>, cardList: Array<MemCard>) {
+		// 附件（2026-10-16 附件契约最小可用）：挂在**用户消息**上——一是失败卡重试要能带上同一批
+		// 附件重发（附件已落库，content_id 复用不重复上传），二是避免"待发列表"跨消息误带。
+		attachments: Array<ChatAttachment>
+		constructor(id: number, role: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<MemCard>, cardList: Array<MemCard>, attachments: Array<ChatAttachment>) {
 			this.id = id
 			this.role = role
 			this.kind = kind
@@ -221,8 +238,22 @@
 			this.chips = chips
 			this.cards = cards
 			this.cardList = cardList
+			this.attachments = attachments
 		}
 	}
+
+	// 已选附件（画布预览用）：附件本体 + 本地临时路径（预览只能读本地路径，云侧 URL 未生成）。
+	class PickedImage {
+		attachment: ChatAttachment
+		previewPath: string
+		constructor(attachment: ChatAttachment, previewPath: string) {
+			this.attachment = attachment
+			this.previewPath = previewPath
+		}
+	}
+	// 待发图片附件（2026-10-16 附件契约最小可用）：选图 → 上传落库成功才入列；
+	// 发送时整体转入该条用户消息并清空（见 sendNow）。
+	let pickedImages = ref<Array<PickedImage>>([])
 	let messages = ref<Array<AiMsg>>([])
 	let nextId = ref(1)
 	let scrollInto = ref('') // scroll-view 锚点滚动（新消息自动落底）
@@ -260,12 +291,12 @@
 	// ── mock 对话样张（onLoad 注入，覆盖画布 ai_reply 板 ①②③④⑥ + 用户长文）──
 	function seedMockMessages(): void {
 		const seq: Array<AiMsg> = [
-			mkUser('那天天气怎么样？'),
+			mkUser('那天天气怎么样？', []),
 			mkAi('bubble', '那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。', [new MemCard('清晨的湖边，风很轻', '8月28日 · 照片', MOCK_IMGS[0])], [], [], []),
-			mkUser('帮我回顾一下这个月'),
+			mkUser('帮我回顾一下这个月', []),
 			mkAi('plain', MOCK_PLAIN_TITLE, [], ['那周最开心的事', '生成 8 月周报'], MOCK_PLAIN_BULLETS, []),
 			mkAi('cards', '', [], ['看看那天还在做什么'], [], [new MemCard('清晨的湖边', '8月28日 · 照片', MOCK_IMGS[0]), new MemCard('实验室的深夜', '8月22日 · 文字', MOCK_IMGS[1])]),
-			mkUser('这段语音转写的内容帮我整理一下：那天我们在湖边走了很久，聊到奶奶种的那棵桂花树，说秋天满院子都是甜香，还想约着国庆回去看看，把院子重新收拾一遍，拍照留个纪念。'),
+			mkUser('这段语音转写的内容帮我整理一下：那天我们在湖边走了很久，聊到奶奶种的那棵桂花树，说秋天满院子都是甜香，还想约着国庆回去看看，把院子重新收拾一遍，拍照留个纪念。', []),
 			mkAi('bubble', '奶奶总说，老屋门口的那棵桂花树是她嫁过来那年种下的。每到秋天，满院子都是甜香，她总在树下摆一张小桌择菜，跟路过邻居打招呼。你上次回去是三年前的秋天，还拍了满地金黄的落花——要不要把这段整理成一条「桂花树」主题记忆？', [], [], [], []),
 			mkAi('confirm', '要把「湖边晨雾」加入 8 月时间胶囊吗？', [], [], [], [])
 		]
@@ -273,13 +304,13 @@
 	}
 
 	// 工厂：减少字面量重复（全显式参数，不用默认值——uts 默认参数零先例不冒险）
-	function mkUser(text: string): AiMsg {
+	function mkUser(text: string, atts: Array<ChatAttachment>): AiMsg {
 		nextId.value = nextId.value + 1
-		return new AiMsg(nextId.value, 'user', 'bubble', text, [], [], [], [])
+		return new AiMsg(nextId.value, 'user', 'bubble', text, [], [], [], [], atts)
 	}
 	function mkAi(kind: string, text: string, cards: Array<MemCard>, chips: Array<string>, bullets: Array<string>, cardList: Array<MemCard>): AiMsg {
 		nextId.value = nextId.value + 1
-		return new AiMsg(nextId.value, 'ai', kind, text, bullets, chips, cards, cardList)
+		return new AiMsg(nextId.value, 'ai', kind, text, bullets, chips, cards, cardList, [])
 	}
 
 	// ── 发送闭环（mock）：用户消息 → typing → 1.8s 后 AI 回复（形态轮换）──
@@ -288,23 +319,48 @@
 		if (t == '') {
 			return
 		}
+		sendNow(t, attachmentsOf(pickedImages.value))
+	}
+
+	// 待发附件 → 契约附件数组（PickedImage = 附件 + 本地预览路径；上行只带附件）
+	function attachmentsOf(picked: Array<PickedImage>): Array<ChatAttachment> {
+		const out: Array<ChatAttachment> = []
+		for (let i = 0; i < picked.length; i++) {
+			out.push(picked[i].attachment)
+		}
+		return out
+	}
+
+	// 真发送（onSend 首发 / onRetry 重发 共用）。
+	//  · atts 为空 ⇒ 行为与接入前**逐字相同**（请求体不带 attachments 键，见 chat_api.streamChatOnce）
+	//  · includeProfile 恒传 true：它当前**无 UI 消费者**（两枚隐私开关 2026-10-14 因"全仓零读零写"
+	//    整行移除，台账 §7.18），保留为契约能力（将来重开开关只改这一处，不动三层链路）。
+	//    ⚠️ 不要为它补开关：没有真消费者就是新的空承诺。后端必须真的按它行事
+	//    （false ⇒ 不携带画像上下文，见 services/chat_context.py `profile_context`）。
+	function sendNow(t: string, atts: Array<ChatAttachment>): void {
 		if (chatStreamActive.value) {
 			// 上一轮还在生成：**不并发发第二条**。流式预览走模块级共享 ref（chatStreamText），
 			// 两轮流同时进行会互相串写，界面会出现"两段回复夹杂"这种最难解释的现象。
 			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
 			return
 		}
+		// 附件**随消息转移**：转入本条用户消息后立即清空待发列表——否则用户下一条普通消息会
+		// 莫名带上上一张图（假状态）。重试由 `m.attachments` 承担：附件已落库，content_id 复用
+		// 不会重复上传，也就不会重复计费/重复落库。
+		if (atts.length > 0) {
+			pickedImages.value = []
+		}
+		draft.value = ''
 		if (USE_MOCK_CHAT === false) {
-			// 真端点（AG6）：本地即时上屏用户消息 + typing 占位，等 POST /api/v1/chat/messages
+			// 真端点（AG6）：本地即时上屏用户消息 + typing 占位，等流式端点回终稿
 			// （后端 AG5 已实现：JWT→可信 user_id、反代 Agent、失败返回 502/504 而**不伪造回复**）
-			draft.value = ''
-			const u2 = mkUser(t)
+			const u2 = mkUser(t, atts)
 			const tp2 = mkAi('typing', '正在翻你的回忆', [], [], [], [])
 			messages.value.push(u2)
 			messages.value.push(tp2)
 			scrollToBottom(tp2.id)
 			const tpId = tp2.id
-			sendChatMessage(conversationId.value, t).then((r: ChatSendResult | null) => {
+			sendChatMessage(conversationId.value, t, atts, true).then((r: ChatSendResult | null) => {
 				removeById(tpId)
 				// 预览用完即清：它是**模块级共享**状态，留着会让下一轮的占位气泡先闪出上一轮的尾句
 				chatStreamText.value = ''
@@ -327,8 +383,7 @@
 			})
 			return
 		}
-		draft.value = ''
-		const u = mkUser(t)
+		const u = mkUser(t, atts)
 		// 2026-10-11 静态审查 A4：补齐 6 参（签名 (kind,text,cards,chips,bullets,cardList)）。
 		// 原为 3 参调用——当前 USE_MOCK_CHAT=false 恒不可达，但一旦翻回 true，
 		// 后四参为 undefined，模板 `m.cards.length` 类读取会崩（且 UTS 严格模式下
@@ -349,15 +404,14 @@
 		}, 1800)
 	}
 
-	// 重试发送（2026-10-07 加固）：撤掉失败卡 → 用原文走真端点重发（复用 onSend 完整链路）
+	// 重试发送（2026-10-07 加固）：撤掉失败卡 → 用原文 + **同一批附件**重发（复用 sendNow）
 	function onRetry(m: AiMsg): void {
 		const text = m.text
 		if (text == '') {
 			return
 		}
 		removeById(m.id)
-		draft.value = text
-		onSend()
+		sendNow(text, m.attachments)
 	}
 
 	// mock 回复生成器（B2 接线后删除）
@@ -502,6 +556,97 @@
 		uni.showToast({ title: name + '：即将上线', icon: 'none' })
 	}
 
+	// ── 图片附件（2026-10-16「附件契约最小可用」· 台账 §7.14 / 审计 A1-A3·D7 销项）──
+	//
+	// 端到端：选图（uni.chooseImage）→ **既有上传链**（runUploadPipeline）落库拿 contentId
+	// → 入待发列表 → 发送时作为 attachments[].content_id 上行 → 后端读既有 caption 转成
+	// 文本提示给 AI（不新调视觉模型）。
+	function onPickImage(): void {
+		uni.chooseImage({
+			// count=1：一次一张（可反复点选累积）。不做多选是有意的——多选要串行上传 + 失败
+			// 部分成功提示，属"最小可用"之外；`count:9` 的批量语义留给后续批次。
+			count: 1,
+			sourceType: ['album', 'camera'],
+			success: (res) => {
+				const paths = res.tempFilePaths
+				if (paths.length == 0) {
+					return
+				}
+				const path = paths[0]
+				if (path == null || path == '') {
+					return
+				}
+				// 选完即收面板 + 上传态提示（面板里没有进度条，开着反而挡着不知道在等什么）
+				closeAttach()
+				uni.showLoading({ title: '正在上传图片…' })
+				uploadOneImage(path).then((att: ChatAttachment | null) => {
+					uni.hideLoading()
+					if (att == null) {
+						// 🚩 红线：上传失败/拿不到 contentId ⇒ **绝不假装发出**，如实提示。
+						// 失败原因由上传链落盘（uploader_photo 同款 console.error）与 api 层 toast 承担。
+						uni.showToast({ title: '图片上传失败，未添加（可稍后重试）', icon: 'none', duration: 2500 })
+						return
+					}
+					pickedImages.value.push(new PickedImage(att, path))
+					uni.showToast({ title: '已添加图片，发送时一并带给 AI', icon: 'none', duration: 2000 })
+				})
+			},
+			fail: () => {
+				// 取消选图：静默（口径同 RecordSheet.pickPhotos:631 / TabSearch.runImageSearch:395）
+			}
+		})
+	}
+
+	// 单张图片 → 既有上传链落库 → contentId。失败/无 contentId 一律 resolve(null)，由调用方如实提示。
+	function uploadOneImage(path: string): Promise<ChatAttachment | null> {
+		return new Promise<ChatAttachment | null>((resolve) => {
+			// 沙箱临时文件的字节数（init 必填）。选图给的是 app 临时目录路径 ⇒ getFileInfo 可读
+			// （voice 链同款；相册 MediaStore 绝对路径那种读不到的情况在这里不适用）
+			uni.getFileSystemManager().getFileInfo({
+				filePath: path,
+				success: (info) => {
+					const size = info.size
+					if (size <= 0) {
+						console.error('[dbg-chat] attach size invalid: ' + size)
+						resolve(null)
+						return
+					}
+					const slash = path.lastIndexOf('/')
+					const name = slash >= 0 ? path.substring(slash + 1) : path
+					// upload_mode='original'：附件要能进 caption 管线（缩略图模式只落占位、不进管线）
+					const spec = new UploadSpec(path, name, size, path, 'original', '')
+					runUploadPipeline(
+						spec,
+						(): UTSJSONObject => {
+							// 无 taken_at/坐标（选图不是拍照，不编造这些元数据；后端 parse_photo_meta 允许缺省）
+							const meta: UTSJSONObject = { source: 'app' }
+							return meta
+						},
+						(_uploadId: string) => {
+							// 附件不做断点续传持久化（会话级临时物；失败即重新选图，不留孤儿 upload_id）
+						},
+						(_uploadId: string) => {
+						}
+					).then((out: UploadOutcome) => {
+						if (out.contentId == '') {
+							console.error('[dbg-chat] attach complete 无 content_id')
+							resolve(null)
+							return
+						}
+						resolve(new ChatAttachment('image', out.contentId, name, size))
+					}, (e: Error) => {
+						console.error('[dbg-chat] attach upload failed: ' + e.message)
+						resolve(null)
+					})
+				},
+				fail: () => {
+					console.error('[dbg-chat] attach getFileInfo failed')
+					resolve(null)
+				}
+			})
+		})
+	}
+
 
 	// RecordSheet 保存成功回调（AI 页无可刷新数据，占位收口）
 	function onRecordSaved(): void {
@@ -590,7 +735,9 @@
 					for (let i = 0; i < items.length; i++) {
 						const it = items[i]
 						if (it.role == 'user') {
-							seq.push(mkUser(it.text))
+							// 历史条目不回填附件（后端历史契约当前不含 attachments；不回填≠伪造：
+							// 附件内容早已作为文本提示并入该轮 AI 上下文，气泡只承载文本）——2026-10-16
+							seq.push(mkUser(it.text, []))
 						} else {
 							// 形态用后端下发的 kind（见 api/chat.py `_kind_for`：bubble | plain | cards）；
 							// 未知一律退回 'bubble' —— 不猜 confirm/typing，避免伪造结构。

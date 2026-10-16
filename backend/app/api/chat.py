@@ -46,6 +46,12 @@ from app.schemas.chat import (
     ChatReplyOut,
 )
 from app.schemas.common import ApiResponse
+from app.services.chat_context import (
+    agent_attachment_arg,
+    agent_message,
+    attachment_hint,
+    profile_context,
+)
 from app.services.external.agent import AgentServiceError, call_agent_chat, stream_agent_chat
 from app.services.llm_ops.output_guard import rule_screen, screen_generated
 
@@ -144,6 +150,11 @@ def _resolve_conversation_id(db: Session, user_id: str, requested: str | None) -
     return normalized
 
 
+# 附件/画像 → agent 上下文的组装已拆到 services/chat_context.py（2026-10-16「附件契约最小可用」）：
+# 那三个函数是纯组装逻辑（读既有 caption 字段 + 画像），与路由/鉴权/落库/护栏无关；
+# 搬出去同时满足结构棘轮（本文件此前已到 600 行下沿）。**改动前先读该模块 docstring**。
+
+
 @router.post("/messages", response_model=ApiResponse[ChatMessageOut])
 def post_message(
     req: ChatMessageIn,
@@ -153,6 +164,13 @@ def post_message(
     """发一条消息，返回智能体回复（非流式；失败不伪造）。"""
     started = time.monotonic()
     conversation_id = _resolve_conversation_id(db, str(user.id), req.conversation_id)
+    # 2026-10-16（附件契约最小可用）：附件 → 文本提示；`include_profile` 决定是否携带画像上下文
+    # （它的生效点就在下面这一行——False 时 `profile_context` 根本不会被调用。
+    #  注：该参数当前**无 UI 消费者**（原隐私开关 2026-10-14 整行移除，台账 §7.18），
+    #  保留为契约能力；**不要为它补开关**。）
+    attachment_text = attachment_hint(db, str(user.id), req.attachments)
+    profile_ctx = profile_context(db, str(user.id)) if req.include_profile else ""
+    agent_text = agent_message(req.content, profile_ctx, attachment_text)
 
     # 1) 先落用户消息（agent 失败也要留痕："问了但没答上"可复盘）
     user_row = ChatMessage(
@@ -168,7 +186,12 @@ def post_message(
 
     # 2) 调 agent（**单次尝试**：见 services/external/agent.py 的幂等性说明，不套重试）
     try:
-        result = call_agent_chat(user_id=str(user.id), message=req.content, conversation_id=conversation_id)
+        result = call_agent_chat(
+            user_id=str(user.id),
+            message=agent_text,
+            conversation_id=conversation_id,
+            **agent_attachment_arg(req.attachments),
+        )
     except AgentServiceError as exc:
         code = ERR_CHAT_002 if exc.http_status == 504 else ERR_CHAT_001
         logger.warning("agent 调用失败 user=%s conv=%s kind=%s", user.id, conversation_id, exc.kind)
@@ -252,6 +275,12 @@ def post_message_stream(
     """
     conversation_id = _resolve_conversation_id(db, str(user.id), req.conversation_id)
     user_id = str(user.id)
+    # 2026-10-16（附件契约最小可用）：**在请求线程内**完成"附件 → 提示 / 画像 → 上下文"的组装
+    # （后台线程只拿现成字符串，不去碰请求作用域的 Session）——口径与非流式端点逐字一致。
+    attachment_text = attachment_hint(db, user_id, req.attachments)
+    profile_ctx = profile_context(db, user_id) if req.include_profile else ""
+    agent_text = agent_message(req.content, profile_ctx, attachment_text)
+    attachment_arg = agent_attachment_arg(req.attachments)
 
     # 1) 先落用户消息（agent 失败也要留痕——同非流式的第 1 步）
     user_row = ChatMessage(
@@ -308,7 +337,10 @@ def post_message_stream(
             try:
                 _offer(("status", {"stage": "accepted"}))
                 for kind, payload in stream_agent_chat(
-                    user_id=user_id, message=req.content, conversation_id=conversation_id
+                    user_id=user_id,
+                    message=agent_text,
+                    conversation_id=conversation_id,
+                    **attachment_arg,
                 ):
                     if kind == "delta":
                         raw_preview += str(payload)

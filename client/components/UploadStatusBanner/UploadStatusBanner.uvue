@@ -81,18 +81,46 @@
 		subscribeSyncStatus((p: boolean, reason: string) => {
 			paused.value = p
 			pauseReason.value = reason
+			// 2026-10-16（批次 6）：**事件驱动刷新**——原回调只写暂停两态，于是"暂停/恢复"引起的
+			// 其余状态（held/failed/uploading 计数）要等下一拍轮询才反映；现广播即刷新，
+			// 暂停/恢复**立即**上屏。下方"失败明细/原因/toast"逻辑一律保留不动。
+			refresh()
 		})
 		refresh()
-		refresher = setInterval(() => {
-			refresh()
-		}, 3000) as number
+		scheduleRefresh()
 	})
 	onBeforeUnmount(() => {
 		if (refresher != 0) {
-			clearInterval(refresher)
+			clearTimeout(refresher)
 			refresher = 0
 		}
 	})
+
+	/**
+	 * 自适应轮询（2026-10-16 · 批次 6 · RC-12 续）：「**有事可报就快、无事可报就慢**」。
+	 *
+	 * 原实现是**恒定 3s** 的 `setInterval`：即便横幅已收起（无待传/无失败/未暂停），也照样每 3s
+	 * 读一次 storage + 查询网络类型（`getNetKind`）——纯空转。现按可见性分档：横幅在屏 → 3s
+	 * （保持实时）；已收起 → 10s **保底**（空转频次降到 1/3）。
+	 *
+	 * ⚠️ 为什么保留"保底"而非纯事件驱动：`held/failed` 计数的**变更源在 uploader 侧**
+	 * （`uploader_queue.uts` 无 subscribe 出口），本文件边界内拿不到事件 ⇒ 纯事件驱动会让
+	 * 「上传失败后横幅永不出现」。彻底事件化需在 `uploader_queue` 加 `subscribeUploadStatus`
+	 * （**本次未获授权，登记为后续批次**）。暂停一路已是真事件驱动（`subscribeSyncStatus` + 上面的 refresh）。
+	 * 代价如实登记：空态下新失败最坏 **10s** 后才上屏（原 3s）。
+	 */
+	function scheduleRefresh(): void {
+		if (refresher != 0) {
+			clearTimeout(refresher)
+			refresher = 0
+		}
+		const gap = show.value ? 3000 : 10000
+		refresher = setTimeout(() => {
+			refresher = 0
+			refresh()
+			scheduleRefresh()
+		}, gap) as number
+	}
 
 	function refresh(): void {
 		paused.value = isSyncPaused()

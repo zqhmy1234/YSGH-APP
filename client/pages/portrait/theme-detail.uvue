@@ -19,50 +19,54 @@
 			     正确写法 direction="vertical"（显式化优于依赖默认值） -->
 		<scroll-view class="flow" direction="vertical">
 			<!-- 结果提示（画布 y126「8 条记忆 · 6月2日至今」） -->
-			<text class="meta-count">{{ items.length }} 条记忆{{ rangeText != '' ? ' · ' + rangeText : '' }}</text>
+			<text class="meta-count">{{ cards.length }} 条记忆{{ rangeText != '' ? ' · ' + rangeText : '' }}</text>
 			<!-- 主题说明（画布 y148；「· 更新于昨天」无数据源省略，台账 卡23 F9a） -->
 			<text class="meta-sub">AI 从你的记忆里聚出来的主题流</text>
 
-			<!-- 记忆卡流（三形态：语音 / 照片 / 文字） -->
-			<view v-for="(ev, idx) in items" :key="ev.id" :class="idx == items.length - 1 ? 'card no-margin' : 'card'">
+			<!-- 记忆卡流（三形态：语音 / 照片 / 文字）
+			     2026-10-16（RC-F）：数据源由 `TimelineEvent` 改为本页视图模型 `ThemeCard`——
+			     kind/标题/元信息/波形高度/前 2 张照片在**组装期**预计算，播放态 active/progress 由
+			     syncActiveCard 相等守卫写入 ⇒ 模板**零函数调用**（原每卡调 metaOf/topPhotos/
+			     voiceIsActive/voiceProgressOfCard 四个函数）。 -->
+			<view v-for="(ev, idx) in cards" :key="ev.id" :class="idx == cards.length - 1 ? 'card no-margin' : 'card'">
 				<!-- ① 语音卡：音频条（玻璃播放钮 + VoiceWave 金波形，detail 先例接线全局播放引擎） -->
-				<view v-if="ev.voice != null" class="voice-strip">
+				<view v-if="ev.kind == 'voice'" class="voice-strip">
 					<view class="vplay-btn" @tap="onPlayTap(ev)">
-						<image v-if="!voiceIsActive(ev.voice.contentId)" class="vplay-icon" src="/static/icons/record-play.svg" />
+						<image v-if="!ev.active" class="vplay-icon" src="/static/icons/record-play.svg" />
 						<view v-else class="vpause-bars">
 							<view class="vpause-bar"></view>
 							<view class="vpause-bar"></view>
 						</view>
 					</view>
 					<view class="vwave">
-						<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+						<VoiceWave :heights="ev.voiceHeights" :waveform="wf.waveformOf(ev.voiceCid)" :active="ev.active" :progress="ev.progress" idle-color="#C4913C" />
 					</view>
 				</view>
-				<view v-if="ev.voice != null" class="voice-text-block">
+				<view v-if="ev.kind == 'voice'" class="voice-text-block">
 					<text class="card-title">{{ ev.title }}</text>
-					<text class="card-meta">{{ metaOf(ev) }}</text>
+					<text class="card-meta">{{ ev.meta }}</text>
 				</view>
 				<!-- ② 照片卡：双图拼块（thumbnailUrl 直喂 :src，EventPhoto 先例；空 URL 占位暖块双色） -->
-				<view v-if="ev.voice == null && ev.photos.length > 0" class="photo-grid">
-					<view v-for="(ph, pIdx) in topPhotos(ev)" :key="ph.contentId" :class="pIdx == 0 ? 'photo-cell cell-a' : 'photo-cell'">
+				<view v-if="ev.kind == 'photo'" class="photo-grid">
+					<view v-for="(ph, pIdx) in ev.photos" :key="ph.contentId" :class="pIdx == 0 ? 'photo-cell cell-a' : 'photo-cell'">
 						<image v-if="ph.thumbnailUrl != ''" class="photo-img" :src="ph.thumbnailUrl" mode="aspectFill" />
 						<view v-else :class="pIdx == 0 ? 'photo-ph ph-a' : 'photo-ph ph-b'"></view>
 					</view>
 				</view>
-				<text v-if="ev.voice == null && ev.photos.length > 0" class="card-title title-flush">{{ ev.title }}</text>
-				<text v-if="ev.voice == null && ev.photos.length > 0" class="card-meta meta-flush">{{ metaOf(ev) }}</text>
+				<text v-if="ev.kind == 'photo'" class="card-title title-flush">{{ ev.title }}</text>
+				<text v-if="ev.kind == 'photo'" class="card-meta meta-flush">{{ ev.meta }}</text>
 				<!-- ③ 文字卡：引用块（左金竖条；L2 事件无 body 字段，引用文字 = 主题事件标题，台账 卡23 F9a） -->
-				<view v-if="ev.voice == null && ev.photos.length == 0" class="quote-block">
+				<view v-if="ev.kind == 'text'" class="quote-block">
 					<view class="quote-bar"></view>
 					<text class="quote-text">{{ ev.title }}</text>
 				</view>
-				<view v-if="ev.voice == null && ev.photos.length == 0" class="text-meta-block">
-					<text class="card-meta">{{ metaOf(ev) }}</text>
+				<view v-if="ev.kind == 'text'" class="text-meta-block">
+					<text class="card-meta">{{ ev.meta }}</text>
 				</view>
 			</view>
 
 			<!-- 空态（主题下暂无 L2 事件；画布无空态帧，沿用既有交互必需形态） -->
-			<view v-if="items.length == 0 && !loading" class="empty-card">
+			<view v-if="cards.length == 0 && !loading" class="empty-card">
 				<text class="empty-text">这个主题下还没有记忆</text>
 			</view>
 		</scroll-view>
@@ -70,12 +74,14 @@
 </template>
 
 <script setup lang="uts">
+	// 2026-10-16（RC-F）：显式引入 watch 驱动播放态同步（本文件其余 Vue API 沿用 uni-app x 自动引入）
+	import { watch } from 'vue'
 	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
 	import {
 		toggleVoice,
 		stopVoice,
-		isVoiceActive,
-		voiceProgressOf
+		voiceCurrentId,
+		voiceProgress
 	} from '@/utils/audio_player'
 	import { EventPhoto } from '@/utils/timeline'
 	import { WaveformCache } from '@/composables/useWaveform'
@@ -83,9 +89,38 @@
 	// ── 页面参数 ──
 	let themeName = ref('')
 	// ── 响应式状态 ──
-	let items = ref<Array<TimelineEvent>>([])
+	// 2026-10-16（RC-F）：卡数据源由 TimelineEvent 改为本页视图模型 ThemeCard（组装期预计算 +
+	// 播放态字段），模板零函数调用。TimelineEvent 仍是取数入参类型，故 import 保留。
+	let cards = ref<Array<ThemeCard>>([])
 	let loading = ref(true)
 	let rangeText = ref('')
+
+	/** 主题卡视图模型（2026-10-16 · RC-F）：组装期预计算 kind/标题/元信息/波形高度/前 2 张照片；
+	 *  播放态 active/progress 由 syncActiveCard 相等守卫写入。类声明先例：TabSearch.VoiceResult。 */
+	class ThemeCard {
+		id: string
+		startTime: number
+		kind: string // voice | photo | text
+		title: string
+		meta: string
+		photos: Array<EventPhoto>
+		voiceCid: string
+		voiceHeights: Array<number>
+		active: boolean
+		progress: number
+		constructor(id: string, startTime: number, kind: string, title: string, meta: string, photos: Array<EventPhoto>, voiceCid: string, voiceHeights: Array<number>) {
+			this.id = id
+			this.startTime = startTime
+			this.kind = kind
+			this.title = title
+			this.meta = meta
+			this.photos = photos
+			this.voiceCid = voiceCid
+			this.voiceHeights = voiceHeights
+			this.active = false
+			this.progress = 0
+		}
+	}
 
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
 	const wf = new WaveformCache()
@@ -108,21 +143,21 @@
 
 	/** 按主题筛出 L2 子集（P-5 收口 2026-09-04：server level=2 过滤窄化，替代全量 timeline 拉取）→ startTime 倒序 */
 	function applyPicked(events: Array<TimelineEvent>): void {
-		const picked: Array<TimelineEvent> = []
+		const picked: Array<ThemeCard> = []
 		let minMs = 0 as number
 		for (let i = 0; i < events.length; i++) {
 			const ev = events[i]
 			if (ev.level === 2 && ev.title == themeName.value) {
-				picked.push(ev)
+				picked.push(toCard(ev))
 				if (minMs == 0 || ev.startTime < minMs) {
 					minMs = ev.startTime
 				}
 			}
 		}
-		picked.sort((a: TimelineEvent, b: TimelineEvent): number => {
+		picked.sort((a: ThemeCard, b: ThemeCard): number => {
 			return b.startTime - a.startTime
 		})
-		items.value = picked
+		cards.value = picked
 		if (minMs > 0) {
 			rangeText.value = fmtMonthDay(minMs) + '至今'
 		} else {
@@ -131,11 +166,28 @@
 		// BB3：数据就绪即批量拉真实波形（本页 L2 子集卡量小，对齐 detail 进页即拉；
 		// 同 contentId 由 useWaveform 的 WaveformCache 去重，onPlayTap 再调零成本）
 		for (let i = 0; i < picked.length; i++) {
-			const v = picked[i].voice
-			if (v != null) {
-				wf.loadWaveform(v.contentId)
+			if (picked[i].voiceCid != '') {
+				wf.loadWaveform(picked[i].voiceCid)
 			}
 		}
+		// RC-F：卡重建后补一次播放态同步（切页返回时正在播的卡要立即显示播放态）
+		syncActiveCard()
+	}
+
+	/** TimelineEvent → ThemeCard：kind/元信息/波形高度/前 2 张照片在**组装期**算好（模板零函数调用）。
+	 *  三形态判定与画布一致：语音（有 voice）→ 照片（有 photos）→ 文字（其余，引用文字=事件标题）。 */
+	function toCard(ev: TimelineEvent): ThemeCard {
+		if (ev.voice != null) {
+			return new ThemeCard(ev.id, ev.startTime, 'voice', ev.title, metaOf(ev), [], ev.voice.contentId, ev.voice.waveHeights)
+		}
+		if (ev.photos.length > 0) {
+			const ps: Array<EventPhoto> = []
+			for (let i = 0; i < ev.photos.length && i < 2; i++) {
+				ps.push(ev.photos[i])
+			}
+			return new ThemeCard(ev.id, ev.startTime, 'photo', ev.title, metaOf(ev), ps, '', [])
+		}
+		return new ThemeCard(ev.id, ev.startTime, 'text', ev.title, metaOf(ev), [], '', [])
 	}
 
 	/**
@@ -190,29 +242,55 @@
 		}
 		return s
 	}
-	/** 照片卡前 2 张（画布双拼网格） */
-	function topPhotos(ev: TimelineEvent): Array<EventPhoto> {
-		const out: Array<EventPhoto> = []
-		for (let i = 0; i < ev.photos.length && i < 2; i++) {
-			out.push(ev.photos[i])
-		}
-		return out
-	}
-
 	// ── 语音播放（detail 先例：复用全局播放引擎，播放态三处一致） ──
-	function onPlayTap(ev: TimelineEvent): void {
-		if (ev.voice == null) {
+	function onPlayTap(ev: ThemeCard): void {
+		if (ev.voiceCid == '') {
 			return
 		}
-		wf.loadWaveform(ev.voice.contentId) // BB3：兜底拉取（就绪批量已覆盖，Map 命中零成本）
-		toggleVoice(ev.voice.contentId)
+		wf.loadWaveform(ev.voiceCid) // BB3：兜底拉取（就绪批量已覆盖，Map 命中零成本）
+		toggleVoice(ev.voiceCid)
 	}
-	function voiceIsActive(cid: string): boolean {
-		return isVoiceActive(cid)
+
+	// ── 播放态预计算（2026-10-16 · RC-F）──────────────────────────────────────────
+	// 范式照 `TabSearch.syncActiveCard` / `TabIndex.syncVoiceCards`：数据写入时把全局播放态写进
+	// 「正在播放那张卡」，模板只读（零函数调用）；相等守卫 ⇒ 未变的卡零写入零重渲染。
+	function applyCardState(c: ThemeCard, cid: string, prog: number): boolean {
+		const isActive = c.voiceCid != '' && c.voiceCid == cid
+		let changed = false
+		if (c.active != isActive) {
+			c.active = isActive
+			changed = true
+		}
+		if (isActive) {
+			if (c.progress != prog) {
+				c.progress = prog
+				changed = true
+			}
+		} else if (c.progress != 0) {
+			c.progress = 0 // 退出活动态：清干净（否则旧卡残留进度染色）
+			changed = true
+		}
+		return changed
 	}
-	function voiceProgressOfCard(cid: string): number {
-		return voiceProgressOf(cid)
+
+	function syncActiveCard(): void {
+		const cid = voiceCurrentId.value
+		const prog = voiceProgress.value
+		const arr = cards.value
+		let changed = false
+		for (let i = 0; i < arr.length; i++) {
+			if (applyCardState(arr[i], cid, prog)) {
+				changed = true
+			}
+		}
+		if (changed) {
+			cards.value = arr.slice() // 整组浅替换（同 TabIndex 口径，确定性重渲染）
+		}
 	}
+
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch，tick 驱动面收敛到 syncActiveCard
+	watch(voiceCurrentId, (): void => { syncActiveCard() })
+	watch(voiceProgress, (): void => { syncActiveCard() })
 
 	function goBack(): void {
 		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页

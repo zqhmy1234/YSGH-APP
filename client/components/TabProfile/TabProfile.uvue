@@ -95,12 +95,19 @@
 	// 不受本 TTL 影响——保存后必须立刻反映新数据。
 	const PROFILE_TTL: number = 60000
 	let lastLoadMs = 0
+	// 2026-10-16（批次 6 · RC-4 续）：**脏标记**——区分「时间到了」（TTL）与「**事实变了**」。
+	// 来源有二：① 持久缓存过旧/无时间戳（见 restoreProfileStats：数字仍回放，但必须忽略 TTL 重拉）；
+	// ② 记录保存成功（savedSeq）。两者都必须能**越过 TTL** 立即重拉，否则会出现
+	// 「保存了但 60s 内切回「我的」看到的还是旧计数」。
+	let statsDirty = false
 	function loadProfileStatsIfStale(): void {
 		const now = Date.now()
-		if (lastLoadMs != 0 && now - lastLoadMs < PROFILE_TTL) {
-			return // TTL 内：沿用已有数据（不闪、不打接口）
+		// 脏 ⇒ 忽略 TTL（事实过期优先于时间过期）；不脏且 TTL 内 ⇒ 沿用已有数据（不闪、不打接口）
+		if (!statsDirty && lastLoadMs != 0 && now - lastLoadMs < PROFILE_TTL) {
+			return
 		}
 		lastLoadMs = now
+		statsDirty = false // 已发起重拉即清脏（失败也不空转；下次 TTL 到期再拉）
 		loadProfileStats()
 	}
 	// 2026-10-14（台账 §4.20 · 用户反馈"每次跳转都要等数据"）：**统计数字持久缓存**。
@@ -108,6 +115,10 @@
 	// （用户感知"先空一会"）。现进入先用上次计数渲染（秒出），再由 `loadProfileStats` 覆盖。
 	// 只存 3 个整数——**无用户文本、无序列化风险**；读写失败一律静默（绝不因缓存影响主流程）。
 	const PROFILE_STATS_KEY = 'yishu_profile_stats'
+	// 2026-10-16（批次 6 · RC-4 续）：**缓存写入时刻一并持久化**（第 4 段）。
+	// 为什么：原缓存**不看年龄**就回放 —— 隔一天再打开，「我的」先显示**昨天的数字**（陈旧却像真的）。
+	// 现：新鲜（≤ PROFILE_TTL）→ 正常回放 + 不脏；过旧/无时间戳（旧格式 3 段）→ **仍回放**
+	// （避免"先空一会"的老问题回归）但**置脏** ⇒ 忽略 TTL 立即重拉，数字被真实值覆盖。
 	function restoreProfileStats(): void {
 		try {
 			const raw = uni.getStorageSync(PROFILE_STATS_KEY) as string
@@ -115,12 +126,19 @@
 				return
 			}
 			const parts = raw.split(',')
-			if (parts.length != 3) {
+			if (parts.length != 3 && parts.length != 4) {
 				return
 			}
 			statMemories.value = parseInt(parts[0])
 			statPhotos.value = parseInt(parts[1])
 			statVoices.value = parseInt(parts[2])
+			let fresh = false
+			if (parts.length == 4) {
+				const ts = parseInt(parts[3])
+				fresh = ts > 0 && Date.now() - ts <= PROFILE_TTL
+			}
+			statsDirty = !fresh
+			console.log('[dbg-profile] 统计缓存回放: fresh=' + fresh + ' 置脏=' + statsDirty)
 		} catch (e) {
 			console.log('[dbg-profile] 统计缓存回放失败（忽略）: ' + e)
 		}
@@ -128,7 +146,7 @@
 	function persistProfileStats(): void {
 		try {
 			uni.setStorageSync(PROFILE_STATS_KEY,
-				'' + statMemories.value + ',' + statPhotos.value + ',' + statVoices.value)
+				'' + statMemories.value + ',' + statPhotos.value + ',' + statVoices.value + ',' + Date.now())
 		} catch (e) {
 			console.log('[dbg-profile] 统计缓存写入失败（忽略）: ' + e)
 		}
@@ -177,8 +195,12 @@
 	}
 
 	// RecordSheet 保存成功回调（统计数字随之刷新）
+	// 2026-10-16（批次 6 · RC-4 续）：改走 `loadProfileStatsIfStale()` + **脏标记** ——
+	// 保存 = **事实变了**（不是"时间到了"），必须越过 TTL 立即重拉；同时清脏，避免下一次
+	// 切 tab 因为脏标记又白拉一次。行为与原来"直调 loadProfileStats()"等价（都是立即拉）。
 	function onRecordSaved(): void {
-		loadProfileStats()
+		statsDirty = true
+		loadProfileStatsIfStale()
 	}
 
 	// 菜单：记忆访谈（旧版 profile 页 goInterview() 入口，画布直转时整段丢失 → 对齐旧版补回）

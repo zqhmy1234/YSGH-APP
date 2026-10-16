@@ -404,8 +404,17 @@
 	}
 
 	// 导航：TabBar 跳转/中央+ 全部由共享组件接管（本页仅保留返回钮）
+	// 2026-10-16（RC-F 返回白屏/点不动）：补「栈内有上一页就回退，否则回壳」。原实现裸
+	// `uni.navigateBack()` —— 深链/redirectTo 直入（页面栈仅 1 页）时它**静默失败**，
+	// 返回钮点了没反应（用户表现为卡死在本页）。口径与 detail/favorites/messages/
+	// theme-detail 的 goBack 一致（全仓统一回退语义）。
 	function goBack(): void {
-		uni.navigateBack()
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
 	}
 
 	// 业务方法

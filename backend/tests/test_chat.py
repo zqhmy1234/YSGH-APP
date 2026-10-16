@@ -203,6 +203,182 @@ def test_empty_content_rejected(client, auth_headers):
     assert resp.status_code == 422
 
 
+# ═══════════ 附件契约最小可用（2026-10-16 · 台账 §7.14 / 审计 A1-A3·D7）═══════════
+#
+# 钉死三件事（都是"声明了但两端没实现"的旧缺口，见台账 §7.14）：
+#   ① 附件（图片）→ agent 收到的**文本提示**取自既有 caption 字段（不上视觉模型）；
+#   ② 附件提示**不得**泄漏他人内容（content_id 越权 ⇒ 只承认"内容暂不可读"）；
+#   ③ `include_profile` 是隐私开关的**真消费者**：False ⇒ 后端不携带画像上下文。
+
+
+def _seed_content(user_id: str, caption: str) -> str:
+    """建一条本人内容（模拟"图片已走既有上传链落库"），返回 content_id。"""
+    from app.db.models import Content
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        row = Content(user_id=user_id, content_type="photo", text=caption, status="done")
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return str(row.id)
+    finally:
+        db.close()
+
+
+def _seed_profile(user_id: str, dimensions: dict) -> None:
+    """建画像（`include_profile` 的消费者读的就是 user_profile.dimensions）。"""
+    from app.db.models import UserProfile
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        db.merge(UserProfile(user_id=user_id, dimensions=dimensions))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _capture_agent(monkeypatch) -> dict:
+    """捕获 agent 调用（message + 附件 kwargs）；桩返回固定回复。"""
+    captured: dict = {}
+
+    def _fake(user_id: str, message: str, conversation_id: str, attachments=None):  # noqa: ARG001
+        captured["message"] = message
+        captured["attachments"] = attachments
+        return AgentChatResult(text="看到了", latency_ms=5, raw={"reply": "看到了"})
+
+    monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
+    return captured
+
+
+def test_attachment_caption_reaches_agent_as_text(client, auth_headers, cleanup_user, monkeypatch):
+    """图片附件：caption（既有字段）→ agent 的文本提示；结构化附件同时透传（三层一致）。"""
+    from app.db.session import SessionLocal
+
+    user_id, headers = auth_headers("chat8")
+    cid = _seed_content(user_id, "湖边黄昏，水面反着金光")
+    captured = _capture_agent(monkeypatch)
+    try:
+        resp = client.post(
+            "/api/v1/chat/messages",
+            json={"content": "这张照片怎么样", "attachments": [{"kind": "image", "content_id": cid}]},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        msg = captured["message"]
+        assert msg.startswith("这张照片怎么样"), "用户正文必须在最前（上下文不得挤掉正文）"
+        assert "用户附了一张图，内容是：湖边黄昏，水面反着金光" in msg
+        # 三层一致：结构化附件原样透传给 agent（agent 侧仅留痕，不解析）
+        assert captured["attachments"] == [
+            {"kind": "image", "content_id": cid, "name": None, "size": None}
+        ]
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_attachment_other_users_content_not_leaked(client, auth_headers, cleanup_user, monkeypatch):
+    """他人的 content_id ⇒ 不得把其 caption 喂给 AI（越权即视为不可读，且不报错）。"""
+    from app.db.session import SessionLocal
+
+    victim_id, _ = auth_headers("chat9victim")
+    user_id, headers = auth_headers("chat9")
+    cid = _seed_content(victim_id, "别人的私密照片描述")
+    captured = _capture_agent(monkeypatch)
+    try:
+        resp = client.post(
+            "/api/v1/chat/messages",
+            json={"content": "看看", "attachments": [{"kind": "image", "content_id": cid}]},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert "别人的私密照片描述" not in captured["message"], "越权附件不得泄漏内容"
+        assert "内容暂不可读" in captured["message"], "读不到须如实说，不得编造"
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            cleanup_user(db, victim_id)
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_include_profile_toggles_profile_context(client, auth_headers, cleanup_user, monkeypatch):
+    """`include_profile` 真的生效：True 带画像、False 只发正文（隐私开关的消费者）。"""
+    from app.db.session import SessionLocal
+
+    user_id, headers = auth_headers("chat10")
+    _seed_profile(user_id, {"relation_core": "家人", "values_priority": "健康"})
+    captured = _capture_agent(monkeypatch)
+    try:
+        on = client.post("/api/v1/chat/messages", json={"content": "在吗"}, headers=headers)
+        assert on.status_code == 200, on.text
+        assert "【用户画像】" in captured["message"]
+        assert "relation_core=家人" in captured["message"]
+
+        off = client.post(
+            "/api/v1/chat/messages",
+            json={"content": "在吗", "include_profile": False},
+            headers=headers,
+        )
+        assert off.status_code == 200, off.text
+        assert captured["message"] == "在吗", "include_profile=False ⇒ 后端不携带画像上下文"
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_stream_attachment_hint_and_include_profile(client, auth_headers, cleanup_user, monkeypatch):
+    """流式端点（客户端**唯一**路径）与附件契约/隐私开关同口径。"""
+    from app.db.session import SessionLocal
+
+    user_id, headers = auth_headers("chat11")
+    cid = _seed_content(user_id, "生日蛋糕上的蜡烛")
+    _seed_profile(user_id, {"relation_core": "家人"})
+    captured: dict = {}
+
+    def _fake_stream(user_id: str, message: str, conversation_id: str, attachments=None):  # noqa: ARG001
+        captured["message"] = message
+        captured["attachments"] = attachments
+        yield ("done", {"reply": "看到蛋糕了", "latency_ms": 3})
+
+    monkeypatch.setattr("app.api.chat.stream_agent_chat", _fake_stream)
+    try:
+        resp = client.post(
+            "/api/v1/chat/messages/stream",
+            json={
+                "content": "看这张",
+                "attachments": [{"kind": "image", "content_id": cid}],
+                "include_profile": False,
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert "用户附了一张图，内容是：生日蛋糕上的蜡烛" in captured["message"]
+        assert "【用户画像】" not in captured["message"], "include_profile=False 在流式端点同样生效"
+        assert captured["attachments"] == [
+            {"kind": "image", "content_id": cid, "name": None, "size": None}
+        ]
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()
+
+
 def test_cards_kind_from_agent_meta(client, auth_headers, cleanup_user, monkeypatch):
     """非流式端点也要把 agent 的结构化附加映射成 `kind=cards`（与流式端点同形态）。
 

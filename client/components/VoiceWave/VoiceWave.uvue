@@ -139,6 +139,11 @@
 		return c > 0 ? c - 1 : 0
 	})
 
+	// 呼吸心跳节拍常量（2026-10-16 · RC-F 降帧；声明前置——barStyles 内引用、tick 在下方
+	// syncBreathClock 里启动）：周期 1000ms，100ms/跳，共 10 跳。
+	const BREATH_TICK_MS: number = 100
+	const BREATH_PERIOD_TICKS: number = 10
+
 	// R7 性能刀（2026-09-04）：每 bar 最终 style 预生成字符串 + 逐 bar 缓存对比——
 	// 旧实现 :style 内联对象逐 tick 全量重建（28 对象/次渲染）；现值不变的 bar 复用缓存
 	// 里的同一字符串（渲染层判等跳过原生更新），进度 tick 只有分界 ±1 与呼吸 bar
@@ -149,9 +154,15 @@
 		const hs = bars.value
 		const pc = playedCount.value
 		const live = liveBarIdx.value
-		// v3 呼吸：三角波 1→0.5→1（周期 900ms≈18 tick；liveBarIdx 变化重置相位=新 bar 从满高起）
-		const ph = liveBarIdx.value * 18 + breathTick.value
-		const tri = 1 - 0.5 * (((ph % 18) * 2) > 18 ? ((ph % 18) * 2) - 18 : (ph % 18) * 2) / 9
+		// v3 呼吸：三角波（周期 = BREATH_PERIOD_TICKS 跳）。
+		// 相位**锚定在 liveBarIdx**（`liveBarIdx * 周期 + 已跳数`）：呼吸前沿随进度前进的那根 bar
+		// 移动、并从周期的同一起点重新起振 ⇒ 波形呼吸与进度染色**同相**（绝不出现"波形还在跳、
+		// 进度已走完"的错位）。
+		// 2026-10-16（RC-F 降帧）：心跳 50ms→BREATH_TICK_MS=100ms（见 syncBreathClock），
+		// 周期常量随之 18→10 tick（900ms→1000ms）。三角波**逐点形状不变**，仅周期变长。
+		const ph = liveBarIdx.value * BREATH_PERIOD_TICKS + breathTick.value
+		const pq = (ph % BREATH_PERIOD_TICKS) * 2
+		const tri = 1 - 0.5 * (pq > BREATH_PERIOD_TICKS ? pq - BREATH_PERIOD_TICKS : pq) / (BREATH_PERIOD_TICKS / 2)
 		const out: Array<string> = []
 		for (let i = 0; i < hs.length; i++) {
 			const h = (i === live ? hs[i] * tri : hs[i])
@@ -178,9 +189,12 @@
 	//   对已销毁元素句柄操作 = use-after-free，try/catch 接不住 SIGSEGV。
 	// 结论：列表 v-if 换卡场景下 UniElement.animate 不存在安全窗口（同步撞 Java CME、
 	//   异步撞 native UAF）。CSS @keyframes App 端不支持（RecordSheet §I A' 拍板）→
-	//   第三条路=50ms 心跳推进 breathTick，live bar 高度在 barStyles 内做 1→0.5→1
-	//   振荡（周期 900ms≈18 tick，观感与 v1 animate 一致），:style 字符串与进度染色
+	//   第三条路=心跳推进 breathTick（2026-10-16 起 100ms/跳、周期 1000ms≈10 tick，见下），
+	//   live bar 高度在 barStyles 内做三角波振荡（观感与 v1 animate 一致），:style 字符串与进度染色
 	//   同路径、零原生句柄，仅「本条活动 && 全局播放中」时运行。
+	// 2026-10-16（RC-F 播放态性能 · 降帧）：心跳原 50ms（20Hz）。呼吸是**装饰性**缩放，
+	// 20Hz 纯属富余——每跳都让 `barStyles` 重算 28 根 bar 的 style 串（且与 audio_player 的
+	// 33ms 进度时钟叠加）。降至 100ms（10Hz）：人眼对缓慢呼吸无差别，重算频次减半。
 	let breathTick = ref(0)
 	let breathClockId = -1
 	function syncBreathClock(): void {
@@ -188,7 +202,7 @@
 		if (want && breathClockId == -1) {
 			breathClockId = setInterval((): void => {
 				breathTick.value = breathTick.value + 1
-			}, 50)
+			}, BREATH_TICK_MS)
 		} else if (!want && breathClockId != -1) {
 			clearInterval(breathClockId)
 			breathClockId = -1
@@ -218,9 +232,10 @@
 		border-radius: var(--d-lattice-p2, 3.8rpx);
 		margin-right: var(--d-lattice-p3, 5.8rpx);
 	}
-	/* 呼吸缩放（F5a「波形跳动」）B9 已接线：目标 bar 由 watch(liveBarIdx/voicePlaying)
-	   驱动 UniElement.animate scaleY 1↔0.5（RecordSheet 真机先例机制）；本类保留作语义标记 */
+	/* 呼吸缩放（F5a「波形跳动」）：B9 起为**纯数据驱动**——live bar 高度在 barStyles 内按
+	   breathTick 做三角波振荡（`UniElement.animate` 已退役，native UAF 根治，见 script 头注）；
+	   本类保留作语义标记，无静态样式。 */
 	.wave-bar-live {
-		/* 动画走命令式 animate，此类无静态样式 */
+		/* 动画走数据驱动 style，此类无静态样式 */
 	}
 </style>
