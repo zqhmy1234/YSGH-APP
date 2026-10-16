@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-17 01:16 · commit a30178c · ts=1792171014
+- **错误**：补提交 perf-retrieval 漏 add 的 test_search_stages.py 时先被 lint 拦(I001 import 排序)再被 lessons 拦(未登记)
+- **根因**：成员新建文件有轻微 lint 错未在交付前修；我整合时漏 add 新建测试文件，补提时才暴露
+- **修复**：ruff --fix 已修；登记教训；整合链加一环：git status 里的未跟踪新文件必须逐个核对归属再提交
+- **相关文件**：backend/tests/test_search_stages.py
+- **教训**：整合收尾固定核对未跟踪文件清单（?? 项）——新文件最易漏 add（本轮 test_search_stages.py）；成员交付前应对新建文件跑 ruff（I001 这类自动可修项不该流到整合期）
+
+---
+
 ### 2026-10-17 01:13 · commit 136c16f · ts=1792170805
 - **错误**：TabAi.uvue 被 AI 三件套顶到 810>800，structure 拦下三路提交；拆 toolLabel 到 utils 修复后重跑，又被 lessons 拦——structure 那次失败我没登记教训
 - **根因**：同一遗漏第三次：把修红当收尾全部，漏了登记教训这一步。根因是这步『不改红』所以在心理上不像收尾的一部分
