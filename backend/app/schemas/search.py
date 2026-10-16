@@ -18,6 +18,10 @@ class SearchQuery(BaseModel):
     # 默认 **False** ⇒ 在野 APK 与既有客户端**零影响**（不多一次 LLM 调用、不增延迟）。
     # 客户端置 True 时，结果额外带 `answer`/`answer_sources`。
     want_answer: bool = False
+    # 分阶段打点开关（2026-10-16 检索超时治理 · 立项①）：默认 **False** ⇒ 零开销、
+    # 响应与改动前逐字一致；置 True 时 `SearchResult.stages` 返回各阶段毫秒耗时。
+    # 仅服务压测/排障用，客户端不感知（在野 APK 零影响）。
+    want_stages: bool = False
 
 
 class SearchHit(BaseModel):
@@ -49,3 +53,10 @@ class SearchResult(BaseModel):
     answer: str | None = None
     # 回答引用的证据 content_id 列表（**必为本次 `hits` 的子集**，供客户端把每条证据挂成卡片）。
     answer_sources: list[str] = []
+    # 分阶段耗时（毫秒，**仅 `want_stages=True` 时非 None**；治理后复测基线用）：
+    #   rewrite = 查询改写+过滤归一+路由/类目判定；encode = BGE-M3 dense+sparse 编码；
+    #   recall  = 向量召回+空结果回退+精确提升+溯源组装（与 latency_ms 同止点）；
+    #   rerank  = bge 粗排+LLM 精排+规则敏感过滤（latency_ms 之后阶段）；
+    #   answer  = 搜索式回答（仅 want_answer=True，否则如实 None）。
+    # 某阶段未执行/拿不到计时（如编码抛异常走 PG 兜底）⇒ 该键如实 None，**绝不编造**。
+    stages: dict[str, int | None] | None = None

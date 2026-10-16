@@ -98,6 +98,26 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     start = time.perf_counter()
     degraded = False
 
+    # 分阶段打点（2026-10-16 检索超时治理 · 立项①）：仅 want_stages=True 时计时——
+    # 默认 False ⇒ 下方所有 _lap() 调用被短路，零 perf_counter 开销、零响应变化。
+    # 为什么用「上一次打点到现在」的 lap 而非各阶段独立起止：管线存在回退重试
+    # （NER/类目/空结果/PG 兜底）与双路召回，嵌套计时会让各阶段之和 ≠ 端到端；
+    # lap 串行切片天然保证 rewrite+encode+recall(+rerank+answer) ≈ 全程墙钟。
+    want_stages = q.want_stages
+    _mark = [start]
+
+    def _lap() -> int:
+        now = time.perf_counter()
+        delta_ms = int((now - _mark[0]) * 1000)
+        _mark[0] = now
+        return delta_ms
+
+    st_rewrite: int | None = None
+    st_encode: int | None = None
+    st_recall: int | None = None
+    st_rerank: int | None = None
+    st_answer: int | None = None
+
     # 1. Query 改写 → 过滤条件（返回 NER 派生过滤，供空结果回退）
     rewritten, filters, ner_filters = _rewrite_query(q)
     # 用户隔离（2026-08-26 修复）：检索阶段即按 user_id 过滤（配合 vector_store._to_filter
@@ -129,9 +149,15 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         if class_filter:
             filters["content_class"] = class_filter
 
+    if want_stages:
+        # rewrite 段：改写+过滤归一+路由/类目判定（均为改写层的毫秒级小步，合并计时）
+        st_rewrite = _lap()
+
     # 3. 编码 + 召回
     try:
         dense, sparse = encode_query(rewritten)
+        if want_stages:
+            st_encode = _lap()  # 含 dense+sparse 双编码；mixed/双路召回的第二次编码计入 recall
         store = get_store()
         # eff_filters：最后一次成功产生 raw_hits 的过滤器（含回退后的），
         # 供双路召回的原查询路使用——此前直接复用 filters 会把回退前的
@@ -237,6 +263,9 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         hits = kept
 
     latency_ms = int((time.perf_counter() - start) * 1000)
+    if want_stages:
+        # recall 段：与 latency_ms 同止点（向量召回+回退重试+PG 兜底+精确提升+溯源组装+R-1 地板）
+        st_recall = _lap()
 
     # 4.5 双层 Rerank 第一层（bge-reranker 粗排 + 低相关过滤；
     #      候选无 text/模型未就绪 → 原序）
@@ -283,6 +312,10 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         except Exception:  # noqa: BLE001 —— 敏感过滤失败不阻断搜索
             logger.warning("规则级敏感过滤异常，跳过")
 
+    if want_stages:
+        # rerank 段：latency_ms 之后的全部剩余检索工作（bge 粗排+LLM 精排+规则敏感过滤）
+        st_rerank = _lap()
+
     # 5. 搜索式一次性问答（2026-10-16 冻结：搜索=回答卡+证据，AI 页=多轮对话）
     #    · **仅 `want_answer=True` 时触发** ⇒ 默认零 LLM 调用、零额外延迟、在野 APK 行为完全不变；
     #    · 只依据本次召回证据作答；证据不足/模型不可用 → answer=None（绝不编造，见 search_answer.py）；
@@ -292,7 +325,10 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     if q.want_answer:
         from app.services.llm_ops.search_answer import generate_answer
 
+        _ans_mark = time.perf_counter() if want_stages else 0.0
         answer, answer_sources, answer_failed = generate_answer(q.q, hits)
+        if want_stages:
+            st_answer = int((time.perf_counter() - _ans_mark) * 1000)
         if answer_failed:
             degraded = True
         # 回答步骤之后重算 latency_ms（协调者 2026-10-16 拍板，方案 A）：
@@ -313,4 +349,17 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         degraded=degraded,
         answer=answer,
         answer_sources=answer_sources,
+        # 分阶段打点：默认 want_stages=False ⇒ None（响应与改动前一致），
+        # True ⇒ 五键全在，未执行/未计时的阶段如实 None（契约承诺，不编造）。
+        stages=(
+            {
+                "rewrite": st_rewrite,
+                "encode": st_encode,
+                "recall": st_recall,
+                "rerank": st_rerank,
+                "answer": st_answer,
+            }
+            if want_stages
+            else None
+        ),
     )
