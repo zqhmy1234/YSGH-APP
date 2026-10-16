@@ -45,7 +45,7 @@
 | 7 | Coze S3 代理预签名（`${endpoint}/sign-url` + `x-storage-token`，region 硬编码 `cn-beijing`） | `storage/s3/s3_storage.py:233-289`、`tools/url_fetch_tools.py:204` | 复用 `backend/app/services/external/storage.py`（COS 原生 `presigned_get_object`） | ⏳ |
 | 8 | `coze_coding_utils`（context/request_context/stream_runner/async_tasks/log/错误分类） | `src/main.py:15-53` 等 | stdlib logging + **显式 user_id 注入**（`request_context` → 函数参数，消除隐式全局态） | 🚧 AG4 切片一：`platform/{context,logging_setup,errors}.py` 已成，**22 处导入已换**（含各 tool/service/web）；剩 `main.py` 的平台编排件（12 处）→ AG4b 整体替换 main.py |
 | 9 | `cozeloop`（观测上报） | `src/main.py:10` + 4 处 `cozeloop.flush()`（`:170/445/569/587`） | 移除（或接我们自己的日志口径） | ⏳ |
-| 10 | `wecom_aibot_sdk` | `src/main_wechat.py`、`services/wechat_service.py:67` | **本轮保留**（企微独立批次处理） | ➖ |
+| 10 | `wecom_aibot_sdk` | `src/main_wechat.py`、`services/wechat_service.py:67` | 曾保留（企微独立批次）；**2026-10-08 W5 拍板删除整链**（四文件+本依赖），企微唯一入口=backend 微信客服 | ✅ |
 | 11 | `langsmith`（LangChain 云追踪） | 依赖项 | 移除或置可选 | ⏳ |
 
 **依赖瘦身计划（`pyproject.toml`）**：移出 `coze-coding-utils`、`coze-workload-identity`、`coze-coding-dev-sdk`、`cozeloop`、`supabase`、`langsmith`，以及 **Linux 桌面库** `dbus-python` / `PyGObject` / `pycairo`（Windows 上装不上，是本包在 Windows 侧的第一号环境雷）。

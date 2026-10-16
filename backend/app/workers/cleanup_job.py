@@ -58,6 +58,15 @@ def _delete_content_objects(db: Session, content_id: str) -> None:
             backend.delete_object(key)
         except Exception as exc:  # noqa: BLE001 —— 对象删除失败记日志继续
             logger.warning("物理清理删对象失败 key=%s: %s", key, exc)
+    # 2026-10-14（台账 §7.25①）：**向量也要清**。原实现只删对象与 DB 行 ⇒ Qdrant 里那条内容
+    # 仍可被检索命中（"以为删干净了其实没有"，与"清空回收站"同一根因）。共用
+    # `services/content_purge`，避免两处再各漏一半。
+    from app.services import content_purge
+
+    content_purge.purge_vectors([str(content.id)])
+    # 2026-10-15（台账 §7.28）：**同一根因的另一处**——`correction_log` 是 NO ACTION 外键，
+    # 30 天物理清理删"被纠错过"的内容同样会 500 ⇒ 先删从属行（共用同一 helper）。
+    content_purge.delete_dependent_rows(db, [str(content.id)])
     # 物理删 contents 行
     db.delete(content)
 

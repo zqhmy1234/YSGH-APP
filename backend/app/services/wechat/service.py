@@ -178,6 +178,21 @@ def download_media(media_id: str, msg_type: str) -> bytes:
     """
     token = _corp_access_token()
     if token is None:
+        # 2026-10-14（台账 §7.19 · 批次 8 审计 A1）：**生产环境绝不产出 mock 媒体**。
+        # 上面 docstring 写「真实模式绝不混入 mock」，但代码里**没有任何生产守卫**：漏配
+        # WECHAT_CORP_ID/Secret 时这里会返回 64×64 纯紫 JPEG / 0.1s 静音 WAV，而调用方
+        # `_process_media` 会把它们当**真实记忆**走 process_content 落库（HTTP 200、
+        # 时间轴出现假照片/假语音，用户与运维零感知）。
+        # 同仓 ASR（external/asr/transcriber.py:100-107）与高德（external/amap.py:151-158）
+        # 在 production 都显式拒绝 mock ⇒ 此处补齐同一口径：**宁可失败，不可造假**。
+        from app.core.config import settings
+
+        if settings.app_env == "production":
+            raise RuntimeError(
+                "WECHAT_MEDIA_UNAVAILABLE: 生产环境缺少企微凭证"
+                "（WECHAT_CORP_ID / 应用 Secret），拒绝返回 mock 媒体"
+                "（防止假图片/假语音被当成真实记忆入库）"
+            )
         return _mock_image_bytes() if msg_type == "image" else _mock_voice_bytes()
 
     import httpx
@@ -315,6 +330,48 @@ def _process_media(db: Session, record: WechatMessage, msg: dict, user_id: str) 
     if content.content_type == "photo":
         safe_enqueue_unique(thumbnails.generate_thumbnail_job, str(content.id), str(content.id))
     return {"media": "ok", "cos_key": cos_key, "content_id": str(content.id)}
+
+
+def bind_by_code(db: Session, msg: dict) -> str | None:
+    """未绑定用户发来**绑定码** ⇒ 建立 openid ↔ 账号 绑定；返回 user_id（无码/失败 → None）。
+
+    2026-10-15（台账 §4.20 ㉖）：F6「微信入口」的**产品级缺口补齐** —— openid 只存在企微侧、
+    App 无从获取，故由 App 领码、用户在自己的微信里把码发回来（完整流程见
+    `services/wechat/bind_code.py` 模块注释）。
+
+    口径：
+      - 只处理 text；码必须是**纯 6 位数字**片段（宽松匹配会把普通聊天里的数字误当码 ⇒ **不误绑**）；
+      - **不做换绑**：该 openid 已绑他人时 `bind_wechat` 抛 `AlreadyBoundToOtherUser`
+        （静默换绑 = 把别人微信收到的记忆改投到我账号，既定纪律禁止）⇒ 拒绝并留日志；
+      - 成功/失败都**不在此处写内容**：调用方对码消息按"只记录"处理，既不让绑定指令变成一条记忆，
+        也保住 `msg_id` 幂等（企微重推不会二次消费）。
+    """
+    if msg.get("msg_type") != "text":
+        return None
+    from app.services.wechat import bind_code as bc
+    from app.services.wechat.binding import (
+        DEFAULT_CHANNEL,
+        AlreadyBoundToOtherUser,
+        bind,
+        normalize_openid,
+    )
+
+    openid = normalize_openid(msg.get("from_user"))
+    if not openid:
+        return None
+    user_id = bc.consume_code(msg.get("content"))
+    if user_id is None:
+        return None
+    try:
+        bind(db, user_id, openid, DEFAULT_CHANNEL)
+    except AlreadyBoundToOtherUser:
+        logger.warning("绑定码命中但 openid 已绑他人，拒绝换绑 openid=%s", openid)
+        return None
+    except ValueError as exc:
+        logger.warning("绑定码绑定失败 openid=%s: %s", openid, exc)
+        return None
+    logger.info("微信绑定成功（绑定码）user=%s openid=%s", user_id, openid)
+    return user_id
 
 
 def process_incoming(db: Session, msg: dict, user_id: str | None = None) -> dict:

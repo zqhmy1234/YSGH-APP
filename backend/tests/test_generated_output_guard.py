@@ -164,19 +164,16 @@ def test_annotate_drops_blocked_open_value():
 # ---------------------------------------------------------------------------
 
 
-class _FakeResult:
-    text = f"我建议你试试{_BAD_TEXT}"
-    latency_ms = 12
-
-
 def _patch_chat(monkeypatch, *, reply_text: str, guard_pass: bool):
     import app.api.chat as chat
-    from app.services.external.agent import AgentChatResult  # noqa: F401  仅类型存在性
+    from app.services.external.agent import AgentChatResult
 
-    def _call(user_id, message, thread_id):  # noqa: ANN001
-        r = _FakeResult()
-        r.text = reply_text
-        return r
+    def _call(user_id, message, conversation_id):  # noqa: ANN001
+        # ⚠️ 参数名必须与真实签名一致（2026-10-08 ccbd3b8 起第 3 参是 `conversation_id`，
+        # 而调用方用**关键字**传参）：曾写成 `thread_id` ⇒ TypeError ⇒ 这两个用例静默变红。
+        # ⚠️ 返回**真实 dataclass** 而不是本地假类（2026-10-09 改）：本地假类会在
+        # `AgentChatResult` 加字段时静默缺字段（本轮 `meta` 就把它打红成 AttributeError）。
+        return AgentChatResult(text=reply_text, latency_ms=12, raw={"reply": reply_text})
 
     monkeypatch.setattr(chat, "call_agent_chat", _call)
     monkeypatch.setattr(

@@ -173,10 +173,11 @@
 		padding-right: var(--d-raw-r40, 40rpx);
 	}
 
-	/* P-4 骨架屏（2026-09-04）：暖白系占位块，模拟日卡版式；纯静态零动画开销 */
-	.sk-hidden {
-		display: none;
-	}
+	/* ⚠️ 隐藏类 .sk-hidden / .ui-hidden 已统一移至**本文件末尾**（2026-10-11）：
+	   两者均为单类选择器（特异性 0,1,0）与 .skeleton{display:flex} / .empty-home{display:flex}
+	   同特异性 ⇒ 按 CSS 层叠「同特异性后定义者胜」，放在前面会被后面的 display:flex 覆盖
+	   （空态/骨架屏会永远藏不住）。放在文件末尾则无论编译器按何种顺序裁决都安全。
+	   详见文件末尾同名块注释。 */
 	.skeleton {
 		padding-left: var(--d-raw-r40, 40rpx);
 		padding-right: var(--d-raw-r40, 40rpx);
@@ -195,7 +196,7 @@
 		flex-direction: column;
 	}
 	.sk-line {
-		background-color: var(--c-paper-300, #EFE9DD);
+		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
 		border-radius: var(--d-raw-r10, 10rpx);
 	}
 	.sk-day {
@@ -221,7 +222,7 @@
 		width: var(--d-raw-r190, 190rpx);
 		height: var(--d-raw-r190, 190rpx);
 		border-radius: var(--d-raw-r16, 16rpx);
-		background-color: var(--c-paper-300, #EFE9DD);
+		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
 		margin-right: var(--d-raw-r16, 16rpx);
 	}
 	.muted {
@@ -523,7 +524,7 @@
 
 	/* 回响卡片（去年今日 · 角贴 + 泛黄） */
 	.echo-card {
-		background-color: var(--c-paper-200, #faf6ee);
+		background-color: #faf6ee;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ7，属令牌化误映射 */
 		border-radius: var(--d-raw-r24, 24rpx);
 		padding: var(--d-raw-r32, 32rpx);
 		margin: var(--d-raw-r24, 24rpx) var(--d-raw-r40, 40rpx);
@@ -676,3 +677,111 @@
 		font-size: var(--d-raw-r26, 26rpx);
 		color: var(--c-ink-500, #8a7a6a);
 	}
+
+	/* ── 壳内空态（2026-10-09）：视觉=empty 页（画布 2:284 空状态帧），就地渲染不跳页 ──
+	   🚨 2026-10-11 静态审查修复：类名统一加 `ti-` 前缀（TabIndex）。
+	   原实现直接沿用 empty 页的 `.empty-*` 类名，而 uni-app x 的 `<style>` 是**全局**的
+	   ⇒ 与 `pages/empty/empty.uvue` 内联的 `.empty-*`、`styles/favorites.css` 的
+	   `.empty-*`（**absolute 定位 + 完全不同的几何**：`.empty-illus{position:absolute;left/top}`
+	   `.empty-cta{width:480.8rpx;height:107.7rpx}`）三方同名，胜出者取决于样式表合并顺序
+	   （不受仓库控制）⇒ 空态插画/CTA 可能被 favorites 版的绝对定位钉死、错位到屏外。
+	   加前缀后三处彻底隔离，各页各管自己的空态。（改名前几何已与 empty 页逐值对齐，
+	   改名不改值 ⇒ 无视觉变化。） */
+	.ti-empty-home {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 60rpx 0 120rpx 0;
+	}
+	.ti-empty-illus {
+		position: relative;
+		width: var(--d-raw-r240, 240rpx);
+		height: var(--d-lattice-p131, 252rpx);
+	}
+	.ti-empty-sun {
+		position: absolute;
+		left: var(--d-raw-r112, 112rpx);
+		top: 0;
+		width: var(--d-raw-r120, 120rpx);
+		height: var(--d-raw-r120, 120rpx);
+	}
+	.ti-empty-lake {
+		position: absolute;
+		left: 0;
+		top: var(--d-raw-r72, 72rpx);
+		width: var(--d-raw-r240, 240rpx);
+		height: var(--d-raw-r180, 180rpx);
+	}
+	.ti-empty-lake-img {
+		position: absolute;
+		left: var(--d-raw-r24, 24rpx);
+		top: var(--d-raw-r24, 24rpx);
+		width: var(--d-raw-r192, 192rpx);
+		height: var(--d-raw-r112, 112rpx);
+	}
+	.ti-empty-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 68rpx;
+		font-size: var(--d-raw-r44, 44rpx);
+		line-height: var(--d-raw-r62, 62rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 600;
+	}
+	.ti-empty-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: var(--d-raw-r22, 22rpx);
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		text-align: center;
+		line-height: var(--d-raw-r42, 42rpx);
+	}
+	.ti-empty-desc2 {
+		margin-top: 0;
+	}
+	.ti-empty-cta {
+		margin-top: var(--d-raw-r72, 72rpx);
+		width: var(--d-lattice-p260, 500rpx);
+		height: var(--d-raw-r112, 112rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: var(--c-rust-500, #b05a3a);
+		border-radius: var(--d-raw-r56, 56rpx);
+		box-shadow: 0 var(--d-raw-r12, 12rpx) var(--d-raw-r32, 32rpx) var(--a-rust-30, rgba(176, 89, 58, 0.3));
+	}
+	.ti-empty-cta-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-white, #ffffff);
+		font-size: var(--d-raw-r32, 32rpx);
+		font-weight: 600;
+	}
+	.ti-empty-voice {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: var(--d-lattice-p27, 52rpx);
+		padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
+		align-items: center;
+	}
+	.ti-empty-voice-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		font-weight: 600;
+		color: var(--c-rust-500, #b05a3a);
+	}
+
+	/* ═══ 隐藏类（**必须留在文件末尾**，2026-10-11 静态审查）═══
+	   为什么放在最后：这两个类是"恒渲染 + class 收起"路径（R9-D：vapor 对 v-if 整树
+	   卸载失效，只能走属性更新）。它们与 .skeleton{display:flex}（骨架屏）/
+	   .empty-home{display:flex}（壳内空态）**特异性完全相同**（单类 0,1,0），
+	   而 uni-app x 的样式合并顺序不受我们控制 ⇒ 若这些隐藏类定义在布局类**之前**，
+	   一旦编译器按"后定义者胜"裁决，display:flex 会覆盖 display:none，
+	   表现为「有数据时骨架屏残留 / 空态插画一直挂在时间轴上方」——两个都是真机上
+	   一眼可见且极易被误诊为"渲染 bug"的故障（09-07 骨架残留就是这么来的）。
+	   放在文件末尾 ⇒ 无论顺序如何裁决，隐藏类永远最后生效。
+	   ⚠️ 新增任何 display:* 的类都必须加在本块**之前**。 */
+	.sk-hidden {
+		display: none;
+	}
+	.ui-hidden {
+		display: none;
+	}
+

@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import uuid
 from functools import lru_cache
+from urllib.parse import urlsplit, urlunsplit
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -69,6 +71,18 @@ def is_test_collection(name: str) -> bool:
     return bool(name) and name.startswith(TEST_COLLECTION_PREFIX)
 
 
+def _client_url(url: str) -> str:
+    """Avoid the slow IPv6 localhost fallback on Windows loopback clients."""
+    if sys.platform != "win32":
+        return url
+    parts = urlsplit(url)
+    if parts.hostname != "localhost":
+        return url
+    host_start = parts.netloc.rfind("@") + 1
+    netloc = parts.netloc[:host_start] + "127.0.0.1" + parts.netloc[host_start + len("localhost"):]
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 def cleanup_test_collections(client: QdrantClient | None = None) -> list[str]:
     """清理全部 test_ 前缀的测试 collection（尽力而为，失败不阻断）
 
@@ -76,7 +90,7 @@ def cleanup_test_collections(client: QdrantClient | None = None) -> list[str]:
     不抛异常——避免清理失败阻断提交（TD-P1C 验收）。
     """
     try:
-        c = client or QdrantClient(url=settings.qdrant_url)
+        c = client or QdrantClient(url=_client_url(settings.qdrant_url))
         names = [col.name for col in c.get_collections().collections]
         removed: list[str] = []
         for name in names:
@@ -108,7 +122,7 @@ class VectorStore:
 
     def __init__(self, url: str | None = None):
         # 修复：Qdrant 地址从配置读取（原硬编码 localhost:6333）
-        self.client = QdrantClient(url=url or settings.qdrant_url)
+        self.client = QdrantClient(url=_client_url(url or settings.qdrant_url))
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
@@ -184,6 +198,30 @@ class VectorStore:
             points=[point_id_for(content_id)],
         )
 
+    def delete_content_vectors(
+        self,
+        content_ids: list[str],
+        collection: str | None = None,
+    ) -> int:
+        """按 content_id 删点位（回收站彻底清除用；2026-10-14 · 台账 §7.25①）。
+
+        为什么必须有：`api/contents/trash.py` 的"清空回收站"原实现**只删 DB 行**，
+        Qdrant 向量与 COS 原件原样残留 ⇒ 用户以为"回收站已清空"，实际数据仍在向量库与
+        对象存储里（**隐私承诺相关**）。
+
+        幂等：点位不存在时 Qdrant 静默忽略（重跑安全）；返回**请求删除的条数**
+        （Qdrant 的 delete 不回逐点结果，故不谎报"实际删了几个点"）。
+        """
+        if not content_ids:
+            return 0
+        col = collection or default_collection()
+        self.ensure_collection(col)
+        self.client.delete(
+            collection_name=col,
+            points_selector=[point_id_for(cid) for cid in content_ids],
+        )
+        return len(content_ids)
+
     def upsert_content(
         self,
         content_id: str,
@@ -209,7 +247,14 @@ class VectorStore:
                     values=list(sparse.values()),
                 ),
             },
-            {"content_id": content_id, **payload},
+            # 2026-10-15（台账 §7.33）：**`text` 必须进 payload**。它本是本函数的形参、却
+            # 从未落进 payload ⇒ `_rrf_fuse` 填的 `text` 恒为 None ⇒
+            # `recall._boost_exact_matches` 读 `hit["text"]` 永远拿不到词元 ⇒
+            # **"精确命中提升"（×1.8/×1.3）对文字/语音内容永不触发**（只有走
+            # `upsert_image_vec` 的照片点自带 text 才不受影响）——注释与实现不一致的典型。
+            # 截断到 400 字符：payload 要进 Qdrant，全文回灌会让点体积膨胀；词元包含判断
+            # 用前 400 字足够，且远小于 Qdrant payload 上限。
+            {"content_id": content_id, "text": (text or "")[:400], **payload},
         )
 
     def search(
@@ -460,4 +505,4 @@ def get_store() -> VectorStore:
 def get_qdrant_client() -> QdrantClient:
     """Qdrant 客户端统一单例（P2-04 收敛：correction/vector_store 共用同一连接，
     消除 correction._correction_store 手写 global 的第二套单例）"""
-    return QdrantClient(url=settings.qdrant_url)
+    return QdrantClient(url=_client_url(settings.qdrant_url))

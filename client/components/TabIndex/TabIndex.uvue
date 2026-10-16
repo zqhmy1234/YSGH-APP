@@ -11,8 +11,12 @@
 			<view class="hero-content">
 				<text class="hero-title serif">回忆</text>
 				<!-- R8：数据驱动化（此前硬编码画布示意文案「八月 · 28 条新记忆/清晨的湖边」= 峰宝 09-06 投诉的模板 UI 之一） -->
-				<text class="hero-sub1">{{ heroSub1 }}</text>
-				<text class="hero-sub2">{{ heroSub2 }}</text>
+				<!-- ⚠️ 2026-10-11（视觉审查）：空态时隐藏副标题——hero 的「暂无新记忆」与壳内空态
+				     的「还没有回忆」会同屏出现两条空文案（两处都在说"这里没东西"）。空态块自己
+				     已带完整引导语义，hero 副标题此时是冗余噪音。走 ui-hidden（class 属性更新
+				     路径，非 v-if——同 R9-D 约束）。 -->
+				<text class="hero-sub1" :class="emptyState ? 'ui-hidden' : ''">{{ heroSub1 }}</text>
+				<text class="hero-sub2" :class="emptyState ? 'ui-hidden' : ''">{{ heroSub2 }}</text>
 			</view>
 		</view>
 
@@ -74,8 +78,37 @@
 				</view>
 			</view>
 
-			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对，无条件渲染；未加载时本就是空壳） -->
-			<view class="feed">
+			<!-- 壳内空态（2026-10-09 真机首测定案）：时间轴空时**就地渲染拍照首页内容**，
+			     不再 redirectTo('/pages/empty/empty')——那会销毁整个壳（AI 对话状态丢失、
+			     切 tab 闪屏、二段式跳转三宗罪同根）。视觉与 empty 页一致（画布 2:284 空状态帧）。
+			     CTA 经 shell_state 桥拉起全壳唯一 RecordSheet（铁律：中央 + 是全壳唯一挂载）。
+			     ⚠️ 2026-10-09 修复：不得用 v-if 控制——vapor 对「v-if 整树卸载」失效（R9-D 同坑，
+			     09-07 骨架屏实锤），且下方 feed 因 R9-D 是无条件渲染 ⇒ v-if 空态块与 feed 必然
+			     叠渲染（真机实拍：空态引导和日卡片挤在一页）。改走骨架屏同款「恒渲染 + class
+			     display:none」互斥，走属性更新路径，不依赖节点卸载。 -->
+			<view class="ti-empty-home" :class="emptyState ? '' : 'ui-hidden'">
+				<view class="ti-empty-illus">
+					<image class="ti-empty-sun" src="/static/icons/i2_302.svg" mode="aspectFit" />
+					<view class="ti-empty-lake"><image class="ti-empty-lake-img" src="/static/icons/i2_304.svg" mode="aspectFit" /></view>
+				</view>
+				<!-- 2026-10-15（真机反馈后修）：**失败与真·空分开**（见 script 内 loadFailed 注释）。
+				     失败时不再说「还没有回忆」（那是假空态 ✗，会让人以为云端记忆丢了），
+				     也不再露出"拍下第一张"的 CTA（数据可能在云端，不该引导用户重新记 ✗）。
+				     用 v-if 会踩本文件既有的 R9-D 坑（整树卸载失效）⇒ 仍走 ui-hidden class 互斥。 -->
+				<text class="ti-empty-title">{{ loadFailed ? '加载失败' : '还没有回忆' }}</text>
+				<text class="ti-empty-desc">{{ loadFailed ? '网络或服务暂时不可用' : '拍一张照片，或说几句话' }}</text>
+				<text class="ti-empty-desc ti-empty-desc2">{{ loadFailed ? '下拉可重试' : '你的回忆会住在这里' }}</text>
+				<view class="ti-empty-cta pressable" :class="loadFailed ? 'ui-hidden' : ''" @tap="emptyTakeFirst">
+					<text class="ti-empty-cta-text">拍下第一张</text>
+				</view>
+				<view class="ti-empty-voice pressable" :class="loadFailed ? 'ui-hidden' : ''" @tap="emptyVoice">
+					<text class="ti-empty-voice-text">或者，录一段语音</text>
+				</view>
+			</view>
+
+			<!-- 时间轴：L1 日卡片 + L2 主题两级（R9-D：去 v-else 配对恒渲染；空态互斥经
+			     ui-hidden class 走属性更新，见上方空态块注释） -->
+			<view class="feed" :class="emptyState ? 'ui-hidden' : ''">
 				<!-- L2 待确认区 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
@@ -96,7 +129,7 @@
 						<!-- 语音卡：琥珀播放钮 + 波形竖条阵列（W0-2 播放态：钮变暂停 + 已播金/未播米 + 进度行） -->
 						<view v-if="ev.voice != null" class="voice-card pressable" @tap="playVoice(ev.voice)">
 							<view class="voice-play-btn">
-								<view v-if="voiceIsActive(ev.voice.contentId) && voiceIsPlaying()" class="voice-pause-icon">
+								<view v-if="ev.voiceActive && ev.voicePlaying" class="voice-pause-icon">
 									<view class="voice-pause-bar"></view>
 									<view class="voice-pause-bar"></view>
 								</view>
@@ -104,18 +137,18 @@
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="ev.voiceActive" :progress="ev.voiceProgress" idle-color="#C4913C" />
 								</view>
-								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
-									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+								<view v-if="ev.voiceActive" class="voice-progress-row">
+									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
 									<view class="voice-track">
-										<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(ev.voice.contentId) * 100) + '%' }"></view>
+										<view class="voice-track-fill" :style="{ width: (ev.voiceProgress * 100) + '%' }"></view>
 									</view>
-									<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
+									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
 								</view>
 								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
 									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ voiceIsActive(ev.voice.contentId) ? voiceTotalSecText() : ev.voice.duration }}</text>
+									<text class="voice-duration">{{ ev.voiceActive ? ev.voiceTotalText : ev.voice.duration }}</text>
 								</view>
 							</view>
 						</view>
@@ -132,7 +165,10 @@
 								<text class="pending-btn-text">忽略</text>
 							</view>
 							<view class="pending-btn pending-btn-solid pressable" @tap="confirmPending(ev)">
-								<text class="pending-btn-text">确认</text>
+								<!-- 2026-10-11 静态审查 #11：主按钮需白字类（`.pending-btn-text` 是深棕
+								     #3a2e25，配 rust 实底后对比度极低、视觉像禁用态；而白字类
+								     `.pending-btn-text-solid` 此前零使用者 = 规则写了没人用） -->
+								<text class="pending-btn-text pending-btn-text-solid">确认</text>
 							</view>
 						</view>
 					</view>
@@ -165,7 +201,7 @@
 						<!-- 语音卡（W0-2 播放态，同待确认区卡） -->
 						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
 							<view class="voice-play-btn">
-								<view v-if="voiceIsActive(ev.voice.contentId) && voiceIsPlaying()" class="voice-pause-icon">
+								<view v-if="ev.voiceActive && ev.voicePlaying" class="voice-pause-icon">
 									<view class="voice-pause-bar"></view>
 									<view class="voice-pause-bar"></view>
 								</view>
@@ -173,18 +209,18 @@
 							</view>
 							<view style="flex:1;">
 								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="voiceIsActive(ev.voice.contentId)" :progress="voiceProgressOfCard(ev.voice.contentId)" idle-color="#C4913C" />
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="ev.voiceActive" :progress="ev.voiceProgress" idle-color="#C4913C" />
 								</view>
-								<view v-if="voiceIsActive(ev.voice.contentId)" class="voice-progress-row">
-									<text class="voice-progress-time">{{ voiceCurSecText() }}</text>
+								<view v-if="ev.voiceActive" class="voice-progress-row">
+									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
 									<view class="voice-track">
-										<view class="voice-track-fill" :style="{ width: (voiceProgressOfCard(ev.voice.contentId) * 100) + '%' }"></view>
+										<view class="voice-track-fill" :style="{ width: (ev.voiceProgress * 100) + '%' }"></view>
 									</view>
-									<text class="voice-progress-time">{{ voiceTotalSecText() }}</text>
+									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
 								</view>
 								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
 									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ voiceIsActive(ev.voice.contentId) ? voiceTotalSecText() : ev.voice.duration }}</text>
+									<text class="voice-duration">{{ ev.voiceActive ? ev.voiceTotalText : ev.voice.duration }}</text>
 								</view>
 							</view>
 						</view>
@@ -214,15 +250,15 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { PhotoAttach } from '@/composables/usePhotoAttach'
 	import { EventOps } from '@/composables/useEventOps'
-	import { requestShellTab } from '@/utils/shell_state'
-	import { fetchTimelineAsync, getCachedTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
+	import { requestShellTab, shellSheetSeq, shellSheetMode, shellActiveTab } from '@/utils/shell_state'
+	import { fetchTimelineAsync, getCachedTimeline, getSnapshotTimeline, wasLastFetchFailed, TimelineEvent, EventVoice, buildDayGroups, DayGroup } from '@/utils/timeline'
 	import {
 		toggleVoice,
-		isVoiceActive,
-		isVoicePlaying,
-		voiceProgressOf,
-		voiceCurSecValue,
-		voiceTotalSecValue,
+		voiceCurrentId,
+		voicePlaying,
+		voiceProgress,
+		voiceCurSec,
+		voiceTotalSec,
 		fmtVoiceTime
 	} from '@/utils/audio_player'
 	import { parseIsoMs } from '@/utils/time'
@@ -234,10 +270,10 @@
 	// "is not exported by ...?uts-proxy"），故二者分开 import。
 	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
-	import { showErrorToast, fetchDailySummary, DailySummary } from '@/utils/api'
+	import { showErrorToast, ApiError, fetchDailySummary, DailySummary } from '@/utils/api'
 	import { aggregateToEvents, ClientL1Event } from '@/utils/agg_runner.uts'
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
-	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
+	import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
 	import {
 		flushOpQueue,
 		pendingOpCount,
@@ -252,6 +288,27 @@
 	let refreshing = ref(false)
 	let days = ref<Array<DayGroup>>([])
 	let pendingEvents = ref<Array<TimelineEvent>>([])
+	// 壳内空态（2026-10-09）：时间轴空时渲染拍照首页引导（替代原 redirectTo empty 整页跳转）
+	let emptyState = ref(false)
+	// 2026-10-15（真机反馈「空状态页不该嵌在有状态页里」+ 首拉失败整屏空白）：
+	// **"加载失败" 与 "真·空" 必须分开**。原实现只有 emptyState 一个派生量：
+	//   · 首拉失败时走 `loaded = true`（收起骨架）而 emptyState 仍 false ⇒ 空态块被
+	//     `ui-hidden` 藏住、feed 又无内容 = **整屏空白**（无引导、无 CTA）✗；
+	//   · 反过来，一旦把失败也收敛成空态，就会显示「还没有回忆」——那是**假空态** ✗
+	//     （用户会以为云端记忆丢了）。
+	// 故单列 loadFailed：失败且有旧数据 ⇒ 保持旧数据（不打扰）；失败且无任何数据 ⇒ 如实显示失败态。
+	let loadFailed = ref(false)
+
+	// 空态 CTA（经 shell_state 桥拉起全壳唯一 RecordSheet；'photo'=直达拍照流，同 empty 页口径）
+	function emptyTakeFirst(): void {
+		shellSheetMode.value = 'photo'
+		shellSheetSeq.value = shellSheetSeq.value + 1
+	}
+
+	function emptyVoice(): void {
+		shellSheetMode.value = ''
+		shellSheetSeq.value = shellSheetSeq.value + 1
+	}
 	let uploading = ref(false)
 	let uploadDone = ref(0)
 	let uploadTotal = ref(0)
@@ -314,11 +371,23 @@
 			applyFetchedEvents(hit.events)
 			refreshSilently()
 		} else {
-			reload()
+			// 冷启动：内存缓存必空（模块级数组随进程销毁）⇒ 先用**持久快照**立刻出画面，
+			// 再静默刷新覆盖（2026-10-14 · 用户反馈"每次打开都要等一会数据才出现"）。
+			// 快照缺失/过旧（>7 天）/解析失败都返回 null ⇒ 此时才走全量拉取（reload）。
+			const snap = getSnapshotTimeline()
+			if (snap != null) {
+				const ageH = ((Date.now() - snap.fetchedAt) / 3600000).toFixed(1)
+				console.log('[dbg-index] timeline snapshot hit, age=' + ageH + 'h -> instant render')
+				applyFetchedEvents(snap.events)
+				refreshSilently()
+			} else {
+				reload()
+			}
 		}
 		try {
 			const photoWatch = createPhotoWatch()
 			if (photoWatch.isReadPermissionGranted()) {
+				watchStarted = true
 				startWatch()
 			} else {
 				// 2026-09-11 D-24 修复：原实现此处**没有 else** —— 未授权时静默跳过，
@@ -331,6 +400,7 @@
 				photoWatch.requestReadPermission((granted: boolean, doNotAskAgain: boolean): void => {
 					console.log('[dbg-index] 相册权限申请回调 granted=' + granted + ' doNotAskAgain=' + doNotAskAgain)
 					if (granted) {
+						watchStarted = true
 						startWatch()
 					} else if (doNotAskAgain) {
 						// 用户已勾选"不再询问"：不再重复弹窗/打扰，仅留日志（须去系统设置手动开）
@@ -346,6 +416,9 @@
 		}
 	})
 	watch((): number => props.shownSeq, (n: number): void => {
+		// 2026-10-11 静态审查 #7：切回首页时**幂等复查**相册监听（用户去系统设置开权限后
+		// 不杀进程也能生效）。成本 = 一次 checkSelfPermission + 日志，无权限框打扰。
+		recheckWatchQuiet()
 		// 原 onShow 体逐字（TTL 内不重拉，过期后台静默刷新）
 		if (!loaded.value) {
 			return
@@ -379,22 +452,123 @@
 
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
 	const wf = new WaveformCache()
-	// 模板取值封装（uvue 模板不直接绑跨模块 ref）
-	function voiceIsActive(cid: string): boolean {
-		return isVoiceActive(cid)
+
+	/**
+	 * RC-5（2026-10-14 · 台账 §4.20）：把播放态写进「正在播放那张卡」的**预计算字段**。
+	 *
+	 * 原实现是模板里每卡 4~6 次函数调用（`voiceIsActive` / `voiceIsPlaying` /
+	 * `voiceProgressOfCard` / `voiceCurSecText` / `voiceTotalSecText`），其中**两处 `v-if`
+	 * 直接依赖函数调用**——平台对 `v-if` 整树卸载处理不稳（`skills/hbuilderx-uniappx-
+	 * runloop/SKILL.md:97-106`），且一次 tick 的整表重渲染会把**全部**语音卡的这些函数重算一遍。
+	 * 现改为「组装期 / tick 写卡片字段、模板只读字段」，与 `TabSearch.syncActiveCard`
+	 * （RC-1/RC-2 批次已落地的同款范式）保持一致。
+	 *
+	 * 三条要点（缺一不可）：
+	 *  ① **相等守卫**：值没变不写，只有真值变化的卡走更新路径；
+	 *  ② 真变过就 `days`/`pendingEvents` **整组浅替换**（`slice()`）——`buildDayGroups` 会
+	 *     **新建**卡片对象，且 uvue 对"就地改字段"能否驱动重渲染不作保证 ⇒ 用一次廉价
+	 *     slice 换**确定性重渲染**（`days.value` 整组替换本就是本页既有操作，见 `renderFromEvents`）；
+	 *  ③ **渲染出口补同步**：每次 `renderFromEvents` 后调一次（见该函数内注释）。
+	 */
+	function syncVoiceCards(): void {
+		const cid = voiceCurrentId.value
+		const playing = voicePlaying.value
+		const prog = voiceProgress.value
+		const cur = fmtVoiceTime(voiceCurSec.value)
+		const total = fmtVoiceTime(voiceTotalSec.value)
+		let changed = false
+		// 两处渲染源都要覆盖：待确认区 + 日卡片（同为 TimelineEvent）
+		const pend = pendingEvents.value
+		for (let i = 0; i < pend.length; i++) {
+			if (applyVoiceState(pend[i], cid, playing, prog, cur, total)) {
+				changed = true
+			}
+		}
+		const ds = days.value
+		for (let d = 0; d < ds.length; d++) {
+			const evs = ds[d].events
+			for (let i = 0; i < evs.length; i++) {
+				if (applyVoiceState(evs[i], cid, playing, prog, cur, total)) {
+					changed = true
+				}
+			}
+		}
+		if (changed) {
+			days.value = ds.slice()
+			pendingEvents.value = pend.slice()
+		}
 	}
-	function voiceIsPlaying(): boolean {
-		return isVoicePlaying()
+
+	/** 把当前播放态写进一张卡；返回"是否发生了变化"（相等守卫，无变化零写入） */
+	function applyVoiceState(
+		ev: TimelineEvent,
+		cid: string,
+		playing: boolean,
+		prog: number,
+		cur: string,
+		total: string
+	): boolean {
+		const v = ev.voice
+		if (v == null) {
+			return false // 无语音成员：本卡不参与播放态
+		}
+		const isActive = v.contentId == cid
+		let changed = false
+		if (ev.voiceActive != isActive) {
+			ev.voiceActive = isActive
+			changed = true
+		}
+		if (isActive) {
+			if (ev.voicePlaying != playing) {
+				ev.voicePlaying = playing
+				changed = true
+			}
+			if (ev.voiceProgress != prog) {
+				ev.voiceProgress = prog
+				changed = true
+			}
+			if (ev.voiceCurText != cur) {
+				ev.voiceCurText = cur
+				changed = true
+			}
+			if (ev.voiceTotalText != total) {
+				ev.voiceTotalText = total
+				changed = true
+			}
+		} else if (ev.voicePlaying || ev.voiceProgress != 0 || ev.voiceCurText != '' || ev.voiceTotalText != '') {
+			// 退出活动态：清干净（否则旧卡残留进度条/时长）
+			ev.voicePlaying = false
+			ev.voiceProgress = 0
+			ev.voiceCurText = ''
+			ev.voiceTotalText = ''
+			changed = true
+		}
+		return changed
 	}
-	function voiceProgressOfCard(cid: string): number {
-		return voiceProgressOf(cid)
+
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncVoiceCards。
+	// 可见性守卫（RC-2 同款）：本组件在壳内**常驻**（shell 用 `v-show` 切换，组件不销毁）⇒ 隐藏时
+	// 这些 watch 仍被全局 ref 驱动，重算+整组浅替换纯属空转。切回本 tab 时补一次同步对齐。
+	function syncVoiceCardsIfVisible(): void {
+		if (shellActiveTab.value != 'index') {
+			return
+		}
+		syncVoiceCards()
 	}
-	function voiceCurSecText(): string {
-		return fmtVoiceTime(voiceCurSecValue())
-	}
-	function voiceTotalSecText(): string {
-		return fmtVoiceTime(voiceTotalSecValue())
-	}
+	watch(voiceCurrentId, (): void => {
+		syncVoiceCardsIfVisible()
+	})
+	watch(voicePlaying, (): void => {
+		syncVoiceCardsIfVisible()
+	})
+	watch(voiceProgress, (): void => {
+		syncVoiceCardsIfVisible()
+	})
+	watch(shellActiveTab, (t: string): void => {
+		if (t == 'index') {
+			syncVoiceCards()
+		}
+	})
 
 	// 数据加载
 	// P-4（2026-09-04 峰宝拍板）：首拉不被离线队列阻塞——fetchAll 立即走；
@@ -412,7 +586,8 @@
 		})
 	}
 	// 本地 mock 时间轴注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
-	// events==0 直接走诚实空态（fetch 失败重试一次后跳 /pages/empty/empty），
+	// events==0 直接走诚实空态（fetch 失败重试一次后仍空 ⇒ 壳内 emptyState 渲染，
+	// **不再跳 /pages/empty/empty**——整页跳转会销毁壳，见本文件空态块注释），
 	// 不再注入 ev-m1~m4 假 id 数据。
 
 	// 空状态重试去重：瞬态失败重试一次的守门位（成功后复位）
@@ -422,19 +597,62 @@
 		console.log('[dbg-index] fetchAll -> fetchTimelineAsync')
 		fetchTimelineAsync(null, onThumbBatch).then((events: Array<TimelineEvent>) => {
 			console.log('[dbg-index] fetchTimeline resolved: ' + events.length + ' events')
+			// 🚨 2026-10-11 静态审查 #1 修复：**失败结果不得覆盖已渲染数据**。
+			// `fetchTimelineAsync` 用「空数组」表达失败（resolve([])），原实现无条件
+			// `applyFetchedEvents(events)` ⇒ 下拉刷新遇断网/502/401 时：①时间轴卡片整片消失
+			// （且 emptyState 仍 false ⇒ 连"还没有回忆"引导都没有 = 一片空白）②回响卡被抹掉
+			// ③2.5s 重试再失败 ⇒ 显示假空态「还没有回忆」（用户以为云端记忆丢了）。
+			// `refreshSilently` 一直有同款守卫（同语义两条路径必须同守卫），唯独此处漏了。
+			if (wasLastFetchFailed()) {
+				console.log('[dbg-index] fetchTimeline failed -> keep current UI')
+				// 首拉失败也要收起骨架屏与下拉转圈（否则骨架永驻/转圈不停）：
+				// 失败态下"骨架收起 + 保持现状"与 refreshSilently 的语义一致。
+				loaded.value = true
+				refreshing.value = false
+				// 2026-10-15（真机反馈后修）：**无任何可显示内容时，把"失败"如实标出来**。
+				// 原实现只收起骨架屏就 return ⇒ 空态块被 ui-hidden 藏住、feed 又没内容
+				// = **整屏空白**（无引导、无 CTA、用户以为 App 坏了）✗。
+				// 有旧数据时**保持原样**（断网不该把正在看的记忆抹掉，同 #1 守卫口径）。
+				if (days.value.length === 0 && pendingEvents.value.length === 0) {
+					loadFailed.value = true
+				}
+				return
+			}
 			applyFetchedEvents(events)
 		})
 		fetchTodayEcho().then((card: EchoCard | null) => {
+			// 🚨 2026-10-11 静态审查 #1 配套：区分"请求失败"与"真无回响"（二者都是 null）。
+			// 失败 ⇒ **保持现状**（断网下拉刷新不该把用户正在看的回响卡抹掉）；
+			// 真无回响（跨天/名额耗尽）⇒ 清空（R7 口径：防旧卡残留指向已删内容，见 messages.uvue）。
+			if (card == null && wasLastEchoFailed()) {
+				console.log('[dbg-index] echo fetch failed -> keep current card')
+				return
+			}
 			echo.value = card
 		})
 	}
 
 	// 卡PA D1：缩略图后台批次落地回调 → 整组 days.value 浅替换（改数据+一次性赋值，禁逐条 push）
+	// ⚠️ 2026-10-14（台账 §4.20 批次 5 · RC-3）：**同帧合并**。缩略图池每 4 张回调一次
+	// （步长在 `timeline.uts` 的缩略图池），而本回调一次要做「groupDays 全量重建 +
+	// `pa.attachAll`（内含 `new Map()` 重建）+ `days.value` 整组替换」——50 张照片即十余次
+	// 整树重建挤在几百毫秒内 ⇒ 列表掉帧、点击无响应（用户感知为"滑动不丝滑"）。
+	// 现改为 16ms 窗口内**只渲染一次**（同帧合并）；尾批必定落帧，数据不丢。
+	let thumbBatchTimer = 0
 	function onThumbBatch(): void {
 		if (!pageAlive.value || !loaded.value) {
 			return
 		}
-		renderFromEvents(currentEvents)
+		if (thumbBatchTimer != 0) {
+			return // 本帧已排队，由它统一渲染（避免重复整树重建）
+		}
+		thumbBatchTimer = setTimeout((): void => {
+			thumbBatchTimer = 0
+			if (!pageAlive.value || !loaded.value) {
+				return // 卸载/未加载：丢弃本帧渲染（同原守卫）
+			}
+			renderFromEvents(currentEvents)
+		}, 16)
 	}
 
 	// 卡PA D2：渲染出口（days/pending 整组浅替换；不清空、不回退加载态防闪屏）
@@ -442,8 +660,24 @@
 		const firstRender = !loaded.value
 		days.value = groupDays(events)
 		pa.attachAll(days.value, pendingEvents.value)
+		// RC-5（2026-10-14）：`buildDayGroups` **新建**卡片对象（播放态字段回到初值）⇒ 每次渲染
+		// 出口补一次同步，否则"正在播放/已暂停"在重渲染后会显示成"未播放"
+		// （同 `TabSearch.rebuildVoice → syncActiveCard`）。
+		syncVoiceCards()
 		loaded.value = true
 		refreshing.value = false
+		// 🚨 2026-10-11 静态审查 #2 修复：`emptyState` 是**派生状态**，必须收敛在渲染出口。
+		// 原实现只在 applyFetchedEvents 内重算，而 days/pending 还能被其它路径改变
+		// （useEventOps 经 render 出口的 ignorePending / patchEventById / removeEventById）
+		// ⇒ 已确证复现：新用户唯一一条事件是待确认态 → 点「忽略」→ days 与 pending 同时为空，
+		// 但 emptyState 仍为 false ⇒ feed 无内容 + 空态块被 ui-hidden 藏住 = **整页白屏**
+		// （无引导、无 CTA，只能靠下拉刷新自愈）。
+		// ⚠️ 本收敛与 #1「失败结果不进入本函数」是**配套**的：先有 #1 才有无条件收敛
+		// （否则失败时的空数组会立刻显示假空态）。
+		emptyState.value = days.value.length === 0 && pendingEvents.value.length === 0
+		// 渲染出口 = 本次**拿到了真实结果**（失败路径有 wasLastFetchFailed 守卫，不进入本函数）
+		// ⇒ 清掉失败标记（否则下一次失败前会一直显示"加载失败"）✓
+		loadFailed.value = false
 		// P-4 内容出现时间埋点：onLoad → 首帧内容上屏（logcat [perf] 行）
 		if (firstRender) {
 			console.log('[perf] index content-visible at ' + Date.now())
@@ -480,21 +714,29 @@
 	}
 
 	// 卡PA D2/R2：拉取结果统一渲染入口（更新数据源引用 + lastFetchAt + 空状态守门）
+	// 注（2026-10-11）：本函数现在**只被成功路径调用**（fetchAll / refreshSilently 都有
+	// wasLastFetchFailed 守卫）⇒ lastFetchAt 天然只在成功时写（原"失败也写"使失败后
+	// 60s TTL 内切 tab 不再补刷，属 #13）。
 	function applyFetchedEvents(events: Array<TimelineEvent>): void {
 		currentEvents = events
 		lastFetchAt = Date.now()
-		renderFromEvents(events)
+		renderFromEvents(events)   // emptyState 已在渲染出口收敛（#2）
 		// 空状态防误伤（2026-09-02 冷启动实锤）：请求失败（连接/鉴权瞬态）同样返回 0 条，
-		// 不能当「真·空状态」踢进 empty 页——失败标记位成立时延迟重试一次，仍空才跳。
+		// 不能当「真·空状态」——失败标记位成立时延迟重试一次，仍空才认空态。
 		if (days.value.length === 0 && pendingEvents.value.length === 0) {
 			if (wasLastFetchFailed() && !emptyRetryDone) {
+				// 失败未确认：先收回刚收敛出来的空态，重试一次再定性（否则"还没有回忆"
+				// 会先闪一下，再被 2.5s 后的重试结果改写）
+				emptyState.value = false
 				emptyRetryDone = true
 				console.log('[dbg-index] timeline fetch failed -> retry in 2.5s')
 				setTimeout(() => { fetchAll() }, 2500)
 				return
 			}
-			console.log('[dbg-index] timeline empty -> redirect /pages/empty/empty')
-			uni.redirectTo({ url: '/pages/empty/empty' })
+			emptyRetryDone = false
+			// ⚠️ 2026-10-09 真机首测定案：空态为**壳内渲染**（emptyState 视图，视觉=empty 页），
+			// 不 redirectTo('/pages/empty/empty')（B10 铁律「壳内零 redirectTo」）。
+			// 空态置位已由 renderFromEvents 收敛，此处直接返回。
 			return
 		}
 		emptyRetryDone = false
@@ -565,10 +807,16 @@
 			return
 		}
 		dismissEcho(card.contentId).then((ok: boolean) => {
-			echo.value = null
-			if (ok) {
-				uni.showToast({ title: '已划掉', icon: 'none' })
+			// 🚨 2026-10-11 静态审查 #6 修复：失败**不得**乐观隐藏。
+			// 原实现无论成败都 `echo.value = null` ⇒ 断网点"划掉"：卡片消失（像成功了），
+			// 但服务端没记录 ⇒ 下次 fetchAll（下拉刷新/切 tab）卡片**复活**——
+			// "划掉了又回来"比"划不掉"更像灵异事件，且无任何提示。
+			if (!ok) {
+				showErrorToast(new ApiError('ECHO_DISMISS', '划掉失败，请稍后重试', 0))
+				return
 			}
+			echo.value = null
+			uni.showToast({ title: '已划掉', icon: 'none' })
 		})
 	}
 
@@ -609,10 +857,20 @@
 		}, 12000)
 	}
 
-	// L-02a：照片路径 / 挂载 / 照片详情已整块进 `usePhotoAttach`（见 composable 头注）；
-	// 组件只留模板入口的薄包装（转发到同一实例，行为等价）。
+	// L-02a：照片路径 / 挂载 已整块进 `usePhotoAttach`（见 composable 头注）。
+	// 🚨 2026-10-11 静态审查 #3 修复：照片点按改为**直达内容详情页**。
+	// 原实现转发到 `pa.onPhotoTap`——它只设置 `showPhotoDetail` 等四态，而**模板中根本没有
+	// 消费它们的照片详情面板**（`photo-detail-panel` 在全仓 0 命中，`tab-index.css:631-659`
+	// 的 `.photo-detail-*` 规则零使用者）⇒ 用户点照片**零反馈**，且照片条带 `.stop`
+	// （连整卡进详情都不触发）——"点得动但没反应"的最差形态。
+	// 保守修法：收口到**既有可用路径**（详情页），不新造 UI；面板若后续要做，
+	// `pa.onPhotoTap` 四态仍在（届时把本函数换回转发即可）。
 	function onPhotoTap(contentId: string): void {
-		pa.onPhotoTap(contentId)
+		if (contentId == '') {
+			uni.showToast({ title: '这张照片暂无可查看的内容', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + contentId })
 	}
 
 	// 待确认（L-02b：逻辑进 `useEventOps`，此处仅模板入口薄包装）
@@ -660,6 +918,33 @@
 	}
 
 	// 相册监听
+	// 2026-10-11 静态审查 #7/#12：两个进程级标志（组件在壳内常驻、不销毁 ⇒ 等价会话级）
+	//  · watchStarted：监听是否已启动 —— 供"切回首页时幂等复查"用（#7）
+	//  · watchNotified：启动 toast 是否已提示过（#12：原实现每次冷启动都弹一次无意义提示）
+	let watchStarted = false
+	let watchNotified = false
+
+	/** 幂等复查：**已授权但监听未启动**时补启动（不弹权限框、不打扰）。
+	 *
+	 * #7 背景：壳架构下 TabIndex 只挂载一次（everIndex 恒 true + v-show），原实现只在
+	 * onMounted 初始化一次监听 ⇒「首次拒绝权限 → 去系统设置打开 → 回 App」时监听永不启动
+	 * （旧注释"下次进入会再次申请"在壳架构下不成立）。挂在切回首页的 watch 上做廉价复查。 */
+	function recheckWatchQuiet(): void {
+		if (watchStarted) {
+			return
+		}
+		try {
+			const pw = createPhotoWatch()
+			if (pw.isReadPermissionGranted()) {
+				console.log('[dbg-index] recheck: 权限已就绪，补启动相册监听')
+				watchStarted = true
+				startWatch()
+			}
+		} catch (e) {
+			// 标准基座无原生插件：忽略（onMounted 已打点）
+		}
+	}
+
 	function startWatch(): void {
 		console.log('[yishu] startWatch begin')
 		recordGrantTime()
@@ -672,7 +957,11 @@
 			handleBatch(items)
 		})
 		console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
-		uni.showToast({ title: '已开始监听相册', icon: 'none' })
+		// #12：只提示一次——老用户每次冷启动都吃一次「已开始监听相册」是纯噪音
+		if (!watchNotified) {
+			watchNotified = true
+			uni.showToast({ title: '已开始监听相册', icon: 'none' })
+		}
 	}
 	function handleBatch(items: Array<PhotoItem>): void {
 		uploading.value = true

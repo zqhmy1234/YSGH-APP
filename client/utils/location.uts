@@ -1,0 +1,155 @@
+/**
+ * 定位封装（2026-10-04 · 替换「上海 · 江边」写死演示值）
+ *
+ * ## 为什么有这个模块
+ *
+ * 此前 `RecordSheet.uvue` 的信息卡地点行是**写死的常量**：
+ * `const USE_MOCK_LOCATION = true` / `locationText = '上海 · 江边'`。
+ * 全客户端（排除构建产物）**零 `uni.getLocation` 调用** —— 也就是说
+ * 「用户开着定位服务」与代码无关，界面那行字无论如何都是「上海 · 江边」。
+ *
+ * ## 设计口径（与后端、与项目铁律一致）
+ *
+ * 1. **拿不到就留空，绝不回落假值。** 这是本模块存在的全部理由：
+ *    定位是增强项，编造一个地名比没有地名更糟（用户会据此判断回忆发生在哪里）。
+ *    失败一律 resolve(null)，调用方显示「未获取到位置」或直接不显示。
+ * 2. **只取坐标，不在客户端解析地名。** 客户端传 `gps_lat` / `gps_lng`，
+ *    由后端统一调高德逆地理（`pipeline_ext.place.enrich_place_on_ingest`）——
+ *    与照片路径（`uploader_photo.uts` 传 gps_lat/gps_lng）**同一条链路**，
+ *    也让「照片」与「文字/语音」的地点产出逻辑保持一致。
+ * 3. **坐标不进 localStorage。** 坐标是敏感数据，只活在内存里、随本次记录走完即弃。
+ * 4. **超时收敛**：`uni.getLocation` 在无权限/无 GPS 时可能既不回调也不报错，
+ *    必须自带看门狗，否则记录面板会一直停在「定位中」。
+ */
+
+/** 定位结果（仅内存持有，不落 storage） */
+export type Fix = {
+	lat: number
+	lng: number
+	/** 精度（米）；仅用于日志，不入库 */
+	accuracy: number
+}
+
+/** 展示用状态：让信息卡能诚实区分「定位中 / 已定位 / 未获取到」 */
+export type LocateState = 'idle' | 'locating' | 'ok' | 'unavailable'
+
+/** 定位超时（ms）。无权限/无 GPS 时 uni.getLocation 可能既不 ok 也不 fail，必须兜底。 */
+const LOCATE_TIMEOUT_MS: number = 8000
+
+/**
+ * 取一次定位。**任何失败都 resolve(null)**（不 reject），调用方无需 try/catch。
+ *
+ * @param onState 状态回调，供 UI 显示「定位中…」/「未获取到位置」
+ */
+export function getCurrentFix(onState?: (s: LocateState) => void): Promise<Fix | null> {
+	const setState = (s: LocateState): void => {
+		if (onState != null) {
+			onState(s)
+		}
+	}
+	return new Promise<Fix | null>((resolve) => {
+		let settled = false
+		const finish = (v: Fix | null): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			resolve(v)
+		}
+
+		setState('locating')
+
+		// 看门狗：拿不到就诚实收场，不让 UI 卡在「定位中」
+		const timer = setTimeout(() => {
+			console.log('[locate] watchdog timeout')
+			setState('unavailable')
+			finish(null)
+		}, LOCATE_TIMEOUT_MS)
+
+		uni.getLocation({
+			// wgs84 = GPS 原始坐标（国际标准，与照片 EXIF 同源）
+			// ⚠️ 2026-10-14 更正：原文写「后端按 WGS84 解释后交给高德 regeo」，而高德
+			// REST regeo 的 location **只认 GCJ-02**（无 coordsys 参数可切换）⇒ 少了
+			// 转换会让地名系统性偏移 300~700 米。转换已在后端统一做：
+			// `backend/app/services/external/amap.py:get_place` 入口调 `gcj02.wgs84_to_gcj02`
+			// （单一转换点）。
+			type: 'wgs84',
+			// 2026-10-14：显式请求高精度定位。Android 12 起系统默认可能只给「粗略位置」
+			// （蜂窝 / Wi-Fi 级，误差百米~公里级）——不请求高精度时，界面照样显示
+			// 「已记录当前位置」，而那个坐标粗到没有意义。
+			isHighAccuracy: true,
+			highAccuracyExpireTime: 4000,
+			success: (res: any): void => {
+				const lat = res != null ? res.latitude : null
+				const lng = res != null ? res.longitude : null
+				// 0/0 是无效坐标哨兵（部分设备定位失败会返回它而不是报错）
+				if (lat == null || lng == null || (Number(lat) == 0 && Number(lng) == 0)) {
+					console.log('[locate] 无效坐标')
+					setState('unavailable')
+					finish(null)
+					return
+				}
+				const acc = res.accuracy != null ? Number(res.accuracy) : 0
+				console.log('[locate] ok lat=' + lat + ' lng=' + lng + ' acc=' + acc)
+				setState('ok')
+				finish({ lat: Number(lat), lng: Number(lng), accuracy: acc })
+			},
+			fail: (err: any): void => {
+				// 用户拒绝授权 / 定位服务关闭 / 设备不支持 —— 都归为「拿不到」
+				console.log('[locate] fail ' + JSON.stringify(err))
+				setState('unavailable')
+				finish(null)
+			}
+		})
+	})
+}
+
+/**
+ * 把定位写入 `POST /contents` 的请求体。
+ *
+ * 后端 `ContentCreate` 契约（`backend/app/schemas/content.py:26-27`）只收
+ * `gps_lat` / `gps_lng`，**不收 place** —— 地名由后端逆地理产出，
+ * 这样客户端不掺和地名解析，也避免客户端与后端两套 geohash 口径。
+ *
+ * 无定位时**不写这两个键**（而不是写 null）：后端 `pipeline_ext.place` 的
+ * 判空条件是 `gps_lat is None`，写不写键都安全，但省略更干净。
+ */
+export function applyGpsToBody(body: UTSJSONObject, fix: Fix | null): void {
+	if (fix == null) {
+		return
+	}
+	body.set('gps_lat', fix.lat)
+	body.set('gps_lng', fix.lng)
+}
+
+// ---------------------------------------------------------------------------
+// 模块级「本次记录的定位」单例
+//
+// 为什么用单例而不是逐层传参：一次记录有**三个**入库提交点，且分属不同模块——
+//   ① 文字（`capsule_api.createTextContentRemark`，由 RecordSheet 直接调）
+//   ② 语音（`voice.uts:484` 的 `saveVoiceContent`，在 useVoiceRecord 链路深处）
+//   ③ 照片（`RecordSheet.savePhoto` → `PhotoItem.lat/lng`）
+// ⚠️ 2026-10-14 更正（台账 §4.20 / 审计 §2）：原文对 ③ 写「`uploader_photo.uts`
+// 自带照片 GPS，与本单例无关」——**该前提是错的**。手动拍照/选图（`uni.chooseImage`）
+// 既拿不到 MediaStore id、也不解析 EXIF，`savePhoto` 当时把经纬度**硬编码为 null**，
+// 结果三个提交点里**只有照片恒定不带地点**（这就是"拍照上传的定位功能没有起效"）。
+// 现 ③ 与其他两点一样读本单例；后端另有 EXIF GPS 兜底（`api/contents/_extract_exif_gps`）。
+// 逐层加参数会把 Fix 穿过 4~5 个文件、且每处都要记得传——漏一处就静默丢坐标。
+// 单例由「打开记录面板时取一次」写入、由各提交点读取，漏读的代价是「没带地点」
+// （诚实缺省），而不是「传了假值」。
+//
+// 生命周期：仅内存（**不落 localStorage**，坐标属敏感数据）；
+// 面板关闭即失效，下次打开重新取，避免用上一次的位置冒充这一次。
+// ---------------------------------------------------------------------------
+let lastFix: Fix | null = null
+
+/** 记录本次定位（面板打开时调用）。传 null 表示「确认拿不到」，清掉旧值。 */
+export function setLastFix(fix: Fix | null): void {
+	lastFix = fix
+}
+
+/** 读取本次定位（各提交点调用）；从未定位成功过则返回 null。 */
+export function getLastFix(): Fix | null {
+	return lastFix
+}

@@ -7,7 +7,7 @@ from fastapi import Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api import make_router
-from app.api.deps import get_current_user
+from app.api.deps import agent_service_user, get_current_user
 from app.core.errors import ERR_CONTENT_006, ERR_SEARCH_001, ERR_SEARCH_002, ApiError
 from app.db.models import User
 from app.db.session import get_db
@@ -78,4 +78,45 @@ def search(
 
     安全修复（审查 MAJOR）：个人记忆检索必须登录后可用（此前未鉴权）。
     """
+    return ApiResponse(data=rag_search(req, db=db, user_id=user.id))
+
+
+@router.post("/agent", response_model=ApiResponse[SearchResult], include_in_schema=False)
+def search_for_agent(
+    req: SearchQuery,
+    db: Session = Depends(get_db),
+    user: User = Depends(agent_service_user),
+):
+    """服务间检索：供 agent 服务以某用户身份复用本后端的 RAG 检索（W2 检索升级）。
+
+    ## 为什么单独一条端点（而不是让原端点兼容服务间头）
+
+    两条通道的信任模型完全不同：JWT 是「用户本人」，`X-Agent-Token` 是
+    「持有共享密钥的服务、代任意用户行事」。把它们塞进同一个依赖，等于让
+    一条可横向越权的通道挂在所有用户端点上。分开后暴露面最小：
+    只此一个路径、`include_in_schema=False`（不入 OpenAPI 文档，不给扫描器指路）、
+    鉴权逻辑独立可审计（`deps.agent_service_user`）。
+
+    ## 与用户端点的差异（诚实标注）
+
+    · 复用**同一个** `rag_search` 服务函数 ⇒ 召回/改写/精排/溯源完全一致，
+      不存在"agent 拿到的是缩水版检索"。
+    · agent 侧需自担延迟：本链路默认开 LLM 改写与精排（P95<3s 门禁口径）。
+      agent 侧对单轮对话只调一次、limit 夹紧，见其 `search_memories`。
+    · `SearchHit` 不含情绪/标签字段（`schemas/search.py:19-31`）——agent 需要
+      时拿 content_id 自行补查，本端点不为它扩契约。
+
+    ## 审计
+
+    服务间调用记一条结构化日志（只记 user_id 与查询长度，不记正文——
+    与本项目日志隐私纪律一致），便于事后回答"谁在什么时候代谁查了什么"。
+    """
+    import logging
+
+    logging.getLogger(__name__).info(
+        "agent_search user_id=%s q_len=%s limit=%s",
+        user.id,
+        len(req.q or ""),
+        req.limit,
+    )
     return ApiResponse(data=rag_search(req, db=db, user_id=user.id))

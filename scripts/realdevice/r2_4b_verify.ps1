@@ -1,4 +1,4 @@
-# R2 · 4b 修复批次真机复验电池组（自动化段 + 人工段清单）
+﻿# R2 · 4b 修复批次真机复验电池组（自动化段 + 人工段清单）
 # 用法: powershell -File r2_4b_verify.ps1 [-Stage autopsy|install|backend|logs|manual]
 # 约定: 证据一律落 scripts/realdevice/evidence/，命名 r2_<项>_<时间戳>（证据三要素：设备+时间/文件/判定）
 param(
@@ -45,21 +45,21 @@ switch ($Stage) {
     Write-Host "[人工] 手机侧确认 EMUI 纯净模式已关（设置→安全），否则 install 静默失败零报错" -ForegroundColor Yellow
     Step "安装" { adb -s $Serial install -r $Apk }
     Step "reverse 三连" {
-        adb -s $Serial reverse tcp:8000 tcp:8000
-        $h = adb -s $Serial shell "curl -s -m 3 http://127.0.0.1:8000/healthz"
+        adb -s $Serial reverse tcp:8010 tcp:8010
+        $h = adb -s $Serial shell "curl -s -m 3 http://127.0.0.1:8010/healthz"
         if ($h -match '"status"\s*:\s*"ok"') { Write-Host "PASS: $h" } else { Write-Host "FAIL: 设备侧 healthz 不通（后端起了吗？跑 -Stage backend）" -ForegroundColor Red }
     }
     Step "屏幕常亮" { adb -s $Serial shell "svc power stayon usb; input keyevent KEYCODE_WAKEUP" }
 }
 "backend" {
     # fix4b 后端（与被测代码同源）+ dev worker（Windows 无 scheduler 形态，见 handoff 坑账）
-    Write-Host "[提示] 与媒体窗共用 8000 端口前先打招呼：$((Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Measure-Object).Count) 个监听者已在"
+    Write-Host "[提示] 与媒体窗共用 8010 端口前先打招呼：$((Get-NetTCPConnection -LocalPort 8010 -State Listen -ErrorAction SilentlyContinue | Measure-Object).Count) 个监听者已在"
     Start-Process -WorkingDirectory "D:\GuangH-App\.wt\fix4b\backend" `
-        -FilePath python -ArgumentList "-m","uvicorn","app.main:app","--host","127.0.0.1","--port","8000" -WindowStyle Minimized
+        -FilePath python -ArgumentList "-m","uvicorn","app.main:app","--host","127.0.0.1","--port","8010" -WindowStyle Minimized
     Start-Process -WorkingDirectory "D:\GuangH-App\.wt\fix4b\backend" `
         -FilePath python -ArgumentList "-c","from app.workers.worker import get_worker_class; from app.core.queue import QUEUE_HIGH, QUEUE_LOW, get_queue; import logging; logging.basicConfig(level=logging.INFO); w=get_worker_class()([get_queue(QUEUE_HIGH),get_queue(QUEUE_LOW)]); w.work()" -WindowStyle Minimized
     Start-Sleep -Seconds 6
-    (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz).Content
+    (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8010/healthz).Content
 }
 "logs" {
     adb -s $Serial logcat -d -t 400 | Select-String "yishu" | Tee-Object "$ev\r2_logcat_$ts.log"

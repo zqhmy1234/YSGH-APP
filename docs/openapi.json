@@ -2775,6 +2775,33 @@
         ]
       }
     },
+    "/api/v1/wechat/bind-code": {
+      "post": {
+        "tags": [
+          "wechat"
+        ],
+        "summary": "Wechat Bind Code",
+        "description": "签发**微信绑定码**（2026-10-15 · 台账 §4.20 ㉖）。\n\n为什么需要它：F6「微信入口」要先知道用户的微信 **openid**，而 openid 只存在企微侧、\nApp 无从获取（后端此前也没有任何\"绑定码/扫码\"流程 ⇒ 功能在产品级不可完成）。\n现流程：App 领码 → 用户在自己的微信里给忆述发「绑定 <码>」→ 回调侧消费码建绑定。\n\n码**6 位数字、10 分钟有效、单次使用**；同账号重发即作废旧码。\n**只回本次码与有效期**（不返回历史码/剩余次数，最小信息）。",
+        "operationId": "wechat_bind_code_api_v1_wechat_bind_code_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/wechat/bindings": {
       "get": {
         "tags": [
@@ -3621,6 +3648,51 @@
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ChatMessageOut_"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/chat/messages/stream": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Post Message Stream",
+        "description": "发一条消息并**流式**取回复（SSE · AG6 余项 2026-10-09）。\n\n与 `POST /messages` 的关系：**同一套鉴权 / 会话隔离 / 护栏 / 落库口径**，\n差别只在传输形态。非流式端点保留（脚本、降级路径与既有测试都在用）。\n\n帧格式（`event:` + 单行 JSON `data:`）：\n  · `status`  {\"stage\":\"accepted\"}                       —— 链路已接（首帧，立即）\n  · `preview` {\"text\":\"<累计全文>\"}                       —— **累计**而非增量\n  · `tool`    {\"phase\":\"started\"|\"done\",\"name\":…}         —— 工具状态（UI\"在翻记忆\"）\n  · `replace` {\"text\":\"<整段>\"}                           —— 校验重试 ⇒ 预览作废覆盖\n  · `done`    {\"conversation_id\",\"reply\":{…},\"latency_ms\"} —— **终稿**（客户端以此收尾）\n  · `error`   {\"code\",\"message\"}                          —— CHAT_001/002/004/INTERNAL_ERROR\n\n为什么 `preview` 推**累计全文**而不是增量分片：客户端侧桥接（蒸汽模式）可能丢帧，\n增量一旦丢一帧，拼出来的回复就是**错字**（比慢更糟）；累计帧每帧自洽，\n丢帧只表现为\"晚一拍\"，下一帧就追平。代价是每秒多几百字节，值得。\n\n⚠️ 三条不可退让的事在流式形态下仍然成立（本端点全部复杂度都在这上面）：\n  1. **用户消息先落库**——agent 失败也留痕（同非流式口径）；\n  2. **预览必须过规则层**：每累积一段就跑 `rule_screen`，命中即中断推流并结束。\n     已推出去的前缀必然是过了规则层的 ⇒「护栏拦截不得泄漏预览」成立；\n  3. **终稿仍走完整链路**（规则层 + LLM 级）：不过审 ⇒ **不落库、不返回该文本**（CHAT_004）。",
+        "operationId": "post_message_stream_api_v1_chat_messages_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -6270,6 +6342,21 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "chips": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chips"
+          },
+          "cards": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Cards"
           }
         },
         "type": "object",
@@ -6762,7 +6849,7 @@
           },
           "source": {
             "type": "string",
-            "pattern": "^(app|windows|wechat|import)$",
+            "pattern": "^(app|windows|wechat|import|agent)$",
             "title": "Source",
             "default": "app"
           },
@@ -6791,6 +6878,23 @@
             ],
             "title": "Size Bytes",
             "description": "声明原件字节数（A9：可选；缺省时带 cos_key 的记录由后端实测存储对象回填）"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "type": "array",
+                "maxItems": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "预置 chips 标签（服务间镜像专用）：≤10 条、单条 ≤32 字，自动去重去空"
           }
         },
         "type": "object",
@@ -7161,9 +7265,9 @@
           "text": {
             "type": "string",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Text",
-            "description": "内容文本（用于向量化）"
+            "description": "内容文本（用于向量化）；照片等无文本内容可留空",
+            "default": ""
           },
           "new_label": {
             "type": "string",
@@ -7198,7 +7302,6 @@
         "type": "object",
         "required": [
           "content_id",
-          "text",
           "new_label"
         ],
         "title": "CorrectionCreate"
@@ -8885,6 +8988,15 @@
             "title": "Rejected",
             "default": []
           },
+          "duplicates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Duplicates",
+            "default": []
+          },
           "server_version": {
             "type": "integer",
             "title": "Server Version"
@@ -9025,6 +9137,26 @@
           "cleared": {
             "type": "integer",
             "title": "Cleared"
+          },
+          "vectors_purged": {
+            "type": "integer",
+            "title": "Vectors Purged",
+            "description": "请求删除的向量条数（Qdrant 不回逐点结果）",
+            "default": 0
+          },
+          "objects_purged": {
+            "type": "integer",
+            "title": "Objects Purged",
+            "description": "实际删除的对象存储原件/缩略图个数",
+            "default": 0
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "清尾失败项；空=全部清干净"
           }
         },
         "type": "object",
@@ -9032,7 +9164,7 @@
           "cleared"
         ],
         "title": "TrashClearOut",
-        "description": "回收站清空出参（DELETE /api/v1/trash）"
+        "description": "回收站清空出参（DELETE /api/v1/trash）\n\n2026-10-14（台账 §7.25①）：新增云端清尾计数与告警——原实现只删 DB 行（Qdrant 向量 /\n对象存储原件残留），接口却只回 `cleared` ⇒ 用户以为\"彻底清空\"（**隐私承诺相关**）。\n新字段均有默认值 ⇒ 老客户端读不到也不受影响（向后兼容）。"
       },
       "TrashItemOut": {
         "properties": {

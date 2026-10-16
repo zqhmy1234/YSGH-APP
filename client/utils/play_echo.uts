@@ -25,14 +25,32 @@ export class EchoCard {
 	}
 }
 
-/** GET /echo/today：去年今日回响（无则 null） */
+/**
+ * 最近一次 `fetchTodayEcho` 是否**请求失败**（2026-10-11 静态审查 #1 配套）。
+ *
+ * 为什么必须区分：本函数 `resolve(null)` 有**两种语义**——①请求失败（网络/鉴权瞬态）
+ * ②「真无回响」（跨天、名额耗尽、今天本来就没有）。调用方若不区分地"null 就清空旧卡"，
+ * 断网刷新会让用户正在看的回响卡凭空消失（与"被划掉"视觉无法区分）。
+ * 而 messages.uvue 的 R7 口径恰恰要求"null 就清空"（防跨天旧卡残留、指向已删内容）
+ * ⇒ 两种需求只能靠本标志区分（同 `timeline.uts` 的 `wasLastFetchFailed` 先例）。
+ */
+let _lastEchoFailed = false
+
+/** 读最近一次 fetchTodayEcho 的失败标志（见上；调用方应在拿到 null 后立即读） */
+export function wasLastEchoFailed(): boolean {
+	return _lastEchoFailed
+}
+
+/** GET /echo/today：去年今日回响（无则 null；**失败亦 null**，用 wasLastEchoFailed 区分） */
 export function fetchTodayEcho(): Promise<EchoCard | null> {
 	return new Promise<EchoCard | null>((resolve) => {
 		get(PATH_ECHO_TODAY).then((res: UTSJSONObject | null) => {
 			if (res == null) {
+				_lastEchoFailed = true
 				resolve(null)
 				return
 			}
+			_lastEchoFailed = false
 			const d = dataObj(res)
 			if (d == null) {
 				resolve(null)

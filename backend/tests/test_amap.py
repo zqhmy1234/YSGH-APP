@@ -27,14 +27,44 @@ pytestmark = pytest.mark.integration
 _TEST_COORDS = [(31.2304, 121.4737)]
 
 
+def _test_gcj() -> list[tuple[float, float]]:
+    """测试坐标 → **服务内部坐标系**（GCJ-02）。
+
+    2026-10-14：`get_place` 入口会把入参（WGS84）转成 GCJ-02 后**再**算缓存键，
+    故本文件构造缓存键必须同口径，否则造出的行永远不命中（如实用例会因此变红）
+    ——这正是"坐标系必须单一"的佐证。
+    """
+    return [amap_svc.wgs84_to_gcj02(lat, lng) for lat, lng in _TEST_COORDS]
+
+
 def _test_geohashes() -> list[str]:
-    return [amap_svc.encode_geohash(lat, lng) for lat, lng in _TEST_COORDS]
+    return [amap_svc.encode_geohash(lat, lng) for lat, lng in _test_gcj()]
 
 
 @pytest.fixture(autouse=True)
 def _ensure_mock_mode():
     """测试必须跑在 mock 模式（不产生费用、不依赖网络）"""
     assert settings.mock_external_ai is True, "测试环境要求 MOCK_EXTERNAL_AI=true"
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clean_test_geo_cache():
+    """用例前先清掉**本文件测试坐标**的缓存行（定向，不清整表）。
+
+    为什么必须清（2026-10-09 补）：`get_place` 是**缓存优先**，而本文件用的坐标（外滩）
+    正是真实联调验证用过的坐标——2026-08-25 的真实调用、api_smoke 的照片管线都可能往
+    `geo_cache` 写一条**30 天内**的缓存行。只要有这样一行，"regeo 抛错 ⇒ mock 回退"这条
+    路径根本不会被执行，用例会拿到真实地名而失败：同一份代码在不同机器/不同时点红绿不同。
+    这是**测试对库状态的隐式依赖**（不是产品缺陷）；定向清理让用例只依赖代码，
+    与 teardown 的"按 key 定向删除"（R8#13）同一口径。
+    """
+    db = SessionLocal()
+    try:
+        db.execute(sa_delete(GeoCache).where(GeoCache.geohash.in_(_test_geohashes())))
+        db.commit()
+    finally:
+        db.close()
     yield
 
 
@@ -114,7 +144,7 @@ def test_get_place_cache_hit_no_api(db, monkeypatch):
         raise AssertionError("缓存命中不应调 API")
 
     monkeypatch.setattr(amap_svc, "regeo", boom)
-    db.add(GeoCache(geohash=amap_svc.encode_geohash(31.2304, 121.4737), place="上海外滩"))
+    db.add(GeoCache(geohash=_test_geohashes()[0], place="上海外滩"))
     db.commit()
 
     assert amap_svc.get_place(db, 31.2304, 121.4737) == "上海外滩"
@@ -130,7 +160,7 @@ def test_get_place_cache_expired_refetch(db, monkeypatch):
 
     monkeypatch.setattr(amap_svc, "regeo", fake_regeo)
     stale = GeoCache(
-        geohash=amap_svc.encode_geohash(31.2304, 121.4737),
+        geohash=_test_geohashes()[0],
         place="旧地点",
         updated_at=datetime.now(UTC) - timedelta(days=31),
     )

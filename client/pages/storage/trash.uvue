@@ -53,7 +53,7 @@
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
 	// FE1（W2-1）：回收站三端点统一走 play.uts 封装（resolve-only，失败空数组/false + api 层全局 toast）
-	import { trashList, trashRestore, trashClear } from '@/utils/play_trash'
+	import { trashList, trashRestore, trashClear, TrashClearResult } from '@/utils/play_trash'
 
 	class TrashItem {
 		id: string
@@ -160,13 +160,21 @@
 				if (!res.confirm) {
 					return
 				}
-				trashClear().then((ok: boolean) => {
-					if (!ok) {
+				trashClear().then((r: TrashClearResult | null) => {
+					if (r == null) {
 						uni.showToast({ title: '清空失败 · 请稍后重试', icon: 'none' })
 						return
 					}
 					fetchTrash()
-					uni.showToast({ title: '回收站已清空', icon: 'none' })
+					// §7.25①（2026-10-14）：DB 侧清空已成事实，但**云端清尾**（向量/原件）
+					// 可能部分失败 ⇒ 如实改口。原实现无论清尾成败都说「回收站已清空」，
+					// 而"数据是否真没了"恰恰是用户最关心的一点（隐私承诺相关）。
+					if (r.warnings.length > 0) {
+						console.log('[yishu] 回收站清空：云端清尾未全成功，告警 ' + r.warnings.length + ' 项')
+						uni.showToast({ title: '已清空，但部分云端数据未清理', icon: 'none', duration: 2500 })
+					} else {
+						uni.showToast({ title: '回收站已清空', icon: 'none' })
+					}
 				})
 			}
 		})

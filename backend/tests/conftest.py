@@ -94,8 +94,10 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
     """统一子表清理：按测试用户删除全部关联数据（FK 依赖链，子表优先）。
 
     对照 backend/sql/schema.sql 完整依赖链：upload_chunks → upload_tasks →
-    tags/content_tags/voice_segments/event_tags/event_items/events/event_edit_log →
+    event_items/events/event_edit_log →
     contents → 画像域/同步域/消息域/纠错域/设备域等。
+    （tags/content_tags/voice_segments/event_tags/question_history 等 11 张
+    legacy 表已于 2026-10-08 W6 迁移 DROP，不再出现在清理链。）
     每个表独立 try（缺失表不阻断），失败仅告警——尽力而为。
     """
     uid = str(user_id)
@@ -108,32 +110,6 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
         ("upload_tasks", "DELETE FROM upload_tasks WHERE user_id = :uid"),
         # AG5（2026-09-23）：AI 对话域新表（叶子表，无子依赖）
         ("chat_messages", "DELETE FROM chat_messages WHERE user_id = :uid"),
-        (
-            "voice_segments",
-            "DELETE FROM voice_segments WHERE content_id IN "
-            "(SELECT id FROM contents WHERE user_id = :uid)",
-        ),
-        (
-            "content_tags",
-            "DELETE FROM content_tags WHERE content_id IN "
-            "(SELECT id FROM contents WHERE user_id = :uid)",
-        ),
-        (
-            "content_tags(tag)",
-            "DELETE FROM content_tags WHERE tag_id IN "
-            "(SELECT id FROM tags WHERE user_id = :uid)",
-        ),
-        (
-            "event_tags",
-            "DELETE FROM event_tags WHERE event_id IN "
-            "(SELECT id FROM events WHERE user_id = :uid)",
-        ),
-        (
-            "event_tags(tag)",
-            "DELETE FROM event_tags WHERE tag_id IN "
-            "(SELECT id FROM tags WHERE user_id = :uid)",
-        ),
-        ("tags", "DELETE FROM tags WHERE user_id = :uid"),
         ("event_edit_log", "DELETE FROM event_edit_log WHERE user_id = :uid"),
         (
             "event_items",
@@ -142,7 +118,6 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
             " OR content_id IN (SELECT id FROM contents WHERE user_id = :uid)",
         ),
         ("events", "DELETE FROM events WHERE user_id = :uid"),
-        ("question_history", "DELETE FROM question_history WHERE user_id = :uid"),
         (
             "correction_log",
             "DELETE FROM correction_log WHERE user_id = :uid"
@@ -163,10 +138,6 @@ def cleanup_user_data(db, user_id: str) -> list[str]:
         ("profile_dimension_history", "DELETE FROM profile_dimension_history WHERE user_id = :uid"),
         ("user_profile", "DELETE FROM user_profile WHERE user_id = :uid"),
         ("sensitive_words", "DELETE FROM sensitive_words WHERE user_id = :uid"),
-        ("guardrail_logs", "DELETE FROM guardrail_logs WHERE user_id = :uid"),
-        ("ai_request_logs", "DELETE FROM ai_request_logs WHERE user_id = :uid"),
-        ("audit_log", "DELETE FROM audit_log WHERE user_id = :uid"),
-        ("app_settings", "DELETE FROM app_settings WHERE user_id = :uid"),
         ("devices", "DELETE FROM devices WHERE user_id = :uid"),
         ("user_wechat_bindings", "DELETE FROM user_wechat_bindings WHERE user_id = :uid"),
     ]

@@ -12,15 +12,26 @@
       "backend_py": 600,
       "client": 800
     },
-    "allowlist": {}
+    "allowlist": {
+      "client/components/TabIndex/TabIndex.uvue": {
+        "lines": 874,
+        "reason": "2026-10-11 静态审查修复批：该文件原 786 行（距阈值 14 行），本批为 12 处确证缺陷（失败覆盖已渲染数据/emptyState 派生状态漏收敛/语音双声道/划掉回响失败乐观隐藏/照片与拆分入口指向不存在的面板/权限复查/toast 频次等）补写**根因注释**（每处含复现序列与行号证据），+88 行。压缩注释会丢失后人复踩所需的证据链，故显式申请。",
+        "target": "把渲染出口/监听链拆到 composables（同 usePhotoAttach/useEventOps 先例）后，行数自然回落，删除本条（销项触发）"
+      },
+      "client/components/RecordSheet/RecordSheet.uvue": {
+        "lines": 834,
+        "reason": "2026-10-15 合并 origin/develop（573b33b）引入 NEW-01 修复：记录面板上传路径补端侧 L1 聚合 + 事件上云（+27 行）。不补则该路径「内容入库但无事件」→ 时间轴 events=0 → 客户端被锁死在空态页（新用户永远出不来），属**功能必需**；合并后 834 行 > 阈值 800，故显式申请基线。",
+        "target": "把「上传成功 → 聚合 → /events/sync 上云」块抽到 composables（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
+      },
+      "client/components/TabSearch/TabSearch.uvue": {
+        "lines": 813,
+        "reason": "2026-10-15 真机缺陷修复：**删除搜索关键词后页面卡死**（原实现只有 v-model + @confirm，删字到空无任何状态转移；本该复位的 clearKeyword 是**全仓零调用的死代码**）⇒ 补 @input 状态转移（清空即回默认列表）、runSearch 空串分支改为复位、并写根因注释，+26 行。不修则该页一旦搜过就永久停在「共 N 条结果」，属**功能必需**；修复后 813 行 > 阈值 800，故显式申请基线。",
+        "target": "把搜索状态机（keyword/hasSearched/hits/onKeywordInput/loadRecent/runSearch）抽到 client/composables/useSearchState.uts（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
+      }
+    }
   },
   "exports": {
     "zero_cap_allowlist": {
-      "AGG_CHECK_ON_DEVICE": {
-        "place": "client/utils/config.uts:72",
-        "reason": "端上聚合自检开关，全仓零代码引用（仅 docs/_resource_endpoint_matrix.md:207 记为「入口缺失」）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
-        "target": "接线使用或删除该常量，随后删除本条（销项触发）"
-      },
       "AuthError": {
         "place": "client/utils/auth.uts:51",
         "reason": "错误类型类导出，全仓零引用（仅 docs/审计_未关闭缺陷_20260923.md 提及）；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
@@ -68,12 +79,12 @@
   "dup_patterns": {
     "soft_delete_filter": {
       "regex": "deleted_at\\.is_\\(None\\)",
-      "total": 44,
+      "total": 43,
       "per_file": {
-        "backend/app/api/contents/__init__.py": 7,
+        "backend/app/api/contents/__init__.py": 5,
         "backend/app/api/contents/favorites.py": 1,
         "backend/app/api/corrections.py": 1,
-        "backend/app/api/deps.py": 1,
+        "backend/app/api/deps.py": 2,
         "backend/app/api/events.py": 6,
         "backend/app/api/event_items.py": 2,
         "backend/app/api/media.py": 2,
@@ -93,15 +104,15 @@
         "backend/app/services/rag/recall.py": 2,
         "backend/app/services/upload/register.py": 1
       },
-      "reason": "L-09 归属 helper 三分裂导致的手抄模式族；总数不得上升",
-      "target": "批次 B3 收敛 helper 后，同步下调 total/per_file"
+      "reason": "L-09 收敛 helper 后的最新分场；2026-10-06 W1 记忆镜像删除是第三处同款查询，三处（create_content 幂等预查 / IntegrityError 回滚重查 / agent 镜像删除）收敛到 deps.find_alive_content_by_cgid，total 44→43、contents/__init__ 7→5、deps 1→2",
+      "target": "维持 total≤43；新增软删过滤一律走 find_alive_content_by_cgid，不再手抄"
     }
   },
   "token_literals": {
     "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。",
     "total": {
-      "hex": 67,
-      "rgb": 4,
+      "hex": 77,
+      "rgb": 5,
       "gradient": 0
     },
     "per_file": {
@@ -196,13 +207,38 @@
         "gradient": 0
       },
       "client/styles/record-sheet.css": {
+        "hex": 3,
+        "rgb": 0,
+        "gradient": 0
+      },
+      "client/styles/tab-ai.css": {
+        "hex": 2,
+        "rgb": 1,
+        "gradient": 0
+      },
+      "client/styles/tab-index.css": {
+        "hex": 3,
+        "rgb": 0,
+        "gradient": 0
+      },
+      "client/styles/detail.css": {
+        "hex": 1,
+        "rgb": 0,
+        "gradient": 0
+      },
+      "client/components/UploadStatusBanner/UploadStatusBanner.uvue": {
+        "hex": 1,
+        "rgb": 0,
+        "gradient": 0
+      },
+      "client/pages/interview/interview.uvue": {
         "hex": 1,
         "rgb": 0,
         "gradient": 0
       }
     },
-    "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10",
-    "reason_note": "同期 design_tokens.dtcg.json（321 叶子）在样式里被引用 0 次",
-    "target": "P3 逐域收敛后逐条下调，直至 total 归零（全部走令牌）"
+    "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10。2026-10-11 按 9-23 基线逐文件对照后上调至 hex 77 / rgb 5：**性质是还原而非新增**——11 处声明在令牌化时被挂上值不等的令牌（Δ3~16/255，误映射；明细见 docs/决策台账.md §4.16（令牌波；原证据文件在 .cowork-temp/ 内，gitignore 不可复现）），按「一切以重构前为准」写回 9-23 原字面量并加注释标明来源。",
+    "reason_note": "同期 design_tokens.dtcg.json（321 叶子）在样式里被引用 0 次；另有 74 条「回退值=9-23 原值、令牌值差 ≤2/255」的设计基色归并**保留未改**（令牌值来自画布实测真源，Δ≤2 视觉不可辨；逐令牌全域一致的 3 个纯色令牌--a-ink-30/40、--a-rust-06 若需逐像素还原，改其 json 值即可恢复 9 处）",
+    "target": "P3 逐域收敛后逐条下调，直至 total 归零（全部走令牌）；**销项路径**：为这 11 个精确色（#AA5334/#E5DED4/#EFE9DD/#faf6ee/#fbf4e4/#ede5d8/#FBF7EF/#D8CFC2/#E5DED2/rgba(42,33,26,0.4)）在设计令牌集里补入等值叶子后改回 var()，届时同步下调本基线"
   }
 }

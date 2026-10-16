@@ -62,7 +62,17 @@ from app.main import app  # noqa: E402
 from app.services.pipeline import process_content  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-TEST_PHOTOS = sorted(ROOT.glob(".cowork-temp/test_photos/*.jpg"))[:3]
+
+def _test_photos() -> list[Path]:
+    """Prepare the generated fixture on a fresh checkout before the photo journey."""
+    photo_dir = ROOT / ".cowork-temp" / "test_photos"
+    photos = sorted(photo_dir.glob("*.jpg"))[:3]
+    if len(photos) < 3:
+        from generate_test_photos import generate
+
+        generate(photo_dir)
+        photos = sorted(photo_dir.glob("*.jpg"))[:3]
+    return photos
 
 
 def _new_client() -> tuple[TestClient, dict]:
@@ -150,9 +160,10 @@ def case_text_journey(client: TestClient, headers: dict) -> str:
 
 def case_photo_journey(client: TestClient, headers: dict) -> list[tuple[str, str]]:
     """F1 第一波：multipart 上传 → 管线 → done（B-BE-1 真实链路）；返回 [(cid, taken_at)]"""
-    assert TEST_PHOTOS, "缺少测试照片（先跑 scripts/generate_test_photos.py）"
+    test_photos = _test_photos()
+    assert len(test_photos) == 3, "测试照片生成失败"
     out: list[tuple[str, str]] = []
-    for f in TEST_PHOTOS:
+    for f in test_photos:
         # 文件名形如 photo_xxx_20260822_080000_... → 规范 ISO（pydantic 需 '-' 分隔）
         ymd, hms = f.name.split("_")[2], f.name.split("_")[3][:6]
         taken = f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}T{hms[:2]}:{hms[2:4]}:{hms[4:6]}+08:00"

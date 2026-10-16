@@ -25,6 +25,7 @@
  */
 import { post, get, dataObj, dataArr, fetchThumbnailPath } from './api'
 import { resolveMediaUrl } from './config'
+import { PATH_EVENTS_CONFIRM, PATH_EVENTS_MERGE, PATH_EVENTS_SPLIT } from './contract'
 import { isoLocal, parseIsoMs } from './time'
 import { getNetKind, NetKind } from './uploader_net'
 // O6/F9：队列存储单源 queue_store（与 sync_client 双离线队列合并单 key，路由差异保留）；
@@ -263,7 +264,7 @@ export function confirmEvent(eventId: string): Promise<boolean> {
 			const body2: UTSJSONObject = {
 				event_id: eventId
 			}
-			post('/api/v1/events/confirm', body2).then((resp: UTSJSONObject | null) => {
+			post(PATH_EVENTS_CONFIRM, body2).then((resp: UTSJSONObject | null) => {
 				if (resp == null) {
 					resolve(false)
 					return
@@ -298,7 +299,7 @@ export function mergeEvent(sourceEventId: string, targetEventId: string): Promis
 				target_event_id: targetEventId,
 				source_event_ids: sourceIds
 			}
-			post('/api/v1/events/merge', body2).then((resp: UTSJSONObject | null) => {
+			post(PATH_EVENTS_MERGE, body2).then((resp: UTSJSONObject | null) => {
 				if (resp == null) {
 					resolve(false)
 					return
@@ -357,7 +358,7 @@ export function splitEvent(eventId: string, contentIds: Array<string>): Promise<
 				event_id: eventId,
 				content_ids: contentIds
 			}
-			post('/api/v1/events/split', body2).then((resp: UTSJSONObject | null) => {
+			post(PATH_EVENTS_SPLIT, body2).then((resp: UTSJSONObject | null) => {
 				if (resp == null) {
 					resolve(false)
 					return

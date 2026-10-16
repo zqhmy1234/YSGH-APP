@@ -10,11 +10,53 @@
   L4  内容形式       四选一（两库共用）
 """
 
+import json
 import re
 import logging
-from typing import Optional, List
+from typing import Any, Optional, List
 
 logger = logging.getLogger(__name__)
+
+
+def coerce_str_list(value: Any) -> Optional[List[str]]:
+    """把 LLM 传来的"列表"各种畸形写法归一化成 `list[str]`。
+
+    ## 为什么需要（2026-10-05 实测故障）
+
+    工具签名声明 `topics: list[str] | None`，而中文模型（qwen3.8-flash 实测）经常把
+    数组参数传成**一个 JSON 字符串**：`'["旅行", "兴趣"]'`。pydantic 在**进入函数体之前**
+    就把它判为类型不符并抛 ValidationError ⇒ 工具函数体一行都没执行
+    （连入口埋点都没有），而 LangChain 又把这层异常包成
+    `ToolMessage("Error invoking tool ...")` 返回 ⇒ LLM 只看到一个语焉不详的错误、
+    拿不到"把 topics 改成数组"这类可修正指引，于是**反复重试同一个工具**，
+    实测单轮 5 次、12~25 秒，最后撞 `recursion_limit` 让整轮对话失败。
+
+    即"一个逗号都没多写"的等价写法，让整条保存链路彻底不可用。故在此处统一兜住：
+      · 真 list → 逐项去空白，丢弃空串
+      · JSON 数组字符串 `'["a","b"]'` / `'["a", "b"]'` → 解析
+      · 裸字符串 `"旅行,兴趣"` → 按中英文逗号/顿号切分
+      · None / 空 → None
+
+    解析失败一律返回 `None`（当作没传），**不抛异常**——归一化失败不该让工具不可用。
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = json.loads(text)
+            except (ValueError, TypeError):
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()] or None
+        parts = [p.strip() for p in re.split(r"[,，、;；]", text)]
+        return [p for p in parts if p] or None
+    if isinstance(value, (list, tuple, set)):
+        return [str(x).strip() for x in value if str(x).strip()] or None
+    return [str(value).strip()]
 
 # ──────────────────────────────────────────────
 # 枚举常量

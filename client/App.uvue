@@ -1,6 +1,7 @@
 <script setup lang="uts">
-	import { onLaunch, onShow, onError } from '@dcloudio/uni-app'
+	import { onLaunch, onShow, onError, onUnhandledRejection } from '@dcloudio/uni-app'
 	import { ensureLogin } from './utils/auth'
+	import { ENV, ensureEnvFingerprint } from './utils/config'
 	import { initSentry, captureException } from './utils/sentry'
 	import { reconcileNow } from './utils/sync_pipeline'
 	import { initSync, drainBackgroundTasks } from './utils/sync_schedule'
@@ -32,7 +33,17 @@
 	}
 
 	onLaunch(() => {
-		console.log('[yishu] client launch, env=' + 'dev')
+		// 2026-10-11 静态审查修复：原为**硬编码字面量 'dev'** —— 即便切到 prod 构建，
+		// 启动日志也永远打印 env=dev，直接误导排障（本项目多起事故都靠这条日志定位）。
+		console.log('[yishu] client launch, env=' + ENV)
+		// 环境指纹守卫（**必须最先执行**，在任何读写本地状态的模块启动之前）：
+		// 后端地址变了就清掉绑定旧后端的状态（游标/镜像/会话 id/对账节流/离线队列），
+		// 否则换端后同步游标错位 ⇒ 时间轴假空、会话 404（详见 config.uts 函数注释）。
+		try {
+			ensureEnvFingerprint()
+		} catch (e) {
+			console.log('[yishu] ensureEnvFingerprint threw: ' + e)
+		}
 		// 加载自定义字体 Sarasa Gothic SC（global:true 已在 loadCustomFonts 内，失败不阻断启动）
 		try {
 			loadCustomFonts()
@@ -89,6 +100,17 @@
 
 	onError((err: any) => {
 		captureException('' + err, 'app.onError', null)
+	})
+
+	// 2026-10-11 静态审查修复：**全局 Promise 异常兜底**。
+	// 原实现只有 onError（它只覆盖同步异常/框架错误）——未捕获的 Promise 拒绝完全静默：
+	// 无 Sentry、无日志、无 UI，真机上表现为"点了没反应"（本项目最贵的一类故障形态）。
+	// ⚠️ 本 API 在 5.24/5.26 的 dts 收录情况未核实——**已过编译门验证**（若编译器不收，
+	// 本行会直接编译失败，不存在"静默不生效"的中间态）。
+	onUnhandledRejection((res: any) => {
+		const reason = res == null ? '' : '' + res.reason
+		console.log('[yishu] unhandled rejection: ' + reason)
+		captureException('unhandled rejection: ' + reason, 'app.unhandledRejection', null)
 	})
 </script>
 
@@ -405,16 +427,16 @@
 		--f-weight-medium: 500;
 		--f-weight-regular: 400;
 		--f-weight-semibold: 600;
-		--g-veil-green-green: linear-gradient(tobottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%);
-		--g-veil-ink-ink: linear-gradient(tobottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%);
-		--g-veil-ink-ink-2: linear-gradient(tobottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%);
-		--g-veil-ink-ink-2-3: linear-gradient(tobottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%);
-		--g-veil-olive-amber-diag: linear-gradient(tobottomright, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%);
-		--g-veil-paper-paper: linear-gradient(tobottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%);
-		--g-veil-paper-paper-2: linear-gradient(tobottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%);
-		--g-veil-paper-sand: linear-gradient(tobottom, rgba(248,247,244,0) 0%, #f8f7f4 100%);
-		--g-veil-sand-sand: linear-gradient(tobottom, #E3CCA8 0%, #C7AD87 100%);
-		--g-veil-slate-olive-diag: linear-gradient(tobottomright, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%);
+		--g-veil-green-green: linear-gradient(to bottom, rgba(217,227,203,0.6) 0%, rgba(217,227,203,0.12) 100%);
+		--g-veil-ink-ink: linear-gradient(to bottom, rgba(25,20,15,0.5) 0%, rgba(25,20,15,0) 100%);
+		--g-veil-ink-ink-2: linear-gradient(to bottom, rgba(26,20,15,0.15) 0%, rgba(26,20,15,0) 100%);
+		--g-veil-ink-ink-2-3: linear-gradient(to bottom, rgba(26,20,15,0.45) 0%, rgba(26,20,15,0.15) 100%);
+		--g-veil-olive-amber-diag: linear-gradient(to bottom right, rgba(122,140,90,0.3) 0%, rgba(196,145,60,0.2) 100%);
+		--g-veil-paper-paper: linear-gradient(to bottom, rgba(248,247,244,0) 0%, rgba(248,247,244,0.6) 100%);
+		--g-veil-paper-paper-2: linear-gradient(to bottom, rgba(248,247,244,0.6) 0%, rgba(248,247,244,1) 100%);
+		--g-veil-paper-sand: linear-gradient(to bottom, rgba(248,247,244,0) 0%, #f8f7f4 100%);
+		--g-veil-sand-sand: linear-gradient(to bottom, #E3CCA8 0%, #C7AD87 100%);
+		--g-veil-slate-olive-diag: linear-gradient(to bottom right, rgba(78,125,140,0.28) 0%, rgba(122,140,90,0.15) 100%);
 		--x-semantic-accent_amber: #c4913c;
 		--x-semantic-accent_amber_faint: rgba(196,145,60,0.1);
 		--x-semantic-accent_amber_light: rgba(196,145,60,0.14);

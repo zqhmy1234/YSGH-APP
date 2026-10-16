@@ -27,16 +27,22 @@ export const PATH_SEARCH: string = '/api/v1/search'
 export const PATH_SEARCH_IMAGE: string = '/api/v1/search/image'
 export const PATH_EVENTS_SYNC: string = '/api/v1/events/sync'
 export const PATH_EVENTS_TIMELINE: string = '/api/v1/events/timeline'
-// AG6（2026-09-23）：AI 对话域（后端 AG5 已实现并把契约重导进 docs/openapi.json，67 路径对齐）
-// 注：`GET /api/v1/chat/replies/{id}` 的常量**故意不在此登记**——客户端当前无调用点
-// （POST 已内联返回完整回复），登记了就是一个零调用常量。加调用点时一并加（同 chat_api.uts 注释）。
-export const PATH_CHAT_MESSAGES: string = '/api/v1/chat/messages'
+// AG6（2026-09-23）：AI 对话域（后端 AG5 已实现并把契约重导进 docs/openapi.json，路径已对齐）
+// 注（2026-10-09 更新）：`GET /api/v1/chat/replies/{id}` 与**非流式** `POST /api/v1/chat/messages`
+// 的常量**故意不在此登记**——客户端对话只有一条路径（流式，见下条），这两条当前零调用。
+// 非流式端点仍在（后端 `/messages`，脚本与降级路径在用，契约测试在 backend/tests/test_chat.py），
+// 将来真要用就**连同调用点一起加**常量，别只加壳（零调用常量 = 轴 4 的 INFO 债务）。
 // 2026-09-25（功能修复波 · Agent 接线补完）：会话历史回填路径。
 // 后端**早已实现**该端点且 docstring 明确写着"客户端进入会话时回填"（backend/app/api/chat.py:166），
 // 但客户端此前**从未调用** ⇒ 重启后会话虽接续（conversationId 已落盘）、界面却空白。
 // 注：与上面 `replies/{id}` 的处理不同——本条**有调用点**（TabAi.onMounted → chat_api.fetchChatHistory），
 // 故按"能力与调用点同时登记"的纪律落进契约（零调用常量会被轴 4 判为 CRITICAL）。
 export const PATH_CHAT_CONVERSATION_MESSAGES: string = '/api/v1/chat/conversations/{id}/messages'
+// AG6 余项（2026-10-09）：**流式**对话端点（`text/event-stream`）。
+// 与 `PATH_CHAT_MESSAGES` **同请求体**、同鉴权/会话隔离/护栏/落库口径，差别只在响应形态：
+// 逐帧推 `status` / `preview` / `tool` / `replace` / `done` / `error`。
+// 调用点：chat_api.sendChatMessage（客户端对话**唯一**入口，已从非流式切到本端点）。
+export const PATH_CHAT_MESSAGES_STREAM: string = '/api/v1/chat/messages/stream'
 export const PATH_EVENTS_CONFIRM: string = '/api/v1/events/confirm'
 export const PATH_EVENTS_MERGE: string = '/api/v1/events/merge'
 export const PATH_EVENTS_SPLIT: string = '/api/v1/events/split'

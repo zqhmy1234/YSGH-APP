@@ -378,7 +378,7 @@
 	}
 	/* R9 禁播态（峰宝拍板 2026-09-06）：独立类覆盖（uvue 禁复合选择器），:class 动态叠加 */
 	.n4_vbtn-disabled {
-		background-color: var(--c-surface-neutral, #D8CFC2);
+		background-color: #D8CFC2;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-surface-neutral 的值与本处原色差 Δ4，属令牌化误映射 */
 	}
 	/* 禁播/处理中提示小字（fs11 #B3A696，波形容器上方） */
 	.n4_vnote {

@@ -25,6 +25,8 @@
 import { ref } from 'vue'
 import { getToken } from './auth'
 import { getBaseUrl } from './config'
+// 2026-10-11：音频下载同样要出网通用头（ngrok 拦截页会挡掉 downloadFile）⇒ 复用统一头工厂
+import { buildHeader } from './api'
 
 // ── 全局播放状态（三处页面共享绑定）──
 export let voiceCurrentId = ref('') // 正在加载/播放的 content_id；'' = 空闲
@@ -221,7 +223,14 @@ export function toggleVoice(contentId: string): void {
 		return
 	}
 	ensurePool()
-	if (voiceCurrentId.value == contentId && activeIdx >= 0) {
+	// 🚨 2026-10-11 静态审查 #5 修复：同条判定必须**带槽位自校验**。
+	// 为什么：`startPlay` 在**下载开始**时就把 `voiceCurrentId` 设成本条（:302），
+	// 而此刻 `activeIdx` 仍指向**上一条**的槽 ⇒ 仅凭 `voiceCurrentId == contentId`
+	// 会把"下载中再点同一条"误判为"同条续播"，于是 `enqueueStep('play', activeIdx)`
+	// **出声的是上一条的音频**；紧接着本条下载完成 → `playFile` 轮转到新槽起播
+	// ⇒ **两条音频同时出声**（违反本模块头注"全局同一时刻只播一条"）。
+	// 复现：播 A（已出声）→ 点 B（进入下载）→ 立即再点 B。
+	if (voiceCurrentId.value == contentId && activeIdx >= 0 && slotCid[activeIdx] == contentId) {
 		if (voicePlaying.value) {
 			// 🔴 v5.1 暂停归零修复（峰宝二次报「点暂停波形+进度条直接归零」）：
 			// Android pause() 后 MediaPlayer 的 currentTime 会瞬时回 0——33ms 时钟若继续
@@ -233,6 +242,12 @@ export function toggleVoice(contentId: string): void {
 			startProgressClock()
 			enqueueStep('play', activeIdx, '')
 		}
+		return
+	}
+	// 下载中的同一条：**忽略重复点击**（UI 已有 loading 态）。
+	// 若放行到下面的"换条"逻辑会重新发一次 downloadFile，而两次下载的回调都会因
+	// `voiceCurrentId == contentId` 校验通过而各起播一次 ⇒ 同样造成双声道。
+	if (voiceCurrentId.value == contentId && voiceLoading.value) {
 		return
 	}
 	// 换条：先确保旧出声槽进队暂停（清队列也不能丢它），再重置 JS 态起新
@@ -292,8 +307,21 @@ function startProgressClock(): void {
 		if (total > 0) {
 			voiceTotalSec.value = Math.round(total)
 			voiceCurSec.value = Math.round(cur)
-			const p = cur / total
-			voiceProgress.value = p > 1 ? 1 : p
+			const raw = cur / total
+			const p = raw > 1 ? 1 : raw
+			// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-1）：**相等守卫 + 1% 粒度**。
+			// 为什么：本时钟 33ms 一跳（30Hz），而 `voiceProgress` 是**每跳都在变的浮点数**
+			// ⇒ 每跳都触发一次响应式通知 ⇒ 时间轴里所有语音卡的模板（`voiceProgressOfCard(cid)`
+			// 之类的**模板函数调用**，每卡 4~6 个）与进度条 `:style="{width:%}"` 全部重算重排。
+			// 50 张照片的列表里只要有一张语音卡在播，就是**每秒 30 次全列表重算**（用户感知即
+			// "滑动不丝滑/点击没反应"）。
+			// 现改为：**只有变化 ≥1% 才写**。1% 细于波形染色条的单条粒度（28 条 ≈ 3.6%/条），
+			// 视觉上无差别，但写入频次降到原来的 1/10 量级（60s 音频 ≈ 1.7 次/秒）。
+			// 注：`voiceCurSec` 用 `Math.round` ⇒ 同一秒内重复赋同值，Vue 的 ref 同值不触发，
+			// 故它本就不是热点；真正的热点只有 `voiceProgress`。
+			if (Math.abs(p - voiceProgress.value) >= 0.01 || p >= 1.0) {
+				voiceProgress.value = p
+			}
 		}
 	}, 33)
 }
@@ -311,14 +339,9 @@ function startPlay(contentId: string): void {
 		return
 	}
 	voiceLoading.value = true
-	const header: UTSJSONObject = {}
-	const token = getToken()
-	if (token != '') {
-		header.set('Authorization', 'Bearer ' + token)
-	}
 	uni.downloadFile({
 		url: getBaseUrl() + '/api/v1/media/audio/' + contentId,
-		header: header,
+		header: buildHeader(''),
 		timeout: 30000,
 		success: (res: any) => {
 			voiceLoading.value = false

@@ -17,7 +17,8 @@
  * 约定对齐 utils/api.uts：resolve-only 永不 reject；post/get 失败 resolve(null) 且已全局
  * showErrorToast（后端 message 显式展示，调用方不重复 toast）。
  */
-import { get, post, dataObj, PATH_DAILY_SUMMARY } from './api'
+import { get, post, request, dataObj, dataArr, PATH_DAILY_SUMMARY } from './api'
+import { applyGpsToBody, getLastFix } from './location'
 
 /** 胶囊端点（BA2 批）：POST /api/v1/capsules */
 export const PATH_CAPSULES: string = '/api/v1/capsules'
@@ -44,6 +45,51 @@ export function sealCapsule(contentId: string, openAtIso: string, note: string):
 }
 
 /**
+ * GET /api/v1/capsules：胶囊列表（CapsuleOut[]，含 content 摘要）。
+ *
+ * 2026-10-15（台账 §4.20 ㉕）**两个用途**：
+ *  ① **触发后端惰性到期扫描**——后端契约（`backend/app/api/capsules.py:117-137`）明写
+ *     「惰性触发到期扫描（capsule_scan.maybe_scan_due，30s 节流）：项目无进程内定时器」，
+ *     即**必须由客户端 GET 列表来顺带触发**。修复前客户端零调用 ⇒ 「封存 → 到期 → 产消息」
+ *     整条链**从未启动**（封存进去就再也没消息）。
+ *  ② 供胶囊面板判断「这条记忆是否已有封存」（可据此显示剩余天数 / 撤销入口）。
+ * 失败 resolve([])（api 层已全局 toast）。
+ */
+export function listCapsules(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get(PATH_CAPSULES).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			resolve(dataArr(res))
+		})
+	})
+}
+
+/**
+ * POST /api/v1/capsules/{id}/open：开启胶囊（到期回看）。
+ * 后端幂等（已 opened 直接返回现态）；**未到期 409**（message 含剩余天数，api 层 toast 显式原因）
+ * ⇒ 本封装不拦截、不伪造成功。成功 resolve(true)，失败 resolve(false)。
+ */
+export function openCapsule(capsuleId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post(PATH_CAPSULES + '/' + capsuleId + '/open', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** DELETE /api/v1/capsules/{id}：撤销封存（仅未开启可删；已开启 409，api 层 toast）。成功 true */
+export function deleteCapsule(capsuleId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request(PATH_CAPSULES + '/' + capsuleId, 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/**
  * POST /api/v1/contents：文字入库（text 类型）+ 用户备注。
  * 请求体逐字段复刻 text_recorder.createTextContent（content_type/text/source）追加 remark
  * （后端 ContentCreate.remark 可选，max_length=2000；ContentOut 回显）。
@@ -58,6 +104,8 @@ export function createTextContentRemark(text: string, remark: string): Promise<s
 	if (remark != '') {
 		body.set('remark', remark)
 	}
+	// 2026-10-04：注入本次定位（有值才写 gps 键；无值不写，绝不写占位坐标）
+	applyGpsToBody(body, getLastFix())
 	return new Promise<string | null>((resolve) => {
 		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
 			if (res == null) {

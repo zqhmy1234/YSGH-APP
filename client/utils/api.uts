@@ -27,6 +27,19 @@ export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 const REQUEST_TIMEOUT_MS: number = 15000
 
+/**
+ * Sentry 上报的 host 后缀（2026-10-11 静态审查 · 环境差异专题）。
+ *
+ * 为什么必须带：本项目最贵故障形态是「接口全空且不报错」（dev 地址误进生产包 / 隧道失效 /
+ * 明文被拦），而 release 包 **console 不可见** ⇒ Sentry 是唯一出口。原上报只带 `path`
+ * （如 `network fail: /api/v1/events/timeline`）——出包后**无法判断客户端连的是哪个 host**，
+ * 排查只能靠猜（是 prod 域名没换？隧道挂了？还是被 Android 明文策略拦了？）。
+ * host 为公开地址、非敏感信息（Sentry DSN 本身即明文内嵌，同口径）。
+ */
+function hostTag(): string {
+	return ' @' + getBaseUrl()
+}
+
 /** 底层原始响应（O5 收口）：status（0=网络失败）+ body（对象守卫后的信封，null=非对象/裸值） */
 export class HttpResult {
 	status: number
@@ -48,10 +61,38 @@ export function showErrorToast(err: Error | null): void {
 	})
 }
 
-function buildHeader(): UTSJSONObject {
-	const header: UTSJSONObject = {
-		'Content-Type': 'application/json'
+/**
+ * 请求头（Authorization + JSON）。
+ * 2026-10-09 起对外导出：流式通道（chat_api 的 `enableChunked` 分支）绕开了本模块的
+ * `doRequest`，必须复用**同一份**头构造——各写一份的话，迟早出现"流式请求忘了带 token"
+ * 这类只在某一条路径上失效的问题。
+ */
+/**
+ * 统一请求头工厂（2026-10-11 重写 · 固定地址模式）
+ *
+ * **所有**出网请求（`uni.request` / `uni.downloadFile` / `uni.uploadFile`）的 header 都从这里取，
+ * 认证头与出网通用头的增删因此只需改这一处。
+ *
+ * ⚠️ 为什么必须重写：原实现只有 `buildHeader()`（写死 Content-Type: application/json），
+ * 而 **GET 分支各自手拼 header**（只塞 Authorization）。2026-10-11 加"隧道跳过头"时，
+ * 全部 GET 请求（时间轴/回响/历史/波形/未读数——后端查询的主力）会被漏掉 ⇒ 走 ngrok
+ * 免费版隧道时 GET 收到拦截页 HTML ⇒ 表现为"接口全空、报错难懂"（本项目最贵故障形态的变体）。
+ * 统一后，**新增任何出网头都不可能再漏掉某一类方法**。
+ *
+ * @param contentType 传 `''` 表示不带 Content-Type：
+ *   · GET（保持"贴近裸调用可通"的历史形态）
+ *   · uni.uploadFile（其 multipart 边界由 SDK 依据 formData 自动设置，手写反而会破坏）
+ */
+export function buildHeader(contentType: string = 'application/json'): UTSJSONObject {
+	const header: UTSJSONObject = {}
+	if (contentType != '') {
+		header.set('Content-Type', contentType)
 	}
+	// 固定地址模式（内测期"以本机为后端载体"）：ngrok 免费版对**判定为浏览器**的请求插入
+	// 拦截页（interstitial，HTML）。uni-app 的默认 UA 含 `Mozilla` ⇒ 不带此头时 GET 会被拦。
+	// 本头是 ngrok 官方开关；对正式服务器 / COS 预签名 / 自建反代**完全无副作用**（未知头被忽略），
+	// 故常驻，不随隧道提供方切换而增删。
+	header.set('ngrok-skip-browser-warning', 'true')
 	const token = getToken()
 	if (token != '') {
 		header.set('Authorization', 'Bearer ' + token)
@@ -78,7 +119,8 @@ export function fetchThumbnailPath(contentId: string): Promise<string> {
 	return new Promise<string>((resolve) => {
 		uni.downloadFile({
 			url: getBaseUrl() + '/api/v1/thumbnails/' + contentId,
-			header: buildHeader(),
+			// 纯 GET：不带 Content-Type（与 buildHeader 的 docstring 口径一致）
+			header: buildHeader(''),
 			timeout: 30000,
 			success: (res: any) => {
 				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
@@ -110,7 +152,7 @@ export function fetchExportFilePath(): Promise<string> {
 	return new Promise<string>((resolve) => {
 		uni.downloadFile({
 			url: getBaseUrl() + PATH_EXPORT,
-			header: buildHeader(),
+			header: buildHeader(''),
 			timeout: 60000,
 			success: (res: any) => {
 				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
@@ -239,7 +281,8 @@ export function fetchUnreadCountSimple(): Promise<number> {
 	})
 }
 
-function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<UTSJSONObject | null> {
+function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean,
+	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
 		let settled = false
 		const finish = (val: UTSJSONObject | null): void => {
@@ -250,12 +293,20 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			clearTimeout(timer)
 			resolve(val)
 		}
+		// 2026-10-04：看门狗超时此前**完全静默**（只 console.log + resolve(null)）——
+		// 用户侧表现为「AI 一点反应都没有」，既不知道失败也不知道在等什么。
+		// 现补Sentry 上报 + 可读 toast，与 onFail 分支同口径。
+		// `timeoutMs <= 0` 表示用默认；长耗时端点（如 AI 对话，实测 6~14s、后端上限 180s）
+		// 必须显式传更大的值，否则会在后端还在算的时候就先判失败。
+		const budget = timeoutMs > 0 ? timeoutMs : REQUEST_TIMEOUT_MS
 		// 5.24 蒸汽模式下 uni.request 的 timeout 参数与 GET 传 data:{} 空对象可能被桥接吞掉
 		// （不派发、不回调），故 timeout 改 JS 层看门狗、GET 且无 body 时省略 data 键与 Content-Type
 		const timer = setTimeout(() => {
 			console.log('[watchdog] timeout ' + path)
+			captureException('watchdog timeout after ' + budget + 'ms: ' + path + hostTag(), 'api.network', null)
+			showErrorToast(new ApiError('TIMEOUT', '请求超时（' + budget + 'ms），请稍后重试'))
 			finish(null)
-		}, REQUEST_TIMEOUT_MS + 5000)
+		}, budget + 5000)
 		console.log('[dbg-req] fire ' + method + ' ' + getBaseUrl() + path)
 		const onSuccess = (res: any): void => {
 			console.log('[dbg-req] ok ' + path + ' status=' + res.statusCode + ' (' + typeof res.statusCode + ')')
@@ -271,7 +322,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			}
 			// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
 			if (res.statusCode >= 500) {
-				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
 			}
 			// 2026-09-01 正式修复（根因实锤于诊断日志）：401/非200 时后端 data 可能非 JSON 对象，
 			// 旧写法 fallback `({} as UTSJSONObject)` 在蒸汽模式（纯 JS）下是裸 JS 对象——
@@ -291,7 +342,7 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 				console.log('[dbg-req] 401-branch-enter ' + path)
 				refreshToken().then((ok: boolean) => {
 					if (ok) {
-						doRequest(path, method, data, true).then((b: UTSJSONObject | null) => {
+						doRequest(path, method, data, true, timeoutMs).then((b: UTSJSONObject | null) => {
 							finish(b)
 						})
 					} else {
@@ -307,7 +358,14 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 		}
 		const onFail = (): void => {
 			console.log('[dbg-req] FAIL ' + path)
-			captureException('network fail: ' + path, 'api.network', null)
+			// 🚨 2026-10-11 静态审查修复：**必须先判 settled**。
+			// 看门狗（budget+5000ms）先判超时后会 resolve(null)，而 uni.request 的 fail
+			// 回调可能随后迟到 ⇒ 用户连收两个 toast（"请求超时" + "网络异常"）、Sentry 双报。
+			// 重构前看门狗是静默的（只有 log），不存在该竞态；补上 toast 后必须同步补守卫。
+			if (settled) {
+				return
+			}
+			captureException('network fail: ' + path + hostTag(), 'api.network', null)
 			showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
 			finish(null)
 		}
@@ -315,16 +373,13 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			console.log('[dbg-req] complete ' + path)
 		}
 		if (method === 'GET') {
-			// GET 无 body：省略 data 键 + 仅带 Authorization（去 Content-Type），贴近裸调用可通形态
-			const header: UTSJSONObject = {}
-			const token = getToken()
-			if (token != '') {
-				header.set('Authorization', 'Bearer ' + token)
-			}
+			// GET 无 body：省略 Content-Type，贴近裸调用可通形态。
+			// 2026-10-11：改走 buildHeader('') —— 原手拼实现只塞 Authorization，会漏掉出网通用头
+			// （如 ngrok-skip-browser-warning），见 buildHeader 的注释。
 			uni.request({
 				url: getBaseUrl() + path,
 				method: 'GET',
-				header: header,
+				header: buildHeader(''),
 				complete: onComplete,
 				success: onSuccess,
 				fail: onFail
@@ -343,9 +398,11 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 	})
 }
 
-/** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject */
-export function request(path: string, method: Method, data: UTSJSONObject | null): Promise<UTSJSONObject | null> {
-	return doRequest(path, method, data, false)
+/** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject。
+ *  `timeoutMs` 仅供**确实长耗时**的端点覆盖（如 AI 对话）；默认 0 =走REQUEST_TIMEOUT_MS。 */
+export function request(path: string, method: Method, data: UTSJSONObject | null,
+	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return doRequest(path, method, data, false, timeoutMs)
 }
 
 function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<HttpResult> {
@@ -371,7 +428,7 @@ function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, 
 				: null
 			// 5xx 服务端异常 → Sentry 上报（与 request 同噪音闸门；4xx 业务错误不打扰）
 			if (res.statusCode >= 500) {
-				captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+				captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
 			}
 			// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
 			if (res.statusCode === 401 && !retried) {
@@ -390,19 +447,15 @@ function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, 
 			finish(new HttpResult(res.statusCode, body))
 		}
 		const onFail = (): void => {
-			captureException('network fail: ' + path, 'api.network', null)
+			captureException('network fail: ' + path + hostTag(), 'api.network', null)
 			finish(new HttpResult(0, null))
 		}
 		if (method === 'GET') {
-			const header: UTSJSONObject = {}
-			const token = getToken()
-			if (token != '') {
-				header.set('Authorization', 'Bearer ' + token)
-			}
+			// 2026-10-11：走头工厂（原手拼会漏掉出网通用头，见 buildHeader 注释）
 			uni.request({
 				url: getBaseUrl() + path,
 				method: 'GET',
-				header: header,
+				header: buildHeader(''),
 				success: onSuccess,
 				fail: onFail
 			})
@@ -444,11 +497,7 @@ function doUploadFileHttp(
 	retried: boolean
 ): Promise<HttpResult> {
 	return new Promise<HttpResult>((resolve) => {
-		const header: UTSJSONObject = {}
-		const token = getToken()
-		if (token != '') {
-			header.set('Authorization', 'Bearer ' + token)
-		}
+		const header: UTSJSONObject = buildHeader('')
 		uni.uploadFile({
 			url: getBaseUrl() + path,
 			filePath: filePath,
@@ -462,7 +511,7 @@ function doUploadFileHttp(
 				const body = parseEnvelopeString(raw)
 				// 5xx 服务端异常 → Sentry 上报（与 rawRequest 同噪音闸门）
 				if (res.statusCode >= 500) {
-					captureException('HTTP ' + res.statusCode + ' ' + path, 'api.http', null)
+					captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
 				}
 				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
 				if (res.statusCode === 401 && !retried) {
@@ -481,7 +530,7 @@ function doUploadFileHttp(
 				resolve(new HttpResult(res.statusCode, body))
 			},
 			fail: () => {
-				captureException('network fail: ' + path, 'api.network', null)
+				captureException('network fail: ' + path + hostTag(), 'api.network', null)
 				resolve(new HttpResult(0, null))
 			}
 		})
@@ -497,8 +546,8 @@ export function get(path: string): Promise<UTSJSONObject | null> {
 	return request(path, 'GET', null)
 }
 
-export function post(path: string, data: UTSJSONObject): Promise<UTSJSONObject | null> {
-	return request(path, 'POST', data)
+export function post(path: string, data: UTSJSONObject, timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return request(path, 'POST', data, timeoutMs)
 }
 
 /** 取信封 data 字段（对象）；body 为空返回 null */

@@ -52,10 +52,27 @@ _SMS_SEND_PHONE_LIMIT = 5          # send：同 phone 5 次/分钟（DB 60s/日 
 
 
 def wechat_login(db: Session, req) -> TokenPair:
-    """微信登录：code 换 unionid → 建立/获取用户 → 签发 token 对（真实 DB）"""
+    """微信登录：code 换 unionid → 建立/获取用户 → 签发 token 对（真实 DB）
+
+    2026-10-15（台账 §7.29）：**授权登录同时建立渠道绑定** —— 这是「跳转微信 → 授权 →
+    完成」里"完成"的那一半。原实现只建 `users` 行、不写 `user_wechat_bindings` ⇒
+    企微侧 `resolve_user_id(openid)` 永远匹配不到人（F6 微信入口实际不可达）。
+    ⚠️ 绑定失败**绝不能影响登录**（`ensure_login_binding` 内部吞异常并记日志）。
+    """
+    from app.services.wechat.binding import ensure_login_binding
+
     provider = get_login_provider("wechat")
     identity = provider.resolve_identity(db, req, client_ip=None)
-    return _finish_login(db, identity)
+    pair = _finish_login(db, identity)
+    # 幂等取回同一行（`_get_or_create_user` 按 unionid/phone 查）—— 只为拿到 user.id 去写绑定
+    user = _get_or_create_user(db, unionid=identity.unionid, phone=identity.phone)
+    ensure_login_binding(
+        db,
+        user_id=str(user.id),
+        openid=identity.wechat_openid or "",
+        channel=identity.wechat_channel,
+    )
+    return pair
 
 
 def device_login(db: Session, req) -> TokenPair:

@@ -15,9 +15,8 @@
 其余端点见 serializers / profile_sensitive / favorites / trash / waveform 子模块，
 `router` / `profile_sensitive_router` / `favorites_router` / `trash_router` 在文件末尾再导出。
 """
-import io as _io
 import logging
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import Depends, File, Form, UploadFile
@@ -28,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.api.contents.serializers import _attach_thumb, _to_out, router
 from app.api.deps import (
     PageParams,
+    find_alive_content_by_cgid,
     get_current_user,
     load_alive_content,
     pagination_params,
@@ -72,6 +72,7 @@ from app.services.photo_content import (
 from app.services.photo_content import (
     register_photo_content as photo_register,
 )
+from app.services.photo_exif import extract_exif_datetime, extract_exif_gps
 from app.services.pipeline import process_content
 from app.services.storage_keys import user_scoped_prefixes
 from app.services.sync_common import parse_ts
@@ -87,33 +88,11 @@ logger = logging.getLogger("yishu.contents")
 # 照片上传共享常量（TD-P2B · S1-H2 收口：MAX_PHOTO_BYTES/ALLOWED_PHOTO_EXTS 收敛到
 # services/upload_meta.py，与分片链路 register_photo_content 同源；此处保留模块级名字
 # 供 upload_photo 引用与测试 monkeypatch（test_content_upload 缩小上限用））
-# PIL 解压炸弹防护（P0-3 · 审查 H3）：40MP 上限（超限拒绝解码）
-_MAX_IMAGE_PIXELS = 40_000_000
-
-
-def _extract_exif_datetime(data: bytes) -> datetime | None:
-    """从照片字节提取 EXIF DateTimeOriginal（相机拍摄时间真值）
-
-    客户端 DATE_TAKEN 可能被 MediaProvider 写成扫描时间（2026-08-24 真机实测），
-    故以后端 EXIF 解析为准：EXIF 无时区=相机本地时间（本设备 +08），
-    显式按 UTC+08:00 解释，与客户端 isoString(+08:00) 一致。
-    P0-3（审查 H3）：Image.open 前设 MAX_IMAGE_PIXELS 防解压炸弹（getexif 虽不
-    解码像素，但 open 阶段的尺寸检查会触发 DecompressionBombError）。
-    """
-    try:
-        from PIL import Image
-
-        Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
-        img = Image.open(_io.BytesIO(data))
-        exif = img.getexif()
-        raw = exif.get(36867)  # DateTimeOriginal
-        if raw:
-            return datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S").replace(
-                tzinfo=timezone(timedelta(hours=8))
-            )
-    except Exception:  # noqa: BLE001 —— 非 JPEG/无 EXIF 静默降级
-        return None
-    return None
+# ⚠️ 2026-10-14：`_MAX_IMAGE_PIXELS` 与两个 EXIF 助手（拍摄时间 / GPS）已**下沉**到
+# `app/services/photo_exif.py` —— 本文件在新增 EXIF GPS 兜底后达 642 行、越过结构
+# 棘轮阈值 600（被结构轴拦截）。拆分不只是为过门禁：EXIF 解析与 HTTP 无关、依赖 PIL
+# 重库，本就属 services 层；分片上传路径将来也可直接复用。
+# 注意 `MAX_PHOTO_BYTES` 相关的 monkeypatch 锚点**仍留在本模块**（测试依赖，勿一并搬走）。
 
 
 def _validate_cos_key(db: Session, user_id: str, cos_key: str) -> None:
@@ -220,7 +199,15 @@ def upload_photo(
     #       moderate 护栏 → 原件落 storage → 建记录 → enqueue_unique 入队，
     #       统一委托 services/photo_content.py（参数化 dedup_key/moderate/mode）。
     #       EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）。
-    exif_taken = _extract_exif_datetime(data)
+    exif_taken = extract_exif_datetime(data)
+    # 2026-10-14（台账 §4.20 / 审计 §2）：客户端**没带** GPS 时，用照片自身的 EXIF GPS 兜底。
+    # 此前这条路径从不带地点（客户端把经纬度硬编码为 null，后端也不看 EXIF）——这是
+    # 「拍照上传的定位功能没有起效」的直接成因。EXIF 为 WGS84；转 GCJ-02 统一在
+    # `amap.get_place` 入口做（单一转换点）。
+    if photo_meta.gps_lat is None or photo_meta.gps_lng is None:
+        exif_gps = extract_exif_gps(data)
+        if exif_gps is not None:
+            photo_meta.gps_lat, photo_meta.gps_lng = exif_gps
     ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
     try:
         content_id = photo_register(
@@ -259,15 +246,33 @@ def create_content(
     # R4#4（创建端点幂等键）：同用户 client_generated_id 已存在 → 幂等返回既有记录
     # （双击/网络重试不重复入库；photo/voice 既有幂等——perceptual_hash 409 / cos_key——
     #  保留为兜底，见下方去重与 voice 分支）
+    # 2026-10-06：查询收敛到 deps.find_alive_content_by_cgid（W1 agent 镜像删除是
+    # 第三处同款，棘轮 soft_delete_filter 手抄上升被推破后三处共用一个 helper）。
     if req.client_generated_id:
-        existing = db.scalar(
-            select(Content).where(
-                Content.user_id == user.id,
-                Content.client_generated_id == req.client_generated_id,
-                Content.deleted_at.is_(None),
-            )
-        )
+        existing = find_alive_content_by_cgid(db, user.id, req.client_generated_id)
         if existing is not None:
+            # 2026-10-14（台账 §7.25② · 批次 8 续审）：**幂等早退要负责"卡住的自愈"**。
+            # 入队发生在主提交（status="processing"）**之后**（见下方 :362-376）⇒ 若那一步失败
+            # （RQ/worker 抖动），客户端重试同 `client_generated_id` 只会拿到既有记录、
+            # **永不重新入队** ⇒ 该内容永久停在 `processing`（AI 管线永不执行）且无任何告警。
+            # 现按 status 分流：仍 processing ⇒ 补一次入队。安全性：`enqueue_unique` 按
+            # content 键去重，`process_content` 按 content_id 幂等（其 docstring 明示
+            # "重投/超龄重扫重跑安全"）⇒ 重复入队不会产生重复数据。
+            if existing.status == "processing":
+                logger.warning(
+                    "幂等命中但内容仍处 processing ⇒ 补入队（疑似上次入队失败）content=%s",
+                    existing.id,
+                )
+                if existing.content_type in ("voice", "photo"):
+                    enqueue_unique(process_content, str(existing.id), str(existing.id))
+                else:
+                    enqueue_unique(
+                        process_content,
+                        str(existing.id),
+                        str(existing.id),
+                        queue_name=QUEUE_LOW,
+                        job_timeout=DEFAULT_JOB_TIMEOUT,
+                    )
             return ApiResponse(data=_to_out(existing))
 
     # TD-P3 M4（审查中危）：自供 cos_key 归属/前缀/存在性校验（防跨租户对象拉取）
@@ -329,6 +334,10 @@ def create_content(
         thumbnail_key=req.thumbnail_key,
         extra=req.extra,
         source=req.source,
+        # W3（2026-10-08）：agent 镜像的预置 chips（L3 主题）→ tags_json。
+        # **仅服务间来源生效**：App 公开端点不因新增字段扩面（老客户端不发 tags，
+        # 即便误发也被此处忽略）。管线打标是合并语义，预置标签不会被冲掉。
+        tags_json=req.tags if req.source == "agent" else None,
         status="processing",   # AI 管线完成后回写 done（异步）
         # BA1（迁移 f2a3b4c5d6e7）：用户备注（save 系可选上送）
         remark=req.remark,
@@ -353,13 +362,7 @@ def create_content(
         db.rollback()
         # R4#4：并发同 client_generated_id → 唯一约束冲突 → 幂等返回既有记录
         if req.client_generated_id:
-            dup = db.execute(
-                select(Content).where(
-                    Content.user_id == user.id,
-                    Content.client_generated_id == req.client_generated_id,
-                    Content.deleted_at.is_(None),
-                )
-            ).scalar_one_or_none()
+            dup = find_alive_content_by_cgid(db, user.id, req.client_generated_id)
             if dup is not None:
                 return ApiResponse(data=_to_out(dup))
         # 审查修复(P1-04)：并发同哈希上传 → 唯一约束冲突 → 回滚重查，返回 409
@@ -566,6 +569,10 @@ def delete_content(
 # upload → "" → GET "" → GET/{content_id} → PATCH → DELETE → favorite×3 → waveform。
 # 四个 router 在此再导出（main.py 依赖 `from app.api.contents import ...` 三 router 与
 # `contents.router`；测试依赖 profile_sensitive_router）。
+from app.api.contents.agent import (  # noqa: E402, F401 —— W1 记忆镜像端点
+    create_content_for_agent,  # noqa: E402, F401
+    delete_content_for_agent_by_cgid,  # noqa: E402, F401
+)
 from app.api.contents.favorites import favorites_router  # noqa: E402, F401
 from app.api.contents.profile_sensitive import profile_sensitive_router  # noqa: E402, F401
 from app.api.contents.trash import trash_router  # noqa: E402, F401

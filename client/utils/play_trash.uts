@@ -4,9 +4,9 @@
  * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
  * 对外导出：deleteContent, trashList, trashRestore, trashClear
  */
-import { get, post, request, dataArr } from './api'
+import { get, post, request, dataArr, dataObj } from './api'
 import { enqueueDeleteOp } from './sync_queue'
-import { getNetKind } from './uploader_net'
+import { currentNetKind } from './uploader_net'
 
 export function deleteContent(contentId: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
@@ -17,9 +17,12 @@ export function deleteContent(contentId: string): Promise<boolean> {
 			}
 			// B12（2026-09-23）：**离线不再白丢用户操作** —— 入队 delete 墓碑，联网后由
 			// `pushPendingOps` 幂等补发（op_id 幂等 + 软删幂等，重发无副作用）。
-			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 getNetKind()=='none' 改口**：
+			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 `currentNetKind()=='none'` 改口**：
 			// 否则用户看到"删除失败"而操作其实已排队 = 状态与事实不符（detail.uvue 已同步改）。
-			if (getNetKind() == 'none') {
+			// 🚨 2026-10-11 静态审查修复：原写 `getNetKind() == 'none'` —— getNetKind 是
+			// **回调式且返回 void**，`void == 'none'` 恒假 ⇒ 本分支永不进入（入队从未发生）。
+			// 改为同步缓存读 `currentNetKind()`（由 uploader_net 的网络监听维护）。
+			if (currentNetKind() == 'none') {
 				enqueueDeleteOp('content', contentId)
 				console.log('[yishu] 离线：删除已入队 content=' + contentId)
 			}
@@ -50,11 +53,59 @@ export function trashRestore(contentId: string): Promise<boolean> {
 	})
 }
 
-/** DELETE /trash：清空回收站（彻底删除不可逆）；返回是否成功 */
-export function trashClear(): Promise<boolean> {
-	return new Promise<boolean>((resolve) => {
+/** 清空回收站的结果（§7.25① 诚实回传）：`warnings` 非空 = 云端清尾未全成功 */
+export class TrashClearResult {
+	cleared: number
+	vectorsPurged: number
+	objectsPurged: number
+	warnings: Array<string>
+
+	constructor(
+		cleared: number,
+		vectorsPurged: number,
+		objectsPurged: number,
+		warnings: Array<string>
+	) {
+		this.cleared = cleared
+		this.vectorsPurged = vectorsPurged
+		this.objectsPurged = objectsPurged
+		this.warnings = warnings
+	}
+}
+
+/**
+ * DELETE /trash：清空回收站（彻底删除不可逆）；返回清空结果，失败 null。
+ *
+ * 2026-10-14（台账 §7.25① / §4.20 ⑳）：**返回值由 boolean 改为结果对象**。后端现在会
+ * **真清尾**（Qdrant 向量 + 对象存储原件），并在部分失败时回 `warnings`；原实现只回 boolean
+ * ⇒ 界面无论清尾成败都显示「回收站已清空」，与事实可能不符（诚实性缺陷）。
+ */
+export function trashClear(): Promise<TrashClearResult | null> {
+	return new Promise<TrashClearResult | null>((resolve) => {
 		request('/api/v1/trash', 'DELETE', null).then((res: UTSJSONObject | null) => {
-			resolve(res != null)
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const data = dataObj(res)
+			if (data == null) {
+				// 200 但读不到 data：清空本身已成事实，**不谎报有告警**
+				resolve(new TrashClearResult(0, 0, 0, []))
+				return
+			}
+			const warns: Array<string> = []
+			const raw = data.getArray('warnings') as Array<string> | null
+			if (raw != null) {
+				for (let i = 0; i < raw.length; i++) {
+					warns.push(raw[i])
+				}
+			}
+			resolve(new TrashClearResult(
+				data.getNumber('cleared') ?? 0,
+				data.getNumber('vectors_purged') ?? 0,
+				data.getNumber('objects_purged') ?? 0,
+				warns
+			))
 		})
 	})
 }

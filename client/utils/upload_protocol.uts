@@ -13,7 +13,7 @@ import { getBaseUrl } from './config'
 import { getToken, ensureLogin } from './auth'
 // R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析），
 // 本模块不再直接 uni.uploadFile；getBaseUrl 仍用于 formPost/init/complete。
-import { uploadFileHttp, HttpResult } from './api'
+import { uploadFileHttp, HttpResult, buildHeader } from './api'
 // O15：上传端点路径 + 字段名统一走 contract.ts（与 OpenAPI 对齐，防漂移）
 import {
 	PATH_UPLOAD_INIT,
@@ -66,13 +66,7 @@ export function formPost(path: string, body: string): Promise<UploadResp> {
 		// 上传链首次 init/complete 必 401（uvicorn 日志 4 次实锤），对齐 api.uts uploadFileHttp
 		// 的「401 → ensureLogin 刷新 → 重放一次」机制；仍 401 才透传给调用方（4xx 停条语义不变）
 		const sendOnce = (done: (resp: UploadResp) => void): void => {
-			const header: UTSJSONObject = {
-				'Content-Type': 'application/x-www-form-urlencoded'
-			}
-			const token = getToken()
-			if (token != '') {
-				header.set('Authorization', 'Bearer ' + token)
-			}
+			const header: UTSJSONObject = buildHeader('application/x-www-form-urlencoded')
 			uni.request({
 				url: getBaseUrl() + path,
 				method: 'POST',

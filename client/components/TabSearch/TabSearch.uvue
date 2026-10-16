@@ -6,7 +6,9 @@
 		<view class="n2_391"> <!-- 搜索胶囊 -->
 			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
 			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
-				<input class="n2_396" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @confirm="doSearch" />
+				<!-- 2026-10-15（真机反馈「删掉关键词后页面动不了」）：补 `@input`，让「输入清空」
+				     有状态转移（原实现只有 v-model + @confirm，删字到空时 hasSearched/hits 全不动 ✗） -->
+				<input :adjust-position="true" class="n2_396" style="color:var(--c-ink-900, #3A2E25);font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="doSearch" />
 			</view>
 			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
 			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
@@ -77,6 +79,7 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
+	import { shellActiveTab } from '@/utils/shell_state'
 	import {
 		toggleVoice,
 		fmtVoiceTime,
@@ -108,7 +111,25 @@
 		savedSeq: { type: Number, default: 0 }
 	})
 	onMounted((): void => {
-		const t = props.typeQuery
+		applyTypeQuery(props.typeQuery)
+		loadRecent()
+	})
+	// 🚨 2026-10-11 静态审查修复：**必须 watch typeQuery**。
+	// 本组件在壳内**常驻不销毁**（shell 用 v-if 首次挂载 + v-show 切换），而原实现只在
+	// onMounted 读一次 prop ⇒ 「先进过搜索 tab → 回"我的"点类型入口 → 再进搜索」时
+	// `typeQuery` 变了但没人响应，筛选器**停留在上次的值**（用户以为点了没反应）。
+	// 注：本项既有缺口非本次重构引入，但同属 seq 桥"看似完整实则有洞"一类。
+	watch((): string => props.typeQuery, (t: string): void => {
+		applyTypeQuery(t)
+	})
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
+	})
+
+	/** 承接 ?type= 预设筛选（photo/voice/text → 1/2/3；'' 或其他值不动，避免误清用户手选） */
+	function applyTypeQuery(t: string): void {
 		if (t == 'photo') {
 			activeFilter.value = 1
 		} else if (t == 'voice') {
@@ -116,13 +137,7 @@
 		} else if (t == 'text') {
 			activeFilter.value = 3
 		}
-		loadRecent()
-	})
-	watch((): number => props.savedSeq, (n: number): void => {
-		if (n > 0) {
-			onRecordSaved()
-		}
-	})
+	}
 
 	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
 	class VoiceResult {
@@ -275,11 +290,28 @@
 	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncActiveCard
 	watch(hits, (): void => { rebuildVoice() })
 	watch(activeFilter, (): void => { rebuildVoice() })
-	watch(voiceCurrentId, (): void => { syncActiveCard() })
-	watch(voicePlaying, (): void => { syncActiveCard() })
-	watch(voiceProgress, (): void => { syncActiveCard() })
-	watch(voiceCurSec, (): void => { syncActiveCard() })
-	watch(voiceTotalSec, (): void => { syncActiveCard() })
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-2）：**可见性守卫**。本组件在壳内**常驻**
+	// （shell 用 `v-show` 切换，组件不销毁）⇒ 隐藏时这些 watch 仍被 audio_player 的全局 ref
+	// 驱动，而 `syncActiveCard()` 要遍历**全部**语音结果卡重算播放态——纯空转
+	// （配合 RC-1 的 1% 粒度后已由 30Hz 降到约 1.7Hz，但仍是"看不见却在算"）。
+	// 现改为：**只有壳的当前 tab 就是 search 时才重算**；切回本 tab 时补一次同步（见下方 watch）。
+	function syncActiveCardIfVisible(): void {
+		if (shellActiveTab.value != 'search') {
+			return
+		}
+		syncActiveCard()
+	}
+	watch(voiceCurrentId, (): void => { syncActiveCardIfVisible() })
+	watch(voicePlaying, (): void => { syncActiveCardIfVisible() })
+	watch(voiceProgress, (): void => { syncActiveCardIfVisible() })
+	watch(voiceCurSec, (): void => { syncActiveCardIfVisible() })
+	watch(voiceTotalSec, (): void => { syncActiveCardIfVisible() })
+	// 切回本 tab 时补同步一次（隐藏期间被守卫跳过的变更需在此对齐，否则进度条会等下一跳才出现）
+	watch(shellActiveTab, (t: string): void => {
+		if (t == 'search') {
+			syncActiveCard()
+		}
+	})
 
 	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
 	let textResults = computed((): Array<TextResult> => {
@@ -335,10 +367,36 @@
 		hasSearched.value = false
 	}
 
+	/**
+	 * 输入清空 ⇒ **复位到默认列表**（2026-10-15 · 真机反馈「删掉买菜后页面动不了」）。
+	 *
+	 * 根因（代码实证）：本页只有 `v-model` + `@confirm`，删字到空**没有任何状态转移** ——
+	 * `hasSearched` 仍为 true、`hits` 仍是上次结果 ⇒ 结果区永久停在「共 N 条结果」，
+	 * 而本该负责复位的 `clearKeyword()` 是**死代码**（全仓零调用 ✗）。
+	 * 现接上 `@input`：输入变空且此前搜过 ⇒ 复位 + 用「最近内容」兜底（与 onMounted 同源）。
+	 */
+	function onKeywordInput(): void {
+		if (keyword.value.trim() != '') {
+			return
+		}
+		if (!hasSearched.value) {
+			return // 本就没搜过：保持默认列表，不做无谓请求
+		}
+		clearKeyword()
+		loadRecent()
+	}
+
 	/** 发起描述性搜索（resolve-only，失败由封装 toast） */
 	function runSearch(): void {
 		const q = keyword.value.trim()
 		if (q == '') {
+			// 2026-10-15：空串**不再只弹 toast 就 return**（那会把页面留在上次的结果态，
+			// 用户观感即"卡死"✗）。已搜过 ⇒ 复位回默认列表；从未搜过 ⇒ 保留提示。
+			if (hasSearched.value) {
+				clearKeyword()
+				loadRecent()
+				return
+			}
 			uni.showToast({ title: '请输入搜索关键词', icon: 'none' })
 			return
 		}
@@ -397,14 +455,18 @@
 	 * 后端 /search 的 q 要求非空（SearchRequest min_length=1），空词语义搜索发不出去，
 	 * 所以「刚进页面还什么都没搜」时用最近内容兜底，结果区不再空白。
 	 * score 恒为 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
+	 *
+	 * 2026-10-14（台账 §4.20 · 用户现场反馈「每次跳转都要等一会数据才出现」）：
+	 * **后台刷新不再清空已显示结果**。原实现无条件 `loading.value = true` ⇒ 即便列表里
+	 * 已有结果（刚保存记录触发的刷新、或切回本 tab），界面也会先退回「搜索中…」再重画，
+	 * 用户感知就是"每次都重新加载一遍"。现口径与 `TabIndex` 的 stale-while-revalidate
+	 * **一致**：只有当前**没有**结果时才显示加载态；有结果就静默替换（失败也不清空）。
 	 */
-	// RecordSheet 保存成功回调：刷新最近内容兜底列表
-	function onRecordSaved(): void {
-		loadRecent()
-	}
-
 	function loadRecent(): void {
-		loading.value = true
+		const hasData = hits.value.length > 0
+		if (!hasData) {
+			loading.value = true
+		}
 		fetchRecentContents(30, filterContentTypes()).then((out) => {
 			loading.value = false
 			if (out == null || out.hits.length == 0) {
@@ -486,8 +548,13 @@
 	}
 	.n2_396 {
 		width: 100%;
-		/* 2026-10-07 修复：uni-app x 的 input 无显式高度会被父级 overflow:hidden 裁掉文字（光标可见、字符不可见）→ 补高度与胶囊一致 */
+		/* 2026-10-04真机修复「看不见自己输入的文字」：原生 <input> 未显式给高度时，
+		   在 .n2_391（定高 92.3rpx + overflow:hidden）里被竖向裁切，只剩半行 →
+		   用户能聚焦、能打字，却看不到字。
+		   高度取与 AI 页输入框同格（--d-lattice-p36 = 69.2rpx，见 styles/tab-ai.css），
+		   配合 line-height 让文字在框内垂直居中。 */
 		height: var(--d-lattice-p36, 69.2rpx);
+		line-height: var(--d-lattice-p36, 69.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p15, 28.8rpx);
 		color: var(--c-ink-900, #3A2E25);

@@ -13,7 +13,8 @@
 
 退出码：0 = 全部通过；1 = 有失败（禁止 commit）。
 （口径交叉引用 · D14-18：仓库内门禁工具的统一约定为 0=通过 / 1=违规 / 2=环境错误；
- 本工具当前只产出 0/1，环境问题（如 pytest 缺失）表现为 1 —— 统一 2 属待办，
+ 本工具产出 0/1/2（2026-10-11 更正：0=通过，1=违规，2=环境错误；判定见 scripts/gate_exit.py；
+ 历史 docstring 曾写「只产出 0/1」）；环境问题（如 pytest 缺失）表现为 1 —— 统一为 2 属待办，
  详见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md §8.3。）
 报告：.cowork-temp/test-report.json
 """
@@ -189,7 +190,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
 
     main_cmd = [
         sys.executable, "-m", "pytest", "backend/tests",
-        "-q", "--tb=short",
+        "-vv", "--tb=short",
         "--cov=backend/app",
         "--cov-report=term-missing",
     ]

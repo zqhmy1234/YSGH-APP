@@ -1,4 +1,4 @@
-# AG5 真代理端到端（可复跑）：客户端 → 本后端 → Agent 服务 → LLM → 工具 → 落库
+﻿# AG5 真代理端到端（可复跑）：客户端 → 本后端 → Agent 服务 → LLM → 工具 → 落库
 #
 # 为什么固化成本脚本：**这是单测覆盖不到的一跳**——`backend/tests/test_chat.py` 是
 # "真 DB + 桩 agent"，只证明本仓逻辑；真 HTTP 反代（含共享密钥头、超时、agent 工具写库）
@@ -54,13 +54,13 @@ for ($i = 0; $i -lt 40; $i++) {
 Write-Output "  /health 就绪: $ok (pid=$($agentP.Id))"
 if (-not $ok) { Write-Output "  --- agent stderr ---"; Get-Content "$tmp\e2e_agent.err" -Tail 25 -ErrorAction SilentlyContinue }
 
-Write-Output "`n===== 2) 拉起后端（127.0.0.1:8000）====="
-$beP = Start-Process python -ArgumentList '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--log-level', 'warning' `
+Write-Output "`n===== 2) 拉起后端（127.0.0.1:8010）====="
+$beP = Start-Process python -ArgumentList '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8010', '--log-level', 'warning' `
     -WorkingDirectory (Join-Path $repo 'backend') -PassThru -NoNewWindow `
     -RedirectStandardOutput "$tmp\e2e_be.out" -RedirectStandardError "$tmp\e2e_be.err"
 $ok2 = $false
 for ($i = 0; $i -lt 40; $i++) {
-    try { $r = Invoke-WebRequest 'http://127.0.0.1:8000/healthz' -TimeoutSec 2 -UseBasicParsing; if ($r.StatusCode -eq 200) { $ok2 = $true; break } } catch { }
+    try { $r = Invoke-WebRequest 'http://127.0.0.1:8010/healthz' -TimeoutSec 2 -UseBasicParsing; if ($r.StatusCode -eq 200) { $ok2 = $true; break } } catch { }
     Start-Sleep -Seconds 1
 }
 Write-Output "  /healthz 就绪: $ok2 (pid=$($beP.Id))"
@@ -69,7 +69,7 @@ if (-not $ok2) { Write-Output "  --- backend stderr ---"; Get-Content "$tmp\e2e_
 Write-Output "`n===== 3) 登录（mock 微信：未配 WECHAT_APPID/SECRET 时走 mock）====="
 $code = "e2e-" + ([guid]::NewGuid().ToString('N').Substring(0, 10))
 $loginJson = @{ code = $code; device_id = 'e2e-dev' } | ConvertTo-Json -Compress
-$login = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/auth/wechat' -Method Post -ContentType 'application/json' `
+$login = Invoke-RestMethod -Uri 'http://127.0.0.1:8010/api/v1/auth/wechat' -Method Post -ContentType 'application/json' `
     -Body ([Text.Encoding]::UTF8.GetBytes($loginJson))
 $token = $login.data.access_token
 $uid = $login.data.user.id
@@ -79,7 +79,7 @@ Write-Output "`n===== 4) 发一条真对话（穿透：后端 → Agent → LLM 
 $chatJson = @{ content = '帮我记住：今天读完《老人与海》第 12 章，很有感触' } | ConvertTo-Json -Compress
 $sw = [Diagnostics.Stopwatch]::StartNew()
 try {
-    $resp = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/chat/messages' -Method Post -ContentType 'application/json' `
+    $resp = Invoke-RestMethod -Uri 'http://127.0.0.1:8010/api/v1/chat/messages' -Method Post -ContentType 'application/json' `
         -Headers @{ Authorization = "Bearer $token" } -Body ([Text.Encoding]::UTF8.GetBytes($chatJson)) -TimeoutSec 300
     $sw.Stop()
     Write-Output "  [OK] 端到端成功，墙钟耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1))s"
@@ -120,4 +120,4 @@ $env:PYTHONIOENCODING = 'utf-8'
 python "$tmp\e2e_check.py"
 
 Write-Output "`n===== 服务保持运行（供客户端接线直连）====="
-Write-Output "  agent pid=$($agentP.Id) port=8300 · backend pid=$($beP.Id) port=8000"
+Write-Output "  agent pid=$($agentP.Id) port=8300 · backend pid=$($beP.Id) port=8010"

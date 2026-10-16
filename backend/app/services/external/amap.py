@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.models import GeoCache
+from app.services.external.gcj02 import wgs84_to_gcj02
 from app.services.external.retry import with_retry
 
 logger = logging.getLogger("yishu.amap")
@@ -125,6 +126,12 @@ def get_place(db, lat: float, lng: float) -> str | None:
     """
     if lat is None or lng is None:
         return None
+    # 2026-10-14（台账 §4.20）：入参一律按 **WGS84** 解释（客户端 GPS / 照片 EXIF 同源），
+    # 转 GCJ-02 后**再**算 geohash 缓存键与调高德——两者必须用同一坐标系，否则
+    # ①地名系统性偏移 300~700 米；②同一地点落进两个缓存格子（重复付费调用）。
+    # ⚠️ 键口径变更：改造前写入的旧缓存行（WGS84 键）不再命中，会重新取一次并以
+    # 新键（GCJ-02）落库；旧行成为孤儿（无害，可择机清理）。
+    lat, lng = wgs84_to_gcj02(float(lat), float(lng))
     gh = encode_geohash(lat, lng)
 
     # 1. 缓存命中（30 天内）直接复用

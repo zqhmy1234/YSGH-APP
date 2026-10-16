@@ -104,7 +104,10 @@ official: false
 - **.gitignore 通配吞真源**（D-19 伴生雷）：根 .gitignore 无锚点通配 `AndroidManifest.xml`、`res/`（本意清构建残留）会把工程根/nativeResources 的**真源文件**一并忽略——文件写了、编译用得到、git 里却不存在（08-28 Agent 走错位的疑因）。修复=豁免三连 `!client/AndroidManifest.xml` `!client/nativeResources/` `!client/nativeResources/**`；验证=`git check-ignore -v` 三件套（真源不被忽略 + `.env` 仍忽略 + unpackage 残留仍忽略）。
 - **全量编译才暴露存量错**：增量编译 warm cache 会掩盖 UTS 错误，`--cleanCache` 全量编译是回归前的硬验证（本波 7 处存量 UTS 错如此暴露）。
 
-## 7. 5.24 迁移期状态（2026-08-29 起，多窗并行）
+## 7. 5.24 迁移期状态（**历史留档**，2026-08-29 起）
+
+> ⚠️ 2026-10-11 注：**迁移已于 2026-09-01 落地**（wrap1 波 17 枚经 `cea5025` 合入 develop：utils 21 文件 `.ts`→`.uts`、Vapor 启用、10 页零错零警）。以下内容作**迁移期考古**保留，当前状态与端口口径（backend 8010 / agent 8300）见 `STATE.md` 与 `scripts/dev/status.ps1`。
+> 另：客户端编译门已自动化——`python scripts/client_compile_gate.py`（20~56s），无需再手工跑 HBuilderX 验证编译。
 
 - **develop 干净基线在 HBuilderX 5.24 下编不过**：UTS `.then` 回调返回类型推断收紧，群发 `Return type mismatch: expected 'Function', actual 'X'`（upload_protocol.ts/uploader.ts/event_ops.ts/sync_client.ts 等）。此前历史「编译通过」证据全部跑在主工作区**脏未提交修复**上（教训：基线可编译性只能以 clean worktree 冷编译证明）。
 - **迁移归属（08-29 拍板，台账 §1.9）**：修复在途窗 `wrap1-agentA2-ui-restore`（其旧基线上逐文件修）；主修复分支 fix/4b **让位客户端域**——客户端半修复（D-07/08/05/14/10/21/22/06/U3）全部冻结，待迁移提交落地后 rebase → 统一一次冷编译。

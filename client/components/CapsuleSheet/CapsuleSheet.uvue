@@ -22,10 +22,10 @@
 				<image class="summary-star" src="/static/icons/detail-sparkle.svg" />
 				<text class="summary-text">{{ summaryText }}</text>
 			</view>
-			<!-- 63:61 节标 -->
-			<text class="section-label">开启时机</text>
+			<!-- 63:61 节标（2026-10-15 · 台账 §4.20 ㉕：已有封存时本区无意义 ⇒ 隐藏，改显示状态行） -->
+			<text v-if="existingId == ''" class="section-label">开启时机</text>
 			<!-- 63:62 时机选项列表（4 项，画布默认选中「3 个月后」） -->
-			<view class="opt-list">
+			<view v-if="existingId == ''" class="opt-list">
 				<view v-for="(o, idx) in opts" :key="idx"
 					class="opt" :class="{ 'opt-on': selected == idx }"
 					:style="{ marginTop: idx > 0 ? '15.4rpx' : '0rpx' }"
@@ -40,11 +40,13 @@
 					<view v-else class="opt-circle"></view>
 				</view>
 			</view>
-			<!-- 63:86 说明 -->
-			<text class="note-text">封存期间这条记忆会上锁，到期那天我们会提醒你打开</text>
-			<!-- 63:87 主按钮 48px→92.3rpx r24 锈红 #B05A3A（§W 修订：原注释误留旧琥珀色） -->
-			<view class="main-btn" @tap="onConfirm">
-				<text class="main-btn-text">封存胶囊</text>
+			<!-- 63:86 说明（已有封存时改显示状态 —— 2026-10-15 · 台账 §4.20 ㉕） -->
+			<text v-if="existingId == ''" class="note-text">封存期间这条记忆会上锁，到期那天我们会提醒你打开</text>
+			<text v-else class="note-text">{{ existingStatus == 'due' ? '这枚胶囊已到期，打开回看那时的自己' : '已封存 · 到期 ' + existingDueText }}</text>
+			<!-- 63:87 主按钮 48px→92.3rpx r24 锈红 #B05A3A（§W 修订：原注释误留旧琥珀色）
+			     2026-10-15：按钮语义随状态分派（未封存=封存 / 已到期=打开 / 封存中=撤销），样式沿用画布真值 -->
+			<view class="main-btn" @tap="onMainTap">
+				<text class="main-btn-text">{{ existingId == '' ? '封存胶囊' : (existingStatus == 'due' ? '打开胶囊' : '撤销封存') }}</text>
 			</view>
 		</view>
 	</view>
@@ -55,8 +57,14 @@
 	// 契约（backend/app/api/capsules.py 已实证）：open_at 必须晚于当前时刻否则 422 CAPSULE_001；
 	// content 须属当前用户且未删除否则 404；重复封存同内容后端不拦截（每次新建一行）；
 	// 到期开启后端自动产消息。旧 USE_MOCK_CAPSULE 本地暂存（capsule_drafts）演示态已删除。
-	import { sealCapsule } from '@/utils/capsule_api'
+	// 2026-10-15（台账 §4.20 ㉕）**接线补齐**：原先只接了「封存」（sealCapsule），而
+	// `GET /capsules`（列表）与 `POST /capsules/{id}/open`（开启）、`DELETE /capsules/{id}`
+	// （撤销）在**全客户端零调用** ⇒ 封存是单程票（封进去看不到、到期开不了、也撤不掉）。
+	// 现本面板负责：进面板查一次列表（顺带触发后端惰性到期扫描）→ 已有封存则改为
+	// 「状态 + 打开（到期）/ 撤销（封存中）」入口。复用现有画布样式，不新增视觉元素。
+	import { sealCapsule, listCapsules, openCapsule, deleteCapsule } from '@/utils/capsule_api'
 	import { isoLocal, shortDate } from '@/utils/time'
+	import { onMounted } from 'vue'
 
 	const props = defineProps({
 		summary: {
@@ -103,11 +111,88 @@
 	// 画布默认选中第 0 项「3 个月后」
 	let selected = ref(0)
 	let submitting = ref(false)
+	// 2026-10-15（台账 §4.20 ㉕）：本条记忆**已有封存**时，面板切换为「状态 + 撤销/开启」入口。
+	// existingId == '' ⇒ 无封存，走原封存流程（画布形态不变）；非空 ⇒ 显示状态行与对应动作。
+	let existingId = ref('')
+	let existingStatus = ref('') // sealed（封存中）/ due（已到期）
+	let existingDueText = ref('')
+
+	onMounted((): void => {
+		if (props.contentId == '') {
+			return
+		}
+		// 拉一次列表（后端把惰性到期扫描挂在该端点上，见 capsule_api.listCapsules 注释）
+		listCapsules().then((rows: Array<UTSJSONObject>) => {
+			for (let i = 0; i < rows.length; i++) {
+				const r = rows[i]
+				if ((r.getString('content_id') ?? '') != props.contentId) {
+					continue
+				}
+				const st = r.getString('status') ?? ''
+				if (st == 'opened') {
+					continue // 已开启：后端不可再撤销，也不该再提示（幂等打开无需入口）
+				}
+				existingId.value = r.getString('id') ?? ''
+				existingStatus.value = st
+				existingDueText.value = shortDate(r.getString('open_at') ?? '')
+				break
+			}
+		})
+	})
 
 	const summaryText = computed((): string => props.summary)
 
 	function onClose(): void {
 		emit('close')
+	}
+
+	/** 主按钮分派（2026-10-15 · 台账 §4.20 ㉕）：未封存→封存（原路径）；已到期→打开；封存中→撤销 */
+	function onMainTap(): void {
+		if (existingId.value == '') {
+			onConfirm()
+			return
+		}
+		if (existingStatus.value == 'due') {
+			onOpenCapsule()
+			return
+		}
+		onUndoCapsule()
+	}
+
+	/**
+	 * 打开到期胶囊：POST /api/v1/capsules/{id}/open（**幂等**；未到期 409 由 api 层 toast 剩余天数）。
+	 * 成功后关闭面板——内容本体就在详情页上，无需再跳（浮层铁律：唤起不跳页）。
+	 */
+	function onOpenCapsule(): void {
+		if (existingId.value == '') {
+			return
+		}
+		submitting.value = true
+		openCapsule(existingId.value).then((ok: boolean) => {
+			submitting.value = false
+			if (ok) {
+				uni.showToast({ title: '胶囊已打开', icon: 'success' })
+				emit('close')
+			}
+		})
+	}
+
+	/**
+	 * 撤销封存：DELETE /api/v1/capsules/{id}（仅**未开启**可删；已开启 409 由 api 层 toast）。
+	 * 被关联的 content 不动（后端软删生态零侵入）⇒ 撤销后这条记忆照常存在，只是不再上锁。
+	 */
+	function onUndoCapsule(): void {
+		if (existingId.value == '') {
+			return
+		}
+		submitting.value = true
+		deleteCapsule(existingId.value).then((ok: boolean) => {
+			submitting.value = false
+			if (ok) {
+				uni.showToast({ title: '已撤销封存', icon: 'success' })
+				emit('close')
+			}
+		})
 	}
 
 	function onOptTap(idx: number): void {

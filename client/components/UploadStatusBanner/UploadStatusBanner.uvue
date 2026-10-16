@@ -2,7 +2,8 @@
 	<!-- 同步状态横幅（B4 §7 · Wave3 Agent H）：
 	     待上传图标 / 失败标红可点击重试 / 暂停横幅"网络异常，已暂停同步" / 一键继续上传。
 	     自包含：直接读 sync_client + uploader 模块状态，宿主页只需一行 <UploadStatusBanner />。
-	     优先级：暂停 > 蜂窝暂缓原图 > 失败可重试 > 上传中。 -->
+	     优先级：暂停 > 蜂窝暂缓原图 > 失败可重试 > 上传中（2026-10-14：分支状态原为裸 let
+	     ⇒ 界面永不更新，已全部改响应式 ref，见 script 内注释）。 -->
 	<view v-if="show" class="banner" :class="bannerClass">
 		<view class="banner-main tk-root" @tap="onBannerTap">
 			<text class="banner-icon">{{ icon }}</text>
@@ -15,7 +16,7 @@
 </template>
 
 <script setup lang="uts">
-	import { onMounted, onBeforeUnmount, computed } from 'vue'
+	import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
 	import { getNetKind, NetKind } from '@/utils/uploader_net'
 	import { heldCount, failedCount } from '@/utils/uploader_queue'
@@ -23,54 +24,63 @@
 
 	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
 
-	let paused = false
-	let pauseReason = ''
-	let held = 0
-	let failed = 0
-	let uploading = false
-	let netKind: NetKind = 'unknown'
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-12）：原为**裸 `let`**（paused/pauseReason/held/
+	// failed/uploading/netKind），而 uvue 的 `<script setup>` 裸 `let` **不是响应式**
+	// （同源实锤见 `TabIndex.uvue` 的"裸 let 非响应式"注释），下面的 computed 又**直接读它们**
+	// ⇒ computed **没有任何响应式依赖** ⇒ 首次求值后被**永久缓存** ⇒ 横幅只在首帧判断一次，
+	// 之后 3s 轮询写入的值**界面永不反映**——表现就是"该出现的横幅不出现"。
+	// 现全部改用 `ref` 并在所有读取处补 `.value`。
+	//
+	// 注：`uploading` 由点击路径（`doContinue`）在"一键继续/重试"期间置位，是**真实状态**
+	// （不是死字段），故保留为第四档——原实现它是裸 let ⇒ 置位后界面同样反映不出来。
+	let paused = ref(false)
+	let pauseReason = ref('')
+	let held = ref(0)
+	let failed = ref(0)
+	let uploading = ref(false)
+	let netKind = ref('unknown')
 	let refresher = 0
 
 	const show = computed((): boolean => {
-		return paused || held > 0 || failed > 0 || uploading
+		return paused.value || held.value > 0 || failed.value > 0 || uploading.value
 	})
 	const bannerClass = computed((): string => {
-		if (paused) return 'banner-paused'
-		if (held > 0) return 'banner-held'
-		if (failed > 0) return 'banner-failed'
+		if (paused.value) return 'banner-paused'
+		if (held.value > 0) return 'banner-held'
+		if (failed.value > 0) return 'banner-failed'
 		return 'banner-uploading'
 	})
 	const icon = computed((): string => {
-		if (paused) return '⏸'
-		if (held > 0) return '📤'
-		if (failed > 0) return '⚠️'
+		if (paused.value) return '⏸'
+		if (held.value > 0) return '📤'
+		if (failed.value > 0) return '⚠️'
 		return '⏳'
 	})
 	const text = computed((): string => {
-		if (paused) return pauseReason != '' ? pauseReason : '网络异常，已暂停同步'
-		if (held > 0) {
-			if (netKind == 'wifi') return held + ' 张照片待上传（原图）'
+		if (paused.value) return pauseReason.value != '' ? pauseReason.value : '网络异常，已暂停同步'
+		if (held.value > 0) {
+			if (netKind.value == 'wifi') return held.value + ' 张照片待上传（原图）'
 			// 2026-09-23 更正：原文案承诺"蜂窝仅传缩略图+元数据"，但压缩步骤尚未接线、
 			// 实际行为是暂缓 → 文案必须说"现在是什么"而非"设计上会怎样"，否则用户以为
 			// 蜂窝下照片已在上传（真相比承诺更重要；接线完成后可恢复原措辞）。
-			return held + ' 张照片待 WiFi 上传（可点「立即上传原图」）'
+			return held.value + ' 张照片待 WiFi 上传（可点「立即上传原图」）'
 		}
-		if (failed > 0) return failed + ' 张照片上传失败，点击重试'
+		if (failed.value > 0) return failed.value + ' 张照片上传失败，点击重试'
 		return '正在上传…'
 	})
 	const showAction = computed((): boolean => {
-		return paused || held > 0 || failed > 0
+		return paused.value || held.value > 0 || failed.value > 0
 	})
 	const actionText = computed((): string => {
-		if (paused) return '继续上传'
-		if (held > 0 && netKind != 'wifi') return '立即上传原图'
+		if (paused.value) return '继续上传'
+		if (held.value > 0 && netKind.value != 'wifi') return '立即上传原图'
 		return '重试'
 	})
 
 	onMounted(() => {
 		subscribeSyncStatus((p: boolean, reason: string) => {
-			paused = p
-			pauseReason = reason
+			paused.value = p
+			pauseReason.value = reason
 		})
 		refresh()
 		refresher = setInterval(() => {
@@ -85,36 +95,36 @@
 	})
 
 	function refresh(): void {
-		paused = isSyncPaused()
-		pauseReason = getPauseReason()
-		held = heldCount()
-		failed = failedCount()
+		paused.value = isSyncPaused()
+		pauseReason.value = getPauseReason()
+		held.value = heldCount()
+		failed.value = failedCount()
 		getNetKind((kind: NetKind) => {
-			netKind = kind
+			netKind.value = kind
 		})
 	}
 	function onBannerTap(): void {
-		if (failed > 0 && !paused) {
+		if (failed.value > 0 && !paused.value) {
 			doContinue('retry-failed')
 		}
 	}
 	function onActionTap(): void {
-		if (paused) {
+		if (paused.value) {
 			doContinue('continue-upload')
-		} else if (held > 0 && netKind != 'wifi') {
+		} else if (held.value > 0 && netKind.value != 'wifi') {
 			doContinue('upload-original')
 		} else {
 			doContinue('retry-failed')
 		}
 	}
 	function doContinue(evt: string): void {
-		uploading = true
+		uploading.value = true
 		emit(evt)
 		continuePendingUploads(() => {
-			uploading = false
+			uploading.value = false
 			refresh()
 		}).then(() => {
-			uploading = false
+			uploading.value = false
 			refresh()
 		})
 	}
@@ -170,7 +180,7 @@
 		padding-right: var(--d-raw-r28, 28rpx);
 		padding-top: var(--d-raw-r10, 10rpx);
 		padding-bottom: var(--d-raw-r10, 10rpx);
-		background-color: var(--c-paper-200, #FBF7EF);
+		background-color: #FBF7EF;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ8，属令牌化误映射 */
 		border-radius: var(--d-raw-r28, 28rpx);
 	}
 	.banner-action-text {

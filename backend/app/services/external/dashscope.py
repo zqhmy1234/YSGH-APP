@@ -54,8 +54,16 @@ _GUARD_SYSTEM = (
 
 
 def _llm_available() -> bool:
-    """百炼可用判定：非 mock 且已配 key"""
-    return not settings.mock_external_ai and bool(settings.dashscope_api_key)
+    """LLM 可用判定：非 mock 且**所配供应商**已配 key（2026-10-15 · 台账 §7.27）
+
+    ⚠️ 刻意不看"另一家"的 key：切到 deepseek 后，即便 dashscope key 有效也不得算可用
+    （否则护栏会拿着无效的 dashscope key 去调用 ⇒ fail-closed 拒发全部内容）。
+    """
+    if settings.mock_external_ai:
+        return False
+    if settings.llm_provider == "deepseek":
+        return bool(settings.deepseek_api_key)
+    return bool(settings.dashscope_api_key)
 
 
 def _ensure_api_key() -> None:
@@ -74,10 +82,26 @@ def _ensure_api_key() -> None:
 
 @with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
 def _chat_text(system: str, user: str, model: str = QWEN_FLASH) -> str:
-    """调 qwen-flash 文本对话（同步），失败抛异常由调用方降级
+    """文本对话（同步），失败抛异常由调用方降级。
 
     带统一重试（网络抖动 3 次指数退避，见 external/retry.py）。
+
+    2026-10-15（台账 §7.27）：按 `LLM_PROVIDER` 分派 —— `dashscope`（默认，qwen-flash，
+    经 dashscope SDK）或 `deepseek`（任何 OpenAI 兼容端点，见 `external/llm_openai.py`）。
+    切到 deepseek 时**`model` 形参（qwen 专用名）被忽略**、改用 `DEEPSEEK_MODEL`：
+    调用点无需改动（它们传的 `QWEN_FLASH` 只是默认值）。
+    ⚠️ 视觉调用不经此处（`image_caption` 恒走 DashScope），故无"DeepSeek 无视觉模型"问题。
     """
+    if settings.llm_provider == "deepseek":
+        from app.services.external.llm_openai import chat_text as _openai_chat_text
+
+        return _openai_chat_text(
+            system,
+            user,
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            model=settings.deepseek_model,
+        )
     from dashscope import Generation
 
     _ensure_api_key()

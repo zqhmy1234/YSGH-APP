@@ -193,6 +193,29 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         # 命中数排序，tsvector 中文无内置 parser，ILIKE 为确定性零依赖方案）。
         raw_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, q.limit)
 
+    # 3.2 **召回为空**也走 PG 兜底（2026-10-15 · 真机 + 集成双实测「刚记的内容搜不到」）
+    #
+    # 根因（代码实证）：worker **先提交 `status=done`、之后才写向量**
+    # （`pipeline.py:445-447`（done+commit）→ `:461-463`（索引）），而 BGE-M3 编码 + Qdrant
+    # upsert 要数十秒（冷启动尤甚）⇒ 紧跟 done 的检索正落在"**DB 有、Qdrant 还没这个点**"
+    # 的时间窗内；而检索只对**已召回**的命中做 DB 回查校验，**不会把 DB-only 的内容补进来**
+    # （`recall.py:142-143`）⇒ 那次检索返回 `200 + hits=[]`，且 `degraded=false`
+    #（该标志原只在 Qdrant 抛异常时置位）⇒ **"还没索引"被伪装成"真的没有"** ✗。
+    #
+    # 口径：召回为空 ⇒ 用**已存在**的 PG 兜底再捞一次（零新增依赖）。
+    #  · 只有**兜底真的捞到东西**时才置 `degraded=True`（如实告知"结果来自兜底、可能不完整"）；
+    #    真·无结果时**不改** degraded（否则会把"就是没有"谎报成"系统降级" ✗）；
+    #  · 有召回时本段不执行 ⇒ 原有路径行为**完全不变**（零风险）。
+    if not raw_hits:
+        fb_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, q.limit)
+        if fb_hits:
+            logger.info(
+                "召回为空但 PG 兜底命中 %d 条（多为索引未就绪：done 已提交、向量尚未写入）",
+                len(fb_hits),
+            )
+            degraded = True
+            raw_hits = fb_hits
+
     # 3.5 精确命中提升（词元全命中 → 提到稠密噪声之上；描述性查询不受影响）
     raw_hits = _boost_exact_matches(rewritten, raw_hits)
 

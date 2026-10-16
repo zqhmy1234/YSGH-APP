@@ -27,9 +27,15 @@ export class AppMessage {
 	// FE1 批：MessageOut.content_id（string|null，BA1 消息跳详情）——null/缺省解析为 ''，
 	// '' = 无关联内容（调用方保持既有就地展示路径）
 	contentId: string
+	// 2026-10-15（台账 §4.20 ㉕）：胶囊到期消息（`msg_type='capsule_due'`）的
+	// `payload.capsule_id`。后端 `workers/capsule_scan.py:69-73` 明确把它与 content_id
+	// **一起**放进 payload「客户端跳详情直用」；原实现只解析 content_id ⇒ 客户端**无从调用**
+	// 「打开胶囊」（POST /capsules/{id}/open）⇒ 胶囊在库里永远停在 due。
+	// '' = 非胶囊消息或存量无 payload。
+	capsuleId: string
 
 	constructor(id: number, channel: string, msgType: string, title: string, body: string, status: string, sentAt: string,
-		echoContentId: string = '', echoContentType: string = 'text', echoText: string = '', echoTakenAt: string = '', echoPlace: string = '', echoDate: string = '', contentId: string = '') {
+		echoContentId: string = '', echoContentType: string = 'text', echoText: string = '', echoTakenAt: string = '', echoPlace: string = '', echoDate: string = '', contentId: string = '', capsuleId: string = '') {
 		this.id = id
 		this.channel = channel
 		this.msgType = msgType
@@ -38,6 +44,7 @@ export class AppMessage {
 		this.status = status
 		this.sentAt = sentAt
 		this.echoContentId = echoContentId
+		this.capsuleId = capsuleId
 		this.echoContentType = echoContentType
 		this.echoText = echoText
 		this.echoTakenAt = echoTakenAt
@@ -124,7 +131,10 @@ export function fetchMessagePage(status: string, cursor: string, limit: number):
 						echoPlace,
 						echoDate,
 						// FE1：MessageOut.content_id（null → ''）
-						item.getString('content_id') ?? ''
+						item.getString('content_id') ?? '',
+						// 2026-10-15（台账 §4.20 ㉕）：capsule_due 消息的 payload.capsule_id
+						//（非胶囊消息取不到 ⇒ ''，与 contentId 同口径）
+						p != null ? (p.getString('capsule_id') ?? '') : ''
 					)
 				)
 			}
@@ -151,6 +161,33 @@ export function fetchUnreadCount(): Promise<number> {
 			resolve(n < 0 ? 0 : n)
 		})
 	})
+}
+
+// ── 列表缓存（2026-10-14 · 台账 §4.20 ⑭）────────────────────────────────────
+// 消息页每次进入（`onShow`）要 `fetchMessages` + `fetchUnreadCount` + `/echo/today` 三个往返，
+// 而**页面实例随返回销毁** ⇒ 页内 ref 无处存活，再进入必然空窗等一次网络（用户感知
+// 「每次跳转都要等数据」）。缓存放**本模块**：`.uts` 是模块作用域、跨页面实例存活；
+// ⚠️ `<script setup>` 顶层变量是"每实例"的，**做不到**这件事（这正是子页无法秒出的共性原因）。
+let _cachedMessages: Array<AppMessage> = []
+let _cachedUnread: number = -1 // -1 = 尚未有过真值
+
+/** 成功拉到列表后回填（供下次进入先渲染） */
+export function putCachedMessages(list: Array<AppMessage>): void {
+	_cachedMessages = list
+}
+
+/** 上次消息列表；从未拉到过则为空数组（调用方据此决定是否先渲染） */
+export function getCachedMessages(): Array<AppMessage> {
+	return _cachedMessages
+}
+
+export function putCachedUnread(n: number): void {
+	_cachedUnread = n
+}
+
+/** 上次未读数；-1 = 尚未有过真值（不要拿它当 0 用） */
+export function getCachedUnread(): number {
+	return _cachedUnread
 }
 
 /** POST /messages/{id}/read：单条已读；返回是否成功 */

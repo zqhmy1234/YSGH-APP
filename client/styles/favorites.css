@@ -62,8 +62,11 @@
 	}
 	.capsule-input {
 		width: 100%;
-		/* 2026-10-07 同类缺陷修复：input 无显式高度会被父级 overflow:hidden 裁字（光标可见、字符不可见） */
+		/* 2026-10-04 真机修复：同 TabSearch 的 .n2_396 —— 原生 <input> 无显式高度时
+		   在 .search-capsule（定高 92.3rpx + overflow:hidden）里被竖向裁切，
+		   用户能打字却看不到字。高度取与 AI 页输入框同格（--d-lattice-p36）。 */
 		height: var(--d-lattice-p36, 69.2rpx);
+		line-height: var(--d-lattice-p36, 69.2rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p15, 28.8rpx);
 		color: var(--c-ink-900, #3A2E25);

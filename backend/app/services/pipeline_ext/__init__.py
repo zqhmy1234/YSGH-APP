@@ -59,6 +59,22 @@ def annotate_on_ingest(db: Session, content: Content) -> None:
         logger.exception("pipeline_ext.annotate_on_ingest 失败")
 
 
+def enrich_place_on_ingest(db: Session, content: Content) -> None:
+    """内容入库时GPS → 地名（默认 no-op）
+
+    2026-10-04 新增。此前逆地理只写在 `pipeline_photo._process_photo` 内，
+    导致**文字/语音**即使带了 `gps_lat/gps_lng` 也不出地名（`place` 恒空），
+    而客户端信息卡却在显示写死的演示地点。现三条 content_type 共用本钩子。
+    失败静默（留空，绝不写占位地名）——与客户端诚实空态同口径。
+    """
+    try:
+        from app.services.pipeline_ext.place import enrich_place_on_ingest as _impl
+
+        _impl(db, content)
+    except Exception:  # noqa: BLE001
+        logger.exception("pipeline_ext.enrich_place_on_ingest 失败")
+
+
 def consume_emotion(db: Session, content: Content) -> None:
     """语音情绪落库后消费（默认 no-op，B5a 域 Agent 实现）"""
     try:

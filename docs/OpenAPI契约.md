@@ -25,11 +25,11 @@ python -c "import sys; sys.path.insert(0,'.'); from app.main import app; import 
 3. 把本文「当前接口」的**路径数**改为该输出值，并核对各域表格路径与 `j['paths']` 一致。
 4. 事件域/上传域等状态列变更时同步更新本文件。
 
-> 当前门禁值：**64 路径**（2026-09-21 实时导出核对）。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）→ 46（2026-08-27，G1 新增 /auth/logout 退出登录：devices 表吊销 refresh，AUTH-006）→ **64（2026-09-21，内测下发卡 S2 新增 /auth/device 设备码登录；同一次重导把此前积压未重导的 17 条路径一并拉齐，见下方「漂移纠正」）**。
+> 当前门禁值：**以 `python scripts/gen_openapi.py --check` 的实时导出为准**（2026-10-11 起不再在此写死数字——写死的数字本身就是漂移源：本条曾记 64，其后代码已继续增长）。最近一次登记的重导见 `docs/决策台账.md` §2.27。历史沿革：39（2026-08-16）→ 45（2026-08-26，新增 profile/sensitive、thumbnails、contents/{id}/events、events/{id}/items|cover、upload/sts 等；同时契约收敛，无独立 /presign 路径）→ 46（2026-08-27，G1 新增 /auth/logout 退出登录：devices 表吊销 refresh，AUTH-006）→ **64（2026-09-21，内测下发卡 S2 新增 /auth/device 设备码登录；同一次重导把此前积压未重导的 17 条路径一并拉齐，见下方「漂移纠正」）**。
 >
 > ⚠️ **2026-09-21 漂移事故（已纠正，必读）**：本次重导发现提交库里的 `docs/openapi.json` 停留在 **46 路径**，而代码真实导出是 **63 路径**（+本次新增 1 = 64）——**17 条路径自 2026-08-27 起新增后从未重导**，即 Snapshot 与代码静默漂移了一个月。本次重导 diff：**新增 18 / 消失 0**（「只增不减」纪律本身未被破坏），但漂移本身已违反「路由变更必须重导」的流程规则。明细与补录见下文「补录」节。
 
-## 当前接口（64 路径）
+## 当前接口（路径数以 `python scripts/gen_openapi.py --check` 为准）
 
 ### 认证（/api/v1/auth）
 | 方法 | 路径 | 说明 | 状态 |

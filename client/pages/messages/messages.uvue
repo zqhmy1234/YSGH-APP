@@ -64,8 +64,10 @@
 	import { ref, computed } from 'vue'
 	import { onShow } from '@dcloudio/uni-app'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
-import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage } from '@/utils/play_messages'
+import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage, putCachedMessages, getCachedMessages, putCachedUnread, getCachedUnread } from '@/utils/play_messages'
 	import { formatIsoShortTime } from '@/utils/time'
+	import { backToShell } from '@/utils/shell_state'
+	import { openCapsule, listCapsules } from '@/utils/capsule_api'
 
 	// ── 响应式状态 ──
 	let unreadCount = ref(0)
@@ -204,15 +206,18 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		}
 	}
 
-	/** 加载消息列表 + 未读数 + 今日回响（onShow 每次进入刷新） */
+	/** 加载消息列表 + 未读数（onShow 每次进入刷新）；结果回填模块级缓存供下次进入秒出 */
 	function loadMessages(): void {
 		fetchMessages('').then((list: Array<AppMessage>) => {
 			allMessages.value = list
+			putCachedMessages(list)
 		})
 		fetchUnreadCount().then((n: number) => {
 			unreadCount.value = n
+			putCachedUnread(n)
 		})
-		loadEcho()
+		// 2026-10-14（台账 §4.20 ⑭）：原有的 `loadEcho()` 已删——`onShow` 里本就紧跟一次
+		// `loadEcho()`，同一进入路径下 `/echo/today` 被请求两次（纯重复请求）。
 	}
 
 	/** 今日回响：真端点（GET /echo/today）。回响卡点击假 id 触发 detail 404 的演示路径已随
@@ -226,12 +231,32 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	}
 
 	onShow(() => {
+		// 2026-10-14（台账 §4.20 ⑭ · 用户反馈「每次跳转都要等数据」）：**先渲染上次列表再刷新**。
+		// 本页实例随返回销毁 ⇒ 页内 ref 不存活，原实现每次进入都从空列表开始、要等三个往返
+		// 回来才出现内容。现用**模块级**缓存（`play_messages.uts` 作用域，跨页面实例存活）
+		// 先把上次内容铺上，再照常拉最新；失败保持缓存内容（不清空）。
+		const cached = getCachedMessages()
+		if (cached.length > 0) {
+			allMessages.value = cached
+		}
+		const cu = getCachedUnread()
+		if (cu >= 0) {
+			unreadCount.value = cu
+		}
 		loadMessages()
 		// R7（2026-09-06）：onShow 同步刷新回声卡——本页常驻不销毁（redirectTo 切 tab），
 		// 跨天后旧卡残留（峰宝实锤：昨天 9-5 的卡今天还在，名额已耗尽点击无响应）；
 		// fetchTodayEcho null 时不清空旧卡？——清。旧卡 contentId 指向的内容可能已被删，
 		// 点「重温」必失败；诚实回落「今天没有回响」
 		loadEcho()
+		// 2026-10-15（台账 §4.20 ㉕）：**触发胶囊到期扫描**。
+		// 后端把惰性扫描挂在 `GET /capsules` 上（`capsule_scan.maybe_scan_due`，30s 节流；
+		// 项目无进程内定时器，`api/capsules.py:117-137` 明写「惰性触发入口（GET /capsules
+		// 顺带执行）」）⇒ **必须由客户端调它**，否则「封存 → 到期 → 产消息」整条链永不启动
+		// （修复前实测：全仓零调用，封存进去就再也没消息）。
+		// 放消息页：到期提醒的消费端就在这里；不 await、不占首屏渲染路径（缓存优先渲染已先执行）、
+		// 失败静默（api 层已 toast，且此调用只为触发服务端扫描，不作为本页数据源）。
+		listCapsules()
 	})
 
 	/** 消息类型路由（W1-3 拍板：关怀→AI 页 / 回响→弹层 / 复盘·语音完成→就地展开 / 其余仅标已读） */
@@ -254,13 +279,28 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			allMessages.value = arr.slice()
 		}
 		if (msg.msgType == 'care_followup') {
-			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页），
-			// 全库扫描发现于 B10 回退残留扫描；项目跨页导航先例为 redirectTo
-			uni.redirectTo({ url: '/pages/shell/shell?tab=ai' })
+			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页）。
+			// 2026-10-14（台账 §4.20 批次 5 · RC-10）：改走**栈内回退**——原 redirectTo 会销毁本页并
+			// **重建整个壳**（白屏 1~2s + 四个 tab 重挂 + TabIndex 的 60s TTL 失效）；壳本就在栈里。
+			backToShell('ai', '')
 			return
 		}
 		if (msg.msgType == 'echo') {
 			openEchoFromMessage(msg)
+			return
+		}
+		if (msg.msgType == 'capsule_due') {
+			// 2026-10-15（台账 §4.20 ㉕）：**胶囊到期 → 先开启、再看内容**。
+			// 后端契约（`api/capsules.py:150-173`）：open **幂等**（已 opened 返回现态），
+			// 未到期 409（message 带剩余天数，api 层已 toast 显式原因）⇒ 此处不拦截、不伪造成功。
+			// 原实现完全没调 open ⇒ 胶囊在库里**永远停在 due**、客户端也拿不到「打开胶囊」这个动作。
+			// 顺序：先开（服务端状态推进），再跳详情（内容本体与是否开启无关，失败了也照样能看）。
+			if (msg.capsuleId != '') {
+				openCapsule(msg.capsuleId)
+			}
+			if (msg.contentId != '') {
+				uni.navigateTo({ url: '/pages/detail/detail?contentId=' + msg.contentId })
+			}
 			return
 		}
 		// FE1（BA1）：MessageOut.content_id 非空 → 直达关联记忆详情（跳转写法同 onEchoReplay 先例）；

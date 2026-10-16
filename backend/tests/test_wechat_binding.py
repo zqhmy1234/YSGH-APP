@@ -248,7 +248,13 @@ def test_list_and_unbind_only_own(cleanup_wechat):
     client.post("/api/v1/wechat/bind", json={"openid": openid_b}, headers=headers_b)
 
     data = client.get("/api/v1/wechat/bindings", headers=headers_a).json()["data"]
-    assert [b["openid"] for b in data["bindings"]] == [openid_a]
+    listed = [b["openid"] for b in data["bindings"]]
+    # 2026-10-15（台账 §7.29）：**授权登录本身就会建立一条渠道绑定** ——
+    # `/auth/wechat` → code2session → openid → `ensure_login_binding(channel=wechat_app)`。
+    # 故本人列表里会有两条：登录自带的那条 mock openid + 这里显式绑定的 openid_a。
+    # 本用例的核心口径不变：**只含本人**（不得出现 openid_b），且显式绑定的那条在列。
+    assert openid_a in listed
+    assert all(o != openid_b for o in listed), listed
 
     assert client.delete(
         "/api/v1/wechat/bindings", params={"openid": openid_b}, headers=headers_a
@@ -256,7 +262,10 @@ def test_list_and_unbind_only_own(cleanup_wechat):
     assert client.delete(
         "/api/v1/wechat/bindings", params={"openid": openid_a}, headers=headers_a
     ).status_code == 200
-    assert client.get("/api/v1/wechat/bindings", headers=headers_a).json()["data"]["bindings"] == []
+    after = client.get("/api/v1/wechat/bindings", headers=headers_a).json()["data"]["bindings"]
+    left = [b["openid"] for b in after]
+    assert openid_a not in left, left          # 自己那条已解绑
+    assert all(o != openid_b for o in left), left  # 他人绑定始终不可见
 
 
 # ---------------------------------------------------------------------------
