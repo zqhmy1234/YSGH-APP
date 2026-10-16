@@ -82,6 +82,24 @@ _VOICE_SEED = [
     "复习完高数第二章", "感觉最近皮肤变差了", "订了周五的机票回老家",
 ]
 
+# ---------- filter 元数据（R-3/R-5 · 2026-10-16）----------
+# 键 = 种子**原文**（唯一），不用 id —— id 会随种子增删位移，重排即失效。
+#
+# ⚠️ 这里**只挂 `tags`**：现有种子文本本来就自然提到「妈妈/朋友/外婆/老同学/孩子」，
+#    而**没有一条自然提到地名** ⇒ place / taken_at / photo 全部放 corpus-D（见下）。
+#    另一个理由：`taken_at` 不能落进 B/C（会把合成路径的 temporal 门禁打红，见 corpus-D 注释）。
+_TEXT_META: dict[str, dict] = {
+    "下午三点给妈妈打电话": {"tags": ["妈妈"]},
+    "妈妈做的菜让我很安心": {"tags": ["妈妈"]},
+    "给朋友寄生日礼物": {"tags": ["朋友"]},
+    "给外婆买助听器电池": {"tags": ["外婆"]},
+    "想起外婆,心里酸酸的": {"tags": ["外婆"]},
+    "收到老同学消息,眼眶一热": {"tags": ["老同学"]},
+    # 该条文案说的是「孩子」，但 NER 词表里没有「孩子」（只有 儿子/女儿 等称谓），
+    # 故挂 `儿子` 以便 `和儿子有关的记录` 能按 tag 命中（见 truth_queries 的改写说明）。
+    "孩子第一次叫爸爸,想哭": {"tags": ["儿子"]},
+}
+
 # ---------- 查询分层模板 ----------
 def _queries_for_text() -> list[dict]:
     """corpus-B 分层查询（query → 期望命中的文本内容片段,用前缀匹配定位 id）"""
@@ -93,21 +111,23 @@ def _queries_for_text() -> list[dict]:
         {"query": "让我难过的记录", "expected_label": "emotion", "layer": "descriptive"},
         {"query": "人生感悟和道理", "expected_label": "quote", "layer": "descriptive"},
         # keyword 关键词精确
-        {"query": "买牛奶", "expected_label": "todo", "layer": "keyword"},
-        {"query": "马拉松", "expected_label": "emotion", "layer": "keyword"},
-        {"query": "收房租", "expected_label": "todo", "layer": "keyword"},
+        {"query": "买牛奶", "expected_label": "todo", "expected": ["b-todo-04"], "layer": "keyword"},
+        {"query": "马拉松", "expected_label": "emotion", "expected": ["b-emotion-14"], "layer": "keyword"},
+        {"query": "收房租", "expected_label": "todo", "expected": ["b-todo-02"], "layer": "keyword"},
         # typo 错字口语（稀疏召回验证）
-        {"query": "买牛乃", "expected_label": "todo", "layer": "typo"},
+        {"query": "买牛乃", "expected_label": "todo", "expected": ["b-todo-04"], "layer": "typo"},
         {"query": "松鼠桂鱼", "expected_label": "__none__", "layer": "typo"},  # 无相关——验证不误召回
         # temporal 时间表达（行为判定：基准无历史数据 → 应返回空）
         {"query": "去年去的地方", "layer": "temporal"},
         {"query": "上个月的照片", "layer": "temporal"},
         # route 路由意图（行为判定）
         {"query": "照片里的猫", "expected_label": "__none__", "layer": "route"},
-        {"query": "给领导交季度总结", "expected_label": "todo", "layer": "route"},
+        {"query": "给领导交季度总结", "expected_label": "todo",
+         "expected": ["b-todo-05", "b-todo-12"], "layer": "route"},
         # length 长短查询
-        {"query": "购物", "expected_label": "todo", "layer": "length"},
-        {"query": "记得明天下午之前把上个月的工作总结报告交给领导", "expected_label": "todo", "layer": "length"},
+        {"query": "购物", "expected_label": "todo", "expected": ["b-todo-14", "b-todo-04"], "layer": "length"},
+        {"query": "记得明天下午之前把上个月的工作总结报告交给领导", "expected_label": "todo",
+         "expected": ["b-todo-05", "b-todo-12"], "layer": "length"},
     ]
 
 
@@ -115,7 +135,10 @@ def build_text_corpus() -> list[dict]:
     items: list[dict] = []
     for label, texts in _TEXT_SEED.items():
         for i, text in enumerate(texts):
-            items.append({"id": f"b-{label}-{i:02d}", "text": text, "content_type": "text", "label": label})
+            items.append({
+                "id": f"b-{label}-{i:02d}", "text": text, "content_type": "text", "label": label,
+                **(_TEXT_META.get(text) or {}),   # R-3/R-5：挂 tags（无则不加键）
+            })
     return items
 
 
@@ -123,6 +146,83 @@ def build_voice_corpus() -> list[dict]:
     return [
         {"id": f"c-{i:02d}", "text": t, "content_type": "voice", "label": "voice"}
         for i, t in enumerate(_VOICE_SEED)
+    ]
+
+
+# ---------- corpus-D：filter 元数据语料（R-3/R-5 · 2026-10-16）----------
+#
+# ## 为什么单独一个文件，而不是并进 B/C
+#
+# `taken_at` 一旦落进 B/C，合成路径（`run_eval._eval_corpus`）的 `temporal` 层就不再是
+# 「空结果」—— 那层被**硬编码为「空=对」**（`run_eval.py` 的 `_eval_corpus`），
+# 于是 `temporal_acc`(0.90) 门禁会**直接打红**。B/C 保持不带 `taken_at`，隔离干净。
+#
+# ## 🔴 时间锚点（本文件的核心）
+#
+# 查询写的是「去年夏天 / 上个月 / 昨天」这类**相对**时间，`_TIME_PATTERNS` 按**运行时 now**
+# 现算窗口 ⇒ 语料里的 `taken_at` 必须相对**同一个锚点**，否则跨天跑就失配。
+# 锚点存在 `_meta.anchor_now`，评测端读它设 `RAG_NOW_OVERRIDE` 冻结时钟（见 `rag/rewrite._now`）。
+# 取**中午**：避开 `replace(day=1)` 一类边界。
+_ANCHOR_NOW = "2026-10-16T12:00:00+08:00"
+
+# 🔴 **保留空窗** = 「上上周」窗（2026-10-02 ~ 2026-10-09）：
+#   两条负样本（`上上周在北海道滑雪的照片` / `上上周翻拍的老照片`）靠它落空。
+#   **谁都不许在这段里写 `taken_at`**，否则负样本会误召回。
+_EMPTY_WINDOW = "2026-10-02 ~ 2026-10-09"
+
+
+def build_filter_corpus() -> list[dict]:
+    """corpus-D：filter 元数据语料 —— place / taken_at / photo
+
+    每条都对应 `truth_queries_50.json` 里某条原本是「空期望占位」的查询，让 place /
+    person / time / image 四层**真正进 retrieval 口径**（出 hit_rate@3 数字）。
+
+    ⚠️ 过滤值必须**等于该查询经 NER 实测抽出的串**（不是我们"想让它抽"的）—— 例如
+    `上海外滩的回忆` 实测抽到的是 `外滩`（地标在词表里排在 `上海` 前），所以这里 place 写 `外滩`。
+    """
+    return [
+        # ── photo：服务 image 意图查询 ─────────────────────────────────
+        # ⚠️ `intent._route_query` 对含「照片/图片/拍的/截图/合照/风景照」的查询**强制 image 意图**
+        #    ⇒ 会打上 `content_types=["photo"]` 硬过滤，必须有 photo 条目才命中。
+        # photo 无 image_vec，靠 **caption 文本**走检索（与生产的 caption 替代路径一致）。
+        {"id": "d-photo-00", "text": "苏州园林里的旅行合照", "content_type": "photo",
+         "label": "photo", "place": "苏州", "taken_at": "2026-09-10T10:00:00+08:00"},
+        #   ↑ 一条同时服务：place 层「在苏州拍的照片」(place=苏州) + time 层「上个月拍的照片」(2026-09)
+        {"id": "d-photo-01", "text": "一只橘猫趴在窗台上晒太阳", "content_type": "photo",
+         "label": "photo", "taken_at": "2026-08-02T09:00:00+08:00"},          # 照片里的猫
+        {"id": "d-photo-02", "text": "海边日落时分的风景照", "content_type": "photo",
+         "label": "photo", "taken_at": "2026-07-18T18:30:00+08:00"},          # 上次拍的风景照
+        {"id": "d-photo-03", "text": "手机截图的课程表", "content_type": "photo",
+         "label": "photo", "taken_at": "2026-06-05T08:00:00+08:00"},          # 截图的课程表
+        {"id": "d-photo-04", "text": "旅行时和朋友拍的合照", "content_type": "photo",
+         "label": "photo", "taken_at": "2026-05-20T15:00:00+08:00"},          # 旅行拍的合照
+        #   这一条同时服务两处：
+        #     · route 层「去年生日那天的照片」(去年=2025 + image 意图)
+        #     · time 层「去年夏天去的杭州」(2025-06~08 **且** place=杭州
+        #       —— 该查询实测**同时**带时间与地点过滤，见 NER 实测)
+        {"id": "d-photo-05", "text": "去年生日在杭州拍的纪念照", "content_type": "photo",
+         "label": "photo", "place": "杭州", "taken_at": "2025-08-20T12:00:00+08:00"},
+
+        # ── place 层（文本，只挂 place）────────────────────────────────
+        {"id": "d-place-00", "text": "上海外滩的夜景值得再看一次", "content_type": "text",
+         "label": "mixed", "place": "外滩"},
+        {"id": "d-place-01", "text": "在西湖边散步了一整个下午", "content_type": "text",
+         "label": "mixed", "place": "西湖"},
+        {"id": "d-place-02", "text": "北京出差的行程安排", "content_type": "text",
+         "label": "todo", "place": "北京"},
+        {"id": "d-place-03", "text": "云南旅游的攻略整理", "content_type": "text",
+         "label": "idea", "place": "云南"},
+
+        # ── time 层（挂 taken_at，服务相对时间查询）──────────────────
+        # 窗口按 `_ANCHOR_NOW` 现算；见 `_TIME_PATTERNS`。
+        {"id": "d-time-00", "text": "昨天和朋友去吃了川菜", "content_type": "text",
+         "label": "mixed", "taken_at": "2026-10-15T19:00:00+08:00"},          # 昨天的记录
+        {"id": "d-time-01", "text": "前年去过的地方是厦门", "content_type": "text",
+         "label": "mixed", "taken_at": "2024-05-20T10:00:00+08:00"},          # 前年去过的地方
+        {"id": "d-time-02", "text": "上周的会议纪要", "content_type": "text",
+         "label": "todo", "taken_at": "2026-10-11T14:00:00+08:00"},           # 上周的会议
+        {"id": "d-time-03", "text": "三年前的今天在准备考研", "content_type": "text",
+         "label": "mixed", "taken_at": "2023-08-01T20:00:00+08:00"},          # 三年前的今天
     ]
 
 
@@ -158,6 +258,7 @@ def main() -> None:
     text_items = build_text_corpus()
     voice_items = build_voice_corpus()
     scale_items = build_scale_corpus(args.scale)
+    filter_items = build_filter_corpus()
 
     # 保存语料（corpus-A 由 build_corpus.py 生成；D 运行时合并 A+B+C）
     (CORPORA_DIR / "corpus_b_text.json").write_text(
@@ -186,11 +287,29 @@ def main() -> None:
         ),
         encoding="utf-8",
     )
+    (CORPORA_DIR / "corpus_d_filter.json").write_text(
+        json.dumps(
+            {"_meta": {"version": 1,
+                        "note": "filter 元数据语料（place/taken_at/photo）—— 服务 truth_queries_50 "
+                                "里原本是空期望占位的 place/person/time/image 四层（R-3/R-5）",
+                        "count": len(filter_items),
+                        "anchor_now": _ANCHOR_NOW,
+                        "anchor_why": "时间查询是相对的（去年夏天/上个月），_TIME_PATTERNS 按运行时 now "
+                                      "现算窗口；冻结锚点让语料可 diff、评测可复现。评测端读本字段设 "
+                                      "RAG_NOW_OVERRIDE（见 rag/rewrite._now）",
+                        "reserved_empty_window": _EMPTY_WINDOW,
+                        "reserved_why": "两条负样本靠这段空窗落空，任何条目都不许在此写 taken_at"},
+             "items": filter_items},
+            ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
     (QUERIES_DIR / "queries_text.json").write_text(
         json.dumps({"queries": _queries_for_text()}, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"corpus-B 文字碎片: {len(text_items)} 条")
     print(f"corpus-C 语音转写: {len(voice_items)} 条")
+    print(f"corpus-D filter 元数据: {len(filter_items)} 条（锚点 {_ANCHOR_NOW}）")
     print(f"corpus-E 规模压力: {len(scale_items)} 条")
     print(f"queries_text: {len(_queries_for_text())} 条分层查询")
 

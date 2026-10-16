@@ -114,7 +114,7 @@ def test_eval_truth_expect_empty_negative_hook():
 
 
 def test_eval_truth_retrieval_and_placeholder():
-    """显式 id 检索 + time 行为占位 + neutral 占位"""
+    """显式 id 检索 + 无 expected 的查询一律落 neutral 占位"""
     from rag_benchmark.run_eval import _eval_truth_queries
 
     queries = [
@@ -127,13 +127,17 @@ def test_eval_truth_retrieval_and_placeholder():
     ]
     corpus_labels = {"__all__": {"b-todo-04"}, "todo": {"b-todo-04"}}
     modality = {"b-todo-04": "text"}
-    # r1 命中 → hit_rate@3=1.0；t1 无结果 → time 行为占位 ok；p1 neutral 占位
+    # r1 命中 → hit_rate@3=1.0；t1 / p1 均无 expected → neutral 占位
     ranker = _fake_ranker({"买牛奶": ["b-todo-04"], "去年去的地方": [], "和妈妈有关": ["b-mixed-00"]})
     res = _eval_truth_queries(queries, ranker, corpus_labels, modality)
     assert res["overall"]["retrieval"]["hit_rate@3"] == 1.0
-    assert res["layers"]["time"]["behavior_acc"] == 1.0
+    # R-3/R-5（2026-10-16）：`_BEHAVIOR_EMPTY_OK_LAYERS` 已清空 —— time 层不再有
+    # 「空结果即正确」的白分口径（语料补了 taken_at 后，空结果意味着**该命中却没命中**）。
+    # 无 expected 的 time 查询与 person 一样落 neutral 占位，**拿不到 behavior_acc**。
+    assert res["layers"]["time"]["placeholder"] is True
+    assert res["layers"]["time"]["behavior_acc"] is None
     assert res["layers"]["person"]["placeholder"] is True
-    assert res["overall"]["placeholder_n"] == 1
+    assert res["overall"]["placeholder_n"] == 2
 
 
 def test_eval_truth_cross_modal_route():

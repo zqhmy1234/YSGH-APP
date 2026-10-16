@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -79,6 +81,37 @@ def _load_json(path: Path) -> dict:
 _INDEX_CHUNK = 64
 
 
+def _payload_for(it: dict, content_type: str) -> dict:
+    """语料条目 → Qdrant payload（R-3/R-5 · 2026-10-16 补 filter 元数据）
+
+    字段名与取值必须**严格对齐生产契约**（否则 filter 层永远匹配不到）：
+      · `place` → 字符串（`_to_filter` 用 `MatchValue`）
+      · `tags`  → **复数键 + 数组**（`_to_filter` 里的键名就是 `tags`）
+      · `taken_at` → **epoch 秒 int**（Qdrant `Range` 只吃数值；ISO 字符串匹配不上。
+        镜像 `pipeline.py` 的 `int(ta.timestamp())`）
+
+    缺省键**不写 None** —— 保持 payload 干净，也让「字段缺失」的语义可用。
+    """
+    payload = {
+        "content_type": content_type,
+        "label": it.get("label"),
+        # P1-A（2026-08-25）：类目路由按 content_class 过滤（与生产 payload
+        # 字段一致；label 保留兼容旧逻辑）
+        "content_class": it.get("label"),
+        "benchmark": "rag-distribution",
+        "text": it["text"],
+    }
+    if it.get("place"):
+        payload["place"] = it["place"]
+    if it.get("tags"):
+        payload["tags"] = list(it["tags"])
+    taken = it.get("taken_at")
+    if taken:
+        payload["taken_at"] = (int(datetime.fromisoformat(taken).timestamp())
+                               if isinstance(taken, str) else int(taken))
+    return payload
+
+
 def _index(db, items: list[dict], content_type: str, collection: str | None = None) -> None:
     """语料 → Qdrant 基准 collection（幂等：同 id 覆盖）
 
@@ -105,15 +138,7 @@ def _index(db, items: list[dict], content_type: str, collection: str | None = No
                 text=it["text"],
                 dense=dense,
                 sparse=sparse,
-                payload={
-                    "content_type": content_type,
-                    "label": it.get("label"),
-                    # P1-A（2026-08-25）：类目路由按 content_class 过滤（与生产 payload
-                    # 字段一致；label 保留兼容旧逻辑）
-                    "content_class": it.get("label"),
-                    "benchmark": "rag-distribution",
-                    "text": it["text"],
-                },
+                payload=_payload_for(it, content_type),
                 collection=col,
             )
         print(f"  [index] {min(start + _INDEX_CHUNK, total)}/{total}", flush=True)
@@ -235,8 +260,16 @@ def _eval_corpus(queries: list[dict], ranker, corpus_labels: dict[str, set[str]]
 
 # ---- Wave2-F（2026-08-26）：真值评测（RAG评测体系 §6，5 项落地）----
 
-# 行为层：time/temporal 时间过滤是硬过滤（无 NER/类目回退）→ "空结果即正确"占位
-_BEHAVIOR_EMPTY_OK_LAYERS = {"time", "temporal"}
+# 行为层：**「空结果即正确」的占位口径**
+#
+# ⚠️ 2026-10-16（R-3/R-5）**已从集合里移除 `time`/`temporal`**：
+# 语料补上 `taken_at` 之后（corpus-D 带 `_meta.anchor_now` 冻结时钟），时间查询会**返回非空**，
+# 再按「空=对」判定就会把**正确命中判成错**。现在 time 层的正向查询都带 `expected`，
+# 走正常的 retrieval 分支（命中 expected 才算对）——与其他层同口径。
+#
+# 保留这个集合本身是**防回归**：今后若有人又把某条 time 查询的 `expected` 清空，
+# 它会掉到 `neutral` **占位**分支（一眼看得出是占位），而不是白拿 `behavior_acc=1.0`。
+_BEHAVIOR_EMPTY_OK_LAYERS: set[str] = set()
 
 
 def _load_truth_queries(path: Path) -> list[dict]:
@@ -394,9 +427,22 @@ def _check_rewrite_case(case: dict, now=None) -> bool:
 
 
 def _now(now) -> object:
+    """当前时间（显式传入 `now` 优先）—— 与 `rag/rewrite._now` 用**同一个** `RAG_NOW_OVERRIDE`
+
+    两边必须同锚，否则 `--truth-50 --rewrite-check` 同进程跑时，
+    改写校验算的期望窗口与检索层实际用的窗口会不一致。
+    """
+    if now is not None:
+        return now
     import datetime as _dt
 
-    return now if now is not None else _dt.datetime.now(_dt.UTC).astimezone()
+    raw = os.environ.get("RAG_NOW_OVERRIDE")
+    if raw:
+        try:
+            return _dt.datetime.fromisoformat(raw).astimezone()
+        except ValueError:
+            print(f"[warn] RAG_NOW_OVERRIDE 解析失败，回落真实 now: {raw}")
+    return _dt.datetime.now(_dt.UTC).astimezone()
 
 
 def _eval_rewrite(cases_path: Path) -> dict:
@@ -436,6 +482,18 @@ def _run_truth_eval(args, report: dict) -> dict:
     if not items:
         items = _load_json(BENCH_DIR / "corpora" / "corpus_b_text.json")["items"]
         items += _load_json(BENCH_DIR / "corpora" / "corpus_c_voice.json")["items"]
+        # corpus-D（R-3/R-5 · 2026-10-16）：filter 元数据语料（place/taken_at/photo）。
+        # 它带 `_meta.anchor_now` —— 时间查询是**相对** now 解析的，必须把时钟冻到
+        # 与该语料同一锚点，否则跨天跑就失配（见 rag/rewrite._now）。
+        d_path = BENCH_DIR / "corpora" / "corpus_d_filter.json"
+        if d_path.exists():
+            d_corpus = _load_json(d_path)
+            items += d_corpus["items"]
+            anchor = (d_corpus.get("_meta") or {}).get("anchor_now")
+            if anchor:
+                os.environ["RAG_NOW_OVERRIDE"] = anchor
+                print(f"[truth] 时钟冻结到语料锚点 RAG_NOW_OVERRIDE={anchor}"
+                      f"（corpus-D {len(d_corpus['items'])} 条）")
     print(f"[truth] 索引语料 {len(items)} 条 → {TRUTH_COLLECTION}")
     by_ct: dict[str, list[dict]] = {}
     for it in items:
