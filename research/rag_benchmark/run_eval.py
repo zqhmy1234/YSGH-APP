@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -49,6 +51,11 @@ BENCH_COLLECTION = "yishu_benchmark"
 TEXT_BENCH_COLLECTION = "yishu_benchmark_text"
 # 外部评测集独立 collection（P1-B2 2026-08-25：T2Ranking 抽取用例，与合成库隔离）
 EXT_COLLECTION = "yishu_benchmark_ext"
+# 规模压力测试独立 collection（A-4 · 2026-10-14）：**索引与查询必须同一个库**。
+# 此前 scale-eval 索引落 TEXT_BENCH_COLLECTION、查询打 BENCH_COLLECTION，两者不是
+# 同一个 collection ⇒ P95 根本没测在刚写进去的 N 条语料上。独立库还保证规模语义：
+# 每个 N 从空库重建，点数不会跨规模累积。
+SCALE_COLLECTION = "yishu_benchmark_scale"
 
 GATE = {
     "hit_rate@3": 0.70,     # M1 门禁（Top3≥70%，与产品口径一致）
@@ -68,11 +75,50 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+# 分段编码批大小（A-4 2026-10-14）：一次性编码整个语料在 N 大时会长时间无输出、
+# 内存峰值高（实测 500 条单批跑十余分钟且无进度）。分段编码**结果与整体一致**
+# （同一模型同一输入，只是切批），但对规模测试可用性影响很大。
+_INDEX_CHUNK = 64
+
+
+def _payload_for(it: dict, content_type: str) -> dict:
+    """语料条目 → Qdrant payload（R-3/R-5 · 2026-10-16 补 filter 元数据）
+
+    字段名与取值必须**严格对齐生产契约**（否则 filter 层永远匹配不到）：
+      · `place` → 字符串（`_to_filter` 用 `MatchValue`）
+      · `tags`  → **复数键 + 数组**（`_to_filter` 里的键名就是 `tags`）
+      · `taken_at` → **epoch 秒 int**（Qdrant `Range` 只吃数值；ISO 字符串匹配不上。
+        镜像 `pipeline.py` 的 `int(ta.timestamp())`）
+
+    缺省键**不写 None** —— 保持 payload 干净，也让「字段缺失」的语义可用。
+    """
+    payload = {
+        "content_type": content_type,
+        "label": it.get("label"),
+        # P1-A（2026-08-25）：类目路由按 content_class 过滤（与生产 payload
+        # 字段一致；label 保留兼容旧逻辑）
+        "content_class": it.get("label"),
+        "benchmark": "rag-distribution",
+        "text": it["text"],
+    }
+    if it.get("place"):
+        payload["place"] = it["place"]
+    if it.get("tags"):
+        payload["tags"] = list(it["tags"])
+    taken = it.get("taken_at")
+    if taken:
+        payload["taken_at"] = (int(datetime.fromisoformat(taken).timestamp())
+                               if isinstance(taken, str) else int(taken))
+    return payload
+
+
 def _index(db, items: list[dict], content_type: str, collection: str | None = None) -> None:
     """语料 → Qdrant 基准 collection（幂等：同 id 覆盖）
 
     collection=None → 默认文字基准库 TEXT_BENCH_COLLECTION；
     外部评测集（--external）传 EXT_COLLECTION 隔离。
+
+    编码按 `_INDEX_CHUNK` 分段（向量与整体编码一致），并打印进度。
     """
     from app.services.embedding import encode_dense, encode_sparse
     from app.services.vector_store import get_store
@@ -80,26 +126,73 @@ def _index(db, items: list[dict], content_type: str, collection: str | None = No
     col = collection or TEXT_BENCH_COLLECTION
     store = get_store()
     store.ensure_collection(col)
-    texts = [it["text"] for it in items]
-    denses = encode_dense(texts)
-    sparses = encode_sparse(texts)
-    for it, dense, sparse in zip(items, denses, sparses, strict=True):
-        store.upsert_content(
-            content_id=it["id"],
-            text=it["text"],
-            dense=dense,
-            sparse=sparse,
-            payload={
-                "content_type": content_type,
-                "label": it.get("label"),
-                # P1-A（2026-08-25）：类目路由按 content_class 过滤（与生产 payload
-                # 字段一致；label 保留兼容旧逻辑）
-                "content_class": it.get("label"),
-                "benchmark": "rag-distribution",
-                "text": it["text"],
-            },
-            collection=col,
-        )
+    total = len(items)
+    for start in range(0, total, _INDEX_CHUNK):
+        chunk = items[start:start + _INDEX_CHUNK]
+        texts = [it["text"] for it in chunk]
+        denses = encode_dense(texts)
+        sparses = encode_sparse(texts)
+        for it, dense, sparse in zip(chunk, denses, sparses, strict=True):
+            store.upsert_content(
+                content_id=it["id"],
+                text=it["text"],
+                dense=dense,
+                sparse=sparse,
+                payload=_payload_for(it, content_type),
+                collection=col,
+            )
+        print(f"  [index] {min(start + _INDEX_CHUNK, total)}/{total}", flush=True)
+
+
+def _reset_collection(collection: str) -> None:
+    """删库重建（规模曲线的每个 N 都必须从空库起步，否则点数会跨规模累积）"""
+    from app.services.vector_store import get_store
+
+    store = get_store()
+    try:
+        store.client.delete_collection(collection)
+    except Exception as exc:  # noqa: BLE001 —— 库不存在属正常（首次跑即如此），仅提示
+        print(f"[scale] 删除旧库 {collection} 跳过：{exc}")
+    store.ensure_collection(collection)
+
+
+def _run_scale_point(size: int, n_queries: int = 50) -> dict:
+    """单点规模压测：索引 N 条 → 测查询 P95
+
+    A-4（2026-10-14）修：索引与查询**都用 SCALE_COLLECTION**（此前两者不同库，
+    P95 没测在实际语料上）。另加 warm-up 排除 BGE 冷加载，避免首次查询把 P95 抬高。
+    """
+    from app.schemas.search import SearchQuery
+    from app.services.embedding import encode_query
+    from app.services.rag import search
+
+    corpus = _load_json(BENCH_DIR / "corpora" / "corpus_e_scale.json")["items"][:size]
+    _reset_collection(SCALE_COLLECTION)
+    t0 = time.perf_counter()
+    _index(None, corpus, "text", collection=SCALE_COLLECTION)
+    idx_ms = int((time.perf_counter() - t0) * 1000)
+
+    encode_query("预热")  # 排除模型冷加载
+    latencies: list[float] = []
+    for i in range(n_queries):
+        t0 = time.perf_counter()
+        search(SearchQuery(q=f"工作备忘 {i * 100}", limit=5), collection=SCALE_COLLECTION)
+        latencies.append((time.perf_counter() - t0) * 1000)
+    p95 = sorted(latencies)[max(0, int(len(latencies) * 0.95) - 1)]
+    from app.core.config import settings  # 记录口径：mock 开关直接决定延迟量级
+
+    return {
+        "collection": SCALE_COLLECTION,
+        "size": len(corpus),
+        "n_queries": n_queries,
+        "index_ms": idx_ms,
+        "p95_ms": round(p95, 1),
+        "gate_p95": p95 < GATE["p95_ms"],
+        # ⚠️ 口径必需字段：mock_external_ai=true 时 LLM 改写/精排是 no-op，
+        # 测出的 P95 会**低于**真实档；对比历史数字前先核对这一项。
+        "mock_external_ai": settings.mock_external_ai,
+        "rerank_enabled": settings.rerank_enabled,
+    }
 
 
 def _make_ranker(content_type: str | None = None, collection: str | None = None):
@@ -167,8 +260,16 @@ def _eval_corpus(queries: list[dict], ranker, corpus_labels: dict[str, set[str]]
 
 # ---- Wave2-F（2026-08-26）：真值评测（RAG评测体系 §6，5 项落地）----
 
-# 行为层：time/temporal 时间过滤是硬过滤（无 NER/类目回退）→ "空结果即正确"占位
-_BEHAVIOR_EMPTY_OK_LAYERS = {"time", "temporal"}
+# 行为层：**「空结果即正确」的占位口径**
+#
+# ⚠️ 2026-10-16（R-3/R-5）**已从集合里移除 `time`/`temporal`**：
+# 语料补上 `taken_at` 之后（corpus-D 带 `_meta.anchor_now` 冻结时钟），时间查询会**返回非空**，
+# 再按「空=对」判定就会把**正确命中判成错**。现在 time 层的正向查询都带 `expected`，
+# 走正常的 retrieval 分支（命中 expected 才算对）——与其他层同口径。
+#
+# 保留这个集合本身是**防回归**：今后若有人又把某条 time 查询的 `expected` 清空，
+# 它会掉到 `neutral` **占位**分支（一眼看得出是占位），而不是白拿 `behavior_acc=1.0`。
+_BEHAVIOR_EMPTY_OK_LAYERS: set[str] = set()
 
 
 def _load_truth_queries(path: Path) -> list[dict]:
@@ -326,9 +427,22 @@ def _check_rewrite_case(case: dict, now=None) -> bool:
 
 
 def _now(now) -> object:
+    """当前时间（显式传入 `now` 优先）—— 与 `rag/rewrite._now` 用**同一个** `RAG_NOW_OVERRIDE`
+
+    两边必须同锚，否则 `--truth-50 --rewrite-check` 同进程跑时，
+    改写校验算的期望窗口与检索层实际用的窗口会不一致。
+    """
+    if now is not None:
+        return now
     import datetime as _dt
 
-    return now if now is not None else _dt.datetime.now(_dt.UTC).astimezone()
+    raw = os.environ.get("RAG_NOW_OVERRIDE")
+    if raw:
+        try:
+            return _dt.datetime.fromisoformat(raw).astimezone()
+        except ValueError:
+            print(f"[warn] RAG_NOW_OVERRIDE 解析失败，回落真实 now: {raw}")
+    return _dt.datetime.now(_dt.UTC).astimezone()
 
 
 def _eval_rewrite(cases_path: Path) -> dict:
@@ -368,6 +482,18 @@ def _run_truth_eval(args, report: dict) -> dict:
     if not items:
         items = _load_json(BENCH_DIR / "corpora" / "corpus_b_text.json")["items"]
         items += _load_json(BENCH_DIR / "corpora" / "corpus_c_voice.json")["items"]
+        # corpus-D（R-3/R-5 · 2026-10-16）：filter 元数据语料（place/taken_at/photo）。
+        # 它带 `_meta.anchor_now` —— 时间查询是**相对** now 解析的，必须把时钟冻到
+        # 与该语料同一锚点，否则跨天跑就失配（见 rag/rewrite._now）。
+        d_path = BENCH_DIR / "corpora" / "corpus_d_filter.json"
+        if d_path.exists():
+            d_corpus = _load_json(d_path)
+            items += d_corpus["items"]
+            anchor = (d_corpus.get("_meta") or {}).get("anchor_now")
+            if anchor:
+                os.environ["RAG_NOW_OVERRIDE"] = anchor
+                print(f"[truth] 时钟冻结到语料锚点 RAG_NOW_OVERRIDE={anchor}"
+                      f"（corpus-D {len(d_corpus['items'])} 条）")
     print(f"[truth] 索引语料 {len(items)} 条 → {TRUTH_COLLECTION}")
     by_ct: dict[str, list[dict]] = {}
     for it in items:
@@ -453,7 +579,11 @@ def _write_report(report: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scale-eval", type=int, default=0, help=">0 时跑规模压力（N 条）")
+    parser.add_argument("--scale-eval", type=int, default=0, help=">0 时跑规模压力（N 条，单点）")
+    parser.add_argument("--scale-sizes", default="",
+                        help="逗号分隔的规模曲线，如 500,1000,5000（A-4；每点从空库重建）")
+    parser.add_argument("--scale-queries", type=int, default=50,
+                        help="每个规模点的查询采样次数（默认 50；旧版硬编码 20）")
     parser.add_argument("--external", action="store_true",
                         help="额外评测外部测试集（T2Ranking 抽取用例，P1-B2；不进门禁）")
     parser.add_argument("--truth-50", action="store_true",
@@ -483,31 +613,34 @@ def main() -> None:
         sys.exit(0 if overall_ok else 1)
 
     # 仅 --rewrite-check（不跑合成全量）→ 直接收尾
-    if args.rewrite_check and not args.scale_eval and not args.external:
+    # 注意 `--scale-sizes` 也要算进「有别的评测要跑」，否则 --rewrite-check --scale-sizes 会被提前收尾
+    if args.rewrite_check and not args.scale_eval and not args.scale_sizes and not args.external:
         report["overall_pass"] = True
         _write_report(report)
         return
 
-    if args.scale_eval > 0:
-        # corpus-E 规模压力：只测延迟随规模（--scale-eval N 条）
-        from app.schemas.search import SearchQuery
-        from app.services.rag import search
+    scale_sizes = [int(s) for s in args.scale_sizes.split(",") if s.strip()] if args.scale_sizes else []
+    if args.scale_eval > 0 and not scale_sizes:
+        scale_sizes = [args.scale_eval]  # 向后兼容旧的单点用法
 
-        corpus = _load_json(BENCH_DIR / "corpora" / "corpus_e_scale.json")["items"][: args.scale_eval]
-        print(f"[scale] 索引 {len(corpus)} 条合成文本...")
-        t0 = time.perf_counter()
-        _index(None, corpus, "text")
-        idx_ms = int((time.perf_counter() - t0) * 1000)
-        latencies = []
-        for i in range(20):
-            t0 = time.perf_counter()
-            search(SearchQuery(q=f"工作备忘 {i * 100}", limit=5), collection=BENCH_COLLECTION)
-            latencies.append((time.perf_counter() - t0) * 1000)
-        p95 = sorted(latencies)[int(len(latencies) * 0.95) - 1]
-        report["corpora"]["scale"] = {"size": len(corpus), "index_ms": idx_ms, "p95_ms": round(p95, 1)}
-        report["corpora"]["scale"]["gate_p95"] = p95 < GATE["p95_ms"]
-        overall_ok &= p95 < GATE["p95_ms"]
-        print(f"[scale] {len(corpus)} 条索引 {idx_ms}ms | 查询 P95 {p95:.0f}ms（门禁 <{GATE['p95_ms']}ms）")
+    if scale_sizes:
+        # corpus-E 规模压力：延迟随规模曲线（A-4 · 2026-10-14 修 collection 不一致）
+        curve: list[dict] = []
+        for size in scale_sizes:
+            pt = _run_scale_point(size, n_queries=args.scale_queries)
+            curve.append(pt)
+            overall_ok &= pt["gate_p95"]
+            mark = "✅" if pt["gate_p95"] else "❌"
+            print(f"[scale] {pt['size']:>6} 条 | 索引 {pt['index_ms']}ms | "
+                  f"查询 P95 {pt['p95_ms']:.0f}ms（门禁 <{GATE['p95_ms']}ms）{mark}")
+        # 向后兼容：`corpora.scale` 保留「单点视图」= 最大规模那一点
+        report["corpora"]["scale"] = curve[-1]
+        report["corpora"]["scale_curve"] = curve
+        (BENCH_DIR / "scale_curve.json").write_text(
+            json.dumps({"_meta": {"collection": SCALE_COLLECTION, "gate_p95_ms": GATE["p95_ms"],
+                                  "note": "A-4 检索性能复测；曲线各点均从空库重建"},
+                        "curve": curve}, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[scale] 曲线已留存: {BENCH_DIR / 'scale_curve.json'}")
     else:
         # corpus-B + corpus-C 文本/语音分布（corpus-D 混合 = B+C 同索引）
         b_items = _load_json(BENCH_DIR / "corpora" / "corpus_b_text.json")["items"]

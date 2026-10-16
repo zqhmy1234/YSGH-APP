@@ -2,7 +2,11 @@
 set -e
 
 echo "=== 忆述光华 Harness 初始化 ==="
-cd "$(dirname "$0")"
+SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+if [ "$SCRIPT_DIR" = "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR=.
+fi
+cd "$SCRIPT_DIR"
 
 # 1. 交付文档完整性检查（18 份必须存在）
 DOCS=(

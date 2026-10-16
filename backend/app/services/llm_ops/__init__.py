@@ -10,6 +10,8 @@
 """
 from app.services.llm_ops.base import (
     chat_text,
+    embed_image,
+    embed_text_in_vision,
     image_caption,
     llm_available,
     moderate,
@@ -19,6 +21,8 @@ from app.services.llm_ops.base import (
 
 __all__ = [
     "chat_text",
+    "embed_image",
+    "embed_text_in_vision",
     "image_caption",
     "llm_available",
     "moderate",

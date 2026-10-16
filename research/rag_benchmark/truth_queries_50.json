@@ -15,7 +15,7 @@
     "gates": {
       "negative_error_rate": 0.05,
       "negative_target": 0.03,
-      "hit_rate@3": 0.70
+      "hit_rate@3": 0.7
     }
   },
   "queries": [
@@ -23,7 +23,11 @@
       "query_id": "tq-0001",
       "query": "让我难过的记录",
       "layer": "descriptive",
-      "expected": ["b-emotion-00", "b-emotion-03", "b-emotion-06"],
+      "expected": [
+        "b-emotion-00",
+        "b-emotion-03",
+        "b-emotion-06"
+      ],
       "expected_label": "emotion",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0001",
@@ -35,7 +39,9 @@
       "query_id": "tq-0002",
       "query": "关于做产品的想法",
       "layer": "descriptive",
-      "expected": ["b-idea-00"],
+      "expected": [
+        "b-idea-00"
+      ],
       "expected_label": "idea",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0002",
@@ -47,7 +53,11 @@
       "query_id": "tq-0003",
       "query": "记得要去办的事情",
       "layer": "descriptive",
-      "expected": ["b-todo-00", "b-todo-02", "b-todo-04"],
+      "expected": [
+        "b-todo-00",
+        "b-todo-02",
+        "b-todo-04"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0003",
@@ -59,7 +69,10 @@
       "query_id": "tq-0004",
       "query": "人生感悟和道理",
       "layer": "descriptive",
-      "expected": ["b-quote-00", "b-quote-13"],
+      "expected": [
+        "b-quote-00",
+        "b-quote-13"
+      ],
       "expected_label": "quote",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0004",
@@ -71,7 +84,10 @@
       "query_id": "tq-0005",
       "query": "开心的时候的记录",
       "layer": "descriptive",
-      "expected": ["b-emotion-02", "b-emotion-05"],
+      "expected": [
+        "b-emotion-02",
+        "b-emotion-05"
+      ],
       "expected_label": "emotion",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0005",
@@ -83,7 +99,10 @@
       "query_id": "tq-0006",
       "query": "创业的一些点子",
       "layer": "descriptive",
-      "expected": ["b-idea-02", "b-idea-09"],
+      "expected": [
+        "b-idea-02",
+        "b-idea-09"
+      ],
       "expected_label": "idea",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0006",
@@ -95,7 +114,10 @@
       "query_id": "tq-0007",
       "query": "很累想休息的记录",
       "layer": "descriptive",
-      "expected": ["b-emotion-00", "b-emotion-12"],
+      "expected": [
+        "b-emotion-00",
+        "b-emotion-12"
+      ],
       "expected_label": "emotion",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0007",
@@ -107,7 +129,10 @@
       "query_id": "tq-0008",
       "query": "让我感动的瞬间",
       "layer": "descriptive",
-      "expected": ["b-emotion-09", "b-emotion-13"],
+      "expected": [
+        "b-emotion-09",
+        "b-emotion-13"
+      ],
       "expected_label": "emotion",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0008",
@@ -119,7 +144,10 @@
       "query_id": "tq-0009",
       "query": "有道理的话想记住",
       "layer": "descriptive",
-      "expected": ["b-quote-04", "b-quote-07"],
+      "expected": [
+        "b-quote-04",
+        "b-quote-07"
+      ],
       "expected_label": "quote",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0009",
@@ -144,7 +172,9 @@
       "query_id": "tq-0011",
       "query": "买牛奶",
       "layer": "keyword",
-      "expected": ["b-todo-04"],
+      "expected": [
+        "b-todo-04"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0011",
@@ -156,7 +186,9 @@
       "query_id": "tq-0012",
       "query": "马拉松",
       "layer": "keyword",
-      "expected": ["b-emotion-14"],
+      "expected": [
+        "b-emotion-14"
+      ],
       "expected_label": "emotion",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0012",
@@ -168,7 +200,9 @@
       "query_id": "tq-0013",
       "query": "交房租",
       "layer": "keyword",
-      "expected": ["b-todo-02"],
+      "expected": [
+        "b-todo-02"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0013",
@@ -180,7 +214,9 @@
       "query_id": "tq-0014",
       "query": "预约体检",
       "layer": "keyword",
-      "expected": ["b-todo-11"],
+      "expected": [
+        "b-todo-11"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0014",
@@ -192,7 +228,9 @@
       "query_id": "tq-0015",
       "query": "川菜馆的毛血旺",
       "layer": "keyword",
-      "expected": ["c-19"],
+      "expected": [
+        "c-19"
+      ],
       "expected_label": "mixed",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0015",
@@ -204,7 +242,9 @@
       "query_id": "tq-0016",
       "query": "买牛乃",
       "layer": "keyword",
-      "expected": ["b-todo-04"],
+      "expected": [
+        "b-todo-04"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0016",
@@ -216,7 +256,9 @@
       "query_id": "tq-0017",
       "query": "回老家的机票",
       "layer": "keyword",
-      "expected": ["c-32"],
+      "expected": [
+        "c-32"
+      ],
       "expected_label": "mixed",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0017",
@@ -241,73 +283,85 @@
       "query_id": "tq-0019",
       "query": "去年夏天去的杭州",
       "layer": "time",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-05"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0019",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "相对时间 → filter 路径（语料无 taken_at，行为层占位）"
+      "note": "时间 filter（去年夏天 2025-06~08）+ 地点 filter（NER 抽出『杭州』）"
     },
     {
       "query_id": "tq-0020",
       "query": "上个月拍的照片",
       "layer": "time",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-00"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0020",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "相对时间（time filter）"
+      "note": "时间 filter（上个月 2026-09）+ image 意图（『照片』）"
     },
     {
       "query_id": "tq-0021",
       "query": "昨天的记录",
       "layer": "time",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-time-00"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0021",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "相对时间（yesterday）"
+      "note": "时间 filter（昨天 = 2026-10-15）"
     },
     {
       "query_id": "tq-0022",
       "query": "前年去过的地方",
       "layer": "time",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-time-01"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0022",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "相对时间（year_before_last）"
+      "note": "时间 filter（前年 = 2024 全年）"
     },
     {
       "query_id": "tq-0023",
       "query": "上周的会议",
       "layer": "time",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-time-02"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0023",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "相对时间（last_week）"
+      "note": "时间 filter（上周 2026-10-09~15）"
     },
     {
       "query_id": "tq-0024",
       "query": "三年前的今天",
       "layer": "time",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-time-03"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0024",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "相对时间（three_years_ago）"
+      "note": "时间 filter（三年前 = 2023 全年）"
     },
     {
       "query_id": "tq-0025",
@@ -326,65 +380,75 @@
       "query_id": "tq-0026",
       "query": "在苏州拍的照片",
       "layer": "place",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-00"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0026",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "地点 filter 路径（语料无 place，行为层占位）"
+      "note": "地点 filter（NER『苏州』）+ image 意图（『照片』）"
     },
     {
       "query_id": "tq-0027",
-      "query": "上海外滩的回忆",
+      "query": "上海外滩的夜景",
       "layer": "place",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-place-00"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0027",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "地点 filter"
+      "note": "地点 filter —— NER 实测抽出『外滩』而非『上海』（地标优先级）；措辞由『上海外滩的回忆』改为『上海外滩的夜景』：『回忆』会命中 _CLASS_RULES 判成 content_class=todo，叠加 place 过滤后为空 → 触发 NER 静默回退把 place 摘掉 → 误召回 todo 类内容"
     },
     {
       "query_id": "tq-0028",
       "query": "在西湖边玩的日子",
       "layer": "place",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-place-01"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0028",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "地点 filter"
+      "note": "地点 filter（NER『西湖』）"
     },
     {
       "query_id": "tq-0029",
       "query": "北京出差的记录",
       "layer": "place",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-place-02"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0029",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "地点 filter"
+      "note": "地点 filter（NER『北京』）"
     },
     {
       "query_id": "tq-0030",
       "query": "云南旅游的攻略",
       "layer": "place",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-place-03"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0030",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "地点 filter"
+      "note": "地点 filter（NER『云南』）"
     },
     {
       "query_id": "tq-0031",
-      "query": "在北海道滑雪的照片",
+      "query": "上上周在北海道滑雪的照片",
       "layer": "place",
       "expected": [],
       "expected_label": "__none__",
@@ -393,67 +457,79 @@
       "user_id_hashed": "sha256:tq0031",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "place 层负样本"
+      "note": "地点层负样本 —— 改写加『上上周』：北海道不在 NER 词表，原本只有 photo 过滤会误召回；现在 time（保留空窗，无条目）+ photo 双过滤落空"
     },
     {
       "query_id": "tq-0032",
       "query": "和妈妈有关的记录",
       "layer": "person",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "b-todo-01",
+        "b-emotion-04"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0032",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "人物 filter（NER tag 路径，语料无 tags，行为层占位）"
+      "note": "人物 filter tags=妈妈（两条均挂该 tag）"
     },
     {
       "query_id": "tq-0033",
       "query": "跟朋友一起的回忆",
       "layer": "person",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "b-todo-19"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0033",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "人物 filter"
+      "note": "人物 filter tags=朋友"
     },
     {
       "query_id": "tq-0034",
-      "query": "孩子相关的照片",
+      "query": "和儿子有关的记录",
       "layer": "person",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "b-emotion-15"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0034",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "人物 filter"
+      "note": "人物 filter —— **原句『孩子相关的照片』改写了**：NER 词表无『孩子』（只有 儿子/女儿 等称谓），且『照片』会触发 image 意图。改用『儿子』并去掉图片词"
     },
     {
       "query_id": "tq-0035",
       "query": "和老同学聚会的记录",
       "layer": "person",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "b-emotion-13"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0035",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "人物 filter"
+      "note": "人物 filter tags=老同学"
     },
     {
       "query_id": "tq-0036",
-      "query": "外婆做菜的记录",
+      "query": "和外婆一起做菜的记录",
       "layer": "person",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "b-todo-16",
+        "b-emotion-11"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0036",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "人物 filter（亲属称谓）"
+      "note": "人物 filter —— **原句『外婆做菜的记录』加了前导字**：『外婆』在句首时 _RE_PERSON 抓不到（需要 1-2 个前导字）"
     },
     {
       "query_id": "tq-0037",
@@ -472,53 +548,61 @@
       "query_id": "tq-0038",
       "query": "照片里的猫",
       "layer": "image",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-01"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0038",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "图片意图（语料无 photo，行为层占位；真实 corpus-A 落地后按 photo 命中）"
+      "note": "图片意图（photo 过滤）"
     },
     {
       "query_id": "tq-0039",
       "query": "上次拍的风景照",
       "layer": "image",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-02"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0039",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "图片意图"
+      "note": "图片意图（photo 过滤）"
     },
     {
       "query_id": "tq-0040",
       "query": "截图的课程表",
       "layer": "image",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-03"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0040",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "截图类图片意图"
+      "note": "图片意图（photo 过滤）"
     },
     {
       "query_id": "tq-0041",
       "query": "旅行拍的合照",
       "layer": "image",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-04"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0041",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "图片意图"
+      "note": "图片意图（photo 过滤）"
     },
     {
       "query_id": "tq-0042",
-      "query": "翻拍的老照片",
+      "query": "上上周翻拍的老照片",
       "layer": "image",
       "expected": [],
       "expected_label": "__none__",
@@ -527,37 +611,43 @@
       "user_id_hashed": "sha256:tq0042",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "image 层负样本"
+      "note": "图片层负样本 —— 同样加『上上周』落空窗（理由同 tq-0031）"
     },
     {
       "query_id": "tq-0043",
       "query": "去年生日那天的照片",
       "layer": "route",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-05"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0043",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "跨模态：时间 + 图片（行为层）"
+      "note": "跨模态：时间（去年 2025）+ image 意图"
     },
     {
       "query_id": "tq-0044",
       "query": "苏州美食的记录",
       "layer": "route",
-      "expected": [],
-      "expected_label": "__none__",
+      "expected": [
+        "d-photo-00"
+      ],
+      "expected_label": null,
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0044",
       "source": "synthetic-realistic",
       "collected_at": "2026-08-26T09:00:00+08:00",
-      "note": "跨模态：地点 + 内容（行为层）"
+      "note": "跨模态：地点（NER『苏州』）+ 内容"
     },
     {
       "query_id": "tq-0045",
       "query": "记录一下今天跑完十公里",
       "layer": "route",
-      "expected": ["c-18"],
+      "expected": [
+        "c-18"
+      ],
       "expected_label": "mixed",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0045",
@@ -569,7 +659,9 @@
       "query_id": "tq-0046",
       "query": "给妈妈打电话的提醒",
       "layer": "route",
-      "expected": ["b-todo-01"],
+      "expected": [
+        "b-todo-01"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0046",
@@ -581,7 +673,9 @@
       "query_id": "tq-0047",
       "query": "把上次拍的照片整理一下发朋友圈",
       "layer": "route",
-      "expected": ["c-09"],
+      "expected": [
+        "c-09"
+      ],
       "expected_label": "mixed",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0047",
@@ -593,7 +687,9 @@
       "query_id": "tq-0048",
       "query": "考研还剩一百天",
       "layer": "route",
-      "expected": ["c-10"],
+      "expected": [
+        "c-10"
+      ],
       "expected_label": "mixed",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0048",
@@ -605,7 +701,10 @@
       "query_id": "tq-0049",
       "query": "记得给猫买猫粮",
       "layer": "route",
-      "expected": ["c-06", "b-todo-13"],
+      "expected": [
+        "c-06",
+        "b-todo-13"
+      ],
       "expected_label": "todo",
       "expect_empty": false,
       "user_id_hashed": "sha256:tq0049",

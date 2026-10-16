@@ -77,6 +77,7 @@ def main() -> int:
 
     # 索引 yishu_benchmark（content_type=photo）：text_vec + text_sparse + image_vec
     from app.services.embedding import encode_dense, encode_sparse
+    from app.services.image_tower import encode_image_vector
     from app.services.vector_store import get_store
 
     store = get_store()
@@ -102,11 +103,15 @@ def main() -> int:
             payload=payload,
             collection="yishu_benchmark",
         )
-        # B2-4 以图搜图：image_vec = BGE-M3(caption)（caption 向量化方案）
+        # B2-4 以图搜图：image_vec 走图片塔适配层（R-4）。
+        # ⚠️ 不再复用 text_vec 的 `dense` —— 那是文本塔向量；图片塔由
+        # `image_tower_backend` 决定（默认 bge_caption 时结果与旧行为一致，
+        # 但空间标识会写进 payload 供检索端隔离）。
+        img_vec, space = encode_image_vector(image_path=it.get("path"), caption=caption)
         store.upsert_image_vec(
             content_id=it["id"],
-            vec=dense,
-            payload=payload,
+            vec=img_vec,
+            payload={**payload, "image_space": space},
             collection="yishu_benchmark",
         )
         indexed.append(it["id"])

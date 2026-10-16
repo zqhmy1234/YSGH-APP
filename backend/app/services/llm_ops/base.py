@@ -40,6 +40,20 @@ def image_caption(image_path: str, prompt: str | None = None) -> str:
     return dashscope.image_caption(image_path, prompt)
 
 
+def embed_image(image_path: str, *, dimension: int = 1024) -> list[float]:
+    """R-4 真图片塔（tongyi-embedding-vision-plus）图片 → 向量 —— 转发。
+
+    同 `image_caption`：**属性访问**转发 ⇒ 测试对 dashscope 模块的打桩仍生效。
+    `image_tower.py` 经本函数调用，遵守「业务域不直连 dashscope」约定。
+    """
+    return dashscope.embed_image(image_path, dimension=dimension)
+
+
+def embed_text_in_vision(text: str, *, dimension: int = 1024) -> list[float]:
+    """真图片塔的文本通道（同模型同空间）—— 转发，见 `dashscope.embed_text_in_vision`。"""
+    return dashscope.embed_text_in_vision(text, dimension=dimension)
+
+
 def route_query(q: str) -> str:
     return dashscope.route_query(q)
 

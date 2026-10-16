@@ -7,6 +7,9 @@
 本文件覆盖：供应商可用判定 / 文本调用分派 / OpenAI 兼容客户端的成败两条路径。
 **全部离线**（`httpx.post` 一律打桩，不打死网络）。
 """
+import sys
+from types import SimpleNamespace
+
 import pytest
 from app.core.config import settings
 from app.services.external import dashscope as ds
@@ -25,6 +28,87 @@ def test_llm_available_is_provider_aware(monkeypatch):
     assert ds._llm_available() is False, "切 deepseek 后不得靠 dashscope key 判可用"
     monkeypatch.setattr(settings, "deepseek_api_key", "ds-key")
     assert ds._llm_available() is True
+
+
+def test_vision_available_uses_dashscope_key_under_deepseek(monkeypatch):
+    """文本切到 DeepSeek 后，视觉仍只由百炼 key 和 mock 开关决定。"""
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
+    monkeypatch.setattr(settings, "deepseek_api_key", "ds-test-key")
+    monkeypatch.setattr(settings, "dashscope_api_key", "dq-test-key")
+    assert ds._vision_available() is True
+
+    monkeypatch.setattr(settings, "dashscope_api_key", "")
+    assert ds._vision_available() is False
+
+    monkeypatch.setattr(settings, "deepseek_api_key", "")
+    monkeypatch.setattr(settings, "dashscope_api_key", "dq-test-key")
+    assert ds._vision_available() is True
+
+    monkeypatch.setattr(settings, "mock_external_ai", True)
+    assert ds._vision_available() is False
+
+
+@pytest.mark.parametrize(
+    ("method", "argument"),
+    [
+        ("image_caption", "C:/photo.png"),
+        ("embed_image", "C:/photo.png"),
+        ("embed_text_in_vision", "照片描述"),
+    ],
+)
+def test_vision_entrypoints_reject_missing_dashscope_key(monkeypatch, method, argument):
+    """三个入口不能用 DeepSeek key 放行到百炼 SDK。"""
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
+    monkeypatch.setattr(settings, "deepseek_api_key", "ds-test-key")
+    monkeypatch.setattr(settings, "dashscope_api_key", "")
+
+    def unexpected_call(**kwargs):
+        pytest.fail("缺少百炼 key 时不应调用百炼 SDK")
+
+    sdk_stub = SimpleNamespace(
+        MultiModalConversation=SimpleNamespace(call=unexpected_call),
+        MultiModalEmbedding=SimpleNamespace(call=unexpected_call),
+    )
+    monkeypatch.setitem(sys.modules, "dashscope", sdk_stub)
+    with pytest.raises(RuntimeError, match="需 DASHSCOPE_API_KEY"):
+        getattr(ds, method)(argument)
+
+
+@pytest.mark.parametrize(
+    ("method", "argument", "expected"),
+    [
+        ("image_caption", "C:/photo.png", "湖边照片"),
+        ("embed_image", "C:/photo.png", [0.1, 0.2]),
+        ("embed_text_in_vision", "湖边照片", [0.1, 0.2]),
+    ],
+)
+def test_vision_entrypoints_work_with_dashscope_key_only(monkeypatch, method, argument, expected):
+    """DeepSeek 未配置也不能挡住百炼视觉调用；SDK 调用用离线桩验证。"""
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
+    monkeypatch.setattr(settings, "deepseek_api_key", "")
+    monkeypatch.setattr(settings, "dashscope_api_key", "dq-test-key")
+    caption_resp = SimpleNamespace(
+        status_code=200,
+        output=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=[{"text": "湖边照片"}]))]
+        ),
+    )
+    embedding_resp = SimpleNamespace(
+        status_code=200,
+        output={"embeddings": [{"embedding": [0.1, 0.2]}]},
+    )
+    sdk_stub = SimpleNamespace(
+        api_key=None,
+        MultiModalConversation=SimpleNamespace(call=lambda **kwargs: caption_resp),
+        MultiModalEmbedding=SimpleNamespace(call=lambda **kwargs: embedding_resp),
+    )
+    monkeypatch.setitem(sys.modules, "dashscope", sdk_stub)
+
+    assert getattr(ds, method)(argument) == expected
+    assert sdk_stub.api_key == "dq-test-key"
 
 
 def test_mock_disables_both_providers(monkeypatch):

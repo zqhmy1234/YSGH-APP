@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "collection": "yishu_benchmark_scale",
+    "gate_p95_ms": 3000,
+    "note": "A-4 检索性能复测；曲线各点均从空库重建"
+  },
+  "curve": [
+    {
+      "collection": "yishu_benchmark_scale",
+      "size": 100,
+      "n_queries": 50,
+      "index_ms": 55218,
+      "p95_ms": 280.2,
+      "gate_p95": true,
+      "mock_external_ai": true,
+      "rerank_enabled": false
+    },
+    {
+      "collection": "yishu_benchmark_scale",
+      "size": 500,
+      "n_queries": 50,
+      "index_ms": 286307,
+      "p95_ms": 285.7,
+      "gate_p95": true,
+      "mock_external_ai": true,
+      "rerank_enabled": false
+    },
+    {
+      "collection": "yishu_benchmark_scale",
+      "size": 1000,
+      "n_queries": 50,
+      "index_ms": 548804,
+      "p95_ms": 292.1,
+      "gate_p95": true,
+      "mock_external_ai": true,
+      "rerank_enabled": false
+    }
+  ]
+}

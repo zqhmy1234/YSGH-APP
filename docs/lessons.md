@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-16 11:10 · commit 163b6da · ts=1792120203
+- **错误**：我用 Select-String -Path backend\\app -Pattern 'EventItem\\(' 得出『后端没有任何代码写 event_items』，并据此差点下『时间轴成员链从未连通』的结论
+- **根因**：PowerShell 的 Select-String 传目录时**不会递归**（缺 -Recurse），零命中被静默返回；我把『工具没搜到』当成了『代码不存在』——而真相是 backend/app/services/events/sync.py:110-113 一直在写 EventItem
+- **修复**：改用带 -Recurse 的检索（或 search_content 工具），并对关键结论做第二路验证后才写进汇报
+- **相关文件**：backend/app/services/events/sync.py
+- **教训**：零命中要当『待复核』而不是『不存在』：目录级检索必须显式递归；凡是要写进汇报的『某代码不存在』结论，必须换一条路径再验一次（换工具/换关键词/换目录）。同族血泪：本仓已多次因『判据本身不成立』得出相反结论
+
+---
+
 ### 2026-10-16 07:50 · commit 9f69319 · ts=1792108205
 - **错误**：删除已退役的 settings 中间页（删文件 + pages.json 收敛）后，门禁 audit_axes 判红：基线 per_file 的 client/pages/settings/settings.uvue 已归零（文件删除/改名/已令牌化）——请从基线删除该条
 - **根因**：退役动作少收了一条尾巴：scripts/audit_harness_baseline.json 按文件登记的条目会随文件消失而归零，棘轮检查把它当『僵尸基线』判红。机制是对的（基线只许收缩），错在我做退役时只想到代码与路由，没想到基线文件
@@ -42,6 +51,48 @@
 - **修复**：先登记结论与判读规则（台账 4.20 ㉙ + STATE 权威指针区加一行），修复列入规划：syntax/lint 改 git 视角（配负向探针：工作区放一个语法坏的 ignored 文件，断言门禁不受影响）、版本一致性、性能增量化
 - **相关文件**：scripts/review_agent.py
 - **教训**：门禁判红的第一件事不是看代码，而是问：它点名的文件能不能进仓库——git ls-files 为空就是门禁假红，与提交者无关。本项目已三次踩同一族（secrets 假红、.wt/ 重复扫、syntax 扫产物）⇒ 凡按目录遍历找文件的检查一律走 git 视角（tracked ∪ untracked-非忽略），且每条都要配负向探针。另：本地与 CI 的工具版本必须钉成同一个，否则本地绿不能说明 CI 绿（本机 ruff 0.15.22 / CI 0.16.8）
+### 2026-10-16 10:34 · commit 5e824a9 · ts=1792118049
+- **错误**：全量门禁首次运行出现 78 项 Pytest 临时目录权限错误和 5 项依赖本地模型缓存的失败
+- **根因**：Windows 用户临时目录 pytest-of-陈子荷 无访问权限，且未设置 HF_HOME 指向已预热的仓库缓存
+- **修复**：将 TEMP/TMP 指向仓库内 .cowork-temp/pytest-temp-vision，并设置 HF_HOME=.cowork-temp/hf、HF_HUB_OFFLINE=1 后复验；测试轴 failed_tests 与 blocking_sections 均为空
+- **相关文件**：scripts/test_agent.py
+- **教训**：本机全量测试先核对 Pytest 临时目录和 Hugging Face 缓存位置，再判断是否为代码回归。
+
+---
+
+### 2026-10-15 22:14 · commit 09a26f4 · ts=1792073662
+- **错误**：认证刷新令牌测试在微信绑定落库后清理用户触发外键错误
+- **根因**：旧测试仅删除 device 和 user，队友新增授权即建绑定后留下 user_wechat_bindings 子行
+- **修复**：测试 teardown 调用公共 cleanup_user fixture 清理全部关联子表，定向复验通过
+- **相关文件**：backend/tests/test_auth_db.py
+- **教训**：（无）
+
+---
+
+### 2026-10-15 22:14 · commit 09a26f4 · ts=1792073655
+- **错误**：合并后全量门禁中 Python Qdrant 请求返回 502，且 pytest 临时目录拒绝访问
+- **根因**：Windows 系统代理代理了 127.0.0.1 请求；旧 pytest 临时目录 ACL 异常；重启后 Docker 测试服务未启动
+- **修复**：先恢复 Docker，再为测试进程设置 NO_PROXY=127.0.0.1,localhost,::1 与独立 basetemp，分段探活后复验
+- **相关文件**：scripts/test_agent.py
+- **教训**：（无）
+
+---
+
+### 2026-10-15 18:07 · commit 573b33b · ts=1792058840
+- **错误**：全量审核扫描 14132 个 Python 文件并漏报缺失测试依赖
+- **根因**：语法检查递归扫入忽略的 Hugging Face 缓存；Ruff 命令依赖 PATH；虚拟环境未装 requirements 已声明的 openpyxl、COS SDK 和 webrtcvad。
+- **修复**：语法扫描改为 Git 可见文件，Ruff 绑定当前 Python 模块；补齐虚拟环境依赖，超时报告保留部分 pytest 输出。
+- **相关文件**：scripts/review_agent.py; scripts/gate_proc.py; backend/requirements.txt
+- **教训**：门禁扫描范围与可入库文件一致，工具依赖和模型资产应在全量运行前预检。
+
+---
+
+### 2026-10-15 18:07 · commit 573b33b · ts=1792058839
+- **错误**：全量 pytest 长时等待且 RAG 搜索 P95 超 3 秒
+- **根因**：Windows 上 localhost 优先尝试不可用的 IPv6 回环；PostgreSQL 与 Qdrant 每次连接额外等待数秒。
+- **修复**：仅 Windows 本机 localhost 连接使用 127.0.0.1，并给 PostgreSQL 连接设置 5 秒超时；定向复验数据库与 RAG 延迟。
+- **相关文件**：backend/app/db/session.py; backend/migrations/env.py; backend/app/services/vector_store.py
+- **教训**：本机端口可连不代表协议请求低延迟；性能门禁应测连接实耗时。
 
 ---
 

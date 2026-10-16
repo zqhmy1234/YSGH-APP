@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import UTC, datetime, timedelta
 
@@ -38,6 +39,26 @@ _TIME_PATTERNS = [
 ]
 
 
+def _now() -> datetime:
+    """当前时间 —— **基准评测可用环境变量 `RAG_NOW_OVERRIDE` 冻结**（2026-10-16）
+
+    为什么需要这个缝：`_TIME_PATTERNS` 把「去年夏天 / 上个月 / 昨天」解析成**相对 now 的绝对窗口**，
+    而评测语料里的 `taken_at` 是**写死的绝对日期**。若评测时 now 漂移（跨天/跨月跑），
+    两边窗口就对不上、时间层查询永远命中不到 —— 数字变成"今天跑绿、明天跑红"。
+
+    冻结后：语料可 diff 归档、评测完全可复现（锚点存在语料 `_meta.anchor_now`）。
+
+    ⚠️ **未设该环境变量时行为与改动前逐字等价**（真实 now），**生产路径零影响**。
+    """
+    raw = os.environ.get("RAG_NOW_OVERRIDE")
+    if raw:
+        try:
+            return datetime.fromisoformat(raw).astimezone()
+        except ValueError:
+            logger.warning("RAG_NOW_OVERRIDE 解析失败，回落真实 now: %s", raw)
+    return datetime.now(UTC).astimezone()
+
+
 def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
     """Query 改写（RET-007）：时间表达解析 → 过滤条件；无 LLM 时规则兜底
 
@@ -46,7 +67,7 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
     """
     filters: dict = {}
     rewritten = q.q
-    now = datetime.now(UTC).astimezone()
+    now = _now()  # 可用 RAG_NOW_OVERRIDE 冻结（见函数说明）；未设时 = 真实 now
 
     # 修复（2026-08-25 RAG 审查）：时间表达只在【句首】才算时间过滤意图。
     # 此前 pattern.search 任意位置命中即加 time 过滤并删词——"记得明天下午之前把

@@ -190,7 +190,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
 
     main_cmd = [
         sys.executable, "-m", "pytest", "backend/tests",
-        "-q", "--tb=short",
+        "-vv", "--tb=short",
         "--cov=backend/app",
         "--cov-report=term-missing",
     ]

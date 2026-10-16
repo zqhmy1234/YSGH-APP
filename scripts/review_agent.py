@@ -176,6 +176,12 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
         lint = [f for f in staged if f.endswith(".py") and f not in dirty and not _lint_skip(f)]
         return ([f for f in staged if f.endswith(".py")], lint, staged)
 
+    # Match the git-visible scan scope. Recursive traversal of ignored model
+    # caches can compile thousands of third-party files and stall the gate.
+    # ⚠️ 2026-10-16 合并说明：上面两行注释来自 develop 侧（`5e824a9`）的**独立修复** ——
+    #   两队各自踩到同一坑（"忽略目录里的 .py 被递归编译/扫到 ⇒ 门禁假红或拖死"），
+    #   这是**第二次独立发现**。实现取本分支版本：`syntax` 与 `lint` **共用同一份 git 视角
+    #   候选集**（下方 `py_candidates`），并额外保住「新增但未提交的 .py 也要过语法」的语义 ✓。
     # 2026-10-15（台账 §4.20 ㉙ · 用户转述「工作群说 CI 红了，是同事的代码有问题？」）：
     # **语法/lint 轴也改走「git 视角」**。原实现 syntax 用 `ROOT.rglob("*.py") + _skip_path()`，
     # 而 `_skip_path` 只排除 `.git/.cowork-temp/client/.wt`，**不认 `.gitignore`** ⇒ 产出目录里
@@ -279,8 +285,8 @@ def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -
     """
     if not files:
         return True, "[skip] 无待检查 .py"
-    code, out = run(["ruff", "check", *files])
-    if code == 127:
+    code, out = run([sys.executable, "-m", "ruff", "check", *files])
+    if code == 127 or "No module named ruff" in out:
         # D14-19：缺 ruff 不得静默放行（否则报告全绿而 lint 从未执行）
         if allow_missing:
             return True, "[放宽] ruff 未安装 → lint 未执行（--allow-missing-tools 显式放行）"

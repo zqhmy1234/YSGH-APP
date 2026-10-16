@@ -684,3 +684,31 @@ ShareSheet（须真机验"保存到相册"）。
 - **门禁三轴各拦一次，均已处置**：`env_template`（新增 config 字段 ⇒ 同批补部署模板）、`structure`（`TabSearch` 813>800 ⇒ 显式申请基线，附 reason/target）、`lessons`（前次失败 ⇒ 登记教训）。
 - **自我纠错两处**：引用了不存在的样式类（等于偷偷新增视觉元素）⇒ 改回既有 `ui-hidden`；在 except 链尾插分支时**吃掉两个端点的 return** ⇒ ruff F841 当场抓到。
 - 接线审计工具 `scripts/audit_client_wiring.py` 沉淀（含 `--selftest`）；判据校准：初版 32 条"疑似无接线"里 **31 条假阳性**（"一行委托"写法 + 排除词缺词边界）⇒ 收敛到 0。
+
+- 后续授权后已完成推送：快速审核复跑通过；B-1 阶段性提交经变基接到 `origin/develop` 的 16 个新提交之后，`scripts/init_db.py` 文件开头冲突已解决且语法、ruff、diff 检查通过；`573b33b` 已由 `git push origin develop` 推送到 GitHub。全量门禁仍未通过，B-1 仍为 `in-progress`；工作区原有 `.gitignore` 的 `/infra/` 忽略规则已恢复且未进入提交。
+- 上条推送成功记录拟单独提交时，最新 `develop` 的快速门禁报 `audit_axes` 令牌 hex 字面量基线 67→70：`TabSearch.uvue`、`TagEditPanel.uvue`、`favorites.uvue` 各增 1，均非本次 B-1 修改。故这条收尾记录暂留本地，未再提交或推送；已推送的 B-1 主提交 `573b33b` 不受影响。
+
+## 2026-10-15 · B-1 全量验证修复
+
+- 已执行 `git fetch origin develop`：本地与远端均为 `573b33b`（领先/落后 `0/0`），无需合并。
+- 修复全量门禁的实际阻断：API 冒烟自动生成测试照片；Windows 的 PostgreSQL/Qdrant `localhost` 连接优先 IPv4；全量语法扫描只检查 Git 可见文件，避开忽略的模型缓存；Ruff 使用当前 Python 环境；修正数据库集成测试中写死的旧库名；恢复三个客户端输入控件的令牌审计基线。审核运行时保留超时输出和测试进度，便于定位。
+- 本机补齐 BGE-M3 缓存、项目依赖 `openpyxl`/`cos-python-sdk-v5`/`webrtcvad-wheels`，Ruff 对齐项目钉住的 0.16.8；当前测试库安装 `vector` 扩展。上述依赖/缓存/扩展为本机环境操作，未提交仓库。SetFit 与外部 API 凭证仍未配置，测试按现有降级路径通过。
+- `review_agent.py --full` 于 18:12 +08:00 退出码 0：语法 396 文件、lint、密钥、结构、跨轴审计、环境模板、OpenAPI 快照、pytest（主套件与 RAG 分组）、API 冒烟 6/6、research 全通过；覆盖率 85.81%（门槛 60%）；`.cowork-temp/test-report.json` 的 `failed_tests=[]`、`blocking_sections=[]`。`init.sh` 经 Git Bash 运行通过；本机 WSL Bash 仍不可用。
+- B-1 保持 `in-progress`：任务书建议的自包含初始迁移、无版本号非空旧库迁移与指定旧文档回写尚未收口。此次全量失败根因是测试数据、依赖及本机连接配置，不是 B-1 schema 真值缺失。
+
+## 2026-10-15 · 接入队友最新 develop 并复验 B-1 修复
+
+- `git fetch origin develop` 取得远端 `401b03b`：自 `573b33b` 起前进 78 个提交，涵盖 Agent、微信绑定、检索、客户端与门禁。把本地修复提交变基后为 `09a26f4`；11 个文件重叠，6 个文件有文本冲突，已逐块保留双方有效改动。百度 OCR 常量误报由队友先修，未重复提交；三个客户端输入同时保留新键盘/搜索行为和颜色令牌修复。原有 `.gitignore` 的 `/infra/` 本地改动已从暂存恢复，未纳入修复提交。
+- 死机后 Docker 未运行；恢复本机 PostgreSQL/Qdrant/Redis。Windows 系统代理使 Python HTTP 客户端访问 127.0.0.1 得到 502（直接请求 200）；全量进程设 `NO_PROXY=127.0.0.1,localhost,::1`。旧 pytest 临时目录 ACL 异常，改用独立 `--basetemp`。定向 RAG、ASR 均通过。
+- 队友新增“微信登录即建绑定”后，一条认证测试的手工 teardown 漏删绑定子行、触发外键错误；改为复用 `cleanup_user` 公共清理链，认证定向测试通过。
+- 最终 `review_agent.py --full` 于 22:22 +08:00 退出码 0：语法 444 文件、lint/密钥/结构/契约/安全审计/聚合等价性、pytest 主套件与 RAG、API 冒烟、research 全通过；覆盖率 85.34%，`failed_tests=[]`、`blocking_sections=[]`。本机缺 HBuilderX CLI，客户端编译轴为明确的降级放行；队友批次已有编译证据，当前冲突合并后的三个输入框未在本机重编译。
+- B-1 仍为 `in-progress`，其尚未收口项不因本次门禁通过而改变；当前状态与下一步回源 `STATE.md`。
+
+## 2026-10-16 · 视觉调用守卫缺陷修复
+
+- `git pull --ff-only origin develop` 快进到 `5e824a9`；保留工作区原有 `.gitignore` 修改和用户新增的缺陷说明文件。缺陷来源：`docs/忆述光华_视觉调用守卫缺陷说明_20261016.md`。
+- `backend/app/services/external/dashscope.py` 新增独立 `_vision_available()`，按非 mock 且有 `DASHSCOPE_API_KEY` 判断；`image_caption`、`embed_image`、`embed_text_in_vision` 改用此守卫，文本调用的 `_llm_available()` 保持按所配供应商判断。台账登记 §7.29。
+- 新增离线回归，覆盖 DeepSeek 配置下“仅有百炼 key”能调用三个视觉入口、“仅有 DeepSeek key”三个入口均在 SDK 前拒绝，以及 mock 关闭视觉调用。定向套件 `test_llm_provider.py`、`test_image_search.py`、`test_image_tower.py` 为 **28 passed**（5 deselected）。
+- 首轮全量门禁测试轴因本机默认 Pytest 临时目录权限与 HF 缓存位置报错；改用仓库内 `TEMP/TMP` 和已预热的 `HF_HOME` 后，失败的 5 个用例定向复验 **5 passed**，全量测试轴 `failed_tests=[]`、`blocking_sections=[]`。环境教训已登记 `docs/lessons.md`。
+- 最终 `python scripts/review_agent.py --full` **退出码 0**：语法、lint、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全、聚合等价、pytest/API 冒烟/research 均通过；覆盖率 **85.52%**。本机缺 HBuilderX CLI，客户端编译轴明确降级放行；本次没有改客户端代码。`pwsh -File ./init.ps1` 通过。
+- 按部长缺陷说明的「自验」条件补验：测试进程配置 `LLM_PROVIDER=deepseek`、仅设置非真实的百炼测试 key、DeepSeek key 为空、`MOCK_EXTERNAL_AI=false`，先断言配置实际生效，再在 `backend/` 跑指定的 `test_image_search.py` 与 `test_image_tower.py`。结果 **17 passed / 5 deselected / 0 failed**；因本机 Pytest 默认临时目录无权限，命令附加 `--basetemp` 与 `-p no:cacheprovider`，不改变测试选择。此项为离线测试，未验证真实百炼账号调用。
