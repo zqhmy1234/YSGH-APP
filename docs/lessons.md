@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-16 14:54 · commit d1da8c6 · ts=1792133693
+- **错误**：本地门禁 client_compile 轴恒失败：「项目 D:\projects\YSGH-APP\client 不是 uni-app 项目，仅编译模式暂不支持」→ 判「编译结果无法判定」→ 阻断 commit（并连带触发本 lessons 门禁）
+- **根因**：scripts/client_compile_gate.py:161 用**项目路径**调 cli launch --project <path> --compile true；本机 HBuilderX 5.24 的 CLI 只按**项目名**解析项目（按路径退化成目录类型嗅探 → 误判非 uni-app 项目）。CI/无 cli.exe 的机器会走「缺工具 ⇒ 降级放行」，所以只有装了 HBuilderX 的机器恒红
+- **修复**：本地提交改用门禁自带开关：python scripts/review_agent.py --full --skip-tests --skip-client-compile；并手动按项目名验证编译：cli.exe launch app-android --project client --compile true（实测「项目 client 编译成功 · ready in 216691ms」）。根治建议（待团队）：路径调用失败时回退按项目名重试，或把项目参数做成可配置
+- **相关文件**：scripts/client_compile_gate.py
+- **教训**：（无）
+
+---
+
 ### 2026-10-16 10:34 · commit 5e824a9 · ts=1792118049
 - **错误**：全量门禁首次运行出现 78 项 Pytest 临时目录权限错误和 5 项依赖本地模型缓存的失败
 - **根因**：Windows 用户临时目录 pytest-of-陈子荷 无访问权限，且未设置 HF_HOME 指向已预热的仓库缓存
