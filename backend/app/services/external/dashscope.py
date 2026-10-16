@@ -66,6 +66,11 @@ def _llm_available() -> bool:
     return bool(settings.dashscope_api_key)
 
 
+def _vision_available() -> bool:
+    """视觉调用恒走百炼，独立于文本 LLM 的供应商配置。"""
+    return not settings.mock_external_ai and bool(settings.dashscope_api_key)
+
+
 def _ensure_api_key() -> None:
     """同步 settings 到 dashscope SDK 全局 api_key（2026-08-25 排查修复）
 
@@ -143,7 +148,7 @@ def image_caption(image_path: str, prompt: str = "用一句话中文描述这张
 
     带统一重试（网络抖动 3 次指数退避，AGENTS.md #13 教训落地）。
     """
-    if not _llm_available():
+    if not _vision_available():
         raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
     from dashscope import MultiModalConversation
 
@@ -189,7 +194,7 @@ def embed_image(image_path: str, *, dimension: int = 1024) -> list[float]:
       ③ `input=[{"image": "file://..."}]` 的本地文件 URL 形态是否支持；
       ④ 文本输入与图片输入是否落在同一向量空间（`embed_text_in_vision` 依赖此点）。
     """
-    if not _llm_available():
+    if not _vision_available():
         raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
     from dashscope import MultiModalEmbedding
 
@@ -213,7 +218,7 @@ def embed_text_in_vision(text: str, *, dimension: int = 1024) -> list[float]:
     用 caption 走文本输入补齐，避免该照片永久不可搜图。**不是跨空间混入。**
     同上：未在真实账号验证（见 `embed_image` 的核对清单）。
     """
-    if not _llm_available():
+    if not _vision_available():
         raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
     from dashscope import MultiModalEmbedding
 

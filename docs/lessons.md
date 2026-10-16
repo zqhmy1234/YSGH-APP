@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-16 10:34 · commit 5e824a9 · ts=1792118049
+- **错误**：全量门禁首次运行出现 78 项 Pytest 临时目录权限错误和 5 项依赖本地模型缓存的失败
+- **根因**：Windows 用户临时目录 pytest-of-陈子荷 无访问权限，且未设置 HF_HOME 指向已预热的仓库缓存
+- **修复**：将 TEMP/TMP 指向仓库内 .cowork-temp/pytest-temp-vision，并设置 HF_HOME=.cowork-temp/hf、HF_HUB_OFFLINE=1 后复验；测试轴 failed_tests 与 blocking_sections 均为空
+- **相关文件**：scripts/test_agent.py
+- **教训**：本机全量测试先核对 Pytest 临时目录和 Hugging Face 缓存位置，再判断是否为代码回归。
+
+---
+
 ### 2026-10-15 22:14 · commit 09a26f4 · ts=1792073662
 - **错误**：认证刷新令牌测试在微信绑定落库后清理用户触发外键错误
 - **根因**：旧测试仅删除 device 和 user，队友新增授权即建绑定后留下 user_wechat_bindings 子行

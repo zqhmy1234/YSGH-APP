@@ -703,3 +703,11 @@ ShareSheet（须真机验"保存到相册"）。
 - 队友新增“微信登录即建绑定”后，一条认证测试的手工 teardown 漏删绑定子行、触发外键错误；改为复用 `cleanup_user` 公共清理链，认证定向测试通过。
 - 最终 `review_agent.py --full` 于 22:22 +08:00 退出码 0：语法 444 文件、lint/密钥/结构/契约/安全审计/聚合等价性、pytest 主套件与 RAG、API 冒烟、research 全通过；覆盖率 85.34%，`failed_tests=[]`、`blocking_sections=[]`。本机缺 HBuilderX CLI，客户端编译轴为明确的降级放行；队友批次已有编译证据，当前冲突合并后的三个输入框未在本机重编译。
 - B-1 仍为 `in-progress`，其尚未收口项不因本次门禁通过而改变；当前状态与下一步回源 `STATE.md`。
+
+## 2026-10-16 · 视觉调用守卫缺陷修复
+
+- `git pull --ff-only origin develop` 快进到 `5e824a9`；保留工作区原有 `.gitignore` 修改和用户新增的缺陷说明文件。缺陷来源：`docs/忆述光华_视觉调用守卫缺陷说明_20261016.md`。
+- `backend/app/services/external/dashscope.py` 新增独立 `_vision_available()`，按非 mock 且有 `DASHSCOPE_API_KEY` 判断；`image_caption`、`embed_image`、`embed_text_in_vision` 改用此守卫，文本调用的 `_llm_available()` 保持按所配供应商判断。台账登记 §7.29。
+- 新增离线回归，覆盖 DeepSeek 配置下“仅有百炼 key”能调用三个视觉入口、“仅有 DeepSeek key”三个入口均在 SDK 前拒绝，以及 mock 关闭视觉调用。定向套件 `test_llm_provider.py`、`test_image_search.py`、`test_image_tower.py` 为 **28 passed**（5 deselected）。
+- 首轮全量门禁测试轴因本机默认 Pytest 临时目录权限与 HF 缓存位置报错；改用仓库内 `TEMP/TMP` 和已预热的 `HF_HOME` 后，失败的 5 个用例定向复验 **5 passed**，全量测试轴 `failed_tests=[]`、`blocking_sections=[]`。环境教训已登记 `docs/lessons.md`。
+- 最终 `python scripts/review_agent.py --full` **退出码 0**：语法、lint、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全、聚合等价、pytest/API 冒烟/research 均通过；覆盖率 **85.52%**。本机缺 HBuilderX CLI，客户端编译轴明确降级放行；本次没有改客户端代码。`pwsh -File ./init.ps1` 通过。
