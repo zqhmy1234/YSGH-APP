@@ -237,8 +237,20 @@ def test_search_trace_present(indexed_store):
 
 @pytest.mark.rag
 @pytest.mark.integration
-def test_search_latency_under_3s(indexed_store):
-    """延迟：P95<3s（RET-018，M1 门禁）"""
+def test_search_latency_sample_under_3s(indexed_store):
+    """搜索延迟**抽样**阈值（RET-018，M1 门禁）——名字如实表述，**请勿当 P95**。
+
+    ⚠️ 三条边界（`ci-gate-perf` 2026-10-16 读码核对，务必知悉）：
+      ① **样本量 n=5**，取 `sorted(latencies)[3]` 实为第 4 小 ≈ **P80**，**不是真 P95**
+         （5 个样本无统计意义，真 P95 需 n≥20）⇒ 本用例只当"5 次抽样均未越线"的冒烟。
+      ② 判据是 `search()` 的**端到端墙钟**（`perf_counter` 包住整条调用），
+         **不是** `SearchResult.latency_ms`（该字段语义为召回段，见 `rag/__init__.py`）。
+      ③ 本用例在 **MOCK_EXTERNAL_AI=true** 下跑 ⇒ 改写/精排/回答等 LLM 往返被 mock 成
+         0 耗时 ⇒ **CI 绿 ≠ 真实 LLM 环境下 P95<3s**；含真实 LLM 的 P95 只能在
+         服务器 + 真 key 压测。
+
+    该判据**不得**用"调小样本量 / 放宽阈值"换绿（阈值 3000ms 与 RET-018 验收线同口径）。
+    """
     latencies = []
     for i in range(5):
         start = time.perf_counter()

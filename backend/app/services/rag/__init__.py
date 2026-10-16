@@ -283,6 +283,26 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         except Exception:  # noqa: BLE001 —— 敏感过滤失败不阻断搜索
             logger.warning("规则级敏感过滤异常，跳过")
 
+    # 5. 搜索式一次性问答（2026-10-16 冻结：搜索=回答卡+证据，AI 页=多轮对话）
+    #    · **仅 `want_answer=True` 时触发** ⇒ 默认零 LLM 调用、零额外延迟、在野 APK 行为完全不变；
+    #    · 只依据本次召回证据作答；证据不足/模型不可用 → answer=None（绝不编造，见 search_answer.py）；
+    #    · LLM 未配置/超时/解析失败 → 如实置 degraded=True（复用既有降级口径，**不新增布尔位**）。
+    answer: str | None = None
+    answer_sources: list[str] = []
+    if q.want_answer:
+        from app.services.llm_ops.search_answer import generate_answer
+
+        answer, answer_sources, answer_failed = generate_answer(q.q, hits)
+        if answer_failed:
+            degraded = True
+        # 回答步骤之后重算 latency_ms（协调者 2026-10-16 拍板，方案 A）：
+        #   · `want_answer=False` 时本块**根本不执行** ⇒ `latency_ms` 仍取上面那次
+        #     （检索段，line 239 原样），**数值与改动前逐字一致** ⇒ 在野客户端与
+        #     既有 P95 验收零扰动；
+        #   · `want_answer=True` 时把这次增强项的**真实尾延迟**计入 ⇒ 门禁（读 latency_ms）
+        #     看到的才是端到端真相，杜绝"门禁绿、真机体感超 3s"的第二类假绿。
+        latency_ms = int((time.perf_counter() - start) * 1000)
+
     return SearchResult(
         query=q.q,
         rewritten_query=rewritten if rewritten != q.q else None,
@@ -291,4 +311,6 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         total=len(hits),
         latency_ms=latency_ms,
         degraded=degraded,
+        answer=answer,
+        answer_sources=answer_sources,
     )

@@ -8734,6 +8734,11 @@
             "minimum": 1.0,
             "title": "Limit",
             "default": 10
+          },
+          "want_answer": {
+            "type": "boolean",
+            "title": "Want Answer",
+            "default": false
           }
         },
         "type": "object",
@@ -8782,6 +8787,25 @@
             "type": "boolean",
             "title": "Degraded",
             "default": false
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "answer_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Answer Sources",
+            "default": []
           }
         },
         "type": "object",
