@@ -5,6 +5,7 @@
  * 对外导出：EchoCard, fetchTodayEcho, dismissEcho
  */
 import { get, post, dataObj } from './api'
+import { resolveMediaUrl } from './config'
 import { PATH_ECHO_TODAY } from './contract'
 
 export class EchoCard {
@@ -14,14 +15,17 @@ export class EchoCard {
 	takenAt: string
 	place: string
 	echoDate: string
+	/** 缩略图票据 URL（2026-10-16 · 仅 photo 有值；''= 无图 → EchoSheet 走 fetchThumbnailPath 兜底/渐变占位） */
+	thumbUrl: string
 
-	constructor(contentId: string, contentType: string, text: string, takenAt: string, place: string, echoDate: string) {
+	constructor(contentId: string, contentType: string, text: string, takenAt: string, place: string, echoDate: string, thumbUrl: string = '') {
 		this.contentId = contentId
 		this.contentType = contentType
 		this.text = text
 		this.takenAt = takenAt
 		this.place = place
 		this.echoDate = echoDate
+		this.thumbUrl = thumbUrl
 	}
 }
 
@@ -68,7 +72,9 @@ export function fetchTodayEcho(): Promise<EchoCard | null> {
 					d.getString('text') ?? '',
 					d.getString('taken_at') ?? '',
 					d.getString('place') ?? '',
-					d.getString('echo_date') ?? ''
+					d.getString('echo_date') ?? '',
+					// 2026-10-16：photo 回响缩略图票据（timeline cover_url 同款 Valet Key 直发；后端缺字段恒 ''）
+					resolveMediaUrl(d.getString('thumb_url'))
 				)
 			)
 		})

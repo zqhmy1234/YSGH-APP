@@ -26,22 +26,29 @@
 			</view>
 		</view>
 		<!-- 消息列表（HEAD 交互接回：3 静态行→filteredMessages v-for；行结构统一用画布行1样式） -->
+		<!-- 2026-10-16：msgSegment 两段分组标题（AI 互动/系统通知）——分段标题复用 n4_97 日期组字形
+		     （in-flow 变体 .msg-seg，协调者裁决：复用样式不算新增视觉元素）；标题只出现在段首 -->
 		<view v-if="filteredMessages.length > 0" class="n4_106">
-			<view v-for="(msg, idx) in filteredMessages" :key="idx" class="n4-msgwrap">
-				<view class="n4_107" @tap="openMessage(msg)">
-					<view class="n4_108" :style="{ backgroundColor: msg.avatarBg }"> <!-- 图标底（动态色） -->
-						<image class="n4_109" :src="msg.iconPath" /> <!-- icon: 按消息类型 -->
-					</view>
-					<view class="n4_111"> <!-- 文案列 -->
-						<view class="n4_111-top">
-							<text class="n4_112">{{ msg.title }}</text>
-							<text class="n4_114">{{ msg.time }}</text>
+			<!-- 分段行外包一层透明格（theme-detail photo-cell 先例）：template v-for 零先例禁用，
+			     行内 v-if/v-else 二选一渲染（分段标题 / 消息行），外格不改排版 -->
+			<view v-for="(row, ridx) in messageRows" :key="ridx">
+				<text v-if="row.isSeg" class="msg-seg">{{ row.segTitle }}</text>
+				<view v-else class="n4-msgwrap">
+					<view class="n4_107" @tap="openMessage(row.msg)">
+						<view class="n4_108" :style="{ backgroundColor: row.msg.avatarBg }"> <!-- 图标底（动态色） -->
+							<image class="n4_109" :src="row.msg.iconPath" /> <!-- icon: 按消息类型 -->
 						</view>
-						<text class="n4_113">{{ msg.summary }}</text>
+						<view class="n4_111"> <!-- 文案列 -->
+							<view class="n4_111-top">
+								<text class="n4_112">{{ row.msg.title }}</text>
+								<text class="n4_114">{{ row.msg.time }}</text>
+							</view>
+							<text class="n4_113">{{ row.msg.summary }}</text>
+						</view>
+						<view v-if="!row.msg.read" class="n4-unread-dot"></view>
 					</view>
-					<view v-if="!msg.read" class="n4-unread-dot"></view>
+					<!-- 就地展开已废弃（§V 拍板 2026-09-03：太简陋）→ 复盘·语音完成改贴底 MessageDetailSheet -->
 				</view>
-				<!-- 就地展开已废弃（§V 拍板 2026-09-03：太简陋）→ 复盘·语音完成改贴底 MessageDetailSheet -->
 			</view>
 		</view>
 		<!-- 空状态 -->
@@ -52,6 +59,7 @@
 		<!-- R9 批次3：绑 echoSheetCard（双来源——页面实时卡 / 消息 payload 快照卡，拍板 A-1） -->
 		<EchoSheet v-if="echoVisible && echoSheetCard != null" :echoText="echoSheetCard.text"
 			:takenAt="echoSheetCard.takenAt" :place="echoSheetCard.place"
+			:contentId="echoSheetCard.contentId" :thumbUrl="echoSheetCard.thumbUrl"
 			@close="echoVisible = false" @replay="onEchoReplay" @dismiss="onEchoDismiss" />
 		<!-- 消息详情弹层（§V 拍板 A：复盘·语音完成贴底弹层，替代就地展开） -->
 		<MessageDetailSheet v-if="detailVisible" :title="detailTitle" :body="detailBody"
@@ -190,6 +198,34 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		const out: Array<MessageItem> = []
 		for (let i = 0; i < allMessages.value.length; i++) {
 			out.push(toItem(allMessages.value[i]))
+		}
+		return out
+	})
+
+	/** 列表行统一模型（2026-10-16 分段渲染）：isSeg=true 为分段标题行（msg 仅作占位引用，不渲染） */
+	class MsgRow {
+		isSeg: boolean
+		segTitle: string
+		msg: MessageItem
+
+		constructor(isSeg: boolean, segTitle: string, msg: MessageItem) {
+			this.isSeg = isSeg
+			this.segTitle = segTitle
+			this.msg = msg
+		}
+	}
+
+	/** 分段列表（msgSegment：1=AI 互动 / 0=系统通知）——段首插标题行，行序保持消息原序 */
+	let messageRows = computed((): Array<MsgRow> => {
+		const out: Array<MsgRow> = []
+		let lastSeg = -1
+		for (let i = 0; i < filteredMessages.value.length; i++) {
+			const m = filteredMessages.value[i]
+			if (m.type != lastSeg) {
+				lastSeg = m.type
+				out.push(new MsgRow(true, m.type == 1 ? 'AI 互动' : '系统通知', m))
+			}
+			out.push(new MsgRow(false, '', m))
 		}
 		return out
 	})
@@ -449,6 +485,19 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		font-weight: 600;
 		font-size: var(--d-card_radius_small, 23.1rpx);
 		color: var(--c-amber-500, #C4913C);
+	}
+	/* 2026-10-16：分段标题（AI 互动/系统通知）in-flow 变体——全部令牌复用自 .n4_97「今天」
+	   （字族/字重 600/字号 --d-card_radius_small 23.1rpx/色 --c-ink-500，逐项同源零新值），
+	   仅去 absolute 定位改流内排布（n4_97 为画布日期组绝对定位，直接复用会脱离文档流顶到固定坐标）。
+	   协调者裁决：复用 n4_97 样式族不算新增视觉元素。 */
+	.msg-seg {
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p2, 3.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
 	}
 	.n4_98 {
 		position: absolute;

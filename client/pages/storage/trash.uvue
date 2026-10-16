@@ -40,6 +40,11 @@
 				</view>
 			</view>
 
+			<!-- 批量（2026-10-16）：ActionSheet 二选一——全部恢复=showModal 确认后客户端循环单条
+			     restore（幂等，零后端改动）；清空复用下方既有真端点流程。容器/文字复用 clear-btn 族 -->
+			<view v-if="items.length > 0" class="clear-btn" @tap="onBatch">
+				<text class="clear-btn-text">批量</text>
+			</view>
 			<!-- 清空（F2b 60:671 白底圆角行 + 60:673 灰色警示行；空态隐藏） -->
 			<view v-if="items.length > 0" class="clear-btn" @tap="onClearAll">
 				<text class="clear-btn-text">清空回收站</text>
@@ -145,7 +150,55 @@
 			}
 			items.value = rows
 			clearCount.value = rows.length
-			uni.showToast({ title: '已恢复', icon: 'none' })
+			// 事实陈述（2026-10-16）：恢复=软删撤销，内容回到删除前的位置/事件
+			uni.showToast({ title: '已恢复，回到原来的位置', icon: 'none' })
+		})
+	}
+
+	/** 批量（2026-10-16）：ActionSheet 二选一 */
+	function onBatch(): void {
+		uni.showActionSheet({
+			itemList: ['全部恢复', '清空回收站'],
+			success: (res) => {
+				if (res.tapIndex === 0) {
+					confirmRestoreAll()
+				} else if (res.tapIndex === 1) {
+					onClearAll()
+				}
+			}
+		})
+	}
+
+	/** 全部恢复：showModal 确认 → 客户端**顺序循环单条** restore（幂等；零后端改动）。
+	 *  顺序而非并发：防 N 条并发打满弱网；代价是 N>20 时总耗时可感（真机风险已登记简报） */
+	function confirmRestoreAll(): void {
+		uni.showModal({
+			title: '全部恢复',
+			content: clearCount.value + ' 条记忆将恢复到原来的位置。确定全部恢复吗？',
+			confirmText: '全部恢复',
+			success: (r) => {
+				if (!r.confirm) {
+					return
+				}
+				const ids: Array<string> = []
+				for (let i = 0; i < items.value.length; i++) {
+					ids.push(items.value[i].id)
+				}
+				restoreNext(ids, 0, 0)
+			}
+		})
+	}
+
+	/** 单条带序循环（UTS 箭头函数不可自引用，递归用具名函数声明）；okCount=成功条数 */
+	function restoreNext(ids: Array<string>, idx: number, okCount: number): void {
+		if (idx >= ids.length) {
+			// 列表按服务端真值重建：已恢复条目不再出现在回收站（幂等重试安全）
+			fetchTrash()
+			uni.showToast({ title: '已恢复 ' + okCount + ' 条，回到原来的位置', icon: 'none' })
+			return
+		}
+		trashRestore(ids[idx]).then((ok: boolean) => {
+			restoreNext(ids, idx + 1, okCount + (ok ? 1 : 0))
 		})
 	}
 

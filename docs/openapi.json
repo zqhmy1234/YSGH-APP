@@ -7495,6 +7495,17 @@
           "fingerprint": {
             "type": "string",
             "title": "Fingerprint"
+          },
+          "thumb_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumb Url"
           }
         },
         "type": "object",

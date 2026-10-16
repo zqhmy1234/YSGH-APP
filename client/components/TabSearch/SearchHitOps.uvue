@@ -1,0 +1,100 @@
+<template>
+	<!-- 就地操作行（2026-10-16 · 自 TabSearch.uvue 按结构棘轮 800 行阈值拆分；props 口径照 EchoSheet
+	     先例。宿主结果卡带 @tap 跳详情，行内 @tap.stop 不冒泡触发跳转） -->
+	<view class="result-ops">
+		<text class="result-op" @tap.stop="onCorrect">纠错</text>
+		<image class="result-fav" :src="fav ? '/static/icons/i4_415-active.svg' : '/static/icons/i4_415.svg'" @tap.stop="onToggleFav" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props 口径照 EchoSheet 先例：只传基本类型（对象 prop 在 UTS 组件边界有类型陷阱，项目零先例不冒险）
+	const props = defineProps({
+		contentId: {
+			type: String,
+			default: ''
+		},
+		contentType: {
+			type: String,
+			default: ''
+		},
+		rawText: {
+			type: String,
+			default: ''
+		}
+	})
+
+	// 2026-10-16 就地操作：星标走幂等真端点 favoriteAdd/Remove；纠错走 submitCorrection（先例 text_recorder.uts:203）
+	import { favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
+	import { submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
+
+	// 会话级收藏态 contentId→bool（自 useSearchState 迁入；宿主卡 v-for 按键复用组件实例，列表重建不丢）
+	const _favStates = new Map<string, boolean>()
+
+	let fav = ref(_favStates.get(props.contentId) ?? false)
+
+	/** 就地收藏：乐观切星标 + 云端幂等写；失败 toast 不回滚（对齐 detail.uvue:480-531 先例） */
+	function onToggleFav(): void {
+		const next = !fav.value
+		fav.value = next
+		_favStates.set(props.contentId, next)
+		if (next) {
+			favoriteAdd(props.contentId).then((ok: boolean) => {
+				if (!ok) {
+					uni.showToast({ title: '云端收藏失败 · 稍后重试', icon: 'none' })
+				}
+			})
+		} else {
+			favoriteRemove(props.contentId).then((ok: boolean) => {
+				if (!ok) {
+					uni.showToast({ title: '云端取消失败 · 稍后重试', icon: 'none' })
+				}
+			})
+		}
+	}
+
+	/** 就地纠错：ActionSheet 选标签 → submitCorrection（ALL_LABELS 五类与后端白名单对齐）。
+	 *  text 用命中原始文本（照片无文本 → 空串，RecordSheet.uvue:712 同款口径：不写假文本进向量库）；
+	 *  oldLabel 传 ''（搜索结果不携带权威旧标签，与 RecordSheet 提交口径一致）。 */
+	function onCorrect(): void {
+		const cns: Array<string> = []
+		for (let i = 0; i < ALL_LABELS.length; i++) {
+			cns.push(ALL_LABELS[i].cn)
+		}
+		uni.showActionSheet({
+			itemList: cns,
+			success: (res) => {
+				const idx = res.tapIndex
+				if (idx < 0 || idx >= ALL_LABELS.length) {
+					return
+				}
+				submitCorrection(props.contentId, props.rawText, ALL_LABELS[idx].key, '', props.contentType).then((ok: boolean) => {
+					uni.showToast({ title: ok ? '已提交纠错' : '纠错失败，请稍后再试', icon: 'none' })
+				})
+			}
+		})
+	}
+</script>
+
+<style>
+	/* 全部令牌复用自既有 class（来源注释为门禁令牌棘轮判定依据，自 TabSearch.uvue 原样搬迁）：
+	   .result-op 字色/字号复用自回收站 .trestore（--c-amber-500 21.2rpx）；
+	   .result-fav 尺寸复用自详情页 .n4_415（--d-lattice-p18 34.6rpx）；
+	   图标复用 i4_415/i4_415-active 族。逐项同源零新色值/尺寸令牌。 */
+	.result-ops {
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		margin-top: var(--d-lattice-p6, 11.5rpx);
+	}
+	.result-op {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
+		margin-right: var(--d-card_radius_small, 23.1rpx);
+	}
+	.result-fav {
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
+	}
+</style>

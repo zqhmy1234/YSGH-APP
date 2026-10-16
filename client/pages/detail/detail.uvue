@@ -22,7 +22,9 @@
 		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
 		<view class="detail-body">
 		<!-- 全幅媒体：照片记忆 → 服务端票据 URL 真图；其余类型 → 画布静态合成图占位 -->
-		<image class="n4_406" :src="heroSrc" mode="aspectFill" />
+		<!-- 2026-10-16：photo 记忆 hero 支持 @tap 原图↔缩略图切换（原图 15m 短票据，久置后切回可能
+		     裂图——onHeroError 监听 <image> 失败自动回落缩略图；非照片类型 originalUrl 恒空，切换不生效） -->
+		<image class="n4_406" :src="heroSrc" mode="aspectFill" @tap="onToggleHero" @error="onHeroError" />
 		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
 		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级） -->
 		<view class="n4_407a"></view>
@@ -190,6 +192,10 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	let aiNote = ref('') // AI 的观察（照片记忆 = 后端 ai_description；空→整卡隐藏）
 	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
 	let heroSrc = ref('/static/images/img4_406.png')
+	// 2026-10-16：hero 原图↔缩略图切换态（仅 photo 有值；originalUrl 由 ContentDetail 取回在手，零契约改动）
+	let heroThumbUrl = ref('') // 缩略图源（本地临时文件或票据 URL）
+	let heroOrigUrl = ref('') // 原图票据 URL（15m 短时效——久看后切换有裂图风险，@error 已兜底回落）
+	let heroShowOrig = ref(false)
 	let relatedList = ref<Array<ContentEventRef>>([])
 
 	/** 事件级语音卡视图模型（2026-10-16 · RC-F）：组装期预计算波形/标题，播放态由 syncVoiceState
@@ -275,57 +281,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		favoriteGet(id).then((favd: boolean) => {
 			fav.value = favd
 		})
-		fetchContentDetail(id).then((d) => {
-			if (d == null) {
-				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
-				// fetchContentDetail 失败可能=网络断/404 已删除/服务不可达
-				uni.showToast({ title: '详情加载失败，请稍后重试', icon: 'none' })
-				return
-			}
-			memBody.value = d.text
-			memTitle.value = makeTitle(d.text)
-			// W0-2：语音记忆 → F5b 语音卡显示 + 播放引擎按 contentId 接线（audio 端点，W0-1）
-			if (d.contentType == 'voice') {
-				isVoice.value = true
-				detailWave.value = genWaveHeights(id, 28)
-				// BB3：进页即拉真实波形（详情页单条语音，非列表懒加载场景）
-				wf.loadWaveform(id)
-				bodySource.value = '来自语音转写的 AI 描述 · 你也可以补充一句'
-				// 可播性按转写状态显式判定（禁止静默）：与事件级语音卡（v.status）同词表
-				if (d.status == 'done') {
-					voicePlayable.value = true
-					voiceNote.value = ''
-				} else if (d.status == 'failed') {
-					voicePlayable.value = false
-					voiceNote.value = '这段语音转写失败，暂不可播放'
-				} else {
-					voicePlayable.value = false
-					voiceNote.value = '转写处理中，稍后可播放'
-				}
-			}
-			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
-			if (d.contentType == 'photo' && d.thumbnailUrl != '') {
-				heroSrc.value = d.thumbnailUrl
-			}
-			let meta = ''
-			if (d.takenAt != '') {
-				meta = formatIsoShortTime(d.takenAt)
-			}
-			if (d.place != '') {
-				meta = meta + (meta != '' ? ' · ' : '') + d.place
-			}
-			memMeta.value = meta
-			// FE1：AI 增量字段（tags_json/ai_description 打标异步，可能 null → 空=不显示对应区块，不造假占位）
-			fetchContentAiMeta(id).then((ai: ContentAiMeta | null) => {
-				if (ai == null) {
-					return
-				}
-				tagList.value = ai.tags
-				if (d.contentType == 'photo' && ai.aiDescription != '') {
-					aiNote.value = ai.aiDescription
-				}
-			})
-		})
+		loadDetail()
 		fetchContentEvents(id).then((evs: Array<ContentEventRef>) => {
 			relatedList.value = evs
 			// R9 批次4（Q3 拍板）：拉第一个所属事件成员，过滤 voice（排除自身）→「这条记忆里的声音」
@@ -465,6 +421,102 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		const t = (it.title ?? '').trim()
 		const title = t == '' ? '一段声音' : (t.length > 18 ? t.substring(0, 18) + '…' : t)
 		return new EvtVoice(it.contentId, it.status, genWaveHeights(it.contentId, 20), title)
+	}
+
+	/** 拉取内容详情（onLoad 与失败弹层【重试】共用入口；GET 幂等，重试=重跑本函数） */
+	function loadDetail(): void {
+		const id = contentId.value
+		if (id == '') {
+			return
+		}
+		fetchContentDetail(id).then((d) => {
+			if (d == null) {
+				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
+				// fetchContentDetail 失败可能=网络断/404 已删除/服务不可达
+				// 2026-10-16：toast → showModal 带【重试】（toast 一闪而过无补救动作，用户只能干等）
+				uni.showModal({
+					title: '详情加载失败',
+					content: '网络断开、内容已删除或服务暂不可达。可检查网络后重试。',
+					confirmText: '重试',
+					cancelText: '取消',
+					success: (r) => {
+						if (r.confirm) {
+							loadDetail()
+						}
+					}
+				})
+				return
+			}
+			memBody.value = d.text
+			memTitle.value = makeTitle(d.text)
+			// W0-2：语音记忆 → F5b 语音卡显示 + 播放引擎按 contentId 接线（audio 端点，W0-1）
+			if (d.contentType == 'voice') {
+				isVoice.value = true
+				detailWave.value = genWaveHeights(id, 28)
+				// BB3：进页即拉真实波形（详情页单条语音，非列表懒加载场景）
+				wf.loadWaveform(id)
+				bodySource.value = '来自语音转写的 AI 描述 · 你也可以补充一句'
+				// 可播性按转写状态显式判定（禁止静默）：与事件级语音卡（v.status）同词表
+				if (d.status == 'done') {
+					voicePlayable.value = true
+					voiceNote.value = ''
+				} else if (d.status == 'failed') {
+					voicePlayable.value = false
+					voiceNote.value = '这段语音转写失败，暂不可播放'
+				} else {
+					voicePlayable.value = false
+					voiceNote.value = '转写处理中，稍后可播放'
+				}
+			}
+			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
+			// 原图 URL 一并留存：hero @tap 原图↔缩略图切换用（originalUrl 已在 ContentDetail 在手，零契约改动）
+			if (d.contentType == 'photo') {
+				heroThumbUrl.value = d.thumbnailUrl
+				heroOrigUrl.value = d.originalUrl
+				if (d.thumbnailUrl != '') {
+					heroShowOrig.value = false
+					heroSrc.value = d.thumbnailUrl
+				} else if (d.originalUrl != '') {
+					heroShowOrig.value = true
+					heroSrc.value = d.originalUrl
+				}
+			}
+			let meta = ''
+			if (d.takenAt != '') {
+				meta = formatIsoShortTime(d.takenAt)
+			}
+			if (d.place != '') {
+				meta = meta + (meta != '' ? ' · ' : '') + d.place
+			}
+			memMeta.value = meta
+			// FE1：AI 增量字段（tags_json/ai_description 打标异步，可能 null → 空=不显示对应区块，不造假占位）
+			fetchContentAiMeta(id).then((ai: ContentAiMeta | null) => {
+				if (ai == null) {
+					return
+				}
+				tagList.value = ai.tags
+				if (d.contentType == 'photo' && ai.aiDescription != '') {
+					aiNote.value = ai.aiDescription
+				}
+			})
+		})
+	}
+
+	/** hero @tap：photo 记忆原图↔缩略图切换（其余类型 originalUrl 恒空，切换不生效） */
+	function onToggleHero(): void {
+		if (heroOrigUrl.value == '' || heroThumbUrl.value == '') {
+			return
+		}
+		heroShowOrig.value = !heroShowOrig.value
+		heroSrc.value = heroShowOrig.value ? heroOrigUrl.value : heroThumbUrl.value
+	}
+
+	/** 原图 15m 票据过期裂图（<image> @error）→ 自动回落缩略图（24h 票据/本地临时文件，稳定） */
+	function onHeroError(): void {
+		if (heroShowOrig.value && heroThumbUrl.value != '') {
+			heroShowOrig.value = false
+			heroSrc.value = heroThumbUrl.value
+		}
 	}
 
 	function goBack(): void {

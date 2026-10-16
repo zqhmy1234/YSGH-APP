@@ -12,6 +12,9 @@ class EchoTodayOut(BaseModel):
     place: str | None = None
     echo_date: str
     fingerprint: str
+    # 2026-10-16：photo 回响缩略图票据 URL（timeline cover_url 同款 Valet Key 直发；
+    # 仅 photo 有值，签票失败/非 photo 为 None → 客户端保留渐变占位兜底）
+    thumb_url: str | None = None
 
 
 class EchoDismissOut(BaseModel):

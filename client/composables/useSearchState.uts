@@ -260,8 +260,12 @@ export class SearchState {
 		//    若前提不成立（latency_ms 早于回答步骤），门禁读到的是「不含回答耗时」的数字 ⇒
 		//    **门禁绿着骗人**（P95 达标但真机体感超 3s）✗✗。前提一旦被改回，本开关必须同步关。
 		// 🚨 **越线处置**：开启后若 P95 越线，**第一手段是收紧回答超时（现 search_answer.py 为 1.0s）
-		//    / 关掉本开关**，**不是放宽验收口径** ✗。回退＝删掉本行末尾的 `, true`（单点）。
-		searchText(q, 30, this.filterContentTypes(), true).then((out: SearchOutcome | null) => {
+		//    / 关掉本开关**，**不是放宽验收口径** ✗。开启＝在本行末尾加 `, true`（单点）。
+		// 2026-10-16 **现状关闭**：真 key 压测（docs/性能验收_搜索_20261016.md）实测本机→LLM 往返
+		//    ~2s+ > 1.0s 硬上限 ⇒ want_answer=on 30/30 全部超时降级、**0 条拿到回答**；此时开着 =
+		//    用户白等多等 ~1s 仍无回答 ✗。故回退到 off（契约默认本就是 false，在野零影响 ✓）。
+		//    重新开启的前提：回答链在**目标环境**实测能交付回答（上限是否需放宽/换档属产品拍板 ✗）。
+		searchText(q, 30, this.filterContentTypes()).then((out: SearchOutcome | null) => {
 			this.loading.value = false
 			this.hasSearched.value = true
 			this.pushHistory(q)

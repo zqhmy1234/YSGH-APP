@@ -83,8 +83,10 @@
 					<text class="n2_593">{{ item.title }}</text>
 					<text class="n2_594">{{ item.meta }}</text>
 				</view>
-			</view>
-			<view v-for="(item, idx) in textResults" :key="'t' + item.id" class="n2_598" @tap="openResult(item)">
+				<!-- 就地操作行（2026-10-16 拆为 SearchHitOps 子组件） -->
+				<SearchHitOps :contentId="item.id" :contentType="item.contentType" />
+				</view>
+				<view v-for="(item, idx) in textResults" :key="'t' + item.id" class="n2_598" @tap="openResult(item)">
 				<!-- 照片命中：服务端票据 URL 直连回显（<image> 无法带 header，预签名/票据 URL 是唯一通路） -->
 				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFill" />
 				<view class="n2_599"> <!-- 摘要块 -->
@@ -94,8 +96,10 @@
 				<view class="n2_600"> <!-- 文字元信息区 -->
 					<text class="n2_603">{{ item.meta }}</text>
 				</view>
-			</view>
-			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<!-- 就地操作行（2026-10-16 拆为 SearchHitOps 子组件；rawText=命中原始文本，照片无文本为空串） -->
+				<SearchHitOps :contentId="item.id" :contentType="item.contentType" :rawText="item.rawText" />
+				</view>
+				<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
 				<text class="n2-empty-text">{{ emptyText() }}</text>
 			</view>
 			<!-- 空结果不空手（2026-10-16）：改写建议 chips（点了直接重搜） -->
@@ -132,6 +136,9 @@
 		voiceCurSec,
 		voiceTotalSec
 	} from '@/utils/audio_player'
+	// 2026-10-16 就地操作行拆为同目录子组件 SearchHitOps（结构棘轮 800 行阈值拆分）：嵌套文件名≠目录名
+	// 不符合 easycom，手动 import（script setup 内 import 即模板可用）
+	import SearchHitOps from '@/components/TabSearch/SearchHitOps.uvue'
 
 	// ── 搜索状态机（2026-10-16 · 整块抽到 useSearchState；销 audit_harness 基线条目）──
 	// 先例：useEventOps/usePhotoAttach —— 组件经 `ss` 访问**同一 ref 对象**（全项目零
@@ -232,6 +239,8 @@
 		title: string
 		meta: string
 		waveHeights: Array<number>
+		// 2026-10-16：contentType 传给 SearchHitOps（纠错提交用；收藏态在子组件内自治）
+		contentType: string
 		// 播放态快照（tick 局部更新）：syncActiveCard 只写「正在播放那张卡」的这些属性，
 		// 其余卡零写入零重渲染；默认值在 constructor 内赋（UTS 无字段默认初始化）
 		active: boolean
@@ -239,11 +248,12 @@
 		progress: number
 		curText: string
 		totalText: string
-		constructor(id: string, title: string, meta: string, waveHeights: Array<number>) {
+		constructor(id: string, title: string, meta: string, waveHeights: Array<number>, contentType: string) {
 			this.id = id
 			this.title = title
 			this.meta = meta
 			this.waveHeights = waveHeights
+			this.contentType = contentType
 			this.active = false
 			this.playing = false
 			this.progress = 0
@@ -258,11 +268,16 @@
 		meta: string
 		/** 照片缩略图票据 URL（仅 content_type=photo 有值；文字/语音为空串） */
 		thumb: string
-		constructor(id: string, text: string, meta: string, thumb: string) {
+		// 2026-10-16：contentType/rawText 传给 SearchHitOps（纠错提交用；照片无文本 → rawText=''，不写假文本）
+		contentType: string
+		rawText: string
+		constructor(id: string, text: string, meta: string, thumb: string, contentType: string, rawText: string) {
 			this.id = id
 			this.text = text
 			this.meta = meta
 			this.thumb = thumb
+			this.contentType = contentType
+			this.rawText = rawText
 		}
 	}
 
@@ -340,7 +355,7 @@
 			const h = vis[i]
 			if (h.contentType == 'voice') {
 				const title = h.eventTitle != '' ? h.eventTitle : '语音记忆'
-				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId)))
+				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId), h.contentType))
 			}
 		}
 		voiceResults.value = out
@@ -387,7 +402,7 @@
 			}
 			const txt = h.text != '' ? h.text : '（无文本描述）'
 			// 照片命中带服务端下发的缩略图票据 URL，其余类型为空串
-			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : ''))
+			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : '', h.contentType, h.text))
 		}
 		return out
 	})

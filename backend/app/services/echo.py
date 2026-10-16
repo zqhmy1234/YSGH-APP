@@ -278,6 +278,17 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         except IntegrityError:
             db.rollback()
             return None
+        # 2026-10-16：EchoSheet 真图——photo 回响补缩略图票据（timeline cover_url 同款
+        # content_urls 签票）；失败降级 None 不阻塞回响主链路（客户端保留渐变占位兜底）。
+        # 放进 snapshot ⇒ /echo/today 响应与 echo 消息 payload 同步携带（同一份快照）。
+        thumb_url = None
+        if content.content_type == "photo" and content.thumbnail_key:
+            try:
+                from app.services.external.media_url import content_urls
+
+                _orig, thumb_url = content_urls(None, content.thumbnail_key, str(user_id))
+            except Exception:
+                logger.warning("回响缩略图签票失败 content=%s", content.id, exc_info=True)
         # R9 批次3（R9-1 · 拍板 A-1）：回响首次展示同步建发 in-app echo 消息，
         # payload=回响快照——消息中心点击直接回放快照（不调 /echo/today、不占名额）。
         # 只在「新展示」分支到达此处（shown_today>=1 早返回 None）→ 天然每回响至多 1 条消息。
@@ -289,6 +300,7 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
             "place": content.place,
             "echo_date": today.isoformat(),
             "fingerprint": fp,
+            "thumb_url": thumb_url,
         }
         _create_echo_message(db, user_id, snapshot)
         return snapshot

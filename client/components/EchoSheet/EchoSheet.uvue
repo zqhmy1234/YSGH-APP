@@ -17,8 +17,11 @@
 				<text class="head-close-text">×</text>
 			</view>
 			</view>
-			<!-- 图片区：画布为暖→冷渐变演示占位；真照片通路=downloadFile(header token)/预签名 URL（图片硬约束），挂 A9 邻项 -->
-			<view class="photo-ph"></view>
+			<!-- 图片区（2026-10-16 真图）：photo 回响优先渲染服务端 thumb_url 票据直发；
+			     快照路径无 thumbUrl → 组件内 fetchThumbnailPath 兜底（downloadFile+header 落本地）；
+			     两者皆空 → 保留画布渐变占位（无图不造假）。尺寸/圆角完全复用 .photo-ph -->
+			<image v-if="imgSrc != ''" class="photo-ph" style="width:100%" :src="imgSrc" mode="aspectFill" />
+			<view v-else class="photo-ph"></view>
 			<view class="date-row">
 				<image class="date-star" src="/static/icons/about-star.svg" />
 				<text class="date-text">{{ dateText }}</text>
@@ -36,8 +39,12 @@
 </template>
 
 <script setup lang="uts">
+	// 2026-10-16 真图兜底：快照路径（消息 payload 回放）无 thumbUrl → 既有 fetchThumbnailPath
+	// （downloadFile+header 落本地，会话级缓存——重复挂载零额外请求）；失败恒 '' → 渐变占位保留
+	import { fetchThumbnailPath } from '@/utils/api'
 	// Props：传基本类型（对象 prop 在 UTS 组件边界有类型陷阱，项目零先例不冒险）
-	// 卡20 铁律：props/emit 接口不动（messages.uvue 接线保持），本段脚本与重写前逐字一致
+	// 卡20 铁律：props/emit 基本接口不动（messages.uvue 接线保持）；2026-10-16 经协调者裁决
+	// 新增 contentId/thumbUrl 两个 String prop（EchoSheet 真图渲染用），既有 prop/emit 语义不变
 	const props = defineProps({
 		echoText: {
 			type: String,
@@ -50,10 +57,32 @@
 		place: {
 			type: String,
 			default: ''
+		},
+		// 2026-10-16 真图两路输入：contentId（fetchThumbnailPath 兜底取图用）+ thumbUrl（票据直发优先）
+		contentId: {
+			type: String,
+			default: ''
+		},
+		thumbUrl: {
+			type: String,
+			default: ''
 		}
 	})
 
 	const emit = defineEmits(['close', 'replay', 'dismiss'])
+
+	let localThumb = ref('')
+	if (props.thumbUrl == '' && props.contentId != '') {
+		fetchThumbnailPath(props.contentId).then((p: string) => {
+			if (p != '') {
+				localThumb.value = p
+			}
+		})
+	}
+	/** 实际渲染图源：票据 URL 优先，本地兜底次之，空串=渐变占位 */
+	const imgSrc = computed((): string => {
+		return props.thumbUrl != '' ? props.thumbUrl : localThumb.value
+	})
 
 	let dismissing = ref(false)
 
