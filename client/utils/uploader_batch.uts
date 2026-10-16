@@ -134,7 +134,7 @@ function failWholeBatch(items: Array<PhotoItem>, onProgress: (p: UploadProgress)
 	}
 	// 2026-10-16（真机反馈「不知道是哪六张、点了重试没反应」）：整批失败（上传前 `ensureLogin()`
 	// 不通过 = 后端不可达 / 登录态失效）**最有诊断价值**，原先只 console.error ✗ ⇒ 设备上不可见。
-	// 本函数是两处登录失败调用点（uploadBatch 与 continuePendingUploads）的唯一汇聚点 ✓。
+	// 本函数是两处登录失败调用点（uploadBatch 与 uploadItems）的唯一汇聚点 ✓。
 	setLastUploadError('连不上服务端（登录态失效或后端不可达）⇒ 整批 ' + items.length.toString() + ' 张未上传')
 	for (let i = 0; i < items.length; i++) {
 		registerConsecutiveFailure()
@@ -182,25 +182,13 @@ export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) 
 	})
 }
 
-/** 一键继续：解除暂停 + 上传 held/failed 待处理照片 + 补传**待补原件**（缩略图已传、原图待补）
- *  —— 原图模式；B4 §5"立即上传原图"手动入口，亦为 WiFi 恢复自动补传的复用出口。
- *  待补原件不在 held（已成功上传缩略图），故单独并入；补原件的清理由管线按成功清除。 */
-export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+/** 原样上传一批（原图模式）+ **统一成功清理**：resolve 出口集中做 removeHeld/removeFailed。
+ *  2026-10-16（批次 6 · 单张重试）：自 continuePendingUploads 抽出 —— 横幅「单张重传」与「一键继续」
+ *  必须共用本出口，否则清理路径分叉，会出现「重传成功但队列未清/清错」的隐性分叉 ✗。
+ *  失败项保留在 failed 队列（UploadPool.runUpload → addFailed 去重按 path 覆盖），失败原因由
+ *  uploader_photo / failWholeBatch 写 setLastUploadError（机制已存在，不在此重复）。 */
+export function uploadItems(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
 	return new Promise<Array<UploadedPhoto>>((resolve) => {
-		resumeSync()
-		const held = heldPhotos()
-		const failed = failedPhotos()
-		const pendingOriginal = pendingOriginalItems()
-		const items: Array<PhotoItem> = []
-		for (let i = 0; i < held.length; i++) {
-			items.push(held[i])
-		}
-		for (let i = 0; i < failed.length; i++) {
-			items.push(failed[i])
-		}
-		for (let i = 0; i < pendingOriginal.length; i++) {
-			items.push(pendingOriginal[i])
-		}
 		if (items.length === 0) {
 			const empty = new UploadProgress(0, 0, 0)
 			onProgress(empty)
@@ -209,12 +197,13 @@ export function continuePendingUploads(onProgress: (p: UploadProgress) => void):
 		}
 		ensureLogin().then((ok: boolean) => {
 			if (!ok) {
-				console.error('[yishu] 继续上传：登录失败（后端不可达）')
+				console.error('[yishu] uploadItems：登录失败（后端不可达），整批入失败队列')
 				failWholeBatch(items, onProgress, resolve)
 				return
 			}
 			const pool = new UploadPool(items, onProgress, (out: Array<UploadedPhoto>) => {
-				// 成功后从 held/failed 队列移除（无论池是否因暂停提前返回，只清已成功项）
+				// 成功后从 held/failed 队列移除（无论池是否因暂停提前返回，只清已成功项）——
+				// 单张重试与全量续传共此清理出口，勿在各调用处另写清理。
 				for (let i = 0; i < out.length; i++) {
 					removeHeld(out[i].item.path)
 					removeFailed(out[i].item.path)
@@ -224,6 +213,29 @@ export function continuePendingUploads(onProgress: (p: UploadProgress) => void):
 			pool.start('original')
 		})
 	})
+}
+
+/** 一键继续：解除暂停 + 上传 held/failed 待处理照片 + 补传**待补原件**（缩略图已传、原图待补）
+ *  —— 原图模式；B4 §5"立即上传原图"手动入口，亦为 WiFi 恢复自动补传的复用出口。
+ *  待补原件不在 held（已成功上传缩略图），故单独并入；补原件的清理由管线按成功清除。 */
+export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+	resumeSync()
+	const held = heldPhotos()
+	const failed = failedPhotos()
+	const pendingOriginal = pendingOriginalItems()
+	const items: Array<PhotoItem> = []
+	for (let i = 0; i < held.length; i++) {
+		items.push(held[i])
+	}
+	for (let i = 0; i < failed.length; i++) {
+		items.push(failed[i])
+	}
+	for (let i = 0; i < pendingOriginal.length; i++) {
+		items.push(pendingOriginal[i])
+	}
+	// 2026-10-16（批次 6）：上传执行 + 成功清理（removeHeld/removeFailed）并入 uploadItems，
+	// 与「单张重传」共用同一出口；resumeSync 为同步调用，移出 Promise 执行器语义不变。
+	return uploadItems(items, onProgress)
 }
 
 /** WiFi 恢复时自动补传暂缓原图 + 待补原件（B4 §5 流量约束闭环：蜂窝暂缓/省流 → 到 WiFi 自动续传）；

@@ -280,6 +280,8 @@
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+// 2026-10-16（批次 6）：watch 自 'vue' 显式引入（语音保存 loading 的复位监听，见文件尾 submitVoice）
+import { watch } from 'vue'
 
 	// ===== 对外事件 =====
 	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
@@ -672,7 +674,9 @@
 			return
 		}
 		photoUploading.value = true
-		uni.showLoading({ title: '上传中…', mask: true })
+		// 2026-10-16（批次 6 · 保存即时反馈）：三入口统一先给「保存中…」（点确定到出结果之间的
+		// 空窗原无任何反馈）；上传开始后由进度回调把标题切「上传中（n/N）…」（见下）。
+		uni.showLoading({ title: '保存中…', mask: true })
 		const now = Date.now()
 		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
 		// 2026-10-14（台账 §4.20）：带上本次定位（原硬编码 null ⇒ 照片恒定不带地点）。
@@ -686,7 +690,13 @@
 		}
 		// 2026-10-14（台账 §7.17）：提交前快照手选分类——原实现只清空、**从不提交**。
 		const picked = manualLabel.value
-		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
+		uploadBatch(items, (p: UploadProgress): void => {
+			// 2026-10-16（批次 6）：进度此前纯丢弃 ✗ —— 把 loading 标题换成真实进度「上传中（n/N）…」。
+			// ⚠️ 真机项：App 端重复 showLoading 换标题是否闪烁/跳变，待真机验证。
+			if (p.total > 0) {
+				uni.showLoading({ title: '上传中（' + p.done.toString() + '/' + p.total.toString() + '）…', mask: true })
+			}
+		}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()
 			photoUploading.value = false
 			if (uploaded.length > 0) {
@@ -741,13 +751,18 @@
 			} else {
 				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
 			}
-		})
-	}
+			}, (e: Error): void => {
+			// 2026-10-16（批次 6）：异常路径兜底 —— reject/抛错也必须收 loading，否则转圈永久卡住 ✗
+			uni.hideLoading()
+			photoUploading.value = false
+			showErrorToast(e)
+			})
+			}
 
-	// ===== 文字记录（F1e：确定 → 整栈收起；云端分类继续跑，手选分类不一致时登记纠正） =====
-	function submitText(): void {
-		const text = draft.value.trim()
-		console.log('[yishu] submitText: ' + text)
+			// ===== 文字记录（F1e：确定 → 整栈收起；云端分类继续跑，手选分类不一致时登记纠正） =====
+			function submitText(): void {
+			const text = draft.value.trim()
+			console.log('[yishu] submitText: ' + text)
 		if (text == '') {
 			showErrorToast(new Error('先写点什么吧'))
 			return
@@ -756,11 +771,15 @@
 			return
 		}
 		submitting.value = true
+		// 2026-10-16（批次 6 · 保存即时反馈）：文字入口与拍照/语音统一「保存中…」；
+		// hideLoading 覆盖成功 / contentId==null 失败 / reject 异常三条路径（见下两处分支）。
+		uni.showLoading({ title: '保存中…', mask: true })
 		const picked = manualLabel.value
 		// BA1（FE2）：备注卡接真——remark 随 POST /api/v1/contents 入库（薄封装 capsule_api）；
 		// 提交前捕获快照（保存成功后 remark 会被清空，闭包内不能读 ref）
 		const remarkVal = remark.value.trim()
 		createTextContentRemark(text, remarkVal).then((contentId: string | null) => {
+			uni.hideLoading()
 			console.log('[yishu] createTextContent -> ' + contentId)
 			submitting.value = false
 			if (contentId == null) {
@@ -790,9 +809,14 @@
 					// AI 打标完成即服务端生效，无 UI 依赖
 					console.log('[yishu] pollClassify done, label=' + (result != null ? result.label : 'null'))
 				})
-			})
-		})
-	}
+				})
+				}, (e: Error): void => {
+				// 2026-10-16（批次 6）：reject 异常路径兜底收 loading（成功/contentId==null 两支已在上方收）
+				uni.hideLoading()
+				submitting.value = false
+				showErrorToast(e)
+				})
+				}
 
 	// ===== 语音录音方法 =====
 	// recording 复位统一出口（4 处 false 赋值收敛，防漏关动画）
@@ -820,7 +844,36 @@
 	const lastVoiceDuration = vr.lastVoiceDuration
 	const lastVoiceFile = vr.lastVoiceFile
 	const saving = vr.saving
-	function submitVoice(): void { vr.submitVoice() }
+	// 2026-10-16（批次 6 · 保存即时反馈）：语音保存链在 composable（useVoiceRecord）内——本文件
+	// 边界不含 composable，但**任意终态**（成功/音频降级仅落文本/入库失败/异常）都会复位 saving ref
+	// ⇒ 组件侧「标志位 + watch saving 复位」收 loading，全路径覆盖且不侵入 composable。
+	// （watch 显式自 'vue' 引入并置于顶部 import 区，同 UploadStatusBanner.uvue 先例；本文件头注释
+	//  只禁 '@dcloudio/uni-app' 的生命周期导入，不禁 'vue'。）
+	let voiceSaveLoading = false
+	watch(saving, (v: boolean): void => {
+		if (!v && voiceSaveLoading) {
+			voiceSaveLoading = false
+			uni.hideLoading()
+		}
+	})
+	function submitVoice(): void {
+		uni.showLoading({ title: '保存中…', mask: true })
+		voiceSaveLoading = true
+		try {
+			vr.submitVoice()
+		} catch (e) {
+			// 同步抛错兜底：先收 loading 再如实上报（防转圈卡死）
+			voiceSaveLoading = false
+			uni.hideLoading()
+			showErrorToast(e as Error)
+			return
+		}
+		if (!saving.value) {
+			// 早退分支（转写为空/正在保存）：保存链未启动，watch 不会触发 ⇒ 同步收
+			voiceSaveLoading = false
+			uni.hideLoading()
+		}
+	}
 	function setRecordingOff(): void { vr.setRecordingOff() }
 	function toggleRecord(): void { vr.toggleRecord() }
 	function pauseRecordNow(): void { vr.pauseRecordNow() }

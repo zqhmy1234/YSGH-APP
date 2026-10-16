@@ -20,7 +20,10 @@
 	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
 	import { getNetKind, NetKind } from '@/utils/uploader_net'
 	import { heldCount, failedCount, failedPhotos, removeFailed, lastUploadError, clearLastUploadError } from '@/utils/uploader_queue'
-	import { continuePendingUploads } from '@/utils/uploader_batch'
+	import { continuePendingUploads, uploadItems } from '@/utils/uploader_batch'
+	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
+	// PhotoItem 为纯数据类，声明家在 interface.uts（同 RecordSheet/TabIndex 先例）
+	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 
 	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
 
@@ -134,54 +137,93 @@
 	function onBannerTap(): void {
 		if (failed.value > 0 && !paused.value) {
 			// 2026-10-16（真机反馈「我也不知道是哪六张、点了重试也没任何反应」）：
-			// 点横幅**不再闷头直接重试**，先给"是哪几张 + 为什么失败"的明细，
-			// 由用户在弹窗里决定「重试」还是「清除记录」✓。
+			// 点横幅**不再闷头直接重试**，先给"是哪几张 + 为什么失败"的明细（ActionSheet），
+			// 由用户决定单张重传 / 全部重试 / 清除记录 ✓。
 			showFailedDetail()
 		}
 	}
 
 	/**
-	 * 失败明细弹窗：文件名（前 5 张）+ 最近一次失败原因 + 两个动作。
-	 *
-	 * 「清除记录」是**必需**的：若失败是永久性的（例如该文件在相册里已不可读），
-	 * 否则红条会永远挂着、每次重试都白跑 ✗（真机现象就是"数字恒为 6"）。
+	 * 失败明细（2026-10-16 批次 6 改版）：`uni.showActionSheet` 逐张列出**失败文件名**，
+	 * 点选哪张就只重传哪张（原 Modal 只有「重试(全量)」——对永久性失败张每轮全量白跑，
+	 * 也无法对应「到底是哪张」）。尾部保留两个队列级动作：
+	 *   · 「全部重试」= 右侧按钮同效的全量出口；
+	 *   · 「清除失败记录」是**必需**的：若失败是永久性的（例如该文件在相册里已不可读），
+	 *     不清理则红条永挂、每次重试都白跑 ✗（真机现象就是"数字恒为 6"）。
+	 * 最近一次失败原因在弹 sheet 前以轻 toast 带出一屏（ActionSheet 无正文槽位）。
+	 * ⚠️ 真机项：App 端 ActionSheet 长文件名截断样式、超长失败列表（>6 张）的滚动表现待验证。
 	 */
 	function showFailedDetail(): void {
 		const items = failedPhotos()
 		const why = lastUploadError()
 		const names: Array<string> = []
-		const max = items.length > 5 ? 5 : items.length
-		for (let i = 0; i < max; i++) {
+		for (let i = 0; i < items.length; i++) {
 			const segs = items[i].path.split('/')
 			names.push(segs[segs.length - 1])
 		}
-		let content = items.length.toString() + ' 张照片上传失败'
-		if (names.length > 0) {
-			content = content + '：' + names.join('、')
-			if (items.length > names.length) {
-				content = content + ' 等'
-			}
-		}
+		names.push('全部重试（' + items.length.toString() + ' 张）')
+		names.push('清除失败记录')
 		if (why != '') {
-			content = content + '\n原因：' + why
+			uni.showToast({ title: '原因：' + why, icon: 'none', duration: 3000 })
 		}
-		uni.showModal({
-			title: '上传失败明细',
-			content: content,
-			confirmText: '重试',
-			cancelText: '清除记录',
+		uni.showActionSheet({
+			itemList: names,
 			success: (res) => {
-				if (res.confirm) {
+				const idx = res.tapIndex
+				if (idx < items.length) {
+					retryOne(items[idx])
+					return
+				}
+				if (idx == items.length) {
+					// 「全部重试」：与右侧 action 按钮同出口
 					doContinue('retry-failed')
 					return
 				}
+				// 「清除失败记录」
 				for (let i = 0; i < items.length; i++) {
 					removeFailed(items[i].path)
 				}
 				clearLastUploadError()
 				refresh()
 				uni.showToast({ title: '已清除失败记录', icon: 'none' })
+			},
+			fail: () => {
+				// 用户点「取消」：ActionSheet 取消走 fail 分支（非 tapIndex=-1），静默
 			}
+		})
+	}
+
+	/**
+	 * 单张重传（2026-10-16 批次 6）：ActionSheet 点选哪张就只传哪张。
+	 * 复用 `uploadItems` —— 原图上传 + resolve 出口统一 removeHeld/removeFailed（防清理路径
+	 * 分叉，勿在此另写清理）；单张失败仍由 UploadPool 写回 failed 队列（addFailed 按 path
+	 * 覆盖去重 = 失败保留）+ setLastUploadError 原因（机制已存在）。
+	 */
+	function retryOne(item: PhotoItem): void {
+		uploading.value = true
+		uni.showLoading({ title: '重传中…', mask: true })
+		uploadItems([item], (p: UploadProgress): void => {}).then((out: Array<UploadedPhoto>) => {
+			uni.hideLoading()
+			uploading.value = false
+			refresh()
+			if (out.length > 0) {
+				uni.showToast({ title: '已重传 1 张', icon: 'success' })
+				if (failedCount() == 0) {
+					clearLastUploadError()
+				}
+			} else {
+				const why = lastUploadError()
+				uni.showToast({
+					title: '重传失败' + (why != '' ? '：' + why : ''),
+					icon: 'none',
+					duration: 3000
+				})
+			}
+		}, (e: Error): void => {
+			uni.hideLoading()
+			uploading.value = false
+			refresh()
+			uni.showToast({ title: '重传异常，请稍后再试', icon: 'none' })
 		})
 	}
 
