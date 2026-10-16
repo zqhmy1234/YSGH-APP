@@ -116,10 +116,30 @@ def run_cleanup(older_than_days: int = 30, limit: int = 500, dry_run: bool = Fal
         for log in due:
             try:
                 if not dry_run:
+                    # 2026-10-16（数据一致性 · 与 `trash_clear` 同源）：**硬删前置采集** ——
+                    # ① 该内容所属的成员事件（`event_items.content_id` 是级联外键，删完无从反查 ✗）
+                    # ② 用户归属（内容行删掉后读不到，而回收助手要做归属校验 ✓）
+                    from app.db.models import Content, EventItem
+                    from app.services import content_purge
+
+                    _c = db.get(Content, str(log.content_id))
+                    _uid = str(_c.user_id) if _c is not None else ""
+                    _ev_ids = [
+                        str(x)
+                        for x in db.execute(
+                            select(EventItem.event_id).where(
+                                EventItem.content_id == str(log.content_id)
+                            )
+                        ).scalars().all()
+                    ]
                     _delete_content_objects(db, str(log.content_id))
                     _clear_tombstone(db, str(log.content_id))
                     log.cleanup_status = "done"
                     db.commit()
+                    # 清尾后回收"失去全部成员"的事件（与清空回收站共用同一助手 ✓）——
+                    # 否则 30 天物理清理会**批量**制造空壳事件（本仓实测已积到 485 个 ✗）。
+                    if _uid:
+                        content_purge.gc_orphan_events(db, _uid, _ev_ids)
                 cleaned += 1
             except Exception as exc:  # noqa: BLE001 —— 单行失败保留 pending 重试
                 db.rollback()
