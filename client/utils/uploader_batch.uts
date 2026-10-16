@@ -12,6 +12,8 @@ import { MAX_CONCURRENCY, UploadMode, UploadOptions, UploadProgress, UploadedPho
 import { NetKind, getNetKind, resolveMode } from './uploader_net'
 import { addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, removeFailed, removeHeld } from './uploader_queue'
 import { uploadWithRetry } from './uploader_photo'
+// 2026-10-16：WiFi 恢复自动补传同样要上云，否则补传的照片不进时间轴（D-05 缺口）
+import { submitUploadsAsL1 } from './l1_submit.uts'
 
 /** 并发池（游标式分配，天然实现 ≤3 并发；批量失败 ≥10 暂停剩余） */
 class UploadPool {
@@ -189,7 +191,9 @@ function maybeUploadHeldOnWifi(): void {
 	getNetKind((kind: NetKind) => {
 		if (kind == 'wifi') {
 			console.log('[yishu] WiFi 恢复，自动补传暂缓原图（held=' + heldCount() + ' failed=' + failedCount() + '）')
-			continuePendingUploads(() => {})
+			continuePendingUploads(() => {}).then((uploaded: Array<UploadedPhoto>) => {
+				submitUploadsAsL1(uploaded)
+			})
 		}
 	})
 }

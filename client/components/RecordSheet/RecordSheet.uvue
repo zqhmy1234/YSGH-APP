@@ -273,11 +273,11 @@
 	import { getCurrentFix, getLastFix, setLastFix, Fix, LocateState } from '@/utils/location'
 	import { showErrorToast } from '@/utils/api'
 	import { VoiceRecorder } from '@/composables/useVoiceRecord'
-	import { UploadProgress, UploadedPhoto, isoString } from '@/utils/uploader_types'
+	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
 	import { uploadBatch } from '@/utils/uploader_batch'
 	// NEW-01 修复（2026-10-11 开发 C）：端侧 L1 聚合 + 上云所需依赖（与 TabIndex.handleBatch 同源）
-	import { aggregateToEvents } from '@/utils/agg_runner.uts'
-	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
+	// 2026-10-16：上云逻辑抽成共口（utils/l1_submit.uts），供 记录面板 / 横幅手动上传 / WiFi 自动补传 三处复用
+	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 
@@ -710,27 +710,8 @@
 				// 锁死在空态页（空态页唯一入口又是记录面板 → 新用户永远出不来）。
 				// 后端设计：云侧默认只跑 L2/L3（backend/app/services/events/aggregate.py:82-84），
 				// L1 日卡片必须由端侧 POST /api/v1/events/sync 提交，故此处必须补上。
-				const tz = -new Date().getTimezoneOffset()
-				const agg = aggregateToEvents(uploaded, tz)
-				const syncEvents: Array<UTSJSONObject> = []
-				for (let i = 0; i < agg.events.length; i++) {
-					const ev = agg.events[i]
-					const obj: UTSJSONObject = {
-						client_event_id: ev.clientEventId,
-						title: ev.title,
-						start_time: isoString(ev.startTime),
-						end_time: isoString(ev.endTime),
-						photo_ids: ev.photoIds
-					}
-					syncEvents.push(obj)
-				}
-				if (syncEvents.length > 0) {
-					syncClientEvents(syncEvents).then((out: SyncOutcome | null) => {
-						console.log('[yishu] 记录面板事件上云: accepted=' + (out != null ? out.accepted : -1)
-							+ ' dup=' + (out != null ? out.duplicates : -1)
-							+ ' rejected=' + (out != null ? out.rejected : -1))
-					})
-				}
+				const l1n = submitUploadsAsL1(uploaded)
+				console.log('[yishu] 记录面板 L1 提交条数=' + l1n)
 				uni.showToast({ title: '已记录', icon: 'success' })
 				emit('saved')
 				photos.value = []
