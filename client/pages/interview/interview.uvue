@@ -28,6 +28,9 @@
 		<view v-else class="n4_181"> <!-- 完成卡（三问答毕） -->
 			<text class="n4_182">访谈完成</text>
 			<text class="n4_183">谢谢你的分享，已经开始了解你了</text>
+			<!-- 2026-10-17：渲染后端复述文本 confirmation——此前脚本里只赋值、模板零引用 = 死数据，
+			     用户看不到"AI 记住了什么"；复用既有 .n4_184（引导文本类，width:100% 长文本自动换行） -->
+			<text v-if="confirmation != ''" class="n4_184">{{ confirmation }}</text>
 			<view class="start-btn" @tap="goHome">
 				<text class="start-btn-text">开始使用</text>
 			</view>

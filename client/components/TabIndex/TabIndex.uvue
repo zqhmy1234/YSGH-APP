@@ -194,11 +194,87 @@
 			     ⇒ 三态互斥不叠渲染 ✓。
 			     ⚠️ 日卡列表数据源 `visibleDays` 已排除「今天」的日组（去重口径，见其定义处）。 -->
 			<view class="feed" :class="(showEmpty || loading) ? 'ui-hidden' : ''">
-				<!-- L2 待确认区 -->
+				<view v-for="(day, dayIdx) in visibleDays" :key="day.key" class="day-block">
+					<view class="day-head">
+						<text class="day-title serif">{{ day.label }}</text>
+						<!-- 2026-10-17：日头"N 张照片"概括——组内 photoCount 总和在 buildDayGroups 出口
+						     预计算（DayGroup.photoCountTotal），无照片日组不显示；复用既有 .meta-item -->
+						<text v-if="day.photoCountTotal > 0" class="meta-item">{{ day.photoCountTotal }} 张照片</text>
+						<view class="day-line"></view>
+					</view>
+					<!-- 整卡可点进详情（真机实锤：此前卡片**没绑任何 @tap**，详情页从时间轴无入口）。
+					     内部已有 @tap 的子元素必须加 .stop，否则点操作/照片/播放也会冒泡进详情 -->
+					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'" @tap="openDetail(ev)">
+						<!-- 操作入口 -->
+						<view class="card-ops pressable" @tap.stop="onCardOps(ev, dayIdx)">
+							<text class="card-ops-text">⋯</text>
+						</view>
+						<view v-if="ev.coverPath != ''" class="cover-wrap">
+							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" lazy-load="true" />
+						</view>
+						<text class="card-title serif">{{ ev.title }}</text>
+						<view class="card-meta">
+							<!-- 2026-10-16（RC-F 性能）：层级文案改查表（`levelLabels[ev.level]`），去掉模板函数调用
+						     ——列表每次整树重渲染时不再逐卡调 `levelText()`（原实现每 tick 全列表重算） -->
+						<text class="meta-item">{{ levelLabels[ev.level] }}</text>
+							<!-- 卡PA R4：视图字段组装期预计算（卡E01 计数口径不变），模板零函数调用 -->
+							<text v-if="ev.hasRenderablePhotos" class="meta-item rust">{{ ev.photoCountText }}</text>
+							<!-- 2026-10-17：跨零点标记——组装期判定（endTime>0 且日键与 startTime 不同，见
+							     buildDayGroups），模板只读字段零函数调用；复用既有 .meta-item -->
+							<text v-if="ev.crossDay" class="meta-item">跨零点</text>
+							</view>
+							<view v-if="ev.hasRenderablePhotos" class="photo-strip">
+							<image v-for="(p, pi) in ev.renderPhotoPaths" :key="pi" class="strip-img pressable" :src="p" mode="aspectFill" lazy-load="true" @tap.stop="onPhotoTap(ev.renderPhotoIds[pi])" />
+						</view>
+						<!-- 语音卡（W0-2 播放态，同待确认区卡） -->
+						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
+							<view class="voice-play-btn">
+								<view v-if="ev.voiceActive && ev.voicePlaying" class="voice-pause-icon">
+									<view class="voice-pause-bar"></view>
+									<view class="voice-pause-bar"></view>
+								</view>
+								<view v-else class="voice-play-icon"></view>
+							</view>
+							<view style="flex:1;">
+								<view class="voice-wave">
+									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="ev.voiceActive" :progress="ev.voiceProgress" idle-color="#C4913C" />
+								</view>
+								<view v-if="ev.voiceActive" class="voice-progress-row">
+									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
+									<view class="voice-track">
+										<!-- 2026-10-16（RC-F 播放态性能）：进度填充由 `width:%` 改 `transform:scaleX()`。
+										     `width` 是**布局属性**，每 tick 改动都会触发布局重排；`transform` 走**合成层**，
+										     只重绘不重排。值取自卡属性 `voiceProgress`（组装期/tick 预计算进卡片，
+										     模板零函数调用——见 `syncVoiceCards`）。类仍是既有 `.voice-track-fill`
+										     （零新增视觉元素），`transform-origin:left` 走内联样式（不动共享 CSS）。 -->
+										<view class="voice-track-fill" :style="'transform:scaleX(' + ev.voiceProgress + ');transform-origin:left;'"></view>
+									</view>
+									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
+								</view>
+								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
+									<text class="voice-title">{{ ev.voice.title }}</text>
+									<text class="voice-duration">{{ ev.voiceActive ? ev.voiceTotalText : ev.voice.duration }}</text>
+								</view>
+							</view>
+						</view>
+						<!-- 文字卡 -->
+						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
+							<view class="quote-line"></view>
+							<view class="quote-content">
+								<text class="quote-text serif">{{ ev.quote }}</text>
+								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- L2 待确认区（2026-10-17 起移入历史区底部，仍在 .feed 内） -->
 				<!-- 2026-10-16（用户裁决 · 采纳"待确认区不做日期过滤"）：本区是"**待用户确认**"的
 				     **动作队列**，不是按天的历史区 ⇒ 过滤会把**今天的确认入口一起藏掉** ✗；
 				     代价（今天的 pending 卡与上方「今天」块的 entry 可能同图）用户已判定**可接受** ✓。
-				     按产品决定，**「待确认区」移出主视区属后续批次**（本批不动 —— 这是**有意的**，非漏改）。 -->
+				     2026-10-17：**移出主视区**——本块是可缺席块（v-if 在整块上，移位不新增 v-if ⇒
+				     不踩 R9-D），整段移到 `visibleDays` 历史循环之后 = 历史区底部；
+				     确认/忽略入口与逻辑零改动（eo.confirmPending / eo.ignorePending 不变）。 -->
 				<view v-if="pendingEvents.length > 0" class="pending-block">
 					<text class="day-title serif">待确认</text>
 					<text class="pending-sub muted">这些主题还不确定，确认后不会再被算法改动</text>
@@ -265,74 +341,6 @@
 								     #3a2e25，配 rust 实底后对比度极低、视觉像禁用态；而白字类
 								     `.pending-btn-text-solid` 此前零使用者 = 规则写了没人用） -->
 								<text class="pending-btn-text pending-btn-text-solid">确认</text>
-							</view>
-						</view>
-					</view>
-				</view>
-
-				<view v-for="(day, dayIdx) in visibleDays" :key="day.key" class="day-block">
-					<view class="day-head">
-						<text class="day-title serif">{{ day.label }}</text>
-						<view class="day-line"></view>
-					</view>
-					<!-- 整卡可点进详情（真机实锤：此前卡片**没绑任何 @tap**，详情页从时间轴无入口）。
-					     内部已有 @tap 的子元素必须加 .stop，否则点操作/照片/播放也会冒泡进详情 -->
-					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'" @tap="openDetail(ev)">
-						<!-- 操作入口 -->
-						<view class="card-ops pressable" @tap.stop="onCardOps(ev, dayIdx)">
-							<text class="card-ops-text">⋯</text>
-						</view>
-						<view v-if="ev.coverPath != ''" class="cover-wrap">
-							<image class="cover-img" :src="ev.coverPath" mode="aspectFill" lazy-load="true" />
-						</view>
-						<text class="card-title serif">{{ ev.title }}</text>
-						<view class="card-meta">
-							<!-- 2026-10-16（RC-F 性能）：层级文案改查表（`levelLabels[ev.level]`），去掉模板函数调用
-						     ——列表每次整树重渲染时不再逐卡调 `levelText()`（原实现每 tick 全列表重算） -->
-						<text class="meta-item">{{ levelLabels[ev.level] }}</text>
-							<!-- 卡PA R4：视图字段组装期预计算（卡E01 计数口径不变），模板零函数调用 -->
-							<text v-if="ev.hasRenderablePhotos" class="meta-item rust">{{ ev.photoCountText }}</text>
-						</view>
-						<view v-if="ev.hasRenderablePhotos" class="photo-strip">
-							<image v-for="(p, pi) in ev.renderPhotoPaths" :key="pi" class="strip-img pressable" :src="p" mode="aspectFill" lazy-load="true" @tap.stop="onPhotoTap(ev.renderPhotoIds[pi])" />
-						</view>
-						<!-- 语音卡（W0-2 播放态，同待确认区卡） -->
-						<view v-if="ev.voice != null" class="voice-card pressable" @tap.stop="playVoice(ev.voice)">
-							<view class="voice-play-btn">
-								<view v-if="ev.voiceActive && ev.voicePlaying" class="voice-pause-icon">
-									<view class="voice-pause-bar"></view>
-									<view class="voice-pause-bar"></view>
-								</view>
-								<view v-else class="voice-play-icon"></view>
-							</view>
-							<view style="flex:1;">
-								<view class="voice-wave">
-									<VoiceWave :heights="ev.voice.waveHeights" :waveform="wf.waveformOf(ev.voice.contentId)" :active="ev.voiceActive" :progress="ev.voiceProgress" idle-color="#C4913C" />
-								</view>
-								<view v-if="ev.voiceActive" class="voice-progress-row">
-									<text class="voice-progress-time">{{ ev.voiceCurText }}</text>
-									<view class="voice-track">
-										<!-- 2026-10-16（RC-F 播放态性能）：进度填充由 `width:%` 改 `transform:scaleX()`。
-										     `width` 是**布局属性**，每 tick 改动都会触发布局重排；`transform` 走**合成层**，
-										     只重绘不重排。值取自卡属性 `voiceProgress`（组装期/tick 预计算进卡片，
-										     模板零函数调用——见 `syncVoiceCards`）。类仍是既有 `.voice-track-fill`
-										     （零新增视觉元素），`transform-origin:left` 走内联样式（不动共享 CSS）。 -->
-										<view class="voice-track-fill" :style="'transform:scaleX(' + ev.voiceProgress + ');transform-origin:left;'"></view>
-									</view>
-									<text class="voice-progress-time">{{ ev.voiceTotalText }}</text>
-								</view>
-								<view style="display:flex; flex-direction:row; align-items:center; margin-top:8rpx;">
-									<text class="voice-title">{{ ev.voice.title }}</text>
-									<text class="voice-duration">{{ ev.voiceActive ? ev.voiceTotalText : ev.voice.duration }}</text>
-								</view>
-							</view>
-						</view>
-						<!-- 文字卡 -->
-						<view v-if="ev.quote != null && ev.quote != ''" class="quote-card">
-							<view class="quote-line"></view>
-							<view class="quote-content">
-								<text class="quote-text serif">{{ ev.quote }}</text>
-								<text v-if="ev.quoteSource != null && ev.quoteSource != ''" class="quote-source">—— {{ ev.quoteSource }}</text>
 							</view>
 						</view>
 					</view>

@@ -146,6 +146,8 @@ export class TimelineEvent {
 	renderPhotoPaths: Array<string>
 	hasRenderablePhotos: boolean
 	photoCountText: string
+	/** 跨零点标记（2026-10-17）：组装期由 buildDayGroups 判定（endTime>0 且日键与 startTime 不同），模板只读 */
+	crossDay: boolean
 	// ── RC-5（2026-10-14）播放态快照：由页面在「组装期 / 播放 tick / 切回本 tab」写入，
 	//    模板**只读字段、零函数调用**（同 `TabSearch.syncActiveCard` 范式）。
 	//    为什么放进卡片：原模板每卡 4~6 次函数调用，且**两处 `v-if` 直接依赖函数调用**
@@ -200,6 +202,7 @@ export class TimelineEvent {
 		this.renderPhotoPaths = []
 		this.hasRenderablePhotos = false
 		this.photoCountText = ''
+		this.crossDay = false
 		this.voiceActive = false
 		this.voicePlaying = false
 		this.voiceProgress = 0
@@ -503,11 +506,14 @@ export class DayGroup {
 	key: string
 	label: string
 	events: Array<TimelineEvent>
+	/** 组内 photoCount 总和（2026-10-17：日头"N 张照片"概括；buildDayGroups 出口求和，0=无照片日组） */
+	photoCountTotal: number
 
 	constructor(key: string, label: string, events: Array<TimelineEvent>) {
 		this.key = key
 		this.label = label
 		this.events = events
+		this.photoCountTotal = 0
 	}
 }
 
@@ -534,6 +540,9 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 	const l2: Array<TimelineEvent> = []
 	for (let i = 0; i < events.length; i++) {
 		const ev = events[i]
+		// 2026-10-17：跨零点判定（组装期一次，模板只读字段）——endTime>0 且与 startTime 不同日键。
+		// L1 分支走 copy 需显式复制（同 voice 等字段，见下方 copy 块），独立 L2 组直接用 ev 本体 ✓
+		ev.crossDay = ev.endTime > 0 && dayKey(ev.endTime) != dayKey(ev.startTime)
 		if (ignoredIds.has(ev.id)) {
 			continue // B3-5 忽略（本地隐藏）
 		}
@@ -590,6 +599,8 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 		copy.renderPhotoPaths = ev.renderPhotoPaths
 		copy.hasRenderablePhotos = ev.hasRenderablePhotos
 		copy.photoCountText = ev.photoCountText
+		// 2026-10-17：crossDay 同样不在 constructor 里——不补这行分组后标记全丢（同 voice 覆辙）
+		copy.crossDay = ev.crossDay
 		// 画布真值（index_canvas 内容区）：一个「日期分组」头 + 当天多张卡。
 		// 同日多个 L1 必须合并进同一 DayGroup，禁止每个 L1 各自重复日期头。
 		const existIdx = l1ByDay.get(k)
@@ -610,6 +621,17 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 			groups.push(new DayGroup(k, friendlyDay(ev.startTime), [ev]))
 			l1ByDay.set(k, groups.length - 1)
 		}
+	}
+	// 2026-10-17：日头"N 张照片"概括——出口对每组求 photoCount 总和（>0 时日头显示，见 TabIndex
+	// 模板 day-head；无照片日组不显示）。放出口而非建组处：同日多 L1 会合并进同一组，
+	// 只有出口求和才是整组完整口径。
+	for (let g = 0; g < groups.length; g++) {
+		let total = 0
+		const gevents = groups[g].events
+		for (let m = 0; m < gevents.length; m++) {
+			total += gevents[m].photoCount
+		}
+		groups[g].photoCountTotal = total
 	}
 	return new DayGroupResult(groups, pending)
 }
