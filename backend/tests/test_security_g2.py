@@ -5,7 +5,8 @@
     全接口下发（含错误响应）；HSTS 仅生产（app_env=production）下发
   - 生产关闭文档暴露：create_app(app_env=production) 时
     docs_url/openapi_url/redoc_url 全 None → /docs /openapi.json /redoc 全 404
-  - /healthz 收敛：只返回 {status: ok}，不泄露 env/mock 开关/DB/版本明细
+  - /healthz 收敛：只返回 status + 两类运维事实（agent 探活/降级计数），
+    不泄露 env/mock 开关/DB/版本明细
   - sync_pull limit 上限：<1 或 >MAX_PULL_LIMIT → 422 SYNC_001（明确错误码）
 """
 from app.core.config import settings
@@ -96,13 +97,25 @@ def test_production_docs_closed_business_routes_alive(monkeypatch):
 # ---------- /healthz 收敛（R6#15） ----------
 
 def test_healthz_minimal(client):
-    """healthz 只暴露最小存活信息 {status: ok}，无任何环境/开关/DB/版本明细"""
+    """healthz 只暴露存活信息 + 两类运维事实，无任何环境/开关/DB/版本明细。
+
+    2026-10-16（台账 §7.12「静默降级显性化」）：新增 `agent`（backend→agent 探活）
+    与 `agent_degradation`（agent 侧 W1 镜像 / W2 检索合并的降级计数）两个**运维事实**
+    键——用于把「AI 说已记住，App 时间轴却空白」这类静默降级变可见。两者均非敏感，
+    且**不含令牌指纹**（指纹只进两侧启动日志）。断言改为"白名单键 + 禁词集"，既守住
+    R6#15 的最小化契约，又允许这两个刻意新增的键。
+    """
     r = client.get("/healthz")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"status": "ok"}, f"healthz 应只返回 status=ok: {body}"
+    assert body["status"] == "ok"
+    allowed = {"status", "agent", "agent_degradation", "agent_service_token_fp"}
+    assert set(body) <= allowed, f"healthz 出现未预期键: {sorted(set(body) - allowed)}"
     leaked = HEALTHZ_FORBIDDEN & {k.lower() for k in body}
     assert not leaked, f"healthz 泄露内部信息键: {sorted(leaked)}"
+    # 降级计数形态固定（agent 不可达时给 {total: 0}，不制造假计数）
+    assert isinstance(body.get("agent_degradation"), dict)
+    assert "total" in body["agent_degradation"]
     # 中间件链路仍工作（request_id 保留——运维排障可用，非敏感）
     assert r.headers.get("x-request-id")
 

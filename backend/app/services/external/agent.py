@@ -211,11 +211,19 @@ def stream_agent_chat(user_id: str, message: str, conversation_id: str) -> Itera
     )
 
 
-def health() -> dict:
-    """探活（供运维/门禁用；失败不抛，返回状态字典）。"""
+def health(timeout: float = 5.0) -> dict:
+    """探活（供运维 / 门禁 / `/healthz` 调用；失败不抛，返回状态字典）。
+
+    2026-10-16（台账 §7.12）：`/healthz` 会调本函数把 agent 侧的**降级计数**
+    （`body["degradation"]`，W1 记忆镜像 / W2 检索合并）暴露出来；`timeout` 可调，
+    探活端点取更短的值以免一次依赖抖动拖慢健康检查（如 `/healthz` 传 2.0）。
+
+    返回 `{"reachable","status","body"}`：`body` 为 agent `/health` 的 JSON（200 时），
+    否则为状态文本或异常摘要（**不抛**——探活失败本身不该让调用方 500）。
+    """
     url = f"{settings.agent_service_base_url.rstrip('/')}/health"
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=timeout) as client:
             resp = client.get(url)
         return {"reachable": resp.status_code == 200, "status": resp.status_code,
                 "body": resp.json() if resp.status_code == 200 else resp.text[:200]}

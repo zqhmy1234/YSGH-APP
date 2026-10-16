@@ -122,6 +122,62 @@ else {
 }
 
 Write-Host ''
+Write-Host '── 端点双层对账（backend /healthz × agent /health）──' -ForegroundColor Cyan
+# 2026-10-16（台账 §7.12）：上面 health_probe 查的是"配置文件 / 进程内看到什么"；
+# 本段查的是**两个正在跑的进程互相是否自洽**——直接读两个活端点做对账：
+#   · backend /healthz.agent_service_token_fp 应等于 agent /health.inbound_token_fp
+#     （同一把共享密钥、两个方向）；不等或未配置 ⇒ 一侧 401/503、另一侧**静默降级**
+#     （用户表现＝「AI 说已记住，App 时间轴却空白」）。
+#   · agent /health.degradation.total > 0 ⇒ W1 记忆镜像 / W2 检索合并正在持续降级。
+$healthz = $null
+try {
+    $healthz = ((Invoke-WebRequest "http://127.0.0.1:$BackendPort/healthz" -UseBasicParsing -TimeoutSec 6).Content | ConvertFrom-Json)
+}
+catch { $healthz = $null }
+$agentHealth = $null
+try {
+    $agentHealth = ((Invoke-WebRequest "http://127.0.0.1:$AgentPort/health" -UseBasicParsing -TimeoutSec 6).Content | ConvertFrom-Json)
+}
+catch { $agentHealth = $null }
+
+if ($null -eq $healthz) {
+    Write-Host '  [INFO] backend /healthz 不可达（端点对账跳过）' -ForegroundColor Yellow
+}
+elseif ($null -eq $agentHealth) {
+    Write-Host '  [INFO] agent /health 不可达（AI 页会 502；端点对账跳过）' -ForegroundColor Yellow
+}
+else {
+    $bfp = [string]$healthz.agent_service_token_fp
+    $aIn = [string]$agentHealth.inbound_token_fp
+    $aOut = [string]$agentHealth.backend_token_fp
+    if ([string]::IsNullOrEmpty($bfp) -or $bfp -eq '(空)') {
+        Write-Host ("  [FAIL] 服务间令牌未配置       backend fp={0} ｜ agent 入站 fp={1}" -f $bfp, $aIn) -ForegroundColor Red
+        Write-Host '         ⇒ W1 记忆镜像/W2 检索合并将静默降级（AI 说已记住，App 时间轴却空白）' -ForegroundColor Red
+        $missing++
+    }
+    elseif ($bfp -eq $aIn) {
+        Write-Host ("  [ OK ] 两端令牌一致           backend fp={0} ｜ agent 入站 fp={1} ｜ agent 出站 fp={2}" -f $bfp, $aIn, $aOut) -ForegroundColor Green
+    }
+    else {
+        Write-Host ("  [FAIL] 两端令牌不一致         backend fp={0} ｜ agent 入站 fp={1}" -f $bfp, $aIn) -ForegroundColor Red
+        Write-Host '         ⇒ 一侧 401/503、另一侧静默降级（AI 说已记住但 App 时间轴空白）' -ForegroundColor Red
+        $missing++
+    }
+    $btotal = 0
+    $atotal = 0
+    if ($healthz.agent_degradation) { $btotal = [int]$healthz.agent_degradation.total }
+    if ($agentHealth.degradation) { $atotal = [int]$agentHealth.degradation.total }
+    if ($atotal -eq 0 -and $btotal -eq 0) {
+        Write-Host '  [ OK ] 增强路径无降级         degradation.total=0' -ForegroundColor Green
+    }
+    else {
+        Write-Host ("  [FAIL] 增强路径正在降级       backend 见到 total={0} ｜ agent 自报 total={1}" -f $btotal, $atotal) -ForegroundColor Red
+        Write-Host '         ⇒ 记忆镜像(W1)/检索合并(W2) 未生效：用户会看到「AI 说已记住，App 时间轴却空白」' -ForegroundColor Red
+        $missing++
+    }
+}
+
+Write-Host ''
 if ($missing -eq 0) {
     Write-Host '  ✅ 全栈就绪，可以真机测试' -ForegroundColor Green
     exit 0

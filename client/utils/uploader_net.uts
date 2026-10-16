@@ -94,8 +94,8 @@ _bindNetWatch()
 
 /** 按请求模式 + 实际网络解析上传模式：
  *  - original：强制原图（WiFi 默认 / "立即上传原图"手动入口）
- *  - thumbnail：缩略图+元数据（**压缩步骤尚未接线** → 暂缓，见下）
- *  - auto：WiFi→original；蜂窝/none→hold（流量约束：蜂窝不自动传原图）
+ *  - thumbnail：缩略图+元数据（蜂窝省流；压缩与上传接线见 upload_pipeline.uts）
+ *  - auto：WiFi→original；蜂窝→thumbnail；离线(none)/未知(unknown)→hold
  *  - hold：一律暂缓
  * 返回 'original' | 'thumbnail' | 'hold' */
 export function resolveMode(mode: UploadMode, kind: NetKind): string {
@@ -103,13 +103,10 @@ export function resolveMode(mode: UploadMode, kind: NetKind): string {
 		return 'original'
 	}
 	if (mode == 'thumbnail') {
-		// ⚠️ 2026-09-23 取证更正：原注释的理由（"管线未就绪 / audit_B4_sync §1 全仓无缩略图生成"）
-		// **不成立**——后端 `thumbnail_meta` 契约与客户端 `uni.compressImage`（app-android
-		// 受支持，HBuilderX dts 已取证）都已具备，缺的是"本函数到上传主流程之间从未接入压缩"。
-		// 接线完成前**保持 hold**：宁可如实暂缓，也不能上传原件冒充缩略图——后者会让后端把
-		// 3MB 原图登记成 thumbnail_key 占位（对象存储被占满，且用户拿不到原图）。
-		console.log('[yishu] thumbnail 模式尚未接线压缩步骤（非能力缺失，见文件头 2026-09-23 注），暂缓上传')
-		return 'hold'
+		// 2026-10-16（A1 五步方案接线）：压缩步骤已在 upload_pipeline.uts 接好——
+		// 蜂窝先 `uni.compressImage` 压缩略图再用同一协议上传（meta.upload_mode=thumbnail_meta），
+		// 压缩失败由批量入口退回 held，**绝不拿原图冒充缩略图**。故本分支不再"恒 hold"。
+		return 'thumbnail'
 	}
 	if (mode == 'hold') {
 		return 'hold'
@@ -119,11 +116,15 @@ export function resolveMode(mode: UploadMode, kind: NetKind): string {
 		return 'original'
 	}
 	if (kind == 'cellular') {
-		// 与 thumbnail 分支同因（压缩未接线）→ 蜂窝下先入 held，等 WiFi 或"立即上传原图"。
-		console.log('[yishu] 蜂窝网络：压缩步骤未接线 → 暂缓入 held（等 WiFi 或"立即上传原图"）')
-		return 'hold'
+		// 2026-10-16（根因 RC-D 修复）：此处曾恒返回 'hold' ⇒ 蜂窝下**整批照片一张都不传**、
+		// 全部挂起等 WiFi（"链路中段被恒假条件短路 ⇒ 蜂窝上传整体停摆"）。
+		// B4 流量约束的本意是"蜂窝只传缩略图+元数据"，故改为 'thumbnail'：蜂窝也能上传（省流），
+		// 原图待 WiFi 恢复由 continuePendingUploads 凭 meta.content_id 补传。
+		return 'thumbnail'
 	}
-	console.log('[yishu] 网络不可用（' + kind + '）：暂缓原图')
+	// none / unknown：无网或网络类型不确定 ⇒ 暂缓。unknown 不能当"可省流上传"，
+	// 否则离线空转（把"未知"当成"已排队"同样是状态与事实不符，见 currentNetKind 注）。
+	console.log('[yishu] 网络不可用或未知（' + kind + '）：暂缓原图')
 	return 'hold'
 }
 

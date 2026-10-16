@@ -1,4 +1,5 @@
 """忆述光华 backend · 应用配置（pydantic-settings）"""
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -347,3 +348,57 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def agent_service_token_fingerprint(raw: str | None = None) -> str:
+    """服务间令牌指纹（sha256 前 8 位十六进制）；空值返回 `"(空)"`。
+
+    2026-10-16（台账 §7.12「静默降级显性化」）：backend 的 `agent_service_token`
+    与 agent 的 `AGENT_SERVICE_TOKEN` **必须是同一个值**（同一把密钥、两个方向，
+    见 `app/api/deps.py:agent_service_user`）。两侧不一致时 backend→agent 401、
+    agent→backend 401 ⇒ agent 侧 W1 记忆镜像 / W2 检索合并**静默降级**，用户表现的
+    形态是「AI 说已记住，App 时间轴却空白」，而两侧日志都只显示"已配置"、无从对账。
+
+    指纹**只输出哈希前 8 位、不可逆**，绝不泄露令牌原文，仅用于两侧启动日志对账。
+
+    算法**单一真源**在 `app.core.diagnostics.token_fingerprint`（其 docstring 声明
+    与 `agent/src/yishu/security.py:token_fingerprint` 同算法——两侧改动必须同步）。
+    """
+    from app.core.diagnostics import token_fingerprint  # 延迟导入：避免 config⇄diagnostics 循环
+
+    return token_fingerprint(settings.agent_service_token if raw is None else raw)
+
+
+def assert_agent_service_token_config() -> bool:
+    """启动期断言服务间令牌已配置并打印指纹（2026-10-16 · 静默降级显性化）。
+
+    返回是否已配置，供调用方（lifespan）按需记录，但**本身不抛错**。
+
+    ## 为什么需要
+
+    `agent_service_token` 为空时，agent→backend 的记忆镜像（W1）与检索合并（W2）
+    会**降级跳过**，用户侧的形态是「AI 说已记住，App 时间轴却空白」。启动日志里带上
+    指纹，即可与 agent `/health` 的 `inbound_token_fp` 一眼对账（不同＝两侧密钥不一致）。
+
+    ## 为什么刻意只告警、不抛错
+
+    与 `_apply_production_safety` 里 JWT/refresh 的 fail-closed 断言**不同**：服务间
+    通道是**增强**而非依赖——缺失时对话主链路照常可用。若在此 fail-closed，一次
+    "令牌没配好"会升级成"整个后端起不来"，故障面更大。本项目取舍：
+    **降级可以，隐形不行；但绝不把增强通道的配置缺失升级成全站不可用**。
+    """
+    configured = bool((settings.agent_service_token or "").strip())
+    logger = logging.getLogger("yishu.config")
+    logger.info(
+        "[启动断言] 服务间令牌 agent_service_token=%s fp=%s"
+        "（须与 agent /health 的 inbound_token_fp 相同；不同＝两侧密钥不一致）",
+        "已配置" if configured else "未配置",
+        agent_service_token_fingerprint(),
+    )
+    if not configured:
+        logger.warning(
+            "[启动断言] agent_service_token 未配置：agent→backend 的记忆镜像(W1)/"
+            "检索合并(W2) 将降级跳过（用户表现＝「AI 说已记住，App 时间轴却空白」）。"
+            "对话主链路不受影响。配置后重启，并比对本行 fp 与 agent 启动日志的 fp。"
+        )
+    return configured

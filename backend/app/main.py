@@ -40,11 +40,11 @@ from app.api.contents import favorites_router, profile_sensitive_router, trash_r
 from app.api.event_items import router as event_items_router
 from app.api.media import router as media_router  # 媒体票据下发（Valet Key · 2026-08-31）
 from app.api.thumbnails import router as thumbnails_router  # B4 缩略图（Wave3 AgentG 提供，集成接线）
-from app.core.config import settings
-from app.core.diagnostics import log_agent_channel_config  # 服务间通道启动自检（2026-10-14）
+from app.core.config import agent_service_token_fingerprint, assert_agent_service_token_config, settings
 from app.core.errors import install_error_handlers
 from app.core.middleware import RequestIDMiddleware
 from app.core.ratelimit import RateLimitMiddleware  # G1/R6#2/#3：通用限流（auth/ASR/搜索）
+from app.services.external import agent as agent_service  # backend→agent 探活（/healthz 用）
 
 logger = logging.getLogger("yishu.main")
 
@@ -63,10 +63,13 @@ async def lifespan(app: FastAPI):
 
     schema = get_schema()
     logger.info("画像枚举集已加载：L0 %d / L1 %d", schema.l0_count, schema.l1_count)
-    # 服务间通道自检（2026-10-14 · 台账 §7.12）：打印 backend→agent 地址与**令牌指纹**，
-    # 使"两侧是否同一把密钥"在启动日志里就能直接对账。不一致时的形态是
-    # 「AI 页照常能聊、记忆却不落 App」，而两侧日志都只显示"已配置"，无从判断。
-    log_agent_channel_config()
+    # 服务间通道启动断言（2026-10-16 · 台账 §7.12「静默降级显性化」）：打印
+    # backend→agent 令牌**指纹**，使"两侧是否同一把密钥"在启动日志里就能直接对账。
+    # 不一致 / 为空时的形态是「AI 页照常能聊、记忆却不落 App」，而两侧日志都只显示
+    # "已配置"，无从判断——故这里显式断言（只告警不抛错：增强通道缺失不该让全站起不来）。
+    # 说明：本行由 config 层断言取代原先的 `diagnostics.log_agent_channel_config()`（2026-10-14），
+    # 避免两处各打一份指纹；该函数仍保留在 `app/core/diagnostics.py`（未删除）。
+    assert_agent_service_token_config()
     yield
 
 
@@ -159,9 +162,38 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", tags=["meta"])
     def healthz():
-        """健康检查（CI/部署探针）——G2/R6#15 收敛：只暴露最小存活信息，
-        不泄露 env/mock 开关/DB 连接串/版本明细（避免探测信息辅助攻击面测绘）。"""
-        return {"status": "ok"}
+        """健康检查（CI/部署探针）。
+
+        G2/R6#15 收敛：不泄露 env/mock 开关/DB 连接串/版本明细（防攻击面测绘）。
+
+        2026-10-16（台账 §7.12「静默降级显性化」）另加三类**运维事实**：
+          · `agent`               —— backend→agent 通道是否可达（不可达 ⇒ 对话主链路会
+                                     如实报错 CHAT_001/002，不再是"照常能聊实则失忆"）；
+          · `agent_degradation`   —— agent 侧 W1 记忆镜像 / W2 检索合并的**降级计数**
+                                     （`total` 非 0 即代表「AI 说已记住，App 时间轴却空白」
+                                     正在持续发生——探活一眼可见，不必翻日志/等报障）；
+          · `agent_service_token_fp` —— 本服务 `agent_service_token` 的**指纹**
+                                     （sha256 前 8 位、不可逆）。供 `scripts/dev/status.ps1`
+                                     与 agent `/health` 的 `inbound_token_fp` **直接对账**：
+                                     两边 fp 不同 ⇒ 共享密钥不一致 ⇒ agent 侧静默降级。
+        探活**只读、不建连/建表**（agent 侧 /health 亦只读单例）；任何失败一律吞掉、
+        不改变本端点 200（探针不应因**增强**依赖抖动而被判死）。
+
+        ⚠️ 指纹取舍（与 `core/diagnostics.py` 原"指纹只进日志"的注释相悖，故此处显式更正）：
+        该值**不可逆、仅 8 位十六进制**，用于跨进程对账；对高熵令牌不构成可离线爆破的
+        预言机（且能拿到 /healthz 者本可对校验端点试错得到同样的 401 信号）。若生产要求
+        更严，可由 `app_env` 门控为仅非生产暴露（本批按"开发期对账优先"暴露，待拍板）。
+        """
+        out = {"status": "ok"}
+        out["agent_service_token_fp"] = agent_service_token_fingerprint()
+        probe = agent_service.health(timeout=2.0)
+        reachable = bool(probe.get("reachable"))
+        out["agent"] = {"reachable": reachable, "status": probe.get("status")}
+        body = probe.get("body")
+        degradation = body.get("degradation") if isinstance(body, dict) else None
+        # 不可达 / 未返回降级快照时统一给 `{"total": 0}`（探活只读事实，不制造假计数）。
+        out["agent_degradation"] = degradation if isinstance(degradation, dict) else {"total": 0}
+        return out
 
     return app
 

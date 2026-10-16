@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.diagnostics import token_fingerprint
 from app.core.errors import ERR_AUTH_001, ERR_AUTH_005, ERR_CONTENT_010, ApiError
 from app.core.security import decode_token
 from app.db.models import Content, User
@@ -122,11 +123,29 @@ def agent_service_user(
     """
     expected = settings.agent_service_token
     if not expected:
+        # 2026-10-16（台账 §7.12「静默降级显性化」）：本分支此前是**无告警的 503**——
+        # agent 侧会把它当作"增强路径不可用"降级（记忆镜像 W1 / 检索合并 W2 静默跳过），
+        # 而 backend 侧不留任何线索，连"是令牌没配 vs 令牌不一致"都分不清。现补一条
+        # **结构化 WARNING + 令牌指纹**（不可逆、只取 sha256 前 8 位，绝不打印原文）。
+        _logger.warning(
+            "agent 服务间通道未配置：agent_service_token 为空（fp=%s）——"
+            "agent→backend 的记忆镜像(W1)/检索合并(W2) 将降级跳过；"
+            "请在 backend/.env 与 agent 环境配置**同一个**值后重启",
+            token_fingerprint(expected),
+        )
         raise ApiError(ERR_AUTH_005, "服务间通道未配置（agent_service_token 为空）", http=503)
 
     provided = request.headers.get(_HDR_AGENT_AUTH) or ""
     if not provided or not secrets.compare_digest(provided, expected):
-        _logger.warning("agent 服务间调用令牌无效")
+        # 同上：把"两端令牌不一致"这个**最常见的真实故障**变可见——比对 expected_fp 与
+        # provided_fp 即可判定（provided 为空 ⇒ agent 侧 AGENT_BACKEND_TOKEN /
+        # AGENT_SERVICE_TOKEN 未配；非空但不同 ⇒ 两侧密钥不一致）。指纹不可逆，安全。
+        _logger.warning(
+            "agent 服务间调用令牌无效：expected_fp=%s provided_fp=%s"
+            "（两侧 fp 不同＝密钥不一致；provided_fp=(空)＝agent 侧未配令牌）",
+            token_fingerprint(expected),
+            token_fingerprint(provided),
+        )
         raise ApiError(ERR_AUTH_005, "服务间令牌无效", http=401)
 
     user_id = (request.headers.get(_HDR_AGENT_USER) or "").strip()
