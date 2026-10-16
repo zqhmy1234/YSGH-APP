@@ -65,6 +65,11 @@ class ChatReplyOut(BaseModel):
     text: str
     chips: list[str] = Field(default_factory=list, description="plain+chips 形态的快捷问题")
     cards: list[dict[str, Any]] = Field(default_factory=list, description="cards 形态的卡组")
+    # 引用回溯（2026-10-17）：本条回复引用到的记忆/内容来源条目（content_id 等结构化字段）。
+    # 数据源 = agent 侧从工具结果（save_memory/search_memories 等）派生的 meta["sources"]，
+    # 本后端**只透传、不解析文本、不猜**（与 cards 同一哲学：只认字段名、不认结构细节）。
+    # 缺省空数组 ⇒ 客户端 N=0 不渲染；agent 未发该字段的旧行为不变。
+    sources: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str
 
 

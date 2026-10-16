@@ -256,10 +256,10 @@ def test_meta_skips_duplicate_and_failed_saves():
 
 
 def test_meta_empty_for_plain_chat():
-    """普通闲聊（无工具调用）⇒ 无 cards/chips（回复保持 bubble/plain，不被强行结构化）。"""
+    """普通闲聊（无工具调用）⇒ 无 cards/chips/sources（回复保持 bubble/plain，不被强行结构化）。"""
     msgs = [HumanMessage(content="你好"), AIMessage(content="你好呀")]
     meta = _events(_FakeAgent(messages=msgs))[-1][1]["_meta"]
-    assert meta == {"cards": [], "chips": []}
+    assert meta == {"cards": [], "chips": [], "sources": []}
 
 
 # ── 4. SSE 端点 ───────────────────────────────────────────────────────────────

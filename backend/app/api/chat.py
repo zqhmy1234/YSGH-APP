@@ -61,13 +61,14 @@ router = make_router(prefix="/api/v1/chat", tags=["chat"])
 
 
 def _to_reply(row: ChatMessage) -> ChatReplyOut:
-    """ORM → 契约回复对象（chips/cards 从 `payload` 取；2026-10-09 起 agent 会产结构化附加）。"""
+    """ORM → 契约回复对象（chips/cards/sources 从 `payload` 取；2026-10-09 起 agent 会产结构化附加）。"""
     return ChatReplyOut(
         id=str(row.id),
         kind=row.kind,  # type: ignore[arg-type]
         text=row.content,
         chips=list((row.payload or {}).get("chips") or []),
         cards=list((row.payload or {}).get("cards") or []),
+        sources=list((row.payload or {}).get("sources") or []),
         created_at=row.created_at.isoformat(),
     )
 
@@ -92,20 +93,27 @@ def _kind_for(text: str, cards: list | None = None, chips: list | None = None) -
 
 
 def _reply_payload(meta: dict | None) -> dict | None:
-    """把 agent 的 `_meta`（cards/chips）规整成落库的 `chat_messages.payload`。
+    """把 agent 的 `_meta`（cards/chips/sources）规整成落库的 `chat_messages.payload`。
 
-    只认字段名、不认结构细节——agent 侧的卡片形状由它自己的测试守（agent/tests）。
+    只认字段名、不认结构细节——agent 侧的结构形状由它自己的测试守（agent/tests）。
     空 ⇒ None（`payload` 为空的对象会污染既有"payload 非空即有结构化附加"的读法）。
+
+    sources（引用回溯，2026-10-17）：agent 从 `save_memory`/`search_memories` 等工具的
+    **结构化结果**派生（content_id 等字段）。本后端只透传 dict 条目、**绝不解析回复文本
+    去猜来源**——文本是 LLM 的自由措辞，抽它会随模型换句而静默失效（与 cards 同源教训）。
     """
     if not isinstance(meta, dict):
         return None
     cards = meta.get("cards")
     chips = meta.get("chips")
+    sources = meta.get("sources")
     payload: dict = {}
     if isinstance(cards, list) and cards:
         payload["cards"] = [c for c in cards if isinstance(c, dict)]
     if isinstance(chips, list) and chips:
         payload["chips"] = [str(c) for c in chips if str(c).strip()]
+    if isinstance(sources, list) and sources:
+        payload["sources"] = [s for s in sources if isinstance(s, dict)]
     return payload or None
 
 

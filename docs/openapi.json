@@ -6529,6 +6529,14 @@
             "title": "Cards",
             "description": "cards 形态的卡组"
           },
+          "sources": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
           "created_at": {
             "type": "string",
             "title": "Created At"
@@ -8786,6 +8794,11 @@
             "type": "boolean",
             "title": "Want Answer",
             "default": false
+          },
+          "want_stages": {
+            "type": "boolean",
+            "title": "Want Stages",
+            "default": false
           }
         },
         "type": "object",
@@ -8853,6 +8866,27 @@
             "type": "array",
             "title": "Answer Sources",
             "default": []
+          },
+          "stages": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stages"
           }
         },
         "type": "object",

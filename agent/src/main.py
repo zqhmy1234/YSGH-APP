@@ -128,10 +128,14 @@ class ChatResponse(BaseModel):
     user_id: str
     thread_id: str
     latency_ms: int
-    # 结构化附加（2026-10-09）：cards/chips。由 `utils.output_validator.build_reply_meta`
-    # 从 `save_memory` 的**工具结果**派生（不解析回复文本、不猜提示词协议）。
+    # 结构化附加（2026-10-09；sources 2026-10-17）：cards/chips/sources。由
+    # `utils.output_validator.build_reply_meta` 从 `save_memory`/`search_memories`
+    # 的**工具结果**派生（不解析回复文本、不猜提示词协议）。
     # 缺省空 dict ⇒ 旧调用方行为不变（非记忆类对话本就没有结构化形态）。
-    meta: dict[str, Any] = Field(default_factory=dict, description="cards/chips（对话页卡片与追问建议）")
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description="cards/chips/sources（对话页卡片、追问建议、引用回溯）",
+    )
 
 
 class HealthResponse(BaseModel):

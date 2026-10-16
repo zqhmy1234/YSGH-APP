@@ -57,8 +57,10 @@ def test_happy_path_persists_and_matches_contract(client, auth_headers, cleanup_
 
         # 契约形状（客户端 TabAi 依赖）
         assert set(data) >= {"conversation_id", "reply", "latency_ms"}
-        assert set(data["reply"]) >= {"id", "kind", "text", "chips", "cards", "created_at"}
+        assert set(data["reply"]) >= {"id", "kind", "text", "chips", "cards", "sources", "created_at"}
         assert data["reply"]["kind"] in {"bubble", "plain"}
+        # 引用回溯缺省口径：agent 未发 sources ⇒ 契约给空数组（客户端 N=0 不渲染）
+        assert data["reply"]["sources"] == []
         assert data["reply"]["text"].startswith("✅ 已保存")
         assert data["latency_ms"] >= 0
 
@@ -410,6 +412,106 @@ def test_cards_kind_from_agent_meta(client, auth_headers, cleanup_user, monkeypa
         assert reply["cards"][0]["title"] == "湖边散步"
         assert reply["chips"] == ["看看「生活」相关的记忆"]
     finally:
+        from app.db.session import SessionLocal
+
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()
+
+
+# ═══════════ 引用回溯 sources（2026-10-17 · AI 页三项之一）═══════════
+#
+# 钉死口径：sources 是 agent 从**工具结果结构化字段**（save_memory/search_memories 的
+# content_id 等）派生的 meta["sources"]，本后端**只透传 dict 条目、绝不解析回复文本猜来源**
+# （文本是 LLM 自由措辞，抽它会随模型换句静默失效）。非 dict 条目（LLM 乱写/旧版本残留）
+# 一律丢弃；缺省空数组（客户端 N=0 不渲染尾注）。
+
+
+def test_sources_passthrough_and_sanitized(client, auth_headers, cleanup_user, monkeypatch):
+    """非流式：meta.sources 的 dict 条目原样进 reply.sources；非 dict 条目被过滤。"""
+    from app.db.session import SessionLocal
+    from app.services.external.agent import AgentChatResult
+
+    user_id, headers = auth_headers("chat12")
+
+    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:  # noqa: ARG001
+        return AgentChatResult(
+            text="那是你七月记过的事",
+            latency_ms=7,
+            raw={"reply": "那是你七月记过的事"},
+            meta={
+                "sources": [
+                    {"content_id": "cid-1", "source": "memory"},
+                    {"content_id": "cid-2", "source": "content"},
+                    "garbage-string",  # 非 dict ⇒ 必须被过滤（防 LLM 乱写污染契约）
+                    42,
+                ]
+            },
+        )
+
+    monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
+    try:
+        resp = client.post("/api/v1/chat/messages", json={"content": "七月我记了什么"}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        reply = resp.json()["data"]["reply"]
+        assert reply["sources"] == [
+            {"content_id": "cid-1", "source": "memory"},
+            {"content_id": "cid-2", "source": "content"},
+        ], "只透传结构化 dict 条目，文本/数字一律丢弃（不解析文本、不猜）"
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_stream_sources_in_done_frame(client, auth_headers, cleanup_user, monkeypatch):
+    """流式端点（客户端唯一路径）done 帧的 reply 同样带 sources——两端口共用 _reply_payload/_to_reply，
+    只测一个会在另一个改字段名时静默丢字段。"""
+    import json as _json
+
+    from app.db.session import SessionLocal
+
+    user_id, headers = auth_headers("chat13")
+
+    def _fake_stream(user_id: str, message: str, conversation_id: str):  # noqa: ARG001
+        yield (
+            "done",
+            {
+                "reply": "想到了，是七月那次",
+                "latency_ms": 3,
+                "meta": {"sources": [{"content_id": "cid-s1"}]},
+            },
+        )
+
+    monkeypatch.setattr("app.api.chat.stream_agent_chat", _fake_stream)
+    try:
+        resp = client.post(
+            "/api/v1/chat/messages/stream",
+            json={"content": "那件事是几月"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        done_data = None
+        for raw in resp.text.split("\n\n"):
+            if raw.startswith("event: done"):
+                for line in raw.split("\n"):
+                    if line.startswith("data:"):
+                        done_data = _json.loads(line[len("data:"):].strip())
+        assert done_data is not None, f"流里必须有 done 帧：{resp.text!r}"
+        assert done_data["reply"]["sources"] == [{"content_id": "cid-s1"}]
+    finally:
+        db = SessionLocal()
+        try:
+            cleanup_user(db, user_id)
+            db.commit()
+        finally:
+            db.close()
         from app.db.session import SessionLocal
 
         db = SessionLocal()

@@ -1,0 +1,30 @@
+/**
+ * AI 对话工具标签映射（2026-10-17 · 从 TabAi.uvue 抽离——structure 棘轮拆分包体积分，同 TabSearch 先例）。
+ *
+ * 为什么单独成文件：TabAi.uvue 顶到 800 行结构上限，本映射（12 条 + 函数本体 + 注释）是纯数据层，
+ * 与组件渲染无关，抽为 utils 与既有 utils 分层一致；TabAi 只 import 调用。
+ *
+ * 映射覆盖 agent `_TOOL_LIST()`（agent/src/agents/agent.py）全部 12 个工具——
+ * 新增 5 个**归并进既有短句**（同类用户可感知动作用同一句文案，不为每个工具造新词）：
+ *   update_memory_summary→记下这条 / delete_memory·delete_knowledge_collection·link_memory_to_collection→整理数据 /
+ *   search_knowledge_collections→翻你的收藏。
+ * 判据：12 个工具名逐一出现在本映射中。
+ */
+export function toolLabel(name: string): string {
+	if (name == 'search_memories' || name == 'get_recent_memories') {
+		return '翻你的记忆'
+	}
+	if (name == 'save_memory' || name == 'save_knowledge_collection' || name == 'update_memory_summary') {
+		return '记下这条'
+	}
+	if (name == 'get_memory_stats' || name == 'get_knowledge_summary' || name == 'delete_memory' || name == 'delete_knowledge_collection' || name == 'link_memory_to_collection') {
+		return '整理数据'
+	}
+	if (name == 'search_knowledge_collections') {
+		return '翻你的收藏'
+	}
+	if (name == 'fetch_url_content') {
+		return '读取这个链接'
+	}
+	return '处理'
+}

@@ -86,13 +86,18 @@ export class ChatReply {	id: string
 	bullets: Array<string>
 	chips: Array<string>
 	cards: Array<ChatCard>
-	constructor(id: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<ChatCard>) {
+	// 引用回溯（2026-10-17）：本条回复引用到的记忆来源 content_id 列表（N 条记忆的气泡尾注
+	// 只数数量；id 本身预留给"点击跳回原文"）。数据源是后端透传的 agent 工具结果结构化字段，
+	// 缺字段/非数组一律回退空数组（N=0 ⇒ 页面不渲染该尾注）。
+	sources: Array<string>
+	constructor(id: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<ChatCard>, sources: Array<string>) {
 		this.id = id
 		this.kind = kind
 		this.text = text
 		this.bullets = bullets
 		this.chips = chips
 		this.cards = cards
+		this.sources = sources
 	}
 }
 
@@ -154,6 +159,30 @@ function parseCards(arr: Array<any> | null): Array<ChatCard> {
 	return out
 }
 
+/**
+ * 解析 sources 字段（引用回溯；2026-10-17）。
+ * 元素是对象 ⇒ 只取其 content_id（结构化字段，不解析任何文本）；纯字符串则原样收。
+ * 其余类型一律丢弃——UTS 强转 null/数字会崩或污染渲染（同 parseStringArray 口径）。
+ */
+function parseSources(arr: Array<any> | null): Array<string> {
+	const out: Array<string> = []
+	if (arr == null) {
+		return out
+	}
+	for (let i = 0; i < arr.length; i++) {
+		const v = arr[i]
+		if (typeof v == 'string') {
+			out.push(v as string)
+		} else if (v instanceof UTSJSONObject) {
+			const cid = v.getString('content_id')
+			if (cid != null && cid != '') {
+				out.push(cid)
+			}
+		}
+	}
+	return out
+}
+
 /** 解析 reply 对象 → ChatReply；字段缺失不崩（防御：后端升级/降级期字段可能缺） */
 function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 	if (obj == null) {
@@ -176,7 +205,8 @@ function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 		title,
 		bullets,
 		parseStringArray(obj.getArray('chips')),
-		parseCards(obj.getArray('cards'))
+		parseCards(obj.getArray('cards')),
+		parseSources(obj.getArray('sources'))
 	)
 }
 

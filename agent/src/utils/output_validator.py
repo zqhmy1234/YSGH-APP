@@ -616,8 +616,67 @@ def _tool_json(content: object) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _collect_sources(round_messages: list) -> list[dict]:
+    """从 `save_memory` / `search_memories` 的 ToolMessage **结构化结果**收集引用来源。
+
+    2026-10-17（引用回溯 · "来自 N 条记忆"尾注）：只认工具结果 JSON 的 id 字段，
+    **不解析回复文本**——文本是 LLM 的自由措辞，抽它随模型换句而静默失效
+    （与 cards 同一哲学，backend `_reply_payload` 同口径）。条目形状对齐
+    backend 透传契约：`{"content_id", "kind", "origin"}`——client 只取
+    `content_id` 数数量，id 预留给"跳回原文"。
+
+    id 空间（必须区分，否则"跳回原文"会跳到别人的空间）：
+      · `origin="app"`   —— App contents 的 UUID（save 镜像回传 / search 的
+        `source=app_contents` 命中），App 侧可解析；
+      · `origin="agent"` —— agent `memories` 表的自增 id（镜像降级时的退回值），
+        只在 agent 库内可解析。
+
+    已知边界（诚实标注）：同一记忆"先 save（拿到 app UUID）再被 search 本地命中
+    （agent id）"会产出两条不同 id 的条目——两套 id 之间没有映射字段，宁可
+    多报也不猜。
+    """
+    sources: list[dict] = []
+    seen: set[str] = set()
+
+    def _push(content_id: Any, *, origin: str) -> None:
+        if content_id is None or not str(content_id).strip():
+            return
+        key = f"{origin}:{content_id}"
+        if key in seen:
+            return
+        seen.add(key)
+        # 只有 id 与空间标记：绝不带 content 正文（隐私纪律——工具结果里的
+        # 记忆原文不许进给客户端的结构化数据）。
+        sources.append({"content_id": str(content_id), "kind": "memory", "origin": origin})
+
+    for msg in round_messages or []:
+        if getattr(msg, "type", "") != "tool":
+            continue
+        data = _tool_json(getattr(msg, "content", ""))
+        if not data:
+            continue  # 非 JSON（异常兜底文案）⇒ 没有结构化真相，跳过
+        name = getattr(msg, "name", "")
+        if name == "save_memory":
+            if not data.get("success"):
+                continue  # 保存失败 ⇒ 该行不存在，不能当来源（宁缺勿假）
+            # duplicate=True 也计入：回复确实引用了那条既有记忆。
+            if data.get("content_id"):
+                _push(data.get("content_id"), origin="app")
+            else:
+                _push(data.get("memory_id"), origin="agent")
+        elif name == "search_memories":
+            for m in data.get("memories") or []:
+                if not isinstance(m, dict):
+                    continue
+                if m.get("source") == "app_contents":
+                    _push(m.get("id"), origin="app")
+                else:
+                    _push(m.get("id"), origin="agent")
+    return sources
+
+
 def build_reply_meta(messages: list) -> dict:
-    """从**本轮消息**里抽结构化附加（`cards` / `chips`）——不猜提示词协议、不解析自然语言。
+    """从**本轮消息**里抽结构化附加（`cards` / `chips` / `sources`）——不猜提示词协议、不解析自然语言。
 
     数据来源是 `save_memory` 的 ToolMessage（机器可读的成功结果）。为什么从**工具结果**取、
     而不是从回复文本里正则抽：
@@ -681,7 +740,7 @@ def build_reply_meta(messages: list) -> dict:
         first_topics = cards[0].get("topics") or []
         chips.append(f"看看「{first_topics[0]}」相关的记忆" if first_topics else "看看相关的记忆")
         chips.append("再帮我记一条")
-    return {"cards": cards, "chips": chips}
+    return {"cards": cards, "chips": chips, "sources": _collect_sources(round_messages)}
 
 
 def _resolve_max_rounds(max_rounds: int | None) -> int:

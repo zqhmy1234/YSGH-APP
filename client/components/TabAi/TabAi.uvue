@@ -28,6 +28,12 @@
 		<view class="ai-header">
 			<text class="n2_336">AI</text>
 			<text class="n2_337">问问你的回忆</text>
+			<!-- 清空上下文入口（2026-10-17）：会话越聊越长、AI 背负的历史越重，给用户一个
+			     "忘掉前文、重新开聊"的出口。复用既有 chip 样式（零新增视觉元素）；仅真链路且
+			     有活动会话时显示（mock 演示无真会话可清，显示反而是假承诺）。 -->
+			<view v-if="!USE_MOCK_CHAT && conversationId != ''" class="chip pressable" @tap="onClearContext">
+				<text class="chip-text">开启新对话</text>
+			</view>
 		</view>
 		<!-- 演示数据标注（2026-09-23）：内测期智能体尚未接入后端，必须显式告知，
 		     否则用户会把样张对话当成已上线的能力（台账 §7.1） -->
@@ -65,6 +71,8 @@
 								<text class="n2_348">{{ m.cards[0].meta }}</text>
 							</view>
 						</view>
+						<!-- 引用回溯尾注（2026-10-17）：N=0 不渲染；复用卡片 meta 文本类（n2_348），零新增视觉元素 -->
+						<text v-if="m.sources.length > 0" class="n2_348">来自 {{ m.sources.length }} 条记忆</text>
 					</view>
 					<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333） -->
 					<view v-else-if="m.kind === 'plain'" class="plain-block">
@@ -73,6 +81,9 @@
 							<view class="plain-dot" />
 							<text class="plain-text">{{ b }}</text>
 						</view>
+						<!-- 引用回溯尾注（2026-10-17）：直铺长答多是"翻记忆"类回复，来源条数同样给；
+						     N=0 不渲染；复用 meta 文本类（n2_348），零新增视觉元素 -->
+						<text v-if="m.sources.length > 0" class="n2_348">来自 {{ m.sources.length }} 条记忆</text>
 						<view v-if="m.chips.length > 0" class="chips-row">
 							<view v-for="(c, ci) in m.chips" :key="ci" class="chip pressable" @tap="onChipTap(c)">
 								<text class="chip-text">{{ c }}</text>
@@ -190,6 +201,9 @@
 	import { onMounted, watch } from 'vue'
 	import { aiAttachOpen } from '@/utils/shell_state'
 	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem, ChatCard, ChatAttachment, chatStreamText, chatStreamTool, chatStreamActive, CHAT_CONV_STORAGE_KEY } from '@/utils/chat_api'
+	// 工具标签映射（2026-10-17）：抽离到 utils/chat_tool_labels.uts（structure 棘轮拆分包体积分，
+	// 同 TabSearch 先例）；12 条映射单一真源在 utils，本文件只消费。
+	import { toolLabel } from '@/utils/chat_tool_labels'
 	// 图片附件走**既有上传链**（2026-10-16 附件契约最小可用）：只**调用**，不修改
 	// （upload_pipeline.uts 不在本任务边界内，禁改）。
 	// 为什么不用 uploadBatch / uploadWithRetry：那两个入口吃 `PhotoItem`（MediaStore id、拍摄时间、
@@ -229,6 +243,10 @@
 		// 附件（2026-10-16 附件契约最小可用）：挂在**用户消息**上——一是失败卡重试要能带上同一批
 		// 附件重发（附件已落库，content_id 复用不重复上传），二是避免"待发列表"跨消息误带。
 		attachments: Array<ChatAttachment>
+		// 引用回溯（2026-10-17）：本条回复引用的记忆来源 content_id 列表——**只有数量用于渲染**
+		// （气泡尾注"来自 N 条记忆"，N=0 不渲染），故不进构造函数（mkAi 调用点零改动），
+		// 由真链路回调按需赋值；字段初始化器先例见 privacy.uvue PolicySection.blocks。
+		sources: Array<string> = []
 		constructor(id: number, role: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<MemCard>, cardList: Array<MemCard>, attachments: Array<ChatAttachment>) {
 			this.id = id
 			this.role = role
@@ -378,11 +396,13 @@
 					uni.setStorageSync(CHAT_CONV_KEY, r.conversationId)
 				}
 				const ai = mkAi(r.reply.kind, r.reply.text, [], r.reply.chips, r.reply.bullets, toMemCards(r.reply.cards))
+				// 引用回溯（2026-10-17）：来源条数随消息带上（N=0 时模板不渲染尾注，零视觉副作用）
+				ai.sources = r.reply.sources
 				messages.value.push(ai)
 				scrollToBottom(ai.id)
-			})
-			return
-		}
+				})
+				return
+				}
 		const u = mkUser(t, atts)
 		// 2026-10-11 静态审查 A4：补齐 6 参（签名 (kind,text,cards,chips,bullets,cardList)）。
 		// 原为 3 参调用——当前 USE_MOCK_CHAT=false 恒不可达，但一旦翻回 true，
@@ -402,6 +422,16 @@
 			messages.value.push(ai)
 			scrollToBottom(ai.id)
 		}, 1800)
+	}
+
+	// 清空上下文（2026-10-17）：只清"会话身份"（存储键 + 内存态）——下一条消息由后端新建会话，
+	// AI 不再携带旧历史。不动本地已上屏消息（那是用户可见的记录，清了反而像"丢数据"）。
+	// 删键用的就是 chat_api 导出的常量（单一来源，勿手写字符串）；删键后首条消息的路径
+	// 与 chat_api 的 CHAT_003 自愈（404 ⇒ 清同一键 + 新会话重发）完全同路，无回归。
+	function onClearContext(): void {
+		uni.removeStorageSync(CHAT_CONV_KEY)
+		conversationId.value = ''
+		uni.showToast({ title: '已开启新对话', icon: 'none', duration: 1500 })
 	}
 
 	// 重试发送（2026-10-07 加固）：撤掉失败卡 → 用原文 + **同一批附件**重发（复用 sendNow）
@@ -450,23 +480,6 @@
 			return '正在' + toolLabel(chatStreamTool.value) + '…'
 		}
 		return m.text
-	}
-
-	// 工具名 → 用户可读短句（工具名是英文标识符，直接展示等于把实现细节推给用户）
-	function toolLabel(name: string): string {
-		if (name == 'search_memories' || name == 'get_recent_memories') {
-			return '翻你的记忆'
-		}
-		if (name == 'save_memory' || name == 'save_knowledge_collection') {
-			return '记下这条'
-		}
-		if (name == 'get_memory_stats' || name == 'get_knowledge_summary') {
-			return '整理数据'
-		}
-		if (name == 'fetch_url_content') {
-			return '读取这个链接'
-		}
-		return '处理'
 	}
 
 	// 移除 typing 占位（uts 数组无 filter 先例，手写重建最稳）

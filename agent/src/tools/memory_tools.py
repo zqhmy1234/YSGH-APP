@@ -526,7 +526,7 @@ def _backend_base_and_token() -> tuple[str, str]:
 
 def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
                           topics: list[str] | None, people: list[str] | None,
-                          location: str | None, category: str | None) -> None:
+                          location: str | None, category: str | None) -> str | None:
     """把 agent 记忆**镜像**成 App 的正式 contents（W1 记忆域打通）。
 
     ## 为什么必须镜像（否则 Agent 的记忆是假的）
@@ -567,14 +567,14 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
 
     if os.getenv("AGENT_MIRROR_TO_APP", "1").strip().lower() in {"0", "false", "no"}:
         _note_degrade("mirror_api_disabled", memory_id=memory_id)
-        return
+        return None
     base, token = _backend_base_and_token()
     if not token:
         # ⚠️ 2026-10-14（台账 §7.12）：原为 INFO 级 `mirror_skipped`——生产里 INFO
         # 往往根本不被采集 ⇒ **记忆不进 App 时间轴而无人知晓**（用户看到"AI 说已记住，
         # 换到 App 却什么都没有"）。现走 _note_degrade：首次 WARNING + 计数进 /health。
         _note_degrade("mirror_skipped_no_token", memory_id=memory_id)
-        return
+        return None
     try:
         timeout = float(os.getenv("AGENT_BACKEND_SEARCH_TIMEOUT_S", "6"))
     except (TypeError, ValueError):
@@ -614,7 +614,9 @@ def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
     if resp.status_code == 200:
         cid = (resp.json().get("data") or {}).get("id")
         log_event("mirror_ok", memory_id=memory_id, content_id=cid)
-        return
+        # 回传 App 侧 contents id：save_memory 把它放进工具结果，供引用回溯
+        # （"来自 N 条记忆"）拿**可解析的 App 身份**，而不是只有 agent 内部自增 id。
+        return cid
     # 422 = 护栏拒收（App 侧不留敏感内容，**有意为之**，不是故障）；其余按失败处理。
     # 两者都要计数：前者意味着"这条记忆只在 agent 里、App 永远看不到"（用户会以为
     # 保存失败或丢失），后者是真故障。见 _note_degrade。
@@ -923,8 +925,9 @@ def save_memory(
             # ── W1 记忆域打通：镜像成 App 正式 contents ──
             # 不放 try 外：镜像失败只记日志，**绝不**让"保存"这个用户可见动作失败
             # （上面那行已 commit 到本地表；镜像属于增强）。
+            app_content_id: str | None = None
             try:
-                _mirror_memory_to_app(
+                app_content_id = _mirror_memory_to_app(
                     memory_id, content,
                     mood=validated["mood"], topics=topics, people=people,
                     location=location, category=validated["category"],
@@ -935,6 +938,9 @@ def save_memory(
             return json.dumps({
                 "success": True,
                 "memory_id": memory_id,
+                # App 侧镜像 contents 的 id（2026-10-17 引用回溯）：镜像降级时为 null，
+                # 消费方退回 memory_id——两套 id 空间由 origin 字段区分，不混认。
+                "content_id": app_content_id,
                 "message": f"记忆已成功保存，ID: {memory_id}",
                 "category": validated["category"],
                 "mood": validated["mood"],
