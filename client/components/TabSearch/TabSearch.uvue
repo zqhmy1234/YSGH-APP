@@ -1,5 +1,7 @@
 <template>
-	<!-- B10 方案A 金丝雀：自 pages/search/search.uvue 整体搬迁（模板/样式零改动；TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE） -->
+	<!-- B10 方案A 金丝雀：自 pages/search/search.uvue 整体搬迁（TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE）
+	     2026-10-16 搜索形态改造：入口转「描述式」+ 筛选转「用户维度」+ 结果可解释 + 空结果不空手 + 搜索历史；
+	     样式块保持零改动（不新增视觉元素，所有新块复用既有 class）。 -->
 <!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
 	<view class="search-root tk-root">
 		<text class="n2_390">搜索</text> <!-- 大标题 -->
@@ -8,7 +10,9 @@
 			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
 				<!-- 2026-10-15（真机反馈「删掉关键词后页面动不了」）：补 `@input`，让「输入清空」
 				     有状态转移（原实现只有 v-model + @confirm，删字到空时 hasSearched/hits 全不动 ✗） -->
-				<input :adjust-position="true" class="n2_396" style="color:var(--c-ink-900, #3A2E25);font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="doSearch" />
+				<!-- 2026-10-16（描述式入口）：占位由「输入关键词…」改为「描述一段回忆，帮你找」，
+				     `@confirm` 直接发整句（后端 RAG 自带改写，无需用户自己拆关键词） -->
+				<input :adjust-position="true" class="n2_396" style="color:var(--c-ink-900, #3A2E25);font-size:28.8rpx;" v-model="keyword" placeholder="描述一段回忆，帮你找" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="runSearch" />
 			</view>
 			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
 			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
@@ -18,15 +22,40 @@
 				<text class="s-chip-text">以图搜</text>
 			</view>
 		</view>
-		<view class="n2_397"> <!-- 筛选行（HEAD 交互接回：4 静态 chip→filters v-for + active 态） -->
-			<view v-for="(f, idx) in filters" :key="idx" class="s-chip" :class="{ 's-chip-active': idx === activeFilter, 's-chip-ml': idx > 0 }" @tap="setFilter(idx)">
-				<text class="s-chip-text" :class="{ 's-chip-text-active': idx === activeFilter }">{{ f }}</text>
+		<!-- 筛选行（2026-10-16 改造：原「全部/照片/语音/文字」= 模态**内部概念**，用户不这么想记忆；
+		     改为用户维度——时间（今天/本周/本月/那年）+ 有照片 + 有地点。
+		     仍复用 .n2_397 行与 .s-chip 族；模态过滤降为机制层（见 useSearchState.filterContentTypes） -->
+		<view class="n2_397">
+			<view v-for="(f, idx) in filterChips" :key="idx" class="s-chip" :class="{ 's-chip-active': isFilterActive(idx), 's-chip-ml': idx > 0 }" @tap="onFilterTap(idx)">
+				<text class="s-chip-text" :class="{ 's-chip-text-active': isFilterActive(idx) }">{{ f }}</text>
 			</view>
 		</view>
 		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
 		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
 		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
 		<scroll-view class="n2-results" direction="vertical" :show-scrollbar="false">
+			<!-- 描述式示例提示（未搜索时，复用 .n2-empty 居中行 + .s-chip）：教用户「整句描述」，点了即搜索 -->
+			<view v-if="!hasSearched && exampleHints.length > 0" class="n2-empty">
+				<view v-for="(ex, i) in exampleHints" :key="'h' + i" class="s-chip" :class="{ 's-chip-ml': i > 0 }" @tap="onHint(ex)">
+					<text class="s-chip-text">{{ ex }}</text>
+				</view>
+			</view>
+			<!-- 最近搜索（进页面即可点重搜；最多展示 3 条，长串仅显示层截断、重搜仍用完整串） -->
+			<view v-if="!hasSearched && recentHistory.length > 0" class="n2-empty">
+				<view v-for="(h, i) in recentHistory" :key="'hs' + i" class="s-chip" :class="{ 's-chip-ml': i > 0 }" @tap="onHistory(h)">
+					<text class="s-chip-text">{{ shortQuery(h) }}</text>
+				</view>
+				<view class="s-chip s-chip-ml" @tap="clearHistory()">
+					<text class="s-chip-text">清空</text>
+				</view>
+			</view>
+			<!-- 回答卡（2026-10-16 冻结契约 SearchResult.answer；无回答时空串 ⇒ 整块不渲染，不伪造） -->
+			<view v-if="answer != ''" class="n2_598">
+				<view class="n2_599">
+					<view class="n2_601"></view>
+					<text class="n2_602">{{ answer }}</text>
+				</view>
+			</view>
 			<view v-for="(item, idx) in voiceResults" :key="'v' + item.id" class="n2_588" @tap="openResult(item)">
 				<view class="n2_589"> <!-- 语音媒体 -->
 					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
@@ -69,6 +98,18 @@
 			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
 				<text class="n2-empty-text">{{ emptyText() }}</text>
 			</view>
+			<!-- 空结果不空手（2026-10-16）：改写建议 chips（点了直接重搜） -->
+			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<view v-for="(s, i) in exampleHints" :key="'s' + i" class="s-chip" :class="{ 's-chip-ml': i > 0 }" @tap="onHint(s)">
+					<text class="s-chip-text">{{ s }}</text>
+				</view>
+			</view>
+			<!-- 引导去 AI 页问（复用既有 shell 内零销毁切 tab 方式） -->
+			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<view class="s-chip" @tap="goAskAi()">
+					<text class="s-chip-text">去 AI 页问</text>
+				</view>
+			</view>
 		</scroll-view>
 
 	</view>
@@ -77,9 +118,10 @@
 <script setup lang="uts">
 	import { ref, computed, watch, onMounted } from 'vue'
 	import { WaveformCache } from '@/composables/useWaveform'
-	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { searchByImage, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { SearchState } from '@/composables/useSearchState'
 	import { shortDate } from '@/utils/time'
-	import { shellActiveTab } from '@/utils/shell_state'
+	import { shellActiveTab, requestShellTab } from '@/utils/shell_state'
 	import {
 		toggleVoice,
 		fmtVoiceTime,
@@ -91,18 +133,52 @@
 		voiceTotalSec
 	} from '@/utils/audio_player'
 
-	// ── 响应式状态 ──
-	let keyword = ref('')
-	let activeFilter = ref(0)
-	let loading = ref(false)
-	let hasSearched = ref(false)
-	let degraded = ref(false)
-	let hits = ref<Array<SearchHitItem>>([])
-	let filters = ['全部', '照片', '语音', '文字']
+	// ── 搜索状态机（2026-10-16 · 整块抽到 useSearchState；销 audit_harness 基线条目）──
+	// 先例：useEventOps/usePhotoAttach —— 组件经 `ss` 访问**同一 ref 对象**（全项目零
+	// defineExpose/$refs）；模板入口由下方薄包装转发，行为等价。抽走的正是该基线条目
+	// target 列出的那批：keyword/hasSearched/hits/筛选/历史/onKeywordInput/runSearch/loadRecent。
+	const ss = new SearchState()
+	// 顶层 ref 绑定（模板自动解包；与 ss 内为同一 ref 对象 ⇒ 双向同步）
+	let keyword = ss.keyword
+	let hasSearched = ss.hasSearched
+	let hits = ss.hits
+	let answer = ss.answer
+	let history = ss.history
+	// 筛选行标签（顺序即 idx 语义）——数组常量，非 ref
+	let filterChips = ss.filterLabels
+
+	// 描述式示例提示 / 空结果改写建议（同一组短句，复用同一数组避免重复维护）
+	const exampleHints: Array<string> = ['上个月的照片', '我提过的书', '湖边那天']
+
+	// 最近搜索展示（最多 3 条；完整串留给重搜，显示截断见 shortQuery）
+	let recentHistory = computed((): Array<string> => {
+		return history.value.slice(0, 3)
+	})
+
+	// 模板入口薄包装（转发到同一实例）
+	function onKeywordInput(): void { ss.onKeywordInput() }
+	function runSearch(): void { ss.runSearch() }
+	function onFilterTap(idx: number): void { ss.onFilterTap(idx) }
+	function isFilterActive(idx: number): boolean { return ss.isFilterActive(idx) }
+	function clearHistory(): void { ss.clearHistory() }
+	function onHistory(q: string): void { ss.onHistory(q) }
+	/** 点示例/建议：回填输入并直接搜索 */
+	function onHint(q: string): void {
+		ss.keyword.value = q
+		ss.runSearch()
+	}
+	/** 引导去 AI 页问：复用既有跨 tab 跳转（壳内零销毁切换） */
+	function goAskAi(): void {
+		requestShellTab('ai', '')
+	}
+	/** 历史项显示层截断（仅显示；重搜用完整串） */
+	function shortQuery(q: string): string {
+		return q.length > 6 ? q.substring(0, 6) + '…' : q
+	}
 
 	// 本地 mock 数据注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
 	// 此前 onLoad 无条件灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*）压住真实结果；
-	// 现进入页面即拉「最近内容」兜底（见 onLoad），空结果走诚实空态文案。
+	// 现进入页面即拉「最近内容」兜底（见 onMounted），空结果走诚实空态文案。
 
 	// B10 方案A 组件契约（shell → 组件）：savedSeq 每次记录保存成功 ++（原 onRecordSaved 回调）。
 	// typeQuery 承接原 ?type= 预设筛选（shell onLoad 解析后注入）。数据常驻=拍板项 3 正式行为。
@@ -111,8 +187,8 @@
 		savedSeq: { type: Number, default: 0 }
 	})
 	onMounted((): void => {
-		applyTypeQuery(props.typeQuery)
-		loadRecent()
+		ss.applyTypeQuery(props.typeQuery)
+		ss.loadRecent()
 	})
 	// 🚨 2026-10-11 静态审查修复：**必须 watch typeQuery**。
 	// 本组件在壳内**常驻不销毁**（shell 用 v-if 首次挂载 + v-show 切换），而原实现只在
@@ -120,24 +196,13 @@
 	// `typeQuery` 变了但没人响应，筛选器**停留在上次的值**（用户以为点了没反应）。
 	// 注：本项既有缺口非本次重构引入，但同属 seq 桥"看似完整实则有洞"一类。
 	watch((): string => props.typeQuery, (t: string): void => {
-		applyTypeQuery(t)
+		ss.applyTypeQuery(t)
 	})
 	watch((): number => props.savedSeq, (n: number): void => {
 		if (n > 0) {
 			onRecordSaved()
 		}
 	})
-
-	/** 承接 ?type= 预设筛选（photo/voice/text → 1/2/3；'' 或其他值不动，避免误清用户手选） */
-	function applyTypeQuery(t: string): void {
-		if (t == 'photo') {
-			activeFilter.value = 1
-		} else if (t == 'voice') {
-			activeFilter.value = 2
-		} else if (t == 'text') {
-			activeFilter.value = 3
-		}
-	}
 
 	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
 	class VoiceResult {
@@ -187,48 +252,19 @@
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
 	const wf = new WaveformCache()
 
-	/** 组装卡底元信息：类型 · 日期 · 所属事件 */
+	/** 组装卡底元信息：类型 · 日期 · 地点 · 所属事件（2026-10-16 补地点——结果可解释要求） */
 	function hitMeta(h: SearchHitItem): string {
 		let s = contentTypeCn(h.contentType)
 		if (h.takenAt != '') {
 			s += ' · ' + shortDate(h.takenAt)
 		}
+		if (h.place != '') {
+			s += ' · ' + h.place
+		}
 		if (h.eventTitle != '') {
 			s += ' · ' + h.eventTitle
 		}
 		return s
-	}
-
-	// 筛选标签 → 后端 content_types（全部=不过滤）
-	function filterContentTypes(): Array<string> {
-		if (activeFilter.value === 1) {
-			return ['photo']
-		}
-		if (activeFilter.value === 2) {
-			return ['voice']
-		}
-		if (activeFilter.value === 3) {
-			return ['text']
-		}
-		return []
-	}
-
-	// 本地筛选（与 filterContentTypes() 同源，两处阈值必须一致）
-	// D7 零冗余请求：切筛选不再重发搜索请求（setFilter 只改 activeFilter），
-	// 结果全部在这里本地过滤；filterContentTypes() 仅在首搜路径（runSearch/loadRecent）
-	// 作为 content_types 参数传服务端。诚实语义：首搜已按类型服务端过滤时，
-	// 池子里没有其他类型 → 切过去显示「暂无xx结果」空态，不回退补发请求。
-	function matchesFilter(ct: string): boolean {
-		if (activeFilter.value === 1) {
-			return ct == 'photo'
-		}
-		if (activeFilter.value === 2) {
-			return ct == 'voice'
-		}
-		if (activeFilter.value === 3) {
-			return ct == 'text'
-		}
-		return true
 	}
 
 	// 语音结果（content_type=voice → 语音卡）。
@@ -273,12 +309,14 @@
 		}
 	}
 
-	/** 重建语音卡列表（hits / 筛选变化时触发；tick 不走这里） */
+	/** 重建语音卡列表（hits / 筛选变化时触发；tick 不走这里）。
+	 *  数据源＝ss.visibleHits()（命中 + 用户维度筛选，唯一入口，与 textResults 同源）。 */
 	function rebuildVoice(): void {
 		const out: Array<VoiceResult> = []
-		for (let i = 0; i < hits.value.length; i++) {
-			const h = hits.value[i]
-			if (h.contentType == 'voice' && matchesFilter(h.contentType)) {
+		const vis = ss.visibleHits()
+		for (let i = 0; i < vis.length; i++) {
+			const h = vis[i]
+			if (h.contentType == 'voice') {
 				const title = h.eventTitle != '' ? h.eventTitle : '语音记忆'
 				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId)))
 			}
@@ -289,7 +327,10 @@
 
 	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncActiveCard
 	watch(hits, (): void => { rebuildVoice() })
-	watch(activeFilter, (): void => { rebuildVoice() })
+	// 2026-10-16：筛选态（时间/有照片/有地点）改动即时重算语音卡（textResults 为 computed 自跟）
+	watch(ss.timeFilter, (): void => { rebuildVoice() })
+	watch(ss.hasPhoto, (): void => { rebuildVoice() })
+	watch(ss.hasPlace, (): void => { rebuildVoice() })
 	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-2）：**可见性守卫**。本组件在壳内**常驻**
 	// （shell 用 `v-show` 切换，组件不销毁）⇒ 隐藏时这些 watch 仍被 audio_player 的全局 ref
 	// 驱动，而 `syncActiveCard()` 要遍历**全部**语音结果卡重算播放态——纯空转
@@ -316,12 +357,10 @@
 	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
 	let textResults = computed((): Array<TextResult> => {
 		const out: Array<TextResult> = []
-		for (let i = 0; i < hits.value.length; i++) {
-			const h = hits.value[i]
+		const vis = ss.visibleHits()
+		for (let i = 0; i < vis.length; i++) {
+			const h = vis[i]
 			if (h.contentType == 'voice') {
-				continue
-			}
-			if (!matchesFilter(h.contentType)) {
 				continue
 			}
 			const txt = h.text != '' ? h.text : '（无文本描述）'
@@ -332,94 +371,31 @@
 	})
 
 	function resultCountText(): string {
-		if (loading.value) {
+		if (ss.loading.value) {
 			return '搜索中…'
 		}
-		let n = voiceResults.value.length + textResults.value.length
-		return hasSearched.value ? ('共 ' + n.toString() + ' 条结果') : '输入关键词，搜索你的记忆'
+		const n = voiceResults.value.length + textResults.value.length
+		return hasSearched.value ? ('共 ' + n.toString() + ' 条结果') : '描述一段回忆，帮你找'
 	}
 
 	function emptyText(): string {
 		if (!hasSearched.value) {
-			return '输入关键词开始搜索'
+			return '描述一段回忆开始搜索'
 		}
-		if (activeFilter.value === 1) {
-			return '暂无照片结果'
+		if (ss.hasClientFilter()) {
+			// 口径如实（2026-10-16）：时间/地点维度是**客户端对已取得结果**的过滤（后端仅支持模态），
+			// 故空态要说明作用范围，避免用户误以为"全库都没有"。
+			return '按当前筛选没有结果（筛选作用于已展示结果）'
 		}
-		if (activeFilter.value === 2) {
-			return '暂无语音结果'
-		}
-		if (activeFilter.value === 3) {
-			return '暂无文字结果'
-		}
-		return '没有找到相关记忆，换个关键词试试'
-	}
-
-	function setFilter(idx: number): void {
-		// D7 零冗余请求：切筛选纯本地过滤（matchesFilter 链响应 activeFilter），
-		// 不再重发搜索请求；首搜时 filterContentTypes() 才传参服务端。
-		activeFilter.value = idx
-	}
-
-	function clearKeyword(): void {
-		keyword.value = ''
-		hits.value = []
-		hasSearched.value = false
-	}
-
-	/**
-	 * 输入清空 ⇒ **复位到默认列表**（2026-10-15 · 真机反馈「删掉买菜后页面动不了」）。
-	 *
-	 * 根因（代码实证）：本页只有 `v-model` + `@confirm`，删字到空**没有任何状态转移** ——
-	 * `hasSearched` 仍为 true、`hits` 仍是上次结果 ⇒ 结果区永久停在「共 N 条结果」，
-	 * 而本该负责复位的 `clearKeyword()` 是**死代码**（全仓零调用 ✗）。
-	 * 现接上 `@input`：输入变空且此前搜过 ⇒ 复位 + 用「最近内容」兜底（与 onMounted 同源）。
-	 */
-	function onKeywordInput(): void {
-		if (keyword.value.trim() != '') {
-			return
-		}
-		if (!hasSearched.value) {
-			return // 本就没搜过：保持默认列表，不做无谓请求
-		}
-		clearKeyword()
-		loadRecent()
-	}
-
-	/** 发起描述性搜索（resolve-only，失败由封装 toast） */
-	function runSearch(): void {
-		const q = keyword.value.trim()
-		if (q == '') {
-			// 2026-10-15：空串**不再只弹 toast 就 return**（那会把页面留在上次的结果态，
-			// 用户观感即"卡死"✗）。已搜过 ⇒ 复位回默认列表；从未搜过 ⇒ 保留提示。
-			if (hasSearched.value) {
-				clearKeyword()
-				loadRecent()
-				return
-			}
-			uni.showToast({ title: '请输入搜索关键词', icon: 'none' })
-			return
-		}
-		loading.value = true
-		searchText(q, 30, filterContentTypes()).then((out) => {
-			loading.value = false
-			hasSearched.value = true
-			if (out == null) {
-				hits.value = []
-				return
-			}
-			hits.value = out.hits
-			degraded.value = out.degraded
-		})
+		return '没有找到相关记忆，换个说法试试'
 	}
 
 	/**
 	 * 以图搜图（AG6 接线）：选一张图 → POST /api/v1/search/image（multipart）→ **复用同一结果区**。
 	 *  · 取消选图静默（入口取消＝什么都不做，口径同 RecordSheet.pickPhotos）；
 	 *  · 失败由封装 toast、结果置空（**不伪造命中**）；
-	 *  · 图搜无关键词 ⇒ 清空 keyword 并置 hasSearched，避免结果区回落到"输入关键词开始搜索"
-	 *    这种与事实不符的空态文案。
-	 * 拆两个 filterContentTypes 不适用：图搜由后端按图片语义检索，不走 activeFilter 的本地过滤链。
+	 *  · 图搜无关键词 ⇒ 清空 keyword 并置 hasSearched（由状态机 applyImageResult 统一处理），
+	 *    避免结果区回落到"输入关键词开始搜索"这种与事实不符的空态文案。
 	 */
 	function runImageSearch(): void {
 		uni.chooseImage({
@@ -430,49 +406,12 @@
 				if (paths.length === 0) {
 					return
 				}
-				loading.value = true
+				ss.loading.value = true
 				searchByImage(paths[0], 30).then((out) => {
-					loading.value = false
-					hasSearched.value = true
-					keyword.value = ''
-					if (out == null) {
-						hits.value = []
-						return
-					}
-					hits.value = out.hits
-					degraded.value = out.degraded
+					ss.loading.value = false
+					ss.applyImageResult(out)
 				})
 			}
-		})
-	}
-
-	function doSearch(): void {
-		runSearch()
-	}
-
-	/**
-	 * 进入页面的默认数据源：GET /contents 拉最近内容。
-	 * 后端 /search 的 q 要求非空（SearchRequest min_length=1），空词语义搜索发不出去，
-	 * 所以「刚进页面还什么都没搜」时用最近内容兜底，结果区不再空白。
-	 * score 恒为 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
-	 *
-	 * 2026-10-14（台账 §4.20 · 用户现场反馈「每次跳转都要等一会数据才出现」）：
-	 * **后台刷新不再清空已显示结果**。原实现无条件 `loading.value = true` ⇒ 即便列表里
-	 * 已有结果（刚保存记录触发的刷新、或切回本 tab），界面也会先退回「搜索中…」再重画，
-	 * 用户感知就是"每次都重新加载一遍"。现口径与 `TabIndex` 的 stale-while-revalidate
-	 * **一致**：只有当前**没有**结果时才显示加载态；有结果就静默替换（失败也不清空）。
-	 */
-	function loadRecent(): void {
-		const hasData = hits.value.length > 0
-		if (!hasData) {
-			loading.value = true
-		}
-		fetchRecentContents(30, filterContentTypes()).then((out) => {
-			loading.value = false
-			if (out == null || out.hits.length == 0) {
-				return // 保持空态文案，不打 hasSearched（避免误显「共 0 条结果」）
-			}
-			hits.value = out.hits
 		})
 	}
 
@@ -491,8 +430,8 @@
 		toggleVoice(item.id)
 	}
 
-	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用与 setFilter(idx:number) 签名冲突，
-	//   模板已改回 HEAD 的 v-for + setFilter(idx)，此处删除）
+	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用早已删除；2026-10-16 筛选行改为
+	//   v-for filterChips + onFilterTap/isFilterActive，筛选状态与历史一并进 useSearchState）
 </script>
 
 <style>

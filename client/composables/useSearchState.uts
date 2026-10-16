@@ -1,0 +1,313 @@
+/**
+ * 搜索状态机（2026-10-16 · 自 components/TabSearch/TabSearch.uvue 整块抽出）
+ *
+ * ## 为什么抽出来
+ * TabSearch.uvue 已 813 行（超本仓 800 行阈值，在 scripts/audit_harness_baseline.json 的
+ * filesize 豁免里**显式申请过基线**，其 `target` 原文即「把搜索状态机（keyword/hasSearched/
+ * hits/筛选/历史/onKeywordInput/runSearch/loadRecent）抽到 client/composables/useSearchState.uts
+ * （同 usePhotoAttach/useEventOps 先例）后删条」。本次抽出的正是该 target 列出的那批。
+ *
+ * ## 先例
+ * 同 useEventOps.uts / usePhotoAttach.uts：**纯 class + 模块级 ref**，组件 `new` 一个实例，
+ * 经实例访问**同一 ref 对象**（全项目零 defineExpose/$refs）；模板入口由组件侧薄包装转发。
+ *
+ * ## 边界（刻意留在组件、不搬）
+ * 结果卡视图模型（voiceResults/textResults）、WaveformCache、播放 tick 局部更新——属渲染管线
+ * 核心，搬走会破坏既有约定（「两处阈值一致」「tick 只写单卡」），行为不等价。
+ *
+ * ## 筛选口径（2026-10-16 决策，已写进交付报告）
+ * 后端 `POST /search` 的**显式**过滤参数只有模态 `content_types`；`loadRecent` 走的
+ * `/contents` 端点更无任何过滤参数。故**时间/有照片/有地点三维度在客户端对已取得的结果做
+ * 过滤**，作用于「当前这一页结果」（搜索/最近内容均最多 30 条），**非全库**。UI 在空态文案里
+ * 如实说明该口径（见组件 `emptyText`），不静默假装全库过滤。
+ */
+import { ref } from 'vue'
+import { searchText, fetchRecentContents, SearchHitItem, SearchOutcome } from '@/utils/search_api'
+import { parseIsoMs } from '@/utils/time'
+
+/** 搜索历史存储键（最近 8 条，行分隔单文本——同 uploader_queue 的 getStorageSync/setStorageSync 惯用法） */
+const HISTORY_KEY: string = 'yishu_search_history'
+const HISTORY_MAX: number = 8
+
+/** 本地零点毫秒（用于「今天/本周」按日粒度比较；规避 UTS 多参 Date 构造器不可靠，此处只用单参 + 时间减法） */
+function dayStartMs(ms: number): number {
+	const d = new Date(ms)
+	const sinceMidnight = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 1000 + d.getMilliseconds()
+	return ms - sinceMidnight
+}
+
+export class SearchState {
+	/** 当前输入（**描述式**：允许整句，不再要求关键词） */
+	keyword = ref('')
+	/** 是否已发起过真实搜索（区别于进页面时的「最近内容」兜底） */
+	hasSearched = ref(false)
+	loading = ref(false)
+	degraded = ref(false)
+	hits = ref<Array<SearchHitItem>>([])
+	/** 回答卡正文（2026-10-16 冻结契约 SearchResult.answer；空串=无回答，不渲染卡片） */
+	answer = ref('')
+	/** 时间维度：0=不限 / 1=今天 / 2=本周 / 3=本月 / 4=那年（往年） */
+	timeFilter = ref(0)
+	/** 有照片 / 有地点（开关，可与时间维度叠加） */
+	hasPhoto = ref(false)
+	hasPlace = ref(false)
+	/** 模态（photo/voice/text）降为次要：仅由 ?type= 入口注入后端 content_types，不再占筛选行 */
+	modalType = ref('')
+	history = ref<Array<string>>([])
+
+	/** 筛选行标签（顺序即下标语义，与 onFilterTap/isFilterActive 绑定） */
+	filterLabels: Array<string> = ['今天', '本周', '本月', '那年', '有照片', '有地点']
+
+	constructor() {
+		this.loadHistory()
+	}
+
+	// ── 搜索历史（本地持久，进页面可点即重搜）──
+	loadHistory(): void {
+		const raw = uni.getStorageSync(HISTORY_KEY) as string
+		if (raw == null || raw == '') {
+			this.history.value = []
+			return
+		}
+		const out: Array<string> = []
+		const lines = raw.split('\n')
+		for (let i = 0; i < lines.length; i++) {
+			if (lines[i] != '') {
+				out.push(lines[i])
+			}
+		}
+		this.history.value = out
+	}
+	persistHistory(): void {
+		uni.setStorageSync(HISTORY_KEY, this.history.value.join('\n'))
+	}
+	/** 去重后置顶写入（最多 HISTORY_MAX 条） */
+	pushHistory(q: string): void {
+		const kept: Array<string> = [q]
+		for (let i = 0; i < this.history.value.length; i++) {
+			const h = this.history.value[i]
+			if (h != q) {
+				kept.push(h)
+			}
+		}
+		this.history.value = kept.slice(0, HISTORY_MAX)
+		this.persistHistory()
+	}
+	clearHistory(): void {
+		this.history.value = []
+		uni.setStorageSync(HISTORY_KEY, '')
+	}
+	/** 点历史项：回填输入并直接重搜 */
+	onHistory(q: string): void {
+		this.keyword.value = q
+		this.runSearch()
+	}
+
+	// ── ?type= 入口（模态次要化后仅作用于后端 content_types）──
+	applyTypeQuery(t: string): void {
+		if (t == 'photo') {
+			this.modalType.value = 'photo'
+			this.hasPhoto.value = true // 让入口意图在筛选行可见（照片入口 → 「有照片」高亮）
+		} else if (t == 'voice') {
+			this.modalType.value = 'voice'
+		} else if (t == 'text') {
+			this.modalType.value = 'text'
+		}
+		// '' 或其他值不动，避免误清用户手选（保留原语义）
+	}
+
+	// ── 用户维度筛选 ──
+	isFilterActive(idx: number): boolean {
+		if (idx < 4) {
+			return this.timeFilter.value == idx + 1
+		}
+		if (idx == 4) {
+			return this.hasPhoto.value
+		}
+		if (idx == 5) {
+			return this.hasPlace.value
+		}
+		return false
+	}
+	onFilterTap(idx: number): void {
+		if (idx < 4) {
+			const v = idx + 1
+			this.timeFilter.value = this.timeFilter.value == v ? 0 : v // 再点同一项 = 取消（回到「不限」）
+		} else if (idx == 4) {
+			this.hasPhoto.value = !this.hasPhoto.value
+			// 取消「有照片」时同步撤下 type=photo 的机制过滤，避免两个来源互相打架
+			if (!this.hasPhoto.value && this.modalType.value == 'photo') {
+				this.modalType.value = ''
+			}
+		} else if (idx == 5) {
+			this.hasPlace.value = !this.hasPlace.value
+		}
+	}
+
+	/** 时间维度判定（按日粒度；日期缺失/非法在启用时间筛选时一律排除——诚实不猜、不放行） */
+	matchesTime(h: SearchHitItem): boolean {
+		const f = this.timeFilter.value
+		if (f == 0) {
+			return true
+		}
+		const iso = h.takenAt
+		if (iso == '') {
+			return false
+		}
+		const ms = parseIsoMs(iso)
+		if (ms <= 0) {
+			return false
+		}
+		const nowMs = Date.now()
+		if (f == 1) {
+			return dayStartMs(ms) == dayStartMs(nowMs)
+		}
+		if (f == 2) {
+			// 本周 = 自然周（周一起）；以 now 当日零点为锚向前推
+			const start = dayStartMs(nowMs)
+			const dow = new Date(start).getDay() // 0=周日…6=周六
+			const weekStart = start - ((dow + 6) % 7) * 86400000
+			return ms >= weekStart && ms <= nowMs
+		}
+		if (f == 3) {
+			const d = new Date(ms)
+			const n = new Date(nowMs)
+			return d.getFullYear() == n.getFullYear() && d.getMonth() == n.getMonth()
+		}
+		// f == 4「那年」＝往年（年份早于当前年）
+		return new Date(ms).getFullYear() < new Date(nowMs).getFullYear()
+	}
+
+	/** 当前应展示的结果（命中经三项用户维度筛选后的子集；结果区唯一数据入口） */
+	visibleHits(): Array<SearchHitItem> {
+		const out: Array<SearchHitItem> = []
+		for (let i = 0; i < this.hits.value.length; i++) {
+			const h = this.hits.value[i]
+			if (this.hasPhoto.value && h.contentType != 'photo') {
+				continue
+			}
+			if (this.hasPlace.value && h.place == '') {
+				continue
+			}
+			if (!this.matchesTime(h)) {
+				continue
+			}
+			out.push(h)
+		}
+		return out
+	}
+
+	/** 是否有客户端维度筛选生效（空态文案据此说明口径） */
+	hasClientFilter(): boolean {
+		return this.timeFilter.value != 0 || this.hasPhoto.value || this.hasPlace.value
+	}
+
+	// ── 搜索 / 兜底 ──
+	/** 发往后端的 content_types（模态）：有照片开关优先；否则 ?type= 注入的机制模态；无则全部 */
+	filterContentTypes(): Array<string> {
+		if (this.hasPhoto.value) {
+			return ['photo']
+		}
+		const m = this.modalType.value
+		if (m != '') {
+			return [m]
+		}
+		return []
+	}
+
+	clearKeyword(): void {
+		this.keyword.value = ''
+		this.hits.value = []
+		this.answer.value = ''
+		this.hasSearched.value = false
+	}
+
+	/**
+	 * 输入清空 ⇒ 复位到默认列表（2026-10-15 真机「删掉关键词后页面动不了」修复的迁移保留）。
+	 * 本页只有 `v-model` + `@confirm`，删字到空若没有任何状态转移，`hasSearched` 会停在 true、
+	 * `hits` 停在旧结果 ⇒ 结果区永久停在「共 N 条结果」。
+	 */
+	onKeywordInput(): void {
+		if (this.keyword.value.trim() != '') {
+			return
+		}
+		if (!this.hasSearched.value) {
+			return // 本就没搜过：保持默认列表，不做无谓请求
+		}
+		this.clearKeyword()
+		this.loadRecent()
+	}
+
+	/** 发起描述式搜索（resolve-only，失败由封装 toast） */
+	runSearch(): void {
+		const q = this.keyword.value.trim()
+		if (q == '') {
+			// 空串不再只弹 toast 就 return（会停在旧结果态）——已搜过则复位回默认列表
+			if (this.hasSearched.value) {
+				this.clearKeyword()
+				this.loadRecent()
+				return
+			}
+			uni.showToast({ title: '请输入搜索关键词', icon: 'none' })
+			return
+		}
+		this.loading.value = true
+		// ── want_answer（2026-10-16 · 协调者拍板：**开**）──
+		// 产品已锁定「搜索 = 一次性问答：回答卡 + 证据」⇒ 下发 `want_answer=true` 取回答卡
+		// （回答失败/证据不足由后端置 null → 落空串，卡片整块不渲染，不伪造）。
+		// 🚨 **开启前提（硬条件，当前已满足）**：后端 `SearchResult.latency_ms` 必须在**回答步骤之后**
+		//    计算——见 backend/app/services/rag/__init__.py:304（仅 `want_answer=true` 分支内重算）。
+		//    若前提不成立（latency_ms 早于回答步骤），门禁读到的是「不含回答耗时」的数字 ⇒
+		//    **门禁绿着骗人**（P95 达标但真机体感超 3s）✗✗。前提一旦被改回，本开关必须同步关。
+		// 🚨 **越线处置**：开启后若 P95 越线，**第一手段是收紧回答超时（现 search_answer.py 为 1.0s）
+		//    / 关掉本开关**，**不是放宽验收口径** ✗。回退＝删掉本行末尾的 `, true`（单点）。
+		searchText(q, 30, this.filterContentTypes(), true).then((out: SearchOutcome | null) => {
+			this.loading.value = false
+			this.hasSearched.value = true
+			this.pushHistory(q)
+			if (out == null) {
+				this.hits.value = []
+				this.answer.value = ''
+				return
+			}
+			this.hits.value = out.hits
+			this.degraded.value = out.degraded
+			this.answer.value = out.answer
+		})
+	}
+
+	/** 以图搜图结果写入（图搜无关键词：清输入 + 置 hasSearched，避免空态文案与事实不符） */
+	applyImageResult(out: SearchOutcome | null): void {
+		this.hasSearched.value = true
+		this.keyword.value = ''
+		this.answer.value = ''
+		if (out == null) {
+			this.hits.value = []
+			return
+		}
+		this.hits.value = out.hits
+		this.degraded.value = out.degraded
+	}
+
+	/**
+	 * 进入页面的默认数据源：GET /contents 拉最近内容（/search 要求 q 非空，空词发不出去）。
+	 * score 恒 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
+	 *
+	 * 2026-10-14（用户现场反馈「每次跳转都要等一会数据才出现」）：后台刷新不再清空已显示结果
+	 * （stale-while-revalidate，口径与 TabIndex 一致）；失败也不清空。
+	 */
+	loadRecent(): void {
+		const hasData = this.hits.value.length > 0
+		if (!hasData) {
+			this.loading.value = true
+		}
+		this.answer.value = '' // 兜底列表无回答（诚实）
+		fetchRecentContents(30, this.filterContentTypes()).then((out: SearchOutcome | null) => {
+			this.loading.value = false
+			if (out == null || out.hits.length == 0) {
+				return // 保持空态文案，不打 hasSearched（避免误显「共 0 条结果」）
+			}
+			this.hits.value = out.hits
+		})
+	}
+}

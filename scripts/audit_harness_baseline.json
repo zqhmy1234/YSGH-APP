@@ -22,11 +22,6 @@
         "lines": 834,
         "reason": "2026-10-15 合并 origin/develop（573b33b）引入 NEW-01 修复：记录面板上传路径补端侧 L1 聚合 + 事件上云（+27 行）。不补则该路径「内容入库但无事件」→ 时间轴 events=0 → 客户端被锁死在空态页（新用户永远出不来），属**功能必需**；合并后 834 行 > 阈值 800，故显式申请基线。",
         "target": "把「上传成功 → 聚合 → /events/sync 上云」块抽到 composables（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
-      },
-      "client/components/TabSearch/TabSearch.uvue": {
-        "lines": 813,
-        "reason": "2026-10-15 真机缺陷修复：**删除搜索关键词后页面卡死**（原实现只有 v-model + @confirm，删字到空无任何状态转移；本该复位的 clearKeyword 是**全仓零调用的死代码**）⇒ 补 @input 状态转移（清空即回默认列表）、runSearch 空串分支改为复位、并写根因注释，+26 行。不修则该页一旦搜过就永久停在「共 N 条结果」，属**功能必需**；修复后 813 行 > 阈值 800，故显式申请基线。",
-        "target": "把搜索状态机（keyword/hasSearched/hits/onKeywordInput/loadRecent/runSearch）抽到 client/composables/useSearchState.uts（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
       }
     }
   },

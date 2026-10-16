@@ -2,8 +2,8 @@
  * 搜索入口（T-SR-1/2/3/4）：描述性搜索 + 以图搜图 + 降级态
  *
  * 链路（后端契约）：
- *  POST /api/v1/search            → {q, intent, content_types?, time_from?, time_to?, place?, tag?, limit}
- *    → SearchResult {query, rewritten_query, intent, hits[], total, latency_ms, degraded}
+ *  POST /api/v1/search            → {q, intent, content_types?, time_from?, time_to?, place?, tag?, limit, want_answer?}
+ *    → SearchResult {query, rewritten_query, intent, hits[], total, latency_ms, degraded, answer?, answer_sources?}
  *  POST /api/v1/search/image      → multipart file（jpg/png ≤10MB）+ limit → SearchResult
  *  SearchHit {content_id, content_type, text, taken_at, place, event_id, event_title, score, trace{}}
  *
@@ -66,6 +66,10 @@ export class SearchOutcome {
 	total: number
 	latencyMs: number
 	degraded: boolean
+	/** 回答卡正文（2026-10-16 冻结契约 SearchResult.answer；后端 null / 未请求 ⇒ 空串） */
+	answer: string
+	/** 回答引用的证据 content_id 列表（必为 hits 子集；空数组=模型未引用，属正常非错误） */
+	answerSources: Array<string>
 
 	constructor(
 		query: string,
@@ -74,7 +78,9 @@ export class SearchOutcome {
 		hits: Array<SearchHitItem>,
 		total: number,
 		latencyMs: number,
-		degraded: boolean
+		degraded: boolean,
+		answer: string,
+		answerSources: Array<string>
 	) {
 		this.query = query
 		this.rewrittenQuery = rewrittenQuery
@@ -83,6 +89,8 @@ export class SearchOutcome {
 		this.total = total
 		this.latencyMs = latencyMs
 		this.degraded = degraded
+		this.answer = answer
+		this.answerSources = answerSources
 	}
 }
 
@@ -166,6 +174,17 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 			)
 		}
 	}
+	// 回答卡（2026-10-16 冻结契约）：字段缺失/为 null 一律落空串（容错——后端未部署新字段时不崩）
+	const srcRaw = d.getArray('answer_sources')
+	const answerSources: Array<string> = []
+	if (srcRaw != null) {
+		for (let i = 0; i < srcRaw.length; i++) {
+			const sid = srcRaw[i] as string
+			if (sid != null) {
+				answerSources.push(sid)
+			}
+		}
+	}
 	return new SearchOutcome(
 		d.getString('query') ?? '',
 		d.getString('rewritten_query') ?? '',
@@ -173,7 +192,9 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 		hits,
 		d.getNumber('total') as number,
 		d.getNumber('latency_ms') as number,
-		d.getBoolean('degraded') ?? false
+		d.getBoolean('degraded') ?? false,
+		d.getString('answer') ?? '',
+		answerSources
 	)
 }
 
@@ -226,13 +247,14 @@ export function fetchRecentContents(limit: number, contentTypes: Array<string>):
 					))
 				}
 			}
-			resolve(new SearchOutcome('', '', 'recent', hits, hits.length, 0, false))
+			resolve(new SearchOutcome('', '', 'recent', hits, hits.length, 0, false, '', []))
 		})
 	})
 }
 
-/** POST /search：描述性搜索；contentTypes 非空时按 photo/voice/text/article 过滤；返回 SearchOutcome 或 null */
-export function searchText(query: string, limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
+/** POST /search：描述性搜索；contentTypes 非空时按 photo/voice/text/article 过滤；返回 SearchOutcome 或 null
+ *  2026-10-16：wantAnswer 为真时下发 `want_answer`（冻结契约，默认 false=完全旧行为）→ 结果带 `answer`/`answer_sources`。 */
+export function searchText(query: string, limit: number, contentTypes: Array<string>, wantAnswer: boolean = false): Promise<SearchOutcome | null> {
 	const body: UTSJSONObject = {
 		q: query,
 		limit: limit
@@ -240,6 +262,9 @@ export function searchText(query: string, limit: number, contentTypes: Array<str
 	// 仅在指定类型时下发 content_types（空数组=全部，不下发避免后端误判）
 	if (contentTypes.length > 0) {
 		body.set('content_types', contentTypes)
+	}
+	if (wantAnswer) {
+		body.set('want_answer', true)
 	}
 	// B13 面包屑（2026-09-23）：addBreadcrumb 此前**零调用**⇒ 上报事件到达时没有任何
 	// "之前发生了什么"的轨迹。**隐私纪律：只记长度/标签，绝不记用户原文**——面包屑随事件
