@@ -3816,7 +3816,7 @@
           "meta"
         ],
         "summary": "Healthz",
-        "description": "健康检查（CI/部署探针）。\n\nG2/R6#15 收敛：不泄露 env/mock 开关/DB 连接串/版本明细（防攻击面测绘）。\n\n2026-10-16（台账 §7.12「静默降级显性化」）另加三类**运维事实**：\n  · `agent`               —— backend→agent 通道是否可达（不可达 ⇒ 对话主链路会\n                             如实报错 CHAT_001/002，不再是\"照常能聊实则失忆\"）；\n  · `agent_degradation`   —— agent 侧 W1 记忆镜像 / W2 检索合并的**降级计数**\n                             （`total` 非 0 即代表「AI 说已记住，App 时间轴却空白」\n                             正在持续发生——探活一眼可见，不必翻日志/等报障）；\n  · `agent_service_token_fp` —— 本服务 `agent_service_token` 的**指纹**\n                             （sha256 前 8 位、不可逆）。供 `scripts/dev/status.ps1`\n                             与 agent `/health` 的 `inbound_token_fp` **直接对账**：\n                             两边 fp 不同 ⇒ 共享密钥不一致 ⇒ agent 侧静默降级。\n探活**只读、不建连/建表**（agent 侧 /health 亦只读单例）；任何失败一律吞掉、\n不改变本端点 200（探针不应因**增强**依赖抖动而被判死）。\n\n⚠️ 指纹取舍（与 `core/diagnostics.py` 原\"指纹只进日志\"的注释相悖，故此处显式更正）：\n该值**不可逆、仅 8 位十六进制**，用于跨进程对账；对高熵令牌不构成可离线爆破的\n预言机（且能拿到 /healthz 者本可对校验端点试错得到同样的 401 信号）。若生产要求\n更严，可由 `app_env` 门控为仅非生产暴露（本批按\"开发期对账优先\"暴露，待拍板）。",
+        "description": "健康检查（CI/部署探针）。\n\nG2/R6#15 收敛：不泄露 env/mock 开关/DB 连接串/版本明细（防攻击面测绘）。\n\n2026-10-16（台账 §7.12「静默降级显性化」）另加三类**运维事实**：\n  · `agent`               —— backend→agent 通道是否可达（不可达 ⇒ 对话主链路会\n                             如实报错 CHAT_001/002，不再是\"照常能聊实则失忆\"）；\n  · `agent_degradation`   —— agent 侧 W1 记忆镜像 / W2 检索合并的**降级计数**\n                             （`total` 非 0 即代表「AI 说已记住，App 时间轴却空白」\n                             正在持续发生——探活一眼可见，不必翻日志/等报障）；\n  · `agent_service_token_fp` —— 本服务 `agent_service_token` 的**指纹**\n                             （sha256 前 8 位、不可逆）。供 `scripts/dev/status.ps1`\n                             与 agent `/health` 的 `inbound_token_fp` **直接对账**：\n                             两边 fp 不同 ⇒ 共享密钥不一致 ⇒ agent 侧静默降级。\n探活**只读、不建连/建表**（agent 侧 /health 亦只读单例）；任何失败一律吞掉、\n不改变本端点 200（探针不应因**增强**依赖抖动而被判死）。\n\n⚠️ 指纹取舍（2026-10-16 拍板：**生产也暴露，不按 app_env 门控**）：\n该值**不可逆、仅 8 位十六进制**，唯一的对账价值场景正是**生产**（\"两端令牌不一致\"\n在生产才是「AI 说记住了却没有」的静默故障根因）；从生产摘掉＝把功能废掉。\n**安全前提：「/healthz 为内网探活端点、不对外」**——该前提若被打破，指纹将成为\n离线枚举 oracle，须重新评估（此时配合 `core/config.py` 的令牌长度下限断言）。",
         "operationId": "healthz_healthz_get",
         "responses": {
           "200": {
@@ -6289,32 +6289,62 @@
         "title": "CapsuleOut",
         "description": "胶囊出参（列表/详情/开启通用；status: sealed/due/opened）"
       },
-      "ChatAttachmentIn": {
+      "ChatAttachment": {
         "properties": {
           "kind": {
             "type": "string",
             "enum": [
               "image",
-              "voice",
-              "link",
               "file"
             ],
             "title": "Kind"
           },
-          "ref": {
-            "type": "string",
-            "maxLength": 512,
-            "title": "Ref",
-            "description": "内容/对象引用（如 content_id 或 URL）"
+          "content_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Id",
+            "description": "已落库内容的 id（上传链 complete 返回）"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "展示名/文件名（file 用）"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size",
+            "description": "字节数（展示用，不参与业务判定）"
           }
         },
         "type": "object",
         "required": [
-          "kind",
-          "ref"
+          "kind"
         ],
-        "title": "ChatAttachmentIn",
-        "description": "附件（契约里的 attachments[]）。MVP 仅记录，不解析内容。"
+        "title": "ChatAttachment",
+        "description": "附件（对话请求 `attachments[]` · 2026-10-16「附件契约最小可用」冻结形状）。\n\n三层一致：客户端 `utils/chat_api.uts::ChatAttachment` → 本模型 → agent `ChatRequest.attachments`。\n为什么不叫旧名 `ChatAttachmentIn`/不用旧字段 `ref`：旧形状（kind/ref 四枚举）**自 08-01 起\n无任何调用方构造**（客户端从不构造、agent 也无该字段，见台账 §7.14）——按本仓既有口径\n「契约里预留 ≠ 现在能用」，收窄为图片通路**真实用到**的字段形态（审计 A3/D7 的销项）。\n为什么是 `content_id`：图片先走**既有上传链**落库拿到 content_id，caption 由本后端用既有字段读\n（不新调视觉模型，见 api/chat.py `_content_caption`）。"
       },
       "ChatHistoryItemOut": {
         "properties": {
@@ -6416,10 +6446,16 @@
           },
           "attachments": {
             "items": {
-              "$ref": "#/components/schemas/ChatAttachmentIn"
+              "$ref": "#/components/schemas/ChatAttachment"
             },
             "type": "array",
             "title": "Attachments"
+          },
+          "include_profile": {
+            "type": "boolean",
+            "title": "Include Profile",
+            "description": "是否允许后端把用户画像上下文随本轮消息带给 AI（缺省 True＝既有行为）。当前无 UI 消费者（原隐私开关 2026-10-14 整行移除），保留为契约能力。",
+            "default": true
           }
         },
         "type": "object",
@@ -6427,7 +6463,7 @@
           "content"
         ],
         "title": "ChatMessageIn",
-        "description": "用户一条消息。`conversation_id` 缺省＝新建会话。"
+        "description": "用户一条消息（后端「发送请求」；契约文档里亦称 `ChatSendRequest`，指同一模型）。\n\n`conversation_id` 缺省＝新建会话。\n`include_profile`（2026-10-16）：**契约能力，当前无 UI 消费者**——原来那两枚隐私开关\n（privacy_ai_chat / privacy_echo）已于 2026-10-14 因\"全仓零读零写\"**整行移除**（台账 §7.18），\n故客户端恒传 True；字段保留是为了\"将来重开开关时不再动三层链路\"。\n⚠️ **不要为它补 UI 开关**（没有真消费者就是新的空承诺）。\n后端**必须真的按它行事**：False ⇒ 不携带画像上下文（取值点在 api/chat.py，\n组装逻辑见 services/chat_context.py `profile_context`）。默认 True = 既有行为。"
       },
       "ChatMessageOut": {
         "properties": {

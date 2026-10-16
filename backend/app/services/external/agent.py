@@ -55,7 +55,9 @@ def _headers() -> dict[str, str]:
     return headers
 
 
-def call_agent_chat(user_id: str, message: str, conversation_id: str) -> AgentChatResult:
+def call_agent_chat(
+    user_id: str, message: str, conversation_id: str, attachments: list[dict] | None = None
+) -> AgentChatResult:
     """调 agent 服务跑一轮对话，返回其回复文本。
 
     `conversation_id` 用作 agent 侧的会话键素材——一个用户可有多个会话，
@@ -73,6 +75,12 @@ def call_agent_chat(user_id: str, message: str, conversation_id: str) -> AgentCh
     thread_id = f"{user_id}:{conversation_id}"
     url = f"{settings.agent_service_base_url.rstrip('/')}/v1/chat"
     payload = {"user_id": user_id, "message": message, "thread_id": thread_id}
+    # 2026-10-16（附件契约最小可用）：附件**结构化透传**（agent 侧仅留痕/透传，不解析内容）。
+    # 有值才带：`attachments=None/[]` 时 payload 与本函数既有形状**逐字相同**——既有调用方、
+    # 既有桩测试（3 参 fake）行为零变化。附件真正被 AI 读到的是 `message` 里的文本提示
+    # （由 api/chat.py `_attachment_hint` 组装），不依赖 agent 侧实现细节。
+    if attachments:
+        payload["attachments"] = attachments
     started = time.monotonic()
     try:
         with httpx.Client(timeout=settings.agent_service_timeout_s) as client:
@@ -145,7 +153,9 @@ def _iter_sse(resp: httpx.Response) -> Iterator[tuple[str, dict]]:
         yield _decode_sse_data(event or "message", "".join(buffer))
 
 
-def stream_agent_chat(user_id: str, message: str, conversation_id: str) -> Iterator[tuple[str, object]]:
+def stream_agent_chat(
+    user_id: str, message: str, conversation_id: str, attachments: list[dict] | None = None
+) -> Iterator[tuple[str, object]]:
     """调 agent 服务的**流式**接口，逐条产出 `(kind, payload)`。
 
     产出与 agent 侧 SSE 帧同构（见 `agent/src/main.py::chat_stream`）：
@@ -162,6 +172,9 @@ def stream_agent_chat(user_id: str, message: str, conversation_id: str) -> Itera
     thread_id = f"{user_id}:{conversation_id}"
     url = f"{settings.agent_service_base_url.rstrip('/')}/v1/chat/stream"
     payload = {"user_id": user_id, "message": message, "thread_id": thread_id}
+    # 附件透传口径同 call_agent_chat（有值才带，空则 payload 形状不变）
+    if attachments:
+        payload["attachments"] = attachments
     # 读超时用既有 agent 超时（单轮 LLM 上限）；连接/写入用更短的固定值
     # ——连不上或写不出去没必要等 180 秒。
     timeout = httpx.Timeout(
