@@ -16,10 +16,14 @@ time 解析复用 sync_common.parse_ts（naive 视为 UTC 防 DB 比较 TypeErro
 from __future__ import annotations
 
 import json
+import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.services.sync_common import parse_ts
+
+logger = logging.getLogger("yishu.upload_meta")
 
 # 照片上传共享常量（原 contents.py:60-64 定义、upload.py:256 内联元组——双份漂移源）
 MAX_PHOTO_BYTES = 20 * 1024 * 1024  # 单张 20MB（API multipart 中转上限）
@@ -32,6 +36,61 @@ PHOTO_SOURCES = ("app", "windows", "wechat", "import")
 
 class MetaValidationError(ValueError):
     """meta 校验失败（继承 ValueError：service 层可直接透传语义；API 层按需转 ApiError）"""
+
+
+def is_usable_gps(lat: float | None, lng: float | None) -> bool:
+    """坐标能否用于逆地理：非空 / 有限值 / 在合法范围 / **且不是 (0,0) 空哨兵**。
+
+    2026-10-16（根因族 RC-B「静默降级」收官）：客户端 `uni.getLocation` 定位失败时
+    部分设备不报错而是返回 (0,0)（见 `client/utils/location.uts` 的无效坐标判定），
+    客户端已拦；本函数是**服务端同一口径**，防老版本客户端 / 分片链路把 (0,0) 当坐标
+    送进来 —— 否则高德会对几内亚湾逆地理出一个**看似正常**的地名，"有值但是假的"
+    比留空更糟（项目铁律：静默降级不得当正常）。
+
+    ⚠️ 取舍：经度 0 / 纬度 0 单边为 0 是合法坐标（本初子午线 / 赤道），**不拦**；
+    只拦**两点同时为 0**。本产品面向国内场景，代价可忽略。
+    """
+    if lat is None or lng is None:
+        return False
+    try:
+        f_lat, f_lng = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return False
+    if not (math.isfinite(f_lat) and math.isfinite(f_lng)):
+        return False
+    if not (-90 <= f_lat <= 90) or not (-180 <= f_lng <= 180):
+        return False
+    return not (f_lat == 0.0 and f_lng == 0.0)
+
+
+def resolve_photo_gps(
+    meta_lat: float | None, meta_lng: float | None, data: bytes | None
+) -> tuple[float | None, float | None]:
+    """照片坐标合并（**唯一实现**，multipart 中转与分片 complete 两条链路共用）。
+
+    2026-10-16（根因族 RC-B「静默降级」收官 · team-lead 裁决扩权）——口径：
+      · **EXIF 优先**：照片 EXIF GPS 是相机硬件写入的**拍摄地真值**；`place` 的语义是
+        "这条记忆**当时**发生在哪"。
+      · **meta 兜底**：meta 坐标是"用户点开记录面板那一刻的设备定位"，对"从相册选旧
+        照片补记"的场景记录的是用户**此刻**所在，与照片发生地点无关（拿它当地名会张冠
+        李戴）；但 EXIF 无 GPS（截图 / 已剥离 / 相机无定位）时它是唯一来源。
+      ⚠️ 本口径**反转**了 2026-10-14 首版（commit b8d57ac）的「meta 优先、EXIF 兜底」，
+        勿改回——反转理由见上。
+    · 两侧都过 `is_usable_gps`（拦 (0,0) 空哨兵 / NaN / 越界），**绝不编造坐标**。
+    · 坐标系不在此处转换：两侧都是 WGS84，转 GCJ-02 统一在 `amap.get_place` 入口做。
+    · `data=None` / 非照片字节 ⇒ EXIF 解析返回 None，自然回落到 meta。
+    """
+    if data:
+        from app.services.photo_exif import extract_exif_gps
+
+        exif_gps = extract_exif_gps(data)
+        if exif_gps is not None and is_usable_gps(exif_gps[0], exif_gps[1]):
+            return float(exif_gps[0]), float(exif_gps[1])
+    # 显式 guard 而非 assert：生产代码里 assert 在 `-O` 下会被剥除 ⇒ 校验静默失效
+    # （S101）。此处直接用 `is_usable_gps` 的返回值作判定，非空性同时满足类型收窄。
+    if meta_lat is not None and meta_lng is not None and is_usable_gps(meta_lat, meta_lng):
+        return float(meta_lat), float(meta_lng)
+    return None, None
 
 
 @dataclass
@@ -77,6 +136,13 @@ def parse_photo_meta(meta: str) -> PhotoMeta:
         raise MetaValidationError("gps_lat 越界（-90~90）")
     if gps_lng is not None and not (-180 <= gps_lng <= 180):
         raise MetaValidationError("gps_lng 越界（-180~180）")
+    # 2026-10-16：空哨兵 (0,0) 归一为 None（诚实留空 + 留痕），不当真实坐标入库。
+    # 为什么不直接 422：这**不是**协议错误（数值合法），而是"设备没定位到"——
+    # 拒单会让整张照片上传失败，留空才是正确降级（与客户端同口径）。
+    if gps_lat == 0.0 and gps_lng == 0.0:
+        logger.warning("meta 坐标为 (0,0) 空哨兵 ⇒ 视为无定位（不逆地理）")
+        gps_lat = None
+        gps_lng = None
 
     source = meta_obj.get("source", "app")
     if source not in PHOTO_SOURCES:

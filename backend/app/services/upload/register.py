@@ -29,7 +29,11 @@ from app.services.photo_content import (
 )
 from app.services.pipeline import process_content
 from app.services.upload.protocol import VALID_UPLOAD_MODES
-from app.services.upload_meta import MetaValidationError, parse_photo_meta
+from app.services.upload_meta import (
+    MetaValidationError,
+    parse_photo_meta,
+    resolve_photo_gps,
+)
 
 logger = logging.getLogger("yishu.upload")
 
@@ -87,6 +91,28 @@ def register_photo_content(db: Session, user_id: str, cos_key: str, meta: str) -
     # original/thumbnail_meta/update；本函数只做协议适配，两套幂等键保留。
     content_id = meta_obj.get("content_id")
     mode = "update" if content_id else upload_mode
+
+    # 2026-10-16（根因族 RC-B「静默降级」收官 · team-lead 裁决扩权）：
+    # **分片 complete 链路此前从不看 EXIF** —— 客户端 meta 无坐标、而照片自带 EXIF GPS 时，
+    # 这张照片**恒定丢地点**（正是本批要治的静默丢失）。现与 multipart 链路**同一口径**：
+    # EXIF 优先（拍摄地真值）、meta 兜底，有效性判定复用 `upload_meta.resolve_photo_gps`
+    # → `is_usable_gps`（**不另造第三份判断**）。
+    # 仅在 mode == "original"（上传物即原件）时解析：
+    #   · "thumbnail_meta" 传的是缩略图，其 EXIF 不是原件真值；
+    #   · "update"（补传原件）在 photo_content 里不改写 gps（既有行为），解析了也不会落库。
+    # ⚠️ 代价：本层需 get_object 取一次原件字节供 EXIF 解析；photo_content 内部随后还会
+    #   `_require_photo_bytes` 再读一次（魔数校验）⇒ 该路径原件被读两遍。未绕过校验链，
+    #   收敛读取需改 photo_content 入参（不在本批边界内）。
+    if mode == "original":
+        try:
+            data_for_exif = get_storage_backend().get_object(cos_key)
+        except KeyError:  # noqa: BLE001 —— 对象缺失交给 photo_content 既有校验报 404/422
+            data_for_exif = None
+        merged_lat, merged_lng = resolve_photo_gps(
+            photo_meta.gps_lat, photo_meta.gps_lng, data_for_exif
+        )
+        photo_meta.gps_lat, photo_meta.gps_lng = merged_lat, merged_lng
+
     return photo_register(
         db,
         user_id,

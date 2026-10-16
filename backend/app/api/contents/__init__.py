@@ -72,7 +72,7 @@ from app.services.photo_content import (
 from app.services.photo_content import (
     register_photo_content as photo_register,
 )
-from app.services.photo_exif import extract_exif_datetime, extract_exif_gps
+from app.services.photo_exif import extract_exif_datetime
 from app.services.pipeline import process_content
 from app.services.storage_keys import user_scoped_prefixes
 from app.services.sync_common import parse_ts
@@ -81,6 +81,7 @@ from app.services.upload_meta import (
     MAX_PHOTO_BYTES,
     MetaValidationError,
     parse_photo_meta,
+    resolve_photo_gps,
 )
 
 logger = logging.getLogger("yishu.contents")
@@ -200,14 +201,13 @@ def upload_photo(
     #       统一委托 services/photo_content.py（参数化 dedup_key/moderate/mode）。
     #       EXIF 拍摄时间优先（相机真值；客户端时间可能被扫描污染）。
     exif_taken = extract_exif_datetime(data)
-    # 2026-10-14（台账 §4.20 / 审计 §2）：客户端**没带** GPS 时，用照片自身的 EXIF GPS 兜底。
-    # 此前这条路径从不带地点（客户端把经纬度硬编码为 null，后端也不看 EXIF）——这是
-    # 「拍照上传的定位功能没有起效」的直接成因。EXIF 为 WGS84；转 GCJ-02 统一在
-    # `amap.get_place` 入口做（单一转换点）。
-    if photo_meta.gps_lat is None or photo_meta.gps_lng is None:
-        exif_gps = extract_exif_gps(data)
-        if exif_gps is not None:
-            photo_meta.gps_lat, photo_meta.gps_lng = exif_gps
+    # 2026-10-16（根因族 RC-B 收官）：坐标合并口径 = **EXIF 优先，meta 兜底**——
+    # 单一实现在 `services/upload_meta.resolve_photo_gps`（分片 complete 链路同一份，
+    # 不再两处各写）。核心理由（`place` = "这条记忆**当时**发生在哪"）与"反转 b8d57ac
+    # 的 meta 优先"记录见该函数 docstring。
+    photo_meta.gps_lat, photo_meta.gps_lng = resolve_photo_gps(
+        photo_meta.gps_lat, photo_meta.gps_lng, data
+    )
     ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
     try:
         content_id = photo_register(

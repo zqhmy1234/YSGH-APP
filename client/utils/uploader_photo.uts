@@ -29,6 +29,12 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 		const fileName = slashIdx >= 0 ? item.path.substring(slashIdx + 1) : item.path
 		// 1. 断点：已有 upload_id 直接复用（status 补传），否则 init（onNewUploadId 持久化）
 		const spec = new UploadSpec(item.path, fileName, fileSize, item.path, uploadMode, findPending(item.path))
+		// 2026-10-16（根因族 RC-B「静默降级」收官）：坐标**空值兜底**。
+		// 只有"真的可用"的坐标才写进 meta —— 部分设备定位失败会返回 0/0 哨兵，
+		// 或在换算中产生 NaN（与 `client/utils/location.uts` 的无效坐标判定同一口径）。
+		// 为什么必须在这里拦：把 0/0 或 NaN 当坐标送下去，后端会照单入库、高德对
+		// (0,0) 逆地理出一个**看似正常**的地名（几内亚湾），比"没有地点"更像 bug；
+		// 项目铁律即"静默降级不得当正常"。故不可用时**不写这两个键 + 留痕**，如实为空。
 		const buildMeta = (): UTSJSONObject => {
 			const meta: UTSJSONObject = {
 				taken_at: isoString(item.takenAt),
@@ -39,8 +45,16 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 				}
 			}
 			if (item.lat != null && item.lng != null) {
-				meta.set('gps_lat', '' + item.lat)
-				meta.set('gps_lng', '' + item.lng)
+				const la = item.lat as number
+				const ln = item.lng as number
+				if (!isNaN(la) && !isNaN(ln) && Math.abs(la) <= 90 && Math.abs(ln) <= 180
+					&& !(la == 0 && ln == 0)) {
+					meta.set('gps_lat', '' + la)
+					meta.set('gps_lng', '' + ln)
+				} else {
+					// 有值但不可用：留痕（真机日志可见），本条不带地点
+					console.log('[yishu] 坐标不可用（NaN/越界/0,0 哨兵），本条不带地点 lat=' + la + ' lng=' + ln)
+				}
 			}
 			return meta
 		}
