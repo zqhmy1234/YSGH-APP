@@ -35,21 +35,15 @@
 			<view class="main-btn" @tap="onSave">
 				<text class="main-btn-text">保存到相册</text>
 			</view>
-			<!-- 63:25 面板项行：三社交项画布即灰显态（#B3A696 文案 / #8A7A6A 图标），灰显诚实化 -->
-			<view class="items-row">
-				<view class="share-item" @tap="onSocial('微信分享待接入')">
-					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-wechat.svg" /></view>
-					<text class="item-label">微信好友</text>
-				</view>
-				<view class="share-item item-mid" @tap="onSocial('朋友圈分享待接入')">
-					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-moments.svg" /></view>
-					<text class="item-label">朋友圈</text>
-				</view>
-				<view class="share-item item-mid" @tap="onSocial('链接复制待接入')">
-					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-link.svg" /></view>
-					<text class="item-label">复制链接</text>
-				</view>
-			</view>
+			<!-- 2026-10-16（清假入口批次）：原 63:25「面板项行」三社交项（微信好友 / 朋友圈 / 复制链接）**整行移除**。
+			     判定依据：三项点击均只弹「待接入」占位 toast，属「看起来能点其实没反应」——按本批口径隐藏而非假装。
+			     ① 微信好友 / 朋友圈 = 需第三方分享 SDK（微信开放平台），未接入；
+			     ② 复制链接 = 全库**无分享 URL 方案**（grep：client 无 clipboard/deep-link/分享链接 先例，
+			        manifest 无 scheme，后端无 share 端点）⇒ 无链接可复制的"复制链接"是空承诺，一并隐藏。
+			     重新启用条件：① 微信 SDK 接入后按渠道恢复；② 产品定下分享 URL 后，
+			        在 ShareSheet 内 `uni.setClipboardData({ data: <url> })` 即可（约 3 行），
+			        但需宿主 detail.uvue 额外传 contentId 才能拼出可回溯的链接（详见台账）。
+			     （相关样式 .items-row/.share-item/.item-mid/.item-icon/.item-icon-img/.item-label 已随之清理，见 style 段。） -->
 		</view>
 	</view>
 </template>
@@ -81,14 +75,12 @@
 		// 卡21/W1-6 复核：canvas 绘制（<canvas>/createCanvasContext）与 uni.saveImageToPhotosAlbum
 		// 全项目均零先例 → 无法生成/保存卡片图，白名单 share_card.uts 的创建条件（canvas 需独立封装）不成立，故不新建。
 		// 降级为诚实 toast，台账登记（W1-6/W1-8 降级登记 3）。真图保存通路待原生能力接入后启用。
+		// 2026-10-16（清假入口批次复核）：「保存卡片图」**不属可自闭环项**——成分卡须 canvas 合成（零先例），
+		//   保留诚实 toast（非静默假死，故不隐藏）；待 canvas 封装落地后切真实现。
 		uni.showToast({ title: '卡片图生成即将上线', icon: 'none' })
 	}
 
-	function onSocial(msg: string): void {
-		// 社交项灰显诚实化（卡21 交互接线）。画布本就是灰显态（弱字色+浅图标底）；
-		// 微信/朋友圈/复制链接 SDK 均未接入，按渠道出诚实占位 toast
-		uni.showToast({ title: msg, icon: 'none' })
-	}
+	// 2026-10-16：原 onSocial(msg) 已随三社交项整行移除（无消费者）——见模板内注释。
 </script>
 
 <style>
@@ -229,38 +221,6 @@
 		font-size: var(--d-lattice-p16, 30.8rpx);
 		color: var(--c-white, #FFFFFF);
 	}
-	.items-row {
-		width: 100%;
-		margin-top: var(--d-lattice-p16, 30.8rpx);
-		flex-direction: row;
-	}
-	.share-item {
-		width: var(--d-lattice-p90, 173.1rpx);
-		flex-direction: column;
-		align-items: center;
-	}
-	.item-mid {
-		/* 画布项间距 40px → margin（gap 引擎丢弃） */
-		margin-left: var(--d-lattice-p40, 76.9rpx);
-	}
-	.item-icon {
-		width: var(--d-lattice-p48, 92.3rpx);
-		height: var(--d-lattice-p48, 92.3rpx);
-		border-radius: var(--d-lattice-p24, 46.2rpx);
-		/* 重设计：淡底 → 白底+淡投影（4:404 令牌，pt→rpx：y2/blur8/a0.05） */
-		background-color: var(--c-white, #FFFFFF);
-		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p2, 3.8rpx) var(--d-lattice-p8, 15.4rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
-		justify-content: center;
-		align-items: center;
-	}
-	.item-icon-img {
-		width: var(--d-lattice-p22, 42.3rpx);
-		height: var(--d-lattice-p22, 42.3rpx);
-	}
-	.item-label {
-		margin-top: var(--d-lattice-p6, 11.5rpx);
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-ink-300, #B3A696);
-	}
+	/* 2026-10-16：三社交项整行移除后，.items-row/.share-item/.item-mid/.item-icon/.item-icon-img/.item-label
+	   共 6 条孤儿 CSS 一并清理（RC-G 死代码；模板已无对应节点）。 */
 </style>

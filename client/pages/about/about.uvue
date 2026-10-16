@@ -5,9 +5,9 @@
 	     图标映射：60:748/749 锁 → storage-lock.svg；60:751 铃 → storage-bell.svg；
 	       60:753 圆形刷新 → icon-refresh.svg（弃 W1-2 storage-moon，月亮语义不符 JSON 矢量）；60:754 → license-trash.svg
 	     诚实化降级（W1-2 口径 6 条，重排后逐条复核成立，见差异台账 卡15 F3b）：
-	       开源许可无内容文案 → 行保留画布真值 tap 诚实 toast（用户协议已由卡E04 上线内容页真跳转）；
 	       检查更新无更新服务 → 「已是最新」静态真值 + tap toast；版本号 v1.0.0 写死画布值（发版手动同步）；
-	       备案行照抄画布占位「沪ICP备 XXXXXXXX号 · 公司主体待补充」（占位即「待备案」语义） -->
+	       备案行照抄画布占位「沪ICP备 XXXXXXXX号 · 公司主体待补充」（占位即「待备案」语义）；
+	       2026-10-16（清假入口批次）：原「开源许可」占位行（无内容文案）已整行移除（见卡2 注释）。 -->
 	<view class="page-root tk-root">
 		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
 		<view class="nav-title">
@@ -42,17 +42,15 @@
 				</view>
 			</view>
 
-			<!-- ═══ 卡2（F3b 60:729 组2 y420）：检查更新 已是最新 / 开源许可 ═══ -->
+			<!-- ═══ 卡2（F3b 60:729 组2 y420）：检查更新 已是最新 ═══
+			     2026-10-16（清假入口批次）：「开源许可」行**整行移除**——无清单页、无内容（产品未定），
+			     点击仅弹「开源许可清单即将上线」占位 toast = 空承诺；按本批口径隐藏。
+			     重新启用条件：开源许可清单页 + 真实依赖许可文本落地后恢复（原画布节点 60:729）。 -->
 			<view class="card card-gap">
 				<view class="arow" @tap="onCheckUpdate">
 					<image class="arow-icon" src="/static/icons/icon-refresh.svg" />
 					<text class="arow-label">检查更新</text>
 					<text class="arow-latest">已是最新</text>
-				</view>
-				<view class="arow" @tap="onLicense">
-					<image class="arow-icon" src="/static/icons/license-trash.svg" />
-					<text class="arow-label">开源许可</text>
-					<image class="chev" src="/static/icons/i4_145.svg" />
 				</view>
 			</view>
 		</view>
@@ -80,10 +78,8 @@
 		uni.showToast({ title: '已是最新版本', icon: 'none' })
 	}
 
-	// 菜单行：开源许可（无清单页，诚实占位）
-	function onLicense(): void {
-		uni.showToast({ title: '开源许可清单即将上线', icon: 'none' })
-	}
+	// 2026-10-16：原 onLicense（开源许可占位 toast）已随该行整行移除（无消费者）
+
 
 	function goBack(): void {
 		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页（settings.uvue 先例）

@@ -369,6 +369,11 @@ def agent_service_token_fingerprint(raw: str | None = None) -> str:
     return token_fingerprint(settings.agent_service_token if raw is None else raw)
 
 
+# 服务间令牌长度下限：指纹 sha256[:8] 被 /healthz 暴露时，其安全性完全依赖令牌不可猜
+# （短/可猜令牌 ⇒ 指纹可被离线枚举比对，成为 oracle）。32 字符是按熵下限拍的经验值。
+_TOKEN_MIN_LEN = 32
+
+
 def assert_agent_service_token_config() -> bool:
     """启动期断言服务间令牌已配置并打印指纹（2026-10-16 · 静默降级显性化）。
 
@@ -386,8 +391,17 @@ def assert_agent_service_token_config() -> bool:
     通道是**增强**而非依赖——缺失时对话主链路照常可用。若在此 fail-closed，一次
     "令牌没配好"会升级成"整个后端起不来"，故障面更大。本项目取舍：
     **降级可以，隐形不行；但绝不把增强通道的配置缺失升级成全站不可用**。
+
+    ## 长度下限（2026-10-16 追加 · 配合 /healthz 暴露指纹）
+
+    `/healthz` 会暴露本令牌的指纹 `sha256[:8]`（供 `scripts/dev/status.ps1` 两端对账；
+    该端点**为内网探活、不对外**——对账的价值场景正是生产）。此暴露的安全性**完全依赖
+    令牌本身不可猜**：若令牌短/可猜，`sha256[:8]` 就成了**离线校验 oracle**（枚举候选
+    → 比对指纹）。故对长度设下限（≥`_TOKEN_MIN_LEN`），不足时 **WARNING 但不抛错**
+    （沿用同一口径——把服务打死比这个风险更糟）。
     """
-    configured = bool((settings.agent_service_token or "").strip())
+    token = (settings.agent_service_token or "").strip()
+    configured = bool(token)
     logger = logging.getLogger("yishu.config")
     logger.info(
         "[启动断言] 服务间令牌 agent_service_token=%s fp=%s"
@@ -400,5 +414,13 @@ def assert_agent_service_token_config() -> bool:
             "[启动断言] agent_service_token 未配置：agent→backend 的记忆镜像(W1)/"
             "检索合并(W2) 将降级跳过（用户表现＝「AI 说已记住，App 时间轴却空白」）。"
             "对话主链路不受影响。配置后重启，并比对本行 fp 与 agent 启动日志的 fp。"
+        )
+    elif len(token) < _TOKEN_MIN_LEN:
+        logger.warning(
+            "[启动断言] agent_service_token 过短（%d 字符 < %d）：/healthz 会暴露其指纹 "
+            "sha256[:8]，短/可猜令牌可被**离线比对/枚举** ⇒ 指纹即 oracle。"
+            "请换成随机长串（如 `openssl rand -hex 32`），两侧配同值后重启。",
+            len(token),
+            _TOKEN_MIN_LEN,
         )
     return configured

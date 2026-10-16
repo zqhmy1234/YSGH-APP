@@ -84,7 +84,7 @@
 	class CapsuleOpt {
 		main: string = ''
 		sub: string = ''
-		monthsLater: number = 0   // 到期 = 当前日期 + N 个月（0 = 自定义日期，无到期日）
+		monthsLater: number = 0   // 到期 = 当前日期 + N 个月（恒 > 0：自定义日期项已于 2026-10-16 移除）
 		constructor(main: string, sub: string, monthsLater: number) {
 			this.main = main
 			this.sub = sub
@@ -99,13 +99,16 @@
 		return Date.UTC(now.getFullYear(), now.getMonth() + monthsLater, now.getDate(), now.getHours(), now.getMinutes())
 	}
 
-	// 画布 63:63~63:85 四选项真值主文案；sub 日期动态算真实到期日（画布装饰段
+	// 画布 63:63~63:85 选项真值主文案；sub 日期动态算真实到期日（画布装饰段
 	// 「冬天的菜市场」等与演示日期绑定，动态日期后语义不成立 → 只留真实到期日）
+	// 2026-10-16（清假入口批次）：画布第 4 项「自定义日期（生日 / 纪念日）」**整项移除**——
+	//   它无日期选择器（画布无对应交互帧），点击仅弹「自定义日期即将上线」占位 toast，
+	//   属「看起来能点其实没反应」；按本批口径隐藏（保留其余 3 个真到期档）。
+	//   重新启用条件：接入 uni 日期选择器（项目零先例）+ 定下 open_at 语义后恢复。
 	const opts: Array<CapsuleOpt> = [
 		new CapsuleOpt('3 个月后', shortDate(isoLocal(openAtMs(3))), 3),
 		new CapsuleOpt('半年后', shortDate(isoLocal(openAtMs(6))), 6),
-		new CapsuleOpt('1 年后', shortDate(isoLocal(openAtMs(12))), 12),
-		new CapsuleOpt('自定义日期（生日 / 纪念日）', '', 0)
+		new CapsuleOpt('1 年后', shortDate(isoLocal(openAtMs(12))), 12)
 	]
 
 	// 画布默认选中第 0 项「3 个月后」
@@ -196,11 +199,7 @@
 	}
 
 	function onOptTap(idx: number): void {
-		if (idx == 3) {
-			// 自定义日期无选择器（画布无对应交互帧），诚实化降级
-			uni.showToast({ title: '自定义日期即将上线', icon: 'none' })
-			return
-		}
+		// 2026-10-16：原「自定义日期」分支已随第 4 项移除（idx==3 死代码清理）
 		selected.value = idx
 	}
 
@@ -214,11 +213,7 @@
 			return
 		}
 		const opt = opts[selected.value]
-		if (opt.monthsLater <= 0) {
-			// 自定义日期（onOptTap 已拦，此处双保险）
-			uni.showToast({ title: '自定义日期即将上线', icon: 'none' })
-			return
-		}
+		// 2026-10-16：原「monthsLater<=0（自定义日期）双保险」守卫已随第 4 项移除清理——现所有档位恒 > 0
 		const dueMs = openAtMs(opt.monthsLater)
 		if (dueMs <= Date.now()) {
 			// 后端契约 open_at 必须晚于 now（422 CAPSULE_001）→ 本地先校验显式 toast

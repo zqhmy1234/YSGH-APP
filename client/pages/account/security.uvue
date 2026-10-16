@@ -12,6 +12,10 @@
 		<image class="n41_164" src="/static/icons/i4_135.svg" @tap="goBack" /> <!-- 画布 41:164 返回（复用 settings 同款箭头 SVG） -->
 		<view class="list-flow"> <!-- 列表流式容器（组间 margin 自动下移） -->
 			<view class="sec-group"> <!-- 画布 41:169 组·账号信息 -->
+				<!-- 2026-10-16（清假入口批次 · 裁决后改回保留）：本行**保留**——它渲染的是 `GET /users/me`
+				     服务端掩码真号（真实信息，非假号）⇒ 隐藏＝少给用户一个事实，与本批"诚实化"立意相反。
+				     只改写「点击」文案：原「手机号绑定即将上线」占位 toast＝空承诺 ✗ ⇒ 现改「如需变更请联系客服」
+				     （诚实：后端无自助改绑端点，手机号绑定属 B5 远期）。 -->
 				<view class="sec-row" @tap="onPhone"> <!-- 画布 41:170 行·手机号 -->
 					<view class="sec-icon">
 						<image class="sec-icon-img" src="/static/icons/icon-phone.svg" />
@@ -34,15 +38,9 @@
 					<text class="sec-arrow">›</text>
 				</view>
 			</view>
-			<view class="sec-group group-gap"> <!-- 画布 41:183 组·数据与隐私（组间距 38pt=73.1rpx；导出/存储两行已移出 → 存储与备份页） -->
-				<view class="sec-row" @tap="onPrivacy"> <!-- 画布 41:189 行·隐私权限 -->
-					<view class="sec-icon">
-						<image class="sec-icon-img" src="/static/icons/icon-shield.svg" />
-					</view>
-					<text class="sec-label">隐私权限</text>
-					<text class="sec-arrow">›</text>
-				</view>
-			</view>
+			<!-- 2026-10-16（清假入口批次 · 裁决后隐藏）：原 41:183 组·数据与隐私（唯一行＝「隐私权限」）**整组移除**——
+			     该行点击仅弹「隐私权限设置即将上线」占位 toast、无目标页，属同类占位入口。
+			     ⚠️ 恢复条件：接入**系统权限设置页**（如跳 App 系统权限/通知设置）后，按画布 41:183/41:189 恢复本组。 -->
 			<view class="sec-group group-gap" @tap="onLogout"> <!-- 画布 41:200 组·退出登录 -->
 				<view class="sec-row-center">
 					<text class="sec-logout-text">退出登录</text>
@@ -63,8 +61,8 @@
 // W10 新页：账号与安全（画布板 41:161）
 // 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
 // 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
-// W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」）：手机号显「未绑定」不显假号 138****5678
-// ——B4 后已接 `GET /users/me` 真值（服务端掩码下发）；失败/未绑定仍显「未绑定」，不显假号 ✓；
+// W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」/ 2026-10-16 更新）：原「手机号」行（曾接
+// `GET /users/me` 掩码真值，但绑定端点属 B5 远期、点击仅占位 toast）已整行移除，见模板注释；
 // 微信行（2026-10-15 · 台账 §7.29）：**接真实绑定态**（`GET /wechat/bindings`）并**就地绑定/解绑** ——
 // 未绑定 ⇒ `wechatLogin()` 拉起微信授权（失败自动回落绑定码通道）；已绑定 ⇒ 二次确认解绑；
 // ⚠️ 本注释取代两处已过期表述：① 「微信行不再显示『已绑定』」（2026-09-21 当时正确，但 10-15 起绑定
@@ -78,10 +76,10 @@
 	import { listWechatBindings, issueBindCode, unbindWechat } from '@/utils/wechat_api'
 	import { wechatLogin } from '@/utils/auth'
 
-	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
+	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」（2026-10-16 裁决后随本行保留而恢复）
 	let phoneText = ref('未绑定')
 	// 2026-10-15（台账 §7.29）：微信**绑定态**接真值（`GET /wechat/bindings`）；默认「未绑定」，
-	// 拉取失败保持默认（不显假状态 —— 同手机号行口径）。
+	// 拉取失败保持默认（不显假状态）。
 	let wechatText = ref('未绑定')
 	// 2026-10-15（真机反馈后复修）：本页**就地绑定/解绑**。原先点这一行会跳 settings 中间页，
 	// 与 settings 的「账号与安全」行互跳 ⇒ 我的→设置→账号与安全→设置 死循环 ✗（用户实测）。
@@ -128,10 +126,10 @@
 
 	onLoad(() => {
 		// 2026-10-15（台账 §7.29）：微信绑定态真值（失败保持「未绑定」，不 toast 打扰）
+		// 2026-10-16：手机号行保留 ⇒ 恢复拉取服务端掩码真号（失败显式 toast，保持「未绑定」降级不显假号）
 		refreshWechat()
 		fetchUsersMe().then((d: UTSJSONObject | null) => {
 			if (d == null) {
-				// 不静默：失败显式 toast，保持「未绑定」降级显示
 				uni.showToast({ title: '账号信息加载失败', icon: 'none' })
 				return
 			}
@@ -152,9 +150,12 @@
 		}
 	}
 
+	/**
+	 * 手机号行（2026-10-16 · 裁决后改回）：**保留本行**（展示服务端掩码真号），点击给**诚实文案**——
+	 * 后端无自助改绑端点（手机号绑定属 B5 远期），不再弹「即将上线」空承诺，改为引导联系客服。
+	 */
 	function onPhone(): void {
-		// W0-4 诚实化：绑定管理能力依赖后端 users/me（B5 远期），措辞改「即将上线」
-		uni.showToast({ title: '手机号绑定即将上线', icon: 'none' })
+		uni.showToast({ title: '如需变更手机号请联系客服', icon: 'none' })
 	}
 
 	/**
@@ -200,9 +201,8 @@
 		})
 	}
 
-	function onPrivacy(): void {
-		uni.showToast({ title: '隐私权限设置即将上线', icon: 'none' })
-	}
+	// 2026-10-16（清假入口批次 · 裁决后隐藏）：原 onPrivacy（隐私权限占位 toast，无目标页）已随
+	// 「隐私权限」行整组移除；恢复条件见模板内注释（接入系统权限设置页）。
 
 	function onLogout(): void {
 		uni.showModal({

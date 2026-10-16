@@ -20,7 +20,7 @@
 			     且 agent 侧**根本没有画像能力**（无画像工具/上下文，见审计 §4）⇒ 不存在可接的消费者，
 			     "关闭后不再引用你的画像"是**空承诺**（合规相关，不能靠"本地生效"的措辞掩盖）。
 			     重新启用条件（服务端偏好字段 + 两端真消费）见台账 §7.18。
-			     （相关样式 .switch/.row-icon 等暂留，随下次样式整饬清理。） -->
+			     （相关开关样式 .switch/.switch-on/.switch-off/.switch-knob 已于 2026-10-16 随本批 RC-G 清理，见 style 段。） -->
 
 			<!-- 64:292 组2：敏感话题管理 + 清除画像数据（两者均为真链路，保留） -->
 			<view class="group-card group-2">
@@ -183,31 +183,9 @@
 	.value-danger {
 		color: var(--c-rust-500, #B05A3A);
 	}
-	/* ── 64:318 开关：46×28 r14 p3，开 #B05A3A（滑块靠右 x21）/ 关降级 #D8D0C6（画布只有开态），
-	   滑块 22 白圆 影 0,1,3,.25；INNER_SHADOW 白a0.3 纳入 inset ── */
-	.switch {
-		width: var(--d-search_height, 88.5rpx);
-		height: var(--d-fab_radius, 53.8rpx);
-		border-radius: var(--d-lattice-p14, 26.9rpx);
-		padding: var(--d-lattice-p3, 5.8rpx);
-		box-shadow: inset 0 var(--d-lattice-p1, 1.9rpx) 3.9rpx var(--a-white-30, rgba(255, 255, 255, 0.3));
-		flex-direction: row;
-	}
-	.switch-on {
-		background-color: var(--c-rust-500, #B05A3A);
-		justify-content: flex-end;
-	}
-	.switch-off {
-		background-color: var(--c-surface-neutral, #D8D0C6);
-		justify-content: flex-start;
-	}
-	.switch-knob {
-		width: var(--d-lattice-p22, 42.3rpx);
-		height: var(--d-lattice-p22, 42.3rpx);
-		border-radius: var(--d-lattice-p11, 21.2rpx);
-		background-color: var(--c-white, #FFFFFF);
-		box-shadow: 0 var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-25, rgba(59, 46, 38, 0.25));
-	}
+	/* 2026-10-16（清 RC-G 死代码）：原 64:318 开关样式 .switch/.switch-on/.switch-off/.switch-knob
+	   4 条已随「AI 对话/回响使用画像」假开关（2026-10-14 移除，见模板注释）**一并清理**——模板已无对应节点。
+	   若开关在服务端偏好字段 + 两端真消费到位后重新启用，样式需按画布 64:318 真值恢复。 */
 	/* ── 说明：11px Regular #B3A696（组1 底 226→232 gap6=11.5rpx / 组2 底 350→356 同） ── */
 	.group-hint {
 		margin-top: var(--d-lattice-p6, 11.5rpx);
