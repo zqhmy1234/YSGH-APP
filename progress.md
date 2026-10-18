@@ -721,3 +721,12 @@ ShareSheet（须真机验"保存到相册"）。
 - **三条教训（`lessons.py add` 已登记）**：① 契约变更必须同批重导快照；② 新增任何导出（含可观测计数器）必须同批给调用点或删掉（**我加了 `getDegradeRuns` 却忘接线** —— 本轮主题「写了没接线」在我产出上复发）；③ 批量提交序列里每次 `git commit` 前先 `git reset`（被拦的提交不清空索引会与下一条混装，已三次踩；`5d97ab6` 因此把「附件契约」与「全部流畅度」混进一条）。
 - **遗留/待产品决策**：用户气泡不显示已发图片 / `uploader_queue` subscribe 真事件化（横幅空态最坏 10s 上屏）/ `wf.waveformOf` 上移 / **产品决策**：端侧聚类硬顶（400，实测 ≤81/日 ⇒ 5× 余量）之上是否要云端产 L1 / `EchoSheet` 接真实图片 / caption 受控回填 1691 张无文本照片（能力已就位 `44544e0`）。
 - **真机未验（如实）**：附件面板客户端 UTS 只过编译门；累积真机清单见 `STATE.md`（定位四条 / 省流三条 / 流畅度五条 / 附件两条）。
+
+## 2026-10-19 · 同步合并 develop + 窄口上传（与 B/C 分工边界）
+
+- `git fetch` 后 `origin/develop` 前进 4 个提交（`d649a63` D-05 补传上云共口 / `45bf17c` 真机复验脚本 / `8fda5bb` lessons / `dd89678` 复验台账+出包清单+OCR）。本地 feature 分支 33 ahead / 4 behind，`git merge --no-ff origin/develop` → `ff8eadd`。
+- 3 处冲突按「两边都保留」解：`uploader_batch.uts`（省流待补原件 + `l1_submit` 上云）、`UploadStatusBanner.uvue`（重试结果 toast + `submitUploadsAsL1`）、`docs/lessons.md`（我方 10-17 条目 + 远端 10-16 两条）。`git diff --check` 无残留冲突标记。
+- 验证：`scripts/client_compile_gate.py` **真编译 72652ms**；`review_agent.py` 快速门禁通过；`test_event_gc_orphan` 3 passed。**`--full` 未跑完**：本机 Docker 无响应（`docker ps` 挂起），测试轴依赖 PG/Redis/Qdrant，已如实登记 `STATE.md` 阻塞 6。
+- 窄口上传：新建 `sync/infra-fixes-20261019`（自 `origin/develop`），按**代码路径 diff + `git apply --3way`** 摘取 5 条不冲突修复（`a9e7ccf`/`f60e7ff`/`ec15130`/`44544e0`/`1f2bfbf`），已推远端；**develop 未动**。产品决策 8 条、与 B/C 任务域重叠 13 条、门禁/CI 4 条均未上传（分类与理由见本轮汇报）。
+- 摘取时发现既有红：`44544e0` 给 `_stale_candidates` 加 `include_empty_done` 关键字参数后，`test_requeue_job` 的候选桩仍是 3 参 lambda ⇒ **5 条 TypeError**；该缺陷在 feature 分支同样存在（说明 10-16 后未跑过 `--full`）。两支均已修（6 passed），教训已登记。
+- 过程教训两条已入 `docs/lessons.md`：① 跨分支摘取用「按路径 diff + apply」，不要整提交 cherry-pick；管道后不要用 `$LASTEXITCODE` 判错误。② 改被 monkeypatch 钉住的函数签名必须同步改桩；定向绿不等于 `--full` 绿。
