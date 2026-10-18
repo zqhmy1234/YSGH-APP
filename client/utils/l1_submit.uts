@@ -1,0 +1,84 @@
+/**
+ * 端侧 L1 上云共口（2026-10-16 · C 线补 D-05 缺口）
+ *
+ * 背景：按后端设计，云侧默认只跑 L2/L3（backend/app/services/events/aggregate.py:82-84），
+ * **L1 日卡片必须由端侧 POST /api/v1/events/sync 提交**。
+ * 此前只有「记录面板拍照」和「相册监听」两条路径做了聚合+上云；
+ * **横幅手动上传（held → 立即上传原图）与 WiFi 恢复自动补传**两条补传路径，
+ * 把 continuePendingUploads() 的返回值直接丢掉 → 这些照片只入 contents、不进时间轴。
+ *
+ * 本共口供上述路径复用，并带一层兜底：端侧聚类 aggregateToEvents 抛异常或返回 0 条时，
+ * 退化为「按本次上传直接合成当天一张日卡片」——内测期宁可卡片粒度粗一点，
+ * 也不能让用户拍完照时间轴一动不动。
+ */
+import { aggregateToEvents } from '@/utils/agg_runner.uts'
+import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
+import { UploadedPhoto, isoString } from '@/utils/uploader_types'
+
+/** 兜底：不依赖聚类，按本地自然日把本次上传合成一张日卡片 */
+function fallbackDayEvent(uploaded: Array<UploadedPhoto>): UTSJSONObject {
+	let minTs = uploaded[0].item.takenAt
+	let maxTs = uploaded[0].item.takenAt
+	const ids: Array<string> = []
+	for (let i = 0; i < uploaded.length; i++) {
+		const u = uploaded[i]
+		ids.push(u.contentId)
+		const t = u.item.takenAt
+		if (t < minTs) {
+			minTs = t
+		}
+		if (t > maxTs) {
+			maxTs = t
+		}
+	}
+	// isoString → '2026-10-16T22:09:11+08:00'，前 10 位即本地自然日
+	const day = isoString(minTs).substring(0, 10)
+	const ev: UTSJSONObject = {
+		client_event_id: 'ev-fb-' + Date.now() + '-' + Math.floor(Math.random() * 1000000),
+		title: day + ' · ' + ids.length + '条',
+		start_time: isoString(minTs),
+		end_time: isoString(maxTs),
+		photo_ids: ids
+	}
+	return ev
+}
+
+/**
+ * 上传成功后提交端侧 L1（聚合优先；异常或 0 条时走兜底日卡片）。
+ * @param uploaded uploadBatch / continuePendingUploads 的成功结果（含云侧 content_id）
+ * @return 本次提交的事件条数（0 = 无可用事件，未发起请求）
+ */
+export function submitUploadsAsL1(uploaded: Array<UploadedPhoto>): number {
+	if (uploaded.length == 0) {
+		return 0
+	}
+	const tz = -new Date().getTimezoneOffset()
+	const events: Array<UTSJSONObject> = []
+	try {
+		const agg = aggregateToEvents(uploaded, tz)
+		for (let i = 0; i < agg.events.length; i++) {
+			const ev = agg.events[i]
+			const obj: UTSJSONObject = {
+				client_event_id: ev.clientEventId,
+				title: ev.title,
+				start_time: isoString(ev.startTime),
+				end_time: isoString(ev.endTime),
+				photo_ids: ev.photoIds
+			}
+			events.push(obj)
+		}
+	} catch (e: any) {
+		console.error('[yishu] L1 端侧聚合异常，改走兜底日卡片: ' + (e != null && e.message != null ? e.message : 'unknown'))
+	}
+	if (events.length == 0) {
+		events.push(fallbackDayEvent(uploaded))
+		console.log('[yishu] L1 兜底日卡片: n=' + uploaded.length)
+	}
+	syncClientEvents(events).then((out: SyncOutcome | null) => {
+		console.log('[yishu] L1 上云: n=' + events.length
+			+ ' accepted=' + (out != null ? out.accepted : -1)
+			+ ' dup=' + (out != null ? out.duplicates : -1)
+			+ ' rejected=' + (out != null ? out.rejected : -1))
+	})
+	return events.length
+}

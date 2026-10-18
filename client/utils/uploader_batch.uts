@@ -14,6 +14,8 @@ import { addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, r
 import { uploadWithRetry } from './uploader_photo'
 // 2026-10-16（蜂窝省流 A1）：压缩预检（失败退回 held）+ 待补原件队列（缩略图**已传**，独立于 held）
 import { compressForThumbnail, addPendingOriginal, pendingOriginalItems } from './upload_pipeline'
+// 2026-10-16（D-05 缺口，origin/develop）：WiFi 恢复自动补传同样要上云，否则补传的照片不进时间轴
+import { submitUploadsAsL1 } from './l1_submit.uts'
 
 /** 并发池（游标式分配，天然实现 ≤3 并发；批量失败 ≥10 暂停剩余） */
 class UploadPool {
@@ -251,7 +253,9 @@ function maybeUploadHeldOnWifi(): void {
 	getNetKind((kind: NetKind) => {
 		if (kind == 'wifi') {
 			console.log('[yishu] WiFi 恢复，自动补传暂缓原图（held=' + heldCount() + ' failed=' + failedCount() + ' 待补原件=' + pendingOriginalCount + '）')
-			continuePendingUploads(() => {})
+			continuePendingUploads(() => {}).then((uploaded: Array<UploadedPhoto>) => {
+				submitUploadsAsL1(uploaded)
+			})
 		}
 	})
 }

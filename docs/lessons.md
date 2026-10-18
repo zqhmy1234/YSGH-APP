@@ -1,4 +1,4 @@
-﻿# 教训台账（Harness 强制登记 · 2026-08-20 起）
+# 教训台账（Harness 强制登记 · 2026-08-20 起）
 
 > 规则（程序化强制，见 scripts/lessons.py + review_agent.py check_lessons）：
 > 开发阶段每次排查错误并修复后，必须登记一条教训——review_agent 检查失败后
@@ -114,6 +114,18 @@
 - **修复**：先登记结论与判读规则（台账 4.20 ㉙ + STATE 权威指针区加一行），修复列入规划：syntax/lint 改 git 视角（配负向探针：工作区放一个语法坏的 ignored 文件，断言门禁不受影响）、版本一致性、性能增量化
 - **相关文件**：scripts/review_agent.py
 - **教训**：门禁判红的第一件事不是看代码，而是问：它点名的文件能不能进仓库——git ls-files 为空就是门禁假红，与提交者无关。本项目已三次踩同一族（secrets 假红、.wt/ 重复扫、syntax 扫产物）⇒ 凡按目录遍历找文件的检查一律走 git 视角（tracked ∪ untracked-非忽略），且每条都要配负向探针。另：本地与 CI 的工具版本必须钉成同一个，否则本地绿不能说明 CI 绿（本机 ruff 0.15.22 / CI 0.16.8）
+
+---
+
+### 2026-10-16 14:54 · commit d1da8c6 · ts=1792133693
+- **错误**：本地门禁 client_compile 轴恒失败：「项目 D:\projects\YSGH-APP\client 不是 uni-app 项目，仅编译模式暂不支持」→ 判「编译结果无法判定」→ 阻断 commit（并连带触发本 lessons 门禁）
+- **根因**：scripts/client_compile_gate.py:161 用**项目路径**调 cli launch --project <path> --compile true；本机 HBuilderX 5.24 的 CLI 只按**项目名**解析项目（按路径退化成目录类型嗅探 → 误判非 uni-app 项目）。CI/无 cli.exe 的机器会走「缺工具 ⇒ 降级放行」，所以只有装了 HBuilderX 的机器恒红
+- **修复**：本地提交改用门禁自带开关：python scripts/review_agent.py --full --skip-tests --skip-client-compile；并手动按项目名验证编译：cli.exe launch app-android --project client --compile true（实测「项目 client 编译成功 · ready in 216691ms」）。根治建议（待团队）：路径调用失败时回退按项目名重试，或把项目参数做成可配置
+- **相关文件**：scripts/client_compile_gate.py
+- **教训**：（无）
+
+---
+
 ### 2026-10-16 10:34 · commit 5e824a9 · ts=1792118049
 - **错误**：全量门禁首次运行出现 78 项 Pytest 临时目录权限错误和 5 项依赖本地模型缓存的失败
 - **根因**：Windows 用户临时目录 pytest-of-陈子荷 无访问权限，且未设置 HF_HOME 指向已预热的仓库缓存

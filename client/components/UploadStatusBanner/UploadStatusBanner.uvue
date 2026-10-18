@@ -24,6 +24,8 @@
 	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（同 RecordSheet/TabIndex 先例）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+	// 2026-10-16（D-05 缺口，origin/develop）：补传路径此前只上传、不上云 → 这些照片不进时间轴
+	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
 
 	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
 
@@ -242,9 +244,11 @@
 		continuePendingUploads(() => {
 			uploading.value = false
 			refresh()
-		}).then(() => {
+		}).then((uploaded: Array<UploadedPhoto>) => {
 			uploading.value = false
 			refresh()
+			// 2026-10-16（D-05 缺口）：补传上来的照片同样要上云 L1，否则不进时间轴
+			submitUploadsAsL1(uploaded)
 			// 2026-10-16（真机反馈「点了重试没任何反应」）：**结果必须可见** ——
 			// 原先重试完只有横幅闪一下"正在上传…"再弹回"6 张失败"（数字不变、零提示）
 			// ⇒ 用户无法判断到底做了什么 ✗。现给确定结论，仍失败则附**原因** ✓。
