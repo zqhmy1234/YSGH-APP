@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-19 01:41 · commit dd89678 · ts=1792345311
+- **错误**：在 develop 上摘取本地分支提交时，git cherry-pick -n 在 docs/lessons.md 上冲突，后续 commit 全部被门禁 lessons 轴拦下，索引里堆了多个提交的改动（且循环没有及时停）
+- **根因**：① 摘取时把台账类文件（docs/STATE/progress）一起摘，冲突必然落在台账上；② 冲突态下继续 cherry-pick/commit，且门禁先拦 lessons（develop 的 lessons 没有原分支的新条目）；③ 管道 | Select-Object 后 \ 变成 0，冲突判断失效，循环继续跑
+- **修复**：git reset --hard origin/develop；改用 git diff -- <代码路径> --output=patch 再 git apply --3way 逐条摘取，台账不进摘取分支；本教训登记后单提交收口
+- **相关文件**：scripts/lessons.py
+- **教训**：跨分支摘取用『按路径 diff + apply』，不要整提交 cherry-pick；管道之后不要用 \ 判错误，改存临时退出码或不用管道
+
+---
+
 ### 2026-10-16 14:54 · commit d1da8c6 · ts=1792133693
 - **错误**：本地门禁 client_compile 轴恒失败：「项目 D:\projects\YSGH-APP\client 不是 uni-app 项目，仅编译模式暂不支持」→ 判「编译结果无法判定」→ 阻断 commit（并连带触发本 lessons 门禁）
 - **根因**：scripts/client_compile_gate.py:161 用**项目路径**调 cli launch --project <path> --compile true；本机 HBuilderX 5.24 的 CLI 只按**项目名**解析项目（按路径退化成目录类型嗅探 → 误判非 uni-app 项目）。CI/无 cli.exe 的机器会走「缺工具 ⇒ 降级放行」，所以只有装了 HBuilderX 的机器恒红

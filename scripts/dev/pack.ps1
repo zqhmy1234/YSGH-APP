@@ -34,7 +34,12 @@ param(
     [string]$Apk = '',
     [switch]$Deploy,
     [string]$SigningDir = "$env:USERPROFILE\.yishu-signing",
-    [int]$PackTimeoutSec = 1500
+    # 2026-10-15（台账 §4.20 ㉙）：默认值 1500s（25min）**在 DCloud 免费队列下必然超时** ✗ ——
+    # 实测 21:17 提交时排到第 **98** 位（预计 20+ 分钟），脚本到 25min 就 `exit 1`，
+    # 而 `-RedirectStandardOutput $packLog` 会**截断** pack.log ⇒ **产物 URL 一并丢失** ✗✗
+    # （这正是"包总出不来"的机制原因）。默认放宽到 3600s（60min，覆盖免费队列常态）；
+    # 队列特别长时可显式加大：`-PackTimeoutSec 7200`。付费加速链接见 pack.log。
+    [int]$PackTimeoutSec = 3600
 )
 
 $ErrorActionPreference = 'Continue'
@@ -188,6 +193,13 @@ else {
     Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue   # 用完即删（口令不留盘）
     if (-not $doneLine) {
         Bad "云打包在 $PackTimeoutSec 秒内未给出结果" "看 $packLog（HBuilderX 是否掉线/是否需登录）"
+        # 2026-10-15（台账 §4.20 ㉙）：超时**不等于**云端失败 —— 云端任务仍在跑，只是本地没等到。
+        # 但 `-RedirectStandardOutput` 会截断 pack.log ⇒ **下一次运行会把本次的产物 URL 覆盖掉** ✗，
+        # 故此处必须把自救路径写清楚（否则包做出来了却拿不到）。
+        Write-Host '  ℹ️ 云端任务**不会**因为本地超时而取消，产物通常仍会产出。拿 URL 的两条路：' -ForegroundColor Yellow
+        Write-Host '     ① DCloud 控制台 → 该次云打包记录（推荐，最稳）；' -ForegroundColor Yellow
+        Write-Host '     ② 立刻 `Get-Content .cowork-temp\pack.log -Tail 20` 看是否已出现 `安装包下载地址`（出现即拷贝走，别重跑脚本 —— 重跑会截断日志 ✗）' -ForegroundColor Yellow
+        Write-Host "     下次加大等待：pwsh -File scripts\dev\pack.ps1 -AllowTunnel -PackTimeoutSec 7200" -ForegroundColor Yellow
         exit 1
     }
     Ok "云打包完成：$doneLine"
