@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-19 01:48 · commit ff8eadd · ts=1792345711
+- **错误**：44544e0 给 requeue_job._stale_candidates 加了 include_empty_done 关键字参数，但 test_requeue_job 的候选桩仍写成 3 参 lambda，5 条用例全部 TypeError；快速门禁不含全量测试，缺陷一直留到 10-19 摘取提交时才暴露
+- **根因**：改函数签名时只跑了定向用例（或没跑），而该桩是用 lambda 钉住函数，关键字参数直接 TypeError；快速门禁的 lint/syntax 层看不到行为断言，只有 --full 的 pytest 才抓得到
+- **修复**：桩补 include_empty_done=False 形参；6 条用例复跑通过（同步修在 feature 分支与 sync 摘取分支）
+- **相关文件**：backend/tests/test_requeue_job.py
+- **教训**：改被 monkeypatch 钉住的函数签名时，必须同时改桩的形参（\*\*kwargs 或显式参数）；定向用例绿不等于 --full 绿，行为层改动至少跑一次该测试文件全集
+
+---
+
 ### 2026-10-17 01:16 · commit a30178c · ts=1792171014
 - **错误**：补提交 perf-retrieval 漏 add 的 test_search_stages.py 时先被 lint 拦(I001 import 排序)再被 lessons 拦(未登记)
 - **根因**：成员新建文件有轻微 lint 错未在交付前修；我整合时漏 add 新建测试文件，补提时才暴露
