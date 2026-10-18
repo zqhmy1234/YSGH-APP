@@ -19,6 +19,11 @@
 			<text class="sheet-title">{{ title }}</text>
 			<text class="sheet-time">{{ time }}</text>
 			<text class="sheet-body">{{ body }}</text>
+			<!-- 2026-10-19（批次 C · 每日回顾）：可选主行动——复盘消息没有 content_id，
+			     用户看完正文需要一条出口回到「今天」。空串不渲染（不放假按钮，铁律同 A10） -->
+			<view v-if="actionText != ''" class="sheet-action pressable" @tap="onAction">
+				<text class="sheet-action-text">{{ actionText }}</text>
+			</view>
 		</view>
 	</view>
 </template>
@@ -49,9 +54,14 @@
 		avatarBg: {
 			type: String,
 			default: 'rgba(176, 89, 59, 0.12)'
+		},
+		// 2026-10-19（批次 C · 每日回顾）：可选主行动文案；空串 = 不渲染按钮
+		actionText: {
+			type: String,
+			default: ''
 		}
 	})
-	const emit = defineEmits(['close'])
+	const emit = defineEmits(['close', 'action'])
 
 	/** msg_type → 徽章文案（当前路由只有 daily_review/voice_done 会进本层，其余兜底） */
 	let typeLabel = computed((): string => {
@@ -72,6 +82,10 @@
 
 	function onClose(): void {
 		emit('close')
+	}
+
+	function onAction(): void {
+		emit('action')
 	}
 </script>
 
@@ -175,5 +189,20 @@
 		font-size: 28.9rpx;
 		line-height: var(--d-lattice-p24, 46.2rpx);
 		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 2026-10-19（批次 C · 每日回顾）：主行动按钮——锈红唯一 CTA 色，88rpx 热区 */
+	.sheet-action {
+		margin-top: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-raw-r88, 88rpx);
+		border-radius: var(--d-raw-r44, 44rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	.sheet-action-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-paper-50, #FAF9F5);
 	}
 </style>

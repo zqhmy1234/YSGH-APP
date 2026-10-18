@@ -64,7 +64,7 @@
 		<!-- 消息详情弹层（§V 拍板 A：复盘·语音完成贴底弹层，替代就地展开） -->
 		<MessageDetailSheet v-if="detailVisible" :title="detailTitle" :body="detailBody"
 			:time="detailTime" :msgType="detailMsgType" :iconPath="detailIcon" :avatarBg="detailBg"
-			@close="detailVisible = false" />
+			:actionText="detailAction" @close="detailVisible = false" @action="onDetailAction" />
 	</view>
 </template>
 
@@ -124,6 +124,9 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	let detailMsgType = ref('')
 	let detailIcon = ref('')
 	let detailBg = ref('')
+	// 2026-10-19（批次 C · 每日回顾）：弹层主行动文案——复盘消息给「去看今天的记忆」出口；
+	// 其余消息空串（组件不渲染按钮，不放假 CTA）
+	let detailAction = ref('')
 	// 回响演示开关 USE_MOCK_ECHO 已随真端点接线移除（2026-09-05 起真数据走 GET /echo/today，
 	// 演示卡假 id 触发 detail 404 的路径不复存在）；无回响时 echoCard=null 整卡隐藏=诚实空态
 
@@ -162,7 +165,7 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		if (t == 'care_followup') {
 			return '/static/icons/msg-ai.svg'
 		}
-		if (t == 'voice_done' || t == 'echo') {
+		if (t == 'voice_done' || t == 'echo' || t == 'daily_review') {
 			return '/static/icons/msg-teal.svg'
 		}
 		return '/static/icons/msg-bell.svg'
@@ -353,9 +356,19 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			detailMsgType.value = msg.msgType
 			detailIcon.value = msg.iconPath
 			detailBg.value = msg.avatarBg
+			// 2026-10-19（批次 C）：复盘消息没有 content_id，但它是「回顾位」的入口——
+			// 给一条确定出口回到「今天」；语音完成仍无关联内容（content_id 为空）时不给假按钮
+			detailAction.value = msg.msgType == 'daily_review' ? '去看今天的记忆' : ''
 			detailVisible.value = true
 			return
 		}
+	}
+
+	/** 2026-10-19（批次 C · 每日回顾）：弹层主行动 → 回壳「今天」视图。
+	 *  backToShell 自带栈内回退 + 深链 reLaunch 兜底（见 shell_state.uts 头注），不新造跳转。 */
+	function onDetailAction(): void {
+		detailVisible.value = false
+		backToShell('index', '')
 	}
 
 	function openFeatured(): void {

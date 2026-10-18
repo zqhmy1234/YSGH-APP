@@ -14,7 +14,13 @@
 
 ## 正在做什么
 
-**2026-10-19 同步合并 + 窄口上传（用户拍板：产品决策暂不上传、不抢 A/B/C 的活）**：`origin/develop`(dd89678) 的 **4 个提交**已并入 → `ff8eadd`（D-05 补传上云共口 / 真机复验脚本 / 复验台账 / 出包前清单）；3 处冲突按**两边都保留**解（`uploader_batch` 省流待补原件 + `l1_submit` 上云；`UploadStatusBanner` 重试结果提示 + 上云；`lessons` 两批条目）。编译门**真编译 72.7s**、快速门禁通过、事件回收定向 **3 passed**。另把 **5 条不冲突的后端/脚本修复**摘到 `sync/infra-fixes-20261019` 并推远端（事件空壳回收 `a9e7ccf` / 30 天清理接回收 `f60e7ff` / 回收用例 `ec15130` / 重扫增收无 caption 照片 `44544e0` / `pack.ps1` 等待 3600s `1f2bfbf`）；**develop 未动**。产品决策（entry 流/搜索重做/AI 页/settings 退役）与 B/C 任务域重叠的 21 条提交**未上传**。发现并修掉一处我们自己的红：`44544e0` 改 `_stale_candidates` 签名后 `test_requeue_job` 的桩未跟 ⇒ **5 条 TypeError**（feature 与 sync 两支均已修，6 passed）——说明 10-16 之后没跑过 `--full`。当前 feature 相对 develop：**35 ahead / 0 behind**。
+**2026-10-19 同步合并 + 窄口上传（用户拍板：产品决策暂不上传、不抢 A/B/C 的活）**：`origin/develop`(dd89678) 的 **4 个提交**已并入 → `ff8eadd`（D-05 补传上云共口 / 真机复验脚本 / 复验台账 / 出包前清单）；3 处冲突按**两边都保留**解（`uploader_batch` 省流待补原件 + `l1_submit` 上云；`UploadStatusBanner` 重试结果提示 + 上云；`lessons` 两批条目）。编译门**真编译 72.7s**、快速门禁通过、事件回收定向 **3 passed**。另把 **5 条不冲突的后端/脚本修复**摘到 `sync/infra-fixes-20261019` 并推远端（事件空壳回收 `a9e7ccf` / 30 天清理接回收 `f60e7ff` / 回收用例 `ec15130` / 重扫增收无 caption 照片 `44544e0` / `pack.ps1` 等待 3600s `1f2bfbf`）；**develop 未动**。产品决策（entry 流/搜索重做/AI 页/settings 退役）与 B/C 任务域重叠的 21 条提交**未上传**。发现并修掉一处我们自己的红：`44544e0` 改 `_stale_candidates` 签名后 `test_requeue_job` 的桩未跟 ⇒ **5 条 TypeError**（feature 与 sync 两支均已修，6 passed）——说明 10-16 之后没跑过 `--full`。当前 feature 相对 develop：**36 ahead / 0 behind**（本轮提交前）。
+
+**2026-10-19（续）· 回顾位收口 / 搜索档位 / 数据体检（用户要求"能继续做的全部完成"）**：
+① **回顾位**：那年今日 10-15 已落（今天卡下、有才出现），本轮补**每日回顾的出口**——`MessageDetailSheet` 新增 `actionText/@action`，messages 页对 `daily_review` 给「去看今天的记忆」→ `backToShell('index')`（复盘仍走 §V 拍板的贴底弹层，不推翻旧决策）；编译门**真编译 57.5s** 通过。
+② **搜索性能治理②**：`BGE_DEVICE/BGE_THREADS/BGE_WARMUP_ON_START` 三档 settings 化（默认值=改前行为）+ `lifespan` 后台预热；`embedding.warmup()` 实测 **9.9s**；**拍板不采用异步精排**（要改客户端协议、在野 APK 无此能力），精排降级杠杆用既有 `RERANK_ENABLED/RERANK_LLM_ENABLED`；查询侧双前向合并单独立项。**P95 5560ms 仍未达标**，剩 GPU / 关精排 / 改写降档三条路，都是成本决策。
+③ **数据体检**：photos 3919 / 无 caption 3625 / 「done 但无 caption」**1694**；processing 滞留 **4464** / failed 336。`requeue_job` 新增 **`--only-empty-done`**（dry-run 实测 1694 全可重投）；**回填未执行**（1694 次视觉调用成本待拍板）。
+④ **harness 清账**：`feature_list.json` 给 F1/F4/F5/F8/B1 追写当日 evidence（**没有改任何 status**——policy 明写 11 条 in-progress 是如实状态）；产出 `docs/给BC的勘误与同步_20261019.md`（8 条硬勘误 + B-3 三缺项 + B-4/B-5 合并建议；**未改他们的手册**）。
 
 **2026-10-16（第二波）定位真落库 / 降级显性化 + 多模态附件契约 / 界面流畅度 / 占位入口诚实化**：两批 6 条提交已推（`148af09`→`5ed8255`），明细见 `docs/决策台账.md` §4.20 ㉚。核验：ruff 全过、编译门**真编译 84.5s**、后端回归 **483 passed**、`-k chat` **102 passed**、`openapi --check` OK（259806 字符）、exports 轴「无新增零调用能力导出」（424→419）。⚠️ **附件面板客户端 UTS 仅过编译门、真机未验**（「刚传完即发」可能落「内容暂不可读」，如实标注）。
 
@@ -71,7 +77,7 @@
 3. 🟡 **图片通路 ngrok 免费版拦截页**（`ERR_NGROK_6024`）：`<image>` 无法带自定义头 ⇒ 依赖 Android 原生 UA 放行；若真机图片全裂，二选一（改走 `uni.downloadFile` + 本地路径 / 换 cloudflared·ngrok 付费）——**沿用自 10-14，未变**
 4. 🟡 **上传管线类改动受"验证条件"限制**（蜂窝省流五步等）：按 2026-09-23 纪律需「编译门 **+ 真机验证条件**」，当前不可验 ⇒ 挂账，不得以未验证改动填补——**沿用自 10-14，未变**
 5. 🟡 **LLM 供应商为 DeepSeek**（`LLM_PROVIDER=deepseek`，key 取本机 `deepseek-ugsimulator`）；百炼 Token Plan 未续 ⇒ 视觉类（caption）仍走 DashScope 分支、无 key 时降级——**沿用自 10-14，未变**
-6. 🟡 **本机 Docker 无响应（2026-10-19 02:07 `docker ps` 挂起）** ⇒ `review_agent.py --full` 跑不完（测试轴依赖 PG/Redis/Qdrant），当日只完成快速门禁 + 编译门 + 定向用例；**Docker 恢复后先补一次 `--full` 钉基线**
+6. 🟡 **`review_agent.py --full` 在本机跑不完（2026-10-19 两次实测：无输出、低 CPU 停滞 >10min）**：PG/Redis/API 均可达（5432/6379/8010），但 `docker ps` 挂起 ⇒ 疑为某个测试/子进程在等不可用服务；当日只完成快速门禁 + 编译门 57.5s + `pytest -m unit` 112 passed + 定向用例。**不要把 full 写成绿**；Docker CLI 恢复或定位到具体用例后补跑。
 
 ## 权威指针（想知道 X 去哪看）
 
@@ -95,6 +101,7 @@
 - **测试（2026-10-15 实测）**：微信链路 **21 passed**（绑定码 8 + 授权登录建绑定 3 + unionid 对齐 4 + 媒体 6）；`model_text` 不变量 **10 passed**；上传 **34 passed**；`-k "search or rag"` **117 passed**；新增索引时窗用例 **1 passed**；生命周期+同步 **27 passed**（10-14）
 - **视觉守卫（2026-10-16 实测）**：独立百炼 key 判定已覆盖三个视觉入口；离线定向 **28 passed**（5 deselected）。按缺陷说明的 DeepSeek + 仅百炼测试 key 条件补跑指定两份测试：**17 passed / 5 deselected / 0 failed**。`review_agent.py --full` 退出码 **0**，覆盖率 **85.52%**，`failed_tests=[]`、`blocking_sections=[]`；本机缺 HBuilderX CLI，客户端编译轴降级放行。详见 `progress.md` 末尾记录。
 - **本波（2026-10-16 第二波）实测**：后端回归 **483 passed**；`-k chat` **102 passed**；编译门真编译 **84.5s**；`openapi --check` OK（259806 字符）；exports 轴 424→419（**无新增零调用能力导出**）。⚠️ 附件面板客户端 UTS 仅过编译门、**真机未验**。
+- **2026-10-19（本机）**：`pytest -m unit` **112 passed**；`test_requeue_job` **7 passed**；`test_event_gc_orphan` **3 passed**；编译门**真编译 57.5s**；`review_agent` 快速门禁 0；**`--full` 未跑完**（见阻塞 6，勿引用为绿）。
 - **门禁（2026-10-15）**：队友批次的 `review_agent.py` 全绿；本日三轴各拦过一次并**均已按纪律处置**——`env_template`（新增 config 字段 ⇒ 同批补部署模板）、`structure`（`TabSearch` 813>800 ⇒ 显式申请基线）、`lessons`（前次失败 ⇒ 登记教训）；队友环境的客户端编译门**真编译**多次通过（38s / 49s / 56s / 91s，均有日志）。本机 `develop` 接入 B-1 全量验证修复后，22:22 复跑 `review_agent.py --full` 退出码 0、覆盖率 85.34%、失败/阻断项 0；本机缺 HBuilderX CLI，客户端编译轴明确降级放行，未在本机重编译。
 - **出包前端到端（用户视角）**：合并**前**曾 17/17 全绿；合并后重跑**未跑全**（脚本侧两处挂住 + 当次 ⑤"搜索未命中"⇒ **根因已定位并修复** `f94fcf6`：向量写入晚于 `done` 提交的时间窗 + 检索无 DB 兜底）；**结论：新包前需再跑一次完整端到端**
 - **未关闭重大缺陷**：见 §7（RAG 负样本误召回 0.5714 / 推送全 mock / 图搜"无图片查询评测"等）

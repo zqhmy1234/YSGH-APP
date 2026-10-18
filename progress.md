@@ -730,3 +730,12 @@ ShareSheet（须真机验"保存到相册"）。
 - 窄口上传：新建 `sync/infra-fixes-20261019`（自 `origin/develop`），按**代码路径 diff + `git apply --3way`** 摘取 5 条不冲突修复（`a9e7ccf`/`f60e7ff`/`ec15130`/`44544e0`/`1f2bfbf`），已推远端；**develop 未动**。产品决策 8 条、与 B/C 任务域重叠 13 条、门禁/CI 4 条均未上传（分类与理由见本轮汇报）。
 - 摘取时发现既有红：`44544e0` 给 `_stale_candidates` 加 `include_empty_done` 关键字参数后，`test_requeue_job` 的候选桩仍是 3 参 lambda ⇒ **5 条 TypeError**；该缺陷在 feature 分支同样存在（说明 10-16 后未跑过 `--full`）。两支均已修（6 passed），教训已登记。
 - 过程教训两条已入 `docs/lessons.md`：① 跨分支摘取用「按路径 diff + apply」，不要整提交 cherry-pick；管道后不要用 `$LASTEXITCODE` 判错误。② 改被 monkeypatch 钉住的函数签名必须同步改桩；定向绿不等于 `--full` 绿。
+
+## 2026-10-19（续）· 回顾位收口 / 搜索档位 / 数据体检 / 勘误清单
+
+- **回顾位（批次 C）**：「那年今日」10-15 已落（今天卡下、`lookbackRows.length>0` 才渲染，纯本地判定、每年≤3 条）；本轮补**每日回顾的出口**——`MessageDetailSheet` 新增可选 `actionText` + `action` 事件（空串不渲染，不放假 CTA），messages 页对 `daily_review` 给「去看今天的记忆」→ `backToShell('index','')`。复盘仍走 §V 拍板的贴底弹层，不推翻旧决策。编译门**真编译 57.5s** 通过。
+- **搜索性能治理②**：`BGE_DEVICE/BGE_THREADS/BGE_WARMUP_ON_START` settings 化（默认 `""`/`4`/`false` = 改前行为），`embedding.py` 读 settings 并在显式配置时传 device，`main.py` lifespan 按开关起 daemon 线程预热（失败只 WARN）。`embedding.warmup()` 实测 **9.9s**。**拍板**：不做异步二次排序（改客户端协议、在野 APK 无能力）；精排降级用既有 `RERANK_ENABLED/RERANK_LLM_ENABLED`；查询侧双前向合并单独立项。**P95 5560ms 仍未达标**——剩 GPU / 关精排 / 改写降档三条成本决策。
+- **数据体检**：真库 photos 3919 / 无 caption 3625 / 「done 但无 caption」**1694**；`processing` 滞留 **4464** / `failed` 336。`requeue_job` 新增 `--only-empty-done`（只选假 done 照片，dry-run 实测 **1694** 全可重投；避免被 4800 条积压淹没）。**回填未执行**（1694 次视觉调用成本待拍板）。
+- **harness 清账**：`feature_list.json` 给 F1/F4/F5/F8/B1 追写当日 evidence（**未改任何 status**，policy 明写 11 条 in-progress 是如实状态）；产出 `docs/给BC的勘误与同步_20261019.md`（8 条硬勘误 + B-3 三缺项 + B-4/B-5 合并建议 + 真库体检），**未改他们的手册**。
+- **验证**：`pytest -m unit` **112 passed**；`test_requeue_job` **7 passed**；`test_event_gc_orphan` **3 passed**；快速门禁 0。**`--full` 两次跑不完**（无输出、低 CPU 停滞 >10min；PG/Redis/API 可达但 `docker ps` 挂起）——如实登记为阻塞 6，不写成绿。
+- **教训两条**（`lessons.py add`）：① 跨分支摘取用「按路径 diff + apply」，不要整提交 cherry-pick；管道后不要用 `$LASTEXITCODE` 判错误。② 新增 config 字段必须同批补 `backend/.env.example` **与** `deploy/.env.production.template`（env_template 轴比的是后者）。

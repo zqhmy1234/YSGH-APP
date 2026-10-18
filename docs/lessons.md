@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-19 02:32 · commit 5470c8f · ts=1792348363
+- **错误**：新增 BGE_DEVICE/BGE_THREADS/BGE_WARMUP_ON_START 三个 config 字段后只补了 backend/.env.example，env_template 轴判红（真缺口三项）
+- **根因**：该轴比对的是 deploy/.env.production.template（部署契约源），backend/.env.example 只是本地模板；两处都要补，且模板里还有'与 config.py 逐一对齐'的承诺
+- **修复**：deploy/.env.production.template 补三项（生产预热默认 true）；复跑 env_template 绿
+- **相关文件**：deploy/.env.production.template
+- **教训**：新增 config 字段 = 同批补两个模板（backend/.env.example + deploy/.env.production.template）；提交前先跑 env_template 轴，别等钩子拦
+
+---
+
 ### 2026-10-19 01:48 · commit ff8eadd · ts=1792345711
 - **错误**：44544e0 给 requeue_job._stale_candidates 加了 include_empty_done 关键字参数，但 test_requeue_job 的候选桩仍写成 3 参 lambda，5 条用例全部 TypeError；快速门禁不含全量测试，缺陷一直留到 10-19 摘取提交时才暴露
 - **根因**：改函数签名时只跑了定向用例（或没跑），而该桩是用 lambda 钉住函数，关键字参数直接 TypeError；快速门禁的 lint/syntax 层看不到行为断言，只有 --full 的 pytest 才抓得到

@@ -217,6 +217,15 @@ class Settings(BaseSettings):
     # dev/CI 联调可显式 MOCK_EXTERNAL_AI=true 覆盖；测试套件由 conftest autouse 强制 true。
     mock_external_ai: bool = False
 
+    # 2026-10-19（搜索性能治理② · docs/性能验收_搜索_20261016.md）：BGE-M3 运行档位 settings 化。
+    # 背景：encode 段 P95 1140ms（off 模式第三大头），首请求懒加载冷启动实测 12~14s；
+    # 满核线程曾在 16GB 机器上 OOM，故线程数默认 4、不做"自动开满"。
+    # device 留空 = sentence-transformers 自动选（有 CUDA 用 GPU，否则 CPU）。
+    bge_device: str = ""
+    bge_threads: int = 4
+    # 启动期后台预热（默认关：开发机不必每次吃 1.2GB 常驻；部署/压测机建议开）。
+    bge_warmup_on_start: bool = False
+
     # 双层 Rerank 第一层：bge-reranker 本地模型路径（WP-F；目录不存在则跳过重排）
     # 审查修复(P1-10)：存纯文件名（相对 backend/models），加载侧用 __file__ 解析绝对路径，
     # 消除对 CWD 的依赖（原 "backend/models/..." 仅当 CWD=仓库根才有效）。

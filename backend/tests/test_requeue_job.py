@@ -87,7 +87,7 @@ def _pin_candidates(monkeypatch, content):
     """
     monkeypatch.setattr(
         "app.workers.requeue_job._stale_candidates",
-        lambda db_, cutoff, limit, include_empty_done=False: [db_.get(Content, str(content.id))],
+        lambda db_, cutoff, limit, include_empty_done=False, only_empty_done=False: [db_.get(Content, str(content.id))],
     )
 
 
@@ -230,3 +230,39 @@ def test_dry_run_changes_nothing(db_user, monkeypatch):
     db.refresh(c)
     assert "requeue_count" not in (c.extra or {})
     assert c.status == "failed"
+
+
+def test_only_empty_done_selects_done_photo_without_text(db_user, monkeypatch):
+    """only_empty_done：只选「done 但无 caption 的照片」，不夹带 failed/processing 历史积压
+
+    真库口径（2026-10-19）：4464 processing + 336 failed 会淹没回填目标 ⇒ 专项开关必须
+    把范围缩到「done + photo + text 为空」，且显式排除有 caption 的 done 照片。
+    """
+    db, user = db_user
+    photo = _content(db, user.id, ctype="photo", status="done")
+    failed = _content(
+        db, user.id, ctype="text", status="failed", extra={"error": {"retryable": True}}
+    )
+    captioned = _content(db, user.id, ctype="photo", status="done")
+    captioned.text = "有 caption 的照片"
+    db.commit()
+
+    # 三条都拨到 2000 年：确保 limit=1 时被选中的是「最旧且符合 only_empty_done」的那条
+    for c in (photo, failed, captioned):
+        db.execute(
+            sa_update(Content)
+            .where(Content.id == c.id)
+            .values(updated_at=datetime(2000, 1, 1, tzinfo=UTC))
+        )
+    db.commit()
+    calls = _collector(monkeypatch)
+
+    report = run_requeue(limit=1, only_empty_done=True)
+
+    assert report["scanned"] == 1
+    assert report["requeued"] == 1
+    assert calls == [(process_content, str(photo.id))]
+    db.refresh(failed)
+    assert "requeue_count" not in (failed.extra or {})
+    db.refresh(captioned)
+    assert "requeue_count" not in (captioned.extra or {})

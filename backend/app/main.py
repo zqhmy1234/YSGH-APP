@@ -49,6 +49,25 @@ from app.services.external import agent as agent_service  # backend→agent 探�
 logger = logging.getLogger("yishu.main")
 
 
+def _start_bge_warmup() -> None:
+    """后台预热 BGE-M3（2026-10-19 搜索性能治理②）。
+
+    为什么用线程而不是在 lifespan 里同步跑：首请求懒加载冷启动实测 12~14s，
+    同步会把 API 就绪时间整体推后；预热失败也不该影响启动（检索退回懒加载即可）。
+    """
+    import threading
+
+    from app.services import embedding
+
+    def _run() -> None:
+        try:
+            embedding.warmup()  # 内部已打「预热完成 Xs」日志
+        except Exception as exc:  # noqa: BLE001 —— 预热是增强，失败只告警
+            logger.warning("BGE-M3 预热失败（不影响服务，检索退回懒加载）：%s", exc)
+
+    threading.Thread(target=_run, name="bge-warmup", daemon=True).start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动：Sentry 初始化（决策 #12，生产环境）
@@ -70,6 +89,9 @@ async def lifespan(app: FastAPI):
     # 说明：本行由 config 层断言取代原先的 `diagnostics.log_agent_channel_config()`（2026-10-14），
     # 避免两处各打一份指纹；该函数仍保留在 `app/core/diagnostics.py`（未删除）。
     assert_agent_service_token_config()
+    # 2026-10-19（搜索性能治理②）：可选后台预热（BGE_WARMUP_ON_START=true 时生效）。
+    if settings.bge_warmup_on_start:
+        _start_bge_warmup()
     yield
 
 

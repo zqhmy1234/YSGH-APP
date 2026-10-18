@@ -47,7 +47,11 @@ REQUEUE_MAX_ATTEMPTS = 3
 
 
 def _stale_candidates(
-    db: Session, cutoff: datetime, limit: int, include_empty_done: bool = False
+    db: Session,
+    cutoff: datetime,
+    limit: int,
+    include_empty_done: bool = False,
+    only_empty_done: bool = False,
 ) -> list[Content]:
     """选中超龄 failed/processing 内容（updated_at 升序，最旧优先）。
 
@@ -57,19 +61,25 @@ def _stale_candidates(
     本 job 原来看不见 ⇒ 它们对语义检索与跨模态聚类**永久隐身**（同 §7.20「done 却静默不索引」一族 ✓）。
     口径：**仅照片** + 同样要求**超龄**（防与正在跑的管线抢同一条）+ 需显式开启（默认关闭，
     保证既有调度语义与 CI 行为不变 ✓）。
+
+    2026-10-19（caption 回填专项）：`only_empty_done=True` 时**只**选这类「假 done」照片。
+     原因：真库当前还有 **4464 条 processing 滞留 + 336 条 failed**，`include-empty-done`
+    会把它们一起选中 ⇒ 想单独回填 caption 时会被这些历史积压淹没（dry-run 实测 limit=5000
+    全部被占满、1694 张目标里只见到一眼）。拆开开关后回填范围可精确计数、成本可预估。
     """
     from sqlalchemy import and_, or_
 
-    status_cond = Content.status.in_(("failed", "processing"))
-    if include_empty_done:
-        status_cond = or_(
-            status_cond,
-            and_(
-                Content.status == "done",
-                Content.content_type == "photo",
-                or_(Content.text.is_(None), Content.text == ""),
-            ),
-        )
+    empty_done = and_(
+        Content.status == "done",
+        Content.content_type == "photo",
+        or_(Content.text.is_(None), Content.text == ""),
+    )
+    if only_empty_done:
+        status_cond = empty_done
+    else:
+        status_cond = Content.status.in_(("failed", "processing"))
+        if include_empty_done:
+            status_cond = or_(status_cond, empty_done)
     return list(
         db.scalars(
             select(Content)
@@ -134,6 +144,7 @@ def run_requeue(
     limit: int = 100,
     dry_run: bool = False,
     include_empty_done: bool = False,
+    only_empty_done: bool = False,
 ) -> dict:
     """执行一轮失败/卡死重扫，返回 {scanned, requeued, finalized, skipped_final, failed}
 
@@ -145,12 +156,16 @@ def run_requeue(
     - include_empty_done: 额外纳入「done 但无 caption 的照片」（见 `_stale_candidates` ✓）。
       注意这些内容 `status='done'` ⇒ 不会被 `skipped_final` 分支拦住（那里要求 status=failed ✓），
       会正常走重投入队 ⇒ 管线重跑 caption（视觉守卫修好后可成功 ✓）。
+    - only_empty_done: **只**选「done 但无 caption 的照片」（caption 回填专项）。优先级高于
+      include_empty_done；用于把回填与 failed/processing 历史积压分开计数、分开控制成本。
     """
     db: Session = SessionLocal()
     cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
     requeued = finalized = skipped_final = failed = 0
     try:
-        candidates = _stale_candidates(db, cutoff, limit, include_empty_done=include_empty_done)
+        candidates = _stale_candidates(
+            db, cutoff, limit, include_empty_done=include_empty_done, only_empty_done=only_empty_done
+        )
         for content in candidates:
             try:
                 error = (content.extra or {}).get("error") or {}
@@ -204,6 +219,11 @@ def main() -> None:
         action="store_true",
         help="额外纳入「done 但无 caption 的照片」（caption 断供期间的历史遗留；默认关闭）",
     )
+    parser.add_argument(
+        "--only-empty-done",
+        action="store_true",
+        help="只选「done 但无 caption 的照片」（caption 回填专项；优先于 --include-empty-done）",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     report = run_requeue(
@@ -211,6 +231,7 @@ def main() -> None:
         limit=args.limit,
         dry_run=args.dry_run,
         include_empty_done=args.include_empty_done,
+        only_empty_done=args.only_empty_done,
     )
     logger.info("requeue report: %s", report)
     print(report)

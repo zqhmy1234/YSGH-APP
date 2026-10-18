@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from functools import lru_cache
 from pathlib import Path
 
-# 限制线程数（必须在 torch import 前设置）
-os.environ.setdefault("OMP_NUM_THREADS", "4")
-os.environ.setdefault("TORCH_NUM_THREADS", "4")
+from app.core.config import get_settings
+
+# 限制线程数（必须在 torch import 前设置）；2026-10-19 搜索性能治理②：settings 化。
+# 默认仍为 4——满核曾在 16GB 机器上 OOM（本文件头注），调大是资源决策、须配合内存复测。
+_settings = get_settings()
+_BGE_THREADS = max(1, int(_settings.bge_threads))
+os.environ.setdefault("OMP_NUM_THREADS", str(_BGE_THREADS))
+os.environ.setdefault("TORCH_NUM_THREADS", str(_BGE_THREADS))
 # 离线加载（模型已本地缓存）：sentence_transformers 加载前会 HEAD huggingface.co 校验，
 # 国内网络 connect 超时 → 每次测试/启动挂 2 分钟+（实测 10s×5 重试退避）。
 # 缓存完整时离线加载零差异；CI/新机器需下载时显式设 HF_HUB_OFFLINE=0（见 .github/workflows/ci.yml）。
@@ -34,7 +40,7 @@ MODEL_REPO = "BAAI/bge-m3"
 _LOCAL_DIR = Path(__file__).resolve().parents[2] / "models" / "bge-m3"
 MODEL_NAME = str(_LOCAL_DIR) if (_LOCAL_DIR / "config.json").is_file() else MODEL_REPO
 
-torch.set_num_threads(4)
+torch.set_num_threads(_BGE_THREADS)
 
 
 @lru_cache(maxsize=1)
@@ -44,9 +50,34 @@ def get_model() -> SentenceTransformer:
     模型来源二选一（按`MODEL_NAME` 自动判定，无需改配置）：
       · 本地目录 `backend/models/bge-m3/config.json` 存在 → 用它（离线，推荐）
       · 否则回退 HF repo id `BAAI/bge-m3`（需HF_HUB_OFFLINE=0 且网络可达）
+
+    设备：`BGE_DEVICE` 留空 = sentence-transformers 自动选（有 CUDA 用 GPU）；
+    显式 `cpu` / `cuda` 可强制档位（2026-10-19 搜索性能治理②）。
     """
-    logger.info("加载 BGE-M3 模型: %s", MODEL_NAME)
-    return SentenceTransformer(MODEL_NAME, model_kwargs={"torch_dtype": torch.float16})
+    logger.info(
+        "加载 BGE-M3 模型: %s（device=%s, threads=%d）",
+        MODEL_NAME,
+        _settings.bge_device or "auto",
+        _BGE_THREADS,
+    )
+    kwargs: dict = {"model_kwargs": {"torch_dtype": torch.float16}}
+    if _settings.bge_device:
+        kwargs["device"] = _settings.bge_device
+    return SentenceTransformer(MODEL_NAME, **kwargs)
+
+
+def warmup() -> float:
+    """预热 BGE-M3（加载 + 一次编码），返回耗时秒（2026-10-19 搜索性能治理②）。
+
+    首请求懒加载冷启动实测 12~14s（`docs/性能验收_搜索_20261016.md` §预热），
+    由 `main.py` 在 `BGE_WARMUP_ON_START=true` 时用后台线程调用，不阻塞启动。
+    失败不抛给服务：检索会退回懒加载（行为与未预热完全一致）。
+    """
+    start = time.perf_counter()
+    encode_dense(["预热"])
+    took = time.perf_counter() - start
+    logger.info("BGE-M3 预热完成: %.1fs", took)
+    return took
 
 
 def encode_dense(texts: list[str], normalize: bool = True) -> list[list[float]]:
