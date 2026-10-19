@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # 生产默认值强制替换（见 _apply_production_safety）。
     refresh_token_hmac_key: str = "change-me-refresh-hmac-key-0000000000"
 
+    # B-3: independent, base64-encoded 32-byte keys. No fallback to JWT or
+    # refresh keys; rotation requires re-encrypting/re-indexing stored topics.
+    profile_field_encryption_key: str = ""
+    profile_field_hmac_key: str = ""
+
     # 外部 API Key
     dashscope_api_key: str = ""
     # 百炼业务空间 ID（sk-ws- 工作空间级 key 必须带 X-DashScope-WorkSpace，SDK 无环境变量兜底）
@@ -332,6 +337,17 @@ def _apply_production_safety(settings: Settings) -> Settings:
             "生产环境必须配置 REFRESH_TOKEN_HMAC_KEY（当前为默认值）——"
             "请设置与 JWT_SECRET 独立的强随机密钥（HMAC-SHA256 密钥隔离）"
         )
+    # Validate at startup in production, even if no profile endpoint is called.
+    # Import locally to keep the configuration module free of crypto cycles.
+    from base64 import b64decode
+    from binascii import Error as Base64Error
+    try:
+        enc_key = b64decode(settings.profile_field_encryption_key, validate=True)
+        hash_key = b64decode(settings.profile_field_hmac_key, validate=True)
+    except (ValueError, Base64Error) as exc:
+        raise RuntimeError("生产环境必须配置两把独立的 PROFILE_FIELD_* 密钥") from exc
+    if len(enc_key) != 32 or len(hash_key) != 32 or enc_key == hash_key:
+        raise RuntimeError("生产环境 PROFILE_FIELD_* 密钥须为两把不同的 32 字节随机值")
     if settings.mock_external_ai:
         logging.getLogger("yishu.config").warning(
             "生产环境强制关闭 mock_external_ai（防 mock 验证码/假凭证直返）——"

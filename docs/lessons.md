@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-19 10:56 · commit dd89678 · ts=1792378591
+- **错误**：pre-commit hook 在已暂存 B-3 提交时因找不到 Ruff 与后端依赖而阻断
+- **根因**：hook 固定执行 PATH 上的 python；发起 git commit 的 PowerShell 未把项目 .venv/Scripts 放在 PATH 前面，故落到系统 Python
+- **修复**：提交命令的进程 PATH 临时前置项目 .venv/Scripts，保留 hook 正常运行并核对审核报告
+- **相关文件**：.githooks/pre-commit
+- **教训**：手工门禁用虚拟环境通过后，提交前仍要确认 Git hook 解析到同一解释器；不要用 --no-verify 绕过环境错误。
+
+---
+
+### 2026-10-19 10:42 · commit dd89678 · ts=1792377751
+- **错误**：B-3 迁移首次执行因本地 PROFILE_FIELD 密钥为空被安全校验拒绝
+- **根因**：PowerShell Add-Content 的数组表达式把 KEY= 与随机值拆成两行；迁移前未核对配置解析后的长度
+- **修复**：修正忽略的 backend/.env 行结构；只输出键名和长度验证两把 key 均为有效 32 字节 base64；迁移随后事务完成
+- **相关文件**：backend/.env
+- **教训**：写入本地密钥后先用不回显值的长度与格式检查，再运行数据迁移；失败时先确认 Alembic 事务未提交。
+
+---
+
 ### 2026-10-16 14:54 · commit d1da8c6 · ts=1792133693
 - **错误**：本地门禁 client_compile 轴恒失败：「项目 D:\projects\YSGH-APP\client 不是 uni-app 项目，仅编译模式暂不支持」→ 判「编译结果无法判定」→ 阻断 commit（并连带触发本 lessons 门禁）
 - **根因**：scripts/client_compile_gate.py:161 用**项目路径**调 cli launch --project <path> --compile true；本机 HBuilderX 5.24 的 CLI 只按**项目名**解析项目（按路径退化成目录类型嗅探 → 误判非 uni-app 项目）。CI/无 cli.exe 的机器会走「缺工具 ⇒ 降级放行」，所以只有装了 HBuilderX 的机器恒红

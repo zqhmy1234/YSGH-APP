@@ -142,6 +142,15 @@
    "gate": "空库 upgrade/check、漂移 0 阻断、旧库数据保留、项目 pytest 与全量审核门禁"
   },
   {
+   "id": "BACKEND-B3-PROFILE-CRYPTO",
+   "name": "后端 B-3 敏感话题加密与盲索引",
+   "description": "profile_sensitive.topic AES-256-GCM 密文、独立 HMAC-SHA256 盲索引、旧行回填与明文列分期退出",
+   "dependencies": ["BACKEND-B1-SCHEMA"],
+   "status": "in-progress",
+   "evidence": "2026-10-19：第一阶段已实现加密读写、回响匹配、API 明文契约与导出隐去 hash；本机开发库 21 行迁移至 b3a1c2d3e4f5，密文/hash 缺失 0，alembic check 无漂移；相关 42 项定向测试通过，review_agent.py --full 最终退出码 0、覆盖率 85.53%、failed_tests/blocking_sections 均空。旧 topic 列依手册保留一个发布周期供回滚，故数据库明文彻底移除与服务器验收尚未完成。细节见 docs/B2-B5_后端执行顺序_20261019.md 与 STATE.md。",
+   "gate": "生产副本演练与密钥备份；旧明文列独立删除迁移；API/导出/回响回归；全量门禁"
+  },
+  {
    "id": "OPS-SECRETS",
    "name": "密钥管理链路（Infisical，横切 OPS）",
    "description": "所有外部 API Key 与凭证集中存 Infisical（组织 Yishuguanghua / 项目 yishu-backend / 环境 dev+staging+prod）；命令行链路：winget 装 CLI → infisical login（浏览器授权）→ infisical init → secrets 列出/取单条/run 注入；流程固化于 skills/infisical-secrets/SKILL.md",
@@ -154,7 +163,7 @@
  "policy": {
   "scope": "本文件只覆盖 **MVP 用户故事能力清单**（F/M 系列）。维护类工作（结构重构 / 门禁 / 出包 / harness）由 STATE.md 与 docs/决策台账.md 承载。",
   "one_in_progress": "约定：同时只允许 1 条 in-progress —— 由门户检查 harness_state 提示（WARN，不阻断）。",
-  "one_in_progress_note": "2026-10-14 如实说明：本文件现存 10 条 in-progress，**明知不满足**上述约定，且**不打算用改状态来「满足」它**——MVP 阶段 F1~F8 / P2-ECHO / OPS-SECRETS 是**并行推进**的（每条 evidence 尾部都写明余项：L2 待真实数据、情绪 S2 开心漏报 0.496 待校准、RAG 负样本误召回 0.5714 未达标、微信实网未验、密钥链接待申请项…），把它们改成 done/blocked 属**编造状态**（本项目最贵的一类）。「同时只做一条」的真实含义是**单个会话内的执行纪律**，由 STATE.md 的「正在做什么」承载；harness_state 的 WARN 应按此理解，**不得以改状态消除**。",
+  "one_in_progress_note": "2026-10-19 如实说明：本文件现存 12 条 in-progress，**明知不满足**上述约定，且**不打算用改状态来「满足」它**——MVP 阶段 F1~F8 / P2-ECHO / OPS-SECRETS 是**并行推进**的（每条 evidence 尾部都写明余项：L2 待真实数据、情绪 S2 开心漏报 0.496 待校准、RAG 负样本误召回 0.5714 未达标、微信实网未验、密钥链接待申请项…），把它们改成 done/blocked 属**编造状态**（本项目最贵的一类）。「同时只做一条」的真实含义是**单个会话内的执行纪律**，由 STATE.md 的「正在做什么」承载；harness_state 的 WARN 应按此理解，**不得以改状态消除**。",
   "evidence": "每条 evidence 只保留**最近一次**结论 + 指针；历史流水写 progress.md（追加式）。",
   "status_enum": [
    "not-started",
@@ -163,6 +172,6 @@
    "done",
    "deprecated"
   ],
-  "updated_at": "2026-10-16"
+  "updated_at": "2026-10-19"
  }
 }

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -71,12 +71,30 @@ class ProfileSensitive(Base):
     """
 
     __tablename__ = "profile_sensitive"
-    __table_args__ = (UniqueConstraint("user_id", "topic", name="profile_sensitive_user_id_topic_key"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "topic", name="profile_sensitive_user_id_topic_key"),
+        UniqueConstraint("user_id", "topic_hash", name="profile_sensitive_user_id_topic_hash_key"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
-    topic: Mapped[str] = mapped_column(String)
-    topic_hash: Mapped[str | None] = mapped_column(String, nullable=True)  # HMAC 盲索引预留
+    # Retained for one rollout as rollback data. Never written by new code;
+    # remove with a separate migration after the encrypted path is verified.
+    legacy_topic: Mapped[str | None] = mapped_column("topic", String, nullable=True)
+    topic_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    topic_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    @property
+    def topic(self) -> str:
+        from app.services.profile_sensitive_crypto import decrypt_topic
+
+        return decrypt_topic(self.topic_enc)
+
+    @topic.setter
+    def topic(self, value: str) -> None:
+        from app.services.profile_sensitive_crypto import encrypt_topic
+
+        self.topic_enc, self.topic_hash = encrypt_topic(value)
     disposition: Mapped[str] = mapped_column(
         String, default="forbid", server_default=text("'forbid'")
     )  # allow/mention/caution/review/forbid

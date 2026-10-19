@@ -85,10 +85,10 @@ def upsert_profile_sensitive(
     evidence: list | None = None,
     locked: bool = False,
 ) -> ProfileSensitive:
-    """画像敏感增/改（B1-6 对话式）：(user_id, topic) 存在则更新，否则插入。
+    """画像敏感增/改：(user_id, topic_hash) 原子查重；数据库不写明文。
 
     R2#13 竞态修复：原 SELECT 查重 → INSERT 有并发窗口（同 (user_id, topic) 双插
-    败者 IntegrityError 500）——唯一约束 profile_sensitive_user_id_topic_key 兜底，
+    败者 IntegrityError 500）——唯一约束 profile_sensitive_user_id_topic_hash_key 兜底，
     但未捕获异常。现改 ON CONFLICT DO UPDATE 原子 upsert（单语句，无竞态窗口）。
 
     locked=True 为用户显式标记（永不过期语义强化）；返回值即最新行。
@@ -100,15 +100,19 @@ def upsert_profile_sensitive(
         raise ValueError("topic 不能为空")
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+    from app.services.profile_sensitive_crypto import encrypt_topic
+
+    topic_enc, topic_hash = encrypt_topic(topic)
     evidence_list = list(evidence) if evidence else []
     stmt = (
         pg_insert(ProfileSensitive)
         .values(
-            user_id=user_id, topic=topic, disposition=disposition,
+            user_id=user_id, topic_enc=topic_enc, topic_hash=topic_hash,
+            disposition=disposition,
             evidence=evidence_list, locked=locked,
         )
         .on_conflict_do_update(
-            index_elements=[ProfileSensitive.user_id, ProfileSensitive.topic],
+            index_elements=[ProfileSensitive.user_id, ProfileSensitive.topic_hash],
             set_={
                 "disposition": disposition,
                 "evidence": evidence_list,
@@ -124,16 +128,19 @@ def upsert_profile_sensitive(
     db.expire_all()
     return db.execute(
         select(ProfileSensitive).where(
-            ProfileSensitive.user_id == user_id, ProfileSensitive.topic == topic
+            ProfileSensitive.user_id == user_id, ProfileSensitive.topic_hash == topic_hash
         )
     ).scalar_one()
 
 
 def delete_profile_sensitive(db: Session, user_id: str, topic: str) -> bool:
     """画像敏感删（B1-6）：删除该用户该话题；不存在返回 False"""
+    from app.services.profile_sensitive_crypto import topic_digest
+
+    digest = topic_digest(topic)
     row = db.execute(
         select(ProfileSensitive).where(
-            ProfileSensitive.user_id == user_id, ProfileSensitive.topic == topic
+            ProfileSensitive.user_id == user_id, ProfileSensitive.topic_hash == digest
         )
     ).scalar_one_or_none()
     if row is None:

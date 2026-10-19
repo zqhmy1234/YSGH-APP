@@ -20,7 +20,9 @@
 """
 from __future__ import annotations
 
+import base64
 import logging
+import os
 import uuid
 
 import pytest
@@ -28,6 +30,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text as sa_text
 
 logger = logging.getLogger("yishu.tests.conftest")
+
+
+@pytest.fixture()
+def profile_crypto_keys(monkeypatch):
+    """Fresh runtime-only keys; no key value is stored in test source or reports."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "profile_field_encryption_key", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setattr(settings, "profile_field_hmac_key", base64.b64encode(os.urandom(32)).decode())
 
 # ---------------------------------------------------------------------------
 # client / 认证

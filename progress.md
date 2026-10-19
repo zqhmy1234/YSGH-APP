@@ -712,3 +712,13 @@ ShareSheet（须真机验"保存到相册"）。
 - 首轮全量门禁测试轴因本机默认 Pytest 临时目录权限与 HF 缓存位置报错；改用仓库内 `TEMP/TMP` 和已预热的 `HF_HOME` 后，失败的 5 个用例定向复验 **5 passed**，全量测试轴 `failed_tests=[]`、`blocking_sections=[]`。环境教训已登记 `docs/lessons.md`。
 - 最终 `python scripts/review_agent.py --full` **退出码 0**：语法、lint、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全、聚合等价、pytest/API 冒烟/research 均通过；覆盖率 **85.52%**。本机缺 HBuilderX CLI，客户端编译轴明确降级放行；本次没有改客户端代码。`pwsh -File ./init.ps1` 通过。
 - 按部长缺陷说明的「自验」条件补验：测试进程配置 `LLM_PROVIDER=deepseek`、仅设置非真实的百炼测试 key、DeepSeek key 为空、`MOCK_EXTERNAL_AI=false`，先断言配置实际生效，再在 `backend/` 跑指定的 `test_image_search.py` 与 `test_image_tower.py`。结果 **17 passed / 5 deselected / 0 failed**；因本机 Pytest 默认临时目录无权限，命令附加 `--basetemp` 与 `-p no:cacheprovider`，不改变测试选择。此项为离线测试，未验证真实百炼账号调用。
+
+## 2026-10-19 · 后端 B-2～B-5 新任务书与 B-3 第一阶段
+
+- 保留用户已有 `.gitignore` 修改和未跟踪的新版作战手册，`git pull --ff-only origin develop` 从 `d1da8c6` 快进到 `dd89678`；`init.ps1` 通过。执行顺序另写 `docs/B2-B5_后端执行顺序_20261019.md`。
+- B-2 本地 `requeue_job --dry-run` 成功（扫描 100 条候选）、`cleanup_job --dry-run` 成功（本次清理 0，23 条未到期）。这不是服务器 cron 验收，仍须 4 项业务 job + 1 项备份的 `crontab -l`、日志和重投实证。
+- B-3 限定 `profile_sensitive.topic`，本机开发库 21 行、归一化重复 0、`evidence` 非空 0。实现随机 AES-256-GCM 加密、独立 HMAC-SHA256 盲索引、生产缺钥匙 fail-fast、ORM/API/回响/导出读写收口，并增补可 dry-run/续跑回填工具与 Alembic 增量迁移。两把随机内部密钥仅写入本机 Git 忽略的 `backend/.env`，未回显值或提交。第一次写入被 PowerShell 表达式拆行，迁移在校验前拒绝、版本仍为旧 head；修正后成功迁移至 `b3a1c2d3e4f5`，21 行密文/hash 缺失均 0，`alembic check` 无漂移。旧明文列依手册保留一轮，**B-3 仍未最终完成**。
+- 隔离 PostgreSQL schema 的旧行迁移/服务回归通过；相关定向 **42 passed**，Ruff/语法检查通过。首次全量门禁因旧 schema 与系统临时目录 ACL 报错；设置仓库内 TEMP/TMP、已有 HF_HOME 且升级开发库后，第二轮全量测试轴通过，覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`；最终门禁只被 lessons 纪律拦下，已按脚本登记本次 PowerShell 密钥拆行教训。最终复跑结果见后续追加记录。
+- B-4 代码复核：`moderate.py` 主链已接 `qwen_response_check`，`guard.ManagedDetector` 实为事件软话题补漏；其去留登记台账 §5.12 待负责人定。B-5 的 D/F/G 目录目前仅有样例，不能出真实质量结论。
+- 登记 lessons 后最终复跑 `review_agent.py --full` **退出码 0**：语法 449 文件、Ruff、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全审计、聚合等价、全量测试/API 冒烟/research 均通过；覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`。本机无 HBuilderX CLI，客户端编译轴明确降级放行（本次未改 `client/`）。复跑 `init.ps1` 通过。
+- 首次本地 `git commit` 被 pre-commit **正确拦截为环境错误**：hook 固定调用 PATH 上的 `python`，当次落到系统 Python 而缺 Ruff/后端依赖。按纪律登记 lessons；提交进程改为把项目 `.venv/Scripts` 前置 PATH 后重试，不使用 `--no-verify`。
