@@ -226,6 +226,11 @@ class Settings(BaseSettings):
     # 启动期后台预热（默认关：开发机不必每次吃 1.2GB 常驻；部署/压测机建议开）。
     bge_warmup_on_start: bool = False
 
+    # 2026-10-19（caption 回填）：照片 AI 描述（第二次 VL 调用）开关。
+    # 它只写 ai_description（展示用），**不参与检索向量**；回填/弱网/省钱时可关掉，
+    # 少一次 Qwen3-VL 往返（实测该调用在限流下会 3×30s 超时，拖慢整条管线）。
+    photo_description_enabled: bool = True
+
     # 双层 Rerank 第一层：bge-reranker 本地模型路径（WP-F；目录不存在则跳过重排）
     # 审查修复(P1-10)：存纯文件名（相对 backend/models），加载侧用 __file__ 解析绝对路径，
     # 消除对 CWD 的依赖（原 "backend/models/..." 仅当 CWD=仓库根才有效）。

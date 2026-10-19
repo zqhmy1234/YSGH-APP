@@ -100,7 +100,8 @@ def _process_photo(db: Session, content: Content) -> None:
         # ai_description。在此内联执行（本地临时图片文件仅存活于本处理器窗口）。
         # 失败语义同 caption：仅 log，不阻断照片主流程（打标是增强项，主内容仍 done）；
         # LLM 未配置走「配置缺失」显式路径（AiTaggingError.LLM_NOT_CONFIGURED，log 可查）。
-        if image_path is not None:
+        # 2026-10-19：由 PHOTO_DESCRIPTION_ENABLED 控制（回填/限流时关掉，省一次 VL 往返）。
+        if image_path is not None and settings.photo_description_enabled:
             try:
                 from app.services.ai_tagging import generate_photo_description
 

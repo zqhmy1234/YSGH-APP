@@ -145,6 +145,7 @@ def run_requeue(
     dry_run: bool = False,
     include_empty_done: bool = False,
     only_empty_done: bool = False,
+    require_file: bool = False,
 ) -> dict:
     """执行一轮失败/卡死重扫，返回 {scanned, requeued, finalized, skipped_final, failed}
 
@@ -158,6 +159,9 @@ def run_requeue(
       会正常走重投入队 ⇒ 管线重跑 caption（视觉守卫修好后可成功 ✓）。
     - only_empty_done: **只**选「done 但无 caption 的照片」（caption 回填专项）。优先级高于
       include_empty_done；用于把回填与 failed/processing 历史积压分开计数、分开控制成本。
+    - require_file: 只保留**对象存储里真有文件**的行（caption 回填前置校验）。真库 1694 条
+      「假 done」里 827 条根本没有 cos_key、753 条有 key 但文件不在盘上 ⇒ 不校验就重投，
+      会把大量注定失败的行丢进管线（浪费 worker 时间，也会把 retryable 状态搅乱）。
     """
     db: Session = SessionLocal()
     cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
@@ -166,6 +170,17 @@ def run_requeue(
         candidates = _stale_candidates(
             db, cutoff, limit, include_empty_done=include_empty_done, only_empty_done=only_empty_done
         )
+        if require_file:
+            from app.services.external.storage import get_storage_backend
+
+            storage = get_storage_backend()
+            before = len(candidates)
+            candidates = [
+                c
+                for c in candidates
+                if (c.cos_key or "").strip() and storage.object_exists(c.cos_key)
+            ]
+            logger.info("require_file: 候选 %d → %d（无 cos_key / 文件不在盘上的行不重投）", before, len(candidates))
         for content in candidates:
             try:
                 error = (content.extra or {}).get("error") or {}
@@ -224,6 +239,11 @@ def main() -> None:
         action="store_true",
         help="只选「done 但无 caption 的照片」（caption 回填专项；优先于 --include-empty-done）",
     )
+    parser.add_argument(
+        "--require-file",
+        action="store_true",
+        help="只保留对象存储里真有文件的行（回填前置校验；无 cos_key / 文件不在盘上则跳过）",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     report = run_requeue(
@@ -232,6 +252,7 @@ def main() -> None:
         dry_run=args.dry_run,
         include_empty_done=args.include_empty_done,
         only_empty_done=args.only_empty_done,
+        require_file=args.require_file,
     )
     logger.info("requeue report: %s", report)
     print(report)

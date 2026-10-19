@@ -739,3 +739,11 @@ ShareSheet（须真机验"保存到相册"）。
 - **harness 清账**：`feature_list.json` 给 F1/F4/F5/F8/B1 追写当日 evidence（**未改任何 status**，policy 明写 11 条 in-progress 是如实状态）；产出 `docs/给BC的勘误与同步_20261019.md`（8 条硬勘误 + B-3 三缺项 + B-4/B-5 合并建议 + 真库体检），**未改他们的手册**。
 - **验证**：`pytest -m unit` **112 passed**；`test_requeue_job` **7 passed**；`test_event_gc_orphan` **3 passed**；快速门禁 0。**`--full` 两次跑不完**（无输出、低 CPU 停滞 >10min；PG/Redis/API 可达但 `docker ps` 挂起）——如实登记为阻塞 6，不写成绿。
 - **教训两条**（`lessons.py add`）：① 跨分支摘取用「按路径 diff + apply」，不要整提交 cherry-pick；管道后不要用 `$LASTEXITCODE` 判错误。② 新增 config 字段必须同批补 `backend/.env.example` **与** `deploy/.env.production.template`（env_template 轴比的是后者）。
+
+## 2026-10-19（第三段）· PR #4 + caption 回填 + 搜索 P95 调研 + 内部阻塞盘点
+
+- **PR**：用 GitHub API（本机凭据）把 `sync/infra-fixes-20261019` 开成 **PR #4**（base `develop`）—— https://github.com/zqhmy1234/YSGH-APP/pull/4 。develop 仍未合入。
+- **caption 回填**：拆开看 1694 条「done 但无 caption」——**827 条无 cos_key**、**753 条有 key 但对象存储无文件**、**114 条真有文件**。新增 `requeue_job --require-file`（只保留有对象的行）与 `--only-empty-done`；新增 `backend/scripts/backfill_captions.py`（进程内逐条 `process_content`，避免经 RQ 触发上百个用户聚合）。为提速/省钱新增 `PHOTO_DESCRIPTION_ENABLED`（默认 true；回填时 false，关掉第二次 VL 调用——它只写 `ai_description`，不参与检索）。开局已处理 20+，余 92 在跑（单进程；空闲内存仅 0.4GB，并行会 OOM）。
+- **搜索 P95 调研**：`docs/搜索P95_业界做法调研_20261019.md`。要点：Qdrant Query API 的 prefetch+RRF 把融合下推到检索库（一次往返）；FastEmbed 用 ONNX/量化/并行做 CPU 编码；Onyx 把 hybrid 实现在索引后端抽象里；RAGFlow 的 issue 实证「多路召回 + rerank」就是慢。对应我们：瓶颈是 LLM 改写 + LLM 精排 + CPU 双前向，推荐 P0 投机式并行召回/精排策略化、P1 ONNX/int8 + 服务端 RRF，组合预期 2.3–2.6s（需 R-9 复测）。
+- **内部阻塞**：`docs/内部阻塞项_20261019.md` 记 B1–B7。最硬的两条：**Redis 6379 假活**（端口通、PING 超时；监听者 `com.docker.backend`）⇒ RQ 与 `--full` 都不可信；**空闲内存 0.4GB/15.7GB** ⇒ 重活随时换页/OOM。另：agent 8300 未起、4464 processing、19120 每日复盘候选用户、`--full` 从未真正跑过。
+- **验证**：`test_requeue_job` 8 passed（含 require_file）；`pytest -m unit` 112 passed；快速门禁待提交前复跑。回填为真实外部调用，进度以 DB/日志为准。

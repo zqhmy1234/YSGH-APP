@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-19 11:20 · commit 8da2546 · ts=1792380012
+- **错误**：新增 backfill_captions.py 的局部 import 顺序（SessionLocal 在 Content 前）被 ruff I001 拦下，pre-commit 拒绝提交
+- **根因**：写新脚本时凭习惯排 import；ruff 的 isort 规则对局部 import 也生效，而我只在提交时跑门禁
+- **修复**：改为 models 在 session 前；提交前先 ruff check 变更文件
+- **相关文件**：backend/scripts/backfill_captions.py
+- **教训**：新增文件先跑 ruff check <file> 再 git add；局部 import 同样受 I001 约束
+
+---
+
 ### 2026-10-19 02:32 · commit 5470c8f · ts=1792348363
 - **错误**：新增 BGE_DEVICE/BGE_THREADS/BGE_WARMUP_ON_START 三个 config 字段后只补了 backend/.env.example，env_template 轴判红（真缺口三项）
 - **根因**：该轴比对的是 deploy/.env.production.template（部署契约源），backend/.env.example 只是本地模板；两处都要补，且模板里还有'与 config.py 逐一对齐'的承诺

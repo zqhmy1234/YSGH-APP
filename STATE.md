@@ -22,6 +22,12 @@
 ③ **数据体检**：photos 3919 / 无 caption 3625 / 「done 但无 caption」**1694**；processing 滞留 **4464** / failed 336。`requeue_job` 新增 **`--only-empty-done`**（dry-run 实测 1694 全可重投）；**回填未执行**（1694 次视觉调用成本待拍板）。
 ④ **harness 清账**：`feature_list.json` 给 F1/F4/F5/F8/B1 追写当日 evidence（**没有改任何 status**——policy 明写 11 条 in-progress 是如实状态）；产出 `docs/给BC的勘误与同步_20261019.md`（8 条硬勘误 + B-3 三缺项 + B-4/B-5 合并建议；**未改他们的手册**）。
 
+**2026-10-19（第三段）· PR + 回填 + 业界调研 + 内部阻塞**：
+① **PR**：`sync/infra-fixes-20261019` → **PR #4**（base develop）已开。
+② **回填**：1694「done 无 caption」里只有 **114** 有真实文件（827 无 cos_key、753 文件不在盘上）⇒ 新增 `--require-file`，只跑 114；已处理 20+，余 92 在跑（单进程，CPU/内存受限，ETA ~1.5h）。`PHOTO_DESCRIPTION_ENABLED=false` 关掉第二次 VL 调用（它只写 ai_description，不参与检索）。
+③ **调研**：`docs/搜索P95_业界做法调研_20261019.md` —— Qdrant 服务端 RRF / FastEmbed ONNX / Onyx 索引层融合 / RAGFlow 精排慢的实证；推荐 P0「投机式并行召回 + 精排策略化」、P1「ONNX/int8 + Query API」，组合预期 2.3–2.6s。
+④ **内部阻塞**：`docs/内部阻塞项_20261019.md` 记 B1–B7（Redis 6379 假活 / 内存 0.4GB / agent 8300 未起 / 1694→114 数据债 / 4464 processing / 19120 候选用户 / `--full` 从未真正跑过）。
+
 **2026-10-16（第二波）定位真落库 / 降级显性化 + 多模态附件契约 / 界面流畅度 / 占位入口诚实化**：两批 6 条提交已推（`148af09`→`5ed8255`），明细见 `docs/决策台账.md` §4.20 ㉚。核验：ruff 全过、编译门**真编译 84.5s**、后端回归 **483 passed**、`-k chat` **102 passed**、`openapi --check` OK（259806 字符）、exports 轴「无新增零调用能力导出」（424→419）。⚠️ **附件面板客户端 UTS 仅过编译门、真机未验**（「刚传完即发」可能落「内容暂不可读」，如实标注）。
 
 **2026-10-16（第一波）视觉调用守卫修复**：快进 `origin/develop` 至 `5e824a9`；照片 caption 与图片/文字视觉向量入口改用独立百炼 key 守卫，DeepSeek 仅影响文本供应商判定（台账 §7.29）。离线定向回归 28 passed；全量门禁结果见 `progress.md`。缺陷说明见 `docs/忆述光华_视觉调用守卫缺陷说明_20261016.md`。
@@ -77,7 +83,7 @@
 3. 🟡 **图片通路 ngrok 免费版拦截页**（`ERR_NGROK_6024`）：`<image>` 无法带自定义头 ⇒ 依赖 Android 原生 UA 放行；若真机图片全裂，二选一（改走 `uni.downloadFile` + 本地路径 / 换 cloudflared·ngrok 付费）——**沿用自 10-14，未变**
 4. 🟡 **上传管线类改动受"验证条件"限制**（蜂窝省流五步等）：按 2026-09-23 纪律需「编译门 **+ 真机验证条件**」，当前不可验 ⇒ 挂账，不得以未验证改动填补——**沿用自 10-14，未变**
 5. 🟡 **LLM 供应商为 DeepSeek**（`LLM_PROVIDER=deepseek`，key 取本机 `deepseek-ugsimulator`）；百炼 Token Plan 未续 ⇒ 视觉类（caption）仍走 DashScope 分支、无 key 时降级——**沿用自 10-14，未变**
-6. 🟡 **`review_agent.py --full` 在本机跑不完（2026-10-19 两次实测：无输出、低 CPU 停滞 >10min）**：PG/Redis/API 均可达（5432/6379/8010），但 `docker ps` 挂起 ⇒ 疑为某个测试/子进程在等不可用服务；当日只完成快速门禁 + 编译门 57.5s + `pytest -m unit` 112 passed + 定向用例。**不要把 full 写成绿**；Docker CLI 恢复或定位到具体用例后补跑。
+6. 🔴 **内部阻塞已单列**（用户 10-19 提醒「表面阻塞消失 ≠ 内部阻塞消失」）：`docs/内部阻塞项_20261019.md` 记 **B1–B7** —— **Redis 6379 假活**（端口通、PING 超时 ⇒ RQ/全量门禁不可用）、**内存仅 0.4GB 空闲**（重活必 OOM/换页）、agent 8300 未起、1694 里只有 114 可回填、4464 processing、19120 候选用户、`--full` 从未真正跑过。**不要再把「端口通 / 快速门禁绿」当健康判据。**
 
 ## 权威指针（想知道 X 去哪看）
 
@@ -102,6 +108,7 @@
 - **视觉守卫（2026-10-16 实测）**：独立百炼 key 判定已覆盖三个视觉入口；离线定向 **28 passed**（5 deselected）。按缺陷说明的 DeepSeek + 仅百炼测试 key 条件补跑指定两份测试：**17 passed / 5 deselected / 0 failed**。`review_agent.py --full` 退出码 **0**，覆盖率 **85.52%**，`failed_tests=[]`、`blocking_sections=[]`；本机缺 HBuilderX CLI，客户端编译轴降级放行。详见 `progress.md` 末尾记录。
 - **本波（2026-10-16 第二波）实测**：后端回归 **483 passed**；`-k chat` **102 passed**；编译门真编译 **84.5s**；`openapi --check` OK（259806 字符）；exports 轴 424→419（**无新增零调用能力导出**）。⚠️ 附件面板客户端 UTS 仅过编译门、**真机未验**。
 - **2026-10-19（本机）**：`pytest -m unit` **112 passed**；`test_requeue_job` **7 passed**；`test_event_gc_orphan` **3 passed**；编译门**真编译 57.5s**；`review_agent` 快速门禁 0；**`--full` 未跑完**（见阻塞 6，勿引用为绿）。
+- **2026-10-19 回填**：1694「假 done」中仅 **114** 有真实文件（827 无 cos_key + 753 文件不在盘上）；已处理 20+、余 92 在跑；`--only-empty-done --require-file` dry-run 可复现 114。
 - **门禁（2026-10-15）**：队友批次的 `review_agent.py` 全绿；本日三轴各拦过一次并**均已按纪律处置**——`env_template`（新增 config 字段 ⇒ 同批补部署模板）、`structure`（`TabSearch` 813>800 ⇒ 显式申请基线）、`lessons`（前次失败 ⇒ 登记教训）；队友环境的客户端编译门**真编译**多次通过（38s / 49s / 56s / 91s，均有日志）。本机 `develop` 接入 B-1 全量验证修复后，22:22 复跑 `review_agent.py --full` 退出码 0、覆盖率 85.34%、失败/阻断项 0；本机缺 HBuilderX CLI，客户端编译轴明确降级放行，未在本机重编译。
 - **出包前端到端（用户视角）**：合并**前**曾 17/17 全绿；合并后重跑**未跑全**（脚本侧两处挂住 + 当次 ⑤"搜索未命中"⇒ **根因已定位并修复** `f94fcf6`：向量写入晚于 `done` 提交的时间窗 + 检索无 DB 兜底）；**结论：新包前需再跑一次完整端到端**
 - **未关闭重大缺陷**：见 §7（RAG 负样本误召回 0.5714 / 推送全 mock / 图搜"无图片查询评测"等）

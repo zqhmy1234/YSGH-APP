@@ -266,3 +266,38 @@ def test_only_empty_done_selects_done_photo_without_text(db_user, monkeypatch):
     assert "requeue_count" not in (failed.extra or {})
     db.refresh(captioned)
     assert "requeue_count" not in (captioned.extra or {})
+
+
+def test_require_file_skips_rows_without_blob(db_user, monkeypatch):
+    """require_file：无 cos_key / 文件不在盘上的行不重投（真库 1694 里只有 114 有真文件）"""
+    db, user = db_user
+    ok = _content(db, user.id, ctype="photo", status="done")
+    ok.cos_key = "photos/ok.jpg"
+    missing = _content(db, user.id, ctype="photo", status="done")
+    missing.cos_key = "photos/missing.jpg"
+    db.commit()
+
+    class _StubStorage:
+        def object_exists(self, key: str) -> bool:
+            return key == "photos/ok.jpg"
+
+    monkeypatch.setattr(
+        "app.services.external.storage.get_storage_backend",
+        lambda *a, **k: _StubStorage(),
+    )
+    monkeypatch.setattr(
+        "app.workers.requeue_job._stale_candidates",
+        lambda db_, cutoff, limit, include_empty_done=False, only_empty_done=False: [
+            db_.get(Content, str(ok.id)),
+            db_.get(Content, str(missing.id)),
+        ],
+    )
+    calls = _collector(monkeypatch)
+
+    report = run_requeue(limit=2, require_file=True)
+
+    assert report["scanned"] == 1
+    assert report["requeued"] == 1
+    assert calls == [(process_content, str(ok.id))]
+    db.refresh(missing)
+    assert "requeue_count" not in (missing.extra or {})
