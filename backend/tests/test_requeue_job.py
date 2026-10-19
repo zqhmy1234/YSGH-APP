@@ -87,7 +87,7 @@ def _pin_candidates(monkeypatch, content):
     """
     monkeypatch.setattr(
         "app.workers.requeue_job._stale_candidates",
-        lambda db_, cutoff, limit: [db_.get(Content, str(content.id))],
+        lambda db_, cutoff, limit, include_empty_done=False: [db_.get(Content, str(content.id))],
     )
 
 

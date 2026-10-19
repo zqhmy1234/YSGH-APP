@@ -125,6 +125,16 @@ def trash_clear(
     purge_targets: list[tuple[str, str, str]] = [
         (str(r.id), r.cos_key or "", r.thumbnail_key or "") for r in rows
     ]
+    # 2026-10-16：**在硬删之前**采集受影响的事件 id —— `event_items.content_id` 是级联外键，
+    # 删完就查不到了（同 `purge_targets` 为何要先取 key ✓）。清尾后据此回收"零成员空壳事件"。
+    from app.db.models import EventItem
+
+    affected_event_ids = [
+        str(x)
+        for x in db.execute(
+            select(EventItem.event_id).where(EventItem.content_id.in_([t[0] for t in purge_targets]))
+        ).scalars().all()
+    ]
     # 2026-10-15（台账 §7.28）：**先删从属行**——`correction_log` 对 `contents` 是 NO ACTION
     # 外键，用户"纠错过"的内容硬删会 500（端到端验证实测：提交纠错的序列必挂）。
     content_purge.delete_dependent_rows(db, [t[0] for t in purge_targets])
@@ -137,6 +147,13 @@ def trash_clear(
     ids = [t[0] for t in purge_targets]
     sync_writes.hard_delete_records(db, ids)
     db.commit()
+
+    # 2026-10-16（台账 · 数据一致性）：**清尾后回收"失去全部成员"的事件**。
+    # 真库实证：级联删掉了全部 event_items，而父事件留着 ⇒ 485 个 L1 空壳（卡片照片/语音/计数全空，
+    # 冷启动后彻底看不到）✗。有剩余成员则只重算时间窗，零成员则软删（留审计）✓。
+    from app.services.content_purge import gc_orphan_events
+
+    gc_orphan_events(db, str(user.id), affected_event_ids)
 
     # 2026-10-14（台账 §7.25① · 批次 8 收口）：**真清空**。原实现只删 DB 行，Qdrant 向量与
     # 对象存储原件原样残留 ⇒ 用户以为"回收站已清空"，实际数据仍可被检索命中、仍占着存储

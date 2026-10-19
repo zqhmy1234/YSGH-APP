@@ -46,13 +46,35 @@ REQUEUE_DEFAULT_STALE_SECONDS = 3600
 REQUEUE_MAX_ATTEMPTS = 3
 
 
-def _stale_candidates(db: Session, cutoff: datetime, limit: int) -> list[Content]:
-    """选中超龄 failed/processing 内容（updated_at 升序，最旧优先）"""
+def _stale_candidates(
+    db: Session, cutoff: datetime, limit: int, include_empty_done: bool = False
+) -> list[Content]:
+    """选中超龄 failed/processing 内容（updated_at 升序，最旧优先）。
+
+    2026-10-16（台账 · caption 断供遗留）：`include_empty_done=True` 时**额外纳入
+    「done 但成果为空」的照片** —— `status='done'` 而 `text` 为空，说明 caption 从未成功
+    （视觉塔断供期间产生：真库实测 **1691 张** ✗✗）。这类"**假 done**"不在 failed/processing 里，
+    本 job 原来看不见 ⇒ 它们对语义检索与跨模态聚类**永久隐身**（同 §7.20「done 却静默不索引」一族 ✓）。
+    口径：**仅照片** + 同样要求**超龄**（防与正在跑的管线抢同一条）+ 需显式开启（默认关闭，
+    保证既有调度语义与 CI 行为不变 ✓）。
+    """
+    from sqlalchemy import and_, or_
+
+    status_cond = Content.status.in_(("failed", "processing"))
+    if include_empty_done:
+        status_cond = or_(
+            status_cond,
+            and_(
+                Content.status == "done",
+                Content.content_type == "photo",
+                or_(Content.text.is_(None), Content.text == ""),
+            ),
+        )
     return list(
         db.scalars(
             select(Content)
             .where(
-                Content.status.in_(("failed", "processing")),
+                status_cond,
                 Content.updated_at <= cutoff,
                 Content.deleted_at.is_(None),
             )
@@ -111,6 +133,7 @@ def run_requeue(
     older_than_seconds: int = REQUEUE_DEFAULT_STALE_SECONDS,
     limit: int = 100,
     dry_run: bool = False,
+    include_empty_done: bool = False,
 ) -> dict:
     """执行一轮失败/卡死重扫，返回 {scanned, requeued, finalized, skipped_final, failed}
 
@@ -119,12 +142,15 @@ def run_requeue(
     - finalized: 重扫超限置终态数
     - skipped_final: 终态失败（retryable=False）跳过数
     - failed: 单行处置异常数（保留原状，下轮重试）
+    - include_empty_done: 额外纳入「done 但无 caption 的照片」（见 `_stale_candidates` ✓）。
+      注意这些内容 `status='done'` ⇒ 不会被 `skipped_final` 分支拦住（那里要求 status=failed ✓），
+      会正常走重投入队 ⇒ 管线重跑 caption（视觉守卫修好后可成功 ✓）。
     """
     db: Session = SessionLocal()
     cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
     requeued = finalized = skipped_final = failed = 0
     try:
-        candidates = _stale_candidates(db, cutoff, limit)
+        candidates = _stale_candidates(db, cutoff, limit, include_empty_done=include_empty_done)
         for content in candidates:
             try:
                 error = (content.extra or {}).get("error") or {}
@@ -173,12 +199,18 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=100, help="每轮最多处理条数")
     parser.add_argument("--dry-run", action="store_true", help="只扫描统计，不重投/不置终态")
+    parser.add_argument(
+        "--include-empty-done",
+        action="store_true",
+        help="额外纳入「done 但无 caption 的照片」（caption 断供期间的历史遗留；默认关闭）",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     report = run_requeue(
         older_than_seconds=args.older_than_seconds,
         limit=args.limit,
         dry_run=args.dry_run,
+        include_empty_done=args.include_empty_done,
     )
     logger.info("requeue report: %s", report)
     print(report)
