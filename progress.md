@@ -722,3 +722,8 @@ ShareSheet（须真机验"保存到相册"）。
 - B-4 代码复核：`moderate.py` 主链已接 `qwen_response_check`，`guard.ManagedDetector` 实为事件软话题补漏；其去留登记台账 §5.12 待负责人定。B-5 的 D/F/G 目录目前仅有样例，不能出真实质量结论。
 - 登记 lessons 后最终复跑 `review_agent.py --full` **退出码 0**：语法 449 文件、Ruff、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全审计、聚合等价、全量测试/API 冒烟/research 均通过；覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`。本机无 HBuilderX CLI，客户端编译轴明确降级放行（本次未改 `client/`）。复跑 `init.ps1` 通过。
 - 首次本地 `git commit` 被 pre-commit **正确拦截为环境错误**：hook 固定调用 PATH 上的 `python`，当次落到系统 Python 而缺 Ruff/后端依赖。按纪律登记 lessons；提交进程改为把项目 `.venv/Scripts` 前置 PATH 后重试，不使用 `--no-verify`。
+
+## 2026-10-19 · B-2 服务器定时任务准备
+
+- 用户请求协助设置 B-2，并确认服务器尚未开通；未接触或修改任何远端 cron。现有 SSH 别名不能证明是项目服务器，连接也超时，不以此冒充部署证据。
+- 核对当前生产选型为容器拓扑 A（`deploy/docker-compose.yml`）；`deploy/RUNBOOK.md` §5 补齐可安装的 4 条容器内业务任务 + 1 条 PG 备份 crontab 范本，含 `SHELL`/`PATH`、日志、北京时区核对和清理任务首次 `--dry-run`。静态核对为 5 条任务、4 条经容器执行、1 条备份、清理试运行 1 条。服务器开通后仍须核对路径/权限并实装、观察日志、验证失败任务重投。
