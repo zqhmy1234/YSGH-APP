@@ -29,7 +29,16 @@ def _to_out(c: Content) -> ContentOut:
         taken_at=c.taken_at,
         place=c.place,
         emotion=c.emotion,
-        tags=[],
+        # 2026-10-24（待办总账 D-08 · 原台账 §7.26⑥）：`tags` 此前硬编码 `[]`，
+        # 即「出参里永远空」。它是**入参** ContentIn.tags（服务间镜像预置 chips）的
+        # 同名出参，语义上从未被填充 —— 真有标签的是 `tags_json`（754 行有数据，
+        # 客户端 7 处读它）。经全仓取证：客户端**从不**读 ContentOut.tags，
+        # 测试也没有断言依赖它。
+        # 故改为**由 tags_json 派生**，而不是删字段：① 删字段会改契约面（openapi 快照
+        # 变化 + 潜在外部消费者 404）；② 派生的空值语义与旧行为一致（tags_json 为
+        # None ⇒ 仍为 []），不会让任何现存调用方观察到差异；③ 一旦有调用方真去读，
+        # 读到的是真值而不是一个骗人的空数组。
+        tags=_tags_from_json(c.tags_json),
         status=c.status,
         audio_processing=(c.extra or {}).get("audio_processing"),
         created_at=c.created_at,
@@ -40,6 +49,22 @@ def _to_out(c: Content) -> ContentOut:
         tags_json=c.tags_json,
         ai_description=c.ai_description,
     )
+
+
+def _tags_from_json(raw: object) -> list[str]:
+    """把 `contents.tags_json`（JSONB，实存 list[str]）转成 `ContentOut.tags`。
+
+    只做**形状防御**，不做语义加工：非 list / 元素非 str 一律跳过（历史行可能是
+    dict 或混入 null），保证出参永远是 `list[str]`（契约类型），不会因为一行脏数据
+    让整个列表接口 500。上限与写入侧 `_MAX_TAGS` 无关——这里只回显既有数据。
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, str) and item:
+            out.append(item)
+    return out
 
 
 def _attach_thumb(item: ContentOut, c: Content, user_id: str) -> ContentOut:

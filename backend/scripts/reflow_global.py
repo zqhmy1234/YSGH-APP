@@ -31,8 +31,14 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 # 类别词表唯一来源：与运行期分类器共用，避免"回流脚本还按 5 类收样本"。
 from app.services.classifier import DEFAULT_CLASSES  # noqa: E402
+from app.services.correction import GLOBAL_RETRAIN_THRESHOLD  # noqa: E402
 
-DEFAULT_THRESHOLD = 50  # B5-c-4：共性纠错 ≥50 条才触发
+# 2026-10-24（待办总账 D-07 · 原台账 §7.26③）：阈值此前**两处独立定义**
+# （本文件 `DEFAULT_THRESHOLD = 50` 与 `services/correction.py:31 GLOBAL_RETRAIN_THRESHOLD = 50`）。
+# 当前同值所以没出事，但「改一处不生效」正是最容易在调参时踩的坑：改 service 常量
+# 不会影响脚本默认值，反之亦然，且两边都「看起来对」。
+# 现改为**从 service 导入单一来源**；本别名只为保持脚本内既有引用逐字不变（少改一处少一处风险）。
+DEFAULT_THRESHOLD = GLOBAL_RETRAIN_THRESHOLD  # B5-c-4：共性纠错 ≥50 条才触发（单一来源见 services/correction）
 CORRECTION_LIMIT = 200  # 单次微调最多取样本数（防过拟合抖动）
 REFLOW_ACC_GATE = 0.75  # 评估集门禁（M1 口径）：不达标不覆盖生产模型
 KEEP_BACKUPS = 3  # 模型备份保留份数（回滚兜底）

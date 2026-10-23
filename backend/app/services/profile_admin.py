@@ -51,6 +51,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("yishu.profile_admin")
 
 # 事件级软话题回流/全局词不属"用户画像"，不在此清理范围（`sensitive_words` 归护栏域）
+#
+# 2026-10-24（待办总账 D-09 · 原台账 §7.26⑤）：本表此前**定义后无人引用** ——
+# `clear_profile` 里手写五个 `cleared["<表名>"] = ...`，与这里的键各写一份。
+# 后果不是立刻出错，而是「声明与实现可以悄悄分叉」：往 `clear_profile` 加了第六张表却
+# 忘了写进本表（或反之），读代码的人会以为清理范围就是这五行。
+# 现改为**机器校验**：`clear_profile` 末尾比对两边键集合，不一致即抛错。
+# 这是本仓通用的「棘轮」做法（结构/基线只许收紧），代价是一次集合比较。
 _CLEARED_TABLES = {
     "user_profile": "画像维度值",
     "profile_dimension_history": "维度历史值",
@@ -91,6 +98,16 @@ def clear_profile(db: Session, user_id: str) -> dict:
         select(func.count()).select_from(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
     ).scalar_one()
     db.commit()
+
+    # 单一来源校验（2026-10-24 · D-09）：声明表集合必须与实际清理的表**完全相同**。
+    # 只在开发/测试期能靠代码评审保证，这里做成运行期棘轮——漏登记即报错而不是静默少清。
+    # 注意用 set 比较而非 `list(cleared)` 顺序比较：顺序无语义（返回 dict 的键序只是插入序）。
+    decl, actual = set(_CLEARED_TABLES), set(cleared)
+    if decl != actual:
+        raise RuntimeError(
+            f"clear_profile 与 _CLEARED_TABLES 不一致："
+            f"声明未清={sorted(decl - actual)} 清理未声明={sorted(actual - decl)}"
+        )
 
     total = sum(cleared.values())
     logger.info(
