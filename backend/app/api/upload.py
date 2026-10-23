@@ -75,14 +75,23 @@ def init_upload(
 ):
     """建上传任务（client_upload_id 幂等）
 
-    流量约束（B4 §6，Wave3 AgentG）：
-      upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）
-      on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）
-    两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。
+    流量约束：`upload_mode` = original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）；
+    `on_wifi` = 客户端网络标记（可选）。
 
-    R4#12：client_upload_id/file_name 安全字符白名单；file_size/chunk_size 正数下限；
-    大数上限（file_size>MAX）与分片下限（chunk_size<MIN）仍由下方 UPLOAD_001 业务码承接。
+    这两个字段在本端点**只做提前校验**（非法值即刻返回 422，不必等传完才失败）并原样回显；
+    真正生效在 `/complete` 的 `meta` 上。见下方代码注释。
+
+    字段约束：`client_upload_id` / `file_name` 走安全字符白名单；`file_size` / `chunk_size` 正数下限；
+    大数上限（file_size > MAX）与分片下限（chunk_size < MIN）返回 UPLOAD_001。
     """
+    # ⚠️ 为什么 init 不落库（2026-10-24 复核 §7.26⑦ 时确认，**属有意分工非脱漏**）：
+    #    真正生效在 POST /complete 的 meta —— `services/upload/register.py` 把
+    #    upload_mode / on_wifi 写进 `contents.extra`，客户端也是按这个口径发的
+    #    （`upload_pipeline.uts` 组 `meta.upload_mode`）。
+    #    要落任务行得先给 upload_tasks 加列 + 迁移，而「任务行是否需要留存流量口径」
+    #    是产品/架构决策（见待办总账 D-13 邻的契约决策），不属顺手改。
+    #    留此注释以免后人把它当缺陷反复重开。
+    #    另：本函数的 docstring 会进 OpenAPI description，故内部路径只写在这里。
     if upload_mode not in upload_svc.VALID_UPLOAD_MODES:
         raise ApiError(
             ERR_UPLOAD_007,

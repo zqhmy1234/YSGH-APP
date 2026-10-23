@@ -3315,7 +3315,7 @@
           "upload"
         ],
         "summary": "Init Upload",
-        "description": "建上传任务（client_upload_id 幂等）\n\n流量约束（B4 §6，Wave3 AgentG）：\n  upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）\n  on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）\n两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。\n\nR4#12：client_upload_id/file_name 安全字符白名单；file_size/chunk_size 正数下限；\n大数上限（file_size>MAX）与分片下限（chunk_size<MIN）仍由下方 UPLOAD_001 业务码承接。",
+        "description": "建上传任务（client_upload_id 幂等）\n\n流量约束：`upload_mode` = original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）；\n`on_wifi` = 客户端网络标记（可选）。\n\n这两个字段在本端点**只做提前校验**（非法值即刻返回 422，不必等传完才失败）并原样回显；\n真正生效在 `/complete` 的 `meta` 上。见下方代码注释。\n\n字段约束：`client_upload_id` / `file_name` 走安全字符白名单；`file_size` / `chunk_size` 正数下限；\n大数上限（file_size > MAX）与分片下限（chunk_size < MIN）返回 UPLOAD_001。",
         "operationId": "init_upload_api_v1_upload_init_post",
         "requestBody": {
           "content": {
