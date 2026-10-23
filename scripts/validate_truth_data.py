@@ -5,7 +5,8 @@
   - 必填字段 100% / 枚举合法 / 类型正确
   - A：命中类 expected/expected_label 二选一非空；干扰类 expected=[]+expect_empty=true+expected_label=__none__
        （expected 与 run_eval.py 对齐；expect_empty 负样本，每层都要有）
-  - B：label 英文码（todo/idea/emotion/quote/mixed/question/fact，2026-10-23 起 7 类）；label_confidence=disputed 不阻断但警告
+  - B：label 英文码（todo/idea/emotion/quote/mixed/question/fact，2026-10-23 起 7 类）；
+       label_confidence=disputed 不阻断但警告
   - C：self_talk_only 必须 true（隐私铁律）；transcript_source=human 才算真值
   - D：consensus ≥2/3 才入真值；expected_l1.date 格式
   - E：predicted ≠ corrected；类别英文码
