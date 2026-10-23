@@ -782,3 +782,43 @@ ShareSheet（须真机验"保存到相册"）。
   - 客户端编译门：**真编译 45561ms** 成功（本次合并带入 `client/` 2 个文件：`RecordSheet.uvue` chips 7 类 / `text_recorder.uts` ALL_LABELS+LABEL_CN）。
   - `review_agent.py` 快速门禁 → **退出码 0**；`audit_axes` 无 CRITICAL（INFO 21）、`env_template` 真缺口 0 / 过期项 0、`openapi_snapshot` OK、`port_consistency` OK；`harness_state` 仅 WARN（feature_list 12 条 in-progress，如实状态）。
 - **如实标注**：`--full` 本次未跑（Docker 刚起、Redis/Qdrant 冷态，且历史上两次跑不完）——**不得引用为绿**；远端 `backend/sql/schema.sql` 的 `profile_sensitive` 段仍写 `topic text NOT NULL` + `UNIQUE(user_id, topic)`，与其自身迁移不一致（**远端既有漂移，本次不修**，已登记台账）。
+
+## 2026-10-24 · 7 类分类器重训（远端 GPU 机）+ 闸门开启实测 + 出包半程
+
+### 一、SetFit 7 类重训（用户拍板：放在远程服务器 student03 上跑）
+
+- **机器**：`student03@10.20.28.21`（xsuper-7960-Tower，RTX 5880 Ada 48GB / 56 核 / 502GB 内存 / Ubuntu 24.04 / Python 3.12.3 / 无 sudo）。Skill 从超声项目复制到 `skills/remote-gpu-server-devtest/`。
+- **数据**：**没有真实训练数据可用**——真库 `contents` 有 `content_class` 的只有 mixed 1451 / todo 41 / idea 9 / emotion 5 / quote·question·fact **各 0**，且全部 `class_source=setfit`（是旧 5 类模型的输出，当标签用＝自证循环）；`correction_log` 仅 7 条且全是 mixed→idea。⇒ **如实按训练脚本设计用种子集**：`backend/data/setfit_seed.json` 7 类 × 12 条，划分 **70 训练 / 14 评估**。
+- **环境自举踩了三层坑**（都已修并登记教训）：
+  1. 系统 `python3` **无 pip、无 ensurepip、无 virtualenv**，`python3 -m venv` 直接失败 ⇒ 改 `venv --without-pip` + `get-pip.py`。
+  2. 首次直接用最新版装（**ST 6.2.0 / setfit 1.2.0**）训出 100%，但产物 `modules.json` 引用 `sentence_transformers.base.modules.normalize`，回本机（ST 5.6.0）加载报 `ModuleNotFoundError` ⇒ **分类静默降级 mixed**。
+  3. 于是把远端 venv **按本机版本矩阵重装**：`torch 2.12.0+cpu / transformers 4.57.6 / tokenizers 0.22.2 / datasets 4.8.5 / accelerate 1.13.0 / setfit 1.1.3 / ST 5.6.0`，再训。
+- **结果**：训练耗时 **117s**；评估准确率 **100%（14/14）**、门禁 ≥75% 达标；`labels.json` 7 类齐全（emotion/fact/idea/mixed/question/quote/todo）。产物 2.2GB 拉回本机 `backend/models/setfit-classifier`（`.gitignore` 不入库），本机 `classify()` 七类语料 **7/7 命中、degraded=False**。`pytest test_setfit.py test_answerability_gate.py` → **11 passed**。
+- **另一处顺带修**：`test_answerability_reject_defaults_off` 原本断言运行期 `settings.answerability_reject_enabled is False`，闸门一开就假红 ⇒ 改为断言 `Settings.model_fields[...].default`（契约默认值 ≠ 环境覆盖）。
+
+### 二、answerability 闸门开启（用户拍板「闸门开」）
+
+- 落地：`backend/.env` 与 `deploy/.env.production.template` 均置 `ANSWERABILITY_REJECT_ENABLED=true`（生产模板由 false 改 true）。
+- **代价实测（truth-50，同语料 131 条 / 计分 43 查询，四种配置）**：
+
+  | 配置 | hit_rate@3 | 负样本误召回 | 门禁 |
+  |---|---|---|---|
+  | HEAD 基线（mock，闸门关） | 0.9302 | 0.5714 | hit ✅ / neg ❌ |
+  | qwen-flash，闸门**关** | **0.9302** | **0.5714** | hit ✅ / neg ❌ |
+  | qwen-flash，闸门**开** | **0.7674** | **0.0000** | hit ✅ / neg ✅ |
+  | DeepSeek，闸门**开** | **0.6512** | 0.0000 | hit ❌ / neg ✅ |
+
+  - **qwen 关闸门与 HEAD 基线逐位一致**（0.9302/0.5714）⇒ 基线可复现，下降不是语料/随机性造成。
+  - 逐条归因：43 条计分查询里 **12 条原本命中被清空**，其中 **11 条是「正确答案全判 false」**、仅 1 条 pre-gate 已判 true；另有 3 条被拒答但本来也没命中（正确拒答）。
+  - **分层**（qwen）：descriptive 1.0→1.0、image 1.0→1.0 **不受影响**；person 1.0→0.6、route 0.7143→0.4286、time 1.0→0.8333、place 1.0→0.8。
+  - **根因**：闸门复用精排的「相关且信息足够」判定，而真值集正确答案多为 **4~9 字短记忆**（『预约体检』『上周的会议纪要』），模型按该标准判 false 合理 ⇒ 把「排序判定」当「存在性判定」是语义挪用。**长度不是原因**：true/false 两组文本长度中位数 10 vs 9。
+  - DeepSeek 档更差（0.6512 跌破 0.7）⇒ **闸门效果强依赖精排模型，换供应商会换结论**。
+- 结论登记：`docs/决策台账.md` §20 **M-9**；两条教训已 `lessons.py add`。
+
+### 三、出包（进行到一半，用户指示暂停）
+
+- 前置门：`preflight_pack.ps1 -AllowTunnel` **全绿**（ENV=prod / REAL_DEVICE_HOST 空 / 固定地址隧道已核对 / 图标 splash 齐备 / 编译门真编译 41292ms；WARN 1：`usesCleartextTraffic=true` 待上架前回收）。
+- 踩坑：首次 `pack.ps1` 由我重定向到 `pack.log` 与脚本自身写入同一文件 ⇒ `Start-Process ... -RedirectStandardOutput` 报文件占用、云打包**没真正启动**；改用独立 `pack-run.log` 后正常。
+- 云打包已提交（**Android 自有证书**）：队列 id `0fb6fae0-cf04-11f1-acf9-fb9aeaeb6ce1`，初始第 182 位 → 后续降至 39 位。
+- **未完成**：产物未取回、四项尸检未做、分发页未投放。客户端当前为出包态（`ENV='prod'` / `REAL_DEVICE_HOST=''` / `PROD_BASE_URL=https://coleslaw-absence-harvest.ngrok-free.dev`），**该改动未提交**。
+- 本机服务栈已起齐：Redis PONG / Qdrant 200 / PG 5432 / backend 8010 / agent 8300 / RQ worker / ngrok 静态域名隧道（`healthz` 经公网 200，`agent_degradation.total=0`）。

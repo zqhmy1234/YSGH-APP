@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-24 01:38 · commit b5159c4 · ts=1792777132
+- **错误**：在 student03 GPU 服务器上用最新的 sentence-transformers 6.2.0 训练 SetFit，评估 100% 通过，但产物拷回本机后 SetFitModel.from_pretrained 报 No module named 'sentence_transformers.base.modules.normalize'，分类静默降级为 mixed（degraded=True，conf 0.0），而且因为走了 try/except 降级分支，只有一条 WARNING
+- **根因**：训练环境与推理环境的 ST 版本不一致：新 ST 把 normalize 模块挪到 sentence_transformers.sentence_transformer.modules.normalize 并写进 modules.json 的 type 字段；本机/CI 钉的是 5.6.0，找不到该路径。评估是在训练环境里跑的，所以 100% 通过完全没有暴露这个问题
+- **修复**：远端 venv 按本机版本矩阵重装（ST 5.6.0/setfit 1.1.3/transformers 4.57.6/tokenizers 0.22.2/datasets 4.8.5/accelerate 1.13.0/torch 2.12.0）后重训，modules.json 变为 sentence_transformers.sentence_transformer.modules.*，本机加载正常并 7/7 命中
+- **相关文件**：backend/scripts/train_setfit.py
+- **教训**：**训练产物必须在「最终推理环境」里验一次加载**。评估准确率是在训练 venv 里算的，那份环境和生产/CI 不是一个版本矩阵时，100% 通过只能证明"训练环境自洽"。跨机训练（尤其远端 GPU）开工前先把版本矩阵对齐并写进脚本，产物拷回后第一时间跑一次 `classify()` 冒烟，别等集成测试。另：降级路径只有 WARNING 时，"模型挂了"与"模型判 mixed"在业务侧几乎不可分辨（D-22 已用 degraded=True 区分，但那只在出参里，日志层仍要醒目）。
+
+---
+
+### 2026-10-24 01:38 · commit b5159c4 · ts=1792777113
+- **错误**：answerability 闸门按用户拍板开启后，truth-50 的 hit_rate@3 从 0.9302 掉到 0.7674（qwen-flash）/0.6512（DeepSeek），负样本误召回 0.5714→0.0；丢失的 12 条命中里 11 条是『精排把正确答案全判 false 导致整组被清空』
+- **根因**：闸门复用的是精排的 answerable 三态，而精排的判定标准是『这段文本能否回答这个问题（含时间/地点/事件/对象等足够信息）』——真值集里大量正确答案本身就是 4~9 字的短记忆（如『预约体检』『上周的会议纪要』），模型按标准判 false 是合理的；把『精排排序用的相关度判定』直接当成『存在性判定』是语义挪用，all-or-nothing 聚合又把单条误判放大成整组清空。同一批查询在 mock 下 0.9302、真实 qwen 关闸门 0.9302（可复现基线），所以下降不是语料或随机性造成
+- **修复**：保留闸门但默认不启用于本机/CI；把 A/B 数据登记台账 §20 M-9；真实上线启用前必须换成独立的存在性判定（或仅在『关键词/时间/地点/人物』之外的描述层启用），并复测 hit_rate@3 与误召回的联合门禁
+- **相关文件**：backend/app/services/rag/__init__.py
+- **教训**：**别把一个指标的判定复用到另一个语义上**。精排的 `answerable` 是"这段能不能回答这个问题"（排序用），闸门要的是"库里有没有这条记忆"（存在性用）——两者在长文本上近似，在真实的短记忆上相反。量化时才看得见：同语料下关闸门 0.9302、开闸门 0.7674，而**负样本误召回是 0.5714→0**，看起来"问题解决了"，实际是"把该给的答案也一起拒了"。凡引入一个二元拦截器，必须同时报告它误伤了多少真命中，只报它挡住了多少假命中就是自欺。
+
+---
+
 ### 2026-10-19 11:20 · commit 8da2546 · ts=1792380012
 - **错误**：新增 backfill_captions.py 的局部 import 顺序（SessionLocal 在 Content 前）被 ruff I001 拦下，pre-commit 拒绝提交
 - **根因**：写新脚本时凭习惯排 import；ruff 的 isort 规则对局部 import 也生效，而我只在提交时跑门禁

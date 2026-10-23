@@ -5,7 +5,7 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-10-23
+**最后更新**：2026-10-24
 **分支**：`feature/agent-closeout-20261008`（`origin/develop@dd89678` 已于 `ff8eadd` 并入；**`origin/develop@f49df29` 已于 2026-10-23 本次合并并入**）｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
@@ -14,7 +14,12 @@
 
 ## 正在做什么
 
-**2026-10-23 · 合并 origin/develop（`dd89678` → `f49df29`，5 个提交）**：取回远端三件实质能力——① **B-3 画像敏感话题加密**（AES-256-GCM + HMAC 盲索引 + 迁移 + 回填脚本）；② **分类词表 5 类 → 7 类**（+question/fact，代码/契约/客户端 chips 全对齐，DB 零改动、**SetFit 模型仍需重训**）；③ **answerability 拒答闸门**（复用 LLM 精排三态判定，`ANSWERABILITY_REJECT_ENABLED` 默认 false、无明确判定时 fail-open）。冲突 **4 处逐块解**（`test_rag.py` 两侧用例都留 + 延迟用例取本地 n=20；`lessons.md` 按 ts 倒序；`progress.md` 两侧小节全留按时间序；`STATE.md` 分支行取本地、正文两侧原文都留）。合并后 `alembic heads` **单头** `b3a1c2d3e4f5`（其 down_revision 恰为本侧原 head `6a12e10c4868`）⇒ **无需 merge migration**；本机开发库已 `6a12e10c4868 → b3a1c2d3e4f5`，`profile_sensitive` **104 行**全部回填密文/hash（缺失 0）。`gen_openapi.py` 重导后 `--check` 通过。详见 `progress.md` 2026-10-23 节。
+**2026-10-24 · 7 类分类器重训落地 + answerability 闸门开启后的实测代价**：
+① **分类器已重训**（远端 `student03@10.20.28.21` 训练 → 本机部署）：70 训练 / 14 评估，评估 **100%（14/14）**、门禁 ≥75% 达标；本机 `classify()` 7 类各命中、`degraded=False`。**训练必须按本机版本矩阵**（ST 5.6.0 / setfit 1.1.3 / transformers 4.57.6 / tokenizers 0.22.2 / datasets 4.8.5 / accelerate 1.13.0 / torch 2.12.0+cpu）——用 ST 6.2.0 训出的产物含 `2_Normalize` 引用，本机加载即 `ModuleNotFoundError`、分类静默降级 mixed（教训已登记）。
+② **闸门已按拍板开启**（`backend/.env` 与 `deploy/.env.production.template` 均 `ANSWERABILITY_REJECT_ENABLED=true`），但**实测代价已量化**：同语料同配置 A/B（qwen-flash）—— 关闸门 `hit_rate@3=0.9302 / 误召回 0.5714`；开闸门 `hit_rate@3=0.7674 / 误召回 0.0000`。DeepSeek 档更差（0.6512）。丢失的 12 条命中里 11 条是「正确答案被整组判 false 清空」（真相多是 4~9 字短记忆，如『预约体检』『上周的会议纪要』）。**闸门挡住了假命中、也挡掉了 16pp 真命中**；上线前须换成独立的存在性判定或仅在描述层启用（台账 §20 M-9 / 教训已登记）。
+③ **测试断言随配置修正**：`test_answerability_reject_defaults_off` 原先断言运行期 `settings.*`，`.env` 一开就假红 ⇒ 改断言 `Settings` 字段默认值（契约默认值 vs 环境覆盖是两件事）。
+
+**2026-10-23 · 合并 origin/develop（`dd89678` → `f49df29`，5 个提交）**：取回远端三件实质能力——① **B-3 画像敏感话题加密**（AES-256-GCM + HMAC 盲索引 + 迁移 + 回填脚本）；② **分类词表 5 类 → 7 类**（+question/fact，代码/契约/客户端 chips 全对齐，DB 零改动；**模型已由 2026-10-24 重训补上**）；③ **answerability 拒答闸门**（复用 LLM 精排三态判定）。冲突 **4 处逐块解**（`test_rag.py` 两侧用例都留 + 延迟用例取本地 n=20；`lessons.md` 按 ts 倒序；`progress.md` 两侧小节全留按时间序；`STATE.md` 分支行取本地、正文两侧原文都留）。合并后 `alembic heads` **单头** `b3a1c2d3e4f5`（其 down_revision 恰为本侧原 head `6a12e10c4868`）⇒ **无需 merge migration**；本机开发库已 `6a12e10c4868 → b3a1c2d3e4f5`，`profile_sensitive` **104 行**全部回填密文/hash（缺失 0）。`gen_openapi.py` 重导后 `--check` 通过。详见 `progress.md` 2026-10-23 节。
 
 **2026-10-19 同步合并 + 窄口上传（用户拍板：产品决策暂不上传、不抢 A/B/C 的活）**：`origin/develop`(dd89678) 的 **4 个提交**已并入 → `ff8eadd`（D-05 补传上云共口 / 真机复验脚本 / 复验台账 / 出包前清单）；3 处冲突按**两边都保留**解（`uploader_batch` 省流待补原件 + `l1_submit` 上云；`UploadStatusBanner` 重试结果提示 + 上云；`lessons` 两批条目）。编译门**真编译 72.7s**、快速门禁通过、事件回收定向 **3 passed**。另把 **5 条不冲突的后端/脚本修复**摘到 `sync/infra-fixes-20261019` 并推远端（事件空壳回收 `a9e7ccf` / 30 天清理接回收 `f60e7ff` / 回收用例 `ec15130` / 重扫增收无 caption 照片 `44544e0` / `pack.ps1` 等待 3600s `1f2bfbf`）；**develop 未动**。产品决策（entry 流/搜索重做/AI 页/settings 退役）与 B/C 任务域重叠的 21 条提交**未上传**。发现并修掉一处我们自己的红：`44544e0` 改 `_stale_candidates` 签名后 `test_requeue_job` 的桩未跟 ⇒ **5 条 TypeError**（feature 与 sync 两支均已修，6 passed）——说明 10-16 之后没跑过 `--full`。当前 feature 相对 develop：**36 ahead / 0 behind**（本轮提交前）。
 
@@ -66,7 +71,7 @@
 ## 下一步（按优先级）
 
 0. **当前后端 B 批（远端干线，合并带入）**：服务器开通后核对路径、时区、Docker 权限，在目标机安装 RUNBOOK §5 的 4 业务 cron + 1 备份并验日志/重投；B-3 补生产副本迁移/密钥保管演练，稳定一个发布周期后发独立删除旧 `topic` 列迁移；随后做 B-4 G 批基准与误导注释处理，B-5 D/F/G 三评测器。详见执行顺序文档与决策台账 §19。
-0.5 **10-23 合并带入的两个上线前置**：① **SetFit 需重训 7 类**（`python backend/scripts/train_setfit.py`；重训前模型只输出旧 5 类，`question/fact` 只能靠用户纠错写入——代码已加显式告警）；② **answerability 闸门默认关且真实 LLM 档未验**（无 key 时 fail-open，别当成 P0-2 已修好）。
+0.5 **2026-10-24 更新——两个上线前置的现状**：① **SetFit 7 类已重训完成**（评估 100%，本机 7 类全命中）⇒ 该项**已解除**；模型在 `backend/models/setfit-classifier`（2.2GB，不入库，换机需重训或拷贝）。② **answerability 闸门已开（拍板）但代价已量化**：qwen 档 `hit_rate@3` 0.9302→**0.7674**、误召回 0.5714→**0**；DeepSeek 档 0.6512。**结论：闸门当前能过负样本门禁、但吃掉约 16pp 真命中**，上线前须换独立存在性判定或只在描述层启用（台账 §20 M-9）。③ **出包**：2026-10-24 云打包已提交（队列编号 `0fb6fae0-cf04-11f1-acf9-fb9aeaeb6ce1`，自有证书），**出包产物未取回、未尸检、未投放**——按用户指示暂停，需要时用 `scripts/dev/pack.ps1 -SkipPack -Apk <apk> -Deploy` 续。
 1. **批次 B（进行中）· entry 流最小闭环**：「今天」锚点 + 记录后立刻可见（时间轴读 `contents`，事件只做增强）
 2. **批次 C · 回顾位**：那年今日（今天卡下）+ 每日回顾（接回响/消息链）
 3. **批次 D · 搜索形态重做**：`/search` 加可选 `answer` → 回答卡 + 用户维度筛选 + 可解释结果 + 历史/继续
@@ -89,7 +94,8 @@
 4. 🟡 **上传管线类改动受"验证条件"限制**（蜂窝省流五步等）：按 2026-09-23 纪律需「编译门 **+ 真机验证条件**」，当前不可验 ⇒ 挂账，不得以未验证改动填补——**沿用自 10-14，未变**
 5. 🟡 **LLM 供应商为 DeepSeek**（`LLM_PROVIDER=deepseek`，key 取本机 `deepseek-ugsimulator`）；百炼 Token Plan 未续 ⇒ 视觉类（caption）仍走 DashScope 分支、无 key 时降级——**沿用自 10-14，未变**
 6. 🔴 **内部阻塞已单列**（用户 10-19 提醒「表面阻塞消失 ≠ 内部阻塞消失」）：`docs/内部阻塞项_20261019.md` 记 **B1–B7** —— **Redis 6379 假活**（端口通、PING 超时 ⇒ RQ/全量门禁不可用）、**内存仅 0.4GB 空闲**（重活必 OOM/换页）、agent 8300 未起、1694 里只有 114 可回填、4464 processing、19120 候选用户、`--full` 从未真正跑过。**不要再把「端口通 / 快速门禁绿」当健康判据。**（2026-10-23 补：本次为跑测试临时起了 Docker，Redis **PONG** / Qdrant 200 / PG 5432 均在听 ⇒ 容器侧已可用；但 `--full` 仍未跑，本条**不因此判为解除**。）
-7. 🟡 **合并带入的两个上线前置（2026-10-23）**：**SetFit 未重训**（代码已扩 7 类，模型仍 5 类，`question/fact` 只能靠用户纠错写入）；**answerability 闸门默认关**且真实 LLM 档未验（无 key 时 fail-open）。详见 `docs/决策台账.md` §20 M-5/M-6。
+7. 🟡 **闸门代价（2026-10-24 实测，替代原「两个上线前置」条目）**：**SetFit 已重训解除**；剩下的硬问题是 **answerability 闸门在真实 LLM 下吃掉真命中**——qwen 档 `hit_rate@3` 0.9302→0.7674（−16.3pp）、DeepSeek 档 →0.6512（**跌破 0.7 门禁**），换来的负样本误召回 0.5714→0。量化口径：43 条计分查询里 12 条原本命中被清空，其中 11 条是「正确答案全判 false」；被清空前已判 true 的只有 1 条。**根因**是闸门复用了精排的「相关且信息足够」判定，而真值集正确答案多为 4~9 字短记忆。详见 `docs/决策台账.md` §20 M-9。
+8. 🟡 **出包链停在半程（2026-10-24）**：前置门全绿、云打包已提交（自有证书，队列 id `0fb6fae0-cf04-11f1-acf9-fb9aeaeb6ce1`），**产物未取回/未尸检/未投放**——用户指示暂停。客户端已切 `ENV='prod'` / `REAL_DEVICE_HOST=''` / `PROD_BASE_URL=https://coleslaw-absence-harvest.ngrok-free.dev`（**未提交**，出包前必须保持该状态；联调请用 `write_base_url.ps1 -Restore` 回 dev）。⚠️ 本机后端/worker/agent/ngrok 隧道**已在跑**，关机即所有在野 APK 不可用。
 
 ## 权威指针（想知道 X 去哪看）
 
@@ -109,6 +115,8 @@
 
 ## 关键数字（唯一口径）
 
+- **2026-10-24 SetFit 7 类重训**：训练 70 条 / 评估 14 条；**评估准确率 100%（14/14）**，门禁 ≥75% 达标；训练耗时 **117s**（远端 56 核 CPU，无 GPU 参与）；产物 2.2GB（`backend/models/setfit-classifier`，`.gitignore` 不入库）；本机 `classify()` 七类语料各 1 条 **7/7 命中**、`degraded=False`（conf 0.51~0.75）。训练环境必须与本机版本矩阵一致（见台账 §20 M-10）。
+- **2026-10-24 闸门 A/B（truth-50，同语料 131 条 / 计分 43 查询）**：基线（mock、关）`hit@3=0.9302 / neg=0.5714` → **qwen-flash 关** 0.9302 / 0.5714（**与基线逐位一致，证明基线可复现**）→ **qwen-flash 开** `0.7674 / 0.0000` → **DeepSeek 开** `0.6512 / 0.0000`。开闸门后丢失 12 条命中、1 条 pre-gate 判 true；被拒答且本来未命中的 3 条。**按层看**：descriptive/image 不受影响（1.0/1.0），person 1.0→0.6、route 0.7143→0.4286、time 1.0→0.8333、place 1.0→0.8（qwen 档）。
 - **2026-10-23 合并实测**：`origin/develop` `dd89678`→`f49df29` 5 提交已并入；冲突 4 处（3 个文档 + `test_rag.py`）；`alembic heads` **单头** `b3a1c2d3e4f5`（无需 merge migration）；本机库 `6a12e10c4868 → b3a1c2d3e4f5`，`profile_sensitive` **104 行**回填，密文/hash 缺失 **0**；定向 pytest 共 **96 passed / 4 skipped / 1 deselected**（11 + 15 + 22 + 36 + 12，最后一项为 `-m rag` 167.14s）；编译门**真编译 45561ms**；`openapi --check` OK（260916 字符）；快速门禁 **退出码 0**；**`--full` 未跑**（勿引用为绿）。
 - **2026-10-19 B-3**：开发库敏感话题 21 行、归一化冲突 0、回填后密文/hash 缺失 0；B-3 相关定向 42 passed，`alembic check` 无漂移；`review_agent.py --full` 最终退出码 **0**，覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`；本机无 HBuilderX CLI，客户端编译轴明确降级放行（本次未改客户端）。
 - **用户故事**：✅46 / 🟡7 / ❌0；A 级真机证据 **32** 条（口径基线 **2026-08-29**，**仍未按 9–10 月变更重算**）

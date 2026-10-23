@@ -64,7 +64,13 @@ def test_gate_empty_hits():
 
 
 def test_answerability_reject_defaults_off():
-    """默认关闭：不验收前生产行为必须与改动前一致（显式开启才生效）"""
-    from app.core.config import settings
+    """**声明默认值**为 false：不验收前生产行为必须与改动前一致（显式开启才生效）。
 
-    assert settings.answerability_reject_enabled is False
+    ⚠️ 断言的是 `Settings` 的**字段默认值**，不是运行期 `settings.*`：
+    后者会被 `backend/.env` 覆盖（2026-10-23 用户拍板「闸门开」后本机即为 true）。
+    用运行期值断言，等于把「本机 .env 恰好是 false」当成契约 ⇒ 换个环境就假红
+    （同 lessons 里「本地绿≠CI 绿」那一族）。
+    """
+    from app.core.config import Settings
+
+    assert Settings.model_fields["answerability_reject_enabled"].default is False
