@@ -7272,7 +7272,7 @@
           "new_label": {
             "type": "string",
             "title": "New Label",
-            "description": "纠正后的分类：todo/idea/emotion/quote/mixed"
+            "description": "纠正后的分类：todo/idea/emotion/quote/mixed/question/fact（7 类）"
           },
           "old_label": {
             "anyOf": [

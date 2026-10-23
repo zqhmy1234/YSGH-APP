@@ -1,4 +1,4 @@
-"""文字碎片分类 + 三层裁决 API（F2 · M1 Part 3：SetFit 5 类 · B5-c）
+"""文字碎片分类 + 三层裁决 API（F2 · M1 Part 3：SetFit 7 类 · B5-c）
 
 P2-01 重构（推理移 worker）：SetFit 单条 ~27s（CPU 实测），不再同步占用 API 线程池。
   POST /api/v1/classify                   → 入队 high 队列，立即返回 {job_id}（API 不阻塞）

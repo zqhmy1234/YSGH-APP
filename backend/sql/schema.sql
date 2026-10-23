@@ -93,7 +93,7 @@ CREATE TABLE contents (                        -- 核心表
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         uuid NOT NULL REFERENCES users(id),
     content_type    text NOT NULL,             -- photo / text / voice / article
-    content_class   text,                      -- 待办/灵感/情绪/引用/混合
+    content_class   text,                      -- 待办/灵感/情绪/引用/混合/问询/事实（7 类，自由字符串无约束）
     class_source    text,                      -- setfit / llm / rule / user
     model_version   text,                      -- 分类模型版本
     text            text,                      -- OCR 结果/转写/原文
