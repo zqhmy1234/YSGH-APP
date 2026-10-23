@@ -127,7 +127,7 @@ $cfg=[ordered]@{ android=[ordered]@{
   packagename="com.yishu.guanghua"
   androidpacktype=0
   certalias=$kv['alias']
-  certfile="C:\Users\ghf\.yishu-signing\yishu-guanghua-beta.jks"
+  certfile="$env:USERPROFILE\.yishu-signing\<你的签名证书>.jks"
   certpassword=$kv['passwd']
   storepassword=$kv['passwd']
 }}
