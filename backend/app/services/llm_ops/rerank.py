@@ -178,6 +178,11 @@ def llm_rerank(
     rerank_rank=1..top_k；全部候选附 rerank_reason（LLM 理由）。
     调用方按自身 limit 截断——精排"top-5"是名次窗口，不硬砍 API 返回条数。
 
+    `answerable`（2026-10-23 新增）：该候选的「能否回答」原始判定 —— True/False 表示
+    LLM **明确判过**，None 表示未判定（无 key / mock / 解析失败 / 索引越界 / 候选窗之外）。
+    本函数仍不增删候选（保持契约）；拒答由调用方按此字段决定（见
+    `settings.answerability_reject_enabled`），这样精排降级时不会连带清空结果。
+
     无 key / mock / 开关关 / 异常 → 原序返回（不抛异常、不改变候选集）。
     """
     if not hits:
@@ -205,10 +210,12 @@ def llm_rerank(
     score_of = {id(c): float(c.get("score") or 0.0) for c in cands}
     ok: list[tuple[dict, str]] = []
     no: list[tuple[dict, str]] = []
+    answer_of: dict[int, bool] = {}  # id(candidate) → 明确判定；未判定者不在表内
     for v in verdicts:
         i = v["i"]
         if not (0 <= i < len(cands)):
             continue
+        answer_of[id(cands[i])] = v["ans"]
         (ok if v["ans"] else no).append((cands[i], v["reason"]))
     judged = {v["i"] for v in verdicts if 0 <= v["i"] < len(cands)}
     for i, c in enumerate(cands):
@@ -229,6 +236,8 @@ def llm_rerank(
     for rank, c in enumerate(ordered, 1):
         nh = dict(c)
         nh["rerank_reason"] = reasons.get(id(c)) or "（未给出理由）"
+        # 未判定给 None（三态）：调用方据此区分「明确不能回答」与「没判」，避免降级时误拒答
+        nh["answerable"] = answer_of.get(id(c))
         if rank <= k:
             nh["rerank_rank"] = rank
         out.append(nh)

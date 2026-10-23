@@ -3,61 +3,13 @@
     "version": 2,
     "note": "RAG 全分布测评"
   },
-  "corpora": {
-    "scale": {
-      "collection": "yishu_benchmark_scale",
-      "size": 1000,
-      "n_queries": 50,
-      "index_ms": 548804,
-      "p95_ms": 292.1,
-      "gate_p95": true,
-      "mock_external_ai": true,
-      "rerank_enabled": false
-    },
-    "scale_curve": [
-      {
-        "collection": "yishu_benchmark_scale",
-        "size": 100,
-        "n_queries": 50,
-        "index_ms": 55218,
-        "p95_ms": 280.2,
-        "gate_p95": true,
-        "mock_external_ai": true,
-        "rerank_enabled": false
-      },
-      {
-        "collection": "yishu_benchmark_scale",
-        "size": 500,
-        "n_queries": 50,
-        "index_ms": 286307,
-        "p95_ms": 285.7,
-        "gate_p95": true,
-        "mock_external_ai": true,
-        "rerank_enabled": false
-      },
-      {
-        "collection": "yishu_benchmark_scale",
-        "size": 1000,
-        "n_queries": 50,
-        "index_ms": 548804,
-        "p95_ms": 292.1,
-        "gate_p95": true,
-        "mock_external_ai": true,
-        "rerank_enabled": false
-      }
-    ]
-  },
-  "rewrite_check": {
-    "n": 11,
-    "accuracy": 1.0,
-    "failed": []
-  },
+  "corpora": {},
   "truth": {
     "queries": 50,
     "sources": [
       "truth_queries_50"
     ],
-    "corpus_size": 117,
+    "corpus_size": 131,
     "layers": {
       "descriptive": {
         "n": 10,
@@ -67,10 +19,10 @@
         "unmatched_n": 0,
         "behavior_acc": null,
         "retrieval": {
-          "recall@1": 0.059,
-          "recall@3": 0.1645,
-          "recall@5": 0.2762,
-          "recall@10": 0.5586,
+          "recall@1": 0.0576,
+          "recall@3": 0.1605,
+          "recall@5": 0.2696,
+          "recall@10": 0.5454,
           "hit_rate@1": 1.0,
           "hit_rate@3": 1.0,
           "hit_rate@5": 1.0,
@@ -92,121 +44,193 @@
         "unmatched_n": 0,
         "behavior_acc": null,
         "retrieval": {
-          "recall@1": 0.0375,
-          "recall@3": 0.1115,
-          "recall@5": 0.1776,
-          "recall@10": 0.3373,
+          "recall@1": 0.0328,
+          "recall@3": 0.1063,
+          "recall@5": 0.1582,
+          "recall@10": 0.3176,
           "hit_rate@1": 0.7143,
           "hit_rate@3": 0.8571,
           "hit_rate@5": 0.8571,
           "hit_rate@10": 0.8571,
           "precision@1": 0.7143,
-          "precision@3": 0.7143,
+          "precision@3": 0.7619,
           "precision@5": 0.6857,
-          "precision@10": 0.6571,
+          "precision@10": 0.6857,
           "mrr": 0.7619,
-          "ndcg@3": 0.7143,
+          "ndcg@3": 0.7478,
           "n_queries": 7
         }
       },
       "time": {
         "n": 7,
-        "placeholder": true,
+        "placeholder": false,
         "negative_n": 1,
         "negative_fp": 0,
         "unmatched_n": 0,
-        "behavior_acc": 1.0,
-        "retrieval": null
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 1.0,
+          "recall@3": 1.0,
+          "recall@5": 1.0,
+          "recall@10": 1.0,
+          "hit_rate@1": 1.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 1.0,
+          "precision@3": 0.3333,
+          "precision@5": 0.2,
+          "precision@10": 0.1,
+          "mrr": 1.0,
+          "ndcg@3": 1.0,
+          "n_queries": 6
+        }
       },
       "place": {
         "n": 6,
-        "placeholder": true,
+        "placeholder": false,
         "negative_n": 1,
         "negative_fp": 0,
         "unmatched_n": 0,
         "behavior_acc": null,
-        "retrieval": null
+        "retrieval": {
+          "recall@1": 1.0,
+          "recall@3": 1.0,
+          "recall@5": 1.0,
+          "recall@10": 1.0,
+          "hit_rate@1": 1.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 1.0,
+          "precision@3": 0.3333,
+          "precision@5": 0.2,
+          "precision@10": 0.1,
+          "mrr": 1.0,
+          "ndcg@3": 1.0,
+          "n_queries": 5
+        }
       },
       "person": {
         "n": 6,
-        "placeholder": true,
-        "negative_n": 1,
-        "negative_fp": 1,
-        "unmatched_n": 0,
-        "behavior_acc": null,
-        "retrieval": null
-      },
-      "image": {
-        "n": 5,
-        "placeholder": true,
-        "negative_n": 1,
-        "negative_fp": 0,
-        "unmatched_n": 0,
-        "behavior_acc": null,
-        "retrieval": null
-      },
-      "route": {
-        "n": 8,
-        "placeholder": true,
+        "placeholder": false,
         "negative_n": 1,
         "negative_fp": 1,
         "unmatched_n": 0,
         "behavior_acc": null,
         "retrieval": {
-          "recall@1": 0.032,
-          "recall@3": 0.0711,
-          "recall@5": 0.1101,
-          "recall@10": 0.2077,
-          "hit_rate@1": 0.6,
-          "hit_rate@3": 0.6,
-          "hit_rate@5": 0.6,
-          "hit_rate@10": 0.6,
-          "precision@1": 0.6,
+          "recall@1": 0.8,
+          "recall@3": 1.0,
+          "recall@5": 1.0,
+          "recall@10": 1.0,
+          "hit_rate@1": 1.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 1.0,
           "precision@3": 0.4667,
-          "precision@5": 0.44,
-          "precision@10": 0.42,
-          "mrr": 0.6,
-          "ndcg@3": 0.4939,
+          "precision@5": 0.28,
+          "precision@10": 0.14,
+          "mrr": 1.0,
+          "ndcg@3": 1.0,
           "n_queries": 5
+        }
+      },
+      "image": {
+        "n": 5,
+        "placeholder": false,
+        "negative_n": 1,
+        "negative_fp": 0,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.75,
+          "recall@3": 1.0,
+          "recall@5": 1.0,
+          "recall@10": 1.0,
+          "hit_rate@1": 0.75,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 0.75,
+          "precision@3": 0.3333,
+          "precision@5": 0.2,
+          "precision@10": 0.1,
+          "mrr": 0.875,
+          "ndcg@3": 0.9077,
+          "n_queries": 4
+        }
+      },
+      "route": {
+        "n": 8,
+        "placeholder": false,
+        "negative_n": 1,
+        "negative_fp": 1,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.3052,
+          "recall@3": 0.3176,
+          "recall@5": 0.3301,
+          "recall@10": 0.3611,
+          "hit_rate@1": 0.7143,
+          "hit_rate@3": 0.7143,
+          "hit_rate@5": 0.7143,
+          "hit_rate@10": 0.7143,
+          "precision@1": 0.7143,
+          "precision@3": 0.3333,
+          "precision@5": 0.2571,
+          "precision@10": 0.2,
+          "mrr": 0.7143,
+          "ndcg@3": 0.5627,
+          "n_queries": 7
         }
       }
     },
     "overall": {
       "retrieval": {
-        "recall@1": 0.0454,
-        "recall@3": 0.1246,
-        "recall@5": 0.2038,
-        "recall@10": 0.4013,
-        "hit_rate@1": 0.8095,
-        "hit_rate@3": 0.8571,
-        "hit_rate@5": 0.8571,
-        "hit_rate@10": 0.8571,
-        "precision@1": 0.8095,
-        "precision@3": 0.746,
-        "precision@5": 0.7333,
-        "precision@10": 0.7238,
-        "mrr": 0.8254,
-        "ndcg@3": 0.759,
-        "n_queries": 21
+        "recall@1": 0.4857,
+        "recall@3": 0.5677,
+        "recall@5": 0.601,
+        "recall@10": 0.6898,
+        "hit_rate@1": 0.8837,
+        "hit_rate@3": 0.9302,
+        "hit_rate@5": 0.9302,
+        "hit_rate@10": 0.9302,
+        "precision@1": 0.8837,
+        "precision@3": 0.5426,
+        "precision@5": 0.4512,
+        "precision@10": 0.393,
+        "mrr": 0.9031,
+        "ndcg@3": 0.8668,
+        "n_queries": 43
       },
       "negative_n": 7,
       "negative_error_rate": 0.5714,
-      "placeholder_n": 16,
+      "placeholder_n": 0,
       "unmatched_n": 0,
       "cross_modal": {
-        "n": 5,
+        "n": 7,
         "multi_modal_hit": 1,
-        "acc": 0.2
+        "acc": 0.1429
       }
     },
     "gates": {
-      "hit_rate@3": 0.8571,
+      "hit_rate@3": 0.9302,
       "gate_hit_rate@3": true,
-      "n_queries": 21,
+      "n_queries": 43,
       "negative_error_rate": 0.5714,
       "gate_negative_error_rate": false,
       "threshold_hit_rate@3": 0.7,
       "threshold_negative": 0.05
+    },
+    "settings": {
+      "mock_external_ai": true,
+      "llm_provider": "dashscope",
+      "rerank_enabled": false,
+      "rerank_llm_enabled": true,
+      "retrieval_min_dense_score": 0.0,
+      "answerability_reject_enabled": false
     }
   },
   "overall_pass": false

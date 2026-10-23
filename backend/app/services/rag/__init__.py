@@ -25,7 +25,7 @@ import logging
 import time
 
 from app.core.config import settings
-from app.schemas.search import SearchQuery, SearchResult
+from app.schemas.search import SearchHit, SearchQuery, SearchResult
 from app.services.embedding import encode_query
 from app.services.rag.image import (
     _CAPTION_CACHE_MAX,
@@ -78,6 +78,28 @@ __all__ = [
     "_caption_cache_lock",
     "_search_by_image_impl",
 ]
+
+
+def _apply_answerability_gate(hits: list[SearchHit]) -> list[SearchHit]:
+    """answerability 拒答闸门（all-or-nothing，2026-10-23）。
+
+    只认 LLM 精排**明确给出**的判定（`trace["llm_answerable"]` 为 True/False）：
+
+    · 没有任何明确判定（mock / 无 key / 解析失败 / 精排关闭）→ 原样返回（fail-open，
+      不能让拒答不可用把搜索结果清空）；
+    · 只要有一条判「能回答」→ 原样返回（**不按条剔除**：逐条删会误伤 hit_rate@3，
+      且不能回答的候选本来就被 llm_rerank 压到队尾）；
+    · 全部明确判「不能回答」→ 返回空，即「我没有这条记忆」。
+
+    门禁口径：真实负样本上 negative_error_rate ≤0.05，同时 hit_rate@3 不低于基线。
+    """
+    if not hits:
+        return hits
+    judged = [h for h in hits if h.trace.get("llm_answerable") is not None]
+    if not judged or any(h.trace.get("llm_answerable") for h in judged):
+        return hits
+    logger.info("answerability 拒答：%d 条候选全部判为不可回答 → 返回空", len(judged))
+    return []
 
 
 def search(q: SearchQuery, db=None, user_id: str | None = None, collection: str | None = None) -> SearchResult:
@@ -268,10 +290,19 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         # 仅当 LLM 真实判定过（带 rerank_reason）才替换排序；mock/无 key 原序不动候选集
         judged = {c["id"]: c.get("rerank_reason") for c in llm_reranked if "rerank_reason" in c}
         if judged and llm_reranked:
-            hits = [c["hit"] for c in llm_reranked][: q.limit]
-            for h in hits:
+            hits = []
+            for c in llm_reranked[: q.limit]:
+                h = c["hit"]
                 if h.content_id in judged:
                     h.trace["llm_rerank_reason"] = judged[h.content_id]
+                # answerability 三态：True/False = LLM 明确判过；None = 未判定（mock/解析失败）
+                h.trace["llm_answerable"] = c.get("answerable")
+                hits.append(h)
+
+    # 4.5c answerability 拒答（2026-10-23）：精排判过且【全部】不可回答 → 返回空。
+    #      默认关闭；前提是真实 LLM + 真实负样本验收，理由见 config.answerability_reject_enabled。
+    if settings.answerability_reject_enabled:
+        hits = _apply_answerability_gate(hits)
 
     # 4.6 规则级敏感过滤（B5b-1 🟢：摘要/搜索规则级，不过模型；Wave1 AgentC 转交）
     #     命中 reject 类硬规则词的结果直接排除（转述用户内容的最小兜底）。

@@ -544,9 +544,21 @@ def _run_truth_eval(args, report: dict) -> dict:
         "threshold_hit_rate@3": GATE["hit_rate@3"],
         "threshold_negative": GATE["negative_error_rate"],
     }
+    # 环境指纹（§6.3）：拒答/精排/改写都直接影响负样本指标，报告必须能自证口径，
+    # 否则「同一语料两次跑出不同数字」无法归因。2026-10-23 补 answerability 开关。
+    from app.core.config import settings
+
     report["truth"] = {"queries": len(queries), "sources": sources,
                        "corpus_size": len(items), "layers": res["layers"],
-                       "overall": overall, "gates": truth_gates}
+                       "overall": overall, "gates": truth_gates,
+                       "settings": {
+                           "mock_external_ai": settings.mock_external_ai,
+                           "llm_provider": settings.llm_provider,
+                           "rerank_enabled": settings.rerank_enabled,
+                           "rerank_llm_enabled": settings.rerank_llm_enabled,
+                           "retrieval_min_dense_score": settings.retrieval_min_dense_score,
+                           "answerability_reject_enabled": settings.answerability_reject_enabled,
+                       }}
     hr_txt = (f"hit_rate@3={hr3}（门禁 ≥{GATE['hit_rate@3']}）" if n_q
               else "hit_rate@3 无法判定（n_queries=0，没有可测查询）")
     print(f"[truth] 检索 {hr_txt}"

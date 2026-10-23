@@ -261,6 +261,19 @@ class Settings(BaseSettings):
     #   标定工具与完整权衡表：<仓库>/research/rag_benchmark/r1_calibrate.py
     retrieval_min_dense_score: float = 0.0
 
+    # answerability 拒答（2026-10-23，按《RAG 检索链路与准确率提升方案_20261018》
+    # §三 P0-2 / §四 阶段 2-2）：LLM 精排本来就在逐条判「能否回答」（`llm_ops/rerank.py`
+    # 的 ans 字段），但此前只用来排序、且约定「绝不增删候选」⇒ 候选全部不可回答时仍会
+    # 返回 top-k，系统永远说不出「我没有这条记忆」（负样本误召回 0.5714，门禁 ≤0.05）。
+    # 开启后：精排**明确判定过**的候选**全部** ans=false → 整个结果集返回空；
+    # 只要有一条判「能回答」就不拒答（不做逐条剔除，避免误伤 hit_rate@3）。
+    #
+    # ⚠️ 默认 false = 保持现有行为。开启前提（两条都要满足）：
+    #   ① 真实 LLM —— mock / 无 key 时精排不产生判定，本闸门自动失效，不会误清空结果；
+    #   ② 真实负样本 ≥50 条用于验收 —— R-1 已证明合成语料上正负样本分数不可分，
+    #      合成集测出的 negative_error_rate 不能当验收依据（见 r1_calibrate.py）。
+    answerability_reject_enabled: bool = False
+
     # R-4 图片塔适配层（2026-10-14）：`image_vec`（以图搜图命名向量）用哪种模型出向量。
     #   bge_caption      = 现状：图片 → Qwen3-VL caption → BGE-M3 文本塔编码
     #                      （B2-4 允许的**替代路径**，等于用文本塔冒充图片塔）
