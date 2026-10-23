@@ -1,7 +1,8 @@
-"""SetFit 分类服务（M1 Part 3 · F2 文字碎片 5 类分类）
+"""SetFit 分类服务（M1 Part 3 · F2 文字碎片 7 类分类）
 
 - 模型：backend/models/setfit-classifier（scripts/train_setfit.py 训练）
-- 5 类：todo(待办)/idea(灵感)/emotion(情绪)/quote(引用)/mixed(混合)
+- 7 类：todo(待办)/idea(灵感)/emotion(情绪)/quote(引用)/mixed(混合)/
+  question(问询)/fact(事实) —— 2026-10-15 规格扩类，2026-10-23 代码对齐
 - 三层裁决（B5-c）：本服务 = 第②层全局 SetFit；第①层个人规则（correction_log
   向量相似>0.8）与第③层共性回流微调由后续任务接入
 """
@@ -24,8 +25,10 @@ logger = logging.getLogger("yishu.classify")
 
 _MODEL_DIR = Path(__file__).resolve().parent.parent.parent / "models" / "setfit-classifier"
 
-DEFAULT_CLASSES = ["todo", "idea", "emotion", "quote", "mixed"]
-DEFAULT_CLASSES_CN = ["待办", "灵感", "情绪", "引用", "混合"]
+# 顺序 = 业务展示顺序（旧 5 类在前，新增 2 类追加在后，避免旧客户端/旧数据口径被打乱）。
+# ⚠️ 训练脚本写 labels.json 时用的是模型 id2label 的字母序；运行期以 labels.json 为准。
+DEFAULT_CLASSES = ["todo", "idea", "emotion", "quote", "mixed", "question", "fact"]
+DEFAULT_CLASSES_CN = ["待办", "灵感", "情绪", "引用", "混合", "问询", "事实"]
 
 # 标签权威词表（审查 P1-09 收敛：corrections/correction 模块引用，消除三份重复定义）
 VALID_CLASSES = set(DEFAULT_CLASSES)
@@ -56,6 +59,16 @@ def _load() -> tuple[object | None, list[str], list[str]]:
         meta = json.loads(labels_path.read_text(encoding="utf-8"))
         classes = meta["classes"]
         classes_cn = meta["classes_cn"]
+        # 2026-10-23：规格已扩到 7 类，但磁盘上的模型可能还是旧 5 类。
+        # 以 labels.json 为准（否则 predict_proba 的列数对不上），但必须显式告警：
+        # 否则会出现「代码支持 7 类、模型只会 5 类」的静默错配。
+        missing = [c for c in DEFAULT_CLASSES if c not in classes]
+        if missing:
+            logger.warning(
+                "SetFit 模型标签少于代码词表：缺 %s（模型 %d 类 / 代码 %d 类）。"
+                "请重跑 scripts/train_setfit.py 训练 7 类模型；在此之前 question/fact 只能由用户纠错写入。",
+                missing, len(classes), len(DEFAULT_CLASSES),
+            )
     else:
         classes, classes_cn = DEFAULT_CLASSES, DEFAULT_CLASSES_CN
     return model, classes, classes_cn
@@ -66,6 +79,9 @@ def _fallback_result(text: str, classes: list[str], classes_cn: list[str]) -> di
 
     D-22（08-29）：degraded=True 显式标记——降级 mixed+conf0 与模型真判 mixed 从此
     可区分，裁决链/客户端不再把「模型没跑」伪装成分类结论（与 D-16 emotion_source 同族教训）。
+
+    2026-10-23 扩 7 类时**刻意不改降级标签**：`question`/`fact` 是有语义的真实类别，
+    不能拿来当"模型没跑"的兜底；兜底仍用 `mixed` + `degraded=True`。
     """
     return {
         "label": "mixed",

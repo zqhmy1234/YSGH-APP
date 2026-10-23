@@ -17,7 +17,10 @@ class CorrectionCreate(BaseModel):
         max_length=2000,
         description="内容文本（用于向量化）；照片等无文本内容可留空",
     )
-    new_label: str = Field(..., description="纠正后的分类：todo/idea/emotion/quote/mixed")
+    new_label: str = Field(
+        ...,
+        description="纠正后的分类：todo/idea/emotion/quote/mixed/question/fact（7 类）",
+    )
     old_label: str | None = Field(None, description="原分类（模型给出的）")
     source: str = Field("active", description="active=主动纠错 / echo=回响确认 / org=整理联动")
     content_type: str = Field("text", description="photo/text/voice")

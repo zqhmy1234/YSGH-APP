@@ -237,6 +237,60 @@ def test_search_trace_present(indexed_store):
 
 @pytest.mark.rag
 @pytest.mark.integration
+def test_answerability_gate_wiring_rejects_all(indexed_store, monkeypatch):
+    """链路接线（2026-10-23）：精排全判不可回答 → search 返回空；开关关闭时行为不变。
+
+    LLM 用桩替代（真实链路需 key），只验证 rag/__init__.py 的三段接线：
+    精排判定 → trace["llm_answerable"] → `_apply_answerability_gate`。
+    """
+    from app.core.config import settings
+    from app.services.llm_ops import rerank as rerank_mod
+
+    def _fake_rerank(query, cands, top_k=None, candidates=None):
+        out = []
+        for c in cands:
+            nh = dict(c)
+            nh["rerank_reason"] = "无关"
+            nh["answerable"] = False
+            out.append(nh)
+        return out
+
+    monkeypatch.setattr(rerank_mod, "llm_rerank", _fake_rerank)
+    q = SearchQuery(q="杭州旅行荷花")
+
+    monkeypatch.setattr(settings, "answerability_reject_enabled", False)
+    assert search(q, collection=TEST_COLLECTION).hits, "开关关闭时不应拒答"
+
+    monkeypatch.setattr(settings, "answerability_reject_enabled", True)
+    assert search(q, collection=TEST_COLLECTION).hits == [], "全部判不可回答应返回空"
+
+
+@pytest.mark.rag
+@pytest.mark.integration
+def test_answerability_gate_wiring_keeps_when_any_answerable(indexed_store, monkeypatch):
+    """链路接线：只要有一条判「能回答」→ 整组保留（不逐条剔除，保 hit_rate@3）"""
+    from app.core.config import settings
+    from app.services.llm_ops import rerank as rerank_mod
+
+    def _fake_rerank(query, cands, top_k=None, candidates=None):
+        out = []
+        for idx, c in enumerate(cands):
+            nh = dict(c)
+            nh["rerank_reason"] = "能回答" if idx == 0 else "无关"
+            nh["answerable"] = idx == 0
+            out.append(nh)
+        return out
+
+    monkeypatch.setattr(rerank_mod, "llm_rerank", _fake_rerank)
+    monkeypatch.setattr(settings, "answerability_reject_enabled", True)
+    hits = search(SearchQuery(q="杭州旅行荷花"), collection=TEST_COLLECTION).hits
+    assert hits, "有一条能回答时不拒答"
+    assert any(h.trace.get("llm_answerable") is True for h in hits)
+    assert any(h.trace.get("llm_answerable") is False for h in hits), "不可回答的候选应保留在队尾"
+
+
+@pytest.mark.rag
+@pytest.mark.integration
 def test_search_latency_sample_under_3s(indexed_store):
     """搜索延迟**抽样**阈值（RET-018，M1 门禁）——n=20 真 P95 口径。
 
@@ -803,6 +857,27 @@ def test_llm_rerank_single_object_and_string_index(monkeypatch):
     out = rerank_mod.llm_rerank("杭州看花", hits, top_k=1)
     assert [h["id"] for h in out] == ["b", "a"]
     assert out[0]["rerank_reason"] == "能回答"
+
+
+def test_llm_rerank_exposes_answerable_tristate(monkeypatch):
+    """answerability 三态：True/False=LLM 明确判过；未判定候选=None（拒答闸门据此 fail-open）"""
+    from app.services.llm_ops import rerank as rerank_mod
+
+    hits = [
+        {"id": "a", "text": "杭州西湖手摇船荷花", "score": 0.9},
+        {"id": "b", "text": "苏州松鼠桂鱼人均八十", "score": 0.8},
+        {"id": "c", "text": "马拉松五公里痛快", "score": 0.7},
+    ]
+    monkeypatch.setattr(rerank_mod, "llm_available", lambda: True)
+    monkeypatch.setattr(
+        rerank_mod,
+        "chat_text",
+        lambda system, user: (
+            '[{"i":0,"ans":true,"reason":"命中"},{"i":1,"ans":false,"reason":"无关"}]'
+        ),
+    )
+    out = rerank_mod.llm_rerank("杭州旅行", hits, top_k=2)
+    assert {h["id"]: h["answerable"] for h in out} == {"a": True, "b": False, "c": None}
 
 
 def test_rerank_auto_enabled_strategy(monkeypatch):

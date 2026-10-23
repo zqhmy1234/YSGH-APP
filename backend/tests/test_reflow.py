@@ -6,6 +6,22 @@ import pytest
 from scripts.reflow_global import _backup_model, _promote_if_gate, build_dataset
 
 
+def test_classifier_wordlist_is_seven():
+    """2026-10-23 契约锁：分类词表必须是 7 类，且中英一一对应。"""
+    from app.services.classifier import (
+        DEFAULT_CLASSES,
+        DEFAULT_CLASSES_CN,
+        LABEL_CN_MAP,
+        VALID_CLASSES,
+    )
+
+    assert DEFAULT_CLASSES == ["todo", "idea", "emotion", "quote", "mixed", "question", "fact"]
+    assert len(DEFAULT_CLASSES_CN) == len(DEFAULT_CLASSES) == 7
+    assert VALID_CLASSES == set(DEFAULT_CLASSES)
+    assert LABEL_CN_MAP["question"] == "问询"
+    assert LABEL_CN_MAP["fact"] == "事实"
+
+
 def test_build_dataset_groups_by_label():
     """候选 → 按 new_label 分组，空文本跳过"""
     candidates = [
@@ -15,6 +31,8 @@ def test_build_dataset_groups_by_label():
         {"text": "人生如逆旅", "new_label": "quote"},
         {"text": "今天好累", "new_label": "emotion"},
         {"text": "随便聊聊", "new_label": "mixed"},
+        {"text": "我今天记了什么？", "new_label": "question"},
+        {"text": "今天生病了，去医院挂了水", "new_label": "fact"},
         {"text": "非法标签", "new_label": "unknown"},  # 非法标签丢弃
     ]
     ds = build_dataset(candidates)
@@ -23,9 +41,11 @@ def test_build_dataset_groups_by_label():
     assert ds["quote"] == ["人生如逆旅"]
     assert ds["emotion"] == ["今天好累"]
     assert ds["mixed"] == ["随便聊聊"]
+    assert ds["question"] == ["我今天记了什么？"]
+    assert ds["fact"] == ["今天生病了，去医院挂了水"]
     assert "unknown" not in ds
     total = sum(len(v) for v in ds.values())
-    assert total == 5
+    assert total == 7
 
 
 def test_backup_model_backs_up_and_prunes(tmp_path):

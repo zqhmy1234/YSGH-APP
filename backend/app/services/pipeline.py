@@ -133,7 +133,7 @@ def _index_content(db: Session, content: Content, text: str | None = None) -> No
 
 
 def _classify_content(db: Session, content: Content, text: str) -> None:
-    """SetFit 5 类分类 → 回写 content_class/class_source/model_version"""
+    """SetFit 7 类分类 → 回写 content_class/class_source/model_version"""
     try:
         result = _get_classifier()(text)
         content.content_class = result["label"]

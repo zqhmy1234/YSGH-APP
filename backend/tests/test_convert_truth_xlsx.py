@@ -203,8 +203,8 @@ def test_convert_a_strict_layer_drops_unmappable(tmp_path):
 # ---------------------------------------------------------------- B 批
 
 
-def test_convert_b_skips_invalid_label(tmp_path):
-    """excel 里混进了 question / fact，不在规格 5 类枚举内 → 逐条跳过并记 blocker。"""
+def test_convert_b_accepts_seven_classes(tmp_path):
+    """2026-10-23：question / fact 已是合法 7 类，必须全部转出（不再跳过）。"""
     _write_xlsx(tmp_path / "B批_文字碎片标注表_v2.xlsx", [
         ("B批_文字碎片标注", B_HEADERS, B_SAMPLE, [
             ["a-0001", "明天记得带身份证去体检", "todo", "confirmed", "beta-user", "用户A‘",
@@ -218,11 +218,30 @@ def test_convert_b_skips_invalid_label(tmp_path):
 
     result = conv.convert_b(_sources("b"), _ctx(tmp_path))
 
+    assert [r["fragment_id"] for r in result.records] == ["a-0001", "a-0002", "a-0003"]
+    assert [r["label"] for r in result.records] == ["todo", "question", "fact"]
+    skips = [b for b in result.blockers if b.severity == "skip"]
+    assert not skips
+
+
+def test_convert_b_skips_invalid_label(tmp_path):
+    """非法类别仍逐条跳过并记 blocker（保住宽容模式语义）。"""
+    _write_xlsx(tmp_path / "B批_文字碎片标注表_v2.xlsx", [
+        ("B批_文字碎片标注", B_HEADERS, B_SAMPLE, [
+            ["a-0001", "明天记得带身份证去体检", "todo", "confirmed", "beta-user", "用户A‘",
+             "2026-08-28", "待办"],
+            ["a-0002", "随便聊聊", "unknown", "confirmed", "beta-user", "用户A‘",
+             "2026-09-10", "非法"],
+        ]),
+    ])
+
+    result = conv.convert_b(_sources("b"), _ctx(tmp_path))
+
     assert [r["fragment_id"] for r in result.records] == ["a-0001"]
     skips = [b for b in result.blockers if b.severity == "skip"]
-    assert len(skips) == 2
-    assert all(b.reason == "ENUM_INVALID" for b in skips)
-    assert {b.record_id for b in skips} == {"a-0002", "a-0003"}
+    assert len(skips) == 1
+    assert skips[0].reason == "ENUM_INVALID"
+    assert skips[0].record_id == "a-0002"
 
 
 def test_convert_b_hashes_users_consistently(tmp_path):

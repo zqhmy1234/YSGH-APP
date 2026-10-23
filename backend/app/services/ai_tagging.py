@@ -1,7 +1,7 @@
 """ai_tagging.py —— BA3 AI 链批：chips 自由标签 + 照片 AI 一句话描述（A1/A7 远期总账）
 
 拍板口径（F1 组）：chips 标签 = AI 动态生成、**不限死枚举**——本服务输出即自由标签
-数组（list[str]），与 SetFit 5 类（情绪/灵感/混合/引用/待办，content_class 体系）
+数组（list[str]），与 SetFit 7 类（情绪/灵感/混合/引用/待办/问询/事实，content_class 体系）
 互不相关、不作真值。写入列（BA1 已建，勿在此重复建列）：
 - contents.tags_json        标签数组（文本/语音类，异步 RQ 任务 tag_content 写）
 - contents.ai_description   照片一句话描述（≤40 字，照片管线内联写）

@@ -29,6 +29,9 @@ if hasattr(sys.stdout, "reconfigure"):
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
 
+# 类别词表唯一来源：与运行期分类器共用，避免"回流脚本还按 5 类收样本"。
+from app.services.classifier import DEFAULT_CLASSES  # noqa: E402
+
 DEFAULT_THRESHOLD = 50  # B5-c-4：共性纠错 ≥50 条才触发
 CORRECTION_LIMIT = 200  # 单次微调最多取样本数（防过拟合抖动）
 REFLOW_ACC_GATE = 0.75  # 评估集门禁（M1 口径）：不达标不覆盖生产模型
@@ -91,8 +94,8 @@ def collect_candidates(db) -> list[dict]:
 
 
 def build_dataset(candidates: list[dict]) -> dict[str, list[str]]:
-    """候选 → 5 类数据集（文本按 new_label 分组；无文本的跳过）"""
-    dataset: dict[str, list[str]] = {c: [] for c in ("todo", "idea", "emotion", "quote", "mixed")}
+    """候选 → 7 类数据集（文本按 new_label 分组；无文本的跳过）"""
+    dataset: dict[str, list[str]] = {c: [] for c in DEFAULT_CLASSES}
     for c in candidates[:CORRECTION_LIMIT]:
         text = (c.get("text") or "").strip()
         label = c.get("new_label")

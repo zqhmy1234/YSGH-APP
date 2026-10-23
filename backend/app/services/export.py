@@ -131,7 +131,6 @@ def _profile_out(db: Session, user_id: str) -> dict:
             {
                 "id": s.id,
                 "topic": s.topic,
-                "topic_hash": s.topic_hash,
                 "disposition": s.disposition,
                 "evidence": s.evidence or [],
                 "locked": s.locked,

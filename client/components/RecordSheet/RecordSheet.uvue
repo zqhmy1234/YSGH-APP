@@ -99,7 +99,7 @@
 
 			<!-- ═══ 语音 · 补录信息态（F1d：转写内容 + 分类 chips + 信息卡 + 备注 + 保存） ═══
 			     帧真值 record_f1d_canvas.json（390x844 · 35 节点 · 2026-09-02 导出）
-			     分类 chips 用真实枚举 ALL_LABELS（待办/灵感/情绪/引用/混合），画布「日常生活/家人与朋友/旅行」为示例名；
+			     分类 chips 用真实枚举 ALL_LABELS（待办/灵感/情绪/引用/混合/问询/事实），画布「日常生活/家人与朋友/旅行」为示例名；
 			     AI 预选 = 进入标注态对转写文本真实打标（submitClassify+pollClassify），非演示 -->
 			<view v-else-if="formMode == 'voice'" class="stage-col">
 				<scroll-view class="anno-scroll" direction="vertical" :show-scrollbar="false">

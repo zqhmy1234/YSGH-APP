@@ -161,7 +161,21 @@ du -sh backend/models ~/.cache/huggingface                   # 5 磁盘分账
 | 每月/季度 | 恢复演练 | 见 `backup_pg.sh` 末尾附录 | 季度全流程演练（RTO ≤4h） |
 
 > ⚠️ **完整清单是 4 条 job**（复盘 / 清理 / **重投** / **胶囊补扫**）—— 本表原先漏了后两条，
-> 2026-09-29 补。容器拓扑（A）下的对应写法见 `技术文档/03_环境与运维/忆述光华_Docker生产部署文档_20260923.md` §8。
+> 2026-09-29 补。容器拓扑（A）下的对应写法见下方范本。
+
+**拓扑 A（当前生产选型）的 crontab 范本**（项目目录按服务器实际路径核对；以下使用 `/srv/guangh`）：
+
+```cron
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+7 * * * * cd /srv/guangh && { date -Is; docker compose --profile app -f deploy/docker-compose.yml exec -T backend python -m app.workers.requeue_job --older-than-seconds 3600 --limit 100; } >> deploy/logs/requeue.log 2>&1
+30 3 * * * cd /srv/guangh && /bin/bash deploy/scripts/backup_pg.sh >> deploy/logs/backup.log 2>&1
+10 4 * * * cd /srv/guangh && { date -Is; docker compose --profile app -f deploy/docker-compose.yml exec -T backend python -m app.workers.cleanup_job --older-than-days 30 --limit 500 --dry-run; } >> deploy/logs/cleanup.log 2>&1
+5 8 * * * cd /srv/guangh && { date -Is; docker compose --profile app -f deploy/docker-compose.yml exec -T backend python -c "from app.db.session import SessionLocal; from app.workers.capsule_scan import scan_due_capsules; db=SessionLocal(); print('due:', scan_due_capsules(db)); db.close()"; } >> deploy/logs/capsule_scan.log 2>&1
+0 22 * * * cd /srv/guangh && { date -Is; docker compose --profile app -f deploy/docker-compose.yml exec -T backend python /app/scripts/daily_review.py; } >> deploy/logs/daily_review.log 2>&1
+```
+
+安装前确认 `date` 显示的时区符合业务时间（每日复盘应为北京时间 22:00）、`docker compose --profile app -f deploy/docker-compose.yml ps backend` 显示后端容器运行，且执行 cron 的系统用户有 Docker 权限。此范本的清理任务**先保留 `--dry-run`**；核对首次扫描范围后，再单独移除该参数。拓扑 A 的应用依赖在容器内，不能直接用宿主机 `python` 跑四项业务 job。
 
 验证：`crontab -l`；`tail -20 deploy/logs/backup.log` 出现「备份完成」+「归档结构完整」。
 

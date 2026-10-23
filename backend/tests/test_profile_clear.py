@@ -21,7 +21,7 @@ from app.db.models import (
 from app.db.session import SessionLocal
 from sqlalchemy import text
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("profile_crypto_keys")]
 
 
 def _seed(db, user_id: str, dimension: str = "personality_core") -> None:

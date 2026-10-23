@@ -42,7 +42,7 @@ def tag_content(content_id: str) -> dict:
     """BA3（AI 链批）：低优先级 RQ 任务 —— 文本/语音类 chips 自由标签
 
     标签口径（F1 拍板）：AI 动态生成、不限死枚举，写 contents.tags_json（list[str]，
-    与 ContentOut 出参对接）；与 SetFit 5 类（content_class）互不相关。
+    与 ContentOut 出参对接）；与 SetFit 7 类（content_class）互不相关。
     失败语义（不静默）：LLM 未配置/超时/解析失败 → log 错误原因（AiTaggingError.code），
     tags_json 维持 None；不 re-raise（RQ 视为成功不再重投，重试上限由 ai_tagging 内部
     with_retry 3 次承担）——打标是增强项，不阻塞主内容 done。

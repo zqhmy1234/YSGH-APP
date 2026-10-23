@@ -138,7 +138,7 @@ def test_personal_rule_miss_falls_to_global(db_user, mock_encode):
     db, user = db_user
     result = arbitrate(db, user.id, "知人者智,自知者明", "text")
     assert result["layer"] == "global"
-    assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed"}
+    assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed", "question", "fact"}
 
 
 def test_last_correction_wins(db_user, mock_encode):

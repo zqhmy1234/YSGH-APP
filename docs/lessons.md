@@ -18,6 +18,24 @@
 
 ---
 
+### 2026-10-19 10:56 · commit dd89678 · ts=1792378591
+- **错误**：pre-commit hook 在已暂存 B-3 提交时因找不到 Ruff 与后端依赖而阻断
+- **根因**：hook 固定执行 PATH 上的 python；发起 git commit 的 PowerShell 未把项目 .venv/Scripts 放在 PATH 前面，故落到系统 Python
+- **修复**：提交命令的进程 PATH 临时前置项目 .venv/Scripts，保留 hook 正常运行并核对审核报告
+- **相关文件**：.githooks/pre-commit
+- **教训**：手工门禁用虚拟环境通过后，提交前仍要确认 Git hook 解析到同一解释器；不要用 --no-verify 绕过环境错误。
+
+---
+
+### 2026-10-19 10:42 · commit dd89678 · ts=1792377751
+- **错误**：B-3 迁移首次执行因本地 PROFILE_FIELD 密钥为空被安全校验拒绝
+- **根因**：PowerShell Add-Content 的数组表达式把 KEY= 与随机值拆成两行；迁移前未核对配置解析后的长度
+- **修复**：修正忽略的 backend/.env 行结构；只输出键名和长度验证两把 key 均为有效 32 字节 base64；迁移随后事务完成
+- **相关文件**：backend/.env
+- **教训**：写入本地密钥后先用不回显值的长度与格式检查，再运行数据迁移；失败时先确认 Alembic 事务未提交。
+
+---
+
 ### 2026-10-19 02:32 · commit 5470c8f · ts=1792348363
 - **错误**：新增 BGE_DEVICE/BGE_THREADS/BGE_WARMUP_ON_START 三个 config 字段后只补了 backend/.env.example，env_template 轴判红（真缺口三项）
 - **根因**：该轴比对的是 deploy/.env.production.template（部署契约源），backend/.env.example 只是本地模板；两处都要补，且模板里还有'与 config.py 逐一对齐'的承诺
@@ -141,6 +159,8 @@
 - **修复**：先登记结论与判读规则（台账 4.20 ㉙ + STATE 权威指针区加一行），修复列入规划：syntax/lint 改 git 视角（配负向探针：工作区放一个语法坏的 ignored 文件，断言门禁不受影响）、版本一致性、性能增量化
 - **相关文件**：scripts/review_agent.py
 - **教训**：门禁判红的第一件事不是看代码，而是问：它点名的文件能不能进仓库——git ls-files 为空就是门禁假红，与提交者无关。本项目已三次踩同一族（secrets 假红、.wt/ 重复扫、syntax 扫产物）⇒ 凡按目录遍历找文件的检查一律走 git 视角（tracked ∪ untracked-非忽略），且每条都要配负向探针。另：本地与 CI 的工具版本必须钉成同一个，否则本地绿不能说明 CI 绿（本机 ruff 0.15.22 / CI 0.16.8）
+
+---
 
 ---
 

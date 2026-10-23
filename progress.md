@@ -747,3 +747,38 @@ ShareSheet（须真机验"保存到相册"）。
 - **搜索 P95 调研**：`docs/搜索P95_业界做法调研_20261019.md`。要点：Qdrant Query API 的 prefetch+RRF 把融合下推到检索库（一次往返）；FastEmbed 用 ONNX/量化/并行做 CPU 编码；Onyx 把 hybrid 实现在索引后端抽象里；RAGFlow 的 issue 实证「多路召回 + rerank」就是慢。对应我们：瓶颈是 LLM 改写 + LLM 精排 + CPU 双前向，推荐 P0 投机式并行召回/精排策略化、P1 ONNX/int8 + 服务端 RRF，组合预期 2.3–2.6s（需 R-9 复测）。
 - **内部阻塞**：`docs/内部阻塞项_20261019.md` 记 B1–B7。最硬的两条：**Redis 6379 假活**（端口通、PING 超时；监听者 `com.docker.backend`）⇒ RQ 与 `--full` 都不可信；**空闲内存 0.4GB/15.7GB** ⇒ 重活随时换页/OOM。另：agent 8300 未起、4464 processing、19120 每日复盘候选用户、`--full` 从未真正跑过。
 - **验证**：`test_requeue_job` 8 passed（含 require_file）；`pytest -m unit` 112 passed；快速门禁待提交前复跑。回填为真实外部调用，进度以 DB/日志为准。
+
+## 2026-10-19 · 后端 B-2～B-5 新任务书与 B-3 第一阶段
+
+- 保留用户已有 `.gitignore` 修改和未跟踪的新版作战手册，`git pull --ff-only origin develop` 从 `d1da8c6` 快进到 `dd89678`；`init.ps1` 通过。执行顺序另写 `docs/B2-B5_后端执行顺序_20261019.md`。
+- B-2 本地 `requeue_job --dry-run` 成功（扫描 100 条候选）、`cleanup_job --dry-run` 成功（本次清理 0，23 条未到期）。这不是服务器 cron 验收，仍须 4 项业务 job + 1 项备份的 `crontab -l`、日志和重投实证。
+- B-3 限定 `profile_sensitive.topic`，本机开发库 21 行、归一化重复 0、`evidence` 非空 0。实现随机 AES-256-GCM 加密、独立 HMAC-SHA256 盲索引、生产缺钥匙 fail-fast、ORM/API/回响/导出读写收口，并增补可 dry-run/续跑回填工具与 Alembic 增量迁移。两把随机内部密钥仅写入本机 Git 忽略的 `backend/.env`，未回显值或提交。第一次写入被 PowerShell 表达式拆行，迁移在校验前拒绝、版本仍为旧 head；修正后成功迁移至 `b3a1c2d3e4f5`，21 行密文/hash 缺失均 0，`alembic check` 无漂移。旧明文列依手册保留一轮，**B-3 仍未最终完成**。
+- 隔离 PostgreSQL schema 的旧行迁移/服务回归通过；相关定向 **42 passed**，Ruff/语法检查通过。首次全量门禁因旧 schema 与系统临时目录 ACL 报错；设置仓库内 TEMP/TMP、已有 HF_HOME 且升级开发库后，第二轮全量测试轴通过，覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`；最终门禁只被 lessons 纪律拦下，已按脚本登记本次 PowerShell 密钥拆行教训。最终复跑结果见后续追加记录。
+- B-4 代码复核：`moderate.py` 主链已接 `qwen_response_check`，`guard.ManagedDetector` 实为事件软话题补漏；其去留登记台账 §5.12 待负责人定。B-5 的 D/F/G 目录目前仅有样例，不能出真实质量结论。
+- 登记 lessons 后最终复跑 `review_agent.py --full` **退出码 0**：语法 449 文件、Ruff、密钥、结构、跨轴、环境模板、OpenAPI、端口、安全审计、聚合等价、全量测试/API 冒烟/research 均通过；覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`。本机无 HBuilderX CLI，客户端编译轴明确降级放行（本次未改 `client/`）。复跑 `init.ps1` 通过。
+- 首次本地 `git commit` 被 pre-commit **正确拦截为环境错误**：hook 固定调用 PATH 上的 `python`，当次落到系统 Python 而缺 Ruff/后端依赖。按纪律登记 lessons；提交进程改为把项目 `.venv/Scripts` 前置 PATH 后重试，不使用 `--no-verify`。
+
+## 2026-10-19 · B-2 服务器定时任务准备
+
+- 用户请求协助设置 B-2，并确认服务器尚未开通；未接触或修改任何远端 cron。现有 SSH 别名不能证明是项目服务器，连接也超时，不以此冒充部署证据。
+- 核对当前生产选型为容器拓扑 A（`deploy/docker-compose.yml`）；`deploy/RUNBOOK.md` §5 补齐可安装的 4 条容器内业务任务 + 1 条 PG 备份 crontab 范本，含 `SHELL`/`PATH`、日志、北京时区核对和清理任务首次 `--dry-run`。静态核对为 5 条任务、4 条经容器执行、1 条备份、清理试运行 1 条。服务器开通后仍须核对路径/权限并实装、观察日志、验证失败任务重投。
+
+## 2026-10-23 · 合并 origin/develop（dd89678 → f49df29，5 个提交）
+
+- **范围**：把远端 develop 干线取回 feature 分支，`git merge --no-ff origin/develop`。合并前 feature 为 **38 ahead / 5 behind**，合并后 0 behind。
+- **远端带来的三件实质能力**：① `851187d` B-3 画像敏感话题加密（AES-256-GCM + HMAC 盲索引 + 迁移 + 回填脚本，22 文件）；② `01dd20e` 分类词表 5 类 → 7 类（+question/fact）代码/契约/客户端 chips 全对齐，**DB 零改动、SetFit 模型需重训**；③ `f49df29` answerability 拒答闸门（复用 LLM 精排三态判定，默认 `ANSWERABILITY_REJECT_ENABLED=false`、未判定时 fail-open）。另 `4841d59` B-2 cron 部署文档、`fe795a6` lint。
+- **冲突 4 处，逐块解（无整文件 ours/theirs）**：
+  - `backend/tests/test_rag.py`：远端两条 answerability 接线用例 + 本地 n=20 真分位延迟用例 **两边都保留**；删除远端被取代的旧 `test_search_latency_under_3s`（n=5 旧写法）。同时把 `@pytest.mark.rag/@pytest.mark.integration` 装饰器补给远端新用例（合并块里这两个 marker 被归到了本地一侧，直接接受会丢标记）。
+  - `docs/lessons.md`：两边条目按 `ts` 严格倒序合并（本地 11:20 → 远端 10:56 → 远端 10:42 → 本地 02:32 …）。
+  - `progress.md`：保留两侧全部小节，按时间序（10-16 → 本地 10-19 三段 → 远端 10-19 B-2/B-3 两段 → 本次）。
+  - `STATE.md`：「分支」行取本地并补记本次合并；「正在做什么」两侧原文都保留；「下一步」远端第 0 条（后端 B 批）置首、本地 PR #4 提示随后。
+- **合并后收口**：`gen_openapi.py` 重导（合并树里两侧契约项都在，但字节级比对不合）→ `--check` 通过；`backend/.env.example` 与 `deploy/.env.production.template` 两侧键齐全（BGE 三档 / PHOTO_DESCRIPTION / ANSWERABILITY / PROFILE_FIELD_*），注释块复查无错插。
+- **Alembic**：合并后 `alembic heads` 单头 `b3a1c2d3e4f5`（其 `down_revision=6a12e10c4868` 恰为本侧原 head）⇒ **无需再生成 merge migration**。本机开发库随后 `alembic upgrade head`：`6a12e10c4868` → `b3a1c2d3e4f5`，`profile_sensitive` 104 行全部回填密文/hash（缺失 0）。两把 `PROFILE_FIELD_*` 密钥写入 Git 忽略的 `backend/.env`，**未回显值、未提交**。
+- **验证（2026-10-23 实测）**：
+  - 环境：`docker compose` 起来后 Redis PING=PONG、Qdrant `/healthz`=200、PG 5432 监听；`ruff 0.16.8` 与 CI 钉版一致；`cryptography 50.0.0` 已装（远端新增依赖）。
+  - `gen_openapi.py --check` → **OK（260916 字符）**，与实现一致。
+  - `alembic heads` → **单头 `b3a1c2d3e4f5`**；`alembic current` → `b3a1c2d3e4f5`；库中 `profile_sensitive` **104 行**，`topic_enc/topic_hash` 缺失 **0**，旧 `topic` 明文 104 条保留（按设计留一个发布周期）。
+  - 定向 pytest（`TEMP/TMP` 指仓库内）：`test_answerability_gate.py` + `test_search_stages.py` **11 passed**；`test_profile_sensitive_crypto.py` + `test_profile_sensitive_migration.py` + `test_config_alias.py` **15 passed**；`test_reflow.py` + `test_convert_truth_xlsx.py` + `test_setfit.py` **22 passed / 4 skipped**；`test_echo.py` + `test_profile_clear.py` + `test_correction.py` **36 passed / 1 deselected**；`test_rag.py -m rag` **12 passed / 32 deselected（167.14s）**。
+  - 客户端编译门：**真编译 45561ms** 成功（本次合并带入 `client/` 2 个文件：`RecordSheet.uvue` chips 7 类 / `text_recorder.uts` ALL_LABELS+LABEL_CN）。
+  - `review_agent.py` 快速门禁 → **退出码 0**；`audit_axes` 无 CRITICAL（INFO 21）、`env_template` 真缺口 0 / 过期项 0、`openapi_snapshot` OK、`port_consistency` OK；`harness_state` 仅 WARN（feature_list 12 条 in-progress，如实状态）。
+- **如实标注**：`--full` 本次未跑（Docker 刚起、Redis/Qdrant 冷态，且历史上两次跑不完）——**不得引用为绿**；远端 `backend/sql/schema.sql` 的 `profile_sensitive` 段仍写 `topic text NOT NULL` + `UNIQUE(user_id, topic)`，与其自身迁移不一致（**远端既有漂移，本次不修**，已登记台账）。

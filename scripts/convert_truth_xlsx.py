@@ -66,7 +66,8 @@ SALT_FILE = DATA_DIR / ".salt"
 
 # ---------------------------------------------------------------- 常量与枚举
 
-FRAGMENT_LABELS = ("todo", "idea", "emotion", "quote", "mixed")
+# 2026-10-23：规格 2026-10-15 已扩到 7 类（+question/+fact），代码对齐。
+FRAGMENT_LABELS = ("todo", "idea", "emotion", "quote", "mixed", "question", "fact")
 # 规格 layer 枚举（docs/真值数据规格标准_v1.md §A）
 QUERY_LAYERS = ("descriptive", "keyword", "typo", "person", "place", "time", "route")
 
@@ -685,7 +686,7 @@ def convert_b(sources: list[Source], ctx: Ctx) -> BatchResult:
         if label not in FRAGMENT_LABELS:
             result.blockers.append(_base_blocker(
                 source, row, fid, "label", "ENUM_INVALID",
-                f"label={_safe_value(label, 'label')} 不在 5 类枚举内"
+                f"label={_safe_value(label, 'label')} 不在 7 类枚举内"
                 f"（{'/'.join(FRAGMENT_LABELS)}）", "skip",
             ))
             continue
@@ -909,7 +910,8 @@ def convert_e(sources: list[Source], ctx: Ctx) -> BatchResult:
             result.blockers.append(_base_blocker(
                 source, row, cid, "predicted/corrected", "ENUM_INVALID",
                 f"predicted={_safe_value(predicted, 'predicted')} / "
-                f"corrected={_safe_value(corrected, 'corrected')} 不在 5 类枚举内", "skip",
+                f"corrected={_safe_value(corrected, 'corrected')} 不在 7 类枚举内"
+                f"（{'/'.join(FRAGMENT_LABELS)}）", "skip",
             ))
             continue
         if predicted == corrected:

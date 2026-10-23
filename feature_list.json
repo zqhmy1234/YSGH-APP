@@ -130,7 +130,7 @@
    "description": "测试清单 17 模块 ~140 项（P0 ~60）+ AI 故障注入测试桩 + 性能基准 JSON 化进 CI 金丝雀 + 备份演练 DR-001~006",
    "dependencies": [],
    "status": "completed",
-   "evidence": "实现：fix/4b @ 3b2faec（真机清单 05/07 入库）+ feature/missing-pages-impl @ 677ea68（终值口径回源）｜scripts/realdevice/ 清单脚本 + 忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md §1.2（判定）｜真机 nova 11 七清单终态判定（2026-08-28：✅3/❌1/🟡3），缺陷 19 单见 docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md §4，证据 50 文件按「证据留本地」铁律留存 evidence/（.gitignore 不入库）；现行唯一口径=AGENTS.md「当前状态」+ docs/决策台账.md，下一步=4b 修复批次（散单 D-05/D-10/D-14/D-21 待并批）"
+   "evidence": "实现：fix/4b @ 3b2faec（真机清单 05/07 入库）+ feature/missing-pages-impl @ 677ea68（终值口径回源）｜scripts/realdevice/ 清单脚本 + 忆述光华_交付文档/MVP完成度评估_20260827/08_收尾波次完成汇报_20260828.md §1.2（判定）｜真机 nova 11 七清单终态判定（2026-08-28：✅3/❌1/🟡3），缺陷 19 单见 docs/parallel-dev-收尾/19_wave3_真机补验跟踪表.md §4，证据 50 文件按「证据留本地」铁律留存 evidence/（.gitignore 不入库）；现行唯一口径=AGENTS.md「当前状态」+ docs/决策台账.md，下一步=4b 修复批次（散单 D-05/D-10/D-14/D-21 待并批） 2026-10-23：合并后客户端编译门真编译 45561ms 通过（本次带入 client/ 2 文件：RecordSheet.uvue chips 7 类、text_recorder.uts ALL_LABELS/LABEL_CN 7 类）；--full 未跑。"
   },
   {
    "id": "BACKEND-B1-SCHEMA",
@@ -140,8 +140,19 @@
     "M0"
    ],
    "status": "in-progress",
-   "evidence": "2026-10-12：用户批准 2 张在用表补 ORM、11 张退休且已有数据保留。已补 34 处 server_default、新增增量迁移、空库 Alembic bootstrap、漂移门禁与建库脚本单链化。空库 upgrade/check 通过；漂移检查 ORM 32 表/Alembic 32 表、BLOCKING 0/INFO 0；隔离既有 d9a0b1c2d3e4 版本库升级后 users 与 audit_log 哨兵行保留，2 张在用表存在。阶段性代码已推送 develop @ 573b33b。2026-10-15：git fetch 核对本地与 origin/develop 均为 573b33b；修复全量审核所需的测试照片自动生成、Windows localhost 数据库与 Qdrant 连接延迟、审核扫描忽略缓存、测试依赖及本机 vector 扩展等问题。review_agent.py --full 退出码 0，syntax/lint/secrets/audit_axes/pytest/API 冒烟/research 全通过，覆盖率 85.81%，failed_tests 与 blocking_sections 均为空。B-1 仍为进行中：任务书建议的自包含初始迁移、无版本号非空旧库迁移与指定旧文档回写尚未收口；历史全量失败为当时环境及测试链路问题，并非数据库真值缺失。2026-10-15 接入队友 develop@401b03b 后，认证测试适配微信绑定新外键；本机恢复 Docker、绕过本机代理并换独立 pytest 临时目录，review_agent.py --full 退出码 0，覆盖率 85.34%，failed_tests/blocking_sections 均空。客户端编译轴因本机缺 HBuilderX CLI 明确降级放行，B-1 状态不变。 | 2026-10-19：合并 origin/develop 后 alembic head=6a12e10c4868（22 个迁移）；B-1 残留项不变——真实存量库升级演练仍未做，勿写成已收口。",
+   "evidence": "2026-10-12：用户批准 2 张在用表补 ORM、11 张退休且已有数据保留。已补 34 处 server_default、新增增量迁移、空库 Alembic bootstrap、漂移门禁与建库脚本单链化。空库 upgrade/check 通过；漂移检查 ORM 32 表/Alembic 32 表、BLOCKING 0/INFO 0；隔离既有 d9a0b1c2d3e4 版本库升级后 users 与 audit_log 哨兵行保留，2 张在用表存在。阶段性代码已推送 develop @ 573b33b。2026-10-15：git fetch 核对本地与 origin/develop 均为 573b33b；修复全量审核所需的测试照片自动生成、Windows localhost 数据库与 Qdrant 连接延迟、审核扫描忽略缓存、测试依赖及本机 vector 扩展等问题。review_agent.py --full 退出码 0，syntax/lint/secrets/audit_axes/pytest/API 冒烟/research 全通过，覆盖率 85.81%，failed_tests 与 blocking_sections 均为空。B-1 仍为进行中：任务书建议的自包含初始迁移、无版本号非空旧库迁移与指定旧文档回写尚未收口；历史全量失败为当时环境及测试链路问题，并非数据库真值缺失。2026-10-15 接入队友 develop@401b03b 后，认证测试适配微信绑定新外键；本机恢复 Docker、绕过本机代理并换独立 pytest 临时目录，review_agent.py --full 退出码 0，覆盖率 85.34%，failed_tests/blocking_sections 均空。客户端编译轴因本机缺 HBuilderX CLI 明确降级放行，B-1 状态不变。 | 2026-10-19：合并 origin/develop 后 alembic head=6a12e10c4868（22 个迁移）；B-1 残留项不变——真实存量库升级演练仍未做，勿写成已收口。 2026-10-23：合并后 alembic heads 为单头 b3a1c2d3e4f5（down_revision=6a12e10c4868，无需 merge migration）；openapi 快照重导后 --check 通过（260916 字符）。",
    "gate": "空库 upgrade/check、漂移 0 阻断、旧库数据保留、项目 pytest 与全量审核门禁"
+  },
+  {
+   "id": "BACKEND-B3-PROFILE-CRYPTO",
+   "name": "后端 B-3 敏感话题加密与盲索引",
+   "description": "profile_sensitive.topic AES-256-GCM 密文、独立 HMAC-SHA256 盲索引、旧行回填与明文列分期退出",
+   "dependencies": [
+    "BACKEND-B1-SCHEMA"
+   ],
+   "status": "in-progress",
+   "evidence": "2026-10-19：第一阶段已实现加密读写、回响匹配、API 明文契约与导出隐去 hash；本机开发库 21 行迁移至 b3a1c2d3e4f5，密文/hash 缺失 0，alembic check 无漂移；相关 42 项定向测试通过，review_agent.py --full 最终退出码 0、覆盖率 85.53%、failed_tests/blocking_sections 均空。旧 topic 列依手册保留一个发布周期供回滚，故数据库明文彻底移除与服务器验收尚未完成。细节见 docs/B2-B5_后端执行顺序_20261019.md 与 STATE.md。 2026-10-23：远端 develop@f49df29 已并入 feature 分支（冲突 4 处逐块解）；本机开发库 6a12e10c4868 → b3a1c2d3e4f5，profile_sensitive 104 行全部回填、密文/hash 缺失 0、旧 topic 明文按设计保留；定向 15 passed（crypto/migration/config_alias）+ 36 passed（echo/profile_clear/correction）。",
+   "gate": "生产副本演练与密钥备份；旧明文列独立删除迁移；API/导出/回响回归；全量门禁"
   },
   {
    "id": "OPS-SECRETS",
@@ -156,7 +167,7 @@
  "policy": {
   "scope": "本文件只覆盖 **MVP 用户故事能力清单**（F/M 系列）。维护类工作（结构重构 / 门禁 / 出包 / harness）由 STATE.md 与 docs/决策台账.md 承载。",
   "one_in_progress": "约定：同时只允许 1 条 in-progress —— 由门户检查 harness_state 提示（WARN，不阻断）。",
-  "one_in_progress_note": "2026-10-14 如实说明：本文件现存 10 条 in-progress，**明知不满足**上述约定，且**不打算用改状态来「满足」它**——MVP 阶段 F1~F8 / P2-ECHO / OPS-SECRETS 是**并行推进**的（每条 evidence 尾部都写明余项：L2 待真实数据、情绪 S2 开心漏报 0.496 待校准、RAG 负样本误召回 0.5714 未达标、微信实网未验、密钥链接待申请项…），把它们改成 done/blocked 属**编造状态**（本项目最贵的一类）。「同时只做一条」的真实含义是**单个会话内的执行纪律**，由 STATE.md 的「正在做什么」承载；harness_state 的 WARN 应按此理解，**不得以改状态消除**。",
+  "one_in_progress_note": "2026-10-19 如实说明：本文件现存 12 条 in-progress，**明知不满足**上述约定，且**不打算用改状态来「满足」它**——MVP 阶段 F1~F8 / P2-ECHO / OPS-SECRETS 是**并行推进**的（每条 evidence 尾部都写明余项：L2 待真实数据、情绪 S2 开心漏报 0.496 待校准、RAG 负样本误召回 0.5714 未达标、微信实网未验、密钥链接待申请项…），把它们改成 done/blocked 属**编造状态**（本项目最贵的一类）。「同时只做一条」的真实含义是**单个会话内的执行纪律**，由 STATE.md 的「正在做什么」承载；harness_state 的 WARN 应按此理解，**不得以改状态消除**。",
   "evidence": "每条 evidence 只保留**最近一次**结论 + 指针；历史流水写 progress.md（追加式）。",
   "status_enum": [
    "not-started",
@@ -165,6 +176,6 @@
    "done",
    "deprecated"
   ],
-  "updated_at": "2026-10-16"
+  "updated_at": "2026-10-23"
  }
 }

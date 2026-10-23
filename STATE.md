@@ -5,14 +5,16 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-10-19
-**分支**：`feature/agent-closeout-20261008`（`origin/develop@dd89678` 已于 `ff8eadd` 并入）｜ **最近提交**：以 `git log -1 --oneline` 为准
+**最后更新**：2026-10-23
+**分支**：`feature/agent-closeout-20261008`（`origin/develop@dd89678` 已于 `ff8eadd` 并入；**`origin/develop@f49df29` 已于 2026-10-23 本次合并并入**）｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
 
 ---
 
 ## 正在做什么
+
+**2026-10-23 · 合并 origin/develop（`dd89678` → `f49df29`，5 个提交）**：取回远端三件实质能力——① **B-3 画像敏感话题加密**（AES-256-GCM + HMAC 盲索引 + 迁移 + 回填脚本）；② **分类词表 5 类 → 7 类**（+question/fact，代码/契约/客户端 chips 全对齐，DB 零改动、**SetFit 模型仍需重训**）；③ **answerability 拒答闸门**（复用 LLM 精排三态判定，`ANSWERABILITY_REJECT_ENABLED` 默认 false、无明确判定时 fail-open）。冲突 **4 处逐块解**（`test_rag.py` 两侧用例都留 + 延迟用例取本地 n=20；`lessons.md` 按 ts 倒序；`progress.md` 两侧小节全留按时间序；`STATE.md` 分支行取本地、正文两侧原文都留）。合并后 `alembic heads` **单头** `b3a1c2d3e4f5`（其 down_revision 恰为本侧原 head `6a12e10c4868`）⇒ **无需 merge migration**；本机开发库已 `6a12e10c4868 → b3a1c2d3e4f5`，`profile_sensitive` **104 行**全部回填密文/hash（缺失 0）。`gen_openapi.py` 重导后 `--check` 通过。详见 `progress.md` 2026-10-23 节。
 
 **2026-10-19 同步合并 + 窄口上传（用户拍板：产品决策暂不上传、不抢 A/B/C 的活）**：`origin/develop`(dd89678) 的 **4 个提交**已并入 → `ff8eadd`（D-05 补传上云共口 / 真机复验脚本 / 复验台账 / 出包前清单）；3 处冲突按**两边都保留**解（`uploader_batch` 省流待补原件 + `l1_submit` 上云；`UploadStatusBanner` 重试结果提示 + 上云；`lessons` 两批条目）。编译门**真编译 72.7s**、快速门禁通过、事件回收定向 **3 passed**。另把 **5 条不冲突的后端/脚本修复**摘到 `sync/infra-fixes-20261019` 并推远端（事件空壳回收 `a9e7ccf` / 30 天清理接回收 `f60e7ff` / 回收用例 `ec15130` / 重扫增收无 caption 照片 `44544e0` / `pack.ps1` 等待 3600s `1f2bfbf`）；**develop 未动**。产品决策（entry 流/搜索重做/AI 页/settings 退役）与 B/C 任务域重叠的 21 条提交**未上传**。发现并修掉一处我们自己的红：`44544e0` 改 `_stale_candidates` 签名后 `test_requeue_job` 的桩未跟 ⇒ **5 条 TypeError**（feature 与 sync 两支均已修，6 passed）——说明 10-16 之后没跑过 `--full`。当前 feature 相对 develop：**36 ahead / 0 behind**（本轮提交前）。
 
@@ -27,6 +29,8 @@
 ② **回填**：1694「done 无 caption」里只有 **114** 有真实文件（827 无 cos_key、753 文件不在盘上）⇒ 新增 `--require-file`，只跑 114；已处理 20+，余 92 在跑（单进程，CPU/内存受限，ETA ~1.5h）。`PHOTO_DESCRIPTION_ENABLED=false` 关掉第二次 VL 调用（它只写 ai_description，不参与检索）。
 ③ **调研**：`docs/搜索P95_业界做法调研_20261019.md` —— Qdrant 服务端 RRF / FastEmbed ONNX / Onyx 索引层融合 / RAGFlow 精排慢的实证；推荐 P0「投机式并行召回 + 精排策略化」、P1「ONNX/int8 + Query API」，组合预期 2.3–2.6s。
 ④ **内部阻塞**：`docs/内部阻塞项_20261019.md` 记 B1–B7（Redis 6379 假活 / 内存 0.4GB / agent 8300 未起 / 1694→114 数据债 / 4464 processing / 19120 候选用户 / `--full` 从未真正跑过）。
+
+**2026-10-19 后端 B-2～B-5 新任务书接入，当前单项执行 B-2 部署准备（远端线，合并带入）**：新版作战手册的执行顺序见 `docs/B2-B5_后端执行顺序_20261019.md`。B-2 两个 worker dry-run 通过；当前容器拓扑的五条 cron 范本已补入 `deploy/RUNBOOK.md` §5，清理首轮保留 `--dry-run`。用户确认**服务器尚未开通**，故远端未安装、未验收。B-3 第一阶段已写代码并将本机开发库 21 条敏感话题回填为 AES-GCM 密文 + HMAC 盲索引；**旧 `topic` 明文列按手册保留一个发布周期供回滚，B-3 尚未最终验收。**B-4 主链已接线，需 G 批基准；B-5 三个评测器及 D/F/G 真实样本尚未落地。
 
 **2026-10-16（第二波）定位真落库 / 降级显性化 + 多模态附件契约 / 界面流畅度 / 占位入口诚实化**：两批 6 条提交已推（`148af09`→`5ed8255`），明细见 `docs/决策台账.md` §4.20 ㉚。核验：ruff 全过、编译门**真编译 84.5s**、后端回归 **483 passed**、`-k chat` **102 passed**、`openapi --check` OK（259806 字符）、exports 轴「无新增零调用能力导出」（424→419）。⚠️ **附件面板客户端 UTS 仅过编译门、真机未验**（「刚传完即发」可能落「内容暂不可读」，如实标注）。
 
@@ -61,8 +65,8 @@
 
 ## 下一步（按优先级）
 
-> **10-19 起先做**：决定 `sync/infra-fixes-20261019` 去向（开 PR / 暂挂）。**不要直推 develop**——它含 `pack.ps1` 等待时长 1500→3600s 的行为变化，且 develop 是 B/C 的干线。门禁/CI 四条（`7415213` / `884e215` / `2c6638a` / `2b3ca68`）**先不传**：会改 B/C 每天跑的门禁行为（新增 `tool_versions` 轴）。
-
+0. **当前后端 B 批（远端干线，合并带入）**：服务器开通后核对路径、时区、Docker 权限，在目标机安装 RUNBOOK §5 的 4 业务 cron + 1 备份并验日志/重投；B-3 补生产副本迁移/密钥保管演练，稳定一个发布周期后发独立删除旧 `topic` 列迁移；随后做 B-4 G 批基准与误导注释处理，B-5 D/F/G 三评测器。详见执行顺序文档与决策台账 §19。
+0.5 **10-23 合并带入的两个上线前置**：① **SetFit 需重训 7 类**（`python backend/scripts/train_setfit.py`；重训前模型只输出旧 5 类，`question/fact` 只能靠用户纠错写入——代码已加显式告警）；② **answerability 闸门默认关且真实 LLM 档未验**（无 key 时 fail-open，别当成 P0-2 已修好）。
 1. **批次 B（进行中）· entry 流最小闭环**：「今天」锚点 + 记录后立刻可见（时间轴读 `contents`，事件只做增强）
 2. **批次 C · 回顾位**：那年今日（今天卡下）+ 每日回顾（接回响/消息链）
 3. **批次 D · 搜索形态重做**：`/search` 加可选 `answer` → 回答卡 + 用户维度筛选 + 可解释结果 + 历史/继续
@@ -78,12 +82,14 @@
 
 ## 阻塞
 
+0. 🟡 **B 批外部验收条件**：用户确认服务器尚未开通，B-2 cron 无安装对象、定时日志未验；B-3 旧明文列须等一个发布周期和生产副本演练后删除；B-4/B-5 真实 D/F/G 真值未到（仓库只有格式样例）。B-4 `ManagedDetector` 去留待负责人按 `docs/决策台账.md` §5.12 拍板。
 1. 🔴 **微信侧资质全未到位**（开放平台「移动应用」AppID + 企微**客服 Secret** + **ICP 备案域名**）⇒ 代码已写到位（`WECHAT_APPID/SECRET`、`WECHAT_LOGIN_CHANNEL`、`WECHAT_KF_SECRET` + manifest oauth 模块），**填配置即通**；当前点「微信绑定」会**回落绑定码**（预期行为，非缺陷）
 2. 🟡 **上传失败根因待真机取证**：已把服务端"存储/未知异常"补成**带上下文的 WARNING**（`9cfe2c8`；原先是无日志 500 ⇒ 客户端只能当网络故障反复重试）；候选根因（MediaStore 绝对路径可读性 / SIZE 与真实字节不一致 / 隧道超时）**需一次真机 logcat 才能定**
 3. 🟡 **图片通路 ngrok 免费版拦截页**（`ERR_NGROK_6024`）：`<image>` 无法带自定义头 ⇒ 依赖 Android 原生 UA 放行；若真机图片全裂，二选一（改走 `uni.downloadFile` + 本地路径 / 换 cloudflared·ngrok 付费）——**沿用自 10-14，未变**
 4. 🟡 **上传管线类改动受"验证条件"限制**（蜂窝省流五步等）：按 2026-09-23 纪律需「编译门 **+ 真机验证条件**」，当前不可验 ⇒ 挂账，不得以未验证改动填补——**沿用自 10-14，未变**
 5. 🟡 **LLM 供应商为 DeepSeek**（`LLM_PROVIDER=deepseek`，key 取本机 `deepseek-ugsimulator`）；百炼 Token Plan 未续 ⇒ 视觉类（caption）仍走 DashScope 分支、无 key 时降级——**沿用自 10-14，未变**
-6. 🔴 **内部阻塞已单列**（用户 10-19 提醒「表面阻塞消失 ≠ 内部阻塞消失」）：`docs/内部阻塞项_20261019.md` 记 **B1–B7** —— **Redis 6379 假活**（端口通、PING 超时 ⇒ RQ/全量门禁不可用）、**内存仅 0.4GB 空闲**（重活必 OOM/换页）、agent 8300 未起、1694 里只有 114 可回填、4464 processing、19120 候选用户、`--full` 从未真正跑过。**不要再把「端口通 / 快速门禁绿」当健康判据。**
+6. 🔴 **内部阻塞已单列**（用户 10-19 提醒「表面阻塞消失 ≠ 内部阻塞消失」）：`docs/内部阻塞项_20261019.md` 记 **B1–B7** —— **Redis 6379 假活**（端口通、PING 超时 ⇒ RQ/全量门禁不可用）、**内存仅 0.4GB 空闲**（重活必 OOM/换页）、agent 8300 未起、1694 里只有 114 可回填、4464 processing、19120 候选用户、`--full` 从未真正跑过。**不要再把「端口通 / 快速门禁绿」当健康判据。**（2026-10-23 补：本次为跑测试临时起了 Docker，Redis **PONG** / Qdrant 200 / PG 5432 均在听 ⇒ 容器侧已可用；但 `--full` 仍未跑，本条**不因此判为解除**。）
+7. 🟡 **合并带入的两个上线前置（2026-10-23）**：**SetFit 未重训**（代码已扩 7 类，模型仍 5 类，`question/fact` 只能靠用户纠错写入）；**answerability 闸门默认关**且真实 LLM 档未验（无 key 时 fail-open）。详见 `docs/决策台账.md` §20 M-5/M-6。
 
 ## 权威指针（想知道 X 去哪看）
 
@@ -103,6 +109,8 @@
 
 ## 关键数字（唯一口径）
 
+- **2026-10-23 合并实测**：`origin/develop` `dd89678`→`f49df29` 5 提交已并入；冲突 4 处（3 个文档 + `test_rag.py`）；`alembic heads` **单头** `b3a1c2d3e4f5`（无需 merge migration）；本机库 `6a12e10c4868 → b3a1c2d3e4f5`，`profile_sensitive` **104 行**回填，密文/hash 缺失 **0**；定向 pytest 共 **96 passed / 4 skipped / 1 deselected**（11 + 15 + 22 + 36 + 12，最后一项为 `-m rag` 167.14s）；编译门**真编译 45561ms**；`openapi --check` OK（260916 字符）；快速门禁 **退出码 0**；**`--full` 未跑**（勿引用为绿）。
+- **2026-10-19 B-3**：开发库敏感话题 21 行、归一化冲突 0、回填后密文/hash 缺失 0；B-3 相关定向 42 passed，`alembic check` 无漂移；`review_agent.py --full` 最终退出码 **0**，覆盖率 **85.53%**，`failed_tests=[]`、`blocking_sections=[]`；本机无 HBuilderX CLI，客户端编译轴明确降级放行（本次未改客户端）。
 - **用户故事**：✅46 / 🟡7 / ❌0；A 级真机证据 **32** 条（口径基线 **2026-08-29**，**仍未按 9–10 月变更重算**）
 - **测试（2026-10-15 实测）**：微信链路 **21 passed**（绑定码 8 + 授权登录建绑定 3 + unionid 对齐 4 + 媒体 6）；`model_text` 不变量 **10 passed**；上传 **34 passed**；`-k "search or rag"` **117 passed**；新增索引时窗用例 **1 passed**；生命周期+同步 **27 passed**（10-14）
 - **视觉守卫（2026-10-16 实测）**：独立百炼 key 判定已覆盖三个视觉入口；离线定向 **28 passed**（5 deselected）。按缺陷说明的 DeepSeek + 仅百炼测试 key 条件补跑指定两份测试：**17 passed / 5 deselected / 0 failed**。`review_agent.py --full` 退出码 **0**，覆盖率 **85.52%**，`failed_tests=[]`、`blocking_sections=[]`；本机缺 HBuilderX CLI，客户端编译轴降级放行。详见 `progress.md` 末尾记录。

@@ -20,7 +20,7 @@ from app.services.echo import dismiss_echo, get_today_echo
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("profile_crypto_keys")]
 
 
 def _last_year_content(db, user_id: str, text: str = "去年的今天", sensitive: str = "正常") -> Content:
@@ -242,6 +242,7 @@ def test_profile_sensitive_crud(db_user):
     db, user = db_user
     row = upsert_profile_sensitive(db, user.id, "前女友", "forbid", ["用户原话"], locked=True)
     assert row.disposition == "forbid" and row.locked is True
+    assert row.legacy_topic is None and row.topic_enc != "前女友" and row.topic_hash
     row2 = upsert_profile_sensitive(db, user.id, "前女友", "caution")
     assert row2.id == row.id and row2.disposition == "caution"  # 同话题更新
     rows = list_profile_sensitive(db, user.id)
@@ -251,6 +252,25 @@ def test_profile_sensitive_crud(db_user):
     assert delete_profile_sensitive(db, user.id, "前女友") is True
     assert delete_profile_sensitive(db, user.id, "前女友") is False
     assert list_profile_sensitive(db, user.id) == []
+
+
+def test_profile_sensitive_normalized_upsert_and_user_isolation(db_user, make_user):
+    from app.services.echo import delete_profile_sensitive, list_profile_sensitive, upsert_profile_sensitive
+
+    db, user = db_user
+    other = make_user(db, "profile-crypto")
+    try:
+        first = upsert_profile_sensitive(db, user.id, "前女友", "forbid")
+        again = upsert_profile_sensitive(db, user.id, " 前女友 ", "caution")
+        assert first.id == again.id
+        assert len(list_profile_sensitive(db, user.id)) == 1
+        separate = upsert_profile_sensitive(db, other.id, "前女友", "forbid")
+        assert separate.id != first.id
+        assert len(list_profile_sensitive(db, other.id)) == 1
+    finally:
+        delete_profile_sensitive(db, other.id, "前女友")
+        db.delete(other)
+        db.commit()
 
 
 def test_profile_sensitive_upsert_race_no_500(db_user):

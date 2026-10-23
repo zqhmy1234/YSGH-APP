@@ -69,6 +69,9 @@ def test_settings_is_basesettings():
 
 def test_production_forces_mock_external_ai_false(monkeypatch):
     """生产环境启动期强制 mock_external_ai=False（漏配即 fail-closed，防验证码 mock 直返）"""
+    import base64
+    import os
+
     from app.core.config import _apply_production_safety
 
     s = Settings(
@@ -77,6 +80,8 @@ def test_production_forces_mock_external_ai_false(monkeypatch):
         mock_external_ai=True,
         jwt_secret="s" * 40,
         refresh_token_hmac_key="r" * 40,
+        profile_field_encryption_key=base64.b64encode(os.urandom(32)).decode(),
+        profile_field_hmac_key=base64.b64encode(os.urandom(32)).decode(),
     )
     _apply_production_safety(s)
     assert s.mock_external_ai is False
