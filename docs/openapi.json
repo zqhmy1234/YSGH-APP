@@ -964,7 +964,7 @@
           "trash"
         ],
         "summary": "Trash Clear",
-        "description": "回收站清空（W2-1）：当前用户全部软删条目硬删（不可逆；客户端 showModal 强确认）。\n\n降级登记（_diff_ledger）：Qdrant 向量/COS 原件清理未挂接——MVP 只删 DB 行，\n向量残留不影响正确性（查询按 contents 行驱动）；挂接挂远期账 A3。",
+        "description": "回收站清空（W2-1）：当前用户全部软删条目硬删（不可逆；客户端 showModal 强确认）。\n\n真清空范围：DB 行 + Qdrant 向量 + 对象存储原件（清尾在 DB 提交之后，失败只留孤儿并\n如实回包 `warnings`，不假装「全部清干净」）。",
         "operationId": "trash_clear_api_v1_trash_delete",
         "responses": {
           "200": {

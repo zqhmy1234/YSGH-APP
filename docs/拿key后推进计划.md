@@ -1,5 +1,14 @@
 # 拿 Key 后推进计划 + 全量性能指标需求（2026-08-19，执行进度更新 14:4x）
 
+> ⚠️ **2026-10-24 已并入 [待办总账](待办总账.md)**：本文件仅存历史记录，新任务/状态变更只写总账，勿在此新增。
+>
+> **降级说明**：本文写于 08-19，**1.3 节的五项对齐大多已完成**（本轮实测：腾讯云密钥命名已用
+> `AliasChoices` 收编、DashScope workspace 已四处传参、旧 env 已收编；仅 STS role ARN 仍为 root、
+> staging 仍空）；**1.2 节缺失清单也大多到位**（`backend/.env` 已有 `AMAP_WEB_API_KEY`(len32)、
+> `SENTRY_DSN`(len95)、`DASHSCOPE_API_KEY`(len115)），**唯独微信/企微/uni-push 仍缺**。
+> 第四节「性能指标需求」仍是有效口径（可继续引用）；但**其中的实测数字已过时**
+> （以 `docs/性能验收_搜索_20261016.md` 为准）。以下正文原样保留。
+
 > 背景：2026-08-19 Infisical 密钥链路打通（CLI v0.43.122 → 登录 → yishu-backend 项目 → dev/prod 各 10 条 Secrets；流程见 `skills/infisical-secrets/SKILL.md`）。本文档盘点：①现有 Keys 解锁了哪些 Sprint 工作 ②哪些仍阻塞 ③可推进工作的测试与执行计划 ④本项目全部性能指标需求。
 >
 > **执行进度（2026-08-19）**：WP-A ✅ config 别名读取（6 测试）｜WP-B ✅ 百炼探测**可用**（qwen-flash 真实调用成功）｜WP-C ✅ COS 分片上传+断电续传（upload_tasks/chunks 表 + storage 抽象层 + 10 测试）｜WP-D ✅ 端云对账（reconcile 6 测试）｜WP-E ✅ CI 图片标签+审核（6 测试）｜WP-F ⏸ RAG 调优**暂停**（用户拍板：数据量不足，测意义不大；已保留路由过滤修复 route_acc 0.5→1.0 + reranker 接线）｜WP-G ✅ 微信"找"沙箱链路（find_memories + API，4 测试）｜WP-H ✅ 数据安全审计（audit_security.py 全绿，备份 RPO 已恢复 ≤24h）。全量 pytest 145 passed。

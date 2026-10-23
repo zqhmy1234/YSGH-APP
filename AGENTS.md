@@ -16,15 +16,15 @@
   - `忆述光华_深度开发设计/01-05e` — 10 份深度设计定稿（B1 画像 / B2+02b RAG / B3 事件聚合 / B4 同步 / B5a-e 语音·护栏·纠错·后台·Windows）
   - `MVP完成度评估_20260827/` — 完成度评估九份（**02=用户故事目录（状态唯一来源）、07=08-27 基线汇报、08=收尾完成汇报**）
 - `AGENTS.md` / `feature_list.json` / `progress.md` / `init.sh` / `session-handoff.md` — harness 文件；配套权威：`docs/决策台账.md`（术语消歧+决策+待拍板唯一登记簿）、`docs/lessons.md`（错误与教训单一来源）、`docs/lessons-主题索引.md`（按根因族复盘索引）
-- `docs/parallel-dev/` — **开发期并行任务卡（「开发 Wave 1–4」，Agent A–L，2026-08-25~26，已结束）**。⚠️ **2026-09-23 harness 清理**：波次任务卡（00–13）与归档件已删（`git log --diff-filter=D` 可回看），**仅保留 `_B5a_B5d修正后待办.md`**——其中 J-1/J-2/J-3 三项待办**未闭环**，已登记 `docs/决策台账.md` §7。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
-- `docs/parallel-dev-收尾/` — **收尾波次任务卡（「收尾 Wave 1–4」，2026-08-27~28，已全收口）**。⚠️ **2026-09-23 harness 清理**：任务卡与归档件（00–16/17–23）已删（`git log --diff-filter=D` 可回看），**仅保留 `19_wave3_真机补验跟踪表.md`**——该表 §4＝**缺陷台账（20 单：D-01~D-16、D-18~D-22；D-17 未启用；D-20 系补验修复单 f726942；D-22=08-29 P-2 诊断坐实 O-2 升单）与环境事件（O-1；O-2→D-22；O-3 暗物质审计；O-4 跨窗合流波）的唯一来源**，**其中 D-18/D-19 仍为「已修待复验」＝未关闭**。各卡是历史记录，勿当待办入口。⚠️「开发 Wave 4」（J/K/L）≠「收尾 Wave 4」（4a/4b 归档），全库术语表见 `docs/决策台账.md` §0
+- `docs/parallel-dev/` — **开发期并行任务卡（「开发 Wave 1–4」，Agent A–L，2026-08-25~26，已结束）**。⚠️ **2026-09-23 harness 清理**：波次任务卡（00–13）与归档件已删（`git log --diff-filter=D` 可回看），**实际仅剩 `_B5a_B5d修正后待办.md` 一个文件**（2026-10-24 核实）。⚠️ **该表的"待办"状态已过期，引用前必须验码**：`docs/决策台账.md` §7.10 逐项核实 **J-1~J-6 六项均已在代码中实现**（J-2 SNR 降权 `asr/emotion.py::_noise_weight`、J-3 段级合并 `asr/emotion.py::merge_segment_emotion` 等），**仅 J-7（录音中断状态机 POC）未复核、仍按待办看待**。**MVP 修正（2026-08-26 拍板）：桌面端（F9/B5e/Zvec/Windows 相关）已移出 MVP 归二期，并行开发只覆盖 Android+云端+微信**
+- `docs/parallel-dev-收尾/` — **收尾波次任务卡（「收尾 Wave 1–4」，2026-08-27~28，已全收口）**。⚠️ **2026-09-23 harness 清理**：任务卡与归档件（00–16/17–23）已删（`git log --diff-filter=D` 可回看），**实际保留 3 个文件**（2026-10-24 核实）：① `19_wave3_真机补验跟踪表.md`——该表 §4＝**缺陷台账（20 单：D-01~D-16、D-18~D-22；D-17 未启用；D-20 系补验修复单 f726942；D-22=08-29 P-2 诊断坐实 O-2 升单）与环境事件（O-1；O-2→D-22；O-3 暗物质审计；O-4 跨窗合流波）的唯一来源**，**其中 D-18/D-19 仍为「已修待复验」＝未关闭**；② `20_R2复验与C线测试执行台账.md`（真机复验 C 线台账）；③ `21_PR3差异审计_20261011.md`（PR#3 差异审计）。各卡是**历史记录，勿当待办入口**（待办统一写 [`docs/待办总账.md`](docs/待办总账.md)）。⚠️「开发 Wave 4」（J/K/L）≠「收尾 Wave 4」（4a/4b 归档），全库术语表见 `docs/决策台账.md` §0
 - `backend/` — FastAPI 后端（`app/api` · `app/services` · `app/workers`；**端口 8010**）
 - `client/` — uni-app x 客户端（`pages` / `components` / `utils`(.uts) / `styles` / `uni_modules`；**改前先读 `skills/hbuilderx-uniappx-runloop/`**）
 - `agent/` — LangGraph Agent 服务（`src/main.py`；**规范端口 8300**）
 - `deploy/` — 部署与出包（`ONE_SWAP.md` 换址 · `RUNBOOK.md` · `scripts/preflight_pack.ps1` 出包前置门 · `download/` 分发页）
 - `scripts/` — 门禁与工具（`review_agent.py` 提交门禁 · `test_agent.py` · `client_compile_gate.py` 客户端编译门 · `dev/` 本机联调脚本 · `realdevice/` 真机证据）
-- `skills/` — 领域知识（`infisical-secrets` / `hbuilderx-uniappx-runloop` / `android-media-e2e` / `apk-cloud-release`）
-- `docs/` — 决策台账（§5 待拍板 / §7 未关闭缺陷）· lessons · 各批次交接件
+- `skills/` — 领域知识（2026-10-24 实测共 7 个：`infisical-secrets` / `hbuilderx-uniappx-runloop` / `android-media-e2e` / `apk-cloud-release` / `harness-gate-maintenance` / `sse-streaming-integration` / **`remote-gpu-server-devtest`**）
+- `docs/` — 决策台账（§5 待拍板 / §7 未关闭缺陷）· **`待办总账.md`（待办与缺陷的唯一汇总登记簿，2026-10-24 建；分册只存历史）** · lessons 与主题索引 · 各批次交接件
 - `.trae/specs/` — 波次任务书（design-token / functional-fix / refactor-extensibility）
 - `uvue_gen/` · `design_data*/` · `design_gap_audit/` — **生成物/设计数据，勿手改**
 - `review/` · `_verify_*` — 视觉与真机验收证据，**勿清**
@@ -33,6 +33,7 @@
 - `skills/android-media-e2e/SKILL.md` — 真机 E2E 测试 skill（测试照片注入 scan_file / 权限 / 截屏像素定位 + **收尾 Wave 3 沉淀：语音短录音链 / 情绪三层默认值 / 云打包验证**；F1 链路真机验收流程，2026-08-24 沉淀、08-28 补录）
 - `skills/harness-gate-maintenance/SKILL.md` — **harness 与门禁维护手册**（改门禁 / 加检查轴 / 动 STATE·progress·feature_list·handoff·init 前读；含两条铁律：新增门禁必须先做**负向探针自校验**、**运维域问题不阻断提交**）。2026-10-11 沉淀
 - `skills/sse-streaming-integration/SKILL.md` — **对话域 SSE 流式对接范式**（三层帧协议 / StreamingResponse 生成器与 `contextvars` 陷阱 / **断连不丢回复**的后台线程+队列 / 客户端 `enableChunked` 手写 UTF-8 解码 / cards·chips 协议）。2026-10-11 沉淀
+- `skills/remote-gpu-server-devtest/SKILL.md` — **远端 GPU 机（`student03@10.20.28.21`）开发/测试操作手册**（fish shell 铁律 / here-string 传码 / 去 CRLF / `CUDA_VISIBLE_DEVICES` / 服务只绑回环；踩坑档案见同目录 `reference.md`）。**2026-10-24 用于 SetFit 7 类重训**——⚠️ 训练的**版本矩阵必须与本机一致**（ST 5.6.0 / setfit 1.1.3 / torch 2.12.0+cpu / transformers 4.57.6），用新版训出的产物回本机 `ModuleNotFoundError` ⇒ 分类**静默降级 mixed**。注意该 skill 正文原为超声项目所写，与「忆述光华」的项目约定不同，**只取其环境与连通性部分**
 - `skills/apk-cloud-release/SKILL.md` — **Android 云打包与出包** skill（前置静态门 → 确认后端地址可达 → HBuilderX CLI 云打包自有证书 → 四项尸检：签名指纹 / 包内地址 / 权限 / apksigner → 部署分发路径）。含 2026-10-04 实测踩出的五个坑：**签名参数走错会静默用 DCloud 共享证书（已装用户装不上新包、只能卸载重装）**、口令必须走仓库外 config、临时隧道地址重启即失效、HBuilderX 单队列并发互杀、**本机 SSL 失败不等于隧道死（须云端视角验证）**；另附「装了却用不了」必查项（内测登录开关 / RQ worker / agent 服务 / 队列积压）。参数速查与故障对照见同目录 `reference.md`。2026-10-04 沉淀
 
 ## 当前状态

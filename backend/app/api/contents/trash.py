@@ -108,9 +108,16 @@ def trash_clear(
 ):
     """回收站清空（W2-1）：当前用户全部软删条目硬删（不可逆；客户端 showModal 强确认）。
 
-    降级登记（_diff_ledger）：Qdrant 向量/COS 原件清理未挂接——MVP 只删 DB 行，
-    向量残留不影响正确性（查询按 contents 行驱动）；挂接挂远期账 A3。
+    真清空范围：DB 行 + Qdrant 向量 + 对象存储原件（清尾在 DB 提交之后，失败只留孤儿并
+    如实回包 `warnings`，不假装「全部清干净」）。
     """
+    # ⚠️ 历史注记（**必须留在注释里、不要写进 docstring**）：本函数原有一条「降级登记」
+    # 自述——「Qdrant 向量/COS 原件清理未挂接，MVP 只删 DB 行，挂远期账 A3」。
+    # 该自述已于 2026-10-14 失效（台账 §7.25①）：真实清尾现已挂接，见函数末尾的
+    # `content_purge.purge_vectors` / `purge_objects`。
+    # 为什么不能写进 docstring：FastAPI 会把端点 docstring 当作 OpenAPI `description`
+    # **直接暴露给 API 消费者**，而 `docs/openapi.json` 是字节级快照 ⇒ 内部台账编号与
+    # 历史沿革会漏进对外契约（2026-10-24 实测踩到，见 lessons）。
     rows = (
         db.execute(
             select(Content).where(

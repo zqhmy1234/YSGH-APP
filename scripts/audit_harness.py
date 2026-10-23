@@ -296,20 +296,43 @@ def audit_client() -> None:
     # ① USE_MOCK_* 清点
     # ⚠️ 只认**声明形态**（`const X: boolean = true/false`）——初版按裸词匹配，
     # 会把注释里提到的开关名（如 TabAi 头注的示例）也算成开关，产生误报。
+    #
+    # ⚠️ 2026-10-24 修第二层误报（「声明形态」还不够）：`RecordSheet.uvue:326` 与
+    # `location.uts:7` 里写的是**历史沿革注释**——「此前是 `const USE_MOCK_LOCATION = true`
+    # + 字面量，现已删除」。这段文字**完全符合声明形态正则**，于是被算成「2 处未关闭的
+    # mock 开关」；实际全仓已无该开关、定位走真 `uni.getLocation`（拿不到就留空，不回落假值）。
+    # 后果不是小事：发版清单要求「USE_MOCK_* 全部 = false」，一条**幻影红灯**会让这条检查
+    # 长期被无视（本次正是如此：B8 挂了两个月没人动）。
+    # 解法：沿用本文件已有的字符级 `_comment_ranges` / `_in_comment`（与轴 2 的页面路径、
+    # .ts 残留同款判据）——注释内的匹配不计入「未关闭开关」，但**照样打印**出来，
+    # 避免把「真开关被注释掉」误当成「已清理」（那才是更危险的静默）。
     mock_re = re.compile(
         r"\b(?:export\s+)?(?:const|let)\s+(USE_MOCK_[A-Z0-9_]+)\s*(?::\s*\w+)?\s*=\s*(true|false)"
     )
     mock_true: list[str] = []
     mock_false: list[str] = []
+    mock_in_comment: list[str] = []
     for f in sources:
         text = f.read_text(encoding="utf-8", errors="replace")
+        ranges = _comment_ranges(text)
         for m in mock_re.finditer(text):
             line = text[: m.start()].count("\n") + 1
             name, val = m.group(1), m.group(2)
             entry = f"{f.relative_to(REPO)}:{line}  {name} = {val}"
+            if _in_comment(ranges, m.start()):
+                mock_in_comment.append(entry)
+                continue
             (mock_true if val == "true" else mock_false).append(entry)
     total_mock = len(mock_true) + len(mock_false)
     _say("INFO", f"USE_MOCK_* 共 {total_mock} 处：未关闭 {len(mock_true)} / 已关闭 {len(mock_false)}")
+    if mock_in_comment:
+        _say(
+            "INFO",
+            f"另有 {len(mock_in_comment)} 处出现在**注释**里（历史沿革，不计入开关；"
+            f"若其中有本该生效的开关，说明它被注释掉了，须人工确认）：",
+        )
+        for e in sorted(mock_in_comment):
+            _say("  ", e)
     for e in sorted(mock_true):
         _say("  ", e)
     if mock_true:

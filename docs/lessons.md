@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-24 02:40 · commit 373d7dd · ts=1792780805
+- **错误**：为修掉一处过期自述（回收站清空 docstring 说「向量/原件未挂接」），我把「该自述已失效、见台账 §7.25①」写进了端点 docstring，结果它直接漏进对外 API 契约：FastAPI 把端点 docstring 当作 OpenAPI description，docs/openapi.json 快照随即变化，门禁 openapi_snapshot 判红。同一次改动里，我还在台账表格里写了含裸竖线的 grep 表达式（mock|演示|占位），把 Markdown 表格结构打断。
+- **根因**：两处同族：**改动的载体与暴露面不一致**。① 端点 docstring 是「对外契约的一部分」而不是「内部备忘」，我在里面写了台账编号与内部沿革；② Markdown 表格单元格里出现裸竖线会被当成分隔符，我复制的正则表达式恰好含竖线。
+- **修复**：把历史注记从 docstring 挪到函数体内的 # 注释（并写明「为什么不能写进 docstring」）；表格里的正则改写成中文顿号列举；重导 openapi 后 --check 通过。两处都补了复核：改完跑 gen_openapi.py --check 与表格竖线数统计。
+- **相关文件**：backend/app/api/contents/trash.py
+- **教训**：端点 docstring = 对外契约，不是内部备忘。凡要写台账编号、历史沿革、降级登记这类内容，一律写 Python 注释，绝不写进 docstring（否则会被 openapi 快照字节级比对抓到，而且真的暴露给 API 消费者）。另：往 Markdown 表格里贴任何含 | 的代码/正则，先转义或改写，改完用「每行列数统计」自检——表格坏了渲染不出错，只会静默错位。
+
+---
+
 ### 2026-10-24 01:38 · commit b5159c4 · ts=1792777132
 - **错误**：在 student03 GPU 服务器上用最新的 sentence-transformers 6.2.0 训练 SetFit，评估 100% 通过，但产物拷回本机后 SetFitModel.from_pretrained 报 No module named 'sentence_transformers.base.modules.normalize'，分类静默降级为 mixed（degraded=True，conf 0.0），而且因为走了 try/except 降级分支，只有一条 WARNING
 - **根因**：训练环境与推理环境的 ST 版本不一致：新 ST 把 normalize 模块挪到 sentence_transformers.sentence_transformer.modules.normalize 并写进 modules.json 的 type 字段；本机/CI 钉的是 5.6.0，找不到该路径。评估是在训练环境里跑的，所以 100% 通过完全没有暴露这个问题
