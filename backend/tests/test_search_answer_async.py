@@ -153,3 +153,78 @@ def test_client_contract_parses_job_id():
     # 路径常量与后端路由必须一致
     contract = (root / "client" / "utils" / "contract.uts").read_text(encoding="utf-8")
     assert "/api/v1/search/answers/{job_id}" in contract
+
+
+# ---------------------------------------------------------------------------
+# 4. 归属校验（IDOR）—— 2026-10-24 被 test_authz_gate 抓出来后补的
+#
+# 初版快照没记 user_id，端点只靠「uuid4 hex 猜不到」。`test_authz_gate` 直接判红：
+# 「按 id 操作既有实体的端点必须引用 user.id」。那条检查是对的 —— 安全性不该建立
+# 在「别人猜不到」上（uuid 会出现在日志/分享链接/截图里）。
+# ---------------------------------------------------------------------------
+
+
+def test_read_job_rejects_other_users_snapshot():
+    """别人的 job_id ⇒ None（端点据此 404，不泄露「存在但不属于你」）。"""
+    job = _job_module()
+    from app.core.queue import redis
+
+    jid = "owner-probe"
+    try:
+        job._write(jid, {"status": "done", "answer": "我的私事", "sources": [], "user_id": "user-A"})
+        # 本人可读
+        assert job.read_job(jid, user_id="user-A") is not None
+        # 他人不可读（返回 None，而不是抛错 —— 端点统一 404 口径）
+        assert job.read_job(jid, user_id="user-B") is None
+    finally:
+        redis.delete(job._key(jid))
+
+
+def test_read_job_rejects_legacy_snapshot_without_owner():
+    """老快照（本字段上线前的残留）没有 user_id ⇒ 传了 user_id 时一律拒。
+
+    宁可让极少数在途 job 失效（客户端按"没拿到回答"渲染），也不放过越权读。
+    """
+    job = _job_module()
+    from app.core.queue import redis
+
+    jid = "legacy-probe"
+    try:
+        job._write(jid, {"status": "done", "answer": "旧格式", "sources": []})
+        assert job.read_job(jid, user_id="user-A") is None
+    finally:
+        redis.delete(job._key(jid))
+
+
+def test_start_answer_job_records_owner():
+    """`start_answer_job` 必须把 user_id 写进快照（否则归属校验无据可依）。
+
+    ⚠️ 不要断言 `status == "pending"`：后台线程是**并发**的，且本用例传空 hits ⇒
+    `generate_answer` 立刻返回（无证据 ⇒ answer=None、failed=False），
+    线程可能在断言前就把快照覆盖成 `done` —— 那是**正确的**行为，断言 pending 会变成 flaky
+    （实测在整跑时偶发失败、单跑必过，就是这个竞态）。
+    本用例的考点是「归属被记录」，故只断言 user_id 与 status 属合法取值。
+    """
+    job = _job_module()
+    from app.core.queue import redis
+
+    jid = job.start_answer_job("探针查询", [], user_id="user-C")
+    try:
+        snap = job.read_job(jid, user_id="user-C")
+        assert snap is not None
+        assert snap.get("user_id") == "user-C"
+        assert snap.get("status") in ("pending", "done", "failed")
+    finally:
+        redis.delete(job._key(jid))
+
+
+def test_endpoint_passes_user_id_to_read_job():
+    """源码级防漂移：端点**必须**把 user.id 传进 read_job（否则归属校验被绕过）。"""
+    import inspect
+
+    from app.api import search as search_api
+
+    src = inspect.getsource(search_api.get_answer_job)
+    assert "read_job(job_id, user_id=" in src, (
+        "get_answer_job 必须把 user.id 传给 read_job —— 否则归属校验形同虚设"
+    )

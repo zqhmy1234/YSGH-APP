@@ -68,8 +68,22 @@ def _write(job_id: str, payload: dict[str, Any]) -> None:
         logger.warning("回答快照写入失败 job=%s: %s", job_id, exc)
 
 
-def read_job(job_id: str) -> dict[str, Any] | None:
-    """读暂存快照；不存在/过期/解析失败一律返回 None（调用方据此 404）。"""
+def read_job(job_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    """读暂存快照；不存在/过期/解析失败/**不属于该用户**一律返回 None（调用方据此 404）。
+
+    ## 归属校验（2026-10-24 补 · 被 `test_authz_gate` 的 IDOR 检查抓到）
+
+    初版快照**没有记录 user_id**，端点层只靠「uuid4 hex 猜不到」来保证隔离。
+    `test_authz_gate::test_every_id_endpoint_has_ownership_check` 直接判红：
+    「按 id 操作既有实体的端点必须引用 user.id」—— 它是对的，那条检查存在的理由正是
+    「不要把安全性建立在『别人猜不到』上」（uuid 会出现在日志/分享链接/截图里）。
+
+    现在：`start_answer_job` 把 `user_id` 写进快照，本函数**在返回前比对**；
+    不匹配一律当作「不存在」（同一 404 口径，不给探测者「存在但不属于你」的区分信号）。
+
+    `user_id=None` 表示**不做归属校验**——仅供内部/测试直读（例如运维排查、单测里构造快照）。
+    端点层**必须**传 user_id。
+    """
     try:
         raw = redis.get(_key(job_id))
     except Exception as exc:  # noqa: BLE001 —— 读失败按"没有"处理，不抛给端点
@@ -85,11 +99,27 @@ def read_job(job_id: str) -> dict[str, Any] | None:
         # 脏数据（格式变更/半截写入）⇒ 当作没有，不把解析异常抛给客户端
         logger.warning("回答快照解析失败 job=%s", job_id)
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    if user_id is not None:
+        owner = data.get("user_id")
+        # 老快照（本字段上线前的，TTL 10 分钟内可能残留）没有 user_id ⇒ 一律拒。
+        # 宁可让极少数在途 job 失效（客户端按"没拿到回答"渲染），也不放过越权读。
+        # ⚠️ 注意条件必须是 `owner != user_id`（**含 owner 为 None**）：
+        #    初版写成 `owner is not None and owner != user_id`，那等于「没有归属信息的
+        #    快照对任何人放行」—— 属 fail-open，正是本函数要消灭的形态。
+        #    该写法被刚补的用例 `test_read_job_rejects_legacy_snapshot_without_owner` 抓到。
+        if owner != user_id:
+            logger.warning("回答快照归属不匹配 job=%s（拒绝返回，按不存在处理）", job_id)
+            return None
+    return data
 
 
-def start_answer_job(query: str, hits: list) -> str:
+def start_answer_job(query: str, hits: list, user_id: str | None = None) -> str:
     """落 pending 快照并在**后台线程**生成回答；立刻返回 job_id。
+
+    `user_id` 会写进快照，供 `read_job` 做归属校验（见其 docstring）。
+    调用方（`rag._search_impl`）传入当前登录用户 id。
 
     ## 为什么用后台线程而不是 RQ
 
@@ -105,7 +135,8 @@ def start_answer_job(query: str, hits: list) -> str:
     （SQLAlchemy Session 非线程安全）。不传最干净。
     """
     job_id = new_job_id()
-    _write(job_id, {"status": STATUS_PENDING, "answer": None, "sources": []})
+    # 归属写进快照：`read_job` 据此拒越权读（见其 docstring 的 IDOR 说明）。
+    _write(job_id, {"status": STATUS_PENDING, "answer": None, "sources": [], "user_id": user_id})
 
     def _run() -> None:
         # 函数内 import：避免模块级依赖环（search_answer → embedding → ... 较重），
@@ -127,6 +158,7 @@ def start_answer_job(query: str, hits: list) -> str:
                     "sources": [],
                     "reason": str(exc),
                     "elapsed_ms": int((_time.perf_counter() - t0) * 1000),
+                    "user_id": user_id,
                 },
             )
             return
@@ -143,6 +175,7 @@ def start_answer_job(query: str, hits: list) -> str:
                     "sources": [],
                     "reason": "llm-unavailable",
                     "elapsed_ms": elapsed_ms,
+                "user_id": user_id,
                 },
             )
             return
@@ -154,6 +187,7 @@ def start_answer_job(query: str, hits: list) -> str:
                 "answer": answer,
                 "sources": list(sources or []),
                 "elapsed_ms": elapsed_ms,
+                "user_id": user_id,
             },
         )
 

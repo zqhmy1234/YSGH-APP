@@ -369,7 +369,9 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             from app.services.search_answer_job import start_answer_job
 
             try:
-                answer_job_id = start_answer_job(q.q, hits)
+                # user_id 必须传：快照里记录归属，取回答时据此做 IDOR 校验
+                # （`api/search.py::get_answer_job` 会把请求用户的 id 传进 read_job 比对）
+                answer_job_id = start_answer_job(q.q, hits, user_id=str(user_id) if user_id else None)
             except Exception:  # noqa: BLE001 —— 起 job 失败不得让搜索失败
                 # 失败时不置 degraded：检索本身完全正常，只是"回答这条路没走通"；
                 # 客户端拿不到 job_id 就按"无回答"渲染（诚实空态）。

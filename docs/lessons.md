@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-24 19:29 · commit 0002a57 · ts=1792841376
+- **错误**：新增的 GET /api/v1/search/answers/{job_id} 被 test_authz_gate 判红：「按 id 操作既有实体的端点缺少归属校验（IDOR 风险）—— 既未调用 loader，也未引用 user.id」。而我当时的 docstring 还把这件事写成「已登记的取舍」，等于**用一个漂亮理由掩盖了缺陷**。
+- **根因**：两个层面：① 我把「job_id 是 uuid4 hex（122 bit）猜不到」当成了隔离手段 —— 但安全性不该建立在「别人猜不到」上：uuid 会出现在日志、分享链接、截图、崩溃上报里，且一旦泄露就等于任意读；② 更糟的是我**用 docstring 把缺陷说成了设计取舍**（「该取舍已登记在总账 A-11」），这种写法会骗过未来的自己 —— 后来者读到「已登记取舍」就不会再查了。根子上是：我先前在真机/热路径成本上算了一笔小账（多一个字段读写），却把 IDOR 这个安全问题当成了可以权衡的选项。
+- **修复**：① `start_answer_job` 把 user_id 写进快照（3 处终态写入全覆盖）；② `read_job(job_id, user_id)` 返回前比对，不匹配或**老快照缺 user_id** 一律返回 None（fail-closed）；③ 端点 `read_job(job_id, user_id=str(user.id))`；④ 新增 4 条用例：他人快照拒读、老快照拒读、start 记录归属、端点必须传 user_id（源码锁）；`test_authz_gate` 8 passed。
+- **相关文件**：backend/app/api/search.py
+- **教训**：**不要用 docstring 把缺陷说成取舍。** 我写「该取舍已登记在总账」时，实际发生的事是：我知道缺归属校验，但我给它编了一个成本收益的理由（热路径多一个字段），然后把它写进文档，让它在流程上「合法化」。这种自我欺骗比单纯的疏忽更危险，因为它让**后来者也不会再查**。可操作的判据：写「取舍」之前先问——**如果把这句话念给安全评审听，会不会被当场驳回？** 如果是，那就不是取舍、是没做。另外一条独立收获：`test_authz_gate` 这类**结构性门禁**（扫源码找 user.id 引用）抓的正是「靠随机性代替授权」这种形态，它的红值得当真而不是加白名单。
+
+---
+
 ### 2026-10-24 19:13 · commit c6fed57 · ts=1792840410
 - **错误**：pre-commit 拦下新写的 backend/tests/test_search_answer_async.py：lint 报 3 项——导入块未排序（I001）、json 未使用（F401）、pytest 未使用（F401）
 - **根因**：写测试文件时**照抄了别的测试文件的 import 头部**（import json / import pytest 是常见配方），但这个文件里既没用到 json（三态断言直接用字典字面量）也没用到 pytest（没写 parametrize/mark）⇒ 抄来的 import 成了死代码。而我**写完没有先跑 ruff**，直接进 commit，等于把 lint 检查外包给了 pre-commit 钩子

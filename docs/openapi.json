@@ -1811,7 +1811,7 @@
           "search"
         ],
         "summary": "Get Answer Job",
-        "description": "取异步回答结果（A-11 ③ · 2026-10-24）。\n\n返回 `{status, answer, sources, reason?, elapsed_ms?}`，`status ∈ pending|done|failed`：\n\n  · `pending` —— 后台还在生成（客户端 300~500ms 后再来）；\n  · `done`    —— `answer` 可能为 **None**，含义是「证据不足，本来就没有答案」\n                 （与 `failed` 是两回事，客户端应渲染\"没查到\"而不是\"出错了\"）；\n  · `failed`  —— 系统降级（LLM 不可用/超时/异常），`reason` 给机器口径、\n                 客户端据此展示\"暂时没生成出来\"，**绝不伪造回答**。\n\n鉴权：必须登录（与 `POST /search` 同口径）。\n⚠️ 诚实说明：job 快照存 Redis、**没有按 user_id 分键** —— job_id 是 uuid4 hex\n（122 bit 随机）、TTL 仅 10 分钟、内容是该用户自己的检索回答 ⇒ 猜测不可行。\n若要加强，把 user_id 写进快照并在本端点比对即可（成本一行）；当前不做是因为\n那要把一次额外字段读写加进热路径，收益仅是防「自己泄露自己 uuid」。\n**该取舍已登记在总账 A-11。**",
+        "description": "取异步回答结果（A-11 ③ · 2026-10-24）。\n\n返回 `{status, answer, sources, reason?, elapsed_ms?}`，`status ∈ pending|done|failed`：\n\n  · `pending` —— 后台还在生成（客户端 300~500ms 后再来）；\n  · `done`    —— `answer` 可能为 **None**，含义是「证据不足，本来就没有答案」\n                 （与 `failed` 是两回事，客户端应渲染\"没查到\"而不是\"出错了\"）；\n  · `failed`  —— 系统降级（LLM 不可用/超时/异常），`reason` 给机器口径、\n                 客户端据此展示\"暂时没生成出来\"，**绝不伪造回答**。\n\n鉴权：必须登录 + **归属校验**（与 `POST /search` 同口径）。\njob 快照里记了 `user_id`，本端点把它传进 `read_job` 比对；不属于当前用户一律 404\n（与\"不存在/已过期\"同一口径，不给探测者「存在但不属于你」的区分信号）。\n\n⚠️ 2026-10-24 修正：初版**没有**做归属校验，只靠「uuid4 hex 猜不到」——\n`test_authz_gate::test_every_id_endpoint_has_ownership_check` 直接判红（IDOR 风险），\n那条检查是对的：安全性不该建立在「别人猜不到」上（uuid 会出现在日志/分享链接/截图里）。\n现已改为在快照里存 user_id 并比对，成本是写快照时多一个字段（**不在读热路径上加查询**）。",
         "operationId": "get_answer_job_api_v1_search_answers__job_id__get",
         "security": [
           {
