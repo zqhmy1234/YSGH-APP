@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-25 06:34 · commit e3d579d · ts=1792881253
+- **错误**：为过令牌棘轮跑 `audit_token_literals.py --write-baseline`，它把 `audit_harness_baseline.json` 里 `token_literals` 的 `reason` / `reason_note` / `target` 三段历史记录**整体覆盖**成脚本内的简化版；同时我看到 rgb 5→4，第一反应是「PortraitPrivacyPanel 存量漂移」，差点把这个错因写进基线说明
+- **根因**：两件事叠加。① `--write-baseline` 的实现只写 `total`/`per_file`/`_doc`，另外三段是**硬编码的短字符串**（见脚本 main() 里的字面量），所以每次跑都会把人工维护的长文档冲掉—— 而那段文档正是「2026-10-11 上调至 77/5 是还原而非新增」的判据和销项路径，丢了就再也找不到。② 我没核对基线内部自洽性就下结论：实测 HEAD 版本 `total.rgb=5` 但 `per_file` 明细求和只有 **4**，旧基线**本就自相矛盾**；`--write-baseline` 按明细重算 total，把矛盾「修正」成 4。我却先入为主地把差异归给了最近改过的文件（PortraitPrivacyPanel），而它根本不在我的 `git status` 里
+- **修复**：① 从 `git show HEAD:scripts/audit_harness_baseline.json` 取回三段原文并恢复，只替换 `total`；② 重写 `reason_note`：hex 77→75 如实记为「PortraitPrivacyPanel 的存量漂移、本次未改该文件（git status 可证）」；rgb 5→4 如实记为「旧基线 total 与 per_file 不一致被重算暴露，不是代码变化」；③ 校验收敛：`audit_token_literals.py` 退出码 0
+- **相关文件**：scripts/audit_harness_baseline.json
+- **教训**：**「生成式修基线」会吃掉人工维护的说明，而说明往往比数字更贵。**跑任何 `--write-baseline` / `--fix` 类命令后，必须 `git diff` 确认它没覆盖文档性字段；覆盖了就从 git 取回原文、只换该换的字段。第二层：**看到两个数字对不上时，先验基线自身是否自洽**（total 声明 vs per_file 求和），再去找代码变化 —— 否则会把「历史记账误差被重算暴露」误诊成「有人改了代码」，然后在 git 历史里徒劳搜索一个不存在的 commit。本仓已有同族教训（`sensitive_status` 默认「正常」被当成审核结论）：**数字有值 ≠ 数字有意义**。
+
+---
+
 ### 2026-10-25 01:36 · commit 66c6840 · ts=1792863370
 - **错误**：D-24 内容安全：台账长期记载为「适配器已实现，等开通阿里云后切 provider」，我按这个口径理解了很久；实测发现真正的问题根本不是 provider，而是**用户自己上传的 4154 张照片从来没被任何图片审核触碰过**，而库里它们的 `sensitive_status` 全显示「正常」（那是 server_default 出厂值）
 - **根因**：把「组件已实现」误当成「功能已生效」。三处独立事实叠在一起才构成这个错觉：① `check_image` 只在微信一条链被调用；② `sensitive_status` 有默认值「正常」；③ 存在的 `mark_sensitive_on_ingest` 看的是 `content.text`（caption/OCR 的文字）而非图片。任何一处单独看都不会觉得有问题 —— 只有把「谁调用了审核」「状态从哪来」「审的是什么」三个问题各自查到实处，才发现整条图片审核链路是空的
