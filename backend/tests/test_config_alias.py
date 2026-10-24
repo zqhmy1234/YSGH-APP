@@ -186,3 +186,63 @@ def test_development_allows_empty_secrets():
 
     s = Settings(_env_file=None, app_env="development", jwt_secret="", refresh_token_hmac_key="")
     _apply_production_safety(s)  # 不抛即通过
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-24（B-15 残余风险收口）：`app_env` 必须归一化
+#
+# 背景（voice-agent 实测发现）：全仓 6 处生产守卫都用 `app_env == "production"`
+# **字符串精确比较**。实测 `APP_ENV=Production` / `PRODUCTION` / `prod` / `prod `（带空格）
+# **全部不命中** ⇒ 那些「生产环境必须 fail-closed」的守卫会**静默失效**
+# （B-15 的两道 mock 守卫首当其冲：mock 猜测会重新入库）。
+#
+# 修在配置层（一处覆盖 6 个调用点），而不是逐个 `.lower()`：
+# 逐处改的话，每加一个新守卫就多一次漏改机会 —— 那正是本缺陷的成因。
+# ---------------------------------------------------------------------------
+import pytest as _pytest2  # noqa: E402
+
+
+@_pytest2.mark.parametrize(
+    "raw",
+    ["production", "Production", "PRODUCTION", "prod", "PrOd", " prod ", "prod\n", "PRD"],
+)
+def test_app_env_aliases_normalize_to_production(raw):
+    """各种生产写法都必须归一化成 `production`，否则 6 处守卫静默失效。"""
+    s = Settings(_env_file=None, app_env=raw)
+    assert s.app_env == "production", f"{raw!r} 未归一化 ⇒ 生产守卫会静默失效"
+
+
+@_pytest2.mark.parametrize("raw", ["development", "Development", "dev", "DEV", "local", " dev "])
+def test_app_env_aliases_normalize_to_development(raw):
+    """各种开发写法归一化成 `development`（否则本地会误判成生产、起不来）。"""
+    s = Settings(_env_file=None, app_env=raw)
+    assert s.app_env == "development"
+
+
+@_pytest2.mark.parametrize("raw", ["test", "staging", "qa"])
+def test_unknown_app_env_is_preserved_lowercased(raw):
+    """未知环境名**不猜**：只去空白 + 转小写，原样保留。
+
+    为什么不猜成 production：会让 CI/预发的开发流程起不来；
+    为什么不猜成 development：会让真实生产 fail-open。两者都比「如实保留」更糟。
+    """
+    s = Settings(_env_file=None, app_env=f"  {raw.upper()}  ")
+    assert s.app_env == raw
+
+
+def test_normalized_production_still_enforces_guards():
+    """归一化必须真正让守卫生效（端到端，不只是字段值对）。"""
+    from app.core.config import _apply_production_safety
+
+    for raw in ("Production", "PRODUCTION", "prod"):
+        s = Settings(
+            _env_file=None,
+            app_env=raw,
+            jwt_secret="s" * 40,
+            refresh_token_hmac_key="r" * 40,
+            profile_field_encryption_key=_b64.b64encode(_os.urandom(32)).decode(),
+            profile_field_hmac_key=_b64.b64encode(_os.urandom(32)).decode(),
+            mock_external_ai=True,
+        )
+        _apply_production_safety(s)
+        assert s.mock_external_ai is False, f"{raw!r} 未触发生产守卫（mock 会直返假凭证）"

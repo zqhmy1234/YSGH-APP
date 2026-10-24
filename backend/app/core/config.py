@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # .env 固定位于 backend/ 下（无论从仓库根还是 backend/ 启动都能加载）
@@ -21,7 +21,34 @@ class Settings(BaseSettings):
     )
 
     # 环境
+    # ⚠️ 2026-10-24（B-15 残余风险收口）：**必须归一化**。
+    # 全仓有 6 处生产守卫用 `app_env == "production"` 字符串精确比较
+    # （config.py 自身、upload.py、diagnostics.py、pipeline.py、asr/transcriber.py、
+    #  agent 侧 llm_ops/annotate.py 与 event_merge.py）。实测 `APP_ENV=Production` /
+    #  `PRODUCTION` / `prod` / `prod `（带空格）**全部不命中** ⇒ 那些「生产环境必须
+    #  fail-closed」的守卫会**静默失效**，mock 猜测重新入库。
+    # 修在**配置层**而不是逐个改 .lower()：一处覆盖 6 个调用点，且新加的守卫自动受益；
+    #  逐处改则每加一个守卫就多一次漏改机会（这正是本缺陷的成因）。
     app_env: str = "development"
+
+    @field_validator("app_env", mode="after")
+    @classmethod
+    def _normalize_app_env(cls, v: str) -> str:
+        """归一化环境名：去空白 + 转小写 + 常见别名映射。
+
+        归一化后仍**不猜**未知值（例如 `staging` 原样保留小写），因为把未知环境
+        猜成 production 会让 dev 起不来、猜成 development 会让生产 fail-open——
+        两者都比「如实保留 + 让守卫按自己的口径判断」更糟。
+        """
+        v = (v or "").strip().lower()
+        # 生产别名 → production（只收窄这几种明显同义写法）
+        if v in ("prod", "production", "prd"):
+            return "production"
+        # 开发/测试别名 → development（保留 test 独立语义时不合并，此处只处理明显别名）
+        if v in ("dev", "development", "local"):
+            return "development"
+        return v
+
     debug: bool = True
     # CORS 白名单（逗号分隔；审查修复 P1-05：生产默认空=同源，开发放开）
     cors_origins: str = ""
@@ -99,6 +126,21 @@ class Settings(BaseSettings):
     agent_service_base_url: str = "http://127.0.0.1:8300"
     # 与 agent 服务的共享密钥（对应其 AGENT_SERVICE_TOKEN）；留空则不带该头
     agent_service_token: str = ""
+
+    # ── 推送通道（2026-10-24 · 待办总账 B-02 收口）──
+    # 背景：此前 `services/notify.py` 的 PushChannel 只有 MockPushChannel（只写日志），
+    # 且 `set_push_channel()` **零调用** —— 消息虽真实落库，但手机端**不会有任何通知**
+    # （用户只能自己打开 App 进消息页才看到，真库 589 条里 491 条未读）。
+    #
+    # 现在提供一个**可配置的真实通道**（WebhookPushChannel）：配了 URL 就真的 POST，
+    # 没配就**显式 warning + 计数**（绝不伪装成"已推送"）。选 Webhook 而不是厂商 SDK
+    # 的原因：厂商通道（uni-push / 华为 / 小米）都要 AppID/证书，本仓目前一个都没到位，
+    # 而 Webhook 是**零凭证可落地**的那一档，能把"假的"先变成"真的但未接线"。
+    push_webhook_url: str = ""
+    # webhook 鉴权头（可选）：配了就带 `Authorization: Bearer <token>`，空则不带
+    push_webhook_token: str = ""
+    # 单次推送请求超时（秒）：推送是**旁路增强**，绝不能拖慢消息落库主链路
+    push_webhook_timeout_s: float = 5.0
 
     # ── 本地自然日口径（功能修复波 D04-1 · 2026-09-25）──
     # 云侧"本地日"的**单一来源**（见 app/core/timeutil.py）：L1 日聚合与"去年今日"回响都用它。
