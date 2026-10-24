@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, Text, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,7 +20,10 @@ class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 messages_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="messages_user_id_fkey"), index=True
+    )
     channel: Mapped[str] = mapped_column(String, default="in_app", server_default=text("'in_app'"))  # in_app / push
     msg_type: Mapped[str] = mapped_column(String)  # daily_review / voice_done / care_followup / echo
     title: Mapped[str] = mapped_column(String)

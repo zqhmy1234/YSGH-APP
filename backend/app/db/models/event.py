@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, Index, String, func
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, String, func
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -30,10 +30,15 @@ class Event(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=sa_text("gen_random_uuid()")
     )
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="events_user_id_fkey"), index=True
+    )
     client_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=False)
     level: Mapped[int] = mapped_column(default=0)  # 0-3
-    parent_event_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    # D-13：自引用 FK（库中已有 events_parent_event_id_fkey，仅补 ORM 声明）
+    parent_event_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("events.id", name="events_parent_event_id_fkey"), nullable=True
+    )
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     title_source: Mapped[str | None] = mapped_column(String, nullable=True)
     cover_content_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)

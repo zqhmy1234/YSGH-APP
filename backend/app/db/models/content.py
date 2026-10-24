@@ -2,7 +2,18 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,7 +48,10 @@ class Content(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=sa_text("gen_random_uuid()")
     )
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 contents_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="contents_user_id_fkey"), index=True
+    )
     content_type: Mapped[str] = mapped_column(String)
     content_class: Mapped[str | None] = mapped_column(String, nullable=True)
     class_source: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -88,8 +102,13 @@ class CorrectionLog(Base):
     __tablename__ = "correction_log"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
-    content_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    # D-13：FK 声明与库对齐（correction_log_user_id_fkey / correction_log_content_id_fkey 均已在库）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="correction_log_user_id_fkey"), index=True
+    )
+    content_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("contents.id", name="correction_log_content_id_fkey"), nullable=True
+    )
     content_type: Mapped[str] = mapped_column(String, default="text", server_default=sa_text("'text'"))
     qdrant_point_id: Mapped[str | None] = mapped_column(String, nullable=True)
     old_label: Mapped[str | None] = mapped_column(String, nullable=True)

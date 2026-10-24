@@ -14,7 +14,10 @@ class UserProfile(Base):
 
     __tablename__ = "user_profile"
 
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    # D-13：FK 声明与库对齐（库中已有 user_profile_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="user_profile_user_id_fkey"), primary_key=True
+    )
     version: Mapped[int] = mapped_column(default=1, server_default=text("1"))
     dimensions: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'"))
     token_usage: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
@@ -30,7 +33,12 @@ class ProfileDimensionHistory(Base):
     __tablename__ = "profile_dimension_history"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 profile_dimension_history_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", name="profile_dimension_history_user_id_fkey"),
+        index=True,
+    )
     dimension: Mapped[str] = mapped_column(String)
     value: Mapped[str] = mapped_column(String)
     updated_at: Mapped[datetime] = mapped_column(
@@ -49,7 +57,12 @@ class ProfileDimensionPending(Base):
     __table_args__ = (UniqueConstraint("user_id", "dimension", "raw_answer", name="uq_pdp_user_dim_raw"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 profile_dimension_pending_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", name="profile_dimension_pending_user_id_fkey"),
+        index=True,
+    )
     dimension: Mapped[str] = mapped_column(String)  # relation_core / life_events / values_priority
     raw_answer: Mapped[str] = mapped_column(String)  # 未命中枚举的原始回答
     count: Mapped[int] = mapped_column(BigInteger, default=1, server_default=text("1"))  # 同类累计
@@ -77,7 +90,10 @@ class ProfileSensitive(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 profile_sensitive_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="profile_sensitive_user_id_fkey"), index=True
+    )
     # Retained for one rollout as rollback data. Never written by new code;
     # remove with a separate migration after the encrypted path is verified.
     legacy_topic: Mapped[str | None] = mapped_column("topic", String, nullable=True)
@@ -133,7 +149,10 @@ class SensitiveWord(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     word: Mapped[str] = mapped_column(String)
     level: Mapped[int] = mapped_column(default=1)  # 1=预置 2=画像标记驱动 3=违规词回流
-    user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)  # NULL=全局
+    # D-13：FK 声明与库对齐（库中已有 sensitive_words_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="sensitive_words_user_id_fkey"), nullable=True
+    )  # NULL=全局
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -147,7 +166,10 @@ class ProfileAnnotationPool(Base):
     __tablename__ = "profile_annotation_pool"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 profile_annotation_pool_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="profile_annotation_pool_user_id_fkey"), index=True
+    )
     event_id: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_text: Mapped[str] = mapped_column(String)
     dimension: Mapped[str | None] = mapped_column(String, nullable=True)

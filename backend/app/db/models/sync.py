@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,7 +15,10 @@ class SyncState(Base):
     __tablename__ = "sync_state"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 sync_state_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="sync_state_user_id_fkey"), index=True
+    )
     device_id: Mapped[str] = mapped_column(String)
     cursor_version: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -37,7 +40,10 @@ class OfflineQueue(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     op_id: Mapped[str] = mapped_column(String)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 offline_queue_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="offline_queue_user_id_fkey"), index=True
+    )
     device_id: Mapped[str] = mapped_column(String)
     op_type: Mapped[str] = mapped_column(String)
     payload: Mapped[dict] = mapped_column(JSONB)
@@ -75,7 +81,10 @@ class SyncFieldVersion(Base):
     entity_type: Mapped[str] = mapped_column(String, primary_key=True)
     entity_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     field: Mapped[str] = mapped_column(String, primary_key=True)
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 sync_field_versions_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="sync_field_versions_user_id_fkey"), index=True
+    )
     value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

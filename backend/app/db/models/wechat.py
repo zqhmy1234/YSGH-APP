@@ -31,7 +31,11 @@ class WechatMessage(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     msg_id: Mapped[str] = mapped_column(String, unique=True)
-    user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    # D-13：FK 声明与库对齐（库中已有 wechat_messages_user_id_fkey，仅补 ORM 声明；
+    # 列可空性维持 ORM 原样 nullable=True，库侧亦为可空——只补声明不改列）
+    user_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="wechat_messages_user_id_fkey"), nullable=True
+    )
     msg_type: Mapped[str] = mapped_column(String)  # text / image / link / voice
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     media_id: Mapped[str | None] = mapped_column(String, nullable=True)

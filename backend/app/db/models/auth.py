@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,7 +43,10 @@ class Device(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=_uuid, server_default=text("gen_random_uuid()")
     )
-    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    # D-13：FK 声明与库对齐（库中已有 devices_user_id_fkey，仅补 ORM 声明）
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", name="devices_user_id_fkey"), index=True
+    )
     device_id: Mapped[str] = mapped_column(String)
     platform: Mapped[str] = mapped_column(String)
     # TD-P3 M6（审查中危/低危）：refresh_token 不再明文落库——只存哈希 + 最后轮换时间。
