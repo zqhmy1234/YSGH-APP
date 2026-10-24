@@ -700,7 +700,10 @@ import { watch } from 'vue'
 		// takenAt 分日卡 ⇒ 会落错卡）。现逐张读 EXIF DateTimeOriginal：
 		//   · 读到 ⇒ 真实拍摄时刻；
 		//   · 读不到 ⇒ **0（时间未知哨兵）**，绝不回填 now —— 后端 meta.taken_at 会**省略**该键，
-		//     contents.taken_at 留 NULL，界面按「时间未知」展示（见 uploader_photo 与下方 setInfoTime）。
+		//     contents.taken_at 留 NULL；端侧聚合按「记录日」归卡并 WARN 计数（agg_runner.aggTsOf）。
+		// ⚠️ 信息卡的 `infoTime`（"今天 HH:mm"）是**记录时刻**、不是照片拍摄时刻，故本处不改它：
+		//    它描述"这条记忆是什么时候被记下来的"，对文字/语音/照片三种模式都成立且都是真值。
+		//    （初版注释曾写"界面按时间未知展示，见 setInfoTime"——那句是错的，已删。）
 		let unknownCount = 0
 		// 每个 panel 生命周期内取一次实例即可（createPhotoWatch 是轻量工厂，但没必要循环里建）
 		const exifWatch = createPhotoWatch()
