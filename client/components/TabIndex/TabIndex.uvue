@@ -356,6 +356,38 @@
 				</view>
 			</view>
 		</scroll-view>
+
+		<!-- D-21（2026-10-25）：事件拆分面板。此前 `useEventOps.doSplit` 只设四态、
+		     **模板无任何面板消费**（`split-panel` 全仓 0 命中、`tab-index.css:592-628` 的
+		     `.split-*` 规则零使用者）⇒ 入口被移除、点不到。现面板落地，入口恢复。
+		     样式**复用** `tab-index.css` 里那批零使用者的 `.split-*` 规则（不新造视觉）。 -->
+		<view v-if="eo.showSplitPanel.value" class="split-mask" @tap="onCancelSplit">
+			<view class="split-panel" @tap.stop>
+				<text class="split-title">选择要拆出去的成员</text>
+				<view v-if="eo.splitLoading.value" class="split-tip">
+					<text class="split-item-text">正在读取成员…</text>
+				</view>
+				<view v-else-if="eo.splitItems.value.length < 2" class="split-tip">
+					<text class="split-item-text">成员不足，无法拆分</text>
+				</view>
+				<scroll-view v-else class="split-scroll" direction="vertical">
+					<view v-for="(it, i) in eo.splitItems.value" :key="it.contentId"
+						class="split-item pressable" @tap="onToggleSplitItem(i)">
+						<text class="split-check">{{ it.selected ? '✓' : '○' }}</text>
+						<text class="split-item-text">{{ it.title }}</text>
+						<text class="split-time">{{ eo.splitTimeText(it.takenAt) }}</text>
+					</view>
+				</scroll-view>
+				<view class="split-actions">
+					<view class="split-cancel pressable" @tap="onCancelSplit">
+						<text class="split-cancel-text">取消</text>
+					</view>
+					<view class="split-ok pressable" @tap="onConfirmSplit">
+						<text class="split-ok-text">拆分</text>
+					</view>
+				</view>
+			</view>
+		</view>
 	</view>
 </template>
 
@@ -1192,6 +1224,20 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	function loadMoreDays(): void {
 		visibleDayCount.value = visibleDayCount.value + LOAD_MORE_STEP
 		console.log('[dbg-index] loadMoreDays -> visibleDayCount=' + visibleDayCount.value)
+	}
+
+	// D-21（2026-10-25）：拆分面板的三个薄包装（逻辑全在 `useEventOps`，此处只做模板入口）。
+	// 为什么要包装：模板里直接写 `eo.confirmSplit()` 在这种 class 实例上可行，但**取消后要
+	// 同时隐藏遮罩**，而 `cancelSplit` 只清面板态 —— 遮罩态由 `showSplitPanel` 驱动，
+	// 故取消就是调 `cancelSplit`（它已把 `showSplitPanel` 置 false）。包一层便于注释意图。
+	function onToggleSplitItem(idx: number): void {
+		eo.toggleSplitItem(idx)
+	}
+	function onConfirmSplit(): void {
+		eo.confirmSplit()
+	}
+	function onCancelSplit(): void {
+		eo.cancelSplit()
 	}
 
 	// 相册监听
