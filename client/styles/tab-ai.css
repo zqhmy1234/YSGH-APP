@@ -559,3 +559,29 @@
 	font-size: var(--d-lattice-p14, 26.9rpx);
 	color: var(--c-rust-600, #B05A3A);
 }
+/* D-10（2026-10-25）：已选文件列表（无缩略图，只列文件名 + 单个移除） */
+.attach-files {
+	display: flex;
+	flex-direction: column;
+	padding-left: var(--d-lattice-p16, 30.8rpx);
+	padding-right: var(--d-lattice-p16, 30.8rpx);
+	padding-top: var(--d-lattice-p10, 19.2rpx);
+}
+.attach-file-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding-top: var(--d-lattice-p8, 15.4rpx);
+	padding-bottom: var(--d-lattice-p8, 15.4rpx);
+}
+.attach-file-name {
+	flex: 1;
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	color: var(--c-ink-700, #5A4C40);
+}
+.attach-file-remove {
+	width: var(--d-lattice-p32, 61.5rpx);
+	text-align: right;
+	font-size: var(--d-lattice-p18, 34.6rpx);
+	color: var(--c-ink-300, #B3A696);
+}

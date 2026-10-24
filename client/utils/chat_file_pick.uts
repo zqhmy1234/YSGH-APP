@@ -1,0 +1,105 @@
+/**
+ * 对话附件「文件」选择（D-10 · 2026-10-25）
+ *
+ * ## 更正一条此前的错误结论（重要）
+ *
+ * 此前记录写「客户端没有文件选择器：全仓 `chooseFile` 零命中 ⇒ 点了"文件"也无处可选」。
+ * **那个结论是搜自己仓库得出的，方法是错的。**
+ *
+ * 查官方 SDK 的 dts 与文档后的事实（`@dcloudio/uni-app-x/types/uni/uts-plugin-api/lib/uni-media/utssdk/interface.d.ts:3666`）：
+ *   · `uni.chooseFile` **存在**；
+ *   · **Android 支持**：`uniVer 4.51+`（本机 HBuilderX 5.26，满足）；
+ *   · ⚠️ **`tempFilePaths` 在 Android 不支持**（文档明写）⇒ **必须用 `tempFiles`**；
+ *   · ⚠️ **`extension` 过滤在 App 平台不支持** ⇒ 类型/大小必须**自己拦**；
+ *   · Android 返回的 `path` 是 **`content://`** 协议。
+ *
+ * ## 为什么这里**不上传**，只传文件名
+ *
+ * 后端 `ChatAttachment` 的 `kind` 是 `Literal["image", "file"]`，且
+ * `services/chat_context.attachment_hint` 对 `file` 分支**只读 `name`**
+ * （"用户附了一个文件：xxx"），`content_id` 是可选的。
+ * 而现有上传链（`upload_pipeline`）是**照片专用**（`register_photo_content`），
+ * 传非图片文件要新开一条入库路径 —— 那是另一件事。
+ *
+ * ⇒ 本模块的行为是**诚实的最小可用**：把**文件名**作为上下文告诉 AI。
+ * 这**不是**"把文件内容喂给 AI"，页面上必须如实说明，不能假装读了文件。
+ *
+ * ## `content://` 的诚实边界
+ *
+ * 我们**不读文件字节**，所以 `content://` 无法被 `getFileSystemManager` 读取这件事
+ * 在本路径上**不影响功能**。`size` 取 `tempFiles[i].size`（SDK 直接给，无需读文件）。
+ * 将来若要真读内容，`content://` 必须先在 UTS 层复制到沙盒 —— 那时再评估。
+ */
+
+import { ChatAttachment } from './chat_api.uts'
+
+/** 单个文件大小上限：20MB。超过直接拦，不上传、不静默截断。 */
+export const FILE_PICK_MAX_BYTES: number = 20 * 1024 * 1024
+
+/** 允许的扩展名（Android 不支持 extension 过滤 ⇒ 必须自己判） */
+const ALLOWED_EXT: Array<string> = ['pdf', 'txt', 'md', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv']
+
+export class FilePickResult {
+	/** 构造好的附件；失败为 null */
+	attachment: ChatAttachment | null
+	/** 给用户看的失败原因（成功为空串）。**必须展示**，不能静默 */
+	reason: string
+
+	constructor(attachment: ChatAttachment | null, reason: string) {
+		this.attachment = attachment
+		this.reason = reason
+	}
+}
+
+function extOf(name: string): string {
+	const i = name.lastIndexOf('.')
+	return i < 0 ? '' : name.substring(i + 1).toLowerCase()
+}
+
+/**
+ * 打开系统文件选择器，选一个文件 → 构造 `file` 类附件（**只带名字与大小**）。
+ *
+ * @return 成功时 `attachment != null`；取消选择时两者皆为「空」（`attachment == null` 且 `reason == ''`）
+ */
+export function pickChatFile(): Promise<FilePickResult> {
+	return new Promise<FilePickResult>((resolve) => {
+		uni.chooseFile({
+			count: 1,
+			// ⚠️ 文档实测：App 平台不支持 `extension` 过滤，这里传了也可能被忽略 ——
+			// 真正的类型校验在 success 里做（不能依赖 SDK 拦）。
+			success: (res) => {
+				// ⚠️ Android 上 tempFilePaths 是**空数组**（文档明写不支持）⇒ 必须用 tempFiles
+				const files = res.tempFiles
+				if (files == null || files.length == 0) {
+					resolve(new FilePickResult(null, '没有选到文件'))
+					return
+				}
+				const f = files[0]
+				const name = f.name == null || f.name == '' ? '未命名文件' : f.name
+				const size = f.size == null ? 0 : f.size
+
+				if (size <= 0) {
+					resolve(new FilePickResult(null, '读不到文件大小，已取消'))
+					return
+				}
+				if (size > FILE_PICK_MAX_BYTES) {
+					resolve(new FilePickResult(null, '文件超过 20MB，暂不支持'))
+					return
+				}
+				const ext = extOf(name)
+				if (ALLOWED_EXT.indexOf(ext) < 0) {
+					resolve(new FilePickResult(null, '暂不支持这种文件类型（' + (ext == '' ? '无扩展名' : ext) + '）'))
+					return
+				}
+
+				// contentId 留空：后端 `attachment_hint` 对 file 分支只读 name。
+				// ⚠️ 这意味着**文件内容不会被 AI 读到** —— 页面文案必须如实（见 TabAi 的提示）。
+				resolve(new FilePickResult(new ChatAttachment('file', '', name, size), ''))
+			},
+			fail: () => {
+				// 用户取消也会走 fail ⇒ 不当错误处理，但也不假成功
+				resolve(new FilePickResult(null, ''))
+			}
+		})
+	})
+}

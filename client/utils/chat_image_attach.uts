@@ -1,0 +1,75 @@
+/**
+ * 对话「图片附件」上传（从 TabAi.uvue 抽出 · 2026-10-25）
+ *
+ * ## 为什么抽出来
+ *
+ * `TabAi.uvue` 结构棘轮已到 800 行上限（抽出前 822 行），而这段逻辑与「页面怎么渲染」
+ * 完全无关 —— 它只是「一张本地图片 → 既有上传链落库 → contentId → 构造附件」。
+ * 抽出来既不改变行为，也让 TabAi 有空间接 D-10 的文件入口。
+ *
+ * ## 行为与抽取前**逐字一致**（不是重构，是搬家）
+ *
+ * · 上传失败 / 拿不到 `contentId` ⇒ 一律 `resolve(null)`，由调用方如实提示
+ *   （**绝不假装发出**，也绝不构造没有 contentId 的附件）；
+ * · 不编造 `taken_at`/坐标（选图不是拍照）；
+ * · `upload_mode='original'`：附件要能进 caption 管线（缩略图模式只落占位、不进管线）；
+ * · 附件不做断点续传持久化（会话级临时物；失败即重新选图，不留孤儿 upload_id）。
+ */
+
+import { ChatAttachment } from './chat_api.uts'
+import { UploadOutcome, UploadSpec, runUploadPipeline } from './upload_pipeline.uts'
+
+/**
+ * 单张图片 → 既有上传链落库 → `contentId` → 附件。
+ *
+ * @param path 本地临时文件路径（`uni.chooseImage` 给的 `tempFilePaths[i]`）
+ * @return 成功为 `ChatAttachment(kind='image')`；失败/无 contentId 为 `null`
+ */
+export function uploadImageAttachment(path: string): Promise<ChatAttachment | null> {
+	return new Promise<ChatAttachment | null>((resolve) => {
+		// 沙箱临时文件的字节数（init 必填）。选图给的是 app 临时目录路径 ⇒ getFileInfo 可读
+		// （voice 链同款；相册 MediaStore 绝对路径那种读不到的情况在这里不适用）
+		uni.getFileSystemManager().getFileInfo({
+			filePath: path,
+			success: (info) => {
+				const size = info.size
+				if (size <= 0) {
+					console.error('[dbg-chat] attach size invalid: ' + size)
+					resolve(null)
+					return
+				}
+				const slash = path.lastIndexOf('/')
+				const name = slash >= 0 ? path.substring(slash + 1) : path
+				// upload_mode='original'：附件要能进 caption 管线（缩略图模式只落占位、不进管线）
+				const spec = new UploadSpec(path, name, size, path, 'original', '')
+				runUploadPipeline(
+					spec,
+					(): UTSJSONObject => {
+						// 无 taken_at/坐标（选图不是拍照，不编造这些元数据；后端 parse_photo_meta 允许缺省）
+						const meta: UTSJSONObject = { source: 'app' }
+						return meta
+					},
+					(_uploadId: string) => {
+						// 附件不做断点续传持久化（会话级临时物；失败即重新选图，不留孤儿 upload_id）
+					},
+					(_uploadId: string) => {
+					}
+				).then((out: UploadOutcome) => {
+					if (out.contentId == '') {
+						console.error('[dbg-chat] attach complete 无 content_id')
+						resolve(null)
+						return
+					}
+					resolve(new ChatAttachment('image', out.contentId, name, size))
+				}, (e: Error) => {
+					console.error('[dbg-chat] attach upload failed: ' + e.message)
+					resolve(null)
+				})
+			},
+			fail: () => {
+				console.error('[dbg-chat] attach getFileInfo failed')
+				resolve(null)
+			}
+		})
+	})
+}

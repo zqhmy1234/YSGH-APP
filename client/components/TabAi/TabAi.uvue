@@ -178,23 +178,33 @@
 					<image v-for="(pi, idx) in pickedImages" :key="idx" class="grid-thumb" :class="idx === 0 ? 'grid-thumb-first' : ''" :src="pi.previewPath" mode="aspectFill" />
 				</view>
 			</view>
+			<!-- D-10：已选文件（无缩略图，只列名字 + 可单删；塞进缩略图格会渲染空图框） -->
+			<view v-if="pickedFiles.length > 0" class="attach-files">
+				<view v-for="(f, fidx) in pickedFiles" :key="fidx" class="attach-file-row">
+					<text class="attach-file-name">{{ f.name }}</text>
+					<text class="attach-file-remove" @tap="removeFile(fidx)">×</text>
+				</view>
+			</view>
 			<view class="attach-entries">
 				<!-- 图片（2026-10-16）：**真通路**——选图 → 既有上传链落库拿 contentId → 随消息上行 -->
 				<view class="attach-entry attach-entry-first pressable" @tap="onPickImage">
 					<image class="attach-entry-icon" src="/static/icons/record-gallery.svg" />
 					<text class="attach-entry-text">图片</text>
 				</view>
-				<!-- 🚩 B-04（2026-10-24）：「文件」「粘贴链接」两入口**已隐藏**，只留「图片」。
-				     口径＝本仓「隐藏优于假装」。依据（实测）：① 客户端无文件选择器；
-				     ② 后端 `ChatAttachment.kind` 只认 `image`，无 link 类型。
-				     ⇒ 此前只弹「即将上线」，是永不自闭环的空转入口。
-				     🔧 恢复条件（**同时满足**）：③ 端侧接 chooseFile/SAF 并走既有上传链拿 content_id；
-				     ④ 后端 kind 增加文件/链接类型 + chat_context 有对应注入。届时把两个 <view>
-				     原样放回本节点即可（样式零改动），`onAttachEntry` 函数体一直保留。
-				     ⚠️ 2026-10-25 更正：`uni.chooseFile` **确实存在**（Android 4.51+，本机 HBuilderX 5.26
-				     可用；Android 只支持 `tempFiles`，`tempFilePaths` 不支持；返回 `content://`）。
-				     故 ③ 的前置已具备，卡点只剩 ④（后端契约）。原注释写「客户端没有 chooseFile」
-				     是**搜自己仓库得出的错误结论**——见总账 D-10 更正。 -->
+				<!-- 文件（D-10 · 2026-10-25 接真）：`uni.chooseFile` 确实存在（Android 4.51+；
+				     Android 只有 `tempFiles`、`tempFilePaths` 不支持；返回 content://）。
+				     ⚠️ 本入口**只把文件名告诉 AI，不读文件内容**——上传链是照片专用
+				     （`register_photo_content`），传非图片要新开入库路径，属另一件事。
+				     页面文案已如实说明（见 onPickFile）。 -->
+				<view class="attach-entry pressable" @tap="onPickFile">
+					<image class="attach-entry-icon" src="/static/icons/icon-file.svg" />
+					<text class="attach-entry-text">文件</text>
+				</view>
+				<!-- 「粘贴链接」仍隐藏：后端 `ChatAttachment.kind` 只有 image/file，**没有 link**，
+				     且 `chat_context.attachment_hint` 无对应分支 ⇒ 接了也无处承载（不是"没做"，是"契约没有"）。
+				     恢复条件：后端 kind 增加 link + attachment_hint 有链接正文提取。
+				     2026-10-25 更正：原注释说"客户端无文件选择器"是**搜自己仓库得出的错误结论**，
+				     见总账 D-10。 -->
 			</view>
 		</view>
 	</view>
@@ -215,6 +225,8 @@
 	// 只要 path/name/size，是这条链对"非相册来源文件"的既有入口（voice 链同款用法），
 	// init→status→chunk→complete 三段状态机一字不改。
 	import { runUploadPipeline, UploadSpec, UploadOutcome } from '@/utils/upload_pipeline'
+	import { uploadImageAttachment } from '@/utils/chat_image_attach'
+	import { FilePickResult, pickChatFile } from '@/utils/chat_file_pick'
 	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
 	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
@@ -275,6 +287,9 @@
 	// 待发图片附件（2026-10-16 附件契约最小可用）：选图 → 上传落库成功才入列；
 	// 发送时整体转入该条用户消息并清空（见 sendNow）。
 	let pickedImages = ref<Array<PickedImage>>([])
+	// D-10（2026-10-25）：文件附件（**无本地预览图**，故与 pickedImages 分开存 ——
+	// 塞进 pickedImages 会让缩略图格渲染空图）
+	let pickedFiles = ref<Array<ChatAttachment>>([])
 	let messages = ref<Array<AiMsg>>([])
 	let nextId = ref(1)
 	let scrollInto = ref('') // scroll-view 锚点滚动（新消息自动落底）
@@ -340,7 +355,13 @@
 		if (t == '') {
 			return
 		}
-		sendNow(t, attachmentsOf(pickedImages.value))
+		// 图片（有预览）与文件（无预览）分两个列表存，发送时合并成一条 attachments 数组。
+		// 顺序：图片在前、文件在后（图片有缩略图、用户更可能先看）。
+		const all: Array<ChatAttachment> = attachmentsOf(pickedImages.value)
+		for (let i = 0; i < pickedFiles.value.length; i++) {
+			all.push(pickedFiles.value[i])
+		}
+		sendNow(t, all)
 	}
 
 	// 待发附件 → 契约附件数组（PickedImage = 附件 + 本地预览路径；上行只带附件）
@@ -370,6 +391,7 @@
 		// 不会重复上传，也就不会重复计费/重复落库。
 		if (atts.length > 0) {
 			pickedImages.value = []
+			pickedFiles.value = []
 		}
 		draft.value = ''
 		if (USE_MOCK_CHAT === false) {
@@ -566,14 +588,46 @@
 	function closeAttach(): void {
 		aiAttachOpen.value = false
 	}
-	// 附件入口行（B-04 · 2026-10-24：模板侧「文件」「粘贴链接」两个入口**已隐藏**，本函数因此
-	// **当前零调用**——保留函数体是刻意的：它就是恢复路径（模板注释列了恢复条件 ③④）。
-	// ⚠️ 本函数是**组件内局部 function，不是 `export`** ⇒ 不会触发 `audit_harness.py` 轴 4 的
-	// 「导出却零调用」CRITICAL（该轴只扫 `client/utils/**` 的 `export`），故不需要删函数。
-	// 若将来恢复入口之前又不想留死代码，则连同模板注释一并删除即可（恢复条件已写在那里）。
+	/** D-10：移除一个已选文件（选错了能单删，不必全清重选） */
+	function removeFile(idx: number): void {
+		const rest: Array<ChatAttachment> = []
+		for (let i = 0; i < pickedFiles.value.length; i++) {
+			if (i != idx) {
+				rest.push(pickedFiles.value[i])
+			}
+		}
+		pickedFiles.value = rest
+	}
+	// 附件入口行（B-04 · 2026-10-24 曾隐藏两入口；D-10 · 2026-10-25「文件」已接真、此处仍零调用）
+	// ⚠️ 本函数是**组件内局部 function，不是 `export`** ⇒ 不触发 `audit_harness.py` 轴 4
+	// （该轴只扫 `client/utils/**` 的 `export`）。保留作「粘贴链接」的占位实现：
+	// 那个入口等后端 `ChatAttachment.kind` 增加 link 后才会恢复。
 	function onAttachEntry(name: string): void {
 		closeAttach()
 		uni.showToast({ title: name + '：即将上线', icon: 'none' })
+	}
+
+	// ── 文件附件（D-10 · 2026-10-25）──
+	// 端到端：uni.chooseFile → 只取 name/size → ChatAttachment(kind='file') → 上行。
+	//
+	// ⚠️ **只传文件名，不传内容**：现有上传链是照片专用（`register_photo_content`），
+	//    传非图片文件要新开一条入库路径。故 AI 只会知道「用户附了一个文件：x.pdf」，
+	//    **读不到文件里的字**。这一点必须如实告知用户，不能让人以为 AI 读了文件。
+	// ⚠️ Android 只有 `tempFiles`（`tempFilePaths` 不支持）；`extension` 过滤 App 端不支持
+	//    ⇒ 类型与大小在 `chat_file_pick` 里自己拦。
+	function onPickFile(): void {
+		closeAttach()
+		pickChatFile().then((r: FilePickResult) => {
+			if (r.attachment == null) {
+				// 空 reason = 用户主动取消，不打扰
+				if (r.reason != '') {
+					uni.showToast({ title: r.reason, icon: 'none', duration: 2500 })
+				}
+				return
+			}
+			pickedFiles.value = pickedFiles.value.concat([r.attachment!])
+			uni.showToast({ title: '已添加文件名（内容不会读给 AI）', icon: 'none', duration: 2600 })
+		})
 	}
 
 	// ── 图片附件（2026-10-16「附件契约最小可用」· 台账 §7.14 / 审计 A1-A3·D7 销项）──
@@ -599,7 +653,7 @@
 				// 选完即收面板 + 上传态提示（面板里没有进度条，开着反而挡着不知道在等什么）
 				closeAttach()
 				uni.showLoading({ title: '正在上传图片…' })
-				uploadOneImage(path).then((att: ChatAttachment | null) => {
+				uploadImageAttachment(path).then((att: ChatAttachment | null) => {
 					uni.hideLoading()
 					if (att == null) {
 						// 🚩 红线：上传失败/拿不到 contentId ⇒ **绝不假装发出**，如实提示。
@@ -616,57 +670,6 @@
 			}
 		})
 	}
-
-	// 单张图片 → 既有上传链落库 → contentId。失败/无 contentId 一律 resolve(null)，由调用方如实提示。
-	function uploadOneImage(path: string): Promise<ChatAttachment | null> {
-		return new Promise<ChatAttachment | null>((resolve) => {
-			// 沙箱临时文件的字节数（init 必填）。选图给的是 app 临时目录路径 ⇒ getFileInfo 可读
-			// （voice 链同款；相册 MediaStore 绝对路径那种读不到的情况在这里不适用）
-			uni.getFileSystemManager().getFileInfo({
-				filePath: path,
-				success: (info) => {
-					const size = info.size
-					if (size <= 0) {
-						console.error('[dbg-chat] attach size invalid: ' + size)
-						resolve(null)
-						return
-					}
-					const slash = path.lastIndexOf('/')
-					const name = slash >= 0 ? path.substring(slash + 1) : path
-					// upload_mode='original'：附件要能进 caption 管线（缩略图模式只落占位、不进管线）
-					const spec = new UploadSpec(path, name, size, path, 'original', '')
-					runUploadPipeline(
-						spec,
-						(): UTSJSONObject => {
-							// 无 taken_at/坐标（选图不是拍照，不编造这些元数据；后端 parse_photo_meta 允许缺省）
-							const meta: UTSJSONObject = { source: 'app' }
-							return meta
-						},
-						(_uploadId: string) => {
-							// 附件不做断点续传持久化（会话级临时物；失败即重新选图，不留孤儿 upload_id）
-						},
-						(_uploadId: string) => {
-						}
-					).then((out: UploadOutcome) => {
-						if (out.contentId == '') {
-							console.error('[dbg-chat] attach complete 无 content_id')
-							resolve(null)
-							return
-						}
-						resolve(new ChatAttachment('image', out.contentId, name, size))
-					}, (e: Error) => {
-						console.error('[dbg-chat] attach upload failed: ' + e.message)
-						resolve(null)
-					})
-				},
-				fail: () => {
-					console.error('[dbg-chat] attach getFileInfo failed')
-					resolve(null)
-				}
-			})
-		})
-	}
-
 
 	// RecordSheet 保存成功回调（AI 页无可刷新数据，占位收口）
 	function onRecordSaved(): void {

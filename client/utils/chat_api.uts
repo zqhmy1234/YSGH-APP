@@ -379,7 +379,14 @@ function streamChatOnce(conversationId: string, content: string, attachments: Ar
 		const arr: Array<UTSJSONObject> = []
 		for (let i = 0; i < attachments.length; i++) {
 			const a = attachments[i]
-			const o: UTSJSONObject = { kind: a.kind, content_id: a.contentId }
+			// D-10（2026-10-25）：`content_id` 为空时**不发该键**。
+			// 为什么：`file` 类附件（只带文件名，不上传）没有 contentId；发一个空串
+			// 会让后端 `content_caption('')` 走一次无意义查询，也让日志里出现"有 id 但为空"
+			// 的假信号。后端 schema 该字段本就是可选（`str | None = None`）。
+			const o: UTSJSONObject = { kind: a.kind }
+			if (a.contentId != '') {
+				o.set('content_id', a.contentId)
+			}
 			if (a.name != '') {
 				o.set('name', a.name)
 			}
