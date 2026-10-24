@@ -391,16 +391,57 @@ def test_boost_exact_matches_partial():
 
 
 def test_classify_query_intent_descriptive():
-    """P1-A（2026-08-25）：描述性查询 → 规则词表主导类别（修复 descriptive 召回缺口）"""
+    """P1-A（2026-08-25）：描述性查询 → 规则词表主导类别（修复 descriptive 召回缺口）
+
+    ⚠️ 2026-10-24（A-06 修）：**规则只允许 ≥2 字的词**。
+    原 `todo` 27 条里 14 条是单字（买/交/还/给/寄/退/取/回/办/修/充/发/付/缴），
+    而匹配方式是**子串**（`kw in q`）—— 中文里这些字几乎万能 ⇒ 大量误路由：
+      · 「回老家的机票」判 todo（命中「回」）
+      · 「把上次拍的照片整理一下发朋友圈」判 todo（命中「发」）
+      · 「考研还剩一百天」判 todo（命中「还」）
+    ⇒ 加 `content_class=todo` 过滤 ⇒ 目标文档被整体挡在召回路外。
+    实测（truth-50，闸门关闭）：去掉单字后 hit@3 **38/43 → 40/43**，
+    负样本误召回不变，其余 5 层持平。
+
+    因此下面三条原断言（依赖单字命中）已按新口径改写，
+    并新增「单字不得单独计分」的守卫用例。
+    """
     from app.services.rag import _classify_query_intent
 
     assert _classify_query_intent("关于做产品的想法") == "idea"
     assert _classify_query_intent("让我难过的记录") == "emotion"
     assert _classify_query_intent("记得要去办的事情") == "todo"
     assert _classify_query_intent("人生感悟和道理") == "quote"
-    assert _classify_query_intent("买牛奶") == "todo"
-    assert _classify_query_intent("收房租") == "todo"
-    assert _classify_query_intent("买牛乃") == "todo"  # 错字不阻断（"买"命中）
+    # 多字词照样命中（这些是去掉单字后保留的规则）
+    assert _classify_query_intent("明天记得买牛奶") == "todo"      # 「记得」多字
+    assert _classify_query_intent("该交房租了") == "todo"          # 「房租」多字
+    # ⚠️ 单字不再计分：这两个旧断言（「买」命中）已按新口径反转
+    assert _classify_query_intent("买牛奶") is None, (
+        "单字「买」不得单独把查询判成 todo（否则「回老家」「发朋友圈」类会被误过滤）"
+    )
+    assert _classify_query_intent("买牛乃") is None, (
+        "同上：错字「买牛乃」以前靠单字「买」判 todo，现按无主导类别处理（不过滤）"
+    )
+
+
+def test_class_rules_have_no_single_char_keywords():
+    """守卫：所有类目规则**不得**含单字关键词（2026-10-24 A-06 回归防线）。
+
+    为什么单独设一条：这类缺陷的形态是「看着像正常配置的一行词表」，
+    单个词看不出问题，要**整体统计**才暴露（14/27 是单字）。
+    以后有人往规则里加单字（例如为了「买」这个动词），这条会立刻红。
+    """
+    from app.services.rag.intent import _CLASS_RULES
+
+    offenders: dict[str, list[str]] = {}
+    for cls, kws in _CLASS_RULES.items():
+        singles = [kw for kw in kws if len(kw) < 2]
+        if singles:
+            offenders[cls] = singles
+    assert not offenders, (
+        f"类目规则含单字关键词 {offenders} —— 子串匹配下单字几乎万能，会造成大面积误路由。"
+        "请改写成词组（如「买牛奶」「交房租」）或要求与其他词共现。"
+    )
 
 
 def test_classify_query_intent_no_class():
