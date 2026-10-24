@@ -97,6 +97,11 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("PROFILE_SENSITIVE_001", "话题参数非法", 422),
     ErrorSpec("PROFILE_SENSITIVE_002", "topic 不能为空", 422),
     ErrorSpec("PROFILE_SENSITIVE_003", "话题不存在", 404),
+    # 画像标注池（D-18 · 2026-10-25：待确认候选的读/确认/否定）
+    ErrorSpec("PROFILE_ANNOT_001", "limit 需在 1~200", 422),
+    ErrorSpec("PROFILE_ANNOT_002", "action 必须为 confirmed 或 discarded", 422),
+    ErrorSpec("PROFILE_ANNOT_003", "标注不存在", 404),
+    ErrorSpec("PROFILE_ANNOT_004", "该标注已处理", 409),
     # 搜索域
     ErrorSpec("SEARCH_001", "空图片文件", 422),
     ErrorSpec("SEARCH_002", "图片超过大小上限", 422),

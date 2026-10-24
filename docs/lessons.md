@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-25 07:12 · commit ff20841 · ts=1792883536
+- **错误**：D-18 新增的 4 个错误码（`PROFILE_ANNOT_001~004`）没登记到 `ERROR_REGISTRY`，导致 `test_error_registry::test_error_registry_covers_all_raise_sites` 变红。而**我提交 D-18 那次快速门禁是通过的** —— 因为那次提交的文件列表里没有后端代码（我后来单独提交了 ledger），快速门禁只查「本次提交涉及的文件」+ 不跑 pytest ⇒ 这个红直到下一次 `--full` 才被抓出来
+- **根因**：我误把「快速门禁绿」当成「代码没问题」。但这个仓的快速门禁设计上就**不跑全量测试**（2026-08-26 用户拍板拆分快/全量，快速版只做静态层 + 涉及文件的检查），所以它的绿只覆盖「本次动的文件没明显问题」，**不覆盖跨文件约束**（错误码注册表、契约快照、导出可达性等正是跨文件约束）。更具体的失误：我写新端点时**没有对照 `errors.py` 的既有邻近块**（`PROFILE_SENSITIVE_*` 就在旁边），否则一眼就能看到需要登记
+- **修复**：① 在 `errors.py` 的「画像级敏感」块后补 4 条 `ErrorSpec`；② `pytest tests/test_error_registry.py` → 10 passed；③ `pytest tests/test_profile_annotation_api.py` → 6 passed（确认错误码改动没破坏端点）；④ `gen_openapi.py` → 内容未变（错误码不进 openapi 快照）
+- **相关文件**：backend/app/core/errors.py
+- **教训**：**新增 `raise ApiError("XXX_NNN", ...)` 时，必须立刻在同一次改动里登记 `ERROR_REGISTRY`** —— `test_error_registry` 会扫全仓 raise 点，但这只在你跑到那个测试时才知道。更普适的一条：**快速门禁绿 ≠ 全量门禁绿**（本会话第 5 次印证）。快速门禁的覆盖范围是「本次提交涉及的文件 + 静态层」，**跨文件不变量**（错误码注册表、openapi 快照、导出可达性、ORM 与库一致性）只有 `--full` 才查。所以：① 动后端 API 后，即使只改一个文件，也该**手动**跑一遍相关的约束测试（`test_error_registry` / `gen_openapi.py --check` / `test_authz_gate`）；② 把「--full」安排在**每个逻辑批次结束时**，而不是「一天结束时」—— 否则一批问题会攒到最后一次性爆出来，定位成本成倍上升。③ 写新块时先看**邻近既有块**（这次 `PROFILE_SENSITIVE_*` 就在旁边），同族约定通常就写在那里。
+
+---
+
 ### 2026-10-25 06:34 · commit e3d579d · ts=1792881253
 - **错误**：为过令牌棘轮跑 `audit_token_literals.py --write-baseline`，它把 `audit_harness_baseline.json` 里 `token_literals` 的 `reason` / `reason_note` / `target` 三段历史记录**整体覆盖**成脚本内的简化版；同时我看到 rgb 5→4，第一反应是「PortraitPrivacyPanel 存量漂移」，差点把这个错因写进基线说明
 - **根因**：两件事叠加。① `--write-baseline` 的实现只写 `total`/`per_file`/`_doc`，另外三段是**硬编码的短字符串**（见脚本 main() 里的字面量），所以每次跑都会把人工维护的长文档冲掉—— 而那段文档正是「2026-10-11 上调至 77/5 是还原而非新增」的判据和销项路径，丢了就再也找不到。② 我没核对基线内部自洽性就下结论：实测 HEAD 版本 `total.rgb=5` 但 `per_file` 明细求和只有 **4**，旧基线**本就自相矛盾**；`--write-baseline` 按明细重算 total，把矛盾「修正」成 4。我却先入为主地把差异归给了最近改过的文件（PortraitPrivacyPanel），而它根本不在我的 `git status` 里
