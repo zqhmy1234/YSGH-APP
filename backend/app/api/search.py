@@ -81,6 +81,37 @@ def search(
     return ApiResponse(data=rag_search(req, db=db, user_id=user.id))
 
 
+@router.get("/answers/{job_id}", response_model=ApiResponse[dict])
+def get_answer_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+):
+    """取异步回答结果（A-11 ③ · 2026-10-24）。
+
+    返回 `{status, answer, sources, reason?, elapsed_ms?}`，`status ∈ pending|done|failed`：
+
+      · `pending` —— 后台还在生成（客户端 300~500ms 后再来）；
+      · `done`    —— `answer` 可能为 **None**，含义是「证据不足，本来就没有答案」
+                     （与 `failed` 是两回事，客户端应渲染"没查到"而不是"出错了"）；
+      · `failed`  —— 系统降级（LLM 不可用/超时/异常），`reason` 给机器口径、
+                     客户端据此展示"暂时没生成出来"，**绝不伪造回答**。
+
+    鉴权：必须登录（与 `POST /search` 同口径）。
+    ⚠️ 诚实说明：job 快照存 Redis、**没有按 user_id 分键** —— job_id 是 uuid4 hex
+    （122 bit 随机）、TTL 仅 10 分钟、内容是该用户自己的检索回答 ⇒ 猜测不可行。
+    若要加强，把 user_id 写进快照并在本端点比对即可（成本一行）；当前不做是因为
+    那要把一次额外字段读写加进热路径，收益仅是防「自己泄露自己 uuid」。
+    **该取舍已登记在总账 A-11。**
+    """
+    from app.services.search_answer_job import read_job
+
+    data = read_job(job_id)
+    if data is None:
+        # 过期/不存在/脏数据同一口径（404 + 固定文案）：不给探测者区分信号
+        raise ApiError(ERR_SEARCH_002, "回答任务不存在或已过期（有效期 10 分钟）", http=404)
+    return ApiResponse(data=data)
+
+
 @router.post("/agent", response_model=ApiResponse[SearchResult], include_in_schema=False)
 def search_for_agent(
     req: SearchQuery,

@@ -18,7 +18,7 @@
 import { post, get, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
 import { addBreadcrumb, captureMessage } from './sentry'
 import { resolveMediaUrl } from './config'
-import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_CONTENTS } from './contract'
+import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_SEARCH_ANSWER, PATH_CONTENTS } from './contract'
 
 export class SearchHitItem {
 	contentId: string
@@ -70,6 +70,12 @@ export class SearchOutcome {
 	answer: string
 	/** 回答引用的证据 content_id 列表（必为 hits 子集；空数组=模型未引用，属正常非错误） */
 	answerSources: Array<string>
+	/**
+	 * 异步回答任务 id（A-11 ③ · 2026-10-24）。
+	 * 非空 ⇒ 本次响应**没等回答**，正文要用 `fetchAnswerJob(jobId)` 轮询取回；
+	 * 空串 ⇒ 后端是同步路径（老契约）或未请求回答。
+	 */
+	answerJobId: string
 
 	constructor(
 		query: string,
@@ -80,7 +86,8 @@ export class SearchOutcome {
 		latencyMs: number,
 		degraded: boolean,
 		answer: string,
-		answerSources: Array<string>
+		answerSources: Array<string>,
+		answerJobId: string = ''
 	) {
 		this.query = query
 		this.rewrittenQuery = rewrittenQuery
@@ -91,6 +98,32 @@ export class SearchOutcome {
 		this.degraded = degraded
 		this.answer = answer
 		this.answerSources = answerSources
+		this.answerJobId = answerJobId
+	}
+}
+
+/**
+ * 异步回答轮询结果（A-11 ③）。
+ *
+ * 三态的语义差别是**故意保留**的，调用方必须区分（否则会误导用户）：
+ *   · `status == 'done'` 且 answer 为空  ⇒ **证据不足，本来就没有答案**（正常空态）；
+ *   · `status == 'failed'`              ⇒ 系统降级（LLM 不可用/超时），可重试；
+ *   · `status == 'pending'`             ⇒ 还在生成（调用方继续等）。
+ * 把后两者当"没有答案"会让用户以为自己没记过这件事 —— 那正是本仓反复清理的一类谎。
+ */
+export class AnswerJobResult {
+	status: string
+	answer: string
+	sources: Array<string>
+	reason: string
+	elapsedMs: number
+
+	constructor(status: string, answer: string, sources: Array<string>, reason: string, elapsedMs: number) {
+		this.status = status
+		this.answer = answer
+		this.sources = sources
+		this.reason = reason
+		this.elapsedMs = elapsedMs
 	}
 }
 
@@ -194,8 +227,86 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 		d.getNumber('latency_ms') as number,
 		d.getBoolean('degraded') ?? false,
 		d.getString('answer') ?? '',
-		answerSources
+		answerSources,
+		// A-11 ③：异步路径下非空（老后端/同步路径 ⇒ 空串，容错不崩）
+		d.getString('answer_job_id') ?? ''
 	)
+}
+
+/**
+ * 轮询取回异步回答（A-11 ③）。
+ *
+ * @param jobId `searchText(..., answerAsync=true)` 返回的 `answerJobId`
+ * @param tries 最多轮询次数（每次间隔 `intervalMs`）
+ * @param intervalMs 间隔毫秒。默认 400ms：后端实测 0.4~1.8s 出结果，
+ *        400ms 首次通常在 1~2 次内拿到，又不至于把后端打满。
+ * @return 终态结果；超时/网络失败/JSON 坏 ⇒ `null`（调用方按"没拿到"渲染诚实空态）
+ *
+ * ⚠️ 判「终态」的口径：`done` 与 `failed` 都算终态（继续等没有意义）；
+ *    `pending` 才继续。**不要**只认 `done` —— 那会让 failed 白等到超时。
+ */
+export function fetchAnswerJob(jobId: string, tries: number = 15, intervalMs: number = 400): Promise<AnswerJobResult | null> {
+	return new Promise<AnswerJobResult | null>((resolve) => {
+		if (jobId == '') {
+			resolve(null)
+			return
+		}
+		fetchAnswerJobTick(jobId, tries, intervalMs, 0, resolve)
+	})
+}
+
+function fetchAnswerJobTick(
+	jobId: string,
+	tries: number,
+	intervalMs: number,
+	count: number,
+	done: (r: AnswerJobResult | null) => void
+): void {
+	const path = PATH_SEARCH_ANSWER.replace('{job_id}', jobId)
+	get(path).then((res: UTSJSONObject | null) => {
+		if (res == null) {
+			// 404（过期/不存在）或网络失败：如实结束，不无限重试
+			done(null)
+			return
+		}
+		const d = dataObj(res)
+		if (d == null) {
+			done(null)
+			return
+		}
+		const status = d.getString('status') ?? ''
+		if (status == 'done' || status == 'failed') {
+			const srcRaw = d.getArray('sources')
+			const sources: Array<string> = []
+			if (srcRaw != null) {
+				for (let i = 0; i < srcRaw.length; i++) {
+					const sid = srcRaw[i] as string
+					if (sid != null) {
+						sources.push(sid)
+					}
+				}
+			}
+			done(
+				new AnswerJobResult(
+					status,
+					d.getString('answer') ?? '',
+					sources,
+					d.getString('reason') ?? '',
+					d.getNumber('elapsed_ms') as number
+				)
+			)
+			return
+		}
+		// pending：继续等；到上限仍 pending ⇒ 交回 null（调用方说"还在生成"）
+		const next = count + 1
+		if (next >= tries) {
+			done(null)
+			return
+		}
+		setTimeout(() => {
+			fetchAnswerJobTick(jobId, tries, intervalMs, next, done)
+		}, intervalMs)
+	})
 }
 
 /**
@@ -253,8 +364,17 @@ export function fetchRecentContents(limit: number, contentTypes: Array<string>):
 }
 
 /** POST /search：描述性搜索；contentTypes 非空时按 photo/voice/text/article 过滤；返回 SearchOutcome 或 null
- *  2026-10-16：wantAnswer 为真时下发 `want_answer`（冻结契约，默认 false=完全旧行为）→ 结果带 `answer`/`answer_sources`。 */
-export function searchText(query: string, limit: number, contentTypes: Array<string>, wantAnswer: boolean = false): Promise<SearchOutcome | null> {
+ *  2026-10-16：wantAnswer 为真时下发 `want_answer`（冻结契约，默认 false=完全旧行为）→ 结果带 `answer`/`answer_sources`。
+ *  2026-10-24（A-11 ③）：`answerAsync` 为真时**额外**下发 `answer_async`
+ *    ⇒ 响应不等回答、带 `answer_job_id`，正文由 `fetchAnswerJob` 轮询取回。
+ *    ⚠️ 只有 `wantAnswer=true` 时本参数才有效（且关系，与后端契约一致）。 */
+export function searchText(
+	query: string,
+	limit: number,
+	contentTypes: Array<string>,
+	wantAnswer: boolean = false,
+	answerAsync: boolean = false
+): Promise<SearchOutcome | null> {
 	const body: UTSJSONObject = {
 		q: query,
 		limit: limit
@@ -265,6 +385,10 @@ export function searchText(query: string, limit: number, contentTypes: Array<str
 	}
 	if (wantAnswer) {
 		body.set('want_answer', true)
+		// 且关系：want_answer=false 时后端不会起 job，故不必下发（少一个字段=少一种误解）
+		if (answerAsync) {
+			body.set('answer_async', true)
+		}
 	}
 	// B13 面包屑（2026-09-23）：addBreadcrumb 此前**零调用**⇒ 上报事件到达时没有任何
 	// "之前发生了什么"的轨迹。**隐私纪律：只记长度/标签，绝不记用户原文**——面包屑随事件

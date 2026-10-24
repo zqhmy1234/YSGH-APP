@@ -1805,6 +1805,54 @@
         ]
       }
     },
+    "/api/v1/search/answers/{job_id}": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Get Answer Job",
+        "description": "取异步回答结果（A-11 ③ · 2026-10-24）。\n\n返回 `{status, answer, sources, reason?, elapsed_ms?}`，`status ∈ pending|done|failed`：\n\n  · `pending` —— 后台还在生成（客户端 300~500ms 后再来）；\n  · `done`    —— `answer` 可能为 **None**，含义是「证据不足，本来就没有答案」\n                 （与 `failed` 是两回事，客户端应渲染\"没查到\"而不是\"出错了\"）；\n  · `failed`  —— 系统降级（LLM 不可用/超时/异常），`reason` 给机器口径、\n                 客户端据此展示\"暂时没生成出来\"，**绝不伪造回答**。\n\n鉴权：必须登录（与 `POST /search` 同口径）。\n⚠️ 诚实说明：job 快照存 Redis、**没有按 user_id 分键** —— job_id 是 uuid4 hex\n（122 bit 随机）、TTL 仅 10 分钟、内容是该用户自己的检索回答 ⇒ 猜测不可行。\n若要加强，把 user_id 写进快照并在本端点比对即可（成本一行）；当前不做是因为\n那要把一次额外字段读写加进热路径，收益仅是防「自己泄露自己 uuid」。\n**该取舍已登记在总账 A-11。**",
+        "operationId": "get_answer_job_api_v1_search_answers__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/classify": {
       "post": {
         "tags": [
@@ -8795,6 +8843,11 @@
             "title": "Want Answer",
             "default": false
           },
+          "answer_async": {
+            "type": "boolean",
+            "title": "Answer Async",
+            "default": false
+          },
           "want_stages": {
             "type": "boolean",
             "title": "Want Stages",
@@ -8866,6 +8919,17 @@
             "type": "array",
             "title": "Answer Sources",
             "default": []
+          },
+          "answer_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Job Id"
           },
           "stages": {
             "anyOf": [

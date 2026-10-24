@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-24 19:13 · commit c6fed57 · ts=1792840410
+- **错误**：pre-commit 拦下新写的 backend/tests/test_search_answer_async.py：lint 报 3 项——导入块未排序（I001）、json 未使用（F401）、pytest 未使用（F401）
+- **根因**：写测试文件时**照抄了别的测试文件的 import 头部**（import json / import pytest 是常见配方），但这个文件里既没用到 json（三态断言直接用字典字面量）也没用到 pytest（没写 parametrize/mark）⇒ 抄来的 import 成了死代码。而我**写完没有先跑 ruff**，直接进 commit，等于把 lint 检查外包给了 pre-commit 钩子
+- **修复**：ruff check --fix 自动修 3 项（排序 + 删两个未用导入），随后 ruff check → All checks passed；pytest tests/test_search_answer_async.py → 9 passed（删 import 不影响用例）
+- **相关文件**：backend/tests/test_search_answer_async.py
+- **教训**：**写完文件先跑 ruff，别把它留给 pre-commit。** pre-commit 只会在你**已经决定提交**时才告诉你，这时候返工要么重写提交说明（因为门禁要求登记教训），要么中断提交流程——成本远高于写完就 ruff check <file>（不到 1 秒）。更具体的一条：**不要整段照抄别的文件的 import 头部**。本仓测试文件常见配方是 import json / import pytest，但不同用例需要的东西不同；抄来的未用导入不会报错、只会被 lint 抓，而 lint 又是提交门禁的一环 ⇒ 抄一行 import 的代价是整轮提交失败。
+
+---
+
 ### 2026-10-24 18:34 · commit 756a7ff · ts=1792838089
 - **错误**：全量门禁 --full 红在两处：① tests→api_smoke 的 healthz 用例失败——它断言 /healthz 全等于 status=ok，而实际多出 agent / agent_degradation / agent_service_token_fp 三个字段；② audit_security 的「生产强制强 JWT 密钥」误报失败——它按源码子串匹配默认值字面量，而我把该字面量提成了 _jwt_default 变量（语义完全等价）
 - **根因**：两处都是**检查与实现长期脱钩**：① 2026-10-16 的 5a12a9b 给 /healthz **有意**加了 §7.12 的三类运维事实，但该 commit 的 --stat 里没有 scripts/api_smoke_cases.py ⇒ 此后 api_smoke 一直红，而我此前只跑快速门禁（不含 api_smoke）所以从未看见；② audit_security 用**源码子串匹配**代替**语义检查**，任何等价重构（提取常量）都会让它误报 —— 这是检查本身脆弱，不是改坏了代码

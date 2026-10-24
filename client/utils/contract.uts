@@ -25,6 +25,9 @@ export const PATH_CONTENTS: string = '/api/v1/contents'
 export const PATH_WAVEFORM: string = '/api/v1/contents/{id}/waveform'
 export const PATH_SEARCH: string = '/api/v1/search'
 export const PATH_SEARCH_IMAGE: string = '/api/v1/search/image'
+// 异步回答取回（A-11 ③ · 2026-10-24）：`{job_id}` 占位，调用方 replace 后 GET。
+// 与后端 `api/search.py` 的 `@router.get("/answers/{job_id}")` 一一对应。
+export const PATH_SEARCH_ANSWER: string = '/api/v1/search/answers/{job_id}'
 export const PATH_EVENTS_SYNC: string = '/api/v1/events/sync'
 export const PATH_EVENTS_TIMELINE: string = '/api/v1/events/timeline'
 // AG6（2026-09-23）：AI 对话域（后端 AG5 已实现并把契约重导进 docs/openapi.json，路径已对齐）

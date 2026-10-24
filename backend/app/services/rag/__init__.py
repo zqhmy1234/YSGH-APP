@@ -353,22 +353,46 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     #    · LLM 未配置/超时/解析失败 → 如实置 degraded=True（复用既有降级口径，**不新增布尔位**）。
     answer: str | None = None
     answer_sources: list[str] = []
+    answer_job_id: str | None = None
     if q.want_answer:
-        from app.services.llm_ops.search_answer import generate_answer
+        if q.answer_async:
+            # ── A-11 ③（2026-10-24）：**异步回答**——本次响应不等回答 ──
+            # 为什么这样拆：搜索是同步 POST，召回+精排已吃掉大部分 P95 预算，
+            # 回答再压 1~2s 必然越线；而"不等"就能让主链路立刻返回证据。
+            # 回答生成在后台线程跑、结果存 Redis 10 分钟，客户端轮询取回
+            # （`GET /api/v1/search/answers/{job_id}`，形态同既有分类任务 job 轮询）。
+            #
+            # ⚠️ 关键：**`latency_ms` 在这里不再重算**。异步路径下本次响应**确实没有**
+            # 承担回答耗时 ⇒ latency_ms 如实反映本次响应耗时，这才是真值。
+            # 若"为了门禁好看"在这里加一个估计值，就是伪造测量。
+            # 回答的真实耗时由 job 快照里的 `elapsed_ms` 单独记录（不混进检索 P95）。
+            from app.services.search_answer_job import start_answer_job
 
-        _ans_mark = time.perf_counter() if want_stages else 0.0
-        answer, answer_sources, answer_failed = generate_answer(q.q, hits)
-        if want_stages:
-            st_answer = int((time.perf_counter() - _ans_mark) * 1000)
-        if answer_failed:
-            degraded = True
+            try:
+                answer_job_id = start_answer_job(q.q, hits)
+            except Exception:  # noqa: BLE001 —— 起 job 失败不得让搜索失败
+                # 失败时不置 degraded：检索本身完全正常，只是"回答这条路没走通"；
+                # 客户端拿不到 job_id 就按"无回答"渲染（诚实空态）。
+                logger.warning("异步回答任务创建失败，按无回答返回")
+        else:
+            from app.services.llm_ops.search_answer import generate_answer
+
+            _ans_mark = time.perf_counter() if want_stages else 0.0
+            answer, answer_sources, answer_failed = generate_answer(q.q, hits)
+            if want_stages:
+                st_answer = int((time.perf_counter() - _ans_mark) * 1000)
+            if answer_failed:
+                degraded = True
         # 回答步骤之后重算 latency_ms（协调者 2026-10-16 拍板，方案 A）：
         #   · `want_answer=False` 时本块**根本不执行** ⇒ `latency_ms` 仍取上面那次
         #     （检索段，line 239 原样），**数值与改动前逐字一致** ⇒ 在野客户端与
         #     既有 P95 验收零扰动；
-        #   · `want_answer=True` 时把这次增强项的**真实尾延迟**计入 ⇒ 门禁（读 latency_ms）
-        #     看到的才是端到端真相，杜绝"门禁绿、真机体感超 3s"的第二类假绿。
-        latency_ms = int((time.perf_counter() - start) * 1000)
+        #   · `want_answer=True`（同步路径）时把这次增强项的**真实尾延迟**计入 ⇒
+        #     门禁（读 latency_ms）看到的才是端到端真相，杜绝"门禁绿、真机体感超 3s"
+        #     的第二类假绿；
+        #   · `answer_async=True` 时**不重算**（本次响应没有等回答）——见上方注释。
+        if not q.answer_async:
+            latency_ms = int((time.perf_counter() - start) * 1000)
 
     return SearchResult(
         query=q.q,
@@ -380,6 +404,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         degraded=degraded,
         answer=answer,
         answer_sources=answer_sources,
+        answer_job_id=answer_job_id,
         # 分阶段打点：默认 want_stages=False ⇒ None（响应与改动前一致），
         # True ⇒ 五键全在，未执行/未计时的阶段如实 None（契约承诺，不编造）。
         stages=(
