@@ -5,7 +5,7 @@
 前端页面通过这些 API 获取数据，对话功能复用 /stream_run 接口。
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
@@ -160,9 +160,13 @@ async def get_dashboard(request: Request):
                     topic_counts[t] = topic_counts.get(t, 0) + 1
 
         # 本周新增（记忆+收藏）
-        week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
-        week_mem = client.table("memories").select("id", count="exact").eq("user_id", user_id).gte("created_at", week_ago).execute()
-        week_col = client.table("knowledge_collections").select("id", count="exact").eq("user_id", user_id).gte("created_at", week_ago).execute()
+        week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+        week_mem = client.table("memories").select("id", count="exact").eq(
+            "user_id", user_id
+        ).gte("created_at", week_ago).execute()
+        week_col = client.table("knowledge_collections").select("id", count="exact").eq(
+            "user_id", user_id
+        ).gte("created_at", week_ago).execute()
         week_new = (week_mem.count or 0) + (week_col.count or 0)
 
         return JSONResponse({

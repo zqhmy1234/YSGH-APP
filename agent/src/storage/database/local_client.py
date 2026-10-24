@@ -27,6 +27,7 @@ from typing import Any
 
 from sqlalchemy import and_, create_engine, delete, func, or_, select, update
 from sqlalchemy import inspect as sa_inspect
+
 # ⚠️ `on_conflict_do_nothing()` 只在 **PG 方言**的 insert 上有，通用的
 # `sqlalchemy.insert()` 没有 —— 用错的话在运行期才炸
 # （`'Insert' object has no attribute 'on_conflict_do_nothing'`，已实测）。

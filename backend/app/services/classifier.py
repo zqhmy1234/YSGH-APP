@@ -44,7 +44,7 @@ def _load() -> tuple[object | None, list[str], list[str]]:
     2026-08-29 O-1 顺带项：torch_dtype→dtype（transformers>=4.56 改名，4.57 旧名弃用警告）；
     降级路径加 degraded 标记（D-22：mixed 不再与模型结论混同）。
     2026-08-26 降级：模型目录缺失/加载失败（CI 全新检出无 gitignore 权重、生产未预置）
-    → 返回 None，classify/classify_batch 走确定性降级（mixed），不崩溃（与 rerank/caption 降级同模式）。
+    → 返回 None，`classify` 走确定性降级（mixed），不崩溃（与 rerank/caption 降级同模式）。
     """
     try:
         import torch
@@ -114,34 +114,6 @@ def classify(text: str) -> dict:
             for c, cn, p in zip(classes, classes_cn, probs, strict=True)
         ],
     }
-
-
-def classify_batch(texts: list[str]) -> list[dict]:
-    """批量分类（worker 攒批用；单次推理摊薄模型加载成本）
-
-    CPU 实测：单条 predict ~27s（2.2GB SetFit 无 GPU），批 10 条约 30s——
-    必须攒批，禁止逐条调 classify（2026-08-20 实测记录）。
-    """
-    if not texts:
-        return []
-    model, classes, classes_cn = _load()
-    if model is None:
-        return [_fallback_result(t, classes, classes_cn) for t in texts]
-    probs = model.predict_proba(list(texts))
-    results = []
-    for p in probs:
-        idx = int(p.argmax())
-        results.append({
-            "label": classes[idx],
-            "label_cn": classes_cn[idx],
-            "confidence": round(float(p[idx]), 4),
-            "degraded": False,
-            "scores": [
-                {"label": c, "label_cn": cn, "score": round(float(s), 4)}
-                for c, cn, s in zip(classes, classes_cn, p, strict=True)
-            ],
-        })
-    return results
 
 
 def classify_job(text: str) -> dict:

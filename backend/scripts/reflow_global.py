@@ -123,13 +123,24 @@ def main() -> None:
     # 修复（审查 MAJOR）：原流水线断裂——mark_global_candidates 无触发入口
     # （仅测试调用），is_global_candidate 恒 False → 本脚本永远 0 候选。
     # 补：扫描前先执行共性纠错标记（≥2 用户一致的 (old→new) 对 → 全局候选）。
-    from app.services.correction import mark_global_candidates
+    from app.services.correction import global_candidate_count, mark_global_candidates
 
     marked = mark_global_candidates(db)
     if marked:
         print(f"共性纠错标记: 新增 {marked} 条全局候选")
 
     candidates = collect_candidates(db)
+    # 2026-10-24（待办总账 B-06④ · 原台账 §7.26④）：`global_candidate_count` 此前
+    # **只有测试调用**。它不是死代码（测试用它断言标记流水线），但生产侧无人读 ⇒
+    # "库里到底有多少候选"只能靠上面的 collect 结果反推，而两者**口径不同**：
+    #   · collect_candidates：按 user+content 去重，且**丢掉没有 text 的行**（微调要文本）；
+    #   · global_candidate_count：直接数 is_global_candidate=True 的行，不去重不过滤。
+    # 两个数不一致正是"明明标记了很多、脚本还说差 N 条"这类困惑的来源，
+    # 故在此**显式并列打印**（只加可观测性，不改门禁判据——训练仍按 candidates 计）。
+    print(
+        f"候选计数: 可微调 {len(candidates)} 条（去重且有文本）"
+        f" / 已标记 {global_candidate_count(db)} 条（库内总数）"
+    )
     print(f"共性纠错候选: {len(candidates)} 条（阈值 {args.threshold}）")
 
     if len(candidates) < args.threshold:

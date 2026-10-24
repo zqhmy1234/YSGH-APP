@@ -248,7 +248,6 @@ class FetchClient:
                             connect_ips = hop_ips
                             continue
                         # 非重定向：流式收正文，超限即断
-                        resp = candidate
                         chunks: list[bytes] = []
                         total = 0
                         for chunk in candidate.iter_bytes():

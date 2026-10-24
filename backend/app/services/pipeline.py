@@ -64,6 +64,15 @@ from app.services.pipeline_audio import (  # noqa: F401
     _set_emotion_enrichment,
     enrich_content_emotion,
 )
+
+# B-07（2026-10-24）用户纠错保护：判定/留痕件在 `pipeline_class_guard.py`
+# （拆出理由与取证结论见该模块 docstring；此处 re-export 保持导入路径可用）。
+from app.services.pipeline_class_guard import (  # noqa: F401
+    _USER_DECIDED_CLASS_SOURCES,
+    _active_correction_of,
+    _record_classification_skipped,
+    _user_decided_class,
+)
 from app.services.pipeline_common import (  # noqa: F401
     _enqueue_user_aggregation,
     extra_get,
@@ -132,9 +141,29 @@ def _index_content(db: Session, content: Content, text: str | None = None) -> No
     )
 
 
+# ---------------------------------------------------------------------------
+# B-07 · 用户纠错保护（2026-10-24）——判定件在 `pipeline_class_guard.py`
+#
+# 缺陷：用户改正分类后，后续流水线（RQ 重投 / 超龄重扫 / voice 二次分类）又把
+# `content_class` 写回模型输出、`class_source` 标成 `setfit` ⇒ 用户功能被静默吃掉。
+# ⚠️ 取证：纠错 API 只写 `content_class`、**从不写 `class_source`**（全仓该列赋值点
+# 只有本文件 `= "setfit"`）⇒ 按 `class_source == "correction"` 写守卫**永不生效**。
+# ⇒ 真值来源 = `correction_log` 最新 active 行（详见该模块 docstring）。
+# `_classify_content` **留驻本文件**——它是 `tests/test_pipeline.py` 的 patch 目标。
+# ---------------------------------------------------------------------------
+
+
 def _classify_content(db: Session, content: Content, text: str) -> None:
-    """SetFit 7 类分类 → 回写 content_class/class_source/model_version"""
+    """SetFit 7 类分类 → 回写 content_class/class_source/model_version
+
+    B-07 守卫：**已由用户纠错的内容直接跳过**（不跑模型、不写三个权威字段），
+    只在 `extra.classification_skipped` 留痕。判据与取舍见上方 `_user_decided_class`。
+    """
     try:
+        evidence = _user_decided_class(db, content)
+        if evidence is not None:
+            _record_classification_skipped(content, evidence)
+            return
         result = _get_classifier()(text)
         content.content_class = result["label"]
         content.class_source = "setfit"

@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -180,7 +180,7 @@ def _find_existing_memory(client, user_id: str, content: str) -> tuple[Any, str]
     if window <= 0 or len(new_norm) < DEDUP_MIN_PREFIX:
         return None, ""
 
-    since = (datetime.now(timezone.utc) - timedelta(minutes=window)).isoformat()
+    since = (datetime.now(UTC) - timedelta(minutes=window)).isoformat()
     recent = getattr(
         client.table("memories")
         .select("id, content")
@@ -264,7 +264,11 @@ def _parse_content(content: Any) -> str:
         if content and isinstance(content[0], str):
             return " ".join(content)
         else:
-            return " ".join(item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text")
+            return " ".join(
+                item.get("text", "")
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            )
     return str(content)
 
 
@@ -774,7 +778,8 @@ def save_memory(
         content: 记忆的原始内容（必填）
         category: 记忆分类（七选一）：情绪、事件、想法、灵感、人物、地点、待分类
         mood: 情绪状态（八选一）：开心、平静、感恩、期待、悲伤、焦虑、愤怒、疲惫
-        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、社交、兴趣、目标、生活、认知、其他
+        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、
+            社交、兴趣、目标、生活、认知、其他
         location: 相关地点（可选）
         people: 相关人物列表（可选）
         content_format: 内容形式：text、image、voice、link，默认text
@@ -948,13 +953,18 @@ def save_memory(
                 "people": people,
                 "location": location,
                 "related_memories": related,
-                "_hint": "回复用户时展示：✅已保存、📝内容、🏷️分类、💭情绪、📌主题、👫同行(如有)、📍地点(如有)。如果有related_memories，自然地提及相关历史记忆，如「这让我想起你X月X日也记录过类似的事情～」。严禁展示内容形式(content_format)、memory_id。",
+                "_hint": (
+                    "回复用户时展示：✅已保存、📝内容、🏷️分类、💭情绪、📌主题、👫同行(如有)、"
+                    "📍地点(如有)。如果有related_memories，自然地提及相关历史记忆，"
+                    "如「这让我想起你X月X日也记录过类似的事情～」。"
+                    "严禁展示内容形式(content_format)、memory_id。"
+                ),
             }, ensure_ascii=False)
         else:
             return json.dumps({"success": False, "message": "保存失败，未返回数据"}, ensure_ascii=False)
     except APIError as e:
         logger.error(f"保存记忆失败: {e.message}")
-        raise Exception(f"保存记忆失败: {e.message}")
+        raise Exception(f"保存记忆失败: {e.message}") from e
 
 
 @tool
@@ -984,7 +994,9 @@ def search_memories(
 
     try:
         # 构建查询（按 user_id 隔离）
-        db_query = client.table("memories").select("id, content, summary, mood, topics, location, people, created_at, memory_categories(name)").eq("user_id", _get_user_id())
+        db_query = client.table("memories").select(
+            "id, content, summary, mood, topics, location, people, created_at, memory_categories(name)"
+        ).eq("user_id", _get_user_id())
 
         # 应用过滤条件
         if category:
@@ -1075,7 +1087,7 @@ def search_memories(
 
     except APIError as e:
         logger.error(f"搜索记忆失败: {e.message}")
-        raise Exception(f"搜索记忆失败: {e.message}")
+        raise Exception(f"搜索记忆失败: {e.message}") from e
 
 
 @tool
@@ -1098,7 +1110,7 @@ def get_recent_memories(days: int = 7, limit: int = 20) -> str:
         # datetime——而 `created_at` 列是 timestamptz（DateTime(True)），naive 值
         # 会被 PG 按会话时区解释，与 `_find_existing_memory` 里用的
         # `now(timezone.utc)` 两套口径并存，跨机器部署时是隐患。
-        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         response = client.table("memories") \
             .select("id, content, summary, mood, topics, category_id, created_at, memory_categories(name)") \
@@ -1132,7 +1144,7 @@ def get_recent_memories(days: int = 7, limit: int = 20) -> str:
 
     except APIError as e:
         logger.error(f"获取最近记忆失败: {e.message}")
-        raise Exception(f"获取最近记忆失败: {e.message}")
+        raise Exception(f"获取最近记忆失败: {e.message}") from e
 
 
 @tool
@@ -1156,7 +1168,9 @@ def get_memory_stats() -> str:
         category_stats: list[dict[str, Any]] = []
         categories_data: list[dict[str, Any]] = categories_response.data if categories_response.data else []
         for cat in categories_data:
-            cat_memories = client.table("memories").select("id", count="exact").eq("user_id", user_id).eq("category_id", cat.get("id")).execute()
+            cat_memories = client.table("memories").select("id", count="exact").eq(
+                "user_id", user_id
+            ).eq("category_id", cat.get("id")).execute()
             category_stats.append({
                 "name": cat.get("name"),
                 "count": cat_memories.count if cat_memories.count else 0
@@ -1190,7 +1204,7 @@ def get_memory_stats() -> str:
 
     except APIError as e:
         logger.error(f"获取统计信息失败: {e.message}")
-        raise Exception(f"获取统计信息失败: {e.message}")
+        raise Exception(f"获取统计信息失败: {e.message}") from e
 
 
 @tool
@@ -1227,7 +1241,7 @@ def update_memory_summary(memory_id: int, summary: str) -> str:
 
     except APIError as e:
         logger.error(f"更新记忆摘要失败: {e.message}")
-        raise Exception(f"更新记忆摘要失败: {e.message}")
+        raise Exception(f"更新记忆摘要失败: {e.message}") from e
 
 
 @tool
@@ -1264,7 +1278,7 @@ def delete_memory(memory_id: int) -> str:
 
     except APIError as e:
         logger.error(f"删除记忆失败: {e.message}")
-        raise Exception(f"删除记忆失败: {e.message}")
+        raise Exception(f"删除记忆失败: {e.message}") from e
 
 
 @tool
@@ -1290,7 +1304,8 @@ def save_knowledge_collection(
         title: 标题（可选）
         author: 作者（可选）
         source: 来源，如URL、平台名、出处（可选）
-        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、社交、兴趣、目标、生活、认知、其他
+        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、
+            社交、兴趣、目标、生活、认知、其他
         image_url: 图片URL（可选）
         mood: 情绪状态（可选，八选一）：开心、平静、感恩、期待、悲伤、焦虑、愤怒、疲惫
         content_format: 内容形式：text、image、voice、link，默认text
@@ -1388,7 +1403,11 @@ def save_knowledge_collection(
                 "mood": validated["mood"],
                 "related_collections": related_cols,
                 "related_memories": related_mems,
-                "_hint": "回复用户时展示：✅已收藏、📝标题、🏷️类型、📌主题、💭情绪(如有)。如果有related_memories或related_collections，自然地提及相关历史内容。严禁展示content_format、collection_id。",
+                "_hint": (
+                    "回复用户时展示：✅已收藏、📝标题、🏷️类型、📌主题、💭情绪(如有)。"
+                    "如果有related_memories或related_collections，自然地提及相关历史内容。"
+                    "严禁展示content_format、collection_id。"
+                ),
             }, ensure_ascii=False)
         else:
             return json.dumps({
@@ -1398,7 +1417,7 @@ def save_knowledge_collection(
 
     except APIError as e:
         logger.error(f"保存知识收藏失败: {e.message}")
-        raise Exception(f"保存知识收藏失败: {e.message}")
+        raise Exception(f"保存知识收藏失败: {e.message}") from e
 
 
 @tool
@@ -1454,7 +1473,7 @@ def search_knowledge_collections(
 
     except APIError as e:
         logger.error(f"搜索知识收藏失败: {e.message}")
-        raise Exception(f"搜索知识收藏失败: {e.message}")
+        raise Exception(f"搜索知识收藏失败: {e.message}") from e
 
 
 @tool
@@ -1473,9 +1492,11 @@ def get_knowledge_summary(topics: list[str] | None = None, days: int = 7) -> str
 
     try:
         from datetime import timedelta
-        cutoff_date = datetime.now() - timedelta(days=days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
-        query_builder = client.table("knowledge_collections").select("*").eq("user_id", _get_user_id()).gte("created_at", cutoff_date.isoformat())
+        query_builder = client.table("knowledge_collections").select("*").eq(
+            "user_id", _get_user_id()
+        ).gte("created_at", cutoff_date.isoformat())
 
         if topics:
             response = query_builder.execute()
@@ -1514,4 +1535,4 @@ def get_knowledge_summary(topics: list[str] | None = None, days: int = 7) -> str
 
     except APIError as e:
         logger.error(f"获取知识总结失败: {e.message}")
-        raise Exception(f"获取知识总结失败: {e.message}")
+        raise Exception(f"获取知识总结失败: {e.message}") from e

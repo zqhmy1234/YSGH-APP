@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 
 import pytest
-
 from tools import memory_tools as mt
 from yishu import degradation
 from yishu.security import backend_channel_token, token_fingerprint

@@ -89,6 +89,14 @@ async def lifespan(app: FastAPI):
     # 说明：本行由 config 层断言取代原先的 `diagnostics.log_agent_channel_config()`（2026-10-14），
     # 避免两处各打一份指纹；该函数仍保留在 `app/core/diagnostics.py`（未删除）。
     assert_agent_service_token_config()
+    # B-02（2026-10-24）：推送通道接线——**这是 `set_push_channel` 的第一个真实调用方**
+    # （此前全仓零调用 ⇒ 生产恒走 MockPushChannel ⇒ 消息落库但手机端永远没有通知）。
+    # 未配置 `PUSH_WEBHOOK_URL` 时不抛错（推送是旁路增强，不该拦住启动），
+    # 由 `build_push_channel_from_settings()` 打 WARNING 显式说明后果；
+    # 投递计数（delivered / skipped_unconfigured / failed）见 `notify.push_delivery_stats()`。
+    from app.services.notify import build_push_channel_from_settings, set_push_channel
+
+    set_push_channel(build_push_channel_from_settings())
     # 2026-10-19（搜索性能治理②）：可选后台预热（BGE_WARMUP_ON_START=true 时生效）。
     if settings.bge_warmup_on_start:
         _start_bge_warmup()

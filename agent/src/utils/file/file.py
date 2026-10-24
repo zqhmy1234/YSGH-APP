@@ -1,12 +1,12 @@
 import os
-import requests
-import uuid
-import chardet
 from io import BytesIO
-from typing import Literal,Callable, Any, Optional,Union
-from pydantic import BaseModel, Field, field_validator,PrivateAttr,ConfigDict
+from typing import Literal
 from urllib.parse import urlparse
+
+import chardet
+import requests
 from pptx import Presentation
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 MAX_FILE_SIZE = 100 * 1024 * 1024
 
@@ -19,7 +19,7 @@ class File(BaseModel):
         default="default",
         description="文件类型"
     )
-    _local_path: Optional[str] = PrivateAttr(default=None)
+    _local_path: str | None = PrivateAttr(default=None)
     model_config = ConfigDict(
         json_schema_extra={
             "x-component": "file-upload",  # 前端用文件上传组件
@@ -30,7 +30,7 @@ class File(BaseModel):
         """设置缓存路径"""
         self._local_path = path
 
-    def get_cache_path(self) -> Optional[str]:
+    def get_cache_path(self) -> str | None:
         """获取缓存路径（如果文件实际存在）"""
         return self._local_path
 
@@ -96,7 +96,11 @@ def infer_file_category(path_or_url: str) -> tuple[str, str]:
     return 'default', ext_with_dot
 
 class FileOps:
-    DOWNLOAD_DIR = "/tmp"
+    # noqa: S108 —— `/tmp` 是**上游交付时的常量**，本仓不消费该下载链路（`_get_bytes_stream`
+    # 只在 Coze 侧的远程 URL 取文件时用；本仓 agent 的工具链走 `storage.*`）。
+    # 改成 `tempfile.gettempdir()` 会改变运行时落盘路径，属逻辑变更，故只做标注不改值；
+    # 若将来真启用本模块，须同时按平台取值（Windows 上 `\tmp` 会落到盘根）。
+    DOWNLOAD_DIR = "/tmp"  # noqa: S108
 
     @staticmethod
     def _get_bytes_stream(file_obj:File) -> tuple[bytes, str]:
@@ -126,14 +130,14 @@ class FileOps:
                         if chunk:
                             current_size += len(chunk)
                             if current_size > MAX_FILE_SIZE:
-                                raise Exception(f"检测到文件超过 100MB，已中断。")
+                                raise Exception("检测到文件超过 100MB，已中断。")
                             downloaded_content.write(chunk)
 
                     # 获取完整 bytes
                     return downloaded_content.getvalue(), ext
 
             except requests.RequestException as e:
-                raise RuntimeError(f"网络请求失败: {e}")
+                raise RuntimeError(f"网络请求失败: {e}") from e
 
         else:
             if not os.path.exists(file_obj.url):
@@ -168,7 +172,12 @@ class FileOps:
             # filename = f"{uuid.uuid4().hex}{ext}"
             local_path = os.path.join(FileOps.DOWNLOAD_DIR, filename)
 
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+            headers = {
+                'User-Agent': (
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                    '(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+                )
+            }
             with requests.get(file_obj.url, headers=headers, stream=True, timeout=120) as r:
                 r.raise_for_status()
                 with open(local_path, 'wb') as f:
@@ -177,7 +186,7 @@ class FileOps:
 
             return local_path
         except Exception as e:
-            raise RuntimeError(f"Download failed for {file_obj.url}: {str(e)}")
+            raise RuntimeError(f"Download failed for {file_obj.url}: {str(e)}") from e
 
     @staticmethod
     def read_bytes(file_obj:File) -> bytes:
@@ -274,7 +283,7 @@ def read_docx(cont_stream) -> str:
 
     return "\n\n".join(all_parts)
 
-def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
+def read_ppt(file_input: str | bytes | BytesIO) -> str:
     if not Presentation:
         return "[Error] 未安装 python-pptx 库，无法解析 PPT 文件"
 

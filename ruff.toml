@@ -12,18 +12,21 @@ line-length = 120
 #
 # 取值依据（三处一致，勿单一改动）：CI `.github/workflows/ci.yml` python-version 3.11、
 # `deploy/Dockerfile.backend` FROM python:3.11-slim、本机 conda 环境 3.11。
-# 注意：agent/ 是独立 py3.12 项目，但已在下方 exclude 中排除，本项对它无影响。
+# 注意：agent/ 是独立 py3.12 项目（本项按其上界 py311 判，属**更严**的一侧，
+# 即"py311 能过的写法 py312 必然能过"，方向安全；2026-10-24 撤销 agent exclude 后此条开始生效）。
 target-version = "py311"
 
 # 客户端（uni-app x：UTS/Kotlin/uvue）不属于 Python 工具链（B2 决策，2026-08-24）
 #
-# agent：开发部同事交付的 Coze Agent 包（2026-09-23 原样入库，依据见 agent/UPSTREAM.md）。
-#   ⚠️ **临时豁免**——上游 354 处违规（239 可自动修 + 115 手动，含 S310/S110/DTZ/PLW0603 等真问题）。
-#   注意：本 exclude 只对**目录遍历**生效；pre-commit 快模式是显式传文件给 ruff
-#   （`ruff check <files>`），故另有 `scripts/review_agent.py:_lint_skip()` 做列表层过滤。
-#   **撤销待办 AG7**：改写批次完成后删除本项与 `_lint_skip` 的 agent 判断（两处同步），
-#   登记见 docs/决策台账.md §4.12 与 docs/待办处理排期_20260923.md「Agent 接线批」。
-exclude = ["client", "agent"]
+# agent：**2026-10-24 已撤销临时豁免（B-16 销项 · 即原待办 AG7）**。
+#   上游交付时 354 处违规，本轮清零：`python -m ruff check agent` → All checks passed；
+#   同时 `agent/tests` 201 用例全绿、逐文件 compileall 通过 ⇒ agent/ 现与 backend/ 同口径纳管。
+#   ⚠️ 与 `scripts/review_agent.py:_lint_skip()` 是**两处必须同步**的配套改动：
+#   本 exclude 只对**目录遍历**生效；pre-commit 快模式是显式传文件给 ruff
+#   （`ruff check <files>`），**命令行显式传入的文件不受 config.exclude 约束**
+#   ⇒ 列表层过滤在 `_lint_skip()` 里。只改一处会造成"全量绿 / 快模式红"的口径分裂。
+#   历史登记：docs/决策台账.md §4.12、docs/待办处理排期_20260923.md「Agent 接线批」AG7。
+exclude = ["client"]
 
 [lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "DTZ", "BLE", "PLW"]

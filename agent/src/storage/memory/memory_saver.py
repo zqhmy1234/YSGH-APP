@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from typing import Optional, Union
+from typing import Optional
 
 import psycopg
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -77,11 +77,11 @@ class MemoryManager:
     """Memory Manager 单例类"""
 
     _instance: Optional['MemoryManager'] = None
-    _checkpointer: Optional[Union[PostgresSaver, MemorySaver]] = None
+    _checkpointer: PostgresSaver | MemorySaver | None = None
     # 2026-10-05：由「单条长驻连接」改为「同步连接池」。
     # 原先只有 `_conn`（单连接）且永不重建 —— DB 重启或网络抖动一次后，
     # 进程生命周期内再也不重连，对话记忆静默持续失败（见 get_checkpointer）。
-    _pool: Optional[ConnectionPool] = None
+    _pool: ConnectionPool | None = None
     _setup_done: bool = False
 
     def __new__(cls):
@@ -165,7 +165,7 @@ class MemoryManager:
             logger.warning(f"Failed to setup schema/tables: {e}")
             return False
 
-    def _get_db_url_safe(self) -> Optional[str]:
+    def _get_db_url_safe(self) -> str | None:
         """安全获取 db_url，失败时返回 None
 
         规范化在此收口：`get_db_url()` 返回的是 **SQLAlchemy 形态**（给 `db.py` 的
@@ -295,12 +295,12 @@ class MemoryManager:
         except Exception:  # noqa: BLE001,S110 —— 统计取不到不该让/health 500
             return "pool=?"
 
-_memory_manager: Optional[MemoryManager] = None
+_memory_manager: MemoryManager | None = None
 
 
 def get_memory_saver() -> BaseCheckpointSaver:
     """获取 checkpointer，优先使用 PostgresSaver，db_url 不可用或连接失败时退化为 MemorySaver"""
-    global _memory_manager
+    global _memory_manager  # noqa: PLW0603 —— 惰性单例（checkpointer 必须进程内唯一）
     if _memory_manager is None:
         _memory_manager = MemoryManager()
     return _memory_manager.get_checkpointer()
@@ -326,6 +326,5 @@ def close_memory_pool() -> None:
 
     单连接时代没有这个问题（一条连接随对象回收），这正是池化后新增的义务。
     """
-    global _memory_manager
     if _memory_manager is not None:
         _memory_manager._discard_pool()

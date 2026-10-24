@@ -16,7 +16,6 @@ from __future__ import annotations
 import importlib
 
 import pytest
-
 from storage.database.local_client import _db_value, _pg_pattern
 from yishu.context import new_context, request_context
 
@@ -74,7 +73,8 @@ def test_save_memory_is_idempotent_for_same_content():
 def test_db_value_normalizes_datetime():
     from datetime import datetime
 
-    v = _db_value({"created_at": datetime(2026, 10, 4, 12, 30, 15), "n": 1})
+    # 故意传 naive datetime：被测行为就是"DB 取出的 naive datetime 要能 JSON 化"
+    v = _db_value({"created_at": datetime(2026, 10, 4, 12, 30, 15), "n": 1})  # noqa: DTZ001
     assert isinstance(v["created_at"], str)
     assert v["created_at"].startswith("2026-10-04")
     assert v["n"] == 1

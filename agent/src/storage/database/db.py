@@ -16,7 +16,7 @@ try:
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
-except Exception:
+except Exception:  # noqa: BLE001,S110 —— dotenv 属可选依赖（纯本地开发便利），缺失时按下文「缺配置显式报错」路径处理
     pass
 
 
@@ -71,13 +71,13 @@ def _create_engine_with_retry():
     raise last_error  # pyright: ignore [reportGeneralTypeIssues]
 
 def get_engine():
-    global _engine
+    global _engine  # noqa: PLW0603 —— 模块级惰性单例（引擎须进程内唯一，重连会丢池）
     if _engine is None:
         _engine = _create_engine_with_retry()
     return _engine
 
 def get_sessionmaker():
-    global _SessionLocal
+    global _SessionLocal  # noqa: PLW0603 —— 同上，sessionmaker 必须绑定同一个 engine
     if _SessionLocal is None:
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
     return _SessionLocal

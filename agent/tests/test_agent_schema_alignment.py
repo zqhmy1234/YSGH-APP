@@ -43,7 +43,6 @@ import re
 
 import pytest
 from sqlalchemy import inspect
-
 from storage.database.db import get_db_url
 from storage.database.shared.model import Base as AgentBase
 
@@ -137,7 +136,7 @@ def test_backend_mirror_model_stays_in_sync():
     if not backend_file.exists():
         if (repo_root / "backend").is_dir():
             pytest.fail(f"仓库有 backend/ 但找不到镜像模型 {BACKEND_MODEL_FILE} —— 守卫失效，请核对路径")
-        pytest.skip(f"本仓没有 backend/（部署形态不同），跳过后端镜像对拍")
+        pytest.skip("本仓没有 backend/（部署形态不同），跳过后端镜像对拍")
     text = backend_file.read_text(encoding="utf-8")
 
     def _declared_cols(cls_name: str) -> set[str]:

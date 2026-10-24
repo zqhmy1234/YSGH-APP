@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -83,8 +83,8 @@ def test_filters_order_limit_iso_datetime(client: LocalClient):
     for i in range(3):
         client.table("memories").insert({"content": f"AG3 过滤 {i}", "user_id": USER, "importance": i + 1}).execute()
 
-    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
     future_hits = client.table("memories").select("id", count="exact")
     assert future_hits.eq("user_id", USER).gte("created_at", future).execute().count == 0

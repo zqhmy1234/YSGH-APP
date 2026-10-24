@@ -35,7 +35,7 @@ def _build_rules() -> tuple[tuple[type[BaseException], ClassifiedError], ...]:
 
 def classify_error(exc: BaseException) -> ClassifiedError:
     """把异常归成 (kind, http_status, retryable)。未识别 → internal/500/重试一次。"""
-    global _RULES
+    global _RULES  # noqa: PLW0603 —— 惰性缓存规则表（模块级不可变元组，只初始化一次）
     if not _RULES:
         _RULES = _build_rules()
     for exc_type, classified in _RULES:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Protocol, runtime_checkable
 
@@ -39,6 +40,13 @@ logger = logging.getLogger("yishu.notify")
 # create_message 的 push 分支经端口投递（幂等键 = message.id）；默认 MockPushChannel
 # 日志占位（S4-07：交付调度+消息生成+消息中心），凭证到位后 set_push_channel 换真实
 # 厂商通道零切换。
+#
+# B-02（2026-10-24 收口）：`set_push_channel()` 此前**零调用**（定义后全仓无调用方），
+# 故生产恒走 MockPushChannel ⇒ 消息真实落库、手机却**不会有任何系统通知**
+# （用户只能自己打开 App 进消息页才看到；真库 589 条消息里 491 条未读）。
+# 现补：① 真实可用通道 `WebhookPushChannel`（配 URL 即真 POST，未配置**显式告警 + 计数**，
+# 绝不伪装成功）；② `main.py` lifespan 用 `set_push_channel()` 接线。
+# 厂商通道（uni-push / 华为 / 小米）仍需 AppID+证书，本仓一个都没到位，故本批**不接 SDK**。
 # ---------------------------------------------------------------------------
 @runtime_checkable
 class PushChannel(Protocol):
@@ -56,6 +64,173 @@ class MockPushChannel:
         logger.info("[MOCK_PUSH] user=%s msg_id=%s title=%s body=%s", user_id, message.id, message.title, message.body)
 
 
+# ---- 投递计数（B-02：未配置/失败必须**可观测**，不静默）----
+
+
+@dataclass
+class PushDeliveryStats:
+    """推送投递计数（进程级，供运维/测试断言"到底推没推出去"）
+
+    为什么需要：本缺陷的原始形态就是**静默**——通道只打一行 INFO 日志，
+    「没有推送通道」与「推送成功」在事后完全不可区分。计数把三者分开：
+    真投递成功（`delivered`）/ 未配置跳过（`skipped_unconfigured`）/ 投递失败（`failed`）。
+    """
+
+    attempted: int = 0
+    delivered: int = 0
+    skipped_unconfigured: int = 0
+    failed: int = 0
+    last_error: str | None = None
+
+
+_PUSH_STATS = PushDeliveryStats()
+
+
+def push_delivery_stats() -> dict:
+    """当前推送投递计数快照（只读；供 /healthz 之外的自检脚本与测试使用）"""
+    return {
+        "attempted": _PUSH_STATS.attempted,
+        "delivered": _PUSH_STATS.delivered,
+        "skipped_unconfigured": _PUSH_STATS.skipped_unconfigured,
+        "failed": _PUSH_STATS.failed,
+        "last_error": _PUSH_STATS.last_error,
+    }
+
+
+def reset_push_delivery_stats() -> None:
+    """清零投递计数（测试隔离用；生产无调用方）"""
+    _PUSH_STATS.attempted = 0
+    _PUSH_STATS.delivered = 0
+    _PUSH_STATS.skipped_unconfigured = 0
+    _PUSH_STATS.failed = 0
+    _PUSH_STATS.last_error = None
+
+
+class WebhookPushChannel:
+    """真实可用的 webhook 推送通道（B-02：把"假的"变成"可配置的真的"）
+
+    ## 为什么是 webhook 而不是厂商 SDK
+
+    uni-push / 华为 / 小米通道都要求 AppID + 证书 + 客户端 SDK 集成，本仓**一个都不在位**
+    （客户端 `manifest.json` 无 push 模块）。Webhook 是**零凭证可落地**的那一档：配一个
+    URL 就能真的把消息 POST 出去，接企业微信群机器人 / 自建中继 / 后续任何厂商网关都行
+    —— 端上真正弹通知仍需要客户端接 push SDK，那一半不在本批范围内，**不谎称已闭环**。
+
+    ## 未配置时的行为（本类最重要的一条）
+
+    **不伪装成功**：`attempted` 计入但 `delivered` 不增，打 WARNING 并在
+    `skipped_unconfigured` 累加。绝不"看起来推了"。
+
+    ## 旁路铁律（Lead 明确要求写进 docstring）
+
+    `send()` 是**旁路增强**，绝不参与消息落库事务：内部全量 try/except 吞掉一切异常
+    （含 httpx 任意错误、DNS/超时/证书/JSON），并且**必定带超时**（默认
+    `settings.push_webhook_timeout_s`）。webhook 挂掉时消息照常落库、用户照常在
+    App 内看到——最坏的后果只能是"少了一条通知"，**不能是"消息没存上"**。
+    """
+
+    def __init__(
+        self,
+        url: str | None = None,
+        token: str | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        # 延迟读配置：允许测试 monkeypatch settings 后再构造（不在模块导入期固化）
+        from app.core.config import settings
+
+        self.url = (url if url is not None else settings.push_webhook_url or "").strip()
+        self.token = (token if token is not None else settings.push_webhook_token or "").strip()
+        raw_timeout = timeout if timeout is not None else settings.push_webhook_timeout_s
+        # 防呆：0/负数会让 httpx 立刻超时或抛错，退化为默认 5s
+        self.timeout = raw_timeout if isinstance(raw_timeout, (int, float)) and raw_timeout > 0 else 5.0
+
+    @property
+    def configured(self) -> bool:
+        """是否已配置 webhook（未配置时 send 只告警不投递）"""
+        return bool(self.url)
+
+    def _payload(self, user_id: str, message: Message) -> dict:
+        """投递体（幂等键 message.id 供接收端去重；不塞用户隐私之外的东西）"""
+        return {
+            "channel": "push",
+            "user_id": str(user_id),
+            "message_id": message.id,
+            "msg_type": message.msg_type,
+            "title": message.title,
+            "body": message.body,
+            "payload": message.payload or {},
+            "sent_at": message.sent_at.isoformat() if message.sent_at else None,
+        }
+
+    def send(self, *, user_id: str, message: Message) -> None:
+        """投递一条消息（**绝不抛异常**；未配置/失败都走显式告警 + 计数）"""
+        _PUSH_STATS.attempted += 1
+
+        if not self.configured:
+            _PUSH_STATS.skipped_unconfigured += 1
+            # 只告警一次按等级 WARNING（不是 INFO：INFO 在默认日志级别下就是"静默"，
+            # 而本缺陷的原始形态正是"静默地没推"）
+            logger.warning(
+                "推送未配置（PUSH_WEBHOOK_URL 为空）⇒ 消息 %s 仅落库、**不会**到达手机端。"
+                "用户需自行打开 App 消息页才能看到（skip=%d）",
+                message.id,
+                _PUSH_STATS.skipped_unconfigured,
+            )
+            return
+
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        try:
+            import httpx
+
+            resp = httpx.post(
+                self.url,
+                json=self._payload(user_id, message),
+                headers=headers,
+                timeout=self.timeout,
+            )
+            if resp.status_code >= 400:
+                _PUSH_STATS.failed += 1
+                _PUSH_STATS.last_error = f"HTTP {resp.status_code}"
+                logger.warning(
+                    "推送投递失败 msg=%s HTTP %s（消息已正常落库，仅通知未送达）",
+                    message.id,
+                    resp.status_code,
+                )
+                return
+            _PUSH_STATS.delivered += 1
+            logger.info("推送投递成功 msg=%s HTTP %s", message.id, resp.status_code)
+        except Exception as exc:  # noqa: BLE001 —— 旁路铁律：推送失败绝不外泄
+            _PUSH_STATS.failed += 1
+            _PUSH_STATS.last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "推送投递异常 msg=%s: %s: %s（消息已正常落库，仅通知未送达）",
+                message.id,
+                type(exc).__name__,
+                exc,
+            )
+
+
+def build_push_channel_from_settings() -> PushChannel:
+    """按配置构造推送通道（`main.py` lifespan 接线用）
+
+    未配置 `PUSH_WEBHOOK_URL` 时返回 **WebhookPushChannel（未配置态）而不再是 mock**：
+    这样"没配置"会以 WARNING + 计数显式暴露，而不是像 mock 那样打一行 INFO 就当作
+    "推送已完成"。语义差别即 B-02 的全部价值。
+    """
+    channel = WebhookPushChannel()
+    if channel.configured:
+        logger.info("推送通道已启用：WebhookPushChannel → %s", channel.url)
+    else:
+        # 启动即说清后果（不等第一次推送失败才发现）
+        logger.warning(
+            "推送通道未配置 webhook（PUSH_WEBHOOK_URL 为空）：消息会照常落库，"
+            "但**手机端不会有任何系统通知**。配置 PUSH_WEBHOOK_URL 后重启即可生效。"
+        )
+    return channel
+
+
 _push_channel_ref: dict[str, PushChannel | None] = {"channel": None}
 
 
@@ -69,7 +244,11 @@ def get_push_channel() -> PushChannel:
 
 
 def set_push_channel(channel: PushChannel | None) -> None:
-    """注入/重置推送通道（None 恢复 mock 默认；真实厂商通道配 key 后注入）"""
+    """注入/重置推送通道（None 恢复 mock 默认；真实厂商通道配 key 后注入）
+
+    B-02：生产由 `main.py` lifespan 调 `build_push_channel_from_settings()` 后注入
+    （此前本函数**全仓零调用** ⇒ 生产恒 mock）。
+    """
     _push_channel_ref["channel"] = channel
 
 # 复盘生成时区（产品口径：本地 22:00；MVP 中国区固定 +08:00）
@@ -214,8 +393,9 @@ def create_message(
     db.flush([msg])
 
     if channel == "push":
-        # 推送厂商凭证未配置 → mock 通道（R1#12 端口抽象：默认 MockPushChannel 日志
-        # 占位；凭证到位后 set_push_channel 换真实厂商通道，幂等键 = messages.id）
+        # 推送通道：默认 mock；生产由 main.py 用 set_push_channel 注入
+        # WebhookPushChannel（B-02）。通道实现内部**绝不抛异常**（旁路铁律），
+        # 故此处不需要额外 try/except —— 推送失败不会影响消息落库。
         get_push_channel().send(user_id=user_id, message=msg)
     return msg
 

@@ -11,14 +11,14 @@
 """
 
 import json
-import re
 import logging
-from typing import Any, Optional, List
+import re
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def coerce_str_list(value: Any) -> Optional[List[str]]:
+def coerce_str_list(value: Any) -> list[str] | None:
     """把 LLM 传来的"列表"各种畸形写法归一化成 `list[str]`。
 
     ## 为什么需要（2026-10-05 实测故障）
@@ -130,7 +130,7 @@ CONTENT_FORMATS = ["text", "image", "voice", "link"]
 # 归一化函数
 # ──────────────────────────────────────────────
 
-def normalize_category(category: Optional[str]) -> str:
+def normalize_category(category: str | None) -> str:
     """校验并归一化 L1-A 记忆分类，非法值兜底为 '待分类'"""
     if not category:
         return "待分类"
@@ -145,7 +145,7 @@ def normalize_category(category: Optional[str]) -> str:
     return "待分类"
 
 
-def normalize_collection_type(content_type: Optional[str]) -> str:
+def normalize_collection_type(content_type: str | None) -> str:
     """校验并归一化 L1-B 收藏分类，非法值兜底为 '其他'"""
     if not content_type:
         return "其他"
@@ -160,7 +160,7 @@ def normalize_collection_type(content_type: Optional[str]) -> str:
     return "其他"
 
 
-def normalize_mood(mood: Optional[str]) -> Optional[str]:
+def normalize_mood(mood: str | None) -> str | None:
     """
     校验并归一化 L2 情绪状态
     - 记忆库：必打，非法值兜底为 '平静'
@@ -182,13 +182,13 @@ def normalize_mood(mood: Optional[str]) -> Optional[str]:
     return "平静"
 
 
-def normalize_mood_required(mood: Optional[str]) -> str:
+def normalize_mood_required(mood: str | None) -> str:
     """记忆库必打情绪，None 兜底为 '平静'"""
     result = normalize_mood(mood)
     return result if result else "平静"
 
 
-def normalize_topics(topics: Optional[List[str]]) -> List[str]:
+def normalize_topics(topics: list[str] | None) -> list[str]:
     """
     校验并归一化 L3 主题领域
     - 允许 1~2 个主题
@@ -231,7 +231,7 @@ def normalize_topics(topics: Optional[List[str]]) -> List[str]:
     return normalized[:2]
 
 
-def normalize_content_format(content_format: Optional[str]) -> str:
+def normalize_content_format(content_format: str | None) -> str:
     """校验 L4 内容形式，非法值兜底为 'text'"""
     if not content_format:
         return "text"
@@ -243,9 +243,9 @@ def normalize_content_format(content_format: Optional[str]) -> str:
 
 
 def validate_memory_tags(
-    category: Optional[str] = None,
-    mood: Optional[str] = None,
-    content_format: Optional[str] = None,
+    category: str | None = None,
+    mood: str | None = None,
+    content_format: str | None = None,
 ) -> dict:
     """
     一次性校验个人记忆库的全部标签
@@ -259,10 +259,10 @@ def validate_memory_tags(
 
 
 def validate_collection_tags(
-    content_type: Optional[str] = None,
-    topics: Optional[List[str]] = None,
-    mood: Optional[str] = None,
-    content_format: Optional[str] = None,
+    content_type: str | None = None,
+    topics: list[str] | None = None,
+    mood: str | None = None,
+    content_format: str | None = None,
 ) -> dict:
     """
     一次性校验知识收藏库的全部标签

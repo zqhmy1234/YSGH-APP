@@ -32,7 +32,6 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
-
 from storage.memory import memory_saver as ms
 from storage.memory.memory_saver import (
     POOL_DEFAULT_MAX_SIZE,
@@ -369,9 +368,8 @@ def test_tool_error_message_never_carries_exception_text():
     `/v1/chat` 已在响应里去掉 `str(exc)`，但这条路径会把异常原文喂给模型，
     模型再复述给用户就等于绕过了那道防线 —— 两处口径必须一致。
     """
-    from langchain_core.messages import ToolMessage
-
     from agents.agent import handle_tool_errors
+    from langchain_core.messages import ToolMessage
 
     request = SimpleNamespace(
         tool_call={"id": "call_1", "name": "save_memory", "args": {"content": "x"}},
@@ -384,7 +382,8 @@ def test_tool_error_message_never_carries_exception_text():
     leaky_dsn = f"postgresql+psycopg://user:{pw}@10.0.0.5:5432/yishu"
 
     def handler(_req):
-        raise RuntimeError(f"connection to {leaky_dsn} failed: SELECT * FROM memories")
+        # noqa: S608 —— 同上方注释：这段"SQL + DSN"是泄漏金丝雀，故意造得像个真查询。
+        raise RuntimeError(f"connection to {leaky_dsn} failed: SELECT * FROM memories")  # noqa: S608
 
     # `@wrap_tool_call` 装饰后是 middleware 对象，本体在 `wrap_tool_call` 属性上。
     middleware = handle_tool_errors

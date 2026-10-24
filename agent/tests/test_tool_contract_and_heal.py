@@ -14,7 +14,6 @@ import json
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-
 from tools.memory_tools import _common_prefix_len, _find_existing_memory, _norm
 from tools.tag_rules import coerce_str_list
 from utils.output_validator import _salvage_partial_reply
@@ -75,9 +74,10 @@ def test_common_prefix_len_is_capped():
 @pytest.fixture()
 def mem_client():
     """真实连库（判重是 SQL + Python 双层逻辑，mock 掉就测不到真东西）。"""
+    import uuid
+
     from storage.database.local_client import create_local_client
     from yishu.context import new_context, request_context
-    import uuid
 
     uid = f"test-dedup-{uuid.uuid4().hex[:8]}"
     request_context.set(new_context(method="test", user_id=uid))
@@ -230,10 +230,11 @@ def test_heal_noop_when_all_tool_calls_answered():
 # ── 5. 工具参数契约：save_memory 真的能落库（不带 LLM）───────────────
 def test_save_memory_persists_and_dedups_end_to_end():
     """端到端（无 LLM）：首次写入 → 尾部追加被判重 → 库中仍只有一条。"""
-    from tools.memory_tools import save_memory
-    from storage.database.local_client import create_local_client
-    from yishu.context import new_context, request_context
     import uuid
+
+    from storage.database.local_client import create_local_client
+    from tools.memory_tools import save_memory
+    from yishu.context import new_context, request_context
 
     uid = f"test-e2e-{uuid.uuid4().hex[:8]}"
     request_context.set(new_context(method="test", user_id=uid))

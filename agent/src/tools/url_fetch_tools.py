@@ -176,7 +176,9 @@ def delete_knowledge_collection(collection_id: int) -> str:
     client = _get_client()
 
     try:
-        response = client.table("knowledge_collections").delete().eq("id", collection_id).eq("user_id", _get_user_id()).execute()
+        response = client.table("knowledge_collections").delete().eq(
+            "id", collection_id
+        ).eq("user_id", _get_user_id()).execute()
 
         if response.data:
             return json.dumps({
@@ -191,7 +193,7 @@ def delete_knowledge_collection(collection_id: int) -> str:
 
     except APIError as e:
         logger.error(f"删除知识收藏失败: {e.message}")
-        raise Exception(f"删除知识收藏失败: {e.message}")
+        raise Exception(f"删除知识收藏失败: {e.message}") from e
 
 
 @tool
@@ -234,7 +236,9 @@ def export_knowledge_collections() -> str:
     client = _get_client()
 
     try:
-        response = client.table("knowledge_collections").select("*").eq("user_id", _get_user_id()).order("created_at", desc=True).execute()
+        response = client.table("knowledge_collections").select("*").eq(
+            "user_id", _get_user_id()
+        ).order("created_at", desc=True).execute()
         collection_data: list[dict[str, Any]] = response.data if response.data else []
 
         if not collection_data:
@@ -245,7 +249,9 @@ def export_knowledge_collections() -> str:
 
         # 生成 Markdown 内容
         lines: list[str] = ["# 我的知识收藏", ""]
-        lines.append(f"共 {len(collection_data)} 条收藏，导出时间：{__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # 导出时间戳（本地时区可读性优先，仅用于文件名/页眉，不参与任何时序判定）
+        exported_at = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        lines.append(f"共 {len(collection_data)} 条收藏，导出时间：{exported_at}")
         lines.append("")
 
         for idx, item in enumerate(collection_data, 1):
@@ -317,7 +323,7 @@ def export_knowledge_collections() -> str:
 
     except APIError as e:
         logger.error(f"导出知识收藏失败: {e.message}")
-        raise Exception(f"导出知识收藏失败: {e.message}")
+        raise Exception(f"导出知识收藏失败: {e.message}") from e
     except Exception as e:
         # ⚠️ 2026-10-05 安全：原先 `raise Exception(f"...{str(e)}")` —— 这个 message
         # 会被 LangChain 包成 ToolMessage **进 LLM 上下文**，模型可能复述给用户，
@@ -325,7 +331,7 @@ def export_knowledge_collections() -> str:
         # 足够让模型区分"配置问题/权限问题/网络问题"，又不带内部信息。
         # 细节已由上面一行 logger.error 完整落盘，日志侧不丢信息。
         logger.error("导出知识收藏失败: %s", e)
-        raise Exception(f"导出知识收藏失败（{type(e).__name__}），请稍后重试")
+        raise Exception(f"导出知识收藏失败（{type(e).__name__}），请稍后重试") from e
 
 
 @tool
@@ -348,7 +354,9 @@ def link_memory_to_collection(collection_id: int, memory_id: int) -> str:
     try:
         user_id = _get_user_id()
         # 先读取当前收藏的关联记忆列表（按用户隔离）
-        response = client.table("knowledge_collections").select("related_memory_ids").eq("id", collection_id).eq("user_id", user_id).execute()
+        response = client.table("knowledge_collections").select("related_memory_ids").eq(
+            "id", collection_id
+        ).eq("user_id", user_id).execute()
 
         if not response.data:
             return json.dumps({
@@ -385,4 +393,4 @@ def link_memory_to_collection(collection_id: int, memory_id: int) -> str:
 
     except APIError as e:
         logger.error(f"关联记忆失败: {e.message}")
-        raise Exception(f"关联记忆失败: {e.message}")
+        raise Exception(f"关联记忆失败: {e.message}") from e

@@ -32,7 +32,6 @@ import os
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from web import api_routes as ar
 
 
@@ -115,7 +114,9 @@ def test_error_responses_do_not_echo_exception_text(client, auth_headers, monkey
     def broken_client():
         class _Broken:
             def table(self, *_a, **_k):
-                raise _Boom(f"connection to {dsn} failed: SELECT * FROM memories")
+                # noqa: S608 —— 故意拼接的**金丝雀**：本用例要验证"异常原文不外泄"，
+                # 所以异常消息必须长得像真 DSN + 真 SQL，否则测不出泄漏。非真实查询。
+                raise _Boom(f"connection to {dsn} failed: SELECT * FROM memories")  # noqa: S608
 
         return _Broken()
 

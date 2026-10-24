@@ -446,5 +446,9 @@ def heal_dangling_tool_calls(agent, config) -> int:
             dangling=len(patch),
         )
         return 0
-    log_event("checkpoint_healed", dangling=len(patch), thread_id=str(config.get("configurable", {}).get("thread_id", ""))[:40])
+    log_event(
+        "checkpoint_healed",
+        dangling=len(patch),
+        thread_id=str(config.get("configurable", {}).get("thread_id", ""))[:40],
+    )
     return len(patch)

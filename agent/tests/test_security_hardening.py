@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import pytest
-
 from main import _client_message
 from yishu.errors import ClassifiedError
 from yishu.observability import SensitiveFieldError, log_event
@@ -122,7 +121,6 @@ def test_identifier_regexes_are_anchored_with_fullmatch_semantics():
 def test_user_id_format_rejects_unsafe_values(bad: str):
     """路径穿越 / SQL 片段 / 超长 / 空值一律 400。"""
     from fastapi import HTTPException
-
     from yishu.security import validate_user_id
 
     with pytest.raises(HTTPException):
@@ -201,7 +199,12 @@ def test_collection_search_uses_postgrest_wildcard(monkeypatch):
         def eq(self, *a, **k):
             return _Q()
 
-    monkeypatch.setattr(mt, "_get_client", lambda: type("C", (), {"table": lambda _s, _t: _T()})())
+    # 写成具名函数而非零参 lambda：monkeypatch 要的是可调用对象，具名形式更易读也更易打断点。
+    # 内层 `lambda _s, _t: _T()` 保留——它必须吃掉 (self, table_name) 两个位置参数。
+    def fake_client():
+        return type("C", (), {"table": lambda _s, _t: _T()})()
+
+    monkeypatch.setattr(mt, "_get_client", fake_client)
     monkeypatch.setattr(mt, "_get_user_id", lambda: "u1")
     mt.search_knowledge_collections.invoke({"query": "灯", "limit": 99999})
     assert seen["pattern"] == "*灯*"

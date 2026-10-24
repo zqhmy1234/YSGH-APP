@@ -94,10 +94,8 @@ def _skip_path(parts: tuple[str, ...]) -> bool:
     2026-08-26：加 .wt/（并行开发 worktree 副本——每个都是完整仓库，
     全量模式会重复扫 5 份 backend，静态门禁 150s→~30s）。
 
-    ⚠️ 2026-09-23 **临时**加 agent/（开发部同事交付的 Coze Agent 包，原样入库以便对照上游）：
-    该包 354 处 lint 违规（239 可自动修 + 115 需手动，含 S310/S110/DTZ005 等真问题），
-    其上不符合我们规范。**豁免是临时的**：改写批次（见 docs/待办处理排期_20260923.md「Agent 接线批」AG7）
-    完成后**必须删除本行**并全量收口 lint。登记：docs/决策台账.md §4.12。
+    ⚠️ agent/ **不**在此排除（2026-09-23 的临时豁免已于 2026-10-24 随 B-16 销项撤销，
+    见 `_lint_skip()`）：agent/ 的语法、lint、密钥扫描现全部正常纳管。
     """
     return (
         ".git" in parts
@@ -125,20 +123,23 @@ def _skip_path_for_secrets(parts: tuple[str, ...]) -> bool:
 
 
 def _lint_skip(path: str) -> bool:
-    """lint 步的**文件列表层**排除（`_skip_path` 只作用于语法步的目录遍历）。
+    """lint 步的**文件列表层**排除。
 
     为什么需要独立函数：`check_lint` 把文件**显式**传给 `ruff check <files>`，
     而 **ruff 的 `config.exclude` 对命令行显式传入的文件不生效**（实测：仅配
     ruff.toml 的 exclude 时，本次提交里的 agent/*.py 仍被 lint 拦下）。
     故必须在列表层过滤。
 
-    ⚠️ 2026-09-23 **临时**纳入 agent/（交付包原样入库，理由与依据见 `agent/UPSTREAM.md`）：
-    上游 354 处违规；**仅豁免 lint**——语法与密钥扫描仍覆盖 agent/（实测通过：32 文件编译 OK、无硬编码密钥）。
-    **撤销待办 AG7**：改写批次完成后删除本函数的 agent 判断（与 ruff.toml 的 exclude 同步），
-    登记见 docs/决策台账.md §4.12 与排期「Agent 接线批」AG7。
+    ✅ 2026-10-24：**agent/ 豁免已撤销**（B-16 销项 · 原待办 AG7）。
+    agent/ 存量 142 处违规已清零（`python -m ruff check agent` → All checks passed，
+    `agent/tests` 201 用例全绿），现与 backend/ 同口径参与本次提交的 lint。
+    与 `ruff.toml` 的 `exclude = ["client"]` 是**两处同步**改动：那边管目录遍历、
+    这里管显式传入的文件列表，只改一处会造成"全量绿 / 快模式红"的口径分裂。
+
+    当前无排除项；保留函数是因为调用点已按它分流（`_scope_files` 两处），
+    将来若有新的包级豁免，加在这里即可（且必须同步 ruff.toml）。
     """
-    p = path.replace("\\", "/")
-    return p == "agent" or p.startswith("agent/")
+    return False
 
 
 def _git_files(cached: bool) -> list[str]:
