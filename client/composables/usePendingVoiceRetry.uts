@@ -1,0 +1,74 @@
+/**
+ * B-09 收口（2026-10-24）：失败转写的**找回入口**（状态 + 交互）
+ *
+ * ## 为什么需要这个文件
+ *
+ * B-09 原先只做到「转写失败 → 入持久队列 `yishu_failed_voice` + 当场弹重试 modal」。
+ * 但用户**关掉 App 就再也找不到那条录音**了 —— 数据在存储里、却没有 UI 入口。
+ * 这比真丢更糟：**它无法被察觉**（用户以为丢了，代码以为保住了）。
+ *
+ * 所以补两件事：① 进面板时读一次队列；② 有条目就给一个**可点**的重试入口。
+ *
+ * ## 为什么抽成 composable 而不是写在 RecordSheet 里
+ *
+ * `RecordSheet.uvue` 已是 900+ 行（结构棘轮基线 834 行，长期 WARN）。
+ * 本仓既有做法是「热路径/独立关注点抽 composable，组件退化为薄绑定层」
+ * （见 `usePhotoAttach` / `useEventOps` 先例）。本文件只是把这段状态与交互搬出去，
+ * **不改变任何行为**。
+ *
+ * ## 边界（刻意不做的事）
+ *
+ * · **不复制转写实现**：重试走调用方传进来的 `retryTranscribe`（实际是
+ *   `VoiceRecorder.retryTranscribe`，与首次转写同一条链）。
+ * · **不并发重试多条**：多条同时重试会同时更新同一个 transcript 状态机 ⇒ 互相覆盖。
+ *   故一次只重试**最早**那条（队列按入队顺序）。
+ * · **不显示文件路径**：路径是内部实现细节，且很长会打爆一行。
+ */
+
+import { ref, Ref } from 'vue'
+import { voiceFailures, voiceFailureCount, VoiceFailure } from '@/utils/voice_failure'
+
+/** 重试完成后等待多久再刷新角标（转写是异步的，太快读会读到旧计数） */
+const REFRESH_DELAY_MS: number = 1500
+
+export interface PendingVoiceRetry {
+	/** 失败段条数（0 = 无，模板据此决定是否渲染入口） */
+	pendingVoiceN: Ref<number>
+	/** 进面板/新失败发生后调用，刷新条数 */
+	refresh: () => void
+	/** 点「点此重试」时调用：只重试最早那条，稍后自动刷新角标 */
+	retryEarliest: () => void
+}
+
+/**
+ * @param retryTranscribe 调用方的重试入口（`(path, durationMs) => void`）。
+ *        由调用方注入而非本文件直接 import `VoiceRecorder` —— 避免 composable 反向依赖
+ *        组件状态机（`useVoiceRecord.uts` 里那个类是按组件生命周期构造的）。
+ */
+export function usePendingVoiceRetry(
+	retryTranscribe: (path: string, durationMs: number) => void
+): PendingVoiceRetry {
+	const pendingVoiceN = ref<number>(0)
+
+	function refresh(): void {
+		pendingVoiceN.value = voiceFailureCount()
+	}
+
+	function retryEarliest(): void {
+		const list: Array<VoiceFailure> = voiceFailures()
+		if (list.length == 0) {
+			// 队列空了（可能刚被别处销账）：如实刷新为 0，不要留着过期的角标
+			refresh()
+			return
+		}
+		const first = list[0]
+		console.log('[yishu] 重试最早一条失败转写：' + first.reason)
+		retryTranscribe(first.path, first.durationMs)
+		// 成功会被 removeVoiceFailure 销账，失败会覆盖同 path 记录 ⇒ 两种情况都要重读
+		setTimeout((): void => {
+			refresh()
+		}, REFRESH_DELAY_MS)
+	}
+
+	return { pendingVoiceN, refresh, retryEarliest }
+}

@@ -194,6 +194,11 @@
 							</view>
 							<!-- 语音诊断行（情绪/通道/安全审核：画布 F1d 无槽位，低调度呈现） -->
 							<text v-if="formMode == 'voice' && voiceDiag != ''" class="diag-line">{{ voiceDiag }}</text>
+							<!-- B-09（2026-10-24）：失败转写找回入口。
+							     只在**语音态**且队列非空时出现；点它一次重试最早那条（不多条并发，
+							     避免同时更新同一个 transcript 状态机）。 -->
+							<text v-if="formMode == 'voice' && pendingVoiceN > 0" class="diag-line v-retry"
+								@click="onRetryPendingVoice()">⚠️ {{ pendingVoiceN }} 条录音未转写成功 · 点此重试（最早一条）</text>
 						</template>
 
 						<!-- 分类 chips（照片态文案 2026-10-14 更正：「AI 已预选」是假状态，见台账 §7.17） -->
@@ -267,6 +272,10 @@
 		readStoredCustomLabels, persistCustomLabels, customChipCls, customChipTextCls,
 		customVChipCls, customVChipTextCls
 	} from '@/utils/custom_labels'
+	// 2026-10-24（B-09 收口）：失败转写的**找回入口**（状态与交互在
+	// composables/usePendingVoiceRetry.uts，此处只做绑定；重试仍走 vr.retryTranscribe，
+	// 不复制第二份转写实现）
+	import { usePendingVoiceRetry } from '@/composables/usePendingVoiceRetry'
 	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
 	import { createTextContentRemark } from '@/utils/capsule_api'
 	import { recorderState, stopRecord } from '@/utils/voice'
@@ -369,6 +378,26 @@ import { watch } from 'vue'
 		}
 		return parts.join(' · ')
 	})
+
+	// ===== B-09 收口（2026-10-24）：失败转写的**找回入口** =====
+	// 背景：B-09 之前只做到「失败入持久队列 + 当场弹重试 modal」，
+	//   但**用户关掉 App 就再也找不到那条录音**（数据在 `yishu_failed_voice` 里，却没有 UI 入口）。
+	//   这等于「数据没丢、但用户以为丢了」——比真丢更糟，因为它无法被察觉。
+	// 实现搬到 composables/usePendingVoiceRetry.uts（本文件已 900+ 行，按既有
+	//   usePhotoAttach / useEventOps 先例抽出去，组件只做绑定）。
+	// 注意 `vr` 在下方才构造（`const vr = new VoiceRecorder(...)`），故这里用**箭头懒求值**，
+	//   不能在构造前直接引用实例方法。
+	const pendingVoice = usePendingVoiceRetry((path: string, durationMs: number): void => {
+		vr.retryTranscribe(path, durationMs)
+	})
+	const pendingVoiceN = pendingVoice.pendingVoiceN
+	function refreshPendingVoice(): void {
+		pendingVoice.refresh()
+	}
+	function onRetryPendingVoice(): void {
+		pendingVoice.retryEarliest()
+	}
+
 	const ctaLabel = computed((): string => {
 		if (formMode.value == 'voice') {
 			return '保存'
@@ -385,6 +414,9 @@ import { watch } from 'vue'
 		})
 		// 自定义分类：进面板即读本地持久化（custom_labels 逗号串）
 		customLabels.value = readStoredCustomLabels()
+		// B-09（2026-10-24）：进面板即读一次失败转写队列，有条目就显示找回入口
+		// （数据是持久化的，重启 App 后仍能找回；不读这一步等于 UI 永远不知道它们存在）
+		refreshPendingVoice()
 		// P6：宿主页带模式直达（空状态「拍下第一张」→ 直弹相机）
 		if (props.initialMode == 'photo') {
 			directPick.value = true   // 直达期间隐藏面板 UI，防「先闪面板再拉相机」

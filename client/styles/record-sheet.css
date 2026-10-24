@@ -442,6 +442,12 @@
 		line-height: var(--d-raw-r34, 34rpx);
 		color: var(--c-ink-300, #b3a696);
 	}
+	/* B-09（2026-10-24）：失败转写找回入口——必须**看起来可点**，
+	   否则它就是一句"告警文案"而不是入口，用户仍然找不回那条录音。 */
+	.diag-line.v-retry {
+		color: var(--c-accent-terra, #b4643c);
+		text-decoration: underline;
+	}
 	.sec-row {
 		width: var(--d-raw-r654, 654rpx);
 		margin-top: var(--d-raw-r58, 58rpx);
