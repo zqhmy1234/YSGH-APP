@@ -5,6 +5,7 @@
  * → L1 日卡片事件（client_event_id 幂等键）→ 供 POST /events/sync 上云。
  * 与云侧 AGG-016 同参同逻辑（agg_config 单一来源）。
  */
+import { ref } from 'vue'
 import { L0_EPS_S_M, L0_MIN_PTS, l0EpsTsec } from '@/utils/agg/agg_config.uts'
 import { preprocess, RawPhoto } from '@/utils/agg/pipeline.uts'
 import { DayCard, Photo, l1DailyAggregate, stDbscan } from '@/utils/agg/st_dbscan.uts'
@@ -83,6 +84,33 @@ let degradeRuns = 0
 export function getDegradeRuns(): number {
 	return degradeRuns
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B-17（2026-10-24）：降级**必须让用户看得见**——日志/计数只服务排障，不服务用户
+//
+// 缺陷形态：`pts.length > AGG_CLIENT_MAX_N` ⇒ 跳过端侧 ST-DBSCAN ⇒ **本次不出 L1**；而云侧
+// 只产 L2/L3、**没有 L1 生产者**（见上方常量注释）⇒ 这些照片**当天在时间轴上不存在**。
+// 修前处置只有 `console.warn` + `degradeRuns++`：用户看到的是「时间轴空着」，**零感知**、
+// 也无从知道"稍后重试可能有"——这是「静默降级」最坏的一类（用户以为记忆丢了）。
+//
+// 处置：把"本次聚合被跳过"这个**事实**导出成一个响应式字符串（用户能读懂的一句话），
+// 由 UI 用一行低调提示渲染（`components/AggDegradeNotice`，宿主 TabIndex）。
+// 口径边界（**不撒谎**）：
+//   · 文案只说"本次未生成" + "可稍后重试"，**不写"加载中"**（那是假状态：没有任何在跑的
+//     任务会把它变成有），也不承诺"明天一定有"（云侧无 L1 生产者这一前提未变）；
+//   · 该值**只反映最近一次聚合运行**：一次成功的运行（`pts.length > 0` 且未越顶）会把它清回
+//     空串——否则警告会永久挂在页面上，变成噪音（用户对常驻红字会免疫）。
+//   · 空输入/未运行过 ⇒ 空串 ⇒ UI 不显示任何东西（无"占位行"）。
+// 为什么用 `ref` 而不是普通 getter：UI 要**在降级发生的当拍**改变显示，普通函数返回值没有
+// 响应式依赖，computed 会永久缓存（本仓 RC-12 已踩过"裸 let 不响应"的同族坑）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 降级提示文案（单一真源；改文案只改这里） */
+const AGG_DEGRADE_NOTICE: string = '照片较多，本次未生成今日时间轴 · 可稍后重试'
+
+/** 端侧聚类降级的**用户可见**提示；`''` = 最近一次聚合未降级（正常） */
+export let aggDegradeNotice = ref('')
+
 /** 分片粒度：组装阶段每片处理多少张（片间 `setTimeout(0)` 让出主线程） */
 const AGG_CHUNK_N: number = 50
 
@@ -176,6 +204,10 @@ function buildEventsFromDays(days: Array<DayCard>): Array<ClientL1Event> {
  * 规模靠 `AGG_CLIENT_MAX_N` 兜底：越顶**降级（跳过）**并 WARN + 计数，后果见该常量注释。
  */
 function finishAgg(pts: Array<Photo>, tzOffsetMin: number): AggRunResult {
+	// B-17：**每次运行都先归零**——本值语义是「最近一次聚合是否降级」，不是"历史上降没降过"。
+	// 放在这里（而不是只在成功分支清）能保证「降级 → 用户重试 → 这次只有 0 张照片」也不会
+	// 留下一句过期的告警（过期告警＝撒谎的另一种形态）。
+	aggDegradeNotice.value = ''
 	// B-12：本次 run 有「时间未知 ⇒ 按记录日归卡」的 fallback 时，聚合结果行要**带上这个事实**
 	// （只在有 fallback 时多打一行，不新造日志行、不影响既有 [yishu] 端侧聚合行）。
 	if (runFallbackN > 0) {
@@ -190,6 +222,9 @@ function finishAgg(pts: Array<Photo>, tzOffsetMin: number): AggRunResult {
 	// 故这里必须 WARN + 计数，并把**后果**写进日志文案。
 	if (pts.length > AGG_CLIENT_MAX_N) {
 		degradeRuns++
+		// B-17：把"本次跳过"这件事**暴露给 UI**（不只是日志/计数）。响应式赋值 ⇒
+		// 宿主那一行提示当拍出现，不需要用户杀进程重进。
+		aggDegradeNotice.value = AGG_DEGRADE_NOTICE
 		// 2026-10-16（audit exports 轴）：累计值改为经**公开访问器** getDegradeRuns() 读出——
 		// 此前只插值模块私有的 degradeRuns，导出函数零调用被门禁判成"能力写了没接线"。
 		// 取值口径不变（同一变量），只是把唯一读面落在既有 [yishu-agg] 告警行上（不新造日志行）。

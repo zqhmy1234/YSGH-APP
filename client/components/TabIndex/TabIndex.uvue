@@ -31,6 +31,10 @@
 		<!-- 同步状态横幅 -->
 		<UploadStatusBanner />
 
+		<!-- B-17（2026-10-25）：端侧聚合降级提示（照片数超 400 硬顶时本次不出 L1 ⇒ 时间轴空白）。
+		     组件内部 `v-if` 判空串，未降级时**零渲染**、不占位。 -->
+		<AggDegradeNotice />
+
 		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
 		<scroll-view class="scroll" direction="vertical" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
 			<!-- 回响卡片（去年今日 · 角贴 + 泛黄）；W6 拍板：整卡 → 该记忆详情页 -->

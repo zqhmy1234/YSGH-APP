@@ -1,0 +1,53 @@
+<template>
+	<!-- B-17（2026-10-25）：端侧聚类降级时，让用户**看得见**时间轴为什么是空的。
+	     `aggDegradeNotice` 为空串 ⇒ 整个节点不渲染（无占位行、无空隙）。 -->
+	<view v-if="notice != ''" class="agg-degrade-notice">
+		<text class="agg-degrade-text">{{ notice }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+	/**
+	 * 端侧聚合降级提示条（B-17）
+	 *
+	 * ## 为什么需要这个组件
+	 *
+	 * `agg_runner.uts` 在 `pts.length > AGG_CLIENT_MAX_N(400)` 时会**跳过端侧 ST-DBSCAN**，
+	 * 后果是**本次不出 L1 日卡片**；而云侧只产 L2/L3、**没有 L1 生产者** ⇒
+	 * 这些照片**当天在时间轴上不存在**。用户看到的是"时间轴空着"，且**零感知**。
+	 *
+	 * 修前只有 `console.warn` + `getDegradeRuns()` 计数 —— 那是给排障看的，不是给用户看的。
+	 * 本组件把那句话渲染出来，语义与 `UploadStatusBanner` 同族（状态条，非新增视觉语言）。
+	 *
+	 * ## 文案纪律（不撒谎）
+	 *
+	 * · 只说「本次未生成」+「可稍后重试」，**不写"加载中"** —— 没有任何在跑的任务会把它
+	 *   变成有，写"加载中"是假状态；
+	 * · 也不承诺"明天一定有" —— 云侧无 L1 生产者这一前提未变；
+	 * · 一次成功的聚合会把 `aggDegradeNotice` 清回空串 ⇒ 提示自动消失，
+	 *   不会永久挂在页面上变成用户免疫的噪音。
+	 */
+	import { aggDegradeNotice } from '@/utils/agg_runner.uts'
+
+	// 直接绑到模块级 ref：`agg_runner` 在一次聚合结束时写值，本组件随之重渲染。
+	// 为什么不在本组件里再 `ref` 一份：那样就要额外同步，且容易漂移（两个真源）。
+	const notice = aggDegradeNotice
+</script>
+
+<style>
+	/* 与 `UploadStatusBanner` 同族的低调度状态条：不抢视觉、不新增设计语言。 */
+	.agg-degrade-notice {
+		width: 654rpx;
+		margin: 0 auto 16rpx auto;
+		padding: 16rpx 24rpx;
+		border-radius: 12rpx;
+		background-color: var(--c-paper-soft, #f3efe8);
+	}
+
+	.agg-degrade-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 22rpx;
+		line-height: 32rpx;
+		color: var(--c-ink-300, #b3a696);
+	}
+</style>
