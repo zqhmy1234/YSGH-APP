@@ -107,7 +107,20 @@ def test_frozen_snapshot_is_up_to_date() -> None:
 
     两个作用：① 有人改了用例/实现却忘了重生成 ⇒ 立刻报（golden file 纪律）；
     ② 反过来也是**分支回归**的探测器（生成器期望由实现算出，实现被改坏 ⇒ 与冻结值不符）。
+
+    ⚠️ 2026-10-24 修一个**假红**：本用例原先直接 `from scripts.gen_agg_fixtures import ...`。
+    `scripts/` 没有 `__init__.py`（是**命名空间包**），能否 import 取决于 **CWD**：
+      · 从仓库根跑 → 通过；· 从 `backend/` 跑 → `ModuleNotFoundError`。
+    而全仓多数测试与 `--full` 都是从 `backend/` 起的 ⇒ 这条用例**长期是假红/被跳过**，
+    等于「快照新鲜度」这道门在常规路径下**从未真正生效**（实测：pristine HEAD 同样失败）。
+    现改为**显式把仓库根插入 sys.path**，两种 CWD 都能真跑。
     """
+    import sys
+
+    repo_root = str(REPO_ROOT)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
     from scripts.gen_agg_fixtures import build_cases, render_json
 
     assert render_json(build_cases()) == SNAPSHOT, (

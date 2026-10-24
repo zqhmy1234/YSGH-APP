@@ -118,7 +118,14 @@ def test_burst_fold_keeps_first_photo():
 
 
 def test_night_boundary_attributed_to_prev_day_with_tz():
-    """深夜归属（墙钟规则，与 tz 无关）：23:40→前一天；00:20/00:30→前一天；01:01→当天"""
+    """深夜归属（墙钟规则，与 tz 无关）：**跨零点之后**才归前一天。
+
+    2026-10-24 修 bug 后重写本用例（原断言断的正是 bug）：
+      · 8/24 23:40 / 23:50 → **8/24**（当天！原文断言归 8/23 是错的）
+      · 8/25 00:20 / 00:30 → 8/24（跨过零点，归前一晚）
+      · 8/25 01:01 → 8/25（已出深夜窗）
+    语义：一个熬夜的晚上整段算同一"天"，所以 8/24 22:00→8/25 01:00 全落 8/24。
+    """
     photos = [
         _p("p1", _local_ms(2026, 8, 24, 23, 40), 31.2304, 121.4737),
         _p("p2", _local_ms(2026, 8, 24, 23, 50), 31.2304, 121.4737),
@@ -128,18 +135,28 @@ def test_night_boundary_attributed_to_prev_day_with_tz():
     ]
     _, days = _run(photos)
     by_date = {d["date"]: sorted(p.id for p in d["photos"]) for d in days}
-    assert by_date["2026-08-23"] == ["p1", "p2"], "8/24 23:40 深夜拍摄应归属 8/23"
-    assert by_date["2026-08-24"] == ["p3", "p4"], "8/25 00:xx 应归属 8/24"
+    assert by_date["2026-08-24"] == ["p1", "p2", "p3", "p4"], (
+        "8/24 23:40-23:50 与 8/25 00:xx 应同属 8/24（跨零点整段一个晚上）"
+    )
     assert by_date["2026-08-25"] == ["p5"], "01:01 已出深夜窗，归属当天"
+    assert "2026-08-23" not in by_date, "23:30-23:59 **不得**被推到更前一天（原 bug）"
 
 
 def test_utc_bucket_no_shift():
-    """tz=0（UTC 日界）：深夜规则按墙钟生效——23:40 UTC 归属前一天 2026-08-23"""
-    t0 = datetime(2026, 8, 24, 23, 40, tzinfo=UTC)
-    photos = [_p("p1", int(t0.timestamp() * 1000), 31.2304, 121.4737)]
-    pts = preprocess(photos)
-    days = l1_daily_aggregate([], pts, tz_offset_minutes=0)
-    assert days[0]["date"] == "2026-08-23", "23:40 墙钟触发深夜规则，归属前一天"
+    """tz=0（UTC 日界）：23:40 **归当天**；00:40 才归前一天（原断言断的是 bug）。"""
+    # 23:40 → 当天（23:30-23:59 属于当天，不得减一天）
+    t_late = datetime(2026, 8, 24, 23, 40, tzinfo=UTC)
+    days_late = l1_daily_aggregate(
+        [], preprocess([_p("p1", int(t_late.timestamp() * 1000), 31.2304, 121.4737)]), tz_offset_minutes=0
+    )
+    assert days_late[0]["date"] == "2026-08-24", "23:40 属于当天（原 bug 会误推到 08-23）"
+
+    # 00:40 → 前一天
+    t_early = datetime(2026, 8, 25, 0, 40, tzinfo=UTC)
+    days_early = l1_daily_aggregate(
+        [], preprocess([_p("p2", int(t_early.timestamp() * 1000), 31.2304, 121.4737)]), tz_offset_minutes=0
+    )
+    assert days_early[0]["date"] == "2026-08-24", "跨过零点后归属前一晚"
 
 
 def test_gps_drift_nulled_still_clusters():

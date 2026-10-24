@@ -130,27 +130,52 @@ def l1_daily_aggregate(
         tz_offset_minutes = local_utc_offset_minutes()
 
     def bucket_day(ts: datetime) -> str:
-        """自然日分桶；深夜 23:30-1:00 归属前一天（B3-2）
+        """自然日分桶；深夜 23:30–01:00 **整段**归入该晚所属的那一天（B3-2）
 
-        修复：原实现 ts.replace(hour=0).date() 仍是当天日期，规则完全失效（审查 CRITICAL）；
-        00:00-00:59 也缺失处理。统一：23:30-23:59 / 00:00-00:59 / 01:00 整点 → 前一天。
+        ## 这段规则的**正确语义**（2026-10-24 用户当场指出后重写）
+
+        「深夜归属前一天」的本意是：**一个熬夜的晚上，整段算作同一个"一天"**。
+        以 08-22 晚上熬到 08-23 凌晨为例，22:00 → 23:30 → 00:30 → 01:00 这一串照片，
+        应该**全部落在 08-22 这张日卡里**（"我 22 号那个晚上出去的"）。
+
+        ## 原实现的 bug（2026-10-24 修）
+
+        原规则 `23:30≤t<24:00 or 00:00≤t<01:00 or t==01:00 → 日期减一天`，
+        对**跨零点之后**的时刻（00:xx / 01:00）减一天是对的（08-23 00:30 → 08-22 ✓），
+        但对**跨零点之前**的时刻（23:30–23:59）**也减了一天**，于是：
+          08-22 23:40 → **08-21** ✗（应该还是 08-22）
+          08-22 23:59 → **08-21** ✗
+        即**同一晚被切成了两张日卡**（23:30 前在 08-22 卡、23:30 后被推到 08-21 卡、
+        零点后又跳回 08-22 卡），用户看到的是「23:30 拍的照片凭空少了一天」。
+
+        ## 修法（最小改动，只动那一段）
+
+        `night` 配置（hour=23, minute=30）现在只用于定义**深夜窗的起点**，
+        但**只对"已经跨过零点的时刻"生效**：
+          · `t >= 00:00` 且 `t <= 01:00`（即 00:00–01:00 整） → 日期减一天；
+          · `23:30 <= t < 24:00` → **日期不变**（它本来就属于自己的那天）；
+          · 其余 → 日期不变。
+        注意 23:30 这个配置值**仍然有意义**：它标出"深夜从此开始"，供 L1 卡片做
+        「深夜段」提示等后续用途；只是**不再用它来做减一天**。
+
+        端侧 `client/utils/agg/st_dbscan.uts:bucketDay` 必须同批改（AGG-016 双跑一致）。
         """
         shifted = ts + timedelta(minutes=tz_offset_minutes) if tz_offset_minutes else ts
-        # D04-3（2026-09-24 重构波）：深夜归属起点改为**读取 AGG_CONFIG["night"]**——
-        #   原为硬编码 23/30 字面量，而 `AGG_CONFIG["night"]` 写了却**无人读** ⇒ "统一参数源"名不副实。
-        #   接线后值与字面量完全相同（23/30）⇒ **行为等价**；端侧 `st_dbscan.uts:bucketDay`
-        #   独立实现同规则（AGG-016 端云一致）。
-        #   注：此处**函数内局部 import** 是刻意的——`agg_types.py:19` 反向 `from …st_dbscan import Photo`，
-        #   模块级 import 会构成**循环依赖**（已登记，属既有结构问题，见 ledger D04-3 附注）。
+        # D04-3（2026-09-24 重构波）：深夜归属起点读取 AGG_CONFIG["night"]（不再硬编码 23/30）。
+        #   注：此处**函数内局部 import** 是刻意的——`agg_types.py:19` 反向
+        #   `from …st_dbscan import Photo`，模块级 import 会构成循环依赖（既有结构问题）。
         from app.services.event_aggregation.agg_types import AGG_CONFIG  # noqa: PLC0415
 
         _night = AGG_CONFIG["night"]
-        night_rule = (
-            (shifted.hour == _night["hour"] and shifted.minute >= _night["minute"])
-            or shifted.hour == 0
+        _night_start_h = _night["hour"]  # = 23：深夜窗起点（当前仅供语义/后续用途）
+        # ⚠️ 只对**跨过零点之后**的时刻减一天。23:30–23:59 属于"当天"，不减。
+        _crossed_midnight = (
+            shifted.hour == 0
             or (shifted.hour == 1 and shifted.minute == 0)
         )
-        if night_rule:
+        # 深夜窗起点保留在判定式里可读性更好，也方便将来若要"仅对深夜窗内时刻"做别的处理。
+        _within_night_window = (shifted.hour >= _night_start_h) or _crossed_midnight
+        if _within_night_window and _crossed_midnight:
             return (shifted - timedelta(days=1)).date().isoformat()
         return shifted.date().isoformat()
 

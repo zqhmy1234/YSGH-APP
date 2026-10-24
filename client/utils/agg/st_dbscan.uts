@@ -357,30 +357,46 @@ function pad2(n: number): string {
 }
 
 /**
- * 自然日分桶；深夜 23:30-1:00 归属前一天（B3-2）
- * 统一：23:30-23:59 / 00:00-00:59 / 01:00 整点 → 前一天（与 Python 实现一致）
+ * 自然日分桶：深夜 23:30–01:00 **整段**归入该晚所属的那一天（B3-2）
  *
- * 2026-10-24（待办总账 A-10 复核）：本注释原先写作"深夜 23:30-1:00 **连续拍摄**归属前一天"，
- * 但实现里**从未判断"连续"** —— 只看时钟是否落在区间内，孤立一张也照样推前一天。
- * 也就是说"连续拍摄"是**设计意图**，不是当前行为。产品尚未拍板要不要真的补连续性判定
- * （见总账 A-10 三选项），故此处**只把注释改成如实表述、行为一字不动**，
- * 避免后人按注释以为已有连续性保护。
- * 若将来决定补"连续"判定：需在端侧与此处同步改 Python 侧
- * （`backend/app/services/event_aggregation/st_dbscan.py` 同规则，AGG-016 双跑一致性约束）。
+ * ## 正确语义（2026-10-24 用户当场指出后重写）
+ *
+ * 「深夜归属前一天」的本意是「一个熬夜的晚上，整段算同一个"一天"」。
+ * 以 08-22 晚上熬到 08-23 凌晨为例：22:00 → 23:30 → 00:30 → 01:00 应**全部**落在
+ * **08-22** 那张日卡里。
+ *
+ * ## 原实现的 bug（同日修）
+ *
+ * 原判定 `(hour==23 && minute>=30) || hour==0 || (hour==1 && minute==0)` 一律减一天：
+ * 对**跨过零点后**的时刻（00:xx / 01:00）减一天是对的（08-23 00:30 → 08-22 ✓）；
+ * 但对**跨零点前**的 23:30–23:59 **也减了一天** ⇒
+ *   08-22 23:40 → **08-21** ✗（应为 08-22）
+ * 于是同一晚被切成两张卡：23:29 在 08-22 卡、23:30 被推到 08-21 卡、零点后又跳回 08-22 卡。
+ *
+ * ## 修法（最小改动）
+ *
+ * 只对「已跨过零点」的时刻减一天；23:30–23:59 属于当天，不减。
+ * `AGG_CONFIG` 里的 `night`（23:30）仍标示"深夜从此开始"，但**不再用于减一天**。
+ *
+ * ⚠️ 必须与 Python 侧 `backend/app/services/event_aggregation/st_dbscan.py:bucket_day`
+ * **同批保持一致**（AGG-016 端云双跑）；改一处不改另一处会直接让双跑门禁红。
  */
 function bucketDay(ts: number, tzOffsetMin: number): string {
 	const shifted = ts + tzOffsetMin * 60000
 	const d = new Date(shifted)
 	const hour = d.getUTCHours()
 	const minute = d.getUTCMinutes()
-	const toPrev = (hour == 23 && minute >= 30) || hour == 0 || (hour == 1 && minute == 0)
-	const base = new Date(shifted - (toPrev ? 86400000 : 0))
+	// 只对**跨过零点之后**的时刻减一天：00:00–00:59 与 01:00 整。
+	// 23:30–23:59 属于当天，不减（原实现在这里多减了一天 ⇒ 同一晚被切成两张日卡）。
+	const crossedMidnight = hour == 0 || (hour == 1 && minute == 0)
+	const base = new Date(shifted - (crossedMidnight ? 86400000 : 0))
 	return base.getUTCFullYear() + '-' + pad2(base.getUTCMonth() + 1) + '-' + pad2(base.getUTCDate())
 }
 
 /**
  * L1 日聚合：簇 + 散片 → 自然日卡片
- * 规则（B3-2）：自然日 0-24 时；深夜 23:30-1:00 连续拍摄归属前一天。
+ * 规则（B3-2）：自然日 0-24 时；深夜 23:30–01:00 整段归入该晚所属的那一天
+ * （23:30–23:59 归当天，00:00–01:00 归前一天；详见 bucketDay 的规则说明）。
  * 输出 DayCard[]，稀疏（1-2 张）标记并入日卡片（B3 #8）。
  */
 export function l1DailyAggregate(clusters: Photo[][], noise: Photo[], tzOffsetMin: number): DayCard[] {

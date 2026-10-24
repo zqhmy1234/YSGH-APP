@@ -314,20 +314,14 @@
         ],
         "days": [
           {
-            "date": "2026-08-23",
-            "ids": [
-              "p1",
-              "p2"
-            ],
-            "is_sparse": true
-          },
-          {
             "date": "2026-08-24",
             "ids": [
+              "p1",
+              "p2",
               "p3",
               "p4"
             ],
-            "is_sparse": true
+            "is_sparse": false
           },
           {
             "date": "2026-08-25",
@@ -499,19 +493,13 @@
         ],
         "days": [
           {
-            "date": "2026-08-23",
-            "ids": [
-              "p1",
-              "p2"
-            ],
-            "is_sparse": true
-          },
-          {
             "date": "2026-08-24",
             "ids": [
+              "p1",
+              "p2",
               "p3"
             ],
-            "is_sparse": true
+            "is_sparse": false
           }
         ]
       }

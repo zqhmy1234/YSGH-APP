@@ -54,8 +54,7 @@ export const AGG_FIXTURES: AggCase[] = [
 	], new AggExpected([
 		['p1', 'p4', 'p5', 'p3', 'p2'],
 	], [
-		new AggExpectedDay('2026-08-23', ['p1', 'p2'], true),
-		new AggExpectedDay('2026-08-24', ['p3', 'p4'], true),
+		new AggExpectedDay('2026-08-24', ['p1', 'p2', 'p3', 'p4'], false),
 		new AggExpectedDay('2026-08-25', ['p5'], true),
 	]), false),
 	new AggCase('gps-drift-corrected', 480, [
@@ -88,8 +87,7 @@ export const AGG_FIXTURES: AggCase[] = [
 	], new AggExpected([
 		['p1', 'p3', 'p2'],
 	], [
-		new AggExpectedDay('2026-08-23', ['p1', 'p2'], true),
-		new AggExpectedDay('2026-08-24', ['p3'], true),
+		new AggExpectedDay('2026-08-24', ['p1', 'p2', 'p3'], false),
 	]), false),
 	new AggCase('scale-30-photos-3days', 480, [
 		new AggPhoto('p1', 1787536800000, 31.2304, 121.4737, [], ''),
