@@ -407,13 +407,17 @@ def _apply_production_safety(settings: Settings) -> Settings:
         return settings
 
     # ---- 1. JWT_SECRET：空值 / 默认值 / 过短 一律拒 ----
-    _jwt_default = "change-me-32-bytes-min-secret-0000"
+    # ⚠️ 2026-10-24：下面的默认值**必须字面量内联**，不要提成变量。
+    # 原因：`scripts/audit_security.py` 的「生产强制强 JWT 密钥」检查是**源码子串匹配**
+    #   `'jwt_secret == "change-me-32-bytes-min-secret-0000"' in config_src`。
+    # 我曾把它提成 `_jwt_default` 变量（语义完全等价），结果让这条安全检查**误报失败**
+    # ⇒ 全量门禁红在 audit_security。在把该检查改成语义检查之前，内联字面量是两头都对的写法。
     if not settings.jwt_secret:
         raise RuntimeError(
             "生产环境 JWT_SECRET 为空——空密钥下任意 token 均可被伪造。"
             "请在 backend/.env 设置强随机密钥（≥32 字节）"
         )
-    if settings.jwt_secret == _jwt_default:
+    if settings.jwt_secret == "change-me-32-bytes-min-secret-0000":
         raise RuntimeError(
             "生产环境必须配置 JWT_SECRET（当前为默认值，存在伪造 token 风险）——"
             "请在 backend/.env 设置强随机密钥（≥32 字节）"
@@ -424,12 +428,12 @@ def _apply_production_safety(settings: Settings) -> Settings:
         )
 
     # ---- 2. REFRESH_TOKEN_HMAC_KEY：同款三档 ----
-    _refresh_default = "change-me-refresh-hmac-key-0000000000"
+    # （同为内联字面量，理由同上：audit_security 也按字面量匹配 refresh 默认值）
     if not settings.refresh_token_hmac_key:
         raise RuntimeError(
             "生产环境 REFRESH_TOKEN_HMAC_KEY 为空——请设置与 JWT_SECRET 独立的强随机密钥"
         )
-    if settings.refresh_token_hmac_key == _refresh_default:
+    if settings.refresh_token_hmac_key == "change-me-refresh-hmac-key-0000000000":
         raise RuntimeError(
             "生产环境必须配置 REFRESH_TOKEN_HMAC_KEY（当前为默认值）——"
             "请设置与 JWT_SECRET 独立的强随机密钥（HMAC-SHA256 密钥隔离）"

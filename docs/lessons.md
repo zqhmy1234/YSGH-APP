@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-10-24 18:34 · commit 756a7ff · ts=1792838089
+- **错误**：全量门禁 --full 红在两处：① tests→api_smoke 的 healthz 用例失败——它断言 /healthz 全等于 status=ok，而实际多出 agent / agent_degradation / agent_service_token_fp 三个字段；② audit_security 的「生产强制强 JWT 密钥」误报失败——它按源码子串匹配默认值字面量，而我把该字面量提成了 _jwt_default 变量（语义完全等价）
+- **根因**：两处都是**检查与实现长期脱钩**：① 2026-10-16 的 5a12a9b 给 /healthz **有意**加了 §7.12 的三类运维事实，但该 commit 的 --stat 里没有 scripts/api_smoke_cases.py ⇒ 此后 api_smoke 一直红，而我此前只跑快速门禁（不含 api_smoke）所以从未看见；② audit_security 用**源码子串匹配**代替**语义检查**，任何等价重构（提取常量）都会让它误报 —— 这是检查本身脆弱，不是改坏了代码
+- **修复**：① api_smoke_cases.py 的 healthz 断言改为三段口径：status==ok / §7.12 三键必须存在 / 不得出现 env·app_env·mock·database_url·version 等敏感面（保住 G2/R6#15 防攻击面测绘的原意）；实测 6 条真实用例全绿；② config.py 把 JWT / refresh 默认值**改回内联字面量**（安全语义一字不改），并在注释里写明「不要提取成变量，否则 audit_security 子串匹配会误报」；③ 顺带修掉 test_guard_failsafe 的一个环境耦合假红（未钉死 llm_provider）
+- **相关文件**：scripts/api_smoke_cases.py
+- **教训**：**快速门禁绿不等于全量门禁绿，而两者的差集里藏着长期假红。** 本仓快速门禁不含 api_smoke 与 audit_security，所以我连续多个提交都是绿的，直到跑 --full 才暴露一个已经红了 8 天的用例（5a12a9b 之后没人跑过全量）。教训两层：① **改完一批就该跑一次 --full**，别等集成收口，否则假红会堆到最后一起爆；② 凡按**字符串匹配源码**的门禁，等价重构也会让它红 —— 遇到这种红先判断是「真缺陷」还是「检查脆弱」，前者修代码、后者修检查或让代码保持它认得的形态，**不要直接改判据把它放过去**。
+
+---
+
 ### 2026-10-24 17:13 · commit 4cfcd91 · ts=1792833186
 - **错误**：客户端编译门把 UTS 编译器的 Rust panic 判成了「编译成功」，连骗两次：一次 readExifTakenMs 引发的 overload.rs:232 panic 后进程 abort（日志末行'已停止运行'），门禁却报 [ok] 编译成功；我据此以为改动没问题，又改了两版返回值写法（as number / toDouble() / 0.0），每版都崩、每版都判绿，白费两轮
 - **根因**：两个信号同时缺失：① FAIL_HINTS 里没有 panic/abort 类特征串，崩溃完全不被识别；② panic 发生在编译中段，而**前面已编译模块的产物已经写入 unpackage/dist** ⇒ 「产物已更新⇒成功」的旁证分支恒成立。更根本的是门禁判定逻辑写在一个 200 行的大函数里、与文件系统/子进程耦合，没有任何单测能覆盖它 ⇒ 这条旁证路径从未被负向探针敲过

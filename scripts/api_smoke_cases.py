@@ -87,10 +87,39 @@ def _new_client() -> tuple[TestClient, dict]:
 
 
 def case_healthz(client: TestClient) -> None:
-    # G2/R6#15：healthz 收敛——只暴露最小存活信息 {status: ok}
+    """healthz 探针：存活 + 安全响应头 + **不泄漏**敏感面。
+
+    ⚠️ 2026-10-24 修一个**长期假红**：本用例原断言 `r.json() == {"status": "ok"}`（全等），
+    但 2026-10-16 的 `5a12a9b`（台账 §7.12「静默降级显性化」）已给 `/healthz` **有意加了**
+    三类运维事实（`agent` 探活 / `agent_degradation` 计数 / `agent_service_token_fp` 指纹），
+    且**没有同批更新本冒烟用例** ⇒ api_smoke 此后一直红在 healthz。
+    实测确认：该 commit 的 `--stat` 里没有 `scripts/api_smoke_cases.py`。
+
+    正确的断言口径（既不假红、也不放弃 G2/R6#15 的原意）：
+      · `status` 必须是 `ok`（存活语义）；
+      · 必须**存在**那三类运维事实键（它们是 §7.12 的功能，删掉才是回归）；
+      · **不得**出现 env / mock 开关 / DB 连接串 / 版本明细（G2/R6#15 防攻击面测绘的原意）。
+    """
     r = client.get("/healthz")
     assert r.status_code == 200, r.text
-    assert r.json() == {"status": "ok"}, r.text
+    body = r.json()
+
+    # 1) 存活语义（G2/R6#15 收敛后的最小契约）
+    assert body.get("status") == "ok", r.text
+
+    # 2) §7.12（5a12a9b）新增的运维事实必须仍在——它们被删掉才是真回归
+    assert "agent_service_token_fp" in body, ("§7.12 令牌指纹缺失（两端令牌不一致时无法对账）", r.text)
+    assert isinstance(body.get("agent"), dict), ("§7.12 agent 探活字段缺失", r.text)
+    assert "reachable" in body["agent"], ("agent.reachable 缺失（通道不可达将无法一眼看出）", r.text)
+    assert isinstance(body.get("agent_degradation"), dict), ("§7.12 降级计数缺失", r.text)
+    assert "total" in body["agent_degradation"], ("agent_degradation.total 缺失", r.text)
+
+    # 3) G2/R6#15 的原意：**不得泄漏**环境/开关/连接串/版本明细
+    forbidden = ("env", "app_env", "mock", "mock_external_ai",
+                 "database_url", "db_url", "redis_url", "version")
+    leaked = [k for k in body if k in forbidden]
+    assert not leaked, (f"/healthz 泄漏敏感面 {leaked}（违反 G2/R6#15 防攻击面测绘）", r.text)
+
     # G2/R6#11：安全响应头全接口下发
     assert r.headers.get("x-content-type-options") == "nosniff", r.headers
     assert r.headers.get("x-frame-options") == "DENY", r.headers

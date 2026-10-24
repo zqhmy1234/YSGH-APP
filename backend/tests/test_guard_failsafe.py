@@ -31,12 +31,26 @@ pytestmark = pytest.mark.integration
 
 
 def test_fail_closed_verdict_carries_reject_action(monkeypatch):
-    """生产 + 未配 key ⇒ dashscope.moderate 的 fail-closed 返回值必须 `action=reject`。"""
+    """生产 + 未配 key ⇒ dashscope.moderate 的 fail-closed 返回值必须 `action=reject`。
+
+    ⚠️ 2026-10-24 修一个**环境耦合导致的假红**：本用例原先只置空 `dashscope_api_key`，
+    但 `_llm_available()`（`external/dashscope.py:56`，2026-10-15 台账 §7.27）会
+    **按当前所配供应商**判可用性——本机 `LLM_PROVIDER=deepseek` 且配了 deepseek key 时，
+    它返回 **True**（跳过 fail-closed 分支去调真 API）⇒ 断言 `verdict["pass"] is False` 失败。
+    这不是缺陷回归，而是**用例没把 provider 固定住**。
+
+    为什么不在被测代码里改：§7.27 那条「刻意不看另一家的 key」是**已拍板的有意设计**
+    （切到 deepseek 后不应拿无效的 dashscope key 去调用）——动它会重新引入原缺陷。
+    所以正确修法是把**测试的前置条件**补全：显式钉死 `llm_provider="dashscope"`。
+    """
     from app.services.external import dashscope
     from app.services.llm_ops.moderate import verdict_action
 
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "mock_external_ai", False)
+    # 必须钉死 provider：否则本机 LLM_PROVIDER=deepseek 时 _llm_available() 为 True，
+    # 走不到 fail-closed 分支（见上方 docstring）。
+    monkeypatch.setattr(settings, "llm_provider", "dashscope")
     monkeypatch.setattr(settings, "dashscope_api_key", "")
 
     verdict = dashscope.moderate("今天天气不错")
