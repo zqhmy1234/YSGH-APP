@@ -345,26 +345,62 @@ class Settings(BaseSettings):
 def _apply_production_safety(settings: Settings) -> Settings:
     """生产环境安全兜底（P0-1，审查 H1/S4-四-3）：
 
-    1. JWT：禁止默认密钥（公开字符串，任何人都可伪造 token）——dev/test 保留默认值。
-    2. Refresh HMAC：禁止默认密钥（G1/R6#8——与 jwt_secret 隔离的 refresh 哈希密钥，
+    1. JWT：禁止默认密钥与**空值**（公开/空字符串任何人都可伪造 token）。
+    2. Refresh HMAC：同上（G1/R6#8——与 jwt_secret 隔离的 refresh 哈希密钥，
        DB 泄漏场景下防止攻击者用公开默认值离线爆破/构造哈希）。
-    3. Mock：强制 mock_external_ai=False——漏配环境变量的新部署若沿用默认 True，
+    3. PROFILE_FIELD_*：必须两把不同的 32 字节 base64。
+    4. Mock：强制 mock_external_ai=False——漏配环境变量的新部署若沿用默认 True，
        短信验证码 mock 直返会造成任意手机号账户接管（认证绕过），必须 fail-closed。
+
+    ⚠️ 2026-10-24（待办总账 A-01 风险 1 闭环）：原实现**只比对默认字符串**，
+    `JWT_SECRET=`（空串）能一路通过校验并带着空密钥启动 —— 空 HMAC 密钥下
+    任何 token 都可被离线伪造，属比"用默认值"更严重的失效形态（默认值至少还是个已知常量）。
+    实测复现：`Settings(app_env='production', jwt_secret='')` + 本函数 → 通过，`len==0`。
+    现改为「空值 或 默认值 或 长度不足」三档一律 fail-closed，并把长度下限与
+    文档口径对齐（≥32 字节）。
     """
     import logging
 
     if settings.app_env != "production":
         return settings
-    if settings.jwt_secret == "change-me-32-bytes-min-secret-0000":
+
+    # ---- 1. JWT_SECRET：空值 / 默认值 / 过短 一律拒 ----
+    _jwt_default = "change-me-32-bytes-min-secret-0000"
+    if not settings.jwt_secret:
+        raise RuntimeError(
+            "生产环境 JWT_SECRET 为空——空密钥下任意 token 均可被伪造。"
+            "请在 backend/.env 设置强随机密钥（≥32 字节）"
+        )
+    if settings.jwt_secret == _jwt_default:
         raise RuntimeError(
             "生产环境必须配置 JWT_SECRET（当前为默认值，存在伪造 token 风险）——"
             "请在 backend/.env 设置强随机密钥（≥32 字节）"
         )
-    if settings.refresh_token_hmac_key == "change-me-refresh-hmac-key-0000000000":
+    if len(settings.jwt_secret) < 32:
+        raise RuntimeError(
+            f"生产环境 JWT_SECRET 过短（{len(settings.jwt_secret)} 字节，需 ≥32）"
+        )
+
+    # ---- 2. REFRESH_TOKEN_HMAC_KEY：同款三档 ----
+    _refresh_default = "change-me-refresh-hmac-key-0000000000"
+    if not settings.refresh_token_hmac_key:
+        raise RuntimeError(
+            "生产环境 REFRESH_TOKEN_HMAC_KEY 为空——请设置与 JWT_SECRET 独立的强随机密钥"
+        )
+    if settings.refresh_token_hmac_key == _refresh_default:
         raise RuntimeError(
             "生产环境必须配置 REFRESH_TOKEN_HMAC_KEY（当前为默认值）——"
             "请设置与 JWT_SECRET 独立的强随机密钥（HMAC-SHA256 密钥隔离）"
         )
+    if len(settings.refresh_token_hmac_key) < 32:
+        raise RuntimeError(
+            f"生产环境 REFRESH_TOKEN_HMAC_KEY 过短"
+            f"（{len(settings.refresh_token_hmac_key)} 字节，需 ≥32）"
+        )
+    if settings.jwt_secret == settings.refresh_token_hmac_key:
+        raise RuntimeError("生产环境 JWT_SECRET 与 REFRESH_TOKEN_HMAC_KEY 必须不同（密钥隔离）")
+
+    # ---- 3. PROFILE_FIELD_*：两把独立的 32 字节 ----
     # Validate at startup in production, even if no profile endpoint is called.
     # Import locally to keep the configuration module free of crypto cycles.
     from base64 import b64decode
@@ -376,6 +412,8 @@ def _apply_production_safety(settings: Settings) -> Settings:
         raise RuntimeError("生产环境必须配置两把独立的 PROFILE_FIELD_* 密钥") from exc
     if len(enc_key) != 32 or len(hash_key) != 32 or enc_key == hash_key:
         raise RuntimeError("生产环境 PROFILE_FIELD_* 密钥须为两把不同的 32 字节随机值")
+
+    # ---- 4. mock 强制关闭 ----
     if settings.mock_external_ai:
         logging.getLogger("yishu.config").warning(
             "生产环境强制关闭 mock_external_ai（防 mock 验证码/假凭证直返）——"

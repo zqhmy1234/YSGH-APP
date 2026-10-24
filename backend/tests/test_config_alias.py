@@ -119,3 +119,70 @@ def test_production_default_refresh_hmac_key_raises(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="REFRESH_TOKEN_HMAC_KEY"):
         _apply_production_safety(s)
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-24（待办总账 A-01 风险 1 闭环）：生产密钥校验从「只比对默认值」扩到四档
+#
+# 背景实测：原实现下 `Settings(app_env='production', jwt_secret='')` 能一路通过
+# `_apply_production_safety`，带着**空 HMAC 密钥**启动 —— 空密钥下任意 token 都可被
+# 离线伪造，比"用默认值"更严重（默认值至少还是个已知常量，空值等于把签名关掉）。
+# 这组用例同时是**负向探针**：每条都必须真的被拒，否则说明校验又退化回只查默认值。
+# ---------------------------------------------------------------------------
+import base64 as _b64  # noqa: E402
+import os as _os  # noqa: E402
+
+import pytest as _pytest  # noqa: E402
+
+
+def _prod_settings(**overrides):
+    """构造一份「除被测项外都合法」的生产配置。"""
+    base = {
+        "_env_file": None,
+        "app_env": "production",
+        "jwt_secret": "s" * 40,
+        "refresh_token_hmac_key": "r" * 40,
+        "profile_field_encryption_key": _b64.b64encode(_os.urandom(32)).decode(),
+        "profile_field_hmac_key": _b64.b64encode(_os.urandom(32)).decode(),
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+@_pytest.mark.parametrize(
+    ("label", "overrides"),
+    [
+        ("JWT 空串", {"jwt_secret": ""}),
+        ("JWT 默认值", {"jwt_secret": "change-me-32-bytes-min-secret-0000"}),
+        ("JWT 过短 16", {"jwt_secret": "s" * 16}),
+        ("refresh 空串", {"refresh_token_hmac_key": ""}),
+        ("refresh 默认值", {"refresh_token_hmac_key": "change-me-refresh-hmac-key-0000000000"}),
+        ("refresh 过短 16", {"refresh_token_hmac_key": "r" * 16}),
+        ("jwt 与 refresh 相同", {"refresh_token_hmac_key": "s" * 40}),
+    ],
+)
+def test_production_rejects_weak_secrets(label, overrides):
+    """生产环境：空值 / 默认值 / 过短 / 两把相同 —— 一律 fail-closed。"""
+    from app.core.config import _apply_production_safety
+
+    s = _prod_settings(**overrides)
+    with _pytest.raises(RuntimeError):
+        _apply_production_safety(s)
+
+
+def test_production_accepts_strong_secrets():
+    """合法配置（两把独立 40 字节）必须通过——防「校验改得永远红」。"""
+    from app.core.config import _apply_production_safety
+
+    s = _prod_settings()
+    _apply_production_safety(s)  # 不抛即通过
+    assert len(s.jwt_secret) >= 32
+    assert s.jwt_secret != s.refresh_token_hmac_key
+
+
+def test_development_allows_empty_secrets():
+    """dev/test 保持宽松（否则本地起服务都要先造密钥）。"""
+    from app.core.config import _apply_production_safety
+
+    s = Settings(_env_file=None, app_env="development", jwt_secret="", refresh_token_hmac_key="")
+    _apply_production_safety(s)  # 不抛即通过
