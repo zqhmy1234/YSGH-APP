@@ -48,6 +48,25 @@ def _process_photo(db: Session, content: Content) -> None:
         image_path = Path(content.extra["image_path"])
 
     try:
+        # 0.5 **图片内容审核**（D-24 · 2026-10-25 用户拍板「只审增量」）
+        #     为什么必须排在 caption 之前：
+        #       ① 省成本——违规图不必再花一次 Qwen3-VL 往返（每张 1~3s + tokens）；
+        #       ② 防污染——违规图不该产生 caption 并被索引进 Qdrant（否则会出现在检索结果里）。
+        #     为什么单独一步而不是复用 `mark_sensitive_on_ingest`：那个看的是 `content.text`
+        #       （caption/OCR 的文字），属**文本审核**；本步看的是**图片内容本身**。
+        #       两者互补，都不能省。
+        #     fail-open 但可观测（不阻断入库，见 media_safety 模块文档）。
+        try:
+            from app.services.pipeline_ext.media_safety import moderate_photo_on_ingest
+
+            _verdict = moderate_photo_on_ingest(db, content, content.cos_key)
+            if _verdict == "review":
+                # 命中：标记待复核后**仍继续**跑 caption（用户自己仍可看这张照片，
+                # 只是它不会被主动提及）。不删照片——删用户记忆是更重的动作。
+                logger.info("照片标记待复核 content=%s（图片审核命中）", content.id)
+        except Exception as exc:  # noqa: BLE001 —— 审核是增强项，绝不阻断入库
+            logger.warning("图片审核环节异常（照片照常入库，但未审）content=%s: %s", content.id, exc)
+
         # 1. caption（图片塔；失败不影响照片浏览，仅不可搜）
         #    Qdrant 索引（text_vec/image_vec）+ payload 补全 R2#1 后置到主提交
         #    之后（_index_after_commit，此时 place/ci_tags 已就绪，无需 update_payload）

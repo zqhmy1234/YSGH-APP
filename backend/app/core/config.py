@@ -240,6 +240,27 @@ class Settings(BaseSettings):
     #   aliyun     = 上架前启用（阿里云内容安全增强版，需 AccessKey + 开通「内容安全」服务）
     #   off        = 不调外部审核（文本仅本地规则、图片默认放行；调用方自行决定）
     content_safety_provider: Literal["tencent_ci", "aliyun", "off"] = "tencent_ci"
+    # 用户**照片**（非微信来图）的图片内容审核开关（D-24 · 2026-10-25 用户拍板「只审增量」）。
+    #
+    # 为什么需要这个开关：实测（2026-10-25）全仓 `check_image` **只被 `wechat/service.py:237`
+    # 一处调用** ⇒ 微信来图会审，但**用户自己上传的 4154 张照片一张都没过图片审核**；
+    # 而 `contents.sensitive_status` 的默认值是 "正常"（`db/models/content.py:62` server_default）
+    # ⇒ 那些"正常"是**出厂默认值，不是审核结论**。两者合起来会造成「以为审了、其实没审」。
+    # 应用商店对 UGC 图片有审核要求，故这是真实的上架阻断项。
+    #
+    # 实现：`pipeline_ext/media_safety.moderate_photo_on_ingest`（挂在 caption **之前**，
+    # 违规图不必再花一次 VL 往返，也不产生 caption 污染检索）。
+    #
+    # ⚠️ 生效前提（三条，缺一条就只是 skipped，日志会写明）：
+    #   ① `storage_backend == "cos"`（腾讯 CI 的 image_audit 要 COS 对象 key，本地 fs 无对象）；
+    #   ② `content_safety_provider != "off"`；
+    #   ③ 有 `cos_key`。
+    #
+    # ⚠️ **只审增量，不回溯存量**（用户拍板）：历史 4154 张不重跑，
+    #    其 `sensitive_status` 仍可能是出厂默认值 ⇒ **不得对外宣称"存量已审"**。
+    #    若将来要补审，按 `extra.image_moderation` 缺失或 `verdict=skipped/error` 筛，
+    #    再批量跑同一个函数。
+    content_image_moderation_enabled: bool = True
     # 生成态输出护栏（D10-8 · 2026-09-25 用户拍板「按建议来」）：
     # 四条用户可见生成链（照片 AI 描述 / 事件标题 / 画像开放值 / 对话回复）的审核档位——
     # 规则层（本地词表，零成本）**全量**生效；LLM 级只用于两处：

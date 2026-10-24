@@ -184,14 +184,17 @@
 					<image class="attach-entry-icon" src="/static/icons/record-gallery.svg" />
 					<text class="attach-entry-text">图片</text>
 				</view>
-				<view class="attach-entry pressable" @tap="onAttachEntry('文件')">
-					<image class="attach-entry-icon" src="/static/icons/icon-file.svg" />
-					<text class="attach-entry-text">文件</text>
-				</view>
-				<view class="attach-entry pressable" @tap="onAttachEntry('粘贴链接')">
-					<image class="attach-entry-icon" src="/static/icons/icon-link.svg" />
-					<text class="attach-entry-text">粘贴链接</text>
-				</view>
+				<!-- 🚩 B-04（2026-10-24）：「文件」「粘贴链接」两入口**已隐藏**，只留「图片」。
+				     口径＝本仓「隐藏优于假装」。依据（实测）：① 客户端无文件选择器；
+				     ② 后端 `ChatAttachment.kind` 只认 `image`，无 link 类型。
+				     ⇒ 此前只弹「即将上线」，是永不自闭环的空转入口。
+				     🔧 恢复条件（**同时满足**）：③ 端侧接 chooseFile/SAF 并走既有上传链拿 content_id；
+				     ④ 后端 kind 增加文件/链接类型 + chat_context 有对应注入。届时把两个 <view>
+				     原样放回本节点即可（样式零改动），`onAttachEntry` 函数体一直保留。
+				     ⚠️ 2026-10-25 更正：`uni.chooseFile` **确实存在**（Android 4.51+，本机 HBuilderX 5.26
+				     可用；Android 只支持 `tempFiles`，`tempFilePaths` 不支持；返回 `content://`）。
+				     故 ③ 的前置已具备，卡点只剩 ④（后端契约）。原注释写「客户端没有 chooseFile」
+				     是**搜自己仓库得出的错误结论**——见总账 D-10 更正。 -->
 			</view>
 		</view>
 	</view>
@@ -563,7 +566,11 @@
 	function closeAttach(): void {
 		aiAttachOpen.value = false
 	}
-	// 附件入口行（mock：MVP 文件/链接选择器未接，W0-4 措辞诚实化，与全项目占位口径统一）
+	// 附件入口行（B-04 · 2026-10-24：模板侧「文件」「粘贴链接」两个入口**已隐藏**，本函数因此
+	// **当前零调用**——保留函数体是刻意的：它就是恢复路径（模板注释列了恢复条件 ③④）。
+	// ⚠️ 本函数是**组件内局部 function，不是 `export`** ⇒ 不会触发 `audit_harness.py` 轴 4 的
+	// 「导出却零调用」CRITICAL（该轴只扫 `client/utils/**` 的 `export`），故不需要删函数。
+	// 若将来恢复入口之前又不想留死代码，则连同模板注释一并删除即可（恢复条件已写在那里）。
 	function onAttachEntry(name: string): void {
 		closeAttach()
 		uni.showToast({ title: name + '：即将上线', icon: 'none' })
