@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 忆述光华 · 相册监听插件 Android 纯 UTS 实现（B-UT-1/2/3/4 · 2026-08-24 决策调整）
  * Wave4 Agent K · B5d 升级（K-1a）：前台服务短命化 + microphone/dataSync 互斥
  *
@@ -20,13 +20,28 @@
  */
 import { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType, PermissionResultCallback } from '../interface.uts'
 import { initBackgroundTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
+// 2026-10-24 拆分（structure 棘轮 800 行）：SharedPreferences 访问层与 B-18 两阶段提交各自独立成文件。
+// 本文件只负责「扫描 + 组装 PhotoItem + 把批次交给 pending 状态机」。
+import { appContext, prefs, KEY_LAST_SEEN } from './prefs_store.uts'
+import {
+	armAckWatchdog,
+	beginBatch,
+	commitBatch,
+	hasPending,
+	pendingFromId,
+	resolveScanStart,
+	markDeferredScan,
+	isAwaitingAck,
+	resetForFirstInit,
+	setRescanHook,
+	ackBatch as ackCurrentBatch,
+	rescanPending as rescanPendingBatch
+} from './pending_batch.uts'
 
 // 类型具名再导出（供页面从平台模块路径引用）
 export { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType, PermissionResultCallback } from '../interface.uts'
-
 /** 静默窗口：4s 无新照片变更 → 触发攒批回调（B-UT-4，3-5s 区间） */
 const DEBOUNCE_MS: Long = 4000
-const KEY_LAST_SEEN = 'last_seen_photo_id'
 const REQ_READ_MEDIA = 2001
 const ZERO_LONG: Long = 0
 
@@ -83,20 +98,7 @@ let _serviceRunning: boolean = false
 let _serviceStartedAt: Long = ZERO_LONG
 let _lastActivityMs: Long = ZERO_LONG
 
-let _appContext: android.content.Context | null = null
-function appContext(): android.content.Context {
-	const cached = _appContext
-	if (cached != null) {
-		return cached
-	}
-	const created = UTSAndroid.getAppContext()
-	_appContext = created
-	return created!
-}
-
-function prefs(): android.content.SharedPreferences {
-	return appContext().getSharedPreferences('yishu_photo_watch', 0)
-}
+// appContext() / prefs() 已抽到 ./prefs_store.uts（2026-10-24 拆分），此处 import 复用同一份。
 
 /**
  * 当前设备应请求的相册读权限名。
@@ -148,6 +150,18 @@ function readExifTaken(path: string): Long {
 	return ZERO_LONG
 }
 
+// ⚠️ 2026-10-24（B-12）：读真实拍摄时刻改成 **PhotoWatch 的实例方法 `getPhotoTakenAt()`**
+// （实现在 `PhotoWatchImpl` 里，紧挨 `getPendingFromId`）。
+//
+// 为什么不是自由函数：初版写成 `export function readExifTakenMs(path): number`
+// 并在 `interface.uts` 同名声明，触发 UTS 编译器 overload 解析 panic（HBuilderX 5.26）：
+//   crates/uts_transforms/src/overload.rs:232:25:
+//   internal error: entered unreachable code:
+//   overload error Some(Atom('readExifTakenMs' type=dynamic))  ⇒ 编译进程 abort。
+// 试过 `as number` / `toDouble()` / `0.0` 三种写法，**都崩**（说明不是 Long/Double 转换问题，
+// 是自由函数跨文件重载推断的问题）。而**类成员方法返回 number 是本插件已验证跑通的形态**
+// （`getPendingFromId(): number` 一直在用），故改为实例方法绕开该编译路径。
+
 /** ContentObserver 监听器：UTS 继承原生类（POC-01 路径，纯 UTS 版） */
 class PhotoObserver extends android.database.ContentObserver {
 	callback: PhotoBatchCallback | null = null
@@ -179,17 +193,29 @@ class PhotoObserver extends android.database.ContentObserver {
 		if (cb == null) {
 			return
 		}
-		let lastSeen = prefs().getLong(KEY_LAST_SEEN, 0)
+		// ── B-18 守卫：有批次正在等确认时**不要立刻重扫** ──
+		// 等确认期间游标未推进，立即重扫会把**同一批**再交出去（重复上传）。故只置脏标记，
+		// 由 pending_batch 的 commit/abort 在结论落地后补扫一次（不漏新照片、也不重传同一张）。
+		if (isAwaitingAck()) {
+			markDeferredScan()
+			return
+		}
+		// ── B-18 阶段⓪：决议扫描起点（有未确认 pending ⇒ 从其起点重扫；否则用已提交游标）──
+		// 细节（为什么必须这样、安全性边界）见 pending_batch.uts 的模块注释。
+		const start = resolveScanStart()
+		const scanFrom = start.from
+		const lastSeen = prefs().getLong(KEY_LAST_SEEN, 0)
 		const collectionUri: android.net.Uri = sdkInt() >= 29
 			? android.provider.MediaStore.Images.Media.getContentUri("external")
 			: android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 		// projection/selectionArgs 传 null（UTSArray 与 Java Array 互转受限），
-		// lastSeen 直接拼入 selection（值为自有存储的 long，无注入面）
-		const selection: String = android.provider.MediaStore.Images.Media._ID + ' > ' + lastSeen
+		// scanFrom 直接拼入 selection（值为自有存储的 long，无注入面）。
+		// ⚠️ B-18：这里用 scanFrom（可能因 pending 回退到批起点）而不是 lastSeen。
+		const selection: String = android.provider.MediaStore.Images.Media._ID + ' > ' + scanFrom
 		const sortOrder: String = android.provider.MediaStore.Images.Media._ID + ' ASC'
 
 		const items: Array<PhotoItem> = []
-		let maxId = lastSeen
+		let maxId = scanFrom
 		try {
 			const cursor = appContext().getContentResolver().query(
 				collectionUri, null, selection, null, sortOrder
@@ -245,19 +271,44 @@ class PhotoObserver extends android.database.ContentObserver {
 		}
 
 		// 首次启动：游标初始化为当前最大照片 id，跳过存量相册（隐私 + 首波只监听新增）
+		// ⚠️ B-18 边界：`lastSeen == 0` 时**不存在**「要重扫的历史」（首次本就不监听存量），
+		// 故这条初始化路径可以无条件推进，且顺手清掉可能残留的 pending（脏数据自愈）。
 		if (lastSeen == ZERO_LONG) {
-			prefs().edit().putLong(KEY_LAST_SEEN, maxId).apply()
+			resetForFirstInit(maxId)
 			console.log('[yishu] init cursor to ' + maxId + ' (skip existing library)')
 			return
 		}
 
 		if (items.length > 0) {
-			// 先推进游标再回调：即使回调消费失败也不重复触发（轻量去重，B-UT-3）
-			prefs().edit().putLong(KEY_LAST_SEEN, maxId).apply()
-			console.log('[yishu] emitIncremental found ' + items.length + ', maxId=' + maxId)
+			// ── B-18 阶段①：**先落 pending（write-ahead）**，再回调 ──
+			const batchMax: Long = beginBatch(scanFrom as Long, maxId, start.carriedMax as Long)
+			console.log('[yishu] emitIncremental found ' + items.length
+				+ ', batch=[' + scanFrom + '..' + batchMax + '] pending 已落盘，等调用方确认')
 			// B5d：记录最近活动时间（dataSync 前台服务看门狗空闲自停依据）
 			_lastActivityMs = Date.now() as Long
-			cb(items)
+
+			// ── B-18 阶段②：回调，按回调的显式结论决定是否推进游标 ──
+			// 三种结果分别处置（见 interface.uts 的 PhotoBatchCallback 契约）：
+			//   true  → 同步已持久接管 ⇒ 立刻提交（推进游标 + 清 pending）
+			//   false → 异步中（典型=上传还没结果）⇒ **保留 pending**，等 ackBatch()
+			//   抛异常 → 保留 pending，但**不等 ack**（期望值置 false 语义：下次变更即重扫）
+			let claimed = false
+			try {
+				claimed = cb(items)
+			} catch (e: Throwable) {
+				console.error('[yishu] 批次回调抛异常（游标**不推进**，保留 pending 待重扫）: '
+					+ (e != null && e.message != null ? e.message : 'unknown'))
+				claimed = false
+			}
+			if (claimed) {
+				commitBatch(batchMax, '回调同步确认')
+			} else {
+				// 进入「等确认」态：此期间到来的变更只置脏，不立刻重扫（否则会重复上传同一批）。
+				// beginBatch 已把 _awaitingAck 置 true，这里只需挂有界看门狗。
+				armAckWatchdog()
+				console.log('[yishu] 批次待确认：游标暂不推进（pending='
+					+ scanFrom + '..' + batchMax + '），等 ackBatch() 或下次扫描重扫')
+			}
 		} else {
 			console.log('[yishu] emitIncremental found 0 (lastSeen=' + lastSeen + ')')
 		}
@@ -433,6 +484,13 @@ class PhotoWatchImpl implements PhotoWatch {
 			// 幂等重启：仅替换回调，不重复注册
 			existing.callback = callback
 		}
+		// B-18：装配补扫钩子（commit/abort 后由它补跑一次增量扫描，把等确认期间攒下的变更取走）
+		setRescanHook((): void => {
+			const o = this.observer
+			if (o != null) {
+				o.emitIncremental()
+			}
+		})
 		if (!this.registered) {
 			const obs = this.observer
 			if (obs != null) {
@@ -501,6 +559,66 @@ class PhotoWatchImpl implements PhotoWatch {
 
 	getLastSeenId(): number {
 		return prefs().getLong(KEY_LAST_SEEN, 0)
+	}
+
+	/**
+	 * 读一张照片的**真实拍摄时间**（EXIF `DateTimeOriginal` → epoch ms）。B-12。
+	 *
+	 * 为什么需要（B-12）：手动选图走 `uni.chooseImage` 拿到的是沙箱临时文件、**没有 MediaStore
+	 * 元数据**，旧实现只能拿 `Date.now()` 冒充「拍摄时刻」⇒「补记三年前的老照片」在时间轴上
+	 * 一律落到今天（拍摄时间 = 保存时间，是假数据）。
+	 *
+	 * 为什么放在插件里：EXIF 解析要 `android.media.ExifInterface`（原生类），页面层没有等价能力
+	 * （`uni.chooseImage` 不回传拍摄时间）。
+	 *
+	 * 为什么是**实例方法**而不是自由函数：自由函数版（`export function readExifTakenMs`）
+	 * 让 UTS 编译器 overload 解析 panic（overload.rs:232 unreachable, Atom(... type=dynamic)）
+	 * ⇒ 编译进程 abort；而类方法返回 number 是本插件已验证跑通的形态（见 `getLastSeenId`）。
+	 *
+	 * @param path 照片路径（`uni.chooseImage` 沙箱临时路径可读；MediaStore 绝对路径亦可）
+	 * @return 拍摄时刻 epoch ms；EXIF 缺失/解析失败 = `0`（调用方据此走「时间未知」分支，
+	 *         **绝不回填 now**——那正是本缺陷要消灭的伪造）
+	 */
+	getPhotoTakenAt(path: string): number {
+		// 复用内部 readExifTaken（唯一实现，不复制解析逻辑）；Long → number 显式收窄。
+		const ms: Long = readExifTaken(path)
+		if (ms <= ZERO_LONG) {
+			console.log('[yishu] getPhotoTakenAt 无 DateTimeOriginal（时间未知，绝不回填 now）: ' + path)
+			return 0.0
+		}
+		return ms.toDouble()
+	}
+
+	// ---------- B-18 两阶段提交 · 调用方确认入口 ----------
+
+	/**
+	 * 确认（或否决）当前待确认批次 —— 异步消费（上传）完成后由调用方**必须**调用一次。
+	 *
+	 * @param consumeOk true = 本批已被持久接管（上传成功 / 已落 held·failed 重试队列）⇒ 推进游标；
+	 *                  false = 未接管（例如失败且**没**进任何重试队列）⇒ 游标不推进，下次重扫。
+	 * @return 是否真的有一个待确认批次被结算（无 pending 时调用返回 false，便于调用方发现问题）
+	 */
+	ackBatch(consumeOk: boolean): boolean {
+		// 实现委托 ./pending_batch.uts（那边是单一实现，本文件不重复 key 读写逻辑）
+		return ackCurrentBatch(consumeOk)
+	}
+
+	/** 当前是否存在待确认批次（诊断/宿主展示用） */
+	hasPendingBatch(): boolean {
+		return hasPending()
+	}
+
+	/** 待确认批次的起点 _id（无 pending 返回当前游标；诊断用） */
+	getPendingFromId(): number {
+		return pendingFromId()
+	}
+
+	/**
+	 * 手动重扫（宿主在「用户手动重试」等场景可调用）：把 pending 起点作为扫描起点跑一次。
+	 * 语义 = 「我知道上一批没成功，请再交给我一次」——**不推进游标**，也不清 pending。
+	 */
+	rescanPending(): void {
+		rescanPendingBatch()
 	}
 
 	requestReadPermission(callback: PermissionResultCallback): void {

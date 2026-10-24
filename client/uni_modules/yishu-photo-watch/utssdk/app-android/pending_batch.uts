@@ -1,0 +1,250 @@
+/**
+ * 忆述光华 · 相册监听插件 · B-18 游标两阶段提交（2026-10-24 拆出自 index.uts）
+ *
+ * ## 缺陷回顾（为什么必须两阶段）
+ * 原实现是「**先推进游标再回调**」——`prefs().edit().putLong(KEY_LAST_SEEN, maxId).apply()`
+ * 在 `cb(items)` **之前**。后果：回调里上传失败（断网拍一张）时游标已前进 ⇒ 这批照片的
+ * `_id` 以后再也扫不到 ⇒ **永久丢照片**，且用户与我们都没有任何报错出口。
+ *
+ * ## 为什么不能简单改成「cb 之后再推进」
+ * 回调抛异常 / 进程被杀在 cb 与推进之间，游标就停在原处 ⇒ 每次变更事件都重扫同一批；
+ * 配合上游上传会变成**反复重传同一批**（比丢照片轻，但同样是缺陷）。
+ *
+ * ## 本实现：两阶段提交（write-ahead pending + 显式 ack）
+ *   阶段①：扫描出批次后**先**把 {重扫起点, 批次 maxId} 写进 pending 两键（`beginBatch`）；
+ *   阶段②：回调返回后按回调的**显式结论**决定：
+ *           · `true`  ——同步已接管 ⇒ `commitBatch`（推进游标 + 清 pending）；
+ *           · `false` ——异步中（例如要上传）⇒ **保留 pending**，等调用方 `ackBatch(...)`；
+ *           · 抛异常  ——`abortBatch`（不推进游标、清 pending、下次从原游标重扫）。
+ *   启动/下次扫描：`resolveScanStart()` 发现 pending 未清 ⇒ 从 pending 的**起点**重扫
+ *           （不回退到 0，存量相册不会被翻出来）。
+ *
+ * ## 安全性要点
+ * pending 起点永远 = 上一批的**已提交游标**，故重扫范围恰好是「未确认的那几批」；
+ * 最坏情况是**重复上传**（后端 `init` 按 path 幂等、register 按 cos_key 幂等 ⇒ 不产生
+ * 重复内容），**绝不会**是「丢照片」。这条取舍是本项目「宁重勿丢」的直接体现。
+ *
+ * ## 为什么单独成文件
+ * structure 棘轮：index.uts 已逼近 800 行阈值，而这块是**自洽的状态机**（自己的持久键 +
+ * 自己的进程内状态 + 自己的看门狗），抽出来后 index.uts 只负责「扫描 + 调这里」。
+ *
+ * ⚠️ 类型约定：本文件的 _id 一律用 `number`（与 index.uts 的 `getLong(...)` 结果、
+ * `putLong(key, value)` 入参同一体系，沿用该文件既有写法，不引入 Long 标注以免跨文件推断打架）。
+ */
+import {
+	KEY_LAST_SEEN,
+	KEY_PENDING_FROM,
+	KEY_PENDING_MAX,
+	prefs
+} from './prefs_store.uts'
+
+/** 等 ack 的最长时间：超时视为「未消费」⇒ 从 pending 起点重扫（有界兜底，防某调用方忘 ack 后照片断流） */
+const ACK_TIMEOUT_MS: Long = 10 * 60 * 1000
+/** Long 零常量（UTS 类型严格：`prefs().getLong(...)` 结果与**字面量 0** 比较会报
+ *  「实际类型 Number 预期 Long」，故一律走这个常量 —— 同 index.uts 既有写法）。 */
+const ZERO_LONG: Long = 0
+
+/**
+ * 「有批次在等确认」标志。
+ *
+ * 为什么需要它：等 ack 期间游标没推进，若此时又来一次相册变更并立刻扫描，
+ * 会**把在途批次再扫一遍**（重复上传）。故等确认期间**推迟**扫描，只置脏标记，
+ * 提交/放弃后立刻补扫一次 —— 既不重复上传，也不漏新照片。
+ */
+let _awaitingAck: boolean = false
+/** 等确认期间是否有被推迟的扫描 */
+let _dirtyWhileAck: boolean = false
+/** 补扫钩子（由 index.uts 在 observer 就绪后装配）：commit/abort 后调它补跑一次增量扫描 */
+let _rescanHook: (() => void) | null = null
+
+// ---------- 扫描起点决议 ----------
+
+/** 扫描起点决议结果（from = 实际扫描起点；carriedMax = 旧 pending 的上界，无 pending 时 0） */
+export class ScanStart {
+	from: Long
+	carriedMax: Long
+	hasPending: boolean
+
+	constructor(from: Long, carriedMax: Long, hasPending: boolean) {
+		this.from = from
+		this.carriedMax = carriedMax
+		this.hasPending = hasPending
+	}
+}
+
+/**
+ * 决议本次扫描的起点。
+ *
+ * 健康前提：pending 起点不该**超前**于已提交游标（`pFrom <= lastSeen`）；
+ * 超前的脏数据（人为改存储 / 版本回退）按「无 pending」处理，绝不让游标倒退到未来。
+ */
+export function resolveScanStart(): ScanStart {
+	const lastSeen = prefs().getLong(KEY_LAST_SEEN, ZERO_LONG)
+	const pFrom = prefs().getLong(KEY_PENDING_FROM, ZERO_LONG)
+	const pMax = prefs().getLong(KEY_PENDING_MAX, ZERO_LONG)
+	if (pMax > ZERO_LONG && pFrom <= lastSeen) {
+		console.log('[yishu] 检测到未确认的 pending 批次 [' + pFrom + '..' + pMax + ']'
+			+ '（上次未 ack：进程被杀/回调异常/ack 超时）⇒ 从起点重扫，lastSeen=' + lastSeen)
+		return new ScanStart(pFrom, pMax, true)
+	}
+	return new ScanStart(lastSeen, ZERO_LONG, false)
+}
+
+// ---------- 阶段①：落 pending ----------
+
+/** 阶段①：**先落 pending（write-ahead）再回调**。返回本批的有效上界（供阶段②使用）。 */
+export function beginBatch(scanFrom: Long, scannedMax: Long, carriedMax: Long): Long {
+	// batchMax 取「本次扫描 maxId」与「旧 pending 上界」的较大者：
+	// 重扫时若补进了新照片，ack 后推进到新上界才不漏；沿用旧上界会与游标回退打架。
+	const batchMax: Long = scannedMax > carriedMax ? scannedMax : carriedMax
+	prefs().edit()
+		.putLong(KEY_PENDING_FROM, scanFrom)
+		.putLong(KEY_PENDING_MAX, batchMax)
+		.apply()
+	_awaitingAck = true
+	return batchMax
+}
+
+// ---------- 阶段②：提交 / 放弃 / 看门狗 ----------
+
+/** 请求补扫一次（0ms 排到主线程：避免在回调栈里递归进 emitIncremental） */
+export function requestRescan(): void {
+	const hook = _rescanHook
+	if (hook == null) {
+		return
+	}
+	new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() => {
+		const h = _rescanHook
+		if (h != null) {
+			h()
+		}
+	}, 0)
+}
+
+/** 装配补扫钩子（observer 就绪后调用；重复调用以最后一次为准） */
+export function setRescanHook(hook: (() => void) | null): void {
+	_rescanHook = hook
+}
+
+/** 等确认期间到来的变更：只置脏标记，**不要**立刻重扫（否则会把在途批次再交一遍） */
+export function markDeferredScan(): void {
+	_dirtyWhileAck = true
+	console.log('[yishu] 有批次待确认 ⇒ 本次变更推迟到确认后补扫（dirty=true）')
+}
+
+/** 当前是否在等调用方 ack（observer 扫描入口据此决定「立刻扫」还是「置脏」） */
+export function isAwaitingAck(): boolean {
+	return _awaitingAck
+}
+
+/** 结清脏标记并按需补扫（提交/放弃共用出口，避免两处各写一遍） */
+function settleDirty(): void {
+	if (!_dirtyWhileAck) {
+		return
+	}
+	_dirtyWhileAck = false
+	console.log('[yishu] 等确认期间有被推迟的相册变更 ⇒ 补扫一次')
+	requestRescan()
+}
+
+/**
+ * 阶段②-成功：**提交本批** —— 推进游标到本批上界 + 清 pending 两键。
+ *
+ * 只有两种情况可以走到这里（语义都成立）：
+ *   ① 回调同步返回 true（调用方已把本批放进可重试的持久队列）；
+ *   ② 调用方事后 `ackBatch(true)`（异步已有结论：上传成功，或已落 held/failed 队列）。
+ * 两者都意味着「这批照片已被持久接管、以后有重试路径」⇒ 游标前进才不会丢东西。
+ */
+export function commitBatch(batchMax: Long, via: string): void {
+	prefs().edit()
+		.putLong(KEY_LAST_SEEN, batchMax)
+		.remove(KEY_PENDING_FROM)
+		.remove(KEY_PENDING_MAX)
+		.apply()
+	_awaitingAck = false
+	console.log('[yishu] 批次提交（' + via + '）：lastSeen=' + batchMax + '，pending 已清')
+	settleDirty()
+}
+
+/**
+ * 阶段②-失败/放弃：**不推进游标**，只清 pending 标记。
+ *
+ * 为什么可以清 pending：pending 起点 `KEY_PENDING_FROM` **恒等于**提交前的
+ * `KEY_LAST_SEEN`（见 `resolveScanStart` 的取值）⇒ 清标记不扩大重扫范围，
+ * 下次从游标重来即可，行为等价且省两条存储。
+ */
+export function abortBatch(reason: string): void {
+	const keep = prefs().getLong(KEY_LAST_SEEN, ZERO_LONG)
+	prefs().edit()
+		.remove(KEY_PENDING_FROM)
+		.remove(KEY_PENDING_MAX)
+		.apply()
+	_awaitingAck = false
+	console.error('[yishu] 批次未确认（' + reason + '）：游标保持 ' + keep + '，下次从该点重扫')
+	settleDirty()
+}
+
+/** 等确认看门狗：调用方忘了 ack 时**有界兜底**（否则新照片一直卡在脏标记里、游标永不动） */
+export function armAckWatchdog(): void {
+	new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() => {
+		if (!_awaitingAck) {
+			return
+		}
+		abortBatch('ack 超时 ' + (ACK_TIMEOUT_MS / 1000) + 's 未收到 ackBatch，兜底重扫')
+	}, ACK_TIMEOUT_MS)
+}
+
+// ---------- 对外诊断 / 确认入口（PhotoWatch 的方法实现在 index.uts，这里给可复用原语） ----------
+
+/** 是否存在待确认批次 */
+export function hasPending(): boolean {
+	return prefs().getLong(KEY_PENDING_MAX, 0) > 0
+}
+
+/** 待确认批次的扫描起点（无 pending 时返回当前游标） */
+export function pendingFromId(): number {
+	if (!hasPending()) {
+		return prefs().getLong(KEY_LAST_SEEN, 0)
+	}
+	return prefs().getLong(KEY_PENDING_FROM, prefs().getLong(KEY_LAST_SEEN, 0))
+}
+
+/**
+ * 结算当前待确认批次（调用方在异步消费有结论后**必须**调一次）。
+ * @return 是否真的有一个待确认批次被结算（无 pending 返回 false，便于调用方发现问题）
+ */
+export function ackBatch(consumeOk: boolean): boolean {
+	const pMax = prefs().getLong(KEY_PENDING_MAX, 0)
+	if (pMax <= 0) {
+		// 没有待确认批次：可能同步已提交、或已被超时看门狗兜底 ⇒ 打点后无事可做（不静默）
+		console.log('[yishu] ackBatch(consumeOk=' + consumeOk + ') 无待确认批次（已结算或已超时兜底），忽略')
+		return false
+	}
+	if (consumeOk) {
+		commitBatch(pMax, '调用方 ackBatch(true)')
+	} else {
+		abortBatch('调用方 ackBatch(false)：本批未被持久接管')
+	}
+	return true
+}
+
+/** 手动重扫（用户主动「重试」时用）：解掉等确认态并立刻补扫一次，**不推进游标** */
+export function rescanPending(): void {
+	if (!hasPending()) {
+		console.log('[yishu] rescanPending：无 pending 批次，改为常规扫描')
+	}
+	_awaitingAck = false
+	_dirtyWhileAck = false
+	requestRescan()
+}
+
+/** 首次启动初始化游标时顺带清掉可能残留的 pending（脏数据自愈；首启本就不监听存量） */
+export function resetForFirstInit(maxId: Long): void {
+	prefs().edit()
+		.putLong(KEY_LAST_SEEN, maxId)
+		.remove(KEY_PENDING_FROM)
+		.remove(KEY_PENDING_MAX)
+		.apply()
+	_awaitingAck = false
+	_dirtyWhileAck = false
+}

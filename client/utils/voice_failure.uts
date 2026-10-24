@@ -1,0 +1,166 @@
+/**
+ * 语音转写失败队列（B-09 修复 · 2026-10-24 自 `utils/voice.uts` 拆出）
+ *
+ * 拆出原因：结构棘轮（`client/utils/*.uts` ≤800 行）。本块是**独立能力**
+ * （失败段持久队列 + 两个用户提示），只依赖 `uni` 全局，与录音编排无耦合。
+ *
+ * 为什么独立 key 而不复用照片的 `yishu_failed_uploads`：两者**重试语义不同**——
+ * 照片是"重传二进制"，语音是"重跑转写"；混在一个队列里会让重试入口分不清该走哪条链。
+ *
+ * 只依赖 `uni` 全局（storage / showModal），**不 import 任何业务模块**——失败队列是底层能力，
+ * 反向依赖会让"转写失败"这种降级路径被上层模块的加载失败连坐。
+ */
+// ══════════════════════════════════════════════════════════════════════════════
+// B-09 修复（2026-10-24）：转写失败**不许变成孤儿**
+//
+// 旧行为：`onRecordStopped` 里 `transcribeWav` 返回 null（HTTP 非 200 / 超时 / 过大）时
+// 只 toast 一次就把状态复位成空闲——**整段录音在 UI 上消失**（无重试入口、不落队列、
+// `lastVoiceFile` 被下一次录音覆盖）。实锤：04:54 那段 60s 录音 503，PC 侧回放 3.7s 出文，
+// 端内却没有任何找回路径。
+//
+// 现在：失败段落**独立**本地待发队列 `yishu_failed_voice`（不与照片的
+// `yishu_failed_uploads` 混用——两者重试语义不同：照片是重传二进制，语音是重跑转写），
+// 行格式 `path|durationMs|ts|reason`（行分隔纯文本，同 `uploader_queue` 的存储惯用法，
+// 但**不复用其 PhotoItem 行格式**：语音没有 width/height/MediaStore id 这些字段）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 语音失败段队列 key（独立于照片上传队列） */
+export const VOICE_FAILED_KEY: string = 'yishu_failed_voice'
+
+/** 一条失败的语音段（重试转写所需的最小信息） */
+export class VoiceFailure {
+	path: string
+	durationMs: number
+	/** 失败时刻（epoch ms） */
+	ts: number
+	/** 失败原因（给用户看的口径，不是堆栈） */
+	reason: string
+
+	constructor(path: string, durationMs: number, ts: number, reason: string) {
+		this.path = path
+		this.durationMs = durationMs
+		this.ts = ts
+		this.reason = reason
+	}
+}
+
+function voiceLines(): Array<string> {
+	const raw = uni.getStorageSync(VOICE_FAILED_KEY) as string
+	if (raw == null || raw == '') {
+		return []
+	}
+	const out: Array<string> = []
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i] != '') {
+			out.push(lines[i])
+		}
+	}
+	return out
+}
+
+/**
+ * 记一条失败段（**同 path 覆盖**，不重复堆积）。
+ *
+ * 注意：reason 里的 `|` 会被替换掉——它是行分隔符的字段分隔符，不替换会把整行读坏。
+ */
+export function addVoiceFailure(path: string, durationMs: number, reason: string): void {
+	if (path == '') {
+		// 没有可重试的本地文件 ⇒ 不记录（凭空建一条"可重试"记录才是骗人）
+		return
+	}
+	const safe = reason.replaceAll('|', '/')
+	const line = path + '|' + durationMs + '|' + Date.now() + '|' + safe
+	const lines = voiceLines()
+	let replaced = false
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith(path + '|')) {
+			kept.push(line)
+			replaced = true
+		} else {
+			kept.push(lines[i])
+		}
+	}
+	if (!replaced) {
+		kept.push(line)
+	}
+	uni.setStorageSync(VOICE_FAILED_KEY, kept.join('\n'))
+	console.log('[yishu] 语音失败段入队（可重试转写）reason=' + safe)
+}
+
+/** 全部失败段（供"重试转写"入口与启动找回） */
+export function voiceFailures(): Array<VoiceFailure> {
+	const lines = voiceLines()
+	const out: Array<VoiceFailure> = []
+	for (let i = 0; i < lines.length; i++) {
+		const parts = lines[i].split('|')
+		if (parts.length < 3) {
+			continue
+		}
+		const reason = parts.length >= 4 ? parts[3] : ''
+		out.push(new VoiceFailure(parts[0], parseInt(parts[1]), parseInt(parts[2]), reason))
+	}
+	return out
+}
+
+/** 失败段条数（UI 徽标/提示用） */
+export function voiceFailureCount(): number {
+	return voiceLines().length
+}
+
+/** 重试成功（或用户明确放弃）后销账 */
+export function removeVoiceFailure(path: string): void {
+	const lines = voiceLines()
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].startsWith(path + '|')) {
+			kept.push(lines[i])
+		}
+	}
+	uni.setStorageSync(VOICE_FAILED_KEY, kept.join('\n'))
+}
+
+/**
+ * 转写失败时给用户的**可行动**反馈（B-09 ③ + 铁律"不许静默"）。
+ *
+ * 做成 modal 而不是 toast：toast 一闪而过且没有操作入口——这正是 B-09 的原始病灶
+ * （"只 toast 一次就重置空闲"）。confirm = 立刻重试，cancel = 先留着稍后重试。
+ * 两条路都**保留队列记录**，不存在"点了取消就丢"。
+ *
+ * @param reason 失败原因（用户可读）
+ * @param onRetry 用户选择立即重试时回调
+ */
+export function promptVoiceRetry(reason: string, onRetry: () => void): void {
+	uni.showModal({
+		title: '转写失败',
+		content: reason + '\n这段录音已保留，可稍后重试转写。',
+		confirmText: '重试',
+		cancelText: '稍后',
+		success: (res) => {
+			if (res.confirm) {
+				onRetry()
+			}
+		}
+	})
+}
+
+/**
+ * 录音无效（被中断 / 零能量）时给用户的**显式告知 + 重录入口**（B-08 ③）。
+ *
+ * @param reason 具体原因（MSG_INTERRUPTED / MSG_NO_SOUND 等）
+ * @param onRetry 用户选择重录时回调
+ */
+export function promptVoiceInvalid(reason: string, onRetry: () => void): void {
+	uni.showModal({
+		title: '这段录音没有声音',
+		content: reason + '\n可以马上重新录一段。',
+		confirmText: '重录',
+		cancelText: '知道了',
+		success: (res) => {
+			if (res.confirm) {
+				onRetry()
+			}
+		}
+	})
+}

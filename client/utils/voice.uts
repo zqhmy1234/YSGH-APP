@@ -59,6 +59,11 @@ export class AsrResult {
 	mock: boolean
 	guardPassed: boolean
 	guardReason: string
+	/** 后端处理结论（B-08 修复 · 2026-10-24）：`succeeded` / `no_speech` / `mock`。
+	 *  **为什么必须带上**：原实现把 `no_speech`（后端已判定"这段是数字零/无语音"）
+	 *  与"成功但文本为空"混为一谈 ⇒ 客户端进预览态显示**空白卡片**，用户到点「确定」
+	 *  才被告知"转写内容为空"（静默吞音的第二段路）。带 outcome 后调用方可当场判死并重录。 */
+	outcome: string
 
 	constructor(
 		text: string,
@@ -77,7 +82,8 @@ export class AsrResult {
 		durationMs: number,
 		mock: boolean,
 		guardPassed: boolean,
-		guardReason: string
+		guardReason: string,
+		outcome: string = 'succeeded'
 	) {
 		this.text = text
 		this.channel = channel
@@ -96,6 +102,7 @@ export class AsrResult {
 		this.mock = mock
 		this.guardPassed = guardPassed
 		this.guardReason = guardReason
+		this.outcome = outcome
 	}
 }
 
@@ -328,7 +335,9 @@ function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 						(d.getNumber('duration_ms') as number) ?? 0,
 						d.getBoolean('mock') ?? false,
 						passed,
-						guardReason
+						guardReason,
+						// B-08：带出后端处理结论（no_speech = 后端已判定数字零/无语音）
+						d.getString('outcome') ?? 'succeeded'
 					)
 				)
 				return
@@ -391,6 +400,46 @@ function fileNameOf(path: string): string {
 	const idx = path.lastIndexOf('/')
 	return idx >= 0 ? path.substring(idx + 1) : path
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// B-08 / B-09（2026-10-24）：两块新能力已拆成独立文件，此处**只做转发**。
+//
+// 为什么拆：结构棘轮 `client/utils/*.uts` ≤800 行（`scripts/review_agent.py` 的 structure
+// 轴）。这两块是**独立能力**（wav 零能量判定 / 失败段持久队列），与录音编排无耦合 ⇒
+// 拆文件是正解，不该申请「新增超阈基线」（基线只留给渲染结构不可拆的 UVUE 组件）。
+//
+// 为什么用 `export { x } from` 而不是 `import` 后再 `export`：后者会让本文件多出一份
+// 本地绑定，UTS 对「同名类型再导出」曾触发 overload panic（平台 index.uts 那条教训同源）；
+// 具名再导出是编译期别名，不产生本地符号。
+//
+// 调用方（`composables/useVoiceRecord.uts`）继续从 `@/utils/voice` 取，**签名零变化**。
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── B-08：麦克风抢占 / 零能量判定（实现在 utils/voice_silence.uts）──
+export {
+	MSG_INTERRUPTED,
+	MSG_NO_SOUND,
+	SCAN_HAS_SIGNAL,
+	SCAN_SILENT,
+	SCAN_UNKNOWN,
+	scanWavSilence,
+	startRecordWatchdog,
+	stopRecordWatchdog,
+	VoiceScan
+} from './voice_silence'
+
+// ── B-09：转写失败队列 + 用户提示（实现在 utils/voice_failure.uts）──
+export {
+	addVoiceFailure,
+	promptVoiceInvalid,
+	promptVoiceRetry,
+	removeVoiceFailure,
+	VOICE_FAILED_KEY,
+	VoiceFailure,
+	voiceFailureCount,
+	voiceFailures
+} from './voice_failure'
+
 
 // ---- J-4 长录音分片持久化上传（复用 /upload 分片协议；单块 = 整文件） ----
 // 协议请求（init/chunk/complete + urlEncode/formPost/fieldOf）统一走 upload_protocol.ts（TD-P2B S1-H3）

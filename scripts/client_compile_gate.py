@@ -59,6 +59,41 @@ CLI_CANDIDATES = tuple(
 
 OK_MARKERS = ("编译成功", "ready in")
 FAIL_HINTS = ("编译失败", "语法错误", "SyntaxError", "Unexpected token", "未找到", "Cannot find")
+# ⚠️ 2026-10-24（假绿修复 · 实测事故）：
+# UTS 编译器（Rust 实现）遇到某些写法会**panic 后 abort 整个进程**，日志形如：
+#   thread '<unnamed>' panicked at crates/uts_transforms/src/overload.rs:232:25:
+#   internal error: entered unreachable code: overload error Some(Atom('Xxx' type=dynamic))
+#   thread caused non-unwinding panic. aborting.  ... 已停止运行...
+# 关键危险点：**panic 之前，前面已编译模块的产物已经被写入 unpackage/dist**，
+# 于是 `_artifact_touched_since()` 旁证分支判「产物已更新 ⇒ 成功」——
+# 实测就这样把一次真崩溃判成了 ok（当日 `readExifTakenMs` 事故，连骗两次）。
+# 所以：**任何 panic / abort / Rust 编译错误信号都必须单独识别为失败**，
+# 且优先级高于产物旁证（旁证只用于"日志没捕到但确实编成了"的情形）。
+CRASH_HINTS = (
+    "panicked at",
+    "non-unwinding panic",
+    "caused non-unwinding panic",
+    "aborting.",
+    "internal error: entered unreachable code",
+    # HBuilderX 在**编译进程死掉**后固定补这一句（正常「编译成功」后也会打，但它
+    # 与 OK_MARKERS 同时出现时以「编译成功」为准 —— 见下方判定顺序，故此处仅作信号）
+    "已停止运行",
+)
+# UTS/TS 编译诊断行：形如 `17:07:10.775 error: 参数类型不匹配…`
+# （HBuilderX 会在 `error:` 前加时间戳，并夹若干**零宽字符**，故不能简单用 `^error:`）。
+# 判定口径：整行在 `error:` 之前**只有**时间戳/标点/空白/零宽字符 ⇒ 是一条编译诊断。
+_DIAG_ERROR_RE = re.compile(r"^[\s\d:.\-]*error:")
+_ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200f\u2060\ufeff]")
+
+
+def _has_diag_error(out: str) -> bool:
+    """日志里是否存在编译诊断 `error:` 行。"""
+    for line in _ZERO_WIDTH_RE.sub("", out).splitlines():
+        if _DIAG_ERROR_RE.search(line.strip() + " "):
+            return True
+    return False
+
+
 # HBuilderX 未启动时 cli 的拒绝语（2026-10-14 实测）：它**不编译**、打印一句就退出。
 # 必须单独识别为"无法编译"——否则空日志会掉进产物旁证分支（那正是曾经假通过的入口）。
 NEED_OPEN_MARKERS = ("未检测到已打开的HBuilderX", "请先执行cli open")
@@ -180,34 +215,76 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
             "需先 `cli open`（本门已尝试自动拉起但未成功）后重跑。",
         )
 
-    ok = any(m in out for m in OK_MARKERS)
-    bad = any(h in out for h in FAIL_HINTS)
+    verdict = judge_log_text(
+        out,
+        elapsed=elapsed,
+        exit_code=code,
+        timeout_s=timeout_s,
+        artifact_touched=_artifact_touched_since(started_wall),
+    )
+    if verdict is not None:
+        return verdict
 
-    if ok:
+
+def judge_log_text(
+    out: str,
+    *,
+    elapsed: float,
+    exit_code: int,
+    timeout_s: int,
+    artifact_touched: str,
+) -> tuple[str, str]:
+    """**纯函数**判定编译结果（不碰文件系统/进程，便于单测与负向探针）。
+
+    ## 判定优先级（顺序本身就是本函数的规格）
+
+    1. **崩溃信号**（`CRASH_HINTS`）⇒ fail。UTS 编译器（Rust）panic 后 abort 整个进程，
+       日志里会出现 `panicked at ...`；此时**前面模块的产物已经落盘**，
+       若先看产物旁证就会判成功 —— 2026-10-24 实测连骗两次（`readExifTakenMs` 事故）。
+    2. **编译诊断错误**（行首 `error:`）⇒ fail。与 `编译成功` 不应共存。
+    3. **成功标记**（`编译成功`/`ready in`）⇒ ok。
+    4. **产物旁证**（日志没捕到 + 产物在本次调用后更新且无失败特征）⇒ ok。
+    5. 超时 ⇒ fail；有失败特征 ⇒ fail；其余 ⇒ fail（**判为「未验证」，不默认通过**）。
+
+    ⚠️ 为什么 1/2 必须**优先于** 3：HBuilderX 日志是追加式的，一次崩溃的日志里可能仍留着
+    上一次成功的 `ready in ...ms`；也正因如此，把「成功标记」放前面会掩盖真实失败。
+    """
+    tail = "\n".join([ln for ln in out.splitlines() if ln.strip()][-12:]) or "（日志为空）"
+
+    # 1. 崩溃信号（`已停止运行` 单独不算 —— 正常成功后 HBuilderX 也会打这句）
+    crash = [h for h in CRASH_HINTS if h in out and h != "已停止运行"]
+    if crash:
+        return (
+            "fail",
+            f"UTS 编译器崩溃（命中 {crash}）——**编译在崩溃处中断，产物不完整**：\n{tail}",
+        )
+
+    # 2. 编译诊断错误
+    if _has_diag_error(out):
+        return "fail", f"客户端编译出错（含 `error:` 诊断行）：\n{tail}"
+
+    # 3. 成功标记
+    if any(m in out for m in OK_MARKERS):
         m = re.search(r"ready in (\d+)ms", out)
         cost = f"{m.group(1)}ms" if m else f"{elapsed:.1f}s"
-        return "ok", f"客户端编译成功（{cost}）；日志 {LOG_PATH.relative_to(REPO)}"
+        return "ok", f"客户端编译成功（{cost}）"
 
-    # 双判据兜底：cli 委派给现有实例时日志可能**写在 HBuilderX 自己的日志里**而本文件为空。
-    # 此时看**编译产物**是否在本次调用后更新过（编译成功必然触碰 unpackage/dist/dev）。
-    # ⚠️ 时间基准必须是**墙上时钟**（见 `started_wall` 处注释：原来传 monotonic 导致恒真 ⇒ 假通过）。
-    touched = _artifact_touched_since(started_wall)
-    if touched and not bad:
+    # 4. 产物旁证（仅在前面都没有崩溃/错误信号时才有资格成立）
+    if artifact_touched and not any(h in out for h in FAIL_HINTS):
         return (
             "ok",
             "未捕获到编译日志（cli 委派给运行中的 HBuilderX），但编译产物已在本次调用后更新"
-            f"（{touched}）⇒ 判为成功",
+            f"（{artifact_touched}）⇒ 判为成功",
         )
 
-    if code == -1:
-        return "fail", f"编译超时（>{timeout_s}s）——日志见 {LOG_PATH.relative_to(REPO)}"
-
-    tail = "\n".join([ln for ln in out.splitlines() if ln.strip()][-12:]) or "（日志为空）"
-    if bad:
-        return "fail", f"客户端编译失败（退出码 {code}）：\n{tail}"
+    # 5. 其余一律不通过
+    if exit_code == -1:
+        return "fail", f"编译超时（>{timeout_s}s）：\n{tail}"
+    if any(h in out for h in FAIL_HINTS):
+        return "fail", f"客户端编译失败（退出码 {exit_code}）：\n{tail}"
     return (
         "fail",
-        f"编译结果**无法判定**（无成功标记、产物也未更新 ⇒ 按「未验证」处理，退出码 {code}）：\n{tail}",
+        f"编译结果**无法判定**（无成功标记、产物也未更新 ⇒ 按「未验证」处理，退出码 {exit_code}）：\n{tail}",
     )
 
 

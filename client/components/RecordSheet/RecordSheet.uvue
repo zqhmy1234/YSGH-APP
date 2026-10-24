@@ -280,6 +280,12 @@
 	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+	// 2026-10-24（B-12）：读真实拍摄时刻（EXIF DateTimeOriginal）。
+	// 走插件根 `createPhotoWatch()`（与 TabIndex.uvue 同款已验证路径），再调实例方法
+	// `getPhotoTakenAt()` —— **不是自由函数**：自由函数版会触发 UTS 编译器 overload panic
+	// （overload.rs:232，理由见 interface.uts 该方法注释），类方法返回 number 才是跑通的形态。
+	// 取不到时返回 0 = 时间未知哨兵，**绝不回填 Date.now()**。
+	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
 // 2026-10-16（批次 6）：watch 自 'vue' 显式引入（语音保存 loading 的复位监听，见文件尾 submitVoice）
 import { watch } from 'vue'
 
@@ -684,9 +690,38 @@ import { watch } from 'vue'
 		const fixLat: number | null = fix != null ? fix.lat : null
 		const fixLng: number | null = fix != null ? fix.lng : null
 		const items: Array<PhotoItem> = []
+		// 2026-10-24（B-12 修）：**拍摄时刻不再用保存时刻冒充**。
+		// 旧实现 `new PhotoItem(-(now + i), path, now, ...)` 把 takenAt 直接写成 Date.now() ⇒
+		// 「从相册补记三年前的老照片」在时间轴/去年今日里一律落到今天（假数据，且端侧聚合按
+		// takenAt 分日卡 ⇒ 会落错卡）。现逐张读 EXIF DateTimeOriginal：
+		//   · 读到 ⇒ 真实拍摄时刻；
+		//   · 读不到 ⇒ **0（时间未知哨兵）**，绝不回填 now —— 后端 meta.taken_at 会**省略**该键，
+		//     contents.taken_at 留 NULL，界面按「时间未知」展示（见 uploader_photo 与下方 setInfoTime）。
+		let unknownCount = 0
+		// 每个 panel 生命周期内取一次实例即可（createPhotoWatch 是轻量工厂，但没必要循环里建）
+		const exifWatch = createPhotoWatch()
 		for (let i = 0; i < photos.value.length; i++) {
 			const sz = i < photoSizes.value.length ? photoSizes.value[i] : 0
-			items.push(new PhotoItem(-(now + i), photos.value[i], now, 0, 0, fixLat, fixLng, sz))
+			const p = photos.value[i]
+			let takenAt = 0
+			try {
+				takenAt = exifWatch.getPhotoTakenAt(p)
+			} catch (e) {
+				// 标准基座无原生插件 / 平台不支持：如实按未知处理（不静默伪造 now）
+				console.log('[yishu] getPhotoTakenAt 不可用（按时间未知处理）: ' + e)
+				takenAt = 0
+			}
+			if (takenAt <= 0) {
+				unknownCount++
+			}
+			// id 仍用负时间戳占位（手动选图无 MediaStore id；上传只用 path/size/takenAt）——
+			// 与 takenAt 是两个字段，互不影响（原实现在这里**共用**了 now，才让假时间传播出去）。
+			items.push(new PhotoItem(-(now + i), p, takenAt, 0, 0, fixLat, fixLng, sz))
+		}
+		if (unknownCount > 0) {
+			// 不静默：既进日志（真机可查），也在保存后如实告知（见下方 toast 文案）
+			console.log('[yishu] 照片拍摄时间未知 ' + unknownCount + '/' + items.length
+				+ ' 张（EXIF 无 DateTimeOriginal）⇒ takenAt=0，不伪造为现在')
 		}
 		// 2026-10-14（台账 §7.17）：提交前快照手选分类——原实现只清空、**从不提交**。
 		const picked = manualLabel.value

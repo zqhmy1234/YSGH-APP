@@ -1,0 +1,37 @@
+/**
+ * 忆述光华 · 相册监听插件 · SharedPreferences 访问层（2026-10-24 拆分）
+ *
+ * 为什么单独成文件：B-18 两阶段提交把「游标 / pending 标记」的读写从 index.uts 里抽了出来，
+ * 两个文件都要用**同一个** SharedPreferences 文件与**同一套** key —— 这类"共享基础设施"
+ * 必须是单一实现，否则拆完就是两份 key 常量、迟早漂移（本项目已有双份常量漂移的历史教训）。
+ *
+ * 约定：本文件只做「拿到 Context / 拿到 prefs / 声明 key」，不含任何业务判定。
+ */
+
+/** 插件私有 SharedPreferences 文件名（游标、pending 标记都存这里） */
+const PREFS_NAME = 'yishu_photo_watch'
+
+/** 已提交游标：上一批**已被确认接管**的最后一张照片 _id */
+export const KEY_LAST_SEEN = 'last_seen_photo_id'
+/** pending 批次的重扫起点（= 本批扫描起点，即上一批已提交的游标） */
+export const KEY_PENDING_FROM = 'pending_batch_from'
+/** pending 批次的最大 _id（ack 成功后用它推进 KEY_LAST_SEEN） */
+export const KEY_PENDING_MAX = 'pending_batch_max'
+
+let _appContext: android.content.Context | null = null
+
+/** 应用 Context（进程级缓存）。UTSAndroid.getAppContext() 声明为非空，直接返回其值。 */
+export function appContext(): android.content.Context {
+	const cached = _appContext
+	if (cached != null) {
+		return cached
+	}
+	const created = UTSAndroid.getAppContext()
+	_appContext = created
+	return created!
+}
+
+/** 本插件私有 SharedPreferences */
+export function prefs(): android.content.SharedPreferences {
+	return appContext().getSharedPreferences(PREFS_NAME, 0)
+}

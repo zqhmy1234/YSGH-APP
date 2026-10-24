@@ -25,7 +25,19 @@ export class PhotoItem {
 	id: number
 	/** 文件绝对路径（DATA） */
 	path: string
-	/** 拍摄时间 epoch 毫秒（EXIF → DATE_TAKEN → DATE_ADDED 优先级） */
+	/**
+	 * 拍摄时间 epoch 毫秒（EXIF → DATE_TAKEN → DATE_ADDED 优先级）。
+	 *
+	 * ⚠️ 2026-10-24（B-12）：**`0` 是「时间未知」的显式哨兵，不是「1970 年」也不是「现在」**。
+	 * 三档语义必须区分开（端侧聚合按 takenAt 分日卡，混了就会静默落错卡）：
+	 *   · `> 0`  真实拍摄时刻；
+	 *   · `== 0` 未知（EXIF 取不到 / 手动选图读不到 DateTimeOriginal）；
+	 *   · `< 0`  本仓库历史上有「负时间戳作临时 id」的用法，**takenAt 不应为负**，遇到按未知处理。
+	 *
+	 * 消费方义务：`== 0` 时**不得**把它当「现在」静默使用 ——
+	 * 上传侧应**省略** `meta.taken_at`（后端留 NULL，由 `created_at` 兜底），
+	 * 端侧聚合若必须给个值入卡，要在日志/UI 上**显式标记 fallback**（见 agg_runner 的 timeFallback 计数）。
+	 */
 	takenAt: number
 	/** 宽（WIDTH，API 29+ 有值） */
 	width: number
@@ -50,8 +62,21 @@ export class PhotoItem {
 	}
 }
 
-/** 攒批回调：一批新照片（已按静默窗口去重） */
-export type PhotoBatchCallback = (items: Array<PhotoItem>) => void
+/**
+ * 攒批回调：一批新照片（已按静默窗口去重）。
+ *
+ * ⚠️ 2026-10-24（B-18 两阶段提交）：**返回类型由 void 改为 boolean**，语义 =
+ * 「本批是否已被调用方**持久接管**」：
+ *   · 返回 true  ⇒ 插件立刻推进游标（last_seen）并清除 pending 标记；
+ *   · 返回 false ⇒ **不推进游标**、保留 pending 标记 —— 调用方承诺稍后用
+ *     `ackBatch(true/false)` 给出最终结论（异步上传属于这一类：同步返回时还不知道成败）。
+ *   · 抛异常     ⇒ 同 false（且立刻放弃等待，下一批变更事件即重扫，不必等 ack）。
+ *
+ * 为什么必须有返回值（原实现没有，是 B-18 的根因）：游标先推进再回调 ⇒ 回调里上传失败时
+ * 这批照片的 _id 已被跳过，**以后永远扫不到**（断网拍一张就永久丢）。
+ * 现在「推进游标」= 「本批已被可重试的持久队列接管」这一事实的**显式承诺**，而不是猜测。
+ */
+export type PhotoBatchCallback = (items: Array<PhotoItem>) => boolean
 
 /**
  * 权限申请结果回调（D-24 引入）。
@@ -72,6 +97,27 @@ export interface PhotoWatch {
 	stop(): void
 	/** 读取当前游标（last_seen photo _id，用于 UI 展示状态） */
 	getLastSeenId(): number
+	/**
+	 * 确认/否决**当前待确认批次**（B-18 两阶段提交的第二个阶段）。
+	 *
+	 * 什么时候必须调用：`PhotoBatchCallback` 返回了 `false`（本批异步消费中，典型=上传还没结果）时，
+	 * 调用方在拿到结论后**必须且只需**调用一次：
+	 *   - `ackBatch(true)`  = 本批已被持久接管（上传成功，**或**已落 held/failed 重试队列）⇒
+	 *                        插件推进游标到本批上界并清 pending，后续不再重扫；
+	 *   - `ackBatch(false)` = 本批未被接管（例如失败且没进任何重试队列）⇒ 游标不动，
+	 *                        下次扫描从原游标重扫（照片不会丢）。
+	 * 返回 `false` = 当时没有待确认批次（已被同步提交或已被 ack 看门狗兜底），调用方可据此打点。
+	 */
+	ackBatch(consumeOk: boolean): boolean
+	/** 当前是否存在待确认批次（诊断/宿主状态展示；true ⇒ 照片还在「未确认」区，可能被重扫） */
+	hasPendingBatch(): boolean
+	/** 待确认批次的扫描起点 `_id`（无 pending 时返回当前游标；诊断用，便于定位重扫范围） */
+	getPendingFromId(): number
+	/**
+	 * 手动重扫一次（用户主动「重试」时用）：以 pending 起点为扫描起点跑一次，
+	 * **不推进游标**。无 pending 时退化为常规增量扫描。
+	 */
+	rescanPending(): void
 	/**
 	 * 请求相册读取权限（弹系统框）。
 	 * 权限名按设备实际 SDK 选择：13+ → READ_MEDIA_IMAGES，以下 → READ_EXTERNAL_STORAGE。
@@ -103,6 +149,28 @@ export interface PhotoWatch {
 	isForegroundServiceActive(): boolean
 	/** 当前前台服务激活类型（互斥状态查询） */
 	getActiveType(): ForegroundActiveType
+	/**
+	 * 读一张照片的**真实拍摄时间**（EXIF `DateTimeOriginal` → epoch ms）。B-12。
+	 *
+	 * 为什么需要（B-12）：手动选图走 `uni.chooseImage`，拿到的是沙箱临时文件、
+	 * **没有 MediaStore 元数据**，旧实现只能拿 `Date.now()` 冒充「拍摄时刻」——
+	 * 于是「补记三年前的老照片」在时间轴上一律落到今天（拍摄时间 = 保存时间，是假数据）。
+	 *
+	 * @param path 照片文件路径（沙箱临时文件路径 / MediaStore 绝对路径均可，只要能读到 EXIF）
+	 * @return 真实拍摄时刻 epoch ms；**读不到返回 `0`**（= 时间未知，见 `PhotoItem.takenAt` 的三档语义）。
+	 *         绝不返回「现在」——那正是本缺陷要消灭的伪造。
+	 *
+	 * ⚠️ 2026-10-24 为什么是**实例方法**而不是自由函数：
+	 * 初版写成顶层 `export function readExifTakenMs(path): number`（+ 本文件同名声明），
+	 * 触发 UTS 编译器 overload 解析 panic（HBuilderX 5.26）：
+	 *   crates/uts_transforms/src/overload.rs:232:25:
+	 *   internal error: entered unreachable code: overload error
+	 *   Some(Atom('readExifTakenMs' type=dynamic))  ⇒ 编译进程直接 abort。
+	 * 试过 `as number` / `toDouble()` / `0.0` 三种返回值写法**都崩** ⇒ 不是 Long/Double 转换问题，
+	 * 是**顶层自由函数跨文件重载推断**的问题。而类成员方法返回 number 是本插件已验证跑通的形态
+	 * （`getLastSeenId(): number` / `getPendingFromId(): number` 一直在用），故改为实例方法。
+	 */
+	getPhotoTakenAt(path: string): number
 }
 
 /** 创建相册监听器实例（跨端工厂，平台目录实现） */

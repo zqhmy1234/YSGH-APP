@@ -437,9 +437,15 @@ def test_pipeline_answer_timeout_protects_main_path(stub_pipeline, monkeypatch):
 
     invoked: list[int] = []
 
+    # 2026-10-24（A-11）：上限由 1.0s 调到 2.5s（实测 1.35~1.75s 可交付回答）。
+    # 本用例的「慢」必须**相对当前上限**定义，否则改上限就会让用例过期
+    # （原来 sleep 2.0s，上限抬到 2.5s 后慢调用反而自然结束 ⇒ 断言失效）。
+    # 故改为「上限 + 1.5s 的慢」，并相应地按上限推上界。
+    _slow_s = sa.ANSWER_TIMEOUT_SECONDS + 1.5
+
     def slow_chat(system, user):
         invoked.append(1)
-        _time.sleep(2.0)  # 故意远超 1.0s 上限
+        _time.sleep(_slow_s)  # 故意远超当前上限
         return '{"answer": "早该被超时截断", "sources": [0]}'
 
     monkeypatch.setattr(sa, "llm_available", lambda: True)
@@ -449,8 +455,11 @@ def test_pipeline_answer_timeout_protects_main_path(stub_pipeline, monkeypatch):
     result = rag.search(SearchQuery(q="去年夏天去哪了", limit=3, want_answer=True))
     elapsed = _time.perf_counter() - t0
 
-    assert invoked == [1], "慢 LLM 必须被真正调用，否则 1.0s 上限未被检验"
+    assert invoked == [1], "慢 LLM 必须被真正调用，否则上限未被检验"
     assert result.answer is None
     assert result.degraded is True
-    # 上界 < 2s 的慢调用 ⇒ 证明是 1.0s 上限截断、而非等慢调用自然结束
-    assert elapsed < 1.5, f"应被 1.0s 上限截断（远早于 2s 慢调用），实测 {elapsed:.2f}s"
+    # 上界 = 上限 + 0.5s 余量 ⇒ 证明是**超时截断**、而非等慢调用自然结束（后者要 _slow_s 秒）
+    _upper = sa.ANSWER_TIMEOUT_SECONDS + 0.5
+    assert elapsed < _upper, (
+        f"应被 {sa.ANSWER_TIMEOUT_SECONDS}s 上限截断（远早于 {_slow_s}s 慢调用），实测 {elapsed:.2f}s"
+    )

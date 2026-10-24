@@ -1,0 +1,327 @@
+/**
+ * 语音静音/中断判定（B-08 修复 · 2026-10-24 自 `utils/voice.uts` 拆出）
+ *
+ * 拆出原因：结构棘轮（`client/utils/*.uts` ≤800 行）。本块是**独立能力**（wav 零能量扫描
+ * + 录音中断轮询自检），与 `voice.uts` 的录音编排/转写/上传无耦合，故独立成文件而非申请基线。
+ *
+ * ⚠️ **刻意不 import `voice.uts`**：`voice.uts` 要 re-export 本模块 ⇒ 反向 import 会形成模块环
+ * （UTS 编译器对环的处理未经验证，本仓已有"type 再导出触发 overload panic"的先例）。
+ * 这里改为直接向插件要**同一个单例** controller（`createRecorder()` 是插件里的模块级单例），
+ * 拿到与 `voice.uts` 完全相同的 `state()` / `recordedMs()`，行为等价且无环。
+ */
+import { createRecorder, REC_STATE_IDLE, REC_STATE_INTERRUPTED, REC_STATE_PAUSED } from '@/uni_modules/yishu-recorder'
+import { addBreadcrumb } from './sentry'
+
+// 类型不显式标注（同 `voice.uts:110` 的 `let _controller = createRecorder()` 写法）：
+// 插件只把 `RecorderController` 作**类型**再导出，UTS 里当值/类型混用时曾触发 overload panic
+// （本仓"平台 index.uts 不要 export * from interface.uts"那条教训同源）。推断类型最稳。
+let _recorder = createRecorder()
+
+/** 当前录音状态（同 `voice.uts::recorderState`） */
+function recorderState(): string {
+	return _recorder.state()
+}
+
+/** 累计录音时长（同 `voice.uts::recordedMs`） */
+function recordedMs(): number {
+	return _recorder.recordedMs()
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// B-08 修复（2026-10-24）：麦克风被抢占时**禁止静默吞音**
+//
+// 缺陷本体（台账 B-08 / tracker19 D-06）：来电/相机/其他 App 抢麦时，uni
+// `RecorderManager` **既不给 onError 也不给 onInterruptionBegin**（闹钟/相机两路真机实证），
+// 停录后落盘的 wav 里全是数字零。而旧链路把这个"全零 wav"当正常录音继续走转写，
+// 后端 `_wav_is_digital_silence` 判 `no_speech` 返回 text=""，客户端**又不读 outcome**
+// ⇒ 进预览态显示一张**空白卡片**，用户直到点「确定」才看到"转写内容为空"。
+// 一句话：不是"录不到音"，是"录不到还让用户以为录上了"。
+//
+// 修法（任务卡要求三条至少前两条，本文件实现全部三条的判定/提示侧）：
+//   ① 录音中**轮询自检**（`startRecordWatchdog`）：状态机与计时双重探活——UTC 计时停走
+//      或原生态无声变 idle 即判"中断"，不等原生回调（它本来就不会来）。
+//   ② 停录后**零能量看门狗**（`scanWavSilence`）：读 wav 采样做客观判定，
+//      全零/近零 ⇒ `silent`，**不提交、明确告知**；判不了 ⇒ `unknown`（如实放行给后端判定）。
+//   ③ **显式提示 + 重录入口**（本文件提供文案常量与判定结果，宿主用 modal/toast 呈现）。
+//
+// 判定阈值与后端 `audio.py::_wav_is_digital_silence` **逐字对齐**（|sample| > 4 即算有声），
+// 避免"端侧说有声音、后端说没声音"两套事实。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 三态判定（**禁止把 unknown 当任何一方**——读不到就如实交回后端判） */
+export const SCAN_HAS_SIGNAL: string = 'has_signal'
+export const SCAN_SILENT: string = 'silent'
+export const SCAN_UNKNOWN: string = 'unknown'
+
+/** 零能量阈值：与后端 `_wav_is_digital_silence` 的 `abs(sample) > 4` 一致 */
+const SIGNAL_THRESHOLD: number = 4
+/** 扫描上限（超限即 unknown：长录音走分片持久化 + 云端 VAD，不在此处判生死） */
+const SCAN_MAX_BYTES: number = 12 * 1024 * 1024
+/** 采样点上限（每点 2 字节 ⇒ 约 4MB PCM） */
+const SCAN_MAX_SAMPLES: number = 2000000
+/** 中断轮询周期（任务卡建议 500ms） */
+const WATCHDOG_INTERVAL_MS: number = 500
+/** 计时停走判据：连续这么多周期无推进 ⇒ 判中断（2.5s 足够区分"卡一下"与"真停了"） */
+const WATCHDOG_STALL_TICKS: number = 5
+
+/** 中断后给用户看的文案（抢占窗显式提示——**不许静默**） */
+export const MSG_INTERRUPTED: string = '录音被中断（可能来电），这段没有声音'
+/** 零能量判定后的文案 */
+export const MSG_NO_SOUND: string = '这段没有录到声音，请重新录'
+
+/** wav 零能量扫描结论（三态 + 证据字段，便于真机取证） */
+export class VoiceScan {
+	/** SCAN_HAS_SIGNAL / SCAN_SILENT / SCAN_UNKNOWN */
+	verdict: string
+	/** 观察到的峰值绝对幅度（0~32767；unknown 时无意义——先看 verdict） */
+	peak: number
+	/** 实际检查的采样点数 */
+	samples: number
+	/** 文件字节数（拿不到为 0） */
+	bytes: number
+	/** unknown 的原因（有结论时为空串）；**只用于日志/取证，不直接给用户看** */
+	reason: string
+
+	constructor(verdict: string, peak: number, samples: number, bytes: number, reason: string) {
+		this.verdict = verdict
+		this.peak = peak
+		this.samples = samples
+		this.bytes = bytes
+		this.reason = reason
+	}
+}
+
+function scanUnknown(reason: string, bytes: number): VoiceScan {
+	// unknown 一律留痕：真机上"没有日志"等于查不清（本仓铁律：降级要可观测）
+	addBreadcrumb('voice', 'silence-scan UNKNOWN: ' + reason + ' bytes=' + bytes)
+	return new VoiceScan(SCAN_UNKNOWN, 0, 0, bytes, reason)
+}
+
+/** 小端 16bit 有符号采样 */
+function sampleAt(b: Uint8Array, i: number): number {
+	const u = b[i] + b[i + 1] * 256
+	return u >= 32768 ? u - 65536 : u
+}
+
+/** 小端 u32（wav chunk size） */
+function u32le(b: Uint8Array, i: number): number {
+	return b[i] + b[i + 1] * 256 + b[i + 2] * 65536 + b[i + 3] * 16777216
+}
+
+/** 4 字节 ASCII 比较（避免 String.fromCharCode——UTS 端行为未验证，用码值最稳） */
+function matchTag(b: Uint8Array, i: number, c0: number, c1: number, c2: number, c3: number): boolean {
+	return b[i] == c0 && b[i + 1] == c1 && b[i + 2] == c2 && b[i + 3] == c3
+}
+
+/**
+ * 零能量看门狗：读 wav 采样，判定这段是不是**数字零**。
+ *
+ * 与后端 `_wav_is_digital_silence` 同口径（|sample| > 4 即有信号）。
+ * 双窗口采样（头部 + 尾部各最多 ~100 万点）：抢占/中断多发生在中后段，只看头会漏。
+ * resolve-only（永不 reject）。
+ */
+export function scanWavSilence(filePath: string): Promise<VoiceScan> {
+	return new Promise<VoiceScan>((resolve) => {
+		if (filePath == '') {
+			resolve(scanUnknown('filePath 为空', 0))
+			return
+		}
+		const fs = uni.getFileSystemManager()
+		fs.getFileInfo({
+			filePath: filePath,
+			success: (info) => {
+				const size = info.size
+				if (size <= 0) {
+					resolve(scanUnknown('文件大小为 0（录音未落盘）', size))
+					return
+				}
+				if (size > SCAN_MAX_BYTES) {
+					resolve(scanUnknown('文件过大跳过扫描 size=' + size, size))
+					return
+				}
+				fs.readFile({
+					filePath: filePath,
+					success: (res) => {
+						let bytes: Uint8Array | null = null
+						try {
+							// 不传 encoding ⇒ Android 4.31+ 返回 ArrayBuffer（官方 dts 明载）
+							bytes = new Uint8Array(res.data as ArrayBuffer)
+						} catch (e) {
+							bytes = null
+						}
+						const buf = bytes
+						if (buf == null) {
+							resolve(scanUnknown('readFile 未返回 ArrayBuffer（无法读原始采样）', size))
+							return
+						}
+						resolve(scanPcm(buf, size))
+					},
+					fail: () => {
+						resolve(scanUnknown('readFile 失败（沙箱不可读）', size))
+					}
+				})
+			},
+			fail: () => {
+				resolve(scanUnknown('getFileInfo 失败（文件已不在）', 0))
+			}
+		})
+	})
+}
+
+/** 纯字节逻辑（与 IO 分离：便于逻辑推演与后续单测） */
+function scanPcm(b: Uint8Array, size: number): VoiceScan {
+	if (b.length < 44) {
+		return scanUnknown('文件过短（<44 字节，仅头部）', size)
+	}
+	// RIFF / WAVE 魔数
+	if (!matchTag(b, 0, 82, 73, 70, 70) || !matchTag(b, 8, 87, 65, 86, 69)) {
+		return scanUnknown('非 RIFF/WAVE 容器', size)
+	}
+	let off = 12
+	let bits = 16
+	let dataStart = -1
+	let dataLen = 0
+	while (off + 8 <= b.length) {
+		const csize = u32le(b, off + 4)
+		if (matchTag(b, off, 102, 109, 116, 32)) { // "fmt "
+			if (off + 8 + 16 <= b.length) {
+				bits = b[off + 8 + 14] + b[off + 8 + 15] * 256
+			}
+		} else if (matchTag(b, off, 100, 97, 116, 97)) { // "data"
+			dataStart = off + 8
+			dataLen = csize > 0 ? csize : b.length - dataStart
+			const avail = b.length - dataStart
+			if (dataLen > avail) {
+				dataLen = avail
+			}
+			break
+		}
+		if (csize <= 0) {
+			break
+		}
+		off = off + 8 + csize + (csize % 2) // chunk 偶数字节对齐
+	}
+	if (dataStart < 0 || dataLen <= 0) {
+		return scanUnknown('未找到 data chunk（wav 未写完/被截断）', size)
+	}
+	if (bits != 16) {
+		// 只认 16bit PCM（录音链契约 16k/16bit/单声道）；其他位深不自作聪明，交回后端
+		return scanUnknown('非 16bit PCM（bits=' + bits + '）', size)
+	}
+
+	const total = (dataLen - (dataLen % 2)) / 2
+	const window = Math.floor(SCAN_MAX_SAMPLES / 2)
+	const headCount = total <= window * 2 ? total : window
+	let peak = 0
+	let checked = 0
+	for (let n = 0; n < headCount; n++) {
+		const s = sampleAt(b, dataStart + n * 2)
+		const a = s < 0 ? -s : s
+		if (a > peak) {
+			peak = a
+		}
+		checked++
+		if (a > SIGNAL_THRESHOLD) {
+			return new VoiceScan(SCAN_HAS_SIGNAL, a, checked, size, '')
+		}
+	}
+	if (total > window) {
+		const tailStart = total - window
+		for (let n = tailStart; n < total; n++) {
+			const s = sampleAt(b, dataStart + n * 2)
+			const a = s < 0 ? -s : s
+			if (a > peak) {
+				peak = a
+			}
+			checked++
+			if (a > SIGNAL_THRESHOLD) {
+				return new VoiceScan(SCAN_HAS_SIGNAL, a, checked, size, '')
+			}
+		}
+	}
+	// 检查过的窗口内没有任何采样超过阈值 ⇒ 数字零/近零（**客观证据，不是猜测**）
+	addBreadcrumb('voice', 'silence-scan SILENT peak=' + peak + ' samples=' + checked + ' bytes=' + size)
+	return new VoiceScan(SCAN_SILENT, peak, checked, size, '')
+}
+
+/**
+ * ① 录音中轮询自检（中断探活）。
+ *
+ * ## 为什么必须"轮询"而不能等回调
+ * D-06 真机两轮实证：抢麦时 `onInterruptionBegin` / `onError` **一个都不来**。
+ * 等回调 = 等到用户点结束才发现手里是零。
+ *
+ * ## 能查什么 / 不能查什么（如实标注）
+ * - **能查**：① 原生态是否**无声变 idle**（录音器被回收/释放，`recorderState()` 掉回 idle）；
+ *   ② 累计时长是否**停走**（插件 `recordedMs()` 在暂停/中断时冻结——静默暂停会露出来）。
+ * - **不能查**：麦克风是否真的在采到声音。5.24 dts 里 `onFrameRecorded` 的 app-android
+ *   支持标记是 `x`（不可用），拿不到逐帧电平 ⇒ **端侧无法在录音过程中证明有声音**。
+ *   故真正的"没录上"判据落在 ②（停录后看 wav 采样，客观、确定性）。
+ *
+ * 单例：插件只有一个 `_controller`，同一时刻只可能有一段录音 ⇒ 模块级状态足够
+ * （同 `location.uts` 的模块单例惯用法；避免在 UTS 里用函数类型字段，那没有先例）。
+ *
+ * ⚠️ 假阳性防护（P0 级）：用户手动暂停 / 原生已报中断时 `recordedMs()` 本来就是冻结的，
+ * 此时**只清计数不判定**——否则正常暂停会在 2.5s 后被误报"录音被中断"（假阳性比缺陷更糟）。
+ */
+let _wdTimer: number = 0
+let _wdLastMs: number = -1
+let _wdStallTicks: number = 0
+/** 中断判定回调（单例，随 start/stop 成对设置/清空） */
+let _wdOnStall: ((reason: string) => void) | null = null
+
+/** 起轮询自检（幂等：重复调用先收旧定时器） */
+export function startRecordWatchdog(onStall: (reason: string) => void): void {
+	stopRecordWatchdog()
+	_wdOnStall = onStall
+	_wdLastMs = -1
+	_wdStallTicks = 0
+	_wdTimer = setInterval(() => {
+		const cb = _wdOnStall
+		if (cb == null) {
+			return
+		}
+		const st = recorderState()
+		if (st == REC_STATE_PAUSED || st == REC_STATE_INTERRUPTED) {
+			// 假阳性防护：暂停态本来就冻结计数（见函数头注释）
+			_wdStallTicks = 0
+			_wdLastMs = -1
+			return
+		}
+		if (st == REC_STATE_IDLE) {
+			// 原生态无声变 idle：录音器已被系统回收/释放（抢麦常见后果之一）
+			console.log('[yishu] watchdog: 原生态无声变 idle ⇒ 判中断')
+			stopRecordWatchdog()
+			cb('state became idle without callback')
+			return
+		}
+		const ms = recordedMs()
+		if (_wdLastMs < 0) {
+			// 暂停恢复后重新起算（避免把"暂停期间没动"算成 stall）
+			_wdLastMs = ms
+			_wdStallTicks = 0
+			return
+		}
+		if (ms <= _wdLastMs) {
+			_wdStallTicks++
+			if (_wdStallTicks >= WATCHDOG_STALL_TICKS) {
+				console.log('[yishu] watchdog: 累计时长停走 ' + _wdStallTicks + ' 拍 ⇒ 判中断')
+				stopRecordWatchdog()
+				cb('recordedMs stalled at ' + ms)
+			}
+			return
+		}
+		_wdStallTicks = 0
+		_wdLastMs = ms
+	}, WATCHDOG_INTERVAL_MS) as number
+}
+
+/** 收轮询自检（停录 / 回滚 / 放弃 / 卸载各路径**都必须**调，否则定时器泄漏） */
+export function stopRecordWatchdog(): void {
+	if (_wdTimer != 0) {
+		clearInterval(_wdTimer)
+		_wdTimer = 0
+	}
+	_wdOnStall = null
+	_wdLastMs = -1
+	_wdStallTicks = 0
+}

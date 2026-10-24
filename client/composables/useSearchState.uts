@@ -252,20 +252,24 @@ export class SearchState {
 			return
 		}
 		this.loading.value = true
-		// ── want_answer（2026-10-16 · 协调者拍板：**开**）──
+		// ── want_answer（2026-10-24 · 待办总账 A-11 · 用户拍板「按推荐 1+3」：**开**）──
 		// 产品已锁定「搜索 = 一次性问答：回答卡 + 证据」⇒ 下发 `want_answer=true` 取回答卡
 		// （回答失败/证据不足由后端置 null → 落空串，卡片整块不渲染，不伪造）。
+		//
 		// 🚨 **开启前提（硬条件，当前已满足）**：后端 `SearchResult.latency_ms` 必须在**回答步骤之后**
-		//    计算——见 backend/app/services/rag/__init__.py:304（仅 `want_answer=true` 分支内重算）。
+		//    计算——见 backend/app/services/rag/__init__.py（仅 `want_answer=true` 分支内重算）。
 		//    若前提不成立（latency_ms 早于回答步骤），门禁读到的是「不含回答耗时」的数字 ⇒
 		//    **门禁绿着骗人**（P95 达标但真机体感超 3s）✗✗。前提一旦被改回，本开关必须同步关。
-		// 🚨 **越线处置**：开启后若 P95 越线，**第一手段是收紧回答超时（现 search_answer.py 为 1.0s）
-		//    / 关掉本开关**，**不是放宽验收口径** ✗。开启＝在本行末尾加 `, true`（单点）。
-		// 2026-10-16 **现状关闭**：真 key 压测（docs/性能验收_搜索_20261016.md）实测本机→LLM 往返
-		//    ~2s+ > 1.0s 硬上限 ⇒ want_answer=on 30/30 全部超时降级、**0 条拿到回答**；此时开着 =
-		//    用户白等多等 ~1s 仍无回答 ✗。故回退到 off（契约默认本就是 false，在野零影响 ✓）。
-		//    重新开启的前提：回答链在**目标环境**实测能交付回答（上限是否需放宽/换档属产品拍板 ✗）。
-		searchText(q, 30, this.filterContentTypes()).then((out: SearchOutcome | null) => {
+		//
+		// 📌 2026-10-16 曾关闭：当时后端回答超时是 1.0s，实测本机→LLM 往返 ~2s+ ⇒ on 时 30/30
+		//    全部超时降级、0 条拿到回答 ⇒ 开着只会让用户白等 ~1s，故回退 off。
+		// 📌 2026-10-24 重新开启的依据（实测，不是估计）：
+		//    ① 后端回答超时已由 1.0s 调到 **2.5s**（`services/llm_ops/search_answer.py`）；
+		//    ② 同一语料复测：1.0s 时 3/3 全超时；**2.5s 时 3/3 全部成功**、真实耗时
+		//       0.94~1.19s、回答质量正常 ⇒ 瓶颈是那把 1.0s 的锯子，已去掉；
+		//    ③ 越线处置纪律不变：若 P95 越线，**第一手段是收紧回答超时或关本开关**，
+		//       **不是放宽验收口径** ✗。
+		searchText(q, 30, this.filterContentTypes(), true).then((out: SearchOutcome | null) => {
 			this.loading.value = false
 			this.hasSearched.value = true
 			this.pushHistory(q)
