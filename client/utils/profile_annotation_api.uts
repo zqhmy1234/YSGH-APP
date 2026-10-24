@@ -1,0 +1,112 @@
+/**
+ * 画像标注池客户端 API（D-18 · 2026-10-25）
+ *
+ * ## 为什么需要这个文件
+ *
+ * 用户选了「诚实版详情页 + 待确认标注的确认入口」。后端端点本批已新建：
+ *   · `GET  /api/v1/profile/annotations`        —— 列出待确认（仅 pending）
+ *   · `POST /api/v1/profile/annotations/{id}`   —— 确认（写进画像）/ 否定
+ *
+ * ## 与 `play_interview.uts` 的分工
+ *
+ * `play_interview` 负责**已确认的画像**（`/interview/profile`）；
+ * 本文件负责**待确认的候选**（`/profile/annotations`）。两者是同一页面的两块数据，
+ * 但语义相反：前者是「事实」，后者是「AI 猜的、等你判断」。
+ *
+ * ## 降级语义（不撒谎）
+ *
+ * 网络失败 ⇒ 返回 `null` / `false`，由页面区分「没有待确认项」和「加载失败」，
+ * **不得把失败渲染成"暂无待确认"**（那会让用户以为 AI 什么都没猜出来）。
+ */
+
+import { get, post } from './api'
+import { PATH_PROFILE_ANNOTATIONS, PATH_PROFILE_ANNOTATION_DECIDE } from './contract'
+
+/** 一条待确认标注 */
+export class ProfileAnnotation {
+	id: number
+	dimension: string | null
+	candidateValue: string | null
+	confidence: number
+	rawText: string
+	createdAt: string | null
+
+	constructor(
+		id: number,
+		dimension: string | null,
+		candidateValue: string | null,
+		confidence: number,
+		rawText: string,
+		createdAt: string | null
+	) {
+		this.id = id
+		this.dimension = dimension
+		this.candidateValue = candidateValue
+		this.confidence = confidence
+		this.rawText = rawText
+		this.createdAt = createdAt
+	}
+}
+
+function toAnnotation(o: UTSJSONObject): ProfileAnnotation {
+	const id = o.getNumber('id')
+	const conf = o.getNumber('confidence')
+	return new ProfileAnnotation(
+		id == null ? 0 : id,
+		o.getString('dimension'),
+		o.getString('candidate_value'),
+		conf == null ? 0 : conf,
+		o.getString('raw_text') ?? '',
+		o.getString('created_at')
+	)
+}
+
+/**
+ * 拉取待确认标注。
+ *
+ * @param limit 最多几条（1~200，后端校验；默认 50）
+ * @return 数组；**网络失败返回 null**（与"空数组=确实没有"区分开）
+ */
+export function fetchProfileAnnotations(limit: number): Promise<Array<ProfileAnnotation> | null> {
+	return new Promise<Array<ProfileAnnotation> | null>((resolve) => {
+		get(PATH_PROFILE_ANNOTATIONS + '?limit=' + limit).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const data = res.getArray<UTSJSONObject>('data')
+			if (data == null) {
+				resolve(null)
+				return
+			}
+			const out = new Array<ProfileAnnotation>()
+			for (let i = 0; i < data.length; i++) {
+				const item = data[i]
+				if (item != null) {
+					out.push(toAnnotation(item))
+				}
+			}
+			resolve(out)
+		})
+	})
+}
+
+/**
+ * 确认或否定一条标注。
+ *
+ * @param id     标注 id
+ * @param action `confirmed`（对）/ `discarded`（不对）
+ * @param value  确认时可选：修正后的值（AI 猜「咖啡」，用户改成「奶茶」）
+ * @return 成功 true / 失败 false（**失败必须提示用户**，不能静默）
+ */
+export function decideProfileAnnotation(id: number, action: string, value: string | null): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		const body: UTSJSONObject = { action: action }
+		if (value != null && value != '') {
+			body['value'] = value
+		}
+		post(PATH_PROFILE_ANNOTATION_DECIDE.replace('{id}', id.toString()), body).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}

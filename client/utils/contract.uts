@@ -64,6 +64,10 @@ export const PATH_ECHO_TODAY: string = '/api/v1/echo/today'
 export const PATH_INTERVIEW_QUESTIONS: string = '/api/v1/interview/questions'
 export const PATH_INTERVIEW_ANSWERS: string = '/api/v1/interview/answers'
 export const PATH_INTERVIEW_PROFILE: string = '/api/v1/interview/profile'
+// D-18 画像标注池（2026-10-25 新建）：待确认列表 / 确认-否定
+// `{id}` 为路径占位，调用方自行 replace（与 PATH_SEARCH_ANSWER 同款约定）
+export const PATH_PROFILE_ANNOTATIONS: string = '/api/v1/profile/annotations'
+export const PATH_PROFILE_ANNOTATION_DECIDE: string = '/api/v1/profile/annotations/{id}'
 
 // ═══════════ 关键字段名（对齐 openapi.json DTO schema 属性名）═══════════
 

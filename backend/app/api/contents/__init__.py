@@ -574,6 +574,9 @@ from app.api.contents.agent import (  # noqa: E402, F401 —— W1 记忆镜像�
     delete_content_for_agent_by_cgid,  # noqa: E402, F401
 )
 from app.api.contents.favorites import favorites_router  # noqa: E402, F401
+from app.api.contents.profile_annotation import (  # noqa: E402, F401 —— D-18 画像标注池读+确认
+    router as profile_annotation_router,  # noqa: E402, F401
+)
 from app.api.contents.profile_sensitive import profile_sensitive_router  # noqa: E402, F401
 from app.api.contents.trash import trash_router  # noqa: E402, F401
 from app.api.contents.waveform import get_content_waveform  # noqa: E402, F401

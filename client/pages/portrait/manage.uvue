@@ -13,9 +13,12 @@
 	</view>
 
 		<scroll-view class="scroll" direction="vertical">
-			<!-- 画像概览卡片（W6 拍板 2026-09-04：画像详情页未设计，整卡不可点；
-			     「画像详情页」已登记远期总账 B 类，出设计稿后再接） -->
-			<view class="profile-card">
+			<!-- 画像概览卡片（D-18 · 2026-10-25：**已可点**，跳 `pages/portrait/detail`）。
+			     原注释「W6 拍板 2026-09-04：画像详情页未设计，整卡不可点」已失效 ——
+			     详情页已按「诚实版」落地（只展示有依据的 + 待确认候选可确认/否定）。
+			     ⚠️ 该页**不是视觉稿还原**：数据实测 403 用户平均仅 3.7 个维度有值，
+			     故形态是「一列维度 + 依据 + 待确认」，不做花哨可视化。 -->
+			<view class="profile-card pressable" @tap="openProfileDetail">
 				<view class="profile-head">
 					<view class="profile-avatar">
 						<text class="avatar-text">忆</text>
@@ -449,6 +452,11 @@
 	// 业务方法
 	function onThemeTap(theme: any): void {
 		uni.navigateTo({ url: '/pages/portrait/theme-detail?theme=' + encodeURIComponent(theme.name) })
+	}
+	// D-18（2026-10-25）：画像卡整卡 → 详情页。此前整卡不可点（原注释「画像详情页未设计」），
+	// 现详情页已落地（诚实版：只展示有依据的 + 待确认候选可确认/否定）。
+	function openProfileDetail(): void {
+		uni.navigateTo({ url: '/pages/portrait/detail' })
 	}
 	function onRefreshProfile(): void {
 		loading.value = true

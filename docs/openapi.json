@@ -933,6 +933,113 @@
         }
       }
     },
+    "/api/v1/profile/annotations": {
+      "get": {
+        "tags": [
+          "profile-annotation"
+        ],
+        "summary": "List Annotations",
+        "description": "列出**待确认**的画像标注（仅 pending；按置信度降序，高置信度更可能对）。",
+        "operationId": "list_annotations_api_v1_profile_annotations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_AnnotationOut__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profile/annotations/{annotation_id}": {
+      "post": {
+        "tags": [
+          "profile-annotation"
+        ],
+        "summary": "Decide Annotation",
+        "description": "确认（**写进画像**）或否定（只标记）一条待确认标注。\n\n## 为什么确认必须写画像\n\n用户点「对」的语义是「这条关于我的描述是对的」⇒ 它应该出现在画像里。\n若只把 `status` 改成 `confirmed` 而不写 `user_profile.dimensions`，\n用户下次打开详情页会发现「我确认过了，但画像里没有」—— 那是假状态，\n正是本仓反复清理的那类问题。\n\n## 实现要点\n\n· 只能操作**自己的** pending 记录（`user_id` 过滤 + `status='pending'` 双条件）；\n· 已是 confirmed/discarded ⇒ 409（不静默覆盖，用户可能重复点了）；\n· 维度为空 ⇒ 只标记不写画像（没有维度就没法写），并如实返回 `written=False`。",
+        "operationId": "decide_annotation_api_v1_profile_annotations__annotation_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Annotation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/trash": {
       "get": {
         "tags": [
@@ -3881,6 +3988,94 @@
   },
   "components": {
     "schemas": {
+      "AnnotationDecision": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "confirmed=对 / discarded=不对"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "确认时可选：修正后的值"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "AnnotationDecision",
+        "description": "确认/否定一条标注。"
+      },
+      "AnnotationOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "candidate_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Value"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "raw_text": {
+            "type": "string",
+            "title": "Raw Text"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "dimension",
+          "candidate_value",
+          "confidence",
+          "raw_text",
+          "created_at"
+        ],
+        "title": "AnnotationOut",
+        "description": "一条待确认标注（跨语言命名与客户端 `AnnotationItem` 对齐）。"
+      },
       "ApiResponse_ArbitrateJobOut_": {
         "properties": {
           "code": {
@@ -5339,6 +5534,41 @@
         },
         "type": "object",
         "title": "ApiResponse[dict]"
+      },
+      "ApiResponse_list_AnnotationOut__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AnnotationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[AnnotationOut]]"
       },
       "ApiResponse_list_CapsuleOut__": {
         "properties": {

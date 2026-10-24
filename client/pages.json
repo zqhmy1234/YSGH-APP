@@ -42,6 +42,14 @@
 			}
 		},
 		{
+			"path": "pages/portrait/detail",
+			"style": {
+				"navigationBarTitleText": "我的记忆画像",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
 			"path": "pages/portrait/theme-detail",
 			"style": {
 				"navigationBarTitleText": "主题详情",

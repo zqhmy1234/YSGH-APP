@@ -1,0 +1,117 @@
+{
+  "_doc": "小模型试点对比（2026-10-25）。留出集 14 条为手工构造、避开训练集典型表述；样本量不足以做统计显著性，只能做同口径模型间对比，**不是绝对精度基线**。",
+  "holdout_n": 14,
+  "rows": [
+    {
+      "name": "bge-m3 torch fp16（现）",
+      "acc": 9,
+      "n": 14,
+      "lat_median_ms": 138.7,
+      "size_mb": 2182.2,
+      "misses": [
+        {
+          "text": "为什么会这样",
+          "want": "question",
+          "got": "mixed"
+        },
+        {
+          "text": "地球绕太阳转",
+          "want": "fact",
+          "got": "quote"
+        },
+        {
+          "text": "他今年三十岁",
+          "want": "fact",
+          "got": "mixed"
+        },
+        {
+          "text": "今天开会然后去吃饭",
+          "want": "mixed",
+          "got": "fact"
+        },
+        {
+          "text": "拍了照片还写了点东西",
+          "want": "mixed",
+          "got": "question"
+        }
+      ]
+    },
+    {
+      "name": "bge-small torch fp16",
+      "acc": 11,
+      "n": 14,
+      "lat_median_ms": 9.8,
+      "size_mb": 91.9,
+      "misses": [
+        {
+          "text": "突然想到一个点子",
+          "want": "idea",
+          "got": "emotion"
+        },
+        {
+          "text": "地球绕太阳转",
+          "want": "fact",
+          "got": "mixed"
+        },
+        {
+          "text": "今天开会然后去吃饭",
+          "want": "mixed",
+          "got": "todo"
+        }
+      ]
+    },
+    {
+      "name": "bge-small ONNX fp32",
+      "acc": 11,
+      "n": 14,
+      "lat_median_ms": 10.6,
+      "size_mb": 90.4,
+      "misses": [
+        {
+          "text": "突然想到一个点子",
+          "want": "idea",
+          "got": "emotion"
+        },
+        {
+          "text": "地球绕太阳转",
+          "want": "fact",
+          "got": "mixed"
+        },
+        {
+          "text": "今天开会然后去吃饭",
+          "want": "mixed",
+          "got": "todo"
+        }
+      ]
+    },
+    {
+      "name": "bge-small ONNX int8 per-channel",
+      "acc": 10,
+      "n": 14,
+      "lat_median_ms": 4.7,
+      "size_mb": 22.9,
+      "misses": [
+        {
+          "text": "突然想到一个点子",
+          "want": "idea",
+          "got": "emotion"
+        },
+        {
+          "text": "地球绕太阳转",
+          "want": "fact",
+          "got": "mixed"
+        },
+        {
+          "text": "今天开会然后去吃饭",
+          "want": "mixed",
+          "got": "todo"
+        },
+        {
+          "text": "拍了照片还写了点东西",
+          "want": "mixed",
+          "got": "question"
+        }
+      ]
+    }
+  ]
+}

@@ -89,6 +89,21 @@ def quantize_int8(fp32_path: Path, out_dir: Path) -> Path:
 
     为什么用**动态**而非静态：静态量化要校准数据集，本产品没有代表性的
     中文碎片语料（种子 84 条太窄、会过拟合校准分布）⇒ 动态量化更诚实。
+
+    ## ⚠️ 必须 `per_channel=True`（2026-10-25 实测，不是偏好）
+
+    默认的 **per-tensor** 对称量化会把留出集准确率从 11/14 打到 **9/14（-2 条）**，
+    而 **per-channel 只掉 1 条（11→10）** —— 同样 22.9MB 体积，精度差一条。
+    原因：整条模型共用一个 scale 时，embedding 与 attention 里那些量级差异大的
+    小矩阵会被同一个 scale 压扁；per-channel 给每个输出通道独立 scale，损伤小得多。
+
+    另外两个变体已实测**更差**，不要试：
+      · 排除 embedding/pooler 层：**9/14（-2）**（少了量化的层反而留了 fp32 权重，
+        混合精度在短文本上引入额外数值不连续）；
+      · uint8 per-channel：10/14（-1，与 int8 per-channel 持平，无额外收益）。
+
+    ⇒ 结论：**int8 + per-channel 是当前最优**（22.9MB / 掉 1 条）。
+    精度损失无法完全消除 —— 上线前必须用真实语料复评（本批留出集仅 14 条）。
     """
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
@@ -98,8 +113,9 @@ def quantize_int8(fp32_path: Path, out_dir: Path) -> Path:
         model_input=str(fp32_path),
         model_output=str(dst),
         weight_type=QuantType.QInt8,
+        per_channel=True,
     )
-    print(f"int8 量化完成 {time.perf_counter() - t0:.0f}s")
+    print(f"int8 量化完成 {time.perf_counter() - t0:.0f}s（per-channel）")
     return dst
 
 

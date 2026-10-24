@@ -36,7 +36,12 @@ from app.api import (  # noqa: E501
     users,
     wechat,
 )
-from app.api.contents import favorites_router, profile_sensitive_router, trash_router
+from app.api.contents import (
+    favorites_router,
+    profile_annotation_router,
+    profile_sensitive_router,
+    trash_router,
+)
 from app.api.event_items import router as event_items_router
 from app.api.media import router as media_router  # 媒体票据下发（Valet Key · 2026-08-31）
 from app.api.thumbnails import router as thumbnails_router  # B4 缩略图（Wave3 AgentG 提供，集成接线）
@@ -167,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(contents.router)
     app.include_router(profile_sensitive_router)  # B5b FIX-4
+    app.include_router(profile_annotation_router)  # D-18 画像标注池：待确认列表 + 确认/否定
     app.include_router(trash_router)  # W2-1 回收站列表/恢复/清空
     app.include_router(favorites_router)  # W2-2 收藏列表：画像级敏感增删查（Wave1 AgentC 提供，集成接线）
     app.include_router(event_items_router)  # B3-4 照片→事件反向入口（Wave2 AgentE 提供）

@@ -1,0 +1,399 @@
+/**
+ * 画像详情页（D-18 · 2026-10-25）
+ *
+ * ## 用户的两个问题与这里的回答
+ *
+ * 用户问：「画像详情页真的要给用户看到吗？」「要设计的话该怎么设计呢？」
+ *
+ * 实测答案（决定本页形态）：
+ *   · 403 个用户，**平均只有 3.7 个维度有值**，123 人只有 1 个 ⇒ 内容很薄，
+ *     所以本页**不做花哨可视化**，就是一列「维度 + 当前值 + 依据」；
+ *   · `profile_annotation_pool` **308 条全是 pending**（AI 猜的、用户从未确认）
+ *     ⇒ **不能当成事实展示**，故本页把它单列成「待你确认」区，每条可确认/否定；
+ *   · `profile_sensitive` 137 条（其中 135 条 `forbid`）是**「别再提」的保护数据**
+ *     ⇒ **本页不展示、也不可操作**（展示了就等于破坏保护）。
+ *
+ * ## 数据来源（三块，语义各不相同，不要混）
+ *
+ *   ① 已确认画像 —— `GET /interview/profile`（`dimensions: {dim: [值]}`）
+ *   ② 待确认候选 —— `GET /profile/annotations`（本批新建，仅 pending）
+ *   ③ 统计事实 —— 记录天数/条数（永为真，不依赖 AI）
+ *
+ * ## 诚实边界（页面必须写出来）
+ *
+ *   · 顶部明写「以下内容由 AI 从你的记录中归纳，可能不准确」；
+ *   · 每条都带「依据」入口（能点开看原文片段）—— 只给结论不给依据等于让用户盲信；
+ *   · 加载失败**不得**渲染成「暂无」；
+ *   · 未收录的维度 id 降级显示原 id（`dimLabel`），不留空白。
+ */
+<template>
+	<view class="page-root">
+		<!-- 头部：返回 + 标题 -->
+		<view class="header">
+			<view class="back pressable" @tap="goBack">
+				<text class="back-text">‹</text>
+			</view>
+			<text class="title serif">我的记忆画像</text>
+		</view>
+
+		<scroll-view class="scroll" direction="vertical">
+			<!-- ① 统计事实（永为真，先给用户一点确定感） -->
+			<view class="stat-card">
+				<text class="stat-line">{{ statLine }}</text>
+			</view>
+
+			<!-- ② 待确认（AI 猜的，需要用户判断） -->
+			<view v-if="annotationLoadFailed" class="notice">
+				<text class="notice-text">待确认内容加载失败，可下拉重试</text>
+			</view>
+			<view v-else-if="annotations.length > 0" class="section">
+				<view class="section-head">
+					<text class="section-title serif">等你确认</text>
+					<text class="section-hint">AI 从你的记录里猜的，对就点「是」</text>
+				</view>
+				<view v-for="a in annotations" :key="a.id.toString()" class="annot-row">
+					<view class="annot-main">
+						<text class="annot-dim">{{ dimLabel(a.dimension) }}</text>
+						<text class="annot-val">{{ a.candidateValue }}</text>
+					</view>
+					<text class="annot-evidence" @tap="toggleEvidence(a.id)">依据</text>
+					<view class="annot-actions">
+						<view class="btn-yes pressable" @tap="decide(a, 'confirmed')">
+							<text class="btn-yes-text">是</text>
+						</view>
+						<view class="btn-no pressable" @tap="decide(a, 'discarded')">
+							<text class="btn-no-text">不是</text>
+						</view>
+					</view>
+					<text v-if="expandedId == a.id" class="annot-raw">{{ a.rawText }}</text>
+				</view>
+			</view>
+
+			<!-- ③ 已确认画像 -->
+			<view v-if="profileLoadFailed" class="notice">
+				<text class="notice-text">画像加载失败，可下拉重试</text>
+			</view>
+			<view v-else-if="dims.length > 0" class="section">
+				<view class="section-head">
+					<text class="section-title serif">已经了解的</text>
+				</view>
+				<view v-for="d in dims" :key="d.id" class="dim-row">
+					<text class="dim-label">{{ d.label }}</text>
+					<text class="dim-value">{{ d.value }}</text>
+				</view>
+			</view>
+			<view v-else-if="!loading" class="empty">
+				<text class="empty-text">还没有足够的内容生成画像。多记录一些，它会慢慢长出来。</text>
+			</view>
+
+			<!-- 诚实声明（不可删） -->
+			<text class="disclaimer">以上内容由 AI 从你的记录中归纳，可能不准确。点「依据」可看原文。</text>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { dimLabel } from '@/utils/profile_labels.uts'
+	import { fetchInterviewProfile } from '@/utils/play_interview.uts'
+	import {
+		ProfileAnnotation,
+		decideProfileAnnotation,
+		fetchProfileAnnotations
+	} from '@/utils/profile_annotation_api.uts'
+
+	class DimRow {
+		id: string
+		label: string
+		value: string
+
+		constructor(id: string, label: string, value: string) {
+			this.id = id
+			this.label = label
+			this.value = value
+		}
+	}
+
+	let dims = ref<Array<DimRow>>([])
+	let annotations = ref<Array<ProfileAnnotation>>([])
+	let loading = ref(true)
+	let profileLoadFailed = ref(false)
+	let annotationLoadFailed = ref(false)
+	let expandedId = ref<number>(-1)
+	let statLine = ref('')
+
+	onLoad(() => {
+		loadProfile()
+		loadAnnotations()
+	})
+
+	/** 拉已确认画像（三块里最基础的一块；失败要单独标，不能和"没有画像"混） */
+	function loadProfile(): void {
+		profileLoadFailed.value = false
+		fetchInterviewProfile().then((res: UTSJSONObject | null) => {
+			loading.value = false
+			if (res == null) {
+				profileLoadFailed.value = true
+				return
+			}
+			const obj = res.getJSON('dimensions')
+			const rows = new Array<DimRow>()
+			if (obj != null) {
+				const keys = UTSJSONObject.keys(obj)
+				for (let i = 0; i < keys.length; i++) {
+					const k = keys[i] as string
+					const vals = obj.getArray<string>(k)
+					if (vals != null && vals.length > 0) {
+						rows.push(new DimRow(k, dimLabel(k), vals.join('、')))
+					}
+				}
+			}
+			dims.value = rows
+			const cold = res.getBoolean('cold_start_done')
+			statLine.value = '已了解 ' + rows.length.toString() + ' 个方面' + (cold == true ? ' · 冷启动已完成' : '')
+		})
+	}
+
+	/** 拉待确认标注（失败要单独标；**不得**渲染成"暂无"） */
+	function loadAnnotations(): void {
+		annotationLoadFailed.value = false
+		fetchProfileAnnotations(50).then((res: Array<ProfileAnnotation> | null) => {
+			if (res == null) {
+				annotationLoadFailed.value = true
+				return
+			}
+			annotations.value = res
+		})
+	}
+
+	function toggleEvidence(id: number): void {
+		expandedId.value = expandedId.value == id ? -1 : id
+	}
+
+	/**
+	 * 确认/否定。成功后**从列表移除该条**（用户已判断过，不该再问）。
+	 * 失败必须提示 —— 静默失败会让用户以为点成功了。 */
+	function decide(a: ProfileAnnotation, action: string): void {
+		decideProfileAnnotation(a.id, action, null).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+				return
+			}
+			const rest = new Array<ProfileAnnotation>()
+			for (let i = 0; i < annotations.value.length; i++) {
+				const it = annotations.value[i]
+				if (it.id != a.id) {
+					rest.push(it)
+				}
+			}
+			annotations.value = rest
+			uni.showToast({
+				title: action == 'confirmed' ? '已加入画像' : '已忽略',
+				icon: 'none'
+			})
+			// 「是」会写进画像 ⇒ 重新拉一次，让「已经了解的」即时反映
+			if (action == 'confirmed') {
+				loadProfile()
+			}
+		})
+	}
+
+	function goBack(): void {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	/* D-18 详情页样式：全部走设计令牌（`var(--c-*, #fallback)` 写法——
+	   `scripts/audit_token_literals.py` 的 `_strip_var_fallbacks` 会剔除 fallback 再计数，
+	   故不增加硬编码色值；fallback 保留是为了令牌未定义时不过度失真）。
+
+	   为什么不做花哨可视化：实测 403 个用户**平均只有 3.7 个维度有值**（123 人只有 1 个），
+	   内容本就薄；堆图表只会掩盖"其实没多少东西"这个事实。形态刻意朴素。 */
+	.page-root {
+		flex: 1;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+
+	.header {
+		flex-direction: row;
+		align-items: center;
+		padding: 24rpx 32rpx;
+	}
+
+	.back {
+		width: 56rpx;
+		height: 56rpx;
+		justify-content: center;
+	}
+
+	.back-text {
+		font-size: 44rpx;
+		color: var(--c-ink-900, #3A2E25);
+	}
+
+	.title {
+		font-size: 34rpx;
+		font-weight: bold;
+		color: var(--c-ink-900, #3A2E25);
+		margin-left: 8rpx;
+	}
+
+	.scroll {
+		flex: 1;
+	}
+
+	.stat-card {
+		margin: 0 32rpx 24rpx 32rpx;
+		padding: 24rpx;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: 16rpx;
+	}
+
+	.stat-line {
+		font-size: 26rpx;
+		color: var(--c-ink-700, #5A4C40);
+	}
+
+	.section {
+		margin: 0 32rpx 24rpx 32rpx;
+	}
+
+	.section-head {
+		margin-bottom: 16rpx;
+	}
+
+	.section-title {
+		font-size: 30rpx;
+		font-weight: 600;
+		color: var(--c-ink-900, #3A2E25);
+	}
+
+	.section-hint {
+		font-size: 22rpx;
+		color: var(--c-ink-300, #B3A696);
+		margin-top: 6rpx;
+	}
+
+	.annot-row {
+		flex-direction: row;
+		align-items: center;
+		flex-wrap: wrap;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: 16rpx;
+		padding: 20rpx 24rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.annot-main {
+		flex: 1;
+	}
+
+	.annot-dim {
+		font-size: 22rpx;
+		color: var(--c-ink-300, #B3A696);
+	}
+
+	.annot-val {
+		font-size: 28rpx;
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: 4rpx;
+	}
+
+	.annot-evidence {
+		font-size: 22rpx;
+		color: var(--c-amber-500, #C4913C);
+		padding: 8rpx 12rpx;
+	}
+
+	.annot-actions {
+		flex-direction: row;
+	}
+
+	.btn-yes {
+		padding: 8rpx 24rpx;
+		background-color: var(--c-amber-500, #C4913C);
+		border-radius: 999rpx;
+		margin-right: 12rpx;
+	}
+
+	.btn-yes-text {
+		font-size: 24rpx;
+		color: var(--c-white, #FFFFFF);
+	}
+
+	.btn-no {
+		padding: 8rpx 24rpx;
+		border-radius: 999rpx;
+		border-width: 1rpx;
+		border-style: solid;
+		border-color: var(--c-paper-500, #E9DFCB);
+	}
+
+	.btn-no-text {
+		font-size: 24rpx;
+		color: var(--c-ink-700, #5A4C40);
+	}
+
+	.annot-raw {
+		width: 100%;
+		font-size: 22rpx;
+		color: var(--c-ink-500, #8A7A6A);
+		line-height: 32rpx;
+		margin-top: 12rpx;
+		padding-top: 12rpx;
+		border-top-width: 1rpx;
+		border-top-style: solid;
+		border-top-color: var(--c-paper-300, #EFEAE2);
+	}
+
+	.dim-row {
+		flex-direction: row;
+		align-items: center;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: 16rpx;
+		padding: 22rpx 24rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.dim-label {
+		width: 200rpx;
+		font-size: 24rpx;
+		color: var(--c-ink-500, #8A7A6A);
+	}
+
+	.dim-value {
+		flex: 1;
+		font-size: 28rpx;
+		color: var(--c-ink-900, #3A2E25);
+	}
+
+	.notice {
+		margin: 0 32rpx 24rpx 32rpx;
+		padding: 20rpx;
+		background-color: var(--c-paper-soft, #f3efe8);
+		border-radius: 12rpx;
+	}
+
+	.notice-text {
+		font-size: 22rpx;
+		color: var(--c-ink-300, #B3A696);
+	}
+
+	.empty {
+		margin: 0 32rpx 24rpx 32rpx;
+		padding: 32rpx 24rpx;
+	}
+
+	.empty-text {
+		font-size: 24rpx;
+		color: var(--c-ink-300, #B3A696);
+		line-height: 36rpx;
+	}
+
+	.disclaimer {
+		margin: 8rpx 32rpx 48rpx 32rpx;
+		font-size: 20rpx;
+		color: var(--c-ink-300, #B3A696);
+		line-height: 30rpx;
+	}
+</style>
