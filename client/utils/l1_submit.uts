@@ -17,25 +17,47 @@ import { UploadedPhoto, isoString } from '@/utils/uploader_types'
 
 /** 兜底：不依赖聚类，按本地自然日把本次上传合成一张日卡片 */
 function fallbackDayEvent(uploaded: Array<UploadedPhoto>): UTSJSONObject {
-	let minTs = uploaded[0].item.takenAt
-	let maxTs = uploaded[0].item.takenAt
+	// 2026-10-24（B-12 下游第③点）：`takenAt == 0` = **拍摄时间未知**（EXIF 无 DateTimeOriginal）。
+	// 旧实现直接 `min(minTs, 0)` ⇒ 这张兜底卡片的日界变成 `1970-01-01`，卡片标题写「1970-01-01 · N条」
+	// ——比"落今天"更荒谬（用户会以为数据损坏）。故逐张按 `> 0` 过滤取真值；
+	// **一张真值都没有**时才回落记录时刻，并在标题里**显式写明**这是"记录日"而非拍摄日。
+	let hasReal = false
+	let minTs = 0
+	let maxTs = 0
 	const ids: Array<string> = []
 	for (let i = 0; i < uploaded.length; i++) {
 		const u = uploaded[i]
 		ids.push(u.contentId)
 		const t = u.item.takenAt
-		if (t < minTs) {
+		if (t <= 0) {
+			continue
+		}
+		if (!hasReal) {
 			minTs = t
-		}
-		if (t > maxTs) {
 			maxTs = t
+			hasReal = true
+		} else {
+			if (t < minTs) {
+				minTs = t
+			}
+			if (t > maxTs) {
+				maxTs = t
+			}
 		}
+	}
+	if (!hasReal) {
+		// 全批时间未知：用"现在"作卡片的**记录时刻**（否则卡片无法入日桶），
+		// 但标题说清是「记录日」，不冒充拍摄日。
+		minTs = Date.now()
+		maxTs = minTs
+		console.warn('[yishu] L1 兜底日卡片：本批 ' + uploaded.length
+			+ ' 张拍摄时间全部未知 ⇒ 按**记录日**归卡（标题标「记录日」，非拍摄时刻）')
 	}
 	// isoString → '2026-10-16T22:09:11+08:00'，前 10 位即本地自然日
 	const day = isoString(minTs).substring(0, 10)
 	const ev: UTSJSONObject = {
 		client_event_id: 'ev-fb-' + Date.now() + '-' + Math.floor(Math.random() * 1000000),
-		title: day + ' · ' + ids.length + '条',
+		title: day + ' · ' + ids.length + '条' + (hasReal ? '' : '（记录日）'),
 		start_time: isoString(minTs),
 		end_time: isoString(maxTs),
 		photo_ids: ids

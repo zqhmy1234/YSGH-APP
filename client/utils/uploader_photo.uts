@@ -37,12 +37,21 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 		// 项目铁律即"静默降级不得当正常"。故不可用时**不写这两个键 + 留痕**，如实为空。
 		const buildMeta = (): UTSJSONObject => {
 			const meta: UTSJSONObject = {
-				taken_at: isoString(item.takenAt),
 				source: 'app',
 				extra: {
 					width: item.width,
 					height: item.height
 				}
+			}
+			// 2026-10-24（B-12 下游必改点）：`takenAt <= 0` = **时间未知**（EXIF 无 DateTimeOriginal，
+			// 见 PhotoItem.takenAt 的三档语义）。绝不能 `isoString(0)` —— 那是 1970-01-01，
+			// 后端会当真值入库 ⇒ 老照片在时间轴/去年今日里落到 1970 年那张卡（比"落今天"更荒谬）。
+			// 正确做法 = **省略该键**：后端 `parse_photo_meta` 见无 taken_at ⇒ NULL，
+			// `contents.taken_at` 留空，界面按「时间未知」展示（与"有值但是假的"划清界限）。
+			if (item.takenAt > 0) {
+				meta.set('taken_at', isoString(item.takenAt))
+			} else {
+				console.log('[yishu] 本条拍摄时间未知（takenAt=0）⇒ meta 不带 taken_at，后端留 NULL')
 			}
 			if (item.lat != null && item.lng != null) {
 				const la = item.lat as number

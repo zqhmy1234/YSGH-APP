@@ -64,6 +64,12 @@
 	const text = computed((): string => {
 		if (paused.value) return pauseReason.value != '' ? pauseReason.value : '网络异常，已暂停同步'
 		if (held.value > 0) {
+			// 2026-10-24（B-13 残留②·方向相反的那一半）：held 与 failed **同时非零**时，
+			// 原实现只显示 held 那一句 ⇒ 「N 张上传失败」被**静默吞掉**（红色告警彻底消失，
+			// 用户以为没有失败）。横幅只显示一行是硬约束，故合并成一句、两类数字都在。
+			if (failed.value > 0) {
+				return held.value + ' 张待 WiFi 上传 · ' + failed.value + ' 张上传失败'
+			}
 			if (netKind.value == 'wifi') return held.value + ' 张照片待上传（原图）'
 			// 2026-09-23 更正：原文案承诺"蜂窝仅传缩略图+元数据"，但压缩步骤尚未接线、
 			// 实际行为是暂缓 → 文案必须说"现在是什么"而非"设计上会怎样"，否则用户以为

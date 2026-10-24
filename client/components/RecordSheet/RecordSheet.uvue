@@ -275,6 +275,10 @@
 	import { VoiceRecorder } from '@/composables/useVoiceRecord'
 	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
 	import { uploadBatch } from '@/utils/uploader_batch'
+	// 2026-10-24（B-13 修）：区分「暂缓」与「失败」必须读队列真实状态，不能凭 uploaded.length==0 猜。
+	// `uploadBatch` 在离线/网络不明时返回**空数组但把照片放进 held**（等 WiFi），
+	// 旧的 `else showToast('上传失败，请重试')` 把这个"成功暂缓"报成了失败。
+	import { heldCount, failedCount } from '@/utils/uploader_queue'
 	// NEW-01 修复（2026-10-11 开发 C）：端侧 L1 聚合 + 上云所需依赖（与 TabIndex.handleBatch 同源）
 	// 2026-10-16：上云逻辑抽成共口（utils/l1_submit.uts），供 记录面板 / 横幅手动上传 / WiFi 自动补传 三处复用
 	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
@@ -765,7 +769,23 @@ import { watch } from 'vue'
 				manualLabel.value = ''
 				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
 			} else {
-				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
+				// 2026-10-24（B-13 修）：`uploaded.length == 0` **不等于失败**。
+				// `uploadBatch` 有三条"空结果但意思不同"的出口，必须分开说：
+				//   · 离线/网络不明 → 全部入 **held**（等 WiFi/立即上传原图）＝**已暂缓，不是失败**；
+				//   · 重试耗尽/后端拒绝 → 入 **failed**（可重试明细）＝真失败；
+				//   · 两者都有 → 如实说"部分暂缓、部分失败"，别用一句"上传失败"糊过去。
+				// 判据直接读队列真实计数（不猜状态：`uploaded.length` 与 `UploadProgress` 都区分不了 held/failed）。
+				// ⚠️ 本处**只改文案、不改流程**（面板仍停留，用户可见照片仍在表单里）——
+				//    暂缓的照片已进 held 持久队列，不会丢；是否收起面板属交互决策，不在 B-13 范围内改动。
+				const hc = heldCount()
+				const fc = failedCount()
+				if (hc > 0 && fc == 0) {
+					uni.showToast({ title: '已暂缓上传（' + hc.toString() + ' 张，连上 WiFi 后自动上传）', icon: 'none', duration: 3500 })
+				} else if (hc > 0 && fc > 0) {
+					uni.showToast({ title: '部分已暂缓（' + hc.toString() + ' 张等 WiFi）、' + fc.toString() + ' 张失败', icon: 'none', duration: 3500 })
+				} else {
+					uni.showToast({ title: '上传失败，请重试', icon: 'none' })
+				}
 			}
 			}, (e: Error): void => {
 			// 2026-10-16（批次 6）：异常路径兜底 —— reject/抛错也必须收 loading，否则转圈永久卡住 ✗

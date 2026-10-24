@@ -22,15 +22,27 @@ import { showErrorToast } from '@/utils/api'
 import { createVoiceContentRemark } from '@/utils/capsule_api'
 import { submitCorrection } from '@/utils/text_recorder'
 import {
+	addVoiceFailure,
+	AsrResult,
+	MSG_INTERRUPTED,
+	MSG_NO_SOUND,
 	pauseRecord,
-	recorderState,
-	resumeRecord,
+	promptVoiceInvalid,
+	promptVoiceRetry,
 	REC_STATE_PAUSED,
+	recorderState,
+	removeVoiceFailure,
+	resumeRecord,
+	SCAN_SILENT,
+	scanWavSilence,
 	setShouldResume,
 	startRecord,
+	startRecordWatchdog,
 	stopRecord,
+	stopRecordWatchdog,
 	transcribeWav,
-	uploadVoicePersistent
+	uploadVoicePersistent,
+	VoiceScan
 } from '@/utils/voice'
 
 import { RecordAnimations } from '@/composables/useRecordAnimations'
@@ -61,6 +73,9 @@ export class VoiceRecorder {
 	 *  为什么需要：卸载时若直接 stopRecordNow，原生回调会带着时长进保存链 ⇒
 	 *  「录音中按返回键」会变成"边退出边把这段录音存下来"（用户意图是取消）。 */
 	private abandonFlag: boolean = false
+	/** B-08（2026-10-24）：本次录音是否被判过"中断"（用于停录时给用户**合并**的一条明确提示）。
+	 *  看门狗本身是 `voice.uts` 的模块单例（插件只可能有一段录音在录），这里只留判定结果。 */
+	private interrupted: boolean = false
 
 	private emitSaved: () => void
 	private emitClose: () => void
@@ -125,6 +140,8 @@ export class VoiceRecorder {
 			this.guardMsg.value = ''
 			this.voiceHints.value = ''
 			this.lastVoiceFile.value = ''
+			// B-08：新一轮录音重置中断标记
+			this.interrupted = false
 			setShouldResume(true)
 			this.recordTimer.value = setInterval(() => {
 				this.recordSeconds.value++
@@ -135,12 +152,17 @@ export class VoiceRecorder {
 			startRecord(
 				() => {
 					console.log('[yishu] record started')
+					// B-08 ①（2026-10-24）：**真开录后**再起中断轮询自检。
+					// 为什么不在 startRecord 之前起：权限未授予时 startRecord 走异步申请分支，
+					// 此时原生态恒为 idle ⇒ 看门狗会立刻误判"录音被中断"（假阳性比缺陷更糟）。
+					this.startWatchdogNow()
 				},
 				(path: string, durationMs: number) => {
 					this.onRecordStopped(path, durationMs)
 				},
 				(msg: string) => {
 					console.error('[yishu] record error: ' + msg)
+					this.stopWatchdogNow()
 					this.setRecordingOff()
 					this.recState.value = 'idle'
 					this.recordHint.value = '轻触中央圆点 · 开始录音'
@@ -162,6 +184,9 @@ export class VoiceRecorder {
 				},
 				(autoPaused: boolean) => {
 					console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
+					// B-08：原生回调来了就如实记下（能来是好事，但**不能指望它来**——
+					// 真机抢麦实证两轮都不来，所以还有 ① 的轮询自检兜底）
+					this.onInterrupted('native onInterruptionBegin')
 					this.recState.value = recorderState()
 					this.recordHint.value = '录音被中断，已暂停'
 					// R7 补缺口：系统中断（来电/音频焦点/省电）时原生录音已自动暂停，但轮盘动画
@@ -209,6 +234,38 @@ export class VoiceRecorder {
 			console.log('[yishu] pauseRecord failed (标准基座无原生插件，忽略): ' + e)
 		}
 	}
+
+	// ── B-08 中断看门狗的启停（2026-10-24）────────────────────────────────────
+
+	/** 起轮询自检（**只在该起的时机调**：原生 onStart 之后；停止时必调 `stopWatchdogNow`） */
+	startWatchdogNow(): void {
+		startRecordWatchdog((reason: string): void => {
+			this.onInterrupted(reason)
+		})
+	}
+
+	stopWatchdogNow(): void {
+		stopRecordWatchdog()
+	}
+
+	/**
+	 * 判定"录音被中断"后的 UI 联动（① 轮询自检 与 原生回调共用）。
+	 *
+	 * **只标记、不自动停录**（刻意）：中止判定可能来自 2.5s 的短暂卡顿，若自动 stop
+	 * 会把用户正在说的话截断——那才是真正的数据损失。这里做的是**让用户当场知道**
+	 * （hint 文案 + 恢复入口），最终是否有声音由停录后的零能量看门狗**客观裁定**。
+	 */
+	onInterrupted(reason: string): void {
+		console.log('[yishu] 判定录音中断: ' + reason)
+		this.interrupted = true
+		this.recState.value = recorderState()
+		this.recordHint.value = '录音被中断（可能来电），松开后可重录'
+		this.anim.pause()
+		if (this.recordTimer.value > 0) {
+			clearInterval(this.recordTimer.value)
+			this.recordTimer.value = 0
+		}
+	}
 	// 双击结束：第一击可能已把原生录音置为暂停，先恢复原生态再停（stopped 回调统一走 onRecordStopped）
 	endFromTap(): void {
 		if (this.recState.value == REC_STATE_PAUSED) {
@@ -238,6 +295,9 @@ export class VoiceRecorder {
 		}
 	}
 	stopRecordNow(): void {
+		// B-08：**先收**看门狗再 stop——否则 stop 之后原生态转 idle 的那几毫秒里，
+		// 看门狗会把"正常停止"误判成"录音被中断"（假阳性：用户明明是自己点的结束）。
+		this.stopWatchdogNow()
 		try {
 			stopRecord()
 		} catch (e) {
@@ -261,6 +321,9 @@ export class VoiceRecorder {
 	 * 与 `stopRecordNow` 的区别只在语义：后者是"用户主动结束并要求处理"（进保存链）。
 	 */
 	abandonRecording(): void {
+		// B-08：放弃也必收看门狗（否则卸载后定时器还在跑，回调和已销毁组件交互）
+		this.stopWatchdogNow()
+		this.interrupted = false
 		if (!this.recording.value) {
 			return
 		}
@@ -282,6 +345,8 @@ export class VoiceRecorder {
 	}
 
 	onRecordStopped(path: string, durationMs: number): void {
+		// B-08：录音已停 ⇒ 立刻收中断看门狗（它只服务"录的过程中"）
+		this.stopWatchdogNow()
 		this.setRecordingOff()
 		this.recState.value = 'idle'
 		if (this.recordTimer.value > 0) {
@@ -298,13 +363,13 @@ export class VoiceRecorder {
 		}
 		if (durationMs < 500) {
 			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			// B-08 同族：太短也是"无效录音"的一种，这条不是静默（有 toast），但要清中断标记
+			this.interrupted = false
 			showErrorToast(new Error('录音太短'))
 			return
 		}
 		this.lastVoiceDuration.value = durationMs
 		this.lastVoiceFile.value = path
-		this.transcribing.value = true
-		this.recordHint.value = '正在转写…'
 		if (durationMs >= 300000) {
 			// 长录音（>5min）：分段转写走持久上传，无标注态（画布无此帧）——诚实收栈
 			this.transcribing.value = false
@@ -312,19 +377,91 @@ export class VoiceRecorder {
 			uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
 			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
 				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+				if (res == null) {
+					// B-09 同族（不许静默）：长录音上传失败也必须留可重试的记录
+					addVoiceFailure(path, durationMs, '长录音上传失败')
+					promptVoiceRetry('长录音上传失败', (): void => {
+						this.retryLongUpload()
+					})
+					return
+				}
 				uni.showToast({ title: '已记录', icon: 'success' })
 				this.emitSaved()
 				this.emitClose()
 			})
 			return
 		}
-		transcribeWav(path).then((res) => {
-			this.transcribing.value = false
-			if (res == null) {
+		// ② 零能量看门狗（B-08 核心）：**先用客观证据判这段有没有声音，再决定要不要转写**。
+		// 顺序刻意如此——旧链路是"先转写再看结果"，于是全零录音要花一次网络往返才被告知没声音。
+		this.transcribing.value = true
+		this.recordHint.value = '正在检查录音…'
+		const wasInterrupted = this.interrupted
+		this.interrupted = false
+		scanWavSilence(path).then((scan: VoiceScan) => {
+			console.log('[yishu] voice scan verdict=' + scan.verdict + ' peak=' + scan.peak
+				+ ' samples=' + scan.samples + ' reason=' + scan.reason)
+			if (scan.verdict == SCAN_SILENT) {
+				// **判死：不转写、不入队、不当成功**。用户看到的是明确的"没有声音 + 可重录"。
+				this.transcribing.value = false
 				this.recordHint.value = '轻触中央圆点 · 开始录音'
-				showErrorToast(new Error('转写失败，请重试'))
+				this.transcript.value = ''
+				// 中断过的段给"被中断"的文案（更贴近真实原因），否则给"没录到声音"
+				const why = wasInterrupted ? MSG_INTERRUPTED : MSG_NO_SOUND
+				// 取证留痕：真机上一句日志就能判断这是"抢占"还是"用户没说话"
+				addBreadcrumb('voice', 'silent segment rejected: peak=' + scan.peak + ' samples=' + scan.samples + ' interrupted=' + wasInterrupted)
+				promptVoiceInvalid(why, (): void => {
+					this.startAgain()
+				})
 				return
 			}
+			// has_signal / unknown（unknown = 端侧读不到，**如实交回后端判**，不替它下结论）
+			this.recordHint.value = '正在转写…'
+			this.transcribeAndPreview(path, durationMs)
+		})
+	}
+
+	/**
+	 * 转写 → 填充预览态（**B-09 抽出来**：失败重试要复用同一条链，不能复制一份）。
+	 *
+	 * 三条"禁止静默"的落点都在这里：
+	 * ① `res == null`（HTTP 非 200 / 超时 / 过大）⇒ 入失败队列 + modal「重试/稍后」；
+	 * ② `outcome == 'no_speech'`（后端已判数字零）⇒ 按"没录到声音"处理，**不进预览态**；
+	 * ③ `text` 为空 ⇒ 同上（旧行为是进一张空白卡片，用户到点保存才被告知空）。
+	 */
+	transcribeAndPreview(path: string, durationMs: number): void {
+		this.transcribing.value = true
+		transcribeWav(path).then((res: AsrResult | null) => {
+			this.transcribing.value = false
+			if (res == null) {
+				// B-09：失败段**入本地待发队列** + 给可行动反馈（不再只 toast 一次就丢弃）
+				this.recordHint.value = '转写失败 · 这段录音已保留'
+				addVoiceFailure(path, durationMs, '转写失败（网络或服务不可用）')
+				promptVoiceRetry('网络或服务不可用，转写没成功。', (): void => {
+					this.retryTranscribe(path, durationMs)
+				})
+				return
+			}
+			// ② 后端说"没语音"（outcome=no_speech，来自 _wav_is_digital_silence）
+			if (res.outcome == 'no_speech') {
+				this.recordHint.value = '轻触中央圆点 · 开始录音'
+				this.transcript.value = ''
+				addBreadcrumb('voice', 'backend no_speech rejected (端侧扫描未能判定)')
+				promptVoiceInvalid(MSG_NO_SOUND, (): void => {
+					this.startAgain()
+				})
+				return
+			}
+			// ③ 有 outcome=succeeded 但文本为空：同样不能进"空白预览"
+			if (res.text.trim() == '') {
+				this.recordHint.value = '轻触中央圆点 · 开始录音'
+				this.transcript.value = ''
+				promptVoiceInvalid(MSG_NO_SOUND, (): void => {
+					this.startAgain()
+				})
+				return
+			}
+			// 成功：销掉这条 path 可能残留的失败记录（重试成功后不留僵尸队列项）
+			removeVoiceFailure(path)
 			this.transcript.value = res.text
 			this.emotion.value = res.emotion
 			const hints: Array<string> = []
@@ -355,6 +492,66 @@ export class VoiceRecorder {
 			}
 			this.setVoiceStage('preview') // F1c
 		})
+	}
+
+	/** B-09：重试转写（保留同一 path / 时长；成功即销账，再失败则更新原因） */
+	retryTranscribe(path: string, durationMs: number): void {
+		if (this.transcribing.value) {
+			return
+		}
+		this.lastVoiceDuration.value = durationMs
+		this.lastVoiceFile.value = path
+		this.recordHint.value = '正在重试转写…'
+		this.transcribeAndPreview(path, durationMs)
+	}
+
+	/** B-09 同族：长录音上传重试 */
+	retryLongUpload(): void {
+		const path = this.lastVoiceFile.value
+		const dur = this.lastVoiceDuration.value
+		if (path == '') {
+			showErrorToast(new Error('没有可重试的录音文件'))
+			return
+		}
+		uni.showToast({ title: '正在重试上传…', icon: 'none' })
+		uploadVoicePersistent(path, dur).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				addVoiceFailure(path, dur, '长录音上传失败')
+				promptVoiceRetry('长录音上传仍然失败，已保留。', (): void => {
+					this.retryLongUpload()
+				})
+				return
+			}
+			removeVoiceFailure(path)
+			uni.showToast({ title: '已记录', icon: 'success' })
+			this.emitSaved()
+			this.emitClose()
+		})
+	}
+
+	/**
+	 * B-08 ③：用户点「重录」⇒ 复位到可录态。
+	 *
+	 * 注意**不自动开录**（刻意）：showModal 关闭后立刻 start 在部分机型上会被
+	 * 音频焦点抢回（反而录出坏段）。这里把入口交给用户手指，只保证状态干净。
+	 */
+	startAgain(): void {
+		this.stopWatchdogNow()
+		this.interrupted = false
+		this.setRecordingOff()
+		this.recState.value = 'idle'
+		this.transcript.value = ''
+		this.guardMsg.value = ''
+		this.voiceHints.value = ''
+		this.lastVoiceFile.value = ''
+		this.lastVoiceDuration.value = 0
+		this.recordSeconds.value = 0
+		this.recordHint.value = '轻触中央圆点 · 开始录音'
+		if (this.recordTimer.value > 0) {
+			clearInterval(this.recordTimer.value)
+			this.recordTimer.value = 0
+		}
+		this.setVoiceStage('record')
 	}
 	submitVoice(): void {
 		const text = this.transcript.value.trim()

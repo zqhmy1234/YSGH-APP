@@ -86,12 +86,51 @@ export function getDegradeRuns(): number {
 /** 分片粒度：组装阶段每片处理多少张（片间 `setTimeout(0)` 让出主线程） */
 const AGG_CHUNK_N: number = 50
 
+// ─────────────────────────────────────────────────────────────────────────────
+// B-12 下游（2026-10-24）：「拍摄时间未知」进聚合时必须**显式 fallback**，不许静默
+//
+// 背景：`PhotoItem.takenAt` 的三档语义是 `>0` 真值 / `==0` 未知。手动选图读不到 EXIF
+// DateTimeOriginal 时是 `0`，而**本函数就是"靠 takenAt 分日卡"的那一环**：
+//   `bucketDay(0, tz)` ⇒ `1970-01-01` ⇒ 这张照片会孤零零落进**1970 年那张卡**。
+// 那不是"时间未知"，那是"时间错了"——用户在时间轴里翻到 1970 会以为数据坏了，比落错今天更荒谬。
+//
+// 处置（**显式 fallback**，即任务书要求的"不要静默用 now"）：
+//   · 仍用 `Date.now()` 兜底入聚合 —— 否则这张照片**根本不进时间轴**
+//     （云侧只产 L2/L3、无 L1 生产者，见 AGG_CLIENT_MAX_N 注释），等于"补记的照片看不见"；
+//   · 但**必须** WARN + 计数 + 记 content_id，文案写明"这是 fallback，不是拍摄时刻"，
+//     使"落到了今天这张卡"这件事**可观测、可解释**，而不是悄悄发生。
+// 取舍依据：落今天（可见 + 日志说明"时间未知，按记录日归卡"）> 落 1970（可见但时间错）
+//           > 不进时间轴（不可见）。三项里只有第一项既保可见性又不撒谎。
+let timeFallbackN = 0
+/** 本次聚合运行内的 fallback 次数（诊断用） */
+let runFallbackN = 0
+
+/** 累计 fallback 次数（非 0 ⇒ 确有"时间未知"的照片被按记录日归卡） */
+export function getTimeFallbackN(): number {
+	return timeFallbackN
+}
+
+/**
+ * 取入聚合用的时间戳：`takenAt > 0` 用真值；否则回落 `Date.now()` 并计数 + WARN。
+ * **回落是显式且被记录的**（见上方注释），绝不假装它就是拍摄时刻。
+ */
+function aggTsOf(u: UploadedPhoto): number {
+	const t: number = u.item.takenAt
+	if (t > 0) {
+		return t
+	}
+	timeFallbackN++
+	runFallbackN++
+	console.warn('[yishu-agg] 拍摄时间未知（takenAt=0）⇒ 按**记录日**归卡（fallback，非拍摄时刻）content=' + u.contentId)
+	return Date.now()
+}
+
 /** 组装算法层输入（photo id = content_id；ts = 本地拍摄时间；phash = 文件身份键） */
 function buildRaws(uploads: Array<UploadedPhoto>): Array<RawPhoto> {
 	const raws: RawPhoto[] = []
 	for (let i = 0; i < uploads.length; i++) {
 		const u = uploads[i]
-		raws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, [], photoHashOf(u)))
+		raws.push(new RawPhoto(u.contentId, aggTsOf(u), u.item.lat, u.item.lng, [], photoHashOf(u)))
 	}
 	return raws
 }
@@ -137,6 +176,15 @@ function buildEventsFromDays(days: Array<DayCard>): Array<ClientL1Event> {
  * 规模靠 `AGG_CLIENT_MAX_N` 兜底：越顶**降级（跳过）**并 WARN + 计数，后果见该常量注释。
  */
 function finishAgg(pts: Array<Photo>, tzOffsetMin: number): AggRunResult {
+	// B-12：本次 run 有「时间未知 ⇒ 按记录日归卡」的 fallback 时，聚合结果行要**带上这个事实**
+	// （只在有 fallback 时多打一行，不新造日志行、不影响既有 [yishu] 端侧聚合行）。
+	if (runFallbackN > 0) {
+		// 累计值经**公开访问器**读出而非直接插值模块私有变量（同 degradeRuns / getDegradeRuns 的
+		// 口径：audit exports 轴会把"导出了但零调用"判成能力没接线，取数落在日志行上即为真实读面）。
+		console.warn('[yishu-agg] 本次聚合含拍摄时间未知照片 ' + runFallbackN
+			+ ' 张 ⇒ 已按**记录日**归卡（fallback）；累计 ' + getTimeFallbackN() + ' 次')
+	}
+	runFallbackN = 0
 	// ⚠️ 降级分支（可观测性是硬要求，**不许静默**）：跳过端侧聚类 = **本次不出 L1**，
 	// 而云侧没有 L1 生产者（见 AGG_CLIENT_MAX_N 注释）⇒ 当天时间轴要等客户端重跑/后续策略。
 	// 故这里必须 WARN + 计数，并把**后果**写进日志文案。
@@ -208,7 +256,9 @@ function chunkStep(): void {
 	const end = chunkIdx + AGG_CHUNK_N < n ? chunkIdx + AGG_CHUNK_N : n
 	for (let i = chunkIdx; i < end; i++) {
 		const u = chunkUploads[i]
-		chunkRaws.push(new RawPhoto(u.contentId, u.item.takenAt, u.item.lat, u.item.lng, [], photoHashOf(u)))
+		// B-12：与 buildRaws **同一出口**（aggTsOf）——分片路径与同步路径必须同判，否则
+		// 「同一张时间未知的照片」在两条入口下落进不同日卡（端侧两条上传链都会走到这里）。
+		chunkRaws.push(new RawPhoto(u.contentId, aggTsOf(u), u.item.lat, u.item.lng, [], photoHashOf(u)))
 	}
 	chunkIdx = end
 	if (chunkIdx < n) {

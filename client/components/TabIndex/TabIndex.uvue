@@ -1222,12 +1222,18 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 		console.log('[yishu] startWatch begin')
 		recordGrantTime()
 		const watch = createPhotoWatch()
-		watch.start((items: Array<PhotoItem>) => {
+		// 2026-10-24（B-18 两阶段提交）：回调**返回 boolean**，语义 = 「本批是否已经落到可重试的
+		// 持久队列」。上传是异步的，返回时还没有结论 ⇒ 这里**必须返回 false**（= 暂不推进游标），
+		// 由 handleBatch 在上传链结束后调 `watch.ackBatch(...)` 给出最终结论。
+		// 旧实现（游标先推进再回调）的问题：上传失败时游标已前进 ⇒ 这批照片以后永远扫不到。
+		watch.start((items: Array<PhotoItem>): boolean => {
 			console.log('[yishu] batch received: ' + items.length)
 			if (items.length === 0) {
-				return
+				// 空批：没什么可接管，直接让插件推进游标（否则游标会卡住 forever）
+				return true
 			}
-			handleBatch(items)
+			handleBatch(items, watch)
+			return false
 		})
 		console.log('[yishu] startWatch done, lastSeen=' + watch.getLastSeenId())
 		// #12：只提示一次——老用户每次冷启动都吃一次「已开始监听相册」是纯噪音
@@ -1236,7 +1242,16 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 			uni.showToast({ title: '已开始监听相册', icon: 'none' })
 		}
 	}
-	function handleBatch(items: Array<PhotoItem>): void {
+	/**
+	 * 处理一批新照片（B-18：**必须**在结论落地后调用 `watch.ackBatch(...)`）。
+	 *
+	 * ack 的判据 = 「这批照片现在是否有一条**可重试的持久路径**」：
+	 *  · `uploadBatch` 正常 resolve ⇒ 每张要么已上传、要么已入 held（等 WiFi）/ failed（可重试）
+	 *    ⇒ 都是持久的 ⇒ `ackBatch(true)`，游标前进（不会丢）；
+	 *  · 上传链**抛异常/没能落库** ⇒ `ackBatch(false)`，游标不动 ⇒ 下次扫描从原处重扫，
+	 *    最坏结果是重复上传（后端 init 按 path 幂等、register 按 cos_key 幂等）而**不是丢照片**。
+	 */
+	function handleBatch(items: Array<PhotoItem>, watch: PhotoWatch): void {
 		uploading.value = true
 		uploadDone.value = 0
 		uploadTotal.value = items.length
@@ -1247,7 +1262,15 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 			uploadFailed.value = p.failed
 		}).then((uploaded: Array<UploadedPhoto>) => {
 			uploading.value = false
+			// B-18 阶段②：上传链已把每张照片处置掉（成功 / 入 held / 入 failed 队列）⇒ 本批可接管。
+			// ⚠️ 顺序很重要：**先 ack 再收尾**——收尾（聚合/上云）耗时且可能异常，
+			// 而那些步骤失败不会让这批照片消失（照片已在 contents 或 held/failed 里），不该拖住游标。
+			const acked = watch.ackBatch(true)
+			if (!acked) {
+				console.log('[yishu] ackBatch(true) 无待确认批次（可能已被 ack 看门狗兜底结算）')
+			}
 			if (uploadFailed.value > 0) {
+				// B-13：失败与「暂缓」不是一回事 —— 这里只说失败；暂缓由横幅/记录面板按 held 计数说明
 				uni.showToast({ title: '有 ' + uploadFailed.value + ' 张上传失败', icon: 'none' })
 			}
 			if (uploaded.length > 0) {
@@ -1301,6 +1324,14 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 			}
 			// 卡PA R2：同上，上传完成走无闪屏静默刷新（uploaded 为空时的原有出口）
 			refreshSilently()
+		}, (e: Error): void => {
+			// B-18：上传链**异常**（不是"某张失败"，而是整条链没跑完）⇒ 不能保证已持久接管
+			// ⇒ ackBatch(false)：游标保持不动，下次扫描从原处重扫（宁重勿丢）。
+			uploading.value = false
+			const msg = e != null && e.message != null ? e.message : 'unknown'
+			console.error('[yishu] handleBatch 上传链异常，ackBatch(false) 保留重扫：' + msg)
+			watch.ackBatch(false)
+			uni.showToast({ title: '照片同步异常，稍后会自动重试', icon: 'none' })
 		})
 	}
 </script>

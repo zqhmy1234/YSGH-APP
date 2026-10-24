@@ -198,15 +198,15 @@ export function armAckWatchdog(): void {
 
 /** 是否存在待确认批次 */
 export function hasPending(): boolean {
-	return prefs().getLong(KEY_PENDING_MAX, 0) > 0
+	return prefs().getLong(KEY_PENDING_MAX, ZERO_LONG) > ZERO_LONG
 }
 
 /** 待确认批次的扫描起点（无 pending 时返回当前游标） */
 export function pendingFromId(): number {
 	if (!hasPending()) {
-		return prefs().getLong(KEY_LAST_SEEN, 0)
+		return prefs().getLong(KEY_LAST_SEEN, ZERO_LONG).toDouble()
 	}
-	return prefs().getLong(KEY_PENDING_FROM, prefs().getLong(KEY_LAST_SEEN, 0))
+	return prefs().getLong(KEY_PENDING_FROM, prefs().getLong(KEY_LAST_SEEN, ZERO_LONG)).toDouble()
 }
 
 /**
@@ -214,8 +214,8 @@ export function pendingFromId(): number {
  * @return 是否真的有一个待确认批次被结算（无 pending 返回 false，便于调用方发现问题）
  */
 export function ackBatch(consumeOk: boolean): boolean {
-	const pMax = prefs().getLong(KEY_PENDING_MAX, 0)
-	if (pMax <= 0) {
+	const pMax = prefs().getLong(KEY_PENDING_MAX, ZERO_LONG)
+	if (pMax <= ZERO_LONG) {
 		// 没有待确认批次：可能同步已提交、或已被超时看门狗兜底 ⇒ 打点后无事可做（不静默）
 		console.log('[yishu] ackBatch(consumeOk=' + consumeOk + ') 无待确认批次（已结算或已超时兜底），忽略')
 		return false
