@@ -796,7 +796,13 @@ import { watch } from 'vue'
 				// L1 日卡片必须由端侧 POST /api/v1/events/sync 提交，故此处必须补上。
 				const l1n = submitUploadsAsL1(uploaded)
 				console.log('[yishu] 记录面板 L1 提交条数=' + l1n)
-				uni.showToast({ title: '已记录', icon: 'success' })
+				// A-02（2026-10-24 · 用户同意选项②）：照片态同样如实告知
+				// 「自定义分类仅本机可见」——不能只在文字路径说、照片路径不说。
+				const photoUsedCustom = manualLabel.value.indexOf('custom:') == 0
+				uni.showToast({
+					title: photoUsedCustom ? '已记录（自定义分类仅本机可见）' : '已记录',
+					icon: 'success'
+				})
 				emit('saved')
 				photos.value = []
 				photoSizes.value = []
@@ -860,8 +866,16 @@ import { watch } from 'vue'
 			lastText.value = text
 			draft.value = ''
 			remark.value = ''
+			// A-02（2026-10-24 · 用户同意选项②）：自定义分类**不会同步到服务端**
+			// （后端 corrections.py:36 的 VALID_CLASSES 白名单只认 7 类）。
+			// 原先这件事只写在代码注释里 ⇒ 用户选中后毫无感知，属**静默无效**。
+			// 现改为保存成功时明说边界：能建、能选、本机可见，但暂未同步。
+			const usedCustom = picked.indexOf('custom:') == 0
 			manualLabel.value = ''
-			uni.showToast({ title: '已记录', icon: 'success' })
+			uni.showToast({
+				title: usedCustom ? '已记录（自定义分类仅本机可见）' : '已记录',
+				icon: 'success'
+			})
 			emit('saved')
 			emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
 			// 云端分类继续执行（服务端打标）；组件可能已随浮层销毁，仅剩服务端副作用

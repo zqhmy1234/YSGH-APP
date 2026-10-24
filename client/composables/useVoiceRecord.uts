@@ -620,10 +620,22 @@ export class VoiceRecorder {
 			})
 		}
 		if (audioOk) {
-			uni.showToast({ title: '已记录', icon: 'success' })
+			// A-02（2026-10-24 · 用户同意选项②）：自定义分类**不会同步到服务端**
+			//（后端 corrections.py:36 的 VALID_CLASSES 白名单只认 7 类）。
+			// 原先只写在代码注释里 ⇒ 用户选中后毫无感知，属**静默无效**。现保存成功时明说边界。
+			uni.showToast({
+				title: picked.indexOf('custom:') == 0 ? '已记录（自定义分类仅本机可见）' : '已记录',
+				icon: 'success'
+			})
 		} else {
 			// 降级路径显式告知：文本已存但音频没有（峰宝铁律：不允许静默）
-			uni.showToast({ title: '已存文本（音频未上传）', icon: 'none', duration: 2500 })
+			uni.showToast({
+				title: picked.indexOf('custom:') == 0
+					? '已存文本（音频未上传；自定义分类仅本机可见）'
+					: '已存文本（音频未上传）',
+				icon: 'none',
+				duration: 2500
+			})
 		}
 		this.emitSaved()
 		this.transcript.value = ''
