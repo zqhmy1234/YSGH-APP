@@ -93,6 +93,12 @@
 </template>
 
 <script setup lang="uts">
+	// ⚠️ 必须显式 import：`ref` / `onLoad` 虽在 uni-app x 里也能靠自动导入解析（本页首版
+	// 没 import 也编译通过了），但**全仓同目录先例都显式写**（`manage.uvue:172` /
+	// `favorites.uvue:136,138`）。自动导入是隐式行为，一旦编译器版本变化就变成运行期
+	// undefined —— 这类"能编译但跑不起来"的坑本仓踩过多次（见 lessons 的 UTS 族）。
+	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
 	import { dimLabel } from '@/utils/profile_labels.uts'
 	import { fetchInterviewProfile } from '@/utils/play_interview.uts'
 	import {
@@ -135,15 +141,28 @@
 				profileLoadFailed.value = true
 				return
 			}
+			// 用法与 `manage.uvue:255-262`（同目录、同类数据）**逐句对齐**：
+			// `keys()` 取键、`getJSONArray()` 取值。首版曾用 `UTSJSONObject.keys()` +
+			// `getArray<string>()`，虽也编译通过，但同仓无先例、UTS 泛型方法在真机的
+			// 行为未验证 ⇒ 一律用已被真机跑过的写法。
 			const obj = res.getJSON('dimensions')
 			const rows = new Array<DimRow>()
 			if (obj != null) {
-				const keys = UTSJSONObject.keys(obj)
+				const keys = obj.keys()
 				for (let i = 0; i < keys.length; i++) {
-					const k = keys[i] as string
-					const vals = obj.getArray<string>(k)
+					const k = keys[i]
+					const vals = obj.getJSONArray(k)
 					if (vals != null && vals.length > 0) {
-						rows.push(new DimRow(k, dimLabel(k), vals.join('、')))
+						const parts: Array<string> = []
+						for (let j = 0; j < vals.length; j++) {
+							const v = vals[j]
+							if (v != null) {
+								parts.push(v.toString())
+							}
+						}
+						if (parts.length > 0) {
+							rows.push(new DimRow(k, dimLabel(k), parts.join('、')))
+						}
 					}
 				}
 			}

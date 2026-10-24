@@ -19,7 +19,7 @@
  * **不得把失败渲染成"暂无待确认"**（那会让用户以为 AI 什么都没猜出来）。
  */
 
-import { get, post } from './api'
+import { dataArr, get, post } from './api'
 import { PATH_PROFILE_ANNOTATIONS, PATH_PROFILE_ANNOTATION_DECIDE } from './contract'
 
 /** 一条待确认标注 */
@@ -74,17 +74,13 @@ export function fetchProfileAnnotations(limit: number): Promise<Array<ProfileAnn
 				resolve(null)
 				return
 			}
-			const data = res.getArray<UTSJSONObject>('data')
-			if (data == null) {
-				resolve(null)
-				return
-			}
+			// 用 `dataArr()`（`client/utils/api.uts:559`）而不是 `res.getArray<T>('data')`：
+			// 前者是全仓统一的信封解析入口（内部 `getArray('data')` + `as` 断言），
+			// 已被 `trashList` 等多处验证；后者是同仓**无先例**的泛型写法。
+			const data = dataArr(res)
 			const out = new Array<ProfileAnnotation>()
 			for (let i = 0; i < data.length; i++) {
-				const item = data[i]
-				if (item != null) {
-					out.push(toAnnotation(item))
-				}
+				out.push(toAnnotation(data[i]))
 			}
 			resolve(out)
 		})
