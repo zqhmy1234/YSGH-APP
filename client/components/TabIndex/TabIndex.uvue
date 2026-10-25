@@ -144,25 +144,14 @@
 					<view class="day-line"></view>
 				</view>
 				<text v-if="todayEntries.length === 0" class="pending-sub muted">今天还没有记录 · 点下方的 + 记一笔</text>
-				<view v-for="e in todayEntries" :key="'te-' + e.id" class="card pressable" @tap="openEntry(e)">
-					<!-- 文字 entry：复用为文字预留的引用卡（左侧琥珀竖线 + 引言体） -->
-					<view v-if="e.kind === 'text'" class="quote-card">
-						<view class="quote-line"></view>
-						<view class="quote-content">
-							<text class="quote-text serif">{{ e.text }}</text>
-							<text class="quote-source">{{ e.timeLabel }}{{ e.place != '' ? ' · ' + e.place : '' }}</text>
-						</view>
-					</view>
-					<!-- 照片 entry：封面复用 `.cover-wrap/.cover-img`（同「那年今日」行/事件卡），
-					     图片走服务端 thumbnail_url 票据（在 entries_api 内 resolveMediaUrl 拼直连） -->
-					<view v-if="e.kind === 'photo'" class="cover-wrap">
-						<image class="cover-img" :src="e.photoUrl" mode="aspectFill" lazy-load="true" />
-					</view>
-					<view v-if="e.kind === 'photo'" class="card-meta">
-						<text class="meta-item">{{ e.timeLabel }}</text>
-						<text v-if="e.place != ''" class="meta-item">{{ e.place }}</text>
-					</view>
-				</view>
+				<!-- 2026-10-25（task-12 ①/②）：条目卡抽成 `EntryCard` 组件 —— 「今天」块与历史区
+				     **渲染同一种东西**（一条 contents 记录），此前这段模板在两处各写一遍（重复且会漂移）。
+				     组件内已含「⋯」操作入口（今天记的东西此前**零操作入口**），逻辑在 `useEntryOps`。
+				     props 逐个展开传（对象 prop 在 UTS 组件边界有类型陷阱，见组件头注）。 -->
+				<EntryCard v-for="e in todayEntries" :key="'te-' + e.id"
+					:id="e.id" :kind="e.kind" :text="e.text" :photo-url="e.photoUrl"
+					:time-label="e.timeLabel" :place="e.place"
+					@open="openEntryById" @ops="opsEntryById" />
 			</view>
 
 			<!-- 回顾位「那年今日」（2026-10-15 · 台账 §4.20 ㉘ · 批次 C 第一刀）：
@@ -196,21 +185,29 @@
 			     `todayEntries.length === 0`（理由见上方「今天」块注释）；2026-10-16：与骨架屏、
 			     「今天」块统一用 `loading`/`showEmpty` 判显隐（`loading = !loaded || !todayLoaded`）
 			     ⇒ 三态互斥不叠渲染 ✓。
-			     ⚠️ 日卡列表数据源 `visibleDays` 已排除「今天」的日组（去重口径，见其定义处）。 -->
+			     ⚠️ 日卡列表数据源 `visibleDays` 已排除「今天」的日组（去重口径，见其定义处）。
+			     🚨 2026-10-25（task-12 ① · 真机事故「老账号历史全空」）：`visibleDays` 的元素类型
+			     已由 `DayGroup` 换成 **`HistoryDay`**（事件 + 内容条目合并组）。原因：老账号几乎没有
+			     可用事件（L1 只在客户端上传那刻产出，云侧默认 l2l3 不产 L1；实测该账号 contents 316 /
+			     events 12 且 event_items 全为 0）⇒ 只渲染事件日组 = 历史区恒空 ⇒ 页面只剩「今天」。
+			     现同一天内先渲染事件卡、再渲染内容条目；**空壳事件已在合并时剔除**（见 history_days.uts）。 -->
 			<view class="feed" :class="(showEmpty || loading) ? 'ui-hidden' : ''">
-				<view v-for="(day, dayIdx) in visibleDays" :key="day.key" class="day-block">
+				<view v-for="day in visibleDays" :key="day.key" class="day-block">
 					<view class="day-head">
 						<text class="day-title serif">{{ day.label }}</text>
-						<!-- 2026-10-17：日头"N 张照片"概括——组内 photoCount 总和在 buildDayGroups 出口
-						     预计算（DayGroup.photoCountTotal），无照片日组不显示；复用既有 .meta-item -->
+						<!-- 2026-10-17：日头"N 张照片"概括——组内 photoCount 总和在出口预计算
+						     （`HistoryDay.photoCountTotal` = 事件求和 + 内容照片数），无照片不显示 -->
 						<text v-if="day.photoCountTotal > 0" class="meta-item">{{ day.photoCountTotal }} 张照片</text>
 						<view class="day-line"></view>
 					</view>
 					<!-- 整卡可点进详情（真机实锤：此前卡片**没绑任何 @tap**，详情页从时间轴无入口）。
 					     内部已有 @tap 的子元素必须加 .stop，否则点操作/照片/播放也会冒泡进详情 -->
 					<view v-for="ev in day.events" :key="ev.id" class="card" :class="ev.level === 1 ? 'card-l1' : 'card-l2'" @tap="openDetail(ev)">
-						<!-- 操作入口 -->
-						<view class="card-ops pressable" @tap.stop="onCardOps(ev, dayIdx)">
+						<!-- 操作入口。🚨 2026-10-25（task-12 ③）：第二个参数由 **dayIdx** 改为 **day.key**。
+						     原传索引是过滤后数组下标，而 `getPrevL1Id` 用未过滤的 `days`（含今天）索引
+						     ⇒ 整体偏移 1（最新历史日永远"没有可合并的上一张"、次新日会把卡合并进今天）。
+						     日键是稳定标识，不随分页窗口 slice 变化而漂移。 -->
+						<view class="card-ops pressable" @tap.stop="onCardOps(ev, day.key)">
 							<text class="card-ops-text">⋯</text>
 						</view>
 						<view v-if="ev.coverPath != ''" class="cover-wrap">
@@ -270,7 +267,24 @@
 							</view>
 						</view>
 					</view>
+					<!-- 🚨 2026-10-25（task-12 ① · 核心）：**内容条目**（来自 contents）。
+					     老账号的 events 几乎是空壳（实测 12 条事件 event_items 全为 0），若只渲染事件卡，
+					     历史区就是空的 ⇒ 用户「317 条内容却只看得到今天」。这里把 contents 按天分组后
+					     与事件卡**同组渲染**（同一个日期头，不重复）。渲染与「今天」块**同一个组件**
+					     （`EntryCard`）⇒ 视觉天然同构、零重复代码。 -->
+					<EntryCard v-for="(e, eIdx) in day.entries" :key="day.key + '-e' + eIdx + '-' + e.id"
+						:id="e.id" :kind="e.kind" :text="e.text" :photo-url="e.photoUrl"
+						:time-label="e.timeLabel" :place="e.place"
+						@open="openEntryById" @ops="opsEntryById" />
 				</view>
+
+				<!-- 🚨 2026-10-25（task-12 ① · 截断如实暴露）：「内容拉取被截断」必须让用户看见。
+				     历史区现在读 contents（多页游标），页数有上限（`FEED_MAX_PAGES`）⇒ 内容特别多的
+				     账号会只显示最近 N 天。此前这类截断是**静默**的（`entries_api.uts` 旧注释自己
+				     标注过"静默吃掉"），用户会以为"更早的记忆丢了" ✗。
+				     口径：只说事实（"仅显示最近 N 天"），**不承诺**"加载更多能看全"（没有对应能力）✗。
+				     样式复用既有 `.pending-sub.muted`（零新增视觉元素）。 -->
+				<text v-if="entriesTruncated" class="pending-sub muted">内容较多，仅显示最近的部分记录 · 更早的可到搜索页查找</text>
 
 				<!-- L2 待确认区（2026-10-17 起移入历史区底部，仍在 .feed 内） -->
 				<!-- 2026-10-16（用户裁决 · 采纳"待确认区不做日期过滤"）：本区是"**待用户确认**"的
@@ -424,7 +438,11 @@
 	import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 		// 2026-10-15（台账 §4.20 ㉘ · 「今天」块）：今天的**文字记录** —— 读 contents 而非 events
 	//（文字不产 event，详见模块注释）
-	import { fetchTodayEntries, wasLastEntriesFetchFailed, TodayEntry, buildLookback, LookbackRow } from '@/utils/entries_api'
+	import { fetchEntryFeed, TodayEntry, buildLookback, LookbackRow, EntryFeed, EntryDay } from '@/utils/entries_api'
+// 2026-10-25（task-12 ①）：历史区兜底——内容按天分组 + 与事件日组合并（同一日期只出一个日头）
+import { HistoryDay, mergeHistoryDays } from '@/utils/history_days.uts'
+// 2026-10-25（task-12 ②）：「今天」块条目的操作入口（收藏 / 纠错 / 移入回收站）
+import { EntryOps } from '@/composables/useEntryOps.uts'
 import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/utils/play_echo'
 	import {
 		flushOpQueue,
@@ -511,17 +529,36 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	// 「今天」的内容由上方「今天」块（读 `contents`）**独占**；若日分组里再出现今天的事件卡片，
 	// 同一张今天的照片会**出现两次** ✗。事件日分组键 = `dayKey(startTime)`（见 buildDayGroups），
 	// 与本处 `dayKey(Date.now())` 同源 ⇒ 排除 `d.key == 今天` 即可 ✓。
+	//
+	// 🚨 2026-10-25（task-12 ① · 真机事故「老账号历史全空」）：本 computed 不再是历史区的**唯一**
+	// 数据源。此前历史区 = 事件日组，而**老账号几乎没有可用事件**（L1 生产者只在客户端上传那刻跑，
+	// 云侧默认 l2l3 不产 L1；实测该账号 contents 316 条 / events 12 条且 event_items 全为 0）
+	// ⇒ `historyDayCount = 0` ⇒ 页面只剩「今天」。现历史区 = **事件日组 ∪ 内容日组**
+	// （见下方 `historyRows`），本 computed 只保留"今天的日组"用途（去重口径不变）。
 	let historyDays = computed((): Array<DayGroup> => {
 		const today = dayKey(Date.now())
 		return days.value.filter((d: DayGroup): boolean => d.key != today)
 	})
-	let visibleDays = computed((): Array<DayGroup> => {
-		return historyDays.value.slice(0, visibleDayCount.value)
+
+	// ── 2026-10-25（task-12 ①）：历史区合并数据源 ──────────────────────────────────────────
+	// `entryDays` = contents 按本地自然日分组（`fetchEntryFeed().days`，含今天；合并时去掉）。
+	// 为什么要与事件日组**合并**而不是二选一：新账号两种都有（事件是聚合产物、内容是原料），
+	// 二选一会丢掉一半信息；而合并必须**按日期键去重**，否则同一天会出现两个「10月24日」✗。
+	let entryDays = ref<Array<EntryDay>>([])
+	// 内容拉取是否**被截断**（服务端还有更早的内容没拉）⇒ 页面如实提示「仅显示最近 N 天」，
+	// 这是对 2026-10-16 那条「拉 50 条再就地筛会静默截断」的正面处置（见 entries_api 注释 ③）
+	let entriesTruncated = ref(false)
+	// 合并后的历史区（事件 + 内容，按日倒序，同一天只出一个日期头；空壳事件已剔除）
+	let historyRows = computed((): Array<HistoryDay> => {
+		return mergeHistoryDays(historyDays.value, entryDays.value, dayKey(Date.now()), 0)
+	})
+	let visibleDays = computed((): Array<HistoryDay> => {
+		return historyRows.value.slice(0, visibleDayCount.value)
 	})
 	// 历史区总日组数（已排除今天）——「加载更多」的剩余数用它，**不能**用 `days.length`
-	// （含今天会多算一组，按钮"还有 N 组"会虚高 ✗）
+	// （含今天会多算一组，按钮"还有 N 组"会虚高 ✗；且现在还要算上内容日组）
 	let historyDayCount = computed((): number => {
-		return historyDays.value.length
+		return historyRows.value.length
 	})
 
 	// 生命周期
@@ -1061,29 +1098,100 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 	// 不新增端点/契约 ✓）；视图字段在 `buildLookback` 里预计算（模板零函数调用 ✓）。
 	let lookbackRows = ref<Array<LookbackRow>>([])
 
+	// ── 内容拉取（2026-10-25 · task-12 ① 改造）───────────────────────────────────────────
+	//
+	// 原实现 `loadTodayEntries()` 只调 `fetchTodayEntries()`（单页 50 条、只留今天）——
+	// **老账号的历史内容根本没被请求过**（316 条里只拉最近 50 条，且其余 49 条被"非今天"筛掉）。
+	// 现改为 `fetchEntryFeed(MAX_PAGES)`：**一次请求链**同时产出
+	//   ① `today` → 「今天」块；② `days` → 历史区兜底；③ `truncated` → 截断如实提示。
+	// 为什么不是再来一次请求：两次请求会拉到**不同时刻**的数据（翻页期间有写入），
+	// 「今天」块与历史区就可能出现"同一张照片两边都有/两边都没有" ✗。
+	// 内容拉取页数上限：**4 页 × 100 条 = 400 条容量**。
+	// 取 4 的实测依据（真实账号 `e4134743-…` 316 条内容）：4×100 即可**覆盖全部 27 天**
+	// （最早到 2025-09-05，`truncated=false`）；而旧的 1×50 只能覆盖 1 天。
+	// 不取更多：每多一页多一次 RTT，而 400 条已超出 MVP 内测账号量级（最高 316）；
+	// 真超了也不会静默——`truncated=true` ⇒ 页面显示「仅显示最近的部分记录」。
+	const FEED_MAX_PAGES: number = 4
+
+	/**
+	 * 拉内容 → 「今天」块 + 历史区内容日组。
+	 *
+	 * 失败语义（逐字沿用 2026-10-16 口径）：`fetchEntryFeed` 失败返回 `null` ⇒
+	 * **保持现状不覆盖**（断网下拉刷新不该把用户正在看的今天记录抹掉 ✗）；
+	 * `todayLoaded` **无条件先置位**（否则骨架永驻，见原注释）。
+	 */
 	function loadTodayEntries(): void {
-		fetchTodayEntries().then((rows: Array<TodayEntry>) => {
-			// 2026-10-16（三态 · 分支 B1）：**无条件先置位**——`fetchTodayEntries` 的 Promise 恒 resolve
-			// （`get()` 失败也 resolve null ⇒ 本函数失败也 resolve []）⇒ 此处置位保证 `loading` 一定收敛，
-			// **不会因下方失败守卫而漏置**（漏置 = 骨架永驻 ✗）。必须在守卫**之前**置。
+		fetchEntryFeed(FEED_MAX_PAGES).then((feed: EntryFeed | null) => {
+			// 2026-10-16（三态 · 分支 B1）：**无条件先置位**——`fetchEntryFeed` 的 Promise 恒 resolve
+			// ⇒ 此处置位保证 `loading` 一定收敛，**不会因下方失败守卫而漏置**（漏置 = 骨架永驻 ✗）。
 			todayLoaded.value = true
-			// 🚨 2026-10-16（复核补 · 沿 10-11 静态审查 #1 对 events / echo 的同一口径）：
-			// **失败结果不得覆盖已渲染的今天记录**。`fetchTodayEntries` 用空数组表达"请求失败"与
-			// "今天真的没有记录"两种情形 ⇒ 原实现无条件覆盖，则**断网下拉刷新会把用户正在看的
-			// 今天的文字/照片整块抹掉**（"今天"块退回"今天还没有记录"）；只记文字（不产 event）
-			// 的用户更会翻成假空态「还没有回忆」（`showEmpty` 依赖 `todayEntries`）✗。
-			// 失败保持现状、成功才覆盖 ✓；首拉失败时 todayEntries 本就为空，最终显隐仍由下方
-			// `showEmpty`（events/loadFailed 口径）统一裁决，不新增分支、不新增监听 ✓。
-			if (wasLastEntriesFetchFailed()) {
-				console.log('[dbg-index] today entries fetch failed -> keep current')
+			if (feed == null) {
+				console.log('[dbg-index] entry feed fetch failed -> keep current')
 				return
 			}
-			todayEntries.value = rows
+			todayEntries.value = feed.today
+			// 历史区兜底数据源（含今天；`mergeHistoryDays` 合并时去掉今天，去重口径不变 ✓）
+			entryDays.value = feed.days
+			entriesTruncated.value = feed.truncated
+			console.log('[dbg-index] entry feed: scanned=' + feed.scanned
+				+ ' today=' + feed.today.length
+				+ ' days=' + feed.days.length
+				+ ' truncated=' + feed.truncated)
 		})
 	}
 
-	function openEntry(e: TodayEntry): void {
-		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + e.id })
+	// ── 2026-10-25（task-12 ①②）：条目卡的宿主侧回调 + 操作入口 ────────────────────────
+	// `EntryCard` 只 emit **基本类型（content id 字符串）**——对象 prop/emit 在 UTS 组件边界有类型
+	// 陷阱（EchoSheet/SearchHitOps 铁律），故宿主按 id 反查条目（两份数据源都要查：今天块与历史区）。
+	//
+	// 为什么按 id 反查而不把 `TodayEntry` 塞进 emit：同上。反查成本 O(n)，但 n ≤ 200 且只在点按
+	// 时发生（不是渲染期），可接受；换来的是组件边界上零对象传输（与全仓先例一致 ✓）。
+
+	/** 按 content id 反查条目（先查「今天」块，再查历史区内容日组）；找不到返回 null */
+	function findEntryById(id: string): TodayEntry | null {
+		for (let i = 0; i < todayEntries.value.length; i++) {
+			if (todayEntries.value[i].id == id) {
+				return todayEntries.value[i]
+			}
+		}
+		const ds = entryDays.value
+		for (let i = 0; i < ds.length; i++) {
+			const es = ds[i].entries
+			for (let j = 0; j < es.length; j++) {
+				if (es[j].id == id) {
+					return es[j]
+				}
+			}
+		}
+		return null
+	}
+
+	/** 条目卡整卡点按 → 内容详情页（「今天」块与历史区**同一去向**） */
+	function openEntryById(id: string): void {
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + id })
+	}
+
+	// 此前「今天」块条目**只绑 @tap、没有任何 `.card-ops`** ⇒ 用户今天记的东西零操作入口
+	// （不能收藏/纠错/删）。现补一个「⋯」（热区已按 ④ 放大到 44dp）。
+	// 口径说明见 `useEntryOps` 头注：内容卡只给**内容级**操作（收藏/纠错/软删）——
+	// 「确认/拆分/合并」是**事件级**（入参 event_id），对一条 content 无从下手，硬摆=空转入口 ✗。
+	const entryOps = new EntryOps((): void => {
+		// 操作成功后就地刷新「今天」块与历史区（同一条请求链，见 loadTodayEntries）
+		loadTodayEntries()
+	})
+
+	/** 条目「⋯」操作面板（「今天」块与历史区共用同一套语义） */
+	function opsEntryById(id: string): void {
+		const e = findEntryById(id)
+		if (e == null) {
+			// 数据已被刷新掉（列表整组浅替换是常态）⇒ 如实提示，不静默
+			uni.showToast({ title: '这条记录已更新，请重试', icon: 'none' })
+			return
+		}
+		// 纠错的 rawText：文字卡传原文（写进纠错记录供后续复核）；照片传空串
+		// —— 与 `SearchHitOps` 同口径：**不把编造的文本写进向量库** ✗
+		const raw = e.kind == 'text' ? e.text : ''
+		entryOps.onEntryOps(e, raw, e.kind)
 	}
 
 	/** 回顾位点击 → 与 `openDetail` 同口径（封面优先、首图回退）；无可查看内容时诚实 toast */

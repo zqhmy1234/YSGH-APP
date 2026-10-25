@@ -89,3 +89,71 @@ def test_keeps_json_with_args_key_but_no_name():
 def test_keeps_code_block_of_python():
     s = "```python\nprint('hi')\n```"
     assert strip_model_markup(s) == s
+
+
+# ── 2026-10-25 补：工具结果 JSON 泄漏（真机反馈"中间 json 格式的文本混进来，非常丑"）──
+#
+# 下面两条是**同一现象的两半**，缺一条就会让修复退化成"过度清洗"或"清洗不到位"：
+#   · 真实工具结果（含 `success` / `_hint`）⇒ 必须整段消失；
+#   · 用户主动要的 JSON 示例 ⇒ 必须一字节不动（上面 `test_keeps_legitimate_json` 已守，
+#     这里再补一条"形状接近但不含工具键"的更紧的边界）。
+
+
+def test_strips_real_tool_result_leak():
+    """真机样本：模型把 save_knowledge_collection 的 ToolMessage 整串复述进正文。
+
+    这段 JSON 形状**完全正常**（不是工具调用），旧的判据只认 `tool_calls`/`name+arguments`
+    ⇒ 一字节没动（实测复现）。现在靠"含 `success` 或含 `_` 开头内部键"识别。
+    """
+    leak = (
+        '{"success": true, "collection_id": 59, "message": "知识收藏已成功保存，ID: 59", '
+        '"content_type": "文章", "title": "AI 与记忆", "topics": ["学习"], "mood": "平静", '
+        '"related_collections": [], "related_memories": [], '
+        '"_hint": "回复用户时展示：✅已收藏、📝标题……严禁展示content_format、collection_id。"}'
+    )
+    raw = f"好的，已经帮你收藏啦～\n{leak}\n还有什么想记录的吗？"
+    out = strip_model_markup(raw)
+    assert "_hint" not in out, repr(out)
+    assert "collection_id" not in out, repr(out)
+    assert "success" not in out, repr(out)
+    # 正文两端的自然语言必须保留（不是把整段回复吞掉）
+    assert "已经帮你收藏啦" in out, repr(out)
+    assert "还有什么想记录的吗" in out, repr(out)
+
+
+def test_strips_hint_when_it_survives_as_bare_word():
+    """`_hint` 任意位置出现都要剥——包括模型只复述了键名、JSON 没成形的情形。"""
+    raw = "已保存好了。_hint 回复时展示分类和情绪。"
+    out = strip_model_markup(raw)
+    assert "_hint" not in out, repr(out)
+    assert "已保存好了" in out, repr(out)
+
+
+def test_strips_fenced_real_tool_result():
+    """```json 围栏里的工具结果同样整段消失（围栏变空壳后连围栏一起收）。"""
+    raw = (
+        "帮你存好了\n```json\n"
+        '{"success": true, "memory_id": 12, "_hint": "严禁展示 memory_id"}\n'
+        "```\n早点休息"
+    )
+    out = strip_model_markup(raw)
+    assert "_hint" not in out, repr(out)
+    assert "memory_id" not in out, repr(out)
+    assert "帮你存好了" in out and "早点休息" in out, repr(out)
+
+
+def test_keeps_user_json_without_tool_keys():
+    """紧邻边界：用户要的 JSON 示例**不含**工具键 ⇒ 必须原样保留。
+
+    这是防止"为了不泄漏就一律剥 JSON"过度清洗的第二道守护
+    （第一道是 `test_keeps_legitimate_json`）。
+    """
+    s = '给你一段示例：{"name": "小明", "age": 18, "city": "杭州"}'
+    assert strip_model_markup(s) == s
+
+
+def test_keeps_json_with_underscore_only_in_value():
+    """`_` 只出现在**值**里（不在键上）不构成内部键 ⇒ 保留。"""
+    s = '{"note": "这是_user_id字段的说明"}'
+    assert strip_model_markup(s) == s
+

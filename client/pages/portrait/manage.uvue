@@ -27,6 +27,14 @@
 						<text class="profile-title serif">我的记忆画像</text>
 						<text class="profile-badge">L2 · 主题级</text>
 					</view>
+					<!-- 2026-10-25 · 可供性修复（用户真机：「压根没有点开详情页的入口」）：
+					     链路本来通（整卡 @tap=openProfileDetail → pages/portrait/detail），
+					     断的是**视觉可供性** —— 本页下面 6 个真正会跳转的菜单行**每一个**都带
+					     `.menu-arrow ›`，用户从页内一致性学到「有箭头才可点」，于是唯独这张
+					     **没有箭头**的画像卡被当成静态概览图。
+					     故这里补一枚与那 6 行**完全同族**的箭头（复用既有 `.menu-arrow` 类，
+					     不新造视觉）—— 让"能不能点"在页内只有一种读法。 -->
+					<text class="menu-arrow">›</text>
 				</view>
 				<text class="profile-desc">基于你的照片、文字、语音碎片，AI 自动生成的个人记忆画像。画像会随着记忆积累不断更新。</text>
 				<view class="profile-stats">

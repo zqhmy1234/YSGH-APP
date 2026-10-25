@@ -38,6 +38,9 @@ import { refreshToken, clearToken } from './auth'
 import { getBaseUrl } from './config'
 import { addBreadcrumb, captureException } from './sentry'
 import { PATH_CHAT_MESSAGES_STREAM, PATH_CHAT_CONVERSATION_MESSAGES } from './contract'
+// 2026-10-25：JSON 碎片判定（真机「中间的 json 格式的文本会混进来」）。
+// 实现放独立文件是因为本文件已 793 行 / 阈值 800（structure 棘轮无豁免）。
+import { dropJsonFragments, looksLikeJsonFragment } from './chat_text_shape'
 
 /** 记忆卡片（agent 侧 `save_memory` 结构化投影；img 为空串=文字记忆无缩略图） */
 export class ChatCard {
@@ -124,6 +127,14 @@ export function splitLines(text: string): Array<string> {
 	return out
 }
 
+/** JSON 碎片判定（2026-10-25 · 真机「中间的 json 格式的文本会混进来，非常丑」）。
+ *
+ * ⚠️ 实现已抽到 `utils/chat_text_shape.uts`（本文件 793 行 / 阈值 800 / 无豁免，
+ * 把判定塞在这里会顶过阈值判 CRITICAL）。此处 re-export 只为不破坏既有 import；
+ * 判据与完整理由见那个文件。
+ */
+export { looksLikeJsonFragment } from './chat_text_shape'
+
 /** 解析字符串数组字段（元素非字符串一律丢弃——UTS 强转 null/数字会崩或污染渲染） */
 function parseStringArray(arr: Array<any> | null): Array<string> {
 	const out: Array<string> = []
@@ -190,15 +201,19 @@ function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 	}
 	const text = obj.getString('text') ?? ''
 	const kind = obj.getString('kind') ?? 'bubble'
-	// plain：首行作标题，其余行作要点；单行/非 plain 时 bullets 为空（页面另有渲染分支）
-	const lines = splitLines(text)
+	// 2026-10-25（真机「中间的 json 格式的文本会混进来」）：**先滤掉 JSON 碎片，再切标题/要点**。
+	// 顺序是关键：`plain` 把首行当标题、其余每行当 bullet；若切分后才过滤，一段压平的 JSON
+	// 已被拆成"标题 + 十条要点"（每行带锈红圆点）——正是用户说的"非常丑"。判据见 chat_text_shape.
+	const lines = dropJsonFragments(splitLines(text))
 	const bullets: Array<string> = []
 	if (kind == 'plain' && lines.length > 1) {
 		for (let i = 1; i < lines.length; i++) {
 			bullets.push(lines[i])
 		}
 	}
-	const title = lines.length > 0 ? lines[0] : text
+	// 全被滤空（整段回复就是一段 JSON）⇒ title 用空串而不是原 text：
+	// 宁可气泡空着，也不把 JSON 当标题顶上首行（后者正是真机那个现象的形态）。
+	const title = lines.length > 0 ? lines[0] : ''
 	return new ChatReply(
 		obj.getString('id') ?? '',
 		kind,

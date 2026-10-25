@@ -36,7 +36,7 @@ import { get, dataObj } from './api'
 // 2026-10-16 修正：PATH_CONTENTS 定义在 `contract.uts`，此前从 `./api` 导入是**悬空导出**
 // （`api.uts` 不 re-export contract）——按 search_api/voice 的既有正确写法收到 `./contract` ✓。
 import { PATH_CONTENTS } from './contract'
-import { parseIsoMs, dayKey } from './time'
+import { parseIsoMs, dayKey, friendlyDay } from './time'
 import { resolveMediaUrl } from './config'
 import { TimelineEvent } from './timeline'
 
@@ -58,6 +58,56 @@ export class TodayEntry {
 		this.timeLabel = timeLabel
 		this.place = place
 		this.orderMs = orderMs
+	}
+}
+
+/**
+ * 按本地自然日分组的一天记录（2026-10-25 · task-12 ①）。
+ *
+ * 与 `TimelineEvent` 的日组（`timeline.DayGroup`）**同款语义**（`key` = `yyyy-mm-dd`
+ * 本地日键、`label` = 日头文案），只是载荷换成原始 `contents` 条目 —— 这样两者能
+ * 按日期键合并成一个历史区（见 `history_days.mergeHistoryDays`）。
+ */
+export class EntryDay {
+	key: string
+	label: string
+	entries: Array<TodayEntry>
+
+	constructor(key: string, label: string) {
+		this.key = key
+		this.label = label
+		this.entries = []
+	}
+}
+
+/**
+ * 一次内容拉取的结果（2026-10-25 · task-12 ①）。
+ *
+ * 为什么把它做成一个对象而不是「一个数组」：历史区同时需要
+ *   ① **今天**的条目（给「今天」块）、② **所有天**的分组（给历史区兜底）、
+ *   ③ **这次到底拉全了没有**（`truncated`）——三者是同一次请求的结果，
+ *   分三次拉等于三倍延迟且可能不一致。
+ */
+export class EntryFeed {
+	/** 今天的条目（正序：早上 → 现在） */
+	today: Array<TodayEntry>
+	/** 全部按天分组（**含今天**；历史区渲染前由 `mergeHistoryDays` 去掉今天） */
+	days: Array<EntryDay>
+	/** 实际扫过多少条内容（诊断/提示用） */
+	scanned: number
+	/**
+	 * 是否**因为达到扫描上限而提前停止**（仍有更早的内容没拉）。
+	 *
+	 * 这是 2026-10-16 那条「拉 50 条再就地筛会静默截断」的**如实暴露**：
+	 * 截断不再是"用户看不见"的静默行为，而是页面上一行「仅显示最近 N 天」的提示。
+	 */
+	truncated: boolean
+
+	constructor(today: Array<TodayEntry>, days: Array<EntryDay>, scanned: number, truncated: boolean) {
+		this.today = today
+		this.days = days
+		this.scanned = scanned
+		this.truncated = truncated
 	}
 }
 
@@ -154,112 +204,248 @@ function hhmm(ms: number): string {
 	return h + ':' + m
 }
 
-/**
- * 最近一次 `fetchTodayEntries` 是否**请求失败**（2026-10-16 复核补 · 沿 `timeline.wasLastFetchFailed`
- * 与 `play_echo.wasLastEchoFailed` 先例）。
- *
- * 为什么必须区分（与 2026-10-11 静态审查 #1 对 events / echo 的修复同一族，当时漏了本条通路）：
- * 本函数 `resolve([])` 有**两种语义**——①请求失败（网络/鉴权瞬态）②"今天真的没有记录"。
- * 调用方若一律覆盖 `todayEntries`，则**一次失败的下拉刷新就会把用户正在看的今天的文字/照片
- * 整块抹掉**（"今天"块退回"今天还没有记录"）；而只记文字（不产 event）的用户，更会因此翻成
- * 假空态「还没有回忆」✗ —— 正是本轮要治的那类事故。
- */
-let _lastEntriesFailed = false
+// ⚠️ 2026-10-25（task-12）：**失败标志 `wasLastEntriesFetchFailed` 已删除**。
+// 原因：它存在的前提是「`fetchTodayEntries` 用空数组同时表达失败与"今天真没记录"」——
+// 必须外加一个模块级布尔才能区分。新入口 `fetchEntryFeed` **直接返回 `null` 表示失败**
+// （类型系统承担这件事，不再依赖"读一下模块级变量"这种易忘的时序约定），
+// 旧函数因此失去唯一调用方 ⇒ 一并删除（零调用导出会被 `audit_harness` 轴 4 判 CRITICAL）。
 
-/** 读最近一次 `fetchTodayEntries` 的失败标志（调用方应在拿到数组后立即读；口径同上） */
-export function wasLastEntriesFetchFailed(): boolean {
-	return _lastEntriesFailed
+/**
+ * 拉内容并按本地自然日分组（2026-10-25 · task-12 ① 的核心）。
+ *
+ * ## 为什么要多页
+ *
+ * `GET /contents` 是**游标分页**（`Page{items, cursor, has_more}`，limit 1..100，
+ * 见 `backend/app/api/contents/__init__.py:403`）。旧实现只拉 **1 页 50 条**，而老账号
+ * 有 316 条内容 ⇒ **更早的历史根本拉不到**（不是"今天之外被筛掉"，是**没请求过**）。
+ * 本函数按 `maxPages` 逐页跟游标，直到：① 拿满 `maxPages` 页；② 服务端 `has_more=false`。
+ *
+ * ## 三件事一次做完（同一份响应，不分三次请求）
+ *
+ *   ① `today`：只留今天（「今天」块）——判定口径与旧实现**逐字相同**
+ *      （文字用 `created_at`；照片 `taken_at` 优先、缺失回退 `created_at`）；
+ *   ② `days`：**全部按天分组**（历史区兜底；含今天，合并时再去掉）；
+ *   ③ `truncated`：**拉满了 maxPages 但服务端还有更多** ⇒ 如实标记，页面提示
+ *      「仅显示最近 N 天」。这是对 2026-10-16 那条"静默截断"的正面处置：
+ *      截断仍然存在（端点无日期参数，不做假承诺），但**不再静默** ✓。
+ *
+ * ## 失败语义（与 `fetchTodayEntries` 同口径）
+ *
+ * 任一分页请求失败 ⇒ **一页都没收到**时返回 `null`（调用方保持现状不覆盖）；
+ * 已收到的页**不丢**（宁可显示"真实但可能不全"的数据，也不要因为第 3 页失败
+ * 而把第 1~2 页的内容一起抹掉 ✗），此时 `truncated=true` 让页面如实提示。
+ *
+ * ⚠️ 写法约束（沿 `agg_runner.chunkStep` 的血泪）：**不在函数内定义函数** ——
+ * 内层函数声明曾把 UTS 编译器卡死 300s+。故分页状态一律挂**模块级变量**，
+ * `feedAssemble` / `feedFinish` / `feedFetchPage` 均为**模块级函数**。
+ */
+/**
+ * 单页扫描上限。
+ *
+ * ⚠️ 取 **100** 而不是旧实现的 50：后端 `pagination_params` 的 limit 范围就是 `1..100`
+ * （`backend/app/api/deps.py:30`）⇒ 100 是**服务端允许的最大页**，用它等于"每页装最多"。
+ *
+ * 实测依据（真实账号 `e4134743-…`，316 条内容）：
+ *   · 50 条/页 × 4 页 = 200 条 ⇒ 只覆盖 8 天，最早到 10/05；
+ *   · **100 条/页 × 4 页 = 400 条 ⇒ 覆盖全部 27 天（最早到 2025-09-05），`truncated=false`**。
+ * ⇒ 同样 4 次请求装下 2 倍数据；这个账号**一次请求链就把历史拉全**（用户的核心诉求）。
+ * 服务端另有硬上限 100 ⇒ 再想拉更多只能加页，不能加大 limit（见 `FEED_MAX_PAGES`）。
+ */
+const TODAY_SCAN_LIMIT: number = 100
+
+let _feedRaw: Array<UTSJSONObject> = []
+let _feedSeen: Set<string> = new Set<string>()
+let _feedPages = 0
+let _feedMaxPages = 1
+let _feedCursor = ''
+let _feedTruncated = false
+let _feedFailed = false
+let _feedTodayKey = ''
+let _feedResolve: ((f: EntryFeed | null) => void) | null = null
+
+/** 收齐后的组装：`_feedRaw` → EntryFeed（today + days）。纯计算，无副作用外的日志。 */
+function feedAssemble(): EntryFeed {
+	const today: Array<TodayEntry> = []
+	const byKey: Map<string, EntryDay> = new Map<string, EntryDay>()
+	const dayOrder: Array<string> = []
+	for (let i = 0; i < _feedRaw.length; i++) {
+		const c = _feedRaw[i]
+		const ct = c.getString('content_type') ?? ''
+		let entry: TodayEntry | null = null
+		if (ct == 'text') {
+			const text = c.getString('text') ?? ''
+			if (text == '') {
+				continue // 空文字不占一行（诚实：没有内容就不假装有卡片 ✓）
+			}
+			// 文字：时刻＝`created_at`（文字没有 taken_at，后端不赋值 ⇒ 不假装有 ✓）
+			const ms = parseIsoMs(c.getString('created_at') ?? '')
+			if (ms <= 0) {
+				continue
+			}
+			entry = new TodayEntry(c.getString('id') ?? '', 'text', text, '', hhmm(ms), c.getString('place') ?? '', ms)
+		} else if (ct == 'photo') {
+			// 照片：图片 URL 用服务端已下发的**缩略图票据**（thumbnail_url），
+			// 经 resolveMediaUrl 拼直连地址（<image :src> 带不了 Bearer header ✓）。
+			// 无票据（原件未上传的占位 / 已被清理）⇒ 本张**跳过**：不给"没有图的照片卡"
+			// （诚实：展示不了就不占一行 ✓）。
+			const url = resolveMediaUrl(c.getString('thumbnail_url'))
+			if (url == '') {
+				continue
+			}
+			// 照片用 **`taken_at` 拍摄时刻**优先（与 `buildDayGroups` 事件日分组同一时间轴，
+			// 保证"照片+它所在事件"一起进今天块或一起被历史区排除，不重复出现 ✓）；
+			// 缺失 taken_at（早期数据）才回退 `created_at`（记录时刻）。
+			let ms = parseIsoMs(c.getString('taken_at') ?? '')
+			if (ms <= 0) {
+				ms = parseIsoMs(c.getString('created_at') ?? '')
+			}
+			if (ms <= 0) {
+				continue
+			}
+			entry = new TodayEntry(c.getString('id') ?? '', 'photo', '', url, hhmm(ms), c.getString('place') ?? '', ms)
+		}
+		// 其余 content_type（voice/article）不在本刀（见模块注释 2）；它们**也不进历史区**
+		// ——历史区复用同一 TodayEntry 渲染原子，语音要接播放管道/波形，属独立工作面 ✗
+		if (entry == null) {
+			continue
+		}
+		const e = entry as TodayEntry
+		const k = dayKey(e.orderMs)
+		let day = byKey.get(k)
+		if (day == null) {
+			day = new EntryDay(k, friendlyDay(e.orderMs))
+			byKey.set(k, day)
+			dayOrder.push(k)
+		}
+		day.entries.push(e)
+		if (k == _feedTodayKey) {
+			today.push(e)
+		}
+	}
+	// 每天内部正序（早上 → 现在）；日组本身倒序（近 → 远）
+	const days: Array<EntryDay> = []
+	for (let i = 0; i < dayOrder.length; i++) {
+		const d = byKey.get(dayOrder[i])
+		if (d == null) {
+			continue
+		}
+		d.entries.sort((a: TodayEntry, b: TodayEntry): number => a.orderMs - b.orderMs)
+		days.push(d)
+	}
+	days.sort((a: EntryDay, b: EntryDay): number => {
+		if (a.key == b.key) {
+			return 0
+		}
+		return a.key < b.key ? 1 : -1
+	})
+	// 日记式正序（早上 → 现在），理由见模块注释 5
+	today.sort((a: TodayEntry, b: TodayEntry): number => a.orderMs - b.orderMs)
+	return new EntryFeed(today, days, _feedRaw.length, _feedTruncated)
 }
 
-/**
- * 拉今天的记录（文字 + 照片，正序）。失败 resolve([])（api 层已全局 toast；本块属增强信息，
- * **不因它失败而报错**——时间轴主内容仍由 `events` 负责 ✓；失败与"真无记录"用上方标志区分）。
- */
-export function fetchTodayEntries(): Promise<Array<TodayEntry>> {
-	return new Promise<Array<TodayEntry>>((resolve) => {
-		// 已知上限与截断语义（2026-10-16 用户裁决 · 接受）：本端点**没有日期过滤参数**，只按
-		// `created_at desc` 取最近 50 条 ⇒ 单日记录与其它类型交错超过 50 条时，更早的今天条目会
-		// **被静默截断**（不报错、不提示；表现=「今天」块少几条）。单日 >50 条极罕见，用户已接受 ✓；
-		// 若日后须严守，正确修法是**服务端加日期参数**（如 ?day=yyyy-mm-dd）而非调大 limit ✗。
-		get(PATH_CONTENTS + '?limit=50').then((body: UTSJSONObject | null) => {
-			if (body == null) {
-				// 失败（连接/鉴权瞬态）：与"真无记录"同为 [] ⇒ 置标志供调用方区分（见上方注释）
-				_lastEntriesFailed = true
-				resolve([])
-				return
-			}
-			const d = dataObj(body)
-			if (d == null) {
-				_lastEntriesFailed = true
-				resolve([])
-				return
-			}
-			// 拿到可解析的信封 = 成功（后续 items 为空只表示"今天没有记录"，**不算失败** ✓）
-			_lastEntriesFailed = false
-			const todayKey = dayKey(Date.now())
-			const out: Array<TodayEntry> = []
-			const raw = d.getArray('items')
-			if (raw != null) {
-				const arr = raw as Array<UTSJSONObject>
-				for (let i = 0; i < arr.length; i++) {
-					const c = arr[i]
-					const ct = c.getString('content_type') ?? ''
-					if (ct == 'text') {
-						const text = c.getString('text') ?? ''
-						if (text == '') {
-							continue // 空文字不占一行（诚实：没有内容就不假装有卡片 ✓）
-						}
-						// 文字：时刻＝`created_at`（文字没有 taken_at，后端不赋值 ⇒ 不假装有 ✓）
-						const ms = parseIsoMs(c.getString('created_at') ?? '')
-						if (ms <= 0 || dayKey(ms) != todayKey) {
-							continue
-						}
-						out.push(new TodayEntry(
-							c.getString('id') ?? '',
-							'text',
-							text,
-							'',
-							hhmm(ms),
-							c.getString('place') ?? '',
-							ms
-						))
-					} else if (ct == 'photo') {
-						// 照片：图片 URL 用服务端已下发的**缩略图票据**（thumbnail_url），
-						// 经 resolveMediaUrl 拼直连地址（<image :src> 带不了 Bearer header ✓）。
-						// 无票据（原件未上传的占位 / 已被清理）⇒ 本张**跳过**：不给"没有图的照片卡"
-						// （诚实：展示不了就不占一行 ✓）。
-						const url = resolveMediaUrl(c.getString('thumbnail_url'))
-						if (url == '') {
-							continue
-						}
-						// 🚨 去重口径的关键（见模块注释 4）：照片用 **`taken_at` 拍摄时刻**判定"是否今天"，
-						// 与 `buildDayGroups` 的事件日分组**同一时间轴**（事件 startTime 也取自照片时刻）
-						// ⇒ 一张"今天的照片+它所在的今天事件"要么一起进「今天」块、要么一起被历史区排除，
-						// 不会"照片在「今天」块、事件又在历史区"重复出现 ✓。
-						// 缺失 taken_at（早期数据）才回退 created_at（记录时刻）。
-						let ms = parseIsoMs(c.getString('taken_at') ?? '')
-						if (ms <= 0) {
-							ms = parseIsoMs(c.getString('created_at') ?? '')
-						}
-						if (ms <= 0 || dayKey(ms) != todayKey) {
-							continue
-						}
-						out.push(new TodayEntry(
-							c.getString('id') ?? '',
-							'photo',
-							'',
-							url,
-							hhmm(ms),
-							c.getString('place') ?? '',
-							ms
-						))
-					}
-					// 其余 content_type（voice/article）不在本刀（见模块注释 2）
+/** 收尾：**先清模块级状态、再回调**（回调里可能再次触发拉取 ⇒ 必须防重入，同 `chunkStep`）。
+ *
+ *  `built` 由调用方在清状态**之前**组装好并传入 —— 这样"清状态"与"组装"没有先后陷阱
+ *  （上一版把组装放在清状态之后，会读到空数组 ⇒ 历史区恒空，正是本次要修的那类 bug）。
+ *
+ *  失败语义（**唯一**判据是 `null`，不再有模块级失败标志）：
+ *   · `built == null` ⇒ 一页都没成功、且没有任何已收条目 ⇒ 调用方**保持现状不覆盖**；
+ *   · 非 null 但部分页失败 ⇒ 返回"真实但可能不全"的数据（比整块抹掉好，见 `fetchEntryFeed`）。 */
+function feedFinish(built: EntryFeed | null): void {
+	const cb = _feedResolve
+	_feedResolve = null
+	_feedRaw = []
+	_feedSeen = new Set<string>()
+	_feedPages = 0
+	_feedCursor = ''
+	_feedTruncated = false
+	_feedFailed = false
+	if (cb == null) {
+		return
+	}
+	cb(built)
+}
+
+/** 分页失败时的收尾：**已收条目仍要交付**（"真实但可能不全" > 整块抹掉）。
+ *  一页都没收到才返回 null（= 真失败，调用方保持现状）。 */
+function feedFail(): void {
+	_feedFailed = true
+	if (_feedRaw.length == 0) {
+		feedFinish(null)
+		return
+	}
+	// 部分成功：数据集**必须**标记为截断（用户看到「仅显示最近的部分记录」），
+	// 因为确实还有更早的内容没拉到 —— 这与"服务端无更多"是两件事，不能混 ✗
+	_feedTruncated = true
+	feedFinish(feedAssemble())
+}
+
+/** 逐页请求；靠「游标严格前进」规则防死循环（`next == cursor` 即停） */
+function feedFetchPage(): void {
+	const path = _feedCursor == ''
+		? PATH_CONTENTS + '?limit=' + TODAY_SCAN_LIMIT
+		: PATH_CONTENTS + '?limit=' + TODAY_SCAN_LIMIT + '&cursor=' + encodeURIComponent(_feedCursor)
+	get(path).then((body: UTSJSONObject | null) => {
+		if (body == null) {
+			feedFail()
+			return
+		}
+		const d = dataObj(body)
+		if (d == null) {
+			feedFail()
+			return
+		}
+		const raw = d.getArray('items')
+		if (raw != null) {
+			const arr = raw as Array<UTSJSONObject>
+			for (let i = 0; i < arr.length; i++) {
+				const c = arr[i]
+				const id = c.getString('id') ?? ''
+				// ⚠️ 去重：游标是 `(created_at, id)` 复合键，**翻页期间有新内容写入**时同一 id
+				// 可能出现在两页（服务端 limit+1 取 has_more，不保证快照隔离）⇒ 重复会在
+				// 时间轴里显示成两张一样的卡 ✗。
+				if (id != '' && _feedSeen.has(id)) {
+					continue
 				}
+				if (id != '') {
+					_feedSeen.add(id)
+				}
+				_feedRaw.push(c)
 			}
-			// 日记式正序（早上 → 现在），理由见模块注释 5
-			out.sort((a: TodayEntry, b: TodayEntry): number => a.orderMs - b.orderMs)
-			resolve(out)
-		})
+		}
+		_feedPages = _feedPages + 1
+		const hasMore = d.getBoolean('has_more') ?? false
+		const next = d.getString('cursor') ?? ''
+		// 「服务端还有更多、但我这轮不拉了」= 截断（如实标记，见函数注释 ③）
+		_feedTruncated = hasMore
+		const canGo = _feedPages < _feedMaxPages && hasMore && next != '' && next != _feedCursor
+		if (canGo) {
+			_feedCursor = next
+			feedFetchPage()
+			return
+		}
+		// 收齐 → **先组装，再 finish**（finish 清状态并回调；组装必须在清状态之前）
+		feedFinish(feedAssemble())
+	})
+}
+
+export function fetchEntryFeed(maxPages: number): Promise<EntryFeed | null> {
+	return new Promise<EntryFeed | null>((resolve) => {
+		if (maxPages < 1) {
+			resolve(new EntryFeed([], [], 0, false))
+			return
+		}
+		// 重置模块级分页状态（并防重入：上一次未完成的回调会被**覆盖**，其 Promise 永不
+		// resolve —— 这比让两次拉取共用同一份状态、互相串数据要好；调用方均为"刷新覆盖"语义）
+		_feedRaw = []
+		_feedSeen = new Set<string>()
+		_feedPages = 0
+		_feedMaxPages = maxPages
+		_feedCursor = ''
+		_feedTruncated = false
+		_feedFailed = false
+		_feedTodayKey = dayKey(Date.now())
+		_feedResolve = resolve
+		feedFetchPage()
 	})
 }

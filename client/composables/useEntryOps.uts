@@ -1,0 +1,148 @@
+/**
+ * 「今天」块条目的操作入口（2026-10-25 · task-12 ②）
+ *
+ * ## 为什么需要（真机反馈的另一半）
+ *
+ * `TabIndex.uvue` 的「今天」块此前**只绑了 `@tap="openEntry(e)"`**，卡上**没有任何
+ * `.card-ops` 子节点**（全仓 `card-ops` 只在历史日分组的事件卡上出现过一次）⇒
+ * **今天刚记的东西没有任何操作入口**：不能纠错、不能收藏、不能删。
+ * 配合「⋯ 热区只有 48rpx≈24px（低于 44dp 下限）」+ 历史区因没有 events 而整块为空，
+ * 用户的实际体感就是「什么都点不了」。
+ *
+ * ## ⚠️ 一个必须说清的口径：这里给的是**内容级**操作，不是事件级
+ *
+ * 任务书原文说「今天记的东西没有确认/拆分/合并入口」。但代码事实是：
+ *   · 「今天」块渲染的是 **`contents`**（`TodayEntry`，`entries_api` 产出）——**不是事件**；
+ *   · 「确认 / 拆分 / 合并」是 **事件级**操作（后端 `/events/confirm|split|merge`，
+ *     入参是 `event_id`），对一条 content 无从下手。
+ * ⇒ 硬把「拆分」摆到 content 卡上会变成"点了报错"或"点了没反应"——比没有更差（本仓
+ *    反复清理的正是这类空转入口）。
+ *
+ * 故本 composable 给的是**真正适用于一条内容**的三个操作，且全部走**既有已接线**的 API：
+ *   ① **纠错分类** —— `text_recorder.submitCorrection`（RecordSheet / SearchHitOps 同源）；
+ *   ② **收藏 / 取消收藏** —— `play_favorite.favoriteGet/Add/Remove`（detail/favorites 同源）；
+ *   ③ **移入回收站** —— `play_trash.deleteContent`（30 天软删，符合全局软删口径）。
+ *
+ * 事件级的「确认 / 拆分 / 合并」入口在**历史区的事件卡**上（`.card-ops`，本次一并把热区
+ * 放大到 44dp），事件聚合出来后用户即可在那里操作。
+ */
+import { favoriteAdd, favoriteGet, favoriteRemove } from '@/utils/play_favorite'
+import { ALL_LABELS, LabelOption, submitCorrection } from '@/utils/text_recorder'
+import { deleteContent } from '@/utils/play_trash'
+// B12：离线判定（`play_trash` 侧离线失败已入队，此处据同一判据改口，
+// 避免报"失败"而其实已排队 —— 与 `detail.uvue:603-617` 同源口径）
+import { currentNetKind } from '@/utils/uploader_net'
+import { TodayEntry } from '@/utils/entries_api'
+
+/**
+ * 「今天」条目操作处理器。
+ *
+ * 注入两个回调而不是让本模块直接改页面状态：与 `useEventOps` 同一范式
+ * （页面持有 ref，composable 只管流程），避免两处真源。
+ */
+export class EntryOps {
+	/** 操作完成后刷新「今天」块（成功才调，失败保持现状） */
+	private onChanged: () => void
+
+	constructor(onChanged: () => void) {
+		this.onChanged = onChanged
+	}
+
+	/**
+	 * 弹出操作面板（底部 action sheet）。
+	 *
+	 * @param e           被操作的条目
+	 * @param rawText     纠错提交用的原文（照片传空串——与 `SearchHitOps` 同口径：
+	 *                    **不把编造的文本写进向量库**）
+	 * @param contentType 纠错提交用的内容类型（'text' / 'photo'）
+	 */
+	onEntryOps(e: TodayEntry, rawText: string, contentType: string): void {
+		// 先查收藏态再弹面板：否则「收藏/取消收藏」文案只能二选一猜（猜错 = 用户点了反向操作 ✗）
+		favoriteGet(e.id).then((fav: boolean) => {
+			const items: Array<string> = [fav ? '取消收藏' : '收藏', '纠错分类', '移入回收站']
+			uni.showActionSheet({
+				itemList: items,
+				success: (res) => {
+					if (res.tapIndex === 0) {
+						this.toggleFavorite(e.id, fav)
+					} else if (res.tapIndex === 1) {
+						this.pickLabel(e.id, rawText, contentType)
+					} else if (res.tapIndex === 2) {
+						this.confirmDelete(e.id, e.kind)
+					}
+				},
+				fail: () => {}
+			})
+		})
+	}
+
+	/** 收藏 / 取消收藏：失败如实 toast（**不静默、不回滚成假状态**） */
+	private toggleFavorite(contentId: string, currentlyFav: boolean): void {
+		if (currentlyFav) {
+			favoriteRemove(contentId).then((ok: boolean) => {
+				uni.showToast({ title: ok ? '已取消收藏' : '取消失败，请重试', icon: 'none' })
+				if (ok) {
+					this.onChanged()
+				}
+			})
+			return
+		}
+		favoriteAdd(contentId).then((ok: boolean) => {
+			uni.showToast({ title: ok ? '已收藏' : '收藏失败，请重试', icon: 'none' })
+			if (ok) {
+				this.onChanged()
+			}
+		})
+	}
+
+	/** 纠错分类：ActionSheet 选五类（`ALL_LABELS` 与后端白名单对齐）→ submitCorrection */
+	private pickLabel(contentId: string, rawText: string, contentType: string): void {
+		const cns: Array<string> = []
+		for (let i = 0; i < ALL_LABELS.length; i++) {
+			cns.push(ALL_LABELS[i].cn)
+		}
+		uni.showActionSheet({
+			itemList: cns,
+			success: (res) => {
+				const idx = res.tapIndex
+				if (idx < 0 || idx >= ALL_LABELS.length) {
+					return
+				}
+				const picked: LabelOption = ALL_LABELS[idx]
+				submitCorrection(contentId, rawText, picked.key, '', contentType).then((ok: boolean) => {
+					uni.showToast({ title: ok ? '已提交纠错' : '纠错失败，请稍后再试', icon: 'none' })
+				})
+			},
+			fail: () => {}
+		})
+	}
+
+	/** 移入回收站：**必须二次确认**（删除是可恢复 30 天，但仍是破坏性操作） */
+	private confirmDelete(contentId: string, kind: string): void {
+		const what = kind == 'photo' ? '这张照片' : '这条记录'
+		uni.showModal({
+			title: '移入回收站',
+			content: what + '将移入回收站，30 天内可恢复。确定吗？',
+			success: (res) => {
+				if (!res.confirm) {
+					return
+				}
+				deleteContent(contentId).then((ok: boolean) => {
+					if (!ok) {
+						// B12（同 `detail.uvue:603-617` 口径）：离线时删除**已入队**（play_trash 侧
+						// `enqueueDeleteOp`），故不能报"失败"——那会让用户以为什么都没发生、再点一次。
+						if (currentNetKind() == 'none') {
+							uni.showToast({ title: '已离线：删除将在联网后自动完成', icon: 'none', duration: 2500 })
+							this.onChanged()
+							return
+						}
+						uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+						return
+					}
+					uni.showToast({ title: '已移入回收站', icon: 'none' })
+					this.onChanged()
+				})
+			}
+		})
+	}
+}

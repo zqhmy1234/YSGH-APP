@@ -82,9 +82,21 @@ def _process_photo(db: Session, content: Content) -> None:
         # 1.5 OCR（PHOTO-1 · 2026-09-26：照片中的文字 → 可检索内容）
         #    百度 accurate_basic（CHN_ENG）识别照片内文字（菜单/收据/路牌/屏幕笔记），
         #    写 extra.ocr_text（聚合链路 B3#6 消费：_ocr_summary 对无 GPS 照片生效），
-        #    并拼入 content.text（OCR\ncaption 并存，主提交后 _index_after_commit 索引进 Qdrant）。
+        #    并拼入 content.text（caption + OCR 并存，主提交后 _index_after_commit 索引进 Qdrant）。
         #    失败语义同 caption：显式记录后仅跳过 OCR 增强，照片主流程不受影响
         #    （OcrNotConfiguredError 为「配置缺失」显式路径，log 可查）。
+        #
+        # ⚠️ 拼接顺序（2026-10-25 调整 · 待办「搜索页 OCR 糊满卡片」）：
+        #    原为 `f"{ocr_text}\n{content.text}"`（**OCR 在前**）。后果是真机可见缺陷——
+        #    截图类照片的 OCR 是**逐行**结果（"10:08 / 4G / 49 / 全部 / 药名 / 复旦大学 / 店铺…"，
+        #    数十行、800+ 字符），把它前置等于把**状态栏噪声顶到最前**，而真正有意义的那句
+        #    caption（"这是一张手机购物 App 的截图…"）被压到最底部；客户端结果卡只显示前几行，
+        #    于是用户看到的全是碎片。
+        #    改为 **caption 在前、OCR 在后**：首屏先给人话，OCR 仍完整保留在 text 里供检索
+        #    （BGE-M3 编码整串，召回不受影响）。
+        #    副作用：① 同一条照片的 text **首行**变了（下游若依赖"text 以 OCR 开头"需同步，
+        #    当前只有 `tests/test_pipeline.py` 的断言如此，已同步更新）；② 向量内容字节序变化
+        #    ⇒ 旧点与新点的 embedding 不完全相同（语义几乎不变，无需重灌，重灌亦安全）。
         if image_path is not None:
             try:
                 from app.services.external.baidu_ocr import ocr_image
@@ -92,7 +104,7 @@ def _process_photo(db: Session, content: Content) -> None:
                 ocr_text = ocr_image(image_path.read_bytes())
                 if ocr_text:
                     patch_extra(content, ocr_text=ocr_text)
-                    content.text = f"{ocr_text}\n{content.text}" if content.text else ocr_text
+                    content.text = f"{content.text}\n{ocr_text}" if content.text else ocr_text
                     logger.info("照片 OCR 成功 content=%s（%d 字）", content.id, len(ocr_text))
             except Exception as exc:  # noqa: BLE001 —— OCR 失败不影响照片浏览/搜索 caption
                 logger.warning("照片 OCR 失败 content=%s: %s", content.id, exc)

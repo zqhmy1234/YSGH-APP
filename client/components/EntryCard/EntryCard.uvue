@@ -1,0 +1,70 @@
+<template>
+	<!-- 内容条目卡（2026-10-25 · task-12 ①/② 抽取）
+	     「今天」块与历史区**渲染同一种东西**（一条 contents 记录：文字或照片），此前这段模板
+	     在两处各写一遍（≈18 行 × 2）⇒ 结构重复，且任一侧改了另一侧会漂移。
+
+	     视觉**零新增**：文字复用 `.quote-card/.quote-line/.quote-content/.quote-text/.quote-source`
+	     （与「今天」块、待确认区同款）；照片复用 `.cover-wrap/.cover-img` + `.card-meta/.meta-item`；
+	     操作入口复用 `.card-ops/.card-ops-text`（热区已按 task-12 ④ 放大到 44dp）。
+
+	     为什么 props 只传基本类型 + 一个 key：项目既有铁律 —— **对象 prop 在 UTS 组件边界有类型
+	     陷阱**（EchoSheet/SearchHitOps 先例：对象 prop 零先例不冒险）。故 `id/kind/text/photoUrl/
+	     timeLabel/place` 逐个展开传，`TodayEntry` 实例不进组件边界。
+
+	     事件通过 `@ops` 抛出（组件不直接调后端；操作语义在宿主的 `useEntryOps`）。 -->
+	<view class="card pressable" @tap="onOpen">
+		<!-- 操作入口（⋯）：内部子元素必须 `.stop`，否则点操作会冒泡进详情页 -->
+		<view class="card-ops pressable" @tap.stop="onOps">
+			<text class="card-ops-text">⋯</text>
+		</view>
+		<!-- 文字：左侧琥珀引用竖线 + 引言体 -->
+		<view v-if="kind === 'text'" class="quote-card">
+			<view class="quote-line"></view>
+			<view class="quote-content">
+				<text class="quote-text serif">{{ text }}</text>
+				<text class="quote-source">{{ timeLabel }}{{ place != '' ? ' · ' + place : '' }}</text>
+			</view>
+		</view>
+		<!-- 照片：服务端 thumbnail_url 票据（已在 entries_api 内 resolveMediaUrl 拼直连） -->
+		<view v-if="kind === 'photo'" class="cover-wrap">
+			<image class="cover-img" :src="photoUrl" mode="aspectFill" lazy-load="true" />
+		</view>
+		<view v-if="kind === 'photo'" class="card-meta">
+			<text class="meta-item">{{ timeLabel }}</text>
+			<text v-if="place != ''" class="meta-item">{{ place }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props 口径照 EchoSheet/SearchHitOps 先例：**只传基本类型**
+	const props = defineProps({
+		id: { type: String, default: '' },
+		/** 'text' | 'photo' */
+		kind: { type: String, default: '' },
+		/** 文字正文；照片为空串（照片没有 caption，不假装有 ✗） */
+		text: { type: String, default: '' },
+		/** 照片缩略图 URL；文字为空串 */
+		photoUrl: { type: String, default: '' },
+		timeLabel: { type: String, default: '' },
+		place: { type: String, default: '' }
+	})
+
+	const emit = defineEmits(['open', 'ops'])
+
+	/** 整卡点按 → 宿主决定去向（「今天」块与历史区去向相同：内容详情页） */
+	function onOpen(): void {
+		emit('open', props.id)
+	}
+
+	/** 「⋯」→ 宿主弹出的操作面板（收藏 / 纠错 / 移入回收站，逻辑在 `useEntryOps`） */
+	function onOps(): void {
+		emit('ops', props.id)
+	}
+</script>
+
+<style>
+	/* 无新增规则：本组件只用宿主页（`TabIndex`)已 @import 的 `tab-index.css` 里的既有 class。
+	   ⚠️ uni-app x 的 `<style>` 是**全局**的（tab-index.css 头注记载），故本节留空即可复用；
+	   在此重复声明会与共享 CSS 产生第二真源。 */
+</style>

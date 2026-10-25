@@ -1,0 +1,104 @@
+<template>
+	<!-- AI 气泡正文（形态①普通气泡 / 形态②直铺长答）
+	     2026-10-25 自 TabAi.uvue 抽出：TabAi 已 799 行 / 阈值 800 / **无豁免**，
+	     任何净增都会让 structure 轴判 CRITICAL。先抽再改（同 SearchHitOps.uvue
+	     于 2026-10-16 为同一阈值自 TabSearch.uvue 拆出的先例）。
+
+	     边界：**只搬模板结构，不搬数据模型**。`text/bullets/chips/cards/sources` 全部
+	     逐项传基本类型/数组 props（对象 prop 在 UTS 组件边界有类型陷阱，项目零先例不冒险
+	     —— SearchHitOps.uvue:11 同款判断）。chips 的点击**回抛**给宿主（`emit('chip')`），
+	     本组件不自己发消息，避免"组件里藏业务"。
+	     类名维持 `n2_34x` / `plain-*`：它们只在本组件与 tab-ai.css 内出现（实测全仓
+	     无第二个 css 定义同名类），故不需要换前缀；换前缀反而会让 tab-ai.css 里
+	     这些从画布反推出来的名字与设计稿对不上。 -->
+	<view v-if="kind === 'bubble'" class="n2_342">
+		<text class="n2_343">{{ text }}</text>
+		<view v-if="cardTitle !== ''" class="n2_344">
+			<image v-if="cardImg !== ''" class="n2_345" :src="cardImg" mode="aspectFill" />
+			<view class="n2_346">
+				<text class="n2_347">{{ cardTitle }}</text>
+				<text class="n2_348">{{ cardMeta }}</text>
+			</view>
+		</view>
+		<!-- 引用回溯尾注（2026-10-17）：N=0 不渲染；复用卡片 meta 文本类（n2_348），零新增视觉元素 -->
+		<text v-if="sourceCount > 0" class="n2_348">来自 {{ sourceCount }} 条记忆</text>
+	</view>
+	<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333） -->
+	<view v-else-if="kind === 'plain'" class="plain-block">
+		<text class="plain-title">{{ text }}</text>
+		<view v-for="(b, bi) in bullets" :key="bi" class="plain-bullet">
+			<view class="plain-dot" />
+			<text class="plain-text">{{ b }}</text>
+		</view>
+		<!-- 引用回溯尾注（2026-10-17）：直铺长答多是"翻记忆"类回复，来源条数同样给；
+		     N=0 不渲染；复用 meta 文本类（n2_348），零新增视觉元素 -->
+		<text v-if="sourceCount > 0" class="n2_348">来自 {{ sourceCount }} 条记忆</text>
+		<view v-if="chips.length > 0" class="chips-row">
+			<view v-for="(c, ci) in chips" :key="ci" class="chip pressable" @tap="onChip(c)">
+				<text class="chip-text">{{ c }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props 口径照 SearchHitOps/EchoSheet 先例：只用基本类型与数组，不传对象。
+	const props = defineProps({
+		/** 'bubble' | 'plain'；其它值不渲染（由宿主 v-if 保证只会是这两者） */
+		kind: {
+			type: String,
+			default: 'bubble'
+		},
+		text: {
+			type: String,
+			default: ''
+		},
+		bullets: {
+			// Array props 用 `required: true`（VoiceWave.heights / TagEditPanel.aiTags 同款）：
+			// 本仓**零** `default: () => []` 工厂先例，UTS 编译器对该写法的支持未验证过，
+			// 不拿新写法冒险；宿主 `m.bullets` / `m.chips` 恒为非 null 数组（AiMsg 构造时赋值）。
+			type: Array,
+			required: true
+		},
+		chips: {
+			type: Array,
+			required: true
+		},
+		/** bubble 内嵌卡（0/1 张）：拆成三个标量而不是传 MemCard 对象 */
+		cardTitle: {
+			type: String,
+			default: ''
+		},
+		cardMeta: {
+			type: String,
+			default: ''
+		},
+		cardImg: {
+			type: String,
+			default: ''
+		},
+		/** 引用回溯条数（只渲染数量，不传 content_id 列表） */
+		sourceCount: {
+			type: Number,
+			default: 0
+		}
+	})
+
+	// chips 点击回抛给宿主：本组件不发消息（业务留在 TabAi，组件只负责渲染）
+	const emit = defineEmits(['chip'])
+
+	function onChip(label: string): void {
+		emit('chip', label)
+	}
+</script>
+
+<style>
+	/* 样式全部留在 @/styles/tab-ai.css（本组件不含私有样式）：
+	   · .n2_342/.n2_343/.n2_344/.n2_345/.n2_346/.n2_347/.n2_348 与
+	     .plain-block/.plain-title/.plain-bullet/.plain-dot/.plain-text/.chips-row
+	     均在该文件（实测唯一来源）；
+	   · uvue 的 style 是**全局**的，子组件可直接用宿主同款类名 —— 但前提是那个
+	     css 被某处 @import 过：TabAi.uvue 仍 @import '@/styles/tab-ai.css'（未删），
+	     且 AiBody 只在 TabAi 内使用，故不必重复 import（重复 import 会让样式块
+	     被合并两次，将来排查变量覆盖时更难）。 */
+</style>

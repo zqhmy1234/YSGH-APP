@@ -28,9 +28,23 @@
 					<text class="n2_472">记忆访谈</text> <!-- 文字 -->
 					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 				</view>
-				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像管理 -->
+				<!-- 2026-10-25 · 层级优化（用户真机：「画像详情页压根没有点开详情页的入口」）：
+				     原为**一行**「画像管理」→ pages/portrait/manage，而画像详情页
+				     （`pages/portrait/detail`）的**全仓唯一入口**是 manage 页里那张画像卡，
+				     于是到详情页要：我的(0) → 画像管理行(1) → manage页(2) → 画像卡(3) → detail。
+				     现拆成两行（视觉零新造：全部复用 .n2_467/.n2_468/.n2_472/.n2_473）：
+				       · 「我的记忆画像」→ **直达 detail**，我的→详情 = **1 次点击**；
+				       · 「画像设置」→ 原 manage 页（刷新/编辑标签/隐私设置在那边，语义不变）。
+				     为什么不合并成一个入口：detail 是"看画像"，manage 是"改画像"，
+				     两者用户意图不同；合并会把设置项埋进只读页，反而新增一次跳转。 -->
+				<view class="n2_467" @tap="goProfileDetail"> <!-- 行-我的记忆画像（直达详情） -->
+					<image class="n2_468" src="/static/icons/profile-info.svg" /> <!-- icon: 画像信息（既有未引用图标，同琥珀族） -->
+					<text class="n2_472">我的记忆画像</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像设置（原「画像管理」，指向 manage 页） -->
 					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
-					<text class="n2_472">画像管理</text> <!-- 文字 -->
+					<text class="n2_472">画像设置</text> <!-- 文字 -->
 					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 				</view>
 				<view class="n2_467" @tap="goFavorites"> <!-- 行-我的收藏（峰宝联调点名 2026-09-02：goFavorites 接线早已落盘但模板漏行，补入口；样式复用 467 行族） -->
@@ -208,9 +222,17 @@
 		uni.navigateTo({ url: '/pages/interview/interview' })
 	}
 
-	// 菜单：我的画像
+	// 菜单：我的画像（**设置**语义：刷新画像 / 编辑标签 / 隐私设置在 manage 页）
 	function goPortraitManage(): void {
 		uni.navigateTo({ url: '/pages/portrait/manage' })
+	}
+
+	// 菜单：我的记忆画像（**查看**语义：直达画像详情页 · 2026-10-25 层级优化）
+	// 为什么单开一行：`pages/portrait/detail` 此前全仓唯一入口是 manage 页的画像卡，
+	// 到详情要 3 次点击；直达后 1 次。detail 页 `onLoad` 无必填参数（实测只读自身数据）
+	// ⇒ 可直接 navigateTo，不需要经 manage 中转。
+	function goProfileDetail(): void {
+		uni.navigateTo({ url: '/pages/portrait/detail' })
 	}
 
 	// 菜单：我的收藏（卡16 集成接线，主窗口 2026-09-02：收藏页已建成，toast 占位退役）

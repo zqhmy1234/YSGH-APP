@@ -1,0 +1,73 @@
+/**
+ * AI 回复文本的**客户端形态判定**（2026-10-25 从 chat_api.uts 拆出）。
+ *
+ * ## 为什么单独一个文件
+ *
+ * `chat_api.uts` 已 793 行、阈值 800（structure 棘轮 · 无豁免）——在里面加任何判定
+ * 都会把文件顶过阈值判 CRITICAL。而这段逻辑本身**与网络/会话态无关**（纯字符串判定），
+ * 抽出来反而更该独立：它是"渲染前该不该展示"的**唯一判据**，被 chat_api 与将来任何
+ * 需要过滤的地方复用，不该埋在 700 行的网络封装里。
+ *
+ * ## 为什么客户端也要判（后端已有一道闸）
+ *
+ * 后端 `model_text.strip_model_markup` 是**第一道闸且更严**；但两处必须都有：
+ *   · **预览帧在流式过程中先上屏**（后端校验发生在流之后，泄漏窗口天然存在）；
+ *   · 老客户端可能连老后端；
+ *   · 终稿替换失败时留在屏上的就是预览文本。
+ * 客户端这层职责很窄：**别把 JSON 切片当要点渲染**——不是替代后端清洗。
+ */
+
+/**
+ * 该行是否像"JSON/工具结果碎片"。
+ *
+ * 判据只认"一眼就不是给人读的"两种，**刻意保守**（正常中文回复不该被误伤）：
+ *   ① 行内含 `_hint` —— 内部提示词键，永远不该出现在用户可见文本里；
+ *   ② 行首是 `{`/`[` **且**行内有 ≥2 个 `":` 形态的键值对 —— 单行压平的 JSON 片段。
+ *
+ * 为什么不用 `JSON.parse` 判：预览帧常是**半截**的（流式中途），合法解析必然失败，
+ * 用它判会漏掉绝大多数真实泄漏样本。这里只数结构特征，对半截文本同样有效。
+ *
+ * 为什么阈值取 2 个键值对而不是 1：`{"name": "小明"}` 这种用户要的单键 JSON 示例
+ * 属于"可能该保留"的内容，而工具结果必然有十几个键 —— 取 2 既能抓住泄漏，
+ * 又不会把短示例判死（与后端 `test_keeps_legitimate_json` 同一守则）。
+ */
+export function looksLikeJsonFragment(line: string): boolean {
+	const s = line.trim()
+	if (s == '') {
+		return false
+	}
+	if (s.indexOf('_hint') >= 0) {
+		return true
+	}
+	const head = s.charAt(0)
+	if (head != '{' && head != '[') {
+		return false
+	}
+	let pairs = 0
+	for (let i = 0; i + 1 < s.length; i++) {
+		if (s.charAt(i) == '"' && s.charAt(i + 1) == ':') {
+			pairs++
+			if (pairs >= 2) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+/**
+ * 从整段文本里**整行剔除** JSON 碎片（保留原有行序与空行语义由调用方处理）。
+ *
+ * 为什么在**切标题/要点之前**做：`plain` 形态把首行当标题、其余每行当 bullet。
+ * 若切分后才过滤，一段压平的 JSON 已经被拆成"标题 + 十条要点"（每行还带一个圆点），
+ * 那正是用户原话里"非常丑"的形态。故分组前先剔行。
+ */
+export function dropJsonFragments(lines: Array<string>): Array<string> {
+	const kept: Array<string> = []
+	for (let i = 0; i < lines.length; i++) {
+		if (!looksLikeJsonFragment(lines[i])) {
+			kept.push(lines[i])
+		}
+	}
+	return kept
+}

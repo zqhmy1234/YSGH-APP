@@ -459,7 +459,7 @@ class TestPhotoPipeline:
         assert c.text is None  # caption 失败未回写
 
     def test_photo_ocr_writes_ocr_text_and_merges(self, db_user, monkeypatch):
-        """PHOTO-1：百度 OCR 成功 → extra.ocr_text 写入 + content.text 拼入（OCR\ncaption）"""
+        """PHOTO-1：百度 OCR 成功 → extra.ocr_text 写入 + content.text 拼入（caption\nOCR）"""
         db, user = db_user
         self._seed_photo()
         c = _content(db, user.id, "photo", cos_key="photos/u/1.jpg")
@@ -477,9 +477,15 @@ class TestPhotoPipeline:
         db.refresh(c)
         assert c.status == "done"
         assert (c.extra or {}).get("ocr_text") == "宫保鸡丁 38元\n鱼香肉丝 32元"
-        # text = OCR\ncaption（caption 也在；顺序不影响检索）
-        assert c.text.startswith("宫保鸡丁 38元")
-        assert "西湖边的荷花" in c.text
+        # 2026-10-25 拼接顺序调整：**caption 在前、OCR 在后**。
+        # 原为 OCR 在前 ⇒ 截图类照片的状态栏噪声（10:08 / 4G / 49 / 全部…）占据首屏，
+        # 真正的人话 caption 被压到最底（真机缺陷「搜索页糊满碎片文本」的后端一半）。
+        # OCR 仍完整保留在 text 里 ⇒ 检索召回不受影响（BGE-M3 编码整串）。
+        assert c.text.startswith("西湖边的荷花"), (
+            f"caption 应在最前（首屏给人话），实际开头：{c.text[:30]!r}"
+        )
+        assert "宫保鸡丁 38元" in c.text
+        assert c.text == "西湖边的荷花\n宫保鸡丁 38元\n鱼香肉丝 32元"
 
     def test_photo_ocr_failure_silent(self, db_user, monkeypatch):
         """PHOTO-1：OCR 失败 → 照片仍 done（增强项不阻断主流程），text 保持 caption"""

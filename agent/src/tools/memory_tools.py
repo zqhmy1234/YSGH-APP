@@ -953,12 +953,19 @@ def save_memory(
                 "people": people,
                 "location": location,
                 "related_memories": related,
-                "_hint": (
-                    "回复用户时展示：✅已保存、📝内容、🏷️分类、💭情绪、📌主题、👫同行(如有)、"
-                    "📍地点(如有)。如果有related_memories，自然地提及相关历史记忆，"
-                    "如「这让我想起你X月X日也记录过类似的事情～」。"
-                    "严禁展示内容形式(content_format)、memory_id。"
-                ),
+                # ⚠️ 2026-10-25（真机反馈「中间的 json 格式的文本会混进来，非常丑」）：
+                # 此处原有 `"_hint": "回复用户时展示：✅已保存、…"` —— **已整行删除**。
+                # 为什么删（三条都要成立才敢删）：
+                #   ① **信息零损失**：这段提示的全部内容（✅已保存 / 📝内容 / 🏷️分类 /
+                #      💭情绪 / 📌主题 / 👫同行 / 📍地点、related 提及话术、
+                #      禁展示 content_format 与 memory_id）在 system prompt 里**逐条都有**
+                #      （`config/agent_llm_config.json` 的「# 保存确认回复格式」
+                #      与「严禁在回复中展示以下内容」两节）——实测逐关键字核对过；
+                #   ② **它是泄漏源**：模型会把这串 JSON 复述进正文，`_hint` 的英文原文
+                #      随之出现在用户屏幕上（真机截图即此形态）；
+                #   ③ 提示词写在**工具结果**里本身就是错位——工具结果应该只承载
+                #      「操作结果」，行为规范属于 system prompt（单一真源）。
+                # 结论：规范移回它该在的地方（prompt），工具结果保持纯数据。
             }, ensure_ascii=False)
         else:
             return json.dumps({"success": False, "message": "保存失败，未返回数据"}, ensure_ascii=False)
@@ -1078,11 +1085,14 @@ def search_memories(
             "success": True,
             "count": len(memories),
             "memories": memories,
-            "_hint": (
-                "若某条记忆的 source 是 app_contents，表示它在用户 App 里（图文/语音等），"
-                "提及来源时说「你在 App 里记录过」，不要说成是 AI 对话记录。"
-                if any(m.get("source") == "app_contents" for m in memories) else ""
-            ),
+            # ⚠️ 2026-10-25：此处原有 `"_hint"`（「source 是 app_contents 表示它在用户
+            # App 里，提及来源时说『你在 App 里记录过』」）——**已从工具结果移出**。
+            # 为什么移而不是删：这条口径是"怎么措辞"，属**行为规范**，不属于操作结果；
+            # 而且它是**独有**信息（system prompt 里原本没有，与另两处 `_hint` 不同）。
+            # 故已把它**加进 system prompt**（`config/agent_llm_config.json`
+            # 「# 提及记忆来源（重要）」节），这里只保留纯数据。
+            # 判据：工具结果的唯一职责是"操作结果"，规范必须留在单一真源（prompt）里；
+            # 否则同一个规范会有两份、且其中一份会随 JSON 一起泄漏到用户屏幕上。
         }, ensure_ascii=False)
 
     except APIError as e:
@@ -1403,11 +1413,10 @@ def save_knowledge_collection(
                 "mood": validated["mood"],
                 "related_collections": related_cols,
                 "related_memories": related_mems,
-                "_hint": (
-                    "回复用户时展示：✅已收藏、📝标题、🏷️类型、📌主题、💭情绪(如有)。"
-                    "如果有related_memories或related_collections，自然地提及相关历史内容。"
-                    "严禁展示content_format、collection_id。"
-                ),
+                # ⚠️ 2026-10-25：此处原有 `"_hint"` 已整行删除（理由同 save_memory 处）——
+                # 「✅已收藏 / 📝标题 / 🏷️类型 / 📌主题 / 💭情绪」「related 自然提及」
+                # 「禁展示 content_format / collection_id」在 system prompt
+                # 「# 保存确认回复格式」+「严禁在回复中展示以下内容」两节里逐条都有。
             }, ensure_ascii=False)
         else:
             return json.dumps({

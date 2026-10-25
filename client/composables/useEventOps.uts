@@ -56,39 +56,80 @@ export class EventOps {
 		this.getDays = getDays
 	}
 
-	onCardOps(ev: TimelineEvent, dayIdx: number): void {
-		if (ev.level === 1) {
-			// 「拆分这张卡」入口（D-21 · 2026-10-25 **恢复**）。
-			// 历史：2026-10-11 静态审查 #4 曾移除它 —— 当时 `doSplit` 只设四态而**模板无面板**
-			// （`split-panel` 全仓 0 命中、`.split-*` 规则零使用者），点了没反应，是最差形态。
-			// 现在面板已落地（`TabIndex.uvue` 的 `.split-mask/.split-panel` + 三处薄包装），
-			// 且 `doSplit` 自己会拦「成员不足，无法拆分」⇒ 入口可以摆了。
-			const items: Array<string> = ['确认这张卡', '拆分这张卡', '合并到上一张']
-			uni.showActionSheet({
-				itemList: items,
-				success: (res) => {
-					if (res.tapIndex === 0) {
-						this.doConfirm(ev)
-					} else if (res.tapIndex === 1) {
-						this.doSplit(ev)
-					} else if (res.tapIndex === 2) {
-						this.doMerge(ev, dayIdx)
-					}
-				},
-				fail: () => {}
-			})
+	onCardOps(ev: TimelineEvent, dayKeyStr: string): void {
+		// ── 菜单恒稳（2026-10-25 · D-21 可供性修复）─────────────────────────────
+		// 旧行为：L1 出三项、L2 只出一项 ⇒ **菜单项数量随卡片变化**，用户点每张卡都得
+		// 重新读一遍（"上次这里能拆分，这次怎么没了"），也就形成不了"操作入口在这里"的预期。
+		// 现在：**任何卡都是三项**，不可用的项不消失，而是**在标签里写明原因**；
+		// 点它则给一条 toast 解释为什么不可用 —— 不做"点了没反应"的死项（那是更差的静默）。
+		//
+		// 判定全部用**本地已加载数据**（零网络）：拆分看 `contentCount`（后端 timeline 随卡下发，
+		// `events.py` 的 `_counts_by_event` GROUP BY 真实计数）；合并看"前面还有没有更早的 L1 日卡片"。
+		// ⚠️ 这只是**前置提示**，不是硬闸：真正的保护仍在 `doSplit`（成员不足自会 toast）
+		// 与后端 `split_event`（内容必须属于该事件）。本函数**不改** doSplit/doMerge 的行为，
+		// 也不碰 `getPrevL1Id(fromDayKey)` 那条 task-12 的日键修复。
+		const isL1 = ev.level === 1
+		const canSplit = ev.contentCount >= 2
+		const canMerge = isL1 && this.getPrevL1Id(dayKeyStr) != ''
+
+		const items: Array<string> = []
+		const reasons: Array<string> = []   // 与 items 同下标：空串 = 可用
+		const acts: Array<string> = []      // 'confirm' | 'split' | 'merge'
+
+		// ① 确认（恒可用）
+		items.push(isL1 ? '确认这张卡' : '确认这个主题')
+		reasons.push('')
+		acts.push('confirm')
+
+		// ② 拆分（恒在；不可用时在标签里说明）
+		if (canSplit) {
+			items.push(isL1 ? '拆分这张卡' : '拆分这个主题')
+			reasons.push('')
 		} else {
-			const items2: Array<string> = ['确认这个主题']
-			uni.showActionSheet({
-				itemList: items2,
-				success: (res) => {
-					if (res.tapIndex === 0) {
-						this.doConfirm(ev)
-					}
-				},
-				fail: () => {}
-			})
+			items.push((isL1 ? '拆分这张卡' : '拆分这个主题') + '（只有 1 条内容）')
+			reasons.push('这张只有 1 条内容，拆不出来（至少要 2 条）')
 		}
+		acts.push('split')
+
+		// ③ 合并到上一张（恒在；不可用时在标签里说明）
+		if (canMerge) {
+			items.push('合并到上一张')
+			reasons.push('')
+		} else if (!isL1) {
+			// L2 主题不是"某一天的卡"，并入上一张日卡会跨层级（后端 `merge_events` 只搬成员，
+			// 会把主题内容挂进日卡）⇒ 刻意只对日卡片开放，并**明确告知**而不是藏起来。
+			items.push('合并到上一张（仅日卡片可合并）')
+			reasons.push('合并只对日卡片开放：主题请先确认，再到日卡片上合并')
+		} else {
+			items.push('合并到上一张（前面没有日卡片）')
+			reasons.push('这张是当前最早的一张，前面没有可合并的日卡片')
+		}
+		acts.push('merge')
+
+		uni.showActionSheet({
+			itemList: items,
+			success: (res) => {
+				const idx = res.tapIndex
+				if (idx < 0 || idx >= items.length) {
+					return
+				}
+				const why = reasons[idx]
+				if (why != '') {
+					// 不可用项：**必须给反馈**（点了没反应 = 静默，正是本卡要消灭的形态）
+					uni.showToast({ title: why, icon: 'none', duration: 2500 })
+					return
+				}
+				const act = acts[idx]
+				if (act == 'confirm') {
+					this.doConfirm(ev)
+				} else if (act == 'split') {
+					this.doSplit(ev)
+				} else if (act == 'merge') {
+					this.doMerge(ev, dayKeyStr)
+				}
+			},
+			fail: () => {}
+		})
 	}
 	// 卡PA R2：按事件 id 定位局部替换单事件对象（改 currentEvents=缓存同引用 → 整组浅替换触发）
 	patchEventById(eventId: string, mutate: (ev: TimelineEvent) => void): void {
@@ -123,12 +164,40 @@ export class EventOps {
 			}
 		})
 	}
-	getPrevL1Id(dayIdx: number): string {
-		// 修复（2026-08-31）：原写 days.value[i].events.level / .events.id —— events 是数组，
-		// 属性访问恒 undefined → 本函数永远返回空串 → 「合并到上一张」功能整体失效。
-		// 正解：向前逐日找第一张 L1 事件。
+	/**
+	 * 向前找第一张更早的 L1 事件（「合并到上一张」的目标）。
+	 *
+	 * 🚨 2026-10-25（task-12 ③ · **真 bug 修复**）：入参由 **日组下标** 改为 **日组键**。
+	 *
+	 * 原缺陷：模板 `v-for="(day, dayIdx) in visibleDays"` 的 `dayIdx` 是**过滤后**数组的下标，
+	 * 而本函数拿 `this.getDays()`（**未过滤、含今天**）去索引 —— 两个数组不同长不同位：
+	 *   · `visibleDays = historyDays.slice(0, N)`，`historyDays = days.filter(d => d.key != today)`；
+	 *   · `days` 按 `startTime` **倒序** ⇒ **今天恒在 `days[0]`** ⇒ 历史区所有日组整体**偏移 1**。
+	 * 后果（用户可见）：
+	 *   · 最新历史日（`dayIdx=0`）永远 toast「没有可合并的上一张」（它检查的是今天那组，看有没有更早的 —— 循环 `i = -1` 直接不跑）；
+	 *   · `dayIdx=1` 时实际检查的是**今天**组，且「上一张」会落在今天的卡上 —— **把历史卡合并进今天** ✗。
+	 *
+	 * 修法选择「传日键」而不是「传过滤后的日组列表」：日键是**稳定标识**（`yyyy-mm-dd`，
+	 * 与 `buildDayGroups`/`history_days` 同源），不随分页窗口 `visibleDayCount` 变化而漂移；
+	 * 传列表则每次 slice 变化后必须重算，且调用方（模板）要多维护一份状态 ✗。
+	 *
+	 * @param fromDayKey 当前卡所在**日组的键**（`DayGroup.key` / `HistoryDay.key`）
+	 */
+	getPrevL1Id(fromDayKey: string): string {
 		const days = this.getDays()
-		for (let i = dayIdx - 1; i >= 0; i--) {
+		// 先定位当前日组在**未过滤**数组里的真实下标（找不到 = 数据已刷新，按"没有上一张"处理）
+		let startIdx = -1
+		for (let i = 0; i < days.length; i++) {
+			if (days[i].key == fromDayKey) {
+				startIdx = i
+				break
+			}
+		}
+		if (startIdx < 0) {
+			return ''
+		}
+		// 从**当前日组的前一组**开始向前找第一张更早的 L1（原 2026-08-31 修复的正解：向前逐日找）
+		for (let i = startIdx - 1; i >= 0; i--) {
 			const evs = days[i].events
 			for (let j = 0; j < evs.length; j++) {
 				if (evs[j].level === 1) {
@@ -138,8 +207,8 @@ export class EventOps {
 		}
 		return ''
 	}
-	doMerge(ev: TimelineEvent, dayIdx: number): void {
-		const targetId = this.getPrevL1Id(dayIdx)
+	doMerge(ev: TimelineEvent, fromDayKey: string): void {
+		const targetId = this.getPrevL1Id(fromDayKey)
 		if (targetId == '') {
 			uni.showToast({ title: '没有可合并的上一张', icon: 'none' })
 			return

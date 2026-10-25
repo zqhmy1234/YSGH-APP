@@ -504,22 +504,40 @@
 	}
 
 	/* 卡片操作菜单 */
+	/* 🚨 2026-10-25（task-12 ④ · 真机反馈「找不到」）：
+	   ① **热区 48rpx≈24px → 88rpx≈44px**（`--d-lattice-p46`＝88.5rpx，恰好触到 44dp 可点下限）。
+	      原尺寸只有 24px，手指点不中；且紧贴卡右上角、无任何视觉提示 ✗。
+	   ② **补背景圆片 + 描边**：纯白卡上一个 #8a7a6a 的「⋯」对比度太低，用户没意识到那里可点。
+	      现给一块浅底圆片（`--c-paper-100`）+ 柔和描边，视觉上"像个按钮"。
+	   ③ 内缩量 24rpx → 16rpx，让放大后的热区**落在卡内**（不越界压到下一卡）。
+	   令牌棘轮：颜色/圆角全走既有 var()，**零新增硬编码色值**。 */
 	.card-ops {
 		position: absolute;
 		/* absolute-ok: 卡内右上角操作钮（卡内锚点，随卡滚动） */
-		top: var(--d-raw-r24, 24rpx);
-		right: var(--d-raw-r24, 24rpx);
-		width: var(--d-lattice-p25, 48rpx);
-		height: var(--d-lattice-p25, 48rpx);
+		top: var(--d-raw-r16, 16rpx);
+		right: var(--d-raw-r16, 16rpx);
+		width: var(--d-lattice-p46, 88.5rpx);
+		height: var(--d-lattice-p46, 88.5rpx);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		border-radius: var(--d-lattice-p46, 88.5rpx);
+		background-color: var(--c-paper-100, #f8f7f4);
+		border-width: 1rpx;
+		border-style: solid;
+		border-color: var(--a-ink-12, rgba(58, 46, 37, 0.12));
 	}
 	.card-ops-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-raw-r36, 36rpx);
-		color: var(--c-ink-500, #8a7a6a);
+		/* 36rpx → 44rpx：热区放大后图标同比例放大（44dp 圆片里塞 18px 的字仍显小） */
+		font-size: var(--d-raw-r44, 44rpx);
+		/* 2026-10-25（④）：`--c-ink-500`(#8a7a6a) 在浅底圆片上对比度仍偏低
+		   ⇒ 改 `--c-ink-700`(#5a4c40)（与 `.dim-label` 同族），更易看见 */
+		color: var(--c-ink-700, #5a4c40);
 		font-weight: bold;
+		/* 字形「⋯」的墨迹偏下半部 ⇒ 给 line-height 撑满热区做视觉居中 */
+		line-height: var(--d-lattice-p46, 88.5rpx);
+		text-align: center;
 	}
 
 	/* 回响卡片（去年今日 · 角贴 + 泛黄） */

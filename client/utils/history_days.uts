@@ -1,0 +1,172 @@
+/**
+ * 历史区日组（2026-10-25 · task-12 ①）
+ *
+ * ## 为什么需要这个文件（真机事故：老账号历史全空）
+ *
+ * 用户真机实测：**老账号（316 条内容）只看得到「今天」的卡片，历史区完全空白**。
+ *
+ * 根因不是分页、不是参数、不是后端限窗（三个最自然的假设已逐一实测排除），而是
+ * **两块用了两条不同的数据源，只有一条对老账号有效**：
+ *
+ *   · 「今天」块读 `contents`（`entries_api.fetchTodayEntries`）——这条对任何账号都有数据；
+ *   · 历史区读 `events`（`TabIndex.visibleDays`）——**老账号几乎没有可用事件**：
+ *     L1 日卡片的生产者只在**客户端上传那一刻**跑（`utils/l1_submit.uts::submitUploadsAsL1`），
+ *     云侧默认 `mode="l2l3"` **不产 L1**；历史照片都在这条接线存在**之前**上传的
+ *     ⇒ 没 event_items、没 L1。实测该账号：contents **316** 条，events **12** 条且
+ *     event_items **全为 0**（空壳）；全库 790 个 events 只对应 4 行 event_items。
+ *   ⇒ `historyDayCount = 0` ⇒ 连「加载更多」都不渲染 ⇒ 页面只剩「今天」。
+ *
+ * 处置：历史区**也**读 `contents`，按本地自然日分组（`entries_api.fetchEntryFeed` 的
+ * `days`），与事件日组**按日期键合并**（本文件 `mergeHistoryDays`）——同一天既有事件
+ * 又有内容时只出现**一个**日期头，而不是两个「10月24日」。
+ *
+ * ## 两条硬口径（不撒谎）
+ *
+ * 1. **空壳事件不渲染**：`event_items = 0` 的事件只有标题没有内容，是"坏掉的壳子"。
+ *    渲染它等于给用户一个点进去什么都没有的卡 ✗。判据见 `isEmptyShellEvent`，
+ *    **宁严不宽**：只有**所有**内容字段都为 0/空时才判空壳（避免误杀真实事件）。
+ * 2. **合并顺序 = 日期倒序**（与 `buildDayGroups` 同向，用户翻旧账从近到远）；
+ *    同一天内**事件卡在前、内容条目在后**（事件是聚合结果，内容是其原料）。
+ */
+import { DayGroup, TimelineEvent } from '@/utils/timeline'
+import { EntryDay, TodayEntry } from '@/utils/entries_api'
+
+/**
+ * 历史区一天（事件 + 内容条目同组，**共用一个日期头**）。
+ *
+ * 为什么把两者放进同一个类而不是让模板跑两个循环：两个循环 = 两个日期头，
+ * 同一天会出现「10月24日」两遍 ✗（任务书明确禁止）。
+ */
+export class HistoryDay {
+	/** 日键 `yyyy-mm-dd`（本地时区，与 `timeline.buildDayGroups` 同源） */
+	key: string
+	/** 日头文案（`friendlyDay`：M月D日 · 周X） */
+	label: string
+	/** 当天的 L1/L2 事件卡（已排除空壳） */
+	events: Array<TimelineEvent>
+	/** 当天的原始记录（文字/照片，来自 contents） */
+	entries: Array<TodayEntry>
+	/** 当天可展示照片数（日头"N 张照片"用；事件求和 + 内容照片计数） */
+	photoCountTotal: number
+
+	constructor(key: string, label: string) {
+		this.key = key
+		this.label = label
+		this.events = []
+		this.entries = []
+		this.photoCountTotal = 0
+	}
+}
+
+/**
+ * 事件是否为「空壳」（只有标题、没有任何成员内容）。
+ *
+ * 判据**宁严不宽**：下列全部成立才判空壳 ——
+ *   `contentCount == 0` && `photoCount == 0` && 无成员照片 && 无 photoIds && 无语音。
+ * 只要任一字段有内容就正常渲染（宁可多画一个卡，也不错杀一条真实记忆）。
+ */
+export function isEmptyShellEvent(ev: TimelineEvent): boolean {
+	if (ev.contentCount > 0 || ev.photoCount > 0) {
+		return false
+	}
+	if (ev.photos.length > 0 || ev.photoIds.length > 0) {
+		return false
+	}
+	if (ev.voice != null) {
+		return false
+	}
+	return true
+}
+
+/**
+ * 合并「事件日组」与「内容日组」→ 历史区日组（按日期倒序，同一天只出一个日期头）。
+ *
+ * @param eventGroups `timeline.buildDayGroups` 产出的日组（可含今天；空壳事件在此剔除）
+ * @param entryDays   `entries_api.fetchEntryFeed().days` 产出的内容日组
+ * @param todayKey    今天的日键（调用方传 `dayKey(Date.now())`；本函数**不读时钟** ⇒
+ *                    纯函数、可推演，也避免渲染期反复 `new Date()`）
+ * @param maxDays     最多返回多少组（≤0 = 不限）
+ */
+export function mergeHistoryDays(
+	eventGroups: Array<DayGroup>,
+	entryDays: Array<EntryDay>,
+	todayKey: string,
+	maxDays: number
+): Array<HistoryDay> {
+	const byKey: Map<string, HistoryDay> = new Map<string, HistoryDay>()
+	let shellSkipped = 0
+
+	// ① 事件日组（今天排除；空壳剔除）
+	for (let i = 0; i < eventGroups.length; i++) {
+		const g = eventGroups[i]
+		if (g.key == todayKey) {
+			continue
+		}
+		let day = byKey.get(g.key)
+		if (day == null) {
+			day = new HistoryDay(g.key, g.label)
+			byKey.set(g.key, day)
+		}
+		const target = day as HistoryDay
+		for (let j = 0; j < g.events.length; j++) {
+			const ev = g.events[j]
+			if (isEmptyShellEvent(ev)) {
+				// 🚨 坏掉的壳子不渲染（见文件头口径 1）
+				shellSkipped = shellSkipped + 1
+				continue
+			}
+			target.events.push(ev)
+			target.photoCountTotal += ev.photoCount
+		}
+	}
+	if (shellSkipped > 0) {
+		// 不静默：空壳事件被计数并落日志（真因排查时"事件去哪了"第一现场）
+		console.log('[yishu-history] 跳过空壳事件 ' + shellSkipped + ' 个（无任何成员内容）')
+	}
+
+	// ② 内容日组（今天排除——今天由「今天」块独占，否则同一张照片出现两次 ✗）
+	for (let i = 0; i < entryDays.length; i++) {
+		const ed = entryDays[i]
+		if (ed.key == todayKey || ed.entries.length == 0) {
+			continue
+		}
+		let day = byKey.get(ed.key)
+		if (day == null) {
+			day = new HistoryDay(ed.key, ed.label)
+			byKey.set(ed.key, day)
+		}
+		const target = day as HistoryDay
+		for (let j = 0; j < ed.entries.length; j++) {
+			const it = ed.entries[j]
+			target.entries.push(it)
+			if (it.kind == 'photo') {
+				target.photoCountTotal += 1
+			}
+		}
+	}
+
+	// ③ 倒序 + 丢掉"事件与内容都被剔除后"的空组（否则会出现只有日期头的空日 ✗）
+	const out: Array<HistoryDay> = []
+	const keys = byKey.keys()
+	for (let i = 0; i < keys.length; i++) {
+		const d = byKey.get(keys[i])
+		if (d == null) {
+			continue
+		}
+		if (d.events.length == 0 && d.entries.length == 0) {
+			continue
+		}
+		out.push(d)
+	}
+	// 日键 `yyyy-mm-dd` 字典序 == 时间序 ⇒ 字符串比大小即倒序（零 locale、零 Date）
+	out.sort((a: HistoryDay, b: HistoryDay): number => {
+		if (a.key == b.key) {
+			return 0
+		}
+		return a.key < b.key ? 1 : -1
+	})
+	if (maxDays > 0 && out.length > maxDays) {
+		return out.slice(0, maxDays)
+	}
+	return out
+}

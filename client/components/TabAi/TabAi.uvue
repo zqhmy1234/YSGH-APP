@@ -61,35 +61,20 @@
 							<image class="n4_2" src="/static/icons/i4_2.svg" />
 						</view>
 					</view>
-					<!-- 形态①：普通气泡（可内嵌记忆卡） -->
-					<view v-if="m.kind === 'bubble'" class="n2_342">
-						<text class="n2_343">{{ m.text }}</text>
-						<view v-if="m.cards.length > 0" class="n2_344">
-							<image class="n2_345" :src="m.cards[0].img" mode="aspectFill" />
-							<view class="n2_346">
-								<text class="n2_347">{{ m.cards[0].title }}</text>
-								<text class="n2_348">{{ m.cards[0].meta }}</text>
-							</view>
-						</view>
-						<!-- 引用回溯尾注（2026-10-17）：N=0 不渲染；复用卡片 meta 文本类（n2_348），零新增视觉元素 -->
-						<text v-if="m.sources.length > 0" class="n2_348">来自 {{ m.sources.length }} 条记忆</text>
-					</view>
-					<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333） -->
-					<view v-else-if="m.kind === 'plain'" class="plain-block">
-						<text class="plain-title">{{ m.text }}</text>
-						<view v-for="(b, bi) in m.bullets" :key="bi" class="plain-bullet">
-							<view class="plain-dot" />
-							<text class="plain-text">{{ b }}</text>
-						</view>
-						<!-- 引用回溯尾注（2026-10-17）：直铺长答多是"翻记忆"类回复，来源条数同样给；
-						     N=0 不渲染；复用 meta 文本类（n2_348），零新增视觉元素 -->
-						<text v-if="m.sources.length > 0" class="n2_348">来自 {{ m.sources.length }} 条记忆</text>
-						<view v-if="m.chips.length > 0" class="chips-row">
-							<view v-for="(c, ci) in m.chips" :key="ci" class="chip pressable" @tap="onChipTap(c)">
-								<text class="chip-text">{{ c }}</text>
-							</view>
-						</view>
-					</view>
+					<!-- 形态①②（气泡/直铺）抽到 AiBody.uvue（2026-10-25 · 800 行棘轮先抽再改；
+					     先例 SearchHitOps.uvue）。chips 经 @chip 回抛本文件 onChipTap，业务仍在此。 -->
+					<AiBody
+						v-if="m.kind === 'bubble' || m.kind === 'plain'"
+						:kind="m.kind"
+						:text="m.text"
+						:bullets="m.bullets"
+						:chips="m.chips"
+						:card-title="m.cards.length > 0 ? m.cards[0].title : ''"
+						:card-meta="m.cards.length > 0 ? m.cards[0].meta : ''"
+						:card-img="m.cards.length > 0 ? m.cards[0].img : ''"
+						:source-count="m.sources.length"
+						@chip="onChipTap"
+					/>
 					<!-- 形态③：记忆卡横滑组（画布 4:323，第二张露边示意滑动） -->
 					<view v-else-if="m.kind === 'cards'" class="cards-wrap">
 						<!-- 引导文案（2026-10-09 结构化回复）：卡片是 agent 正文的**结构化投影**，
@@ -169,10 +154,10 @@
 		<view v-if="attachShown()" class="attach-panel">
 			<view class="attach-handle" />
 			<text class="attach-title">添加附件</text>
-			<!-- 已选附件预览（2026-10-16 附件契约最小可用）：此处原为 **2×3 六张静态 mock 图**
-			     （img2_345.png 等）——用户从未选过、`@tap` 也没有（审计 A2/A3：「无 attachments 通路」）
-			     ⇒ **已删**。现渲染**用户真实选中的图片**（上传成功才有，见 onPickImage），
-			     复用既有 `.attach-grid/.grid-row/.grid-thumb` 类，零新增视觉元素；未选图则整块不渲染。 -->
+			<!-- 2026-10-25：panel 补 max-height（原先无上限会顶出屏幕）；光有上限会裁掉已选项，
+			     故内容包进 scroll-view（超高可滚）。direction 不用已废弃的 scroll-y。 -->
+			<scroll-view class="attach-body" direction="vertical">
+			<!-- 已选图预览：原为 6 张静态 mock 图（无 @tap，审计 A2/A3），已删；现渲染用户真实选图。 -->
 			<view v-if="pickedImages.length > 0" class="attach-grid">
 				<view class="grid-row">
 					<image v-for="(pi, idx) in pickedImages" :key="idx" class="grid-thumb" :class="idx === 0 ? 'grid-thumb-first' : ''" :src="pi.previewPath" mode="aspectFill" />
@@ -206,6 +191,7 @@
 				     2026-10-25 更正：原注释说"客户端无文件选择器"是**搜自己仓库得出的错误结论**，
 				     见总账 D-10。 -->
 			</view>
+			</scroll-view>
 		</view>
 	</view>
 </template>
@@ -227,6 +213,9 @@
 	import { runUploadPipeline, UploadSpec, UploadOutcome } from '@/utils/upload_pipeline'
 	import { uploadImageAttachment } from '@/utils/chat_image_attach'
 	import { FilePickResult, pickChatFile } from '@/utils/chat_file_pick'
+	// 气泡正文（形态①②）子组件（2026-10-25 · structure 棘轮 800 行拆包；
+	// 先例 TabSearch.uvue:155 的 SearchHitOps 同款 default import + 模板内直接用）
+	import AiBody from '@/components/TabAi/AiBody.uvue'
 	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
 	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
@@ -616,7 +605,11 @@
 	// ⚠️ Android 只有 `tempFiles`（`tempFilePaths` 不支持）；`extension` 过滤 App 端不支持
 	//    ⇒ 类型与大小在 `chat_file_pick` 里自己拦。
 	function onPickFile(): void {
-		closeAttach()
+		// ⚠️ 2026-10-25 **真 bug 修复**：本行原为 `closeAttach()` —— 面板在**选文件之前**
+		// 就被关掉，于是 `pickedFiles` 虽然后来被赋值，`.attach-files`（模板 :182-187）
+		// 所在的 `.attach-panel` 已经 `v-if=false` ⇒ 用户永远看不到文件名。
+		// 真机反馈原话：「点击文件弹出来了，文件名不会出现」。删除后：选完文件面板**仍开着**，
+		// 已选列表即时可见；用户自己点空白处（scrim）/返回键关闭。
 		pickChatFile().then((r: FilePickResult) => {
 			if (r.attachment == null) {
 				// 空 reason = 用户主动取消，不打扰
@@ -650,8 +643,12 @@
 				if (path == null || path == '') {
 					return
 				}
-				// 选完即收面板 + 上传态提示（面板里没有进度条，开着反而挡着不知道在等什么）
-				closeAttach()
+				// ⚠️ 2026-10-25 **真 bug 修复**：此处原为 `closeAttach()` —— 选完图**立刻关面板**，
+				// 于是 `pickedImages.push(...)` 之后 `.attach-grid`（模板 :176-180）所在的
+				// `.attach-panel` 已 `v-if=false` ⇒ 缩略图永远不显示。真机反馈原话：
+				// 「添加图片，图片也不会出现」。删除后：上传成功即在本面板内看到缩略图，
+				// 用户可继续「+」追加或自己关面板。
+				// （上传期仍给 showLoading 遮罩——面板里没有进度条，至少要让人知道在等什么。）
 				uni.showLoading({ title: '正在上传图片…' })
 				uploadImageAttachment(path).then((att: ChatAttachment | null) => {
 					uni.hideLoading()

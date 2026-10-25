@@ -449,6 +449,15 @@
 		right: var(--d-card_margin_x, 38.5rpx);
 		bottom: var(--d-raw-r220, 220rpx); /* 避让 TabBar（110px=220rpx 全高） */
 		padding-bottom: var(--d-lattice-p18, 34.6rpx);
+		/* 2026-10-25（真机反馈）：面板**原先无高度上限** —— 选了几张图 + 几个文件后
+		   内容把面板顶出屏幕上沿（把手/标题被裁到屏幕外，只能盲点）。
+		   取值用**px 而非 vh**：本仓 `max-height` 全用 px（tab-index.css:619/658/698
+		   的 380/500px 三个先例），`vh` 零先例、uvue 端支持未验证 ⇒ 不拿新单位冒险。
+		   420px ≈ 常见机型 812pt 屏的 52%，与"半屏浮层"的画布意图一致。
+		   ⚠️ 光有 max-height 会**裁掉内容**，故模板里把面板内容包进
+		   `<scroll-view direction="vertical" class="attach-body">`（见 TabAi.uvue），
+		   超高时能滚，不丢任何已选项。 */
+		max-height: 420px;
 		background-color: var(--c-white, #FFFFFF);
 		border-radius: var(--d-card_margin_x, 38.5rpx);
 		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p24, 46.2rpx) var(--a-ink-18, rgba(59, 46, 38, 0.18));
@@ -477,9 +486,20 @@
 		width: 100%;
 		flex-direction: column;
 	}
+	/* 2026-10-25：面板内容滚动容器（配合 .attach-panel 的 max-height——只给上限会把
+	   已选项裁掉，包一层 scroll-view 才能"超高可滚、不丢项"）。
+	   高度上限由父级 max-height 约束，这里只需允许纵向滚动 + 撑满宽度。 */
+	.attach-body {
+		width: 100%;
+		flex-direction: column;
+	}
 	.grid-row {
 		margin-top: var(--d-lattice-p6, 11.5rpx);
 		flex-direction: row;
+		/* 2026-10-25（真机反馈）：原为**不换行**单行 —— 第 4 张起横向溢出面板
+		   （`grid-thumb` 宽 192.3rpx × 4 ≈ 770rpx > 面板可用宽），用户看不到也点不到。
+		   加 wrap 后随面板宽度自动折行。 */
+		flex-wrap: wrap;
 	}
 	.grid-thumb {
 		width: var(--d-lattice-p100, 192.3rpx);
@@ -580,8 +600,16 @@
 	color: var(--c-ink-700, #5A4C40);
 }
 .attach-file-remove {
+	/* 2026-10-25（真机可用性）：原热区 ≈61×40rpx —— 高度 40rpx(≈20px) 远低于 44px 无障碍下限，
+	   手指点不准；色 --c-ink-300 (#B3A696) 在白底上仅 2.38:1，低于 WCAG AA 的 4.5:1，
+	   浅灰小叉用户根本看不见。
+	   改法：padding 撑到 ≈44px 热区（上下各 19.2rpx + 字高）、色换 --c-ink-700 (#5A4C40, 8.26:1)。
+	   宽度保留 61.5rpx（列表右对齐时视觉位置不变），额外用 min-height 兜住热区下限。 */
 	width: var(--d-lattice-p32, 61.5rpx);
+	min-height: var(--d-lattice-p46, 88.5rpx);
+	padding-top: var(--d-lattice-p10, 19.2rpx);
+	padding-bottom: var(--d-lattice-p10, 19.2rpx);
 	text-align: right;
 	font-size: var(--d-lattice-p18, 34.6rpx);
-	color: var(--c-ink-300, #B3A696);
+	color: var(--c-ink-700, #5A4C40);
 }

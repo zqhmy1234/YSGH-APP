@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-10-25 22:16 · commit cf6a197 · ts=1792937794
+- **错误**：跑 `review_agent.py --full` 时 `test_pipeline.py` 两个用例红：`test_photo_writes_image_vec` 与 `test_main_commit_failure_leaves_no_orphan_vector`。报错是 `qdrant_client.http.exceptions.UnexpectedResponse: Unexpected Response: 502 (Bad Gateway)`—— 我第一反应是「agent 的改动把管线搞坏了」，差点去改代码
+- **根因**：那两个用例**依赖真实的本地 Qdrant 容器**（写 image_vec 到 Qdrant，断言向量确实落库）。而当时 Docker Desktop 没在跑（`docker ps` 报 `npipe ... cannot find the file specified`），`127.0.0.1:6333` 连接被拒 ⇒ 测试拿到的 502 是**基础设施不可用**，与代码无关。更早还有一个佐证我没抓住：同一次 `--full` 里 pytest **整体崩掉却没有 FAILED 行**（`test-report.json` 的 `failed_tests` 为空、输出只有 pytest 内部调用栈），那是环境级失败的特征，不是用例断言失败
+- **修复**：① 启动 Docker Desktop，等 `docker ps` 能看到 `yishu-qdrant` 与 `yishu-redis`；② 单跑那两个用例 → **2 passed**，确认与代码无关；③ 重跑 `--full` → 只剩 lessons 轴（门禁要求失败登记），登记本条后通过
+- **相关文件**：backend/tests/test_pipeline.py
+- **教训**：**「测试红」要先分三层：用例断言失败 / 基础设施不可用 / 收集或环境崩溃。**判据：① 输出里有 `FAILED <用例名>` + 断言对比 ⇒ 才可能是代码问题；② 只有异常类型（`502 Bad Gateway`、`ConnectionError`、`ConnectionRefused`）且指向外部服务 ⇒ 先查依赖服务在不在；③ `failed_tests` 为空但退出码非 0 ⇒ 环境/收集中断。本仓有一批用例**依赖真实容器**（Qdrant / Redis / PG），跑 `--full` 前必须先确认`docker ps` 里 `yishu-qdrant` / `yishu-redis` 是 Up —— 否则会得到一片假红，浪费在错误的地方找根因。附带一条：**不要因为一次红就动别人的代码**。这次 27 个文件是 4 个 agent 并行改的，我自己的直觉是「肯定是刚合进来的改动」——但先查依赖服务只花了 2 分钟，而改错代码会把 4 个人的成果一起弄脏。
+
+---
+
+### 2026-10-25 20:09 · commit cf6a197 · ts=1792930197
+- **错误**：给接近体积阈值的文件加代码，一加就判 structure CRITICAL（client/utils/chat_api.uts 793→806 行 > 800）
+- **根因**：structure 棘轮判的是「文件总行数」，对「新增行」没有任何豁免：文件在 793 行时看似还有 7 行余量，但新增的函数只要有 8 行就必然越阈。本轮连续踩了同一个坑两次：先在 TabAi.uvue（799 行）里改附件面板，被迫先把气泡正文抽成 AiBody.uvue；随后又在 chat_api.uts（793 行）里加 looksLikeJsonFragment，同样撞线，只好再抽 chat_text_shape.uts。正确顺序是「先抽再改」：动手前先算目标文件距阈值还剩几行，新增逻辑放不下就独立成文件（本仓先例：SearchHitOps.uvue 为 800 阈值自 TabSearch.uvue 拆出、voice_failure.uts 同款），而不是先写进去再被门禁打回重做——后者每次返工都要重跑编译门（20s+）。
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-10-25 07:12 · commit ff20841 · ts=1792883536
 - **错误**：D-18 新增的 4 个错误码（`PROFILE_ANNOT_001~004`）没登记到 `ERROR_REGISTRY`，导致 `test_error_registry::test_error_registry_covers_all_raise_sites` 变红。而**我提交 D-18 那次快速门禁是通过的** —— 因为那次提交的文件列表里没有后端代码（我后来单独提交了 ledger），快速门禁只查「本次提交涉及的文件」+ 不跑 pytest ⇒ 这个红直到下一次 `--full` 才被抓出来
 - **根因**：我误把「快速门禁绿」当成「代码没问题」。但这个仓的快速门禁设计上就**不跑全量测试**（2026-08-26 用户拍板拆分快/全量，快速版只做静态层 + 涉及文件的检查），所以它的绿只覆盖「本次动的文件没明显问题」，**不覆盖跨文件约束**（错误码注册表、契约快照、导出可达性等正是跨文件约束）。更具体的失误：我写新端点时**没有对照 `errors.py` 的既有邻近块**（`PROFILE_SENSITIVE_*` 就在旁边），否则一眼就能看到需要登记
