@@ -251,6 +251,17 @@
 		font-weight: 500;
 		padding-left: var(--d-raw-r8, 8rpx);
 	}
+	/* 2026-10-25（task-20 · T-2）：「今天」块与历史日期头**视觉需拉开一档**。
+	   原实现两者共用 .day-title，font-size 22rpx / color ink-500 / weight 500 **三项完全相同**
+	   （`TabIndex.uvue:143` vs `:197`）⇒ 用户刷到「今天」要读字才能确认，层级上没有任何"当前"感。
+	   另：ink-500 #8a7a6a on paper-100 #f8f7f4 = **3.86:1**，低于 WCAG AA 正文 4.5:1，
+	   而 22rpx≈10.6dp 属小字、不适用"大字 3:1"豁免 ⇒ 顺手一并修对比度。
+	   新版：ink-900 #3a2e25 on paper-100 = **12.27:1**（AAA 过）+ 字号升 26rpx + 字重 600。 */
+	.day-title-today {
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 600;
+		font-size: var(--d-raw-r26, 26rpx);
+	}
 	.day-line {
 		flex: 1;
 		height: var(--d-raw-r1, 1rpx);
@@ -495,6 +506,15 @@
 		color: var(--c-ink-900, #3a2e25);
 		line-height: var(--d-raw-r44, 44rpx);
 		font-style: italic;
+		/* 2026-10-25（task-20 · T-1 双保险之二）：**必须先折掉 \n**，`max-lines` 才管用。
+		   uni-app x app-android 的 text **默认 `white-space: keep`**（HBuilderX 5.0 起；同
+		   `tab-search.css .n2_602` 那条真机实证）⇒ 正文里的换行符会**逐行渲染**：用户手敲
+		   1000 字含 30 个换行，即使 max-lines=3 也只截前 3 个自然段、每段仍可能很长；
+		   而连续空行会先吃掉 3 行额度、正文一个字都显示不出来。
+		   `normal` = \n 折成空格串成流，配 `text-overflow: ellipsis` 收尾，
+		   再让模板上的 `:max-lines="3"` 精确截 3 行（CSS 的 `lines:` 在 vapor:true 下不支持）。 */
+		white-space: normal;
+		text-overflow: ellipsis;
 	}
 	.quote-source {
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -510,18 +530,25 @@
 	   ② **补背景圆片 + 描边**：纯白卡上一个 #8a7a6a 的「⋯」对比度太低，用户没意识到那里可点。
 	      现给一块浅底圆片（`--c-paper-100`）+ 柔和描边，视觉上"像个按钮"。
 	   ③ 内缩量 24rpx → 16rpx，让放大后的热区**落在卡内**（不越界压到下一卡）。
-	   令牌棘轮：颜色/圆角全走既有 var()，**零新增硬编码色值**。 */
+	   令牌棘轮：颜色/圆角全走既有 var()，**零新增硬编码色值**。
+	   ─────────────────────────────────────────────────────────────────────
+	   2026-10-25（task-20 · P2）**数值订正**：上面 ① 里「88.5rpx≈44px」**是不准的**。
+	   换算口径 1rpx = 0.48dp（750rpx 设计宽 / 360dp 逻辑宽）⇒ 88.5rpx = **42.5dp**，
+	   差 1.5dp 未达 44dp 下限（88.5 这个数是按画布 46px × 1.923 来的，而画布 px→dp 不是 1:1）。
+	   现改 **92rpx = 44.2dp**（达标）。`--d-lattice-p46` 令牌本身不动（它按画布 46px 定义，
+	   别处可能引用）；这里直接用字面量表达"44dp 触控下限"这个**平台常量**语义，
+	   避免继续把画布像素令牌误当触控规范用。radius / line-height 同步到 92rpx 保持正圆与居中。 */
 	.card-ops {
 		position: absolute;
 		/* absolute-ok: 卡内右上角操作钮（卡内锚点，随卡滚动） */
 		top: var(--d-raw-r16, 16rpx);
 		right: var(--d-raw-r16, 16rpx);
-		width: var(--d-lattice-p46, 88.5rpx);
-		height: var(--d-lattice-p46, 88.5rpx);
+		width: 92rpx;
+		height: 92rpx;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: var(--d-lattice-p46, 88.5rpx);
+		border-radius: 92rpx;
 		background-color: var(--c-paper-100, #f8f7f4);
 		border-width: 1rpx;
 		border-style: solid;
@@ -535,8 +562,8 @@
 		   ⇒ 改 `--c-ink-700`(#5a4c40)（与 `.dim-label` 同族），更易看见 */
 		color: var(--c-ink-700, #5a4c40);
 		font-weight: bold;
-		/* 字形「⋯」的墨迹偏下半部 ⇒ 给 line-height 撑满热区做视觉居中 */
-		line-height: var(--d-lattice-p46, 88.5rpx);
+		/* 字形「⋯」的墨迹偏下半部 ⇒ 给 line-height 撑满热区做视觉居中（同步 92rpx） */
+		line-height: 92rpx;
 		text-align: center;
 	}
 
@@ -588,10 +615,22 @@
 		flex-direction: row;
 		justify-content: flex-end;
 	}
+	/* 2026-10-25（task-20 · T-3）：触控热区补到 44dp。
+	       实测口径：1rpx = 0.48dp（750rpx 设计宽 / 360dp 逻辑宽）⇒ **44dp = 91.7rpx**，
+	       取整 **92rpx（= 44.2dp）**。用字面量而非新令牌：`App.uvue` 的令牌块是
+	       `token-wave:generated` **自动生成区**（`scripts/token_codemod.py` 从
+	       design_tokens.dtcg.json 生成），手加令牌会被下次生成覆盖；且尺寸字面量不在
+	       `audit_token_literals` 的棘轮范围内（它只数 hex/rgb/gradient）。
+	       原 `.echo-dismiss` = padding12×2 + 字22 ≈ 46rpx = **22.1dp**，只有下限的一半；
+	       它是「去年今日」卡片的关闭钮，点不中就永远关不掉那张卡。 */
 	.echo-dismiss {
+		min-height: 92rpx;
 		padding: var(--d-raw-r12, 12rpx) var(--d-raw-r32, 32rpx);
 		border-radius: var(--d-raw-r24, 24rpx);
 		background-color: var(--a-rust-10, rgba(176,90,58,0.1));
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 	.echo-dismiss-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -669,15 +708,25 @@
 		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-300, #B3A696);
 	}
+	/* 2026-10-25（task-20 · T-3）：拆分面板两个主按钮原 padding 16×2 + 字33 ≈ 65rpx = **31.2dp**。
+	   「确定拆分」是不可逆操作，点不准会误触「取消」——热区必须达标。 */
 	.split-cancel {
+		min-height: 92rpx;
 		padding: var(--d-raw-r16, 16rpx) var(--d-raw-r32, 32rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 	.split-cancel-text {
 		font-size: var(--d-raw-r28, 28rpx);
 		color: var(--c-ink-500, #8A7A6A);
 	}
 	.split-ok {
+		min-height: 92rpx;
 		padding: var(--d-raw-r16, 16rpx) var(--d-raw-r32, 32rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		background-color: var(--c-amber-500, #C4913C);
 		border-radius: var(--d-raw-r999, 999rpx);
 	}
@@ -718,8 +767,12 @@
 	}
 
 	/* 卡PB R1：尾部加载更多按钮 */
+	/* 2026-10-25（task-20 · T-3）：原 padding 20×2 + 字24 ≈ 64rpx = **30.7dp**。
+	   虽然本批已加 `@scrolltolower` 自动加载（T-4），但按钮仍是降级入口
+	   （短内容/部分机型 scrolltolower 不触发），热区必须同样达标。 */
 	.load-more {
 		margin-top: var(--d-raw-r32, 32rpx);
+		min-height: 92rpx;
 		padding: var(--d-raw-r20, 20rpx) var(--d-raw-r40, 40rpx);
 		display: flex;
 		flex-direction: row;
@@ -786,11 +839,20 @@
 		color: var(--c-ink-900, #3a2e25);
 		font-weight: 600;
 	}
+	/* 2026-10-25（task-20 · P2 失败态可辨识）：失败态与外层「还没有回忆」空态**共用同一套
+	   插画**（太阳 + 湖，`i2_302/i2_304`），只有标题/描述文字不同 ⇒ 用户看到熟悉的"空回忆"
+	   画面，很容易理解成"我的数据没了"，而不是"这次没加载上"。
+	   不换图标（静态资源协调成本高、且空态插画是画布真值），改为**给标题上色区分**：
+	   失败 = `--c-rust-500`(#b05a3a)（on paper-100 = **4.49:1**，达 AA），正常空态 = ink-900。
+	   模板上加 `.ti-empty-title-failed` 类（见 `TabIndex.uvue` 该行）。 */
+	.ti-empty-title-failed {
+		color: var(--c-rust-500, #b05a3a);
+	}
 	.ti-empty-desc {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: var(--d-raw-r22, 22rpx);
 		font-size: var(--d-raw-r28, 28rpx);
-		color: var(--c-ink-500, #8a7a6a);
+		color: var(--c-ink-700, #5a4c40);
 		text-align: center;
 		line-height: var(--d-raw-r42, 42rpx);
 	}
@@ -814,11 +876,16 @@
 		font-size: var(--d-raw-r32, 32rpx);
 		font-weight: 600;
 	}
+	/* 2026-10-25（task-20 · T-3）：`录一段语音` 是**空态第二条路**（不想拍照就录音），
+	   原来 padding 11.5×2 + 字21 ≈ 44rpx = **21.1dp** —— 新用户第一屏就点不中，等于把
+	   "录一段"这条路堵死一半。补到 92rpx 热区 + 横向 padding 让它像一个可点的 bar。 */
 	.ti-empty-voice {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		margin-top: var(--d-lattice-p27, 52rpx);
-		padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
+		min-height: 92rpx;
+		padding: var(--d-raw-r24, 24rpx) var(--d-raw-r32, 32rpx);
 		align-items: center;
+		justify-content: center;
 	}
 	.ti-empty-voice-text {
 		font-family: "Sarasa Gothic SC", sans-serif;

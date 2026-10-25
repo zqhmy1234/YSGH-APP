@@ -97,19 +97,31 @@ def test_production_docs_closed_business_routes_alive(monkeypatch):
 # ---------- /healthz 收敛（R6#15） ----------
 
 def test_healthz_minimal(client):
-    """healthz 只暴露存活信息 + 两类运维事实，无任何环境/开关/DB/版本明细。
+    """healthz 只暴露存活信息 + 若干运维事实，无任何环境/开关/DB/版本明细。
 
     2026-10-16（台账 §7.12「静默降级显性化」）：新增 `agent`（backend→agent 探活）
     与 `agent_degradation`（agent 侧 W1 镜像 / W2 检索合并的降级计数）两个**运维事实**
     键——用于把「AI 说已记住，App 时间轴却空白」这类静默降级变可见。两者均非敏感，
     且**不含令牌指纹**（指纹只进两侧启动日志）。断言改为"白名单键 + 禁词集"，既守住
     R6#15 的最小化契约，又允许这两个刻意新增的键。
+
+    2026-10-25（D-23 · 4520 条 processing 卡死）：再新增 `stale_processing_count` /
+    `stale_processing_degraded` 两个**运维事实**键——用于把"内容卡在 processing 且无人
+    处理"这类静默故障变可见（修复前这 4520 条完全不可观测，症状只是"搜不到自己的照片"）。
+    结构性计数，不含任何用户内容/连接串/版本，仍守 R6#15 最小化契约。
     """
     r = client.get("/healthz")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    allowed = {"status", "agent", "agent_degradation", "agent_service_token_fp"}
+    allowed = {
+        "status",
+        "agent",
+        "agent_degradation",
+        "agent_service_token_fp",
+        "stale_processing_count",
+        "stale_processing_degraded",
+    }
     assert set(body) <= allowed, f"healthz 出现未预期键: {sorted(set(body) - allowed)}"
     leaked = HEALTHZ_FORBIDDEN & {k.lower() for k in body}
     assert not leaked, f"healthz 泄露内部信息键: {sorted(leaked)}"

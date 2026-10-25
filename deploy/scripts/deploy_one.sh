@@ -76,6 +76,13 @@ else
 	}
 	install_systemd "${DEPLOY_DIR}/systemd/yishu-api.service" "yishu-api.service"
 	install_systemd "${DEPLOY_DIR}/systemd/yishu-worker.service" "yishu-worker.service"
+	# D-23（2026-10-25 · 4520 条 processing 卡死根因修复）：requeue_job 的**调度**。
+	# 此前它只存在于 RUNBOOK 的一行 cron 表格里、**从未真正安装过**（全仓零执行路径）
+	# ⇒ `process_content` 承诺的"超龄重扫兜底"从来没发生 ⇒ 4520 条永久卡死且完全静默。
+	# ⚠️ 是 .timer 而非 .service 单独 enable：enable timer 才会定时触发（service 是 oneshot，
+	#    单独 enable service 不会按周期跑）。两者都要装（timer 靠 Unit= 找 service）。
+	install_systemd "${DEPLOY_DIR}/systemd/yishu-requeue.service" "yishu-requeue.service"
+	install_systemd "${DEPLOY_DIR}/systemd/yishu-requeue.timer" "yishu-requeue.timer"
 	# W4 部署接线（2026-10-06，docs/功能对齐计划_20261006.md）：agent 服务此前
 	# 没有任何部署单元——本机能跑、线上不存在，「客户端↔Agent 接线完成」的
 	# 验收前提就是它在线上。前置：agent/.venv（uv sync --frozen；依赖含
@@ -87,9 +94,15 @@ else
 	sudo systemctl daemon-reload
 	# enable 一次（重复 enable 无副作用）；随后统一 restart（避免 enable --now 与 restart 叠加）
 	sudo systemctl enable yishu-api.service yishu-worker.service yishu-agent.service >/dev/null
+	# D-23：timer 必须 enable（并 restart 使新的 OnCalendar 立即生效）。
+	# requeue.service 是 oneshot，**不要** enable（enable 它会在开机时跑一次完整重投，
+	# 那是意外成本；它应当只由 timer 触发）。
+	sudo systemctl enable --now yishu-requeue.timer >/dev/null
+	sudo systemctl restart yishu-requeue.timer
 	sudo systemctl restart yishu-api.service yishu-worker.service yishu-agent.service
 	sleep 3
 	sudo systemctl --no-pager --lines=0 status yishu-api.service yishu-worker.service yishu-agent.service || true
+	sudo systemctl list-timers yishu-requeue.timer --no-pager || true
 fi
 
 log "4. 自证（healthcheck.sh）"

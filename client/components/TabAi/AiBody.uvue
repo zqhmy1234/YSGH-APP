@@ -23,10 +23,18 @@
 		<!-- 引用回溯尾注（2026-10-17）：N=0 不渲染；复用卡片 meta 文本类（n2_348），零新增视觉元素 -->
 		<text v-if="sourceCount > 0" class="n2_348">来自 {{ sourceCount }} 条记忆</text>
 	</view>
-	<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333） -->
+	<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333）
+	     2026-10-25（task-16 ②）：**段落与列表分开渲染**。
+	     此前每一行都带锈红圆点 ⇒ 一段正常散文被切成"标题 + 一串点"（用户原话「不像对话」）。
+	     现在：`paragraphs`（散文段）连续正文档渲染、无圆点；`bullets`（真列表项）才带圆点。
+	     视觉上仍是画布节①的"宽版直铺"骨架，只是把"哪些行是列表"的判据从"每一行"收紧到
+	     "真正的列表项"（判据见 `utils/chat_text_shape.isListItem`）。 -->
 	<view v-else-if="kind === 'plain'" class="plain-block">
-		<text class="plain-title">{{ text }}</text>
-		<view v-for="(b, bi) in bullets" :key="bi" class="plain-bullet">
+		<text v-if="text !== ''" class="plain-title">{{ text }}</text>
+		<!-- 散文段落：连续正文，行距 1.42（与 .plain-text 同源），无圆点 -->
+		<text v-for="(p, pi) in paragraphs" :key="'p' + pi" class="plain-para">{{ p }}</text>
+		<!-- 列表项：只有真列表才带圆点 -->
+		<view v-for="(b, bi) in bullets" :key="'b' + bi" class="plain-bullet">
 			<view class="plain-dot" />
 			<text class="plain-text">{{ b }}</text>
 		</view>
@@ -57,6 +65,11 @@
 			// Array props 用 `required: true`（VoiceWave.heights / TagEditPanel.aiTags 同款）：
 			// 本仓**零** `default: () => []` 工厂先例，UTS 编译器对该写法的支持未验证过，
 			// 不拿新写法冒险；宿主 `m.bullets` / `m.chips` 恒为非 null 数组（AiMsg 构造时赋值）。
+			type: Array,
+			required: true
+		},
+		/** 正文段落（2026-10-25 · task-16 ②）：`plain` 里**不是列表项**的行，渲染成连续正文、无圆点 */
+		paragraphs: {
 			type: Array,
 			required: true
 		},

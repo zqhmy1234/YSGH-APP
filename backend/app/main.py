@@ -73,6 +73,45 @@ def _start_bge_warmup() -> None:
     threading.Thread(target=_run, name="bge-warmup", daemon=True).start()
 
 
+# ── D-23（2026-10-25 · 4520 条 processing 卡死）· /healthz 的卡死计数 ────────────
+# 为什么需要缓存：「探针可能被 cron / 负载均衡高频轮询」，每次 COUNT 扫 5000+ 行 JSONB
+# 表达式不划算；且 DB 抖动不能把探针拖死（connect_timeout=5 × 高频轮询 = 探针超时风暴）。
+# 60s 与 `TabIndex.SHOW_REFRESH_TTL` / `TabProfile.PROFILE_TTL` 同一量级（本仓惯例）。
+_STALE_SNAPSHOT_TTL_SECONDS = 60
+# 超过这个条数即判 degraded —— 口径来自本次故障：修复前实测 4520 条、且**完全静默**。
+# 100 的选取：正常稳态应为 0（兜底每 30 分钟跑一次，最坏滞留窗口内的量级是「本轮在跑的
+# 几拾条」），100 留出批量导入时的合理抖动余量，同时远低于 4520 这种"系统性卡死"。
+STALE_PROCESSING_DEGRADED_THRESHOLD = 100
+_stale_snapshot_cache: dict[str, object] = {"at": 0.0, "count": -1, "degraded": False}
+
+
+def _stale_processing_snapshot() -> tuple[int, bool]:
+    """读取「超龄 processing」快照（带 60s TTL + 任何异常都降级为 -1/False）。
+
+    返回值 `count == -1` 表示**查询失败/未知** —— 刻意不用 0 冒充健康：
+    0 的语义是"确实没有卡死"，-1 的语义是"查不到"，两者混同会让真正的问题
+    （DB 不可连时探活反而显示健康）永久隐身。
+    """
+    import time
+
+    now = time.monotonic()
+    at = float(_stale_snapshot_cache["at"])  # type: ignore[arg-type]
+    if at != 0.0 and now - at < _STALE_SNAPSHOT_TTL_SECONDS:
+        return int(_stale_snapshot_cache["count"]), bool(_stale_snapshot_cache["degraded"])  # type: ignore[arg-type]
+
+    count = -1
+    try:
+        from app.workers.requeue_job import stale_processing_count
+
+        count = stale_processing_count()
+    except Exception as exc:  # noqa: BLE001 —— 探活不得因增强依赖抖动被判死
+        logger.warning("/healthz 卡死计数查询失败（本次报 -1=未知，不代表健康）：%s", type(exc).__name__)
+
+    degraded = count > STALE_PROCESSING_DEGRADED_THRESHOLD
+    _stale_snapshot_cache.update({"at": now, "count": count, "degraded": degraded})
+    return count, degraded
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动：Sentry 初始化（决策 #12，生产环境）
@@ -212,6 +251,24 @@ def create_app() -> FastAPI:
                                      （sha256 前 8 位、不可逆）。供 `scripts/dev/status.ps1`
                                      与 agent `/health` 的 `inbound_token_fp` **直接对账**：
                                      两边 fp 不同 ⇒ 共享密钥不一致 ⇒ agent 侧静默降级。
+
+        2026-10-25（D-23 · **4520 条 processing 卡死**）追加两个键：
+          · `stale_processing_count`    —— 当前 `status='processing'` 且超龄（默认 3600s）
+                                          且未软删的条数。**与 `workers/requeue_job.py`
+                                          的选行判据同源**（都走
+                                          `services/pipeline_common.stale_processing_filter`），
+                                          所以"报多少"与"兜底会重投多少"永远对得上。
+          · `stale_processing_degraded` —— 上面这个数 > 阈值（默认 100）时为 true。
+        为什么必须加：修复前这 4520 条是**完全静默**的——没有任何端点、日志或告警
+        能看见它们；症状只是"用户搜不到自己的照片"。加上本键后，同类静默在探活上
+        一眼可见（与 `agent_degradation` 同一族：**把静默降级变成可观测事实**）。
+        `status` 恒为 `ok`（探针不应因**增强**依赖抖动被判死，同 agent 探活语义）。
+
+        DB 查询有 **60s TTL 缓存**：探针可能被 cron 高频轮询，不宜每次 COUNT；
+        且 DB 抖动不能把探针拖死（`connect_timeout=5` × 高频 = 探针超时风暴）。
+        任何异常一律吞掉 → `count=-1, degraded=False`（**未知不是健康**的语义由
+        `count=-1` 自己表达，不伪造 0）。
+
         探活**只读、不建连/建表**（agent 侧 /health 亦只读单例）；任何失败一律吞掉、
         不改变本端点 200（探针不应因**增强**依赖抖动而被判死）。
 
@@ -230,6 +287,10 @@ def create_app() -> FastAPI:
         degradation = body.get("degradation") if isinstance(body, dict) else None
         # 不可达 / 未返回降级快照时统一给 `{"total": 0}`（探活只读事实，不制造假计数）。
         out["agent_degradation"] = degradation if isinstance(degradation, dict) else {"total": 0}
+        # D-23：processing 卡死可见化（带 60s TTL 缓存 + 全异常吞掉）
+        stale_count, stale_degraded = _stale_processing_snapshot()
+        out["stale_processing_count"] = stale_count
+        out["stale_processing_degraded"] = stale_degraded
         return out
 
     return app

@@ -21,7 +21,19 @@
 		<view v-if="kind === 'text'" class="quote-card">
 			<view class="quote-line"></view>
 			<view class="quote-content">
-				<text class="quote-text serif">{{ text }}</text>
+				<!-- 2026-10-25（task-20 · T-1）：**长文本截断**。
+				     无条件时 .quote-text 是 28rpx/44rpx 行高、卡内可用宽 ≈588rpx ⇒ 每行 ≈21 字
+				     ⇒ 输入上限 1000 字（RecordSheet draft maxlength）= 48 行 × 44rpx = **2112rpx
+				     ≈ 1.4 屏**，一条记录顶掉整屏，时间轴失去扫读能力。
+				     现截 3 行（≈63 字），全文走「点卡 → 详情」（宿主 openEntryById 通路已存在）。
+				     ⚠️ **属性名是 `max-lines`（带连字符）不是 `maxlines`** —— 这是编译验证过的：
+				     写 `:maxlines="3"` 编译器只给 `warn: Property 'maxlines' is not supported on
+				     '<text>'`（**编译仍绿、属性静默丢弃**，正是最难查的那类）；改 `:max-lines` 后
+				     该警告消失，且 EntryCard 产物 kt/cpp 各多 9-13 字节（真的生成了 setMaxLines 调用）。
+				     根因：`<text>` 的 props 在 `compiler-vapor-dom2.cjs.js` 里声明为 `'max-lines': {
+				     type:'number', setter:'setMaxLines' }`，而 `maxlines` 在该 660KB 编译器里 index=-1
+				     （完全不存在）。`max-lines` 需 uni-app x 5.21+（本机 5.26 满足）。 -->
+				<text class="quote-text serif" :max-lines="3">{{ text }}</text>
 				<text class="quote-source">{{ timeLabel }}{{ place != '' ? ' · ' + place : '' }}</text>
 			</view>
 		</view>

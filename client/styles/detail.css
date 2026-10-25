@@ -197,7 +197,7 @@
 		margin-left: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
-		font-size: var(--d-lattice-p11, 21.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-rust-500, #B05A3A);
 	}
 	.n4_429 {
@@ -229,7 +229,7 @@
 	}
 	.n4-tag-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-rust-500, #B05A3A);
 	}
 	.n4_430 {
@@ -266,8 +266,37 @@
 	.n4_432 {
 		margin-top: var(--d-lattice-p6, 11.5rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-ink-300, #B3A696);
+		font-size: var(--d-raw-r22, 22rpx);
+		/* 2026-10-25（task-20 · D-4 + P2 对比度）：
+		   P2 — 原 `--c-ink-300`(#b3a696) on 白卡 = **2.38:1**，远低于 AA 4.5:1；
+		        改 `--c-ink-700`(#5a4c40) ⇒ **8.26:1**。
+		   D-4 — 可点线索改由**外层 pill 容器**承担（见 `.n4-sup-pill`）：
+		        首选的下划线 `text-decoration` 在 uni-app x **不被支持**
+		        （编译实测 `WARNING: text-decoration is not a standard property name`，
+		        本机 5.26 报两条）。故这里只负责颜色，形状/可点性交给容器。 */
+		color: var(--c-ink-700, #5a4c40);
+	}
+	/* D-4（task-20）：可点 pill —— 让「你也可以补充一句」看得出能点。
+	   `min-height: 92rpx`（44.2dp）顺带把这条变成合格触控目标（原裸 text 仅 22rpx 高 ≈10.6dp，
+	   是详情页最小的点击区之一）。视觉沿用页内既有的"白底/浅底 + 圆角卡"语言。 */
+	.n4-sup-pill {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		min-height: 92rpx;
+		margin-top: var(--d-lattice-p6, 11.5rpx);
+		padding: var(--d-raw-r16, 16rpx) var(--d-raw-r24, 24rpx);
+		background-color: var(--c-paper-100, #f8f7f4);
+		border-width: 1rpx;
+		border-style: solid;
+		border-color: var(--a-ink-08, rgba(58,46,37,0.08));
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+	}
+	.n4-sup-arrow {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		margin-left: var(--d-raw-r12, 12rpx);
 	}
 	.n4_433 {
 		/* D4 流式：节标前后各 23.1 与卡 mb 叠加=46.2 大节距（uvue flex 无 margin 折叠，单边各半） */
@@ -340,7 +369,7 @@
 	.n4_437 {
 		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p9, 17.3rpx);
+		font-size: var(--d-raw-r24, 24rpx);
 		color: var(--c-ink-500, #8A7A6A);
 	}
 	/* ── F5b 语音卡（画布 y448pt = 861.5rpx）──
@@ -383,7 +412,7 @@
 	/* 禁播/处理中提示小字（fs11 #B3A696，波形容器上方） */
 	.n4_vnote {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-300, #B3A696);
 		margin-bottom: var(--d-lattice-p4, 7.7rpx);
 	}
@@ -472,7 +501,7 @@
 	.n4_vprog-cur {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 500;
-		font-size: var(--d-lattice-p10, 19.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_vtrack {
@@ -490,7 +519,7 @@
 	}
 	.n4_vprog-total {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p10, 19.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-300, #B3A696);
 	}
 	/* 默认/暂停态标题（F5b：fs14 Medium #3A2E25，满宽可换行） */
@@ -540,6 +569,14 @@
 		align-items: center;
 		/* 画布 gap=4px（7.7rpx）→ 换 .n4_447 margin-top */
 		overflow: hidden;
+		/* 2026-10-25（task-20 · D-3）：**热区撑满操作条**。
+		   实测：`.n4_441` 整条 115.4rpx = 55.4dp（本身达标），但三个 op 是 column 子项且无高度，
+		   内容只有 38.5rpx 图标 + 22rpx 文字 + 7.7rpx 间距 ≈ **68rpx = 32.6dp**
+		   ⇒「问 AI / 加入胶囊 / 分享」三个主出口全部点不准（不足 44dp 的 3/4）。
+		   父条已有确定高度，故 `height:100%` 让整个 55.4dp 都可点；原来垂直居中靠父的
+		   `align-items:center`，撑满后改由自身 `justify-content:center` 居中内容。 */
+		height: 100%;
+		justify-content: center;
 	}
 	.n4_445 {
 		width: var(--d-card_margin_x, 38.5rpx);
@@ -548,7 +585,7 @@
 	.n4_447 {
 		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p10, 19.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_448 {
@@ -559,6 +596,9 @@
 		align-items: center;
 		/* 画布 gap=4px → 换 .n4_452 margin-top */
 		overflow: hidden;
+		/* 2026-10-25（task-20 · D-3）：热区撑满操作条 —— 见 .n4_444 注释 */
+		height: 100%;
+		justify-content: center;
 	}
 	.n4_449 {
 		width: var(--d-card_margin_x, 38.5rpx);
@@ -567,7 +607,7 @@
 	.n4_452 {
 		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p10, 19.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
 	.n4_453 {
@@ -578,6 +618,9 @@
 		align-items: center;
 		/* 画布 gap=4px → 换 .n4_457 margin-top */
 		overflow: hidden;
+		/* 2026-10-25（task-20 · D-3）：热区撑满操作条 —— 见 .n4_444 注释 */
+		height: 100%;
+		justify-content: center;
 	}
 	.n4_454 {
 		width: var(--d-card_margin_x, 38.5rpx);
@@ -586,6 +629,85 @@
 	.n4_457 {
 		margin-top: var(--d-lattice-p4, 7.7rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p10, 19.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-900, #3A2E25);
+	}
+	/* ═══════════════════════════════════════════════════════════════════════════
+	   2026-10-25（task-20）D-1 / D-2 新增规则
+	   ═══════════════════════════════════════════════════════════════════════════ */
+
+	/* ── D-1 无 hero 形态（文字 / 语音记忆）───────────────────────────────────
+	   旧实现里 hero + 4 层渐变 + 标题 + 元信息**全是绝对定位**，而 .n4_flow 用
+	   margin-top: 861.5rpx 给它们预留空间。文字/语音记忆不再渲染 hero 后，
+	   若只加 v-if 而不管这几条，标题会浮在顶部、正文上方留 861rpx 空洞。
+	   故无 hero 时标题/元信息回到**普通流**，n4_flow 的预留归零。
+	   垂直节奏沿用画布体系：hero 顶到标题 723.1rpx 的呼吸感由 padding-top 的
+	   安全区 + 玻璃顶栏（.n4_409 top:123.1rpx 钉死）共同保证 ⇒ 这里给 200rpx
+	   （≈96dp，正好落在玻璃顶栏下方，不与返回/收藏钮重叠）。 */
+	.n4_422-flow {
+		position: relative;
+		top: 0;
+		left: 0;
+		width: auto;
+		height: auto;
+		margin-left: var(--d-card_margin_x, 38.5rpx);
+		margin-right: var(--d-card_margin_x, 38.5rpx);
+		/* 玻璃顶栏 .n4_409 = top 123.1rpx + 钮高 84.6rpx ⇒ 内容从 207.7 起才不压钮 */
+		margin-top: 215rpx;
+	}
+	.n4_423-flow {
+		position: relative;
+		top: 0;
+		left: 0;
+		width: auto;
+		height: auto;
+		margin-left: var(--d-card_margin_x, 38.5rpx);
+		margin-right: var(--d-card_margin_x, 38.5rpx);
+		margin-top: var(--d-raw-r12, 12rpx);
+	}
+	.n4_flow-nohero {
+		/* 归零：无绝对层需要让位。
+		   ⚠️ 不用 `!important`（全仓零先例）：它需要压过 `.n4_flow` 的 margin-top，
+		   而本规则在文件**末尾**且选择器特异性相同（0,1,0）⇒ 按 CSS 层叠「同特异性
+		   后定义者胜」自然生效（同 `tab-index.css` 里 `.ui-hidden` 必须后置那条教训）。 */
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+	}
+
+	/* ── D-2 加载骨架 ────────────────────────────────────────────────────────
+	   三行占位（标题 / 元信息 / 正文卡），用纸色块表达"正在加载"而不是留白。
+	   刻意**不写「加载中…」文字**：骨架块本身已足够表意，且避免与
+	   "还没有回忆"空态文案混淆。色值走既有 paper 令牌（无新增硬编码色）。 */
+	.n4-skel {
+		flex-direction: column;
+		margin-left: var(--d-card_margin_x, 38.5rpx);
+		margin-right: var(--d-card_margin_x, 38.5rpx);
+		margin-top: 215rpx;
+	}
+	.n4-skel-line {
+		background-color: var(--c-paper-400, #ede5d5);
+		border-radius: var(--d-raw-r8, 8rpx);
+	}
+	.n4-skel-title {
+		width: 70%;
+		height: var(--d-lattice-p26, 50rpx);
+	}
+	.n4-skel-meta {
+		width: 40%;
+		height: var(--d-card_radius_small, 23.1rpx);
+		margin-top: var(--d-raw-r16, 16rpx);
+	}
+	.n4-skel-card {
+		flex-direction: column;
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		padding: var(--d-raw-r32, 32rpx);
+		background-color: var(--c-white, #ffffff);
+		border-radius: var(--d-card_radius, 38.5rpx);
+	}
+	.n4-skel-body {
+		width: 100%;
+		height: var(--d-raw-r24, 24rpx);
+	}
+	.n4-skel-body2 {
+		width: 55%;
+		margin-top: var(--d-raw-r16, 16rpx);
 	}

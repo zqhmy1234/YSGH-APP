@@ -1,0 +1,143 @@
+<template>
+	<!-- 流式等待/生成态（2026-10-25 · task-16 ② 重设计）
+	     ═══════════════════════════════════════════════════════════════════════
+	     ## 为什么重做这个形态（真机实测驱动的设计决策）
+
+	     实测（lead + 本人两路独立验证，`curl -N` 逐行打时间戳，服务器本机直连）：
+	       · SSE 是真流式：preview 帧间隔 8~205ms、**分散且不均匀** ⇒ 后端逐 token 推送；
+	       · 但**首帧延迟约 1.0~1.3s**：从「点了发送」到「第一个字符出现」有一秒多，
+	         其间 UI 只有 status:accepted（用户看不见任何东西）；
+	       · 客户端另有 80ms 合帧（`chat_api.stageStreamText`，防 v-for 整列表重渲）+ 
+	         400ms 滚动节流（这个是滚动，不是渲染）⇒ 到字节奏约 12Hz。
+
+	     用户说「要支持真正的流式」。数据层本来就是真的 —— 缺的是**感知**：
+	     前一秒完全空白，然后字突然开始跳，体验上像"卡一下然后突然出现"，不像在打字。
+
+	     ## 三档文案（按信息量从少到多，绝不编造）
+
+	       ① 无任何信号        → `忆光正在读你的话…`
+	       ② 有 tool 帧        → `忆光正在<工具动作>…`（如「正在翻你的记忆」）
+	       ③ 有 preview 正文   → 直接显示累计全文（逐字效果，此时才轮到"打字机"）
+
+	     ⚠️ 文案纪律：三档都说"正在做什么"，**不写百分比/进度条**（无法知道进度，
+	     编一个进度条就是假状态 —— 本仓反复清理的那类问题）。
+	     ⚠️ Vapor 模式：`lines` 属性不支持；本组件不截断文本，故无需 `max-lines`。
+	     ═══════════════════════════════════════════════════════════════════════ -->
+	<view class="typing-wrap">
+		<!-- 等待/工具阶段（还没有正文）：三个呼吸圆点 + 一句人话 -->
+		<view v-if="text === ''" class="typing-row">
+			<text class="typing-text">{{ stageText }}</text>
+			<view class="td-1" />
+			<view class="td-2" />
+			<view class="td-3" />
+		</view>
+		<!-- 生成阶段（已有正文）：逐字文本 + 行尾光标，让"还在写"这件事持续可见 -->
+		<view v-else class="typing-live">
+			<text class="typing-live-text">{{ text }}</text>
+			<!-- 光标：一个细竖条，作为"仍在输出"的持续信号。
+			     为什么用独立 view 而不是文本里的 "|" 字符：字符会被计入文本长度、
+			     复制回复时会带上它（假字符混进用户的剪贴板 ✗）。 -->
+			<view class="typing-caret" />
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// ⚠️ 显式 import `computed`：虽然本仓有依赖自动导入的先例（VoiceWave.uvue 未 import 也能过编译），
+	// 但 2026-10-25 的 detail 页复盘已定口径——**自动导入是隐式行为，编译器版本一变就是运行期
+	// undefined**（"能编译但跑不起来"这一类最贵的坑）。新文件一律显式写。
+	import { computed } from 'vue'
+	import { toolLabel } from '@/utils/chat_tool_labels'
+
+	// Props 只用基本类型（本仓铁律：对象 prop 在 UTS 组件边界有类型陷阱）
+	const props = defineProps({
+		/** 流式累计全文（空串 = 还没出正文） */
+		text: {
+			type: String,
+			default: ''
+		},
+		/** 当前在跑的工具名（空串 = 没有工具在跑） */
+		tool: {
+			type: String,
+			default: ''
+		}
+	})
+
+	// 三档文案的唯一真源（模板零函数调用：改用 computed 而不是模板里调函数）
+	const stageText = computed((): string => {
+		if (props.tool != '') {
+			return '忆光正在' + toolLabel(props.tool) + '…'
+		}
+		return '忆光正在读你的话…'
+	})
+</script>
+
+<style>
+	/* 样式在本组件内（.typing-row/.typing-text/.td-1..3 已从 tab-ai.css 迁到此处）。
+	   为什么迁：这三个类只服务本形态，放在共享 css 里会让 TabAi 那份 600+ 行的样式表
+	   继续膨胀；且组件自带样式后，宿主不再需要为它维护类名。 */
+	.typing-wrap {
+		width: 100%;
+		margin-top: var(--d-lattice-p8, 15.4rpx);
+		flex-direction: column;
+	}
+	.typing-row {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+	}
+	.typing-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		flex: 1;
+	}
+	/* 生成态容器：文字 + 行尾光标同一行，光标跟在最后一行文字后面。
+	   flex-wrap 让长文本正常折行、光标始终贴在文末。 */
+	.typing-live {
+		width: 100%;
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: flex-end;
+	}
+	.typing-live-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		line-height: var(--d-raw-r44, 44rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 光标：2rpx 宽竖条，与行高同高。静态可见即可 ——
+	   不做闪烁动画（Vapor 下 CSS @keyframes 不支持，JS 时钟会引入每帧重排，
+	   而"有个竖条在文末"本身已经足够表达"还在写"）。 */
+	.typing-caret {
+		width: var(--d-raw-r3, 3rpx);
+		height: var(--d-raw-r32, 32rpx);
+		margin-left: var(--d-raw-r4, 4rpx);
+		margin-bottom: var(--d-raw-r6, 6rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	/* 三点呼吸（uvue 仅支持单类选择器 ⇒ 透明度阶梯拆独立类） */
+	.td-1 {
+		width: var(--d-lattice-p5, 9.6rpx);
+		height: var(--d-lattice-p5, 9.6rpx);
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		border-radius: 4.8rpx;
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	.td-2 {
+		width: var(--d-lattice-p5, 9.6rpx);
+		height: var(--d-lattice-p5, 9.6rpx);
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		border-radius: 4.8rpx;
+		background-color: var(--c-rust-500, #B05A3A);
+		opacity: 0.55;
+	}
+	.td-3 {
+		width: var(--d-lattice-p5, 9.6rpx);
+		height: var(--d-lattice-p5, 9.6rpx);
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		border-radius: 4.8rpx;
+		background-color: var(--c-rust-500, #B05A3A);
+		opacity: 0.25;
+	}
+</style>

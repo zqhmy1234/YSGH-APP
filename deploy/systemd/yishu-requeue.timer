@@ -1,0 +1,43 @@
+# 忆述光华 · requeue_job 定时器（D-23 根因修复 · 每 30 分钟）
+# ⚠️ 模板：`@DEPLOY_ROOT@` / `@RUN_USER@` 由 deploy/scripts/deploy_one.sh 渲染后安装。
+#
+# 与 `yishu-requeue.service` 成对；本文件只管"何时触发"，"做什么"在 .service 里。
+#
+# ## 为什么 30 分钟
+# `REQUEUE_DEFAULT_STALE_SECONDS = 3600`（1 小时才算超龄）。30 分钟一轮 ⇒
+# 最坏滞留 1.5h 被发现，相对阈值足够灵敏；同时避免每分钟扫全表的浪费。
+#
+# ## Persistent=true 的意义（**这条是本次故障的直接补救**）
+# 服务器重启/关机期间错过的触发，开机后会**补跑一次**。
+# 原故障的成因之一正是"8/27、9/24-25 批量导入后被中断"——那些时刻如果有
+# `Persistent=true`，重启后第一轮就会把中断的行捡回来，而不是永久静默。
+#
+# ## 首次安装后建议：立刻手动触发一次 dry-run 看规模（**不要**直接跑全量）
+#   sudo systemctl start yishu-requeue.service     # 真跑（有外部 API 成本！）
+#   先 dry-run 请直接执行：
+#   cd /srv/guangh/backend && sudo -u <RUN_USER> .venv/bin/python -m app.workers.requeue_job --dry-run
+#
+# ## 验证安装成功（三步，缺一不可）
+#   systemctl list-timers yishu-requeue.timer        # NEXT 列应为 30 分钟内的时刻
+#   journalctl -u yishu-requeue.service -n 50       # 或 tail deploy/logs/requeue.log
+#   curl -s localhost:8010/healthz | jq .stale_processing_count   # 应逐轮下降
+
+[Unit]
+Description=忆述光华 requeue_job 定时器（每 30 分钟 · 超龄 processing 兜底）
+Documentation=file://@DEPLOY_ROOT@/deploy/RUNBOOK.md
+
+[Timer]
+# 每 30 分钟一次。OnCalendar 用 `*:0/30` 表示整点与半点（0/30 分钟），
+# 比 OnUnitActiveSec 更好排障（日志时间可预期，不会随重启漂移）。
+OnCalendar=*:0/30
+# 开机后 5 分钟补跑一次（给 PG/Redis/worker 起来的时间；Persistent 会把关机期间
+# 错过的触发合并成一次，不会连发多次）。
+OnBootSec=5min
+Persistent=true
+# 抖动 ±120s：多台机器/多个环境同时打同一个库时错开（本仓单机部署也用得上，
+# 因为 db 备份、cleanup_job 也可能落在整点）。
+RandomizedDelaySec=120
+Unit=yishu-requeue.service
+
+[Install]
+WantedBy=timers.target

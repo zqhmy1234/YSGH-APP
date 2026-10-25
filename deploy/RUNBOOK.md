@@ -148,22 +148,118 @@ du -sh backend/models ~/.cache/huggingface                   # 5 磁盘分账
 
 ---
 
-## 5. 定时任务（系统 cron，不进代码调度）
+## 5. 定时任务（系统 cron / systemd timer，不进代码调度）
+
+> 🔴 **2026-10-25（D-23）· 本节曾是「写着但没装」的重大缺口 —— 已用 systemd timer 补齐**
+>
+> **故障事实**：本表原先写了「每小时 · 失败/卡死任务重投 → `requeue_job`」，但**从未真正安装**
+> 到任何环境（全仓零执行路径、无 crontab、无 timer）。后果：`status='processing'` 积压
+> **4520 条**（含 failed 共 5157），最早 8/27、最新 0.6 小时前，`qdrant_text_id` 非空数
+> **0/4520**（向量化从未执行）——用户侧表现只是"搜不到自己的照片"，**完全静默**。
+> 详见 `docs/诊断_4520条processing卡死_20261025.md`。
+>
+> **现在的口径**：`requeue_job` 由 **systemd timer** 托管（不是 cron），随
+> `deploy/scripts/deploy_one.sh` 自动安装；同时 `/healthz` 新增
+> `stale_processing_count` / `stale_processing_degraded` 让卡死**一眼可见**（见 §5.2）。
 
 | 时间 | 任务 | 命令 | 说明 |
 |---|---|---|---|
 | 每日 22:00 | 每日复盘生成 | `python backend/scripts/daily_review.py` | 幂等；**决策台账 §2.6**：系统 cron 而非代码内调度 |
 | 每日 03:30 | PG 备份 | `bash deploy/scripts/backup_pg.sh` | 见 `deploy/scripts/backup_pg.sh` 头部 cron 示例；RPO ≤24h |
 | 每日（低峰） | 30 天软删物理清理 | `backend/app/workers/cleanup_job.py` | **首跑先 dry-run** 确认影响范围 |
-| **每小时** | **失败/卡死任务重投** | `cd backend && python -m app.workers.requeue_job --older-than-seconds 3600 --limit 100` | 建议挂每小时第 7 分。🔴 不挂它：失败/卡死的任务**永久停在队列里**，且**不报错**（总账 A-1 那类静默失效） |
+| **每 30 分钟** | **失败/卡死任务重投** | **systemd timer** `yishu-requeue.timer` → `python -m app.workers.requeue_job --older-than-seconds 3600 --limit 200` | 🔴 见 §5.1（**可执行交付 + 安装/验证命令**）。不挂它：卡死任务**永久停在 `processing`** 且**完全不报错** |
 | **每日 08:05** | **胶囊到期扫描（补扫兜底）** | `cd backend && python -c "from app.db.session import SessionLocal; from app.workers.capsule_scan import scan_due_capsules; db=SessionLocal(); print('due:', scan_due_capsules(db)); db.close()"` | 它**已内置惰性触发**（`GET /api/v1/capsules` 顺带扫描，30s 节流），故**不是静默失效**；此行只是兜底 |
 | 每周 | 孤儿对象扫描 | `orphan_scan` | **首跑先 dry-run** |
 | 每月/季度 | 恢复演练 | 见 `backup_pg.sh` 末尾附录 | 季度全流程演练（RTO ≤4h） |
 
-> ⚠️ **完整清单是 4 条 job**（复盘 / 清理 / **重投** / **胶囊补扫**）—— 本表原先漏了后两条，
-> 2026-09-29 补。容器拓扑（A）下的对应写法见下方范本。
+> ⚠️ **完整清单是 5 条 job**（复盘 / 备份 / 清理 / **重投** / **胶囊补扫**）——
+> 本表 2026-09-29 补了后两条；2026-10-25 起**重投改由 systemd timer 托管**（不再走 crontab）。
+
+### 5.1 `requeue_job` 调度（D-23 · **可执行交付**）
+
+**交付文件**（已在仓内，随 `deploy_one.sh` 自动安装）：
+- `deploy/systemd/yishu-requeue.service` —— `Type=oneshot`，跑 `requeue_job --limit 200`，
+  `flock -n` 防「上一轮未跑完、下一轮又拉起」的跨轮并发
+- `deploy/systemd/yishu-requeue.timer` —— 每 30 分钟（`OnCalendar=*:0/30`）+ `Persistent=true`
+  （关机期间错过的触发开机后补跑 —— 正是本次故障「批量导入被中断」场景的直接补救）+
+  `OnBootSec=5min`
+
+**安装命令**（已由 `deploy_one.sh` 第 3 步自动执行；手工安装等价命令）：
+
+```bash
+cd /srv/guangh          # 项目实际路径
+RUN_USER=ubuntu         # 运行用户，与 yishu-worker.service 的 User= 保持一致
+
+# 渲染占位符 → /etc/systemd/system/（与 deploy_one.sh 的 install_systemd 同一套 sed）
+for f in yishu-requeue.service yishu-requeue.timer; do
+  sed -e "s|@DEPLOY_ROOT@|$PWD|g" -e "s|@RUN_USER@|${RUN_USER}|g" "deploy/systemd/$f" \
+    | sudo tee "/etc/systemd/system/$f" >/dev/null
+  sudo chmod 644 "/etc/systemd/system/$f"
+done
+
+sudo mkdir -p deploy/logs
+sudo chown "${RUN_USER}:${RUN_USER}" deploy/logs
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now yishu-requeue.timer
+sudo systemctl restart yishu-requeue.timer
+```
+
+> ⚠️ **不要 `enable yishu-requeue.service`** —— 它是 oneshot，单独 enable 会在开机时
+> **立即跑一次完整重投**（意外外部 API 成本）。**只 enable timer。**
+
+**验证安装成功（四步）**：
+
+```bash
+# ① timer 已注册：NEXT 列应为 30 分钟内的时刻
+systemctl list-timers yishu-requeue.timer --no-pager
+
+# ② 下一轮后看日志（含 scanned/requeued 计数）
+tail -20 deploy/logs/requeue.log
+#   期望形如：requeue report: {'scanned': 200, 'requeued': 195, 'finalized': 0,
+#                             'skipped_final': 5, 'failed': 0}
+
+# ③ 卡死计数在 /healthz 上可见，且应逐轮下降
+curl -s localhost:8010/healthz | python -m json.tool | grep -E 'stale_processing'
+
+# ④ 手工 dry-run 核对规模（**不产生外部 API 成本**）
+cd backend && .venv/bin/python -m app.workers.requeue_job --dry-run --limit 5000
+```
+
+**首次上线务必分两步走**（4520 条 × 外部 API，成本很实）：
+
+```bash
+cd backend
+# 1) 先只 dry-run 看清规模与 content_type 分布
+.venv/bin/python -m app.workers.requeue_job --dry-run --limit 5000
+
+# 2) 确认后小批量真跑（每轮 200 条，靠 timer 慢慢清；**不要**一次全投）
+.venv/bin/python -m app.workers.requeue_job --limit 200
+```
+
+### 5.2 卡死可见性（`/healthz` 新增两键）
+
+与 `agent_degradation` 同一族：**把静默降级变成可观测事实**。
+
+| 键 | 含义 |
+|---|---|
+| `stale_processing_count` | `status='processing'` 且超龄（>3600s）且未软删的条数。**与 `requeue_job` 选行同源判据**（`services/pipeline_common.stale_processing_filter`）⇒「报多少」与「兜底会重投多少」永远对得上。**`-1` = 查询失败/未知，不是健康** |
+| `stale_processing_degraded` | 上面的数 > 100（`STALE_PROCESSING_DEGRADED_THRESHOLD`）时 `true` |
+
+探活内部有 **60s TTL 缓存**（防高频轮询打库、防 DB 抖动拖死探针）；`status` 恒 `ok`
+（探针不因增强依赖抖动被判死，同 `agent` 探活语义）。
+
+巡检建议（内测期人工即可）：`stale_processing_count > 100` 连续 2 轮 ⇒ 查 worker 日志 +
+`rq info`；`= -1` ⇒ 查 DB 连通性；`stale_processing_degraded=true` 而 worker 正常
+⇒ 先看 timer 是否在跑（`systemctl list-timers yishu-requeue.timer`）。
+
+---
 
 **拓扑 A（当前生产选型）的 crontab 范本**（项目目录按服务器实际路径核对；以下使用 `/srv/guangh`）：
+
+> ⚠️ 下面的 `requeue_job` 行**已由 systemd timer 取代**（§5.1）。保留在此仅供
+> 拓扑 A（容器内跑）参考 —— 若你确实用 crontab 托管（例如容器拓扑下 systemd 无法直接
+> 调容器内 python），**删掉 timer 再启用这一行**，不要两边同时开（会双投）。
 
 ```cron
 SHELL=/bin/bash

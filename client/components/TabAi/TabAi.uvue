@@ -68,6 +68,7 @@
 						:kind="m.kind"
 						:text="m.text"
 						:bullets="m.bullets"
+						:paragraphs="m.paragraphs"
 						:chips="m.chips"
 						:card-title="m.cards.length > 0 ? m.cards[0].title : ''"
 						:card-meta="m.cards.length > 0 ? m.cards[0].meta : ''"
@@ -116,15 +117,12 @@
 							</view>
 						</view>
 					</view>
-					<!-- 形态⑤：流式输出态（画布 4:349；点透明度阶梯模拟渐隐，App 端 keyframes 支持有限）
-					     2026-10-09（AG6 余项）：文案改为**实时**——流式预览到达后显示累计全文（逐字效果），
-					     工具阶段（无正文可推时）显示"正在翻你的记忆…"，都没有才退回占位文案 -->
-					<view v-else-if="m.kind === 'typing'" class="typing-row">
-						<text class="typing-text">{{ typingDisplay(m) }}</text>
-					<view class="td-1" />
-					<view class="td-2" />
-					<view class="td-3" />
-					</view>
+					<!-- 形态⑤：流式等待/生成态（2026-10-25 · task-16 ② 重设计，抽到 AiTyping.uvue）
+					     实测驱动：SSE 是真流式（帧间隔 8~205ms 分散），但**首帧延迟约 1s** —— 那一秒
+					     用户看不到任何东西，正是"感觉不是流式"的主因。AiTyping 三档渐进叙事：
+					     无信号→「忆光正在读你的话…」/ 有 tool 帧→「正在翻你的记忆…」/
+					     有正文→逐字文本 + 行尾光标。文案纪律与判据见该组件头注。 -->
+					<AiTyping v-else-if="m.kind === 'typing'" :text="chatStreamText" :tool="chatStreamTool" />
 					<!-- 形态⑥：发送失败重试卡（2026-10-07 客户端加固）：保留原文，一键重发 -->
 					<view v-else-if="m.kind === 'failed'" class="fail-card pressable" @tap="onRetry(m)">
 						<text class="fail-text">发送失败 · 点此重试</text>
@@ -240,7 +238,11 @@
 		role: string // 'user' | 'ai'
 		kind: string // 'bubble' | 'plain' | 'cards' | 'confirm' | 'typing'
 		text: string
-		bullets: Array<string> // plain 形态要点
+		bullets: Array<string> // plain 形态要点（**只有真正的列表项**，2026-10-25 task-16 ②）
+		// 正文段落（2026-10-25 · task-16 ②）：plain 里**不是列表项**的行，渲染成连续散文。
+		// 为什么单列一个字段而不是塞进 bullets：后端 `_kind_for` 只看"有没有 \n"就判 plain，
+		// 把散文也当要点渲染 = 用户说的「不像对话」。字段初始化器先例同下方 `sources`。
+		paragraphs: Array<string> = []
 		chips: Array<string> // 尾部快捷追问
 		cards: Array<MemCard> // bubble 内嵌卡（0/1 张）；cards 横滑时用 cardList
 		cardList: Array<MemCard>
@@ -412,6 +414,9 @@
 				const ai = mkAi(r.reply.kind, r.reply.text, [], r.reply.chips, r.reply.bullets, toMemCards(r.reply.cards))
 				// 引用回溯（2026-10-17）：来源条数随消息带上（N=0 时模板不渲染尾注，零视觉副作用）
 				ai.sources = r.reply.sources
+				// 正文段落（2026-10-25 · task-16 ②）：plain 形态里非列表项的散文，
+				// 交给 AiBody 渲染成连续正文（不塞进 bullets ⇒ 不再被切成一条条锈红圆点）
+				ai.paragraphs = r.reply.paragraphs
 				messages.value.push(ai)
 				scrollToBottom(ai.id)
 				})
@@ -483,18 +488,10 @@
 		return out
 	}
 
-	// typing 气泡文案（2026-10-09 流式）：预览累计全文 > 工具阶段提示 > 原始占位文案。
-	// 优先级这么排的理由：有正文时就该看正文（逐字效果），正文还没出但工具在跑时给一句人话，
-	// 两者都没有（如 mock 分支/首帧未到）才退回占位——**任何情况都不编造内容**。
-	function typingDisplay(m: AiMsg): string {
-		if (chatStreamText.value != '') {
-			return chatStreamText.value
-		}
-		if (chatStreamTool.value != '') {
-			return '正在' + toolLabel(chatStreamTool.value) + '…'
-		}
-		return m.text
-	}
+	// typing 文案逻辑已于 2026-10-25（task-16 ②）迁入 `AiTyping.uvue`：
+	// 「预览全文 > 工具阶段 > 等待占位」的三档优先级现在由该组件的 computed 承担
+	// （模板里直接绑 `chatStreamText` / `chatStreamTool` 两个模块级 ref）。
+	// 原 `typingDisplay(m)` 因此零调用 ⇒ 删除（零调用函数留着只会误导后来者以为还有入口）。
 
 	// 移除 typing 占位（uts 数组无 filter 先例，手写重建最稳）
 	function removeById(id: number): void {

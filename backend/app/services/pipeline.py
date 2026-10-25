@@ -78,6 +78,7 @@ from app.services.pipeline_common import (  # noqa: F401
     extra_get,
     logger,
     patch_extra,
+    transition_processing,
 )
 from app.services.pipeline_photo import _process_photo  # noqa: F401
 from app.services.pipeline_tagging import tag_content  # noqa: F401
@@ -415,10 +416,9 @@ def process_content(content_id: str) -> dict:
         if content is None:
             return {"content_id": content_id, "status": "not-found"}
 
-        # 阶段 0：外部调用前提交状态位（分阶段提交）——"processing"先落库并
-        # 结束当前事务，后续分钟级外部调用不持有 contents 行锁/数据库连接
-        if content.status != "processing":
-            content.status = "processing"
+        # 阶段 0：外部调用前提交状态位（分阶段提交）——"processing"先落库并结束当前事务，
+        # 后续分钟级外部调用不持有行锁/连接；D-23 顺带写 extra.processing_started_at。
+        transition_processing(content, "processing")
         db.commit()
 
         processed = []
@@ -512,8 +512,8 @@ def process_content(content_id: str) -> dict:
                 tags_job_status = "enqueue_failed"
                 processed.append("tags_enqueue_failed")
 
-        content.status = "done"
-        # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
+        # D-23：置 done 并清打点 + 阶段 3 主提交（全部 DB 状态变更一次落库）
+        transition_processing(content, "done")
         db.commit()
 
         # F3/R5-3：聚合独立任务入队（主提交后——聚合任务独立会话须见已提交内容）。
@@ -550,7 +550,7 @@ def process_content(content_id: str) -> dict:
         if target is not None:
             detail = exc.to_dict()
             patch_extra(target, audio_processing=detail, error=detail)
-            target.status = "failed"
+            transition_processing(target, "failed")
             db.commit()
         logger.warning("process_content %s ASR 失败: %s", content_id, exc.code)
         if exc.retryable:
@@ -590,7 +590,7 @@ def process_content(content_id: str) -> dict:
                 patch_extra(target, audio_processing=detail, error=detail)
             else:
                 patch_extra(target, error=detail)
-            target.status = "failed"
+            transition_processing(target, "failed")
             db.commit()
         logger.error("process_content %s 失败: %s", content_id, exc)
         # A2（P0-2）：审计已落库，re-raise 交 RQ Retry(3) 重投——此前吞掉

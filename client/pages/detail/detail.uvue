@@ -21,24 +21,52 @@
 		</view>
 		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
 		<view class="detail-body">
-		<!-- 全幅媒体：照片记忆 → 服务端票据 URL 真图；其余类型 → 画布静态合成图占位 -->
-		<!-- 2026-10-16：photo 记忆 hero 支持 @tap 原图↔缩略图切换（原图 15m 短票据，久置后切回可能
-		     裂图——onHeroError 监听 <image> 失败自动回落缩略图；非照片类型 originalUrl 恒空，切换不生效） -->
-		<image class="n4_406" :src="heroSrc" mode="aspectFill" @tap="onToggleHero" @error="onHeroError" />
+		<!-- ═══ D-1（2026-10-25 · task-20）**假图修复** ═══
+		     原来这里无条件渲染 `<image :src="heroSrc" @tap="onToggleHero">`，而 `heroSrc` 初值是
+		     `/static/images/img4_406.png`（一张真实的芦苇湖景照 780×720）。但 `loadDetail` 里只有
+		     `contentType == 'photo'` 才换成真图（见该函数）⇒ **文字 / 语音记忆永远显示这张风景照**：
+		       · 用户会以为"这是我自己拍的照片"（它长得像真照片，不像占位图）；
+		       · 且 `<image>` 上挂着 `@tap="onToggleHero"`，而该函数在 `heroOrigUrl==''` 时直接
+		         return ⇒ **点这块 692rpx 大图毫无反应**（假内容 + 死点击区双重问题）。
+		     修法：`v-if="heroHasImage"` —— 只有真的拿到照片 URL 才渲染 hero。
+		     ⚠️ 关键连带（**踩过就难查**）：hero / 两道渐变遮罩 / 标题 / 元信息**全部是绝对定位**，
+		     而 `.n4_flow` 用 `margin-top: 861.5rpx` 给它们预留空间。所以 hero 不渲染时**必须同时**
+		     ① 不渲染 4 个渐变层（它们是 hero 的装饰），② 把标题/元信息改回普通流、③ `n4_flow`
+		     的 margin-top 归零 —— 否则会留下 861rpx 的**空白洞**（比假图更难看）。
+		     故下面标题/元信息与 `n4_flow` 都按 `heroHasImage` 二分：有图=画布原样（绝对定位 + 861.5
+		     预留）；无图=普通流（紧凑排版，语音态即设计稿 F5a 的"无 hero"形态）。 -->
+		<image v-if="heroHasImage" class="n4_406" :src="heroSrc" mode="aspectFill" @tap="onToggleHero" @error="onHeroError" />
 		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
-		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级） -->
-		<view class="n4_407a"></view>
-		<view class="n4_407b"></view>
-		<view class="n4_408a"></view>
-		<view class="n4_408b"></view>
-		<text class="n4_422">{{ memTitle }}</text> <!-- 详情标题（动态） -->
-		<text class="n4_423">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
+		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级）。
+		     ⚠️ 这四层是 **hero 的装饰**（给文字压暗底/与纸色衔接）⇒ 无 hero 时必须一起消失。 -->
+		<view v-if="heroHasImage" class="n4_407a"></view>
+		<view v-if="heroHasImage" class="n4_407b"></view>
+		<view v-if="heroHasImage" class="n4_408a"></view>
+		<view v-if="heroHasImage" class="n4_408b"></view>
+		<text class="n4_422" :class="heroHasImage ? '' : 'n4_422-flow'">{{ memTitle }}</text> <!-- 详情标题（动态） -->
+		<text class="n4_423" :class="heroHasImage ? '' : 'n4_423-flow'">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
+		<!-- D-2（2026-10-25 · task-20）：**loading 态**。
+		     此前全文搜 `skeleton|loading` = 0 命中 ⇒ 慢网下用户先看到"记忆详情 / 空正文 /
+		     一颗未收藏的星"，以为内容丢了。现在 loading 期间用三行骨架占位（不显示任何
+		     假标题/假正文），数据回来再整体换成真内容。
+		     ⚠️ 失败态**不动**：`loadDetail` 里 `d == null` 已走 showModal + 重试（那条是对的）。 -->
+		<view v-if="loading" class="n4-skel">
+			<view class="n4-skel-line n4-skel-title"></view>
+			<view class="n4-skel-line n4-skel-meta"></view>
+			<view class="n4-skel-card">
+				<view class="n4-skel-line n4-skel-body"></view>
+				<view class="n4-skel-line n4-skel-body n4-skel-body2"></view>
+			</view>
+		</view>
 		<!-- D4 流式重构（2026-09-09 峰宝拍板「改流式布局」）：元信息以下全部进普通流容器。
 		     病根=全页绝对定位硬编码 top：画布卡片 top-to-top 间距（273.1/292.3）含 mock 文案撑出的
 		     卡高，真实文案变短/区块 v-if 隐藏 → 空洞（峰宝实证：AI 描述离元信息太远）。
 		     画布真值换算：卡间距统一 23.1rpx(12pt)（vcard→AI=211.6-188.5✓ AI→正文=273.1-250✓），
-		     节标签前 46.2rpx(24pt) 大节距。附带根治：语音播放态进度行 v-if 出现时不再与下方钉死元素重叠 -->
-		<view class="n4_flow">
+		     节标签前 46.2rpx(24pt) 大节距。附带根治：语音播放态进度行 v-if 出现时不再与下方钉死元素重叠。
+		     ⚠️ D-1 连带：`n4_flow` 的 `margin-top: 861.5rpx` 是**为绝对定位的 hero+标题+元信息预留**的。
+		     无 hero 时（文字/语音记忆）这些兄弟都已回到普通流 ⇒ margin-top 必须归零，
+		     否则标题下方凭空出现 861rpx 空白。故按 `heroHasImage` 二分加 `n4_flow-nohero`。 -->
+		<view class="n4_flow" :class="heroHasImage ? '' : 'n4_flow-nohero'">
 			<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
 			<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': !voicePlayable }">
 				<!-- 2026-10-16（RC-F）：播放钮暂停态改读预计算属性（mainActive && mainPlaying），零函数调用 -->
@@ -86,7 +114,19 @@
 			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
 			<!-- 卡19 接线：来源行「你也可以补充一句」可点 → 弹输入补一句（本地暂存，见 onEditSup） -->
 			<text v-if="bodySup != ''" class="n4_431-sup">{{ bodySup }}</text>
-			<text class="n4_432" @tap="onEditSup">{{ bodySource }}</text> <!-- 正文来源：可点补充（W0-2：语音=转写描述，照片=AI 描述） -->
+			<!-- D-4（2026-10-25 · task-20）：**「补充一句」要有可点线索**。
+			     原来它是一个裸 `<text class="n4_432" @tap="onEditSup">`，文案「来自照片的 AI 描述 ·
+			     你也可以补充一句」，长得和普通说明文字完全一样（无下划线/箭头/按钮底）
+			     ⇒ 用户不知道这行能点，"补充一句"这个能力等于藏着。
+			     ⚠️ 首选方案 `text-decoration: underline` **实测在 uni-app x 不支持**：
+			        编译器报 `WARNING: text-decoration is not a standard property name
+			        (may not be supported)`（本机 5.26，两条）。故改用**容器级**方案 ——
+			        外套一个带浅底 + 圆角的 pill，视觉上明确"这是可点的条"，
+			        且这种写法与页内 `.n4_435`（相关记忆卡）同族，不新造视觉语言。 -->
+			<view class="n4-sup-pill pressable" @tap="onEditSup">
+				<text class="n4_432">{{ bodySource }}</text>
+				<text class="n4-sup-arrow">›</text>
+			</view>
 		</view>
 		<!-- 相关记忆（HEAD 版交互接回：无归属事件整区隐藏；画布静态2卡→数据驱动横滑，画布4:434本即横滑容器） -->
 		<template v-if="relatedList.length > 0">
@@ -190,8 +230,19 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	let memMeta = ref('')
 	let memBody = ref('')
 	let aiNote = ref('') // AI 的观察（照片记忆 = 后端 ai_description；空→整卡隐藏）
-	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
-	let heroSrc = ref('/static/images/img4_406.png')
+	// D-2（2026-10-25 · task-20）：**加载态**。此前本页没有任何 loading 表达 ⇒ 慢网下用户先看到
+	// "记忆详情 / 空正文 / 未收藏星标"，以为内容丢了。初值 true，`loadDetail` 两条出口都置 false
+	// （成功 / 失败弹窗后），保证不会永久挂在骨架屏上。
+	let loading = ref(true)
+	// D-1（2026-10-25 · task-20）：**hero 是否有真图**。`false` ⇒ 不渲染 hero（文字/语音记忆）。
+	// 旧实现用 `heroSrc` 初值兜底到 `/static/images/img4_406.png`（真实风景照）⇒ 文字/语音记忆
+	// 永远显示一张"别人的照片"，且那层 `<image>` 挂了 `@tap` 但函数空返回 = 死点击区。
+	// 现在只有 `contentType == 'photo'` 且真拿到 URL 才置 true。
+	let heroHasImage = ref(false)
+	// 全幅媒体源：photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
+	// ⚠️ D-1：**初值置空串**（不再兜底到 img4_406.png）——那是假图的数据源，兜底等于没修。
+	// 空串时模板不会渲染（被 `v-if="heroHasImage"` 挡在外面），故不会出现裂图。
+	let heroSrc = ref('')
 	// 2026-10-16：hero 原图↔缩略图切换态（仅 photo 有值；originalUrl 由 ContentDetail 取回在手，零契约改动）
 	let heroThumbUrl = ref('') // 缩略图源（本地临时文件或票据 URL）
 	let heroOrigUrl = ref('') // 原图票据 URL（15m 短时效——久看后切换有裂图风险，@error 已兜底回落）
@@ -431,6 +482,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		}
 		fetchContentDetail(id).then((d) => {
 			if (d == null) {
+				// D-2（task-20）：失败也必须收 loading，否则骨架屏永久挂在页面上（比"空正文"更糟）
+				loading.value = false
 				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
 				// fetchContentDetail 失败可能=网络断/404 已删除/服务不可达
 				// 2026-10-16：toast → showModal 带【重试】（toast 一闪而过无补救动作，用户只能干等）
@@ -441,6 +494,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 					cancelText: '取消',
 					success: (r) => {
 						if (r.confirm) {
+							// 重试期间重新进 loading 态（否则用户点了"重试"毫无视觉反馈）
+							loading.value = true
 							loadDetail()
 						}
 					}
@@ -470,15 +525,19 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 			}
 			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
 			// 原图 URL 一并留存：hero @tap 原图↔缩略图切换用（originalUrl 已在 ContentDetail 在手，零契约改动）
+			// D-1（task-20）：**只有真的拿到 URL 才置 heroHasImage=true** ⇒ 文字/语音记忆不会再有 hero；
+			// 连照片但两条 URL 都空（极端：票据生成失败）也走无 hero 形态，比显示假风景图诚实。
 			if (d.contentType == 'photo') {
 				heroThumbUrl.value = d.thumbnailUrl
 				heroOrigUrl.value = d.originalUrl
 				if (d.thumbnailUrl != '') {
 					heroShowOrig.value = false
 					heroSrc.value = d.thumbnailUrl
+					heroHasImage.value = true
 				} else if (d.originalUrl != '') {
 					heroShowOrig.value = true
 					heroSrc.value = d.originalUrl
+					heroHasImage.value = true
 				}
 			}
 			let meta = ''
@@ -489,6 +548,9 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 				meta = meta + (meta != '' ? ' · ' : '') + d.place
 			}
 			memMeta.value = meta
+			// D-2（task-20）：主体数据已落地 ⇒ 收骨架屏。放在这里（而不是 fetchContentAiMeta 之后）
+			// 是因为 AI 增量字段是**次要增强**（tags/ai_description），不该拖住主内容展示。
+			loading.value = false
 			// FE1：AI 增量字段（tags_json/ai_description 打标异步，可能 null → 空=不显示对应区块，不造假占位）
 			fetchContentAiMeta(id).then((ai: ContentAiMeta | null) => {
 				if (ai == null) {

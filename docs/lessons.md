@@ -9,6 +9,42 @@
 
 ---
 
+### 2026-10-25 23:58 · commit 828dd01 · ts=1792943921
+- **错误**：`backend/app/services/pipeline_common.py:80` 写了 `from datetime import UTC, datetime as _dt` —— ruff **I001**（import 块未排序/未格式化），pre-commit 钩子拦下提交
+- **根因**：isort 的 force-sort-within-sections 规则要求：**同一模块里既有普通名又有带 as 别名的名时**，要拆成两条独立 import 语句并按名字排序，不能合并在一条里。我图省事把 `UTC` 和 `datetime as _dt` 写在同一个 from 里，ruff 的自动修正正是把它拆成两行。注意：这是**函数内局部 import**（为了避开模块级循环依赖），局部 import 同样受 isort 管——这点容易误以为「函数里的 import 不管」
+- **修复**：`python -m ruff check --fix backend/app/services/pipeline_common.py` → 5 errors 全自动修好；复验 `ruff check` → All checks passed
+- **相关文件**：backend/app/services/pipeline_common.py
+- **教训**：**`from x import A, B as C` 这种混合形式会被 isort 判 I001。** 带 `as` 别名的名字要从普通名字里拆出来单独一行。更重要的是：**函数内局部 import 也受 isort 管辖** —— 不要把「为了避开循环依赖而放在函数里」当成「可以不守 import 规范」。流程上一条：`ruff check` 通过 ≠ `ruff check --fix` 已跑过。写完代码先跑一次 `--fix`（它能修 90% 的 I001/F401），再跑 check 确认，否则会在 pre-commit 那一刻被拦，白白多一轮。
+
+---
+
+### 2026-10-25 23:48 · commit 828dd01 · ts=1792943292
+- **错误**：`backend/tests/test_requeue_scheduling_d23.py` 里写了 `f"...{src.count('transition_processing(target, \'failed\')')} 处"` —— f-string 表达式内用了反斜杠转义单引号。**ruff 报 invalid-syntax**，pytest **整个文件 collection ERROR**（连带 `test_requeue_job.py` 也 ERROR），`--full` 因此判红
+- **根因**：Python **3.11 及之前**的 f-string 表达式部分**不允许出现反斜杠**（PEP 701 在 3.12 才放开）。本机跑的是 3.13（能过），但 ruff 的 target-version 按仓库配置（3.11）判定 ⇒ lint 红。更深一层：我在 f-string 里嵌套了**同一种引号**（外层 f"…" + 内层 '…' 里再想放 'failed'），这本身就说明**引号层级过深时不该用 f-string 内联表达式**
+- **修复**：把计数算到局部变量再插值：`failed_calls = src.count('transition_processing(target, "failed")')` 然后 `f"…实际 {failed_calls} 处"`。既消除反斜杠，也更好读。修后 `pytest tests/test_requeue_scheduling_d23.py tests/test_requeue_job.py` → **25 passed**
+- **相关文件**：backend/tests/test_requeue_scheduling_d23.py
+- **教训**：**f-string 里不要嵌表达式，尤其不要嵌带引号/转义的表达式。** 这条不是风格偏好：Python 3.11 及之前 f-string 表达式禁止反斜杠（PEP 701 才在 3.12 放开），写出来 lint 直接 invalid-syntax，而**本机跑 3.13 时 pytest 可能看不出问题**（版本错配 ⇒ 本地绿、CI 红）。规矩：**计数/取值先落局部变量，再插值**。另一条相关的：一个测试文件有语法错会让**同目录其他测试文件也 collection ERROR**（这次 `test_requeue_job.py` 被连带）——所以你看到「两个 ERROR」不等于「两个文件都有问题」，先修语法再看真实失败数。
+
+---
+
+### 2026-10-25 23:31 · commit 828dd01 · ts=1792942268
+- **错误**：用户问「那 229 条内容卡着的原因」。查完发现不是 229 条而是 **4520 条**，且根因是「兜底任务 `requeue_job` 从来没被任何 cron/timer/代码执行过」——而 `pipeline.py` 的异常处理里**明确写着**「RQ 重投耗尽仍失败 → requeue_job 超龄重扫兜底」
+- **根因**：`backend/app/workers/requeue_job.py:22` 自己写着「RQ 无内置 cron——调度登记给集成 Agent」，但**全仓检索 `requeue_job` 只有注释与文档提到它**，没有任何代码/cron/systemd timer 执行。于是形成闭环缺口：process_content 阶段 0 先 commit `status='processing'`（为了不持锁跑分钟级外部调用）→ 进程被杀/job_timeout(600s)/重启时异常处理器没机会跑 → 状态永久停 processing → RQ `failure_ttl=7 天` 后失败任务从 registry 自动消失 → **再也没有任何机制会碰它**。注释里承诺的兜底，与实际是否有人调用它，是两件独立的事
+- **修复**：① 定位证据链：`rq:queue:*` 长度全 0（不是排着）、`rq:registry:failed` = 0（不是失败未重试）、worker 2 进程在跑（不是挂了）、`qdrant_text_id` 非空数 = 0/4520（不是跑完没回写）、最新一条 0.6 小时前（不是历史积压）；② 全仓检索确认 requeue_job 零调用；③ 补调度（systemd timer）+ `/healthz` 报 `stale_processing_count` 让卡死可见；④ 加 `processing_started_at` 让兜底能区分「正在跑」与「卡死」
+- **相关文件**：backend/app/workers/requeue_job.py
+- **教训**：**注释里写的「兜底」不等于兜底存在。** 判断一个降级/兜底机制是否真实生效，必须回答「谁调用它、多久一次、调用不到会怎样」三问，而**不能因为异常处理代码里提了它的名字就认为它会在**。本仓已有多起同族：`sensitive_status` 默认值被当审核结论、`aggDegradeNotice` 注释承诺了不存在的组件、这次是 `requeue_job` 注释承诺了没人调度的兜底。**共同形态：写下了意图，但没有把它接到执行上。**检测手段很便宜：对任何一个「兜底/定时/清理」函数名做一次全仓 grep，看它是否只出现在注释与自身定义里 —— 是的话，它就是死的。
+
+---
+
+### 2026-10-25 23:31 · commit 828dd01 · ts=1792942267
+- **错误**：时间轴长文本截断：先写了 `:maxlines="3"`（看着像 uni-app 的旧属性名），**编译门照样绿、exit 0**，但编译器只打了一条极易忽略的 `warn: Property 'maxlines' is not supported on '<text>'` —— 属性被**静默丢弃**，UI 一行都没截
+- **根因**：uni-app x 的 `<text>` 列表里这个属性叫 **`max-lines`**（带连字符），不是 `maxlines`。编译器 props 表里写的是 `'max-lines': {type:'number', setter:'setMaxLines'}`，而字符串 `maxlines` 在 660KB 的 compiler-vapor-dom2 里 **index = -1（完全不存在）**。更糟的是：**写错的属性名不会报 error**，只打 warn ⇒ 现有编译门（只看 `error:`）判绿。这类缺陷是最危险的一类 —— 「以为改过了」比「没改」更难发现，因为代码 diff 里明明有那一行
+- **修复**：① A/B 双探针证伪：`:maxlines` 与 `:max-lines` 分别编译，比对日志（warn 有无）与产物字节数（kt 1636 vs **1649**，后者真的生成了 setMaxLines 调用）；② 改用 `:max-lines="3"`，warn 消失（`maxlines` / `not supported on` 两个串在日志里 index=-1）；③ 补第二道止血：`.quote-text` 加 `white-space: normal`（uni-app x app-android 的 text 默认 `white-space: keep`，正文里的 `\n` 会逐行渲染，`max-lines` 只截前 3 个自然段、连续空行还会先吃掉额度导致一个字都不显示）
+- **相关文件**：client/components/EntryCard/EntryCard.uvue
+- **教训**：**「编译通过」不能证明「属性生效」。** uni-app x 对不认识的组件属性只打 `warn` 不报 `error`，而编译门只看 `error:` ⇒ 写错属性名会**静默通过、静默失效**。所以凡是用到不熟悉的组件属性，判据必须是三条同时成立：① 日志里没有 `not supported on`/`is not a standard property name`（这类 warn 一律当 error 看）；② **产物字节数有变化**（改了行为 vs 只改了源码，产物是不说谎的）；③ 真机看一眼实际效果。附带一条同类实证：`text-decoration` 在本仓 uni-app x 也**不支持**（同样只报 WARNING），要做「可点文字」只能用容器级 pill —— 这两个都是今天的实测。**更上游的一条**：同一天里 `TabSearch` 用对了 `max-lines`、`EntryCard` 差点用错 `maxlines`——差别只在于「有没有去查」而不是「知不知道」。**遇到同类需求先 grep 同仓既有用法，再验它是否真生效。**
+
+---
+
 ### 2026-10-25 22:16 · commit cf6a197 · ts=1792937794
 - **错误**：跑 `review_agent.py --full` 时 `test_pipeline.py` 两个用例红：`test_photo_writes_image_vec` 与 `test_main_commit_failure_leaves_no_orphan_vector`。报错是 `qdrant_client.http.exceptions.UnexpectedResponse: Unexpected Response: 502 (Bad Gateway)`—— 我第一反应是「agent 的改动把管线搞坏了」，差点去改代码
 - **根因**：那两个用例**依赖真实的本地 Qdrant 容器**（写 image_vec 到 Qdrant，断言向量确实落库）。而当时 Docker Desktop 没在跑（`docker ps` 报 `npipe ... cannot find the file specified`），`127.0.0.1:6333` 连接被拒 ⇒ 测试拿到的 502 是**基础设施不可用**，与代码无关。更早还有一个佐证我没抓住：同一次 `--full` 里 pytest **整体崩掉却没有 FAILED 行**（`test-report.json` 的 `failed_tests` 为空、输出只有 pytest 内部调用栈），那是环境级失败的特征，不是用例断言失败

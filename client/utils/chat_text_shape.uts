@@ -71,3 +71,210 @@ export function dropJsonFragments(lines: Array<string>): Array<string> {
 	}
 	return kept
 }
+
+/**
+ * 去掉列表项的行内标记（`- ` / `* ` / `1. ` 等），只留正文。
+ *
+ * 为什么必须剥：列表项在客户端会**渲染成 `.plain-dot` 圆点 + 文本**。若保留原标记，
+ * 用户看到的是「• - 记录高峰在月末」—— 一个圆点加一个减号，比原来更丑 ✗。
+ * 模型用的是 Markdown 习惯（`-` / `1.`），我们用自己的圆点表达同一语义，故标记必须剥。
+ */
+export function stripListMarker(line: string): string {
+	let s = line.trim()
+	const head = s.charAt(0)
+	if ((head == '-' || head == '*' || head == '•' || head == '·') && s.length > 1) {
+		const second = s.charAt(1)
+		if (second == ' ' || second == '\u3000') {
+			return s.substring(2).trim()
+		}
+	}
+	if (s.length > 2) {
+		const c0 = s.charAt(0)
+		if (c0 == '(') {
+			const close = s.indexOf(')')
+			if (close > 1 && close <= 4) {
+				// `(1) xxx` → 剥到右括号之后
+				return s.substring(close + 1).trim()
+			}
+		}
+		if (c0 >= '0' && c0 <= '9') {
+			// `1.` / `1、` / `1)` 前缀：跳过连续数字后跟一个分隔符
+			let i = 0
+			while (i < s.length && s.charAt(i) >= '0' && s.charAt(i) <= '9') {
+				i++
+			}
+			if (i > 0 && i < s.length - 1) {
+				const sep = s.charAt(i)
+				if (sep == '.' || sep == '\u3001' || sep == ')') {
+					return s.substring(i + 1).trim()
+				}
+			}
+		}
+	}
+	return s
+}
+
+/**
+ * 该行是否是一条**真正的列表项**（渲染时该加锈红圆点）。
+ *
+ * ## 为什么需要它（2026-10-25 · task-16 ② 的核心）
+ *
+ * 旧实现把 `plain` 形态的**每一行**都当 bullet 渲染（`chat_api.parseReply` 里
+ * `for (i = 1; i < lines.length; i++) bullets.push(lines[i])`）。而 `_kind_for` 判定
+ * `plain` 的依据只是「**文本里有 \\n**」—— 于是**任何多行回复**都会变成
+ * 「大标题 + 一串锈红圆点」，包括一段正常的分段散文。用户原话：「不像对话」。
+ *
+ * ## 判据：**只认显式列表标记**（这条是踩过一次后收紧的）
+ *
+ * 初版还加了一条「短行 + 无句末标点 ⇒ 算列表项」。实测（见 task-16 的验证脚本）它会把
+ * 中文散文短句整片误判成要点 —— **中文短句本来就经常不带句号**（「那天早上有薄雾」
+ * 「你自己也在备注里写了风很轻」），于是散文照样被切成一串圆点，等于没修 ✗。
+ *
+ * 现在只认模型真正会打的标记：
+ *   · `-` / `*` / `•` / `·` 后跟空格或全角空格；
+ *   · 数字序：`1.` / `1、` / `1)` / `(1)`。
+ *
+ * 取舍（**宁可少圆点，不可多圆点**）：
+ *   · 漏判（模型输出无标记的换行列表）⇒ 渲染成连续段落，读起来是散文，**可读性不受损** ✓；
+ *   · 误判（把散文短句当要点）⇒ 一段话被切成一串锈红圆点，正是用户投诉的形态 ✗。
+ *   两害相权，只认显式标记是唯一安全的一侧。
+ */
+export function isListItem(line: string): boolean {
+	const s = line.trim()
+	if (s == '') {
+		return false
+	}
+	// ① 项目符号：`-` / `*` / `•` / `·` + 空白（防误伤 "3-5 条" 这种行内连字符）
+	const head = s.charAt(0)
+	if ((head == '-' || head == '*' || head == '•' || head == '·') && s.length > 1) {
+		const second = s.charAt(1)
+		if (second == ' ' || second == '\u3000') {
+			return true
+		}
+	}
+	// ② 数字序：`1.` / `1、` / `1)` / `(1)`
+	if (s.length > 2) {
+		const c0 = s.charAt(0)
+		const c1 = s.charAt(1)
+		if (c0 == '(') {
+			const close = s.indexOf(')')
+			if (close > 1 && close <= 4) {
+				return true
+			}
+		}
+		if (c0 >= '0' && c0 <= '9' && (c1 == '.' || c1 == '\u3001' || c1 == ')')) {
+			return true
+		}
+	}
+	return false
+}
+
+/** 段落切分结果：首段（可当小标题）+ 其余段（每条自带"是不是列表项"标记） */
+export class ReplyBody {
+	/** 首段文本：**只在它确实是"短标题行"时**由调用方当小标题，否则并入正文 */
+	first: string
+	/** 首段是否适合当小标题（短、无句末标点） */
+	firstIsTitle: boolean
+	/** 其余段落（已剔 JSON 碎片） */
+	rest: Array<string>
+	/** `rest` 里每条是否为列表项（与 `rest` 下标一一对应；避免渲染层再判一次） */
+	restIsList: Array<boolean>
+
+	constructor(first: string, firstIsTitle: boolean, rest: Array<string>, restIsList: Array<boolean>) {
+		this.first = first
+		this.firstIsTitle = firstIsTitle
+		this.rest = rest
+		this.restIsList = restIsList
+	}
+}
+
+/**
+ * 从整段回复文本算出「标题 / 段落 / 列表项」三份结果（`parseReply` 直接消费）。
+ *
+ * 为什么把这个编排放在本文件而不是 `chat_api.parseReply`：后者已 794 行 / 阈值 800
+ * （structure 棘轮**无豁免**），在里面加逻辑就会顶过阈值。而"怎么切分"本就是本文件职责。
+ */
+export class ReplyShape {
+	/** 当小标题的首行；空串 = 没有标题（首行已并入 paragraphs） */
+	title: string
+	/** 正文段落（非列表项） */
+	paragraphs: Array<string>
+	/** 要点（真正的列表项，渲染时带圆点） */
+	bullets: Array<string>
+
+	constructor(title: string, paragraphs: Array<string>, bullets: Array<string>) {
+		this.title = title
+		this.paragraphs = paragraphs
+		this.bullets = bullets
+	}
+}
+
+/**
+ * `plain` 形态的最终切分（title / paragraphs / bullets）。
+ *
+ * @param text   回复正文
+ * @param isPlain 后端判定的形态是否为 `plain`（非 plain 不切分，全部交 bubble 渲染）
+ */
+export function shapeReply(text: string, isPlain: boolean): ReplyShape {
+	const lines = splitTextLines(text)
+	const body = shapeReplyBody(lines)
+	if (!isPlain) {
+		return new ReplyShape('', [], [])
+	}
+	const paragraphs: Array<string> = []
+	const bullets: Array<string> = []
+	for (let i = 0; i < body.rest.length; i++) {
+		if (body.restIsList[i]) {
+			// 剥掉 `- ` / `1. ` 等标记：客户端自己画圆点，保留标记会变成「• - 内容」✗
+			bullets.push(stripListMarker(body.rest[i]))
+		} else {
+			paragraphs.push(body.rest[i])
+		}
+	}
+	let title = ''
+	if (body.firstIsTitle) {
+		title = body.first
+	} else if (body.first != '') {
+		// 首行不是短标题（长句/列表项）⇒ 它是正文第一段，不能硬拔成标题 ✗
+		paragraphs.unshift(body.first)
+	}
+	return new ReplyShape(title, paragraphs, bullets)
+}
+
+/** 按行切分（保留原行序；`\r\n` 归一；末行空串丢弃） */
+export function splitTextLines(text: string): Array<string> {
+	const norm = text.replace('\r\n', '\n')
+	const parts = norm.split('\n')
+	const out: Array<string> = []
+	for (let i = 0; i < parts.length; i++) {
+		out.push(parts[i])
+	}
+	// 末尾若因结尾换行产生空串，去掉（否则会多一个空段落）
+	if (out.length > 0 && out[out.length - 1] == '') {
+		out.pop()
+	}
+	return out
+}
+
+export function shapeReplyBody(lines: Array<string>): ReplyBody {
+	const kept = dropJsonFragments(lines)
+	if (kept.length == 0) {
+		return new ReplyBody('', false, [], [])
+	}
+	const head = kept[0].trim()
+	// 首行当标题的条件：**不是列表项** + 足够短（>18 字就不是标题，是正文第一句）
+	const firstIsTitle = !isListItem(head) && head.length <= 18
+	const restStart = 1
+	const rest: Array<string> = []
+	const restIsList: Array<boolean> = []
+	for (let i = restStart; i < kept.length; i++) {
+		const t = kept[i].trim()
+		if (t == '') {
+			continue
+		}
+		rest.push(t)
+		restIsList.push(isListItem(t))
+	}
+	return new ReplyBody(head, firstIsTitle, rest, restIsList)
+}
+

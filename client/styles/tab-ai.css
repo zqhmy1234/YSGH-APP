@@ -224,6 +224,18 @@
 		line-height: var(--d-raw-r44, 44rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
+	/* 散文段落（2026-10-25 · task-16 ②）：直铺长答里**不是列表项**的行。
+	   此前这些行也带锈红圆点 ⇒ 一段正常散文被切成"标题 + 一串点"，用户说不像对话。
+	   现独立成段：无圆点、段间留 12rpx、字号行距与 .plain-text 完全同源（读起来是同一篇文章）。
+	   ⚠️ Vapor 模式不支持 `lines`，若要限行必须用 `max-lines` **属性**（本处不截断，故不需要）。 */
+	.plain-para {
+		width: 100%;
+		margin-top: var(--d-raw-r12, 12rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		line-height: var(--d-raw-r44, 44rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
 	/* 追问 chips（画布 4:334）：米灰底胶囊、墨棕次级字 */
 	.chips-row {
 		margin-top: var(--d-card_radius_small, 23.1rpx);
@@ -360,45 +372,13 @@
 		font-size: var(--d-lattice-p14, 26.9rpx);
 		color: var(--c-white, #FFFFFF);
 	}
-	/* 形态⑤：流式输出态（画布 4:349，三点透明度阶梯） */
-	.typing-row {
-		width: 100%;
-		margin-top: var(--d-lattice-p8, 15.4rpx);
-		flex-direction: row;
-		align-items: center;
-	}
-	.typing-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p16, 30.8rpx);
-		color: var(--c-ink-500, #8A7A6A);
-		/* 2026-10-11（视觉审查 B4）：本元素内容从"短占位文案"变为**流式累计全文**，
-		   不加 flex:1 时长文本会把右侧三点挤出 .typing-row（row 布局）或被压成极窄列折行 */
-		flex: 1;
-	}
-	/* uvue 仅支持单类选择器：三点透明度阶梯拆独立类（.typing-dot.d1 复合选择器不支持） */
-	.td-1 {
-		width: var(--d-lattice-p5, 9.6rpx);
-		height: var(--d-lattice-p5, 9.6rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		border-radius: 4.8rpx;
-		background-color: var(--c-rust-500, #B05A3A);
-	}
-	.td-2 {
-		width: var(--d-lattice-p5, 9.6rpx);
-		height: var(--d-lattice-p5, 9.6rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		border-radius: 4.8rpx;
-		background-color: var(--c-rust-500, #B05A3A);
-		opacity: 0.55;
-	}
-	.td-3 {
-		width: var(--d-lattice-p5, 9.6rpx);
-		height: var(--d-lattice-p5, 9.6rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		border-radius: 4.8rpx;
-		background-color: var(--c-rust-500, #B05A3A);
-		opacity: 0.25;
-	}
+	/* 形态⑤（流式等待/生成态）的样式已随 task-16 ② 迁入 `components/TabAi/AiTyping.uvue`
+	   —— 原先的 `.typing-row / .typing-text / .td-1..3` 共 38 行只服务那一个形态，
+	   留在共享样式表里既是死代码、又让本文件继续膨胀。
+	   ⚠️ uni-app x 的 `<style>` 是**全局**的，但本处删除是安全的：这 5 个类在全仓
+	   已无第二个使用者（`grep typing-row client/` 只剩 AiTyping.uvue）。
+	   若将来别处也要用这套圆点，请从 AiTyping.uvue 复制而**不要**在这里复活旧规则
+	   （两处同名类会按层叠顺序互相覆盖，排查成本极高）。 */
 	/* 用户消息行 */
 	.n2_349 {
 		width: var(--d-card_width, 673.1rpx);

@@ -40,7 +40,7 @@ import { addBreadcrumb, captureException } from './sentry'
 import { PATH_CHAT_MESSAGES_STREAM, PATH_CHAT_CONVERSATION_MESSAGES } from './contract'
 // 2026-10-25：JSON 碎片判定（真机「中间的 json 格式的文本会混进来」）。
 // 实现放独立文件是因为本文件已 793 行 / 阈值 800（structure 棘轮无豁免）。
-import { dropJsonFragments, looksLikeJsonFragment } from './chat_text_shape'
+import { shapeReply } from './chat_text_shape'
 
 /** 记忆卡片（agent 侧 `save_memory` 结构化投影；img 为空串=文字记忆无缩略图） */
 export class ChatCard {
@@ -93,7 +93,13 @@ export class ChatReply {	id: string
 	// 只数数量；id 本身预留给"点击跳回原文"）。数据源是后端透传的 agent 工具结果结构化字段，
 	// 缺字段/非数组一律回退空数组（N=0 ⇒ 页面不渲染该尾注）。
 	sources: Array<string>
-	constructor(id: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<ChatCard>, sources: Array<string>) {
+	// 正文段落（2026-10-25 · task-16 ②）：`plain` 形态里**不是列表项**的那些行。
+	// 为什么要和 bullets 分开：后端 `_kind_for` 只看"有没有 \\n"就判 plain ⇒ 一段正常散文
+	// 会被渲染成"标题 + 一串锈红圆点"（用户原话「不像对话」）。现在散文进 paragraphs
+	// （连续正文档），只有真正的列表项进 bullets（带圆点）。两者顺序由 `shapeReplyBody` 决定，
+	// 渲染时**段落在前、要点在后**（见 AiBody）。
+	paragraphs: Array<string>
+	constructor(id: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<ChatCard>, sources: Array<string>, paragraphs: Array<string> = []) {
 		this.id = id
 		this.kind = kind
 		this.text = text
@@ -101,6 +107,7 @@ export class ChatReply {	id: string
 		this.chips = chips
 		this.cards = cards
 		this.sources = sources
+		this.paragraphs = paragraphs
 	}
 }
 
@@ -114,18 +121,12 @@ export class ChatSendResult {
 	}
 }
 
-/** 把整段纯文本切成非空行数组（plain 形态的 title/bullets 由此得来） */
-export function splitLines(text: string): Array<string> {
-	const out: Array<string> = []
-	const lines = text.split('\n')
-	for (let i = 0; i < lines.length; i++) {
-		const s = lines[i].trim()
-		if (s != '') {
-			out.push(s)
-		}
-	}
-	return out
-}
+/** ⚠️ 2026-10-25（task-16 ②）：原 `splitLines` 已**删除** —— 它唯一的调用方是
+ *  `parseReply` 的旧实现（"首行标题 + 其余全 bullet"）。现在切分统一走
+ *  `chat_text_shape.shapeReply`（内部用 `splitTextLines`，语义更严：还负责剔 JSON 碎片、
+ *  区分段落/列表项）。删而不留，是因为本仓 `audit_harness` 轴 4 会把"导出了但零调用"
+ *  判 CRITICAL —— 留着它不只是死代码，还会直接把门禁弄红。
+ *  若将来别处真要"切非空行"，从 `chat_text_shape` 导 `splitTextLines` 即可，别在这里复活。 */
 
 /** JSON 碎片判定（2026-10-25 · 真机「中间的 json 格式的文本会混进来，非常丑」）。
  *
@@ -204,24 +205,22 @@ function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 	// 2026-10-25（真机「中间的 json 格式的文本会混进来」）：**先滤掉 JSON 碎片，再切标题/要点**。
 	// 顺序是关键：`plain` 把首行当标题、其余每行当 bullet；若切分后才过滤，一段压平的 JSON
 	// 已被拆成"标题 + 十条要点"（每行带锈红圆点）——正是用户说的"非常丑"。判据见 chat_text_shape.
-	const lines = dropJsonFragments(splitLines(text))
-	const bullets: Array<string> = []
-	if (kind == 'plain' && lines.length > 1) {
-		for (let i = 1; i < lines.length; i++) {
-			bullets.push(lines[i])
-		}
-	}
-	// 全被滤空（整段回复就是一段 JSON）⇒ title 用空串而不是原 text：
-	// 宁可气泡空着，也不把 JSON 当标题顶上首行（后者正是真机那个现象的形态）。
-	const title = lines.length > 0 ? lines[0] : ''
+	//
+	// 🚨 2026-10-25（task-16 ② · 用户「不像对话」）：「首行标题 + **其余每行**都当 bullet」是错的。
+	// 后端 `_kind_for` 判 `plain` 的唯一依据就是「文本里有 \\n」⇒ **任何多行回复**都会变成
+	// 「大标题 + 一串锈红圆点」，一段正常的分段散文被切成要点列表 ✗。
+	// 现由 `chat_text_shape.shapeReply` 统一判定（散文→paragraphs / 真列表项→bullets），
+	// 判据与理由见该文件；本文件只负责把结果装进 ChatReply。
+	const shape = shapeReply(text, kind == 'plain')
 	return new ChatReply(
 		obj.getString('id') ?? '',
 		kind,
-		title,
-		bullets,
+		shape.title,
+		shape.bullets,
 		parseStringArray(obj.getArray('chips')),
 		parseCards(obj.getArray('cards')),
-		parseSources(obj.getArray('sources'))
+		parseSources(obj.getArray('sources')),
+		shape.paragraphs
 	)
 }
 

@@ -1,0 +1,71 @@
+# 忆述光华 · requeue_job 定时重扫（D-23 根因修复）
+# ⚠️ 模板：`@DEPLOY_ROOT@` / `@RUN_USER@` 由 deploy/scripts/deploy_one.sh 渲染后安装。
+#
+# ## 为什么需要这个 unit（这不是"优化"，是**补一个从未存在过的兜底**）
+#
+# `backend/app/workers/requeue_job.py` 的设计意图写在它的文件头：
+#   「RQ 无内置 cron——调度登记给集成 Agent（与 cleanup_job 同机制，建议每 1h 跑一次）」
+# 但 2026-10-25 全仓检索证实：**它从来没有被任何 cron / systemd timer / RQ scheduler /
+# 代码路径执行过**（只有注释与文档提到它）。
+#
+# 于是形成一条闭环缺口：
+#   1. `process_content` 的阶段 0 先 commit `status='processing'`（避免长事务持锁）；
+#   2. 随后跑分钟级外部调用（COS / ASR / dashscope / 腾讯 CI / 高德）；
+#   3. 若此时进程被杀 / RQ job_timeout(600s) 触发 / 机器重启 ⇒ 异常处理器**没机会跑**，
+#      内容永久停在 `processing`；
+#   4. `process_content` 的异常路径明确承诺「RQ 重投耗尽仍失败 → requeue_job 超龄重扫兜底」；
+#   5. 而那个兜底**从未运行** ⇒ 内容永久卡死且**完全静默**（用户只感觉"搜不到自己的照片"）。
+#
+# 实测后果：`status='processing'` 积压 **4520 条**（含 failed 共 5157），
+# 最早 8/27、最新 0.6 小时前，`qdrant_text_id` 非空数 = 0/4520（向量化从未执行）。
+#
+# ⚠️ 幂等性（改本 unit 前必读）：
+#   `run_requeue()` 走的不是 `enqueue_unique`，而是 `enqueue_high(process_content, id)`
+#   —— **不带确定性 job_id**。所以"同一行被两轮同时选中"理论上会投两个 job。
+#   它的幂等性由**两层**保证，缺一不可：
+#     a. `_stale_candidates` 只选 `updated_at`（或 `processing_started_at`）**超龄**
+#        的行，且 `run_requeue` 每条重投后立即 `_bump_requeue_count` + `commit`
+#        ⇒ `updated_at` 前移，**同一轮内不会重复选中**；
+#     b. 单条重扫次数上限 `REQUEUE_MAX_ATTEMPTS=3`，超限置终态（`requeue_exhausted`），
+#        不会无限重投烧 API 成本。
+#   ⇒ 本 unit 用 `Type=oneshot`（不是 `Type=simple`）：进程跑完即退，由 timer 再次拉起；
+#     `ExecStart` 前加 `flock` 互斥，防「上一轮还没跑完、timer 又拉起一轮」导致跨轮并发选中
+#     同一批行（这是 a 层覆盖不到的唯一缝隙——a 只能防同一轮内的重复）。
+#
+# 频率 30 分钟的依据：`REQUEUE_DEFAULT_STALE_SECONDS=3600`（1 小时才算超龄）
+# ⇒ 30 分钟一轮最坏滞留 1.5h 才被发现，相对 1 小时阈值足够灵敏；同时把
+# 「每轮扫全表的 JSONB 表达式」的成本控制在 2 次/小时（一天 48 次）。
+
+[Unit]
+Description=忆述光华 requeue_job 定时重扫（超龄 failed/processing 兜底 · D-23）
+Documentation=file://@DEPLOY_ROOT@/deploy/RUNBOOK.md
+After=network-online.target docker.service
+Wants=network-online.target
+# 只在 worker 活着的时候重投有意义（worker 挂了重投也只是往队列里堆）
+# 注意：不写 Requires=yishu-worker.service —— worker 重启时不应连带掐掉本 job。
+
+[Service]
+Type=oneshot
+User=@RUN_USER@
+Group=@RUN_USER@
+WorkingDirectory=@DEPLOY_ROOT@/backend
+EnvironmentFile=@DEPLOY_ROOT@/deploy/.env
+Environment=PYTHONUNBUFFERED=1
+
+# flock：上一轮未结束则本轮**直接退出**（退出码 0，见 flock -n 语义），
+# 而不是排队等待——排队会让积压越滚越长，且等待期间选中的行可能已被上轮处理。
+# `--limit 200`：默认 100 条/轮，200 让首次清账不至于太慢（4520 条 ÷ 200 ≈ 23 轮 ≈
+# 12 小时），同时避免单轮重投过快把外部 API 打限流。
+ExecStart=/usr/bin/flock -n /tmp/yishu-requeue.lock @DEPLOY_ROOT@/backend/.venv/bin/python -m app.workers.requeue_job --older-than-seconds 3600 --limit 200
+
+# oneshot 不该被 systemd 反复重启（失败了等下一个 timer 周期即可，
+# 密集重启只会放大外部 API 压力）
+Restart=no
+TimeoutStartSec=1800
+KillSignal=SIGTERM
+
+StandardOutput=append:@DEPLOY_ROOT@/deploy/logs/requeue.log
+StandardError=append:@DEPLOY_ROOT@/deploy/logs/requeue.log
+
+[Install]
+WantedBy=multi-user.target

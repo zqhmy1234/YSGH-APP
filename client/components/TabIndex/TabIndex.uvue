@@ -36,7 +36,11 @@
 		<AggDegradeNotice />
 
 		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
-		<scroll-view class="scroll" direction="vertical" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+		<!-- 2026-10-25（task-20 · T-4）：补 `@scrolltolower` —— 滚到底**自动**加载，不再要求用户
+		     去找一个 30.7dp 的「加载更多」小按钮点（首屏 20 组 / 每次 +20 组，老账号 316 条内容
+		     ⇒ 原来要点 15 次才能翻完）。按钮保留作视觉提示与降级入口（scrolltolower 在某些
+		     机型/短内容场景不触发时仍可点）。幂等由 `loadMoreDays` 内部守卫保证，见该函数注释。 -->
+		<scroll-view class="scroll" direction="vertical" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh" @scrolltolower="loadMoreDays">
 			<!-- 回响卡片（去年今日 · 角贴 + 泛黄）；W6 拍板：整卡 → 该记忆详情页 -->
 			<view v-if="echo != null" class="echo-card pressable" @tap="openEchoDetail">
 				<view class="echo-corner">
@@ -108,7 +112,7 @@
 				     失败时不再说「还没有回忆」（那是假空态 ✗，会让人以为云端记忆丢了），
 				     也不再露出"拍下第一张"的 CTA（数据可能在云端，不该引导用户重新记 ✗）。
 				     用 v-if 会踩本文件既有的 R9-D 坑（整树卸载失效）⇒ 仍走 ui-hidden class 互斥。 -->
-				<text class="ti-empty-title">{{ loadFailed ? '加载失败' : '还没有回忆' }}</text>
+				<text class="ti-empty-title" :class="loadFailed ? 'ti-empty-title-failed' : ''">{{ loadFailed ? '加载失败' : '还没有回忆' }}</text>
 				<text class="ti-empty-desc">{{ loadFailed ? '网络或服务暂时不可用' : '拍一张照片，或说几句话' }}</text>
 				<text class="ti-empty-desc ti-empty-desc2">{{ loadFailed ? '下拉可重试' : '你的回忆会住在这里' }}</text>
 				<view class="ti-empty-cta pressable" :class="loadFailed ? 'ui-hidden' : ''" @tap="emptyTakeFirst">
@@ -140,7 +144,11 @@
 			        `!todayLoaded`）期间本块隐藏 ⇒ 不再出现"空态先闪一下再被今天记录顶掉"✗。 -->
 			<view class="day-block" :class="(showEmpty || loading) ? 'ui-hidden' : ''">
 				<view class="day-head">
-					<text class="day-title serif">今天</text>
+					<!-- 2026-10-25（task-20 · T-2）：加 .day-title-today —— 与历史日期头拉开层级。
+					     原来「今天」与「2026-10-20」共用 .day-title，font-size/color/weight 三项全同
+					     （实测 22rpx / ink-500 / 500），用户分不清"这是今天"还是"某一天历史"；
+					     且 ink-500 on paper-100 仅 3.86:1（低于 AA 4.5:1）。 -->
+					<text class="day-title day-title-today serif">今天</text>
 					<view class="day-line"></view>
 				</view>
 				<text v-if="todayEntries.length === 0" class="pending-sub muted">今天还没有记录 · 点下方的 + 记一笔</text>
@@ -1328,8 +1336,29 @@ import { fetchTodayEcho, dismissEcho, EchoCard, wasLastEchoFailed } from '@/util
 		reload()
 	}
 
-	// 卡PB R1：加载更多（每点一次多 LOAD_MORE_STEP 组）
+	// 卡PB R1：加载更多（每次多 LOAD_MORE_STEP 组）
+	//
+	// 🚨 2026-10-25（task-20 · T-4 幂等性）：本函数现在有**两个触发源** ——
+	// ① 尾部按钮 `@tap`（原路径）；② `scroll-view` 的 `@scrolltolower`（本批新增，自动加载）。
+	// 两个源会**同时/连发**触发，必须自守，否则：
+	//   · 滚到底部那一下「按钮可见 + scrolltolower 已触发」⇒ 若用户同时点到按钮，**一次动作 +40 组**；
+	//   · `scrolltolower` 在惯性滚动中可能**连续多次**回调（内容高度未及时变化时）⇒ 一次猛滑直接到底；
+	//   · 更坏的是与 `onRefresh` 交错：下拉刷新刚 `resetPagingOnNextRender=true`，
+	//     此时若 scrolltolower 仍按旧 `visibleDayCount` 累加，刷新成功后窗口复位到
+	//     `DAY_PAGE_INITIAL` 会**吃掉**这次加载（用户看到"滑到底没反应"）。
+	// 故加三道守卫（全部是**提前 return**，不改既有行为语义）：
+	//   a) `loading`（= !loaded || !todayLoaded）：数据还没到位，加窗口没有意义，且会与刷新抢写；
+	//   b) `refreshing`：下拉刷新进行中，窗口由刷新结束统一复位，此时不得累加；
+	//   c) 已达上限 `visibleDayCount >= historyDayCount`：没有更多了，再累加只会让
+	//      slice 越界（虽然 slice 安全）并让按钮"还有 N 组"显示负数。
+	// 单次调用仍是"纯 +STEP"（无异步），因此不需要额外的 in-flight 互斥标志。
 	function loadMoreDays(): void {
+		if (loading.value || refreshing.value) {
+			return
+		}
+		if (visibleDayCount.value >= historyDayCount.value) {
+			return
+		}
 		visibleDayCount.value = visibleDayCount.value + LOAD_MORE_STEP
 		console.log('[dbg-index] loadMoreDays -> visibleDayCount=' + visibleDayCount.value)
 	}
