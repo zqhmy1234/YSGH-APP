@@ -94,6 +94,60 @@ def _has_diag_error(out: str) -> bool:
     return False
 
 
+# ⚠️ 2026-10-26（假绿修复 #2 · 实测事故）：**uvue 语法/语义错误不带 `error:` 前缀**。
+#
+# 实测日志（`export class` 写在 uvue 组件里，02:40 那次）：
+#   02:40:58.110 \x1b[31mat components/DimEvidenceList/DimEvidenceList.uvue:1:0\x1b[39m
+#   02:40:58.971 已停止运行...
+# **全程没有一行 `error:`** ⇒ `_has_diag_error()` 返回 False ⇒ 落进「产物旁证」判 ok。
+#
+# ## 关键难点：`.uvue:行:列` **不能单独**作为判据
+#
+# 实测**成功**日志里也有 3 处同样格式，但它们是 **WARNING 的定位**：
+#   [plugin:uni:app-uvue-css] WARNING: Unsupported dynamic style property 'background'.
+#   at components/TabIndex/TabIndex.uvue:53:3
+#   [plugin:uni:app-uvue-css] WARNING: `text-decoration` is not a standard property name
+#   at components/RecordSheet/RecordSheet.uvue:455:3
+# 若只看 `.uvue:行:列` 就会把**正常成功**判成失败（第一版探针就这么错了，已被
+# 双探针当场抓出：成功日志被判 fail）。故判据必须是「**错误级**定位」：
+#
+#   判据 = 同一次诊断块里，`.uvue:行:列` 之前最近的一条 `[plugin:...]` 级标记
+#          是 ERROR 级（不含 `WARNING`） ⇒ fail
+#
+# 更稳的实现：HBuilderX 对**错误**的状态行用 ANSI 红色（`\x1b[31m`），
+# 对 **WARNING** 用黄色（`\x1b[33m`）。实测两类的颜色标记稳定不同 ⇒ 以颜色为主判据，
+# 文字（`WARNING`）为辅助。ANSI 必须先剥离才能做别的正则，故先规范化为纯文本。
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+# 错误级定位：整行以 `at ` 开头 + .uvue:行:列，且该行在原始日志中**被红色包裹**。
+# 由于剥 ANSI 后颜色信息丢失，改为分两步：先在原始串上找「红色包裹的 at 行」。
+_RED_AT_RE = re.compile(r"\x1b\[31m\s*at\s+[\w./\-]+\.uvue:\d+:\d+", re.IGNORECASE)
+
+
+def _has_uvue_error_loc(out: str) -> bool:
+    """日志里是否存在**错误级**的 `<file>.uvue:行:列` 定位。
+
+    判据（两条任一命中即 fail）：
+      ① 该定位行被 ANSI 红色（`\\x1b[31m`）包裹 —— HBuilderX 对错误用红、对 WARNING 用黄；
+      ② 剥 ANSI 后，该 `at ...uvue:N:M` 行**往前 3 行内**出现 `ERROR`（大写）且不含 `WARNING`。
+    两条都要求「错误级」，避免把成功日志里的 WARNING 定位误判成失败。
+    """
+    if _RED_AT_RE.search(out):
+        return True
+
+    clean = _ANSI_RE.sub("", _ZERO_WIDTH_RE.sub("", out))
+    lines = clean.splitlines()
+    for i, ln in enumerate(lines):
+        if not re.search(r"\bat\s+[\w./\-]+\.uvue:\d+:\d+", ln):
+            continue
+        # 往回看 3 行找级别标记
+        window = " ".join(lines[max(0, i - 3):i])
+        if "WARNING" in window or "WARN" in window:
+            continue
+        if "ERROR" in window or "错误" in window:
+            return True
+    return False
+
+
 # HBuilderX 未启动时 cli 的拒绝语（2026-10-14 实测）：它**不编译**、打印一句就退出。
 # 必须单独识别为"无法编译"——否则空日志会掉进产物旁证分支（那正是曾经假通过的入口）。
 NEED_OPEN_MARKERS = ("未检测到已打开的HBuilderX", "请先执行cli open")
@@ -262,6 +316,15 @@ def judge_log_text(
     # 2. 编译诊断错误
     if _has_diag_error(out):
         return "fail", f"客户端编译出错（含 `error:` 诊断行）：\n{tail}"
+
+    # 2b. uvue 编译错误定位（`at xxx.uvue:行:列`）—— 2026-10-26 新增。
+    #     这类错误**不带 `error:` 前缀**（实测：`export class` 写在 uvue 里，
+    #     日志只有源码片段 + `at ...uvue:1:0` + `已停止运行`），
+    #     若不加这条会落进下面的「成功标记/产物旁证」判 ok ⇒ 又一次假绿。
+    #     为什么放在「成功标记」之前：成功的编译日志里不会出现这种定位行，
+    #     而失败日志里可能残留上一次成功的 `ready in`（追加式日志）。
+    if _has_uvue_error_loc(out):
+        return "fail", f"客户端编译出错（含 `<file>.uvue:行:列` 错误定位）：\n{tail}"
 
     # 3. 成功标记
     if any(m in out for m in OK_MARKERS):

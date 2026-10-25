@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "version": 1,
+    "label_kind": "auto_weak_visual",
+    "n_candidates": 6,
+    "n_queries": 6,
+    "candidates": [
+      ".cowork-temp\\gps-photos\\DSCN0010.jpg",
+      ".cowork-temp\\gps-photos\\DSCN0012.jpg",
+      ".cowork-temp\\gps-photos\\DSCN0021.jpg",
+      ".cowork-temp\\gps-photos\\hangzhou_xihu.jpg",
+      ".cowork-temp\\gps-photos\\hangzhou_xihu_geotagged.jpg",
+      "review\\drift_capsule_zoom.png"
+    ],
+    "disjoint_verified": true,
+    "note": "自动生成的**试点**标注。相关标签是『视觉签名相同』的弱标签，**不是人工语义标注**；样本量远低于基线门槛（≥20+≥20）。"
+  },
+  "cases": [
+    {
+      "query_image": "review\\drift_capsule_zoom2.png",
+      "relevant_ids": [
+        "imgq-drift_capsule_zoom"
+      ],
+      "label_kind": "auto_weak_visual",
+      "note": "弱标签：同底色+同形状（非人工标注）"
+    },
+    {
+      "query_image": "review\\shot_cold_loading_201511.png",
+      "relevant_ids": [],
+      "label_kind": "auto_weak_visual",
+      "note": "弱标签：同底色+同形状（非人工标注）"
+    },
+    {
+      "query_image": "review\\shot_cold_t9_201519.png",
+      "relevant_ids": [],
+      "label_kind": "auto_weak_visual",
+      "note": "弱标签：同底色+同形状（非人工标注）"
+    },
+    {
+      "query_image": "review\\shot_now_200754.png",
+      "relevant_ids": [],
+      "label_kind": "auto_weak_visual",
+      "note": "弱标签：同底色+同形状（非人工标注）"
+    },
+    {
+      "query_image": "review\\shot_now_200754_capsule.png",
+      "relevant_ids": [
+        "imgq-drift_capsule_zoom"
+      ],
+      "label_kind": "auto_weak_visual",
+      "note": "弱标签：同底色+同形状（非人工标注）"
+    },
+    {
+      "query_image": "review\\shot_t2_200837.png",
+      "relevant_ids": [],
+      "label_kind": "auto_weak_visual",
+      "note": "弱标签：同底色+同形状（非人工标注）"
+    }
+  ]
+}

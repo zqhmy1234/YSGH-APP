@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-10-26 02:47 · commit c7e93df · ts=1792954062
+- **错误**：加 dimension_evidence 后 detail.uvue 到 819 行超 800 棘轮；我先把整个 evidence 逻辑写进宿主，再拆成 composable + 子组件才回到 744 行。另外第一次 review_agent 报 audit_axes 红，第二次同命令同代码却是绿的（读到的是上一次的缓存报告）
+- **根因**：两件事：①结构棘轮要在**动手前**估行数——已知 detail 已 682 行、再加依据块必然超阈，应该一开始就按 SearchHitOps/useSearchState 的先例拆，而不是写超了再拆（返工一轮）。②review_agent 的结论要以**当次输出的标记**为准：不同门禁项是先后打印的，只看'EXIT=1'会误以为是新问题；应完整读输出里哪个轴是❌
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-26 01:46 · commit c7e93df · ts=1792950399
+- **错误**：移除未使用的 categoryRank 导出后，review_agent audit_axes 又报了另外两个新 CRITICAL（新增零调用导出）—— 我在 profile_labels 生成器里删了它，但没意识到 detail.uvue 的「分组」实现根本不需要位次函数（按 DIM_CATEGORY_ORDER 顺序遍历即可）
+- **根因**：生成物的导出集要和消费端严格对齐：我先写了一个 categoryRank() 备用，改用'顺序遍历 ORDER'的算法后它就死了；但 UTS 里遗留导出会被 audit_axes 的'导出-引用可达性'轴判为 CRITICAL。教训：写生成器时不要预埋'可能有用'的辅助函数，只导出当前消费者真的会调的那几个
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-26 01:18 · commit c7e93df · ts=1792948698
+- **错误**：audit_axes 令牌轴报『硬编码 hex 上升 75→76，新增含色字面量文件 client/pages/portrait/detail.uvue』，但该文件我新增的唯一 hex 在**注释里**（底色 amber-500 → rust-500 #B05A3A），实际 CSS 值全部走 var(--c-*, #fallback)
+- **根因**：audit_token_literals 的 _strip_var_fallbacks 只剔除 var() 的 fallback 部分，不剔除**注释内**的 hex；写『改前 #XXXXXX → 改后 #YYYYYY』这种说明性注释会被当成真的硬编码色值计数。规则本身合理（注释里的 hex 也可能被复制成真实值），但注释里引用色值必须不带 # 前缀
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-10-25 23:58 · commit 828dd01 · ts=1792943921
 - **错误**：`backend/app/services/pipeline_common.py:80` 写了 `from datetime import UTC, datetime as _dt` —— ruff **I001**（import 块未排序/未格式化），pre-commit 钩子拦下提交
 - **根因**：isort 的 force-sort-within-sections 规则要求：**同一模块里既有普通名又有带 as 别名的名时**，要拆成两条独立 import 语句并按名字排序，不能合并在一条里。我图省事把 `UTC` 和 `datetime as _dt` 写在同一个 from 里，ruff 的自动修正正是把它拆成两行。注意：这是**函数内局部 import**（为了避开模块级循环依赖），局部 import 同样受 isort 管——这点容易误以为「函数里的 import 不管」

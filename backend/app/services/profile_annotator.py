@@ -360,6 +360,73 @@ def display_dimensions(dimensions: dict) -> dict[str, list[str]]:
     return out
 
 
+# evidence 单条文本下发上限（与 `_POOL_TEXT_MAX` 的池侧口径一致；再裁一次是因为
+# 历史行可能是旧版本写入的更长文本）。
+_EVIDENCE_TEXT_MAX = _POOL_TEXT_MAX
+
+
+def display_evidence(dimensions: dict) -> dict[str, list[dict]]:
+    """结构化 dimensions → `{dim: [{ts, text, content_id}]}`（**画像可解释**出参）。
+
+    ## 为什么需要这个函数（而不是让 detail 页读原始结构）
+
+    `display_dimensions()` 是云侧唯一的展示口径，它把结构化 entry 压平成
+    `{dim: [值]}` —— **evidence 在那一层就被丢掉了**（2026-10-26 全链验证：
+    DB 里 1514 个维度带 evidence、共 1561 条，但 API 出参一条都没有）。
+    于是画像详情页「已经了解的」区只能给结论、给不出依据，用户无从判断该不该信。
+    ⇒ 本批（task-21 · B 方案）**新增并列字段**而非改 `dimensions` 形状：
+
+        dimensions:        {dim: [值]}            ← 已发布契约，逐字不变
+        dimension_evidence: {dim: [{ts,text,content_id}]}  ← 本批新增
+
+    为什么用并列字段：`dimensions` 是**已发布**契约，客户端
+    `utils/play_interview.uts::flattenDimensions` 按 `list[str]` 读、`profile_labels.uts`
+    也按它取中文名。改成 `{dim: [{value,evidence}]}` 会让老客户端崩；而**新增**字段
+    老客户端读到不认识就忽略（JSON 宽容），零破坏。
+
+    ## 三条口径（与 Lead 约束逐条对应）
+
+    ① **只对有 evidence 的维度下发 key**；没有的**不下发**（返回 `{}` 而不是
+       `{dim: []}`）。理由：`{dim: []}` 会让客户端误以为"这个维度有依据但空了"
+       （= 重要性信号），而真相是"从没记过依据"。也让响应体小很多
+       （1514/用户维度里绝大多数是空的）。
+    ② **每条裁剪**：`text` 截到 `_EVIDENCE_TEXT_MAX`（池侧同口径）、`ts`/`content_id`
+       缺失时给 `None` 而不是省略（字段形态稳定，客户端不用做存在性判断）。
+    ③ **只读、不查库**：`content_id` **原样透传，不做归属校验** —— 因为
+       evidence 是从**该用户自己的** `user_profile.dimensions` 里读的，写入时
+       （`profile_annotator.apply_annotation` / `record_hits`）都带当时的 user_id。
+       2026-10-26 全库实测：1551 条带 content_id 的 evidence 中**跨用户 0 条**
+       （10 条 null、35 条指向已删 content），故不引入额外查询。
+       ⚠️ 若将来 evidence 有了新的写入路径（尤其是跨用户聚合类），**必须重新验这条**，
+       并在此处加归属过滤 —— 所以这段注释是给后来人的告警，不是解释。
+    """
+    out: dict[str, list[dict]] = {}
+    for dim, entry in (dimensions or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        ev = entry.get("evidence")
+        if not isinstance(ev, list) or not ev:
+            continue
+        rows: list[dict] = []
+        for item in ev:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            cid = item.get("content_id")
+            ts = item.get("ts")
+            rows.append(
+                {
+                    "ts": str(ts) if ts else None,
+                    "text": (str(text) if text else "")[:_EVIDENCE_TEXT_MAX],
+                    "content_id": str(cid) if cid else None,
+                }
+            )
+        # 全空的 evidence 列表 ⇒ 当作"没有"（不下发 key），见口径 ①
+        if any(r["text"] or r["ts"] for r in rows):
+            out[dim] = rows
+    return out
+
+
 # ---------------------------------------------------------------- 工具
 def _same_day_as(entry, now: datetime) -> bool:
     """entry.updated_at 与 now 是否同一天（同日同维度节流）"""

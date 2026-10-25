@@ -1,0 +1,358 @@
+{
+  "_meta": {
+    "version": 1,
+    "kind": "real_db_negative_recall",
+    "source": "research/rag_benchmark/negatives_candidate.json",
+    "note": "用**真库**采集的真负样本，跑**真实生产检索路径** rag.search 得到的误召回实测。口径与 run_eval 的 expect_empty 判定一致：返回≥1 条即误召回。",
+    "evaluation_mode": "production(db+user_id)",
+    "user_id_sha256_8": "62ba81ac",
+    "n": 20,
+    "gate": 0.05,
+    "llm_rerank_enabled": false,
+    "config_snapshot": {
+      "retrieval_min_dense_score": 0.0,
+      "answerability_reject_enabled": false,
+      "rerank_llm_enabled": false,
+      "llm_rewrite_enabled": false,
+      "class_routing_enabled": false
+    }
+  },
+  "negative_error_rate": 0.95,
+  "false_positives": 19,
+  "n": 20,
+  "gate_pass": false,
+  "details": [
+    {
+      "query": "我记得上次去看过极光",
+      "entity": "极光",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        34,
+        34,
+        34
+      ],
+      "top_text_sha8": [
+        "3e06e0d5",
+        "7840f0af",
+        "475acbaf"
+      ]
+    },
+    {
+      "query": "松鼠桂鱼",
+      "entity": "松鼠桂鱼",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        31,
+        31,
+        29
+      ],
+      "top_text_sha8": [
+        "3fbef222",
+        "17b06a9a",
+        "a6e239c2"
+      ]
+    },
+    {
+      "query": "上上周在北海道滑雪的照片",
+      "entity": "北海道",
+      "n_hits": 0,
+      "fp": false,
+      "degraded": false,
+      "top_text_len": [],
+      "top_text_sha8": []
+    },
+    {
+      "query": "在冰川上徒步的那天",
+      "entity": "冰川",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        30,
+        30,
+        30
+      ],
+      "top_text_sha8": [
+        "dad6bc64",
+        "4c27dfd8",
+        "d85d1537"
+      ]
+    },
+    {
+      "query": "深海潜水看到的鱼群",
+      "entity": "深海潜水",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        31,
+        31,
+        34
+      ],
+      "top_text_sha8": [
+        "17b06a9a",
+        "3fbef222",
+        "3e06e0d5"
+      ]
+    },
+    {
+      "query": "撒哈拉沙漠的星空",
+      "entity": "撒哈拉",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        30,
+        30,
+        33
+      ],
+      "top_text_sha8": [
+        "4c27dfd8",
+        "dad6bc64",
+        "bd7915f0"
+      ]
+    },
+    {
+      "query": "乞力马扎罗登顶的记录",
+      "entity": "乞力马扎罗",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        30,
+        31,
+        30
+      ],
+      "top_text_sha8": [
+        "dad6bc64",
+        "9af742c3",
+        "4c27dfd8"
+      ]
+    },
+    {
+      "query": "马丘比丘的旅行攻略",
+      "entity": "马丘比丘",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        34,
+        37,
+        34
+      ],
+      "top_text_sha8": [
+        "7840f0af",
+        "9e8a473b",
+        "3e06e0d5"
+      ]
+    },
+    {
+      "query": "管风琴独奏音乐会",
+      "entity": "管风琴",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        30,
+        30,
+        30
+      ],
+      "top_text_sha8": [
+        "843de0be",
+        "78fef4ba",
+        "cc20d3b9"
+      ]
+    },
+    {
+      "query": "马头琴练习曲",
+      "entity": "马头琴",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        34,
+        34,
+        30
+      ],
+      "top_text_sha8": [
+        "d6e9e973",
+        "f09c2106",
+        "be7da5f1"
+      ]
+    },
+    {
+      "query": "古籍笺注的读书笔记",
+      "entity": "笺注",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        32,
+        30,
+        31
+      ],
+      "top_text_sha8": [
+        "446a5480",
+        "cc20d3b9",
+        "b142f12c"
+      ]
+    },
+    {
+      "query": "偏微分方程期末复习",
+      "entity": "偏微分方程",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        34,
+        34,
+        34
+      ],
+      "top_text_sha8": [
+        "d6e9e973",
+        "f09c2106",
+        "80dabfd9"
+      ]
+    },
+    {
+      "query": "质谱仪校准流程",
+      "entity": "质谱仪",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        31,
+        31,
+        31
+      ],
+      "top_text_sha8": [
+        "63490a2c",
+        "1c387af0",
+        "4414ee24"
+      ]
+    },
+    {
+      "query": "乙二胺四乙酸配制",
+      "entity": "乙二胺四乙酸",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        34,
+        34,
+        34
+      ],
+      "top_text_sha8": [
+        "d6e9e973",
+        "f09c2106",
+        "80dabfd9"
+      ]
+    },
+    {
+      "query": "换了卤素灯的客厅",
+      "entity": "卤素灯",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        31,
+        31,
+        31
+      ],
+      "top_text_sha8": [
+        "1db56096",
+        "fd43022a",
+        "f1a3715f"
+      ]
+    },
+    {
+      "query": "塔斯马尼亚自驾",
+      "entity": "塔斯马尼亚",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        37,
+        37,
+        37
+      ],
+      "top_text_sha8": [
+        "9e8a473b",
+        "7df1c034",
+        "2aef45ed"
+      ]
+    },
+    {
+      "query": "复活节岛石像",
+      "entity": "复活节岛",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        32,
+        32,
+        32
+      ],
+      "top_text_sha8": [
+        "fdfd666c",
+        "db4bd6de",
+        "759495f3"
+      ]
+    },
+    {
+      "query": "摩拉维亚的古镇",
+      "entity": "摩拉维亚",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        36,
+        36,
+        32
+      ],
+      "top_text_sha8": [
+        "d73a3cb0",
+        "d2efd7a6",
+        "58ca9cc0"
+      ]
+    },
+    {
+      "query": "手冲冰滴咖啡壶",
+      "entity": "手冲冰滴",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        31,
+        31,
+        31
+      ],
+      "top_text_sha8": [
+        "fefe63ce",
+        "91af6988",
+        "329f51dd"
+      ]
+    },
+    {
+      "query": "铁人三项完赛成绩",
+      "entity": "铁人三项",
+      "n_hits": 5,
+      "fp": true,
+      "degraded": false,
+      "top_text_len": [
+        34,
+        30,
+        34
+      ],
+      "top_text_sha8": [
+        "f09c2106",
+        "dad6bc64",
+        "46ddfb40"
+      ]
+    }
+  ]
+}

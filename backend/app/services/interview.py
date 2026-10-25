@@ -28,6 +28,7 @@ from app.services.llm_ops.annotate import annotate
 from app.services.profile_annotator import (
     HISTORY_LIMIT,  # noqa: F401 —— 对外再导出（历史裁剪常量，测试引用）
     display_dimensions,
+    display_evidence,
     get_or_create_profile,
     record_hits,
 )
@@ -205,13 +206,35 @@ def submit_answers(db: Session, user_id: str, answers: dict[str, str]) -> dict:
 
 
 def get_profile(db: Session, user_id: str) -> dict:
-    """查询画像（冷启动激活状态；dimensions 为展示格式 {dim: [当前值]}）"""
+    """查询画像（冷启动激活状态）。
+
+    ## 两个并列数据源（**语义不同，别混**）
+
+    · `dimensions`         —— 展示口径 `{dim: [当前值]}`。**已发布契约，形状逐字不变**
+                              （客户端 `flattenDimensions` / `profile_labels.uts` 按
+                              `list[str]` 读）。
+    · `dimension_evidence` —— 依据 `{dim: [{ts,text,content_id}]}`。2026-10-26 新增，
+                              **只对有依据的维度下发 key**（没有的就是 `{}` 里不存在）。
+
+    为什么要拆成两个字段而不是把 evidence 塞进 dimensions：`dimensions` 是已发布契约，
+    改形状会让老客户端崩；新增并列字段则老客户端自动忽略（JSON 宽容）。
+    详见 `profile_annotator.display_evidence` 的 docstring（含全库跨用户泄漏实测）。
+    """
     profile = db.execute(
         select(UserProfile).where(UserProfile.user_id == user_id)
     ).scalar_one_or_none()
-    dimensions = display_dimensions(profile.dimensions or {}) if profile else {}
+    # ⚠️ `profile` 可能是 None（新用户还没跑过冷启动）——必须先判空再取 dimensions，
+    # 否则 AttributeError: 'NoneType' object has no attribute 'dimensions'
+    # （本行原写法 `display_dimensions(profile.dimensions or {}) if profile else {}`
+    #  把判空放在条件里；我改成先取 raw 时漏了这层，被 test_..._without_profile 抓出）
+    raw = (profile.dimensions or {}) if profile else {}
+    # `user_id` 是**当前登录用户**（调用方从 JWT 取），不是请求参数 ——
+    # evidence 只从该用户自己的 profile 行里读，天然隔离（无跨用户查询路径）。
+    dimensions = display_dimensions(raw) if profile else {}
+    evidence = display_evidence(raw) if profile else {}
     return {
         "dimensions": dimensions,
+        "dimension_evidence": evidence,
         "version": profile.version if profile else 0,
         "cold_start_done": bool(dimensions),
     }

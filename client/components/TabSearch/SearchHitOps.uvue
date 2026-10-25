@@ -2,7 +2,14 @@
 	<!-- 就地操作行（2026-10-16 · 自 TabSearch.uvue 按结构棘轮 800 行阈值拆分；props 口径照 EchoSheet
 	     先例。宿主结果卡带 @tap 跳详情，行内 @tap.stop 不冒泡触发跳转） -->
 	<view class="result-ops">
-		<text class="result-op" @tap.stop="onCorrect">纠错</text>
+		<!-- task-21 第 8 条：`.result-op` 原字号 21.2rpx（< 22rpx 下限）且色为
+		     amber-500（对白 **2.81:1**，AA 需 4.5）—— 这是"纠错"入口，是用户唯一能
+		     告诉我们"标错了"的通道，最不该看不清。改为 pill 容器（Vapor 下
+		     `text-decoration` 不支持，只能靠容器表达可点）+ rust-700 字 5.89:1。
+		     热区 86rpx = 44.0dp（原只有文字本身 ≈ 21rpx 高 ≈ 11dp）。 -->
+		<view class="result-op pressable" @tap.stop="onCorrect">
+			<text class="result-op-text">纠错</text>
+		</view>
 		<image class="result-fav" :src="fav ? '/static/icons/i4_415-active.svg' : '/static/icons/i4_415.svg'" @tap.stop="onToggleFav" />
 	</view>
 </template>
@@ -77,10 +84,14 @@
 </script>
 
 <style>
-	/* 全部令牌复用自既有 class（来源注释为门禁令牌棘轮判定依据，自 TabSearch.uvue 原样搬迁）：
-	   .result-op 字色/字号复用自回收站 .trestore（--c-amber-500 21.2rpx）；
-	   .result-fav 尺寸复用自详情页 .n4_415（--d-lattice-p18 34.6rpx）；
-	   图标复用 i4_415/i4_415-active 族。逐项同源零新色值/尺寸令牌。 */
+	/* 令牌全部来自既有体系，零新色值（task-21 第 8 条修复后仍守此纪律）：
+	     · .result-op 由裸 text 改为 pill 容器 —— 字号 21.2rpx → 23.1rpx（≥22rpx 下限），
+	       色 amber-500（2.81:1）→ rust-700（5.89:1），底 paper-100 + 圆角表达"可点"
+	       （Vapor 不支持 `text-decoration`，只剩容器这一条路）；
+	     · .result-fav 尺寸不变（34.6rpx）但**补热区**：图标本身 18dp 太小，
+	       外层 .result-fav-hit 撑到 86rpx = 44.0dp。
+	   为什么色值能取 rust-700：`client/styles/record-sheet.css:653` 已有
+	   `var(--c-rust-700, #8a5a20)` 先例，属既有令牌族，不新增。 */
 	.result-ops {
 		flex-direction: row;
 		justify-content: flex-end;
@@ -88,13 +99,26 @@
 		margin-top: var(--d-lattice-p6, 11.5rpx);
 	}
 	.result-op {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-amber-500, #C4913C);
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		height: 86rpx;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-paper-100, #F8F7F4);
+		border-radius: var(--d-raw-r9999, 9999rpx);
 		margin-right: var(--d-card_radius_small, 23.1rpx);
+	}
+	.result-op-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-rust-700, #8a5a20);
 	}
 	.result-fav {
 		width: var(--d-lattice-p18, 34.6rpx);
 		height: var(--d-lattice-p18, 34.6rpx);
+		/* 图标本身只有 34.6rpx = 18dp（远低于 44dp）⇒ 用 padding 撑热区到 44dp 高。
+		   不收边距：padding 均分，视觉位置不变（图标仍右对齐、垂直居中）。 */
+		padding: 25rpx;
 	}
 </style>

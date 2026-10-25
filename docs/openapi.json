@@ -7712,6 +7712,40 @@
         "title": "DeviceLoginRequest",
         "description": "设备码登录（内测期临时通道 · 2026-09-21）：客户端设备唯一标识 → 自助建档。\n\n门控：`ALLOW_DEVICE_LOGIN=false`（默认）时端点返回 501 AUTH_014，不静默降级。\ndevice_id 长度上限与 WechatLoginRequest.device_id 对齐（64），两者都是设备标识字段。"
       },
+      "DimensionEvidence": {
+        "properties": {
+          "ts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "default": ""
+          },
+          "content_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Id"
+          }
+        },
+        "type": "object",
+        "title": "DimensionEvidence",
+        "description": "一条画像依据（**画像可解释** · 2026-10-26 task-21 B 方案）。\n\n为什么现在才有：`display_dimensions()` 把结构化 entry 压平成 `{dim: [值]}`，\nevidence 在那一层被丢掉 —— 于是详情页只能给结论、给不出依据，用户无从判断\n该不该信。本类是该字段的**唯一契约形状**。\n\n字段取值语义：\n  · `text`       —— 用户自己写过的那句话（`profile_annotation_pool.raw_text`\n                    或标注时的 `evidence_text`），**不是 AI 再生成的一段话**；\n  · `ts`         —— 该依据产生的时刻（ISO-8601）。有了它用户才能判断\n                    「很久以前提过一次」还是「反复出现」—— 两者可信度完全不同；\n  · `content_id` —— 来源内容 id（**该用户自己的**内容；2026-10-26 全库实测\n                    无跨用户情况）。给出去是为了让客户端将来能跳回原始记忆。\n三个字段都可能为 `None`（历史数据缺失），故一律 `str | None` 而非省略字段 ——\n字段形态稳定，客户端不必做存在性判断。"
+      },
       "EchoDismissOut": {
         "properties": {
           "dismissed": {
@@ -8456,6 +8490,16 @@
           "cold_start_done": {
             "type": "boolean",
             "title": "Cold Start Done"
+          },
+          "dimension_evidence": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/DimensionEvidence"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Dimension Evidence"
           }
         },
         "type": "object",
@@ -8465,7 +8509,7 @@
           "cold_start_done"
         ],
         "title": "InterviewProfileOut",
-        "description": "画像出参（GET /api/v1/interview/profile）"
+        "description": "画像出参（GET /api/v1/interview/profile）\n\n⚠️ **`dimensions` 的形状是已发布契约，逐字不变**（`dict[str, list[str]]`）：\n客户端 `utils/play_interview.uts::flattenDimensions` 与 `profile_labels.uts`\n都按 `list[str]` 读。要补信息只能**新增并列字段**，不能改形状（改形状会让\n老客户端崩；新增字段老客户端读到不认识就忽略）。\n\n`dimension_evidence`（2026-10-26 · task-21 B 方案）：\n  有依据的维度 → `{dim: [{ts, text, content_id}]}`；**没有依据的维度不下发 key**\n  （即 `{}` 而不是 `{dim: []}`）—— 后者会让客户端误以为\"有依据但空了\"。"
       },
       "InterviewQuestion": {
         "properties": {

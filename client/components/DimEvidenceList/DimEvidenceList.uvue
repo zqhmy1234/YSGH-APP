@@ -1,0 +1,93 @@
+<template>
+	<!-- 维度依据列表（2026-10-26 · task-21 B 方案 · 自 detail.uvue 拆出）
+	     结构棘轮：detail.uvue 加依据后到 819 行 > 800 阈值，按 `SearchHitOps` 先例
+	     把「依据渲染」这块独立成子组件（宿主只留 4 个薄包装函数 + 一个 Map）。
+
+	     ## 为什么拆这块而不是别的
+	     依据区是**自包含的**：输入是 `Array<EvidenceRow>`，输出是「引用块 + 每条原文 + 时间」，
+	     不碰宿主的任何业务状态（不读 expandedId / 不调接口）。而页面上其它块都跟
+	     annotations / dimGroups 状态绑定，拆了要跨组件传状态（UTS 边界传对象有陷阱，
+	     见 SearchHitOps 的 props 注释：只传基本类型）。
+
+	     ## 视觉与「等你确认」区**同族**（刻意）
+	     用 `.annot-raw` 系的底/竖条/字号/时间样式 —— 用户看到两个区的"依据"长得一样，
+	     就知道"这是一类东西"。不复用这个类而新造一套会让同一页面出现两种"依据"外观。
+	     类名带 `evl-` 前缀隔离（同页 / 跨页同名类全局冲突在本仓踩过，见 lessons）。 -->
+	<view class="evl-root">
+		<view v-for="(ev, i) in rows" :key="'ev' + i" class="evl-item">
+			<text v-if="ev.text != ''" class="evl-text">{{ ev.text }}</text>
+			<!-- ⚠️ 条件与渲染**必须是同一个字段** `tsText`（宿主已格式化好）。
+			     2026-10-26 实测抓到的缺陷：上一版这里写成
+			       `v-if="ev.ts != ''"` + `{{ ev.tsText }}`
+			     —— 判断读 `ts`、渲染读 `tsText`，而宿主传的对象只有 `ts`（未格式化）
+			     ⇒ 条件恒真但 `tsText` 不存在 ⇒ **时间恒为空**，而且不会报任何错
+			     （模板对未定义字段静默渲染空串），属最难查的一类。
+			     约定：**本组件只接收格式化好的 `tsText`，不接收原始 `ts`**（见 script 里的类注释）。 -->
+			<text v-if="ev.tsText != ''" class="evl-time">{{ ev.tsText }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	/**
+	 * 一条依据的**展示态**（时间已在宿主侧格式化好）。
+	 *
+	 * 为什么不直接传后端的 `EvidenceRow{ts, text}` 让组件自己格式化：
+	 * `shortDate()` 在 `utils/time.uts`，组件里再 import 一次是重复依赖；
+	 * 更重要的是——**时间格式化口径必须与页面其它地方一致**（宿主已经 import 了
+	 * `shortDate`），两处各 import 一份，将来改格式就会漏掉一处。
+	 * 故这里只接收"已格式化好的东西"，组件保持纯展示、零业务依赖。
+	 */
+	// ⚠️ uvue 组件内**不能 export class**（编译器报 `at components/...uvue:1:0` 且
+	// 整页编译失败，实测 2026-10-26）。组件内部的展示态类不需要导出——宿主用
+	// 结构相同的普通对象/类即可（UTS 在组件边界按结构匹配）。
+	// 上一版写成 `export class` 导致编译中断，而 `client_compile_gate.py` 因
+	// `cli launch --compile` 参数不存在（该子命令只认 `app-android`）而判了假通过。
+	class DimEvidenceItem {
+		text: string
+		tsText: string
+
+		constructor(text: string, tsText: string) {
+			this.text = text
+			this.tsText = tsText
+		}
+	}
+
+	// Props 口径照 SearchHitOps 先例：只传基本类型/数组（对象 prop 在 UTS 组件边界有类型陷阱）
+	const props = defineProps({
+		rows: {
+			type: Array<DimEvidenceItem>,
+			default: (): Array<DimEvidenceItem> => new Array<DimEvidenceItem>()
+		}
+	})
+</script>
+
+<style>
+	.evl-root {
+		width: 100%;
+		margin-top: 12rpx;
+		padding: 16rpx 20rpx;
+		background-color: var(--c-paper-100, #F8F7F4);
+		border-radius: 12rpx;
+		border-left-width: 5.8rpx;
+		border-left-style: solid;
+		border-left-color: var(--c-amber-500, #C4913C);
+	}
+
+	.evl-item {
+		margin-top: 12rpx;
+	}
+
+	.evl-text {
+		font-size: 24rpx;
+		color: var(--c-ink-700, #5A4C40);
+		line-height: 36rpx;
+	}
+
+	/* 时间戳：辅助信息，比原文轻一档但仍需可读（ink-500 对 paper-100 = 3.86:1） */
+	.evl-time {
+		font-size: 22rpx;
+		color: var(--c-ink-500, #8A7A6A);
+		margin-top: 8rpx;
+	}
+</style>

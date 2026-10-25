@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "version": 1,
+    "kind": "image_query_quality",
+    "collection": "yishu_benchmark_imgquality",
+    "n": 3,
+    "n_candidates": 6,
+    "min_queries_for_baseline": 20,
+    "min_candidates_for_baseline": 20,
+    "is_baseline": false,
+    "label_kind": "auto_weak_visual",
+    "disjoint_verified": true,
+    "material_notes": {
+      "review/": "8 张手机 UI 截图（验收证据），非相册照片 —— 不适合做图搜质量素材",
+      "corpus_d_filter.json": "6 条 photo 条目只有文字描述，**没有图片文件**",
+      ".cowork-temp/test_photos/": "50 张程序生成纯色几何图（circle/rect/triangle × 4 底色），非自然图像"
+    },
+    "honest_statement": "样本量不足（查询图 3 < 20，候选 6 < 20）⇒ **不构成质量基线**，仅验证评测框架可用。"
+  },
+  "hit@1": 0.0,
+  "hit@3": 0.0,
+  "mrr": 0.0,
+  "n": 3,
+  "details": [
+    {
+      "query_image": "review\\drift_capsule_zoom2.png",
+      "relevant_ids": [
+        "imgq-drift_capsule_zoom"
+      ],
+      "returned": [
+        "imgq-hangzhou_xihu",
+        "imgq-DSCN0010",
+        "imgq-DSCN0021",
+        "imgq-hangzhou_xihu_geotagged"
+      ],
+      "rank": null,
+      "latency_ms": 5539.6,
+      "label_kind": "auto_weak_visual"
+    },
+    {
+      "query_image": "review\\shot_cold_loading_201511.png",
+      "relevant_ids": [],
+      "returned": [
+        "imgq-DSCN0021",
+        "imgq-DSCN0012",
+        "imgq-DSCN0010",
+        "imgq-hangzhou_xihu_geotagged"
+      ],
+      "rank": null,
+      "latency_ms": 6484.2,
+      "label_kind": "auto_weak_visual"
+    },
+    {
+      "query_image": "review\\shot_cold_t9_201519.png",
+      "relevant_ids": [],
+      "returned": [
+        "imgq-DSCN0021",
+        "imgq-DSCN0012",
+        "imgq-hangzhou_xihu_geotagged",
+        "imgq-hangzhou_xihu"
+      ],
+      "rank": null,
+      "latency_ms": 5823.2,
+      "label_kind": "auto_weak_visual"
+    }
+  ]
+}

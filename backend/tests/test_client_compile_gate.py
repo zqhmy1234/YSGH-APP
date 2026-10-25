@@ -139,3 +139,83 @@ def test_judge_is_pure_and_ordered():
     crash_and_success = "ready in 1ms\n" + CRASH_LOG
     assert _judge(crash_and_success, touched="a.kt") == "fail"
     assert _judge(crash_and_success, touched="") == "fail"
+
+# ══════════════════════════════════════════════════════════════════════════
+# 2026-10-26 假绿 #2：**uvue 编译错误不带 `error:` 前缀**
+#
+# ## 事故（代价：一版坏代码被判「编译成功」并通过 pre-commit）
+#
+# 给画像详情页抽 `DimEvidenceList.uvue` 时写了 `export class DimEvidenceItem`
+# （uvue 组件内不允许 export class）。真实日志：
+#
+#     02:40:58.348 D:/.../components/DimEvidenceList/DimEvidenceList.uvue
+#     02:40:58.353 32 |  ...（打印出错行源码 + 插入符 ^^^）
+#     02:40:58.410 <ESC>[31mat components/DimEvidenceList/DimEvidenceList.uvue:1:0<ESC>[39m
+#     02:40:58.971 已停止运行...
+#
+# **全程没有一行 `error:`** ⇒ `_has_diag_error()` False ⇒ 掉进「产物旁证」判 ok。
+# 与 2026-10-24 的 UTS panic 是**同一类不同形态**：失败信号存在，判据没认它。
+#
+# ## 关键陷阱（第一版判据就踩了）
+#
+# `.uvue:行:列` **不能单独**当判据 —— 实测**成功**日志里也有 3 处，它们是
+# `[plugin:uni:app-uvue-css] WARNING` 的定位：
+#     WARNING: Unsupported dynamic style property 'background'.
+#     at components/TabIndex/TabIndex.uvue:53:3
+# 只看格式会把正常成功判成失败（探针 ② 当场抓出）。
+#
+# ## 最终判据：**错误级**定位
+#   ① 该 `at ...uvue:N:M` 行被 ANSI 红色（ESC[31m）包裹（错误红 / WARNING 黄）；
+#   ② 或往前 3 行内出现 `ERROR`（且不含 `WARNING`）。
+# ══════════════════════════════════════════════════════════════════════════
+
+_ESC = "\x1b"
+
+# 真实失败日志原文摘录（2026-10-26 02:40 实测，含 ANSI 颜色）
+UVUE_ERROR_LOG = (
+    "02:40:38.481 HBuilderX Version: 5.26\n"
+    "02:40:43.188 项目 client 开始编译\n"
+    "02:40:58.348 D:/GuangH-App/client/components/DimEvidenceList/DimEvidenceList.uvue\n"
+    "02:40:58.353 32 | 故这里只接收已格式化好的东西\n"
+    "02:40:58.410   |  ^^^^^^^^^^^^^\n"
+    + _ESC + "[31mat components/DimEvidenceList/DimEvidenceList.uvue:1:0" + _ESC + "[39m\n"
+    "02:40:58.971 已停止运行...\n"
+)
+
+# 真实成功日志里的 WARNING 定位（2026-10-26 02:50 实测）——绝不能判 fail
+UVUE_WARNING_LOG = (
+    "02:50:37.212 " + _ESC + "[33m[plugin:uni:app-uvue-css] WARNING: Unsupported dynamic style "
+    "property background." + _ESC + "[39m\n"
+    "02:50:37.217 at components/TabIndex/TabIndex.uvue:53:3\n"
+    "02:50:37.219 51 |    height: var(--d-raw-r269, 269rpx);\n"
+    "02:50:56.367 项目 client 编译成功。\n"
+    "02:50:56.375 ready in 45398ms.\n"
+    "02:50:56.390 已停止运行...\n"
+)
+
+
+def test_uvue_error_without_error_prefix_is_fail():
+    """**核心回归**：uvue 错误（无 `error:` 前缀）必须判 fail，即使产物已更新。"""
+    assert _judge(UVUE_ERROR_LOG, touched="manifest.json @ now") == "fail"
+
+
+def test_uvue_warning_loc_is_not_fail():
+    """**反向探针**：成功日志里的 WARNING `.uvue:行:列` 定位不得被判成失败。"""
+    assert _judge(UVUE_WARNING_LOG, touched="manifest.json @ now") == "ok"
+
+
+def test_uvue_error_beats_stale_success_marker():
+    """追加式日志：错误日志里残留上一次 `ready in` ⇒ 仍必须 fail。"""
+    stale = "02:30:00.000 项目 client 编译成功。\n02:30:00.100 ready in 20000ms.\n" + UVUE_ERROR_LOG
+    assert _judge(stale, touched="x.kt") == "fail"
+
+
+def test_ansi_color_is_the_discriminator():
+    """判据核心：红色=错误 / 黄色=WARNING。"""
+    red = _ESC + "[31mat a.uvue:1:0" + _ESC + "[39m\n已停止运行...\n"
+    assert _judge(red) == "fail"
+    yellow = (
+        _ESC + "[33m[plugin:x] WARNING: y" + _ESC + "[39m\n"
+        "at a.uvue:1:0\n项目 client 编译成功。\n"
+    )
+    assert _judge(yellow) == "ok"

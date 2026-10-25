@@ -14,17 +14,27 @@
 				     `@confirm` 直接发整句（后端 RAG 自带改写，无需用户自己拆关键词） -->
 				<input :adjust-position="true" class="n2_396" style="color:var(--c-ink-900, #3A2E25);font-size:28.8rpx;" v-model="keyword" placeholder="描述一段回忆，帮你找" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="runSearch" />
 			</view>
-			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
-			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
-			     早已就绪，但用户完全触达不到——"多模态搜索"对用户等于不存在。
-			     复用既有 s-chip 样式类（不新增 CSS，避免样式回归面） -->
-			<view class="s-chip s-chip-ml" @tap="runImageSearch()">
-				<text class="s-chip-text">以图搜</text>
-			</view>
+			<!-- 以图搜图入口已于 2026-10-26 搬出胶囊（task-21 第 5 条）：
+			     现在是筛选行上方的独立实底按钮（.img-search-btn），见模板上方。
+			     原来这里是 `.s-chip`「以图搜」—— 与输入框同色同层、权重为零，
+			     而当时全仓检索显示它曾是 `searchByImage` 的**唯一调用方**（别删）。 -->
 		</view>
 		<!-- 筛选行（2026-10-16 改造：原「全部/照片/语音/文字」= 模态**内部概念**，用户不这么想记忆；
 		     改为用户维度——时间（今天/本周/本月/那年）+ 有照片 + 有地点。
 		     仍复用 .n2_397 行与 .s-chip 族；模态过滤降为机制层（见 useSearchState.filterContentTypes） -->
+		<!-- 以图搜图入口（2026-10-26 · task-21 第 5 条：**搬出搜索胶囊，独立成按钮**）。
+		     原位置：胶囊内最右侧一个 .s-chip（白底 + ink-500 字），与输入框同色同层
+		     ⇒ 视觉权重为零；而它其实是**另一条完整检索通路**（选图 → 向量搜），
+		     不是输入框的附属选项。真机反馈证实"不知道还能以图搜"。
+		     现在：独立实底按钮（rust-500 底 + 白字 4.81:1 AA ✓），置于筛选行之前 ——
+		     第一屏扫视就能看到"除了打字，还能给张图"。热区 84.6rpx = 44.0dp ✓。
+		     ⚠️ 放在 .n2_397 **外面**是刻意的：筛选行是 Vapor 下横排定宽容器
+		     （画布 2:397 定 x/y 与宽），塞进去会把 6 个 chip 挤出行外。 -->
+		<view class="n2_397-img">
+			<view class="img-search-btn pressable" @tap="runImageSearch()">
+				<text class="img-search-text">🖼 以图搜</text>
+			</view>
+		</view>
 		<view class="n2_397">
 			<view v-for="(f, idx) in filterChips" :key="idx" class="s-chip" :class="{ 's-chip-active': isFilterActive(idx), 's-chip-ml': idx > 0 }" @tap="onFilterTap(idx)">
 				<text class="s-chip-text" :class="{ 's-chip-text-active': isFilterActive(idx) }">{{ f }}</text>
@@ -113,7 +123,15 @@
 				<!-- 就地操作行（2026-10-16 拆为 SearchHitOps 子组件；rawText=命中原始文本，照片无文本为空串） -->
 				<SearchHitOps :contentId="item.id" :contentType="item.contentType" :rawText="item.rawText" />
 				</view>
-				<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<!-- 无结果态（task-21 第 7 条）：**加主句**，与"没搜过"拉开区分。
+				     实测问题：三态文案原先都塞在同一个 .n2-empty 里（居中灰字、同 padding），
+				     视觉同质 ⇒ 用户分不清"我还没搜"和"搜了但没结果"，而这两者的下一步
+				     动作**完全相反**（前者去描述、后者改说法）。
+				     修法：无结果态给一行更重的结论句（ink-900 + 30.8rpx），下面才是轻的
+				     改写建议 chip。「没搜过」态不加主句——它旁边就有可点的示例 chip，
+				     再加标题反而喧宾夺主。 -->
+				<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty-col">
+				<text class="n2-empty-lead">{{ emptyLead() }}</text>
 				<text class="n2-empty-text">{{ emptyText() }}</text>
 			</view>
 			<!-- 空结果不空手（2026-10-16）：改写建议 chips（点了直接重搜） -->
@@ -438,7 +456,22 @@
 			// 故空态要说明作用范围，避免用户误以为"全库都没有"。
 			return '按当前筛选没有结果（筛选作用于已展示结果）'
 		}
-		return '没有找到相关记忆，换个说法试试'
+		return '换个说法试试 —— 比如换成人名、地点或当时在做的事'
+	}
+
+	/**
+	 * 无结果态的**主句**（task-21 第 7 条：三态视觉区分）。
+	 *
+	 * 为什么主句与 `emptyText()` 要分开：主句回答"发生了什么"（结论），
+	 * `emptyText()` 回答"那我该怎么办"（建议）。两者层级不同，混在一行会让用户
+	 * 既没记住结论也没看到建议。这也让"无结果"与"没搜过"在**结构与字号**上都不同，
+	 * 而不是只靠文案差异（文案差异在灰字小字号下几乎读不出来）。
+	 */
+	function emptyLead(): string {
+		if (ss.hasClientFilter()) {
+			return '这些筛选下没有记忆'
+		}
+		return '没有找到相关记忆'
 	}
 
 	/**

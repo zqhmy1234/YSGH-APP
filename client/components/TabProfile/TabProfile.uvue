@@ -23,6 +23,14 @@
 		</view>
 		<view class="list-flow"> <!-- 列表流式容器（流式重构三定律：组间 margin 表达画布 y 差，加行/加组自动下移，不再写死 top） -->
 			<view class="n2_466"> <!-- 列表组1 -->
+				<!-- task-21 第 6 条（信息架构 · 高频前置）：原顺序为
+				     记忆访谈 / 我的记忆画像 / 画像设置 / **我的收藏** / 消息中心。
+				     实测不合理：「我的收藏」是**查阅**类高频入口（用户会反复回来翻），
+				     而「画像设置」是**配置**类低频入口（改一次就很少再进）。
+				     把低频配置夹在两个高频查阅入口中间，等于每次找收藏都要先跨过设置。
+				     现顺序（语义分层：访谈 → 查阅 → 配置 → 消息）：
+				       记忆访谈 / 我的记忆画像 / **我的收藏** / 画像设置 / 消息中心
+				     只调整顺序、不动任何样式与 handler（`@tap` 原样跟随）。 -->
 				<view class="n2_467" @tap="goInterview"> <!-- 行-记忆访谈（旧版入口在还原中丢失，对齐旧版 profile goInterview() 补回；样式复用 467 行） -->
 					<image class="n2_468" src="/static/icons/i2_468a.svg" /> <!-- icon: 麦克风（§P8 峰宝点名图标重复：访谈=麦） -->
 					<text class="n2_472">记忆访谈</text> <!-- 文字 -->
@@ -42,14 +50,14 @@
 					<text class="n2_472">我的记忆画像</text> <!-- 文字 -->
 					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 				</view>
-				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像设置（原「画像管理」，指向 manage 页） -->
-					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
-					<text class="n2_472">画像设置</text> <!-- 文字 -->
-					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
-				</view>
 				<view class="n2_467" @tap="goFavorites"> <!-- 行-我的收藏（峰宝联调点名 2026-09-02：goFavorites 接线早已落盘但模板漏行，补入口；样式复用 467 行族） -->
 					<image class="n2_468" src="/static/icons/i2_468b.svg" /> <!-- icon: 空心星（§P8 峰宝点名图标重复：收藏=星） -->
 					<text class="n2_472">我的收藏</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像设置（原「画像管理」，指向 manage 页） -->
+					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
+					<text class="n2_472">画像设置</text> <!-- 文字 -->
 					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
 				</view>
 				<view class="n2_475" @tap="goMessagesCenter"> <!-- 行-消息中心 -->
@@ -321,7 +329,10 @@
 		height: var(--d-lattice-p15, 28.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-card_radius_small, 23.1rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		/* task-21 第 8 条：签名行 ink-500 对 paper-100 = 3.86:1（AA 需 4.5）⇒ ink-700 7.71:1。
+		   这行是「已记录 N 段回忆」—— 用户判断"我这个 App 里到底有多少东西"的第一眼数据，
+		   读不清会直接怀疑数据是不是没存上。 */
+		color: var(--c-ink-700, #5A4C40);
 	}
 	.n2_456 {
 		position: absolute;
@@ -353,8 +364,11 @@
 	}
 	.n2_459 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		/* task-21 第 8 条：原 21.2rpx（< 22rpx 下限）⇒ 23.1rpx。
+		   统计标签是「回忆 / 照片 / 语音」三个字的含义锚 —— 数字 42.3rpx 很大但没有
+		   标签就是三个裸数字。同时 ink-500 对白 4.14:1（AA 需 4.5）⇒ ink-700 8.26:1。 */
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-700, #5A4C40);
 		/* uvue App端不支持flex gap（官方能力边界），画布 gap=3.8rpx 改子元素margin */
 		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}
@@ -370,8 +384,9 @@
 	}
 	.n2_462 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		/* task-21 第 8 条：21.2rpx → 23.1rpx；ink-500(4.14:1) → ink-700(8.26:1)。同 .n2_459 */
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-700, #5A4C40);
 		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
 		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}
@@ -387,8 +402,9 @@
 	}
 	.n2_465 {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		/* task-21 第 8 条：21.2rpx → 23.1rpx；ink-500(4.14:1) → ink-700(8.26:1)。同 .n2_459 */
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-700, #5A4C40);
 		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
 		margin-top: var(--d-lattice-p2, 3.8rpx);
 	}

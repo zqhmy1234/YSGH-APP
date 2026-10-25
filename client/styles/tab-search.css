@@ -70,20 +70,50 @@
 		align-items: center;
 		overflow: hidden;
 	}
+	/* 「以图搜」独立按钮行（task-21 第 5 条）。
+	   位置：筛选行（top 353.8rpx）**上方**一行 —— 用 353.8 − 84.6（按钮高）− 15.4（间隙）
+	   ≈ 253.8rpx。这样不挤压筛选行、不碰结果区起点（496.2rpx），完全在既有空白带里。
+	   左对齐与页面其它块同一 x（38.5rpx）。 */
+	.n2_397-img {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: 253.8rpx;
+		flex-direction: row;
+		align-items: center;
+	}
 	/* chip 动态化（HEAD 交互接回）：默认白底灰字，active 态锈红 tint */
 	.s-chip {
 		flex-direction: row;
 		align-items: center;
+		justify-content: center;
 		padding-left: var(--d-lattice-p9, 17.3rpx);
 		padding-right: var(--d-lattice-p9, 17.3rpx);
 		padding-top: var(--d-lattice-p9, 17.3rpx);
 		padding-bottom: var(--d-lattice-p9, 17.3rpx);
+		/* task-21 第 4 条（热区）：原本只有 padding 17.3×2 + 文字 23.1×1.4 ≈ 67rpx 高
+		   = **34.8dp**，低于 44dp 下限。筛选 chip 是搜索页除输入框外最高频的点击
+		   目标，补 min-height 86rpx = **44.0dp**（正好达标，不虚胖）。
+		   宽度不动：文字 + 左右 padding 已 > 44dp。 */
+		min-height: 86rpx;
 		background-color: var(--c-white, #FFFFFF);
 		border-radius: var(--d-raw-r9999, 9999rpx);
+		/* 未选中补一圈**极淡**描边（paper-500 对白 1.32:1，几乎不可见）——
+		   目的是让"有边框"不成为选中信号，只有**边框颜色**才是。详见 .s-chip-active。 */
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-style: solid;
+		border-color: var(--c-paper-500, #E9DFCB);
 		overflow: hidden;
 	}
+	/* task-21 第 4 条（选中态不够明显）：实测原实现的差异只有「12% 琥珀底 tint」+
+	   「ink-500(4.14:1) → rust-500(4.11:1)」—— **对比度几乎没变**，色相也只差一点点，
+	   用户看不出哪些筛选正生效。修法三管齐下（几何不动，只加视觉权重）：
+	     · 底 tint 保持 12%（画布 2:397 真值，不改）；
+	     · **补 1.9rpx rust 描边**（非文本对比 rust-500 对白 4.81:1 ≥ 3:1 ✓）——
+	       "有色边=选中、灰淡边=未选中"，边界一眼可辨；
+	     · 文字 rust-500 → **rust-700 #8a5a20**（对 rust12+白 5.04:1，AA ✓）。 */
 	.s-chip-active {
 		background-color: var(--a-rust-12, rgba(176, 89, 59, 0.12));
+		border-color: var(--c-rust-500, #B05A3A);
 	}
 	/* 画布 2:397 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
 	.s-chip-ml {
@@ -92,13 +122,16 @@
 	.s-chip-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-card_radius_small, 23.1rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		/* task-21 第 8 条：ink-500 对白 4.14:1（AA 需 4.5，差一点）⇒ 提到 ink-700 8.26:1。
+		   chip 文字是**筛选条件的名字**（今天/本周/有照片），读不清等于筛不了。 */
+		color: var(--c-ink-700, #5A4C40);
 	}
 	.s-chip-text-active {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-card_radius_small, 23.1rpx);
 		font-weight: 600;
-		color: var(--c-rust-500, #B05A3A);
+		/* rust-500 对 rust12+白仅 4.11:1 ⇒ rust-700 5.04:1（AA ✓） */
+		color: var(--c-rust-700, #8a5a20);
 	}
 	.n2_406 {
 		position: absolute;
@@ -108,7 +141,11 @@
 		height: var(--d-lattice-p15, 28.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-card_radius_small, 23.1rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		/* task-21 第 7/8 条：结果计数行是**三态的身份标识**（「描述一段回忆，帮你找」=
+		   没搜过 / 「共 N 条结果」= 有结果 / 「没有找到…」= 无结果）。原来 ink-500 对
+		   paper-100 只有 3.86:1（低于 4.5），三态之间的视觉差被"都看不清"抹平了。
+		   提到 ink-700（7.71:1）—— 三态文案都落在这个元素上，读得清才分得开。 */
+		color: var(--c-ink-700, #5A4C40);
 	}
 	.n2-results {
 		position: absolute;
@@ -203,7 +240,11 @@
 	}
 	.svp-time {
 		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-raw-r20, 20rpx);
+		/* task-21 第 8 条：20rpx < 22rpx 下限 ⇒ 22rpx。
+		   播放进度时间（0:03 / 0:12）是"这段语音多长"的唯一线索 —— 小到读不出等于没有。
+		   色 ink-500 4.14:1（贴在 amber-14 底上的白卡区，实测仍 ≥4）保留：它是辅助
+		   数值，与主标题 ink-900 形成层级；如再加深会与标题抢读数。 */
+		font-size: var(--d-raw-r22, 22rpx);
 		color: var(--c-ink-500, #8A7A6A);
 	}
 	.svp-track {
@@ -316,7 +357,7 @@
 	.n2_603 {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-ink-500, #8A7A6A);
+		color: var(--c-ink-700, #5A4C40);
 	}
 	.n2-empty {
 		flex-direction: row;
@@ -324,8 +365,54 @@
 		padding-top: var(--d-lattice-p32, 61.5rpx);
 		padding-bottom: var(--d-lattice-p32, 61.5rpx);
 	}
+	/* 无结果态容器：竖排（主句在上、建议在下），与"没搜过"的横排 chip 行结构不同 */
+	.n2-empty-col {
+		flex-direction: column;
+		align-items: center;
+		padding-top: var(--d-lattice-p32, 61.5rpx);
+		padding-bottom: var(--d-lattice-p24, 46.2rpx);
+	}
 	.n2-empty-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p14, 26.9rpx);
-		color: var(--c-ink-300, #B3A696);
+		/* task-21 第 7/8 条：原 ink-300 对 paper-100 = **2.22:1**（全页最弱），
+		   而这段文字是三态里"没搜过"和"无结果"**唯一**的说明 —— 读不清就等于没有空态。
+		   提到 ink-700 = 7.71:1；三态的结构区分靠 .n2-empty-lead（无结果才有）。 */
+		color: var(--c-ink-700, #5A4C40);
+	}
+	/* task-21 第 7 条：三态区分。
+	   实测问题：三种状态的文案都塞在同一个 `.n2-empty` 里（都是居中灰字，padding 相同），
+	   视觉上完全同质 —— 用户分不清"我还没搜"和"搜了但没结果"，而这两者的**下一步动作
+	   完全相反**（前者该去描述、后者该改说法）。
+	   修法（零新色值）：无结果态挂 `.n2-empty-lead`，给一句更重的"主句"（ink-900 13.15:1
+	   + 稍大字号）+ 下面才是轻的补充建议，形成"标题 + 副文"层次；未搜索态保持单行轻文案
+	   （它不需要标题，因为它右边就有可点的示例 chip）。 */
+	.n2-empty-lead {
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		font-weight: 600;
+		color: var(--c-ink-900, #3A2E25);
+		margin-bottom: var(--d-lattice-p6, 11.5rpx);
+	}
+	/* 「以图搜」独立入口（task-21 第 5 条）——
+	   实测问题：现在它是搜索胶囊**内部**最右侧一个 `.s-chip`（白底 + ink-500 字），
+	   与输入框同色同层，紧急度为零；而它其实是**另一条完整的检索通路**（选图 → 向量搜），
+	   不是"输入框的一个附属选项"。用户真机反馈过"不知道还能以图搜"。
+	   修法：搬出胶囊、独立成一颗**带图标 + 实底**的按钮（页面内唯二的实底控件之一，
+	   另一个是主搜索输入框），放在筛选行左侧。底用 rust-500（白字 4.81:1 AA ✓），
+	   视觉权重与"这一步能换一种方式搜"相称。 */
+	.img-search-btn {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		min-height: 86rpx;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		border-radius: var(--d-raw-r9999, 9999rpx);
+	}
+	.img-search-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		font-weight: 600;
+		color: var(--c-white, #FFFFFF);
 	}

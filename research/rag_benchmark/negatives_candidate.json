@@ -1,0 +1,296 @@
+{
+  "_meta": {
+    "version": 1,
+    "kind": "real_db_negatives_candidate",
+    "generated_by": "research/rag_benchmark/collect_negatives.py",
+    "note": "从**真库**反向采集的负样本候选（B-01）。判据：查询的关键实体 token 在可检索语料中 0 命中。**这是候选集，不是已提交基线** —— 基线是truth_queries_50.json，改它会让历史指标不可比，故本文件独立。",
+    "verdict_rule": "命中 = contents.text ILIKE %token%（status=done + 未软删 + 非敏感拦截 + 文本非空，与 rag 召回用户可见面一致）；任一 token 命中即判『语料里有』并移出候选（保守，宁少不多）",
+    "searchable_corpus_n": 2095,
+    "entity_pool_n": 20,
+    "true_negatives": 20,
+    "rejected": 0
+  },
+  "negatives": [
+    {
+      "query": "我记得上次去看过极光",
+      "entity": "极光",
+      "layer": "descriptive",
+      "tokens": [
+        "极光"
+      ],
+      "hits": {
+        "极光": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['极光'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "松鼠桂鱼",
+      "entity": "松鼠桂鱼",
+      "layer": "keyword",
+      "tokens": [
+        "松鼠桂鱼"
+      ],
+      "hits": {
+        "松鼠桂鱼": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['松鼠桂鱼'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "上上周在北海道滑雪的照片",
+      "entity": "北海道",
+      "layer": "place",
+      "tokens": [
+        "北海道"
+      ],
+      "hits": {
+        "北海道": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['北海道'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "在冰川上徒步的那天",
+      "entity": "冰川",
+      "layer": "descriptive",
+      "tokens": [
+        "冰川"
+      ],
+      "hits": {
+        "冰川": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['冰川'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "深海潜水看到的鱼群",
+      "entity": "深海潜水",
+      "layer": "descriptive",
+      "tokens": [
+        "深海潜水"
+      ],
+      "hits": {
+        "深海潜水": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['深海潜水'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "撒哈拉沙漠的星空",
+      "entity": "撒哈拉",
+      "layer": "place",
+      "tokens": [
+        "撒哈拉"
+      ],
+      "hits": {
+        "撒哈拉": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['撒哈拉'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "乞力马扎罗登顶的记录",
+      "entity": "乞力马扎罗",
+      "layer": "place",
+      "tokens": [
+        "乞力马扎罗"
+      ],
+      "hits": {
+        "乞力马扎罗": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['乞力马扎罗'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "马丘比丘的旅行攻略",
+      "entity": "马丘比丘",
+      "layer": "place",
+      "tokens": [
+        "马丘比丘"
+      ],
+      "hits": {
+        "马丘比丘": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['马丘比丘'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "管风琴独奏音乐会",
+      "entity": "管风琴",
+      "layer": "keyword",
+      "tokens": [
+        "管风琴"
+      ],
+      "hits": {
+        "管风琴": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['管风琴'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "马头琴练习曲",
+      "entity": "马头琴",
+      "layer": "keyword",
+      "tokens": [
+        "马头琴"
+      ],
+      "hits": {
+        "马头琴": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['马头琴'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "古籍笺注的读书笔记",
+      "entity": "笺注",
+      "layer": "keyword",
+      "tokens": [
+        "笺注"
+      ],
+      "hits": {
+        "笺注": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['笺注'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "偏微分方程期末复习",
+      "entity": "偏微分方程",
+      "layer": "keyword",
+      "tokens": [
+        "偏微分方程"
+      ],
+      "hits": {
+        "偏微分方程": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['偏微分方程'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "质谱仪校准流程",
+      "entity": "质谱仪",
+      "layer": "keyword",
+      "tokens": [
+        "质谱仪"
+      ],
+      "hits": {
+        "质谱仪": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['质谱仪'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "乙二胺四乙酸配制",
+      "entity": "乙二胺四乙酸",
+      "layer": "keyword",
+      "tokens": [
+        "乙二胺四乙酸"
+      ],
+      "hits": {
+        "乙二胺四乙酸": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['乙二胺四乙酸'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "换了卤素灯的客厅",
+      "entity": "卤素灯",
+      "layer": "keyword",
+      "tokens": [
+        "卤素灯"
+      ],
+      "hits": {
+        "卤素灯": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['卤素灯'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "塔斯马尼亚自驾",
+      "entity": "塔斯马尼亚",
+      "layer": "place",
+      "tokens": [
+        "塔斯马尼亚"
+      ],
+      "hits": {
+        "塔斯马尼亚": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['塔斯马尼亚'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "复活节岛石像",
+      "entity": "复活节岛",
+      "layer": "place",
+      "tokens": [
+        "复活节岛"
+      ],
+      "hits": {
+        "复活节岛": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['复活节岛'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "摩拉维亚的古镇",
+      "entity": "摩拉维亚",
+      "layer": "place",
+      "tokens": [
+        "摩拉维亚"
+      ],
+      "hits": {
+        "摩拉维亚": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['摩拉维亚'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "手冲冰滴咖啡壶",
+      "entity": "手冲冰滴",
+      "layer": "keyword",
+      "tokens": [
+        "冰滴"
+      ],
+      "hits": {
+        "冰滴": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['冰滴'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    },
+    {
+      "query": "铁人三项完赛成绩",
+      "entity": "铁人三项",
+      "layer": "keyword",
+      "tokens": [
+        "铁人三项"
+      ],
+      "hits": {
+        "铁人三项": 0
+      },
+      "hits_total": 0,
+      "verdict": "true_negative",
+      "evidence": "关键 token ['铁人三项'] 在可检索语料（2095 条）中 0 命中 ⇒ 语料确实没有该实体"
+    }
+  ],
+  "rejected": []
+}

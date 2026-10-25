@@ -1,0 +1,139 @@
+/**
+ * 画像依据（`dimension_evidence`）状态 —— 自 `pages/portrait/detail.uvue` 抽出
+ * （2026-10-26 · task-21 B 方案 · 结构棘轮）
+ *
+ * ## 为什么抽出来
+ *
+ * 后端本批新增 `GET /interview/profile` 的并列字段 `dimension_evidence`
+ * （`dimensions` 形状逐字不变，见 `backend/app/schemas/interview.py` 的注释）。
+ * 客户端要把 `{dim: [{ts,text,content_id}]}` 投影成可渲染结构 + 管理「哪条展开」，
+ * 这块逻辑加进 detail.uvue 后该文件到 **819 行**（> 800 阈值）。
+ *
+ * 按 `useSearchState.uts` 先例（**纯 class + 模块级 ref，组件 new 一个实例经实例访问
+ * 同一 ref 对象**；全项目零 defineExpose/$refs）把这块抽出，宿主只留薄包装。
+ *
+ * ## 为什么不放进子组件 `DimEvidenceList.uvue`
+ *
+ * 那个组件是**纯展示**（输入格式化好的行、输出引用块）。而"解析 JSON + 判断有没有 +
+ * 管理展开态"是**状态**，塞进展示组件会让它同时承担渲染与解析两件事；且展开态被
+ * 宿主模板用于 `v-if`（要在宿主身上）。故职责这样切：
+ *   · 本文件（composable）  → 解析 / 投影 / 展开态
+ *   · DimEvidenceList.uvue  → 只渲染
+ *   · detail.uvue           → 薄包装转发 + 模板
+ *
+ * ## 降级语义（与「不得撒谎」纪律一致）
+ *
+ * 解析失败 ⇒ 整体当"没有依据"（`dimEvidence` 空、`hasEvidence` 全 false）——
+ * 「依据」入口不渲染，页面退化成"只有结论"的形态。**绝不让依据解析失败把整页画像
+ * 拖挂**（用户至少还要看结论）；也**绝不**伪造占位文本冒充依据。
+ */
+
+import { ref } from 'vue'
+import { shortDate } from '@/utils/time'
+
+/** 一条依据（后端 `DimensionEvidence` 的客户端镜像） */
+export class EvidenceRow {
+	/** 该依据产生的时刻（ISO-8601；后端可能给 null ⇒ 这里归一为 ''） */
+	ts: string
+	/**
+	 * 该依据的时刻**已格式化**（`shortDate` 口径，与「等你确认」区**同一个函数**）。
+	 *
+	 * 为什么在投影时就格式化好、而不是让渲染组件自己格式化：
+	 * `DimEvidenceList.uvue` 刻意保持"零业务依赖"（不 import utils）；若它自己
+	 * import 一份 `shortDate`，同一页面两处"依据时间"就各有一份格式化实现，
+	 * 将来改口径必漏一处（这类"两处各写一遍"的漂移在本仓踩过多次）。
+	 */
+	tsText: string
+	/** 用户自己写过的那句话（不是 AI 再生成的一段） */
+	text: string
+
+	constructor(ts: string, text: string) {
+		this.ts = ts
+		this.tsText = ts == '' ? '' : shortDate(ts)
+		this.text = text
+	}
+}
+
+export class ProfileEvidenceState {
+	/**
+	 * 维度 id → 依据列表。
+	 *
+	 * 用 `Map` 而不是每次在模板里现解 JSON：模板里 `hasEvidence(d.id)` 每次渲染都调，
+	 * 现解会有几十次重复解析（维度数 × 渲染轮次）。loadProfile 时一次性投影，
+	 * 渲染路径只剩一次 `get()`。
+	 */
+	dimEvidence = new Map<string, Array<EvidenceRow>>()
+
+	/** 当前展开依据的维度 id（空串 = 全收起）。**与标注区的 expandedId 分开**：id 空间不同 */
+	expandedDim = ref('')
+
+	/**
+	 * 从 `GET /interview/profile` 的响应里投影依据表。
+	 *
+	 * @param res 画像响应（`UTSJSONObject`；调用方已确认非 null）
+	 *
+	 * 口径对齐后端（**不要在这里二次判断"该不该下发"**）：后端已保证只有有依据的维度
+	 * 才有 key。这里保留 `length > 0` 判断只是兜住"旧服务端/异常给了空列表"的情况。
+	 */
+	load(res: UTSJSONObject): void {
+		this.dimEvidence.clear()
+		try {
+			const ev = res.getJSON('dimension_evidence')
+			if (ev == null) {
+				return
+			}
+			const keys = ev.keys()
+			for (let i = 0; i < keys.length; i++) {
+				const dim = keys[i]
+				const arr = ev.getJSONArray(dim)
+				if (arr == null || arr.length == 0) {
+					continue
+				}
+				const list = new Array<EvidenceRow>()
+				for (let j = 0; j < arr.length; j++) {
+					const item = arr[j]
+					if (item == null) {
+						continue
+					}
+					const o = item as UTSJSONObject
+					const text = o.getString('text') ?? ''
+					const ts = o.getString('ts') ?? ''
+					// 只有文本或时间任一非空才算有效依据（与后端 `any(text or ts)` 同口径）
+					if (text != '' || ts != '') {
+						list.push(new EvidenceRow(ts, text))
+					}
+				}
+				if (list.length > 0) {
+					this.dimEvidence.set(dim, list)
+				}
+			}
+		} catch (e) {
+			// 依据是增强信息：解析失败⇒退化为"无依据"形态，不拖挂整页
+			console.log('[dbg-evidence] dimension_evidence 解析失败（忽略，退化为无依据形态）: ' + e)
+			this.dimEvidence.clear()
+		}
+	}
+
+	/** 该维度有没有依据可展开（模板据此决定是否渲染「依据」入口） */
+	has(dim: string): boolean {
+		const v = this.dimEvidence.get(dim)
+		return v != undefined && v.length > 0
+	}
+
+	/** 依据条数（按钮上写「依据 N」—— 用户点之前就知道值不值得点） */
+	count(dim: string): number {
+		const v = this.dimEvidence.get(dim)
+		return v == undefined ? 0 : v.length
+	}
+
+	/** 取依据列表（模板 v-for 用；返回空数组而不是 null，模板无需判空） */
+	rowsOf(dim: string): Array<EvidenceRow> {
+		const v = this.dimEvidence.get(dim)
+		return v == undefined ? new Array<EvidenceRow>() : v
+	}
+
+	/** 展开/收起某个维度（再点一次收起） */
+	toggle(dim: string): void {
+		this.expandedDim.value = this.expandedDim.value == dim ? '' : dim
+	}
+}

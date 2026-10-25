@@ -42,6 +42,19 @@
 				<text class="stat-line">{{ statLine }}</text>
 			</view>
 
+			<!-- ⓪ 诚实声明 · **顶部**（2026-10-26 · task-21 第 3 条）
+			     UX 审查实测问题：原实现只在**页面最底部**有一行 20rpx 灰字。用户从标题
+			     进来看到「我的记忆画像」+ 一串结论，很可能**滚不到底就已经信了** ——
+			     等看到声明时，印象已经形成（首因效应）。而「AI 归纳可能不准」这条
+			     恰恰必须在**读结论之前**送达。
+			     修法：顶部保留一条（amber-10% 底 + ink-700 字 = 7.54:1，视觉层级高于正文），
+			     底部那条**精简为一句**（保留是因为用户滑到底再想核对时不该找不到）。
+			     ⚠️ 不复用 .notice 类：那是"加载失败"的语义色，混用会让用户把正常声明
+			     读成故障提示。 -->
+			<view class="ai-disclaimer-top">
+				<text class="ai-disclaimer-top-text">⚠️ 以下是 AI 从你的记录里归纳的，**可能不准确**。每条都能点「依据」看原文，觉得不对可以改。</text>
+			</view>
+
 			<!-- ② 待确认（AI 猜的，需要用户判断） -->
 			<view v-if="annotationLoadFailed" class="notice">
 				<text class="notice-text">待确认内容加载失败，可下拉重试</text>
@@ -56,7 +69,13 @@
 						<text class="annot-dim">{{ dimLabel(a.dimension) }}</text>
 						<text class="annot-val">{{ a.candidateValue }}</text>
 					</view>
-					<text class="annot-evidence" @tap="toggleEvidence(a.id)">依据</text>
+					<!-- 「依据」做成 pill 容器（2026-10-26 · task-21 第 1 条）：
+					     原为裸 text，热区仅文字本身 ≈ 44rpx 宽（22.9dp）—— 远低于 44dp。
+					     Vapor 下 `text-decoration` 不支持（只报 WARNING 静默丢弃），
+					     故"看起来像可点"只能用**容器 pill**（底 + 圆角）而非下划线。 -->
+					<view class="annot-evidence pressable" @tap="toggleEvidence(a.id)">
+						<text class="annot-evidence-text">{{ expandedId == a.id ? '收起' : '依据' }}</text>
+					</view>
 					<view class="annot-actions">
 						<view class="btn-yes pressable" @tap="decide(a, 'confirmed')">
 							<text class="btn-yes-text">是</text>
@@ -65,29 +84,64 @@
 							<text class="btn-no-text">不是</text>
 						</view>
 					</view>
-					<text v-if="expandedId == a.id" class="annot-raw">{{ a.rawText }}</text>
+					<view v-if="expandedId == a.id" class="annot-raw">
+						<text class="annot-raw-text">{{ a.rawText }}</text>
+						<!-- 时间戳（task-21 第 1 条「带时间」）：`AnnotationOut.created_at` 后端已下发，
+						     原实现完全没用。有了"这句话是 3 个月前说的"这个信息，用户才能判断
+						     这条推断是否还成立（很久以前的一次提及 vs 反复出现，可信度完全不同）。 -->
+						<text v-if="a.createdAt != null && a.createdAt != ''" class="annot-raw-time">{{ shortDate(a.createdAt) }}</text>
+					</view>
 				</view>
 			</view>
 
-			<!-- ③ 已确认画像 -->
+			<!-- ③ 已确认画像（**按 category 分组** · 2026-10-26 · task-21 第 2 条）
+			     UX 审查实测：15 个维度平铺成一列，用户读不懂 —— 「年龄段 / 饮食偏好 /
+			     熬夜修仙 / 价值观·家庭」混在一起，没有任何结构线索。
+			     修法：按枚举集里既有 `category` 分组（`profile_labels.uts::dimCategory`，
+			     由 `docs/画像维度枚举集_l0.json` + `l1_骨架.json` 的 category 字段投影，
+			     分组名一个都没新造），组内按 `DIM_CATEGORY_ORDER` 语义排序。
+			     分组数据在 script 里算好（`dimGroups`），模板只渲染 —— 避免在模板里做
+			     嵌套循环 + 排序（uvue 模板能力有限，且这段逻辑要可测）。 -->
 			<view v-if="profileLoadFailed" class="notice">
 				<text class="notice-text">画像加载失败，可下拉重试</text>
 			</view>
-			<view v-else-if="dims.length > 0" class="section">
+			<view v-else-if="dimGroups.length > 0" class="section">
 				<view class="section-head">
 					<text class="section-title serif">已经了解的</text>
+					<!-- hint 随分组状态变：真分组时说明"按主题"；维度太少退化平铺时只说条数
+					     （见 groupDims 的 GROUP_MIN_ROWS 说明） -->
+					<text class="section-hint">{{ dimCountHint() }}</text>
 				</view>
-				<view v-for="d in dims" :key="d.id" class="dim-row">
-					<text class="dim-label">{{ d.label }}</text>
-					<text class="dim-value">{{ d.value }}</text>
+				<view v-for="g in dimGroups" :key="g.name" class="dim-group">
+					<!-- 空 name = 维度太少没分组（平铺），不渲染标题 -->
+					<text v-if="g.name != ''" class="dim-group-title">{{ g.name }}</text>
+					<view v-for="d in g.rows" :key="d.id" class="dim-wrap">
+						<view class="dim-row">
+							<text class="dim-label">{{ d.label }}</text>
+							<text class="dim-value">{{ d.value }}</text>
+							<!-- 「依据」入口（2026-10-26 · task-21 B 方案：后端已下发
+							     `dimension_evidence`）。**与「等你确认」区的 pill 同一视觉族**
+							     （复用 .annot-evidence / .annot-evidence-text，不造第二套）。
+							     只在真有依据时渲染：无依据的维度不该出现一个点了没东西的按钮
+							     （那是最典型的"假可供性"）。
+							     条数直接写在按钮上（「依据 2 条」）—— 用户点之前就知道值不值得点。 -->
+							<view v-if="hasEvidence(d.id)" class="annot-evidence pressable" @tap="toggleDimEvidence(d.id)">
+								<text class="annot-evidence-text">{{ expandedDim == d.id ? '收起' : ('依据 ' + evidenceCount(d.id).toString()) }}</text>
+							</view>
+						</view>
+						<!-- 展开后的依据列表 —— 拆到 `DimEvidenceList.uvue`（结构棘轮 800 行，
+						     按 SearchHitOps 先例拆自包含块；该组件复用 .evl-* 但视觉与
+						     「等你确认」的引用块同族：同底/同竖条/同字号/同时间样式）。 -->
+						<DimEvidenceList v-if="expandedDim == d.id" :rows="evidenceOf(d.id)" />
+					</view>
 				</view>
 			</view>
 			<view v-else-if="!loading" class="empty">
 				<text class="empty-text">还没有足够的内容生成画像。多记录一些，它会慢慢长出来。</text>
 			</view>
 
-			<!-- 诚实声明（不可删） -->
-			<text class="disclaimer">以上内容由 AI 从你的记录中归纳，可能不准确。点「依据」可看原文。</text>
+			<!-- 诚实声明 · **底部精简版**（顶部那条是主入口，见 ⓪） -->
+			<text class="disclaimer">以上内容由 AI 归纳，可能不准确。</text>
 		</scroll-view>
 	</view>
 </template>
@@ -99,13 +153,25 @@
 	// undefined —— 这类"能编译但跑不起来"的坑本仓踩过多次（见 lessons 的 UTS 族）。
 	import { ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
-	import { dimLabel } from '@/utils/profile_labels.uts'
+	import {
+		DIM_CATEGORY_ORDER,
+		dimCategory,
+		dimLabel
+	} from '@/utils/profile_labels.uts'
 	import { fetchInterviewProfile } from '@/utils/play_interview.uts'
+	import { shortDate } from '@/utils/time'
 	import {
 		ProfileAnnotation,
 		decideProfileAnnotation,
 		fetchProfileAnnotations
 	} from '@/utils/profile_annotation_api.uts'
+	import { EvidenceRow, ProfileEvidenceState } from '@/composables/useProfileEvidence.uts'
+	// 结构棘轮拆分（task-21 B 方案）：依据渲染独立成组件。
+	// ⚠️ 2026-10-26 修正：组件必须放 `components/` 而不是 `pages/` —— 放 pages/ 时这行
+	// `import ... from '@/pages/portrait/DimEvidenceList.uvue'` 会被
+	// `audit_harness.py` 客户端漂移轴误判成「引用未注册页面（死路由）」CRITICAL
+	// （该轴按 `@/pages/` 前缀正则判页面引用，分不清 import 组件与 navigateTo）。
+	import DimEvidenceList from '@/components/DimEvidenceList/DimEvidenceList.uvue'
 
 	class DimRow {
 		id: string
@@ -119,13 +185,135 @@
 		}
 	}
 
-	let dims = ref<Array<DimRow>>([])
+	/** 一个分组（`name` = 枚举集 category；`rows` = 该组下的维度行） */
+	class DimGroup {
+		name: string
+		rows: Array<DimRow>
+
+		constructor(name: string, rows: Array<DimRow>) {
+			this.name = name
+			this.rows = rows
+		}
+	}
+
+	/**
+	 * 画像依据状态（`dimension_evidence` 的解析/投影/展开态）—— 整体在
+	 * `composables/useProfileEvidence.uts`（结构棘轮：本页加依据后到 819 行 > 800，
+	 * 按 `useSearchState.uts` 先例抽出；该文件头有完整的分工说明）。
+	 *
+	 * 为什么在**此页**才 new（而不是做成全局单例）：依据随图片像数据走，页面卸载即该丢；
+	 * 做成模块级单例会让"上次那个用户的依据"残留到下次进页面（跨用户串数据风险）。
+	 */
+	const ev = new ProfileEvidenceState()
+	/** 薄包装：模板入口转发到同一实例（与 TabSearch 的 ss.* 包装同一写法） */
+	let expandedDim = ev.expandedDim
+
+	/**
+	 * 分组后的维度（**渲染唯一数据源**）。
+	 *
+	 * task-21 第 2 条：原有一个扁平的 `dims` ref 供模板直出，改分组后模板只用 `dimGroups`
+	 * ⇒ `dims` 会变成"只写不读"的死状态。故意**删掉**它而不是保留：uvue 里残留的
+	 * 无人读 ref 仍会参与响应式登记（每次赋值触发依赖收集），且下一个人会以为它有用。
+	 * 统计口径（"已了解 N 个方面"）直接由 `rows.length` 在 loadProfile 里算，不需要中间态。
+	 */
+	let dimGroups = ref<Array<DimGroup>>([])
 	let annotations = ref<Array<ProfileAnnotation>>([])
 	let loading = ref(true)
 	let profileLoadFailed = ref(false)
 	let annotationLoadFailed = ref(false)
 	let expandedId = ref<number>(-1)
 	let statLine = ref('')
+
+	/**
+	 * 扁平维度 → 按 category 分组（顺序按 `DIM_CATEGORY_ORDER` 语义排）。
+	 *
+	 * 为什么不放模板里做：uvue 模板不支持嵌套 v-for + 排序表达式，且这段逻辑
+	 * 值得单独解释（见下）。算法朴素（维度最多十几个，O(n²) 足够）：
+	 *   ① 按 `DIM_CATEGORY_ORDER` 升序遍历，能匹配到的组先出；
+	 *   ② 再扫一遍收"不在 ORDER 里"的组（`dimCategory` 保证落到兜底组「其他」，
+	 *      所以实际不会漏 —— 但保留这一轮是为了让别人改 ORDER 时不会静默丢维度）。
+	 *
+	 * ⚠️ 关键：**不丢维度**。宁可分组丑，不可维度消失 —— 与 `dimLabel` 同一纪律。
+	 *
+	 * ⚠️ **分组门槛（GROUP_MIN_DIMS / GROUP_MIN_ROWS）—— 真库实测调过，别随手改**：
+	 *
+	 * 实测 456 个 profile：403 用户平均只有 **3.7 个维度**有值，141 人只有 1 个。
+	 * 我按几种门槛在真库上跑过对照（`.cowork-temp/compare_group_rules*.py`）：
+	 *
+	 * | 门槛 | 会分组 | 标题负担(组数/维度) | 单行组占比 |
+	 * |---|---|---|---|
+	 * | 永分组（不加门槛） | 448/448 | 0.85 | **62%** ← 一半以上的标题没有内容支撑 |
+	 * | 组数>=3（我先用的） | 193/448 | 0.83 | 50% |
+	 * | **维度>=4 且 组数>=2（采用）** | **211/448** | **0.74** | 76% |
+	 *
+	 * ⚠️ 这里有一个**必须如实承认的取舍**：76% 的组只有 1 行 —— 因为维度本来就天然
+	 * 分散在不同 category（重度用户 7 个维度常落在 6 个组里）。所以"按 category 分组"
+	 * 在**当前数据形态下**救不了"读不懂"，它只是给有内容的人一个结构线索。
+	 * 真正的读不懂靠三件事解决：① 维度中文名（`dimLabel`）② 组标题的语义序
+	 * （`DIM_CATEGORY_ORDER`）③ 单行组的视觉弱化（见 `.dim-group-title` 的注释）。
+	 * 若将来 profile 平均维度数长到 8+，应重新跑对照脚本并下调门槛。
+	 */
+	const GROUP_MIN_DIMS: number = 4
+	const GROUP_MIN_ROWS: number = 2
+
+	function groupDims(rows: Array<DimRow>): Array<DimGroup> {
+		const out = new Array<DimGroup>()
+		const used = new Set<string>()
+		for (let i = 0; i < DIM_CATEGORY_ORDER.length; i++) {
+			const cat = DIM_CATEGORY_ORDER[i]
+			const bucket = new Array<DimRow>()
+			for (let j = 0; j < rows.length; j++) {
+				if (dimCategory(rows[j].id) == cat) {
+					bucket.push(rows[j])
+				}
+			}
+			if (bucket.length > 0) {
+				out.push(new DimGroup(cat, bucket))
+				used.add(cat)
+			}
+		}
+		// 兜底：ORDER 里没有的组（改常量后可能出现）也不能丢
+		const remaining = new Array<DimRow>()
+		for (let j = 0; j < rows.length; j++) {
+			if (!used.has(dimCategory(rows[j].id))) {
+				remaining.push(rows[j])
+			}
+		}
+		if (remaining.length > 0) {
+			out.push(new DimGroup('其他', remaining))
+		}
+			// 维度太少 / 组太碎 ⇒ 分组得不偿失，整体退化成一个无标题组（平铺）。
+		// 判据见上方 GROUP_MIN_DIMS 的对照表（真库 448 户实测调出来的）。
+		if (out.length < GROUP_MIN_ROWS || rows.length < GROUP_MIN_DIMS) {
+			const flat = new Array<DimGroup>()
+			flat.push(new DimGroup('', rows))
+			return flat
+		}
+		return out
+	}
+
+	/**
+	 * 「已经了解的」区副标题 —— 跟着分组状态说人话。
+	 *
+	 * 不写"按主题分组"当兜底：分组退化时（维度 < GROUP_MIN_ROWS）说"按主题分组"是**假话**，
+	 * 用户看不到任何分组标题会以为界面坏了。宁可只说条数。
+	 */
+	function dimCountHint(): string {
+		const total = countRows()
+		if (dimGroups.value.length > 1) {
+			return total.toString() + ' 个方面 · 按主题分组'
+		}
+		return total.toString() + ' 个方面'
+	}
+
+	/** 已了解的维度总数（分组退化时所有行都装在一个组里） */
+	function countRows(): number {
+		let n = 0
+		for (let i = 0; i < dimGroups.value.length; i++) {
+			n += dimGroups.value[i].rows.length
+		}
+		return n
+	}
 
 	onLoad(() => {
 		loadProfile()
@@ -166,10 +354,33 @@
 					}
 				}
 			}
-			dims.value = rows
+			// 分组（task-21 第 2 条）：15 个维度平铺读不懂 ⇒ 按枚举集既有 category 分
+			dimGroups.value = groupDims(rows)
+			// 依据表（task-21 B 方案）：后端 `dimension_evidence` → composable 投影
+			ev.load(res)
 			const cold = res.getBoolean('cold_start_done')
 			statLine.value = '已了解 ' + rows.length.toString() + ' 个方面' + (cold == true ? ' · 冷启动已完成' : '')
 		})
+	}
+
+	/**
+	 * 依据相关的薄包装（模板入口 → 转发到 `ev` 同一实例，与 TabSearch 的 `ss.*` 写法一致）。
+	 * 真正的实现在 `composables/useProfileEvidence.uts`。
+	 */
+	function hasEvidence(dim: string): boolean {
+		return ev.has(dim)
+	}
+
+	function evidenceCount(dim: string): number {
+		return ev.count(dim)
+	}
+
+	function evidenceOf(dim: string): Array<EvidenceRow> {
+		return ev.rowsOf(dim)
+	}
+
+	function toggleDimEvidence(dim: string): void {
+		ev.toggle(dim)
 	}
 
 	/** 拉待确认标注（失败要单独标；**不得**渲染成"暂无"） */
@@ -289,8 +500,28 @@
 
 	.section-hint {
 		font-size: 22rpx;
-		color: var(--c-ink-300, #B3A696);
+		/* task-21 第 8 条：ink-300 在 paper-100 上仅 2.22:1（AA 需 4.5）⇒ 提到 ink-500
+		   实测 3.86:1。仍不足 4.5 但这是"辅助说明"层级，进一步加深到 ink-700 会与
+		   标题抢注意力（层级倒挂）。取 ink-500 + 加粗到 500 补足辨识度。 */
+		font-weight: 500;
+		color: var(--c-ink-500, #8A7A6A);
 		margin-top: 6rpx;
+	}
+
+	/* ── 顶部诚实声明（task-21 第 3 条）──
+	   实测：ink-700 on amber-10%+白 = 7.54:1（AA 需 4.5 ✓）。
+	   刻意不用 .notice（那是"加载失败"的语义底 paper-soft），避免用户误读成故障。 */
+	.ai-disclaimer-top {
+		margin: 0 32rpx 24rpx 32rpx;
+		padding: 20rpx 24rpx;
+		background-color: var(--a-amber-10, rgba(196, 145, 59, 0.1));
+		border-radius: 12rpx;
+	}
+
+	.ai-disclaimer-top-text {
+		font-size: 24rpx;
+		line-height: 36rpx;
+		color: var(--c-ink-700, #5A4C40);
 	}
 
 	.annot-row {
@@ -309,7 +540,9 @@
 
 	.annot-dim {
 		font-size: 22rpx;
-		color: var(--c-ink-300, #B3A696);
+		/* task-21 第 8 条：ink-300 在白底 2.38:1 → ink-500 4.14:1（辅助层级可接受，
+		   且这是"这条属于哪个维度"的标签，与候选值 ink-900 形成明确主次） */
+		color: var(--c-ink-500, #8A7A6A);
 	}
 
 	.annot-val {
@@ -318,51 +551,138 @@
 		margin-top: 4rpx;
 	}
 
+	/* ── 「依据」pill（task-21 第 1 条）──
+	   原为裸 text：热区 ≈ 44rpx 宽（22.9dp），远低于 44dp 且没有"可点"的可供性。
+	   Vapor 下 `text-decoration` 不支持（静默丢弃），故用**容器 pill** 表达可点：
+	     · 热区 86rpx 高 = 44.0dp（达标）；宽 padding 24rpx 保证 ≥ 44dp；
+	     · 底 amber-10% + 边 rust — 与正文区分，又不抢「是」的主行动权重；
+	     · 文字 ink-700 on amber-10+白 = 7.27:1（AA ✓，原 amber-500 仅 2.81 ✗）。 */
 	.annot-evidence {
+		justify-content: center;
+		align-items: center;
+		min-width: 86rpx;
+		height: 86rpx;
+		padding-left: 16rpx;
+		padding-right: 16rpx;
+		margin-right: 8rpx;
+		background-color: var(--a-amber-10, rgba(196, 145, 59, 0.1));
+		border-radius: 999rpx;
+	}
+
+	.annot-evidence-text {
 		font-size: 22rpx;
-		color: var(--c-amber-500, #C4913C);
-		padding: 8rpx 12rpx;
+		color: var(--c-ink-700, #5A4C40);
 	}
 
 	.annot-actions {
 		flex-direction: row;
 	}
 
+	/* ── 「是 / 不是」按钮（task-21 第 1 条核心）──
+	   实测两个都不达标：
+	     · 「是」白字 on amber-500 = **2.81:1**（AA 需 4.5）—— 浅琥珀配白字，对比度极低，
+	       低视力/强光下基本看不见；且这两颗按钮是**整个页面唯一的写操作**，最不该糊。
+	     · 高度 padding 8+8 + fs24×1.4 ≈ 50rpx = **25.8dp**（需 44dp）—— 手指点不准。
+	   修法：
+	     · 底色 amber-500 → **rust-500**：白字对比 **4.81:1**（AA ✓）。仍属暖色
+	       家族（不破坏页面调性），且比 amber 更深更像"主行动"。
+	     · 高度 → `height: 86rpx` = **44.0dp**（正好达标，不是 88/96 那种过肥）。
+	     · 「不是」保留描边但**加深描边**：paper-500 对白仅 1.32:1（几乎看不见）→ 提到
+	       ink-500（4.14:1，满足非文本 3:1），文字 ink-700 8.26:1。
+	       同高 44dp，与「是」视觉重量相当（避免"否定比肯定难按"的暗黑模式）。 */
 	.btn-yes {
-		padding: 8rpx 24rpx;
-		background-color: var(--c-amber-500, #C4913C);
+		justify-content: center;
+		align-items: center;
+		min-width: 107.7rpx;
+		height: 86rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		background-color: var(--c-rust-500, #B05A3A);
 		border-radius: 999rpx;
 		margin-right: 12rpx;
 	}
 
 	.btn-yes-text {
-		font-size: 24rpx;
+		font-size: 26rpx;
+		font-weight: 600;
 		color: var(--c-white, #FFFFFF);
 	}
 
 	.btn-no {
-		padding: 8rpx 24rpx;
+		justify-content: center;
+		align-items: center;
+		min-width: 107.7rpx;
+		height: 86rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
 		border-radius: 999rpx;
 		border-width: 1rpx;
 		border-style: solid;
-		border-color: var(--c-paper-500, #E9DFCB);
+		border-color: var(--c-ink-500, #8A7A6A);
 	}
 
 	.btn-no-text {
-		font-size: 24rpx;
+		font-size: 26rpx;
 		color: var(--c-ink-700, #5A4C40);
 	}
 
+	/* 依据原文（task-21 第 1 条）：从"一行 rawText"升级为可读的引用块。
+	   原文是**用户自己写过的话**（`profile_annotation_pool.raw_text`），是"AI 凭什么
+	   这么猜"的唯一凭据 —— 用引用块的形态（左边竖条 + 略浅底）告诉用户"这是原始材料，
+	   不是 AI 又生成的一段话"。文字提到 ink-700 = 8.26:1（原 ink-500 4.14 偏弱，
+	   而这里恰恰是最需要被读清的内容）。 */
 	.annot-raw {
 		width: 100%;
+		margin-top: 12rpx;
+		padding: 16rpx 20rpx;
+		background-color: var(--c-paper-100, #F8F7F4);
+		border-radius: 12rpx;
+		border-left-width: 5.8rpx;
+		border-left-style: solid;
+		border-left-color: var(--c-amber-500, #C4913C);
+	}
+
+	.annot-raw-text {
+		font-size: 24rpx;
+		color: var(--c-ink-700, #5A4C40);
+		line-height: 36rpx;
+	}
+
+	/* 依据的时间戳（辅助信息，比原文轻一档但仍需可读：3.86:1） */
+	.annot-raw-time {
 		font-size: 22rpx;
 		color: var(--c-ink-500, #8A7A6A);
-		line-height: 32rpx;
-		margin-top: 12rpx;
-		padding-top: 12rpx;
-		border-top-width: 1rpx;
-		border-top-style: solid;
-		border-top-color: var(--c-paper-300, #EFEAE2);
+		margin-top: 8rpx;
+	}
+
+	/* ── 分组小标题（task-21 第 2 条）──
+	   15 个维度平铺读不懂 ⇒ 按 category 分出「身份与背景 / 关系核心 / 行为习惯…」。
+	   小标题用 rust-700 on paper-100 = 5.50:1（AA ✓），比正文 ink-900 轻、比辅助
+	   ink-500 重 —— 正好卡在"这是分组不是内容"的层级上。左侧 5.8rpx 竖条做视觉锚
+	   （复用 .n2_601 同款做法：amber-500 竖条），让分组边界一眼可见。
+	   ⚠️ 刻意做得**收敛**（24rpx / 600 字重 / 8+12rpx 上下留白，字号小于维度行内容
+	   28rpx）：真库实测 76% 的分组只有 1 行（维度天然分散在不同 category，见
+	   GROUP_MIN_DIMS 的对照表），若标题比内容显眼，用户会读到一堆"标题 + 一行"的
+	   噪音。**标题必须弱于内容**，这样单行组读起来就是"一个小节名 + 一条事实"。 */
+	.dim-group {
+		margin-bottom: 20rpx;
+	}
+
+	.dim-group-title {
+		font-size: 24rpx;
+		font-weight: 600;
+		color: var(--c-rust-700, #8a5a20);
+		padding-left: 12rpx;
+		padding-top: 8rpx;
+		padding-bottom: 10rpx;
+		border-left-width: 5.8rpx;
+		border-left-style: solid;
+		border-left-color: var(--c-amber-500, #C4913C);
+	}
+
+	/* 维度行外层（task-21 B 方案：行 + 可展开的依据块要作为一个整体，故多包一层） */
+	.dim-wrap {
+		margin-bottom: 12rpx;
 	}
 
 	.dim-row {
@@ -371,7 +691,6 @@
 		background-color: var(--c-white, #FFFFFF);
 		border-radius: 16rpx;
 		padding: 22rpx 24rpx;
-		margin-bottom: 12rpx;
 	}
 
 	.dim-label {
@@ -386,6 +705,11 @@
 		color: var(--c-ink-900, #3A2E25);
 	}
 
+	/* 依据多条之间的分隔（第一条无上边距，靠 .annot-raw 自身的 padding 撑开） */
+	.ev-item {
+		margin-top: 12rpx;
+	}
+
 	.notice {
 		margin: 0 32rpx 24rpx 32rpx;
 		padding: 20rpx;
@@ -394,8 +718,10 @@
 	}
 
 	.notice-text {
-		font-size: 22rpx;
-		color: var(--c-ink-300, #B3A696);
+		font-size: 24rpx;
+		/* task-21 第 8 条：ink-300 on paper-soft = 2.08:1（最差的一处）⇒ ink-700 7.21:1。
+		   这是"加载失败"提示，用户**必须**看见（看不见就会以为页面本身没内容）。 */
+		color: var(--c-ink-700, #5A4C40);
 	}
 
 	.empty {
@@ -405,14 +731,17 @@
 
 	.empty-text {
 		font-size: 24rpx;
-		color: var(--c-ink-300, #B3A696);
+		/* 空态文案是用户唯一能看到的引导 ⇒ 不能是 2.22:1 的浅灰 */
+		color: var(--c-ink-500, #8A7A6A);
 		line-height: 36rpx;
 	}
 
 	.disclaimer {
 		margin: 8rpx 32rpx 48rpx 32rpx;
-		font-size: 20rpx;
-		color: var(--c-ink-300, #B3A696);
-		line-height: 30rpx;
+		/* task-21 第 8 条：原 20rpx < 22rpx 下限 ⇒ 提到 22rpx；ink-300 2.22:1 ⇒ ink-500 3.86:1。
+		   底部这条是"顶部主声明的精简重复"，故允许比顶部（ink-700 7.54:1）轻一档。 */
+		font-size: 22rpx;
+		color: var(--c-ink-500, #8A7A6A);
+		line-height: 32rpx;
 	}
 </style>
