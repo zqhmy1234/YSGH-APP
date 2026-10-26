@@ -208,3 +208,9 @@ deploy/.tunnel-mode
 #       git check-ignore -v deploy/download/apk/__UNI__*.apk          → 应输出命中（= 版本原件仍被忽略）
 !deploy/download/apk/
 !deploy/download/apk/yishu-beta-latest.apk
+
+# --- 一次性验证/生成产物（2026-10-26 归档后不再入库）---
+# `_verify_*`：端侧验收截图与 crash dump；`design_data_for_agents`：已判定 elements=0 的无效设计数据。
+# 原件已归档到工作区外归档目录/2026-10/repo-artifacts/，需要回看从归档取，不再随仓库增长。
+_verify_*/
+design_data_for_agents/
