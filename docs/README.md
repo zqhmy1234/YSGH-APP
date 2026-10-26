@@ -60,6 +60,21 @@
 | [perf-baseline.md](perf-baseline.md) | 📖 基线 | 性能基线 |
 | [拿key后推进计划.md](拿key后推进计划.md) | 🕓 部分完成 | P0-1 RAG 真实链路已落地；P0-2 图片塔等项见远期待办 |
 
+## 归档（2026-Q3）
+
+> 2026-10-26：根目录文档收敛，7 份历史/一次性文档移入 [archive/2026-Q3/](archive/2026-Q3/)。
+> 根目录只保留 5 个 harness 文件（`AGENTS.md` / `README.md` / `STATE.md` / `progress.md` / `session-handoff.md`）。
+
+| 文档 | 原用途 |
+|---|---|
+| [_diff_ledger.md](archive/2026-Q3/_diff_ledger.md) | 还原差异台账（2026-08-31） |
+| [_resource_endpoint_matrix.md](archive/2026-Q3/_resource_endpoint_matrix.md) | 资源↔端点核实矩阵（2026-08-31） |
+| [GAP_ANALYSIS_20260903_AppStore上架差距评估.md](archive/2026-Q3/GAP_ANALYSIS_20260903_AppStore上架差距评估.md) | 上架差距评估（2026-09-03） |
+| [波D_后端结构重构_交付报告_20260910.md](archive/2026-Q3/波D_后端结构重构_交付报告_20260910.md) | 波 D 交付报告（2026-09-10） |
+| [分支与文档说明.md](archive/2026-Q3/分支与文档说明.md) | 分支/文档地图（2026-09-21） |
+| [小鲸无忧价值方案_20260913.md](archive/2026-Q3/小鲸无忧价值方案_20260913.md) | 商务材料（2026-09-13） |
+| [小鲸无忧合作分析_20260912.md](archive/2026-Q3/小鲸无忧合作分析_20260912.md) | 商务材料（2026-09-12） |
+
 ## 清理记录
 
 ### 2026-09-23 二轮清理（用户授权「CEF 全删」，删 91 份，`docs/` 512→428 文件 / 2.3→1.87MB）

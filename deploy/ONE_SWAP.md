@@ -168,4 +168,4 @@ powershell -ExecutionPolicy Bypass -File D:\GuangH-App\deploy\scripts\preflight_
 | `ALLOW_DEVICE_LOGIN=true` | 置回 `false`（设备码通道关闭，回归微信/手机号登录） |
 | `http://IP:8010` 明文口径 | 见 §5 |
 | `Settings.Secure.ANDROID_ID` 作为设备标识 | 属个人信息，隐私政策「收集的设备信息」条款须声明 |
-| `CODE_...`/压测门禁等 6 项 | 见 `GAP_ANALYSIS_20260903_AppStore上架差距评估.md` |
+| `CODE_...`/压测门禁等 6 项 | 见 `docs/archive/2026-Q3/GAP_ANALYSIS_20260903_AppStore上架差距评估.md` |

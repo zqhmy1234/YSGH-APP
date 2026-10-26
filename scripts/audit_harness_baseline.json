@@ -59,7 +59,7 @@
       },
       "parseErrorString": {
         "place": "client/utils/api.uts:537",
-        "reason": "错误信封解析导出，全仓零代码引用（仅 docs/_resource_endpoint_matrix.md:222 与 search_api.uts:15 注释提及）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+        "reason": "错误信封解析导出，全仓零代码引用（仅 docs/archive/2026-Q3/_resource_endpoint_matrix.md:222 与 search_api.uts:15 注释提及）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
         "target": "接线使用或删除该导出，随后删除本条"
       },
       "stopPeriodicSync": {
