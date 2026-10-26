@@ -1,0 +1,149 @@
+<template>
+	<!-- ═══ 「这条记忆里的声音」区块（R9 批次4 · Q3 拍板）──── 2026-10-26 自 detail.uvue 抽出 ═══
+	     语义：当前内容所属**第一个事件**内的其他 voice 成员（排除自身）。
+	     生日歌案例：photo 详情页没有语音大卡，但 ST-DBSCAN 把跑步语音聚进了同一事件
+	     ⇒ 在这里回放，否则"这张照片那天还有段录音"这个事实用户永远看不到。
+
+	     为什么抽出：详情页 853 行 > 棘轮阈值 800（audit_harness 轴 5）。本区块是
+	     自含的（只依赖传入的成员数组 + 一个播放回调），抽走后详情页模板只留 3 行挂载点。
+
+	     ⚠️ 播放态由宿主**预计算后写入成员对象**（`active`/`playing`/`progress`，
+	        相等守卫见宿主的 `applyEventVoiceState`）—— 本组件零函数调用、零全局 ref，
+	        与主语音卡同一条收敛原则（RC-F）。 -->
+	<view v-if="voices.length > 0" class="ev-root">
+		<text class="ev-title">这条记忆里的声音</text>
+		<view v-for="(v, vi) in voices" :key="vi" class="ev-card" @tap="onPlay(v)">
+			<view class="ev-btn" :class="{ 'ev-btn-disabled': v.status != 'done' }">
+				<view v-if="v.active && v.playing" class="ev-btn-pause">
+					<view class="ev-btn-pause-bar"></view>
+					<view class="ev-btn-pause-bar"></view>
+				</view>
+				<view v-else class="ev-btn-play"></view>
+			</view>
+			<view class="ev-col">
+				<!-- 禁播/处理中显式说明（Q2 拍板：绝不静默） -->
+				<text v-if="v.status != 'done'" class="ev-note">{{ v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放' }}</text>
+				<view class="ev-wave">
+					<!-- idle/played 色不传：VoiceWave 的 props 默认值就是 F5a 拍板的
+					     未播/已播色（见该组件 defineProps），此处重复写等于抄一遍常量 -->
+					<VoiceWave :heights="v.wave" :waveform="waveformOf(v.contentId)" :active="v.active" :progress="v.progress" />
+				</view>
+				<text class="ev-name">{{ v.title }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { WaveformCache } from '@/composables/useWaveform'
+	// 视图模型从 `.uts` 引入（**不从 `.uvue` 导出**：`.uvue` 的 script setup 不是
+	// 稳定的跨文件导出形态，且 .uvue 内类字段默认初始化会被 UTS 编译拒绝）。
+	// 同仓先例：SplitItem / ContentDetail 都在 utils/*.uts。
+	import { EventVoiceItem } from '@/composables/useVoiceProjection'
+
+	const props = defineProps({
+		/** 成员列表（空数组 ⇒ 整块不渲染） */
+		voices: {
+			type: Array,
+			default: (): Array<EventVoiceItem> => []
+		}
+	})
+
+	const emit = defineEmits(['play'])
+
+	/** 波形缓存（BB3 真实波形；未落表时 VoiceWave 内部回退伪波形）。
+	 *  放在组件内而非宿主：波形只为这一块的卡服务，宿主不必知道它的存在。 */
+	const wf = new WaveformCache()
+
+	function waveformOf(cid: string): Array<number> {
+		return wf.waveformOf(cid)
+	}
+
+	function onPlay(v: EventVoiceItem): void {
+		emit('play', v)
+	}
+</script>
+
+<style>
+	/* 节标：mt23.1 + 前卡 mb=46.2 大节距（D4 流式口径，与 .n4_433 同族） */
+	.ev-title {
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		margin-bottom: var(--d-lattice-p11, 21.2rpx);
+		margin-left: var(--d-card_margin_x, 38.5rpx);
+		width: var(--d-raw-r420, 420rpx);
+		height: var(--d-lattice-p19, 36.5rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 卡：画布实测卡间距 193-170=23.1 */
+	.ev-card {
+		margin-left: var(--d-card_margin_x, 38.5rpx);
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		width: var(--d-card_width, 673.1rpx);
+		height: var(--d-raw-r170, 170rpx);
+		flex-direction: row;
+		align-items: center;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		padding-left: 27rpx;
+		padding-right: 27rpx;
+		/* 悬浮感（与主语音卡同族淡阴影） */
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-raw-r4, 4rpx) var(--d-raw-r15, 15rpx) var(--a-ink-06, rgba(58, 46, 37, 0.06));
+	}
+	.ev-btn {
+		width: var(--d-lattice-p40, 76.9rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-amber-500, #C4913C);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		margin-right: var(--d-card_radius_small, 23.1rpx);
+	}
+	/* 同 VoiceMemoCard 的禁播色：帧真值作令牌回退（--c-surface-neutral 与本处差 Δ4，属令牌映射误配） */
+	.ev-btn-disabled {
+		background-color: var(--c-voice-btn-disabled, #D8CFC2);
+	}
+	.ev-btn-play {
+		width: var(--d-lattice-p0, 0rpx);
+		height: var(--d-lattice-p0, 0rpx);
+		border-left: var(--d-lattice-p11, 21.2rpx) solid var(--c-white, #FFFFFF);
+		border-top: 14.4rpx solid transparent;
+		border-bottom: 14.4rpx solid transparent;
+	}
+	.ev-btn-pause {
+		flex-direction: row;
+	}
+	.ev-btn-pause-bar {
+		width: var(--d-lattice-p4, 7.7rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		border-radius: var(--d-lattice-p2, 3.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		margin-left: var(--d-raw-r5, 5rpx);
+		margin-right: var(--d-raw-r5, 5rpx);
+	}
+	.ev-col {
+		flex: 1;
+		flex-direction: column;
+	}
+	.ev-note {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-ink-300, #B3A696);
+		margin-bottom: var(--d-lattice-p4, 7.7rpx);
+	}
+	.ev-wave {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		height: var(--d-raw-r44, 44rpx);
+	}
+	.ev-name {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: 25.4rpx;
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p3, 5.8rpx);
+	}
+</style>

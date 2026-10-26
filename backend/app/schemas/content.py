@@ -101,6 +101,16 @@ class ContentOut(BaseModel):
     size_bytes: int | None = None      # 原件体积
     tags_json: list | None = None      # 预留 AI 打标
     ai_description: str | None = None  # 预留照片 AI 描述
+    # ── 照片正文分层（2026-10-26 · 详情页「照片文字全被打出来」修复）────────────
+    # `text` 是 caption 与 OCR 的**拼接串**（见 services/photo_text.py 模块文档）：
+    # 拼在一起是为了检索（BGE-M3 编码整串），但展示层无法区分 ⇒ 客户端把
+    # 779 字符的截图界面文字当正文打印。故**并列新增**两个可选字段：
+    #   caption  照片的一句话描述（人话；可能是 None=描述生成失败）
+    #   ocr_text 照片 OCR 原文（机器产物；None=无 OCR/非照片）
+    # `text` **形状不变**（同 `dimension_evidence` 先例：增并列不改原字段），
+    # 历史行无需回填、搜索与向量不受影响、老客户端读 `text` 行为与今天完全一致。
+    caption: str | None = None
+    ocr_text: str | None = None
 
 
 class ProfileSensitiveCreate(BaseModel):

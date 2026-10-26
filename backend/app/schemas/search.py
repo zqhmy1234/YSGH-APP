@@ -40,6 +40,14 @@ class SearchHit(BaseModel):
     score: float
     # 命中内容缩略图票据 URL（Valet Key，仅 photo 类型有值；2026-09-04 峰宝拍板搜索结果带图）
     thumbnail_url: str | None = None
+    # ── 照片命中文本分层（2026-10-26 · 与 ContentOut 同批、同契约口径）──────────
+    # 命中照片的 `text` 是 `caption\nocr_text` 拼接串，摘要直接渲染它 = 把截图里的
+    # 界面词（「10:08 / 4G / 全部 / 药名 …」）糊满卡片（真机实测 832 字符 30+ 行）。
+    # 故并列下发分层结果（`text` 形状不变，老客户端行为一致）：
+    #   caption  一句话人话摘要；None=描述生成失败（此时摘要位应留空而不是退化成 OCR）
+    #   ocr_text OCR 原文，供「展开看文字」这类显式入口使用
+    caption: str | None = None
+    ocr_text: str | None = None
     # 溯源（大厂标配 + 记忆类产品信任底线，B2 关键设计约束 #3）
     trace: dict = Field(..., description="命中字段/事件/标签解释，RET-016")
 

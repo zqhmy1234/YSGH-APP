@@ -26,14 +26,23 @@
 	     两条都满足后：删本常量与 mock 层（seedMockMessages/buildMockReply/REPLY_KIND_ROTATION）。 -->
 	<view class="ai-root tk-root">
 		<view class="ai-header">
-			<text class="n2_336">AI</text>
-			<text class="n2_337">问问你的回忆</text>
-			<!-- 清空上下文入口（2026-10-17）：会话越聊越长、AI 背负的历史越重，给用户一个
-			     "忘掉前文、重新开聊"的出口。复用既有 chip 样式（零新增视觉元素）；仅真链路且
-			     有活动会话时显示（mock 演示无真会话可清，显示反而是假承诺）。 -->
-			<view v-if="!USE_MOCK_CHAT && conversationId != ''" class="chip pressable" @tap="onClearContext">
-				<text class="chip-text">开启新对话</text>
+			<view class="ai-title-row">
+				<text class="n2_336">AI</text>
+				<!-- 「新会话」真入口（2026-10-26 · AI 页重设计 ②）。
+				     原来只有一枚 `.chip`「开启新对话」贴在副标题右侧 —— 与正文同色同层、
+				     权重为零，用户原话「只有一个文字条」；而且它其实**只清上下文**，
+				     视觉上却承诺了"开一个新会话"。
+				     现改为标题行右侧的**独立描边按钮**（锈红字 + 白底 + 锈红细描边）：
+				       · 热区 88.5rpx × ≥88.5rpx（≈44×44dp）—— 满足无障碍最小热区；
+				       · 文字 24rpx、色 --c-rust-500 对白底 = **4.81:1**（AA 正文达标）；
+				       · 只在"有活动会话"时出现（无会话时按下也无事可做 ⇒ 不给假按钮）。
+				     行为仍走 onClearContext（删会话键 + 清内存态），但**多一步确认**：
+				     原文案承诺的是"开新会话"，而空白会话并不会让旧消息消失 —— 必须说清楚。 -->
+				<view v-if="!USE_MOCK_CHAT && conversationId != ''" class="ai-newchat pressable" @tap="onNewChat">
+					<text class="ai-newchat-text">新会话</text>
+				</view>
 			</view>
+			<text class="n2_337">问问你的回忆</text>
 		</view>
 		<!-- 演示数据标注（2026-09-23）：内测期智能体尚未接入后端，必须显式告知，
 		     否则用户会把样张对话当成已上线的能力（台账 §7.1） -->
@@ -47,10 +56,22 @@
 		<scroll-view class="n4_88" direction="vertical" :scroll-into-view="scrollInto">
 			<!-- 2026-09-25（Agent 接线补完）：**真链空态**。`USE_MOCK_CHAT` 翻转为 false 后，
 			     全新用户（无历史）会看到一片空白 —— 那是我方翻开关引入的体验回归，故补一个
-			     **诚实空态**：无假数据、不预填示例对话；有历史时不显示（由 onMounted 回填填充）。 -->
+			     **诚实空态**：无假数据、不预填示例对话；有历史时不显示（由 onMounted 回填填充）。
+			     2026-10-26（AI 页重设计）：空态从"两句灰字"升级为**可点的开场**——
+			     原来用户面对一片空白只能自己想问什么，而"问问你的回忆"这个能力本身不难，
+			     难的是**不知道能问什么**。三个代表性问题（时间回溯 / 主题回顾 / 找东西）
+			     直接当输入发送，点一下就有真实回答（走同一条 sendNow，零新链路）。 -->
 			<view v-if="messages.length == 0 && !USE_MOCK_CHAT" class="ai-empty">
+				<view class="ai-empty-mark">
+					<image class="ai-empty-mark-img" src="/static/icons/i4_2.svg" />
+				</view>
 				<text class="ai-empty-title">和你的回忆聊聊</text>
-				<text class="ai-empty-sub">比如「帮我回顾这个月」「去年今日我在做什么」</text>
+				<text class="ai-empty-sub">你的记录、照片和语音，都可以直接问</text>
+				<view class="ai-empty-prompts">
+					<view v-for="(q, qi) in EMPTY_PROMPTS" :key="'ep-' + qi" class="ai-prompt pressable" @tap="onPromptTap(q)">
+						<text class="ai-prompt-text">{{ q }}</text>
+					</view>
+				</view>
 			</view>
 			<view v-for="m in messages" :key="m.id" :id="'msg-' + m.id">
 				<!-- AI 消息组 -->
@@ -136,88 +157,56 @@
 				</view>
 			</view>
 		</scroll-view>
-		<view class="n2_355">
-			<input :adjust-position="true" class="n2_357" v-model="draft" placeholder="问点什么…" placeholder-style="color:#B3A696;font-size:26.9rpx;" :maxlength="200" confirm-type="send" @confirm="onSend" />
-			<view class="n2_358" @tap="onSend">
-				<image class="n2_359" src="/static/icons/i2_359.svg" />
-			</view>
-			<!-- 附件入口（2026-09-01 峰宝拍板）：发送钮左移、入口放其右侧（最右端，画布终审同序） -->
-			<view class="attach-btn pressable" @tap="openAttach">
-				<image class="attach-btn-icon" src="/static/icons/icon-paperclip.svg" />
-			</view>
-		</view>
-
-		<!-- 附件选择面板（画布 ai_typing 4:361 半屏形态）：scrim 点空收起 -->
-		<view v-if="attachShown()" class="attach-scrim" @tap="closeAttach" />
-		<view v-if="attachShown()" class="attach-panel">
-			<view class="attach-handle" />
-			<text class="attach-title">添加附件</text>
-			<!-- 2026-10-25：panel 补 max-height（原先无上限会顶出屏幕）；光有上限会裁掉已选项，
-			     故内容包进 scroll-view（超高可滚）。direction 不用已废弃的 scroll-y。 -->
-			<scroll-view class="attach-body" direction="vertical">
-			<!-- 已选图预览：原为 6 张静态 mock 图（无 @tap，审计 A2/A3），已删；现渲染用户真实选图。 -->
-			<view v-if="pickedImages.length > 0" class="attach-grid">
-				<view class="grid-row">
-					<image v-for="(pi, idx) in pickedImages" :key="idx" class="grid-thumb" :class="idx === 0 ? 'grid-thumb-first' : ''" :src="pi.previewPath" mode="aspectFill" />
-				</view>
-			</view>
-			<!-- D-10：已选文件（无缩略图，只列名字 + 可单删；塞进缩略图格会渲染空图框） -->
-			<view v-if="pickedFiles.length > 0" class="attach-files">
-				<view v-for="(f, fidx) in pickedFiles" :key="fidx" class="attach-file-row">
-					<text class="attach-file-name">{{ f.name }}</text>
-					<text class="attach-file-remove" @tap="removeFile(fidx)">×</text>
-				</view>
-			</view>
-			<view class="attach-entries">
-				<!-- 图片（2026-10-16）：**真通路**——选图 → 既有上传链落库拿 contentId → 随消息上行 -->
-				<view class="attach-entry attach-entry-first pressable" @tap="onPickImage">
-					<image class="attach-entry-icon" src="/static/icons/record-gallery.svg" />
-					<text class="attach-entry-text">图片</text>
-				</view>
-				<!-- 文件（D-10 · 2026-10-25 接真）：`uni.chooseFile` 确实存在（Android 4.51+；
-				     Android 只有 `tempFiles`、`tempFilePaths` 不支持；返回 content://）。
-				     ⚠️ 本入口**只把文件名告诉 AI，不读文件内容**——上传链是照片专用
-				     （`register_photo_content`），传非图片要新开入库路径，属另一件事。
-				     页面文案已如实说明（见 onPickFile）。 -->
-				<view class="attach-entry pressable" @tap="onPickFile">
-					<image class="attach-entry-icon" src="/static/icons/icon-file.svg" />
-					<text class="attach-entry-text">文件</text>
-				</view>
-				<!-- 「粘贴链接」仍隐藏：后端 `ChatAttachment.kind` 只有 image/file，**没有 link**，
-				     且 `chat_context.attachment_hint` 无对应分支 ⇒ 接了也无处承载（不是"没做"，是"契约没有"）。
-				     恢复条件：后端 kind 增加 link + attachment_hint 有链接正文提取。
-				     2026-10-25 更正：原注释说"客户端无文件选择器"是**搜自己仓库得出的错误结论**，
-				     见总账 D-10。 -->
-			</view>
-			</scroll-view>
+		<!-- 输入区（2026-10-26 · AI 页重设计 ②③④）：整块移交 `AiComposer.uvue`。
+		     为什么搬：本文件 793 行 / 阈值 800 / 无豁免，而这三件事全在输入区
+		     （自适高输入框 / 已选附件可见 / 附件面板重排），原地改必然先撞棘轮。
+		     同 `AiBody.uvue`（10-25）/ `SearchHitOps.uvue`（10-16）先例：先搬再改。
+		     **边界**：待发附件的状态机（图片先落库拿 contentId 才入列 / 文件只带名字 /
+		     两条选择链都不关面板）已抽到 `composables/useAiAttach.uts`，本文件只做
+		     「扁平投影 → props」与「发送时 takeAll()」两件事。
+		     组件抛事件、宿主执行：pick-image / pick-file / remove-image / remove-file / send。 -->
+		<view class="ai-composer-wrap">
+			<AiComposer :busy="chatStreamActive" :image-paths="pickedImagePaths" :image-sizes="pickedImageSizes"
+				:file-names="pickedFileNames" :file-sizes="pickedFileSizes" :seed-text="draft" :seed-seq="draftSeq"
+				@send="onComposerSend" @pick-image="onPickImage" @pick-file="onPickFile"
+				@remove-image="onRemoveImage" @remove-file="removeFile" />
 		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
-	import { onMounted, watch } from 'vue'
+	import { onMounted, watch, computed } from 'vue'
 	import { aiAttachOpen } from '@/utils/shell_state'
 	import { sendChatMessage, fetchChatHistory, ChatSendResult, ChatHistoryItem, ChatCard, ChatAttachment, chatStreamText, chatStreamTool, chatStreamActive, CHAT_CONV_STORAGE_KEY } from '@/utils/chat_api'
 	// 工具标签映射（2026-10-17）：抽离到 utils/chat_tool_labels.uts（structure 棘轮拆分包体积分，
 	// 同 TabSearch 先例）；12 条映射单一真源在 utils，本文件只消费。
 	import { toolLabel } from '@/utils/chat_tool_labels'
-	// 图片附件走**既有上传链**（2026-10-16 附件契约最小可用）：只**调用**，不修改
-	// （upload_pipeline.uts 不在本任务边界内，禁改）。
-	// 为什么不用 uploadBatch / uploadWithRetry：那两个入口吃 `PhotoItem`（MediaStore id、拍摄时间、
-	// 宽高、SIZE 列），而 `uni.chooseImage` 给的是**沙箱临时文件**（没有 MediaStore 元数据，
-	// `uploader_photo.uploadOne` 也会因 size<=0 直接 reject）；`runUploadPipeline` + `UploadSpec`
-	// 只要 path/name/size，是这条链对"非相册来源文件"的既有入口（voice 链同款用法），
-	// init→status→chunk→complete 三段状态机一字不改。
-	import { runUploadPipeline, UploadSpec, UploadOutcome } from '@/utils/upload_pipeline'
-	import { uploadImageAttachment } from '@/utils/chat_image_attach'
-	import { FilePickResult, pickChatFile } from '@/utils/chat_file_pick'
+	// 待发附件（选图/选文件/删除/取走）= **图片上传链 + 文件选择链 + 两个待发列表**，
+	// 2026-10-26 整块抽到 `composables/useAiAttach.uts`（本文件贴 800 行阈值，先搬再改；
+	// 先例 usePhotoAttach / useSearchState / usePendingVoiceRetry）。
+	// 行为与抽取前逐字一致：图片先落库拿 contentId 才入列、文件只带名字、两条链都不关面板。
+	import { AiAttachState } from '@/composables/useAiAttach'
+	// 输入区（2026-10-26 · AI 页重设计 ②③④）：自适高输入框 + 已选附件条 + 附件面板，
+	// 整块抽到 AiComposer.uvue（本文件 793 行 / 阈值 800 / 无豁免，见模板处注释）
+	import AiComposer from '@/components/TabAi/AiComposer.uvue'
 	// 气泡正文（形态①②）子组件（2026-10-25 · structure 棘轮 800 行拆包；
 	// 先例 TabSearch.uvue:155 的 SearchHitOps 同款 default import + 模板内直接用）
 	import AiBody from '@/components/TabAi/AiBody.uvue'
-	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
-	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
+	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、本地闭环；
+	// =false 时发送走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
 
-	let draft = ref('') // AI 输入草稿
+	// AI 输入草稿的**外部投放通道**（2026-10-26）：输入框本体已迁入 AiComposer.uvue，
+	// 本文件不再持有"用户正在打的字"，只持有**要投给输入框的文本**（detail 页 askAI 的上下文预填、
+	// 切回本 tab 时重读三键）。`draftSeq` 每次投放 ++ ⇒ 组件侧 watch(seedSeq) 才写入
+	// （用 seq 而不是 watch(seedText)：同一段文本重复预填也必须生效）。
+	let draft = ref('')
+	let draftSeq = ref(0)
+	/** 投放一段文本到输入框（幂等：seq 递增才生效） */
+	function seedDraft(text: string): void {
+		draft.value = text
+		draftSeq.value = draftSeq.value + 1
+	}
+
 	// attachOpen 上收 shell_state.aiAttachOpen（返回键优先级协同 shell 浮层；B10 P2）
 
 	// ── 消息数据模型（contract-first：字段名与未来 B2 chat 契约对齐）──
@@ -266,21 +255,20 @@
 		}
 	}
 
-	// 已选附件（画布预览用）：附件本体 + 本地临时路径（预览只能读本地路径，云侧 URL 未生成）。
-	class PickedImage {
-		attachment: ChatAttachment
-		previewPath: string
-		constructor(attachment: ChatAttachment, previewPath: string) {
-			this.attachment = attachment
-			this.previewPath = previewPath
-		}
-	}
-	// 待发图片附件（2026-10-16 附件契约最小可用）：选图 → 上传落库成功才入列；
-	// 发送时整体转入该条用户消息并清空（见 sendNow）。
-	let pickedImages = ref<Array<PickedImage>>([])
-	// D-10（2026-10-25）：文件附件（**无本地预览图**，故与 pickedImages 分开存 ——
-	// 塞进 pickedImages 会让缩略图格渲染空图）
-	let pickedFiles = ref<Array<ChatAttachment>>([])
+	// ── 待发附件（2026-10-26 · AI 页重设计 ③）：状态与两条选择链已抽到 useAiAttach.uts ──
+	// 本文件只保留两件事：① 扁平投影（喂给 AiComposer 的 props）
+	// ② 发送时 `attach.takeAll()` 取走（见 sendNow / onRetry）。
+	const attach = new AiAttachState()
+
+	// 附件 → 输入区组件的**扁平投影**。
+	// 为什么不在组件边界传 `Array<ChatAttachment>`（对象数组）：本仓铁律
+	// 「对象 prop 在 UTS 组件边界有类型陷阱，零先例不冒险」（AiBody / DimEvidenceList 同款判断）。
+	// 故拆成 4 个基本类型数组，**顺序与下标一一对应**（同进同出，同一实例产出）。
+	// 作用：AiComposer 用它们在**输入框上方常驻**一条 chip 条 —— 面板关掉也能看见已添加了什么。
+	const pickedImagePaths = computed((): Array<string> => attach.imagePaths())
+	const pickedImageSizes = computed((): Array<number> => attach.imageSizes())
+	const pickedFileNames = computed((): Array<string> => attach.fileNames())
+	const pickedFileSizes = computed((): Array<number> => attach.fileSizes())
 	let messages = ref<Array<AiMsg>>([])
 	let nextId = ref(1)
 	let scrollInto = ref('') // scroll-view 锚点滚动（新消息自动落底）
@@ -292,7 +280,7 @@
 	// onConfirmAction 全部无条件走 mock）→ 后果：① 无法通过配置关闭 ② 用户无从得知是演示
 	// 数据，会把样张当成已上线的智能体（见 docs/决策台账.md §7.1）。
 	//
-	// **2026-09-25（功能修复波 · Agent 接线）**：客户端真端点已接（onSend → chat_api
+	// **2026-09-25（功能修复波 · Agent 接线）**：客户端真端点已接（发送 → chat_api
 	// sendChatMessage → POST /api/v1/chat/messages → 后端反代 agent 服务），故默认值翻转为
 	// **false**（＝生产口径）。`true` 仅供演示/录屏（此时页面顶部显示「内测演示数据」标注）。
 	// **门禁锁定**：`audit_harness client` 断言本常量为 false —— 防止"接线回退成占位"。
@@ -340,51 +328,47 @@
 		return new AiMsg(nextId.value, 'ai', kind, text, bullets, chips, cards, cardList, [])
 	}
 
-	// ── 发送闭环（mock）：用户消息 → typing → 1.8s 后 AI 回复（形态轮换）──
-	function onSend(): void {
-		const t = draft.value.trim()
-		if (t == '') {
+	// ── 发送闭环（2026-10-26 起由输入区组件回调驱动）──
+	// 组件 `AiComposer` 在按下发送时**先清空自己的输入框再 emit('send', text)**，
+	// 故本处拿到的就是待发文本；本文件不再持有"用户正在打的字"，`draft` 降级为**投放通道**
+	// （detail 页 askAI 的上下文预填，见 seedDraft / prefillDraftFrom）。
+	// 🚨 2026-10-26（本轮自查抓到的回归）：**必须先判重入、再 takeAll()**。
+	// `attach.takeAll()` 是**破坏性**的（取走即清空待发列表）。若写成 `sendNow(t, attach.takeAll())`
+	// 就会在"上一轮还在生成"的早退路径上**先把附件吞掉**（用户看到附件消失、消息却没发出去），
+	// 而抽取前的老代码是先判 `chatStreamActive` 再清列表的 —— 顺序一换就是行为回归。
+	function busyBlock(): boolean {
+		if (!chatStreamActive.value) {
+			return false
+		}
+		// 上一轮还在生成：**不并发发第二条**。流式预览走模块级共享 ref（chatStreamText），
+		// 两轮流同时进行会互相串写，界面会出现"两段回复夹杂"这种最难解释的现象。
+		uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+		return true
+	}
+
+	function onComposerSend(t: string): void {
+		if (busyBlock()) {
 			return
 		}
-		// 图片（有预览）与文件（无预览）分两个列表存，发送时合并成一条 attachments 数组。
-		// 顺序：图片在前、文件在后（图片有缩略图、用户更可能先看）。
-		const all: Array<ChatAttachment> = attachmentsOf(pickedImages.value)
-		for (let i = 0; i < pickedFiles.value.length; i++) {
-			all.push(pickedFiles.value[i])
-		}
-		sendNow(t, all)
+		// `takeAll()` 取走并清空待发列表（图片在前、文件在后；附件随消息转移）。
+		sendNow(t, attach.takeAll())
 	}
 
-	// 待发附件 → 契约附件数组（PickedImage = 附件 + 本地预览路径；上行只带附件）
-	function attachmentsOf(picked: Array<PickedImage>): Array<ChatAttachment> {
-		const out: Array<ChatAttachment> = []
-		for (let i = 0; i < picked.length; i++) {
-			out.push(picked[i].attachment)
-		}
-		return out
-	}
-
-	// 真发送（onSend 首发 / onRetry 重发 共用）。
+	// 真发送（onComposerSend 首发 / onRetry 重发 共用）。
 	//  · atts 为空 ⇒ 行为与接入前**逐字相同**（请求体不带 attachments 键，见 chat_api.streamChatOnce）
 	//  · includeProfile 恒传 true：它当前**无 UI 消费者**（两枚隐私开关 2026-10-14 因"全仓零读零写"
 	//    整行移除，台账 §7.18），保留为契约能力（将来重开开关只改这一处，不动三层链路）。
 	//    ⚠️ 不要为它补开关：没有真消费者就是新的空承诺。后端必须真的按它行事
 	//    （false ⇒ 不携带画像上下文，见 services/chat_context.py `profile_context`）。
 	function sendNow(t: string, atts: Array<ChatAttachment>): void {
-		if (chatStreamActive.value) {
-			// 上一轮还在生成：**不并发发第二条**。流式预览走模块级共享 ref（chatStreamText），
-			// 两轮流同时进行会互相串写，界面会出现"两段回复夹杂"这种最难解释的现象。
-			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+		// 兜底重入判定（正常路径已在调用方 busyBlock() 拦过；重试 onRetry 也走这里）
+		if (busyBlock()) {
 			return
 		}
-		// 附件**随消息转移**：转入本条用户消息后立即清空待发列表——否则用户下一条普通消息会
-		// 莫名带上上一张图（假状态）。重试由 `m.attachments` 承担：附件已落库，content_id 复用
-		// 不会重复上传，也就不会重复计费/重复落库。
-		if (atts.length > 0) {
-			pickedImages.value = []
-			pickedFiles.value = []
-		}
-		draft.value = ''
+		// 附件已由调用方 `takeAll()` 取走并清空（见 onComposerSend）；重试路径带的是
+		// 消息自带的 `m.attachments` —— 附件已落库，content_id 复用不会重复上传/重复计费。
+		// ⚠️ 这里**不再清 draft**（2026-10-26）：输入框文本由 AiComposer 自己持有并在 emit 前清空；
+		// `draft` 现在只是"预填投放通道"，在这里清它等于把用户刚点开的上下文一并抹掉。
 		if (USE_MOCK_CHAT === false) {
 			// 真端点（AG6）：本地即时上屏用户消息 + typing 占位，等流式端点回终稿
 			// （后端 AG5 已实现：JWT→可信 user_id、反代 Agent、失败返回 502/504 而**不伪造回复**）
@@ -443,14 +427,39 @@
 		}, 1800)
 	}
 
-	// 清空上下文（2026-10-17）：只清"会话身份"（存储键 + 内存态）——下一条消息由后端新建会话，
-	// AI 不再携带旧历史。不动本地已上屏消息（那是用户可见的记录，清了反而像"丢数据"）。
-	// 删键用的就是 chat_api 导出的常量（单一来源，勿手写字符串）；删键后首条消息的路径
-	// 与 chat_api 的 CHAT_003 自愈（404 ⇒ 清同一键 + 新会话重发）完全同路，无回归。
-	function onClearContext(): void {
-		uni.removeStorageSync(CHAT_CONV_KEY)
-		conversationId.value = ''
-		uni.showToast({ title: '已开启新对话', icon: 'none', duration: 1500 })
+	// ── 「新会话」入口（2026-10-26 · AI 页重设计 ②）──
+	// ## 改了什么
+	// 原来是标题旁一枚 `.chip`「开启新对话」（与副标题同色同层，用户原话「只有一个文字条」），
+	// 且**没有确认**：手滑一下就把多轮上下文 silently 丢掉，而界面上什么也没变
+	// （本地消息不清）—— 用户无法判断"到底发生了什么"。
+	// 现在：标题行右侧独立描边按钮 + 二次确认，确认文案**如实说明**三件事：
+	//   ① 旧对话仍留在屏幕上（不是删除）；② 之后的提问不再带旧上下文；③ 不可撤销。
+	//
+	// ## 语义边界（不变）
+	// 仍只清"会话身份"（存储键 + 内存态）—— 下一条消息由后端新建会话。
+	// 不动本地已上屏消息（那是用户可见的记录，清了反而像"丢数据"）。
+	// 删键用 chat_api 导出的常量（单一来源）；删键后首条消息与 CHAT_003 自愈完全同路。
+	function onNewChat(): void {
+		if (chatStreamActive.value) {
+			// 正在流式生成时开会话：上一轮的终稿回来会写进**新**会话的消息列表里，
+			// 表现为"新会话突然多出一段答非所问的回复"。先让这一轮收尾。
+			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+			return
+		}
+		uni.showModal({
+			title: '开始新会话',
+			content: '之后的问题不再带上之前的对话内容。屏幕上已有的对话保留，不会被删除。',
+			confirmText: '开始',
+			cancelText: '取消',
+			success: (res) => {
+				if (!res.confirm) {
+					return
+				}
+				uni.removeStorageSync(CHAT_CONV_KEY)
+				conversationId.value = ''
+				uni.showToast({ title: '已开始新会话', icon: 'none', duration: 1500 })
+			}
+		})
 	}
 
 	// 重试发送（2026-10-07 加固）：撤掉失败卡 → 用原文 + **同一批附件**重发（复用 sendNow）
@@ -541,10 +550,28 @@
 		}
 	})
 
-	// chips 点击 = 快捷追问当作输入发送（体验闭环）
+	// chips 点击 = 快捷追问**直接当消息发送**（体验闭环）
+	// 2026-10-26：原来走 `draft.value = c; onSend()` —— 即"先塞进输入框再立刻发送"，
+	// 中间态没人看得见（输入框已迁到另一个组件）。改为直接调 sendNow，语义更直白；
+	// chips 本身就带着完整文本，用户不需要先编辑它（想改的人自己会去输入框打）。
 	function onChipTap(c: string): void {
-		draft.value = c
-		onSend()
+		if (busyBlock()) {
+			return
+		}
+		sendNow(c, attach.takeAll())
+	}
+
+	// 空态开场问题（2026-10-26 · AI 页重设计）。三条覆盖三种最常见的真实意图：
+	// 时间回溯（去年今日）/ 主题回顾（这个月）/ 具体找东西（语音里说过的）。
+	// ⚠️ 文案纪律：这些都是**能问得动**的问题（后端 tools 有对应能力），
+	// 不写"AI 懂你的一切"这类承诺；点一下就走同一条 sendNow，**零新链路**。
+	const EMPTY_PROMPTS: Array<string> = ['去年今日我在做什么？', '帮我回顾一下这个月', '我说过关于「桂花」的事吗？']
+
+	function onPromptTap(q: string): void {
+		if (busyBlock()) {
+			return
+		}
+		sendNow(q, attach.takeAll())
 	}
 
 	// 行动确认卡按钮（mock：B2 接线后改 POST 确认接口）
@@ -564,105 +591,23 @@
 		}
 	}
 
-	// 附件面板壳化协同（B10 P2）：开关经 shell_state 共享 ref（返回键优先级由 shell 消费）
-	function attachShown(): boolean {
-		return aiAttachOpen.value
-	}
-	function openAttach(): void {
-		aiAttachOpen.value = true
-	}
-	function closeAttach(): void {
-		aiAttachOpen.value = false
-	}
-	/** D-10：移除一个已选文件（选错了能单删，不必全清重选） */
-	function removeFile(idx: number): void {
-		const rest: Array<ChatAttachment> = []
-		for (let i = 0; i < pickedFiles.value.length; i++) {
-			if (i != idx) {
-				rest.push(pickedFiles.value[i])
-			}
-		}
-		pickedFiles.value = rest
-	}
-	// 附件入口行（B-04 · 2026-10-24 曾隐藏两入口；D-10 · 2026-10-25「文件」已接真、此处仍零调用）
-	// ⚠️ 本函数是**组件内局部 function，不是 `export`** ⇒ 不触发 `audit_harness.py` 轴 4
-	// （该轴只扫 `client/utils/**` 的 `export`）。保留作「粘贴链接」的占位实现：
-	// 那个入口等后端 `ChatAttachment.kind` 增加 link 后才会恢复。
-	function onAttachEntry(name: string): void {
-		closeAttach()
-		uni.showToast({ title: name + '：即将上线', icon: 'none' })
-	}
-
-	// ── 文件附件（D-10 · 2026-10-25）──
-	// 端到端：uni.chooseFile → 只取 name/size → ChatAttachment(kind='file') → 上行。
-	//
-	// ⚠️ **只传文件名，不传内容**：现有上传链是照片专用（`register_photo_content`），
-	//    传非图片文件要新开一条入库路径。故 AI 只会知道「用户附了一个文件：x.pdf」，
-	//    **读不到文件里的字**。这一点必须如实告知用户，不能让人以为 AI 读了文件。
-	// ⚠️ Android 只有 `tempFiles`（`tempFilePaths` 不支持）；`extension` 过滤 App 端不支持
-	//    ⇒ 类型与大小在 `chat_file_pick` 里自己拦。
-	function onPickFile(): void {
-		// ⚠️ 2026-10-25 **真 bug 修复**：本行原为 `closeAttach()` —— 面板在**选文件之前**
-		// 就被关掉，于是 `pickedFiles` 虽然后来被赋值，`.attach-files`（模板 :182-187）
-		// 所在的 `.attach-panel` 已经 `v-if=false` ⇒ 用户永远看不到文件名。
-		// 真机反馈原话：「点击文件弹出来了，文件名不会出现」。删除后：选完文件面板**仍开着**，
-		// 已选列表即时可见；用户自己点空白处（scrim）/返回键关闭。
-		pickChatFile().then((r: FilePickResult) => {
-			if (r.attachment == null) {
-				// 空 reason = 用户主动取消，不打扰
-				if (r.reason != '') {
-					uni.showToast({ title: r.reason, icon: 'none', duration: 2500 })
-				}
-				return
-			}
-			pickedFiles.value = pickedFiles.value.concat([r.attachment!])
-			uni.showToast({ title: '已添加文件名（内容不会读给 AI）', icon: 'none', duration: 2600 })
-		})
-	}
-
-	// ── 图片附件（2026-10-16「附件契约最小可用」· 台账 §7.14 / 审计 A1-A3·D7 销项）──
-	//
-	// 端到端：选图（uni.chooseImage）→ **既有上传链**（runUploadPipeline）落库拿 contentId
-	// → 入待发列表 → 发送时作为 attachments[].content_id 上行 → 后端读既有 caption 转成
-	// 文本提示给 AI（不新调视觉模型）。
+	// ── 附件操作（2026-10-26 · AI 页重设计 ③）：薄包装，实现全在 useAiAttach.uts ──
+	// 为什么包一层而不是模板直接绑 `attach.pickImage`：① 模板里写 `@pick-image="attach.pickImage"`
+	// 会丢掉 `this` 绑定（UTS 类方法不是箭头函数）；② 本仓模板入口一律走组件内局部函数
+	// （同 useSearchState 的 runSearch 薄包装先例），读起来与其它页一致。
+	// 三处要点（都在 composable 里，这里只提醒）：图片先落库拿 contentId 才入列、文件只带
+	// 文件名不读内容、**两条选择链都不关附件面板**（关了就看不到刚加的东西 —— 真机原话）。
 	function onPickImage(): void {
-		uni.chooseImage({
-			// count=1：一次一张（可反复点选累积）。不做多选是有意的——多选要串行上传 + 失败
-			// 部分成功提示，属"最小可用"之外；`count:9` 的批量语义留给后续批次。
-			count: 1,
-			sourceType: ['album', 'camera'],
-			success: (res) => {
-				const paths = res.tempFilePaths
-				if (paths.length == 0) {
-					return
-				}
-				const path = paths[0]
-				if (path == null || path == '') {
-					return
-				}
-				// ⚠️ 2026-10-25 **真 bug 修复**：此处原为 `closeAttach()` —— 选完图**立刻关面板**，
-				// 于是 `pickedImages.push(...)` 之后 `.attach-grid`（模板 :176-180）所在的
-				// `.attach-panel` 已 `v-if=false` ⇒ 缩略图永远不显示。真机反馈原话：
-				// 「添加图片，图片也不会出现」。删除后：上传成功即在本面板内看到缩略图，
-				// 用户可继续「+」追加或自己关面板。
-				// （上传期仍给 showLoading 遮罩——面板里没有进度条，至少要让人知道在等什么。）
-				uni.showLoading({ title: '正在上传图片…' })
-				uploadImageAttachment(path).then((att: ChatAttachment | null) => {
-					uni.hideLoading()
-					if (att == null) {
-						// 🚩 红线：上传失败/拿不到 contentId ⇒ **绝不假装发出**，如实提示。
-						// 失败原因由上传链落盘（uploader_photo 同款 console.error）与 api 层 toast 承担。
-						uni.showToast({ title: '图片上传失败，未添加（可稍后重试）', icon: 'none', duration: 2500 })
-						return
-					}
-					pickedImages.value.push(new PickedImage(att, path))
-					uni.showToast({ title: '已添加图片，发送时一并带给 AI', icon: 'none', duration: 2000 })
-				})
-			},
-			fail: () => {
-				// 取消选图：静默（口径同 RecordSheet.pickPhotos:631 / TabSearch.runImageSearch:395）
-			}
-		})
+		attach.pickImage()
+	}
+	function onPickFile(): void {
+		attach.pickFile()
+	}
+	function onRemoveImage(idx: number): void {
+		attach.removeImage(idx)
+	}
+	function removeFile(idx: number): void {
+		attach.removeFile(idx)
 	}
 
 	// RecordSheet 保存成功回调（AI 页无可刷新数据，占位收口）
@@ -718,7 +663,8 @@
 		if (text.length > PREFILL_MAX_LEN) {
 			text = text.substring(0, PREFILL_MAX_LEN)
 		}
-		draft.value = text
+		// 投放给输入区组件（2026-10-26）：输入框已迁入 AiComposer，本文件只递增 seq
+		seedDraft(text)
 	}
 
 	// B10 方案A 组件契约（P2）：options（?memTitle=）与 RecordSheet @saved 上收 shell——

@@ -150,6 +150,14 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
             if rh["sparse_score"] > 0:
                 matched.append("sparse")
         ev = event_map.get(rh["content_id"])
+        # 2026-10-26：照片命中补分层文本（与 ContentOut 同源同口径，见 services/photo_text.py）。
+        # 只对 photo 拆；其余类型 caption/ocr_text 恒 None ⇒ 客户端走原 `text` 路径。
+        cap: str | None = None
+        ocr: str | None = None
+        if c is not None and c.content_type == "photo":
+            from app.services.photo_text import split_caption_ocr
+
+            cap, ocr = split_caption_ocr(c.text, (c.extra or {}).get("ocr_text"))
         hits.append(SearchHit(
             content_id=rh["content_id"],
             content_type=c.content_type if c else "text",
@@ -160,6 +168,8 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
             event_title=ev["title"] if ev else None,
             score=rh["score"],
             thumbnail_url=thumb_map.get(rh["content_id"]),
+            caption=cap,
+            ocr_text=ocr,
             trace={
                 "matched": matched or ["dense"],
                 "dense_score": rh["dense_score"],

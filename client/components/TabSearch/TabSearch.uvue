@@ -105,17 +105,22 @@
 				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFit" />
 				<view class="n2_599"> <!-- 摘要块 -->
 					<view class="n2_601"></view> <!-- 引用竖线 -->
-					<!-- 2026-10-25（真机「一长串竖排碎片文本糊满卡片」· 核心修复）：
+					<!-- 2026-10-25（真机「一长串竖排碎片文本糊满卡片」）：
 					     该条 content.text 是照片 OCR 逐行拼接（库内实测 832 字符、30+ 行
 					     "10:08 / 4G / 49 / 全部 / 药名 / 复旦大学…"）。uni-app x app-android 的
 					     text 默认 white-space: keep ⇒ 每个 \n 都换行渲染，一张卡被顶成一整屏。
-					     两道止血：① CSS white-space: normal（\n 折成空格成流）+ ② max-lines 截断。
+					     当时的两道止血：① CSS white-space: normal（\n 折成空格成流）+ ② max-lines 截断。
 					     ⚠️ max-lines **必须用属性**不能用 CSS `lines:`——manifest.json:9 是
 					     vapor:true，`lines` 在 Vapor 的 unixVaporVer 是 x（不支持），
 					     `max-lines` 是 5.21（本机 HBuilderX 5.26 满足）。
-					     真正的层级修复（caption 优先、OCR 折叠）需 SearchHit 增 ocr_text 字段，
-					     本批**不做契约改动**，已登记为后续项。 -->
-					<text class="n2_602" :max-lines="3">{{ item.text }}</text>
+
+					     **2026-10-26 层级修复**（上一批注释里登记的"后续项"已落地）：
+					     服务端 SearchHit 增并列字段 `caption` / `ocr_text`，摘要位改读 caption
+					     （见 script 里 textResults 的注释），OCR 不再进摘要 —— 那两道止血
+					     也从"截断噪声"变回"兜住超长 caption"的正常保护。
+					     `v-if="item.text != ''"`：照片 caption 为空时不渲染空行
+					     （否则摘要区留下一条无内容的空隙）。 -->
+					<text v-if="item.text != ''" class="n2_602" :max-lines="3">{{ item.text }}</text>
 				</view>
 				<view class="n2_600"> <!-- 文字元信息区 -->
 					<text class="n2_603">{{ item.meta }}</text>
@@ -423,7 +428,15 @@
 		}
 	})
 
-	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
+	// 文字 / 照片结果（photo 走 caption，其余类型走 text）
+	// ═══ 2026-10-26（与详情页 E-1 同一病根的第二处）═══
+	// 原为 `h.text`，而照片命中的 `text` 是 `caption\nocr_text` 拼接串（库内实测 832 字符、
+	// 30+ 行"10:08 / 4G / 全部 / 药名 / 复旦大学…"）。上一批只做了两道止血
+	// （white-space:normal + max-lines=3，见模板注释）—— 那是**截断**噪声，不是**分层**：
+	// 用户看到的仍是"截图里的界面词被截成 3 行"。本批服务端下发 caption/ocr_text 后，
+	// 摘要位改读 `caption`（人话），OCR 不再进摘要。
+	// 照片且 caption 为空（描述生成失败）→ 摘要位**留空**（不回落 text：回落=把病修回去），
+	// 由「照片卡本来就以图为主」的形态承接，而不是塞一段界面词。
 	let textResults = computed((): Array<TextResult> => {
 		const out: Array<TextResult> = []
 		const vis = ss.visibleHits()
@@ -432,9 +445,22 @@
 			if (h.contentType == 'voice') {
 				continue
 			}
-			const txt = h.text != '' ? h.text : '（无文本描述）'
+			let txt = ''
+			let raw = h.text
+			if (h.contentType == 'photo') {
+				txt = h.caption
+				// 纠错/编辑操作拿到的"原始文本"也应是 caption（不是拼接串）：
+				// 否则用户点「纠错」看到一整屏界面词，会以为自己搜错了东西。
+				raw = h.caption
+			} else {
+				txt = h.text
+			}
+			if (txt == '') {
+				// 非照片且真的没正文才给占位；照片无 caption 时留空（见上）
+				txt = h.contentType == 'photo' ? '' : '（无文本描述）'
+			}
 			// 照片命中带服务端下发的缩略图票据 URL，其余类型为空串
-			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : '', h.contentType, h.text))
+			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : '', h.contentType, raw))
 		}
 		return out
 	})

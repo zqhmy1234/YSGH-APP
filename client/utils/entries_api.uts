@@ -302,6 +302,12 @@ function feedAssemble(): EntryFeed {
 			if (ms <= 0) {
 				continue
 			}
+			// ⚠️ 2026-10-26 审查记录（**未改，留作待办**）：照片卡这里 `text` 传空串，
+			// 而服务端已能下发 `caption`（一句话描述）。故时间轴照片卡只有图+时间+地点，
+			// 扫读时不知道拍的是什么。**本批刻意不改**：① 它属"信息缺口"而非
+			// "机器产物当人话"（本次修复的病因）；② 要在 EntryCard 增图注槽位 +
+			// `tab-index.css` 增类，而该 CSS 是主屏共享件（1500+ 行、多卡族共用），
+			// 改它需单独一轮视觉回归。已登记为后续项，见本轮交付清单。
 			entry = new TodayEntry(c.getString('id') ?? '', 'photo', '', url, hhmm(ms), c.getString('place') ?? '', ms)
 		}
 		// 其余 content_type（voice/article）不在本刀（见模块注释 2）；它们**也不进历史区**

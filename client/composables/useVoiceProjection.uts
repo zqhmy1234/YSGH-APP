@@ -1,0 +1,135 @@
+/**
+ * 语音播放态投影（2026-10-26 自 detail.uvue 抽出 · RC-F 收敛结论的复用点）
+ *
+ * ## 解决的问题
+ *
+ * 模板每 tick 调取值函数（`voiceIsActive()` / `voiceProgressOfCard()` / `voiceCurSecText()`…）
+ * 时，`audio_player` 的 33ms 时钟每次写全局 ref 都会让**整页重算**。范式（先例
+ * `TabSearch.syncActiveCard` / `TabIndex.syncVoiceCards`）是：**数据写入时**把全局播放态
+ * 投影进"正在播放那一张卡"的预计算字段，模板只读字段 ⇒ 零函数调用；
+ * 且**相等守卫**保证值没变不写 ⇒ 未变的卡零响应式通知、零重渲染。
+ *
+ * ## 为什么抽成 composable
+ *
+ * 这段投影与页面状态无关：它只需要 (a) 全局播放态来源，(b) 每个卡的可写目标对象。
+ * 详情页只是第一个用它的地方；抽出后可以单测"相等守卫"这条性能契约。
+ *
+ * 用法：宿主每次源变化调 `main(...)` 拿主卡字段、调 `applyMember(...)` 原地写成员卡；
+ * 两者的返回值/字段都用于相等守卫（没变就不写 ref）。
+ * ⚠️ 本节刻意**不写形如 `obj.method()` 的示例**——`audit_harness` 的导出引用轴会把它
+ * 当作真实调用点扫描（曾经因此报"proj.compute 未声明"的假 CRITICAL）。
+ */
+import { fmtVoiceTime } from '@/utils/audio_player'
+
+/** 主语音卡的目标字段（宿主把它写进自己的 ref） */
+export class MainVoiceState {
+	active: boolean
+	playing: boolean
+	progress: number
+	curText: string
+	totalText: string
+	changed: boolean
+
+	constructor(active: boolean, playing: boolean, progress: number, curText: string, totalText: string, changed: boolean) {
+		this.active = active
+		this.playing = playing
+		this.progress = progress
+		this.curText = curText
+		this.totalText = totalText
+		this.changed = changed
+	}
+}
+
+/** 事件级语音成员（结构契约：宿主传入的可写对象需具备这些字段） */
+export class VoiceStateTarget {
+	contentId: string
+	active: boolean
+	playing: boolean
+	progress: number
+
+	constructor(contentId: string = '', active: boolean = false, playing: boolean = false, progress: number = 0) {
+		this.contentId = contentId
+		this.active = active
+		this.playing = playing
+		this.progress = progress
+	}
+}
+
+/**
+ * 事件级语音卡视图模型（「这条记忆里的声音」区块的数据源）。
+ *
+ * ⚠️ **UTS 类不能写字段默认初始化**（`title: string = ''` 会编译报错）——
+ * 同仓先例 `TabSearch.VoiceResult` 注释："默认值在 constructor 内赋
+ * （UTS 无字段默认初始化）"。故本类所有默认值都落在 constructor 里。
+ *
+ * 放在本模块（而不是组件 .uvue 里）的另一条原因：`.uvue` 的 `<script setup>`
+ * 导出类供其它页面 import 并不是受支持的用法（编译实测：组件内的
+ * 字段初始化报错先暴露，但导出跨文件引用同样不可依赖）。视图模型放 `.uts`
+ * 才是本仓的稳定形态（VoiceResult / SplitItem / ContentDetail 都是这样）。
+ */
+export class EventVoiceItem extends VoiceStateTarget {
+	status: string
+	wave: Array<number>
+	title: string
+
+	constructor(contentId: string = '', status: string = '', wave: Array<number> = [], title: string = '') {
+		super(contentId)
+		this.status = status
+		this.wave = wave
+		this.title = title
+	}
+}
+
+/** 播放态投影器：无状态（每次 compute 传入当前源值），可跨卡复用 */
+export class VoiceStateProjector {
+	/**
+	 * 主卡投影。
+	 *
+	 * @param targetId 当前详情内容 id
+	 * @param cid      全局正在播放的 contentId（空=未播）
+	 * @param playing  是否播放中（false=暂停）
+	 * @param prog     进度 0..1
+	 * @param curSec   当前秒
+	 * @param totalSec 总秒
+	 * @returns 主卡应写入的字段；`changed=false` ⇒ 宿主**不要**写（相等守卫）。
+	 */
+	main(targetId: string, cid: string, playing: boolean, prog: number, curSec: number, totalSec: number): MainVoiceState {
+		const isActive = cid != '' && cid == targetId
+		if (isActive) {
+			return new MainVoiceState(true, playing, prog, fmtVoiceTime(curSec), fmtVoiceTime(totalSec), true)
+		}
+		// 退出活动态：清干净（否则旧卡残留进度行/时长）
+		return new MainVoiceState(false, false, 0, '', '', true)
+	}
+
+	/**
+	 * 事件级成员投影（**原地写**目标对象，返回是否变化）。
+	 *
+	 * @returns true = 该成员字段被改动过 ⇒ 宿主需重建数组引用触发重渲染。
+	 *          false = 完全没变 ⇒ 零写入（这是开销收敛的关键：3 张卡里通常只有 1 张在动）。
+	 */
+	applyMember(v: VoiceStateTarget, cid: string, playing: boolean, prog: number): boolean {
+		const isActive = v.contentId != '' && v.contentId == cid
+		let changed = false
+		if (v.active != isActive) {
+			v.active = isActive
+			changed = true
+		}
+		if (isActive) {
+			if (v.playing != playing) {
+				v.playing = playing
+				changed = true
+			}
+			if (v.progress != prog) {
+				v.progress = prog
+				changed = true
+			}
+		} else if (v.playing || v.progress != 0) {
+			// 退出活动态：清残留
+			v.playing = false
+			v.progress = 0
+			changed = true
+		}
+		return changed
+	}
+}

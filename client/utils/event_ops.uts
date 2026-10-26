@@ -118,8 +118,20 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 		thumbnailUrl: string
 		/** 原图票据 URL（短时效；photo 有值） */
 		originalUrl: string
+		/** 照片一句话描述（人话）。**2026-10-26**：服务端新增并列字段 `caption`。
+		 *  空串=描述生成失败（非照片恒空）—— 正文区必须按「无正文」处理，
+		 *  **绝不**回落到 `text`（那是 caption+OCR 拼接串，就是"把照片文字全打出来"的病根）。 */
+		caption: string
+		/** 照片 OCR 原文（机器产物）。空串=无 OCR/非照片。只在「查看照片里的文字」显式展开时用。 */
+		ocrText: string
+		/** AI 打标 chips（tags_json）；空数组=不显示区块 */
+		tags: Array<string>
+		/** AI 一句话观察（ai_description，照片才有）；空串=不显示 */
+		aiDescription: string
+		/** 用户备注（PATCH /contents/{id} remark） */
+		remark: string
 
-		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string, thumbnailUrl: string, originalUrl: string) {
+		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string, thumbnailUrl: string, originalUrl: string, caption: string, ocrText: string, tags: Array<string>, aiDescription: string, remark: string) {
 			this.id = id
 			this.contentType = contentType
 			this.text = text
@@ -128,7 +140,27 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 			this.status = status
 			this.thumbnailUrl = thumbnailUrl
 			this.originalUrl = originalUrl
+			this.caption = caption
+			this.ocrText = ocrText
+			this.tags = tags
+			this.aiDescription = aiDescription
+			this.remark = remark
 		}
+	}
+
+	/** tags_json（list|null）→ Array<string>，逐项过滤空串
+	 *  （整表 cast 先例 play_content.uts fetchContentAiMeta） */
+	function parseTags(it: UTSJSONObject): Array<string> {
+		const out: Array<string> = []
+		const raw = it.getArray('tags_json') as Array<string> | null
+		if (raw != null) {
+			for (let i = 0; i < raw.length; i++) {
+				if (raw[i] != '') {
+					out.push(raw[i])
+				}
+			}
+		}
+		return out
 	}
 
 	export function fetchContentDetail(contentId: string): Promise<ContentDetail | null> {
@@ -157,7 +189,12 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 					it.getString('place') ?? '',
 					it.getString('status') ?? '',
 					resolveMediaUrl(it.getString('thumbnail_url')),
-					resolveMediaUrl(it.getString('original_url'))
+					resolveMediaUrl(it.getString('original_url')),
+					it.getString('caption') ?? '',
+					it.getString('ocr_text') ?? '',
+					parseTags(it),
+					it.getString('ai_description') ?? '',
+					it.getString('remark') ?? ''
 				)
 				// 照片缩略图过渡管线（Valet Key 落地前 · 2026-09-02）：
 				// 服务端 contents 列表的 thumbnail_url 票据恒空 → photo 改走

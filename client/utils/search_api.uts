@@ -32,6 +32,12 @@ export class SearchHitItem {
 	trace: string // 溯源摘要（trace dict → 可读文本）
 	/** 缩略图 URL（已 resolve；照片类结果卡显示用；空串=无图） */
 	thumbnailUrl: string
+	/** 照片一句话人话摘要（2026-10-26 服务端新增并列字段；非照片恒空）。
+	 *  ⚠️ **卡片摘要位必须用它而不是 `text`** —— `text` 是 `caption\nocr_text`
+	 *  拼接串，直接渲染等于把截图里的界面词糊满卡片（真机实测 832 字符 30+ 行）。 */
+	caption: string
+	/** 照片 OCR 原文（机器产物；空串=无 OCR）。当前卡片不展示，留给「展开看文字」类入口。 */
+	ocrText: string
 
 	constructor(
 		contentId: string,
@@ -43,7 +49,9 @@ export class SearchHitItem {
 		eventTitle: string,
 		score: number,
 		trace: string,
-		thumbnailUrl: string
+		thumbnailUrl: string,
+		caption: string,
+		ocrText: string
 	) {
 		this.contentId = contentId
 		this.contentType = contentType
@@ -55,6 +63,8 @@ export class SearchHitItem {
 		this.score = score
 		this.trace = trace
 		this.thumbnailUrl = thumbnailUrl
+		this.caption = caption
+		this.ocrText = ocrText
 	}
 }
 
@@ -202,7 +212,10 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 					traceToText(h.getJSON('trace')),
 					// 2026-09-04 后端 SearchHit 补 thumbnail_url（Valet Key 票据，
 					// 仅 photo 命中有值）→ resolveMediaUrl 拼直连地址，结果卡带图
-					resolveMediaUrl(h.getString('thumbnail_url'))
+					resolveMediaUrl(h.getString('thumbnail_url')),
+					// 2026-10-26：照片文本分层（caption 人话 / ocr_text 机器产物）
+					h.getString('caption') ?? '',
+					h.getString('ocr_text') ?? ''
 				)
 			)
 		}
@@ -354,7 +367,10 @@ export function fetchRecentContents(limit: number, contentTypes: Array<string>):
 						'',
 						0,
 						'',
-						resolveMediaUrl(c.getString('thumbnail_url'))
+						resolveMediaUrl(c.getString('thumbnail_url')),
+						// recent 列表来自 GET /contents（同一 ContentOut 契约）⇒ 同样分层
+						c.getString('caption') ?? '',
+						c.getString('ocr_text') ?? ''
 					))
 				}
 			}

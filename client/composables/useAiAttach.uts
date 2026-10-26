@@ -1,0 +1,211 @@
+/**
+ * AI 对话「待发附件」状态与选择链路（2026-10-26 · AI 页重设计 ③）
+ *
+ * ## 为什么抽出来
+ *
+ * `TabAi.uvue` 原本就贴着 structure 棘轮（改前 793 行 / 阈值 800 / **无豁免**）。
+ * 本轮要把输入区整块迁到 `AiComposer.uvue`（自适高输入框 + 已选附件条 + 面板重排），
+ * 宿主只剩下"附件业务"这一块还压在页面上：PickedImage / pickedImages / pickedFiles /
+ * 选图 / 选文件 / 两个删除 / 附件合并 —— 约 120 行。
+ * 抽出来宿主只剩「投给组件的 4 个扁平数组 + 一个 state 实例」。
+ *
+ * ## 先例与边界（**行为与抽取前逐字一致**）
+ *
+ * 同 `usePhotoAttach.uts` / `useSearchState.uts` / `usePendingVoiceRetry.uts`：
+ * **纯 class，组件 `new` 一个实例，经实例访问同一 ref 对象**（全项目零 defineExpose/$refs）。
+ *
+ * 刻意**留在宿主**、不搬进来的三件事：
+ *   · `computed` 的扁平投影（imagePaths/imageSizes/...）—— 它们要参与模板响应式，
+ *     留在组件里读本类的 ref 即可（本仓 computed 全在 .uvue 内，`computed` 写在
+ *     class 字段里**零先例**，不拿新写法冒险）；
+ *   · `sendNow` / `onRetry` —— 发送与失败重发是页面闭环，附件只是入参；
+ *   · 附件面板开关（`shell_state.aiAttachOpen`）—— 归 shell 的返回键优先级管。
+ *
+ * ## 两条诚实边界（不能改，改了就是假承诺）
+ *
+ * 1. **图片先落库再入列**：`uploadImageAttachment` 拿不到 `contentId` 就返回 null，
+ *    本类**不构造没有 contentId 的附件**、并如实 toast 失败 —— 绝不假装"加上了"。
+ *    为什么这么严：附件随消息上行时后端靠 `content_id` 读 caption，空 id 等于发了个空气。
+ * 2. **文件只带名字**：上传链是照片专用（`register_photo_content`），传非图片要另开入库
+ *    路径。故文件附件只有 `name`/`size`，AI **读不到文件内容** —— 面板与 chip 上都已如实写明。
+ */
+import { ref } from 'vue'
+import { ChatAttachment } from '@/utils/chat_api'
+import { uploadImageAttachment } from '@/utils/chat_image_attach'
+import { FilePickResult, pickChatFile } from '@/utils/chat_file_pick'
+
+/**
+ * 已选图片 = 契约附件 + 本地临时路径。
+ *
+ * 为什么要留 `previewPath`：`<image :src>` 只能读**本地路径**（云侧签名 URL 在发送前
+ * 还没生成），而 `attachment.name` 只是文件名 —— 用它渲染是空白图框。
+ */
+class PickedImage {
+	attachment: ChatAttachment
+	previewPath: string
+
+	constructor(attachment: ChatAttachment, previewPath: string) {
+		this.attachment = attachment
+		this.previewPath = previewPath
+	}
+}
+
+/**
+ * 待发附件状态机（一个实例 = 一页的待发列表）。
+ *
+ * 生命周期：选图/选文件 → 入列（面板内即时可见 + 输入框上方 chip 条即时可见）
+ * → 发送时 `takeAll()` 整体取出并清空 → 附件转入那条用户消息（失败重试复用 `m.attachments`，
+ * content_id 复用不会重复上传）。
+ */
+export class AiAttachState {
+	/** 待发图片（上传落库成功后才有值） */
+	pickedImages = ref<Array<PickedImage>>([])
+	/** 待发文件（无本地预览图，故与图片分开存 —— 塞进图片列表会让缩略图格渲染空图框） */
+	pickedFiles = ref<Array<ChatAttachment>>([])
+
+	/** 图片本地预览路径（与 `pickedImages` 同序，供视图层按下标取用） */
+	imagePaths(): Array<string> {
+		const out: Array<string> = []
+		for (let i = 0; i < this.pickedImages.value.length; i++) {
+			out.push(this.pickedImages.value[i].previewPath)
+		}
+		return out
+	}
+
+	/** 图片字节数（同序） */
+	imageSizes(): Array<number> {
+		const out: Array<number> = []
+		for (let i = 0; i < this.pickedImages.value.length; i++) {
+			out.push(this.pickedImages.value[i].attachment.size)
+		}
+		return out
+	}
+
+	/** 文件名（同序） */
+	fileNames(): Array<string> {
+		const out: Array<string> = []
+		for (let i = 0; i < this.pickedFiles.value.length; i++) {
+			out.push(this.pickedFiles.value[i].name)
+		}
+		return out
+	}
+
+	/** 文件字节数（同序） */
+	fileSizes(): Array<number> {
+		const out: Array<number> = []
+		for (let i = 0; i < this.pickedFiles.value.length; i++) {
+			out.push(this.pickedFiles.value[i].size)
+		}
+		return out
+	}
+
+	/** 合计条数（模板据此决定 chip 条/面板空态的显隐） */
+	count(): number {
+		return this.pickedImages.value.length + this.pickedFiles.value.length
+	}
+
+	/**
+	 * 待发附件 → 契约数组，**并清空**待发列表（发送时调用一次）。
+	 *
+	 * 顺序：图片在前、文件在后（图片有缩略图、用户更可能先确认它）。
+	 * 为什么取完就清：附件随消息转移。不清的话用户下一条普通消息会莫名带上上一张图 ——
+	 * 那是**假状态**，比丢一次附件更难解释。重试由消息自带的 `attachments` 承担。
+	 */
+	takeAll(): Array<ChatAttachment> {
+		const out: Array<ChatAttachment> = []
+		for (let i = 0; i < this.pickedImages.value.length; i++) {
+			out.push(this.pickedImages.value[i].attachment)
+		}
+		for (let i = 0; i < this.pickedFiles.value.length; i++) {
+			out.push(this.pickedFiles.value[i])
+		}
+		if (out.length > 0) {
+			this.pickedImages.value = []
+			this.pickedFiles.value = []
+		}
+		return out
+	}
+
+	/** 移除一张已选图片。只从待发列表移除，**不删云端内容**（上传已落库，孤儿由既有清理任务管） */
+	removeImage(idx: number): void {
+		const rest: Array<PickedImage> = []
+		for (let i = 0; i < this.pickedImages.value.length; i++) {
+			if (i != idx) {
+				rest.push(this.pickedImages.value[i])
+			}
+		}
+		this.pickedImages.value = rest
+	}
+
+	/** 移除一个已选文件（选错了能单删，不必全清重选） */
+	removeFile(idx: number): void {
+		const rest: Array<ChatAttachment> = []
+		for (let i = 0; i < this.pickedFiles.value.length; i++) {
+			if (i != idx) {
+				rest.push(this.pickedFiles.value[i])
+			}
+		}
+		this.pickedFiles.value = rest
+	}
+
+	/**
+	 * 选图（一次一张，可反复点选累积）。
+	 *
+	 * 端到端：`uni.chooseImage` → **既有上传链**（`uploadImageAttachment`）落库拿 contentId
+	 * → 入列。上传期给 showLoading 遮罩：面板里没有进度条，至少让人知道在等什么。
+	 *
+	 * ⚠️ 这里**绝不关附件面板**（2026-10-25 真 bug：原实现选完就关，于是缩略图永远不显示；
+	 * 真机原话「添加图片，图片也不会出现」）。面板关不关由用户决定。
+	 * ⚠️ 不做多选是有意的：多选要串行上传 + 部分成功提示，属"最小可用"之外。
+	 */
+	pickImage(): void {
+		uni.chooseImage({
+			count: 1,
+			sourceType: ['album', 'camera'],
+			success: (res) => {
+				const paths = res.tempFilePaths
+				if (paths.length == 0) {
+					return
+				}
+				const path = paths[0]
+				if (path == null || path == '') {
+					return
+				}
+				uni.showLoading({ title: '正在上传图片…' })
+				uploadImageAttachment(path).then((att: ChatAttachment | null) => {
+					uni.hideLoading()
+					if (att == null) {
+						// 🚩 红线：上传失败/拿不到 contentId ⇒ 绝不假装加上，如实提示
+						uni.showToast({ title: '图片上传失败，未添加（可稍后重试）', icon: 'none', duration: 2500 })
+						return
+					}
+					this.pickedImages.value.push(new PickedImage(att, path))
+					uni.showToast({ title: '已添加图片，发送时一并带给 AI', icon: 'none', duration: 2000 })
+				})
+			},
+			fail: () => {
+				// 取消选图：静默（口径同 RecordSheet.pickPhotos / TabSearch.runImageSearch）
+			}
+		})
+	}
+
+	/**
+	 * 选文件（只取 name/size，**不上传、不读内容**）。
+	 *
+	 * ⚠️ 同样**不关面板** —— 关掉的话用户看不到刚加的东西（2026-10-25 真 bug 的同族）。
+	 * 现在关掉也看得见（输入框上方常驻 chip 条），但那不该成为"先关再找"的理由。
+	 */
+	pickFile(): void {
+		pickChatFile().then((r: FilePickResult) => {
+			if (r.attachment == null) {
+				// 空 reason = 用户主动取消，不打扰
+				if (r.reason != '') {
+					uni.showToast({ title: r.reason, icon: 'none', duration: 2500 })
+				}
+				return
+			}
+			this.pickedFiles.value = this.pickedFiles.value.concat([r.attachment!])
+			uni.showToast({ title: '已添加文件（只带文件名，不读内容）', icon: 'none', duration: 2600 })
+		})
+	}
+}

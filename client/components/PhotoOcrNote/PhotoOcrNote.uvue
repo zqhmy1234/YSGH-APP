@@ -1,0 +1,141 @@
+<template>
+	<!-- 照片 OCR（机器产物）折叠块 —— 2026-10-26 详情页「照片上的文字全被打出来」修复的展示端。
+	     设计口径（为什么单独成组件而不是内联在详情页）：
+	       ① 详情页 `detail.uvue` 已 781 行 / 棘轮阈值 800（`audit_harness` 轴 5），
+	          内联展开态逻辑会破阈；抽成组件后详情页只留一行挂载点；
+	       ② **边界清晰**：OCR 是"机器识别出来的字"，与"人写的记忆正文"是两件事，
+	          组件化让这条分界线在代码里也看得见（宿主只传字，不认识 OCR 的形态）。
+
+	     交互口径：
+	       · 默认 **折叠**：只给一行预览（按空格归并后 `max-lines=2` 截断），
+	         一眼不再被 30+ 行界面词糊满；
+	       · 点击标题行 → 展开全文（换行**原样保留**：用户点开就是要看原样，
+	         不替他把换行折成空格）；
+	       · 右侧给**字数**而非"展开/收起"以外的花活 —— 让用户自己判断值不值得展开
+	         （库内实测同一张截图 779 字，这个数字本身就是诚实的量词）。 -->
+	<view class="ocr-root">
+		<view class="ocr-head" @tap="toggle">
+			<text class="ocr-label">照片里的文字</text>
+			<text class="ocr-count">{{ countLabel }}</text>
+			<text class="ocr-toggle">{{ open ? '收起' : '展开' }}</text>
+		</view>
+		<!-- ⚠️ Vapor 模式：截断必须用 **属性** `max-lines`（连字符）。
+		     写 `maxlines` 编译器只 warn「Property 'maxlines' is not supported」且**静默丢弃**
+		     （编译仍绿）；CSS 的 `lines:` 在 Vapor 亦不支持。本机 HBuilderX 5.26 满足 5.21+。 -->
+		<text v-if="open" class="ocr-body">{{ text }}</text>
+		<text v-else class="ocr-preview" :max-lines="2">{{ preview }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+
+	const props = defineProps({
+		/** OCR 原文（逐行结果，换行是原始形态，不预加工） */
+		text: {
+			type: String,
+			default: ''
+		}
+	})
+
+	let open = ref(false)
+
+	/** 折叠态预览：把逐行 OCR 归并成一句流式文本（连续空白/换行 → 单空格）。
+	 *  为什么归并：OCR 是**逐行**结果（"此电脑 / 本地磁盘 / (D:)" 各占一行），
+	 *  直接给 `max-lines=2` 只会露出最前面两行状态栏噪声，预览价值为零；
+	 *  归并后一行能容纳十来个词，用户能判断"这是不是我要找的那张截图"。 */
+	let preview = computed((): string => {
+		const raw = props.text
+		let out = ''
+		let lastSpace = true
+		for (let i = 0; i < raw.length; i++) {
+			const ch = raw.substring(i, i + 1)
+			if (ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ') {
+				if (!lastSpace) {
+					out = out + ' '
+					lastSpace = true
+				}
+			} else {
+				out = out + ch
+				lastSpace = false
+			}
+		}
+		return out.trim()
+	})
+
+	/** 字数（去掉换行/空白后的**有效字符数**）：给用户一个"值不值得展开"的量词。
+	 *  不用 `raw.length`——那是含换行的长度，与"看到多少字"不符（虚高 ~10%）。 */
+	let countLabel = computed((): string => {
+		let n = 0
+		const raw = props.text
+		for (let i = 0; i < raw.length; i++) {
+			const ch = raw.substring(i, i + 1)
+			if (ch != '\n' && ch != '\r' && ch != '\t' && ch != ' ') {
+				n++
+			}
+		}
+		return n + ' 字'
+	})
+
+	function toggle(): void {
+		open.value = !open.value
+	}
+</script>
+
+<style>
+	/* 色值全部走令牌 + 字面量回退（`var(--c-*, #fallback)`）：
+	   `audit_token_literals` 会把 `var()` 的**回退值**剔除后计数，故回退写法不算硬编码。 */
+	.ocr-root {
+		width: 100%;
+		flex-direction: column;
+		margin-top: var(--d-lattice-p8, 15.4rpx);
+		padding-left: var(--d-raw-r16, 16rpx);
+		padding-right: var(--d-raw-r16, 16rpx);
+		padding-top: var(--d-raw-r12, 12rpx);
+		padding-bottom: var(--d-raw-r12, 12rpx);
+		background-color: var(--c-paper-100, #f8f7f4);
+		border-radius: var(--d-lattice-p12, 23.1rpx);
+	}
+	/* 标题行：整行可点（min-height 92rpx≈44dp 达标触控），与页内「补充一句」pill 同族 */
+	.ocr-head {
+		flex-direction: row;
+		align-items: center;
+		min-height: 92rpx;
+	}
+	.ocr-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-700, #5a4c40);
+	}
+	.ocr-count {
+		flex: 1;
+		margin-left: var(--d-raw-r8, 8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-ink-500, #8a7a6a);
+	}
+	.ocr-toggle {
+		margin-left: var(--d-raw-r12, 12rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	/* 展开态：正文字号但更浅（机器文本不该抢正文的视觉权重），换行原样 */
+	.ocr-body {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-700, #5a4c40);
+		margin-bottom: var(--d-raw-r8, 8rpx);
+	}
+	/* 折叠态预览：比展开态更淡一档（--c-ink-500 on --c-paper-100 ≈ 4.6:1，达 WCAG AA 4.5） */
+	.ocr-preview {
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		margin-bottom: var(--d-raw-r8, 8rpx);
+	}
+</style>

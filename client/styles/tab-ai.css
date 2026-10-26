@@ -11,6 +11,44 @@
 		padding-left: var(--d-card_margin_x, 38.5rpx);
 		padding-right: var(--d-card_margin_x, 38.5rpx);
 	}
+	/* 标题行（2026-10-26 · AI 页重设计 ②）：大标题与「新会话」按钮同行、两端对齐。
+	   原来大标题与「开启新对话」chip 是**两条竖直兄弟节点**，chip 落在副标题下方，
+	   视觉上像"第三行小字" —— 用户原话「只有一个文字条」。 */
+	.ai-title-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	/* 新会话按钮：白底 + 锈红细描边 + 锈红字。
+	   对比度实测：--c-rust-500(#B05A3A) 对白底 = **4.81:1**（AA 正文 4.5 达标）；
+	   热区：上下 padding 各 12rpx + 字高 34rpx ≈ 58rpx 是**容器**高度，
+	   再靠外层 min-height 抬到 88.5rpx(≈44dp) —— 44dp 是无障碍最小可点热区。
+	   为什么用描边而不是实底：实底锈红会把"新会话"变成全页最高权重按钮
+	   （而它是低频、次要动作），描边能表达"可点"而不抢发送钮的戏。 */
+	.ai-newchat {
+		min-height: var(--d-lattice-p46, 88.5rpx);
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-rust-45, rgba(176,90,58,0.45));
+		border-radius: var(--d-raw-r9999, 9999rpx);
+	}
+	.ai-newchat-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	/* 输入区外壳（2026-10-26）：只负责**贴底 + 左右留白**，内里的输入条/面板在
+	   AiComposer.uvue 里自带样式（同 AiTyping 口径：组件级样式不回流到本文件）。 */
+	.ai-composer-wrap {
+		margin-left: var(--d-card_margin_x, 38.5rpx);
+		margin-right: var(--d-card_margin_x, 38.5rpx);
+		margin-bottom: var(--d-lattice-p98, 188.5rpx);
+		flex-shrink: 0;
+		flex-direction: column;
+	}
 	/* 演示数据标注（2026-09-23）：内测期智能体未接入后端，页面必须显式说明，
 	   避免用户把样张对话当成已上线能力（台账 §7.1）。淡卡底 #F6EFE3 + 锈红字，与
 	   security 页徽章同族色，不引入新视觉语言。 */
@@ -43,60 +81,20 @@
 		font-size: var(--d-lattice-p13, 25rpx);
 		color: var(--c-ink-500, #8A7A6A);
 	}
-	.n2_355 {
-		margin-left: var(--d-card_margin_x, 38.5rpx);
-		margin-right: var(--d-card_margin_x, 38.5rpx);
-		margin-bottom: var(--d-lattice-p98, 188.5rpx);
-		height: var(--d-lattice-p52, 100rpx);
-		flex-shrink: 0;
-		flex-direction: row;
-		align-items: center;
-		padding-left: var(--d-lattice-p16, 30.8rpx);
-		padding-right: var(--d-lattice-p16, 30.8rpx);
-		background-color: var(--a-white-55, rgba(255, 255, 255, 0.55));
-		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-white-65, rgba(255, 255, 255, 0.65)), inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-40, rgba(255, 255, 255, 0.4)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p24, 46.2rpx) var(--a-ink-08, rgba(59, 46, 38, 0.08));
-		border-radius: var(--d-raw-r9999, 9999rpx);
-		overflow: hidden;
-	}
-	.n2_357 {
-		flex: 1;
-		height: var(--d-lattice-p36, 69.2rpx);
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p14, 26.9rpx);
-		color: var(--c-ink-900, #3A2E25);
-	}
-	/* 附件入口钮（2026-09-01）：与发送钮同族 69.2rpx 圆钮，白底描边弱化、锈红 clip 点缀 */
-	.attach-btn {
-		width: var(--d-lattice-p36, 69.2rpx);
-		height: var(--d-lattice-p36, 69.2rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		flex-direction: row;
-		justify-content: center;
-		align-items: center;
-		background-color: var(--c-white, #FFFFFF);
-		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-ink-12, rgba(58, 46, 37, 0.12));
-		border-radius: var(--d-lattice-p18, 34.6rpx);
-		overflow: hidden;
-	}
-	.attach-btn-icon {
-		width: var(--d-lattice-p18, 34.6rpx);
-		height: var(--d-lattice-p18, 34.6rpx);
-	}
-	.n2_358 {
-		width: var(--d-lattice-p36, 69.2rpx);
-		height: var(--d-lattice-p36, 69.2rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		flex-direction: row;
-		justify-content: center;
-		align-items: center;
-		background-color: var(--c-rust-500, #B05A3A);
-		border-radius: var(--d-lattice-p18, 34.6rpx);
-		overflow: hidden;
-	}
-	.n2_359 {
-		width: var(--d-lattice-p16, 30.8rpx);
-		height: var(--d-lattice-p16, 30.8rpx);
-	}
+	/* ── 输入条 / 附件面板的样式已于 2026-10-26 随结构一起迁入
+	   `components/TabAi/AiComposer.uvue`（.n2_355 / .n2_357-359、.attach-btn 及其图标、
+	   .attach-scrim / .attach-panel / .attach-handle / .attach-title / .attach-grid /
+	   .attach-body / .grid-row / .grid-thumb(-first) / .attach-entries / .attach-entry 三兄弟 /
+	   .attach-files / .attach-file-row / .attach-file-name / .attach-file-remove）。
+	   为什么整批删除而不是留着：① 那 23 个类在全仓已**零模板引用**（实测
+	   全仓 `class=` 属性检索结果全为 0）—— 留着就是"影子样式"，
+	   将来有人改这里以为能改界面；② uvue 的 style 是全局的，同名类会互相覆盖，
+	   两处同义类并存的排查成本极高（本仓踩过，见 lessons）。
+	   ⚠️ 若将来别处需要这些形状，请从 AiComposer.uvue 复制而**不要**在这里复活
+	   （理由同上：同名类跨文件覆盖）。
+	   ⚠️ 注释纪律（2026-10-26 实测事故）：注释正文里**绝不能出现连续星号加斜杠**
+	   （类名通配式写法 / glob 路径都会造出它）—— 那会提前终止块注释，
+	   剩下的 CSS 被当成 UTS 解析，编译器只报 `Unexpected '/'` 且定位到 文件:1:0。 */
 	.n4_88 {
 		flex: 1;
 		min-height: 240rpx;
@@ -408,123 +406,20 @@
 		line-height: var(--d-raw-r44, 44rpx);
 		color: var(--c-white, #FFFFFF);
 	}
-	/* 附件选择面板（画布 ai_typing 4:361 半屏形态：把手 + 标题 + 相册格 + 入口行）。
-	   2026-10-16（附件契约最小可用）：原写死的 2×3 六张静态占位图已删（假数据），
-	   相册格改渲染**用户真实选中的图片**；入口行由两枚（文件/粘贴链接）变三枚（+图片，
-	   真通路）——类名与取值一律复用，本文件未新增选择器。 */
-	.attach-scrim {
-		position: fixed;
-		/* absolute-ok: 全屏遮罩浮层（浮层白名单） */
-		left: 0;
-		top: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(42, 33, 26, 0.4);  /* 2026-10-11 恢复（9-23 基准）：原令牌 --a-ink-40 的值与本处原色差 Δ16，属令牌化误映射 */
-		z-index: 1000;
-	}
-	.attach-panel {
-		position: fixed;
-		/* absolute-ok: 底部半屏浮层面板（浮层白名单），z1000 与 RecordSheet 同层 */
-		left: var(--d-card_margin_x, 38.5rpx);
-		right: var(--d-card_margin_x, 38.5rpx);
-		bottom: var(--d-raw-r220, 220rpx); /* 避让 TabBar（110px=220rpx 全高） */
-		padding-bottom: var(--d-lattice-p18, 34.6rpx);
-		/* 2026-10-25（真机反馈）：面板**原先无高度上限** —— 选了几张图 + 几个文件后
-		   内容把面板顶出屏幕上沿（把手/标题被裁到屏幕外，只能盲点）。
-		   取值用**px 而非 vh**：本仓 `max-height` 全用 px（tab-index.css:619/658/698
-		   的 380/500px 三个先例），`vh` 零先例、uvue 端支持未验证 ⇒ 不拿新单位冒险。
-		   420px ≈ 常见机型 812pt 屏的 52%，与"半屏浮层"的画布意图一致。
-		   ⚠️ 光有 max-height 会**裁掉内容**，故模板里把面板内容包进
-		   `<scroll-view direction="vertical" class="attach-body">`（见 TabAi.uvue），
-		   超高时能滚，不丢任何已选项。 */
-		max-height: 420px;
-		background-color: var(--c-white, #FFFFFF);
-		border-radius: var(--d-card_margin_x, 38.5rpx);
-		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p24, 46.2rpx) var(--a-ink-18, rgba(59, 46, 38, 0.18));
-		flex-direction: column;
-		align-items: center;
-		z-index: 1001;
-	}
-	.attach-handle {
-		margin-top: var(--d-card_radius_small, 23.1rpx);
-		width: var(--d-lattice-p48, 92.3rpx);
-		height: var(--d-lattice-p5, 9.6rpx);
-		border-radius: 4.8rpx;
-		background-color: #E5DED4;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-600 的值与本处原色差 Δ12，属令牌化误映射 */
-	}
-	.attach-title {
-		margin-top: var(--d-lattice-p14, 26.9rpx);
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-weight: 600;
-		font-size: var(--d-lattice-p15, 28.8rpx);
-		color: var(--c-ink-900, #3A2E25);
-	}
-	.attach-grid {
-		margin-top: var(--d-lattice-p16, 30.8rpx);
-		padding-left: var(--d-lattice-p16, 30.8rpx);
-		padding-right: var(--d-lattice-p16, 30.8rpx);
-		width: 100%;
-		flex-direction: column;
-	}
-	/* 2026-10-25：面板内容滚动容器（配合 .attach-panel 的 max-height——只给上限会把
-	   已选项裁掉，包一层 scroll-view 才能"超高可滚、不丢项"）。
-	   高度上限由父级 max-height 约束，这里只需允许纵向滚动 + 撑满宽度。 */
-	.attach-body {
-		width: 100%;
-		flex-direction: column;
-	}
-	.grid-row {
-		margin-top: var(--d-lattice-p6, 11.5rpx);
-		flex-direction: row;
-		/* 2026-10-25（真机反馈）：原为**不换行**单行 —— 第 4 张起横向溢出面板
-		   （`grid-thumb` 宽 192.3rpx × 4 ≈ 770rpx > 面板可用宽），用户看不到也点不到。
-		   加 wrap 后随面板宽度自动折行。 */
-		flex-wrap: wrap;
-	}
-	.grid-thumb {
-		width: var(--d-lattice-p100, 192.3rpx);
-		height: var(--d-lattice-p76, 146.2rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		border-radius: var(--d-card_radius_small, 23.1rpx);
-		background-color: var(--c-paper-300, #F0EBE3);
-	}
-	/* uvue 不支持后代+伪类选择器，首元素用显式覆盖类（须置于 .grid-thumb 之后生效） */
-	.grid-thumb-first {
-		margin-left: 0;
-	}
-	.attach-entries {
-		margin-top: var(--d-lattice-p14, 26.9rpx);
-		padding-left: var(--d-lattice-p16, 30.8rpx);
-		padding-right: var(--d-lattice-p16, 30.8rpx);
-		width: 100%;
-		flex-direction: row;
-	}
-	.attach-entry {
-		flex: 1;
-		height: var(--d-lattice-p42, 80.8rpx);
-		margin-left: var(--d-lattice-p8, 15.4rpx);
-		padding-left: var(--d-card_radius_small, 23.1rpx);
-		flex-direction: row;
-		align-items: center;
-		background-color: var(--c-paper-100, #F8F7F4);
-		border-radius: var(--d-card_radius_small, 23.1rpx);
-	}
-	.attach-entry-first {
-		margin-left: 0;
-	}
-	.attach-entry-icon {
-		width: var(--d-lattice-p18, 34.6rpx);
-		height: var(--d-lattice-p18, 34.6rpx);
-	}
-	.attach-entry-text {
-		margin-left: var(--d-lattice-p10, 19.2rpx);
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p14, 26.9rpx);
-		color: var(--c-ink-900, #3A2E25);
-	}
-
+	/* 附件选择面板（画板 ai_typing 4:361）的**全部**样式已于 2026-10-26 迁入
+	   `components/TabAi/AiComposer.uvue`（.aic-scrim/.aic-panel/.aic-handle/.aic-title/.aic-entries/
+	   .aic-entry 系列 / .aic-grid / .aic-thumb 系列 / .aic-files / .aic-file 系列）。
+	   同上方输入条注释里的理由：那批类已零模板引用，留着就是影子样式；且 uvue 的 style
+	   是全局的，同名类跨文件覆盖的排查成本极高。 */
 /* 2026-09-25（Agent 接线补完）：真链空态 —— USE_MOCK_CHAT 翻 false 后、无历史时的诚实首页。
-   取值一律走令牌（带回退，视觉零风险）；无假数据、不预填示例对话。 */
+   取值一律走令牌（带回退，视觉零风险）；无假数据、不预填示例对话。
+
+   2026-10-26（AI 页重设计）：空态由"两句灰字"升级为**可点的开场**。
+   为什么必须改：用户面对一片空白时，难点不是"不知道能问"，是**不知道能问什么** ——
+   原来那行「比如『帮我回顾这个月』」是**死的文字**，用户得自己把它抄进输入框。
+   现在三个问题各是一枚实底 chip，点一下直接发（onPromptTap → sendNow，零新链路）。
+   对比度：chip 底 paper-300 #F0EBE3，字 ink-700 #5A4C40 = **6.96:1**（AA 达标）；
+   热区：高 76.9rpx(≈38px) + 上下 padding 各 11.5rpx ⇒ ≈ 50px ≥ 44dp。 */
 .ai-empty {
 	flex: 1;
 	justify-content: center;
@@ -533,7 +428,24 @@
 	padding-left: var(--d-lattice-p20, 38.5rpx);
 	padding-right: var(--d-lattice-p20, 38.5rpx);
 }
+/* 星芒标记：给空态一个"这是 AI 在等你"的视觉锚点（而不是纯排版）。
+   24pt 圆底锈红实心 + 白星芒 = 与 AI 消息头同族（n4_1），用户一眼认出是同一个说话人。 */
+.ai-empty-mark {
+	width: var(--d-lattice-p48, 92.3rpx);
+	height: var(--d-lattice-p48, 92.3rpx);
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	background-color: var(--c-rust-500, #B05A3A);
+	border-radius: var(--d-card_radius_small, 23.1rpx);
+	box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-lattice-p8, 15.4rpx) var(--a-rust-30, rgba(176,89,59,0.3));
+}
+.ai-empty-mark-img {
+	width: var(--d-lattice-p26, 50rpx);
+	height: var(--d-lattice-p26, 50rpx);
+}
 .ai-empty-title {
+	margin-top: var(--d-lattice-p16, 30.8rpx);
 	font-size: var(--d-lattice-p16, 30.8rpx);
 	font-weight: 600;
 	color: var(--c-ink-900, #3A2E25);
@@ -541,7 +453,29 @@
 .ai-empty-sub {
 	margin-top: var(--d-raw-r16, 16rpx);
 	font-size: var(--d-raw-r26, 26rpx);
-	color: var(--c-ink-500, #8A7A6A);
+	/* ink-500 对 paper-100 = 3.86:1 **低于 AA**（这句是要读的引导语，不是装饰）
+	   ⇒ 换 surface-neutralD(#6B5D4F) = 5.36:1（对 #F6F1E7 实测） */
+	color: var(--c-surface-neutralD, #6B5D4F);
+}
+.ai-empty-prompts {
+	margin-top: var(--d-lattice-p24, 46.2rpx);
+	width: 100%;
+	flex-direction: column;
+	align-items: stretch;
+}
+.ai-prompt {
+	margin-top: var(--d-lattice-p8, 15.4rpx);
+	padding-left: var(--d-lattice-p18, 34.6rpx);
+	padding-right: var(--d-lattice-p18, 34.6rpx);
+	padding-top: var(--d-lattice-p11, 21.2rpx);
+	padding-bottom: var(--d-lattice-p11, 21.2rpx);
+	background-color: var(--c-paper-300, #F0EBE3);
+	border-radius: var(--d-card_radius_small, 23.1rpx);
+}
+.ai-prompt-text {
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	line-height: var(--d-raw-r40, 40rpx);
+	color: var(--c-ink-700, #5A4C40);
 }
 /* 发送失败重试卡（2026-10-07 客户端加固）：不伪造回复，但给用户一键重发出口 */
 .fail-card {

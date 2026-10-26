@@ -1,0 +1,81 @@
+/**
+ * 内容正文分层决策（2026-10-26 · 详情页「照片上的文字全被打出来」修复的核心判据）
+ *
+ * ## 为什么单独成一个模块
+ *
+ * 这个判断（"哪一段该当正文给人看"）**不是详情页的私有细节**，而是内容契约的
+ * 展示口径：搜索页、收藏页、AI 上下文预填都要用同一条规则。写在页面里的话，
+ * 第二处需要时只会被复制一遍，然后两处慢慢漂移。
+ *
+ * 另外它是**纯函数**（输入 ContentDetail → 输出展示字段），与页面状态无关 ⇒
+ * 可以被单测直接锁死，不必起一个页面。
+ *
+ * ## 判据（按 `contentType` 分流，不靠猜文本形态）
+ *
+ * | 类型 | 正文 | OCR | 标题源 |
+ * |---|---|---|---|
+ * | photo | `caption`（人话；空=不渲染正文） | `ocrText`（折叠块） | caption → aiDescription → 中性占位 |
+ * | text / voice / article | `text` 全文（语音=转写文本） | 无 | `text` |
+ *
+ * **绝不**在照片 caption 为空时回落到 `text` —— `text` 是 `caption\nocr_text`
+ * 拼接串，回落等于把病修回去（库内实测 858 字符里 779 是截图界面词）。
+ *
+ * ## 为什么不用 `text` 的前缀/长度启发式
+ *
+ * 曾考虑的方案：客户端从 `text` 里"截掉看起来像 OCR 的尾部"。否决理由：
+ * ① 2026-10-25 拼接顺序**翻转过**（`OCR\ncaption` → `caption\nOCR`），库里两代数据共存，
+ *    按前缀猜会整条读出旧行的 OCR；
+ * ② OCR 与 caption 的边界无法从文本形态可靠判定（caption 里也可能出现引号、数字、英文）；
+ * ③ 服务端一次拆准（`services/photo_text.py`，两代顺序都认），客户端只按字段渲染。
+ */
+import { ContentDetail } from '@/utils/event_ops'
+
+/** 正文分层结果（详情页模板直接消费） */
+export class BodyLayers {
+	/** 正文（照片=caption；文字/语音=text 全文）。空串 ⇒ 模板不渲染正文段 */
+	body: string
+	/** 照片 OCR 原文（机器产物，折叠展示）。空串 ⇒ 不渲染「照片里的文字」块 */
+	ocr: string
+	/** 标题来源文本（空串 ⇒ 由调用方给中性标题） */
+	titleSrc: string
+	/** AI「观察」卡文案：照片 caption 为空时用 ai_description 补位，否则留空（避免与正文重复） */
+	aiNote: string
+	/** 正文来源行的前缀（「来自照片的描述」/「来自语音转写的 AI 描述」） */
+	sourceLabel: string
+
+	constructor(body: string, ocr: string, titleSrc: string, aiNote: string, sourceLabel: string) {
+		this.body = body
+		this.ocr = ocr
+		this.titleSrc = titleSrc
+		this.aiNote = aiNote
+		this.sourceLabel = sourceLabel
+	}
+}
+
+/**
+ * ContentDetail → 各展示位该显示什么。
+ *
+ * @param d 详情（字段由 `fetchContentDetail` 解析；非照片类型 caption/ocrText 恒空）
+ * @returns 分层结果；调用方负责把空串解释成"不渲染"（模板 `v-if`）。
+ */
+export function resolveBodyLayers(d: ContentDetail): BodyLayers {
+	if (d.contentType == 'photo') {
+		// 照片：正文只用 caption。caption 为空时**不回落到 text**（见模块文档）。
+		let aiNote = ''
+		if (d.caption == '') {
+			// 正文位空了 ⇒ ai_description 不是"重复",而是此时唯一的描述,补进 AI 卡
+			aiNote = d.aiDescription
+		}
+		let titleSrc = d.caption
+		if (titleSrc == '') {
+			titleSrc = d.aiDescription
+		}
+		return new BodyLayers(d.caption, d.ocrText, titleSrc, aiNote, '来自照片的描述 · 你也可以补充一句')
+	}
+	if (d.contentType == 'voice') {
+		// 语音：`text` 就是转写文本（人话），照旧整段。
+		return new BodyLayers(d.text, '', d.text, '', '来自语音转写的 AI 描述 · 你也可以补充一句')
+	}
+	// 文字 / 文章：`text` 是用户自己写的原文。
+	return new BodyLayers(d.text, '', d.text, '', '来自文字记录 · 你也可以补充一句')
+}

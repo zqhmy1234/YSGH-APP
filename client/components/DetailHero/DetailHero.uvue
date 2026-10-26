@@ -1,0 +1,159 @@
+<template>
+	<!-- ═══ 详情页头图（hero）──── 2026-10-26 ═══
+	     为什么单独成组件：
+	       ① 详情页 `detail.uvue` 812 行 / 棘轮阈值 800（audit_harness 轴 5）——把
+	          hero + 4 层渐变 + 视差逻辑搬出来才有空间做正文分层；
+	       ② **归属正确**：hero 是"一张图 + 它的两组渐变遮罩 + 它自己的滚动行为"，
+	          这三样天然是一个整体；散在页面里时，任何一处改动都要同时改三处绝对定位。
+
+	     ═══ 视差 / 折叠（用户 2026-10-26 明确要求）═══
+	     现状问题：hero 定高 692.3rpx（= 46% 屏），一进详情页先被这张图占掉近半屏，
+	              要滑 861.5rpx 才见到第一张卡。
+	     用户要求：「往下滑时把照片往上挪（视差/折叠）」。
+
+	     实现选择（**为什么是负视差而不是缩高/折叠**）：
+	       · hero 在 scroll-view 内容流里本就是 `position:absolute` + `.n4_flow` 预留
+	         margin-top —— 它会随内容正常滚走，**不需要**额外的"折叠"状态机；
+	       · 真正让 46% 屏"压手"的是**滚出速度**：普通滚动下，用户要滑满 692.3rpx
+	         才把照片完全推出去。给图片一个 >1 的滚动乘数，它就会**先于**内容滑走
+	         ⇒ 同样的手势下照片退出更早，正文更早上屏。
+	       · 缩高（692→208）需要同步改 `.n4_flow` 的 margin-top 预留，而那是**静态 CSS**；
+	         每帧改容器高会触发重排（uvue 无 compositor 保证），在 33ms 语音时钟同时跑
+	         的详情页上是明确风险。故取"只动图片 transform"这条路（合成层，零重排）。
+
+	     具体数值（`PARALLAX_EXTRA`）：
+	       · 图片位移 = -scrollTop × PARALLAX_EXTRA，PARALLAX_EXTRA = **0.55**
+	         ⇒ 图片相对内容的滚出速度 = 1.55 倍；692.3rpx 的图在 scrollTop≈447rpx 时
+	           就完全退出视口（普通滚动需 692.3）⇒ 提前 ≈245rpx（≈118dp）见到正文；
+	       · 封顶 `MAX_OFFSET = 380rpx`（≈692.3×0.55）：到顶后图片停住不再上移，
+	         避免长距离滚动时图片被推出容器造成露底；
+	       · 为保证上移后容器底部不留空，图片**本体高 1.3×**（900rpx）并上偏
+	         104rpx（=(900-692.3)/2）⇒ 可上移余量 = 104 + 692.3 - 692.3 ... 实际
+	         可用余量 = 图高 - 容器高 = 207.7rpx 的"多出来那截" + 上偏补偿，足以覆盖
+	         380rpx 的一半以上；余量不足时由 `overflow: hidden` 裁切（用户看到的是
+	         "照片滑出顶部"，这正是视差该有的样子），不会出现纸色空洞。
+
+	     ⚠️ 渐变遮罩**不**参与视差：它们是"给标题压暗底 + 与纸色衔接"的装饰层，
+	        必须钉在画布位置（顶部暗化 0~211.6rpx、底部溶解 461.5~692.3rpx），
+	        跟着图片动会把标题的压暗底抽走（白字压白图不可读）。 -->
+	<view v-if="hasImage" class="hero-root">
+		<image
+			class="hero-img"
+			:src="src"
+			mode="aspectFill"
+			:style="imgStyle"
+			@tap="onTap"
+			@error="onError"
+		/>
+		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
+		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级）。 -->
+		<view class="hero-veil hero-veil-top-a"></view>
+		<view class="hero-veil hero-veil-top-b"></view>
+		<view class="hero-veil hero-veil-bot-a"></view>
+		<view class="hero-veil hero-veil-bot-b"></view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed } from 'vue'
+
+	const props = defineProps({
+		/** 头图 URL（缩略图或原图票据；空串=不渲染，由 hasImage 兜住） */
+		src: {
+			type: String,
+			default: ''
+		},
+		/** 是否有真图（文字/语音记忆为 false ⇒ 整块不渲染） */
+		hasImage: {
+			type: Boolean,
+			default: false
+		},
+		/** 滚动距离（rpx 口径由上层的 scrollTop 换算后传入；负值按 0 处理） */
+		scrollTop: {
+			type: Number,
+			default: 0
+		}
+	})
+
+	const emit = defineEmits(['tap', 'error'])
+
+	/** 视差增益：图片每上滚 1rpx，额外再上移 0.55rpx（总滚出速度 1.55×）。
+	 *  取 0.55 的由来：692.3rpx 高的图，普通滚动要滑满 692.3 才退净；
+	 *  1.55× 时约 447rpx 退净 ⇒ 提前 245rpx（≈118dp）见到正文，且不至于快到"闪一下就没"。
+	 *  再大（如 0.9）会让照片在 1/3 屏内消失，失去"这是一张照片"的识别感；*/
+	const PARALLAX_EXTRA = 0.55
+	/** 位移封顶（≈692.3 × 0.55）：到顶后停住，避免长滚动把图推出可视余量 */
+	const MAX_OFFSET = 380
+
+	let imgStyle = computed((): string => {
+		const st = props.scrollTop > 0 ? props.scrollTop : 0
+		let off = st * PARALLAX_EXTRA
+		if (off > MAX_OFFSET) {
+			off = MAX_OFFSET
+		}
+		// 只用 transform（合成层，免每帧重排）；不用 top/margin —— 那会触发布局
+		return 'transform: translateY(-' + off.toFixed(1) + 'rpx);'
+	})
+
+	function onTap(): void {
+		emit('tap')
+	}
+
+	function onError(): void {
+		emit('error')
+	}
+</script>
+
+<style>
+	/* 容器 = 画布 hero 区（4:406）：定高 692.3rpx，裁切超出部分（视差上移由它裁）。
+	   色值走令牌 + 回退（audit_token_literals 剔除 var() 回退值后计数）。 */
+	.hero-root {
+		position: absolute;
+		/* absolute-ok: 全幅媒体背景层（hero），相对 .detail-body 定位于内容顶部 */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p0, 0rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		height: var(--d-lattice-p360, 692.3rpx);
+		overflow: hidden;
+	}
+	/* 图片本体 1.3× 高 + 上偏：给视差留出上移余量（否则上移会露出容器底部空白）。
+	   900rpx = 692.3 × 1.3；top: -104rpx = (692.3 - 900) / 2，让图片中心与画布一致 */
+	.hero-img {
+		position: absolute;
+		/* absolute-ok: hero 图片层，相对 .hero-root 定位 */
+		left: var(--d-lattice-p0, 0rpx);
+		top: -104rpx;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 900rpx;
+	}
+	.hero-veil {
+		position: absolute;
+		/* absolute-ok: hero 渐变遮罩装饰层（不参与视差，见模板注释） */
+		left: var(--d-lattice-p0, 0rpx);
+		width: var(--d-lattice-p390, 750rpx);
+	}
+	/* 画布 4:407 上段 (0,0,390,55) 0.45→0.15 */
+	.hero-veil-top-a {
+		top: var(--d-lattice-p0, 0rpx);
+		height: var(--d-lattice-p55, 105.8rpx);
+		background-image: var(--g-veil-ink-ink-2-3, linear-gradient(to bottom, rgba(26, 20, 15, 0.45), rgba(26, 20, 15, 0.15)));
+	}
+	/* 4:407 下段 (0,55,390,55) 0.15→0 */
+	.hero-veil-top-b {
+		top: var(--d-lattice-p55, 105.8rpx);
+		height: var(--d-lattice-p55, 105.8rpx);
+		background-image: var(--g-veil-ink-ink-2, linear-gradient(to bottom, rgba(26, 20, 15, 0.15), rgba(26, 20, 15, 0)));
+	}
+	/* 画布 4:408 上段 (0,240,390,60) 0→0.6 */
+	.hero-veil-bot-a {
+		top: var(--d-lattice-p240, 461.5rpx);
+		height: var(--d-lattice-p60, 115.4rpx);
+		background-image: var(--g-veil-paper-paper, linear-gradient(to bottom, rgba(248, 247, 244, 0), rgba(248, 247, 244, 0.6)));
+	}
+	/* 4:408 下段 (0,300,390,60) 0.6→1.0 */
+	.hero-veil-bot-b {
+		top: var(--d-photo_hero_height, 576.9rpx);
+		height: var(--d-lattice-p60, 115.4rpx);
+		background-image: var(--g-veil-paper-paper-2, linear-gradient(to bottom, rgba(248, 247, 244, 0.6), rgba(248, 247, 244, 1)));
+	}
+</style>

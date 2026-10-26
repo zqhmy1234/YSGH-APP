@@ -12,6 +12,7 @@ from app.api import make_router
 from app.db.models import Content
 from app.schemas.content import ContentOut
 from app.services.external.media_url import content_urls
+from app.services.photo_text import split_caption_ocr
 
 router = make_router(prefix="/api/v1/contents", tags=["contents"])
 
@@ -21,6 +22,14 @@ logger = logging.getLogger("yishu.contents")
 
 
 def _to_out(c: Content) -> ContentOut:
+    # 2026-10-26（详情页「照片上的文字全被打出来」修复）：照片的 `text` 是
+    # `caption\nocr_text` 的拼接串（检索要整串，展示要分层）。此处**只加并列字段**
+    # `caption` / `ocr_text`，`text` 原样下发 ⇒ 老客户端行为不变、向量/搜索不变。
+    # 拆分逻辑收在 `services/photo_text.py`（两代拼接顺序都认），非照片类型两者恒 None。
+    caption: str | None = None
+    ocr_text: str | None = None
+    if c.content_type == "photo":
+        caption, ocr_text = split_caption_ocr(c.text, (c.extra or {}).get("ocr_text"))
     return ContentOut(
         id=str(c.id),
         content_type=c.content_type,
@@ -48,6 +57,8 @@ def _to_out(c: Content) -> ContentOut:
         size_bytes=c.size_bytes,
         tags_json=c.tags_json,
         ai_description=c.ai_description,
+        caption=caption,
+        ocr_text=ocr_text,
     )
 
 

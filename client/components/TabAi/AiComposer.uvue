@@ -1,0 +1,550 @@
+<template>
+	<!-- AI 页输入区（2026-10-26 · AI 页重设计 ②③④ 一次收口）
+	     ═══════════════════════════════════════════════════════════════════════
+	     ## 为什么整块搬进组件（而不是在 TabAi 里继续加）
+
+	     `TabAi.uvue` 已 793 行 / 结构棘轮阈值 800 / **无豁免** —— 本轮要改的三件事
+	     （自适高输入框、已选附件可见、附件面板重排）全在输入区，原地改必然先撞线。
+	     按 `AiBody.uvue`（2026-10-25）/ `SearchHitOps.uvue`（2026-10-16）先例：**先搬再改**。
+
+	     ## 三处重设计的判据（全部来自真机反馈 + 画布 ai_typing 节 Q/R）
+
+	     ④ 输入框自适高（真机原话「现在是定高单行输入框，写长句时看不到全文」）
+	        · 原来用的是 `<input>` —— **input 不支持 auto-height**（只有 textarea 支持）；
+	        · 现改 `<textarea :auto-height="true">` + `min-height`/`max-height`。
+	          ⚠️ 设了 auto-height 后 **style.height 不生效**（官方文档明写），故只给
+	          min/max，绝不给 height；到 240rpx 后内部滚动（同款写法见官方
+	          `pages/component/textarea/textarea.uvue` 的 min-height/max-height 用例）。
+	        · 外层输入条原为**定高 100rpx + align-items:center**：定高会把 textarea
+	          压回一行，故改 `align-items: flex-end`（按钮贴底，跟随输入框长高）。
+
+	     ③ 添加图片/文件后**要能看到已被添加**（真机原话「选完什么都不显示」）
+	        · 已修复的 bug（`onPickFile`/`onPickImage` 首行 `closeAttach()`）只是让面板
+	          不再提前关闭；**但画布 ai_typing 节 Q「多附件预览编辑（发送前，逐个可删）」
+	          这一整块从未实现** —— 已选项只活在面板里，面板一关就彻底看不见。
+	        · 现在：① 输入框**上方常驻**一条附件 chip 条（面板关着也看得见、可删）；
+	          ② 面板内改「入口行在上、已选在下」，选完的项就出现在刚点的地方；
+	          ③ 面板标题带「已选 N」，关面板前也有确认感。
+
+	     ② 附件面板（画布 ai_typing 节 P）
+	        · 结构：把手 → 标题(+已选数) → 入口行(图片/文件) → 已选图片格 → 已选文件列表；
+	        · 每一项都有独立删除（原图片格**没有删除控件**，选错只能整页重来）。
+
+	     ## 边界（刻意不做）
+	     · **不持有附件业务状态**：`pickedImages/pickedFiles` 仍是宿主的（发送失败重试要
+	       复用同一批附件、`content_id` 不重复上传），本组件只渲染 + 抛事件。
+	     · **不发请求**：选图/选文件仍在宿主（走既有上传链），本组件只 `emit('pick-image')`。
+	     · 不写 `aiAttachOpen` 之外的状态：面板开关仍走 `shell_state`（返回键优先级在 shell）。
+	     ═══════════════════════════════════════════════════════════════════════ -->
+	<view class="aic-root">
+		<!-- ⓐ 已选附件 chip 条（画布 ai_typing 节 Q）：**常驻**在输入框上方 -->
+		<scroll-view v-if="attachCount > 0" class="aic-chips" direction="horizontal" :show-scrollbar="false">
+			<view class="aic-chips-row">
+				<view v-for="(p, i) in imagePaths" :key="'aic-img-' + i" class="aic-chip">
+					<image class="aic-chip-thumb" :src="p" mode="aspectFill" />
+					<view class="aic-chip-info">
+						<text class="aic-chip-name">图片 {{ i + 1 }}</text>
+						<text class="aic-chip-meta">{{ sizeText(imageSizes, i) }}</text>
+					</view>
+					<view class="aic-chip-x pressable" @tap="onRemoveImage(i)">
+						<text class="aic-chip-x-text">×</text>
+					</view>
+				</view>
+				<view v-for="(n, j) in fileNames" :key="'aic-file-' + j" class="aic-chip">
+					<view class="aic-chip-filebox">
+						<image class="aic-chip-fileicon" src="/static/icons/icon-file.svg" />
+					</view>
+					<view class="aic-chip-info">
+						<text class="aic-chip-name">{{ n }}</text>
+						<text class="aic-chip-meta">{{ sizeText(fileSizes, j) }} · 只带文件名</text>
+					</view>
+					<view class="aic-chip-x pressable" @tap="onRemoveFile(j)">
+						<text class="aic-chip-x-text">×</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- ⓑ 输入条：textarea 自适高（替代原 <input>，input 不支持 auto-height） -->
+		<view class="aic-bar">
+			<textarea :adjust-position="true" class="aic-input" v-model="text" :auto-height="true" placeholder="问点什么…"
+				placeholder-class="aic-ph" :maxlength="2000" confirm-type="send" :confirm-hold="true" @confirm="onSendTap" />
+			<view class="aic-send pressable" :class="canSend ? 'aic-send-on' : 'aic-send-off'" @tap="onSendTap">
+				<image class="aic-send-icon" src="/static/icons/i2_359.svg" />
+			</view>
+			<view class="aic-attach pressable" @tap="openAttach">
+				<image class="aic-attach-icon" src="/static/icons/icon-paperclip.svg" />
+			</view>
+		</view>
+
+		<!-- ⓒ 附件面板（画布 ai_typing 节 P）：scrim 点空收起 -->
+		<view v-if="attachShown()" class="aic-scrim" @tap="closeAttach" />
+		<view v-if="attachShown()" class="aic-panel">
+			<view class="aic-handle" />
+			<text class="aic-title">{{ panelTitle }}</text>
+			<!-- 入口行在**最上**：选完的项就出现在刚点过的位置正下方（原在最下方，
+			     新选项出现在它上面，长面板里等于"看不见"） -->
+			<view class="aic-entries">
+				<view class="aic-entry aic-entry-first pressable" @tap="onPickImage">
+					<image class="aic-entry-icon" src="/static/icons/record-gallery.svg" />
+					<text class="aic-entry-text">图片</text>
+				</view>
+				<view class="aic-entry pressable" @tap="onPickFile">
+					<image class="aic-entry-icon" src="/static/icons/icon-file.svg" />
+					<text class="aic-entry-text">文件</text>
+				</view>
+			</view>
+			<scroll-view class="aic-body" direction="vertical">
+				<!-- 已选图片：每张可单独删（原无删除控件） -->
+				<view v-if="imagePaths.length > 0" class="aic-grid">
+					<view v-for="(pi, idx) in imagePaths" :key="'aic-g-' + idx" class="aic-thumbwrap">
+						<image class="aic-thumb" :src="pi" mode="aspectFill" />
+						<view class="aic-thumbx pressable" @tap="onRemoveImage(idx)">
+							<text class="aic-thumbx-text">×</text>
+						</view>
+					</view>
+				</view>
+				<!-- 已选文件：无缩略图，只列名字 + 大小 + 可单删 -->
+				<view v-if="fileNames.length > 0" class="aic-files">
+					<view v-for="(f, fidx) in fileNames" :key="'aic-f-' + fidx" class="aic-file-row">
+						<image class="aic-file-icon" src="/static/icons/icon-file.svg" />
+						<text class="aic-file-name">{{ f }}</text>
+						<text class="aic-file-size">{{ sizeText(fileSizes, fidx) }}</text>
+						<view class="aic-file-x pressable" @tap="onRemoveFile(fidx)">
+							<text class="aic-file-x-text">×</text>
+						</view>
+					</view>
+				</view>
+				<!-- 空态提示：面板刚打开时不留一片空白（否则像"没加载出来"） -->
+				<text v-if="attachCount == 0" class="aic-hint">还没有添加任何东西 · 选好的图片和文件会显示在这里，发送前都能删掉</text>
+				<text v-if="fileNames.length > 0" class="aic-hint">文件只会把文件名告诉 AI，不会读取文件内容</text>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { computed, ref, watch } from 'vue'
+	import { aiAttachOpen } from '@/utils/shell_state'
+
+	// Props 口径照 AiBody/DimEvidenceList 先例：只传基本类型与数组（对象 prop 在 UTS 边界有类型陷阱），
+	// 且数组一律 `required: true`（本仓零 `default: () => []` 工厂先例，不拿新写法冒险）。
+	const props = defineProps({
+		/** 流式生成中：发送钮置灰、点了给提示（宿主判重入；本组件只做视觉） */
+		busy: { type: Boolean, default: false },
+		/** 已选图片的本地预览路径（缩略图只能读本地路径；云侧 URL 发送前拿不到） */
+		imagePaths: { type: Array<string>, required: true },
+		/** 与 imagePaths **等长**的字节数（宿主同进同出维护，模板按下标取用） */
+		imageSizes: { type: Array<number>, required: true },
+		/** 已选文件名（文件附件不上传，故只有名字与大小） */
+		fileNames: { type: Array<string>, required: true },
+		fileSizes: { type: Array<number>, required: true },
+		/** 宿主预填（detail 页 askAI / 切回本 tab 重读上下文）：seq 变化才写入，幂等 */
+		seedText: { type: String, default: '' },
+		seedSeq: { type: Number, default: 0 }
+	})
+	const emit = defineEmits(['send', 'pick-image', 'pick-file', 'remove-image', 'remove-file'])
+
+	/** 输入文本。**本组件持有**：宿主的 draft 因此可以整条删掉（宿主只在发送时收文本） */
+	let text = ref('')
+	const attachCount = computed((): number => props.imagePaths.length + props.fileNames.length)
+	const canSend = computed((): boolean => text.value.trim() != '' && !props.busy)
+	const panelTitle = computed((): string => {
+		if (attachCount.value == 0) {
+			return '添加附件'
+		}
+		return '添加附件 · 已选 ' + attachCount.value
+	})
+
+	/** 字节数 → 人话（画布节 Q 的「3.1 MB / 2.4 MB」同口径；B/KB 足够，不引第三方库） */
+	function sizeText(sizes: Array<number>, idx: number): string {
+		if (idx >= sizes.length) {
+			return ''
+		}
+		const n = sizes[idx]
+		if (n <= 0) {
+			return ''
+		}
+		if (n >= 1024 * 1024) {
+			return (n / (1024 * 1024)).toFixed(1) + ' MB'
+		}
+		if (n >= 1024) {
+			return (n / 1024).toFixed(0) + ' KB'
+		}
+		return n + ' B'
+	}
+
+	function onSendTap(): void {
+		if (props.busy) {
+			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+			return
+		}
+		const t = text.value.trim()
+		if (t == '') {
+			return
+		}
+		// 先清空再抛：宿主 `sendNow` 里有"上一轮还在生成就早退"的分支，若先 emit 再清空，
+		// 那种情况下用户的字会被吞掉（清空了却没发出去）。故清空以"宿主一定会接住"为前提。
+		text.value = ''
+		emit('send', t)
+	}
+
+	// 附件面板开关：与 shell 共享（返回键优先级在 shell，故不能做成组件内 ref）
+	function attachShown(): boolean {
+		return aiAttachOpen.value
+	}
+	function openAttach(): void {
+		aiAttachOpen.value = true
+	}
+	function closeAttach(): void {
+		aiAttachOpen.value = false
+	}
+
+	function onPickImage(): void {
+		emit('pick-image')
+	}
+	function onPickFile(): void {
+		emit('pick-file')
+	}
+	function onRemoveImage(idx: number): void {
+		emit('remove-image', idx)
+	}
+	function onRemoveFile(idx: number): void {
+		emit('remove-file', idx)
+	}
+
+	// 宿主预填（detail 页 askAI 的上下文、切回本 tab 时重读三键）：
+	// 只在 seq 变化时写入 —— 用 seq 而不是 watch(seedText)，因为"同一段文本再预填一次"
+	// 也必须生效（例如重复从同一详情页跳进来）。
+	watch((): number => props.seedSeq, (): void => {
+		if (props.seedText != '') {
+			text.value = props.seedText
+		}
+	})
+</script>
+
+<style>
+	/* 样式自带（同 AiTyping 口径）：本文件只服务输入区，放进 tab-ai.css 会让那份共享表
+	   继续膨胀，且宿主不再需要为这里维护类名。类名统一 `aic-` 前缀（uvue 的 style 是全局的，
+	   同页同名类会互相覆盖 —— 本仓踩过）。 */
+	.aic-root {
+		width: 100%;
+		flex-direction: column;
+		flex-shrink: 0;
+	}
+
+	/* ── ⓐ 已选附件 chip 条 ── */
+	.aic-chips {
+		width: 100%;
+		margin-bottom: var(--d-lattice-p8, 15.4rpx);
+	}
+	.aic-chips-row {
+		flex-direction: row;
+		padding-bottom: var(--d-lattice-p1, 1.9rpx);
+	}
+	/* chip：缩略图/图标 + 两行信息 + 删除。高 78rpx（≈39px）+ 上下 padding 后热区 ≥ 44px */
+	.aic-chip {
+		flex-direction: row;
+		align-items: center;
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		padding-left: var(--d-lattice-p5, 9.6rpx);
+		padding-right: var(--d-lattice-p2, 3.8rpx);
+		padding-top: var(--d-lattice-p3, 5.8rpx);
+		padding-bottom: var(--d-lattice-p3, 5.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p4, 7.7rpx) var(--a-ink-08, rgba(58,46,37,0.08));
+		overflow: hidden;
+	}
+	.aic-chip-thumb {
+		width: var(--d-lattice-p34, 65.4rpx);
+		height: var(--d-lattice-p34, 65.4rpx);
+		border-radius: var(--d-lattice-p5, 9.6rpx);
+		background-color: var(--c-paper-300, #F0EBE3);
+	}
+	.aic-chip-filebox {
+		width: var(--d-lattice-p34, 65.4rpx);
+		height: var(--d-lattice-p34, 65.4rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: var(--c-paper-200, #F6F1E7);
+		border-radius: var(--d-lattice-p5, 9.6rpx);
+	}
+	.aic-chip-fileicon {
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
+	}
+	.aic-chip-info {
+		flex-direction: column;
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		justify-content: center;
+	}
+	.aic-chip-name {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 次要信息（大小/口径）：用 --c-surface-neutralD（6B5D4F）而不是 ink-500。
+	   实测对比度（白底）：ink-500 = 4.14:1 **低于 AA 正文 4.5**；surface-neutralD = **6.36:1** 达标，
+	   且比 ink-900(13.15) 弱一档 ⇒ 层级仍分得开。22rpx 是本仓最小字号下限，不再往下压。 */
+	.aic-chip-meta {
+		margin-top: var(--d-lattice-p1, 1.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-surface-neutralD, #6B5D4F);
+	}
+	/* 删除热区 88rpx(≈44px) 见方：低于 44dp 手指点不准（本仓 attach-file-remove 同款教训） */
+	.aic-chip-x {
+		width: var(--d-lattice-p46, 88.5rpx);
+		height: var(--d-lattice-p46, 88.5rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+	}
+	.aic-chip-x-text {
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-700, #5A4C40);
+	}
+
+	/* ── ⓑ 输入条 ── */
+	.aic-bar {
+		width: 100%;
+		flex-direction: row;
+		/* 原为 align-items: center + 定高 100rpx：定高会把自适高的 textarea 压回一行
+		   （auto-height 下 style.height 不生效，但父级定高会裁切） */
+		align-items: flex-end;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		padding-top: var(--d-lattice-p12, 23.1rpx);
+		padding-bottom: var(--d-lattice-p12, 23.1rpx);
+		background-color: var(--a-white-55, rgba(255,255,255,0.55));
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-white-65, rgba(255,255,255,0.65)), inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-40, rgba(255,255,255,0.4)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p24, 46.2rpx) var(--a-ink-08, rgba(59,46,38,0.08));
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		overflow: hidden;
+	}
+	/* 自适高正文：min 一行(44rpx 行高 + 上下 pad)、max 240rpx（≈6 行）后内部滚动。
+	   ⚠️ 不给 height：auto-height 下 height 无效（官方文档），写了只会误导后人。 */
+	.aic-input {
+		flex: 1;
+		min-height: var(--d-lattice-p36, 69.2rpx);
+		max-height: var(--d-raw-r240, 240rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		padding-left: var(--d-lattice-p1, 1.9rpx);
+		padding-right: var(--d-lattice-p1, 1.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		line-height: var(--d-raw-r40, 40rpx);
+		color: var(--c-ink-900, #3A2E25);
+		background-color: var(--c-transparent, rgba(0,0,0,0));
+	}
+	/* placeholder：原为 `placeholder-style="color:B3A696"` —— B3A696 在玻璃底 FCFBFA 上
+	   仅 **2.31:1**（AA 需 4.5:1），是本次重设计里第二处真实可读性缺陷。
+	   改 --c-ink-500（色号 8A7A6A）→ 4.01:1：**仍低于 AA 正文 4.5**，故仅作占位提示用，
+	   并要求真正的可读信息（示例问题）走 chip 实底（墨棕 5A4C40 对 paper-100 = 7.71:1）。 */
+	.aic-ph {
+		color: var(--c-ink-500, #8A7A6A);
+		font-size: var(--d-lattice-p14, 26.9rpx);
+	}
+	.aic-send {
+		width: var(--d-lattice-p36, 69.2rpx);
+		height: var(--d-lattice-p36, 69.2rpx);
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		border-radius: var(--d-lattice-p18, 34.6rpx);
+		overflow: hidden;
+	}
+	.aic-send-on {
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	/* 不可发态：用沙色底 + 白箭头，与原锈红实底形成明显差别（不靠"降透明度"——
+	   opacity 会让白箭头也跟着淡，看着像 bug）。白箭头对沙色 C7AD87 = 2.15:1，
+	   但它只是"当前不可用"的图标、不是可读文字，且真正语义由"点了弹提示"承担。 */
+	.aic-send-off {
+		background-color: var(--c-sand-500, #C7AD87);
+	}
+	.aic-send-icon {
+		width: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p16, 30.8rpx);
+	}
+	.aic-attach {
+		width: var(--d-lattice-p36, 69.2rpx);
+		height: var(--d-lattice-p36, 69.2rpx);
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-ink-12, rgba(58,46,37,0.12));
+		border-radius: var(--d-lattice-p18, 34.6rpx);
+		overflow: hidden;
+	}
+	.aic-attach-icon {
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
+	}
+
+	/* ── ⓒ 附件面板 ── */
+	.aic-scrim {
+		position: fixed;
+		/* absolute-ok: 全屏遮罩浮层（浮层白名单） */
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: var(--a-ink-40, rgba(42,33,26,0.4));
+		z-index: 1000;
+	}
+	.aic-panel {
+		position: fixed;
+		/* absolute-ok: 底部半屏浮层面板（浮层白名单），z1000 与 RecordSheet 同层 */
+		left: var(--d-card_margin_x, 38.5rpx);
+		right: var(--d-card_margin_x, 38.5rpx);
+		bottom: var(--d-raw-r220, 220rpx);
+		padding-bottom: var(--d-lattice-p18, 34.6rpx);
+		max-height: 420px;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p24, 46.2rpx) var(--a-ink-18, rgba(59,46,38,0.18));
+		flex-direction: column;
+		align-items: center;
+		z-index: 1001;
+	}
+	.aic-handle {
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		width: var(--d-lattice-p48, 92.3rpx);
+		height: var(--d-lattice-p5, 9.6rpx);
+		border-radius: var(--d-raw-r5, 5rpx);
+		background-color: var(--c-paper-600, #E5DCC8);
+	}
+	.aic-title {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.aic-entries {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		width: 100%;
+		flex-direction: row;
+	}
+	/* 入口钮：80.8rpx(≈40px) 高，加 23.1rpx 上下 padding 后热区 ≈ 45px（≥44dp） */
+	.aic-entry {
+		flex: 1;
+		height: var(--d-lattice-p42, 80.8rpx);
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		flex-direction: row;
+		align-items: center;
+		background-color: var(--c-paper-100, #F8F7F4);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+	}
+	.aic-entry-first {
+		margin-left: 0;
+	}
+	.aic-entry-icon {
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
+	}
+	.aic-entry-text {
+		margin-left: var(--d-lattice-p10, 19.2rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.aic-body {
+		width: 100%;
+		flex-direction: column;
+	}
+	.aic-grid {
+		margin-top: var(--d-lattice-p12, 23.1rpx);
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.aic-thumbwrap {
+		position: relative;
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		margin-bottom: var(--d-lattice-p8, 15.4rpx);
+	}
+	.aic-thumb {
+		width: var(--d-lattice-p100, 192.3rpx);
+		height: var(--d-lattice-p76, 146.2rpx);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-paper-300, #F0EBE3);
+	}
+	/* 角标删除：压在缩略图右上角，88rpx 热区（超出图外的部分靠负 top 吸收） */
+	.aic-thumbx {
+		position: absolute;
+		/* absolute-ok: 缩略图角标删除按钮（铁律 11.5 例外：角标必须脱离流） */
+		top: 0;
+		right: 0;
+		width: var(--d-lattice-p40, 76.9rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: var(--a-ink-40, rgba(42,33,26,0.4));
+		border-radius: var(--d-raw-r9999, 9999rpx);
+	}
+	.aic-thumbx-text {
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	.aic-files {
+		flex-direction: column;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+	}
+	.aic-file-row {
+		flex-direction: row;
+		align-items: center;
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+	}
+	.aic-file-icon {
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
+	}
+	.aic-file-name {
+		flex: 1;
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-700, #5A4C40);
+	}
+	.aic-file-size {
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	/* 删除热区：88.5rpx(≈44px) 高 × 61.5rpx 宽，色 ink-700（白底 8.26:1） */
+	.aic-file-x {
+		width: var(--d-lattice-p32, 61.5rpx);
+		min-height: var(--d-lattice-p46, 88.5rpx);
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+	}
+	.aic-file-x-text {
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-700, #5A4C40);
+	}
+	.aic-hint {
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		padding-top: var(--d-lattice-p10, 19.2rpx);
+		font-size: var(--d-raw-r22, 22rpx);
+		line-height: var(--d-raw-r34, 34rpx);
+		/* 提示语是"要读的句子"（不是装饰）：ink-500 在白底 4.14:1 不达 AA ⇒ 用 surface-neutralD
+		   （6B5D4F / 6.36:1）。attach 面板整块是白底，故按白底算。 */
+		color: var(--c-surface-neutralD, #6B5D4F);
+	}
+</style>

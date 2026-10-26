@@ -19,7 +19,7 @@
 				</view>
 			</view>
 		</view>
-		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
+		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false" @scroll="onPageScroll">
 		<view class="detail-body">
 		<!-- ═══ D-1（2026-10-25 · task-20）**假图修复** ═══
 		     原来这里无条件渲染 `<image :src="heroSrc" @tap="onToggleHero">`，而 `heroSrc` 初值是
@@ -34,17 +34,28 @@
 		     ① 不渲染 4 个渐变层（它们是 hero 的装饰），② 把标题/元信息改回普通流、③ `n4_flow`
 		     的 margin-top 归零 —— 否则会留下 861rpx 的**空白洞**（比假图更难看）。
 		     故下面标题/元信息与 `n4_flow` 都按 `heroHasImage` 二分：有图=画布原样（绝对定位 + 861.5
-		     预留）；无图=普通流（紧凑排版，语音态即设计稿 F5a 的"无 hero"形态）。 -->
-		<image v-if="heroHasImage" class="n4_406" :src="heroSrc" mode="aspectFill" @tap="onToggleHero" @error="onHeroError" />
-		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
-		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级）。
-		     ⚠️ 这四层是 **hero 的装饰**（给文字压暗底/与纸色衔接）⇒ 无 hero 时必须一起消失。 -->
-		<view v-if="heroHasImage" class="n4_407a"></view>
-		<view v-if="heroHasImage" class="n4_407b"></view>
-		<view v-if="heroHasImage" class="n4_408a"></view>
-		<view v-if="heroHasImage" class="n4_408b"></view>
-		<text class="n4_422" :class="heroHasImage ? '' : 'n4_422-flow'">{{ memTitle }}</text> <!-- 详情标题（动态） -->
-		<text class="n4_423" :class="heroHasImage ? '' : 'n4_423-flow'">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
+		     预留）；无图=普通流（紧凑排版，语音态即设计稿 F5a 的"无 hero"形态）。
+		     E-7（2026-10-26）：标题/元信息另外还要 `!loading` —— 见下方说明。
+		     ── E-2（2026-10-26）：`<image>` + 4 层渐变**收进 `DetailHero` 组件**，并接上
+		         用户要求的「下滑时照片往上挪」视差（组件内 `PARALLAX_EXTRA=0.55`，数值依据见该组件注释）。
+		         抽组件理由：hero 定高 692.3rpx(=46% 屏) 的视差逻辑内联会撑破本页 800 行阈值。 -->
+		<DetailHero
+			:src="heroSrc"
+			:has-image="heroHasImage"
+			:scroll-top="heroScrollTop"
+			@tap="onToggleHero"
+			@error="onHeroError"
+		/>
+		<!-- D-2（2026-10-25 · task-20）**loading 态** + E-7（2026-10-26）**修复其未竟部分** ═══
+		     原实现（task-20）加了骨架屏，但**标题/元信息仍在骨架屏旁边照常渲染**：
+		       · `memTitle` 初值是字面量「记忆详情」⇒ 加载中用户看到的是
+		         「记忆详情」这四个字 —— 那是一个**假标题**，不是占位；
+		       · `memMeta` 初值空串 ⇒ 元信息位什么也没有（但标题假值已足够误导）。
+		     task-20 的注释写着"不显示任何假标题/假正文"，实际只做到了正文，标题漏了。
+		     故这里给两条 `<text>` 补 `v-if="!loading"`：加载期只留骨架块，标题/元信息等
+		     真数据到了再出现 —— 与注释承诺一致，也不再出现"记忆详情"这种假标题闪烁。 -->
+		<text v-if="!loading" class="n4_422" :class="heroHasImage ? '' : 'n4_422-flow'">{{ memTitle }}</text> <!-- 详情标题（动态） -->
+		<text v-if="!loading" class="n4_423" :class="heroHasImage ? '' : 'n4_423-flow'">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
 		<!-- D-2（2026-10-25 · task-20）：**loading 态**。
 		     此前全文搜 `skeleton|loading` = 0 命中 ⇒ 慢网下用户先看到"记忆详情 / 空正文 /
 		     一颗未收藏的星"，以为内容丢了。现在 loading 期间用三行骨架占位（不显示任何
@@ -67,36 +78,24 @@
 		     无 hero 时（文字/语音记忆）这些兄弟都已回到普通流 ⇒ margin-top 必须归零，
 		     否则标题下方凭空出现 861rpx 空白。故按 `heroHasImage` 二分加 `n4_flow-nohero`。 -->
 		<view class="n4_flow" :class="heroHasImage ? '' : 'n4_flow-nohero'">
-			<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
-			<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': !voicePlayable }">
-				<!-- 2026-10-16（RC-F）：播放钮暂停态改读预计算属性（mainActive && mainPlaying），零函数调用 -->
-				<view v-if="mainActive && mainPlaying" class="n4_vbtn-pause">
-					<view class="n4_vbtn-pause-bar"></view>
-					<view class="n4_vbtn-pause-bar"></view>
-				</view>
-				<view v-else class="n4_vbtn-play"></view>
-			</view>
-			<view class="n4_vcol">
-				<text v-if="voiceNote != ''" class="n4_vnote">{{ voiceNote }}</text>
-				<view class="n4_vwave">
-					<!-- 2026-10-16（RC-F）：播放态改读**预计算属性**（mainActive/mainProgress/mainCurText/
-					     mainTotalText），模板零函数调用（原 voiceIsActive()/voiceProgressOfCard()/
-					     voiceCurSecText()/voiceTotalSecText() 每次 tick 全页重算）。waveform 仍走
-					     `wf.waveformOf`——与 TabSearch 先例一致，只在波形落表时 version++，非 tick 热点。 -->
-					<VoiceWave :heights="detailWave" :waveform="wf.waveformOf(contentId)" :active="mainActive" :progress="mainProgress" idle-color="#E5DCC8" played-color="#C4913C" />
-				</view>
-				<view v-if="mainActive" class="n4_vprog">
-					<text class="n4_vprog-cur">{{ mainCurText }}</text>
-					<view class="n4_vtrack">
-						<!-- 2026-10-16（RC-F）：进度填充 `width:%`→`transform:scaleX()`（合成层，免每 tick 重排） -->
-						<view class="n4_vtrack-fill" :style="'transform:scaleX(' + mainProgress + ');transform-origin:left;'"></view>
-					</view>
-					<text class="n4_vprog-total">{{ mainTotalText }}</text>
-				</view>
-				<text v-if="mainActive && mainPlaying" class="n4_vtitle-playing">正在播放 · {{ memTitle }}</text>
-				<text v-else class="n4_vtitle">{{ memTitle }}</text>
-			</view>
-		</view>
+			<!-- 主语音卡：E-4（2026-10-26）抽成 `VoiceMemoCard` 组件。
+			     原为 30 行内联模板（播放钮/波形/进度行/标题），是自含职责单元；抽出的
+			     直接收益是详情页回到 800 行棘轮阈值内，间接收益是播放态**只经 props
+			     流入**（RC-F 收敛结论：模板零函数调用、零全局 ref 读取）。 -->
+			<VoiceMemoCard
+				v-if="isVoice"
+				:heights="detailWave"
+				:waveform="wf.waveformOf(contentId)"
+				:active="mainActive"
+				:playing="mainPlaying"
+				:progress="mainProgress"
+				:cur-text="mainCurText"
+				:total-text="mainTotalText"
+				:title="memTitle"
+				:note="voiceNote"
+				:playable="voicePlayable"
+				@play="onPlayVoice"
+			/>
 		<view v-if="aiNote != '' || tagList.length > 0" class="n4_424"> <!-- AI注释卡（描述或标签任一存在才显示；FE1 数据源 tags_json/ai_description，null=不显示区块）；D4 流式：语音态被 vcard 自然推下（画布同位 1073.1=vcard 底，margin 0 即还原） -->
 			<view class="n4_425"> <!-- 注释头 -->
 				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
@@ -111,9 +110,26 @@
 			</view>
 		</view>
 		<view class="n4_430"> <!-- 正文卡（D4 流式：margin 23.1 接力 AI 卡，语音态被上方区块自然推下） -->
-			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
+			<!-- ═══ E-1（2026-10-26）**正文分层**：不再把 `d.text` 整串当正文 ═══
+			     病根：照片 `content.text` = `caption\nocr_text` 拼接串（检索要整串）。
+			     库内实测一条：full text 858 字符，其中 OCR 779、caption 40 ⇒ 93% 正文是
+			     截图里的界面词（此电脑/本地磁盘/(D:)/GuangH-App/deploy…）。用户原话：
+			     「为什么把照片上的文字都呈现出来」——就是这一串。
+			     修法（按类型分流，`text` 契约不变，服务端并列下发 caption/ocr_text）：
+			       · 照片 → 正文只放 caption（人话）；OCR 收进**可展开**的「照片里的文字」，
+			         默认折叠（行数截断 3 行，展开才全文），一眼不再被界面词糊满；
+			       · 文字/语音 → `text` 就是人话（语音=转写），照旧整段显示；
+			       · 照片且 caption 为空（描述生成失败）→ 正文卡**不显示空卡**，
+			         只留 OCR 折叠条（有 OCR 时）或整卡隐藏。 -->
+			<text v-if="bodyText != ''" class="n4_431">{{ bodyText }}</text>
 			<!-- 卡19 接线：来源行「你也可以补充一句」可点 → 弹输入补一句（本地暂存，见 onEditSup） -->
 			<text v-if="bodySup != ''" class="n4_431-sup">{{ bodySup }}</text>
+			<!-- 照片 OCR：机器产物，默认折叠（组件内自带展开态）。
+			     2026-10-26 E-1：抽成 `PhotoOcrNote` 而非内联 ——
+			     ① 详情页已 781 行 / 棘轮阈值 800（audit_harness 轴 5），内联展开逻辑会破阈；
+			     ② 边界清晰：OCR 是"机器识别的字"，与"人写的正文"是两件事。
+			     非照片类型 `ocrText` 恒空 ⇒ 整块不渲染。 -->
+			<PhotoOcrNote v-if="ocrText != ''" :text="ocrText" />
 			<!-- D-4（2026-10-25 · task-20）：**「补充一句」要有可点线索**。
 			     原来它是一个裸 `<text class="n4_432" @tap="onEditSup">`，文案「来自照片的 AI 描述 ·
 			     你也可以补充一句」，长得和普通说明文字完全一样（无下划线/箭头/按钮底）
@@ -142,31 +158,9 @@
 				</view>
 			</scroll-view>
 		</template>
-		<!-- R9 批次4（Q3 拍板）：事件级语音卡「这条记忆里的声音」——当前内容所属第一个事件内的
-		     其他 voice 成员（排除自身）。播放复用全局引擎；processing/failed 禁播+小字（Q2 拍板）。
-		     生日歌案例：photo 详情无语音大卡，但 ST-DBSCAN 把跑步语音聚进了同事件 → 在此回放 -->
-		<template v-if="eventVoices.length > 0">
-			<text class="n4_evt-title">这条记忆里的声音</text>
-			<view v-for="(v, vi) in eventVoices" :key="vi" class="n4_evt-card"
-				@tap="onPlayEventVoice(v)">
-				<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': v.status != 'done' }">
-					<view v-if="v.active && v.playing" class="n4_vbtn-pause">
-						<view class="n4_vbtn-pause-bar"></view>
-						<view class="n4_vbtn-pause-bar"></view>
-					</view>
-					<view v-else class="n4_vbtn-play"></view>
-				</view>
-				<view class="n4_evt-col">
-					<text v-if="v.status != 'done'" class="n4_vnote">{{ v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放' }}</text>
-					<view class="n4_evt-wave">
-						<!-- 2026-10-16（RC-F）：波形高度/标题在组装期预计算进 `v.wave`/`v.title`；播放态读
-						     `v.active`/`v.playing`/`v.progress`（syncVoiceState 相等守卫写入）——模板零函数调用 -->
-						<VoiceWave :heights="v.wave" :waveform="wf.waveformOf(v.contentId)" :active="v.active" :progress="v.progress" idle-color="#E5DCC8" played-color="#C4913C" />
-					</view>
-					<text class="n4_evt-name">{{ v.title }}</text>
-				</view>
-			</view>
-		</template>
+		<!-- 「这条记忆里的声音」：E-5（2026-10-26）抽成 `EventVoiceList`（自含职责：
+		     只依赖成员数组 + 一个播放回调），详情页只留挂载点。区块空则组件自身不渲染。 -->
+		<EventVoiceList :voices="eventVoices" @play="onPlayEventVoice" />
 		</view> <!-- /n4_flow（D4 流式容器闭合） -->
 		</view>
 		</scroll-view>
@@ -196,11 +190,18 @@
 	import { ref, watch } from 'vue'
 
 	import { WaveformCache } from '@/composables/useWaveform'
+	// E-1（2026-10-26）：正文分层判据（纯函数；详情/搜索/收藏共用同一条规则）
+	import { resolveBodyLayers } from '@/composables/useContentBody'
+	// E-6（2026-10-26）：播放态投影（相等守卫的性能契约，见该模块文档）
+	// 同时承载事件级语音视图模型 `EventVoiceItem`（随 E-5 区块迁移从页面挪进 .uts，
+	// 理由见该模块注释：.uvue 内类字段默认初始化会被 UTS 编译拒绝、.uvue 也不是
+	// 稳定的跨文件导出形态；先例 TabSearch.VoiceResult / SplitItem 均在 .uts 侧）。
+	import { VoiceStateProjector, EventVoiceItem } from '@/composables/useVoiceProjection'
 	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
 	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
 import { deleteContent } from '@/utils/play_trash'
-import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/play_content'
+import { updateContentRemark } from '@/utils/play_content'
 	// B12：离线判定（play_* 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
 	// 🚨 2026-10-11 静态审查修复：原用 `getNetKind()`（回调式、返回 void）做同步判断 ⇒
 	// `void == 'none'` 恒假，改口分支永不进入（用户仍看到"失败"而操作其实已排队）。
@@ -216,7 +217,9 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		voiceProgress,
 		voiceCurSec,
 		voiceTotalSec,
-		fmtVoiceTime,
+		// fmtVoiceTime 已不再直接使用（2026-10-26 E-6：秒→文本的格式化随播放态投影
+		// 一起迁进 `composables/useVoiceProjection.uts`）⇒ 从本页 import 移除，
+		// 避免「导入了但没人用」的假依赖（audit_harness 导出引用轴会记为低引用噪声）。
 		genWaveHeights
 	} from '@/utils/audio_player'
 
@@ -228,8 +231,19 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	let contentId = ref('')
 	let memTitle = ref('记忆详情')
 	let memMeta = ref('')
-	let memBody = ref('')
+	// ═══ E-1（2026-10-26）**正文分层** ═══
+	// 病根：照片 `content.text` = `caption\nocr_text` 拼接串（检索故意拼整串）。
+	// 库内实测一条：full 858 字符，其中 OCR 779、caption 40 ⇒ 93% 正文是截图界面词。
+	// 故正文改由三个独立状态驱动，而不是继续复用 `memBody = d.text`：
+	//   bodyText  —— 正文（照片=caption；文字/语音=text 全文）；空串 ⇒ 整段不渲染
+	//   ocrText   —— 照片 OCR 原文；空串 ⇒ 不渲染「照片里的文字」折叠块
+	//   aiNote    —— AI 观察（ai_description）；与 caption 分工见 loadDetail 注释
+	let bodyText = ref('')
+	let ocrText = ref('')
 	let aiNote = ref('') // AI 的观察（照片记忆 = 后端 ai_description；空→整卡隐藏）
+	// E-2（2026-10-26）：hero 视差输入（rpx）。scroll-view 的 @scroll 给 px，按屏宽换算成 rpx
+	// （1rpx = windowWidth / 750 px，同 uni-app x 官方 rpx 定义；换算后与画布 750 基准一致）。
+	let heroScrollTop = ref(0)
 	// D-2（2026-10-25 · task-20）：**加载态**。此前本页没有任何 loading 表达 ⇒ 慢网下用户先看到
 	// "记忆详情 / 空正文 / 未收藏星标"，以为内容丢了。初值 true，`loadDetail` 两条出口都置 false
 	// （成功 / 失败弹窗后），保证不会永久挂在骨架屏上。
@@ -249,32 +263,11 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	let heroShowOrig = ref(false)
 	let relatedList = ref<Array<ContentEventRef>>([])
 
-	/** 事件级语音卡视图模型（2026-10-16 · RC-F）：组装期预计算波形/标题，播放态由 syncVoiceState
-	 *  相等守卫写入——模板只读字段、零函数调用（类声明先例：TabSearch.VoiceResult）。 */
-	class EvtVoice {
-		contentId: string
-		status: string
-		wave: Array<number>
-		title: string
-		active: boolean
-		playing: boolean
-		progress: number
-		constructor(contentId: string, status: string, wave: Array<number>, title: string) {
-			this.contentId = contentId
-			this.status = status
-			this.wave = wave
-			this.title = title
-			this.active = false
-			this.playing = false
-			this.progress = 0
-		}
-	}
-
 	// R9 批次4（Q3 拍板）：事件级语音成员——「这条记忆里的声音」区块数据源
 	// （当前内容所属第一个事件内的 voice 成员，排除自身）；空数组=区块隐藏
-	// 2026-10-16（RC-F）：由 `SplitItem` 裸数组改为本页私有视图模型 `EvtVoice`——SplitItem 是
-	// utils 契约（不在本批改动边界内），用本页私有类承载波形/标题/播放态视图字段。
-	let eventVoices = ref<Array<EvtVoice>>([])
+	// 2026-10-26（E-5）：视图模型 `EvtVoice` 已随区块一起迁进 `EventVoiceList` 组件
+	// （类声明先例 TabSearch.VoiceResult 保持：视图模型归它自己的视图）。
+	let eventVoices = ref<Array<EventVoiceItem>>([])
 	// W0-2 · F5b：语音记忆才显示语音卡；波形由 contentId 确定性生成（与 index/search 同源 genWaveHeights）
 	let isVoice = ref(false)
 	let detailWave = ref<Array<number>>([])
@@ -339,7 +332,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 			// 生日前歌案例：photo 详情无语音卡，但事件里聚了跑步语音——事件级声音在这里补齐
 			if (evs.length > 0 && evs[0].id != '') {
 				fetchEventItems(evs[0].id).then((items: Array<SplitItem>) => {
-					const voices: Array<EvtVoice> = []
+					const voices: Array<EventVoiceItem> = []
 					for (let i = 0; i < items.length; i++) {
 						if (items[i].contentType == 'voice' && items[i].contentId != id) {
 							voices.push(toEvtVoice(items[i]))
@@ -375,69 +368,36 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		}
 		toggleVoice(contentId.value)
 	}
-	// ── 播放态预计算（2026-10-16 · RC-F）──────────────────────────────────────────
-	// 范式照 `TabSearch.syncActiveCard` / `TabIndex.syncVoiceCards`：**数据写入时**把全局播放态写进
-	// 「正在播放那张卡」的预计算属性，模板只读字段 ⇒ 零函数调用；且**相等守卫**保证值没变不写
-	// ⇒ 未变的卡零响应式通知、零重渲染。
-	// 此前详情页模板每 tick 调 6 个取值函数（voiceIsActive/voiceIsPlaying/voiceProgressOfCard/
-	// voiceCurSecText/voiceTotalSecText/evtWaveOf…），而 audio_player 的 33ms 时钟会写全局 ref
-	// ⇒ 每次写都整页重算。现收敛为单源 watch（见文件末），tick 驱动面只剩「活动卡」。
-	function applyMainVoiceState(cid: string, playing: boolean, prog: number, cur: string, total: string): void {
-		const isActive = cid != '' && cid == contentId.value
-		if (mainActive.value != isActive) {
-			mainActive.value = isActive
-		}
-		if (isActive) {
-			if (mainPlaying.value != playing) { mainPlaying.value = playing }
-			if (mainProgress.value != prog) { mainProgress.value = prog }
-			if (mainCurText.value != cur) { mainCurText.value = cur }
-			if (mainTotalText.value != total) { mainTotalText.value = total }
-		} else if (mainPlaying.value || mainProgress.value != 0 || mainCurText.value != '' || mainTotalText.value != '') {
-			// 退出活动态：清干净（否则旧卡残留进度行/时长）
-			mainPlaying.value = false
-			mainProgress.value = 0
-			mainCurText.value = ''
-			mainTotalText.value = ''
-		}
-	}
-
-	/** 事件级卡：写 active/playing/progress；返回"是否变化"（相等守卫，无变化零写入） */
-	function applyEventVoiceState(v: EvtVoice, cid: string, playing: boolean, prog: number): boolean {
-		const isActive = v.contentId != '' && v.contentId == cid
-		let changed = false
-		if (v.active != isActive) {
-			v.active = isActive
-			changed = true
-		}
-		if (isActive) {
-			if (v.playing != playing) {
-				v.playing = playing
-				changed = true
-			}
-			if (v.progress != prog) {
-				v.progress = prog
-				changed = true
-			}
-		} else if (v.playing || v.progress != 0) {
-			v.playing = false
-			v.progress = 0
-			changed = true
-		}
-		return changed
-	}
+	// ── 播放态预计算（2026-10-16 · RC-F；2026-10-26 E-6 投影逻辑抽到 composable）──────────
+	// 范式见 `composables/useVoiceProjection.uts` 模块文档：**数据写入时**投影，模板只读字段，
+	// 相等守卫保证"值没变不写"。这里只保留把投影结果落到本页 ref 的那几行。
+	const voiceProj = new VoiceStateProjector()
 
 	/** 汇总入口：主语音卡 + 事件级语音卡逐张套用；有变才 slice 重建数组引用（确定性重渲染） */
 	function syncVoiceState(): void {
 		const cid = voiceCurrentId.value
 		const playing = voicePlaying.value
 		const prog = voiceProgress.value
-		const cur = fmtVoiceTime(voiceCurSec.value)
-		const total = fmtVoiceTime(voiceTotalSec.value)
-		applyMainVoiceState(cid, playing, prog, cur, total)
+		// 主卡
+		const m = voiceProj.main(contentId.value, cid, playing, prog, voiceCurSec.value, voiceTotalSec.value)
+		// 相等守卫：值没变就不写（避免 33ms 时钟驱动的无谓重渲染）
+		if (mainActive.value != m.active) { mainActive.value = m.active }
+		if (m.active) {
+			if (mainPlaying.value != m.playing) { mainPlaying.value = m.playing }
+			if (mainProgress.value != m.progress) { mainProgress.value = m.progress }
+			if (mainCurText.value != m.curText) { mainCurText.value = m.curText }
+			if (mainTotalText.value != m.totalText) { mainTotalText.value = m.totalText }
+		} else if (mainPlaying.value || mainProgress.value != 0 || mainCurText.value != '' || mainTotalText.value != '') {
+			mainPlaying.value = false
+			mainProgress.value = 0
+			mainCurText.value = ''
+			mainTotalText.value = ''
+		}
+		// 事件级卡
 		const arr = eventVoices.value
 		let changed = false
 		for (let i = 0; i < arr.length; i++) {
-			if (applyEventVoiceState(arr[i], cid, playing, prog)) {
+			if (voiceProj.applyMember(arr[i], cid, playing, prog)) {
 				changed = true
 			}
 		}
@@ -456,7 +416,7 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	// ═══ R9 批次4：事件级语音卡（「这条记忆里的声音」）═══
 	// D4 流式重构（2026-09-09）：区块随 n4_flow 普通流排布，evtSectionTop/evtCardTop 绝对定位函数已删
 	/** 成员卡播放：processing/failed 显式 toast（Q2 拍板），绝不静默；done → 全局引擎 */
-	function onPlayEventVoice(v: EvtVoice): void {
+	function onPlayEventVoice(v: EventVoiceItem): void {
 		if (v.status != 'done') {
 			uni.showToast({
 				title: v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放',
@@ -466,12 +426,17 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		}
 		toggleVoice(v.contentId)
 	}
-	/** SplitItem(voice) → EvtVoice：波形确定性生成（与 index/search/detail 大卡同源 genWaveHeights）、
+	/** SplitItem(voice) → EventVoiceItem：波形确定性生成（与 index/search/detail 大卡同源 genWaveHeights）、
 	 *  标题转写文本截断（空文本给中性占位）——两者原是**模板函数调用**，现移到组装期预计算。 */
-	function toEvtVoice(it: SplitItem): EvtVoice {
+	function toEvtVoice(it: SplitItem): EventVoiceItem {
 		const t = (it.title ?? '').trim()
 		const title = t == '' ? '一段声音' : (t.length > 18 ? t.substring(0, 18) + '…' : t)
-		return new EvtVoice(it.contentId, it.status, genWaveHeights(it.contentId, 20), title)
+		const v = new EventVoiceItem()
+		v.contentId = it.contentId
+		v.status = it.status
+		v.wave = genWaveHeights(it.contentId, 20)
+		v.title = title
+		return v
 	}
 
 	/** 拉取内容详情（onLoad 与失败弹层【重试】共用入口；GET 幂等，重试=重跑本函数） */
@@ -502,8 +467,26 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 				})
 				return
 			}
-			memBody.value = d.text
-			memTitle.value = makeTitle(d.text)
+			// ═══ E-1（2026-10-26）正文分层：**本次修复的核心落点** ═══
+			// 原为 `memBody.value = d.text` —— 照片的 text 是 `caption\nocr_text` 拼接串，
+			// 等于把 779 字符的截图界面词（"此电脑 / 本地磁盘 / (D:) / deploy / 下载…"）
+			// 当记忆正文整段打印。用户原话「为什么把照片上的文字都呈现出来」即此。
+			// 判据（哪段该当正文）收在纯函数 `useContentBody.resolveBodyLayers` ——
+			// 搜索页/收藏页/AI 预填要用同一条规则，写死在页面里必然被复制后漂移。
+			const layers = resolveBodyLayers(d)
+			bodyText.value = layers.body
+			ocrText.value = layers.ocr
+			aiNote.value = layers.aiNote
+			bodySource.value = layers.sourceLabel
+			// 标题：layers.titleSrc 为空（照片且 caption/描述都缺）⇒ 中性标题，
+			// 不拿 OCR 首行（"此电脑"）当标题 —— 那会变成"标题也叫此电脑"的荒谬结果。
+			memTitle.value = layers.titleSrc != '' ? makeTitle(layers.titleSrc) : '照片记忆'
+			// 备注（PATCH remark 的真实落库值）：此前只在本次会话内暂存、冷启动即失；
+			// 现在服务端随详情下发 remark ⇒ 进页就能看到上次补的那句。
+			bodySup.value = d.remark
+			if (d.tags.length > 0) {
+				tagList.value = d.tags
+			}
 			// W0-2：语音记忆 → F5b 语音卡显示 + 播放引擎按 contentId 接线（audio 端点，W0-1）
 			if (d.contentType == 'voice') {
 				isVoice.value = true
@@ -548,25 +531,55 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 				meta = meta + (meta != '' ? ' · ' : '') + d.place
 			}
 			memMeta.value = meta
-			// D-2（task-20）：主体数据已落地 ⇒ 收骨架屏。放在这里（而不是 fetchContentAiMeta 之后）
-			// 是因为 AI 增量字段是**次要增强**（tags/ai_description），不该拖住主内容展示。
+			// D-2（task-20）：主体数据已落地 ⇒ 收骨架屏。
+			// E-3（2026-10-26）：**删掉第二次请求**。原实现先 `fetchContentDetail` 再
+			// `fetchContentAiMeta` 去拉 AI 增量字段，而两者打的是**同一个端点**
+			// `GET /api/v1/contents?content_id=&limit=1`（见 play_content.uts 注释
+			// "ContentDetail 未承载 tags/ai_description"）—— 那是当时的**缺字段补丁**。
+			// 现在 `ContentOut` 已直接下发 caption/ocr_text/tags_json/ai_description/remark
+			// ⇒ 一次请求拿全，省掉一轮 RTT（慢网下这是进页白屏时间的一半来源），
+			// 也消除了"主内容已上屏、AI 卡稍后自己冒出来"的跳动。
 			loading.value = false
-			// FE1：AI 增量字段（tags_json/ai_description 打标异步，可能 null → 空=不显示对应区块，不造假占位）
-			fetchContentAiMeta(id).then((ai: ContentAiMeta | null) => {
-				if (ai == null) {
-					return
-				}
-				tagList.value = ai.tags
-				if (d.contentType == 'photo' && ai.aiDescription != '') {
-					aiNote.value = ai.aiDescription
-				}
-			})
 		})
 	}
 
+	/** E-2（2026-10-26）：scroll-view 滚动 → hero 视差输入。
+	 *  为什么需要换算：`UniScrollEvent.detail.scrollTop` 单位是 **px**（HBuilderX dts
+	 *  `UniScrollEventDetail.scrollTop`），而视差量按画布 750 基准的 **rpx** 表达
+	 *  （1rpx = windowWidth/750 px）。不换算会让位移随机型屏宽漂移（1080p 窄屏与
+	 *  1440 宽屏差 33%）。getWindowInfo 取一次并缓存，不在滚动回调里反复调。
+	 *  性能：只写一个 number ref，且**相等守卫**（值没变不写）—— 本页同时跑 33ms
+	 *  语音时钟，滚动回调不能再制造无谓的整页重算（同 RC-F 的收敛原则）。 */
+	let rpxPerPx = 0
+	function rpxFromPx(px: number): number {
+		if (rpxPerPx <= 0) {
+			try {
+				const wi = uni.getWindowInfo()
+				const w = wi.windowWidth
+				rpxPerPx = w > 0 ? 750 / w : 2
+			} catch (e) {
+				// 取不到窗口宽：按 375dp 基准兜底（=2 rpx/px，最常见机型）
+				rpxPerPx = 2
+			}
+		}
+		return px * rpxPerPx
+	}
+
+	function onPageScroll(e: UniScrollEvent): void {
+		// 只在有 hero 时才需要这份数据（文字/语音记忆无 hero，省掉换算）
+		if (!heroHasImage.value) {
+			return
+		}
+		const next = rpxFromPx(e.detail.scrollTop)
+		// 相等守卫（取整到 1rpx：亚像素位移肉眼不可见，却会让每帧都触发重算）
+		const rounded = Math.round(next)
+		if (Math.round(heroScrollTop.value) != rounded) {
+			heroScrollTop.value = rounded
+		}
+	}
+
 	/** hero @tap：photo 记忆原图↔缩略图切换（其余类型 originalUrl 恒空，切换不生效） */
-	function onToggleHero(): void {
-		if (heroOrigUrl.value == '' || heroThumbUrl.value == '') {
+	function onToggleHero(): void {		if (heroOrigUrl.value == '' || heroThumbUrl.value == '') {
 			return
 		}
 		heroShowOrig.value = !heroShowOrig.value
@@ -701,8 +714,12 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		//   yishu_ai_context_title     string  记忆标题（正文首句截断 ≤14 字，空=''）
 		//   yishu_ai_context_body      string  记忆正文全文（空=''）
 		//   yishu_ai_context_content_id string 内容 id（可回查详情，空=''）
+		// E-1（2026-10-26）：给 AI 的上下文只能用**人话正文**（`bodyText`），不能用拼接串。
+		// 此前这里塞 `memBody`（= d.text，含 779 字符 OCR）⇒ 用户点「问 AI」时，
+		// prompt 里被塞进一整屏截图界面词，AI 的上下文直接跑偏（"此电脑/本地磁盘/D:…"
+		// 与用户想聊的记忆无关）。这是同一个病根的第二个受害面。
 		uni.setStorageSync('yishu_ai_context_title', memTitle.value)
-		uni.setStorageSync('yishu_ai_context_body', memBody.value)
+		uni.setStorageSync('yishu_ai_context_body', bodyText.value)
 		uni.setStorageSync('yishu_ai_context_content_id', contentId.value)
 		// 2026-10-14（台账 §4.20 批次 5 · RC-10）：原为 `uni.redirectTo('/pages/shell/shell?tab=ai')`
 		// —— 那会**销毁本页并重建整个壳**（白屏 1~2s + 四个 tab 全部重挂 + TabIndex 的 60s TTL 失效）。

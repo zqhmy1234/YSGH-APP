@@ -9,6 +9,69 @@
 
 ---
 
+### 2026-10-26 13:17 · commit a64e7ef · ts=1792991831
+- **错误**：`--full` 门禁红在 `backend/tests/test_pipeline.py::TestPhotoPipeline::test_photo_writes_image_vec` —— 报错形如 `qdrant_client.http.exceptions.UnexpectedResponse` / 连接拒绝
+- **根因**：本机 Docker Desktop 未启动 ⇒ `yishu-qdrant` 容器不在 ⇒ 该用例要求的**真 Qdrant** 连不上。**已双向证实不是代码缺陷**：`git stash` 掉本轮全部改动后跑同一条用例，**仍然失败**（`1 failed` 在同一位置）；恢复改动后再跑同样失败。注意：这次与本轮 `photo_text.py` 的改动**无关**——那个改动只读 `extra.ocr_text` 与 `text` 的字符串拆分，不碰向量写入路径
+- **修复**：启动 Docker Desktop（`Start-Process 'C:\\Program Files\\Docker\\Docker Desktop.exe'`）等 `yishu-qdrant` 起来后重跑 `--full`。若 Docker 起不来（本机沙箱限制），按既有口径把该用例记为**环境阻塞**而非代码失败——但必须在报告里写清楚「哪条用例、为什么是环境、如何证明」（本轮用 stash 对照法）
+- **相关文件**：backend/tests/test_pipeline.py
+- **教训**：**`--full` 报红先分清「代码失败」与「环境阻塞」，判据是 stash 对照法。** 做法：`git stash push -u` → 跑失败的那条用例 → 如果**原始代码同样失败**，就是环境问题。这比只看错误信息可靠得多：Qdrant 连接错误看起来像代码 bug，但根因是本机 Docker 没起。本仓反复踩这个坑（2026-10-25 也踩过一次，当时是 `test_correction_protection` 三条用例），所以**跑 `--full` 前先确认 Docker 在跑**，能省一整轮。另一条：`Start-Process` 拉起 Docker Desktop 后需要等 60~100 秒容器才 ready，立刻 `docker ps` 会看到空列表——别以为启动失败。
+
+---
+
+### 2026-10-26 12:35 · commit a64e7ef · ts=1792989319
+- **错误**：UNI-APP X Vapor 编译报 [plugin:uts] Unexpected '/'. at components/TabAi/TabAi.uvue:1:0（定位到 1:0 与真实错误无关）
+- **根因**：CSS/UTS 注释里写了含 '*/' 的字面量：本次是注释中列举旧类名写成 '.attach-btn*/.attach-scrim'，其中 '*/' 提前终止了块注释，剩下的 CSS 被当成 UTS 解析。另一个同族写法是文档路径 'client/**/*.uvue'（**/* 里的 */ 同样会终止注释）。不是 BOM/CRLF/编码问题
+- **修复**：把注释里的 '名字*/' 'glob **/*' 这类字形改掉（改写成「.attach-btn 及其图标」「全仓 class= 检索」），然后从头编译即过
+- **相关文件**：client/styles/tab-ai.css, client/components/TabAi/AiComposer.uvue, client/composables/useAiAttach.uts
+- **教训**：uvue/UTS 编译报「Unexpected '/'」且定位  时，先怀疑注释里含 '*/'（类名通配、glob 路径最常犯），不要先怀疑编码或缓存；本轮因此白烧 1 小时反复重启 HBuilderX / 清 unpackage
+
+---
+
+### 2026-10-26 11:40 · commit a64e7ef · ts=1792986019
+- **错误**：详情页骨架屏加了，但标题仍是字面量「记忆详情」——加载期用户看到的是假标题，不是占位
+- **根因**：task-20 只给正文加了骨架，两条 <text>（标题/元信息）漏了 !loading 守卫；注释写「不显示任何假标题」但实际只做到正文
+- **修复**：标题/元信息补 v-if="!loading"，加载期只留骨架块
+- **相关文件**：client/pages/detail/detail.uvue
+- **教训**：加骨架屏要连标题一起挡——初值是字面量的字段在加载期就是假数据，比空白更误导
+
+---
+
+### 2026-10-26 11:40 · commit a64e7ef · ts=1792986013
+- **错误**：照片详情页把照片上的文字整段打印出来（用户原话：为什么把照片上的文字都呈现出来）
+- **根因**：pipeline_photo 把 caption 与 OCR 拼成 content.text（f"{text}\n{ocr}"），检索需要整串是对的；但客户端详情/搜索/时间轴全部把 text 当人话渲染 ⇒ 一条照片 858 字符里 779 是截图界面词（此电脑/本地磁盘/D:…），机器产物被当成了正文
+- **修复**：服务端并列下发 caption/ocr_text（photo_text.split_caption_ocr，两代拼接顺序都认；text 形状不变）；客户端按字段分层：详情正文只放 caption、OCR 进默认折叠块；搜索摘要改读 caption；AI 预填上下文改用 bodyText
+- **相关文件**：backend/app/services/photo_text.py
+- **教训**：拼接串是给检索用的，展示必须按字段分层；同一个 text 字段同时承担检索与展示时，机器产物必然漏进 UI
+
+---
+
+### 2026-10-26 10:54 · commit a64e7ef · ts=1792983273
+- **错误**：本会话编译门/审计结果多次自相矛盾（同一命令两次跑，一次报 TabAi.uvue 865 行超阈、一次报 718 行通过；token 基线也在中途自己变了）
+- **根因**：多 agent 并行改同一工作区：别的会话正在拆 TabAi.uvue、也在跑 audit_token_literals --write-baseline，文件与基线在两次读之间被改
+- **修复**：判定前先看 git status + 文件行数确认目标文件的当前态；只对自己改动范围的文件负责，不替并行 agent 的中间态结论背书
+- **相关文件**：scripts/audit_token_literals.py
+- **教训**：并行工作区里"门禁红了"必须先分辨是自身改动还是别人的中间态，否则会去修不属于自己的文件
+
+---
+
+### 2026-10-26 10:54 · commit a64e7ef · ts=1792983268
+- **错误**：audit_harness 导出引用轴报 'class VoiceStateProjector 的 proj.compute/proj.mainApplied/proj.mainState 未声明' 的 CRITICAL（假报）
+- **根因**：扫描器把 JSDoc 注释里形如 obj.method() 的**用法示例**当成了真实调用点，而这三个方法从未存在
+- **修复**：注释里不写 obj.method() 形式的示例（改为纯文字描述）；重跑后真报只剩 fetchContentAiMeta 零调用
+- **相关文件**：client/composables/useVoiceProjection.uts
+- **教训**：新模块的用法示例别写成可执行形状——导出引用轴会当真调用扫描，制造假 CRITICAL 淹没真信号
+
+---
+
+### 2026-10-26 10:54 · commit a64e7ef · ts=1792983263
+- **错误**：uni-app x 编译报 'Element is missing end tag' 于 detail 改造后的编译门
+- **根因**：UTS 类**不能写字段默认初始化**（如 title: string = ''），编译器先把该语法错误报成看似无关的模板错误；且 .uvue 的 script setup 不是稳定的跨文件导出形态
+- **修复**：类默认值一律落 constructor（先例 TabSearch.VoiceResult 注释已写明）；视图模型放 .uts（utils/ 或 composables/）而非 .uvue
+- **相关文件**：client/composables/useVoiceProjection.uts
+- **教训**：在 .uvue 里新建 class 并带默认值时，先按 UTS 规则去掉字段初始化，否则编译错误会伪装成模板错误
+
+---
+
 ### 2026-10-26 02:47 · commit c7e93df · ts=1792954062
 - **错误**：加 dimension_evidence 后 detail.uvue 到 819 行超 800 棘轮；我先把整个 evidence 逻辑写进宿主，再拆成 composable + 子组件才回到 744 行。另外第一次 review_agent 报 audit_axes 红，第二次同命令同代码却是绿的（读到的是上一次的缓存报告）
 - **根因**：两件事：①结构棘轮要在**动手前**估行数——已知 detail 已 682 行、再加依据块必然超阈，应该一开始就按 SearchHitOps/useSearchState 的先例拆，而不是写超了再拆（返工一轮）。②review_agent 的结论要以**当次输出的标记**为准：不同门禁项是先后打印的，只看'EXIT=1'会误以为是新问题；应完整读输出里哪个轴是❌
