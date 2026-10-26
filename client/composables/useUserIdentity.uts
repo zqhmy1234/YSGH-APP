@@ -1,0 +1,75 @@
+/**
+ * 当前用户身份投影（2026-10-26 · 首页头像字修复 #2）
+ *
+ * ## 为什么需要
+ *
+ * `TabIndex.uvue` 的 hero 头像字一直是**硬编码字面量「峰」**
+ * （`<text class="hero-avatar-char serif">峰</text>`）——它是画布示意稿直转的产物，
+ * 与 R8 批次修的 hero 副标题（「八月 · 28 条新记忆」）属同一批「模板 UI」缺陷，
+ * 只是头像位漏掉了。后果：**任何非「峰」姓用户，进 App 第一眼看到的都是别人的名字缩写**。
+ *
+ * `GET /api/v1/users/me` 早就存在（BB1 · `play_content.uts::fetchUsersMe`），
+ * 出参 `UserMeOut{id, nickname, avatar, phone(掩码)}`，但全仓**只有 `pages/account/security.uvue`
+ * 在用**（且只取 `phone`）⇒ `nickname` 从未被任何界面消费过。
+ *
+ * ## 设计口径
+ *
+ * 1. **只取首字符**：hero 头像是 77rpx 见方圆片，放不下两个字。多字会被圆角裁成半个字
+ *    （这正是本次要修的"字被裁切"视觉缺陷）。**在数据层截断**，而不是让布局去裁 ——
+ *    布局裁切的结果依赖字体度量，跨机型不可预测。
+ * 2. **拉不到就空**：失败 / 无昵称 / 空串一律 `''`，模板据此藏字、只留琥珀圆片。
+ *    宁可"没有字"，也不冒用别人的名字，更不用「?」之类的占位符假装有数据
+ *    （与 hero 副标题「失败即清空，不造假不残留」同一诚实口径）。
+ * 3. **不 toast**：头像字缺失不影响任何操作，为它弹提示只会打扰。
+ *    与 `security.uvue` 对 `phone` 的处理**不同**——那里是用户主动查看的字段，失败必须告知。
+ * 4. **与 hero 副标题解耦**：`/users/me` 与 `/stats/daily-summary` 是两个端点、两种失败语义，
+ *    绑在一起会让一个失败拖掉另一个（`TabIndex` 已因"串行首拉"踩过同类坑，见 P-4 注释）。
+ *
+ * ## 为什么是"回调注入"而不是"导出 ref 给模板直接用"
+ *
+ * 本仓**没有**"模块级 export ref 直接被 <template> 绑定"的先例（`shell_state.uts` 的几个
+ * ref 全部只在 script 侧读写，如 `shellActiveTab.value`）。uvue 的 vapor 渲染器对
+ * 「模板绑定外部模块 ref 的自动解包」未经验证，而本仓已因渲染器假设踩过多起：
+ * R9-D（v-if 整树卸载失效 → 骨架整树残留）、`aria-label` 在 `<view>` 上不受支持、
+ * `flex:1` 的 text 首帧纵向拉伸。故沿用**本仓已验证的注入范式**
+ * （`useEventOps` 注入渲染/刷新回调、`usePhotoAttach` 注入取值函数）：
+ * 页面持有自己的 `ref`，本模块只负责"取数 + 截断 + 失败语义"，通过回调交付。
+ * 这样页面侧的模板绑定仍是**本地 ref**（全仓到处都在用，零风险）。
+ *
+ * ## UTS 注意
+ *
+ * - `substring(0, 1)` 而不是 `nickname[0]`：UTS 字符串下标在非 ASCII 上行为与 JS 不同，
+ *   `substring` 走平台原生切片（全仓先例：`EchoSheet.uvue:93`、`TabAi.uvue:664`）。
+ * - 本模块**只读一个字段**，不持有用户对象：页面不需要 id/avatar/phone，
+ *   多存一份就多一份与服务端漂移的机会。
+ */
+import { fetchUsersMe } from '@/utils/play_content'
+
+/**
+ * 拉取昵称并投影为头像字，经回调交付。
+ *
+ * @param onChar 收到最终头像字（**可能是空串**，调用方据此藏字）。
+ *               永不传 `null`：调用方拿到就写，不用再判空。
+ *
+ * 失败语义：网络/鉴权失败 ⇒ **不回调**（保持调用方现值）。
+ * 为什么不是回调 `''`：首拉失败后用户切走再切回，不该把已显示的字擦掉；
+ * 而"服务端明确返回空昵称"才回调 `''` —— 两种语义必须分开。
+ */
+export function loadAvatarChar(onChar: (ch: string) => void): void {
+	fetchUsersMe().then((d: UTSJSONObject | null) => {
+		if (d == null) {
+			return // 拉取失败：保持现值，下次进页再试
+		}
+		const nick = d.getString('nickname')
+		if (nick == null) {
+			onChar('')
+			return
+		}
+		const n = nick.trim()
+		if (n.length == 0) {
+			onChar('')
+			return
+		}
+		onChar(n.substring(0, 1))
+	})
+}

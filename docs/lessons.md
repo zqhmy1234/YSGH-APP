@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-10-26 14:42 · commit 954e1e4 · ts=1792996924
+- **错误**：解析异常从 .then 回调冒出成未处理 rejection ⇒ Promise 永不 resolve ⇒ 永久加载态（骨架/加载文案永不消失）
+- **根因**：fetchTimelineAsync / feedFetchPage 的解析+组装段未包 try：任一字段形状不符同步抛出即让 resolve/feedFinish 永不执行；页面 loaded 恒 false
+- **修复**：`timeline.fetchTimelineAsync`（解析段包 try，失败置 `_lastFetchFailed` 并 resolve([])）+ `entries_api.feedFetchPage`（读字段与组装整体包 try，失败走 `feedFail()`）——把“永不收敛”改成“失败可收敛”
+- **相关文件**：client/utils/timeline.uts, client/utils/entries_api.uts
+- **教训**：**Promise 的 resolve 必须与调用方可见的每一个失败路径对齐**。凡在 `.then` 回调里裸跑“解析/组装”，就默认它可能同步抛；一抛则 resolve 永不执行、调用方的 loading 标志永不置位 ⇒ 表现为**永久加载态**（比报错更坏：用户无法判断是慢是死）。UTS/uvue 下这类异常还会被桥接吞掉，连日志都看不到（本项目 2026-09-02「正在翻找相纸永卡」就是这么来的，当时只修了具体触发点 `pidArr.getString`，没有修“抛出即永不收敛”这条结构 ⇒ 同类事故随时可复发）。
+
+---
+
+### 2026-10-26 14:41 · commit 954e1e4 · ts=1792996919
+- **错误**：hero 数字与实际列表来自互不相交的数据源（event_items vs contents），有 281 条内容的账号 hero 显示 count=0「暂无新记忆」
+- **根因**：daily-summary 数 event_items 关联内容，而时间轴列表读 contents；本库 event_items 仅 4 行、contents 9779 行，两表长期脱钩 ⇒ 假状态
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-10-26 14:37 · commit 954e1e4 · ts=1792996623
+- **错误**：首页 hero「28 条新记忆」与下方列表空白矛盾；骨架屏实为不可见（1.07:1 / 1.21:1）；头像字硬编码「峰」且首帧 flex 居中失效致字形溢出圆片；搜索框占位字白0.85压白0.32玻璃=1.04:1
+- **根因**：①hero 把「最新一条事件的月份」与「全时段 distinct 内容数」拼成一句 ⇒ 两个各自为真的数字拼成假话；且 count 数 event_items 联接的内容、列表读 contents，两表脱钩即数字与列表不同源。②骨架屏颜色只在有没有这个节点上验证过，从未量过对比度：白卡 on 米白页 1.07:1、占位条 #EFE9DD on 白卡 1.21:1，都远低于 WCAG 非文本 3:1 ⇒ 骨架存在但人眼看不见，等价于旧版那行看不见的灰字。③头像用画布示意稿字面量，且圆片缺 overflow:hidden、仅靠父级 flex 对齐定字形位置，而首帧 flex 对齐对 text 不可靠（同 .search-placeholder 已知坑）⇒ 字形落在左上角并溢出圆外。④玻璃拟态在深色照片背景上保不住可读性，白色文字与白色半透明底同色。
+- **修复**：①后端 count/latest 改与列表同源同口径（contents、本月、text|photo），前端 projectHeroSubs 分三态（本月N条 / 本月还没有 / 暂无），另抽 useHeroSubs.uts 纯函数。②骨架屏占位条改 --c-sk-bar #a89078（on 白卡 3.03:1）+ 白卡补 paper-700 描边与阴影，并补一行 ink-700 说明字（7.71:1）。③头像字接 GET /users/me nickname 首字符（useUserIdentity.uts，拉不到就空不冒用），CSS 补 overflow:hidden + 字形钉死 73rpx 盒 + line-height/text-align 居中，不依赖 flex 首帧。④胶囊底 0.32→0.78、字色白0.85→ink-700，最坏场景 5.56:1。
+- **相关文件**：client/components/TabIndex/TabIndex.uvue, client/styles/tab-index.css, client/composables/useHeroSubs.uts, client/composables/useUserIdentity.uts, backend/app/api/stats.py
+- **教训**：「加了但看不见」等于没加：任何用于消除空白的占位/骨架/提示元素，必须在真机截图上量对比度（非文本 3:1 / 正文 4.5:1）再算完成；拼接口径不同的数字到一句话里前，先确认两个数字的时间窗与数据源是同一件事。
+
+---
+
 ### 2026-10-26 13:17 · commit a64e7ef · ts=1792991831
 - **错误**：`--full` 门禁红在 `backend/tests/test_pipeline.py::TestPhotoPipeline::test_photo_writes_image_vec` —— 报错形如 `qdrant_client.http.exceptions.UnexpectedResponse` / 连接拒绝
 - **根因**：本机 Docker Desktop 未启动 ⇒ `yishu-qdrant` 容器不在 ⇒ 该用例要求的**真 Qdrant** 连不上。**已双向证实不是代码缺陷**：`git stash` 掉本轮全部改动后跑同一条用例，**仍然失败**（`1 failed` 在同一位置）；恢复改动后再跑同样失败。注意：这次与本轮 `photo_text.py` 的改动**无关**——那个改动只读 `extra.ocr_text` 与 `text` 的字符串拆分，不碰向量写入路径

@@ -401,37 +401,52 @@ function feedFetchPage(): void {
 			feedFail()
 			return
 		}
-		const raw = d.getArray('items')
-		if (raw != null) {
-			const arr = raw as Array<UTSJSONObject>
-			for (let i = 0; i < arr.length; i++) {
-				const c = arr[i]
-				const id = c.getString('id') ?? ''
-				// ⚠️ 去重：游标是 `(created_at, id)` 复合键，**翻页期间有新内容写入**时同一 id
-				// 可能出现在两页（服务端 limit+1 取 has_more，不保证快照隔离）⇒ 重复会在
-				// 时间轴里显示成两张一样的卡 ✗。
-				if (id != '' && _feedSeen.has(id)) {
-					continue
+		// 🚨 2026-10-26（**永久加载态**修复 · 与 `timeline.fetchTimelineAsync` 同款）：
+		// 下面这一段（读字段 + 组装）**必须整体在 try 里**。原实现裸跑：任一 `getString`
+		// / `getBoolean` 在形状不符时同步抛出，异常从 `.then` 回调冒出成未处理 rejection，
+		// 而 `feedFinish(...)` 永远不会执行 ⇒ `_feedResolve` 一直挂着 ⇒ 调用方
+		// `loadTodayEntries` 的 `.then` 永不触发 ⇒ `todayLoaded` 恒 false
+		// ⇒ `loading` 恒真 ⇒ **骨架屏永驻、内容永不出现**。
+		// 这不是假设：本模块注释自己记着「上一版把组装放在清状态之后 ⇒ 历史区恒空」
+		// 那类状态机事故；而"抛异常 ⇒ 永不收敛"是同一个病更彻底的形式。
+		// 失败口径沿用 `feedFail()`：已收条目仍交付（真实但可能不全），一页都没收到才 null
+		// —— 由调用方"保持现状/如实提示"消化，绝不假装还在加载。
+		try {
+			const raw = d.getArray('items')
+			if (raw != null) {
+				const arr = raw as Array<UTSJSONObject>
+				for (let i = 0; i < arr.length; i++) {
+					const c = arr[i]
+					const id = c.getString('id') ?? ''
+					// ⚠️ 去重：游标是 `(created_at, id)` 复合键，**翻页期间有新内容写入**时同一 id
+					// 可能出现在两页（服务端 limit+1 取 has_more，不保证快照隔离）⇒ 重复会在
+					// 时间轴里显示成两张一样的卡 ✗。
+					if (id != '' && _feedSeen.has(id)) {
+						continue
+					}
+					if (id != '') {
+						_feedSeen.add(id)
+					}
+					_feedRaw.push(c)
 				}
-				if (id != '') {
-					_feedSeen.add(id)
-				}
-				_feedRaw.push(c)
 			}
+			_feedPages = _feedPages + 1
+			const hasMore = d.getBoolean('has_more') ?? false
+			const next = d.getString('cursor') ?? ''
+			// 「服务端还有更多、但我这轮不拉了」= 截断（如实标记，见函数注释 ③）
+			_feedTruncated = hasMore
+			const canGo = _feedPages < _feedMaxPages && hasMore && next != '' && next != _feedCursor
+			if (canGo) {
+				_feedCursor = next
+				feedFetchPage()
+				return
+			}
+			// 收齐 → **先组装，再 finish**（finish 清状态并回调；组装必须在清状态之前）
+			feedFinish(feedAssemble())
+		} catch (e) {
+			console.log('[dbg-index] entry feed 解析/组装失败 -> 按失败收敛: ' + e)
+			feedFail()
 		}
-		_feedPages = _feedPages + 1
-		const hasMore = d.getBoolean('has_more') ?? false
-		const next = d.getString('cursor') ?? ''
-		// 「服务端还有更多、但我这轮不拉了」= 截断（如实标记，见函数注释 ③）
-		_feedTruncated = hasMore
-		const canGo = _feedPages < _feedMaxPages && hasMore && next != '' && next != _feedCursor
-		if (canGo) {
-			_feedCursor = next
-			feedFetchPage()
-			return
-		}
-		// 收齐 → **先组装，再 finish**（finish 清状态并回调；组装必须在清状态之前）
-		feedFinish(feedAssemble())
 	})
 }
 

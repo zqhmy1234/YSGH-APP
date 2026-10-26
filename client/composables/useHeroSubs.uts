@@ -1,0 +1,109 @@
+/**
+ * 首页 hero 区文案投影（2026-10-26 · 修复 #4）
+ *
+ * ## 为什么需要（"28 条新记忆"与下方空白矛盾）
+ *
+ * 真机截图 `review/shot_now_200754.png` 上：hero 承诺「八月 · 28 条新记忆」，
+ * 而下方直到 TabBar 是一大片纯空白。用户第一反应是"我的记忆丢了"——
+ * 这是全页最伤人的一句文案。
+ *
+ * 病根有两层，本文件的职责是**第二层**：
+ *   ① **后端口径**（`backend/app/api/stats.py`，2026-10-26 由另一路并行修改）：
+ *      `count` 原来数的是「事件经 event_items 关联的内容数」，而列表读的是 `contents`
+ *      ⇒ 两张表长期脱钩（实测：`event_items` 仅 4 行 vs `contents` 9779 行），
+ *      数字与列表来自互不相交的数据源。已改为与列表同源同口径。
+ *   ② **前端拼接**（本文件）：原实现把「最新**一条事件**的月份」与「**全时段**条数」
+ *      拼成一句「8月 · 28 条新记忆」⇒ 任何人都会读成「八月有 28 条」。
+ *      这正是本次修的：**两个数字各自为真，拼在一起就成假话**。
+ *
+ * ## 当前契约（以 `backend/app/api/stats.py` 2026-10-26 版为准）
+ *
+ *   · `count`              = **当前自然月**内、未软删、类型 `text|photo` 的内容条数
+ *                            （与列表 `entries_api.feedAssemble` 的可渲染集合一致）
+ *   · `latest_event_text`  = 最新**一条内容**的可读文案（可能为 `null`：照片无 AI 描述）
+ *   · `latest_event_time`  = 该条内容的时刻（`taken_at` 优先，回退 `created_at`）
+ *
+ * ⚠️ 字段名仍叫 `latest_event_*`，但语义已是「最新一条**记忆**」（后端保持字段名不变
+ *    以免动 openapi 字节级快照）。本模块按新语义消费，不要被字段名误导。
+ *
+ * ## 三态文案（每一态都必须"同时为真"）
+ *
+ *   1. `count > 0`                      → 「8月 · 28 条记忆」+ 最新那条摘要
+ *      count 是本月 ⇒ 月份前缀成立；不会出现"承诺 N 条但列表空"（列表同源）。
+ *   2. `count == 0` 但 `latest_event_time` 有值 → 「本月还没有新记忆」+ 最新那条摘要
+ *      **不能说「暂无新记忆」**：本月 0 条不等于库里 0 条，列表下方很可能还有往月内容。
+ *      这句话必须同时容得下"本月空"与"历史有"两件事。
+ *   3. `count == 0` 且无任何内容        → 「暂无新记忆」
+ *      此时才是真的什么都没有，列表也会走空态块，两处口径一致。
+ *
+ * 失败（`s == null`）⇒ 两行空串：**不造假、不残留**（峰宝 09-06「模板 UI」投诉口径）。
+ * 特别注意第 2 态：这是修复"28 条 vs 空白"矛盾时**最容易漏掉**的一格——
+ * 只改第 1 态会让"本月无新内容但历史有 281 条"的账号看到「暂无新记忆」+ 满屏历史，
+ * 换个方向犯同一个错。
+ */
+import { DailySummary } from '@/utils/api'
+import { parseIsoMs } from '@/utils/time'
+
+/** hero 区两行文案（`sub1` 主行 / `sub2` 最新摘要行） */
+export class HeroSubs {
+	sub1: string
+	sub2: string
+
+	constructor(sub1: string, sub2: string) {
+		this.sub1 = sub1
+		this.sub2 = sub2
+	}
+}
+
+/** `M月dd日 HH:mm` —— hero 副标题的时间粒度（与设计稿「8月28日 07:42」一致） */
+function fmtWhen(d: Date): string {
+	let hh = d.getHours().toString()
+	if (hh.length < 2) {
+		hh = '0' + hh
+	}
+	let mi = d.getMinutes().toString()
+	if (mi.length < 2) {
+		mi = '0' + mi
+	}
+	return (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + hh + ':' + mi
+}
+
+/**
+ * 把 `/stats/daily-summary` 结果投影成 hero 两行文案。
+ *
+ * 纯函数（不碰 ref / 不发请求）⇒ 可单测、与页面寿命解耦、模板零函数调用。
+ *
+ * @param s 服务端摘要；`null` = 拉取失败 ⇒ 返回两行空串（诚实清空）
+ */
+export function projectHeroSubs(s: DailySummary | null): HeroSubs {
+	if (s == null) {
+		return new HeroSubs('', '')
+	}
+	// ⚠️ 两个判据必须分开，不能合成一个 `hasLatest`：
+	//   · `hasAny`  = 库里有**任何**可渲染内容 ⇒ 决定"本月还没有" vs "暂无新记忆"；
+	//   · `hasText` = 最新那条有**可读文案** ⇒ 决定摘要行要不要显示。
+	// 反例（实测会踩）：最新一条是**没有 AI 描述的照片** ⇒ `latest_event_text` 为 null，
+	// 但内容确实存在。若用 `hasText` 判"有没有内容"，这种账号会被告知「暂无新记忆」，
+	// 而下方列表滚得到几十张照片 —— 换个方向犯同一个错。
+	const hasAny = (s.latestEventTime != '')
+	const hasText = hasAny && (s.latestEventText != '')
+	const latestD = hasAny ? new Date(parseIsoMs(s.latestEventTime)) : new Date(0)
+	// 摘要行：有可读文案才拼（照片无 AI 描述时后端给 null ⇒ 前端不编占位词）
+	const sub2 = hasText ? (s.latestEventText + ' · ' + fmtWhen(latestD)) : ''
+
+	if (s.count > 0) {
+		// 态 1：count 是**本月**条数（见头注契约）⇒ 月份前缀成立。
+		// 月份取**最新记忆**的月份而非 `Date.now()`：两者在正常数据下必然同月
+		// （count>0 说明本月有内容，而"最新"不早于本月）；用实际数据更抗时钟偏差。
+		const m = hasAny ? (latestD.getMonth() + 1) : (new Date().getMonth() + 1)
+		return new HeroSubs(m.toString() + '月 · ' + s.count.toString() + ' 条记忆', sub2)
+	}
+
+	// 态 2 / 态 3 分界：本月 0 条，但库里是否还有往月内容
+	if (hasAny) {
+		// 态 2：本月空、历史有 ⇒ 说"本月"而不是"暂无"（否则与下方历史列表自相矛盾）
+		return new HeroSubs('本月还没有新记忆', sub2)
+	}
+	// 态 3：真的什么都没有
+	return new HeroSubs('暂无新记忆', '')
+}

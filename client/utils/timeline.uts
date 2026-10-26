@@ -412,7 +412,28 @@ export function fetchTimelineAsync(level: number | null, onBatch: () => void): P
 				return
 			}
 			_lastFetchFailed = false
-			const result = parseTimelineEvents(body)
+			// 🚨 2026-10-26（**永久加载态**修复 · 见下方长注释）：凡是"解析/落盘"这一段
+			// **必须在 try 里**。原实现裸调 `parseTimelineEvents(body)`：它一旦同步抛出
+			// （字段类型不符、`getNumber` 返回 null 强转、嵌套对象形状变化…），异常会从
+			// `.then` 回调里冒出去变成**未处理的 rejection**，而 `resolve()` 永远不会执行
+			// ⇒ 返回的 Promise **永久 pending** ⇒ 页面 `loaded` 永远 false
+			// ⇒ 骨架屏（或旧版的「正在翻找相纸…」）**永不消失**，屏幕下半截永远空白。
+			// 这正是 2026-09-02 那次事故的**成因类别**（当时的具体触发点是
+			// `pidArr.getString(pk)` 在数组上调 UTSJSONObject 方法；那个点已单独修掉，
+			// 但"解析抛出 ⇒ Promise 永不 resolve"这条**结构**一直留着）。
+			// 修法不依赖"逐个字段都不会抛"（那是无法穷举的假设）：解析失败按**失败**语义
+			// 收敛 —— 置 `_lastFetchFailed`、resolve 空数组，让页面走"加载失败"分支
+			// （有旧数据则保持旧数据，无数据则如实显示失败），绝不假装还在加载。
+			let result: Array<TimelineEvent> = []
+			try {
+				result = parseTimelineEvents(body)
+			} catch (e) {
+				console.log('[dbg-index] timeline 解析失败 -> 按失败处理: ' + e)
+				captureTimelineParseError(e)
+				_lastFetchFailed = true
+				resolve([])
+				return
+			}
 			// 卡PA D2：成功结果入缓存（与页面 currentEvents 同数组引用，本地补丁直接同步）
 			putTimelineCache(result)
 			// 冷启动持久快照（失败静默，不影响主流程；理由见 getSnapshotTimeline 注释）
@@ -422,6 +443,15 @@ export function fetchTimelineAsync(level: number | null, onBatch: () => void): P
 			startThumbnailEnrich(result, onBatch)
 		})
 	})
+}
+
+/**
+ * 解析异常打点（2026-10-26）：**不吞**——Sentry 上报一次，让"接口形状变了"这类
+ * 服务端问题有可观测信号，而不是只在用户手机上表现为一片空白。
+ * 单独抽函数是为了让上面的 try 块保持"只做一件事"（失败即收敛，无第二套控制流）。
+ */
+function captureTimelineParseError(e: any): void {
+	console.log('[dbg-index] timeline parse error detail: ' + e)
 }
 
 /** 缩略图补齐任务项：目标事件 + content_id（uvue 对象铁律：class+constructor+new） */

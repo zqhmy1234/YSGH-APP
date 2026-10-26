@@ -3729,7 +3729,7 @@
           "stats"
         ],
         "summary": "Daily Summary",
-        "description": "hero 副标题三字段（count/latest_event_text/latest_event_time）\n\n口径（事件域对齐 /events/stats：user_id + deleted_at IS NULL）。\n无事件时返回 count=0 + 两个 None——前端判空清空 hero 文案（不造假）。",
+        "description": "hero 副标题三字段（count / latest_event_text / latest_event_time）\n\n口径（2026-10-26 起，与时间轴列表**同源**）：\n  · count：当前自然月内、未软删、类型属 `_LISTABLE_TYPES` 的 `contents` 条数；\n  · latest_event_text：最新一条记忆的可读文案（文字取正文首行；照片取\n    `ai_description`，缺失退化「照片记忆」）——**不再是事件标题**；\n  · latest_event_time：该条记忆的时刻（`taken_at` 优先、缺失回退 `created_at`）。\n\n无内容时返回 count=0 + 两个 None —— 前端据此清空/退化为「暂无新记忆」，\n此时那句话是**真的**（旧口径下它是假的：明明有 281 条）。",
         "operationId": "daily_summary_api_v1_stats_daily_summary_get",
         "responses": {
           "200": {

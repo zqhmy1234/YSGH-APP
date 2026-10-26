@@ -106,7 +106,7 @@
   "token_literals": {
     "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。",
     "total": {
-      "hex": 68,
+      "hex": 66,
       "rgb": 3,
       "gradient": 0
     },
@@ -207,13 +207,13 @@
         "gradient": 0
       },
       "client/styles/tab-index.css": {
-        "hex": 3,
+        "hex": 1,
         "rgb": 0,
         "gradient": 0
       }
     },
-    "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10。2026-10-11 按 9-23 基线逐文件对照后上调至 hex 77 / rgb 5：**性质是还原而非新增**——11 处声明在令牌化时被挂上值不等的令牌（Δ3~16/255，误映射；明细见 docs/决策台账.md §4.16（令牌波；原证据文件在 .cowork-temp/ 内，gitignore 不可复现）），按「一切以重构前为准」写回 9-23 原字面量并加注释标明来源。",
-    "reason_note": "同期 design_tokens.dtcg.json（321 叶子）在样式里被引用 0 次；另有 74 条「回退值=9-23 原值、令牌值差 ≤2/255」的设计基色归并**保留未改**（令牌值来自画布实测真源，Δ≤2 视觉不可辨；逐令牌全域一致的 3 个纯色令牌--a-ink-30/40、--a-rust-06 若需逐像素还原，改其 json 值即可恢复 9 处） ｜ **2026-10-25 复核**：本文件 total 由 77/5 降为 75/4，**两处都需要说明**：<br>① **hex 77→75：真实下降，但不是本次改动造成的**。新增的 `client/pages/portrait/detail.uvue` 全程用 `var(--c-*, #fallback)` 写法（fallback 被 `_strip_var_fallbacks` 剔除后计 0，故新增文件未进 per_file）；下降来自 `PortraitPrivacyPanel.uvue` 的 hex 6→4 —— 那是**本次之前就存在的漂移**，本次按棘轮规则「下降须同步下调基线」执行，**未改该文件**（`git status` 可证）。<br>② **rgb 5→4：不是代码变化，是旧基线的内部不一致被修正**。实测 HEAD 版本中 `total.rgb` 声明为 5，但其 `per_file` 明细求和只有 4 —— 旧基线自相矛盾。`--write-baseline` 按明细重算 total，把这个矛盾修正为 4。⇒ 后续若有人追查「rgb 少了一个」，**不必找代码**，这里是历史记账误差。 ｜ **2026-10-26 同步下调（hex 75→68 / rgb 4→3，且删除 3 条已归零的 per_file 条目）**：① `client/components/TabAi/TabAi.uvue` 1→0 —— **本批改动所致**：输入条迁入 `AiComposer.uvue` 后，原来那行 `placeholder-style=\"color:#B3A696\"` 一并消失（新占位色走 `--c-ink-500` 令牌，回退值按规则不计）；② `AiComposer.uvue` **未进 per_file**（全令牌 + 回退值，代码口径 0 处字面量），这是刻意做法而非漏记；③ 另两条归零（`client/pages/detail/detail.uvue`、`client/styles/detail.css`）来自**同一工作树上另一批未提交的改造**（detail 页拆分/令牌化），与本次 AI 页改动无关 —— 如实记录当前代码状态，不代为背书其设计。 ｜ ⚠️ **本批 per_file 里有 4 条不属于本次 AI 页改动**（`EventVoiceList.uvue` 3 / `PhotoOcrNote.uvue` 2 / `VoiceMemoCard.uvue` 11 / `client/utils` 之外的同类新增）：它们是同一工作树上另一批未提交的 detail 页组件拆分产物，工作区里先于本批存在。按棘轮规则「新增超阈/新增字面量文件必须录基线或改用令牌」只能录进来，**但这不等于认可**：那批应自行按 P3 收敛，届时从本文件删条目（棘轮只许收缩）。",
-    "target": "P3 逐域收敛后逐条下调，直至 total 归零（全部走令牌）；**销项路径**：为这 11 个精确色（#AA5334/#E5DED4/#EFE9DD/#faf6ee/#fbf4e4/#ede5d8/#FBF7EF/#D8CFC2/#E5DED2/rgba(42,33,26,0.4)）在设计令牌集里补入等值叶子后改回 var()，届时同步下调本基线"
+    "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10",
+    "reason_note": "同期 design_tokens.dtcg.json（321 叶子）在样式里被引用 0 次",
+    "target": "P3 逐域收敛后逐条下调，直至 total 归零（全部走令牌）"
   }
 }

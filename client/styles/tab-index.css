@@ -65,6 +65,25 @@
 		/* 画布 2:258：底部米色垂直溶解 #F8F7F4 a0→0.78@75%→1。三参数限两标，溶解曲线近似 */
 		background: var(--g-veil-paper-sand, linear-gradient(to bottom, rgba(248,247,244,0), #f8f7f4));
 	}
+	/* ⚠️ 2026-10-26（头像字被裁切 · 修复 #2）：本规则**缺 `overflow: hidden`**，
+	   且**只靠父级 flex 居中**来定位字形 —— 两处叠加造成真机上的"字叠在圆片/被裁切"。
+	   像素级实证（review/shot_now_200754.png，1084px 宽 ⇒ 1rpx = 1.445px）：
+	     · 琥珀圆片像素范围 y≈166 起（CSS top:111rpx ⇒ 160px，符）；
+	     · 白字「峰」像素范围 **y 161–198 / x 925–975** —— 上边缘比圆片**高出 5px**，
+	       左边距圆心还差一截 ⇒ 字形是**贴在圆片左上方、并溢出圆外**，不是居中的；
+	     · 对照 review/shot_t2_200837.png 同一位置：字是居中的。
+	   ⇒ 这不是"字号太大撑破圆"，而是**首帧 flex 对齐没生效**（本仓同族已知坑：
+	     `.search-placeholder` 注释记录的"uvue 首帧把 flex:1 的 text 纵向拉伸致字形贴顶"）。
+	     flex 的 align-items/justify-content 对 `<text>` 在首帧不可靠 ⇒ 字形落在内容盒
+	     的起始角（左上），随后 feed 重排才自愈 —— 冷启动被截到的那一帧就是故障态。
+	   修法（**不依赖 flex 对齐**，三条都必要）：
+	     ① 补 `overflow: hidden`：无论字形漂到哪，都裁在圆内（与 TabProfile `.n2_452`
+	        对齐；那一处本来就有，所以「我的」页头像不裂 —— 同视觉原子两套 CSS，本处漏了）；
+	     ② 给字形**钉死盒子 + 行高居中**：width/height 撑满内圆（73rpx = 77 − 2×2 边框），
+	        `line-height` 等于盒子高 ⇒ 垂直居中由行高保证，不靠 align-items；
+	     ③ `text-align: center` 同理负责水平居中，不靠 justify-content。
+	     这样即使 flex 对齐在首帧失效，字形仍在圆内正中。
+	   字号 40rpx 保留：内圆 73rpx 装 40rpx 字（实绘高≈46rpx）留 13.5rpx/侧余量，够。 */
 	.hero-avatar {
 		position: absolute;
 		/* absolute-ok: hero 头像角标（画布锚点） */
@@ -80,12 +99,20 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		/* 关键：把字形裁在圆内（与 TabProfile .n2_452 对齐；此前缺失 ⇒ 字形溢出到照片上） */
+		overflow: hidden;
 	}
 	.hero-avatar-char {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-raw-r40, 40rpx);
 		color: var(--c-white, #ffffff);
 		font-weight: 600;
+		/* ②③ 钉死盒子 + 行高/文本对齐居中：不依赖父级 flex 在首帧是否生效。
+		   73rpx = 外径 77rpx − 上下边框各 2rpx。 */
+		width: 73rpx;
+		height: 73rpx;
+		line-height: 73rpx;
+		text-align: center;
 	}
 	/* 画布真值（2026-09-01 重拉 index_canvas.json）：
 	   大标题 px(20,56) fs40 → rpx(38.5,107.7) fs76.9，白 a1.0，无阴影
@@ -130,6 +157,23 @@
 	}
 
 	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
+	/* ⚠️ 2026-10-26（首屏空白修复 #3 · 占位文字对比度）：
+	   原实现 = 白 0.85 的字 叠在 白 0.32 的玻璃底上。实测 **1.04:1**
+	   （玻璃底叠在 paper-100 上实际是 rgb(250,250,248)，白字压上去几乎同色）。
+	   真机截图 review/shot_now_200754_capsule.png / shot_t2_200837_capsule.png 上
+	   「描述一段回忆，帮你找」淡到需要凑近才认得出——和 AI 页修过的 2.31:1 同族缺陷，
+	   这里是**更差的一例**（1.04 比 2.31 低一半以上）。
+	   改法（两处联动，单改哪一处都不够）：
+	     ① 玻璃底不透明度 0.32 → **0.78**：胶囊压在照片最暗处（湖区暗部实测 ≈ rgb(90,85,70)）
+	        时，0.32 的底几乎被照片吃掉（底变成深色 ⇒ 任何深色字都读不出）；
+	        0.78 后底色最坏 ≈ rgb(219,218,215)，深浅字都能立住。
+	     ② 字色 白 0.85 → **--c-ink-700 #5A4C40**：与 AI 页同类修法一致（深字压浅玻璃）。
+	   实测对比度（ink-700 对胶囊底，遍历 hero 照片从亮到暗的背景）：
+	        纸白底 8.12:1 / 夕照浅 7.84:1 / 中灰 6.75:1 / 暗部 5.90:1 / 最暗 5.56:1
+	        ⇒ **最坏 5.56:1，全场景过 WCAG AA 正文 4.5:1**（原 1.04:1 → 5.56:1，+4.5 倍）。
+	   为什么把底加这么实（0.78）而不是只换字色：只换字色的话，0.32 的底在暗部会让字与底
+	   一起变暗（实测暗部只有 2.43:1）——玻璃拟态在这个位置**保不住可读性**，
+	   而这是用户进 App 看到的第一个可交互元素，优先可读性。 */
 	.search-capsule {
 		margin: var(--d-raw-r24, 24rpx) var(--d-raw-r40, 40rpx);
 		/* 几何钉死：画布 46px×1.9231=88.5rpx 固定高，垂直居中靠 height+align-items。
@@ -137,10 +181,10 @@
 		   +文字贴顶（2026-09-02 真机漂移实锤，feed relayout 后才自愈），固定高根除 */
 		height: var(--d-search_height, 88.5rpx);
 		padding: 0 var(--d-raw-r32, 32rpx);
-		background-color: var(--a-white-32, rgba(255,255,255,0.32));
+		background-color: var(--a-white-78, rgba(255,255,255,0.78));
 		border-radius: var(--d-raw-r46, 46rpx);
 		border-width: var(--d-raw-r1, 1rpx);
-		border-color: var(--a-white-50, rgba(255,255,255,0.5));
+		border-color: var(--a-white-90, rgba(255,255,255,0.9));
 		border-style: solid;
 		display: flex;
 		flex-direction: row;
@@ -157,7 +201,8 @@
 		/* 不用 flex:1——uvue 首帧曾把 flex:1 的 text 纵向拉伸致字形贴顶（漂移实锤之一）；
 		   胶囊本身 stretch 满宽可点，无需 text 撑开 */
 		font-size: var(--d-raw-r28, 28rpx);
-		color: var(--a-white-85, rgba(255,255,255,0.85));
+		/* 原 --a-white-85（1.04:1）⇒ --c-ink-700，最坏 5.56:1 全场景过 AA，见上方块注释 */
+		color: var(--c-ink-700, #5A4C40);
 	}
 
 	.scroll {
@@ -185,18 +230,55 @@
 		display: flex;
 		flex-direction: column;
 	}
+	/* ⚠️ 2026-10-26（首屏空白修复 #1）：骨架屏此前**根本看不见**——实测对比度
+	   `.sk-card` 白底 on paper-100 = **1.07:1**、`.sk-line` #EFE9DD on 白卡 = **1.21:1**。
+	   两者都远低于 WCAG 非文本元素 3:1，人眼在米白页面上等于"什么都没有"
+	   ⇒ 用户看到的是"搜索框下面一大片空白"（真机截图 review/shot_now_200754.png
+	   从 y≈935 到 TabBar y≈1700 整块纯 #f8f7f4，像素采样实证）。
+	   骨架屏本来就是为了替代旧版「正在翻找相纸…」而加的，但**加了等于没加**：它的存在
+	   完全不可见，用户得到的仍是空白首屏 + 无从判断 App 是否在工作。
+	   改法（三处，缺一不可）：
+	     ① 卡片描边：加 paper-700 边框，让白卡从米白页面上"浮"出来（1.38:1 描边可见度
+	        够用于 1px 边界，主要是靠阴影与色差共同作用）；
+	     ② 卡片阴影：复用既有 --shadow 族（视觉规范 v2 已有，零新增令牌）；
+	     ③ 占位条改 --c-sand-500 #c7ad87：on 白卡 = **2.15:1**，仍不达 3:1
+	        ⇒ 最终取 **--c-ink-300 #b3a696**（on 白卡 **2.38:1**）? 否 —— 见下方
+	        `.sk-line` 实测表，最终定 #a89078（3.03:1）以满足非文本 3:1。
+	   为什么非文本也要 3:1：WCAG 1.4.11「非文本对比度」适用于**承载含义**的图形；
+	   骨架条承载"这里马上会有内容"的含义，属 UI 组件边界，取 3:1 是安全口径。 */
 	.sk-card {
 		background-color: var(--c-white, #FFFFFF);
 		border-radius: var(--d-raw-r24, 24rpx);
 		padding: var(--d-raw-r24, 24rpx);
 		margin-bottom: var(--d-raw-r28, 28rpx);
+		/* 白卡 on paper-100 仅 1.07:1 —— 没有描边/阴影时卡片形状不可辨 */
+		border-width: var(--d-raw-r2, 2rpx);
+		border-color: var(--c-paper-700, #e1d3b8);
+		border-style: solid;
+		box-shadow: 0 var(--d-raw-r6, 6rpx) var(--d-raw-r18, 18rpx) var(--a-ink-08, rgba(58,46,37,0.078));
 	}
 	.sk-card-body {
 		display: flex;
 		flex-direction: column;
 	}
+	/* 2026-10-26（首屏空白修复 #1）：骨架屏说明行。
+	   对比度 --c-ink-700 #5A4C40 on paper-100 #F8F7F4 = **7.71:1**（AAA）。
+	   刻意不用 .muted（--c-ink-300 = **2.22:1**）：旧版那行「正在翻找相纸…」就是
+	   ink-300，真机上是"淡到几乎看不见"——用户因此在截图上看到的是一片空白。
+	   字号 26rpx（13dp）比正文小一档但仍是可读正文字号，且与骨架卡节奏协调。 */
+	.sk-caption {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-700, #5A4C40);
+		margin-bottom: var(--d-raw-r24, 24rpx);
+	}
+	/* 占位条：#a89078 on 白卡 = 3.03:1（WCAG 非文本 3:1 达标）。
+	   原 #EFE9DD = 1.21:1 —— 是"看不见"的直接原因，本次换色。
+	   仍带令牌回退写法；#a89078 无现成令牌（sand-500 是 #c7ad87，只有 2.15:1 不够），
+	   故按令牌纪律写成 var(--c-sk-bar, #a89078) 的**单点私有令牌**，值同时登记在
+	   App.uvue :root，避免各处再散写字面量。 */
 	.sk-line {
-		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
+		background-color: var(--c-sk-bar, #a89078);
 		border-radius: var(--d-raw-r10, 10rpx);
 	}
 	.sk-day {
@@ -222,7 +304,8 @@
 		width: var(--d-raw-r190, 190rpx);
 		height: var(--d-raw-r190, 190rpx);
 		border-radius: var(--d-raw-r16, 16rpx);
-		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
+		/* 同 .sk-line：原 #EFE9DD on 白卡 = 1.21:1（看不见）⇒ --c-sk-bar 3.03:1 */
+		background-color: var(--c-sk-bar, #a89078);
 		margin-right: var(--d-raw-r16, 16rpx);
 	}
 	.muted {
