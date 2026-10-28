@@ -94,6 +94,7 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("MSG_002", "消息不存在", 404),
     ErrorSpec("MSG_003", "游标格式无效（应为消息 id）", 422),
     # 画像级敏感
+    ErrorSpec("PROFILE_001", "画像重建任务不存在或已过期", 404),
     ErrorSpec("PROFILE_SENSITIVE_001", "话题参数非法", 422),
     ErrorSpec("PROFILE_SENSITIVE_002", "topic 不能为空", 422),
     ErrorSpec("PROFILE_SENSITIVE_003", "话题不存在", 404),
@@ -163,6 +164,7 @@ ERR_CONTENT_008 = "CONTENT_008"
 ERR_CONTENT_009 = "CONTENT_009"
 ERR_CONTENT_010 = "CONTENT_010"
 ERR_CONTENT_011 = "CONTENT_011"
+ERR_PROFILE_001 = "PROFILE_001"
 ERR_CORR_001 = "CORR_001"
 ERR_CORR_002 = "CORR_002"
 ERR_CORR_003 = "CORR_003"

@@ -37,6 +37,7 @@ import time
 from pathlib import Path
 
 from gate_io import force_utf8  # noqa: E402  —— UTF-8 兜底唯一实现（同仓约定）
+from hbuilder_project_guard import inspect_client_project
 
 force_utf8()
 
@@ -134,6 +135,13 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
             "设置环境变量 HBUILDERX_CLI 指向它，或在有 HBuilderX 的机器上跑。",
         )
 
+    # 2026-10-23：`--project client` 按名称选择。HBuilderX 工作区曾有当前仓库与
+    # 旧 YSGH-PR3/client 两个同名项目，CLI 静默编译旧版 102 却仍打印成功。
+    # 任何编译前必须先证明唯一且路径正确；同名冲突不能靠看日志猜。
+    unique_ok, unique_detail = inspect_client_project(CLIENT)
+    if not unique_ok:
+        return "fail", ENV_ERR_PREFIX + " HBuilderX 项目选择不安全：" + unique_detail
+
     # 2026-10-14：HBuilderX 未启动时 `cli launch` **不编译**（只打印一句就走），
     # 必须先把它拉起来；拉不起来就如实报环境错误，**绝不**降级成"通过"。
     not_ready = ensure_hbuilderx_open(cli)
@@ -157,8 +165,10 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
     # （手工 `Start-Process -RedirectStandardOutput` 却能拿到完整日志）。用文件重定向
     # 与被验证过的手工路径完全一致 ⇒ 不再依赖 cli 在管道模式下的行为。
     with LOG_PATH.open("w", encoding="utf-8", errors="replace") as sink:
+        # HBuilderX 5.24 的 CLI 只接受已导入项目的名称；传绝对路径会误报
+        # “不是 uni-app 项目，仅编译模式暂不支持”（本机 2026-10-23 实测）。
         proc = subprocess.Popen(
-            [str(cli), "launch", "app-android", "--project", str(CLIENT), "--compile", "true"],
+            [str(cli), "launch", "app-android", "--project", CLIENT.name, "--compile", "true"],
             stdout=sink,
             stderr=subprocess.STDOUT,
         )

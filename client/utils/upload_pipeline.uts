@@ -15,7 +15,14 @@ import { getBaseUrl } from './config'
 // 见 api.uts 的 buildHeader 注释）。本文件此前的 statusMissing 自拼 header，会漏掉通用头。
 import { buildHeader } from './api'
 import { initUpload, putChunk, completeUpload, fieldOf, UploadResp } from './upload_protocol'
-import { PATH_UPLOAD_STATUS, FIELD_UPLOAD_ID, FIELD_MISSING_CHUNKS, FIELD_FILE_KEY, FIELD_CONTENT_ID } from './contract'
+import {
+	PATH_UPLOAD_STATUS,
+	FIELD_UPLOAD_ID,
+	FIELD_MISSING_CHUNKS,
+	FIELD_FILE_KEY,
+	FIELD_CONTENT_ID,
+	FIELD_TAKEN_AT
+} from './contract'
 
 /** 单文件上传规格（调用方组装） */
 export class UploadSpec {
@@ -43,11 +50,26 @@ export class UploadOutcome {
 	contentId: string
 	fileKey: string
 	uploadId: string
+	// 后端最终确认的拍摄事实（EXIF 优先）。客户端据此覆盖本地临时值，
+	// 否则端侧 L1 聚合仍会用保存时间/当前位置生成事件。
+	takenAt: string
+	gpsLat: number | null
+	gpsLng: number | null
 
-	constructor(contentId: string, fileKey: string, uploadId: string) {
+	constructor(
+		contentId: string,
+		fileKey: string,
+		uploadId: string,
+		takenAt: string = '',
+		gpsLat: number | null = null,
+		gpsLng: number | null = null
+	) {
 		this.contentId = contentId
 		this.fileKey = fileKey
 		this.uploadId = uploadId
+		this.takenAt = takenAt
+		this.gpsLat = gpsLat
+		this.gpsLng = gpsLng
 	}
 }
 
@@ -131,7 +153,18 @@ function completeFor(uploadId: string, meta: UTSJSONObject): Promise<UploadOutco
 					reject(new UploadPipeError(0, 'complete 无 content_id', false))
 					return
 				}
-				resolve(new UploadOutcome(cid, fieldOf(resp.raw, FIELD_FILE_KEY), uploadId))
+				const gpsLatRaw = fieldOf(resp.raw, 'gps_lat')
+				const gpsLngRaw = fieldOf(resp.raw, 'gps_lng')
+				const gpsLat = gpsLatRaw != '' && gpsLatRaw != 'null' ? Number(gpsLatRaw) : null
+				const gpsLng = gpsLngRaw != '' && gpsLngRaw != 'null' ? Number(gpsLngRaw) : null
+				resolve(new UploadOutcome(
+					cid,
+					fieldOf(resp.raw, FIELD_FILE_KEY),
+					uploadId,
+					fieldOf(resp.raw, FIELD_TAKEN_AT),
+					gpsLat,
+					gpsLng
+				))
 				return
 			}
 			reject(new UploadPipeError(resp.status, 'complete HTTP ' + resp.status, resp.status >= 400 && resp.status < 500))

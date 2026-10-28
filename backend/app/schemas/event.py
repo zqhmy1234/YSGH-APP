@@ -37,7 +37,7 @@ class EventOut(BaseModel):
     id: str
     level: int = Field(..., ge=0, le=3)
     title: str | None
-    title_source: str | None            # llm / template / user
+    title_source: str | None            # device / llm / template / user
     cover_content_id: str | None
     start_time: datetime | None
     end_time: datetime | None

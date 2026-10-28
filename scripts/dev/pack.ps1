@@ -164,8 +164,8 @@ else {
     Info "已生成打包配置（仓库外）：$cfgPath"
 
     $packLog = Join-Path $logDir 'pack.log'
-    $client = Join-Path $RepoRoot 'client'
-    Start-Process $cli -ArgumentList @('pack', '--project', $client, '--platform', 'android', '--config', $cfgPath) `
+    # HBuilderX 5.24 的 pack CLI 只接受已导入项目名称；绝对路径会报“不支持打包”。
+    Start-Process $cli -ArgumentList @('pack', '--project', 'client', '--platform', 'android', '--config', $cfgPath) `
         -RedirectStandardOutput $packLog -RedirectStandardError "$packLog.err" -WindowStyle Hidden | Out-Null
     Info "云打包已启动（3~10 分钟），日志 $packLog"
 

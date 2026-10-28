@@ -1,4 +1,6 @@
 """分片上传契约（S5-03 · WP-C）"""
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -32,6 +34,10 @@ class UploadCompleteOut(BaseModel):
     file_key: str
     upload_id: str
     content_id: str | None = None    # 集成侧：建/复用 contents 记录后回填
+    # 后端最终确认的拍摄事实；客户端据此覆盖本地临时值，再生成端侧事件。
+    taken_at: datetime | None = None
+    gps_lat: float | None = None
+    gps_lng: float | None = None
 
 
 class UploadStatusOut(BaseModel):

@@ -48,7 +48,12 @@ def test_dms_invalid_returns_none(dms):
 
 # --- 端到端：真 JPEG ---
 
-def _jpeg_with_gps() -> bytes:
+def _jpeg_with_gps(
+    lat_parts=(31, 13, 49),
+    lng_parts=(121, 28, 25),
+    lat_ref: str = "N",
+    lng_ref: str = "E",
+) -> bytes:
     """构造一张带 EXIF GPS 的最小 JPEG（不引入外部样例文件）。
 
     ⚠️ 写入必须用 `IFDRational`：EXIF 的 DMS 是 RATIONAL 数组，直接塞嵌套 int 元组
@@ -60,12 +65,25 @@ def _jpeg_with_gps() -> bytes:
 
     exif = Image.Exif()
     gps = exif.get_ifd(0x8825)  # GPSInfo IFD：Pillow 会把该 dict 挂进 _ifds，可直接改
-    gps[1] = "N"
-    gps[2] = (IFDRational(31, 1), IFDRational(13, 1), IFDRational(49, 1))
-    gps[3] = "E"
-    gps[4] = (IFDRational(121, 1), IFDRational(28, 1), IFDRational(25, 1))
+    gps[1] = lat_ref
+    gps[2] = tuple(IFDRational(value, 1) for value in lat_parts)
+    gps[3] = lng_ref
+    gps[4] = tuple(IFDRational(value, 1) for value in lng_parts)
     buf = io.BytesIO()
     Image.new("RGB", (4, 4), (128, 128, 128)).save(buf, format="JPEG", exif=exif.tobytes())
+    return buf.getvalue()
+
+
+def _jpeg_with_datetime(*, tag: int, value: str) -> bytes:
+    """构造带指定 EXIF 时间标签的最小 JPEG。"""
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[tag] = value
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (128, 128, 128)).save(
+        buf, format="JPEG", exif=exif.tobytes()
+    )
     return buf.getvalue()
 
 
@@ -84,6 +102,40 @@ def test_extract_exif_gps_from_real_jpeg():
     lat, lng = got
     assert round(lat, 3) == 31.230
     assert round(lng, 3) == 121.474
+
+
+def test_extract_exif_gps_rejects_zero_pair():
+    """(0,0) 是常见空占位，必须返回 None，不能落到几内亚湾。"""
+    try:
+        data = _jpeg_with_gps(lat_parts=(0, 0, 0), lng_parts=(0, 0, 0))
+    except Exception as exc:  # noqa: BLE001 —— 构造侧能力问题
+        pytest.skip(f"本机 Pillow 无法写出 GPS IFD（构造侧限制）：{exc}")
+    assert extract_exif_gps(data) is None
+
+
+def test_extract_exif_datetime_falls_back_to_datetime_tag():
+    """真实相机常只写 tag 306；必须兼容，否则合法拍摄时间会被当成 None。"""
+    data = _jpeg_with_datetime(tag=306, value="2025:06:12 16:21:31")
+    got = extract_exif_datetime(data)
+    assert got is not None
+    assert got.isoformat() == "2025-06-12T16:21:31+08:00"
+
+
+def test_extract_exif_datetime_prefers_datetime_original():
+    """两个标签都存在时，DateTimeOriginal 是更权威的相机拍摄时间。"""
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[306] = "2026:01:01 00:00:00"
+    exif[36867] = "2025:06:12 16:21:31"
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (128, 128, 128)).save(
+        buf, format="JPEG", exif=exif.tobytes()
+    )
+
+    got = extract_exif_datetime(buf.getvalue())
+    assert got is not None
+    assert got.isoformat() == "2025-06-12T16:21:31+08:00"
 
 
 def test_extract_returns_none_for_non_jpeg():

@@ -365,6 +365,37 @@ class TestVoicePipeline:
         assert c.status == "failed"
         assert c.extra["audio_processing"]["outcome"] == "failed_retryable"
 
+    def test_voice_asr_failure_keeps_client_transcript(
+        self, db_user, monkeypatch, tmp_path
+    ):
+        """后台 ASR 二次增强失败时，客户端已保存的转写不能把整条内容打成 failed。"""
+        from app.services.external.asr import AsrError
+
+        db, user = db_user
+        wav = tmp_path / "voice.wav"
+        wav.write_bytes(b"RIFF....WAVEfmt ")
+        c = _content(
+            db,
+            user.id,
+            "voice",
+            text="客户端已经有转写",
+            extra={"audio_path": str(wav)},
+        )
+
+        def unavailable(*args, **kwargs):
+            raise AsrError("MISSING_API_KEY", "ASR unavailable", retryable=True)
+
+        monkeypatch.setattr("app.services.external.asr.transcribe", unavailable)
+        from app.services.pipeline import process_content
+
+        response = process_content(str(c.id))
+        assert response["status"] == "done"
+        assert response["outcome"] == "degraded_existing_text"
+        db.refresh(c)
+        assert c.status == "done"
+        assert c.text == "客户端已经有转写"
+        assert c.extra["audio_processing"]["code"] == "MISSING_API_KEY"
+
     def test_voice_unclassified_failure_reraises_after_audit(
         self, db_user, monkeypatch, tmp_path
     ):

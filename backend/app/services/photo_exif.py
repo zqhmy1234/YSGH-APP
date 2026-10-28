@@ -87,17 +87,24 @@ def extract_exif_gps(data: bytes) -> tuple[float, float] | None:
             return None
         if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
             return None
+        # (0,0) 是常见 EXIF 空占位，不是可展示地点；宁可留空也不落到几内亚湾。
+        if lat == 0 and lng == 0:
+            return None
         return lat, lng
     except Exception:  # noqa: BLE001 —— 非 JPEG / 无 EXIF 静默降级（同 extract_exif_datetime）
         return None
 
 
 def extract_exif_datetime(data: bytes) -> datetime | None:
-    """从照片字节提取 EXIF DateTimeOriginal（相机拍摄时间真值）。
+    """从照片字节提取 EXIF 拍摄时间（DateTimeOriginal → DateTime）。
 
     客户端 DATE_TAKEN 可能被 MediaProvider 写成扫描时间（2026-08-24 真机实测），
     故以后端 EXIF 解析为准：EXIF 无时区 = 相机本地时间（本设备 +08），显式按
     UTC+08:00 解释，与客户端 isoString(+08:00) 一致。
+
+    2026-10-27：真实相机样本只写 EXIF tag 306 `DateTime`，没有 tag 36867
+    `DateTimeOriginal`。只认后者会得到 None，随后保存时间又会被误当成拍摄时间。
+    不读取文件系统 mtime：复制/同步会改写它，不能作为拍摄事实。
     """
     try:
         from PIL import Image
@@ -105,11 +112,17 @@ def extract_exif_datetime(data: bytes) -> datetime | None:
         Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
         img = Image.open(io.BytesIO(data))
         exif = img.getexif()
-        raw = exif.get(36867)  # DateTimeOriginal
-        if raw:
-            return datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S").replace(
-                tzinfo=timezone(timedelta(hours=8))
-            )
+        for tag in (36867, 306):  # DateTimeOriginal → DateTime
+            raw = exif.get(tag)
+            if not raw:
+                continue
+            try:
+                return datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S").replace(
+                    tzinfo=timezone(timedelta(hours=8))
+                )
+            except ValueError:
+                # 空串/全零占位等坏值继续尝试下一标签，绝不使用当前时间兜底。
+                continue
     except Exception:  # noqa: BLE001 —— 非 JPEG/无 EXIF 静默降级
         return None
     return None

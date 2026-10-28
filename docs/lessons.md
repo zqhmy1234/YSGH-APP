@@ -9,6 +9,51 @@
 
 ---
 
+### 2026-10-29 01:13 · commit f49df29 · ts=1793207608
+- **错误**：同步新增 P0 成果时，完整门禁先后拦截未使用导入与超长行
+- **根因**：画像路由首版保留了未使用的 Session/get_db 导入；新增报告脚本按长句直接落盘，未先跑单文件 Ruff
+- **修复**：删除未使用导入，拆分长字符串并内联冗余 lambda；提交前先对全部待提交 Python 文件运行 Ruff
+- **相关文件**：backend/app/api/profile.py; backend/tests/test_rag.py; scripts/generate_c5_c6_reports.py
+- **教训**：新增文件和测试在暂存后先做范围化 Ruff，再跑完整门禁，避免秒级问题拖成长门禁返工
+
+---
+
+### 2026-10-28 13:04 · commit f49df29 · ts=1793163877
+- **错误**：精确搜索新增软删除条件后结构棘轮报警，公共 helper 新增文件也被视为重复模式
+- **根因**：审计按正则统计 deleted_at.is_(None)；从 pg_fallback 移到 query_helpers 时 per_file 基线未同步
+- **修复**：保持总数 43 不变，把基线 per_file 从 pg_fallback 迁到 query_helpers
+- **相关文件**：backend/app/services/query_helpers.py, scripts/audit_harness_baseline.json
+- **教训**：重构公共查询条件时必须同步结构棘轮的 per_file 基线，不能只看总数
+
+---
+
+### 2026-10-28 00:00 · commit f49df29 · ts=1793116816
+- **错误**：OPPO 相册选择器的 temp 图即使勾选原图也会等长清除 GPS，后端和直接 DATA 路径均读不到
+- **根因**：系统媒体隐私层改写选择器副本；scoped storage 还可能阻止插件直接读 DATA
+- **修复**：客户端强制 sizeType=original；新增 MediaStore 原始 URI InputStream/DATA 双路 EXIF 回查；原生插件变更必须进入新自定义基座或 APK
+- **相关文件**：client/components/RecordSheet/RecordSheet.uvue, client/uni_modules/yishu-photo-watch/utssdk/app-android/index.uts
+- **教训**：相册元数据验收必须校验实际上传字节和原生插件版本，不能只看文件名或大小
+
+---
+
+### 2026-10-28 00:00 · commit f49df29 · ts=1793116816
+- **错误**：上传完成响应新增 taken_at/gps 字段后 OpenAPI 快照未同步，静态门失败
+- **根因**：修改 Pydantic UploadCompleteOut 后未运行 gen_openapi.py
+- **修复**：运行 scripts/gen_openapi.py 重导快照并复跑静态门
+- **相关文件**：backend/app/schemas/upload.py, docs/openapi.json
+- **教训**：公开响应 schema 变更必须同步 OpenAPI 快照
+
+---
+
+### 2026-10-23 20:21 · commit 4841d59 · ts=1792758080
+- **错误**：102 APK 搜索输入值存在但文字不可见；全量静态门随后因三处字色 hex 增加报 CRITICAL
+- **根因**：为通过令牌棘轮把原生 input 的 inline 字面色改成 CSS 变量，Android 原生输入层不解析变量及 fallback；修复回字面 hex 后又与只许收缩的令牌基线冲突
+- **修复**：主搜索、收藏搜索、标签输入恢复 101 已验字的字面 hex；令牌基线做仅这三个原生控件、各 +1 的显式例外并写明原因；补原生控件运行时回归
+- **相关文件**：client/components/TabSearch/TabSearch.uvue,client/pages/favorites/favorites.uvue,client/components/TagEditPanel/TagEditPanel.uvue,scripts/audit_harness_baseline.json
+- **教训**：原生输入控件的运行色不能为过静态令牌门而变量化；要保留字面值并做窄范围、有理由的基线例外
+
+---
+
 ### 2026-10-19 10:56 · commit dd89678 · ts=1792378591
 - **错误**：pre-commit hook 在已暂存 B-3 提交时因找不到 Ruff 与后端依赖而阻断
 - **根因**：hook 固定执行 PATH 上的 python；发起 git commit 的 PowerShell 未把项目 .venv/Scripts 放在 PATH 前面，故落到系统 Python
@@ -3115,3 +3160,16 @@
 
 36. **uvicorn 活着 ≠ 管线活着**：RQ worker 未启动时上传后 `enqueue_unique(process_content)` 积压 296+185 条零消费者，contents 恒 status=processing、永不聚合 → 时间轴（events 层）看不到、搜索（contents/qdrant 层）看得到；后端启动必须 `cd backend && python -m app.workers.worker`（Windows 自动 SimpleWorker）
 37. **echo「去年今日」跨天坑**：seed_echo_today 硬编码日期跨天即空转（两次实锤）；每日名额（EchoHistory shown_at 当日≥1）任何验证后必须删记录还原；--date 参数化后仍须显式传当天
+## 2026-10-23：HBuilderX 同名 client 会静默编译旧版本
+
+- 现象：`ENV='dev'`、`REAL_DEVICE_HOST='localhost'`、`adb reverse` 和手机侧
+  `127.0.0.1:8010/healthz` 均已验证通过，但自定义基座仍持续请求
+  `http://192.168.31.143:8010`，最终全部超时；CLI 却仍打印“编译成功”。
+- 根因：HBuilderX 同时登记当前 `D:\projects\YSGH-APP\client` 与旧
+  `D:\projects\YSGH-PR3\client`。CLI 的 `--project client` 按名称选择，同名时
+  无法证明实际源码，导致编译产物/缓存与当前工作树不一致。
+- 修复：旧目录按 manifest versionCode 归档为 `client-102`，当前源码独占
+  `client`；新增 `scripts/hbuilder_project_guard.py`，编译前要求注册表中恰好
+  一个 `client` 且路径等于当前仓库。
+- 验证口径：不能只看“编译成功”，还要确认 HBuilderX 项目路径、包内 versionCode
+  和实际请求 host。旧版本重命名周期以 APK 重新打包为边界。

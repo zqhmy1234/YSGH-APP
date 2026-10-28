@@ -114,6 +114,66 @@ def test_cer_ignores_punct_diff():
     assert _cer("你好，世界。", "你好世界") == 0.0
 
 
+def test_hbuilder_project_guard_accepts_unique_current_client(tmp_path):
+    """编译门只允许唯一 client，且必须指向当前仓库源码。"""
+    from scripts.hbuilder_project_guard import inspect_client_project
+
+    registry = tmp_path / "HBuilder X.ini"
+    current = tmp_path / "repo" / "client"
+    old = tmp_path / "archive" / "client-102"
+    registry.write_text(
+        "[workspace]\n"
+        f"projects\\1\\path={current.as_posix()}\n"
+        f"projects\\2\\path={old.as_posix()}\n",
+        encoding="utf-8",
+    )
+
+    ok, detail = inspect_client_project(current, registry)
+
+    assert ok
+    assert "client ->" in detail
+
+
+def test_hbuilder_project_guard_rejects_duplicate_client(tmp_path):
+    """两个同名 client 时明确报错，防止 CLI 静默编译旧版本。"""
+    from scripts.hbuilder_project_guard import inspect_client_project
+
+    registry = tmp_path / "HBuilder X.ini"
+    current = tmp_path / "repo" / "client"
+    old = tmp_path / "old" / "client"
+    registry.write_text(
+        "[workspace]\n"
+        f"projects\\1\\path={current.as_posix()}\n"
+        f"projects\\2\\path={old.as_posix()}\n",
+        encoding="utf-8",
+    )
+
+    ok, detail = inspect_client_project(current, registry)
+
+    assert not ok
+    assert "2 个名为 `client`" in detail
+    assert "client-<versionCode>" in detail
+
+
+def test_hbuilder_project_guard_rejects_wrong_single_client(tmp_path):
+    """唯一的 client 指向旧目录也不允许通过。"""
+    from scripts.hbuilder_project_guard import inspect_client_project
+
+    registry = tmp_path / "HBuilder X.ini"
+    current = tmp_path / "repo" / "client"
+    wrong = tmp_path / "old" / "client"
+    registry.write_text(
+        "[workspace]\n"
+        f"projects\\1\\path={wrong.as_posix()}\n",
+        encoding="utf-8",
+    )
+
+    ok, detail = inspect_client_project(current, registry)
+
+    assert not ok
+    assert "未指向当前仓库" in detail
+
+
 # ---------------------------------------------------------------------------
 # build_truth_corpus（scripts/build_truth_corpus.py）：评测语料稳定 UUID
 # ---------------------------------------------------------------------------

@@ -135,7 +135,7 @@ CREATE TABLE events (                          -- 四层模型 L0-L3
     level          int NOT NULL,               -- 0-3
     parent_event_id uuid REFERENCES events(id),
     title          text,
-    title_source   text,                       -- llm / template / user
+    title_source   text,                       -- device / llm / template / user
     cover_content_id uuid,
     start_time     timestamptz,
     end_time       timestamptz,

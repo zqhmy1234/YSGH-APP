@@ -132,6 +132,24 @@ def test_qwen_response_check_network_error_raises(monkeypatch):
         gm.qwen_response_check("内容")
 
 
+def test_qwen_response_check_non_ascii_header_degrades(monkeypatch):
+    """无效凭据含中文时不能把 UnicodeEncodeError 泄漏成 API 500。"""
+    import httpx
+    from app.services.llm_ops import guard_managed as gm
+
+    monkeypatch.setattr(gm, "_managed_available", lambda: True)
+    monkeypatch.setattr(
+        gm.settings, "dashscope_api_key", "sk-请填写真实密钥"
+    )
+
+    def _non_ascii_header(*args, **kwargs):
+        raise UnicodeEncodeError("ascii", "sk-请填写真实密钥", 3, 8, "non-ascii")
+
+    monkeypatch.setattr(httpx, "post", _non_ascii_header)
+    with pytest.raises(RuntimeError, match="托管护栏调用失败"):
+        gm.qwen_response_check("内容", max_retries=0)
+
+
 def test_moderate_managed_mock_falls_back_to_chat(monkeypatch):
     """策略：mock 模式托管不可用 → chat 兜底（规则命中即拦截，未命中放行）
 

@@ -37,7 +37,7 @@ from app.services.rag.image import (
     search_by_image,
 )
 from app.services.rag.intent import _CLASS_RULES, _classify_query_intent, _route_query
-from app.services.rag.pg_fallback import _pg_fallback_search
+from app.services.rag.pg_fallback import _pg_exact_search, _pg_fallback_search
 from app.services.rag.recall import (
     SEARCH_CONCURRENCY,
     _assemble_hits,
@@ -237,6 +237,15 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             )
             degraded = True
             raw_hits = fb_hits
+
+    # 3.2b **精确关键词独立召回**（2026-10-28）：
+    # 此前 PG 只在上方 raw_hits 为空时兜底；只要 Qdrant 返回任意语义噪声，
+    # 明确存在于内容/标签/事件标题里的关键词就可能完全进不了候选。
+    # 这里始终做一次显式字段召回并合并；精确通道只看 SearchQuery 的硬过滤，
+    # 不套用 NER/分类器推断条件。
+    exact_hits = _pg_exact_search(q, db, user_id, limit=50)
+    if exact_hits:
+        raw_hits = _merge_recalls([raw_hits, exact_hits], limit=50)
 
     # 3.5 精确命中提升（词元全命中 → 提到稠密噪声之上；描述性查询不受影响）
     raw_hits = _boost_exact_matches(rewritten, raw_hits)

@@ -107,7 +107,7 @@ def qwen_response_check(
     for attempt in range(max_retries + 1):
         try:
             resp = httpx.post(url, headers=_build_headers(), json=body, timeout=timeout)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, UnicodeError) as exc:
             last_exc = exc
             logger.warning("托管护栏网络异常（第 %d 次）: %s", attempt + 1, exc)
             continue

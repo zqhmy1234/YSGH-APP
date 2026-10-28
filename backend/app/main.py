@@ -29,6 +29,7 @@ from app.api import (  # noqa: E501
     export,
     interview,
     messages,
+    profile,
     search,
     stats,
     sync,
@@ -149,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(sync.router)
     app.include_router(echo.router)
     app.include_router(interview.router)
+    app.include_router(profile.router)
     app.include_router(wechat.router)
     app.include_router(messages.router)
     app.include_router(capsules.router)  # BA2 时间胶囊（远期总账 A5）

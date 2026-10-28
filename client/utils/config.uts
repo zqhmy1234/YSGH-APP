@@ -12,7 +12,7 @@
  */
 // ⚠️ 2026-09-21（C2 卡）：内测包必须为 'prod'——dev 分支的地址是 10.0.2.2/127.0.0.1 隧道地址，
 // 正式包发出去后连不上任何真实服务器（表现为"所有页面全空且不报错"）。
-export const ENV: string = 'dev' // 'dev' | 'prod'（2026-10-09 真机联调切 dev；出包前必须改回 'prod' 并跑 preflight 门）
+export const ENV: string = 'prod' // 'dev' | 'prod'（2026-10-09 真机联调切 dev；出包前必须改回 'prod' 并跑 preflight 门）
 
 /** Sentry DSN（可观测双通道·客户端侧；DSN 为公开标识，Sentry 官方允许客户端明文内嵌——非机密） */
 export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o4511955023888384.ingest.us.sentry.io/4511958507388928'
@@ -23,7 +23,7 @@ export const SENTRY_DSN: string = 'https://dfa9a0ac9011d7d84da919ae87c2cd60@o451
  *  - 留空：走模拟器地址 10.0.2.2
  */
 // C2：prod 构建下必须留空——非空会让 getBaseUrl() 走进 dev 分支（真机隧道地址）。
-export const REAL_DEVICE_HOST: string = 'localhost' // adb reverse tcp:8010 tcp:8010（真机联调最稳路径，见 getBaseUrl）
+export const REAL_DEVICE_HOST: string = '' // adb reverse tcp:8010 tcp:8010（真机联调最稳路径，见 getBaseUrl）
 
 const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
 
@@ -37,7 +37,7 @@ const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
  *   - 占位未替换时 `getBaseUrl()` 会 `console.error` 喊出来——因为"接口全空且不报错"
  *     是最费排障时间的失败形态（与本文件头 8010 抢占事故同源教训）。
  */
-const PROD_BASE_URL: string = 'https://coleslaw-absence-harvest.ngrok-free.dev'
+const PROD_BASE_URL: string = 'http://192.168.31.143:8010'
 
 /**
  * 生产基址的"看起来没配好"标记词（2026-09-21 泛化）
@@ -94,7 +94,8 @@ function isDevCarrier(): boolean {
 	try {
 		const info = uni.getAppBaseInfo()
 		const pkg = info.packageName ?? ''
-		return pkg == 'io.dcloud.uniappx' || pkg == 'io.dcloud.HBuilder'
+		return pkg == 'io.dcloud.uniappx'
+			|| pkg == 'io.dcloud.HBuilder'
 	} catch (e) {
 		console.log('[yishu] isDevCarrier 探测失败（按打包产物处理，安全侧）: ' + e)
 		return false

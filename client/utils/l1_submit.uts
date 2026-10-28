@@ -52,10 +52,22 @@ export function submitUploadsAsL1(uploaded: Array<UploadedPhoto>): number {
 	if (uploaded.length == 0) {
 		return 0
 	}
+	// 后端最终 EXIF 缺失时 item.takenAt 仍为 0（相册旧图）。没有发生时间就不能
+	// 伪造 1970 或保存时间事件；保留内容本身，等后端补元数据后再聚合。
+	const timed: Array<UploadedPhoto> = []
+	for (let i = 0; i < uploaded.length; i++) {
+		if (uploaded[i].item.takenAt > 0) {
+			timed.push(uploaded[i])
+		}
+	}
+	if (timed.length == 0) {
+		console.log('[yishu] L1 跳过：上传内容无权威拍摄时间')
+		return 0
+	}
 	const tz = -new Date().getTimezoneOffset()
 	const events: Array<UTSJSONObject> = []
 	try {
-		const agg = aggregateToEvents(uploaded, tz)
+		const agg = aggregateToEvents(timed, tz)
 		for (let i = 0; i < agg.events.length; i++) {
 			const ev = agg.events[i]
 			const obj: UTSJSONObject = {
@@ -71,8 +83,8 @@ export function submitUploadsAsL1(uploaded: Array<UploadedPhoto>): number {
 		console.error('[yishu] L1 端侧聚合异常，改走兜底日卡片: ' + (e != null && e.message != null ? e.message : 'unknown'))
 	}
 	if (events.length == 0) {
-		events.push(fallbackDayEvent(uploaded))
-		console.log('[yishu] L1 兜底日卡片: n=' + uploaded.length)
+		events.push(fallbackDayEvent(timed))
+		console.log('[yishu] L1 兜底日卡片: n=' + timed.length)
 	}
 	syncClientEvents(events).then((out: SyncOutcome | null) => {
 		console.log('[yishu] L1 上云: n=' + events.length

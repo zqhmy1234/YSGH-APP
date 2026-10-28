@@ -49,9 +49,10 @@
 				<view class="tag-list">
 					<view v-for="tag in personalityTags" :key="tag.name" class="tag-item" :class="{ 'tag-active': tag.active }">
 						<text :class="tag.active ? 'tag-text tag-text-active' : 'tag-text'">{{ tag.name }}</text>
-						<text class="tag-confidence">{{ tag.confidence }}%</text>
+						<text v-if="tag.confidence > 0" class="tag-confidence">{{ tag.confidence }}%</text>
 					</view>
 				</view>
+				<text v-if="!loading && personalityTags.length == 0" class="pm-list-empty">暂无可展示画像，先记录更多内容或点击刷新</text>
 			</view>
 
 			<!-- 记忆主题卡片 -->
@@ -104,7 +105,7 @@
 					</view>
 					<view class="menu-main">
 						<text class="menu-title-text">刷新画像</text>
-						<text class="menu-desc">基于最新记忆数据重新计算画像</text>
+						<text class="menu-desc">{{ profileRebuildText != '' ? profileRebuildText : '基于最新记忆数据重新计算画像' }}</text>
 					</view>
 					<text class="menu-arrow">›</text>
 				</view>
@@ -155,7 +156,12 @@
 <script setup lang="uts">
 	import { onLoad } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
-	import { fetchInterviewProfile } from '@/utils/play_interview'
+	import {
+		fetchInterviewProfile,
+		startProfileRebuild,
+		fetchProfileRebuildStatus,
+		ProfileRebuildStatus
+	} from '@/utils/play_interview'
 	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
 	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
 
@@ -183,6 +189,8 @@
 	let tagOpen = ref(false) // 编辑性格标签面板
 	let privacyOpen = ref(false) // 画像隐私设置面板
 	let tagNamesState = ref<Array<string>>([]) // 当前标签名集（TagEditPanel :ai-tags 契约）
+	let profileRebuilding = ref(false)
+	let profileRebuildText = ref('')
 
 	// 返回键拦截：浮层/添加行开着时先收起，而不是退出页面（返回 true = 已自行处理）
 	onBackPress((): boolean => {
@@ -227,25 +235,29 @@
 			}
 			const dims = d.getJSON('dimensions')
 			if (dims != null) {
-				// 从 dimensions 派生性格标签（MVP：取前6个维度）
+				// dimensions 的 value 才是用户可读画像；内部 key（relation_role 等）
+				// 只用于归组，不能直接显示为“性格标签”。
 				const keys = dims.keys()
 				const tags: Array<any> = []
-				// W1-5 修复：tagNamesState 同步派生（原仅 rebuildTagsFromStorage 写，
-				// 首次打开 TagEditPanel :ai-tags 为空数组 → AI 标签区空白）
 				const names: Array<string> = []
-				for (let i = 0; i < Math.min(6, keys.length); i++) {
+				for (let i = 0; i < keys.length && tags.length < 6; i++) {
 					const key = keys[i]
 					const values = dims.getJSONArray(key)
-					let conf = 70
-					if (values != null && values.length > 0) {
-						conf = 60 + (i * 5) % 30
+					if (values == null) {
+						continue
 					}
-					tags.push({
-						name: key,
-						confidence: conf,
-						active: i < 3
-					})
-					names.push(key)
+					for (let j = 0; j < values.length && tags.length < 6; j++) {
+						const value = values[j] as string
+						if (value != null && value != '') {
+							tags.push({
+								name: value,
+								// 当前画像接口不返回置信度：不伪造百分比。
+								confidence: 0,
+								active: true
+							})
+							names.push(value)
+						}
+					}
 				}
 				personalityTags.value = tags
 				tagNamesState.value = names
@@ -413,10 +425,57 @@
 		uni.navigateTo({ url: '/pages/portrait/theme-detail?theme=' + encodeURIComponent(theme.name) })
 	}
 	function onRefreshProfile(): void {
+		if (profileRebuilding.value) {
+			return
+		}
 		loading.value = true
-		loadProfile()
-		loadStats()
-		uni.showToast({ title: '正在刷新画像...', icon: 'none' })
+		profileRebuilding.value = true
+		profileRebuildText.value = '正在整理已有记忆…'
+		startProfileRebuild().then((jobId: string | null) => {
+			if (jobId == null) {
+				profileRebuilding.value = false
+				profileRebuildText.value = '创建重建任务失败，请重试'
+				loading.value = false
+				return
+			}
+			pollProfileRebuild(jobId)
+		})
+	}
+
+	function pollProfileRebuild(jobId: string): void {
+		fetchProfileRebuildStatus(jobId).then((s: ProfileRebuildStatus | null) => {
+			if (s == null) {
+				profileRebuilding.value = false
+				profileRebuildText.value = '任务状态读取失败，请重试'
+				loading.value = false
+				return
+			}
+			if (s.status == 'finished') {
+				profileRebuilding.value = false
+				profileRebuildText.value = s.degraded
+					? '已完成（本地规则模式）'
+					: '画像已更新'
+				loadProfile()
+				loadStats()
+				uni.showToast({
+					title: s.skipped > 0 ? '画像已更新（含已处理记忆）' : '画像已更新',
+					icon: 'none'
+				})
+				return
+			}
+			if (s.status == 'failed') {
+				profileRebuilding.value = false
+				profileRebuildText.value = s.error != '' ? s.error : '画像重建失败'
+				loading.value = false
+				return
+			}
+			profileRebuildText.value = s.total > 0
+				? '正在整理 ' + s.processed.toString() + '/' + s.total.toString() + ' 条记忆…'
+				: '正在准备记忆…'
+			setTimeout((): void => {
+				pollProfileRebuild(jobId)
+			}, 1500)
+		})
 	}
 	function onEditTags(): void {
 		tagOpen.value = true

@@ -220,6 +220,23 @@ def test_upload_exif_overrides_client_taken_at(client, auth_headers):
     assert taken.startswith("2026-08-22"), f"EXIF 时间应覆盖客户端时间: {taken}"
 
 
+def test_upload_exif_datetime_falls_back_over_client_taken_at(client, auth_headers):
+    """真实相机只写 tag 306 时，也必须覆盖客户端保存时间。"""
+    from PIL import Image
+
+    buf = _io.BytesIO()
+    img = Image.new("RGB", (64, 64), (120, 150, 90))
+    exif = Image.Exif()
+    exif[306] = "2025:06:12 16:21:31"
+    img.save(buf, "JPEG", exif=exif.tobytes())
+
+    meta = {"taken_at": "2026-10-27T12:00:00+08:00", "source": "app"}
+    r = _upload(client, auth_headers, content=buf.getvalue(), meta=meta)
+    assert r.status_code == 200, r.text
+    taken = r.json()["data"]["taken_at"]
+    assert taken.startswith("2025-06-12"), f"EXIF DateTime 应覆盖客户端时间: {taken}"
+
+
 def test_voice_contents_cos_key_idempotent(client, auth_headers):
     """B5a 集成配套：/contents voice 带 cos_key → 幂等（同用户同 cos_key 返回既有记录，防旧客户端二次建内容）
 

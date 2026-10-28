@@ -144,6 +144,7 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
         matched = []
         if rh.get("pg"):
             matched.append("pg")
+            matched.extend(rh.get("matched_fields") or [])
         else:
             if rh["dense_score"] > 0:
                 matched.append("dense")
@@ -165,6 +166,8 @@ def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) ->
                 "dense_score": rh["dense_score"],
                 "sparse_score": rh["sparse_score"],
                 "rrf": rh["score"],
+                "exact_score": rh.get("exact_score", 0.0),
+                "matched_fields": rh.get("matched_fields", []),
             },
         ))
     return hits

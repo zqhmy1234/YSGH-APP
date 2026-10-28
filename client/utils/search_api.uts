@@ -112,12 +112,22 @@ function traceToText(trace: UTSJSONObject | null): string {
 		const names: Array<string> = []
 		for (let i = 0; i < matched.length; i++) {
 			const m = matched[i] as string
+			let label = m
 			if (m == 'dense') {
-				names.push('语义')
+				label = '语义'
 			} else if (m == 'sparse') {
-				names.push('关键词')
-			} else {
-				names.push(m)
+				label = '关键词'
+			} else if (m == 'pg') {
+				label = '精确'
+			} else if (m == 'text_phrase' || m == 'text') {
+				label = '原文'
+			} else if (m == 'tag') {
+				label = '标签'
+			} else if (m == 'event_title') {
+				label = '卡片标题'
+			}
+			if (names.indexOf(label) < 0) {
+				names.push(label)
 			}
 		}
 		parts.push('召回：' + names.join('+'))

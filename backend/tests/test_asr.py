@@ -204,6 +204,28 @@ def test_real_mode_missing_key_is_explicit_failure(wav_file: Path, monkeypatch):
     assert raised.value.outcome == "failed_final"
 
 
+def test_configured_sensevoice_runs_without_dashscope_key(wav_file: Path, monkeypatch):
+    """本地 SenseVoice 已配置时，不应因缺百炼 Key 阻止本地转写。"""
+    monkeypatch.setattr(settings, "mock_external_ai", False)
+    monkeypatch.setattr(settings, "dashscope_api_key", "")
+    monkeypatch.setattr(settings, "sensevoice_model_dir", "configured-local-model")
+    import app.services.external.asr as asr_mod
+
+    def fake_sensevoice(_path):
+        return AsrResult(
+            text="本地转写成功",
+            channel="sensevoice",
+            outcome="succeeded",
+            confidence=0.9,
+            model="sensevoice-test",
+        )
+
+    monkeypatch.setitem(asr_mod._CHANNELS, "sensevoice", fake_sensevoice)
+    result = transcribe(wav_file, preferred="auto")
+    assert result.text == "本地转写成功"
+    assert result.channel == "sensevoice"
+
+
 def test_real_mode_digital_silence_is_no_speech(tmp_path: Path, monkeypatch):
     silent = _make_wav(tmp_path / "silent.wav", silence=True)
     monkeypatch.setattr(settings, "mock_external_ai", False)

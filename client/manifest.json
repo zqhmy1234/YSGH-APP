@@ -3,7 +3,7 @@
   "appid": "__UNI__2650A2A",
   "description": "个人记忆整理与回顾 App（客户端第一波：F1 数据链路 + F8 时间轴）",
   "versionName": "0.1.0",
-  "versionCode": "100",
+  "versionCode": "104",
   "locale": "zh-Hans",
   "uni-app-x": {
     "vapor": true

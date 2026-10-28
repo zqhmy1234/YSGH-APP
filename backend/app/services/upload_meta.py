@@ -77,6 +77,13 @@ def parse_photo_meta(meta: str) -> PhotoMeta:
         raise MetaValidationError("gps_lat 越界（-90~90）")
     if gps_lng is not None and not (-180 <= gps_lng <= 180):
         raise MetaValidationError("gps_lng 越界（-180~180）")
+    # 坐标必须成对；全零是设备/EXIF 的空占位，按“无地点”处理而不是报上传失败。
+    if (gps_lat is None) != (gps_lng is None):
+        gps_lat = None
+        gps_lng = None
+    elif gps_lat == 0 and gps_lng == 0:
+        gps_lat = None
+        gps_lng = None
 
     source = meta_obj.get("source", "app")
     if source not in PHOTO_SOURCES:

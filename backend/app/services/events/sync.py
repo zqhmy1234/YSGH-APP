@@ -98,7 +98,9 @@ def sync_client_events(
             user_id=user_id,
             level=1,
             title=item.get("title") or (f"{day_key} · {len(valid)}条" if day_key else f"{len(valid)}条"),
-            title_source="user" if item.get("title") else "template",
+            # D-15（2026-08-29 已拍板）：端侧 L1 同步来源统一 device；
+            # title_source=user 仅留给服务端真实用户编辑，避免误触 B3-5 用户背书保护。
+            title_source="device",
             start_time=start_ts,
             end_time=end_ts,
             place=item.get("place"),

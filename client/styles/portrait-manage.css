@@ -199,6 +199,13 @@
 		font-size: var(--d-raw-r20, 20rpx);
 		color: var(--c-ink-300, #b3a696);
 	}
+	.pm-list-empty {
+		display: flex;
+		padding: var(--d-raw-r20, 20rpx) 0;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-300, #b3a696);
+	}
 
 	/* 记忆主题 */
 	.theme-list {

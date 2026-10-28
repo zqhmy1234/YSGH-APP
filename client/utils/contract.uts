@@ -61,6 +61,7 @@ export const PATH_ECHO_TODAY: string = '/api/v1/echo/today'
 export const PATH_INTERVIEW_QUESTIONS: string = '/api/v1/interview/questions'
 export const PATH_INTERVIEW_ANSWERS: string = '/api/v1/interview/answers'
 export const PATH_INTERVIEW_PROFILE: string = '/api/v1/interview/profile'
+export const PATH_PROFILE_REBUILD: string = '/api/v1/profile/rebuild'
 
 // ═══════════ 关键字段名（对齐 openapi.json DTO schema 属性名）═══════════
 

@@ -106,7 +106,24 @@ def _transcribe_one(
             raise AsrError("MOCK_DISABLED", "生产环境禁止使用 mock 转写")
         return _transcribe_mock(path, errors)
     if not settings.dashscope_api_key:
-        raise AsrError("MISSING_API_KEY", "ASR 服务未配置 DASHSCOPE_API_KEY")
+        # 本地 SenseVoice 不依赖百炼 Key。只有部署方显式配置了本地模型目录时才
+        # 尝试本地通道，避免开发机在缺模型时隐式联网下载。
+        if settings.sensevoice_model_dir.strip():
+            try:
+                result = _CHANNELS["sensevoice"](path)
+                result.errors = list(errors)
+                return result
+            except AsrError as exc:
+                errors.append(f"sensevoice:{exc.code}")
+                logger.warning("本地 SenseVoice 不可用: %s", exc.code)
+            except Exception as exc:  # noqa: BLE001
+                errors.append("sensevoice:PROVIDER_ERROR")
+                logger.warning("本地 SenseVoice 异常: %s", type(exc).__name__)
+        raise AsrError(
+            "MISSING_API_KEY",
+            "ASR 服务未配置 DASHSCOPE_API_KEY，且本地 SenseVoice 不可用",
+            errors=errors,
+        )
 
     order = list(ASR_CHANNELS) if preferred == "auto" else [preferred] + [
         item for item in ASR_CHANNELS if item != preferred

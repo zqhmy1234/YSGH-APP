@@ -38,6 +38,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, text
 
 from app.db.models import (
+    Content,
     ProfileAnnotationPool,
     ProfileDimensionHistory,
     ProfileDimensionPending,
@@ -86,6 +87,17 @@ def clear_profile(db: Session, user_id: str) -> dict:
     cleared["profile_l2_evidence"] = db.execute(
         text("DELETE FROM profile_l2_evidence WHERE user_id = :uid"), {"uid": user_id}
     ).rowcount or 0
+
+    # 重建标记是画像派生物，不属于业务内容；清画像时一并移除，
+    # 否则下一次“重建”会把全部旧记忆当作已处理而直接跳过。
+    content_rows = db.execute(
+        select(Content).where(Content.user_id == user_id)
+    ).scalars().all()
+    for content in content_rows:
+        extra = dict(content.extra or {})
+        if "profile_rebuilt_at" in extra:
+            extra.pop("profile_rebuilt_at", None)
+            content.extra = extra
 
     kept = db.execute(
         select(func.count()).select_from(ProfileSensitive).where(ProfileSensitive.user_id == user_id)

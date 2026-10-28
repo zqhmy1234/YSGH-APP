@@ -8,7 +8,10 @@
 			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
 				<!-- 2026-10-15（真机反馈「删掉关键词后页面动不了」）：补 `@input`，让「输入清空」
 				     有状态转移（原实现只有 v-model + @confirm，删字到空时 hasSearched/hits 全不动 ✗） -->
-				<input :adjust-position="true" class="n2_396" style="color:var(--c-ink-900, #3A2E25);font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="doSearch" />
+				<!-- 2026-10-23 真机回归：原生 input 的文本色不解析 CSS 变量（连 fallback 也不生效），
+				     占位符因为 inline placeholder-style 使用字面值仍可见；输入值其实存在，但绘制成全白。
+				     这里必须使用 101 已验证的字面色；高度继续由 .n2_396 类负责。 -->
+				<input :adjust-position="true" class="n2_396" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="doSearch" />
 			</view>
 			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
 			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
@@ -195,6 +198,9 @@
 		}
 		if (h.eventTitle != '') {
 			s += ' · ' + h.eventTitle
+		}
+		if (h.trace != '') {
+			s += ' · ' + h.trace
 		}
 		return s
 	}

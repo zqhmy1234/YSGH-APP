@@ -81,6 +81,12 @@
 							<text class="resume-text">继续录音</text>
 						</view>
 					</view>
+					<view v-if="!recording && transcribeFailed" class="interrupt-bar">
+						<text class="interrupt-text">转写失败，录音已保留</text>
+						<view class="resume-btn" @tap="retryTranscribe">
+							<text class="resume-text">重新转写</text>
+						</view>
+					</view>
 				</view>
 			</view>
 
@@ -106,7 +112,7 @@
 					<view class="v-body">
 						<!-- 转写内容（节标 13pt #8A7A6A；白卡 654x250 radius 38rpx，可改字纠正） -->
 						<text class="v-sec v-sec-first">转写内容</text>
-						<textarea :adjust-position="true" class="v-trans" v-model="transcript" :maxlength="2000" />
+						<textarea :adjust-position="true" class="v-trans" style="color:#3a2e25;" v-model="transcript" :maxlength="2000" />
 						<text v-if="voiceDiag != ''" class="v-diag">{{ voiceDiag }}</text>
 
 						<!-- 分类（AI 已预选 · 点标签可纠正；chips=ALL_LABELS 真实枚举） -->
@@ -152,7 +158,7 @@
 
 							<!-- 备注（BA1 已接真：remark 随保存接口入库，ContentOut 回显） -->
 							<text class="v-sec">备注</text>
-						<textarea :adjust-position="true" class="v-remark" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+						<textarea :adjust-position="true" class="v-remark" style="color:#3a2e25;" v-model="remark" placeholder="补充几句…" :maxlength="200" />
 					</view>
 				</scroll-view>
 				<view class="v-save" @tap="onSave"><text class="v-save-text">保存</text></view>
@@ -187,8 +193,8 @@
 						<!-- 转写内容（F1d，可改字纠正）/ 正文（F1e） -->
 						<template v-else>
 							<text class="sec-label sec-label-first">{{ formMode == 'voice' ? '转写内容' : '正文' }}</text>
-							<textarea :adjust-position="true" v-if="formMode == 'voice'" class="a-input" v-model="transcript" :maxlength="2000" />
-							<textarea :adjust-position="true" v-else class="a-input" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="1000" />
+							<textarea :adjust-position="true" v-if="formMode == 'voice'" class="a-input" style="color:#3a2e25;" v-model="transcript" :maxlength="2000" />
+							<textarea :adjust-position="true" v-else class="a-input" style="color:#3a2e25;" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="1000" />
 							<view v-if="formMode == 'text' && draft != ''" class="counter-wrap">
 								<text class="counter-row">{{ draft.length }}/1000</text>
 							</view>
@@ -240,7 +246,7 @@
 							<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；BA1 已接真随保存入库） -->
 							<template v-if="formMode != 'photo'">
 							<text class="sec-label sec-label-gap">备注</text>
-							<textarea :adjust-position="true" class="remark-input" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+							<textarea :adjust-position="true" class="remark-input" style="color:#3a2e25;" v-model="remark" placeholder="补充几句…" :maxlength="200" />
 						</template>
 
 						<!-- 确定钮（画布真值：随内容流置于信息卡之后，非固定底栏） -->
@@ -280,6 +286,8 @@
 	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
+	const photoWatch = createPhotoWatch()
 
 	// ===== 对外事件 =====
 	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
@@ -436,6 +444,15 @@
 			// 峰宝 09-02 拍板：点击**立即**拉 picker（不先进表单页再弹）；成功后才进表单页，
 			// 取消留在记录面板；拍照/选照片进**同一**照片表单（sourceKind 只决定拉相机还是相册）
 			sourceKind.value = m == 'photo' ? 'camera' : 'album'
+			if (m == 'photo') {
+				// 相机入口在拍照弹起前刷新一次位置；不能用面板首次挂载时
+				// 或上一次记录留下的位置冒充本次拍摄地点。
+				getCurrentFix((s: LocateState): void => {
+					locateState.value = s
+				}).then((fix: Fix | null): void => {
+					setLastFix(fix)
+				})
+			}
 			pickPhotos()
 			return
 		}
@@ -599,6 +616,8 @@
 		uni.chooseImage({
 			count: 9 - photos.value.length,
 			sourceType: srcs,
+			// GPS/拍摄时间只存在于原文件 EXIF；系统压缩会直接剥离。
+			sizeType: ['original'],
 			success: (res) => {
 				// §X：directPick 是直达会话全程标志，成功后不复位——scrim/sheet 整场不挂载，
 				// 表单独占屏幕（峰宝 09-03 真机实锤：与 scrim/sheet 同帧挂载时 uvue 原生 z 序
@@ -676,17 +695,51 @@
 		const now = Date.now()
 		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
 		// 2026-10-14（台账 §4.20）：带上本次定位（原硬编码 null ⇒ 照片恒定不带地点）。
-		const fix = getLastFix()
+		// 当前位置只允许给相机新拍兜底。相册旧图必须使用照片 EXIF；
+		// 没有 EXIF GPS 就留空，不能显示“现在所在的地方”。
+		const cameraCapture = sourceKind.value == 'camera'
+		const fix = cameraCapture ? getLastFix() : null
 		const fixLat: number | null = fix != null ? fix.lat : null
 		const fixLng: number | null = fix != null ? fix.lng : null
 		const items: Array<PhotoItem> = []
 		for (let i = 0; i < photos.value.length; i++) {
 			const sz = i < photoSizes.value.length ? photoSizes.value[i] : 0
-			items.push(new PhotoItem(-(now + i), photos.value[i], now, 0, 0, fixLat, fixLng, sz))
+			let captureAt = cameraCapture ? now : 0
+			let lat = fixLat
+			let lng = fixLng
+			if (!cameraCapture) {
+				// OPPO 等系统选择器即使返回“原图”，也可能在 temp 文件中等长清除
+				// GPS 标签。按文件名+大小回查 MediaStore 原始媒体，提交真实元数据。
+				const p = photos.value[i]
+				const slash = p.lastIndexOf('/')
+				let name = slash >= 0 ? p.substring(slash + 1) : p
+				try {
+					name = decodeURIComponent(name)
+				} catch (e) {
+					// temp 路径未编码时保持原值
+				}
+				const meta = photoWatch.lookupPickedPhotoMetadata(name, sz)
+				if (meta != null) {
+					if (meta.takenAt > 0) {
+						captureAt = meta.takenAt
+					}
+					// (0,0) 是 EXIF/MediaStore 常见空占位；不能拿来覆盖空地点。
+					if (meta.lat != null && meta.lng != null && !(meta.lat == 0 && meta.lng == 0)) {
+						lat = meta.lat
+						lng = meta.lng
+					}
+				}
+			}
+			items.push(new PhotoItem(-(now + i), photos.value[i], captureAt, 0, 0, lat, lng, sz))
 		}
 		// 2026-10-14（台账 §7.17）：提交前快照手选分类——原实现只清空、**从不提交**。
 		const picked = manualLabel.value
-		uploadBatch(items, (p: UploadProgress): void => {}).then((uploaded: Array<UploadedPhoto>) => {
+		// uploadBatch 对「蜂窝/离线暂缓」与「真实上传失败」都返回空数组；
+		// 记录进度里的 failed 才能区分，不能把已安全入 held 队列的照片误报为失败。
+		let lastUploadFailed = 0
+		uploadBatch(items, (p: UploadProgress): void => {
+			lastUploadFailed = p.failed
+		}).then((uploaded: Array<UploadedPhoto>) => {
 			uni.hideLoading()
 			photoUploading.value = false
 			if (uploaded.length > 0) {
@@ -719,6 +772,15 @@
 				remark.value = ''
 				manualLabel.value = ''
 				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+			} else if (lastUploadFailed == 0) {
+				// 蜂窝/离线：照片已进持久 held 队列，不是失败。关闭表单避免重复入队；
+				// 首页横幅继续显示“待 WiFi 上传”，网络恢复后自动补传。
+				uni.showToast({ title: '已暂缓上传，连接 WiFi 后自动继续', icon: 'none', duration: 2500 })
+				photos.value = []
+				photoSizes.value = []
+				remark.value = ''
+				manualLabel.value = ''
+				emit('close')
 			} else {
 				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
 			}
@@ -795,6 +857,7 @@
 	const recordHint = vr.recordHint
 	const voiceHints = vr.voiceHints
 	const transcribing = vr.transcribing
+	const transcribeFailed = vr.transcribeFailed
 	const transcript = vr.transcript
 	const emotion = vr.emotion
 	const guardMsg = vr.guardMsg
@@ -802,6 +865,7 @@
 	const lastVoiceFile = vr.lastVoiceFile
 	const saving = vr.saving
 	function submitVoice(): void { vr.submitVoice() }
+	function retryTranscribe(): void { vr.retryTranscribe() }
 	function setRecordingOff(): void { vr.setRecordingOff() }
 	function toggleRecord(): void { vr.toggleRecord() }
 	function pauseRecordNow(): void { vr.pauseRecordNow() }

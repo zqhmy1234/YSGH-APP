@@ -8,6 +8,7 @@ import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 import { retryAsync } from './retry'
 import { runUploadPipeline, UploadSpec, UploadOutcome, UploadPipeError } from './upload_pipeline'
 import { is4xx, isoString } from './uploader_types'
+import { parseIsoMs } from './time'
 import { clearPending, findPending, savePending } from './uploader_pending'
 
 // ---------- 单张上传（O16 收口：init→status→chunk→complete 状态机统一走 upload_pipeline.ts，
@@ -30,14 +31,19 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 		const spec = new UploadSpec(item.path, fileName, fileSize, item.path, uploadMode, findPending(item.path))
 		const buildMeta = (): UTSJSONObject => {
 			const meta: UTSJSONObject = {
-				taken_at: isoString(item.takenAt),
 				source: 'app',
 				extra: {
 					width: item.width,
 					height: item.height
 				}
 			}
-			if (item.lat != null && item.lng != null) {
+			// 相册旧图在客户端拿不到权威拍摄时间：不发送 1970/保存时间占位，
+			// 交由后端 EXIF 解析。相机新拍仍有客户端时刻兜底。
+			if (item.takenAt > 0) {
+				meta.set('taken_at', isoString(item.takenAt))
+			}
+			// 全零坐标是常见空占位；不要发送给后端生成“几内亚湾”地点。
+			if (item.lat != null && item.lng != null && !(item.lat == 0 && item.lng == 0)) {
 				meta.set('gps_lat', '' + item.lat)
 				meta.set('gps_lng', '' + item.lng)
 			}
@@ -49,6 +55,16 @@ function uploadOne(item: PhotoItem, uploadMode: string): Promise<string> {
 			(uploadId: string) => { savePending(item.path, uploadId) },
 			(uploadId: string) => { clearPending(item.path) }
 		).then((out: UploadOutcome) => {
+			// 后端完成响应携带 EXIF 最终事实。覆盖 item 后，UploadedPhoto
+			// 沿用的就是同一对象，端侧 L1/兜底日卡片不会再拿保存时间。
+			const serverMs = parseIsoMs(out.takenAt)
+			if (serverMs > 0) {
+				item.takenAt = serverMs
+			}
+			if (out.gpsLat != null && out.gpsLng != null) {
+				item.lat = out.gpsLat
+				item.lng = out.gpsLng
+			}
 			resolve(out.contentId)
 		}, (e: Error) => {
 			reject(e)

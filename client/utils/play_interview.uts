@@ -5,7 +5,12 @@
  * 对外导出：InterviewQuestion, InterviewResult, fetchInterviewQuestions, submitInterviewAnswers, fetchInterviewProfile
  */
 import { get, post, request, dataObj } from './api'
-import { PATH_INTERVIEW_QUESTIONS, PATH_INTERVIEW_ANSWERS, PATH_INTERVIEW_PROFILE } from './contract'
+import {
+	PATH_INTERVIEW_QUESTIONS,
+	PATH_INTERVIEW_ANSWERS,
+	PATH_INTERVIEW_PROFILE,
+	PATH_PROFILE_REBUILD
+} from './contract'
 
 export class InterviewQuestion {
 	key: string
@@ -24,6 +29,36 @@ export class InterviewResult {
 	constructor(dimensions: string, confirmation: string) {
 		this.dimensions = dimensions
 		this.confirmation = confirmation
+	}
+}
+
+export class ProfileRebuildStatus {
+	jobId: string
+	status: string
+	total: number
+	processed: number
+	applied: number
+	pooled: number
+	failed: number
+	skipped: number
+	degraded: boolean
+	error: string
+
+	constructor(
+		jobId: string, status: string, total: number, processed: number,
+		applied: number, pooled: number, failed: number, skipped: number,
+		degraded: boolean, error: string
+	) {
+		this.jobId = jobId
+		this.status = status
+		this.total = total
+		this.processed = processed
+		this.applied = applied
+		this.pooled = pooled
+		this.failed = failed
+		this.skipped = skipped
+		this.degraded = degraded
+		this.error = error
 	}
 }
 
@@ -143,6 +178,42 @@ export function fetchInterviewProfile(): Promise<UTSJSONObject | null> {
 				return
 			}
 			resolve(dataObj(res))
+		})
+	})
+}
+
+/** POST /profile/rebuild：创建“从已有记忆重建画像”异步任务；失败 null */
+export function startProfileRebuild(): Promise<string | null> {
+	return new Promise<string | null>((resolve) => {
+		post(PATH_PROFILE_REBUILD, {}).then((res: UTSJSONObject | null) => {
+			const d = res != null ? dataObj(res) : null
+			const jobId = d != null ? (d.getString('job_id') ?? '') : ''
+			resolve(jobId != '' ? jobId : null)
+		})
+	})
+}
+
+/** GET /profile/rebuild/jobs/{id}：画像重建任务进度；失败 null */
+export function fetchProfileRebuildStatus(jobId: string): Promise<ProfileRebuildStatus | null> {
+	return new Promise<ProfileRebuildStatus | null>((resolve) => {
+		get(PATH_PROFILE_REBUILD + '/jobs/' + jobId).then((res: UTSJSONObject | null) => {
+			const d = res != null ? dataObj(res) : null
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(new ProfileRebuildStatus(
+				d.getString('job_id') ?? jobId,
+				d.getString('status') ?? 'queued',
+				d.getNumber('total') as number,
+				d.getNumber('processed') as number,
+				d.getNumber('applied') as number,
+				d.getNumber('pooled') as number,
+				d.getNumber('failed') as number,
+				d.getNumber('skipped') as number,
+				d.getBoolean('degraded') ?? false,
+				d.getString('error') ?? ''
+			))
 		})
 	})
 }

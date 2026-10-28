@@ -27,7 +27,7 @@ from app.core.errors import (
     ERR_UPLOAD_010,
     ApiError,
 )
-from app.db.models import User
+from app.db.models import Content, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.upload import (
@@ -212,6 +212,12 @@ def complete_upload(
         # 集成：对象已在存储 → 建 contents 记录（cos_key）+ 入队 process_content
         content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
         result["content_id"] = content_id
+        record = db.get(Content, content_id)
+        if record is not None:
+            # EXIF/注册层最终确认的拍摄事实；客户端据此覆盖本地临时值。
+            result["taken_at"] = record.taken_at
+            result["gps_lat"] = record.gps_lat
+            result["gps_lng"] = record.gps_lng
     except NotFoundError as exc:
         # 任务不存在/越权 → 404；content_id 不存在或非本人 → 404（不再误报 422 UPLOAD_004）
         raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc

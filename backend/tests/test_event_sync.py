@@ -125,6 +125,7 @@ def test_sync_creates_l1_device_event_with_changelog(db_user):
         select(Event).where(Event.user_id == user.id, Event.level == 1)
     ).scalar_one()
     assert row.generated_by == "device"
+    assert row.title_source == "device"
     assert row.client_event_id == "ev-full"
     assert row.place == "测试地"
     items = db.execute(

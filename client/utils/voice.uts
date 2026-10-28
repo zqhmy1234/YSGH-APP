@@ -140,7 +140,9 @@ const PERM_DENIED_FOREVER_MSG = '麦克风权限已被拒绝且不再询问，�
 let _permDeniedMsg: string = PERM_DENIED_MSG
 
 /** 权限申请看门狗（ms）：框架回调未到达时不得无限挂起（挂起 = 录音按钮永久无响应且零提示） */
-const PERM_WATCHDOG_MS: number = 15000
+// 首次权限弹窗包含阅读与系统动画，15 秒会在部分用户尚未点击时误判失败。
+// 60 秒仍能以有限等待兜底桥接回调丢失，同时避免“刚授权却被旧看门狗中止”。
+const PERM_WATCHDOG_MS: number = 60000
 
 /**
  * 确保录音权限已授予（幂等）：已授予直接 resolve(true)；未授予则弹系统框。
@@ -281,7 +283,9 @@ export function transcribeWav(filePath: string): Promise<AsrResult | null> {
  *  —— 401 重放 + 5xx Sentry + 信封解析）。仅由 `transcribeWav` 在过大小时调用。 */
 function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 	return new Promise<AsrResult | null>((resolve) => {
-		uploadFileHttp(PATH_ASR_TRANSCRIBE + '?preferred=auto', filePath, 'file', null, 30000).then((hr: HttpResult) => {
+		// ASR 可能先尝试 Fun-ASR，再降级到本地 SenseVoice；<=8MB 直传允许的录音最长接近
+		// 4 分钟。固定 30s 会让云端稍慢时客户端先判失败，即使后端随后已返回 200。
+		uploadFileHttp(PATH_ASR_TRANSCRIBE + '?preferred=auto', filePath, 'file', null, 90000).then((hr: HttpResult) => {
 			if (hr.status === 200) {
 				// 教训（lessons.md #3）：uploadFile 的 res.data 是 string；uploadFileHttp 已按信封解析
 				const body = hr.body

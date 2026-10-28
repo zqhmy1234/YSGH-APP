@@ -100,18 +100,18 @@
         "backend/app/services/events/timeline.py": 1,
         "backend/app/services/pipeline_ext/emotion.py": 1,
         "backend/app/services/pipeline_ext/sensitive.py": 2,
-        "backend/app/services/rag/pg_fallback.py": 1,
+        "backend/app/services/query_helpers.py": 1,
         "backend/app/services/rag/recall.py": 2,
         "backend/app/services/upload/register.py": 1
       },
-      "reason": "L-09 收敛 helper 后的最新分场；2026-10-06 W1 记忆镜像删除是第三处同款查询，三处（create_content 幂等预查 / IntegrityError 回滚重查 / agent 镜像删除）收敛到 deps.find_alive_content_by_cgid，total 44→43、contents/__init__ 7→5、deps 1→2",
+      "reason": "L-09 收敛 helper 后的最新分场；2026-10-06 W1 记忆镜像删除是第三处同款查询，三处收敛到 deps.find_alive_content_by_cgid；2026-10-28 精确搜索把 pg_fallback 的软删除条件迁到 services/query_helpers.alive_clause，total 保持 43、per_file 从 pg_fallback 移至 query_helpers",
       "target": "维持 total≤43；新增软删过滤一律走 find_alive_content_by_cgid，不再手抄"
     }
   },
   "token_literals": {
-    "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。",
+    "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。例外：三个原生 input 的 inline 字色必须使用 hex（主搜索/收藏搜索/标签输入，2026-10-23 真机白字回归），各增加 1 个 hex；记录面板五个原生 textarea 也必须使用 inline 字色（正文、备注、语音转写、语音备注、照片备注），共增加 5 个 hex。",
     "total": {
-      "hex": 77,
+      "hex": 85,
       "rgb": 5,
       "gradient": 0
     },
@@ -132,7 +132,7 @@
         "gradient": 0
       },
       "client/pages/favorites/favorites.uvue": {
-        "hex": 1,
+        "hex": 2,
         "rgb": 0,
         "gradient": 0
       },
@@ -197,17 +197,22 @@
         "gradient": 0
       },
       "client/components/TabSearch/TabSearch.uvue": {
-        "hex": 1,
+        "hex": 2,
         "rgb": 0,
         "gradient": 0
       },
       "client/components/TagEditPanel/TagEditPanel.uvue": {
-        "hex": 15,
+        "hex": 16,
         "rgb": 1,
         "gradient": 0
       },
       "client/styles/record-sheet.css": {
         "hex": 3,
+        "rgb": 0,
+        "gradient": 0
+      },
+      "client/components/RecordSheet/RecordSheet.uvue": {
+        "hex": 5,
         "rgb": 0,
         "gradient": 0
       },

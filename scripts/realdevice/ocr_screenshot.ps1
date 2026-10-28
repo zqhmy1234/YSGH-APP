@@ -9,7 +9,8 @@
 
 param(
     [Parameter(Mandatory = $true)][string]$Path,
-    [string]$Lang = 'zh-Hans-CN'
+    [string]$Lang = 'zh-Hans-CN',
+    [switch]$WithBounds
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,4 +55,21 @@ $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)
 $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
 $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
 
-foreach ($line in $result.Lines) { Write-Output $line.Text }
+foreach ($line in $result.Lines) {
+    if (-not $WithBounds) {
+        Write-Output $line.Text
+        continue
+    }
+    $left = [double]::PositiveInfinity
+    $top = [double]::PositiveInfinity
+    $right = [double]::NegativeInfinity
+    $bottom = [double]::NegativeInfinity
+    foreach ($word in $line.Words) {
+        $r = $word.BoundingRect
+        if ($r.X -lt $left) { $left = $r.X }
+        if ($r.Y -lt $top) { $top = $r.Y }
+        if (($r.X + $r.Width) -gt $right) { $right = $r.X + $r.Width }
+        if (($r.Y + $r.Height) -gt $bottom) { $bottom = $r.Y + $r.Height }
+    }
+    Write-Output ("{0}`t{1:F0}`t{2:F0}`t{3:F0}`t{4:F0}" -f $line.Text, $left, $top, ($right-$left), ($bottom-$top))
+}

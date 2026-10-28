@@ -45,6 +45,7 @@ export class VoiceRecorder {
 	recordHint = ref('轻触中央圆点 · 开始录音')
 	voiceHints = ref('')
 	transcribing = ref(false)
+	transcribeFailed = ref(false)
 	transcript = ref('')
 	emotion = ref('')
 	guardMsg = ref('')
@@ -120,6 +121,7 @@ export class VoiceRecorder {
 			this.recState.value = 'idle'
 			this.recordHint.value = '轻触暂停 · 连点两次结束'
 			this.transcript.value = ''
+			this.transcribeFailed.value = false
 			this.resetAiLabel()
 			this.emotion.value = ''
 			this.guardMsg.value = ''
@@ -303,7 +305,18 @@ export class VoiceRecorder {
 		}
 		this.lastVoiceDuration.value = durationMs
 		this.lastVoiceFile.value = path
+		this.transcribeLastVoice()
+	}
+
+	transcribeLastVoice(): void {
+		const path = this.lastVoiceFile.value
+		const durationMs = this.lastVoiceDuration.value
+		if (path == '') {
+			showErrorToast(new Error('找不到待转写录音'))
+			return
+		}
 		this.transcribing.value = true
+		this.transcribeFailed.value = false
 		this.recordHint.value = '正在转写…'
 		if (durationMs >= 300000) {
 			// 长录音（>5min）：分段转写走持久上传，无标注态（画布无此帧）——诚实收栈
@@ -321,7 +334,8 @@ export class VoiceRecorder {
 		transcribeWav(path).then((res) => {
 			this.transcribing.value = false
 			if (res == null) {
-				this.recordHint.value = '轻触中央圆点 · 开始录音'
+				this.transcribeFailed.value = true
+				this.recordHint.value = '转写失败，录音已保留，可点此重试'
 				showErrorToast(new Error('转写失败，请重试'))
 				return
 			}
@@ -355,6 +369,13 @@ export class VoiceRecorder {
 			}
 			this.setVoiceStage('preview') // F1c
 		})
+	}
+
+	retryTranscribe(): void {
+		if (this.transcribing.value) {
+			return
+		}
+		this.transcribeLastVoice()
 	}
 	submitVoice(): void {
 		const text = this.transcript.value.trim()

@@ -204,10 +204,11 @@ def upload_photo(
     # 此前这条路径从不带地点（客户端把经纬度硬编码为 null，后端也不看 EXIF）——这是
     # 「拍照上传的定位功能没有起效」的直接成因。EXIF 为 WGS84；转 GCJ-02 统一在
     # `amap.get_place` 入口做（单一转换点）。
-    if photo_meta.gps_lat is None or photo_meta.gps_lng is None:
-        exif_gps = extract_exif_gps(data)
-        if exif_gps is not None:
-            photo_meta.gps_lat, photo_meta.gps_lng = exif_gps
+    # EXIF GPS 是照片本身的事实，优先于客户端“打开记录面板时”的位置；
+    # 照片没有有效 GPS 时才保留客户端值，作为相机新拍兜底。
+    exif_gps = extract_exif_gps(data)
+    if exif_gps is not None:
+        photo_meta.gps_lat, photo_meta.gps_lng = exif_gps
     ext_safe = ext if ext in ALLOWED_PHOTO_EXTS else ".jpg"
     try:
         content_id = photo_register(

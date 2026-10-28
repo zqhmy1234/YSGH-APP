@@ -259,6 +259,19 @@ def register_photo_content(
         # P0-3：original 新建路径魔数校验（分片 complete 路径无 bytes 入参，
         # 借校验内 get_object 的返回量体积，BA1 size_bytes）
         data = _require_photo_bytes(cos_key)
+
+    # 2026-10-27：分片 complete 路径此前只信任客户端 meta，拿不到手动选图
+    # 的真实 EXIF。所有持有原件字节的照片注册在此统一补 EXIF：时间优先，
+    # GPS 也优先于客户端“打开面板时”的当前位置。
+    from app.services.photo_exif import extract_exif_datetime, extract_exif_gps
+
+    photo_exif_taken = extract_exif_datetime(data)
+    if photo_exif_taken is not None:
+        taken_at = photo_exif_taken
+    exif_gps = extract_exif_gps(data)
+    if exif_gps is not None:
+        photo_meta.gps_lat, photo_meta.gps_lng = exif_gps
+
     record = Content(
         user_id=user_id,
         content_type="photo",

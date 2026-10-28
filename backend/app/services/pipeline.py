@@ -521,6 +521,26 @@ def process_content(content_id: str) -> dict:
         if target is not None:
             detail = exc.to_dict()
             patch_extra(target, audio_processing=detail, error=detail)
+            # 客户端在入库前已拿到本地转写时，后台 ASR 只是二次增强。增强失败
+            # 不应把已有文字和音频整条标成 failed（用户会看到卡片消失）。
+            if target.content_type == "voice" and (target.text or "").strip():
+                target.status = "done"
+                db.commit()
+                try:
+                    _index_after_commit(db, target)
+                except Exception as index_exc:  # noqa: BLE001
+                    logger.warning("降级语音索引失败 content=%s: %s", content_id, index_exc)
+                logger.warning(
+                    "process_content %s 后台 ASR 失败，保留客户端转写",
+                    content_id,
+                )
+                return {
+                    "content_id": content_id,
+                    "status": "done",
+                    "outcome": "degraded_existing_text",
+                    "retryable": exc.retryable,
+                    "error": exc.code,
+                }
             target.status = "failed"
             db.commit()
         logger.warning("process_content %s ASR 失败: %s", content_id, exc.code)

@@ -18,11 +18,25 @@
  * 本文件按同名实现即可（重复导出曾触发编译器 overload panic）；
  * 类型单独具名再导出（error3：页面需从平台模块引用插件类型）。
  */
-import { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType, PermissionResultCallback } from '../interface.uts'
+import {
+	PhotoItem,
+	PickedPhotoMetadata,
+	PhotoBatchCallback,
+	PhotoWatch,
+	ForegroundActiveType,
+	PermissionResultCallback
+} from '../interface.uts'
 import { initBackgroundTasks } from '@/uni_modules/yishu-background-tasks/utssdk/app-android/index.uts'
 
 // 类型具名再导出（供页面从平台模块路径引用）
-export { PhotoItem, PhotoBatchCallback, PhotoWatch, ForegroundActiveType, PermissionResultCallback } from '../interface.uts'
+export {
+	PhotoItem,
+	PickedPhotoMetadata,
+	PhotoBatchCallback,
+	PhotoWatch,
+	ForegroundActiveType,
+	PermissionResultCallback
+} from '../interface.uts'
 
 /** 静默窗口：4s 无新照片变更 → 触发攒批回调（B-UT-4，3-5s 区间） */
 const DEBOUNCE_MS: Long = 4000
@@ -122,30 +136,187 @@ function listText(arr: Array<string>): string {
 	return s == '' ? '(空)' : s
 }
 
+/** Exif 对象 → epoch ms（DateTimeOriginal → DateTime）。 */
+function readExifTime(exif: android.media.ExifInterface): Long {
+	let dt = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL)
+	if (dt == null || dt == '') {
+		dt = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME)
+	}
+	if (dt != null && dt != '') {
+		const parts = dt.split(' ')
+		const d = parts[0].split(':')
+		const t = parts.length > 1 ? parts[1].split(':') : ['0', '0', '0']
+		if (d.length === 3) {
+			const year = parseInt(d[0])
+			const month = parseInt(d[1])
+			const day = parseInt(d[2])
+			const hour = t.length > 0 ? parseInt(t[0]) : 0
+			const minute = t.length > 1 ? parseInt(t[1]) : 0
+			const second = t.length > 2 ? parseInt(t[2]) : 0
+			return new Date(year, month - 1, day, hour, minute, second).getTime() as Long
+		}
+	}
+	return ZERO_LONG
+}
+
 /** EXIF DateTimeOriginal → epoch ms（EXIF 无时区=相机本地时间；设备本地即 +08） */
 function readExifTaken(path: string): Long {
 	try {
-		const exif = new android.media.ExifInterface(path)
-		const dt = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL)
-		if (dt != null && dt != '') {
-			const parts = dt.split(' ')
-			const d = parts[0].split(':')
-			const t = parts.length > 1 ? parts[1].split(':') : ['0', '0', '0']
-			if (d.length === 3) {
-				const year = parseInt(d[0])
-				const month = parseInt(d[1])
-				const day = parseInt(d[2])
-				const hour = t.length > 0 ? parseInt(t[0]) : 0
-				const minute = t.length > 1 ? parseInt(t[1]) : 0
-				const second = t.length > 2 ? parseInt(t[2]) : 0
-				return new Date(year, month - 1, day, hour, minute, second).getTime() as Long
-			}
-		}
+		return readExifTime(new android.media.ExifInterface(path))
 	} catch (e: Throwable) {
 		// 读 EXIF 失败忽略，走 DATE_TAKEN/DATE_ADDED 回退（2026-08-24 真机：加日志定位端侧时间偏移根因）
 		console.error('[yishu] EXIF 读取失败 ' + path + ': ' + (e != null && e.message != null ? e.message : 'unknown'))
 	}
 	return ZERO_LONG
+}
+
+/** EXIF "度/1,分/1,秒/100" + N/S/E/W → 十进制度；坏值返回 null。 */
+function readExifCoordinate(exif: android.media.ExifInterface, tag: String, refTag: String): number | null {
+	try {
+		const raw = exif.getAttribute(tag)
+		if (raw == null || raw == '') {
+			return null
+		}
+		const parts = raw.split(',')
+		if (parts.length < 3) {
+			return null
+		}
+		const degree = parts[0].split('/')
+		const minute = parts[1].split('/')
+		const second = parts[2].split('/')
+		const d = degree.length >= 2 ? parseFloat(degree[0]) / parseFloat(degree[1]) : parseFloat(degree[0])
+		const m = minute.length >= 2 ? parseFloat(minute[0]) / parseFloat(minute[1]) : parseFloat(minute[0])
+		const s = second.length >= 2 ? parseFloat(second[0]) / parseFloat(second[1]) : parseFloat(second[0])
+		let value = d + m / 60.0 + s / 3600.0
+		const ref = exif.getAttribute(refTag) ?? ''
+		if (ref.toUpperCase() == 'S' || ref.toUpperCase() == 'W') {
+			value = -value
+		}
+		return value
+	} catch (e) {
+		return null
+	}
+}
+
+/**
+ * 按 temp 文件名 + 原始字节数回查 MediaStore 原媒体。
+ *
+ * OPPO 选择器即使勾选“原图”也可能在 temp 文件中清除 GPS（时间保留、文件
+ * 字节数保持一致）。上传目录/文件系统不是可信元数据源；这里读取系统媒体库
+ * 原始 DATA 路径，并用 ExifInterface 恢复时间与 GPS。
+ */
+function lookupPickedPhotoMetadataImpl(displayName: string, size: number): PickedPhotoMetadata | null {
+	if (displayName == '' || size <= 0) {
+		return null
+	}
+	const collectionUri: android.net.Uri = sdkInt() >= 29
+		? android.provider.MediaStore.Images.Media.getContentUri("external")
+		: android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+	// size 是数字，无字符串注入面；displayName 在游标内精确比对，避免构造
+	// selectionArgs（本项目 UTS→Java 数组转换先例不足）。
+	const selection: String = android.provider.MediaStore.Images.Media.SIZE + ' = ' + size
+	try {
+		const cursor = appContext().getContentResolver().query(
+			collectionUri, null, selection, null, null
+		)
+		if (cursor == null) {
+			return null
+		}
+		while (cursor.moveToNext()) {
+			const nameCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.DISPLAY_NAME)
+			const candidate = nameCol >= 0 ? (cursor.getString(nameCol) ?? '') : ''
+			if (candidate != displayName) {
+				continue
+			}
+			const idCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media._ID)
+			const id = idCol >= 0 ? cursor.getLong(idCol) : ZERO_LONG
+			const pathCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.DATA)
+			const path = pathCol >= 0 ? (cursor.getString(pathCol) ?? '') : ''
+
+			let taken: Long = ZERO_LONG
+			let lat: number | null = null
+			let lng: number | null = null
+
+			if (id > 0) {
+				try {
+					const itemUri = android.content.ContentUris.withAppendedId(collectionUri, id)
+					const stream = appContext().getContentResolver().openInputStream(itemUri)
+					if (stream != null) {
+						const exif = new android.media.ExifInterface(stream)
+						taken = readExifTime(exif)
+						lat = readExifCoordinate(
+							exif,
+							android.media.ExifInterface.TAG_GPS_LATITUDE,
+							android.media.ExifInterface.TAG_GPS_LATITUDE_REF
+						)
+						lng = readExifCoordinate(
+							exif,
+							android.media.ExifInterface.TAG_GPS_LONGITUDE,
+							android.media.ExifInterface.TAG_GPS_LONGITUDE_REF
+						)
+						stream.close()
+					}
+					// 某些 OPPO ContentProvider 会对 URI 流雾化 GPS，但应用持
+					// READ_MEDIA_IMAGES 时仍可读 DATA 原文件；仅补缺失字段。
+					if ((lat == null || lng == null) && path != '') {
+						const fileExif = new android.media.ExifInterface(path)
+						if (taken <= 0) {
+							taken = readExifTime(fileExif)
+						}
+						const fileLat = readExifCoordinate(
+							fileExif,
+							android.media.ExifInterface.TAG_GPS_LATITUDE,
+							android.media.ExifInterface.TAG_GPS_LATITUDE_REF
+						)
+						const fileLng = readExifCoordinate(
+							fileExif,
+							android.media.ExifInterface.TAG_GPS_LONGITUDE,
+							android.media.ExifInterface.TAG_GPS_LONGITUDE_REF
+						)
+						if (fileLat != null && fileLng != null) {
+							lat = fileLat
+							lng = fileLng
+						}
+					}
+				} catch (e: Throwable) {
+					console.error('[yishu] 原媒体 EXIF 回查失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+				}
+			}
+
+			// 部分设备 MediaStore 不能直读 DATA：使用游标列兜底。GPS 列若被
+			// 系统隐私层清空，仍保持 null，不拿当前位置冒充。
+			if (taken <= 0) {
+				const dateCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.DATE_TAKEN)
+				if (dateCol >= 0 && !cursor.isNull(dateCol)) {
+					taken = cursor.getLong(dateCol)
+				}
+			}
+			if (taken <= 0) {
+				const addedCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.DATE_ADDED)
+				if (addedCol >= 0 && !cursor.isNull(addedCol)) {
+					taken = cursor.getLong(addedCol) * 1000
+				}
+			}
+			if (lat == null || lng == null) {
+				const latCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.LATITUDE)
+				const lngCol = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.LONGITUDE)
+				if (latCol >= 0 && lngCol >= 0 && !cursor.isNull(latCol) && !cursor.isNull(lngCol)) {
+					lat = cursor.getDouble(latCol)
+					lng = cursor.getDouble(lngCol)
+				}
+			}
+			cursor.close()
+			if (lat != null && lng != null && lat == 0.0 && lng == 0.0) {
+				lat = null
+				lng = null
+			}
+			return new PickedPhotoMetadata(taken, lat, lng)
+		}
+		cursor.close()
+	} catch (e: Throwable) {
+		console.error('[yishu] 原媒体回查失败: ' + (e != null && e.message != null ? e.message : 'unknown'))
+	}
+	return null
 }
 
 /** ContentObserver 监听器：UTS 继承原生类（POC-01 路径，纯 UTS 版） */
@@ -586,6 +757,10 @@ class PhotoWatchImpl implements PhotoWatch {
 			return 'unsupported'
 		}
 		return 'none'
+	}
+
+	lookupPickedPhotoMetadata(displayName: string, size: number): PickedPhotoMetadata | null {
+		return lookupPickedPhotoMetadataImpl(displayName, size)
 	}
 }
 

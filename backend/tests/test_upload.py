@@ -9,6 +9,7 @@
 前置：PG yishu 库
 """
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.core.config import settings
@@ -35,6 +36,21 @@ def _make_task(db, user, client_upload_id=None, data: bytes | None = None, chunk
         chunk_size,
     )
     return task, data
+
+
+def _jpeg_with_datetime(value: str) -> bytes:
+    """生成带 EXIF DateTime(tag 306) 的真实 JPEG，供分片路径回归。"""
+    import io
+
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[306] = value
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (120, 150, 90)).save(
+        buf, "JPEG", exif=exif.tobytes()
+    )
+    return buf.getvalue()
 
 
 def test_init_idempotent(db_user):
@@ -69,6 +85,27 @@ def test_complete_creates_content(db_user):
     assert record.gps_lng == 121.4737
 
 
+def test_register_photo_content_chunk_path_uses_exif_datetime(db_user):
+    """分片 complete 无 bytes 入参时，注册层仍从存储原件解析 EXIF 时间。"""
+    db, user = db_user
+    task, data = _make_task(db, user, data=_jpeg_with_datetime("2025:06:12 16:21:31"))
+    for i in range(task.chunk_count):
+        upload_svc.upload_chunk(db, task.id, i, data[i * CHUNK : (i + 1) * CHUNK])
+    result = upload_svc.complete_upload(db, task.id)
+
+    content_id = upload_svc.register_photo_content(
+        db,
+        user.id,
+        result["file_key"],
+        '{"taken_at":"2026-10-27T12:00:00+08:00","source":"app"}',
+    )
+    record = db.get(Content, content_id)
+    assert record is not None
+    assert record.taken_at is not None
+    local = record.taken_at.astimezone(timezone(timedelta(hours=8)))
+    assert local == datetime(2025, 6, 12, 16, 21, 31, tzinfo=timezone(timedelta(hours=8)))
+
+
 def test_register_photo_content_bad_meta(db_user):
     """meta 非法（坏 JSON / gps 越界 / source 白名单外）→ ValueError"""
     db, user = db_user
@@ -80,7 +117,17 @@ def test_register_photo_content_bad_meta(db_user):
         upload_svc.register_photo_content(db, user.id, "photos/x.jpg", '{"source": "hacker"}')
 
 
+def test_parse_photo_meta_drops_zero_and_unpaired_gps():
+    from app.services.upload_meta import parse_photo_meta
 
+    zero = parse_photo_meta('{"gps_lat": 0, "gps_lng": 0, "source": "app"}')
+    assert zero.gps_lat is None and zero.gps_lng is None
+
+    unpaired = parse_photo_meta('{"gps_lat": 31.2, "source": "app"}')
+    assert unpaired.gps_lat is None and unpaired.gps_lng is None
+
+
+def test_chunk_upload_and_complete(db_user):
     db, user = db_user
     task, data = _make_task(db, user)
     chunk_count = task.chunk_count

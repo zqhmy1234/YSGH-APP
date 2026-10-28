@@ -727,3 +727,26 @@ ShareSheet（须真机验"保存到相册"）。
 
 - 用户请求协助设置 B-2，并确认服务器尚未开通；未接触或修改任何远端 cron。现有 SSH 别名不能证明是项目服务器，连接也超时，不以此冒充部署证据。
 - 核对当前生产选型为容器拓扑 A（`deploy/docker-compose.yml`）；`deploy/RUNBOOK.md` §5 补齐可安装的 4 条容器内业务任务 + 1 条 PG 备份 crontab 范本，含 `SHELL`/`PATH`、日志、北京时区核对和清理任务首次 `--dry-run`。静态核对为 5 条任务、4 条经容器执行、1 条备份、清理试运行 1 条。服务器开通后仍须核对路径/权限并实装、观察日志、验证失败任务重投。
+
+## 2026-10-28 · W43 遗留项收口与 104 打包前置
+
+- 检索 `docs/周报/2026-W43_开发C周报.md` 的“未完成/下周计划/手册缺口”，产出 `docs/parallel-dev-收尾/36_W43遗留项收口与104前置_20261028.md`，逐项区分已完成、104 待验和外部阻塞。
+- D-15 按 2026-08-29 拍板修复：`services/events/sync.py` 的端侧 L1 同步统一写 `title_source="device"`；服务端真实用户编辑仍写 `user`；补 `test_event_sync` 落库断言，schemas/sql 注释同步。
+- 修复记录面板蜂窝/离线 held 被误报为“上传失败”：`uploadBatch` 仍以空数组兼容原契约，调用方改为读取进度中的 failed 数；failed=0 时显示“已暂缓上传，连接 WiFi 后自动继续”，不再误报。
+- 出包前置门全绿：ENV prod、REAL_DEVICE_HOST 空、PROD_BASE_URL 局域网地址、权限/图标/启动图/明文/真源/客户端编译均 PASS；`versionCode=104`，包名不变。
+- PKX110 自定义基座预演：IN-01 主搜索 `output104`、IN-02 收藏搜索 `favorite104`、IN-03 标签 `tag104`、IN-04 正文 `writeprobe104`、IN-05 普通备注 `remarkprobe104` 均通过 OCR/EditText 双证据；ADB 无法稳定注入中文，最终 104 包仍要补中文人工截图。
+- 回归：事件同步/事件操作/AB 场景 58 passed；语音/审核/fail-safe 74 passed；Ruff 通过；客户端编译门通过。后端进程在预演中曾异常退出，已用修复后的 `start_all.ps1 -SkipDocker -SkipAgent` 恢复 0.0.0.0:8010 并通过 healthz。
+- `review_agent.py --full` 最终退出码 0：457 文件语法、lint、密钥、结构、契约、OpenAPI、权限/环境模板、安全和聚合等价全通过；主测试与 RAG 覆盖率 85.49%，`failed_tests=[]`、`blocking_sections=[]`；客户端编译门通过。非阻断警告为 feature_list 12 条 in-progress 与备份新鲜度未演练；第三方日志仍显示百炼视觉/腾讯 COS未配置、百度 OCR 占位 key 401。
+- 百度 OCR 从仓库外 `_local_keys.env` 注入后真实 token 获取和截图识别均成功，截图中的 `output104` 被识别；门禁里的百度 401 已归因为测试进程未注入 Key。`start_all.ps1` 已统一加载本地密钥文件。
+- 用户明确 104 云打包由用户执行；开发 C 未启动打包。待 APK 返回后继续 IN-06～IN-08、历史照片 GPS、蜂窝暂缓真实行为、冷启动旧 token、D-18/D-19 后台同步与四项尸检。
+
+## 2026-10-29 · ADB 通道真机测试与两处回归修复
+
+- 按用户要求切到 `ENV=dev + REAL_DEVICE_HOST=localhost`，标准基座 + `adb reverse tcp:8010 tcp:8010` 启动当前 104 源码。日志确认所有请求访问 `127.0.0.1:8010`，时间轴/统计/回响均 200。
+- 已通过：主搜索 `adbprobe` 可见并返回空结果、正文 `adbrecord`、备注 `adbremark`、语音编辑框 `.voiceedit`、连续添加照片 `4/9`、离线保存提示“已暂缓上传”、WiFi 恢复自动补传 3 个唯一 held 项并提交 3 个 L1 事件、时间轴更新。
+- 发现 GPS 回归：历史照片被写成 `(0,0)` 并生成错误地点。后端 EXIF、后端 meta、客户端选图回填、上传 meta/照片插件四层统一拒绝全零；专项 `65 passed`。修复后同一照片安全落为 `gps=None/place=None`，不发假地点；原始 GPS 恢复仍需 104/新自定义基座。
+- 发现首次录音权限弹窗超过 15 秒时旧看门狗先判失败，`PERM_WATCHDOG_MS` 改为 60 秒。授权后重录与 ADB 语音通道成功，页面识别出真实非空文本并显示 `sensevoice` 通道。
+- ADB 测试发现搜索本次请求约 8–9 秒，未达到 3 秒 P95 目标；单样本不作 P95 结论，但列入性能复测。
+- 照片执行单 IN-08“照片备注”与当前产品模板冲突：源码注释明确照片帧无备注节，未擅自新增功能，等待产品口径。
+- 完整证据与测试数据 ID 见 `docs/parallel-dev-收尾/37_ADB通道真机测试记录_20261029.md`。未删除任何用户数据。
+- 修复后最终 `review_agent.py --full` 退出码 0：457 文件语法、lint/密钥/结构/契约/OpenAPI/安全/聚合等价、API 冒烟、research、客户端编译全通过；覆盖率 85.50%，`failed_tests=[]`、`blocking_sections=[]`、`blocking_checks=[]`。客户端已恢复为 104 出包态 `ENV=prod / REAL_DEVICE_HOST='' / PROD_BASE_URL=http://192.168.31.143:8010`，API health 正常。

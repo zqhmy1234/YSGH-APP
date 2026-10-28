@@ -2556,6 +2556,79 @@
         ]
       }
     },
+    "/api/v1/profile/rebuild": {
+      "post": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Start Profile Rebuild",
+        "operationId": "start_profile_rebuild_api_v1_profile_rebuild_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProfileRebuildStartOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile/rebuild/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Profile Rebuild Status",
+        "operationId": "profile_rebuild_status_api_v1_profile_rebuild_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProfileRebuildStatusOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/wechat/find": {
       "post": {
         "tags": [
@@ -4669,6 +4742,68 @@
         },
         "type": "object",
         "title": "ApiResponse[ProfileClearOut]"
+      },
+      "ApiResponse_ProfileRebuildStartOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileRebuildStartOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ProfileRebuildStartOut]"
+      },
+      "ApiResponse_ProfileRebuildStatusOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileRebuildStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ProfileRebuildStatusOut]"
       },
       "ApiResponse_ProfileSensitiveDeleteOut_": {
         "properties": {
@@ -8422,6 +8557,93 @@
         "title": "ProfileClearOut",
         "description": "画像清除出参（DELETE /api/v1/interview/profile · D07-12）。\n\n`cleared` 逐表回报删除行数（客户端可如实告诉用户\"删掉了什么\"），\n`sensitive_topics_kept` = **刻意保留**的敏感话题条数（那是\"别再提这个话题\"的\n保护性数据，清除画像不应连带移除保护——见 `services/profile_admin` 模块说明）。"
       },
+      "ProfileRebuildStartOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "queued"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "ProfileRebuildStartOut"
+      },
+      "ProfileRebuildStatusOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "processed": {
+            "type": "integer",
+            "title": "Processed",
+            "default": 0
+          },
+          "applied": {
+            "type": "integer",
+            "title": "Applied",
+            "default": 0
+          },
+          "pooled": {
+            "type": "integer",
+            "title": "Pooled",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped",
+            "default": 0
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded",
+            "default": false
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ProfileRebuildStatusOut"
+      },
       "ProfileSensitiveCreate": {
         "properties": {
           "topic": {
@@ -9291,6 +9513,40 @@
               }
             ],
             "title": "Content Id"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "gps_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gps Lat"
+          },
+          "gps_lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gps Lng"
           }
         },
         "type": "object",

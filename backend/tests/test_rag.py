@@ -606,6 +606,94 @@ def test_pg_fallback_search_filters_content_type(pg_db_user):
     assert str(c_photo.id) in ids2
 
 
+@pytest.mark.integration
+def test_pg_exact_search_matches_text_tag_and_event_title(pg_db_user):
+    """精确关键词覆盖内容原文、标签与事件标题，并返回可解释命中字段。"""
+    from app.services.rag.pg_fallback import _pg_exact_search
+
+    db, user = pg_db_user
+    marker = f"精确探针{uuid.uuid4().hex[:6]}"
+    c_text = Content(
+        user_id=user.id, content_type="text", text=f"{marker} 原文",
+        status="done", source="app",
+    )
+    c_tag = Content(
+        user_id=user.id, content_type="text", text="标签命中内容",
+        tags_json={"tags": [f"标签{marker}"]}, status="done", source="app",
+    )
+    c_event = Content(
+        user_id=user.id, content_type="voice", text="事件成员内容",
+        status="done", source="app",
+    )
+    db.add_all([c_text, c_tag, c_event])
+    db.commit()
+    ev = Event(
+        user_id=user.id, level=2, title=f"事件{marker}",
+        status="confirmed", generated_by="cloud",
+    )
+    db.add(ev)
+    db.commit()
+    db.add(EventItem(content_id=c_event.id, event_id=ev.id))
+    db.commit()
+
+    text_hits = _pg_exact_search(SearchQuery(q=marker), db, str(user.id))
+    assert str(c_text.id) in [h["content_id"] for h in text_hits]
+    fields = next(h for h in text_hits if h["content_id"] == str(c_text.id))["matched_fields"]
+    assert "text" in fields or "text_phrase" in fields
+
+    tag_hits = _pg_exact_search(SearchQuery(q=f"标签{marker}"), db, str(user.id))
+    assert str(c_tag.id) in [h["content_id"] for h in tag_hits]
+    assert "tag" in next(h for h in tag_hits if h["content_id"] == str(c_tag.id))["matched_fields"]
+
+    title_hits = _pg_exact_search(SearchQuery(q=f"事件{marker}"), db, str(user.id))
+    assert str(c_event.id) in [h["content_id"] for h in title_hits]
+    assert "event_title" in next(
+        h for h in title_hits if h["content_id"] == str(c_event.id)
+    )["matched_fields"]
+
+
+@pytest.mark.integration
+def test_search_merges_exact_hit_when_semantic_noise_exists(pg_db_user, monkeypatch):
+    """Qdrant 有噪声结果时，明确关键词仍必须进入最终结果。"""
+    import app.services.rag as rag
+
+    db, user = pg_db_user
+    marker = f"始终命中{uuid.uuid4().hex[:6]}"
+    exact = Content(
+        user_id=user.id, content_type="text", text=f"{marker} 的记忆",
+        status="done", source="app",
+    )
+    noise = Content(
+        user_id=user.id, content_type="text", text="完全无关的语义近邻",
+        status="done", source="app",
+    )
+    db.add_all([exact, noise])
+    db.commit()
+
+    class FakeStore:
+        def search(self, *_args, **_kwargs):
+            return [{
+                "content_id": str(noise.id),
+                "score": 0.02,
+                "dense_score": 0.9,
+                "sparse_score": 0.0,
+                "text": noise.text,
+            }]
+
+    monkeypatch.setattr(rag, "get_store", FakeStore)
+    monkeypatch.setattr(rag, "encode_query", lambda _q: ([0.0], {}))
+
+    result = rag.search(SearchQuery(q=marker, limit=10), db=db, user_id=str(user.id))
+    ids = [h.content_id for h in result.hits]
+    assert str(exact.id) in ids
+    exact_hit = next(h for h in result.hits if h.content_id == str(exact.id))
+    assert exact_hit.trace["exact_score"] > 0
+    assert (
+        "text" in exact_hit.trace["matched_fields"]
+        or "text_phrase" in exact_hit.trace["matched_fields"]
+    )
+
+
 # ---- audit #15：溯源事件级归因 ----
 
 
