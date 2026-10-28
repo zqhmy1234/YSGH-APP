@@ -39,7 +39,7 @@ import secrets as _secrets
 import sys
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -397,6 +397,69 @@ def _safe_value(value: Any, field_name: str) -> str:
 # ---------------------------------------------------------------- 读层
 
 
+def resolve_xlsx(xlsx_dir: Path, name: str) -> Path:
+    """解析逻辑表名到实际文件：同名 + 带日期后缀（如 `-20261026`）取最新。
+
+    产品部更新表时不覆盖原文件，而是另存为 `<原名>-YYYYMMDD.xlsx`。
+    取 mtime 最新的一份；`~$` 开头的 Excel 临时锁文件排除。
+    """
+    exact = xlsx_dir / name
+    stem, suffix = exact.stem, exact.suffix
+    candidates = [
+        p for p in xlsx_dir.glob(f"{stem}*{suffix}")
+        if not p.name.startswith("~$")
+    ]
+    if exact.exists() and exact not in candidates:
+        candidates.append(exact)
+    if not candidates:
+        return exact
+    return max(candidates, key=lambda p: (p.stat().st_mtime, p.name))
+
+
+def _media_key(name: str) -> tuple[str, str]:
+    """把文件名压成可比较的键 `(主干, 扩展名)`。
+
+    主干去掉分隔符与数字前导零：`d001` 与 `d-0001` 同键、`a-0006` 与 `a0006` 同键。
+    用来容忍产品部手写文件名的编号差异（表里写 `d001.mp3`，盘上是 `d-0001.mp3`）。
+    """
+    p = Path(name)
+    stem = re.sub(r"[\s_\-]", "", p.stem).lower()
+    stem = re.sub(r"\d+", lambda m: str(int(m.group(0))), stem)
+    return stem, p.suffix.lower()
+
+
+def resolve_media(media_dir: Path, raw_name: str) -> Path | None:
+    """在 media_dir 里找出表里 `file_name` 对应的实际文件，找不到返回 None。
+
+    三级匹配：① 文件名精确；② 主干+扩展名同键；③ 只主干同键。
+    `a-0006.m4a`（表里）与 `a-0006.mp3`（盘上其实也是 AAC/M4A 容器）走 ③ 命中。
+    同键多候选取 mtime 最新，保证同名不同版本时取更新的一份。
+    """
+    if not raw_name or raw_name == "/" or not media_dir.is_dir():
+        return None
+    exact = media_dir / Path(raw_name).name
+    if exact.is_file():
+        return exact
+    key = _media_key(raw_name)
+    files = [p for p in media_dir.iterdir() if p.is_file()]
+    for pick in (lambda p: _media_key(p.name) == key,
+                 lambda p: _media_key(p.name)[0] == key[0]):
+        hits = [p for p in files if pick(p)]
+        if hits:
+            return max(hits, key=lambda p: (p.stat().st_mtime, p.name))
+    return None
+
+
+# 说话人标记：行首或标点后的「A：」「乙:」这类。只认显式标记——
+# 这是作废级判据（见 convert_c），宁可漏判也不能把自述误杀。
+_SPEAKER_LABEL = re.compile(r"(?:^|[\s，。？！、；])([A-Da-d甲乙丙丁])\s*[:：]")
+
+
+def speaker_labels(text: str) -> set[str]:
+    """返回转写里出现过的说话人标记集合（如 {'A', 'B'}）。"""
+    return {m.group(1) for m in _SPEAKER_LABEL.finditer(text)}
+
+
 def find_header_row(ws, anchor: str, scan: int = 6) -> int | None:
     """在 sheet 前 scan 行里找含 anchor 的表头行（1-based 行号）。"""
     for row_no in range(1, min(scan, ws.max_row) + 1):
@@ -537,7 +600,7 @@ def convert_a(sources: list[Source], ctx: Ctx) -> BatchResult:
     result = BatchResult(batch="a")
     seen: dict[str, int] = {}
     for source in sources:
-        read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+        read = read_sheet_rows(resolve_xlsx(ctx.xlsx_dir, source.xlsx), source)
         _handle_read(read, source, result)
         rows = read.rows
         if not read.hard_errors:
@@ -668,11 +731,16 @@ def _convert_a_row(row: RawRow, source: Source, ctx: Ctx,
 def convert_b(sources: list[Source], ctx: Ctx) -> BatchResult:
     result = BatchResult(batch="b")
     source = sources[0]
-    read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+    xlsx = resolve_xlsx(ctx.xlsx_dir, source.xlsx)
+    # 阻断清单要指回**真正读的那份**（产品部另存为 `...-20261026.xlsx` 时，
+    # 逻辑名会指向一个没被读的旧文件），所以把实际文件名替换进 source。
+    source = replace(source, xlsx=xlsx.name)
+    read = read_sheet_rows(xlsx, source)
     if not _handle_read(read, source, result):
         return result
     rows = read.rows
     result.rows_read = len(rows)
+    nonconformant: list[str] = []
     for row in rows:
         v = row.values
         fid = _s(v["fragment_id"])
@@ -716,10 +784,7 @@ def convert_b(sources: list[Source], ctx: Ctx) -> BatchResult:
                 f"collected_at={collected[:10]} 年份可疑（疑录入错误）", "warn",
             ))
         if not fid.startswith("f-"):
-            result.blockers.append(_base_blocker(
-                source, row, fid, "fragment_id", "ID_PREFIX_NONCONFORMANT",
-                "规格要求 f- 前缀；**不改写**（改了会让 A 批引用更断）", "warn",
-            ))
+            nonconformant.append(fid)
         for pattern in _scan_secrets(text):
             result.blockers.append(_base_blocker(
                 source, row, fid, "text", "SENSITIVE_CONTENT",
@@ -735,25 +800,46 @@ def convert_b(sources: list[Source], ctx: Ctx) -> BatchResult:
             "collected_at": collected,
             "note": _s(v["note"]),
         })
+    if nonconformant:
+        groups = "/".join(sorted({fid.split("-")[0] for fid in nonconformant}))
+        result.blockers.append(Blocker(
+            batch=source.batch, source_file=source.xlsx, sheet=source.sheet,
+            row=0, record_id=None, field_name="fragment_id",
+            reason="ID_PREFIX_NONCONFORMANT",
+            detail=f"{len(nonconformant)}/{len(result.records)} 条不是 f- 前缀，"
+                   f"实际按组号命名（{groups}）；**不改写**——A 批 expected 直接引用这些 id，"
+                   "改了只会把引用断得更彻底（是否改规格见 docs/真值数据规格标准_v1.md §命名）",
+            severity="warn",
+        ))
     return result
 
 
 def convert_c(sources: list[Source], ctx: Ctx) -> BatchResult:
     result = BatchResult(batch="c")
     source = sources[0]
-    read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+    xlsx = resolve_xlsx(ctx.xlsx_dir, source.xlsx)
+    source = replace(source, xlsx=xlsx.name)
+    read = read_sheet_rows(xlsx, source)
     if not _handle_read(read, source, result):
         return result
     rows = read.rows
     result.rows_read = len(rows)
+    nonconformant: list[str] = []
     for row in rows:
         v = row.values
         cid = _s(v["clip_id"])
         transcript = _s(v["transcript"])
         if not cid or not transcript:
+            # 分开报：c 组是「有音频、有 id，但人工转写还空着」，和整行空是两回事
+            if not cid and not transcript:
+                what = "clip_id 与 transcript 都为空"
+            elif not cid:
+                what = "clip_id 为空"
+            else:
+                what = "人工转写 transcript 为空（音频已在，待逐字转写）"
             result.blockers.append(_base_blocker(
                 source, row, cid or None, "clip_id/transcript", "MISSING_REQUIRED",
-                "id 或 transcript 为空（真值要求人工逐字转写）", "skip",
+                what, "skip",
             ))
             continue
         dur = v["duration_s"]
@@ -774,21 +860,40 @@ def convert_c(sources: list[Source], ctx: Ctx) -> BatchResult:
             ))
             continue
 
+        # 隐私铁律：录音只收自述片段（规格 L104/L159）。转写里出现两套以上
+        # 说话人标记 = 多人对话，这条按规格「作废」，不能强行盖 self_talk_only=True。
+        labels = speaker_labels(transcript)
+        if len(labels) >= 2:
+            result.blockers.append(_base_blocker(
+                source, row, cid, "transcript", "SELF_TALK_VIOLATION",
+                f"转写含 {len(labels)} 个说话人标记（{'/'.join(sorted(labels))}）——"
+                "属多人对话，违反「录音只收自述片段」，该条作废", "skip",
+            ))
+            continue
+
         raw_name = _s(v["file_name"])
+        audio_ref = ""
         if not raw_name or raw_name == "/":
-            audio_ref = ""
             result.blockers.append(_base_blocker(
                 source, row, cid, "audio_ref", "MISSING_MEDIA_FILE",
                 "file_name 为空或 '/' —— 该条没有对应音频文件（转录文本仍可用）", "warn",
             ))
         else:
-            audio_ref = f"research/truth-data/c/audio/{Path(raw_name).name}"
-            if not (ctx.data_dir / "c" / "audio" / Path(raw_name).name).exists():
+            found = resolve_media(ctx.data_dir / "c" / "audio", raw_name)
+            if found is None:
                 result.blockers.append(_base_blocker(
                     source, row, cid, "audio_ref", "MISSING_MEDIA_FILE",
                     f"音频文件 {Path(raw_name).name} 不在 research/truth-data/c/audio/ 下"
                     "（转录文本仍可用；RAG 评测只吃 transcript，音频仅 WER 校准需要）", "warn",
                 ))
+            else:
+                audio_ref = f"research/truth-data/c/audio/{found.name}"
+                if found.name != Path(raw_name).name:
+                    result.blockers.append(_base_blocker(
+                        source, row, cid, "audio_ref", "MEDIA_NAME_MISMATCH",
+                        f"表里写 {Path(raw_name).name}，盘上是 {found.name}"
+                        "（已按实际文件登记，建议产品部统一命名）", "warn",
+                    ))
 
         noise = _code(v["noise_level"])
         if noise not in C_NOISE_LEVELS:
@@ -797,10 +902,7 @@ def convert_c(sources: list[Source], ctx: Ctx) -> BatchResult:
                 f"env={_safe_value(noise, 'noise_level')} 不在 clean/noisy/bgm 内", "warn",
             ))
         if not cid.startswith("v-"):
-            result.blockers.append(_base_blocker(
-                source, row, cid, "clip_id", "ID_PREFIX_NONCONFORMANT",
-                "规格要求 v- 前缀；**不改写**", "warn",
-            ))
+            nonconformant.append(cid)
         for pattern in _scan_secrets(transcript):
             result.blockers.append(_base_blocker(
                 source, row, cid, "transcript", "SENSITIVE_CONTENT",
@@ -821,6 +923,16 @@ def convert_c(sources: list[Source], ctx: Ctx) -> BatchResult:
             "collected_at": collected,
             "note": _s(v["note"]),
         })
+    if nonconformant:
+        groups = "/".join(sorted({cid.split("-")[0] for cid in nonconformant}))
+        result.blockers.append(Blocker(
+            batch=source.batch, source_file=source.xlsx, sheet=source.sheet,
+            row=0, record_id=None, field_name="clip_id",
+            reason="ID_PREFIX_NONCONFORMANT",
+            detail=f"{len(nonconformant)}/{len(result.records)} 条不是 v- 前缀，"
+                   f"实际按组号命名（{groups}）；**不改写**（A 批 expected 直接引用这些 id）",
+            severity="warn",
+        ))
     return result
 
 
@@ -874,7 +986,7 @@ def convert_d(sources: list[Source], ctx: Ctx) -> BatchResult:
     """D 批只出骨架 —— 见 _D_SKELETON 的理由。"""
     result = BatchResult(batch="d", converted=False, skeleton=dict(_D_SKELETON))
     for source in sources:
-        read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+        read = read_sheet_rows(resolve_xlsx(ctx.xlsx_dir, source.xlsx), source)
         _handle_read(read, source, result)
         rows = read.rows
         if not read.hard_errors:
@@ -890,7 +1002,7 @@ def convert_d(sources: list[Source], ctx: Ctx) -> BatchResult:
 def convert_e(sources: list[Source], ctx: Ctx) -> BatchResult:
     result = BatchResult(batch="e")
     source = sources[0]
-    read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+    read = read_sheet_rows(resolve_xlsx(ctx.xlsx_dir, source.xlsx), source)
     if not _handle_read(read, source, result):
         return result
     rows = read.rows
@@ -953,7 +1065,7 @@ def convert_f(sources: list[Source], ctx: Ctx) -> BatchResult:
     """F 批只出骨架 —— sheet 无数据行。"""
     result = BatchResult(batch="f", converted=False, skeleton=dict(_F_SKELETON))
     for source in sources:
-        read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+        read = read_sheet_rows(resolve_xlsx(ctx.xlsx_dir, source.xlsx), source)
         _handle_read(read, source, result)
         if not read.hard_errors:
             result.rows_read += len(read.rows)
@@ -967,7 +1079,7 @@ def convert_f(sources: list[Source], ctx: Ctx) -> BatchResult:
 def convert_g(sources: list[Source], ctx: Ctx) -> BatchResult:
     result = BatchResult(batch="g")
     source = sources[0]
-    read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+    read = read_sheet_rows(resolve_xlsx(ctx.xlsx_dir, source.xlsx), source)
     if not _handle_read(read, source, result):
         return result
     rows = read.rows
@@ -1033,7 +1145,7 @@ def convert_g(sources: list[Source], ctx: Ctx) -> BatchResult:
 def convert_h(sources: list[Source], ctx: Ctx) -> BatchResult:
     result = BatchResult(batch="h")
     source = sources[0]
-    read = read_sheet_rows(ctx.xlsx_dir / source.xlsx, source)
+    read = read_sheet_rows(resolve_xlsx(ctx.xlsx_dir, source.xlsx), source)
     if not _handle_read(read, source, result):
         return result
     rows = read.rows
@@ -1165,7 +1277,9 @@ def write_reports(results: list[BatchResult], ctx: Ctx, dry_run: bool) -> tuple[
             lines.append(f"### {mark} {severity}")
             lines.append("")
             for b in items:
-                loc = f"{res.batch.upper()}批 {b.record_id or '-'} ({b.source_file}!{b.sheet} r{b.row})"
+                # row=0 是整批级阻断（如"109/109 条都不是 f- 前缀"），不指行号
+                where = f"{b.source_file}!{b.sheet}" + (f" r{b.row}" if b.row else "")
+                loc = f"{res.batch.upper()}批 {b.record_id or '-'} ({where})"
                 lines.append(f"- {b.reason} ｜ {loc} ｜ 字段 `{b.field_name}`：{b.detail}")
             lines.append("")
 
@@ -1212,13 +1326,13 @@ def collect_known_ids(by_batch: dict[str, list[Source]], ctx_xlsx_dir: Path) -> 
     id_fields = {"b": "fragment_id", "c": "clip_id"}
     for batch in ("b", "c"):
         source = by_batch[batch][0]
-        read = read_sheet_rows(ctx_xlsx_dir / source.xlsx, source)
+        read = read_sheet_rows(resolve_xlsx(ctx_xlsx_dir, source.xlsx), source)
         if read.hard_errors:
             continue
         field_name = id_fields[batch]
         known[batch] = {_s(r.values[field_name]) for r in read.rows if _s(r.values[field_name])}
     for source in by_batch["d"]:
-        read = read_sheet_rows(ctx_xlsx_dir / source.xlsx, source)
+        read = read_sheet_rows(resolve_xlsx(ctx_xlsx_dir, source.xlsx), source)
         if read.hard_errors:
             continue
         known["d"] |= {_s(r.values["photo_id"]) for r in read.rows if _s(r.values["photo_id"])}
@@ -1248,7 +1362,7 @@ def main() -> int:
 
     selected = args.batch or sorted(by_batch)
     missing = [s.xlsx for s in SOURCES if s.batch in selected
-               and not (args.xlsx_dir / s.xlsx).exists()]
+               and not resolve_xlsx(args.xlsx_dir, s.xlsx).exists()]
     if missing:
         print(f"❌ 以下 xlsx 不在 {args.xlsx_dir}：{sorted(set(missing))}")
         print("   用 --xlsx-dir 指定产品部表格所在目录。")

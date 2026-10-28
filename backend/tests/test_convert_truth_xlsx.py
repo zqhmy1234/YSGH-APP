@@ -481,3 +481,109 @@ def test_secret_scan_flags_without_echoing(tmp_path):
     hits = [b for b in result.blockers if b.reason == "SENSITIVE_CONTENT"]
     assert hits, "应命中密钥模式"
     assert fake_key not in hits[0].detail, "阻断清单不得回显密钥原文"
+
+
+# ---------------------------------------------------------------- 2026-10-26：换版后的三条新口径
+
+
+C_HEADERS = ["编号\naudio_id", "录音文件名\nfile_name", "人工转写文字\ntranscript（逐字）",
+             "情绪标签\nemotion_label", "录音环境\nenv", "时长\nduration_s",
+             "user_id_hashed", "收集日期\ncollected_at", "备注\nnote"]
+C_SAMPLE = ["v-0001", "如：c-0001.m4a", "← 逐字转写", "happy/sad/neutral", "clean / noisy / bgm",
+            "如：87", "如：用户A", "YYYY-MM-DD", ""]
+
+
+def _c_row(cid, fn, transcript, dur="30", em="calm", env="clean", date="2026-08-28"):
+    return [cid, fn, transcript, em, env, dur, "用户A", date, ""]
+
+
+def test_convert_c_drops_multi_speaker_clips(tmp_path):
+    """C 批铁律「录音只收自述片段」：转写里出现两套说话人标记 = 多人对话，整条作废。
+
+    2026-10-26 新版表里 a-0010/0011/0012 就是这样（`A：…` / `B：…`）。
+    规格 L104 明写 self_talk_only=false 该条作废，所以不能盖着 True 混进真值集。
+    """
+    _write_xlsx(tmp_path / "C批_语音片段标注表.xlsx", [
+        ("C批_语音片段标注", C_HEADERS, C_SAMPLE, [
+            _c_row("a-0001", "/", "今天开会开了三个小时，脑子转不动了"),
+            _c_row("a-0010", "/", "A：你那个社区项目怎么推？B：先从街道办入手"),
+            _c_row("a-0011", "/", "甲：我越写越烦。乙：那就先别写了"),
+        ]),
+    ])
+
+    result = conv.convert_c(_sources("c"), _ctx(tmp_path))
+
+    assert [r["clip_id"] for r in result.records] == ["a-0001"]
+    skipped = {b.record_id for b in result.blockers if b.severity == "skip"}
+    assert skipped == {"a-0010", "a-0011"}
+    assert all(b.reason == "SELF_TALK_VIOLATION" for b in result.blockers if b.severity == "skip")
+    # 自述那一条仍然照规格标 true
+    assert result.records[0]["self_talk_only"] is True
+
+
+def test_speaker_labels_needs_two_distinct_speakers():
+    """单个说话人标记不算多人对话 —— 自述里出现"注意："这类冒号不能被误杀。"""
+    assert conv.speaker_labels("今天开会开了三个小时") == set()
+    assert conv.speaker_labels("A：我先说一句") == {"A"}
+    assert conv.speaker_labels("A：先这样。B：好的") == {"A", "B"}
+
+
+def test_resolve_media_tolerates_numbering_and_extension(tmp_path):
+    """表里写 d001.mp3、盘上是 d-0001.mp3；表里写 a-0006.m4a、盘上是 a-0006.mp3。"""
+    media = tmp_path / "audio"
+    media.mkdir()
+    (media / "d-0001.mp3").write_bytes(b"x")
+    (media / "a-0006.mp3").write_bytes(b"x")  # 实为 M4A 容器，扩展名是错的
+
+    assert conv.resolve_media(media, "d001.mp3").name == "d-0001.mp3"
+    assert conv.resolve_media(media, "a-0006.m4a").name == "a-0006.mp3"
+    assert conv.resolve_media(media, "d-0009.mp3") is None
+    assert conv.resolve_media(media, "/") is None, "无音频条目不能被当成缺失文件"
+
+
+def test_convert_c_registers_actual_media_name(tmp_path):
+    """audio_ref 按**盘上实际文件名**登记，同时记一条命名不符告警，不阻断。"""
+    ctx = _ctx(tmp_path)
+    media = ctx.data_dir / "c" / "audio"
+    media.mkdir(parents=True)
+    (media / "d-0001.mp3").write_bytes(b"x")
+    _write_xlsx(tmp_path / "C批_语音片段标注表.xlsx", [
+        ("C批_语音片段标注", C_HEADERS, C_SAMPLE, [
+            _c_row("d-0001", "d001.mp3", "现在是晚上十一点，我在写代码"),
+        ]),
+    ])
+
+    result = conv.convert_c(_sources("c"), ctx)
+
+    assert result.records[0]["audio_ref"] == "research/truth-data/c/audio/d-0001.mp3"
+    assert any(b.reason == "MEDIA_NAME_MISMATCH" for b in result.blockers)
+
+
+def test_resolve_xlsx_picks_newest_dated_copy(tmp_path):
+    """产品部更新表是「另存为 原名-YYYYMMDD.xlsx」，脚本要自动取最新那份。"""
+    import os
+
+    old = tmp_path / "B批_文字碎片标注表_v2.xlsx"
+    new = tmp_path / "B批_文字碎片标注表_v2-20261026.xlsx"
+    lock = tmp_path / "~$B批_文字碎片标注表_v2-20261027.xlsx"
+    for p in (old, new, lock):
+        p.write_bytes(b"x")
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(new, (1_700_100_000, 1_700_100_000))
+    os.utime(lock, (1_700_200_000, 1_700_200_000))  # Excel 锁文件最新，但必须排除
+
+    assert conv.resolve_xlsx(tmp_path, "B批_文字碎片标注表_v2.xlsx") == new
+
+
+def test_convert_b_collapses_id_prefix_warnings(tmp_path):
+    """109 条都不带 f- 前缀时，清单只出**一整批一条**告警，不逐条刷屏埋掉真问题。"""
+    rows = [[f"a-{i:04d}", f"碎片{i}", "todo", "confirmed", "beta-user", "用户A",
+             "2026-09-06", ""] for i in range(1, 6)]
+    _write_xlsx(tmp_path / "B批_文字碎片标注表_v2.xlsx", [("B批_文字碎片标注", B_HEADERS, B_SAMPLE, rows)])
+
+    result = conv.convert_b(_sources("b"), _ctx(tmp_path))
+
+    prefix = [b for b in result.blockers if b.reason == "ID_PREFIX_NONCONFORMANT"]
+    assert len(prefix) == 1
+    assert prefix[0].row == 0, "整批级告警不带行号"
+    assert "5/5" in prefix[0].detail

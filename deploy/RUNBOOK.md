@@ -236,5 +236,5 @@ ls -lh deploy/data/wal-archive | tail -3
 | 1 | **空串密钥不被生产兜底拦截** | `_apply_production_safety` 只拦「默认字符串」，`JWT_SECRET=`（空）会让服务带空签名密钥启动 | **本卡只登记不改码**（`config.py` 属别的卡域）。规避：模板必填项保持注释状态；**建议主窗安派**一次加固（拒绝空/短于 32 字节） |
 | 2 | 明文访问 `http://IP:8010` + `usesCleartextTraffic` | 内测期临时口径，省备案等待 | 上架前切 HTTPS 证书并移除开关（决策台账 §1.13） |
 | 3 | `ALLOW_DEVICE_LOGIN=true` | 内测期设备码登录通道 | 上架前置回 `false`（决策台账 §1.13） |
-| 4 | `DEV_PAGE_ENABLED` / Sentry / 压测门禁 6 项未达标 | 见 `GAP_ANALYSIS_20260903_AppStore上架差距评估.md` | 上架前逐项清零 |
+| 4 | `DEV_PAGE_ENABLED` / Sentry / 压测门禁 6 项未达标 | 见 `docs/archive/2026-Q3/GAP_ANALYSIS_20260903_AppStore上架差距评估.md` | 上架前逐项清零 |
 | 5 | **本手册中所有命令未经真机执行** | 本机 Docker/WSL 环境不可用（`deploy/README.md` §8.1） | 上机时按 §1 逐步跑，失败项回填到本文与 README §8.3 |
