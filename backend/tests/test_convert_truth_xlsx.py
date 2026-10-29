@@ -155,7 +155,9 @@ def test_convert_a_flags_dangling_and_ambiguous_refs(tmp_path):
           "应该找到的内容编号\nexpected_ids", "来源批次\nref_batch", "user_id_hashed",
           "收集日期\ncollected_at", "备注\nnote"],
          ["q-0001", "←", "time", "如：f-0003", "B批", "如：用户A", "YYYY-MM-DD", ""],
-         [["q-0001", "找那个视频", "time", "f-0003, a-0002", "B批", "用户A", "2026-09-10", ""]]),
+         # ref_batch 留空 → 走「全库查重」路径，a-0002 在 B/C 同时存在才算歧义（2026-10-27：
+         # 填了 ref_batch 时只在声明批次内查，见 test_convert_a_ref_batch_scopes_ambiguity）
+         [["q-0001", "找那个视频", "time", "f-0003, a-0002", "", "用户A", "2026-09-10", ""]]),
         ("A2批_干扰类查询",
          ["编号\nquery_id", "用户搜索原话\nquery_text", "搜索类型\nquery_type",
           "为什么搜不到\nnull_reason", "user_id_hashed", "收集日期\ncollected_at", "备注\nnote"],
@@ -173,6 +175,38 @@ def test_convert_a_flags_dangling_and_ambiguous_refs(tmp_path):
     hit = result.records[0]
     assert hit["expected"] == ["f-0003", "a-0002"]
     assert hit["expected_unresolved"] is True
+
+
+def test_convert_a_ref_batch_scopes_ambiguity(tmp_path):
+    """2026-10-27：ref_batch=B批 时，a-0002 只在 B 批内查重 → 不应误报跨批歧义。
+
+    背景：B/C 两批存在同名采集 id（a-0002 等），A 批靠 ref_batch 列消歧；
+    不限定批次时仍应报 REF_AMBIGUOUS（由上一条测试覆盖）。
+    """
+    _write_xlsx(tmp_path / "A批_搜索查询标注表.xlsx", [
+        ("A1批_命中类查询",
+         ["编号\nquery_id", "用户搜索原话\nquery_text", "搜索类型\nquery_type",
+          "应该找到的内容编号\nexpected_ids", "来源批次\nref_batch", "user_id_hashed",
+          "收集日期\ncollected_at", "备注\nnote"],
+         ["q-0001", "←", "time", "如：f-0003", "B批", "如：用户A", "YYYY-MM-DD", ""],
+         [["q-0001", "找那个视频", "time", "a-0002", "B批", "用户A", "2026-09-10", ""]]),
+        ("A2批_干扰类查询",
+         ["编号\nquery_id", "用户搜索原话\nquery_text", "搜索类型\nquery_type",
+          "为什么搜不到\nnull_reason", "user_id_hashed", "收集日期\ncollected_at", "备注\nnote"],
+         ["q-n001", "←", "time", "not_stored", "如：用户A", "YYYY-MM-DD", ""],
+         [["q-n001", "找不到的", "topic", "not_stored", "用户A", "2026-09-10", ""]]),
+    ])
+    known = {"b": {"a-0002"}, "c": {"a-0002"}, "d": set()}
+
+    result = conv.convert_a(_sources("a"), _ctx(tmp_path, known))
+
+    reasons = {b.reason for b in result.blockers}
+    assert "REF_AMBIGUOUS" not in reasons, "已声明 B批，不应再报跨批歧义"
+    assert "REF_DANGLING" not in reasons
+    hit = result.records[0]
+    assert hit["expected"] == ["a-0002"]
+    assert hit.get("ref_batch") == "B批"
+    assert "expected_unresolved" not in hit
 
 
 def test_convert_a_strict_layer_drops_unmappable(tmp_path):

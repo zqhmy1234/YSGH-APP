@@ -120,9 +120,13 @@ def build_corpus() -> dict:
                 "label": rec.get("label") or (modal if modal != "image" else "mixed"),
                 "source_batch": batch,
             })
-            manifest["entries"][collect_id] = {
+            # 2026-10-27 修复：B / C 两批存在同名采集 id（a-0001…a-0009、a'-0001… 等），
+            # 原来只以 collect_id 为键会让后一批覆盖前一批（manifest 丢条目、A 批重映射撞车）。
+            # 键改为 `批次:采集id`，uuid 本来就含 batch，语义一致。
+            manifest["entries"][f"{batch}:{collect_id}"] = {
                 "uuid": cid,
                 "batch": batch,
+                "collect_id": collect_id,
                 "modal": modal,
                 "event_id": None,  # D 批事件关联（未来 B3 事件聚合回填）
             }
@@ -145,25 +149,62 @@ def build_corpus() -> dict:
     return manifest
 
 
+def _ref_batches(ref_batch: str) -> list[str]:
+    """'B批, C批' → ['b', 'c']（A 批 ref_batch 列的中文批次声明）"""
+    s = (ref_batch or "").upper()
+    return [b for b in ("b", "c", "d") if b.upper() in s]
+
+
+def _map_collect_id(rid: str, ref_batch: str, entries: dict) -> str | None:
+    """采集 id → uuid。
+
+    优先按 ref_batch 限定批次；未声明批次时要求**全库唯一**命中。
+    返回 None 表示找不到或指向不明（保留原 id，由调用方计数）。
+    """
+    batches = _ref_batches(ref_batch)
+    if batches:
+        hits = [entries[f"{b}:{rid}"]["uuid"] for b in batches if f"{b}:{rid}" in entries]
+    else:
+        hits = [ent["uuid"] for key, ent in entries.items() if key.endswith(f":{rid}")]
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
 def remap_a(manifest: dict) -> int:
-    """A 批 expected 重映射：采集 id → 稳定 uuid（写 a_remapped.json）"""
+    """A 批 expected 重映射：采集 id → 稳定 uuid（写 a_remapped.json）
+
+    2026-10-27：按 A 批 `ref_batch` 消歧。B/C 同名 id（a-0004 等）在旧实现里
+    会互相覆盖，现已按 `批次:采集id` 建 manifest，并在重映射时按 ref_batch 限定。
+    """
     a_files = sorted((DATA_DIR / "a").glob("a_v*.json"))
     if not a_files:
         print("A 批无数据，跳过重映射")
         return 0
     path = a_files[-1]
     queries = json.loads(path.read_text(encoding="utf-8"))
-    mapping = {cid: ent["uuid"] for cid, ent in manifest.get("entries", {}).items()}
-    remapped = 0
+    entries = manifest.get("entries", {})
+    remapped = unmapped = 0
     for q in queries:
-        new_ids = [mapping.get(rid, rid) for rid in (q.get("expected") or [])]
-        changed = new_ids != (q.get("expected") or [])
-        q["expected"] = new_ids
-        if changed:
+        new_ids: list[str] = []
+        for rid in q.get("expected") or []:
+            if rid in {ent["uuid"] for ent in entries.values()}:
+                new_ids.append(rid)  # 已经是 uuid（幂等）
+                continue
+            uuid = _map_collect_id(rid, q.get("ref_batch") or "", entries)
+            if uuid is None:
+                new_ids.append(rid)
+                unmapped += 1
+                print(f"  ⚠ 无法重映射 {q.get('query_id')} → {rid}"
+                      f"（ref_batch={q.get('ref_batch') or '未声明'}）")
+            else:
+                new_ids.append(uuid)
+        if new_ids != (q.get("expected") or []):
+            q["expected"] = new_ids
             remapped += 1
     out = DATA_DIR / "a" / "a_remapped.json"
     out.write_text(json.dumps(queries, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"A 批重映射完成: {len(queries)} 条查询（{remapped} 条 expected 已替换为 uuid）→ {out}")
+    print(f"A 批重映射完成: {len(queries)} 条查询（{remapped} 条已替换；{unmapped} 个 id 未映射）→ {out}")
     return remapped
 
 

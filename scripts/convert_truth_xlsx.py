@@ -169,6 +169,8 @@ FIELD_MAPS: dict[str, dict[str, str]] = {
         "clip_id": "audio_id",
         "file_name": "file_name",
         "transcript": "transcript",
+        # 2026-10-27：可选列。AI/机器转写必须标 asr，不能冒充人工；缺列 → human（兼容旧表）
+        "transcript_source": "transcript_source",
         "emotion": "emotion_label",
         "noise_level": "env",
         "duration_s": "duration_s",
@@ -668,6 +670,9 @@ def _convert_a_row(row: RawRow, source: Source, ctx: Ctx,
         ref_batch = _s(v["ref_batch"])
         if ref_batch:
             note_parts.append(f"来源批次：{ref_batch}")
+            # 2026-10-27：ref_batch 进记录。B/C 两批存在同名 id（a-0001…a-0009 等），
+            # 只有带上批次才能消歧；build_truth_corpus 用 (batch, id) 生成 uuid5。
+            rec["ref_batch"] = ref_batch
         rec["expected"] = [p.strip() for p in re.split(r"[,，、\s]+", raw_ids) if p.strip()]
         if not rec["expected"]:
             result.blockers.append(_base_blocker(
@@ -675,8 +680,12 @@ def _convert_a_row(row: RawRow, source: Source, ctx: Ctx,
                 "命中类 expected 为空，且无 expected_label 可填 → 无法满足校验器的「二者不能同空」", "skip",
             ))
             return None
+        # ref_batch（如 "B批, C批"）→ known_ids 的批键（"b"/"c"/"d"）。
+        # 有批次声明时只在声明范围内查重，避免 B/C 同名 id 被误报 REF_AMBIGUOUS。
+        declared = {b for b in ("b", "c", "d") if b.upper() in ref_batch.upper()} if ref_batch else set()
         for ref in rec["expected"]:
-            owners = [b for b, ids in ctx.known_ids.items() if ref in ids]
+            owners = [b for b, ids in ctx.known_ids.items()
+                      if (not declared or b in declared) and ref in ids]
             if not owners:
                 result.blockers.append(_base_blocker(
                     source, row, qid, "expected", "REF_DANGLING",
@@ -908,13 +917,21 @@ def convert_c(sources: list[Source], ctx: Ctx) -> BatchResult:
                 source, row, cid, "transcript", "SENSITIVE_CONTENT",
                 f"transcript 命中密钥模式 {pattern!r}（已脱敏）", "warn",
             ))
+        # 转写来源：表里显式填 asr 才记 asr；缺列/空值默认 human（兼容旧表）。
+        # 2026-10-27：ASR 草稿不能冒充人工真值（校验器允许 asr，但下游要能区分）。
+        tsrc = _code(v.get("transcript_source")) or "human"
+        if tsrc not in ("human", "asr"):
+            result.blockers.append(_base_blocker(
+                source, row, cid, "transcript_source", "ENUM_INVALID",
+                f"transcript_source={_safe_value(tsrc, 'transcript_source')} 非法（human/asr），按 human 处理", "warn",
+            ))
+            tsrc = "human"
         result.records.append({
             "clip_id": cid,
             "audio_ref": audio_ref,
             "duration_s": round(dur_f, 1),
             "transcript": transcript,
-            # 人工转写才计真值；excel 的「人工转写文字」列即 human
-            "transcript_source": "human",
+            "transcript_source": tsrc,
             "emotion": _code(v["emotion"]),
             "noise_level": noise,
             # 隐私铁律：录音只收自述片段。校验器硬要求 true，缺则整条作废

@@ -209,8 +209,10 @@ def test_build_truth_corpus_ingestion(tmp_path, monkeypatch):
     d_items = json.loads((out_dir / "corpus_d_truth.json").read_text(encoding="utf-8"))["items"]
     assert d_items[0]["content_type"] == "image"
     assert "生日" in d_items[0]["text"]
-    assert manifest["entries"]["frag-1"]["uuid"] == b_items[0]["id"]
-    assert manifest["entries"]["frag-1"]["modal"] == "text"
+    # 2026-10-27：manifest 键改为「批次:采集id」——B/C 同名 id（a-0002 等）不再互相覆盖
+    assert manifest["entries"]["b:frag-1"]["uuid"] == b_items[0]["id"]
+    assert manifest["entries"]["b:frag-1"]["modal"] == "text"
+    assert manifest["entries"]["b:frag-1"]["collect_id"] == "frag-1"
 
     # 幂等：重跑同 id
     bc.build_corpus()

@@ -514,8 +514,17 @@ def _run_truth_eval(args, report: dict) -> dict:
         queries += _load_truth_queries(BENCH_DIR / "truth_queries_50.json")
         sources.append("truth_queries_50")
     if args.truth_a:
-        a_files = sorted((BENCH_DIR.parent.parent / "research" / "truth-data" / "a").glob("a_v*.json"))
-        if a_files:
+        a_dir = BENCH_DIR.parent.parent / "research" / "truth-data" / "a"
+        # 2026-10-27：优先用 a_remapped.json —— 它把采集 id 换成
+        # build_truth_corpus 分配的稳定 uuid（B/C 同名 id 已按批次消歧）。
+        # 没有 remapped 时才回退到最新 a_v*.json（直接用采集 id，仅适用于
+        # 语料 id 全局唯一、或只做结构校验的场景）。
+        remapped = a_dir / "a_remapped.json"
+        a_files = sorted(a_dir.glob("a_v*.json"))
+        if remapped.exists():
+            queries += _load_truth_queries(remapped)
+            sources.append("truth-data/a/a_remapped.json")
+        elif a_files:
             queries += _load_truth_queries(a_files[-1])
             sources.append(f"truth-data/a/{a_files[-1].name}")
         else:
