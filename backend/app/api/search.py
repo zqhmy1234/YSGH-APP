@@ -1,4 +1,4 @@
-"""检索路由：描述性搜索（B2 RAG，F5）+ 溯源 + 以图搜图（B2-4）"""
+"""检索路由：描述性搜索（B2 RAG，F5）+ 溯源 + 以图搜图（B2-4）+ 音频搜（B 方案）"""
 import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -7,15 +7,17 @@ from fastapi import Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api import make_router
+from app.api.asr import _asr_error
 from app.api.deps import agent_service_user, get_current_user
 from app.core.errors import ERR_CONTENT_006, ERR_SEARCH_001, ERR_SEARCH_002, ApiError
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.search import SearchQuery, SearchResult
+from app.services.external.asr import AsrError, temporary_suffix, validate_audio_bytes
 from app.services.file_magic import is_photo_bytes
 from app.services.rag import search as rag_search
-from app.services.rag import search_by_image
+from app.services.rag import search_by_audio, search_by_image
 
 router = make_router(prefix="/api/v1/search", tags=["search"])
 
@@ -61,6 +63,55 @@ def search_by_image_api(
         result = search_by_image(tmp_path, SearchQuery(q="[image]", limit=limit), db=db, user_id=user.id)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+    return ApiResponse(data=result)
+
+
+@router.post("/audio", response_model=ApiResponse[SearchResult])
+def search_by_audio_api(
+    file: UploadFile = File(..., description="查询音频（M4A/WAV/MP3/AAC 等，≤8MB）"),
+    limit: int = Query(10, ge=1, le=50),
+    preferred: str = Query("auto", pattern="^(auto|funasr|sensevoice|mock)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """音频搜全模态（B 方案 2026-11-01）：上传录音 → ASR 转写 → 复用文本检索
+
+    为什么要有这条端点（客户端其实也能两步走：/asr/transcribe → /search）：
+    自动化评测与契约校验没有客户端就驱动不了音频检索；且后端单跳把"转写失败"
+    与"搜不到"区分开（各自有独立错误码/日志），两步走时用户只看到一句"搜索失败"。
+
+    返回结构与 `POST /api/v1/search` **完全同构**（同一 `SearchResult`）：
+    `query/rewritten_query` = 转写文本（用户要能看到"这句话被听成了什么"），
+    `intent` = 转写文本走路由的结果（text/image/mixed），客户端无需另写解析分支。
+
+    错误映射复用 ASR 域（`_asr_error`）：音频参数/格式问题 → 422 ASR_001，
+    转写服务不可用 → 503 ASR_002——两处各写一份码表必然漂移。
+    """
+    data = file.file.read()
+    try:
+        audio_format = validate_audio_bytes(data, file.filename)
+    except AsrError as exc:
+        raise _asr_error(exc) from exc
+    # 临时文件保留真实扩展名：Fun-ASR Flash 依此构造 format 与 MIME
+    tmp_path: str | None = None
+    try:
+        with NamedTemporaryFile(suffix=temporary_suffix(audio_format), delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        try:
+            result = search_by_audio(
+                tmp_path,
+                SearchQuery(q="[audio]", limit=limit),
+                db=db,
+                user_id=user.id,
+                # preferred 透传给 ASR 双通道（mock=离线评测/单测；auto=生产默认）
+                preferred=preferred,
+            )
+        except AsrError as exc:
+            raise _asr_error(exc) from exc
+    finally:
+        if tmp_path is not None:
+            Path(tmp_path).unlink(missing_ok=True)
     return ApiResponse(data=result)
 
 

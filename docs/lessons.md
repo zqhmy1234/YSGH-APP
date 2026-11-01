@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-01 23:58 · commit 45ed6f9 · ts=1793548713
+- **错误**：worktree 分支 feat/crossmodal-search 上 review_agent 快速门禁必红：structure 报 5 条『基线 filesize.allowlist 条目已不再超阈』、audit_axes 报『硬编码 hex 84→85』
+- **根因**：该分支树是从主仓快照重建的（commit b2d1bfa），而 scripts/audit_harness_baseline.json 的棘轮基线取自另一棵（更新的）代码树：5 个文件在本树已低于阈值、hex 现状 85 而基线记 84。基线是『整仓状态』快照，却随代码树分支漂移，且门禁把它当 CRITICAL（不是 WARN）。实测取证：git archive HEAD 出纯净树跑两条审计同样红 ⇒ 与本分支新改动无关
+- **修复**：按门禁自身给出的补救动手：从 allowlist 删除 5 条僵尸条目、token total.hex 对账到 85（scripts/audit_harness_baseline.json）。跨分支合并时该文件应以目标分支版本为准，合并后重跑并 --write-baseline 对齐
+- **相关文件**：scripts/audit_harness_baseline.json
+- **教训**：棘轮基线必须与它所在的那棵树对账；worktree/快照重建后先跑一次全量审计，别把基线漂移当成新改动引入的违规
+
+---
+
 ### 2026-11-01 11:46 · commit 4e1289b · ts=1793504797
 - **错误**：db/alive.py 引用 app.db.models.base.Base —— ModuleNotFoundError 拖垮 backend 启动（healthz 503）
 - **根因**：Base 实际定义在 app.db.session；写 helper 时按惯例猜了 models.base 且只过了 py_compile/ruff（静态检查不解析 import 目标），门禁语法层抓不到运行时 import 错误

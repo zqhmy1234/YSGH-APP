@@ -13,7 +13,9 @@ M1 门禁（Top3≥70% + P95<3s）以规则兜底版本为基线。
   rewrite.py     查询改写（_rewrite_query：时间表达/NER/LLM）
   recall.py      检索召回与组装（_merge_recalls / _boost_exact_matches /
                  _assemble_hits + 共享并发信号量 _search_semaphore）
-  image.py       以图搜图（search_by_image + caption 缓存）
+  image.py       以图搜图（search_by_image + caption 缓存；2026-11-01 起
+                 图片路 + caption 文本路双路融合 = 照片→全模态）
+  audio.py       音频检索（search_by_audio：ASR 转写 → 复用 search = 音频→全模态）
   pg_fallback.py Qdrant 降级 PG 全文检索（_pg_fallback_search）
 
 对外契约不变：search / search_by_image 主入口 + 全部内部函数经本包重导出，
@@ -27,6 +29,7 @@ import time
 from app.core.config import settings
 from app.schemas.search import SearchHit, SearchQuery, SearchResult
 from app.services.embedding import encode_query
+from app.services.rag.audio import search_by_audio, transcribe_for_search
 from app.services.rag.image import (
     _CAPTION_CACHE_MAX,
     _CAPTION_CACHE_TTL_SECONDS,
@@ -36,13 +39,20 @@ from app.services.rag.image import (
     _search_by_image_impl,
     search_by_image,
 )
-from app.services.rag.intent import _CLASS_RULES, _classify_query_intent, _route_query
+from app.services.rag.intent import (
+    _CLASS_RULES,
+    _classify_query_intent,
+    _resolve_intent,
+    _route_query,
+)
 from app.services.rag.pg_fallback import _pg_exact_search, _pg_fallback_search
 from app.services.rag.recall import (
     SEARCH_CONCURRENCY,
     _assemble_hits,
     _boost_exact_matches,
+    _fuse_recalls_rrf,
     _merge_recalls,
+    _mixed_recalls,
     _search_semaphore,
 )
 from app.services.rag.rewrite import _TIME_PATTERNS, _rewrite_query
@@ -56,9 +66,12 @@ __all__ = [
     "SEARCH_CONCURRENCY",
     "search",
     "search_by_image",
+    "search_by_audio",
+    "transcribe_for_search",
     # intent
     "_CLASS_RULES",
     "_classify_query_intent",
+    "_resolve_intent",
     "_route_query",
     # rewrite
     "_TIME_PATTERNS",
@@ -66,6 +79,8 @@ __all__ = [
     # recall
     "_search_semaphore",
     "_merge_recalls",
+    "_fuse_recalls_rrf",
+    "_mixed_recalls",
     "_boost_exact_matches",
     "_assemble_hits",
     # pg_fallback
@@ -159,8 +174,11 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 把"某个约束被静默丢弃"伪装成"Qdrant 降级、走 PG 兜底"。
     filters = normalize_filters(filters)
 
-    # 2. 路由（B2：路由决定检索范围——image 意图只搜图片 caption，文字搜图）
-    intent = _route_query(rewritten)
+    # 2. 路由（B2：路由决定检索范围；C 方案 2026-11-01：三态 + 显式 intent 生效）
+    # 此前 `_route_query` 只能返回 image/text，`SearchQuery.intent` 全仓零使用 ⇒
+    # mixed 双路融合是死代码、含图词即锁死照片。现：auto → 规则路由三态；
+    # 显式 text/image 覆盖路由（image = 用户明确"只要照片"的窄路，见 _resolve_intent）。
+    intent = _resolve_intent(getattr(q, "intent", "auto"), _route_query(rewritten))
     if intent == "image":
         # FIX-1（2026-08-26）：过滤值用规范 "photo"（与生产 payload 一致；
         # 遗留 "image" 由 _to_filter 别名展开兼容）——此前 "image" 过滤
@@ -187,12 +205,9 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         # content_class 过滤带去原查询路，外部语料无该字段 → 原路恒空（2026-08-25 调研修复）。
         eff_filters = filters
         if intent == "mixed":
-            # B2 mixed 双路融合（2026-08-19）：image 路 + 全量路并行召回 → 去重合并
-            image_filters = {**filters, "content_types": [CONTENT_TYPE_PHOTO]}
-            raw_hits = _merge_recalls([
-                store.search(dense, sparse, filters=image_filters, limit=50, collection=collection),
-                store.search(dense, sparse, filters=filters, limit=50, collection=collection),
-            ], limit=50)
+            # B2 mixed 双路融合（2026-08-19；C 方案 2026-11-01 接线生效）：
+            # 照片路 + 全量路并行召回 → 去重合并（详见 recall._mixed_recalls）
+            raw_hits = _mixed_recalls(store, dense, sparse, filters, collection=collection)
         else:
             raw_hits = store.search(dense, sparse, filters=filters, limit=50, collection=collection)
         # 空结果回退（2026-08-19）：仅 NER 派生过滤导致空结果时，去掉 NER 过滤重试
@@ -201,11 +216,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             retry_filters = {k: v for k, v in filters.items() if k not in ner_filters}
             logger.info("NER 过滤空结果，回退重试（去掉 %s）", list(ner_filters))
             if intent == "mixed":
-                image_filters = {**retry_filters, "content_types": [CONTENT_TYPE_PHOTO]}
-                raw_hits = _merge_recalls([
-                    store.search(dense, sparse, filters=image_filters, limit=50, collection=collection),
-                    store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection),
-                ], limit=50)
+                raw_hits = _mixed_recalls(store, dense, sparse, retry_filters, collection=collection)
             else:
                 raw_hits = store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection)
             eff_filters = retry_filters
@@ -215,11 +226,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             retry_filters = {k: v for k, v in filters.items() if k != "content_class"}
             logger.info("类目过滤空结果，回退重试（去掉 content_class=%s）", class_filter)
             if intent == "mixed":
-                image_filters = {**retry_filters, "content_types": [CONTENT_TYPE_PHOTO]}
-                raw_hits = _merge_recalls([
-                    store.search(dense, sparse, filters=image_filters, limit=50, collection=collection),
-                    store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection),
-                ], limit=50)
+                raw_hits = _mixed_recalls(store, dense, sparse, retry_filters, collection=collection)
             else:
                 raw_hits = store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection)
             eff_filters = retry_filters

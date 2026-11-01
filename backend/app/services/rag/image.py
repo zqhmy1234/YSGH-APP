@@ -13,7 +13,7 @@ import threading
 import time
 
 from app.schemas.search import SearchQuery, SearchResult
-from app.services.rag.recall import _assemble_hits, _search_semaphore
+from app.services.rag.recall import _assemble_hits, _fuse_recalls_rrf, _search_semaphore
 from app.services.vector_store import CONTENT_TYPE_PHOTO, get_store
 
 logger = logging.getLogger("yishu.rag")
@@ -102,29 +102,54 @@ def _search_by_image_impl(
     TTL 24h），重复同图查询跳过 qwen3-vl-plus 往返（单次 2-4.4s）→ 缓存命中时
     只剩编码+检索（~1s）。换 Qwen3-VL-Embedding（tongyi-embedding-vision-plus）
     属 B2-4 需求，需 key，登记不阻塞。
+
+    2026-11-01（跨模态 A 方案：照片 → 全模态）：**双路召回**。
+      · 图片路 `image_vec`：caption 向量与照片点同空间 ⇒ 找"跟这张像的图"（精确性）；
+      · 文本路 `text_vec+text_sparse`：caption 当查询词，**不过滤 content_types**
+        ⇒ 图里的事也可能只记在文字/语音里（"那天拍的饺子"只在语音备忘里提过）。
+    为什么必须补文本路（写入侧实证）：`services/pipeline.py::_index_after_commit`
+    只给 photo 点写 image_vec，text/voice 点**只有 text_vec** ⇒ 纯图像空间里
+    物理上不存在文字/语音点，"照片搜到语音"在原实现下永远不可能（不是排序问题）。
+    两路分数量纲不可比，用 `_fuse_recalls_rrf`（名次融合）而非取最大分，理由见该函数。
     """
-    from app.services.embedding import encode_dense
+    from app.services.embedding import encode_query
 
     start = time.perf_counter()
     degraded = False
     caption = ""
+    store = None
+    dense_q: list[float] = []
+    sparse_q: dict[str, float] = {}
+    image_hits: list[dict] = []
+    base_filters: dict = {"user_id": str(user_id)} if user_id else {}
     try:
         caption = _cached_image_caption(image_path)
         if not caption:
             raise RuntimeError("图片 caption 为空")
-        vec = encode_dense([caption])[0]
+        # 一次编码拿 dense+sparse：dense 同时是图片查询向量（BGE-M3(caption) 同空间），
+        # 比过去"encode_dense + 再 encode"少一次模型前向（P95 门禁）。
+        dense_q, sparse_q = encode_query(caption)
         store = get_store()
         # FIX-1：过滤值用规范 "photo"（遗留 "image" 由 _to_filter 别名兼容）
-        filters: dict = {"content_types": [CONTENT_TYPE_PHOTO]}
-        if user_id:
-            filters["user_id"] = str(user_id)
-        raw_hits = store.search_image(vec, filters=filters, limit=50, collection=collection)
+        photo_filters = {**base_filters, "content_types": [CONTENT_TYPE_PHOTO]}
+        image_hits = store.search_image(dense_q, filters=photo_filters, limit=50, collection=collection)
     except Exception as exc:  # noqa: BLE001 —— 图片塔/向量库不可用降级
         logger.warning("以图搜图降级: %s", exc)
         degraded = True
         caption = ""
-        raw_hits = []
+        image_hits = []
 
+    text_hits: list[dict] = []
+    # 文本路独立 try：图片路已成功时，文本路失败不应把图片结果一起丢掉
+    if caption and store is not None:
+        try:
+            text_hits = store.search(dense_q, sparse_q, filters=base_filters, limit=50, collection=collection)
+        except Exception as exc:  # noqa: BLE001 —— 文本路失败只降级为单路
+            logger.warning("以图搜图文本路降级（仅用图片路）: %s", exc)
+            # 结果确实不完整（跨模态那部分缺了），如实置降级标记而不是假装完整
+            degraded = True
+
+    raw_hits = _fuse_recalls_rrf([image_hits, text_hits], limit=50, channels=["image", "text"])
     hits = _assemble_hits(raw_hits, q.limit, db, user_id)
     latency_ms = int((time.perf_counter() - start) * 1000)
 

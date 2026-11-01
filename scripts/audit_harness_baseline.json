@@ -28,35 +28,10 @@
     "reason": "2026-10-15 真机缺陷修复：**删除搜索关键词后页面卡死**（原实现只有 v-model + @confirm，删字到空无任何状态转移；本该复位的 clearKeyword 是**全仓零调用的死代码**）⇒ 补 @input 状态转移（清空即回默认列表）、runSearch 空串分支改为复位、并写根因注释，+26 行。不修则该页一旦搜过就永久停在「共 N 条结果」，属**功能必需**；修复后 813 行 > 阈值 800，故显式申请基线。",
     "target": "把搜索状态机（keyword/hasSearched/hits/onKeywordInput/loadRecent/runSearch）抽到 client/composables/useSearchState.uts（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
    },
-   "client/pages/messages/messages.uvue": {
-    "lines": 917,
-    "reason": "2026-10-30 P2 G-1/分组标题/G-6 失败态：整页从「绝对定位不可滚」改为真分页滚动容器（scroll-view + cursor/has_more + 加载更多行 + 加载中/失败三态），另加按 sent_at 分桶的今天/昨天/更早分组与分隔行。917 行里约 200 行是这批新增结构。",
-    "target": "把「消息行模型 MessageItem + toItem 映射」抽到 components/MessageRow 或 utils/message_model.uts、把「分组桶计算」抽到 utils/message_group.uts 后，行数回落到 800 以内即删除本条。"
-   },
-   "client/components/TabAi/TabAi.uvue": {
-    "lines": 861,
-    "reason": "2026-10-30：D-10 历史失败态（区分「没拉到」与「没有历史」）+ D-4 回填补 bullets/cardList + D-9 预览按消息绑定 + D-7 chips 不吞草稿（拆 onSend/sendNow）+ D-13 卸载复位。都是 AI 页真实交互修复，不是格式增长。",
-    "target": "把「消息模型 AiMsg/mkUser/mkAi/toMemCards + applyHistory 合并」抽到 utils/ai_messages.uts，把「流式预览绑定 streamForMsgId/streamTextFor」抽到 composables/useChatStream.uts 后，行数回落到 800 以内即删除本条。"
-   },
-   "client/utils/chat_api.uts": {
-    "lines": 813,
-    "reason": "2026-10-30 P2 D-1/D-3/D-5/D-10：SSE 静默期判死（graceTimer 逐片重排）、帧边界回收已消费前缀（原 O(n²)）、非 plain 保留全文、历史失败信号。",
-    "target": "把「UTF-8 增量解码 Utf8Decoded/decodeUtf8/isTruncatedUtf8」与「SSE 帧解析 parseSseFrame/consumeFrames」整体抽到 utils/chat_sse.uts（纯函数，可单测），行数回落到 800 以内即删除本条。"
-   },
-   "client/utils/timeline.uts": {
-    "lines": 812,
-    "reason": "2026-10-30 P0-2/P0-3/P0-4/P1-12/P1-13/P1-14 与 P2 B-1/B-3：L2 平铺、请求号与失败语义、缓存按 level 分槽、解析 try/catch、L3 归类与统一重排、缩略图池代际号。",
-    "target": "按计划把 parseTimelineEvents 与 buildDayGroups 整体抽到 utils/timeline_parse.uts（纯函数、无网络依赖），行数回落到 800 以内即删除本条。"
-   },
    "backend/app/api/events.py": {
     "lines": 631,
     "reason": "2026-11-01 走查 4.8 修复批：open_content_id 跳转锚点（6.x 全 7 条解锁）+ _batch_open_content_ids + _reconcile_events_after_content_delete（3.6 删除闭环）。功能性增长，非债。",
     "target": "拆 api/events_events.py（事件 CRUD/confirm/merge/split）与 api/events_timeline.py（timeline/stats/echo 组装）两模块"
-   },
-   "backend/app/api/contents/__init__.py": {
-    "lines": 631,
-    "reason": "2026-11-01 走查 4.8 修复批：删除链路 event_items 清理与事件 reconcile（同批 trash.py restore 重建 L1 配套）。功能性增长。",
-    "target": "抽 services/contents/delete_reconcile.py"
    },
    "backend/app/services/pipeline.py": {
     "lines": 658,
@@ -141,7 +116,7 @@
  "token_literals": {
   "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。例外：三个原生 input 的 inline 字色必须使用 hex（主搜索/收藏搜索/标签输入，2026-10-23 真机白字回归），各增加 1 个 hex；记录面板五个原生 textarea 也必须使用 inline 字色（正文、备注、语音转写、语音备注、照片备注），共增加 5 个 hex。",
   "total": {
-   "hex": 84,
+   "hex": 85,
    "rgb": 5,
    "gradient": 0
   },

@@ -1,10 +1,12 @@
 /**
- * 搜索入口（T-SR-1/2/3/4）：描述性搜索 + 以图搜图 + 降级态
+ * 搜索入口（T-SR-1/2/3/4）：描述性搜索 + 以图搜图 + 音频搜 + 降级态
  *
  * 链路（后端契约）：
  *  POST /api/v1/search            → {q, intent, content_types?, time_from?, time_to?, place?, tag?, limit}
  *    → SearchResult {query, rewritten_query, intent, hits[], total, latency_ms, degraded}
  *  POST /api/v1/search/image      → multipart file（jpg/png ≤10MB）+ limit → SearchResult
+ *  POST /api/v1/search/audio      → multipart file（m4a/wav/mp3 ≤8MB）+ limit → SearchResult
+ *    （B 方案 2026-11-01：后端 ASR 转写后复用文本检索；三模态互搜的音频入口）
  *  SearchHit {content_id, content_type, text, taken_at, place, event_id, event_title, score, trace{}}
  *
  * 降级态（T-SR-4）：degraded=true（Qdrant 降级纯 PG 检索）→ 页面黄条提示；
@@ -18,7 +20,7 @@
 import { post, get, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
 import { addBreadcrumb, captureMessage } from './sentry'
 import { resolveMediaUrl } from './config'
-import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_CONTENTS } from './contract'
+import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_SEARCH_AUDIO, PATH_CONTENTS } from './contract'
 
 export class SearchHitItem {
 	contentId: string
@@ -282,6 +284,42 @@ export function searchByImage(filePath: string, limit: number): Promise<SearchOu
 				return
 			}
 			const msg = hr.body != null ? (hr.body.getString('message') ?? '搜索失败（HTTP ' + hr.status + '）') : '搜索失败（HTTP ' + hr.status + '）'
+			showErrorToast(new Error(msg))
+			resolve(null)
+		})
+	})
+}
+
+/**
+ * POST /search/audio：用**录音**搜全模态（跨模态 B 方案 · 2026-11-01）
+ *
+ * 链路：本地录音（`utils/voice.uts` 的 startRecord 落盘 wav）→ 本函数 multipart 直传
+ * → 后端 ASR 转写 → 复用文本检索 → 返回与 `searchText` **同构**的 SearchOutcome。
+ * 因此调用方（TabSearch）可以复用同一套结果区，无需为新模态写解析分支。
+ *
+ * 与"先 transcribeWav 再 searchText"两步走的关系：两步走也能用（且是零后端改动
+ * 的兜底路径），但两次往返之间用户会看到"先转写、再搜索"的割裂，失败点翻倍；
+ * 单跳由后端串起来，`out.query` 直接就是"这句话被听成了什么"（可见、可纠错）。
+ *
+ * 超时 90s：与 `voice.transcribeWav` 同口径——云端 ASR 偶发慢于 30s，客户端先判
+ * 失败会让用户重录（which 更贵）；失败仍然 resolve(null) + toast（resolve-only 约定）。
+ * 面包屑只记动作与上限，不记文件路径（路径含用户隐私）。
+ */
+export function searchByAudio(filePath: string, limit: number): Promise<SearchOutcome | null> {
+	addBreadcrumb('search', 'audio upload limit=' + limit)
+	return new Promise<SearchOutcome | null>((resolve) => {
+		uploadFileHttp(PATH_SEARCH_AUDIO + '?limit=' + limit, filePath, 'file', null, 90000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				const out = parseSearch(hr.body)
+				if (out != null && out.degraded) {
+					// 与文本搜索同口径：降级（转写失败/检索兜底）要让可观测侧知道
+					captureMessage('audio search degraded', 'warning')
+				}
+				resolve(out)
+				return
+			}
+			// 422 = 音频不合规（格式/大小），503 = 转写服务不可用；后端 message 已是中文可读文案
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '语音搜索失败（HTTP ' + hr.status + '）') : '语音搜索失败（HTTP ' + hr.status + '）'
 			showErrorToast(new Error(msg))
 			resolve(null)
 		})

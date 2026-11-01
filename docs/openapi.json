@@ -1804,6 +1804,78 @@
         }
       }
     },
+    "/api/v1/search/audio": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search By Audio Api",
+        "description": "音频搜全模态（B 方案 2026-11-01）：上传录音 → ASR 转写 → 复用文本检索\n\n为什么要有这条端点（客户端其实也能两步走：/asr/transcribe → /search）：\n自动化评测与契约校验没有客户端就驱动不了音频检索；且后端单跳把\"转写失败\"\n与\"搜不到\"区分开（各自有独立错误码/日志），两步走时用户只看到一句\"搜索失败\"。\n\n返回结构与 `POST /api/v1/search` **完全同构**（同一 `SearchResult`）：\n`query/rewritten_query` = 转写文本（用户要能看到\"这句话被听成了什么\"），\n`intent` = 转写文本走路由的结果（text/image/mixed），客户端无需另写解析分支。\n\n错误映射复用 ASR 域（`_asr_error`）：音频参数/格式问题 → 422 ASR_001，\n转写服务不可用 → 503 ASR_002——两处各写一份码表必然漂移。",
+        "operationId": "search_by_audio_api_api_v1_search_audio_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "preferred",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(auto|funasr|sensevoice|mock)$",
+              "default": "auto",
+              "title": "Preferred"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_search_by_audio_api_api_v1_search_audio_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SearchResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/search": {
       "post": {
         "tags": [
@@ -2673,78 +2745,6 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/profile/locked-tags": {
-      "get": {
-        "tags": [
-          "profile"
-        ],
-        "summary": "Locked Tags Read",
-        "description": "读锁定标签集合。从未设置过的用户返回空数组（不建画像空行）。",
-        "operationId": "locked_tags_read_api_v1_profile_locked_tags_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProfileLockedTagsOut_"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      },
-      "put": {
-        "tags": [
-          "profile"
-        ],
-        "summary": "Locked Tags Replace",
-        "description": "整体覆盖锁定标签集合（空数组 = 全部解锁），返回规整后的最新集合。",
-        "operationId": "locked_tags_replace_api_v1_profile_locked_tags_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileLockedTagsIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProfileLockedTagsOut_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
       }
     },
     "/api/v1/wechat/find": {
@@ -3759,65 +3759,6 @@
         ]
       }
     },
-    "/api/v1/upload/direct-url": {
-      "post": {
-        "tags": [
-          "upload"
-        ],
-        "summary": "Direct Upload Url",
-        "description": "**客户端直传**：签发一次性预签名 PUT URL（2026-10-31）。\n\n## 为什么必须有它\n生产服务器公网带宽 1 Mbps（≈125 KB/s）——一张 3MB 照片经后端中转要 **24 秒**，\n客户端早就超时了，于是队列里全是\"上传失败/待重试\"。\n直传把字节流从\"客户端→业务服务器\"改成\"客户端→对象存储\"，\n业务服务器只签发一张票据 + 事后校验，出口带宽不再是大文件通道。\n\n## 为什么用预签名 URL 而不是 `/upload/sts` 的临时密钥\nSTS 需要客户端自己算 COS 签名（HMAC-SHA1 + 规范化请求串 + 字典序拼接），\n在 UTS 里实现成本高、易错；预签名把签名留在服务端，客户端只发一次原始 PUT。\n\n## 契约\n- 命名空间只允许 `photos` / `voice` / `thumbnails`（与内容表 cos_key 前缀一致）\n- key 由服务端生成：`{namespace}/{user_id}/{uuid}.{ext}`，**客户端不能指定 key**\n  （防跨用户覆盖）\n- 返回 `url` 为空时表示该后端不支持直传（本地 fs/fake），客户端应回退后端中转",
-        "operationId": "direct_upload_url_api_v1_upload_direct_url_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "namespace",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "photos",
-              "title": "Namespace"
-            }
-          },
-          {
-            "name": "ext",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "jpg",
-              "title": "Ext"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/stats/daily-summary": {
       "get": {
         "tags": [
@@ -4018,7 +3959,7 @@
           "chat"
         ],
         "summary": "Get History",
-        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供\"问 AI 带上下文\"。\n\n## 2026-10-30（P2 D-11）分页：为什么\"从最近往回翻\"\n\n改造前无条件取全会话（`order_by(created_at.asc())` 无 limit）。会话越长，进入对话页\n的等待越久；而用户进入时真正要看的是**最后几轮**，几十轮前的历史在首屏之外。\n故分页语义定为「先给最近 limit 条，再按 cursor 往前翻」：\n  · SQL 侧 `created_at DESC, id DESC` 取 limit+1（多取一条判 has_more）；\n  · **出参仍按时间正序**（客户端渲染顺序不变，改造前的逐条顺序不被打乱）；\n  · cursor = 本页**最早**那条，语义是\"比它更早\"。\n不传 limit/cursor 时全量（老客户端与既有测试的行为原样保留）。\n游标非法 → 422 CHAT_005（不静默退化成第一页：那会让用户以为翻到了更早的消息）。",
+        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供\"问 AI 带上下文\"。",
         "operationId": "get_history_api_v1_chat_conversations__conversation_id__messages_get",
         "security": [
           {
@@ -4034,44 +3975,6 @@
               "type": "string",
               "title": "Conversation Id"
             }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "maximum": 200,
-                  "minimum": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "每页条数（1-200，返回**最近** N 条）。省略且不带 cursor = 全量（向后兼容）",
-              "title": "Limit"
-            },
-            "description": "每页条数（1-200，返回**最近** N 条）。省略且不带 cursor = 全量（向后兼容）"
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "取更早一页的游标（取上次响应 data.cursor 原样回传，勿自行拼装）",
-              "title": "Cursor"
-            },
-            "description": "取更早一页的游标（取上次响应 data.cursor 原样回传，勿自行拼装）"
           }
         ],
         "responses": {
@@ -4988,37 +4891,6 @@
         },
         "type": "object",
         "title": "ApiResponse[ProfileClearOut]"
-      },
-      "ApiResponse_ProfileLockedTagsOut_": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code",
-            "default": "OK"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "default": "success"
-          },
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ProfileLockedTagsOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "request_id": {
-            "type": "string",
-            "title": "Request Id",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "ApiResponse[ProfileLockedTagsOut]"
       },
       "ApiResponse_ProfileRebuildStartOut_": {
         "properties": {
@@ -6390,6 +6262,21 @@
         ],
         "title": "Body_init_upload_api_v1_upload_init_post"
       },
+      "Body_search_by_audio_api_api_v1_search_audio_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "查询音频（M4A/WAV/MP3/AAC 等，≤8MB）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_search_by_audio_api_api_v1_search_audio_post"
+      },
       "Body_search_by_image_api_api_v1_search_image_post": {
         "properties": {
           "file": {
@@ -6794,36 +6681,6 @@
             },
             "type": "array",
             "title": "Messages"
-          },
-          "cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cursor",
-            "description": "取更早一页的游标（本页最早一条的位置）；无更早消息时 null"
-          },
-          "limit": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Limit",
-            "description": "本次生效的页长；null = 全量模式"
-          },
-          "has_more": {
-            "type": "boolean",
-            "title": "Has More",
-            "description": "true = 本次窗口之外还有更早的消息",
-            "default": false
           }
         },
         "type": "object",
@@ -6832,7 +6689,7 @@
           "messages"
         ],
         "title": "ChatHistoryOut",
-        "description": "会话历史（供客户端进入会话时回填；**messages 恒按时间正序**）。\n\n2026-10-30（P2 D-11）分页字段：\n  · 不传 `limit`/`cursor` → 全量（改造前行为，老客户端不受影响）；\n  · 传了 → 返回**最近 `limit` 条**，`has_more` = 还有更早的消息，\n    `cursor` = 本页最早那条的位置，回传即取更早一页（**向前翻**，聊天的使用方向）。"
+        "description": "会话历史（供客户端进入会话时回填；按时间正序）。"
       },
       "ChatMessageIn": {
         "properties": {
@@ -8210,17 +8067,6 @@
             ],
             "title": "Cover Url"
           },
-          "open_content_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Open Content Id"
-          },
           "voice": {
             "anyOf": [
               {
@@ -8907,34 +8753,6 @@
         "title": "ProfileClearOut",
         "description": "画像清除出参（DELETE /api/v1/interview/profile · D07-12）。\n\n`cleared` 逐表回报删除行数（客户端可如实告诉用户\"删掉了什么\"），\n`sensitive_topics_kept` = **刻意保留**的敏感话题条数（那是\"别再提这个话题\"的\n保护性数据，清除画像不应连带移除保护——见 `services/profile_admin` 模块说明）。"
       },
-      "ProfileLockedTagsIn": {
-        "properties": {
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Tags"
-          }
-        },
-        "type": "object",
-        "title": "ProfileLockedTagsIn",
-        "description": "PUT 请求体：整体覆盖的锁定集合（可为空数组 = 全部解锁）。"
-      },
-      "ProfileLockedTagsOut": {
-        "properties": {
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Tags"
-          }
-        },
-        "type": "object",
-        "title": "ProfileLockedTagsOut",
-        "description": "读/写返回：服务端规整后的最新集合（去空白、去空串、去重、保序）。"
-      },
       "ProfileRebuildStartOut": {
         "properties": {
           "job_id": {
@@ -8991,11 +8809,6 @@
           "skipped": {
             "type": "integer",
             "title": "Skipped",
-            "default": 0
-          },
-          "batches": {
-            "type": "integer",
-            "title": "Batches",
             "default": 0
           },
           "degraded": {
@@ -9385,13 +9198,12 @@
           },
           "total": {
             "type": "integer",
-            "title": "Total",
-            "description": "可翻页候选条数（≤ 召回窗口 50，非全库匹配数）"
+            "title": "Total"
           },
           "has_more": {
             "type": "boolean",
             "title": "Has More",
-            "description": "true = 本次取数窗口被占满，后面**可能**还有（再取会把 offset 加上本页条数）；false = 已到候选池末尾",
+            "description": "true = 本次取数窗口被占满，后面可能还有",
             "default": false
           },
           "latency_ms": {
