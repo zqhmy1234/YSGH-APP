@@ -15,6 +15,7 @@
   · 体积上限 2MB、超时 20s、只接受 text/html 与 text/plain
 诚实：抓不到就是抓不到——返回非 0 status_code + 说明，不编造内容。
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -78,12 +79,7 @@ def _is_public_ip(ip: ipaddress._BaseAddress) -> bool:
     if ip in ipaddress.ip_network("100.64.0.0/10"):
         return False
     return not (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
+        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
     )
 
 
@@ -176,9 +172,7 @@ class FetchClient:
             # 不做静默放行：非公网地址直接拒绝（Agent 面向用户输入，必须防 SSRF）
             return FetchResult(
                 status_code=403,
-                status_message=(
-                    f"拒绝抓取非公网地址（SSRF 防护）：{parsed.hostname}"
-                ),
+                status_message=(f"拒绝抓取非公网地址（SSRF 防护）：{parsed.hostname}"),
                 url=url,
             )
         # 首个 IP 的钉法；其余候选 IP 由 `_open_pinned` 按同一规则推出。
@@ -212,9 +206,7 @@ class FetchClient:
                     # 截断。那样 2MB 上限是**事后**生效，起不到保护作用：构造一个
                     # 500MB 响应就能把进程内存打爆（单次工具调用即可）。
                     # 改为流式读取 + 边读边计数，超限立刻中断连接。
-                    stack, candidate = self._open_pinned(
-                        client, src, current_headers, connect_ips, current_ext
-                    )
+                    stack, candidate = self._open_pinned(client, src, current_headers, connect_ips, current_ext)
                     with stack:
                         if candidate.status_code in (301, 302, 303, 307, 308):
                             location = candidate.headers.get("location", "")
@@ -236,10 +228,7 @@ class FetchClient:
                             if not hop_ips:
                                 return FetchResult(
                                     status_code=403,
-                                    status_message=(
-                                        "拒绝跟随重定向到非公网地址（SSRF 防护）："
-                                        f"{nxt_parsed.hostname}"
-                                    ),
+                                    status_message=(f"拒绝跟随重定向到非公网地址（SSRF 防护）：{nxt_parsed.hostname}"),
                                     url=url,
                                 )
                             # 换 host ⇒ 重新解析、重新校验、重新钉 IP、重算 Host 头
@@ -248,7 +237,6 @@ class FetchClient:
                             connect_ips = hop_ips
                             continue
                         # 非重定向：流式收正文，超限即断
-                        resp = candidate
                         chunks: list[bytes] = []
                         total = 0
                         for chunk in candidate.iter_bytes():
@@ -335,9 +323,7 @@ class FetchClient:
                 # `headers` 里带着真实域名的 `Host`（与IP 无关，故所有候选共用）：
                 # 不带它的话 Host 会变成 IP 字面量，虚拟主机会选错站点。
                 response = stack.enter_context(
-                    client.stream(
-                        "GET", candidate_url, headers=headers, extensions=extensions
-                    )
+                    client.stream("GET", candidate_url, headers=headers, extensions=extensions)
                 )
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 last_exc = exc
@@ -433,4 +419,4 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-__all__ = ["ContentItem", "FetchClient", "FetchedImage", "FetchResult"]
+__all__ = ["ContentItem", "FetchClient", "FetchResult", "FetchedImage"]

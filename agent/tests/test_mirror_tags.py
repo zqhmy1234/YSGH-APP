@@ -4,6 +4,7 @@ backend 只对 source=agent 把 tags 落到 contents.tags_json（App 详情页 c
 唯一数据源）；topics 此前只进 extra 时 App 完全看不见。本文件钉住请求体形态：
 有 topics ⇒ body["tags"] 必须带上；无 topics ⇒ 不带该键（不发送垃圾字段）。
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -51,8 +52,13 @@ def capture_mirror(monkeypatch):
 
 def test_mirror_sends_topics_as_tags(capture_mirror):
     mt._mirror_memory_to_app(
-        "m-1", "今天去了香山", mood="开心", topics=["旅行", "健康"],
-        people=None, location=None, category="事件",
+        "m-1",
+        "今天去了香山",
+        mood="开心",
+        topics=["旅行", "健康"],
+        people=None,
+        location=None,
+        category="事件",
     )
     body = capture_mirror.last_json
     assert body["tags"] == ["旅行", "健康"]
@@ -63,7 +69,12 @@ def test_mirror_sends_topics_as_tags(capture_mirror):
 
 def test_mirror_without_topics_omits_tags_key(capture_mirror):
     mt._mirror_memory_to_app(
-        "m-2", "随手一记", mood=None, topics=None,
-        people=None, location=None, category=None,
+        "m-2",
+        "随手一记",
+        mood=None,
+        topics=None,
+        people=None,
+        location=None,
+        category=None,
     )
     assert "tags" not in capture_mirror.last_json

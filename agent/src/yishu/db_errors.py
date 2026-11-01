@@ -10,6 +10,7 @@
   · `except ValueError`（本仓 AG3 测试与通用兜底）同样生效；
   · 带 `.message`，与 PostgREST 的错误形状一致（上游读 `e.message`）。
 """
+
 from __future__ import annotations
 
 from typing import Any

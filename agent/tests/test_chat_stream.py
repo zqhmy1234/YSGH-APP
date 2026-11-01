@@ -10,11 +10,13 @@
 替身策略：`_FakeAgent` 只实现流式运行器真正用到的 `stream` / `get_state`，
 **不建网络、不建库**；端点测试把 `main.run_agent_stream` 整个换掉（同样不外呼）。
 """
+
 from __future__ import annotations
 
 import types
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
 from utils.output_validator import stream_agent_with_validation
 
 
@@ -35,16 +37,16 @@ class _FakeAgent:
         self._messages = list(messages or [])
         self.invoke_calls: list[dict] = []
 
-    def stream(self, _input, _config, stream_mode=None):  # noqa: ARG002 —— 签名对齐
+    def stream(self, _input, _config, stream_mode=None):
         for text in self._deltas:
             yield ("messages", (_FakeChunk(text), {}))
         for update in self._updates:
             yield ("updates", update)
 
-    def get_state(self, _config):  # noqa: ARG002
+    def get_state(self, _config):
         return types.SimpleNamespace(values={"messages": self._messages})
 
-    def invoke(self, payload, _config=None):  # noqa: ARG002 —— 重试轮用
+    def invoke(self, payload, _config=None):
         self.invoke_calls.append(payload)
         return {"messages": self._messages}
 
@@ -197,9 +199,7 @@ def _save_pair(call_id: str, content: str, result_json: str) -> list:
     return [
         AIMessage(
             content="",
-            tool_calls=[
-                {"name": "save_memory", "args": {"content": content}, "id": call_id, "type": "tool_call"}
-            ],
+            tool_calls=[{"name": "save_memory", "args": {"content": content}, "id": call_id, "type": "tool_call"}],
         ),
         ToolMessage(content=result_json, tool_call_id=call_id, name="save_memory"),
     ]
@@ -267,12 +267,13 @@ def test_sse_endpoint_frames(monkeypatch):
     """端点把事件翻成 SSE 帧：status/delta/done 齐全，且 `data:` 是单行 JSON。"""
     import json
 
-    import main
     from fastapi.testclient import TestClient
+
+    import main
 
     monkeypatch.setattr("yishu.security.service_token", lambda: "")
 
-    def _fake_stream(message, user_id="", ctx=None, max_rounds=None):  # noqa: ARG001
+    def _fake_stream(message, user_id="", ctx=None, max_rounds=None):
         yield ("delta", "你")
         yield ("tool", {"phase": "started", "name": "search_memories"})
         yield ("delta", "好")
@@ -297,9 +298,9 @@ def test_sse_endpoint_frames(monkeypatch):
         event, data = "", ""
         for ln in lines:
             if ln.startswith("event: "):
-                event = ln[len("event: "):]
+                event = ln[len("event: ") :]
             elif ln.startswith("data: "):
-                data = ln[len("data: "):]
+                data = ln[len("data: ") :]
         events.append((event, json.loads(data)))
 
     assert [e for e, _ in events] == ["status", "delta", "tool", "delta", "done"]

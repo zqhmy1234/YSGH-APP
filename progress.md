@@ -750,3 +750,27 @@ ShareSheet（须真机验"保存到相册"）。
 - 照片执行单 IN-08“照片备注”与当前产品模板冲突：源码注释明确照片帧无备注节，未擅自新增功能，等待产品口径。
 - 完整证据与测试数据 ID 见 `docs/parallel-dev-收尾/37_ADB通道真机测试记录_20261029.md`。未删除任何用户数据。
 - 修复后最终 `review_agent.py --full` 退出码 0：457 文件语法、lint/密钥/结构/契约/OpenAPI/安全/聚合等价、API 冒烟、research、客户端编译全通过；覆盖率 85.50%，`failed_tests=[]`、`blocking_sections=[]`、`blocking_checks=[]`。客户端已恢复为 104 出包态 `ENV=prod / REAL_DEVICE_HOST='' / PROD_BASE_URL=http://192.168.31.143:8010`，API health 正常。
+
+## 2026-11-01 · Agent 服务线 G0/G1 基线加固
+
+- 新建 `codex/agent-baseline-hardening` 分支，起点 `develop@f010d7f`；保留用户已有的
+  client manifest/config 与 release 目录改动，不混入本次 Agent 范围。
+- Agent 依赖修复：补 HTML 抽取真实需要的 `beautifulsoup4`/`lxml`，锁文件同步；补 Ruff
+  开发依赖并建立 Python 3.12 独立规则集。历史 142 项 Ruff 问题已清零，格式检查通过。
+- 新增隔离测试库初始化脚本 `agent/scripts/init_test_db.py`：拒绝非 test 库名，只建
+  Agent 三表，幂等写入七个分类种子。本地创建 `yishu_agent_test` 后初始化结果为
+  `tables=3/3 categories=7`。
+- `agent/tests` 当日基线：**194 passed / 1 warning**；警告是 LangGraph 1.x 的
+  `AgentStatePydantic` 弃用提示，不影响当前行为。`uv lock --check`、生产依赖导出、
+  `compileall` 均通过。
+- 新增 CI `agent-gate`：Python 3.12、uv 0.13.6、完整 Ruff、隔离 PostgreSQL、pytest
+  和 Dockerfile 真实构建；Dockerfile 同步钉住 uv 版本。
+- 启动收口：重写 `agent/README.md`，删除旧的 flow/5000 用法；PowerShell/POSIX 本地
+  脚本固定调用 `agent/.venv`。以专用测试库和显式占位模型配置启动成功，`/health`
+  返回 `status=ok / db_configured=true / auth_enabled=true / degradation.total=0`。
+- 静态检查同时修复真实问题：导出与“本周新增”改 aware UTC、异常链补 `from`、临时目录
+  去掉硬编码 `/tmp`、可选文档解析依赖改惰性加载。
+- 未完成：真实 Agent 模型 key 缺失，故 T1 未验；本机访问 Docker Hub 拉取
+  `python:3.12-slim` 超时，容器构建待 GitHub Actions 实跑；真机三项仍待设备证据。
+  详情见 `docs/Agent服务线基线加固_20261101.md`。
+- 仓库快速门禁 `scripts/review_agent.py` 退出码 0。

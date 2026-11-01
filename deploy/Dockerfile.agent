@@ -34,6 +34,7 @@ ENV PYTHONUNBUFFERED=1 \
 #   Debian 12+ 的源在 /etc/apt/sources.list.d/debian.sources（不是老的 sources.list），
 #   故按文件存在性择一替换；替换失败不致命（`|| true`，退回原源继续）。
 ARG DEBIAN_MIRROR=mirrors.aliyun.com
+ARG UV_VERSION=0.13.6
 RUN set -eux; \
     if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
       sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
@@ -47,8 +48,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# uv：优先用官方镜像取二进制；此处用 pip 装，省一次基础镜像拉取（装法与 agent/scripts/setup.sh 的 uv 口径一致）
-RUN pip install --no-cache-dir uv
+# uv：优先用官方镜像取二进制；此处用 pip 装，省一次基础镜像拉取。
+# 版本必须与 CI 钉的版本一致，避免 lockfile revision / CLI 语义随上游漂移。
+RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 
 WORKDIR /app
 

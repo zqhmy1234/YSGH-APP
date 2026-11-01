@@ -11,6 +11,7 @@
    `Object of type datetime is not JSON serializable`。
 4. **PostgREST 语义补齐**：`ilike` 用 `*` 通配并转义用户输入里的 % / _。
 """
+
 from __future__ import annotations
 
 import importlib
@@ -30,7 +31,7 @@ def test_get_user_id_fails_closed_without_context(module_name):
     mod = importlib.import_module(module_name)
     request_context.set(new_context(method="test", user_id=None))
     with pytest.raises(PermissionError):
-        mod._get_user_id()  # noqa: SLF001
+        mod._get_user_id()
 
 
 @pytest.mark.parametrize("module_name", TOOL_MODULES)
@@ -38,7 +39,7 @@ def test_get_user_id_returns_context_value(module_name):
     """有上下文时正常返回（fail-closed 不能误伤正常路径）。"""
     mod = importlib.import_module(module_name)
     request_context.set(new_context(method="test", user_id="user-42"))
-    assert mod._get_user_id() == "user-42"  # noqa: SLF001
+    assert mod._get_user_id() == "user-42"
 
 
 def test_run_agent_rejects_empty_user_id():

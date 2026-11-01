@@ -23,12 +23,14 @@
 
 **日志留全量（含 SQL/参数，供排查），对外只给「类别 + 可读中文」。**
 """
+
 from __future__ import annotations
 
 import logging
 
 import pytest
 from sqlalchemy.exc import DataError, IntegrityError, OperationalError
+
 from storage.database.local_client import LocalTableQuery
 from yishu.db_errors import APIError
 
@@ -51,8 +53,12 @@ def _sqlalchemy_error(cls=DataError, *, sql: str | None = None, params: dict | N
     )
     return cls(
         statement=stmt,
-        params=params if params is not None else {
-            "content": _PRIVATE_TEXT, "importance": "这不是数字", "user_id": "u1",
+        params=params
+        if params is not None
+        else {
+            "content": _PRIVATE_TEXT,
+            "importance": "这不是数字",
+            "user_id": "u1",
         },
         orig=RuntimeError(f"connection to {_LEAKY_DSN} failed"),
     )
@@ -61,6 +67,7 @@ def _sqlalchemy_error(cls=DataError, *, sql: str | None = None, params: dict | N
 @pytest.fixture
 def raising_query(monkeypatch):
     """让 `_execute_inner` 抛出指定异常，观察 `execute` 的收口行为。"""
+
     def _make(exc: Exception) -> LocalTableQuery:
         q = LocalTableQuery("memories")
         monkeypatch.setattr(q, "_execute_inner", lambda: (_ for _ in ()).throw(exc))
@@ -115,15 +122,14 @@ def test_original_error_is_exception_chained_not_swallowed(raising_query):
 # ── 2. 全量细节必须在**日志**里（脱敏不等于丢信息） ─────────────────
 def test_full_detail_is_logged_server_side(raising_query, caplog):
     """对外脱敏的同时，日志必须留有 SQL 与参数——否则排查只能靠猜。"""
-    with caplog.at_level(logging.ERROR, logger="yishu.agent.db"):
-        with pytest.raises(APIError):
-            raising_query(_sqlalchemy_error()).execute()
+    with caplog.at_level(logging.ERROR, logger="yishu.agent.db"), pytest.raises(APIError):
+        raising_query(_sqlalchemy_error()).execute()
 
     logged = "\n".join(r.getMessage() for r in caplog.records)
     # 表名与动作（动作是构造时的默认 select，这里只断言"记了动作"这一事实）
     assert "table=memories" in logged
     assert "action=" in logged
-    assert "DataError" in logged                             # 类别
+    assert "DataError" in logged  # 类别
     # 日志侧保留原始细节是**有意的**（本地日志，不出网、不进模型上下文）
     assert _PRIVATE_TEXT in logged, "日志侧必须留全量，否则排查只能靠猜"
 

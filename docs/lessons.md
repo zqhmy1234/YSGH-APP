@@ -3173,3 +3173,12 @@
   一个 `client` 且路径等于当前仓库。
 - 验证口径：不能只看“编译成功”，还要确认 HBuilderX 项目路径、包内 versionCode
   和实际请求 host。旧版本重命名周期以 APK 重新打包为边界。
+
+## 2026-11-01：Agent 历史测试数字不等于当前环境可复现
+
+- 现象：`agent` “最近一次 194 passed”，但装锁文件依赖后仍有 18 failed / 8 errors。
+- 根因有两类：测试库连接依赖进程环境，且 `yishu.fetch` 在运行时导入
+  `beautifulsoup4`/`lxml`，两者却未在 `pyproject.toml` 声明。
+- 处置：补运行时依赖；新增名称必须含 `test` 的数据库初始化脚本，只建 Agent 三表并
+  幂等写分类种子；CI 使用独立 PostgreSQL service 复跑全部测试。
+- 铁律：历史 passed 不能替代当日结果；依赖声明要以真实 import 和当日测试为准。

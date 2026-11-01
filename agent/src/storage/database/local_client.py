@@ -15,6 +15,7 @@
 刻意比 PostgREST **更严**的一点：列名会对着 ORM 校验，写错列名**立即报错**（PostgREST 也会 400，
 但本地实现若不校验就会静默返回空——那是最难查的一类）。
 """
+
 from __future__ import annotations
 
 import json
@@ -27,12 +28,14 @@ from typing import Any
 
 from sqlalchemy import and_, create_engine, delete, func, or_, select, update
 from sqlalchemy import inspect as sa_inspect
+
 # ⚠️ `on_conflict_do_nothing()` 只在 **PG 方言**的 insert 上有，通用的
 # `sqlalchemy.insert()` 没有 —— 用错的话在运行期才炸
 # （`'Insert' object has no attribute 'on_conflict_do_nothing'`，已实测）。
 # 本仓的库就是 PostgreSQL，直接引方言版本。
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
+
 from storage.database.shared.model import KnowledgeCollections, Memories, MemoryCategories
 from yishu.db_errors import APIError
 
@@ -45,13 +48,12 @@ _TABLES: dict[str, Any] = {
     "memory_categories": MemoryCategories,
 }
 
+
 def _db_url() -> str:
     """连接串：优先 DATABASE_URL（本服务 .env 口径），兼容上游的 PGDATABASE_URL。"""
     url = os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL")
     if not url:
-        raise RuntimeError(
-            "未配置 DATABASE_URL（agent/.env）—— 数据落我们自己的 Postgres，连接串必填"
-        )
+        raise RuntimeError("未配置 DATABASE_URL（agent/.env）—— 数据落我们自己的 Postgres，连接串必填")
     return url
 
 
@@ -101,10 +103,10 @@ def _parse_dot_condition(query: Any, spec: str) -> Any:
     if len(parts) != 3:
         return None
     column, op, raw = parts
-    attr = query._column(column)  # noqa: SLF001 —— 同模块内部协作
+    attr = query._column(column)
     if attr is None:
         return None
-    value = query._coerce(column, raw)  # noqa: SLF001
+    value = query._coerce(column, raw)
     if op == "eq":
         return attr == value
     if op == "neq":
@@ -454,7 +456,10 @@ class LocalTableQuery:
             # 想按 "DataError" / "IntegrityError" grep 日志是 grep 不到的。
             logger.error(
                 "数据层错误 table=%s action=%s exc_type=%s exc=%s",
-                self.table, self.action, type(exc).__name__, exc,
+                self.table,
+                self.action,
+                type(exc).__name__,
+                exc,
             )
             raise APIError(
                 f"数据访问失败（{type(exc).__name__}），请稍后重试",

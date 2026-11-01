@@ -19,6 +19,7 @@
     探针会"成功"，于是假通过。本脚本因此只认上面两处来源，并**打印实际使用凭证的指纹**
     （长度+前缀+sha256 前 8 位，不可逆、无泄漏），供人工核对账号。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +30,7 @@ from pathlib import Path
 AGENT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AGENT_ROOT / "src"))
 
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import load_dotenv
 
 env_file = AGENT_ROOT / ".env"
 if env_file.exists():
@@ -51,7 +52,7 @@ def fingerprint(value: str) -> str:
     return f"len={len(value)} prefix={value[:6]}… sha256[:8]={hashlib.sha256(value.encode()).hexdigest()[:8]}"
 
 
-from llm_provider import load_llm_settings  # noqa: E402
+from llm_provider import load_llm_settings
 
 try:
     settings = load_llm_settings()
@@ -66,7 +67,7 @@ if settings.extra_headers:
     ws = settings.extra_headers.get("X-DashScope-WorkSpace", "")
     print(f"     workspace 指纹：{fingerprint(ws)}（业务空间需与 key 同属 Token Plan 账号）")
 
-from openai import OpenAI  # noqa: E402
+from openai import OpenAI
 
 client = OpenAI(
     api_key=settings.api_key,

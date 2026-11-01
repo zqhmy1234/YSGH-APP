@@ -14,6 +14,7 @@ W1 记忆镜像 / W2 检索合并的降级**此前是不可见的**：缺令牌�
   3. 两侧令牌指纹**同一份算法**（`yishu.security.token_fingerprint`）——
      这是"两侧启动日志可以互相对账"的前提。
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,17 +52,13 @@ def test_note_degrade_logs_warning_once_then_info(caplog):
 
 def test_mirror_records_degradation_when_token_missing(monkeypatch):
     monkeypatch.setattr(mt, "_backend_base_and_token", lambda: ("http://test", ""))
-    mt._mirror_memory_to_app(
-        "m-1", "内容", mood=None, topics=None, people=None, location=None, category=None
-    )
+    mt._mirror_memory_to_app("m-1", "内容", mood=None, topics=None, people=None, location=None, category=None)
     assert degradation.snapshot().get("mirror_skipped_no_token") == 1
 
 
 def test_mirror_records_degradation_when_module_disabled(monkeypatch):
     monkeypatch.setenv("AGENT_MIRROR_TO_APP", "0")
-    mt._mirror_memory_to_app(
-        "m-2", "内容", mood=None, topics=None, people=None, location=None, category=None
-    )
+    mt._mirror_memory_to_app("m-2", "内容", mood=None, topics=None, people=None, location=None, category=None)
     assert degradation.snapshot().get("mirror_api_disabled") == 1
 
 

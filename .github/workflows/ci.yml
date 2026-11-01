@@ -78,6 +78,75 @@ jobs:
         # **刻意不加 continue-on-error**：存在 CRITICAL 即 fail，不再保留任何恒绿门禁。
         run: python scripts/audit_harness.py client
 
+  agent-gate:
+    name: Agent Gate（Ruff 致命规则 + pytest + 容器构建）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/yishu_agent_test
+      AGENT_SERVICE_TOKEN: ci-agent-service-token-0123456789abcdef0123456789abcdef
+      AGENT_BACKEND_SEARCH: "0"
+      AGENT_MIRROR_TO_APP: "0"
+      PYTHONPATH: src
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: yishu_agent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d yishu_agent_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned uv
+        # uv 同时是构建镜像和开发环境的依赖解析器。钉版本避免锁文件语义随
+        # 上游 CLI 升级漂移；升级时必须先本地跑 sync/test/build 三项。
+        run: python -m pip install uv==0.13.6
+
+      - name: Sync locked dependencies
+        working-directory: agent
+        run: uv sync --frozen --dev --python 3.12
+
+      - name: Ruff lint and format
+        working-directory: agent
+        # 使用 agent/pyproject.toml 的独立 Py3.12 规则集。少量 per-file ignore
+        # 都对应“全局单例 / 有意先加载环境变量 / 构造恶意测试输入”等已说明场景。
+        run: |
+          uv run ruff check src tests scripts
+          uv run ruff format --check src tests scripts
+
+      - name: Compile source and tests
+        working-directory: agent
+        run: uv run python -m compileall -q src tests scripts
+
+      - name: Initialize isolated Agent test database
+        working-directory: agent
+        run: uv run python scripts/init_test_db.py
+
+      - name: Run Agent tests
+        working-directory: agent
+        run: uv run python -m pytest tests -q
+
+      - name: Build production Agent image
+        # 测试环境与生产镜像分开：pytest 依赖不进生产镜像，但镜像必须能真实构建。
+        run: docker build --build-arg DEBIAN_MIRROR=deb.debian.org -f deploy/Dockerfile.agent -t yishu-agent:ci .
+
   full-gate:
     name: Full Gate（全量 pytest + api_smoke + research）
     runs-on: ubuntu-latest

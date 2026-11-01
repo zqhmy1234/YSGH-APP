@@ -29,11 +29,13 @@
 5. 重定向到内网仍被逐跳拒绝（原有能力，防回归）
 6. `file://` 等非 http(s) 协议仍被拒
 """
+
 from __future__ import annotations
 
 import socket
 
 import pytest
+
 from yishu import fetch as fetchmod
 from yishu.fetch import FetchClient, _pin_to_ip, _resolve_public_ips
 
@@ -47,7 +49,7 @@ from yishu.fetch import FetchClient, _pin_to_ip, _resolve_public_ips
         "169.254.169.254",  # 云metadata，最经典的 SSRF 目标
         "10.20.28.21",  # 内网
         "100.64.1.1",  # CGNAT：ipaddress.is_private 对它返回 False，必须单列
-        "0.0.0.0",  # noqa: S104 —— 这里不是绑定地址，而是**待拒绝的目标**；
+        "0.0.0.0",
         "::1",
     ],
 )
@@ -87,16 +89,12 @@ def test_dns_failure_resolves_to_nothing(monkeypatch):
 @pytest.mark.parametrize(
     ("url", "ip", "want_url", "want_host"),
     [
-        ("http://example.com/a?b=1", "93.184.216.34",
-         "http://93.184.216.34/a?b=1", "example.com"),
-        ("https://example.com/x", "93.184.216.34",
-         "https://93.184.216.34/x", "example.com"),
+        ("http://example.com/a?b=1", "93.184.216.34", "http://93.184.216.34/a?b=1", "example.com"),
+        ("https://example.com/x", "93.184.216.34", "https://93.184.216.34/x", "example.com"),
         # 非默认端口必须同时出现在 URL 与 Host 头里
-        ("http://example.com:8080/y", "93.184.216.34",
-         "http://93.184.216.34:8080/y", "example.com:8080"),
+        ("http://example.com:8080/y", "93.184.216.34", "http://93.184.216.34:8080/y", "example.com:8080"),
         # 默认端口不该出现在 Host 头里（否则虚拟主机可能选错站点）
-        ("https://example.com:443/z", "93.184.216.34",
-         "https://93.184.216.34/z", "example.com"),
+        ("https://example.com:443/z", "93.184.216.34", "https://93.184.216.34/z", "example.com"),
     ],
 )
 def test_pin_keeps_url_host_and_sni_consistent(url, ip, want_url, want_host):
@@ -120,8 +118,9 @@ def test_pin_brackets_ipv6_literal():
 class _FakeResponse:
     """最小可用的 httpx.Response 替身。"""
 
-    def __init__(self, url: str, status: int = 200,
-                 headers: dict | None = None, body: bytes = b"<html><body>ok</body></html>"):
+    def __init__(
+        self, url: str, status: int = 200, headers: dict | None = None, body: bytes = b"<html><body>ok</body></html>"
+    ):
         self.url = url
         self.status_code = status
         self.headers = headers or {"content-type": "text/html"}
@@ -143,8 +142,7 @@ def _capture_stream(monkeypatch) -> dict:
 
     def fake_stream(_self, method, url, **kwargs):
         seen.setdefault("requests", []).append(
-            {"method": method, "url": url,
-             "headers": kwargs.get("headers"), "ext": kwargs.get("extensions")}
+            {"method": method, "url": url, "headers": kwargs.get("headers"), "ext": kwargs.get("extensions")}
         )
         return _FakeResponse(url)
 
@@ -185,13 +183,13 @@ def test_dns_rebinding_cannot_swap_connection_target(monkeypatch):
 def test_redirect_to_private_host_is_still_blocked(monkeypatch):
     """公网 → 302 → 内网：逐跳复校验必须拦住（防回归，2026-10-04 已修）。"""
     monkeypatch.setattr(
-        fetchmod.socket, "getaddrinfo",
+        fetchmod.socket,
+        "getaddrinfo",
         lambda *_a, **_k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80))],
     )
 
     def fake_stream(_self, _method, url, **_kw):
-        return _FakeResponse(url, status=302,
-                             headers={"location": "http://127.0.0.1:8300/api/memories?user_id=x"})
+        return _FakeResponse(url, status=302, headers={"location": "http://127.0.0.1:8300/api/memories?user_id=x"})
 
     monkeypatch.setattr(fetchmod.httpx.Client, "stream", fake_stream)
     result = FetchClient().fetch("http://evil.test/r")
@@ -209,7 +207,8 @@ def test_non_http_schemes_are_rejected(url: str):
 def test_oversized_body_is_aborted_mid_stream(monkeypatch):
     """2MB 上限必须**边读边判**，不能等读完再截断（否则形同虚设）。"""
     monkeypatch.setattr(
-        fetchmod.socket, "getaddrinfo",
+        fetchmod.socket,
+        "getaddrinfo",
         lambda *_a, **_k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80))],
     )
 
@@ -219,8 +218,7 @@ def test_oversized_body_is_aborted_mid_stream(monkeypatch):
             for _ in range(16):  # 4MB > 2MB 上限
                 yield chunk
 
-    monkeypatch.setattr(fetchmod.httpx.Client, "stream",
-                        lambda _s, _m, url, **_k: _Huge(url))
+    monkeypatch.setattr(fetchmod.httpx.Client, "stream", lambda _s, _m, url, **_k: _Huge(url))
     result = FetchClient().fetch("http://big.test/")
     assert result.status_code == 413
     assert "上限" in result.status_message
@@ -229,7 +227,8 @@ def test_oversized_body_is_aborted_mid_stream(monkeypatch):
 def test_multiple_public_ips_all_returned_for_fallback(monkeypatch):
     """多 A 记录要全部返回：第一个连不通时能回退，否则正常双栈站点会被误判为抓不到。"""
     monkeypatch.setattr(
-        fetchmod.socket, "getaddrinfo",
+        fetchmod.socket,
+        "getaddrinfo",
         lambda *_a, **_k: [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80)),
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 80)),
@@ -259,7 +258,8 @@ class _FailingConnect:
 
 def _two_public_ips(monkeypatch) -> None:
     monkeypatch.setattr(
-        fetchmod.socket, "getaddrinfo",
+        fetchmod.socket,
+        "getaddrinfo",
         lambda *_a, **_k: [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80)),
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 80)),
@@ -274,9 +274,9 @@ def test_multi_ip_fallback_actually_retries_next_ip(monkeypatch):
 
     def fake_stream(_self, _method, url, **_kw):
         attempted.append(url)
-        if len(attempted) == 1:      # 第一个 IP 连不上
+        if len(attempted) == 1:  # 第一个 IP 连不上
             return _FailingConnect()
-        return _FakeResponse(url)    # 第二个 IP 通
+        return _FakeResponse(url)  # 第二个 IP 通
 
     monkeypatch.setattr(fetchmod.httpx.Client, "stream", fake_stream)
 
@@ -309,7 +309,6 @@ def test_multi_ip_fallback_still_pins_host_and_sni(monkeypatch):
 def test_all_ips_failing_returns_502(monkeypatch):
     """所有候选 IP 都连不上 ⇒ 502（如实报网络错误，不静默返回空内容）。"""
     _two_public_ips(monkeypatch)
-    monkeypatch.setattr(fetchmod.httpx.Client, "stream",
-                        lambda _s, _m, _u, **_k: _FailingConnect())
+    monkeypatch.setattr(fetchmod.httpx.Client, "stream", lambda _s, _m, _u, **_k: _FailingConnect())
     result = FetchClient().fetch("http://dead.test/")
     assert result.status_code == 502

@@ -4,11 +4,13 @@
 提供记忆浏览、知识收藏浏览、统计概览等数据接口。
 前端页面通过这些 API 获取数据，对话功能复用 /stream_run 接口。
 """
+
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
+
 from storage.database.supabase_client import get_supabase_client
 from yishu.context import new_context, request_context
 from yishu.security import RateLimiter, require_token, validate_user_id
@@ -40,9 +42,7 @@ def _category_id(client, name: str):
     （被下面的 `except` 转成 500 响应，属在线故障）。实测确认。
     """
     try:
-        resp = (
-            client.table("memory_categories").select("id").eq("name", name).limit(1).execute()
-        )
+        resp = client.table("memory_categories").select("id").eq("name", name).limit(1).execute()
         rows = getattr(resp, "data", None)
         return rows[0].get("id") if rows else None
     except Exception as exc:  # noqa: BLE001 —— 取 id 失败不该阻断列表查询
@@ -146,35 +146,49 @@ async def get_dashboard(request: Request):
         # 情绪分布
         mood_resp = client.table("memories").select("mood").eq("user_id", user_id).execute()
         mood_counts = {}
-        for item in (mood_resp.data or []):
+        for item in mood_resp.data or []:
             mood = item.get("mood") or "未标记"
             mood_counts[mood] = mood_counts.get(mood, 0) + 1
 
         # 主题分布
         topics_resp = client.table("memories").select("topics").eq("user_id", user_id).execute()
         topic_counts = {}
-        for item in (topics_resp.data or []):
+        for item in topics_resp.data or []:
             mem_topics = item.get("topics")
             if isinstance(mem_topics, list):
                 for t in mem_topics:
                     topic_counts[t] = topic_counts.get(t, 0) + 1
 
         # 本周新增（记忆+收藏）
-        week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
-        week_mem = client.table("memories").select("id", count="exact").eq("user_id", user_id).gte("created_at", week_ago).execute()
-        week_col = client.table("knowledge_collections").select("id", count="exact").eq("user_id", user_id).gte("created_at", week_ago).execute()
+        week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+        week_mem = (
+            client.table("memories")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .gte("created_at", week_ago)
+            .execute()
+        )
+        week_col = (
+            client.table("knowledge_collections")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .gte("created_at", week_ago)
+            .execute()
+        )
         week_new = (week_mem.count or 0) + (week_col.count or 0)
 
-        return JSONResponse({
-            "success": True,
-            "data": {
-                "total_memories": total_memories,
-                "total_collections": total_collections,
-                "mood_distribution": mood_counts,
-                "topic_distribution": topic_counts,
-                "week_new": week_new,
+        return JSONResponse(
+            {
+                "success": True,
+                "data": {
+                    "total_memories": total_memories,
+                    "total_collections": total_collections,
+                    "mood_distribution": mood_counts,
+                    "topic_distribution": topic_counts,
+                    "week_new": week_new,
+                },
             }
-        })
+        )
     except Exception as e:
         return _error_response("获取仪表盘数据", e)
 
@@ -193,10 +207,17 @@ async def get_memories(
 
     try:
         offset = (page - 1) * page_size
-        query = client.table("memories").select(
-            "id, content, summary, mood, topics, location, people, category_id, created_at, memory_categories(name)",
-            count="exact"
-        ).eq("user_id", user_id)
+        query = (
+            client.table("memories")
+            .select(
+                (
+                    "id, content, summary, mood, topics, location, people, "
+                    "category_id, created_at, memory_categories(name)"
+                ),
+                count="exact",
+            )
+            .eq("user_id", user_id)
+        )
 
         if category and category != "全部":
             # 关系路径过滤在本薄层必抛 ValueError（见 `_category_id` 说明），
@@ -207,42 +228,48 @@ async def get_memories(
             else:
                 # 分类名不存在 ⇒ 该分类下必然无数据，直接返回空集，
                 # 而不是退化成"不过滤"（那会把全部记忆当成该分类返回）
-                return JSONResponse({
-                    "success": True,
-                    "data": [],
-                    "pagination": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
-                })
+                return JSONResponse(
+                    {
+                        "success": True,
+                        "data": [],
+                        "pagination": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
+                    }
+                )
 
         query = query.order("created_at", desc=True).range(offset, offset + page_size - 1)
         response = query.execute()
 
         items = []
-        for mem in (response.data or []):
+        for mem in response.data or []:
             cat_data = mem.get("memory_categories")
             cat_name = cat_data.get("name") if isinstance(cat_data, dict) else None
-            items.append({
-                "id": mem.get("id"),
-                "content": mem.get("content"),
-                "summary": mem.get("summary"),
-                "mood": mem.get("mood"),
-                "topics": mem.get("topics") or [],
-                "location": mem.get("location"),
-                "people": mem.get("people") or [],
-                "category": cat_name,
-                "created_at": mem.get("created_at"),
-            })
+            items.append(
+                {
+                    "id": mem.get("id"),
+                    "content": mem.get("content"),
+                    "summary": mem.get("summary"),
+                    "mood": mem.get("mood"),
+                    "topics": mem.get("topics") or [],
+                    "location": mem.get("location"),
+                    "people": mem.get("people") or [],
+                    "category": cat_name,
+                    "created_at": mem.get("created_at"),
+                }
+            )
 
         total = response.count or 0
-        return JSONResponse({
-            "success": True,
-            "data": items,
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total": total,
-                "total_pages": (total + page_size - 1) // page_size,
+        return JSONResponse(
+            {
+                "success": True,
+                "data": items,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total,
+                    "total_pages": (total + page_size - 1) // page_size,
+                },
             }
-        })
+        )
     except Exception as e:
         return _error_response("获取记忆列表", e)
 
@@ -270,30 +297,34 @@ async def get_collections(
         response = query.execute()
 
         items = []
-        for col in (response.data or []):
-            items.append({
-                "id": col.get("id"),
-                "title": col.get("title") or "无标题",
-                "content": col.get("content"),
-                "summary": col.get("summary"),
-                "content_type": col.get("content_type"),
-                "author": col.get("author"),
-                "source": col.get("source"),
-                "topics": col.get("topics") or [],
-                "created_at": col.get("created_at"),
-            })
+        for col in response.data or []:
+            items.append(
+                {
+                    "id": col.get("id"),
+                    "title": col.get("title") or "无标题",
+                    "content": col.get("content"),
+                    "summary": col.get("summary"),
+                    "content_type": col.get("content_type"),
+                    "author": col.get("author"),
+                    "source": col.get("source"),
+                    "topics": col.get("topics") or [],
+                    "created_at": col.get("created_at"),
+                }
+            )
 
         total = response.count or 0
-        return JSONResponse({
-            "success": True,
-            "data": items,
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total": total,
-                "total_pages": (total + page_size - 1) // page_size,
+        return JSONResponse(
+            {
+                "success": True,
+                "data": items,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total,
+                    "total_pages": (total + page_size - 1) // page_size,
+                },
             }
-        })
+        )
     except Exception as e:
         return _error_response("获取收藏列表", e)
 
@@ -301,8 +332,10 @@ async def get_collections(
 @router.get("/categories")
 async def get_categories():
     """获取分类列表"""
-    return JSONResponse({
-        "success": True,
-        "memory_categories": MEMORY_CATEGORIES,
-        "collection_types": COLLECTION_TYPES,
-    })
+    return JSONResponse(
+        {
+            "success": True,
+            "memory_categories": MEMORY_CATEGORIES,
+            "collection_types": COLLECTION_TYPES,
+        }
+    )

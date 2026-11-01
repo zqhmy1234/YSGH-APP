@@ -9,11 +9,12 @@ update/delete 必须拒绝（否则是全表事故）。
 前置：agent/.env 里的 DATABASE_URL 指向本地 Postgres，且三表已由
 backend 的 alembic 迁移（a4b5c6d7e8f9）创建。
 """
+
 from __future__ import annotations
 
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,11 +22,11 @@ import pytest
 AGENT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AGENT_ROOT / "src"))
 
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import load_dotenv
 
 load_dotenv(AGENT_ROOT / ".env", override=False)
 
-from storage.database.local_client import LocalClient  # noqa: E402
+from storage.database.local_client import LocalClient
 
 USER = f"ag3-test-{uuid.uuid4().hex[:8]}"
 
@@ -50,21 +51,28 @@ def test_insert_select_count_and_embed(client: LocalClient):
     cat_id = cat.data[0]["id"]
     assert cat_id
 
-    mem = client.table("memories").insert(
-        {
-            "content": "AG3 测试记忆",
-            "user_id": USER,
-            "mood": "平静",
-            "topics": ["学习", "工作"],
-            "category_id": cat_id,
-        }
-    ).execute()
+    mem = (
+        client.table("memories")
+        .insert(
+            {
+                "content": "AG3 测试记忆",
+                "user_id": USER,
+                "mood": "平静",
+                "topics": ["学习", "工作"],
+                "category_id": cat_id,
+            }
+        )
+        .execute()
+    )
     mem_id = mem.data[0]["id"]
     assert mem.data[0]["topics"] == ["学习", "工作"]  # JSON 列原样往返
 
-    got = client.table("memories").select(
-        "id, content, mood, topics, memory_categories(name)", count="exact"
-    ).eq("user_id", USER).execute()
+    got = (
+        client.table("memories")
+        .select("id, content, mood, topics, memory_categories(name)", count="exact")
+        .eq("user_id", USER)
+        .execute()
+    )
     assert got.count == 1
     assert len(got.data) == 1
     row = got.data[0]
@@ -83,8 +91,8 @@ def test_filters_order_limit_iso_datetime(client: LocalClient):
     for i in range(3):
         client.table("memories").insert({"content": f"AG3 过滤 {i}", "user_id": USER, "importance": i + 1}).execute()
 
-    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
     future_hits = client.table("memories").select("id", count="exact")
     assert future_hits.eq("user_id", USER).gte("created_at", future).execute().count == 0
@@ -129,15 +137,20 @@ def test_unknown_column_and_table_fail_loudly(client: LocalClient):
 
 def test_collection_table_roundtrip(client: LocalClient):
     """knowledge_collections 的写入-读回（收藏域与记忆域同薄层）。"""
-    cid = client.table("knowledge_collections").insert(
-        {
-            "user_id": USER,
-            "content": "AG3 收藏内容",
-            "content_type": "article",
-            "title": "标题",
-            "related_memory_ids": [1, 2],
-        }
-    ).execute().data[0]["id"]
+    cid = (
+        client.table("knowledge_collections")
+        .insert(
+            {
+                "user_id": USER,
+                "content": "AG3 收藏内容",
+                "content_type": "article",
+                "title": "标题",
+                "related_memory_ids": [1, 2],
+            }
+        )
+        .execute()
+        .data[0]["id"]
+    )
     row = client.table("knowledge_collections").select("*").eq("id", cid).maybe_single().execute().data
     assert row["title"] == "标题"
     assert row["related_memory_ids"] == [1, 2]

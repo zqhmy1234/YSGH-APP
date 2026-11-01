@@ -10,6 +10,7 @@
 单入口取客户端；保名即可**零改动**切换到本地数据层，把风险集中在薄层单文件。
 新代码请用 `get_client()`；`get_supabase_client` 仅作兼容别名保留（更名收口见 UPSTREAM 六·AG4）。
 """
+
 from __future__ import annotations
 
 from typing import Any

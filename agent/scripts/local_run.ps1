@@ -24,6 +24,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $agentRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $srcDir = Join-Path $agentRoot 'src'
+$python = Join-Path $agentRoot '.venv\Scripts\python.exe'
 
 if (-not $NoCleanEnv) {
     $stale = Get-ChildItem Env: | Where-Object { $_.Name -like 'DASHSCOPE*' }
@@ -48,6 +49,16 @@ if (-not (Test-Path (Join-Path $agentRoot '.env'))) {
     throw "缺少 agent/.env —— 复制 .env.example 并填 key"
 }
 
+if (-not (Test-Path $python)) {
+    throw "缺少 agent/.venv —— 先在 agent 目录运行: uv sync --frozen --dev --python 3.12"
+}
+
+$env:AGENT_HTTP_PORT = [string]$Port
 Write-Host ("[run] uvicorn main:app  127.0.0.1:{0}  (cwd={1})" -f $Port, $srcDir)
-Set-Location $srcDir
-python -m uvicorn main:app --host 127.0.0.1 --port $Port
+Push-Location $srcDir
+try {
+    & $python -m uvicorn main:app --host 127.0.0.1 --port $Port
+}
+finally {
+    Pop-Location
+}

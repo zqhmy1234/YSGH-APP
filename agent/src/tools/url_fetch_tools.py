@@ -2,12 +2,15 @@
 忆光 - 链接内容提取与知识管理工具
 提供链接内容提取、删除收藏、导出收藏等功能
 """
+
 import json
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain.tools import tool
+
 from storage.database.supabase_client import get_supabase_client
 from yishu.context import new_context, request_context
 from yishu.db_errors import APIError
@@ -107,11 +110,10 @@ def fetch_url_content(url: str) -> str:
         response = client.fetch(url=url)
 
         if response.status_code != 0:
-            return json.dumps({
-                "success": False,
-                "message": f"链接提取失败: {response.status_message}",
-                "url": url
-            }, ensure_ascii=False)
+            return json.dumps(
+                {"success": False, "message": f"链接提取失败: {response.status_message}", "url": url},
+                ensure_ascii=False,
+            )
 
         # 提取文本内容
         text_parts: list[str] = []
@@ -122,29 +124,34 @@ def fetch_url_content(url: str) -> str:
             if item.type == "text":
                 text_parts.append(item.text)
             elif item.type == "image":
-                images.append({
-                    "image_url": item.image.image_url,
-                    "display_url": item.image.display_url,
-                    "width": item.image.width,
-                    "height": item.image.height
-                })
+                images.append(
+                    {
+                        "image_url": item.image.image_url,
+                        "display_url": item.image.display_url,
+                        "width": item.image.width,
+                        "height": item.image.height,
+                    }
+                )
             elif item.type == "link":
                 links.append(item.url)
 
         full_text = "\n".join(text_parts)
 
-        return json.dumps({
-            "success": True,
-            "url": response.url or url,
-            "title": response.title,
-            "publish_time": getattr(response, "publish_time", None),
-            "filetype": getattr(response, "filetype", None),
-            "text_content": full_text,
-            "text_length": len(full_text),
-            "images": images,
-            "images_count": len(images),
-            "links": links
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": True,
+                "url": response.url or url,
+                "title": response.title,
+                "publish_time": getattr(response, "publish_time", None),
+                "filetype": getattr(response, "filetype", None),
+                "text_content": full_text,
+                "text_length": len(full_text),
+                "images": images,
+                "images_count": len(images),
+                "links": links,
+            },
+            ensure_ascii=False,
+        )
 
     except Exception as e:
         logger.error(f"链接内容提取失败: {e}")
@@ -153,11 +160,9 @@ def fetch_url_content(url: str) -> str:
         # `type(exc).__name__` 加固（agents/agent.py:103-112、本文件 :317-323、
         # storage/local_client.py:429-462），此处是漏网的一处 ⇒ 只回异常类型名，
         # 细节保留在服务端日志（上面那行 logger.error 已带全量）。
-        return json.dumps({
-            "success": False,
-            "message": f"链接内容提取失败（{type(e).__name__}）",
-            "url": url
-        }, ensure_ascii=False)
+        return json.dumps(
+            {"success": False, "message": f"链接内容提取失败（{type(e).__name__}）", "url": url}, ensure_ascii=False
+        )
 
 
 @tool
@@ -176,22 +181,22 @@ def delete_knowledge_collection(collection_id: int) -> str:
     client = _get_client()
 
     try:
-        response = client.table("knowledge_collections").delete().eq("id", collection_id).eq("user_id", _get_user_id()).execute()
+        response = (
+            client.table("knowledge_collections")
+            .delete()
+            .eq("id", collection_id)
+            .eq("user_id", _get_user_id())
+            .execute()
+        )
 
         if response.data:
-            return json.dumps({
-                "success": True,
-                "message": f"收藏 {collection_id} 已删除"
-            }, ensure_ascii=False)
+            return json.dumps({"success": True, "message": f"收藏 {collection_id} 已删除"}, ensure_ascii=False)
         else:
-            return json.dumps({
-                "success": False,
-                "message": f"未找到ID为 {collection_id} 的收藏"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": f"未找到ID为 {collection_id} 的收藏"}, ensure_ascii=False)
 
     except APIError as e:
         logger.error(f"删除知识收藏失败: {e.message}")
-        raise Exception(f"删除知识收藏失败: {e.message}")
+        raise Exception(f"删除知识收藏失败: {e.message}") from e
 
 
 @tool
@@ -221,31 +226,38 @@ def export_knowledge_collections() -> str:
             tool="export_knowledge_collections",
             reason=unavailable,
         )
-        return json.dumps({
-            "success": False,
-            "unavailable": True,
-            "message": (
-                f"导出功能当前不可用（{unavailable}）。"
-                "请如实告知用户：收藏内容仍完整保存在知识库中、可随时在应用内查看，"
-                "暂时不支持导出为文件；不要说成'导出失败'，也不要重试本工具。"
-            ),
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": False,
+                "unavailable": True,
+                "message": (
+                    f"导出功能当前不可用（{unavailable}）。"
+                    "请如实告知用户：收藏内容仍完整保存在知识库中、可随时在应用内查看，"
+                    "暂时不支持导出为文件；不要说成'导出失败'，也不要重试本工具。"
+                ),
+            },
+            ensure_ascii=False,
+        )
 
     client = _get_client()
 
     try:
-        response = client.table("knowledge_collections").select("*").eq("user_id", _get_user_id()).order("created_at", desc=True).execute()
+        response = (
+            client.table("knowledge_collections")
+            .select("*")
+            .eq("user_id", _get_user_id())
+            .order("created_at", desc=True)
+            .execute()
+        )
         collection_data: list[dict[str, Any]] = response.data if response.data else []
 
         if not collection_data:
-            return json.dumps({
-                "success": False,
-                "message": "当前没有可导出的收藏内容"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": "当前没有可导出的收藏内容"}, ensure_ascii=False)
 
         # 生成 Markdown 内容
         lines: list[str] = ["# 我的知识收藏", ""]
-        lines.append(f"共 {len(collection_data)} 条收藏，导出时间：{__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        exported_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        lines.append(f"共 {len(collection_data)} 条收藏，导出时间：{exported_at}")
         lines.append("")
 
         for idx, item in enumerate(collection_data, 1):
@@ -295,7 +307,7 @@ def export_knowledge_collections() -> str:
             region="cn-beijing",
         )
 
-        timestamp = __import__('datetime').datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S")
         file_key = storage.upload_file(
             file_content=markdown_content.encode("utf-8"),
             file_name=f"knowledge_export_{timestamp}.md",
@@ -308,16 +320,19 @@ def export_knowledge_collections() -> str:
             expire_time=86400,
         )
 
-        return json.dumps({
-            "success": True,
-            "total_collections": len(collection_data),
-            "download_url": download_url,
-            "message": f"已导出 {len(collection_data)} 条收藏，下载链接有效期为24小时"
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": True,
+                "total_collections": len(collection_data),
+                "download_url": download_url,
+                "message": f"已导出 {len(collection_data)} 条收藏，下载链接有效期为24小时",
+            },
+            ensure_ascii=False,
+        )
 
     except APIError as e:
         logger.error(f"导出知识收藏失败: {e.message}")
-        raise Exception(f"导出知识收藏失败: {e.message}")
+        raise Exception(f"导出知识收藏失败: {e.message}") from e
     except Exception as e:
         # ⚠️ 2026-10-05 安全：原先 `raise Exception(f"...{str(e)}")` —— 这个 message
         # 会被 LangChain 包成 ToolMessage **进 LLM 上下文**，模型可能复述给用户，
@@ -325,7 +340,7 @@ def export_knowledge_collections() -> str:
         # 足够让模型区分"配置问题/权限问题/网络问题"，又不带内部信息。
         # 细节已由上面一行 logger.error 完整落盘，日志侧不丢信息。
         logger.error("导出知识收藏失败: %s", e)
-        raise Exception(f"导出知识收藏失败（{type(e).__name__}），请稍后重试")
+        raise Exception(f"导出知识收藏失败（{type(e).__name__}），请稍后重试") from e
 
 
 @tool
@@ -348,13 +363,16 @@ def link_memory_to_collection(collection_id: int, memory_id: int) -> str:
     try:
         user_id = _get_user_id()
         # 先读取当前收藏的关联记忆列表（按用户隔离）
-        response = client.table("knowledge_collections").select("related_memory_ids").eq("id", collection_id).eq("user_id", user_id).execute()
+        response = (
+            client.table("knowledge_collections")
+            .select("related_memory_ids")
+            .eq("id", collection_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
 
         if not response.data:
-            return json.dumps({
-                "success": False,
-                "message": f"未找到ID为 {collection_id} 的收藏"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": f"未找到ID为 {collection_id} 的收藏"}, ensure_ascii=False)
 
         current_ids: list[int] = []
         item = response.data[0] if isinstance(response.data, list) else response.data
@@ -365,24 +383,26 @@ def link_memory_to_collection(collection_id: int, memory_id: int) -> str:
         if memory_id not in current_ids:
             current_ids.append(memory_id)
 
-        update_response = client.table("knowledge_collections") \
-            .update({"related_memory_ids": current_ids}) \
-            .eq("id", collection_id) \
-            .eq("user_id", user_id) \
+        update_response = (
+            client.table("knowledge_collections")
+            .update({"related_memory_ids": current_ids})
+            .eq("id", collection_id)
+            .eq("user_id", user_id)
             .execute()
+        )
 
         if update_response.data:
-            return json.dumps({
-                "success": True,
-                "message": f"收藏 {collection_id} 已关联记忆 {memory_id}",
-                "related_memory_ids": current_ids
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": f"收藏 {collection_id} 已关联记忆 {memory_id}",
+                    "related_memory_ids": current_ids,
+                },
+                ensure_ascii=False,
+            )
         else:
-            return json.dumps({
-                "success": False,
-                "message": "关联失败"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": "关联失败"}, ensure_ascii=False)
 
     except APIError as e:
         logger.error(f"关联记忆失败: {e.message}")
-        raise Exception(f"关联记忆失败: {e.message}")
+        raise Exception(f"关联记忆失败: {e.message}") from e

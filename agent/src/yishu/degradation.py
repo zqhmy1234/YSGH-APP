@@ -23,6 +23,7 @@ W1 记忆镜像（agent → backend `POST /contents/agent`）与 W2 检索合并
 `reason` 用可读的下划线串——它会**同时**成为日志事件名（`degrade_<reason>`）
 与 `/health` 的 `degradation` 字段名，所以不要带空格或中划线。
 """
+
 from __future__ import annotations
 
 # reason -> 累计次数
