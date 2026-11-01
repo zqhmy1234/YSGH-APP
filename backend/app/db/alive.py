@@ -5,7 +5,7 @@
 """
 from sqlalchemy import ColumnElement
 
-from app.db.models.base import Base
+from app.db.session import Base
 
 _DELETED_AT_ATTR = "deleted_at"
 

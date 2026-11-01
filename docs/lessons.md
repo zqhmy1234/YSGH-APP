@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-01 11:46 · commit 4e1289b · ts=1793504797
+- **错误**：db/alive.py 引用 app.db.models.base.Base —— ModuleNotFoundError 拖垮 backend 启动（healthz 503）
+- **根因**：Base 实际定义在 app.db.session；写 helper 时按惯例猜了 models.base 且只过了 py_compile/ruff（静态检查不解析 import 目标），门禁语法层抓不到运行时 import 错误
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：新建模块引用项目内部基类时先 grep 定义位置（或从使用处抄 import 行），py_compile 不验证 import 目标存在性；backend 起不来时第一时间看 uvicorn 日志尾部
+
+---
+
 ### 2026-11-01 11:09 · commit 233b7f3 · ts=1793502570
 - **错误**：结构棘轮双报警：3 文件超 600 行 + soft_delete_filter 手抄 43→45
 - **根因**：多轮走查修复批持续向 events.py/contents/__init__.py/pipeline.py 增长（open_content_id/reconcile/硬超时守护均为功能性代码）；deleted_at.is_(None) 新增 2 处手抄未走公共出口
