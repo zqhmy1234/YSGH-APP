@@ -801,3 +801,8 @@ ShareSheet（须真机验"保存到相册"）。
 - **10.1 行为差异**：栈深 3 返回键逐层弹出 vs 判据「一步回壳」——待产品确认。
 - **9.1 部分验证**：export API 200 + 客户端实现完整（P1-39 真实路径披露）；弹窗在模拟器未出现，待真机复验。
 - 进度：**49/76**（严格口径）；handoff/台账 §4.14 同步。
+
+## 2026-11-01 11:15 · 门禁收敛 + 三批 commit（goal round 9）
+- **review_agent 快速门全绿**（此前 8 轮积累 4 类阻断）：env_template（4 新配置进双模板）、openapi_snapshot（重导）、structure（3 文件超阈显式登记 filesize.allowlist + 新增 db/alive() 软删过滤唯一出口收敛 dup）、lessons 登记。
+- **三批 commit**：af3ce3a（backend 检索+超时+棘轮）、6e806e8（client 三修复）、5c34a21（docs 台账）。
+- 存量 108 文件为上一 agent 遗留工作，未纳入本 goal 范围，保持原样。
