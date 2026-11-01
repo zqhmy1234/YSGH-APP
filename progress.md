@@ -750,3 +750,54 @@ ShareSheet（须真机验"保存到相册"）。
 - 照片执行单 IN-08“照片备注”与当前产品模板冲突：源码注释明确照片帧无备注节，未擅自新增功能，等待产品口径。
 - 完整证据与测试数据 ID 见 `docs/parallel-dev-收尾/37_ADB通道真机测试记录_20261029.md`。未删除任何用户数据。
 - 修复后最终 `review_agent.py --full` 退出码 0：457 文件语法、lint/密钥/结构/契约/OpenAPI/安全/聚合等价、API 冒烟、research、客户端编译全通过；覆盖率 85.50%，`failed_tests=[]`、`blocking_sections=[]`、`blocking_checks=[]`。客户端已恢复为 104 出包态 `ENV=prod / REAL_DEVICE_HOST='' / PROD_BASE_URL=http://192.168.31.143:8010`，API health 正常。
+
+## 2026-11-01 05:10 · 走查续批 31/76 + 检索地板上线（goal round 2）
+- **检索修复**：`retrieval_min_dense_score=0.55` + 新增 `retrieval_min_sparse_score=0.01`（sparse 救援阈值，标定：负样本稀疏噪声 0.0001~0.0005 vs 真命中 0.17+）上线 `backend/.env`；`rag/__init__.py` 地板过滤改 `_trace_num` 兼容 + sparse 救援。**「sparse_score 恒 0」经实测排除**（真实链路带 user 过滤正常输出）。
+- **测试**：conftest 新增 autouse `_autouse_retrieval_floor_disabled`（先例同 wechat 凭证沙箱）；全量 **1191 passed**。
+- **走查（P0 3.3 + 1.4）**：待确认卡「点照片只进详情」✅×2、「确认→卡片落当日分组」✅（设备端 confirm 200 + DB confirmed + 重启后主题卡在时间轴）；**「忽略」按钮无响应 = 新缺陷**（多坐标/连点/长按全无效，同屏确认按钮可点 → 疑命中区偏移或 tap.stop 失效），已登记台账 §4.9。
+- **环境**：后端重启加载新地板；RQ worker 重启（原 worker 已死、队列积压已清）；走查账号造 2 条 pending L2 事件用于走查（芦苇剪影 draft 仍在库）。
+- **进度**：76 条已验 31；handoff §2.1/§2.4#7 已同步。
+
+## 2026-11-01 06:15 · 3.3 四类操作全绿 + spacer 布局修复（goal round 3）
+- **修复**：pending 卡按钮行落入底部 tab 浮层触摸拦截带 → 新增 `.pending-actions-spacer`(220rpx)（`tab-index.css` + `TabIndex.uvue` 各 1 处，编译门 109040ms 通过）。min-width/margin-bottom 两套试错已撤销。
+- **复验（全部设备端）**：忽略 ✅（声音碎片卡消失、DB 保持 draft=本地隐藏语义）；确认 ✅（芦苇剪影 confirm 200 + DB confirmed + 落日分组）；语音播放 ✅（按钮变暂停、进度推进、不跳详情）。
+- **判定教训**（lessons 新条目×2）：布局拦截类 tap 失效 ≠ 注入不可达；对照实验须含「目标按钮换位置后可点」。
+- **进度**：33/76。台账 §4.9 两次修订 + handoff §2.1 已同步。
+
+## 2026-11-01 07:45 · P0 process_content 硬超时 + PG exact 豁免 + 走查 4.3/4.4（goal round 4）
+- **P0 修复（handoff §2.4#1）**：`process_content` 应用层硬超时——Windows SimpleWorker 上 RQ job_timeout 不生效（signal.alarm 仅 Unix），实现体拆 `_process_content_impl` + 外层线程池 `future.result(timeout=settings.pipeline_hard_timeout_s=900s)` 守护；超时置 failed+retryable+`PIPELINE_HARD_TIMEOUT` 交 RQ 重投，泄漏线程 daemon 化不阻塞消费循环。新增 `tests/test_pipeline_hard_timeout.py` 3 passed。
+- **回归修复（上轮地板引入）**：R-1 地板误杀 PG exact 通道命中（dense/sparse 双 0 是通道属性）——搜「deletemark-1101-test」命中不了同名内容。修：`_is_pg_exact` 豁免。负样本仍 0 条，test_rag 34 passed。
+- **测试基建发现（预存）**：test_pipeline.py/test_search.py 全量连跑在基线即 access violation（transformers 模型加载竞态）、test_agg_fixtures_parity 缺 scripts.gen_agg_fixtures 模块——均与本批无关，已用基线 stash 对照证实。
+- **走查**：4.4 搜索→详情→删除→重搜 0 条闭环 ✅；4.3 真空态文案 ✅。进度 **35/76**。
+- 环境：backend/worker 已重启载入全部修复；逐文件全量测试通过（绕开预存崩溃链）。
+
+## 2026-11-01 08:10 · 走查 40/76（D/E/F/G 域）+ tab 坐标勘误（goal round 5）
+- **tab 坐标勘误**：正确热区 y≈2300（图标中心），y=2320 落 tab item 间隙被吞——此前「我的 tab 切不动」多为坐标误差。§4.11 已记录。
+- **走查新增 6 条**：5.1 AI 流式完整 ✅、5.2 流式中切 tab 回复不丢 ✅、6.2 已删除内容显式错误态 ✅（P1-19 修复实证）、7.1 我的页统计真值 ✅、8.1 未读数 ✅、8.2 已读红点消失 ✅（标题计数口径待确认）。
+- **新登记待查**：详情错误页「返回」按钮 tap 无响应（系统返回键正常）。
+- 测试数据：capsule_due 消息 #10711（指向已删除内容，走查用）。
+- 进度：**40/76**。
+
+## 2026-11-01 09:10 · F 域走查 + P1 修复 Map.keys()（goal round 6）
+- **P1 修复**：画像管理主题数/列表恒 0 —— `applyThemes` 的 `Map.keys().length` 在 UTS(Kotlin) 无该属性 ⇒ 循环零次。改 `Map.forEach`。调试日志（dbg-f72）证实数据到达 5 条 L2 而渲染 0，修复后真机复验主题数 5、列表排序正确。已撤临时日志。
+- **走查**：7.2 ✅（修复后）、7.3 ✅（主题详情 3=3 一致）。
+- **数据修复**：走查账号 event_items 被多轮实验耗尽，幂等补挂成员关系。
+- 进度：**42/76**。
+
+## 2026-11-01 10:12 · G 域回响卡走查 + P1×2 修复（goal round 7）
+- **P1 修复×2（TabIndex.uvue）**：① 快照命中路径 echo 永不拉取（refreshSilently 补 fetchTodayEcho）；② 划掉后卡片残留半渲染壳（v-if 对象→null 部分更新，P-4 同族）→ 改恒渲染 + ui-hidden + 镜像 ref + setEchoNull() 统一入口。
+- **走查**：8.3 回响卡显示 ✅（造数据：acffe24d taken_at 改 2025-11-01 + 清 echo_history）、3.4/8.4 划掉干净消失 ✅（dismiss 200 + 无残留）、8.5 消息页单源同步 ✅。
+- **判据澄清**：「点划掉跳详情」是点击落点误差（整卡区），非缺陷。
+- 进度：**45/76**。
+
+## 2026-11-01 10:32 · G/J 域走查 48/76（goal round 8）
+- **走查 +3**：8.3 弹层 ✅、8.6 双击重温一层 push ✅、8.8 缺内容显式提示 ✅（同 6.2 链路）。
+- **10.1 行为差异**：栈深 3 返回键逐层弹出 vs 判据「一步回壳」——需产品确认预期口径，非崩溃。
+- **数据**：我的页统计随真实数据更新（5 回忆/4 照片/1 语音）。
+- 进度：**48/76**。
+
+## 2026-11-01 10:40 · G/J/H 域走查 49/76（goal round 8 续）
+- **+8.3 弹层** ✅、**+8.6 双击重温一层 push** ✅（返回一步回消息页无残留）、**+8.8 缺内容显式提示** ✅（同 6.2 链路）。
+- **10.1 行为差异**：栈深 3 返回键逐层弹出 vs 判据「一步回壳」——待产品确认。
+- **9.1 部分验证**：export API 200 + 客户端实现完整（P1-39 真实路径披露）；弹窗在模拟器未出现，待真机复验。
+- 进度：**49/76**（严格口径）；handoff/台账 §4.14 同步。

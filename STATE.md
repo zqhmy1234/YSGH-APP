@@ -5,7 +5,7 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-10-29
+**最后更新**：2026-11-01 10:40（走查 49/76：G/J/H 域 8.3/8.6/8.8/9.1；10.1 行为差异待确认。明细见 `docs/客户端交互链路勘错_20261030.md` §4.9-§4.14）
 **分支**：`develop` ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
@@ -13,6 +13,16 @@
 ---
 
 ## 正在做什么
+
+**2026-10-30 106 包已出（修正后端地址 + 标签真锁定）**：`versionCode 106`，`PROD_BASE_URL` 指向**当前真实 IP `192.168.31.165`**（105 的 `.143` 因 DHCP 换号已失联，这是 105 报"网络异常"的唯一原因）。签名自有证书 DN=SHA-256 `CFB43629…C222F2` 与登记一致、`apksigner verify`=0；包内 `.165` 存在 / `.143` 已消失；权限齐备。产物 `deploy/download/apk/yishu-beta-latest.apk`，**SHA256 `0D0142FCBA040B9878A71F9711DD9F08643A91B100BC414694BFD3135CF2A1AA`**；105 备份为 `yishu-beta-OLD-105.apk`。
+**标签锁定已做成真功能**（设计口径 `01_用户画像系统_B1.md:139`）：后端新增 `user_profile.locked_tags` 列（迁移 `c1d2e3f4a5b6`，已在开发库应用）、`GET/PUT /api/v1/profile/locked-tags`、打标器命中锁定标签整条跳过（`services/profile_annotator.py`，`locked`/`locked_current_value` 单列不混入故障口径），`tests/test_profile_locked_tags.py` **12 passed**；客户端 `utils/profile_locked_tags.uts` 走真源、本机 storage 降为离线兜底，文案改回「我固定的标签（AI 不会再改动）」。**教训（已踩）：`netsh interface ip add address` 在活动网卡上会触发 DHCP 重租导致断网数十秒——不要用改网卡配置的办法兜底地址漂移，正确做法是重打包 + 路由器 DHCP 静态绑定。**
+
+**2026-10-30 105 包（历史，已作废）**：`versionCode 105`，类型 **Android 自有证书**（DN=YiShu GuangHua Beta，SHA-256 与登记值 `CFB43629…C222F2` 完全一致，`apksigner verify` 退出码 0）。四项尸检通过：包内地址 `http://192.168.31.143:8010`（旧 ngrok 域名已消失）／权限 INTERNET·RECORD_AUDIO·POST_NOTIFICATIONS·LOCATION 齐备／28,103,693 bytes。产物 `deploy/download/apk/yishu-beta-latest.apk`，**SHA256 `16BB16D1FFBDB73DA6C61DBFBF67C86419AAE1D3DDEA164593A6B97618715129`**；旧包备份为 `yishu-beta-OLD-103.apk`。**包内是局域网地址 ⇒ 手机必须与 PC 同一 WiFi**（换网会"全空且不报错"，非缺陷）。真机走查按 [docs/真机走查清单_105_20261030.md](docs/真机走查清单_105_20261030.md)（10 区块 69 项，P0 9 项优先）。
+
+**2026-10-30 客户端交互链路全量勘错与修复**：按 45 条用户操作链路（A 记录写入 / B 时间轴读 / C 搜索 / D AI 对话 / E 详情 / F 画像·我的 / G 消息 / H 存储回收站 / I 设置账号 / J 全局控制）走查，共登记 **约 131 条缺陷（P0 7 / P1 41 / P2 约 83）**，清单与证据见 [docs/客户端交互链路勘错_20261030.md](docs/客户端交互链路勘错_20261030.md)。**已修 77 条**：**P0 7/7 全完成、P1 41/41 全完成**、P2 29 条；**每一批都跑了真编译**（`client_compile_gate.py` 连续 9 次通过，最近 72785ms）。**剩余 P2 约 50 条**（清单见该文档 §6「第六轮待办」）。
+**子 agent 权限**：spawn 时传 `mode=acceptEdits` 才有写盘能力（默认只读）。三轮共 15 条由子 agent 独立修复（访谈/主题详情/画像与统计/消息与收藏），均已复核 diff + 过编译门。
+**4 条需拍板/需设计稿**（消息列表无滚动容器、EchoSheet 主图通路、favorites 失败信号、消息页「今天」分组口径）见文档 §6。
+**编译门前置**：HBuilderX 注册表里的旧副本 `.wt/missing-pages/client` 已改名为 `client-legacy`（仅改名未删文件），同名冲突解除后编译门才可用。
 
 **2026-10-28/29 W43 遗留项收口与 ADB 真机测试**：上周报告的可落地遗留在 104 打包前完成收口。D-15 已按拍板改为端侧同步 `title_source='device'`；记录面板已区分蜂窝/离线 held 与真实上传失败；照片拍摄时刻、搜索精确召回、画像重建、语音真实转写均已有代码与验证记录；出包前置门全绿，`versionCode=104`。2026-10-29 已用标准基座 + `adb reverse tcp:8010 tcp:8010` 实测搜索、正文、备注、语音编辑、连续 4 张照片、离线暂缓与 WiFi 补传；并发现修复 GPS `(0,0)` 落库和首次录音权限 15 秒误判。**104 云打包由用户执行，开发 C 暂不再打包**。详细清单见 `docs/parallel-dev-收尾/36_W43遗留项收口与104前置_20261028.md` 与 `37_ADB通道真机测试记录_20261029.md`。
 
