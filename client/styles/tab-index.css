@@ -273,6 +273,12 @@
 		flex-direction: row;
 		justify-content: flex-end;
 	}
+	/* 2026-11-01 走查缺陷（台账 §4.9）修复占位：pending 卡是列表末元素时按钮行
+	   落进底部 tab 浮层的触摸拦截带（tap 被 + 按钮层截胡 → 点忽略/确认弹出记录面板）。
+	   在按钮行下加实体占位把按钮抬离遮挡带；占位属于卡片内容流，随卡片滚动。 */
+	.pending-actions-spacer {
+		height: 220rpx;
+	}
 	.pending-btn {
 		padding-left: var(--d-raw-r40, 40rpx);
 		padding-right: var(--d-raw-r40, 40rpx);
@@ -281,6 +287,7 @@
 		border-radius: var(--d-raw-r32, 32rpx);
 		display: flex;
 		align-items: center;
+		justify-content: center;
 	}
 	.pending-btn-ghost {
 		border-width: 2rpx;

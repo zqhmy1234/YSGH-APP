@@ -154,7 +154,7 @@
 </template>
 
 <script setup lang="uts">
-	import { onLoad } from '@dcloudio/uni-app'
+	import { onLoad, onUnload } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
 	import {
 		fetchInterviewProfile,
@@ -164,6 +164,8 @@
 	} from '@/utils/play_interview'
 	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
 	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
+	// 锁定标签：真源在服务端（GET/PUT /api/v1/profile/locked-tags），storage 只是离线兜底
+	import { cachedLockedTags, clearLockedTagCache, syncLockedTags, LockedTagsResult } from '@/utils/profile_locked_tags'
 
 	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影）
 	type SensTopic = {
@@ -189,6 +191,13 @@
 	let tagOpen = ref(false) // 编辑性格标签面板
 	let privacyOpen = ref(false) // 画像隐私设置面板
 	let tagNamesState = ref<Array<string>>([]) // 当前标签名集（TagEditPanel :ai-tags 契约）
+	// 锁定标签集合（2026-10-30 · B1:139）：服务端真源，storage 只作离线兜底缓存。
+	// 为什么放 ref 而不是每次读 storage：面板保存后宿主需要立即重建展示；且"网络失败"
+	// 与"用户没有锁定标签"必须能区分（前者保留缓存值，不显示成空）。
+	let lockedTagsState = ref<Array<string>>([])
+	// 2026-10-30（P1-30）：「性格标签是否被用户编辑过」标记位（与 TagEditPanel 写的是同一个键）。
+	// 为什么需要：编辑结果为**空集合**时必须与「从未编辑」区分开，否则清空后会被派生标签复活。
+	const TAGS_EDITED_FLAG: string = 'portrait_tags_edited'
 	let profileRebuilding = ref(false)
 	let profileRebuildText = ref('')
 
@@ -223,7 +232,13 @@
 			loadProfile()
 			loadStats()
 			loadSensitive()
+			loadLockedTags()
 		})
+	})
+	// 2026-10-30（P0-5）：离页作废轮询令牌 —— 否则画像重建轮询在页面销毁后继续打接口、
+	// 并往已卸载的组件状态里写值（还会弹 toast）。
+	onUnload(() => {
+		stopProfilePoll()
 	})
 
 	// 加载画像数据（从 interview/profile dimensions 派生性格标签）
@@ -276,31 +291,58 @@
 	// 记忆主题列表仍需 L2 事件明细（标题/条数派生），窄化为 fetchTimeline(2) 仅拉 L2 子集（server level 过滤）。
 	/** 从 L2 事件派生主题列表（原 `loadStats` 内联体抽出：供"缓存命中"与"走网络"两条路径共用） */
 	function applyThemes(events: Array<TimelineEvent>): void {
-		// 主题数 = L2 事件总数（口径与原 level===2 计数一致）
-		totalThemes.value = events.length
-		// 从 L2 事件派生记忆主题（MVP：取高频 L2 事件标题）——派生逻辑不变，数据源窄化为 L2
-		const themeMap: Map<string, number> = new Map<string, number>()
+		// 2026-10-30（P1-32）：三处口径双向纠错（原实现「主题数」与「每条条数」各错一半）——
+		//  ① 主题数原取 `events.length`（L2 **事件**条数），但列表按 title **去重**成主题
+		//     ⇒ 同名主题在「主题」数字里被重复计数。现以「去重后的主题名数」为准（与列表同一口径）。
+		//  ② 每条主题条数原取「同 title 的事件条数」，而界面文案是「N 条记忆」⇒ 把事件数当记忆数。
+		//     现累加事件自带的 `contentCount`（后端 content_count = 该事件成员内容数），
+		//     同名主题条数**累加不丢**；事件真的没有成员内容时如实显示 0（不拿事件数充数）。
+		//  ③ 文案写「高频出现的记忆主题」，但原实现没排序（取前 4 其实是插入序=随机前 4）
+		//     ⇒ 现按累计条数倒序、同数再按事件数倒序。
+		const eventMap: Map<string, number> = new Map<string, number>()
+		const contentMap: Map<string, number> = new Map<string, number>()
 		for (let i = 0; i < events.length; i++) {
 			const ev = events[i]
-			if (ev.level === 2 && ev.title != '') {
-				const count = themeMap.get(ev.title)
-				if (count != null) {
-					themeMap.set(ev.title, count + 1)
-				} else {
-					themeMap.set(ev.title, 1)
-				}
+			if (ev.level !== 2 || ev.title == '') {
+				continue
 			}
+			eventMap.set(ev.title, (eventMap.get(ev.title) ?? 0) + 1)
+			contentMap.set(ev.title, (contentMap.get(ev.title) ?? 0) + ev.contentCount)
 		}
+		const names: Array<string> = []
+		// 2026-11-01 走查修复（F-7.2 主题数恒 0）：原 `const nameKeys = eventMap.keys();
+		// for (i < nameKeys.length; names.push(nameKeys[i]))` —— UTS(Kotlin) 的
+		// `Map.keys()` 返回 Set，**没有 `.length` 属性**（JS 习惯），`nameKeys.length`
+		// 是 undefined ⇒ 循环体一次都不执行 ⇒ names 恒空 ⇒ 主题数/列表恒 0。
+		// 数据日志已证实 applyThemes 收到 5 条 L2（dbg-f72），卡在渲染前这一步。
+		// 改用 Map.forEach 遍历（UTS 三端一致），同时 try/catch 防单条脏数据拖垮整页。
+		try {
+			eventMap.forEach((v: number, k: string): void => {
+				names.push(k)
+			})
+		} catch (e) {
+			console.log('[dbg-f72] map iterate error: ' + e)
+		}
+		names.sort((a: string, b: string): number => {
+			const ca = contentMap.get(a) ?? 0
+			const cb = contentMap.get(b) ?? 0
+			if (cb != ca) {
+				return cb - ca
+			}
+			const ea = eventMap.get(a) ?? 0
+			const eb = eventMap.get(b) ?? 0
+			return eb - ea
+		})
+		// 主题数 = 去重后的主题名数（不是 L2 事件条数）
+		totalThemes.value = names.length
 		const themeList: Array<any> = []
 		const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
 		const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
-		const themeKeys = themeMap.keys()
-		for (let i = 0; i < Math.min(4, themeKeys.length); i++) {
-			const name = themeKeys[i]
-			const count = themeMap.get(name) ?? 0
+		for (let i = 0; i < Math.min(4, names.length); i++) {
+			const name = names[i]
 			themeList.push({
 				name: name,
-				count: count,
+				count: contentMap.get(name) ?? 0,
 				icon: icons[i % icons.length],
 				color: colors[i % colors.length]
 			})
@@ -385,7 +427,10 @@
 			content: '将移除「' + s.topic + '」的标记，AI 将恢复常规处理',
 			success: (res) => {
 				if (res.confirm) {
-					request('/api/v1/profile/sensitive?topic=' + s.topic, 'DELETE', null).then((body: UTSJSONObject | null) => {
+					// 2026-10-30（P2 F-3）：topic 是**中文**（"老伴离世"），直接拼进 query 依赖各端
+					// HTTP 实现自动 percent-encode —— 注释里自承"若 iOS 拒绝裸中文 URL 再补"，
+					// 即这条路在非 Android 端是**未验证的**。这里显式 encodeURIComponent，跨端一致。
+					request('/api/v1/profile/sensitive?topic=' + encodeURIComponent(s.topic), 'DELETE', null).then((body: UTSJSONObject | null) => {
 						if (body != null) {
 							uni.showToast({ title: '已移除', icon: 'none' })
 							loadSensitive()
@@ -442,8 +487,30 @@
 		})
 	}
 
+	// 2026-10-30（P0-5）：原轮询有三处硬伤 ——
+	//   ① 终态只认 finished/failed，后端还有其他终态（stopped/canceled/deferred，见 core/queue.py）
+	//      ⇒ 落到这些终态时每 1.5s 打一次接口、永远不停；
+	//   ② 没有页活标志：用户返回上一页后定时器继续跑，还会对已卸载页面写状态 + toast；
+	//   ③ 没有总时长上限：job 卡 queued 时可轮询上千次。
+	// 现加：轮询令牌（离开页面即作废）+ 终态白名单 + 总时长上限。
+	let pollSeq = 0
+	const POLL_INTERVAL_MS: number = 1500
+	const POLL_MAX_MS: number = 180000
+	let pollStartedAt: number = 0
+
+	function stopProfilePoll(): void {
+		pollSeq = pollSeq + 1 // 令牌自增：在途回调据此作废
+	}
+
 	function pollProfileRebuild(jobId: string): void {
+		if (pollStartedAt == 0) {
+			pollStartedAt = Date.now()
+		}
+		const mySeq = pollSeq
 		fetchProfileRebuildStatus(jobId).then((s: ProfileRebuildStatus | null) => {
+			if (mySeq != pollSeq) {
+				return // 已离页/已取消：不再写任何状态
+			}
 			if (s == null) {
 				profileRebuilding.value = false
 				profileRebuildText.value = '任务状态读取失败，请重试'
@@ -463,9 +530,16 @@
 				})
 				return
 			}
-			if (s.status == 'failed') {
+			// 终态白名单：任何非「进行中」的终态都必须停止轮询，否则按钮永久禁用
+			if (s.status == 'failed' || s.status == 'stopped' || s.status == 'canceled' || s.status == 'deferred' || s.status == 'not_found') {
 				profileRebuilding.value = false
 				profileRebuildText.value = s.error != '' ? s.error : '画像重建失败'
+				loading.value = false
+				return
+			}
+			if (Date.now() - pollStartedAt > POLL_MAX_MS) {
+				profileRebuilding.value = false
+				profileRebuildText.value = '整理时间较长，稍后回到本页会自动更新'
 				loading.value = false
 				return
 			}
@@ -473,8 +547,11 @@
 				? '正在整理 ' + s.processed.toString() + '/' + s.total.toString() + ' 条记忆…'
 				: '正在准备记忆…'
 			setTimeout((): void => {
+				if (mySeq != pollSeq) {
+					return
+				}
 				pollProfileRebuild(jobId)
-			}, 1500)
+			}, POLL_INTERVAL_MS)
 		})
 	}
 	function onEditTags(): void {
@@ -484,42 +561,69 @@
 		privacyOpen.value = true
 	}
 
-	// ── 卡24 F9b：TagEditPanel 结果写回（storage 由面板落，宿主重读重建本地态） ──
+	// ── 卡24 F9b：TagEditPanel 结果写回（AI 区 storage 由面板落；锁定区真源在服务端） ──
 	function onTagsSaved(): void {
+		// 面板保存时已把锁定集合写入兜底缓存 ⇒ 先立即重建（不闪），再从服务端对齐一次
 		rebuildTagsFromStorage()
+		loadLockedTags()
 	}
 
-	/** storage 编辑结果（\n 连接）覆盖 personalityTags/tagNamesState；两键皆空 = 从未编辑，不动派生值 */
+	/** 读锁定标签：先用兜底缓存渲染，再以服务端为真源覆盖。
+	 *
+	 *  2026-10-30（P1-33）：原实现只读本机 storage 渲染锁定区，后端完全不知情 ⇒ 画像重建时
+	 *  AI 照旧把用户删掉/固定的标签写回来（"锁定"是空承诺）。现服务端为真源。
+	 *  请求失败**保留缓存值**（不把网络失败显示成"没有锁定标签"）。 */
+	function loadLockedTags(): void {
+		lockedTagsState.value = cachedLockedTags()
+		rebuildTagsFromStorage()
+		syncLockedTags().then((r: LockedTagsResult) => {
+			if (r.ok) {
+				lockedTagsState.value = r.tags
+			}
+			rebuildTagsFromStorage()
+		})
+	}
+
+	/** storage 编辑结果（\n 连接）覆盖 personalityTags/tagNamesState。
+	 *
+	 *  2026-10-30（P1-30）：判据从「列表是否非空」改为**编辑标记位**（`portrait_tags_edited`）。
+	 *  原实现把「edited 键为空」当作「从未编辑 ⇒ 回落现网派生标签」，于是用户把 AI 标签全删光后
+	 *  保存（空串）＝看起来像没编辑过 ⇒ 派生标签被重新抄回来，被删的标签复活。
+	 *  现规则：标记位=1 时以 storage 集合**整体覆盖**（空集合也是有效结果，就是"全清"）；
+	 *  未编辑过才用派生标签。固定标签是本机独立集合，两种情况都追加（按名去重，不重复入列）。
+	 *  兼容：老版本只写了列表、没有标记位 ⇒ edited 键非空时按「已编辑」处理（不丢用户既有编辑）。 */
 	function rebuildTagsFromStorage(): void {
 		const editedStr = uni.getStorageSync('portrait_ai_tags_edited') as string
-		const lockedStr = uni.getStorageSync('portrait_locked_tags') as string
-		if (editedStr == '' && lockedStr == '') {
-			return
-		}
+		const everEdited = (uni.getStorageSync(TAGS_EDITED_FLAG) as string) == '1'
 		const tags: Array<any> = []
 		const names: Array<string> = []
-		if (editedStr != '') {
+		if (everEdited || editedStr != '') {
+			// 编辑过（或老版本遗留的编辑结果）：AI 区以 storage 为准，空 = 用户清空，不再抄派生值
 			const segs = editedStr.split('\n')
 			for (let i = 0; i < segs.length; i++) {
 				if (segs[i] != '') {
-					tags.push({ name: segs[i], confidence: 70, active: true })
+					// 2026-10-30（P2 F-7）：这里的 70/100 是**凭空编的置信度**（后端画像接口根本不返回
+					// 置信度，`loadProfile` 已按"不伪造百分比"写成 0）。伪造成 high 会让用户以为
+					// "AI 很确定"，且本机固定标签还被编成 100%。统一置 0 ⇒ 模板 `v-if="confidence > 0"`
+					// 自动不渲染百分比徽章。
+					tags.push({ name: segs[i], confidence: 0, active: true })
 					names.push(segs[i])
 				}
 			}
 		} else {
-			// 从未删过 AI 标签：保留现网派生标签
+			// 从未编辑：保留现网派生标签
 			for (let i = 0; i < tagNamesState.value.length; i++) {
-				tags.push({ name: tagNamesState.value[i], confidence: 70, active: true })
+				tags.push({ name: tagNamesState.value[i], confidence: 0, active: true })
 				names.push(tagNamesState.value[i])
 			}
 		}
-		if (lockedStr != '') {
-			const lsegs = lockedStr.split('\n')
-			for (let i = 0; i < lsegs.length; i++) {
-				if (lsegs[i] != '') {
-					tags.push({ name: lsegs[i], confidence: 100, active: true })
-					names.push(lsegs[i])
-				}
+		// 锁定区以 lockedTagsState 为准（loadLockedTags 用服务端真源对齐；本机缓存只在
+		// 请求失败时兜底）——不再直接读 storage，否则服务端集合与展示会各说一套
+		for (let i = 0; i < lockedTagsState.value.length; i++) {
+			const lt = lockedTagsState.value[i]
+			if (lt != '' && names.indexOf(lt) < 0) {
+				tags.push({ name: lt, confidence: 0, active: true })
+				names.push(lt)
 			}
 		}
 		personalityTags.value = tags
@@ -529,6 +633,15 @@
 	// ── 卡25 F9c：画像数据已清除（面板清 storage 后回调）→ 本地标签态清零；
 	//    后端画像清除端点未登记（台账 卡25 F9c），不重拉后端防复活 ──
 	function onPortraitCleared(): void {
+		// 2026-10-30（P1-30）：清空画像时一并**复位「已编辑」标记位**。
+		// 面板已把两个列表键清空，若标记位残留，之后打开标签面板会把「编辑过 + 空」当成用户意图，
+		// 于是重建画像后仍然看不到新派生标签（标记位必须在"画像被清空"这个语义点上失效）。
+		uni.removeStorageSync(TAGS_EDITED_FLAG)
+		// 2026-10-30（P1-33）：锁定标签真源在服务端，云端 DELETE 已连带删除 user_profile 行
+		// （locked_tags 随之消失）；本机缓存 + 「待推送」标记必须一起清，否则残留标记会把
+		// 旧集合当"未推送改动"再推回云端（清除后又自己长回来）。
+		clearLockedTagCache()
+		lockedTagsState.value = []
 		personalityTags.value = []
 		tagNamesState.value = []
 	}
