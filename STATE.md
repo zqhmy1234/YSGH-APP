@@ -5,8 +5,8 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-11-02 01:50（**再收 2 项：9.1 导出 + 3.2 断网冷启动**。清单 **59 通过 / 6 部分验证 / 1 无法判定 / 9 待验**——9.1 实证导出文件 19172B 与服务端 `/export` 字节完全一致、成功/失败两态均诚实（§4.45）；3.2 实测断网冷启动走**本地 XView DAO 兜底**正常渲染，红线「不假空态」稳定通过（§4.47，优于判据）；7.4 因标签编辑入口点不动转真机（§4.46）。跨模态 A+B+C 已合并 `3ee0013` 并三向实证；`22014fa` 收口走查遗留 110 文件。门禁：快速 ✅ / client 编译门 ✅ 39876ms；**全量门禁待补跑（内存 2.55GB<3GB）**）
-**下一步**：① 真机到位后按 `docs/剩余待验项_真机复验清单_20261102.md` 走剩余 9 项（必须真机 7 项 + 7.4 + 8.7 重试确认）；② 释放内存后补跑 `python scripts/review_agent.py --full`；③ 清理并行 worktree：`git worktree remove D:\GuangH-App-crossmodal`
+**最后更新**：2026-11-02 02:30（**第 8 轮：门禁与架构复核 + 环境重建**。① **全量门禁仍被内存预检拒绝**（2.35GB<3GB，本机 15.7GB 被 Harness/浏览器/WSL 占 ~13GB）——已实测"关模拟器 3.94GB / 停 embedding 3.29GB"仍不够，属机器容量问题；② 替代验证：**定向套件 77 passed**（crossmodal+rag+image_search+search_filters+pagination）；③ **跨模态架构复核通过**（caption 只编码一次、双路失败隔离、RRF k=60 规避量纲陷阱、溯源字段保留）；④ **模拟器已从零重建**（`ANDROID_AVD_HOME=D:\Android\avd` + `-avd yishu35 -no-snapshot -no-audio -gpu swiftshader_indirect`，冷启后须 `cmd wifi connect-network AndroidWifi open`）；⑤ **新发现：该镜像有 wlan0** ⇒ 2.4 的"恢复 WiFi 自动补传"下轮可能可验（此前"模拟器永远不是 wifi"的结论需修正）。清单 **59 通过 / 6 部分验证 / 1 无法判定 / 9 待验**，见台账 §4.48）
+**下一步**：① 下轮试 2.4 自动补传（wlan0 已具备）+ 8.7 重试确认；② 真机到位按 `docs/剩余待验项_真机复验清单_20261102.md` 走剩余项；③ 全量门禁需腾出 ≥3GB 空闲内存（关 Harness 之外的常驻大件）后补跑；④ 清理并行 worktree：`git worktree remove D:\GuangH-App-crossmodal`
 **分支**：`develop` ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
