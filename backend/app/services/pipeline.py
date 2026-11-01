@@ -42,6 +42,8 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -72,6 +74,17 @@ from app.services.pipeline_common import (  # noqa: F401
 )
 from app.services.pipeline_photo import _process_photo  # noqa: F401
 from app.services.pipeline_tagging import tag_content  # noqa: F401
+
+
+class PipelineHardTimeout(Exception):
+    """process_content 应用层硬超时（retryable —— RQ 照常重投）"""
+
+    retryable = True
+
+    def __init__(self, content_id: str, timeout_s: int) -> None:
+        super().__init__(f"process_content {content_id} 硬超时 {timeout_s}s")
+        self.content_id = content_id
+        self.timeout_s = timeout_s
 
 
 @lru_cache(maxsize=1)
@@ -349,8 +362,20 @@ def _index_after_commit(db: Session, content: Content) -> None:
         logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
 
 
-def process_content(content_id: str) -> dict:
+def process_content(content_id: str, _inner=None) -> dict:
     """内容处理主入口（RQ worker 消费；API-016 队列编排）
+
+    2026-11-01（走查 P0：Windows SimpleWorker 无法强杀超时 job——RQ 的 job_timeout
+    在 Unix 靠 signal.alarm 实现，Windows 上恒不生效，单个卡死 job 会永久堵死单线程
+    worker）。本函数现在带**应用层硬超时**：把实现体丢进单线程池跑，
+    `future.result(timeout=settings.pipeline_hard_timeout_s)` 到点即返回失败结构
+    （content 置 failed + retryable，RQ 照常重投）；实现体线程不可强杀但会被
+    孤儿（daemon）化，泄漏的线程在下次重投成功后自行结束——**单线程 worker 的
+    消费循环不再被卡死**，这是本修复的核心收益。
+
+    直接调 `process_content(cid)`（测试/进程内调用）等价于旧行为外加超时守护；
+    测试需要注入 mock 实现时传 `_inner=`（RQ pickle 只序列化函数名与参数，
+    `_inner` 默认 None → 走真实实现，不影响 RQ 路径）。
 
     返回：{"content_id", "status", "processed": [步骤], "error": 可选}
 
@@ -368,6 +393,48 @@ def process_content(content_id: str) -> dict:
         主提交前入队，消除 commit→enqueue 间隙崩溃丢任务；enqueue_unique 同
         content 键不重复入队），入队失败回写 enqueue_failed 审计标记
     """
+    # ---- 应用层硬超时守护（见 docstring；测试经 _inner 注入替身实现）----
+    impl = _inner if _inner is not None else _process_content_impl
+    timeout_s = settings.pipeline_hard_timeout_s
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pc-guard")
+    try:
+        future = executor.submit(impl, content_id)
+        try:
+            return future.result(timeout=timeout_s)
+        except FuturesTimeoutError:
+            logger.error(
+                "process_content %s 硬超时（%ss）——job 置 failed + retryable，"
+                "泄漏的守护线程交由 RQ 重投覆盖/孤儿巡检兜底",
+                content_id, timeout_s,
+            )
+            # 超时≠异常：实现体可能仍持有 db 会话。这里用独立会话置终态，
+            # 与顶层 except 的审计语义一致，随后按 retryable 语义 re-raise 交 RQ 重投。
+            db2: Session = SessionLocal()
+            try:
+                target = db2.get(Content, content_id)
+                if target is not None:
+                    detail = {
+                        "outcome": "failed_retryable",
+                        "code": "PIPELINE_HARD_TIMEOUT",
+                        "message": f"处理超过 {timeout_s}s 硬超时",
+                        "retryable": True,
+                        "errors": ["HardTimeout"],
+                    }
+                    patch_extra(target, error=detail)
+                    target.status = "failed"
+                    db2.commit()
+            finally:
+                db2.close()
+            raise PipelineHardTimeout(content_id, timeout_s) from None
+    finally:
+        # shutdown(wait=False)：不等泄漏线程（Windows 无法强杀），不阻塞 worker 消费循环
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    # ---- 以下为原实现体（_process_content_impl），仅 process_content 经守护调用 ----
+
+
+def _process_content_impl(content_id: str) -> dict:
+    """process_content 的实现体（由应用层硬超时守护调用；勿直接注册为 RQ 任务）"""
     from app.services.external.asr import AsrError
 
     # 边界校验：content_id 必须是合法 uuid（worker 队列可能收到脏 id），

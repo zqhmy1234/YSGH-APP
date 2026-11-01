@@ -231,6 +231,24 @@ def _autouse_rate_limit_disabled(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _autouse_retrieval_floor_disabled(monkeypatch):
+    """【autouse 全仓生效】检索相关性地板测试沙箱（2026-11-01）。
+
+    用途：backend/.env 现已设 RETRIEVAL_MIN_DENSE_SCORE=0.55 /
+    RETRIEVAL_MIN_SPARSE_SCORE=0.01（走查修复：搜不存在的词不再返回 top-10）。
+    测试语料是占位文本（walkthrough-test 等），语义分 0.4~0.5 全会被地板滤掉，
+    test_search_basic 等 4 个存量用例因此误挂。本 fixture 进程内关地板 →
+    测试回到「不过滤」语义；需要真地板的用例自行 monkeypatch 显式置值
+    （先例：_autouse_wechat_credentials_sandboxed 同型隔离）。
+    只影响测试进程（monkeypatch 自动还原），dev 服务器加载 .env 真值不受影响。
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "retrieval_min_dense_score", 0.0)
+    monkeypatch.setattr(settings, "retrieval_min_sparse_score", 0.01)
+
+
+@pytest.fixture(autouse=True)
 def _autouse_wechat_credentials_sandboxed(monkeypatch):
     """【autouse 全仓生效】微信域凭证测试沙箱（2026-09-09 凭证接通波立）。
 

@@ -1,249 +1,281 @@
 {
-  "_doc": [
-    "audit_harness 棘轮基线（ratchet baseline）——存量冻结，只允许收缩，不允许扩张。",
-    "规则：新增违规 = CRITICAL；存量超阈文件在 allowlist 内被豁免（但不得再增长，增长会 WARN）。",
-    "收缩方式：拆分/收敛后，把对应条目从本文件删除或下调计数（须与代码同 commit，便于回滚）。",
-    "建立于 2026-09-24（易扩展/易维护重构波 · 批次 B1）；台账见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md",
-    "禁止把本文件当万能豁免池：每条须有 reason 与 target（销项触发）。",
-    "僵尸豁免清算（2026-09-24 B10-e）：基线条目若已不再违规（文件被删/改名/已拆到阈值内/计数已归零），门禁报 CRITICAL 要求删除该条——棘轮只许收缩，缩了要记账。"
-  ],
-  "filesize": {
-    "thresholds": {
-      "backend_py": 600,
-      "client": 800
-    },
-    "allowlist": {
-      "client/components/TabIndex/TabIndex.uvue": {
-        "lines": 874,
-        "reason": "2026-10-11 静态审查修复批：该文件原 786 行（距阈值 14 行），本批为 12 处确证缺陷（失败覆盖已渲染数据/emptyState 派生状态漏收敛/语音双声道/划掉回响失败乐观隐藏/照片与拆分入口指向不存在的面板/权限复查/toast 频次等）补写**根因注释**（每处含复现序列与行号证据），+88 行。压缩注释会丢失后人复踩所需的证据链，故显式申请。",
-        "target": "把渲染出口/监听链拆到 composables（同 usePhotoAttach/useEventOps 先例）后，行数自然回落，删除本条（销项触发）"
-      },
-      "client/components/RecordSheet/RecordSheet.uvue": {
-        "lines": 834,
-        "reason": "2026-10-15 合并 origin/develop（573b33b）引入 NEW-01 修复：记录面板上传路径补端侧 L1 聚合 + 事件上云（+27 行）。不补则该路径「内容入库但无事件」→ 时间轴 events=0 → 客户端被锁死在空态页（新用户永远出不来），属**功能必需**；合并后 834 行 > 阈值 800，故显式申请基线。",
-        "target": "把「上传成功 → 聚合 → /events/sync 上云」块抽到 composables（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
-      },
-      "client/components/TabSearch/TabSearch.uvue": {
-        "lines": 813,
-        "reason": "2026-10-15 真机缺陷修复：**删除搜索关键词后页面卡死**（原实现只有 v-model + @confirm，删字到空无任何状态转移；本该复位的 clearKeyword 是**全仓零调用的死代码**）⇒ 补 @input 状态转移（清空即回默认列表）、runSearch 空串分支改为复位、并写根因注释，+26 行。不修则该页一旦搜过就永久停在「共 N 条结果」，属**功能必需**；修复后 813 行 > 阈值 800，故显式申请基线。",
-        "target": "把搜索状态机（keyword/hasSearched/hits/onKeywordInput/loadRecent/runSearch）抽到 client/composables/useSearchState.uts（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
-      }
-    }
+ "_doc": [
+  "audit_harness 棘轮基线（ratchet baseline）——存量冻结，只允许收缩，不允许扩张。",
+  "规则：新增违规 = CRITICAL；存量超阈文件在 allowlist 内被豁免（但不得再增长，增长会 WARN）。",
+  "收缩方式：拆分/收敛后，把对应条目从本文件删除或下调计数（须与代码同 commit，便于回滚）。",
+  "建立于 2026-09-24（易扩展/易维护重构波 · 批次 B1）；台账见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md",
+  "禁止把本文件当万能豁免池：每条须有 reason 与 target（销项触发）。",
+  "僵尸豁免清算（2026-09-24 B10-e）：基线条目若已不再违规（文件被删/改名/已拆到阈值内/计数已归零），门禁报 CRITICAL 要求删除该条——棘轮只许收缩，缩了要记账。"
+ ],
+ "filesize": {
+  "thresholds": {
+   "backend_py": 600,
+   "client": 800
   },
-  "exports": {
-    "zero_cap_allowlist": {
-      "AuthError": {
-        "place": "client/utils/auth.uts:51",
-        "reason": "错误类型类导出，全仓零引用（仅 docs/审计_未关闭缺陷_20260923.md 提及）；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
-        "target": "编译门可用后：接线使用或删除该导出，随后删除本条（销项触发）"
-      },
-      "getRecorder": {
-        "place": "client/utils/voice.uts:104",
-        "reason": "录音工厂导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
-        "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
-      },
-      "invalidateTimelineCache": {
-        "place": "client/utils/timeline.uts:244",
-        "reason": "时间轴缓存失效导出，全仓零代码引用；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
-        "target": "接线使用或删除该导出，随后删除本条"
-      },
-      "isIgnoredEvent": {
-        "place": "client/utils/event_ops.uts:196",
-        "reason": "事件忽略判定导出，全仓零代码引用；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
-        "target": "接线使用或删除该导出，随后删除本条"
-      },
-      "lastTempFile": {
-        "place": "client/utils/voice.uts:108",
-        "reason": "临时文件路径读取导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
-        "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
-      },
-      "parseErrorString": {
-        "place": "client/utils/api.uts:537",
-        "reason": "错误信封解析导出，全仓零代码引用（仅 docs/archive/2026-Q3/_resource_endpoint_matrix.md:222 与 search_api.uts:15 注释提及）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
-        "target": "接线使用或删除该导出，随后删除本条"
-      },
-      "stopPeriodicSync": {
-        "place": "client/utils/sync_schedule.uts:48",
-        "reason": "深审 D08-10 已判定真死（唯一 1 处引用＝自身声明行，由同一假阴性造成）；**B5b 拆分后新址**（原 client/utils/sync_client.uts:584 已随拆分删除）",
-        "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
-      },
-      "WALK_SPEED_MS": {
-        "place": "client/utils/agg/agg_config.uts:19",
-        "reason": "深审 D04-12 已判定零调用；此前因轴 4 **非递归**（只扫 client/utils/*.uts）而整体漏扫，B10-f 补 rglob 后露出",
-        "target": "编译门可用后：接线使用或删除该常量，随后删除本条"
-      }
-    },
-    "reason": "轴 4（零调用能力导出）棘轮：存量 4 枚冻结、不阻断；B10-d 修正 EXPORT_RE 假阴性后由 0 露出为 4",
-    "target": "编译门可用后逐条接线/删除，把本 allowlist 收缩为空（棘轮只许收缩）"
-  },
-  "dup_patterns": {
-    "soft_delete_filter": {
-      "regex": "deleted_at\\.is_\\(None\\)",
-      "total": 43,
-      "per_file": {
-        "backend/app/api/contents/__init__.py": 5,
-        "backend/app/api/contents/favorites.py": 1,
-        "backend/app/api/corrections.py": 1,
-        "backend/app/api/deps.py": 2,
-        "backend/app/api/events.py": 6,
-        "backend/app/api/event_items.py": 2,
-        "backend/app/api/media.py": 2,
-        "backend/app/api/stats.py": 3,
-        "backend/app/services/echo.py": 1,
-        "backend/app/services/notify.py": 1,
-        "backend/app/services/photo_content.py": 2,
-        "backend/app/workers/requeue_job.py": 1,
-        "backend/app/services/events/aggregate.py": 3,
-        "backend/app/services/events/aggregate_write.py": 3,
-        "backend/app/services/events/edit.py": 1,
-        "backend/app/services/events/sync.py": 1,
-        "backend/app/services/events/timeline.py": 1,
-        "backend/app/services/pipeline_ext/emotion.py": 1,
-        "backend/app/services/pipeline_ext/sensitive.py": 2,
-        "backend/app/services/query_helpers.py": 1,
-        "backend/app/services/rag/recall.py": 2,
-        "backend/app/services/upload/register.py": 1
-      },
-      "reason": "L-09 收敛 helper 后的最新分场；2026-10-06 W1 记忆镜像删除是第三处同款查询，三处收敛到 deps.find_alive_content_by_cgid；2026-10-28 精确搜索把 pg_fallback 的软删除条件迁到 services/query_helpers.alive_clause，total 保持 43、per_file 从 pg_fallback 移至 query_helpers",
-      "target": "维持 total≤43；新增软删过滤一律走 find_alive_content_by_cgid，不再手抄"
-    }
-  },
-  "token_literals": {
-    "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。例外：三个原生 input 的 inline 字色必须使用 hex（主搜索/收藏搜索/标签输入，2026-10-23 真机白字回归），各增加 1 个 hex；记录面板五个原生 textarea 也必须使用 inline 字色（正文、备注、语音转写、语音备注、照片备注），共增加 5 个 hex。",
-    "total": {
-      "hex": 85,
-      "rgb": 5,
-      "gradient": 0
-    },
-    "per_file": {
-      "client/pages/account/security.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/detail/detail.uvue": {
-        "hex": 4,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/empty/empty.uvue": {
-        "hex": 3,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/favorites/favorites.uvue": {
-        "hex": 2,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/portrait/manage.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/portrait/theme-detail.uvue": {
-        "hex": 11,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/settings/settings.uvue": {
-        "hex": 0,
-        "rgb": 1,
-        "gradient": 0
-      },
-      "client/pages/storage/trash.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/CapsuleSheet/CapsuleSheet.uvue": {
-        "hex": 2,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/EchoSheet/EchoSheet.uvue": {
-        "hex": 12,
-        "rgb": 1,
-        "gradient": 0
-      },
-      "client/components/MessageDetailSheet/MessageDetailSheet.uvue": {
-        "hex": 1,
-        "rgb": 1,
-        "gradient": 0
-      },
-      "client/components/PortraitPrivacyPanel/PortraitPrivacyPanel.uvue": {
-        "hex": 6,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/RecordSheet/CategoryChips.uvue": {
-        "hex": 3,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/ShareSheet/ShareSheet.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/TabAi/TabAi.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/TabIndex/TabIndex.uvue": {
-        "hex": 2,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/TabSearch/TabSearch.uvue": {
-        "hex": 2,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/TagEditPanel/TagEditPanel.uvue": {
-        "hex": 16,
-        "rgb": 1,
-        "gradient": 0
-      },
-      "client/styles/record-sheet.css": {
-        "hex": 3,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/RecordSheet/RecordSheet.uvue": {
-        "hex": 5,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/styles/tab-ai.css": {
-        "hex": 2,
-        "rgb": 1,
-        "gradient": 0
-      },
-      "client/styles/tab-index.css": {
-        "hex": 3,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/styles/detail.css": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/components/UploadStatusBanner/UploadStatusBanner.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      },
-      "client/pages/interview/interview.uvue": {
-        "hex": 1,
-        "rgb": 0,
-        "gradient": 0
-      }
-    },
-    "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10。2026-10-11 按 9-23 基线逐文件对照后上调至 hex 77 / rgb 5：**性质是还原而非新增**——11 处声明在令牌化时被挂上值不等的令牌（Δ3~16/255，误映射；明细见 docs/决策台账.md §4.16（令牌波；原证据文件在 .cowork-temp/ 内，gitignore 不可复现）），按「一切以重构前为准」写回 9-23 原字面量并加注释标明来源。",
-    "reason_note": "同期 design_tokens.dtcg.json（321 叶子）在样式里被引用 0 次；另有 74 条「回退值=9-23 原值、令牌值差 ≤2/255」的设计基色归并**保留未改**（令牌值来自画布实测真源，Δ≤2 视觉不可辨；逐令牌全域一致的 3 个纯色令牌--a-ink-30/40、--a-rust-06 若需逐像素还原，改其 json 值即可恢复 9 处）",
-    "target": "P3 逐域收敛后逐条下调，直至 total 归零（全部走令牌）；**销项路径**：为这 11 个精确色（#AA5334/#E5DED4/#EFE9DD/#faf6ee/#fbf4e4/#ede5d8/#FBF7EF/#D8CFC2/#E5DED2/rgba(42,33,26,0.4)）在设计令牌集里补入等值叶子后改回 var()，届时同步下调本基线"
+  "allowlist": {
+   "client/components/TabIndex/TabIndex.uvue": {
+    "lines": 874,
+    "reason": "2026-10-11 静态审查修复批：该文件原 786 行（距阈值 14 行），本批为 12 处确证缺陷（失败覆盖已渲染数据/emptyState 派生状态漏收敛/语音双声道/划掉回响失败乐观隐藏/照片与拆分入口指向不存在的面板/权限复查/toast 频次等）补写**根因注释**（每处含复现序列与行号证据），+88 行。压缩注释会丢失后人复踩所需的证据链，故显式申请。",
+    "target": "把渲染出口/监听链拆到 composables（同 usePhotoAttach/useEventOps 先例）后，行数自然回落，删除本条（销项触发）"
+   },
+   "client/components/RecordSheet/RecordSheet.uvue": {
+    "lines": 834,
+    "reason": "2026-10-15 合并 origin/develop（573b33b）引入 NEW-01 修复：记录面板上传路径补端侧 L1 聚合 + 事件上云（+27 行）。不补则该路径「内容入库但无事件」→ 时间轴 events=0 → 客户端被锁死在空态页（新用户永远出不来），属**功能必需**；合并后 834 行 > 阈值 800，故显式申请基线。",
+    "target": "把「上传成功 → 聚合 → /events/sync 上云」块抽到 composables（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
+   },
+   "client/components/TabSearch/TabSearch.uvue": {
+    "lines": 813,
+    "reason": "2026-10-15 真机缺陷修复：**删除搜索关键词后页面卡死**（原实现只有 v-model + @confirm，删字到空无任何状态转移；本该复位的 clearKeyword 是**全仓零调用的死代码**）⇒ 补 @input 状态转移（清空即回默认列表）、runSearch 空串分支改为复位、并写根因注释，+26 行。不修则该页一旦搜过就永久停在「共 N 条结果」，属**功能必需**；修复后 813 行 > 阈值 800，故显式申请基线。",
+    "target": "把搜索状态机（keyword/hasSearched/hits/onKeywordInput/loadRecent/runSearch）抽到 client/composables/useSearchState.uts（同 usePhotoAttach/useEventOps 先例）后，行数回落即删除本条（销项触发）"
+   },
+   "client/pages/messages/messages.uvue": {
+    "lines": 917,
+    "reason": "2026-10-30 P2 G-1/分组标题/G-6 失败态：整页从「绝对定位不可滚」改为真分页滚动容器（scroll-view + cursor/has_more + 加载更多行 + 加载中/失败三态），另加按 sent_at 分桶的今天/昨天/更早分组与分隔行。917 行里约 200 行是这批新增结构。",
+    "target": "把「消息行模型 MessageItem + toItem 映射」抽到 components/MessageRow 或 utils/message_model.uts、把「分组桶计算」抽到 utils/message_group.uts 后，行数回落到 800 以内即删除本条。"
+   },
+   "client/components/TabAi/TabAi.uvue": {
+    "lines": 861,
+    "reason": "2026-10-30：D-10 历史失败态（区分「没拉到」与「没有历史」）+ D-4 回填补 bullets/cardList + D-9 预览按消息绑定 + D-7 chips 不吞草稿（拆 onSend/sendNow）+ D-13 卸载复位。都是 AI 页真实交互修复，不是格式增长。",
+    "target": "把「消息模型 AiMsg/mkUser/mkAi/toMemCards + applyHistory 合并」抽到 utils/ai_messages.uts，把「流式预览绑定 streamForMsgId/streamTextFor」抽到 composables/useChatStream.uts 后，行数回落到 800 以内即删除本条。"
+   },
+   "client/utils/chat_api.uts": {
+    "lines": 813,
+    "reason": "2026-10-30 P2 D-1/D-3/D-5/D-10：SSE 静默期判死（graceTimer 逐片重排）、帧边界回收已消费前缀（原 O(n²)）、非 plain 保留全文、历史失败信号。",
+    "target": "把「UTF-8 增量解码 Utf8Decoded/decodeUtf8/isTruncatedUtf8」与「SSE 帧解析 parseSseFrame/consumeFrames」整体抽到 utils/chat_sse.uts（纯函数，可单测），行数回落到 800 以内即删除本条。"
+   },
+   "client/utils/timeline.uts": {
+    "lines": 812,
+    "reason": "2026-10-30 P0-2/P0-3/P0-4/P1-12/P1-13/P1-14 与 P2 B-1/B-3：L2 平铺、请求号与失败语义、缓存按 level 分槽、解析 try/catch、L3 归类与统一重排、缩略图池代际号。",
+    "target": "按计划把 parseTimelineEvents 与 buildDayGroups 整体抽到 utils/timeline_parse.uts（纯函数、无网络依赖），行数回落到 800 以内即删除本条。"
+   },
+   "backend/app/api/events.py": {
+    "lines": 631,
+    "reason": "2026-11-01 走查 4.8 修复批：open_content_id 跳转锚点（6.x 全 7 条解锁）+ _batch_open_content_ids + _reconcile_events_after_content_delete（3.6 删除闭环）。功能性增长，非债。",
+    "target": "拆 api/events_events.py（事件 CRUD/confirm/merge/split）与 api/events_timeline.py（timeline/stats/echo 组装）两模块"
+   },
+   "backend/app/api/contents/__init__.py": {
+    "lines": 631,
+    "reason": "2026-11-01 走查 4.8 修复批：删除链路 event_items 清理与事件 reconcile（同批 trash.py restore 重建 L1 配套）。功能性增长。",
+    "target": "抽 services/contents/delete_reconcile.py"
+   },
+   "backend/app/services/pipeline.py": {
+    "lines": 658,
+    "reason": "2026-11-01 走查 P0：process_content 应用层硬超时守护（Windows SimpleWorker 兜底，+60 行）；拆分受 tests/test_pipeline 字符串 monkeypatch 同模块约束（文件头四条同留约束）。",
+    "target": "守护抽 services/pipeline_guard.py（连 _process_content_impl 迁移，同步 RQ pickle 路径与 monkeypatch 断言）"
+   }
   }
+ },
+ "exports": {
+  "zero_cap_allowlist": {
+   "AuthError": {
+    "place": "client/utils/auth.uts:51",
+    "reason": "错误类型类导出，全仓零引用（仅 docs/审计_未关闭缺陷_20260923.md 提及）；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
+    "target": "编译门可用后：接线使用或删除该导出，随后删除本条（销项触发）"
+   },
+   "getRecorder": {
+    "place": "client/utils/voice.uts:104",
+    "reason": "录音工厂导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
+    "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+   },
+   "isIgnoredEvent": {
+    "place": "client/utils/event_ops.uts:196",
+    "reason": "事件忽略判定导出，全仓零代码引用；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+    "target": "接线使用或删除该导出，随后删除本条"
+   },
+   "lastTempFile": {
+    "place": "client/utils/voice.uts:108",
+    "reason": "临时文件路径读取导出零调用；原被轴 4 假阴性掩盖（B10-d 修正后露出）",
+    "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+   },
+   "parseErrorString": {
+    "place": "client/utils/api.uts:537",
+    "reason": "错误信封解析导出，全仓零代码引用（仅 docs/archive/2026-Q3/_resource_endpoint_matrix.md:222 与 search_api.uts:15 注释提及）；原被轴 4 **注释计数**假阴性掩盖（B10-q 修正后露出）",
+    "target": "接线使用或删除该导出，随后删除本条"
+   },
+   "stopPeriodicSync": {
+    "place": "client/utils/sync_schedule.uts:48",
+    "reason": "深审 D08-10 已判定真死（唯一 1 处引用＝自身声明行，由同一假阴性造成）；**B5b 拆分后新址**（原 client/utils/sync_client.uts:584 已随拆分删除）",
+    "target": "编译门可用后：接线使用或删除该导出，随后删除本条"
+   },
+   "WALK_SPEED_MS": {
+    "place": "client/utils/agg/agg_config.uts:19",
+    "reason": "深审 D04-12 已判定零调用；此前因轴 4 **非递归**（只扫 client/utils/*.uts）而整体漏扫，B10-f 补 rglob 后露出",
+    "target": "编译门可用后：接线使用或删除该常量，随后删除本条"
+   }
+  },
+  "reason": "轴 4（零调用能力导出）棘轮：存量 4 枚冻结、不阻断；B10-d 修正 EXPORT_RE 假阴性后由 0 露出为 4",
+  "target": "编译门可用后逐条接线/删除，把本 allowlist 收缩为空（棘轮只许收缩）"
+ },
+ "dup_patterns": {
+  "soft_delete_filter": {
+   "regex": "deleted_at\\.is_\\(None\\)",
+   "total": 43,
+   "per_file": {
+    "backend/app/api/contents/__init__.py": 5,
+    "backend/app/api/contents/favorites.py": 1,
+    "backend/app/api/corrections.py": 1,
+    "backend/app/api/deps.py": 2,
+    "backend/app/api/events.py": 6,
+    "backend/app/api/event_items.py": 2,
+    "backend/app/api/media.py": 2,
+    "backend/app/api/stats.py": 3,
+    "backend/app/services/echo.py": 1,
+    "backend/app/services/notify.py": 1,
+    "backend/app/services/photo_content.py": 2,
+    "backend/app/workers/requeue_job.py": 1,
+    "backend/app/services/events/aggregate.py": 3,
+    "backend/app/services/events/aggregate_write.py": 3,
+    "backend/app/services/events/edit.py": 1,
+    "backend/app/services/events/sync.py": 1,
+    "backend/app/services/events/timeline.py": 1,
+    "backend/app/services/pipeline_ext/emotion.py": 1,
+    "backend/app/services/pipeline_ext/sensitive.py": 2,
+    "backend/app/services/query_helpers.py": 1,
+    "backend/app/services/rag/recall.py": 2,
+    "backend/app/services/upload/register.py": 1
+   },
+   "reason": "L-09 收敛 helper 后的最新分场；2026-10-06 W1 记忆镜像删除是第三处同款查询，三处收敛到 deps.find_alive_content_by_cgid；2026-10-28 精确搜索把 pg_fallback 的软删除条件迁到 services/query_helpers.alive_clause，total 保持 43、per_file 从 pg_fallback 移至 query_helpers",
+   "target": "维持 total≤43；新增软删过滤一律走 find_alive_content_by_cgid，不再手抄"
+  }
+ },
+ "token_literals": {
+  "_doc": "令牌波 P4 棘轮：硬编码色字面量（hex/rgb/gradient）只许减不许增；下降须同步下调基线。例外：三个原生 input 的 inline 字色必须使用 hex（主搜索/收藏搜索/标签输入，2026-10-23 真机白字回归），各增加 1 个 hex；记录面板五个原生 textarea 也必须使用 inline 字色（正文、备注、语音转写、语音备注、照片备注），共增加 5 个 hex。",
+  "total": {
+   "hex": 84,
+   "rgb": 5,
+   "gradient": 0
+  },
+  "per_file": {
+   "client/pages/account/security.uvue": {
+    "hex": 2,
+    "rgb": 0,
+    "gradient": 0,
+    "reason": "2026-10-30 P2 I-2：+1 来自原生 <input placeholder-style> 的占位色字面值。原生 input 不解析 CSS 变量（本仓 TabSearch.uvue:16 同一条既有结论，101 号验证），只能用字面值 ⇒ 合法例外，不是待令牌化残留。"
+   },
+   "client/pages/detail/detail.uvue": {
+    "hex": 4,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/pages/empty/empty.uvue": {
+    "hex": 3,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/pages/favorites/favorites.uvue": {
+    "hex": 2,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/pages/portrait/manage.uvue": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/pages/portrait/theme-detail.uvue": {
+    "hex": 11,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/pages/settings/settings.uvue": {
+    "hex": 0,
+    "rgb": 1,
+    "gradient": 0
+   },
+   "client/pages/storage/trash.uvue": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/CapsuleSheet/CapsuleSheet.uvue": {
+    "hex": 2,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/EchoSheet/EchoSheet.uvue": {
+    "hex": 12,
+    "rgb": 1,
+    "gradient": 0
+   },
+   "client/components/MessageDetailSheet/MessageDetailSheet.uvue": {
+    "hex": 1,
+    "rgb": 1,
+    "gradient": 0
+   },
+   "client/components/PortraitPrivacyPanel/PortraitPrivacyPanel.uvue": {
+    "hex": 6,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/RecordSheet/CategoryChips.uvue": {
+    "hex": 3,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/ShareSheet/ShareSheet.uvue": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/TabAi/TabAi.uvue": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/TabIndex/TabIndex.uvue": {
+    "hex": 2,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/TabSearch/TabSearch.uvue": {
+    "hex": 2,
+    "rgb": 0,
+    "gradient": 0,
+    "reason": "2026-10-30 P2 C-4/C-8：hex=2 全部位于**模板内联样式**（input 的 color / placeholder-style）。原生 input 不解析 CSS 变量，属合法例外。**请勿**「顺手令牌化」成 var(--x, #hex)：回退值会被剔除 ⇒ 计数下降 ⇒ 触发「已下降请同步下调基线」WARN。"
+   },
+   "client/components/TagEditPanel/TagEditPanel.uvue": {
+    "hex": 16,
+    "rgb": 1,
+    "gradient": 0
+   },
+   "client/styles/record-sheet.css": {
+    "hex": 3,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/RecordSheet/RecordSheet.uvue": {
+    "hex": 5,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/styles/tab-ai.css": {
+    "hex": 2,
+    "rgb": 1,
+    "gradient": 0
+   },
+   "client/styles/tab-index.css": {
+    "hex": 3,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/styles/detail.css": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/components/UploadStatusBanner/UploadStatusBanner.uvue": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   },
+   "client/pages/interview/interview.uvue": {
+    "hex": 1,
+    "rgb": 0,
+    "gradient": 0
+   }
+  },
+  "reason": "令牌波开工实测存量（2026-09-25 · 代码口径，已剔注释）：hex 638 / rgb 171 / gradient 10。2026-10-11 按 9-23 基线逐文件对照后上调至 hex 77 / rgb 5：**性质是还原而非新增**——11 处声明在令牌化时被挂上值不等的令牌（Δ3~16/255，误映射；明细见 docs/决策台账.md §4.16（令牌波；原证据文件在 .cowork-temp/ 内，gitignore 不可复现）），按「一切以重构前为准」写回 9-23 原字面量并加注释标明来源。",
+  "reason_note": "同期 design_tokens.dtcg.json（321 叶子）在样式里被引用 0 次；另有 74 条「回退值=9-23 原值、令牌值差 ≤2/255」的设计基色归并**保留未改**（令牌值来自画布实测真源，Δ≤2 视觉不可辨；逐令牌全域一致的 3 个纯色令牌--a-ink-30/40、--a-rust-06 若需逐像素还原，改其 json 值即可恢复 9 处）",
+  "target": "P3 逐域收敛后逐条下调，直至 total 归零（全部走令牌）；**销项路径**：为这 11 个精确色（#AA5334/#E5DED4/#EFE9DD/#faf6ee/#fbf4e4/#ede5d8/#FBF7EF/#D8CFC2/#E5DED2/rgba(42,33,26,0.4)）在设计令牌集里补入等值叶子后改回 var()，届时同步下调本基线"
+ }
 }

@@ -39,6 +39,24 @@ class Settings(BaseSettings):
     # Qdrant 向量库（B2；修复：原代码硬编码 localhost，部署/CI 不可切换）
     qdrant_url: str = "http://localhost:6333"
 
+    # 检索相关性门槛（2026-10-31 · 走查缺陷修复）
+    # 0 = 关闭；默认 0.55 = `dense_score`（0~1）必须达到该值才返回，
+    # 除非命中关键词（sparse_score>0 直接保留）。
+    # 背景：本地无 rerank 模型时原来没有任何分数过滤，搜不存在的词也返回 top-10。
+
+    # 共享 embedding 服务（2026-10-31 · 压测结论驱动）
+    # 空 = 进程内加载 BGE-M3（每个 worker 各一份，~1.2GB）；配置后 = 只发 HTTP，
+    # 本进程不加载模型。压测实测：4 个 worker 各带一份模型会因页面文件不足
+    # (`os error 1455`) 反而降到 0.11 条/秒，配了本项才能线性扩展。
+    embedding_service_url: str = ""
+
+    # 共享服务不可用时**是否回退到本地模型**（默认 False = 宁可报错）。
+    # 2026-10-31 决策（用户）：回退会把 ~1.2GB 模型加载进当前进程，
+    # 一旦发生就会挤爆内存、连带其它服务一起挂 —— 宁可这个 job 失败并重试，
+    # 也不能让一台机器因为"想更可用"而整体不可用。
+    # 仅本机开发想省事时显式设 EMBEDDING_FALLBACK_LOCAL=true。
+    embedding_fallback_local: bool = False
+
     # JWT（决策 #8；密钥 ≥32 字节，否则 pyjwt 告警）
     jwt_secret: str = "change-me-32-bytes-min-secret-0000"
     jwt_access_ttl_minutes: int = 120
@@ -260,6 +278,19 @@ class Settings(BaseSettings):
     # ⇒ 本项要真正达标，前置是 §2.1#3「扩真实语料」，不是再调代码。
     #   标定工具与完整权衡表：<仓库>/research/rag_benchmark/r1_calibrate.py
     retrieval_min_dense_score: float = 0.0
+
+    # 稀疏救援阈值（2026-11-01 走查标定）：sparse_score ≥ 该值才视为「真稀疏命中」。
+    # BGE-M3 稀疏塔对任意 query 都产出非零权重（噪声 0.0001~0.0005 vs 真命中 0.17+），
+    # 所以救援判据不能是 >0；默认 0.01 与噪声带差 20 倍以上，标定数据见台账 4.8。
+    retrieval_min_sparse_score: float = 0.01
+
+    # process_content 应用层硬超时（2026-11-01 · 走查 P0）。RQ 的 job_timeout 在
+    # Windows SimpleWorker 上不生效（signal.alarm 仅 Unix），单个卡死 job 会永久
+    # 堵死单线程 worker。此超时在任务函数内用线程池 future.result() 兜底：
+    # 到点置 failed+retryable 交 RQ 重投，泄漏线程 daemon 化不阻塞消费循环。
+    # 默认 900s：比 RQ job_timeout(600s) 宽，覆盖 ASR 类长任务 + 重试内退避；
+    # 配 0 关闭（不推荐）。
+    pipeline_hard_timeout_s: int = 900
 
     # answerability 拒答（2026-10-23，按《RAG 检索链路与准确率提升方案_20261018》
     # §三 P0-2 / §四 阶段 2-2）：LLM 精排本来就在逐条判「能否回答」（`llm_ops/rerank.py`

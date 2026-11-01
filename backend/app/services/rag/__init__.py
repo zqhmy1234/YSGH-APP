@@ -102,6 +102,27 @@ def _apply_answerability_gate(hits: list[SearchHit]) -> list[SearchHit]:
     return []
 
 
+def _trace_num(trace, key: str) -> float:
+    """从 trace 里安全取数值，**兼容 dict 与模型对象两种形态**。
+
+    2026-10-31 踩坑：一开始只写成 `trace.get(key)`，而生产里 `h.trace` 是 pydantic 模型
+    （不是 dict）⇒ 抛 AttributeError，被外层的 `except` 吞掉后**逐条都判为"保留"**，
+    相关性门槛看起来加了、实际一条都没过滤（设备上复测仍是 10 条无关结果）。
+    这里显式两种形态都处理，取不到一律返回 0.0。
+    """
+    if trace is None:
+        return 0.0
+    val = None
+    if isinstance(trace, dict):
+        val = trace.get(key)
+    else:
+        val = getattr(trace, key, None)
+    try:
+        return float(val or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def search(q: SearchQuery, db=None, user_id: str | None = None, collection: str | None = None) -> SearchResult:
     """描述性搜索主链路（API-003/RET-001~018 前置）
 
@@ -119,6 +140,12 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     """搜索实现体（被 search 信号量包裹）"""
     start = time.perf_counter()
     degraded = False
+    # 2026-10-30（P2 C-5）：offset 分页的取数窗口。
+    # 管线里每一处"最终截断"都要按 **offset+limit** 取，再在收尾处切片 `[offset:offset+limit]`：
+    # 若仍按 limit 截断，offset>0 时切片起点已经越过整份结果 ⇒ 永远返回空页
+    #（而且看起来像"没搜到"，不报错——最难查的一类）。
+    # offset=0 时 window == limit ⇒ 既有行为逐字节不变。
+    window = q.offset + q.limit
 
     # 1. Query 改写 → 过滤条件（返回 NER 派生过滤，供空结果回退）
     rewritten, filters, ner_filters = _rewrite_query(q)
@@ -213,7 +240,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         degraded = True
         # audit #16：降级不再返回空结果——改走 PG 全文检索兜底（ILIKE 多词 OR +
         # 命中数排序，tsvector 中文无内置 parser，ILIKE 为确定性零依赖方案）。
-        raw_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, q.limit)
+        raw_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, window)
 
     # 3.2 **召回为空**也走 PG 兜底（2026-10-15 · 真机 + 集成双实测「刚记的内容搜不到」）
     #
@@ -229,7 +256,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     #    真·无结果时**不改** degraded（否则会把"就是没有"谎报成"系统降级" ✗）；
     #  · 有召回时本段不执行 ⇒ 原有路径行为**完全不变**（零风险）。
     if not raw_hits:
-        fb_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, q.limit)
+        fb_hits = _pg_fallback_search(q, rewritten, filters, db, user_id, window)
         if fb_hits:
             logger.info(
                 "召回为空但 PG 兜底命中 %d 条（多为索引未就绪：done 已提交、向量尚未写入）",
@@ -251,7 +278,8 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     raw_hits = _boost_exact_matches(rewritten, raw_hits)
 
     # 4. 溯源组装（RET-016：每条结果可解释命中字段）
-    hits = _assemble_hits(raw_hits, q.limit, db, user_id)
+    #    2026-10-30（P2 C-5）：按窗口取（offset>0 时要连前面几页的候选一起组装才能切片）
+    hits = _assemble_hits(raw_hits, window, db, user_id)
 
     # 4.1 R-1 拒答地板（2026-10-09）：召回层稠密相似度低于地板的命中整条剔除；
     #     全部低于地板 → 空结果，即「答不出来就不答」。门禁 negative_error_rate ≤0.05。
@@ -262,9 +290,35 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     #     量级 ~0.016 且只反映名次，与相关性无关，不能用来设阈值）。
     if settings.retrieval_min_dense_score > 0 and hits:
         floor = settings.retrieval_min_dense_score
-        kept = [h for h in hits if h.trace.get("dense_score", 0.0) >= floor]
+        # 2026-10-31：原写法 `h.trace.get(...)` 假定 trace 是 dict，而生产里是模型对象
+        # ⇒ 一开地板就 AttributeError。统一走 `_trace_num`（两种形态都兼容）。
+        # 2026-11-01 走查标定：`sparse_score > 0` 当救援条件不可用——BGE-M3 稀疏塔对
+        # 任意 query 都会产出非零 IDF 权重（负样本噪声分 0.0001~0.0005，真命中
+        # 0.17~0.23，差约 400 倍），"非零"≠"相关"。改用真实阈值 0.01（sparse_floor），
+        # 与 config 注释「sparse_score>0 直接保留」的意图一致，只是判得准一点。
+        sparse_floor = getattr(settings, "retrieval_min_sparse_score", 0.01)
+
+        def _is_pg_exact(h) -> bool:
+            """PG 精确通道命中判定（trace.matched 含 "pg"）"""
+            matched = (
+                h.trace.get("matched")
+                if isinstance(h.trace, dict)
+                else getattr(h.trace, "matched", None)
+            ) or []
+            return "pg" in matched
+
+        kept = [
+            h for h in hits
+            # PG 精确通道豁免（2026-11-01 回归修复）：exact 命中的 dense/sparse 双 0
+            # 是通道属性而非不相关——上一轮地板误杀了字面命中（搜
+            # "deletemark-1101-test" 命中不了同名内容）。
+            if _is_pg_exact(h)
+            or _trace_num(h.trace, "exact_score") > 0
+            or _trace_num(h.trace, "dense_score") >= floor
+            or _trace_num(h.trace, "sparse_score") >= sparse_floor
+        ]
         if len(kept) != len(hits):
-            logger.info("R-1 拒答地板 %.3f：%d → %d 条", floor, len(hits), len(kept))
+            logger.info("R-1 拒答地板 %.3f（sparse≥%.2f 救援）：%d → %d 条", floor, sparse_floor, len(hits), len(kept))
         hits = kept
 
     latency_ms = int((time.perf_counter() - start) * 1000)
@@ -280,7 +334,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             {"id": h.content_id, "text": h.text or "", "score": h.score, "hit": h}
             for h in hits[: settings.rerank_max_candidates]
         ]
-        hits = [c["hit"] for c in rerank(rewritten, cands, min_score=settings.rerank_min_score)][: q.limit]
+        hits = [c["hit"] for c in rerank(rewritten, cands, min_score=settings.rerank_min_score)][:window]
 
     # 4.5b 双层 Rerank 第二层（LLM 精排，Wave2-F 2026-08-26，B2-1 Ilya 方案）：
     #   bge 粗排 top-50→top-10（rerank_llm_candidates）→ qwen-flash 判"能否回答"
@@ -295,12 +349,16 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             {"id": h.content_id, "text": h.text or "", "score": h.score, "hit": h}
             for h in hits[: settings.rerank_llm_candidates]
         ]
-        llm_reranked = llm_rerank(rewritten, llm_cands, top_k=settings.rerank_llm_top_k)
+        # 2026-10-30（P2 C-5）：top_k 至少要覆盖窗口，否则 offset>0 时精排只回 top_k 条、
+        # 后面的页直接没候选（分页在开启精排时才坏，最难在测试里撞到）。
+        llm_reranked = llm_rerank(
+            rewritten, llm_cands, top_k=max(settings.rerank_llm_top_k, window)
+        )
         # 仅当 LLM 真实判定过（带 rerank_reason）才替换排序；mock/无 key 原序不动候选集
         judged = {c["id"]: c.get("rerank_reason") for c in llm_reranked if "rerank_reason" in c}
         if judged and llm_reranked:
             hits = []
-            for c in llm_reranked[: q.limit]:
+            for c in llm_reranked[:window]:
                 h = c["hit"]
                 if h.content_id in judged:
                     h.trace["llm_rerank_reason"] = judged[h.content_id]
@@ -313,6 +371,13 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     if settings.answerability_reject_enabled:
         hits = _apply_answerability_gate(hits)
 
+    # 4.5d 相关性门槛：**复用 4.1 的 `retrieval_min_dense_score`**（已在本文件上半段生效）。
+    # 2026-10-31 走查：我一开始在这里又写了一套 `search_min_dense_score` 门槛，
+    # 属重复实现——项目里早有同款机制，只是默认 0.0 关闭。已删除重复代码，
+    # 改为在 config 里把 `retrieval_min_dense_score` 设成 0.55 来启用。
+    # 现象与理由：搜 `zzqqxx`（不存在的词）仍返回 10 条「关键词分 0 / 语义分 36~41」，
+    # 客户端永远进不到空态；根因是没装 rerank 模型时**完全没有分数过滤**。
+
     # 4.6 规则级敏感过滤（B5b-1 🟢：摘要/搜索规则级，不过模型；Wave1 AgentC 转交）
     #     命中 reject 类硬规则词的结果直接排除（转述用户内容的最小兜底）。
     if hits:
@@ -323,12 +388,23 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         except Exception:  # noqa: BLE001 —— 敏感过滤失败不阻断搜索
             logger.warning("规则级敏感过滤异常，跳过")
 
+    # 4.7 分页切片（2026-10-30 · P2 C-5）：
+    #   total = 窗口内**候选池**条数（切片前）；hits = 其中 [offset, offset+limit) 这一段。
+    #   has_more 判定用"窗口是否被占满"：占满 ⇒ 后面可能还有；未占满 ⇒ 已到候选池末尾。
+    #   （不谎报：占满时报 true 是"可能有"，翻到空页也只是到底了，不会出现"说有更多却
+    #   少给了本来存在的候选"——后者才是客户端无法自愈的那种不一致。）
+    total = len(hits)
+    has_more = total >= window > 0
+    if q.offset > 0:
+        hits = hits[q.offset : q.offset + q.limit]
+
     return SearchResult(
         query=q.q,
         rewritten_query=rewritten if rewritten != q.q else None,
         intent=intent,
         hits=hits,
-        total=len(hits),
+        total=total,
+        has_more=has_more,
         latency_ms=latency_ms,
         degraded=degraded,
     )

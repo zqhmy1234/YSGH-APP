@@ -1,15 +1,16 @@
 """事件路由：四层事件模型（B3）+ 时间轴（F8）+ 用户手动操作（B3-5）"""
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api import make_router
 from app.api.deps import get_current_user, uuid4_str
 from app.core.errors import ERR_EVENT_004, ERR_EVENT_006, ERR_EVENT_007, ApiError
+from app.db.alive import alive
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.common import ApiResponse
+from app.schemas.common import ApiResponse, Page
 from app.schemas.event import (
     EventConfirmRequest,
     EventCoverRequest,
@@ -32,6 +33,10 @@ PHOTOS_PER_EVENT = 6
 
 # 每个事件随 timeline 下发的语音成员上限（W0-2 就地播放：卡片语音卡单条，取首条足够）。
 VOICES_PER_EVENT = 1
+
+# 分页模式的默认页长（2026-10-30 · P2 B-7）：只在「传了 cursor 没传 limit」时生效。
+# 与 api/deps.pagination_params 的默认 20 保持一致——同一产品里两套默认页长没有好处。
+_TIMELINE_DEFAULT_LIMIT = 20
 
 
 @router.get("/stats", response_model=ApiResponse[dict])
@@ -69,7 +74,7 @@ def event_stats(
             Content,
             (Content.id == EventItem.content_id) & (Content.content_type == "photo"),
         )
-        .where(Event.user_id == user.id, Event.deleted_at.is_(None))
+        .where(Event.user_id == user.id, alive(Event))
     ).one()
     return ApiResponse(
         data={
@@ -81,11 +86,24 @@ def event_stats(
     )
 
 
-@router.get("/timeline", response_model=ApiResponse[list[EventOut]])
+@router.get(
+    "/timeline",
+    response_model=ApiResponse[list[EventOut]] | ApiResponse[Page[EventOut]],
+)
 def timeline(
     level: int | None = None,
     status: str | None = None,
     pending: bool | None = None,
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=100,
+        description="每页条数（1-100）。**省略且不带 cursor = 全量**（向后兼容老客户端）",
+    ),
+    cursor: str | None = Query(
+        None,
+        description="分页游标（不透明字符串；取上次响应 data.cursor 原样回传，勿自行拼装）",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -96,10 +114,46 @@ def timeline(
       status=draft / level=2 组合亦可（客户端自行组合）
     L3 事件附加 lifecycle（活跃 30 天→静默→归档，读取时派生）。
     安全：需登录。
-    """
-    from app.services.events import get_event_last_activity, get_timeline, l3_lifecycle
 
-    events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
+    ## 2026-10-30（P2 B-7）分页：两种响应形态，按「有没有传分页参数」切换
+
+    改造前：无上限全量下发（`services/events/timeline.py:41-45` 无条件
+    `order_by(...).all()`）。事件数上千的用户首屏要等全部事件 + 全部成员照片/语音/封面
+    的批量查询跑完，客户端再全量重建列表——这是 B-7 的根因。
+
+    形态判定（**只有显式传 `limit` 或 `cursor` 才分页**）：
+      · 不带参数 → `data` 仍是**数组**（`EventOut[]`），与改造前逐字节一致；
+        老客户端 / 存量脚本 / `scripts/api_smoke_cases.py` 都按数组解析，无条件改成分页
+        对象会让它们拿到空时间轴（不崩、全空——比崩更难查）。
+      · 带 `limit` 和/或 `cursor` → `data` 是 `Page{items, cursor, has_more}`；只传 cursor
+        不传 limit 时按默认 20 条续页。
+    游标格式非法 → 422 EVENT_007（不静默退回第一页：那会让用户以为翻页生效了）。
+    """
+    from app.services.events import (
+        encode_timeline_cursor,
+        get_event_last_activity,
+        get_timeline,
+        get_timeline_page,
+        l3_lifecycle,
+    )
+
+    paged = limit is not None or cursor is not None
+    has_more = False
+    if paged:
+        try:
+            events, has_more = get_timeline_page(
+                db,
+                str(user.id),
+                level=level,
+                status=status,
+                pending=bool(pending),
+                limit=limit if limit is not None else _TIMELINE_DEFAULT_LIMIT,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            raise ApiError(ERR_EVENT_007, f"游标格式无效：{exc}", http=422) from exc
+    else:
+        events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
     event_ids = [e.id for e in events]
     # 审查修复(P1-11)：一次 GROUP BY 批量取计数，消除 N+1（原逐事件 count 查询）
     counts = _batch_counts(db, event_ids)
@@ -120,20 +174,26 @@ def timeline(
     photos_by_event = _batch_event_photos(db, event_ids, uid)
     voices_by_event = _batch_event_voices(db, event_ids, uid)
     cover_urls = _batch_cover_urls(db, [e.cover_content_id for e in events], uid)
-    return ApiResponse(
-        data=[
-            _to_out(
-                e,
-                counts,
-                lifecycles.get(str(e.id)),
-                photos=photos_by_event.get(str(e.id)),
-                voice=voices_by_event.get(str(e.id)),
-                cover_url=cover_urls.get(str(e.cover_content_id)) if e.cover_content_id else None,
-                photo_ids=photo_ids.get(str(e.id)),
-            )
-            for e in events
-        ]
-    )
+    open_ids = _batch_open_content_ids(db, event_ids, uid)
+    items = [
+        _to_out(
+            e,
+            counts,
+            lifecycles.get(str(e.id)),
+            photos=photos_by_event.get(str(e.id)),
+            voice=voices_by_event.get(str(e.id)),
+            cover_url=cover_urls.get(str(e.cover_content_id)) if e.cover_content_id else None,
+            photo_ids=photo_ids.get(str(e.id)),
+            open_content_id=open_ids.get(str(e.id)),
+        )
+        for e in events
+    ]
+    if not paged:
+        # 全量形态：`data` 直接是数组（与改造前一致）
+        return ApiResponse(data=items)
+    # 分页形态：游标取**本页最后一条**（下一请求据此续页）；has_more 由服务层多取一条判定
+    next_cursor = encode_timeline_cursor(events[-1]) if (has_more and events) else None
+    return ApiResponse(data=Page(items=items, cursor=next_cursor, has_more=has_more))
 
 
 def _attach_thumbnail_urls(db: Session, items: list[dict], user_id: str) -> None:
@@ -162,6 +222,45 @@ def _attach_thumbnail_urls(db: Session, items: list[dict], user_id: str) -> None
             urls[str(r.id)] = thumb
     for item in items:
         item["thumbnail_url"] = urls.get(item.get("content_id"))
+
+
+def _batch_open_content_ids(db: Session, event_ids: list, user_id: str) -> dict[str, str]:
+    """每个事件取**一条**可用于跳转详情的成员内容 id（防 N+1）。
+
+    2026-10-31 走查缺陷：L1 日卡是聚合事件，`cover_content_id` 常为 NULL
+    （封面只在照片事件或用户手动换封面时才有），客户端 `openDetail` 拿不到 id
+    就弹「这条记忆暂无可查看的内容」并 return ⇒ **时间轴卡片点了没反应**，
+    详情页 7 条走查项全被挡死。
+    这里给一个与封面无关的跳转锚点：取该事件最新的成员内容。
+
+    排序用 `Content.created_at`（内容入库时间，稳定且一定有值），
+    不依赖 EventItem 的时间列。
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rn = (
+        func.row_number()
+        .over(partition_by=EventItem.event_id, order_by=Content.created_at.desc())
+        .label("rn")
+    )
+    sub = (
+        select(EventItem.event_id, EventItem.content_id, rn)
+        .join(Content, Content.id == EventItem.content_id)
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+        .subquery()
+    )
+    rows = db.execute(
+        select(sub.c.event_id, sub.c.content_id).where(sub.c.rn == 1)
+    ).all()
+    return {str(r[0]): str(r[1]) for r in rows}
 
 
 def _batch_event_photos(db: Session, event_ids: list, user_id: str) -> dict[str, list]:
@@ -370,6 +469,7 @@ def _to_out(
     voice: VoiceInfo | None = None,
     cover_url: str | None = None,
     photo_ids: list[str] | None = None,
+    open_content_id: str | None = None,
 ) -> EventOut:
     """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1；L3 附生命周期）
 
@@ -400,6 +500,9 @@ def _to_out(
         cover_url=cover_url,
         photos=photos or [],
         voice=voice,
+        # 跳转用（2026-10-31）：无封面时回退首条成员内容，客户端才能进详情
+        open_content_id=open_content_id
+        or (str(e.cover_content_id) if e.cover_content_id else None),
     )
 
 

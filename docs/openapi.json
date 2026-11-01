@@ -1322,7 +1322,7 @@
           "events"
         ],
         "summary": "Timeline",
-        "description": "时间轴（F8）：L1 日卡片 + L2 主题事件 + L3 主题流；按 start_time 排序\n\nWave2-AgentD：L2 待确认区筛选——\n  pending=true → level≥2 且 status=draft 且 confidence<0.7（B3-5 <0.7 进待确认）\n  status=draft / level=2 组合亦可（客户端自行组合）\nL3 事件附加 lifecycle（活跃 30 天→静默→归档，读取时派生）。\n安全：需登录。",
+        "description": "时间轴（F8）：L1 日卡片 + L2 主题事件 + L3 主题流；按 start_time 排序\n\nWave2-AgentD：L2 待确认区筛选——\n  pending=true → level≥2 且 status=draft 且 confidence<0.7（B3-5 <0.7 进待确认）\n  status=draft / level=2 组合亦可（客户端自行组合）\nL3 事件附加 lifecycle（活跃 30 天→静默→归档，读取时派生）。\n安全：需登录。\n\n## 2026-10-30（P2 B-7）分页：两种响应形态，按「有没有传分页参数」切换\n\n改造前：无上限全量下发（`services/events/timeline.py:41-45` 无条件\n`order_by(...).all()`）。事件数上千的用户首屏要等全部事件 + 全部成员照片/语音/封面\n的批量查询跑完，客户端再全量重建列表——这是 B-7 的根因。\n\n形态判定（**只有显式传 `limit` 或 `cursor` 才分页**）：\n  · 不带参数 → `data` 仍是**数组**（`EventOut[]`），与改造前逐字节一致；\n    老客户端 / 存量脚本 / `scripts/api_smoke_cases.py` 都按数组解析，无条件改成分页\n    对象会让它们拿到空时间轴（不崩、全空——比崩更难查）。\n  · 带 `limit` 和/或 `cursor` → `data` 是 `Page{items, cursor, has_more}`；只传 cursor\n    不传 limit 时按默认 20 条续页。\n游标格式非法 → 422 EVENT_007（不静默退回第一页：那会让用户以为翻页生效了）。",
         "operationId": "timeline_api_v1_events_timeline_get",
         "security": [
           {
@@ -1377,6 +1377,44 @@
               ],
               "title": "Pending"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "每页条数（1-100）。**省略且不带 cursor = 全量**（向后兼容老客户端）",
+              "title": "Limit"
+            },
+            "description": "每页条数（1-100）。**省略且不带 cursor = 全量**（向后兼容老客户端）"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "分页游标（不透明字符串；取上次响应 data.cursor 原样回传，勿自行拼装）",
+              "title": "Cursor"
+            },
+            "description": "分页游标（不透明字符串；取上次响应 data.cursor 原样回传，勿自行拼装）"
           }
         ],
         "responses": {
@@ -1385,7 +1423,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_EventOut__"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse_list_EventOut__"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiResponse_Page_EventOut__"
+                    }
+                  ],
+                  "title": "Response Timeline Api V1 Events Timeline Get"
                 }
               }
             }
@@ -2629,6 +2675,78 @@
         }
       }
     },
+    "/api/v1/profile/locked-tags": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Locked Tags Read",
+        "description": "读锁定标签集合。从未设置过的用户返回空数组（不建画像空行）。",
+        "operationId": "locked_tags_read_api_v1_profile_locked_tags_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProfileLockedTagsOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Locked Tags Replace",
+        "description": "整体覆盖锁定标签集合（空数组 = 全部解锁），返回规整后的最新集合。",
+        "operationId": "locked_tags_replace_api_v1_profile_locked_tags_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileLockedTagsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProfileLockedTagsOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/wechat/find": {
       "post": {
         "tags": [
@@ -3641,6 +3759,65 @@
         ]
       }
     },
+    "/api/v1/upload/direct-url": {
+      "post": {
+        "tags": [
+          "upload"
+        ],
+        "summary": "Direct Upload Url",
+        "description": "**客户端直传**：签发一次性预签名 PUT URL（2026-10-31）。\n\n## 为什么必须有它\n生产服务器公网带宽 1 Mbps（≈125 KB/s）——一张 3MB 照片经后端中转要 **24 秒**，\n客户端早就超时了，于是队列里全是\"上传失败/待重试\"。\n直传把字节流从\"客户端→业务服务器\"改成\"客户端→对象存储\"，\n业务服务器只签发一张票据 + 事后校验，出口带宽不再是大文件通道。\n\n## 为什么用预签名 URL 而不是 `/upload/sts` 的临时密钥\nSTS 需要客户端自己算 COS 签名（HMAC-SHA1 + 规范化请求串 + 字典序拼接），\n在 UTS 里实现成本高、易错；预签名把签名留在服务端，客户端只发一次原始 PUT。\n\n## 契约\n- 命名空间只允许 `photos` / `voice` / `thumbnails`（与内容表 cos_key 前缀一致）\n- key 由服务端生成：`{namespace}/{user_id}/{uuid}.{ext}`，**客户端不能指定 key**\n  （防跨用户覆盖）\n- 返回 `url` 为空时表示该后端不支持直传（本地 fs/fake），客户端应回退后端中转",
+        "operationId": "direct_upload_url_api_v1_upload_direct_url_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "photos",
+              "title": "Namespace"
+            }
+          },
+          {
+            "name": "ext",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "jpg",
+              "title": "Ext"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/stats/daily-summary": {
       "get": {
         "tags": [
@@ -3841,7 +4018,7 @@
           "chat"
         ],
         "summary": "Get History",
-        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供\"问 AI 带上下文\"。",
+        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供\"问 AI 带上下文\"。\n\n## 2026-10-30（P2 D-11）分页：为什么\"从最近往回翻\"\n\n改造前无条件取全会话（`order_by(created_at.asc())` 无 limit）。会话越长，进入对话页\n的等待越久；而用户进入时真正要看的是**最后几轮**，几十轮前的历史在首屏之外。\n故分页语义定为「先给最近 limit 条，再按 cursor 往前翻」：\n  · SQL 侧 `created_at DESC, id DESC` 取 limit+1（多取一条判 has_more）；\n  · **出参仍按时间正序**（客户端渲染顺序不变，改造前的逐条顺序不被打乱）；\n  · cursor = 本页**最早**那条，语义是\"比它更早\"。\n不传 limit/cursor 时全量（老客户端与既有测试的行为原样保留）。\n游标非法 → 422 CHAT_005（不静默退化成第一页：那会让用户以为翻到了更早的消息）。",
         "operationId": "get_history_api_v1_chat_conversations__conversation_id__messages_get",
         "security": [
           {
@@ -3857,6 +4034,44 @@
               "type": "string",
               "title": "Conversation Id"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 200,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "每页条数（1-200，返回**最近** N 条）。省略且不带 cursor = 全量（向后兼容）",
+              "title": "Limit"
+            },
+            "description": "每页条数（1-200，返回**最近** N 条）。省略且不带 cursor = 全量（向后兼容）"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "取更早一页的游标（取上次响应 data.cursor 原样回传，勿自行拼装）",
+              "title": "Cursor"
+            },
+            "description": "取更早一页的游标（取上次响应 data.cursor 原样回传，勿自行拼装）"
           }
         ],
         "responses": {
@@ -4681,6 +4896,37 @@
         "type": "object",
         "title": "ApiResponse[Page[ContentOut]]"
       },
+      "ApiResponse_Page_EventOut__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Page_EventOut_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[Page[EventOut]]"
+      },
       "ApiResponse_Page_MessageOut__": {
         "properties": {
           "code": {
@@ -4742,6 +4988,37 @@
         },
         "type": "object",
         "title": "ApiResponse[ProfileClearOut]"
+      },
+      "ApiResponse_ProfileLockedTagsOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileLockedTagsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ProfileLockedTagsOut]"
       },
       "ApiResponse_ProfileRebuildStartOut_": {
         "properties": {
@@ -6517,6 +6794,36 @@
             },
             "type": "array",
             "title": "Messages"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "取更早一页的游标（本页最早一条的位置）；无更早消息时 null"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "本次生效的页长；null = 全量模式"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "true = 本次窗口之外还有更早的消息",
+            "default": false
           }
         },
         "type": "object",
@@ -6525,7 +6832,7 @@
           "messages"
         ],
         "title": "ChatHistoryOut",
-        "description": "会话历史（供客户端进入会话时回填；按时间正序）。"
+        "description": "会话历史（供客户端进入会话时回填；**messages 恒按时间正序**）。\n\n2026-10-30（P2 D-11）分页字段：\n  · 不传 `limit`/`cursor` → 全量（改造前行为，老客户端不受影响）；\n  · 传了 → 返回**最近 `limit` 条**，`has_more` = 还有更早的消息，\n    `cursor` = 本页最早那条的位置，回传即取更早一页（**向前翻**，聊天的使用方向）。"
       },
       "ChatMessageIn": {
         "properties": {
@@ -7903,6 +8210,17 @@
             ],
             "title": "Cover Url"
           },
+          "open_content_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Content Id"
+          },
           "voice": {
             "anyOf": [
               {
@@ -8474,6 +8792,38 @@
         ],
         "title": "Page[ContentOut]"
       },
+      "Page_EventOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[EventOut]"
+      },
       "Page_MessageOut_": {
         "properties": {
           "items": {
@@ -8557,6 +8907,34 @@
         "title": "ProfileClearOut",
         "description": "画像清除出参（DELETE /api/v1/interview/profile · D07-12）。\n\n`cleared` 逐表回报删除行数（客户端可如实告诉用户\"删掉了什么\"），\n`sensitive_topics_kept` = **刻意保留**的敏感话题条数（那是\"别再提这个话题\"的\n保护性数据，清除画像不应连带移除保护——见 `services/profile_admin` 模块说明）。"
       },
+      "ProfileLockedTagsIn": {
+        "properties": {
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "title": "ProfileLockedTagsIn",
+        "description": "PUT 请求体：整体覆盖的锁定集合（可为空数组 = 全部解锁）。"
+      },
+      "ProfileLockedTagsOut": {
+        "properties": {
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "title": "ProfileLockedTagsOut",
+        "description": "读/写返回：服务端规整后的最新集合（去空白、去空串、去重、保序）。"
+      },
       "ProfileRebuildStartOut": {
         "properties": {
           "job_id": {
@@ -8613,6 +8991,11 @@
           "skipped": {
             "type": "integer",
             "title": "Skipped",
+            "default": 0
+          },
+          "batches": {
+            "type": "integer",
+            "title": "Batches",
             "default": 0
           },
           "degraded": {
@@ -8956,6 +9339,14 @@
             "minimum": 1.0,
             "title": "Limit",
             "default": 10
+          },
+          "offset": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "description": "跳过排序结果的前 N 条（0=第一页）",
+            "default": 0
           }
         },
         "type": "object",
@@ -8994,7 +9385,14 @@
           },
           "total": {
             "type": "integer",
-            "title": "Total"
+            "title": "Total",
+            "description": "可翻页候选条数（≤ 召回窗口 50，非全库匹配数）"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "true = 本次取数窗口被占满，后面**可能**还有（再取会把 offset 加上本页条数）；false = 已到候选池末尾",
+            "default": false
           },
           "latency_ms": {
             "type": "integer",

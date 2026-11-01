@@ -34,6 +34,61 @@ trash_router = make_router(prefix="/api/v1/trash", tags=["trash"])
 logger = logging.getLogger("yishu.trash")
 
 
+def _ensure_l1_event_after_restore(db: Session, row: Content, user_id) -> None:
+    """恢复内容后，保证它在时间轴上有一张 L1 日卡（2026-11-01 · 走查 9.2）。
+
+    ## 为什么需要
+    删除内容时会把「成员被摘空」的 L1 事件一并删掉（见
+    `contents/__init__.py::_reconcile_events_after_content_delete`）；
+    而恢复只把 `contents.deleted_at` 置空 ⇒ 内容复活但**没有卡片**，
+    用户点「恢复」后回到时间轴什么都看不到（设备实测：回收站 3→2 条，时间轴仍 3 条）。
+
+    ## 做法
+    若该内容已属于某个**存活成员关系**，什么都不做（正常路径）。
+    否则按端侧同一幂等键 `ev-c-<contentId>` 重建 L1 事件 + 成员，口径与客户端
+    `submitContentAsL1` 一致 ⇒ 重放/再次删除都不会产生重复卡。
+
+    ## 封面
+    只有照片才把 `cover_content_id` 指向自己；文字/语音留空（客户端会回退到
+    `open_content_id` 跳转，不依赖封面）。
+    """
+    from app.db.alive import alive
+    from app.db.models import Event, EventItem
+
+    alive = db.execute(
+        select(EventItem.event_id)
+        .join(Event, Event.id == EventItem.event_id)
+        .join(Content, Content.id == EventItem.content_id)
+        .where(EventItem.content_id == row.id, alive(Content))
+    ).scalar_one_or_none()
+    if alive is not None:
+        return
+
+    ts = row.created_at or datetime.now(UTC)
+    day = ts.astimezone().strftime("%Y-%m-%d")
+    kind = "照片" if row.content_type == "photo" else ("语音" if row.content_type == "voice" else "文字")
+    excerpt = (row.text or "").strip().replace("\n", " ")[:14]
+    title = f"{day} · {kind}" + (f" · {excerpt}" if excerpt else "")
+
+    ev = Event(
+        user_id=user_id,
+        level=1,
+        title=title,
+        title_source="device",
+        start_time=ts,
+        end_time=ts,
+        confidence=0.9,
+        status="draft",
+        generated_by="device",
+        client_event_id=f"ev-c-{row.id}",
+        cover_content_id=str(row.id) if row.content_type == "photo" else None,
+    )
+    db.add(ev)
+    db.flush()
+    db.add(EventItem(content_id=str(row.id), event_id=ev.id))
+    logger.info("恢复内容 %s 后重建 L1 事件 %s（%s）", row.id, ev.id, title)
+
+
 @trash_router.get("", response_model=ApiResponse[list[TrashItemOut]])
 def trash_list(
     db: Session = Depends(get_db),
@@ -97,6 +152,14 @@ def trash_restore(
     if row is None:
         raise ApiError(ERR_CONTENT_010, "回收站中不存在该内容或无权访问", http=404)
     sync_writes.restore_content(db, row, user.id)
+    # 2026-11-01（走查 9.2 实测缺陷）：**恢复的内容回不到时间轴**。
+    # 现场：删 sunrise-walk-107 → 回收站点「恢复」→ `POST /trash/{id}/restore` 200、
+    # 回收站条目消失，但时间轴仍是 3 条、这张卡没回来。
+    # 根因：删除时（`_reconcile_events_after_content_delete`）会把"成员被摘空"的 L1 事件
+    # 一并删掉；而恢复只把 `contents.deleted_at` 置空，**不会重建事件** ⇒ 内容活着但没有卡片。
+    # 处置：恢复后若该内容不属于任何存活事件，按端侧同一幂等键 `ev-c-<contentId>` 重建
+    # L1 日卡（与客户端提交口径一致，重放/再次删除都不会产生重复卡）。
+    _ensure_l1_event_after_restore(db, row, user.id)
     db.commit()
     return ApiResponse(data=ContentDeleteOut(content_id=row.id, deleted=False, permanent_at=None))
 
