@@ -5,8 +5,8 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-11-01 23:55（**第 6 轮：环境恢复 + 跨模态检索并行开工**。① 走查清单 **55 通过 / 7 部分验证 / 2 无法判定 / 12 待验**（新增 2.4 🟡，见台账 §4.39）；② **调试基座已用最新源码恢复并跑通编译门（23086ms）**——关键：`pm clear` 无效，必须 `adb uninstall io.dcloud.uniappx` 让 CLI 重装基座 + 补 `adb reverse 8000/8010` + `adb unroot`（root 会让 launch 失败），SOP 见台账 §4.37；③ **跨模态检索（用户新要求）已定案 A+B+C 并派 Agent 在独立 worktree `D:\GuangH-App-crossmodal`（分支 `feat/crossmodal-search`）实施**，根因与方案见台账 §4.38；④ 10.5 弱网 ✅、7.1/I-1/I-2 ✅；误报缺陷 D-NEW-1 已撤回（§4.34/§4.36））
-**并行任务**：`feat/crossmodal-search`（跨模态 A+B+C）——**合并前必须由主会话跑 `client_compile_gate.py`**；合并顺序与冲突面见台账 §4.38。
+**最后更新**：2026-11-02 01:05（**跨模态检索 A+B+C 已合并并通过三向端到端实证**：文字「拍的语音」→ 语音1+照片4；音频 `/search/audio` 真实 wav→ASR→语音1+照片2；照片 `/search/image`→照片8+语音1+文字1。合并提交 `3ee0013`，另 `22014fa` 为走查遗留 110 文件批量收口。门禁：快速 ✅ / **client 编译门 ✅ 39876ms** / `test_crossmodal_search+test_rag` 48 passed；**全量门禁被内存阈值拒绝（2.55GB<3GB，环境非代码）**。走查清单 **57 通过 / 7 部分验证 / 2 无法判定 / 10 待验**，证据台账 §4.22–§4.43）
+**并行任务**：无（跨模态分支已合并删除待定：`D:\GuangH-App-crossmodal` 可 `git worktree remove` 清理）
 **分支**：`develop` ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
