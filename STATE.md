@@ -5,8 +5,8 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-11-02 02:30（**第 8 轮：门禁与架构复核 + 环境重建**。① **全量门禁仍被内存预检拒绝**（2.35GB<3GB，本机 15.7GB 被 Harness/浏览器/WSL 占 ~13GB）——已实测"关模拟器 3.94GB / 停 embedding 3.29GB"仍不够，属机器容量问题；② 替代验证：**定向套件 77 passed**（crossmodal+rag+image_search+search_filters+pagination）；③ **跨模态架构复核通过**（caption 只编码一次、双路失败隔离、RRF k=60 规避量纲陷阱、溯源字段保留）；④ **模拟器已从零重建**（`ANDROID_AVD_HOME=D:\Android\avd` + `-avd yishu35 -no-snapshot -no-audio -gpu swiftshader_indirect`，冷启后须 `cmd wifi connect-network AndroidWifi open`）；⑤ **新发现：该镜像有 wlan0** ⇒ 2.4 的"恢复 WiFi 自动补传"下轮可能可验（此前"模拟器永远不是 wifi"的结论需修正）。清单 **59 通过 / 6 部分验证 / 1 无法判定 / 9 待验**，见台账 §4.48）
-**下一步**：① 下轮试 2.4 自动补传（wlan0 已具备）+ 8.7 重试确认；② 真机到位按 `docs/剩余待验项_真机复验清单_20261102.md` 走剩余项；③ 全量门禁需腾出 ≥3GB 空闲内存（关 Harness 之外的常驻大件）后补跑；④ 清理并行 worktree：`git worktree remove D:\GuangH-App-crossmodal`
+**最后更新**：2026-11-02 03:20（**第 9 轮：2.4 自动补传机制证实 + 10.3 三态补齐**。① **2.4 ✅ 通过**：断网录 2 张（表单 2/9）→ held 横幅「2 张照片待 WiFi 上传」→ 连上 WiFi 后**未点任何按钮**即自动上传（logcat 链：`upload form NETWORK /upload/init` → HTTP 0 → retry ×5 → 退避耗尽且 upload_id 留存）；"补传成功"因模拟器 NAT 在 WiFi 起来后缺默认路由未达成（PC 侧 /healthz 200、LAN 200，故非产品缺陷）。② **10.3 ✅ 三态齐**：新增目击「2 张照片上传失败，点击重试」。③ ⚠️ 模拟器因本轮 root+手改路由进入不稳定态（Bluetooth 报错 + SystemUI ANR 循环）——**下轮先冷重启模拟器再继续**（命令见台账 §4.48/§4.50）。清单 **60 通过 / 6 部分验证 / 1 无法判定 / 8 待验**（台账 §4.49/§4.50））
+**下一步**：① 冷重启模拟器后继续 8.7 重试确认 / 7.4（若找到可靠点击法）；② 真机到位按 `docs/剩余待验项_真机复验清单_20261102.md` 走剩余 8 项；③ 全量门禁需腾 ≥3GB 空闲内存后补跑；④ 清理并行 worktree：`git worktree remove D:\GuangH-App-crossmodal`
 **分支**：`develop` ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
