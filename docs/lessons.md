@@ -3182,3 +3182,13 @@
 - 处置：补运行时依赖；新增名称必须含 `test` 的数据库初始化脚本，只建 Agent 三表并
   幂等写分类种子；CI 使用独立 PostgreSQL service 复跑全部测试。
 - 铁律：历史 passed 不能替代当日结果；依赖声明要以真实 import 和当日测试为准。
+
+## 2026-11-01：多服务启动脚本不能共用一个 Python 环境
+
+- 现象：backend 的 Python 能正常起 backend，但同一解释器启动 Agent 时因缺
+  `langchain_core` 立即退出；健康检查只表现为“Agent 未通过”。
+- 根因：backend 与 Agent 是两套独立依赖。启动脚本只解析了一个 `$Python`，并把它用于
+  所有服务。
+- 处置：`scripts/dev/start_all.ps1` 单独选择 `agent/.venv/Scripts/python.exe`，并在
+  backend/Agent 启动前分别检查各自关键依赖。
+- 铁律：多进程服务栈必须按进程选择运行时，不能假设共享 venv。

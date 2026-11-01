@@ -774,3 +774,24 @@ ShareSheet（须真机验"保存到相册"）。
   `python:3.12-slim` 超时，容器构建待 GitHub Actions 实跑；真机三项仍待设备证据。
   详情见 `docs/Agent服务线基线加固_20261101.md`。
 - 仓库快速门禁 `scripts/review_agent.py` 退出码 0。
+- 用户提供独立 DeepSeek Key 后写入本机忽略的 `agent/.env`（未回显、未入库），
+  backend 与 Agent 同步生成随机共享 token。`probe_model.py` 真实调用成功。
+- 定位并修复 `scripts/dev/start_all.ps1` 混用 backend 虚拟环境启动 Agent 的缺陷：
+  原启动因 `langchain_core` 缺失直接失败；现分别选择 backend 与 `agent/.venv` Python，
+  并前置检查各自依赖。修正后全栈健康检查通过。
+- T1 真实验收：非流式 HTTP 200 / **5625ms**；流式 5 preview + done / **1483ms**；
+  DSML/tool_calls 标记未泄漏；真实工具调用 `get_recent_memories` 完整 started/done /
+  **3468ms**，无资料时正确拒编；会话历史回读 user+assistant 共 2 条。
+
+## 2026-11-01 · 冷启动旧 token 上传修复
+
+- 用标准基座可控复现过期 access token 冷启动：页面请求收到 401，单飞 refresh 成功；
+  相册上传同时开始，原实现因上传 init 再撞 401 产生 8 张失败。
+- 根因不止认证：`formPost` 错用 `ensureLogin`；上传状态查询绕过 `rawRequest`；
+  Android 标准基座对 MediaStore 绝对路径要求 `file://` 包装，否则 `uni.uploadFile`
+  可能永不回调。multipart 另补 JS 看门狗与非阻塞超时落定。
+- 修复后再次只置无效 access token、保留 refresh token 并回退相册游标：19 张照片
+  自动上传完成，数据库 `upload_tasks=19 completed / upload_chunks=19 / contents=19`；
+  端侧聚合 1 个 L1 事件并成功上云 `accepted=1`，真机失败横幅消失。
+- 完整证据见 `docs/parallel-dev-收尾/39_C端冷启动上传修复记录_20261101.md`。
+  104 发行包冷启动仍待打包验证；测试照片内容未擅自删除。
