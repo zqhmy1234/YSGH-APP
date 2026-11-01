@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-02 00:45 · commit 22014fa · ts=1793551537
+- **错误**：跨模态分支合并后门禁三红：openapi 快照超前（含代码里不存在的端点）、audit_harness_baseline 被分支版本覆盖导致 structure 棘轮误报、audit_axes 契约缺 2 条
+- **根因**：分支从同一 commit 拉出后各自改动了共享的门禁基线文件；合并时按'文件级'取一方，未按'以主仓为单一事实源'策略，且 openapi 需按合并后代码重导
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-11-02 00:35 · commit 45ed6f9 · ts=1793550927
 - **错误**：同一批改动连续两轮因 lint 未过（B007 未使用循环变量 / PLW0108 不必要的 lambda / E402 因在 import 间插函数）
 - **根因**：修 lint 时只对'我改过的文件'跑 ruff，没跑 repo 级全扫；且替换插入位置未避开 import 段
@@ -33,6 +42,12 @@
 - **修复**：见代码
 - **相关文件**：-
 - **教训**：（无）
+### 2026-11-01 23:58 · commit 45ed6f9 · ts=1793548713
+- **错误**：worktree 分支 feat/crossmodal-search 上 review_agent 快速门禁必红：structure 报 5 条『基线 filesize.allowlist 条目已不再超阈』、audit_axes 报『硬编码 hex 84→85』
+- **根因**：该分支树是从主仓快照重建的（commit b2d1bfa），而 scripts/audit_harness_baseline.json 的棘轮基线取自另一棵（更新的）代码树：5 个文件在本树已低于阈值、hex 现状 85 而基线记 84。基线是『整仓状态』快照，却随代码树分支漂移，且门禁把它当 CRITICAL（不是 WARN）。实测取证：git archive HEAD 出纯净树跑两条审计同样红 ⇒ 与本分支新改动无关
+- **修复**：按门禁自身给出的补救动手：从 allowlist 删除 5 条僵尸条目、token total.hex 对账到 85（scripts/audit_harness_baseline.json）。跨分支合并时该文件应以目标分支版本为准，合并后重跑并 --write-baseline 对齐
+- **相关文件**：scripts/audit_harness_baseline.json
+- **教训**：棘轮基线必须与它所在的那棵树对账；worktree/快照重建后先跑一次全量审计，别把基线漂移当成新改动引入的违规
 
 ---
 

@@ -350,6 +350,8 @@ class VectorStore:
                 "dense_score": round(float(hit.score), 4),
                 "sparse_score": 0.0,
                 "text": payload.get("text"),
+                # 2026-11-01 跨模态：命中类型回传（溯源兜底用，理由见 `_rrf_fuse`）
+                "content_type": payload.get("content_type"),
             })
         return result
 
@@ -386,7 +388,11 @@ class VectorStore:
 
     @staticmethod
     def _rrf_fuse(dense_hits, sparse_hits, limit: int = 50, k: int = 60) -> list[dict]:
-        """RRF 融合（Reciprocal Rank Fusion）"""
+        """RRF 融合（Reciprocal Rank Fusion）
+
+        `content_type` 一并回传（2026-11-01 跨模态）：DB 回查落空时（基准/单测/降级）
+        `_assemble_hits` 用它兜底；此前一律回落 "text"，照片/语音命中被标成文字。
+        """
         scores: dict[str, float] = {}
         details: dict[str, dict] = {}
 
@@ -397,6 +403,7 @@ class VectorStore:
             details[pid]["dense_score"] = hit.score
             if hit.payload:
                 details[pid]["text"] = hit.payload.get("text")
+                details[pid]["content_type"] = hit.payload.get("content_type")
 
         for rank, hit in enumerate(sparse_hits, 1):
             pid = str(hit.payload.get("content_id", hit.id)) if hit.payload else str(hit.id)
@@ -405,6 +412,7 @@ class VectorStore:
             d["sparse_score"] = hit.score
             if hit.payload:
                 d["text"] = hit.payload.get("text")
+                d["content_type"] = d.get("content_type") or hit.payload.get("content_type")
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
         result = []
@@ -416,6 +424,7 @@ class VectorStore:
                 "dense_score": round(d["dense_score"], 4),
                 "sparse_score": round(d["sparse_score"], 4),
                 "text": d.get("text"),
+                "content_type": d.get("content_type"),
             })
         return result
 

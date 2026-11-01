@@ -7,7 +7,11 @@ from pydantic import BaseModel, Field
 
 class SearchQuery(BaseModel):
     q: str = Field(..., min_length=1, max_length=200, description="描述性查询（自然语言）")
-    intent: Literal["auto", "text", "image"] = "auto"   # auto=LLM 路由（B2 查询路由）
+    # 检索意图（C 方案 2026-11-01 起**真正生效**，此前全仓零使用）：
+    #   auto  = 规则路由（含图词且还剩实词 → mixed；纯图指代 → image；否则 text）
+    #   text  = 强制全量检索（不做照片过滤、不做双路合并）
+    #   image = 强制只回照片（"我只要照片"的窄路，精确性优先，见 rag/intent._resolve_intent）
+    intent: Literal["auto", "text", "image"] = "auto"
     content_types: list[str] | None = None              # 过滤：photo/text/voice/article
     time_from: datetime | None = None                   # payload filter（非召回路）
     time_to: datetime | None = None
@@ -38,9 +42,9 @@ class SearchHit(BaseModel):
 
 
 class SearchResult(BaseModel):
-    query: str
-    rewritten_query: str | None = None      # Query 改写结果（RET-007）
-    intent: str                              # text / image / mixed
+    query: str                               # 音频检索时为转写文本（用户可见"被听成了什么"）
+    rewritten_query: str | None = None      # Query 改写结果（RET-007；图搜=caption，音搜=转写）
+    intent: str                              # text / image / mixed（请求侧 auto/text/image 的对偶）
     hits: list[SearchHit]
     # 2026-10-30（P2 C-5）total 的**准确口径**（改造前这里恒等于 len(hits)，即"本页条数"
     # 被当成总数，`offset` 一出现就自相矛盾）：

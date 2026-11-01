@@ -22,6 +22,13 @@
 			<view class="s-chip s-chip-ml" @tap="runImageSearch()">
 				<text class="s-chip-text">以图搜</text>
 			</view>
+			<!-- 语音搜入口（跨模态 B 方案 · 2026-11-01）：此前三模态互搜只有"文字/图片"两个入口，
+			     录音只能存成语音内容、**不能当查询**（`searchByAudio` 导出零调用 = 用户触达不到）。
+			     交互同「以图搜」：点一次开始录、再点一次停止并自动检索；录音能力复用
+			     `utils/voice.uts`（权限申请/中断/30min 分段都在既有插件里，不新造轮子）。 -->
+			<view class="s-chip s-chip-ml" @tap="runAudioSearch()">
+				<text class="s-chip-text">{{ recording ? '停止' : '语音搜' }}</text>
+			</view>
 		</view>
 		<view class="n2_397"> <!-- 筛选行（HEAD 交互接回：4 静态 chip→filters v-for + active 态） -->
 			<view v-for="(f, idx) in filters" :key="idx" class="s-chip" :class="{ 's-chip-active': idx === activeFilter, 's-chip-ml': idx > 0 }" @tap="setFilter(idx)">
@@ -119,13 +126,16 @@
 <script setup lang="uts">
 	import { ref, computed, watch, onMounted } from 'vue'
 	import { WaveformCache } from '@/composables/useWaveform'
-	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { searchText, searchByImage, searchByAudio, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
 	// 2026-10-30（P2 C-4 / C-8）：搜索历史（仅本机存储）与关键词高亮切分（纯函数，可脱离 UI 单测）
 	import { readSearchHistory, pushSearchHistory, clearSearchHistory } from '@/utils/search_history'
 	import { splitHighlight, HighlightPart } from '@/utils/highlight'
 	import { shellActiveTab } from '@/utils/shell_state'
 	import { isTimelineDirty, markTimelineClean } from '@/utils/timeline'
+	// 语音搜（跨模态 B 方案 2026-11-01）：录音能力复用既有领域桥接，不新造
+	// （权限申请 D-25 / 中断状态机 J-7 / 30min 分段都在 `yishu-recorder` 插件里）
+	import { ensureRecordPermission, startRecord, stopRecord } from '@/utils/voice'
 	import {
 		toggleVoice,
 		fmtVoiceTime,
@@ -162,6 +172,8 @@
 	// 高亮必须按"产生这批结果的那个词"切分：若直接读 keyword，用户点进结果前改了输入框却没重搜，
 	// 旧结果会被按新词二次高亮 —— 命中的其实是新词的字面巧合，属错误归因。
 	let searchedKeyword = ref('')
+	// 录音中标志（语音搜）：驱动 chip 文案在「语音搜 ↔ 停止」间切换，也是重复点击的防抖闸门
+	let recording = ref(false)
 
 	// 本地 mock 数据注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
 	// 此前 onLoad 无条件灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*）压住真实结果；
@@ -661,6 +673,83 @@
 		} else {
 			loadRecent()
 		}
+	}
+
+	/**
+	 * 语音搜（跨模态 B 方案 · 2026-11-01）：录音 → POST /api/v1/search/audio → **复用同一结果区**。
+	 *
+	 * 为什么是"单跳"而不是客户端两步（先 transcribeWav 再 searchText）：两次往返之间
+	 * 用户会看到"先转写、再搜索"的割裂，失败点翻倍；后端单跳由服务端串起 ASR 与检索，
+	 * 返回结构与文本检索同构，因此这里与 runImageSearch 共用同一套结果渲染。
+	 * 为什么必须复用 `utils/voice.uts`：录音权限（D-25）、来电/闹钟中断（J-7）、
+	 * 30min 分段、录音器占用恢复都在既有插件状态机里，直接调 uni.getRecorderManager
+	 * 会绕过这些踩过坑的路径。
+	 *
+	 * 交互口径（与「以图搜」一致）：点一次开始录，再点一次停止并检索；
+	 * 停止后把**转写文本回填输入框**——用户要能看到"这句话被听成了什么"，
+	 * 听错了还能接着改词重搜（否则只能重录）。
+	 */
+	function runAudioSearch(): void {
+		if (recording.value) {
+			stopRecord()
+			return
+		}
+		ensureRecordPermission().then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '未获得麦克风权限，无法录音', icon: 'none' })
+				return
+			}
+			recording.value = true
+			startRecord(
+				() => {
+					console.log('[yishu] audio-search record started')
+				},
+				(path: string, durationMs: number) => {
+					recording.value = false
+					// 太短（<0.5s）几乎必然空转写，后端会老老实实返回空结果 ——
+					// 与其让用户看到"搜到 0 条"，不如直接提示重录
+					if (durationMs < 500) {
+						uni.showToast({ title: '说话时间太短，请重试', icon: 'none' })
+						return
+					}
+					searchRecordedAudio(path)
+				},
+				(msg: string) => {
+					recording.value = false
+					uni.showToast({ title: '录音失败：' + msg, icon: 'none', duration: 2500 })
+				},
+				(autoPaused: boolean) => {
+					// 系统中断（来电/闹钟/音频焦点被抢）：原生录音已自动暂停。
+					// 必须同步 UI，否则 chip 永远停在「停止」、用户再点只是 stop 一次空录音。
+					if (autoPaused) {
+						recording.value = false
+						uni.showToast({ title: '录音被中断，请重新开始', icon: 'none' })
+					}
+				},
+				(path: string, _ms: number) => {
+					// 30min 自动结束：与手动停止同一条落盘→检索路径（入口通常十几秒，防御性分支）
+					recording.value = false
+					searchRecordedAudio(path)
+				}
+			)
+		})
+	}
+
+	/** 录音落盘 → 上传检索（手动停止 / 30min 自动结束共用；拆一个函数避免两处漂移） */
+	function searchRecordedAudio(path: string): void {
+		loading.value = true
+		searchByAudio(path, 30).then((out) => {
+			loading.value = false
+			hasSearched.value = true
+			if (out == null) {
+				hits.value = []
+				return
+			}
+			// 转写文本回填（out.query 即后端转写结果）：让用户看见"被听成了什么"
+			keyword.value = out.query
+			hits.value = out.hits
+			degraded.value = out.degraded
+		})
 	}
 
 	/**

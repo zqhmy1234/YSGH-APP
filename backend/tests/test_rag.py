@@ -218,8 +218,16 @@ def test_rewrite_ner_explicit_param_wins():
 
 
 def test_route_query():
-    """查询路由：图片意图识别（B2 路由）"""
-    assert _route_query("照片里的猫") == "image"
+    """查询路由：三态（C 方案 2026-11-01 起 image 不再是"含图词"的唯一归宿）
+
+    语义变更（有意的，不是回归）：此前 `_route_query` 只能返回 image/text，
+    任何含"照片/截图/相册"的查询都会被检索层锁成"只搜照片"，文字/语音被条件
+    排除（三模态互搜做不成）。现在"图词之外还有实词" ⇒ mixed（照片路 + 全量路
+    双召回），只有纯图指代才保持 image。完整判据用例见
+    `tests/test_crossmodal_search.py::test_route_query_yields_mixed_for_image_words_with_content`。
+    """
+    assert _route_query("这张照片") == "image"          # 纯图指代：找那张图
+    assert _route_query("照片里的猫") == "mixed"        # 图片只是语境 → 双路
     assert _route_query("考研笔记") == "text"
 
 
@@ -489,9 +497,17 @@ def test_image_intent_hits_photo_points():
 
     此前检索过滤用 "image" 而生产 payload 为 "photo" → 生产文字搜图/以图搜图
     恒空结果（评测集用 "image" 索引故未暴露）。本测试验证：
-    1) image 意图（"照片里的猫"）→ 命中 content_type="photo" 的点；
+    1) **显式 intent="image"**（"照片里的猫"）→ 命中 content_type="photo" 的点，
+       且不命中 text 点（"我只要照片"的窄路，C 方案回归保护）；
     2) 遗留 "image" 点同样命中（过滤端 MatchAny 兼容）；
-    3) text 点不被 image 意图过滤命中。
+    3) text 点不被 photo 过滤命中。
+
+    语义变更说明（2026-11-01 · 跨模态 C 方案，**有意更新旧断言**）：
+    原用例走 auto 路由断言 `intent == "image"`，而新口径下"照片里的猫"因为还有
+    实词（猫）⇒ mixed（照片路 + 全量路双召回），text 点**允许**出现在结果里。
+    "只回照片"的能力没有丢，只是必须**显式**声明 intent="image"（见
+    `tests/test_crossmodal_search.py::test_explicit_image_intent_stays_photo_only`）；
+    这里把旧断言改为显式 intent，两条语义各有用例守。
     """
     store = get_store()
     docs = [
@@ -509,17 +525,25 @@ def test_image_intent_hits_photo_points():
     # R8#9：轮询等索引最终一致性（photo 点可被图片意图命中）
     polling_until(
         lambda: "fix1-photo" in [
-            h.content_id for h in search(SearchQuery(q="照片里的猫", limit=20), collection=TEST_COLLECTION).hits
+            h.content_id
+            for h in search(
+                SearchQuery(q="照片里的猫", intent="image", limit=20), collection=TEST_COLLECTION
+            ).hits
         ],
-        timeout=5, interval=0.2, message="fix1-photo 索引就绪（image 意图）",
+        timeout=5, interval=0.2, message="fix1-photo 索引就绪（显式 image 意图）",
     )
 
-    # image 意图：应命中 photo 点（生产语义），不命中 text 点
-    r = search(SearchQuery(q="照片里的猫", limit=20), collection=TEST_COLLECTION)
+    # 显式 image 意图：只命中 photo 点（生产语义），不命中 text 点
+    r = search(SearchQuery(q="照片里的猫", intent="image", limit=20), collection=TEST_COLLECTION)
     assert r.intent == "image"
     ids = [h.content_id for h in r.hits]
     assert "fix1-photo" in ids, f"image 意图应命中 photo 点, got {ids}"
-    assert "fix1-text" not in ids, "image 意图不应命中 text 点"
+    assert "fix1-text" not in ids, "显式 image 意图不应命中 text 点"
+
+    # auto 路由（同一句查询）：mixed → 照片仍命中，但不再锁死类型（可含文字/语音）
+    auto = search(SearchQuery(q="照片里的猫", limit=20), collection=TEST_COLLECTION)
+    assert auto.intent == "mixed", f"含图词+实词应路由为 mixed, got {auto.intent}"
+    assert "fix1-photo" in [h.content_id for h in auto.hits]
 
     # 显式 content_types=["photo"]：遗留 "image" 点也命中（旧数据不丢）
     r2 = search(SearchQuery(q="课程表", content_types=["photo"], limit=20), collection=TEST_COLLECTION)

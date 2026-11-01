@@ -1804,6 +1804,78 @@
         }
       }
     },
+    "/api/v1/search/audio": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search By Audio Api",
+        "description": "音频搜全模态（B 方案 2026-11-01）：上传录音 → ASR 转写 → 复用文本检索\n\n为什么要有这条端点（客户端其实也能两步走：/asr/transcribe → /search）：\n自动化评测与契约校验没有客户端就驱动不了音频检索；且后端单跳把\"转写失败\"\n与\"搜不到\"区分开（各自有独立错误码/日志），两步走时用户只看到一句\"搜索失败\"。\n\n返回结构与 `POST /api/v1/search` **完全同构**（同一 `SearchResult`）：\n`query/rewritten_query` = 转写文本（用户要能看到\"这句话被听成了什么\"），\n`intent` = 转写文本走路由的结果（text/image/mixed），客户端无需另写解析分支。\n\n错误映射复用 ASR 域（`_asr_error`）：音频参数/格式问题 → 422 ASR_001，\n转写服务不可用 → 503 ASR_002——两处各写一份码表必然漂移。",
+        "operationId": "search_by_audio_api_api_v1_search_audio_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "preferred",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(auto|funasr|sensevoice|mock)$",
+              "default": "auto",
+              "title": "Preferred"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_search_by_audio_api_api_v1_search_audio_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SearchResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/search": {
       "post": {
         "tags": [
@@ -6389,6 +6461,21 @@
           "file_size"
         ],
         "title": "Body_init_upload_api_v1_upload_init_post"
+      },
+      "Body_search_by_audio_api_api_v1_search_audio_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "查询音频（M4A/WAV/MP3/AAC 等，≤8MB）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_search_by_audio_api_api_v1_search_audio_post"
       },
       "Body_search_by_image_api_api_v1_search_image_post": {
         "properties": {
