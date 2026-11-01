@@ -806,3 +806,9 @@ ShareSheet（须真机验"保存到相册"）。
 - **review_agent 快速门全绿**（此前 8 轮积累 4 类阻断）：env_template（4 新配置进双模板）、openapi_snapshot（重导）、structure（3 文件超阈显式登记 filesize.allowlist + 新增 db/alive() 软删过滤唯一出口收敛 dup）、lessons 登记。
 - **三批 commit**：af3ce3a（backend 检索+超时+棘轮）、6e806e8（client 三修复）、5c34a21（docs 台账）。
 - 存量 108 文件为上一 agent 遗留工作，未纳入本 goal 范围，保持原样。
+
+## 2026-11-01 12:00 · 启动事故修复 + F 域走查 51/76（goal round 11）
+- **启动事故**：上一 commit 的 db/alive.py 引用不存在的 app.db.models.base ⇒ backend 拒启动（healthz 503）。修：Base 实际在 app.db.session（586d71b）。lessons：py_compile 不验证 import 目标。
+- **走查 +2**：7.5 性格标签锁定文案 ✅（真锁定实现一致）、1.7 画像重建复验 ✅（刷新→更新→按钮态恢复）。
+- **7.4** ⏸ 无 AI 标签数据可构造，待补验。
+- 进度：**51/76**。
