@@ -383,9 +383,19 @@ def create_content(
     sync_writes.log_content_created(db, user.id, str(record.id))
 
     # 入队异步 AI 管线（API-016；API 立即返回不阻塞）
-    # 审查修复(P1-12)：voice/photo 用户等待 → 高优队列；text/article 低优
     # F4/R5-4#5：enqueue_unique 同 content 键不重复入队（job 级去重）
-    if req.content_type in ("voice", "photo"):
+    #
+    # 🚨 2026-10-31（走查实测：新写的文字搜不到）——**优先级原来是反的**。
+    # 原实现：voice/photo → 高优（默认队列），text/article → 低优（QUEUE_LOW）。
+    # 但实测成本结构恰好相反：
+    #   · 照片最贵：`image_caption` 超时 30s × 3 次重试 = 单张 90s，且成批上传；
+    #   · 文字最便宜：只有打标 + 向量，秒级。
+    # 结果：一批照片把高优队列占满几十小时，**用户刚写的文字排在它们后面**，
+    # 内容永远停在 processing ⇒ 搜索搜不到、卡片无标题（现场：队列里 0 job、
+    # DB 里 4579 条 >24h 的 processing）。
+    # 现改为按**处理成本/用户等待强度**排队：文字(秒级、立刻要能搜到) 走高优；
+    # 照片(慢、可后台慢慢来) 走低优；语音居中走低优但带超时兜底（转写有看门狗）。
+    if req.content_type in ("text", "article"):
         # R9-B6（2026-09-06）：第 2 个 str(record.id) 是函数参数——enqueue_unique 的 key
         # 只是去重键，缺 args = process_content() 零参 TypeError 秒死（failed 262 条同因）
         enqueue_unique(process_content, str(record.id), str(record.id))
@@ -534,6 +544,40 @@ def update_content_remark(
     return ApiResponse(data=_to_out(row))
 
 
+def _reconcile_events_after_content_delete(db: Session, content_id: str) -> None:
+    """内容软删后，同步收拾它挂过的事件（2026-11-01 · 走查 3.6）。
+
+    为什么必须做：时间轴渲染的是 `events`，不是 `contents`。只软删内容时，
+    事件与 `event_items` 都还在 ⇒ 卡片继续显示（用户以为"没删掉"），
+    点进去又因为成员已删而拿不到内容（空壳）。
+
+    规则：
+      ① 摘掉该内容的成员关系（无论事件还有没有别的成员）；
+      ② 成员被摘空的事件**直接删除** —— 它只是端侧聚合出来的展示容器，
+         没有独立业务价值；`offline_queue` 里的 upsert 记录仍可重放重建。
+    仅删除本用户的事件，避免越权（`Event.user_id` 双保险）。
+    """
+    from sqlalchemy import delete as _delete
+    from sqlalchemy import func
+
+    from app.db.models import Event, EventItem
+
+    eids = db.execute(
+        select(EventItem.event_id).where(EventItem.content_id == content_id)
+    ).scalars().all()
+    if not eids:
+        return
+
+    db.execute(_delete(EventItem).where(EventItem.content_id == content_id))
+    for eid in eids:
+        left = db.execute(
+            select(func.count()).select_from(EventItem).where(EventItem.event_id == eid)
+        ).scalar()
+        if not left:
+            db.execute(_delete(Event).where(Event.id == eid))
+            logger.info("内容 %s 删除后其事件 %s 已无成员，一并删除", content_id, eid)
+
+
 @router.delete("/{content_id}", response_model=ApiResponse[ContentDeleteOut])
 def delete_content(
     content_id: str,
@@ -554,6 +598,13 @@ def delete_content(
     row = load_alive_content(db, user.id, content_id)
     now = datetime.now(UTC)
     sync_writes.soft_delete_content(db, row, user.id, change_ts=now, anchor=now)
+    # 2026-11-01（走查 3.6 实测缺陷）：**删了内容，时间轴卡片还在**。
+    # 现场：详情页删掉 mangosteen → `DELETE /contents/…` 200、`contents.deleted_at` 已置，
+    # 但返回时间轴后卡片照旧（hero 仍 8 条）。原因：时间轴渲染的是 **事件**，
+    # 而软删只动 contents，`event_items` 仍指向它 ⇒ 事件成了"空壳卡片"，
+    # 点进去也拿不到内容（`_batch_open_content_ids` 会过滤 `deleted_at`）。
+    # 处置：把该内容的成员关系摘掉；成员清空的事件（纯聚合产物、无独立价值）一并删除。
+    _reconcile_events_after_content_delete(db, str(row.id))
     db.commit()
     return ApiResponse(
         data=ContentDeleteOut(

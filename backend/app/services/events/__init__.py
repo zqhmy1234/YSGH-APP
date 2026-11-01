@@ -37,8 +37,10 @@ from app.services.events.sync import (
     sync_client_events_safe,
 )
 from app.services.events.timeline import (
+    encode_timeline_cursor,
     get_event_last_activity,
     get_timeline,
+    get_timeline_page,
     l3_lifecycle,
 )
 
@@ -59,6 +61,8 @@ __all__ = [
     "sync_client_events_safe",
     # timeline（时间轴）
     "get_timeline",
+    "get_timeline_page",
+    "encode_timeline_cursor",
     "get_event_last_activity",
     # timeline 再导出（B9a）：L3 生命周期衍生的对外门面（API 不再直连算法包）
     "l3_lifecycle",

@@ -19,9 +19,16 @@
 import { ref } from 'vue'
 
 import { showErrorToast } from '@/utils/api'
+// 2026-10-31：原生 errMsg 可能是 JSON 串，展示前必须清洗（见 utils/err_text.uts）
+import { humanizeErr } from '@/utils/err_text'
 import { createVoiceContentRemark } from '@/utils/capsule_api'
 import { submitCorrection } from '@/utils/text_recorder'
+import { submitContentAsL1 } from '@/utils/l1_submit.uts'
 import {
+	ASR_FAIL_NETWORK,
+	ASR_FAIL_OFFLINE,
+	ASR_FAIL_TIMEOUT,
+	lastAsrFailReason,
 	pauseRecord,
 	recorderState,
 	resumeRecord,
@@ -62,6 +69,12 @@ export class VoiceRecorder {
 	 *  为什么需要：卸载时若直接 stopRecordNow，原生回调会带着时长进保存链 ⇒
 	 *  「录音中按返回键」会变成"边退出边把这段录音存下来"（用户意图是取消）。 */
 	private abandonFlag: boolean = false
+	/** 组件存活标志（2026-10-30 · P2 F-2）：宿主组件 onUnmounted 时置 true。
+	 *  为什么需要：转写/上传都是网络异步，用户完全可能「录完 → 立刻返回/关面板」，
+	 *  而 `transcribeWav` / `uploadVoicePersistent` 的回调随后才到 —— 原实现照样
+	 *  `setVoiceStage('preview')` / `showToast` / `emitSaved` / `emitClose`，
+	 *  即**对已卸载的页面写状态并把事件 emit 给已经关闭的浮层**（宿主可能已切到别的 tab）。 */
+	private disposed: boolean = false
 
 	private emitSaved: () => void
 	private emitClose: () => void
@@ -88,6 +101,12 @@ export class VoiceRecorder {
 		this.resetAiLabel = resetAiLabel
 		this.remarkTrimmed = remarkTrimmed
 		this.resetFormFields = resetFormFields
+	}
+
+	/** 2026-10-30（P2 F-2）：宿主组件卸载时调用（先于/独立于 abandonRecording）。
+	 *  置位后所有网络回调只许落 ref、不许 toast/emit/切 stage。 */
+	markDisposed(): void {
+		this.disposed = true
 	}
 
 	setRecordingOff(): void {
@@ -159,7 +178,10 @@ export class VoiceRecorder {
 					} else if (m.indexOf('permission') >= 0 || m.indexOf('denied') >= 0) {
 						showErrorToast(new Error('麦克风权限未开启，请在系统设置中允许'))
 					} else {
-						showErrorToast(new Error('录音失败：' + msg))
+						// 2026-10-31（走查：JSON 直接暴露给用户）：`msg` 可能是
+						// `{"errMsg":"..."}` 这种结构体串，直接拼进 toast 会把花括号引号怼给用户。
+						// 统一走清洗；清洗不出人话就给可执行建议。
+						showErrorToast(new Error(humanizeErr(msg, '录音失败，请重试一次')))
 					}
 				},
 				(autoPaused: boolean) => {
@@ -290,6 +312,14 @@ export class VoiceRecorder {
 			clearInterval(this.recordTimer.value)
 			this.recordTimer.value = 0
 		}
+		// 2026-10-30（P2 F-2）：组件已卸载 ⇒ 原生 onStop 回调落在这里时只复位状态，
+		// 绝不进转写/上传/保存链（那是"边退出边把这段录音存下来"）。
+		if (this.disposed) {
+			this.abandonFlag = false
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			console.log('[yishu] 卸载后 onStop：只复位，不转写不上传')
+			return
+		}
 		// 🚨 2026-10-11 静态审查：放弃态（组件卸载中调 abandonRecording）**只复位、不进保存链**。
 		// 否则「录音中按返回键关闭面板」会触发转写+上传+保存（用户意图是取消）。
 		if (this.abandonFlag) {
@@ -325,7 +355,26 @@ export class VoiceRecorder {
 			uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
 			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
 				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+				// 2026-10-30（P2 F-2）：卸载后不再 toast / emit（上传本身已发生，内容照常入库）
+				if (this.disposed) {
+					console.log('[yishu] 长录音回包时组件已卸载：不再 toast/emit')
+					return
+				}
+				// 2026-10-30（P1-4）：原实现**不判结果** —— 上传失败也照弹「已记录」并把面板收起，
+				// 用户以为存住了、实际什么都没入库（录音文件也不再提示）。现区分成功/失败。
+				const cid = res != null ? res.getString('content_id') : null
+				if (cid == null || cid == '') {
+					showErrorToast(new Error('长录音上传失败，录音已保留，可重试'))
+					return
+				}
 				uni.showToast({ title: '已记录', icon: 'success' })
+				// 2026-10-31（走查 C：同日多张日卡标题完全相同）：长录音此刻还没有转写文本，
+				// 摘要传 '' ⇒ 标题尾段退化为时刻 HH:mm，仍保证同日多卡不同名。
+				submitContentAsL1(cid, Date.now(), '语音', '').then((ok: boolean) => {
+					if (!ok) {
+						uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+					}
+				})
 				this.emitSaved()
 				this.emitClose()
 			})
@@ -333,10 +382,67 @@ export class VoiceRecorder {
 		}
 		transcribeWav(path).then((res) => {
 			this.transcribing.value = false
+			// 2026-10-30（P2 F-2）：转写回包时组件可能已卸载（用户录完就返回/关面板）——
+			// 原实现继续 `setVoiceStage('preview')` / toast，写在已销毁页面上，用户下次进面板
+			// 还会看到上一段的预览态。此处直接丢弃结果（录音文件仍在本地，不影响重录）。
+			if (this.disposed) {
+				console.log('[yishu] 转写回包时组件已卸载：丢弃本次结果')
+				return
+			}
 			if (res == null) {
+				// 2026-10-30：先取失败原因（voice.uts 的看门狗/离线前置/直传链共同写入）
+				const why = lastAsrFailReason()
+				// 2026-10-30（P1-5）：**4.3~5min 录音的死区**。
+				// 16k/16bit 直传上限 8MB ≈ 4分20秒；而分片持久化（uploadVoicePersistent）的
+				// 阈值写的是 5 分钟 ⇒ 这段区间里：直传被 >8MB 拦下返回 null，界面报
+				// 「转写失败，录音已保留，可点此重试」，而**重试永远还是同一结果**，真正的
+				// 分片路径永不触发 —— 用户被卡在一个 100% 失败的重试循环里。
+				// 修法：直传失败且时长已超过直传可承载区间 ⇒ 同轮改走持久化分片上传。
+				// 2026-10-30：离线/网络类失败**不要**改走分片上传 —— 它同样要联网，
+				// 只会把用户的等待再延长一轮，然后还是失败。直接落到下方可执行文案。
+				const netFailure = why == ASR_FAIL_OFFLINE || why == ASR_FAIL_NETWORK
+				if (durationMs >= 240000 && !netFailure) {
+					this.recordHint.value = '正在上传长录音…'
+					uploadVoicePersistent(path, durationMs).then((r: UTSJSONObject | null) => {
+						// 2026-10-30（P2 F-2）：卸载后只记录，不再改 UI / emit
+						if (this.disposed) {
+							console.log('[yishu] 长录音（直传失败转分片）回包时组件已卸载：不再 toast/emit')
+							return
+						}
+						const cid = r != null ? r.getString('content_id') : null
+						if (cid == null || cid == '') {
+							this.transcribeFailed.value = true
+							this.recordHint.value = '长录音上传失败，录音已保留，可重试'
+							showErrorToast(new Error('长录音上传失败，请重试'))
+							return
+						}
+						uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
+						// 2026-10-31（走查 C）：同上报文可区分，长录音暂无转写文本 ⇒ 空摘要走时刻兜底
+						submitContentAsL1(cid, Date.now(), '语音', '').then((ok: boolean) => {
+							if (!ok) {
+								uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+							}
+						})
+						this.recordHint.value = '轻触中央圆点 · 开始录音'
+						this.emitSaved()
+						this.emitClose()
+					})
+					return
+				}
+				// 2026-10-30（修「卡在正在转写」）：按真实失败原因给**可执行**文案。
+				// 原实现无论离线/超时/服务端错都只弹「转写失败，请重试」，用户不知道
+				// 该等联网还是该重试；而离线时重试必然再失败。
 				this.transcribeFailed.value = true
-				this.recordHint.value = '转写失败，录音已保留，可点此重试'
-				showErrorToast(new Error('转写失败，请重试'))
+				if (why == ASR_FAIL_OFFLINE || why == ASR_FAIL_NETWORK) {
+					this.recordHint.value = '转写失败：当前无网络，录音已保留'
+					showErrorToast(new Error('当前无网络，录音已保留；联网后点「重新转写」'))
+				} else if (why == ASR_FAIL_TIMEOUT) {
+					this.recordHint.value = '转写超时，录音已保留'
+					showErrorToast(new Error('转写超时（网络较慢），录音已保留，可点「重新转写」'))
+				} else {
+					this.recordHint.value = '转写失败，录音已保留，可点此重试'
+					showErrorToast(new Error('转写失败，请重试'))
+				}
 				return
 			}
 			this.transcript.value = res.text
@@ -405,8 +511,11 @@ export class VoiceRecorder {
 				this.saving.value = false
 				if (contentId != null) {
 					this.afterVoiceSaved(contentId, text, picked, false)
-				} else {
+				} else if (!this.disposed) {
+					// 2026-10-30（P2 F-2）：组件已卸载则不再向死页 toast（失败事实已进日志/Sentry）
 					showErrorToast(new Error('语音入库失败（无本地录音文件且文本入库未成功）'))
+				} else {
+					console.error('[yishu] 语音入库失败（组件已卸载，不 toast）')
 				}
 			})
 			return
@@ -427,8 +536,10 @@ export class VoiceRecorder {
 					this.saving.value = false
 					if (fbId != null) {
 						this.afterVoiceSaved(fbId, text, picked, false)
-					} else {
+					} else if (!this.disposed) {
 						showErrorToast(new Error('语音保存失败（音频上传与文本入库均未成功）'))
+					} else {
+						console.error('[yishu] 语音保存失败（组件已卸载，不 toast）')
 					}
 				})
 			}
@@ -442,6 +553,20 @@ export class VoiceRecorder {
 			submitCorrection(contentId, text, picked, '', 'voice').then((ok: boolean) => {
 				console.log('[yishu] voice manual correction ok=' + ok)
 			})
+		}
+		// 2026-10-30（P0-1）：语音记录必须**同时提交当日 L1 事件**，否则时间轴（只读 events）
+		// 永远看不到这条（云侧默认 mode=l2l3 不写 L1，L1 只能端侧提交）。
+		// 2026-10-31（走查 C：同日多张日卡标题完全相同）：短录音此时已有转写文本 ⇒ 摘要进标题
+		submitContentAsL1(contentId, Date.now(), '语音', text).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+			}
+		})
+		// 2026-10-30（P2 F-2）：保存链的回包可能晚于组件卸载。纠错与 L1（上面）是服务端副作用，
+		// 必须做完；之后的 toast / emit / 表单复位一律不做。
+		if (this.disposed) {
+			console.log('[yishu] 语音保存回包时组件已卸载：跳过 toast/emit')
+			return
 		}
 		if (audioOk) {
 			uni.showToast({ title: '已记录', icon: 'success' })

@@ -37,9 +37,47 @@ export class AggRunResult {
 	}
 }
 
-/** 生成客户端事件幂等键（时间戳 + 随机后缀，同用户唯一） */
-function genClientEventId(): string {
-	return 'ev-' + Date.now() + '-' + Math.floor(Math.random() * 1000000)
+/**
+ * 成员 id 集合的**顺序无关**指纹（逐条 djb2 后求和，再拼上条数）。
+ *
+ * 为什么不用时间戳/随机数：见下方 `dayEventId` 的 2026-10-30 事故说明——
+ * 幂等键必须是**同一批照片恒等**的函数，否则服务端去重永远不会命中。
+ */
+function idsFingerprint(ids: Array<string>): string {
+	let sum = 0
+	for (let i = 0; i < ids.length; i++) {
+		const s = ids[i]
+		let h = 5381
+		for (let k = 0; k < s.length; k++) {
+			h = ((h << 5) + h + (s.charCodeAt(k) ?? 0)) & 0x7fffffff
+		}
+		sum = (sum + h) & 0x7fffffff
+	}
+	return sum.toString(16) + 'x' + ids.length.toString()
+}
+
+/**
+ * 端侧 L1 事件幂等键 = 本地自然日 + 成员 id 集合指纹。
+ *
+ * 2026-10-30（修「同一天出现两张一样的日卡」）根因：原实现是
+ * `'ev-' + Date.now() + '-' + random`，**每次调用都换一个新键** ⇒ 服务端按
+ * client_event_id 去重（services/events/sync.py:68-74 + 唯一索引
+ * uq_events_user_client_event）完全失效。而端侧**确实**会对同一批照片提交两次：
+ * uploader_batch.uts:224 的 WiFi 恢复自动补传与
+ * UploadStatusBanner.uvue:141 的「一键继续」挂在**同一个** continuePendingUploads
+ * Promise 上，两次 `.then` 各调一次 submitUploadsAsL1 ⇒ 两个不同 client_event_id、
+ * 相同 photo_ids ⇒ 时间轴同日两张完全一样的卡（buildDayGroups 把同日 L1 合并进
+ * 同一日期头下，所以表现正是"同一天两张重复卡"）。
+ *
+ * 改成确定性键后：同一批照片无论提交几次/来自哪条路径，服务端都命中 duplicates，
+ * 不再产生第二张卡（幂等性从"服务器帮忙去重"变成"客户端本来就该给出的稳定键"）。
+ *
+ * 注意：**不同批次**的照片（同一天上午/下午各一批）仍是两张卡——这是既有设计
+ * （timeline.uts:751-759「同日多个 L1 合并进同一 DayGroup，禁止重复日期头」），
+ * 不是重复。
+ */
+export function dayEventId(day: string, ids: Array<string>): string {
+	return 'ev-d-' + day + '-' + idsFingerprint(ids)
 }
 
 /**
@@ -111,7 +149,8 @@ export function aggregateToEvents(uploads: Array<UploadedPhoto>, tzOffsetMin: nu
 			}
 		}
 		events.push(new ClientL1Event(
-			genClientEventId(),
+			// 2026-10-30：幂等键改为确定性（day + 成员集合指纹），见 dayEventId 注释
+			dayEventId(d.date, ids),
 			d.date + ' · ' + d.photos.length + '条',
 			minTs,
 			maxTs,

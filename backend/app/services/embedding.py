@@ -49,8 +49,58 @@ def get_model() -> SentenceTransformer:
     return SentenceTransformer(MODEL_NAME, model_kwargs={"torch_dtype": torch.float16})
 
 
+def _remote_base() -> str:
+    """共享 embedding 服务的地址（未配置则返回空 = 走本地模型）。
+
+    2026-10-31：压测证明「每进程各加载一份模型」是吞吐瓶颈——
+    4 个 worker 时日志出现 `os error 1455`（页面文件不足），模型加载失败、
+    反而比单 worker 更慢（0.22 → 0.11 条/秒）。配了本地址后本进程**完全不加载模型**，
+    内存从 ~1.2GB 降到几十 MB，worker 数量就能线性扩。
+    """
+    from app.core.config import settings
+
+    return str(getattr(settings, "embedding_service_url", "") or "")
+
+
+def _fallback_allowed() -> bool:
+    """共享服务失败时是否允许回退本地模型（默认不允许，见 config 注释）。"""
+    from app.core.config import settings
+
+    return bool(getattr(settings, "embedding_fallback_local", False))
+
+
+def _remote_encode(texts: list[str], want: tuple[str, ...]) -> dict:
+    """调共享服务；失败由调用方决定是否回退本地。"""
+    import httpx
+
+    base = _remote_base().rstrip("/")
+    resp = httpx.post(
+        f"{base}/embed",
+        json={"texts": texts, "want": list(want)},
+        timeout=60.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def encode_dense(texts: list[str], normalize: bool = True) -> list[list[float]]:
-    """dense 向量（BGE-M3 默认池化，1024 维）"""
+    """dense 向量（BGE-M3 默认池化，1024 维）
+
+    配了 `EMBEDDING_SERVICE_URL` 就走共享服务（本进程不加载模型）；
+    调用失败**回退本地**——宁可慢一点，也不能让整条管线因为一个边车服务挂掉。
+    """
+    base = _remote_base()
+    if base:
+        try:
+            return _remote_encode(texts, ("dense",))["dense"]
+        except Exception as exc:  # noqa: BLE001
+            if not _fallback_allowed():
+                # 2026-10-31：默认**不回退**。回退会把 1.2GB 模型加载进本进程，
+                # 挤爆内存后连带 backend/worker 一起挂 —— 宁可这一条失败（RQ 会重试），
+                # 也不能让整台机器陪葬。
+                logger.error("共享 embedding 服务不可用且已禁用本地回退: %s", exc)
+                raise
+            logger.warning("共享 embedding 服务不可用，回退本地模型: %s", exc)
     model = get_model()
     vecs = model.encode(texts, normalize_embeddings=normalize, show_progress_bar=False)
     return [v.tolist() for v in vecs]
@@ -86,6 +136,15 @@ def encode_sparse(texts: list[str]) -> list[dict[str, float]]:
     BGE-M3 官方 sparse 公式：weights = relu(sparse_linear(last_hidden_state))，
     索引 = token id（Qdrant sparse 向量索引无词汇表限制，直接用 token id）。
     """
+    base = _remote_base()
+    if base:
+        try:
+            return _remote_encode(texts, ("sparse",))["sparse"]
+        except Exception as exc:  # noqa: BLE001
+            if not _fallback_allowed():
+                logger.error("共享 embedding 服务不可用（sparse）且已禁用本地回退: %s", exc)
+                raise
+            logger.warning("共享 embedding 服务不可用（sparse），回退本地模型: %s", exc)
     model = get_model()
     sparse_linear = _get_sparse_linear()
     features = model.tokenize(texts)

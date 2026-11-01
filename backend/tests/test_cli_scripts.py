@@ -121,6 +121,10 @@ def test_hbuilder_project_guard_accepts_unique_current_client(tmp_path):
     registry = tmp_path / "HBuilder X.ini"
     current = tmp_path / "repo" / "client"
     old = tmp_path / "archive" / "client-102"
+    # 2026-10-31：守卫现在**只统计磁盘上存在的条目**（死条目忽略，见 test_..._ignores_dead_entries），
+    # 所以用例必须真的建目录——只写 ini 会让两条都变死条目，断言失去意义。
+    current.mkdir(parents=True)
+    old.mkdir(parents=True)
     registry.write_text(
         "[workspace]\n"
         f"projects\\1\\path={current.as_posix()}\n"
@@ -141,6 +145,8 @@ def test_hbuilder_project_guard_rejects_duplicate_client(tmp_path):
     registry = tmp_path / "HBuilder X.ini"
     current = tmp_path / "repo" / "client"
     old = tmp_path / "old" / "client"
+    current.mkdir(parents=True)
+    old.mkdir(parents=True)  # 两条都要真实存在才算"同名冲突"（死条目会被忽略）
     registry.write_text(
         "[workspace]\n"
         f"projects\\1\\path={current.as_posix()}\n"
@@ -151,7 +157,9 @@ def test_hbuilder_project_guard_rejects_duplicate_client(tmp_path):
     ok, detail = inspect_client_project(current, registry)
 
     assert not ok
-    assert "2 个名为 `client`" in detail
+    # 2026-10-31：守卫措辞加了「**存在的**」（死条目不算候选），断言改为按语义分段匹配，
+    # 不再绑死整句——否则改动说明文字就会误报失败，掩盖真正的行为变化。
+    assert "2 个" in detail and "名为 `client` 的项目" in detail
     assert "client-<versionCode>" in detail
 
 
@@ -162,6 +170,7 @@ def test_hbuilder_project_guard_rejects_wrong_single_client(tmp_path):
     registry = tmp_path / "HBuilder X.ini"
     current = tmp_path / "repo" / "client"
     wrong = tmp_path / "old" / "client"
+    wrong.mkdir(parents=True)  # 唯一的那条必须是**活**条目，否则会被当死条目忽略
     registry.write_text(
         "[workspace]\n"
         f"projects\\1\\path={wrong.as_posix()}\n",
@@ -172,6 +181,33 @@ def test_hbuilder_project_guard_rejects_wrong_single_client(tmp_path):
 
     assert not ok
     assert "未指向当前仓库" in detail
+
+
+def test_hbuilder_project_guard_ignores_dead_entries(tmp_path):
+    """死条目（磁盘上已不存在）**不参与**唯一性判定。
+
+    ## 为什么这条必须有（2026-10-30 实测事故）
+    真实 HBuilderX 注册表里留着 4 条**已删除 worktree** 的 `client` 条目。按旧口径它们算
+    "同名冲突" ⇒ 编译门永久报环境错误、根本无法编译。修法是把死条目排除，
+    但又不能反过来变成"忽略一切"——所以这里钉住正向语义：**活 1 条 + 死 1 条同名 ⇒ 仍算唯一**。
+    """
+    from scripts.hbuilder_project_guard import inspect_client_project
+
+    registry = tmp_path / "HBuilder X.ini"
+    current = tmp_path / "repo" / "client"
+    dead = tmp_path / "gone" / "client"  # 刻意不创建
+    current.mkdir(parents=True)
+    registry.write_text(
+        "[workspace]\n"
+        f"projects\\1\\path={current.as_posix()}\n"
+        f"projects\\2\\path={dead.as_posix()}\n",
+        encoding="utf-8",
+    )
+
+    ok, detail = inspect_client_project(current, registry)
+
+    assert ok, detail
+    assert "已忽略" in detail and "死条目" in detail
 
 
 # ---------------------------------------------------------------------------

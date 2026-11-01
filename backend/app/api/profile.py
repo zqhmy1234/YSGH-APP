@@ -1,13 +1,17 @@
-"""画像管理路由：从已有记忆异步重建画像。"""
+"""画像管理路由：画像重建 + 锁定标签（B1:139）。"""
 from fastapi import Depends
+from sqlalchemy.orm import Session
 
 from app.api import make_router
 from app.api.deps import get_current_user
-from app.core.errors import ERR_PROFILE_001, ApiError
+from app.core.errors import ERR_PROFILE_001, ERR_PROFILE_002, ApiError
 from app.core.queue import QUEUE_LOW, enqueue_low, get_job
 from app.db.models import User
+from app.db.session import get_db
 from app.schemas.common import ApiResponse
+from app.schemas.profile_locked_tags import ProfileLockedTagsIn, ProfileLockedTagsOut
 from app.schemas.profile_rebuild import ProfileRebuildStartOut, ProfileRebuildStatusOut
+from app.services.profile_locked_tags import get_locked_tags, replace_locked_tags
 from app.services.profile_rebuild import rebuild_user_profile
 
 router = make_router(prefix="/api/v1/profile", tags=["profile"])
@@ -56,8 +60,41 @@ def profile_rebuild_status(
         pooled=int(meta.get("pooled", summary.get("pooled", 0)) or 0),
         failed=int(meta.get("failed", summary.get("failed", 0)) or 0),
         skipped=int(meta.get("skipped", summary.get("skipped", 0)) or 0),
+        # 2026-10-30（P2 F-6）：批次进度（批大小由 worker 的 limit 决定，不再兼作总量上限）
+        batches=int(meta.get("batches", summary.get("batches", 0)) or 0),
         degraded=bool(meta.get("degraded", summary.get("degraded", False))),
         error=error,
         summary=summary,
     )
     return ApiResponse(data=data)
+
+
+# ---------------------------------------------------------------- 锁定标签（B1:139）
+#
+# 真源在服务端（user_profile.locked_tags）。客户端 TagEditPanel 的「固定」原先只写本机
+# storage ⇒ 后端不知情，画像重建时 AI 会把用户删掉/固定的标签写回来。这两个端点把它
+# 变成服务端事实，`services/profile_annotator.apply_annotation` 在写回前按该集合跳过。
+
+
+@router.get("/locked-tags", response_model=ApiResponse[ProfileLockedTagsOut])
+def locked_tags_read(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """读锁定标签集合。从未设置过的用户返回空数组（不建画像空行）。"""
+    return ApiResponse(data=ProfileLockedTagsOut(tags=get_locked_tags(db, user.id)))
+
+
+@router.put("/locked-tags", response_model=ApiResponse[ProfileLockedTagsOut])
+def locked_tags_replace(
+    req: ProfileLockedTagsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """整体覆盖锁定标签集合（空数组 = 全部解锁），返回规整后的最新集合。"""
+    try:
+        tags = replace_locked_tags(db, user.id, req.tags)
+    except ValueError as exc:
+        # 非法项不静默丢弃：否则"PUT 成功但集合变了"无从解释（PROFILE_002 / 422）
+        raise ApiError(ERR_PROFILE_002, str(exc), http=422) from exc
+    return ApiResponse(data=ProfileLockedTagsOut(tags=tags))

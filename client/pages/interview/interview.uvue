@@ -24,10 +24,23 @@
 			<view v-if="lastEmotion != ''" class="emo-chip"> <!-- 上一答情绪标签（D-16：空串=未测得不渲染） -->
 				<text class="emo-chip-text">情绪 · {{ lastEmotion }}</text>
 			</view>
+			<!-- 2026-10-30（P1-27）：提交失败**不写完成态**（原实现无条件 done=true ⇒ 答案全丢、
+			     无法重试）。失败时停留在当前问，答案仍在 answers 里，这里给可重试出口 -->
+			<view v-if="submitFailed" class="retry-hint">
+				<text class="retry-hint-text">这次没提交成功，回答都还留着</text>
+			</view>
+			<view v-if="submitFailed" class="start-btn" @tap="submitAll">
+				<text class="start-btn-text">重试提交</text>
+			</view>
 		</view>
 		<view v-else class="n4_181"> <!-- 完成卡（三问答毕） -->
 			<text class="n4_182">访谈完成</text>
 			<text class="n4_183">谢谢你的分享，已经开始了解你了</text>
+			<!-- 2026-10-30（P1-28）：后端下发的 `confirmation`（AI 复述）原先是**死状态**——
+			     取到值却零渲染点。现按普通气泡上屏；为空时降级为不渲染并在 submitAll 里 console 说明 -->
+			<view v-if="confirmation != ''" class="confirm-bubble">
+				<text class="confirm-text">{{ confirmation }}</text>
+			</view>
 			<view class="start-btn" @tap="goHome">
 				<text class="start-btn-text">开始使用</text>
 			</view>
@@ -75,6 +88,8 @@
 	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play_interview'
 	import { startRecord, stopRecord, transcribeWav, AsrResult } from '@/utils/voice'
 	import { showErrorToast } from '@/utils/api'
+	// 2026-10-31：原生 errMsg 可能是 JSON 串，展示前清洗
+	import { humanizeErr } from '@/utils/err_text'
 	import { backToShell } from '@/utils/shell_state'
 
 	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
@@ -112,6 +127,8 @@
 	let textAnswer = ref('')
 	let confirmation = ref('')
 	let submitting = ref(false)
+	// 2026-10-30（P1-27）：提交失败标记（true 时停留在当前问并渲染「重试提交」，不进入完成态）
+	let submitFailed = ref(false)
 	let timerId: number = -1
 	// 按问题 key 收集答案（后端 answers dict 白名单 key）
 	const answers: UTSJSONObject = {}
@@ -188,7 +205,9 @@
 				(msg: string) => {
 					console.error('[interview] record error: ' + msg)
 					resetRecUi()
-					showErrorToast(new Error('录音失败：' + msg))
+					// 2026-10-31（走查：JSON 直接暴露给用户）：系统 errMsg 可能是
+					// `{"errMsg":"..."}`，不能原样拼进 toast。
+					showErrorToast(new Error(humanizeErr(msg, '录音失败，请重试一次')))
 				},
 				(autoPaused: boolean) => {
 					console.log('[interview] record interrupted (autoPaused=' + autoPaused + ')')
@@ -264,20 +283,50 @@
 	}
 
 	// 提交三问答案到后端，拿复述确认
+	// 2026-10-30（P1-27）：原实现无论成败都 `done=true` ⇒ 提交失败被当成「访谈完成」，
+	// 用户看到完成卡但后端一条答案都没收到（答案只在内存 answers 里，页面一走即丢），
+	// 且没有任何重试入口。现改为：**只有拿到后端结果才写完成态**；失败保留答案 + 重试出口。
+	// 另补空答案守卫：answers 全空时不得提交（后端会据此建画像维度，空答案=脏画像）。
 	function submitAll(): void {
 		if (submitting.value) {
 			return
 		}
+		if (UTSJSONObject.keys(answers).length == 0) {
+			uni.showToast({ title: '还没有记录任何回答', icon: 'none' })
+			return
+		}
 		submitting.value = true
+		submitFailed.value = false
 		uni.showLoading({ title: '正在生成画像…' })
-		submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
+		// play_interview 的契约是 resolve-only（失败 resolve(null) 不 reject）；
+		// 仍用 try 兜住同步抛出，避免 loading 与 submitting 永久卡死
+		try {
+			submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
+				uni.hideLoading()
+				submitting.value = false
+				if (res == null) {
+					// 失败：不写完成态、不清空 answers，用户可原样重试
+					submitFailed.value = true
+					console.log('[interview] 提交失败：保持在第 ' + (step.value + 1) + ' 问，答案保留，不写完成态')
+					showErrorToast(new Error('提交失败，回答已保留，请重试'))
+					return
+				}
+				confirmation.value = res.confirmation
+				if (confirmation.value == '') {
+					// 2026-10-30（P1-28）：后端未下发复述时明确降级（完成卡只剩固定文案），不留「取到但不显示」的死状态
+					console.log('[interview] 后端未下发 confirmation，完成卡降级为固定文案')
+				} else {
+					console.log('[interview] confirmation 已渲染，长度 ' + confirmation.value.length)
+				}
+				done.value = true
+			})
+		} catch (e) {
+			console.log('[interview] submitInterviewAnswers 同步抛出（状态回滚）: ' + e)
 			uni.hideLoading()
 			submitting.value = false
-			if (res != null && res.confirmation != '') {
-				confirmation.value = res.confirmation
-			}
-			done.value = true
-		})
+			submitFailed.value = true
+			showErrorToast(new Error('提交失败，回答已保留，请重试'))
+		}
 	}
 
 	// 文字回答弹层
@@ -589,6 +638,34 @@
 		font-size: var(--d-raw-r30, 30rpx);
 		color: var(--c-paper-100, #F8F7F4);
 		font-weight: 600;
+	}
+	/* 2026-10-30（P1-28）：AI 复述确认气泡（画布未画此态，沿用卡内既有 chip 视觉：
+	   淡锈红底 + 锈红字，与 .emo-chip 同族；uvue 样式不继承，text 单独带 font-family） */
+	.confirm-bubble {
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		width: 100%;
+		padding-left: 23rpx;
+		padding-right: 23rpx;
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--a-rust-10, rgba(176, 89, 59, 0.1));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	/* 2026-10-30（P1-27）：提交失败提示（重试按钮复用 .start-btn） */
+	.retry-hint {
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		width: 100%;
+	}
+	.retry-hint-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p12, 23.1rpx);
+		color: var(--c-rust-500, #B05A3A);
 	}
 	.text-modal {
 		position: absolute;

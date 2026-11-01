@@ -9,7 +9,7 @@ import { ensureLogin } from './auth'
 import { getDeviceId } from './device_id'
 import { retryAsync } from './retry'
 import { PATH_SYNC_PUSH, PATH_SYNC_PULL, PATH_SYNC_RECONCILE } from './contract'
-import { nextBatchOfTypes, removeByIds } from './queue_store'
+import { nextBatchOfTypes, removeByIds, bumpRetryById } from './queue_store'
 import { LAST_SYNC_KEY, PUSH_BATCH_SIZE, PullOutcome, PushOutcome, ReconcileReport, SYNC_TYPES } from './sync_types'
 import { isSyncPaused, pendingSyncCount, registerConsecutiveFailure, resetConsecutiveFailures } from './sync_queue'
 import { applyChanges, mirrorSnapshot, readCursor, writeCursor } from './sync_local'
@@ -144,7 +144,12 @@ function postBatchWithRetry(ops: Array<UTSJSONObject>): Promise<PushBatchResult>
 	})
 }
 
-/** 队列主循环：逐批 push（每批内部退避重试），4xx 停批，连续失败≥N 暂停 */
+// 2026-10-30（P1-41）：连续 4xx 轮数（同一次运行内）。达到上限才认死丢弃，避免"一次 4xx 真丢件"，
+// 同时也不会无限重试一批永久无效的 payload。
+let consecutive4xx: number = 0
+const MAX_4XX_ROUNDS: number = 3
+
+/** 队列主循环：逐批 push（每批内部退避重试），4xx 累计 3 轮才丢弃，连续失败≥N 暂停 */
 function flushQueueLoop(
 	applyAcc: number,
 	conflictAcc: number,
@@ -159,20 +164,42 @@ function flushQueueLoop(
 	postBatchWithRetry(ops).then((r: PushBatchResult) => {
 		if (r.ok) {
 			resetConsecutiveFailures()
+			consecutive4xx = 0
 			dropBatchFromQueue(ops)
 			if (r.conflicts > 0) {
 				console.warn('[yishu] sync push conflicts=' + r.conflicts + '（已保留云端版本）')
+				// 2026-10-30（P1-41）：**冲突后必须补拉**。LWW 冲突时服务端保留云端版本，
+				// 而客户端本地仍是自己那份 ⇒ 不补拉就永久不一致（用户看到"改了没生效"，
+				// 且在下次本地改动前一直错）。补拉一次把云端值覆盖回本地。
+				pullIncremental().then((p: PullOutcome) => {
+					console.log('[yishu] 冲突后补拉完成 applied=' + p.applied + ' cursor=' + p.cursor)
+				})
 			}
 			if (r.rejected > 0) {
-				console.warn('[yishu] sync push rejected=' + r.rejected + '（已丢弃）')
+				console.warn('[yishu] sync push rejected=' + r.rejected + '（服务端明确拒绝，已丢弃）')
 			}
 			flushQueueLoop(applyAcc + r.applied, conflictAcc + r.conflicts, rejectAcc + r.rejected, resolve)
 			return
 		}
 		if (r.is4xx) {
-			console.error('[yishu] sync push 4xx 停整批（不可重试）')
-			dropAll(ops)
-			flushQueueLoop(applyAcc, conflictAcc, rejectAcc + ops.length, resolve)
+			// 2026-10-30（P1-41）：**不再"一次 4xx 就整批丢弃"**。
+			// 原实现 `dropAll(ops)` ⇒ 一次 4xx（多半是某一条 payload 超出/字段过期）就把整批
+			// 离线操作**真丢掉**，且只留一行 console（用户端零提示）——离线记录凭空消失。
+			// 现口径：先给每条记一次重试（retry_count+1），连续 3 轮仍 4xx 才认死并丢弃，
+			// 期间保留队列（网络恢复/版本对齐后仍有机会成功）。
+			consecutive4xx = consecutive4xx + 1
+			for (let i = 0; i < ops.length; i++) {
+				bumpRetryById(ops[i].getString('op_id') ?? '')
+			}
+			if (consecutive4xx >= MAX_4XX_ROUNDS) {
+				console.error('[yishu] sync push 连续 ' + consecutive4xx + ' 轮 4xx，认死丢弃 ' + ops.length + ' 条')
+				dropAll(ops)
+				consecutive4xx = 0
+				flushQueueLoop(applyAcc, conflictAcc, rejectAcc + ops.length, resolve)
+				return
+			}
+			console.warn('[yishu] sync push 4xx（第 ' + consecutive4xx + ' 轮），保留 ' + ops.length + ' 条待下轮')
+			resolve(new PushOutcome(applyAcc, conflictAcc, rejectAcc, pendingSyncCount()))
 			return
 		}
 		// 网络/5xx：退避耗尽或暂停中断 → 保留队列待下轮（连续失败计数/暂停判定在 retryAsync.onFail）
@@ -199,7 +226,84 @@ export function pushPendingOps(): Promise<PushOutcome> {
 	})
 }
 
-/** 增量拉取（游标持久化 + 应用到本地镜像） */
+// 2026-10-31（P2 J-2）：增量拉取必须**翻页到底**。原实现只拉一页却读了 has_more 就直接 resolve
+// ⇒ 首次同步/长期离线后变更数 >limit(200) 时永远拉不完（游标停在第 1 页末，用户永远少数据，
+// 且下轮又从那里拉一页，剩多少页都只前进一页）。MAX_PULL_PAGES 是防死循环的硬上限：后端口径
+// 异常（has_more 恒真、游标不前进）时不会把同步链卡成无限循环，而是如实回报 has_more 留给下轮。
+const MAX_PULL_PAGES: number = 20
+
+/** 单页拉取结果（内层类型，**不导出**——零调用导出会被审核轴 4 判 CRITICAL） */
+class PullPage {
+	ok: boolean
+	changes: number
+	cursor: number
+	hasMore: boolean
+
+	constructor(ok: boolean, changes: number, cursor: number, hasMore: boolean) {
+		this.ok = ok
+		this.changes = changes
+		this.cursor = cursor
+		this.hasMore = hasMore
+	}
+}
+
+/** 拉一页（since 起，limit=200）。失败 ok=false ⇒ 调用方停在这里，游标**不前进**（不吞已拿到的页） */
+function pullOnePage(since: number): Promise<PullPage> {
+	return new Promise<PullPage>((resolve) => {
+		rawRequest(PATH_SYNC_PULL + '?device_id=' + getDeviceId() + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
+			if (hr.status !== 200) {
+				console.error('[yishu] sync pull HTTP ' + hr.status)
+				resolve(new PullPage(false, 0, since, false))
+				return
+			}
+			let changes: Array<UTSJSONObject> = []
+			let cursor = since
+			let hasMore = false
+			if (hr.body != null) {
+				const d: UTSJSONObject | null = hr.body.getJSON('data')
+				if (d != null) {
+					const arr = d.getArray('changes')
+					if (arr != null) {
+						changes = arr as Array<UTSJSONObject>
+					}
+					// ⚠️ 2026-10-09 修漏网强转：getNumber 缺字段返回 null，`as number` 强转 null 会
+					// 运行时崩；cursor 缺失时保持 since 不推进（本轮变更照常应用，下轮重复拉到同批——幂等）。
+					cursor = d.getNumber('cursor') ?? since
+					const hm = d.getBoolean('has_more')
+					hasMore = hm != null ? hm : false
+				}
+			}
+			applyChanges(changes)
+			writeCursor(cursor)
+			console.log('[yishu] sync pull since=' + since + ' -> cursor=' + cursor + ' changes=' + changes.length + ' hasMore=' + hasMore)
+			resolve(new PullPage(true, changes.length, cursor, hasMore))
+		})
+	})
+}
+
+/** 翻页循环（同 flushQueueLoop 的累积+递归范式）：任一页失败即停，已完成页已落盘、游标停在最后成功页 */
+function pullPages(cursor: number, total: number, pages: number, resolve: (r: PullOutcome) => void): void {
+	pullOnePage(cursor).then((p: PullPage) => {
+		if (!p.ok) {
+			resolve(new PullOutcome(total, cursor, false))
+			return
+		}
+		const got = total + p.changes
+		const seen = pages + 1
+		if (!p.hasMore) {
+			resolve(new PullOutcome(got, p.cursor, false))
+			return
+		}
+		if (seen >= MAX_PULL_PAGES) {
+			console.warn('[yishu] sync pull 已达单轮页数上限 ' + MAX_PULL_PAGES + '，剩余留给下轮')
+			resolve(new PullOutcome(got, p.cursor, true))
+			return
+		}
+		pullPages(p.cursor, got, seen, resolve)
+	})
+}
+
+/** 增量拉取（游标持久化 + 应用到本地镜像；2026-10-31 J-2 起逐页拉到底） */
 export function pullIncremental(): Promise<PullOutcome> {
 	return new Promise<PullOutcome>((resolve) => {
 		ensureLogin().then((ok: boolean) => {
@@ -208,38 +312,7 @@ export function pullIncremental(): Promise<PullOutcome> {
 				resolve(new PullOutcome(0, readCursor(), false))
 				return
 			}
-			const since = readCursor()
-			rawRequest(PATH_SYNC_PULL + '?device_id=' + getDeviceId() + '&since=' + since + '&limit=200', 'GET', null).then((hr: HttpResult) => {
-				if (hr.status === 200) {
-					let changes: Array<UTSJSONObject> = []
-					let cursor = since
-					let hasMore = false
-					if (hr.body != null) {
-						const d: UTSJSONObject | null = hr.body.getJSON('data')
-						if (d != null) {
-							const arr = d.getArray('changes')
-							if (arr != null) {
-								changes = arr as Array<UTSJSONObject>
-							}
-							// ⚠️ 2026-10-09 修漏网强转：getNumber 缺字段返回 null，`as number` 强转
-							// null 会运行时崩（与 auth.uts doRefresh 同型，真机首测静态审查发现）。
-							// cursor 缺失时保持 since 不推进（本轮变更照常应用，游标不前移，
-							// 下轮拉取重复拉到同批——幂等，好过崩溃后游标错乱）。
-							const c = d.getNumber('cursor') ?? since
-							cursor = c
-							const hm = d.getBoolean('has_more')
-							hasMore = hm != null ? hm : false
-						}
-					}
-					applyChanges(changes)
-					writeCursor(cursor)
-					console.log('[yishu] sync pull since=' + since + ' -> cursor=' + cursor + ' changes=' + changes.length + ' hasMore=' + hasMore)
-					resolve(new PullOutcome(changes.length, cursor, hasMore))
-				} else {
-					console.error('[yishu] sync pull HTTP ' + hr.status)
-					resolve(new PullOutcome(0, since, false))
-				}
-			})
+			pullPages(readCursor(), 0, 0, resolve)
 		})
 	})
 }

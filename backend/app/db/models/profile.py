@@ -17,6 +17,13 @@ class UserProfile(Base):
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     version: Mapped[int] = mapped_column(default=1, server_default=text("1"))
     dimensions: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'"))
+    # 用户锁定标签（B1:139「删除 + 用户锁定，LLM 不再自动写回」）。
+    # **本表是唯一真源**：客户端 storage（portrait_locked_tags）只是离线兜底缓存。
+    # 写回侧（services/profile_annotator.apply_annotation）据此跳过——不新增/不覆盖/不删除；
+    # 迁移 c1d2e3f4a5b6。
+    locked_tags: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'"), nullable=False
+    )
     token_usage: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     last_rebuilt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

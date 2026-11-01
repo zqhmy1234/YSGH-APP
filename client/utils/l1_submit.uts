@@ -11,9 +11,12 @@
  * 退化为「按本次上传直接合成当天一张日卡片」——内测期宁可卡片粒度粗一点，
  * 也不能让用户拍完照时间轴一动不动。
  */
-import { aggregateToEvents } from '@/utils/agg_runner.uts'
+// 2026-10-30（修重复日卡）：dayEventId = 确定性幂等键（day + 成员集合指纹），与聚合结果同源
+import { aggregateToEvents, dayEventId } from '@/utils/agg_runner.uts'
 import { syncClientEvents, SyncOutcome } from '@/utils/event_sync'
 import { UploadedPhoto, isoString } from '@/utils/uploader_types'
+// 2026-10-31（设备走查缺陷 1）：卡标题里的「日期」必须用记忆日唯一实现，禁止 isoString().substring
+import { memDayKey } from '@/utils/time'
 
 /** 兜底：不依赖聚类，按本地自然日把本次上传合成一张日卡片 */
 function fallbackDayEvent(uploaded: Array<UploadedPhoto>): UTSJSONObject {
@@ -31,10 +34,16 @@ function fallbackDayEvent(uploaded: Array<UploadedPhoto>): UTSJSONObject {
 			maxTs = t
 		}
 	}
-	// isoString → '2026-10-16T22:09:11+08:00'，前 10 位即本地自然日
-	const day = isoString(minTs).substring(0, 10)
+	// 2026-10-31（设备走查缺陷 1）：原为 `isoString(minTs).substring(0, 10)` —— 取的是
+	// ISO 串前 10 位（设备墙钟日），与时间轴分组头（parseIsoMs→dayKey）**是两套日界算法**。
+	// 设备时区非 +08 或跨深夜窗口时两者给出不同的日子，同一张卡标题写 10-30、
+	// 分组头写 10月31日。现统一走 `memDayKey`（唯一实现，含 B3-2 夜猫规则）。
+	const day = memDayKey(minTs)
 	const ev: UTSJSONObject = {
-		client_event_id: 'ev-fb-' + Date.now() + '-' + Math.floor(Math.random() * 1000000),
+		// 2026-10-30（修重复日卡）：兜底卡同样必须用确定性键，否则「兜底被触发两次」
+		// （两条补传路径挂在同一 Promise 上，见 uploader_batch.uts:224 / UploadStatusBanner.uvue:141）
+		// 就会在同一天落两张一模一样的卡。原为 'ev-fb-'+Date.now()+random。
+		client_event_id: dayEventId(day, ids),
 		title: day + ' · ' + ids.length + '条',
 		start_time: isoString(minTs),
 		end_time: isoString(maxTs),
@@ -48,6 +57,192 @@ function fallbackDayEvent(uploaded: Array<UploadedPhoto>): UTSJSONObject {
  * @param uploaded uploadBatch / continuePendingUploads 的成功结果（含云侧 content_id）
  * @return 本次提交的事件条数（0 = 无可用事件，未发起请求）
  */
+/** 两位补零（仅本文件用；不导出，避免 axis-4「零调用导出」） */
+function pad2Local(n: number): string {
+	return n < 10 ? '0' + n.toString() : n.toString()
+}
+
+/** 卡片标题尾段：优先**内容摘要**（折叠空白、截 14 字），没有摘要时退化为当天时刻 HH:mm。
+ *
+ *  2026-10-31（走查 C：同日多张日卡标题完全相同）——同一天记两条文字/语音，
+ *  标题原本都是 `2026-10-31 · 文字`，时间轴上无法区分（设备截图实证）。
+ *  这里给出「可区分的最小事实」：正文首段；长录音此时还没有转写文本，就用时刻兜底。
+ *  两条记录若在同一分钟内且都无摘要，标题仍可能相同（概率区间极小，且此时正文为空=无信息可展示）。 */
+function titleTail(ts: number, excerpt: string): string {
+	let out = ''
+	let prevSpace = false
+	for (let i = 0; i < excerpt.length && out.length < 14; i++) {
+		const ch = excerpt.substring(i, i + 1)
+		const isSpace = ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t'
+		if (isSpace) {
+			if (out.length > 0 && !prevSpace) {
+				out = out + ' '
+				prevSpace = true
+			}
+			continue
+		}
+		out = out + ch
+		prevSpace = false
+	}
+	if (out.length > 0 && out.substring(out.length - 1) == ' ') {
+		out = out.substring(0, out.length - 1)
+	}
+	if (out != '') {
+		return out
+	}
+	const d = new Date(ts)
+	return pad2Local(d.getHours()) + ':' + pad2Local(d.getMinutes())
+}
+
+/**
+ * 单条内容（文字 / 语音）提交为当日 L1 日卡片。
+ *
+ * 2026-10-30（P0-1）：修「保存了却不出现在时间轴」。
+ * 根因链：云侧聚合默认 `mode=l2l3`（`backend/app/services/events/aggregate.py:77-84`）**从不写 L1**，
+ * L1 只能由端侧 `POST /events/sync` 提交；而端侧只有照片链调了 `submitUploadsAsL1`，
+ * 文字（`RecordSheet.submitText`）与语音（`useVoiceRecord.afterVoiceSaved`）**都没提交事件**
+ * ⇒ 时间轴（只读 events）里永远看不到这两类记录。这与 STATE「记录后立刻可见＝硬要求」冲突。
+ *
+ * 后端 `sync_client_events` 的归属校验是对 `Content.id` 做的（不限 content_type），
+ * 因此把内容 id 放进 `photo_ids` 即可，**无需改后端**（最小侵入）。
+ *
+ * @param excerpt 内容摘要（正文/转写首段）——用于让**同日多张日卡标题可区分**，见下方 2026-10-31 注。
+ *        ⚠️ 传 '' 合法（长录音此时还没转写文本）：标题退化为「当天时刻」，仍保证同日可区分。
+ * @return true=服务端已接收（accepted/duplicates 均算成功）；false=失败，调用方应提示"稍后同步"
+ */
+export function submitContentAsL1(contentId: string, takenAtMs: number, kindLabel: string, excerpt: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		if (contentId == '') {
+			resolve(false)
+			return
+		}
+		const ts = takenAtMs > 0 ? takenAtMs : Date.now()
+		// 2026-10-31（设备走查缺陷 1）：同上——卡片标题的日期与时间轴分组头必须同源
+		// （原 `isoString(ts).substring(0, 10)` 是第二套日界，见 fallbackDayEvent 注释）
+		const day = memDayKey(ts)
+		const ev: UTSJSONObject = {
+			// 幂等键：同一内容固定用它 → 网络重试只落一次（后端按 client_event_id 去重）
+			client_event_id: 'ev-c-' + contentId,
+			// 2026-10-31（走查 C：同日多张日卡标题完全相同）：原为 `day + ' · ' + kindLabel`
+			// ⇒ 同一天记两条文字，时间轴出现两张一模一样的「2026-10-31 · 文字」，用户无法区分
+			// （设备截图实证：横幅「2 条新记忆」，两张卡同标题）。
+			// 现标题带**内容摘要**（无摘要时退化为当天时刻）—— 不改后端、不动幂等键，
+			// 因此不会产生重复卡：一条内容仍对一条卡，只是卡面能区分了。
+			title: day + ' · ' + kindLabel + ' · ' + titleTail(ts, excerpt),
+			start_time: isoString(ts),
+			end_time: isoString(ts),
+			photo_ids: [contentId]
+		}
+		const events: Array<UTSJSONObject> = [ev]
+		// 2026-10-30（修「已保存，稍后同步到时间轴」是空话）：
+		// 原实现失败时只把 ok=false 交给调用方，调用方弹完 toast **什么都不排队** ⇒
+		// 用户被告知"稍后同步"，实际永远不会同步（离线场景 100% 复现）。
+		// 现失败入 outbox（幂等键 'ev-c-<contentId>' 固定，补发不会重复落库），
+		// 并在每次提交前顺带补发历史欠账。
+		flushOutbox()
+		syncClientEvents(events).then((out: SyncOutcome | null) => {
+			const ok = out != null && (out.accepted > 0 || out.duplicates > 0)
+			console.log('[yishu] 单条内容 L1 上云: content=' + contentId
+				+ ' ok=' + ok
+				+ ' accepted=' + (out != null ? out.accepted : -1)
+				+ ' rejected=' + (out != null ? out.rejected : -1))
+			if (!ok) {
+				pushOutbox(events)
+			}
+			resolve(ok)
+		})
+	})
+}
+
+// ── 2026-10-30（P1-1）：L1 上云的**本地待发队列（outbox）** ──
+// 原实现是纯 fire-and-forget：`.then` 里只 console.log，失败不重试、不落盘、调用方也不看结果。
+// 而服务端只要有一个 id 非法就**整条拒收** ⇒ 照片已入库、时间轴却空白，且用户与日志里都没有任何痕迹。
+// 现在：失败/被拒的事件落盘，下次任何一次提交前先尝试补发（幂等靠 client_event_id，服务端已去重）。
+const L1_OUTBOX_KEY: string = 'l1_event_outbox'
+
+// 2026-10-30（修重复日卡）：在途事件幂等键集合（进程内单飞，见 submitUploadsAsL1 尾部）
+const _l1Inflight: Set<string> = new Set<string>()
+
+// 存储格式沿用本仓既有约定（同 uploader_pending / queue_store）：**逐行一个 JSON**，
+// 而不是把整个数组序列化 —— UTS 下 `JSON.parse` 的数组泛型形态不可靠（见 uploader_types.uts:13）。
+function readOutbox(): Array<UTSJSONObject> {
+	const raw = uni.getStorageSync(L1_OUTBOX_KEY) as string
+	const out: Array<UTSJSONObject> = []
+	if (raw == null || raw == '') {
+		return out
+	}
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim()
+		if (line == '') {
+			continue
+		}
+		try {
+			out.push(JSON.parse(line) as UTSJSONObject)
+		} catch (e) {
+			console.error('[yishu] L1 outbox 单行解析失败，跳过该行')
+		}
+	}
+	return out
+}
+
+function writeOutbox(list: Array<UTSJSONObject>): void {
+	if (list.length == 0) {
+		uni.removeStorageSync(L1_OUTBOX_KEY)
+		return
+	}
+	const lines: Array<string> = []
+	for (let i = 0; i < list.length; i++) {
+		lines.push(JSON.stringify(list[i]))
+	}
+	uni.setStorageSync(L1_OUTBOX_KEY, lines.join('\n'))
+}
+
+/** 把待发事件并进 outbox（按 client_event_id 去重，保留最新一条） */
+function pushOutbox(events: Array<UTSJSONObject>): void {
+	const cur = readOutbox()
+	for (let i = 0; i < events.length; i++) {
+		const cid = events[i].getString('client_event_id') ?? ''
+		let replaced = false
+		for (let j = 0; j < cur.length; j++) {
+			if ((cur[j].getString('client_event_id') ?? '') == cid) {
+				cur[j] = events[i]
+				replaced = true
+				break
+			}
+		}
+		if (!replaced) {
+			cur.push(events[i])
+		}
+	}
+	writeOutbox(cur)
+	console.log('[yishu] L1 outbox 累积 ' + cur.length.toString() + ' 条待补发')
+}
+
+/** 尝试补发 outbox（不阻塞调用方；成功项移除、失败项保留） */
+function flushOutbox(): void {
+	const cur = readOutbox()
+	if (cur.length == 0) {
+		return
+	}
+	syncClientEvents(cur).then((out: SyncOutcome | null) => {
+		if (out == null) {
+			console.log('[yishu] L1 outbox 补发失败，保留全部')
+			return
+		}
+		if (out.rejected > 0) {
+			// 被服务端明确拒绝的条目无法通过重试修复（id 非法/归属不符）⇒ 丢弃并留痕，
+			// 避免 outbox 被永久毒化（每次启动都重发同一批坏数据）。
+			console.error('[yishu] L1 outbox 有 ' + out.rejected.toString() + ' 条被服务端拒绝，已丢弃')
+		}
+		// 本地无法逐条核对 accepted/duplicates/rejected 的对应关系（后端只回计数），
+		// 保守策略：本轮全部视为已处理（幂等键保证不会重复落库）。
+		writeOutbox([])
+		console.log('[yishu] L1 outbox 补发完成 accepted=' + out.accepted.toString()
+			+ ' dup=' + out.duplicates.toString() + ' rejected=' + out.rejected.toString())
+	})
+}
+
 export function submitUploadsAsL1(uploaded: Array<UploadedPhoto>): number {
 	if (uploaded.length == 0) {
 		return 0
@@ -86,11 +281,47 @@ export function submitUploadsAsL1(uploaded: Array<UploadedPhoto>): number {
 		events.push(fallbackDayEvent(timed))
 		console.log('[yishu] L1 兜底日卡片: n=' + timed.length)
 	}
-	syncClientEvents(events).then((out: SyncOutcome | null) => {
-		console.log('[yishu] L1 上云: n=' + events.length
+	// 2026-10-30（修重复日卡）：**进程内单飞**。
+	// 即使幂等键已确定性（服务端只会落一条），也不必真的发两遍请求：
+	// WiFi 恢复自动补传（uploader_batch.uts:224）与横幅「一键继续」（UploadStatusBanner.uvue:141）
+	// 会同时刻各调一次本函数，若都发请求，用户会连收两条「同步稍后重试」toast。
+	const pending: Array<UTSJSONObject> = []
+	for (let i = 0; i < events.length; i++) {
+		const cid = events[i].getString('client_event_id') ?? ''
+		if (cid != '' && _l1Inflight.has(cid)) {
+			continue
+		}
+		pending.push(events[i])
+	}
+	if (pending.length == 0) {
+		console.log('[yishu] L1 上云跳过：本批事件全部在途（并发重复提交已被单飞拦截）')
+		return 0
+	}
+	for (let i = 0; i < pending.length; i++) {
+		const cid = pending[i].getString('client_event_id') ?? ''
+		if (cid != '') {
+			_l1Inflight.add(cid)
+		}
+	}
+	// 2026-10-30（P1-1）：先把历史欠账补发掉（同一次网络机会，成本一次请求）
+	flushOutbox()
+	syncClientEvents(pending).then((out: SyncOutcome | null) => {
+		for (let i = 0; i < pending.length; i++) {
+			const cid = pending[i].getString('client_event_id') ?? ''
+			if (cid != '') {
+				_l1Inflight.delete(cid)
+			}
+		}
+		console.log('[yishu] L1 上云: n=' + pending.length
 			+ ' accepted=' + (out != null ? out.accepted : -1)
 			+ ' dup=' + (out != null ? out.duplicates : -1)
 			+ ' rejected=' + (out != null ? out.rejected : -1))
+		// 2026-10-30（P1-1）：失败/部分被拒 ⇒ 落盘等下次补发（幂等键保证重发不会重复落库）
+		const ok = out != null && out.rejected == 0 && (out.accepted > 0 || out.duplicates > 0)
+		if (!ok) {
+			pushOutbox(pending)
+			uni.showToast({ title: '已记录 · 时间轴同步稍后重试', icon: 'none', duration: 2500 })
+		}
 	})
-	return events.length
+	return pending.length
 }

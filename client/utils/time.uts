@@ -26,11 +26,24 @@ function pad3(n: number): string {
 	return '' + n
 }
 
-/** epoch ms → ISO8601 本地时间（+08:00 后缀；同原 uploader.isoString / sync.isoNow） */
+/**
+ * epoch ms → ISO8601 **带真实本地偏移**的时间串（同原 uploader.isoString / sync.isoNow）。
+ *
+ * 2026-10-30（P2 A-6）：后缀原先是**硬编码 `+08:00`**，但各字段取的是设备**墙钟**时间。
+ * 两者在 +08 设备上恰好一致（所以一直没暴露），一旦设备时区不是 +08：
+ * `taken_at` / 事件 `start_time` 会被打上错误的偏移 ⇒ 服务端换算 UTC 后整体错位，
+ * 日卡片跨天/跨小时错位；而日界分桶用的却是真实偏移（`-getTimezoneOffset()`）⇒ 口径自相矛盾。
+ * 现按 `getTimezoneOffset()` 生成真实 ±HH:MM。
+ */
 export function isoLocal(ms: number): string {
 	const d = new Date(ms)
+	// getTimezoneOffset 语义：UTC - 本地（分钟），东八区返回 -480 ⇒ 符号要取反
+	const offMin = -d.getTimezoneOffset()
+	const sign = offMin >= 0 ? '+' : '-'
+	const abs = offMin >= 0 ? offMin : -offMin
+	const offStr = sign + pad2(Math.floor(abs / 60)) + ':' + pad2(abs % 60)
 	return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
-		'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + '+08:00'
+		'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + offStr
 }
 
 /** epoch ms → ISO8601 UTC（毫秒 + Z；同原 sentry.isoNow，Sentry Envelope sent_at 用） */
@@ -66,23 +79,35 @@ export function parseIsoMs(iso: string): number {
 		timePart = timePart.substring(0, zIdx)
 	} else {
 		// +08:00 / -05:30 尾偏移
+		// 2026-10-31（设备走查缺陷 1）：原判定写的是 `plusIdx > 8` / `minusIdx > 8`，
+		// 而标准 `HH:MM:SS+08:00` 的正负号**正好落在下标 8**（"00:01:23" 占 0..7）
+		// ⇒ 条件恒为 false，偏移串**从未被剥离**，整个串被当 UTC 解析。
+		// 后果：服务端下发 `2026-10-31T01:01:05+08:00`（= 10-30T17:01Z）被读成
+		// 10-31T01:01Z，凭空 +8h —— 设备时区与 +08 不同时直接跨天
+		// （实测：日卡标题 2026-10-30 / 分组头 10月31日，同一张卡分裂成两天）。
+		// 现改为「日期段已在上面按 'T' 切掉，时间串里出现的正负号只可能是偏移分隔符」。
 		let signIdx = -1
 		const plusIdx = timePart.lastIndexOf('+')
 		const minusIdx = timePart.lastIndexOf('-')
-		if (plusIdx > 8) {
+		if (plusIdx > minusIdx) {
 			signIdx = plusIdx
-		} else if (minusIdx > 8) {
+		} else {
 			signIdx = minusIdx
 		}
 		if (signIdx >= 0) {
 			const off = timePart.substring(signIdx)
-			timePart = timePart.substring(0, signIdx)
-			const neg = off.startsWith('-')
-			const parts = off.substring(1).split(':')
-			const oh = parseInt(parts[0])
-			const om = parts.length > 1 ? parseInt(parts[1]) : 0
-			const offTotal = (oh * 3600 + om * 60) * 1000
-			offsetMs = neg ? -offTotal : offTotal
+			// 2026-10-31（设备走查缺陷 1 配套守卫）：只有形如 ±HH:MM（长度 6 且含 ':'）
+			// 才按偏移剥离；畸形串（如尾部多一个 '-'）不剥离，否则 parseInt('') = NaN
+			// ⇒ 整个时间变 NaN ⇒ 该事件被静默排到最后一天，比"偏移没解析"更难查。
+			if (off.length == 6 && off.indexOf(':') == 3) {
+				timePart = timePart.substring(0, signIdx)
+				const neg = off.startsWith('-')
+				const parts = off.substring(1).split(':')
+				const oh = parseInt(parts[0])
+				const om = parts.length > 1 ? parseInt(parts[1]) : 0
+				const offTotal = (oh * 3600 + om * 60) * 1000
+				offsetMs = neg ? -offTotal : offTotal
+			}
 		}
 	}
 	const t = timePart.split(':')
@@ -107,17 +132,86 @@ export function parseIsoMs(iso: string): number {
 	return utc - offsetMs
 }
 
-/** 日期分组键：epoch ms → yyyy-mm-dd（本地时区；同原 timeline.dayKey） */
+/** 日期分组键：epoch ms → yyyy-mm-dd（本地时区；同原 timeline.dayKey）
+ *
+ *  ⚠️ 与 `memDayKey` 的区别（2026-10-31 设备走查缺陷 1 收口时明确）：
+ *    本函数是**纯自然日**，给「消息分组（今天/昨天）」「日期显示」这类**日历语义**用；
+ *    记忆（照片/文字/语音）的日卡片另有 B3-2「深夜 23:30–01:00 归属前一天」规则，
+ *    那份语义只在 `memDayKey`/`dayCardKey` 里，**不要混用**（混用即"同一天分裂成两天"）。 */
 export function dayKey(ms: number): string {
 	const d = new Date(ms)
 	return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
 }
 
-/** 友好日期标题：8月24日 · 周一（本地时区；同原 timeline.friendlyDay） */
+/**
+ * 记忆日卡片键（**唯一实现**）：epoch ms + 指定时区偏移 → yyyy-mm-dd。
+ *
+ * 2026-10-31（设备走查缺陷 1）：此前「一天」有**三份**实现，各算各的：
+ *   ① `utils/agg/st_dbscan.uts::bucketDay`（照片日卡 date —— 含 B3-2 夜猫规则）；
+ *   ② `utils/l1_submit.uts` 的 `isoString(ts).substring(0, 10)`（文字/语音卡标题日）；
+ *   ③ `timeline.uts` 分组键（`dayKey`）+ 分组头（`friendlyDay`）。
+ * ② 取的是设备墙钟日，③ 的日界来自 `parseIsoMs`（当时该函数**根本没剥离 `+08:00` 偏移**，
+ * 把服务端本地时间当 UTC 读 ⇒ 凭空 +8h）⇒ 设备时区一旦与偏移串不一致就跨天
+ * （设备实测：标题 2026-10-30 / 分组头 10月31日，同一张卡同时出现在两个日子口径里）。
+ * 现全部收敛到本函数：**同一 ms 只可能得出一个记忆日**，写入方（卡片标题）与读取方
+ * （时间轴分组键 / 分组头）调用的是同一段代码。
+ *
+ * 规则（B3-2，与 `backend/app/services/event_aggregation/st_dbscan.py::bucket_day`
+ * **逐字等价**——端云 AGG-016 双跑比对的就是这个结果，改这里必须两端同步改）：
+ * 自然日 0-24 时；23:30-23:59 / 00:00-00:59 / 01:00 整点 → 归属前一天。
+ *
+ * @param ms epoch 毫秒
+ * @param tzOffsetMin 时区偏移（分钟，东八区传 +480；端侧双跑由调用方显式传）
+ */
+export function dayCardKey(ms: number, tzOffsetMin: number): string {
+	// 用 UTC 取字段 = 先平移再读「墙上时间」，避免设备本地时区二次介入
+	const shifted = ms + tzOffsetMin * 60000
+	const d = new Date(shifted)
+	const hour = d.getUTCHours()
+	const minute = d.getUTCMinutes()
+	const toPrev = (hour == 23 && minute >= 30) || hour == 0 || (hour == 1 && minute == 0)
+	const base = new Date(shifted - (toPrev ? 86400000 : 0))
+	return base.getUTCFullYear() + '-' + pad2(base.getUTCMonth() + 1) + '-' + pad2(base.getUTCDate())
+}
+
+/** 记忆日卡片键（**设备本地时区**）：端侧写卡片标题 / 时间轴分组都走这里 */
+export function memDayKey(ms: number): string {
+	return dayCardKey(ms, -new Date(ms).getTimezoneOffset())
+}
+
+/** 日键 → 该日**本地正午**的 epoch ms（只用于喂给吃 ms 的显示函数，如 friendlyDay）。
+ *  取正午而非零点：夏令时切换日零点可能不存在/重复，正午永远在当天之内。
+ *  实现只用 `Date.UTC` + `new Date(ms)`（本模块既有写法）——UTS 的 Date 不保证支持
+ *  `new Date(y, m, d, h, …)` 多参构造，用时区偏移回投这一步换成算术。 */
+export function dayKeyToMs(day: string): number {
+	const parts = day.split('-')
+	if (parts.length !== 3) {
+		return 0
+	}
+	const y = parseInt(parts[0])
+	const m = parseInt(parts[1])
+	const d = parseInt(parts[2])
+	if (y <= 0 || m <= 0 || d <= 0) {
+		return 0
+	}
+	const utcNoon = Date.UTC(y, m - 1, d, 12, 0, 0)
+	// 该时刻的设备偏移（分钟；UTC - 本地，东八区 -480）⇒ 加回去即本地正午
+	return utcNoon + new Date(utcNoon).getTimezoneOffset() * 60000
+}
+
+/** 友好日期标题：8月24日 · 周一（本地时区；同原 timeline.friendlyDay）
+ *
+ *  2026-10-30（P2 B-5）：原实现**不带年份**。记忆是跨年的（"去年今天"回响、上年旧内容、
+ *  回收站里的陈年条目），「8月24日 · 周一」在跨年数据上根本分不清是哪一年（不同年份的同一天
+ *  星期几还可能相同）。现：**非本年度**的日期加年份前缀；本年度维持画布原文案，界面零变化。 */
 export function friendlyDay(ms: number): string {
 	const d = new Date(ms)
 	const weeks: Array<string> = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-	return (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + weeks[d.getDay()]
+	const label = (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + weeks[d.getDay()]
+	if (d.getFullYear() != new Date(Date.now()).getFullYear()) {
+		return d.getFullYear() + '年' + label
+	}
+	return label
 }
 
 /** epoch ms → 月日时刻（MM-DD HH:mm，补零；同原 index.uvue splitTimeText 格式化部分） */

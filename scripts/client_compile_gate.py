@@ -60,9 +60,56 @@ CLI_CANDIDATES = tuple(
 
 OK_MARKERS = ("编译成功", "ready in")
 FAIL_HINTS = ("编译失败", "语法错误", "SyntaxError", "Unexpected token", "未找到", "Cannot find")
+# 2026-10-30 补充（一次**真实的假通过**，见 `classify_log` 头注）：结构性错误（模板/style/脚本
+# 解析失败）的现实形态不止上面那几条。这两类必须单列，否则 `bad=False` + 产物旁证 ⇒ 假 ok。
+FAIL_MARKERS_STRUCTURAL = (
+    "[plugin:",  # uni-app x 各编译插件（uts/vue/style）的统一错误前缀
+    "已停止运行",  # 编译中断的固定收尾语；失败时必现
+    "Unexpected ",  # 「Unexpected token / '/' / character」等解析错
+    "unknown file",  # esbuild 侧解析失败
+    "ERROR in",  # webpack 风格报错头
+)
+# 报错定位行（`at components/X/X.uvue:1:0`）：**位置**即证据，不依赖中文/英文措辞
+FAIL_LOCATION_RE = re.compile(r"at\s+\S+\.(?:uvue|uts|vue|kt|ts|js):\d+")
 # HBuilderX 未启动时 cli 的拒绝语（2026-10-14 实测）：它**不编译**、打印一句就退出。
 # 必须单独识别为"无法编译"——否则空日志会掉进产物旁证分支（那正是曾经假通过的入口）。
 NEED_OPEN_MARKERS = ("未检测到已打开的HBuilderX", "请先执行cli open")
+
+
+def classify_log(out: str) -> tuple[str, str]:
+    """按编译日志文本判定结果，返回 `(verdict, reason)`。
+
+    verdict ∈ `{"need_open", "ok", "fail", "undetermined"}`。
+
+    ## 为什么必须抽成纯函数（2026-10-30 事故）
+
+    `client/components/TabSearch/TabSearch.uvue` 的 style 段少闭合一个 `*/` ⇒ 注释提前结束，
+    其后两行中文裸露成 CSS，其中的 `色/字号` 触发 `[plugin:uts] Unexpected '/'`，编译**确实失败**
+    并打印 `已停止运行`。而旧带内逻辑只认 `FAIL_HINTS` 里的五种措辞，该错误**一种都不命中**
+    ⇒ `bad=False`；`manifest.json` 每次编译必被重写 ⇒ 产物旁证为真 ⇒ 门禁报 ok、退出码 0。
+    **门禁把一次真失败判成通过，就是这么发生的。**
+
+    抽成纯函数的意义：错误文本分类可以用**真实日志片段**做负向探针（见
+    `backend/tests/test_client_compile_gate.py`），而不必真的把仓库改坏去编译一次。
+    """
+    if any(m in out for m in NEED_OPEN_MARKERS):
+        return "need_open", "HBuilderX 未启动：编译**未执行**（不是通过）"
+    # ⚠️ 顺序即口径（2026-10-30 实测校准两次）：
+    # ① `编译成功。` / `ready in Nms` 是 HBuilderX 的**终态裁决**，必须最先认——
+    #    成功构建的日志里照样会夹带 `[plugin:uni:app-uvue-css] WARNING: ...` 与收尾的
+    #    `已停止运行...`（后者是"运行会话结束"，不是失败）。把它们当失败会**假红**：
+    #    本门加固后第一次复跑就撞上了这条（编译明明成功、却报 fail）。
+    # ② 只有在**没有成功标记**时，那些特征才等价于失败 —— 2026-10-30 的事故日志正是
+    #    「[plugin:uts] Unexpected '/' + at X.uvue:1:0 + 已停止运行」而无成功标记。
+    if any(m in out for m in OK_MARKERS):
+        return "ok", "日志出现成功标记"
+    if any(m in out for m in FAIL_MARKERS_STRUCTURAL):
+        return "fail", "日志出现结构性错误标记（[plugin:]/Unexpected/已停止运行 等，且无成功标记）"
+    if any(h in out for h in FAIL_HINTS):
+        return "fail", "日志出现失败措辞（编译失败/SyntaxError/Cannot find 等）"
+    if FAIL_LOCATION_RE.search(out):
+        return "fail", "日志出现报错定位行（at xxx.uvue:N:M）"
+    return "undetermined", "日志无成功标记也无失败特征"
 
 
 def find_cli() -> Path | None:
@@ -180,20 +227,18 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
 
     out = LOG_PATH.read_text(encoding="utf-8", errors="replace") if LOG_PATH.exists() else ""
     elapsed = time.monotonic() - started
+    verdict, reason = classify_log(out)
 
     # ⚠️ 2026-10-14：HBuilderX 未启动时 cli **不编译**，只打印下面这句并立即退出。
     # 必须先识别它——否则空日志会掉进"产物旁证"分支，而那正是曾经假通过的入口。
-    if any(m in out for m in NEED_OPEN_MARKERS):
+    if verdict == "need_open":
         return (
             "skip",
-            ENV_ERR_PREFIX + " HBuilderX 未启动：编译**未执行**（不是通过）。"
+            ENV_ERR_PREFIX + f" {reason}。"
             "需先 `cli open`（本门已尝试自动拉起但未成功）后重跑。",
         )
 
-    ok = any(m in out for m in OK_MARKERS)
-    bad = any(h in out for h in FAIL_HINTS)
-
-    if ok:
+    if verdict == "ok":
         m = re.search(r"ready in (\d+)ms", out)
         cost = f"{m.group(1)}ms" if m else f"{elapsed:.1f}s"
         return "ok", f"客户端编译成功（{cost}）；日志 {LOG_PATH.relative_to(REPO)}"
@@ -201,8 +246,10 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
     # 双判据兜底：cli 委派给现有实例时日志可能**写在 HBuilderX 自己的日志里**而本文件为空。
     # 此时看**编译产物**是否在本次调用后更新过（编译成功必然触碰 unpackage/dist/dev）。
     # ⚠️ 时间基准必须是**墙上时钟**（见 `started_wall` 处注释：原来传 monotonic 导致恒真 ⇒ 假通过）。
+    # ⚠️ 2026-10-30：只有在 `verdict == "undetermined"` 时才允许走旁证——出现任何失败特征
+    # （结构化标记/失败措辞/报错定位行）一律判 fail，绝不用产物时间戳覆盖。
     touched = _artifact_touched_since(started_wall)
-    if touched and not bad:
+    if verdict == "undetermined" and touched:
         return (
             "ok",
             "未捕获到编译日志（cli 委派给运行中的 HBuilderX），但编译产物已在本次调用后更新"
@@ -213,11 +260,11 @@ def compile_client(timeout_s: int = TIMEOUT_S) -> tuple[str, str]:
         return "fail", f"编译超时（>{timeout_s}s）——日志见 {LOG_PATH.relative_to(REPO)}"
 
     tail = "\n".join([ln for ln in out.splitlines() if ln.strip()][-12:]) or "（日志为空）"
-    if bad:
-        return "fail", f"客户端编译失败（退出码 {code}）：\n{tail}"
+    if verdict == "fail":
+        return "fail", f"客户端编译失败（{reason}；退出码 {code}）：\n{tail}"
     return (
         "fail",
-        f"编译结果**无法判定**（无成功标记、产物也未更新 ⇒ 按「未验证」处理，退出码 {code}）：\n{tail}",
+        f"编译结果**无法判定**（{reason}，产物也未更新 ⇒ 按「未验证」处理，退出码 {code}）：\n{tail}",
     )
 
 

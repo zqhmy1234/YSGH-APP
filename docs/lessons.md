@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-11-02 00:35 · commit 45ed6f9 · ts=1793550927
+- **错误**：同一批改动连续两轮因 lint 未过（B007 未使用循环变量 / PLW0108 不必要的 lambda / E402 因在 import 间插函数）
+- **根因**：修 lint 时只对'我改过的文件'跑 ruff，没跑 repo 级全扫；且替换插入位置未避开 import 段
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-11-02 00:28 · commit 45ed6f9 · ts=1793550505
+- **错误**：批量修 lint 时用 python 字符串替换往测试文件插入桩函数，插进了模块 docstring 与 __future__ 之前，造成 SyntaxError 连挂两轮门禁
+- **根因**：定位插入点时用 s.find('\n\n') 的近似锚点，没意识到文件开头是三引号 docstring；且 __future__ 导入必须在文件最前（除 docstring）
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-11-01 22:07 · commit ? · ts=1793542049
+- **错误**：pm clear 后客户端时间轴显示'还没有回忆'，误判为弱网假空态缺陷
+- **根因**：pm clear 会重新随机 App 内 device_id ⇒ device-login 派生新空账号；未先核对账号身份就判读空态
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
 ### 2026-11-01 11:46 · commit 4e1289b · ts=1793504797
 - **错误**：db/alive.py 引用 app.db.models.base.Base —— ModuleNotFoundError 拖垮 backend 启动（healthz 503）
 - **根因**：Base 实际定义在 app.db.session；写 helper 时按惯例猜了 models.base 且只过了 py_compile/ruff（静态检查不解析 import 目标），门禁语法层抓不到运行时 import 错误
@@ -3263,3 +3290,20 @@
   一个 `client` 且路径等于当前仓库。
 - 验证口径：不能只看“编译成功”，还要确认 HBuilderX 项目路径、包内 versionCode
   和实际请求 host。旧版本重命名周期以 APK 重新打包为边界。
+
+## 2026-11-01：客户端空态/失败态判读必须先核对"当前登录的是哪个账号"
+
+- 现象：模拟器上 `pm clear <pkg>` 后重装 App，时间轴稳定显示「还没有回忆」，服务端直查同一
+  device_id 却有 10 条事件 ⇒ 一度判定为「弱网假空态」缺陷（D-NEW-1）。
+- 根因：**`pm clear` 会清掉 App 自己生成并持久化的 `device_id`**，重启后重新随机
+  （`49290f13f35486ce` → `0b3e1f2c5a831cc4`），device-login 按新 device_id 派生
+  **新空账号**（unionid = `device:<device_id>`）。于是「空态」完全正确，缺陷不存在。
+- 判定口径（做任何空态/失败态判读前必跑）：
+  1. `SELECT device_id,user_id FROM devices ORDER BY last_active_at DESC LIMIT 3` —— 确认
+     App 现在落在哪条 device 行；
+  2. `SELECT count(*) FROM contents WHERE user_id=<该 user> AND deleted_at IS NULL` —— 该账号
+     到底有没有数据；
+  3. 两者对不上（新 device → 新 user）就是**账号漂移**，先修账号再谈 UI 结论。
+- 附带教训：`pm clear` 对 **HBuilderX 调试基座**还会连带清掉 `/data/data/io.dcloud.uniappx`
+  下的 App 资源 ⇒ 基座报 "application resources are not detected"，只能靠 HBuilderX
+  GUI `cli launch` 重新推包（无桌面会话时 `cli open` 会超时 -1）。**不要把 `pm clear` 当"清缓存"用**。

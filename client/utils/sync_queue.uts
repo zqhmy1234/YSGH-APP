@@ -4,7 +4,7 @@
  * enqueue* / pendingSyncCount + 暂停令牌与连续失败计数的对外薄封装。
  * 对外导出：enqueueFieldOp, enqueueDeleteOp, pendingSyncCount, MAX_BATCH_FAILURES, subscribeSyncStatus, pauseSync, resumeSync, isSyncPaused, getPauseReason, registerConsecutiveFailure, resetConsecutiveFailures
  */
-import { MAX_BATCH_FAILURES as SHARED_MAX_BATCH_FAILURES, SyncStatusListener, pauseSync as sharedPauseSync, resumeSync as sharedResumeSync, isSyncPaused as sharedIsSyncPaused, getPauseReason as sharedGetPauseReason, subscribeSyncStatus as sharedSubscribeSyncStatus, registerConsecutiveFailure as sharedRegisterConsecutiveFailure, resetConsecutiveFailures as sharedResetConsecutiveFailures, broadcastStatus as sharedBroadcastStatus } from './pause_controller'
+import { MAX_BATCH_FAILURES as SHARED_MAX_BATCH_FAILURES, SyncStatusListener, pauseSync as sharedPauseSync, resumeSync as sharedResumeSync, isSyncPaused as sharedIsSyncPaused, getPauseReason as sharedGetPauseReason, subscribeSyncStatus as sharedSubscribeSyncStatus, unsubscribeSyncStatus as sharedUnsubscribeSyncStatus, registerConsecutiveFailure as sharedRegisterConsecutiveFailure, resetConsecutiveFailures as sharedResetConsecutiveFailures, broadcastStatus as sharedBroadcastStatus } from './pause_controller'
 import { enqueueEntry, countPendingOfTypes } from './queue_store'
 import { SYNC_TYPES, isoNow } from './sync_types'
 
@@ -72,6 +72,11 @@ export function pendingSyncCount(): number {
 export const MAX_BATCH_FAILURES: number = SHARED_MAX_BATCH_FAILURES
 export function subscribeSyncStatus(cb: SyncStatusListener): void {
 	sharedSubscribeSyncStatus(cb)
+}
+
+/** 2026-10-30（P2 J-3）：退订转发（UI 组件卸载时必须调用，否则监听器只增不减） */
+export function unsubscribeSyncStatus(cb: SyncStatusListener | null = null): void {
+	sharedUnsubscribeSyncStatus(cb)
 }
 export function pauseSync(reason: string): void {
 	sharedPauseSync(reason)

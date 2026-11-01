@@ -8,6 +8,8 @@
  *  - ts 为 epoch 毫秒（UTC）；时间差 = |a.ts - b.ts| / 1000（秒）
  *  - 日界按 tzOffsetMin（分钟）偏移后取 UTC 日期（端侧传设备本地时区偏移）
  */
+// 2026-10-31（设备走查缺陷 1）：日分桶唯一实现在 utils/time.uts（端云双跑同参同结果）
+import { dayCardKey } from '../time'
 
 /** 照片时间点（预处理后） */
 export class Photo {
@@ -352,22 +354,16 @@ export function stDbscan(photos: Photo[], epsTsec: number, epsS_m: number, minPt
 	return clusters
 }
 
-function pad2(n: number): string {
-	return n < 10 ? '0' + n : '' + n
-}
-
 /**
  * 自然日分桶；深夜 23:30-1:00 归属前一天（B3-2）
- * 统一：23:30-23:59 / 00:00-00:59 / 01:00 整点 → 前一天（与 Python 实现一致）
+ *
+ * 2026-10-31（设备走查缺陷 1）：实现**整体上收到 `utils/time.uts::dayCardKey`**
+ * ——就是本函数原来那段代码，一字未改地搬过去。原先它只服务照片日卡的 `date`，
+ * 而文字/语音卡标题、时间轴分组头各自另算「一天」⇒ 同一张卡能分裂成两天
+ * （设备实测：标题 2026-10-30 / 分组头 10月31日）。现在三处共用同一实现。
  */
 function bucketDay(ts: number, tzOffsetMin: number): string {
-	const shifted = ts + tzOffsetMin * 60000
-	const d = new Date(shifted)
-	const hour = d.getUTCHours()
-	const minute = d.getUTCMinutes()
-	const toPrev = (hour == 23 && minute >= 30) || hour == 0 || (hour == 1 && minute == 0)
-	const base = new Date(shifted - (toPrev ? 86400000 : 0))
-	return base.getUTCFullYear() + '-' + pad2(base.getUTCMonth() + 1) + '-' + pad2(base.getUTCDate())
+	return dayCardKey(ts, tzOffsetMin)
 }
 
 /**

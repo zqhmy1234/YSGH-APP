@@ -40,7 +40,6 @@
 <script setup lang="uts">
 	// 2026-10-15（台账 §4.20 ㉖）：微信绑定三端点（取码/查绑定/解绑）——原全客户端零调用。
 	import { issueBindCode, listWechatBindings, unbindWechat } from '@/utils/wechat_api'
-	import { wechatLogin } from '@/utils/auth'
 	import { onMounted } from 'vue'
 	// 2026-10-14（台账 §7.18）：本页原含三枚假开关（通知偏好 / 深色模式 / 清理缓存），
 	// 已按本波口径移除（判定依据见模板内注释）；现仅保留真跳转的「账号与安全」。
@@ -85,13 +84,16 @@
 	})
 
 	/**
-	 * 微信绑定入口（2026-10-15 · 台账 §7.29 重构为「unionid 对齐」）：
+	 * 微信绑定入口（2026-10-15 · 台账 §7.29；2026-10-30 修 P0-7）：
 	 * - **已绑定** ⇒ 二次确认后解绑（只断开关联；已入库记忆不受影响，后端零侵入 ✓）；
-	 * - **未绑定** ⇒ **授权优先**：`wechatLogin()` 拉起微信授权（uni.login → POST /auth/wechat），
-	 *   后端 code2session 换 **unionid（主键）+ openid（绑定表键）** ⇒ **授权即完成绑定** ——
-	 *   这才是成熟形态（用户不出产品、一个码也不用打）；授权不可用（未配开放平台 AppID /
-	 *   manifest 未开微信模块，**属外部资质前置**）⇒ **自动回落「绑定码」通道**（内测可用），
-	 *   不把用户卡在死路上。
+	 * - **未绑定** ⇒ 走**绑定码**通道。
+	 *
+	 * ⚠️ 原实现「授权优先」调 `wechatLogin()` 是**错的**：`/auth/wechat` 是登录端点
+	 * （后端按 unionid `_get_or_create_user` 后签发 TokenPair），客户端调它就会用返回的
+	 * token **覆盖当前会话** ⇒ 内测身份 `device:<device_id>` 被换成 unionid 账号，
+	 * 用户看到「记忆全没了/换了账号」且原会话不可恢复。
+	 * 而 `POST /wechat/bind` 需要 openid，`uni.login` 只给 code、App 拿不到 openid，
+	 * 真正可行的绑定路径是绑定码（服务端回调侧消费）。详见 `utils/wechat_api.uts` 文件头。
 	 */
 	function onWechatBind(): void {
 		if (wechatBound.value) {
@@ -114,16 +116,8 @@
 			})
 			return
 		}
-		wechatLogin().then((ok: boolean) => {
-			if (ok) {
-				uni.showToast({ title: '微信授权成功 · 已绑定', icon: 'success' })
-				refreshWechat()
-				return
-			}
-			// 授权不可用（资质未到位/未装微信）⇒ 回落绑定码通道，不把用户卡死
-			console.log('[yishu] 微信授权不可用 ⇒ 回落绑定码通道')
-			showBindCodeFlow()
-		})
+		console.log('[yishu] 绑定入口走绑定码通道（不调用 /auth/wechat，避免覆盖当前会话）')
+		showBindCodeFlow()
 	}
 
 	/**

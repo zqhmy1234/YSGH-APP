@@ -17,8 +17,13 @@
 			<view class="usage-card">
 				<text class="usage-title">存储用量</text>
 				<view class="usage-main-row">
+					<!-- 2026-10-30（P2 H-3）：原为 `{{ totalSize }}` + 写死的 `/ 128 GB` —— 分母是画布
+					     占位值，与任何真实值无关（设备总容量、配额都没有来源），等于给用户看一个
+					     假的比例关系（"我用了 128GB 里的多少"）。本页也没有容量端点（`fetchTotalBytes`
+					     只返回已用字节），做不出真分母 ⇒ 按诚实口径**只说已用**：不加分母、不画百分比。
+					     若日后有配额/设备容量端点，再在这里补分母（唯一落点）。 -->
+					<text class="usage-prefix">已用</text>
 					<text class="usage-num">{{ totalSize }}</text>
-					<text class="usage-total">/ 128 GB</text>
 				</view>
 				<view class="cat-row">
 					<view class="cat-dot cat-dot-photo"></view>
@@ -207,7 +212,36 @@
 				uni.showToast({ title: '导出失败，请检查网络后重试', icon: 'none' })
 				return
 			}
-			uni.showToast({ title: '导出成功', icon: 'success' })
+			// 2026-10-30（P1-39）：**不能只说"导出成功"**。
+			// 原实现只把文件下到 app 临时目录（downloadFile 的 tempFilePath）就 toast 成功，
+			// 而临时目录对用户不可见、也拿不出来 ⇒ 用户被告知成功了却永远找不到这个文件。
+			// 现口径：先尝试 saveFile 落到应用持久目录，再把**真实路径**告诉用户并提供「复制路径」。
+			uni.saveFile({
+				tempFilePath: path,
+				success: (r: any) => {
+					const saved = typeof r.savedFilePath == 'string' ? (r.savedFilePath as string) : path
+					showExported(saved)
+				},
+				fail: () => {
+					// 平台不支持 saveFile：如实给出临时路径，别假装已持久化
+					showExported(path)
+				}
+			})
+		})
+	}
+
+	/** 导出成功后的落点披露（路径可复制，用户能自己去文件管理器取） */
+	function showExported(p: string): void {
+		uni.showModal({
+			title: '导出完成',
+			content: '文件已保存到：\n' + p + '\n\n可在文件管理器中按此路径找到它。',
+			confirmText: '复制路径',
+			cancelText: '知道了',
+			success: (r) => {
+				if (r.confirm) {
+					uni.setClipboardData({ data: p })
+				}
+			}
 		})
 	}
 
@@ -296,12 +330,14 @@
 		line-height: var(--d-lattice-p36, 69.2rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
-	.usage-total {
+	/* 2026-10-30（P2 H-3）：`.usage-total`（写死「/ 128 GB」的分母位）已删；
+	   改为大数字前的「已用」前缀——语义由标签承担，不再伪造总量。 */
+	.usage-prefix {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p13, 25rpx);
 		line-height: var(--d-lattice-p18, 34.6rpx);
 		color: var(--c-ink-300, #B3A696);
-		margin-left: var(--d-lattice-p6, 11.5rpx);
+		margin-right: var(--d-lattice-p6, 11.5rpx);
 	}
 	/* 容量分区行（画布 gap=10px；值列右对齐固定 52px 位，行尾留 16px 画布余量） */
 	.cat-row {

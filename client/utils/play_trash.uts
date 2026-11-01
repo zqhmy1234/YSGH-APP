@@ -31,14 +31,27 @@ export function deleteContent(contentId: string): Promise<boolean> {
 	})
 }
 
+// 2026-10-30（P2 H-1）：**失败信号**（与 `play_messages.uts::messagesFetchFailed()` 同一范式）。
+// 本模块 resolve-only：失败给空数组 ⇒ 页面**无法区分**「回收站是空的」与「这次没拉到」，
+// 两者都渲染成"暂无内容"空态（用户会以为 30 天保留的东西已经被清掉了——比报错更吓人）。
+// 模块作用域（`.uts`）而非页面 `<script setup>`：回收站页每次进入都是新实例，页内 ref 存不住。
+let _lastTrashFetchFailed: boolean = false
+
+/** 最近一次 `trashList` 是否失败（失败 ≠ 回收站为空：页面据此给重试入口而不是空态文案） */
+export function trashFetchFailed(): boolean {
+	return _lastTrashFetchFailed
+}
+
 /** GET /trash：回收站列表（TrashItemOut[]，days_left 后端算好）；失败/空 → 空数组（api 层已 toast） */
 export function trashList(): Promise<Array<UTSJSONObject>> {
 	return new Promise<Array<UTSJSONObject>>((resolve) => {
 		get('/api/v1/trash').then((res: UTSJSONObject | null) => {
 			if (res == null) {
+				_lastTrashFetchFailed = true
 				resolve([])
 				return
 			}
+			_lastTrashFetchFailed = false
 			resolve(dataArr(res))
 		})
 	})

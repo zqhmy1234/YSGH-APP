@@ -56,6 +56,13 @@
 	const emit = defineEmits(['close', 'replay', 'dismiss'])
 
 	let dismissing = ref(false)
+	// 2026-10-30（P2 G-4）：两个按钮原先**各自为政、都没有共同的单飞闸**：
+	//  ① 「重温这段记忆」双击会 emit 两次 replay → 宿主两次 `navigateTo` → 详情页被 push 两层
+	//     （用户返回要退两次，且看着像"点一下开了两页"）；
+	//  ② dismiss 进行中主按钮仍可点，两个动作并发竞争（一个在划掉、一个在跳详情）。
+	// 现用 acted 做整层单飞：任一动作发出后其余按钮一律失效。弹层由宿主关闭后 v-if 卸载，
+	// acted/dismissing 随之复位，不影响下一次打开。
+	let acted = ref(false)
 
 	/** '2025-09-02T10:30:00' → 年=2025 月=9 日=2（解析失败降级只显「一年前的今天」） */
 	function parseParts(): Array<number> {
@@ -97,14 +104,20 @@
 	}
 
 	function onReplay(): void {
+		// 2026-10-30（P2 G-4）：见 acted 声明处（防双击重复 push 详情 / 与 dismiss 竞争）
+		if (acted.value || dismissing.value) {
+			return
+		}
+		acted.value = true
 		emit('replay')
 	}
 
 	function onDismiss(): void {
-		if (dismissing.value) {
+		if (dismissing.value || acted.value) {
 			return
 		}
 		dismissing.value = true
+		acted.value = true
 		emit('dismiss')
 		// 宿主完成 dismissEcho 后关闭弹层（v-if 卸载本组件，dismissing 随之复位）——
 		// 不用 defineExpose（全项目零先例，编译器风险不冒险）

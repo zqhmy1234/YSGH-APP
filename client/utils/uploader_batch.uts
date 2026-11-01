@@ -72,6 +72,10 @@ class UploadPool {
 				this.failed++
 				this.consecutive++
 				addFailed(item)
+				// 2026-10-30（P1-3）：`addFailed` 之外**必须移出 held** —— 原实现只在成功时才
+				// removeHeld，失败项同时留在两个队列 ⇒ 横幅双计（N 张待传 + M 张失败），
+				// 下次「一键继续」把同一路径塞进同一批两次（原图双倍流量）。
+				removeHeld(item.path)
 				registerConsecutiveFailure()
 				if (this.consecutive >= MAX_BATCH_FAILURES) {
 					console.error('[yishu] 连续失败 ' + MAX_BATCH_FAILURES + ' 条，暂停剩余（横幅可继续）')
@@ -107,6 +111,63 @@ function failWholeBatch(items: Array<PhotoItem>, onProgress: (p: UploadProgress)
 /** 批量上传主入口（并发 ≤3）；成功项返回（上传前确保已登录）。
  *  opts.mode：auto（WiFi 原图/蜂窝暂缓）/ original（强制原图）/ thumbnail / hold */
 export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) => void, opts: UploadOptions | null = null): Promise<Array<UploadedPhoto>> {
+	// 2026-10-31（走查 2.1/2.2）：**入队前先验真图**。
+	// 事故：走查时把 11 个以 `<?` 开头的非图片文件按 .jpg 推进相册，全部进了 held/failed 队列，
+	// logcat 刷屏 `ExifInterface: Invalid byte order: 3c3f`，反复重试且永远传不上去。
+	// 只认扩展名不够（这些文件就叫 .jpg），这里用 `uni.getImageInfo` 真解码一次：能拿到宽高才算图片。
+	// 不能解码的直接剔除并**显式告知**，绝不静默塞进队列——否则用户只会看到“待上传”永不消失。
+	return filterValidImages(items).then((valid: Array<PhotoItem>) => {
+		return uploadBatchValidated(valid, onProgress, opts)
+	})
+}
+
+/**
+ * 真图校验：`uni.getImageInfo` 能解出尺寸才算有效图片（非图片/损坏/0 字节都会 fail）。
+ * 全失败时返回空数组，由调用方按 0 张处理（不会静默替换成“已记录”）。
+ */
+function filterValidImages(items: PhotoItem[]): Promise<Array<PhotoItem>> {
+	return new Promise<Array<PhotoItem>>((resolve) => {
+		if (items.length == 0) {
+			resolve([])
+			return
+		}
+		const ok: Array<PhotoItem> = []
+		let pending = items.length
+		const done = (): void => {
+			pending = pending - 1
+			if (pending > 0) {
+				return
+			}
+			if (ok.length < items.length) {
+				const bad = items.length - ok.length
+				console.error('[yishu] 上传前剔除 ' + bad + ' 个非图片/损坏文件（getImageInfo 解码失败，共 ' + items.length + ' 个）')
+				uni.showToast({ title: bad.toString() + ' 张不是有效图片，已跳过', icon: 'none' })
+			}
+			resolve(ok)
+		}
+		for (let i = 0; i < items.length; i++) {
+			const it = items[i]
+			if (it.path == '') {
+				done()
+				continue
+			}
+			uni.getImageInfo({
+				src: it.path,
+				// 不读回调入参：本处只关心“能不能解码”，少一个类型依赖就少一处编译风险
+				success: () => {
+					ok.push(it)
+					done()
+				},
+				fail: () => {
+					done()
+				}
+			})
+		}
+	})
+}
+
+/** 校验通过后的真实上传体（原 `uploadBatch` 主体一字未改，只改了函数名与入口） */
+function uploadBatchValidated(items: PhotoItem[], onProgress: (p: UploadProgress) => void, opts: UploadOptions | null = null): Promise<Array<UploadedPhoto>> {
 	return new Promise<Array<UploadedPhoto>>((resolve) => {
 		if (items.length === 0) {
 			const empty = new UploadProgress(0, 0, 0)
@@ -142,17 +203,43 @@ export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) 
 }
 
 /** 一键继续：解除暂停 + 上传 held/failed 全部待处理照片（原图模式；B4 §5"立即上传原图"手动入口） */
+// 2026-10-30（P1-2）：加**在途单飞**。原实现无互斥：连点横幅按钮、或「点按钮」与
+// 「WiFi 恢复自动补传」撞车时，两个调用各自组装 held+failed 并各起一个 UploadPool
+// （各 ≤3 并发）⇒ 同一张照片被两个池同时上传、并各自提交一次 L1 ⇒ 同日出现重复日卡。
+let _continueInflight: Promise<Array<UploadedPhoto>> | null = null
+
 export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+	if (_continueInflight != null) {
+		console.log('[yishu] 继续上传已在途，复用同一批次（防重复上传/重复提交 L1）')
+		return _continueInflight
+	}
+	const p = doContinuePendingUploads(onProgress)
+	_continueInflight = p
+	p.then((_out: Array<UploadedPhoto>) => {
+		_continueInflight = null
+	})
+	return p
+}
+
+function doContinuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
 	return new Promise<Array<UploadedPhoto>>((resolve) => {
 		resumeSync()
 		const held = heldPhotos()
 		const failed = failedPhotos()
 		const items: Array<PhotoItem> = []
+		// 按 path 去重兜底（两个队列理论上互斥，历史数据可能已重叠）
+		const seen: Set<string> = new Set<string>()
 		for (let i = 0; i < held.length; i++) {
-			items.push(held[i])
+			if (!seen.has(held[i].path)) {
+				seen.add(held[i].path)
+				items.push(held[i])
+			}
 		}
 		for (let i = 0; i < failed.length; i++) {
-			items.push(failed[i])
+			if (!seen.has(failed[i].path)) {
+				seen.add(failed[i].path)
+				items.push(failed[i])
+			}
 		}
 		if (items.length === 0) {
 			const empty = new UploadProgress(0, 0, 0)
@@ -166,7 +253,29 @@ export function continuePendingUploads(onProgress: (p: UploadProgress) => void):
 				failWholeBatch(items, onProgress, resolve)
 				return
 			}
-			const pool = new UploadPool(items, onProgress, (out: Array<UploadedPhoto>) => {
+			// 2026-10-31（走查 2.1/2.2）：**这条路径也必须验真图**。
+			// 原实现这里直接 `new UploadPool`，绕开了 `uploadBatch` ⇒ held/failed 队列里的坏文件
+			// （走查时那 11 个 `<?` 开头的假 jpg）会绕过上面新加的过滤，继续被反复重试。
+			// 校验不过的直接从 held/failed 里清掉，否则它们永远挂在横幅上。
+			filterValidImages(items).then((valid: Array<PhotoItem>) => {
+				if (valid.length < items.length) {
+					const vp: Array<string> = []
+					for (let vi = 0; vi < valid.length; vi++) {
+						vp.push(valid[vi].path)
+					}
+					for (let ii = 0; ii < items.length; ii++) {
+						if (vp.indexOf(items[ii].path) < 0) {
+							removeHeld(items[ii].path)
+							removeFailed(items[ii].path)
+						}
+					}
+				}
+				if (valid.length == 0) {
+					onProgress(new UploadProgress(0, 0, 0))
+					resolve([])
+					return
+				}
+				const pool = new UploadPool(valid, onProgress, (out: Array<UploadedPhoto>) => {
 				// 成功后从 held/failed 队列移除（无论池是否因暂停提前返回，只清已成功项）
 				for (let i = 0; i < out.length; i++) {
 					removeHeld(out[i].item.path)
@@ -174,7 +283,8 @@ export function continuePendingUploads(onProgress: (p: UploadProgress) => void):
 				}
 				resolve(out)
 			})
-			pool.start('original')
+				pool.start('original')
+			}) // filterValidImages().then
 		})
 	})
 }

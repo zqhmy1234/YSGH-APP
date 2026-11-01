@@ -142,6 +142,20 @@ def sync_client_events(
         accepted.append({"client_event_id": cid, "event_id": str(ev.id), "photo_count": len(valid)})
         affected.extend(valid)
 
+    # 2026-11-01：走查诊断——event_items 全表为空（events 896 条 / 成员 0 条），
+    # 时间轴卡片因此没有 cover_content_id、点不进详情。这里把每条事件的
+    # 「收到几个 id / 命中几个 / 走了哪个分支」打出来，一次定位是 rejected、duplicates
+    # 还是写入被回滚。
+    logger.info(
+        "events/sync 结果 user=%s accepted=%d duplicates=%d rejected=%d affected=%d | %s",
+        user_id,
+        len(accepted),
+        len(duplicates),
+        len(rejected),
+        len(affected),
+        rejected[:3],
+    )
+
     upper_items = 0
     if affected:
         upper_items = _refresh_upper_candidates(db, user_id, affected)

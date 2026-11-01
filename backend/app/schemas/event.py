@@ -59,6 +59,12 @@ class EventOut(BaseModel):
     photos: list[EventPhotoOut] = []
     # 封面缩略图票据 URL（cover_content_id 对应，可不在成员照片前 N 张内）
     cover_url: str | None = None
+    # 「点开详情」用的内容 id（2026-10-31 走查缺陷修复）
+    # 与 cover_content_id 分开：封面是**图片**语义（文字内容做封面会取不到图），
+    # 而这个是**跳转**语义 —— L1 日卡是聚合事件、cover 常为 NULL，
+    # 客户端 openDetail 拿不到 id 就只弹一句「暂无可查看的内容」然后返回，
+    # 表现就是「时间轴卡片点了没反应、详情页永远打不开」。
+    open_content_id: str | None = None
     # 语音卡信息（像素级 UI 还原：琥珀播放钮 + 波形竖条阵列）
     voice: VoiceInfo | None = None
     # 文字卡引用（像素级 UI 还原：左侧琥珀引用竖线 + 引言体）

@@ -118,8 +118,12 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 		thumbnailUrl: string
 		/** 原图票据 URL（短时效；photo 有值） */
 		originalUrl: string
+		/** 备注（2026-10-30 修 P1-20）：后端 `serializers.py` 一直下发 `remark`，但本类从未解析
+		 *  ⇒ 详情页读不到备注，只能"保存成功写内存、重进就丢"，页面注释还据此断言
+		 *  「后端无 PATCH 补充端点→冷启动即失」（实际 PATCH 端点存在且可回读）。 */
+		remark: string
 
-		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string, thumbnailUrl: string, originalUrl: string) {
+		constructor(id: string, contentType: string, text: string, takenAt: string, place: string, status: string, thumbnailUrl: string, originalUrl: string, remark: string) {
 			this.id = id
 			this.contentType = contentType
 			this.text = text
@@ -128,6 +132,7 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 			this.status = status
 			this.thumbnailUrl = thumbnailUrl
 			this.originalUrl = originalUrl
+			this.remark = remark
 		}
 	}
 
@@ -157,7 +162,8 @@ export function fetchContentEvents(contentId: string): Promise<Array<ContentEven
 					it.getString('place') ?? '',
 					it.getString('status') ?? '',
 					resolveMediaUrl(it.getString('thumbnail_url')),
-					resolveMediaUrl(it.getString('original_url'))
+					resolveMediaUrl(it.getString('original_url')),
+					it.getString('remark') ?? ''
 				)
 				// 照片缩略图过渡管线（Valet Key 落地前 · 2026-09-02）：
 				// 服务端 contents 列表的 thumbnail_url 票据恒空 → photo 改走

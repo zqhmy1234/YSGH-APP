@@ -77,8 +77,17 @@
 					<text class="rec-hint">{{ recordHint }}</text>
 					<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
 						<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
-						<view class="resume-btn" @tap="resumeRecordNow">
-							<text class="resume-text">继续录音</text>
+						<view class="hold-btn" @tap="resumeRecordNow">
+							<text class="hold-text">继续</text>
+						</view>
+						<!-- 2026-11-01（走查 1.2 实测缺陷）：**暂停后没有任何"结束"入口**。
+						     原设计把结束藏在「连点两次中央圆点（400ms 内）」，但暂停态界面只写了
+						     「继续录音」，用户根本无从发现 —— 设备实测：录 5 秒轻触变成暂停，
+						     然后界面上再也找不到怎么保存，1.2/6.5/6.6 三条走查全被挡住。
+						     这里给一个显式按钮，走 `endFromTap()`（暂停态会先 resume 再 stop，
+						     与连点两次完全同一条路径，不新增状态机分支）。 -->
+						<view class="finish-btn" @tap="endRecordNow">
+							<text class="finish-text">结束并转写</text>
 						</view>
 					</view>
 					<view v-if="!recording && transcribeFailed" class="interrupt-bar">
@@ -281,9 +290,11 @@
 	import { VoiceRecorder } from '@/composables/useVoiceRecord'
 	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
 	import { uploadBatch } from '@/utils/uploader_batch'
+	// 2026-10-30（P2 A-8）：需要读同步暂停态 —— 暂停时不能承诺「WiFi 后自动继续」
+	import { isSyncPaused } from '@/utils/pause_controller'
 	// NEW-01 修复（2026-10-11 开发 C）：端侧 L1 聚合 + 上云所需依赖（与 TabIndex.handleBatch 同源）
 	// 2026-10-16：上云逻辑抽成共口（utils/l1_submit.uts），供 记录面板 / 横幅手动上传 / WiFi 自动补传 三处复用
-	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
+	import { submitUploadsAsL1, submitContentAsL1 } from '@/utils/l1_submit.uts'
 	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
 	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
 	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
@@ -341,6 +352,15 @@
 	let photos = ref<Array<string>>([])
 	let photoSizes = ref<Array<number>>([])
 	let photoUploading = ref(false)
+	// 2026-10-30（P2 A-5）：组件存活标志。上传/入库是网络异步，用户完全可能「点了保存 →
+	// 立刻关面板/按返回」——此时组件已被 v-if 卸载，回调若照常 toast / emit('close') / 改表单 ref：
+	// ① 新页面被无关 toast 干扰；② emit 到已销毁实例（宿主已把 sheetOpen 置 false）；
+	// ③ 表单态在已卸载组件上再写一遍（无意义）。故卸载即置 true，回调只做服务端副作用 + 清理。
+	let disposed = false
+	// 2026-10-30（P2 A-7）：分类轮询世代号（与 utils/timeline.uts 缩略图池 `_thumbGen` 同范式）。
+	// 原实现 pollClassify 的回调无任何身份校验：用户「重录 / 关面板 / 卸载」后，上一轮的
+	// 20×3s 轮询仍会返回并把 label 写进 `aiLabel` ⇒ 新录的一段语音被贴上上一段的分类。
+	let classifyGen = 0
 	// 照片入口来源（峰宝 09-02 拍板：拍照/选照片同一表单页，sourceKind 只决定拉相机还是相册）
 	let sourceKind = ref('camera')
 	// 文字记录
@@ -397,6 +417,11 @@
 		})
 	})
 	onUnmounted(() => {
+		// 2026-10-30（P2 A-5/A-7）：先立死亡标志，再停录音 —— 之后任何在途回调（上传批次、
+		// 分类轮询、转写）只允许做服务端副作用与本地清理，不许 toast / emit / 改表单。
+		disposed = true
+		classifyGen = classifyGen + 1
+		vr.markDisposed()
 		if (recordTimer.value > 0) {
 			clearInterval(recordTimer.value)
 			recordTimer.value = 0
@@ -425,14 +450,21 @@
 
 	// ===== 浮层整体关闭（点遮罩 / 宿主页调用） =====
 	function onClose(): void {
+		// 2026-10-30（P2 A-6 已裁定：点遮罩关面板 = **不保存**）：
+		// 原实现调 `stopRecordNow()` → 原生 onStop → onRecordStopped 走**保存链**
+		// （转写→预览→入库），即「点一下遮罩/✕ 就把这段录音存下来了」，与用户意图相反；
+		// 也与本文件 onUnmounted 的 `abandonRecording()`（只停不存）语义不一致。
+		// 现改为 abandoned：只有显式「确定/保存」才落库。
 		// 铁律 11：closeForm 曾因 stopRecord 抛异常导致状态永不复位 → 此处同样无条件通知宿主页
 		try {
 			if (recording.value) {
-				stopRecordNow()
+				vr.abandonRecording()
 			}
 		} catch (e) {
-			console.log('[yishu] onClose 停止录音失败（忽略，仍强制关闭浮层）: ' + e)
+			console.log('[yishu] onClose 放弃录音失败（忽略，仍强制关闭浮层）: ' + e)
 		}
+		// 2026-10-30（P2 A-7）：关面板即终结本轮分类轮询世代
+		classifyGen = classifyGen + 1
 		formMode.value = ''
 		voiceStage.value = 'record'
 		emit('close')
@@ -490,6 +522,18 @@
 			console.log('[yishu] closeForm 停止录音失败（忽略，仍强制关闭表单）: ' + e)
 		}
 		formMode.value = ''
+		// 2026-10-30（P2 A-1）：**取消路径必须复位本轮输入**。
+		// 原实现只有「保存成功」才清 photos/photoSizes/draft/remark/manualLabel，取消返回时全部留着
+		// ⇒ 再次进入「照片/写几句」看到上一轮的图与文字、件数显示旧值（如"4/9"），
+		// 甚至可能把上一轮的旧图当成本次提交（重复入库）。
+		photos.value = []
+		photoSizes.value = []
+		draft.value = ''
+		remark.value = ''
+		manualLabel.value = ''
+		aiLabel.value = ''
+		// 2026-10-30（P2 A-7）：取消返回 = 本轮作废，在途分类轮询的结果一律丢弃
+		classifyGen = classifyGen + 1
 		// §X：直达会话（拍下第一张）用户没打开过面板，表单返回=直接关浮层回宿主页
 		if (directPick.value) {
 			emit('close')
@@ -509,6 +553,12 @@
 	function onChipTap(key: string): void {
 		// F1 标注态：点标签选分类（重复点同一枚 = 取消手选）
 		manualLabel.value = manualLabel.value == key ? '' : key
+		// 2026-10-30（P2 A-7）：自定义分类**在选中时就说清楚**，而不是保存时静默丢弃。
+		// 后端 `VALID_CLASSES` 白名单不收自由标签（`api/corrections.py:36`），原实现在保存路径
+		// 直接 `if (picked.indexOf('custom:') == 0) return` —— chip 仍高亮，用户以为分类生效了。
+		if (manualLabel.value.indexOf('custom:') == 0) {
+			uni.showToast({ title: '自定义分类暂不支持同步到云端，仅本机标记', icon: 'none', duration: 2500 })
+		}
 	}
 	// F1d 语音标注态 chips：有效选中 = 手选优先，未手选则取 AI 预选
 	function vChipCls(key: string): string {
@@ -581,12 +631,20 @@
 		voiceStage.value = 'annotate'
 		// F1d：进入标注态即对转写文本真实打标 → AI 预选分类（hint「AI 已预选 · 点标签可纠正」真实化）
 		aiLabel.value = ''
-		if (transcript.value.trim() != '') {
-			submitClassify(transcript.value).then((jobId: string | null) => {
-				if (jobId == null) {
+		// 2026-10-30（P2 A-7）：本轮世代号 = 这一次「进标注态」的身份；重录/关面板/卸载都会 ++，
+		// 于是旧轮次的 submit/poll 回调回来时世代不符 → 直接丢弃（不再写 aiLabel）。
+		classifyGen = classifyGen + 1
+		const gen = classifyGen
+		const txt = transcript.value
+		if (txt.trim() != '') {
+			submitClassify(txt).then((jobId: string | null) => {
+				if (jobId == null || gen != classifyGen || disposed) {
 					return
 				}
 				pollClassify(jobId, 20, 3000).then((result) => {
+					if (gen != classifyGen || disposed) {
+						return
+					}
 					if (result != null && result.label != '') {
 						aiLabel.value = result.label
 					}
@@ -595,6 +653,8 @@
 		}
 	}
 	function reRecord(): void {
+		// 2026-10-30（P2 A-7）：重录 = 上一轮作废，作废在途分类轮询（否则旧 label 会贴到新录音上）
+		classifyGen = classifyGen + 1
 		transcript.value = ''
 		aiLabel.value = ''
 		emotion.value = ''
@@ -612,9 +672,15 @@
 	// sourceKind 决定拉相机还是相册（峰宝 09-02 拍板：拍照/选照片同一表单页，只是入口不同）；
 	// 成功拿到照片才进表单页（不落空表单）；取消一律静默（入口取消=留面板，续选取消=留表单）
 	function pickPhotos(): void {
+		// 2026-10-30（P2 A-007/A-3）：先算剩余名额，0 张时直接不动（count=0 调 chooseImage 无意义）
+		const remain = 9 - photos.value.length
+		if (remain <= 0) {
+			uni.showToast({ title: '最多 9 张', icon: 'none' })
+			return
+		}
 		const srcs: Array<string> = sourceKind.value == 'camera' ? ['camera'] : ['album']
 		uni.chooseImage({
-			count: 9 - photos.value.length,
+			count: remain,
 			sourceType: srcs,
 			// GPS/拍摄时间只存在于原文件 EXIF；系统压缩会直接剥离。
 			sizeType: ['original'],
@@ -622,22 +688,39 @@
 				// §X：directPick 是直达会话全程标志，成功后不复位——scrim/sheet 整场不挂载，
 				// 表单独占屏幕（峰宝 09-03 真机实锤：与 scrim/sheet 同帧挂载时 uvue 原生 z 序
 				// 不稳定，二次进入 form-layer 被压到 scrim/sheet 之下=「表单在但看不见+点了没反应」）
+				//
+				// 🚨 2026-10-30（P2 A-007/A-3）：**两数组必须成对 push、共用同一上限**。
+				// 原实现是「paths 循环受 9 张上限约束、tempFiles 循环全量追加」——
+				// 已有 8 张时再选 4 张：photos 只进 1 张（截断到 9），photoSizes 却进 4 个 ⇒
+				// 从这一刻起 `photoSizes[i]` 与 `photos[i]` **下标永久错位**：
+				//   ① 提交时 `savePhoto` 用错位后的 size 组装 PhotoItem ⇒ 后端 init 的 size
+				//      与真实文件不符，complete 阶段 422（体积校验失败）；
+				//   ② 删除中间某张后（removePhoto 按下标同步删两数组）错位继续往后传染。
+				// 现改为单循环、按 `min(剩余名额, paths.length, tempFiles.length)` 成对追加。
 				const paths = res.tempFilePaths
-				for (let i = 0; i < paths.length; i++) {
-					if (photos.value.length >= 9) {
+				const tfs = res.tempFiles
+				let n = paths.length
+				if (n > remain) {
+					n = remain
+				}
+				if (n > tfs.length) {
+					n = tfs.length
+				}
+				for (let i = 0; i < n; i++) {
+					const p = paths[i]
+					// 路径缺失时**立即停止**（不能跳过：跳过一个就会让两个数组再次错位）
+					if (p == null) {
 						break
 					}
-					const p = paths[i]
-					if (p != null) {
-						photos.value.push(p)
-					}
-				}
-				const tfs = res.tempFiles
-				for (let i = 0; i < tfs.length; i++) {
+					photos.value.push(p)
+					// 尺寸拿不到记 0：savePhoto/uploadOne 会以「文件大小为 0」显式失败，
+					// 而不是用别张图的大小冒充（错位比失败更糟——它静默入库错误元数据）。
+					let sz = 0
 					const tf = tfs[i]
 					if (tf != null) {
-						photoSizes.value.push(tf.size)
+						sz = tf.size
 					}
+					photoSizes.value.push(sz)
 				}
 				// 拿到照片才进表单页
 				formMode.value = 'photo'
@@ -765,7 +848,26 @@
 				// L1 日卡片必须由端侧 POST /api/v1/events/sync 提交，故此处必须补上。
 				const l1n = submitUploadsAsL1(uploaded)
 				console.log('[yishu] 记录面板 L1 提交条数=' + l1n)
-				uni.showToast({ title: '已记录', icon: 'success' })
+				// 2026-10-30（P2 A-5）：面板已卸载 ⇒ 到这里为止的服务端副作用（纠错 + L1）
+				// **已经做完且必须做完**（照片真的传上去了，跳过就留下"内容入库但无事件"的孤儿）；
+				// 之后的 toast / emit / 表单复位一律不做。
+				if (disposed) {
+					console.log('[yishu] 上传回调到达时面板已卸载：仅清理（不 toast / 不 emit / 不复位表单）')
+					return
+				}
+				// 2026-10-30（P1-7）：**部分失败不能报全成功**。
+				// 原判据是「有没有成功的」（`uploaded.length > 0`）而不是「有没有失败的」
+				// ⇒ 9 张里 3 张失败仍 toast「已记录」并关面板，失败项静默沉到 failed 队列，
+				// 用户以为九张都在，实际少三张且没有任何提示。
+				if (lastUploadFailed > 0) {
+					uni.showToast({
+						title: (uploaded.length).toString() + ' 张已记录 · ' + lastUploadFailed.toString() + ' 张待重试',
+						icon: 'none',
+						duration: 2500
+					})
+				} else {
+					uni.showToast({ title: '已记录', icon: 'success' })
+				}
 				emit('saved')
 				photos.value = []
 				photoSizes.value = []
@@ -773,15 +875,35 @@
 				manualLabel.value = ''
 				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
 			} else if (lastUploadFailed == 0) {
+				// 2026-10-30（P2 A-5）：同上，卸载后只清理（照片已安全进 held 队列，不需要告知）
+				if (disposed) {
+					console.log('[yishu] 上传回调（暂缓入队）到达时面板已卸载：仅清理')
+					return
+				}
 				// 蜂窝/离线：照片已进持久 held 队列，不是失败。关闭表单避免重复入队；
 				// 首页横幅继续显示“待 WiFi 上传”，网络恢复后自动补传。
-				uni.showToast({ title: '已暂缓上传，连接 WiFi 后自动继续', icon: 'none', duration: 2500 })
+				// 2026-10-30（P2 A-8）：同步处于**暂停**状态（连续失败自动暂停 / 用户手动暂停）时，
+				// 原文案「连接 WiFi 后自动继续」是假的 —— 暂停期间不会自动补传，用户会一直等到某个
+				// 永远不会发生的动作。改为指向横幅里的继续入口（真实可执行路径）。
+				const syncPaused = isSyncPaused()
+				uni.showToast({
+					title: syncPaused
+						? '已暂缓上传；同步已暂停，请在首页横幅点「继续」'
+						: '已暂缓上传，连接 WiFi 后自动继续',
+					icon: 'none',
+					duration: 2500
+				})
 				photos.value = []
 				photoSizes.value = []
 				remark.value = ''
 				manualLabel.value = ''
 				emit('close')
 			} else {
+				// 2026-10-30（P2 A-5）：卸载后不再弹失败 toast（失败项已在 failed 队列，横幅可见）
+				if (disposed) {
+					console.log('[yishu] 上传回调（全部失败）到达时面板已卸载：不再 toast')
+					return
+				}
 				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
 			}
 		})
@@ -814,9 +936,26 @@
 			draft.value = ''
 			remark.value = ''
 			manualLabel.value = ''
-			uni.showToast({ title: '已记录', icon: 'success' })
-			emit('saved')
-			emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+			// 2026-10-30（P0-1）：文字记录必须**同时提交当日 L1 事件**，否则时间轴（只读 events）
+			// 永远看不到这条 —— 云侧聚合默认 mode=l2l3 从不写 L1，L1 只能端侧提交。
+			// 失败不吞：内容已入库，但要让用户知道「还没出现在时间轴」。
+			// 2026-10-30（P2 A-5 同类）：L1 属服务端副作用，**提到 toast 之前**，面板卸载也要提交。
+			// 2026-10-31（走查 C：同日多张日卡标题完全相同）：把正文前 14 字带进标题，
+			// 同一天记两条文字时两张卡不再同名（卡片面仍是「日期 · 文字 · 摘要」）。
+			submitContentAsL1(cid, Date.now(), '文字', text).then((ok: boolean) => {
+				if (!ok && !disposed) {
+					uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+				}
+			})
+			// 2026-10-30（P2 A-5）：内容入库回调可能晚于面板卸载（用户点确定后立刻返回）——
+			// 此时不再 toast、不向已销毁实例 emit。
+			if (disposed) {
+				console.log('[yishu] 文字入库回调到达时面板已卸载：跳过 toast/emit')
+			} else {
+				uni.showToast({ title: '已记录', icon: 'success' })
+				emit('saved')
+				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+			}
 			// 云端分类继续执行（服务端打标）；组件可能已随浮层销毁，仅剩服务端副作用
 			submitClassify(text).then((jobId: string | null) => {
 				if (picked != '' && picked.indexOf('custom:') != 0) {
@@ -845,7 +984,10 @@
 		() => { emit('saved') },
 		() => { emit('close') },
 		(s: string) => { voiceStage.value = s },
-		() => (manualLabel.value != '' ? manualLabel.value : aiLabel.value),
+		// 2026-10-30（P1-6）：**只回传用户手选**的标签。原先回退到 `aiLabel`，导致「用户一个 chip
+		// 都没点」也会以 source=active 提交一次纠错（new_label = AI 自己的输出）⇒ 个人规则层
+		// 学习自己的预测，是 O-2 自我强化的复发路径。AI 预选只作 UI 显示。
+		() => manualLabel.value,
 		() => { aiLabel.value = '' },
 		() => remark.value.trim(),
 		() => { remark.value = ''; manualLabel.value = ''; aiLabel.value = '' }
@@ -868,6 +1010,10 @@
 	function retryTranscribe(): void { vr.retryTranscribe() }
 	function setRecordingOff(): void { vr.setRecordingOff() }
 	function toggleRecord(): void { vr.toggleRecord() }
+	// 2026-11-01（走查 1.2）：「结束并转写」显式入口。
+	// 复用 `endFromTap()`（暂停态先 resume 再 stop），与「连点两次圆点」同一条路径，
+	// 不新增状态机分支 ⇒ 不会与既有 400ms 双击逻辑冲突。
+	function endRecordNow(): void { vr.endFromTap() }
 	function pauseRecordNow(): void { vr.pauseRecordNow() }
 	function endFromTap(): void { vr.endFromTap() }
 	function resumeRecordNow(): void { vr.resumeRecordNow() }

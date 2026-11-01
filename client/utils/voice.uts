@@ -242,6 +242,40 @@ export function resumeRecord(): void {
 	_controller.resume()
 }
 
+// ── 转写失败原因（2026-10-30）──────────────────────────────────────────────
+// 为什么需要：原实现只有「resolve(null)」这一个失败信号，调用方无从区分
+// 「离线 / 超时 / 服务端拒绝」，只能统一弹「转写失败，请重试」——用户飞行模式下
+// 录完音看到这句话，不知道是"再点一次"还是"等联网"。现在失败原因是显式值，
+// 调用方（composables/useVoiceRecord.uts）据此给可执行文案。
+export const ASR_FAIL_OFFLINE: string = 'offline'
+export const ASR_FAIL_TIMEOUT: string = 'timeout'
+export const ASR_FAIL_NETWORK: string = 'network'
+export const ASR_FAIL_SERVER: string = 'server'
+export const ASR_FAIL_TOO_LARGE: string = 'too_large'
+export const ASR_FAIL_PARSE: string = 'parse'
+
+/** 最近一次 transcribeWav 的失败原因（'' = 成功/未失败）。转写天然串行，无需并发保护 */
+let _lastAsrFailReason: string = ''
+export function lastAsrFailReason(): string {
+	return _lastAsrFailReason
+}
+
+/** 直传链内部的失败原因（由 transcribeWavDirect 写、transcribeWav 读取；同上，串行使用） */
+let _lastDirectFailReason: string = ''
+
+/**
+ * 转写看门狗（ms）：直传超时预算 90s + 10s 余量。
+ *
+ * 2026-10-30（修「飞行模式录音 → 关飞行 → 一直卡在正在转写」）：
+ * 原实现把"能不能回"完全押在 `uni.uploadFile` 的 success/fail 回调上——
+ * App-Android 上 `timeout` 参数并不总能生效，且桥接偶发吞回调（本仓既有实证：
+ * api.uts 的 request 必须自带 JS 层看门狗正是这个原因）；而调用方一旦置
+ * `transcribing=true` 就会把语音 UI **永久冻结**（useVoiceRecord.uts 的
+ * toggleRecord 在 transcribing 时直接 return，用户点麦克风毫无反应）。
+ * 现在保证：无论回调是否到达，本 Promise 必在 ASR_WATCHDOG_MS 内落定。
+ */
+const ASR_WATCHDOG_MS: number = 100000
+
 /**
  * POST /asr/transcribe：上传 wav 转写（**≤8MB 直传**）；返回 AsrResult 或 null。
  *
@@ -256,31 +290,73 @@ export function resumeRecord(): void {
  */
 export function transcribeWav(filePath: string): Promise<AsrResult | null> {
 	return new Promise<AsrResult | null>((resolve) => {
-		uni.getFileSystemManager().getFileInfo({
-			filePath: filePath,
-			success: (info) => {
-				if (info.size > MAX_DIRECT_UPLOAD_BYTES) {
-					uni.showToast({ title: '录音较长，改用分片上传转写', icon: 'none', duration: 2500 })
-					addBreadcrumb('voice', 'transcribe skipped: size=' + info.size + ' > ' + MAX_DIRECT_UPLOAD_BYTES)
-					resolve(null)
+		let settled = false
+		// timer 先声明后赋值：finish 内部 clearTimeout 引用它，避免任何同步回调下的 TDZ 风险
+		let timer: number = 0
+		const finish = (r: AsrResult | null, reason: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			if (timer > 0) {
+				clearTimeout(timer)
+			}
+			_lastAsrFailReason = r == null ? reason : ''
+			if (r == null) {
+				console.error('[yishu] ASR 转写失败 reason=' + reason)
+				addBreadcrumb('voice', 'transcribe failed: ' + reason)
+			}
+			resolve(r)
+		}
+		timer = setTimeout(() => {
+			finish(null, ASR_FAIL_TIMEOUT)
+		}, ASR_WATCHDOG_MS) as number
+
+		const start = (): void => {
+			uni.getFileSystemManager().getFileInfo({
+				filePath: filePath,
+				success: (info) => {
+					if (info.size > MAX_DIRECT_UPLOAD_BYTES) {
+						uni.showToast({ title: '录音较长，改用分片上传转写', icon: 'none', duration: 2500 })
+						addBreadcrumb('voice', 'transcribe skipped: size=' + info.size + ' > ' + MAX_DIRECT_UPLOAD_BYTES)
+						finish(null, ASR_FAIL_TOO_LARGE)
+						return
+					}
+					transcribeWavDirect(filePath).then((r: AsrResult | null) => {
+						finish(r, _lastDirectFailReason)
+					})
+				},
+				fail: () => {
+					// 拿不到大小：按原行为继续直传（不因元数据缺失阻断主链）
+					transcribeWavDirect(filePath).then((r: AsrResult | null) => {
+						finish(r, _lastDirectFailReason)
+					})
+				}
+			})
+		}
+
+		// 2026-10-30（同一事故）：**离线前置判定**。飞行模式下直接给「无网络」结论，
+		// 不把录音丢给注定失败的 uploadFile（那条路在部分机型上要挂满超时预算）。
+		uni.getNetworkType({
+			success: (res) => {
+				const t = res.networkType
+				if (t == 'none') {
+					finish(null, ASR_FAIL_OFFLINE)
 					return
 				}
-				transcribeWavDirect(filePath).then((r: AsrResult | null) => {
-					resolve(r)
-				})
+				start()
 			},
 			fail: () => {
-				// 拿不到大小：按原行为继续直传（不因元数据缺失阻断主链）
-				transcribeWavDirect(filePath).then((r: AsrResult | null) => {
-					resolve(r)
-				})
+				// 取不到网络类型（标准基座/权限异常）：不阻断主链，按原行为直传
+				start()
 			}
 		})
 	})
 }
 
 /** 直传真身（≤8MB 路径；R1#17：multipart 上传统一走 api.ts uploadFileHttp
- *  —— 401 重放 + 5xx Sentry + 信封解析）。仅由 `transcribeWav` 在过大小时调用。 */
+ *  —— 401 重放 + 5xx Sentry + 信封解析）。仅由 `transcribeWav` 在过大小时调用。
+ *  失败时写 `_lastDirectFailReason`（调用方据此给可执行文案），不自行 toast 网络类错误。 */
 function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 	return new Promise<AsrResult | null>((resolve) => {
 		// ASR 可能先尝试 Fun-ASR，再降级到本地 SenseVoice；<=8MB 直传允许的录音最长接近
@@ -291,12 +367,14 @@ function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 				const body = hr.body
 				if (body == null) {
 					showErrorToast(new Error('转写响应解析失败'))
+					_lastDirectFailReason = ASR_FAIL_PARSE
 					resolve(null)
 					return
 				}
 				const d = body.getJSON('data')
 				if (d == null) {
 					showErrorToast(new Error('转写结果为空'))
+					_lastDirectFailReason = ASR_FAIL_PARSE
 					resolve(null)
 					return
 				}
@@ -338,7 +416,16 @@ function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
 				return
 			}
 			// 非 200：尝试解析错误信封（uploadFileHttp 已按信封解析；4xx 含 refresh 后仍 401）
+			// 2026-10-30：status=0 = 网络层失败（离线/连接被拒/上传中断）。原实现会弹
+			// 「转写失败（HTTP 0）」——对用户是噪音且不可行动；改为只回传原因，
+			// 由 useVoiceRecord 给「无网络，录音已保留，联网后点重新转写」这类可执行文案。
+			if (hr.status === 0) {
+				_lastDirectFailReason = ASR_FAIL_NETWORK
+				resolve(null)
+				return
+			}
 			const msg = hr.body != null ? (hr.body.getString('message') ?? '转写失败（HTTP ' + hr.status + '）') : '转写失败（HTTP ' + hr.status + '）'
+			_lastDirectFailReason = ASR_FAIL_SERVER
 			showErrorToast(new Error(msg))
 			resolve(null)
 		})

@@ -12,28 +12,21 @@
  *        → data{ conversation_id, messages[]{ id, role, kind, text, created_at } }（历史含 user 行）
  *
  * 形态映射（**必须**，否则 TabAi 渲染走错分支）：
- *   · 后端 reply.kind 目前只有 bubble | plain（agent 只回纯文本）；客户端 AiMsg.kind 同名 ⇒ 直接可用。
- *   · plain 形态客户端要 `bullets`（要点数组），后端只给整段 text ⇒ 此处按「首行作标题、
- *     其余非空行作要点」切分（多行正是 V3 SOP 确认块的形态，逐行成 bullet 恰好吻合）。
+ *   · 后端 reply.kind 只有 bubble | plain（客户端 AiMsg.kind 同名 ⇒ 直接可用）；plain 需 `bullets`
+ *     ⇒ 按「首行作标题、其余非空行作要点」切分（正是 V3 SOP 确认块的形态）。
  *   · 后端 kind=cards/confirm/typing **当前不会产生**（需 agent 侧结构化输出）⇒ 本模块**不臆造**：
  *     契约里预留 ≠ 现在能回，写死假 cards 就是把演示数据又塞回真链路。
  *
  * ── 流式通道（AG6 余项 · 2026-10-09）──
- * 客户端**唯一**对话入口 `sendChatMessage` 已从非流式切到 SSE：
- *   · 传输 = `uni.request({enableChunked: true})` + `RequestTask.onChunkReceived`（分块 ArrayBuffer）；
- *     已实测 **5.24 编译通过**（`enableChunked`/`onChunkReceived` 未收录进 5.24 的 dts，
- *     一度担心像 `scroll-y` 那样被编译器拒——实测能编过，结论落 docs/lessons.md）。
- *   · 预览走**模块级 ref**（`chatStreamText` 等，同 audio_player.uts 的 voiceProgress 先例），
- *     TabAi 直接绑 ref 渲染"逐字"，本模块不传回调（UTS 导出函数带函数类型参数零先例，不冒险）。
- *   · **兜底**：蒸汽模式桥接可能吞掉 chunk 回调 ⇒ `success` 里对整段响应体再解析一次
- *     （拿不到 `done` 帧就如实返回 null，绝不把预览当终稿）。
- *
- * 约定对齐 utils/api.uts：resolve-only 永不 reject；失败 resolve(null) 并**已 showErrorToast**
- * ⇒ 调用方**不重复 toast**（同 capsule_api 注释口径）。401 单飞刷新重放一次（流式通道绕开了
- * `doRequest`，故在此显式对齐同一语义）。
+ * `sendChatMessage` 走 SSE：`uni.request({enableChunked:true})` + `onChunkReceived`（5.24 编译实测
+ * 通过；二者未收录进 5.24 dts，结论落 docs/lessons.md）。预览走**模块级 ref**（同 audio_player.uts
+ * 先例，不传回调——UTS 导出函数带函数类型参数零先例）。**兜底**：桥接吞 chunk 时 `success` 里再解析
+ * 整段响应体（拿不到 done 帧就如实返回 null，绝不把预览当终稿）。
+ * 约定同 utils/api.uts：resolve-only；失败 resolve(null) 且**已 showErrorToast** ⇒ 调用方不重复 toast；
+ * 401 单飞刷新重放一次（本通道绕开 doRequest，故显式对齐）。
  */
 import { ref } from 'vue'
-import { get, dataObj, buildHeader, showErrorToast, ApiError } from './api'
+import { get, dataObj, buildHeader, showErrorToast, ApiError, parseEnvelopeString } from './api'
 import { refreshToken, clearToken } from './auth'
 import { getBaseUrl } from './config'
 import { addBreadcrumb, captureException } from './sentry'
@@ -144,7 +137,10 @@ function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 			bullets.push(lines[i])
 		}
 	}
-	const title = lines.length > 0 ? lines[0] : text
+	// 2026-10-30（P2 D-5）：非 plain 回复的正文原被截成**首行**（title=lines[0]），其余行直接丢 ——
+	// 而 bullets 只在 kind=='plain' 时才有渲染点 ⇒ 卡片/气泡类回复在多行正文下只显示"半句话"。
+	// 现：plain 维持「首行=标题、其余=要点」；其他 kind 的正文保留**全文**。
+	const title = kind == 'plain' ? (lines.length > 0 ? lines[0] : text) : text
 	return new ChatReply(
 		obj.getString('id') ?? '',
 		kind,
@@ -161,28 +157,35 @@ function parseReply(obj: UTSJSONObject | null): ChatReply | null {
 export let chatStreamText = ref('')
 /** 是否有一轮流式正在进行（TabAi 据此决定 typing 气泡的去留） */
 export let chatStreamActive = ref(false)
+
+// 2026-10-30（P1-24）：在途请求句柄 + 主动取消标记。原 task 是函数局部变量、不外露 ⇒ 页面销毁/
+// 切走后**无法中断**：连接还在收帧写共享 chatStreamText，而 chatStreamActive 只有 finish 才复位
+// ⇒ 重进页面后每次发送都弹「正在生成回复，稍等一下」（永久卡死）。
+let _activeTask: RequestTask | null = null
+let _cancelRequested: boolean = false
+
+/** 中断当前流式请求（页面卸载 / 切离对话 tab 时调用）。已结束则无副作用。 */
+export function cancelChatStream(): void {
+	_cancelRequested = true
+	if (_activeTask != null) {
+		_activeTask.abort()
+		_activeTask = null
+	}
+	chatStreamActive.value = false
+	chatStreamText.value = ''
+	chatStreamTool.value = ''
+}
 /** 工具状态文案（后端 `tool` 帧的 name；空串 = 没有工具在跑） */
 export let chatStreamTool = ref('')
 
 // ═══════════ 流式文本合并（2026-10-14 · 台账 §4.20 批次 5 · RC-8）═══════════
-//
-// ## 为什么
-//
-// 预览帧的到达频率是"每个 token / 每个 chunk"（实测每秒可达数十帧）。原实现**每帧直接写**
-// `chatStreamText`（TabAi 的 typing 气泡绑它渲染）⇒ **每帧一次 TabAi 重渲染**，而打字机气泡
-// 处在 `v-for` 的消息列表内 ⇒ **整列表跟着重渲染**（长会话下即"打字时卡顿、输入滞涩"）。
-//
-// ## 做法
-//
-// **合帧落定**：新文本先暂存到**非响应式**变量，最多每 80ms 落一次 ref。
-// 80ms ≈ 12.5Hz，对"逐字"观感足够（人眼对 12Hz 以上的文本增长基本连续），
-// 而重渲染次数降到原来的 1/N（N ≈ 帧率 / 12.5）。
-//
-// ## 安全边界（必须成对，否则出现"回复闪回"）
-//
-//  · 每轮**开始**（`sendChatMessage`）与**结束**（该 promise settle）都要 `cancelStreamTextFlush()`：
-//    否则调用方（TabAi 收到终稿后）清空 ref 之后，残留的定时器会把**上一轮的尾句写回去**；
-//  · `replace` 帧（校验重试后的整段替换）与 `preview` 同走这一入口，天然覆盖。
+// 为什么：预览帧每 token/chunk 一帧（每秒可达数十帧），原实现每帧直接写 `chatStreamText`
+// ⇒ 每帧一次 TabAi 重渲染，而打字机气泡处在 `v-for` 消息列表内 ⇒ **整列表跟着重渲染**
+// （长会话下"打字时卡顿、输入滞涩"）。做法：**合帧落定**——新文本先落非响应式变量，最多每
+// 80ms 落一次 ref（12.5Hz 对"逐字"观感足够），重渲染次数降到 1/N（N ≈ 帧率/12.5）。
+// 安全边界（必须成对，否则"回复闪回"）：每轮**开始**（sendChatMessage）与**结束**（promise
+// settle）都要 `cancelStreamTextFlush()`，否则调用方清空 ref 后残留定时器会把上一轮尾句写回去；
+// `replace` 帧（校验重试的整段替换）与 `preview` 同走这一入口，天然覆盖。
 let pendingStreamText = ''
 let streamFlushTimer = 0
 
@@ -209,9 +212,8 @@ function cancelStreamTextFlush(): void {
 const STREAM_TIMEOUT_MS: number = 90000
 
 /**
- * 会话 id 的本地存储键（**单一来源**：TabAi 也 import 本常量，勿再各自写字符串）。
- * 2026-10-11 静态审查 A3：陈旧会话 id 的自愈逻辑在本文件内（见 streamChatOnce 的 404 分支），
- * 故键必须与写入方同源——两处各写一份字符串迟早漂移。
+ * 会话 id 的本地存储键（**单一来源**：TabAi 也 import 本常量）。
+ * 2026-10-11 审查 A3：陈旧会话 id 的自愈在本文件内（streamChatOnce 的 404 分支），键须与写入方同源。
  */
 export const CHAT_CONV_STORAGE_KEY = 'yishu_chat_conversation_id'
 
@@ -226,13 +228,71 @@ class Utf8Decoded {
 }
 
 /**
+ * 2026-10-30（P1-22）：解析**非 200** 响应体。
+ *
+ * 本通道 `responseType: 'arraybuffer'` ⇒ 失败时 `res.data` 是 ArrayBuffer 而**不是** JSON 对象。
+ * 原实现两处都用 `res.data instanceof UTSJSONObject` 判断，恒 false ⇒ 后端 `code`/`message`
+ * 全丢（自愈分支与错误文案双双失效）。这里统一三种形态：对象 / ArrayBuffer / 字符串。
+ */
+function parseChatErrBody(data: any): UTSJSONObject | null {
+	if (data == null) {
+		return null
+	}
+	if (data instanceof UTSJSONObject) {
+		return data as UTSJSONObject
+	}
+	if (data instanceof ArrayBuffer) {
+		const dec = decodeUtf8(new Uint8Array(data as ArrayBuffer))
+		return parseEnvelopeString(dec.text)
+	}
+	if (typeof data == 'string') {
+		return parseEnvelopeString(data as string)
+	}
+	return null
+}
+
+/**
+ * 整块字节是否为 UTF-8 的**合法前缀**（末尾可能被截断）：RFC 3629 逐序列校验，
+ * 且 E0/ED/F0/F4 的首续字节另有区间（排除 overlong 与 UTF-16 代理区）。
+ * 2026-10-31（P2 D-2）：兜底分支靠它区分「还没收完、等下一片」与「真损坏」。
+ */
+function isTruncatedUtf8(bytes: Uint8Array): boolean {
+	let i = 0
+	while (i < bytes.length) {
+		const b = bytes[i]
+		if (b < 0x80) {
+			i = i + 1
+			continue
+		}
+		// 续字节个数由 lead 决定；0x80-0xC1（游离续字节/overlong）与 0xF5+ 一律判损坏
+		const need = b < 0xc2 ? -1 : b < 0xe0 ? 1 : b < 0xf0 ? 2 : b < 0xf5 ? 3 : -1
+		if (need < 0) {
+			return false
+		}
+		const lo = b == 0xe0 ? 0xa0 : b == 0xf0 ? 0x90 : 0x80
+		const hi = b == 0xed ? 0x9f : b == 0xf4 ? 0x8f : 0xbf
+		for (let g = 0; g < need; g++) {
+			const idx = i + 1 + g
+			if (idx >= bytes.length) {
+				return true // 末尾还没收完：合法截断
+			}
+			const c = bytes[idx]
+			if (c < (g == 0 ? lo : 0x80) || c > (g == 0 ? hi : 0xbf)) {
+				return false // 续字节越界 ⇒ 真损坏，不能干等
+			}
+		}
+		i = i + 1 + need
+	}
+	return false
+}
+
+/**
  * 字节数组 → UTF-8 文本（**不依赖 TextDecoder**：uni-app x 未提供该全局对象，已核对 5.24 dts）。
  *
- * 做法：逐字节拼 `%XX` 再交 `decodeURIComponent`（本项目既有用例：shell.uvue 用后者解 url query）。
- * ⚠️ 流式场景的真问题：一个汉字占 3 字节，可能被切在两个 chunk 之间，整串解码会抛 URIError。
- * 故从尾部最多回退 3 字节重试，并把回退掉的字节数交给调用方（`usedBytes`）——下一个 chunk 到达时补全。
- * 这也解释了为什么本模块每次都把**累积字节整体**解码、而不做"逐块解码再拼"：
- * 后者一旦碰上半个汉字就会产出乱码，且这种乱码只在中文长回复的特定字节切分下出现（极难复现）。
+ * 做法：逐字节拼 `%XX` 再交 `decodeURIComponent`（既有用例：shell.uvue 解 url query）。
+ * ⚠️ 流式下汉字 3 字节可能被切在两个 chunk 之间 ⇒ 整串解码抛 URIError。故从尾部最多回退 4 字节
+ * 重试，把回退掉的字节数交给调用方（`usedBytes`），下一片到达时补全 —— 这也是每次都把**累积字节
+ * 整体**解码、而非"逐块解码再拼"的原因（后者必产乱码，只在中文长回复的特定切分下暴露）。
  */
 function decodeUtf8(bytes: Uint8Array): Utf8Decoded {
 	let end = bytes.length
@@ -249,10 +309,13 @@ function decodeUtf8(bytes: Uint8Array): Utf8Decoded {
 			end = end - 1
 		}
 	}
-	// 兜底（正常流不会走到）：连"回退 3 字节"都解不开 ⇒ 流里有**非法字节**（真损坏）。
-	// 此时只**丢弃 1 个字节**并保留其余，让同一块里合法的后续内容还能被解出来；
-	// 早期版本这里返回 `('', bytes.length)`（整块丢弃）——那会把可读文本一并吃掉，
-	// 表现是"偶发少一段回复"，比丢一个坏字节严重得多。
+	// 兜底：连「回退 4 字节」都解不开，必须区分 (a) 整块就是一个**没收完的字符** / (b) 真损坏。
+	// 2026-10-31（P2 D-2）：原实现一律按 (b) 丢 1 字节 —— 对 (a) 是灾难点：首片落在字符中间时
+	// pending 从续字节开始，之后每片都解不开、每片再丢 1 字节 ⇒ 不止少一个字，而是**整条回复全丢**
+	// （SSE 帧永远拼不出两个换行）。故 (a) 一字节都不消费，等下一片；(b) 仍丢 1 字节推进（可终止）。
+	if (isTruncatedUtf8(bytes)) {
+		return new Utf8Decoded('', 0)
+	}
 	return new Utf8Decoded('', bytes.length > 0 ? 1 : 0)
 }
 
@@ -318,6 +381,8 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 		body.set('conversation_id', conversationId)
 	}
 	return new Promise<ChatSendResult | null>((resolve) => {
+		// 2026-10-30（P1-24）：新一轮请求开始 ⇒ 复位取消标记（上一轮的取消不得影响本轮）
+		_cancelRequested = false
 		let settled = false
 		let consumed = 0 // 已消费到 `decoded` 的哪个字符位置（帧可能跨 chunk，按位置推进才不重不漏）
 		let decoded = ''
@@ -329,12 +394,20 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 		let firstPreviewLogged = false
 		let frameCount = 0
 		let chunkCount = 0
+		// 2026-10-30（P2 D-1）：`success` 之后的「静默期」计时器（收到新分片就重排），
+		// 声明在 finish 之前 —— finish 要能清掉它（Kotlin 侧局部变量必须先用后声明不了）。
+		let httpDone = false
+		let graceTimer = 0
 
 		const finish = (result: ChatSendResult | null, abortConn: boolean): void => {
 			if (settled) {
 				return
 			}
 			settled = true
+			if (graceTimer != 0) {
+				clearTimeout(graceTimer)
+				graceTimer = 0
+			}
 			// 🚨 2026-10-11 静态审查 A1 修复（**本批引入的回归**）：这里必须是「**取消**看门狗」，
 			// 而初版写法是 `resetWatchdog()` —— 那是「先 clear 再**新建**一个 90s 定时器」，
 			// 于是**每次成功回复结束后约 90s，都会凭空弹出一次「AI 回复超时，请稍后重试」**
@@ -346,6 +419,10 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 			}
 			chatStreamActive.value = false
 			chatStreamTool.value = ''
+			// 2026-10-30（P1-24）：本次请求已结束，撤销在途句柄登记
+			if (_activeTask == task) {
+				_activeTask = null
+			}
 			resolve(result)
 			// 2026-10-11：判失败时主动断开连接——原实现看门狗超时后请求仍挂在后台继续
 			// 收数据（连接白占、数据白收）。A-1 修复后 backend 断连也会跑完落库，客户端
@@ -358,17 +435,12 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 				}
 			}
 		}
-		// ⚠️ 2026-10-11 B-3（三层超时口径矛盾）：看门狗从「总时长」改「**idle 时长**」。
-		// 原 90s 总超时 < agent 单轮实测 56~76s + 校验重试轮可破 90s（backend 上限 180s），
-		// 正常长回复必被错杀——注释自称"留出让后端如实 504 的余量"，实际余量是负的。
-		// 改法：**每收到一帧就续命**，真卡死（连续 90s 无任何帧）才判超时；总时长上限
-		// 交还给 backend 的 180s。
-		// ⚠️ 但前提是**真的有保活帧**（2026-10-11 静态审查 B3 实锤：初版注释断言"backend
-		// 每 10s 一条 ping"是**幻觉**——agent 侧的 `: ping` 注释帧在 backend 适配器
-		// `_iter_sse` 里就被按 `line.startswith(':')` 丢弃，从未到达客户端；当时 backend
-		// 自身也不发任何心跳）。若没有心跳，idle 看门狗等价于"连续 90s 无正文帧即超时"，
-		// 长思考/工具静默轮会被误杀。⇒ **backend 已在 `_frames` 补 5s 保活注释帧**
-		// （chat.py 的 `_KEEPALIVE_INTERVAL_S`），本看门狗与之配套，改一侧必须对侧同改。
+		// ⚠️ 2026-10-11 B-3：看门狗是「**idle 时长**」而非总时长——原 90s 总超时 < agent 单轮
+		// 实测 56~76s + 校验重试可破 90s（backend 上限 180s），正常长回复必被错杀（余量是负的）。
+		// 改：每收到一帧就续命，连续 90s 无帧才判超时，总时长上限交还 backend 的 180s。
+		// 前提是**真的有保活帧**（B3 实锤：": ping" 在 backend `_iter_sse` 被按 `:` 丢弃，从未
+		// 到客户端；当时 backend 也不发心跳）⇒ backend 已在 `_frames` 补 5s 保活（`_KEEPALIVE_INTERVAL_S`）。
+		// 二者配套：改一侧必须对侧同改。
 		let watchdog = -1
 		const resetWatchdog = (): void => {
 			if (watchdog >= 0) {
@@ -381,6 +453,23 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 			}, STREAM_TIMEOUT_MS)
 		}
 		resetWatchdog()
+
+		// 2026-10-30（P2 D-1）：「success 之后还有没有数据在来」用**静默期**判定，而不是固定时刻。
+		// 每收到新分片就重排（见 appendBytes 末尾），真的连续 1.2s 无任何字节才判失败。
+		const scheduleGrace = (): void => {
+			if (graceTimer != 0) {
+				clearTimeout(graceTimer)
+			}
+			graceTimer = setTimeout((): void => {
+				graceTimer = 0
+				if (!settled) {
+					// 全链路唯一静默失败分支：HTTP 200、已渲染若干预览、但流里始终没有 done 帧
+					// （后端中途挂/中间层截断）。必须显式提示，否则用户看到"字打了一半消失"。
+					showErrorToast(new ApiError('CHAT_001', 'AI 回复未完成，请重试', 0))
+				}
+				finish(null, false)
+			}, 1200)
+		}
 
 		const handleFrame = (raw: string): void => {
 			// 2026-10-11：单帧解析失败（半截 JSON/异常数据）只丢这一帧，**绝不让异常冒出
@@ -443,11 +532,17 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 			while (!settled) {
 				const idx = decoded.indexOf('\n\n', consumed)
 				if (idx < 0) {
-					return // 还有半帧没到齐：等下一个 chunk
+					break // 还有半帧没到齐：等下一个 chunk
 				}
 				const raw = decoded.substring(consumed, idx)
 				consumed = idx + 2
 				handleFrame(raw)
+			}
+			// 2026-10-30（P2 D-3）：`decoded` 原**只增不减** ⇒ 每个 chunk 都在变长字符串上 indexOf/substring，
+			// 累计 O(n²) 且已消费前缀永不释放。这里在帧边界（安全点）丢掉它，只留半帧尾巴。
+			if (consumed > 0) {
+				decoded = decoded.substring(consumed)
+				consumed = 0
 			}
 		}
 
@@ -464,6 +559,10 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 			pending = merged.slice(dec.usedBytes)
 			decoded += dec.text
 			consumeFrames()
+			// 2026-10-30（P2 D-1）：HTTP 200 已返回但还在收数据 ⇒ 重排静默期，别把在途终稿判死
+			if (httpDone && !settled) {
+				scheduleGrace()
+			}
 		}
 
 		const task = uni.request({
@@ -475,6 +574,11 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 			enableChunked: true,
 			success: (res: any) => {
 				const status = typeof res.statusCode == 'number' ? (res.statusCode as number) : 0
+				// 2026-10-30（P1-22）：非 200 时 `res.data` 是 ArrayBuffer 而非对象，原用
+				// `instanceof UTSJSONObject` 判断**恒 false** ⇒ ① `code404` 恒空，CHAT_003 陈旧会话
+				// 自愈是**死代码**（"换账号后每条都 404、只能清 App 数据"的砖一直在）；② 错误码/文案
+				// 全丢，只剩 "HTTP_xxx"。现统一走 errBody（ArrayBuffer → UTF-8 解码 → 信封解析）。
+				const errBody = parseChatErrBody(res.data)
 				// 🚨 2026-10-11 静态审查 A3 修复：陈旧会话 id 的**自愈**。
 				// 背景：会话 id 是**设备级**存储（不随用户切换清理），而后端对未知/他人会话
 				// 一律 404 CHAT_003（IDOR 防护）。换账号 / 后端库重置后，本地这条 id 必然失效，
@@ -482,10 +586,7 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 				// 自愈：仅对 CHAT_003 ⇒ 清掉本地会话 id + 以**新会话**重发一次（仅一次，防循环）。
 				// 其他 404（如路径错误）不自愈，避免掩盖真问题。
 				if (status == 404 && !newConvTried) {
-					let code404 = ''
-					if (res.data instanceof UTSJSONObject) {
-						code404 = res.data.getString('code') ?? ''
-					}
+					const code404 = errBody != null ? (errBody.getString('code') ?? '') : ''
 					if (code404 == 'CHAT_003') {
 						console.log('[dbg-chat] stale conversation -> retry as new conversation')
 						uni.removeStorageSync(CHAT_CONV_STORAGE_KEY)
@@ -501,11 +602,9 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 				}
 				if (status == 401 && !retried) {
 					// 401 单飞刷新重放一次（语义与 api.uts.doRequest 一致；本通道绕开了它，故在此复刻）。
-					// 🚨 2026-10-11 静态审查 B2 修复：外层看门狗必须**彻底停掉（交接给内层）**，
-					// 初版只 resetWatchdog() 续命一次远远不够——重放的帧只会喂**内层**自己的
-					// 看门狗，外层 90s 到点仍会误杀一次本来正常的重放，且 abort 打在**已结束的
-					// 外层 task** 上（内层连接纹丝不动）。后果：正常回复被判失败 + 后端继续落库
-					// ⇒ 历史里出现用户没见过的回复。
+					// 🚨 2026-10-11 审查 B2：外层看门狗必须**彻底停掉（交接给内层）**——重放的帧
+					// 只喂内层看门狗，只 resetWatchdog() 续命一次的话外层 90s 到点仍会误杀，
+					// 且 abort 打在已结束的外层 task 上 ⇒ 回复被判失败而后端继续落库（历史多出用户没见过的回复）。
 					if (watchdog >= 0) {
 						clearTimeout(watchdog)
 						watchdog = -1
@@ -527,9 +626,9 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 					// 非 200：响应体是**普通 JSON 错误信封**（不是 SSE）⇒ 同 api.uts 口径取 code/message
 					let code = 'HTTP_' + status
 					let msg = 'AI 回复失败（HTTP ' + status + '）'
-					if (res.data instanceof UTSJSONObject) {
-						code = res.data.getString('code') ?? code
-						msg = res.data.getString('message') ?? msg
+					if (errBody != null) {
+						code = errBody.getString('code') ?? code
+						msg = errBody.getString('message') ?? msg
 					}
 					showErrorToast(new ApiError(code, msg, status))
 					finish(null, false)
@@ -548,17 +647,11 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 				// 走到这里仍没 settled ⇒ 没有 done 帧：**如实失败**，绝不拿预览当终稿。
 				// ⚠️ 但**不能立刻判失败**：部分平台的 chunk 回调可能排在 success 之后，
 				// 立即收尾会把"已经在途的终稿帧"丢掉（表现为"文字渲染完了却没显示回复"的偶发丢帧）。
-				// 留 400ms 让在途分片落地，之后仍无 done 才认失败。
-				setTimeout(() => {
-					// 2026-10-11（交互审查 B1）：这是全链路**唯一静默失败**分支——HTTP 200、
-					// 已渲染若干预览、但流里始终没有 done 帧（后端中途挂/中间层截断）。
-					// 其它失败（看门狗/非 200/流内 error/网络）都有 toast；唯独这里若静默，
-					// 用户看到"字打了一半凭空消失"且无任何提示，比报错更费解。补诚实提示。
-					if (!settled) {
-						showErrorToast(new ApiError('CHAT_001', 'AI 回复未完成，请重试', 0))
-					}
-					finish(null, false)
-				}, 400)
+				// 2026-10-30（P2 D-1）：原实现固定 400ms 一次性判死且不随后续分片续命 ⇒ 未等到 done
+				// 就弹「AI 回复未完成」并丢掉仍在途的终稿（后端已落库，用户看到失败）。现为「静默期」：
+				// scheduleGrace 每收到新分片重排，连续 1.2s 无字节才判失败（与看门狗同为 idle 口径）。
+				httpDone = true
+				scheduleGrace()
 			},
 			fail: (_err: any) => {
 				// 2026-10-11：finish(null, true) 的主动 abort 会走到这里（fail: request:fail abort）
@@ -566,11 +659,20 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 				if (settled) {
 					return
 				}
+				// 2026-10-30（P1-24）：用户主动取消（离页/切 tab）不算网络失败，
+				// 不弹 toast、不上报 Sentry（否则每次切 tab 都产生一条假告警）。
+				if (_cancelRequested) {
+					_cancelRequested = false
+					finish(null, false)
+					return
+				}
 				captureException('network fail: chat stream @' + getBaseUrl(), 'api.network', null)
 				showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
 				finish(null, false)
 			}
 		})
+		// 2026-10-30（P1-24）：登记在途 task，供 cancelChatStream() 中断
+		_activeTask = task
 		task.onChunkReceived((res: any) => {
 			chunkSeen = true
 			chunkCount = chunkCount + 1
@@ -586,11 +688,9 @@ function streamChatOnce(conversationId: string, content: string, retried: boolea
 	})
 }
 
-// ⚠️ 这里**故意没有** `fetchChatReply`（GET /api/v1/chat/replies/{id} 的封装）。
-// 原因：POST 已内联返回完整回复 ⇒ 该函数当前零调用，而"零调用的能力导出"正是本仓
-// `audit_harness.py` 轴 4 判定为 CRITICAL 的缺陷形态（能力写了没接线，图搜先例）。
-// 我不能一边拿这条门禁查别人、一边自己塞一个零调用函数进来。
-// 真需要时（SSE 流式/断线重取，见排期 AG6 余项）连同**调用点**一起加，别只加壳。
+// ⚠️ 这里**故意没有** `fetchChatReply`（GET /chat/replies/{id}）：POST 已内联返回完整回复 ⇒ 零调用，
+// 而"零调用的能力导出"正是 `audit_harness.py` 轴 4 判 CRITICAL 的形态（图搜先例）。
+// 真需要时（断线重取等）连同**调用点**一起加，别只加壳。
 
 /** 历史消息项（后端 `ChatHistoryItemOut` 的客户端子集） */
 export class ChatHistoryItem {
@@ -611,31 +711,73 @@ export class ChatHistoryItem {
 	}
 }
 
+// ── 历史回填的三态信号（2026-10-30 · P2 D-10 / D-11）──────────────────────────
+// 与 `play_messages.uts::messagesFetchFailed()` **同一范式**（模块级标记 + getter）：
+// 本模块所有取数都是 resolve-only、失败给 null ⇒ 页面无法区分
+// 「真的没有历史」与「这次没拉到」，两者都渲染成空态（D-10 的假空态）。
+// ⚠️ `<script setup>` 顶层变量是"每实例"的，只有 `.uts` 模块作用域能跨页面实例存活。
+let _historyFetchFailed: boolean = false
+
+/** 最近一次 `fetchChatHistory` 是否**失败**（失败 ≠ 没有历史：页面据此给重试入口） */
+export function chatHistoryFetchFailed(): boolean {
+	return _historyFetchFailed
+}
+
+// 2026-10-30：`chatHistoryHasMore()` / `chatHistoryNextCursor()` 因**零消费方**（AI 页无上拉容器）
+// 命中审计轴 4「零调用能力导出」⇒ 按「接线或删除」删掉 accessor 与私有状态。`fetchChatHistory`
+// 的三形参保留（后端 `has_more/cursor` 已就位），等上拉容器就位时**连调用点一起加**。
+
 /**
  * 取会话历史（时间正序）：`GET /api/v1/chat/conversations/{id}/messages`。
  *
  * 2026-09-25（功能修复波 · Agent 接线补完）：后端**早已实现**该端点并在 docstring 里要求
  * "客户端进入会话时回填"，但客户端**从未调用** —— 后果是重启后会话虽接续（conversationId
  * 已落盘）、界面却空白（用户以为历史丢了）。
- * 失败 `resolve(null)`：调用方保持空列表即可，**不伪造历史**。
+ * 失败 `resolve(null)`：调用方保持空列表即可，**不伪造历史**（失败标记见 chatHistoryFetchFailed）。
+ *
+ * 2026-10-30（P2 D-11）分页：新增 `cursor` / `limit` 两个**可选**参数（不传 = 全量，
+ * 与改造前逐字一致，老调用方 `fetchChatHistory(convId)` 行为不变）。
+ *   · `limit > 0` → 只取**最近** limit 条（进入会话时的首屏，别再把几十轮前的历史一起拉）；
+ *   · `cursor` 非空 → 取比该游标更早的一页（"加载更早"按钮）；
+ *   · 返回的数组**恒为时间正序**（后端保证），页面拼接时把更早的一页插到最前面；
+ *   · 是否还有更早、下一页游标从 `chatHistoryHasMore()` / `chatHistoryNextCursor()` 取。
  */
-export function fetchChatHistory(conversationId: string): Promise<Array<ChatHistoryItem> | null> {
+export function fetchChatHistory(
+	conversationId: string,
+	cursor: string = '',
+	limit: number = 0
+): Promise<Array<ChatHistoryItem> | null> {
 	if (conversationId == '') {
+		// 空会话 id = 不是"加载失败"，是一个确定的空结果 ⇒ 不清失败标记之外的状态
+		_historyFetchFailed = false
 		return new Promise<Array<ChatHistoryItem> | null>((resolve) => {
 			resolve(null)
 		})
 	}
-	const path = PATH_CHAT_CONVERSATION_MESSAGES.replace('{id}', conversationId)
+	let path = PATH_CHAT_CONVERSATION_MESSAGES.replace('{id}', conversationId)
+	const params: Array<string> = []
+	if (limit > 0) {
+		params.push('limit=' + limit)
+	}
+	if (cursor != '') {
+		// 游标是后端不透明串（含 `|` 与 `:`）⇒ 必须编码，否则被 URL 解析截断
+		params.push('cursor=' + encodeURIComponent(cursor))
+	}
+	if (params.length > 0) {
+		path = path + '?' + params.join('&')
+	}
 	// B13 面包屑口径同 sendChatMessage：只记"取历史"，不记内容
-	addBreadcrumb('chat', 'fetch history')
+	addBreadcrumb('chat', 'fetch history' + (params.length > 0 ? ' paged' : ''))
 	return new Promise<Array<ChatHistoryItem> | null>((resolve) => {
 		get(path).then((body: UTSJSONObject | null) => {
 			if (body == null) {
+				_historyFetchFailed = true
 				resolve(null)
 				return
 			}
 			const d = dataObj(body)
 			if (d == null) {
+				_historyFetchFailed = true
 				resolve(null)
 				return
 			}
@@ -663,6 +805,8 @@ export function fetchChatHistory(conversationId: string): Promise<Array<ChatHist
 					))
 				}
 			}
+			// 2026-10-30（P2 D-10）：只保留失败标记（分页元信息暂不落私有状态，见上方删除说明）。
+			_historyFetchFailed = false
 			resolve(out)
 		})
 	})

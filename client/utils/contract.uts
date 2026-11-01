@@ -21,6 +21,13 @@ export const PATH_AUTH_WECHAT: string = '/api/v1/auth/wechat'
 export const PATH_AUTH_DEVICE: string = '/api/v1/auth/device'
 export const PATH_AUTH_REFRESH: string = '/api/v1/auth/refresh'
 export const PATH_AUTH_LOGOUT: string = '/api/v1/auth/logout'
+// 2026-10-30（P2 I-2）：手机号验证码备用通道（决策 #8）——两个端点在
+// backend/app/api/auth.py:60(phone)/75(sms/send) **早已实现**、openapi.json:93/135 有 schema，
+// 但客户端此前零调用（`security.uvue` 的「手机号」行只弹「即将上线」）。
+// 按本文件头「新增端点改本文件一处」的纪律登记；调用点 = utils/auth.uts 的
+// sendSmsCode / loginWithPhone（常量声明与调用点同时落地，不产生零引用常量）。
+export const PATH_AUTH_SMS_SEND: string = '/api/v1/auth/sms/send'
+export const PATH_AUTH_PHONE: string = '/api/v1/auth/phone'
 export const PATH_CONTENTS: string = '/api/v1/contents'
 export const PATH_WAVEFORM: string = '/api/v1/contents/{id}/waveform'
 export const PATH_SEARCH: string = '/api/v1/search'
@@ -62,6 +69,9 @@ export const PATH_INTERVIEW_QUESTIONS: string = '/api/v1/interview/questions'
 export const PATH_INTERVIEW_ANSWERS: string = '/api/v1/interview/answers'
 export const PATH_INTERVIEW_PROFILE: string = '/api/v1/interview/profile'
 export const PATH_PROFILE_REBUILD: string = '/api/v1/profile/rebuild'
+// 锁定标签（2026-10-30 · B1:139「用户锁定，LLM 不再自动写回」）：GET 读 / PUT 整体覆盖。
+// 服务端 user_profile.locked_tags 是**唯一真源**，客户端 storage 只是离线兜底缓存
+export const PATH_PROFILE_LOCKED_TAGS: string = '/api/v1/profile/locked-tags'
 
 // ═══════════ 关键字段名（对齐 openapi.json DTO schema 属性名）═══════════
 

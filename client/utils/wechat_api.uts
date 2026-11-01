@@ -52,7 +52,15 @@ export function listWechatBindings(): Promise<Array<UTSJSONObject>> {
 				resolve([])
 				return
 			}
-			resolve(dataArr(d))
+			// 2026-10-30（P1-35）：原为 `dataArr(d)` —— 但 `dataArr` 取的是 `d.data`，
+			// 而后端返回的是 `data: { bindings: [...] }`，`bindings` 是对象**字段**不是数组信封
+			// ⇒ 恒返回 [] ⇒ 界面永远显示「未绑定」、「解绑」入口永不可达。
+			const arr = d.getArray('bindings')
+			if (arr == null) {
+				resolve([])
+				return
+			}
+			resolve(arr as Array<UTSJSONObject>)
 		})
 	})
 }

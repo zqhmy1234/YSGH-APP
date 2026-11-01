@@ -8,6 +8,9 @@
 - 更新规则：同值强度累加 / 异值替换+旧值进 history（最近 10 条）/ 同日同维度节流（高频用户）
 - 证据锚点：内容级写 profile_l2_evidence；维度级 evidence 列表（证据原话 + 时间戳 = 新鲜度戳）
 - 集合型维度（multi_value）：同值强度累加、异值追加（relation_core/life_event_major/兴趣等）
+- 锁定标签（B1:139）：命中用户固定的标签（user_profile.locked_tags）⇒ 整条命中跳过，
+  **不新增 / 不覆盖 / 不删除**（不进低置信池、不写 history/l2_evidence）。这是 AI 写回
+  画像的**唯一闸门**——入库标注、画像重建、访谈作答全部汇流到 apply_annotation。
 
 存储结构（user_profile.dimensions JSONB）：
 - 单值维度：{"value", "strength", "confidence", "updated_at", "first_seen_at", "history", "evidence", "source"}
@@ -25,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ProfileAnnotationPool, ProfileDimensionHistory, UserProfile
 from app.services.llm_ops.annotate import annotate
+from app.services.profile_locked_tags import locked_tag_set
 from app.services.profile_schema import EnumSchema, get_schema
 
 logger = logging.getLogger("yishu.profile_annotator")
@@ -35,6 +39,11 @@ HISTORY_LIMIT = 10
 MAX_EVIDENCE = 10
 # 节流豁免来源：用户主动作答（冷启动访谈）不节流
 _THROTTLE_SKIP_SOURCES = {"interview"}
+# 被「锁定标签」拦下的两种形态（B1:139）：命中锁定值 / 要覆盖被锁定的当前值。
+# 单列在 record_hits 结果的 locked 里——用户意图不是异常，不能混进 skipped 的故障口径。
+LOCKED_REASON_VALUE = "locked"
+LOCKED_REASON_CURRENT = "locked_current_value"
+_LOCKED_REASONS = (LOCKED_REASON_VALUE, LOCKED_REASON_CURRENT)
 # 池内 raw_text 截断（防超长）
 _POOL_TEXT_MAX = 500
 
@@ -80,7 +89,13 @@ def record_hits(
     返回 {"applied": [...], "pooled": [...], "throttled": [...], "new_values": [...], "skipped": [...]}。
     """
     schema = schema or get_schema()
-    result: dict = {"applied": [], "pooled": [], "throttled": [], "new_values": [], "skipped": []}
+    result: dict = {
+        "applied": [], "pooled": [], "throttled": [], "new_values": [], "skipped": [],
+        # 被锁定标签拦下的命中单列：与「跑了但没命中」区分（锁定是用户意图，不是异常）
+        "locked": [],
+    }
+    # 锁定标签集合：整批只读一次（真源 = user_profile.locked_tags，B1:139）
+    locked = locked_tag_set(db, user_id)
     applied_dims: set[str] = set()  # 本批已应用过的维度：批内同维不再节流（同一条内容的多次命中）
     # S6-6 性能修复：get_or_create_profile 提循环外（懒加载共享实例，批内只建/查一次；
     # 全批低置信度入池时 profile 保持 None，不产生空 profile 副作用）
@@ -97,7 +112,7 @@ def record_hits(
         r = apply_annotation(
             db, user_id, dim, value, confidence,
             content_id=content_id, evidence_text=evidence_text, source=source, schema=schema,
-            skip_throttle=(dim in applied_dims), profile=profile,
+            skip_throttle=(dim in applied_dims), profile=profile, locked_tags=locked,
         )
         action = r.get("action")
         if action in ("added", "strengthened", "replaced"):
@@ -107,6 +122,8 @@ def record_hits(
             result["pooled"].append(r)
         elif action == "throttled":
             result["throttled"].append(r)
+        elif r.get("reason") in _LOCKED_REASONS:
+            result["locked"].append(r)
         else:
             result["skipped"].append(r)
         if r.get("is_new"):
@@ -128,19 +145,41 @@ def apply_annotation(
     schema: EnumSchema | None = None,
     skip_throttle: bool = False,
     profile: UserProfile | None = None,
+    locked_tags: set[str] | None = None,
 ) -> dict:
-    """单条命中应用（阈值 → 池 / 归一 → 节流 → 更新规则 → 证据锚点）。
+    """单条命中应用（锁定闸门 → 阈值 → 池 / 归一 → 节流 → 更新规则 → 证据锚点）。
 
     返回 {"action": pooled|strengthened|added|replaced|throttled|skipped, ...}。
     skip_throttle：同一条内容的多次命中（record_hits 批内同维）跳过同日节流，
     避免"一句话提到妈妈和老婆"只写入第一个。
     profile：可选已加载画像（S6-6 record_hits 提循环外共享实例，批内只查一次）；
     None 时按需 get_or_create_profile（独立调用/测试路径）。
+    locked_tags：用户锁定标签集合（真源 user_profile.locked_tags）。None 时按需查库
+    （独立调用/测试路径）；record_hits 批内只查一次并传入。
     """
     schema = schema or get_schema()
     spec = schema.get(dimension)
     if spec is None:
         return {"action": "skipped", "dimension": dimension, "enum_value": enum_value, "reason": "unknown_dimension"}
+
+    # 归一提前到闸门之前：锁定集合存的是**规范值**（如「妈妈」），而命中可能是别名
+    # （「母亲」）——不先归一，"母亲"会绕过"妈妈"的锁定。
+    value = spec.canonicalize(enum_value)
+    is_new = value is None
+    if is_new:
+        value = enum_value  # 开放枚举：直接新增（带证据+时间戳，查重已由 canonicalize 完成）
+
+    # 锁定闸门 ①（不新增/不覆盖）：命中值本身被锁定 ⇒ 整条命中不落库、也不进低置信池。
+    # 放在阈值判定之前是刻意的：进池等于"候选放行给周级复核"，仍是 AI 改写路径。
+    locked = locked_tag_set(db, user_id) if locked_tags is None else locked_tags
+    if value in locked:
+        logger.info(
+            "[画像标注] 跳过锁定标签 dim=%s value=%s user=%s", dimension, value, user_id
+        )
+        return {
+            "action": "skipped", "reason": LOCKED_REASON_VALUE,
+            "dimension": dimension, "enum_value": value, "confidence": confidence,
+        }
 
     threshold = spec.threshold()
     if confidence < threshold:
@@ -150,15 +189,26 @@ def apply_annotation(
             "confidence": confidence, "threshold": threshold,
         }
 
-    value = spec.canonicalize(enum_value)
-    is_new = value is None
-    if is_new:
-        value = enum_value  # 开放枚举：直接新增（带证据+时间戳，查重已由 canonicalize 完成）
-
     if profile is None:
         profile = get_or_create_profile(db, user_id)
     dims = dict(profile.dimensions or {})
     entry = dims.get(dimension)
+
+    # 锁定闸门 ②（不删除）：单值维度「异值替换」会把旧值踢进 history，等价于删掉用户
+    # 固定的标签 ⇒ 拒绝。集合型维度只追加不删人（_apply_multi 无移除分支），不需要拦。
+    if not spec.multi_value and isinstance(entry, dict):
+        current = entry.get("value")
+        if isinstance(current, str) and current in locked and current != value:
+            logger.info(
+                "[画像标注] 拒绝覆盖锁定值 dim=%s 保留=%s 拒绝=%s user=%s",
+                dimension, current, value, user_id,
+            )
+            return {
+                "action": "skipped", "reason": LOCKED_REASON_CURRENT,
+                "dimension": dimension, "enum_value": value, "confidence": confidence,
+                "locked_value": current,
+            }
+
     now = datetime.now(UTC)
     now_iso = now.isoformat()
 

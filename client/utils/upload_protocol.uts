@@ -37,11 +37,31 @@ export class UploadResp {
 	}
 }
 
-/** URL 编码最小集（路径/file_name/upload_id/meta 均为 ASCII 可控字符；中文文件名后续补全） */
+/** 单字节 → `%XX`（大写十六进制，RFC 3986） */
+function pct(b: number): string {
+	const hex = b.toString(16).toUpperCase()
+	return hex.length < 2 ? '%0' + hex : '%' + hex
+}
+
+/**
+ * URL 编码（**含完整 UTF-8 百分号编码**）。
+ *
+ * ## 2026-11-01 修（走查 1.2 实测缺陷：中文入库乱码）
+ * 原实现只转义 `& = % + 空格`，其余字符（**包括全部中文**）原样透传，注释里也写着
+ * "中文文件名后续补全"。而语音链是把**转写文本**塞进 `meta` 再经本函数上送：
+ *   `meta` = `{"text":"你有病啊。", ...}` → 未转义的中文直接进 form body。
+ * 结果：数据库里存成 `'ä½\xa0æ\x9c\x89ç\x97\x85å\x95\x8aã\x80\x82'`
+ *   —— 正是「UTF-8 字节被按 Latin-1 解码」的形态，用户在详情页看到的就是乱码。
+ * 对照实验：用 Python 以标准 UTF-8 提交同一句话 → 入库正确 ⇒ 问题只在这条表单链。
+ *
+ * 修法：非 ASCII 一律先按 UTF-8 拆字节再 `%XX`（含代理对，emoji 不会截断），
+ * 这样 body 变成纯 ASCII，服务端无论用哪种 charset 解码都不会错。
+ */
 export function urlEncode(s: string): string {
 	let out = ''
 	for (let i = 0; i < s.length; i++) {
 		const c = s.charAt(i)
+		const code = s.charCodeAt(i)
 		if (c == '&') {
 			out += '%26'
 		} else if (c == '=') {
@@ -52,8 +72,20 @@ export function urlEncode(s: string): string {
 			out += '%2B'
 		} else if (c == ' ') {
 			out += '%20'
-		} else {
+		} else if (code < 0x80) {
 			out += c
+		} else if (code < 0x800) {
+			out += pct(0xc0 | (code >> 6)) + pct(0x80 | (code & 0x3f))
+		} else if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) {
+			// 代理对（BMP 外字符，如 emoji）→ 组合成 4 字节
+			const next = s.charCodeAt(i + 1)
+			const cp = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00)
+			out += pct(0xf0 | (cp >> 18)) + pct(0x80 | ((cp >> 12) & 0x3f)) +
+				pct(0x80 | ((cp >> 6) & 0x3f)) + pct(0x80 | (cp & 0x3f))
+			i++
+		} else {
+			out += pct(0xe0 | (code >> 12)) + pct(0x80 | ((code >> 6) & 0x3f)) +
+				pct(0x80 | (code & 0x3f))
 		}
 	}
 	return out

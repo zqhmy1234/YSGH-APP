@@ -48,10 +48,28 @@ export function backToShell(tab: string, query: string): void {
 	requestShellTab(tab, query)
 	const pages = getCurrentPages()
 	if (pages.length > 1) {
-		uni.navigateBack({ delta: 1 })
-	} else {
-		uni.reLaunch({ url: '/pages/shell/shell?tab=' + tab })
+		// 2026-10-30（P1-40）：**退到壳为止，而不是退一层**。
+		// 原实现固定 `delta: 1` 假设壳就在上一页；而「壳 → 详情 → 消息(再 push)」这类
+		// 栈深 ≥3 的场景里，只退一层会停在中间页 —— 而此时 tab 已经被 requestShellTab
+		// 切走了 ⇒ 用户看到的是"回不去、还停在一个不相干的页面"。
+		let delta = 1
+		for (let i = pages.length - 2; i >= 0; i--) {
+			const route = pages[i].route != null ? pages[i].route : ''
+			if (route == 'pages/shell/shell') {
+				delta = pages.length - 1 - i
+				break
+			}
+			// 栈里没有壳（深链场景）：把 delta 打到栈顶，交给下面的 reLaunch 兜底
+			if (i == 0) {
+				delta = 0
+			}
+		}
+		if (delta > 0) {
+			uni.navigateBack({ delta: delta })
+			return
+		}
 	}
+	uni.reLaunch({ url: '/pages/shell/shell?tab=' + tab })
 }
 
 /** 组件请求拉起全局 RecordSheet（2026-10-09：TabIndex 空态 CTA「拍下第一张/录一段语音」——
@@ -60,3 +78,28 @@ export function backToShell(tab: string, query: string): void {
  * 与 requestShellTab 同款 seq+watch 模式，壳内零跳页。 */
 export let shellSheetSeq = ref(0)
 export let shellSheetMode = ref('')
+
+// 2026-10-31（走查实测缺陷）：**横幅补传完成后要能通知时间轴刷新**。
+// 现场：点「立即上传原图」→ 上传成功 → `L1 上云 accepted=1`、库里已落 `ev-d-…`，
+// 但时间轴一直停在旧的 4 张卡，只有切 tab（onShow）才刷出来。
+// 原因是这条链自包含在 `UploadStatusBanner` 里（J-14 把 emit 全删了），
+// 而 `savedSeq` 是 shell 页内的 ref，横幅根本拿不到 ⇒ 上传完成没有任何刷新信号。
+// 这里放一个**模块级**广播（先例同 `audio_player.uts` 的 export ref），
+// 横幅 +1、TabIndex watch 到就按「有记录已保存」处理（置脏 + 立即刷新，绕过 60s TTL）。
+export let recordSavedSeq = ref(0)
+
+/**
+ * 2026-10-30（P1-37）：**回响「划掉」的跨页广播**。
+ *
+ * 回响状态原先在「消息页」与「时间轴 TabIndex」各持一份独立 ref，划掉时只清自己那份
+ * ⇒ 在消息页划掉后，回时间轴大卡还在、还能点开；反之亦然（用户：划了又回来）。
+ * 这里给一条与 `shellSheetSeq` 同款的 seq 广播：谁划掉谁 bump，两边 watch 后各自清卡。
+ */
+export let echoDismissSeq = ref(0)
+/** 被划掉的那条回响的 contentId（'' = 不区分，全部清） */
+export let echoDismissContentId = ref('')
+
+export function notifyEchoDismissed(contentId: string): void {
+	echoDismissContentId.value = contentId
+	echoDismissSeq.value = echoDismissSeq.value + 1
+}

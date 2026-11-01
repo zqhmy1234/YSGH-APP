@@ -22,6 +22,28 @@ export function subscribeSyncStatus(cb: SyncStatusListener): void {
 	_statusListeners.push(cb)
 }
 
+/**
+ * 2026-10-30（P2 J-3）：**取消订阅**。
+ *
+ * 原实现只有订阅、没有退订，而监听器存在模块级数组里（跨页面实例存活）⇒ 每次
+ * UploadStatusBanner 卸载/重挂都会再 push 一份，旧回调仍会往**已卸载组件**的 ref 写值：
+ * 轻则重复 setState、重则组件销毁后写响应式对象（平台表现不一），且监听器数量只增不减。
+ * 传 undefined 表示清空全部（登出等场景）。
+ */
+export function unsubscribeSyncStatus(cb: SyncStatusListener | null = null): void {
+	if (cb == null) {
+		_statusListeners = []
+		return
+	}
+	const kept: Array<SyncStatusListener> = []
+	for (let i = 0; i < _statusListeners.length; i++) {
+		if (_statusListeners[i] != cb) {
+			kept.push(_statusListeners[i])
+		}
+	}
+	_statusListeners = kept
+}
+
 function emitStatus(): void {
 	const paused = isSyncPaused()
 	const reason = getPauseReason()

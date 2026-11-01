@@ -17,7 +17,9 @@
 				<text class="n2_462">照片</text> <!-- 名 -->
 			</view>
 			<view class="n2_463"> <!-- 统计-语音 -->
-				<text class="n2_464">{{ statVoices }}</text> <!-- 数 -->
+				<!-- 2026-10-30（P1-31）：语音无后端总数端点，只能按最新内容样本计数；样本被截断时
+				     显示下限「N+」，不把截断值装成总数（statVoicesText 由 statVoices + truncated 拼出） -->
+				<text class="n2_464">{{ statVoicesText }}</text> <!-- 数 -->
 				<text class="n2_465">语音</text> <!-- 名 -->
 			</view>
 		</view>
@@ -67,19 +69,33 @@
 </template>
 
 <script setup lang="uts">
-	import { ref, onMounted, watch } from 'vue'
+	import { ref, computed, onMounted, watch } from 'vue'
 	import { requestShellTab } from '@/utils/shell_state'
-	import { fetchRecentContents } from '@/utils/search_api'
+	import { fetchRecentSample, RecentSample } from '@/utils/search_api'
+	import { fetchDailySummary, fetchEventStats, DailySummary, EventStats } from '@/utils/api'
 
 	// ===== 设计稿图标（已落成 /static/icons/*.svg 静态资源） =====
 
 	// TabBar 图标（我的=激活态锈红；其余=常态灰）
 
 
-	// ===== 统计真数据（P2：接 GET /contents；57 条以内一次拉全，MVP 够用） =====
+	// ===== 统计真数据 =====
+	// 2026-10-30（P1-31）：口径重定 —— 原来三个数字全部由一次 `GET /contents?limit=100` 现算，
+	// 既把"内容条数"当"回忆条数"，又只统计最新 100 条（内容超过 100 的用户永远看到 100 且不自知）。
+	// 现按各端点的真实能力取值：
+	//  · 回忆 = `GET /stats/daily-summary` 的 `count`（事件关联的 distinct 内容数，全量聚合**不截断**；
+	//    尚未进事件的内容不计入——与"照片"同以事件关联为基准，两个数不会互相矛盾）；
+	//  · 照片 = `GET /events/stats` 的 `photo_count`（distinct 照片数，同样全量不截断）；
+	//  · 语音 = 后端**没有**按类型计数的端点 ⇒ 只能数最新内容样本；样本被 `has_more` 截断时
+	//    以「N+」呈现（下限），绝不把截断值当总数。
 	let statMemories = ref(0)
 	let statPhotos = ref(0)
 	let statVoices = ref(0)
+	/** 语音计数是否为「下限」（最新内容样本被分页截断 ⇒ 真实语音数 ≥ statVoices） */
+	let statVoicesTruncated = ref(false)
+	const statVoicesText = computed((): string => {
+		return '' + statVoices.value + (statVoicesTruncated.value ? '+' : '')
+	})
 
 	// B10 方案A 组件契约：shownSeq 每次切到本 tab ++（原页级 onShow 等价恢复——统计需随
 	// 新记录刷新，数据常驻但计数重拉）；savedSeq 记录保存成功 ++（原 RecordSheet @saved）。
@@ -106,7 +122,9 @@
 	// 2026-10-14（台账 §4.20 · 用户反馈"每次跳转都要等数据"）：**统计数字持久缓存**。
 	// 原实现切到「我的」时三个统计从初值起、要等 `fetchRecentContents(100, [])` 回来才有数字
 	// （用户感知"先空一会"）。现进入先用上次计数渲染（秒出），再由 `loadProfileStats` 覆盖。
-	// 只存 3 个整数——**无用户文本、无序列化风险**；读写失败一律静默（绝不因缓存影响主流程）。
+	// 只存整数——**无用户文本、无序列化风险**；读写失败一律静默（绝不因缓存影响主流程）。
+	// 2026-10-30（P1-31）：第 4 位是语音计数的「是否下限」标记（1=样本被截断，回放后仍要显示 N+，
+	// 否则冷启动会先把一个下限值画成精确值）。兼容旧的 3 段格式。
 	const PROFILE_STATS_KEY = 'yishu_profile_stats'
 	function restoreProfileStats(): void {
 		try {
@@ -115,12 +133,13 @@
 				return
 			}
 			const parts = raw.split(',')
-			if (parts.length != 3) {
+			if (parts.length < 3) {
 				return
 			}
 			statMemories.value = parseInt(parts[0])
 			statPhotos.value = parseInt(parts[1])
 			statVoices.value = parseInt(parts[2])
+			statVoicesTruncated.value = parts.length > 3 && parts[3] == '1'
 		} catch (e) {
 			console.log('[dbg-profile] 统计缓存回放失败（忽略）: ' + e)
 		}
@@ -128,7 +147,8 @@
 	function persistProfileStats(): void {
 		try {
 			uni.setStorageSync(PROFILE_STATS_KEY,
-				'' + statMemories.value + ',' + statPhotos.value + ',' + statVoices.value)
+				'' + statMemories.value + ',' + statPhotos.value + ',' + statVoices.value
+					+ ',' + (statVoicesTruncated.value ? '1' : '0'))
 		} catch (e) {
 			console.log('[dbg-profile] 统计缓存写入失败（忽略）: ' + e)
 		}
@@ -149,24 +169,47 @@
 	})
 
 	function loadProfileStats(): void {
-		fetchRecentContents(100, []).then((out) => {
-			if (out == null) {
-				return
+		// 2026-10-30（P1-31）：三个数字分流到各自端点，互不冒充：
+		//  ① 回忆：daily-summary.count（全量聚合，不截断）
+		//  ② 照片：events/stats.photo_count（全量聚合，不截断）
+		//  ③ 语音：无总数端点 ⇒ 最新内容样本计数 + truncated 标记（截断即显示 N+）
+		// 任一路失败保持旧值（api 层已全局 toast），不写假 0。
+		// 2026-10-30（P2 F-5）：三路**全失败**时要撤销 TTL 锁。原实现在 loadProfileStatsIfStale 里
+		// 先写 `lastLoadMs = now` 再发请求 ⇒ 离线/服务异常时三路全失败，之后 60s 内切回本 tab
+		// 一律直接 return，用户看到的是"统计永远不刷新"且没有任何重试入口。
+		let pending = 3
+		let okCount = 0
+		const settleOne = (ok: boolean): void => {
+			if (ok) {
+				okCount = okCount + 1
 			}
-			let photos = 0
-			let voices = 0
-			for (let i = 0; i < out.hits.length; i++) {
-				const t = out.hits[i].contentType
-				if (t == 'photo') {
-					photos++
-				} else if (t == 'voice') {
-					voices++
-				}
+			pending = pending - 1
+			if (pending == 0 && okCount == 0) {
+				lastLoadMs = 0
+				console.log('[dbg-profile] 统计三路全失败，撤销 60s TTL（下次切回重试）')
 			}
-			statMemories.value = out.hits.length
-			statPhotos.value = photos
-			statVoices.value = voices
-			persistProfileStats()
+		}
+		fetchDailySummary().then((d: DailySummary | null) => {
+			if (d != null) {
+				statMemories.value = d.count
+				persistProfileStats()
+			}
+			settleOne(d != null)
+		})
+		fetchEventStats().then((s: EventStats | null) => {
+			if (s != null) {
+				statPhotos.value = s.photoCount
+				persistProfileStats()
+			}
+			settleOne(s != null)
+		})
+		fetchRecentSample(100, ['voice']).then((s: RecentSample | null) => {
+			if (s != null) {
+				statVoices.value = s.items.length
+				statVoicesTruncated.value = s.truncated
+				persistProfileStats()
+			}
+			settleOne(s != null)
 		})
 	}
 
@@ -200,7 +243,12 @@
 	// 原路径是 我的 → settings（仅两行）→ account/security，白多一次跳转；
 	// 现按用户口径直连，settings 页随之退役（见台账 §7.30））
 	function goSettings(): void {
-		uni.navigateTo({ url: '/pages/account/security' })
+		// 2026-10-30（P2 I-1）：**恢复「设置」为总入口**。原实现（台账 §7.30 为断开回环）把
+		// 「我的→设置」直接指向账号安全页，`pages/settings/settings` 因此变成**全仓零 navigateTo 的孤儿页**
+		// ——页面和路由都在，用户永远进不去。
+		// 现口径（单向链，无回环）：我的 → 设置（settings）→ 账号与安全（security）。
+		// `security` 侧**不设**「设置」入口，故不会出现 grpC 提醒的 设置⇄账号与安全 两点互跳。
+		uni.navigateTo({ url: '/pages/settings/settings' })
 	}
 
 	// 菜单：存储与备份（W0-4 错绑修复：原 goPrivacy 误绑此行；W1-1 页面已落地改真跳转）

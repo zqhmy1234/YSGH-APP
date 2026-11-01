@@ -188,20 +188,27 @@ function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
 }
 
 /**
- * 最近内容（搜索页进入时的默认列表）——2026-08-31 新增
+ * 「最近内容」样本（2026-10-30 · P1-31）：分页信封的 `items` + `has_more`。
  *
- * 为什么需要：后端 `SearchQuery.q` 要求 min_length=1，**不支持空词查询**；
- * 而搜索页进入时关键词为空 → 结果区一片空白，页面看着像坏了。
- * 改用 GET /api/v1/contents 拉最近内容兜底，用户一进页面就能看到自己的记忆。
- *
- * 与真实搜索的语义差异（调用方需知）：
- *  - score 恒为 0：表示"按时间倒序"，不是"按相关度"
- *  - intent='recent'：区别于搜索的 text/image/mixed
- *  - eventId/eventTitle 为空：contents 列表端点不返回事件归属
- *  - 命中缩略图 URL（contents 端点有 thumbnail_url，搜索端点暂无）
+ * 为什么需要：`/contents` 是**游标分页**（backend/app/api/contents/__init__.py list_contents），
+ * `limit=100` 拿到的最多只是最新一页。原调用方把 `items.length` 当「总数」显示 ⇒ 内容超过
+ * 100 条的用户永远看到 100（"我的"统计被截断且不自知）。本结构把 `has_more` 一并带出，
+ * 调用方据此区分「这是全量真值」还是「只是下限」，从而不再显示一个会被截断的数字。
  */
-export function fetchRecentContents(limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
-	return new Promise<SearchOutcome | null>((resolve) => {
+export class RecentSample {
+	items: Array<SearchHitItem>
+	/** true = 服务端还有更早的内容 ⇒ items 只是最新一页，计数是**下限**而非总数 */
+	truncated: boolean
+
+	constructor(items: Array<SearchHitItem>, truncated: boolean) {
+		this.items = items
+		this.truncated = truncated
+	}
+}
+
+/** GET /contents?limit=N 的原始样本（含 has_more），内容类型在端上筛；失败 resolve(null) + toast。 */
+export function fetchRecentSample(limit: number, contentTypes: Array<string>): Promise<RecentSample | null> {
+	return new Promise<RecentSample | null>((resolve) => {
 		get(PATH_CONTENTS + '?limit=' + limit).then((body: UTSJSONObject | null) => {
 			if (body == null) {
 				resolve(null)
@@ -236,7 +243,34 @@ export function fetchRecentContents(limit: number, contentTypes: Array<string>):
 					))
 				}
 			}
-			resolve(new SearchOutcome('', '', 'recent', hits, hits.length, 0, false))
+			resolve(new RecentSample(hits, d.getBoolean('has_more') ?? false))
+		})
+	})
+}
+
+/**
+ * 最近内容（搜索页进入时的默认列表）——2026-08-31 新增
+ *
+ * 为什么需要：后端 `SearchQuery.q` 要求 min_length=1，**不支持空词查询**；
+ * 而搜索页进入时关键词为空 → 结果区一片空白，页面看着像坏了。
+ * 改用 GET /api/v1/contents 拉最近内容兜底，用户一进页面就能看到自己的记忆。
+ *
+ * 与真实搜索的语义差异（调用方需知）：
+ *  - score 恒为 0：表示"按时间倒序"，不是"按相关度"
+ *  - intent='recent'：区别于搜索的 text/image/mixed
+ *  - eventId/eventTitle 为空：contents 列表端点不返回事件归属
+ *  - 命中缩略图 URL（contents 端点有 thumbnail_url，搜索端点暂无）
+ *  - 2026-10-30（P1-31）：`total` = 本页条数，**不是**内容总数（游标分页）；
+ *    需要判断"是否还有更多"的调用方改用 `fetchRecentSample`（带 truncated）
+ */
+export function fetchRecentContents(limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
+	return new Promise<SearchOutcome | null>((resolve) => {
+		fetchRecentSample(limit, contentTypes).then((s: RecentSample | null) => {
+			if (s == null) {
+				resolve(null)
+				return
+			}
+			resolve(new SearchOutcome('', '', 'recent', s.items, s.items.length, 0, false))
 		})
 	})
 }
@@ -256,7 +290,10 @@ export function searchText(query: string, limit: number, contentTypes: Array<str
 	// 发往 Sentry（外部服务），用户搜索词属于个人内容。
 	addBreadcrumb('search', 'text q_len=' + query.length + (contentTypes.length > 0 ? ' filtered' : ''))
 	return new Promise<SearchOutcome | null>((resolve) => {
-		post(PATH_SEARCH, body).then((res: UTSJSONObject | null) => {
+		// 2026-10-30（P2 C-6）：本端点含 LLM 改写 + 双层精排，实测 8~9s 属正常。
+		// 原走 api.uts 默认 15s 看门狗 ⇒ 偶发超时被 resolve(null) 当成"没有找到"，
+		// 用户看到的是错误结论而不是"慢"。显式放宽到 30s（与图搜一致）。
+		post(PATH_SEARCH, body, 30000).then((res: UTSJSONObject | null) => {
 			const out = parseSearch(res)
 			if (out != null && out.degraded) {
 				// 降级＝关键词检索退回兜底结果：用户会看到"有结果但不是想要的"，
@@ -279,6 +316,13 @@ export function searchByImage(filePath: string, limit: number): Promise<SearchOu
 			if (hr.status === 200) {
 				// uploadFile res.data 是 string（lessons.md #3）；uploadFileHttp 已按信封解析
 				resolve(parseSearch(hr.body))
+				return
+			}
+			// 2026-10-30（P2 C-7）：status===0 是网络层失败，原实现会打印「搜索失败（HTTP 0）」
+			// —— 把传输层错误码当业务文案，用户完全看不懂。
+			if (hr.status === 0) {
+				showErrorToast(new Error('网络异常 · 图片上传失败，请重试'))
+				resolve(null)
 				return
 			}
 			const msg = hr.body != null ? (hr.body.getString('message') ?? '搜索失败（HTTP ' + hr.status + '）') : '搜索失败（HTTP ' + hr.status + '）'

@@ -2,7 +2,7 @@
  * 玩法层 · 消息中心（T-PL-3）（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
  *
  * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
- * 对外导出：AppMessage, MessagePage, fetchMessagePage, fetchMessages, fetchUnreadCount, markMessageRead, markAllRead
+ * 对外导出：AppMessage, MessagePage, fetchMessagePage, messagesFetchFailed, fetchUnreadCount, markMessageRead, markAllRead
  */
 import { get, post, dataObj, fetchUnreadCountSimple } from './api'
 import { PATH_MESSAGES, parsePageData } from './contract'
@@ -82,19 +82,23 @@ export function fetchMessagePage(status: string, cursor: string, limit: number):
 		get(PATH_MESSAGES + query).then((res: UTSJSONObject | null) => {
 			const empty = new MessagePage([], '', false)
 			if (res == null) {
+				_lastFetchFailed = true
 				resolve(empty)
 				return
 			}
 			const d = dataObj(res)
 			if (d == null) {
+				_lastFetchFailed = true
 				resolve(empty)
 				return
 			}
 			const page = parsePageData(d)
 			if (page == null) {
+				_lastFetchFailed = true
 				resolve(empty)
 				return
 			}
+			_lastFetchFailed = false
 			const result: Array<AppMessage> = []
 			for (let i = 0; i < page.items.length; i++) {
 				const item = page.items[i] as UTSJSONObject
@@ -143,15 +147,21 @@ export function fetchMessagePage(status: string, cursor: string, limit: number):
 	})
 }
 
-/** GET /messages 首屏（status 过滤 ''=全部/unread/read）；兼容旧调用方（取第一页 items）。
- *  分页消费请用 fetchMessagePage（O17：含 cursor/has_more）；失败空数组 */
-export function fetchMessages(status: string): Promise<Array<AppMessage>> {
-	return new Promise<Array<AppMessage>>((resolve) => {
-		fetchMessagePage(status, '', 50).then((page: MessagePage) => {
-			resolve(page.items)
-		})
-	})
+// 2026-10-30（P2 G-6）：**失败信号**（模块级，同 _cachedMessages 的作用域口径）。
+// 本模块所有取数函数都是 resolve-only，失败时给空数组/空页 —— 页面层因此**无法区分**
+// 「真的没有消息」与「请求失败」，两者都渲染成空态（假空态，用户以为消息被清空了）。
+// 这里补一个最近一次取数的失败标记，页面据此改文案/给重试入口。
+let _lastFetchFailed: boolean = false
+
+/** 最近一次 `fetchMessagePage` 是否失败 */
+export function messagesFetchFailed(): boolean {
+	return _lastFetchFailed
 }
+
+// 2026-10-30（P2 G-1）：删除 `fetchMessages(status)` 兼容包装。
+// 它内部 `fetchMessagePage(status, '', 50)` **丢弃 cursor/has_more**，是全量错觉的来源；
+// 消息页改用 `fetchMessagePage` 做真分页后它零调用 ⇒ 命中审计轴 4「零调用能力导出」，
+// 按该轴口径删除（不是留着"以后可能有人用"）。
 
 /** 未读数（P4 性能收口：改走 GET /messages/unread-count 单 count 查询，替代旧游标翻全量累加；
  *  失败 -1 → 0 保持旧兼容语义；调用方 messages.uvue 仅作角标展示） */

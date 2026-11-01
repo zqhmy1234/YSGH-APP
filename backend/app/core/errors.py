@@ -95,6 +95,8 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("MSG_003", "游标格式无效（应为消息 id）", 422),
     # 画像级敏感
     ErrorSpec("PROFILE_001", "画像重建任务不存在或已过期", 404),
+    # 锁定标签（B1:139）：非法输入显式 422，不静默丢弃（丢项会让"PUT 成功但集合变了"无从解释）
+    ErrorSpec("PROFILE_002", "锁定标签非法（需字符串数组；单标签 ≤32 字符、总数 ≤50）", 422),
     ErrorSpec("PROFILE_SENSITIVE_001", "话题参数非法", 422),
     ErrorSpec("PROFILE_SENSITIVE_002", "topic 不能为空", 422),
     ErrorSpec("PROFILE_SENSITIVE_003", "话题不存在", 404),
@@ -135,6 +137,9 @@ _ERROR_SPECS: list[ErrorSpec] = [
     # D10-8（2026-09-25）：生成态输出护栏拦截（**不落库、不返回该文本**；
     # 与"agent 不可用不伪造回复"同族口径——宁可不答，也不给未过审文本）
     ErrorSpec("CHAT_004", "AI 回复未通过安全审核，已拦截", 422),
+    # 2026-10-30（P2 D-11）：对话历史游标非法。**不能**静默退化成"第一页"——
+    # 那会让用户以为已经翻到了更早的消息（`api/chat.py` 出参已改用 cursor/has_more）。
+    ErrorSpec("CHAT_005", "对话历史游标格式无效", 422),
 ]
 
 ERROR_REGISTRY: dict[str, ErrorSpec] = {spec.code: spec for spec in _ERROR_SPECS}
@@ -165,6 +170,7 @@ ERR_CONTENT_009 = "CONTENT_009"
 ERR_CONTENT_010 = "CONTENT_010"
 ERR_CONTENT_011 = "CONTENT_011"
 ERR_PROFILE_001 = "PROFILE_001"
+ERR_PROFILE_002 = "PROFILE_002"
 ERR_CORR_001 = "CORR_001"
 ERR_CORR_002 = "CORR_002"
 ERR_CORR_003 = "CORR_003"
@@ -208,6 +214,10 @@ ERR_CHAT_001 = "CHAT_001"
 ERR_CHAT_002 = "CHAT_002"
 ERR_CHAT_003 = "CHAT_003"
 ERR_CHAT_004 = "CHAT_004"
+# 2026-10-30（P2 D-11）：历史分页游标非法（422）。
+# 为什么不复用 CHAT_003（会话不存在）：那条码的语义是"你看不到这个会话"（404，防枚举），
+# 混进"参数格式错"会让客户端把可修复的入参错误当成会话失效去清 conversationId。
+ERR_CHAT_005 = "CHAT_005"
 
 
 class ApiError(Exception):

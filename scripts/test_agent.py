@@ -97,6 +97,13 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
 
 COV_XML = ".cowork-temp/coverage.xml"
 
+# 2026-10-31（走查 门禁稳定性）：重测试阶段的**内存下限**（GB）。
+# 依据（实测，非估算）：本机 pytest 会真加载 BGE-M3（backend/models/bge-m3 存在时优先本地目录，
+# fp16 权重 ~2.2GB）＋ torch 上下文，api_smoke 峰值 ~2.5GB。低于此线开跑不是"可能慢"，
+# 而是**必然**在 transformers 加载权重处访问违例（实测可用 0.52GB → 0xC0000005，
+# 崩在 `_load_state_dict_into_meta_model`），而崩溃的表现是"没有失败用例"。
+HEAVY_MIN_FREE_GB = 3.0
+
 
 def _rag_env_ready() -> tuple[bool, str]:
     """RAG 用例运行环境探测（2026-08-27 批次 H2：rag 纳入覆盖率前先确认可跑）
@@ -161,6 +168,105 @@ def extract_failed_tests(output: str) -> list[str]:
     return seen
 
 
+# ─── 原生崩溃识别（2026-10-31 · 走查 门禁稳定性）────────────────────────────────
+#
+# 实付代价（整轮排查才定位）：`review_agent --full` 报 `[❌] tests` 而 `failed_tests: []`，
+# details 里只有一段 pytest 内部栈尾 ⇒ 看起来像"门禁调用路径有问题"，实际是 **pytest 进程
+# 被 Windows 访问违例(0xC0000005)终止**：pytest 默认启用 faulthandler，致命信号时它把各线程栈
+# 直接写进输出，然后进程死掉 —— 既没有 `FAILED` 行，也没有汇总行，于是"没有失败用例"。
+#
+# 转储的两个可识别指纹（与普通 traceback 区分）：
+#   ① 帧格式 `File "...", line N in func`（**无逗号**；普通 traceback 是 `line N, in func`）；
+#   ② 帧序**内→外**（第一个是最深的调用点，最后一个才是 `<frozen runpy>`）。
+# 因此必须显式解析，否则每次都要人工重跑 pytest 才能知道死在哪个用例（本轮已实测）。
+_CRASH_NTSTATUS = {
+    0xC0000005: "访问违例 access violation",
+    0xC00000FD: "栈溢出 stack overflow",
+    0xC0000409: "fail-fast（栈缓冲越界）",
+    0xC0000374: "堆损坏 heap corruption",
+}
+
+_NODEID_RE = re.compile(r"^(?P<node>\S*?\.py::\S+)$")
+_NODEID_STATUS_RE = re.compile(r"\b(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS|RERUN)\b")
+_FRAME_RE = re.compile(r'File "(?P<path>[^"]+)", line (?P<line>\d+) in (?P<func>\S+)')
+
+
+def extract_native_crash(exit_code: int, output: str) -> dict | None:
+    """识别「进程被原生信号终止」→ 返回 {signature, exit_code, nodeid, project_frames}。
+
+    `nodeid` = 崩溃时**正在跑**的用例（`-vv` 下那一行还没打状态就得出了结论）；
+    `project_frames` 只留 **本仓库内的帧**（pytest/pluggy/transformers 的帧对定位无用，
+    原实现把它们一起塞进 1200 字符尾部切片，恰好把项目帧挤掉）。
+    识别不出返回 None（**不吞**，交给原有 FAILED 解析路径）。
+    """
+    text = output or ""
+    sig = ""
+    m = re.search(r"Windows fatal exception:\s*([^\r\n]+)", text)
+    if m:
+        sig = "Windows fatal exception: " + m.group(1).strip()
+    else:
+        m = re.search(r"Fatal Python error:\s*([^\r\n]+)", text)
+        if m:
+            sig = "Fatal Python error: " + m.group(1).strip()
+    ntstatus = None
+    code_u = exit_code & 0xFFFFFFFF  # Windows 的 returncode 可能是负数(POSIX 风格)也可能是 NTSTATUS 原值
+    if code_u in _CRASH_NTSTATUS:
+        ntstatus = code_u
+        if not sig:
+            sig = f"0x{code_u:08X} {_CRASH_NTSTATUS[code_u]}"
+    if not sig and ntstatus is None:
+        return None
+
+    # 崩溃时正在运行的用例：最后一个「有 nodeid、但没有任何状态词」的行
+    nodeid = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        m2 = _NODEID_RE.match(line)
+        if m2 and not _NODEID_STATUS_RE.search(line):
+            nodeid = m2.group("node")
+    # 只保留本仓库帧（按转储顺序＝从崩溃点往外，正好是可读的调用链）
+    project_frames: list[str] = []
+    root = str(ROOT).replace("\\", "/")
+    for f in _FRAME_RE.finditer(text):
+        path = f.group("path").replace("\\", "/")
+        if not path.startswith(root):
+            continue
+        rel = path[len(root):].lstrip("/")
+        frame = f"{rel}:{f.group('line')} in {f.group('func')}"
+        if frame not in project_frames:
+            project_frames.append(frame)
+    return {
+        "signature": sig,
+        "exit_code": exit_code,
+        "ntstatus": f"0x{ntstatus:08X}" if ntstatus else "",
+        "nodeid": nodeid,
+        "project_frames": project_frames[:8],
+    }
+
+
+def _format_crash(crash: dict) -> str:
+    """把崩溃渲染成「第一行可被 extract_failed_tests 抓到」的块。
+
+    首行故意写成 `ERROR <nodeid>`：与 pytest 原生失败行同形 ⇒ 报告 `failed_tests` 自动带上它，
+    `review_agent` 的「失败用例（单一来源）」也就直接显示，无需改任何消费方。
+    """
+    node = crash["nodeid"] or "（未解析到用例名：见下方原始输出）"
+    lines = [
+        "[pytest 原生崩溃：进程被终止 —— 不是断言失败，所以此前 failed_tests 为空]",
+        f"ERROR {node}",
+        f"  信号/退出码: {crash['exit_code']}  {crash['signature']}"
+        + (f"  NTSTATUS={crash['ntstatus']}" if crash["ntstatus"] else ""),
+    ]
+    if crash["project_frames"]:
+        lines.append("  调用链（只列本仓库帧，从崩溃点往外）:")
+        lines.extend(f"    {f}" for f in crash["project_frames"])
+    lines.append(
+        "  判读：进程级崩溃（C 扩展/内存），**不能**当作「用例断言失败」处理；"
+        "先看上面第一帧是不是在做重活（加载模型/大分配），再查当时可用内存。"
+    )
+    return "\n".join(lines)
+
+
 def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     """pytest 全量 + 覆盖率（2026-08-25：测试环境封闭——覆盖 MOCK/STORAGE_BACKEND
 
@@ -186,6 +292,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     # test_yishu_contents 与 CI `pytest -m rag` 步骤的隔离形态保持一致。
     warnings: list[str] = []
     outputs: list[str] = []
+    run_codes: list[int] = []  # 2026-10-31：每段 pytest 的退出码（原生崩溃判定要用它）
     failed = False
 
     main_cmd = [
@@ -208,6 +315,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     if rag_ready:
         # 主套件先跑（不 gate 阈值），rag 追加覆盖后统一判定（合并覆盖 ≥ 主套件覆盖）
         code, main_out = run(main_cmd, env=env)
+        run_codes.append(code)
         outputs.append("[pytest·主套件]\n" + main_out.strip())
         if code != 0:
             failed = True
@@ -221,6 +329,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
             f"--cov-fail-under={cov_threshold}",
         ]
         code2, rag_out = run(rag_cmd, env={**env, "QDRANT_COLLECTION": "test_yishu_contents"})
+        run_codes.append(code2)
         outputs.append("[pytest·rag 分组（计入覆盖率）]\n" + rag_out.strip())
         if code2 != 0:
             failed = True
@@ -228,6 +337,7 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
         warnings.append(f"RAG 用例未纳入覆盖率统计（{rag_reason}）；覆盖率阈值仅按主套件判定")
         main_cmd += [f"--cov-fail-under={cov_threshold}", f"--cov-report=xml:{COV_XML}"]
         code, out = run(main_cmd, env=env)
+        run_codes.append(code)
         outputs.append("[pytest·主套件]\n" + out.strip())
         if code != 0:
             failed = True
@@ -247,6 +357,19 @@ def run_pytest(cov_threshold: int) -> tuple[bool, str]:
     combined = "\n\n".join(outputs)
     if not failed:
         return True, combined.strip()[-3500:]
+    # 2026-10-31（走查 门禁稳定性）：**先判原生崩溃**。崩溃时 pytest 来不及输出任何
+    # `FAILED` 行，直接走下面的解析只会得到"未匹配到 FAILED/ERROR"——那正是本轮
+    # 「reports failed_tests: [] + 只有一段栈尾」的成因（看起来像用例全过，其实进程死了）。
+    for crash_code in run_codes:
+        crash = extract_native_crash(crash_code, combined)
+        if crash is not None:
+            return False, (
+                f"{gate_exit.ENV_ERR_PREFIX} pytest 进程被原生信号终止 ⇒ 测试**未被判定**"
+                "（既不是通过，也不是用例断言失败）\n\n"
+                + _format_crash(crash)
+                + "\n\n[原始输出·尾部]\n"
+                + combined.strip()[-2500:]
+            )
     # 失败时**摘要置顶**（见 extract_failed_tests 的教训注释）：门禁第一眼就该看到用例名，
     # 而不是被覆盖率表淹没。原始输出仍保留尾部（含最后一个 traceback 片段）供下钻。
     failures = extract_failed_tests(combined)
@@ -331,15 +454,35 @@ def main() -> int:
                 "建议先关闭 HBuilderX 编译残留/TRAE/WorkBuddy 等大进程"
             )
 
+    # 2026-10-31（走查 门禁稳定性）：内存不足时**拒绝开跑**，而不是让它崩成"没有失败用例"。
+    # 语义是「环境不成立、本工具无法判定」= 退出码 2（仍阻断提交，但归因正确），
+    # 报告照常落盘（含原因），避免 review_agent 去读上一次的陈旧 failed_tests。
+    low_mem = args.only is None and 0 <= free < HEAVY_MIN_FREE_GB
+    low_mem_note = (
+        f"{gate_exit.ENV_ERR_PREFIX} 可用物理内存 {free:.2f}GB < {HEAVY_MIN_FREE_GB:.1f}GB ⇒ "
+        "**拒绝开跑**：本套 pytest 会真加载 BGE-M3（fp16 ~2.2GB）、api_smoke 峰值 ~2.5GB，"
+        "内存不够时进程会在加载权重处访问违例（0xC0000005），表现成「没有任何失败用例」。\n"
+        "  处理：先释放内存（关模拟器 qemu / HBuilderX 编译残留 / 其他 agent 的重任务），"
+        "确认可用内存 ≥ 3GB 后重跑。"
+    )
+
     # 执行顺序（TD-P1C 2026-08-26）：api_smoke 与 pytest 均已隔离——
     # api_smoke 写 test_ 前缀测试 collection（不再写生产 yishu_contents），
     # 不再需要"api_smoke 先于 pytest"顺序 hack；pytest 常规先行，
     # 每跑结束统一清理 test_ collection（尽力而为）。
-    sections = {
-        "pytest": run_pytest(args.cov_threshold) if args.only is None or args.only == "api" else (True, "[skip]"),
-        "api_smoke": run_api_smoke() if args.only is None or args.only == "api" else (True, "[skip]"),
-        "research": run_research_validation() if args.only is None or args.only == "research" else (True, "[skip]"),
-    }
+    sections = (
+        {
+            "pytest": (False, low_mem_note),
+            "api_smoke": (False, low_mem_note),
+            "research": (True, "[skip] 内存不足（--only research 可单跑，它不加载模型）"),
+        }
+        if low_mem
+        else {
+            "pytest": run_pytest(args.cov_threshold) if args.only is None or args.only == "api" else (True, "[skip]"),
+            "api_smoke": run_api_smoke() if args.only is None or args.only == "api" else (True, "[skip]"),
+            "research": run_research_validation() if args.only is None or args.only == "research" else (True, "[skip]"),
+        }
+    )
     blocking = {k: v for k, v in sections.items() if not v[0]}
     passed = not blocking
 

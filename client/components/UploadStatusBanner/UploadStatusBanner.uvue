@@ -17,15 +17,20 @@
 
 <script setup lang="uts">
 	import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
-	import { subscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
+	import { subscribeSyncStatus, unsubscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
 	import { getNetKind, NetKind } from '@/utils/uploader_net'
 	import { heldCount, failedCount } from '@/utils/uploader_queue'
 	import { continuePendingUploads } from '@/utils/uploader_batch'
 	// 2026-10-16：补传路径此前只上传、不上云 → 这些照片不进时间轴（D-05 缺口）
 	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
 	import { UploadedPhoto } from '@/utils/uploader_types'
+	// 2026-10-31（走查实测缺陷）：补传成功后广播保存信号给 TabIndex（否则时间轴不刷新）
+	import { recordSavedSeq } from '@/utils/shell_state'
 
-	const emit = defineEmits(['continue-upload', 'retry-failed', 'upload-original'])
+	// 2026-10-30（P2 J-14）：原 `defineEmits(['continue-upload','retry-failed','upload-original'])`
+	// 三个事件**全仓零监听者**（宿主 `TabIndex` 只写 `<UploadStatusBanner />`，不接任何 @ 事件），
+	// 而本组件是自包含的（自己调 continuePendingUploads + submitUploadsAsL1）⇒ emit 纯属死 API：
+	// 既让"接线审计"看不出真实边界，也诱导后人以为宿主必须接。整组事件与 emit 调用一并删除。
 
 	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-12）：原为**裸 `let`**（paused/pauseReason/held/
 	// failed/uploading/netKind），而 uvue 的 `<script setup>` 裸 `let` **不是响应式**
@@ -80,11 +85,16 @@
 		return '重试'
 	})
 
+	// 2026-10-30（P2 J-3）：回调提到模块作用域并**在卸载时退订**。
+	// 原实现每次挂载都 push 一个新的匿名回调、永不移除 ⇒ 监听器只增不减，旧回调继续往
+	// 已卸载组件的 ref 写值（重复渲染/跨实例串写）。
+	const onSyncStatus = (p: boolean, reason: string): void => {
+		paused.value = p
+		pauseReason.value = reason
+	}
+
 	onMounted(() => {
-		subscribeSyncStatus((p: boolean, reason: string) => {
-			paused.value = p
-			pauseReason.value = reason
-		})
+		subscribeSyncStatus(onSyncStatus)
 		refresh()
 		refresher = setInterval(() => {
 			refresh()
@@ -95,6 +105,7 @@
 			clearInterval(refresher)
 			refresher = 0
 		}
+		unsubscribeSyncStatus(onSyncStatus)
 	})
 
 	function refresh(): void {
@@ -108,28 +119,39 @@
 	}
 	function onBannerTap(): void {
 		if (failed.value > 0 && !paused.value) {
-			doContinue('retry-failed')
+			doContinue()
 		}
 	}
 	function onActionTap(): void {
 		if (paused.value) {
-			doContinue('continue-upload')
+			doContinue()
 		} else if (held.value > 0 && netKind.value != 'wifi') {
-			doContinue('upload-original')
+			doContinue()
 		} else {
-			doContinue('retry-failed')
+			doContinue()
 		}
 	}
-	function doContinue(evt: string): void {
+	function doContinue(): void {
+		// 2026-10-30（P1-2）：原 `uploading` 只被赋值、从不判空 ⇒ 连点横幅会并发起多个上传池，
+		// 同批照片被重复上传、并重复提交 L1（同日重复日卡）。这里做 UI 侧互斥；
+		// uploader_batch.continuePendingUploads 内部另有一层单飞兜底。
+		if (uploading.value) {
+			console.log('[yishu] 继续上传进行中，忽略重复点击')
+			return
+		}
 		uploading.value = true
-		emit(evt)
-		continuePendingUploads(() => {
+		continuePendingUploads(() => {}).then((uploaded: Array<UploadedPhoto>) => {
 			uploading.value = false
 			refresh()
-		}).then((uploaded: Array<UploadedPhoto>) => {
-			uploading.value = false
-			refresh()
-			submitUploadsAsL1(uploaded)
+			if (uploaded.length > 0) {
+				// 2026-10-31（走查实测缺陷）：L1 提交后**必须广播保存信号**。
+				// 原实现只 submit 不通知：时间轴要等用户切 tab 才刷新，
+				// 用户看到的就是「上传成功了但不出日卡」。这里用模块级 `recordSavedSeq`
+				// （J-14 已把 emit 全删，横幅是自包含组件，只能走共享状态）。
+				// 注：`submitUploadsAsL1` 是同步函数（返回已 accepted 的条数），不是 Promise。
+				submitUploadsAsL1(uploaded)
+				recordSavedSeq.value = recordSavedSeq.value + 1
+			}
 		})
 	}
 </script>

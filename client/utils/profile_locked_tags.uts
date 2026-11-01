@@ -1,0 +1,126 @@
+/**
+ * 锁定标签（B1:139「删除 + 用户锁定，LLM 不再自动写回」）客户端存取层。
+ *
+ * **真源在服务端**：`GET/PUT /api/v1/profile/locked-tags`（后端 `user_profile.locked_tags`，
+ * `profile_annotator.apply_annotation` 写回画像前按该集合跳过：不新增/不覆盖/不删除）。
+ *
+ * 本机 storage（键 `portrait_locked_tags`，与历史版本同名 ⇒ 升级用户既有固定标签不丢）
+ * 自 2026-10-30 起**降级为离线兜底缓存**：只在请求失败时用于渲染/重试，**不是事实来源**。
+ * 在此之前它是唯一存储 ⇒ 后端完全不知情，画像重建时 AI 照样把用户删掉/固定的标签写回来。
+ */
+import { get, request } from '@/utils/api'
+import { PATH_PROFILE_LOCKED_TAGS } from '@/utils/contract'
+
+/** 离线兜底缓存键（非真源；真源见 PATH_PROFILE_LOCKED_TAGS） */
+export const LOCKED_TAGS_CACHE_KEY: string = 'portrait_locked_tags'
+/** 「本机有未推送的锁定改动」标记（PUT 失败时置位；下次 syncLockedTags 先重推再拉取）。
+ *  没有它，离线固定一个标签后重新打开面板会被服务端旧集合直接覆盖 ⇒ 用户的锁定静默丢失。 */
+export const LOCKED_TAGS_PENDING_KEY: string = 'portrait_locked_tags_pending'
+
+/** 结果信封：为什么不用 null 表示失败 —— "请求失败"与"云端确实没有任何锁定"
+ *  是两件事，混成 null 会让调用方把失败当空集合写回缓存（把用户数据抹掉）。 */
+export class LockedTagsResult {
+	ok: boolean = false
+	tags: Array<string> = []
+	constructor(ok: boolean, tags: Array<string>) {
+		this.ok = ok
+		this.tags = tags
+	}
+}
+
+/** 读本机兜底缓存（\n 连接；与历史版本同一格式，旧数据直接可读） */
+export function cachedLockedTags(): Array<string> {
+	const out: Array<string> = []
+	const raw = uni.getStorageSync(LOCKED_TAGS_CACHE_KEY) as string
+	if (raw == null || raw == '') {
+		return out
+	}
+	const segs = raw.split('\n')
+	for (let i = 0; i < segs.length; i++) {
+		if (segs[i] != '') {
+			out.push(segs[i])
+		}
+	}
+	return out
+}
+
+/** 写本机兜底缓存（\n 连接；只由服务端确认过的集合写入，避免"缓存盖掉真源"） */
+export function cacheLockedTags(tags: Array<string>): void {
+	uni.setStorageSync(LOCKED_TAGS_CACHE_KEY, tags.join('\n'))
+}
+
+/** 清空本机缓存与待推送标记（「清除画像数据」成功回调里用）。
+ *  必须连 `_pending` 一起清：否则残留标记会让下次打开把旧集合当"未推送改动"再推回云端。 */
+export function clearLockedTagCache(): void {
+	uni.removeStorageSync(LOCKED_TAGS_CACHE_KEY)
+	uni.removeStorageSync(LOCKED_TAGS_PENDING_KEY)
+}
+
+/** 解析 `{data: {tags: [...]}}`；信封不完整一律 ok=false（不复用上一次的值） */
+function parseResult(body: UTSJSONObject | null): LockedTagsResult {
+	const out: Array<string> = []
+	if (body == null) {
+		return new LockedTagsResult(false, out)
+	}
+	const data = body.getJSON('data')
+	if (data == null) {
+		return new LockedTagsResult(false, out)
+	}
+	const arr = data.getArray('tags')
+	if (arr == null) {
+		return new LockedTagsResult(false, out)
+	}
+	for (let i = 0; i < arr.length; i++) {
+		const t = arr[i] as string
+		if (t != null && t != '') {
+			out.push(t)
+		}
+	}
+	return new LockedTagsResult(true, out)
+}
+
+/** GET 服务端锁定集合（成功即回写兜底缓存）；失败返回 ok=false，调用方回落缓存 */
+export function fetchLockedTags(): Promise<LockedTagsResult> {
+	return new Promise<LockedTagsResult>((resolve) => {
+		get(PATH_PROFILE_LOCKED_TAGS).then((body: UTSJSONObject | null) => {
+			const r = parseResult(body)
+			if (r.ok) {
+				cacheLockedTags(r.tags)
+			}
+			resolve(r)
+		})
+	})
+}
+
+/** PUT 整体覆盖服务端锁定集合（空数组 = 全部解锁）。
+ *  成功返回**服务端规整后**的集合（去空白/去空串/去重）并回写缓存，保证本机与云端同一份；
+ *  失败保留本次集合于缓存并置「待推送」标记，由下一次 syncLockedTags 重推。 */
+export function saveLockedTags(tags: Array<string>): Promise<LockedTagsResult> {
+	// 先落兜底缓存 + 待推送标记：PUT 在途/失败期间本机显示的就是用户刚点的结果
+	cacheLockedTags(tags)
+	uni.setStorageSync(LOCKED_TAGS_PENDING_KEY, '1')
+	const body: UTSJSONObject = {}
+	body.set('tags', tags)
+	return new Promise<LockedTagsResult>((resolve) => {
+		request(PATH_PROFILE_LOCKED_TAGS, 'PUT', body).then((resp: UTSJSONObject | null) => {
+			const r = parseResult(resp)
+			if (r.ok) {
+				uni.removeStorageSync(LOCKED_TAGS_PENDING_KEY)
+				cacheLockedTags(r.tags)
+			}
+			resolve(r)
+		})
+	})
+}
+
+/** 对齐锁定集合（打开面板/进入画像页时调用）：
+ *  - 有未推送改动 ⇒ 先 PUT（本地集合覆盖服务端），成功即清标记；
+ *  - 否则拉服务端覆盖本地缓存。
+ *  返回最终集合；ok=false = 网络不可用（调用方继续用缓存渲染，不要当成"没有锁定"）。 */
+export function syncLockedTags(): Promise<LockedTagsResult> {
+	const pending = (uni.getStorageSync(LOCKED_TAGS_PENDING_KEY) as string) == '1'
+	if (pending) {
+		return saveLockedTags(cachedLockedTags())
+	}
+	return fetchLockedTags()
+}

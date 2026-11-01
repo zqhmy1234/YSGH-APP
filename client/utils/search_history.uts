@@ -1,0 +1,77 @@
+/**
+ * 搜索历史（2026-10-30 · P2 C-4）——**仅本机存储，不上云**。
+ *
+ * 为什么只存本地：搜索关键词是**用户主动表达的关注点**（"体检报告""离婚""活检"这种），
+ * 上云就等于把最敏感的意图画像同步到服务器，与"隐私优先、图片/文本不出端"的口径冲突，
+ * 且历史本身零跨端价值（换个设备重新点两次就行）。故只用 `uni.setStorageSync`。
+ *
+ * 为什么用 `\n` 拼串而不是 JSON：与仓内既有做法一致（uploader_queue / sync_local / queue_store
+ * 都是 `join('\n')`）——UTS 下 `JSON.parse` 的数组泛型形态不可靠（见 uploader_types.uts:13 的
+ * 同类注记），拼串是零歧义且可人工排查的形态。代价是关键词里的换行必须清掉（见 sanitize）。
+ */
+
+/** 存储键（单一事实源；读写都走它，避免字面量散落两处后不一致） */
+const HISTORY_KEY = 'yishu_search_history_v1'
+/** 上限 10 条：一行横滑 chip 的可扫视范围，再多就必须二次滑动才看得全，反而难找 */
+const HISTORY_MAX = 10
+
+/** 关键词规范化：去首尾空白 + 把换行/制表压成空格（否则会破坏 `\n` 拼串的行结构） */
+function sanitize(kw: string): string {
+	const flat = kw ?? ''
+	const noNl = flat.split('\n').join(' ').split('\r').join(' ')
+	return noNl.trim()
+}
+
+/** 读历史（已按存储顺序：越靠前越新）；无记录/空值返回空数组 */
+export function readSearchHistory(): Array<string> {
+	const out: Array<string> = []
+	const raw = uni.getStorageSync(HISTORY_KEY) as string
+	if (raw == null || raw == '') {
+		return out
+	}
+	const lines = raw.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		const v = lines[i].trim()
+		if (v == '') {
+			continue
+		}
+		// 读侧也截断：老版本/异常数据超长时不让 UI 溢出上限
+		if (out.length >= HISTORY_MAX) {
+			break
+		}
+		out.push(v)
+	}
+	return out
+}
+
+/**
+ * 记一条历史（去重后置顶），返回**写后的新列表**供调用方直接刷 UI。
+ *
+ * 去重口径：大小写不敏感比较（`Lake` 与 `lake` 视为同一条），但**保留用户最新一次的写法**——
+ * 用户刚敲的形态才是他想看到的形态。
+ */
+export function pushSearchHistory(kw: string): Array<string> {
+	const out: Array<string> = []
+	const prev = readSearchHistory()
+	const key = sanitize(kw)
+	if (key == '') {
+		return prev
+	}
+	const lowKey = key.toLowerCase()
+	out.push(key)
+	for (let i = 0; i < prev.length; i++) {
+		if (out.length >= HISTORY_MAX) {
+			break
+		}
+		if (prev[i].toLowerCase() != lowKey) {
+			out.push(prev[i])
+		}
+	}
+	uni.setStorageSync(HISTORY_KEY, out.join('\n'))
+	return out
+}
+
+/** 一键清空（整键删除，不逐条写空串——避免留下一个"存在但为空"的残留键） */
+export function clearSearchHistory(): void {
+	uni.removeStorageSync(HISTORY_KEY)
+}

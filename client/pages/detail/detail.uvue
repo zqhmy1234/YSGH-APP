@@ -19,10 +19,22 @@
 				</view>
 			</view>
 		</view>
-		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
+		<!-- 2026-10-30（P1-19）：**明确的错误态**。原实现 contentId 缺失时 `return`、加载失败只 toast，
+		     页面照样渲染「记忆详情」+ 静态头图 + 空正文，且收藏/分享/胶囊全都可点 ⇒ 用户以为
+		     这是一条空记忆，还能对它做操作（并往 favorite_ids 里写空串）。 -->
+		<view v-if="detailMissing" class="detail-missing">
+			<text class="detail-missing-title">这条记忆不存在或已删除</text>
+			<text class="detail-missing-sub">它可能已被删除，或在另一台设备上修改过</text>
+			<view class="detail-missing-btn" @tap="goBack">
+				<text class="detail-missing-btn-text">返回</text>
+			</view>
+		</view>
+		<scroll-view v-else class="detail-scroll" direction="vertical" :show-scrollbar="false">
 		<view class="detail-body">
 		<!-- 全幅媒体：照片记忆 → 服务端票据 URL 真图；其余类型 → 画布静态合成图占位 -->
-		<image class="n4_406" :src="heroSrc" mode="aspectFill" />
+		<!-- 2026-10-30（P2 E-5）：票据 URL 是短时效的（缩略图 24h/原图 15m），过期即静默裂图。
+		     `@error` 兜底回落静态占位图，不让用户面对一块空白。 -->
+		<image class="n4_406" :src="heroSrc" mode="aspectFill" @error="onHeroError" />
 		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
 		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级） -->
 		<view class="n4_407a"></view>
@@ -146,7 +158,7 @@
 	import { ref } from 'vue'
 
 	import { WaveformCache } from '@/composables/useWaveform'
-	import { onLoad, onUnload } from '@dcloudio/uni-app'
+	import { onLoad, onUnload, onHide, onBackPress } from '@dcloudio/uni-app'
 	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
 	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
 import { deleteContent } from '@/utils/play_trash'
@@ -157,7 +169,9 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	// 改用同步缓存读 `currentNetKind()`（见 uploader_net 注释）。
 	import { currentNetKind } from '@/utils/uploader_net'
 	import { formatIsoShortTime } from '@/utils/time'
-	import { backToShell } from '@/utils/shell_state'
+	import { backToShell, recordSavedSeq } from '@/utils/shell_state'
+	import { invalidateTimelineCache } from '@/utils/timeline'
+	import { submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -172,6 +186,11 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 
 	// ═══════════ 响应式状态 ═══════════
 	let fav = ref(false) // 收藏状态
+	// 2026-10-30（P1-18）：用户是否已手动点过星标 —— 一旦为 true，迟到的初始化回填不再覆盖
+	let favTouched: boolean = false
+	// 2026-10-30（P1-19）：详情是否真的加载成功（false 时页面进入明确错误态，禁用全部动作）
+	let detailLoaded = ref(false)
+	let detailMissing = ref(false)
 	// 卡21/卡22 F7 弹层开关（浮层铁律：唤起不跳页）
 	let shareOpen = ref(false)
 	let capsuleOpen = ref(false)
@@ -202,6 +221,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	let bodySup = ref('')
 	// FE1：AI 打标 chips（tags_json，打标异步可能 null → 空数组=不显示区块）
 	let tagList = ref<Array<string>>([])
+	// 2026-10-30（P2 E-3）：纠错需要 contentType（后端按类型登记规则）
+	let contentTypeRef = ref('text')
 
 	/** 取正文首句/前 14 字作标题 */
 	function makeTitle(text: string): string {
@@ -227,23 +248,38 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 	onLoad((options: OnLoadOptions) => {
 		const id = options['contentId'] as string
 		if (id == null || id == '') {
+			// 2026-10-30（P1-19）：参数缺失 = 明确的错误态，不再静默渲染空壳页
+			console.error('[yishu] detail 缺 contentId 入参')
+			detailMissing.value = true
 			return
 		}
 		contentId.value = id
 		// FE1 真端点（W2-2）：GET /contents/{id}/favorite 查单条收藏态初始化星标；
 		// 失败 false（api 层已全局 toast），不再读本地 favorite_ids（列表页回落契约不受影响）
 		favoriteGet(id).then((favd: boolean) => {
-			fav.value = favd
+			// 2026-10-30（P1-18）：初始化是异步的，用户可能已经点过星标 —— 一旦点过，
+			// 迟到的初始化结果**不得反噬**用户操作（否则看到"点了又自己弹回去"）。
+			if (!favTouched) {
+				fav.value = favd
+			}
 		})
 		fetchContentDetail(id).then((d) => {
 			if (d == null) {
 				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
 				// fetchContentDetail 失败可能=网络断/404 已删除/服务不可达
+				// 2026-10-30（P1-19）：除了 toast，还要进入错误态（否则页面停在默认空壳上，
+				// 用户可以对一条不存在的内容做收藏/分享）
+				detailMissing.value = true
 				uni.showToast({ title: '详情加载失败，请稍后重试', icon: 'none' })
 				return
 			}
+			detailLoaded.value = true
+			contentTypeRef.value = d.contentType != '' ? d.contentType : 'text'
 			memBody.value = d.text
 			memTitle.value = makeTitle(d.text)
+			// 2026-10-30（P1-20）：回显服务端备注。原实现从不读 remark（ContentDetail 也没解析）
+			// ⇒ 备注只能"保存后写内存"，退出重进即丢，页面注释还据此误判"后端无端点"。
+			bodySup.value = d.remark
 			// W0-2：语音记忆 → F5b 语音卡显示 + 播放引擎按 contentId 接线（audio 端点，W0-1）
 			if (d.contentType == 'voice') {
 				isVoice.value = true
@@ -313,6 +349,26 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		// W0-2：离页停播，防止语音跨页残留出声（与 index/search 同规）
 		stopVoice()
 	})
+	// 2026-10-30（P2 E-2）：原实现只挂 onUnload，**退到后台不停播**（用户按 Home 后
+	// 记忆里的语音还在响，且没有通知栏控制入口）。补 onHide 停播。
+	onHide(() => {
+		stopVoice()
+	})
+	// 2026-10-31（P2 J-6）：本页浮层（分享 / 时间胶囊）此前**不拦返回键** —— 浮层开着按返回会直接
+	// 退出本页（用户以为只是关弹层，结果回列表、滚动位置与已加载数据全丢）。口径同 empty/manage：
+	// 有浮层先关浮层并 return true，无浮层 return false 走默认返回。
+	// 注：本页「更多」「修改分类」是 native showActionSheet/showModal（不是 v-if 浮层），由系统自己收起。
+	onBackPress((): boolean => {
+		if (shareOpen.value) {
+			shareOpen.value = false
+			return true
+		}
+		if (capsuleOpen.value) {
+			capsuleOpen.value = false
+			return true
+		}
+		return false
+	})
 
 	// 语音播放（W0-2 · F5b：详情页语音卡复用全局播放引擎，播放态三处一致）
 	function onPlayVoice(): void {
@@ -376,63 +432,119 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 		}
 	}
 
-	function toggleFav(): void {
-		// FE1（W2-2）：真端点 toggle（幂等）+ 本地 favorite_ids 双写保留（favorites 页回落契约 +
-		// 离线星标即时反馈）；失败不回滚本地态，toast 显式原因（api 层全局 toast + 页内补充提示）
-		fav.value = !fav.value
+	// 2026-10-30（P2 E-5）：头图加载失败（票据过期/签票失败）→ 回落静态占位，只回落一次防死循环
+	let heroFallbackUsed: boolean = false
+	function onHeroError(): void {
+		if (heroFallbackUsed) {
+			return
+		}
+		heroFallbackUsed = true
+		heroSrc.value = '/static/images/img4_406.png'
+	}
+
+	// 2026-10-30（P1-18）：本地 favorite_ids 写入收敛成一个函数（按**目标态**幂等重写），
+	// 供乐观更新与回滚两处共用 —— 原实现内联展开，回滚时无法复用。
+	function writeFavoriteLocal(on: boolean): void {
 		const raw = uni.getStorageSync('favorite_ids') as string
-		let ids: Array<string> = []
+		const ids: Array<string> = []
 		if (raw != null && raw != '' && raw != '[]') {
 			const parts = raw.split(',')
 			for (let i = 0; i < parts.length; i++) {
-				if (parts[i] != '') {
+				if (parts[i] != '' && parts[i] != contentId.value) {
 					ids.push(parts[i])
 				}
 			}
 		}
-		if (fav.value) {
-			let exists = false
-			for (let i = 0; i < ids.length; i++) {
-				if (ids[i] == contentId.value) {
-					exists = true
-					break
-				}
-			}
-			if (!exists) {
-				ids.push(contentId.value)
-			}
-		} else {
-			const next: Array<string> = []
-			for (let i = 0; i < ids.length; i++) {
-				if (ids[i] != contentId.value) {
-					next.push(ids[i])
-				}
-			}
-			ids = next
+		if (on && contentId.value != '') {
+			ids.push(contentId.value)
 		}
 		uni.setStorageSync('favorite_ids', ids.join(','))
-		if (contentId.value != '') {
-			if (fav.value) {
-				favoriteAdd(contentId.value).then((ok: boolean) => {
+	}
+
+	function toggleFav(): void {
+		// 2026-10-30（P1-19）：contentId 为空时**禁止写脏 id**（原实现会把 '' 塞进 favorite_ids，
+		// 后续收藏页按逗号切分会得到空串，形成脏数据）。
+		if (contentId.value == '') {
+			uni.showToast({ title: '记忆未加载完成，请稍后', icon: 'none' })
+			return
+		}
+		favTouched = true
+		const target = !fav.value
+		// 乐观更新（离线也有即时反馈）
+		fav.value = target
+		writeFavoriteLocal(target)
+		const p = target ? favoriteAdd(contentId.value) : favoriteRemove(contentId.value)
+		p.then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: target ? '已收藏' : '已取消收藏', icon: 'none', duration: 1500 })
+				return
+			}
+			// 2026-10-30（P1-18）：**失败必须回滚**，且本地存储与云端保持一致。
+			// 原实现「失败不回滚本地态」⇒ 界面显示已收藏、云端没有、收藏页又读另一源，
+			// 三处口径可以互相矛盾，用户无法判断到底收没收藏。
+			fav.value = !target
+			writeFavoriteLocal(!target)
+			uni.showToast({ title: '收藏未同步 · 已恢复原状态，请稍后重试', icon: 'none', duration: 2500 })
+		})
+	}
+
+	/**
+	 * 2026-10-30（P2 E-3）：详情页「修改分类」。
+	 * 纠错此前只在录制流（RecordSheet / 语音）可用 ⇒ 已存记忆的分类**无法修正**，
+	 * 而用户故事 F4 明确要求「在详情页也能改」。后端 `POST /corrections` 早已就绪，
+	 * 这里复用同一薄封装（source=active 会回写 content_class 并进入个人规则层）。
+	 */
+	function onFixCategory(): void {
+		if (contentId.value == '') {
+			return
+		}
+		// ⚠️ 2026-10-31（走查缺陷修复）：`LabelOption` 的字段是 **key/cn**，不是 value/label。
+		// 原来读 `ALL_LABELS[i].label` 全是 undefined ⇒ 设备上点「修改分类」弹出的是
+		// **四行空白** + Cancel（截图 t8_category.png），而且提交时 `picked` 也是 undefined。
+		const names: Array<string> = []
+		for (let i = 0; i < ALL_LABELS.length; i++) {
+			names.push(ALL_LABELS[i].cn)
+		}
+		uni.showActionSheet({
+			itemList: names,
+			success: (res) => {
+				if (res.tapIndex < 0 || res.tapIndex >= ALL_LABELS.length) {
+					return
+				}
+				const picked = ALL_LABELS[res.tapIndex].key
+				const pickedLabel = ALL_LABELS[res.tapIndex].cn
+				submitCorrection(contentId.value, memBody.value, picked, '', contentTypeRef.value).then((ok: boolean) => {
 					if (!ok) {
-						uni.showToast({ title: '云端收藏失败 · 稍后重试', icon: 'none' })
+						uni.showToast({ title: '分类修改失败 · 请稍后重试', icon: 'none' })
+						return
 					}
-				})
-			} else {
-				favoriteRemove(contentId.value).then((ok: boolean) => {
-					if (!ok) {
-						uni.showToast({ title: '云端取消失败 · 稍后重试', icon: 'none' })
+					// 就地回显（不重拉整页）：把新分类放到标签行最前，去重
+					const next: Array<string> = [pickedLabel]
+					for (let i = 0; i < tagList.value.length; i++) {
+						if (tagList.value[i] != pickedLabel) {
+							next.push(tagList.value[i])
+						}
 					}
+					tagList.value = next
+					uni.showToast({ title: '分类已更新', icon: 'none' })
 				})
 			}
-		}
-		uni.showToast({ title: fav.value ? '已收藏' : '已取消收藏', icon: 'none', duration: 1500 })
+		})
 	}
 
 	// 更多：编辑 / 删除 / 分享
 	function onMore(): void {
+		// 2026-10-30（P1-19）：未成功加载的内容不允许进入操作菜单
+		if (!detailLoaded.value) {
+			uni.showToast({ title: '记忆未加载完成，请稍后', icon: 'none' })
+			return
+		}
 		uni.showActionSheet({
-			itemList: ['编辑记忆', '删除记忆', '分享'],
+			// 2026-10-30（P2 E-6）：菜单文案与真实能力对齐 —— 后端只开放 remark 单字段，
+			// 写「编辑记忆」会让用户以为能改正文（点进去发现只能追加一句）。
+			// 2026-10-30（P2 E-3）：补「修改分类」——纠错此前只在录制流可用，
+			// 已存记忆无法改分类（后端 /corrections 早已就绪）。
+			itemList: ['补充一句备注', '修改分类', '删除记忆', '分享'],
 			success: (res) => {
 				const idx = res.tapIndex
 				if (idx === 0) {
@@ -441,6 +553,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 					// 正文文字修改需专用端点，不造假编辑器
 					onEditSup()
 				} else if (idx === 1) {
+					onFixCategory()
+				} else if (idx === 2) {
 					uni.showModal({
 						title: '删除记忆',
 						content: '删除后将移入回收站，保留 30 天。确定删除吗？',
@@ -453,6 +567,8 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 										// 本地墓碑 = 立即按已删处理并返回上一页（避免用户以为没删掉又点一次）；
 										// 队列条数在「存储与同步」页的同步卡可见（pendingSyncCount 已上屏）。
 										if (currentNetKind() == 'none') {
+											// 2026-10-30（P1-10）：本地数据视图同样要作废，否则列表还显示这条
+											invalidateTimelineCache()
 											uni.showToast({ title: '已离线：删除将在联网后自动完成', icon: 'none', duration: 2500 })
 											setTimeout(() => {
 												goBack()
@@ -462,6 +578,19 @@ import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/
 										uni.showToast({ title: '删除失败 · 请稍后重试', icon: 'none' })
 										return
 									}
+									// 2026-10-30（P1-10）：删成功后让时间轴/收藏/搜索的缓存整体失效，
+									// 否则返回列表仍能看到已删除的记忆（原先 invalidateTimelineCache 零调用=死代码）
+									invalidateTimelineCache()
+									// 2026-11-01（走查 3.6 实测）：**只置脏不够**。
+									// 设备实测：删除 200、库里事件已删、用户事件数 5→4，但返回时间轴
+									// 卡片仍在（hero 条数也没变）——因为壳层 TabIndex 是常驻的，
+									// `navigateBack` 不必然触发它的 onShow 拉取，dirty 标记就一直躺着。
+									// 这里复用已有的共享信号（横幅补传同款），TabIndex watch 到会
+									// 「置脏 + 立即刷新」，删除后列表立刻少一张卡。
+									recordSavedSeq.value = recordSavedSeq.value + 1
+									// 2026-10-30（P2 E-6）：本地收藏残留 + 正在播放的语音继续响（600ms 内仍可点播）
+									writeFavoriteLocal(false)
+									stopVoice()
 									uni.showToast({ title: '已移入回收站', icon: 'none' })
 									// 软删成功 → 详情页内容已不存在，返回上一页
 									setTimeout(() => {

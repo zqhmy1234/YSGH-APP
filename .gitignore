@@ -214,3 +214,12 @@ deploy/.tunnel-mode
 # 原件已归档到工作区外归档目录/2026-10/repo-artifacts/，需要回看从归档取，不再随仓库增长。
 _verify_*/
 design_data_for_agents/
+
+# 知识图谱产物（graphify，2026-10-30；cache 与本地产物不入库）
+graphify-out/
+
+
+# 走查/验收证据与本地运行产物（2026-11-02：`_verify/` 575MB 截图曾被漏忽略；`_verify_*/` 已有规则）
+_verify/
+backend/runs/
+.codebuddy/

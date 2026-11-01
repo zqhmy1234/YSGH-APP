@@ -11,6 +11,8 @@
 import { getBaseUrl } from './config'
 import { getToken, refreshToken, clearToken } from './auth'
 import { captureException } from './sentry'
+// 2026-10-31：toast 文案统一清洗（防止 JSON/结构体裸露给用户）
+import { humanizeErr } from './err_text'
 
 export class ApiError extends Error {
 	code: string
@@ -51,9 +53,27 @@ export class HttpResult {
 	}
 }
 
+// 2026-10-30（P2 J-9）：toast 去重。并发请求一起失败时（首屏 3~5 个并行请求同时超时）
+// 原实现会连弹同样几条 toast，互相覆盖 ⇒ 用户只看到最后一条，观感上像"一直在弹"。
+// 按**文案**做 2s 去重：2s 内的同一条错误只弹一次（不同文案照常各弹一次）。
+let _lastErrToastMsg: string = ''
+let _lastErrToastAt: number = 0
+
 /** 统一错误 toast（业务错误码也提示，方便第一波联调定位） */
 export function showErrorToast(err: Error | null): void {
-	const msg = err != null && err.message != '' ? err.message : '请求失败'
+	const rawMsg = err != null && err.message != '' ? err.message : '请求失败'
+	// 2026-10-31（走查：JSON 直接暴露给用户）：**全局兜底清洗**。
+	// 各调用点写法不一，有的把系统 errMsg（`{"errMsg":"..."}`）或响应体直接拼进 message，
+	// 用户会在 toast 里看到花括号引号，既看不懂又显得粗糙。
+	// 这里统一过一遍 humanizeErr：是 JSON 就取人话字段，取不到就换成可读兜底。
+	// 放在唯一出口处，比逐个调用点修补更可靠（新增调用点自动受保护）。
+	const msg = humanizeErr(rawMsg, '操作失败，请重试')
+	const now = Date.now()
+	if (msg == _lastErrToastMsg && now - _lastErrToastAt < 2000) {
+		return
+	}
+	_lastErrToastMsg = msg
+	_lastErrToastAt = now
 	uni.showToast({
 		title: msg,
 		icon: 'none',
@@ -281,6 +301,33 @@ export function fetchUnreadCountSimple(): Promise<number> {
 	})
 }
 
+/**
+ * 2026-10-30（P0 真机 422）：401 重放用的**请求体深拷贝**。
+ *
+ * 事故现场（模拟器日志，107 包）：
+ *   fire POST /contents → 401 → refresh 成功 → 重放 POST /contents → **422**
+ * 而用全新 token 手工打同一端点（逐字段试过 content_type/text/source/gps_lat/gps_lng）**恒 200**，
+ * 说明 422 只出现在"重放"这一跳 ⇒ 不是字段非法，而是**重放时 body 不再是原样**。
+ * 原实现直接把同一个 `data` 对象再传一次（依赖"UTSJSONObject 可复用"这个未经证明的假设）。
+ * 现改为序列化后重建一份新对象，让重放与首发在字节层面等价。
+ * 序列化失败时退回原对象（宁可保持旧行为，也不要因为克隆失败而丢掉整次重放）。
+ */
+function cloneBodyForReplay(data: UTSJSONObject | null): UTSJSONObject | null {
+	if (data == null) {
+		return null
+	}
+	try {
+		const text = JSON.stringify(data)
+		if (text == null || text == '' || text == '{}') {
+			return data
+		}
+		return JSON.parse(text) as UTSJSONObject
+	} catch (e) {
+		console.log('[dbg-req] 重放体克隆失败，退回原对象: ' + e)
+		return data
+	}
+}
+
 function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean,
 	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
 	return new Promise<UTSJSONObject | null>((resolve) => {
@@ -304,7 +351,9 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 		const timer = setTimeout(() => {
 			console.log('[watchdog] timeout ' + path)
 			captureException('watchdog timeout after ' + budget + 'ms: ' + path + hostTag(), 'api.network', null)
-			showErrorToast(new ApiError('TIMEOUT', '请求超时（' + budget + 'ms），请稍后重试'))
+			// 2026-10-30（P2 J-9）：用户不需要看到「20000ms」这种实现细节（毫秒数已在
+			// console/Sentry 里留痕，见上一行 captureException），面向用户的文案只保留结论。
+			showErrorToast(new ApiError('TIMEOUT', '请求超时，请稍后重试'))
 			finish(null)
 		}, budget + 5000)
 		console.log('[dbg-req] fire ' + method + ' ' + getBaseUrl() + path)
@@ -340,9 +389,17 @@ function doRequest(path: string, method: Method, data: UTSJSONObject | null, ret
 			// 401 → refresh 一次后重放；refresh 失败清 token
 			if (res.statusCode === 401 && !retried) {
 				console.log('[dbg-req] 401-branch-enter ' + path)
+				// 2026-10-30（P0 真机 422）：重放必须用**原始请求体的深拷贝**。
+				// 模拟器实测日志：POST /contents → 401 → refresh → 重放 → **422**（后端收到的
+				// body 缺字段）。用全新 token 手工打同一端点恒 200 ⇒ 问题只在重放这一跳。
+				// 已排除 body 内容本身（content_type/text/source/gps 逐项试过都 200）；
+				// 剩下的合理解释就是**同一个 UTSJSONObject 被消费过一次后在重放时不再是原样**
+				// （UTS 对象跨桥传递的已知脆弱点）。这里改成重放前重新序列化一份新对象，
+				// 使重放与首发在字节层面等价，不再依赖"对象可复用"这个假设。
+				const replayData = cloneBodyForReplay(data)
 				refreshToken().then((ok: boolean) => {
 					if (ok) {
-						doRequest(path, method, data, true, timeoutMs).then((b: UTSJSONObject | null) => {
+						doRequest(path, method, replayData, true, timeoutMs).then((b: UTSJSONObject | null) => {
 							finish(b)
 						})
 					} else {
@@ -432,9 +489,11 @@ function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, 
 			}
 			// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
 			if (res.statusCode === 401 && !retried) {
+				// 2026-10-30（P0）：同 doRequest —— 重放用深拷贝体（见上方注释）
+				const replayData = cloneBodyForReplay(data)
 				refreshToken().then((ok: boolean) => {
 					if (ok) {
-						doRawRequest(path, method, data, true).then((r: HttpResult) => {
+						doRawRequest(path, method, replayData, true).then((r: HttpResult) => {
 							finish(r)
 						})
 					} else {
@@ -515,9 +574,11 @@ function doUploadFileHttp(
 				}
 				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
 				if (res.statusCode === 401 && !retried) {
+					// 2026-10-30（P0）：上传链同样用深拷贝的 formData 重放（同 doRequest 口径）
+					const replayForm = cloneBodyForReplay(formData)
 					refreshToken().then((ok: boolean) => {
 						if (ok) {
-							doUploadFileHttp(path, filePath, name, formData, timeout, true).then((r: HttpResult) => {
+							doUploadFileHttp(path, filePath, name, replayForm, timeout, true).then((r: HttpResult) => {
 								resolve(r)
 							})
 						} else {

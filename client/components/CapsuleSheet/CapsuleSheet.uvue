@@ -45,7 +45,7 @@
 			<text v-else class="note-text">{{ existingStatus == 'due' ? '这枚胶囊已到期，打开回看那时的自己' : '已封存 · 到期 ' + existingDueText }}</text>
 			<!-- 63:87 主按钮 48px→92.3rpx r24 锈红 #B05A3A（§W 修订：原注释误留旧琥珀色）
 			     2026-10-15：按钮语义随状态分派（未封存=封存 / 已到期=打开 / 封存中=撤销），样式沿用画布真值 -->
-			<view class="main-btn" @tap="onMainTap">
+			<view class="main-btn" :class="{ 'main-btn-off': !capChecked || submitting }" @tap="onMainTap">
 				<text class="main-btn-text">{{ existingId == '' ? '封存胶囊' : (existingStatus == 'due' ? '打开胶囊' : '撤销封存') }}</text>
 			</view>
 		</view>
@@ -116,9 +116,16 @@
 	let existingId = ref('')
 	let existingStatus = ref('') // sealed（封存中）/ due（已到期）
 	let existingDueText = ref('')
+	// 2026-10-31（P2 J-11）：**首帧竞态**。`existingId` 只可能在下面的 listCapsules 落定后变非空，
+	// 而主按钮从第一帧就可点 ⇒ 网络慢/用户手快时会按"无封存"路径**再封一次**；后端对同内容重复封存
+	// **不拦截**（每次新建一行）⇒ 同一记忆挂两枚胶囊，且撤销只能撤掉其中一枚（用户以为没撤掉）。
+	// 故：查询落定前按钮禁用 + onMainTap/onConfirm 二次校验（禁用只影响观感，双击/无障碍仍可触发）。
+	let capChecked = ref(false)
 
 	onMounted((): void => {
 		if (props.contentId == '') {
+			// 无关联内容：本来就不允许封存（onConfirm 显式拒绝），无需等查询
+			capChecked.value = true
 			return
 		}
 		// 拉一次列表（后端把惰性到期扫描挂在该端点上，见 capsule_api.listCapsules 注释）
@@ -137,6 +144,8 @@
 				existingDueText.value = shortDate(r.getString('open_at') ?? '')
 				break
 			}
+			// 2026-10-31（P2 J-11）：查询落定（无论有无封存）才放开按钮——此后 existingId 才是真值
+			capChecked.value = true
 		})
 	})
 
@@ -148,6 +157,11 @@
 
 	/** 主按钮分派（2026-10-15 · 台账 §4.20 ㉕）：未封存→封存（原路径）；已到期→打开；封存中→撤销 */
 	function onMainTap(): void {
+		// 2026-10-31（P2 J-11）：查询未落定 ⇒ 分派依据（existingId）还不可信，一律拦下
+		if (!capChecked.value) {
+			uni.showToast({ title: '正在检查是否已封存…', icon: 'none' })
+			return
+		}
 		if (existingId.value == '') {
 			onConfirm()
 			return
@@ -206,6 +220,11 @@
 
 	function onConfirm(): void {
 		if (submitting.value) {
+			return
+		}
+		// 2026-10-31（P2 J-11）：二次校验（禁用态只是观感，快速双击/无障碍仍可能触达）
+		if (!capChecked.value) {
+			uni.showToast({ title: '正在检查是否已封存…', icon: 'none' })
 			return
 		}
 		if (props.contentId == '') {
@@ -417,6 +436,10 @@
 		background-color: var(--c-rust-500, #B05A3A);
 		justify-content: center;
 		align-items: center;
+	}
+	/* 2026-10-31（P2 J-11）：不可点态（查询中 / 提交中）。只降不透明度，不改画布几何与色值 */
+	.main-btn-off {
+		opacity: 0.6;
 	}
 	.main-btn-text {
 		font-family: "Sarasa Gothic SC", sans-serif;

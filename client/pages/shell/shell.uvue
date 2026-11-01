@@ -14,7 +14,7 @@
 		     失败也放行——api.uts 401 自愈重登兜底，不卡白屏） -->
 		<TabIndex v-if="ready && everIndex" v-show="activeTab == 'index'" :shown-seq="indexShownSeq" :saved-seq="savedSeq" />
 		<TabAi v-if="ready && everAi" v-show="activeTab == 'ai'" :prefill-title="aiTitle" :prefill-summary="aiSummary" :saved-seq="savedSeq" :shown-seq="aiShownSeq" />
-		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" />
+		<TabSearch v-if="ready && everSearch" v-show="activeTab == 'search'" :type-query="searchType" :saved-seq="savedSeq" @typeconsumed="onTypeConsumed" />
 		<TabProfile v-if="ready && everProfile" v-show="activeTab == 'profile'" :shown-seq="profileShownSeq" :saved-seq="savedSeq" />
 		<TabBar :active="activeTab" :embedded="true" @plus="openSheet" @tab="onTabTap" />
 		<RecordSheet v-if="sheetOpen" :initial-mode="sheetMode" @close="onSheetClose" @saved="onSaved" />
@@ -25,6 +25,7 @@
 	import { ref, watch } from 'vue'
 	import { onLoad, onBackPress } from '@dcloudio/uni-app'
 	import { ensureLogin } from '@/utils/auth'
+	import { cancelChatStream } from '@/utils/chat_api'
 	import { shellActiveTab, shellNavSeq, shellNavTab, shellNavQuery, aiAttachOpen, shellSheetSeq, shellSheetMode } from '@/utils/shell_state'
 
 	const VALID_TABS = ['index', 'ai', 'search', 'profile']
@@ -119,8 +120,13 @@
 		// 原实现只在 `onBackPress` 且 `activeTab=='ai'` 时复位 `aiAttachOpen` ⇒ 用户
 		// 「AI 开附件面板 → 切到"我的" → 按返回键」时：①返回键不再管这个面板（走默认退出 App）
 		// ②切回 AI 时面板**还开着**（残留 true）。切 tab 即收面板是唯一自洽语义。
+		// 2026-10-30（P2 D-13）：改成**无条件**复位 —— 原条件只覆盖"从 ai 切走"这一条路径，
+		// 壳被 reLaunch 重建（shell_state 回壳兜底）时面板会以 true 状态回来。
+		aiAttachOpen.value = false
 		if (activeTab.value == 'ai' && tab != 'ai') {
-			aiAttachOpen.value = false
+			// 2026-10-30（P1-24）：切离对话 tab 即中断流式（TabAi 是 v-show 常驻、不会卸载，
+			// 不在这里取消就会一直收帧写共享预览 ref，且 chatStreamActive 永不复位）。
+			cancelChatStream()
 		}
 		if (tab == 'ai') {
 			everAi.value = true
@@ -143,6 +149,13 @@
 			// RC-10：切到 AI 时广播一次，让 TabAi 重读上下文预填（回壳不再重挂本组件）
 			aiShownSeq.value = aiShownSeq.value + 1
 		}
+	}
+
+	// 2026-10-31（P2 J-4）：type 意图消费后复位（TabSearch 应用完回报 `typeconsumed`）。
+	// 不清零的后果：searchType 作为**常驻状态**留在壳里，下一次不带 type 的深链/组件请求会继承
+	// 上一次的筛选意图；且同值重复请求因 prop 未变而 watch 不触发（点了没反应）。
+	function onTypeConsumed(): void {
+		searchType.value = ''
 	}
 
 	/** TabBar 嵌入式回调：四 tab 全壳内 v-show 切换（P2 终态，零老路） */

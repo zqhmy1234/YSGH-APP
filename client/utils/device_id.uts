@@ -8,9 +8,11 @@
  *   ① ANDROID_ID（原生插件 `yishu-device-id`）—— 权威源：清缓存/同签名重装均不变
  *   ② 本地 storage 上次已知值 —— 插件临时不可用（如标准基座）时**不至于换号**
  *   ③ 框架 `uni.getDeviceInfo().deviceId` —— 最弱：官方文档明载清空 Storage 即变，仅作兜底
- *   ④ **仅 dev 构建**：本地持久化的 dev 设备 id —— 让标准调试基座（无原生插件）也能登录，
- *      保住开发循环；`ENV='prod'` 的正式包**不会**走到这一步（正式包宁可显式失败，
- *      也不静默造出一个新账号——那正是用户会误判"数据丢了"的场景）
+ *   ④ **安装级兜底（dev + prod 都启用，2026-10-30 起）**：本地持久化的安装标识 ——
+ *      ①dev：让标准调试基座（无原生插件）也能登录，保住开发循环（source=dev_fallback）；
+ *      ②prod：① ② ③ 全失败时**也必须给出非空 id**（source=install_fallback）——
+ *      否则 `POST /events/sync` 被 422 拒收 ⇒ 记录存得住但时间轴永远空白（真实事故）。
+ *      原设计"正式包宁可显式失败也不造新账号"已被该事故推翻：留空 = 整条链 100% 失效。
  *
  * 消费方：`utils/auth.uts`（登录）、`utils/sync_client.uts`、`utils/event_sync.uts`
  * （后两者原 import auth 的 `DEVICE_ID` 常量；2026-09-21 随本文件收口到此处，保持"单源"纪律）。
@@ -25,6 +27,9 @@ export const SOURCE_ANDROID_ID = 'android_id'
 export const SOURCE_STORAGE = 'storage'
 export const SOURCE_FRAMEWORK = 'framework'
 export const SOURCE_DEV_FALLBACK = 'dev_fallback'
+// 2026-10-30（修 422）：正式包的安装级兜底单独一个来源名——与 dev_fallback 区分开，
+// 否则排障时看到 source=dev_fallback 会误判"这是开发包"，而实际是正式包走了第⑤层。
+export const SOURCE_INSTALL_FALLBACK = 'install_fallback'
 export const SOURCE_NONE = 'none'
 
 let _id = ''
@@ -38,7 +43,8 @@ export function getDeviceIdSource(): string {
 /** dev 兜底设备 id（持久化随机串；仅 ENV!='prod' 启用，见文件头 ④） */
 function devFallbackId(): string {
 	let v = uni.getStorageSync(KEY_DEV_FALLBACK) as string
-	if (v == null || v == '') {
+	// 2026-10-30（修 422）：空白串按"没有"处理（同 getDeviceId 的归一，防脏值被当有效 id 复用）
+	if (v == null || v.trim() == '') {
 		// 时间戳 + 随机后缀：dev 期足够唯一，且不引入额外依赖
 		v = 'dev-' + Date.now().toString() + '-' + Math.floor(Math.random() * 1000000).toString()
 		uni.setStorageSync(KEY_DEV_FALLBACK, v)
@@ -94,10 +100,29 @@ export function getDeviceId(): string {
 		}
 	}
 
-	// ④ dev 专用兜底（保住标准基座下的开发循环；正式包不启用）
-	if (id == '' && ENV != 'prod') {
+	// 2026-10-30（修 422）：空白串同样算"取不到"。
+	// 后端 `min_length=1` 只查长度，一个 " "（或插件偶发返回的空格/换行）能过校验却是个
+	// 无效标识 ⇒ 会静默造出一个"每台设备都相同"的假身份。故 ①②③ 之后统一归一。
+	if (id.trim() == '') {
+		id = ''
+	}
+
+	// ④ **安装级兜底（dev + prod 都启用）** —— 2026-10-30 真机事故修复：**device_id 绝不允许为空**。
+	// 事故：正式包里 ①②③ 全失败（原生插件抛异常 + 新装 Storage 空 + 框架 deviceId 为空）
+	// ⇒ getDeviceId() 返回 '' ⇒ 所有 `POST /events/sync` 被后端 422
+	// （`String should have at least 1 character`，见 schemas/event.py:136 device_id min_length=1）
+	// ⇒ 表现为：文字/语音保存后弹 HTTP 422；照片上传成功但**时间轴不出现日卡**（L1 提交被拒）；
+	// 日卡重复（提交失败后本地重试与前一次并存）。
+	//
+	// 为什么允许 prod 也生成：这条链的产出**只用于本机身份**，语义是"安装级稳定串"（
+	// devFallbackId 内部就是「读持久化键 → 无则生成并持久化」，不含任何 dev 专属语义）。
+	// 两种方案的取舍：①留空 → 整条记录链 100% 失效（用户看到的是"存不进去"）；
+	// ②生成 → 最坏情况是清 Storage/换机后被视为新设备（数据在旧账号下，不丢）。
+	// 后者远优于前者，故选 ②。Storage 被清时 id 会变，这是本层**已知且接受**的代价，
+	// 排障靠 source=install_fallback 一眼分辨（正式包若常态出现本来源，说明 ① 插件真的挂了）。
+	if (id == '') {
 		id = devFallbackId()
-		source = SOURCE_DEV_FALLBACK
+		source = ENV != 'prod' ? SOURCE_DEV_FALLBACK : SOURCE_INSTALL_FALLBACK
 	}
 
 	_id = id

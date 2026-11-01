@@ -137,12 +137,17 @@ def _search_by_image_impl(
         except Exception:  # noqa: BLE001
             logger.warning("规则级敏感过滤异常，跳过")
 
+    # 2026-10-30（P2 C-5）：以图搜图**不支持 offset 分页**（查询图只有一份，翻页无意义），
+    # 但 total/has_more 的口径必须与文本检索一致，否则同一份 SearchResult 契约在
+    # 两个端点上有两套含义（客户端只能按最保守的解释写）。
+    #   total = 组装后的候选条数（切片前，上限 limit）；has_more = 命中数撑满了这次取数窗口。
     return SearchResult(
         query=q.q,
         rewritten_query=caption or None,
         intent="image",
         hits=hits,
         total=len(hits),
+        has_more=bool(hits) and len(hits) >= q.limit,
         latency_ms=latency_ms,
         degraded=degraded,
     )

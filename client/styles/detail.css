@@ -589,3 +589,37 @@
 		font-size: var(--d-lattice-p10, 19.2rpx);
 		color: var(--c-ink-900, #3A2E25);
 	}
+
+/* ── 2026-10-30（P1-19）详情页显式错误态 ──
+   原先是模板内联 style + 裸十六进制色值（4 处），既过不了令牌棘轮，也无法统一改色。
+   改为类 + 令牌：var(--令牌, 回退字面量) 是仓内既定形态，回退值被令牌审计剔除计数。 */
+.detail-missing {
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 80rpx;
+}
+.detail-missing-title {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 32rpx;
+	color: var(--c-ink-900, #3A2E25);
+}
+.detail-missing-sub {
+	margin-top: 16rpx;
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 26rpx;
+	text-align: center;
+	color: var(--c-ink-500, #8A7A6A);
+}
+.detail-missing-btn {
+	margin-top: 48rpx;
+	padding: 20rpx 56rpx;
+	border-radius: 44rpx;
+	background-color: var(--c-rust-500, #B05A3A);
+}
+.detail-missing-btn-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: 28rpx;
+	color: var(--c-white, #FFFFFF);
+}

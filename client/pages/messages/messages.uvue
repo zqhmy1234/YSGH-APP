@@ -4,7 +4,11 @@
 		<!-- 铁律 11.5：同层 absolute 兄弟按 DOM 顺序绘制，返回图标必须排在标题容器**之后**，
 		     否则被全宽 750rpx 的 .n4_95 盖住 → @tap 收不到事件（真机 2026-08-31：返回键完全点不动） -->
 		<view class="n4_95"> <!-- 标题容器 -->
-			<text class="n4_96">消息</text> <!-- 页标题 -->
+			<!-- 2026-10-30（P1-38）：未读数**上屏**。原实现 `unreadCount` 只在脚本里算、
+			     模板零引用 ⇒ 用户完全看不到还有几条没读（列表圆点只覆盖"已加载的那一页"）。
+			     本页是画布绝对定位（帧 4:89），插入浮层会压到标题/返回键，故用标题后缀这种
+			     零布局风险的方式表达；数字来自 `/messages/unread-count` 真值。 -->
+			<text class="n4_96">消息{{ unreadCount > 0 ? '（' + unreadCount + '）' : '' }}</text>
 		</view>
 		<image class="n4_93" src="/static/icons/i4_93.svg" @tap="goBack" /> <!-- icon: 返回 -->
 		<!-- R7 小接线（W2-4 对拍行动项）：「全部已读」——markAllRead 封装在（play.uts:319）但零触发。
@@ -12,7 +16,10 @@
 		<view class="readall-btn" @tap="onMarkAllRead">
 			<text class="readall-text">全部已读</text>
 		</view>
-		<text class="n4_97">今天</text> <!-- 日期分组 -->
+		<!-- 2026-10-30（P2 G-1 分组）：原为**写死的**「今天」—— 昨天/上周的消息上面也印「今天」，
+		     跨天不刷新、旧消息永远被称作今天（口径假）。现由首条消息的 sent_at 推导（首组名），
+		     无消息时为空串（该节点是 absolute 画布锚点，隐藏不影响任何布局）。 -->
+		<text class="n4_97">{{ firstGroupLabel }}</text> <!-- 日期分组（数据推导） -->
 		<!-- R7：回响卡改数据驱动——模板原硬编码「天台看流星雨」（昨天 seed 的过期文案），
 		     峰宝跨天后看到的就是它。echoCard null（无回响/名额耗尽/内容已删）整卡隐藏，诚实空态 -->
 		<view class="n4_98" v-if="echoCard != null" @tap="openFeatured"> <!-- 回响卡（HEAD 交互接回） -->
@@ -26,27 +33,59 @@
 			</view>
 		</view>
 		<!-- 消息列表（HEAD 交互接回：3 静态行→filteredMessages v-for；行结构统一用画布行1样式） -->
-		<view v-if="filteredMessages.length > 0" class="n4_106">
-			<view v-for="(msg, idx) in filteredMessages" :key="idx" class="n4-msgwrap">
-				<view class="n4_107" @tap="openMessage(msg)">
-					<view class="n4_108" :style="{ backgroundColor: msg.avatarBg }"> <!-- 图标底（动态色） -->
-						<image class="n4_109" :src="msg.iconPath" /> <!-- icon: 按消息类型 -->
-					</view>
-					<view class="n4_111"> <!-- 文案列 -->
-						<view class="n4_111-top">
-							<text class="n4_112">{{ msg.title }}</text>
-							<text class="n4_114">{{ msg.time }}</text>
-						</view>
-						<text class="n4_113">{{ msg.summary }}</text>
-					</view>
-					<view v-if="!msg.read" class="n4-unread-dot"></view>
+		<!-- 2026-10-30（P2 G-1 结构性改造）：**本页此前没有任何滚动容器** —— `.n4_106`/`.n4_98`
+		     全是 absolute、`page-root` 高度=视口 ⇒ 超过一屏的消息既滚不到、也点不到（加载更多
+		     更无从谈起）。现按 detail.uvue「一页一个滚动根」与 TabSearch `.n2-results`
+		     （absolute + top/bottom 的 scroll-view 实证先例）把列表区包进 scroll-view：
+		     白卡 `.n4_106` 仍留在滚动区内、改为**静态入流**（宽 100%），视觉（白底/圆角/投影/
+		     内边距/行结构）零改动，只是高度改由内容决定、超出时在卡内滚动。
+		     标题 / 返回键 / 「全部已读」/ 分组标签 / 回响卡仍在滚动区外 absolute（固定不跟随滑动）。 -->
+		<scroll-view v-if="filteredMessages.length > 0" class="msg-scroll" direction="vertical" :show-scrollbar="false">
+			<view class="n4_106">
+				<!-- 2026-10-30（P2 G-6 收口）：**「有旧数据 + 本次刷新失败」原本完全不可见** ——
+				     `loadFailed` 只在空态（`filteredMessages.length == 0`）里被读，列表非空时
+				     这个信号没有任何出口，用户看到的是一份"看着正常但没有更新"的列表。
+				     现于卡片顶部给一行可点的次级提示（数据照旧展示、不隐藏），点它走 onEmptyTap
+				     重试；成功后 `loadFailed` 复位，这行自动消失。 -->
+				<view v-if="loadFailed && filteredMessages.length > 0" class="refresh-failed" @tap="onEmptyTap">
+					<text class="refresh-failed-text">本次刷新没成功 · 点这里重试</text>
 				</view>
-				<!-- 就地展开已废弃（§V 拍板 2026-09-03：太简陋）→ 复盘·语音完成改贴底 MessageDetailSheet -->
+				<!-- 2026-10-30（P2 G-1）：`:key` 原用**下标** —— 消息刷新/已读状态变化后列表重建时，
+				     同下标的行会被当成同一节点复用（标记已读后圆点可能不更新、内容错位闪烁）。
+				     消息有稳定 id，直接用它（同 P2 B-6 照片条 `:key` 用下标的同类问题）。 -->
+				<view v-for="(msg, idx) in filteredMessages" :key="msg.id" class="n4-msgwrap">
+					<!-- 2026-10-30（P2 G-1 分组）：跨组分隔行。**首组名由滚动区外那句 `.n4_97` 承载**
+					     （画布只有一处标签锚点），此处只画后续分组的切换行，避免同屏出现两次「今天」。 -->
+					<view v-if="msg.showGroupBefore" class="msg-group-row">
+						<text class="msg-group-text">{{ msg.groupLabel }}</text>
+					</view>
+					<view class="n4_107" @tap="openMessage(msg)">
+						<view class="n4_108" :style="{ backgroundColor: msg.avatarBg }"> <!-- 图标底（动态色） -->
+							<image class="n4_109" :src="msg.iconPath" /> <!-- icon: 按消息类型 -->
+						</view>
+						<view class="n4_111"> <!-- 文案列 -->
+							<view class="n4_111-top">
+								<text class="n4_112">{{ msg.title }}</text>
+								<text class="n4_114">{{ msg.time }}</text>
+							</view>
+							<text class="n4_113">{{ msg.summary }}</text>
+						</view>
+						<view v-if="!msg.read" class="n4-unread-dot"></view>
+					</view>
+					<!-- 就地展开已废弃（§V 拍板 2026-09-03：太简陋）→ 复盘·语音完成改贴底 MessageDetailSheet -->
+				</view>
+				<!-- 2026-10-30（P2 G-1 分页）：只有服务端 `has_more` 为真才出现；加载中禁用重入
+				     （loadingMore 同 onRetry 的单飞范式）。没有更多时整行隐藏，不印假占位。 -->
+				<view v-if="hasMore" class="load-more" @tap="loadMoreMessages">
+					<text class="load-more-text">{{ loadingMore ? '加载中…' : '加载更多' }}</text>
+				</view>
 			</view>
-		</view>
+		</scroll-view>
 		<!-- 空状态 -->
-		<view v-if="filteredMessages.length == 0" class="n4-empty">
-			<text class="n4-empty-text">暂无消息</text>
+		<!-- 2026-10-30（P2 G-6）：失败态可点重试。空态本身不在滚动区内（列表为空时才出现），
+		     所以不承诺"下拉刷新"这种本页没有的手势，只给可点的重试入口。 -->
+		<view v-if="filteredMessages.length == 0" class="n4-empty" @tap="onEmptyTap">
+			<text class="n4-empty-text">{{ loadFailed ? '消息加载失败 · 点这里重试' : '暂无消息' }}</text>
 		</view>
 		<!-- ═══ 回响弹层（F6a · W1-3）：浮层不是页面（峰宝拍板铁律 1 同族） ═══ -->
 		<!-- R9 批次3：绑 echoSheetCard（双来源——页面实时卡 / 消息 payload 快照卡，拍板 A-1） -->
@@ -61,17 +100,31 @@
 </template>
 
 <script setup lang="uts">
-	import { ref, computed } from 'vue'
+	import { ref, computed, watch } from 'vue'
 	import { onShow } from '@dcloudio/uni-app'
 	import { fetchTodayEcho, dismissEcho, EchoCard } from '@/utils/play_echo'
-import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessage, putCachedMessages, getCachedMessages, putCachedUnread, getCachedUnread } from '@/utils/play_messages'
-	import { formatIsoShortTime } from '@/utils/time'
-	import { backToShell } from '@/utils/shell_state'
+import { fetchMessagePage, MessagePage, fetchUnreadCount, messagesFetchFailed, markMessageRead, markAllRead, AppMessage, putCachedMessages, getCachedMessages, putCachedUnread, getCachedUnread } from '@/utils/play_messages'
+	// 2026-10-30（P2 G-1 分组）：新增 parseIsoMs / dayKey —— 项目唯一的 ISO 解析与「本地日期键」实现，
+	// 分组判断不再靠字符串截取（`+08:00` 偏移串会让 substring 口径跨天算错）。
+	import { formatIsoShortTime, parseIsoMs, dayKey } from '@/utils/time'
+	// 2026-10-31：消息正文清洗（防 JSON 结构体直接展示）
+	import { prettyText } from '@/utils/err_text'
+	import { backToShell, echoDismissSeq, echoDismissContentId, notifyEchoDismissed } from '@/utils/shell_state'
 	import { openCapsule, listCapsules } from '@/utils/capsule_api'
 
 	// ── 响应式状态 ──
 	let unreadCount = ref(0)
+	// 2026-10-30（P2 G-6）：最近一次列表拉取是否失败（区分「加载失败」与「真的没有消息」）
+	let loadFailed = ref(false)
 	let allMessages = ref<Array<AppMessage>>([])
+	// 2026-10-30（P2 G-1 分页）：游标 + 是否还有下一页 + 在途标记（单飞，防连点连发）。
+	// 首屏与「加载更多」共用同一端点 `fetchMessagePage`（O17 契约 page{items,cursor,has_more}），
+	// 原实现只用 `fetchMessages`（内部固定 limit=50、**丢弃 cursor/has_more**）⇒ 第 51 条之后
+	// 的消息在客户端永远取不到。
+	const MSG_PAGE_SIZE: number = 20
+	let msgCursor = ref('')
+	let hasMore = ref(false)
+	let loadingMore = ref(false)
 	// 回响弹层（W1-3）：GET /echo/today 真端点；空回响时按峰宝拍板（2026-09-02）注入演示数据供 UI 验证
 	let echoVisible = ref(false)
 	let echoCard = ref<EchoCard | null>(null)
@@ -93,6 +146,9 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		markAllRead().then((ok: boolean) => {
 			if (ok) {
 				unreadCount.value = 0
+				// 2026-10-30（P1-38）：本地乐观值与缓存、服务端三处必须同步推进，
+				// 否则下次进入先用缓存值铺屏（显示旧未读数）、再被服务端覆盖，闪一下。
+				putCachedUnread(0)
 				// R9-E：渲染真源是 toItem 的 m.status != 'unread'（181 行），且 filteredMessages computed
 				// 依赖 allMessages.value 数组引用——旧码改幽灵字段 read 且 in-place 改元素，双失效圆点不动。
 				// 改 status 真源 + slice() 重建引用触发 computed 重算
@@ -131,7 +187,16 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		msgType: string
 		// FE1：MessageOut.content_id（null → ''；''=无关联内容，点击保持既有就地展示路径）
 		contentId: string
-		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number, msgType: string, contentId: string) {
+		// 2026-10-30（P0-6）：原**漏声明该字段**，而 `onMessageTap` 里却在读 `msg.capsuleId`
+		// （:298）⇒ UTS 严格类型下访问未声明属性：轻则分支恒失效、重则编译报错。
+		// `AppMessage.capsuleId` 在 play_messages.uts 早已解析（胶囊到期消息需要它）。
+		capsuleId: string
+		// 2026-10-30（P2 G-1 分组）：分组键（本地日界，yyyy-mm-dd）+ 展示名（今天/昨天/更早）
+		// + 本行之前是否需要画一条跨组分隔行（由 filteredMessages 单次遍历填充，模板只读）。
+		groupKey: string
+		groupLabel: string
+		showGroupBefore: boolean
+		constructor(id: number, title: string, summary: string, time: string, iconPath: string, avatarBg: string, read: boolean, type: number, msgType: string, contentId: string, capsuleId: string, groupKey: string, groupLabel: string, showGroupBefore: boolean) {
 			this.id = id
 			this.title = title
 			this.summary = summary
@@ -142,6 +207,10 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			this.type = type
 			this.msgType = msgType
 			this.contentId = contentId
+			this.capsuleId = capsuleId
+			this.groupKey = groupKey
+			this.groupLabel = groupLabel
+			this.showGroupBefore = showGroupBefore
 		}
 	}
 
@@ -170,11 +239,45 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		return 'rgba(176, 89, 59, 0.12)'
 	}
 
+	// ── 日期分组（2026-10-30 · P2 G-1）──────────────────────────────────────────
+	// 根因：模板原写死 `<text class="n4_97">今天</text>`，与数据无关 —— 昨天的消息也印「今天」，
+	// 页面常驻跨天更不会变。现按 `sent_at` 的真实日期分桶（今天 / 昨天 / 更早）：
+	//  · 用 `parseIsoMs` 解析（全项目唯一 ISO 解析，按真实偏移换算 UTC 毫秒），
+	//    再用 `dayKey` 取**本地**日界键（不是字符串截取 —— `+08:00` 偏移串会让 substring 口径错天）；
+	//  · 「昨天」= 当日零点往前 86400000ms 的日界键（设备时区无夏令时的常规情形精确；
+	//    有夏令时的时区在切换当天的边界上可能差一天，属可接受的显示级误差，登记交付说明）。
+	/** 本地日界键（yyyy-mm-dd）；无效/缺失时间返回 'unknown'（归入「更早」桶，不伪装成今天） */
+	function groupKeyOf(sentAt: string): string {
+		const ms = parseIsoMs(sentAt)
+		if (ms <= 0) {
+			return 'unknown'
+		}
+		return dayKey(ms)
+	}
+
+	/** 分组展示名：今天 / 昨天 / 更早 */
+	function groupLabelOf(sentAt: string): string {
+		const ms = parseIsoMs(sentAt)
+		if (ms <= 0) {
+			return '更早'
+		}
+		if (dayKey(ms) == dayKey(Date.now())) {
+			return '今天'
+		}
+		if (dayKey(ms) == dayKey(Date.now() - 86400000)) {
+			return '昨天'
+		}
+		return '更早'
+	}
+
 	function toItem(m: AppMessage): MessageItem {
 		return new MessageItem(
 			m.id,
-			m.title,
-			m.body,
+			// 2026-10-31（走查：JSON 直接暴露给用户）：标题/正文都过一遍清洗。
+			// 系统消息的 body 可能是 JSON 串，列表 `<text>{{ msg.summary }}</text>`
+			// 会把它原样摊在列表里（花括号 + 引号），既难读也显得粗糙。
+			prettyText(m.title, ''),
+			prettyText(m.body, ''),
 			formatIsoShortTime(m.sentAt),
 			msgIcon(m.msgType),
 			msgBg(m.msgType),
@@ -182,16 +285,38 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			msgSegment(m.msgType),
 			m.msgType,
 			// FE1：AppMessage.contentId（play.uts 解析 MessageOut.content_id，null→''）
-			m.contentId
+			m.contentId,
+			m.capsuleId,
+			groupKeyOf(m.sentAt),
+			groupLabelOf(m.sentAt),
+			// 首行永远不画分隔行（首组名由滚动区外 `.n4_97` 承载），此处给 false，遍历时再改
+			false
 		)
 	}
 
+	// 2026-10-30（P2 G-1 分组）：单次遍历同时算出「哪些行之前要画跨组分隔行」。
+	// 列表由服务端按 sent_at 倒序下发，同一分组必然连续 ⇒ 只需与上一行的键比较。
 	let filteredMessages = computed((): Array<MessageItem> => {
 		const out: Array<MessageItem> = []
+		let prevKey = ''
 		for (let i = 0; i < allMessages.value.length; i++) {
-			out.push(toItem(allMessages.value[i]))
+			const it = toItem(allMessages.value[i])
+			if (i > 0 && it.groupKey != prevKey) {
+				it.showGroupBefore = true
+			}
+			prevKey = it.groupKey
+			out.push(it)
 		}
 		return out
+	})
+
+	/** 滚动区外那句分组标签：取**首条消息**的分组名（无消息时为空串，节点 absolute 不影响布局） */
+	let firstGroupLabel = computed((): string => {
+		const arr = filteredMessages.value
+		if (arr.length == 0) {
+			return ''
+		}
+		return arr[0].groupLabel
 	})
 
 	/** 返回上级（设计稿消息中心由别的页签进入，带返回导航） */
@@ -207,9 +332,41 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 	}
 
 	/** 加载消息列表 + 未读数（onShow 每次进入刷新）；结果回填模块级缓存供下次进入秒出 */
+	/** 2026-10-30（P2 G-6）：**失败重试入口**。两处共用：
+	 *  · 列表为空时的空态文案（「消息加载失败 · 点这里重试」）；
+	 *  · 列表非空但本次刷新失败时，卡片顶部那行「本次刷新没成功 · 点这里重试」。
+	 *  非失败态（真的没有消息）点击无动作——不给假交互。 */
+	function onEmptyTap(): void {
+		if (loadFailed.value) {
+			loadFailed.value = false
+			loadMessages()
+		}
+	}
+
 	function loadMessages(): void {
-		fetchMessages('').then((list: Array<AppMessage>) => {
+		// 2026-10-30（P2 G-1）：首屏改用**分页端点** `fetchMessagePage`（原 `fetchMessages`
+		// 内部写死 limit=50 且丢弃 cursor/has_more ⇒ 第 51 条之后的消息客户端永远取不到）。
+		// 刷新前先清游标/翻页态：否则拿着上一轮的游标续拉一个已经换过的列表会造成重复或漏条。
+		msgCursor.value = ''
+		hasMore.value = false
+		fetchMessagePage('', '', MSG_PAGE_SIZE).then((page: MessagePage) => {
+			const list = page.items
+			// 2026-10-30（P2 G-2）：`onShow` 上的注释承诺「失败保持缓存内容（不清空）」，但这里
+			// 无条件 `allMessages.value = list` —— 而取数失败时 resolve 的是**空页**
+			// ⇒ 已显示的列表被清空、退回「暂无消息」（假空态），模块缓存也被写成空。
+			// 现按注释口径兑现：空响应不覆盖已有非空列表（消息在本端没有删除入口，"本来有条目却
+			// 返回空"实际上只能是请求失败/会话异常；真清空时下一次刷新仍为空，用户最多多看一眼旧数据）。
+			if (list.length == 0 && allMessages.value.length > 0) {
+				console.log('[messages] 本次拉取为空但本地已有条目，保留现有列表（疑似请求失败）')
+				loadFailed.value = messagesFetchFailed()
+				return
+			}
+			// 2026-10-30（P2 G-6）：**没有缓存时的空态也要能区分失败**
+			// （请求失败与"真没有消息"都返回空页，原先都渲染「暂无消息」）。
+			loadFailed.value = messagesFetchFailed()
 			allMessages.value = list
+			msgCursor.value = page.cursor
+			hasMore.value = page.hasMore
 			putCachedMessages(list)
 		})
 		fetchUnreadCount().then((n: number) => {
@@ -218,6 +375,59 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		})
 		// 2026-10-14（台账 §4.20 ⑭）：原有的 `loadEcho()` 已删——`onShow` 里本就紧跟一次
 		// `loadEcho()`，同一进入路径下 `/echo/today` 被请求两次（纯重复请求）。
+	}
+
+	/** 2026-10-30（P2 G-1）：「加载更多」—— 用当前游标续拉下一页，**按 id 去重后追加**。
+	 *  · 失败（`messagesFetchFailed()` 为真）：不清空、不推进游标、不隐藏入口，显式 toast 让用户重试；
+	 *  · 服务端返回空增量却仍报 has_more（游标异常）：主动收敛 hasMore=false，避免"点不完"的死循环；
+	 *  · 单飞：loadingMore 在途期间不重复发请求（同 onRetry 范式）。 */
+	function loadMoreMessages(): void {
+		if (loadingMore.value || !hasMore.value) {
+			return
+		}
+		loadingMore.value = true
+		fetchMessagePage('', msgCursor.value, MSG_PAGE_SIZE).then((page: MessagePage) => {
+			loadingMore.value = false
+			if (messagesFetchFailed()) {
+				uni.showToast({ title: '加载更多失败，请稍后再试', icon: 'none' })
+				return
+			}
+			const merged: Array<AppMessage> = []
+			const seenIds: Array<number> = []
+			const cur = allMessages.value
+			for (let i = 0; i < cur.length; i++) {
+				merged.push(cur[i])
+				seenIds.push(cur[i].id)
+			}
+			let added = 0
+			for (let i = 0; i < page.items.length; i++) {
+				const it = page.items[i]
+				let dup = false
+				for (let j = 0; j < seenIds.length; j++) {
+					if (seenIds[j] == it.id) {
+						dup = true
+						break
+					}
+				}
+				if (!dup) {
+					merged.push(it)
+					seenIds.push(it.id)
+					added = added + 1
+				}
+			}
+			if (added == 0 && page.hasMore) {
+				console.log('[messages] 下一页无新增条目却仍报 has_more，停止翻页（游标异常）')
+				hasMore.value = false
+				return
+			}
+			// 2026-10-30（P2 G-6）：分页这一跳成功 ⇒ 网络/会话是通的，撤销「本次刷新没成功」提示。
+			// 否则卡片顶部那行会与刚拉到的新数据自相矛盾（提示说失败、数据却在增加）。
+			loadFailed.value = false
+			allMessages.value = merged
+			msgCursor.value = page.cursor
+			hasMore.value = page.hasMore
+			putCachedMessages(merged)
+		})
 	}
 
 	/** 今日回响：真端点（GET /echo/today）。回响卡点击假 id 触发 detail 404 的演示路径已随
@@ -265,8 +475,8 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			msg.read = true
 			if (unreadCount.value > 0) {
 				unreadCount.value--
+				putCachedUnread(unreadCount.value) // P1-38：缓存同步（避免下次进入先闪旧值）
 			}
-			markMessageRead(msg.id)
 			// R9-E：同步 allMessages 真源 status + 重建引用，computed 重算后圆点即时消失
 			//（旧码只改渲染副本 MessageItem.read，computed 不重算，圆点不动）
 			const arr = allMessages.value
@@ -277,6 +487,26 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 				}
 			}
 			allMessages.value = arr.slice()
+			// 2026-10-30（P2 G-3）：原实现 `markMessageRead(msg.id)` 是**发完即忘** —— 请求失败时
+			// 圆点已消失、未读数已自减，服务端却仍是 unread ⇒ 下次进入数字又跳回去（本地与服务端
+			// 长期不一致，用户以为"看过了"却被重复提醒）。现按返回值回滚三处状态，失败即如实复原。
+			markMessageRead(msg.id).then((ok: boolean) => {
+				if (ok) {
+					return
+				}
+				msg.read = false
+				const src = allMessages.value
+				for (let i = 0; i < src.length; i++) {
+					if (src[i].id == msg.id) {
+						src[i].status = 'unread'
+						break
+					}
+				}
+				allMessages.value = src.slice()
+				unreadCount.value = unreadCount.value + 1
+				putCachedUnread(unreadCount.value)
+				console.log('[messages] 标记已读失败，已回滚圆点与未读数（id=' + msg.id + '）')
+			})
 		}
 		if (msg.msgType == 'care_followup') {
 			// W1-3 存量暗雷修复（§T2）：无 tabBar 注册时 switchTab 跳 AI 页必败（switchTab 只认 tabBar 页）。
@@ -300,6 +530,10 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			}
 			if (msg.contentId != '') {
 				uni.navigateTo({ url: '/pages/detail/detail?contentId=' + msg.contentId })
+			} else {
+				// 2026-10-30（P2 G-5）：payload 缺 content_id 时原实现**静默返回** —— 用户点一条
+				// 「胶囊到期」提醒，界面毫无反应（项目军规：失败/无路可走不许静默）。显式说明。
+				uni.showToast({ title: '这条提醒没有关联记忆，可在时间轴查看', icon: 'none' })
 			}
 			return
 		}
@@ -312,7 +546,9 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		if (msg.msgType == 'daily_review' || msg.msgType == 'voice_done') {
 			// §V 拍板 A：贴底弹层展示完整正文+完整时间（替代就地展开）；「查看关联记忆」挂总账 A10
 			detailTitle.value = msg.title
-			detailBody.value = msg.summary
+			// 2026-10-31（走查：JSON 直接暴露给用户）：某些系统消息的 body 是 JSON 串，
+			// 直接塞进贴底弹层会把花括号引号摊给用户看。统一走 prettyText 清洗。
+			detailBody.value = prettyText(msg.summary, '这条消息暂无更多内容')
 			detailTime.value = msg.time
 			detailMsgType.value = msg.msgType
 			detailIcon.value = msg.iconPath
@@ -320,6 +556,22 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 			detailVisible.value = true
 			return
 		}
+		// 2026-10-31（走查 8.2：点一条未读「没有任何反馈」）
+		// 原实现只处理三类消息（有 contentId / daily_review / voice_done），其余类型
+		// 直接走到函数末尾 ⇒ 既不标记已读、也不弹层、也不给提示，用户点了以为卡死。
+		// 兜底：未读就标已读并回填本地状态（未读数同步减一），已读则给一句中性说明。
+		if (!msg.read) {
+			markMessageRead(msg.id).then((ok: boolean) => {
+				if (ok) {
+					msg.read = true
+					if (unreadCount.value > 0) {
+						unreadCount.value = unreadCount.value - 1
+					}
+				}
+			})
+			return
+		}
+		uni.showToast({ title: '这条消息没有更多内容', icon: 'none' })
 	}
 
 	function openFeatured(): void {
@@ -386,12 +638,30 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		dismissEcho(card.contentId).then((ok: boolean) => {
 			echoVisible.value = false
 			if (ok) {
+				// 2026-10-30（P1-36）：划掉成功后**本页大卡必须一起清**。
+				// 原实现只关弹层、不动 `echoCard` ⇒ 页面上那张「时间胶囊 · 去年今天」还在，
+				// 而且还能点开（点开又弹回同一张）—— 用户看到的正是"划掉了却没消失"。
+				echoCard.value = null
+				// 2026-10-30（P1-37）：广播给时间轴，回响状态单源
+				notifyEchoDismissed(card.contentId)
 				uni.showToast({ title: '今年不再提醒', icon: 'none' })
 			} else {
 				uni.showToast({ title: '设置未成功，请稍后再试', icon: 'none' })
 			}
 		})
 	}
+
+	// 2026-10-30（P1-37）：接收「时间轴划掉了」的广播，本页大卡同步消失
+	watch((): number => echoDismissSeq.value, (_n: number): void => {
+		if (echoCard.value == null) {
+			return
+		}
+		const id = echoDismissContentId.value
+		if (id == '' || echoCard.value.contentId == id) {
+			echoCard.value = null
+			console.log('[yishu] 回响已在时间轴划掉，消息页同步清除')
+		}
+	})
 </script>
 
 <style>
@@ -429,7 +699,10 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		position: absolute;
 		left: var(--d-card_margin_x, 38.5rpx);
 		top: var(--d-lattice-p110, 211.5rpx);
-		width: var(--d-lattice-p24, 46.2rpx);
+		/* 2026-10-30（P2 G-1）：宽度从画布的 24pt（46.2rpx，恰好等于两个字）放宽到 120rpx ——
+		     本节点是 absolute 左对齐单行文本，放宽只会向右延伸、不推动任何兄弟节点；
+		     原值在「今天/昨天/更早」两字下是刚好贴边，设备字体度量稍宽就会裁掉末字。 */
+		width: var(--d-raw-r120, 120rpx);
 		height: var(--d-lattice-p15, 28.8rpx);
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-weight: 600;
@@ -510,11 +783,23 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		font-size: var(--d-card_radius_small, 23.1rpx);
 		color: var(--c-ink-700, #5A4C40);
 	}
-	.n4_106 {
+	/* 2026-10-30（P2 G-1）：滚动视口 = 原列表卡的画布矩形（left/top/width 原值不动），
+	   高度改为「到屏幕底部」（absolute + top/bottom，TabSearch `.n2-results` 实证写法；
+	   uni-app x 的 scroll-view 必须有确定高度才滚得动，这里是页面内唯一的滚动根）。
+	   本页无 TabBar（二级页 navigateTo 进入），故 bottom 取 0，末尾留白由卡片 margin-bottom 给。 */
+	.msg-scroll {
 		position: absolute;
-		left: var(--d-card_margin_x, 38.5rpx);
+		/* 视口取「卡片矩形 + 左右各 7.7rpx」：卡片有 5.8rpx 模糊投影，视口若与卡片等宽会被裁掉
+		   （scroll-view 会裁剪子节点）；卡片再在内部左移 7.7rpx，落在画布原 x=38.5rpx 上。 */
+		left: var(--d-lattice-p16, 30.8rpx);
+		right: var(--d-lattice-p16, 30.8rpx);
 		top: var(--d-photo_hero_height, 576.9rpx);
+		bottom: 0;
+	}
+	.n4_106 {
+		/* 画布节点原为 absolute；进滚动区后必须**静态入流**，否则 scroll-view 算不出内容高度 */
 		width: var(--d-card_width, 673.1rpx);
+		margin-left: var(--d-lattice-p8, 7.7rpx);
 		flex-direction: column;
 		padding-left: var(--d-lattice-p6, 11.5rpx);
 		padding-right: var(--d-lattice-p6, 11.5rpx);
@@ -524,6 +809,50 @@ import { fetchMessages, fetchUnreadCount, markMessageRead, markAllRead, AppMessa
 		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
 		border-radius: var(--d-card_margin_x, 38.5rpx);
 		overflow: hidden;
+		/* 滚到底时最后一行与屏幕底之间留一口气（无 TabBar 避让，等同画布侧边距） */
+		margin-bottom: var(--d-card_margin_x, 38.5rpx);
+	}
+	/* 2026-10-30（P2 G-1 分组）：跨组分隔行（次级文字，非卡片；与画布 `.n4_97` 同字号同色） */
+	.msg-group-row {
+		width: 100%;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+	}
+	.msg-group-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	/* 2026-10-30（P2 G-6 收口）：刷新失败提示行（卡片顶部，锈红细字；与「加载更多」同为行内提示，
+	   不新增卡片族）。点击热区按行撑满。 */
+	.refresh-failed {
+		width: 100%;
+		justify-content: center;
+		align-items: center;
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+	}
+	.refresh-failed-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-rust-500, #B05A3A);
+		text-align: center;
+	}
+	/* 2026-10-30（P2 G-1 分页）：「加载更多」= 一行居中细文字，热区按行撑满（≥60rpx 军规） */
+	.load-more {
+		width: 100%;
+		justify-content: center;
+		align-items: center;
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+	}
+	.load-more-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-300, #B3A696);
+		text-align: center;
 	}
 	.n4_107 {
 		width: 100%;

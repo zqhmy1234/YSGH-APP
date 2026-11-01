@@ -19,7 +19,7 @@
 			     正确写法 direction="vertical"（显式化优于依赖默认值） -->
 		<scroll-view class="flow" direction="vertical">
 			<!-- 结果提示（画布 y126「8 条记忆 · 6月2日至今」） -->
-			<text class="meta-count">{{ items.length }} 条记忆{{ rangeText != '' ? ' · ' + rangeText : '' }}</text>
+			<text class="meta-count">{{ contentTotal }} 条记忆{{ rangeText != '' ? ' · ' + rangeText : '' }}</text>
 			<!-- 主题说明（画布 y148；「· 更新于昨天」无数据源省略，台账 卡23 F9a） -->
 			<text class="meta-sub">AI 从你的记忆里聚出来的主题流</text>
 
@@ -62,15 +62,17 @@
 			</view>
 
 			<!-- 空态（主题下暂无 L2 事件；画布无空态帧，沿用既有交互必需形态） -->
-			<view v-if="items.length == 0 && !loading" class="empty-card">
-				<text class="empty-text">这个主题下还没有记忆</text>
+			<!-- 2026-10-30（P1-29）：失败与真空态必须可区分 —— 请求失败也显示「没有记忆」是假空态，
+			     现按 loadFailed 换成可点重试的文案 -->
+			<view v-if="items.length == 0 && !loading" class="empty-card" @tap="loadItems">
+				<text class="empty-text">{{ loadFailed ? '没能加载到这个主题，点这里重试' : '这个主题下还没有记忆' }}</text>
 			</view>
 		</scroll-view>
 	</view>
 </template>
 
 <script setup lang="uts">
-	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
+	import { fetchTimeline, fetchTimelineAsync, getCachedTimeline, TimelineEvent, TimelineFetchResult } from '@/utils/timeline'
 	import {
 		toggleVoice,
 		stopVoice,
@@ -85,6 +87,10 @@
 	// ── 响应式状态 ──
 	let items = ref<Array<TimelineEvent>>([])
 	let loading = ref(true)
+	// 2026-10-30（P1-32 收尾）：本主题的**内容**条数（Σ contentCount），与画像管理页同口径
+	let contentTotal = ref(0)
+	// 2026-10-30（P1-29）：区分「请求失败」与「真的没有记忆」（空态文案 + 重试出口）
+	let loadFailed = ref(false)
 	let rangeText = ref('')
 
 	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
@@ -123,6 +129,15 @@
 			return b.startTime - a.startTime
 		})
 		items.value = picked
+		// 2026-10-30（P1-32 收尾）：条数口径与「画像管理页」对齐。
+		// 管理页展示的是 `Σ contentCount`（该主题下**内容**条数），而本页原先用 `items.length`
+		// 即**L2 事件**条数 ⇒ 同一个主题在两个页面显示两个不同数字（用户会以为丢数据）。
+		// 这里同样累加 contentCount；后端为 0（事件确实没有成员内容）时如实显示 0，不拿事件数充数。
+		let total = 0
+		for (let i = 0; i < picked.length; i++) {
+			total = total + picked[i].contentCount
+		}
+		contentTotal.value = total
 		if (minMs > 0) {
 			rangeText.value = fmtMonthDay(minMs) + '至今'
 		} else {
@@ -153,12 +168,21 @@
 		const hit = getCachedTimeline()
 		if (hit != null) {
 			applyPicked(hit.events)
+			// 2026-10-30（P1-29）：原命中缓存直接 return，`loading` 停在初值 true
+			// ⇒ 空态 `v-if="items.length == 0 && !loading"` 永不成立（主题无 L2 事件时白屏无提示）。
+			// 命中即「已有结论」，必须先把 loading 收敛掉，再去后台静默刷新。
+			loading.value = false
+			loadFailed.value = false
 			refreshQuietly()
 			return
 		}
 		loading.value = true
-		fetchTimeline(2).then((events: Array<TimelineEvent>) => {
-			applyPicked(events)
+		loadFailed.value = false
+		// 2026-10-30（P1-29）：改用带失败语义的 fetchTimelineAsync（fetchTimeline 兼容出口会把
+		// 失败折成 []，本页无法分辨）⇒ 成功 / 失败 / 空三条路径都在这里收敛 loading。
+		fetchTimelineAsync(2, (): void => {}).then((res: TimelineFetchResult) => {
+			applyPicked(res.events)
+			loadFailed.value = res.failed
 			loading.value = false
 		})
 	}

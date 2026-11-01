@@ -101,6 +101,22 @@ class StorageBackend(ABC):
         """
         return None
 
+    def get_upload_url(self, key: str, ttl: int = 900) -> str | None:
+        """**客户端直传**用的预签名 PUT URL（2026-10-31 新增）。
+
+        为什么需要它：生产服务器公网带宽只有 1 Mbps，一张 3MB 照片经后端中转
+        要 24 秒，客户端必然超时、队列被"上传失败"刷满。让客户端**直接传到对象存储**，
+        业务服务器只留一张票据和一次回调校验。
+
+        为什么不直接用 `/upload/sts` 的临时密钥：那需要客户端自己算 COS 签名
+        （UTS 里实现 HMAC-SHA1 + 规范化请求串，成本高且易错）。
+        预签名 URL 把签名留在服务端，客户端只需要一次原始 PUT。
+
+        Returns:
+            预签名 URL；**None = 该后端不支持直传**，调用方回退"后端中转"路径。
+        """
+        return None
+
 
 class FakeStorageBackend(StorageBackend):
     """内存实现（测试/默认）"""
@@ -206,6 +222,18 @@ class MinioStorageBackend(StorageBackend):
             )
         except Exception as exc:  # noqa: BLE001 —— 签名失败不阻断，回退代理端点
             logger.warning("minio 预签名失败，回退代理端点 key=%s err=%s", key, exc)
+            return None
+
+    def get_upload_url(self, key: str, ttl: int = 900) -> str | None:
+        """MinIO 预签名 PUT（S3 兼容；客户端直传，2026-10-31）"""
+        from datetime import timedelta
+
+        try:
+            return self._client.presigned_put_object(
+                self._bucket, key, expires=timedelta(seconds=max(int(ttl), 1))
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("minio 直传签名失败，回退后端中转 key=%s err=%s", key, exc)
             return None
 
 
@@ -355,6 +383,24 @@ class CosStorageBackend(StorageBackend):
             )
         except Exception as exc:  # noqa: BLE001 —— 签名失败回退代理端点
             logger.warning("COS 预签名失败，回退代理端点 key=%s err=%s", key, exc)
+            return None
+
+    def get_upload_url(self, key: str, ttl: int = 900) -> str | None:
+        """COS 预签名 **PUT** URL（客户端直传，2026-10-31）
+
+        与 `get_download_url` 同一套机制，只把 Method 换成 PUT：
+        签名留在服务端，客户端一次原始 PUT 即可上传，**不经过业务服务器**。
+        这样 1 Mbps 公网带宽只影响"客户端↔对象存储"，不占用服务器出口。
+        """
+        try:
+            return self._client.get_presigned_url(
+                Bucket=self._bucket,
+                Key=key,
+                Method="PUT",
+                Expired=max(int(ttl), 1),
+            )
+        except Exception as exc:  # noqa: BLE001 —— 签名失败回退"后端中转"
+            logger.warning("COS 直传签名失败，回退后端中转 key=%s err=%s", key, exc)
             return None
 
     def get_sts_credentials(self, user_id: str | None = None) -> dict:

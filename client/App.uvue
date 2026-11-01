@@ -1,5 +1,5 @@
 <script setup lang="uts">
-	import { onLaunch, onShow, onError, onUnhandledRejection } from '@dcloudio/uni-app'
+	import { onLaunch, onShow, onHide, onError, onUnhandledRejection } from '@dcloudio/uni-app'
 	import { ensureLogin } from './utils/auth'
 	import { ENV, ensureEnvFingerprint } from './utils/config'
 	import { initSentry, captureException } from './utils/sentry'
@@ -78,14 +78,27 @@
 			const last = uni.getStorageSync(RKEY) as string
 			const now = Date.now()
 			if (last == null || last == '' || now - (Number(last) || 0) > 24 * 3600 * 1000) {
-				uni.setStorageSync(RKEY, String(now))
+				// 2026-10-30（P2 J-1）：**先写时间戳会把失败也锁 24 小时**。
+				// 原实现在发请求之前就落 `reconcile_last_at` ⇒ 这次对账一旦失败（离线冷启动最常见），
+				// 下一次重试要等整整一天，而"对账"恰恰是修分歧的手段，越晚修分歧越大。
+				// 现口径：成功才写时间戳；失败留空，下次启动立刻再试（对账本身幂等）。
 				reconcileNow().then((r) => {
 					console.log('[yishu] reconcile on launch -> ' + (r == null ? 'null' : 'push=' + r.needPush + ' pull=' + r.needPull + ' divergent=' + r.divergent))
+					if (r != null) {
+						uni.setStorageSync(RKEY, String(Date.now()))
+					}
 				})
 			}
 		} catch (e) {
 			console.log('[yishu] reconcile threw: ' + e)
 		}
+	})
+
+	// 2026-10-30（P2 J-13）：记录「上一次进后台的时刻」。原 App 没有 onHide ⇒ 回前台时
+	// 除了 drain 后台任务什么都不做，离线期间写的记录要等 2h 定时器那一轮才会同步。
+	let hiddenAt: number = 0
+	onHide(() => {
+		hiddenAt = Date.now()
 	})
 
 	onShow(() => {
@@ -95,6 +108,15 @@
 			drainBackgroundTasks()
 		} catch (e) {
 			console.log('[yishu] drainBackgroundTasks 标准基座降级: ' + e)
+		}
+		// 2026-10-30（P2 J-13）：**回前台补同步**。后台停留 ≥5 分钟（地铁/锁屏/切走）回前台时补一次
+		// 对账：offline 期间写的内容与 op 队列在这一刻推进，而不是干等 2h 定时器。对账幂等，
+		// 失败不清节流（沿用 J-1 口径：成功才写时间戳）。
+		if (hiddenAt > 0 && Date.now() - hiddenAt >= 5 * 60 * 1000) {
+			hiddenAt = 0
+			reconcileNow().then((r) => {
+				console.log('[yishu] reconcile on foreground -> ' + (r == null ? 'null' : 'push=' + r.needPush + ' pull=' + r.needPull))
+			})
 		}
 	})
 

@@ -284,7 +284,13 @@
 		width: var(--d-lattice-p390, 750rpx);
 		flex-direction: column;
 		align-items: center;
-		padding-bottom: var(--d-lattice-p156, 300rpx);
+		/* 2026-11-01（走查 1.2 实测缺陷）：原 300rpx 时，暂停态的「结束并转写」按钮
+		   刚好压在内容盒下边界上 —— 视觉覆盖 y1930~1995，但只有上半部分可点
+		   （y1961 连点两次无反应、y1928 一次就中）。这类"看得见点不着"比纯 bug 更伤，
+		   用户会以为按钮坏了。抬高 60rpx 让整条按钮行落在内容盒内部。 */
+		/* ⚠️ 不能用 `--d-lattice-p156`（该令牌存在且=300rpx，fallback 永远不生效，
+		   第一次改就是这么白改的）。用未定义令牌名，让 360rpx 真正落地。 */
+		padding-bottom: var(--d-raw-r360, 360rpx);
 	}
 	.rec-timer {
 		font-family: "Sarasa Gothic SC", sans-serif;
@@ -327,6 +333,43 @@
 		padding-bottom: var(--d-raw-r10, 10rpx);
 	}
 	.resume-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-paper-100, #f8f7f4);
+		font-size: var(--d-raw-r26, 26rpx);
+	}
+	/* 2026-11-01（走查 1.2）：暂停态两个动作并列。
+	   「结束并转写」是主操作（实心 rust），「继续」降为次操作（描边），
+	   避免两个同等重的按钮让用户仍不知道该点哪个。 */
+	.hold-btn {
+		background-color: transparent;
+		border: var(--d-raw-r2, 2rpx) solid var(--c-rust-500, #b05a3a);
+		border-radius: var(--d-raw-r24, 24rpx);
+		padding-left: var(--d-raw-r28, 28rpx);
+		padding-right: var(--d-raw-r28, 28rpx);
+		/* 2026-11-01：显式高度 + 居中 —— 实测命中区比绘制区整体上移约 33px
+		   （视觉中心 1887 点不动、1854 能点）。原因是按钮 frame 高度由 padding 撑出，
+		   与绘制出来的圆角块不重合。给出确定高度后 frame 与视觉对齐。 */
+		height: var(--d-raw-r64, 64rpx);
+		align-items: center;
+		justify-content: center;
+		margin-right: var(--d-raw-r12, 12rpx);
+	}
+	.hold-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-rust-500, #b05a3a);
+		font-size: var(--d-raw-r26, 26rpx);
+	}
+	.finish-btn {
+		background-color: var(--c-rust-500, #b05a3a);
+		border-radius: var(--d-raw-r24, 24rpx);
+		padding-left: var(--d-raw-r24, 24rpx);
+		padding-right: var(--d-raw-r24, 24rpx);
+		/* 同上：显式高度，保证命中区与视觉块重合 */
+		height: var(--d-raw-r64, 64rpx);
+		align-items: center;
+		justify-content: center;
+	}
+	.finish-text {
 		font-family: "Sarasa Gothic SC", sans-serif;
 		color: var(--c-paper-100, #f8f7f4);
 		font-size: var(--d-raw-r26, 26rpx);

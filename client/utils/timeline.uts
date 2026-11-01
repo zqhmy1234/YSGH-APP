@@ -8,7 +8,9 @@
 import { get, dataArr, fetchThumbnailPath } from './api'
 import { resolveMediaUrl } from './config'
 import { PATH_EVENTS_TIMELINE } from './contract'
-import { parseIsoMs, dayKey, friendlyDay } from './time'
+// 2026-10-31（设备走查缺陷 1）：分组键与分组头都必须由「记忆日」唯一实现导出
+// （memDayKey = 自然日 + B3-2 夜猫规则；dayKeyToMs 把日键回投成当天正午给 friendlyDay 拼标签）
+import { parseIsoMs, memDayKey, dayKeyToMs, friendlyDay } from './time'
 import { genWaveHeights } from './audio_player'
 
 /**
@@ -125,6 +127,11 @@ export class TimelineEvent {
 	confidence: number
 	/** 封面 content_id（无则首图回退，B3-4 封面展示） */
 	coverContentId: string
+	// 2026-10-31（走查缺陷）：**跳转锚点**，与封面分开。
+	// L1 日卡是聚合事件、`cover_content_id` 常为空 ⇒ 客户端 openDetail 拿不到 id
+	// 只弹「暂无可查看的内容」就 return，表现是「时间轴卡片点了没反应」。
+	// 后端 timeline 现在额外下发 `open_content_id`（事件最新成员内容）。
+	openContentId: string
 	/** L1 卡片下的 L2 主题（客户端分组填充；接口层恒为空数组） */
 	children: Array<TimelineEvent>
 	/** 卡片照片条 content_id 列表（服务端 photos 优先，无则回退本地会话填充） */
@@ -189,6 +196,7 @@ export class TimelineEvent {
 		this.status = status
 		this.confidence = confidence
 		this.coverContentId = coverContentId
+		this.openContentId = ''
 		this.children = []
 		this.photoIds = []
 		this.coverPath = ''
@@ -215,9 +223,35 @@ export class TimelineEvent {
 }
 
 /** 拉取时间轴（level 过滤：null=全部 / 1=L1 / 2=L2）；失败返回空数组（永不 reject） */
-// 上次 fetchTimeline 是否因请求失败（body==null，连接/鉴权瞬态）返回空——
-// 供 fetchAll 区分「真·空状态」与「失败误判」：失败不踢 empty 页，延迟重试。
-// 冷启动实锤（2026-09-02）：后端 timeline 全 200 有数据，设备仍被踢进空状态页。
+// 2026-10-30（P0-3）：失败判定原先是**进程级单一布尔** `_lastFetchFailed`：并发刷新时
+// A 请求失败置 true、B 请求成功置 false，A 的回调读到 false ⇒ 用空数组走「成功」分支，
+// 列表清空 + 空态误显（整屏假空态）；反向则成功数据被当失败丢弃。根因是「失败」不是
+// 请求的属性，而是进程的全局状态。
+// 现改为：每次请求自增 seq，结果封成 `TimelineFetchResult{requestId, failed, events}`；
+// 页面只接受 `requestId == 自己那一次` 的结果，晚到的旧响应一律丢弃。
+let _fetchSeq: number = 0
+/** 最近一次发起请求的序号（调用 fetchTimelineAsync 后同步读它即可绑定本次请求） */
+export function currentTimelineRequestSeq(): number {
+	return _fetchSeq
+}
+
+/** 一次拉取的完整结果（失败语义跟随本次请求，不再有全局布尔） */
+export class TimelineFetchResult {
+	requestId: number
+	failed: boolean
+	events: Array<TimelineEvent>
+
+	constructor(requestId: number, failed: boolean, events: Array<TimelineEvent>) {
+		this.requestId = requestId
+		this.failed = failed
+		this.events = events
+	}
+}
+
+/**
+ * @deprecated 兼容旧出口（P0-3 起失败语义随 TimelineFetchResult 下发）。
+ * 仍会更新，但**不代表任何一次具体请求**，新代码禁止用它做跳转/空态判定。
+ */
 let _lastFetchFailed = false
 export function wasLastFetchFailed(): boolean {
 	return _lastFetchFailed
@@ -232,8 +266,17 @@ const TIMELINE_CACHE_TTL: number = 60000
 // 卡PA D1 并发池参数（先例：uploader.uts:48 常量声明在文件顶部，类方法内使用）
 const THUMB_POOL_CONCURRENCY: number = 3
 const THUMB_POOL_BATCH: number = 4
+// 2026-10-30（P0-4）：原只有**单槽**缓存。`fetchTimeline(2)`（画像管理 / 主题详情）拿到的是
+// L2 子集，却和全量结果共用一个槽 ⇒ 进过一次画像页后，时间轴命中缓存只剩主题卡、L1 日卡全消失。
+// 现按 level 分区：`null`（全量）一槽，level=1/2/3 各一槽，互不覆盖。
 let _cacheEvents: Array<TimelineEvent> = []
 let _cacheAt: number = 0
+const _cacheByLevel: Map<number, Array<TimelineEvent>> = new Map<number, Array<TimelineEvent>>()
+const _cacheAtByLevel: Map<number, number> = new Map<number, number>()
+// 脏标记：写操作（删除/恢复/编辑）后置脏，列表页据此**绕过 60s TTL** 立刻刷新
+let _timelineDirty: boolean = false
+// 缩略图补齐代际号：每次新建补图池 / 缓存失效时自增，旧池回调按代际丢弃（防重复下载 + 旧图回填）
+let _thumbGen: number = 0
 
 export class TimelineCacheHit {
 	events: Array<TimelineEvent>
@@ -245,25 +288,79 @@ export class TimelineCacheHit {
 	}
 }
 
-/** 命中返回快照（events 与缓存同引用），过期/失效/空返回 null */
-export function getCachedTimeline(): TimelineCacheHit | null {
-	if (_cacheAt == 0 || _cacheEvents.length == 0) {
+/** 命中返回快照（events 与缓存同引用），过期/失效/空返回 null。level=null 读全量槽 */
+export function getCachedTimeline(level: number | null = null): TimelineCacheHit | null {
+	if (level == null) {
+		if (_cacheAt == 0 || _cacheEvents.length == 0) {
+			return null
+		}
+		if (Date.now() - _cacheAt > TIMELINE_CACHE_TTL) {
+			return null
+		}
+		return new TimelineCacheHit(_cacheEvents, _cacheAt)
+	}
+	const events = _cacheByLevel.get(level)
+	const at = _cacheAtByLevel.get(level)
+	if (events == null || at == null || events.length == 0) {
 		return null
 	}
-	if (Date.now() - _cacheAt > TIMELINE_CACHE_TTL) {
+	if (Date.now() - at > TIMELINE_CACHE_TTL) {
 		return null
 	}
-	return new TimelineCacheHit(_cacheEvents, _cacheAt)
+	return new TimelineCacheHit(events, at)
 }
 
-export function putTimelineCache(events: Array<TimelineEvent>): void {
-	_cacheEvents = events
-	_cacheAt = Date.now()
+/** 写缓存：level=null 写全量槽，否则只写该 level 自己的槽（互不覆盖） */
+export function putTimelineCache(events: Array<TimelineEvent>, level: number | null = null): void {
+	if (level == null) {
+		_cacheEvents = events
+		_cacheAt = Date.now()
+		return
+	}
+	_cacheByLevel.set(level, events)
+	_cacheAtByLevel.set(level, Date.now())
+}
+
+/**
+ * 缓存失效（**写操作后必须调用**，见 P1-10：本函数此前全仓零调用 = 死代码）。
+ * 调用约定：`detail.uvue` 删除/编辑成功、`trash.uvue` 恢复/永久删除成功、
+ * 记录保存成功后调用本函数；列表页在 `shownSeq` 变化时先判 `isTimelineDirty()`，
+ * 为真则绕过 60s TTL 立刻刷新。
+ */
+/**
+ * 2026-10-30（P1-34）：**登出时彻底清除**时间轴相关缓存（内存 + 磁盘快照）。
+ * 只置脏是不够的 —— 快照会在下次进入时被回放，用户会在新账号下先看到上一账号的记忆。
+ */
+export function clearAllTimelineCache(): void {
+	_cacheEvents = null
+	_cacheAt = 0
+	_cacheByLevel.clear()
+	_cacheAtByLevel.clear()
+	_timelineDirty = true
+	_thumbGen = _thumbGen + 1
+	_timelineFetchSeq = _timelineFetchSeq + 1
+	uni.removeStorageSync(SNAPSHOT_KEY)
+	uni.removeStorageSync(SNAPSHOT_AT_KEY)
+	console.log('[yishu] 时间轴缓存已清空（登出）')
 }
 
 export function invalidateTimelineCache(): void {
 	_cacheEvents = []
 	_cacheAt = 0
+	_cacheByLevel.clear()
+	_cacheAtByLevel.clear()
+	_timelineDirty = true
+	_thumbGen = _thumbGen + 1
+}
+
+/** 缓存已被写操作置脏（列表页据此跳过 TTL 早退） */
+export function isTimelineDirty(): boolean {
+	return _timelineDirty
+}
+
+/** 全量拉取成功后由本模块自动清脏；页面无需手调 */
+export function markTimelineClean(): void {
+	_timelineDirty = false
 }
 
 // ── 冷启动持久快照（2026-10-14 · 台账 §4.20；用户现场反馈「每次打开/跳转都要等数据」）──
@@ -279,8 +376,42 @@ const SNAPSHOT_AT_KEY = 'yishu_timeline_snapshot_at'
 /** 快照最长接受年龄：7 天（再旧就不用了，宁等一次网络） */
 const SNAPSHOT_MAX_AGE_MS: number = 7 * 24 * 3600 * 1000
 
+/**
+ * 2026-10-30（P1-11）：持久化前**剥掉所有短时效票据 URL**。
+ *
+ * 快照最长存 7 天，而票据 URL 的有效期只有 15 分钟（缩略图 24h、原图 15m，见本文件 :24-26 的说明）。
+ * 原实现把整份响应原样落盘 ⇒ 冷启动回放的是**早已过期的签名 URL**，`<image :src>` 必然 404，
+ * 于是首屏整片裂图，要等静默刷新（几百 ms~数秒）才补上——正是用户说的"打开先一片空白/破图"。
+ *
+ * 现口径：落盘时把这些字段清空，解析侧拿到空串即走 `fetchThumbnailPath(contentId)` 的
+ * 令牌头通路（api.uts 内有本地缓存），图片仍然能出来，且**不会**先用一个死链渲染。
+ */
+function stripVolatileUrls(body: UTSJSONObject): void {
+	try {
+		const items = body.getArray('items')
+		if (items == null) {
+			return
+		}
+		for (let i = 0; i < items.length; i++) {
+			const ev = items[i] as UTSJSONObject
+			ev.set('cover_url', '')
+			const photos = ev.getArray('photos')
+			if (photos != null) {
+				for (let k = 0; k < photos.length; k++) {
+					const p = photos[k] as UTSJSONObject
+					p.set('thumbnail_url', '')
+					p.set('original_url', '')
+				}
+			}
+		}
+	} catch (e) {
+		console.log('[dbg-index] 快照剥票失败（忽略，按原样存）: ' + e)
+	}
+}
+
 function persistTimelineSnapshot(body: UTSJSONObject): void {
 	try {
+		stripVolatileUrls(body)
 		uni.setStorageSync(SNAPSHOT_KEY, JSON.stringify(body))
 		uni.setStorageSync(SNAPSHOT_AT_KEY, '' + Date.now())
 	} catch (e) {
@@ -320,7 +451,11 @@ export function getSnapshotTimeline(): TimelineCacheHit | null {
 
 /** 兼容出口（favorites/manage/theme-detail 三页调用）：委托 fetchTimelineAsync，缩略图后台静默补齐 */
 export function fetchTimeline(level: number | null): Promise<Array<TimelineEvent>> {
-	return fetchTimelineAsync(level, (): void => {})
+	return new Promise<Array<TimelineEvent>>((resolve) => {
+		fetchTimelineAsync(level, (): void => {}).then((res: TimelineFetchResult) => {
+			resolve(res.events)
+		})
+	})
 }
 
 /**
@@ -355,6 +490,8 @@ export function parseTimelineEvents(body: UTSJSONObject): Array<TimelineEvent> {
 			item.getNumber('confidence') as number,
 			item.getString('cover_content_id') ?? ''
 		)
+		// 2026-10-31：跳转锚点（无封面时后端回退"最新成员内容"）——没有它日卡点不进详情
+		ev.openContentId = item.getString('open_content_id') ?? ''
 		// 图片下发（Valet Key）：服务端已批量下发成员照片与封面 URL，
 		// 客户端直接建索引——冷启动不再依赖上传回调，照片条开箱即渲染。
 		ev.photos = parsePhotos(item)
@@ -396,26 +533,42 @@ export function parseTimelineEvents(body: UTSJSONObject): Array<TimelineEvent> {
 	return result
 }
 
-export function fetchTimelineAsync(level: number | null, onBatch: () => void): Promise<Array<TimelineEvent>> {
+export function fetchTimelineAsync(level: number | null, onBatch: () => void): Promise<TimelineFetchResult> {
 	// 2026-10-14（台账 §4.20 ⑪ 第 10 轴）：原为**字面量** `'/api/v1/events/timeline'`，
 	// 而契约常量 `PATH_EVENTS_TIMELINE` 声明后零引用 ⇒ 两处会各自漂移（后端改路径时
 	// 契约改了、这里不动 ⇒ 请求打到不存在的路径）。改用契约常量为**单一事实源**。
 	const path = level == null ? PATH_EVENTS_TIMELINE : PATH_EVENTS_TIMELINE + '?level=' + level
-	return new Promise<Array<TimelineEvent>>((resolve) => {
+	// P0-3：请求编号在这一行**同步**自增 —— 调用方紧接着读 currentTimelineRequestSeq()
+	// 就能拿到「本次」的 id，晚到的旧响应据此识别并丢弃。
+	const reqId = ++_fetchSeq
+	return new Promise<TimelineFetchResult>((resolve) => {
 		get(path).then((body: UTSJSONObject | null) => {
 			if (body == null) {
 				_lastFetchFailed = true
-				resolve([])
+				resolve(new TimelineFetchResult(reqId, true, []))
 				return
 			}
 			_lastFetchFailed = false
-			const result = parseTimelineEvents(body)
+			// P1-12：解析必须整体兜住 —— 原实现若在此抛错（可空数值被 as number 强转），
+			// 外层 Promise 的 resolve 永不调用 ⇒ 骨架屏永驻、下拉转圈不停。
+			let result: Array<TimelineEvent> = []
+			try {
+				result = parseTimelineEvents(body)
+			} catch (e) {
+				console.log('[dbg-index] timeline 解析异常，按本次请求失败处理: ' + e)
+				_lastFetchFailed = true
+				resolve(new TimelineFetchResult(reqId, true, []))
+				return
+			}
 			// 卡PA D2：成功结果入缓存（与页面 currentEvents 同数组引用，本地补丁直接同步）
-			putTimelineCache(result)
-			// 冷启动持久快照（失败静默，不影响主流程；理由见 getSnapshotTimeline 注释）
-			persistTimelineSnapshot(body)
+			putTimelineCache(result, level)
+			// 冷启动持久快照：只对**全量**响应持久化（L2 子集不能代表时间轴）
+			if (level == null) {
+				persistTimelineSnapshot(body)
+				markTimelineClean()
+			}
 			// 卡PA D1：立即 resolve 返回（不等缩略图），补图转后台并发池
-			resolve(result)
+			resolve(new TimelineFetchResult(reqId, false, result))
 			startThumbnailEnrich(result, onBatch)
 		})
 	})
@@ -443,11 +596,15 @@ class ThumbnailPool {
 	done: number = 0
 	total: number
 	onBatch: () => void
+	// 2026-10-30（P2 B-3）：原池无代际标识 —— 每次刷新都新建一个池，旧池仍会把图回填到
+	// 已被替换掉的旧事件数组上并触发整树重建（重复下载 + 闪旧图）。现按代际丢弃过期回调。
+	gen: number
 
-	constructor(jobs: Array<ThumbJob>, onBatch: () => void) {
+	constructor(jobs: Array<ThumbJob>, onBatch: () => void, gen: number) {
 		this.jobs = jobs
 		this.total = jobs.length
 		this.onBatch = onBatch
+		this.gen = gen
 	}
 
 	start(): void {
@@ -458,6 +615,9 @@ class ThumbnailPool {
 	}
 
 	next(): void {
+		if (this.gen != _thumbGen) {
+			return // 已换代：停止续链，不再回填
+		}
 		const i = this.index
 		this.index++
 		if (i >= this.total) {
@@ -465,6 +625,9 @@ class ThumbnailPool {
 		}
 		const job = this.jobs[i]
 		fetchThumbnailPath(job.cid).then((p: string) => {
+			if (this.gen != _thumbGen) {
+				return // 已换代：这张图属于上一批数据，丢弃
+			}
 			if (p != '') {
 				job.ev.photos.push(new EventPhoto(job.cid, p, '', job.ev.startTime, job.ev.place, job.ev.title))
 				job.ev.photoUrlMap.set(job.cid, p)
@@ -495,7 +658,9 @@ function startThumbnailEnrich(events: Array<TimelineEvent>, onBatch: () => void)
 	if (jobs.length == 0) {
 		return
 	}
-	new ThumbnailPool(jobs, onBatch).start()
+	// 每次开池换代：旧池的在途回调会被丢弃（见 ThumbnailPool.gen 注释）
+	_thumbGen = _thumbGen + 1
+	new ThumbnailPool(jobs, onBatch, _thumbGen).start()
 }
 
 /** 时间轴按日分组：日卡片组（L2 挂同日 L1 之下） */
@@ -523,6 +688,35 @@ export class DayGroupResult {
 }
 
 /**
+ * 日卡标题 → 按分组键归一日期前缀（「2026-10-30 · 文字」里的 2026-10-30）。
+ *
+ * 2026-10-31（设备走查缺陷 1）：卡标题把「这一天」**写死成字符串存进服务端**，
+ * 而它算的是**保存那一刻**的设备时区。设备时区/DST 一变（本次实测：模拟器从 GMT
+ * 改成 Asia/Shanghai 后，旧卡标题停在 2026-10-30，而分组键正确落到 2026-10-31），
+ * 两份就永久分裂——**收敛算法救不了已经写进库里的字符串**。
+ * 分组键（memDayKey(startTime)）才是唯一真值，故展示层按它重写日期前缀：
+ *   · 用户手动改过标题（title_source=user）一律不碰；
+ *   · 只认严格形态 `yyyy-mm-dd · …`（不匹配原样返回，不做模糊猜测/不回退硬编码）；
+ *   · 归一动作打 log —— 静默改文案比不改更难排查。
+ */
+function tieTitleToDay(ev: TimelineEvent, day: string): string {
+	const s = ev.title
+	if (ev.titleSource == 'user') {
+		return s
+	}
+	if (s.length < 13 || s.charAt(4) != '-' || s.charAt(7) != '-' || s.substring(10, 13) != ' · ') {
+		return s
+	}
+	const titleDay = s.substring(0, 10)
+	if (titleDay == day) {
+		return s
+	}
+	const fixed = day + s.substring(10)
+	console.log('[yishu] 日卡标题按分组键归一：' + s + ' → ' + fixed + '（start=' + ev.startTime + '）')
+	return fixed
+}
+
+/**
  * 按日分组（纯函数；原 index.uvue groupDays 迁移，F10 拆分行为等价）：
  * draft & confidence<0.7 → 待确认区；忽略事件过滤（卡PA D9：调用方一次性读 storage
  * 建 Set 传入，循环内零 getStorageSync）；L1/L2 各自按 startTime 倒序；
@@ -537,14 +731,17 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 		if (ignoredIds.has(ev.id)) {
 			continue // B3-5 忽略（本地隐藏）
 		}
-		const isPending = ev.status == 'draft' && ev.confidence > 0 && ev.confidence < 0.7
+		// 2026-10-30（P2 B-1）：原判定缺 `level >= 2`，会把低置信 **L1 日卡**搬进待确认区
+		// （该显的日组不显）；对齐后端 `api/events.py:94-96` 的口径。
+		const isPending = ev.level >= 2 && ev.status == 'draft' && ev.confidence > 0 && ev.confidence < 0.7
 		if (isPending) {
 			pending.push(ev)
 			continue
 		}
 		if (ev.level === 1) {
 			l1.push(ev)
-		} else if (ev.level === 2) {
+		} else if (ev.level >= 2) {
+			// 2026-10-30（P1-13）：原只收 level===2，L3 事件被**静默丢弃**（后端明确会下发 L3）。
 			l2.push(ev)
 		}
 	}
@@ -556,11 +753,17 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 	const l1ByDay: Map<string, number> = new Map<string, number>()
 	for (let i = 0; i < l1.length; i++) {
 		const ev = l1[i]
-		const k = dayKey(ev.startTime)
+		// 2026-10-31（设备走查缺陷 1）：原 `dayKey(startTime)`（纯自然日）+ `friendlyDay(startTime)`
+		// 是**第二、第三套日界**：与卡标题（聚合的 dayCardKey / l1_submit 的 isoString 截断）
+		// 各算各的 ⇒ 同一张卡「标题 2026-10-30 / 分组头 10月31日」。现分组键=记忆日唯一实现，
+		// 分组头由**同一个键**回投（dayKeyToMs）后再格式化 ⇒ 结构上不可能再分裂。
+		const k = memDayKey(ev.startTime)
+		// 2026-10-31（设备走查缺陷 1）：卡标题里的日期一律按**分组键**归一后显示（见 tieTitleToDay）
+		const shownTitle = tieTitleToDay(ev, k)
 		const copy = new TimelineEvent(
 			ev.id,
 			ev.level,
-			ev.title,
+			shownTitle,
 			ev.titleSource,
 			ev.startTime,
 			ev.endTime,
@@ -576,6 +779,12 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 		//    photoIds / coverPath / photos / photoUrlMap / coverUrl 全部丢失 →
 		//    分组后的卡片一律没照片，即便 timeline 已拉到数据。
 		//    这是"卡片没照片"的隐藏第四层断链（前三层见 _diff_ledger.md W6 §23.2）。
+		// 2026-11-01（走查缺陷）：**跳转锚点必须跟着拷**。
+		// 分组后客户端渲染的是这份 copy，而 `openContentId` 不在 constructor 参数里 ⇒
+		// 不补这行，网络层明明收到了 `open_content_id`（接口实测 open=2f89fa7e…），
+		// 分组一过就变空，`openDetail` 仍拿不到 id。与 2026-08-31「photoIds 丢失」
+		// 是同一类断链（copy 少拷字段），第三次出现了。
+		copy.openContentId = ev.openContentId
 		copy.photoIds = ev.photoIds
 		copy.coverPath = ev.coverPath
 		copy.photos = ev.photos
@@ -596,20 +805,60 @@ export function buildDayGroups(events: Array<TimelineEvent>, ignoredIds: Set<str
 		if (existIdx != null) {
 			groups[existIdx].events.push(copy)
 		} else {
-			groups.push(new DayGroup(k, friendlyDay(ev.startTime), [copy]))
+			groups.push(new DayGroup(k, friendlyDay(dayKeyToMs(k)), [copy]))
 			l1ByDay.set(k, groups.length - 1)
 		}
 	}
+	// 2026-10-30（P0-2）：原把 L2 推进 `groups[idx].events[0].children`，而 `TabIndex.uvue`
+	// 模板**全文没有 children 渲染点**（grep 0 命中）⇒ L2 主题卡永不显示；更糟的是
+	// 「确认」一条待确认 L2 后它从 pending 落进 l2 数组、被推入 children，UI 上表现为
+	// **点确认 → 卡片消失**。现改为与 L1 平铺进同一日组的 events，再统一按时间倒序排。
 	for (let j = 0; j < l2.length; j++) {
 		const ev = l2[j]
-		const k = dayKey(ev.startTime)
+		// 2026-10-31（设备走查缺陷 1）：同 L1 分支——分组键与标签同源，杜绝「同一天两个头」
+		const k = memDayKey(ev.startTime)
 		const idx = l1ByDay.get(k)
 		if (idx != null && groups[idx].events.length > 0) {
-			groups[idx].events[0].children.push(ev)
+			groups[idx].events.push(ev)
 		} else {
-			groups.push(new DayGroup(k, friendlyDay(ev.startTime), [ev]))
+			groups.push(new DayGroup(k, friendlyDay(dayKeyToMs(k)), [ev]))
 			l1ByDay.set(k, groups.length - 1)
 		}
 	}
+
+	// 2026-10-30（P1-14）：两轮 append 后日组顺序会乱（只有 L2 的日期组被追加到末尾，
+	// 今天的主题卡掉到最底部）；组内 L2 也可能排在 L1 前面。此处统一重排：
+	//   · 组内按 startTime 倒序；
+	//   · 组间按「组内最大 startTime」倒序；
+	//   · 时间未知（startTime <= 0）的组固定排最后（不再生成 1970-01-01 假日组，见 P2 B-5）。
+	for (let g = 0; g < groups.length; g++) {
+		groups[g].events.sort((a: TimelineEvent, b: TimelineEvent): number => b.startTime - a.startTime)
+	}
+	groups.sort((a: DayGroup, b: DayGroup): number => {
+		const ta = dayGroupAnchor(a)
+		const tb = dayGroupAnchor(b)
+		if (ta <= 0 && tb <= 0) {
+			return 0
+		}
+		if (ta <= 0) {
+			return 1
+		}
+		if (tb <= 0) {
+			return -1
+		}
+		return tb - ta
+	})
 	return new DayGroupResult(groups, pending)
+}
+
+/** 日组锚点时间 = 组内最大 startTime（全未知返回 0，排序时固定末尾） */
+function dayGroupAnchor(g: DayGroup): number {
+	let max: number = 0
+	for (let i = 0; i < g.events.length; i++) {
+		const t = g.events[i].startTime
+		if (t > max) {
+			max = t
+		}
+	}
+	return max
 }

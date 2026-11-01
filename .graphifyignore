@@ -1,0 +1,74 @@
+# .graphifyignore — 忆述光华 图谱构建排除清单
+# 目的：只把「人写的源码与设计文档」纳入知识图，排除生成物/构建产物/二进制/缓存。
+
+# ── 构建产物与生成物（uvue_gen / design_data* / unpackage 均为脚本产物，勿入图）──
+client/unpackage/
+uvue_gen/
+design_data/
+design_data_v4/
+design_gap_audit/
+out/
+_tmp/
+.wt/
+backups/
+.cowork-temp/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── 依赖与第三方 ──
+node_modules/
+.venv/
+venv/
+
+# ── 二进制 / 媒体 / 数据集 ──
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.mov
+*.mp3
+*.wav
+*.amr
+*.m4a
+*.apk
+*.zip
+*.rar
+*.7z
+*.pt
+*.onnx
+*.bin
+*.safetensors
+*.xlsx
+*.xls
+*.docx
+*.pdf
+*.sqlite
+*.db
+
+# ── 锁文件 / 日志 ──
+*.log
+logs/
+package-lock.json
+pnpm-lock.yaml
+
+# ── 密钥（永不入图）──
+.env
+.env.*
+infisical.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ── 图谱自身缓存 ──
+graphify-out/cache/
+
+# ── 历史归档（噪声大，按需再开）──
+docs/archive/
+忆述光华_交付文档/数据库设计/*.png

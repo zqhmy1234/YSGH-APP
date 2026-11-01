@@ -66,9 +66,19 @@ function bindSlotEvents(c: InnerAudioContext, idx: number): void {
 		if (voiceCurrentId.value != slotCid[idx]) {
 			return
 		}
+		// 2026-10-30（P2 E-1）：**结束也是一种状态迁移**。原实现只把 playing 置 false，
+		// 33ms 进度时钟照跑（stopProgressClock 只在 stopVoice/暂停路径调用）⇒ 播放结束后
+		// 计时器泄漏、卡片停在 progress=1 的"活动态"上（波形仍高亮、秒数停在末尾）。
 		voicePlaying.value = false
 		voiceProgress.value = 1
 		voiceCurSec.value = voiceTotalSec.value
+		stopProgressClock()
+		// 复位到 idle：卡片回到未播放形态，再次点击从 0 开始（toggleVoice 依赖 currentId 判态）
+		if (voiceCurrentId.value == slotCid[idx]) {
+			voiceCurrentId.value = ''
+			voiceProgress.value = 0
+			voiceCurSec.value = 0
+		}
 	})
 	c.onError((_err: any) => {
 		if (voiceCurrentId.value == '' || voiceCurrentId.value != slotCid[idx]) {

@@ -37,9 +37,10 @@
 		<!-- ═══ F4a 列表态（卡流，search 结果区先例：绝对定位滚动区） ═══ -->
 		<scroll-view v-if="loaded && allCards.length > 0" class="card-scroll" direction="vertical" :show-scrollbar="false">
 			<!-- §P9：类型筛选 0 结果时给提示（原纯空白被误读为渲染缺陷；countText=总数为画布真值不动） -->
+			<!-- 2026-10-30（P2 H-6）：文案按「有关键词 / 无关键词」分流（见 emptyHintTitle/emptyHintSub） -->
 			<view v-if="displayCards.length == 0" class="filter-empty">
-				<text class="filter-empty-text">该类型下暂无收藏</text>
-				<text class="filter-empty-text filter-empty-sub">换个类型看看，或去记忆详情页点亮星星</text>
+				<text class="filter-empty-text">{{ emptyHintTitle }}</text>
+				<text class="filter-empty-text filter-empty-sub">{{ emptyHintSub }}</text>
 			</view>
 			<view v-for="item in displayCards" :key="item.id" class="fav-card" :class="item.kind == 'text' ? 'fav-card-text' : ''" @tap="openCard(item)">
 				<!-- ── 语音卡（60:776）── -->
@@ -203,6 +204,9 @@
 	let favTotal = ref(0) // 「N 条收藏」计数（画布 60:772 文案真值）
 	let loaded = ref(false)
 	let favIds = ref<Array<string>>([])
+	// 2026-10-30（P2 H-5）：取消收藏**无在途防重** —— 连点星星会连发两次 DELETE，第二次通常已 404
+	// ⇒ 用户明明取消了，却弹「取消收藏失败」（假失败）。按 content_id 记在途集合，重复点击直接忽略。
+	let unfavInFlight = ref<Array<string>>([])
 
 	/** 收藏数据契约（卡16）：uni.getStorageSync('favorite_ids') Array<string> content_id
 	 *  诚实化：detail 页收藏端点未建（W0-4），favorite_ids 由本地写入；try/catch 兜底（empty/index 先例） */
@@ -415,6 +419,15 @@
 		return favTotal.value + ' 条收藏'
 	}
 
+	// 2026-10-30（P2 H-6）：0 结果提示原固定写「该类型下暂无收藏」—— 但 0 结果也可能是**关键词**
+	// 没命中（用户根本没在筛类型），提示却让他"换个类型"，指错方向。按是否有关键词分流。
+	const emptyHintTitle = computed((): string => {
+		return keyword.value.trim() != '' ? '没有找到匹配的收藏' : '该类型下暂无收藏'
+	})
+	const emptyHintSub = computed((): string => {
+		return keyword.value.trim() != '' ? '换个关键词试试，或清空搜索框' : '换个类型看看，或去记忆详情页点亮星星'
+	})
+
 	// ── 播放引擎接线（search 先例三处一致）──
 	function voiceIsActive(id: string): boolean {
 		return isVoiceActive(id)
@@ -461,7 +474,14 @@
 			uni.showToast({ title: '该条目未关联记忆，无法取消收藏', icon: 'none' })
 			return
 		}
+		// 2026-10-30（P2 H-5）：同一 content_id 已在途 ⇒ 忽略重复点击（见 unfavInFlight 声明处）
+		if (unfavInFlight.value.indexOf(item.contentId) >= 0) {
+			return
+		}
+		unfavInFlight.value.push(item.contentId)
+		unfavInFlight.value = unfavInFlight.value.slice()
 		favoriteRemove(item.contentId).then((ok: boolean) => {
+			clearUnfavInFlight(item.contentId)
 			if (!ok) {
 				uni.showToast({ title: '取消收藏失败 · 请稍后重试', icon: 'none' })
 				return
@@ -476,7 +496,10 @@
 			favIds.value = next
 			const cards: Array<FavCard> = []
 			for (let i = 0; i < allCards.value.length; i++) {
-				if (allCards.value[i].id != item.id) {
+				// 2026-10-30（P2 H-4）：原按 `id` 过滤 —— 回落链路（`buildRealCards`）里 `id` 是
+				// **事件 id**，同一事件下有多条收藏时，取消其中一条会把同事件的其他收藏卡一起删掉
+				//（列表凭空少卡）。收藏的最小单位是 content_id，故按 contentId 过滤。
+				if (allCards.value[i].contentId != item.contentId) {
 					cards.push(allCards.value[i])
 				}
 			}
@@ -484,6 +507,17 @@
 			favTotal.value = cards.length
 			uni.showToast({ title: '已取消收藏', icon: 'none', duration: 1500 })
 		})
+	}
+
+	/** 2026-10-30（P2 H-5）：清出在途集合（成功/失败/异常都必须清，否则该条永久点不动） */
+	function clearUnfavInFlight(contentId: string): void {
+		const out: Array<string> = []
+		for (let i = 0; i < unfavInFlight.value.length; i++) {
+			if (unfavInFlight.value[i] != contentId) {
+				out.push(unfavInFlight.value[i])
+			}
+		}
+		unfavInFlight.value = out
 	}
 
 	function goTimeline(): void {

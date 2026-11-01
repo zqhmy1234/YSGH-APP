@@ -37,6 +37,11 @@ def test_fail_closed_verdict_carries_reject_action(monkeypatch):
 
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "mock_external_ai", False)
+    # 2026-10-31：`_llm_available()` 自台账 §7.27（2026-10-15）起按**所配供应商**判定
+    # （deepseek 就只看 deepseek key，刻意不看 dashscope 的）。本机 .env 是 deepseek 且配了 key
+    # ⇒ 只清 dashscope key 时它仍判"可用"，用例就会拿到 pass=True 的假失败。
+    # 这里把供应商固定成 dashscope，测试意图（生产 + 无 key ⇒ 拒发）才成立。
+    monkeypatch.setattr(settings, "llm_provider", "dashscope")
     monkeypatch.setattr(settings, "dashscope_api_key", "")
 
     verdict = dashscope.moderate("今天天气不错")

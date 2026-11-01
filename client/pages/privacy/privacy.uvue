@@ -35,11 +35,76 @@
 				<text v-else class="next-link next-link-end">已到末节，感谢阅读</text>
 			</view>
 		</scroll-view>
+
+		<!-- ═══════════ 2026-10-30（P2 I-3）本机隐私权限四项开关 ═══════════
+		     依据：决策 #22「照片原件默认上云、**可关闭**」+ 台账 §7.15「假开关族」
+		     （原「设置-账号与安全-隐私权限」点进去只弹「即将上线」）。
+		     入口：security.uvue 跳本页带 `?panel=perms` ⇒ 就地拉起全屏浮层（不跳页，
+		     PortraitPrivacyPanel 范式）；从「关于-隐私政策」直达时不弹，仍是纯政策页。
+
+		     ⚠️ 边界诚实（不承诺做不到的事）：四项**当前只落本机** `yishu.privacy.*`——
+		     已核 后端 `app/api` 全无 privacy/偏好端点、客户端上传/转写/画像/回响四处也**没有
+		     读这些键的消费者** ⇒ 页面上下两处都写明「云端策略以服务端配置为准」，
+		     toast 也带「本机记录」。升级为真开关的前置条件（服务端偏好字段 + 两端真消费）
+		     沿用台账 §7.18 判定口径。 -->
+		<view v-if="permsOpen" class="pn-root">
+			<image class="pn-back" src="/static/icons/i4_135.svg" @tap="closePerms" />
+			<view class="pn-title">
+				<text class="pn-title-text">隐私权限</text>
+			</view>
+			<scroll-view class="pn-body" direction="vertical" :show-scrollbar="false">
+				<text class="pn-hint">以下开关只记录在你的本机上。本版本尚未接入服务端策略，关闭某项不代表云端已停止相应处理——云端策略以服务端配置为准。</text>
+				<view class="prv-group">
+					<view class="prv-row" @tap="togglePhotoOrigin">
+						<view class="prv-main">
+							<text class="prv-label">照片原件上云</text>
+							<text class="prv-desc">控制相册原图是否上传云端；关闭时预期只上传缩略图与元数据</text>
+						</view>
+						<view class="prv-switch" :class="photoOriginOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+					<view class="prv-divider"></view>
+					<view class="prv-row" @tap="toggleVoiceCloud">
+						<view class="prv-main">
+							<text class="prv-label">语音云端处理</text>
+							<text class="prv-desc">控制语音转写与情绪识别的云端处理</text>
+						</view>
+						<view class="prv-switch" :class="voiceCloudOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+					<view class="prv-divider"></view>
+					<view class="prv-row" @tap="togglePortraitGen">
+						<view class="prv-main">
+							<text class="prv-label">画像生成</text>
+							<text class="prv-desc">控制是否由系统依据你的记忆生成渐进式画像</text>
+						</view>
+						<view class="prv-switch" :class="portraitGenOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+					<view class="prv-divider"></view>
+					<view class="prv-row" @tap="toggleDailyEcho">
+						<view class="prv-main">
+							<text class="prv-label">每日回响</text>
+							<text class="prv-desc">控制首页「去年今日」的回忆回响展示</text>
+						</view>
+						<view class="prv-switch" :class="dailyEchoOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+				</view>
+				<text class="pn-note">当前状态：本版本四项开关仅作用于本机行为记录，不会改变云端的上传、转写、画像或回响策略；服务端行为以其配置为准。接入服务端偏好字段后，页面会自动改为读取真值。</text>
+			</scroll-view>
+		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
 	import { ref } from 'vue'
+	// 2026-10-30（P2 I-3）：读 `?panel=perms`（账号与安全页跳来时拉起开关浮层）
+	import { onLoad } from '@dcloudio/uni-app'
 
 	// 先例铁律：type 字面量构造编译器不认 → class + constructor + new（对齐 MessageItem/DayGroup 套路）
 	class PolicyBlock {
@@ -89,6 +154,10 @@
 			new PolicyBlock('b', '数据导出：「我的-存储与备份」可导出您的全部记忆数据。'),
 			new PolicyBlock('b', '注销账号：「设置-账号与安全-注销账号」，注销后我们将删除或匿名化处理您的个人信息。'),
 			new PolicyBlock('b', '撤回授权：可在系统权限设置中随时关闭相册、麦克风等授权；关闭后相应功能不可用，但不影响已授权期间的处理。'),
+			// 2026-10-30（P2 I-3）：补齐「隐私权限」开关入口的告知——开关已落（设置-账号与安全-隐私权限），
+			// 但本版本只在本机记录选择、服务端无对应偏好字段（已核：后端无 privacy 端点）⇒ 政策里如实写明边界，
+			// 不让用户以为关掉开关云端就停了（合规相关，同台账 §7.18 口径）。
+			new PolicyBlock('b', '隐私开关：在「设置-账号与安全-隐私权限」可调整照片原件上云、语音云端处理、画像生成、每日回响四项。当前版本这四项仅在本机记录你的选择，尚未接入云端策略——云端行为仍以服务端配置为准；接入后将同步更新本政策。'),
 			new PolicyBlock('p', '如对个人信息处理有任何疑问，可通过本政策末节的联系方式与我们取得联系，我们将在 15 个工作日内予以答复。'),
 		]),
 		new PolicySection('third', '第三方', '第三方服务与其他条款', 146.2, [
@@ -109,6 +178,72 @@
 
 	// 帧默认选中「信息收集」（F3a 60:710 选中态深棕底白字）
 	let activeIdx = ref(1)
+
+	// ═══ 2026-10-30（P2 I-3）本机隐私开关（键名前缀统一 yishu.privacy.*） ═══
+	// 默认全开（决策 #22「照片原件默认上云、可关闭」：默认给能力，把关闭权交给用户）
+	const KEY_PRIV_PHOTO = 'yishu.privacy.photo_origin_cloud'
+	const KEY_PRIV_VOICE = 'yishu.privacy.voice_cloud'
+	const KEY_PRIV_PORTRAIT = 'yishu.privacy.portrait_gen'
+	const KEY_PRIV_ECHO = 'yishu.privacy.daily_echo'
+	let permsOpen = ref(false)
+	let photoOriginOn = ref(true)
+	let voiceCloudOn = ref(true)
+	let portraitGenOn = ref(true)
+	let dailyEchoOn = ref(true)
+
+	/** 读布尔开关：未落盘（空串）视为**默认开**；只有显式写 '0' 才算关 */
+	function readFlag(key: string): boolean {
+		const v = uni.getStorageSync(key) as string
+		return v != '0'
+	}
+
+	function writeFlag(key: string, on: boolean): void {
+		uni.setStorageSync(key, on ? '1' : '0')
+	}
+
+	/** 切换即落盘 + toast 确认；文案带「本机记录」——不暗示云端已生效（见页面顶部边界说明） */
+	function toastFlag(on: boolean): void {
+		uni.showToast({ title: on ? '已开启（本机记录）' : '已关闭（本机记录）', icon: 'none' })
+	}
+
+	function togglePhotoOrigin(): void {
+		photoOriginOn.value = !photoOriginOn.value
+		writeFlag(KEY_PRIV_PHOTO, photoOriginOn.value)
+		toastFlag(photoOriginOn.value)
+	}
+	function toggleVoiceCloud(): void {
+		voiceCloudOn.value = !voiceCloudOn.value
+		writeFlag(KEY_PRIV_VOICE, voiceCloudOn.value)
+		toastFlag(voiceCloudOn.value)
+	}
+	function togglePortraitGen(): void {
+		portraitGenOn.value = !portraitGenOn.value
+		writeFlag(KEY_PRIV_PORTRAIT, portraitGenOn.value)
+		toastFlag(portraitGenOn.value)
+	}
+	function toggleDailyEcho(): void {
+		dailyEchoOn.value = !dailyEchoOn.value
+		writeFlag(KEY_PRIV_ECHO, dailyEchoOn.value)
+		toastFlag(dailyEchoOn.value)
+	}
+
+	function closePerms(): void {
+		permsOpen.value = false
+	}
+
+	// `?panel=perms` = 从「账号与安全-隐私权限」跳来 ⇒ 拉起开关浮层；否则纯政策页（关于页入口）
+	// 入参读法沿用 detail.uvue:249 / theme-detail.uvue:100 的 `options['x'] as string`（OnLoadOptions）
+	onLoad((options: OnLoadOptions) => {
+		const panel = options['panel'] as string
+		if (panel == 'perms') {
+			// 先读真值再开浮层（不先读会出现"默认开"与 storage 实际关闭态不一致的假状态）
+			photoOriginOn.value = readFlag(KEY_PRIV_PHOTO)
+			voiceCloudOn.value = readFlag(KEY_PRIV_VOICE)
+			portraitGenOn.value = readFlag(KEY_PRIV_PORTRAIT)
+			dailyEchoOn.value = readFlag(KEY_PRIV_ECHO)
+			permsOpen.value = true
+		}
+	})
 
 	function onChip(idx: number): void {
 		activeIdx.value = idx
@@ -262,5 +397,125 @@
 }
 	.next-link-end {
 		color: var(--c-ink-300, #B3A696);
+	}
+
+	/* ═══ 2026-10-30（P2 I-3）隐私权限浮层 ═══
+	   全屏 fixed 不透明底（盖住宿主政策页与 TabBar，z-index 1000，PortraitPrivacyPanel 范式）。
+	   无画布真值 → 沿用本页既有 token（白卡 r16 / ink 三档字色 / 锈金强调）。 */
+	.pn-root {
+		position: fixed;
+		/* absolute-ok: 全屏浮层（就地拉起不跳页；与 PortraitPrivacyPanel.panel-root 几何同款） */
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		background-color: var(--c-paper-100, #F8F7F4);
+		z-index: 1000;
+		flex-direction: column;
+	}
+	.pn-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序：先标题容器后返回钮） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	.pn-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.pn-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.pn-body {
+		flex: 1;
+		margin-top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-raw-r60, 60rpx);
+	}
+	.pn-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		line-height: var(--d-lattice-p19, 36.5rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.pn-note {
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		line-height: var(--d-lattice-p17, 32.7rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* ── 行列表形态（标题+说明+开关，单卡内行分隔；不用卡片堆叠） ── */
+	.prv-group {
+		margin-top: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		padding: var(--d-lattice-p6, 11.5rpx);
+		flex-direction: column;
+	}
+	.prv-row {
+		flex-direction: row;
+		align-items: center;
+		padding: var(--d-card_radius_small, 23.1rpx);
+	}
+	.prv-main {
+		flex: 1;
+		flex-direction: column;
+	}
+	.prv-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.prv-desc {
+		margin-top: var(--d-lattice-p4, 7.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		line-height: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.prv-divider {
+		height: var(--d-lattice-p1, 1.9rpx);
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		margin-right: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-paper-400, #EDE5D5);
+	}
+	/* 开关：46×28 r14（台账 §7.18 遗留规格，PortraitPrivacyPanel 同款）；开 c-rust-500 / 关 c-surface-neutral。
+	   ⚠️ 注释里不要写带井号的色值：audit_token_literals 对 .uvue 只剔 <script> 段注释，style 段注释照算。 */
+	.prv-switch {
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		width: var(--d-search_height, 88.5rpx);
+		height: var(--d-fab_radius, 53.8rpx);
+		border-radius: var(--d-lattice-p14, 26.9rpx);
+		padding: var(--d-lattice-p3, 5.8rpx);
+		flex-direction: row;
+	}
+	.prv-switch-on {
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: flex-end;
+	}
+	.prv-switch-off {
+		background-color: var(--c-surface-neutral, #D8D0C6);
+		justify-content: flex-start;
+	}
+	.prv-knob {
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		border-radius: var(--d-lattice-p11, 21.2rpx);
+		background-color: var(--c-white, #FFFFFF);
 	}
 </style>

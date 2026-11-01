@@ -70,7 +70,18 @@ class ChatHistoryItemOut(BaseModel):
 
 
 class ChatHistoryOut(BaseModel):
-    """会话历史（供客户端进入会话时回填；按时间正序）。"""
+    """会话历史（供客户端进入会话时回填；**messages 恒按时间正序**）。
+
+    2026-10-30（P2 D-11）分页字段：
+      · 不传 `limit`/`cursor` → 全量（改造前行为，老客户端不受影响）；
+      · 传了 → 返回**最近 `limit` 条**，`has_more` = 还有更早的消息，
+        `cursor` = 本页最早那条的位置，回传即取更早一页（**向前翻**，聊天的使用方向）。
+    """
 
     conversation_id: str
     messages: list[ChatHistoryItemOut]
+    cursor: str | None = Field(
+        None, description="取更早一页的游标（本页最早一条的位置）；无更早消息时 null"
+    )
+    limit: int | None = Field(None, description="本次生效的页长；null = 全量模式")
+    has_more: bool = Field(False, description="true = 本次窗口之外还有更早的消息")

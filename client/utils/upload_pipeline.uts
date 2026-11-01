@@ -174,7 +174,8 @@ function completeFor(uploadId: string, meta: UTSJSONObject): Promise<UploadOutco
 
 /** 走完整管线（含断点补传）；成功 resolve UploadOutcome；失败 reject UploadPipeError。
  *  onNewUploadId：新建任务时回调（调用方持久化 upload_id 供重启续传）；
- *  onCompleted：成功完成时回调（调用方清理持久化的 upload_id）。 */
+ *  onCompleted：管线**收尾**时回调 —— 成功，或遇到 permanent（4xx）错误时**作废断点**，
+ *  两种情况下调用方都应清理持久化的 upload_id。 */
 export function runUploadPipeline(
 	spec: UploadSpec,
 	buildMeta: () => UTSJSONObject,
@@ -182,19 +183,33 @@ export function runUploadPipeline(
 	onCompleted: (uploadId: string) => void
 ): Promise<UploadOutcome> {
 	return new Promise<UploadOutcome>((resolve, reject) => {
+		// 2026-10-30（P2 A-2）：permanent（4xx）失败必须**作废断点 upload_id**。
+		// 原实现只 `reject(e)`：调用方持久化的 upload_id 仍在，下次重试以 `resumeUploadId` 继续补传
+		// 那个已被服务端判死的任务 ⇒ 每次都停在同一处 4xx，形成"恒失败"（用户反复点重试都没用）。
+		// 网络/5xx（permanent=false）保留断点 —— 续传才有意义。
+		const fail: (uploadId: string, e: Error) => void = (uploadId, e) => {
+			if (e instanceof UploadPipeError) {
+				const perr = e as UploadPipeError
+				if (perr.permanent && uploadId != '') {
+					console.log('[yishu] upload 永久失败（HTTP ' + perr.status + '），作废断点 upload_id=' + uploadId)
+					onCompleted(uploadId)
+				}
+			}
+			reject(e)
+		}
 		const finish: (uploadId: string, meta: UTSJSONObject) => void = (uploadId, meta) => {
 			completeFor(uploadId, meta).then((out: UploadOutcome) => {
 				onCompleted(uploadId)
 				resolve(out)
 			}, (e: Error) => {
-				reject(e)
+				fail(uploadId, e)
 			})
 		}
 		const send: (uploadId: string) => void = (uploadId) => {
 			putChunkFor(uploadId, spec.filePath).then(() => {
 				finish(uploadId, buildMeta())
 			}, (e: Error) => {
-				reject(e)
+				fail(uploadId, e)
 			})
 		}
 		const resumeOrChunk: (uploadId: string) => void = (uploadId) => {

@@ -47,7 +47,8 @@
 				<view class="arow" @tap="onCheckUpdate">
 					<image class="arow-icon" src="/static/icons/icon-refresh.svg" />
 					<text class="arow-label">检查更新</text>
-					<text class="arow-latest">已是最新</text>
+					<!-- 2026-10-30（P2 I-5）：静态「已是最新」同样是无法验证的断言（没有更新服务）⇒ 改「内测版」 -->
+					<text class="arow-latest">内测版</text>
 				</view>
 				<view class="arow" @tap="onLicense">
 					<image class="arow-icon" src="/static/icons/license-trash.svg" />
@@ -75,9 +76,12 @@
 		uni.navigateTo({ url: '/pages/privacy/privacy' })
 	}
 
-	// 菜单行：检查更新（无更新服务，画布真值「已是最新」）
+	// 菜单行：检查更新
+	// 2026-10-30（P2 I-5）：原来无论点几次都回「已是最新版本」—— 而工程里**没有任何更新检查服务**
+	// （没调接口、没比版本号），这是凭空断言"你已是最新"，与"不造假数据"军规冲突。
+	// 现改为如实说明当前形态（内测未接更新通道），不再给出无法验证的结论。
 	function onCheckUpdate(): void {
-		uni.showToast({ title: '已是最新版本', icon: 'none' })
+		uni.showToast({ title: '内测版暂未接入在线更新，请关注团队发布', icon: 'none', duration: 2500 })
 	}
 
 	// 菜单行：开源许可（无清单页，诚实占位）

@@ -293,3 +293,58 @@ def upload_sts(
         logger.warning("STS 获取失败: %s", exc)
         raise ApiError(ERR_UPLOAD_006, "STS 暂不可用，请走后端中转上传", http=503) from exc
     return ApiResponse(data=creds)
+
+
+@router.post("/direct-url", response_model=ApiResponse[dict])
+def direct_upload_url(
+    namespace: str = "photos",
+    ext: str = "jpg",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**客户端直传**：签发一次性预签名 PUT URL（2026-10-31）。
+
+    ## 为什么必须有它
+    生产服务器公网带宽 1 Mbps（≈125 KB/s）——一张 3MB 照片经后端中转要 **24 秒**，
+    客户端早就超时了，于是队列里全是"上传失败/待重试"。
+    直传把字节流从"客户端→业务服务器"改成"客户端→对象存储"，
+    业务服务器只签发一张票据 + 事后校验，出口带宽不再是大文件通道。
+
+    ## 为什么用预签名 URL 而不是 `/upload/sts` 的临时密钥
+    STS 需要客户端自己算 COS 签名（HMAC-SHA1 + 规范化请求串 + 字典序拼接），
+    在 UTS 里实现成本高、易错；预签名把签名留在服务端，客户端只发一次原始 PUT。
+
+    ## 契约
+    - 命名空间只允许 `photos` / `voice` / `thumbnails`（与内容表 cos_key 前缀一致）
+    - key 由服务端生成：`{namespace}/{user_id}/{uuid}.{ext}`，**客户端不能指定 key**
+      （防跨用户覆盖）
+    - 返回 `url` 为空时表示该后端不支持直传（本地 fs/fake），客户端应回退后端中转
+    """
+    if namespace not in ("photos", "voice", "thumbnails"):
+        raise ApiError(ERR_UPLOAD_001, "命名空间非法（photos/voice/thumbnails）", http=422)
+    safe_ext = ext.lower().lstrip(".")
+    if safe_ext not in ("jpg", "jpeg", "png", "webp", "m4a", "wav", "aac", "mp3"):
+        raise ApiError(ERR_UPLOAD_001, "扩展名不支持", http=422)
+
+    # 注：`uuid4_str` 是入参强校验器（需要传 value），不是生成器 —— 这里要新 uid
+    from uuid import uuid4
+
+    key = f"{namespace}/{user.id}/{uuid4()}.{safe_ext}"
+    backend = get_storage_backend()
+    url = backend.get_upload_url(key)
+    if url is None:
+        # 不报错：本地开发是 fs 后端，本来就不支持直传，让客户端走中转即可
+        return ApiResponse(data={
+            "key": key,
+            "url": "",
+            "method": "PUT",
+            "expires_in": 0,
+            "fallback": "relay",
+        })
+    return ApiResponse(data={
+        "key": key,
+        "url": url,
+        "method": "PUT",
+        "expires_in": int(getattr(settings, "media_original_ttl", 900)),
+        "fallback": "",
+    })

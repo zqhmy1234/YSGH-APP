@@ -11,7 +11,9 @@
 				<!-- 2026-10-23 真机回归：原生 input 的文本色不解析 CSS 变量（连 fallback 也不生效），
 				     占位符因为 inline placeholder-style 使用字面值仍可见；输入值其实存在，但绘制成全白。
 				     这里必须使用 101 已验证的字面色；高度继续由 .n2_396 类负责。 -->
-				<input :adjust-position="true" class="n2_396" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @input="onKeywordInput" @confirm="doSearch" />
+				<!-- 2026-10-30（P2 C-4）：补 @focus / @blur —— 「输入框聚焦且关键词为空」是历史 chip 行
+				     的唯一显隐条件；没有这两个事件就无从判断聚焦态（原先全仓 input 都只用 v-model/@input）。 -->
+				<input :adjust-position="true" class="n2_396" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @focus="onInputFocus" @blur="onInputBlur" @input="onKeywordInput" @confirm="doSearch" />
 			</view>
 			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
 			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
@@ -26,10 +28,31 @@
 				<text class="s-chip-text" :class="{ 's-chip-text-active': idx === activeFilter }">{{ f }}</text>
 			</view>
 		</view>
+		<!-- 2026-10-30（P2 C-2）：降级提示并入结果提示行。
+		     本页是设计稿坐标绝对定位（新增独立黄条会与 .n2-results 的 top 重叠），
+		     故不插新节点，改为在提示行追加后缀 —— 用户可见、零布局风险。 -->
 		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
 		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
 		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
 		<scroll-view class="n2-results" direction="vertical" :show-scrollbar="false">
+			<!-- 2026-10-30（P2 C-4）搜索历史：本机最近 10 条关键词（仅本地、不上云）。
+			     放在结果区**滚动流的第一位**而不是 .n2_406 与 .n2-results 之间——
+			     本页是设计稿坐标绝对定位（结果区 top=496.2rpx 已钉死），在两者之间插节点会压住结果区；
+			     置于流首既满足「结果区顶部」，又随结果一起滚动、零布局风险。
+			     无历史时 showHistory 为 false ⇒ 整块不渲染、不占位。 -->
+			<view v-if="showHistory" class="s-hist-block">
+				<view class="s-hist-head">
+					<text class="s-hist-title">最近搜索</text>
+					<text class="s-hist-clear" @tap="onClearHistory()">清空</text>
+				</view>
+				<scroll-view class="s-hist-scroll" direction="horizontal" :show-scrollbar="false">
+					<view class="s-hist-row">
+						<view v-for="(k, hi) in historyKeywords" :key="'h' + hi" class="s-chip s-hist-chip" :class="{ 's-chip-ml': hi > 0 }" @tap="onPickHistory(k)">
+							<text class="s-chip-text">{{ k }}</text>
+						</view>
+					</view>
+				</scroll-view>
+			</view>
 			<view v-for="(item, idx) in voiceResults" :key="'v' + item.id" class="n2_588" @tap="openResult(item)">
 				<view class="n2_589"> <!-- 语音媒体 -->
 					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
@@ -63,13 +86,29 @@
 				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFill" />
 				<view class="n2_599"> <!-- 摘要块 -->
 					<view class="n2_601"></view> <!-- 引用竖线 -->
-					<text class="n2_602">{{ item.text }}</text>
+					<!-- 2026-10-30（P2 C-8）：命中词高亮走「text 子节点切片」，**不用 rich-text / v-html**。
+					     关键词来自用户输入、又要随结果回显，任何"把字符串当标记解析"的方案都是 XSS 面；
+					     切段后颜色/字重只是样式属性，不参与解析 ⇒ 结构上无注入面。
+					     parts 由 utils/highlight.splitHighlight 纯函数在 textResults 里算好（已按**已提交查询词**切分，
+					     与输入框当前内容解耦：用户改了输入框但没重搜时，旧结果不会被错误地二次高亮）。 -->
+					<text class="n2_602"><text v-for="(p, pi) in item.parts" :key="'p' + pi" :class="p.hit ? 'n2-hl-hit' : 'n2-hl-plain'">{{ p.text }}</text></text>
 				</view>
 				<view class="n2_600"> <!-- 文字元信息区 -->
 					<text class="n2_603">{{ item.meta }}</text>
 				</view>
 			</view>
-			<view v-if="hasSearched && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+			<!-- 2026-10-30（P2 C-1/C-3）：三态互斥渲染。原实现只看 hasSearched，
+			     导致「搜索中…」与上一轮的空结果文案同屏，且「加载失败」和「真空」不可区分。 -->
+			<view v-if="loading && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">搜索中…</text>
+			</view>
+			<view v-else-if="searchFailed" class="n2-empty">
+				<text class="n2-empty-text">搜索失败 · 请检查网络后重新搜索</text>
+			</view>
+			<view v-else-if="recentFailed && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">最近记忆加载失败 · 请稍后重试</text>
+			</view>
+			<view v-else-if="voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
 				<text class="n2-empty-text">{{ emptyText() }}</text>
 			</view>
 		</scroll-view>
@@ -82,7 +121,11 @@
 	import { WaveformCache } from '@/composables/useWaveform'
 	import { searchText, searchByImage, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
 	import { shortDate } from '@/utils/time'
+	// 2026-10-30（P2 C-4 / C-8）：搜索历史（仅本机存储）与关键词高亮切分（纯函数，可脱离 UI 单测）
+	import { readSearchHistory, pushSearchHistory, clearSearchHistory } from '@/utils/search_history'
+	import { splitHighlight, HighlightPart } from '@/utils/highlight'
 	import { shellActiveTab } from '@/utils/shell_state'
+	import { isTimelineDirty, markTimelineClean } from '@/utils/timeline'
 	import {
 		toggleVoice,
 		fmtVoiceTime,
@@ -102,6 +145,23 @@
 	let degraded = ref(false)
 	let hits = ref<Array<SearchHitItem>>([])
 	let filters = ['全部', '照片', '语音', '文字']
+	// 2026-10-30（P1-16/P1-17）：**请求序号**与**失败态**。
+	// 原实现三条入口（文本搜索 / 图搜 / 最近内容）共用 hits+loading 三个 ref，且没有任何
+	// 序号或取消标记 ⇒ 旧响应可覆盖新结果；`null`（网络失败）与「零命中」又被合并处理
+	// ⇒ 用户看到「没有找到相关记忆」，而真实原因是请求失败了。
+	let reqSeq: number = 0
+	let searchFailed = ref(false)
+	let recentFailed = ref(false)
+
+	// 2026-10-30（P2 C-4）：搜索历史（仅本机，见 utils/search_history.uts 头注的口径）。
+	// keywordFocused 由 input 的 @focus/@blur 驱动；historyHideTimer 用于「延迟隐藏」（见 onInputBlur）。
+	let historyKeywords = ref<Array<string>>([])
+	let keywordFocused = ref(false)
+	let historyHideTimer = 0
+	// 2026-10-30（P2 C-8）：**已提交查询词**，与输入框内容解耦。
+	// 高亮必须按"产生这批结果的那个词"切分：若直接读 keyword，用户点进结果前改了输入框却没重搜，
+	// 旧结果会被按新词二次高亮 —— 命中的其实是新词的字面巧合，属错误归因。
+	let searchedKeyword = ref('')
 
 	// 本地 mock 数据注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
 	// 此前 onLoad 无条件灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*）压住真实结果；
@@ -113,9 +173,16 @@
 		typeQuery: { type: String, default: '' },
 		savedSeq: { type: Number, default: 0 }
 	})
+	// 2026-10-31（P2 J-4）：`typeQuery` 是宿主（shell）的**一次性意图**，本组件应用后必须回报
+	// 一次（`typeconsumed`），宿主随即清零。原实现"只写不清"：意图作为常驻状态留在壳里，
+	// 下一次深链/组件请求若不带 type，旧值仍被当成"当前意图"（且同值重复请求因 prop 未变而不生效）。
+	// ⚠️ 事件名不带连字符：emit 名与模板监听属性逐字一致，避免驼峰/短横线归一化差异。
+	const emit = defineEmits(['typeconsumed'])
 	onMounted((): void => {
 		applyTypeQuery(props.typeQuery)
 		loadRecent()
+		// 2026-10-30（P2 C-4）：进页即读本机历史（readSearchHistory 内含空值/超长兜底）
+		historyKeywords.value = readSearchHistory()
 	})
 	// 🚨 2026-10-11 静态审查修复：**必须 watch typeQuery**。
 	// 本组件在壳内**常驻不销毁**（shell 用 v-if 首次挂载 + v-show 切换），而原实现只在
@@ -139,7 +206,12 @@
 			activeFilter.value = 2
 		} else if (t == 'text') {
 			activeFilter.value = 3
+		} else {
+			return // 非 type 值：不清用户手选，也不回报（没有"消费"发生）
 		}
+		// 2026-10-31（P2 J-4）：已消费 ⇒ 请宿主清零。宿主清成 '' 后 watch 会再调一次本函数，
+		// 走上面 else 直接返回，不会形成循环。
+		emit('typeconsumed')
 	}
 
 	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
@@ -174,11 +246,14 @@
 		meta: string
 		/** 照片缩略图票据 URL（仅 content_type=photo 有值；文字/语音为空串） */
 		thumb: string
-		constructor(id: string, text: string, meta: string, thumb: string) {
+		/** 2026-10-30（P2 C-8）：切好的高亮片段（前缀/命中/后缀…），模板按段渲染，零标记解析 */
+		parts: Array<HighlightPart>
+		constructor(id: string, text: string, meta: string, thumb: string, parts: Array<HighlightPart>) {
 			this.id = id
 			this.text = text
 			this.meta = meta
 			this.thumb = thumb
+			this.parts = parts
 		}
 	}
 
@@ -312,6 +387,24 @@
 	watch(voiceProgress, (): void => { syncActiveCardIfVisible() })
 	watch(voiceCurSec, (): void => { syncActiveCardIfVisible() })
 	watch(voiceTotalSec, (): void => { syncActiveCardIfVisible() })
+	// 2026-10-30（P1-21）：搜到结果 → 进详情 → 删除/改备注 → 返回，**结果区仍是旧数据**。
+	// 本组件在壳内常驻，没有 onShow 可用；详情页删除已把时间轴缓存置脏（invalidateTimelineCache），
+	// 这里复用同一个脏标记：切回 search tab 且已置脏 ⇒ 重拉当前结果。
+	watch(shellActiveTab, (tab: string): void => {
+		if (tab != 'search') {
+			return
+		}
+		if (!isTimelineDirty()) {
+			return
+		}
+		markTimelineClean()
+		const q = keyword.value.trim()
+		if (q != '') {
+			runSearch()
+		} else {
+			loadRecent()
+		}
+	})
 	// 切回本 tab 时补同步一次（隐藏期间被守卫跳过的变更需在此对齐，否则进度条会等下一跳才出现）
 	watch(shellActiveTab, (t: string): void => {
 		if (t == 'search') {
@@ -322,6 +415,9 @@
 	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
 	let textResults = computed((): Array<TextResult> => {
 		const out: Array<TextResult> = []
+		// 2026-10-30（P2 C-8）：读 searchedKeyword 使本 computed 依赖它 —— 新搜索完成后高亮自动重算；
+		// 只读 keyword 会漏掉"改了输入框但没重搜"时不该重算的语义（见 searchedKeyword 声明处）
+		const kw = searchedKeyword.value
 		for (let i = 0; i < hits.value.length; i++) {
 			const h = hits.value[i]
 			if (h.contentType == 'voice') {
@@ -330,9 +426,14 @@
 			if (!matchesFilter(h.contentType)) {
 				continue
 			}
-			const txt = h.text != '' ? h.text : '（无文本描述）'
+			// 2026-10-30（P2 C-8）：占位串「（无文本描述）」是**界面文案、不是内容**，不给它套高亮——
+			// 否则用户搜「无文本」时占位符会被染色，等于把 UI 文案当成命中证据。
+			// 无原文 ⇒ 用空关键词走 splitHighlight 的"不切分"分支，得到单段普通片段。
+			const raw = h.text
+			const txt = raw != '' ? raw : '（无文本描述）'
+			const parts: Array<HighlightPart> = raw != '' ? splitHighlight(raw, kw) : splitHighlight(txt, '')
 			// 照片命中带服务端下发的缩略图票据 URL，其余类型为空串
-			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : ''))
+			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : '', parts))
 		}
 		return out
 	})
@@ -341,8 +442,16 @@
 		if (loading.value) {
 			return '搜索中…'
 		}
+		if (searchFailed.value) {
+			return '搜索失败'
+		}
 		let n = voiceResults.value.length + textResults.value.length
-		return hasSearched.value ? ('共 ' + n.toString() + ' 条结果') : '输入关键词，搜索你的记忆'
+		if (!hasSearched.value) {
+			return '输入关键词，搜索你的记忆'
+		}
+		// 2026-10-30（P2 C-2）：降级态必须让用户看见（原先只在 Sentry 里有）
+		const suffix = degraded.value ? ' · 部分结果可能不完整' : ''
+		return '共 ' + n.toString() + ' 条结果' + suffix
 	}
 
 	function emptyText(): string {
@@ -361,6 +470,58 @@
 		return '没有找到相关记忆，换个关键词试试'
 	}
 
+	// 2026-10-30（P2 C-4）：历史行显隐的**唯一判据**（模板只用它，不写复合表达式）：
+	// 聚焦 且 输入框为空 且 有历史 ⇒ 显示；无历史时整块不渲染、不占位。
+	let showHistory = computed((): boolean => {
+		if (!keywordFocused.value) {
+			return false
+		}
+		if (keyword.value.trim() != '') {
+			return false
+		}
+		return historyKeywords.value.length > 0
+	})
+
+	/** 聚焦：立刻显示历史，并作废在飞的隐藏定时器（快速失焦→再聚焦时不会被旧定时器关掉） */
+	function onInputFocus(): void {
+		if (historyHideTimer != 0) {
+			clearTimeout(historyHideTimer)
+			historyHideTimer = 0
+		}
+		keywordFocused.value = true
+	}
+
+	/**
+	 * 失焦：**延迟 300ms 隐藏**。
+	 * 根因（原生事件顺序）：点历史 chip 时输入框会先派发 blur、再派发 tap；
+	 * 若 blur 里立刻置 false，`v-if` 会把 chip 整块摘掉 ⇒ tap 派发不出去 = 用户眼里"点了没反应"。
+	 * 取 300ms（而非 200ms）：软键盘场景下 blur 还要伴随 IME 收起动画，ACTION_UP 可能被推后；
+	 * 300ms 覆盖该抖动，而"点了别处 300ms 后消失"人眼不可察。再长会显得历史条赖着不走。
+	 * 注：这是**事件顺序**决定的必要处理，不是防御性定时器 —— 去掉它本功能在真机上就是坏的。
+	 */
+	function onInputBlur(): void {
+		if (historyHideTimer != 0) {
+			clearTimeout(historyHideTimer)
+		}
+		historyHideTimer = setTimeout((): void => {
+			keywordFocused.value = false
+			historyHideTimer = 0
+		}, 300)
+	}
+
+	/** 点历史 chip：回填输入框并**立即搜索**（复用 runSearch 唯一入口：序号/失败态/历史写入都在里面） */
+	function onPickHistory(kw: string): void {
+		keyword.value = kw
+		keywordFocused.value = false
+		runSearch()
+	}
+
+	/** 一键清空历史（只删本机键；已显示的结果不受影响） */
+	function onClearHistory(): void {
+		clearSearchHistory()
+		historyKeywords.value = []
+	}
+
 	function setFilter(idx: number): void {
 		// D7 零冗余请求：切筛选纯本地过滤（matchesFilter 链响应 activeFilter），
 		// 不再重发搜索请求；首搜时 filterContentTypes() 才传参服务端。
@@ -371,6 +532,12 @@
 		keyword.value = ''
 		hits.value = []
 		hasSearched.value = false
+		// 2026-10-30（P1-16）：作废在途请求 —— 否则清空后旧搜索的回调仍会把结果写回来
+		reqSeq = reqSeq + 1
+		searchFailed.value = false
+		degraded.value = false
+		// 2026-10-30（P2 C-8）：结果已清空 ⇒ 高亮基准词一并清掉（否则后续"最近内容"会被旧词染色）
+		searchedKeyword.value = ''
 	}
 
 	/**
@@ -407,15 +574,27 @@
 			return
 		}
 		loading.value = true
+		searchFailed.value = false
+		// 2026-10-30（P2 C-4）：**发起即记历史**（不是成功才记）。
+		// 失败/超时同样是"用户真的搜过这个词"，成功后仍可从历史一键重试；成功才记会让弱网用户白搜。
+		historyKeywords.value = pushSearchHistory(q)
+		const my = ++reqSeq
 		searchText(q, 30, filterContentTypes()).then((out) => {
+			if (my != reqSeq) {
+				return // 已被更新的请求取代：丢弃本次结果（防串）
+			}
 			loading.value = false
-			hasSearched.value = true
 			if (out == null) {
-				hits.value = []
+				// 失败 ≠ 零命中：**保留上一轮结果**并给可重试错误态，
+				// 不置 hasSearched（否则会渲染成「共 0 条结果」这种与事实不符的结论）
+				searchFailed.value = true
 				return
 			}
+			hasSearched.value = true
 			hits.value = out.hits
 			degraded.value = out.degraded
+			// 2026-10-30（P2 C-8）：结果落地时才切"高亮基准词"，与这批 hits 严格配对
+			searchedKeyword.value = q
 		})
 	}
 
@@ -437,14 +616,24 @@
 					return
 				}
 				loading.value = true
+				searchFailed.value = false
+				// 2026-10-30（P2 C-7）：图搜与文本搜索共用筛选器，但图搜结果不做本地类型过滤
+				// ⇒ 必须复位筛选，否则上一次选的「语音」会把图搜结果全滤掉，只剩空态。
+				activeFilter.value = 0
+				const my = ++reqSeq
 				searchByImage(paths[0], 30).then((out) => {
-					loading.value = false
-					hasSearched.value = true
-					keyword.value = ''
-					if (out == null) {
-						hits.value = []
+					if (my != reqSeq) {
 						return
 					}
+					loading.value = false
+					keyword.value = ''
+					// 2026-10-30（P2 C-8）：图搜没有关键词 ⇒ 清掉高亮基准词（结果按图片语义命中，无"命中词"可言）
+					searchedKeyword.value = ''
+					if (out == null) {
+						searchFailed.value = true
+						return
+					}
+					hasSearched.value = true
 					hits.value = out.hits
 					degraded.value = out.degraded
 				})
@@ -454,6 +643,24 @@
 
 	function doSearch(): void {
 		runSearch()
+	}
+
+	/**
+	 * B10 方案A 的 savedSeq 回调落点（记录保存成功 ⇒ 刷新当前视图）。
+	 *
+	 * 2026-10-30（P2 C-4/C-8 顺带修复）：**这个函数原先是缺失的** ——
+	 * 上方 `watch(props.savedSeq)` 里调用了 `onRecordSaved()`（TabSearch.uvue:152），
+	 * 但全文件没有任何定义（B10 搬迁时把回调换成 savedSeq prop，函数体被删、调用点没删），
+	 * 属"用了却没声明"的符号，与 audit_class_members 抓的那类假绿同源。
+	 * 语义对齐 TabIndex 的同名函数：已搜过 ⇒ 重跑当前搜索（结果反映新增/删除），否则刷新最近内容。
+	 */
+	function onRecordSaved(): void {
+		const q = keyword.value.trim()
+		if (q != '') {
+			runSearch()
+		} else {
+			loadRecent()
+		}
 	}
 
 	/**
@@ -473,10 +680,22 @@
 		if (!hasData) {
 			loading.value = true
 		}
+		recentFailed.value = false
+		const my = ++reqSeq
 		fetchRecentContents(30, filterContentTypes()).then((out) => {
+			if (my != reqSeq) {
+				return // 已被搜索/更新的请求取代
+			}
 			loading.value = false
-			if (out == null || out.hits.length == 0) {
-				return // 保持空态文案，不打 hasSearched（避免误显「共 0 条结果」）
+			if (out == null) {
+				// 2026-10-30（P2 C-3）：原实现「失败」与「真空」都不打 hasSearched，
+				// 而空态的 v-if 又要求 hasSearched ⇒ 结果区**一句文案都没有**，页面像卡住。
+				recentFailed.value = true
+				return
+			}
+			recentFailed.value = false
+			if (out.hits.length == 0) {
+				return // 真空：由空态块按 hasSearched=false 显示引导文案
 			}
 			hits.value = out.hits
 		})
@@ -815,5 +1034,66 @@
 		font-family: "Sarasa Gothic SC", sans-serif;
 		font-size: var(--d-lattice-p14, 26.9rpx);
 		color: var(--c-ink-300, #B3A696);
+	}
+	/* ── 2026-10-30（P2 C-4）搜索历史行 ──
+	   胶囊外壳/文字**直接复用 .s-chip / .s-chip-text**（同筛选行），此处只加两层修饰：
+	   ① 容器（横滑 + 标题行）；② 描边态。不引入新组件族，底色仍是米色画布。 */
+	.s-hist-block {
+		width: 100%;
+		flex-direction: column;
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+	}
+	.s-hist-head {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--d-lattice-p6, 11.5rpx);
+	}
+	.s-hist-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.s-hist-clear {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
+	}
+	.s-hist-scroll {
+		width: 100%;
+		/* 横滑容器必须显式定高（scroll-view 无高度即塌陷）。76rpx = chip 内边距 34.6 + 文字行 ~32
+		   + 上下描边 3.8，留 5rpx 余量防裁边。 */
+		height: var(--d-raw-r76, 76rpx);
+	}
+	.s-hist-row {
+		flex-direction: row;
+		align-items: center;
+		height: 100%;
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+	}
+	/* 描边胶囊：金边 + 白底（与 .s-chip 白底同族，靠 1.9rpx 金边与筛选行区分"这是历史"） */
+	.s-hist-chip {
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--c-amber-500, #C4913C);
+		background-color: var(--c-white, #FFFFFF);
+	}
+	/* ── 2026-10-30（P2 C-8）高亮片段 ──
+	   命中段 = 金色加粗（任务指定 B8860B）。写成「令牌 + 字面量回退」是本仓令牌波既定形态，
+	   回退值即该色 ⇒ 令牌缺失时表现完全一致。
+	   ⚠️ 注释里也不能出现带井号的色值字面量：audit_token_literals 对 .uvue **只剔 <script> 段**的
+	   注释（模板/style 段的注释照算），写进注释会直接把该文件的 hex 计数顶上去（实测 +1）。
+	   非命中段显式给色/字号而不是依赖嵌套继承：嵌套 text 在端上的继承行为与平台实现相关，
+	   显式声明才能保证"其余保持正文色"这条要求在任何端都成立。 */
+	.n2-hl-plain {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-700, #5A4C40);
+	}
+	.n2-hl-hit {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		font-weight: bold;
+		color: var(--c-gold-600, #B8860B);
 	}
 </style>
