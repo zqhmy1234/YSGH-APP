@@ -1,9 +1,11 @@
 #!/bin/sh
-# Pre-commit hook：调用代码质量审核 Agent
+# Pre-commit hook：调用代码质量审核 Agent（快速门禁，秒级）
 # 安装：git config core.hooksPath .githooks
 # 失败时阻断 commit（不允许 --no-verify 绕过，见 AGENTS.md）
+# 注：2026-08-26 快/全量拆分——hook 只跑快速门禁（默认模式）；
+#     全量门禁（含全量测试）：python scripts/review_agent.py --full（CI 与集成验收用）
 
-echo "=== [pre-commit] 代码质量审核 ==="
+echo "=== [pre-commit] 代码质量审核（快速门禁） ==="
 if ! python scripts/review_agent.py; then
     echo ""
     echo "!!! [pre-commit] 审核未通过 — 禁止提交"

@@ -1,0 +1,18 @@
+{
+  "id": "health_mobility",
+  "label": "行动能力",
+  "category": "健康与生活",
+  "current_values": [
+    "正常",
+    "受限"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_mobility",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

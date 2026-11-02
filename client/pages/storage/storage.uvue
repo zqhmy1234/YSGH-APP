@@ -1,0 +1,526 @@
+<template>
+<!-- 卡12 F2a 存储与备份（2026-09-02 画布 JSON 真值整体重写）
+     真值：.wt/missing-pages/uvue_gen/storage_canvas.json（60:565 · 63 节点）
+     布局锚点：settings.uvue 二级页骨架（导航/卡片/行/toggle 全套项目先例）
+     容量分区：后端无分类型字节 → 分类行诚实空态；总量接真 total_bytes（BA1 · FE2） -->
+	<view class="page-root tk-root">
+		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">存储与备份</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<view class="list-flow">
+			<!-- ═══ 卡1 · 存储用量（画布 60:606：容量分区 · radius 16 · 无阴影）
+			     BA1（FE2）：总量接真字节 total_bytes（daily-summary），后端无分类型字节
+			     → 照片/语音/文字分类行诚实空态（值 '—' · 填充 0），不造假分布 -->
+			<view class="usage-card">
+				<text class="usage-title">存储用量</text>
+				<view class="usage-main-row">
+					<!-- 2026-10-30（P2 H-3）：原为 `{{ totalSize }}` + 写死的 `/ 128 GB` —— 分母是画布
+					     占位值，与任何真实值无关（设备总容量、配额都没有来源），等于给用户看一个
+					     假的比例关系（"我用了 128GB 里的多少"）。本页也没有容量端点（`fetchTotalBytes`
+					     只返回已用字节），做不出真分母 ⇒ 按诚实口径**只说已用**：不加分母、不画百分比。
+					     若日后有配额/设备容量端点，再在这里补分母（唯一落点）。 -->
+					<text class="usage-prefix">已用</text>
+					<text class="usage-num">{{ totalSize }}</text>
+				</view>
+				<view class="cat-row">
+					<view class="cat-dot cat-dot-photo"></view>
+					<text class="cat-label">照片</text>
+					<view class="cat-track">
+						<view class="cat-fill cat-fill-photo" :style="{ width: photoFill }"></view>
+					</view>
+					<view class="cat-val-wrap"><text class="cat-val">{{ photoVal }}</text></view>
+				</view>
+				<view class="cat-row">
+					<view class="cat-dot cat-dot-voice"></view>
+					<text class="cat-label">语音</text>
+					<view class="cat-track">
+						<view class="cat-fill cat-fill-voice" :style="{ width: voiceFill }"></view>
+					</view>
+					<view class="cat-val-wrap"><text class="cat-val">{{ voiceVal }}</text></view>
+				</view>
+				<view class="cat-row">
+					<view class="cat-dot cat-dot-text"></view>
+					<text class="cat-label">文字</text>
+					<view class="cat-track">
+						<view class="cat-fill cat-fill-text" :style="{ width: textFill }"></view>
+					</view>
+					<view class="cat-val-wrap"><text class="cat-val">{{ textVal }}</text></view>
+				</view>
+			</view>
+
+			<!-- ═══ 卡2 · 同步与备份（画布 60:570：自动同步「已开启」/ 上次同步 今天 17:42 / 待补传+一键重试） ═══ -->
+			<view class="card card-gap">
+				<view class="srow">
+					<image class="srow-icon" src="/static/icons/storage-lock.svg" />
+					<text class="srow-label">自动同步</text>
+					<text class="srow-state">{{ syncOn ? '已开启' : '已暂停' }}</text>
+				</view>
+				<view class="srow">
+					<image class="srow-icon" src="/static/icons/storage-bell.svg" />
+					<text class="srow-label">上次同步</text>
+					<text class="srow-time">{{ lastSyncText }}</text>
+				<view class="toggle" :style="syncOn ? 'justify-content: flex-end;' : 'justify-content: flex-start;'" @tap="toggleSync"> <!-- 开关：滑块位置随状态（settings notifyOn 同款先例）；峰宝 09-03 反馈不可切换 -->
+					<view class="toggle-knob"></view>
+				</view>
+				</view>
+				<view v-if="pendingN > 0" class="srow">
+					<view class="pending-dot"></view>
+					<text class="srow-pending">{{ pendingN }} 条记忆待补传</text>
+					<view class="retry-btn" @tap="onRetry">
+						<text class="retry-btn-text">{{ retrying ? '重试中…' : '一键重试' }}</text>
+					</view>
+				</view>
+				<view class="flow-hint">
+					<text class="flow-hint-text">WiFi 传原图，蜂窝网络仅传缩略图与元数据</text>
+				</view>
+			</view>
+
+			<!-- ═══ 卡3 · 数据管理（画布 60:571：回收站 + 导出全部记忆）
+			     卡2→卡3 间距：画布原值 ~3pt（60:570 hug 底 → 60:571 y642）＝生成缺陷级贴死，
+			     峰宝拍板（2026-09-02）覆盖为与卡1→卡2 同节奏 24pt，已登记 _diff_ledger.md -->
+			<view class="card card-gap">
+				<view class="srow" @tap="goTrash">
+					<image class="srow-icon" src="/static/icons/i4_161.svg" />
+					<text class="srow-label">回收站</text>
+					<text class="srow-meta">{{ trashText }}</text>
+				</view>
+				<view class="srow" @tap="onExport">
+					<image class="srow-icon" src="/static/icons/icon-refresh.svg" />
+					<text class="srow-label">导出全部记忆</text>
+					<text class="srow-meta">{{ cacheText }}</text>
+					<image class="chev" src="/static/icons/i4_145.svg" />
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	import { onLoad, onShow } from '@dcloudio/uni-app'
+	import { pendingSyncCount, isSyncPaused } from '@/utils/sync_queue'
+	import { getLastSyncAt } from '@/utils/sync_pipeline'
+	import { runSyncChain } from '@/utils/sync_schedule'
+	import { pauseSync, resumeSync } from '@/utils/pause_controller'
+	import { fetchExportFilePath } from '@/utils/api'
+	import { fetchTotalBytes, fmtBytes } from '@/utils/capsule_api'
+	import { formatIsoShortTime } from '@/utils/time'
+
+	// ── 同步状态（真数据：sync_client 真实状态）──
+	let pendingN = ref(0)
+	let syncOn = ref(true)
+	let retrying = ref(false)
+	let exporting = ref(false)
+	// 上次同步：B7（BB1）sync_client 已落盘 yishu_last_sync_at（ISO）→ onShow 读真值；
+	// 无记录/空串保持「—」诚实空态
+	let lastSyncText = ref('—')
+
+	// ── 存储用量（BA1 · FE2 接真）──
+	// 总量 = GET /api/v1/stats/daily-summary → total_bytes（该用户未删除内容 size_bytes
+	// 求和；后端 coalesce 归 0，出参缺省按 0 处理），fmtBytes 格式化 KB/MB/GB。
+	// 请求失败保持 '—'（api 层已全局 toast 显式原因，对齐本页 onExport 失败显式风格）。
+	// 后端无分类型字节 → 照片/语音/文字分类行诚实空态（值 '—' · 填充 0），不造假分布。
+	let totalSize = ref('—')
+	let photoVal = ref('—')
+	let voiceVal = ref('—')
+	let textVal = ref('—')
+	let photoFill = ref('0rpx')   // 分类填充宽（后端无分类型数据恒 0）
+	let voiceFill = ref('0rpx')
+	let textFill = ref('0rpx')
+
+	// ── 数据管理（回收站文案为画布静态说明；缓存值无端点 → 诚实「—」）──
+	let trashText = ref('30 天后清除')
+	let cacheText = ref('—')
+
+	onLoad(() => {
+		loadUsage()
+	})
+	onShow(() => {
+		// 同步真实状态 + 用量刷新（从回收站等子页返回时回读）
+		pendingN.value = pendingSyncCount()
+		syncOn.value = !isSyncPaused()
+		refreshLastSync()
+		loadUsage()
+	})
+
+	/** 上次同步真值（B7 · BB1）：ISO → MM-dd HH:mm（time.formatIsoShortTime 项目先例）；
+	 *  无记录保持「—」 */
+	function refreshLastSync(): void {
+		const last = getLastSyncAt()
+		if (last != '') {
+			lastSyncText.value = formatIsoShortTime(last)
+		}
+	}
+
+	/** 拉真字节总量（fetchTotalBytes；失败 -1 → 保持 '—'，api 层已全局 toast） */
+	function loadUsage(): void {
+		fetchTotalBytes().then((n: number) => {
+			if (n < 0) {
+				return
+			}
+			totalSize.value = fmtBytes(n)
+		})
+	}
+
+	/** 一键重试：runSyncChain（补推→增量拉，内部全路径 resolve 永不 reject），完成后刷新待补传数 */
+	/** 自动同步开关（峰宝 09-03 真机反馈「不可滑动」）：切换 pause_controller 真状态，滑块位置随 syncOn */
+	function toggleSync(): void {
+		syncOn.value = !syncOn.value
+		if (syncOn.value) {
+			resumeSync()
+		} else {
+			pauseSync('手动暂停同步')
+		}
+		uni.showToast({ title: syncOn.value ? '已开启同步' : '已暂停同步', icon: 'none', duration: 1500 })
+	}
+
+	function onRetry(): void {
+		if (retrying.value) {
+			return
+		}
+		retrying.value = true
+		uni.showLoading({ title: '同步中…', mask: true })
+		runSyncChain().then(() => {
+			pendingN.value = pendingSyncCount()
+			refreshLastSync()
+			uni.hideLoading()
+			retrying.value = false
+			if (pendingN.value > 0) {
+				uni.showToast({ title: '仍有 ' + pendingN.value + ' 条待下轮重试', icon: 'none' })
+			} else {
+				uni.showToast({ title: '同步完成', icon: 'success' })
+			}
+		})
+	}
+
+	/** 导出：GET /api/v1/export 全量 JSON（US-42 拍板链路恢复 · 总账 A9 关单）
+	 * 通路 fetchExportFilePath（api.uts，header 带 token 的 downloadFile 既有拍板）：
+	 * 成功 toast + 失败诚实提示；exporting 防重入（onRetry 同款） */
+	function onExport(): void {
+		if (exporting.value) {
+			return
+		}
+		exporting.value = true
+		uni.showLoading({ title: '导出中…', mask: true })
+		fetchExportFilePath().then((path: string) => {
+			uni.hideLoading()
+			exporting.value = false
+			if (path == '') {
+				uni.showToast({ title: '导出失败，请检查网络后重试', icon: 'none' })
+				return
+			}
+			// 2026-10-30（P1-39）：**不能只说"导出成功"**。
+			// 原实现只把文件下到 app 临时目录（downloadFile 的 tempFilePath）就 toast 成功，
+			// 而临时目录对用户不可见、也拿不出来 ⇒ 用户被告知成功了却永远找不到这个文件。
+			// 现口径：先尝试 saveFile 落到应用持久目录，再把**真实路径**告诉用户并提供「复制路径」。
+			uni.saveFile({
+				tempFilePath: path,
+				success: (r: any) => {
+					const saved = typeof r.savedFilePath == 'string' ? (r.savedFilePath as string) : path
+					showExported(saved)
+				},
+				fail: () => {
+					// 平台不支持 saveFile：如实给出临时路径，别假装已持久化
+					showExported(path)
+				}
+			})
+		})
+	}
+
+	/** 导出成功后的落点披露（路径可复制，用户能自己去文件管理器取） */
+	function showExported(p: string): void {
+		uni.showModal({
+			title: '导出完成',
+			content: '文件已保存到：\n' + p + '\n\n可在文件管理器中按此路径找到它。',
+			confirmText: '复制路径',
+			cancelText: '知道了',
+			success: (r) => {
+				if (r.confirm) {
+					uni.setClipboardData({ data: p })
+				}
+			}
+		})
+	}
+
+	function goTrash(): void {
+		uni.navigateTo({ url: '/pages/storage/trash' })
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页（settings.uvue 先例）
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	/* ── 导航（settings.uvue 二级页先例原值） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	/* ── 卡片流 ── */
+	.list-flow {
+		margin-top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		flex-direction: column;
+	}
+	/* 卡1 存储用量（画布 60:606：radius 16 · 无阴影） */
+	.usage-card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+	}
+	.usage-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.usage-main-row {
+		flex-direction: row;
+		align-items: flex-end;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+	}
+	.usage-num {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 700;
+		font-size: var(--d-lattice-p30, 57.7rpx);
+		line-height: var(--d-lattice-p36, 69.2rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 2026-10-30（P2 H-3）：`.usage-total`（写死「/ 128 GB」的分母位）已删；
+	   改为大数字前的「已用」前缀——语义由标签承担，不再伪造总量。 */
+	.usage-prefix {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-300, #B3A696);
+		margin-right: var(--d-lattice-p6, 11.5rpx);
+	}
+	/* 容量分区行（画布 gap=10px；值列右对齐固定 52px 位，行尾留 16px 画布余量） */
+	.cat-row {
+		flex-direction: row;
+		align-items: center;
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+	}
+	.cat-dot {
+		width: var(--d-lattice-p8, 15.4rpx);
+		height: var(--d-lattice-p8, 15.4rpx);
+		border-radius: var(--d-lattice-p4, 7.7rpx);
+	}
+	.cat-dot-photo {
+		background-color: var(--c-amber-500, #C4913C);
+	}
+	.cat-dot-voice {
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	.cat-dot-text {
+		background-color: var(--c-ink-500, #8A7A6A);
+	}
+	.cat-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		margin-left: var(--d-lattice-p18, 34.6rpx);
+		width: var(--d-safe_bottom, 65.4rpx);
+	}
+	.cat-track {
+		width: 327rpx;
+		height: var(--d-lattice-p6, 11.5rpx);
+		border-radius: var(--d-lattice-p3, 5.8rpx);
+		background-color: var(--c-paper-400, #EDE5D5);
+		margin-left: var(--d-lattice-p10, 19.2rpx);
+		overflow: hidden;
+	}
+	.cat-fill {
+		height: var(--d-lattice-p6, 11.5rpx);
+		border-radius: var(--d-lattice-p3, 5.8rpx);
+	}
+	.cat-fill-photo {
+		background-color: var(--c-amber-500, #C4913C);
+	}
+	.cat-fill-voice {
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	.cat-fill-text {
+		background-color: var(--c-ink-500, #8A7A6A);
+	}
+	.cat-val-wrap {
+		width: var(--d-lattice-p52, 100rpx);
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-left: var(--d-lattice-p10, 19.2rpx);
+	}
+	.cat-val {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* 卡2/卡3（画布 60:570/60:571：radius 20 · 阴影；两卡画布紧贴 y340/522） */
+	.card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.card-gap {
+		/* 卡间统一 24pt：卡1→卡2（画布 60:606 y110 → 60:570 y340 推算）；
+		   卡2→卡3 同节奏（画布原值仅 ~3pt 贴死，峰宝拍板覆盖，2026-09-02） */
+		margin-top: var(--d-lattice-p24, 46.2rpx);
+	}
+	/* ── 同步/数据卡行 ── */
+	.srow {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.srow-icon {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.srow-label {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.srow-state {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-amber-500, #C4913C);
+	}
+	.toggle {
+		width: var(--d-search_height, 88.5rpx);
+		height: 53.9rpx;
+		/* §O P8：开关与状态值（已开启/上次同步时间）之间补间隔，对齐行内 23.1rpx 节奏 */
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		padding-left: var(--d-lattice-p3, 5.8rpx);
+		padding-right: var(--d-lattice-p3, 5.8rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		border-radius: var(--d-lattice-p14, 26.9rpx);
+		overflow: hidden;
+	}
+	.toggle-knob {
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p11, 21.2rpx);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-25, rgba(59, 46, 38, 0.25));
+	}
+	.srow-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.srow-meta {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.pending-dot {
+		width: var(--d-lattice-p8, 15.4rpx);
+		height: var(--d-lattice-p8, 15.4rpx);
+		border-radius: var(--d-lattice-p4, 7.7rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		/* 峰宝拍板（2026-09-02 联调）：警示点在 38.5rpx 图标列内居中，文字列与上方行左缘对齐
+		   （画布真值文字列本就错位 14804 vs 14820，属生成缺陷级不一致，已登记台账） */
+		margin-left: var(--d-lattice-p6, 11.5rpx);
+	}
+	.srow-pending {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-left: 34.7rpx;
+	}
+	.retry-btn {
+		/* 热区 ≥56rpx（text@tap 清零军规 2026-09-06）：view 承载，text 纯展示 */
+		margin-left: 34.7rpx;
+		padding: var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p0, 0rpx);
+		justify-content: center;
+		align-items: center;
+	}
+	.retry-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.flow-hint {
+		width: 100%;
+		flex-direction: row;
+		padding-left: var(--d-status_bar_height, 84.6rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-lattice-p2, 3.8rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+	}
+	.flow-hint-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.chev {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+</style>

@@ -1,0 +1,28 @@
+{
+  "id": "topic_active_top5",
+  "refine_mode": "non_enum_structure",
+  "values": null,
+  "values_detail": [
+    {"value": "工作职场", "phrase": "聊加班、同事关系、跳槽、内卷", "china_note": "996与职场焦虑是国民级话题"},
+    {"value": "考研考公", "phrase": "备考、上岸、调剂、上岸率", "china_note": "学历与编制竞争是青年核心议题"},
+    {"value": "育儿", "phrase": "鸡娃、学区房、双减、早教", "china_note": "教育焦虑渗透家庭日常"},
+    {"value": "房贷", "phrase": "月供、提前还贷、LPR、断供", "china_note": "房产负债是家庭财务主轴"},
+    {"value": "养生", "phrase": "泡脚、保温杯、艾灸、熬夜补救", "china_note": "年轻群体兴起中式养生潮"},
+    {"value": "追星", "phrase": "打投、塌房、饭圈、应援", "china_note": "饭圈文化高度活跃且易极化"},
+    {"value": "国漫国剧", "phrase": "追番、国创、影视解说、名场面", "china_note": "国产内容消费快速崛起"},
+    {"value": "理财", "phrase": "基金绿了、定投、国债、薅羊毛", "china_note": "居民理财意识强波动中焦虑"},
+    {"value": "相亲", "phrase": "媒婆、相亲角、条件匹配、催婚", "china_note": "婚恋压力是代际高频冲突点"},
+    {"value": "装修", "phrase": "户型、全包半包、甲醛、避坑", "china_note": "购房后强刚需且决策重"},
+    {"value": "宠物", "phrase": "猫狗、毛孩子、绝育、宠物医疗", "china_note": "独居与情感代偿需求旺盛"},
+    {"value": "副业", "phrase": "搞钱、摆摊、自媒体、接单", "china_note": "收入焦虑催生副业常态"},
+    {"value": "游戏", "phrase": "王者、原神、开黑、抽卡", "china_note": "手游社交与消费高度活跃"},
+    {"value": "旅游", "phrase": "特种兵旅游、小众打卡、避坑", "china_note": "节假日出行是全民行为"},
+    {"value": "减肥", "phrase": "轻断食、帕梅拉、体重焦虑", "china_note": "身材管理是持续热门"},
+    {"value": "父母健康", "phrase": "体检、慢病、陪诊、异地牵挂", "china_note": "独居青年对父母的远程照护"},
+    {"value": "回乡", "phrase": "返乡、春运、躺平、城乡落差", "china_note": "户籍与迁徙牵动身份议题"},
+    {"value": "股市", "phrase": "A股、打新、韭菜、牛熊", "china_note": "散户参与度高情绪化强"},
+    {"value": "考编考证人", "phrase": "教师资格证、CPA、事业编", "china_note": "证书与稳定导向的求职文化"},
+    {"value": "婚育成本", "phrase": "彩礼、三金、生育补贴、丁克", "china_note": "婚育经济负担是热议焦点"}
+  ],
+  "refine_note": "非固定枚举；附中国常见活跃主题池，LLM运行时从池中参考并开放扩展，主题值由L2动态集合取，按强度排序输出Top5"
+}

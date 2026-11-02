@@ -1,0 +1,204 @@
+/**
+ * AI 对话页的**消息模型**与**历史回填合并**（2026-10-31 · 走查区块 5 / D-3）。
+ *
+ * ## 为什么抽出（不是为了让文件变短）
+ * 回填（`GET /conversations/{id}/messages`）与流式（`done` 帧终稿）是**两条独立管线**，
+ * 但必须产出**逐字一致**的视图模型——否则同一条回复「当场看有要点、重启后只剩标题」
+ * 会反复回归（本项目已发生过一次：D-4）。把「文本怎么切成 title/bullets」「cards 放哪两个
+ * 槽位」「本地消息与历史怎么合并」收在一处，两条管线共用同一实现，才不会各写一套。
+ *
+ * ## 契约约束（别改写法）
+ * · uvue 下对象一律 `class + constructor + new`（`MergeCard(label: ...)` 这种字面量写法
+ *   编译器不认，W10.4 编译失败实锤）⇒ `MemCard` / `AiMsg` 都是 class。
+ * · id 由本模块的**单调整数**发放：历史回填与流式上屏可能交错，id 一旦重复，模板 `:key`
+ *   与 `removeById` 就会命中错的气泡（表现为"撤掉了别人的 typing、留下自己的"）。
+ * · `splitLines` 直接复用 `chat_api` 的实现：plain 形态的切分口径有且只有这一份。
+ */
+import { ChatCard, ChatHistoryItem, splitLines } from './chat_api'
+
+/** typing 气泡的兜底文案（无预览、无工具阶段时显示；单一来源，TabAi 与本模块共用） */
+export const TYPING_TEXT = '正在翻你的回忆'
+
+/** 记忆卡（`ChatCard` 的视图模型；img 为空串=文字记忆无缩略图） */
+export class MemCard {
+	title: string
+	meta: string
+	img: string
+	constructor(title: string, meta: string, img: string) {
+		this.title = title
+		this.meta = meta
+		this.img = img
+	}
+}
+
+/** 一条对话消息（role=user|ai；kind 决定模板走哪个形态分支） */
+export class AiMsg {
+	id: number
+	role: string // 'user' | 'ai'
+	kind: string // 'bubble' | 'plain' | 'cards' | 'confirm' | 'typing' | 'failed'
+	text: string
+	bullets: Array<string> // plain 形态要点（首行之外的每一行）
+	chips: Array<string> // 尾部快捷追问（只有 plain / cards 两个分支渲染）
+	cards: Array<MemCard> // bubble 内嵌卡（0/1 张）
+	cardList: Array<MemCard> // cards 横滑组
+	constructor(id: number, role: string, kind: string, text: string, bullets: Array<string>, chips: Array<string>, cards: Array<MemCard>, cardList: Array<MemCard>) {
+		this.id = id
+		this.role = role
+		this.kind = kind
+		this.text = text
+		this.bullets = bullets
+		this.chips = chips
+		this.cards = cards
+		this.cardList = cardList
+	}
+}
+
+// 单调 id：0 保留给「无在途流」（streamForMsgId 的哨兵），故从 2 起发。
+let _nextId: number = 1
+
+/** 取一个新消息 id（全局单调，跨回填/流式/重试共用） */
+export function nextMsgId(): number {
+	_nextId = _nextId + 1
+	return _nextId
+}
+
+/** 用户消息工厂 */
+export function mkUser(text: string): AiMsg {
+	return new AiMsg(nextMsgId(), 'user', 'bubble', text, [], [], [], [])
+}
+
+/** AI 消息工厂（全显式参数，不用默认值——uts 默认参数零先例） */
+export function mkAi(kind: string, text: string, cards: Array<MemCard>, chips: Array<string>, bullets: Array<string>, cardList: Array<MemCard>): AiMsg {
+	return new AiMsg(nextMsgId(), 'ai', kind, text, bullets, chips, cards, cardList)
+}
+
+/** 结构化卡片 → 视图模型（img 可能为空串 ⇒ 模板按空串跳过图片，不渲染占位碎图） */
+export function toMemCards(list: Array<ChatCard>): Array<MemCard> {
+	const out: Array<MemCard> = []
+	for (let i = 0; i < list.length; i++) {
+		out.push(new MemCard(list[i].title, list[i].meta, list[i].img))
+	}
+	return out
+}
+
+/**
+ * 历史项 → 视图模型（**D-3 的核心**）。
+ *
+ * 2026-10-31（走查 5.6 / D-3）：原实现把**全文**当 title 塞进气泡、`bullets` 恒传 `[]`
+ * ⇒ 历史回填出来的 plain 消息只剩一段大字号标题，要点全丢：同一条多行回复
+ * 「当场看有要点、杀 App 重开 / 从详情页重进后没有」。
+ * 这里复刻 `chat_api.parseReply`（流式终稿）的同一套切分：plain ⇒ 首行作标题、其余非空行
+ * 作要点；其他 kind ⇒ 正文保留全文。两处**同一口径**，回填形态与当场渲染一致。
+ */
+export function buildHistoryMessages(items: Array<ChatHistoryItem>): Array<AiMsg> {
+	const out: Array<AiMsg> = []
+	for (let i = 0; i < items.length; i++) {
+		const it = items[i]
+		if (it.role == 'user') {
+			out.push(mkUser(it.text))
+			continue
+		}
+		const cl = toMemCards(it.cards)
+		// 形态用后端下发的 kind（backend/app/api/chat.py `_kind_for`：bubble|plain|cards）；
+		// 未知一律退回 'bubble'（不猜 confirm/typing，避免伪造结构）。
+		// ⚠️ kind=cards 但 cards 为空 ⇒ 退回 'plain'：否则渲染出一个空卡组（看不见内容）。
+		let k = (it.kind == 'plain' || it.kind == 'bubble' || it.kind == 'cards') ? it.kind : 'bubble'
+		if (k == 'cards' && cl.length == 0) {
+			k = 'plain'
+		}
+		const lines = splitLines(it.text)
+		let title = it.text
+		const bullets: Array<string> = []
+		if (k == 'plain') {
+			title = lines.length > 0 ? lines[0] : it.text
+			for (let li = 1; li < lines.length; li++) {
+				bullets.push(lines[li])
+			}
+		}
+		// 卡片两处都要给：第 3 参 `cards` 是 bubble 内嵌卡（模板读 `m.cards[0]`），
+		// 第 6 参 `cardList` 是 cards 横滑组（模板读 `m.cardList`）。模板分支互斥 ⇒ 传同一数组安全。
+		out.push(new AiMsg(nextMsgId(), 'ai', k, title, bullets, it.chips, cl, cl))
+	}
+	return out
+}
+
+/**
+ * 把历史合并进本地列表：**以历史为骨架、本地只补它还没有的**（本地一律不丢）。
+ *
+ * 2026-10-31（D-3 配套）：回填是网络异步、发消息是同步的 —— 用户从详情页「问问 AI」进来、
+ * 草稿已预填、1 秒内点发送，回填后到。若整表替换，刚发的提问与 typing 占位会被旧历史抹掉，
+ * 随后 done 把回复 push 进一个"没有提问的列表"（气泡悬空）。
+ *
+ * ## 为什么不是"简单 head.concat(local)"
+ * 断连补拉的场景里本地是 `[提问, 失败卡]`、历史是 `[…, 提问, 回复]`：把差异项一律塞到**最前面**
+ * 会让回复排到提问之前（顺序错乱，比丢消息更难解释）。这里改用**锚点**：
+ *   ① 找 incoming 里**最后一条**能在 local 中（按 role+text）找到的项 = 两边已知的交汇点；
+ *   ② 以整个 incoming 为骨架，把锚点之后 local 独有（历史里确实没有）的项按原序接在尾部。
+ * 副作用可控：历史里存在的消息会换成新实例（id 变化），但**历史里没有的本地项（如 typing 占位、
+ * 未落库的提问）保留原 id** ⇒ 流式预览的消息级绑定不会因此断掉。
+ *
+ * 完全没有交集（换账号/换后端导致历史整批不同）⇒ 历史在前、本地在后（本地是刚发生的）。
+ */
+export function mergeHistory(local: Array<AiMsg>, incoming: Array<AiMsg>): Array<AiMsg> {
+	if (local.length == 0) {
+		return incoming
+	}
+	let anchorLocal = -1
+	let anchorInc = -1
+	for (let i = 0; i < incoming.length; i++) {
+		for (let j = local.length - 1; j > anchorLocal; j--) {
+			if (local[j].role == incoming[i].role && local[j].text == incoming[i].text) {
+				anchorLocal = j
+				anchorInc = i
+				break
+			}
+		}
+	}
+	if (anchorLocal < 0) {
+		return incoming.concat(local)
+	}
+	const tail: Array<AiMsg> = []
+	for (let j = anchorLocal + 1; j < local.length; j++) {
+		let dup = false
+		for (let i = anchorInc + 1; i < incoming.length; i++) {
+			if (local[j].role == incoming[i].role && local[j].text == incoming[i].text) {
+				dup = true
+				break
+			}
+		}
+		if (!dup) {
+			tail.push(local[j])
+		}
+	}
+	if (tail.length == 0) {
+		return incoming
+	}
+	return incoming.concat(tail)
+}
+
+/** 按 id 移除一条（typing 占位/失败卡撤除用；uts 数组无 filter 先例，手写重建最稳） */
+export function removeMessageById(src: Array<AiMsg>, id: number): Array<AiMsg> {
+	const out: Array<AiMsg> = []
+	for (let i = 0; i < src.length; i++) {
+		if (src[i].id != id) {
+			out.push(src[i])
+		}
+	}
+	return out
+}
+
+/**
+ * 剔除所有残留 typing 气泡（断连/取消/切页后留在列表里的占位）。
+ *
+ * 为什么需要：typing 气泡只是"本轮正在生成"的视觉占位，请求一旦结束或取消就不再代表
+ * 任何真实状态；留着会让用户以为 AI 还在跑，且它会去抢预览文本（D-9 的成因之一）。
+ */
+export function dropTypingMessages(src: Array<AiMsg>): Array<AiMsg> {
+	const out: Array<AiMsg> = []
+	for (let i = 0; i < src.length; i++) {
+		if (src[i].kind != 'typing') {
+			out.push(src[i])
+		}
+	}
+	return out
+}

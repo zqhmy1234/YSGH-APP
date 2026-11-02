@@ -54,6 +54,57 @@ _CATEGORY_ACTION = {
     "违规网址": "mask",  # 违规域名打码（保留文本主体；用户 2026-08-20 拍板先接入）
 }
 
+# ---------------------------------------------------------------------------
+# 事件级敏感类别（B5b 事件级分类器规则层：5-8 类，设计清单 分手/离世/健康/
+# 金钱/家庭矛盾 先行，补齐 法律纠纷/意外创伤；词表文件在 backend/data/sensitive/）
+# 与硬规则词表（reject/mask）不同：事件级敏感是"软"敏感（话题级，不影响入库，
+# 只影响回响/追问等主动提及路径），因此独立成表、独立判定入口。
+_EVENT_CATEGORY_FILES = {
+    "事件类_分手.txt": "分手",
+    "事件类_离世.txt": "离世",
+    "事件类_健康.txt": "健康",
+    "事件类_金钱.txt": "金钱",
+    "事件类_家庭矛盾.txt": "家庭矛盾",
+    "事件类_法律纠纷.txt": "法律纠纷",
+    "事件类_意外创伤.txt": "意外创伤",
+}
+
+# 事件类别内置兜底词（文件缺失时用；与 _FALLBACK_WORDS 同理）
+#
+# D10-9-D（2026-09-25 用户拍板「按建议来」）：**软话题规则词表兜底扩容**。
+# 为什么扩容：软话题的"主动提及"保护此前**完全依赖 LLM 补漏**（`detect_event_sensitive`
+# 返回 [] 时无人再挡），而 LLM 可能不可用/异常 —— 扩容后常见口语表达由**规则层**
+# 兜住（零成本、确定性），LLM 降级时仍有一层保护。
+#
+# **为什么不担心误报**：本表是**软表** —— 命中只影响"是否标记为敏感话题"
+# （⇒ 不主动提及），**不拒发、不影响入库**。误报代价 = 少一次回响；漏报代价 = 用户
+# 被戳心。故此处刻意**偏保守**（宁多标）。反之，硬规则表（`_FALLBACK_WORDS`）
+# 是 reject/mask，必须严进。
+_EVENT_FALLBACK_WORDS = {
+    "分手": ["分手", "离婚", "前任", "劈腿", "出轨", "别联系了", "感情破裂", "复合"],
+    "离世": ["去世", "离世", "过世", "逝世", "葬礼", "忌日", "灵堂", "殉职", "夭折", "不在了"],
+    "健康": ["癌症", "肿瘤", "住院", "手术", "抑郁症", "自杀", "化疗", "放疗", "重病", "绝症", "急诊"],
+    "金钱": ["欠债", "破产", "失业", "借钱", "网贷", "高利贷", "负债", "欠钱", "裁员", "还不上"],
+    "家庭矛盾": ["家暴", "吵架", "冷战", "婆媳", "断绝关系", "闹翻", "冷暴力", "分居"],
+    "法律纠纷": ["官司", "坐牢", "拘留", "起诉", "判刑", "律师函", "仲裁", "刑拘"],
+    "意外创伤": ["车祸", "火灾", "溺水", "性侵", "绑架", "摔伤", "烫伤", "失血"],
+}
+
+# 违规词回流（B5b）：运行时热加入的词汇（检测违规 → 入规则表；进程内即刻生效，
+# 持久化在 sensitive_words 表 level=3，由调用方负责写库）。
+# 归入独立类别"回流词"，避免污染文件词表的类别语义。
+_EVENT_REFLUX_WORDS: set[str] = set()
+_REFLUX_CATEGORY = "回流词"
+
+# 硬规则回流词（D10-5 · 2026-09-25）：**被 moderate/LLM 判定违规（reject）** 的词条。
+# 与 `_EVENT_REFLUX_WORDS`（软事件级：只影响"是否敏感话题"标记，不拒发）**刻意分开**：
+#   · 硬词 ⇒ `check_sensitive` 直接 `reject`，兑现 guard.py 声明的"自动入规则表、
+#     下一轮不必再调 LLM"（此前声明与实现不符：回流词只进软表，硬规则从不读）；
+#   · 软词 ⇒ 只有事件级标记（把"分手/离世"这类话题升级为拒发是**错误的**，
+#     审计 D10-5 明确警告过这个坑）。
+_HARD_REFLUX_WORDS: set[str] = set()
+
+
 # 网址黑名单：1.5 万域名，禁止子串匹配（太慢）→ 提取域名后集合 O(1) 查询
 _RE_URL_DOMAIN = re.compile(
     r"(?i)(?:https?://|www\.)?([a-z0-9][a-z0-9-]*\.(?:com|cn|net|org|cc|top|xyz|vip|club|site|online|wang|work|info|biz|me|tv|io|app|dev|pro)(?:\.[a-z]{2})?)"
@@ -90,6 +141,78 @@ def _load_words() -> dict[str, set[str]]:
         # 合并内置补充词（开源词库缺的高频词，2026-08-20 实测）
         result[cat] |= set(_FALLBACK_WORDS.get(cat, []))
     return result
+
+
+@lru_cache(maxsize=1)
+def _load_event_words() -> dict[str, set[str]]:
+    """加载事件级敏感类别词表（缓存；文件缺失回退内置词）"""
+    result: dict[str, set[str]] = {}
+    for fname, cat in _EVENT_CATEGORY_FILES.items():
+        p = _DATA_DIR / fname
+        words = _load_word_file(p) if p.exists() else set()
+        words |= set(_EVENT_FALLBACK_WORDS.get(cat, []))
+        result[cat] = words
+    return result
+
+
+def add_violation_word(word: str, category: str | None = None, *, hard: bool = False) -> None:
+    """违规词热加入（B5b 回流）：进程内立即进入规则判定。
+
+    - `hard=False`（默认）：只进**事件级软表**（`_EVENT_REFLUX_WORDS` / 对应事件
+      类别），只影响"是否敏感话题"标记，**不**拒发（软话题本就不阻断入库）。
+    - `hard=True`：同时进**硬规则回流表**（`_HARD_REFLUX_WORDS`）⇒
+      `check_sensitive` 下一轮即 `reject`（被 LLM 判违规的词不必再调一次 LLM）。
+
+    category 给定时同时并入对应事件类别（如 LLM 判"分手"类敏感），
+    否则归入"回流词"独立类别。持久化由调用方写 sensitive_words(level=3)。
+    """
+    w = (word or "").strip()
+    if not w:
+        return
+    if hard:
+        _HARD_REFLUX_WORDS.add(w)
+    if category and category in _load_event_words():
+        _load_event_words()[category].add(w)
+    else:
+        _EVENT_REFLUX_WORDS.add(w)
+
+
+def check_event_sensitive(text: str) -> dict:
+    """事件级敏感分类（规则层，B5b）：返回 {"categories", "matched", "pass"}
+
+    只做"话题级"软敏感判定（分手/离世/健康/金钱/家庭矛盾/法律纠纷/意外创伤），
+    与 check_sensitive（硬规则 reject/mask）互不干扰：
+    - 硬规则命中 → 内容在入库前已被 moderate 拦截/打码，不会走到这里
+    - 事件级命中 → 内容正常入库，仅打 sensitive_tags 供主动提及路径规避
+    """
+    if not text or not text.strip():
+        return {"categories": [], "matched": [], "pass": True}
+    normalized = _normalize(text)
+    words = _load_event_words()
+    categories: list[str] = []
+    matched: list[str] = []
+    for cat, wset in words.items():
+        for w in wset:
+            if w and w in normalized:
+                categories.append(cat)
+                matched.append(w)
+                break  # 每类记一个即可
+    # 运行时回流词（独立类别）
+    for w in sorted(_EVENT_REFLUX_WORDS):
+        if w and w in normalized and "回流词" not in categories:
+            categories.append(_REFLUX_CATEGORY)
+            matched.append(w)
+            break
+    return {"categories": categories, "matched": matched, "pass": not categories}
+
+
+def filter_sensitive_rule(text: str) -> bool:
+    """搜索/摘要规则级敏感过滤（B5b-1 🟢 规则级，不过模型）：True = 命中硬规则
+    敏感词（reject 类），调用方应排除该结果/摘要。
+
+    供 Agent A 在 rag.py 搜索结果/摘要路径显式调用；仅规则词表，零模型开销。
+    """
+    return check_sensitive(text).get("action") == "reject"
 
 
 def _load_url_domains() -> set[str] | None:
@@ -193,6 +316,15 @@ def check_sensitive(text: str) -> dict:
     #    审查 CRITICAL 修复：不再提前 return——与词表检测同时执行，reject 恒优先于 mask，
     #    防止"敏感词+黑名单网址"同现时 reject 语义被 URL 分支旁路。
     url_masked, url_hits = _check_urls(text)
+
+    # 0.5 硬规则回流词（D10-5）：被 moderate/LLM 判过违规的词，下一轮直接 reject
+    #     （reject 恒优先于 mask，故置于词表 mask 分支之前；命中即拒，理由明示来源）
+    hard_hits = sorted(w for w in _HARD_REFLUX_WORDS if w and w in normalized)
+    if hard_hits:
+        return {"pass": False, "action": "reject",
+                "reason": f"命中回流违规词: {hard_hits[0]}",
+                "masked_text": None, "matched": hard_hits,
+                "categories": [_REFLUX_CATEGORY]}
 
     # 1. 词表类检测
     matched: list[str] = []

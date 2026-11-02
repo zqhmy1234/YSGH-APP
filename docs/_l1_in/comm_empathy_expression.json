@@ -1,0 +1,19 @@
+{
+  "id": "comm_empathy_expression",
+  "label": "情感表达",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "外露",
+    "适中",
+    "内敛"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_emotional_expressiveness",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

@@ -22,6 +22,10 @@ logger = logging.getLogger("yishu.external")
 QWEN_FLASH = "qwen-flash"            # 文本：改写/路由/精排
 QWEN_VL = "qwen3-vl-plus"            # 图片塔
 QWEN_GUARD = "qwen-flash"            # 护栏（内容安全）——qwen-guard 不存在（400 实测），B5b 托管护栏接入前用 qwen-flash
+# R-4 真·图片塔（多模态 embedding）。**必须用带日期的快照**：无版本号的
+# tongyi-embedding-vision-plus 默认 1152 维，放不进本仓 image_vec(1024) 槽位；
+# 快照版支持 dimension 参数（官方支持 64~1152）。见 image_tower.py 头部说明。
+QWEN_VISION_EMBED = "tongyi-embedding-vision-plus-2026-03-06"
 # 注：B5b 定稿为百炼托管护栏（qwen_response_check，header X-DashScope-DataInspection
 # 自动匹配），qwen-guard 为 chat 模型兜底；接入托管前先用规则预检 + chat 模型双保险。
 
@@ -29,9 +33,13 @@ QWEN_GUARD = "qwen-flash"            # 护栏（内容安全）——qwen-guard 
 _BLOCK_MARKERS = ("block", "refuse", "拒", "不合法", "违规", "有害")
 
 _REWRITE_SYSTEM = (
-    "你是记忆整理 App 的查询改写器。将用户的自然语言查询改写为适合向量检索的"
-    "简洁中文查询（去掉口语、保留核心实体与意图），并识别时间表达。"
-    "只输出改写后的查询，不要任何解释。"
+    "你是记忆整理 App 的查询改写器。判断输入查询是否需要改写，按规则输出：\n"
+    "1. 如果查询已经是简洁准确的关键词（实体+意图清晰，如'买牛奶''马拉松''驼奶的功效'），"
+    "   原样返回，不要做任何改动。\n"
+    "2. 仅在以下情况改写：①存在错别字/拼音错误（'买牛乃'→'买牛奶'）；"
+    "②口语化/指代不明（'上次说的那个''帮我找一下'）；③描述性查询需要扩展为"
+    "记忆内容风格的表达（'关于做产品的想法'→'产品创意想法'）。\n"
+    "改写必须保持原意，不编造新实体。只输出查询本身，不要解释。"
 )
 
 _ROUTE_SYSTEM = (
@@ -46,18 +54,62 @@ _GUARD_SYSTEM = (
 
 
 def _llm_available() -> bool:
-    """百炼可用判定：非 mock 且已配 key"""
+    """LLM 可用判定：非 mock 且**所配供应商**已配 key（2026-10-15 · 台账 §7.27）
+
+    ⚠️ 刻意不看"另一家"的 key：切到 deepseek 后，即便 dashscope key 有效也不得算可用
+    （否则护栏会拿着无效的 dashscope key 去调用 ⇒ fail-closed 拒发全部内容）。
+    """
+    if settings.mock_external_ai:
+        return False
+    if settings.llm_provider == "deepseek":
+        return bool(settings.deepseek_api_key)
+    return bool(settings.dashscope_api_key)
+
+
+def _vision_available() -> bool:
+    """视觉调用恒走百炼，独立于文本 LLM 的供应商配置。"""
     return not settings.mock_external_ai and bool(settings.dashscope_api_key)
+
+
+def _ensure_api_key() -> None:
+    """同步 settings 到 dashscope SDK 全局 api_key（2026-08-25 排查修复）
+
+    dashscope SDK 只认 env/全局 api_key，不读本项目 settings：
+    机器遗留旧格式 DASHSCOPE_API_KEY（sk-4980...）会覆盖 .env 的 sk-ws- 值，
+    导致 403 Workspace access denied（旧 key + workspace 头不匹配）。
+    settings 本身 env 优先、.env 兜底，这里显式同步即可根治。
+    """
+    import dashscope
+
+    if settings.dashscope_api_key and dashscope.api_key != settings.dashscope_api_key:
+        dashscope.api_key = settings.dashscope_api_key
 
 
 @with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
 def _chat_text(system: str, user: str, model: str = QWEN_FLASH) -> str:
-    """调 qwen-flash 文本对话（同步），失败抛异常由调用方降级
+    """文本对话（同步），失败抛异常由调用方降级。
 
     带统一重试（网络抖动 3 次指数退避，见 external/retry.py）。
+
+    2026-10-15（台账 §7.27）：按 `LLM_PROVIDER` 分派 —— `dashscope`（默认，qwen-flash，
+    经 dashscope SDK）或 `deepseek`（任何 OpenAI 兼容端点，见 `external/llm_openai.py`）。
+    切到 deepseek 时**`model` 形参（qwen 专用名）被忽略**、改用 `DEEPSEEK_MODEL`：
+    调用点无需改动（它们传的 `QWEN_FLASH` 只是默认值）。
+    ⚠️ 视觉调用不经此处（`image_caption` 恒走 DashScope），故无"DeepSeek 无视觉模型"问题。
     """
+    if settings.llm_provider == "deepseek":
+        from app.services.external.llm_openai import chat_text as _openai_chat_text
+
+        return _openai_chat_text(
+            system,
+            user,
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            model=settings.deepseek_model,
+        )
     from dashscope import Generation
 
+    _ensure_api_key()
     resp = Generation.call(
         model=model,
         messages=[
@@ -90,33 +142,217 @@ def route_query(q: str) -> str:
     return "text"
 
 
+# ── 视觉塔熔断（2026-10-31 · 队列被拖死的现场修复）──
+# 现场：worker 单线程卡在 `tag_content` 3 小时；重启后日志连续刷
+#   `外部服务 image_caption 第1/3次失败：调用超时 30s，第1s 后重试`
+# ⇒ 每张照片要 30s×3 才失败，库里积压 4637 条 ⇒ 队列按天算，
+#   用户新写的文字排在照片后面，**永远等不到打标/向量 ⇒ 搜索搜不到**。
+# 这不是搜索的问题，是「一个坏掉的外部服务把整条流水线拖死」。
+# 处置：连续失败达阈值即熔断 COOLDOWN 秒，期间**立即失败**（不等 30s×3），
+# 让积压内容以「无图注」快速走完、队列恢复流动；冷却后自动重试探路。
+_VISION_FAIL_STREAK = 0
+_VISION_OPEN_UNTIL = 0.0
+_VISION_FAIL_THRESHOLD = 3
+_VISION_COOLDOWN_S = 600.0
+
+# 视觉请求的**硬超时**（交给 SDK 自己断，而不是靠外层的线程池超时）。
+# 为什么必须显式传：SDK 默认 300s，而我们的装饰器超时是用线程池实现的、
+# 超时后线程杀不掉 ⇒ 每次都泄漏一个还在 OSS/HTTP 里的线程。
+_VISION_REQUEST_TIMEOUT_S = 10
+
+# 走 base64 内嵌的体积上限：超过就退回 `file://`（OSS 两跳）。
+# 依据：实测 0.14~6.14MB 的图走 data-uri 都在 1.1~3.9s，与体积弱相关；
+# 但 base64 会让 JSON 体积膨胀 ~33%，8MB 以上容易撞网关限制，故设 6MB。
+_VISION_INLINE_MAX_BYTES = 6 * 1024 * 1024
+
+
+def _image_ref(image_path: str) -> str:
+    """把本地图片转成 SDK 可直接内嵌的引用，尽量避开 OSS 两跳。
+
+    ## 为什么不用 `file://`（2026-10-31 vision-diag 实测）
+    dashscope SDK 的 `check_and_upload_local` 看到 `file://`/裸路径时，会走
+    「取上传凭证 → POST 到对象存储 → 得到 oss:// URL」三段，才把图发给模型；
+    而**文本 LLM 没有这一段**。所以同一台机、同一份配置，文本正常、视觉却容易在
+    30s 处超时——差别就在这两跳。
+
+    实测对比（同一张 3.14MB 的 jpg）：
+      · `file://` 直传 → 2.79s（含 OSS 上传）
+      · base64 data-uri → **1.08s**（无上传）
+    """
+    import base64
+    import os
+
+    try:
+        if not os.path.isfile(image_path):
+            return f"file://{image_path}"
+        if os.path.getsize(image_path) > _VISION_INLINE_MAX_BYTES:
+            return f"file://{image_path}"
+        with open(image_path, "rb") as fh:
+            raw = fh.read()
+        ext = os.path.splitext(image_path)[1].lower()
+        mime = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+        }.get(ext, "image/jpeg")
+        return f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
+    except Exception as exc:  # noqa: BLE001 —— 内嵌失败就退回原路径，绝不因此中断
+        logger.warning("图片内嵌失败，退回 file:// 上传路径: %s", exc)
+        return f"file://{image_path}"
+
+
+def vision_circuit_open() -> bool:
+    """视觉塔是否处于熔断期（供测试与日志观察）。"""
+    import time as _t
+
+    return _t.monotonic() < _VISION_OPEN_UNTIL
+
+
+def _vision_trip() -> None:
+    """记一次视觉失败；达阈值即开启熔断窗口。"""
+    # 熔断状态是**模块级单例**（跨请求共享），只能靠 global 更新；改用容器/类会引入一次
+    # 不必要的间接层。故此处显式豁免 ruff 的 PLW0603。
+    global _VISION_FAIL_STREAK, _VISION_OPEN_UNTIL  # noqa: PLW0603
+    import time as _t
+
+    _VISION_FAIL_STREAK += 1
+    if _VISION_FAIL_STREAK >= _VISION_FAIL_THRESHOLD:
+        _VISION_OPEN_UNTIL = _t.monotonic() + _VISION_COOLDOWN_S
+        logger.warning(
+            "视觉塔连续失败 %d 次，熔断 %.0fs（期间跳过图注/图向量，仅用 EXIF 元数据）",
+            _VISION_FAIL_STREAK,
+            _VISION_COOLDOWN_S,
+        )
+
+
+def _vision_recover() -> None:
+    global _VISION_FAIL_STREAK  # noqa: PLW0603
+    _VISION_FAIL_STREAK = 0
+
+
 @with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
 def image_caption(image_path: str, prompt: str = "用一句话中文描述这张图片的内容和场景。") -> str:
     """Qwen3-VL 图片塔：图片 → 语义描述（供向量化索引/检索）
 
     带统一重试（网络抖动 3 次指数退避，AGENTS.md #13 教训落地）。
+    2026-10-31：外加熔断——连续失败后直接抛错（不耗 30s×3），避免堵死单线程队列。
     """
-    if not _llm_available():
+    if not _vision_available():
         raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
+    if vision_circuit_open():
+        raise RuntimeError("视觉塔熔断中（近期连续超时），本轮跳过图注")
     from dashscope import MultiModalConversation
 
-    resp = MultiModalConversation.call(
-        model=QWEN_VL,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"image": f"file://{image_path}"},
-                    {"text": prompt},
-                ],
-            }
-        ],
+    _ensure_api_key()
+    # 2026-10-31（vision-diag 实测结论）：两个真实病灶都在这里
+    #  ① **`file://` 本地路径会触发 SDK 的 OSS 两跳**（`check_and_upload_local` →
+    #     `OssUtils.upload`：先取 cert 再 POST，`requests timeout=3600`）。
+    #     文本 LLM 没有这一步 ⇒ 现场「文本全好、视觉全挂、恒为 30s」完全对得上。
+    #     实测同图：`file://` 2.79s vs **data-uri 1.08s**，且后者不需要对象存储。
+    #  ② SDK `MultiModalConversation.call` **没有 timeout 形参**，默认 300s；
+    #     我们的 `@with_retry(..., timeout=30)` 是用线程池 + `future.result(30)` 实现的，
+    #     `shutdown(wait=False)` **杀不掉已在跑的线程** ⇒ 每次超时泄漏一个线程（≤1h），
+    #     3 次重试 = 3 个泄漏线程 ×4637 张照片 ⇒ 连接/线程堆积，越跑越死（自增强）。
+    # 处置：小图走 base64 内嵌（消掉两跳）+ 显式 `request_timeout`（让 SDK 自己断，不泄漏线程）。
+    image_ref = _image_ref(image_path)
+    try:
+        resp = MultiModalConversation.call(
+            model=QWEN_VL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"image": image_ref},
+                        {"text": prompt},
+                    ],
+                }
+            ],
+            workspace=settings.dashscope_workspace_id or None,
+            request_timeout=_VISION_REQUEST_TIMEOUT_S,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"dashscope {QWEN_VL} 调用失败: {resp.status_code} {resp.message}")
+        parts = resp.output.choices[0].message.content
+        out = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+    except Exception:
+        _vision_trip()
+        raise
+    _vision_recover()
+    return out
+
+
+def _extract_embedding(resp) -> list[float]:
+    """从多模态向量响应里取第一条向量。
+
+    响应形态（官方文档）：`output.embeddings[i]` = `{index, embedding, type}`，
+    `type` ∈ text/image/video/multi_images。
+    """
+    items = resp.output["embeddings"]
+    if not items:
+        raise RuntimeError("dashscope 多模态向量返回空 embeddings")
+    return [float(x) for x in items[0]["embedding"]]
+
+
+@with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
+def embed_image(image_path: str, *, dimension: int = 1024) -> list[float]:
+    """R-4 真图片塔：图片 → 向量（tongyi-embedding-vision-plus 多模态 embedding）
+
+    ⚠️ **本函数尚未在真实账号上验证过**（百炼「多模态向量」未开通）。开通后须先核对：
+      ① 该接口是否接受 `workspace=`（MultiModalConversation 接受，embedding 侧待确认）；
+      ② `dimension=1024` 是否被接受、返回长度是否恰为 1024（**零切换成立的前提**）；
+      ③ `input=[{"image": "file://..."}]` 的本地文件 URL 形态是否支持；
+      ④ 文本输入与图片输入是否落在同一向量空间（`embed_text_in_vision` 依赖此点）。
+    """
+    if not _vision_available():
+        raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
+    # 2026-10-31：与 image_caption 共用同一熔断（同属视觉塔，一起坏一起停）
+    if vision_circuit_open():
+        raise RuntimeError("视觉塔熔断中（近期连续超时），本轮跳过图向量")
+    from dashscope import MultiModalEmbedding
+
+    _ensure_api_key()
+    try:
+        resp = MultiModalEmbedding.call(
+            model=QWEN_VISION_EMBED,
+            input=[{"image": _image_ref(image_path)}],
+            dimension=dimension,
+            workspace=settings.dashscope_workspace_id or None,
+            request_timeout=_VISION_REQUEST_TIMEOUT_S,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"dashscope {QWEN_VISION_EMBED} 调用失败: {resp.status_code} {resp.message}")
+        out = _extract_embedding(resp)
+    except Exception:
+        _vision_trip()
+        raise
+    _vision_recover()
+    return out
+
+
+@with_retry(retries=3, backoff=(1, 2, 4), timeout=30)
+def embed_text_in_vision(text: str, *, dimension: int = 1024) -> list[float]:
+    """真图片塔的**文本通道** —— 与 `embed_image` 同一模型、同一空间。
+
+    用途：索引侧拿不到图片文件时（生产 `_index_after_commit` 时临时文件已删），
+    用 caption 走文本输入补齐，避免该照片永久不可搜图。**不是跨空间混入。**
+    同上：未在真实账号验证（见 `embed_image` 的核对清单）。
+    """
+    if not _vision_available():
+        raise RuntimeError("百炼未配置，图片塔不可用（需 DASHSCOPE_API_KEY）")
+    from dashscope import MultiModalEmbedding
+
+    _ensure_api_key()
+    resp = MultiModalEmbedding.call(
+        model=QWEN_VISION_EMBED,
+        input=[{"text": text}],
+        dimension=dimension,
         workspace=settings.dashscope_workspace_id or None,
     )
     if resp.status_code != 200:
-        raise RuntimeError(f"dashscope {QWEN_VL} 调用失败: {resp.status_code} {resp.message}")
-    parts = resp.output.choices[0].message.content
-    return "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+        raise RuntimeError(f"dashscope {QWEN_VISION_EMBED} 调用失败: {resp.status_code} {resp.message}")
+    return _extract_embedding(resp)
 
 
 def moderate(text: str) -> dict:
@@ -164,13 +400,18 @@ def moderate(text: str) -> dict:
         # 开发/测试 mock 保持放行（本地联调契约）。
         if settings.app_env == "production":
             logger.error("生产环境未配置 DASHSCOPE_API_KEY，护栏默认拒发（fail-closed）")
-            return {"pass": False, "reason": "guard-unavailable"}
+            # D10-1（2026-09-25 P0）：fail-closed 分支**必须带 `action`** ——
+            # 调用方（contents / photo_content）按 `action` 分派，缺键 ⇒ 既非 reject
+            # 也非 mask ⇒ 两条 if 均不成立 ⇒ **明确判"拒发"却原文入库**。
+            return {"pass": False, "reason": "guard-unavailable", "action": "reject",
+                    "matched": rule["matched"], "categories": rule["categories"]}
         logger.info("护栏 mock 放行（未配置百炼，规则预检已过）")
-        return {"pass": True, "reason": "mock"}
+        return {"pass": True, "reason": "mock", "action": "allow"}
     try:
         answer = _chat_text(_GUARD_SYSTEM, text, model=QWEN_GUARD).strip().upper()
         blocked = any(m in answer for m in _BLOCK_MARKERS) or answer == "BLOCK"
-        return {"pass": not blocked, "reason": "guard" if blocked else ""}
+        return {"pass": not blocked, "reason": "guard" if blocked else "",
+                "action": "reject" if blocked else "allow"}
     except Exception as exc:  # noqa: BLE001 —— fail-safe：不可用即拦截
         logger.warning("护栏调用失败，fail-safe 拦截: %s", exc)
-        return {"pass": False, "reason": "guard-unavailable"}
+        return {"pass": False, "reason": "guard-unavailable", "action": "reject"}

@@ -1,0 +1,504 @@
+{
+ "id": "60:21",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9725490212440491,
+    "g": 0.9686274528503418,
+    "b": 0.95686274766922
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 844,
+ "name": "F1c 语音·预览态",
+ "x": 10520,
+ "y": 120,
+ "clipsContent": true,
+ "children": [
+  {
+   "id": "60:22",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.9725490212440491,
+      "g": 0.9686274528503418,
+      "b": 0.95686274766922
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 390,
+   "height": 844,
+   "name": "表单Sheet",
+   "x": 0,
+   "y": 0,
+   "clipsContent": true,
+   "children": [
+    {
+     "id": "60:24",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 24,
+     "height": 25.31999969482422,
+     "name": "返回",
+     "x": 20,
+     "y": 60,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:25",
+       "type": "VECTOR",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 16,
+       "height": 16.8799991607666,
+       "name": "Vector",
+       "x": 4,
+       "y": 4.21999979019165
+      }
+     ]
+    },
+    {
+     "id": "60:26",
+     "type": "TEXT",
+     "fontSize": 17,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Semi Bold"
+     },
+     "characters": "说一段",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 24,
+     "name": "标题",
+     "x": 0,
+     "y": 60,
+     "textAlignHorizontal": "CENTER",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:27",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 24,
+     "height": 25.31999969482422,
+     "name": "关闭",
+     "x": 346,
+     "y": 60,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:28",
+       "type": "VECTOR",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 14,
+       "height": 14.770000457763672,
+       "name": "Vector",
+       "x": 5,
+       "y": 5.275000095367432
+      }
+     ]
+    },
+    {
+     "id": "60:29",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 140,
+     "height": 5,
+     "name": "Home指示条",
+     "x": 125,
+     "y": 828,
+     "clipsContent": true,
+     "cornerRadius": 3,
+     "children": []
+    },
+    {
+     "id": "60:60",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "effects": [
+      {
+       "type": "DROP_SHADOW",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487,
+        "a": 0.07999999821186066
+       },
+       "offset": {
+        "x": 0,
+        "y": 8
+       },
+       "radius": 24,
+       "spread": 0,
+       "visible": true,
+       "blendMode": "NORMAL",
+       "showShadowBehindNode": false,
+       "boundVariables": {}
+      }
+     ],
+     "width": 342,
+     "height": 260,
+     "name": "转写卡",
+     "x": 24,
+     "y": 150,
+     "clipsContent": true,
+     "cornerRadius": 24,
+     "children": [
+      {
+       "id": "60:61",
+       "type": "TEXT",
+       "fontSize": 17,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "今天下午在江边走了走，风把梧桐叶吹得沙沙响，对岸的灯一盏一盏亮起来。忽然想起小时候也是这样的傍晚，外婆在阳台喊我回家吃饭。",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 294,
+       "height": 300,
+       "name": "转写文本",
+       "x": 24,
+       "y": 36,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "60:62",
+       "type": "TEXT",
+       "fontSize": 13,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "时长 01:24 · 今天 17:42",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.5411764979362488,
+          "g": 0.47843137383461,
+          "b": 0.4156862795352936
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 294,
+       "height": 18,
+       "name": "元信息",
+       "x": 24,
+       "y": 204,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    },
+    {
+     "id": "60:63",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.929411768913269,
+        "g": 0.8980392217636108,
+        "b": 0.8352941274642944
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 159,
+     "height": 54,
+     "name": "重新录",
+     "x": 24,
+     "y": 724,
+     "clipsContent": true,
+     "cornerRadius": 27,
+     "children": [
+      {
+       "id": "60:64",
+       "type": "TEXT",
+       "fontSize": 16,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Medium"
+       },
+       "characters": "重新录",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 159,
+       "height": 22,
+       "name": "重新录文字",
+       "x": 0,
+       "y": 16,
+       "textAlignHorizontal": "CENTER",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    },
+    {
+     "id": "60:65",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.6901960968971252,
+        "g": 0.3529411852359772,
+        "b": 0.22745098173618317
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "effects": [
+      {
+       "type": "DROP_SHADOW",
+       "color": {
+        "r": 0.6899999976158142,
+        "g": 0.3529999852180481,
+        "b": 0.22699999809265137,
+        "a": 0.30000001192092896
+       },
+       "offset": {
+        "x": 0,
+        "y": 6
+       },
+       "radius": 16,
+       "spread": 0,
+       "visible": true,
+       "blendMode": "NORMAL",
+       "showShadowBehindNode": true,
+       "boundVariables": {}
+      }
+     ],
+     "width": 159,
+     "height": 54,
+     "name": "确定",
+     "x": 207,
+     "y": 724,
+     "clipsContent": true,
+     "cornerRadius": 27,
+     "children": [
+      {
+       "id": "60:66",
+       "type": "TEXT",
+       "fontSize": 16,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Medium"
+       },
+       "characters": "确定",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 159,
+       "height": 22,
+       "name": "保存文字",
+       "x": 0,
+       "y": 16,
+       "textAlignHorizontal": "CENTER",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    },
+    {
+     "id": "60:79",
+     "type": "TEXT",
+     "fontSize": 15,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "9:41",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 70,
+     "height": 20,
+     "name": "状态栏时间",
+     "x": 24,
+     "y": 16,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:80",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 24,
+     "height": 12,
+     "name": "电池",
+     "x": 342,
+     "y": 20,
+     "clipsContent": true,
+     "cornerRadius": 4,
+     "children": []
+    }
+   ]
+  }
+ ]
+}

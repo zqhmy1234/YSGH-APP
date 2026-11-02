@@ -69,9 +69,26 @@ def _extract_place_rules(query: str) -> str | None:
     return None
 
 
+# 前导连接词/介词（2026-10-16）：`_RE_PERSON` 的 `[一-龥]{1,2}` 会**连着一个前导字**
+# 一起捕获 —— 实测「和妈妈有关的记录」抽出的是 **"和妈妈"** 而不是 "妈妈"。
+# 这个脏值拿去过滤 payload `tags` 匹配不到任何内容，于是 `rag/__init__.py` 的
+# 「NER 过滤无命中 → 摘掉 NER filter 重试」回退被触发 ⇒ **person 过滤形同虚设**（且无日志）。
+#
+# 保守实现：**只剥常见连接/介词首字，且剥后长度仍需 ≥2**。
+# 姓氏不在这个集合里，所以「王老师」「小张」「李阿姨」一律原样保留（与 test_ner 既有契约一致）。
+# 同族先例见 `_extract_place_rules` 的「前置剥离常见方位动词」。
+_LEADING_CONJ = frozenset("和跟与同带给找陪请让约替向对为被")
+
+
 def _extract_person_rules(query: str) -> str | None:
     m = _RE_PERSON.search(query)
-    return m.group(1) if m else None
+    if not m:
+        return None
+    person = m.group(1)
+    # 「和妈妈」→「妈妈」；「王老师」首字不在集合内 → 原样保留
+    if len(person) > 2 and person[0] in _LEADING_CONJ:
+        person = person[1:]
+    return person
 
 
 def extract_entities(query: str, enable_llm: bool = False) -> dict:
@@ -95,14 +112,15 @@ def extract_entities(query: str, enable_llm: bool = False) -> dict:
 
 
 def _extract_llm(query: str) -> dict:
-    """qwen-flash 兜底抽取（真实模式；失败抛异常由调用方处理）"""
-    from app.services.external.dashscope import _chat_text
+    """qwen-flash 兜底抽取（真实模式；失败抛异常由调用方处理）
 
-    answer = _chat_text(_LLM_EXTRACT_SYSTEM, query).strip()
-    import json
+    S1-H1/L7 收口：统一走 llm_ops.base.chat_text（此前直接 import dashscope._chat_text，
+    绕过统一入口的日志/降级策略）+ llm_ops.parsing.extract_json_object（此前内联
+    find("{")/rfind("}") 切片解析、无围栏剥离）。
+    """
+    from app.services.llm_ops.base import chat_text
+    from app.services.llm_ops.parsing import extract_json_object
 
-    start, end = answer.find("{"), answer.rfind("}")
-    if start < 0 or end < 0:
-        return {}
-    data = json.loads(answer[start : end + 1])
+    answer = chat_text(_LLM_EXTRACT_SYSTEM, query).strip()
+    data = extract_json_object(answer)
     return {k: (v or "").strip() for k, v in data.items() if isinstance(v, str)}

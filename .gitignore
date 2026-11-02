@@ -63,6 +63,8 @@ desktop.ini
 
 # --- AI agent 工作区（本机会话产物，不入库）---
 .cowork-temp/
+.workbuddy/
+.wt/
 *.log
 last-failure.json
 
@@ -96,7 +98,128 @@ research/**/screenshots/
 *.tmp
 *.temp
 *~
+*.bak
+*.bak.json
+*.merge_bak
 
 # --- 归档与本地 CLI 关联（2026-08-21 安全加固：含 workspaceId，不入库）---
 backups/
 .infisical.json
+
+# 本地文件系统存储后端（STORAGE_BACKEND=fs）
+backend/data/storage/
+# --- 数据库文件 / 本地语料下载（2026-08-25 整理追加）---
+*.db
+*.sqlite
+*.sqlite3
+*.sql3
+research/rag_benchmark/external/
+
+# --- 会话与临时产物 ---
+session-memory-*.md
+# uni-app x / HBuilderX Android 构建残留（2026-08-26 系统性审查）
+# ⚠️ 这些无锚点通配会连 client/ 工程真源一并吞（D-19 伴生雷）——
+# 工程真源豁免三连统一放在本块末尾（gitignore 后匹配者胜，前置 ! 无效）。
+AndroidManifest.xml
+R.txt
+classes.jar
+annotations.zip
+aidl/
+# Android 解包产物（2026-08-27 收口补齐：res/ drawable* layout* values* META-INF ProGuard/资源索引）
+res/
+drawable/
+drawable-*/
+layout/
+layout-*/
+values/
+values-*/
+META-INF/
+proguard.txt
+public.txt
+# D-19 伴生雷豁免（2026-09-10）：云打包 manifest 合并点=client/AndroidManifest.xml、
+# nativeResources=官方静态资源注入通道——两真源必须可入库；根目录解包残留继续被上方忽略。
+# 验证：git check-ignore client/AndroidManifest.xml → 不忽略；AndroidManifest.xml → 忽略
+!client/AndroidManifest.xml
+!client/nativeResources/
+!client/nativeResources/**
+
+# 后端联调敏感/临时文件
+backend/token.txt
+backend/.venv/
+backend/pip_install*.log
+backend/uvicorn*.log
+backend/__pycache__/
+
+
+backend/routes.txt
+
+
+# 审查/部署证据留本地（36e0b64 铁律延伸）
+review/out/
+
+# --- 部署工程运行时产物（S1 卡 · 2026-09-21）---
+# 数据卷 / 日志 / 真实环境文件：绝不入库
+deploy/data/
+deploy/logs/
+deploy/backup/
+deploy/.env
+# ⚠️ 与本文件上方 `.env.*` 通配的冲突（同 client/AndroidManifest.xml 被吞的 D-19 伴生雷）：
+#    `.env.*` 会连带吞掉**模板真源** deploy/.env.production.template（S3 卡交付物），
+#    导致「文件写了、git 里却不存在」= diff 审查永久盲区。故在本文件末尾白名单豁免（后匹配者胜）。
+# 验证：git check-ignore -v deploy/.env.production.template  → 应无输出（= 可入库）
+#       git check-ignore -v deploy/.env                     → 应输出命中（= 被忽略，正确）
+!deploy/.env.production.template
+!deploy/.env.template
+
+# --- 内测自有签名证书（C3 卡 · 2026-09-21）---
+# 真源存放在仓库之外：%USERPROFILE%\.yishu-signing\（keystore + 密码说明 + 导出证书）
+# 此处为防御性忽略：任何被误放进仓库的 keystore/私钥一律不得入库。
+# 注：`*.jks` 已由本文件第 14 行（密钥与隐私块）覆盖，此处补 keystore 后缀变体。
+*.keystore
+*.keystore.bak
+
+# --- 临时脚本/日志（一次性产物，不入库）---
+# 为什么：一次性产物（E2E 运行日志、临时修/导出脚本）不入档会一直显示为未跟踪噪音，
+# 并有被误 git add 进提交的风险（2026-09-23 实发生：_tmp/ag5_commit_msg.txt 被误入库）。
+# 可复用的工具请放 scripts/（如 scripts/e2e_agent_chat.ps1，AG5 真代理 E2E）。
+_tmp/
+
+# --- mcporter 本地配置（浏览器自动化工具在项目根生成的注册文件）---
+# mcporter 会把 MCP server 注册写到"当前目录/config/mcporter.json"（本机环境产物，
+# 含本机绝对路径），与源码无关，一律忽略。
+config/mcporter.json
+
+# --- 隧道地址文件（固定地址模式 · 2026-10-11）---
+# deploy/.tunnel-url 记录**本机当前**的隧道公网地址（由 scripts/dev/tunnel.ps1 写入，
+# write_base_url.ps1 / pack.ps1 读取）。它是环境产物而非源码：随隧道重启与换机器而变，
+# 入库只会让别的机器拿到一个连不上的地址 ⇒ 一律忽略。
+deploy/.tunnel-url
+# 2026-10-12 补：隧道**模式**记录（static/quick/random），与地址文件同类（本机运行产物）
+deploy/.tunnel-mode
+
+# --- 内测下载页 APK 投放目录（C3 卡 · 2026-10-11）---
+# ⚠️ 与上方第 40 行 `*.apk`（Gradle/Android 构建产物忽略）的冲突：
+#    `deploy/download/apk/` 是内测投放目录，页面主按钮固定引用 `apk/yishu-beta-latest.apk`。
+#    若 APK 不入库，走 git 流的部署端将无此文件 → 点击下载 404（2026-10-11 实测确诊）。
+#    故在本文件末尾白名单豁免固定名（后匹配者胜，与 .env 模板豁免同规律）。
+#    版本追溯靠 git 历史（每次出包同名覆盖后提交，历史自然留存各版本），
+#    故只豁免固定名，带版本号的原件仍不入库（避免仓库随出包次数膨胀）。
+# 验证：git check-ignore -v deploy/download/apk/yishu-beta-latest.apk → 应无输出（= 可入库）
+#       git check-ignore -v deploy/download/apk/__UNI__*.apk          → 应输出命中（= 版本原件仍被忽略）
+!deploy/download/apk/
+!deploy/download/apk/yishu-beta-latest.apk
+
+# --- 一次性验证/生成产物（2026-10-26 归档后不再入库）---
+# `_verify_*`：端侧验收截图与 crash dump；`design_data_for_agents`：已判定 elements=0 的无效设计数据。
+# 原件已归档到工作区外归档目录/2026-10/repo-artifacts/，需要回看从归档取，不再随仓库增长。
+_verify_*/
+design_data_for_agents/
+
+# 知识图谱产物（graphify，2026-10-30；cache 与本地产物不入库）
+graphify-out/
+
+
+# 走查/验收证据与本地运行产物（2026-11-02：`_verify/` 575MB 截图曾被漏忽略；`_verify_*/` 已有规则）
+_verify/
+backend/runs/
+.codebuddy/

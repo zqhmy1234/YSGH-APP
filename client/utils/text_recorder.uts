@@ -1,0 +1,234 @@
+/**
+ * 文字记录 + 分类 + 纠错（T-TX-1/2）
+ *
+ * 链路（后端 P2-01 异步化）：
+ *  POST /api/v1/contents        → 文字入库（status=processing）→ 返回 ContentOut
+ *  POST /api/v1/classify        → 分类入队（SetFit ~27s 异步）→ {job_id}
+ *  GET  /api/v1/classify/jobs/{id} → 轮询 → {status, result:{label,label_cn,confidence}}
+ *  POST /api/v1/corrections     → 记录纠错（用户主动改标签）
+ *  POST /api/v1/classify/arbitrate → 三层裁决入队 → {job_id}（T-TX-2）
+ *  GET  /api/v1/classify/arbitrate/jobs/{id} → 轮询结果
+ *
+ * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
+ */
+import { post, get, dataObj } from './api'
+import { PATH_CLASSIFY, PATH_CORRECTIONS } from './contract'
+// O19：全量响应（含用户 text）脱敏后再落日志——res 可能含提交文本，不得整段刷 logcat
+import { redactLog } from './log'
+
+export class ClassifyResult {
+	label: string
+	labelCn: string
+	confidence: number
+	scores: Array<ClassScore>
+
+	constructor(label: string, labelCn: string, confidence: number, scores: Array<ClassScore>) {
+		this.label = label
+		this.labelCn = labelCn
+		this.confidence = confidence
+		this.scores = scores
+	}
+}
+
+export class ClassScore {
+	label: string
+	labelCn: string
+	score: number
+
+	constructor(label: string, labelCn: string, score: number) {
+		this.label = label
+		this.labelCn = labelCn
+		this.score = score
+	}
+}
+
+/** 7 类标签中文名（与后端 VALID_CLASSES 对齐；2026-10-23 扩 question/fact） */
+const LABEL_CN: Map<string, string> = new Map<string, string>()
+LABEL_CN.set('todo', '待办')
+LABEL_CN.set('idea', '灵感')
+LABEL_CN.set('emotion', '情绪')
+LABEL_CN.set('quote', '引用')
+LABEL_CN.set('mixed', '混合')
+LABEL_CN.set('question', '问询')
+LABEL_CN.set('fact', '事实')
+
+/** 标签选项（key 英文键 / cn 中文名；record.uvue 分类纠错标签条数据源） */
+export class LabelOption {
+	key: string
+	cn: string
+
+	constructor(key: string, cn: string) {
+		this.key = key
+		this.cn = cn
+	}
+}
+
+/** 7 类标签全量选项（与后端 VALID_CLASSES 对齐；O10 标签双源收口——record.uvue data 引用之，不再页面硬编码） */
+export const ALL_LABELS: Array<LabelOption> = [
+	new LabelOption('todo', '待办'),
+	new LabelOption('idea', '灵感'),
+	new LabelOption('emotion', '情绪'),
+	new LabelOption('quote', '引用'),
+	new LabelOption('mixed', '混合'),
+	new LabelOption('question', '问询'),
+	new LabelOption('fact', '事实')
+]
+
+export function labelCn(label: string): string {
+	const v = LABEL_CN.get(label)
+	return v != null ? v : label
+}
+
+/** POST /contents：文字入库（text 类型）；返回 content_id 或 null
+ *
+ *  说明：记录面板的真实入库走 `capsule_api.createTextContentRemark`（本函数零调用），
+ *  定位统一由 `utils/location.applyGpsToBody` 在各提交点注入，此处保持原样。
+ */
+export function createTextContent(text: string): Promise<string | null> {
+	const body: UTSJSONObject = {
+		content_type: 'text',
+		text: text,
+		source: 'app'
+	}
+	return new Promise<string | null>((resolve) => {
+		post('/api/v1/contents', body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(d.getString('id'))
+		})
+	})
+}
+
+/** POST /classify：分类入队；返回 job_id 或 null */
+export function submitClassify(text: string): Promise<string | null> {
+	const body: UTSJSONObject = {
+		text: text
+	}
+	return new Promise<string | null>((resolve) => {
+		post(PATH_CLASSIFY, body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(d.getString('job_id'))
+		})
+	})
+}
+
+/** 轮询分类任务（最多 tries 次，间隔 intervalMs）；finished 返回结果，其余 null */
+export function pollClassify(jobId: string, tries: number, intervalMs: number): Promise<ClassifyResult | null> {
+	return new Promise<ClassifyResult | null>((resolve) => {
+		pollClassifyTick(jobId, tries, intervalMs, 0, resolve)
+	})
+}
+
+function pollClassifyTick(
+	jobId: string,
+	tries: number,
+	intervalMs: number,
+	count: number,
+	done: (r: ClassifyResult | null) => void
+): void {
+	const next = count + 1
+	get(PATH_CLASSIFY + '/jobs/' + jobId).then((res: UTSJSONObject | null) => {
+		// O19：全量响应脱敏后落日志（原整段 toJSONString 刷 logcat，含用户 text）
+		console.log('[yishu] pollClassify tick ' + next + ' res=' + (res != null ? redactLog(res.toJSONString()) : 'null'))
+		if (res == null) {
+			done(null)
+			return
+		}
+		const d = dataObj(res)
+		if (d == null) {
+			console.log('[yishu] pollClassify data null')
+			done(null)
+			return
+		}
+		const status = d.getString('status') ?? ''
+		console.log('[yishu] pollClassify status="' + status + '" len=' + status.length + ' finished?=' + (status == 'finished'))
+		if (status == 'finished') {
+			console.log('[yishu] pollClassify finished hit')
+			const r = d.getJSON('result')
+			if (r != null) {
+				done(parseClassifyResult(r))
+				return
+			}
+			done(null)
+			return
+		}
+		if (status == 'failed' || next >= tries) {
+			done(null)
+			return
+		}
+		setTimeout(() => {
+			pollClassifyTick(jobId, tries, intervalMs, next, done)
+		}, intervalMs)
+	})
+}
+
+function parseClassifyResult(r: UTSJSONObject): ClassifyResult {
+	const scores: Array<ClassScore> = []
+	const arr = r.getArray('scores')
+	if (arr != null) {
+		for (let i = 0; i < arr.length; i++) {
+			const item = arr[i] as UTSJSONObject
+			scores.push(new ClassScore(item.getString('label') ?? '', item.getString('label_cn') ?? '', item.getNumber('score') as number))
+		}
+	}
+	return new ClassifyResult(
+		r.getString('label') ?? '',
+		r.getString('label_cn') ?? '',
+		r.getNumber('confidence') as number,
+		scores
+	)
+}
+
+/**
+ * POST /corrections：记录用户主动纠错（T-TX-2 数据源①）；返回是否成功。
+ *
+ * `contentType`（2026-10-14 新增 · 台账 §7.17）：此前**硬编码 `'text'`** ⇒ 照片纠错
+ * 会被后端记成 text 类型（层①个人规则按内容类型分流时会错档）。照片传 `'photo'`、
+ * 语音传 `'voice'`。
+ *
+ * 另：照片在保存时点**没有文本**，故照片传空串——后端已放宽 `text` 为可空，
+ * 空文本时跳过向量化、仍照常回写权威分类（`backend/app/schemas/correction.py`）。
+ */
+export function submitCorrection(contentId: string, text: string, newLabel: string, oldLabel: string, contentType: string): Promise<boolean> {
+	const body: UTSJSONObject = {
+		content_id: contentId,
+		text: text,
+		new_label: newLabel,
+		old_label: oldLabel,
+		source: 'active',
+		content_type: contentType
+	}
+	return new Promise<boolean>((resolve) => {
+		post(PATH_CORRECTIONS, body).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+// 2026-09-23（轴 4 收口）：此处原有 `submitArbitrate` / `pollArbitrate` / `pollArbitrateTick`
+// （POST /classify/arbitrate 及其任务轮询），**已删除，且不应再接回**。理由（证据链）：
+//   · P2 诊断 §2.1 RC1（docs/P2诊断_O1O2_20260829.md，置信度≈95%）指认：旧 record.uvue 的
+//     onTagTap **先调仲裁、再拿裁决回声覆盖用户所选**，并把裁决结果当 new_label 写回
+//     ⇒ 层①个人规则永远学不到用户意图、mixed 写回后自我强化 ⇒ **纠错恒「混合」**（O-2）。
+//     其性质是「自动算法覆盖用户操作」，违反基线约束。
+//   · §2.3 P0 修复＝立即 `submitCorrection(用户所选)` + 仲裁**仅作参考**、finalLabel 永不覆盖。
+//   · 现状：`RecordSheet.uvue:978/1328` 已是 `submitCorrection(cid, text, picked, '')`，
+//     **全程不调仲裁** ⇒ P0 修复已落地，本文件这两个导出成了被取代的残留。
+// 判据（为何删除优于"接上"）：接回去＝重新引入 O-2 恒混合；留着＝给后来者一个危险的接线入口。
+// 若将来确需仲裁（服务端三层裁决仍在，供 echo/自动路径使用），必须同时满足：
+//   ① 用户意图先落 submitCorrection ② finalLabel 仅作参考回显、**永不覆盖用户所选**。

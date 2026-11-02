@@ -1,0 +1,652 @@
+<template>
+	<view class="page tk-root">
+		<!-- 顶部导航栏 -->
+		<view class="header">
+			<view class="nav-row">
+				<view class="back-btn pressable" @tap="goBack">
+					<text class="back-arrow">‹</text>
+					<text class="back-text">我的</text>
+				</view>
+			<text class="header-title serif">画像管理</text>
+			<view class="header-right"></view>
+		</view>
+	</view>
+
+		<scroll-view class="scroll" direction="vertical">
+			<!-- 画像概览卡片（W6 拍板 2026-09-04：画像详情页未设计，整卡不可点；
+			     「画像详情页」已登记远期总账 B 类，出设计稿后再接） -->
+			<view class="profile-card">
+				<view class="profile-head">
+					<view class="profile-avatar">
+						<text class="avatar-text">忆</text>
+					</view>
+					<view class="profile-info">
+						<text class="profile-title serif">我的记忆画像</text>
+						<text class="profile-badge">L2 · 主题级</text>
+					</view>
+				</view>
+				<text class="profile-desc">基于你的照片、文字、语音碎片，AI 自动生成的个人记忆画像。画像会随着记忆积累不断更新。</text>
+				<view class="profile-stats">
+					<view class="stat-item">
+						<text class="stat-number">{{ totalDays }}</text>
+						<text class="stat-label">记忆天数</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-number">{{ totalPhotos }}</text>
+						<text class="stat-label">照片</text>
+					</view>
+					<view class="stat-item">
+						<text class="stat-number">{{ totalThemes }}</text>
+						<text class="stat-label">主题</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 性格标签卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">性格标签</text>
+				<text class="menu-sub">AI 根据记忆内容自动生成的性格特征</text>
+				<view class="tag-list">
+					<view v-for="tag in personalityTags" :key="tag.name" class="tag-item" :class="{ 'tag-active': tag.active }">
+						<text :class="tag.active ? 'tag-text tag-text-active' : 'tag-text'">{{ tag.name }}</text>
+						<text v-if="tag.confidence > 0" class="tag-confidence">{{ tag.confidence }}%</text>
+					</view>
+				</view>
+				<text v-if="!loading && personalityTags.length == 0" class="pm-list-empty">暂无可展示画像，先记录更多内容或点击刷新</text>
+			</view>
+
+			<!-- 记忆主题卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">记忆主题</text>
+				<text class="menu-sub">高频出现的记忆主题分类</text>
+				<view class="theme-list">
+					<view v-for="(theme, tIdx) in themes" :key="theme.name" :class="tIdx === themes.length - 1 ? 'theme-item pressable no-border' : 'theme-item pressable'" @tap="onThemeTap(theme)">
+						<view class="theme-icon" :style="{ backgroundColor: theme.color }">
+							<text class="theme-icon-text">{{ theme.icon }}</text>
+						</view>
+						<view class="theme-info">
+							<text class="theme-name">{{ theme.name }}</text>
+							<text class="theme-count">{{ theme.count }} 条记忆</text>
+						</view>
+						<text class="theme-arrow">›</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 敏感画像管理卡片（W10 画布 41:92 新增，承接 /api/v1/profile/sensitive 三端点） -->
+			<view class="menu-card">
+				<text class="menu-title serif">敏感画像管理</text>
+				<text class="menu-sub">标记后，AI 回顾与画像将按处置方式处理这些话题</text>
+				<view class="sens-list">
+					<view v-for="(s, sIdx) in sensitiveTopics" :key="s.topic" :class="sIdx === sensitiveTopics.length - 1 ? 'sens-row no-border' : 'sens-row'">
+						<text class="sens-name">{{ s.topic }}</text>
+						<text class="sens-badge-text" :style="badgeStyle(s.disposition)">{{ dispositionLabel(s.disposition) }}</text>
+						<view class="sens-remove" @tap="onRemoveSensitive(s)"><text class="sens-remove-text">✕</text></view>
+					</view>
+				</view>
+				<!-- 添加行：点击就地展开输入形态（后端 upsert 默认 forbid，MVP 不做级别选择） -->
+				<view v-if="!adding" class="sens-add pressable" @tap="adding = true">
+					<text class="sens-add-text">＋ 添加敏感话题</text>
+				</view>
+				<view v-else class="sens-add-form">
+					<input :adjust-position="true" class="sens-add-input" v-model="newTopic" placeholder="话题，如：老伴离世" placeholder-style="color:#B3A696;font-size:25rpx;" :maxlength="64" confirm-type="done" @confirm="confirmAddSensitive" />
+					<view class="sens-add-confirm pressable" @tap="confirmAddSensitive">
+						<text class="sens-add-confirm-text">添加</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 画像设置卡片 -->
+			<view class="menu-card">
+				<text class="menu-title serif">画像设置</text>
+				<view class="menu-row pressable" @tap="onRefreshProfile">
+					<view class="menu-icon amber">
+						<image class="menu-icon-img" src="/static/icons/icon-refresh.svg" />
+					</view>
+					<view class="menu-main">
+						<text class="menu-title-text">刷新画像</text>
+						<text class="menu-desc">{{ profileRebuildText != '' ? profileRebuildText : '基于最新记忆数据重新计算画像' }}</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-row pressable" @tap="onEditTags">
+					<view class="menu-icon rust">
+						<image class="menu-icon-img" src="/static/icons/icon-tag.svg" />
+					</view>
+					<view class="menu-main">
+						<text class="menu-title-text">编辑性格标签</text>
+						<text class="menu-desc">手动调整或确认 AI 生成的标签</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-row pressable no-border" @tap="onPrivacySettings">
+					<view class="menu-icon">
+						<image class="menu-icon-img" src="/static/icons/icon-lock.svg" />
+					</view>
+					<view class="menu-main">
+						<text class="menu-title-text">画像隐私设置</text>
+						<text class="menu-desc">控制哪些数据用于画像生成</text>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 关于画像 -->
+			<view class="about-card">
+				<text class="about-title serif">关于记忆画像</text>
+				<text class="about-text">记忆画像是 AI 基于你的个人记忆数据自动生成的用户画像，用于提供更个性化的回忆体验。所有数据仅存储在本地和你的私人空间，不会用于其他用途。</text>
+			</view>
+		</scroll-view>
+
+		<!-- TabBar（W10.4 换新，峰宝拍板）：旧玻璃自绘 TabBar（emoji 图标）废弃，
+		     统一共享组件（真值 = 画布 TabBar 族：SVG 图标 + FAB 咬合 6pt 同 index/ai/search 页） -->
+		<TabBar active="profile" :subpage="true" @plus="sheetOpen = true" />
+
+		<!-- 记录面板浮层：点中央 + 就地拉起，不跳页（产品定义铁律） -->
+		<RecordSheet v-if="sheetOpen" @close="sheetOpen = false" @saved="onRecordSaved" />
+
+		<!-- 编辑性格标签面板（卡24 F9b）：就地拉起不跳页，AI 标签可删 / locked 不可删 -->
+		<TagEditPanel v-if="tagOpen" :ai-tags="tagNamesState" @close="tagOpen = false" @save="onTagsSaved" />
+
+		<!-- 画像隐私设置面板（卡25 F9c）：全屏浮层就地拉起不跳页，开关本地态 + 清除强确认 -->
+		<PortraitPrivacyPanel v-if="privacyOpen" @close="privacyOpen = false" @cleared="onPortraitCleared" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onLoad, onUnload } from '@dcloudio/uni-app'
+	import { ensureLogin } from '@/utils/auth'
+	import {
+		fetchInterviewProfile,
+		startProfileRebuild,
+		fetchProfileRebuildStatus,
+		ProfileRebuildStatus
+	} from '@/utils/play_interview'
+	import { fetchTimeline, getCachedTimeline, TimelineEvent } from '@/utils/timeline'
+	import { showErrorToast, get, post, request, fetchEventStats, EventStats } from '@/utils/api'
+	// 锁定标签：真源在服务端（GET/PUT /api/v1/profile/locked-tags），storage 只是离线兜底
+	import { cachedLockedTags, clearLockedTagCache, syncLockedTags, LockedTagsResult } from '@/utils/profile_locked_tags'
+
+	// 敏感话题条目（W10：/api/v1/profile/sensitive 列表项的最小投影）
+	type SensTopic = {
+		topic: string
+		disposition: string
+	}
+
+	// 响应式数据
+	// 记录面板浮层开关（中央 + 触发，就地拉起不跳页）
+	let sheetOpen = ref(false)
+	let totalDays = ref(0)
+	let totalPhotos = ref(0)
+	let totalThemes = ref(0)
+	let loading = ref(true)
+	let personalityTags = ref<Array<any>>([])
+	let themes = ref<Array<any>>([])
+	// 敏感画像管理（W10 画布 41:92 新增）
+	let sensitiveTopics = ref<Array<SensTopic>>([])
+	let adding = ref(false) // 添加行展开态（就地展开输入，不弹窗）
+	let newTopic = ref('')
+	// 浮层开关与标签态（卡24 F9b / 卡25 F9c：模板与 handler 引用，声明归主窗口合并补齐
+	// ——两 Agent 并发各写引用漏声明，setup 未定义引用导致页面渲染黑屏，2026-09-02 真机实锤）
+	let tagOpen = ref(false) // 编辑性格标签面板
+	let privacyOpen = ref(false) // 画像隐私设置面板
+	let tagNamesState = ref<Array<string>>([]) // 当前标签名集（TagEditPanel :ai-tags 契约）
+	// 锁定标签集合（2026-10-30 · B1:139）：服务端真源，storage 只作离线兜底缓存。
+	// 为什么放 ref 而不是每次读 storage：面板保存后宿主需要立即重建展示；且"网络失败"
+	// 与"用户没有锁定标签"必须能区分（前者保留缓存值，不显示成空）。
+	let lockedTagsState = ref<Array<string>>([])
+	// 2026-10-30（P1-30）：「性格标签是否被用户编辑过」标记位（与 TagEditPanel 写的是同一个键）。
+	// 为什么需要：编辑结果为**空集合**时必须与「从未编辑」区分开，否则清空后会被派生标签复活。
+	const TAGS_EDITED_FLAG: string = 'portrait_tags_edited'
+	let profileRebuilding = ref(false)
+	let profileRebuildText = ref('')
+
+	// 返回键拦截：浮层/添加行开着时先收起，而不是退出页面（返回 true = 已自行处理）
+	onBackPress((): boolean => {
+		if (sheetOpen.value) {
+			sheetOpen.value = false
+			return true
+		}
+		if (tagOpen.value) {
+			tagOpen.value = false
+			return true
+		}
+		if (privacyOpen.value) {
+			privacyOpen.value = false
+			return true
+		}
+		if (adding.value) {
+			adding.value = false
+			return true
+		}
+		return false
+	})
+
+	// 生命周期
+	onLoad(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+				return
+			}
+			loadProfile()
+			loadStats()
+			loadSensitive()
+			loadLockedTags()
+		})
+	})
+	// 2026-10-30（P0-5）：离页作废轮询令牌 —— 否则画像重建轮询在页面销毁后继续打接口、
+	// 并往已卸载的组件状态里写值（还会弹 toast）。
+	onUnload(() => {
+		stopProfilePoll()
+	})
+
+	// 加载画像数据（从 interview/profile dimensions 派生性格标签）
+	function loadProfile(): void {
+		fetchInterviewProfile().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				loading.value = false
+				return
+			}
+			const dims = d.getJSON('dimensions')
+			if (dims != null) {
+				// dimensions 的 value 才是用户可读画像；内部 key（relation_role 等）
+				// 只用于归组，不能直接显示为“性格标签”。
+				const keys = dims.keys()
+				const tags: Array<any> = []
+				const names: Array<string> = []
+				for (let i = 0; i < keys.length && tags.length < 6; i++) {
+					const key = keys[i]
+					const values = dims.getJSONArray(key)
+					if (values == null) {
+						continue
+					}
+					for (let j = 0; j < values.length && tags.length < 6; j++) {
+						const value = values[j] as string
+						if (value != null && value != '') {
+							tags.push({
+								name: value,
+								// 当前画像接口不返回置信度：不伪造百分比。
+								confidence: 0,
+								active: true
+							})
+							names.push(value)
+						}
+					}
+				}
+				personalityTags.value = tags
+				tagNamesState.value = names
+			}
+			loading.value = false
+		})
+	}
+
+	// RecordSheet 保存成功回调：刷新统计数字
+	function onRecordSaved(): void {
+		loadStats()
+	}
+
+	// 加载统计（性能卡 PE 2026-09-04）：统计卡改 GET /events/stats 单聚合端点（api.uts fetchEventStats），
+	// 原 fetchTimeline(null) 全量拉取 + 全事件缩略图触发已删（性能黑洞）。
+	// 记忆主题列表仍需 L2 事件明细（标题/条数派生），窄化为 fetchTimeline(2) 仅拉 L2 子集（server level 过滤）。
+	/** 从 L2 事件派生主题列表（原 `loadStats` 内联体抽出：供"缓存命中"与"走网络"两条路径共用） */
+	function applyThemes(events: Array<TimelineEvent>): void {
+		// 2026-10-30（P1-32）：三处口径双向纠错（原实现「主题数」与「每条条数」各错一半）——
+		//  ① 主题数原取 `events.length`（L2 **事件**条数），但列表按 title **去重**成主题
+		//     ⇒ 同名主题在「主题」数字里被重复计数。现以「去重后的主题名数」为准（与列表同一口径）。
+		//  ② 每条主题条数原取「同 title 的事件条数」，而界面文案是「N 条记忆」⇒ 把事件数当记忆数。
+		//     现累加事件自带的 `contentCount`（后端 content_count = 该事件成员内容数），
+		//     同名主题条数**累加不丢**；事件真的没有成员内容时如实显示 0（不拿事件数充数）。
+		//  ③ 文案写「高频出现的记忆主题」，但原实现没排序（取前 4 其实是插入序=随机前 4）
+		//     ⇒ 现按累计条数倒序、同数再按事件数倒序。
+		const eventMap: Map<string, number> = new Map<string, number>()
+		const contentMap: Map<string, number> = new Map<string, number>()
+		for (let i = 0; i < events.length; i++) {
+			const ev = events[i]
+			if (ev.level !== 2 || ev.title == '') {
+				continue
+			}
+			eventMap.set(ev.title, (eventMap.get(ev.title) ?? 0) + 1)
+			contentMap.set(ev.title, (contentMap.get(ev.title) ?? 0) + ev.contentCount)
+		}
+		const names: Array<string> = []
+		// 2026-11-01 走查修复（F-7.2 主题数恒 0）：原 `const nameKeys = eventMap.keys();
+		// for (i < nameKeys.length; names.push(nameKeys[i]))` —— UTS(Kotlin) 的
+		// `Map.keys()` 返回 Set，**没有 `.length` 属性**（JS 习惯），`nameKeys.length`
+		// 是 undefined ⇒ 循环体一次都不执行 ⇒ names 恒空 ⇒ 主题数/列表恒 0。
+		// 数据日志已证实 applyThemes 收到 5 条 L2（dbg-f72），卡在渲染前这一步。
+		// 改用 Map.forEach 遍历（UTS 三端一致），同时 try/catch 防单条脏数据拖垮整页。
+		try {
+			eventMap.forEach((v: number, k: string): void => {
+				names.push(k)
+			})
+		} catch (e) {
+			console.log('[dbg-f72] map iterate error: ' + e)
+		}
+		names.sort((a: string, b: string): number => {
+			const ca = contentMap.get(a) ?? 0
+			const cb = contentMap.get(b) ?? 0
+			if (cb != ca) {
+				return cb - ca
+			}
+			const ea = eventMap.get(a) ?? 0
+			const eb = eventMap.get(b) ?? 0
+			return eb - ea
+		})
+		// 主题数 = 去重后的主题名数（不是 L2 事件条数）
+		totalThemes.value = names.length
+		const themeList: Array<any> = []
+		const colors = ['#c4913c24', '#b05a3a1f', '#4e7d8c21', '#7a8c5a24']
+		const icons = ['👨‍👩‍👧', '✈️', '📚', '🍜']
+		for (let i = 0; i < Math.min(4, names.length); i++) {
+			const name = names[i]
+			themeList.push({
+				name: name,
+				count: contentMap.get(name) ?? 0,
+				icon: icons[i % icons.length],
+				color: colors[i % colors.length]
+			})
+		}
+		themes.value = themeList
+	}
+
+	function loadStats(): void {
+		fetchEventStats().then((s: EventStats | null) => {
+			if (s != null) {
+				totalDays.value = s.dayCount
+				totalPhotos.value = s.photoCount
+			}
+			// s==null：请求失败（doRequest 已全局 toast），统计保持 0 不造假
+		})
+		// 2026-10-14（台账 §4.20 ⑭ · 用户反馈「每次跳转都要等数据」）：主题列表优先复用
+		// **时间轴模块已有缓存**（`getCachedTimeline`，60s 内有效）——用户进入本页多半是刚从
+		// 时间轴/我的页过来，缓存基本必命中 ⇒ **零请求、零等待**即可派生主题；
+		// 未命中才走 `fetchTimeline(2)`（原路径）。
+		const hit = getCachedTimeline()
+		if (hit != null) {
+			applyThemes(hit.events)
+		} else {
+			fetchTimeline(2).then((events: Array<TimelineEvent>) => {
+				applyThemes(events)
+			})
+		}
+	}
+
+	// ── 敏感画像管理（W10 画布 41:92；端点契约见 backend/app/api/contents.py profile_sensitive_router）──
+
+	// 处置级别五档（后端 ProfileSensitiveCreate.pattern：allow|mention|caution|review|forbid）
+	function dispositionLabel(d: string): string {
+		switch (d) {
+			case 'allow': return '允许'
+			case 'mention': return '可提及'
+			case 'caution': return '谨慎'
+			case 'review': return '需复核'
+			case 'forbid': return '禁止'
+			default: return d
+		}
+	}
+
+	// 徽章配色对齐画布 41:97 禁止（锈红 a0.12）/ 41:103 谨慎（锈金 a0.10）/ 41:109 需复核（米灰底次级字）；
+	// allow/mention 延伸记忆主题图标四色系（橄榄绿 / 黛蓝）
+	function badgeStyle(d: string): string {
+		if (d == 'forbid') { return 'color:#B05A3A;background-color:rgba(176,90,58,0.12);' }
+		if (d == 'caution') { return 'color:#C4913C;background-color:rgba(196,145,60,0.10);' }
+		if (d == 'review') { return 'color:#8A7A6A;background-color:#F0EBE3;' }
+		if (d == 'allow') { return 'color:#7A8C5A;background-color:rgba(122,140,90,0.14);' }
+		return 'color:#4E7D8C;background-color:rgba(78,125,140,0.13);'
+	}
+
+	// GET /api/v1/profile/sensitive：列出全部话题（后端按更新时间倒序）
+	function loadSensitive(): void {
+		get('/api/v1/profile/sensitive').then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				return
+			}
+			const arr = body.getArray('data')
+			if (arr == null) {
+				return
+			}
+			const list: Array<SensTopic> = []
+			for (let i = 0; i < arr.length; i++) {
+				const it = arr[i]
+				const topic = it.getString('topic')
+				if (topic != null && topic != '') {
+					list.push({ topic: topic, disposition: it.getString('disposition') ?? 'forbid' })
+				}
+			}
+			sensitiveTopics.value = list
+		})
+	}
+
+	// DELETE /api/v1/profile/sensitive?topic=xxx：先强确认再删。
+	// 中文 topic 直接拼 query：Android 端 OkHttp 对非 ASCII query 自动 percent-encode（UTF-8）；
+	// 若后续 iOS 适配发现 URLSession 拒绝裸中文 URL，再补手写编码（登记差异台账 W10）
+	function onRemoveSensitive(s: SensTopic): void {
+		uni.showModal({
+			title: '移除敏感话题',
+			content: '将移除「' + s.topic + '」的标记，AI 将恢复常规处理',
+			success: (res) => {
+				if (res.confirm) {
+					// 2026-10-30（P2 F-3）：topic 是**中文**（"老伴离世"），直接拼进 query 依赖各端
+					// HTTP 实现自动 percent-encode —— 注释里自承"若 iOS 拒绝裸中文 URL 再补"，
+					// 即这条路在非 Android 端是**未验证的**。这里显式 encodeURIComponent，跨端一致。
+					request('/api/v1/profile/sensitive?topic=' + encodeURIComponent(s.topic), 'DELETE', null).then((body: UTSJSONObject | null) => {
+						if (body != null) {
+							uni.showToast({ title: '已移除', icon: 'none' })
+							loadSensitive()
+						}
+					})
+				}
+			}
+		})
+	}
+
+	// POST /api/v1/profile/sensitive（幂等 upsert）：UI 显式添加默认 forbid + locked=true
+	// （后端 locked 语义 = 用户显式标记、永不过期；与 B1-6 对话式「别跟我提 X」产物同权）
+	function confirmAddSensitive(): void {
+		const t = newTopic.value.trim()
+		if (t == '') {
+			uni.showToast({ title: '请输入话题', icon: 'none' })
+			return
+		}
+		const d: UTSJSONObject = { topic: t, disposition: 'forbid', locked: true }
+		post('/api/v1/profile/sensitive', d).then((body: UTSJSONObject | null) => {
+			if (body != null) {
+				uni.showToast({ title: '已添加', icon: 'none' })
+				newTopic.value = ''
+				adding.value = false
+				loadSensitive()
+			}
+		})
+	}
+
+	// 导航：TabBar 跳转/中央+ 全部由共享组件接管（本页仅保留返回钮）
+	function goBack(): void {
+		uni.navigateBack()
+	}
+
+	// 业务方法
+	function onThemeTap(theme: any): void {
+		uni.navigateTo({ url: '/pages/portrait/theme-detail?theme=' + encodeURIComponent(theme.name) })
+	}
+	function onRefreshProfile(): void {
+		if (profileRebuilding.value) {
+			return
+		}
+		loading.value = true
+		profileRebuilding.value = true
+		profileRebuildText.value = '正在整理已有记忆…'
+		startProfileRebuild().then((jobId: string | null) => {
+			if (jobId == null) {
+				profileRebuilding.value = false
+				profileRebuildText.value = '创建重建任务失败，请重试'
+				loading.value = false
+				return
+			}
+			pollProfileRebuild(jobId)
+		})
+	}
+
+	// 2026-10-30（P0-5）：原轮询有三处硬伤 ——
+	//   ① 终态只认 finished/failed，后端还有其他终态（stopped/canceled/deferred，见 core/queue.py）
+	//      ⇒ 落到这些终态时每 1.5s 打一次接口、永远不停；
+	//   ② 没有页活标志：用户返回上一页后定时器继续跑，还会对已卸载页面写状态 + toast；
+	//   ③ 没有总时长上限：job 卡 queued 时可轮询上千次。
+	// 现加：轮询令牌（离开页面即作废）+ 终态白名单 + 总时长上限。
+	let pollSeq = 0
+	const POLL_INTERVAL_MS: number = 1500
+	const POLL_MAX_MS: number = 180000
+	let pollStartedAt: number = 0
+
+	function stopProfilePoll(): void {
+		pollSeq = pollSeq + 1 // 令牌自增：在途回调据此作废
+	}
+
+	function pollProfileRebuild(jobId: string): void {
+		if (pollStartedAt == 0) {
+			pollStartedAt = Date.now()
+		}
+		const mySeq = pollSeq
+		fetchProfileRebuildStatus(jobId).then((s: ProfileRebuildStatus | null) => {
+			if (mySeq != pollSeq) {
+				return // 已离页/已取消：不再写任何状态
+			}
+			if (s == null) {
+				profileRebuilding.value = false
+				profileRebuildText.value = '任务状态读取失败，请重试'
+				loading.value = false
+				return
+			}
+			if (s.status == 'finished') {
+				profileRebuilding.value = false
+				profileRebuildText.value = s.degraded
+					? '已完成（本地规则模式）'
+					: '画像已更新'
+				loadProfile()
+				loadStats()
+				uni.showToast({
+					title: s.skipped > 0 ? '画像已更新（含已处理记忆）' : '画像已更新',
+					icon: 'none'
+				})
+				return
+			}
+			// 终态白名单：任何非「进行中」的终态都必须停止轮询，否则按钮永久禁用
+			if (s.status == 'failed' || s.status == 'stopped' || s.status == 'canceled' || s.status == 'deferred' || s.status == 'not_found') {
+				profileRebuilding.value = false
+				profileRebuildText.value = s.error != '' ? s.error : '画像重建失败'
+				loading.value = false
+				return
+			}
+			if (Date.now() - pollStartedAt > POLL_MAX_MS) {
+				profileRebuilding.value = false
+				profileRebuildText.value = '整理时间较长，稍后回到本页会自动更新'
+				loading.value = false
+				return
+			}
+			profileRebuildText.value = s.total > 0
+				? '正在整理 ' + s.processed.toString() + '/' + s.total.toString() + ' 条记忆…'
+				: '正在准备记忆…'
+			setTimeout((): void => {
+				if (mySeq != pollSeq) {
+					return
+				}
+				pollProfileRebuild(jobId)
+			}, POLL_INTERVAL_MS)
+		})
+	}
+	function onEditTags(): void {
+		tagOpen.value = true
+	}
+	function onPrivacySettings(): void {
+		privacyOpen.value = true
+	}
+
+	// ── 卡24 F9b：TagEditPanel 结果写回（AI 区 storage 由面板落；锁定区真源在服务端） ──
+	function onTagsSaved(): void {
+		// 面板保存时已把锁定集合写入兜底缓存 ⇒ 先立即重建（不闪），再从服务端对齐一次
+		rebuildTagsFromStorage()
+		loadLockedTags()
+	}
+
+	/** 读锁定标签：先用兜底缓存渲染，再以服务端为真源覆盖。
+	 *
+	 *  2026-10-30（P1-33）：原实现只读本机 storage 渲染锁定区，后端完全不知情 ⇒ 画像重建时
+	 *  AI 照旧把用户删掉/固定的标签写回来（"锁定"是空承诺）。现服务端为真源。
+	 *  请求失败**保留缓存值**（不把网络失败显示成"没有锁定标签"）。 */
+	function loadLockedTags(): void {
+		lockedTagsState.value = cachedLockedTags()
+		rebuildTagsFromStorage()
+		syncLockedTags().then((r: LockedTagsResult) => {
+			if (r.ok) {
+				lockedTagsState.value = r.tags
+			}
+			rebuildTagsFromStorage()
+		})
+	}
+
+	/** storage 编辑结果（\n 连接）覆盖 personalityTags/tagNamesState。
+	 *
+	 *  2026-10-30（P1-30）：判据从「列表是否非空」改为**编辑标记位**（`portrait_tags_edited`）。
+	 *  原实现把「edited 键为空」当作「从未编辑 ⇒ 回落现网派生标签」，于是用户把 AI 标签全删光后
+	 *  保存（空串）＝看起来像没编辑过 ⇒ 派生标签被重新抄回来，被删的标签复活。
+	 *  现规则：标记位=1 时以 storage 集合**整体覆盖**（空集合也是有效结果，就是"全清"）；
+	 *  未编辑过才用派生标签。固定标签是本机独立集合，两种情况都追加（按名去重，不重复入列）。
+	 *  兼容：老版本只写了列表、没有标记位 ⇒ edited 键非空时按「已编辑」处理（不丢用户既有编辑）。 */
+	function rebuildTagsFromStorage(): void {
+		const editedStr = uni.getStorageSync('portrait_ai_tags_edited') as string
+		const everEdited = (uni.getStorageSync(TAGS_EDITED_FLAG) as string) == '1'
+		const tags: Array<any> = []
+		const names: Array<string> = []
+		if (everEdited || editedStr != '') {
+			// 编辑过（或老版本遗留的编辑结果）：AI 区以 storage 为准，空 = 用户清空，不再抄派生值
+			const segs = editedStr.split('\n')
+			for (let i = 0; i < segs.length; i++) {
+				if (segs[i] != '') {
+					// 2026-10-30（P2 F-7）：这里的 70/100 是**凭空编的置信度**（后端画像接口根本不返回
+					// 置信度，`loadProfile` 已按"不伪造百分比"写成 0）。伪造成 high 会让用户以为
+					// "AI 很确定"，且本机固定标签还被编成 100%。统一置 0 ⇒ 模板 `v-if="confidence > 0"`
+					// 自动不渲染百分比徽章。
+					tags.push({ name: segs[i], confidence: 0, active: true })
+					names.push(segs[i])
+				}
+			}
+		} else {
+			// 从未编辑：保留现网派生标签
+			for (let i = 0; i < tagNamesState.value.length; i++) {
+				tags.push({ name: tagNamesState.value[i], confidence: 0, active: true })
+				names.push(tagNamesState.value[i])
+			}
+		}
+		// 锁定区以 lockedTagsState 为准（loadLockedTags 用服务端真源对齐；本机缓存只在
+		// 请求失败时兜底）——不再直接读 storage，否则服务端集合与展示会各说一套
+		for (let i = 0; i < lockedTagsState.value.length; i++) {
+			const lt = lockedTagsState.value[i]
+			if (lt != '' && names.indexOf(lt) < 0) {
+				tags.push({ name: lt, confidence: 0, active: true })
+				names.push(lt)
+			}
+		}
+		personalityTags.value = tags
+		tagNamesState.value = names
+	}
+
+	// ── 卡25 F9c：画像数据已清除（面板清 storage 后回调）→ 本地标签态清零；
+	//    后端画像清除端点未登记（台账 卡25 F9c），不重拉后端防复活 ──
+	function onPortraitCleared(): void {
+		// 2026-10-30（P1-30）：清空画像时一并**复位「已编辑」标记位**。
+		// 面板已把两个列表键清空，若标记位残留，之后打开标签面板会把「编辑过 + 空」当成用户意图，
+		// 于是重建画像后仍然看不到新派生标签（标记位必须在"画像被清空"这个语义点上失效）。
+		uni.removeStorageSync(TAGS_EDITED_FLAG)
+		// 2026-10-30（P1-33）：锁定标签真源在服务端，云端 DELETE 已连带删除 user_profile 行
+		// （locked_tags 随之消失）；本机缓存 + 「待推送」标记必须一起清，否则残留标记会把
+		// 旧集合当"未推送改动"再推回云端（清除后又自己长回来）。
+		clearLockedTagCache()
+		lockedTagsState.value = []
+		personalityTags.value = []
+		tagNamesState.value = []
+	}
+</script>
+
+<style>
+	@import '@/styles/portrait-manage.css';
+</style>

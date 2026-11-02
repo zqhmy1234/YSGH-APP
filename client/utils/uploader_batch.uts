@@ -1,0 +1,314 @@
+/**
+ * 上传域 · 并发池与批量入口（B5c 2026-09-24 重构波：自 utils/uploader.uts 按分节拆出）
+ *
+ * UploadPool ≤3 并发 / failWholeBatch / uploadBatch / continuePendingUploads / 网络恢复钩子。
+ * 对外导出：continuePendingUploads, uploadBatch
+ */
+import { ensureLogin } from './auth'
+import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+import { pauseSync, resumeSync, isSyncPaused, registerConsecutiveFailure, resetConsecutiveFailures, MAX_BATCH_FAILURES } from './pause_controller'
+import { onNetworkRestored } from './sync_schedule'
+import { MAX_CONCURRENCY, UploadMode, UploadOptions, UploadProgress, UploadedPhoto } from './uploader_types'
+import { NetKind, getNetKind, resolveMode } from './uploader_net'
+import { addFailed, addHeld, failedCount, failedPhotos, heldCount, heldPhotos, removeFailed, removeHeld } from './uploader_queue'
+import { uploadWithRetry } from './uploader_photo'
+// 2026-10-16：WiFi 恢复自动补传同样要上云，否则补传的照片不进时间轴（D-05 缺口）
+import { submitUploadsAsL1 } from './l1_submit.uts'
+
+/** 并发池（游标式分配，天然实现 ≤3 并发；批量失败 ≥10 暂停剩余） */
+class UploadPool {
+	items: Array<PhotoItem>
+	onProgress: (p: UploadProgress) => void
+	resolve: (out: Array<UploadedPhoto>) => void
+	uploadMode: string = 'original'
+	index: number = 0
+	done: number = 0
+	failed: number = 0
+	consecutive: number = 0
+	total: number
+	results: Array<UploadedPhoto> = []
+
+	constructor(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (out: Array<UploadedPhoto>) => void) {
+		this.items = items
+		this.onProgress = onProgress
+		this.resolve = resolve
+		this.total = items.length
+	}
+
+	start(uploadMode: string): void {
+		this.uploadMode = uploadMode
+		const slots = this.total < MAX_CONCURRENCY ? this.total : MAX_CONCURRENCY
+		for (let s = 0; s < slots; s++) {
+			this.next()
+		}
+	}
+
+	/** 暂停：剩余项入 held 队列 + 提前返回已成功部分（横幅"继续上传"恢复） */
+	holdRemaining(): void {
+		for (let i = this.index; i < this.total; i++) {
+			addHeld(this.items[i])
+		}
+		this.resolve(this.results)
+	}
+
+	next(): void {
+		if (isSyncPaused()) {
+			this.holdRemaining()
+			return
+		}
+		const i = this.index
+		this.index++
+		if (i >= this.total) {
+			return
+		}
+		const item = this.items[i]
+		uploadWithRetry(item, this.uploadMode).then((cid: string | null) => {
+			if (cid != null) {
+				this.done++
+				this.consecutive = 0
+				this.results.push(new UploadedPhoto(item, cid))
+				resetConsecutiveFailures()
+			} else {
+				this.failed++
+				this.consecutive++
+				addFailed(item)
+				// 2026-10-30（P1-3）：`addFailed` 之外**必须移出 held** —— 原实现只在成功时才
+				// removeHeld，失败项同时留在两个队列 ⇒ 横幅双计（N 张待传 + M 张失败），
+				// 下次「一键继续」把同一路径塞进同一批两次（原图双倍流量）。
+				removeHeld(item.path)
+				registerConsecutiveFailure()
+				if (this.consecutive >= MAX_BATCH_FAILURES) {
+					console.error('[yishu] 连续失败 ' + MAX_BATCH_FAILURES + ' 条，暂停剩余（横幅可继续）')
+					pauseSync('网络异常，已暂停同步')
+					this.holdRemaining()
+					return
+				}
+			}
+			const p = new UploadProgress(this.done, this.total, this.failed)
+			this.onProgress(p)
+			if (this.done + this.failed === this.total) {
+				this.resolve(this.results)
+			} else {
+				this.next()
+			}
+		})
+	}
+}
+
+/** 整批失败（登录失败/后端不可达）：全部入 failed 队列 + 连续失败计数（≥N 触发暂停横幅） */
+function failWholeBatch(items: Array<PhotoItem>, onProgress: (p: UploadProgress) => void, resolve: (out: Array<UploadedPhoto>) => void): void {
+	for (let i = 0; i < items.length; i++) {
+		addFailed(items[i])
+	}
+	for (let i = 0; i < items.length; i++) {
+		registerConsecutiveFailure()
+	}
+	const fail = new UploadProgress(0, items.length, items.length)
+	onProgress(fail)
+	resolve([])
+}
+
+/** 批量上传主入口（并发 ≤3）；成功项返回（上传前确保已登录）。
+ *  opts.mode：auto（WiFi 原图/蜂窝暂缓）/ original（强制原图）/ thumbnail / hold */
+export function uploadBatch(items: PhotoItem[], onProgress: (p: UploadProgress) => void, opts: UploadOptions | null = null): Promise<Array<UploadedPhoto>> {
+	// 2026-10-31（走查 2.1/2.2）：**入队前先验真图**。
+	// 事故：走查时把 11 个以 `<?` 开头的非图片文件按 .jpg 推进相册，全部进了 held/failed 队列，
+	// logcat 刷屏 `ExifInterface: Invalid byte order: 3c3f`，反复重试且永远传不上去。
+	// 只认扩展名不够（这些文件就叫 .jpg），这里用 `uni.getImageInfo` 真解码一次：能拿到宽高才算图片。
+	// 不能解码的直接剔除并**显式告知**，绝不静默塞进队列——否则用户只会看到“待上传”永不消失。
+	return filterValidImages(items).then((valid: Array<PhotoItem>) => {
+		return uploadBatchValidated(valid, onProgress, opts)
+	})
+}
+
+/**
+ * 真图校验：`uni.getImageInfo` 能解出尺寸才算有效图片（非图片/损坏/0 字节都会 fail）。
+ * 全失败时返回空数组，由调用方按 0 张处理（不会静默替换成“已记录”）。
+ */
+function filterValidImages(items: PhotoItem[]): Promise<Array<PhotoItem>> {
+	return new Promise<Array<PhotoItem>>((resolve) => {
+		if (items.length == 0) {
+			resolve([])
+			return
+		}
+		const ok: Array<PhotoItem> = []
+		let pending = items.length
+		const done = (): void => {
+			pending = pending - 1
+			if (pending > 0) {
+				return
+			}
+			if (ok.length < items.length) {
+				const bad = items.length - ok.length
+				console.error('[yishu] 上传前剔除 ' + bad + ' 个非图片/损坏文件（getImageInfo 解码失败，共 ' + items.length + ' 个）')
+				uni.showToast({ title: bad.toString() + ' 张不是有效图片，已跳过', icon: 'none' })
+			}
+			resolve(ok)
+		}
+		for (let i = 0; i < items.length; i++) {
+			const it = items[i]
+			if (it.path == '') {
+				done()
+				continue
+			}
+			uni.getImageInfo({
+				src: it.path,
+				// 不读回调入参：本处只关心“能不能解码”，少一个类型依赖就少一处编译风险
+				success: () => {
+					ok.push(it)
+					done()
+				},
+				fail: () => {
+					done()
+				}
+			})
+		}
+	})
+}
+
+/** 校验通过后的真实上传体（原 `uploadBatch` 主体一字未改，只改了函数名与入口） */
+function uploadBatchValidated(items: PhotoItem[], onProgress: (p: UploadProgress) => void, opts: UploadOptions | null = null): Promise<Array<UploadedPhoto>> {
+	return new Promise<Array<UploadedPhoto>>((resolve) => {
+		if (items.length === 0) {
+			const empty = new UploadProgress(0, 0, 0)
+			onProgress(empty)
+			resolve([])
+			return
+		}
+		const mode: UploadMode = opts != null && opts.mode != null ? opts.mode : 'auto'
+		getNetKind((kind: NetKind) => {
+			const effective = resolveMode(mode, kind)
+			if (effective == 'hold') {
+				// 蜂窝/离线：暂缓入 held（流量约束），横幅展示"待 WiFi 上传/立即上传原图"
+				for (let i = 0; i < items.length; i++) {
+					addHeld(items[i])
+				}
+				const held = new UploadProgress(0, items.length, 0)
+				onProgress(held)
+				console.log('[yishu] 蜂窝/离线暂缓 ' + items.length + ' 张原图（held=' + heldCount() + '）')
+				resolve([])
+				return
+			}
+			ensureLogin().then((ok: boolean) => {
+				if (!ok) {
+					console.error('[yishu] 上传前登录失败（后端不可达），整批入失败队列')
+					failWholeBatch(items, onProgress, resolve)
+					return
+				}
+				const pool = new UploadPool(items, onProgress, resolve)
+				pool.start(effective)
+			})
+		})
+	})
+}
+
+/** 一键继续：解除暂停 + 上传 held/failed 全部待处理照片（原图模式；B4 §5"立即上传原图"手动入口） */
+// 2026-10-30（P1-2）：加**在途单飞**。原实现无互斥：连点横幅按钮、或「点按钮」与
+// 「WiFi 恢复自动补传」撞车时，两个调用各自组装 held+failed 并各起一个 UploadPool
+// （各 ≤3 并发）⇒ 同一张照片被两个池同时上传、并各自提交一次 L1 ⇒ 同日出现重复日卡。
+let _continueInflight: Promise<Array<UploadedPhoto>> | null = null
+
+export function continuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+	if (_continueInflight != null) {
+		console.log('[yishu] 继续上传已在途，复用同一批次（防重复上传/重复提交 L1）')
+		return _continueInflight
+	}
+	const p = doContinuePendingUploads(onProgress)
+	_continueInflight = p
+	p.then((_out: Array<UploadedPhoto>) => {
+		_continueInflight = null
+	})
+	return p
+}
+
+function doContinuePendingUploads(onProgress: (p: UploadProgress) => void): Promise<Array<UploadedPhoto>> {
+	return new Promise<Array<UploadedPhoto>>((resolve) => {
+		resumeSync()
+		const held = heldPhotos()
+		const failed = failedPhotos()
+		const items: Array<PhotoItem> = []
+		// 按 path 去重兜底（两个队列理论上互斥，历史数据可能已重叠）
+		const seen: Set<string> = new Set<string>()
+		for (let i = 0; i < held.length; i++) {
+			if (!seen.has(held[i].path)) {
+				seen.add(held[i].path)
+				items.push(held[i])
+			}
+		}
+		for (let i = 0; i < failed.length; i++) {
+			if (!seen.has(failed[i].path)) {
+				seen.add(failed[i].path)
+				items.push(failed[i])
+			}
+		}
+		if (items.length === 0) {
+			const empty = new UploadProgress(0, 0, 0)
+			onProgress(empty)
+			resolve([])
+			return
+		}
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				console.error('[yishu] 继续上传：登录失败（后端不可达）')
+				failWholeBatch(items, onProgress, resolve)
+				return
+			}
+			// 2026-10-31（走查 2.1/2.2）：**这条路径也必须验真图**。
+			// 原实现这里直接 `new UploadPool`，绕开了 `uploadBatch` ⇒ held/failed 队列里的坏文件
+			// （走查时那 11 个 `<?` 开头的假 jpg）会绕过上面新加的过滤，继续被反复重试。
+			// 校验不过的直接从 held/failed 里清掉，否则它们永远挂在横幅上。
+			filterValidImages(items).then((valid: Array<PhotoItem>) => {
+				if (valid.length < items.length) {
+					const vp: Array<string> = []
+					for (let vi = 0; vi < valid.length; vi++) {
+						vp.push(valid[vi].path)
+					}
+					for (let ii = 0; ii < items.length; ii++) {
+						if (vp.indexOf(items[ii].path) < 0) {
+							removeHeld(items[ii].path)
+							removeFailed(items[ii].path)
+						}
+					}
+				}
+				if (valid.length == 0) {
+					onProgress(new UploadProgress(0, 0, 0))
+					resolve([])
+					return
+				}
+				const pool = new UploadPool(valid, onProgress, (out: Array<UploadedPhoto>) => {
+				// 成功后从 held/failed 队列移除（无论池是否因暂停提前返回，只清已成功项）
+				for (let i = 0; i < out.length; i++) {
+					removeHeld(out[i].item.path)
+					removeFailed(out[i].item.path)
+				}
+				resolve(out)
+			})
+				pool.start('original')
+			}) // filterValidImages().then
+		})
+	})
+}
+
+/** WiFi 恢复时自动补传暂缓原图（B4 §5 流量约束闭环：蜂窝暂缓 → 到 WiFi 自动续传）；
+ *  由 sync_client.onNetworkRestored 在网络恢复时调用，本文件模块加载时注册（无循环依赖）。 */
+function maybeUploadHeldOnWifi(): void {
+	if (heldCount() === 0 && failedCount() === 0) {
+		return
+	}
+	if (isSyncPaused()) {
+		return
+	}
+	getNetKind((kind: NetKind) => {
+		if (kind == 'wifi') {
+			console.log('[yishu] WiFi 恢复，自动补传暂缓原图（held=' + heldCount() + ' failed=' + failedCount() + '）')
+			continuePendingUploads(() => {}).then((uploaded: Array<UploadedPhoto>) => {
+				submitUploadsAsL1(uploaded)
+			})
+		}
+	})
+}
+
+// 模块加载时注册网络恢复钩子（sync_client 触发；App 启动经 index/profile 引入 uploader 即生效）
+onNetworkRestored((): void => {
+	maybeUploadHeldOnWifi()
+})

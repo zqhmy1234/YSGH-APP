@@ -1,0 +1,18 @@
+{
+  "id": "pref_novelty",
+  "label": "新奇vs熟悉",
+  "category": "决策与偏好",
+  "current_values": [
+    "爱尝新",
+    "恋熟悉"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_novelty_vs_familiarity",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

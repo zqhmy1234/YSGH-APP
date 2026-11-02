@@ -1,0 +1,6 @@
+# Windows 多窗口协作 + core.autocrlf=true 环境下的换行守卫：
+# shell 脚本必须保持 LF 检出（CRLF 会让 bash 报 $'\r': command not found，2026-08-29 事故）
+*.sh text eol=lf
+*.py text eol=lf
+*.uvue text
+*.uts text

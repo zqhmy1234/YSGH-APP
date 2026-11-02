@@ -1,0 +1,656 @@
+/**
+ * 网络层封装（B-CL-4）：统一请求（超时/错误码/全局 toast/ApiError 映射）
+ *
+ * 约定：
+ *  - 后端响应信封 {code, message, data}；data 可为对象或数组（UTSJSONObject 字段访问）
+ *  - 401 → 自动 refresh（refresh_token 轮换）→ 重放一次；仍失败清 token
+ *  - 错误处理：resolve(null) + 全局 toast（UTS Promise 无可靠 catch/onRejected 重载，
+ *    本模块永不 reject，调用方判空即可）
+ *  - 解析辅助：dataObj() 取对象 data；dataArr() 取数组 data
+ */
+import { getBaseUrl } from './config'
+import { getToken, refreshToken, clearToken } from './auth'
+import { captureException } from './sentry'
+// 2026-10-31：toast 文案统一清洗（防止 JSON/结构体裸露给用户）
+import { humanizeErr } from './err_text'
+
+export class ApiError extends Error {
+	code: string
+	httpStatus: number
+
+	constructor(code: string, message: string, httpStatus: number) {
+		super(message)
+		this.code = code
+		this.httpStatus = httpStatus
+	}
+}
+
+export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
+
+const REQUEST_TIMEOUT_MS: number = 15000
+
+/**
+ * Sentry 上报的 host 后缀（2026-10-11 静态审查 · 环境差异专题）。
+ *
+ * 为什么必须带：本项目最贵故障形态是「接口全空且不报错」（dev 地址误进生产包 / 隧道失效 /
+ * 明文被拦），而 release 包 **console 不可见** ⇒ Sentry 是唯一出口。原上报只带 `path`
+ * （如 `network fail: /api/v1/events/timeline`）——出包后**无法判断客户端连的是哪个 host**，
+ * 排查只能靠猜（是 prod 域名没换？隧道挂了？还是被 Android 明文策略拦了？）。
+ * host 为公开地址、非敏感信息（Sentry DSN 本身即明文内嵌，同口径）。
+ */
+function hostTag(): string {
+	return ' @' + getBaseUrl()
+}
+
+/** 底层原始响应（O5 收口）：status（0=网络失败）+ body（对象守卫后的信封，null=非对象/裸值） */
+export class HttpResult {
+	status: number
+	body: UTSJSONObject | null
+
+	constructor(status: number, body: UTSJSONObject | null) {
+		this.status = status
+		this.body = body
+	}
+}
+
+// 2026-10-30（P2 J-9）：toast 去重。并发请求一起失败时（首屏 3~5 个并行请求同时超时）
+// 原实现会连弹同样几条 toast，互相覆盖 ⇒ 用户只看到最后一条，观感上像"一直在弹"。
+// 按**文案**做 2s 去重：2s 内的同一条错误只弹一次（不同文案照常各弹一次）。
+let _lastErrToastMsg: string = ''
+let _lastErrToastAt: number = 0
+
+/** 统一错误 toast（业务错误码也提示，方便第一波联调定位） */
+export function showErrorToast(err: Error | null): void {
+	const rawMsg = err != null && err.message != '' ? err.message : '请求失败'
+	// 2026-10-31（走查：JSON 直接暴露给用户）：**全局兜底清洗**。
+	// 各调用点写法不一，有的把系统 errMsg（`{"errMsg":"..."}`）或响应体直接拼进 message，
+	// 用户会在 toast 里看到花括号引号，既看不懂又显得粗糙。
+	// 这里统一过一遍 humanizeErr：是 JSON 就取人话字段，取不到就换成可读兜底。
+	// 放在唯一出口处，比逐个调用点修补更可靠（新增调用点自动受保护）。
+	const msg = humanizeErr(rawMsg, '操作失败，请重试')
+	const now = Date.now()
+	if (msg == _lastErrToastMsg && now - _lastErrToastAt < 2000) {
+		return
+	}
+	_lastErrToastMsg = msg
+	_lastErrToastAt = now
+	uni.showToast({
+		title: msg,
+		icon: 'none',
+		duration: 2500
+	})
+}
+
+/**
+ * 请求头（Authorization + JSON）。
+ * 2026-10-09 起对外导出：流式通道（chat_api 的 `enableChunked` 分支）绕开了本模块的
+ * `doRequest`，必须复用**同一份**头构造——各写一份的话，迟早出现"流式请求忘了带 token"
+ * 这类只在某一条路径上失效的问题。
+ */
+/**
+ * 统一请求头工厂（2026-10-11 重写 · 固定地址模式）
+ *
+ * **所有**出网请求（`uni.request` / `uni.downloadFile` / `uni.uploadFile`）的 header 都从这里取，
+ * 认证头与出网通用头的增删因此只需改这一处。
+ *
+ * ⚠️ 为什么必须重写：原实现只有 `buildHeader()`（写死 Content-Type: application/json），
+ * 而 **GET 分支各自手拼 header**（只塞 Authorization）。2026-10-11 加"隧道跳过头"时，
+ * 全部 GET 请求（时间轴/回响/历史/波形/未读数——后端查询的主力）会被漏掉 ⇒ 走 ngrok
+ * 免费版隧道时 GET 收到拦截页 HTML ⇒ 表现为"接口全空、报错难懂"（本项目最贵故障形态的变体）。
+ * 统一后，**新增任何出网头都不可能再漏掉某一类方法**。
+ *
+ * @param contentType 传 `''` 表示不带 Content-Type：
+ *   · GET（保持"贴近裸调用可通"的历史形态）
+ *   · uni.uploadFile（其 multipart 边界由 SDK 依据 formData 自动设置，手写反而会破坏）
+ */
+export function buildHeader(contentType: string = 'application/json'): UTSJSONObject {
+	const header: UTSJSONObject = {}
+	if (contentType != '') {
+		header.set('Content-Type', contentType)
+	}
+	// 固定地址模式（内测期"以本机为后端载体"）：ngrok 免费版对**判定为浏览器**的请求插入
+	// 拦截页（interstitial，HTML）。uni-app 的默认 UA 含 `Mozilla` ⇒ 不带此头时 GET 会被拦。
+	// 本头是 ngrok 官方开关；对正式服务器 / COS 预签名 / 自建反代**完全无副作用**（未知头被忽略），
+	// 故常驻，不随隧道提供方切换而增删。
+	header.set('ngrok-skip-browser-warning', 'true')
+	const token = getToken()
+	if (token != '') {
+		header.set('Authorization', 'Bearer ' + token)
+	}
+	return header
+}
+
+// 缩略图落地缓存（content_id → 本地临时路径；会话级，防重复下载）
+const _thumbPathCache = new Map<string, string>()
+
+/**
+ * 拉照片缩略图落临时文件（2026-09-02 主窗口，Valet Key 过渡通路）
+ *
+ * 图片通路硬约束：token 只能走 header，<image :src> 带不上认证 →
+ * 拍板方案二：uni.downloadFile({header}) 落临时文件喂 <image :src>
+ * （先例：audio_player.uts startPlay 同构）。第四窗票据 URL 入库后可整体退役。
+ * 成功返回本地路径（可直接喂 <image :src>），失败返回空串（调用方跳过该图）。
+ */
+export function fetchThumbnailPath(contentId: string): Promise<string> {
+	const cached = _thumbPathCache.get(contentId)
+	if (cached != null) {
+		return Promise.resolve(cached as string)
+	}
+	return new Promise<string>((resolve) => {
+		uni.downloadFile({
+			url: getBaseUrl() + '/api/v1/thumbnails/' + contentId,
+			// 纯 GET：不带 Content-Type（与 buildHeader 的 docstring 口径一致）
+			header: buildHeader(''),
+			timeout: 30000,
+			success: (res: any) => {
+				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
+					const p = res.tempFilePath as string
+					_thumbPathCache.set(contentId, p)
+					resolve(p)
+				} else {
+					resolve('')
+				}
+			},
+			fail: (_err: any) => {
+				resolve('')
+			}
+		})
+	})
+}
+
+// ═══════════ 数据导出（卡E03 W3 · 总账 A9 关单，对齐 backend/app/api/export.py）═══════════
+
+/** 数据导出端点（US-42）：GET /api/v1/export 全量 JSON 元数据（contents/events/profile/corrections，不含图片二进制） */
+export const PATH_EXPORT: string = '/api/v1/export'
+
+/**
+ * 拉全量导出 JSON 落临时文件（storage.uvue onExport 消费）：
+ * 通路同 fetchThumbnailPath（既有拍板：token 只能走 header，uni.downloadFile({header}) 落临时文件）。
+ * 成功返回本地路径，失败返回空串（调用方诚实提示）。
+ */
+export function fetchExportFilePath(): Promise<string> {
+	return new Promise<string>((resolve) => {
+		uni.downloadFile({
+			url: getBaseUrl() + PATH_EXPORT,
+			header: buildHeader(''),
+			timeout: 60000,
+			success: (res: any) => {
+				if (res.statusCode == 200 && res.tempFilePath != null && res.tempFilePath != '') {
+					resolve(res.tempFilePath as string)
+				} else {
+					resolve('')
+				}
+			},
+			fail: (_err: any) => {
+				resolve('')
+			}
+		})
+	})
+}
+
+// ═══════════ 派生统计（性能卡 PE · 2026-09-04）═══════════
+// 后端单聚合查询端点，替代调用方 fetchTimeline(null) 全量拉取后前端派生（性能黑洞）。
+// 信封：{code:"OK", data:{...}}（backend/app/api/events.py event_stats / messages.py unread_count）
+
+/** 事件派生统计端点：GET /api/v1/events/stats（event_count/day_count/photo_count/unread_count） */
+export const PATH_STATS: string = '/api/v1/events/stats'
+
+/** 未读消息数端点：GET /api/v1/messages/unread-count（status=unread 单 count 查询） */
+export const PATH_UNREAD_COUNT: string = '/api/v1/messages/unread-count'
+
+/** 事件统计投影（uvue 对象铁律：class+constructor+new，对齐 HttpResult 先例） */
+export class EventStats {
+	eventCount: number
+	dayCount: number
+	photoCount: number
+	unreadCount: number
+
+	constructor(eventCount: number, dayCount: number, photoCount: number, unreadCount: number) {
+		this.eventCount = eventCount
+		this.dayCount = dayCount
+		this.photoCount = photoCount
+		this.unreadCount = unreadCount
+	}
+}
+
+/**
+ * GET /events/stats：事件派生统计（manage 统计卡消费）。
+ * 失败 resolve(null)（doRequest 已全局 toast），调用方判空保持旧值/0，不造假数据。
+ */
+export function fetchEventStats(): Promise<EventStats | null> {
+	return new Promise<EventStats | null>((resolve) => {
+		get(PATH_STATS).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(new EventStats(
+				d.getNumber('event_count') ?? 0,
+				d.getNumber('day_count') ?? 0,
+				d.getNumber('photo_count') ?? 0,
+				d.getNumber('unread_count') ?? 0
+			))
+		})
+	})
+}
+
+/** hero 副标题端点：GET /api/v1/stats/daily-summary（R9-7 · Q5 拍板） */
+export const PATH_DAILY_SUMMARY: string = '/api/v1/stats/daily-summary'
+
+/** hero 副标题投影（R9-7：count=事件关联 distinct 内容数；latest=最新非软删事件） */
+export class DailySummary {
+	count: number
+	latestEventText: string
+	latestEventTime: string
+
+	constructor(count: number, latestEventText: string, latestEventTime: string) {
+		this.count = count
+		this.latestEventText = latestEventText
+		this.latestEventTime = latestEventTime
+	}
+}
+
+/**
+ * GET /stats/daily-summary：hero 副标题数据源（onLoad 拉取替代本地计算）。
+ * 失败/空态 resolve(null)——调用方判空清空 hero 文案，不造假数据。
+ */
+export function fetchDailySummary(): Promise<DailySummary | null> {
+	return new Promise<DailySummary | null>((resolve) => {
+		get(PATH_DAILY_SUMMARY).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const cnt = d.getNumber('count') ?? 0
+			const text = d.getString('latest_event_text') ?? ''
+			const time = d.getString('latest_event_time') ?? ''
+			resolve(new DailySummary(cnt, text, time))
+		})
+	})
+}
+
+/**
+ * GET /messages/unread-count：未读数单查询（性能卡 PE：取代 play.uts fetchUnreadCount
+ * 游标翻全量累加的调用方迁移用，本卡不改 play.uts/messages.uvue——域外）。
+ * 失败返回 -1（与真 0 区分：调用方判 <0 诚实处理，不造假 0）。
+ */
+export function fetchUnreadCountSimple(): Promise<number> {
+	return new Promise<number>((resolve) => {
+		get(PATH_UNREAD_COUNT).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(-1)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(-1)
+				return
+			}
+			resolve(d.getNumber('count') ?? -1)
+		})
+	})
+}
+
+/**
+ * 2026-10-30（P0 真机 422）：401 重放用的**请求体深拷贝**。
+ *
+ * 事故现场（模拟器日志，107 包）：
+ *   fire POST /contents → 401 → refresh 成功 → 重放 POST /contents → **422**
+ * 而用全新 token 手工打同一端点（逐字段试过 content_type/text/source/gps_lat/gps_lng）**恒 200**，
+ * 说明 422 只出现在"重放"这一跳 ⇒ 不是字段非法，而是**重放时 body 不再是原样**。
+ * 原实现直接把同一个 `data` 对象再传一次（依赖"UTSJSONObject 可复用"这个未经证明的假设）。
+ * 现改为序列化后重建一份新对象，让重放与首发在字节层面等价。
+ * 序列化失败时退回原对象（宁可保持旧行为，也不要因为克隆失败而丢掉整次重放）。
+ */
+function cloneBodyForReplay(data: UTSJSONObject | null): UTSJSONObject | null {
+	if (data == null) {
+		return null
+	}
+	try {
+		const text = JSON.stringify(data)
+		if (text == null || text == '' || text == '{}') {
+			return data
+		}
+		return JSON.parse(text) as UTSJSONObject
+	} catch (e) {
+		console.log('[dbg-req] 重放体克隆失败，退回原对象: ' + e)
+		return data
+	}
+}
+
+function doRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean,
+	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		let settled = false
+		const finish = (val: UTSJSONObject | null): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			resolve(val)
+		}
+		// 2026-10-04：看门狗超时此前**完全静默**（只 console.log + resolve(null)）——
+		// 用户侧表现为「AI 一点反应都没有」，既不知道失败也不知道在等什么。
+		// 现补Sentry 上报 + 可读 toast，与 onFail 分支同口径。
+		// `timeoutMs <= 0` 表示用默认；长耗时端点（如 AI 对话，实测 6~14s、后端上限 180s）
+		// 必须显式传更大的值，否则会在后端还在算的时候就先判失败。
+		const budget = timeoutMs > 0 ? timeoutMs : REQUEST_TIMEOUT_MS
+		// 5.24 蒸汽模式下 uni.request 的 timeout 参数与 GET 传 data:{} 空对象可能被桥接吞掉
+		// （不派发、不回调），故 timeout 改 JS 层看门狗、GET 且无 body 时省略 data 键与 Content-Type
+		const timer = setTimeout(() => {
+			console.log('[watchdog] timeout ' + path)
+			captureException('watchdog timeout after ' + budget + 'ms: ' + path + hostTag(), 'api.network', null)
+			// 2026-10-30（P2 J-9）：用户不需要看到「20000ms」这种实现细节（毫秒数已在
+			// console/Sentry 里留痕，见上一行 captureException），面向用户的文案只保留结论。
+			showErrorToast(new ApiError('TIMEOUT', '请求超时，请稍后重试'))
+			finish(null)
+		}, budget + 5000)
+		console.log('[dbg-req] fire ' + method + ' ' + getBaseUrl() + path)
+		const onSuccess = (res: any): void => {
+			console.log('[dbg-req] ok ' + path + ' status=' + res.statusCode + ' (' + typeof res.statusCode + ')')
+			if (res.statusCode === 200) {
+				// 2026-08-26（H 建议，集成代劳）：后端不可达/网关返回裸值时 res.data 非对象，
+				// 直接强转 UTSJSONObject 会在主线程 FATAL（app 启动崩溃根因）——先守卫再转换
+				if (res.data != null && typeof res.data == 'object') {
+					finish(res.data as UTSJSONObject)
+				} else {
+					finish(null)
+				}
+				return
+			}
+			// 5xx 服务端异常 → Sentry 上报（4xx 业务错误不打扰，噪音闸门）
+			if (res.statusCode >= 500) {
+				captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
+			}
+			// 2026-09-01 正式修复（根因实锤于诊断日志）：401/非200 时后端 data 可能非 JSON 对象，
+			// 旧写法 fallback `({} as UTSJSONObject)` 在蒸汽模式（纯 JS）下是裸 JS 对象——
+			// 没有 UTSJSONObject 原型，getString 非函数 → 同步抛 TypeError 被桥接吞 →
+			// 401 分支永远执行不到（refresh 自愈链失效、20s watchdog 才 resolved）。
+			// 修法：instanceof UTSJSONObject 精确判型，非对象时直接用 HTTP 默认文案。
+			let code = 'UNKNOWN'
+			let msg = 'HTTP ' + res.statusCode
+			if (res.data instanceof UTSJSONObject) {
+				code = res.data.getString('code') ?? code
+				msg = res.data.getString('message') ?? msg
+			}
+			const err = new ApiError(code, msg,
+				typeof res.statusCode == 'number' ? (res.statusCode as number) : 401)
+			// 401 → refresh 一次后重放；refresh 失败清 token
+			if (res.statusCode === 401 && !retried) {
+				console.log('[dbg-req] 401-branch-enter ' + path)
+				// 2026-10-30（P0 真机 422）：重放必须用**原始请求体的深拷贝**。
+				// 模拟器实测日志：POST /contents → 401 → refresh → 重放 → **422**（后端收到的
+				// body 缺字段）。用全新 token 手工打同一端点恒 200 ⇒ 问题只在重放这一跳。
+				// 已排除 body 内容本身（content_type/text/source/gps 逐项试过都 200）；
+				// 剩下的合理解释就是**同一个 UTSJSONObject 被消费过一次后在重放时不再是原样**
+				// （UTS 对象跨桥传递的已知脆弱点）。这里改成重放前重新序列化一份新对象，
+				// 使重放与首发在字节层面等价，不再依赖"对象可复用"这个假设。
+				const replayData = cloneBodyForReplay(data)
+				refreshToken().then((ok: boolean) => {
+					if (ok) {
+						doRequest(path, method, replayData, true, timeoutMs).then((b: UTSJSONObject | null) => {
+							finish(b)
+						})
+					} else {
+						clearToken()
+						showErrorToast(err)
+						finish(null)
+					}
+				})
+			} else {
+				showErrorToast(err)
+				finish(null)
+			}
+		}
+		const onFail = (): void => {
+			console.log('[dbg-req] FAIL ' + path)
+			// 🚨 2026-10-11 静态审查修复：**必须先判 settled**。
+			// 看门狗（budget+5000ms）先判超时后会 resolve(null)，而 uni.request 的 fail
+			// 回调可能随后迟到 ⇒ 用户连收两个 toast（"请求超时" + "网络异常"）、Sentry 双报。
+			// 重构前看门狗是静默的（只有 log），不存在该竞态；补上 toast 后必须同步补守卫。
+			if (settled) {
+				return
+			}
+			captureException('network fail: ' + path + hostTag(), 'api.network', null)
+			showErrorToast(new ApiError('NETWORK', '网络异常，请检查连接', 0))
+			finish(null)
+		}
+		const onComplete = (): void => {
+			console.log('[dbg-req] complete ' + path)
+		}
+		if (method === 'GET') {
+			// GET 无 body：省略 Content-Type，贴近裸调用可通形态。
+			// 2026-10-11：改走 buildHeader('') —— 原手拼实现只塞 Authorization，会漏掉出网通用头
+			// （如 ngrok-skip-browser-warning），见 buildHeader 的注释。
+			uni.request({
+				url: getBaseUrl() + path,
+				method: 'GET',
+				header: buildHeader(''),
+				complete: onComplete,
+				success: onSuccess,
+				fail: onFail
+			})
+		} else {
+			uni.request({
+				url: getBaseUrl() + path,
+				method: method,
+				data: data,
+				header: buildHeader(),
+				complete: onComplete,
+				success: onSuccess,
+				fail: onFail
+			})
+		}
+	})
+}
+
+/** 统一请求（401 自动刷新重放一次）；失败 resolve(null)，不 reject。
+ *  `timeoutMs` 仅供**确实长耗时**的端点覆盖（如 AI 对话）；默认 0 =走REQUEST_TIMEOUT_MS。 */
+export function request(path: string, method: Method, data: UTSJSONObject | null,
+	timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return doRequest(path, method, data, false, timeoutMs)
+}
+
+function doRawRequest(path: string, method: Method, data: UTSJSONObject | null, retried: boolean): Promise<HttpResult> {
+	return new Promise<HttpResult>((resolve) => {
+		let settled = false
+		const finish = (val: HttpResult): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			resolve(val)
+		}
+		// 同 doRequest：5.24 蒸汽模式下 timeout / GET 空 data 可能被桥接吞掉 → 看门狗 + 省略 data 键
+		const timer = setTimeout(() => {
+			console.log('[watchdog] timeout ' + path)
+			finish(new HttpResult(0, null))
+		}, REQUEST_TIMEOUT_MS + 5000)
+		const onSuccess = (res: any): void => {
+			// res.data 对象守卫保留（2026-08-26 H 建议：裸值强转 UTSJSONObject 会在主线程 FATAL）
+			const body: UTSJSONObject | null = (res.data != null && typeof res.data == 'object')
+				? (res.data as UTSJSONObject)
+				: null
+			// 5xx 服务端异常 → Sentry 上报（与 request 同噪音闸门；4xx 业务错误不打扰）
+			if (res.statusCode >= 500) {
+				captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
+			}
+			// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
+			if (res.statusCode === 401 && !retried) {
+				// 2026-10-30（P0）：同 doRequest —— 重放用深拷贝体（见上方注释）
+				const replayData = cloneBodyForReplay(data)
+				refreshToken().then((ok: boolean) => {
+					if (ok) {
+						doRawRequest(path, method, replayData, true).then((r: HttpResult) => {
+							finish(r)
+						})
+					} else {
+						clearToken()
+						finish(new HttpResult(401, body))
+					}
+				})
+				return
+			}
+			finish(new HttpResult(res.statusCode, body))
+		}
+		const onFail = (): void => {
+			captureException('network fail: ' + path + hostTag(), 'api.network', null)
+			finish(new HttpResult(0, null))
+		}
+		if (method === 'GET') {
+			// 2026-10-11：走头工厂（原手拼会漏掉出网通用头，见 buildHeader 注释）
+			uni.request({
+				url: getBaseUrl() + path,
+				method: 'GET',
+				header: buildHeader(''),
+				success: onSuccess,
+				fail: onFail
+			})
+		} else {
+			uni.request({
+				url: getBaseUrl() + path,
+				method: method,
+				data: data,
+				header: buildHeader(),
+				success: onSuccess,
+				fail: onFail
+			})
+		}
+	})
+}
+
+/**
+ * 底层请求（O5 收口：sync_client/event_sync 复用，取代各自复制粘贴的网络层）：
+ * 保留 status 的原始响应 + 401 自动刷新重放一次 + 5xx Sentry 上报；不 toast、
+ * 不 resolve(null)——4xx 停批 / 5xx 重试等业务语义由调用方按 HttpResult.status 自行决定。
+ */
+export function rawRequest(path: string, method: Method, data: UTSJSONObject | null): Promise<HttpResult> {
+	return doRawRequest(path, method, data, false)
+}
+
+/**
+ * 上传/上传类路径统一封装（R1#17：upload_protocol/voice/search_api 的裸 uni.uploadFile 收敛本模块）：
+ * 复用 rawRequest 模式——保留 status、401 自动刷新重放一次、5xx Sentry 上报、不 toast。
+ * uploadFile 的 res.data 为 string（lessons.md #3），经 parseEnvelopeString 解析为信封对象。
+ * 注意：multipart 上传不能带 Content-Type: application/json（uni.uploadFile 自动设 boundary），
+ * 故 header 仅 Authorization；formData 为 multipart 表单字段（可为 null）。
+ */
+function doUploadFileHttp(
+	path: string,
+	filePath: string,
+	name: string,
+	formData: UTSJSONObject | null,
+	timeout: number,
+	retried: boolean
+): Promise<HttpResult> {
+	return new Promise<HttpResult>((resolve) => {
+		const header: UTSJSONObject = buildHeader('')
+		uni.uploadFile({
+			url: getBaseUrl() + path,
+			filePath: filePath,
+			name: name,
+			formData: formData != null ? formData : ({} as UTSJSONObject),
+			header: header,
+			timeout: timeout,
+			success: (res) => {
+				// uploadFile res.data 是 string（lessons.md #3），经信封解析取对象
+				const raw = res.data as string
+				const body = parseEnvelopeString(raw)
+				// 5xx 服务端异常 → Sentry 上报（与 rawRequest 同噪音闸门）
+				if (res.statusCode >= 500) {
+					captureException('HTTP ' + res.statusCode + ' ' + path + hostTag(), 'api.http', null)
+				}
+				// 401 → refresh 一次后重放；refresh 失败清 token（不 toast——语义由调用方按 status 决定）
+				if (res.statusCode === 401 && !retried) {
+					// 2026-10-30（P0）：上传链同样用深拷贝的 formData 重放（同 doRequest 口径）
+					const replayForm = cloneBodyForReplay(formData)
+					refreshToken().then((ok: boolean) => {
+						if (ok) {
+							doUploadFileHttp(path, filePath, name, replayForm, timeout, true).then((r: HttpResult) => {
+								resolve(r)
+							})
+						} else {
+							clearToken()
+							resolve(new HttpResult(401, body))
+						}
+					})
+					return
+				}
+				resolve(new HttpResult(res.statusCode, body))
+			},
+			fail: () => {
+				captureException('network fail: ' + path + hostTag(), 'api.network', null)
+				resolve(new HttpResult(0, null))
+			}
+		})
+	})
+}
+
+/** 上传/上传类路径统一封装（R1#17）：见 doUploadFileHttp；返回 HttpResult（status + 信封对象）。 */
+export function uploadFileHttp(path: string, filePath: string, name: string, formData: UTSJSONObject | null, timeout: number): Promise<HttpResult> {
+	return doUploadFileHttp(path, filePath, name, formData, timeout, false)
+}
+
+export function get(path: string): Promise<UTSJSONObject | null> {
+	return request(path, 'GET', null)
+}
+
+export function post(path: string, data: UTSJSONObject, timeoutMs: number = 0): Promise<UTSJSONObject | null> {
+	return request(path, 'POST', data, timeoutMs)
+}
+
+/** 取信封 data 字段（对象）；body 为空返回 null */
+export function dataObj(body: UTSJSONObject): UTSJSONObject | null {
+	return body.getJSON('data')
+}
+
+/** 取信封 data 字段（数组）；无则空数组 */
+export function dataArr(body: UTSJSONObject): Array<UTSJSONObject> {
+	const arr = body.getArray('data')
+	if (arr == null) {
+		return []
+	}
+	return arr as Array<UTSJSONObject>
+}
+
+/**
+ * 上传/上传类响应信封解析（O9 收口：voice/search_api 各自副本删除，统一本模块）。
+ * uploadFile 等路径的 res.data 为 string（lessons.md #3），可能带日志前缀——
+ * 取首个 '{' 起的 JSON 段再 parse；解析失败返回 null。
+ */
+export function parseEnvelopeString(raw: string): UTSJSONObject | null {
+	const idx = raw.indexOf('{')
+	if (idx < 0) {
+		return null
+	}
+	const jsonStr = raw.substring(idx)
+	try {
+		return JSON.parse(jsonStr) as UTSJSONObject
+	} catch (e) {
+		return null
+	}
+}
+
+/** 错误信封解析（非 200 场景：取 JSON 段的 message；无则返回 fallback） */
+export function parseErrorString(raw: string, fallback: string = '请求失败（HTTP 非 200）'): string {
+	const body = parseEnvelopeString(raw)
+	if (body != null) {
+		const msg = body.getString('message')
+		if (msg != null && msg != '') {
+			return msg
+		}
+	}
+	return fallback
+}

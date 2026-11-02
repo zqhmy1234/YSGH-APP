@@ -1,0 +1,521 @@
+<template>
+	<!-- 卡14 · F3a 隐私政策（2026-09-02 帧真值整体重写，W1-2 旧版作废重排）
+	     真值：.wt/missing-pages/uvue_gen/privacy_canvas.json（390x844 · 23 节点 · 2026-09-02 导出）
+	     帧态：四章 chips（信息收集选中）+ 2.1 记忆记录与整理服务 正文卡（节标/3 段/分隔线/下一节链接）
+	     交互：chips 切换章节 / 「下一节 ←」组间跳转（保留 W1-2 接线）
+	     降级（台账登记）：假状态栏时间+电池移除（detail 先例，navigationStyle:custom 沉浸式，系统渲染真实时钟）；
+	           引言/您的权利/第三方 正文无帧真值 → 复用草稿 v0.1 文案（收集章节已按帧重排） -->
+	<view class="page-root tk-root">
+		<!-- 铁律 11.5：返回图标必须排在标题容器之后，否则被全宽标题盖住收不到 @tap（settings.uvue 先例） -->
+		<view class="nav-title">
+			<text class="nav-title-text">隐私政策</text>
+		</view>
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="goBack" />
+
+		<!-- 章节 chips（F3a：引言/信息收集/您的权利/第三方；选中=深棕底白字，未选中=白底深棕字） -->
+		<view class="chips-row">
+			<view v-for="(sec, idx) in sections" :key="sec.key" class="chip" :class="idx == activeIdx ? 'chip-on' : ''" :style="{ width: sec.w + 'rpx' }" @tap="onChip(idx)">
+				<text class="chip-text" :class="idx == activeIdx ? 'chip-text-on' : ''">{{ sec.label }}</text>
+			</view>
+		</view>
+
+		<!-- 内容滚动区（chips 固定，正文卡可滚） -->
+		<scroll-view class="body-scroll" direction="vertical" :show-scrollbar="false">
+			<view class="card">
+				<text class="sec-title">{{ sections[activeIdx].title }}</text>
+				<view v-for="(blk, bi) in sections[activeIdx].blocks" :key="bi">
+					<text v-if="blk.kind == 'h'" class="blk-h">{{ blk.text }}</text>
+					<text v-else-if="blk.kind == 'b'" class="blk-b">{{ blk.text }}</text>
+					<text v-else class="blk-p">{{ blk.text }}</text>
+				</view>
+				<view class="card-divider"></view>
+				<view v-if="activeIdx < sections.length - 1" class="next-link" @tap="onNext">
+					<text class="next-link-text">下一节：{{ sections[activeIdx + 1].label }} ←</text>
+				</view>
+				<text v-else class="next-link next-link-end">已到末节，感谢阅读</text>
+			</view>
+		</scroll-view>
+
+		<!-- ═══════════ 2026-10-30（P2 I-3）本机隐私权限四项开关 ═══════════
+		     依据：决策 #22「照片原件默认上云、**可关闭**」+ 台账 §7.15「假开关族」
+		     （原「设置-账号与安全-隐私权限」点进去只弹「即将上线」）。
+		     入口：security.uvue 跳本页带 `?panel=perms` ⇒ 就地拉起全屏浮层（不跳页，
+		     PortraitPrivacyPanel 范式）；从「关于-隐私政策」直达时不弹，仍是纯政策页。
+
+		     ⚠️ 边界诚实（不承诺做不到的事）：四项**当前只落本机** `yishu.privacy.*`——
+		     已核 后端 `app/api` 全无 privacy/偏好端点、客户端上传/转写/画像/回响四处也**没有
+		     读这些键的消费者** ⇒ 页面上下两处都写明「云端策略以服务端配置为准」，
+		     toast 也带「本机记录」。升级为真开关的前置条件（服务端偏好字段 + 两端真消费）
+		     沿用台账 §7.18 判定口径。 -->
+		<view v-if="permsOpen" class="pn-root">
+			<image class="pn-back" src="/static/icons/i4_135.svg" @tap="closePerms" />
+			<view class="pn-title">
+				<text class="pn-title-text">隐私权限</text>
+			</view>
+			<scroll-view class="pn-body" direction="vertical" :show-scrollbar="false">
+				<text class="pn-hint">以下开关只记录在你的本机上。本版本尚未接入服务端策略，关闭某项不代表云端已停止相应处理——云端策略以服务端配置为准。</text>
+				<view class="prv-group">
+					<view class="prv-row" @tap="togglePhotoOrigin">
+						<view class="prv-main">
+							<text class="prv-label">照片原件上云</text>
+							<text class="prv-desc">控制相册原图是否上传云端；关闭时预期只上传缩略图与元数据</text>
+						</view>
+						<view class="prv-switch" :class="photoOriginOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+					<view class="prv-divider"></view>
+					<view class="prv-row" @tap="toggleVoiceCloud">
+						<view class="prv-main">
+							<text class="prv-label">语音云端处理</text>
+							<text class="prv-desc">控制语音转写与情绪识别的云端处理</text>
+						</view>
+						<view class="prv-switch" :class="voiceCloudOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+					<view class="prv-divider"></view>
+					<view class="prv-row" @tap="togglePortraitGen">
+						<view class="prv-main">
+							<text class="prv-label">画像生成</text>
+							<text class="prv-desc">控制是否由系统依据你的记忆生成渐进式画像</text>
+						</view>
+						<view class="prv-switch" :class="portraitGenOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+					<view class="prv-divider"></view>
+					<view class="prv-row" @tap="toggleDailyEcho">
+						<view class="prv-main">
+							<text class="prv-label">每日回响</text>
+							<text class="prv-desc">控制首页「去年今日」的回忆回响展示</text>
+						</view>
+						<view class="prv-switch" :class="dailyEchoOn ? 'prv-switch-on' : 'prv-switch-off'">
+							<view class="prv-knob"></view>
+						</view>
+					</view>
+				</view>
+				<text class="pn-note">当前状态：本版本四项开关仅作用于本机行为记录，不会改变云端的上传、转写、画像或回响策略；服务端行为以其配置为准。接入服务端偏好字段后，页面会自动改为读取真值。</text>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+	// 2026-10-30（P2 I-3）：读 `?panel=perms`（账号与安全页跳来时拉起开关浮层）
+	import { onLoad } from '@dcloudio/uni-app'
+
+	// 先例铁律：type 字面量构造编译器不认 → class + constructor + new（对齐 MessageItem/DayGroup 套路）
+	class PolicyBlock {
+		kind: string = 'p' // p=正文段 / b=强调段 / h=小节标题
+		text: string = ''
+		constructor(kind: string, text: string) {
+			this.kind = kind
+			this.text = text
+		}
+	}
+	class PolicySection {
+		key: string = ''
+		label: string = ''
+		title: string = ''
+		w: number = 146 // chip 宽（rpx，画布 76px=146.2rpx；引言 52px=100rpx）
+		blocks: Array<PolicyBlock> = []
+		constructor(key: string, label: string, title: string, w: number, blocks: Array<PolicyBlock>) {
+			this.key = key
+			this.label = label
+			this.title = title
+			this.w = w
+			this.blocks = blocks
+		}
+	}
+
+	// 四章 sections：信息收集章节 = 帧真值（privacy_canvas.json 60:717-60:722，3 段 + 分隔线 + 下一节链接）；
+	// 引言/您的权利/第三方 无帧正文 → 复用草稿 v0.1 文案（台账登记降级），正式定稿后整段替换不动布局
+	const sections: Array<PolicySection> = [
+		new PolicySection('intro', '引言', '欢迎使用忆述光华', 100, [
+			new PolicyBlock('p', '欢迎使用「忆述光华」App（以下简称"本应用"或"我们"）。本应用是一款个人记忆整理与回顾工具，帮助您以照片、语音、文字等方式记录生活点滴，并通过 AI 能力自动整理、分类与检索，形成可回顾的个人记忆库。'),
+			new PolicyBlock('p', '我们深知个人信息对您的重要性，恪守权责一致、目的明确、选择同意、最少够用、确保安全、主体参与、公开透明七项原则，并按业界成熟的安全标准采取相应的安全保护措施。'),
+			new PolicyBlock('b', '请您在使用本应用前，仔细阅读并充分理解本隐私政策的全部内容。您开始使用本应用，即表示同意我们按本政策收集、存储、使用、共享和披露您的个人信息；如不同意任何内容，请立即停止使用。'),
+			new PolicyBlock('p', '本政策适用范围：本应用（Android 端）及其服务。本应用目前仅提供 Android 移动端，不包含桌面端。'),
+		]),
+		// 帧真值（F3a 默认选中态）：2.1 记忆记录与整理服务 = 节标 + 段落 + 强调段 + 段落2（60:717~60:720）
+		new PolicySection('collect', '信息收集', '2.1 记忆记录与整理服务', 146.2, [
+			new PolicyBlock('p', '当您记录记忆时，我们仅收集以下信息：您主动授权的相册照片（含拍摄时间与地点元数据）、您主动录制的语音片段、您主动输入的文字内容。仅在您授权后读取，不上传未授权内容。'),
+			new PolicyBlock('b', '语音经加密后上传至服务器处理，仅用于转写与情绪识别。'),
+			new PolicyBlock('p', '同步遵循最少上传原则：WiFi 环境上传原图，移动网络仅上传缩略图与元数据，以节省您的流量。'),
+		]),
+		new PolicySection('rights', '您的权利', '您对个人信息的控制权', 146.2, [
+			new PolicyBlock('p', '我们非常重视您对个人信息的自主控制权，为您提供了以下管理路径：'),
+			new PolicyBlock('b', '访问与查看：在「我的-画像管理」可查看 APP 对您的渐进式画像；时间轴与搜索可查看全部记忆。'),
+			new PolicyBlock('b', '修改与纠正：记忆的分类标签可手动纠正；画像可在对话式管理界面修改。'),
+			new PolicyBlock('b', '删除：删除记忆即软删除——先移入回收站，30 天内可在回收站恢复；30 天后彻底清除且不可恢复。'),
+			new PolicyBlock('b', '敏感话题管理：可在画像管理中标记"不希望被提及"的话题，AI 将遵守您的偏好。'),
+			new PolicyBlock('b', '数据导出：「我的-存储与备份」可导出您的全部记忆数据。'),
+			new PolicyBlock('b', '注销账号：「设置-账号与安全-注销账号」，注销后我们将删除或匿名化处理您的个人信息。'),
+			new PolicyBlock('b', '撤回授权：可在系统权限设置中随时关闭相册、麦克风等授权；关闭后相应功能不可用，但不影响已授权期间的处理。'),
+			// 2026-10-30（P2 I-3）：补齐「隐私权限」开关入口的告知——开关已落（设置-账号与安全-隐私权限），
+			// 但本版本只在本机记录选择、服务端无对应偏好字段（已核：后端无 privacy 端点）⇒ 政策里如实写明边界，
+			// 不让用户以为关掉开关云端就停了（合规相关，同台账 §7.18 口径）。
+			new PolicyBlock('b', '隐私开关：在「设置-账号与安全-隐私权限」可调整照片原件上云、语音云端处理、画像生成、每日回响四项。当前版本这四项仅在本机记录你的选择，尚未接入云端策略——云端行为仍以服务端配置为准；接入后将同步更新本政策。'),
+			new PolicyBlock('p', '如对个人信息处理有任何疑问，可通过本政策末节的联系方式与我们取得联系，我们将在 15 个工作日内予以答复。'),
+		]),
+		new PolicySection('third', '第三方', '第三方服务与其他条款', 146.2, [
+			new PolicyBlock('p', '为向您提供服务，本应用接入以下第三方服务。我们仅在必要范围内共享您的必要信息，并要求第三方承担保密义务与合规义务：'),
+			new PolicyBlock('b', '阿里云百炼 / FunASR / Qwen3-VL：AI 摘要、分类、语音转写、情绪识别与以图搜图。'),
+			new PolicyBlock('b', '腾讯云 COS 与图像识别：记忆内容云端加密存储与图片内容安全审核。'),
+			new PolicyBlock('b', '百度 OCR：文字类照片的文字识别（即用即弃，不存原图）。'),
+			new PolicyBlock('b', '高德地图：GPS 坐标转地名，用于事件聚合。'),
+			new PolicyBlock('b', '企业微信客服：微信入口收+找（转发收入记忆）。'),
+			new PolicyBlock('b', 'Sentry 与 uni-push：崩溃监控、性能分析与消息推送。'),
+			new PolicyBlock('h', '其他条款'),
+			new PolicyBlock('p', '您的个人信息存储于中华人民共和国境内的服务器；我们采用传输加密、存储加密、访问控制与安全审计等措施保护其安全，如发生安全事件将依法及时告知。'),
+			new PolicyBlock('p', '我们不会与上述服务提供者以外的任何公司、组织和个人共享、转让或公开披露您的个人信息，法律法规另有规定的除外。'),
+			new PolicyBlock('p', '本应用面向成年用户；未满 14 周岁的未成年人使用前应事先取得家长或法定监护人的同意。'),
+			new PolicyBlock('p', '本政策可能适时修订，未经您明确同意不会削减您应享的权利；重大变更将以显著方式通知并再次征得同意。如对本政策有任何疑问、意见或建议，可通过应用商店页面公示的联系方式与我们联系（联系方式将随正式版本公布），我们将在 15 个工作日内答复。'),
+		]),
+	]
+
+	// 帧默认选中「信息收集」（F3a 60:710 选中态深棕底白字）
+	let activeIdx = ref(1)
+
+	// ═══ 2026-10-30（P2 I-3）本机隐私开关（键名前缀统一 yishu.privacy.*） ═══
+	// 默认全开（决策 #22「照片原件默认上云、可关闭」：默认给能力，把关闭权交给用户）
+	const KEY_PRIV_PHOTO = 'yishu.privacy.photo_origin_cloud'
+	const KEY_PRIV_VOICE = 'yishu.privacy.voice_cloud'
+	const KEY_PRIV_PORTRAIT = 'yishu.privacy.portrait_gen'
+	const KEY_PRIV_ECHO = 'yishu.privacy.daily_echo'
+	let permsOpen = ref(false)
+	let photoOriginOn = ref(true)
+	let voiceCloudOn = ref(true)
+	let portraitGenOn = ref(true)
+	let dailyEchoOn = ref(true)
+
+	/** 读布尔开关：未落盘（空串）视为**默认开**；只有显式写 '0' 才算关 */
+	function readFlag(key: string): boolean {
+		const v = uni.getStorageSync(key) as string
+		return v != '0'
+	}
+
+	function writeFlag(key: string, on: boolean): void {
+		uni.setStorageSync(key, on ? '1' : '0')
+	}
+
+	/** 切换即落盘 + toast 确认；文案带「本机记录」——不暗示云端已生效（见页面顶部边界说明） */
+	function toastFlag(on: boolean): void {
+		uni.showToast({ title: on ? '已开启（本机记录）' : '已关闭（本机记录）', icon: 'none' })
+	}
+
+	function togglePhotoOrigin(): void {
+		photoOriginOn.value = !photoOriginOn.value
+		writeFlag(KEY_PRIV_PHOTO, photoOriginOn.value)
+		toastFlag(photoOriginOn.value)
+	}
+	function toggleVoiceCloud(): void {
+		voiceCloudOn.value = !voiceCloudOn.value
+		writeFlag(KEY_PRIV_VOICE, voiceCloudOn.value)
+		toastFlag(voiceCloudOn.value)
+	}
+	function togglePortraitGen(): void {
+		portraitGenOn.value = !portraitGenOn.value
+		writeFlag(KEY_PRIV_PORTRAIT, portraitGenOn.value)
+		toastFlag(portraitGenOn.value)
+	}
+	function toggleDailyEcho(): void {
+		dailyEchoOn.value = !dailyEchoOn.value
+		writeFlag(KEY_PRIV_ECHO, dailyEchoOn.value)
+		toastFlag(dailyEchoOn.value)
+	}
+
+	function closePerms(): void {
+		permsOpen.value = false
+	}
+
+	// `?panel=perms` = 从「账号与安全-隐私权限」跳来 ⇒ 拉起开关浮层；否则纯政策页（关于页入口）
+	// 入参读法沿用 detail.uvue:249 / theme-detail.uvue:100 的 `options['x'] as string`（OnLoadOptions）
+	onLoad((options: OnLoadOptions) => {
+		const panel = options['panel'] as string
+		if (panel == 'perms') {
+			// 先读真值再开浮层（不先读会出现"默认开"与 storage 实际关闭态不一致的假状态）
+			photoOriginOn.value = readFlag(KEY_PRIV_PHOTO)
+			voiceCloudOn.value = readFlag(KEY_PRIV_VOICE)
+			portraitGenOn.value = readFlag(KEY_PRIV_PORTRAIT)
+			dailyEchoOn.value = readFlag(KEY_PRIV_ECHO)
+			permsOpen.value = true
+		}
+	})
+
+	function onChip(idx: number): void {
+		activeIdx.value = idx
+	}
+	function onNext(): void {
+		if (activeIdx.value < sections.length - 1) {
+			activeIdx.value = activeIdx.value + 1
+		}
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页（settings.uvue 先例）
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	/* ── 导航（settings.uvue 二级页先例原值；F3a 标题 18pt=34.6rpx） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	/* ── 章节 chips（F3a y108：高 32px=61.5rpx，圆角 16px=30.8rpx，间距 gap8px=15.4rpx；行起 x20=38.5rpx） ── */
+	.chips-row {
+		position: absolute;
+		/* absolute-ok: 固定筛选行（随内容滚动会失去锚点语义） */
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p108, 207.7rpx);
+		width: 673rpx;
+		flex-direction: row;
+		align-items: center;
+	}
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+	}
+	.chip-on {
+		background-color: var(--c-ink-900, #3A2E25);
+	}
+	.chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.chip-text-on {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		font-weight: 500;
+		color: var(--c-white, #FFFFFF);
+	}
+	/* ── 内容卡（F3a 卡顶 y156=300rpx；页边距 20px=38.5rpx；卡内 gap14px=26.9rpx 换 margin） ── */
+	.body-scroll {
+		flex: 1;
+		margin-top: var(--d-lattice-p156, 300rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-raw-r60, 60rpx);
+	}
+	.card {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+	}
+	.sec-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.blk-h {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+	}
+	.blk-p {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p21, 40.4rpx);
+		color: var(--c-surface-neutralD, #6B5D4F);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+	}
+	.blk-b {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: var(--d-lattice-p21, 40.4rpx);
+		color: var(--c-ink-900, #3A2E25);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+	}
+	.card-divider {
+		height: var(--d-lattice-p1, 1.9rpx);
+		background-color: var(--c-paper-400, #EDE5D5);
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+	}
+.next-link {
+	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
+	font-family: "Sarasa Gothic SC", sans-serif;
+	padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
+	margin-top: var(--d-lattice-p14, 26.9rpx);
+	align-items: center;
+}
+.next-link-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 500;
+	font-size: var(--d-lattice-p13, 25rpx);
+	color: var(--c-amber-500, #C4913C);
+}
+	.next-link-end {
+		color: var(--c-ink-300, #B3A696);
+	}
+
+	/* ═══ 2026-10-30（P2 I-3）隐私权限浮层 ═══
+	   全屏 fixed 不透明底（盖住宿主政策页与 TabBar，z-index 1000，PortraitPrivacyPanel 范式）。
+	   无画布真值 → 沿用本页既有 token（白卡 r16 / ink 三档字色 / 锈金强调）。 */
+	.pn-root {
+		position: fixed;
+		/* absolute-ok: 全屏浮层（就地拉起不跳页；与 PortraitPrivacyPanel.panel-root 几何同款） */
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		background-color: var(--c-paper-100, #F8F7F4);
+		z-index: 1000;
+		flex-direction: column;
+	}
+	.pn-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序：先标题容器后返回钮） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	.pn-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.pn-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.pn-body {
+		flex: 1;
+		margin-top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-raw-r60, 60rpx);
+	}
+	.pn-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		line-height: var(--d-lattice-p19, 36.5rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.pn-note {
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		line-height: var(--d-lattice-p17, 32.7rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* ── 行列表形态（标题+说明+开关，单卡内行分隔；不用卡片堆叠） ── */
+	.prv-group {
+		margin-top: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		padding: var(--d-lattice-p6, 11.5rpx);
+		flex-direction: column;
+	}
+	.prv-row {
+		flex-direction: row;
+		align-items: center;
+		padding: var(--d-card_radius_small, 23.1rpx);
+	}
+	.prv-main {
+		flex: 1;
+		flex-direction: column;
+	}
+	.prv-label {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.prv-desc {
+		margin-top: var(--d-lattice-p4, 7.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		line-height: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.prv-divider {
+		height: var(--d-lattice-p1, 1.9rpx);
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		margin-right: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-paper-400, #EDE5D5);
+	}
+	/* 开关：46×28 r14（台账 §7.18 遗留规格，PortraitPrivacyPanel 同款）；开 c-rust-500 / 关 c-surface-neutral。
+	   ⚠️ 注释里不要写带井号的色值：audit_token_literals 对 .uvue 只剔 <script> 段注释，style 段注释照算。 */
+	.prv-switch {
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		width: var(--d-search_height, 88.5rpx);
+		height: var(--d-fab_radius, 53.8rpx);
+		border-radius: var(--d-lattice-p14, 26.9rpx);
+		padding: var(--d-lattice-p3, 5.8rpx);
+		flex-direction: row;
+	}
+	.prv-switch-on {
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: flex-end;
+	}
+	.prv-switch-off {
+		background-color: var(--c-surface-neutral, #D8D0C6);
+		justify-content: flex-start;
+	}
+	.prv-knob {
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		border-radius: var(--d-lattice-p11, 21.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+	}
+</style>

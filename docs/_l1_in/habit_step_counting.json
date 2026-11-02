@@ -1,0 +1,20 @@
+{
+  "id": "habit_step_counting",
+  "label": "步数记录",
+  "category": "行为习惯",
+  "current_values": null,
+  "value_template": "frequency",
+  "template_values": [
+    "经常",
+    "偶尔",
+    "很少",
+    "不"
+  ],
+  "structure": null,
+  "source": "M",
+  "matraix_id": "habit_step_counting",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "template_level"
+}

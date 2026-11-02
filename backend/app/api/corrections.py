@@ -1,25 +1,30 @@
 """纠错闭环 API（B5-c · F2）
 
-POST /api/v1/corrections            —— 记录纠错（第①层数据源，需登录）
-POST /api/v1/classify/arbitrate     —— 三层裁决分类（个人规则 → 全局 SetFit）
+POST /api/v1/corrections —— 记录纠错（第①层数据源，需登录）
+
+R4#9（arbitrate 路由归属）：三层裁决（/api/v1/classify/arbitrate）已迁入
+api/classify.py（/classify 域，与 OpenAPI"分类与裁决"分组一致）；本模块只留纠错闭环。
 """
-from fastapi import APIRouter, Depends
+from fastapi import Depends
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api import make_router
 from app.api.deps import get_current_user
-from app.core.errors import ApiError
-from app.db.models import User
+from app.core.errors import (
+    ERR_CORR_001,
+    ERR_CORR_002,
+    ERR_EVENT_005,
+    ApiError,
+)
+from app.db.models import Content, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
-from app.schemas.correction import (
-    ArbitrateRequest,
-    CorrectionCreate,
-    CorrectionOut,
-)
+from app.schemas.correction import CorrectionCreate, CorrectionOut
 from app.services.classifier import VALID_CLASSES
 from app.services.correction import record_correction
 
-router = APIRouter(prefix="/api/v1", tags=["corrections"])
+router = make_router(prefix="/api/v1", tags=["corrections"])
 
 
 @router.post("/corrections", response_model=ApiResponse[CorrectionOut])
@@ -29,9 +34,23 @@ def create_correction(
     user: User = Depends(get_current_user),
 ):
     if req.new_label not in VALID_CLASSES:
-        raise ApiError("CORR_001", f"new_label 必须为 {sorted(VALID_CLASSES)} 之一", http=422)
+        raise ApiError(ERR_CORR_001, f"new_label 必须为 {sorted(VALID_CLASSES)} 之一", http=422)
     if req.source not in ("active", "echo", "org"):
-        raise ApiError("CORR_002", "source 必须为 active/echo/org", http=422)
+        raise ApiError(ERR_CORR_002, "source 必须为 active/echo/org", http=422)
+    # R6#13（安全纵深）：content_id 归属校验——写前查 contents 表存在且属当前用户，
+    # 拒绝跨用户 content_id 写纠错记录（对齐 sync.push content_owner 预载；404 防 IDOR/脏引用）
+    # 波D ② 补漏（2026-09-10 深扫）：原查询漏 deleted_at 过滤——本人已软删（回收站）内容
+    # 仍可被写纠错并回写 content_class，与全项目「deleted_at 内容对外不可达」契约相悖
+    # （同 P2-4 media/audio、P2-5 _batch_photo_ids 同族修复）。错误码保持 EVENT_005
+    # 不变——沿用本端点既有口径，不随过滤收敛改变对外契约。
+    content = db.scalar(
+        select(Content).where(
+            Content.id == req.content_id,
+            Content.deleted_at.is_(None),
+        )
+    )
+    if content is None or str(content.user_id) != str(user.id):
+        raise ApiError(ERR_EVENT_005, "内容不存在或不属于当前用户", http=404)
     row = record_correction(
         db,
         user_id=user.id,
@@ -42,6 +61,12 @@ def create_correction(
         source=req.source,
         content_type=req.content_type,
     )
+    # D-22（08-29，P1 回写）：主动纠错即时同步权威字段 contents.content_class——
+    # 此前 corrections 只写 correction_log、从不回写，内容分类展示永久停旧值。
+    # 仅 active 来源回写；echo/org 属被动信号，须过服务层三道闸门后才影响层①，不动权威字段。
+    if req.source == "active" and content.content_class != req.new_label:
+        content.content_class = req.new_label
+        db.commit()
     return ApiResponse(
         data=CorrectionOut(
             id=row.id,
@@ -51,38 +76,3 @@ def create_correction(
             source=row.source,
         )
     )
-
-
-@router.post("/classify/arbitrate", response_model=ApiResponse[dict])
-def arbitrate_text(
-    req: ArbitrateRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """三层裁决分类（P2-01 推理移 worker：SetFit ~27s 入队异步，返回 job_id 供轮询）"""
-    from app.core.queue import enqueue_high
-    from app.services.correction import arbitrate_job
-
-    job = enqueue_high(arbitrate_job, str(user.id), req.text, req.content_type)
-    return ApiResponse(data={"job_id": job.id, "status": "queued"})
-
-
-@router.get("/classify/arbitrate/jobs/{job_id}", response_model=ApiResponse[dict])
-def arbitrate_job_status(
-    job_id: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """查询三层裁决任务状态与结果（轮询）"""
-    from app.core.queue import get_job
-
-    job = get_job(job_id)
-    if job is None:
-        raise ApiError("CORR_003", "任务不存在或已过期", http=404)
-    status = job.get_status()
-    if status == "finished":
-        return ApiResponse(data={"job_id": job_id, "status": status, "result": job.return_value()})
-    if status == "failed":
-        exc = job.exc_info.splitlines()[-1] if job.exc_info else "unknown"
-        return ApiResponse(data={"job_id": job_id, "status": status, "error": exc})
-    return ApiResponse(data={"job_id": job_id, "status": status or "queued"})

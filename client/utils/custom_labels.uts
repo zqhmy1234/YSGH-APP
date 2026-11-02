@@ -1,0 +1,136 @@
+/**
+ * 自定义分类标签：**本地持久化 + 选中态类名**（B5.2f-2b · 2026-09-24 重构波）
+ *
+ * 自 `components/RecordSheet/RecordSheet.uvue` **纯移动**而来（原 `readCustomLabels` /
+ * `persistCustomLabels` / `isCustOn` + 4 个 chip 类名助手）。组件侧只保留 3 个 ref
+ * （`customLabels` / `plusOpen` / `newCat`）与 3 个改状态的函数
+ * （`confirmCustom` / `onCustChipTap` / `onPlusTap`）。
+ *
+ * 形态调整（无逻辑变更）：
+ *   · 原 `isCustOn(c)` 读组件 `manualLabel.value` ⇒ 改为**入参** `manual: string`；
+ *   · 函数名加域前缀（`custChipCls` → `customChipCls` 等），避免在组件里与"内建标签"助手混淆。
+ *
+ * 诚实边界（原注释保留）：后端 `corrections.py VALID_CLASSES` 白名单**不支持自由标签** ⇒
+ * 自定义选中时保存会跳过 `submitCorrection`（台账 A 类登记）。
+ *
+ * ⚠️ 选中语义**刻意不与内建标签对齐**：内建 chip 的有效选中 = 手选优先、未手选取 AI 预选；
+ *   自定义 chip 只看 `manualLabel == 'custom:' + 名称`（AI 从不预选自定义标签）——保持逐字等价。
+ */
+
+/** 本地存储键（**沿用旧键**：换键等于把老用户已建的自定义分类全部丢掉） */
+export const CUSTOM_LABELS_KEY = 'custom_labels'
+
+// ── 存储格式 v2（2026-10-30 · P2 F-8）────────────────────────────────────────
+//
+// 根因（`custom_labels.uts:24-58` 改造前）：标签用**逗号拼接**（`labels.join(',')`）。
+// 只要用户建过一个含逗号的分类名，`readStoredCustomLabels` 就会把它拆成两个标签
+// （"早餐,咖啡" → "早餐" + "咖啡"），而写入侧**没有任何转义** ⇒ 数据一存一读就变形，
+// 且永远不会自愈（下次写回还是逗号串）。
+//
+// 修法选型（为什么不是 JSON 数组）：
+//   · 本仓已三次踩过 "UTS 下 JSON.parse 的数组泛型形态不可靠"
+//     （`uploader_types.uts:13`、`search_history.uts:8-10`、`queue_store.uts` 注释），
+//     既有约定是**行分隔 + 版本前缀**（O14 的 MediaStore id 也是这么加字段的）。
+//   · 这里用 `v2\n` + 逐行一个标签，语义等价于数组，但解析不依赖 JSON 泛型：
+//     单标签含逗号不再被拆开；单标签含换行由写入侧清洗掉（输入框本就单行、限 8 字）。
+//
+// 兼容（旧数据必须能读）：读侧先看版本前缀——
+//   有 `v2\n` ⇒ 按行解析；没有 ⇒ 判定为旧逗号串，按旧规则解析（含原实现的
+//   `[` `]` 空格剔除），并**就地回写 v2**（一次性自愈，幂等：写回的值再读还是同一组）。
+const V2_PREFIX: string = 'v2\n'
+
+/** 写入前的清洗：去空白、去空值、去重；换行是本格式的分隔符 ⇒ 一律剔除 */
+function normalizeLabels(labels: Array<string>): Array<string> {
+	const out: Array<string> = []
+	for (let i = 0; i < labels.length; i++) {
+		const one = labels[i].replace('\n', '').replace('\r', '').trim()
+		if (one != '' && out.indexOf(one) < 0) {
+			out.push(one)
+		}
+	}
+	return out
+}
+
+/** 把一组标签追加进 out（不用展开运算符：UTS 对 `push(...arr)` 的支持无先例） */
+function appendAll(out: Array<string>, labels: Array<string>): void {
+	for (let i = 0; i < labels.length; i++) {
+		out.push(labels[i])
+	}
+}
+
+/**
+ * 读取已存的自定义标签。
+ *
+ * 兼容 4 种形态：v2 行格式 / 旧逗号串 / 平台直接返回的数组 / 空或异常。
+ * 读到旧格式时会**自愈回写 v2**（否则含逗号的旧标签每次读都被拆开，永远修不好）。
+ */
+export function readStoredCustomLabels(): Array<string> {
+	const out: Array<string> = []
+	try {
+		const raw = uni.getStorageSync(CUSTOM_LABELS_KEY)
+		if (raw == null) {
+			return out
+		}
+		if (typeof raw == 'string') {
+			const s = raw as string
+			if (s == '' || s == '[]') {
+				return out
+			}
+			if (s.indexOf(V2_PREFIX) == 0) {
+				appendAll(out, normalizeLabels(s.substring(V2_PREFIX.length).split('\n')))
+				return out
+			}
+			// 旧格式（逗号串）：解析规则与原实现逐字一致，避免老数据行为变化
+			const parts = s.split(',')
+			for (let i = 0; i < parts.length; i++) {
+				const p = parts[i].replace('[', '').replace(']', '').replace(' ', '')
+				if (p != '') {
+					out.push(p)
+				}
+			}
+			// 自愈：把旧格式升级成 v2（幂等；失败不影响本次返回值）
+			persistCustomLabels(out)
+			return out
+		}
+		// 平台把 storage 直接反序列化成数组（部分端见 `readFavoriteIds` 的双兼容先例）
+		const arr = raw as Array<string>
+		appendAll(out, normalizeLabels(arr))
+		persistCustomLabels(out)
+		return out
+	} catch (e) {
+		return out
+	}
+}
+
+/**
+ * 持久化自定义标签（v2 行格式；标签含逗号不再有损）。
+ *
+ * ⚠️ 与旧数据的关系：写入后旧版本 App（若还能装）读到 `v2\n...` 会把它当成
+ * "一个含换行的标签"——这是降级方向上的既定取舍：新旧两个版本不可能同时无损，
+ * 优先保证**当前版本**无损（升级是一次性的，降级只影响未升级设备上的一次显示）。
+ */
+export function persistCustomLabels(labels: Array<string>): void {
+	const clean = normalizeLabels(labels)
+	uni.setStorageSync(CUSTOM_LABELS_KEY, V2_PREFIX + clean.join('\n'))
+}
+
+/** 自定义标签是否处于选中态（key = `'custom:' + 名称`；只看手选，不看 AI 预选） */
+export function customOn(c: string, manual: string): boolean {
+	return manual == 'custom:' + c
+}
+
+export function customChipCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'chip-on' : ''
+}
+
+export function customChipTextCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'chip-on-text' : ''
+}
+
+export function customVChipCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'v-chip-on' : ''
+}
+
+export function customVChipTextCls(c: string, manual: string): string {
+	return customOn(c, manual) ? 'v-chip-on-text' : ''
+}

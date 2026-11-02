@@ -1,0 +1,265 @@
+<template>
+	<!-- ═══════════ 回响弹层（F6a · 卡20 · canvas JSON 真值重写） ═══════════
+	     真值：.wt/missing-pages/uvue_gen/echo_sheet_canvas.json（2026-09-02 导出，帧号 F6a）
+	     组件范围 = 帧内弹层子树：64:42 遮罩 + 64:43 回响弹层（页面背景 64:2~64:8 属 messages.uvue，非本卡白名单）。
+	     弹层 = 全局浮层不是页面，唤起不发生页面跳转（峰宝拍板铁律 1 同族）。
+	     结构（逻辑 px ×1.9231→rpx）：遮罩 #3B2E26 a0.4 / 白板 padding 20/20/18/28 · 纵向 gap14（→26.9rpx margin）/
+	     头行：去年今天 16·600 #3A2E25（y+4）+ × 22·400 #B3A696 / 渐变主图 h200 r12（§V 暖化：#E3CCA8→#C7AD87）/
+	     金星标签行 14×14 #C4913C + 标签 11·500 #C4913C（暖金家族色保留）/ 摘要 15·400 lh24 #3A2E25 /
+	     日期地点 11·400 #8A7A6A / 主按钮 h48 r24 #B05A3A（§V 金→锈红）/ 「今年不再提醒」12·400 #B3A696 居中
+	     §V（2026-09-03 峰宝验机拍板）：弹层底白→#FAF9F5 + 顶圆角 24rpx 恢复 + 渐变暖化 + 主按钮锈红，画布 64:43 子树已同步改。 -->
+	<view class="sheet-root tk-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">去年今天</text>
+				<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 图片区：画布为暖→冷渐变演示占位；真照片通路=downloadFile(header token)/预签名 URL（图片硬约束），挂 A9 邻项 -->
+			<view class="photo-ph"></view>
+			<view class="date-row">
+				<image class="date-star" src="/static/icons/about-star.svg" />
+				<text class="date-text">{{ dateText }}</text>
+			</view>
+			<text class="body-text">{{ echoText }}</text>
+			<text v-if="metaText != ''" class="meta-text">{{ metaText }}</text>
+			<view class="main-btn" @tap="onReplay">
+				<text class="main-btn-text">重温这段记忆</text>
+			</view>
+			<view class="dismiss-btn" @tap="onDismiss">
+				<text class="dismiss-btn-text">{{ dismissing ? '设置中…' : '今年不再提醒' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props：传基本类型（对象 prop 在 UTS 组件边界有类型陷阱，项目零先例不冒险）
+	// 卡20 铁律：props/emit 接口不动（messages.uvue 接线保持），本段脚本与重写前逐字一致
+	const props = defineProps({
+		echoText: {
+			type: String,
+			default: ''
+		},
+		takenAt: {
+			type: String,
+			default: ''
+		},
+		place: {
+			type: String,
+			default: ''
+		}
+	})
+
+	const emit = defineEmits(['close', 'replay', 'dismiss'])
+
+	let dismissing = ref(false)
+	// 2026-10-30（P2 G-4）：两个按钮原先**各自为政、都没有共同的单飞闸**：
+	//  ① 「重温这段记忆」双击会 emit 两次 replay → 宿主两次 `navigateTo` → 详情页被 push 两层
+	//     （用户返回要退两次，且看着像"点一下开了两页"）；
+	//  ② dismiss 进行中主按钮仍可点，两个动作并发竞争（一个在划掉、一个在跳详情）。
+	// 现用 acted 做整层单飞：任一动作发出后其余按钮一律失效。弹层由宿主关闭后 v-if 卸载，
+	// acted/dismissing 随之复位，不影响下一次打开。
+	let acted = ref(false)
+
+	/** '2025-09-02T10:30:00' → 年=2025 月=9 日=2（解析失败降级只显「一年前的今天」） */
+	function parseParts(): Array<number> {
+		const out: Array<number> = [0, 0, 0]
+		if (props.takenAt.length >= 10) {
+			const datePart = props.takenAt.substring(0, 10)
+			const segs = datePart.split('-')
+			if (segs.length >= 3) {
+				out[0] = parseInt(segs[0])
+				out[1] = parseInt(segs[1])
+				out[2] = parseInt(segs[2])
+			}
+		}
+		return out
+	}
+
+	const dateText = computed((): string => {
+		const p = parseParts()
+		if (p[0] > 0 && p[1] > 0 && p[2] > 0) {
+			return p[0] + '年' + p[1] + '月' + p[2] + '日 · 一年前的今天'
+		}
+		return '一年前的今天'
+	})
+
+	const metaText = computed((): string => {
+		const p = parseParts()
+		let meta = ''
+		if (p[1] > 0 && p[2] > 0) {
+			meta = p[1] + '月' + p[2] + '日'
+		}
+		if (props.place != '') {
+			meta = meta == '' ? props.place : meta + ' · ' + props.place
+		}
+		return meta
+	})
+
+	function onClose(): void {
+		emit('close')
+	}
+
+	function onReplay(): void {
+		// 2026-10-30（P2 G-4）：见 acted 声明处（防双击重复 push 详情 / 与 dismiss 竞争）
+		if (acted.value || dismissing.value) {
+			return
+		}
+		acted.value = true
+		emit('replay')
+	}
+
+	function onDismiss(): void {
+		if (dismissing.value || acted.value) {
+			return
+		}
+		dismissing.value = true
+		acted.value = true
+		emit('dismiss')
+		// 宿主完成 dismissEcho 后关闭弹层（v-if 卸载本组件，dismissing 随之复位）——
+		// 不用 defineExpose（全项目零先例，编译器风险不冒险）
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet 同款铁律） */
+		z-index: 1000;
+	}
+	/* 64:42 遮罩：r0.23 g0.18 b0.15 op0.4 → rgba(59,46,38,0.4) */
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
+		z-index: 10;
+	}
+	/* 64:43 回响弹层：暖白底 #FAF9F5（§V 拍板：白板与 App 色彩系统冲突，对齐详情页令牌），y=373（hug≈471px=905.8rpx 兜底）；padding 20/20/18/28；
+	   ⚠️ JSON 导出曾整字段丢失 cornerRadius（画布渲染实有顶圆角，截图定案）→ 顶圆角 24rpx 恢复（旧 PNG 路线同值，RecordSheet/ShareSheet/CapsuleSheet 三兄弟同款单角写法） */
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		min-height: var(--d-lattice-p471, 905.8rpx);
+		background-color: var(--c-paper-50, #FAF9F5);
+		border-top-left-radius: var(--d-raw-r24, 24rpx);
+		border-top-right-radius: var(--d-raw-r24, 24rpx);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
+		z-index: 20;
+		flex-direction: column;
+	}
+	/* 64:44 弹层头：纵向 gap14 → 非首子元素 margin-top 26.9rpx；标题 y+4（64:45 vs 64:46） */
+	.head-row {
+		flex-direction: row;
+		justify-content: space-between;
+	}
+	/* 64:45：16px SemiBold #3A2E25，y 偏移 4px → margin-top 7.7rpx */
+	.head-title {
+		margin-top: var(--d-lattice-p4, 7.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 64:46：22px Regular #B3A696，字形 ×（U+00D7，非 ✕） */
+.head-close {
+	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06）：view 承载，text 纯展示 */
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
+	justify-content: center;
+	align-items: center;
+}
+.head-close-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
+}
+	/* 64:47 照片主图：h200 r12；渐变 [[0,1,0],[-1,0,1]] 求逆 → to bottom；§V 拍板暖化：#E3CCA8→#C7AD87（原 #B0BFC7 青灰冷调与 App 色彩系统冲突，画布 2026-09-03 已同步改） */
+	.photo-ph {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p200, 384.6rpx);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		background-image: var(--g-veil-sand-sand, linear-gradient(to bottom, #E3CCA8, #C7AD87));
+	}
+	/* 64:48 回响标签行：gap6 → 星芒 margin-right 11.5rpx */
+	.date-row {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:49 标签星芒：14×14 → 26.9rpx；金星复用现有 about-star.svg（#C4913C 四芒星，白名单禁新增文件） */
+	.date-star {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-right: var(--d-lattice-p6, 11.5rpx);
+	}
+	/* 64:51：11px Medium #C4913C（旧版锈红 600 为 PNG 路线误值，按 JSON 纠正） */
+	.date-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
+	}
+	/* 64:52 摘要文字：15px Regular lh24 #3A2E25 */
+	.body-text {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		line-height: var(--d-lattice-p24, 46.2rpx);
+	}
+	/* 64:53 日期地点：11px Regular #8A7A6A */
+	.meta-text {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	/* 64:54 主按钮：h48 r24，§V 拍板金→锈红 #B05A3A（对齐 F7/F9b 重设计主按钮令牌），fill_container（stretch 撑满 padding 内宽 673rpx） */
+	.main-btn {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	/* 64:55：16px SemiBold 白 */
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	/* 64:56 划掉：12px Regular #B3A696，fill_container + textAlign CENTER */
+.dismiss-btn {
+	/* text@tap 清零军规：view 承载热区，text 纯展示 */
+	margin-top: var(--d-lattice-p14, 26.9rpx);
+	justify-content: center;
+	align-items: center;
+	padding: var(--d-lattice-p8, 15.4rpx) var(--d-lattice-p0, 0rpx);
+}
+.dismiss-btn-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: var(--d-card_radius_small, 23.1rpx);
+	color: var(--c-ink-300, #B3A696);
+}
+</style>

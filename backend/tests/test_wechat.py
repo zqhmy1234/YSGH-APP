@@ -9,6 +9,7 @@
   - msg_id 幂等（重复回调只入一次）
   - API 冒烟（GET 验证 + POST 收包）
 """
+import time
 import uuid
 
 import pytest
@@ -18,7 +19,7 @@ from app.db.session import SessionLocal
 from app.services.wechat.crypto import decrypt, encrypt
 from app.services.wechat.gateway import handle_message, verify_url
 from app.services.wechat.service import process_incoming
-from app.services.wechat.signature import sign, verify
+from app.services.wechat.signature import REPLAY_WINDOW_SECONDS, is_timestamp_fresh, sign, verify
 from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
@@ -44,7 +45,9 @@ def _wrap(encrypted: str) -> str:
     return f"<xml><Encrypt><![CDATA[{encrypted}]]></Encrypt></xml>"
 
 
-def _params(encrypted: str, ts: str = "1409659589", nonce: str = "1372623149") -> dict:
+def _params(encrypted: str, ts: str | None = None, nonce: str = "1372623149") -> dict:
+    """构造回调参数；默认用当前时间戳（G2/R6#10 起 verify 强制 ±窗口新鲜度）"""
+    ts = ts or str(int(time.time()))
     return {
         "msg_signature": sign(TOKEN, ts, nonce, encrypted),
         "timestamp": ts,
@@ -82,6 +85,75 @@ def test_signature_verify_and_tamper():
     p = _params(encrypted)
     assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is True
     assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted + "x", p["msg_signature"]) is False
+
+
+def test_verify_rejects_stale_timestamp():
+    """G2/R6#10：重放旧包（时间戳超 ±窗口）→ 验签拒绝"""
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    stale = str(int(time.time()) - REPLAY_WINDOW_SECONDS - 60)  # 官方测试向量那种"历史时间戳"
+    p = _params(encrypted, ts=stale)
+    assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is False
+
+
+def test_verify_rejects_future_timestamp():
+    """G2/R6#10：未来时间戳（超窗口）→ 拒绝（防提前预演重放）"""
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    future = str(int(time.time()) + REPLAY_WINDOW_SECONDS + 60)
+    p = _params(encrypted, ts=future)
+    assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is False
+
+
+def test_verify_tolerates_clock_skew_boundary():
+    """G2/R6#10：窗口边界 ±window 内放行、刚越窗拒绝（时钟偏差容忍语义）"""
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    now = time.time()
+    inside = str(int(now - REPLAY_WINDOW_SECONDS) + 5)  # 窗口内（留 5s 裕量防 time.time 漂移）
+    p = _params(encrypted, ts=inside)
+    assert verify(TOKEN, p["timestamp"], p["nonce"], encrypted, p["msg_signature"]) is True
+    outside = str(int(now - REPLAY_WINDOW_SECONDS) - 5)  # 越窗 5 秒
+    p2 = _params(encrypted, ts=outside)
+    assert verify(TOKEN, p2["timestamp"], p2["nonce"], encrypted, p2["msg_signature"]) is False
+
+
+def test_is_timestamp_fresh_invalid_input():
+    """G2/R6#10：非整数/空时间戳 → fail-closed 拒绝（不因解析失败放行）"""
+    now = time.time()
+    assert is_timestamp_fresh(str(int(now)), now=now) is True
+    assert is_timestamp_fresh("", now=now) is False
+    assert is_timestamp_fresh("abc", now=now) is False
+    assert is_timestamp_fresh(None, now=now) is False
+
+
+def test_verify_url_rejects_stale(monkeypatch):
+    """G2/R6#10：URL 验证入口同样防重放（旧时间戳 echostr → 拒绝）"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(settings, "wechat_corp_id", CORP_ID)
+    monkeypatch.setattr(settings, "wechat_token", TOKEN)
+    monkeypatch.setattr(settings, "wechat_encoding_aes_key", AES_KEY)
+    client = TestClient(app)
+    echostr = encrypt("1616140317555161061", AES_KEY, CORP_ID)
+    p = _params(echostr, ts=str(int(time.time()) - REPLAY_WINDOW_SECONDS - 60))
+    r = client.get("/api/v1/wechat/callback", params={**p, "echostr": echostr})
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == "WECHAT_001", r.text
+
+
+def test_wechat_api_stale_callback_rejected(monkeypatch):
+    """G2/R6#10：POST 收包入口重放旧包 → 403 WECHAT_002（防重放贯穿回调）"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(settings, "wechat_corp_id", CORP_ID)
+    monkeypatch.setattr(settings, "wechat_token", TOKEN)
+    monkeypatch.setattr(settings, "wechat_encoding_aes_key", AES_KEY)
+    client = TestClient(app)
+    encrypted = encrypt(TEXT_XML, AES_KEY, CORP_ID)
+    p = _params(encrypted, ts=str(int(time.time()) - REPLAY_WINDOW_SECONDS - 60))
+    r = client.post("/api/v1/wechat/callback", params=p, content=_wrap(encrypted))
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == "WECHAT_002", r.text
 
 
 def test_verify_url_flow():
@@ -159,6 +231,46 @@ def test_process_incoming_idempotent():
         db.close()
 
 
+def test_process_incoming_concurrent_same_msg_id_no_500():
+    """R2#13 竞态修复：并发同 msg_id 回调不 500（ON CONFLICT DO NOTHING 原子幂等）
+
+    两会话同时处理同一回调：一个 created，另一个 rowcount=0 → duplicate，仅一行入库。
+    """
+    import threading
+
+    from app.db.session import SessionLocal
+
+    msg = {"msg_id": f"wx-race-{uuid.uuid4().hex[:10]}", "msg_type": "text", "content": "并发消息"}
+    results: dict = {}
+
+    def worker(n: int):
+        s = SessionLocal()
+        try:
+            r = process_incoming(s, msg)
+            results[n] = r["status"]
+        except Exception as exc:  # noqa: BLE001 —— 记录逃逸异常（不应发生）
+            results[n] = exc
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(v in ("created", "duplicate") for v in results.values()), results
+
+    db = SessionLocal()
+    try:
+        rows = db.query(WechatMessage).filter(WechatMessage.msg_id == msg["msg_id"]).all()
+        assert len(rows) == 1, "并发同 msg_id 只应有一行入库"
+    finally:
+        db.execute(sa_delete(WechatMessage).where(WechatMessage.msg_id == msg["msg_id"]))
+        db.execute(sa_delete(Content).where(Content.source == "wechat"))
+        db.commit()
+        db.close()
+
+
 def test_wechat_api_smoke(monkeypatch):
     """API 冒烟：GET 验证 URL + POST 收包（配置测试凭证后）"""
     from app.main import app
@@ -209,3 +321,63 @@ def test_wechat_delete_requires_auth():
     r = client.post("/api/v1/wechat/delete", data={"msg_id": "1234567890"})
     assert r.status_code == 401
     assert r.json()["code"] == "AUTH_005"
+
+
+# ══════════ P1-1 回归（2026-09-10 深扫修复：回调 XML 安全解析）══════════
+
+
+def test_handle_message_malformed_xml_raises_valueerror():
+    """P1-1：畸形 XML body 必须转 ValueError（api 层 except ValueError→403）——
+    回归钉桩：原生 ET.ParseError 继承 SyntaxError 会漏过 except ValueError 变 500。"""
+    with pytest.raises(ValueError):
+        handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", "<xml><unclosed>")
+
+
+def test_handle_message_entity_expansion_raises_valueerror():
+    """P1-1：内部实体膨胀（billion-laughs 型）payload 必须 ValueError（defusedxml 拦截，
+    DefusedXmlException 是 ValueError 子类）——未认证 DoS 防线。"""
+    ents = '<!ENTITY lol "lol">'
+    for i in range(1, 10):
+        ref = "&lol;" if i == 1 else "&lol" + str(i - 1) + ";"
+        body = ref * 10
+        ents += "<!ENTITY lol" + str(i) + ' "' + body + '">'
+    evil = "<xml><!DOCTYPE lolz [" + ents + "]><Encrypt>&lol9;</Encrypt></xml>"
+    with pytest.raises(ValueError):
+        handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", evil)
+
+
+def test_handle_message_oversized_body_rejected():
+    """P1-1：body 超长（>100KB）解析前即拒（ValueError），防大 body 内存吃满。"""
+    big = "<xml><Encrypt>" + "A" * 110_000 + "</Encrypt></xml>"
+    with pytest.raises(ValueError):
+        handle_message(TOKEN, AES_KEY, CORP_ID, "bad-sig", "1", "n", big)
+
+
+def test_wechat_message_status_writes_are_declared():
+    """D09-10 声明漂移门禁：`wechat_messages.status` 的**写入取值**必须 ⊆ ORM 唯一来源
+    `WECHAT_MESSAGE_STATUSES`（`db/models/wechat.py`）——防"服务端写了枚举外的新值 / 三处注释
+    再次漂移"（原状：ORM 注释 3 值、schema.sql 注释 2 值、service 实写 4~5 值）。
+
+    覆盖两种写入形态（都在 `services/wechat/service.py`）：
+      ① `record.status = "x"`（属主赋值）
+      ② `pg_insert(WechatMessage)....values(status="x")`（插入）
+    """
+    import re
+    from pathlib import Path
+
+    from app.db.models.wechat import WECHAT_MESSAGE_STATUSES
+
+    src = (
+        Path(__file__).resolve().parents[1] / "app" / "services" / "wechat" / "service.py"
+    ).read_text(encoding="utf-8")
+
+    assigned = set(re.findall(r'record\.status\s*=\s*"([a-z0-9_]+)"', src))
+    insert_block = re.search(r"pg_insert\(WechatMessage\)(.*?)on_conflict", src, re.S)
+    inserted = set(re.findall(r'status="([a-z0-9_]+)"', insert_block.group(1))) if insert_block else set()
+
+    written = assigned | inserted
+    assert written, "未扫描到任何 wechat_messages.status 写入点（扫描式疑似失效，勿静默通过）"
+    assert written <= set(WECHAT_MESSAGE_STATUSES), (
+        f"写入了未声明的 wechat_messages.status 取值：{sorted(written - set(WECHAT_MESSAGE_STATUSES))}；"
+        f"如属新增合法状态，请同步更新 db/models/wechat.py::WECHAT_MESSAGE_STATUSES 与 schema.sql 注释"
+    )

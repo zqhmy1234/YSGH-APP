@@ -1,0 +1,15 @@
+{
+  "id": "emotion_curve",
+  "label": "情绪曲线",
+  "category": "情绪与状态",
+  "current_values": null,
+  "value_template": null,
+  "template_values": null,
+  "structure": "时间序列（近 7 天/30 天轨迹），非枚举：存 [(日期, 情绪值, 证据), ...]，由 emotional_state 采样聚合",
+  "source": "N",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "自建结构维度；B1 §5 缺失四组之一；回响/复盘判断'当前合不合适推'",
+  "open_enum": true,
+  "refine_mode": "non_enum_structure"
+}

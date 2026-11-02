@@ -15,7 +15,10 @@
       "id": "b-todo-01",
       "text": "下午三点给妈妈打电话",
       "content_type": "text",
-      "label": "todo"
+      "label": "todo",
+      "tags": [
+        "妈妈"
+      ]
     },
     {
       "id": "b-todo-02",
@@ -105,7 +108,10 @@
       "id": "b-todo-16",
       "text": "给外婆买助听器电池",
       "content_type": "text",
-      "label": "todo"
+      "label": "todo",
+      "tags": [
+        "外婆"
+      ]
     },
     {
       "id": "b-todo-17",
@@ -123,7 +129,10 @@
       "id": "b-todo-19",
       "text": "给朋友寄生日礼物",
       "content_type": "text",
-      "label": "todo"
+      "label": "todo",
+      "tags": [
+        "朋友"
+      ]
     },
     {
       "id": "b-idea-00",
@@ -249,7 +258,10 @@
       "id": "b-emotion-04",
       "text": "妈妈做的菜让我很安心",
       "content_type": "text",
-      "label": "emotion"
+      "label": "emotion",
+      "tags": [
+        "妈妈"
+      ]
     },
     {
       "id": "b-emotion-05",
@@ -291,7 +303,10 @@
       "id": "b-emotion-11",
       "text": "想起外婆,心里酸酸的",
       "content_type": "text",
-      "label": "emotion"
+      "label": "emotion",
+      "tags": [
+        "外婆"
+      ]
     },
     {
       "id": "b-emotion-12",
@@ -303,7 +318,10 @@
       "id": "b-emotion-13",
       "text": "收到老同学消息,眼眶一热",
       "content_type": "text",
-      "label": "emotion"
+      "label": "emotion",
+      "tags": [
+        "老同学"
+      ]
     },
     {
       "id": "b-emotion-14",
@@ -315,7 +333,10 @@
       "id": "b-emotion-15",
       "text": "孩子第一次叫爸爸,想哭",
       "content_type": "text",
-      "label": "emotion"
+      "label": "emotion",
+      "tags": [
+        "儿子"
+      ]
     },
     {
       "id": "b-emotion-16",

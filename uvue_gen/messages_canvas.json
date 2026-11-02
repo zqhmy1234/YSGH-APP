@@ -1,0 +1,1183 @@
+{
+ "id": "4:89",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9725490212440491,
+    "g": 0.9686274528503418,
+    "b": 0.95686274766922
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 844,
+ "name": "消息中心",
+ "x": 3780,
+ "y": 120,
+ "clipsContent": true,
+ "children": [
+  {
+   "id": "4:91",
+   "type": "TEXT",
+   "fontSize": 15,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Semi Bold"
+   },
+   "characters": "9:41",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.22745098173618317,
+      "g": 0.18039216101169586,
+      "b": 0.14509804546833038
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 31,
+   "height": 18,
+   "name": "状态栏时间",
+   "x": 24,
+   "y": 16,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "4:92",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.22745098173618317,
+      "g": 0.18039216101169586,
+      "b": 0.14509804546833038
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 22,
+   "height": 11,
+   "name": "电池",
+   "x": 344,
+   "y": 19,
+   "clipsContent": true,
+   "cornerRadius": 3,
+   "children": []
+  },
+  {
+   "id": "4:93",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "width": 22,
+   "height": 22,
+   "name": "返回",
+   "x": 16,
+   "y": 60,
+   "clipsContent": true,
+   "children": [
+    {
+     "id": "4:94",
+     "type": "VECTOR",
+     "strokes": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 6.4166669845581055,
+     "height": 12.833333969116211,
+     "name": "Vector",
+     "x": 7.333333492279053,
+     "y": 4.583333492279053
+    }
+   ]
+  },
+  {
+   "id": "4:95",
+   "type": "FRAME",
+   "layout": "horizontal",
+   "gap": 0,
+   "padding": {
+    "left": 0,
+    "right": 0,
+    "top": 0,
+    "bottom": 0
+   },
+   "width": 390,
+   "height": "hug_contents",
+   "name": "标题容器",
+   "x": 0,
+   "y": 60,
+   "clipsContent": true,
+   "children": [
+    {
+     "id": "4:96",
+     "type": "TEXT",
+     "fontSize": 18,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Semi Bold"
+     },
+     "characters": "消息",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22745098173618317,
+        "g": 0.18039216101169586,
+        "b": 0.14509804546833038
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": "hug_contents",
+     "height": "hug_contents",
+     "name": "页标题",
+     "x": 177,
+     "y": 0,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    }
+   ]
+  },
+  {
+   "id": "4:97",
+   "type": "TEXT",
+   "fontSize": 12,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Semi Bold"
+   },
+   "characters": "今天",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.5411764979362488,
+      "g": 0.47843137383461,
+      "b": 0.4156862795352936
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 24,
+   "height": 15,
+   "name": "日期分组",
+   "x": 20,
+   "y": 110,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "4:98",
+   "type": "FRAME",
+   "layout": "vertical",
+   "gap": 0,
+   "padding": {
+    "left": 8,
+    "right": 8,
+    "top": 8,
+    "bottom": 8
+   },
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "effects": [
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.05999999865889549
+     },
+     "offset": {
+      "x": 0,
+      "y": 4
+     },
+     "radius": 16,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    },
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.03999999910593033
+     },
+     "offset": {
+      "x": 0,
+      "y": 1
+     },
+     "radius": 3,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    }
+   ],
+   "width": 350,
+   "height": "hug_contents",
+   "name": "回响卡",
+   "x": 20,
+   "y": 138,
+   "clipsContent": true,
+   "cornerRadius": 20,
+   "children": [
+    {
+     "id": "4:99",
+     "type": "FRAME",
+     "layout": "vertical",
+     "gap": 6,
+     "padding": {
+      "left": 14,
+      "right": 14,
+      "top": 14,
+      "bottom": 14
+     },
+     "fills": [
+      {
+       "type": "GRADIENT_LINEAR",
+       "visible": true,
+       "blendMode": "NORMAL",
+       "opacity": 1,
+       "gradientTransform": [
+        [
+         0,
+         1,
+         0
+        ],
+        [
+         -1,
+         0,
+         1
+        ]
+       ],
+       "gradientStops": [
+        {
+         "color": {
+          "r": 0.8510000109672546,
+          "g": 0.8899999856948853,
+          "b": 0.7960000038146973,
+          "a": 0.6000000238418579
+         },
+         "position": 0,
+         "boundVariables": {}
+        },
+        {
+         "color": {
+          "r": 0.8510000109672546,
+          "g": 0.8899999856948853,
+          "b": 0.7960000038146973,
+          "a": 0.11999999731779099
+         },
+         "position": 1,
+         "boundVariables": {}
+        }
+       ]
+      }
+     ],
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "回响块",
+     "x": 8,
+     "y": 8,
+     "clipsContent": true,
+     "cornerRadius": 12,
+     "children": [
+      {
+       "id": "4:100",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 6,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "回响标签行",
+       "x": 14,
+       "y": 14,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "4:101",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 14,
+         "height": 14,
+         "name": "星芒",
+         "x": 0,
+         "y": 0,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "4:102",
+           "type": "VECTOR",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.47843137383461,
+              "g": 0.5490196347236633,
+              "b": 0.3529411852359772
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 10.5,
+           "height": 10.5,
+           "name": "Vector",
+           "x": 1.75,
+           "y": 1.75
+          }
+         ]
+        },
+        {
+         "id": "4:103",
+         "type": "TEXT",
+         "fontSize": 11,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Semi Bold"
+         },
+         "characters": "时间胶囊 · 8 个月前",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.47843137383461,
+            "g": 0.5490196347236633,
+            "b": 0.3529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "hug_contents",
+         "height": "hug_contents",
+         "name": "回响来源",
+         "x": 20,
+         "y": 0.5,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "4:104",
+       "type": "TEXT",
+       "fontSize": 16,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Semi Bold"
+       },
+       "characters": "去年今天：你在天台看了流星雨",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "回响标题",
+       "x": 14,
+       "y": 34,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "4:105",
+       "type": "TEXT",
+       "fontSize": 12,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "点开重温那段记忆，或写一句此刻的想法",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.3529411852359772,
+          "g": 0.2980392277240753,
+          "b": 0.250980406999588
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "回响说明",
+       "x": 14,
+       "y": 59,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "4:106",
+   "type": "FRAME",
+   "layout": "vertical",
+   "gap": 0,
+   "padding": {
+    "left": 6,
+    "right": 6,
+    "top": 6,
+    "bottom": 6
+   },
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "effects": [
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.05000000074505806
+     },
+     "offset": {
+      "x": 0,
+      "y": 3
+     },
+     "radius": 12,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    }
+   ],
+   "width": 350,
+   "height": "hug_contents",
+   "name": "普通消息列表",
+   "x": 20,
+   "y": 300,
+   "clipsContent": true,
+   "cornerRadius": 20,
+   "children": [
+    {
+     "id": "4:107",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 12,
+     "padding": {
+      "left": 12,
+      "right": 12,
+      "top": 12,
+      "bottom": 12
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "行-整理完成",
+     "x": 6,
+     "y": 6,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "4:108",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 0,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.6899999976158142,
+          "g": 0.3499999940395355,
+          "b": 0.23000000417232513
+         },
+         "opacity": 0.11999999731779099,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 40,
+       "height": 40,
+       "name": "图标底",
+       "x": 12,
+       "y": 12,
+       "clipsContent": true,
+       "cornerRadius": 20,
+       "children": [
+        {
+         "id": "4:109",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 18,
+         "height": 18,
+         "name": "图标",
+         "x": 11,
+         "y": 11,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "4:110",
+           "type": "VECTOR",
+           "strokes": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.6901960968971252,
+              "g": 0.3529411852359772,
+              "b": 0.22745098173618317
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 10.5,
+           "height": 7.125,
+           "name": "Vector",
+           "x": 3.75,
+           "y": 5.25
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "4:111",
+       "type": "FRAME",
+       "layout": "vertical",
+       "gap": 2,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "文案列",
+       "x": 64,
+       "y": 14.5,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "4:112",
+         "type": "TEXT",
+         "fontSize": 15,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Semi Bold"
+         },
+         "characters": "整理完成",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "hug_contents",
+         "height": "hug_contents",
+         "name": "标题",
+         "x": 0,
+         "y": 0,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        },
+        {
+         "id": "4:113",
+         "type": "TEXT",
+         "fontSize": 12,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "3 条新记忆已归入时间轴",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "fill_container",
+         "height": "hug_contents",
+         "name": "摘要",
+         "x": 0,
+         "y": 20,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "4:114",
+       "type": "TEXT",
+       "fontSize": 11,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "09:12",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7019608020782471,
+          "g": 0.6509804129600525,
+          "b": 0.5882353186607361
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "时间",
+       "x": 297,
+       "y": 25.5,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    },
+    {
+     "id": "4:115",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 12,
+     "padding": {
+      "left": 12,
+      "right": 12,
+      "top": 12,
+      "bottom": 12
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "行-转写完成",
+     "x": 6,
+     "y": 70,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "4:116",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 0,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.4779999852180481,
+          "g": 0.5490000247955322,
+          "b": 0.3529999852180481
+         },
+         "opacity": 0.14000000059604645,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 40,
+       "height": 40,
+       "name": "图标底",
+       "x": 12,
+       "y": 12,
+       "clipsContent": true,
+       "cornerRadius": 20,
+       "children": [
+        {
+         "id": "4:117",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 18,
+         "height": 18,
+         "name": "图标",
+         "x": 11,
+         "y": 11,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "4:118",
+           "type": "VECTOR",
+           "strokes": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.47843137383461,
+              "g": 0.5490196347236633,
+              "b": 0.3529411852359772
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 9.75,
+           "height": 13.5,
+           "name": "Vector",
+           "x": 4.125,
+           "y": 2.25
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "4:119",
+       "type": "FRAME",
+       "layout": "vertical",
+       "gap": 2,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "文案列",
+       "x": 64,
+       "y": 14.5,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "4:120",
+         "type": "TEXT",
+         "fontSize": 15,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Semi Bold"
+         },
+         "characters": "语音已转写",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "hug_contents",
+         "height": "hug_contents",
+         "name": "标题",
+         "x": 0,
+         "y": 0,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        },
+        {
+         "id": "4:121",
+         "type": "TEXT",
+         "fontSize": 12,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "「和妈妈的通话」可以搜索了",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "fill_container",
+         "height": "hug_contents",
+         "name": "摘要",
+         "x": 0,
+         "y": 20,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "4:122",
+       "type": "TEXT",
+       "fontSize": 11,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "08:40",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7019608020782471,
+          "g": 0.6509804129600525,
+          "b": 0.5882353186607361
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "时间",
+       "x": 295,
+       "y": 25.5,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    },
+    {
+     "id": "4:123",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 12,
+     "padding": {
+      "left": 12,
+      "right": 12,
+      "top": 12,
+      "bottom": 12
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "行-备份完成",
+     "x": 6,
+     "y": 134,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "4:124",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 0,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.3059999942779541,
+          "g": 0.49000000953674316,
+          "b": 0.5490000247955322
+         },
+         "opacity": 0.12999999523162842,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 40,
+       "height": 40,
+       "name": "图标底",
+       "x": 12,
+       "y": 12,
+       "clipsContent": true,
+       "cornerRadius": 20,
+       "children": [
+        {
+         "id": "4:125",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 18,
+         "height": 18,
+         "name": "图标",
+         "x": 11,
+         "y": 11,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "4:126",
+           "type": "VECTOR",
+           "strokes": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.30588236451148987,
+              "g": 0.4901960790157318,
+              "b": 0.5490196347236633
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 13.5,
+           "height": 13.5,
+           "name": "Vector",
+           "x": 2.253751277923584,
+           "y": 2.25
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "4:127",
+       "type": "FRAME",
+       "layout": "vertical",
+       "gap": 2,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "文案列",
+       "x": 64,
+       "y": 14.5,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "4:128",
+         "type": "TEXT",
+         "fontSize": 15,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Semi Bold"
+         },
+         "characters": "夜间备份完成",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "hug_contents",
+         "height": "hug_contents",
+         "name": "标题",
+         "x": 0,
+         "y": 0,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        },
+        {
+         "id": "4:129",
+         "type": "TEXT",
+         "fontSize": 12,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "128 条记忆已安全同步",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.5411764979362488,
+            "g": 0.47843137383461,
+            "b": 0.4156862795352936
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "fill_container",
+         "height": "hug_contents",
+         "name": "摘要",
+         "x": 0,
+         "y": 20,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "4:130",
+       "type": "TEXT",
+       "fontSize": 11,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "昨天",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.7019608020782471,
+          "g": 0.6509804129600525,
+          "b": 0.5882353186607361
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "时间",
+       "x": 304,
+       "y": 25.5,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

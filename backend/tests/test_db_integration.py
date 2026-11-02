@@ -1,23 +1,26 @@
-"""PG 集成测试（验证 yishu 隔离库连通 + v3 35 表可访问）
+"""PG 集成测试（验证当前配置的数据库连通与 ORM 表可访问）
 
-前置：本地 PostgreSQL 已建 yishu 库（scripts/setup_pg.sql + backend/sql/schema.sql v3）
+前置：DATABASE_URL 指向已通过 Alembic 初始化的测试数据库。
 运行：pytest backend/tests/test_db_integration.py -v
 """
 
 
 import pytest
+from app.core.config import settings
 from app.db.session import engine
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 
 @pytest.mark.integration
 def test_db_connect():
-    """连接隔离库 yishu"""
+    """连接到 DATABASE_URL 指定的库和角色。"""
+    configured = make_url(settings.database_url)
     with engine.connect() as conn:
         result = conn.execute(text("SELECT current_database(), current_user"))
         db, user = result.one()
-        assert db == "yishu"
-        assert user == "yishu_app"
+        assert db == configured.database
+        assert user == configured.username
 
 
 @pytest.mark.integration

@@ -1,0 +1,14 @@
+[
+  {
+    "clip_id": "v-0001",
+    "audio_ref": "research/truth-data/c/audio/v-0001.wav",
+    "duration_s": 23.5,
+    "transcript": "今天项目上线了，累但是开心",
+    "transcript_source": "human",
+    "emotion": "happy",
+    "noise_level": "clean",
+    "self_talk_only": true,
+    "user_id_hashed": "sha256:examplehash0001",
+    "collected_at": "2026-09-01T10:00:00+08:00"
+  }
+]

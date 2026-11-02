@@ -1,0 +1,813 @@
+<template>
+	<!-- B10 方案A P2：自 pages/ai/ai.uvue 整体搬迁；TabBar/RecordSheet 挂载与浮层态上收 shell，
+	     attachOpen 经 shell_state 共享（返回键协同）；处置记录台账 §EE -->
+<!-- ardot 直转 v2：AI 对话页（帧 2:332）· W10.4 数据驱动改造（2026-09-01 峰宝拍板）
+     真端点契约（2026-10-09 起为**流式**；封装见 utils/chat_api.uts）：
+     POST /api/v1/chat/messages/stream   { conversation_id?, content, attachments?[] }
+          → text/event-stream：status / preview / tool / replace / done / error
+          （preview 为**累计全文**；客户端逐帧覆盖渲染 typing 气泡 ⇒ 逐字效果）
+     GET  /api/v1/chat/conversations/{id}/messages（进入会话回填历史）
+     GET  /api/v1/chat/replies/:id（客户端当前无调用点；断线重取预留，contract.uts 有登记）
+     注：非流式 POST /api/v1/chat/messages 仍在后端保留（脚本/降级路径），客户端不再走它。
+     mock 开关：USE_MOCK_CHAT（2026-09-23 补真身——此前本行声称的常量在代码中**并不存在**，
+          属无条件硬编码，既无法配置关闭、也不告知用户是演示数据，见台账 §7.1）：
+          true  = 样张对话 + 本地闭环回复（仅演示/录屏），页面顶部显式标注「内测演示数据」
+          false = 不注入样张；**走真端点**（流式，AG6 接线 + 2026-10-09 流式化）——失败时
+                  撤掉 typing 占位、由 api 层提示原因，**绝不伪造 AI 回复**
+
+	     翻转前提（2026-09-23 AG6 登记的诚实边界）：后端 AG5 已就绪且真代理 E2E 跑通（56.3s、
+	     chat_messages/memories 落库实证），但 true→false 还需满足
+	       ① 本文件改动过编译门（已过）② 后端在**客户端可达的地址**上——内测包指向部署域名，
+	          当前只有本机 127.0.0.1:8000 ⇒ 上机前翻转只会得到"请求失败"（等于把演示数据换成错误提示）。
+	     两条都满足后：删本常量与 mock 层（seedMockMessages/buildMockReply/REPLY_KIND_ROTATION）。 -->
+	<view class="ai-root tk-root">
+		<view class="ai-header">
+			<text class="n2_336">AI</text>
+			<text class="n2_337">问问你的回忆</text>
+		</view>
+		<!-- 演示数据标注（2026-09-23）：内测期智能体尚未接入后端，必须显式告知，
+		     否则用户会把样张对话当成已上线的能力（台账 §7.1） -->
+		<view v-if="USE_MOCK_CHAT" class="demo-note">
+			<text class="demo-note-text">内测演示数据 · 智能体尚未接入后端</text>
+		</view>
+		<!-- 2026-09-23 编译门修复：`scroll-y` 在 uni-app x 的 <scroll-view> 上**不是受支持属性**
+		     （编译器原话：Property 'scroll-y' is not supported），正确写法是 `direction`。
+		     uni-app x 的 scroll-view 只定义 direction（none/vertical/horizontal/all）+ refresherEnabled
+		     （HBuilderX 自带 dts dom2/UniNativeScrollView.d.ts）。 -->
+		<scroll-view class="n4_88" direction="vertical" :scroll-into-view="scrollInto">
+			<!-- 2026-09-25（Agent 接线补完）：**真链空态**。`USE_MOCK_CHAT` 翻转为 false 后，
+			     全新用户（无历史）会看到一片空白 —— 那是我方翻开关引入的体验回归，故补一个
+			     **诚实空态**：无假数据、不预填示例对话；有历史时不显示（由 onMounted 回填填充）。 -->
+			<!-- 2026-10-30（P2 D-10）：空态区分「真的没有历史」与「这次没拉到」。
+			     原先两者都渲染「和你的回忆聊聊」⇒ 断网进来时用户以为历史被清空了。 -->
+			<view v-if="messages.length == 0 && !USE_MOCK_CHAT && historyFailed" class="ai-empty" @tap="retryHistory">
+				<text class="ai-empty-title">历史加载失败 · 点这里重试</text>
+				<text class="ai-empty-sub">回复本身在服务端是安全的，只是这次没取到</text>
+			</view>
+			<view v-else-if="messages.length == 0 && !USE_MOCK_CHAT" class="ai-empty">
+				<text class="ai-empty-title">和你的回忆聊聊</text>
+				<text class="ai-empty-sub">比如「帮我回顾这个月」「去年今日我在做什么」</text>
+			</view>
+			<view v-for="m in messages" :key="m.id" :id="'msg-' + m.id">
+				<!-- AI 消息组 -->
+				<view v-if="m.role === 'ai'" class="ai-group">
+					<view class="n2_339">
+						<text class="n2_341">AI</text>
+						<view class="n4_1">
+							<image class="n4_2" src="/static/icons/i4_2.svg" />
+						</view>
+					</view>
+					<!-- 形态①：普通气泡（可内嵌记忆卡） -->
+					<view v-if="m.kind === 'bubble'" class="n2_342">
+						<text class="n2_343">{{ m.text }}</text>
+						<!-- 2026-10-31（走查 5.x / D-8）：内嵌记忆卡补 @tap —— 原实现整块只读不响应，
+						     用户点了没反应（卡片看起来像入口，其实是死图）。 -->
+						<view v-if="m.cards.length > 0" class="n2_344 pressable" @tap="onCardTap(m.cards[0])">
+							<image class="n2_345" :src="m.cards[0].img" mode="aspectFill" />
+							<view class="n2_346">
+								<text class="n2_347">{{ m.cards[0].title }}</text>
+								<text class="n2_348">{{ m.cards[0].meta }}</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态②：直铺长答（无气泡 bullet 组，画布 ai_reply 4:311）+ 尾部追问 chips（4:333） -->
+					<view v-else-if="m.kind === 'plain'" class="plain-block">
+						<text class="plain-title">{{ m.text }}</text>
+						<view v-for="(b, bi) in m.bullets" :key="bi" class="plain-bullet">
+							<view class="plain-dot" />
+							<text class="plain-text">{{ b }}</text>
+						</view>
+						<view v-if="m.chips.length > 0" class="chips-row">
+							<view v-for="(c, ci) in m.chips" :key="ci" class="chip pressable" @tap="onChipTap(c)">
+								<text class="chip-text">{{ c }}</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态③：记忆卡横滑组（画布 4:323，第二张露边示意滑动） -->
+					<view v-else-if="m.kind === 'cards'" class="cards-wrap">
+						<!-- 引导文案（2026-10-09 结构化回复）：卡片是 agent 正文的**结构化投影**，
+						     但正文里可能有卡片装不下的信息（如"这让我想起你 X 月也记过类似的事"），
+						     整段丢掉会让用户觉得答非所问 ⇒ 正文保留为一行引导语，卡片在下 -->
+						<text v-if="m.text != ''" class="cards-lead">{{ m.text }}</text>
+						<!-- 2026-09-23 编译门修复（**这是真缺陷，不只是警告**）：原 `scroll-x` 同样不受支持、被静默忽略
+					     → 该横滑组退化为默认方向，而画布 4:323 的设计是"第二张露边示意滑动"
+					     （横向可滑）。改 direction="horizontal" 才是设计意图。 -->
+					<scroll-view class="cards-scroll" direction="horizontal">
+							<!-- 2026-10-31（走查 5.x / D-8）：横滑组每张卡同样可点（原零 @tap ⇒ 点不动）。 -->
+							<view v-for="(cd, di) in m.cardList" :key="di" class="mem-card pressable" @tap="onCardTap(cd)">
+								<!-- 2026-10-09：文字记忆没有缩略图（agent 卡片 img 为空串）⇒ 跳过图片，
+								     否则是一块空白碎图（比没有更难看，也让人以为加载失败） -->
+								<image v-if="cd.img != ''" class="mem-thumb" :src="cd.img" mode="aspectFill" />
+								<text class="mem-title">{{ cd.title }}</text>
+								<text class="mem-meta">{{ cd.meta }}</text>
+							</view>
+						</scroll-view>
+						<view v-if="m.chips.length > 0" class="chips-row">
+							<view v-for="(c, ci) in m.chips" :key="ci" class="chip pressable" @tap="onChipTap(c)">
+								<text class="chip-text">{{ c }}</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态④：行动确认卡（AI 发起待确认操作，画布 4:339） -->
+					<view v-else-if="m.kind === 'confirm'" class="confirm-card">
+						<view class="confirm-row">
+							<view class="confirm-star">
+								<image class="confirm-star-img" src="/static/icons/i4_2.svg" />
+							</view>
+							<text class="confirm-text">{{ m.text }}</text>
+						</view>
+						<view class="confirm-btns">
+							<view class="btn-ghost pressable" @tap="onConfirmAction(m, false)">
+								<text class="btn-ghost-text">暂不</text>
+							</view>
+							<view class="btn-primary pressable" @tap="onConfirmAction(m, true)">
+								<text class="btn-primary-text">加入胶囊</text>
+							</view>
+						</view>
+					</view>
+					<!-- 形态⑤：流式输出态（画布 4:349；点透明度阶梯模拟渐隐，App 端 keyframes 支持有限）
+					     2026-10-09（AG6 余项）：文案改为**实时**——流式预览到达后显示累计全文（逐字效果），
+					     工具阶段（无正文可推时）显示"正在翻你的记忆…"，都没有才退回占位文案 -->
+					<view v-else-if="m.kind === 'typing'" class="typing-row">
+						<text class="typing-text">{{ typingDisplay(m) }}</text>
+					<view class="td-1" />
+					<view class="td-2" />
+					<view class="td-3" />
+					</view>
+					<!-- 形态⑥：发送失败重试卡（2026-10-07 客户端加固）：保留原文，一键重发 -->
+					<view v-else-if="m.kind === 'failed'" class="fail-card pressable" @tap="onRetry(m)">
+						<text class="fail-text">发送失败 · 点此重试</text>
+					</view>
+				</view>
+				<!-- 用户消息行 -->
+				<view v-else class="n2_349">
+					<view class="n2_350">
+						<text class="n2_351">{{ m.text }}</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+		<view class="n2_355">
+			<input :adjust-position="true" class="n2_357" v-model="draft" placeholder="问点什么…" placeholder-style="color:#B3A696;font-size:26.9rpx;" :maxlength="200" confirm-type="send" @confirm="onSend" />
+			<view class="n2_358" @tap="onSend">
+				<image class="n2_359" src="/static/icons/i2_359.svg" />
+			</view>
+			<!-- 附件入口（2026-09-01 峰宝拍板）：发送钮左移、入口放其右侧（最右端，画布终审同序） -->
+			<view class="attach-btn pressable" @tap="openAttach">
+				<image class="attach-btn-icon" src="/static/icons/icon-paperclip.svg" />
+			</view>
+		</view>
+
+		<!-- 附件选择面板（画布 ai_typing 4:361 半屏形态）：scrim 点空收起 -->
+		<view v-if="attachShown()" class="attach-scrim" @tap="closeAttach" />
+		<view v-if="attachShown()" class="attach-panel">
+			<view class="attach-handle" />
+			<text class="attach-title">添加附件</text>
+			<!-- 2026-10-31（走查 5.x / D-12）：面板整体改成**诚实的待接入态**。
+			     原因：附件发送链路在客户端根本不存在——`sendChatMessage(convId, content)` 没有
+			     attachments 参数（`utils/chat_api.uts` 结构基线锁定，不在本次可改范围），后端
+			     `ChatAttachmentIn` 也只记录 ref、不解析内容。原实现把 6 张示例图当"你的照片"铺开、
+			     入口点了只弹「即将上线」⇒ 是"假可用"：用户会以为是网络/权限问题。
+			     故：示例图灰显并注明不可选，入口灰显 + 行尾「待接入」+ 点击给**具体**说明。 -->
+			<text class="ai-empty-sub" style="margin-top:6rpx">示例图 · 暂不可选（附件发送尚未接入）</text>
+			<view class="attach-grid" style="opacity:0.35">
+				<view class="grid-row">
+					<image class="grid-thumb grid-thumb-first" src="/static/images/img2_345.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img2_140.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img2_256.png" mode="aspectFill" />
+				</view>
+				<view class="grid-row">
+					<image class="grid-thumb grid-thumb-first" src="/static/images/img2_74.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img4_406.png" mode="aspectFill" />
+					<image class="grid-thumb" src="/static/images/img2_16.png" mode="aspectFill" />
+				</view>
+			</view>
+			<view class="attach-entries">
+				<view class="attach-entry attach-entry-first pressable" style="opacity:0.55" @tap="onAttachEntry('文件')">
+					<image class="attach-entry-icon" src="/static/icons/icon-file.svg" />
+					<text class="attach-entry-text">文件</text>
+					<view style="flex:1" />
+					<text class="ai-empty-sub" style="font-size:22rpx">待接入</text>
+				</view>
+				<view class="attach-entry pressable" style="opacity:0.55" @tap="onAttachEntry('粘贴链接')">
+					<image class="attach-entry-icon" src="/static/icons/icon-link.svg" />
+					<text class="attach-entry-text">粘贴链接</text>
+					<view style="flex:1" />
+					<text class="ai-empty-sub" style="font-size:22rpx">待接入</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onMounted, onUnmounted, watch } from 'vue'
+	import { aiAttachOpen } from '@/utils/shell_state'
+	import { sendChatMessage, fetchChatHistory, chatHistoryFetchFailed, cancelChatStream, ChatSendResult, ChatHistoryItem, chatStreamText, chatStreamTool, chatStreamActive, CHAT_CONV_STORAGE_KEY } from '@/utils/chat_api'
+	// 2026-10-31（走查 5.x）：**消息模型与历史回填合并**整体进 `utils/ai_messages.uts`，
+	// **流式预览的消息级绑定**进 `composables/useChatStream.uts`（D-3 / D-9 的修复落点）。
+	// 抽出的理由不是"让文件变短"，而是回填与流式两条管线必须产出逐字一致的视图模型
+	// （各写一套 ⇒ 「当场有要点、回填没有」这类回归反复发生）。
+	import { MemCard, AiMsg, TYPING_TEXT, mkUser, mkAi, toMemCards, buildHistoryMessages, mergeHistory, removeMessageById, dropTypingMessages } from '@/utils/ai_messages'
+	import { ChatStreamBinding } from '@/composables/useChatStream'
+	// 2026-10-31（走查 5.x / D-8）：记忆卡 → 内容详情的解析用「最近内容」快路 + 语义搜索兜底。
+	import { fetchRecentSample, searchText, RecentSample, SearchOutcome, SearchHitItem } from '@/utils/search_api'
+	// AI 对话页（W10.4 数据驱动）：USE_MOCK_CHAT=true 时消息流全量 mock（形态族覆盖）、onSend 本地闭环；
+	// =false 时 onSend 走**真端点** POST /api/v1/chat/messages（AG6 接线，封装见 utils/chat_api.uts）。
+
+	let draft = ref('') // AI 输入草稿
+	// 2026-10-30（P2 D-10）：最近一次历史回填是否失败（区分「没有历史」与「没拉到」）
+	let historyFailed = ref(false)
+	// attachOpen 上收 shell_state.aiAttachOpen（返回键优先级协同 shell 浮层；B10 P2）
+
+	let messages = ref<Array<AiMsg>>([])
+	let scrollInto = ref('') // scroll-view 锚点滚动（新消息自动落底）
+	let replyKindIdx = ref(0) // AI 回复形态轮换指针
+	const REPLY_KIND_ROTATION = ['bubble', 'plain', 'cards', 'confirm']
+
+	// 2026-10-30（P2 D-9）原口径，2026-10-31 收进 composable：本轮请求所属气泡 id（0=无在途）+
+	// 本轮预览/工具文案副本，只有 id 匹配的气泡能读到。共享的 `chatStreamText` 是**全 App 一份**，
+	// 直读它会让列表里任何一条残留 typing 气泡显示本轮文本（"两条回复一起打字"）。
+	const stream = new ChatStreamBinding()
+
+	// ── 演示开关（2026-09-23 补真身；2026-09-25 **接线完成后翻转为 false**）────────────
+	// 头注释自 08-01 起声称有本常量，但代码里**从未存在**（seedMockMessages/onSend/
+	// onConfirmAction 全部无条件走 mock）→ 后果：① 无法通过配置关闭 ② 用户无从得知是演示
+	// 数据，会把样张当成已上线的智能体（见 docs/决策台账.md §7.1）。
+	//
+	// **2026-09-25（功能修复波 · Agent 接线）**：客户端真端点已接（onSend → chat_api
+	// sendChatMessage → POST /api/v1/chat/messages → 后端反代 agent 服务），故默认值翻转为
+	// **false**（＝生产口径）。`true` 仅供演示/录屏（此时页面顶部显示「内测演示数据」标注）。
+	// **门禁锁定**：`audit_harness client` 断言本常量为 false —— 防止"接线回退成占位"。
+	// 为什么 mock 分支**未删除**：其形态族（cards/confirm）后端 agent 尚未产出，删掉会让这些
+	// 形态的模板成为**不可达 UI**（正是本仓已判定为"缺口"的那类）；保留为演示设施而非产品路径。
+	const USE_MOCK_CHAT: boolean = false
+
+	// 会话 ID（AG6）：后端按 conversation_id 存 thread（多轮上下文靠它，丢了就每轮失忆）；
+	// 落盘以便重启后接续同一会话。
+	// 2026-10-11：键改为从 chat_api 导入（**单一来源**）——该键的"陈旧会话自愈"逻辑在
+	// chat_api 内部（CHAT_003 ⇒ 清键 + 新会话重发），两处各写字符串迟早漂移。
+	const CHAT_CONV_KEY = CHAT_CONV_STORAGE_KEY
+	let conversationId = ref('')
+
+	// mock 相册图（static/images 现有资产）
+	const MOCK_IMGS = ['/static/images/img2_345.png', '/static/images/img2_140.png', '/static/images/img2_256.png', '/static/images/img2_74.png']
+
+	// AI 回复语料池（mock：B2 接入后删除；uts 数组单型约束，标题与要点拆两常量）
+	const MOCK_PLAIN_TITLE = '你 8 月的记忆脉络'
+	const MOCK_PLAIN_BULLETS = ['记录高峰在月末，共 23 条', '「湖边」是本月最强的记忆锚点', '语音占比 41%，转写准确率 98%']
+	const MOCK_CARD_TITLES = ['清晨的湖边', '实验室的深夜', '桂花树下', '周末的菜场']
+
+	// ── mock 对话样张（onLoad 注入，覆盖画布 ai_reply 板 ①②③④⑥ + 用户长文）──
+	function seedMockMessages(): void {
+		const seq: Array<AiMsg> = [
+			mkUser('那天天气怎么样？'),
+			mkAi('bubble', '那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。', [new MemCard('清晨的湖边，风很轻', '8月28日 · 照片', MOCK_IMGS[0])], [], [], []),
+			mkUser('帮我回顾一下这个月'),
+			mkAi('plain', MOCK_PLAIN_TITLE, [], ['那周最开心的事', '生成 8 月周报'], MOCK_PLAIN_BULLETS, []),
+			mkAi('cards', '', [], ['看看那天还在做什么'], [], [new MemCard('清晨的湖边', '8月28日 · 照片', MOCK_IMGS[0]), new MemCard('实验室的深夜', '8月22日 · 文字', MOCK_IMGS[1])]),
+			mkUser('这段语音转写的内容帮我整理一下：那天我们在湖边走了很久，聊到奶奶种的那棵桂花树，说秋天满院子都是甜香，还想约着国庆回去看看，把院子重新收拾一遍，拍照留个纪念。'),
+			mkAi('bubble', '奶奶总说，老屋门口的那棵桂花树是她嫁过来那年种下的。每到秋天，满院子都是甜香，她总在树下摆一张小桌择菜，跟路过邻居打招呼。你上次回去是三年前的秋天，还拍了满地金黄的落花——要不要把这段整理成一条「桂花树」主题记忆？', [], [], [], []),
+			mkAi('confirm', '要把「湖边晨雾」加入 8 月时间胶囊吗？', [], [], [], [])
+		]
+		messages.value = seq
+	}
+
+	// 2026-10-31（走查 5.x / D-3）：`mkUser` / `mkAi` 工厂已移入 `utils/ai_messages.uts`
+	// （消息模型与工厂同处一模块，id 单调发放才不会跨管线重复）。
+
+	// ── 发送闭环（mock）：用户消息 → typing → 1.8s 后 AI 回复（形态轮换）──
+	function onSend(): void {
+		const t = draft.value.trim()
+		if (t == '') {
+			return
+		}
+		if (chatStreamActive.value) {
+			// 上一轮还在生成：**不并发发第二条**。流式预览走模块级共享 ref（chatStreamText），
+			// 两轮流同时进行会互相串写，界面会出现"两段回复夹杂"这种最难解释的现象。
+			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+			return
+		}
+		// 2026-10-30（P2 D-7）：清草稿上收到这里——chips 直接发送时不清用户草稿。
+		draft.value = ''
+		sendNow(t)
+	}
+
+	/**
+	 * 真正发出（调用方已判空、判在途、按语义决定是否清草稿）。
+	 * 2026-10-30（P2 D-7 已裁定「chips 直接发送」）：抽出来是为了让 chips 走同一条发送链，
+	 * 但**不经过 draft** —— 原实现 `draft.value = c; onSend()` 会把用户正在写的草稿
+	 * 覆盖成 chip 文案后发出去（草稿永久丢失），生成中还会因上游早退而把 chip 文案
+	 * 留在输入框里（看起来像"点了没反应，但输入框多了几个字"）。
+	 */
+	function sendNow(t: string): void {
+		if (USE_MOCK_CHAT === false) {
+			// 真端点（AG6）：本地即时上屏用户消息 + typing 占位，等 POST /api/v1/chat/messages
+			// （后端 AG5 已实现：JWT→可信 user_id、反代 Agent、失败返回 502/504 而**不伪造回复**）
+			// 2026-10-30（P2 D-9）：先剔除上一轮残留的 typing 气泡（断连/取消/重进页面后
+			// 仍留在列表里的"正在翻你的回忆"），再上屏本轮的两条。
+			clearStaleTyping()
+			const u2 = mkUser(t)
+			const tp2 = mkAi('typing', TYPING_TEXT, [], [], [], [])
+			messages.value.push(u2)
+			messages.value.push(tp2)
+			scrollToBottom(tp2.id)
+			const tpId = tp2.id
+			// 2026-10-30（P2 D-9）：本轮预览只绑定这条气泡；模块级 ref 一律先清空（防上一轮尾句闪现）
+			stream.begin(tpId)
+			chatStreamText.value = ''
+			chatStreamTool.value = ''
+			// 2026-10-30（P1-23）：清理逻辑抽成 onStreamDone，并**同时挂 then 与 catch**。
+			// 原实现只有 .then —— 一旦 sendChatMessage reject（`uni.request` 同步抛错、
+			// 分帧解码抛错、watchdog 之外的异常路径），then 不执行 ⇒ typing 气泡
+			// 「正在翻你的回忆」永久滞留、终稿永不追加，用户只看到一次 toast 后永远卡住。
+			const onStreamDone = (r: ChatSendResult | null): void => {
+				messages.value = removeMessageById(messages.value, tpId)
+				// 预览用完即清：它是**模块级共享**状态，留着会让下一轮的占位气泡先闪出上一轮的尾句
+				chatStreamText.value = ''
+				// 2026-10-30（P2 D-9）：解除本轮消息级绑定 —— 之后任何迟到帧都不再写进气泡
+				stream.release(tpId)
+				if (r == null) {
+					// **不伪造回复**（项目铁律）：不编假 AI 回复，但必须给用户可操作出口——
+					// 插入「发送失败 · 点此重试」卡（2026-10-07 加固），保留原文一键重发；
+					// 失败原因仍由 api 层全局 toast（带后端 message）与 Sentry 承担
+					const failMsg = mkAi('failed', t, [], [], [], [])
+					messages.value.push(failMsg)
+					scrollToBottom(failMsg.id)
+					// 2026-10-30（P1-25）：**断连不等于没存上**。后端 A-1 改成「工作线程 + 队列」后，
+					// 客户端断连/超时并不阻止回复落库；而本组件 v-show 常驻、不会重跑 onMounted
+					// ⇒ 真机上只能杀 App 重启才看得到那条回复（还和提问一起重复出现）。
+					// 这里延时补拉一次历史，按文本去重合并；若确实补到了，就把失败卡撤掉。
+					if (conversationId.value != '') {
+						const before = messages.value.length
+						setTimeout((): void => {
+							fetchChatHistory(conversationId.value).then((items: Array<ChatHistoryItem> | null) => {
+								if (items == null || items.length == 0) {
+									return
+								}
+								applyHistory(items, true)
+								if (messages.value.length > before) {
+									messages.value = removeMessageById(messages.value, failMsg.id)
+									console.log('[yishu] 断连补拉成功：已用服务端回复替换失败卡')
+								}
+							})
+						}, 3000)
+					}
+					return
+				}
+				if (r.conversationId != '') {
+					conversationId.value = r.conversationId
+					uni.setStorageSync(CHAT_CONV_KEY, r.conversationId)
+				}
+				const ai = mkAi(r.reply.kind, r.reply.text, [], r.reply.chips, r.reply.bullets, toMemCards(r.reply.cards))
+				messages.value.push(ai)
+				scrollToBottom(ai.id)
+			}
+			sendChatMessage(conversationId.value, t).then((r: ChatSendResult | null) => {
+				onStreamDone(r)
+			}).catch((e: any) => {
+				console.error('[yishu] chat stream rejected: ' + (e != null && e.message != null ? e.message : 'unknown'))
+				uni.showToast({ title: '网络异常，请重试', icon: 'none' })
+				onStreamDone(null)
+			})
+			return
+		}
+		// 2026-10-30（P2 D-7）：草稿已在 onSend 清空，此处不再重复清（chips/重试路径直接走本函数）
+		const u = mkUser(t)
+		// 2026-10-11 静态审查 A4：补齐 6 参（签名 (kind,text,cards,chips,bullets,cardList)）。
+		// 原为 3 参调用——当前 USE_MOCK_CHAT=false 恒不可达，但一旦翻回 true，
+		// 后四参为 undefined，模板 `m.cards.length` 类读取会崩（且 UTS 严格模式下
+		// 参数个数不符属编译期错误，是潜伏的"翻转即炸"）。
+		const tp = mkAi('typing', TYPING_TEXT, [], [], [], [])
+		messages.value.push(u)
+		messages.value.push(tp)
+		scrollToBottom(tp.id)
+		const replyId = tp.id
+		// 2026-10-30（P2 D-9）：mock 分支同样只让这条气泡参与预览渲染
+		stream.begin(replyId)
+		const userId = u.id
+		setTimeout(() => {
+			messages.value = removeMessageById(messages.value, replyId)
+			// 2026-10-30（P2 D-9）：占位气泡撤掉即解除绑定
+			stream.release(replyId)
+			const kind = REPLY_KIND_ROTATION[replyKindIdx.value % REPLY_KIND_ROTATION.length]
+			replyKindIdx.value = replyKindIdx.value + 1
+			const ai = buildMockReply(kind, userId)
+			messages.value.push(ai)
+			scrollToBottom(ai.id)
+		}, 1800)
+	}
+
+	// 重试发送（2026-10-07 加固）：撤掉失败卡 → 用原文走真端点重发（复用发送链）
+	function onRetry(m: AiMsg): void {
+		const text = m.text
+		if (text == '') {
+			return
+		}
+		if (chatStreamActive.value) {
+			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+			return
+		}
+		messages.value = removeMessageById(messages.value, m.id)
+		// 2026-10-30（P2 D-7 同族）：重试**不经过草稿**——原实现 `draft.value = text; onSend()`
+		// 会把用户此刻正在写的新内容覆盖掉（且失败卡可能已在列表里放很久）。
+		sendNow(text)
+	}
+
+	// mock 回复生成器（B2 接线后删除）
+	function buildMockReply(kind: string, _userId: number): AiMsg {
+		if (kind == 'plain') {
+			return mkAi('plain', MOCK_PLAIN_TITLE, [], ['那周最开心的事', '生成 9 月计划'], MOCK_PLAIN_BULLETS, [])
+		}
+		if (kind == 'cards') {
+			// 2026-10-31：原用 `nextId` 取值（已随消息模型移出本组件）⇒ 改用轮换指针，语义等价
+			const i = replyKindIdx.value % MOCK_CARD_TITLES.length
+			return mkAi('cards', '', [], ['看看那天还在做什么'], [], [new MemCard(MOCK_CARD_TITLES[i], '8月 · 照片', MOCK_IMGS[i % MOCK_IMGS.length]), new MemCard(MOCK_CARD_TITLES[(i + 1) % MOCK_CARD_TITLES.length], '8月 · 文字', MOCK_IMGS[(i + 1) % MOCK_IMGS.length])])
+		}
+		if (kind == 'confirm') {
+			return mkAi('confirm', '要把这条记忆加入本月时间胶囊吗？', [], [], [], [])
+		}
+		return mkAi('bubble', '翻到了——那天你拍了 4 张照片、留了 1 段 37 秒的语音，都在「湖边」这个主题下面。想听那段语音的转写吗？', [], [], [], [])
+	}
+
+	// 2026-10-31（走查 5.x / D-3 · D-9）：`toMemCards` 随消息模型移入 `utils/ai_messages.uts`，
+	// `typingDisplay` / `toolLabel` 进 `composables/useChatStream.uts`，`removeById` / `clearStaleTyping`
+	// 改为 ai_messages 的纯函数（返回新数组，调用方显式赋值 —— 原实现就地改 messages.value，
+	// 与"合并历史"同处一段逻辑时极易互相覆盖）。
+
+	/** typing 气泡文案（薄包装：口径与实现都在 composable，组件只转发，防两套规则漂移） */
+	function typingDisplay(m: AiMsg): string {
+		return stream.displayFor(m)
+	}
+
+	/** 剔除残留 typing 气泡（请求结束后它们不再代表任何真实状态，留着会误显"还在生成"） */
+	function clearStaleTyping(): void {
+		const src = messages.value
+		const after = dropTypingMessages(src)
+		if (after.length != src.length) {
+			console.log('[yishu] 清理残留 typing 气泡 ' + (src.length - after.length).toString() + ' 条')
+			messages.value = after
+		}
+	}
+
+	// 锚点滚动：scroll-into-view 指向最新消息 id（不支持时静默无滚动，不阻塞）
+	//
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-8）：**只在"锚点未变"时才清空重设**。
+	// 原实现无条件 `=''` → 50ms 后设值 ⇒ **每次滚动都两轮布局**，而流式期间滚动很频繁。
+	// 而"同值不触发"实际只发生在**同一锚点重复滚**时（打字机气泡长高、消息 id 不变）；
+	// 锚点变化（新消息上屏）时直接赋值必然触发，无需清空。
+	function scrollToBottom(id: number): void {
+		const target = 'msg-' + id
+		if (scrollInto.value == target) {
+			// 同锚点重复滚：同值不触发 ⇒ 必须"先清再设"（两轮布局不可避免，但已限在此分支）
+			scrollInto.value = ''
+			setTimeout((): void => {
+				scrollInto.value = target
+			}, 50)
+			return
+		}
+		// 锚点变化：一次赋值即可（省掉清空与 50ms 延迟）
+		scrollInto.value = target
+	}
+
+	// 流式预览增长时跟随滚动（2026-10-11 交互审查 B5）：typing 气泡在逐字长高，而滚动
+	// 锚点 id 不变 ⇒ 不主动滚，长回复的字会涨到屏幕外（用户感觉"字停住了"）。
+	// 节流 400ms：preview 帧可达每秒数十帧，无节流会让 scroll-into-view 高频抖动。
+	let lastStreamScrollAt = 0
+	watch((): string => chatStreamText.value, (): void => {
+		// 2026-10-30（P2 D-9）：把模块级预览**拷进本轮气泡的副本**（消息级绑定）
+		stream.sync()
+		const now = Date.now()
+		if (now - lastStreamScrollAt < 400) {
+			return
+		}
+		lastStreamScrollAt = now
+		const n = messages.value.length
+		if (n > 0) {
+			scrollToBottom(messages.value[n - 1].id)
+		}
+	})
+	// 2026-10-30（P2 D-9）：工具阶段只有 `tool` 帧会变（正文未到时 chatStreamText 不变），
+	// 单靠上面的 watch 会漏掉"正在翻你的记忆…"这一步。
+	watch((): string => chatStreamTool.value, (): void => {
+		stream.sync()
+	})
+
+	// chips 点击 = 快捷追问**直接发送**该文案（2026-10-30 · P2 D-7 已裁定）
+	// 原实现 `draft.value = c; onSend()`：把用户正在写的草稿覆盖成 chip 文案后发出去，
+	// 生成中还会因 onSend 早退而把 chip 文案**留在输入框里**（像"点了没反应"）。
+	function onChipTap(c: string): void {
+		const t = c.trim()
+		if (t == '') {
+			return
+		}
+		if (chatStreamActive.value) {
+			uni.showToast({ title: '正在生成回复，稍等一下', icon: 'none', duration: 1500 })
+			return
+		}
+		sendNow(t)
+	}
+
+	// 行动确认卡按钮（mock：B2 接线后改 POST 确认接口）
+	function onConfirmAction(m: AiMsg, ok: boolean): void {
+		if (USE_MOCK_CHAT === false) {
+			// 措辞更正（AG6）：智能体**已接入**，未实现的是"确认卡"这条交互流程本身
+			// （后端无 chat 域确认端点；确认卡目前只由 mock 生成，见文件头形态④）。
+			// 原话"智能体尚未接入"会误导用户以为整个 AI 不可用——失实文案与失实注释同罪。
+			uni.showToast({ title: '该操作暂未开放（内测）', icon: 'none', duration: 2500 })
+			return
+		}
+		messages.value = removeMessageById(messages.value, m.id)
+		if (ok) {
+			const ai = mkAi('bubble', '好，已把「湖边晨雾」收进 8 月时间胶囊。', [new MemCard('8 月时间胶囊', '已收录 12 条记忆', MOCK_IMGS[2])], [], [], [])
+			messages.value.push(ai)
+			scrollToBottom(ai.id)
+		}
+	}
+
+	// 附件面板壳化协同（B10 P2）：开关经 shell_state 共享 ref（返回键优先级由 shell 消费）
+	function attachShown(): boolean {
+		return aiAttachOpen.value
+	}
+	function openAttach(): void {
+		aiAttachOpen.value = true
+	}
+	function closeAttach(): void {
+		aiAttachOpen.value = false
+	}
+	/**
+	 * 附件入口行（2026-10-31 · 走查 5.x / D-12）：**不再是「即将上线」的一行 toast**。
+	 *
+	 * 实测边界（这次核过代码，不是猜）：
+	 *   · 客户端 `sendChatMessage(conversationId, content)` 只有两个参数 —— **没有 attachments**；
+	 *     该封装已顶到结构基线（`utils/chat_api.uts` 813 行），本次不可改。
+	 *   · 后端 `ChatAttachmentIn` 存在（kind/ref），但 docstring 写明「MVP 仅记录，不解析内容」
+	 *     ⇒ 即便把附件传上去，AI 也读不到图片/文件内容，"作为上下文发送"是假承诺。
+	 * 故按"灰显 + 行尾待接入 + 点击给具体说明"处理：告诉用户**为什么**不能用、以及现在能怎么替代。
+	 */
+	function onAttachEntry(name: string): void {
+		closeAttach()
+		let how = ''
+		if (name == '文件') {
+			how = '文件附件需要「文件选择器 + 上传 + 解析」三段链路，当前客户端与后端都未接入，AI 也读不到文件内容。'
+		} else {
+			how = '链接附件需要在服务端抓取网页正文再喂给 AI（抓取工具已存在，但对话请求里没有传附件的通道），当前未接入。'
+		}
+		uni.showModal({
+			title: name + '附件暂未接入',
+			content: how + '\n\n替代做法：把要点记成一条记忆（底部 + 号），再在这里提问——我能检索到你刚记的内容。',
+			showCancel: false,
+			confirmText: '知道了'
+		})
+	}
+
+
+	// RecordSheet 保存成功回调（AI 页无可刷新数据，占位收口）
+	function onRecordSaved(): void {
+	}
+
+	// ── B1 上下文预填接收端（detail 页 askAI 携带当前记忆上下文跳入）──
+	// 主控裁决（2026-09-08）：统一走 detail.uvue askAI 的 storage 三键契约（含 content_id 供对话域后续用）：
+	//   yishu_ai_context_title（记忆标题）/ yishu_ai_context_body（正文全文）/ yishu_ai_context_content_id（内容 id）
+	// 读后即清防陈旧残留；url query 通道（memTitle/memSummary）保留作 manage→theme-detail 同族先例兼容
+	const PREFILL_KEY_TITLE = 'memTitle'
+	const PREFILL_KEY_SUMMARY = 'memSummary'
+	const PREFILL_CTX_TITLE = 'yishu_ai_context_title'
+	const PREFILL_CTX_BODY = 'yishu_ai_context_body'
+	const PREFILL_CTX_CONTENT_ID = 'yishu_ai_context_content_id'
+	const PREFILL_MAX_LEN = 200
+
+	function prefillDraftFrom(title: string, summary: string): void {
+		// 参数化签名（B10 P2：url query 解参上收 shell onLoad，双 prop 直传）；
+		// 全空时仍走 storage 三键兜底（detail askAI 主通道，与来源无关）
+		if (title == '' && summary == '') {
+			// storage 三键兜底（detail.uvue askAI 契约，读后即清；JSON.parse 先例 api.uts:530）
+			try {
+				const ctxTitle = uni.getStorageSync(PREFILL_CTX_TITLE)
+				const ctxBody = uni.getStorageSync(PREFILL_CTX_BODY)
+				const ctxCid = uni.getStorageSync(PREFILL_CTX_CONTENT_ID)
+				const hasCtx = (ctxTitle != null && ctxTitle != '') || (ctxBody != null && ctxBody != '')
+					|| (ctxCid != null && ctxCid != '')
+				if (hasCtx) {
+					title = (ctxTitle != null ? (ctxTitle as string) : '')
+					summary = (ctxBody != null ? (ctxBody as string) : '')
+					// content_id 暂不入对话 payload（B2 对话域接线时用），先清防残留
+					uni.removeStorageSync(PREFILL_CTX_TITLE)
+					uni.removeStorageSync(PREFILL_CTX_BODY)
+					uni.removeStorageSync(PREFILL_CTX_CONTENT_ID)
+				}
+			} catch (e) {
+				console.log('[dbg-ai] prefill storage parse failed: ' + e)
+			}
+		}
+		if (title == '' && summary == '') {
+			return
+		}
+		let text = ''
+		if (title != '') {
+			text = '关于「' + title + '」'
+			if (summary != '') {
+				text = text + '：' + summary
+			}
+		} else {
+			text = summary
+		}
+		if (text.length > PREFILL_MAX_LEN) {
+			text = text.substring(0, PREFILL_MAX_LEN)
+		}
+		draft.value = text
+	}
+
+	// B10 方案A 组件契约（P2）：options（?memTitle=）与 RecordSheet @saved 上收 shell——
+	// prefillTitle/prefillSummary 承接 url query 通道（shell 解参直传；三键 storage 通道本组件直读）；
+	// savedSeq 每次记录保存成功 ++（原 onRecordSaved 占位收口语义不变）。
+	const props = defineProps({
+		prefillTitle: { type: String, default: '' },
+		prefillSummary: { type: String, default: '' },
+		savedSeq: { type: Number, default: 0 },
+		// RC-10（2026-10-14）：shell 每次切到 ai tab 时 ++ —— 回壳改走**栈内回退**后本组件
+		// 不再重挂，上下文预填需靠这条"切到本 tab"广播来重读（见下方 watch）。
+		shownSeq: { type: Number, default: 0 }
+	})
+	/**
+	 * 2026-10-30（P1-26）原口径，2026-10-31 收敛：历史回填的统一入口（onMounted 首次 + 断连后补拉共用）。
+	 *
+	 * 原实现在本组件里**自己拼一遍** `AiMsg`（含 title/bullets 切分、cards 落槽），与流式的
+	 * `chat_api.parseReply` 是两套规则 ⇒ 「当场看有要点、回填后没有」（D-3/D-4）会反复回归。
+	 * 现：拼装与合并都在 `utils/ai_messages.uts`（`buildHistoryMessages` / `mergeHistory`），
+	 * 本函数只负责"什么时候整表装载、什么时候合并、装完要不要落底"。
+	 */
+	function applyHistory(items: Array<ChatHistoryItem>, scrollAfter: boolean): void {
+		const incoming = buildHistoryMessages(items)
+		if (messages.value.length == 0) {
+			messages.value = incoming
+			if (scrollAfter && incoming.length > 0) {
+				scrollToBottom(incoming[incoming.length - 1].id)
+			}
+			return
+		}
+		const merged = mergeHistory(messages.value, incoming)
+		if (merged.length != messages.value.length) {
+			console.log('[yishu] 历史补拉：列表 ' + messages.value.length.toString() + ' → ' + merged.length.toString() + ' 条（未覆盖本地）')
+		}
+		messages.value = merged
+	}
+
+	// ── 2026-10-31（走查 5.x / D-8）：记忆卡 → 内容详情 ──────────────────────────
+	// 根因：卡片来自 agent `save_memory` 的工具结果投影（`output_validator.build_reply_meta`），
+	// 字段只有 title/meta/img/topics —— **刻意不带 memory_id**（id 属内部标识，不下发给客户端）。
+	// 所以"点卡片直达详情"没有现成的 id 可用，只能**用卡片标题反查真实内容**：
+	//   ① 快路 `GET /contents?limit=50`（一次轻请求，~百毫秒）：卡片是刚 save_memory 的产物，
+	//      必然落在最近内容里；命中后用 content_id 跳详情。
+	//   ② 慢路 `POST /search`（含 LLM 改写+精排，实测数秒）：最近 50 条里没有时兜底（老会话里的卡）。
+	// 两条路都要求**文本命中**（卡片标题是正文前 22 字 + 省略号）：宁可如实说"没找到"，
+	// 也不把用户带到一条不相干的记忆上——跳错详情比不跳更糟。
+	function normalizeForMatch(s: string): string {
+		const out: Array<string> = []
+		for (let i = 0; i < s.length; i++) {
+			const ch = s.substring(i, i + 1)
+			if (ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t') {
+				out.push(ch)
+			}
+		}
+		return out.join('')
+	}
+	/** 卡片标题（可能带截断省略号）是否是命中项正文的前缀/子串 */
+	function matchesCardText(hitText: string, cardTitle: string): boolean {
+		let q = normalizeForMatch(cardTitle)
+		if (q.endsWith('…')) {
+			q = q.substring(0, q.length - 1)
+		}
+		if (q == '') {
+			return false
+		}
+		return normalizeForMatch(hitText).indexOf(q) >= 0
+	}
+	/** 在命中列表里按文本定位 content_id（空串 = 没找到） */
+	function findContentId(hits: Array<SearchHitItem>, cardTitle: string): string {
+		for (let i = 0; i < hits.length; i++) {
+			if (hits[i].contentId != '' && matchesCardText(hits[i].text, cardTitle)) {
+				return hits[i].contentId
+			}
+		}
+		return ''
+	}
+	function openContentDetail(contentId: string): void {
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + contentId })
+	}
+	function onCardTap(cd: MemCard): void {
+		const q = cd.title.trim()
+		if (q == '') {
+			// 空标题的卡（正文被 agent 跳过）没有可检索依据 —— 如实说明，不猜
+			uni.showToast({ title: '这张卡片没有可检索的标题，暂时打不开', icon: 'none', duration: 2000 })
+			return
+		}
+		uni.showLoading({ title: '正在打开这条记忆…' })
+		fetchRecentSample(50, []).then((sample: RecentSample | null) => {
+			if (sample != null) {
+				const id = findContentId(sample.items, q)
+				if (id != '') {
+					uni.hideLoading()
+					openContentDetail(id)
+					return
+				}
+			} else {
+				// 取数失败（api 层已 toast）⇒ 慢路同样会失败，不再叠加一次请求与提示
+				uni.hideLoading()
+				return
+			}
+			searchText(q, 5, []).then((o: SearchOutcome | null) => {
+				uni.hideLoading()
+				if (o == null) {
+					return
+				}
+				const id2 = findContentId(o.hits, q)
+				if (id2 == '') {
+					uni.showToast({ title: '没找到这条记忆的详情（可能已删除，或还在建索引）', icon: 'none', duration: 2500 })
+					return
+				}
+				openContentDetail(id2)
+			})
+		})
+	}
+
+	/**
+	 * 2026-10-30（P2 D-10）：历史加载失败后的重试入口（复用 applyHistory 合并口径，不覆盖本地）。
+	 */
+	function retryHistory(): void {
+		const cid = conversationId.value
+		if (cid == '') {
+			historyFailed.value = false
+			return
+		}
+		uni.showLoading({ title: '重新加载…' })
+		fetchChatHistory(cid).then((items: Array<ChatHistoryItem> | null) => {
+			uni.hideLoading()
+			historyFailed.value = chatHistoryFetchFailed()
+			if (items == null || items.length == 0) {
+				if (!historyFailed.value) {
+					uni.showToast({ title: '还没有历史记录', icon: 'none' })
+				}
+				return
+			}
+			applyHistory(items, true)
+		})
+	}
+
+	onMounted((): void => {
+		// 2026-10-30（P2 D-13）：挂载即无条件复位（跨页残留 true 会让附件面板在别的 tab 下"隐形存在"，
+		// 且 shell 的返回键优先级判断会把它当成本页浮层），配合 onUnmounted 的对称复位。
+		aiAttachOpen.value = false // 原页级初值：进组件即收起
+		if (USE_MOCK_CHAT) {
+			seedMockMessages()
+		} else {
+			// 接续上次会话（多轮上下文）；空串 ⇒ 首轮由后端新建会话
+			const saved = uni.getStorageSync(CHAT_CONV_KEY) as string
+			if (saved != null && saved != '') {
+				conversationId.value = saved
+				// 2026-09-25（接线补完）：**回填历史**。后端 docstring 明确要求"客户端进入会话时
+				// 回填"，而此前只恢复了会话 ID ⇒ 重启后会话虽接续、界面却空白（像丢了历史）。
+				// 失败/空保持空列表 —— **不伪造历史**（同 onSend 的失败口径）。
+				// 2026-10-30（P2 D-10）：失败信号来自模块级标记（`fetchChatHistory` 是 resolve-only，
+				// 失败给 null 与"没有历史"同态；`<script setup>` 顶层状态随实例销毁，只有 uts 模块能跨实例）
+				fetchChatHistory(saved).then((items: Array<ChatHistoryItem> | null) => {
+					historyFailed.value = chatHistoryFetchFailed()
+					if (items == null || items.length == 0) {
+						return
+					}
+					applyHistory(items, true)
+				})
+			}
+		}
+		prefillDraftFrom(props.prefillTitle, props.prefillSummary)
+	})
+	// 2026-10-30（P1-24）：离页**必须中断**流式请求。
+	// 原实现无 onUnmounted ⇒ 页面被销毁后连接仍在收帧、模块级 chatStreamText 仍被写，
+	// 而 chatStreamActive 只有 finish 会复位，而 finish 依赖那次请求的闭包还活着。
+	// 重进页面后每次发送都只弹「正在生成回复，稍等一下」= 永久卡死。
+	onUnmounted((): void => {
+		cancelChatStream()
+		// 2026-10-30（P2 D-9）：解除消息级预览绑定（组件已走，迟到帧不许再写任何气泡）
+		stream.reset()
+		// 2026-10-30（P2 D-13）：`aiAttachOpen` 是 shell_state 里的**跨页共享** ref，
+		// 而本组件在壳内是 v-show 常驻、重挂时机不确定 ⇒ 卸载也必须无条件复位，
+		// 不能只依赖 shell 的「切 tab 时复位」这一条路径（壳被 reLaunch 重建时那条路径不经过）。
+		aiAttachOpen.value = false
+	})
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
+	})
+	// RC-10 配套（2026-10-14 · 台账 §4.20 批次 5）：切到本 tab 时重读上下文预填三键
+	// （由 `detail.askAI` 写入）。为什么必须：回壳由 redirectTo（重建整个壳、本组件随之重挂）
+	// 改为**栈内回退**后，本组件不会再挂载 ⇒ 仅靠 onMounted 里那次调用会**漏掉预填**。
+	// `prefillDraftFrom('','')` 在无存储时早退，故本 watch 幂等（不会覆盖用户草稿）。
+	watch((): number => props.shownSeq, (): void => {
+		prefillDraftFrom('', '')
+	})
+</script>
+
+<style>
+	@import '@/styles/tab-ai.css';
+</style>

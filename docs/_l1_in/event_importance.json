@@ -1,0 +1,19 @@
+{
+  "id": "event_importance",
+  "label": "事件重要性",
+  "category": "活跃主题与兴趣",
+  "current_values": [
+    "高",
+    "中",
+    "低"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "N",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "回响候选排序依据",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

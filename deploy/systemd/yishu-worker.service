@@ -1,0 +1,39 @@
+# 忆述光华 · RQ worker 进程（S1 卡）
+# ⚠️ 模板：`@DEPLOY_ROOT@` / `@RUN_USER@` 由 deploy/scripts/deploy_one.sh 渲染后安装。
+#
+# 队列与权重：`python -m app.workers.worker` 默认监听 high,low 两个队列（backend/app/workers/worker.py:43）。
+# Linux 走 RQ 默认 Worker（fork）+ `work(with_scheduler=True)`——
+# **scheduler 不可省**：RQ Retry 的重投任务先进 ScheduledJobRegistry，只有 scheduler 会把它搬回队列；
+# 缺它则"重试永不真正发生"（worker.py:12-15 的 A2/P0-2 修复）。
+# （Windows 开发机的无 scheduler 形态仅本地联调用，生产 Linux 必须用本 unit。）
+
+[Unit]
+Description=忆述光华 RQ worker (high,low + scheduler)
+Documentation=file://@DEPLOY_ROOT@/deploy/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@RUN_USER@
+Group=@RUN_USER@
+WorkingDirectory=@DEPLOY_ROOT@/backend
+EnvironmentFile=@DEPLOY_ROOT@/deploy/.env
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=@DEPLOY_ROOT@/backend/.venv/bin/python -m app.workers.worker
+
+Restart=always
+RestartSec=5
+# 管线任务可能较长（VAD 分段转写 / SetFit 攒批），给足优雅退出时间
+TimeoutStopSec=120
+KillSignal=SIGTERM
+
+StandardOutput=append:@DEPLOY_ROOT@/deploy/logs/worker.log
+StandardError=append:@DEPLOY_ROOT@/deploy/logs/worker.log
+
+# worker 常驻 SetFit + BGE-M3 + SenseVoice（~3.3G，核算书 §2），上限高于 API 侧
+MemoryHigh=5G
+
+[Install]
+WantedBy=multi-user.target

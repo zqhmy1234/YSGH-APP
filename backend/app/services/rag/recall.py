@@ -1,0 +1,271 @@
+"""RAG 检索召回与结果组装（RET-003 融合 / P0-A 双路 / RET-016 溯源）
+
+拆包自 services/rag.py（F6，2026-08-27）：
+  - _search_semaphore：搜索共享并发信号量（text/image 两入口共用，P2-01）
+  - _merge_recalls：多路召回去重合并（**同量纲**多路，mixed 双路融合）
+  - _fuse_recalls_rrf：**跨量纲**多路 RRF 融合（2026-11-01 跨模态 A 方案）
+  - _mixed_recalls：mixed 意图召回（照片路 + 全量路，C 方案）
+  - _boost_exact_matches：关键词精确命中提升（字面命中压过稠密噪声）
+  - _assemble_hits：溯源组装 + 用户隔离回填真实内容 + 事件级归因
+"""
+from __future__ import annotations
+
+import logging
+import re
+import threading
+
+from sqlalchemy import select
+
+from app.db.models import Content, Event, EventItem
+from app.schemas.search import SearchHit
+from app.services.vector_store import CONTENT_TYPE_PHOTO
+
+logger = logging.getLogger("yishu.rag")
+
+# P2-01 并发上限：搜索保留同步（P95<3s 门禁依赖本地推理），但用信号量限制并发
+# 推理数，防止 BGE-M3(1.2GB)/reranker 同时加载打满内存、线程池被推理占满。
+# 文本搜索（__init__.search）与以图搜图（image.search_by_image）共享此信号量。
+SEARCH_CONCURRENCY = 4
+_search_semaphore = threading.BoundedSemaphore(SEARCH_CONCURRENCY)
+
+
+def _merge_recalls(recalls: list[list[dict]], limit: int = 50) -> list[dict]:
+    """多路召回合并：按 content_id 去重保留最高分（mixed 双路融合用）
+
+    ⚠️ 仅适用于**同一量纲**的多路（都是 `store.search` 的 RRF 融合分）。
+    跨量纲（image_vec 余弦 ~0.5-0.7 vs 文本 RRF ~0.016）请用 `_fuse_recalls_rrf`。
+    """
+    merged: dict[str, dict] = {}
+    for hits in recalls:
+        for hit in hits:
+            cid = hit["content_id"]
+            if cid not in merged or hit["score"] > merged[cid]["score"]:
+                merged[cid] = hit
+    return sorted(merged.values(), key=lambda x: x["score"], reverse=True)[:limit]
+
+
+def _fuse_recalls_rrf(
+    recalls: list[list[dict]],
+    limit: int = 50,
+    k: int = 60,
+    channels: list[str] | None = None,
+) -> list[dict]:
+    """**跨量纲**多路 RRF 融合（2026-11-01 跨模态 A 方案）
+
+    为什么要单独一个函数（而不是复用 `_merge_recalls` 的"分数取最大"）：
+    `image_vec` 以图搜图返回的是**余弦相似度**（0.5~0.7 量级），
+    `store.search` 返回的是**RRF 融合分**（1/(60+rank) 量级，~0.016）。
+    两者直接比大小 ⇒ 图片路永远赢、文本路永远挤不进候选窗口，
+    "双路保底"会退化成和改动前一样的老行为（且**看不出坏了**：结果照常返回）。
+
+    RRF 只看名次不看原始分，天然免疫量纲差异（这也是 Qdrant 混合检索用它的原因）。
+    每条命中保留各路的 `dense_score/sparse_score` 最大值（供溯源与拒答地板判据），
+    并记录 `recall_channels`（命中来自哪几条通路，"跨模态保底"可观测）。
+    """
+    scores: dict[str, float] = {}
+    details: dict[str, dict] = {}
+    for idx, hits in enumerate(recalls):
+        label = (channels[idx] if channels and idx < len(channels) else f"recall{idx}")
+        for rank, hit in enumerate(hits or [], 1):
+            cid = hit["content_id"]
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
+            d = details.setdefault(
+                cid,
+                {
+                    "dense_score": 0.0,
+                    "sparse_score": 0.0,
+                    "text": None,
+                    "content_type": None,
+                    "recall_channels": [],
+                },
+            )
+            d["dense_score"] = max(d["dense_score"], float(hit.get("dense_score") or 0.0))
+            d["sparse_score"] = max(d["sparse_score"], float(hit.get("sparse_score") or 0.0))
+            if hit.get("text"):
+                d["text"] = hit["text"]
+            if hit.get("content_type"):
+                d["content_type"] = hit["content_type"]
+            if label not in d["recall_channels"]:
+                d["recall_channels"].append(label)
+
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+    out: list[dict] = []
+    for cid, score in ranked:
+        d = details[cid]
+        out.append({
+            "content_id": cid,
+            # 保留 6 位：k=60 时相邻名次差 ~2.6e-4，round(…, 4) 会把不同名次压成同分
+            "score": round(score, 6),
+            "dense_score": round(d["dense_score"], 4),
+            "sparse_score": round(d["sparse_score"], 4),
+            "text": d["text"],
+            "content_type": d["content_type"],
+            "recall_channels": d["recall_channels"],
+        })
+    return out
+
+
+def _mixed_recalls(store, dense, sparse, filters: dict, collection: str | None = None,
+                   limit: int = 50) -> list[dict]:
+    """mixed 意图召回：照片路 + 全量路 → 合并去重（C 方案 2026-11-01）
+
+    为什么是这两路：同一份文本查询向量打两次——一次限定 `content_type=photo`
+    （"含图词"用户大多先想照片，给它应有的权重），一次**不带类型过滤**
+    （文字/语音里也可能记着同一件事）。两路都是 `store.search` 的 RRF 分，
+    量纲一致，故沿用 `_merge_recalls` 的去重取最高分，零新增开销。
+
+    显式 `content_types` 是**硬约束**：用户明确指定类型时不得被合并路越权覆盖
+    （旧代码这里写死 `{**filters, "content_types": [photo]}`，会盖掉用户的
+    `content_types=["text"]`——只因该分支历来是死代码，缺陷从未暴露）。
+    """
+    if filters.get("content_types"):
+        return store.search(dense, sparse, filters=filters, limit=limit, collection=collection)
+    photo_filters = {**filters, "content_types": [CONTENT_TYPE_PHOTO]}
+    photo_hits = store.search(dense, sparse, filters=photo_filters, limit=limit, collection=collection)
+    full_hits = store.search(dense, sparse, filters=filters, limit=limit, collection=collection)
+    if not photo_hits:
+        return full_hits
+    return _merge_recalls([photo_hits, full_hits], limit=limit)
+
+
+def _boost_exact_matches(query: str, raw_hits: list[dict]) -> list[dict]:
+    """关键词精确命中提升（2026-08-25 RAG 审查新增）
+
+    问题（探针实锤）："马拉松""收房租"等字面关键词查询，RRF 里 dense 路权重 0.7，
+    语义近邻（todo/quote 等无关键词文档）排名压过 sparse 精确命中文档 →
+    字面命中被稠密噪声稀释（probe：马拉松 top3 里精确命中的 emotion 文档排第 3）。
+
+    规则：rewritten 的全部词元（长度≥2，按标点/空白切分）都出现在文档原文 →
+    精确命中，score ×1.8 后重排；部分词元命中（≥50%）→ ×1.3（P0-D 梯度，
+    2026-08-25：2/3 词命中给中等提升，长关键词查询不再只有全命中/无命中两档）。
+    描述性查询（"关于做产品的想法"）无文档能全词命中 → 不触发，零副作用；
+    单 token 查询（"马拉松"/"买牛奶"）同样受益（全命中走 ×1.8）。
+    """
+    if not raw_hits or not query:
+        return raw_hits
+    tokens = [t for t in re.split(r"[\s,，。.！!？?、；;:：（）()「」『』【】\"'‘’]", query) if len(t) >= 2]
+    if not tokens:
+        return raw_hits
+    # 拷贝后修改（2026-08-25 测试暴露：原地改 score 会污染调用方复用的列表）
+    out: list[dict] = []
+    for h in raw_hits:
+        nh = dict(h)
+        text = nh.get("text") or ""
+        if text:
+            matched = [t for t in tokens if t in text]
+            if len(matched) == len(tokens):
+                nh["score"] = round(float(nh["score"]) * 1.8, 4)
+            elif len(matched) / len(tokens) >= 0.5:
+                nh["score"] = round(float(nh["score"]) * 1.3, 4)
+        out.append(nh)
+    return sorted(out, key=lambda x: float(x["score"]), reverse=True)
+
+
+def _assemble_hits(raw_hits: list[dict], limit: int, db, user_id: str | None) -> list[SearchHit]:
+    """溯源组装（RET-016：每条结果可解释命中字段；按用户隔离回填真实内容）
+
+    audit #15（2026-08-26）：事件级归因——回填 event_id/event_title（B3 事件
+    聚合已落库 events/event_items；未关联事件的内容两字段保持 None）。
+    """
+    hits: list[SearchHit] = []
+    if not raw_hits:
+        return hits
+    content_ids = [rh["content_id"] for rh in raw_hits[:limit]]
+    content_map: dict[str, Content] = {}
+    event_map: dict[str, dict] = {}
+    thumb_map: dict[str, str] = {}
+    # D3 修复配套：记录「已尝试 DB 回查的合法 UUID id」——回查落空（软删/failed/非归属）
+    # 者整条剔除；无 DB 模式与非 UUID 测试点（rag-001 类）不受影响照常放行
+    attempted_ids: set[str] = set()
+    if db is not None and user_id is not None:
+        # 过滤非 UUID 格式 id（UUID 列无法匹配 rag-001 类测试点，防 PG 报错）
+        _uuid_re = re.compile(
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        )
+        valid_ids = [cid for cid in content_ids if _uuid_re.match(cid)]
+        attempted_ids = set(valid_ids)
+        if valid_ids:
+            rows = db.execute(
+                select(Content).where(
+                    Content.id.in_(valid_ids),
+                    Content.user_id == user_id,
+                    # D3 修复（2026-09-08 真机实证）：软删内容不得召回——Qdrant 向量在删除
+                    # 链路补齐前仍残留，DB 回查是唯一闸门（与 pg_fallback.py:48 同口径）。
+                    # status 过滤：processing/failed 半态内容不进结果（时间轴同口径）
+                    Content.deleted_at.is_(None),
+                    Content.status == "done",
+                )
+            ).scalars().all()
+            content_map = {str(c.id): c for c in rows}
+            # 缩略图票据（2026-09-04 峰宝拍板搜索结果带图）：命中照片按 content_id 签票，
+            # <image :src> 直连免 header；失败/无 thumbnail_key 不阻塞溯源主链路
+            from app.services.external.media_url import content_urls
+
+            for c in content_map.values():
+                if c.content_type == "photo" and c.thumbnail_key:
+                    try:
+                        _orig, thumb = content_urls(None, c.thumbnail_key, str(user_id))
+                        if thumb:
+                            thumb_map[str(c.id)] = thumb
+                    except Exception:  # noqa: BLE001 —— 签票失败降级为无图，不影响命中
+                        logger.warning("搜索缩略图签票失败 content_id=%s", c.id, exc_info=True)
+            # 事件级归因：content → event_items → events（用户隔离 + 软删过滤）
+            try:
+                ev_rows = db.execute(
+                    select(EventItem.content_id, Event.id, Event.title)
+                    .join(Event, Event.id == EventItem.event_id)
+                    .where(
+                        EventItem.content_id.in_(valid_ids),
+                        Event.user_id == user_id,
+                        Event.deleted_at.is_(None),
+                    )
+                ).all()
+                event_map = {
+                    str(r.content_id): {"id": str(r.id), "title": r.title}
+                    for r in ev_rows
+                }
+            except Exception:  # noqa: BLE001 —— 事件归因失败不影响溯源主链路
+                logger.warning("事件归因回填失败", exc_info=True)
+    for rh in raw_hits[:limit]:
+        c = content_map.get(rh["content_id"])
+        # D3 修复（2026-09-08 真机实证）：软删/failed/非归属内容 Qdrant 向量仍残留，
+        # DB 回查落空的合法 UUID 点整条剔除（此前只降级字段仍带残留 text 出现在结果里）
+        if c is None and rh["content_id"] in attempted_ids:
+            continue
+        matched = []
+        if rh.get("pg"):
+            matched.append("pg")
+            matched.extend(rh.get("matched_fields") or [])
+        else:
+            if rh["dense_score"] > 0:
+                matched.append("dense")
+            if rh["sparse_score"] > 0:
+                matched.append("sparse")
+        ev = event_map.get(rh["content_id"])
+        trace = {
+            "matched": matched or ["dense"],
+            "dense_score": rh["dense_score"],
+            "sparse_score": rh["sparse_score"],
+            "rrf": rh["score"],
+            "exact_score": rh.get("exact_score", 0.0),
+            "matched_fields": rh.get("matched_fields", []),
+        }
+        # 跨模态（2026-11-01）：记录这条命中来自哪几条召回通路。没有它就无法回答
+        # "图搜结果里那条语音是怎么来的"（用户会问，也是 A 方案"双路保底"的唯一证据）。
+        if rh.get("recall_channels"):
+            trace["recall_channels"] = list(rh["recall_channels"])
+        hits.append(SearchHit(
+            content_id=rh["content_id"],
+            # 无 DB 回查时（基准/单测/降级）退回 payload 里的 content_type；
+            # 此前一律填 "text"，会把照片/语音结果标成文字（结果卡徽标错、客户端分组错）。
+            content_type=(c.content_type if c else (rh.get("content_type") or "text")),
+            text=(c.text if c else None) or rh.get("text"),
+            taken_at=c.taken_at if c else None,
+            place=c.place if c else None,
+            event_id=ev["id"] if ev else None,
+            event_title=ev["title"] if ev else None,
+            score=rh["score"],
+            thumbnail_url=thumb_map.get(rh["content_id"]),
+            trace=trace,
+        ))
+    return hits

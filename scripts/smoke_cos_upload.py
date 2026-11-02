@@ -5,10 +5,18 @@ init → 传 0、2 片（模拟中断）→ status（缺失 1）→ 补 1 → co
 费用：3 片 × 1KB + 合并对象 ≈0（极小对象，可忽略）。
 用法：infisical run --env=dev --silent -- python scripts/smoke_cos_upload.py
 """
+# ruff: noqa: E402  （先注入 sys.path 才能 import 仓内 app.*；同 backend/scripts 下各脚本约定）
+import os
 import sys
 import uuid
+from pathlib import Path
 
-sys.path.insert(0, r"D:\GuangH-App\backend")
+# 后端根目录：优先环境变量 YISHU_BACKEND_DIR；默认按脚本位置解析（scripts/ 的上一级），
+# 不再硬编码 D:\GuangH-App\backend（重构波 B12-4 · D13 硬编码路径族）；解析失败即明确报错，不静默回退。
+_BACKEND = os.environ.get("YISHU_BACKEND_DIR", str(Path(__file__).resolve().parent.parent / "backend"))
+if not os.path.isdir(_BACKEND):
+    raise SystemExit(f"未找到后端目录：{_BACKEND}（可用环境变量 YISHU_BACKEND_DIR 覆盖）")
+sys.path.insert(0, _BACKEND)
 
 from app.core.config import settings
 from app.db.models import UploadChunk, UploadTask, User

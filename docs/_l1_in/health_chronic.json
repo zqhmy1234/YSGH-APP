@@ -1,0 +1,18 @@
+{
+  "id": "health_chronic",
+  "label": "慢性病",
+  "category": "健康与生活",
+  "current_values": [
+    "无",
+    "有"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_chronic_condition",
+  "confidence_threshold": 0.8,
+  "note": "⚠️ 敏感 review 级：默认 L3 披露，消费前校验 sensitive_topic",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

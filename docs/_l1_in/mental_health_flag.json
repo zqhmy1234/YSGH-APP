@@ -1,0 +1,19 @@
+{
+  "id": "mental_health_flag",
+  "label": "心理脆弱期",
+  "category": "情绪与状态",
+  "current_values": [
+    "稳定",
+    "波动",
+    "脆弱"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "N",
+  "matraix_id": null,
+  "confidence_threshold": 0.8,
+  "note": "D 视角；连续多日负向才升级（防误判）；脆弱期回响只推正面记忆；联动 G 批护栏",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

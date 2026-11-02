@@ -1,0 +1,21 @@
+{
+  "id": "institution_tier",
+  "label": "学校层次",
+  "category": "学习与认知",
+  "current_values": [
+    "双一流",
+    "普通本科",
+    "专科",
+    "海外名校",
+    "其他"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "institution_tier",
+  "confidence_threshold": 0.7,
+  "note": "中国化：985/211 → 双一流",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

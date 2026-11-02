@@ -1,9 +1,10 @@
-"""消息中心/推送测试（S4-07 推送 + S4-08 消息中心）
+"""消息中心/推送测试（S4-07 推送 + S4-08 消息中心 + B5-c 情绪关怀）
 
 覆盖：
   - create_message：统一入库（in-app / push 同表）+ mock 推送通道
   - generate_daily_review：有内容 → 复盘 push（按类型统计）；无内容 → 跳过
   - notify_voice_done：语音处理完成 push
+  - maybe_send_emotion_care：情绪关怀分层触发（J-6，Wave4 AgentJ）
   - API：列表分页 / status 过滤 / 单条已读（幂等+越权 404）/ 全部已读
 前置：PG yishu 库
 """
@@ -13,26 +14,33 @@ from datetime import datetime
 import pytest
 from app.db.models import Content, Message, User
 from app.db.session import SessionLocal
-from app.services.notify import REVIEW_TZ, create_message, generate_daily_review, notify_voice_done
+from app.services.notify import (
+    REVIEW_TZ,
+    create_message,
+    generate_daily_review,
+    maybe_notify_voice_done,
+    maybe_send_emotion_care,
+    notify_voice_done,
+)
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
+
+class _FakeDaytime(datetime):
+    """固定非深夜时段（15:00），避免 22:00-05:00 夜间跑测试时
+    maybe_send_emotion_care 走 late_night 分支导致断言必挂（2026-08-26 集成修复）"""
+
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 8, 26, 15, 0, 0, tzinfo=REVIEW_TZ)
+
+
+def _patch_daytime(monkeypatch) -> None:
+    import app.services.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "datetime", _FakeDaytime)
+
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"msg-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(Message).where(Message.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _content(db, user_id: str, ctype: str = "text", ts: datetime | None = None) -> Content:
@@ -61,6 +69,35 @@ def test_create_message_in_app_and_push(db_user):
     assert m2.channel == "push"
     rows = db.execute(select(Message).where(Message.user_id == user.id)).scalars().all()
     assert len(rows) == 2
+
+
+def test_create_message_does_not_commit(db_user):
+    """R2#2（事务边界）：create_message 只 flush 不 commit——独立会话在调用方
+    commit 前不可见；落库由最外层编排者统一 commit（不嵌套提交管线事务）。"""
+    db, user = db_user
+    create_message(db, user.id, "in_app", "care_followup", "未提交标题", "正文")
+
+    other = SessionLocal()
+    try:
+        seen = other.execute(
+            select(Message).where(
+                Message.user_id == user.id, Message.title == "未提交标题"
+            )
+        ).scalar_one_or_none()
+        assert seen is None, "create_message 不应 commit（未提交消息独立会话不可见）"
+    finally:
+        other.close()
+
+    db.commit()  # 调用方 commit 后独立会话可见
+    other = SessionLocal()
+    try:
+        assert other.execute(
+            select(Message).where(
+                Message.user_id == user.id, Message.title == "未提交标题"
+            )
+        ).scalar_one() is not None
+    finally:
+        other.close()
 
 
 def test_daily_review_generates_with_content(db_user):
@@ -107,7 +144,7 @@ def test_voice_done_notify(db_user):
     assert msg.payload["content_id"] == "v-1"
 
 
-def test_messages_api_list_read(db_user):
+def test_messages_api_list_read(db_user, cleanup_user):
     """API：列表分页 + status 过滤 + 单条已读 + 全部已读 + 越权 404"""
     from app.api import deps
     from app.main import app
@@ -120,6 +157,9 @@ def test_messages_api_list_read(db_user):
     db.add(other)
     db.commit()
     create_message(db, other.id, "in_app", "care_followup", "别人的", "别人的消息")
+    # R2#2（事务边界）：create_message 不再 commit（只 flush 取 id）——API 走独立
+    # 会话，须显式 commit 后 TestClient 才能读到已入库消息
+    db.commit()
 
     client = TestClient(app)
     app.dependency_overrides[deps.get_current_user] = lambda: user
@@ -160,6 +200,135 @@ def test_messages_api_list_read(db_user):
         assert r8.json()["data"]["items"] == []
     finally:
         app.dependency_overrides.clear()
-        db.execute(sa_delete(Message).where(Message.user_id == other.id))
+        # R8#2：统一 cleanup_user_data（other 用户全链删）
+        cleanup_user(db, other.id)
         db.delete(other)
         db.commit()
+
+
+# ---------- B5-c 情绪关怀分层触发（J-6 · Wave4 AgentJ）----------
+
+
+def _voice_content(db, user_id: str, emotion: str, confidence: float, text: str = "今天好累") -> Content:
+    ts = datetime.now(REVIEW_TZ).replace(hour=12, minute=0, second=0, microsecond=0)
+    c = _content(db, user_id, ctype="voice", ts=ts)
+    c.emotion = {
+        "emotion": emotion,
+        "confidence": confidence,
+        "source": "sensevoice_local",
+        "model": "iic/SenseVoiceSmall-onnx",
+        "actionable": emotion != "平静" and confidence >= 0.7,
+    }
+    c.text = text
+    db.commit()
+    return c
+
+
+def test_care_gate_below_threshold_not_triggered(db_user):
+    """J-6 门控：confidence < 0.7 不触发（只存档案不打扰）"""
+    db, user = db_user
+    c = _voice_content(db, user.id, "难过", 0.5, "没什么")
+    assert maybe_send_emotion_care(db, c) is None
+    c2 = _voice_content(db, user.id, "平静", 0.9, "今天不错")
+    assert maybe_send_emotion_care(db, c2) is None
+
+
+def test_care_sad_without_reason_asks(db_user, monkeypatch):
+    """J-6：SAD + 未说明原因 → 关怀追问"""
+    _patch_daytime(monkeypatch)  # 固定非深夜时段（22:00-05:00 会走 late_night，夜间跑必挂）
+    db, user = db_user
+    c = _voice_content(db, user.id, "难过", 0.9, "唉")
+    msg = maybe_send_emotion_care(db, c)
+    assert msg is not None
+    assert msg.msg_type == "care_followup"
+    assert msg.channel == "in_app"
+    assert msg.payload["template"] == "sad_ask"
+    assert "怎么啦" in msg.body
+
+
+def test_care_sad_with_reason_responds(db_user, monkeypatch):
+    """J-6：SAD + 已说明原因 → 回应内容而非追问（再问是废话）"""
+    _patch_daytime(monkeypatch)
+    db, user = db_user
+    c = _voice_content(db, user.id, "难过", 0.9, "今天工作太忙太累了")
+    msg = maybe_send_emotion_care(db, c)
+    assert msg is not None
+    assert msg.payload["template"] == "sad_respond"
+    assert "辛苦" in msg.body
+
+
+def test_care_angry_companion_exit(db_user):
+    """J-6：ANGRY → 陪伴出口，不主动追问（愤怒时关怀是火上浇油）"""
+    db, user = db_user
+    c = _voice_content(db, user.id, "生气", 0.9, "气死我了")
+    msg = maybe_send_emotion_care(db, c)
+    assert msg is not None
+    assert msg.payload["template"] == "angry"
+    assert "随时找我" in msg.body or "随时找我" in msg.title
+
+
+def test_care_late_night_lightweight(db_user, monkeypatch):
+    """J-6：深夜时段（23:00）→ 轻量表达，不催回复"""
+    import app.services.notify as notify_mod
+
+    class FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 8, 26, 23, 0, 0, tzinfo=REVIEW_TZ)
+
+    monkeypatch.setattr(notify_mod, "datetime", FakeDatetime)
+    db, user = db_user
+    c = _voice_content(db, user.id, "难过", 0.9, "唉")
+    msg = maybe_send_emotion_care(db, c)
+    assert msg is not None
+    assert msg.payload["template"] == "late_night"
+
+
+def test_care_frequency_decay(db_user, monkeypatch):
+    """J-6：连续多日负面 → 频次递减（第 1 天问 → 第 2 天好些了吗 → 第 3 天只陪伴）"""
+    _patch_daytime(monkeypatch)
+    db, user = db_user
+    c = _voice_content(db, user.id, "难过", 0.9, "唉")
+
+    msg1 = maybe_send_emotion_care(db, c)
+    assert msg1.payload["template"] == "sad_ask"
+
+    msg2 = maybe_send_emotion_care(db, c)
+    assert msg2.payload["template"] == "day2"
+
+    msg3 = maybe_send_emotion_care(db, c)
+    assert msg3.payload["template"] == "day3"
+
+    msg4 = maybe_send_emotion_care(db, c)
+    assert msg4.payload["template"] == "day3"
+
+
+def test_care_other_negative_default_companion(db_user):
+    """J-6：其它负面（恐惧/厌恶）→ 默认陪伴出口（保守不追问）"""
+    db, user = db_user
+    c = _voice_content(db, user.id, "恐惧", 0.9, "好怕")
+    msg = maybe_send_emotion_care(db, c)
+    assert msg is not None
+    assert msg.payload["template"] == "angry"
+
+
+def test_maybe_notify_voice_done(db_user):
+    """J-6：voice_done 接线 —— 语音有文本 → push；空白/非语音 → None"""
+    db, user = db_user
+    c = _voice_content(db, user.id, "平静", 0.0, "今天天气不错")
+    msg = maybe_notify_voice_done(db, c)
+    assert msg is not None
+    assert msg.msg_type == "voice_done"
+    assert msg.channel == "push"
+
+    c.text = "   "
+    db.commit()
+    assert maybe_notify_voice_done(db, c) is None
+
+    c2 = _content(
+        db,
+        user.id,
+        ctype="text",
+        ts=datetime.now(REVIEW_TZ).replace(hour=12, minute=0, second=0, microsecond=0),
+    )
+    assert maybe_notify_voice_done(db, c2) is None

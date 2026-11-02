@@ -1,0 +1,192 @@
+/**
+ * 照片路径解析 / 挂载 / 照片详情（L-02a · 2026-09-25 重构波 · **方案 A：整块 view-model 进 composable**）
+ *
+ * 自 `components/TabIndex/TabIndex.uvue` **纯移动**而来：
+ *   · 状态：`localPhotoPath` / `eventPhotoIds`（本会话上传 → 本地路径 & 事件照片映射）+
+ *     照片详情四态（showPhotoDetail / photoDetailPath / photoDetailEvents / photoDetailLoading）
+ *     + 两张**非响应式**索引表（`photoUrlById` 服务端票据 URL、`localPhotoPathMap` O(1) 本地查表）；
+ *   · 方法：photoPathOf / lookupEventPhotos / attachEventPhotos / attachAll（原 attachPhotos）
+ *     / onPhotoTap / closePhotoDetail / jumpFromPhoto；注释与「2026-08-31 重写」实锤记录**逐字保留**。
+ *
+ * 触发式（**不是**状态转移）：`attachAll` 由组件渲染出口 `renderFromEvents` 调用，签名收
+ * `days`/`pending` 两个**入参**（原读组件 `days.value`/`pendingEvents.value` 两个 ref）——
+ * 二者仍属渲染管线核心、留在组件；这样本 composable 不动渲染时序（行为等价）。
+ *
+ * `addLocalPath` / `addEventPhoto` 是**唯一的行为改动面**：把组件 `handleBatch` 里
+ * 「localPhotoPath.value.push + localPhotoPathMap.set」「eventPhotoIds.value.push」两处
+ * **同一语义的写入**收纳为方法（数组 push 与 Map set 必须同进同出，否则 O(1) 查表漂移）。
+ */
+import { ref } from 'vue'
+
+import { fetchContentEvents, ContentEventRef, EventPhotoEntry } from '@/utils/event_ops'
+import { TimelineEvent, DayGroup } from '@/utils/timeline'
+
+/** 会话照片映射项：content_id → 本地路径（封面/照片条/反向入口显示用） */
+export class PhotoPathEntry {
+	contentId: string
+	path: string
+
+	constructor(contentId: string, path: string) {
+		this.contentId = contentId
+		this.path = path
+	}
+}
+
+export class PhotoAttach {
+	localPhotoPath = ref<Array<PhotoPathEntry>>([])
+	eventPhotoIds = ref<Array<EventPhotoEntry>>([])
+	showPhotoDetail = ref(false)
+	photoDetailPath = ref('')
+	photoDetailEvents = ref<Array<ContentEventRef>>([])
+	photoDetailLoading = ref(false)
+	/**
+	 * content_id → 服务端缩略图 URL（Valet Key 票据，已 resolve 成绝对 URL）
+	 *
+	 * 为什么需要：`<image :src>` 带不了 Authorization header，历史照片此前只能靠
+	 * 「本次会话刚上传」的本地路径显示，冷启动必然空白。服务端现在随 timeline
+	 * 下发票据 URL，这里建索引供 photoPathOf() 回退。
+	 * 非响应式：attachPhotos() 在 days.value 赋值之后、渲染之前填充，无需触发额外更新。
+	 */
+	private photoUrlById: Map<string, string> = new Map<string, string>()
+	/** 卡PA R4：content_id → 本地路径 O(1) 查表（对齐 photoUrlById 先例；非响应式，
+	 *  handleBatch push 后同步 set，photoPathOf 不再线性扫描 localPhotoPath 数组） */
+	private localPhotoPathMap: Map<string, string> = new Map<string, string>()
+
+	/** handleBatch 上传回调：本地路径入列（数组 + O(1) 查表**同进同出**） */
+	addLocalPath(contentId: string, path: string): void {
+		this.localPhotoPath.value.push(new PhotoPathEntry(contentId, path))
+		this.localPhotoPathMap.set(contentId, path)
+	}
+
+	/** handleBatch 云端映射回调：事件级照片映射入列 */
+	addEventPhoto(entry: EventPhotoEntry): void {
+		this.eventPhotoIds.value.push(entry)
+	}
+
+	/**
+	 * 照片显示路径：本地优先 → 服务端票据 URL 回退（2026-08-31 修复）
+	 *
+	 * 本地：本次会话上传的照片（localPhotoPath，零延迟、离线可用）
+	 * 服务端：timeline 下发的缩略图 URL（历史照片的唯一来源；此前缺这一层回退，
+	 *       导致冷启动时 <image :src=""> 恒空 —— "卡片没照片"的直接根因之一）
+	 */
+	// 卡PA R4：photoPathOf 改双 Map O(1) 查表（原对 localPhotoPath 线性扫描）。
+	// 本地：本次会话上传的照片（localPhotoPathMap，零延迟、离线可用）
+	// 服务端：timeline 下发的缩略图 URL（photoUrlById，历史照片的唯一来源）
+	photoPathOf(contentId: string): string {
+		const local = this.localPhotoPathMap.get(contentId)
+		if (local != null) {
+			return local
+		}
+		const remote = this.photoUrlById.get(contentId)
+		return remote == null ? '' : remote
+	}
+	lookupEventPhotos(eventId: string): Array<string> {
+		for (let i = 0; i < this.eventPhotoIds.value.length; i++) {
+			if (this.eventPhotoIds.value[i].eventId == eventId) {
+				return this.eventPhotoIds.value[i].contentIds
+			}
+		}
+		return []
+	}
+	/**
+	 * 单事件挂载照片（服务端优先，本地会话补充）——2026-08-31 重写
+	 *
+	 * 三层取值顺序：本地路径（刚上传）＞ 服务端票据 URL（历史照片）＞ 空。
+	 */
+	attachEventPhotos(ev: TimelineEvent): void {
+		// ① 先把服务端下发的成员 URL 收进全局表，供 photoPathOf() 回退。
+		//    必须在算封面之前：封面的第三顺位回退依赖这张表。
+		for (let k = 0; k < ev.photos.length; k++) {
+			const ph = ev.photos[k]
+			if (ph.thumbnailUrl != '') {
+				this.photoUrlById.set(ph.contentId, ph.thumbnailUrl)
+			}
+		}
+		// ② photoIds：服务端已下发则**保留**（timeline 按 taken_at 排好序）。
+		//    ⚠️ 原代码无条件 `ev.photoIds = lookupEventPhotos(ev.id)` —— 本地表在
+		//    冷启动/未上传时是空数组，会把服务端填好的值覆盖成空 → 照片条恒空。
+		//    这是"卡片没照片"最直接的那一层。
+		if (ev.photoIds.length == 0) {
+			ev.photoIds = this.lookupEventPhotos(ev.id)
+		}
+		// ③ 封面：本地路径 → 服务端 cover_url → 首图
+		let cover = this.photoPathOf(ev.coverContentId)
+		if (cover == '' && ev.coverUrl != '') {
+			cover = ev.coverUrl
+		}
+		if (cover == '' && ev.photoIds.length > 0) {
+			cover = this.photoPathOf(ev.photoIds[0])
+		}
+		ev.coverPath = cover
+		// 卡PA R4：视图字段组装期预计算（v-for 模板内零 photoPathOf/renderPhotoIds 调用）。
+		// 过滤口径沿卡E01「有多少是多少」：photoPathOf 为空串的 cid 不进渲染列表；
+		// photoCount 是后端 timeline 字段不改语义，meta 展示值对齐实际可渲染数。
+		const renderIds: Array<string> = []
+		const renderPaths: Array<string> = []
+		for (let k = 0; k < ev.photoIds.length; k++) {
+			const p = this.photoPathOf(ev.photoIds[k])
+			if (p != '') {
+				renderIds.push(ev.photoIds[k])
+				renderPaths.push(p)
+			}
+		}
+		ev.renderPhotoIds = renderIds
+		ev.renderPhotoPaths = renderPaths
+		ev.hasRenderablePhotos = renderIds.length > 0
+		ev.photoCountText = renderIds.length.toFixed(0) + ' 张照片'
+	}
+
+	/** 渲染出口调用（原 attachPhotos）：days/pending 由组件传入（渲染管线核心仍在组件） */
+	attachAll(days: Array<DayGroup>, pending: Array<TimelineEvent>): void {
+		let strips = 0
+		let covers = 0
+		let remote = 0
+		this.photoUrlById = new Map<string, string>()
+		for (let i = 0; i < days.length; i++) {
+			const g = days[i]
+			for (let j = 0; j < g.events.length; j++) {
+				const ev = g.events[j]
+				this.attachEventPhotos(ev)
+				remote += ev.photos.length
+				if (ev.photoIds.length > 0) {
+					strips++
+				}
+				if (ev.coverPath != '') {
+					covers++
+				}
+			}
+		}
+		for (let j = 0; j < pending.length; j++) {
+			const ev = pending[j]
+			this.attachEventPhotos(ev)
+			remote += ev.photos.length
+			if (ev.photoIds.length > 0) {
+				strips++
+			}
+			if (ev.coverPath != '') {
+				covers++
+			}
+		}
+		console.log('[yishu] attachPhotos: days=' + days.length + ' pending=' + pending.length + ' localPaths=' + this.localPhotoPath.value.length + ' eventPhotoIds=' + this.eventPhotoIds.value.length + ' serverPhotos=' + remote + ' strips=' + strips + ' covers=' + covers)
+	}
+
+	// 照片详情
+	onPhotoTap(contentId: string): void {
+		this.showPhotoDetail.value = true
+		this.photoDetailLoading.value = true
+		this.photoDetailPath.value = this.photoPathOf(contentId)
+		this.photoDetailEvents.value = []
+		fetchContentEvents(contentId).then((evs: Array<ContentEventRef>) => {
+			this.photoDetailLoading.value = false
+			this.photoDetailEvents.value = evs
+		})
+	}
+	closePhotoDetail(): void {
+		this.showPhotoDetail.value = false
+		this.photoDetailEvents.value = []
+	}
+	jumpFromPhoto(_idx: number): void {
+		this.closePhotoDetail()
+	}
+}

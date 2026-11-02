@@ -1,0 +1,252 @@
+<template>
+	<!-- ardot 直转 v2：AI 对话页（帧 2:332）· 审计化生成 -->
+	<view class="page-root">
+		<text class="n2_336">AI</text> <!-- 大标题 -->
+		<text class="n2_337">问问你的回忆</text> <!-- 副标题 -->
+		<view class="n2_355"> <!-- 玻璃输入条 -->
+			<view class="n2_356"> <!-- 占位区 -->
+				<text class="n2_357">问点什么…</text> <!-- 输入占位 -->
+			</view>
+			<view class="n2_358"> <!-- 发送钮 -->
+				<image class="n2_359" src="/static/icons/i2_359.svg" /> <!-- icon: 发送图标 -->
+			</view>
+		</view>
+		<view class="n4_88"> <!-- 消息流 -->
+			<view class="n2_338"> <!-- AI消息组 -->
+				<view class="n2_339"> <!-- AI头 -->
+					<text class="n2_341">AI</text> <!-- AI名 -->
+					<view class="n4_1"> <!-- AI头像 -->
+						<image class="n4_2" src="/static/icons/i4_2.svg" /> <!-- icon: 星芒 -->
+					</view>
+				</view>
+				<view class="n2_342"> <!-- AI气泡 -->
+					<text class="n2_343">你上周三去了湖边，要不要看看那天的样子？</text> <!-- AI文字 -->
+					<view class="n2_344"> <!-- 内嵌记忆卡 -->
+						<image class="n2_345" src="/static/images/img2_345.png" mode="aspectFill" /> <!-- 合成图: 缩略图 -->
+						<view class="n2_346"> <!-- 记忆信息 -->
+							<text class="n2_347">清晨的湖边，风很轻</text> <!-- 记忆标题 -->
+							<text class="n2_348">8月28日 · 照片</text> <!-- 记忆元信息 -->
+						</view>
+					</view>
+				</view>
+			</view>
+			<view class="n2_349"> <!-- 用户消息行 -->
+				<view class="n2_350"> <!-- 用户气泡 -->
+					<text class="n2_351">那天天气怎么样？</text> <!-- 用户文字 -->
+				</view>
+			</view>
+			<view class="n2_352"> <!-- AI消息组2 -->
+				<view class="n2_353"> <!-- AI气泡2 -->
+					<text class="n2_354">那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。</text> <!-- AI文字2 -->
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<style>
+	.page-root {
+		flex: 1;
+		background-color: #F8F7F4;
+	}
+	.n2_336 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 107.7rpx;
+		width: 80.8rpx;
+		height: 92.3rpx;
+		font-weight: bold;
+		font-size: 76.9rpx;
+		color: #3A2E25;
+	}
+	.n2_337 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 211.5rpx;
+		width: 150rpx;
+		height: 30.8rpx;
+		font-size: 25rpx;
+		color: #8A7A6A;
+	}
+	.n2_355 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 1334.6rpx;
+		width: 673.1rpx;
+		height: 100rpx;
+		flex-direction: row;
+		gap: 15.4rpx;
+		align-items: center;
+		padding-left: 30.8rpx;
+		padding-right: 30.8rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: rgba(255, 255, 255, 0.72);
+		box-shadow: 0rpx 0rpx 0rpx 1.9rpx rgba(255, 255, 255, 0.65), 0rpx 15.4rpx 46.2rpx rgba(59, 46, 38, 0.08);
+		border-radius: 9999rpx;
+		overflow: hidden;
+	}
+	.n2_356 {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_357 {
+		font-size: 26.9rpx;
+		color: #B3A696;
+	}
+	.n2_358 {
+		width: 69.2rpx;
+		height: 69.2rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		background-color: #B05A3A;
+		border-radius: 34.6rpx;
+		overflow: hidden;
+	}
+	.n2_359 {
+		width: 30.8rpx;
+		height: 30.8rpx;
+	}
+	.n4_88 {
+		position: absolute;
+		left: 38.5rpx;
+		top: 288.5rpx;
+		width: 673.1rpx;
+		flex-direction: column;
+		gap: 30.8rpx;
+		overflow: hidden;
+	}
+	.n2_338 {
+		width: 596.2rpx;
+		flex-direction: column;
+		gap: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_339 {
+		flex-direction: row;
+		gap: 11.5rpx;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_341 {
+		font-weight: 600;
+		font-size: 23.1rpx;
+		color: #5A4C40;
+	}
+	.n4_1 {
+		width: 46.2rpx;
+		height: 46.2rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		background-color: #B0593B;
+		box-shadow: 0rpx 5.8rpx 15.4rpx rgba(176, 89, 59, 0.3);
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n4_2 {
+		width: 26.9rpx;
+		height: 26.9rpx;
+	}
+	.n2_342 {
+		width: 100%;
+		flex-direction: column;
+		gap: 14.2rpx;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_343 {
+		width: 100%;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.n2_344 {
+		width: 100%;
+		flex-direction: row;
+		gap: 19.2rpx;
+		align-items: center;
+		padding-left: 15.4rpx;
+		padding-right: 15.4rpx;
+		padding-top: 15.4rpx;
+		padding-bottom: 15.4rpx;
+		background-color: #F8F7F4;
+		border-radius: 23.1rpx;
+		overflow: hidden;
+	}
+	.n2_345 {
+		width: 92.3rpx;
+		height: 92.3rpx;
+		border-radius: 15.4rpx;
+	}
+	.n2_346 {
+		flex: 1;
+		flex-direction: column;
+		gap: 0;
+		overflow: hidden;
+	}
+	.n2_347 {
+		font-weight: 600;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+	.n2_348 {
+		font-size: 21.2rpx;
+		color: #8A7A6A;
+	}
+	.n2_349 {
+		width: 673.1rpx;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_350 {
+		width: 269.2rpx;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-image: linear-gradient(to bottom, #C3714C, #AA5334);
+		box-shadow: 0rpx 7.7rpx 19.2rpx rgba(176, 89, 59, 0.25);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_351 {
+		font-size: 26.9rpx;
+		color: #FFFFFF;
+	}
+	.n2_352 {
+		width: 596.2rpx;
+		flex-direction: column;
+		gap: 15.4rpx;
+		overflow: hidden;
+	}
+	.n2_353 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: 26.9rpx;
+		padding-right: 26.9rpx;
+		padding-top: 26.9rpx;
+		padding-bottom: 26.9rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0rpx 3.8rpx 15.4rpx rgba(59, 46, 38, 0.05);
+		border-radius: 38.5rpx;
+		overflow: hidden;
+	}
+	.n2_354 {
+		width: 100%;
+		font-size: 26.9rpx;
+		color: #3A2E25;
+	}
+</style>

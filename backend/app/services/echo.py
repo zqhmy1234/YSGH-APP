@@ -6,6 +6,9 @@
 - 敏感排除（SAF-006/007 双查）：contents.sensitive_status ≠ 正常 跳过 +
   画像级敏感（profile_sensitive）命中跳过
 - 指纹：内容 id 稳定派生（跨端同一条）
+
+画像级敏感（B5b FIX-4）：本模块同时提供 profile_sensitive 表的服务函数
+（回响 L1 校验 + B1-6 对话式增删查），供 /api/v1/profile/sensitive 使用。
 """
 from __future__ import annotations
 
@@ -17,11 +20,16 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Content, EchoHistory
+from app.core.timeutil import local_now
+from app.db.models import Content, EchoHistory, ProfileSensitive
 
 logger = logging.getLogger("yishu.echo")
 
 ECHO_DAILY_LIMIT = 1
+
+# 画像 L1 校验：命中这些处置级别 → 回响跳过不重提（产品口径；allow/mention 放行）
+PROFILE_BLOCK_DISPOSITIONS = {"forbid", "caution", "review"}
+PROFILE_DISPOSITIONS = {"allow", "mention", "caution", "review", "forbid"}
 
 
 def _fingerprint(content_id: str) -> str:
@@ -30,23 +38,152 @@ def _fingerprint(content_id: str) -> str:
 
 def _local_now() -> datetime:
     """本地时间（日界按本地口径：修复审查 MINOR——原按 UTC 日界，本地 0:00-8:00
-    会被算到前一天）"""
-    return datetime.now().astimezone()
+    会被算到前一天）
+
+    2026-09-25（功能修复波 D04-1）：**改为委托 `app.core.timeutil.local_now()`**。
+    本函数原用 `datetime.now().astimezone()`＝**服务器本地**，在 UTC 容器里等于 UTC（修复无效）；
+    而事件聚合 L1 又另走 UTC 默认 ⇒ 「同一云侧两套日界」是 P0 缺陷 D04-1 的根因。
+    现云侧日界统一到 `APP_LOCAL_TZ`（单一来源，不依赖容器 TZ）。
+    """
+    return local_now()
 
 
-def _is_sensitive(content: Content) -> bool:
+def profile_sensitive_blocked(db: Session, user_id: str, text: str) -> bool:
+    """画像 L1 校验（B5b FIX-4）：查 profile_sensitive，命中 topic 且处置级别 ∈
+    {forbid, caution, review} → 跳过不重提（allow/mention 放行）。
+
+    画像级敏感永不过期（locked 显式标记/默认 forbid 均无有效期逻辑）——
+    与事件级（≥3 次提及降级）不同，画像行不存在降级路径。
+    """
+    if not text or not text.strip():
+        return False
+    rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    ).scalars().all()
+    return _profile_hit(text, rows)
+
+
+def _profile_hit(text: str, rows) -> bool:
+    """命中画像敏感处置（forbid/caution/review）——rows 为已加载 ProfileSensitive 行
+
+    S6-7：独立出纯函数，供 get_today_echo 一次加载复用（避免逐候选 N 次查询）。
+    """
+    for row in rows:
+        topic = (row.topic or "").strip()
+        if not topic:
+            continue
+        if topic in text and row.disposition in PROFILE_BLOCK_DISPOSITIONS:
+            return True
+    return False
+
+
+def upsert_profile_sensitive(
+    db: Session,
+    user_id: str,
+    topic: str,
+    disposition: str = "forbid",
+    evidence: list | None = None,
+    locked: bool = False,
+) -> ProfileSensitive:
+    """画像敏感增/改：(user_id, topic_hash) 原子查重；数据库不写明文。
+
+    R2#13 竞态修复：原 SELECT 查重 → INSERT 有并发窗口（同 (user_id, topic) 双插
+    败者 IntegrityError 500）——唯一约束 profile_sensitive_user_id_topic_hash_key 兜底，
+    但未捕获异常。现改 ON CONFLICT DO UPDATE 原子 upsert（单语句，无竞态窗口）。
+
+    locked=True 为用户显式标记（永不过期语义强化）；返回值即最新行。
+    """
+    if disposition not in PROFILE_DISPOSITIONS:
+        raise ValueError(f"disposition 非法：{disposition}（可选 {sorted(PROFILE_DISPOSITIONS)}）")
+    topic = topic.strip()
+    if not topic:
+        raise ValueError("topic 不能为空")
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.services.profile_sensitive_crypto import encrypt_topic
+
+    topic_enc, topic_hash = encrypt_topic(topic)
+    evidence_list = list(evidence) if evidence else []
+    stmt = (
+        pg_insert(ProfileSensitive)
+        .values(
+            user_id=user_id, topic_enc=topic_enc, topic_hash=topic_hash,
+            disposition=disposition,
+            evidence=evidence_list, locked=locked,
+        )
+        .on_conflict_do_update(
+            index_elements=[ProfileSensitive.user_id, ProfileSensitive.topic_hash],
+            set_={
+                "disposition": disposition,
+                "evidence": evidence_list,
+                "locked": locked,
+                "updated_at": func.now(),
+            },
+        )
+    )
+    db.execute(stmt)
+    db.commit()
+    # 强制过期 identity-map 缓存：Core 写不会更新 ORM 对象（expire_on_commit=False），
+    # 不 expire 则重查返回旧值（如 disposition 仍是插入时的值）
+    db.expire_all()
+    return db.execute(
+        select(ProfileSensitive).where(
+            ProfileSensitive.user_id == user_id, ProfileSensitive.topic_hash == topic_hash
+        )
+    ).scalar_one()
+
+
+def delete_profile_sensitive(db: Session, user_id: str, topic: str) -> bool:
+    """画像敏感删（B1-6）：删除该用户该话题；不存在返回 False"""
+    from app.services.profile_sensitive_crypto import topic_digest
+
+    digest = topic_digest(topic)
+    row = db.execute(
+        select(ProfileSensitive).where(
+            ProfileSensitive.user_id == user_id, ProfileSensitive.topic_hash == digest
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def list_profile_sensitive(
+    db: Session, user_id: str, disposition: str | None = None
+) -> list[ProfileSensitive]:
+    """画像敏感查（B1-6）：列出该用户全部话题（可按处置级别过滤），按更新时间倒序"""
+    q = select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    if disposition:
+        if disposition not in PROFILE_DISPOSITIONS:
+            raise ValueError(f"disposition 非法：{disposition}")
+        q = q.where(ProfileSensitive.disposition == disposition)
+    q = q.order_by(ProfileSensitive.updated_at.desc())
+    return db.execute(q).scalars().all()
+
+
+def _is_sensitive(db: Session, content: Content, profile_rows=None) -> bool:
     """敏感双查（SAF-006/007；用户 2026-08-20 拍板：已有敏感标记 + LLM 检测）
 
+    第零查（B5b FIX-4 前置画像 L1 校验）：profile_sensitive 命中 forbid/caution/review
+    → 跳过不重提（画像级永不过期，无降级路径）
     第一查：内容入库时的敏感标记（contents.sensitive_status ≠ 正常）
-    第二查：出包前 LLM 检测（dashscope.moderate：规则预检 + 百炼护栏，fail-safe）
-    画像级敏感维度（B5b §2 更前置的画像校验）待画像敏感字段落地后接入（见 refactor-plan P1-06 后续）。
+    第二查：出包前 LLM 检测（llm_ops.base.moderate：规则预检 + 百炼护栏，fail-safe）
+
+    profile_rows：可选已加载 ProfileSensitive 行（S6-7 get_today_echo 一次加载复用）。
     """
+    text = content.text or ""
+    if profile_rows is not None:
+        if _profile_hit(text, profile_rows):
+            return True
+    elif profile_sensitive_blocked(db, str(content.user_id), text):
+        return True
     if content.sensitive_status and content.sensitive_status != "正常":
         return True
     # 第二查：LLM 检测（对内容文本；mock 模式规则预检仍生效，fail-safe 拒发）
-    text = content.text or ""
     if text.strip():
-        from app.services.external.dashscope import moderate
+        from app.services.llm_ops.base import moderate
 
         verdict = moderate(text)
         if not verdict.get("pass", True):
@@ -104,12 +241,32 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         ).scalars().all()
     )
 
+    # S6-7 敏感话题一次加载复用（逐候选 N 次查询 → 每调用 1 次）
+    profile_rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    ).scalars().all()
+
+    llm_checked = False
     for content in row:
-        if _is_sensitive(content):
+        text = content.text or ""
+        # 便宜检查（画像敏感 + 入库敏感标记 + 已划掉）——不触发 LLM
+        if _profile_hit(text, profile_rows):
+            continue
+        if content.sensitive_status and content.sensitive_status != "正常":
             continue
         fp = _fingerprint(content.id)
         if fp in dismissed:
             continue
+        # LLM 检测仅首候选（S6-7）：出包前二次护栏只跑首个通过便宜检查的候选，
+        # 避免对整批候选逐条 LLM（20 次 → ≤1 次）；首候选 LLM 未过 → 不再回退未验证候选
+        if not llm_checked:
+            llm_checked = True
+            if text.strip():
+                from app.services.llm_ops.base import moderate
+
+                verdict = moderate(text)
+                if not verdict.get("pass", True):
+                    continue
         # 记录展示（回响每天≤1 条；event_id 为 NULL 避开 events 外键——事件服务 M2 接入）
         # 修复（审查 MAJOR 竞态）：查询计数无 DB 保护，并发双请求可同天两条——
         # 唯一索引 uq_echo_history_daily 兜底（shown_date 显式落列），插入冲突 →
@@ -128,16 +285,58 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         except IntegrityError:
             db.rollback()
             return None
-        return {
+        # R9 批次3（R9-1 · 拍板 A-1）：回响首次展示同步建发 in-app echo 消息，
+        # payload=回响快照——消息中心点击直接回放快照（不调 /echo/today、不占名额）。
+        # 只在「新展示」分支到达此处（shown_today>=1 早返回 None）→ 天然每回响至多 1 条消息。
+        snapshot = {
             "content_id": content.id,
             "content_type": content.content_type,
-            "text": content.text,
+            "text": text,
             "taken_at": content.taken_at.isoformat() if content.taken_at else None,
             "place": content.place,
             "echo_date": today.isoformat(),
             "fingerprint": fp,
         }
+        _create_echo_message(db, user_id, snapshot)
+        return snapshot
     return None
+
+
+def _create_echo_message(db: Session, user_id: str, snapshot: dict) -> None:
+    """建发 in-app echo 消息（payload=回响快照，R9 批次3）
+
+    事务边界：EchoHistory 已由调用方 commit；本函数 create_message(flush)+commit
+    独立落库。消息建发失败不阻断回响本体（回响查询是主产物），但 logger.error
+    显式记录原因——违反「结果不允许静默」军规的兜底是日志而非吞异常。
+    """
+    text = (snapshot.get("text") or "").strip()
+    ctype = snapshot.get("content_type") or "text"
+    body_hint = {
+        "photo": "去年今天的一张照片",
+        "voice": "去年今天的一段声音",
+    }.get(ctype, "去年今天的一段文字")
+    body = (text[:40] + "…") if len(text) > 40 else (text or body_hint)
+    try:
+        from app.services.notify import create_message
+
+        create_message(
+            db,
+            user_id,
+            channel="in_app",
+            msg_type="echo",
+            title="时间胶囊 · 去年今天",
+            body=body,
+            payload=snapshot,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.error(
+            "echo 消息建发失败（回响本体不受影响）user=%s content=%s",
+            user_id,
+            snapshot.get("content_id"),
+            exc_info=True,
+        )
 
 
 def dismiss_echo(db: Session, user_id: str, content_id: str) -> None:

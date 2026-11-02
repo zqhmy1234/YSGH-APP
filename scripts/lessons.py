@@ -23,15 +23,21 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 LESSONS_PATH = ROOT / "docs" / "lessons.md"
 STATE_PATH = ROOT / ".cowork-temp" / "last-failure.json"
+
+# 2026-08-26 修复：Python 运行时 localtime 为 UTC，台账标题日期比本地慢 8 小时
+# （D/E 手动登记是本地时间，lessons.py add 是 UTC，台账日期混乱）→ 固定 Asia/Shanghai（无夏令时）
+CN_TZ = timezone(timedelta(hours=8))
 
 HEADER = """# 教训台账（Harness 强制登记 · 2026-08-20 起）
 
@@ -60,8 +66,8 @@ def _git_head() -> str:
 
 def add(args) -> int:
     """追加一条教训（文件不存在则建表头）"""
-    now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
-    now_epoch = int(datetime.now().astimezone().timestamp())
+    now = datetime.now(CN_TZ).strftime("%Y-%m-%d %H:%M")
+    now_epoch = int(datetime.now(CN_TZ).timestamp())
     commit = _git_head()
     entry = (
         f"### {now} · commit {commit} · ts={now_epoch}\n"
@@ -73,17 +79,23 @@ def add(args) -> int:
         f"\n---\n\n"
     )
     if LESSONS_PATH.exists():
-        existing = LESSONS_PATH.read_text(encoding="utf-8")
-        # 插到第一个 --- 之后（表头后）
-        if existing.startswith(HEADER):
-            existing = existing[len(HEADER):]
+        text = LESSONS_PATH.read_text(encoding="utf-8")
+        # 2026-08-29 修复：旧实现表头不匹配即整文件重建，曾致 1199 行台账被清空。
+        # 现改为不销毁插入：正文永远保留，只在表头分隔线后插入新条目。
+        if text.startswith(HEADER):
+            body = text[len(HEADER):]
+            out = HEADER + entry + body
+        elif "\n---\n" in text:
+            idx = text.find("\n---\n") + len("\n---\n")
+            out = text[:idx] + "\n" + entry + text[idx:].lstrip("\n")
+            print("⚠️ 表头与 HEADER 常量不一致（可能被手工改过），已改用安全插入，台账正文未动",
+                  file=sys.stderr)
         else:
-            # 迁移：旧文件无表头 → 重建
-            existing = ""
+            out = HEADER + entry + text  # 无分隔线的空表/外来文件：保留原文，仅补表头
     else:
-        existing = ""
+        out = HEADER + entry
     LESSONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    LESSONS_PATH.write_text(HEADER + entry + existing, encoding="utf-8")
+    LESSONS_PATH.write_text(out, encoding="utf-8")
     print(f"✅ 教训已登记：{LESSONS_PATH}")
     print(entry.strip())
     return 0
@@ -95,12 +107,12 @@ def recent(args) -> int:
         print("lessons.md 不存在（尚无登记）")
         return 0
     s = LESSONS_PATH.read_text(encoding="utf-8")
-    cutoff = datetime.now().astimezone() - timedelta(days=args.days)
+    cutoff = datetime.now(CN_TZ) - timedelta(days=args.days)
     count = 0
     for line in s.splitlines():
         if line.startswith("### "):
             try:
-                ts = datetime.strptime(line[4:20], "%Y-%m-%d %H:%M").replace(tzinfo=datetime.now().astimezone().tzinfo)
+                ts = datetime.strptime(line[4:20], "%Y-%m-%d %H:%M").replace(tzinfo=CN_TZ)
                 if ts >= cutoff:
                     count += 1
                     print(line[4:])
@@ -120,10 +132,9 @@ def _last_entry_time() -> datetime | None:
             import re as _re
             m = _re.search(r"ts=(\d+)", line)
             if m:
-                return datetime.fromtimestamp(int(m.group(1)), tz=datetime.now().astimezone().tzinfo)
+                return datetime.fromtimestamp(int(m.group(1)), tz=CN_TZ)
             try:
-                tz = datetime.now().astimezone().tzinfo
-                return datetime.strptime(line[4:20], "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                return datetime.strptime(line[4:20], "%Y-%m-%d %H:%M").replace(tzinfo=CN_TZ)
             except ValueError:
                 continue
     return None
@@ -148,11 +159,10 @@ def check_lessons() -> tuple[bool, str]:
     if not failed_at and not failed_ts:
         return True, "失败状态无时间戳（忽略）"
     if failed_ts is not None:
-        failed_dt = datetime.fromtimestamp(int(failed_ts), tz=datetime.now().astimezone().tzinfo)
+        failed_dt = datetime.fromtimestamp(int(failed_ts), tz=CN_TZ)
     else:
         try:
-            tz = datetime.now().astimezone().tzinfo
-            failed_dt = datetime.strptime(failed_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+            failed_dt = datetime.strptime(failed_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=CN_TZ)
         except ValueError:
             return True, "失败时间戳格式异常（忽略）"
     last = _last_entry_time()

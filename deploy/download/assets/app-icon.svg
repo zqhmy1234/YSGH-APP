@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="忆述光华 应用图标">
+  <title>忆述光华</title>
+  <!--
+    手写矢量标识（卡 E1 · 2026-09-21）：年轮 / 光晕意象，品牌金 → 锈红渐变。
+    为什么手写而不是位图：静态落地页要求任意分辨率清晰、体积极小、零外部依赖。
+    同一标识可另存为 PNG 供 C3 卡的 Android icons 多分辨率使用（届时按 48/72/96/144/192 导出）。
+  -->
+  <defs>
+    <linearGradient id="ringGold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C4913C" />
+      <stop offset="1" stop-color="#B05A3A" />
+    </linearGradient>
+  </defs>
+
+  <!-- 暖纸白底 + 圆角方 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="#F8F7F4" />
+
+  <!-- 三层年轮弧（270°，逐层变细变淡） -->
+  <g fill="none" stroke="url(#ringGold)" stroke-linecap="round">
+    <g transform="rotate(-8 512 512)">
+      <path d="M264.5 264.5 A350 350 0 1 1 759.5 759.5" stroke-width="16" opacity="0.5" />
+    </g>
+    <g transform="rotate(0 512 512)">
+      <path d="M335.2 335.2 A250 250 0 1 1 688.8 688.8" stroke-width="22" opacity="0.72" />
+    </g>
+    <g transform="rotate(8 512 512)">
+      <path d="M405.9 405.9 A150 150 0 1 1 618.1 618.1" stroke-width="30" opacity="0.95" />
+    </g>
+  </g>
+
+  <!-- 中心一点 -->
+  <circle cx="512" cy="512" r="46" fill="url(#ringGold)" />
+</svg>

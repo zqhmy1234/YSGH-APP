@@ -13,6 +13,19 @@ class MessageOut(BaseModel):
     title: str
     body: str
     payload: dict = Field(default_factory=dict)
+    content_id: str | None = None  # BA1：关联内容（消息跳详情）
     status: str
     sent_at: datetime
     read_at: datetime | None = None
+
+
+class MessageReadOut(BaseModel):
+    """单条已读出参（POST /api/v1/messages/{msg_id}/read）"""
+
+    read: int
+
+
+class MessageReadAllOut(BaseModel):
+    """全部已读出参（POST /api/v1/messages/read-all）"""
+
+    read_all: bool

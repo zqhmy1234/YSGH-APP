@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="200" viewBox="0 0 240 200">
+  <!-- 空白相纸（空状态隐喻：还没有照片） -->
+  <g transform="rotate(-3 120 100)">
+    <rect x="50" y="30" width="140" height="150" rx="4" fill="#F6F1E7" stroke="#3A2E25" stroke-width="2"/>
+    <rect x="64" y="44" width="112" height="84" rx="3" fill="none" stroke="#B05A3A" stroke-width="2" stroke-dasharray="6 6" opacity="0.7"/>
+    <circle cx="120" cy="86" r="18" fill="none" stroke="#B05A3A" stroke-width="2" opacity="0.7"/>
+    <line x1="120" y1="74" x2="120" y2="98" stroke="#B05A3A" stroke-width="2" opacity="0.7"/>
+    <line x1="108" y1="86" x2="132" y2="86" stroke="#B05A3A" stroke-width="2" opacity="0.7"/>
+    <line x1="70" y1="150" x2="170" y2="150" stroke="#3A2E25" stroke-width="2" opacity="0.5"/>
+    <line x1="70" y1="162" x2="140" y2="162" stroke="#3A2E25" stroke-width="2" opacity="0.3"/>
+  </g>
+  <rect x="176" y="22" width="26" height="10" rx="2" fill="#B05A3A" opacity="0.85" transform="rotate(-8 189 27)"/>
+</svg>

@@ -1,0 +1,52 @@
+{
+ "file": "中央＋按钮.svg",
+ "width": 56.0,
+ "height": 56.0,
+ "viewBox": null,
+ "rects": [],
+ "circles": [
+  {
+   "kind": "circle",
+   "cx": 28.0,
+   "cy": 28.0,
+   "rx": 28.0,
+   "ry": 28.0,
+   "fill": "#B05A3A",
+   "fop": 1.0,
+   "opacity": 1.0,
+   "stroke": null
+  }
+ ],
+ "paths": [
+  {
+   "kind": "path",
+   "x": 20.47,
+   "y": 20.47,
+   "w": 15.06,
+   "h": 15.06,
+   "fill": "#F6F1E7",
+   "fop": 1.0,
+   "opacity": 1.0,
+   "stroke": null,
+   "ncmd": 26,
+   "dhead": "M7.5167 5.3167L7.5167 0Q7.5299 -0.4611 7.1945 -0.7778Q6.8778"
+  }
+ ],
+ "images": [],
+ "uses": [],
+ "foreign": [],
+ "gradients": [],
+ "filters": [],
+ "text_runs": [
+  {
+   "x": 20.5,
+   "y": 20.5,
+   "w": 15.1,
+   "h": 15.1,
+   "glyphs": 1,
+   "fill": "#F6F1E7",
+   "med_glyph_h": 15.06
+  }
+ ],
+ "page_name": "中央＋按钮"
+}

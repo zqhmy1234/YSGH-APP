@@ -1,16 +1,28 @@
-# 忆述光华 · PostgreSQL 备份脚本（S1-08 / 决策 #13）
+﻿# 忆述光华 · PostgreSQL 备份脚本（S1-08 / 决策 #13）
 # 目标：RPO≤24h（WAL 后 ≤5min）、RTO≤4h（DR-001/005/006）
 # 用法：设置环境变量后运行（Windows PowerShell）：
 #   $env:PGPASSWORD="***"; .\scripts\backup_pg.ps1
 # 产物：backups/yishu_YYYYMMDD_HHMMSS.dump + WAL 归档说明
 
 param(
-    [string]$PGBin = "C:\Program Files\PostgreSQL\17\bin",
-    [string]$BackupDir = "D:\GuangH-App\backups",
+    # PostgreSQL bin 目录：优先环境变量 PGBIN；否则自动探测本机已装版本（取最高版本）。
+    # 不再硬编码版本号默认值（原 "C:\Program Files\PostgreSQL\17\bin" 绑定机器与版本）。
+    [string]$PGBin = $(if ($env:PGBIN) { $env:PGBIN } else {
+            $c = Get-ChildItem "C:\Program Files\PostgreSQL\*\bin" -Directory -ErrorAction SilentlyContinue |
+                Sort-Object { [int]($_.Parent.Name -replace '\D', '') } -Descending | Select-Object -First 1
+            if ($c) { $c.FullName } else { "" }
+        }),
+    # 备份目录：优先环境变量 BACKUP_DIR，未设时用显式默认（仓库根下 backups\）。
+    # 不再把 D:\GuangH-App\backups 写死为唯一取值（重构波 B12-4 · D13 硬编码路径族）；默认值保持与本机原值一致。
+    [string]$BackupDir = $(if ($env:BACKUP_DIR) { $env:BACKUP_DIR } else { "D:\GuangH-App\backups" }),
     [string]$DbName = "yishu",
     [string]$DbUser = "yishu_app",
     [string]$DbHost = "localhost"
 )
+
+if (-not $PGBin -or -not (Test-Path "$PGBin\pg_dump.exe")) {
+    throw "未找到 pg_dump：请设置 -PGBin 或环境变量 PGBIN（如 C:\Program Files\PostgreSQL\<版本>\bin）"
+}
 
 $ErrorActionPreference = "Stop"
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"

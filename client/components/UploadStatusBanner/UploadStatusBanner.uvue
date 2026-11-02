@@ -1,0 +1,218 @@
+<template>
+	<!-- 同步状态横幅（B4 §7 · Wave3 Agent H）：
+	     待上传图标 / 失败标红可点击重试 / 暂停横幅"网络异常，已暂停同步" / 一键继续上传。
+	     自包含：直接读 sync_client + uploader 模块状态，宿主页只需一行 <UploadStatusBanner />。
+	     优先级：暂停 > 蜂窝暂缓原图 > 失败可重试 > 上传中（2026-10-14：分支状态原为裸 let
+	     ⇒ 界面永不更新，已全部改响应式 ref，见 script 内注释）。 -->
+	<view v-if="show" class="banner" :class="bannerClass">
+		<view class="banner-main tk-root" @tap="onBannerTap">
+			<text class="banner-icon">{{ icon }}</text>
+			<text class="banner-text">{{ text }}</text>
+		</view>
+		<view v-if="showAction" class="banner-action" @tap="onActionTap">
+			<text class="banner-action-text">{{ actionText }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+	import { subscribeSyncStatus, unsubscribeSyncStatus, isSyncPaused, getPauseReason, resumeSync } from '@/utils/sync_queue'
+	import { getNetKind, NetKind } from '@/utils/uploader_net'
+	import { heldCount, failedCount } from '@/utils/uploader_queue'
+	import { continuePendingUploads } from '@/utils/uploader_batch'
+	// 2026-10-16：补传路径此前只上传、不上云 → 这些照片不进时间轴（D-05 缺口）
+	import { submitUploadsAsL1 } from '@/utils/l1_submit.uts'
+	import { UploadedPhoto } from '@/utils/uploader_types'
+	// 2026-10-31（走查实测缺陷）：补传成功后广播保存信号给 TabIndex（否则时间轴不刷新）
+	import { recordSavedSeq } from '@/utils/shell_state'
+
+	// 2026-10-30（P2 J-14）：原 `defineEmits(['continue-upload','retry-failed','upload-original'])`
+	// 三个事件**全仓零监听者**（宿主 `TabIndex` 只写 `<UploadStatusBanner />`，不接任何 @ 事件），
+	// 而本组件是自包含的（自己调 continuePendingUploads + submitUploadsAsL1）⇒ emit 纯属死 API：
+	// 既让"接线审计"看不出真实边界，也诱导后人以为宿主必须接。整组事件与 emit 调用一并删除。
+
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-12）：原为**裸 `let`**（paused/pauseReason/held/
+	// failed/uploading/netKind），而 uvue 的 `<script setup>` 裸 `let` **不是响应式**
+	// （同源实锤见 `TabIndex.uvue` 的"裸 let 非响应式"注释），下面的 computed 又**直接读它们**
+	// ⇒ computed **没有任何响应式依赖** ⇒ 首次求值后被**永久缓存** ⇒ 横幅只在首帧判断一次，
+	// 之后 3s 轮询写入的值**界面永不反映**——表现就是"该出现的横幅不出现"。
+	// 现全部改用 `ref` 并在所有读取处补 `.value`。
+	//
+	// 注：`uploading` 由点击路径（`doContinue`）在"一键继续/重试"期间置位，是**真实状态**
+	// （不是死字段），故保留为第四档——原实现它是裸 let ⇒ 置位后界面同样反映不出来。
+	let paused = ref(false)
+	let pauseReason = ref('')
+	let held = ref(0)
+	let failed = ref(0)
+	let uploading = ref(false)
+	let netKind = ref('unknown')
+	let refresher = 0
+
+	const show = computed((): boolean => {
+		return paused.value || held.value > 0 || failed.value > 0 || uploading.value
+	})
+	const bannerClass = computed((): string => {
+		if (paused.value) return 'banner-paused'
+		if (held.value > 0) return 'banner-held'
+		if (failed.value > 0) return 'banner-failed'
+		return 'banner-uploading'
+	})
+	const icon = computed((): string => {
+		if (paused.value) return '⏸'
+		if (held.value > 0) return '📤'
+		if (failed.value > 0) return '⚠️'
+		return '⏳'
+	})
+	const text = computed((): string => {
+		if (paused.value) return pauseReason.value != '' ? pauseReason.value : '网络异常，已暂停同步'
+		if (held.value > 0) {
+			if (netKind.value == 'wifi') return held.value + ' 张照片待上传（原图）'
+			// 2026-09-23 更正：原文案承诺"蜂窝仅传缩略图+元数据"，但压缩步骤尚未接线、
+			// 实际行为是暂缓 → 文案必须说"现在是什么"而非"设计上会怎样"，否则用户以为
+			// 蜂窝下照片已在上传（真相比承诺更重要；接线完成后可恢复原措辞）。
+			return held.value + ' 张照片待 WiFi 上传（可点「立即上传原图」）'
+		}
+		if (failed.value > 0) return failed.value + ' 张照片上传失败，点击重试'
+		return '正在上传…'
+	})
+	const showAction = computed((): boolean => {
+		return paused.value || held.value > 0 || failed.value > 0
+	})
+	const actionText = computed((): string => {
+		if (paused.value) return '继续上传'
+		if (held.value > 0 && netKind.value != 'wifi') return '立即上传原图'
+		return '重试'
+	})
+
+	// 2026-10-30（P2 J-3）：回调提到模块作用域并**在卸载时退订**。
+	// 原实现每次挂载都 push 一个新的匿名回调、永不移除 ⇒ 监听器只增不减，旧回调继续往
+	// 已卸载组件的 ref 写值（重复渲染/跨实例串写）。
+	const onSyncStatus = (p: boolean, reason: string): void => {
+		paused.value = p
+		pauseReason.value = reason
+	}
+
+	onMounted(() => {
+		subscribeSyncStatus(onSyncStatus)
+		refresh()
+		refresher = setInterval(() => {
+			refresh()
+		}, 3000) as number
+	})
+	onBeforeUnmount(() => {
+		if (refresher != 0) {
+			clearInterval(refresher)
+			refresher = 0
+		}
+		unsubscribeSyncStatus(onSyncStatus)
+	})
+
+	function refresh(): void {
+		paused.value = isSyncPaused()
+		pauseReason.value = getPauseReason()
+		held.value = heldCount()
+		failed.value = failedCount()
+		getNetKind((kind: NetKind) => {
+			netKind.value = kind
+		})
+	}
+	function onBannerTap(): void {
+		if (failed.value > 0 && !paused.value) {
+			doContinue()
+		}
+	}
+	function onActionTap(): void {
+		if (paused.value) {
+			doContinue()
+		} else if (held.value > 0 && netKind.value != 'wifi') {
+			doContinue()
+		} else {
+			doContinue()
+		}
+	}
+	function doContinue(): void {
+		// 2026-10-30（P1-2）：原 `uploading` 只被赋值、从不判空 ⇒ 连点横幅会并发起多个上传池，
+		// 同批照片被重复上传、并重复提交 L1（同日重复日卡）。这里做 UI 侧互斥；
+		// uploader_batch.continuePendingUploads 内部另有一层单飞兜底。
+		if (uploading.value) {
+			console.log('[yishu] 继续上传进行中，忽略重复点击')
+			return
+		}
+		uploading.value = true
+		continuePendingUploads(() => {}).then((uploaded: Array<UploadedPhoto>) => {
+			uploading.value = false
+			refresh()
+			if (uploaded.length > 0) {
+				// 2026-10-31（走查实测缺陷）：L1 提交后**必须广播保存信号**。
+				// 原实现只 submit 不通知：时间轴要等用户切 tab 才刷新，
+				// 用户看到的就是「上传成功了但不出日卡」。这里用模块级 `recordSavedSeq`
+				// （J-14 已把 emit 全删，横幅是自包含组件，只能走共享状态）。
+				// 注：`submitUploadsAsL1` 是同步函数（返回已 accepted 的条数），不是 Promise。
+				submitUploadsAsL1(uploaded)
+				recordSavedSeq.value = recordSavedSeq.value + 1
+			}
+		})
+	}
+</script>
+
+<style>
+	.banner {
+		margin-left: var(--d-raw-r32, 32rpx);
+		margin-right: var(--d-raw-r32, 32rpx);
+		margin-top: var(--d-raw-r16, 16rpx);
+		border-radius: var(--d-raw-r12, 12rpx);
+		padding: var(--d-raw-r20, 20rpx) var(--d-raw-r28, 28rpx);
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.banner-paused {
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	.banner-held {
+		background-color: var(--c-ink-900, #3A2E25);
+	}
+	.banner-failed {
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	.banner-uploading {
+		background-color: var(--c-ink-900, #3A2E25);
+		opacity: 0.85;
+	}
+	.banner-main {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	/* uvue App 端样式不继承，text 类需各自声明 font-family */
+	.banner-icon {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-paper-200, #F6F1E7);
+		font-size: var(--d-raw-r30, 30rpx);
+		margin-right: var(--d-raw-r16, 16rpx);
+	}
+	.banner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-paper-200, #F6F1E7);
+		font-size: var(--d-raw-r26, 26rpx);
+		flex: 1;
+	}
+	.banner-action {
+		margin-left: var(--d-raw-r20, 20rpx);
+		padding-left: var(--d-raw-r28, 28rpx);
+		padding-right: var(--d-raw-r28, 28rpx);
+		padding-top: var(--d-raw-r10, 10rpx);
+		padding-bottom: var(--d-raw-r10, 10rpx);
+		background-color: #FBF7EF;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ8，属令牌化误映射 */
+		border-radius: var(--d-raw-r28, 28rpx);
+	}
+	.banner-action-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-rust-500, #B05A3A);
+		font-size: var(--d-raw-r24, 24rpx);
+		font-weight: bold;
+	}
+</style>

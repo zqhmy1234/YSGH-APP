@@ -5,18 +5,29 @@
   corpus-C 语音转写风格                    corpus-D 混合（B+C 合并索引）
   corpus-E 规模压力（--scale-eval,测 P95 随规模曲线）
 
+真值评测（Wave2-F 2026-08-26，RAG评测体系 §6，5 项落地）：
+  --truth-50      50 条真值评测集（research/rag_benchmark/truth_queries_50.json）
+  --truth-a       A 批真值（research/truth-data/a/a_v*.json；expected 经 manifest 重映射）
+                  ——含 expect_empty 负样本钩子 + 行为层占位 + 跨模态 route 聚合
+  --rewrite-check Query 改写层正确率（相对时间→filter 解析 + NER + 显式参数优先）
+  --truth-corpus  用 build_truth_corpus.py 生成的采集语料（缺省回退合成 B+C）
+
 输出：evaluation_report.json（每基准集分层指标 + 门禁结果）
 
 用法：
   python -m research.rag_benchmark.run_eval                 # B+C 分层评估
   python -m research.rag_benchmark.run_eval --scale-eval 1000  # 规模压力
+  python -m research.rag_benchmark.run_eval --truth-50      # 50 条真值评测
+  python -m research.rag_benchmark.run_eval --truth-a --rewrite-check
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -26,7 +37,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "backend"
 
 BENCH_DIR = Path(__file__).resolve().parent
 
-from research.rag_benchmark.metrics import evaluate_retrieval  # noqa: E402
+from research.rag_benchmark.metrics import (  # noqa: E402
+    evaluate_retrieval,
+    evaluate_retrieval_explicit,
+)
 
 # 修复（审查 MAJOR）：基准语料索引进生产 collection yishu_contents 会污染真实
 # 检索空间（payload 带 benchmark 标记但搜索不排除）。改用独立 collection
@@ -35,55 +49,164 @@ BENCH_COLLECTION = "yishu_benchmark"
 # 文字语料评测用独立 collection（2026-08-20：corpus-A 图片 498 点已入 yishu_benchmark，
 # 混同会让 text/route 查询命中图片点 → hit_rate/route_acc 虚低；文字评测隔离）
 TEXT_BENCH_COLLECTION = "yishu_benchmark_text"
+# 外部评测集独立 collection（P1-B2 2026-08-25：T2Ranking 抽取用例，与合成库隔离）
+EXT_COLLECTION = "yishu_benchmark_ext"
+# 规模压力测试独立 collection（A-4 · 2026-10-14）：**索引与查询必须同一个库**。
+# 此前 scale-eval 索引落 TEXT_BENCH_COLLECTION、查询打 BENCH_COLLECTION，两者不是
+# 同一个 collection ⇒ P95 根本没测在刚写进去的 N 条语料上。独立库还保证规模语义：
+# 每个 N 从空库重建，点数不会跨规模累积。
+SCALE_COLLECTION = "yishu_benchmark_scale"
 
 GATE = {
     "hit_rate@3": 0.70,     # M1 门禁（Top3≥70%，与产品口径一致）
     "p95_ms": 3000,         # M1 门禁
     "route_acc": 0.90,      # 路由行为准确率
     "temporal_acc": 0.90,   # 时间过滤行为准确率
+    # 真值评测门禁（RAG评测体系 §5）：一般负样本误召回 ≤5%（target ≤3%）
+    "negative_error_rate": 0.05,
+    "negative_target": 0.03,
 }
+
+# 真值评测独立 collection（采集语料/合成兜底语料专用，避免与生产/合成基准混同）
+TRUTH_COLLECTION = "yishu_benchmark_truth"
 
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _index(db, items: list[dict], content_type: str) -> None:
-    """语料 → Qdrant yishu_benchmark（独立基准库，幂等：同 id 覆盖）"""
+# 分段编码批大小（A-4 2026-10-14）：一次性编码整个语料在 N 大时会长时间无输出、
+# 内存峰值高（实测 500 条单批跑十余分钟且无进度）。分段编码**结果与整体一致**
+# （同一模型同一输入，只是切批），但对规模测试可用性影响很大。
+_INDEX_CHUNK = 64
+
+
+def _payload_for(it: dict, content_type: str) -> dict:
+    """语料条目 → Qdrant payload（R-3/R-5 · 2026-10-16 补 filter 元数据）
+
+    字段名与取值必须**严格对齐生产契约**（否则 filter 层永远匹配不到）：
+      · `place` → 字符串（`_to_filter` 用 `MatchValue`）
+      · `tags`  → **复数键 + 数组**（`_to_filter` 里的键名就是 `tags`）
+      · `taken_at` → **epoch 秒 int**（Qdrant `Range` 只吃数值；ISO 字符串匹配不上。
+        镜像 `pipeline.py` 的 `int(ta.timestamp())`）
+
+    缺省键**不写 None** —— 保持 payload 干净，也让「字段缺失」的语义可用。
+    """
+    payload = {
+        "content_type": content_type,
+        "label": it.get("label"),
+        # P1-A（2026-08-25）：类目路由按 content_class 过滤（与生产 payload
+        # 字段一致；label 保留兼容旧逻辑）
+        "content_class": it.get("label"),
+        "benchmark": "rag-distribution",
+        "text": it["text"],
+    }
+    if it.get("place"):
+        payload["place"] = it["place"]
+    if it.get("tags"):
+        payload["tags"] = list(it["tags"])
+    taken = it.get("taken_at")
+    if taken:
+        payload["taken_at"] = (int(datetime.fromisoformat(taken).timestamp())
+                               if isinstance(taken, str) else int(taken))
+    return payload
+
+
+def _index(db, items: list[dict], content_type: str, collection: str | None = None) -> None:
+    """语料 → Qdrant 基准 collection（幂等：同 id 覆盖）
+
+    collection=None → 默认文字基准库 TEXT_BENCH_COLLECTION；
+    外部评测集（--external）传 EXT_COLLECTION 隔离。
+
+    编码按 `_INDEX_CHUNK` 分段（向量与整体编码一致），并打印进度。
+    """
     from app.services.embedding import encode_dense, encode_sparse
     from app.services.vector_store import get_store
 
+    col = collection or TEXT_BENCH_COLLECTION
     store = get_store()
-    store.ensure_collection(TEXT_BENCH_COLLECTION)
-    texts = [it["text"] for it in items]
-    denses = encode_dense(texts)
-    sparses = encode_sparse(texts)
-    for it, dense, sparse in zip(items, denses, sparses, strict=True):
-        store.upsert_content(
-            content_id=it["id"],
-            text=it["text"],
-            dense=dense,
-            sparse=sparse,
-            payload={
-                "content_type": content_type,
-                "label": it.get("label"),
-                "benchmark": "rag-distribution",
-                "text": it["text"],
-            },
-            collection=TEXT_BENCH_COLLECTION,
-        )
+    store.ensure_collection(col)
+    total = len(items)
+    for start in range(0, total, _INDEX_CHUNK):
+        chunk = items[start:start + _INDEX_CHUNK]
+        texts = [it["text"] for it in chunk]
+        denses = encode_dense(texts)
+        sparses = encode_sparse(texts)
+        for it, dense, sparse in zip(chunk, denses, sparses, strict=True):
+            store.upsert_content(
+                content_id=it["id"],
+                text=it["text"],
+                dense=dense,
+                sparse=sparse,
+                payload=_payload_for(it, content_type),
+                collection=col,
+            )
+        print(f"  [index] {min(start + _INDEX_CHUNK, total)}/{total}", flush=True)
 
 
-def _make_ranker(content_type: str | None = None):
+def _reset_collection(collection: str) -> None:
+    """删库重建（规模曲线的每个 N 都必须从空库起步，否则点数会跨规模累积）"""
+    from app.services.vector_store import get_store
+
+    store = get_store()
+    try:
+        store.client.delete_collection(collection)
+    except Exception as exc:  # noqa: BLE001 —— 库不存在属正常（首次跑即如此），仅提示
+        print(f"[scale] 删除旧库 {collection} 跳过：{exc}")
+    store.ensure_collection(collection)
+
+
+def _run_scale_point(size: int, n_queries: int = 50) -> dict:
+    """单点规模压测：索引 N 条 → 测查询 P95
+
+    A-4（2026-10-14）修：索引与查询**都用 SCALE_COLLECTION**（此前两者不同库，
+    P95 没测在实际语料上）。另加 warm-up 排除 BGE 冷加载，避免首次查询把 P95 抬高。
+    """
+    from app.schemas.search import SearchQuery
+    from app.services.embedding import encode_query
+    from app.services.rag import search
+
+    corpus = _load_json(BENCH_DIR / "corpora" / "corpus_e_scale.json")["items"][:size]
+    _reset_collection(SCALE_COLLECTION)
+    t0 = time.perf_counter()
+    _index(None, corpus, "text", collection=SCALE_COLLECTION)
+    idx_ms = int((time.perf_counter() - t0) * 1000)
+
+    encode_query("预热")  # 排除模型冷加载
+    latencies: list[float] = []
+    for i in range(n_queries):
+        t0 = time.perf_counter()
+        search(SearchQuery(q=f"工作备忘 {i * 100}", limit=5), collection=SCALE_COLLECTION)
+        latencies.append((time.perf_counter() - t0) * 1000)
+    p95 = sorted(latencies)[max(0, int(len(latencies) * 0.95) - 1)]
+    from app.core.config import settings  # 记录口径：mock 开关直接决定延迟量级
+
+    return {
+        "collection": SCALE_COLLECTION,
+        "size": len(corpus),
+        "n_queries": n_queries,
+        "index_ms": idx_ms,
+        "p95_ms": round(p95, 1),
+        "gate_p95": p95 < GATE["p95_ms"],
+        # ⚠️ 口径必需字段：mock_external_ai=true 时 LLM 改写/精排是 no-op，
+        # 测出的 P95 会**低于**真实档；对比历史数字前先核对这一项。
+        "mock_external_ai": settings.mock_external_ai,
+        "rerank_enabled": settings.rerank_enabled,
+    }
+
+
+def _make_ranker(content_type: str | None = None, collection: str | None = None):
     """构造 ranker：query → [(id, score)]（可按类型过滤测路由/过滤）"""
     from app.schemas.search import SearchQuery
     from app.services.rag import search
+
+    col = collection or TEXT_BENCH_COLLECTION
 
     def ranker(q: str):
         req = SearchQuery(q=q, limit=10)
         if content_type:
             req.content_types = [content_type]
-        result = search(req, collection=TEXT_BENCH_COLLECTION)
+        result = search(req, collection=col)
         return [(h.content_id, h.score) for h in result.hits]
 
     return ranker
@@ -128,38 +251,417 @@ def _eval_corpus(queries: list[dict], ranker, corpus_labels: dict[str, set[str]]
         else:
             eval_qs = [{**q, "expected": sorted(_resolve_relevant(q, corpus_labels))} for q in qs]
             metric = evaluate_retrieval(eval_qs, ranker)
+            # P0-B（2026-08-25）：显式相关口径诊断——相关集 = 显式 expected id，
+            # 不被 label 全集稀释；只统计带显式 id 的查询（n_queries 为其数量）。
+            metric["explicit"] = evaluate_retrieval_explicit(qs, ranker)
             report[layer] = metric
     return report, gates
 
 
+# ---- Wave2-F（2026-08-26）：真值评测（RAG评测体系 §6，5 项落地）----
+
+# 行为层：**「空结果即正确」的占位口径**
+#
+# ⚠️ 2026-10-16（R-3/R-5）**已从集合里移除 `time`/`temporal`**：
+# 语料补上 `taken_at` 之后（corpus-D 带 `_meta.anchor_now` 冻结时钟），时间查询会**返回非空**，
+# 再按「空=对」判定就会把**正确命中判成错**。现在 time 层的正向查询都带 `expected`，
+# 走正常的 retrieval 分支（命中 expected 才算对）——与其他层同口径。
+#
+# 保留这个集合本身是**防回归**：今后若有人又把某条 time 查询的 `expected` 清空，
+# 它会掉到 `neutral` **占位**分支（一眼看得出是占位），而不是白拿 `behavior_acc=1.0`。
+_BEHAVIOR_EMPTY_OK_LAYERS: set[str] = set()
+
+
+def _load_truth_queries(path: Path) -> list[dict]:
+    """加载真值查询（兼容 A 批顶层数组 或 {queries:[...]} 对象）"""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("queries"), list):
+        return data["queries"]
+    raise ValueError(f"{path.name}: 无法解析真值查询（期望数组或 {{queries:[]}} 对象）")
+
+
+def _resolve_truth_relevant(q: dict, corpus_labels: dict[str, set[str]]) -> set[str]:
+    """真值查询相关集：显式 expected id 中能解析到语料的子集（label 兜底）"""
+    rel = {i for i in (q.get("expected") or []) if i in corpus_labels.get("__all__", set())}
+    label = q.get("expected_label")
+    if label and label != "__none__" and label in corpus_labels:
+        rel |= corpus_labels[label]
+    return rel
+
+
+def _eval_truth_queries(
+    queries: list[dict],
+    ranker,
+    corpus_labels: dict[str, set[str]],
+    modality_map: dict[str, str],
+) -> dict:
+    """真值查询评估（§6.1/§6.3/§6.5 落地）：
+
+    - expect_empty=True → 负样本钩子（判空/误召回，§5 门禁 negative_error_rate≤5%）
+    - 显式 expected id 可解析 → 检索指标（recall/hit_rate/mrr）
+    - time/temporal 层无 id → 行为占位（空结果即正确，语料缺 taken_at 的过渡口径）
+    - 其余层无 id → neutral 占位（语料缺元数据无法判，记 placeholder）
+    - route 层多 id → 跨模态命中聚合（文/图/语音多模态返回，§6.5）
+    """
+    layers: dict[str, dict] = {}
+    retrieval_qs: list[dict] = []
+    neg_total = neg_fp = placeholder_n = unmatched_n = 0
+    cross_n = cross_multi = 0
+
+    for q in queries:
+        layer = q.get("layer", "other")
+        ranked = [rid for rid, _ in ranker(q["query"])]
+        entry: dict
+        if q.get("expect_empty"):
+            neg_total += 1
+            fp = 1 if ranked else 0
+            neg_fp += fp
+            entry = {"behavior_acc": 0.0 if fp else 1.0, "negative": True}
+        else:
+            ids = [i for i in (q.get("expected") or []) if i in corpus_labels.get("__all__", set())]
+            if ids:
+                resolved = sorted(_resolve_truth_relevant(q, corpus_labels))
+                retrieval_qs.append({**q, "expected": resolved})
+                entry = {"retrieval": True, "resolved": resolved}
+            elif q.get("expected"):
+                unmatched_n += 1
+                entry = {"unmatched": True}
+            elif layer in _BEHAVIOR_EMPTY_OK_LAYERS:
+                entry = {"behavior_acc": 1.0 if not ranked else 0.0, "placeholder": True}
+            else:
+                placeholder_n += 1
+                entry = {"neutral": True, "placeholder": True}
+        # 跨模态 route 聚合（§6.5）：expected 多 id 的 route 查询，看 top-3 是否命中 ≥2 模态
+        if layer == "route" and (q.get("expected") or []):
+            cross_n += 1
+            hit_cts = {modality_map.get(rid) for rid in ranked[:3] if rid in modality_map}
+            hit_cts.discard(None)
+            if len(hit_cts) >= 2:
+                cross_multi += 1
+        lr = layers.setdefault(layer, {
+            "n": 0, "behavior_scores": [], "negative_n": 0, "negative_fp": 0,
+            "unmatched_n": 0, "placeholder": False, "retrieval_qs": [],
+        })
+        lr["n"] += 1
+        if "behavior_acc" in entry and not entry.get("negative"):
+            lr["behavior_scores"].append(entry["behavior_acc"])
+        if entry.get("negative"):
+            lr["negative_n"] += 1
+            lr["negative_fp"] += 1 if entry["behavior_acc"] == 0.0 else 0
+        if entry.get("unmatched"):
+            lr["unmatched_n"] += 1
+        if entry.get("placeholder"):
+            lr["placeholder"] = True
+        if entry.get("retrieval"):
+            lr["retrieval_qs"].append({**q, "expected": entry["resolved"]})
+
+    # 层报告收口
+    layer_report: dict[str, dict] = {}
+    for layer, lr in layers.items():
+        scores = lr["behavior_scores"]
+        layer_report[layer] = {
+            "n": lr["n"],
+            "placeholder": lr["placeholder"],
+            "negative_n": lr["negative_n"],
+            "negative_fp": lr["negative_fp"],
+            "unmatched_n": lr["unmatched_n"],
+            "behavior_acc": round(sum(scores) / len(scores), 4) if scores else None,
+            "retrieval": evaluate_retrieval(lr["retrieval_qs"], ranker) if lr["retrieval_qs"] else None,
+        }
+
+    overall = {
+        "retrieval": evaluate_retrieval(retrieval_qs, ranker) if retrieval_qs else {"n_queries": 0},
+        "negative_n": neg_total,
+        "negative_error_rate": round(neg_fp / neg_total, 4) if neg_total else 0.0,
+        "placeholder_n": placeholder_n,
+        "unmatched_n": unmatched_n,
+    }
+    if cross_n:
+        overall["cross_modal"] = {"n": cross_n, "multi_modal_hit": cross_multi,
+                                  "acc": round(cross_multi / cross_n, 4)}
+    return {"layers": layer_report, "overall": overall}
+
+
+def _check_rewrite_case(case: dict, now=None) -> bool:
+    """改写层单例正确性校验（§6.4：相对时间→filter 解析 + NER + 显式参数优先）"""
+    from app.schemas.search import SearchQuery
+    from app.services.rag import _rewrite_query
+
+    params = case.get("params") or {}
+    q = SearchQuery(q=case["query"], **{k: v for k, v in params.items() if k in ("place", "tag")})
+    rewritten, filters, ner_filters = _rewrite_query(q)
+    expect = case.get("expect") or {}
+    kind = expect.get("kind")
+    if kind == "mid_query_no_filter":
+        return "time_from" not in filters and "time_to" not in filters
+    if kind == "place":
+        if expect.get("place"):
+            return filters.get("place") == expect["place"] and ner_filters.get("place") == expect["place"]
+        return bool(filters.get("place"))
+    if kind == "person":
+        return bool(filters.get("tag"))
+    if kind == "explicit_param_wins":
+        return filters.get("place") == expect["place"] and "place" not in ner_filters
+    # 时间窗口校验
+    tf, tt = filters.get("time_from"), filters.get("time_to")
+    if tf is None:
+        return False
+    exp_rewritten = expect.get("rewritten")
+    if exp_rewritten is not None and rewritten != exp_rewritten:
+        return False
+    if kind == "last_year":
+        return tf.year == _now(now).year - 1 and tt is not None and tt.year == _now(now).year - 1
+    if kind == "last_summer":
+        return tf.month == 6 and tf.day == 1 and tt is not None and tt.month == 8 and tt.day == 31
+    if kind == "two_weeks_ago" or kind == "last_week":
+        return tt is not None and 6 <= (tt - tf).days <= 7
+    if kind == "three_years_ago":
+        return tf.year == _now(now).year - 3
+    if kind == "year_before_last":
+        return tf.year == _now(now).year - 2
+    if kind == "yesterday":
+        return tt is not None and tf.date() == (_now(now).date() - __import__("datetime").timedelta(days=1))
+    return False
+
+
+def _now(now) -> object:
+    """当前时间（显式传入 `now` 优先）—— 与 `rag/rewrite._now` 用**同一个** `RAG_NOW_OVERRIDE`
+
+    两边必须同锚，否则 `--truth-50 --rewrite-check` 同进程跑时，
+    改写校验算的期望窗口与检索层实际用的窗口会不一致。
+    """
+    if now is not None:
+        return now
+    import datetime as _dt
+
+    raw = os.environ.get("RAG_NOW_OVERRIDE")
+    if raw:
+        try:
+            return _dt.datetime.fromisoformat(raw).astimezone()
+        except ValueError:
+            print(f"[warn] RAG_NOW_OVERRIDE 解析失败，回落真实 now: {raw}")
+    return _dt.datetime.now(_dt.UTC).astimezone()
+
+
+def _eval_rewrite(cases_path: Path) -> dict:
+    """Query 改写层正确率评估（§6.4）：逐例判 + 聚合准确率"""
+    data = json.loads(cases_path.read_text(encoding="utf-8"))
+    cases = data.get("cases") if isinstance(data, dict) else data
+    ok = 0
+    failed: list[dict] = []
+    for case in cases:
+        passed = _check_rewrite_case(case)
+        ok += 1 if passed else 0
+        if not passed:
+            failed.append({"case_id": case.get("case_id"), "query": case.get("query")})
+    return {
+        "n": len(cases),
+        "accuracy": round(ok / len(cases), 4) if cases else 0.0,
+        "failed": failed,
+    }
+
+
+def _run_truth_eval(args, report: dict) -> dict:
+    """真值评测主流程（§6.1-6.5）：索引语料 → 跑真值查询 → 门禁
+
+    语料优先级：--truth-corpus 用 build_truth_corpus 产物（采集语料）；
+    缺省回退合成 B+C（truth_queries_50 的 expected 引用合成 id 即可直接跑）。
+    """
+    # 1. 语料（采集或合成兜底）→ TRUTH_COLLECTION
+    items: list[dict] = []
+    if args.truth_corpus:
+        tc = BENCH_DIR / "truth_corpus"
+        for fname in ("corpus_b_truth.json", "corpus_c_truth.json", "corpus_d_truth.json"):
+            p = tc / fname
+            if p.exists():
+                items.extend(_load_json(p)["items"])
+        if not items:
+            print("[truth] 无采集语料（先跑 python scripts/build_truth_corpus.py），回退合成 B+C")
+    if not items:
+        items = _load_json(BENCH_DIR / "corpora" / "corpus_b_text.json")["items"]
+        items += _load_json(BENCH_DIR / "corpora" / "corpus_c_voice.json")["items"]
+        # corpus-D（R-3/R-5 · 2026-10-16）：filter 元数据语料（place/taken_at/photo）。
+        # 它带 `_meta.anchor_now` —— 时间查询是**相对** now 解析的，必须把时钟冻到
+        # 与该语料同一锚点，否则跨天跑就失配（见 rag/rewrite._now）。
+        d_path = BENCH_DIR / "corpora" / "corpus_d_filter.json"
+        if d_path.exists():
+            d_corpus = _load_json(d_path)
+            items += d_corpus["items"]
+            anchor = (d_corpus.get("_meta") or {}).get("anchor_now")
+            if anchor:
+                os.environ["RAG_NOW_OVERRIDE"] = anchor
+                print(f"[truth] 时钟冻结到语料锚点 RAG_NOW_OVERRIDE={anchor}"
+                      f"（corpus-D {len(d_corpus['items'])} 条）")
+    print(f"[truth] 索引语料 {len(items)} 条 → {TRUTH_COLLECTION}")
+    by_ct: dict[str, list[dict]] = {}
+    for it in items:
+        by_ct.setdefault(it.get("content_type") or "text", []).append(it)
+    for ct, group in by_ct.items():
+        _index(None, group, ct, collection=TRUTH_COLLECTION)
+
+    corpus_labels: dict[str, set[str]] = {"__all__": {it["id"] for it in items}}
+    modality_map: dict[str, str] = {}
+    for it in items:
+        corpus_labels.setdefault(it.get("label") or it["content_type"], set()).add(it["id"])
+        modality_map[it["id"]] = it.get("content_type") or "text"
+
+    # 2. 加载真值查询
+    queries: list[dict] = []
+    sources: list[str] = []
+    if args.truth_50:
+        queries += _load_truth_queries(BENCH_DIR / "truth_queries_50.json")
+        sources.append("truth_queries_50")
+    if args.truth_a:
+        a_dir = BENCH_DIR.parent.parent / "research" / "truth-data" / "a"
+        # 2026-10-27：优先用 a_remapped.json —— 它把采集 id 换成
+        # build_truth_corpus 分配的稳定 uuid（B/C 同名 id 已按批次消歧）。
+        # 没有 remapped 时才回退到最新 a_v*.json（直接用采集 id，仅适用于
+        # 语料 id 全局唯一、或只做结构校验的场景）。
+        remapped = a_dir / "a_remapped.json"
+        a_files = sorted(a_dir.glob("a_v*.json"))
+        if remapped.exists():
+            queries += _load_truth_queries(remapped)
+            sources.append("truth-data/a/a_remapped.json")
+        elif a_files:
+            queries += _load_truth_queries(a_files[-1])
+            sources.append(f"truth-data/a/{a_files[-1].name}")
+        else:
+            print("[truth] A 批无数据，跳过")
+    print(f"[truth] 查询 {len(queries)} 条（来源: {', '.join(sources) or '无'}）")
+
+    # 3. 跑真值评估
+    ranker = _make_ranker(collection=TRUTH_COLLECTION)
+    res = _eval_truth_queries(queries, ranker, corpus_labels, modality_map)
+    overall = res["overall"]
+    hr3 = overall["retrieval"].get("hit_rate@3", 0.0) if overall.get("retrieval") else 0.0
+    neg_rate = overall["negative_error_rate"]
+    # 假绿修复（2026-10-09）：原式 `hr3 >= 阈值 or n_queries == 0` 把「没测到任何查询」
+    # 当成 PASS —— 于是 `--truth-a`（数据不足）这类场景会打印「门禁 ✅ PASS」并输出
+    # hit_rate@3=0.0，看起来像"过了"。现改为：无可测查询 → gate 置 None（无法判定），
+    # 且不计入通过（overall_ok 为 False）。报告里同时保留 n_queries 便于区分两种 0.0。
+    n_q = (overall.get("retrieval") or {}).get("n_queries", 0)
+    gate_hr = (hr3 >= GATE["hit_rate@3"]) if n_q else None
+    gate_neg = neg_rate <= GATE["negative_error_rate"]
+    truth_gates = {
+        "hit_rate@3": hr3,
+        "gate_hit_rate@3": gate_hr,
+        "n_queries": n_q,
+        "negative_error_rate": neg_rate,
+        "gate_negative_error_rate": gate_neg,
+        "threshold_hit_rate@3": GATE["hit_rate@3"],
+        "threshold_negative": GATE["negative_error_rate"],
+    }
+    # 环境指纹（§6.3）：拒答/精排/改写都直接影响负样本指标，报告必须能自证口径，
+    # 否则「同一语料两次跑出不同数字」无法归因。2026-10-23 补 answerability 开关。
+    from app.core.config import settings
+
+    report["truth"] = {"queries": len(queries), "sources": sources,
+                       "corpus_size": len(items), "layers": res["layers"],
+                       "overall": overall, "gates": truth_gates,
+                       "settings": {
+                           "mock_external_ai": settings.mock_external_ai,
+                           "llm_provider": settings.llm_provider,
+                           "rerank_enabled": settings.rerank_enabled,
+                           "rerank_llm_enabled": settings.rerank_llm_enabled,
+                           "retrieval_min_dense_score": settings.retrieval_min_dense_score,
+                           "answerability_reject_enabled": settings.answerability_reject_enabled,
+                       }}
+    hr_txt = (f"hit_rate@3={hr3}（门禁 ≥{GATE['hit_rate@3']}）" if n_q
+              else "hit_rate@3 无法判定（n_queries=0，没有可测查询）")
+    print(f"[truth] 检索 {hr_txt}"
+          f" | 负样本误召回率={neg_rate}（门禁 ≤{GATE['negative_error_rate']}）")
+    for layer, lr in res["layers"].items():
+        r = lr.get("retrieval")
+        b = lr.get("behavior_acc")
+        print(f"  layer[{layer}] n={lr['n']} "
+              f"{'hit_rate@3=' + str(r['hit_rate@3']) if r else ''} "
+              f"{'behavior_acc=' + str(b) if b is not None else ''} "
+              f"{'neg=' + str(lr['negative_n']) + '/fp' + str(lr['negative_fp']) if lr['negative_n'] else ''} "
+              f"{'[placeholder]' if lr['placeholder'] else ''}")
+    if "cross_modal" in overall:
+        cm = overall["cross_modal"]
+        print(f"[truth] 跨模态 route: 多模态命中 {cm['multi_modal_hit']}/{cm['n']}（acc={cm['acc']}）")
+    # gate_hr 为 None（无可测查询）时显式算作未通过 —— 不能让 None 顺着 and 传下去，
+    # 否则返回值可能是 None 而不是 bool，调用方按 exit code 判断时会落到意外分支。
+    overall_ok = bool(gate_hr) and bool(gate_neg)
+    hr_mark = "⏭️ 无法判定" if gate_hr is None else ("✅" if gate_hr else "❌")
+    print(f"[truth] 门禁: {'✅ PASS' if overall_ok else '❌ FAIL'}"
+          f"（hit_rate@3 {hr_mark} | 负样本误召回 {'✅' if gate_neg else '❌'}）")
+    return overall_ok
+
+
+def _write_report(report: dict) -> None:
+    out = BENCH_DIR / "evaluation_report.json"
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"报告已输出: {out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scale-eval", type=int, default=0, help=">0 时跑规模压力（N 条）")
+    parser.add_argument("--scale-eval", type=int, default=0, help=">0 时跑规模压力（N 条，单点）")
+    parser.add_argument("--scale-sizes", default="",
+                        help="逗号分隔的规模曲线，如 500,1000,5000（A-4；每点从空库重建）")
+    parser.add_argument("--scale-queries", type=int, default=50,
+                        help="每个规模点的查询采样次数（默认 50；旧版硬编码 20）")
+    parser.add_argument("--external", action="store_true",
+                        help="额外评测外部测试集（T2Ranking 抽取用例，P1-B2；不进门禁）")
+    parser.add_argument("--truth-50", action="store_true",
+                        help="50 条真值评测集（research/rag_benchmark/truth_queries_50.json）")
+    parser.add_argument("--truth-a", action="store_true",
+                        help="A 批真值（research/truth-data/a/a_v*.json；expected 经 manifest 重映射）")
+    parser.add_argument("--truth-corpus", action="store_true",
+                        help="用 build_truth_corpus.py 生成的采集语料（缺省回退合成 B+C）")
+    parser.add_argument("--rewrite-check", action="store_true",
+                        help="Query 改写层正确率（相对时间→filter 解析 + NER + 显式参数优先）")
     args = parser.parse_args()
 
     report: dict = {"_meta": {"version": 2, "note": "RAG 全分布测评"}, "corpora": {}}
     overall_ok = True
 
-    if args.scale_eval > 0:
-        # corpus-E 规模压力：只测延迟随规模（--scale-eval N 条）
-        from app.schemas.search import SearchQuery
-        from app.services.rag import search
+    if args.rewrite_check:
+        rew = _eval_rewrite(BENCH_DIR / "rewrite_cases.json")
+        report["rewrite_check"] = rew
+        print(f"[rewrite] Query 改写层正确率: {rew['accuracy']}（{rew['n']} 例）")
+        if rew["failed"]:
+            print(f"  ✗ 失败用例: {[f['case_id'] for f in rew['failed']]}")
 
-        corpus = _load_json(BENCH_DIR / "corpora" / "corpus_e_scale.json")["items"][: args.scale_eval]
-        print(f"[scale] 索引 {len(corpus)} 条合成文本...")
-        t0 = time.perf_counter()
-        _index(None, corpus, "text")
-        idx_ms = int((time.perf_counter() - t0) * 1000)
-        latencies = []
-        for i in range(20):
-            t0 = time.perf_counter()
-            search(SearchQuery(q=f"工作备忘 {i * 100}", limit=5), collection=BENCH_COLLECTION)
-            latencies.append((time.perf_counter() - t0) * 1000)
-        p95 = sorted(latencies)[int(len(latencies) * 0.95) - 1]
-        report["corpora"]["scale"] = {"size": len(corpus), "index_ms": idx_ms, "p95_ms": round(p95, 1)}
-        report["corpora"]["scale"]["gate_p95"] = p95 < GATE["p95_ms"]
-        overall_ok &= p95 < GATE["p95_ms"]
-        print(f"[scale] {len(corpus)} 条索引 {idx_ms}ms | 查询 P95 {p95:.0f}ms（门禁 <{GATE['p95_ms']}ms）")
+    if args.truth_50 or args.truth_a:
+        overall_ok = _run_truth_eval(args, report)
+        report["overall_pass"] = overall_ok
+        _write_report(report)
+        sys.exit(0 if overall_ok else 1)
+
+    # 仅 --rewrite-check（不跑合成全量）→ 直接收尾
+    # 注意 `--scale-sizes` 也要算进「有别的评测要跑」，否则 --rewrite-check --scale-sizes 会被提前收尾
+    if args.rewrite_check and not args.scale_eval and not args.scale_sizes and not args.external:
+        report["overall_pass"] = True
+        _write_report(report)
+        return
+
+    scale_sizes = [int(s) for s in args.scale_sizes.split(",") if s.strip()] if args.scale_sizes else []
+    if args.scale_eval > 0 and not scale_sizes:
+        scale_sizes = [args.scale_eval]  # 向后兼容旧的单点用法
+
+    if scale_sizes:
+        # corpus-E 规模压力：延迟随规模曲线（A-4 · 2026-10-14 修 collection 不一致）
+        curve: list[dict] = []
+        for size in scale_sizes:
+            pt = _run_scale_point(size, n_queries=args.scale_queries)
+            curve.append(pt)
+            overall_ok &= pt["gate_p95"]
+            mark = "✅" if pt["gate_p95"] else "❌"
+            print(f"[scale] {pt['size']:>6} 条 | 索引 {pt['index_ms']}ms | "
+                  f"查询 P95 {pt['p95_ms']:.0f}ms（门禁 <{GATE['p95_ms']}ms）{mark}")
+        # 向后兼容：`corpora.scale` 保留「单点视图」= 最大规模那一点
+        report["corpora"]["scale"] = curve[-1]
+        report["corpora"]["scale_curve"] = curve
+        (BENCH_DIR / "scale_curve.json").write_text(
+            json.dumps({"_meta": {"collection": SCALE_COLLECTION, "gate_p95_ms": GATE["p95_ms"],
+                                  "note": "A-4 检索性能复测；曲线各点均从空库重建"},
+                        "curve": curve}, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[scale] 曲线已留存: {BENCH_DIR / 'scale_curve.json'}")
     else:
         # corpus-B + corpus-C 文本/语音分布（corpus-D 混合 = B+C 同索引）
         b_items = _load_json(BENCH_DIR / "corpora" / "corpus_b_text.json")["items"]
@@ -193,18 +695,46 @@ def main() -> None:
             for q in queries if q.get("layer") not in ("temporal", "route")
         ]
         all_metrics = evaluate_retrieval(retrieval_qs, ranker)
+        # P0-B：显式口径诊断（用原始查询的显式 id，避免 label 全集误当显式相关）
+        retrieval_raw = [q for q in queries if q.get("layer") not in ("temporal", "route")]
+        all_metrics["explicit"] = evaluate_retrieval_explicit(retrieval_raw, ranker)
         report["corpora"]["mixed"]["overall"] = all_metrics
         gate_hit = all_metrics["hit_rate@3"] >= GATE["hit_rate@3"]
         overall_ok &= gate_hit and all(gates.values())
         print(f"[B+C] 检索层整体 hit_rate@3={all_metrics['hit_rate@3']}（门禁 ≥{GATE['hit_rate@3']}）"
               f" recall@3={all_metrics['recall@3']} mrr={all_metrics['mrr']} ndcg@3={all_metrics['ndcg@3']}")
+        ex = all_metrics["explicit"]
+        print(f"[B+C] 显式口径诊断（n={ex['n_queries']}）: recall@3={ex.get('recall@3')} "
+              f"hit_rate@3={ex.get('hit_rate@3')} mrr={ex.get('mrr')}")
         for layer, m in corpora_report.items():
             print(f"  layer[{layer}] {m}")
 
+        # P1-B2（2026-08-25）：外部测试集（T2Ranking 抽取，见 build_external_corpus.py）
+        # 独立 collection 隔离评测；所有查询带显式 expected id → recall 即显式口径；
+        # 仅诊断/回归哨兵，不进 M1 门禁。
+        if args.external:
+            ext_items = _load_json(BENCH_DIR / "corpora" / "corpus_ext_t2r.json")["items"]
+            ext_queries = _load_json(BENCH_DIR / "queries" / "queries_ext.json")["queries"]
+            print(f"[EXT] 索引外部语料 {len(ext_items)} 条 → {EXT_COLLECTION} ...")
+            t0 = time.perf_counter()
+            _index(None, ext_items, "text", collection=EXT_COLLECTION)
+            ext_ms = int((time.perf_counter() - t0) * 1000)
+            ext_ranker = _make_ranker(collection=EXT_COLLECTION)
+            ext_metrics = evaluate_retrieval(ext_queries, ext_ranker)
+            ext_metrics["explicit"] = evaluate_retrieval_explicit(ext_queries, ext_ranker)
+            report["corpora"]["external"] = {
+                "size": len(ext_items),
+                "n_queries": len(ext_queries),
+                "index_ms": ext_ms,
+                "metrics": ext_metrics,
+                "gate": False,
+            }
+            print(f"[EXT] {len(ext_queries)} 查询: hit_rate@3={ext_metrics['hit_rate@3']} "
+                  f"recall@3={ext_metrics['recall@3']} mrr={ext_metrics['mrr']} "
+                  f"precision@3={ext_metrics['precision@3']} ndcg@3={ext_metrics['ndcg@3']}")
+
     report["overall_pass"] = overall_ok
-    out = BENCH_DIR / "evaluation_report.json"
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"报告已输出: {out}")
+    _write_report(report)
     print(f"总体门禁: {'✅ PASS' if overall_ok else '❌ FAIL'}")
     sys.exit(0 if overall_ok else 1)
 

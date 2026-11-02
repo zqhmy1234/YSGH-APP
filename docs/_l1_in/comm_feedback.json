@@ -1,0 +1,19 @@
+{
+  "id": "comm_feedback",
+  "label": "接受反馈",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "乐于接受",
+    "看情况",
+    "抵触"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_feedback_receptiveness",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

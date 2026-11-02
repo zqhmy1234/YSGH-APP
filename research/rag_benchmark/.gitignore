@@ -1,0 +1,3 @@
+# Wave2-F：build_truth_corpus.py 生成物（采集语料→corpus 的产物，含 PII 全保真字段，
+# 按 RAG评测体系 §7.3 应存独立私有仓库，不入公共代码库）
+truth_corpus/

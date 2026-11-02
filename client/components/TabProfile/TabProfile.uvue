@@ -1,0 +1,555 @@
+<template>
+	<!-- B10 方案A 金丝雀：自 pages/profile/profile.uvue 整体搬迁（模板/样式零改动；TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE） -->
+<!-- ardot 直转 v2：我的页（帧 2:448）· 审计化生成 -->
+	<view class="profile-root tk-root">
+		<view class="n2_452"> <!-- 头像 -->
+			<text class="n2_453">峰</text> <!-- 头像字 -->
+		</view>
+		<text class="n2_454">峰宝</text> <!-- 昵称 -->
+		<text class="n2_455">已记录 {{ statMemories }} 段回忆</text> <!-- 签名行（修复：原硬编码"128 段 · 连续 6 天"，改真数据） -->
+		<view class="n2_456"> <!-- 统计卡（修复：三个数字原硬编码 128/42/23，接 GET /contents 真数据） -->
+			<view class="n2_457"> <!-- 统计-回忆 -->
+				<text class="n2_458">{{ statMemories }}</text> <!-- 数 -->
+				<text class="n2_459">回忆</text> <!-- 名 -->
+			</view>
+			<view class="n2_460"> <!-- 统计-照片 -->
+				<text class="n2_461">{{ statPhotos }}</text> <!-- 数 -->
+				<text class="n2_462">照片</text> <!-- 名 -->
+			</view>
+			<view class="n2_463"> <!-- 统计-语音 -->
+				<!-- 2026-10-30（P1-31）：语音无后端总数端点，只能按最新内容样本计数；样本被截断时
+				     显示下限「N+」，不把截断值装成总数（statVoicesText 由 statVoices + truncated 拼出） -->
+				<text class="n2_464">{{ statVoicesText }}</text> <!-- 数 -->
+				<text class="n2_465">语音</text> <!-- 名 -->
+			</view>
+		</view>
+		<view class="list-flow"> <!-- 列表流式容器（流式重构三定律：组间 margin 表达画布 y 差，加行/加组自动下移，不再写死 top） -->
+			<view class="n2_466"> <!-- 列表组1 -->
+				<view class="n2_467" @tap="goInterview"> <!-- 行-记忆访谈（旧版入口在还原中丢失，对齐旧版 profile goInterview() 补回；样式复用 467 行） -->
+					<image class="n2_468" src="/static/icons/i2_468a.svg" /> <!-- icon: 麦克风（§P8 峰宝点名图标重复：访谈=麦） -->
+					<text class="n2_472">记忆访谈</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_467" @tap="goPortraitManage"> <!-- 行-画像管理 -->
+					<image class="n2_468" src="/static/icons/i2_468.svg" /> <!-- icon: 图标 -->
+					<text class="n2_472">画像管理</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_467" @tap="goFavorites"> <!-- 行-我的收藏（峰宝联调点名 2026-09-02：goFavorites 接线早已落盘但模板漏行，补入口；样式复用 467 行族） -->
+					<image class="n2_468" src="/static/icons/i2_468b.svg" /> <!-- icon: 空心星（§P8 峰宝点名图标重复：收藏=星） -->
+					<text class="n2_472">我的收藏</text> <!-- 文字 -->
+					<image class="n2_473" src="/static/icons/i2_473.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_475" @tap="goMessagesCenter"> <!-- 行-消息中心 -->
+					<image class="n2_476" src="/static/icons/i2_476.svg" /> <!-- icon: 图标 -->
+					<text class="n2_478">消息中心</text> <!-- 文字 -->
+					<image class="n2_479" src="/static/icons/i2_479.svg" /> <!-- icon: 箭头 -->
+				</view>
+			</view>
+			<view class="n2_481"> <!-- 列表组2（margin-top 73.1rpx = 画布组间距 38px，跟组1底部走） -->
+				<view class="n2_482" @tap="goSettings"> <!-- 行-设置 -->
+					<image class="n2_483" src="/static/icons/i2_483.svg" /> <!-- icon: 图标 -->
+					<text class="n2_486">设置</text> <!-- 文字 -->
+					<image class="n2_487" src="/static/icons/i2_487.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_489" @tap="goStorageBackup"> <!-- 行-存储与备份（W0-4 错绑修复：原误绑 goPrivacy，audit F2 实锤） -->
+					<image class="n2_490" src="/static/icons/i2_490.svg" /> <!-- icon: 图标 -->
+					<text class="n2_493">存储与备份</text> <!-- 文字 -->
+					<image class="n2_494" src="/static/icons/i2_494.svg" /> <!-- icon: 箭头 -->
+				</view>
+				<view class="n2_496" @tap="goAbout"> <!-- 行-关于 -->
+					<image class="n2_550" src="/static/icons/i2_550.svg" /> <!-- icon: 关于图标 -->
+					<text class="n2_501">关于忆述光华</text> <!-- 文字 -->
+					<image class="n2_502" src="/static/icons/i2_502.svg" /> <!-- icon: 箭头 -->
+				</view>
+			</view>
+		</view>
+
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed, onMounted, watch } from 'vue'
+	import { requestShellTab } from '@/utils/shell_state'
+	import { fetchRecentSample, RecentSample } from '@/utils/search_api'
+	import { fetchDailySummary, fetchEventStats, DailySummary, EventStats } from '@/utils/api'
+
+	// ===== 设计稿图标（已落成 /static/icons/*.svg 静态资源） =====
+
+	// TabBar 图标（我的=激活态锈红；其余=常态灰）
+
+
+	// ===== 统计真数据 =====
+	// 2026-10-30（P1-31）：口径重定 —— 原来三个数字全部由一次 `GET /contents?limit=100` 现算，
+	// 既把"内容条数"当"回忆条数"，又只统计最新 100 条（内容超过 100 的用户永远看到 100 且不自知）。
+	// 现按各端点的真实能力取值：
+	//  · 回忆 = `GET /stats/daily-summary` 的 `count`（事件关联的 distinct 内容数，全量聚合**不截断**；
+	//    尚未进事件的内容不计入——与"照片"同以事件关联为基准，两个数不会互相矛盾）；
+	//  · 照片 = `GET /events/stats` 的 `photo_count`（distinct 照片数，同样全量不截断）；
+	//  · 语音 = 后端**没有**按类型计数的端点 ⇒ 只能数最新内容样本；样本被 `has_more` 截断时
+	//    以「N+」呈现（下限），绝不把截断值当总数。
+	let statMemories = ref(0)
+	let statPhotos = ref(0)
+	let statVoices = ref(0)
+	/** 语音计数是否为「下限」（最新内容样本被分页截断 ⇒ 真实语音数 ≥ statVoices） */
+	let statVoicesTruncated = ref(false)
+	const statVoicesText = computed((): string => {
+		return '' + statVoices.value + (statVoicesTruncated.value ? '+' : '')
+	})
+
+	// B10 方案A 组件契约：shownSeq 每次切到本 tab ++（原页级 onShow 等价恢复——统计需随
+	// 新记录刷新，数据常驻但计数重拉）；savedSeq 记录保存成功 ++（原 RecordSheet @saved）。
+	const props = defineProps({
+		shownSeq: { type: Number, default: 0 },
+		savedSeq: { type: Number, default: 0 }
+	})
+	// 2026-10-14（台账 §4.20 批次 5 · RC-4）：**切 tab 加 60s TTL**。
+	// 原实现每次切到「我的」tab 都 `loadProfileStats()` ⇒ `fetchRecentContents(100, [])`
+	// ——**一次拉 100 条内容重算全部统计**。用户在四个 tab 间来回点，就是连续打接口 +
+	// 每次重算（掉帧）。口径与 `TabIndex` 的 `SHOW_REFRESH_TTL`（60000）一致：TTL 内切回不重拉。
+	// 注意：记录保存成功（`savedSeq` → `onRecordSaved`）走的是**直调** `loadProfileStats()`，
+	// 不受本 TTL 影响——保存后必须立刻反映新数据。
+	const PROFILE_TTL: number = 60000
+	let lastLoadMs = 0
+	function loadProfileStatsIfStale(): void {
+		const now = Date.now()
+		if (lastLoadMs != 0 && now - lastLoadMs < PROFILE_TTL) {
+			return // TTL 内：沿用已有数据（不闪、不打接口）
+		}
+		lastLoadMs = now
+		loadProfileStats()
+	}
+	// 2026-10-14（台账 §4.20 · 用户反馈"每次跳转都要等数据"）：**统计数字持久缓存**。
+	// 原实现切到「我的」时三个统计从初值起、要等 `fetchRecentContents(100, [])` 回来才有数字
+	// （用户感知"先空一会"）。现进入先用上次计数渲染（秒出），再由 `loadProfileStats` 覆盖。
+	// 只存整数——**无用户文本、无序列化风险**；读写失败一律静默（绝不因缓存影响主流程）。
+	// 2026-10-30（P1-31）：第 4 位是语音计数的「是否下限」标记（1=样本被截断，回放后仍要显示 N+，
+	// 否则冷启动会先把一个下限值画成精确值）。兼容旧的 3 段格式。
+	const PROFILE_STATS_KEY = 'yishu_profile_stats'
+	function restoreProfileStats(): void {
+		try {
+			const raw = uni.getStorageSync(PROFILE_STATS_KEY) as string
+			if (raw == '') {
+				return
+			}
+			const parts = raw.split(',')
+			if (parts.length < 3) {
+				return
+			}
+			statMemories.value = parseInt(parts[0])
+			statPhotos.value = parseInt(parts[1])
+			statVoices.value = parseInt(parts[2])
+			statVoicesTruncated.value = parts.length > 3 && parts[3] == '1'
+		} catch (e) {
+			console.log('[dbg-profile] 统计缓存回放失败（忽略）: ' + e)
+		}
+	}
+	function persistProfileStats(): void {
+		try {
+			uni.setStorageSync(PROFILE_STATS_KEY,
+				'' + statMemories.value + ',' + statPhotos.value + ',' + statVoices.value
+					+ ',' + (statVoicesTruncated.value ? '1' : '0'))
+		} catch (e) {
+			console.log('[dbg-profile] 统计缓存写入失败（忽略）: ' + e)
+		}
+	}
+	onMounted((): void => {
+		restoreProfileStats()
+		loadProfileStatsIfStale()
+	})
+	watch((): number => props.shownSeq, (n: number): void => {
+		if (n > 0) {
+			loadProfileStatsIfStale()
+		}
+	})
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
+	})
+
+	function loadProfileStats(): void {
+		// 2026-10-30（P1-31）：三个数字分流到各自端点，互不冒充：
+		//  ① 回忆：daily-summary.count（全量聚合，不截断）
+		//  ② 照片：events/stats.photo_count（全量聚合，不截断）
+		//  ③ 语音：无总数端点 ⇒ 最新内容样本计数 + truncated 标记（截断即显示 N+）
+		// 任一路失败保持旧值（api 层已全局 toast），不写假 0。
+		// 2026-10-30（P2 F-5）：三路**全失败**时要撤销 TTL 锁。原实现在 loadProfileStatsIfStale 里
+		// 先写 `lastLoadMs = now` 再发请求 ⇒ 离线/服务异常时三路全失败，之后 60s 内切回本 tab
+		// 一律直接 return，用户看到的是"统计永远不刷新"且没有任何重试入口。
+		let pending = 3
+		let okCount = 0
+		const settleOne = (ok: boolean): void => {
+			if (ok) {
+				okCount = okCount + 1
+			}
+			pending = pending - 1
+			if (pending == 0 && okCount == 0) {
+				lastLoadMs = 0
+				console.log('[dbg-profile] 统计三路全失败，撤销 60s TTL（下次切回重试）')
+			}
+		}
+		fetchDailySummary().then((d: DailySummary | null) => {
+			if (d != null) {
+				statMemories.value = d.count
+				persistProfileStats()
+			}
+			settleOne(d != null)
+		})
+		fetchEventStats().then((s: EventStats | null) => {
+			if (s != null) {
+				statPhotos.value = s.photoCount
+				persistProfileStats()
+			}
+			settleOne(s != null)
+		})
+		fetchRecentSample(100, ['voice']).then((s: RecentSample | null) => {
+			if (s != null) {
+				statVoices.value = s.items.length
+				statVoicesTruncated.value = s.truncated
+				persistProfileStats()
+			}
+			settleOne(s != null)
+		})
+	}
+
+	// ===== 交互 =====
+	// 类型入口（照片/语音/文字）
+	function goType(type: string): void {
+		requestShellTab('search', 'type=' + type) // B10 P2：壳内零销毁切 tab（原 navigateTo 壳）
+	}
+
+	// RecordSheet 保存成功回调（统计数字随之刷新）
+	function onRecordSaved(): void {
+		loadProfileStats()
+	}
+
+	// 菜单：记忆访谈（旧版 profile 页 goInterview() 入口，画布直转时整段丢失 → 对齐旧版补回）
+	function goInterview(): void {
+		uni.navigateTo({ url: '/pages/interview/interview' })
+	}
+
+	// 菜单：我的画像
+	function goPortraitManage(): void {
+		uni.navigateTo({ url: '/pages/portrait/manage' })
+	}
+
+	// 菜单：我的收藏（卡16 集成接线，主窗口 2026-09-02：收藏页已建成，toast 占位退役）
+	function goFavorites(): void {
+		uni.navigateTo({ url: '/pages/favorites/favorites' })
+	}
+
+	// 菜单：设置 ⇒ **直达账号与安全**（2026-10-15 · 真机反馈「点设置为什么中间还要有一页」：
+	// 原路径是 我的 → settings（仅两行）→ account/security，白多一次跳转；
+	// 现按用户口径直连，settings 页随之退役（见台账 §7.30））
+	function goSettings(): void {
+		// 2026-10-30（P2 I-1）：**恢复「设置」为总入口**。原实现（台账 §7.30 为断开回环）把
+		// 「我的→设置」直接指向账号安全页，`pages/settings/settings` 因此变成**全仓零 navigateTo 的孤儿页**
+		// ——页面和路由都在，用户永远进不去。
+		// 现口径（单向链，无回环）：我的 → 设置（settings）→ 账号与安全（security）。
+		// `security` 侧**不设**「设置」入口，故不会出现 grpC 提醒的 设置⇄账号与安全 两点互跳。
+		uni.navigateTo({ url: '/pages/settings/settings' })
+	}
+
+	// 菜单：存储与备份（W0-4 错绑修复：原 goPrivacy 误绑此行；W1-1 页面已落地改真跳转）
+	function goStorageBackup(): void {
+		uni.navigateTo({ url: '/pages/storage/storage' })
+	}
+
+	// 菜单：关于我们（W1-2 页面已落地改真跳转）
+	function goAbout(): void {
+		uni.navigateTo({ url: '/pages/about/about' })
+	}
+
+
+	// ardot 直转接线：消息中心入口
+	function goMessagesCenter(): void {
+		uni.navigateTo({ url: '/pages/messages/messages' })
+	}
+</script>
+
+<style>
+
+	.profile-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	/* 列表流式容器：组1/组2 依次入流，组间距 margin 表达（画布组1 y=250px=480.8rpx、组间距 38px=73.1rpx）。
+	   头部四块（头像/昵称/签名/统计卡）为静态内容保留 absolute 定位，不参与流。 */
+	.list-flow {
+		margin-top: var(--d-lattice-p250, 480.8rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		flex-direction: column;
+	}
+	.n2_452 {
+		position: absolute;
+		/* absolute-ok: 静态头部·头像（内容永不增长，画布锚点） */
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p64, 123.1rpx);
+		width: var(--d-lattice-p64, 123.1rpx);
+		height: var(--d-lattice-p64, 123.1rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: var(--c-amber-500, #C4913C);
+		border-radius: var(--d-lattice-p32, 61.5rpx);
+		overflow: hidden;
+	}
+	.n2_453 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p24, 46.2rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	.n2_454 {
+		position: absolute;
+		/* absolute-ok: 静态头部·昵称（同上） */
+		left: var(--d-lattice-p98, 188.5rpx);
+		top: var(--d-lattice-p72, 138.5rpx);
+		width: var(--d-status_bar_height, 84.6rpx);
+		height: 51.9rpx;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_455 {
+		position: absolute;
+		/* absolute-ok: 静态头部·签名行（同上） */
+		left: var(--d-lattice-p98, 188.5rpx);
+		top: var(--d-lattice-p104, 200rpx);
+		width: var(--d-lattice-p192, 369.2rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.n2_456 {
+		position: absolute;
+		/* absolute-ok: 静态头部·统计卡（同上） */
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p152, 292.3rpx);
+		width: var(--d-card_width, 673.1rpx);
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: var(--d-lattice-p18, 34.6rpx);
+		padding-right: var(--d-lattice-p18, 34.6rpx);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-bottom: var(--d-lattice-p18, 34.6rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.n2_457 {
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_458 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_459 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		/* uvue App端不支持flex gap（官方能力边界），画布 gap=3.8rpx 改子元素margin */
+		margin-top: var(--d-lattice-p2, 3.8rpx);
+	}
+	.n2_460 {
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_461 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_462 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
+		margin-top: var(--d-lattice-p2, 3.8rpx);
+	}
+	.n2_463 {
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.n2_464 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_465 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+		/* uvue App端不支持flex gap，画布 gap=3.8rpx 改子元素margin */
+		margin-top: var(--d-lattice-p2, 3.8rpx);
+	}
+	.n2_466 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.n2_467 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_468 {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.n2_472 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.n2_473 {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+	}
+	.n2_475 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_476 {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.n2_478 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.n2_479 {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+	}
+	.n2_481 {
+		/* 流式重构：原 absolute top:746.2 写死（加行即重叠的根因），改 margin-top 跟组1底部走 */
+		margin-top: var(--d-lattice-p38, 73.1rpx);
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.n2_482 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_483 {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.n2_486 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.n2_487 {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+	}
+	.n2_489 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_490 {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.n2_493 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.n2_494 {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+	}
+	.n2_496 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_550 {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.n2_501 {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+		/* uvue App端不支持flex gap，画布 行gap=23.1rpx 改文字margin-left */
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+	}
+	.n2_502 {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+	}
+</style>

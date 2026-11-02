@@ -1,0 +1,586 @@
+/**
+ * 语音录制状态机（B5.2f-2d · 2026-09-24 重构波 · **方案 A：整块 view-model 进 composable**）
+ *
+ * 自 `components/RecordSheet/RecordSheet.uvue` **纯移动**而来：
+ *   · 13 个语音状态 ref（recording/recordSeconds/recordTimer/recState/lastTapAt/recordHint/
+ *     voiceHints/transcribing/transcript/emotion/guardMsg/lastVoiceDuration/lastVoiceFile）；
+ *   · 6 个状态机方法（setRecordingOff / toggleRecord / pauseRecordNow / endFromTap /
+ *     resumeRecordNow / stopRecordNow）—— 注释与真机实锤记录**逐字保留**。
+ *
+ * 注入（组件侧仍持有的东西）：
+ *   · `anim`：轮盘/圆点动画实例（暂停/恢复联动，原为组件内 `ra`）；
+ *   · （2e 起）`onRecordStopped` 也已在类内，原先的 `onStopped` 注入**已撤销**；
+ *   · `resetAiLabel`：清空组件 `aiLabel` 的动作（原 `aiLabel.value = ''` 一行，改回调等价）。
+ *
+ * 行为等价：状态为实例字段（组件用顶层绑定取同一 ref 对象，模板仍自动解包）；方法体逐字保留，
+ * 仅把 `x.value`→`this.x.value`、`ra.`→`this.anim.`、内部互调→`this.<方法>`、`onRecordStopped(`→
+ * `this.onRecordStopped(`。
+ */
+import { ref } from 'vue'
+
+import { showErrorToast } from '@/utils/api'
+// 2026-10-31：原生 errMsg 可能是 JSON 串，展示前必须清洗（见 utils/err_text.uts）
+import { humanizeErr } from '@/utils/err_text'
+import { createVoiceContentRemark } from '@/utils/capsule_api'
+import { submitCorrection } from '@/utils/text_recorder'
+import { submitContentAsL1 } from '@/utils/l1_submit.uts'
+import {
+	ASR_FAIL_NETWORK,
+	ASR_FAIL_OFFLINE,
+	ASR_FAIL_TIMEOUT,
+	lastAsrFailReason,
+	pauseRecord,
+	recorderState,
+	resumeRecord,
+	REC_STATE_PAUSED,
+	setShouldResume,
+	startRecord,
+	stopRecord,
+	transcribeWav,
+	uploadVoicePersistent
+} from '@/utils/voice'
+
+import { RecordAnimations } from '@/composables/useRecordAnimations'
+
+
+export class VoiceRecorder {
+	recording = ref(false)
+	recordSeconds = ref(0)
+	recordTimer = ref(0)
+	recState = ref('idle')
+	lastTapAt: number = 0
+	recordHint = ref('轻触中央圆点 · 开始录音')
+	voiceHints = ref('')
+	transcribing = ref(false)
+	transcribeFailed = ref(false)
+	transcript = ref('')
+	emotion = ref('')
+	guardMsg = ref('')
+	lastVoiceDuration = ref(0)
+	lastVoiceFile = ref('')
+	// GAP-2 修复（2026-09-25）：2e 迁入时**漏声明本字段**（方法体已写 `this.saving.value`），
+	// 而编译报绿（GAP-1）+ 轴 6 只管跨模块 import ⇒ 逃逸。现补声明，并新增轴 7 兜底。
+	saving = ref(false)
+
+	private anim: RecordAnimations
+	private resetAiLabel: () => void
+	/** 「放弃本次录音」标记（2026-10-11 静态审查）：组件卸载/关面板时置位 ⇒ 原生 onStop
+	 *  回调走 onRecordStopped 时**只复位状态，不进入转写/上传/保存链**。
+	 *  为什么需要：卸载时若直接 stopRecordNow，原生回调会带着时长进保存链 ⇒
+	 *  「录音中按返回键」会变成"边退出边把这段录音存下来"（用户意图是取消）。 */
+	private abandonFlag: boolean = false
+	/** 组件存活标志（2026-10-30 · P2 F-2）：宿主组件 onUnmounted 时置 true。
+	 *  为什么需要：转写/上传都是网络异步，用户完全可能「录完 → 立刻返回/关面板」，
+	 *  而 `transcribeWav` / `uploadVoicePersistent` 的回调随后才到 —— 原实现照样
+	 *  `setVoiceStage('preview')` / `showToast` / `emitSaved` / `emitClose`，
+	 *  即**对已卸载的页面写状态并把事件 emit 给已经关闭的浮层**（宿主可能已切到别的 tab）。 */
+	private disposed: boolean = false
+
+	private emitSaved: () => void
+	private emitClose: () => void
+	private setVoiceStage: (s: string) => void
+	private effLabel: () => string
+	private remarkTrimmed: () => string
+	private resetFormFields: () => void
+
+	constructor(
+		anim: RecordAnimations,
+		emitSaved: () => void,
+		emitClose: () => void,
+		setVoiceStage: (s: string) => void,
+		effLabel: () => string,
+		resetAiLabel: () => void,
+		remarkTrimmed: () => string,
+		resetFormFields: () => void
+	) {
+		this.anim = anim
+		this.emitSaved = emitSaved
+		this.emitClose = emitClose
+		this.setVoiceStage = setVoiceStage
+		this.effLabel = effLabel
+		this.resetAiLabel = resetAiLabel
+		this.remarkTrimmed = remarkTrimmed
+		this.resetFormFields = resetFormFields
+	}
+
+	/** 2026-10-30（P2 F-2）：宿主组件卸载时调用（先于/独立于 abandonRecording）。
+	 *  置位后所有网络回调只许落 ref、不许 toast/emit/切 stage。 */
+	markDisposed(): void {
+		this.disposed = true
+	}
+
+	setRecordingOff(): void {
+		this.recording.value = false
+		this.anim.stop()
+	}
+
+	toggleRecord(): void {
+		if (this.transcribing.value) {
+			return
+		}
+		if (this.recording.value) {
+			// 峰宝 09-02 拍板：单击=暂停/继续（立即生效，无 300ms 等待），连点两下=结束录音
+			const now = Date.now()
+			if (this.lastTapAt > 0 && now - this.lastTapAt < 400) {
+				this.lastTapAt = 0
+				this.endFromTap()
+			} else {
+				this.lastTapAt = now
+				if (this.recState.value == REC_STATE_PAUSED) {
+					this.resumeRecordNow()
+				} else {
+					this.pauseRecordNow()
+				}
+			}
+		} else {
+			this.lastTapAt = 0
+			this.recording.value = true
+			this.anim.start()
+			this.recordSeconds.value = 0
+			this.recState.value = 'idle'
+			this.recordHint.value = '轻触暂停 · 连点两次结束'
+			this.transcript.value = ''
+			this.transcribeFailed.value = false
+			this.resetAiLabel()
+			this.emotion.value = ''
+			this.guardMsg.value = ''
+			this.voiceHints.value = ''
+			this.lastVoiceFile.value = ''
+			setShouldResume(true)
+			this.recordTimer.value = setInterval(() => {
+				this.recordSeconds.value++
+			}, 1000) as number
+			// 原生录音插件在标准基座缺失（UTSAndroid is not defined）→ 同步抛出会让状态机卡死，
+			// 导致「录音中关不掉表单」。必须兜底：失败即回滚状态 + 提示。
+			try {
+			startRecord(
+				() => {
+					console.log('[yishu] record started')
+				},
+				(path: string, durationMs: number) => {
+					this.onRecordStopped(path, durationMs)
+				},
+				(msg: string) => {
+					console.error('[yishu] record error: ' + msg)
+					this.setRecordingOff()
+					this.recState.value = 'idle'
+					this.recordHint.value = '轻触中央圆点 · 开始录音'
+					if (this.recordTimer.value > 0) {
+						clearInterval(this.recordTimer.value)
+						this.recordTimer.value = 0
+					}
+					// R7（2026-09-06）：Android RecorderManager 的 errMsg 是系统原文（如 "other errors"），
+					// 用户看不懂。按常见根因翻译；无法识别时给可行动建议。常见触发：
+					// 上次录音未正确释放（强退路径）后立刻再录 / 麦克风被系统占用 / 快速 start-stop 竞态。
+					const m = msg.toLowerCase()
+					if (m.indexOf('other') >= 0 || m.indexOf('fail') >= 0) {
+						showErrorToast(new Error('录音器未就绪（可能被上次录音占用），请重试一次；仍失败请杀掉 App 重开'))
+					} else if (m.indexOf('permission') >= 0 || m.indexOf('denied') >= 0) {
+						showErrorToast(new Error('麦克风权限未开启，请在系统设置中允许'))
+					} else {
+						// 2026-10-31（走查：JSON 直接暴露给用户）：`msg` 可能是
+						// `{"errMsg":"..."}` 这种结构体串，直接拼进 toast 会把花括号引号怼给用户。
+						// 统一走清洗；清洗不出人话就给可执行建议。
+						showErrorToast(new Error(humanizeErr(msg, '录音失败，请重试一次')))
+					}
+				},
+				(autoPaused: boolean) => {
+					console.log('[yishu] record interrupted (autoPaused=' + autoPaused + ')')
+					this.recState.value = recorderState()
+					this.recordHint.value = '录音被中断，已暂停'
+					// R7 补缺口：系统中断（来电/音频焦点/省电）时原生录音已自动暂停，但轮盘动画
+					// 与计时器此前不联动——轮盘继续转+计时继续跑，与手动暂停（§M：全联动）不一致。
+					// 对齐 pauseRecordNow 的联动集（轮盘/圆点动画 pause + 计时器冻结）
+					this.anim.pause()
+					if (this.recordTimer.value > 0) {
+						clearInterval(this.recordTimer.value)
+						this.recordTimer.value = 0
+					}
+				},
+				(path: string, durationMs: number) => {
+					console.log('[yishu] record auto-stop at 30min, saving segment: ' + durationMs + 'ms')
+					this.onRecordStopped(path, durationMs)
+				}
+			)
+			} catch (e) {
+				console.log('[yishu] startRecord failed (标准基座无原生录音插件，状态回滚): ' + e)
+				this.setRecordingOff()
+				this.recState.value = 'idle'
+				this.recordHint.value = '轻触中央圆点 · 开始录音'
+				if (this.recordTimer.value > 0) {
+					clearInterval(this.recordTimer.value)
+					this.recordTimer.value = 0
+				}
+				// 铁律 10.8：能力不可用必须给 toast。只改 recordHint 文案用户看不见
+				// （真机 2026-08-31 峰宝复验：「点麦克风不会有任何提示」）
+				uni.showToast({ title: '当前基座不支持录音，请改用自定义基座', icon: 'none' })
+			}
+		}
+	}
+	// §M 手动暂停（方案 B，峰宝 2026-09-02 拍板）：原生已暂停，UI 计时器冻结 + 轮盘停转，
+	// 恢复入口复用 interrupt-bar「继续录音」
+	pauseRecordNow(): void {
+		try {
+			pauseRecord()
+			this.recState.value = recorderState()
+			this.anim.pause()
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+				this.recordTimer.value = 0
+			}
+			this.recordHint.value = '已暂停 · 轻触继续'
+		} catch (e) {
+			console.log('[yishu] pauseRecord failed (标准基座无原生插件，忽略): ' + e)
+		}
+	}
+	// 双击结束：第一击可能已把原生录音置为暂停，先恢复原生态再停（stopped 回调统一走 onRecordStopped）
+	endFromTap(): void {
+		if (this.recState.value == REC_STATE_PAUSED) {
+			try {
+				resumeRecord()
+			} catch (e) {
+				console.log('[yishu] endFromTap resumeRecord failed (忽略): ' + e)
+			}
+		}
+		this.stopRecordNow()
+	}
+	resumeRecordNow(): void {
+		try {
+			resumeRecord()
+			this.recState.value = recorderState()
+			this.anim.resume()
+			// 计时器随恢复重启（暂停期间已冻结）
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+			}
+			this.recordTimer.value = setInterval(() => {
+				this.recordSeconds.value++
+			}, 1000) as number
+			this.recordHint.value = this.recState.value == REC_STATE_PAUSED ? '录音被中断，已暂停' : '轻触暂停 · 连点两次结束'
+		} catch (e) {
+			console.log('[yishu] resumeRecord failed (标准基座无原生插件，忽略): ' + e)
+		}
+	}
+	stopRecordNow(): void {
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[yishu] stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 兜底：原生不可用也要把 UI 状态复位，否则「录音中」永远退不出去
+			this.setRecordingOff()
+			this.recState.value = 'idle'
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+				this.recordTimer.value = 0
+			}
+		}
+	}
+
+	/**
+	 * 放弃本次录音（**只停，不转写/不上传/不保存**）——组件卸载/面板关闭时用。
+	 *
+	 * 2026-10-11 静态审查：修复"卸载时停录音会顺带保存"——先置 `abandonFlag`，
+	 * 原生 onStop 回调进入 `onRecordStopped` 时即走早退分支。
+	 * 与 `stopRecordNow` 的区别只在语义：后者是"用户主动结束并要求处理"（进保存链）。
+	 */
+	abandonRecording(): void {
+		if (!this.recording.value) {
+			return
+		}
+		this.abandonFlag = true
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[yishu] abandon stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 原生不可用：没有回调，直接自行复位
+			this.abandonFlag = false
+			this.setRecordingOff()
+			this.recState.value = 'idle'
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			if (this.recordTimer.value > 0) {
+				clearInterval(this.recordTimer.value)
+				this.recordTimer.value = 0
+			}
+		}
+	}
+
+	onRecordStopped(path: string, durationMs: number): void {
+		this.setRecordingOff()
+		this.recState.value = 'idle'
+		if (this.recordTimer.value > 0) {
+			clearInterval(this.recordTimer.value)
+			this.recordTimer.value = 0
+		}
+		// 2026-10-30（P2 F-2）：组件已卸载 ⇒ 原生 onStop 回调落在这里时只复位状态，
+		// 绝不进转写/上传/保存链（那是"边退出边把这段录音存下来"）。
+		if (this.disposed) {
+			this.abandonFlag = false
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			console.log('[yishu] 卸载后 onStop：只复位，不转写不上传')
+			return
+		}
+		// 🚨 2026-10-11 静态审查：放弃态（组件卸载中调 abandonRecording）**只复位、不进保存链**。
+		// 否则「录音中按返回键关闭面板」会触发转写+上传+保存（用户意图是取消）。
+		if (this.abandonFlag) {
+			this.abandonFlag = false
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			console.log('[yishu] 放弃态：录音已停止，不上传不保存')
+			return
+		}
+		if (durationMs < 500) {
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			showErrorToast(new Error('录音太短'))
+			return
+		}
+		this.lastVoiceDuration.value = durationMs
+		this.lastVoiceFile.value = path
+		this.transcribeLastVoice()
+	}
+
+	transcribeLastVoice(): void {
+		const path = this.lastVoiceFile.value
+		const durationMs = this.lastVoiceDuration.value
+		if (path == '') {
+			showErrorToast(new Error('找不到待转写录音'))
+			return
+		}
+		this.transcribing.value = true
+		this.transcribeFailed.value = false
+		this.recordHint.value = '正在转写…'
+		if (durationMs >= 300000) {
+			// 长录音（>5min）：分段转写走持久上传，无标注态（画布无此帧）——诚实收栈
+			this.transcribing.value = false
+			this.recordHint.value = '轻触中央圆点 · 开始录音'
+			uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
+			uploadVoicePersistent(path, durationMs).then((res: UTSJSONObject | null) => {
+				console.log('[yishu] long voice uploaded: ' + (res != null ? JSON.stringify(res) : 'null'))
+				// 2026-10-30（P2 F-2）：卸载后不再 toast / emit（上传本身已发生，内容照常入库）
+				if (this.disposed) {
+					console.log('[yishu] 长录音回包时组件已卸载：不再 toast/emit')
+					return
+				}
+				// 2026-10-30（P1-4）：原实现**不判结果** —— 上传失败也照弹「已记录」并把面板收起，
+				// 用户以为存住了、实际什么都没入库（录音文件也不再提示）。现区分成功/失败。
+				const cid = res != null ? res.getString('content_id') : null
+				if (cid == null || cid == '') {
+					showErrorToast(new Error('长录音上传失败，录音已保留，可重试'))
+					return
+				}
+				uni.showToast({ title: '已记录', icon: 'success' })
+				// 2026-10-31（走查 C：同日多张日卡标题完全相同）：长录音此刻还没有转写文本，
+				// 摘要传 '' ⇒ 标题尾段退化为时刻 HH:mm，仍保证同日多卡不同名。
+				submitContentAsL1(cid, Date.now(), '语音', '').then((ok: boolean) => {
+					if (!ok) {
+						uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+					}
+				})
+				this.emitSaved()
+				this.emitClose()
+			})
+			return
+		}
+		transcribeWav(path).then((res) => {
+			this.transcribing.value = false
+			// 2026-10-30（P2 F-2）：转写回包时组件可能已卸载（用户录完就返回/关面板）——
+			// 原实现继续 `setVoiceStage('preview')` / toast，写在已销毁页面上，用户下次进面板
+			// 还会看到上一段的预览态。此处直接丢弃结果（录音文件仍在本地，不影响重录）。
+			if (this.disposed) {
+				console.log('[yishu] 转写回包时组件已卸载：丢弃本次结果')
+				return
+			}
+			if (res == null) {
+				// 2026-10-30：先取失败原因（voice.uts 的看门狗/离线前置/直传链共同写入）
+				const why = lastAsrFailReason()
+				// 2026-10-30（P1-5）：**4.3~5min 录音的死区**。
+				// 16k/16bit 直传上限 8MB ≈ 4分20秒；而分片持久化（uploadVoicePersistent）的
+				// 阈值写的是 5 分钟 ⇒ 这段区间里：直传被 >8MB 拦下返回 null，界面报
+				// 「转写失败，录音已保留，可点此重试」，而**重试永远还是同一结果**，真正的
+				// 分片路径永不触发 —— 用户被卡在一个 100% 失败的重试循环里。
+				// 修法：直传失败且时长已超过直传可承载区间 ⇒ 同轮改走持久化分片上传。
+				// 2026-10-30：离线/网络类失败**不要**改走分片上传 —— 它同样要联网，
+				// 只会把用户的等待再延长一轮，然后还是失败。直接落到下方可执行文案。
+				const netFailure = why == ASR_FAIL_OFFLINE || why == ASR_FAIL_NETWORK
+				if (durationMs >= 240000 && !netFailure) {
+					this.recordHint.value = '正在上传长录音…'
+					uploadVoicePersistent(path, durationMs).then((r: UTSJSONObject | null) => {
+						// 2026-10-30（P2 F-2）：卸载后只记录，不再改 UI / emit
+						if (this.disposed) {
+							console.log('[yishu] 长录音（直传失败转分片）回包时组件已卸载：不再 toast/emit')
+							return
+						}
+						const cid = r != null ? r.getString('content_id') : null
+						if (cid == null || cid == '') {
+							this.transcribeFailed.value = true
+							this.recordHint.value = '长录音上传失败，录音已保留，可重试'
+							showErrorToast(new Error('长录音上传失败，请重试'))
+							return
+						}
+						uni.showToast({ title: '长录音已提交，云端整理中', icon: 'none' })
+						// 2026-10-31（走查 C）：同上报文可区分，长录音暂无转写文本 ⇒ 空摘要走时刻兜底
+						submitContentAsL1(cid, Date.now(), '语音', '').then((ok: boolean) => {
+							if (!ok) {
+								uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+							}
+						})
+						this.recordHint.value = '轻触中央圆点 · 开始录音'
+						this.emitSaved()
+						this.emitClose()
+					})
+					return
+				}
+				// 2026-10-30（修「卡在正在转写」）：按真实失败原因给**可执行**文案。
+				// 原实现无论离线/超时/服务端错都只弹「转写失败，请重试」，用户不知道
+				// 该等联网还是该重试；而离线时重试必然再失败。
+				this.transcribeFailed.value = true
+				if (why == ASR_FAIL_OFFLINE || why == ASR_FAIL_NETWORK) {
+					this.recordHint.value = '转写失败：当前无网络，录音已保留'
+					showErrorToast(new Error('当前无网络，录音已保留；联网后点「重新转写」'))
+				} else if (why == ASR_FAIL_TIMEOUT) {
+					this.recordHint.value = '转写超时，录音已保留'
+					showErrorToast(new Error('转写超时（网络较慢），录音已保留，可点「重新转写」'))
+				} else {
+					this.recordHint.value = '转写失败，录音已保留，可点此重试'
+					showErrorToast(new Error('转写失败，请重试'))
+				}
+				return
+			}
+			this.transcript.value = res.text
+			this.emotion.value = res.emotion
+			const hints: Array<string> = []
+			if (res.notOral) {
+				hints.push('疑似非口述（键盘/环境音）')
+			}
+			if (res.silenceHint) {
+				hints.push('检测到静音空段，可删除')
+			}
+			const merge = res.emotionMerge
+			if (merge != null) {
+				const dm = merge.getJSON('dominant')
+				if (dm != null) {
+					// 🚨 2026-10-11 静态审查修复：原为 `dm.getString('this.emotion')` ——
+					// 搬迁时「x.value → this.x.value」的批量替换**误伤了字符串字面量**
+					// （emotion 是后端 JSON 键，不是 JS 成员），导致主导情绪永远取空。
+					hints.push('主导情绪：' + (dm.getString('emotion') ?? '') + '（时长最长段）')
+				}
+			}
+			if (res.noiseWeight == 'equal') {
+				hints.push('噪音较大，情绪权重已降为持平')
+			}
+			this.voiceHints.value = hints.join('；')
+			if (!res.guardPassed) {
+				this.guardMsg.value = '内容未通过安全审核：' + res.guardReason
+			} else {
+				this.guardMsg.value = res.channel + ' 通道' + (res.mock ? '（mock）' : '') + ' · 置信度 ' + Math.round(res.confidence * 100) + '%'
+			}
+			this.setVoiceStage('preview') // F1c
+		})
+	}
+
+	retryTranscribe(): void {
+		if (this.transcribing.value) {
+			return
+		}
+		this.transcribeLastVoice()
+	}
+	submitVoice(): void {
+		const text = this.transcript.value.trim()
+		if (text == '') {
+			showErrorToast(new Error('转写内容为空'))
+			return
+		}
+		if (this.saving.value) {
+			return
+		}
+		this.saving.value = true
+		const picked = this.effLabel()
+		const duration = this.lastVoiceDuration.value
+		const vFile = this.lastVoiceFile.value
+		const emo = this.emotion.value
+		// BA1（FE2）：备注卡接真——remark 快照（保存成功后会清空，闭包内不能读 ref）
+		const remarkVal = this.remarkTrimmed()
+		// R9-B1（2026-09-06 峰宝拍板「有音频数据必须能播=P0」）：主链走分片上传——
+		// wav 先落对象存储（cos_key），后端 complete 直接建 voice content（本地转写 text
+		// 预填 + 入队 ASR 管线）。旧 saveVoiceContent(''cosKey) 只落文本不传文件，
+		// 造成「有转写无音频」恒不可播（28 条 failed=AUDIO_DOWNLOAD_FAILED 实锤）。
+		// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark → uploadVoicePersistent
+		// 透传 remarkVal，主链成功路径备注一次落库（不再仅降级链入库）。
+		if (vFile == '') {
+			// 无本地录音文件（异常路径，如实降级）：仅落文本，toast 显式告知无音频
+			createVoiceContentRemark(text, duration, remarkVal, '').then((contentId: string | null) => {
+				this.saving.value = false
+				if (contentId != null) {
+					this.afterVoiceSaved(contentId, text, picked, false)
+				} else if (!this.disposed) {
+					// 2026-10-30（P2 F-2）：组件已卸载则不再向死页 toast（失败事实已进日志/Sentry）
+					showErrorToast(new Error('语音入库失败（无本地录音文件且文本入库未成功）'))
+				} else {
+					console.error('[yishu] 语音入库失败（组件已卸载，不 toast）')
+				}
+			})
+			return
+		}
+		uploadVoicePersistent(vFile, duration, text, emo, remarkVal).then((res: UTSJSONObject | null) => {
+			let contentId: string | null = null
+			if (res != null) {
+				contentId = res.getString('content_id')
+			}
+			if (contentId != null && contentId != '') {
+				this.saving.value = false
+				this.afterVoiceSaved(contentId, text, picked, true)
+			} else {
+				// 音频上传失败（显式降级，不静默）：仅落转写文本，cos_key 留空 → 播放链
+				// 会诚实报「音频未上传」；toast 明说原因，峰宝铁律：不允许静默
+			console.error('[yishu] voice upload failed, fallback text-only save')
+			createVoiceContentRemark(text, duration, remarkVal, vFile).then((fbId: string | null) => {
+					this.saving.value = false
+					if (fbId != null) {
+						this.afterVoiceSaved(fbId, text, picked, false)
+					} else if (!this.disposed) {
+						showErrorToast(new Error('语音保存失败（音频上传与文本入库均未成功）'))
+					} else {
+						console.error('[yishu] 语音保存失败（组件已卸载，不 toast）')
+					}
+				})
+			}
+		})
+	}
+
+	/** 语音保存成功后的统一收尾（R9-B1 抽取）：手选分类纠正 + toast + 清态 + 收起浮层 */
+	afterVoiceSaved(contentId: string, text: string, picked: string, audioOk: boolean): void {
+		if (picked != '' && picked.indexOf('custom:') != 0) {
+			// 手选分类 → 纠正端点真持久化（custom: 前缀 = 自定义分类跳过，后端白名单不支持——台账 A 类）
+			submitCorrection(contentId, text, picked, '', 'voice').then((ok: boolean) => {
+				console.log('[yishu] voice manual correction ok=' + ok)
+			})
+		}
+		// 2026-10-30（P0-1）：语音记录必须**同时提交当日 L1 事件**，否则时间轴（只读 events）
+		// 永远看不到这条（云侧默认 mode=l2l3 不写 L1，L1 只能端侧提交）。
+		// 2026-10-31（走查 C：同日多张日卡标题完全相同）：短录音此时已有转写文本 ⇒ 摘要进标题
+		submitContentAsL1(contentId, Date.now(), '语音', text).then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+			}
+		})
+		// 2026-10-30（P2 F-2）：保存链的回包可能晚于组件卸载。纠错与 L1（上面）是服务端副作用，
+		// 必须做完；之后的 toast / emit / 表单复位一律不做。
+		if (this.disposed) {
+			console.log('[yishu] 语音保存回包时组件已卸载：跳过 toast/emit')
+			return
+		}
+		if (audioOk) {
+			uni.showToast({ title: '已记录', icon: 'success' })
+		} else {
+			// 降级路径显式告知：文本已存但音频没有（峰宝铁律：不允许静默）
+			uni.showToast({ title: '已存文本（音频未上传）', icon: 'none', duration: 2500 })
+		}
+		this.emitSaved()
+		this.transcript.value = ''
+		this.emotion.value = ''
+		this.guardMsg.value = ''
+		this.voiceHints.value = ''
+		this.resetFormFields()
+		this.setVoiceStage('record')
+		this.emitClose() // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+	}
+}

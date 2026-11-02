@@ -1,0 +1,61 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
+.phone{width:390px;height:520px;overflow:hidden;position:relative;background:#fff;}
+.page-root { width: 390px; height: 520px; position: relative; overflow: hidden; background-color: #F8F7F4; }
+.n2_262 { position: absolute; left: 20.0px; top: 24.0px; width: 33.0px; height: 13.0px; font-weight: 600; font-size: 11.0px; color: #8A7A6A; }
+.n2_269 { position: absolute; left: 27.0px; top: 250.0px; width: 292.0px; height: 13.0px; font-weight: 600; font-size: 11.0px; color: #B05A3A; }
+.n2_312 { position: absolute; left: 20.0px; top: 48.0px; width: 350.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06), 0px 1px 3px rgba(59, 46, 38, 0.04); border-radius: 20.0px; overflow: hidden; }
+.n2_313 { width: 100%; height: 64.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 14.0px; padding-right: 14.0px; background-color: rgba(196, 145, 60, 0.14); border-radius: 12.0px; overflow: hidden; }
+.n2_315 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.5); border: 1.0px solid rgba(255, 255, 255, 0.8); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.4); border-radius: 16.0px; overflow: hidden; }
+.n2_319 { width: 12.0px; height: 12.0px; }
+.n2_316 { width: 200.0px; height: 26.0px; overflow: hidden; position: relative; }
+.n2_320 { position: absolute; left: 4.0px; top: 3.0px; width: 192.0px; height: 20.0px; }
+.n2_314 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
+.n2_317 { font-weight: 600; font-size: 17.0px; color: #3A2E25; }
+.n2_318 { font-size: 11.0px; color: #8A7A6A; }
+.n2_322 { position: absolute; left: 27.0px; top: 276.0px; width: 336.0px; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 1px 6px rgba(59, 46, 38, 0.1); border-radius: 20.0px; overflow: hidden; }
+.n2_323 { width: 100%; height: 64.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 14.0px; padding-right: 14.0px; background-color: rgba(196, 145, 60, 0.14); border-radius: 12.0px; overflow: hidden; }
+.n2_325 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.5); border: 1.0px solid rgba(255, 255, 255, 0.8); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.4); border-radius: 16.0px; overflow: hidden; }
+.n2_329 { width: 12.0px; height: 12.0px; }
+.n2_326 { width: 200.0px; height: 26.0px; overflow: hidden; position: relative; }
+.n2_330 { position: absolute; left: 4.0px; top: 3.0px; width: 192.0px; height: 20.0px; }
+.n2_324 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
+.n2_327 { font-weight: 600; font-size: 17.0px; color: #3A2E25; }
+.n2_328 { font-size: 11.0px; color: #8A7A6A; }
+</style></head><body><div class="phone">
+    <span class="n2_262">默认态</span> <!-- 态标签-默认 -->
+    <span class="n2_269">按压态 · scale 0.98 + 阴影收紧，$motion-quick 200ms</span> <!-- 态标签-按压 -->
+    <div class="n2_312"> <!-- 语音卡 -->
+      <div class="n2_313"> <!-- 语音媒体 -->
+        <div class="n2_315"> <!-- 玻璃播放钮 -->
+          <img class="n2_319" src="icons/i2_319.svg" /> <!-- 播放图标 -->
+        </div>
+        <div class="n2_316"> <!-- 波形 -->
+          <img class="n2_320" src="icons/i2_320.svg" /> <!-- Vector -->
+        </div>
+      </div>
+      <div class="n2_314"> <!-- 语音文字区 -->
+        <span class="n2_317">和妈妈的通话</span> <!-- 语音卡标题 -->
+        <span class="n2_318">8月27日 12:36 · 语音 3分12秒 · 已转写</span> <!-- 语音卡元信息 -->
+      </div>
+    </div>
+    <div class="n2_322"> <!-- 语音卡 -->
+      <div class="n2_323"> <!-- 语音媒体 -->
+        <div class="n2_325"> <!-- 玻璃播放钮 -->
+          <img class="n2_329" src="icons/i2_329.svg" /> <!-- 播放图标 -->
+        </div>
+        <div class="n2_326"> <!-- 波形 -->
+          <img class="n2_330" src="icons/i2_330.svg" /> <!-- Vector -->
+        </div>
+      </div>
+      <div class="n2_324"> <!-- 语音文字区 -->
+        <span class="n2_327">和妈妈的通话</span> <!-- 语音卡标题 -->
+        <span class="n2_328">8月27日 12:36 · 语音 3分12秒 · 已转写</span> <!-- 语音卡元信息 -->
+      </div>
+    </div>
+</div></body></html>

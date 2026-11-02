@@ -8,11 +8,12 @@
   - 共性纠错标记（≥2 用户一致 → is_global_candidate）+ 计数
 前置：Qdrant（yishu-qdrant）+ BGE-M3 已就绪 + PG yishu 库
 """
+import hashlib
 import uuid
+from datetime import UTC
 
 import pytest
 from app.db.models import Content, CorrectionLog, User
-from app.db.session import SessionLocal
 from app.services.correction import (
     arbitrate,
     global_candidate_count,
@@ -23,9 +24,63 @@ from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
+# R8#7（2026-08-27）：真 BGE-M3 编码降为定长 1024 维 mock（文件合计省 ~7s）。
+# D-22 盲区修复（2026-08-29）：原常量向量 [0.1]*1024 使任意两文本 sim≡1.0——
+# 层①跨内容互命中、mixed 自我锁死类缺陷全部掩盖（P2 诊断 §2.3-P2）。
+# 现改「按文本 sha256 派生前 8 维方向 + 补零」：同文 sim=1.0，异文远低于 0.8，
+# 与真编码的命中语义一致；维度契约仍 1024。真实编码冒烟保留 rag 组单独跑。
+def _mock_dense(text: str) -> list[float]:
+    digs = [
+        int.from_bytes(hashlib.sha256(f"{text}|{i}".encode()).digest()[:8], "big")
+        for i in range(8)
+    ]
+    vec = [d / 2**64 for d in digs]
+    return vec + [0.0] * (1024 - len(vec))
 
-def _make_content(db, user_id: str, cid: str, text: str = "测试内容") -> None:
-    """建真实 contents 行（correction_log.content_id 外键约束）"""
+
+@pytest.fixture()
+def mock_encode(monkeypatch):
+    """把 correction.encode_dense 替换为定长 1024 维 mock 向量（R8#7）
+
+    record_correction/apply_personal_rule 消费的向量按文本派生
+    （同文命中、异文不互串——D-22 修复后语义；维度契约由断言兜底）。
+    """
+    import app.services.correction as corr_mod
+
+    def _fake_encode(texts):
+        return [_mock_dense(t_) for t_ in texts]
+
+    monkeypatch.setattr(corr_mod, "encode_dense", _fake_encode)
+    return _fake_encode
+
+
+def test_mock_encode_dimension_contract(mock_encode):
+    """R8#7 维度契约 1024 + D-22 派生契约：同文稳定、异文方向不同（非常量）"""
+    vec = mock_encode(["任意文本"])[0]
+    assert len(vec) == 1024
+    assert vec == mock_encode(["任意文本"])[0]
+    assert vec != mock_encode(["另一文本"])[0]
+
+
+@pytest.mark.rag
+def test_real_encode_dimension_smoke():
+    """R8#7：真实 BGE-M3 编码冒烟（保留 1 个真编码，防 mock 假绿）
+
+    与 test_rag.test_embedding_dimension 同属 rag 组（默认套件排除，
+    CI full-gate 的 `-m rag` 步骤单独跑）。
+    """
+    import app.services.correction as corr_mod
+
+    dense = corr_mod.encode_dense(["测试"])[0]
+    assert len(dense) == 1024
+
+
+def _make_content(db, user_id: str, cid: str, text: str = "测试内容", deleted_at=None) -> None:
+    """建真实 contents 行（correction_log.content_id 外键约束）
+
+    deleted_at（波D ② 补漏测试用，2026-09-10）：显式传入时间即造「已软删（回收站）」
+    内容行；默认 None 保持既有调用行为不变（内容存活）。
+    """
     db.add(
         Content(
             id=cid,
@@ -33,6 +88,7 @@ def _make_content(db, user_id: str, cid: str, text: str = "测试内容") -> Non
             content_type="text",
             text=text,
             status="done",
+            deleted_at=deleted_at,
         )
     )
     db.commit()
@@ -42,25 +98,7 @@ def _new_cid() -> str:
     return str(uuid.uuid4())
 
 
-@pytest.fixture()
-def db_user():
-    """隔离测试用户（PG yishu 库直插）"""
-    db = SessionLocal()
-    user = User(phone=f"corr-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(
-        CorrectionLog.__table__.delete().where(CorrectionLog.user_id == user.id)
-    )
-    db.execute(Content.__table__.delete().where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
-
-
-def test_record_correction_dual_write(db_user):
+def test_record_correction_dual_write(db_user, mock_encode):
     """记录纠错：Qdrant + correction_log 双写"""
     db, user = db_user
     cid = _new_cid()
@@ -78,14 +116,16 @@ def test_record_correction_dual_write(db_user):
     assert got.user_id == user.id
 
 
-def test_personal_rule_hit(db_user):
+def test_personal_rule_hit(db_user, mock_encode):
     """第①层：相似文本命中个人纠错 → personal 层生效"""
     db, user = db_user
     cid = _new_cid()
     _make_content(db, user.id, cid)
+    # D-22：hash mock 下「近异文」不再互命中（旧常量向量的跨文本命中是假象），
+    # 命中语义改为同文 sim=1.0——与真实编码下同文必中的行为一致。
     record_correction(
         db, user.id, content_id=cid,
-        text="明天记得去超市买牛奶和鸡蛋", new_label="todo", old_label="mixed",
+        text="明天记得买牛奶鸡蛋", new_label="todo", old_label="mixed",
     )
     result = arbitrate(db, user.id, "明天记得买牛奶鸡蛋", "text")
     assert result["layer"] == "personal"
@@ -93,15 +133,15 @@ def test_personal_rule_hit(db_user):
     assert result["similarity"] >= 0.8
 
 
-def test_personal_rule_miss_falls_to_global(db_user):
+def test_personal_rule_miss_falls_to_global(db_user, mock_encode):
     """未命中个人规则 → 第②层全局 SetFit"""
     db, user = db_user
     result = arbitrate(db, user.id, "知人者智,自知者明", "text")
     assert result["layer"] == "global"
-    assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed"}
+    assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed", "question", "fact"}
 
 
-def test_last_correction_wins(db_user):
+def test_last_correction_wins(db_user, mock_encode):
     """同内容多次纠错以最后一次为准"""
     db, user = db_user
     cid = _new_cid()
@@ -112,37 +152,39 @@ def test_last_correction_wins(db_user):
     assert result["label"] == "quote"
 
 
-def test_passive_correction_needs_3_consistent(db_user):
+def test_passive_correction_needs_3_consistent(db_user, mock_encode):
     """审查修复(P1-07，B5-c-5 闸门①)：被动确认（echo/org）纠错需 ≥3 次一致才生效
 
     1 次被动纠错 → 不生效（回落全局）；补足 3 次 → 生效。
     """
     db, user = db_user
+    # D-22 注：闸门①计数按 (user, old→new, type) 对聚合，与向量无关；
+    # 向量命中改为「与某条记录同文」（旧常量版用"明天记得买牛奶"跨点是 sim≡1 假象）。
     for i in range(2):
         cid = _new_cid()
         _make_content(db, user.id, cid)
         record_correction(
             db, user.id, content_id=cid,
-            text=f"明天记得买牛奶{i}", new_label="todo", old_label="mixed",
+            text=f"被动确认样本{i}", new_label="todo", old_label="mixed",
             source="echo",
         )
     # 仅 2 次被动一致 → 未达阈值，个人规则不生效（回落全局）
-    result = arbitrate(db, user.id, "明天记得买牛奶", "text")
+    result = arbitrate(db, user.id, "被动确认样本0", "text")
     assert result["layer"] == "global", f"2 次被动确认不应触发个人规则, got {result}"
-    # 补第 3 次 → 生效
+    # 补第 3 次 → 生效（命中点仍是样本0 同文）
     cid3 = _new_cid()
     _make_content(db, user.id, cid3)
     record_correction(
         db, user.id, content_id=cid3,
-        text="明天记得买牛奶3", new_label="todo", old_label="mixed",
+        text="被动确认样本2", new_label="todo", old_label="mixed",
         source="echo",
     )
-    result2 = arbitrate(db, user.id, "明天记得买牛奶", "text")
+    result2 = arbitrate(db, user.id, "被动确认样本0", "text")
     assert result2["layer"] == "personal", f"3 次被动一致应触发个人规则, got {result2}"
     assert result2["label"] == "todo"
 
 
-def test_global_candidate_marking(db_user):
+def test_global_candidate_marking(db_user, mock_encode):
     """第③层：同一 (old→new) 纠错 ≥2 用户 → is_global_candidate"""
     db, user = db_user
     cid1 = _new_cid()
@@ -191,5 +233,127 @@ def test_arbitrate_api_smoke(db_user):
         assert body["code"] == "OK"
         assert body["data"]["job_id"]  # 入队成功（P2-01：异步推理）
         assert body["data"]["status"] == "queued"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_arbitrate_degraded_passthrough(db_user, monkeypatch):
+    """D-22（08-29）：层②模型不可用 → 裁决结果 degraded=True 显式暴露，
+    mixed+conf0 不再与模型结论混同（与 D-16 emotion_source 同族修复）。"""
+    import app.services.classifier as clf_mod
+    import app.services.correction as corr_mod
+
+    db, user = db_user
+    monkeypatch.setattr(
+        clf_mod, "_load",
+        lambda: (None, clf_mod.DEFAULT_CLASSES, clf_mod.DEFAULT_CLASSES_CN),
+    )
+    r = corr_mod.arbitrate(db, user.id, "一段不会被个人规则命中的新文字", "text")
+    assert r["layer"] == "global"
+    assert r["label"] == "mixed"
+    assert r["confidence"] == 0.0
+    assert r["degraded"] is True
+
+
+def test_correction_active_writes_back_content_class(db_user, mock_encode):
+    """D-22（P1 回写）：POST /corrections active 即时同步 contents.content_class；
+    echo/org 被动信号不得触碰权威字段。"""
+    from app.api import deps
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    cid_a, cid_e = _new_cid(), _new_cid()
+    _make_content(db, user.id, cid_a, text="主动纠错内容")
+    _make_content(db, user.id, cid_e, text="被动回声内容")
+    client = TestClient(app)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    try:
+        r = client.post("/api/v1/corrections", json={
+            "content_id": cid_a, "text": "主动纠错内容",
+            "new_label": "idea", "old_label": "mixed", "source": "active",
+        })
+        assert r.status_code == 200, r.text
+        db.expire_all()
+        assert db.scalar(select(Content).where(Content.id == cid_a)).content_class == "idea"
+        r2 = client.post("/api/v1/corrections", json={
+            "content_id": cid_e, "text": "被动回声内容",
+            "new_label": "quote", "old_label": "mixed", "source": "echo",
+        })
+        assert r2.status_code == 200, r2.text
+        db.expire_all()
+        assert db.scalar(select(Content).where(Content.id == cid_e)).content_class is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_record_correction_without_text_skips_vector(db_user, mock_encode):
+    """台账 §7.17：照片纠错（**无文本**）⇒ 跳过向量化但仍落库。
+
+    为什么必须有这条：照片在保存时点没有文本（caption 由上传后的管线产出），而
+    `record_correction` 会 `encode_dense([text])` 向量化 ⇒ 若照旧执行，要么抛错、
+    要么写入一条**由空串生成的噪声向量**污染层①个人规则（O-2 教训）。
+    断言「落库但无 qdrant 点」就是钉住这个取舍；分类回写由 API 层照常完成。
+    """
+    db, user = db_user
+    cid = _new_cid()
+    _make_content(db, user.id, cid)
+    row = record_correction(
+        db, user.id, content_id=cid,
+        text="", new_label="emotion", old_label="mixed", content_type="photo",
+    )
+    assert row.id > 0
+    assert row.qdrant_point_id is None
+    assert row.content_type == "photo"
+
+
+def test_correction_soft_deleted_content_rejected(db_user, mock_encode):
+    """波D ② 补漏（2026-09-10 深扫）：本人已软删（回收站）内容 → 写纠错 404 EVENT_005。
+
+    原实现 `select(Content).where(Content.id == req.content_id)` 漏 deleted_at 过滤，
+    本人已软删内容仍可被写入纠错并回写 content_class——与全项目「deleted_at 内容
+    对外不可达」一致性契约相悖（同 P2-4 media/audio、P2-5 _batch_photo_ids 同族修复）。
+
+    本用例双侧钉桩（参照 test_l3_voice_chain.py::test_audio_soft_deleted_404 写法）：
+      ① 软删态 → 404 EVENT_005（证明过滤生效，非 200 漏网）
+      ② 恢复（deleted_at 清空）→ 200（证明 404 归因软删，而非归属/参数等其他原因）
+    错误码 EVENT_005 保持不变（本端点既有口径，不随过滤收敛改变）。
+    """
+    from datetime import datetime
+
+    from app.api import deps
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    cid = _new_cid()
+    _make_content(
+        db, user.id, cid,
+        text="回收站里的纠错内容",
+        deleted_at=datetime.now(UTC),
+    )
+    client = TestClient(app)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    try:
+        payload = {
+            "content_id": cid,
+            "text": "回收站里的纠错内容",
+            "new_label": "idea",
+            "old_label": "mixed",
+            "source": "active",
+        }
+        # ① 软删态：本人内容、id 合法，仍必须 404
+        r = client.post("/api/v1/corrections", json=payload)
+        assert r.status_code == 404, f"软删内容应 404，实际 {r.status_code}: {r.text}"
+        assert r.json()["code"] == "EVENT_005", f"错误码: {r.json()['code']}"
+
+        # ② 模拟恢复：清 deleted_at 后即可纠错（404 归因软删而非其他）
+        db.expire_all()
+        row = db.scalar(select(Content).where(Content.id == cid))
+        assert row is not None
+        row.deleted_at = None
+        db.commit()
+        r2 = client.post("/api/v1/corrections", json=payload)
+        assert r2.status_code == 200, f"恢复后应 200，实际 {r2.status_code}: {r2.text}"
     finally:
         app.dependency_overrides.clear()

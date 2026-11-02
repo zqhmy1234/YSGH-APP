@@ -1,0 +1,77 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
+.phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
+.page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
+.n2_336 { position: absolute; left: 20.0px; top: 56.0px; width: 42.0px; height: 48.0px; font-weight: bold; font-size: 40.0px; color: #3A2E25; }
+.n2_337 { position: absolute; left: 20.0px; top: 110.0px; width: 78.0px; height: 16.0px; font-size: 13.0px; color: #8A7A6A; }
+.n2_355 { position: absolute; left: 20.0px; top: 694.0px; width: 350.0px; height: 52.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 16.0px; padding-right: 16.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: rgba(255, 255, 255, 0.72); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.65), 0px 8px 24px rgba(59, 46, 38, 0.08); border-radius: 999px; overflow: hidden; }
+.n2_356 { flex: 1; display: flex; flex-direction: row; align-items: center; overflow: hidden; }
+.n2_357 { font-size: 14.0px; color: #B3A696; }
+.n2_358 { width: 36.0px; height: 36.0px; display: flex; flex-direction: row; align-items: center; justify-content: center; background-color: #B05A3A; border-radius: 18.0px; overflow: hidden; }
+.n2_359 { width: 16.0px; height: 16.0px; }
+.n4_88 { position: absolute; left: 20.0px; top: 150.0px; width: 350.0px; display: flex; flex-direction: column; gap: 16.0px; overflow: hidden; }
+.n2_338 { width: 310.0px; display: flex; flex-direction: column; gap: 8.0px; overflow: hidden; }
+.n2_339 { display: flex; flex-direction: row; gap: 6.0px; align-items: center; overflow: hidden; }
+.n2_341 { font-weight: 600; font-size: 12.0px; color: #5A4C40; }
+.n4_1 { width: 24.0px; height: 24.0px; display: flex; flex-direction: row; align-items: center; justify-content: center; background-color: #B0593B; box-shadow: 0px 3px 8px rgba(176, 89, 59, 0.3); border-radius: 12.0px; overflow: hidden; }
+.n4_2 { width: 14.0px; height: 14.0px; }
+.n2_342 { width: 100%; display: flex; flex-direction: column; gap: 7.4px; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-color: #FFFFFF; box-shadow: 0px 2px 8px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n2_343 { width: 100%; font-size: 14.0px; color: #3A2E25; }
+.n2_344 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #F8F7F4; border-radius: 12.0px; overflow: hidden; }
+.n2_345 { width: 48.0px; height: 48.0px; border-radius: 8.0px; }
+.n2_346 { flex: 1; display: flex; flex-direction: column; gap: 0; overflow: hidden; }
+.n2_347 { font-weight: 600; font-size: 14.0px; color: #3A2E25; }
+.n2_348 { font-size: 11.0px; color: #8A7A6A; }
+.n2_349 { width: 350.0px; display: flex; flex-direction: row; justify-content: flex-end; align-items: center; overflow: hidden; }
+.n2_350 { width: 140.0px; display: flex; flex-direction: row; align-items: center; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-image: linear-gradient(to bottom, #C3714C, #AA5334); box-shadow: 0px 4px 10px rgba(176, 89, 59, 0.25); border-radius: 20.0px; overflow: hidden; }
+.n2_351 { font-size: 14.0px; color: #FFFFFF; }
+.n2_352 { width: 310.0px; display: flex; flex-direction: column; gap: 8.0px; overflow: hidden; }
+.n2_353 { width: 100%; display: flex; flex-direction: column; padding-left: 14.0px; padding-right: 14.0px; padding-top: 14.0px; padding-bottom: 14.0px; background-color: #FFFFFF; box-shadow: 0px 2px 8px rgba(59, 46, 38, 0.05); border-radius: 20.0px; overflow: hidden; }
+.n2_354 { width: 100%; font-size: 14.0px; color: #3A2E25; }
+</style></head><body><div class="phone">
+    <span class="n2_336">AI</span> <!-- 大标题 -->
+    <span class="n2_337">问问你的回忆</span> <!-- 副标题 -->
+    <div class="n2_355"> <!-- 玻璃输入条 -->
+      <div class="n2_356"> <!-- 占位区 -->
+        <span class="n2_357">问点什么…</span> <!-- 输入占位 -->
+      </div>
+      <div class="n2_358"> <!-- 发送钮 -->
+        <img class="n2_359" src="icons/i2_359.svg" /> <!-- 发送图标 -->
+      </div>
+    </div>
+    <div class="n4_88"> <!-- 消息流 -->
+      <div class="n2_338"> <!-- AI消息组 -->
+        <div class="n2_339"> <!-- AI头 -->
+          <span class="n2_341">AI</span> <!-- AI名 -->
+          <div class="n4_1"> <!-- AI头像 -->
+            <img class="n4_2" src="icons/i4_2.svg" /> <!-- 星芒 -->
+          </div>
+        </div>
+        <div class="n2_342"> <!-- AI气泡 -->
+          <span class="n2_343">你上周三去了湖边，要不要看看那天的样子？</span> <!-- AI文字 -->
+          <div class="n2_344"> <!-- 内嵌记忆卡 -->
+            <img class="n2_345" src="images/img2_345.png" /> <!-- 缩略图 -->
+            <div class="n2_346"> <!-- 记忆信息 -->
+              <span class="n2_347">清晨的湖边，风很轻</span> <!-- 记忆标题 -->
+              <span class="n2_348">8月28日 · 照片</span> <!-- 记忆元信息 -->
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="n2_349"> <!-- 用户消息行 -->
+        <div class="n2_350"> <!-- 用户气泡 -->
+          <span class="n2_351">那天天气怎么样？</span> <!-- 用户文字 -->
+        </div>
+      </div>
+      <div class="n2_352"> <!-- AI消息组2 -->
+        <div class="n2_353"> <!-- AI气泡2 -->
+          <span class="n2_354">那天早上有薄雾，07:42 拍下的这张照片，气温大概 26°C——你自己也在备注里写了「风很轻」。</span> <!-- AI文字2 -->
+        </div>
+      </div>
+    </div>
+</div></body></html>

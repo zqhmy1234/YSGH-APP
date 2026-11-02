@@ -1,0 +1,606 @@
+/**
+ * 认证封装（B-CL-3）：mock wechat login（code=dev-client）→ token 对
+ *
+ * ⚠️ TD-P3 M5（审查中危）登记——安全存储降级说明（2026-08-26）：
+ *   理想实现：access/refresh token 走 EncryptedSharedPreferences（B-CL-3 要求），
+ *   插件接口已在 uni_modules/yishu-photo-watch/utssdk/interface.uts 声明
+ *   （安全存储随自定义基座波次恢复——依赖 androidx.security 三方库）。
+ *   当前状态：因 2026-08-24 编译器 overload panic，安全存储函数被隔离，
+ *   临时降级为 uni storage 明文落盘（含 30 天 refresh_token）。
+ *   风险：rooted 设备 / 系统备份 / 同机恶意应用可读取 → 长会话劫持。
+ *   既有缓解：① refresh_token 绑定 device_id（后端 devices 表可吊销、
+ *   轮换即作废旧 token，AUTH-005/006）；② access 仅 2h 短时。
+ *   恢复路径：自定义基座就绪后，将 setSecure/getSecure/removeSecure 改走
+ *   EncryptedSharedPreferences 实现（无需改本文件其他逻辑）。
+ *
+ * 401 自动 refresh（refresh_token 换新对）——G1/R6#6：single-flight 共享 in-flight，
+ * 并发 401 只触发一次 refresh（其余 await 同一 Promise），消除并发双轮换竞态。
+ *
+ * 所有函数 resolve-only（boolean），不 reject——UTS Promise.catch 重载限制，
+ * 调用方用双参 then 即可。
+ */
+import { getBaseUrl } from './config'
+import { getDeviceId, getDeviceIdSource } from './device_id'
+import { PATH_AUTH_DEVICE, PATH_AUTH_REFRESH, PATH_AUTH_LOGOUT, PATH_AUTH_WECHAT, PATH_AUTH_SMS_SEND, PATH_AUTH_PHONE } from './contract'
+// 2026-10-11 固定地址模式：出网通用头下沉到零依赖模块（本文件不能 import api.uts ——
+// 那是反向依赖，见 http_headers.uts 头注释）。登录/刷新/登出必须带上，否则 ngrok 下收拦截页。
+import { commonHeader } from './http_headers'
+
+const KEY_ACCESS = 'yishu.auth.access_token'
+const KEY_REFRESH = 'yishu.auth.refresh_token'
+
+// 2026-10-31（P2 J-8）：**登出代号**。`logout()` 递增它 ⇒ 在途的登录/刷新回调落定时若发现代号已变，
+// 必须**作废且绝不 setSecure**：否则登出清掉的 token 被在途请求"复活"，用户看到登录态自己回来了
+// （比登出失败更难解释：明明点了退出，下一条请求却又是带 token 的成功）。
+let _authEpoch: number = 0
+
+// ⚠️ 2026-09-21（C2 卡）：原 `export const DEVICE_ID = 'yishu-android-dev'` **已删除**。
+//   理由：内测登录 = 设备码通道（后端 `unionid = "device:<device_id>"`，见卡 S2 冻结件），
+//   账号身份直接由它承载——硬编码常量会让 20 台设备撞进**同一个账号**（数据混在一起），
+//   而清缓存/换机时又完全无法区分。改为取真实设备标识。
+//   单源纪律保留、只是换了家：唯一入口 = `utils/device_id.uts` 的 `getDeviceId()`
+//   （原消费方 `sync_client` / `event_sync` 已同步改 import，避免重演"双源分裂"事故）。
+//   设备标识的稳定性口径（为什么不能直接用框架 deviceId）见 device_id.uts 文件头。
+
+// 降级实现（TD-P3 M5 登记）：uni storage 明文；恢复 EncryptedSharedPreferences 见文件头说明。
+// 统一入口封装成 *Secure，恢复时只改这三个函数即可。
+function setSecure(key: string, value: string): void {
+	uni.setStorageSync(key, value)
+}
+
+function getSecure(key: string): string {
+	return uni.getStorageSync(key) as string
+}
+
+function removeSecure(key: string): void {
+	uni.removeStorageSync(key)
+}
+
+export class AuthError extends Error {
+	constructor(message: string) {
+		super(message)
+	}
+}
+
+/** 设备码登录（内测通道 · 2026-09-21 C2 卡）
+ *
+ * 链路：`getDeviceId()` → POST /api/v1/auth/device {device_id, platform} → TokenPair
+ * （响应结构与 /auth/wechat 完全同构，refresh/登出链路零改动）。
+ *
+ * ⚠️ 设备标识为空时**诚实失败并终止**：绝不用随机 id 顶替——那会静默建出一个全新空账号，
+ * 用户看到的是"数据全没了"（本仓历史事故族）。
+ * ⚠️ 不使用 `utils/api.uts` 的 `showErrorToast`：api.uts 已 import 本文件（getToken/refreshToken），
+ * 反向 import 会形成循环依赖，故此处直接用 uni.showToast。
+ * W7-401 加固保留：看门狗 10s——蒸汽模式下 uni.request 桥接可能吞回调（api.uts 同源教训），
+ * 超时按失败处理，保证 ensureLogin 有限时内落定。
+ */
+export function deviceLogin(): Promise<boolean> {
+	console.log('[dbg-auth] deviceLogin fire POST /api/v1/auth/device')
+	return new Promise<boolean>((resolve) => {
+		const epoch = _authEpoch
+		const deviceId = getDeviceId()
+		if (deviceId == '') {
+			// 诚实失败（不静默）：宁可提示用户重试，也不造一个假身份出来
+			console.log('[dbg-auth] deviceLogin 中止：设备标识为空（source=' + getDeviceIdSource() + '）')
+			uni.showToast({ title: '无法识别本机设备，请重启 App 后重试', icon: 'none' })
+			resolve(false)
+			return
+		}
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-auth] deviceLogin ' + why)
+			resolve(ok)
+		}
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout')
+		}, 10000)
+		uni.request({
+			url: getBaseUrl() + PATH_AUTH_DEVICE,
+			method: 'POST',
+			header: commonHeader(),
+			data: {
+				device_id: deviceId,
+				platform: 'android'
+			},
+			success: (res) => {
+				if (res.statusCode === 200) {
+					const body = res.data as UTSJSONObject
+					const data = body.getJSON('data')
+					if (data != null) {
+						// 2026-09-21：原为 `getString('access_token') as string` 直接强转——
+						// 200 但 body 缺字段时 null 强转会**运行时崩**（不是优雅失败）。
+						// 与 `?? ''` 空值检查（项目既有写法）后判空：宁可诚实报失败，也不写空 token 进 storage
+						// （空 token 会让 ensureLogin 下一轮误判为"已登录"，变成更隐蔽的失败）。
+						const at = data.getString('access_token') ?? ''
+						const rt = data.getString('refresh_token') ?? ''
+						if (at != '' && rt != '') {
+							// 2026-10-31（P2 J-8）：期间已登出 ⇒ 作废本次结果，绝不把 token 写回去
+							if (epoch != _authEpoch) {
+								finish(false, 'logout during login')
+								return
+							}
+							setSecure(KEY_ACCESS, at)
+							setSecure(KEY_REFRESH, rt)
+							finish(true, 'success status=200')
+							return
+						}
+						finish(false, 'malformed 200 body: token 字段缺失或为空')
+						return
+					}
+				}
+				finish(false, 'fail status=' + res.statusCode)
+			},
+			fail: () => {
+				finish(false, 'network FAIL')
+			}
+		})
+	})
+}
+
+/**
+ * 微信**授权登录**（2026-10-15 · 台账 §7.29「unionid 对齐」）
+ *
+ * 链路：`uni.login({provider:'weixin'})` → code → `POST /api/v1/auth/wechat {code, device_id}`
+ * → 后端 code2session 换 **unionid（用户主键）+ openid（绑定表键）** → **授权即完成绑定**
+ *（企微侧凭 unionid 解析对齐，用户不需要手打任何码）。
+ *
+ * ⚠️ **前置资质**：需 manifest 打开微信 SDK 模块 + 配 `WECHAT_APPID/SECRET`；未配置时
+ * `uni.login` 必 fail ⇒ 本函数**诚实返回 false**（调用方回落「绑定码」通道，内测照样可用）。
+ * ⚠️ 与 deviceLogin 同款：看门狗 10s；200 但字段缺失按失败（不写空 token 进 storage）；
+ * 不走 `utils/api.uts`（反向 import 会形成循环依赖）。
+ */
+export function wechatLogin(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-auth] wechatLogin ' + why)
+			resolve(ok)
+		}
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout')
+		}, 10000)
+		// 2026-10-15（真机反馈「点微信绑定毫无反应」· 台账 §7.29 复修）：
+		// **必须用 try/catch 包住 `uni.login`** —— 未装微信 SDK / 未配开放平台 AppID 时，
+		// `uni.login` 可能**同步抛错**；同步抛错会让 `new Promise` 直接 **reject**，而本函数
+		// 只写 `resolve`（调用方只挂 `.then`）⇒ Promise **永久不决议**：既不拉起授权、也不给
+		// 绑定码，用户观感就是"点了没反应" ✗（真机实测即此形态，原先的 10s 看门狗也救不了
+		// —— 同步抛错发生在注册回调之前）。
+		// 现任何同步异常都转成正常失败 ⇒ **必然**走调用方的「绑定码」兜底 ✓；
+		// 另：若 `uni.login` 既不回调 success 也不回调 fail，仍由上方 10s 看门狗兜底 ✓。
+		try {
+			uni.login({
+				provider: 'weixin',
+				success: (lr) => {
+					const code = lr.code ?? ''
+					if (code == '') {
+						finish(false, 'uni.login 未返回 code')
+						return
+					}
+					uni.request({
+						url: getBaseUrl() + PATH_AUTH_WECHAT,
+						method: 'POST',
+						header: commonHeader(),
+						data: {
+							code: code,
+							device_id: getDeviceId()
+						},
+						success: (res) => {
+							if (res.statusCode === 200) {
+								const body = res.data as UTSJSONObject
+								const data = body.getJSON('data')
+								if (data != null) {
+									const at = data.getString('access_token') ?? ''
+									const rt = data.getString('refresh_token') ?? ''
+									if (at != '' && rt != '') {
+										setSecure(KEY_ACCESS, at)
+										setSecure(KEY_REFRESH, rt)
+										finish(true, 'success status=200')
+										return
+									}
+									finish(false, 'malformed 200 body: token 字段缺失或为空')
+									return
+								}
+							}
+							finish(false, 'fail status=' + res.statusCode)
+						},
+						fail: () => {
+							finish(false, 'network FAIL')
+						}
+					})
+				},
+				fail: () => {
+					// 未配微信 SDK/AppID 时必现（资质到位前属预期路径，调用方回落绑定码）
+					finish(false, 'uni.login FAIL（未配微信 SDK/AppID）')
+				}
+			})
+		} catch (e) {
+			finish(false, 'uni.login 同步抛错（多为未配微信模块/AppID）')
+		}
+	})
+}
+
+// ═══════════ 手机号验证码备用通道（决策 #8）═══════════
+// 2026-10-30（P2 I-2）：决策 #8 原文「认证体系：✅ 已拍板：微信授权为主（unionid 主键）+ **手机号
+// 验证码备用** + JWT 自建」。两个端点在 backend/app/api/auth.py:60(/phone)、:75(/sms/send) **早已实现**、
+// openapi.json:93/135 有 schema，但客户端此前**零调用**——`security.uvue` 的「手机号」行只弹
+// 「手机号绑定即将上线」，与已拍板的认证体系不符。本段即补这条通道。
+//
+// 端点 / 字段逐字对齐（backend/app/schemas/auth.py）：
+//   POST /api/v1/auth/sms/send  {phone}        → data{mock_code}
+//   POST /api/v1/auth/phone     {phone, code}  → data{access_token, refresh_token, user}
+// 错误分支原文（backend/app/services/auth/auth.py:112-165 + providers.py:184-239）：
+//   429 AUTH_004「发送过于频繁，请稍后再试」/「验证码发送过于频繁，请稍后再试」
+//                /「今日验证码发送次数已达上限」
+//   429 AUTH_004「验证码错误次数过多，该验证码已作废，请重新获取」（每 phone 每码 5 次）
+//   401 AUTH_003「验证码错误或已过期」/「验证码已失效，请重新获取」（并发同码只成功一个）
+//   422          手机号不匹配 ^1\d{10}$ / 验证码非 6 位（FastAPI 参数校验）
+//   501 AUTH_010「短信服务未接入（生产环境），请使用微信登录」（真实网关 T1 未接通）
+//
+// resolve-only（本文件既有口径，永不 reject）；失败**必 toast 可执行文案**，不静默。
+// ⚠️ 不 import `utils/api.uts`（依赖方向是 api → auth，反向 import 成环），故请求与 toast 就地实现。
+
+/** 服务端 message 优先（后端文案本就是给用户看的中文），缺失时按状态码给可执行兜底 */
+function authFailText(status: number, srvMsg: string, fallback: string): string {
+	if (srvMsg != '') {
+		return srvMsg
+	}
+	if (status === 422) {
+		return '手机号或验证码格式不正确'
+	}
+	if (status === 429) {
+		return '操作过于频繁，请稍后再试'
+	}
+	if (status === 501) {
+		return '短信通道未接入，请改用微信登录'
+	}
+	return fallback
+}
+
+/** 失败提示（不静默）：标题即结论，用户据此知道下一步做什么 */
+function authFailToast(msg: string): void {
+	uni.showToast({ title: msg, icon: 'none', duration: 2500 })
+}
+
+/**
+ * 发送短信验证码（`POST /api/v1/auth/sms/send`）：resolve(true) = 已发包（含 mock 直返）。
+ *
+ * 内测期实话：真实短信网关（T1）**未接通**——`mock_external_ai=true` 时后端把验证码放在
+ * `data.mock_code` 里直返，生产环境该端点直接 501。因此拿到 mock_code 时**用弹窗把码给用户**
+ * （否则内测根本没有可用于登录的码，功能等于不可用）；文案明确写"服务端 mock 直返"，
+ * 不伪装成已收到短信。
+ */
+export function sendSmsCode(phone: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-auth] sendSmsCode ' + why)
+			resolve(ok)
+		}
+		// 与 deviceLogin/wechatLogin 同款看门狗（蒸汽模式桥接可能吞回调）
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout')
+			authFailToast('发送超时，请检查网络后重试')
+		}, 10000)
+		uni.request({
+			url: getBaseUrl() + PATH_AUTH_SMS_SEND,
+			method: 'POST',
+			header: commonHeader(),
+			data: {
+				phone: phone
+			},
+			success: (res) => {
+				const status = res.statusCode
+				// 非 200 或 body 非 JSON 对象时**不得**强转（api.uts:368-378 的实测教训：
+				// 裸值强转在蒸汽模式下同步抛错，回调分支永远执行不到）
+				if (status === 200 && res.data instanceof UTSJSONObject) {
+					const data = res.data.getJSON('data')
+					const mock = data != null ? (data.getString('mock_code') ?? '') : ''
+					finish(true, 'success status=200')
+					if (mock != '') {
+						uni.showModal({
+							title: '验证码已生成',
+							content: '真实短信网关尚未接通，本次验证码由服务端直接返回：' + mock + '（5 分钟内有效，仅内测环境可用）。',
+							showCancel: false,
+							confirmText: '知道了'
+						})
+					}
+					return
+				}
+				let srvMsg = ''
+				if (res.data instanceof UTSJSONObject) {
+					srvMsg = res.data.getString('message') ?? ''
+				}
+				finish(false, 'fail status=' + status)
+				authFailToast(authFailText(status, srvMsg, '验证码发送失败（HTTP ' + status.toString() + '），请稍后重试'))
+			},
+			fail: () => {
+				finish(false, 'network FAIL')
+				authFailToast('网络异常，验证码未发送，请检查连接后重试')
+			}
+		})
+	})
+}
+
+/**
+ * 手机号验证码登录（`POST /api/v1/auth/phone`）：成功后**就地写入新 token 对**，resolve(true)。
+ *
+ * ⚠️ 账号语义（必须让调用方知道）：后端 `_get_or_create_user`（services/auth/auth.py:250-262）
+ * 按 **unionid 或 phone** 查用户——设备码账号的 unionid 是 `device:<device_id>`，与手机号账号
+ * 是**两个用户**。所以本函数是「**切换账号**」，不是「给当前账号绑手机号」。调用方必须先
+ * 二次确认（否则就是 P0-7 那类"我的记忆全没了"事故的翻版）。
+ */
+export function loginWithPhone(phone: string, code: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-auth] loginWithPhone ' + why)
+			resolve(ok)
+		}
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout')
+			authFailToast('登录超时，请检查网络后重试')
+		}, 12000)
+		uni.request({
+			url: getBaseUrl() + PATH_AUTH_PHONE,
+			method: 'POST',
+			header: commonHeader(),
+			data: {
+				phone: phone,
+				code: code
+			},
+			success: (res) => {
+				const status = res.statusCode
+				if (status === 200 && res.data instanceof UTSJSONObject) {
+					const data = res.data.getJSON('data')
+					if (data != null) {
+						const at = data.getString('access_token') ?? ''
+						const rt = data.getString('refresh_token') ?? ''
+						if (at != '' && rt != '') {
+							setSecure(KEY_ACCESS, at)
+							setSecure(KEY_REFRESH, rt)
+							finish(true, 'success status=200')
+							return
+						}
+						// 200 但缺字段：绝不写空 token（会让 ensureLogin 误判"已登录"，更隐蔽）
+						finish(false, 'malformed 200 body: token 字段缺失或为空')
+						authFailToast('登录响应异常，请重试')
+						return
+					}
+				}
+				let srvMsg = ''
+				if (res.data instanceof UTSJSONObject) {
+					srvMsg = res.data.getString('message') ?? ''
+				}
+				finish(false, 'fail status=' + status)
+				// 401 AUTH_003 = 码错/过期；429 = 错误次数过多已作废；两者都是可执行文案
+				authFailToast(authFailText(status, srvMsg, '登录失败（HTTP ' + status.toString() + '），请重试'))
+			},
+			fail: () => {
+				finish(false, 'network FAIL')
+				authFailToast('网络异常，登录未完成，请检查连接后重试')
+			}
+		})
+	})
+}
+
+export function getToken(): string {
+	return getSecure(KEY_ACCESS)
+}
+export function getRefreshToken(): string {
+	return getSecure(KEY_REFRESH)
+}
+
+export function clearToken(): void {
+	removeSecure(KEY_ACCESS)
+	removeSecure(KEY_REFRESH)
+}
+
+/**
+ * 确保已登录（幂等）：无 token 时自动登录；返回是否就绪（resolve-only）。
+ * 并发去重：App.onLaunch 与页面 onLoad 可能同时调用，共享同一个进行中的登录 Promise。
+ */
+let _loginInflight: Promise<boolean> | null = null
+
+/**
+ * 设备码登录的**唯一单飞入口**（2026-10-31 · P2 J-7）。
+ *
+ * 为什么需要：单飞原先只写在 `ensureLogin` 里，而 `doRefresh` 的 fallback（refresh 已作废/过期
+ * → 清 token 重登）直接调 `deviceLogin()` **绕开了它** ⇒ 两条路径并发时各发一次
+ * POST /auth/device，后到的响应覆盖先到的 token 对；同 device_id 连发两次登录还会让服务端
+ * 走两遍 refresh 轮换序列。收敛到本函数后：壳启动预热、ensureLogin、refresh fallback
+ * 三者共享同一个 in-flight Promise。
+ */
+function loginOnce(): Promise<boolean> {
+	const inflight = _loginInflight
+	if (inflight != null) {
+		return inflight
+	}
+	const p = deviceLogin()
+	_loginInflight = p
+	p.then((ok: boolean) => {
+		// 只清自己：并发下可能已有更新的一条在飞（登出后立即重登），不能把它的句柄一起清掉
+		if (_loginInflight == p) {
+			_loginInflight = null
+		}
+	})
+	return p
+}
+
+export function ensureLogin(): Promise<boolean> {
+	const token = getToken()
+	if (token != '') {
+		console.log('[dbg-auth] ensureLogin: cached token')
+		return Promise.resolve(true)
+	}
+	console.log('[dbg-auth] ensureLogin: no token, inflight=' + (_loginInflight != null))
+	return loginOnce()
+}
+
+/** refresh_token 换新（401 触发）；resolve-only
+ *
+ * G1/R6#6（single-flight）：并发 401 只触发一次 refresh——
+ * 模块级 _refreshInflight 共享进行中 Promise，其余调用 await 同一 Promise；
+ * 落定后清除（无论成功/失败），下次重新执行。消除并发双轮换竞态
+ * （后端 refresh 轮换为原子 single-use，双轮换必有一个 401）。
+ */
+let _refreshInflight: Promise<boolean> | null = null
+
+export function refreshToken(): Promise<boolean> {
+	console.log('[dbg-auth] refreshToken called, inflight=' + (_refreshInflight != null))
+	let p = _refreshInflight
+	if (p != null) {
+		return p
+	}
+	p = doRefresh()
+	_refreshInflight = p
+	p.then((ok: boolean) => {
+		_refreshInflight = null
+	})
+	return p
+}
+
+function doRefresh(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		// 2026-10-31（P2 J-8）：记下进入时的登出代号；落定时代号已变 ⇒ 本次结果作废
+		const epoch = _authEpoch
+		const rt = getRefreshToken()
+		console.log('[dbg-auth] doRefresh, has_refresh=' + (rt != ''))
+		if (rt == '') {
+			// 无 refresh_token → 重新登录（2026-10-31 J-7：走同一单飞入口，不再直连 deviceLogin）
+			loginOnce().then((ok: boolean) => {
+				resolve(ok)
+			})
+			return
+		}
+		// W7-401 自愈：refresh 失败（已轮换作废/过期/吊销）≠ 终局——
+		// 清 token 后降级重新登录（设备码通道：同一 device_id 映射同一账号，数据不丢）。
+		// 旧实现只 clearToken+resolve(false)，app 卡死在 401 循环无法自愈。
+		const fallbackLogin = (why: string): void => {
+			console.log('[dbg-auth] doRefresh ' + why + ' -> clearToken + re-login fallback')
+			clearToken()
+			// 2026-10-31（P2 J-7）：fallback 重登收敛到 loginOnce —— 与 ensureLogin 共享同一单飞，
+			// 不再出现"refresh fallback 与启动预热各登一次、后到的覆盖先到的"
+			loginOnce().then((ok: boolean) => {
+				resolve(ok)
+			})
+		}
+		let settled = false
+		const timer = setTimeout(() => {
+			// 蒸汽模式桥接吞回调兜底（api.uts 同源教训）：8s 无响应按失败处理
+			if (settled) {
+				return
+			}
+			settled = true
+			fallbackLogin('watchdog timeout(8s)')
+		}, 8000)
+		uni.request({
+			url: getBaseUrl() + PATH_AUTH_REFRESH,
+			method: 'POST',
+			header: commonHeader(),
+			data: {
+				refresh_token: rt,
+				// 注：后端 RefreshRequest 只读 refresh_token（device_id 从 JWT payload 取），
+				// 此字段保留仅为对齐既有请求形状，不参与服务端判定。
+				device_id: getDeviceId()
+			},
+			success: (res) => {
+				console.log('[dbg-auth] doRefresh status=' + res.statusCode)
+				if (settled) {
+					return
+				}
+				settled = true
+				clearTimeout(timer)
+				if (res.statusCode === 200) {
+					const body = res.data as UTSJSONObject
+					const data = body.getJSON('data')
+					if (data != null) {
+						// ⚠️ 2026-10-09 修漏网强转（真机首测静态审查发现）：getString 缺字段返回
+						// null，`as string` 强转 null 会**运行时崩**（进程死亡）——deviceLogin:109-110
+						// 已修过同型问题（2026-09-21），此处是漏修副本。与 `?? ''` 判空后诚实
+						// 走 fallbackLogin：空 token 绝不写进 storage（否则下一轮误判"已登录"，
+						// 变成更隐蔽的失败）。
+						const at = data.getString('access_token') ?? ''
+						const rt = data.getString('refresh_token') ?? ''
+						if (at != '' && rt != '') {
+							// 2026-10-31（P2 J-8）：期间已登出 ⇒ 丢弃本次轮换结果（绝不写回 storage）
+							if (epoch != _authEpoch) {
+								console.log('[dbg-auth] doRefresh 已登出，丢弃本次轮换结果')
+								resolve(false)
+								return
+							}
+							setSecure(KEY_ACCESS, at)
+							setSecure(KEY_REFRESH, rt)
+							console.log('[dbg-auth] doRefresh success, tokens rotated')
+							resolve(true)
+							return
+						}
+						console.log('[dbg-auth] doRefresh malformed 200 body: token 字段缺失或为空')
+					}
+				}
+				fallbackLogin('fail status=' + res.statusCode)
+			},
+			fail: () => {
+				if (settled) {
+					return
+				}
+				settled = true
+				clearTimeout(timer)
+				fallbackLogin('network FAIL')
+			}
+		})
+	})
+}
+
+/**
+ * 退出登录（G1/R6#7）：调后端 logout/revoke（吊销 devices 表 refresh，AUTH-006）
+ * 后清本地凭据。幂等：后端 token 无效/网络失败也返回 true——会话结束优先，
+ * 服务端吊销失败由 refresh 30 天 TTL 兜底。resolve-only。
+ */
+export function logout(): Promise<boolean> {
+	// 2026-10-31（P2 J-8）：登出那一刻起，**在途**的 refresh 就作废 ——
+	// ① 单飞句柄置空（下一个 401 不复用在途那条，它马上会被判无效）；
+	// ② 代号自增：在途 doRefresh 落定时发现代号变了 ⇒ 不写 token、直接 resolve(false)。
+	// 原实现两者都没有：refresh 与 logout 并发时，refresh 的成功响应会在登出**之后**把新 token 对
+	// 写回 storage ⇒ 用户"退出登录"却仍是登录态（界面无任何提示，下次启动直接进主界面）。
+	_authEpoch = _authEpoch + 1
+	_refreshInflight = null
+	_loginInflight = null
+	return new Promise<boolean>((resolve) => {
+		uni.request({
+			url: getBaseUrl() + PATH_AUTH_LOGOUT,
+			method: 'POST',
+			header: commonHeader(),
+			data: {
+				refresh_token: getRefreshToken()
+			},
+			success: () => {
+				clearToken()
+				resolve(true)
+			},
+			fail: () => {
+				clearToken()
+				resolve(true)
+			}
+		})
+	})
+}

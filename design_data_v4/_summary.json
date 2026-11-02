@@ -1,0 +1,123 @@
+{
+ "01_时间轴主页": {
+  "rects": 24,
+  "circles": 14,
+  "paths": 53,
+  "images": 1,
+  "text_runs": 22,
+  "gradients": 2,
+  "gradient_has_dir": 2,
+  "filters": 15,
+  "filter_has_shadow": 0
+ },
+ "02_搜索页": {
+  "rects": 24,
+  "circles": 13,
+  "paths": 51,
+  "images": 0,
+  "text_runs": 23,
+  "gradients": 0,
+  "gradient_has_dir": 0,
+  "filters": 11,
+  "filter_has_shadow": 0
+ },
+ "03_消息中心": {
+  "rects": 10,
+  "circles": 6,
+  "paths": 28,
+  "images": 0,
+  "text_runs": 11,
+  "gradients": 3,
+  "gradient_has_dir": 3,
+  "filters": 5,
+  "filter_has_shadow": 0
+ },
+ "04_我的页": {
+  "rects": 11,
+  "circles": 14,
+  "paths": 59,
+  "images": 0,
+  "text_runs": 39,
+  "gradients": 0,
+  "gradient_has_dir": 0,
+  "filters": 8,
+  "filter_has_shadow": 0
+ },
+ "05_记录面板": {
+  "rects": 28,
+  "circles": 26,
+  "paths": 71,
+  "images": 1,
+  "text_runs": 34,
+  "gradients": 2,
+  "gradient_has_dir": 2,
+  "filters": 23,
+  "filter_has_shadow": 0
+ },
+ "06_冷启动访谈": {
+  "rects": 5,
+  "circles": 13,
+  "paths": 22,
+  "images": 0,
+  "text_runs": 6,
+  "gradients": 3,
+  "gradient_has_dir": 0,
+  "filters": 11,
+  "filter_has_shadow": 0
+ },
+ "07_设置页": {
+  "rects": 10,
+  "circles": 3,
+  "paths": 21,
+  "images": 0,
+  "text_runs": 15,
+  "gradients": 0,
+  "gradient_has_dir": 0,
+  "filters": 4,
+  "filter_has_shadow": 0
+ },
+ "08_记忆详情页": {
+  "rects": 20,
+  "circles": 8,
+  "paths": 46,
+  "images": 1,
+  "text_runs": 23,
+  "gradients": 6,
+  "gradient_has_dir": 6,
+  "filters": 10,
+  "filter_has_shadow": 0
+ },
+ "TabBar胶囊": {
+  "rects": 1,
+  "circles": 3,
+  "paths": 8,
+  "images": 0,
+  "text_runs": 7,
+  "gradients": 0,
+  "gradient_has_dir": 0,
+  "filters": 0,
+  "filter_has_shadow": 0
+ },
+ "中央＋按钮": {
+  "rects": 0,
+  "circles": 1,
+  "paths": 1,
+  "images": 0,
+  "text_runs": 1,
+  "gradients": 0,
+  "gradient_has_dir": 0,
+  "filters": 0,
+  "filter_has_shadow": 0
+ },
+ "补充态_空状态": {
+  "rects": 3,
+  "circles": 0,
+  "paths": 8,
+  "images": 0,
+  "text_runs": 1,
+  "gradients": 0,
+  "gradient_has_dir": 0,
+  "filters": 1,
+  "filter_has_shadow": 0
+ }
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "ocr_id": "o-0001",
+    "image_ref": "research/truth-data/h/images/o-0001.jpg",
+    "expected_text": "购物清单 牛奶 鸡蛋 面包",
+    "image_type": "handwriting",
+    "source": "product-team",
+    "collected_at": "2026-09-01T10:00:00+08:00",
+    "note": "手写笔记（自收）；本地 OCR 识别难，应触发云端兜底"
+  },
+  {
+    "ocr_id": "o-0002",
+    "image_ref": "research/truth-data/h/images/o-0002.jpg",
+    "expected_text": "会议纪要：下周三交方案",
+    "image_type": "handwriting",
+    "source": "product-team",
+    "collected_at": "2026-09-01T10:05:00+08:00",
+    "note": "手写笔记（自收）；用户真实场景"
+  }
+]

@@ -1,0 +1,794 @@
+
+	/* 视觉规范 v2：像素级还原 SVG 设计稿
+	   背景 #f8f7f4 / 卡片 #ffffff 圆角20 / 玻璃 TabBar #ffffff8c 圆角31
+	   主文字 #3a2e25 / 次文字 #8a7a6a / 锈红 #b05a3a / 琥珀 #c4913c */
+	.page {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: var(--c-paper-100, #f8f7f4);
+		padding-left: 0;
+		padding-right: 0;
+		padding-top: 0;
+	}
+
+	.serif {
+		font-family: "Sarasa Gothic SC", "Noto Serif CJK SC", serif;
+	}
+
+	/* 顶栏：干净，不做旧 */
+	.header {
+		padding-top: var(--d-lattice-p25, 48rpx);
+		padding-bottom: var(--d-raw-r24, 24rpx);
+		padding-left: var(--d-raw-r40, 40rpx);
+		padding-right: var(--d-raw-r40, 40rpx);
+	}
+	.header-title {
+		font-size: var(--d-raw-r44, 44rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: bold;
+		letter-spacing: var(--d-raw-r4, 4rpx);
+	}
+	.header-sub {
+		margin-top: var(--d-raw-r8, 8rpx);
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-500, #8a7a6a);
+	}
+
+	/* 照片出血氛围层（390x300 湖面图 + 顶部横向暗化 + 底部横向米色溶解） */
+	.hero-section {
+		position: relative;
+		width: 100%;
+		height: var(--d-lattice-p312, 600rpx);
+		overflow: hidden;
+	}
+	.hero-image {
+		width: 100%;
+		height: 100%;
+	}
+	.hero-overlay-top {
+		position: absolute;
+		/* absolute-ok: hero 顶部暗化遮罩 */
+		top: 0;
+		left: 0;
+		right: 0;
+		height: var(--d-raw-r269, 269rpx);
+		/* 画布 2:257：垂直暗化 rgba(25,20,15) a0.5→0.28@50%→0。uvue 限三参数，双标线性插值中点≈0.25 与 0.28 近似 */
+		background: var(--g-veil-ink-ink, linear-gradient(to bottom, rgba(25,20,15,0.5), rgba(25,20,15,0)));
+	}
+	.hero-overlay-bottom {
+		position: absolute;
+		/* absolute-ok: hero 底部溶解遮罩 */
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: var(--d-raw-r269, 269rpx);
+		/* 画布 2:258：底部米色垂直溶解 #F8F7F4 a0→0.78@75%→1。三参数限两标，溶解曲线近似 */
+		background: var(--g-veil-paper-sand, linear-gradient(to bottom, rgba(248,247,244,0), #f8f7f4));
+	}
+	.hero-avatar {
+		position: absolute;
+		/* absolute-ok: hero 头像角标（画布锚点） */
+		top: 111rpx;
+		right: var(--d-raw-r38, 38rpx);
+		width: 77rpx;
+		height: 77rpx;
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-amber-500, #c4913c);
+		border-width: 2rpx;
+		border-color: var(--a-white-70, rgba(255,255,255,0.7));
+		border-style: solid;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.hero-avatar-char {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r40, 40rpx);
+		color: var(--c-white, #ffffff);
+		font-weight: 600;
+	}
+	/* 画布真值（2026-09-01 重拉 index_canvas.json）：
+	   大标题 px(20,56) fs40 → rpx(38.5,107.7) fs76.9，白 a1.0，无阴影
+	   副标题 px(20,110) fs13 → rpx(38.5,211.5) fs25，白 a0.85
+	   照片说明 px(20,124) fs13 → rpx(38.5,238.5) fs25，白 a1.0，宽 226px→434.6rpx */
+	.hero-content {
+		position: absolute;
+		/* absolute-ok: hero 文案容器（铺满锚定） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p0, 0rpx);
+		right: var(--d-lattice-p0, 0rpx);
+		bottom: var(--d-lattice-p0, 0rpx);
+	}
+	.hero-title {
+		position: absolute;
+		/* absolute-ok: hero 大标题（画布锚点，静态） */
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-fab_size, 107.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p40, 76.9rpx);
+		color: var(--c-white, #ffffff);
+		font-weight: bold;
+	}
+	.hero-sub1 {
+		position: absolute;
+		/* absolute-ok: hero 副标题（画布锚点，静态） */
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p110, 211.5rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--a-white-85, rgba(255,255,255,0.85));
+	}
+	.hero-sub2 {
+		position: absolute;
+		/* absolute-ok: hero 照片说明（画布锚点，静态） */
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p124, 238.5rpx);
+		width: var(--d-lattice-p226, 434.6rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-white, #ffffff);
+	}
+
+	/* 玻璃搜索胶囊（backdrop-blur 16 + 白色内高光） */
+	.search-capsule {
+		margin: var(--d-raw-r24, 24rpx) var(--d-raw-r40, 40rpx);
+		/* 几何钉死：画布 46px×1.9231=88.5rpx 固定高，垂直居中靠 height+align-items。
+		   禁止 content-driven 高度——冷启动首帧 uvue 对行内 text 行盒计算异常会撑高胶囊
+		   +文字贴顶（2026-09-02 真机漂移实锤，feed relayout 后才自愈），固定高根除 */
+		height: var(--d-search_height, 88.5rpx);
+		padding: 0 var(--d-raw-r32, 32rpx);
+		background-color: var(--a-white-32, rgba(255,255,255,0.32));
+		border-radius: var(--d-raw-r46, 46rpx);
+		border-width: var(--d-raw-r1, 1rpx);
+		border-color: var(--a-white-50, rgba(255,255,255,0.5));
+		border-style: solid;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 var(--d-raw-r6, 6rpx) var(--d-raw-r22, 22rpx) var(--a-ink-08, rgba(58,46,37,0.078));
+	}
+	.search-icon {
+		width: var(--d-raw-r36, 36rpx);
+		height: var(--d-raw-r36, 36rpx);
+		margin-right: var(--d-raw-r16, 16rpx);
+	}
+	.search-placeholder {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		/* 不用 flex:1——uvue 首帧曾把 flex:1 的 text 纵向拉伸致字形贴顶（漂移实锤之一）；
+		   胶囊本身 stretch 满宽可点，无需 text 撑开 */
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--a-white-85, rgba(255,255,255,0.85));
+	}
+
+	.scroll {
+		flex: 1;
+	}
+
+	.center-box {
+		padding-top: 140rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding-left: var(--d-raw-r40, 40rpx);
+		padding-right: var(--d-raw-r40, 40rpx);
+	}
+
+	/* ⚠️ 隐藏类 .sk-hidden / .ui-hidden 已统一移至**本文件末尾**（2026-10-11）：
+	   两者均为单类选择器（特异性 0,1,0）与 .skeleton{display:flex} / .empty-home{display:flex}
+	   同特异性 ⇒ 按 CSS 层叠「同特异性后定义者胜」，放在前面会被后面的 display:flex 覆盖
+	   （空态/骨架屏会永远藏不住）。放在文件末尾则无论编译器按何种顺序裁决都安全。
+	   详见文件末尾同名块注释。 */
+	.skeleton {
+		padding-left: var(--d-raw-r40, 40rpx);
+		padding-right: var(--d-raw-r40, 40rpx);
+		padding-top: var(--d-raw-r24, 24rpx);
+		display: flex;
+		flex-direction: column;
+	}
+	.sk-card {
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-raw-r24, 24rpx);
+		padding: var(--d-raw-r24, 24rpx);
+		margin-bottom: var(--d-raw-r28, 28rpx);
+	}
+	.sk-card-body {
+		display: flex;
+		flex-direction: column;
+	}
+	.sk-line {
+		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
+		border-radius: var(--d-raw-r10, 10rpx);
+	}
+	.sk-day {
+		width: var(--d-raw-r180, 180rpx);
+		height: var(--d-raw-r30, 30rpx);
+		margin-bottom: var(--d-raw-r20, 20rpx);
+	}
+	.sk-title {
+		width: var(--d-raw-r420, 420rpx);
+		height: var(--d-raw-r40, 40rpx);
+		margin-bottom: var(--d-raw-r24, 24rpx);
+	}
+	.sk-meta {
+		width: 260rpx;
+		height: var(--d-raw-r26, 26rpx);
+	}
+	.sk-strip {
+		display: flex;
+		flex-direction: row;
+		margin-bottom: var(--d-raw-r24, 24rpx);
+	}
+	.sk-img {
+		width: var(--d-raw-r190, 190rpx);
+		height: var(--d-raw-r190, 190rpx);
+		border-radius: var(--d-raw-r16, 16rpx);
+		background-color: #EFE9DD;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-300 的值与本处原色差 Δ6，属令牌化误映射 */
+		margin-right: var(--d-raw-r16, 16rpx);
+	}
+	.muted {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-300, #b3a696);
+	}
+
+	.feed {
+		padding-bottom: 160rpx;
+		padding-left: var(--d-raw-r40, 40rpx);
+		padding-right: var(--d-raw-r40, 40rpx);
+	}
+	.day-block {
+		margin-top: var(--d-raw-r40, 40rpx);
+	}
+	.day-head {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: var(--d-raw-r20, 20rpx);
+	}
+	.day-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		font-weight: 500;
+		padding-left: var(--d-raw-r8, 8rpx);
+	}
+	.day-line {
+		flex: 1;
+		height: var(--d-raw-r1, 1rpx);
+		background-color: var(--a-ink-08, rgba(58,46,37,0.08));
+		margin-left: var(--d-raw-r16, 16rpx);
+	}
+
+	/* 待确认区 */
+	.pending-block {
+		margin-top: var(--d-raw-r24, 24rpx);
+	}
+	.pending-sub {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-bottom: var(--d-raw-r20, 20rpx);
+		padding-left: var(--d-raw-r8, 8rpx);
+	}
+	.pending-actions {
+		margin-top: var(--d-raw-r20, 20rpx);
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	/* 2026-11-01 走查缺陷（台账 §4.9）修复占位：pending 卡是列表末元素时按钮行
+	   落进底部 tab 浮层的触摸拦截带（tap 被 + 按钮层截胡 → 点忽略/确认弹出记录面板）。
+	   在按钮行下加实体占位把按钮抬离遮挡带；占位属于卡片内容流，随卡片滚动。 */
+	.pending-actions-spacer {
+		height: 220rpx;
+	}
+	.pending-btn {
+		padding-left: var(--d-raw-r40, 40rpx);
+		padding-right: var(--d-raw-r40, 40rpx);
+		padding-top: var(--d-raw-r14, 14rpx);
+		padding-bottom: var(--d-raw-r14, 14rpx);
+		border-radius: var(--d-raw-r32, 32rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.pending-btn-ghost {
+		border-width: 2rpx;
+		border-color: var(--c-rust-500, #b05a3a);
+		margin-right: var(--d-raw-r20, 20rpx);
+	}
+	.pending-btn-solid {
+		background-color: var(--c-rust-500, #b05a3a);
+	}
+	.pending-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-900, #3a2e25);
+	}
+	.pending-btn-text-solid {
+		color: var(--c-white, #ffffff);
+	}
+
+	/* 封面展示 */
+	.cover-wrap {
+		margin-bottom: var(--d-raw-r20, 20rpx);
+		border-radius: var(--d-raw-r16, 16rpx);
+		overflow: hidden;
+	}
+	.cover-img {
+		width: 100%;
+		height: 280rpx;
+		background-color: var(--c-paper-400, #ede5d5);
+	}
+
+	/* 照片条 */
+	.photo-strip {
+		margin-top: var(--d-raw-r20, 20rpx);
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.strip-img {
+		width: var(--d-lattice-p79, 152rpx);
+		height: var(--d-lattice-p79, 152rpx);
+		margin-right: var(--d-raw-r12, 12rpx);
+		margin-bottom: var(--d-raw-r12, 12rpx);
+		border-radius: var(--d-raw-r12, 12rpx);
+		background-color: var(--c-paper-400, #ede5d5);
+	}
+
+	/* 卡片：白色圆角 20 + 底部投影，不描边 */
+	.card {
+		background-color: var(--c-white, #ffffff);
+		border-radius: var(--d-raw-r40, 40rpx);
+		padding: var(--d-raw-r32, 32rpx);
+		margin-bottom: var(--d-raw-r24, 24rpx);
+		box-shadow: 0 var(--d-raw-r4, 4rpx) var(--d-raw-r16, 16rpx) var(--a-ink-06, rgba(58,46,37,0.06));
+		position: relative;
+	}
+	.card-l1 {
+		border-radius: var(--d-raw-r40, 40rpx);
+	}
+	.card-l2 {
+		border-radius: var(--d-raw-r32, 32rpx);
+		margin-left: var(--d-raw-r20, 20rpx);
+	}
+	.card-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r32, 32rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 600;
+		margin-bottom: var(--d-raw-r12, 12rpx);
+	}
+	.title-l2 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		font-weight: 500;
+	}
+	.card-meta {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: var(--d-raw-r8, 8rpx);
+	}
+	.meta-item {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		margin-right: var(--d-raw-r20, 20rpx);
+	}
+	.rust {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-rust-500, #b05a3a);
+	}
+	.amber {
+		color: var(--c-amber-500, #c4913c);
+	}
+
+	/* 语音卡：琥珀播放钮 + 波形竖条阵列 */
+	.voice-card {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: var(--d-raw-r20, 20rpx);
+		background-color: var(--a-amber-14, rgba(196,145,60,0.14));
+		border-radius: var(--d-raw-r24, 24rpx);
+		margin-top: var(--d-raw-r16, 16rpx);
+	}
+	.voice-play-btn {
+		width: var(--d-raw-r64, 64rpx);
+		height: var(--d-raw-r64, 64rpx);
+		border-radius: var(--d-raw-r32, 32rpx);
+		background-color: var(--a-white-80, rgba(255,255,255,0.8));
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: var(--d-raw-r20, 20rpx);
+		box-shadow: 0 2rpx var(--d-raw-r6, 6rpx) var(--a-ink-12, rgba(58,46,37,0.12));
+	}
+	.voice-play-icon {
+		width: 0;
+		height: 0;
+		border-left: var(--d-raw-r20, 20rpx) solid var(--c-rust-500, #b05a3a);
+		border-top: var(--d-raw-r12, 12rpx) solid transparent;
+		border-bottom: var(--d-raw-r12, 12rpx) solid transparent;
+		margin-left: var(--d-raw-r6, 6rpx);
+	}
+	.voice-wave {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		height: var(--d-lattice-p25, 48rpx);
+	}
+	.voice-wave-bar {
+		width: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-amber-500, #c4913c);
+		border-radius: 2rpx;
+		margin-right: var(--d-raw-r4, 4rpx);
+	}
+	.voice-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 500;
+		margin-top: var(--d-raw-r8, 8rpx);
+	}
+	.voice-duration {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		margin-left: var(--d-raw-r16, 16rpx);
+	}
+	/* W0-2 播放态（F5a 规范）：暂停形 + 进度行 */
+	.voice-pause-icon {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.voice-pause-bar {
+		width: var(--d-raw-r8, 8rpx);
+		height: var(--d-raw-r24, 24rpx);
+		background-color: var(--c-rust-500, #b05a3a);
+		border-radius: 2rpx;
+		margin-left: var(--d-raw-r5, 5rpx);
+		margin-right: var(--d-raw-r5, 5rpx);
+	}
+	.voice-progress-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-top: var(--d-raw-r10, 10rpx);
+	}
+	.voice-progress-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r20, 20rpx);
+		color: var(--c-ink-500, #8a7a6a);
+	}
+	.voice-track {
+		flex: 1;
+		height: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-paper-600, #e5dcc8);
+		border-radius: 2rpx;
+		margin-left: var(--d-raw-r12, 12rpx);
+		margin-right: var(--d-raw-r12, 12rpx);
+		overflow: hidden;
+	}
+	.voice-track-fill {
+		height: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-amber-500, #c4913c);
+		border-radius: 2rpx;
+	}
+
+	/* 文字卡：左侧琥珀引用竖线 + 米色引言面板 */
+	.quote-card {
+		display: flex;
+		flex-direction: row;
+		padding: var(--d-raw-r20, 20rpx);
+		margin-top: var(--d-raw-r16, 16rpx);
+		background-color: var(--a-amber-10, rgba(196,145,60,0.10));
+		border-radius: var(--d-raw-r24, 24rpx);
+	}
+	.quote-line {
+		width: var(--d-raw-r6, 6rpx);
+		background-color: var(--c-amber-500, #c4913c);
+		border-radius: var(--d-raw-r3, 3rpx);
+		margin-right: var(--d-raw-r20, 20rpx);
+	}
+	.quote-content {
+		flex: 1;
+	}
+	.quote-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-900, #3a2e25);
+		line-height: var(--d-raw-r44, 44rpx);
+		font-style: italic;
+	}
+	.quote-source {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: var(--d-raw-r12, 12rpx);
+		font-size: var(--d-raw-r22, 22rpx);
+		color: var(--c-ink-500, #8a7a6a);
+	}
+
+	/* 卡片操作菜单 */
+	.card-ops {
+		position: absolute;
+		/* absolute-ok: 卡内右上角操作钮（卡内锚点，随卡滚动） */
+		top: var(--d-raw-r24, 24rpx);
+		right: var(--d-raw-r24, 24rpx);
+		width: var(--d-lattice-p25, 48rpx);
+		height: var(--d-lattice-p25, 48rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.card-ops-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r36, 36rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		font-weight: bold;
+	}
+
+	/* 回响卡片（去年今日 · 角贴 + 泛黄） */
+	.echo-card {
+		background-color: #faf6ee;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-200 的值与本处原色差 Δ7，属令牌化误映射 */
+		border-radius: var(--d-raw-r24, 24rpx);
+		padding: var(--d-raw-r32, 32rpx);
+		margin: var(--d-raw-r24, 24rpx) var(--d-raw-r40, 40rpx);
+		position: relative;
+		box-shadow: 0 var(--d-raw-r4, 4rpx) var(--d-raw-r16, 16rpx) var(--a-ink-08, rgba(58,46,37,0.08));
+	}
+	.echo-corner {
+		position: absolute;
+		/* absolute-ok: echo 卡右上角标（卡内锚点） */
+		top: -4rpx;
+		right: var(--d-raw-r32, 32rpx);
+		background-color: var(--c-amber-500, #c4913c);
+		padding: var(--d-raw-r8, 8rpx) var(--d-raw-r20, 20rpx);
+		border-radius: 0 0 var(--d-raw-r12, 12rpx) var(--d-raw-r12, 12rpx);
+	}
+	.echo-corner-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r20, 20rpx);
+		color: var(--c-white, #ffffff);
+		font-weight: 500;
+	}
+	.echo-date {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		margin-bottom: var(--d-raw-r12, 12rpx);
+	}
+	.echo-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r30, 30rpx);
+		color: var(--c-ink-900, #3a2e25);
+		line-height: var(--d-lattice-p25, 48rpx);
+		font-style: italic;
+	}
+	.echo-meta {
+		margin-top: var(--d-raw-r16, 16rpx);
+		display: flex;
+		flex-direction: row;
+	}
+	.echo-actions {
+		margin-top: var(--d-raw-r20, 20rpx);
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.echo-dismiss {
+		padding: var(--d-raw-r12, 12rpx) var(--d-raw-r32, 32rpx);
+		border-radius: var(--d-raw-r24, 24rpx);
+		background-color: var(--a-rust-10, rgba(176,90,58,0.1));
+	}
+	.echo-dismiss-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r24, 24rpx);
+		color: var(--c-rust-500, #b05a3a);
+	}
+
+
+	/* 按压态动画（scale 0.98 + 阴影收缩 200ms） */
+	.pressable {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+	
+
+	/* 拆分面板 */
+	.split-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: var(--c-white, #ffffff);
+		border-radius: var(--d-raw-r32, 32rpx) var(--d-raw-r32, 32rpx) 0 0;
+		padding: var(--d-raw-r32, 32rpx);
+		max-height: 500px;
+	}
+	.split-title {
+		font-size: var(--d-raw-r32, 32rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 600;
+		margin-bottom: var(--d-raw-r24, 24rpx);
+	}
+	.split-item {
+		padding: var(--d-raw-r20, 20rpx);
+		border-radius: var(--d-raw-r16, 16rpx);
+		background-color: var(--c-paper-100, #f8f7f4);
+		margin-bottom: var(--d-raw-r12, 12rpx);
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.split-item-text {
+		flex: 1;
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-900, #3a2e25);
+	}
+	.split-actions {
+		margin-top: var(--d-raw-r24, 24rpx);
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+
+	/* 照片详情面板 */
+	.photo-detail-panel {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: var(--c-white, #ffffff);
+		border-radius: var(--d-raw-r32, 32rpx) var(--d-raw-r32, 32rpx) 0 0;
+		padding: var(--d-raw-r32, 32rpx);
+		max-height: 500px;
+	}
+	.photo-detail-image {
+		width: 100%;
+		height: var(--d-lattice-p208, 400rpx);
+		border-radius: var(--d-raw-r16, 16rpx);
+		margin-bottom: var(--d-raw-r24, 24rpx);
+		background-color: var(--c-paper-400, #ede5d5);
+	}
+	.photo-detail-title {
+		font-size: var(--d-raw-r32, 32rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 600;
+		margin-bottom: var(--d-raw-r16, 16rpx);
+	}
+	.photo-detail-event {
+		padding: var(--d-raw-r16, 16rpx);
+		border-radius: var(--d-raw-r12, 12rpx);
+		background-color: var(--c-paper-100, #f8f7f4);
+		margin-bottom: var(--d-raw-r12, 12rpx);
+	}
+
+	/* 卡PB R1：尾部加载更多按钮 */
+	.load-more {
+		margin-top: var(--d-raw-r32, 32rpx);
+		padding: var(--d-raw-r20, 20rpx) var(--d-raw-r40, 40rpx);
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		border-width: 2rpx;
+		border-color: var(--a-ink-15, rgba(58,46,37,0.15));
+		border-style: solid;
+		border-radius: var(--d-raw-r36, 36rpx);
+		background-color: var(--c-white, #ffffff);
+	}
+	.load-more-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r26, 26rpx);
+		color: var(--c-ink-500, #8a7a6a);
+	}
+
+	/* ── 壳内空态（2026-10-09）：视觉=empty 页（画布 2:284 空状态帧），就地渲染不跳页 ──
+	   🚨 2026-10-11 静态审查修复：类名统一加 `ti-` 前缀（TabIndex）。
+	   原实现直接沿用 empty 页的 `.empty-*` 类名，而 uni-app x 的 `<style>` 是**全局**的
+	   ⇒ 与 `pages/empty/empty.uvue` 内联的 `.empty-*`、`styles/favorites.css` 的
+	   `.empty-*`（**absolute 定位 + 完全不同的几何**：`.empty-illus{position:absolute;left/top}`
+	   `.empty-cta{width:480.8rpx;height:107.7rpx}`）三方同名，胜出者取决于样式表合并顺序
+	   （不受仓库控制）⇒ 空态插画/CTA 可能被 favorites 版的绝对定位钉死、错位到屏外。
+	   加前缀后三处彻底隔离，各页各管自己的空态。（改名前几何已与 empty 页逐值对齐，
+	   改名不改值 ⇒ 无视觉变化。） */
+	.ti-empty-home {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 60rpx 0 120rpx 0;
+	}
+	.ti-empty-illus {
+		position: relative;
+		width: var(--d-raw-r240, 240rpx);
+		height: var(--d-lattice-p131, 252rpx);
+	}
+	.ti-empty-sun {
+		position: absolute;
+		left: var(--d-raw-r112, 112rpx);
+		top: 0;
+		width: var(--d-raw-r120, 120rpx);
+		height: var(--d-raw-r120, 120rpx);
+	}
+	.ti-empty-lake {
+		position: absolute;
+		left: 0;
+		top: var(--d-raw-r72, 72rpx);
+		width: var(--d-raw-r240, 240rpx);
+		height: var(--d-raw-r180, 180rpx);
+	}
+	.ti-empty-lake-img {
+		position: absolute;
+		left: var(--d-raw-r24, 24rpx);
+		top: var(--d-raw-r24, 24rpx);
+		width: var(--d-raw-r192, 192rpx);
+		height: var(--d-raw-r112, 112rpx);
+	}
+	.ti-empty-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: 68rpx;
+		font-size: var(--d-raw-r44, 44rpx);
+		line-height: var(--d-raw-r62, 62rpx);
+		color: var(--c-ink-900, #3a2e25);
+		font-weight: 600;
+	}
+	.ti-empty-desc {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: var(--d-raw-r22, 22rpx);
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-500, #8a7a6a);
+		text-align: center;
+		line-height: var(--d-raw-r42, 42rpx);
+	}
+	.ti-empty-desc2 {
+		margin-top: 0;
+	}
+	.ti-empty-cta {
+		margin-top: var(--d-raw-r72, 72rpx);
+		width: var(--d-lattice-p260, 500rpx);
+		height: var(--d-raw-r112, 112rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: var(--c-rust-500, #b05a3a);
+		border-radius: var(--d-raw-r56, 56rpx);
+		box-shadow: 0 var(--d-raw-r12, 12rpx) var(--d-raw-r32, 32rpx) var(--a-rust-30, rgba(176, 89, 58, 0.3));
+	}
+	.ti-empty-cta-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		color: var(--c-white, #ffffff);
+		font-size: var(--d-raw-r32, 32rpx);
+		font-weight: 600;
+	}
+	.ti-empty-voice {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		margin-top: var(--d-lattice-p27, 52rpx);
+		padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
+		align-items: center;
+	}
+	.ti-empty-voice-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		font-weight: 600;
+		color: var(--c-rust-500, #b05a3a);
+	}
+
+	/* ═══ 隐藏类（**必须留在文件末尾**，2026-10-11 静态审查）═══
+	   为什么放在最后：这两个类是"恒渲染 + class 收起"路径（R9-D：vapor 对 v-if 整树
+	   卸载失效，只能走属性更新）。它们与 .skeleton{display:flex}（骨架屏）/
+	   .empty-home{display:flex}（壳内空态）**特异性完全相同**（单类 0,1,0），
+	   而 uni-app x 的样式合并顺序不受我们控制 ⇒ 若这些隐藏类定义在布局类**之前**，
+	   一旦编译器按"后定义者胜"裁决，display:flex 会覆盖 display:none，
+	   表现为「有数据时骨架屏残留 / 空态插画一直挂在时间轴上方」——两个都是真机上
+	   一眼可见且极易被误诊为"渲染 bug"的故障（09-07 骨架残留就是这么来的）。
+	   放在文件末尾 ⇒ 无论顺序如何裁决，隐藏类永远最后生效。
+	   ⚠️ 新增任何 display:* 的类都必须加在本块**之前**。 */
+	.sk-hidden {
+		display: none;
+	}
+	.ui-hidden {
+		display: none;
+	}
+

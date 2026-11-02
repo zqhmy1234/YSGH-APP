@@ -1,4 +1,8 @@
-"""add FinetuneJob ORM model
+"""链占位 no-op 迁移（2026-08-26 决策：FinetuneJob ORM 模型已删）
+
+finetune_jobs 表实际由基线迁移 431bcaa8bd54 创建（见 :754 create_table）+ schema.sql 管理，
+写入方为 scripts/reflow_global.py 裸 SQL。本迁移为迁移链连续性占位（upgrade/downgrade 均为
+no-op），保留不可删（a1b2c3d4e5f6 的 down_revision 依赖本 revision）。
 
 Revision ID: 225d7b006ab3
 Revises: 431bcaa8bd54

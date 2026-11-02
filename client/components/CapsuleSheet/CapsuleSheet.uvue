@@ -1,0 +1,450 @@
+<template>
+	<!-- ═══════════ 时间胶囊弹层（F7b 画布真值还原 · 卡22 · 2026-09-03 视觉重设计版） ═══════════
+	     浮层铁律 1 同族：弹层 = 全局浮层不是页面，唤起不发生页面跳转
+	     （RecordSheet/EchoSheet/ShareSheet 同款 fixed + z-index 1000 范式）。
+	     画布 63:53：弹层顶 y=331 → min-height 986.5rpx；弹层 gap=16px→30.8rpx margin；
+	     选项列表 gap=8px→15.4rpx；视觉语言对齐详情页定稿（峰宝 09-03 拍板）：
+	     弹层暖底 #FAF9F5 / 摘要行白卡+双投影 / 选中态锈红 #B05A3A（描边+勾选圆）/
+	     未选卡白底淡投影 / 主按钮锈红；几何未变，仅色彩与投影改版 -->
+	<view class="sheet-root tk-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">加入时间胶囊</text>
+				<!-- × 热区修复（峰宝 09-05 实锤：text@tap 热区只有字形大小点不中）——
+			     view 承载给足 60rpx 方形热区，内部 text 纯展示（text@tap 全库清零军规） -->
+			<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 63:57 记忆摘要行：白卡 + 双投影（重设计：原 #EDE5D5 土黄大色块废弃） -->
+			<view class="summary-row">
+				<image class="summary-star" src="/static/icons/detail-sparkle.svg" />
+				<text class="summary-text">{{ summaryText }}</text>
+			</view>
+			<!-- 63:61 节标（2026-10-15 · 台账 §4.20 ㉕：已有封存时本区无意义 ⇒ 隐藏，改显示状态行） -->
+			<text v-if="existingId == ''" class="section-label">开启时机</text>
+			<!-- 63:62 时机选项列表（4 项，画布默认选中「3 个月后」） -->
+			<view v-if="existingId == ''" class="opt-list">
+				<view v-for="(o, idx) in opts" :key="idx"
+					class="opt" :class="{ 'opt-on': selected == idx }"
+					:style="{ marginTop: idx > 0 ? '15.4rpx' : '0rpx' }"
+					@tap="onOptTap(idx)">
+					<view class="opt-texts">
+						<text class="opt-main">{{ o.main }}</text>
+						<text v-if="o.sub != ''" class="opt-sub">{{ o.sub }}</text>
+					</view>
+					<view v-if="selected == idx" class="opt-check">
+						<image class="opt-check-mark" src="/static/icons/opt-check.svg" />
+					</view>
+					<view v-else class="opt-circle"></view>
+				</view>
+			</view>
+			<!-- 63:86 说明（已有封存时改显示状态 —— 2026-10-15 · 台账 §4.20 ㉕） -->
+			<text v-if="existingId == ''" class="note-text">封存期间这条记忆会上锁，到期那天我们会提醒你打开</text>
+			<text v-else class="note-text">{{ existingStatus == 'due' ? '这枚胶囊已到期，打开回看那时的自己' : '已封存 · 到期 ' + existingDueText }}</text>
+			<!-- 63:87 主按钮 48px→92.3rpx r24 锈红 #B05A3A（§W 修订：原注释误留旧琥珀色）
+			     2026-10-15：按钮语义随状态分派（未封存=封存 / 已到期=打开 / 封存中=撤销），样式沿用画布真值 -->
+			<view class="main-btn" :class="{ 'main-btn-off': !capChecked || submitting }" @tap="onMainTap">
+				<text class="main-btn-text">{{ existingId == '' ? '封存胶囊' : (existingStatus == 'due' ? '打开胶囊' : '撤销封存') }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// BA2 真封存（FE2）：POST /api/v1/capsules {content_id, open_at(ISO 8601 带时区), note?}
+	// 契约（backend/app/api/capsules.py 已实证）：open_at 必须晚于当前时刻否则 422 CAPSULE_001；
+	// content 须属当前用户且未删除否则 404；重复封存同内容后端不拦截（每次新建一行）；
+	// 到期开启后端自动产消息。旧 USE_MOCK_CAPSULE 本地暂存（capsule_drafts）演示态已删除。
+	// 2026-10-15（台账 §4.20 ㉕）**接线补齐**：原先只接了「封存」（sealCapsule），而
+	// `GET /capsules`（列表）与 `POST /capsules/{id}/open`（开启）、`DELETE /capsules/{id}`
+	// （撤销）在**全客户端零调用** ⇒ 封存是单程票（封进去看不到、到期开不了、也撤不掉）。
+	// 现本面板负责：进面板查一次列表（顺带触发后端惰性到期扫描）→ 已有封存则改为
+	// 「状态 + 打开（到期）/ 撤销（封存中）」入口。复用现有画布样式，不新增视觉元素。
+	import { sealCapsule, listCapsules, openCapsule, deleteCapsule } from '@/utils/capsule_api'
+	import { isoLocal, shortDate } from '@/utils/time'
+	import { onMounted } from 'vue'
+
+	const props = defineProps({
+		summary: {
+			type: String,
+			default: ''
+		},
+		// content_id：被封存的记忆（宿主 detail 传入；空 = 无关联内容，封存显式拒绝）
+		contentId: {
+			type: String,
+			default: ''
+		}
+	})
+
+	const emit = defineEmits(['close'])
+
+	// 选项对象：UTS 零先例禁令 → class+constructor+new（对齐 MessageItem/DayGroup 先例），禁 type 字面量
+	class CapsuleOpt {
+		main: string = ''
+		sub: string = ''
+		monthsLater: number = 0   // 到期 = 当前日期 + N 个月（0 = 自定义日期，无到期日）
+		constructor(main: string, sub: string, monthsLater: number) {
+			this.main = main
+			this.sub = sub
+			this.monthsLater = monthsLater
+		}
+	}
+
+	// 到期时刻（ms）：Date.UTC 月加法自动进位（先例 time.uts:106；setMonth 零先例禁用）。
+	// 本地字段喂 UTC 有 ≤8h 偏差，「N 个月后」粒度无感；后端仅校验晚于 now
+	function openAtMs(monthsLater: number): number {
+		const now = new Date()
+		return Date.UTC(now.getFullYear(), now.getMonth() + monthsLater, now.getDate(), now.getHours(), now.getMinutes())
+	}
+
+	// 画布 63:63~63:85 四选项真值主文案；sub 日期动态算真实到期日（画布装饰段
+	// 「冬天的菜市场」等与演示日期绑定，动态日期后语义不成立 → 只留真实到期日）
+	const opts: Array<CapsuleOpt> = [
+		new CapsuleOpt('3 个月后', shortDate(isoLocal(openAtMs(3))), 3),
+		new CapsuleOpt('半年后', shortDate(isoLocal(openAtMs(6))), 6),
+		new CapsuleOpt('1 年后', shortDate(isoLocal(openAtMs(12))), 12),
+		new CapsuleOpt('自定义日期（生日 / 纪念日）', '', 0)
+	]
+
+	// 画布默认选中第 0 项「3 个月后」
+	let selected = ref(0)
+	let submitting = ref(false)
+	// 2026-10-15（台账 §4.20 ㉕）：本条记忆**已有封存**时，面板切换为「状态 + 撤销/开启」入口。
+	// existingId == '' ⇒ 无封存，走原封存流程（画布形态不变）；非空 ⇒ 显示状态行与对应动作。
+	let existingId = ref('')
+	let existingStatus = ref('') // sealed（封存中）/ due（已到期）
+	let existingDueText = ref('')
+	// 2026-10-31（P2 J-11）：**首帧竞态**。`existingId` 只可能在下面的 listCapsules 落定后变非空，
+	// 而主按钮从第一帧就可点 ⇒ 网络慢/用户手快时会按"无封存"路径**再封一次**；后端对同内容重复封存
+	// **不拦截**（每次新建一行）⇒ 同一记忆挂两枚胶囊，且撤销只能撤掉其中一枚（用户以为没撤掉）。
+	// 故：查询落定前按钮禁用 + onMainTap/onConfirm 二次校验（禁用只影响观感，双击/无障碍仍可触发）。
+	let capChecked = ref(false)
+
+	onMounted((): void => {
+		if (props.contentId == '') {
+			// 无关联内容：本来就不允许封存（onConfirm 显式拒绝），无需等查询
+			capChecked.value = true
+			return
+		}
+		// 拉一次列表（后端把惰性到期扫描挂在该端点上，见 capsule_api.listCapsules 注释）
+		listCapsules().then((rows: Array<UTSJSONObject>) => {
+			for (let i = 0; i < rows.length; i++) {
+				const r = rows[i]
+				if ((r.getString('content_id') ?? '') != props.contentId) {
+					continue
+				}
+				const st = r.getString('status') ?? ''
+				if (st == 'opened') {
+					continue // 已开启：后端不可再撤销，也不该再提示（幂等打开无需入口）
+				}
+				existingId.value = r.getString('id') ?? ''
+				existingStatus.value = st
+				existingDueText.value = shortDate(r.getString('open_at') ?? '')
+				break
+			}
+			// 2026-10-31（P2 J-11）：查询落定（无论有无封存）才放开按钮——此后 existingId 才是真值
+			capChecked.value = true
+		})
+	})
+
+	const summaryText = computed((): string => props.summary)
+
+	function onClose(): void {
+		emit('close')
+	}
+
+	/** 主按钮分派（2026-10-15 · 台账 §4.20 ㉕）：未封存→封存（原路径）；已到期→打开；封存中→撤销 */
+	function onMainTap(): void {
+		// 2026-10-31（P2 J-11）：查询未落定 ⇒ 分派依据（existingId）还不可信，一律拦下
+		if (!capChecked.value) {
+			uni.showToast({ title: '正在检查是否已封存…', icon: 'none' })
+			return
+		}
+		if (existingId.value == '') {
+			onConfirm()
+			return
+		}
+		if (existingStatus.value == 'due') {
+			onOpenCapsule()
+			return
+		}
+		onUndoCapsule()
+	}
+
+	/**
+	 * 打开到期胶囊：POST /api/v1/capsules/{id}/open（**幂等**；未到期 409 由 api 层 toast 剩余天数）。
+	 * 成功后关闭面板——内容本体就在详情页上，无需再跳（浮层铁律：唤起不跳页）。
+	 */
+	function onOpenCapsule(): void {
+		if (existingId.value == '') {
+			return
+		}
+		submitting.value = true
+		openCapsule(existingId.value).then((ok: boolean) => {
+			submitting.value = false
+			if (ok) {
+				uni.showToast({ title: '胶囊已打开', icon: 'success' })
+				emit('close')
+			}
+		})
+	}
+
+	/**
+	 * 撤销封存：DELETE /api/v1/capsules/{id}（仅**未开启**可删；已开启 409 由 api 层 toast）。
+	 * 被关联的 content 不动（后端软删生态零侵入）⇒ 撤销后这条记忆照常存在，只是不再上锁。
+	 */
+	function onUndoCapsule(): void {
+		if (existingId.value == '') {
+			return
+		}
+		submitting.value = true
+		deleteCapsule(existingId.value).then((ok: boolean) => {
+			submitting.value = false
+			if (ok) {
+				uni.showToast({ title: '已撤销封存', icon: 'success' })
+				emit('close')
+			}
+		})
+	}
+
+	function onOptTap(idx: number): void {
+		if (idx == 3) {
+			// 自定义日期无选择器（画布无对应交互帧），诚实化降级
+			uni.showToast({ title: '自定义日期即将上线', icon: 'none' })
+			return
+		}
+		selected.value = idx
+	}
+
+	function onConfirm(): void {
+		if (submitting.value) {
+			return
+		}
+		// 2026-10-31（P2 J-11）：二次校验（禁用态只是观感，快速双击/无障碍仍可能触达）
+		if (!capChecked.value) {
+			uni.showToast({ title: '正在检查是否已封存…', icon: 'none' })
+			return
+		}
+		if (props.contentId == '') {
+			// 无关联内容（宿主未传 content_id）：显式拒绝，不发无效请求
+			uni.showToast({ title: '未关联记忆内容，无法封存', icon: 'none', duration: 2200 })
+			return
+		}
+		const opt = opts[selected.value]
+		if (opt.monthsLater <= 0) {
+			// 自定义日期（onOptTap 已拦，此处双保险）
+			uni.showToast({ title: '自定义日期即将上线', icon: 'none' })
+			return
+		}
+		const dueMs = openAtMs(opt.monthsLater)
+		if (dueMs <= Date.now()) {
+			// 后端契约 open_at 必须晚于 now（422 CAPSULE_001）→ 本地先校验显式 toast
+			uni.showToast({ title: '开启时间必须晚于当前时间', icon: 'none', duration: 2200 })
+			return
+		}
+		submitting.value = true
+		// open_at = 带时区 ISO 8601（time.uts isoLocal +08:00，满足后端 tzinfo 校验）；note 可选未采集不传
+		sealCapsule(props.contentId, isoLocal(dueMs), '').then((ok: boolean) => {
+			submitting.value = false
+			if (ok) {
+				uni.showToast({ title: '已封存', icon: 'success' })
+				emit('close')
+			}
+			// 失败不重复 toast：api.uts doRequest 已全局 showErrorToast 显式后端 message
+			// （422 =「open_at 必须晚于当前时刻」、404 = 内容无权等），面板保留供用户重试
+		})
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet/ShareSheet 同款铁律） */
+		z-index: 1000;
+	}
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		/* 画布 63:52 真值：暖黑 a=0.40 */
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
+		z-index: 10;
+	}
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		/* 画布 63:53 弹层顶 y=331 → 高 513 逻辑 = 986.5rpx；内容驱动 + 下限兜底 */
+		min-height: var(--d-lattice-p513, 986.5rpx);
+		/* 重设计：白 → 暖底 #FAF9F5（§W 补刀：§U 批此刀被写竞争吞掉，34270a3 入库的是残缺版） */
+		background-color: var(--c-paper-50, #FAF9F5);
+		/* 承载形状圆角（§W 峰宝拍板）：顶圆角对齐 RecordSheet 弹层 77rpx 家族语言，底缘贴屏 */
+		border-top-left-radius: 77rpx;
+		border-top-right-radius: 77rpx;
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
+		z-index: 20;
+		flex-direction: column;
+	}
+	.head-row {
+		width: 100%;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: flex-start;
+	}
+	.head-title {
+		/* 画布 63:55：y 相对头行 +4px */
+		margin-top: var(--d-lattice-p4, 7.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.head-close {
+		/* 热区 ≥60rpx 方形 + 居中（峰宝拍板：可点区域必须大于字形） */
+		width: var(--d-raw-r60, 60rpx);
+		height: var(--d-raw-r60, 60rpx);
+		justify-content: center;
+		align-items: center;
+		/* 补偿原 padding 10rpx 的视觉位置 */
+		margin-right: -10rpx;
+	}
+	.head-close-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-300, #B3A696);
+		/* 文字在 60rpx 热区内略微上移对齐原视觉基线 */
+		margin-top: -4rpx;
+	}
+	.summary-row {
+		width: 100%;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p52, 100rpx);
+		/* 重设计：白卡 + 双投影（画布 y4/blur16/a0.06 + y1/blur3/a0.04 → rpx；messages 卡同款语言） */
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		overflow: hidden;
+	}
+	.summary-star {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+	}
+	.summary-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.section-label {
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.opt-list {
+		width: 100%;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		flex-direction: column;
+	}
+	.opt {
+		width: 100%;
+		height: var(--d-lattice-p52, 100rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--c-paper-400, #EDE5D5);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		overflow: hidden;
+	}
+	/* 选中态叠加类（只覆盖描边色 = chip 系合法先例；须写在 .opt 之后；§W 补刀锈红） */
+	.opt-on {
+		border-color: var(--c-rust-500, #B05A3A);
+	}
+	.opt-texts {
+		flex-direction: column;
+	}
+	.opt-main {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.opt-sub {
+		/* 画布选项内 gap=2px → margin（gap 引擎丢弃） */
+		margin-top: var(--d-lattice-p2, 3.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.opt-check {
+		width: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p16, 30.8rpx);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
+		/* §W 补刀：勾选圆锈红（§U 批被写竞争吞掉） */
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	/* 白勾：画布 63:69 真矢量导出（2026-09-02 export_nodes，替代原 CSS rotate 实现） */
+	.opt-check-mark {
+		width: var(--d-lattice-p7, 13.5rpx);
+		height: var(--d-raw-r9, 9rpx);
+	}
+	.opt-circle {
+		width: var(--d-lattice-p15, 28.8rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
+		border-radius: 14.4rpx;
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--c-ink-300, #B3A696);
+		background-color: var(--c-transparent, rgba(0, 0, 0, 0));
+	}
+	.note-text {
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		width: 100%;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.main-btn {
+		width: 100%;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		/* 重设计：主按钮琥珀→锈红 #B05A3A（画布 63:87 改版真值，对齐全 app 主按钮体系） */
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	/* 2026-10-31（P2 J-11）：不可点态（查询中 / 提交中）。只降不透明度，不改画布几何与色值 */
+	.main-btn-off {
+		opacity: 0.6;
+	}
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+</style>

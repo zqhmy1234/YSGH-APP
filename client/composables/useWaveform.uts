@@ -1,0 +1,40 @@
+/**
+ * 波形缓存组合式函数（B5.2f · 2026-09-24 重构波）
+
+ * 原状：同一段 ~17 行实现被**复制 5 份**（TabIndex / TabSearch / detail / favorites /
+ * portrait-theme-detail），语义完全一致——
+ *   · 非响应式 `Map` 缓存（照 photoUrlById 先例）+ **版本计数器**驱动重渲染：
+ *     `waveformOf` 在模板中被读取 → 读 `version.value` 建立响应式依赖；拉取落表后 version++
+ *     使模板重取（只重渲染用到该 contentId 的位置）；
+ *   · `null` = 未拉到（懒加载未触发 / 404 非语音非 WAV）→ 组件回退伪波形（静默）。
+ * 现收敛为**单一实现**（本类），各组件 `const wf = new WaveformCache()` 持有自己的实例
+ * （与原"每组件一份缓存"的生命周期一致 ⇒ 行为等价）。
+ */
+import { ref } from 'vue'
+
+import { fetchWaveform } from '@/utils/play_content'
+
+
+export class WaveformCache {
+	private map: Map<string, Array<number>> = new Map<string, Array<number>>()
+	private version = ref(0)
+
+	/** 读即建依赖（version 变化 → 模板重取）；未拉到返回 null（组件回退伪波形） */
+	waveformOf(cid: string): Array<number> | null {
+		this.version.value
+		return this.map.get(cid) ?? null
+	}
+
+	/** 懒加载：命中缓存即返回；否则拉取（仅长度 ≥2 才落表并 version++） */
+	loadWaveform(cid: string): void {
+		if (this.map.has(cid)) {
+			return
+		}
+		fetchWaveform(cid).then((b: Array<number> | null) => {
+			if (b != null && b.length >= 2) {
+				this.map.set(cid, b)
+				this.version.value++
+			}
+		})
+	}
+}

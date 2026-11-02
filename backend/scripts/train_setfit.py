@@ -2,7 +2,7 @@
 
 用法：python scripts/train_setfit.py [--epochs 1] [--iterations 5] [--eval-only]
 
-- 数据：backend/data/setfit_seed.json（5 类 × 12 条手写中文样本，10:2 训练/评估划分）
+- 数据：backend/data/setfit_seed.json（7 类 × 12 条手写中文样本，10:2 训练/评估划分）
 - 底座：BAAI/bge-m3（本地缓存，中文强；SetFit 少样本微调）
 - 输出：backend/models/setfit-classifier/（模型 + labels.json）
 - 门禁：评估集准确率 ≥75%（M1）
@@ -29,11 +29,30 @@ SEED_PATH = BACKEND_DIR / "data" / "setfit_seed.json"
 MODEL_DIR = BACKEND_DIR / "models" / "setfit-classifier"
 BACKBONE = "BAAI/bge-m3"
 
+# 英文码 → 中文展示名（唯一来源；写 labels.json 与评估输出共用）
+CLASSES_CN: dict[str, str] = {
+    "todo": "待办",
+    "idea": "灵感",
+    "emotion": "情绪",
+    "quote": "引用",
+    "mixed": "混合",
+    "question": "问询",
+    "fact": "事实",
+}
+
 
 def load_seed() -> tuple[list[str], list[str], list[str], list[str]]:
     """加载种子数据 → (train_texts, train_labels, eval_texts, eval_labels)"""
     data = json.loads(SEED_PATH.read_text(encoding="utf-8"))
     classes: list[str] = data["_meta"]["classes"]
+    # 2026-10-23 扩 7 类：种子文件的类别必须与训练脚本的中文名表完全对齐，
+    # 否则训练会静默少类（例如只训 5 类），而运行期代码按 7 类解释 → 列数/标签错配。
+    missing_cn = [c for c in classes if c not in CLASSES_CN]
+    missing_group = [c for c in CLASSES_CN if c not in data]
+    if missing_cn or missing_group:
+        raise ValueError(
+            f"setfit_seed.json 类别不一致：未登记中文名={missing_cn}，缺样本组={missing_group}"
+        )
     train_texts: list[str] = []
     train_labels: list[str] = []
     eval_texts: list[str] = []
@@ -103,10 +122,7 @@ def train(epochs: int, iterations: int, save_dir: Path | None = None) -> float:
         json.dumps(
             {
                 "classes": label_order,
-                "classes_cn": [
-                    {"todo": "待办", "idea": "灵感", "emotion": "情绪", "quote": "引用", "mixed": "混合"}[c]
-                    for c in label_order
-                ],
+                "classes_cn": [CLASSES_CN[c] for c in label_order],
                 "backbone": BACKBONE,
             },
             ensure_ascii=False,

@@ -1,0 +1,598 @@
+/**
+ * 语音入口（T-AU-1/2/3 + B5a Wave4 AgentJ J-4/J-7）
+ *
+ * 链路（后端契约）：
+ *  uni.getRecorderManager()  → 录 wav（uni-app x App 端支持 wav 格式，16kHz 16bit 单声道）
+ *  POST /api/v1/asr/transcribe（≤8MB 直传）→ AsrTranscribeResponse
+ *    {text, channel, emotion, emotion_confidence, emotion_source, emotion_bonus, emotion_merge,
+ *     audio_events, not_oral, silence_hint, snr_db, noise_weight, duration_ms, mock, guardrail}
+ *  POST /api/v1/upload/init|chunk|complete（长录音 >8MB 分片持久化 → 音频落对象存储）
+ *  POST /api/v1/contents（content_type=voice + cos_key → 管线 VAD 分段转写；>5min 进 VAD）
+ *
+ * J-4 长录音入口：上限 3.5min → 30min；>8MB 走分片持久化上传（复用 /upload 分片协议），
+ * 后建 voice 内容（cos_key）触发后端 VAD 分段转写。
+ *
+ * J-7 录音中断状态机：由系统能力层插件 yishu-recorder 实现（RECORDING→INTERRUPTED→
+ * 恢复/暂停/30min 自动结束分段保存），本文件为领域桥接，导出稳定函数签名。
+ *
+ * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
+ */
+// O9 收口：上传/错误信封解析统一走 api.ts（原本地 parseEnvelope/parseError 副本已删）
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+// O15：asr/contents 端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { post, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { addBreadcrumb } from './sentry'
+import { PATH_ASR_TRANSCRIBE, PATH_CONTENTS } from './contract'
+import { applyGpsToBody, getLastFix, Fix } from './location'
+// TD-P2B（S1-H3）：分片上传协议统一走 upload_protocol.ts（原 urlEncode/formPost/fieldOf
+// 与 uploader.ts 整段复制，收口后本文件只保留录音业务编排）
+import { UploadResp, completeUpload, fieldOf, initUpload, putChunk } from './upload_protocol'
+import { createRecorder } from '@/uni_modules/yishu-recorder'
+
+/** 录音上限（J-4 放开 3.5min → 30min；后端 duration 到达自动 onStop 分段保存） */
+export const MAX_RECORD_MS: number = 1800000
+/** 直传转写上限（后端 MAX_AUDIO_BYTES=8MB；超过走分片持久化） */
+export const MAX_DIRECT_UPLOAD_BYTES: number = 8 * 1024 * 1024
+
+// 录音状态（J-7，转发插件常量）
+export const REC_STATE_IDLE: string = 'idle'
+export const REC_STATE_RECORDING: string = 'recording'
+export const REC_STATE_INTERRUPTED: string = 'interrupted'
+export const REC_STATE_PAUSED: string = 'paused'
+
+export class AsrResult {
+	text: string
+	channel: string
+	emotion: string  // '' = 未测得（D-16，后端 null 映射空串）
+	emotionConfidence: number
+	emotionSource: string
+	/** 笑声等正向音频事件带来的情绪加分（B5a J-3；P1-A 对齐：消费后端 emotion_bonus） */
+	emotionBonus: boolean
+	emotionMerge: UTSJSONObject | null
+	audioEvents: Array<string>
+	notOral: boolean
+	silenceHint: boolean
+	snrDb: number | null
+	noiseWeight: string
+	confidence: number
+	durationMs: number
+	mock: boolean
+	guardPassed: boolean
+	guardReason: string
+
+	constructor(
+		text: string,
+		channel: string,
+		emotion: string,
+		emotionConfidence: number,
+		emotionSource: string,
+		emotionBonus: boolean,
+		emotionMerge: UTSJSONObject | null,
+		audioEvents: Array<string>,
+		notOral: boolean,
+		silenceHint: boolean,
+		snrDb: number | null,
+		noiseWeight: string,
+		confidence: number,
+		durationMs: number,
+		mock: boolean,
+		guardPassed: boolean,
+		guardReason: string
+	) {
+		this.text = text
+		this.channel = channel
+		this.emotion = emotion
+		this.emotionConfidence = emotionConfidence
+		this.emotionSource = emotionSource
+		this.emotionBonus = emotionBonus
+		this.emotionMerge = emotionMerge
+		this.audioEvents = audioEvents
+		this.notOral = notOral
+		this.silenceHint = silenceHint
+		this.snrDb = snrDb
+		this.noiseWeight = noiseWeight
+		this.confidence = confidence
+		this.durationMs = durationMs
+		this.mock = mock
+		this.guardPassed = guardPassed
+		this.guardReason = guardReason
+	}
+}
+
+/** 录音控制器单例（系统能力层插件 yishu-recorder，J-7 状态机持有者） */
+let _controller = createRecorder()
+
+export function getRecorder(): typeof _controller {
+	return _controller
+}
+
+export function lastTempFile(): string {
+	return _controller.lastFile()
+}
+
+/** 当前录音状态（REC_STATE_*，转发插件） */
+export function recorderState(): string {
+	return _controller.state()
+}
+
+export function recordedMs(): number {
+	return _controller.recordedMs()
+}
+
+/** 设置中断恢复策略：来电/闹钟 shouldResume=true 时中断结束后自动恢复录音 */
+export function setShouldResume(flag: boolean): void {
+	_controller.setShouldResume(flag)
+}
+
+// ---------- 录音权限前置（D-25 修复 · 2026-09-21） ----------
+// 背景：Android 6+（本工程 minSdk=24）录音属危险权限，**仅声明不够，必须运行时申请并获授权**。
+// 全项目此前零运行时权限申请代码（D-25 登记根因）→ 授予态恒 false → 录音必失败。
+// 注（2026-09-21 核实）：2026-08-28 云包尸检显示 APK 内**已含** RECORD_AUDIO（云打包按所用能力
+// 自动补，而 `git log -S RECORD_AUDIO -- client/manifest.json` 为空 = 从未声明过），
+// 因此本卡的实效不在"让权限进包"，而在"让它被真正授予"——即下面的运行时申请。
+
+/** 权限被拒（可再次弹窗）时的用户可读文案——经宿主既有 onError 通道展示，避免双 toast */
+const PERM_DENIED_MSG = '未获得麦克风权限，无法录音，请允许后重试'
+/** 永久拒绝（勾选"不再询问"）时的文案——必须指引去系统设置，否则用户会反复点却毫无反应 */
+const PERM_DENIED_FOREVER_MSG = '麦克风权限已被拒绝且不再询问，请到「系统设置 → 应用 → 忆述光华 → 权限」中手动开启'
+
+/** 最近一次权限被拒原因对应的文案（供 startRecord 的失败分支取用） */
+let _permDeniedMsg: string = PERM_DENIED_MSG
+
+/** 权限申请看门狗（ms）：框架回调未到达时不得无限挂起（挂起 = 录音按钮永久无响应且零提示） */
+// 首次权限弹窗包含阅读与系统动画，15 秒会在部分用户尚未点击时误判失败。
+// 60 秒仍能以有限等待兜底桥接回调丢失，同时避免“刚授权却被旧看门狗中止”。
+const PERM_WATCHDOG_MS: number = 60000
+
+/**
+ * 确保录音权限已授予（幂等）：已授予直接 resolve(true)；未授予则弹系统框。
+ * resolve-only（永不 reject）——与本项目 Promise 约定一致；各失败路径均打点，不静默。
+ */
+export function ensureRecordPermission(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		const ctl = _controller
+		if (ctl.isRecordPermissionGranted()) {
+			resolve(true)
+			return
+		}
+		let settled = false
+		const finish = (ok: boolean, why: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			clearTimeout(timer)
+			console.log('[dbg-voice] ensureRecordPermission ' + why + ' -> granted=' + ok)
+			resolve(ok)
+		}
+		// 看门狗：Activity 被销毁 / 框架回调丢失时兜底，保证调用方有限时内落定（同 auth.uts 写法）
+		const timer = setTimeout(() => {
+			finish(false, 'watchdog timeout(' + PERM_WATCHDOG_MS + 'ms)')
+		}, PERM_WATCHDOG_MS)
+		ctl.requestRecordPermission((granted: boolean, doNotAskAgain: boolean): void => {
+			_permDeniedMsg = doNotAskAgain ? PERM_DENIED_FOREVER_MSG : PERM_DENIED_MSG
+			finish(granted, 'callback(granted=' + granted + ' doNotAskAgain=' + doNotAskAgain + ')')
+		})
+	})
+}
+
+/**
+ * 开始录音（wav 16k 单声道，≤30min）。回调：
+ *  onStart / onStop / onError（原有）
+ *  onInterrupted(autoPaused)（J-7：中断已自动暂停）
+ *  onAutoStop(path, durationMs)（J-7：30min 自动结束，落盘分段）
+ *
+ * ⚠️ 权限前置（D-25）：**未授权时先弹系统框，授权后才真正开录**；拒绝则走既有 onError 通道——
+ * 宿主两处调用点（RecordSheet / interview）在调用本函数前已置好"录音中"UI 态，onError 正是其既有
+ * 回滚路径（含 toast），因此无需改宿主即可完成状态回滚与提示（本卡白名单不含宿主文件）。
+ * 已知 UX 取舍：权限弹框期间宿主的秒表已开始走（仅首次录音遇到）；真实时长以插件 `recordedMs()`
+ * 为准（后端校验用后者），故只是显示偏前，非数据问题。
+ */
+export function startRecord(
+	onStart: () => void,
+	onStop: (path: string, durationMs: number) => void,
+	onError: (msg: string) => void,
+	onInterrupted: (autoPaused: boolean) => void,
+	onAutoStop: (path: string, durationMs: number) => void
+): void {
+	// ① 已授权 / 权限 API 不可用（标准基座无原生插件）→ 保持**原同步路径**，行为与改造前完全一致：
+	//    标准基座下 isRecordPermissionGranted() 会抛 → permApiUnavailable → 直接调 start（其抛错由宿主
+	//    既有 try/catch 接管，仍能回滚 UI + 提示"当前基座不支持录音"）。
+	let alreadyGranted = false
+	let permApiUnavailable = false
+	try {
+		alreadyGranted = _controller.isRecordPermissionGranted()
+	} catch (e: Throwable) {
+		permApiUnavailable = true
+	}
+	if (alreadyGranted || permApiUnavailable) {
+		_controller.start(onStart, onStop, onError, onInterrupted, onAutoStop)
+		return
+	}
+
+	// ② 未授权 → 先申请；授权后开录，拒绝则走既有错误通道（宿主回滚 + 提示）
+	ensureRecordPermission().then((ok: boolean) => {
+		if (!ok) {
+			console.log('[dbg-voice] startRecord 中止：录音权限未授予')
+			onError(_permDeniedMsg)
+			return
+		}
+		try {
+			_controller.start(onStart, onStop, onError, onInterrupted, onAutoStop)
+		} catch (e: Throwable) {
+			// 授权后启动仍失败（录音器被占用等）：必须显式报错——宿主的 try/catch 只覆盖同步调用，
+			// 捕不到 Promise 回调里的异常，静默会变成"点了没反应"。
+			onError('录音启动失败：' + (e != null && e.message != null ? e.message : '未知错误'))
+		}
+	})
+}
+
+/** 停止录音（落盘当前分段） */
+export function stopRecord(): void {
+	_controller.stop()
+}
+
+/** J-7：用户手动暂停（RECORDING→PAUSED） */
+export function pauseRecord(): void {
+	_controller.pause()
+}
+
+/** J-7：恢复录音（PAUSED/INTERRUPTED→RECORDING） */
+export function resumeRecord(): void {
+	_controller.resume()
+}
+
+// ── 转写失败原因（2026-10-30）──────────────────────────────────────────────
+// 为什么需要：原实现只有「resolve(null)」这一个失败信号，调用方无从区分
+// 「离线 / 超时 / 服务端拒绝」，只能统一弹「转写失败，请重试」——用户飞行模式下
+// 录完音看到这句话，不知道是"再点一次"还是"等联网"。现在失败原因是显式值，
+// 调用方（composables/useVoiceRecord.uts）据此给可执行文案。
+export const ASR_FAIL_OFFLINE: string = 'offline'
+export const ASR_FAIL_TIMEOUT: string = 'timeout'
+export const ASR_FAIL_NETWORK: string = 'network'
+export const ASR_FAIL_SERVER: string = 'server'
+export const ASR_FAIL_TOO_LARGE: string = 'too_large'
+export const ASR_FAIL_PARSE: string = 'parse'
+
+/** 最近一次 transcribeWav 的失败原因（'' = 成功/未失败）。转写天然串行，无需并发保护 */
+let _lastAsrFailReason: string = ''
+export function lastAsrFailReason(): string {
+	return _lastAsrFailReason
+}
+
+/** 直传链内部的失败原因（由 transcribeWavDirect 写、transcribeWav 读取；同上，串行使用） */
+let _lastDirectFailReason: string = ''
+
+/**
+ * 转写看门狗（ms）：直传超时预算 90s + 10s 余量。
+ *
+ * 2026-10-30（修「飞行模式录音 → 关飞行 → 一直卡在正在转写」）：
+ * 原实现把"能不能回"完全押在 `uni.uploadFile` 的 success/fail 回调上——
+ * App-Android 上 `timeout` 参数并不总能生效，且桥接偶发吞回调（本仓既有实证：
+ * api.uts 的 request 必须自带 JS 层看门狗正是这个原因）；而调用方一旦置
+ * `transcribing=true` 就会把语音 UI **永久冻结**（useVoiceRecord.uts 的
+ * toggleRecord 在 transcribing 时直接 return，用户点麦克风毫无反应）。
+ * 现在保证：无论回调是否到达，本 Promise 必在 ASR_WATCHDOG_MS 内落定。
+ */
+const ASR_WATCHDOG_MS: number = 100000
+
+/**
+ * POST /asr/transcribe：上传 wav 转写（**≤8MB 直传**）；返回 AsrResult 或 null。
+ *
+ * B14 接线（2026-09-23）：`MAX_DIRECT_UPLOAD_BYTES` 此前**定义了却从未生效**（轴 4 实证：
+ * 该常量零引用）。后果具体而严重：J-4 已把录音上限从 3.5min 放开到 **30min**，
+ * 而 30min 的 16kHz/16bit 单声道 wav ≈ 57MB ≫ 8MB ⇒ 这类录音仍会被送去直传，
+ * 后端 `MAX_AUDIO_BYTES=8MB` 必然拒绝 ⇒ 用户得到一个语焉不详的失败，
+ * 而**本文件里已经写好的正确路径（`uploadVoicePersistent` 分片持久化）从未被走到**。
+ * 故此处按常量本义设闸：超限**不发直传**，明确告知并按失败返回（resolve null），
+ * 由调用方改走持久化链——而不是把大文件丢给后端换一个 413 回来。
+ * 大小拿不到时（getFileInfo fail）**按原行为继续直传**：不因元数据缺失阻断主链。
+ */
+export function transcribeWav(filePath: string): Promise<AsrResult | null> {
+	return new Promise<AsrResult | null>((resolve) => {
+		let settled = false
+		// timer 先声明后赋值：finish 内部 clearTimeout 引用它，避免任何同步回调下的 TDZ 风险
+		let timer: number = 0
+		const finish = (r: AsrResult | null, reason: string): void => {
+			if (settled) {
+				return
+			}
+			settled = true
+			if (timer > 0) {
+				clearTimeout(timer)
+			}
+			_lastAsrFailReason = r == null ? reason : ''
+			if (r == null) {
+				console.error('[yishu] ASR 转写失败 reason=' + reason)
+				addBreadcrumb('voice', 'transcribe failed: ' + reason)
+			}
+			resolve(r)
+		}
+		timer = setTimeout(() => {
+			finish(null, ASR_FAIL_TIMEOUT)
+		}, ASR_WATCHDOG_MS) as number
+
+		const start = (): void => {
+			uni.getFileSystemManager().getFileInfo({
+				filePath: filePath,
+				success: (info) => {
+					if (info.size > MAX_DIRECT_UPLOAD_BYTES) {
+						uni.showToast({ title: '录音较长，改用分片上传转写', icon: 'none', duration: 2500 })
+						addBreadcrumb('voice', 'transcribe skipped: size=' + info.size + ' > ' + MAX_DIRECT_UPLOAD_BYTES)
+						finish(null, ASR_FAIL_TOO_LARGE)
+						return
+					}
+					transcribeWavDirect(filePath).then((r: AsrResult | null) => {
+						finish(r, _lastDirectFailReason)
+					})
+				},
+				fail: () => {
+					// 拿不到大小：按原行为继续直传（不因元数据缺失阻断主链）
+					transcribeWavDirect(filePath).then((r: AsrResult | null) => {
+						finish(r, _lastDirectFailReason)
+					})
+				}
+			})
+		}
+
+		// 2026-10-30（同一事故）：**离线前置判定**。飞行模式下直接给「无网络」结论，
+		// 不把录音丢给注定失败的 uploadFile（那条路在部分机型上要挂满超时预算）。
+		uni.getNetworkType({
+			success: (res) => {
+				const t = res.networkType
+				if (t == 'none') {
+					finish(null, ASR_FAIL_OFFLINE)
+					return
+				}
+				start()
+			},
+			fail: () => {
+				// 取不到网络类型（标准基座/权限异常）：不阻断主链，按原行为直传
+				start()
+			}
+		})
+	})
+}
+
+/** 直传真身（≤8MB 路径；R1#17：multipart 上传统一走 api.ts uploadFileHttp
+ *  —— 401 重放 + 5xx Sentry + 信封解析）。仅由 `transcribeWav` 在过大小时调用。
+ *  失败时写 `_lastDirectFailReason`（调用方据此给可执行文案），不自行 toast 网络类错误。 */
+function transcribeWavDirect(filePath: string): Promise<AsrResult | null> {
+	return new Promise<AsrResult | null>((resolve) => {
+		// ASR 可能先尝试 Fun-ASR，再降级到本地 SenseVoice；<=8MB 直传允许的录音最长接近
+		// 4 分钟。固定 30s 会让云端稍慢时客户端先判失败，即使后端随后已返回 200。
+		uploadFileHttp(PATH_ASR_TRANSCRIBE + '?preferred=auto', filePath, 'file', null, 90000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				// 教训（lessons.md #3）：uploadFile 的 res.data 是 string；uploadFileHttp 已按信封解析
+				const body = hr.body
+				if (body == null) {
+					showErrorToast(new Error('转写响应解析失败'))
+					_lastDirectFailReason = ASR_FAIL_PARSE
+					resolve(null)
+					return
+				}
+				const d = body.getJSON('data')
+				if (d == null) {
+					showErrorToast(new Error('转写结果为空'))
+					_lastDirectFailReason = ASR_FAIL_PARSE
+					resolve(null)
+					return
+				}
+				const g = d.getJSON('guardrail')
+				// D10-10（2026-09-25 功能修复波）：缺失/取不到一律按**未通过**处理。
+				// 原写法 `?? true` / 整体 `: true` 是**客户端唯一一处 fail-open 默认值**：
+				// 字段漂移或老服务端不返回 `guardrail` 时，"未审核"会被显示成"已通过"
+				// （与后端 fail-safe「默认拒发」口径相反）。
+				const passed = g != null ? (g.getBoolean('passed') ?? false) : false
+				const guardReason = g != null
+					? (g.getString('reason') ?? '')
+					: '服务端未返回审核结果（按未通过处理）'
+				// B5a J-1/J-3：音频事件 / 段级情绪合并 / 噪音标记
+				const merge = d.getJSON('emotion_merge')
+				const ae = d.getArray('audio_events') as Array<string> | null
+				const snrRaw = d.getNumber('snr_db')
+				const snr: number | null = snrRaw == null ? null : (snrRaw as number)
+				resolve(
+					new AsrResult(
+						d.getString('text') ?? '',
+						d.getString('channel') ?? '',
+						d.getString('emotion') ?? '',  // D-16: null(未测得) -> 空串，情绪 chip 按空判定不渲染
+						(d.getNumber('emotion_confidence') as number) ?? 0,
+						d.getString('emotion_source') ?? 'none',
+						d.getBoolean('emotion_bonus') ?? false,
+						merge,
+						ae != null ? ae : [],
+						d.getBoolean('not_oral') ?? false,
+						d.getBoolean('silence_hint') ?? false,
+						snr,
+						d.getString('noise_weight') ?? 'high',
+						(d.getNumber('confidence') as number) ?? 0,
+						(d.getNumber('duration_ms') as number) ?? 0,
+						d.getBoolean('mock') ?? false,
+						passed,
+						guardReason
+					)
+				)
+				return
+			}
+			// 非 200：尝试解析错误信封（uploadFileHttp 已按信封解析；4xx 含 refresh 后仍 401）
+			// 2026-10-30：status=0 = 网络层失败（离线/连接被拒/上传中断）。原实现会弹
+			// 「转写失败（HTTP 0）」——对用户是噪音且不可行动；改为只回传原因，
+			// 由 useVoiceRecord 给「无网络，录音已保留，联网后点重新转写」这类可执行文案。
+			if (hr.status === 0) {
+				_lastDirectFailReason = ASR_FAIL_NETWORK
+				resolve(null)
+				return
+			}
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '转写失败（HTTP ' + hr.status + '）') : '转写失败（HTTP ' + hr.status + '）'
+			_lastDirectFailReason = ASR_FAIL_SERVER
+			showErrorToast(new Error(msg))
+			resolve(null)
+		})
+	})
+}
+
+/** POST /contents：语音内容入库（voice 类型，可选携带 cos_key 长音频）；返回 content_id 或 null
+ *
+ *  `fix`（2026-10-04）：本次记录的定位，与文字/照片同口径（见 utils/location.uts）。
+ *  为 null 时不写 gps 键，绝不用占位坐标。
+ */
+export function saveVoiceContent(
+	text: string,
+	durationMs: number,
+	emotion: string,
+	cosKey: string = '',
+	filePath: string = '',
+	fix: Fix | null = null
+): Promise<string | null> {
+	const extra: UTSJSONObject = {
+		duration_ms: durationMs
+	}
+	if (filePath != '') {
+		extra.set('file_name', fileNameOf(filePath))
+	}
+	const body: UTSJSONObject = {
+		content_type: 'voice',
+		text: text,
+		extra: extra,
+		source: 'app'
+	}
+	if (cosKey != '') {
+		// J-4：长录音音频已落对象存储 → 带 cos_key，管线据此下载转写（>5min 走 VAD）
+		body.set('cos_key', cosKey)
+	}
+	applyGpsToBody(body, fix)
+	return new Promise<string | null>((resolve) => {
+		post(PATH_CONTENTS, body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(d.getString('id'))
+		})
+	})
+}
+
+function fileNameOf(path: string): string {
+	const idx = path.lastIndexOf('/')
+	return idx >= 0 ? path.substring(idx + 1) : path
+}
+
+// ---- J-4 长录音分片持久化上传（复用 /upload 分片协议；单块 = 整文件） ----
+// 协议请求（init/chunk/complete + urlEncode/formPost/fieldOf）统一走 upload_protocol.ts（TD-P2B S1-H3）
+
+/**
+ * 录音持久化上传（R9-B1 起短录音也走本链）：wav 文件 → 分片协议落对象存储（file_key）
+ * → 后端 complete 直接建 voice 内容（cos_key + text 预填 + 入队 ASR）。
+ * 返回 {content_id, file_key, long_audio} 或 null。
+ * text：客户端本地转写文本（后端 _register_voice_content 直接落库，管线转写完成后覆盖）；
+ * emotion：本地情绪（只存 extra.client_emotion，不进正式情绪字段）。
+ */
+export function uploadVoicePersistent(
+	filePath: string,
+	durationMs: number,
+	text: string = '',
+	emotion: string = '',
+	remark: string = ''
+): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		const clientUploadId = 'voice|' + filePath
+		const fileName = fileNameOf(filePath)
+		// 文件大小（录音临时文件可用 getFileSystemManager）
+		uni.getFileSystemManager().getFileInfo({
+			filePath: filePath,
+			success: (info) => {
+				const fileSize = info.size
+				if (fileSize <= 0) {
+					showErrorToast(new Error('音频文件大小为 0'))
+					resolve(null)
+					return
+				}
+				// 1. init（单块协议：chunk_size = file_size，同 uploader v2 约定）
+				initUpload(clientUploadId, fileName, fileSize, 'original').then((initResp: UploadResp) => {
+					if (initResp.status !== 200) {
+						showErrorToast(new Error('长录音上传初始化失败'))
+						resolve(null)
+						return
+					}
+					const uploadId = fieldOf(initResp.raw, 'upload_id')
+					if (uploadId == '') {
+						showErrorToast(new Error('上传初始化无 upload_id'))
+						resolve(null)
+						return
+					}
+					// 2. chunk（POST multipart 单块）
+					putChunk(uploadId, filePath, 120000).then((status: number) => {
+						if (status !== 200) {
+							showErrorToast(new Error('长录音分片上传失败'))
+							resolve(null)
+							return
+						}
+						// 3. complete（meta 带 content_type=voice + 本地转写 text 预填，后端直接建 voice 内容）
+						const meta: UTSJSONObject = {
+							content_type: 'voice',
+							duration_ms: durationMs,
+							source: 'app',
+							extra: { file_name: fileName }
+						}
+						if (text != '') {
+							meta.set('text', text)
+						}
+						if (emotion != '') {
+							meta.set('emotion', emotion)
+						}
+						// A8 主链闭环（2026-09-09）：后端 complete voice 分支已收 remark
+						// （services/upload/register.py _register_voice_content meta.remark），
+						// 客户端此前仅文本降级链入库备注 → 主链分片上传路径补透传，
+						// 语音备注随 complete 直建内容一次落库（此前 FE2「主链不收 remark」注释作废）
+						if (remark != '') {
+							meta.set('remark', remark)
+						}
+						completeUpload(uploadId, meta).then((resp: UploadResp) => {
+							if (resp.status !== 200) {
+								showErrorToast(new Error('长录音上传完成失败'))
+								resolve(null)
+								return
+							}
+							const fileKey = fieldOf(resp.raw, 'file_key')
+							// 4. 建 voice 内容：集成后 complete 直接返回 voice content_id（后端 voice 分支已建库+入队）
+							//    旧后端无 content_id → 回退二次建内容请求（/contents 带 cos_key，后端按 cos_key 幂等去重）
+							const voiceContentId = fieldOf(resp.raw, 'content_id')
+							if (voiceContentId != '') {
+								const out: UTSJSONObject = {
+									content_id: voiceContentId,
+									file_key: fileKey,
+									long_audio: true
+								}
+								resolve(out)
+								return
+							}
+							saveVoiceContent('', durationMs, '', fileKey, filePath, getLastFix()).then((contentId: string | null) => {
+								if (contentId == null) {
+									showErrorToast(new Error('长录音内容入库失败'))
+									resolve(null)
+									return
+								}
+								const out: UTSJSONObject = {
+									content_id: contentId,
+									file_key: fileKey,
+									long_audio: true
+								}
+								resolve(out)
+							})
+						})
+					})
+				})
+			},
+			fail: () => {
+				showErrorToast(new Error('读取音频文件信息失败'))
+				resolve(null)
+			}
+		})
+	})
+}

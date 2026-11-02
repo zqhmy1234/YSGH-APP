@@ -1,0 +1,3158 @@
+{
+  "schema_version": "1.0",
+  "level": "L0",
+  "title": "画像维度枚举集 · L0 核心维度（完整 JSON）",
+  "updated_at": "2026-08-25",
+  "author": "峰宝 × 北嘎霖",
+  "basis": "《画像维度枚举集清单_v1》§一 + MatrAIx 1290 维 schema（E:\\Workbuddy\\2026-08-12-14-43-00\\matraix_schema\\dimensions.json）",
+  "description": "L0 = 身份与安全基线，人一次性设计、几乎不变。L1 常驻披露（每次调用必带）核心。source: M=MatrAIx 复用, MC=MatrAIx 改造, N=自建。confidence_threshold: 普通 0.7，超细性格 0.8。disclosure: L1=常驻索引, L2=场景扩展, L3=全量。 枚举值=种子值（开放枚举，见 enum_policy）。 （Wave3-AgentI 收尾：13 维补 values_detail、5 维补 phrase、核心维别名表、annotate_default_dims 默认标注池、集合型维度 multi_value 标记）",
+  "dimensions": [
+    {
+      "id": "age_bracket",
+      "label": "年龄段",
+      "category": "身份与背景",
+      "description": "用户的年龄段（客观事实，抽取置信度高）",
+      "values": [
+        "18-24",
+        "25-34",
+        "35-44",
+        "45-54",
+        "55-64",
+        "65-74",
+        "75+"
+      ],
+      "phrase": "用户年龄在{value}岁段",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "age_bracket",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "闭集；按出生年/自述推断，证据=自述或证件类碎片 【细化v2】原6值→现7值；将'65+'拆为'65-74''75+'，贴合中国银发/空巢/康养分级（75+多空巢需照护）；35-44保留为'35岁危机'锚点；18岁以下按内容策略不纳入。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "65-74",
+          "phrase": "用户年龄在65-74岁段",
+          "china_note": "初老/刚退休群体，广场舞、带孙辈、返乡记忆高频"
+        },
+        {
+          "value": "75+",
+          "phrase": "用户年龄在75+岁段",
+          "china_note": "空巢独居、需照护高龄群体，康养与孤独记忆典型，中国老龄化语境关键边缘"
+        }
+      ]
+    },
+    {
+      "id": "gender",
+      "label": "性别",
+      "category": "身份与背景",
+      "description": "用户性别认同",
+      "values": [
+        "男",
+        "女",
+        "其他",
+        "不愿透露"
+      ],
+      "phrase": "用户{value}性",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "gender_identity",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造：MatrAIx 西方枚举改中文；身份级敏感边缘，默认 L2 披露，消费时按 privacy_level 引用 【细化v2】原4值保留；'男/女/其他/不愿透露'已覆盖主流+身份敏感边缘（其他含跨性别/非二元），中国语境不强行拆分以免标签化；disclosure 维持 L2。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "男",
+          "phrase": "用户男性",
+          "china_note": "传统性别角色叙事（顶梁柱/养家）主流，中国语境不细分"
+        },
+        {
+          "value": "女",
+          "phrase": "用户女性",
+          "china_note": "性别平等语境下主流认同，含家庭/职场双重角色叙事"
+        },
+        {
+          "value": "其他",
+          "phrase": "用户其他性",
+          "china_note": "跨性别/非二元等边缘认同，避免标签化、不追问"
+        },
+        {
+          "value": "不愿透露",
+          "phrase": "用户不愿透露性",
+          "china_note": "身份级敏感，尊重隐私不追问，披露 L2"
+        }
+      ]
+    },
+    {
+      "id": "life_stage",
+      "label": "人生阶段",
+      "category": "身份与背景",
+      "description": "用户所处的人生阶段（中国化，补考研/考公）",
+      "values": [
+        "学生",
+        "考研备考",
+        "考公备考",
+        "职场新人",
+        "相亲恋爱",
+        "成家立业",
+        "育儿期",
+        "空巢",
+        "退休"
+      ],
+      "phrase": "用户处于{value}阶段",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "life_stage",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "改造：原 Student/Early career... 换中国阶段，补考研备考（中国式人生事件高频） 【细化v2】原7值→现9值；新增'考公备考'（中国考公热，与考研并列高频事件）、'相亲恋爱'（中国式催婚相亲为成家前典型阶段）；'育儿期'为粗值不细分学龄段，与 life_event_major 不重叠。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "考公备考",
+          "phrase": "用户处于考公备考阶段",
+          "china_note": "中国特有考公热，与考研并列的千军万马式人生事件，焦虑记忆高频"
+        },
+        {
+          "value": "相亲恋爱",
+          "phrase": "用户处于相亲恋爱阶段",
+          "china_note": "中国式相亲/催婚/彩礼语境下，成家前的典型过渡阶段，区别于自由恋爱"
+        }
+      ]
+    },
+    {
+      "id": "seniority",
+      "label": "职业资历",
+      "category": "身份与背景",
+      "description": "用户职业资历层级",
+      "values": [
+        "学生",
+        "初级",
+        "中级",
+        "资深",
+        "管理者"
+      ],
+      "phrase": "用户是{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "seniority",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "从 Professional: Career 救回；压缩 MatrAIx 10 级为 5 级（去 C-suite/Founder 等企业档） 【细化v2】原5值保留；有序五档（学生→初级→中级→资深→管理者）已完备；体制内职级（科员/科级/处级）由 occupation_domain+运行时扩展承载，不塞入 values。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "学生",
+          "phrase": "用户是学生",
+          "china_note": "在校/应届阶段，无全职资历"
+        },
+        {
+          "value": "初级",
+          "phrase": "用户是初级",
+          "china_note": "入职 1-3 年，执行岗"
+        },
+        {
+          "value": "中级",
+          "phrase": "用户是中级",
+          "china_note": "独当一面、可带小项目"
+        },
+        {
+          "value": "资深",
+          "phrase": "用户是资深",
+          "china_note": "领域专家/核心技术骨干"
+        },
+        {
+          "value": "管理者",
+          "phrase": "用户是管理者",
+          "china_note": "带团队/管业务，含体制内职级（科级/处级由运行时细值承载）"
+        }
+      ]
+    },
+    {
+      "id": "years_experience",
+      "label": "工作年限",
+      "category": "身份与背景",
+      "description": "工作年限（学生为 0）",
+      "values": [
+        "0-2",
+        "3-5",
+        "6-10",
+        "11-20",
+        "20+"
+      ],
+      "phrase": "用户工作{value}年",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "years_experience",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "【细化v2】原5值保留；有序五档已完备，'0-2'对应学生/应届，无需补。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "0-2",
+          "phrase": "用户工作0-2年",
+          "china_note": "应届/职场新人，学生计 0"
+        },
+        {
+          "value": "3-5",
+          "phrase": "用户工作3-5年",
+          "china_note": "成长期，技能定型期"
+        },
+        {
+          "value": "6-10",
+          "phrase": "用户工作6-10年",
+          "china_note": "骨干期，职业上升通道关键段"
+        },
+        {
+          "value": "11-20",
+          "phrase": "用户工作11-20年",
+          "china_note": "资深/管理层常见区间"
+        },
+        {
+          "value": "20+",
+          "phrase": "用户工作20+年",
+          "china_note": "元老级，临近退休或深耕行业"
+        }
+      ]
+    },
+    {
+      "id": "occupation_domain",
+      "label": "职业领域",
+      "category": "身份与背景",
+      "description": "用户所在行业/职业领域（中国化枚举）",
+      "values": [
+        "互联网/IT",
+        "制造/工业",
+        "建筑/工程",
+        "农业/养殖",
+        "教育/培训",
+        "医疗/健康",
+        "金融/银行",
+        "法律/法务",
+        "公务员/体制内",
+        "文化传媒/自媒体",
+        "物流快递/出行",
+        "生活服务/餐饮家政",
+        "军警/国防",
+        "自由职业/个体",
+        "学生",
+        "其他"
+      ],
+      "phrase": "用户在{value}领域",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "改造自 Professional: Industry；中国行业枚举替换美国行业 【细化v2】原10值→现16值；保留互联网/IT、制造、教育、医疗、金融、公务员/体制内、自由职业、学生、其他，中国化：'服务零售'扩为'生活服务/餐饮家政'，新增农业/养殖（户籍农民）、建筑/工程（农民工）、法律/法务、文化传媒/自媒体（抖音/小红书博主）、物流快递/出行（新就业形态）、军警/国防（中国特有）。略超12因中国职业结构宽，运行时常驻扩展。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "公务员/体制内",
+          "phrase": "用户在公务员/体制内领域",
+          "china_note": "细值=公务员/事业编/国企三类，中国稳定型就业代表，铁饭碗叙事"
+        },
+        {
+          "value": "物流快递/出行",
+          "phrase": "用户在物流快递/出行领域",
+          "china_note": "外卖/快递/网约车骑手——中国式新就业形态，规模庞大、记忆独特（算法/赶单）"
+        },
+        {
+          "value": "农业/养殖",
+          "phrase": "用户在农业/养殖领域",
+          "china_note": "户籍农民/返乡创业/乡村振兴语境，城乡两栖典型"
+        },
+        {
+          "value": "军警/国防",
+          "phrase": "用户在军警/国防领域",
+          "china_note": "军人/武警/警察，中国特有职业身份，纪律与奉献叙事"
+        }
+      ]
+    },
+    {
+      "id": "highest_education",
+      "label": "学历",
+      "category": "身份与背景",
+      "description": "用户最高学历",
+      "values": [
+        "义务教育及以下",
+        "高中/中专/职高",
+        "大专",
+        "本科",
+        "硕士",
+        "博士"
+      ],
+      "phrase": "用户学历{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "从 Learning: Academic 救回（highest_education 类） 【细化v2】原5值→现6值；将'高中及以下'拆为'义务教育及以下'（初中/小学，农民工边缘）与'高中/中专/职高'（中专/职高/技校中国特有职教群）；大专/本科/硕士/博士保留。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "高中/中专/职高",
+          "phrase": "用户学历高中/中专/职高",
+          "china_note": "中专/职高/技校为中国特有庞大职教群体，区别于普通高中"
+        },
+        {
+          "value": "义务教育及以下",
+          "phrase": "用户学历义务教育及以下",
+          "china_note": "初中/小学，对应农民工/低学历边缘人群，记忆常涉城乡流动与辍学"
+        }
+      ]
+    },
+    {
+      "id": "academic_field",
+      "label": "专业方向",
+      "category": "身份与背景",
+      "description": "用户所学专业大类",
+      "values": [
+        "理科",
+        "工科",
+        "人文社科",
+        "经管商科",
+        "艺术",
+        "医学(含中医)",
+        "法学",
+        "师范教育",
+        "农学",
+        "军事",
+        "体育",
+        "交叉学科",
+        "其他"
+      ],
+      "phrase": "用户专业方向{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造自 academic_field 【细化v2】原7值→现13值；拆'理工'为'理科''工科'（文理分科）、'文商'为'人文社科''经管商科'；新增农学、军事、体育、交叉学科；医学标注含中医。覆盖中国高教主要门类，运行时常驻扩展细专业。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "农学",
+          "phrase": "用户专业方向农学",
+          "china_note": "农业院校/涉农专业，乡村振兴人才背景"
+        },
+        {
+          "value": "军事",
+          "phrase": "用户专业方向军事",
+          "china_note": "军校/国防生，中国特有"
+        },
+        {
+          "value": "医学(含中医)",
+          "phrase": "用户专业方向医学(含中医)",
+          "china_note": "中西医并重，中医为中国特色医学体系"
+        }
+      ]
+    },
+    {
+      "id": "region_cn",
+      "label": "地域",
+      "category": "身份与背景",
+      "description": "用户家乡/现居地（中国地域，自建）",
+      "values": [
+        "北京",
+        "天津",
+        "上海",
+        "重庆",
+        "河北",
+        "山西",
+        "辽宁",
+        "吉林",
+        "黑龙江",
+        "江苏",
+        "浙江",
+        "安徽",
+        "福建",
+        "江西",
+        "山东",
+        "河南",
+        "湖北",
+        "湖南",
+        "广东",
+        "海南",
+        "四川",
+        "贵州",
+        "云南",
+        "陕西",
+        "甘肃",
+        "青海",
+        "台湾",
+        "内蒙古",
+        "广西",
+        "西藏",
+        "宁夏",
+        "新疆",
+        "香港",
+        "澳门",
+        "海外/外籍"
+      ],
+      "phrase": "用户在{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": "region",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": true,
+      "disclosure": "L2",
+      "note": "自建中国地域；粗值=省份/直辖市，细值=城市（geo_life 承载）；回响/复盘常引用 【细化v2】重大修正：原7值（仅列少数省份+'其他省份'+'家乡+现居不同'）违反 two_level 粗值=省级行政区规则→现35值，补全23省+5自治区+4直辖市+2特别行政区+海外/外籍；删除'家乡+现居不同'（该信息由 geo_life 家乡/现居对承载，非单地值）。values 只放粗值，细值（城市）运行时扩。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "广东",
+          "phrase": "用户在广东",
+          "china_note": "粗值=省级；细值运行时扩为广州/深圳/东莞等（geo_life承载），珠三角跨省务工记忆典型"
+        },
+        {
+          "value": "四川",
+          "phrase": "用户在四川",
+          "china_note": "粗值=省；细值扩为成都/绵阳/区县，川渝方言与饮食记忆锚点"
+        }
+      ]
+    },
+    {
+      "id": "dialect",
+      "label": "方言",
+      "category": "身份与背景",
+      "description": "用户方言/语言变体",
+      "values": [
+        "普通话",
+        "东北官话",
+        "华北官话",
+        "中原官话",
+        "江淮官话",
+        "西南官话",
+        "吴语",
+        "粤语",
+        "闽语",
+        "客家话",
+        "湘语",
+        "赣语",
+        "晋语",
+        "徽语",
+        "其他方言"
+      ],
+      "phrase": "用户说{value}",
+      "defaultValue": "普通话",
+      "source": "MC",
+      "matraix_id": "register",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造自 register；中国方言替换西方变体；影响沟通风格匹配 【细化v2】原7值→现15值；保留普通话/粤/闽/吴，按汉语方言大区重写：官话分东北/华北/中原/江淮/西南五亚区，补吴/粤/闽/客/湘/赣/晋/徽语，覆盖中国主要方言区；'其他方言'兜底。原'四川话'归西南官话、'东北话'归东北官话已归一。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "晋语",
+          "phrase": "用户说晋语",
+          "china_note": "山西及毗邻边区，北方唯一保留入声的汉语方言区，关键边缘"
+        },
+        {
+          "value": "徽语",
+          "phrase": "用户说徽语",
+          "china_note": "皖南片，中国方言边缘支，易被误归吴语"
+        }
+      ]
+    },
+    {
+      "id": "tech_savviness",
+      "label": "技术熟悉度",
+      "category": "身份与背景",
+      "description": "用户对技术/新工具的熟悉程度，决定 AI 交互方式",
+      "values": [
+        "数字原生",
+        "熟练顺手",
+        "谨慎尝鲜",
+        "需要引导",
+        "排斥/不用"
+      ],
+      "phrase": "用户是{value}",
+      "defaultValue": "顺手",
+      "source": "M",
+      "matraix_id": "tech_savviness",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "从 Expertise: Domains 救回；数字原生可多用术语，谨慎型要更贴心 【细化v2】原4值→现5值；保留数字原生/熟练顺手/谨慎尝鲜/排斥，新增'需要引导'（银发/数字弱势群体，微信适老化、易遇反诈场景），更贴合中国代际数字鸿沟。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "需要引导",
+          "phrase": "用户是需要引导",
+          "china_note": "银发/数字弱势群体，微信适老化、易遇诈骗，交互需最简+主动辅助，中国代际数字鸿沟典型"
+        }
+      ]
+    },
+    {
+      "id": "marital_status",
+      "label": "婚姻状况",
+      "category": "身份与背景",
+      "description": "用户婚姻/恋爱状态（中国化，去 domestic partnership）",
+      "values": [
+        "单身",
+        "相亲中",
+        "恋爱中",
+        "同居",
+        "订婚",
+        "已婚",
+        "隐婚",
+        "离异",
+        "丧偶",
+        "再婚"
+      ],
+      "phrase": "用户{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "demo_marital_status",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造；涉及敏感（离异/丧偶）消费时按 sensitive_topic 校验 【细化v2】原6→现10；补相亲中/同居/隐婚/再婚，去domestic partnership中国化；相亲中是中国式婚恋高频态，隐婚是披露姿态变体，再婚承载重组家庭叙事",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "单身",
+          "phrase": "用户{value}",
+          "china_note": "含主动不婚，与不婚主义可并存，状态取'未婚'"
+        },
+        {
+          "value": "相亲中",
+          "phrase": "用户{value}",
+          "china_note": "中国式婚恋高频态，父母催婚/相亲角/媒妁语境，区别于自由恋爱"
+        },
+        {
+          "value": "恋爱中",
+          "phrase": "用户{value}",
+          "china_note": "异地恋作为修饰归relation_detail，此处只标状态"
+        },
+        {
+          "value": "同居",
+          "phrase": "用户{value}",
+          "china_note": "非婚同居在城市青年增多，却常不被父母认可，回响忌默认'已婚'"
+        },
+        {
+          "value": "订婚",
+          "phrase": "用户{value}",
+          "china_note": "含彩礼/订婚宴前置叙事"
+        },
+        {
+          "value": "已婚",
+          "phrase": "用户{value}",
+          "china_note": "公开已婚且无隐婚/再婚特殊语境时取此"
+        },
+        {
+          "value": "隐婚",
+          "phrase": "用户{value}",
+          "china_note": "已婚但对外不公开（职场/舆论顾虑），披露姿态变体，与'已婚'互斥时以披露姿态为准"
+        },
+        {
+          "value": "离异",
+          "phrase": "用户{value}",
+          "china_note": "含离异带娃，娃的叙事归children_count/family_structure"
+        },
+        {
+          "value": "丧偶",
+          "phrase": "用户{value}",
+          "china_note": "丧偶未再婚；再婚则归'再婚'"
+        },
+        {
+          "value": "再婚",
+          "phrase": "用户{value}",
+          "china_note": "离异或丧偶后重组，联动family_structure=重组家庭"
+        }
+      ]
+    },
+    {
+      "id": "children_count",
+      "label": "子女情况",
+      "category": "身份与背景",
+      "description": "用户子女情况（中国语境）",
+      "values": [
+        "无子女",
+        "备孕中",
+        "孕期",
+        "1个",
+        "2个",
+        "3个及以上",
+        "子女已成年",
+        "待领养",
+        "继子女",
+        "失独"
+      ],
+      "phrase": "用户有{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "demo_children_count",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造 【细化v2】原6→现10；补待领养/继子女/失独，拆原'备孕/孕期'为二；失独为计划生育遗留创伤态，最值得注意",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "无子女",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "含丁克与暂未育，催生压力下为关键叙事"
+        },
+        {
+          "value": "备孕中",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "中国式备孕（叶酸/备孕群/长辈期待），焦虑源"
+        },
+        {
+          "value": "孕期",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "与'备孕中'互斥，取当前态"
+        },
+        {
+          "value": "1个",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "独生子女政策下主流"
+        },
+        {
+          "value": "2个",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "二胎/三胎政策后增多"
+        },
+        {
+          "value": "3个及以上",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "多孩/三胎"
+        },
+        {
+          "value": "子女已成年",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "空巢/随迁过渡信号，与'1个/2个'可并存时取此生命阶段标签"
+        },
+        {
+          "value": "待领养",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "等待收养，含排队/福利院语境"
+        },
+        {
+          "value": "继子女",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "再婚带入，归重组家庭；与亲生count可并存"
+        },
+        {
+          "value": "失独",
+          "phrase": "用户子女情况：{value}",
+          "china_note": "独生子女离世，政策遗留创伤，回响须极谨慎并联动sensitive_topic"
+        }
+      ]
+    },
+    {
+      "id": "employment_status",
+      "label": "就业状态",
+      "category": "身份与背景",
+      "description": "用户就业状态",
+      "values": [
+        "全职",
+        "兼职",
+        "自由职业",
+        "灵活就业",
+        "个体经营",
+        "学生",
+        "待业",
+        "待业备考",
+        "家庭主妇/夫",
+        "退休",
+        "内退",
+        "下岗"
+      ],
+      "phrase": "用户{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "demo_employment_status",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造；待业/失业敏感，消费谨慎 【细化v2】原7→现12；补灵活就业/个体经营/待业备考/内退/下岗；灵活就业=零工平台经济，待业备考=考研考公空窗，内退/下岗为体制转型遗留态",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "全职",
+          "phrase": "用户{value}",
+          "china_note": "含体制内/体制外，差异归occupation_domain"
+        },
+        {
+          "value": "灵活就业",
+          "phrase": "用户{value}",
+          "china_note": "外卖/网约车/零工/平台经济，无稳定雇主，非'自由职业'（后者更独立）"
+        },
+        {
+          "value": "个体经营",
+          "phrase": "用户{value}",
+          "china_note": "摆摊/小生意/个体工商户，含地摊经济"
+        },
+        {
+          "value": "待业备考",
+          "phrase": "用户{value}",
+          "china_note": "考研/考公空窗期，中国式gap，长辈易误解为'不务正业'"
+        },
+        {
+          "value": "家庭主妇/夫",
+          "phrase": "用户{value}",
+          "china_note": "含全职带娃/煮夫，常伴经济依赖叙事"
+        },
+        {
+          "value": "内退",
+          "phrase": "用户{value}",
+          "china_note": "体制内/国企提前内退，领减薪"
+        },
+        {
+          "value": "下岗",
+          "phrase": "用户{value}",
+          "china_note": "90年代国企改制遗留，仍有群体提及，创伤感强"
+        },
+        {
+          "value": "待业",
+          "phrase": "用户{value}",
+          "china_note": "主动求职中，与'待业备考'互斥取主因"
+        }
+      ]
+    },
+    {
+      "id": "housing_status",
+      "label": "住房状况",
+      "category": "身份与背景",
+      "description": "用户居住状况（中国化）",
+      "values": [
+        "自有住房",
+        "按揭中",
+        "租房",
+        "公租房",
+        "保障房",
+        "和父母同住",
+        "宿舍/单位房",
+        "借住亲友",
+        "民宿漂泊"
+      ],
+      "phrase": "用户{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "demo_housing_status",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造；买房/租房是中国式人生大事的伴随维度 【细化v2】原6→现9；补公租房/保障房/借住亲友/民宿漂泊；按揭中与自有住房互斥（有无贷），民宿漂泊对应漂泊青年",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "自有住房",
+          "phrase": "用户{value}",
+          "china_note": "无贷自有，与'按揭中'互斥"
+        },
+        {
+          "value": "按揭中",
+          "phrase": "用户{value}",
+          "china_note": "房贷月供，中国式'房奴'焦虑源"
+        },
+        {
+          "value": "公租房",
+          "phrase": "用户{value}",
+          "china_note": "保障房租赁通道，外来务工/低收入"
+        },
+        {
+          "value": "保障房",
+          "phrase": "用户{value}",
+          "china_note": "经济适用房/共有产权房，购类保障"
+        },
+        {
+          "value": "和父母同住",
+          "phrase": "用户{value}",
+          "china_note": "含啃老/代际共居，常因买房压力"
+        },
+        {
+          "value": "民宿漂泊",
+          "phrase": "用户{value}",
+          "china_note": "数字游民/频繁搬家青年，无稳定居所，边缘但增长"
+        }
+      ]
+    },
+    {
+      "id": "generation",
+      "label": "代际",
+      "category": "身份与背景",
+      "description": "用户代际（中国语境映射）",
+      "values": [
+        "10后",
+        "05后",
+        "00后",
+        "90后",
+        "80后",
+        "70后",
+        "60后",
+        "50后及以上"
+      ],
+      "phrase": "用户是{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "demo_generation",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造：Gen Alpha/Z 等映射为中国世代 【细化v2】原6→现8；补10后（α世代）、拆'60后及以上'为60后/50后及以上；各世代承载强文化脚本",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "80后",
+          "phrase": "用户是{value}",
+          "china_note": "独生一代+房奴+育儿内卷见证者"
+        },
+        {
+          "value": "90后",
+          "phrase": "用户是{value}",
+          "china_note": "互联网原住民，反内卷/躺平话语"
+        },
+        {
+          "value": "00后",
+          "phrase": "用户是{value}",
+          "china_note": "Z世代，职场整顿/边界感"
+        },
+        {
+          "value": "60后",
+          "phrase": "用户是{value}",
+          "china_note": "文革/知青一代，含退休银发"
+        },
+        {
+          "value": "50后及以上",
+          "phrase": "用户是{value}",
+          "china_note": "空巢/失能高龄，银发叙事"
+        }
+      ]
+    },
+    {
+      "id": "birth_order",
+      "label": "出生排行",
+      "category": "身份与背景",
+      "description": "用户在兄弟姐妹中的排行（独生政策相关）",
+      "values": [
+        "独生子女",
+        "老大",
+        "中间",
+        "老幺",
+        "双胞胎/多胞胎"
+      ],
+      "phrase": "用户是{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "demo_birth_order",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造；中国独生/二胎语境 【细化v2】原5→现5；保留；独生子女为计划生育政策核心中国标识，最需回响体察的养老独担叙事",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "独生子女",
+          "phrase": "用户是{value}",
+          "china_note": "计划生育核心标识，无兄弟姐妹，养老压力独担；二胎后部分独生转为'老大'（互斥以现状为准）"
+        }
+      ]
+    },
+    {
+      "id": "home_language",
+      "label": "家庭语言",
+      "category": "身份与背景",
+      "description": "家庭语言环境",
+      "values": [
+        "普通话为主",
+        "普通话方言混用",
+        "方言家庭",
+        "民汉双语",
+        "涉外双语",
+        "多语家庭"
+      ],
+      "phrase": "家庭语言{value}",
+      "defaultValue": "普通话为主",
+      "source": "M",
+      "matraix_id": "demo_home_language",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L3",
+      "note": "【细化v2】原4→现6；补普通话方言混用/民汉双语/涉外双语；普通话方言混用最常见，民汉双语对应少数民族",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "普通话方言混用",
+          "phrase": "家庭语言{value}",
+          "china_note": "最常见，校园/职场普通话+祖辈方言，年轻一代方言退化"
+        },
+        {
+          "value": "民汉双语",
+          "phrase": "家庭语言{value}",
+          "china_note": "少数民族家庭，汉语+本族语"
+        },
+        {
+          "value": "涉外双语",
+          "phrase": "家庭语言{value}",
+          "china_note": "跨国婚姻，中文+外语"
+        },
+        {
+          "value": "方言家庭",
+          "phrase": "家庭语言{value}",
+          "china_note": "祖辈带娃方言环境"
+        }
+      ]
+    },
+    {
+      "id": "urbanicity",
+      "label": "城乡环境",
+      "category": "身份与背景",
+      "description": "用户居住城乡类型",
+      "values": [
+        "大城市",
+        "中小城市",
+        "县城",
+        "乡镇",
+        "农村",
+        "城乡接合部",
+        "城中村"
+      ],
+      "phrase": "用户生活在{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "urbanicity",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造：Dense urban 等换中国城乡五档 【细化v2】原5→现7；补城乡接合部/城中村；城中村/城乡接合部是外来务工与漂泊青年典型居所",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "县城",
+          "phrase": "用户生活在{value}",
+          "china_note": "县城体制/考编热核心场景"
+        },
+        {
+          "value": "城乡接合部",
+          "phrase": "用户生活在{value}",
+          "china_note": "城市边缘，户籍/公共服务夹缝"
+        },
+        {
+          "value": "城中村",
+          "phrase": "用户生活在{value}",
+          "china_note": "外来务工聚居，低成本城市落脚，与'大城市'互斥取居住质感"
+        }
+      ]
+    },
+    {
+      "id": "socioeconomic_band",
+      "label": "收入水平",
+      "category": "身份与背景",
+      "description": "用户收入水平（敏感，仅内部推断不引用）",
+      "values": [
+        "低收入",
+        "中低收入",
+        "中等",
+        "中高",
+        "高收入"
+      ],
+      "phrase": "用户处于{value}收入水平",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "socioeconomic_band",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L3",
+      "note": "⚠️ 敏感：默认 L3 全量才披露，消费时禁止直接引用收入表述，只用于内部推断（如消费观/焦虑判断） 【细化v2】原5→现5；有序五档已完备且为敏感维度，保留；对应中国'贫困/温饱/小康/中产/富裕'叙事，仅内部推断（消费观/焦虑）禁止直接引用收入表述",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "低收入",
+          "phrase": "",
+          "china_note": "对应'贫困/温饱'，内部推断用"
+        },
+        {
+          "value": "中等",
+          "phrase": "",
+          "china_note": "对应'小康'，中国中产 aspirational 叙事锚点"
+        },
+        {
+          "value": "高收入",
+          "phrase": "",
+          "china_note": "对应'富裕'，内部推断用"
+        }
+      ]
+    },
+    {
+      "id": "family_structure",
+      "label": "家庭结构",
+      "category": "身份与背景",
+      "description": "家庭构成形态（中国语境，回响常提家人）",
+      "values": [
+        "独居",
+        "和父母同住",
+        "核心家庭",
+        "三代同堂",
+        "异地家庭",
+        "重组家庭",
+        "单亲家庭",
+        "留守家庭",
+        "随迁家庭",
+        "丁克家庭",
+        "失独家庭"
+      ],
+      "phrase": "用户{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "自建；重组家庭敏感，消费时校验 【细化v2】原6→现11；补单亲/留守/随迁/丁克/失独；留守与随迁是城乡人口流动双生子，失独为计划生育遗留创伤态须联动sensitive_topic",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "留守家庭",
+          "phrase": "用户{value}",
+          "china_note": "父母外出务工，老人/童留守农村，城乡流动产物"
+        },
+        {
+          "value": "随迁家庭",
+          "phrase": "用户{value}",
+          "china_note": "务工带娃进城，城乡夹缝，与留守为双生子"
+        },
+        {
+          "value": "单亲家庭",
+          "phrase": "用户{value}",
+          "china_note": "离异/丧偶/非婚生育"
+        },
+        {
+          "value": "丁克家庭",
+          "phrase": "用户{value}",
+          "china_note": "双收入无孩，主动选择，常遇催生压力"
+        },
+        {
+          "value": "重组家庭",
+          "phrase": "用户{value}",
+          "china_note": "再婚组建，含继子女关系张力"
+        },
+        {
+          "value": "失独家庭",
+          "phrase": "用户{value}",
+          "china_note": "独子离世，极敏感，须联动sensitive_topic谨慎回响"
+        }
+      ]
+    },
+    {
+      "id": "relation_core",
+      "label": "核心关系对象",
+      "category": "关系核心",
+      "description": "用户生命中最重要的关系对象（称谓级，中国式关系自然集合）",
+      "values": [
+        "妈妈",
+        "爸爸",
+        "爷爷",
+        "奶奶",
+        "外公",
+        "外婆",
+        "兄弟姐妹",
+        "伴侣",
+        "孩子",
+        "舅舅",
+        "姨妈",
+        "姑姑",
+        "叔叔",
+        "伯伯",
+        "堂兄弟姐妹",
+        "表亲",
+        "侄子",
+        "外甥",
+        "闺蜜",
+        "兄弟",
+        "发小",
+        "挚友",
+        "战友",
+        "师徒",
+        "同学",
+        "室友",
+        "校友",
+        "同事",
+        "领导",
+        "下属",
+        "导师",
+        "邻居",
+        "房东",
+        "月嫂",
+        "保姆",
+        "中介",
+        "快递",
+        "网友",
+        "前任",
+        "其他"
+      ],
+      "phrase": "对用户重要的人是{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.8,
+      "evidence_required": true,
+      "two_level": true,
+      "disclosure": "L1",
+      "note": "自建；称谓级=细值，粗值走 relation_role；冷启动三问激活；证据=用户原话提到的人 【细化v2】原16→现40；补中国式亲戚称谓（舅/姨/姑/叔/伯/堂表/侄甥）、拟亲属（闺蜜/兄弟/发小/战友/师徒）、同窗细分（室友/校友）、职场（领导/下属）、服务者（月嫂/保姆/中介/快递）、现代（网友）。称谓级互斥：血缘兄弟∈兄弟姐妹，义气兄弟∈兄弟；长幼称谓(伯/叔/姑/舅/姨)严格分列。具体人名运行时扩。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "舅舅",
+          "phrase": "用户的重要亲人是舅舅（母亲的兄弟）",
+          "china_note": "中国式母系亲戚，过年走亲戚/随份子的核心对象；常承担'娘家靠山'情感角色"
+        },
+        {
+          "value": "姨妈",
+          "phrase": "用户的重要亲人是姨妈（母亲的姐妹）",
+          "china_note": "母系姨亲；区分舅妈/姨父等姻亲，本值指有血缘的母亲的姐妹"
+        },
+        {
+          "value": "姑姑",
+          "phrase": "用户的重要亲人是姑姑（父亲的姐妹）",
+          "china_note": "父系姑亲；与姑父（姻亲）区分，本值指父亲的姐妹"
+        },
+        {
+          "value": "叔叔",
+          "phrase": "用户的重要亲人是叔叔（父亲的弟弟）",
+          "china_note": "父系旁系长辈；与伯伯（父之兄）区分，称呼严格按长幼"
+        },
+        {
+          "value": "伯伯",
+          "phrase": "用户的重要亲人是伯伯（父亲的哥哥）",
+          "china_note": "父系旁系长辈；中国式长幼称谓体系，不可与叔叔混用"
+        },
+        {
+          "value": "堂兄弟姐妹",
+          "phrase": "用户的重要亲人是堂兄弟姐妹（父系同姓平辈）",
+          "china_note": "同宗同姓的叔伯子女，区别于表亲；家族聚会高频提及"
+        },
+        {
+          "value": "表亲",
+          "phrase": "用户的重要亲人是表亲（姑舅姨的子女）",
+          "china_note": "母系/姑系交叉亲戚，含表哥表姐表弟表妹；走亲戚主力"
+        },
+        {
+          "value": "侄子",
+          "phrase": "用户看重侄子（兄弟的子女）",
+          "china_note": "中国式叔伯姑情怀，'带侄子'是常见陪伴场景"
+        },
+        {
+          "value": "外甥",
+          "phrase": "用户看重外甥（姐妹的子女）",
+          "china_note": "姐妹的子女；母系长辈对甥辈常有宠溺式牵挂"
+        },
+        {
+          "value": "闺蜜",
+          "phrase": "用户有一位极重要的女性好友（闺蜜）",
+          "china_note": "中国女性深度友谊专有词，区别于普通挚友，情感浓度高"
+        },
+        {
+          "value": "兄弟",
+          "phrase": "用户有一位重要的男性好友（好兄弟）",
+          "china_note": "非血缘的'铁哥们'，义气绑定；与兄弟姐妹（血缘）互斥"
+        },
+        {
+          "value": "发小",
+          "phrase": "用户有一位从小一起长大的发小",
+          "china_note": "同街区/同期长大的青梅竹马式关系，时间厚度极高"
+        },
+        {
+          "value": "挚友",
+          "phrase": "用户有一位重要的挚友",
+          "china_note": "通用深度好友；当无法归入闺蜜/兄弟/发小时用此兜底"
+        },
+        {
+          "value": "战友",
+          "phrase": "用户有一位重要的战友（同袍）",
+          "china_note": "军旅/共患难结成的强绑定关系，中国语境特有信任层级"
+        },
+        {
+          "value": "师徒",
+          "phrase": "用户与一位师傅/徒弟关系深厚",
+          "china_note": "手艺/行业传承关系，含拜师情感；区别于学校导师"
+        },
+        {
+          "value": "室友",
+          "phrase": "用户重视一位室友",
+          "china_note": "大学/合租同住者，高频共同生活场景"
+        },
+        {
+          "value": "校友",
+          "phrase": "用户重视一位校友",
+          "china_note": "同校渊源，含'母校情结'连带的弱关系"
+        },
+        {
+          "value": "领导",
+          "phrase": "用户心里有一位重要领导",
+          "china_note": "职场向上关系，中国式上下级含人情/站队维度"
+        },
+        {
+          "value": "下属",
+          "phrase": "用户心里有一位重要下属",
+          "china_note": "职场向下关系，带管理+私人情谊双重性"
+        },
+        {
+          "value": "月嫂",
+          "phrase": "用户看重一位月嫂",
+          "china_note": "产后照护者，短周期但情感浓度极高，中国式育儿关系特有"
+        },
+        {
+          "value": "保姆",
+          "phrase": "用户家里有一位重要的保姆",
+          "china_note": "长期入户照护者，常被视为'准家人'"
+        },
+        {
+          "value": "中介",
+          "phrase": "用户与一位中介往来密切",
+          "china_note": "房产/求职等中介，利益缠身的关系，易生纠纷需敏感"
+        },
+        {
+          "value": "快递",
+          "phrase": "用户与一位快递员相熟",
+          "china_note": "高频接触的服务者，中国式社区弱关系典型"
+        },
+        {
+          "value": "网友",
+          "phrase": "用户重视一位网友",
+          "china_note": "纯线上结识，匿名性高；情感真实但身份弱，需防沉迷/诈骗敏感"
+        },
+        {
+          "value": "前任",
+          "phrase": "用户的前任仍在其情感版图中",
+          "china_note": "前男友/前女友；联动 sensitive_topic 红线，回响必须校验"
+        }
+      ],
+      "aliases": {
+        "母亲": "妈妈",
+        "老妈": "妈妈",
+        "老爸": "爸爸",
+        "父亲": "爸爸",
+        "老婆": "伴侣",
+        "老公": "伴侣",
+        "妻子": "伴侣",
+        "丈夫": "伴侣",
+        "爱人": "伴侣",
+        "女友": "伴侣",
+        "男友": "伴侣",
+        "对象": "伴侣",
+        "媳妇": "伴侣",
+        "闺女": "女儿",
+        "娃": "孩子"
+      },
+      "multi_value": true
+    },
+    {
+      "id": "relation_role",
+      "label": "关系角色",
+      "category": "关系核心",
+      "description": "关系对象的粗分类（两级披露的粗值）",
+      "values": [
+        "家人",
+        "伴侣",
+        "亲戚",
+        "亲友",
+        "同事",
+        "同学",
+        "师生",
+        "邻里",
+        "服务者",
+        "网友",
+        "长辈",
+        "晚辈",
+        "其他"
+      ],
+      "phrase": "{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": true,
+      "disclosure": "L1",
+      "note": "relation_core 的粗值层；L1 常驻用粗值省 token，L2 拉称谓细值 【细化v2】原7→现13；补亲戚/师生/网友/长辈/晚辈。说明：长辈/晚辈为辈分轴，会与家人/亲戚/师生交叉；LLM优先打具体关系类，辈分仅在仅知长幼时兜底，保持单标签互斥。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "亲戚",
+          "phrase": "对方是用户的亲戚（旁系/姻亲）",
+          "china_note": "与家人(直系同住)区分：亲戚指走动往来的叔伯姑舅姨等；春节拜年/随份子主场景"
+        },
+        {
+          "value": "师生",
+          "phrase": "对方是用户的老师或学生",
+          "china_note": "含学校导师与师徒；原 relation_core 有导师/师徒，此处补粗值层"
+        },
+        {
+          "value": "网友",
+          "phrase": "对方是用户的网友",
+          "china_note": "纯线上关系粗类，原缺失；与亲友/同事等线下类互斥"
+        },
+        {
+          "value": "长辈",
+          "phrase": "对方是用户的长辈",
+          "china_note": "跨亲属/师生等的关系角色；当仅知辈分不知具体关系时用，与家人/亲戚可共存但优先具体类"
+        },
+        {
+          "value": "晚辈",
+          "phrase": "对方是用户的晚辈",
+          "china_note": "跨亲属/师生的辈分角色；优先用具体关系类，辈分作兜底"
+        }
+      ],
+      "aliases": {
+        "母亲": "家人",
+        "老爸": "家人",
+        "老婆": "伴侣",
+        "老公": "伴侣",
+        "朋友": "亲友",
+        "哥们": "亲友",
+        "闺蜜": "亲友",
+        "同学": "同学",
+        "同事": "同事"
+      },
+      "multi_value": true
+    },
+    {
+      "id": "relation_status",
+      "label": "关系状态",
+      "category": "关系核心",
+      "description": "关系当前状态（防'前任当好朋友'翻车）",
+      "values": [
+        "亲密",
+        "暧昧",
+        "普通",
+        "塑料",
+        "疏远",
+        "单方面断联",
+        "已断联",
+        "决裂",
+        "前任",
+        "其他"
+      ],
+      "phrase": "用户与{relation_core}关系{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "自建；'前任'状态自动联动 sensitive_topic 处置；回响/追问必须校验 【细化v2】原5→现10；补暧昧/塑料/单方面断联/决裂，均为中国式关系状态高频词。前任状态保留并联动 sensitive_topic。互斥统一：亲密/暧昧为存续强连接，疏远/塑料为存续弱连接，单方面断联/已断联/决裂为断裂，前任为特殊历史态。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "暧昧",
+          "phrase": "用户与对方处于暧昧期",
+          "china_note": "未确立恋爱但超友谊的中国式灰色地带，回响忌直接定性为恋人"
+        },
+        {
+          "value": "塑料",
+          "phrase": "用户与对方是塑料关系",
+          "china_note": "表面亲近实则疏离（塑料姐妹/兄弟情）；需防'当真朋友'翻车"
+        },
+        {
+          "value": "单方面断联",
+          "phrase": "用户被对方单方面断联",
+          "china_note": "被拉黑/被删/对方失联而用户未放手；区别于双方已断联，情感未闭合"
+        },
+        {
+          "value": "决裂",
+          "phrase": "用户与对方已决裂反目",
+          "china_note": "翻脸/断交，含家庭决裂；联动 sensitive_topic 谨慎处置"
+        }
+      ]
+    },
+    {
+      "id": "relation_strength",
+      "label": "关系强度",
+      "category": "关系核心",
+      "description": "关系亲密度",
+      "values": [
+        "极亲",
+        "亲密",
+        "一般",
+        "淡薄"
+      ],
+      "phrase": "用户与{relation_core}关系{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "自建；由提及频率+情感极性累积推断 【细化v2】原4→现4；四级（极亲/亲密/一般/淡薄）已覆盖由强到弱连续谱，完备且互斥，保留不动。与 relation_status 分工：status 管'是否断裂/性质'，strength 管'情感浓度'，二者正交可同打。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "极亲",
+          "phrase": "用户与{relation_core}关系{value}：极亲",
+          "china_note": "每天/高频联系，情感浓度最高（如至亲/热恋）"
+        },
+        {
+          "value": "亲密",
+          "phrase": "用户与{relation_core}关系{value}：亲密",
+          "china_note": "稳定深入的关系，重要事件会分享"
+        },
+        {
+          "value": "一般",
+          "phrase": "用户与{relation_core}关系{value}：一般",
+          "china_note": "有联系但不深入，节日问候级"
+        },
+        {
+          "value": "淡薄",
+          "phrase": "用户与{relation_core}关系{value}：淡薄",
+          "china_note": "少有联系，关系趋冷"
+        }
+      ]
+    },
+    {
+      "id": "attachment_style",
+      "label": "依恋风格",
+      "category": "关系核心",
+      "description": "关系中的依恋模式（关系质量深层指标）",
+      "values": [
+        "安全型",
+        "焦虑型",
+        "回避型",
+        "恐惧型"
+      ],
+      "phrase": "用户是{value}依恋",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "attachment_anxiety",
+      "confidence_threshold": 0.8,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L3",
+      "note": "从 Relationships 救回；anxiety+avoidance 合成三型；超细维度置信度 0.8 【细化v2】原3→现4；补恐惧型，凑齐焦虑×回避二维四象限（安全/焦虑/回避/恐惧），心理模型方完备。超细维度置信度0.8，披露L3不变。原三型名称保留。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "恐惧型",
+          "phrase": "用户是恐惧型依恋",
+          "china_note": "高焦虑×高回避的完整四象限第四格；既渴望亲密又害怕受伤，中国原生家庭创伤常见表现，原缺失导致四象限漏一格"
+        }
+      ]
+    },
+    {
+      "id": "interpersonal_style",
+      "label": "人际风格",
+      "category": "关系核心",
+      "description": "人际互动基调（温暖度×主导性合成）",
+      "values": [
+        "温暖主导",
+        "温暖随和",
+        "冷淡主导",
+        "冷淡随和"
+      ],
+      "phrase": "用户人际风格{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "interpersonal_communion_warmth",
+      "confidence_threshold": 0.8,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L3",
+      "note": "warmth+dominance 合成四象限；超细维度置信度 0.8 【细化v2】原4→现4；温暖度×主导性四象限已完备且互斥，保留不动。超细维度置信度0.8，披露L3不变。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "温暖主导",
+          "phrase": "用户人际风格温暖主导",
+          "china_note": "高温暖×高主导：热心且拿主意（如操心型家长/组织者）"
+        },
+        {
+          "value": "温暖随和",
+          "phrase": "用户人际风格温暖随和",
+          "china_note": "高温暖×低主导：好相处、随大流"
+        },
+        {
+          "value": "冷淡主导",
+          "phrase": "用户人际风格冷淡主导",
+          "china_note": "低温暖×高主导：直接强势、不绕弯"
+        },
+        {
+          "value": "冷淡随和",
+          "phrase": "用户人际风格冷淡随和",
+          "china_note": "低温暖×低主导：疏离但也不争"
+        }
+      ]
+    },
+    {
+      "id": "life_event_major",
+      "label": "人生大事",
+      "category": "人生大事时间线",
+      "description": "用户经历的重大事件（中国式，自然集合）",
+      "values": [
+        "升学与毕业",
+        "考公考编上岸",
+        "求职与入职",
+        "升职跳槽转行",
+        "失业被裁降薪",
+        "创业经商",
+        "入伍与支教援派",
+        "租房与搬家",
+        "买房与置业",
+        "落户摇号与资格获取",
+        "拆迁与安置",
+        "债务与财产损失",
+        "恋爱与相亲",
+        "订婚与结婚",
+        "分手与离婚",
+        "生育与月子",
+        "子女教育与升学",
+        "疾病手术与陪护",
+        "亲人离世与白事",
+        "家庭变故",
+        "意外与灾难",
+        "出国留学与移民",
+        "退休与养老",
+        "成就与个人里程碑",
+        "其他重大事件"
+      ],
+      "phrase": "用户经历过{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": true,
+      "disclosure": "L1",
+      "note": "自建；中国式人生事件（MatrAIx 只有 Migration/Military）；粗值=大类，细值=具体事件+时间；回响核心锚点；入事件时间线永不衰减 【细化v2】原16值→现25值（two_level 粗值=大类，具体事件+时间由细值运行时扩，不枚举年份）。系统补齐中国式事件通道：'考公考编上岸''落户摇号与资格获取''拆迁与安置''债务与财产损失''入伍与支教援派''失业被裁降薪''子女教育与升学''意外与灾难''退休与养老''成就与个人里程碑'。原'扫墓/亲人离世'拆为'亲人离世与白事'（含头七/忌日/迁坟）与'疾病手术与陪护'中的临终陪护；原'分手'扩为'分手与离婚'；原'租房''买房''搬家'重组为'租房与搬家''买房与置业'（断供归债务类）。互斥规则：创业公司倒闭→创业经商（非失业被裁）；购房资格/车牌摇号→落户摇号与资格获取，实际签约付款→买房与置业；因拆迁搬家→拆迁与安置；本人升学→升学与毕业，子女升学→子女教育与升学；出国读书→出国留学与移民；亲人因意外离世→亲人离世与白事（意外本身可另记）。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "升学与毕业",
+          "phrase": "用户经历过升学与毕业",
+          "china_note": "本人学业阶段；细值：中考、高考、艺考、复读、考研、专升本、答辩、散伙饭、毕业照。子女考试归'子女教育与升学'"
+        },
+        {
+          "value": "考公考编上岸",
+          "phrase": "用户经历过考公考编上岸",
+          "china_note": "中国特有的'上岸'叙事；细值：国考、省考、选调生、事业编、教师编、军队文职、三战上岸、面试进面、政审。落榜/二战也归此类"
+        },
+        {
+          "value": "求职与入职",
+          "phrase": "用户经历过求职与入职",
+          "china_note": "细值：秋招、春招、实习、第一份工作、拿offer、转正、体检入职、慢就业待业"
+        },
+        {
+          "value": "失业被裁降薪",
+          "phrase": "用户经历过失业被裁降薪",
+          "china_note": "细值：被裁、'优化'、N+1、降薪、欠薪、下岗、内退、35岁危机、待业gap。创业公司倒闭归'创业经商'"
+        },
+        {
+          "value": "入伍与支教援派",
+          "phrase": "用户经历过入伍与支教援派",
+          "china_note": "组织派遣型经历，中国特有；细值：入伍、退伍复员、转业、军校、支教、援疆援藏、驻村第一书记、西部计划、下乡、援外医疗队、挂职"
+        },
+        {
+          "value": "租房与搬家",
+          "phrase": "用户经历过租房与搬家",
+          "china_note": "细值：北漂沪漂、合租群租、城中村、隔断房、押一付三、被中介坑、搬家、换城市定居、随迁"
+        },
+        {
+          "value": "买房与置业",
+          "phrase": "用户经历过买房与置业",
+          "china_note": "细值：凑首付、六个钱包、房贷、公积金、交房、烂尾楼、装修、学区房、卖房、置换。断供归'债务与财产损失'"
+        },
+        {
+          "value": "落户摇号与资格获取",
+          "phrase": "用户经历过落户摇号与资格获取",
+          "china_note": "中国行政资格/指标型事件；细值：落户、积分入户、人才引进、农转非、迁户口、车牌摇号、新能源指标、购房资格、学位摇号、中签"
+        },
+        {
+          "value": "拆迁与安置",
+          "phrase": "用户经历过拆迁与安置",
+          "china_note": "细值：拆迁、棚改、征地、回迁房、拆迁款、老宅拆除、钉子户、故乡消失。老家被拆常是重要情感锚点"
+        },
+        {
+          "value": "债务与财产损失",
+          "phrase": "用户经历过债务与财产损失",
+          "china_note": "细值：房贷断供、法拍、网贷、信用卡逾期、上征信、失信被执行、P2P暴雷、理财爆雷、炒股/期货巨亏、电信诈骗、传销、预付卡跑路、还清债务"
+        },
+        {
+          "value": "恋爱与相亲",
+          "phrase": "用户经历过恋爱与相亲",
+          "china_note": "细值：初恋、表白、异地恋、网恋、相亲、被催婚、见家长、同居"
+        },
+        {
+          "value": "订婚与结婚",
+          "phrase": "用户经历过订婚与结婚",
+          "china_note": "细值：领证、彩礼、三金、订婚、婚纱照、婚礼办酒、接亲、敬酒、回门、婚房。彩礼与三金是中国婚事高频争议锚点"
+        },
+        {
+          "value": "分手与离婚",
+          "phrase": "用户经历过分手与离婚",
+          "china_note": "细值：分手、退婚、悔婚、离婚冷静期、协议离婚、诉讼离婚、抚养权、复婚、离婚搬离"
+        },
+        {
+          "value": "生育与月子",
+          "phrase": "用户经历过生育与月子",
+          "china_note": "细值：怀孕、产检、生产、剖宫产、坐月子、月嫂、试管、二胎三胎、流产、满月酒、抓周"
+        },
+        {
+          "value": "子女教育与升学",
+          "phrase": "用户经历过子女教育与升学",
+          "china_note": "细值：幼升小、小升初、划片学区、鸡娃、双减、补习班、家长会、陪读、送考、孩子出国留学"
+        },
+        {
+          "value": "疾病手术与陪护",
+          "phrase": "用户经历过疾病手术与陪护",
+          "china_note": "含本人与亲人，细值区分；细值：确诊、住院、手术、化疗、ICU、透析、康复、误诊、异地就医、挂号排队、陪床、失能照护、临终陪伴"
+        },
+        {
+          "value": "亲人离世与白事",
+          "phrase": "用户经历过亲人离世与白事",
+          "china_note": "中国白事仪轨极重，是回响最需谨慎的锚点；细值：报丧、守灵、白事、出殡、头七、骨灰、下葬、忌日、清明扫墓、迁坟、送终"
+        },
+        {
+          "value": "家庭变故",
+          "phrase": "用户经历过家庭变故",
+          "china_note": "细值：父母离婚、重组家庭、家道中落、分家、赡养纠纷、留守儿童、父母外出打工、亲人失联、家暴"
+        },
+        {
+          "value": "意外与灾难",
+          "phrase": "用户经历过意外与灾难",
+          "china_note": "细值：车祸、工伤、火灾、失窃、地震（汶川/玉树）、洪水、台风、疫情封控、方舱隔离、核酸排队。亲人因此离世仍归'亲人离世与白事'"
+        },
+        {
+          "value": "出国留学与移民",
+          "phrase": "用户经历过出国留学与移民",
+          "china_note": "细值：雅思托福、留学、陪读、外派、务工出海、移民、绿卡、'润'、海归回国、探亲签"
+        },
+        {
+          "value": "退休与养老",
+          "phrase": "用户经历过退休与养老",
+          "china_note": "细值：退休、内退、领社保、退休返聘、带孙、广场舞、老年大学、跟团游、养老院、返乡养老"
+        },
+        {
+          "value": "成就与个人里程碑",
+          "phrase": "用户经历过成就与个人里程碑",
+          "china_note": "正向平衡项；细值：奖学金、保研、竞赛获奖、评优、单位表彰、立功、发表、考驾照、买车、第一次坐飞机、减肥成功、戒烟戒酒、跑马拉松、养宠"
+        }
+      ],
+      "aliases": {
+        "高考": "升学与毕业",
+        "考研": "升学与毕业",
+        "毕业": "升学与毕业",
+        "考公": "考公考编上岸",
+        "考编": "考公考编上岸",
+        "上岸": "考公考编上岸",
+        "留学": "出国留学与移民",
+        "出国": "出国留学与移民",
+        "入职": "求职与入职",
+        "求职": "求职与入职",
+        "跳槽": "升职跳槽转行",
+        "升职": "升职跳槽转行",
+        "转行": "升职跳槽转行",
+        "被裁": "失业被裁降薪",
+        "裁员": "失业被裁降薪",
+        "失业": "失业被裁降薪",
+        "做生意": "创业经商",
+        "开公司": "创业经商",
+        "结婚": "订婚与结婚",
+        "婚礼": "订婚与结婚",
+        "离婚": "分手与离婚",
+        "分手": "分手与离婚",
+        "生娃": "生育与月子",
+        "生子": "生育与月子",
+        "怀孕": "生育与月子",
+        "搬家": "租房与搬家",
+        "买房": "买房与置业",
+        "拆迁": "拆迁与安置",
+        "住院": "疾病手术与陪护",
+        "手术": "疾病手术与陪护",
+        "生病": "疾病手术与陪护",
+        "入伍": "入伍与支教援派",
+        "支教": "入伍与支教援派",
+        "退休": "退休与养老",
+        "养老": "退休与养老",
+        "出国留学": "出国留学与移民",
+        "移民": "出国留学与移民"
+      },
+      "multi_value": true
+    },
+    {
+      "id": "life_event_impact",
+      "label": "事件影响",
+      "category": "人生大事时间线",
+      "description": "重大事件对用户的影响性质",
+      "values": [
+        "里程碑",
+        "转折",
+        "低谷",
+        "长期消耗",
+        "遗憾",
+        "平淡日常",
+        "尚未定性"
+      ],
+      "phrase": "该事件是{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "自建；决定复盘怎么提（转折=重点，低谷=谨慎） 【细化v2】原4值→现7值。新增'长期消耗'（中国式'熬'的慢性磨耗，区别于急性低谷）、'遗憾'（未达成/来不及，清明与忌日回响主类型）、'尚未定性'（进行中事件的安全兜底）；'平淡'改称'平淡日常'语义更清。互斥取最强影响项，优先级：尚未定性 > 转折 > 低谷/遗憾 > 长期消耗 > 里程碑 > 平淡日常。'低谷''遗憾'触发谨慎话术，'尚未定性'不进复盘结论。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "长期消耗",
+          "phrase": "该事件是长期消耗",
+          "china_note": "中国式'熬'：多年备考、长期陪护、异地夫妻、还房贷、加班常态；非急性低谷而是慢性磨耗，复盘宜肯定坚持而非渲染苦"
+        },
+        {
+          "value": "遗憾",
+          "phrase": "该事件是遗憾",
+          "china_note": "结果未达成或来不及：没上岸、擦肩而过、没来得及告别、没能回家过年；与'低谷'区分（低谷是处境低落，遗憾是缺口），清明/忌日回响的核心类型"
+        },
+        {
+          "value": "尚未定性",
+          "phrase": "该事件尚未定性",
+          "china_note": "事件仍在进行中（在治疗、在打官司、在备考、刚离职），先记录不下判断，避免过早贴'低谷'刺伤用户"
+        }
+      ]
+    },
+    {
+      "id": "event_emotion_polarity",
+      "label": "事件情感极性",
+      "category": "人生大事时间线",
+      "description": "事件的情感属性（回响先按极性过滤）",
+      "values": [
+        "甜",
+        "苦尽甘来",
+        "中性",
+        "五味杂陈",
+        "释然",
+        "遗憾意难平",
+        "痛"
+      ],
+      "phrase": "该事件是{value}的回忆",
+      "defaultValue": "中性",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "自建；D 视角：回响候选先按极性过滤（低落期不推'痛'） 【细化v2】原3值→现7值。在甜—中性—痛主轴上补中国语境高频混合态：'苦尽甘来'（上岸/还债/病愈式正向含苦）、'五味杂陈'（裸辞/离乡/送别的矛盾态）、'释然'（已和解，可安全回响）、'遗憾意难平'（未和解的缺口，最需克制）。defaultValue 仍为'中性'。D 侧过滤规则升级：低落期可推'甜/苦尽甘来/释然/中性'，不推'痛/遗憾意难平'，'五味杂陈'仅用开放式提问不下结论。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "苦尽甘来",
+          "phrase": "该事件是苦尽甘来的回忆",
+          "china_note": "中国最主流的正向叙事：上岸、还清欠款、病愈出院、孩子考上、房子交付；正向但含艰辛，回响宜'不容易但你做到了'"
+        },
+        {
+          "value": "五味杂陈",
+          "phrase": "该事件是五味杂陈的回忆",
+          "china_note": "说不清的复杂情绪：裸辞、离开老家、搬离旧屋、送孩子出国、和解式离婚；不可简化为甜或痛，回响用开放式提问"
+        },
+        {
+          "value": "释然",
+          "phrase": "该事件是已释然的回忆",
+          "china_note": "已和解的往事（想通了、放下了、走出来了），是少数'痛类记忆里可安全回响'的状态，可温和回顾"
+        },
+        {
+          "value": "遗憾意难平",
+          "phrase": "该事件是遗憾意难平的回忆",
+          "china_note": "中国式'意难平'：错过、没能陪在身边、来不及说的话；仍未和解，回响需极克制，忌节日强推"
+        }
+      ]
+    },
+    {
+      "id": "turning_point",
+      "label": "人生转折点",
+      "category": "人生大事时间线",
+      "description": "定义性转折事件",
+      "values": [
+        "考试上岸",
+        "职业转折",
+        "至亲离世",
+        "生死大病",
+        "家财起落",
+        "自我重塑",
+        "贵人提携",
+        "无单一转折"
+      ],
+      "phrase": "用户的转折点是{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "lifex_turning_point",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造；冷启动三问'人生转折'激活 【细化v2】原6值→现8值（其中'无单一转折'为无值兜底，实质转折值7个，符合4-7）。新增'考试上岸'（高考/考研/考编改命，中国最主流转折通道）、'至亲离世'、'生死大病'（含重大误诊，并吸收原'重获新生'的病愈重生义）、'家财起落'（负债翻身/暴雷破产/拆迁，即'负债翻身'）；原'重大变故'语义过宽被上述三项替代，避免与 adversity_level 重复；保留'职业转折''自我重塑''贵人提携'。北漂沪漂/出国/润按主因归入'职业转折'或'自我重塑'。互斥取用户自述的唯一定义性转折。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "考试上岸",
+          "phrase": "用户的转折点是考试上岸",
+          "china_note": "中国最典型的'改命'通道：高考跳出县城、考研翻盘、考公考编上岸、落户扎根；一场考试改写阶层与城市归属"
+        },
+        {
+          "value": "至亲离世",
+          "phrase": "用户的转折点是至亲离世",
+          "china_note": "父母/伴侣/子女离世后的人生分界线，常伴随责任接棒（成为家里顶梁柱）；L2 披露，话术须庄重"
+        },
+        {
+          "value": "生死大病",
+          "phrase": "用户的转折点是生死大病",
+          "china_note": "含重大误诊、癌症确诊、ICU、术后重生；中国语境常叠加'不敢告诉家人''掏空积蓄'，覆盖原'重获新生'的病愈重生义"
+        },
+        {
+          "value": "家财起落",
+          "phrase": "用户的转折点是家财起落",
+          "china_note": "一夜起落型：负债翻身还清、暴雷破产、断供法拍、生意崩盘、拆迁获赔；金钱冲击直接改写人生轨道"
+        },
+        {
+          "value": "贵人提携",
+          "phrase": "用户的转折点是贵人提携",
+          "china_note": "中国人情语境的关键转折：恩师、领导、老乡、伯乐一句话或一次机会；用户常以'感恩'口吻叙述"
+        }
+      ],
+      "aliases": {
+        "高考": "考试上岸",
+        "考研": "考试上岸",
+        "考公": "考试上岸",
+        "上岸": "考试上岸",
+        "创业": "职业转折",
+        "转行": "职业转折",
+        "离婚": "家财起落"
+      }
+    },
+    {
+      "id": "travel_breadth",
+      "label": "旅行广度",
+      "category": "人生大事时间线",
+      "description": "用户旅行/地域经历广度",
+      "values": [
+        "未出过本市",
+        "仅省内走动",
+        "跨省多地",
+        "到过港澳台或周边国家",
+        "多国旅行",
+        "旅居海外"
+      ],
+      "phrase": "用户{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "lifex_travel_breadth",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造；旅行类记忆回响的依据 【细化v2】原5值→现6值。将'未出过省'细分为'未出过本市''仅省内走动'（县域与务农群体的真实半径，中国重要多数边缘）；新增'到过港澳台或周边国家'（中国式首次出境路径，避免港澳台被误判为'出过国'或'国内'）；'出过国'因语义与新档重叠而并入'到过港澳台或周边国家'与'多国旅行'；'旅居海外'保留并明确长期居留义。取值规则：单调递增，取用户已达到的最大广度档。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "未出过本市",
+          "phrase": "用户未出过本市",
+          "china_note": "县域/乡镇生活半径，务农、照护家人、经济受限群体的真实常态，是中国不可忽略的多数边缘，回响忌用'去过哪些国家'式提问"
+        },
+        {
+          "value": "仅省内走动",
+          "phrase": "用户主要在省内走动",
+          "china_note": "省内探亲、周边自驾、寺庙进香、周末游；含'只在打工城市与老家之间往返'的春运两点式生活"
+        },
+        {
+          "value": "跨省多地",
+          "phrase": "用户去过国内多个省份",
+          "china_note": "细值可含进藏、进疆、三亚过冬、毕业旅行、跨省务工；国内多省是中国主流上限"
+        },
+        {
+          "value": "到过港澳台或周边国家",
+          "phrase": "用户到过港澳台或周边国家",
+          "china_note": "中国人首次'出境'典型路径：港澳跟团、东南亚、日韩；港澳台在情感上是出境体验但非'出国'，单列避免误标"
+        },
+        {
+          "value": "旅居海外",
+          "phrase": "用户旅居或长驻海外",
+          "china_note": "留学、外派、务工出海、移民、陪读；与'多国旅行'区别在于长期居留而非游历"
+        }
+      ]
+    },
+    {
+      "id": "career_path_shape",
+      "label": "职业路径形态",
+      "category": "人生大事时间线",
+      "description": "职业发展路径形态",
+      "values": [
+        "刚起步",
+        "稳定深耕",
+        "转行换赛道",
+        "体制内外互转",
+        "创业经商",
+        "自由灵活就业",
+        "中断与起落"
+      ],
+      "phrase": "用户职业路径{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "lifex_career_path_shape",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造 【细化v2】原6值→现7值。'转行一次''多次转行'合并为'转行换赛道'（次数交由细节层，不占枚举位）；原'线性上升'扩为'稳定深耕'以纳入体制内铁饭碗形态；新增中国特色'体制内外互转'（下海/上岸双向流动）、'中断与起落'（被裁降薪、35岁危机、全职照家、备考gap的非连续路径）；原'自由组合'改称'自由灵活就业'并明确含骑手/网约车/自媒体；'创业'扩为'创业经商'含摆摊与接家业。互斥取近5年主导形态，多形态并存时取用户自我认同者。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "稳定深耕",
+          "phrase": "用户职业路径稳定深耕",
+          "china_note": "含体制内'铁饭碗'型（编制/公职/国企一岗到退休、按资历评职称）与市场化单位内持续晋升，覆盖原'线性上升'"
+        },
+        {
+          "value": "体制内外互转",
+          "phrase": "用户职业路径在体制内外互转",
+          "china_note": "中国特有双向流动：下海经商、辞职考编上岸、国企转民企、大厂逃回体制；身份切换本身即职业形态"
+        },
+        {
+          "value": "创业经商",
+          "phrase": "用户职业路径以创业经商为主",
+          "china_note": "含开店、摆摊、跑运输、接家里生意、办公司、电商直播；创业失败后再创业仍归此形态"
+        },
+        {
+          "value": "自由灵活就业",
+          "phrase": "用户职业路径为自由灵活就业",
+          "china_note": "覆盖原'自由组合'并本土化：外卖骑手、网约车、自媒体、接单外包、兼职多线并行，中国灵活就业规模庞大"
+        },
+        {
+          "value": "中断与起落",
+          "phrase": "用户职业路径有中断与起落",
+          "china_note": "非连续路径：被裁—再就业—降薪、35岁危机、全职妈妈、回家照护老人、长期在家备考的空档；不等于失败，话术须中立"
+        }
+      ]
+    },
+    {
+      "id": "adversity_level",
+      "label": "逆境经历",
+      "category": "人生大事时间线",
+      "description": "用户经历的逆境程度（敏感，消费谨慎）",
+      "values": [
+        "顺遂",
+        "小挫折",
+        "明显波折",
+        "重大磨难",
+        "已走出磨难",
+        "仍在艰难期"
+      ],
+      "phrase": "用户经历{value}",
+      "defaultValue": "",
+      "source": "MC",
+      "matraix_id": "lifex_adversity_level",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L3",
+      "note": "改造；⚠️ 敏感边缘，L3 披露；'仍在艰难期'联动 mental_health_flag 【细化v2】原5值→现6值。原五档程度阶梯（顺遂/小挫折/明显波折/重大磨难/仍在艰难期）本身完备，作为敏感 L3 维度不做扩张式改动，仅修正一处互斥缺陷：原'仍在艰难期'是时态标记而非程度档，与'重大磨难'语义交叉，故补齐配对项'已走出磨难'，使时态两端成对。取值单值规则（优先级）：当前困境进行中→'仍在艰难期'；曾历重大逆境且已和解→'已走出磨难'；其余按程度取'顺遂/小挫折/明显波折/重大磨难'。仅'仍在艰难期'联动 mental_health_flag 并触发降频。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "明显波折",
+          "phrase": "用户经历明显波折",
+          "china_note": "生活受实质冲击但未致崩塌：被裁降薪、房贷吃紧、离婚、亲人重病、生意亏损、异地分居"
+        },
+        {
+          "value": "重大磨难",
+          "phrase": "用户经历重大磨难",
+          "china_note": "至亲离世、自身重病生死、家破债崩、暴雷倾家、灾难幸存；L3 披露，禁止总结式评价与励志口吻"
+        },
+        {
+          "value": "已走出磨难",
+          "phrase": "用户已走出过往磨难",
+          "china_note": "曾历重大逆境但已度过并和解（还清债、病愈、走出丧亲）；给 D 侧一个'可温和回顾'的安全信号，中国用户常以'都过去了'表述"
+        },
+        {
+          "value": "仍在艰难期",
+          "phrase": "用户目前仍处在艰难期",
+          "china_note": "进行中的困境（在治疗、在还债、在失业、在打官司）；最高优先级，联动 mental_health_flag，回响降频、禁推'痛'类与励志话术"
+        }
+      ]
+    },
+    {
+      "id": "festival_anchor",
+      "label": "节假日锚点",
+      "category": "中国节假日",
+      "description": "回响推送的时间锚点（中国节假日，自然集合）",
+      "values": [
+        "春节",
+        "元宵",
+        "龙抬头",
+        "清明",
+        "端午",
+        "七夕",
+        "中元",
+        "中秋",
+        "重阳",
+        "腊八",
+        "小年",
+        "冬至",
+        "除夕",
+        "元旦",
+        "劳动节",
+        "国庆",
+        "妇女节",
+        "女神节",
+        "儿童节",
+        "教师节",
+        "护士节",
+        "双十一",
+        "618",
+        "年货节",
+        "开学",
+        "期末",
+        "毕业季",
+        "寒暑假",
+        "军训",
+        "无特殊"
+      ],
+      "phrase": "农历/日期锚点：{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.9,
+      "evidence_required": false,
+      "two_level": true,
+      "disclosure": "L1",
+      "note": "自建；系统日历即有，无需抽取；'去年今日'推送的触发锚点；细值=具体日期 【细化v2】原12→现30；移出'生日/纪念日'(归 memorial_dates 防重)，补全传统节(龙抬头/七夕/中元/重阳/腊八/小年/冬至/除夕)、现代节(妇女节/女神节/儿童节/教师节/护士节/双十一/618/年货节)、校园节奏(开学/期末/军训)。理由：原集仅覆盖少数大节，缺电商造节(双十一/618/年货节)、传统小节与校园军训—均为'去年今日'强情绪锚点",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "龙抬头",
+          "phrase": "二月二龙抬头，理发迎好运",
+          "china_note": "农历二月初二，传统'剃龙头'习俗，理发/春耕意象，年轻用户常记'今天该理发'"
+        },
+        {
+          "value": "七夕",
+          "phrase": "七夕·中国式情人节",
+          "china_note": "农历七月初七，原乞巧节，现被消费为情人节，回响可锚定恋爱/陪伴记忆"
+        },
+        {
+          "value": "中元",
+          "phrase": "中元节·祭祖缅怀",
+          "china_note": "农历七月十五，祭祀亡者，情绪沉重，回响应联动 sensitive_topic 谨慎，可与家人忌日呼应"
+        },
+        {
+          "value": "重阳",
+          "phrase": "重阳·敬老登高",
+          "china_note": "农历九月初九敬老节，锚定父母/祖辈记忆，适合'陪伴'主题回响"
+        },
+        {
+          "value": "腊八",
+          "phrase": "腊八·喝粥迎年",
+          "china_note": "农历腊月初八腊八粥，春节倒计时起点，年味记忆锚点"
+        },
+        {
+          "value": "小年",
+          "phrase": "小年·扫尘祭灶",
+          "china_note": "北方腊月廿三/南方廿四，春节序曲，除尘/归家意象"
+        },
+        {
+          "value": "冬至",
+          "phrase": "冬至·团圆进补",
+          "china_note": "南汤圆北饺子，'冬至大如年'，家庭聚餐强锚点"
+        },
+        {
+          "value": "除夕",
+          "phrase": "除夕·守岁团圆",
+          "china_note": "春节前夜，年夜饭/守岁，全年最强团圆情感锚点，与春节相邻但情绪独立"
+        },
+        {
+          "value": "女神节",
+          "phrase": "女神节·悦己消费",
+          "china_note": "3.7 衍生自妇女节，电商造节，年轻女性悦己主题锚点"
+        },
+        {
+          "value": "护士节",
+          "phrase": "护士节·致敬医护",
+          "china_note": "5.12，医疗从业者/家属的记忆锚点"
+        },
+        {
+          "value": "年货节",
+          "phrase": "年货节·囤年货",
+          "china_note": "电商造节（腊月末），置办年货意象，归家/准备春节"
+        },
+        {
+          "value": "双十一",
+          "phrase": "双十一·购物狂欢",
+          "china_note": "11.11 电商节，已成年度时间坐标，孤独/消费/熬夜记忆锚点"
+        },
+        {
+          "value": "618",
+          "phrase": "618·年中大促",
+          "china_note": "6.18 电商节，年中时间坐标"
+        },
+        {
+          "value": "军训",
+          "phrase": "军训·开学第一课",
+          "china_note": "高校新生开学军训，集体记忆强，青春回响锚点"
+        }
+      ]
+    },
+    {
+      "id": "memorial_dates",
+      "label": "重要纪念日",
+      "category": "中国节假日",
+      "description": "用户个人重要日期（生日/纪念日/忌日等）",
+      "values": [
+        "生日",
+        "恋爱纪念日",
+        "结婚纪念日",
+        "家人生日",
+        "家人忌日",
+        "宠物生日",
+        "入职周年",
+        "毕业周年",
+        "入党纪念日",
+        "其他个人纪念日"
+      ],
+      "phrase": "个人纪念日：{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.8,
+      "evidence_required": true,
+      "two_level": true,
+      "disclosure": "L2",
+      "note": "自建；家人忌日联动 sensitive_topic（亲丧 review）；细值=具体日期+事件 【细化v2】原5→现10；补家人生日/宠物生日/入职周年/毕业周年/入党纪念日。理由：原集缺'关系型纪念日'—中国式记忆很大程度绑在家人/宠物/职场身份上；宠物生日、入职周年是年轻用户高频情感锚点",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "家人生日",
+          "phrase": "家人生日（父母/子女/祖辈）",
+          "china_note": "中国式家庭纽带，常比自己生日更上心父母生日；回响可提醒/共情"
+        },
+        {
+          "value": "家人忌日",
+          "phrase": "家人忌日",
+          "china_note": "⚠️ 联动 sensitive_topic 亲丧；回响需 cautious，周年可轻触但不强推"
+        },
+        {
+          "value": "宠物生日",
+          "phrase": "宠物生日",
+          "china_note": "都市独居/年轻用户，宠物如家人，强情感锚点，回响温暖向"
+        },
+        {
+          "value": "入职周年",
+          "phrase": "入职周年",
+          "china_note": "职场身份锚点，可与 career_path 呼应，周年复盘"
+        },
+        {
+          "value": "毕业周年",
+          "phrase": "毕业周年",
+          "china_note": "校友记忆/青春锚点，与 life_event 毕业呼应"
+        },
+        {
+          "value": "入党纪念日",
+          "phrase": "入党纪念日",
+          "china_note": "党员身份政治性纪念日，⚠️ 涉政敏感边缘，回响文案中性、不渲染"
+        }
+      ]
+    },
+    {
+      "id": "values_priority",
+      "label": "价值观优先级",
+      "category": "价值观与动机",
+      "description": "用户核心价值观排序（冷启动三问'最骄傲的事'反推）",
+      "values": [
+        "家庭",
+        "事业",
+        "健康",
+        "财富",
+        "自由",
+        "成长",
+        "认可",
+        "安稳",
+        "体验",
+        "责任",
+        "人情",
+        "陪伴",
+        "自我实现",
+        "安全"
+      ],
+      "phrase": "用户最看重{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "values_priority",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": true,
+      "disclosure": "L1",
+      "note": "排序结构：粗值=Top3 价值观，细值=完整排序+证据；回响/复盘选材依据 【细化v2】原10→现14；保留全部原值并新增安稳/责任/人情/自我实现；松弛感·自在归一自由、面子·同辈认可归一认可、孝道归入家庭；互斥统一，粗值=Top价值观",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "家庭",
+          "phrase": "用户最看重家庭",
+          "china_note": "含孝道、顾家、家族根脉；中国语境常=养家/光宗耀祖/三代同堂，是温情也是义务"
+        },
+        {
+          "value": "事业",
+          "phrase": "用户最看重事业",
+          "china_note": "编制/上岸/风口/出人头地；成就多绑定职级头衔与单位光环"
+        },
+        {
+          "value": "健康",
+          "phrase": "用户最看重健康",
+          "china_note": "养生/保温杯/中医调理/不熬夜；身体是本钱，是搞钱养家的前提"
+        },
+        {
+          "value": "财富",
+          "phrase": "用户最看重搞钱",
+          "china_note": "有房有车、财务自由、改善家境；物质保障是中国式安全感底座"
+        },
+        {
+          "value": "自由",
+          "phrase": "用户最看重自在松弛",
+          "china_note": "松弛感、不被绑、躺平/润；与安稳(求稳)不同，自由强调不受限"
+        },
+        {
+          "value": "安稳",
+          "phrase": "用户最看重安稳",
+          "china_note": "体制内、铁饭碗、怕折腾；与'安全'(心理无虞)区分，安稳指生活状态稳定"
+        },
+        {
+          "value": "体验",
+          "phrase": "用户最看重体验",
+          "china_note": "说走就走、特种兵旅游、见世面；反内卷的情绪出口"
+        },
+        {
+          "value": "认可",
+          "phrase": "用户最看重被认可",
+          "china_note": "面子、出人头地、同辈认可；不输别人是底层焦虑"
+        },
+        {
+          "value": "人情",
+          "phrase": "用户最看重人情关系",
+          "china_note": "人脉、随份子、面子往来；关系社会的润滑剂，与认可(被看见)区分"
+        },
+        {
+          "value": "责任",
+          "phrase": "用户最看重责任担子",
+          "china_note": "顶梁柱、养家糊口、对公司与家庭的义务；中国式成年礼"
+        },
+        {
+          "value": "自我实现",
+          "phrase": "用户最看重做自己",
+          "china_note": "内心充盈、兴趣优先、反内卷；年轻世代新增的隐性顶层价值"
+        }
+      ],
+      "aliases": {
+        "考上": "事业",
+        "考研": "成长",
+        "学习": "成长",
+        "读书": "成长",
+        "坚持": "成长",
+        "跑完": "成长",
+        "比赛": "自我实现",
+        "获奖": "自我实现",
+        "带大": "责任",
+        "照顾": "责任"
+      },
+      "multi_value": true
+    },
+    {
+      "id": "motivation_core",
+      "label": "核心动机",
+      "category": "价值观与动机",
+      "description": "驱动用户行为的核心动机",
+      "values": [
+        "被认可",
+        "安全感",
+        "成就感",
+        "亲密连接",
+        "自我实现",
+        "自由探索",
+        "搞钱",
+        "光宗耀祖",
+        "不输别人",
+        "逃避内卷"
+      ],
+      "phrase": "用户追求{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "motivation_core",
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "改造 MatrAIx motivation 系列精选 【细化v2】原6→现10；新增搞钱/光宗耀祖/不输别人/逃避内卷，安全感补别名'求安稳'；证明自己归一不输别人；互斥统一",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "搞钱",
+          "phrase": "用户想搞钱",
+          "china_note": "财富积累、有房有车、改善家境；最直白的中国式底层动机"
+        },
+        {
+          "value": "光宗耀祖",
+          "phrase": "用户想光宗耀祖",
+          "china_note": "让父母有面子、家族荣耀；孝道的外化驱动，区别于个人成就感"
+        },
+        {
+          "value": "不输别人",
+          "phrase": "用户想不输别人",
+          "china_note": "同辈压力、证明自己、鸡娃式比较；证明自己归一于此"
+        },
+        {
+          "value": "逃避内卷",
+          "phrase": "用户想逃开内卷",
+          "china_note": "躺平/润/松弛感；从竞争中主动撤退，反向动机"
+        },
+        {
+          "value": "安全感",
+          "phrase": "用户求安稳",
+          "china_note": "体制内、不冒险、铁饭碗；求安稳=安全感的中国式表述"
+        }
+      ]
+    },
+    {
+      "id": "val_family",
+      "label": "价值观·家庭",
+      "category": "价值观与动机",
+      "description": "家庭在价值观中的权重",
+      "values": [
+        "核心",
+        "重要",
+        "一般",
+        "次要",
+        "无关"
+      ],
+      "phrase": "家庭对用户{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "val_family",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "val_* 五档体系（Core value/Important/Moderate/Minor/Irrelevant 中文化） 【细化v2】五档(核心/重要/一般/次要/无关)完备保留，不改档位命名；中国语境'核心'档常对应孝道/养家/三代同堂叙事",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "核心",
+          "phrase": "家庭对用户核心",
+          "china_note": "孝道/养家/三代同堂叙事，家庭至上"
+        },
+        {
+          "value": "重要",
+          "phrase": "家庭对用户重要",
+          "china_note": "家庭是重要考量但非唯一"
+        },
+        {
+          "value": "一般",
+          "phrase": "家庭对用户一般",
+          "china_note": "家庭与个人发展平衡"
+        },
+        {
+          "value": "次要",
+          "phrase": "家庭对用户次要",
+          "china_note": "个人/事业优先于家庭"
+        },
+        {
+          "value": "无关",
+          "phrase": "家庭对用户无关",
+          "china_note": "家庭联结弱或刻意疏离"
+        }
+      ]
+    },
+    {
+      "id": "val_health",
+      "label": "价值观·健康",
+      "category": "价值观与动机",
+      "description": "健康在价值观中的权重",
+      "values": [
+        "核心",
+        "重要",
+        "一般",
+        "次要",
+        "无关"
+      ],
+      "phrase": "健康对用户{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "val_health",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "【细化v2】五档完备保留；中国语境'核心'档常对应养生/中医/保温杯式长期主义健康观",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "核心",
+          "phrase": "健康对用户核心",
+          "china_note": "养生/中医/保温杯式长期主义健康观"
+        },
+        {
+          "value": "重要",
+          "phrase": "健康对用户重要",
+          "china_note": "规律作息/体检意识"
+        },
+        {
+          "value": "一般",
+          "phrase": "健康对用户一般",
+          "china_note": "不刻意但注意"
+        },
+        {
+          "value": "次要",
+          "phrase": "健康对用户次要",
+          "china_note": "忙于工作牺牲健康"
+        },
+        {
+          "value": "无关",
+          "phrase": "健康对用户无关",
+          "china_note": "无健康管理意识"
+        }
+      ]
+    },
+    {
+      "id": "val_career",
+      "label": "价值观·事业",
+      "category": "价值观与动机",
+      "description": "事业成就的权重",
+      "values": [
+        "核心",
+        "重要",
+        "一般",
+        "次要",
+        "无关"
+      ],
+      "phrase": "事业对用户{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "val_career_success",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "【细化v2】五档完备保留；中国语境'核心'档常绑定编制/上岸/职级头衔/出人头地",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "核心",
+          "phrase": "事业对用户核心",
+          "china_note": "编制/上岸/职级头衔/出人头地绑定事业"
+        },
+        {
+          "value": "重要",
+          "phrase": "事业对用户重要",
+          "china_note": "事业是人生重要支柱"
+        },
+        {
+          "value": "一般",
+          "phrase": "事业对用户一般",
+          "china_note": "工作与生活平衡"
+        },
+        {
+          "value": "次要",
+          "phrase": "事业对用户次要",
+          "china_note": "工作只是谋生手段"
+        },
+        {
+          "value": "无关",
+          "phrase": "事业对用户无关",
+          "china_note": "对事业成就无执念（如躺平/归隐）"
+        }
+      ]
+    },
+    {
+      "id": "val_wealth",
+      "label": "价值观·财富",
+      "category": "价值观与动机",
+      "description": "财富的权重",
+      "values": [
+        "核心",
+        "重要",
+        "一般",
+        "次要",
+        "无关"
+      ],
+      "phrase": "财富对用户{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "val_wealth",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "【细化v2】五档完备保留；中国语境'核心'档常=有房有车/财务自由/搞钱底气",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "核心",
+          "phrase": "财富对用户核心",
+          "china_note": "有房有车/财务自由/搞钱底气"
+        },
+        {
+          "value": "重要",
+          "phrase": "财富对用户重要",
+          "china_note": "重视储蓄与财务安全"
+        },
+        {
+          "value": "一般",
+          "phrase": "财富对用户一般",
+          "china_note": "够花就行"
+        },
+        {
+          "value": "次要",
+          "phrase": "财富对用户次要",
+          "china_note": "不为钱所困"
+        },
+        {
+          "value": "无关",
+          "phrase": "财富对用户无关",
+          "china_note": "视金钱如身外之物"
+        }
+      ]
+    },
+    {
+      "id": "val_freedom",
+      "label": "价值观·自由",
+      "category": "价值观与动机",
+      "description": "个人自由的权重",
+      "values": [
+        "核心",
+        "重要",
+        "一般",
+        "次要",
+        "无关"
+      ],
+      "phrase": "自由对用户{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "val_personal_freedom",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "【细化v2】五档完备保留；中国语境'核心'档常对应松弛感/不内卷/润的自由诉求",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "核心",
+          "phrase": "自由对用户核心",
+          "china_note": "松弛感/不内卷/润的自由诉求"
+        },
+        {
+          "value": "重要",
+          "phrase": "自由对用户重要",
+          "china_note": "需要个人空间与弹性"
+        },
+        {
+          "value": "一般",
+          "phrase": "自由对用户一般",
+          "china_note": "可接受适度约束"
+        },
+        {
+          "value": "次要",
+          "phrase": "自由对用户次要",
+          "china_note": "习惯稳定与秩序"
+        },
+        {
+          "value": "无关",
+          "phrase": "自由对用户无关",
+          "china_note": "对自主性无特别需求"
+        }
+      ]
+    },
+    {
+      "id": "val_growth",
+      "label": "价值观·成长",
+      "category": "价值观与动机",
+      "description": "个人成长的权重",
+      "values": [
+        "核心",
+        "重要",
+        "一般",
+        "次要",
+        "无关"
+      ],
+      "phrase": "成长对用户{value}",
+      "defaultValue": "",
+      "source": "M",
+      "matraix_id": "val_personal_growth",
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "【细化v2】五档完备保留；中国语境'核心'档常=终身学习/不躺平/鸡娃式自我与外推成长",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "核心",
+          "phrase": "成长对用户核心",
+          "china_note": "终身学习/不躺平/自我精进"
+        },
+        {
+          "value": "重要",
+          "phrase": "成长对用户重要",
+          "china_note": "阶段性学习提升"
+        },
+        {
+          "value": "一般",
+          "phrase": "成长对用户一般",
+          "china_note": "顺其自然"
+        },
+        {
+          "value": "次要",
+          "phrase": "成长对用户次要",
+          "china_note": "安于现状"
+        },
+        {
+          "value": "无关",
+          "phrase": "成长对用户无关",
+          "china_note": "无成长焦虑"
+        }
+      ]
+    },
+    {
+      "id": "sensitive_topic",
+      "label": "敏感话题",
+      "category": "敏感标记",
+      "description": "用户个人敏感话题（话题×处置×来源×证据×生命周期）",
+      "values": [
+        "前任/恋情分手",
+        "婚外情/出轨",
+        "催婚催生/相亲压力",
+        "家庭矛盾",
+        "原生家庭创伤",
+        "家人健康/住院",
+        "亲丧/离世",
+        "养老/失能/赡养",
+        "生育创伤/不孕/流产",
+        "工作学业受挫",
+        "职场PUA/被裁/优化",
+        "财务困境",
+        "被诈骗/理财暴雷",
+        "心理健康",
+        "身材外貌",
+        "校园霸凌",
+        "创伤经历",
+        "性取向/出柜",
+        "性别议题/歧视",
+        "网暴/社死",
+        "宗教",
+        "隐私信息",
+        "留守/随迁",
+        "自定义话题"
+      ],
+      "phrase": "用户敏感话题涉及{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.8,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "⚠️ 安全红线。结构：话题×处置(5级: allow/mention/caution/review/forbid)×来源(user/auto/echo)×证据锚点×生命周期(画像级永不过期/事件级提及≥3次降级)。红线级(涉政/违法/未成年/自残/医疗诊断)不进画像走 B5-b 护栏。详见《画像维度枚举集清单_v1》§四 【细化v2】原12固定话题 → 现23主话题+自定义兜底(共24)。升级点：1) 移出「政治立场」至 B5-b 红线护栏（涉政不进画像）；2) 新增12个中国式易漏话题：婚外情/出轨、催婚催生/相亲压力、原生家庭创伤、养老/失能/赡养、生育创伤/不孕/流产、职场PUA/被裁/优化、被诈骗/理财暴雷、校园霸凌、性取向/出柜、性别议题/歧视、网暴/社死、留守/随迁；3) 原值明确定义扩界：「家庭矛盾」含婆媳/家暴/亲子冲突，「财务困境」含网贷/负债/逾期，「身材外貌」含容貌焦虑，「家人健康/住院」含就医/挂号难，「工作学业受挫」含考研/考编失败；4) 每条新增值附建议默认处置级（caution/review 为主），与5级处置结构对齐；5) 红线（涉政/违法/未成年/自残/医疗诊断）一律不进本维度，走 B5-b。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "婚外情/出轨",
+          "phrase": "用户敏感话题：婚外情/出轨",
+          "china_note": "中国式高频且极羞耻：涉及自身或伴侣背叛、家庭信任崩塌，触发易致二次创伤。建议默认处置级 caution；用户情绪不稳时升 review，严禁主动提及或复盘。"
+        },
+        {
+          "value": "催婚催生/相亲压力",
+          "phrase": "用户敏感话题：催婚催生/相亲压力",
+          "china_note": "中国式代际高压典型：父母亲戚催婚催生、安排相亲，关乎人生自主权与价值否定，春节/假期易爆发。建议默认 caution；轻描可 mention，深挖需先确认。"
+        },
+        {
+          "value": "原生家庭创伤",
+          "phrase": "用户敏感话题：原生家庭创伤",
+          "china_note": "与「家庭矛盾」区分：指童年缺爱、控制型父母、重男轻女等家族代际创伤（过往伤口），非当下冲突。复盘极易触发。建议默认 caution，深挖升 review。"
+        },
+        {
+          "value": "养老/失能/赡养",
+          "phrase": "用户敏感话题：养老/失能/赡养",
+          "china_note": "中国式赡养重负：失能父母、久病床前、独生子女421结构养老压力，常伴愧疚与家庭张力。建议默认 caution。"
+        },
+        {
+          "value": "生育创伤/不孕/流产",
+          "phrase": "用户敏感话题：生育创伤/不孕/流产",
+          "china_note": "中国式催生语境下极敏感：不孕/胎停/流产/产后抑郁，叠加长辈催生羞耻与自我否定。建议默认 review；非主动倾诉不触碰。"
+        },
+        {
+          "value": "职场PUA/被裁/优化",
+          "phrase": "用户敏感话题：职场PUA/被裁/优化",
+          "china_note": "中国式职场高压：被PUA、35岁优化、裁员羞耻，尊严与生计双重打击；社媒吐槽多但私人极敏感。建议默认 caution。"
+        },
+        {
+          "value": "被诈骗/理财暴雷",
+          "phrase": "用户敏感话题：被诈骗/理财暴雷",
+          "china_note": "中国式高发：P2P暴雷、杀猪盘、电信诈骗，受害者强烈羞耻与自责，易被二次伤害。建议默认 caution，大额损失升 review；不评判、不追问细节。"
+        },
+        {
+          "value": "校园霸凌",
+          "phrase": "用户敏感话题：校园霸凌",
+          "china_note": "中国式隐忍文化下长期被忽视：肢体/语言/孤立霸凌留下的深度创伤，成年后仍触发。建议默认 caution，复盘升 review。"
+        },
+        {
+          "value": "性取向/出柜",
+          "phrase": "用户敏感话题：性取向/出柜",
+          "china_note": "中国式家庭接纳风险极高：出柜未定前主动提及易引发恐惧与关系危机。建议默认 caution；出柜冲突/被逼婚升 review；绝不向第三方透露。"
+        },
+        {
+          "value": "性别议题/歧视",
+          "phrase": "用户敏感话题：性别议题/歧视",
+          "china_note": "中国式交叉歧视：35岁年龄歧视、学历歧视、地域黑、性别偏见（丧偶式育儿/职场天花板）。用户被评价时易刺痛。建议默认 caution。"
+        },
+        {
+          "value": "网暴/社死",
+          "phrase": "用户敏感话题：网暴/社死",
+          "china_note": "中国式社媒环境：网络暴力、人肉、社会性死亡，创伤类似霸凌但更公开持久。建议默认 caution，复盘升 review。"
+        },
+        {
+          "value": "留守/随迁",
+          "phrase": "用户敏感话题：留守/随迁",
+          "china_note": "中国式城镇化产物：童年留守/随迁子女经历，伴归属感缺失与被抛弃感，影响成年亲密关系。建议默认 caution；轻描 mention。"
+        },
+        {
+          "value": "家庭矛盾",
+          "phrase": "用户敏感话题：家庭矛盾",
+          "china_note": "保留并扩：涵盖婆媳矛盾、家暴、亲子冲突、夫妻争执等当前家庭冲突。含家暴须升 review 并联动安全护栏。建议默认 caution。"
+        },
+        {
+          "value": "亲丧/离世",
+          "phrase": "用户敏感话题：亲丧/离世",
+          "china_note": "重大丧失，中国式讳谈死亡但内心极重。复盘须克制。建议默认 review（人工复核措辞），忌忌日强行推送欢快内容；联动 memorial_dates。"
+        },
+        {
+          "value": "心理健康",
+          "phrase": "用户敏感话题：心理健康",
+          "china_note": "指用户正经历焦虑/抑郁等情绪困扰这一敏感事实（非医疗诊断，诊断走B5-b护栏）。防触发。建议默认 caution。"
+        },
+        {
+          "value": "隐私信息",
+          "phrase": "用户敏感话题：隐私信息",
+          "china_note": "兜底隐私类：用户标记不愿被引用的具体信息。建议默认 forbid（仅本人可见，主动引用禁止），引用前需确认。"
+        },
+        {
+          "value": "自定义话题",
+          "phrase": "",
+          "china_note": "保留开放兜底：运行时同义归一后仍无匹配的新敏感话题可即时新增，带证据锚点+时间戳入集，不等人。"
+        }
+      ]
+    },
+    {
+      "id": "subject_owner",
+      "label": "主语归属",
+      "category": "主语归属与隐私",
+      "description": "内容主语归属（防'我朋友养猫'被当成'我养猫'）",
+      "values": [
+        "自己",
+        "家人",
+        "朋友",
+        "同事",
+        "同学",
+        "邻居",
+        "客户/商家",
+        "网友",
+        "群友",
+        "偶像/公众人物",
+        "师长辈(老师/领导)",
+        "宠物(归属自己但非人)",
+        "陌生人",
+        "其他他人",
+        "不确定"
+      ],
+      "phrase": "该内容是{value}的事",
+      "defaultValue": "自己",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "自建机制；仅 self 归属用户，family/friend/other 只记录不更新用户画像（防数据污染） 【细化v2】原5→现15；理由：原仅物理粗分(自己/家人/朋友/他人/不确定)，无法区分同事/同学/网友/邻居/客户/偶像/师长辈等中国式关系，导致'我同事跳槽''我家猫'被误归用户自身；补关系归属细类并明确'宠物=归属自己但非人'特例，兜底'其他他人'保持互斥统一。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "同事",
+          "phrase": "该内容主语是用户的同事",
+          "china_note": "中国式职场关系高频；'我同事升职/跳槽'属他人事件，不更新用户职业画像"
+        },
+        {
+          "value": "同学",
+          "phrase": "该内容主语是用户的同学",
+          "china_note": "同学圈层强（班级/校友/考研搭子），'我同学结婚'等须防误归自身"
+        },
+        {
+          "value": "网友",
+          "phrase": "该内容主语是用户的网友",
+          "china_note": "网络弱关系（微博/小红书/游戏），身份模糊，引用需谨慎"
+        },
+        {
+          "value": "群友",
+          "phrase": "该内容主语是用户的群友",
+          "china_note": "中国式群聊(微信/QQ群)特有关系，非正式熟人，区别于朋友/网友"
+        },
+        {
+          "value": "偶像/公众人物",
+          "phrase": "该内容主语是用户的偶像或公众人物",
+          "china_note": "'我偶像塌房/我粉的明星'属追星投射，非用户自身经历"
+        },
+        {
+          "value": "师长辈(老师/领导)",
+          "phrase": "该内容主语是用户的老师或领导",
+          "china_note": "尊卑关系语境（导师/老板），'我领导批评我'主语是领导，情感归属用户"
+        },
+        {
+          "value": "客户/商家",
+          "phrase": "该内容主语是用户的客户或商家",
+          "china_note": "服务/交易关系，消费记忆中常见（'商家发货慢'），不可归为用户属性"
+        },
+        {
+          "value": "宠物(归属自己但非人)",
+          "phrase": "该内容主语是用户的宠物",
+          "china_note": "特例：'我家猫生病'物理归属用户(自己)但主语非人；回响应作用户关切而非用户属性"
+        },
+        {
+          "value": "陌生人",
+          "phrase": "该内容主语是陌生人",
+          "china_note": "无关系锚点（路人/新闻人物），仅记录不更新画像"
+        },
+        {
+          "value": "其他他人",
+          "phrase": "该内容主语是上述未列的其他他者",
+          "china_note": "互斥兜底桶，替代原'他人'，避免与具体关系类重叠"
+        }
+      ]
+    },
+    {
+      "id": "privacy_level",
+      "label": "隐私分级",
+      "category": "主语归属与隐私",
+      "description": "内容/维度可引用等级",
+      "values": [
+        "可引用",
+        "可匿名引用",
+        "仅家庭内部",
+        "引用前需确认",
+        "仅本人可见"
+      ],
+      "phrase": "该内容隐私级别为{value}",
+      "defaultValue": "可引用",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "自建机制；引用前需确认=对话式询问'想聊聊吗'；敏感内容自动升级 【细化v2】原3→现5；理由：原三档(可引用/仅本人可见/引用前需确认)机制完备但缺中国式中间态——'可匿名引用'与'仅家庭内部'是本土记忆App高频场景，与原有三档互斥不重叠，故保留并增补两值。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "可匿名引用",
+          "phrase": "",
+          "china_note": "中国式去身份化分享（小红书/朋友圈式）：可引用记忆但剥离具体身份，防社交暴露"
+        },
+        {
+          "value": "仅家庭内部",
+          "phrase": "",
+          "china_note": "家族群可见、家人共享记忆（三代同堂语境）；比'可引用'窄、比'仅本人'宽，中式高频"
+        }
+      ]
+    },
+    {
+      "id": "confidence_trace",
+      "label": "置信度溯源",
+      "category": "主语归属与隐私",
+      "description": "每维度证据与置信度溯源（机制维度）",
+      "values": [
+        "高",
+        "中",
+        "低"
+      ],
+      "phrase": "该维度证据置信度为{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L3",
+      "note": "自建机制；低置信不入画像；消费时 LLM 可溯源'你怎么知道我养猫'→证据事件 【细化v2】原3→现3；有序三档(高/中/低)为机制档位，中国语境无额外值；低置信不入画像、消费时可溯源'你怎么知道'，保留并说明其完备性。",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "高",
+          "phrase": "该维度证据置信度为高",
+          "china_note": "多证据交叉印证（≥3 条独立证据）"
+        },
+        {
+          "value": "中",
+          "phrase": "该维度证据置信度为中",
+          "china_note": "单条强证据或用户自述"
+        },
+        {
+          "value": "低",
+          "phrase": "该维度证据置信度为低",
+          "china_note": "弱证据/推测——低置信不入画像"
+        }
+      ]
+    },
+    {
+      "id": "emotion_baseline",
+      "label": "情绪基线",
+      "category": "情绪基线",
+      "description": "用户近期的情绪基调（回响/复盘判断当前合不合适推）",
+      "values": [
+        "平静",
+        "积极",
+        "焦虑",
+        "低落",
+        "波动",
+        "内耗",
+        "紧绷"
+      ],
+      "phrase": "用户近期情绪{value}",
+      "defaultValue": "平静",
+      "source": "M",
+      "matraix_id": null,
+      "confidence_threshold": 0.7,
+      "evidence_required": true,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "由 emotion_curve(L1) 近 7 天趋势聚合；低落期回响不推'痛'极性记忆 【细化v2】原5→现7；原五档已覆盖主流 valence/arousal，补中国式'内耗''紧绷'两态，均为高 actionable 且与 event_emotion_polarity(甜/痛/中性) 不重复",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "内耗",
+          "phrase": "用户近期处在心理内耗中，想得多做得少、自我拉扯",
+          "china_note": "中国式网络心理词（精神内耗），区别于焦虑（对外担忧）与低落（情绪低落），是慢性自我消耗；回响应避免打鸡血，宜轻推与陪伴"
+        },
+        {
+          "value": "紧绷",
+          "phrase": "用户近期神经紧绷、难以放松",
+          "china_note": "区别于焦虑（指向具体担忧），紧绷是整体张力偏高、放松不下来；回响宜舒缓型、低刺激内容"
+        }
+      ]
+    },
+    {
+      "id": "chat_history_recent",
+      "label": "交互历史（去重）",
+      "category": "交互历史",
+      "description": "画像记得自己说过什么（防重复推送/追问）",
+      "values": [
+        "今日已推",
+        "3天内已推",
+        "7天内已推",
+        "30天内已推",
+        "从未推"
+      ],
+      "phrase": "该话题{value}",
+      "defaultValue": "从未推",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.9,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L1",
+      "note": "自建机制；结构=最近动作(topic+类型+时间)列表，枚举值=频次档位；三视角独立命中的 P0 维度 【细化v2】原5→现5；有序频次档完备（今日/3天/7天/30天/从未），覆盖从实时去重到冷启动全档位，互斥且有序，保留；若需同日多次去重可后续加'1小时内已推'，当前非必需",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "今日已推",
+          "phrase": "该话题今日已推",
+          "china_note": "今天推送过该话题，去重"
+        },
+        {
+          "value": "3天内已推",
+          "phrase": "该话题3天内已推",
+          "china_note": "3 天内推送过，暂缓"
+        },
+        {
+          "value": "7天内已推",
+          "phrase": "该话题7天内已推",
+          "china_note": "7 天内推送过"
+        },
+        {
+          "value": "30天内已推",
+          "phrase": "该话题30天内已推",
+          "china_note": "30 天内推送过"
+        },
+        {
+          "value": "从未推",
+          "phrase": "该话题从未推",
+          "china_note": "冷启动/新话题，可推送"
+        }
+      ]
+    },
+    {
+      "id": "life_rhythm_cn",
+      "label": "中国生活节奏",
+      "category": "中国自建补充",
+      "description": "中国年度节奏锚点（回响/摘要时机）",
+      "values": [
+        "春运",
+        "开学季",
+        "考季",
+        "双十一",
+        "年末冲刺",
+        "淡季",
+        "金三银四",
+        "毕业季",
+        "暑期",
+        "返乡",
+        "体检季"
+      ],
+      "phrase": "当前处于{value}",
+      "defaultValue": "",
+      "source": "N",
+      "matraix_id": null,
+      "confidence_threshold": 0.9,
+      "evidence_required": false,
+      "two_level": false,
+      "disclosure": "L2",
+      "note": "自建；系统日历推断，无需抽取；影响推送时机与文案语境 【细化v2】原6→现11；补金三银四/毕业季/暑期/返乡/体检季5个中国年度锚点；春招并入金三银四(别名)，求职空窗属个人状态非年历锚点故不纳入以保持互斥统一",
+      "open_enum": true,
+      "values_detail": [
+        {
+          "value": "春运",
+          "phrase": "当前处于春运（春节前后人口大迁徙，约腊月-正月）",
+          "china_note": "年度最大人口流动，回乡/拥堵/团聚情绪强；回响宜家庭/团聚/乡愁主题，避开催促型"
+        },
+        {
+          "value": "开学季",
+          "phrase": "当前处于开学季（中小学/高校春秋开学，2月、9月）",
+          "china_note": "家长/学生节奏切换；宜学业/作息/分离焦虑主题"
+        },
+        {
+          "value": "考季",
+          "phrase": "当前处于考季（考研/公考/期中期末等考试密集期，多峰）",
+          "china_note": "高压；回响宜减压/鼓励，避开考砸痛点回忆"
+        },
+        {
+          "value": "双十一",
+          "phrase": "当前处于双十一（11月电商大促）",
+          "china_note": "消费情绪高峰；宜轻量、避开剁手后悔复盘"
+        },
+        {
+          "value": "年末冲刺",
+          "phrase": "当前处于年末冲刺（12月工作/业绩收官）",
+          "china_note": "KPI/总结高压；宜成就回顾、勿加压"
+        },
+        {
+          "value": "淡季",
+          "phrase": "当前处于淡季（无强节奏锚点的平静期）",
+          "china_note": "可推深度复盘/慢回忆，用户注意力较充裕"
+        },
+        {
+          "value": "金三银四",
+          "phrase": "当前处于金三银四（3-4月求职黄金期）",
+          "china_note": "中国式招聘旺季（含春招，春招作别名并入）；求职/跳槽/焦虑主题高发，回响宜职业成长/转机，谨慎触碰被拒记忆"
+        },
+        {
+          "value": "毕业季",
+          "phrase": "当前处于毕业季（6-7月高校毕业）",
+          "china_note": "离别/人生阶段切换；宜青春/启程主题"
+        },
+        {
+          "value": "暑期",
+          "phrase": "当前处于暑期（7-8月学生长假）",
+          "china_note": "亲子/旅行/实习节奏；宜家庭/出行回忆"
+        },
+        {
+          "value": "返乡",
+          "phrase": "当前处于返乡（非春节的回乡，清明/中秋/国庆）",
+          "china_note": "与春运互斥（春运特指春节）；乡愁/团聚轻主题"
+        },
+        {
+          "value": "体检季",
+          "phrase": "当前处于体检季（企业/个人年度体检高峰，多春/年末）",
+          "china_note": "中国式健康焦虑触发点；宜关怀型、避开异常指标痛点"
+        }
+      ]
+    }
+  ],
+  "enum_policy": {
+    "type": "open_enum",
+    "seed_values": "values 字段为种子值（人设计起点），非封闭集合；真实覆盖靠运行时扩展",
+    "llm_add": "标注时种子值匹配不上 → 先同义归一（查维度别名表，如 母亲→妈妈）→ 确无等价值才直接新增 value，带证据锚点+时间戳即时入集，不等人",
+    "anti_fragmentation": "新增前强制查重（同义归一+别名映射）；同一概念不同表述归一到已存在值，防值爆炸",
+    "lifecycle": "活跃保留；低频提示合并；与正式值合并后退役（证据保留）",
+    "promotion": "跨用户高频新增（≥3 用户）→ 人工确认一次 → 升为 L1 正式值（与 L2→L1 晋升同构）",
+    "audit": "新增 value 全量记变更日志（value+证据+时间戳+来源用户哈希）"
+  },
+  "annotate_default_dims": [
+    "relation_core",
+    "relation_role",
+    "relation_status",
+    "relation_strength",
+    "life_event_major",
+    "turning_point",
+    "event_emotion_polarity",
+    "values_priority",
+    "motivation_core",
+    "val_family",
+    "val_health",
+    "val_career",
+    "val_wealth",
+    "val_freedom",
+    "val_growth",
+    "emotion_baseline",
+    "festival_anchor",
+    "career_path_shape",
+    "adversity_level",
+    "travel_breadth",
+    "life_rhythm_cn",
+    "emotional_state",
+    "stress_level",
+    "energy_level",
+    "sleep_quality",
+    "topic_active_top5",
+    "interest_hobbies",
+    "interest_food",
+    "interest_media",
+    "interest_platform",
+    "habit_schedule",
+    "decision_style",
+    "pref_group_vs_alone",
+    "pref_save_vs_spend",
+    "pref_city_vs_nature",
+    "pref_indoor_vs_outdoor",
+    "learning_style",
+    "cognitive_style",
+    "comm_formality",
+    "comm_directness",
+    "comm_verbosity"
+  ]
+}

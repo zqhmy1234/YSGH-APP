@@ -1,0 +1,20 @@
+{
+  "id": "skill_cooking",
+  "label": "做饭",
+  "category": "通用技能与成长",
+  "current_values": null,
+  "value_template": "skill_level",
+  "template_values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "structure": null,
+  "source": "M",
+  "matraix_id": "skill_cooking",
+  "confidence_threshold": 0.7,
+  "note": "技能类统一四档：精通/熟练/入门/不会；复盘'你成长了'素材",
+  "open_enum": true,
+  "refine_mode": "template_level"
+}

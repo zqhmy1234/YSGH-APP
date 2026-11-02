@@ -1,0 +1,12 @@
+{
+  "id": "skill_investing",
+  "refine_mode": "template_level",
+  "values": ["精通", "熟练", "入门", "不会"],
+  "values_detail": [
+    {"value": "精通", "phrase": "懂资产配置、基金定投，能看财报、主动管理组合，不盲从热点", "china_note": "主流成熟投资者，炒股/买基多年仍稳，对应中国基民股民中的理性派"},
+    {"value": "熟练", "phrase": "买过基金股票，会分散风险，但没系统框架", "china_note": "中国最典型的'会一点'群体，余额宝之外敢试水"},
+    {"value": "入门", "phrase": "只买过余额宝或银行理财，知道复利但没实操", "china_note": "庞大理财小白，风险厌恶起点，易被'小白理财课'吸引"},
+    {"value": "不会", "phrase": "只敢存款，怕被割韭菜，觉得投资等于赌博", "china_note": "中国储蓄文化典型边缘，闻'理财'色变，敏感需防护"}
+  ],
+  "refine_note": "原null(template_level)→现4；refine_mode=template_level，沿用skill_level四档原样，补中国语境行为锚点；敏感维度只标技能程度，不列产品/收益/荐股"
+}

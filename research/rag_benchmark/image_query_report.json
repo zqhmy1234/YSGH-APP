@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "note": "以图搜图真实路径（search_by_image）P95 探针 —— 取代历史 2013ms 旧值（那是【文字搜图】的值，且审计要求复测前勿引用任一旧值）",
+    "collection": "yishu_benchmark_imgprobe",
+    "n_images": 20,
+    "images_dir": "D:\\YishuGuanghua\\YSGH-APP\\.cowork-temp\\test_photos",
+    "gate_p95_ms": 3000,
+    "nl_vl_skipped": true,
+    "caveat": "self-query 只证「延迟 + 链路可查」，**不是检索质量基线**（质量需留出标注）；本次 --no-vl，冷口径不含 Qwen3-VL 往返，为下界"
+  },
+  "cold": {
+    "p95_ms": 311.8,
+    "avg_ms": 291.1,
+    "gate_p95": true
+  },
+  "cached": {
+    "p95_ms": 311.0,
+    "avg_ms": 290.2,
+    "gate_p95": true
+  },
+  "self_hit@1": 1.0
+}

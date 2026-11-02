@@ -1,0 +1,28 @@
+{
+  "id": "skill_translation",
+  "refine_mode": "template_level",
+  "values": ["精通", "熟练", "入门", "不会"],
+  "values_detail": [
+    {
+      "value": "精通",
+      "phrase": "能直接做专业翻译或本地化，不靠工具",
+      "china_note": "多为外语/小语种从业者、留学党或外企人；AI翻译普及后仍是高门槛少数"
+    },
+    {
+      "value": "熟练",
+      "phrase": "能读外文、写简单外文，复杂处查词辅助",
+      "china_note": "对应四六级/职场常用，中国城市青年多数落在此档"
+    },
+    {
+      "value": "入门",
+      "phrase": "勉强看懂菜单路牌，深度内容全靠翻译软件",
+      "china_note": "应试学过但荒废，或只接触日韩流行文化，属常见浅层"
+    },
+    {
+      "value": "不会",
+      "phrase": "完全不碰外文，任何外文都依赖翻译软件",
+      "china_note": "非敏感，边缘但普遍，尤见于年长及下沉市场用户"
+    }
+  ],
+  "refine_note": "原N=null→现4=模板原样；template_level模式直接采用skill_level模板四档，并补中国语境行为锚点"
+}

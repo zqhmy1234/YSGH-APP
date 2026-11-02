@@ -1,0 +1,12 @@
+{
+  "id": "skill_project_management",
+  "refine_mode": "template_level",
+  "values": ["精通", "熟练", "入门", "不会"],
+  "values_detail": [
+    {"value": "精通", "phrase": "大项目全周期自己扛，排期、甘特图、钉钉/飞书项目群调度、风险兜底一把抓", "china_note": "中国语境下精通多体现在能搞定跨部门协作、向上汇报与节点交付，而非只懂方法论"},
+    {"value": "熟练", "phrase": "带过小团队或项目，会用Teambition/钉钉跟进，周报里程碑清楚", "china_note": "熟练者惯用本土协作工具与日报周报节奏，是职场主流水平"},
+    {"value": "入门", "phrase": "知道排期表、会用腾讯文档列任务，但没独立主导过项目", "china_note": "入门多来自校园/社招新人，会用免费本土文档协同即算"},
+    {"value": "不会", "phrase": "想到哪做到哪，没有计划也没有跟进，靠临时抱佛脚", "china_note": "不会者在中国职场常被吐槽'没规划'，是需重点辅导的短板档"}
+  ],
+  "refine_note": "原4→现4；template_level模式直接采用skill_level模板值，未改动粒度，仅补齐中国语境行为锚点"
+}

@@ -10,52 +10,65 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.db.models import DeletedLog, OfflineQueue, SyncFieldVersion, SyncState, User
-from app.db.session import SessionLocal
+from app.db.models import DeletedLog, SyncFieldVersion, User
 from app.services.sync import pull_changes, push_ops
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
 
 DEVICE = "test-device-1"
 
 
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"sync-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    # 清理（顺序：先子表）
-    for model in (OfflineQueue, SyncFieldVersion, SyncState, DeletedLog):
-        db.execute(sa_delete(model).where(
-            model.user_id == user.id
-        )) if hasattr(model, "user_id") else None
-    db.execute(
-        sa_delete(SyncFieldVersion).where(
-            SyncFieldVersion.entity_id.in_(
-                [f"00000000-0000-0000-0000-{i:012d}" for i in range(1, 10)]
-            )
-        )
-    )
-    db.execute(sa_delete(OfflineQueue).where(OfflineQueue.user_id == user.id))
-    db.execute(sa_delete(DeletedLog).where(DeletedLog.deleted_by == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
-
-
-def _eid(n: int) -> str:
-    return f"00000000-0000-0000-0000-{n:012d}"
+def _eid() -> str:
+    # 随机 UUID：避免固定 entity_id（0000..0001..0009）跨运行/跨 Agent 并发残留
+    # 撞车（同 test_reconcile 注释）；配合 cleanup_user_data 按 user 全链清，
+    # 无需再按 entity_id 模式兜底删除
+    return str(uuid.uuid4())
 
 
 def _ts(days: int = 0, hours: int = 0) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days, hours=hours)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days, hours=hours)).isoformat()
+
+
+def test_push_missing_field_is_rejected(db_user):
+    """§7.24：`upsert_field` 缺 `field`（该字段在 schema 里**可选**）⇒ 必须进 **rejected**。
+
+    背景：原实现直接 `continue` ⇒ 该 op 不在 applied/conflicts/rejected 任何一处，接口却返回
+    HTTP 200 ⇒ 用户"离线改了备注"得到成功，**云端毫无变化且无任何可观测信号**（最贵的
+    "200 但没生效"）。同文件既有的字段白名单/值类型拒绝都走 `_reject`，本处对齐同一口径。
+    """
+    db, user = db_user
+    r = push_ops(db, user.id, DEVICE, [{
+        "op_id": f"nf-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+        "entity_id": _eid(), "value": "没有 field", "updated_at": _ts(),
+    }])
+    assert r["applied"] == [], r
+    assert len(r["rejected"]) == 1, r
+    assert "field" in r["rejected"][0]["reason"], r
+
+
+def test_push_duplicate_op_id_lands_in_duplicates(db_user):
+    """§7.24：幂等跳过的 op **必须出现在回包里**（`duplicates`）。
+
+    否则客户端拿 200 却无法区分"之前已应用过（网络重试成功）"与"被丢弃/没生效（真故障）"——
+    applied/conflicts/rejected/duplicates 四列才构成完备划分。
+    """
+    db, user = db_user
+    op = {
+        "op_id": f"dup-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+        "entity_id": _eid(), "field": "title", "value": "第一次", "updated_at": _ts(),
+    }
+    r1 = push_ops(db, user.id, DEVICE, [op])
+    assert len(r1["applied"]) == 1, r1
+    assert r1["duplicates"] == [], r1
+
+    r2 = push_ops(db, user.id, DEVICE, [op])  # 重发同一 op_id
+    assert r2["applied"] == [], r2
+    assert len(r2["duplicates"]) == 1, r2
+    assert r2["duplicates"][0]["op_id"] == op["op_id"], r2
 
 
 def test_push_idempotent_by_op_id(db_user):
@@ -64,7 +77,7 @@ def test_push_idempotent_by_op_id(db_user):
     op = {
         "op_id": f"op-{uuid.uuid4().hex[:8]}",
         "op_type": "upsert_field",
-        "entity_id": _eid(1),
+        "entity_id": _eid(),
         "field": "title",
         "value": "第一次",
         "updated_at": _ts(),
@@ -79,7 +92,7 @@ def test_push_idempotent_by_op_id(db_user):
 def test_lww_newer_wins(db_user):
     """字段级 LWW：客户端时间更新 → 覆盖云端"""
     db, user = db_user
-    eid = _eid(2)
+    eid = _eid()
     push_ops(db, user.id, DEVICE, [{
         "op_id": f"a-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
         "entity_id": eid, "field": "tags", "value": ["旧标签"],
@@ -102,7 +115,7 @@ def test_lww_newer_wins(db_user):
 def test_lww_older_loses_with_conflict(db_user):
     """字段级 LWW：客户端时间更旧 → 云端胜 + 冲突提示"""
     db, user = db_user
-    eid = _eid(3)
+    eid = _eid()
     push_ops(db, user.id, DEVICE, [{
         "op_id": f"a-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
         "entity_id": eid, "field": "place", "value": "云端地点",
@@ -122,7 +135,7 @@ def test_lww_older_loses_with_conflict(db_user):
 def test_soft_delete_tombstone(db_user):
     """软删除：delete 操作 → 墓碑同步 + deleted_logs 记录"""
     db, user = db_user
-    eid = _eid(4)
+    eid = _eid()
     push_ops(db, user.id, DEVICE, [{
         "op_id": f"c-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
         "entity_id": eid, "field": "title", "value": "将被删除",
@@ -146,7 +159,7 @@ def test_soft_delete_tombstone(db_user):
 def test_pull_incremental_cursor(db_user):
     """增量拉取：since 游标 → 只返回新变更"""
     db, user = db_user
-    eid = _eid(5)
+    eid = _eid()
     push_ops(db, user.id, DEVICE, [{
         "op_id": f"p1-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
         "entity_id": eid, "field": "title", "value": "v1", "updated_at": _ts(),
@@ -165,7 +178,7 @@ def test_pull_incremental_cursor(db_user):
     assert second["cursor"] > first["cursor"]
 
 
-def test_push_rejects_cross_user_entity(db_user):
+def test_push_rejects_cross_user_entity(db_user, cleanup_user):
     """安全修复：用户 B 不能 upsert/delete 用户 A 的实体（越权拒绝）"""
     db, user_a = db_user
     # 建第二个用户 B
@@ -174,7 +187,7 @@ def test_push_rejects_cross_user_entity(db_user):
     db.commit()
     db.refresh(user_b)
     try:
-        eid = _eid(7)
+        eid = _eid()
         # A 创建实体
         push_ops(db, user_a.id, DEVICE, [{
             "op_id": f"a-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
@@ -201,14 +214,13 @@ def test_push_rejects_cross_user_entity(db_user):
         assert len(r2["rejected"]) == 1
         assert r2["applied"] == []
     finally:
-        # 清理 B 的子表记录（FK 顺序：先子后父）
-        db.execute(sa_delete(OfflineQueue).where(OfflineQueue.user_id == user_b.id))
-        db.execute(sa_delete(DeletedLog).where(DeletedLog.deleted_by == user_b.id))
+        # 清理 B 用户（R8#2：统一 cleanup_user_data，FK 顺序无忧）
+        cleanup_user(db, user_b.id)
         db.delete(user_b)
         db.commit()
 
 
-def test_op_id_idempotent_scoped_per_user(db_user):
+def test_op_id_idempotent_scoped_per_user(db_user, cleanup_user):
     """安全修复：op_id 幂等按用户隔离（用户 B 用同 op_id 不被他 A 跳过）"""
     db, user_a = db_user
     user_b = User(phone=f"sync-test-c-{uuid.uuid4().hex[:8]}", status=1)
@@ -219,20 +231,92 @@ def test_op_id_idempotent_scoped_per_user(db_user):
         shared_op_id = f"shared-{uuid.uuid4().hex[:8]}"
         r1 = push_ops(db, user_a.id, DEVICE, [{
             "op_id": shared_op_id, "op_type": "upsert_field",
-            "entity_id": _eid(8), "field": "title", "value": "A", "updated_at": _ts(),
+            "entity_id": _eid(), "field": "title", "value": "A", "updated_at": _ts(),
         }])
         assert len(r1["applied"]) == 1
         # B 用相同 op_id（全局唯一性由客户端保证，但服务端不能跨用户拦截）
         r2 = push_ops(db, user_b.id, "test-device-b", [{
             "op_id": shared_op_id, "op_type": "upsert_field",
-            "entity_id": _eid(9), "field": "title", "value": "B", "updated_at": _ts(),
+            "entity_id": _eid(), "field": "title", "value": "B", "updated_at": _ts(),
         }])
         assert len(r2["applied"]) == 1, "跨用户 op_id 不应幂等跳过"
     finally:
-        db.execute(sa_delete(OfflineQueue).where(OfflineQueue.user_id == user_b.id))
-        db.execute(sa_delete(DeletedLog).where(DeletedLog.deleted_by == user_b.id))
+        # 清理 user_b（R8#2：统一 cleanup_user_data——含 sync_field_versions/offline_queue/
+        # deleted_logs 全链删，FK schema 下删 user 无忧）
+        cleanup_user(db, user_b.id)
         db.delete(user_b)
         db.commit()
+
+
+def test_push_same_key_in_batch_no_500(db_user):
+    """R2#6：批内同键重复 op（同 entity+field 多条）→ 不再 IntegrityError
+
+    同批两条 op 写同一 (entity_type, entity_id, field)：首条新建行立即登记回映射，
+    第二条命中刚建的行按 LWW 合并——终值 = 较新 op，整批提交成功。
+    """
+    db, user = db_user
+    eid = _eid()
+    r = push_ops(db, user.id, DEVICE, [
+        {"op_id": f"k1-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+         "entity_id": eid, "field": "title", "value": "先", "updated_at": _ts()},
+        {"op_id": f"k2-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+         "entity_id": eid, "field": "title", "value": "后", "updated_at": _ts(hours=1)},
+    ])
+    assert len(r["applied"]) == 2, r
+    row = db.execute(
+        select(SyncFieldVersion).where(
+            SyncFieldVersion.entity_id == eid, SyncFieldVersion.field == "title"
+        )
+    ).scalar_one()
+    assert row.value == "后", "LWW：较新的 op 胜出"
+
+
+def test_push_delete_delete_in_batch(db_user):
+    """R2#6：批内同实体两条 delete（实体已存在）→ 墓碑行登记回映射，不再 IntegrityError"""
+    db, user = db_user
+    eid = _eid()
+    r = push_ops(db, user.id, DEVICE, [
+        {"op_id": f"u1-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+         "entity_id": eid, "field": "title", "value": "先有实体", "updated_at": _ts()},
+        {"op_id": f"d1-{uuid.uuid4().hex[:8]}", "op_type": "delete",
+         "entity_id": eid, "updated_at": _ts(hours=1)},
+        {"op_id": f"d2-{uuid.uuid4().hex[:8]}", "op_type": "delete",
+         "entity_id": eid, "updated_at": _ts(hours=2)},
+    ])
+    assert len(r["applied"]) == 3, r
+    rows = db.execute(
+        select(SyncFieldVersion).where(
+            SyncFieldVersion.entity_id == eid, SyncFieldVersion.field == "*"
+        )
+    ).scalars().all()
+    assert len(rows) == 1, "同实体墓碑只应有一行"
+
+
+def test_push_ops_safe_per_op_fallback(db_user, monkeypatch):
+    """R2#6：整批两次重试仍 IntegrityError → 逐条隔离，冲突单条 rejected 不拖垮整批"""
+    import app.services.sync as sync_mod
+    from sqlalchemy.exc import IntegrityError
+
+    db, user = db_user
+    bad_eid = _eid()
+    good_eid = _eid()
+    bad_op = {"op_id": "conflict-op", "op_type": "upsert_field",
+              "entity_id": bad_eid, "field": "title", "value": "冲突", "updated_at": _ts()}
+    good_op = {"op_id": f"good-{uuid.uuid4().hex[:8]}", "op_type": "upsert_field",
+               "entity_id": good_eid, "field": "title", "value": "正常", "updated_at": _ts()}
+
+    real = sync_mod.push_ops
+
+    def fake_push(dbs, uid, did, ops):
+        if ops and ops[0].get("op_id") == "conflict-op":
+            raise IntegrityError("mock conflict", {}, Exception("dup"))
+        return real(dbs, uid, did, ops)
+
+    monkeypatch.setattr(sync_mod, "push_ops", fake_push)
+    result = sync_mod._push_ops_per_op(db, user.id, DEVICE, [bad_op, good_op])
+    assert result["rejected"] == [{"op_id": "conflict-op", "entity_id": bad_eid,
+                                   "reason": "并发冲突（op 幂等键/字段行无法落库）"}]
+    assert [a["op_id"] for a in result["applied"]] == [good_op["op_id"]], "正常 op 照常应用"
 
 
 def test_sync_api_smoke(db_user):
@@ -249,7 +333,7 @@ def test_sync_api_smoke(db_user):
 
     app.dependency_overrides[deps.get_current_user] = fake_user
     try:
-        eid = _eid(6)
+        eid = _eid()
         r = client.post("/api/v1/sync/push", json={
             "device_id": DEVICE,
             "ops": [{

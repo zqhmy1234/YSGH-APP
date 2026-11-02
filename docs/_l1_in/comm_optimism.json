@@ -1,0 +1,19 @@
+{
+  "id": "comm_optimism",
+  "label": "乐观倾向",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "乐观",
+    "中性",
+    "悲观"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_optimism",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

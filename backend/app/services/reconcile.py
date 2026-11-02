@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,15 +17,26 @@ from app.services.sync_common import TOMBSTONE_FIELD, lww_wins, parse_ts
 
 
 def _cloud_entities(db: Session, user_id: str) -> dict[str, dict]:
-    """云端权威状态：entity → {updated_at, deleted, fields: {...}}（按字段 max updated_at）"""
-    rows = db.scalars(
-        select(SyncFieldVersion).where(SyncFieldVersion.user_id == user_id)
+    """云端权威状态：entity → {updated_at, deleted, fields: {...}}（按字段 max updated_at）
+
+    S6-5 性能修复：投影列只取所需（entity_id/field/value/updated_at/deleted/user_id），
+    不再整行 ORM 实例化。
+    """
+    rows = db.execute(
+        select(
+            SyncFieldVersion.entity_id,
+            SyncFieldVersion.field,
+            SyncFieldVersion.value,
+            SyncFieldVersion.updated_at,
+            SyncFieldVersion.deleted,
+            SyncFieldVersion.user_id,
+        ).where(SyncFieldVersion.user_id == user_id)
     ).all()
     entities: dict[str, dict] = {}
     for row in rows:
         ent = entities.setdefault(
             row.entity_id,
-            {"updated_at": datetime.min.replace(tzinfo=timezone.utc), "deleted": False, "fields": {}},
+            {"updated_at": datetime.min.replace(tzinfo=UTC), "deleted": False, "fields": {}},
         )
         ts = row.updated_at
         if lww_wins(ent["updated_at"], ts):
@@ -47,11 +58,14 @@ def reconcile_snapshot(
     missing_on_client: list[dict] = []
     divergent: list[dict] = []
 
+    # S6-5 O(N×M)→O(N)：client entity_id 先建 set，missing_on_client 判定 O(1)
+    client_ids = {item.get("entity_id") for item in client_items}
+
     for item in client_items:
         entity_id = item.get("entity_id")
         if not entity_id:
             continue
-        client_ts = parse_ts(item.get("updated_at")) or datetime.min.replace(tzinfo=timezone.utc)
+        client_ts = parse_ts(item.get("updated_at")) or datetime.min.replace(tzinfo=UTC)
         client_deleted = bool(item.get("deleted"))
         cloud_ent = cloud.get(entity_id)
         if cloud_ent is None:
@@ -69,7 +83,7 @@ def reconcile_snapshot(
             )
 
     for entity_id, ent in cloud.items():
-        if not any(item.get("entity_id") == entity_id for item in client_items):
+        if entity_id not in client_ids:
             missing_on_client.append(
                 {"entity_id": entity_id, "updated_at": ent["updated_at"].isoformat(), "deleted": ent["deleted"]}
             )

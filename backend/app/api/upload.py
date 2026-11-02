@@ -8,91 +8,257 @@
 """
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
-from app.core.errors import ApiError
-from app.db.models import User
+from app.api import make_router
+from app.api.deps import get_current_user, uuid4_str
+from app.core.config import settings
+from app.core.errors import (
+    ERR_UPLOAD_001,
+    ERR_UPLOAD_002,
+    ERR_UPLOAD_003,
+    ERR_UPLOAD_004,
+    ERR_UPLOAD_005,
+    ERR_UPLOAD_006,
+    ERR_UPLOAD_007,
+    ERR_UPLOAD_008,
+    ERR_UPLOAD_009,
+    ERR_UPLOAD_010,
+    ApiError,
+)
+from app.db.models import Content, User
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
+from app.schemas.upload import (
+    UploadChunkOut,
+    UploadCompleteOut,
+    UploadInitOut,
+    UploadStatusOut,
+)
 from app.services import upload as upload_svc
-from app.services.external.storage import get_storage_backend
+from app.services.errors import ConflictError, NotFoundError, TooLargeError
+from app.services.external.storage import cos_sts_configured, get_storage_backend
 
 logger = logging.getLogger("yishu.upload")
 
-router = APIRouter(prefix="/api/v1/upload", tags=["upload"])
+router = make_router(prefix="/api/v1/upload", tags=["upload"])
+
+# R4#12（表单字段约束补齐）：客户端自报字段的可信度与形状收紧——
+#   - client_upload_id / file_name：安全字符白名单（禁路径分隔符/控制字符，防前缀逃逸与路径穿越）
+#   - file_size ≥1 / chunk_size ≥1：正数（大数/零值在服务层仍走 UPLOAD_001 语义码）
+#   - chunk_index ≥0：分片下标非负
+#   - chunk_hash：SHA256 64 hex（非 64 hex 视为非法输入 → 422）
+#   - upload_mode 保留 UPLOAD_007 业务码（手工校验，不改 422 语义）
+#   - upload_id 保留 uuid4_str → 404 语义（畸形 ID 视同不存在，不改为 422）
+_UPLOAD_ID_SAFE = r"^[A-Za-z0-9_-]{1,255}$"
+_FILE_NAME_SAFE = r"^[^/\\\x00-\x1f]{1,255}$"
+_SHA256_PATTERN = r"^[0-9a-fA-F]{64}$"
 
 
-@router.post("/init", response_model=ApiResponse[dict])
+def _exc_msg(exc: Exception) -> str:
+    """异常消息统一取法：typed ServiceError 用 .message（规避 KeyError 引号 str），其余回退 str()"""
+    return getattr(exc, "message", None) or str(exc)
+
+
+@router.post("/init", response_model=ApiResponse[UploadInitOut])
 def init_upload(
-    client_upload_id: str = Form(...),
-    file_name: str = Form(...),
-    file_size: int = Form(...),
-    chunk_size: int = Form(upload_svc.DEFAULT_CHUNK_SIZE),
+    client_upload_id: str = Form(..., min_length=1, max_length=255, pattern=_UPLOAD_ID_SAFE),
+    file_name: str = Form(..., min_length=1, max_length=255, pattern=_FILE_NAME_SAFE),
+    file_size: int = Form(..., ge=1),
+    chunk_size: int = Form(upload_svc.DEFAULT_CHUNK_SIZE, ge=1),
     storage: str | None = Form(None),
+    upload_mode: str = Form("original"),
+    on_wifi: bool | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """建上传任务（client_upload_id 幂等）
+
+    流量约束（B4 §6，Wave3 AgentG）：
+      upload_mode: original（默认，完整原件）/ thumbnail_meta（蜂窝：只传缩略图+元数据）
+      on_wifi: 客户端网络标记（可选，记录到内容 extra 供流量策略可观测）
+    两参数仅契约/校验；最终语义以 complete 时 meta 为准（见 complete docstring）。
+
+    R4#12：client_upload_id/file_name 安全字符白名单；file_size/chunk_size 正数下限；
+    大数上限（file_size>MAX）与分片下限（chunk_size<MIN）仍由下方 UPLOAD_001 业务码承接。
+    """
+    if upload_mode not in upload_svc.VALID_UPLOAD_MODES:
+        raise ApiError(
+            ERR_UPLOAD_007,
+            f"upload_mode 非法（可选 {'/'.join(upload_svc.VALID_UPLOAD_MODES)}）",
+            http=422,
+        )
+    # TD-P3 M1（审查中危）：大数构造 DoS——file_size 上限 + chunk_size 下限
+    # （服务层 init_upload 同款校验双保险；此处 API 边界先行拒绝，语义清晰）
+    if file_size > upload_svc.MAX_UPLOAD_FILE_SIZE:
+        raise ApiError(
+            ERR_UPLOAD_001,
+            f"文件超过大小上限（{upload_svc.MAX_UPLOAD_FILE_SIZE // (1024 * 1024)}MB）",
+            http=422,
+        )
+    if chunk_size < upload_svc.MIN_CHUNK_SIZE:
+        raise ApiError(
+            ERR_UPLOAD_001,
+            f"分片大小过小（最小 {upload_svc.MIN_CHUNK_SIZE} 字节）",
+            http=422,
+        )
     try:
         task = upload_svc.init_upload(
             db, user.id, client_upload_id, file_name, file_size, chunk_size, storage
         )
     except ValueError as exc:
-        raise ApiError("UPLOAD_001", str(exc), http=422) from exc
+        msg = _exc_msg(exc)
+        raise ApiError(ERR_UPLOAD_001, msg, http=422) from exc
     return ApiResponse(data={
         "upload_id": task.id,
         "chunk_size": task.chunk_size,
         "chunk_count": task.chunk_count,
         "file_key": task.file_key,
         "status": task.status,
+        "upload_mode": upload_mode,
+        "on_wifi": on_wifi,
     })
 
 
-@router.put("/chunk", response_model=ApiResponse[dict])
+@router.put("/chunk", response_model=ApiResponse[UploadChunkOut])
 def upload_chunk(
     upload_id: str = Form(...),
-    chunk_index: int = Form(...),
+    chunk_index: int = Form(..., ge=0),
     file: UploadFile = File(...),
-    chunk_hash: str | None = Form(None),
+    chunk_hash: str | None = Form(None, pattern=_SHA256_PATTERN),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+):
+    return _upload_chunk_impl(upload_id, chunk_index, file, chunk_hash, db, user)
+
+
+@router.post("/chunk", response_model=ApiResponse[UploadChunkOut])
+def upload_chunk_post(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(..., ge=0),
+    file: UploadFile = File(...),
+    chunk_hash: str | None = Form(None, pattern=_SHA256_PATTERN),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """POST 别名（S-ST-1 · 2026-08-25）：uni-app x uni.uploadFile 不支持 PUT method，
+    客户端分片上传只能 POST multipart；语义与 PUT 完全一致（幂等+校验）。"""
+    return _upload_chunk_impl(upload_id, chunk_index, file, chunk_hash, db, user)
+
+
+def _upload_chunk_impl(
+    upload_id: str,
+    chunk_index: int,
+    file: UploadFile,
+    chunk_hash: str | None,
+    db: Session,
+    user: User,
 ):
     data = file.file.read()
     try:
+        upload_id = uuid4_str(upload_id)
         result = upload_svc.upload_chunk(db, upload_id, chunk_index, data, chunk_hash, user_id=user.id)
-    except KeyError as exc:
-        raise ApiError("UPLOAD_002", str(exc), http=404) from exc
+    except NotFoundError as exc:
+        raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_UPLOAD_009, exc.message, http=409) from exc
     except ValueError as exc:
-        raise ApiError("UPLOAD_003", str(exc), http=422) from exc
+        raise ApiError(ERR_UPLOAD_003, _exc_msg(exc), http=422) from exc
+    except Exception as exc:  # noqa: BLE001 —— 兜底留痕后原样抛出（错误语义不变）
+        # 2026-10-15（真机反馈「6 张照片上传失败，点击重试没反应」· 台账 §7.32）：
+        # **存储/未知异常必须留痕**。原实现只映射业务异常，`StorageError`（fs/cos 后端写失败）
+        # 一路冒到全局 handler 变成**无日志的 500** ⇒ 客户端把它当"网络失败"反复退避、
+        # 最终计 failed，而**服务端一行记录都没有** —— 这正是"失败查不出原因"的元问题 ✗。
+        logger.warning(
+            "上传分片失败(存储/未知) upload_id=%s chunk=%s bytes=%d: %s: %s",
+            upload_id,
+            chunk_index,
+            len(data),
+            type(exc).__name__,
+            _exc_msg(exc),
+        )
+        raise
+    # ⚠️ 2026-10-15：本行曾在补日志时被误删（ruff F841 当场抓到 `result` 未被使用）
+    # —— 少了它端点会返回 None。教训：在 except 链尾插分支时，**必须把原 return 补回**。
     return ApiResponse(data=result)
 
 
-@router.post("/complete", response_model=ApiResponse[dict])
+@router.post("/complete", response_model=ApiResponse[UploadCompleteOut])
 def complete_upload(
     upload_id: str = Form(...),
+    meta: str = Form("{}", max_length=16 * 1024),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """合并分片 → 落最终对象 → 建/更新 contents 记录 + 入队管线（S-ST-1 集成）
+
+    meta: JSON 字符串 {taken_at, gps_lat, gps_lng, source, extra,
+                        upload_mode, on_wifi, content_id?}，语义与 /contents/upload 对齐。
+
+    A8（2026-09-09）：voice 分支（meta.content_type=voice）额外识别
+    {duration_ms, text, emotion, remark}——remark 为用户备注（str，≤2000 字符，
+    与 POST /contents 的 ContentCreate.remark 对齐），落 contents.remark。
+
+    Wave3 AgentG（流量约束 B4 §6）：
+      - upload_mode="thumbnail_meta"（蜂窝）：上传物即缩略图 → 只落 thumbnail_key
+        占位内容（original_pending），不进管线；WiFi 后再用本端点补传原件。
+      - upload_mode="original" + content_id=<占位 id>：手动立即上传原图——
+        复用 complete 流程，把原件挂到既有占位内容并触发完整管线（与 photo 同链路）。
+    """
     try:
+        upload_id = uuid4_str(upload_id)
         result = upload_svc.complete_upload(db, upload_id, user_id=user.id)
-    except KeyError as exc:
-        raise ApiError("UPLOAD_002", str(exc), http=404) from exc
+        # 集成：对象已在存储 → 建 contents 记录（cos_key）+ 入队 process_content
+        content_id = upload_svc.register_photo_content(db, user.id, result["file_key"], meta)
+        result["content_id"] = content_id
+        record = db.get(Content, content_id)
+        if record is not None:
+            # EXIF/注册层最终确认的拍摄事实；客户端据此覆盖本地临时值。
+            result["taken_at"] = record.taken_at
+            result["gps_lat"] = record.gps_lat
+            result["gps_lng"] = record.gps_lng
+    except NotFoundError as exc:
+        # 任务不存在/越权 → 404；content_id 不存在或非本人 → 404（不再误报 422 UPLOAD_004）
+        raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
+    except ConflictError as exc:
+        # 分片未齐 → 409（此前误报 422 UPLOAD_004）
+        raise ApiError(ERR_UPLOAD_009, exc.message, http=409) from exc
+    except TooLargeError as exc:
+        # >200MB 走客户端直传 → 413（此前误报 422）
+        raise ApiError(ERR_UPLOAD_010, exc.message, http=413) from exc
     except ValueError as exc:
-        raise ApiError("UPLOAD_004", str(exc), http=422) from exc
+        # 建内容参数校验（ValidationError 及防御性兜底原始 ValueError）→ 422 UPLOAD_004
+        raise ApiError(ERR_UPLOAD_004, _exc_msg(exc), http=422) from exc
+    except Exception as exc:  # noqa: BLE001 —— 兜底留痕后原样抛出（错误语义不变）
+        # 2026-10-15（台账 §7.32）：合并/落对象/建内容任一环的存储异常都要留痕，
+        # 否则又是"客户端反复重试、服务端零日志"（同 chunk 分支，见其上注释）。
+        logger.warning(
+            "上传完成失败(存储/未知) upload_id=%s user=%s: %s: %s",
+            upload_id,
+            user.id,
+            type(exc).__name__,
+            _exc_msg(exc),
+        )
+        raise
+    # ⚠️ 同 chunk 分支：补日志时曾误删本 return（端点会返回 None）——必须成对检查。
     return ApiResponse(data=result)
 
 
-@router.get("/status", response_model=ApiResponse[dict])
+@router.get("/status", response_model=ApiResponse[UploadStatusOut])
 def upload_status(
     upload_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     try:
+        upload_id = uuid4_str(upload_id)
         return ApiResponse(data=upload_svc.get_status(db, upload_id, user_id=user.id))
-    except KeyError as exc:
-        raise ApiError("UPLOAD_002", str(exc), http=404) from exc
+    except NotFoundError as exc:
+        raise ApiError(ERR_UPLOAD_002, exc.message, http=404) from exc
+    except ValueError as exc:
+        # TD-P3 M1：任务分片数异常（遗留恶意行）→ 422 而非 500/OOM
+        raise ApiError(ERR_UPLOAD_003, _exc_msg(exc), http=422) from exc
 
 
 @router.get("/sts", response_model=ApiResponse[dict])
@@ -100,14 +266,85 @@ def upload_sts(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """客户端直传临时凭证（仅 cos 后端；STS 角色未就绪时给出降级提示）"""
+    """客户端直传临时凭证（仅 cos 后端；STS 角色未就绪时给出降级提示）
+
+    P0-2（审查 H2/S4-四-2）：
+      - 生产环境 COS/STS 未配置 → 501（不返回假凭证；mock 凭证仅限非生产，
+        get_settings 已强制生产 mock_external_ai=False 双保险）
+      - 凭证按当前用户前缀签发（photos/voice/thumbnails/{user_id}/*），
+        不再整桶通配
+    """
+    # 生产门控：COS/STS 未真配 → 501 显式告知走后端中转（防误配出假凭证）
+    if settings.app_env == "production" and not cos_sts_configured():
+        raise ApiError(
+            ERR_UPLOAD_008,
+            "STS 直传未接入（生产未配置 COS/STS），请走后端中转上传",
+            http=501,
+        )
     backend = get_storage_backend()
     try:
-        creds = backend.get_sts_credentials()
+        creds = backend.get_sts_credentials(user_id=str(user.id))
+    except ValueError as exc:
+        raise ApiError(ERR_UPLOAD_008, str(exc), http=501) from exc
     except NotImplementedError as exc:
-        raise ApiError("UPLOAD_005", str(exc), http=501) from exc
+        raise ApiError(ERR_UPLOAD_005, str(exc), http=501) from exc
     except Exception as exc:  # noqa: BLE001 —— STS 失败降级为后端中转
         # 审查修复(P1-03)：错误消息不泄漏内部异常类型（信息泄露面收敛）
         logger.warning("STS 获取失败: %s", exc)
-        raise ApiError("UPLOAD_006", "STS 暂不可用，请走后端中转上传", http=503) from exc
+        raise ApiError(ERR_UPLOAD_006, "STS 暂不可用，请走后端中转上传", http=503) from exc
     return ApiResponse(data=creds)
+
+
+@router.post("/direct-url", response_model=ApiResponse[dict])
+def direct_upload_url(
+    namespace: str = "photos",
+    ext: str = "jpg",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**客户端直传**：签发一次性预签名 PUT URL（2026-10-31）。
+
+    ## 为什么必须有它
+    生产服务器公网带宽 1 Mbps（≈125 KB/s）——一张 3MB 照片经后端中转要 **24 秒**，
+    客户端早就超时了，于是队列里全是"上传失败/待重试"。
+    直传把字节流从"客户端→业务服务器"改成"客户端→对象存储"，
+    业务服务器只签发一张票据 + 事后校验，出口带宽不再是大文件通道。
+
+    ## 为什么用预签名 URL 而不是 `/upload/sts` 的临时密钥
+    STS 需要客户端自己算 COS 签名（HMAC-SHA1 + 规范化请求串 + 字典序拼接），
+    在 UTS 里实现成本高、易错；预签名把签名留在服务端，客户端只发一次原始 PUT。
+
+    ## 契约
+    - 命名空间只允许 `photos` / `voice` / `thumbnails`（与内容表 cos_key 前缀一致）
+    - key 由服务端生成：`{namespace}/{user_id}/{uuid}.{ext}`，**客户端不能指定 key**
+      （防跨用户覆盖）
+    - 返回 `url` 为空时表示该后端不支持直传（本地 fs/fake），客户端应回退后端中转
+    """
+    if namespace not in ("photos", "voice", "thumbnails"):
+        raise ApiError(ERR_UPLOAD_001, "命名空间非法（photos/voice/thumbnails）", http=422)
+    safe_ext = ext.lower().lstrip(".")
+    if safe_ext not in ("jpg", "jpeg", "png", "webp", "m4a", "wav", "aac", "mp3"):
+        raise ApiError(ERR_UPLOAD_001, "扩展名不支持", http=422)
+
+    # 注：`uuid4_str` 是入参强校验器（需要传 value），不是生成器 —— 这里要新 uid
+    from uuid import uuid4
+
+    key = f"{namespace}/{user.id}/{uuid4()}.{safe_ext}"
+    backend = get_storage_backend()
+    url = backend.get_upload_url(key)
+    if url is None:
+        # 不报错：本地开发是 fs 后端，本来就不支持直传，让客户端走中转即可
+        return ApiResponse(data={
+            "key": key,
+            "url": "",
+            "method": "PUT",
+            "expires_in": 0,
+            "fallback": "relay",
+        })
+    return ApiResponse(data={
+        "key": key,
+        "url": url,
+        "method": "PUT",
+        "expires_in": int(getattr(settings, "media_original_ttl", 900)),
+        "fallback": "",
+    })

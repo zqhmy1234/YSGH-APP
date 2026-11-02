@@ -1,0 +1,336 @@
+<template>
+	<!-- ═══════════ 分享弹层（F7a 画布真值还原 · 卡21 · 2026-09-03 视觉重设计版） ═══════════
+	     重设计令牌（对齐 4:404 详情页定稿 / CapsuleSheet 同款）：弹层暖底 #FAF9F5、
+	     预览白卡+双投影 0/7.7/30.8 a0.06 + 0/1.9/5.8 a0.04、锈红 #B05A3A 星芒/品牌字/主按钮、
+	     三社交图标圆改白底+淡投影 0/3.8/15.4 a0.05。几何未变（r30.8 卡、r46.2 图标圆同旧画布）。
+	     浮层铁律 1 同族：弹层 = 全局浮层不是页面，唤起不发生页面跳转
+	     （RecordSheet/EchoSheet 同款 fixed + z-index 1000 范式，盖 TabBar 999）。
+	     画布 63:10：弹层顶 y=417 → min-height 821rpx；弹层 gap=16px→30.8rpx margin；
+	     遮罩 63:9 = rgba(59,46,38,0.4)；画布「底页(弱化)」由宿主 detail 真实页面呈现，不属于本组件 -->
+	<view class="sheet-root tk-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">分享记忆</text>
+				<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 重设计：淡底 → 白卡+双投影（4:404 详情页定稿令牌，pt→rpx：y4/blur16/a0.06 + y1/blur3/a0.04） -->
+			<view class="preview-card">
+				<view class="preview-grid">
+					<view class="preview-photo">
+						<image v-if="heroSrc != ''" class="preview-photo-img" :src="heroSrc" mode="aspectFill" />
+					</view>
+					<view class="preview-photo2"></view>
+				</view>
+				<text class="preview-title">{{ titleText }}</text>
+				<view class="brand-row">
+					<!-- 重设计：spark-gold → detail-sparkle（锈红星芒，CapsuleSheet 同款） -->
+					<image class="brand-star" src="/static/icons/detail-sparkle.svg" />
+					<text class="brand-text">忆述光华 · 把日子过成值得回味的记忆</text>
+				</view>
+			</view>
+			<!-- 重设计：#C4913C → 锈红 #B05A3A（CapsuleSheet 主按钮同款） -->
+			<!-- 2026-10-30（P2 E-4）：**撤掉「卡片图生成即将上线」这类假可用**。
+			     「保存到相册」需要先把上面这块预览排版绘制成图片，而项目内没有 canvas 绘制封装
+			     （`share_card.uts` 未建，`<canvas>`/createCanvasContext 全项目零先例）⇒ 现在
+			     生成不出图、也就没有图可保存。改：灰显 + 尾标「待接入」，点击给**具体原因**。 -->
+			<view class="main-btn main-btn-disabled" @tap="onSave">
+				<text class="main-btn-text main-btn-text-disabled">保存到相册 · 待接入</text>
+			</view>
+			<!-- 63:25 面板项行：三社交项画布即灰显态（#B3A696 文案 / #8A7A6A 图标），灰显诚实化 -->
+			<view class="items-row">
+				<!-- 2026-10-30（P2 E-4）：微信好友 / 朋友圈 = 需开放平台 AppID + manifest 微信 SDK 模块
+				     + 审核，当前都未配置 ⇒ 灰显 + 图标降透明度 + 行尾「待接入」，点开只说明原因。 -->
+				<view class="share-item item-disabled" @tap="onSocial('wechat')">
+					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-wechat.svg" /></view>
+					<text class="item-label">微信好友</text>
+					<text class="item-tag">待接入</text>
+				</view>
+				<view class="share-item item-mid item-disabled" @tap="onSocial('moments')">
+					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-moments.svg" /></view>
+					<text class="item-label">朋友圈</text>
+					<text class="item-tag">待接入</text>
+				</view>
+				<!-- 2026-10-30（P2 E-4）：第三个出口改为**真能做成**的「复制文字」。
+				     原画布标签是「复制链接」，但本项目没有任何分享链接来源可复制（后端无分享/短链
+				     端点、无 App scheme、无公开网页版）——硬拼一个 URL 出来就是假链接。
+				     真正可用的是把这段记忆的文字放进剪贴板（uni.setClipboardData，storage 导出
+				     成功弹窗已有同一用法先例）；日后接入分享短链端点再恢复「复制链接」文案。 -->
+				<view class="share-item item-mid" @tap="onCopyText">
+					<view class="item-icon"><image class="item-icon-img" src="/static/icons/share-link.svg" /></view>
+					<text class="item-label item-label-active">复制文字</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// Props：只传基本类型（对象 prop 在 UTS 组件边界有类型陷阱，EchoSheet 同款规避）
+	const props = defineProps({
+		title: {
+			type: String,
+			default: ''
+		},
+		hero: {
+			type: String,
+			default: ''
+		}
+	})
+
+	const emit = defineEmits(['close'])
+
+	// 模板取值走 computed（EchoSheet 先例：uvue 模板不直接绑跨模块 ref）
+	const titleText = computed((): string => props.title)
+	const heroSrc = computed((): string => props.hero)
+
+	function onClose(): void {
+		emit('close')
+	}
+
+	function onSave(): void {
+		// 卡21/W1-6 复核：canvas 绘制（<canvas>/createCanvasContext）与 uni.saveImageToPhotosAlbum
+		// 全项目均零先例 → 无法生成/保存卡片图，白名单 share_card.uts 的创建条件（canvas 需独立封装）不成立，故不新建。
+		// 2026-10-30（P2 E-4）：原实现弹「卡片图生成即将上线」—— 这是**假可用**（听起来像排队中，
+		// 实际上没有任何排期/能力）。现改成一句话说清"缺什么能力、因此做不到、替代办法是什么"。
+		uni.showModal({
+			title: '保存到相册',
+			content: '分享卡需要先按上面的预览排版绘制成图片，客户端目前没有图片绘制能力（canvas 未接入），生成不出图片，所以这个按钮还不能用。想留个纪念可以直接截屏。',
+			showCancel: false,
+			confirmText: '知道了'
+		})
+	}
+
+	/** 2026-10-30（P2 E-4）：微信两个出口的**具体**不可用原因（不再只说「待接入」四个字）。
+	 *  依据：`client/manifest.json` 无微信分享模块、仓库无 `uni.share` 调用、无开放平台 AppID。 */
+	function onSocial(kind: string): void {
+		let title = '分享给微信好友'
+		if (kind == 'moments') {
+			title = '分享到朋友圈'
+		}
+		uni.showModal({
+			title: title,
+			content: '还没接入微信开放平台：需要 AppID、微信 SDK 模块和开放平台审核，这些资质目前都没有，拉不起微信的分享面板。可以先用「复制文字」把这段记忆粘到微信里发。',
+			showCancel: false,
+			confirmText: '知道了'
+		})
+	}
+
+	/** 2026-10-30（P2 E-4）：真实现——把记忆文字写入剪贴板。
+	 *  空文字不假装成功（如实提示没有可复制内容）；失败也让用户知道（不吞错误）。 */
+	function onCopyText(): void {
+		const t = props.title.trim()
+		if (t == '') {
+			uni.showToast({ title: '这段记忆没有可复制的文字', icon: 'none' })
+			return
+		}
+		uni.setClipboardData({
+			data: t,
+			success: () => {
+				uni.showToast({ title: '已复制这段记忆的文字', icon: 'none' })
+			},
+			fail: () => {
+				uni.showToast({ title: '复制失败，请重试', icon: 'none' })
+			}
+		})
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet 同款铁律） */
+		z-index: 1000;
+	}
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		/* 画布 63:9 真值：暖黑 a=0.40 */
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
+		z-index: 10;
+	}
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		/* 画布 63:10 弹层顶 y=417 → 高 427 逻辑 = 821rpx；内容驱动 + 下限兜底 */
+		min-height: var(--d-raw-r821, 821rpx);
+		/* 重设计：白 → 暖底 #FAF9F5（CapsuleSheet 同款） */
+		background-color: var(--c-paper-50, #FAF9F5);
+		/* 承载形状圆角（§W 峰宝拍板）：顶圆角对齐 RecordSheet 弹层 77rpx 家族语言，底缘贴屏 */
+		border-top-left-radius: 77rpx;
+		border-top-right-radius: 77rpx;
+		/* 画布无圆角声明（§W 拍板覆盖画布，快照已回写），底缘贴屏 */
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: 48.1rpx;
+		z-index: 20;
+		flex-direction: column;
+	}
+	.head-row {
+		width: 100%;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: flex-start;
+	}
+	.head-title {
+		/* 画布 63:12：y 相对头行 +4px */
+		margin-top: var(--d-lattice-p4, 7.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+.head-close {
+	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06），补偿原 padding 10rpx */
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
+	justify-content: center;
+	align-items: center;
+	margin-right: -10rpx;
+}
+.head-close-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
+}
+	.preview-card {
+		width: 100%;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		padding-top: var(--d-lattice-p14, 26.9rpx);
+		padding-bottom: var(--d-lattice-p14, 26.9rpx);
+	}
+	.preview-grid {
+		width: 100%;
+		height: var(--d-lattice-p110, 211.5rpx);
+		flex-direction: row;
+	}
+	.preview-photo {
+		flex: 1;
+		background-color: var(--c-paper-500, #E9DFCB);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
+		overflow: hidden;
+	}
+	.preview-photo-img {
+		width: 100%;
+		height: 100%;
+	}
+	.preview-photo2 {
+		flex: 1;
+		margin-left: var(--d-lattice-p4, 7.7rpx);
+		background-color: var(--c-paper-700, #E1D3B8);
+		border-radius: var(--d-lattice-p8, 15.4rpx);
+		overflow: hidden;
+	}
+	.preview-title {
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.brand-row {
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		flex-direction: row;
+		align-items: center;
+	}
+	.brand-star {
+		width: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p14, 26.9rpx);
+		margin-right: var(--d-lattice-p6, 11.5rpx);
+	}
+	.brand-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p10, 19.2rpx);
+		/* 重设计：金棕 → 锈红 */
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.main-btn {
+		width: 100%;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	/* 2026-10-30（P2 E-4）：「待接入」的灰显主按钮 —— 几何（h48/r24/撑满）与可用态完全一致，
+	   只换填充与字色（米色纸底 + 次级字），不做半透明，避免看起来像禁用中的"加载态"。 */
+	.main-btn-disabled {
+		background-color: var(--c-paper-400, #EDE5D5);
+	}
+	.main-btn-text-disabled {
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.items-row {
+		width: 100%;
+		margin-top: var(--d-lattice-p16, 30.8rpx);
+		flex-direction: row;
+	}
+	.share-item {
+		width: var(--d-lattice-p90, 173.1rpx);
+		flex-direction: column;
+		align-items: center;
+	}
+	.item-mid {
+		/* 画布项间距 40px → margin（gap 引擎丢弃） */
+		margin-left: var(--d-lattice-p40, 76.9rpx);
+	}
+	.item-icon {
+		width: var(--d-lattice-p48, 92.3rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		/* 重设计：淡底 → 白底+淡投影（4:404 令牌，pt→rpx：y2/blur8/a0.05） */
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p2, 3.8rpx) var(--d-lattice-p8, 15.4rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		justify-content: center;
+		align-items: center;
+	}
+	.item-icon-img {
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+	}
+	.item-label {
+		margin-top: var(--d-lattice-p6, 11.5rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* 2026-10-30（P2 E-4）：可用的出口（复制文字）用正文次级色，与两个灰显出口拉开差别 */
+	.item-label-active {
+		color: var(--c-ink-700, #5A4C40);
+	}
+	/* 2026-10-30（P2 E-4）：不可用出口 —— 图标整体降透明度（仍是白底圆，尺寸不变） */
+	.item-disabled {
+		opacity: 0.55;
+	}
+	/* 2026-10-30（P2 E-4）：行尾「待接入」标记（11rpx 细字，与标签同列、不再新增视觉元素族） */
+	.item-tag {
+		margin-top: var(--d-lattice-p2, 3.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p10, 19.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+</style>
