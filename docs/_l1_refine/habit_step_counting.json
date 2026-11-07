@@ -1,0 +1,33 @@
+{
+  "id": "habit_step_counting",
+  "refine_mode": "template_level",
+  "values": [
+    "经常",
+    "偶尔",
+    "很少",
+    "不"
+  ],
+  "values_detail": [
+    {
+      "value": "经常",
+      "phrase": "每天都看步数，微信运动打卡、Keep 记录、手环同步",
+      "china_note": "微信运动/Keep 是中国主流计步入口，社交排名驱动高频记录"
+    },
+    {
+      "value": "偶尔",
+      "phrase": "想起来才点开步数，运动时开一下",
+      "china_note": "多借手机自带健康或运动 App 间歇性查看，无社交压力"
+    },
+    {
+      "value": "很少",
+      "phrase": "几乎不主动看，偶尔被朋友榜单提醒",
+      "china_note": "被动触达型，属重要少数"
+    },
+    {
+      "value": "不",
+      "phrase": "从不计步，也不用任何健康/运动 App",
+      "china_note": "无穿戴、无健康 App 习惯，关键边缘人群"
+    }
+  ],
+  "refine_note": "原4→现4；template_level 模式保留频率档原样，仅补中国语境行为锚点，未扩值"
+}

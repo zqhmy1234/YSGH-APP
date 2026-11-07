@@ -1,0 +1,749 @@
+<template>
+	<!-- ardot 直转 v2：冷启动访谈（帧 4:167）· 审计化生成 -->
+	<view class="page-root tk-root">
+		<!-- 光斑：画布为 GRADIENT_RADIAL，uvue App 端不支持 radial-gradient，
+		     改用预混 SVG 圆盘（_genspot.py 生成，纯 <circle fill> 零透明度属性；
+		     三光斑经程序验证两两零重叠，且正下方是纯色底 #F8F7F4，可安全预混） -->
+		<image class="n4_198" src="/static/icons/i4_198.svg" /> <!-- 光斑-琥珀 画布4:198 -->
+		<image class="n4_199" src="/static/icons/i4_199.svg" /> <!-- 光斑-苔绿 画布4:199 -->
+		<image class="n4_200" src="/static/icons/i4_200.svg" /> <!-- 光斑-青蓝 画布4:200 -->
+		<view class="n4_171"> <!-- 进度点（画布4:171；三问流转：当前问亮锈红） -->
+			<view v-for="(i) in 3" :key="i" class="dot" :class="{ 'dot-active': (i - 1) === step, 'dot-first': i === 1 }"></view>
+		</view>
+		<image class="n4_175" src="/static/icons/i4_175.svg" /> <!-- icon: 品牌星芒 -->
+		<view class="n4_177"> <!-- 品牌名容器 -->
+			<text class="n4_178">忆述光华</text> <!-- 忆述光华 -->
+		</view>
+		<view class="n4_179"> <!-- tagline容器 -->
+			<text class="n4_180">把日子过成可以回访的故事</text> <!-- tagline -->
+		</view>
+		<view v-if="!done" class="n4_181"> <!-- 问题卡（三问动态） -->
+			<text class="n4_182">访谈 · 第 {{ step + 1 }} 问</text> <!-- 问题编号 -->
+			<text class="n4_183">{{ currentQuestion }}</text> <!-- 问题 -->
+			<text class="n4_184">随便聊聊，一两句话就够</text> <!-- 问题引导 -->
+			<view v-if="lastEmotion != ''" class="emo-chip"> <!-- 上一答情绪标签（D-16：空串=未测得不渲染） -->
+				<text class="emo-chip-text">情绪 · {{ lastEmotion }}</text>
+			</view>
+			<!-- 2026-10-30（P1-27）：提交失败**不写完成态**（原实现无条件 done=true ⇒ 答案全丢、
+			     无法重试）。失败时停留在当前问，答案仍在 answers 里，这里给可重试出口 -->
+			<view v-if="submitFailed" class="retry-hint">
+				<text class="retry-hint-text">这次没提交成功，回答都还留着</text>
+			</view>
+			<view v-if="submitFailed" class="start-btn" @tap="submitAll">
+				<text class="start-btn-text">重试提交</text>
+			</view>
+		</view>
+		<view v-else class="n4_181"> <!-- 完成卡（三问答毕） -->
+			<text class="n4_182">访谈完成</text>
+			<text class="n4_183">谢谢你的分享，已经开始了解你了</text>
+			<!-- 2026-10-30（P1-28）：后端下发的 `confirmation`（AI 复述）原先是**死状态**——
+			     取到值却零渲染点。现按普通气泡上屏；为空时降级为不渲染并在 submitAll 里 console 说明 -->
+			<view v-if="confirmation != ''" class="confirm-bubble">
+				<text class="confirm-text">{{ confirmation }}</text>
+			</view>
+			<view class="start-btn" @tap="goHome">
+				<text class="start-btn-text">开始使用</text>
+			</view>
+		</view>
+		<view v-if="!done" class="n4_185"> <!-- 语音环 -->
+			<view class="n4_186" @tap="onMicTap"> <!-- 麦克风钮 -->
+				<image class="n4_187" src="/static/icons/i4_187.svg" /> <!-- icon: 麦克风 -->
+			</view>
+		</view>
+		<view v-if="!done" class="n4_189"> <!-- 说话提示容器 -->
+			<view class="n4_190" :class="{ 'hint-recording': recording }" @tap="onMicTap">
+				<text class="n4_190-text">{{ hintText }}</text>
+			</view>
+		</view>
+		<view v-if="!done" class="n4_191"> <!-- 文字回答容器 -->
+			<text class="n4_192" @tap="openTextModal">用文字回答</text> <!-- 用文字回答 -->
+		</view>
+		<view v-if="!done" class="n4_193"> <!-- 跳过容器 -->
+			<text class="n4_194" @tap="skipInterview">跳过访谈</text> <!-- 跳过访谈 -->
+		</view>
+		<view class="n4_201"> <!-- 呼吸光环外圈 -->
+		</view>
+		<!-- 文字回答弹层（画布未画此态，沿用 HEAD 版已验证结构；uvue 样式不继承，text 类逐个补 font-family） -->
+		<view v-if="showTextModal" class="text-modal">
+			<view class="modal-mask" @tap="closeTextModal"></view>
+			<view class="modal-card">
+				<text class="modal-title">用文字回答</text>
+				<textarea :adjust-position="true" class="modal-input" v-model="textAnswer" placeholder="随便聊聊，一两句话就够" placeholder-class="modal-placeholder" :maxlength="200" />
+				<view class="modal-actions">
+					<view class="modal-btn modal-btn-ghost" @tap="closeTextModal">
+						<text class="modal-btn-text ghost-text">取消</text>
+					</view>
+					<view class="modal-btn" @tap="submitTextAnswer">
+						<text class="modal-btn-text">提交</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed } from 'vue'
+	import { onLoad, onUnload, onBackPress } from '@dcloudio/uni-app'
+	import { fetchInterviewQuestions, submitInterviewAnswers, InterviewQuestion, InterviewResult } from '@/utils/play_interview'
+	import { startRecord, stopRecord, transcribeWav, AsrResult } from '@/utils/voice'
+	import { showErrorToast } from '@/utils/api'
+	// 2026-10-31：原生 errMsg 可能是 JSON 串，展示前清洗
+	import { humanizeErr } from '@/utils/err_text'
+	import { backToShell } from '@/utils/shell_state'
+
+	// 兜底三问（API 未就绪时使用，与设计稿冷启动访谈一致）
+	const fallbackQuestions: Array<InterviewQuestion> = [
+		new InterviewQuestion('important_person', '最近有什么小事，让你印象很深？'),
+		new InterviewQuestion('life_turn', '今天有什么瞬间，值得被记住？'),
+		new InterviewQuestion('proud_thing', '此刻，最想对谁说一句话？')
+	]
+	let questions = ref<Array<InterviewQuestion>>(fallbackQuestions)
+	const currentQuestion = computed((): string => {
+		if (step.value >= 0 && step.value < questions.value.length) {
+			return questions.value[step.value].question
+		}
+		return ''
+	})
+	// 语音钮下方提示：转写中 > 录音中 > 待命（uvue 模板不绑嵌套三元，收敛进 computed）
+	const hintText = computed((): string => {
+		if (transcribing.value) {
+			return '正在转写…'
+		}
+		if (recording.value) {
+			return '正在录音 ' + recSeconds.value + '″'
+		}
+		return '点按说话'
+	})
+
+	// 状态
+	let step = ref(0)
+	let done = ref(false)
+	let recording = ref(false)
+	let recSeconds = ref(0)
+	let transcribing = ref(false)
+	let lastEmotion = ref('')
+	let showTextModal = ref(false)
+	let textAnswer = ref('')
+	let confirmation = ref('')
+	let submitting = ref(false)
+	// 2026-10-30（P1-27）：提交失败标记（true 时停留在当前问并渲染「重试提交」，不进入完成态）
+	let submitFailed = ref(false)
+	let timerId: number = -1
+	// 按问题 key 收集答案（后端 answers dict 白名单 key）
+	const answers: UTSJSONObject = {}
+
+	onLoad(() => {
+		fetchInterviewQuestions().then((list: Array<InterviewQuestion>) => {
+			if (list.length > 0) {
+				questions.value = list
+			}
+		})
+	})
+
+	// 离页清理：录音中直接停（防麦克风泄漏），计时器必清
+	onUnload(() => {
+		if (recording.value) {
+			try {
+				stopRecord()
+			} catch (e) {
+				console.log('[interview] onUnload stopRecord failed (忽略): ' + e)
+			}
+		}
+		resetRecUi()
+	})
+
+	// 返回键：录音中先停录音再放行（不拦返回）
+	onBackPress((): boolean => {
+		if (recording.value) {
+			try {
+				stopRecord()
+			} catch (e) {
+				console.log('[interview] onBackPress stopRecord failed (忽略): ' + e)
+			}
+			resetRecUi()
+		}
+		return false
+	})
+
+	// 当前问题 key
+	function currentKey(): string {
+		if (step.value >= 0 && step.value < questions.value.length) {
+			return questions.value[step.value].key
+		}
+		return ''
+	}
+
+	// 麦克风点按：录音 / 停止（真语音链路：录音→转写→答案真文本）
+	function onMicTap(): void {
+		if (transcribing.value) {
+			return
+		}
+		if (!recording.value) {
+			startRecording()
+		} else {
+			stopRecording()
+		}
+	}
+
+	function startRecording(): void {
+		recording.value = true
+		recSeconds.value = 0
+		timerId = setInterval(() => {
+			recSeconds.value = recSeconds.value + 1
+		}, 1000)
+		// 原生录音插件在标准基座缺失（UTSAndroid is not defined）→ 同步抛出会让状态卡死，
+		// 兜底照抄 RecordSheet:982-1023：失败即回滚状态 + toast。五回调参数顺序对齐 voice.uts
+		try {
+			startRecord(
+				() => {
+					console.log('[interview] record started')
+				},
+				(path: string, durationMs: number) => {
+					onRecordStopped(path, durationMs)
+				},
+				(msg: string) => {
+					console.error('[interview] record error: ' + msg)
+					resetRecUi()
+					// 2026-10-31（走查：JSON 直接暴露给用户）：系统 errMsg 可能是
+					// `{"errMsg":"..."}`，不能原样拼进 toast。
+					showErrorToast(new Error(humanizeErr(msg, '录音失败，请重试一次')))
+				},
+				(autoPaused: boolean) => {
+					console.log('[interview] record interrupted (autoPaused=' + autoPaused + ')')
+				},
+				(path: string, durationMs: number) => {
+					// 30min 上限自动结束：与手动停同一落盘转写链路
+					onRecordStopped(path, durationMs)
+				}
+			)
+		} catch (e) {
+			console.log('[interview] startRecord failed (标准基座无原生录音插件，状态回滚): ' + e)
+			resetRecUi()
+			uni.showToast({ title: '当前基座不支持录音，可改用文字回答', icon: 'none' })
+		}
+	}
+
+	function stopRecording(): void {
+		try {
+			stopRecord()
+		} catch (e) {
+			console.log('[interview] stopRecord failed (标准基座无原生插件，忽略): ' + e)
+			// 兜底：原生不可用也要把 UI 状态复位，否则「录音中」退不出去
+			resetRecUi()
+		}
+	}
+
+	// 录音 UI/计时复位（onError 与 start/stop 异常兜底共用）
+	function resetRecUi(): void {
+		if (timerId >= 0) {
+			clearInterval(timerId)
+			timerId = -1
+		}
+		recording.value = false
+	}
+
+	// 录音落盘回调：500ms 最短守卫（语义对齐 RecordSheet:1092）→ 转写 → 答案真文本
+	function onRecordStopped(path: string, durationMs: number): void {
+		resetRecUi()
+		if (durationMs < 500) {
+			showErrorToast(new Error('录音太短'))
+			return
+		}
+		transcribing.value = true
+		transcribeWav(path).then((res: AsrResult | null) => {
+			transcribing.value = false
+			if (res == null) {
+				// 转写失败：诚实 toast 不静默；不推进问题，保留「用文字回答」输入兜底
+				showErrorToast(new Error('转写失败，可改用文字回答'))
+				return
+			}
+			if (res.text.trim() == '') {
+				showErrorToast(new Error('没听清，可改用文字回答'))
+				return
+			}
+			const k = currentKey()
+			if (k != '') {
+				answers[k] = res.text
+			}
+			lastEmotion.value = res.emotion  // D-16：未测得为空串，chip 不渲染
+			uni.showToast({ title: '已记录语音回答', icon: 'none' })
+			nextStep()
+		})
+	}
+
+	// 前进：进入下一问或提交完成
+	function nextStep(): void {
+		if (step.value < questions.value.length - 1) {
+			step.value = step.value + 1
+			textAnswer.value = ''
+		} else {
+			submitAll()
+		}
+	}
+
+	// 提交三问答案到后端，拿复述确认
+	// 2026-10-30（P1-27）：原实现无论成败都 `done=true` ⇒ 提交失败被当成「访谈完成」，
+	// 用户看到完成卡但后端一条答案都没收到（答案只在内存 answers 里，页面一走即丢），
+	// 且没有任何重试入口。现改为：**只有拿到后端结果才写完成态**；失败保留答案 + 重试出口。
+	// 另补空答案守卫：answers 全空时不得提交（后端会据此建画像维度，空答案=脏画像）。
+	function submitAll(): void {
+		if (submitting.value) {
+			return
+		}
+		if (UTSJSONObject.keys(answers).length == 0) {
+			uni.showToast({ title: '还没有记录任何回答', icon: 'none' })
+			return
+		}
+		submitting.value = true
+		submitFailed.value = false
+		uni.showLoading({ title: '正在生成画像…' })
+		// play_interview 的契约是 resolve-only（失败 resolve(null) 不 reject）；
+		// 仍用 try 兜住同步抛出，避免 loading 与 submitting 永久卡死
+		try {
+			submitInterviewAnswers(answers).then((res: InterviewResult | null) => {
+				uni.hideLoading()
+				submitting.value = false
+				if (res == null) {
+					// 失败：不写完成态、不清空 answers，用户可原样重试
+					submitFailed.value = true
+					console.log('[interview] 提交失败：保持在第 ' + (step.value + 1) + ' 问，答案保留，不写完成态')
+					showErrorToast(new Error('提交失败，回答已保留，请重试'))
+					return
+				}
+				confirmation.value = res.confirmation
+				if (confirmation.value == '') {
+					// 2026-10-30（P1-28）：后端未下发复述时明确降级（完成卡只剩固定文案），不留「取到但不显示」的死状态
+					console.log('[interview] 后端未下发 confirmation，完成卡降级为固定文案')
+				} else {
+					console.log('[interview] confirmation 已渲染，长度 ' + confirmation.value.length)
+				}
+				done.value = true
+			})
+		} catch (e) {
+			console.log('[interview] submitInterviewAnswers 同步抛出（状态回滚）: ' + e)
+			uni.hideLoading()
+			submitting.value = false
+			submitFailed.value = true
+			showErrorToast(new Error('提交失败，回答已保留，请重试'))
+		}
+	}
+
+	// 文字回答弹层
+	function openTextModal(): void {
+		showTextModal.value = true
+	}
+	function closeTextModal(): void {
+		showTextModal.value = false
+	}
+	function submitTextAnswer(): void {
+		if (textAnswer.value.trim() == '') {
+			uni.showToast({ title: '写一句话再提交吧', icon: 'none' })
+			return
+		}
+		showTextModal.value = false
+		const k = currentKey()
+		if (k != '') {
+			answers[k] = textAnswer.value.trim()
+		}
+		uni.showToast({ title: '已记录文字回答', icon: 'none' })
+		nextStep()
+	}
+
+	// 跳过访谈
+	// 🚨 2026-10-14（台账 §4.20）：原用 `reLaunch` 回首页 ⇒ **重建整个壳**（四个 tab 重挂 +
+	// 时间轴/画像的内存缓存与 TTL 一并作废 ⇒ 回首页要重拉数据）。改走 `backToShell`：
+	// 栈内有壳就零销毁切回 index；深链直入（栈内无壳）时它内部自会 `reLaunch` 兜底。
+	function skipInterview(): void {
+		uni.showToast({ title: '已跳过，随时可回来', icon: 'none' })
+		setTimeout(() => {
+			backToShell('index', '')
+		}, 600)
+	}
+
+	// 完成 → 进入时间轴
+	function goHome(): void {
+		backToShell('index', '')
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	.n4_198 {
+		position: absolute;
+		left: -115.4rpx;
+		top: var(--d-lattice-p40, 76.9rpx);
+		width: var(--d-lattice-p280, 538.5rpx);
+		height: var(--d-lattice-p280, 538.5rpx);
+	}
+	.n4_199 {
+		position: absolute;
+		left: var(--d-lattice-p220, 423.1rpx);
+		top: var(--d-lattice-p170, 326.9rpx);
+		width: var(--d-lattice-p260, 500rpx);
+		height: var(--d-lattice-p260, 500rpx);
+	}
+	.n4_200 {
+		position: absolute;
+		left: var(--d-lattice-p30, 57.7rpx);
+		top: var(--d-lattice-p330, 634.6rpx);
+		width: var(--d-lattice-p240, 461.5rpx);
+		height: var(--d-lattice-p240, 461.5rpx);
+	}
+	.n4_171 {
+		position: absolute;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p64, 123.1rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		/* 画布 4:171 gap=6pt → 11.5rpx，换到非首子节点 margin-left
+		   （uvue App 端丢弃 gap；三个点是 v-for 生成，首点靠 .dot-first 归零 margin） */
+		align-items: center;
+		overflow: hidden;
+	}
+	.dot {
+		width: var(--d-lattice-p8, 15.4rpx);
+		height: var(--d-lattice-p8, 15.4rpx);
+		margin-left: var(--d-lattice-p6, 11.5rpx); /* 画布 4:171 gap=6pt */
+		background-color: #E5DED2;  /* 2026-10-11 恢复（9-23 基准）：原令牌 --c-paper-600 的值与本处原色差 Δ10，属令牌化误映射 */
+		border-radius: var(--d-lattice-p4, 7.7rpx);
+		overflow: hidden;
+	}
+	/* v-for 首点：margin 归零，否则三个点整体右偏 11.5rpx、不再居中于 750rpx */
+	.dot-first {
+		margin-left: var(--d-lattice-p0, 0rpx);
+	}
+	.dot-active {
+		background-color: var(--c-rust-500, #B05A3A);
+	}
+	.n4_175 {
+		position: absolute;
+		left: var(--d-lattice-p177, 340.4rpx);
+		top: var(--d-lattice-p96, 184.6rpx);
+		width: var(--d-lattice-p36, 69.2rpx);
+		height: var(--d-lattice-p36, 69.2rpx);
+		/* 画布 3 层同心发光：r20/a.2 + r10/a.35 + r4/a.5 */
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-card_margin_x, 38.5rpx) var(--a-amber-20, rgba(196, 145, 60, 0.2)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p10, 19.2rpx) var(--a-amber-35, rgba(196, 145, 60, 0.35)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--a-amber-50, rgba(196, 145, 60, 0.5));
+		border-radius: var(--d-lattice-p18, 34.6rpx);
+	}
+	.n4_177 {
+		position: absolute;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p142, 273.1rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_178 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: var(--d-card_margin_x, 38.5rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n4_179 {
+		position: absolute;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p172, 330.8rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_180 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.n4_181 {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p220, 423.1rpx);
+		width: var(--d-card_width, 673.1rpx);
+		flex-direction: column;
+		/* 画布 4:181 gap=10pt → 19.2rpx，换到非首子节点 margin-top
+		   （uvue App 端丢弃 gap；子节点纵向序：编号→问题→引导，两段间距各 10pt 已由坐标验证） */
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
+		/* 毛玻璃：画布为 BACKGROUND_BLUR(16) + fill 白 a0.55；
+		   转换器曾统一降级成 0.72，此处按画布还原 */
+		background-color: var(--a-white-55, rgba(255, 255, 255, 0.55));
+		/* 画布效果共 4 层：stroke 白a.6（居中描边→改外环免内缩）
+		   + INNER_SHADOW 白a.4 + DROP r16 a.06 + DROP r3 a.04 */
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-white-60, rgba(255, 255, 255, 0.6)), inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-40, rgba(255, 255, 255, 0.4)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.n4_182 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
+	}
+	.n4_183 {
+		width: 100%;
+		margin-top: var(--d-lattice-p10, 19.2rpx); /* 画布 4:181 gap=10pt（编号→问题） */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-card_margin_x, 38.5rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n4_184 {
+		width: 100%;
+		margin-top: var(--d-lattice-p10, 19.2rpx); /* 画布 4:181 gap=10pt（问题→引导） */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	/* 上一答情绪 chip（对齐 RecordSheet v-chip 胶囊形；画布未画此态） */
+	.emo-chip {
+		margin-top: var(--d-lattice-p10, 19.2rpx); /* 与卡内 gap 一致（画布 4:181 gap=10pt） */
+		align-self: flex-start;
+		padding-left: 23rpx;
+		padding-right: 23rpx;
+		height: var(--d-lattice-p24, 46.2rpx);
+		flex-direction: row;
+		align-items: center;
+		background-color: var(--a-rust-10, rgba(176, 89, 59, 0.1));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.emo-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.n4_185 {
+		position: absolute;
+		left: var(--d-lattice-p141, 271.2rpx);
+		top: var(--d-lattice-p436, 838.5rpx);
+		width: var(--d-lattice-p108, 207.7rpx);
+		height: var(--d-lattice-p108, 207.7rpx);
+		background-color: var(--a-rust-12, rgba(176, 89, 59, 0.12));
+		/* 画布 INNER_SHADOW 顶部白色高光 a0.5 */
+		box-shadow: inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-50, rgba(255, 255, 255, 0.5));
+		border-radius: var(--d-lattice-p54, 103.8rpx);
+		overflow: hidden;
+	}
+	.n4_186 {
+		position: absolute;
+		left: var(--d-lattice-p22, 42.3rpx);
+		top: var(--d-lattice-p22, 42.3rpx);
+		width: var(--d-lattice-p64, 123.1rpx);
+		height: var(--d-lattice-p64, 123.1rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		background-color: var(--c-rust-500, #B05A3A);
+		/* 画布 INNER_SHADOW 白a.35 + DROP 下拉投影 */
+		box-shadow: inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-35, rgba(255, 255, 255, 0.35)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p8, 15.4rpx) var(--d-fab_radius, 53.8rpx) var(--a-rust-45, rgba(176, 89, 59, 0.45));
+		border-radius: var(--d-lattice-p32, 61.5rpx);
+		overflow: hidden;
+	}
+	.n4_187 {
+		width: var(--d-lattice-p26, 50rpx);
+		height: var(--d-lattice-p26, 50rpx);
+	}
+	.n4_189 {
+		position: absolute;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p560, 1076.9rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+.n4_190 {
+	/* text@tap 清零军规（2026-09-06）：view 承载热区 */
+	padding: var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p0, 0rpx);
+	align-items: center;
+}
+.n4_190-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 600;
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	color: var(--c-ink-700, #5A4C40);
+}
+	/* 录音中提示变锈红（画布未画此态，沿用 HEAD 版） */
+	.hint-recording {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.n4_191 {
+		position: absolute;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p592, 1138.5rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_192 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.n4_193 {
+		position: absolute;
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p740, 1423.1rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n4_194 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.n4_201 {
+		position: absolute;
+		left: var(--d-lattice-p125, 240.4rpx);
+		top: var(--d-lattice-p420, 807.7rpx);
+		width: var(--d-lattice-p140, 269.2rpx);
+		height: var(--d-lattice-p140, 269.2rpx);
+		background-color: var(--a-rust-06, rgba(176, 89, 59, 0.06));
+		border-radius: var(--d-lattice-p70, 134.6rpx);
+		overflow: hidden;
+	}
+	/* ↓ 完成卡「开始使用」按钮 + 文字回答弹层（画布未画此二态，沿用 HEAD 版已验证样式；
+	   uvue 样式不继承，text 类逐个带 font-family） */
+	.start-btn {
+		margin-top: var(--d-raw-r32, 32rpx);
+		height: 76rpx;
+		border-radius: var(--d-raw-r38, 38rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.start-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r30, 30rpx);
+		color: var(--c-paper-100, #F8F7F4);
+		font-weight: 600;
+	}
+	/* 2026-10-30（P1-28）：AI 复述确认气泡（画布未画此态，沿用卡内既有 chip 视觉：
+	   淡锈红底 + 锈红字，与 .emo-chip 同族；uvue 样式不继承，text 单独带 font-family） */
+	.confirm-bubble {
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		width: 100%;
+		padding-left: 23rpx;
+		padding-right: 23rpx;
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--a-rust-10, rgba(176, 89, 59, 0.1));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.confirm-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	/* 2026-10-30（P1-27）：提交失败提示（重试按钮复用 .start-btn） */
+	.retry-hint {
+		margin-top: var(--d-lattice-p10, 19.2rpx);
+		width: 100%;
+	}
+	.retry-hint-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p12, 23.1rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.text-modal {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 99;
+	}
+	.modal-mask {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		background-color: var(--a-ink-35, rgba(58, 46, 37, 0.35));
+	}
+	.modal-card {
+		width: 620rpx;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-raw-r32, 32rpx);
+		padding: var(--d-raw-r40, 40rpx);
+		z-index: 1;
+		box-shadow: 0 var(--d-raw-r16, 16rpx) var(--d-lattice-p25, 48rpx) var(--a-ink-18, rgba(58, 46, 37, 0.18));
+	}
+	.modal-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r34, 34rpx);
+		font-weight: bold;
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.modal-input {
+		margin-top: var(--d-raw-r24, 24rpx);
+		width: 540rpx;
+		min-height: var(--d-raw-r180, 180rpx);
+		background-color: var(--c-paper-100, #F8F7F4);
+		border-radius: var(--d-raw-r20, 20rpx);
+		padding: var(--d-raw-r24, 24rpx);
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.modal-placeholder {
+		color: var(--c-ink-300, #B3A696);
+	}
+	.modal-actions {
+		margin-top: var(--d-raw-r28, 28rpx);
+		display: flex;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+	.modal-btn {
+		margin-left: var(--d-raw-r20, 20rpx);
+		padding-left: var(--d-raw-r44, 44rpx);
+		padding-right: var(--d-raw-r44, 44rpx);
+		height: var(--d-raw-r72, 72rpx);
+		border-radius: var(--d-raw-r36, 36rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.modal-btn-ghost {
+		background-color: transparent;
+		border-width: 2rpx;
+		border-color: var(--c-rust-500, #B05A3A);
+		border-style: solid;
+	}
+	.modal-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-paper-100, #F8F7F4);
+	}
+	.ghost-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r28, 28rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+</style>

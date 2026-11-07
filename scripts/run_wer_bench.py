@@ -19,8 +19,12 @@ import tarfile
 import time
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+try:  # 既支持直跑 python scripts/x.py，也支持被按包导入（from scripts.x import …）
+    from gate_io import force_utf8  # noqa: E402
+except ModuleNotFoundError:  # 仅「按包导入」路径会走到这里（sys.path 里没有 scripts/）
+    from scripts.gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 

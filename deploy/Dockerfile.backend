@@ -1,0 +1,66 @@
+# ============================================================================
+# 忆述光华 · 后端镜像（S1 卡）
+#
+# 构建上下文 = **仓库根**（compose 里 context: ..），因此 COPY 路径以 backend/ 起头。
+# 手工构建：
+#   docker build -f deploy/Dockerfile.backend -t yishu-backend:local .
+#
+# 设计取舍：
+#  - **不把模型烘进镜像**：BGE-M3(2.2G)+SetFit(1.1–2.2G)+SenseVoice ONNX 以只读挂载进入
+#    （deploy/docker-compose.yml 的 backend.volumes），否则镜像数 GB 且每次改代码重推。
+#  - **不写多进程**：CMD 固定 --workers 1。模型是进程内单例（lru_cache）不跨进程共享，
+#    每多一个 worker 即多一份 BGE-M3 ~1.2G → 16G 机器 OOM（docs/服务器规格核算_20260921.md §2）。
+#  - imageio-ffmpeg 自带静态 ffmpeg 二进制（音频解码无需 apt 装 ffmpeg）。
+# ============================================================================
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app \
+    # 离线加载模型（与 app/services/embedding.py:20 一致）——镜像内不联网拉模型
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
+# curl 供容器内 healthcheck/排障用。Pillow 官方 wheel 自带 libjpeg/zlib；
+# 若启动时报缺失系统库，再补 libjpeg62-turbo zlib1g libwebp7（此处刻意不预装，避免无谓体积）。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 依赖层单独缓存：requirements.txt 不变则不必重装
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
+
+# 业务代码（含 alembic.ini 与 migrations/，便于容器内跑迁移）
+COPY backend/ ./
+
+# 建库封装：容器内准备角色/扩展，再由 Alembic 从 ORM 建空库或升级已有库。
+# init_db.py 在 /app 时以 /app/alembic.ini 判断 backend 目录位置。
+#   用法（由 deploy/scripts/bootstrap.sh 调用，管理员串只在这一次 run 里注入）：
+#     docker compose -f deploy/docker-compose.yml run --rm \
+#       -e YSG_ADMIN_DATABASE_URL=postgresql://<超级用户>:<口令>@postgres:5432/postgres \
+#       backend python /app/init_db.py
+COPY scripts/init_db.py /app/init_db.py
+
+# 画像维度枚举集（D07-1 · P0，2026-09-25 功能修复波）：
+#   `services/profile_schema.py` 的枚举集 JSON 落在**仓库根 docs/**（`_DEFAULT_ENUM_DIR`），
+#   而上面只 COPY 了 backend/ ⇒ 容器内首次 `get_schema()` 抛 FileNotFoundError
+#   ⇒ 画像页 / 访谈 / 画像标注链路首调 **500**（宿主侧开发看不出，只有部署后才炸）。
+#   这里把两份枚举集随镜像分发，并用加载器**唯一承认**的覆盖口径 `PROFILE_ENUM_DIR`
+#   指向（不依赖 /app 之外的路径推断，避免 WORKDIR/PYTHONPATH 变化再次漂移）。
+COPY docs/画像维度枚举集_l0.json docs/画像维度枚举集_l1_骨架.json /app/profile_enums/
+ENV PROFILE_ENUM_DIR=/app/profile_enums
+
+# 非 root 运行
+RUN useradd -r -u 10001 -m appuser \
+    && mkdir -p /app/models \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8010
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]

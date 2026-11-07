@@ -1,0 +1,19 @@
+{
+  "id": "sleep_quality",
+  "label": "睡眠质量",
+  "category": "情绪与状态",
+  "current_values": [
+    "好",
+    "中",
+    "差"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_sleep_quality",
+  "confidence_threshold": 0.7,
+  "note": "近期趋势",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

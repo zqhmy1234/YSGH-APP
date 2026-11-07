@@ -1,7 +1,7 @@
 """bge-reranker 粗排（B2 双层 Rerank 第一层 · WP-F 2026-08-19）
 
-本地 CrossEncoder（bge-reranker-base，中文），模型就绪自动启用；未就绪返回原序（不阻塞）。
-模型路径：settings.reranker_model（默认 backend/models/bge-reranker-base）。
+本地 CrossEncoder（bge-reranker-v2-m3，中文），模型就绪自动启用；未就绪返回原序（不阻塞）。
+模型路径：settings.reranker_model（**唯一来源**；config 默认 backend/models/bge-reranker-v2-m3）。
 加载策略：懒加载 + 进程级单例（首次调用加载，失败记日志降级）。
 """
 from __future__ import annotations
@@ -14,6 +14,38 @@ from app.core.config import settings
 logger = logging.getLogger("yishu.rerank")
 
 
+def _gpu_available() -> bool:
+    """GPU 可用性探测（torch.cuda；torch 缺失/无 GPU → False，不抛异常）"""
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001 —— 探测失败视为无 GPU（保守关闭）
+        return False
+
+
+def rerank_auto_enabled() -> bool:
+    """第一层 reranker 生效判定（Wave2-F 2026-08-26 策略，config 见 rerank_auto_enable 注释）
+
+    规则：settings.rerank_enabled 显式 true → 生效（显式优先）；
+    否则 rerank_auto_enable=True 且 GPU 可用 且 模型就绪 → 自动生效；
+    其余（CPU / 模型缺失 / 显式关闭）→ 不生效。
+    门禁依据：CPU 单对 ~850ms × 候选 20 ≈ 17s 超 P95<3s；GPU 推理 + 候选受限才可满足。
+    """
+    if settings.rerank_enabled:
+        return True
+    if not settings.rerank_auto_enable:
+        return False
+    if not _gpu_available():
+        logger.info("rerank_auto_enable=True 但未检测到 GPU，第一层 reranker 保持关闭")
+        return False
+    if _load_model() is None:
+        logger.info("rerank_auto_enable=True 但 reranker 模型未就绪，第一层 reranker 保持关闭")
+        return False
+    logger.info("rerank_auto_enable=True 且 GPU 就绪 → 第一层 reranker 自动启用")
+    return True
+
+
 @lru_cache(maxsize=1)
 def _load_model():
     from pathlib import Path
@@ -22,13 +54,28 @@ def _load_model():
 
     # 审查修复(P1-10)：模型路径基于 __file__ 解析，不依赖 CWD
     backend_dir = Path(__file__).resolve().parent.parent.parent
-    model_path = Path(settings.reranker_model or "bge-reranker-base")
+    # D05-9（2026-09-24 重构波）：**删除本处 fallback 字面量**——模型名单点化到 config
+    #   （settings.reranker_model 默认 "bge-reranker-v2-m3"，两套 env 模板亦同）。
+    #   原写 `or "bge-reranker-base"` 是**陈旧值**（与 config 不一致；历史上的 docstring 同名陈旧值
+    #   还曾误导 P0-2 把 v2-m3 误判为死重，见 _diff_ledger.md「教训=模型路径判定以 config 为准不注释」）。
+    #   行为等价：`RERANKER_MODEL` 被显式置空时，两分支在"模型目录缺失"下都走 `return None`（优雅降级）。
+    model_path = Path(settings.reranker_model)
     if not model_path.is_absolute():
         model_path = backend_dir / "models" / model_path
     if not (model_path / "config.json").exists():
         return None
     try:
-        return CrossEncoder(str(model_path), max_length=512)
+        import torch
+
+        # 2026-08-25 内存优化：fp16（bge-reranker fp32 ~1GB → fp16 ~0.5GB）
+        # 修复（2026-08-25 RAG 审查）：sentence-transformers 3.4.1 的 CrossEncoder
+        # 不接受 model_kwargs（旧版 API）→ 加载必抛 TypeError → 被 except 吞掉静默降级，
+        # rerank 从未真正生效。3.x 用 automodel_args 透传 torch_dtype。
+        return CrossEncoder(
+            str(model_path),
+            max_length=512,
+            automodel_args={"torch_dtype": torch.float16},
+        )
     except Exception as exc:  # noqa: BLE001 —— 模型加载失败降级为不重排
         logger.warning("reranker 加载失败，跳过重排: %s", exc)
         return None

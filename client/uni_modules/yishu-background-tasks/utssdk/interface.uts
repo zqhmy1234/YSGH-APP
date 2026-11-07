@@ -1,0 +1,30 @@
+/**
+ * 忆述光华 · 后台任务队列插件接口（B5d 统一调度 · Wave4 Agent K）
+ *
+ * 统一后台调度（单 WorkManager 队列）：
+ *  - 任务注册：P0-P4 优先级链（B5d §5 优先级表）
+ *      P0 语音转写/上传 → 独立高优先（无网络约束，用户在等"录音变文字"）
+ *      P1 新照片上传   → 独立高优先 + WiFi 约束（NetworkType.UNMETERED，流量约束另有 uploader 端兜底）
+ *      P2 事件聚合重跑 → 低优先共享档 + WiFi 约束
+ *      P3 云侧拉取     → 低优先共享档 + WiFi 约束
+ *      P4 历史批量导入 → 低优先共享档 + WiFi 约束
+ *  - existingWorkPolicy=KEEP 防重：唯一任务名 + 去重（重复 enqueue 不叠加）
+ *  - 指数退避：setBackoffCriteria(EXPONENTIAL)（Worker 内失败重试走退避）
+ *  - attribution tag（Android 16 扩展归因，B5d §3）：四个 tag 落到每个任务
+ *      sync_photo / voice_transcribe / event_aggregate / profile_fetch
+ *  - 2h 定时兜底：PeriodicWork（接 Agent H sync_client.runSyncChain 入口）
+ *
+ * 运行边界：
+ *  - 依赖 androidx.work（config.json 声明），需要自定义基座（标准基座无 work-runtime 运行时）。
+ *  - 所有入口先做 isWorkManagerAvailable() 运行时检测：标准基座下安全 no-op + 记录 pending，
+ *    不抛异常（优雅降级，App 存活期间由 sync_client 的 setInterval 兜底）。
+ *
+ * 注（UTS 编译器 overload panic 规避）：函数实现统一放平台目录 index.uts 并在此导出，
+ * 本文件只保留跨端共享的类型声明（避免 interface.uts 声明多函数触发 overload.rs 编译器 panic）。
+ */
+
+/** 后台任务类型（与 attribution tag 一一对应） */
+export type BackgroundTaskType = 'voice_transcribe' | 'sync_photo' | 'event_aggregate' | 'profile_fetch' | 'batch_import' | 'sync'
+
+/** 任务执行回调：WorkManager 到点唤醒时，把 taskType 派发给应用层执行（运行在主线程） */
+export type BackgroundTaskHandler = (taskType: string) => void

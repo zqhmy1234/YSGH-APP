@@ -19,8 +19,8 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import UTC
 from datetime import datetime as _datetime
-from datetime import timezone
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -28,6 +28,9 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
+
+# 类别词表唯一来源：与运行期分类器共用，避免"回流脚本还按 5 类收样本"。
+from app.services.classifier import DEFAULT_CLASSES  # noqa: E402
 
 DEFAULT_THRESHOLD = 50  # B5-c-4：共性纠错 ≥50 条才触发
 CORRECTION_LIMIT = 200  # 单次微调最多取样本数（防过拟合抖动）
@@ -44,8 +47,13 @@ def _backup_model(model_dir: Path, backup_root: Path, keep: int = KEEP_BACKUPS) 
         return None
     backup_root.mkdir(parents=True, exist_ok=True)
     # 微秒时间戳：同秒多次调用不碰撞（备份名可排序，用于 keep 裁剪）
-    stamp = _datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    stamp = _datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     dest = backup_root / f"setfit-classifier-{stamp}"
+    # 防同微秒重复调用碰撞（2026-08-24 门禁 flaky：测试内两次备份同微秒 → FileExistsError）
+    suffix = 1
+    while dest.exists():
+        dest = backup_root / f"setfit-classifier-{stamp}-{suffix}"
+        suffix += 1
     shutil.copytree(model_dir, dest)
     olds = sorted(backup_root.glob("setfit-classifier-*"), key=lambda p: p.name, reverse=True)
     for old in olds[keep:]:
@@ -86,8 +94,8 @@ def collect_candidates(db) -> list[dict]:
 
 
 def build_dataset(candidates: list[dict]) -> dict[str, list[str]]:
-    """候选 → 5 类数据集（文本按 new_label 分组；无文本的跳过）"""
-    dataset: dict[str, list[str]] = {c: [] for c in ("todo", "idea", "emotion", "quote", "mixed")}
+    """候选 → 7 类数据集（文本按 new_label 分组；无文本的跳过）"""
+    dataset: dict[str, list[str]] = {c: [] for c in DEFAULT_CLASSES}
     for c in candidates[:CORRECTION_LIMIT]:
         text = (c.get("text") or "").strip()
         label = c.get("new_label")

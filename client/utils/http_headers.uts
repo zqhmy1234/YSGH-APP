@@ -1,0 +1,31 @@
+/**
+ * 出网通用请求头（2026-10-11）——**零 import 的底层模块**，供 `api.uts` 与 `auth.uts` 共用。
+ *
+ * ## 为什么要独立成文件
+ *
+ * `buildHeader()` 住在 `api.uts`，而依赖方向是 **`api.uts` → `auth.uts`**（api 用 auth 的
+ * `getToken`/`refreshToken`）。于是 `auth.uts` **不能**反向 import `api.uts`（循环依赖），
+ * 但它的三个请求——**设备登录 / 刷新令牌 / 登出**——同样需要一个通用头：
+ *
+ * 固定地址模式（内测期以本机为后端载体，ngrok 静态域名）下，ngrok 免费版会对**判定为浏览器**的
+ * 请求插入拦截页（HTML）。uni-app 默认 UA 含 `Mozilla` ⇒ 不带跳过头时，**登录请求会拿到 HTML**，
+ * 表现为「新包装上了却进不去 / 登录失败且原因难懂」。把"与业务无关的通用头"下沉到本模块，
+ * 两条链路（业务请求 + 鉴权请求）就能共用同一份定义，且不制造循环依赖。
+ *
+ * ⚠️ 新增出网请求时：**优先走 `api.uts` 的 `buildHeader()`**（它已含本模块的头 + 认证头）；
+ * 只有在"不能 import api"的底层文件（如 `auth.uts`）里，才直接用 `commonHeader()`。
+ */
+export const NGROK_SKIP_HEADER: string = 'ngrok-skip-browser-warning'
+
+/**
+ * 返回一个**已带通用头**的空 header 对象（调用方再按需加 Content-Type / Authorization）。
+ *
+ * 为什么是"造一个"而不是"改传入的"：UTS 里就地修改调用方对象会让数据流不直观；
+ * 造新对象成本可忽略（每请求一次），换来"看调用点就知道带了什么头"。
+ */
+export function commonHeader(): UTSJSONObject {
+	const header: UTSJSONObject = {}
+	// 对正式服务器 / COS 预签名 / 自建反代**完全无副作用**（未知头被忽略），故常驻。
+	header.set(NGROK_SKIP_HEADER, 'true')
+	return header
+}

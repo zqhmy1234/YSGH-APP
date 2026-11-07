@@ -1,0 +1,57 @@
+/**
+ * 30s 验收计时埋点（B3-6 · 2026-08-26 Wave2 AgentE）
+ *
+ * 产品验收口径（B3 设计 §6.7）：
+ *   授权相册(0s) → 端侧预处理+L0/L1 聚类(1-3s) → 首批日卡片渲染（≤30s ✅）
+ * 埋点：recordGrantTime()（授权/监听启动时刻）→ recordFirstDayRender()
+ * （首批日卡片渲染完成）→ 耗时持久化 uni storage，agg-check 页展示，
+ * 性能日志输出 [yishu] 30s验收 前缀（logcat 可查）。
+ */
+const GRANT_KEY = 'yishu_perf_grant_ms'
+const RENDER_KEY = 'yishu_perf_render_ms'
+const ELAPSED_KEY = 'yishu_perf_elapsed_ms'
+
+/** 记录授权/监听启动时刻（幂等：只记首次） */
+export function recordGrantTime(): void {
+	const raw = uni.getStorageSync(GRANT_KEY) as string
+	if (raw != '') {
+		return
+	}
+	uni.setStorageSync(GRANT_KEY, '' + Date.now())
+	console.log('[yishu] 30s验收: 授权时刻已记录')
+}
+
+/** 记录首批日卡片渲染完成（幂等：只记首次）→ 计算并持久化耗时 */
+export function recordFirstDayRender(): void {
+	const rawRender = uni.getStorageSync(RENDER_KEY) as string
+	if (rawRender != '') {
+		return
+	}
+	const now = Date.now()
+	uni.setStorageSync(RENDER_KEY, '' + now)
+	const rawGrant = uni.getStorageSync(GRANT_KEY) as string
+	if (rawGrant == '') {
+		return // 未记录授权（冷启动旧数据）→ 不统计
+	}
+	const elapsed = now - parseInt(rawGrant)
+	uni.setStorageSync(ELAPSED_KEY, '' + elapsed)
+	console.log('[yishu] 30s验收: 授权→首批日卡片渲染 ' + elapsed + 'ms')
+}
+
+/** 上次授权→首批日卡片渲染耗时（ms；0 = 未记录） */
+export function getLastElapsedMs(): number {
+	const raw = uni.getStorageSync(ELAPSED_KEY) as string
+	if (raw == '') {
+		return 0
+	}
+	return parseInt(raw)
+}
+
+/** agg-check 页展示文本 */
+export function timingText(): string {
+	const ms = getLastElapsedMs()
+	if (ms <= 0) {
+		return '尚未记录（授权相册后自动统计）'
+	}
+	return '上次授权→首批日卡片渲染 ' + ms + 'ms' + (ms <= 30000 ? '（≤30s ✅）' : '（>30s ⚠️）')
+}

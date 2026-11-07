@@ -6,8 +6,20 @@ from pydantic import BaseModel, Field
 class WechatLoginRequest(BaseModel):
     """APP 微信登录：code 换 openid/unionid（服务端调微信接口）"""
 
-    code: str = Field(..., description="微信登录 code（wx.login 获取）")
-    device_id: str = Field(..., description="客户端设备唯一 ID")
+    code: str = Field(..., max_length=128, description="微信登录 code（wx.login 获取）")
+    device_id: str = Field(..., min_length=1, max_length=64, description="客户端设备唯一 ID")
+
+
+class DeviceLoginRequest(BaseModel):
+    """设备码登录（内测期临时通道 · 2026-09-21）：客户端设备唯一标识 → 自助建档。
+
+    门控：`ALLOW_DEVICE_LOGIN=false`（默认）时端点返回 501 AUTH_014，不静默降级。
+    device_id 长度上限与 WechatLoginRequest.device_id 对齐（64），两者都是设备标识字段。
+    """
+
+    device_id: str = Field(..., min_length=1, max_length=64, description="客户端设备唯一 ID")
+    platform: str = Field("android", max_length=16, description="平台标识")
+    app_version: str | None = Field(None, max_length=32, description="客户端版本（排障用）")
 
 
 class PhoneLoginRequest(BaseModel):
@@ -29,6 +41,12 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）"""
+
+    refresh_token: str = Field(..., description="要吊销的 refresh token（设备会话标识）")
+
+
 # ---------- 响应 ----------
 
 class TokenPair(BaseModel):
@@ -44,3 +62,15 @@ class UserBrief(BaseModel):
     nickname: str | None = None
     avatar: str | None = None
     is_new_user: bool = False           # 新用户 → 前端引导 AI 冷启动（F7）
+
+
+class SendSmsOut(BaseModel):
+    """发验证码出参（POST /api/v1/auth/sms/send；mock 通道直返验证码，生产直返被 501 拦截）"""
+
+    mock_code: str
+
+
+class LogoutOut(BaseModel):
+    """退出登录出参（POST /api/v1/auth/logout；幂等：无效/吊销失败仍 ok）"""
+
+    ok: bool

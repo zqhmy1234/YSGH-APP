@@ -1,7 +1,16 @@
 # 忆述光华 · CI（S2-05 收尾项，对齐 S1-04「CI 接入（lint+单测+构建检查，main 保护）」）
-# 策略：CI = 与本地提交门禁同源 —— 直接跑 scripts/review_agent.py（语法/lint/测试/密钥扫描/TODO）。
-# 服务：postgres（yishu 隔离库）+ redis（RQ 队列），与 backend/.env 本地口径一致。
-# 触发：develop/main 推送 + PR → develop/main（main 受保护，只接受 develop 合并）。
+# 策略（2026-08-26 重构：快 + 拦截 + 高质量）：
+#   双层并行：
+#     - fast-gate：静态全仓门禁（语法/lint/密钥/TODO，~30s）——PR/推送即时反馈
+#     - full-gate：全量门禁（pytest 全量 + api_smoke + research + 覆盖率）——最终把关
+#   服务：postgres（yishu 隔离库）+ redis（RQ 队列）+ qdrant（向量库，全量覆盖不 deselect）
+#   缓存：pip 缓存（拆 key + restore-keys 兜底增量）；HF 模型缓存（BGE-M3 按模型拆 key）
+#   触发：develop/main 推送 + PR → develop/main（main 受保护，只接受 develop 合并；
+#         建议 develop 也开 branch protection 要求两 job 通过，见 docs/项目API密钥清单与获取.md 同批讨论）
+# 2026-08-27（批次 H2 R7 增强）：client tsc 试点 / 模型路径 annotation / 覆盖率统一 60 +
+#   rag 计覆盖 / 缓存拆 key / docker exec psql / deselect 警告 / pip-audit 定时 / coverage.xml
+# 2026-09-24（B12-1）：client tsc 试点退役——5.24 迁移后 client/utils/** 全为 *.uts，tsc include
+#   匹配 0 文件（恒绿假门禁）；fast-gate 该步骤改为 audit_harness 轴 2（客户端漂移，真覆盖）。
 name: CI
 
 on:
@@ -9,20 +18,89 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  # P0-4（2026-08-27）：schema.sql ↔ alembic 漂移检测 weekly 巡检（周一 03:00 UTC），
+  # 定时 run 检出漂移即**红**（= 告警信号；D14-23 修正后已去掉 continue-on-error）；
+  # 不参与 PR 门禁（本 job 不由 push/PR 触发）；支持 workflow_dispatch 手动触发。
+  # 同 schedule 触发 pip-audit-weekly（T7 依赖漏洞定时审计）。
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  backend-quality:
-    name: Backend Quality Gate
+  fast-gate:
+    name: Fast Gate（静态语法/lint/密钥）
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff + env_template 判据的最小依赖
+        # 2026-09-28：`review_agent` 的 env_template 检查调用 deploy/scripts/check_env_template.py，
+        #   后者要 `import app.core.config`；config.py 只依赖 pydantic / pydantic-settings
+        #   （Settings 全部字段带默认值、dev 下无 fail-fast ⇒ 无需 backend/.env 即可实例化）。
+        #   此前只 `pip install ruff` ⇒ 该检查恒因 ModuleNotFoundError 报「模板漂移」而**假红**，
+        #   真因是环境缺依赖、与模板内容无关。只补这两个包，不装全量 requirements。
+        # ruff 必须**钉版本**：2026-10-10 实测 `pip install ruff`（不钉）装到了 0.17.0，
+        #   而 0.17.0 改了「无 pyproject/requires-python 时 target-version 的默认推断」，
+        #   于是 UP017(datetime.UTC) 在本仓 66 个文件 154 处突然报红 —— 代码一行没动，
+        #   规则集自己变了。仓库跑的是 Python 3.11，但 ruff.toml 从未声明 target-version，
+        #   这正是它会被上游静默改动的根因。
+        #   钉 0.16.8 = 与开发机一致、也是本仓最后一次 lint 全绿的版本。
+        #   ✅ 根因已另行修复（同日）：ruff.toml 已显式声明 `target-version = "py311"`，
+        #      规则集从此与本仓真实 Python 绑定，不再随 ruff 版本静默漂移；
+        #      并 `ruff --fix` 清掉了那 154 处。**0.16.8 与 0.17.0 现已双双全绿**，
+        #      故本行可直接升 0.17.0（已实测），只是为与开发机保持一致暂留 0.16.8。
+        #   **升级 ruff 时仍须先本地跑 `ruff check .` 看有无新增命中，再改这里的版本号。**
+        #   与下方 full-gate 的同一行**必须保持一致**（两处一起改）。
+        run: pip install ruff==0.16.8 pydantic pydantic-settings
+
+      - name: Run static gate (syntax/lint/secrets/todos, no tests)
+        run: python scripts/review_agent.py --full --skip-tests
+
+      - name: Client gate (audit_harness 轴 2 · 客户端漂移)
+        # B12-1（2026-09-24 重构波）：本步骤原为「client tsc 试点」——对 `client/utils/*.ts` 跑
+        #   `tsc --noEmit`。5.24 迁移已将 `client/utils/**` 全量改名为 `*.uts`，而 tsc 的 include
+        #   只解析 .ts/.tsx/.d.ts（allowJs 时为 .js），**不认 .uts**（TS 无此扩展，无等效配置），
+        #   故 include 匹配 0 文件；叠加 `continue-on-error: true` + 脚本末尾 `exit 0`
+        #   ⇒ 恒绿空转（假门禁，缺陷 D13-1）。原临时 tsconfig/env.d.ts 桩文件策略一并退役。
+        # 替代（真覆盖的等价门禁）：audit_harness 轴 2 —— 客户端漂移审计（USE_MOCK_* 清点 /
+        #   代码内死路由 / 5.24 迁移后 .ts 残留引用），纯文件扫描、无需后端依赖。
+        # **刻意不加 continue-on-error**：存在 CRITICAL 即 fail，不再保留任何恒绿门禁。
+        run: python scripts/audit_harness.py client
+
+  full-gate:
+    name: Full Gate（全量 pytest + api_smoke + research）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # 2026-08-26 修复：DATABASE_URL 等提到 job 级——Init PG 步骤的 alembic upgrade head
+    # 也需要读 DATABASE_URL（此前只在 quality gate 步骤定义 → alembic 用默认 postgres:postgres 密码错 exit 1，
+    # 即 #8-#11 连续失败根因；#6 用 schema.sql 不需要 DATABASE_URL 故成功）。
+    env:
+      DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
+      REDIS_URL: redis://localhost:6379/0
+      QDRANT_URL: http://localhost:6333
+      MOCK_EXTERNAL_AI: "true"
+      # 本地 embedding.py 默认 HF_HUB_OFFLINE=1（防国内网络 HEAD 超时挂起）；
+      # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
+      HF_HUB_OFFLINE: "0"
+      PYTHONPATH: .
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # 2026-08-26：postgres:16-alpine → pgvector/pgvector:pg16（官方镜像自带 vector 扩展；
+        # schema.sql 建库需要 CREATE EXTENSION vector，普通 postgres 镜像无此扩展致 test_vector_extension 挂）
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: admin
@@ -43,7 +121,246 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      qdrant:
+        # 2026-08-26：v1.9.7 → v1.19.0（与 requirements qdrant-client>=1.19 匹配；
+        # 旧版 server 与新版 client 不兼容致 api_smoke payload 刷新 404——#17/#18 失败根因）
+        image: qdrant/qdrant:v1.19.0
+        ports:
+          - 6333:6333
+        # 官方镜像自带 HEALTHCHECK（/healthz），勿加 curl health-cmd（镜像内无 curl）
 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        # 2026-08-27（T4）：去掉 cache: pip（其仅精确 hash 命中才恢复，requirements 变更即全量重下）
+        # ——由下方显式 pip-cache 步骤 + restore-keys 兜底增量代替。
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: pip cache（T4：按 requirements 拆 key + restore-keys 增量兜底）
+        # setup-python 的 cache: pip 无 restore-keys 兜底：requirements 任何变更 →
+        # pip 缓存全量失效重下。改为显式 actions/cache：key 按 requirements.txt hash 拆，
+        # restore-keys 兜底最近缓存 → pip 仅增量重下变更包（避免全量重下）。
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: HF model cache · BGE-M3（T4：按模型拆 key，避免任一消费文件变更牵连全量）
+        # 原单一 ~/.cache/huggingface + hashFiles(embedding,rerank,classifier)：任一文件变更
+        # 即整库 key 失效（restore-keys 兜底最近缓存仍免重下，但大缓存易被 7 天/10GB eviction
+        # 挤占）。拆为 BGE-M3 单独条目：仅 key 其消费方 embedding.py（rerank/setfit 均为仓库
+        # 本地模型，不走 HF），模型内容稳定跨 commit 复用；restore-keys 按 commit 演进兜底。
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub/models--BAAI--bge-m3
+          key: hf-bge-m3-${{ runner.os }}-${{ hashFiles('backend/app/services/embedding.py') }}
+          restore-keys: |
+            hf-bge-m3-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-cov httpx ruff==0.16.8   # 钉版本的理由见上方 fast-gate 同名步骤；两处必须一致
+
+      - name: Dependency vulnerability scan (pip-audit, non-blocking annotation)
+        # TD-P2A（2026-08-26）：依赖扫描入 CI（技术债清理计划 P3-60）。
+        # pip-audit 对解析后的依赖树做 CVE 核验（OSV 库）；失败仅 annotation 标注不阻断
+        # （continue-on-error）——OSV 网络抖动/误报需人工判读，避免假阳性卡死主流水线。
+        # 报告落 .cowork-temp/pip-audit.json 随 test-reports artifact 存档。
+        # 注：周一定时全量审计见 pip-audit-weekly job（T7）。
+        continue-on-error: true
+        run: |
+          mkdir -p .cowork-temp
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --format=json > .cowork-temp/pip-audit.json 2>.cowork-temp/pip-audit.err || echo "pip-audit 非零退出（不阻断，见 annotation）"
+          python - <<'EOF'
+          import json, pathlib
+          report = pathlib.Path('.cowork-temp/pip-audit.json')
+          err = pathlib.Path('.cowork-temp/pip-audit.err')
+          if not report.exists() or report.stat().st_size == 0:
+              print('::warning file=backend/requirements.txt::pip-audit 未产出报告（离线/网络失败），请人工核验依赖安全')
+              if err.exists():
+                  print('::warning::pip-audit stderr: ' + err.read_text(errors='replace')[-400:])
+              raise SystemExit(0)
+          try:
+              data = json.loads(report.read_text(encoding='utf-8'))
+          except json.JSONDecodeError as exc:
+              print(f'::warning::pip-audit 输出解析失败: {exc}')
+              raise SystemExit(0)
+          vulns = data.get('vulnerabilities', [])
+          if not vulns:
+              print('::notice::pip-audit 未发现已知漏洞')
+          else:
+              items = []
+              for v in vulns[:20]:
+                  name = v.get('name', '?')
+                  version = v.get('version', '?')
+                  vid = (v.get('vuln') or {}).get('id', '?')
+                  items.append(f'{name} {version} -> {vid}')
+              print(f"::warning file=backend/requirements.txt::{len(vulns)} 个已知漏洞: {'; '.join(items)}")
+          EOF
+
+      - name: Init PostgreSQL（yishu 隔离库 + 全量 schema，走 scripts/init_db.py 权威路径）
+        # 2026-09-28 重构：原步骤用 `setup_pg.sql + schema.sql` 手工建库，并靠
+        #   `docker ps -qf "name=postgres"` 猜 service 容器句柄 —— 两处都是坑：
+        #   ① 句柄取不到 ⇒ 整步死在第一步、后面 16 个步骤从未跑过（届时日志里没有任何
+        #      docker 报错，只是没有该名字的运行中容器）。
+        #   ② 就算取到了，建出来的库**相对 ORM 权威是残缺的**：schema.sql 缺 5 张 ORM 表
+        #      （capsules / chat_messages / knowledge_collections / memories / memory_categories）
+        #      与 5 个 contents 列（duration / remark / size_bytes / tags_json / ai_description），
+        #      实测 api_smoke 挂 `column contents.duration does not exist`、
+        #      test_db_integration::test_schema_tables_present 报缺表。
+        #      —— 这不是意外：`backend/sql/schema.sql` 自己的头部（2026-09-24）就写着
+        #      「不是建库权威，不要用它新建后端库」「✅ 正确的建库方式：python scripts/init_db.py」，
+        #      而本步骤恰恰在做它明令禁止的事。
+        #   B-1 后 `scripts/init_db.py` 负责角色/扩展，建表交给 Alembic；空库由 ORM 自举，已有库走增量迁移。
+        #   与本地/服务器**同源** —— 「本地全绿 CI 必挂」这一整类漂移事故从结构上消失。
+        #   · 角色名/密码/库名由它从 job 级 `DATABASE_URL` 解析（两侧自动一致，无需再内联密码）
+        #   · pgvector 非 trusted 扩展由它改用**超级用户连目标库**创建（自己踩过这个坑并记在注释里）
+        #   · 超级用户连接串用 `--admin-url` 传（service 容器口径 postgres/admin）
+        #   不再需要 docker exec / pg_isready / psql —— service 容器已把 5432 映射到 runner。
+        run: |
+          python scripts/init_db.py \
+            --admin-url 'postgresql+psycopg://postgres:admin@localhost:5432/postgres'
+
+      - name: Generate test photos (api_smoke photo-journey 链路需要；test_photos 为 gitignore 资产，CI 全新检出需生成)
+        run: python scripts/generate_test_photos.py
+
+      - name: Warm HF models (BGE-M3 预下载，避免测试中现场下载 2.2GB 超时/失败致 5 个 pipeline 测试 status=failed)
+        # 2026-08-26：cache miss 时模型下载失败会以 5 个测试模糊失败呈现；预热步骤显式下载，失败即明确报错
+        # T2（2026-08-27）：脚本成功/失败均输出 HF/模型路径 annotation（匿名 API 可读）。
+        env:
+          HF_HUB_OFFLINE: "0"
+        run: python scripts/warm_hf_models.py
+
+      - name: Run static quality gate (review_agent --full --skip-tests)
+        # T3（2026-08-27）：原 review_agent --full 内部以 50 阈值跑测试（review_agent 硬编码
+        # --cov-threshold 50，不在本批次改动域）。拆为：本步静态门禁（--skip-tests）+ 下步
+        # 测试门禁（test_agent --cov-threshold 60），使 CI 覆盖率阈值统一 60%。
+        # 注（B10 2026-09-24）：本步现已内含 structure（轴5/6）+ audit_axes（轴1-4）检查。
+        run: python scripts/review_agent.py --full --skip-tests
+
+      - name: Check deploy env template ↔ config.py alignment (D13-3)
+        # B12-2（2026-09-24 重构波）：模板「与 config.py 字段逐一对齐」的承诺此前无门禁（缺陷 D13-3）。
+        # 复用 deploy/scripts/check_env_template.py（单一判据，勿在此重写规则）：真缺口（config 有、模板无）或过期项（模板有、config 已无）→ exit 1。
+        # 刻意**不加 continue-on-error**：漂移即 fail。
+        run: python deploy/scripts/check_env_template.py
+
+      - name: Run harness audit (audit_harness 轴 1-6，失败即 fail)
+        # B10（2026-09-24）：audit_harness 多轴审计纳入 CI（此前轴 1-4 零命中，缺陷 D14-1，P0）。
+        # 轴 1 契约对拍需可导入的后端环境——本 job 已装全量依赖 + 起服务，环境满足；
+        # 轴 2/3/4（客户端/模型/导出）为纯文件扫描，轴 5/6（体积/重复）为棘轮。
+        # 刻意**不加 continue-on-error**：存在 CRITICAL 即 fail（退出码 2 的环境错误同样 fail，
+        # 交人工处置）。与上一步 review_agent 的 audit_axes/structure 互为冗余兜底。
+        run: python scripts/audit_harness.py all
+
+      - name: Run full tests + coverage (test_agent --cov-threshold 60)
+        # T3/T8（2026-08-27）：60% 统一阈值 + rag 分组计入覆盖率（test_agent 内主套件 +
+        # rag --cov-append 合并判定）+ 产出 .cowork-temp/coverage.xml（下步 rag 步骤再幂等合并，
+        # 最终随 artifact 上传）。deselect 时 test_agent 输出显式 ::warning::（T6）。
+        # env 继承 job 级（DATABASE_URL/REDIS_URL/QDRANT_URL/MOCK_EXTERNAL_AI/HF_HUB_OFFLINE/PYTHONPATH）
+        run: python scripts/test_agent.py --cov-threshold 60
+
+      - name: Run RAG integration tests (pytest -m rag)
+        # TD-P1C（2026-08-26）：RAG 门禁盲区——本地 pytest 默认 -m "not rag"，
+        # 此步骤显式跑 rag 分组，19 个检索/精排/以图搜图用例进 CI。
+        # 写 test_ 前缀隔离 collection（QDRANT_COLLECTION），不碰生产 yishu_contents。
+        # T3（2026-08-27）：追加 --cov-append + xml——rag 用例计入覆盖率（与 test_agent 的
+        # rag 段幂等合并），最终 .cowork-temp/coverage.xml 反映合并后覆盖（T8 产物）。
+        env:
+          QDRANT_COLLECTION: test_yishu_contents
+        run: python -m pytest backend/tests -m rag -q --tb=short --cov=backend/app --cov-append --cov-report=xml:.cowork-temp/coverage.xml
+
+      - name: Clean up test Qdrant collections (best-effort)
+        # TD-P1C（2026-08-26）：每跑结束清理 test_ 前缀 collection（尽力而为，失败不阻断）
+        if: always()
+        run: >-
+          python -c
+          "import sys; sys.path.insert(0, 'backend');
+          from app.services.vector_store import cleanup_test_collections;
+          print('removed:', cleanup_test_collections())"
+
+      - name: Report failure details to annotation (diagnostic)
+        # 2026-08-26：失败详情写进 annotation（GitHub API 可匿名读 annotations，日志需登录）
+        # T2（2026-08-27）：HF/模型路径信息一并写进 annotation（匿名 API 可读，排障免登录日志）。
+        if: failure()
+        run: |
+          python - <<'EOF'
+          import json, os, pathlib
+          # T2：HF/模型路径写进 annotation
+          hub = os.environ.get('HF_HUB_CACHE')
+          if not hub:
+              hub = str(pathlib.Path.home() / '.cache' / 'huggingface' / 'hub')
+          bge = pathlib.Path(hub) / 'models--BAAI--bge-m3'
+          print('::error title=model-paths::HF_HUB_CACHE=' + hub +
+                ' | BGE-M3 cached=' + ('YES' if bge.is_dir() else 'NO') +
+                ' | reranker=backend/models/bge-reranker-v2-m3' +
+                ' | setfit=backend/models/setfit-classifier')
+          for f in ['.cowork-temp/review-report.json', '.cowork-temp/test-report.json']:
+              p = pathlib.Path(f)
+              if p.exists():
+                  data = json.loads(p.read_text(encoding='utf-8'))
+                  if f.endswith('test-report.json'):
+                      out = {k: {'ok': v['ok'], 'tail': v['output'][-1800:]} for k, v in data.get('details', {}).items()}
+                  else:
+                      out = {'blocking': data.get('blocking_checks'), 'details': {k: {'ok': v['ok'], 'tail': v['output'][-1200:]} for k, v in data.get('details', {}).items()}}
+                  msg = json.dumps(out, ensure_ascii=False)[:3500]
+                  print(f'::error file={f}::{msg}')
+              else:
+                  print(f'::warning file={f}::{f} not found')
+          EOF
+
+      - name: Upload pytest coverage (+ coverage.xml)
+        # T8（2026-08-27）：.cowork-temp/ 含 coverage.xml（test_agent/rag 步骤产出），随 artifact 上传。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: .cowork-temp/
+          if-no-files-found: ignore
+
+  # ============================================================
+  # P0-4（2026-08-27）：schema.sql ↔ alembic 迁移链漂移检测（weekly）
+  # 背景：本 job 设计时 CI 建库源 = schema.sql，本地/生产走 alembic，两链无强制对齐
+  #       ——#8~#19 系列 CI 失败几乎全是漂移类（缺表/缺列/FK/vector 扩展）；lessons.md:97 解法落地。
+  # ⚠️ 口径变更（2026-09-29 登记）：**2026-09-28 起 CI 建库已改走 `scripts/init_db.py`**
+  #       （见本文件 fast/full gate 的 Init PostgreSQL 步骤），A 侧（schema.sql）**不再是
+  #       任何环境的建库源**。故本 job 报出的 BLOCKING 多数是「schema.sql 作为中间态快照已
+  #       过时」而非「构建链有缺口」——**定时红属实，但别按旧描述去查**。
+  #       A 侧改为 init_db.py 产物的前提是 B-1（baseline 自包含）落地，理由见脚本头「口径变更」。
+  # 设计：脚本在临时库分别用 schema.sql 与 alembic head（失败回退 ORM metadata）建库，
+  #       对比表集合/列/索引/外键/唯一约束/主键；退出码 1 = 检出漂移。
+  # 失败策略（B10-i/D14-23 2026-09-24 修正）：**不再使用 continue-on-error**——
+  #       原设置使本 job 永绿，漂移无法产生任何信号；现改为「定时 run 漂移即红」
+  #       （= 告警信号，与同文件 pip-audit-weekly「发现即失败」口径一致）。
+  #       仍**不阻断 push/PR 主流水线**（本 job 仅 schedule/workflow_dispatch 触发，不拖慢 PR）。
+  schema-drift-weekly:
+    name: Schema Drift（weekly，ORM ↔ alembic）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 仅 schedule/workflow_dispatch 触发（不参与 push/PR 门禁）；
+    # 不加此 if 时 schedule 事件会连带跑 fast-gate/full-gate（未修改其逻辑，用 if 隔离）。
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,35 +369,80 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
-      - name: Install dependencies
+      - name: Install deps (sqlalchemy/psycopg/alembic/pydantic——仅漂移检测所需，不装全量 requirements)
+        run: pip install sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings
+
+      - name: Run ORM versus Alembic schema drift check
+        # P0-4：检出漂移 → 脚本 exit 1（+ ::error:: annotation）。
+        # B10-i/D14-23（2026-09-24 重构波）：本步骤原为 `continue-on-error: true` ⇒ **本 job 永绿**，
+        #   schema.sql ↔ alembic 漂移**无法产生任何信号**（与同文件 pip-audit-weekly 的
+        #   「发现即失败、红色定时 run 即告警」口径自相矛盾）。现**去掉 continue-on-error**：
+        #   本 job 仅 schedule/workflow_dispatch 触发 ⇒ 不阻断 push/PR，但定时漂移会变红告警。
+        run: python scripts/check_schema_drift.py --admin-url postgresql+psycopg://postgres:admin@localhost:5432/postgres
+
+  # ============================================================
+  # T7（2026-08-27 批次 H2 R7）：依赖漏洞扫描定时 job（weekly）
+  # 区别于 full-gate 内非阻断的 pip-audit 步骤：本 job 发现漏洞即失败（红色定时 run 即告警
+  # 信号，可在 GitHub 配置通知），报告落 artifact 存档。误报（OSV 数据源）可人工判读，
+  # 必要时评论豁免后重新触发 workflow_dispatch。
+  pip-audit-weekly:
+    name: Dependency Audit（weekly · pip-audit）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit backend requirements (blocking on findings)
         run: |
-          pip install -r backend/requirements.txt
-          pip install pytest pytest-cov httpx ruff
+          mkdir -p .cowork-temp
+          set +e
+          pip-audit -r backend/requirements.txt --format=json > .cowork-temp/pip-audit.json 2>.cowork-temp/pip-audit.err
+          audit_code=$?
+          set -e
+          python - "$audit_code" <<'EOF'
+          import json, pathlib, sys
+          audit_code = int(sys.argv[1])
+          report = pathlib.Path('.cowork-temp/pip-audit.json')
+          err = pathlib.Path('.cowork-temp/pip-audit.err')
+          if not report.exists() or report.stat().st_size == 0:
+              print('::warning::pip-audit 未产出报告（离线/网络失败），请人工核验依赖安全')
+              if err.exists():
+                  print('::warning::pip-audit stderr: ' + err.read_text(errors='replace')[-400:])
+              sys.exit(0)  # 工具/网络故障不当作漏洞失败
+          try:
+              data = json.loads(report.read_text(encoding='utf-8'))
+          except json.JSONDecodeError as exc:
+              print(f'::warning::pip-audit 输出解析失败: {exc}')
+              sys.exit(0)
+          vulns = data.get('vulnerabilities', [])
+          if not vulns:
+              print('::notice::pip-audit 未发现已知漏洞')
+              sys.exit(0)
+          items = []
+          for v in vulns[:30]:
+              name = v.get('name', '?')
+              version = v.get('version', '?')
+              vid = (v.get('vuln') or {}).get('id', '?')
+              items.append(f'{name} {version} -> {vid}')
+          print(f"::error::发现 {len(vulns)} 个已知漏洞（定时审计 → 红色 run 即告警）: {'; '.join(items)}")
+          sys.exit(1)
+          EOF
 
-      - name: Init PostgreSQL (yishu 隔离库 + schema)
-        run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-          PGPASSWORD=admin psql -h localhost -U postgres -f scripts/setup_pg.sql
-          PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -f backend/sql/schema.sql
-          PGPASSWORD=yishu_app_2026 psql -h localhost -U yishu_app -d yishu -c "SELECT current_database(), current_user;"
-
-      - name: Run quality gate (review_agent)
-        env:
-          DATABASE_URL: postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
-          REDIS_URL: redis://localhost:6379/0
-          MOCK_EXTERNAL_AI: "true"
-          # 本地 embedding.py 默认 HF_HUB_OFFLINE=1（防国内网络 HEAD 超时挂起）；
-          # CI 是全新缓存，需联网下载 BGE-M3（~2.2GB），显式覆盖为 0。
-          HF_HUB_OFFLINE: "0"
-          PYTHONPATH: .
-        run: python scripts/review_agent.py
-
-      - name: Upload pytest coverage
+      - name: Upload audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
-          path: .cowork-temp/
+          name: pip-audit-weekly
+          path: .cowork-temp/pip-audit.json
           if-no-files-found: ignore

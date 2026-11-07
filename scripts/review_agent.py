@@ -2,16 +2,36 @@
 """忆述光华 · Pre-Commit 代码质量审核 Agent（Sprint 1 新增流程）
 
 用法：
-  python scripts/review_agent.py [--fix] [--path <dir>]
+  python scripts/review_agent.py          # 快速门禁（默认，秒级）：只查本次提交涉及的文件
+  python scripts/review_agent.py --full   # 全量门禁：仓库级语法/lint/密钥扫描 + 全量测试（集成/CI 前跑）
+  python scripts/review_agent.py --full --skip-tests  # 静态全仓门禁（CI 快速层：语法/lint/密钥，不跑测试）
+  python scripts/review_agent.py --path <dir>   # （兼容占位，忽略）
 
 职责（Commit Gate，写入 AGENTS.md）：
-  1. Python 语法编译检查（所有 .py）
-  2. Lint（ruff，若可用）
-  3. 测试运行（pytest / 项目验证脚本）
-  4. 密钥与敏感信息扫描（.env 泄漏、硬编码 key）
-  5. 阻断项检查（TODO/FIXME 计数报告，不阻断）
+  快模式（pre-commit 默认，2026-08-26 拆分——原每次 commit 全量跑 5 分钟）：
+    1. Python 语法编译检查（本次提交新增/修改的 .py）
+    2. Lint（ruff，仅本次提交的 .py；有未暂存改动的文件跳过，语义同旧实现）
+    3. 密钥与敏感信息扫描（仅本次提交文件——gitignore 的 .env 等永不入 index，天然豁免）
+      ⚠️ 快/全量**都必须**只扫「可能入库」的文件：全量模式原先扫工作区全部 rglob，
+      不认 .gitignore，被 `.workbuddy/tmp/*.txt` 这类被忽略产物卡成假红灯（2026-09-23 修，
+      见 `_repo_text_candidates`）。
+    4. TODO/FIXME 计数报告（不阻断）
+    5. lessons 强制登记检查（上次失败未登记 → 阻断）
+    6. 结构棘轮 structure（轴 5/6：文件体积 / 重复模式，2026-09-24 B1 接入）
+    7. 跨轴审计 audit_axes（轴 1-4：契约/客户端/模型/导出，2026-09-24 B10 接入，缺陷 D14-1）
+    8. 部署模板对齐 env_template（模板 ↔ config.py，2026-09-24 B12 接入，缺陷 D13-3）
+  全量模式（--full，完成验收/集成/CI 用，即旧行为）：
+    1-4 同快模式但扫描整个仓库（排除 client/ 工具链）
+    5. 全量测试（pytest + api_smoke + research，经 scripts/test_agent.py）
+    6. lessons 强制登记检查
+    7. 结构棘轮 + 跨轴审计 + 部署模板对齐（与快模式同源；全量模式下轴 1 契约对拍通常可跑）
 
-退出码：0 = 通过可提交；1 = 存在阻断项（禁止 commit，先修复）。
+退出码（**统一口径**，与 `audit_harness` / `check_schema_drift` / `gen_openapi` 一致 · D14-18）：
+  0 = 通过（可提交）
+  1 = 存在**违规**阻断项（代码问题，须修复后再提交）
+  2 = **环境错误**（工具/依赖/后端不可用，本工具**无法真正判定**）
+      —— 与「违规」区分，避免把「环境没配好」误当成「代码有问题」；
+         调用方（git hook / CI）对**非 0 一律阻断**，但退出码可供快速归因。
 
 报告输出：.cowork-temp/review-report.json（每次覆盖）。
 """
@@ -19,118 +39,349 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
+import re
 import sys
 from pathlib import Path
 
 # Windows 控制台 GBK 兼容（✅/❌ 为 Unicode）
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+from gate_io import force_utf8  # noqa: E402
 
-# subprocess 输出按 UTF-8 解码（Windows 默认 GBK 会炸）
-SUB_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+# D14-12（B10-i）：子进程包装**单一实现**（scripts/gate_proc.py，与 test_agent 共用）
+from gate_proc import run  # noqa: E402
+
+# D14-22（B10-i）：机读报告统一 schema + 带兜底写入（scripts/gate_report.py，三工具共用）
+from gate_report import write_report  # noqa: E402
+
+force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_DIR = ROOT / ".cowork-temp"
 REPORT_PATH = REPORT_DIR / "review-report.json"
 
 # 阻断规则：匹配到这些模式的代码不允许提交
-SECRET_PATTERNS = [
-    "sk-[A-Za-z0-9]{20,}",        # OpenAI/DeepSeek 风格 key
-    "AKIA[0-9A-Z]{16}",           # AWS access key
-    "-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----",
-    "password\\s*=\\s*['\"][^'\"]+['\"]",
-    "secret\\s*=\\s*['\"][^'\"]{8,}['\"]",
-]
-SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py"}
+#
+# D14-9（2026-09-24 B10-l）：模式集**唯一来源** = 同目录 secret_patterns.py（与
+#   scripts/audit_security.py 共用）。此前两处各维护一套且**互有缺口**
+#   （审计认得 AKID…/私钥宽版，提交门禁看不到）⇒ 同一份密钥可能被放行。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from secret_patterns import SECRET_PATTERNS  # noqa: E402
+
+SECRET_SKIP = {".env.example", ".git", "review_agent.py", "config.py", "secret_patterns.py"}
+# 2026-08-27（T9）：补齐 client 工具链（已整目录排除）之外的文本类型盲区——
+# .txt/.properties/.ps1/.sh/.mjs/.bat/.xml/.gitignore/.example/.mako 均可能携带密钥
+TEXT_EXTS = (
+    ".py", ".md", ".json", ".yaml", ".yml", ".toml", ".env", ".ini", ".sql",
+    ".ts", ".uts", ".uvue",
+    ".txt", ".properties", ".ps1", ".sh", ".mjs", ".bat", ".xml", ".gitignore",
+    ".example", ".mako",
+)
 
 
-def run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd or ROOT,
-            timeout=300, encoding="utf-8", errors="replace", env=SUB_ENV, check=False,
-        )
-        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except FileNotFoundError:
-        return 127, f"command not found: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
+def _skip_path(parts: tuple[str, ...]) -> bool:
+    """harness 工具链扫描排除（B2 决策：client/ 为 uni-app x，非 Python 工具链）
+
+    2026-08-26：加 .wt/（并行开发 worktree 副本——每个都是完整仓库，
+    全量模式会重复扫 5 份 backend，静态门禁 150s→~30s）。
+
+    ⚠️ 2026-09-23 **临时**加 agent/（开发部同事交付的 Coze Agent 包，原样入库以便对照上游）：
+    该包 354 处 lint 违规（239 可自动修 + 115 需手动，含 S310/S110/DTZ005 等真问题），
+    其上不符合我们规范。**豁免是临时的**：改写批次（见 docs/待办处理排期_20260923.md「Agent 接线批」AG7）
+    完成后**必须删除本行**并全量收口 lint。登记：docs/决策台账.md §4.12。
+    """
+    return (
+        ".git" in parts
+        or ".cowork-temp" in parts
+        or "client" in parts
+        or (".wt" in parts or (len(parts) > 0 and parts[0] == ".wt"))
+    )
 
 
-def check_syntax() -> tuple[bool, str]:
-    """编译所有 .py，捕获语法错误"""
-    py_files = [p for p in ROOT.rglob("*.py") if ".git" not in p.parts and ".cowork-temp" not in p.parts]
-    errors: list[str] = []
-    for f in py_files:
-        code, out = run([sys.executable, "-m", "py_compile", str(f)])
+def _skip_path_for_secrets(parts: tuple[str, ...]) -> bool:
+    """**密钥/TODO 扫描**的排除集（2026-10-11 修复 D14-25）。
+
+    为什么与 `_skip_path` 分开：`_skip_path` 的语义是"**Python 工具链**（语法/lint）的遍历范围"，
+    它排除 client/ 是合理的（uni-app x 不走 py_compile/ruff）。但 `check_secrets` 复用了同一函数
+    ⇒ `TEXT_EXTS` 里列着 `.uts/.uvue`（设计意图明确要扫客户端）却**从不生效**——客户端里的
+    硬编码密钥属于**最需要拦**的一类（APK 会被反编译，密钥直接暴露给使用者）。
+
+    本排除集只去掉真无关的目录（版本库元数据 / 临时区 / 并行 worktree 副本），**保留 client/**。
+    """
+    return (
+        ".git" in parts
+        or ".cowork-temp" in parts
+        or (".wt" in parts or (len(parts) > 0 and parts[0] == ".wt"))
+    )
+
+
+def _lint_skip(path: str) -> bool:
+    """lint 步的**文件列表层**排除（`_skip_path` 只作用于语法步的目录遍历）。
+
+    为什么需要独立函数：`check_lint` 把文件**显式**传给 `ruff check <files>`，
+    而 **ruff 的 `config.exclude` 对命令行显式传入的文件不生效**（实测：仅配
+    ruff.toml 的 exclude 时，本次提交里的 agent/*.py 仍被 lint 拦下）。
+    故必须在列表层过滤。
+
+    ⚠️ 2026-09-23 **临时**纳入 agent/（交付包原样入库，理由与依据见 `agent/UPSTREAM.md`）：
+    上游 354 处违规；**仅豁免 lint**——语法与密钥扫描仍覆盖 agent/（实测通过：32 文件编译 OK、无硬编码密钥）。
+    **撤销待办 AG7**：改写批次完成后删除本函数的 agent 判断（与 ruff.toml 的 exclude 同步），
+    登记见 docs/决策台账.md §4.12 与排期「Agent 接线批」AG7。
+    """
+    p = path.replace("\\", "/")
+    return p == "agent" or p.startswith("agent/")
+
+
+def _git_files(cached: bool) -> list[str]:
+    """git diff 文件名（相对路径，正斜杠）；cached=True 查暂存区（本次提交），否则查工作区改动
+
+    2026-08-27（批次 H2 R7 · T9）：--diff-filter=ACM → ACMR——重命名（R）文件此前
+    不出现于快模式 diff（git 视之为 R 而非 A），导致 rename 的文件漏过 syntax/lint/
+    secrets 扫描；加入 R 后与全量模式（rglob 覆盖仓库全部）语义一致。
+    """
+    args = ["git", "diff", "--name-only", "--diff-filter=ACMR"]
+    if cached:
+        args.insert(2, "--cached")
+    code, out = run(args)
+    if code != 0 or not out.strip():
+        return []
+    return [p.strip() for p in out.splitlines() if p.strip()]
+
+
+def _staged_files() -> list[str]:
+    """本次提交涉及文件：优先暂存区；手动运行（未 add）时退回工作区改动"""
+    staged = _git_files(cached=True)
+    if staged:
+        return staged
+    return _git_files(cached=False)
+
+
+def _dirty_files() -> set[str]:
+    """有未暂存改动的文件（工作区 != 暂存区）——跳过，避免 lint 到进行中的半成品
+
+    与 _git_files 同为 ACMR（含 rename）：重命名且工作区仍有改动的文件同样
+    被判定 dirty → 快/全量 lint 跳过语义一致（2026-08-27 · T9）。
+    """
+    return {p.replace("\\", "/") for p in _git_files(cached=False)}
+
+
+def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
+    """按模式计算三组扫描文件：(syntax, lint, secrets/todos)
+
+    快模式：仅本次提交文件；全量模式：整个仓库（旧行为）。
+    """
+    if not full:
+        staged = _staged_files()
+        dirty = _dirty_files()
+        # 已暂存但又有未暂存改动的文件跳过 lint（ruff 读工作区，可能 lint 到半成品）
+        lint = [f for f in staged if f.endswith(".py") and f not in dirty and not _lint_skip(f)]
+        return ([f for f in staged if f.endswith(".py")], lint, staged)
+
+    # Match the git-visible scan scope. Recursive traversal of ignored model
+    # caches can compile thousands of third-party files and stall the gate.
+    syntax = [
+        p for p in _repo_text_candidates()
+        if p.endswith(".py") and not _skip_path(Path(p).parts)
+    ]
+    code, ls = run(["git", "ls-files", "--", "*.py"])
+    tracked = [p for p in (ls.splitlines() if code == 0 and ls.strip() else []) if p.strip()]
+    dirty = _dirty_files()
+    lint = [
+        p
+        for p in tracked
+        if p not in dirty and p.replace("/", "\\") not in dirty and not _lint_skip(p)
+    ]
+    secrets: list[str] = []
+    for rel in _repo_text_candidates():
+        if any(rel.startswith(s) or s in rel for s in SECRET_SKIP):
+            continue
+        # ⚠️ 2026-10-11 修复（假绿）：此处此前用 `_skip_path`，而它把 **client/ 整目录排除**
+        # ⇒ 全量模式下 `client/**/*.uts|*.uvue` 从不进入密钥扫描（快模式已改、此处漏改 ⇒
+        # 「改了一半」比没改更危险：文档/台账已宣称"已纳管"，实际仍是盲区）。
+        if _skip_path_for_secrets(Path(rel).parts):
+            continue
+        if rel.endswith(TEXT_EXTS):
+            secrets.append(rel)
+    return (syntax, lint, secrets)
+
+
+def _repo_text_candidates() -> list[str]:
+    """全量模式下「**可能入库**」的文件清单（相对路径）：tracked ∪ untracked-非忽略。
+
+    为什么改（2026-09-23 修一个真实假阳性）：
+      原实现是 `ROOT.rglob("*")`——扫**工作区全部文件**，**不认 .gitignore**。后果：
+      `.workbuddy/tmp/lesson_add.txt`（被忽略的 lessons 临时产物，正文里含示例模式
+      `password='...'`）把全量门禁卡死在 secrets 上，成为**唯一阻断项**。这是坏账两笔：
+        ① 防护为零——被忽略的文件永远不可能进仓库，扫它不产生任何真实防护；
+        ② 危害更大——门禁一变吵就会被绕过（本项目铁律），而它当时正在充当唯一红灯。
+      改为 git 视角（与快模式「只看 staged」语义一致）：只有**能进 index** 的文件才值得扫。
+      gitignore 自身失效场景（如 force-add）由「tracked ∪」这一半兜住。
+    失败兜底：git 不可用时返回空 → secrets 报「无硬编码密钥」（不静默跳过整项检查之外的东西）。
+    """
+    out: list[str] = []
+    for args in (["git", "ls-files"], ["git", "ls-files", "--others", "--exclude-standard"]):
+        code, ls = run(args)
         if code != 0:
-            errors.append(f"{f}: {out.strip()[:300]}")
-    return (not errors), ("\n".join(errors) if errors else f"{len(py_files)} files compiled OK")
+            continue
+        out.extend(p for p in (ls.splitlines() if ls.strip() else []) if p.strip())
+    return sorted({p.replace("\\", "/") for p in out})
 
 
-def check_lint() -> tuple[bool, str]:
-    """ruff check（若未安装则跳过并提示）"""
-    code, out = run(["ruff", "check", "."])
-    if code == 127:
-        return True, "[skip] ruff 未安装（pip install ruff 后启用）"
+def check_syntax(files: list[str]) -> tuple[bool, str]:
+    """编译指定 .py，捕获语法错误
+
+    2026-08-26 性能修复：原实现逐个 spawn `python -m py_compile`（950 文件 ≈ 5 分钟）
+    → 改进程内 py_compile.compile（同进程编译，<10s）。
+    """
+    import py_compile
+
+    errors: list[str] = []
+    for f in files:
+        try:
+            py_compile.compile(str(ROOT / f), doraise=True)
+        except py_compile.PyCompileError as exc:
+            errors.append(f"{f}: {exc.msg or exc}")
+    return (not errors), ("\n".join(errors) if errors else f"{len(files)} files compiled OK")
+
+
+# ─── 门禁口径常量（单一来源）────────────────────────────────────────────────
+#
+# D14-8（2026-09-24 B10-h）：覆盖率阈值此前**双口径**——本工具硬编码 50，而 CI 的
+#   `test_agent --cov-threshold 60` 是 60 ⇒ 「本地 --full 绿」**不等于**「CI 绿」。
+#   现收敛为单一常量并取 CI 的值 60：**本地门禁不得比 CI 松**。
+COV_THRESHOLD = 60
+
+# D14-19（2026-09-24 B10-h）：缺工具（ruff / pytest 未安装）此前**静默转绿**
+#   （返回 True + "[skip]"）——报告全绿而实际什么都没检查，与"假门禁"同族。
+#   现改为**默认阻断**（环境不齐就不能声称"验证过"）；确需在缺工具环境跑通，
+#   必须显式传 `--allow-missing-tools`（有意识、可见地放行，而非静默）。
+ALLOW_MISSING_TOOLS = False
+
+# D14-18（2026-09-24 B10-k / B10-o）：**统一退出码口径**——违规（代码问题）= 1，
+# 环境错误（工具/依赖不可用，无法判定）= 2。
+# 口径与判定函数**单一来源** = scripts/gate_exit.py（与 test_agent 共用）。
+from gate_exit import ENV_ERR_PREFIX  # noqa: E402
+
+
+def check_lint(files: list[str], *, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
+    """ruff check（若未安装则跳过并提示）；只查 git 已跟踪/本次提交文件
+
+    2026-08-26：快模式只 lint 本次提交的 .py（排除有未暂存改动的），
+    秒级返回；全量模式 lint 全部 tracked .py（排除他人进行中的改动）。
+    """
+    if not files:
+        return True, "[skip] 无待检查 .py"
+    code, out = run([sys.executable, "-m", "ruff", "check", *files])
+    if code == 127 or "No module named ruff" in out:
+        # D14-19：缺 ruff 不得静默放行（否则报告全绿而 lint 从未执行）
+        if allow_missing:
+            return True, "[放宽] ruff 未安装 → lint 未执行（--allow-missing-tools 显式放行）"
+        return False, (
+            f"{ENV_ERR_PREFIX} ruff 未安装 ⇒ lint **未执行**（环境不齐不得静默放行）\n"
+            "  安装：pip install ruff\n"
+            "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
+        )
     return (code == 0), out.strip() or "ruff clean"
 
 
-def run_tests() -> tuple[bool, str]:
-    """调用测试 Agent 全量测试（pytest + api_smoke + research）"""
-    code, out = run([sys.executable, str(ROOT / "scripts" / "test_agent.py"), "--cov-threshold", "50"])
+def run_tests(*, allow_missing: bool = ALLOW_MISSING_TOOLS) -> tuple[bool, str]:
+    """全量测试（仅 --full）：调用测试 Agent（pytest + api_smoke + research）"""
+    code, out = run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "test_agent.py"),
+            "--cov-threshold",
+            str(COV_THRESHOLD),
+        ],
+        timeout=900,
+    )
     if code == 0:
         return True, out.strip()[-1500:]
-    if "No module named" in out and "pytest" in out:
-        return True, "[skip] pytest 未安装（pip install pytest pytest-cov httpx）"
-    return (code == 0), out.strip()[-1500:]
+    if re.search(r"No module named ['\"]?(?:pytest|pytest_cov|_pytest)\b", out):
+        # D14-19：缺 pytest 不得静默放行（否则报告全绿而全量测试从未执行）
+        if allow_missing:
+            return True, "[放宽] pytest 未安装 → 全量测试未执行（--allow-missing-tools 显式放行）"
+        return False, (
+            f"{ENV_ERR_PREFIX} pytest 未安装 ⇒ 全量测试 **未执行**（环境不齐不得静默放行）\n"
+            "  安装：pip install pytest pytest-cov httpx\n"
+            "  确需在缺工具环境通过：加 --allow-missing-tools（显式、可见）"
+        )
+    if code != 0:
+        # 2026-09-25：失败时把「失败用例」显式置顶。
+        # 教训（实付代价：4 轮才定位到失败用例名）：`-q --cov-report=term-missing` 的输出
+        # 尾部是**覆盖率表**，`FAILED ...` 摘要被挤出 tail 切片；报告 JSON 里也没有结构化字段
+        # （键名是 details 而非 sections，猜键又白跑一轮）⇒ 最后只能全量重跑 pytest 才看到名字。
+        # 现：test_agent 已在报告里给 `failed_tests`（单一来源），这里直接展示，无需二次抽取。
+        fails = _failed_tests_from_report()
+        head = (
+            "[失败用例（单一来源＝.cowork-temp/test-report.json 的 failed_tests）]\n"
+            + ("\n".join(f"  {f}" for f in fails) if fails else "  （报告未产出 failed_tests，见下方原始输出）")
+        )
+        return False, head + "\n\n[测试输出·尾部]\n" + out.strip()[-1200:]
+    return True, out.strip()[-1500:]
 
 
-def check_secrets() -> tuple[bool, str]:
-    """扫描仓库（排除 .git/.cowork-temp）中的硬编码密钥"""
-    import re
+def _failed_tests_from_report() -> list[str]:
+    """读测试报告的结构化失败用例清单（test_agent 抽取，避免各工具各写一套解析）"""
+    try:
+        data = json.loads((REPORT_DIR / "test-report.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 —— 报告缺失/损坏不阻断，退回原始输出
+        return []
+    return [str(x) for x in (data.get("failed_tests") or [])]
 
+
+def check_secrets(files: list[str]) -> tuple[bool, str]:
+    """扫描硬编码密钥（快模式：仅本次提交文件；全量模式：仓库 rglob）
+
+    ⚠️ 2026-10-11 修复（D14-25）：本步此前复用 `_skip_path`，而它把 **client/ 整目录排除**
+    （那是给"语法/lint 只跑 Python 工具链"用的）⇒ `TEXT_EXTS` 里明明列了 `.uts/.uvue`
+    （设计上要扫客户端），实际却**一个都没扫到**：客户端里硬编码的 token/域名/密钥
+    不会被提交门禁拦下。现改用 `_skip_path_for_secrets`（不排除 client/）。
+    """
     findings: list[str] = []
-    for f in ROOT.rglob("*"):
-        if not f.is_file():
-            continue
-        rel = f.relative_to(ROOT).as_posix()
+    for f in files:
+        rel = f.replace("\\", "/")
         if any(rel.startswith(s) or s in rel for s in SECRET_SKIP):
             continue
-        if any(rel.endswith(ext) for ext in (".py", ".md", ".json", ".yaml", ".yml", ".toml", ".env", ".ini", ".sql")):
+        if _skip_path_for_secrets(Path(rel).parts):
+            continue
+        if not rel.endswith(TEXT_EXTS):
+            continue
+        try:
+            content = Path(f).read_text(encoding="utf-8", errors="ignore")
+        except Exception:
             try:
-                content = f.read_text(encoding="utf-8", errors="ignore")
+                content = (ROOT / f).read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            for i, line in enumerate(content.splitlines(), 1):
-                for pat in SECRET_PATTERNS:
-                    if re.search(pat, line) and "change-me" not in line and "mock" not in line.lower():
-                        findings.append(f"{rel}:{i}: 疑似密钥 {pat[:30]}...")
+        for i, line in enumerate(content.splitlines(), 1):
+            # D14-9 配套（2026-09-24 B10-l）：**显式行内豁免**——行内含 `allowlist secret`
+            # （detect-secrets 业界惯例）即跳过。为什么不用"整目录跳过 tests/"：那会把
+            # **真密钥**连同合成值一起放过（静默盲区）；行内标记则让"这是合成值"在 diff 里
+            # **可见、可审计、可 grep**，且必须逐个显式标注。
+            if "allowlist secret" in line:
+                continue
+            for pat in SECRET_PATTERNS:
+                if re.search(pat, line) and "change-me" not in line and "mock" not in line.lower():
+                    findings.append(f"{rel}:{i}: 疑似密钥 {pat[:30]}...")
     return (not findings), ("\n".join(findings) if findings else "无硬编码密钥")
 
 
-def check_todos() -> tuple[bool, str]:
+def check_todos(files: list[str]) -> tuple[bool, str]:
     """TODO/FIXME 统计（报告，不阻断）"""
-    import re
-
     count = 0
-    files = set()
-    for f in ROOT.rglob("*.py"):
-        if ".git" in f.parts:
+    names = set()
+    for f in files:
+        if not f.endswith(".py") or _skip_path(Path(f).parts):
             continue
         try:
-            content = f.read_text(encoding="utf-8", errors="ignore")
+            content = (ROOT / f).read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
         for line in content.splitlines():
             if re.search(r"\b(TODO|FIXME)\b", line):
                 count += 1
-                files.add(f.name)
-    return True, f"TODO/FIXME: {count} 处（{', '.join(sorted(files))}）— 不阻断"
+                names.add(Path(f).name)
+    return True, f"TODO/FIXME: {count} 处（{', '.join(sorted(names))}）— 不阻断"
 
 
 def _record_failure(checks: dict) -> None:
@@ -146,6 +397,409 @@ def _record_failure(checks: dict) -> None:
     }, ensure_ascii=False), encoding="utf-8")
 
 
+def check_structure() -> tuple[bool, str]:
+    """结构棘轮（文件体积 / 重复模式手抄）——2026-09-24 重构波 B1 接入提交门禁。
+
+    复用 `audit_harness` 的**纯计算**入口（不打印、不导入后端 app），快/全量两模式均秒级。
+    口径：**只拦新增**——存量超阈文件与既有重复计数在 `scripts/audit_harness_baseline.json`
+    冻结；新增超阈文件或重复模式总数上升 → 阻断。
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_harness import structure_findings
+
+    crit = structure_findings()
+    if crit:
+        return False, "结构棘轮新增违规：\n" + "\n".join(crit)
+    return True, "结构棘轮：无新增超阈文件 / 重复模式未上升"
+
+
+def check_audit_axes() -> tuple[bool, str]:
+    """跨轴审计（轴 1-4：契约 / 客户端 / 模型 / 导出）——2026-09-24 重构波 B10 接入门禁。
+
+    背景（缺陷 D14-1，P0）：`structure` 只覆盖轴 5/6，轴 1-4 仅能人工跑，
+    CI 0 命中——契约漂移 / 代码内死路由 / 0 引用模型 / 零调用能力导出四类静默腐化
+    从未被任何自动化门禁拦住。本检查复用 `audit_harness.axes_findings()`（纯调用，
+    不污染其 `main()`）。
+
+    口径：**只有 CRITICAL 阻断**（新增契约双向漂移 / 代码内死路由 / 0 引用模型 /
+    零调用能力导出）；INFO 仅报告。轴 1 需可导入后端环境，缺环境时**降级跳过**
+    （不阻断）——见 `axes_findings` 注释。快/全量模式均执行（轴 2/3/4 为纯文件扫描）。
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_class_members import scan as scan_class_members
+    from audit_client_imports import scan as scan_client_imports
+    from audit_harness import axes_findings
+
+    crit, info, note = axes_findings()
+
+    # 轴 6（2026-09-24 · B5.2f 实测暴露）：客户端模块导出符号「用了却没 import」。
+    # 背景：HBuilderX「编译成功」**只覆盖语法**，符号未解析也报成功 ⇒ 原有门禁全绿而代码是坏的。
+    # 口径：CRITICAL 阻断（与轴 1-4 同）。
+    import_violations, n_exports = scan_client_imports()
+    if import_violations:
+        crit = list(crit) + [
+            f"[客户端导入] {v['file']} 使用了 {v['symbol']}"
+            f"（定义于 {', '.join(v['declared_in'])}）却缺少 import"
+            for v in import_violations
+        ]
+    info = list(info) + [f"[客户端导入] 扫描导出 {n_exports} 个，符号使用均有 import"
+                         if not import_violations else
+                         f"[客户端导入] {len(import_violations)} 处缺 import"]
+
+    # 轴 7（2026-09-25 · GAP-2 实测暴露）：客户端 UTS 类成员「用了却没声明」（`this.<名>`）。
+    # 背景：轴 6 只覆盖**跨模块符号**，「类成员访问」是另一道假绿面——`this.saving.value` 而类里
+    # 没有 saving 字段，编译照样报绿（实测）。口径：CRITICAL 阻断（与轴 6 同）。
+    member_violations, n_classes, _n_skipped = scan_class_members()
+    if member_violations:
+        crit = list(crit) + [
+            f"[类成员] {v['file']} class {v['class']} 的 {v['kind']}{v['member']} 未声明"
+            "（编译不覆盖符号解析，真机 undefined 崩溃）"
+            for v in member_violations
+        ]
+    info = list(info) + [f"[类成员] 检查 {n_classes} 类，成员解析均一致"
+                         if not member_violations else
+                         f"[类成员] {len(member_violations)} 处成员未声明"]
+
+    # 轴 8（2026-09-25 · 令牌波 P4）：客户端硬编码色字面量棘轮（hex/rgb/渐变，只许减不许增）。
+    # 背景：令牌开工实测代码口径 hex 638 / rgb 171 / 渐变 10，而令牌在样式里被引用 0 次；
+    # 令牌化是逐域长活，没有棘轮就会「一边收敛一边长新字面量」。口径：CRITICAL 阻断（同轴 1-7）。
+    from audit_token_literals import findings as token_literal_findings
+
+    tl_crit, tl_warn, tl_info = token_literal_findings()
+    crit = list(crit) + tl_crit
+    info = list(info) + tl_info + tl_warn
+
+    # 轴 9（2026-10-14 · 台账 §4.20 批次 7 / §7.18）：客户端 storage 键「写入但无消费者」。
+    # 背景：§7.18 的**假开关族**（privacy_ai_chat / privacy_echo / settings_notify_on /
+    # settings_theme_index / settings_cache_cleared）都是「UI 会记住状态、但全仓没人读」——
+    # 编译能过、类型能过、人工 review 也滑过（写与读分散在不同文件），唯一机械判据就是
+    # **写了却从来没人读**；其中两枚属**合规空承诺**（"关闭后不再引用你的画像"）。
+    # 口径：CRITICAL 阻断；规则**自带负向探针**，自检不过同样阻断——门禁不可信比没有更糟。
+    from audit_storage_keys import scan as scan_storage_keys
+    from audit_storage_keys import selftest as storage_keys_selftest
+
+    if storage_keys_selftest(verbose=False) != 0:
+        crit = list(crit) + [
+            "[storage 无消费者] 规则自检失败（负向探针未通过）⇒ 本门禁不可信，"
+            "请修 scripts/audit_storage_keys.py"
+        ]
+    sk_violations, sk_stats = scan_storage_keys()
+    if sk_violations:
+        crit = list(crit) + [
+            f"[storage 无消费者] {v['key']}（写于 {', '.join(v['written_in'])})"
+            + (f" {v['note']}" if v["note"] else "")
+            for v in sk_violations
+        ]
+    info = list(info) + [
+        f"[storage 无消费者] 写键 {sk_stats.get('write_keys', 0)} / 读键 "
+        f"{sk_stats.get('read_keys', 0)}，解析不出 {sk_stats.get('dynamic_sites', 0)} 处"
+        if not sk_violations
+        else f"[storage 无消费者] {len(sk_violations)} 个键无消费者"
+    ]
+
+    # 轴 10（2026-10-14 · 台账 §4.20 ⑪ 第 10 轴）：客户端「契约路径常量声明了却没人用」。
+    # 背景：RC-A 族「定义即交付错觉」——`contract.uts` 是端点路径的**单一事实源**，而实测
+    # 9 个路径常量声明后零引用、调用点各自写字面量（`timeline.uts:380` 与
+    # `PATH_EVENTS_TIMELINE` 就是典型）⇒ 后端改路径时两处**各自漂移**，而这类缺陷编译能过、
+    # 类型能过、人工 review 也滑过（声明与使用分散在不同文件）。
+    # 口径：CRITICAL 阻断（同轴 1-9）；豁免必须在 `ALLOW_UNUSED` 写明理由；规则自带负向探针。
+    from audit_contract_const import scan as scan_contract_const
+    from audit_contract_const import selftest as contract_const_selftest
+
+    if contract_const_selftest(verbose=False) != 0:
+        crit = list(crit) + [
+            "[契约常量未使用] 规则自检失败（负向探针未通过）⇒ 本门禁不可信，"
+            "请修 scripts/audit_contract_const.py"
+        ]
+    cc_violations, cc_stats = scan_contract_const()
+    if cc_violations:
+        crit = list(crit) + [
+            f"[契约常量未使用] {v['name']} = {v['value']}（定义于 {v['defined_in']}）{v['note']}"
+            for v in cc_violations
+        ]
+    info = list(info) + [
+        f"[契约常量未使用] 扫描 {cc_stats.get('files', 0)} 文件 / 路径常量 "
+        f"{cc_stats.get('declared', 0)} 个，豁免 {cc_stats.get('allowed', 0)}"
+        if not cc_violations
+        else f"[契约常量未使用] {len(cc_violations)} 个常量零引用"
+    ]
+
+    suffix = f"；{note}" if note else ""
+    if crit:
+        return False, "跨轴审计新增 CRITICAL：\n" + "\n".join(crit) + suffix
+    axes = "契约/客户端/模型/导出/客户端导入/类成员/令牌字面量/storage 无消费者/契约常量未使用"
+    return True, f"跨轴审计（{axes}）：无 CRITICAL；INFO {len(info)} 项{suffix}"
+
+
+def check_env_template() -> tuple[bool, str]:
+    """部署模板 ↔ config.py 对齐——2026-09-24 重构波 B12 接入门禁（缺陷 D13-3）。
+
+    背景：`deploy/.env.production.template` 声称「与 config.py 字段逐一对齐」，但该承诺
+    此前**只是口头**——判据脚本 `deploy/scripts/check_env_template.py` 早已存在，却从未被
+    任何门禁调用；于是新增 config 字段忘加模板（真缺口）或删字段留过期键（过期项）都无人发现。
+
+    口径：**复用该脚本的 main()，不在此重写判定规则**（单一判据，避免两处漂移）。
+    退出码映射：0=对齐 → 放行；1=真缺口或过期项 → **阻断**；2=后端环境不可导入（缺依赖/环境变量）
+    → **降级放行并提示**（与 check_openapi_snapshot 同一口径 —— 该脚本要 import app.core.config，
+    fast-gate 没装后端依赖；若把环境缺失判成漂移，就是**恒假红**：2026-09-28 实测该步在
+    fast-gate 连续报「漂移」，真因只是缺 pydantic，与模板内容毫无关系）。
+    """
+    script = ROOT / "deploy" / "scripts" / "check_env_template.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}（部署契约已失效）"
+    code, out = run([sys.executable, str(script)])
+    if code == 0:
+        return True, out.strip()
+    if code == 2:
+        return True, "[降级] 后端环境不可导入，跳过部署模板一致性校验：\n" + out.strip()
+    return False, "env 模板与 config.py 漂移：\n" + out.strip()
+
+
+def check_agg_equivalence() -> tuple[bool, str]:
+    """端侧 L0 聚类（ST-DBSCAN）**剪枝版 ↔ 仓库参考端逐位等价**校验——2026-10-14（台账 §4.20 RC-7）。
+
+    背景：`client/utils/agg/st_dbscan.uts` 是端侧 L0 聚类核心，2026-10-14 为解 O(n²) 卡主线程做了
+    "语义逐位等价"的剪枝（时间窗 + 空间盒 + 团快路）。这类优化最危险的失效模式是**悄悄改变边界点
+    归属**——编译能过、常规测试也不一定覆盖（端侧断言依赖真机 agg-check 页）。
+    口径：复用 `scripts/bench_st_dbscan.py --quick`（**单一判据**，不在此重写比对规则）：它把剪枝版
+    与仓库 Python 参考端在边界 + 随机模糊用例上逐位对拍。
+    退出码映射：0=全等 → 放行；1=存在不等 → **阻断**；2=环境错误（脚本缺失/导入失败）→ 降级放行。
+    仅 `--full` 跑（quick 也要数秒，预提交不该背这个）。
+    """
+    script = ROOT / "scripts" / "bench_st_dbscan.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}（等价性无法复现）"
+    code, out = run([sys.executable, str(script), "--quick"])
+    text = out.strip()
+    if code == 0:
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        return True, lines[-1] if lines else "ST-DBSCAN 剪枝版与参考端逐位等价"
+    if code == 2:
+        return True, "[降级] 无法运行等价性基准（环境问题）：\n" + text[-500:]
+    return False, "ST-DBSCAN 剪枝版与参考端**不等价**（簇列表不一致）：\n" + text[-800:]
+
+
+def check_openapi_snapshot() -> tuple[bool, str]:
+    """契约快照 `docs/openapi.json` 是否与后端实现一致——2026-09-24 重构波 B10-g（缺陷 D14-7）。
+
+    背景：快照的再生此前是**人工步骤**（既无脚本、也无断言）⇒「文档里的契约」是否真等于
+    「代码里的契约」长期无法证明；`audit_harness` 轴 1 只做**路径级**双向对拍，字段级漂移
+    （schema/参数/状态码/描述）完全看不见。
+
+    口径：复用 `scripts/gen_openapi.py --check`（**单一判据**，不在此重写比对规则），
+    逐字节比对后端实时导出。
+    退出码映射：0=一致 → 放行；1=快照过期 → **阻断**；2=后端环境不可导入（缺依赖/环境变量）
+    → **降级放行并提示**（与 `audit_axes` 轴 1 的降级口径一致，避免把环境问题当代码问题）。
+    """
+    script = ROOT / "scripts" / "gen_openapi.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}（契约再生无法复现）"
+    code, out = run([sys.executable, str(script), "--check"])
+    if code == 0:
+        return True, out.strip()
+    if code == 2:
+        return True, "[降级] 后端环境不可导入，跳过契约快照一致性校验：\n" + out.strip()
+    return False, "契约快照已过期（请运行 python scripts/gen_openapi.py 重导）：\n" + out.strip()
+
+
+def check_client_compile() -> tuple[bool, str]:
+    """客户端编译门（uni-app x）——2026-10-11 新增（D14-25）。
+
+    **仅全量模式执行**：一次编译实测 20~56s，放进每次 commit 的快速门禁会让提交慢到
+    无法忍受；而"完成 / 集成 / 出包前"这些节点上它的价值最高（改动面已定型）。
+
+    缺 HBuilderX（CI / 无 GUI 机器）⇒ **显式降级放行**（不是静默转绿）：消息里带
+    `[降级放行]` 前缀，人能看到"这一步没真正跑"。口径与 openapi_snapshot / env_template
+    一致——工具不可用不等于代码有问题，但必须可见。
+    """
+    script = ROOT / "scripts" / "client_compile_gate.py"
+    if not script.exists():
+        return False, f"判据脚本缺失：{script.relative_to(ROOT)}"
+    code, out = run([sys.executable, str(script)])
+    text = out.strip()
+    if code == 0:
+        if "[skip]" in text or "[环境错误]" in text:
+            return True, "[降级放行] " + text
+        return True, text
+    return False, text
+
+
+def check_port_consistency() -> tuple[bool, str]:
+    """端口口径一致性（2026-10-11 新增 · D14-25）。
+
+    背景：backend `8010` / agent `8300` 是**跨多处文件各自声明**的常量，历史文档里还出现过
+    `8000`（旧后端）与 `8399`（一次性本机覆盖）四种说法。端口错配的现场表现是"连不上 +
+    报错难懂"——本项目最贵的一类故障（与 §4.18 的环境漂移同源）。
+
+    判定（只用**单一事实源**，不重复维护映射表）：
+      · `backend/.env` 的 `API_PORT` 必须等于 `deploy/.env.production.template` 的 `API_PORT`；
+      · `client/utils/config.uts` 里**不得再出现** `:8000`（历史端口）；
+      · `client/utils/config.uts` 里的后端端口必须与上者一致；
+      · agent 端口：`backend/app/core/config.py` 的默认值 与 `agent/.env.example` 的
+        `AGENT_HTTP_PORT` 必须一致（客户端不直连 agent，故不进 config.uts）。
+    """
+    problems: list[str] = []
+    info: list[str] = []
+
+    def read(p: Path) -> str:
+        try:
+            return p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+    env_txt = read(ROOT / "backend" / ".env") or read(ROOT / "backend" / ".env.example")
+    tpl_txt = read(ROOT / "deploy" / ".env.production.template")
+    cli_txt = read(ROOT / "client" / "utils" / "config.uts")
+
+    m_env = re.search(r"(?m)^\s*API_PORT\s*=\s*(\d+)", env_txt)
+    m_tpl = re.search(r"(?m)^\s*API_PORT\s*=\s*(\d+)", tpl_txt)
+    env_port = m_env.group(1) if m_env else ""
+    tpl_port = m_tpl.group(1) if m_tpl else ""
+
+    if env_port and tpl_port and env_port != tpl_port:
+        problems.append(f"backend/.env API_PORT={env_port} ≠ 部署模板 API_PORT={tpl_port}")
+    elif env_port:
+        info.append(f"backend 端口 = {env_port}（.env 与模板一致）")
+    else:
+        info.append("backend/.env 未声明 API_PORT（用默认值）")
+
+    if re.search(r":8000\b", cli_txt):
+        problems.append("client/utils/config.uts 仍含历史端口 :8000（应为 8010）")
+    if env_port and f":{env_port}" not in cli_txt:
+        problems.append(f"client/utils/config.uts 里找不到 :{env_port}（与 backend API_PORT 不一致）")
+
+    # agent 端口：config.py 默认值 vs agent/.env.example
+    # ⚠️ 大小写不敏感：`config.py` 里是**小写**字段 `agent_service_base_url`，
+    # 原先按大写匹配 ⇒ m_cfg 恒 None ⇒ 这条子检查**从未真正生效**（2026-10-11 核验发现）。
+    m_cfg = re.search(
+        r'agent_service_base_url[^\n]*?[:=]\s*"?http://127\.0\.0\.1:(\d+)',
+        read(ROOT / "backend" / "app" / "core" / "config.py"),
+        re.IGNORECASE,
+    )
+    m_agt = re.search(r"(?m)^\s*AGENT_HTTP_PORT\s*=\s*(\d+)", read(ROOT / "agent" / ".env.example"))
+    if m_cfg and m_agt and m_cfg.group(1) != m_agt.group(1):
+        problems.append(f"backend 默认 agent 端口 {m_cfg.group(1)} ≠ agent/.env.example {m_agt.group(1)}")
+    elif m_cfg:
+        info.append(f"agent 端口 = {m_cfg.group(1)}（backend 默认与 agent 配置一致）")
+
+    if problems:
+        return False, "端口口径不一致：\n" + "\n".join(f"  - {p}" for p in problems)
+    return True, "；".join(info) or "端口口径一致"
+
+
+def check_harness_state() -> tuple[bool, str]:
+    """harness 状态新鲜度自检（2026-10-11 新增 · **WARN 级，从不阻断**）。
+
+    为什么是 WARN 而不是阻断：状态文件漂移是"慢性病"（上一版 AGENTS.md 的『当前状态』
+    停在 2026-08-29、落后 43 天并跨 12 批变更），用阻断逼同步会让人靠删检查过关；
+    而每次门禁都打印出来，则漂移**在当场可见**——这才是它真正的价值。
+
+    检查项：
+      · `STATE.md` 是否存在（唯一『当前状态』载体）；
+      · `STATE.md` 的『最后更新』日期与 git 最新提交日期差 ≤ 3 天；
+      · `feature_list.json` 是否只有 ≤1 条 `in-progress`（"一次只做一个特性"的可验证化）。
+    """
+    notes: list[str] = []
+    state = ROOT / "STATE.md"
+    if not state.exists():
+        notes.append("STATE.md 不存在（唯一『当前状态』载体缺失 → 新会话会读到旧口径）")
+    else:
+        # 放宽：允许 Markdown 加粗（`**最后更新**：2026-10-11`）与全/半角冒号
+        m = re.search(
+            r"最后更新[\*_]*\s*[：:]\s*(\d{4}-\d{2}-\d{2})",
+            state.read_text(encoding="utf-8", errors="ignore"),
+        )
+        if not m:
+            notes.append("STATE.md 缺『最后更新: YYYY-MM-DD』行")
+        else:
+            code, out = run(["git", "log", "-1", "--format=%cs"])
+            head_date = out.strip()
+            if code == 0 and len(head_date) == 10 and m.group(1) < head_date:
+                # 仅比较日期字符串（ISO 格式可直接字典序比较）
+                notes.append(f"STATE.md 最后更新 {m.group(1)} 早于最新提交 {head_date}（可能已漂移）")
+
+    fl = ROOT / "feature_list.json"
+    if fl.exists():
+        try:
+            data = json.loads(fl.read_text(encoding="utf-8"))
+            feats = data.get("features") or data.get("items") or []
+            doing = [f for f in feats if str(f.get("status", "")).lower() in ("in-progress", "in_progress")]
+            if len(doing) > 1:
+                notes.append(
+                    f"feature_list.json 有 {len(doing)} 条 in-progress"
+                    "（应 ≤1 ⇒ 否则『一次只做一个特性』无法验证）"
+                )
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"feature_list.json 解析失败：{exc}")
+
+    if notes:
+        return True, "[WARN] " + "；".join(notes)
+    return True, "状态文件新鲜（STATE.md / feature_list.json）"
+
+
+def check_audit_security() -> tuple[bool, str]:
+    """数据安全审计接入（2026-10-11 · D14-25）。
+
+    该脚本（密钥管理 / 传输 / 存储 / 备份 四域）此前是**孤儿**：全仓无任何调用方，
+    其中的备份新鲜度（RPO≤24h）等红线从不自动执行。
+
+    ⚠️ **按域区分严重度**（关键设计，避免"狼来了"）：
+      · `key_management` / `transport` / `storage` —— 与**本次提交的代码**直接相关
+        （硬编码密钥、明文凭据、敏感字段缺失）⇒ **阻断**；
+      · `backup` —— 取决于**运维动作**（有没有定期跑 backup_pg.ps1 产 dump），与代码无关。
+        实测本机 dump 已 421h 超期（RPO≤24h），若把它设为阻断，则**每次提交恒红**，
+        开发者只能靠 --allow-missing-tools 之类绕行 ⇒ 门禁失去公信力。
+        故降级为**每次可见的 WARN**（不阻断），并由台账/§7 跟踪其真实修复。
+
+    环境不齐（脚本缺失/无法运行）按环境错误前缀处理（退出码 2 语义，见 gate_exit）。
+    """
+    script = ROOT / "scripts" / "audit_security.py"
+    if not script.exists():
+        return False, f"{gate_env_prefix()}数据安全审计脚本缺失：scripts/audit_security.py"
+    code, out = run([sys.executable, str(script), "--json"])
+    text = out.strip()
+    if code == 2:
+        return False, f"{gate_env_prefix()}数据安全审计无法运行（环境不齐）"
+    try:
+        start = text.index("{")
+        data = json.loads(text[start:])
+    except Exception:  # noqa: BLE001 —— 解析失败时退回原始退出码
+        if code == 0:
+            return True, "四域无阻断项"
+        return False, "数据安全审计存在阻断项：\n" + "\n".join(text.splitlines()[-10:])
+
+    code_fail: list[str] = []
+    ops_warn: list[str] = []
+    for dom, items in (data.get("domains") or {}).items():
+        for c in items or []:
+            if not (c.get("fail") or not c.get("pass")):
+                continue
+            line = f"{dom}: {c.get('name')} — {c.get('detail')}"
+            (ops_warn if dom == "backup" else code_fail).append(line)
+
+    msg_parts: list[str] = []
+    if code_fail:
+        msg_parts.append("阻断项：\n" + "\n".join(f"  - {x}" for x in code_fail))
+    if ops_warn:
+        msg_parts.append(
+            "[WARN]（运维域，不阻断本次提交，但请尽快补跑备份）\n"
+            + "\n".join(f"  - {x}" for x in ops_warn)
+        )
+    if not msg_parts:
+        msg_parts.append("四域（密钥/传输/存储/备份）均无阻断项")
+
+    if code_fail:
+        return False, "\n".join(msg_parts)
+    return True, "\n".join(msg_parts)
+
+
+def gate_env_prefix() -> str:
+    """环境错误前缀（判定逻辑单一来源见 scripts/gate_exit.py）"""
+    from gate_exit import ENV_ERR_PREFIX
+
+    return ENV_ERR_PREFIX
+
+
 def check_lessons() -> tuple[bool, str]:
     """强制教训登记：上次失败后未登记 → 阻断 commit（2026-08-20 用户要求程序化强制）"""
     import sys as _sys
@@ -156,18 +810,59 @@ def check_lessons() -> tuple[bool, str]:
     return _check()
 
 
+def _classify_failure(blocking: dict[str, tuple[bool, str]]) -> tuple[list[str], list[str]]:
+    """退出码分流（环境错误 2 / 违规 1）——判定逻辑单一来源见 scripts/gate_exit.py（B10-o）。"""
+    from gate_exit import classify_failure
+
+    return classify_failure(blocking)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pre-Commit 代码质量审核")
-    parser.add_argument("--path", default=str(ROOT), help="审核目录")
-    parser.parse_args()
+    parser.add_argument("--path", default=str(ROOT), help="审核目录（兼容占位）")
+    parser.add_argument("--full", action="store_true", help="全量门禁（仓库级扫描 + 全量测试）")
+    parser.add_argument("--skip-tests", action="store_true", help="--full 时跳过全量测试（CI 快速静态层用）")
+    parser.add_argument(
+        "--allow-missing-tools",
+        action="store_true",
+        help="缺 ruff/pytest 时放行（默认阻断；D14-19：可见地放行，而非静默转绿）",
+    )
+    parser.add_argument(
+        "--skip-client-compile",
+        action="store_true",
+        help="--full 时跳过客户端编译门（uni-app x 编译 20~56s；缺 HBuilderX 时会自动降级放行，无需本开关）",
+    )
+    args = parser.parse_args()
+
+    allow_missing = bool(args.allow_missing_tools)
+
+    mode = "full" if args.full else "fast"
+    syntax_files, lint_files, secret_files = _scope_files(args.full)
 
     checks = {
-        "syntax": check_syntax(),
-        "lint": check_lint(),
-        "tests": run_tests(),
-        "secrets": check_secrets(),
-        "todos": check_todos(),
+        "syntax": check_syntax(syntax_files),
+        "lint": check_lint(lint_files, allow_missing=allow_missing),
+        "secrets": check_secrets(secret_files),
+        "todos": check_todos(secret_files),
+        "structure": check_structure(),
+        "audit_axes": check_audit_axes(),
+        "env_template": check_env_template(),
+        "openapi_snapshot": check_openapi_snapshot(),
+        # 2026-10-11 新增（D14-25）：端口口径一致性（纯文本，秒级，快/全量都跑）
+        "port_consistency": check_port_consistency(),
+        # 2026-10-11 新增：harness 状态新鲜度（**始终 True**，消息里带 [WARN] 提示漂移）
+        "harness_state": check_harness_state(),
     }
+    if args.full:
+        # 2026-10-11 新增：数据安全审计（此前是孤儿脚本，无任何调用方）
+        checks["audit_security"] = check_audit_security()
+        # 2026-10-14 新增：端侧 L0 聚类剪枝版的逐位等价性（台账 §4.20 RC-7；仅全量，数秒）
+        checks["agg_equivalence"] = check_agg_equivalence()
+        # 客户端编译门：仅全量（单次 20~56s，放进每次 commit 不可接受）；缺 HBuilderX 自动降级放行
+        if not args.skip_client_compile:
+            checks["client_compile"] = check_client_compile()
+    if args.full and not args.skip_tests:
+        checks["tests"] = run_tests(allow_missing=allow_missing)
 
     blocking = {k: v for k, v in checks.items() if not v[0]}
     passed = not blocking
@@ -182,17 +877,23 @@ def main() -> int:
             passed = False
             blocking["lessons"] = (False, lessons_msg)
 
+    # D14-18：把「环境错误」从「违规」中分流（两者都阻断，但退出码不同：2 vs 1）
+    env_blocked, real_fail = _classify_failure(blocking)
+
     report = {
+        "mode": mode,
         "passed": passed,
         "blocking_checks": list(blocking.keys()),
+        "env_blocked_checks": env_blocked,
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in checks.items()},
         "generated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
     }
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    # D14-22（B10-i）：统一信封（schema_version/generated_at/passed）+ 带兜底写入；
+    # 自有键（mode/blocking_checks/env_blocked_checks/details）保留（CI 依赖 details/blocking_checks）。
+    write_report(REPORT_PATH, report)
 
     print("=" * 60)
-    print("Pre-Commit 代码质量审核")
+    print(f"Pre-Commit 代码质量审核（{'全量' if args.full else '快速'}模式）")
     print("=" * 60)
     for name, (ok, out) in checks.items():
         mark = "✅" if ok else "❌"
@@ -205,13 +906,24 @@ def main() -> int:
             print(f"    {line}")
         if len(out.splitlines()) > 8:
             print(f"    ... ({len(out.splitlines()) - 8} 行省略)")
+    if not args.full:
+        print("\n💡 全量门禁（含全量测试，完成/集成前跑）：python scripts/review_agent.py --full")
+    elif args.skip_tests:
+        print("\n💡 静态门禁完成（已跳过全量测试）；全量验证：python scripts/review_agent.py --full")
 
     print("\n" + "=" * 60)
     if passed:
         print("✅ 审核通过，可以提交")
         return 0
-    print(f"❌ 审核未通过：{', '.join(blocking)} — 修复后重跑，禁止 commit")
-    return 1
+    # D14-18：区分「违规」（代码问题 → 1）与「环境错误」（工具/依赖不可用 → 2）。
+    # 两者都阻断提交（非 0），但退出码不同可供 hook/CI/人工快速归因。
+    if env_blocked:
+        print(f"⚠️ 环境错误（非代码问题，本工具无法判定）：{', '.join(env_blocked)}")
+    if real_fail:
+        print(f"❌ 审核未通过：{', '.join(real_fail)} — 修复后重跑，禁止 commit")
+        return 1
+    print("❌ 无法完成审核（环境不齐，本工具未真正判定）— 修好环境后重跑，禁止 commit")
+    return 2
 
 
 if __name__ == "__main__":

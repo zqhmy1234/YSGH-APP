@@ -1,0 +1,425 @@
+"""认证服务 · 登录渠道策略（F8/R1#8）
+
+渠道抽象（行为等价迁移，源自 api/auth.py）：
+  - LoginProvider ABC：把一次登录请求解析为稳定用户身份（AuthIdentity）
+    · WechatLoginProvider   —— 微信渠道（code → code2session → unionid；配置/生产/mock 三态）
+    · PhoneLoginProvider    —— 真实手机号渠道（短信验证码校验：限流 + OTP + 原子消费）
+    · SmsMockLoginProvider  —— sms-mock 渠道（dev/test 联调：验证码经 MockSmsSender 直返）
+    · DeviceLoginProvider   —— 设备码渠道（内测期临时通道；allow_device_login 关 → 501 AUTH_014）
+  - SmsSender 端口：短信发送抽象
+    · MockSmsSender    —— mock 直返验证码（联调用，零费用）
+    · AliyunSmsSender  —— 真实通道占位（TODO T1 接入前 501，与 P0-1 生产门控一致）
+  - get_login_provider / get_sms_sender 按配置分发（真实消费方见 auth.auth 服务层）
+
+保留成果（以最新 develop 为基准，不得回退）：
+  - TD-P3 M2（审查中危）：验证码爆破防护（内存滑动窗口 + 冷却）+ 验证码 SHA-256 哈希落库
+  - B2 R2#8：验证码原子消费（条件 UPDATE single-use，并发同码双登录仅一成功）
+"""
+from __future__ import annotations
+
+import hashlib
+import secrets
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.errors import (
+    ERR_AUTH_001,
+    ERR_AUTH_003,
+    ERR_AUTH_004,
+    ERR_AUTH_010,
+    ERR_AUTH_011,
+    ERR_AUTH_012,
+    ERR_AUTH_013,
+    ERR_AUTH_014,
+    ApiError,
+)
+from app.db.models import SmsCode
+from app.services.auth.otp_store import get_backend
+
+# ---------------------------------------------------------------------------
+# 短信发送端口（SmsSender）
+# ---------------------------------------------------------------------------
+
+
+class SmsSender(ABC):
+    """短信验证码发送端口：生产接真实短信网关，mock 直返验证码供联调。
+
+    send() 返回可供直返的验证码字符串（仅 mock 通道），真实通道发送后返回 None
+    （验证码不进入响应，防任意手机号接管——P0-1）。
+    """
+
+    name: str = ""
+
+    @abstractmethod
+    def send(self, phone: str, code: str) -> str | None:
+        """发送验证码；返回可直返的验证码（mock），或 None（真实通道不返回）。"""
+
+
+class MockSmsSender(SmsSender):
+    """sms-mock 通道：验证码直返（dev/test 联调用，零费用）"""
+
+    name = "sms-mock"
+
+    def send(self, phone: str, code: str) -> str | None:
+        return code
+
+
+class AliyunSmsSender(SmsSender):
+    """真实短信通道占位：TODO(T1) 接入阿里云短信（0.045 元/条）。
+
+    接入前保持 501（与 wechat_login 的"生产未接入 → 501"对齐：真实通道未接入
+    时明确失败，不静默降级 mock——任意手机号可接管账户的认证绕过）。
+    """
+
+    name = "aliyun"
+
+    def send(self, phone: str, code: str) -> str | None:
+        raise ApiError(ERR_AUTH_010, "短信服务未接入", http=501)
+
+
+def get_sms_sender() -> SmsSender:
+    """按配置选择短信发送通道：
+    mock_external_ai=true → mock（验证码直返）；否则真实通道（T1 未接入 → 501）。"""
+    return MockSmsSender() if settings.mock_external_ai else AliyunSmsSender()
+
+
+# ---------------------------------------------------------------------------
+# 登录渠道策略（LoginProvider）
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AuthIdentity:
+    """登录渠道解析出的稳定用户身份（供注册/令牌逻辑建用户）"""
+
+    unionid: str | None = None
+    phone: str | None = None
+    device_id: str = "phone-login"
+    platform: str = "android"
+    # 2026-10-15（台账 §7.29）：微信渠道专用 —— 授权登录**同时**要建立渠道绑定，而绑定表
+    # `user_wechat_bindings` 的键是 **openid**（不是 unionid，见 schema.sql:57「一个 unionid
+    # 多 openid」），原实现只带 unionid ⇒ 拿不到可写绑定的键。非微信渠道保持默认值（不建绑定）。
+    wechat_openid: str | None = None
+    wechat_channel: str = ""
+
+
+class LoginProvider(ABC):
+    """登录渠道策略：把一次登录请求解析为稳定身份。
+
+    失败抛 ApiError（由全局 error handler 映射错误响应）；校验通过返回 AuthIdentity。
+    协议层不感知渠道细节（真实消费方：auth.auth 的 wechat_login/phone_login）。
+    """
+
+    name: str = ""
+
+    @abstractmethod
+    def resolve_identity(self, db: Session, req, client_ip: str | None) -> AuthIdentity:
+        """渠道特有登录校验 → 稳定身份（用户创建/签发令牌由服务层统一完成）"""
+
+
+# ---------------- 手机号渠道基础设施（send 与 login 共用） ----------------
+# TD-P3 M2 修复（审查中危）：验证码爆破防护
+# ── P2-2（2026-09-10）：计数后端迁 app.services.auth.otp_store ──
+# 原「模块级内存 dict/deque」在多 uvicorn worker/多副本下各计各的 → 爆破阈值
+# 放大 N 倍（本文件旧注释自认「生产单副本即可覆盖」）。现默认 Redis 后端
+# （ZSET 滑窗/INCR+EXPIRE(nx) 失败计数/SET EX 冷却），Redis 故障自动降级
+# 进程内 Memory（=原实现逐字搬入，单进程语义不变，不 500）；测试经 conftest
+# 注入 Memory 保确定性与零 Redis 写依赖。签名与阈值常量保持原样（auth.py
+# 跨模块 import _rate_allow，行为全等红线）。
+_OTP_WINDOW_SECONDS = 600          # 失败计数窗口 / 冷却时长（10 分钟）
+_OTP_MAX_FAILS = 5                 # 每码窗口内失败 ≥5 次作废
+_RATE_WINDOW = 60                  # 限流窗口（秒）
+_LOGIN_IP_LIMIT = 60               # login：同 IP 60 次/分钟
+_LOGIN_PHONE_LIMIT = 10            # login：同 phone 10 次/分钟
+
+
+def _rate_allow(key: str, limit: int, window: float = _RATE_WINDOW) -> bool:
+    """滑动窗口限流（委托 otp_store 后端；语义=window 秒内 ≤limit 次放行含本次）"""
+    return get_backend().rate_allow(key, limit, window)
+
+
+def _otp_fail(phone: str) -> bool:
+    """记录一次失败；返回是否已达作废阈值（≥_OTP_MAX_FAILS）"""
+    return get_backend().otp_fail(phone, _OTP_WINDOW_SECONDS, _OTP_MAX_FAILS)
+
+
+def _otp_start_cooldown(phone: str) -> None:
+    get_backend().otp_start_cooldown(phone, _OTP_WINDOW_SECONDS)
+
+
+def _otp_in_cooldown(phone: str) -> bool:
+    return get_backend().otp_in_cooldown(phone)
+
+
+def _otp_reset(phone: str) -> None:
+    """登录成功 / 新码发出 → 清除失败计数与冷却（每码独立窗口）"""
+    get_backend().otp_reset(phone)
+
+
+def _hash_code(code: str, salt: str | None = None) -> str:
+    """验证码哈希（G1/R6#9：SHA-256 + 每码随机盐；DB 泄漏不可彩虹表反推）
+
+    - salt 非空：sha256(f"{salt}:{code}")（当前写入格式；salt 随行落库）
+    - salt 为空：sha256(code)（TD-P3 存量未加盐记录的比对兼容）
+    """
+    if salt:
+        return hashlib.sha256(f"{salt}:{code}".encode()).hexdigest()
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def _gen_code_salt() -> str:
+    """每码随机盐（16 hex 字符 = 64 bit 熵；随 sms_codes.salt 落库）"""
+    return secrets.token_hex(8)
+
+
+def _gen_sms_code() -> str:
+    return f"{secrets.randbelow(1000000):06d}"
+
+
+def _verify_sms_code(db: Session, req, client_ip: str | None) -> str:
+    """手机号验证码校验（Phone/SmsMock 渠道共用）→ 返回校验通过的手机号。
+
+    限流 → 哈希比对 → 失败计数/作废/冷却 → 原子消费（B2 R2#8 竞态修复）：
+      并发同码双登录仅一个成功——UPDATE sms_codes SET used_at WHERE id=:id AND used_at IS NULL
+      先提交者 rowcount=1 消费成功，后者 rowcount=0（该码已被消费/作废 → 401）。
+    """
+    ip = client_ip or ""
+    if not _rate_allow(f"login:ip:{ip}", _LOGIN_IP_LIMIT):
+        raise ApiError(ERR_AUTH_004, "登录尝试过于频繁，请稍后再试", http=429)
+    if not _rate_allow(f"login:phone:{req.phone}", _LOGIN_PHONE_LIMIT):
+        raise ApiError(ERR_AUTH_004, "登录尝试过于频繁，请稍后再试", http=429)
+    if _otp_in_cooldown(req.phone):
+        raise ApiError(ERR_AUTH_004, "验证码错误次数过多，请稍后再试", http=429)
+
+    now = datetime.now(UTC)
+    record = db.execute(
+        select(SmsCode).where(
+            SmsCode.phone == req.phone,
+            SmsCode.used_at.is_(None),
+            SmsCode.expire_at > now,
+        ).order_by(SmsCode.id.desc()).limit(1)
+    ).scalar_one_or_none()
+
+    # 哈希比较（secrets.compare_digest 防时序攻击；修复：原明文比较）
+    # G1/R6#9：加盐——按记录行 salt 重算（存量无 salt 行走无盐 SHA-256 兼容分支）
+    if record is None or not secrets.compare_digest(
+        _hash_code(req.code, record.salt), record.code or ""
+    ):
+        # M2：失败计数 → 达阈值作废该码并冷却（防 6 位码 5 分钟窗口内爆破）
+        if _otp_fail(req.phone):
+            if record is not None and record.used_at is None:
+                record.used_at = now
+                db.commit()
+            _otp_start_cooldown(req.phone)
+            raise ApiError(
+                ERR_AUTH_004, "验证码错误次数过多，该验证码已作废，请重新获取", http=429
+            )
+        raise ApiError(ERR_AUTH_003, "验证码错误或已过期", http=401)
+
+    _otp_reset(req.phone)
+    # R2#8 竞态修复：验证码原子消费——并发同码双登录仅一个成功。
+    # 原实现：SELECT 未用码 → 校验 → record.used_at 置位 + commit，存在竞态窗口
+    # （两会话都读到未用码、都校验通过 → 同码双登录）。
+    # 现改 UPDATE sms_codes SET used_at=now() WHERE id=:id AND used_at IS NULL：
+    # rowcount=0 → 该码已被并发请求消费/作废 → 401。
+    consumed = db.execute(
+        update(SmsCode)
+        .where(SmsCode.id == record.id, SmsCode.used_at.is_(None))
+        .values(used_at=now)
+    )
+    if consumed.rowcount == 0:
+        db.rollback()
+        raise ApiError(ERR_AUTH_003, "验证码已失效，请重新获取", http=401)
+    db.commit()
+    return req.phone
+
+
+class PhoneLoginProvider(LoginProvider):
+    """真实手机号渠道：短信验证码登录（真实网关 T1 接入后生产走此通道）"""
+
+    name = "phone"
+
+    def resolve_identity(self, db: Session, req, client_ip: str | None = None) -> AuthIdentity:
+        phone = _verify_sms_code(db, req, client_ip)
+        return AuthIdentity(phone=phone, device_id="phone-login", platform="phone")
+
+
+class SmsMockLoginProvider(LoginProvider):
+    """sms-mock 渠道（dev/test 联调）：验证码经 MockSmsSender 直返，登录校验语义与 phone 一致。
+
+    与 PhoneLoginProvider 共享 _verify_sms_code（同库校验，行为等价）；
+    独立命名以表达渠道身份——真实短信通道接入后两渠道可在发送/校验侧独立演化。
+    """
+
+    name = "sms-mock"
+
+    def resolve_identity(self, db: Session, req, client_ip: str | None = None) -> AuthIdentity:
+        phone = _verify_sms_code(db, req, client_ip)
+        return AuthIdentity(phone=phone, device_id="phone-login", platform="phone")
+
+
+# ---------------- 微信渠道 ----------------
+
+# 微信开放平台 jscode2session（决策 #8 微信登录；Wave4-L 接入，替换 mock unionid）
+# 文档：https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-login/code2Session.html
+WECHAT_CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
+
+
+def _wechat_configured() -> bool:
+    """微信登录配置就绪判定（appid/secret 齐全才走真实 code2session）"""
+    return bool(settings.wechat_appid and settings.wechat_secret)
+
+
+class WechatCode2Session:
+    """`jscode2session` 解析结果（2026-10-15 · 台账 §7.29）。
+
+    **为什么要带 openid**：绑定表以 openid 为键（一个 unionid 多 openid），授权登录原先
+    只取 unionid ⇒ 拿不到可写绑定的键，"授权即完成绑定"这一步无从落地。
+    """
+
+    def __init__(self, openid: str, unionid: str) -> None:
+        self.openid = openid
+        self.unionid = unionid
+
+
+def _wechat_code2session(code: str) -> WechatCode2Session:
+    """调微信开放平台 code2session 换 openid/unionid（AUTH-001 unionid 三端一致）
+
+    GET {url}?appid=..&secret=..&js_code=..&grant_type=authorization_code
+    成功：{openid, session_key, [unionid]}——已绑定微信开放平台才返回 unionid，
+    优先用 unionid（三端一致主键），未绑定回退 openid（保证登录可用）。
+    失败语义（不静默降级 mock）：
+      - 业务错误（errcode≠0，如 40029 code 无效/已过期、40163 已使用）→ 401 AUTH_001
+      - 上游网络/HTTP 异常 → 502 AUTH_012（R4#11：AUTH_099 拆分——上游不可用）
+      - 响应缺少 openid → 502 AUTH_013（R4#11：响应协议异常）
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(
+            WECHAT_CODE2SESSION_URL,
+            params={
+                "appid": settings.wechat_appid,
+                "secret": settings.wechat_secret,
+                "js_code": code,
+                "grant_type": "authorization_code",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as exc:
+        raise ApiError(ERR_AUTH_012, "微信登录服务不可用", http=502) from exc
+
+    if data.get("errcode"):
+        raise ApiError(
+            ERR_AUTH_001, f"微信 code 无效或已过期: {data.get('errmsg')}", http=401
+        )
+    openid = data.get("openid")
+    if not openid:
+        raise ApiError(ERR_AUTH_013, "微信登录响应缺少 openid", http=502)
+    unionid = data.get("unionid") or openid
+    return WechatCode2Session(openid=str(openid), unionid=str(unionid))
+
+
+class WechatLoginProvider(LoginProvider):
+    """微信渠道：code 换 unionid → 建立/获取用户 → 签发 token 对（真实 DB）"""
+
+    name = "wechat"
+
+    def resolve_identity(self, db: Session, req, client_ip: str | None = None) -> AuthIdentity:
+        if not req.code:
+            raise ApiError(ERR_AUTH_001, "code 不能为空", http=400)
+
+        if _wechat_configured():
+            ident = _wechat_code2session(req.code)
+            return AuthIdentity(
+                unionid=ident.unionid,
+                device_id=req.device_id,
+                platform="android",
+                wechat_openid=ident.openid,
+                wechat_channel=settings.wechat_login_channel,
+            )
+        if settings.app_env == "production":
+            # 安全修复（审查 CRITICAL）：生产环境未接入微信时拒绝登录，
+            # 不允许任意 code 创建 mock 用户（认证形同虚设）
+            raise ApiError(ERR_AUTH_011, "微信登录未接入", http=501)
+        # 仅开发/测试环境允许 mock（联调用）
+        # 2026-10-15（台账 §7.29）：**openid 与 unionid 一起伪造** —— 让"授权登录即建绑定"
+        # 这条链在 dev 也能端到端验证（否则只能等真凭证到位才第一次跑，风险后置）。
+        return AuthIdentity(
+            unionid=f"mock-unionid-{req.code}",
+            device_id=req.device_id,
+            platform="android",
+            wechat_openid=f"mock-openid-{req.code}",
+            wechat_channel=settings.wechat_login_channel,
+        )
+
+
+# ---------------- 设备码渠道（内测期临时通道 · 2026-09-21） ----------------
+
+# 设备码渠道的伪身份前缀：unionid = f"{DEVICE_UNIONID_PREFIX}{device_id}"。
+# 为什么可直接借用 unionid 列承载身份：User.unionid 是 String(unique) 且**无格式/长度约束**
+# （db/models/auth.py:18），且既有 mock 微信渠道早已产出 `mock-unionid-{code}` 这类任意前缀伪身份
+# （见下 WechatLoginProvider 的 mock 分支）——语义同构，不引入第二套用户生命周期：
+# 建档 / 并发唯一约束兜底 / 签发 / refresh 轮换 / 吊销 全部复用 _finish_login 收口。
+DEVICE_UNIONID_PREFIX = "device:"
+
+
+class DeviceLoginProvider(LoginProvider):
+    """设备码渠道：客户端按设备唯一标识自助建档（**内测期临时通道**）。
+
+    ⚠️ fail-closed 门控（`settings.allow_device_login`，**默认 False**）：
+        关闭时一律 501 AUTH_014，且**先门控后校验**——未启用时不泄露通道的参数校验差异。
+        语义对齐既有两条「未接入即拒绝」：微信未配置 → 501 AUTH_011（本文件 WechatLoginProvider）、
+        短信未接入 → 501 AUTH_010。
+    设计口径（2026-09-21 峰宝拍板）：20 人内测零 UI 改动，首次打开按 device_id 自动建档。
+    代价与约束：**同一 device_id 即同一账号**——「设备标识的稳定性」由客户端保证
+    （用 Android ID，而非框架 Storage 里生成的 deviceId；清缓存即换号会导致用户以为数据丢失），
+    见 docs/决策台账.md §1.13 与任务卡 C2。
+    """
+
+    name = "device"
+
+    def resolve_identity(self, db: Session, req, client_ip: str | None = None) -> AuthIdentity:
+        if not settings.allow_device_login:
+            raise ApiError(ERR_AUTH_014, "设备登录未开启（内测通道）", http=501)
+
+        device_id = (req.device_id or "").strip()
+        # 与 WechatLoginProvider 的空 code 同款收口（400 AUTH_001）。
+        # 不靠 pydantic 单独兜底——`min_length=1` 拦不住全空白串（"   "）。
+        if not device_id:
+            raise ApiError(ERR_AUTH_001, "device_id 不能为空", http=400)
+
+        return AuthIdentity(
+            unionid=f"{DEVICE_UNIONID_PREFIX}{device_id}",
+            device_id=device_id,
+            platform=req.platform or "android",
+        )
+
+
+def get_login_provider(channel: str) -> LoginProvider:
+    """按配置选择登录渠道 provider（F8/R1#8 分发；真实消费方见 auth.auth 服务层）
+
+    ⚠️ 本函数是**全仓唯一的渠道分发点**（tests 中零引用）——新增渠道必须在此登记分支，
+    消费方一律经本函数取 provider，不得直接实例化具体 Provider 类。
+
+    - "wechat"    → 微信渠道（WechatLoginProvider）
+    - "phone"     → 手机号渠道；mock_external_ai=true 时短信通道退化为 sms-mock
+    - "sms-mock"  → 显式指定 mock 渠道（dev/test 联调）
+    - "device"    → 设备码渠道（内测临时通道；allow_device_login=False 时 resolve 抛 501 AUTH_014）
+    """
+    if channel == "wechat":
+        return WechatLoginProvider()
+    if channel == "phone":
+        return SmsMockLoginProvider() if settings.mock_external_ai else PhoneLoginProvider()
+    if channel == "sms-mock":
+        return SmsMockLoginProvider()
+    if channel == "device":
+        return DeviceLoginProvider()
+    raise ValueError(f"未知登录渠道: {channel!r}")

@@ -1,239 +1,101 @@
-"""认证路由（决策 #8：微信授权为主 + 手机号备用 + JWT）
+"""认证路由（协议层：参数校验 + 调用 service + 错误映射）
 
-真实 DB 接入（S1-02）：
-- users：unionid/phone 查询与创建（AUTH-001 unionid 三端一致）
-- devices：refresh_token 记录 + 吊销校验（AUTH-005/006）
-- sms_codes：验证码生成/校验/防刷（AUTH-003/004）
+业务逻辑已下沉 backend/app/services/auth/（F2 API→service 下沉，P0-5 auth 先行）：
+  - services/auth/auth.py      —— 认证服务（注册/令牌/渠道编排）
+  - services/auth/providers.py —— 登录渠道策略（LoginProvider：wechat/phone/sms-mock）
+                                  + 短信发送端口（SmsSender）
+本层只保留：路由定义 + schema 参数校验（FastAPI 依赖注入）+ 服务调用 + 统一响应封装；
+业务错误由服务层抛 ApiError、全局 error handler 映射（对外路径与响应结构不变，行为等价）。
 
-微信 code2session 仍未接入真实密钥时走 mock（MOCK_EXTERNAL_AI 或未配微信密钥）。
+微信 code2session（Wave4-L）：配置 WECHAT_APPID/WECHAT_SECRET 后走真实
+jscode2session（优先 unionid、回退 openid）；未配置时 dev/test 走 mock、production
+保持 501（不静默降级 mock 登录）。
+
+设备码登录（内测期临时通道 · 2026-09-21）：`ALLOW_DEVICE_LOGIN` 默认 false → 501 AUTH_014；
+内测期置 true 供 20 台设备自助建档，**上架前必须置回 false**（docs/决策台账.md §1.13）。
 """
-import secrets
-import uuid
-from datetime import datetime, timedelta, timezone
-
-from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.errors import ApiError
-from app.core.security import create_access_token, create_refresh_token, decode_token
-from app.db.models import Device, SmsCode, User
+from app.api import make_router
 from app.db.session import get_db
 from app.schemas.auth import (
+    DeviceLoginRequest,
+    LogoutOut,
+    LogoutRequest,
     PhoneLoginRequest,
     RefreshRequest,
+    SendSmsOut,
     SendSmsRequest,
     TokenPair,
-    UserBrief,
     WechatLoginRequest,
 )
 from app.schemas.common import ApiResponse
+from app.services.auth import auth as auth_service
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+# 兼容既有引用（test_auth_db R2#7 直接从 app.api.auth 导入）：
+# `_hash_refresh_token`/`_rotate_refresh_token` 定义于服务层 auth.py，此处 re-export 保持导入路径不变。
+from app.services.auth.auth import _hash_refresh_token, _rotate_refresh_token  # noqa: F401
+
+router = make_router(prefix="/api/v1/auth", tags=["auth"])
 
 
 @router.post("/wechat", response_model=ApiResponse[TokenPair])
 def wechat_login(req: WechatLoginRequest, db: Session = Depends(get_db)):
     """微信登录：code 换 unionid → 建立/获取用户 → 签发 token 对（真实 DB）"""
-    if not req.code:
-        raise ApiError("AUTH_001", "code 不能为空", http=400)
+    return ApiResponse(data=auth_service.wechat_login(db=db, req=req))
 
-    if _wechat_configured():
-        unionid = _wechat_code2session(req.code)
-    elif settings.app_env == "production":
-        # 安全修复（审查 CRITICAL）：生产环境未接入微信时拒绝登录，
-        # 不允许任意 code 创建 mock 用户（认证形同虚设）
-        raise ApiError("AUTH_099", "微信登录未接入", http=501)
-    else:
-        # 仅开发/测试环境允许 mock（联调用）
-        unionid = f"mock-unionid-{req.code}"
 
-    user = _get_or_create_user(db, unionid=unionid)
-    tokens = _issue_tokens(db, user, req.device_id)
-    return ApiResponse(data=tokens)
+@router.post("/device", response_model=ApiResponse[TokenPair])
+def device_login(req: DeviceLoginRequest, db: Session = Depends(get_db)):
+    """设备码登录（内测期临时通道，2026-09-21）：按 device_id 自助建档 → 签发 token 对。
+
+    fail-closed：`ALLOW_DEVICE_LOGIN` 未开启（默认）→ 501 AUTH_014，不静默降级为 mock/游客。
+    响应结构与 /wechat 完全同构（客户端零分支解析，refresh/吊销链路直接复用）。
+    限流沿用 auth 域既有 IP/用户双维中间件，不新增阈值。
+    """
+    return ApiResponse(data=auth_service.device_login(db=db, req=req))
 
 
 @router.post("/phone", response_model=ApiResponse[TokenPair])
-def phone_login(req: PhoneLoginRequest, db: Session = Depends(get_db)):
-    """手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）"""
-    now = datetime.now(timezone.utc)
-    record = db.execute(
-        select(SmsCode).where(
-            SmsCode.phone == req.phone,
-            SmsCode.used_at.is_(None),
-            SmsCode.expire_at > now,
-        ).order_by(SmsCode.id.desc()).limit(1)
-    ).scalar_one_or_none()
+def phone_login(
+    req: PhoneLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """手机号验证码登录（备用通道，真实校验 sms_codes；验证码哈希存储防 DB 泄漏）
 
-    # 哈希比较（secrets.compare_digest 防时序攻击；修复：原明文比较）
-    if record is None or not secrets.compare_digest(_hash_code(req.code), record.code or ""):
-        raise ApiError("AUTH_003", "验证码错误或已过期", http=401)
-
-    record.used_at = now
-    db.commit()
-
-    user = _get_or_create_user(db, phone=req.phone)
-    tokens = _issue_tokens(db, user, "phone-login", platform="phone")
-    return ApiResponse(data=tokens)
+    TD-P3 M2（审查中危）：验证码爆破防护
+      - IP+phone 双层滑动窗口限流（超限 429）
+      - 每 phone 每窗口失败 ≥5 次 → 作废当前验证码（used_at 置位）+ 冷却 10 分钟
+    """
+    return ApiResponse(data=auth_service.phone_login(db=db, req=req, client_ip=_client_ip(request)))
 
 
-@router.post("/sms/send", response_model=ApiResponse[dict])
-def send_sms(req: SendSmsRequest, db: Session = Depends(get_db)):
-    """发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）"""
-    now = datetime.now(timezone.utc)
+@router.post("/sms/send", response_model=ApiResponse[SendSmsOut])
+def send_sms(req: SendSmsRequest, request: Request, db: Session = Depends(get_db)):
+    """发送短信验证码（真实入库，6 位 + 5 分钟有效期 + 防刷限流 + 每日上限）
 
-    # 防刷（AUTH-004）：同一手机号 60s 内已有未使用验证码 → 拒绝重发
-    recent = db.execute(
-        select(SmsCode).where(
-            SmsCode.phone == req.phone,
-            SmsCode.used_at.is_(None),
-            SmsCode.created_at > now - timedelta(seconds=60),
-        ).limit(1)
-    ).scalar_one_or_none()
-    if recent is not None:
-        raise ApiError("AUTH_004", "验证码发送过于频繁，请稍后再试", http=429)
-
-    # 每日上限（安全修复：防短信轰炸，10 条/日）
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_count = db.scalar(
-        select(func.count()).select_from(SmsCode).where(
-            SmsCode.phone == req.phone,
-            SmsCode.created_at >= day_start,
-        )
-    ) or 0
-    if today_count >= 10:
-        raise ApiError("AUTH_004", "今日验证码发送次数已达上限", http=429)
-
-    code = _gen_sms_code()
-    # 安全修复：验证码只存 SHA-256 哈希（DB 泄漏不可直接登录）
-    db.add(SmsCode(phone=req.phone, code=_hash_code(code), expire_at=now + timedelta(minutes=5)))
-    db.commit()
-
-    if settings.mock_external_ai:
-        # mock 模式：直接返回验证码供联调（生产走阿里云短信 0.045 元/条）
-        return ApiResponse(data={"mock_code": code})
-    # TODO(T1): 接入阿里云短信发送
-    raise ApiError("AUTH_099", "短信服务未接入", http=501)
+    TD-P3 M2（审查中危）：send 侧 IP+phone 双层限流（防短信轰炸洪泛）。
+    """
+    return ApiResponse(data=auth_service.send_sms(db=db, req=req, client_ip=_client_ip(request)))
 
 
 @router.post("/refresh", response_model=ApiResponse[TokenPair])
 def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     """refresh token 轮换（AUTH-005：旧 refresh 失效；devices 表可吊销 AUTH-006）"""
-    try:
-        payload = decode_token(req.refresh_token)
-    except Exception:
-        raise ApiError("AUTH_005", "refresh token 无效或过期", http=401) from None
-
-    if payload.get("type") != "refresh":
-        raise ApiError("AUTH_005", "token 类型错误", http=401)
-
-    user_id = payload.get("sub")
-    device_id = payload.get("device_id", "")
-
-    # 吊销校验：devices 表中存储的 refresh_token 必须匹配（AUTH-006 退出/改密后失效）
-    device = db.execute(
-        select(Device).where(Device.user_id == user_id, Device.device_id == device_id)
-    ).scalar_one_or_none()
-    if device is None or device.refresh_token != req.refresh_token:
-        raise ApiError("AUTH_005", "refresh token 已吊销", http=401)
-
-    user = db.get(User, user_id)
-    if user is None or user.status != 1:
-        raise ApiError("AUTH_001", "用户不存在或已冻结", http=401)
-
-    tokens = _issue_tokens(db, user, device_id)
-    return ApiResponse(data=tokens)
+    return ApiResponse(data=auth_service.refresh(db=db, req=req))
 
 
-# ---------- helpers ----------
+@router.post("/logout", response_model=ApiResponse[LogoutOut])
+def logout(req: LogoutRequest, db: Session = Depends(get_db)):
+    """退出登录（G1/R6#7）：吊销该 refresh token 绑定的设备会话（AUTH-006）
 
-def _wechat_configured() -> bool:
-    """微信登录配置就绪判定（appid/secret 未配置时走 mock）"""
-    # TODO(T1): 配置 WECHAT_APPID/WECHAT_SECRET 后走真实 code2session
-    return False
-
-
-def _wechat_code2session(code: str) -> str:
-    """TODO(T1): 调微信接口 https://api.weixin.qq.com/sns/jscode2session 换 openid/unionid"""
-    raise ApiError("AUTH_099", "微信登录未接入", http=501)
-
-
-def _get_or_create_user(db: Session, unionid: str | None = None, phone: str | None = None) -> User:
-    """按 unionid 或 phone 查询/创建用户（AUTH-001 三端一致）
-
-    审查修复(P1-04)：并发双端同时首次登录 → 唯一约束冲突（IntegrityError）→
-    回滚后重查，不再 500（此前未捕获直接抛 500）。
+    幂等：token 无效/过期/设备不存在 → 仍返回 ok（客户端必清本地凭据）。
     """
-    from sqlalchemy.exc import IntegrityError
-
-    user = None
-    if unionid:
-        user = db.execute(select(User).where(User.unionid == unionid)).scalar_one_or_none()
-    elif phone:
-        user = db.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
-
-    if user is None:
-        user = User(
-            id=str(uuid.uuid4()),
-            unionid=unionid,
-            phone=phone,
-            nickname="新用户",
-            status=1,
-        )
-        db.add(user)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            # 并发下另一请求已创建 → 重查
-            if unionid:
-                user = db.execute(select(User).where(User.unionid == unionid)).scalar_one_or_none()
-            elif phone:
-                user = db.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
-            if user is None:
-                raise
-        db.refresh(user)
-    return user
+    return ApiResponse(data=auth_service.logout(db=db, refresh_token=req.refresh_token))
 
 
-def _issue_tokens(db: Session, user: User, device_id: str, platform: str = "android") -> TokenPair:
-    """签发 token 对 + 记录/更新 devices 表（refresh 可吊销）
-
-    修复（审查 MINOR）：platform 参数化（原硬编码 android），
-    微信登录默认 android（客户端后续补 platform 字段时透传）。
-    """
-    access = create_access_token(user.id, device_id)
-    refresh = create_refresh_token(user.id, device_id)
-
-    device = db.execute(
-        select(Device).where(Device.user_id == user.id, Device.device_id == device_id)
-    ).scalar_one_or_none()
-    if device is None:
-        device = Device(user_id=user.id, device_id=device_id, platform=platform)
-        db.add(device)
-    device.refresh_token = refresh
-    device.last_active_at = datetime.now(timezone.utc)
-    db.commit()
-
-    return TokenPair(
-        access_token=access,
-        refresh_token=refresh,
-        user=UserBrief(
-            id=user.id,
-            nickname=user.nickname,
-            avatar=user.avatar,
-            is_new_user=False,
-        ),
-    )
-
-
-def _gen_sms_code() -> str:
-    return f"{secrets.randbelow(1000000):06d}"
-
-
-def _hash_code(code: str) -> str:
-    """验证码哈希（SHA-256；仅存哈希，校验时重算比对，DB 泄漏不可登录）"""
-    import hashlib
-
-    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+def _client_ip(request: Request) -> str:
+    """协议层：提取客户端 IP 传给服务层（限流键用）"""
+    return request.client.host if request.client else ""

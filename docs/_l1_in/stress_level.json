@@ -1,0 +1,20 @@
+{
+  "id": "stress_level",
+  "label": "压力水平",
+  "category": "情绪与状态",
+  "current_values": [
+    "低",
+    "中",
+    "高",
+    "爆表"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_stress_level",
+  "confidence_threshold": 0.7,
+  "note": "联动 mental_health_flag；爆表触发关怀策略",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

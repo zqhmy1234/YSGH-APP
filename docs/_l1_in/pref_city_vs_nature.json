@@ -1,0 +1,19 @@
+{
+  "id": "pref_city_vs_nature",
+  "label": "城市vs自然",
+  "category": "决策与偏好",
+  "current_values": [
+    "城市",
+    "自然",
+    "都爱"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_city_vs_nature",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

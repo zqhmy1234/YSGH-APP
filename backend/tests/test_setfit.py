@@ -3,7 +3,7 @@
 覆盖：
   - 门禁：种子数据评估集准确率 ≥75%（分类≥75% M1 门禁）
   - API：POST /api/v1/classify 冒烟 + 空文本 422
-  - 服务：5 类输出结构 + confidence 合法性
+  - 服务：7 类输出结构 + confidence 合法性
 前置：python scripts/train_setfit.py 已训练（backend/models/setfit-classifier/）
 """
 from pathlib import Path
@@ -13,10 +13,14 @@ from app.services.classifier import classify
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "setfit-classifier"
 
-pytestmark = pytest.mark.skipif(
-    not (MODEL_DIR / "model.safetensors").exists() and not (MODEL_DIR / "pytorch_model.bin").exists(),
-    reason="SetFit 模型未训练（先跑 python scripts/train_setfit.py）",
-)
+# H3/R8#10：真 SetFit 模型推理 → 慢测试分层（-m "not slow" 本地快速回归排除）
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not (MODEL_DIR / "model.safetensors").exists() and not (MODEL_DIR / "pytorch_model.bin").exists(),
+        reason="SetFit 模型未训练（先跑 python scripts/train_setfit.py）",
+    ),
+]
 
 
 def _seed_eval() -> list[tuple[str, str]]:
@@ -55,12 +59,16 @@ def test_gate_accuracy_ge_75():
 
 
 def test_classify_structure():
-    """输出结构：5 类 scores + confidence 合法"""
+    """输出结构：7 类 scores + confidence 合法
+
+    ⚠️ 2026-10-23：规格扩 7 类后，磁盘上的模型必须重训（scripts/train_setfit.py）。
+    旧 5 类模型会让本断言失败 —— 这是**有意的**：代码词表与模型列数不能静默错配。
+    """
     result = classify("明天记得去取快递")
-    assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed"}
+    assert result["label"] in {"todo", "idea", "emotion", "quote", "mixed", "question", "fact"}
     assert result["label_cn"]
     assert 0.0 <= result["confidence"] <= 1.0
-    assert len(result["scores"]) == 5
+    assert len(result["scores"]) == 7
     for s in result["scores"]:
         assert s["label"] and s["label_cn"]
         assert 0.0 <= s["score"] <= 1.0

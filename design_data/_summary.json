@@ -1,0 +1,391 @@
+{
+  "定稿 · 精修高保真.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#000000",
+        "#3a2e25",
+        "#5a4c40",
+        "#8a7a6a",
+        "#b05a3a",
+        "#b3a696",
+        "#c4913c",
+        "#c4913c1a",
+        "#c4913c24",
+        "#f8f7f4",
+        "#faf9f5",
+        "#ffffff",
+        "#ffffff52",
+        "#ffffff80",
+        "#ffffff8c",
+        "#ffffffa6",
+        "#ffffffb2",
+        "#ffffffcc",
+        "#ffffffd9"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "1.5",
+        "12.0",
+        "16.0",
+        "2.5",
+        "20.0",
+        "23.0",
+        "28.0",
+        "3.0",
+        "3.33",
+        "31.0",
+        "4.88",
+        "5.42",
+        "7.5"
+      ],
+      "element_types": {
+        "Rect": 24,
+        "Group": 45,
+        "Path": 53,
+        "Circle": 14,
+        "SVGElement": 4,
+        "Use": 2
+      }
+    }
+  },
+  "搜索页.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#3a2e25",
+        "#5a4c40",
+        "#8a7a6a",
+        "#b0593b1f",
+        "#b0593b99",
+        "#b05a3a",
+        "#b3a696",
+        "#c4913c",
+        "#c4913c1a",
+        "#c4913c24",
+        "#f8f7f4",
+        "#faf9f5",
+        "#ffffff",
+        "#ffffff80",
+        "#ffffff8c",
+        "#ffffffa6",
+        "#ffffffcc"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "1.5",
+        "12.0",
+        "16.0",
+        "16.5",
+        "2.5",
+        "20.0",
+        "24.0",
+        "28.0",
+        "3.0",
+        "3.33",
+        "31.0",
+        "4.88",
+        "5.42",
+        "7.5"
+      ],
+      "element_types": {
+        "Rect": 24,
+        "Group": 42,
+        "Path": 51,
+        "Circle": 13,
+        "SVGElement": 2,
+        "Use": 1
+      }
+    }
+  },
+  "我的页.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#3a2e25",
+        "#8a7a6a",
+        "#b05a3a",
+        "#b3a696",
+        "#c4913c",
+        "#f8f7f4",
+        "#faf9f5",
+        "#ffffff",
+        "#ffffff8c",
+        "#ffffffa6"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "2.5",
+        "20.0",
+        "28.0",
+        "3.0",
+        "3.33",
+        "31.0",
+        "32.0",
+        "5.42",
+        "7.5"
+      ],
+      "element_types": {
+        "Rect": 11,
+        "Group": 36,
+        "Path": 59,
+        "Circle": 14,
+        "SVGElement": 2,
+        "Use": 1
+      }
+    }
+  },
+  "消息中心.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#000000",
+        "#3a2e25",
+        "#4e7d8c",
+        "#4e7d8c21",
+        "#5a4c40",
+        "#7a8c5a",
+        "#7a8c5a24",
+        "#8a7a6a",
+        "#b0593b1f",
+        "#b05a3a",
+        "#b3a696",
+        "#f8f7f4",
+        "#ffffff"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "12.0",
+        "20.0",
+        "3.0"
+      ],
+      "element_types": {
+        "Rect": 10,
+        "Group": 20,
+        "Path": 28,
+        "SVGElement": 6,
+        "Circle": 6
+      }
+    }
+  },
+  "设置页.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#3a2e25",
+        "#b05a3a",
+        "#b3a696",
+        "#c4913c",
+        "#f8f7f4",
+        "#ffffff"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "11.0",
+        "14.0",
+        "2.5",
+        "20.0",
+        "3.0"
+      ],
+      "element_types": {
+        "Rect": 10,
+        "Group": 16,
+        "Path": 21,
+        "Circle": 3
+      }
+    }
+  },
+  "冷启动访谈.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#000000",
+        "#3a2e25",
+        "#5a4c40",
+        "#8a7a6a",
+        "#b0593b0f",
+        "#b0593b1f",
+        "#b05a3a",
+        "#b3a696",
+        "#c4913c",
+        "#e5ded2",
+        "#f8f7f4",
+        "#ffffff",
+        "#ffffff8c",
+        "#ffffff99"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "120.0",
+        "130.0",
+        "140.0",
+        "2.5",
+        "20.0",
+        "3.0",
+        "32.0",
+        "4.0",
+        "54.0",
+        "70.0"
+      ],
+      "element_types": {
+        "Rect": 5,
+        "Group": 20,
+        "Circle": 13,
+        "Path": 22,
+        "SVGElement": 4,
+        "Use": 2
+      }
+    }
+  },
+  "记录面板.svg": {
+    "dimensions": "390.0x844.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#000000",
+        "#1a140f",
+        "#3a2e25",
+        "#4e7d8c",
+        "#4e7d8c21",
+        "#5a4c40",
+        "#7a8c5a",
+        "#7a8c5a24",
+        "#8a7a6a",
+        "#b0593b1f",
+        "#b05a3a",
+        "#b3a696",
+        "#c4913c",
+        "#c4913c1a",
+        "#c4913c1f",
+        "#c4913c24",
+        "#f8f7f4",
+        "#faf9f5",
+        "#ffffff",
+        "#ffffff40",
+        "#ffffff80",
+        "#ffffff8c",
+        "#ffffffa6",
+        "#ffffffb2",
+        "#ffffffcc",
+        "#ffffffd9"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "1.5",
+        "12.0",
+        "16.0",
+        "2.5",
+        "20.0",
+        "23.0",
+        "28.0",
+        "3.0",
+        "3.33",
+        "31.0",
+        "32.0",
+        "4.88",
+        "40.0",
+        "5.42",
+        "7.5"
+      ],
+      "element_types": {
+        "Rect": 28,
+        "Group": 63,
+        "Path": 71,
+        "Circle": 26,
+        "SVGElement": 4,
+        "Use": 2
+      }
+    }
+  },
+  "TabBar胶囊.svg": {
+    "dimensions": "350.0x62.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#8a7a6a",
+        "#b05a3a",
+        "#b3a696",
+        "#f6f1e7bf"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "3.33",
+        "31.0",
+        "5.42",
+        "7.5"
+      ],
+      "element_types": {
+        "Rect": 1,
+        "Circle": 3,
+        "Path": 8,
+        "Group": 4
+      }
+    }
+  },
+  "中央＋按钮.svg": {
+    "dimensions": "56.0x56.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#b05a3a",
+        "#f6f1e7"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "28.0"
+      ],
+      "element_types": {
+        "Circle": 1,
+        "Path": 1
+      }
+    }
+  },
+  "内容区.svg": {
+    "dimensions": "350.0x657.0",
+    "viewBox": null,
+    "metrics": {
+      "colors": [
+        "#000000",
+        "#3a2e25",
+        "#4e7d8c",
+        "#4e7d8c29",
+        "#5a4c40",
+        "#8a7a6a",
+        "#b3a696",
+        "#ede5d5",
+        "#f6f1e7",
+        "#fbf7ef"
+      ],
+      "font_sizes": [],
+      "font_families": [],
+      "rect_corners": [
+        "16.0",
+        "20.0",
+        "22.0",
+        "4.88",
+        "8.0"
+      ],
+      "element_types": {
+        "Path": 11,
+        "Circle": 2,
+        "Group": 4,
+        "Rect": 7
+      }
+    }
+  }
+}

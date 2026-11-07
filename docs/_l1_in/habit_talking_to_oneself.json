@@ -1,0 +1,20 @@
+{
+  "id": "habit_talking_to_oneself",
+  "label": "自言自语",
+  "category": "行为习惯",
+  "current_values": null,
+  "value_template": "frequency",
+  "template_values": [
+    "经常",
+    "偶尔",
+    "很少",
+    "不"
+  ],
+  "structure": null,
+  "source": "M",
+  "matraix_id": "habit_talking_to_oneself",
+  "confidence_threshold": 0.7,
+  "note": "与 C 批 self-talk 录音直接相关",
+  "open_enum": true,
+  "refine_mode": "template_level"
+}

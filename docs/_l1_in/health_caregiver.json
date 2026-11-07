@@ -1,0 +1,20 @@
+{
+  "id": "health_caregiver",
+  "label": "照护角色",
+  "category": "健康与生活",
+  "current_values": [
+    "无",
+    "照护老人",
+    "照护孩子",
+    "照护病人"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "health_caregiver_status",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

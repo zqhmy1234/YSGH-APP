@@ -1,7 +1,7 @@
 """corpus-A 文字搜图评估（RET-001 · B2-4）
 
 queries_image.json（build_image_index.py 生成）→ 每查询走生产检索链路
-（collection=yishu_benchmark + content_types=[image]）→ hit_rate@3 / latency。
+（collection=yishu_benchmark + content_types=["photo"]）→ hit_rate@3 / latency。
 
 用法：
   python scripts/eval_image_search.py
@@ -13,8 +13,9 @@ import sys
 import time
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+from gate_io import force_utf8  # noqa: E402
+
+force_utf8()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
@@ -28,13 +29,18 @@ def main() -> int:
     queries = json.loads((BENCH / "queries" / "queries_image.json").read_text(encoding="utf-8"))["queries"]
     print(f"{len(queries)} 条文字搜图查询", flush=True)
 
+    # 预热：首个查询的 BGE-M3 冷加载（~5-8s）不应计入 P95 稳态口径
+    from app.services.embedding import encode_query
+
+    encode_query("预热")
+
     hit3 = 0
     latencies = []
     rows = []
     for q in queries:
         t0 = time.perf_counter()
         result = search(
-            SearchQuery(q=q["query"], limit=5, content_types=["image"]),
+            SearchQuery(q=q["query"], limit=5, content_types=["photo"]),  # FIX-1：规范值
             collection="yishu_benchmark",
         )
         ms = int((time.perf_counter() - t0) * 1000)

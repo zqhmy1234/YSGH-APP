@@ -1,0 +1,24 @@
+{
+  "id": "interest_platform",
+  "label": "内容平台",
+  "category": "活跃主题与兴趣",
+  "current_values": [
+    "微信",
+    "抖音",
+    "小红书",
+    "B站",
+    "网易云",
+    "微博",
+    "知乎",
+    "快手"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "N",
+  "matraix_id": null,
+  "confidence_threshold": 0.7,
+  "note": "自建（中国平台）",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

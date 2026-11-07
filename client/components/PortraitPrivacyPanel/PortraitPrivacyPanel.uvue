@@ -1,0 +1,219 @@
+<template>
+	<!-- ═══════════ 画像隐私设置面板（F9c · 卡25 · canvas JSON 真值） ═══════════
+	     真值：.wt/missing-pages/uvue_gen/portrait_privacy_panel_canvas.json（2026-09-02 14:33 导出，34 节点，帧 F9c）。
+	     画布为整页形态（不透明底 + 返回钮），宿主 manage.uvue 以全屏浮层唤起（不跳页，铁律 1 同族；
+	     fixed 全屏盖 TabBar，RecordSheet 范式）。
+	     结构（逻辑 px ×1.9231→rpx）：底 #F8F7F4 / 返回 22×22 @16,60 / 标题 18·600 居中 y60 /
+	     组1（y110 白卡 r20 p6 影 0,3,12,.05）：行 h52 p12（图标 20×20 + 文字 15·400 #3A2E25 + 开关 46×28 r14
+	     #B05A3A p3 内阴影白a0.3，滑块 22 白 影 0,1,3,.25）/ 说明 11·400 #B3A696 y232 /
+	     组2（y250 同款卡）：行 h44（敏感话题管理→管理 › 13·400 #B3A696；清除画像数据→不可恢复 13·400 #B05A3A）/
+	     说明 11·400 #B3A696 y356 -->
+	<view class="panel-root tk-root">
+		<image class="nav-back" src="/static/icons/i4_135.svg" @tap="onClose" />
+		<view class="nav-title">
+			<text class="nav-title-text">画像隐私设置</text>
+		</view>
+
+		<view class="flow">
+			<!-- 2026-10-14（台账 §7.18）：原「组1 · AI 对话使用画像 / 回响使用画像」两枚开关**已移除**。
+			     判定依据：两个键（privacy_ai_chat / privacy_echo）写入 storage 后**全仓零读取**，
+			     且 agent 侧**根本没有画像能力**（无画像工具/上下文，见审计 §4）⇒ 不存在可接的消费者，
+			     "关闭后不再引用你的画像"是**空承诺**（合规相关，不能靠"本地生效"的措辞掩盖）。
+			     重新启用条件（服务端偏好字段 + 两端真消费）见台账 §7.18。
+			     （相关样式 .switch/.row-icon 等暂留，随下次样式整饬清理。） -->
+
+			<!-- 64:292 组2：敏感话题管理 + 清除画像数据（两者均为真链路，保留） -->
+			<view class="group-card group-2">
+				<view class="row" @tap="onManageSensitive">
+					<image class="row-icon" src="/static/icons/i64_305.svg" />
+					<text class="row-text">敏感话题管理</text>
+					<text class="row-value">管理 ›</text>
+				</view>
+				<view class="row" @tap="onClearPortrait">
+					<image class="row-icon" src="/static/icons/i64_308.svg" />
+					<text class="row-text">清除画像数据</text>
+					<text class="row-value value-danger">不可恢复</text>
+				</view>
+			</view>
+			<!-- 64:321 说明-清除（D07-12：文案与真实行为对齐——云端真删；敏感话题保留） -->
+			<text class="group-hint">清除将删除云端的全部画像维度与证据锚点，需二次确认且不可恢复；「敏感话题」设置会保留</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { clearInterviewProfile } from '@/utils/play_interview'
+
+	const emit = defineEmits(['close', 'cleared'])
+
+	// 2026-10-14（台账 §7.18）：原 `aiOn` / `echoOn` 两枚开关及其 storage 写入**已移除**——
+	// 键写入后零消费者、服务端亦无对应语义（详见模板顶部注释与台账 §7.18）。
+
+	/** 管理 ›：收起面板回宿主页（敏感画像管理卡片就在 manage 页内，无独立二级页） */
+	function onManageSensitive(): void {
+		onClose()
+	}
+
+	/** 清除画像数据：二次强确认（confirm 先例 = manage onRemoveSensitive showModal）。
+	 *
+	 *  D07-12（2026-09-25 功能修复波 · 用户拍板「按建议来」）：**先调云端真删除**
+	 *  （`DELETE /api/v1/interview/profile`），成功后再清本地覆盖态。
+	 *  - 失败（网络/服务端）⇒ 只 toast 失败并**保留**本地态（**绝不声称"已清除"**）；
+	 *  - 成功后本地清空：locked 标签 / AI 标签编辑覆盖（隐私开关已于 2026-10-14 移除，见 §7.18）；
+	 *  - 云端保留的「敏感话题」在确认弹窗里**提前说明**（不承诺删掉它）。
+	 */
+	function onClearPortrait(): void {
+		uni.showModal({
+			title: '清除画像数据',
+			content: '将删除云端的全部画像维度与证据锚点，此操作不可恢复；「敏感话题」设置会保留。确定清除吗？',
+			success: (res) => {
+				if (!res.confirm) {
+					return
+				}
+				clearInterviewProfile().then((ok: boolean) => {
+					if (!ok) {
+						// 失败不伪装成功（与"不伪造远端清除"同族口径）；api 层已给出错误提示
+						uni.showToast({ title: '清除失败，请稍后重试', icon: 'none' })
+						return
+					}
+					uni.setStorageSync('portrait_locked_tags', '')
+					uni.setStorageSync('portrait_ai_tags_edited', '')
+					uni.showToast({ title: '画像数据已清除', icon: 'none' })
+					emit('cleared')
+					onClose()
+				})
+			}
+		})
+	}
+
+	function onClose(): void {
+		emit('close')
+	}
+</script>
+
+<style>
+	/* 全屏浮层：不透明底盖住宿主页与 TabBar（fixed 全屏，z-index 1000 > TabBar 999） */
+	.panel-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		background-color: var(--c-paper-100, #F8F7F4);
+		z-index: 1000;
+		flex-direction: column;
+	}
+	/* ── 导航：画布 标题 18px SemiBold y60 / 返回 22×22 @16,60（theme-detail 同款） ── */
+	.nav-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.nav-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.nav-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（关面板） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	/* 内容流：画布组 x20 → 左右 inset 38.5rpx，组1 y110 */
+	.flow {
+		position: absolute;
+		/* absolute-ok: 内容容器（内容短，无需滚动） */
+		left: var(--d-lattice-p0, 0rpx);
+		right: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		flex-direction: column;
+	}
+	/* 64:291/64:292 组卡：白底 r20 p6 影 (0,3,12,.05) */
+	.group-card {
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		padding: var(--d-lattice-p6, 11.5rpx);
+		box-shadow: 0 var(--d-lattice-p3, 5.8rpx) var(--d-card_radius_small, 23.1rpx) var(--a-ink-05, rgba(59, 46, 38, 0.05));
+		flex-direction: column;
+	}
+	/* 组2 y250：说明 y232+13=245 → gap5=9.6rpx */
+	.group-2 {
+		margin-top: var(--d-lattice-p5, 9.6rpx);
+	}
+	/* ── 行：p12 图标20 文字15 值13；开关行 h52 / 值行 h44 ── */
+	.row {
+		padding: var(--d-card_radius_small, 23.1rpx);
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:299 行图标：20×20 → 38.5rpx（库存 svg 见台账：眼睛无库存降级 icon-chat） */
+	.row-icon {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	/* 64:300 行文字：15px Regular #3A2E25，图标右 gap12=23.1rpx */
+	.row-text {
+		flex: 1;
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 64:307/64:310 行值：13px Regular；管理 › #B3A696 / 不可恢复 #B05A3A */
+	.row-value {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.value-danger {
+		color: var(--c-rust-500, #B05A3A);
+	}
+	/* ── 64:318 开关：46×28 r14 p3，开 #B05A3A（滑块靠右 x21）/ 关降级 #D8D0C6（画布只有开态），
+	   滑块 22 白圆 影 0,1,3,.25；INNER_SHADOW 白a0.3 纳入 inset ── */
+	.switch {
+		width: var(--d-search_height, 88.5rpx);
+		height: var(--d-fab_radius, 53.8rpx);
+		border-radius: var(--d-lattice-p14, 26.9rpx);
+		padding: var(--d-lattice-p3, 5.8rpx);
+		box-shadow: inset 0 var(--d-lattice-p1, 1.9rpx) 3.9rpx var(--a-white-30, rgba(255, 255, 255, 0.3));
+		flex-direction: row;
+	}
+	.switch-on {
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: flex-end;
+	}
+	.switch-off {
+		background-color: var(--c-surface-neutral, #D8D0C6);
+		justify-content: flex-start;
+	}
+	.switch-knob {
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		border-radius: var(--d-lattice-p11, 21.2rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: 0 var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-25, rgba(59, 46, 38, 0.25));
+	}
+	/* ── 说明：11px Regular #B3A696（组1 底 226→232 gap6=11.5rpx / 组2 底 350→356 同） ── */
+	.group-hint {
+		margin-top: var(--d-lattice-p6, 11.5rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+</style>

@@ -27,3 +27,9 @@ REVOKE ALL ON DATABASE postgres FROM yishu_app;
 -- 4. 连接隔离说明（应用侧）：
 --    DATABASE_URL=postgresql+psycopg://yishu_app:yishu_app_2026@localhost:5432/yishu
 --    schema 迁移时在 yishu 库内执行 backend/sql/schema.sql
+
+-- 5. pgvector 扩展（非 trusted，需超级用户安装；schema.sql 里 IF NOT EXISTS 幂等跳过）
+--    2026-08-26：本地新库 setup 与 CI 一致，避免 yishu_app 跑 schema.sql 时权限失败
+\connect yishu
+
+CREATE EXTENSION IF NOT EXISTS vector;

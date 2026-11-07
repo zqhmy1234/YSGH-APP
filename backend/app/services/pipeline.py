@@ -1,21 +1,52 @@
 """内容 AI 管线（P2-02 重构：从 workers/worker.py 下沉，worker 只留进程入口）
 
 process_content(content_id)：按 content_type 分流处理，全部异步在 RQ worker 执行。
-设计（与用户 2026-08-20 拍板）：
-- 用户无感知：每步独立 try/except，失败不抛错不回滚，记录 extra.error
+设计：
+- 非关键增强步骤失败可静默降级；ASR 主步骤失败必须显式回写 failed
+- A2（P0-2）：retryable 失败（网络抖动等）先落审计再 re-raise → RQ Retry(3)
+  真正重投；非 retryable（终态）才吞掉返回 failed。RQ 重投耗尽仍失败 →
+  workers/requeue_job.py 超龄重扫兜底（含 P0-4 遗留的 processing 卡死）
 - text  → SetFit 分类 → 写 content_class/class_source/model_version → 索引
-- voice → ASR 转写（真实/mock 兜底）→ 转写文本入 text → 分类 → 索引
+- voice → ASR 转写 → succeeded/no_speech/failed_* → 分类 → 索引
 - photo → image_caption（Qwen3-VL）写 caption 入索引 + CI 打标（失败静默）
 - 全部 → 事件聚合（aggregate_user，失败静默）
-- 状态机：processing → done（部分失败也算 done，失败明细在 extra.error）
+- 状态机：processing → done/failed；空白语音以 done + audio_processing.no_speech 表达
 
 依赖方向：api → services.pipeline → services.*（单向，不再反向 import worker）。
+
+波D ①（2026-09-10）结构拆分（**只搬代码不改逻辑**，784 行 → 5 文件）：
+  - `pipeline_common.py`  logger / patch_extra / extra_get / _enqueue_user_aggregation（共享底座）
+  - `pipeline_audio.py`   _materialize_voice_audio / _cleanup_temporary_audio /
+                          _set_audio_processing / _set_emotion_enrichment /
+                          enrich_content_emotion（语音音频 + 本地情绪增强）
+  - `pipeline_photo.py`   _process_photo（照片处理器）
+  - `pipeline_tagging.py` tag_content（chips 自由标签 RQ 任务）
+  - `pipeline.py`（本文件）**冷冻核心** + 全量 re-export
+
+⚠️ 本文件为何不能再瘦身（拆分论证，非为指标硬切）：
+`tests/test_pipeline.py` 用**字符串 monkeypatch** 打在 `app.services.pipeline.<name>` 上——
+`_get_classifier` / `_index_content` / `_classify_content` / `_process_text` / `_process_photo`。
+CPython 的函数全局查找走**函数定义模块的 `__dict__`**，因此「被 patch 的名字」与其
+「调用方」必须**同模块共存**，否则 patch 静默失效（测试症状：真去加载 SetFit 大模型）。
+由此锁定四条同留约束：
+  1. `_classify_content`（patch 目标）+ `_process_text` / `_process_voice`（voice 测试打
+     `_classify_content` 期望生效的调用方）+ `_get_classifier` → 同留本文件；
+  2. `_index_content`（patch 目标）+ `_index_after_commit`（调用方）→ 同留本文件；
+  3. `_resolve_handler` 用 `globals().get(name)` 解析处理器名，其 globals 必须就是本模块，
+     故 `CONTENT_HANDLERS` / `register_content_handler` / 三个注册调用随其留驻；
+  4. `process_content` 调 `_resolve_handler` + `_index_after_commit`，且自身是 RQ pickle 路径
+     （`app/workers/worker.py: app.services.pipeline.process_content`）→ 留驻。
+剩余物理下限 ≈ 440 行，其中 `process_content` 单函数 222 行（六阶段编排，拆它即改逻辑）。
 """
 from __future__ import annotations
 
-import logging
+import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,7 +55,36 @@ from app.core.config import settings
 from app.db.models import Content
 from app.db.session import SessionLocal
 
-logger = logging.getLogger("yishu.pipeline")
+# 波D ①（2026-09-10）re-export：搬迁到卫星模块的符号在此回引，保持
+# `app.services.pipeline.<name>` 既有导入路径可用（monkeypatch 目标 / RQ pickle 路径 /
+# worker 预导入 / 测试 import 全部零改动）。本块同时承担"本文件自用"与"兼容再导出"，
+# 故整块标注 noqa: F401。
+from app.services.pipeline_audio import (  # noqa: F401
+    _cleanup_temporary_audio,
+    _materialize_voice_audio,
+    _set_audio_processing,
+    _set_emotion_enrichment,
+    enrich_content_emotion,
+)
+from app.services.pipeline_common import (  # noqa: F401
+    _enqueue_user_aggregation,
+    extra_get,
+    logger,
+    patch_extra,
+)
+from app.services.pipeline_photo import _process_photo  # noqa: F401
+from app.services.pipeline_tagging import tag_content  # noqa: F401
+
+
+class PipelineHardTimeout(Exception):
+    """process_content 应用层硬超时（retryable —— RQ 照常重投）"""
+
+    retryable = True
+
+    def __init__(self, content_id: str, timeout_s: int) -> None:
+        super().__init__(f"process_content {content_id} 硬超时 {timeout_s}s")
+        self.content_id = content_id
+        self.timeout_s = timeout_s
 
 
 @lru_cache(maxsize=1)
@@ -46,6 +106,17 @@ def _index_content(db: Session, content: Content, text: str | None = None) -> No
 
     payload_text = text or content.text
     if not payload_text:
+        # 2026-10-14（台账 §7.20 · 批次 8 审计 A2）：**跳过索引必须留痕**。
+        # 本函数在 `process_content` 把 status 置 done 并**主提交之后**才被调用
+        # （:426-428 → :444），此处静默 return 让调用方拿到 {"status": "done"}，
+        # 而这条内容其实**没有任何向量** ⇒ 文本检索永远命中不到它，且无日志、无计数
+        # （照片 caption 失败时 content.text 为 None 是常见触发路径）。
+        # 口径同 §7.12：降级要可观测，不静默。
+        logger.info(
+            "跳过向量索引（无可索引文本）content=%s type=%s",
+            content.id,
+            content.content_type,
+        )
         return
     dense = encode_dense([payload_text])[0]
     sparse = encode_sparse([payload_text])[0]
@@ -53,22 +124,29 @@ def _index_content(db: Session, content: Content, text: str | None = None) -> No
     # 审查 CRITICAL 修复：taken_at 转 epoch 秒（int）落 payload，与 _to_filter 的
     # Range 数值过滤一致——此前存 ISO 字符串导致时间过滤在生产库静默不命中。
     taken_ts = int(content.taken_at.timestamp()) if content.taken_at else None
-    store.upsert_content(
-        content_id=str(content.id),
-        text=payload_text,
-        dense=dense,
-        sparse=sparse,
-        payload={
+    # Wave0 钩子：B2 域扩展 payload（place/tags/content_type 归一）——冻结 pipeline.py 后唯一扩展入口
+    from app.services.pipeline_ext import extend_payload
+
+    payload = extend_payload(
+        content,
+        {
             "content_type": content.content_type,
             "content_class": content.content_class,
             "taken_at": taken_ts,
             "user_id": str(content.user_id),
         },
     )
+    store.upsert_content(
+        content_id=str(content.id),
+        text=payload_text,
+        dense=dense,
+        sparse=sparse,
+        payload=payload,
+    )
 
 
 def _classify_content(db: Session, content: Content, text: str) -> None:
-    """SetFit 5 类分类 → 回写 content_class/class_source/model_version"""
+    """SetFit 7 类分类 → 回写 content_class/class_source/model_version"""
     try:
         result = _get_classifier()(text)
         content.content_class = result["label"]
@@ -81,137 +159,293 @@ def _classify_content(db: Session, content: Content, text: str) -> None:
 def _process_text(db: Session, content: Content) -> None:
     if content.text:
         _classify_content(db, content, content.text)
-        _index_content(db, content, content.text)
+        # Wave0 钩子：B5b 敏感标记 + B1 画像标注 + 地点补全（2026-10-04）
+        # （Qdrant 索引 R2#1 后置到主提交之后，见 _index_after_commit）
+        from app.services.pipeline_ext import (
+            annotate_on_ingest,
+            enrich_place_on_ingest,
+            mark_sensitive_on_ingest,
+        )
 
-
-def _process_voice(db: Session, content: Content) -> None:
-    """语音：ASR 转写（真实/mock 兜底）→ 转写文本回写 + 分类 + 索引"""
-    import tempfile
-
-    from app.services.external.asr import transcribe
-
-    # 取 COS 音频（cos_key）或本地路径（extra.audio_path，测试用）
-    audio_path = None
-    tmp_file = None
-    if content.cos_key:
-        # 生产：COS 读回二进制写系统临时文件（失败静默；用后清理）
+        # ⚠️ 顺序要求（2026-10-04 实测）：地名补全**必须最先**跑。
+        # `mark_sensitive_on_ingest` / `annotate_on_ingest` 内部会 commit，
+        # 而本处理器运行在 `process_content` 的 `db.begin_nested()`（SAVEPOINT）里——
+        # 它们提交后外层 transaction 已关闭，再执行需要读 `geo_cache` 的逆地理
+        # 会撞 `InvalidRequestError: Can't operate on closed transaction`，
+        # 结果 place 恒为空（实测复现）。同理 `pipeline_photo` 里逆地理也移到了最前。
         try:
-            from app.services.external.storage import get_storage_backend
+            enrich_place_on_ingest(db, content)
+        except Exception as exc:  # noqa: BLE001 —— 地点是增强项，失败不阻塞入库
+            logger.warning("地名补全失败 content=%s: %s", content.id, exc)
+        mark_sensitive_on_ingest(db, content)
+        annotate_on_ingest(db, content)
 
-            storage = get_storage_backend()
-            data = storage.get_object(content.cos_key)
-            tmp_file = Path(tempfile.gettempdir()) / f"yishu_voice_{content.id}.wav"
-            tmp_file.write_bytes(data)
-            audio_path = tmp_file
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("语音下载失败 content=%s: %s", content.id, exc)
-    elif content.extra and content.extra.get("audio_path"):
-        audio_path = Path(content.extra["audio_path"])
 
-    if audio_path is None:
-        return
+def _process_voice(db: Session, content: Content) -> str:
+    """语音主步骤：先完成转写；本地情绪由独立低优先级任务增强。"""
 
+    from app.services.external.asr import (
+        EMOTION_ACTION_THRESHOLD,
+        AsrError,
+        should_enhance_with_local_emotion,
+        transcribe,
+    )
+
+    tmp_file: Path | None = None
     try:
-        result = transcribe(str(audio_path))
-        # 审查 CRITICAL 修复：mock 转写是本地兜底假文本，生产环境拒绝入库/入索引，
-        # 防止假文本污染真实记忆库（此前 mock 文本会被无条件回写并向量化）。
+        audio_path, tmp_file = _materialize_voice_audio(content)
+        result = transcribe(str(audio_path), enhance_emotion=False)
         if result.mock and settings.app_env == "production":
-            logger.warning("生产环境拒绝 mock 转写入库 content=%s（通道: %s）", content.id, result.channel)
-            return
-        if result.text:
-            content.text = result.text
-            content.emotion = {"emotion": result.emotion, "confidence": result.confidence, "channel": result.channel}
-            _classify_content(db, content, result.text)
-            _index_content(db, content, result.text)
-    except Exception as exc:  # noqa: BLE001 —— 转写失败静默
-        logger.warning("转写失败 content=%s: %s", content.id, exc)
+            raise AsrError("MOCK_RESULT_IN_PRODUCTION", "生产环境禁止保存 mock 转写")
+
+        audit = result.audit_dict()
+        needs_local_emotion = (
+            not result.mock and should_enhance_with_local_emotion(result)
+        )
+        audit["emotion_enrichment"] = (
+            "pending" if needs_local_emotion else "not_needed"
+        )
+        _set_audio_processing(content, audit)
+        if result.outcome == "no_speech":
+            return "no_speech"
+        if not result.text.strip():
+            raise AsrError(
+                "EMPTY_TRANSCRIPT",
+                "ASR 返回空文本但未标记为空白语音",
+                retryable=True,
+            )
+
+        content.text = result.text
+        content.emotion = {
+            "emotion": result.emotion,
+            "confidence": result.emotion_confidence,
+            "source": result.emotion_source,
+            "model": result.emotion_model,
+            "actionable": (
+                result.emotion != "平静"
+                and result.emotion_confidence >= EMOTION_ACTION_THRESHOLD
+            ),
+        }
+        _classify_content(db, content, result.text)
+        # Wave0 钩子：B1 画像标注（语音语义内容）+ B5a 情绪消费 + 地点补全（2026-10-04）
+        from app.services.pipeline_ext import (
+            annotate_on_ingest,
+            consume_emotion,
+            enrich_place_on_ingest,
+        )
+
+        # ⚠️ 顺序要求同 `_process_text`：必须先于会 commit 的钩子（见那里注释）
+        try:
+            enrich_place_on_ingest(db, content)
+        except Exception as exc:  # noqa: BLE001 —— 地点是增强项，失败不阻塞转写入库
+            logger.warning("地名补全失败 content=%s: %s", content.id, exc)
+        annotate_on_ingest(db, content)
+        consume_emotion(db, content)
+        # Qdrant 索引 R2#1 后置到主提交之后（_index_after_commit）——索引失败
+        # 不再回写 index_error（仅日志），内容已提交 done，不影响可搜索性兜底
+        return result.outcome
     finally:
-        if tmp_file is not None:
-            try:
-                tmp_file.unlink(missing_ok=True)
-            except OSError:
-                pass
+        _cleanup_temporary_audio(tmp_file)
 
 
-def _process_photo(db: Session, content: Content) -> None:
-    """照片：image_caption 写 caption 入索引 + CI 打标（都失败静默）
+# ---------------------------------------------------------------------------
+# 内容类型处理注册表（R1#7：内容类型 if/elif 分流收敛为注册表）
+#
+# process_content 按 content.content_type 从 CONTENT_HANDLERS 取处理器；
+# 新增内容类型只需调用 register_content_handler 注册，无需改 process_content
+# 分流逻辑（行为等价：text/voice/photo 处理器已注册）。
+#
+# 注册表存**处理器函数名**、分发时按当前模块属性解析——与旧内联 dict 每调用
+# 取模块全局的语义一致（测试 monkeypatch `_process_text` 后分发能取到替身），
+# 也允许运行时替换处理器实现。
+#
+# ⚠️ 波D ①：`_process_photo` 已迁至 pipeline_photo.py（本文件 re-export）；
+# 因 `_resolve_handler` 的 globals() 就是本模块，注册与派发语义不变。
+# ---------------------------------------------------------------------------
+CONTENT_HANDLERS: dict[str, str] = {}
 
-    审查 CRITICAL 修复：image_caption 需要本地文件路径，cos_key 是对象存储键——
-    先下载到临时文件再调用（与 _process_voice 一致），修复真实链路必然失败问题。
+
+def register_content_handler(content_type: str, handler: Callable[..., Any]) -> None:
+    """注册内容类型处理器（幂等覆盖；扩展新类型调用本函数）"""
+    CONTENT_HANDLERS[content_type] = handler.__name__
+
+
+register_content_handler("text", _process_text)
+register_content_handler("voice", _process_voice)
+register_content_handler("photo", _process_photo)
+
+
+def _resolve_handler(content_type: str) -> Callable[..., Any] | None:
+    """按内容类型取当前处理器（模块属性解析：monkeypatch/替换后取到最新实现）"""
+    name = CONTENT_HANDLERS.get(content_type)
+    if not name:
+        return None
+    return globals().get(name)
+
+
+def _resolve_photo_local(content: Content) -> tuple[str | None, Path | None]:
+    """尽力拿到照片的本地文件路径（供 vision 图片塔回源）—— R-4 · 2026-10-14
+
+    为什么在这里回源：`_process_photo` 退出时已把临时图片 `unlink`（见 pipeline_photo），
+    到索引阶段本地文件已不在，只剩持久字段 `content.cos_key`。
+
+    ⚠️ 只有 `dashscope_vision` 后端需要图片；`bge_caption` 后端只用 caption，
+       这里直接返回 `(None, None)` 省掉一次无谓的 COS 下载。
+
+    返回 `(路径, 需清理的临时文件)`；找不到时返回 `(None, None)` —— 调用方据此降级
+    走 caption 文本嵌入（同空间），而不是让这张照片永久不可搜图。
     """
-    import tempfile
-
-    from app.services.external.dashscope import image_caption
-
-    # 取 COS 图片（cos_key）或本地路径（extra.image_path，测试用）
-    image_path = None
-    tmp_file = None
-    if content.cos_key:
-        try:
-            from app.services.external.storage import get_storage_backend
-
-            storage = get_storage_backend()
-            data = storage.get_object(content.cos_key)
-            tmp_file = Path(tempfile.gettempdir()) / f"yishu_photo_{content.id}.jpg"
-            tmp_file.write_bytes(data)
-            image_path = tmp_file
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("图片下载失败 content=%s: %s", content.id, exc)
-    elif content.extra and content.extra.get("image_path"):
-        image_path = Path(content.extra["image_path"])
-
+    if settings.image_tower_backend != "dashscope_vision":
+        return None, None
+    extra_path = extra_get(content, "image_path")  # 测试注入的本地路径
+    if extra_path:
+        return str(extra_path), None
+    if not content.cos_key:
+        return None, None
     try:
-        # 1. caption（图片塔；失败不影响照片浏览，仅不可搜）
-        caption = None
-        if image_path is not None:
-            try:
-                caption = image_caption(str(image_path))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("图片 caption 失败 content=%s: %s", content.id, exc)
-        if caption:
-            content.text = caption
-            _index_content(db, content, caption)
-            # 以图搜图生产接线（P2-07）：caption 向量写入 image_vec 命名向量，
-            # 供 POST /search/image 检索（此前生产 image_vec 恒空，以图搜图恒空结果）
-            try:
-                from app.services.embedding import encode_dense
-                from app.services.vector_store import get_store
+        import tempfile
 
-                img_vec = encode_dense([caption])[0]
-                get_store().upsert_image_vec(
-                    str(content.id),
-                    img_vec,
-                    payload={"text": caption, "content_type": "photo"},
-                )
-            except Exception as exc:  # noqa: BLE001 —— 图片向量失败不影响浏览
-                logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
+        from app.services.external.storage import get_storage_backend
 
-        # 2. CI 打标（F1 L2 场景标签 / 搜索标签增强）
+        data = get_storage_backend().get_object(content.cos_key)
+        tmp = Path(tempfile.gettempdir()) / f"yishu_imgvec_{content.id}.jpg"
+        tmp.write_bytes(data)
+        return str(tmp), tmp
+    except Exception as exc:  # noqa: BLE001 —— 回源失败则降级用 caption 嵌入，不冒泡
+        logger.warning("图片回源失败（将降级用 caption 嵌入）content=%s: %s", content.id, exc)
+        return None, None
+
+
+def _index_after_commit(db: Session, content: Content) -> None:
+    """主提交后的 Qdrant 索引（R2#1：Qdrant 写后置到 DB 提交之后）
+
+    全部向量写入移到主 commit 之后——DB 是内容状态真值，Qdrant 是事后
+    尽力而为的检索增强：主提交失败则根本不写向量（无孤儿向量）；索引失败
+    只影响可搜索性，不否定已提交的 done 状态。upsert 按 content_id 幂等
+    （UUID5 稳定同点 + 整点替换），RQ 重投/超龄重扫重跑安全。
+    photo 附带 image_vec（以图搜图）写入；place/ci_tags 此时已就绪，
+    由 extend_payload 直接进 payload（不再需要 update_payload 补全）。
+    """
+    text = content.text
+    if not text:
+        # 同 §7.20：无文本时 text_vec 与 image_vec **都写不了**（image_vec 走的是
+        # BGE-M3(caption) 同一替代路径，见 `vector_store.upsert_image_vec` docstring）⇒
+        # 该内容对文本检索与**以图搜图均不可见**。原实现静默 return，只留下"已 done"的假象。
+        logger.info(
+            "主提交后索引跳过（content.text 为空）content=%s type=%s",
+            content.id,
+            content.content_type,
+        )
+        return
+    _index_content(db, content, text)
+    if content.content_type != "photo":
+        return
+    try:
+        from app.services.image_tower import encode_image_vector
+        from app.services.vector_store import get_store
+
+        # R-4：图片向量统一走图片塔适配层（默认 bge_caption，与改动前等价）；
+        # vision 后端需要图片本体，这里按 cos_key 回源（拿不到则降级用 caption 嵌入）。
+        image_path, tmp = _resolve_photo_local(content)
         try:
-            from app.services.external.tencent_ci import image_detect_label
-
-            if image_path is not None:
-                tags = image_detect_label(str(image_path))
-                if tags:
-                    extra = dict(content.extra or {})
-                    extra["ci_tags"] = tags
-                    content.extra = extra
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("CI 打标失败 content=%s: %s", content.id, exc)
-    finally:
-        if tmp_file is not None:
-            try:
-                tmp_file.unlink(missing_ok=True)
-            except OSError:
-                pass
+            img_vec, space = encode_image_vector(image_path=image_path, caption=text)
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)  # noqa: B018 —— 清理回源临时文件
+        get_store().upsert_image_vec(
+            str(content.id),
+            img_vec,
+            # `image_space` 供检索端做向量空间隔离（见 vector_store._with_image_space）
+            payload={"text": text, "content_type": "photo", "image_space": space},
+        )
+    except Exception as exc:  # noqa: BLE001 —— 图片向量失败不影响浏览
+        logger.warning("image_vec 写入失败 content=%s: %s", content.id, exc)
 
 
-def process_content(content_id: str) -> dict:
+def process_content(content_id: str, _inner=None) -> dict:
     """内容处理主入口（RQ worker 消费；API-016 队列编排）
 
+    2026-11-01（走查 P0：Windows SimpleWorker 无法强杀超时 job——RQ 的 job_timeout
+    在 Unix 靠 signal.alarm 实现，Windows 上恒不生效，单个卡死 job 会永久堵死单线程
+    worker）。本函数现在带**应用层硬超时**：把实现体丢进单线程池跑，
+    `future.result(timeout=settings.pipeline_hard_timeout_s)` 到点即返回失败结构
+    （content 置 failed + retryable，RQ 照常重投）；实现体线程不可强杀但会被
+    孤儿（daemon）化，泄漏的线程在下次重投成功后自行结束——**单线程 worker 的
+    消费循环不再被卡死**，这是本修复的核心收益。
+
+    直接调 `process_content(cid)`（测试/进程内调用）等价于旧行为外加超时守护；
+    测试需要注入 mock 实现时传 `_inner=`（RQ pickle 只序列化函数名与参数，
+    `_inner` 默认 None → 走真实实现，不影响 RQ 路径）。
+
     返回：{"content_id", "status", "processed": [步骤], "error": 可选}
+
+    R2#1（分阶段提交，重构侦察 R2-P1#1）：
+      - 阶段 0：加载后先提交"processing"状态位（结束当前事务）——COS 下载 /
+        ASR 转写 / dashscope / 腾讯 CI / 高德等分钟级外部调用全部在事务外进行，
+        contents 行锁/连接不再横跨整个管线（ASR/LLM 调用移出行锁窗口）
+      - 阶段 1：处理器（外调 + 内存变更）包 begin_nested（SAVEPOINT）失败隔离
+      - 阶段 2：事件聚合——F3/R5-3 已拆出为独立 per-user RQ 任务（主提交后经
+        enqueue_unique 按 user 级 key 入队去重合并，不再同步跑聚合写库）
+      - 阶段 3：主提交 status=done + 全部 DB 状态变更一次落库
+      - 阶段 4：Qdrant 索引后置到主提交之后（DB 是真值，Qdrant 事后幂等增强；
+        主提交失败则无向量写入，无孤儿向量；重投重跑按 content_id 幂等）
+      - 阶段 5：本地情绪低优先级任务入队——F4/R5-5 尾段**先入队后提交**（done
+        主提交前入队，消除 commit→enqueue 间隙崩溃丢任务；enqueue_unique 同
+        content 键不重复入队），入队失败回写 enqueue_failed 审计标记
     """
+    # ---- 应用层硬超时守护（见 docstring；测试经 _inner 注入替身实现）----
+    impl = _inner if _inner is not None else _process_content_impl
+    timeout_s = settings.pipeline_hard_timeout_s
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pc-guard")
+    try:
+        future = executor.submit(impl, content_id)
+        try:
+            return future.result(timeout=timeout_s)
+        except FuturesTimeoutError:
+            logger.error(
+                "process_content %s 硬超时（%ss）——job 置 failed + retryable，"
+                "泄漏的守护线程交由 RQ 重投覆盖/孤儿巡检兜底",
+                content_id, timeout_s,
+            )
+            # 超时≠异常：实现体可能仍持有 db 会话。这里用独立会话置终态，
+            # 与顶层 except 的审计语义一致，随后按 retryable 语义 re-raise 交 RQ 重投。
+            db2: Session = SessionLocal()
+            try:
+                target = db2.get(Content, content_id)
+                if target is not None:
+                    detail = {
+                        "outcome": "failed_retryable",
+                        "code": "PIPELINE_HARD_TIMEOUT",
+                        "message": f"处理超过 {timeout_s}s 硬超时",
+                        "retryable": True,
+                        "errors": ["HardTimeout"],
+                    }
+                    patch_extra(target, error=detail)
+                    target.status = "failed"
+                    db2.commit()
+            finally:
+                db2.close()
+            raise PipelineHardTimeout(content_id, timeout_s) from None
+    finally:
+        # shutdown(wait=False)：不等泄漏线程（Windows 无法强杀），不阻塞 worker 消费循环
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    # ---- 以下为原实现体（_process_content_impl），仅 process_content 经守护调用 ----
+
+
+def _process_content_impl(content_id: str) -> dict:
+    """process_content 的实现体（由应用层硬超时守护调用；勿直接注册为 RQ 任务）"""
+    from app.services.external.asr import AsrError
+
+    # 边界校验：content_id 必须是合法 uuid（worker 队列可能收到脏 id），
+    # 否则后续 select/db.get 会抛 PG InvalidTextRepresentation（PR#1 回归修复）
+    try:
+        uuid.UUID(content_id)
+    except (ValueError, TypeError):
+        return {"content_id": content_id, "status": "not-found"}
+
     db: Session = SessionLocal()
+    content: Content | None = None
     try:
         content = db.execute(
             select(Content).where(Content.id == content_id)
@@ -219,38 +453,206 @@ def process_content(content_id: str) -> dict:
         if content is None:
             return {"content_id": content_id, "status": "not-found"}
 
+        # 阶段 0：外部调用前提交状态位（分阶段提交）——"processing"先落库并
+        # 结束当前事务，后续分钟级外部调用不持有 contents 行锁/数据库连接
+        if content.status != "processing":
+            content.status = "processing"
+        db.commit()
+
         processed = []
-        handler = {
-            "text": _process_text,
-            "voice": _process_voice,
-            "photo": _process_photo,
-        }.get(content.content_type)
+        handler = _resolve_handler(content.content_type)
+        processing_outcome = None
         if handler:
-            handler(db, content)
+            # 阶段 1：处理器（SAVEPOINT 失败隔离——处理器部分 DB 变更失败仅回滚
+            # 到本保存点，由外层统一回写 failed / re-raise，不外泄部分写入）
+            with db.begin_nested():
+                processing_outcome = handler(db, content)
             processed.append(content.content_type)
 
-        # 事件聚合（B3：photo/text 触发；失败静默，用户无感知）
-        try:
-            from app.services.events import aggregate_user
-
-            agg = aggregate_user(db, str(content.user_id))
-            if agg.get("items"):
-                processed.append("events")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("事件聚合失败 content=%s: %s", content.id, exc)
+        # 空白语音不形成记忆事件；端侧 L0/L1 真值后，云侧只跑 L2/L3 候选。
+        # F3/R5-3：聚合从 process_content 拆出为独立 per-user RQ 任务——
+        # 入队延后到主提交后执行（聚合任务独立会话须能读到已提交内容），
+        # enqueue_unique 按 user 级 key 去重合并（同用户同时多内容只跑一次）。
+        agg_pending = processing_outcome != "no_speech"
 
         # 回写状态（部分步骤失败也算 done；失败明细在 extra.error）
-        errors = (content.extra or {}).get("error")
+        # A2（P0-2）：本轮全成功则清掉上一轮失败残留的 error 标记——retryable
+        # 失败 re-raise 重投成功后 status 由 failed → done，陈旧 error 会让 done
+        # 内容误显示失败（error 仅由顶层失败处理器写入，此处可安全清除）。
+        # 注意：JSONB 列必须整体重赋（content.extra = new）才能被 ORM 追踪，
+        # 原地 pop 不会触发 dirty 检测、commit 不会落库。
+        if content.extra and "error" in content.extra:
+            extra = dict(content.extra)
+            extra.pop("error", None)
+            content.extra = extra
+        errors = extra_get(content, "error")
+        audio_processing = extra_get(content, "audio_processing") or {}
+        emotion_pending = (
+            content.content_type == "voice"
+            and audio_processing.get("emotion_enrichment") == "pending"
+        )
+        # F4/R5-5（重构侦察 R5-5）：尾段先入队后提交——情绪任务在 done 主提交前
+        # 入队，消除 commit→enqueue 间隙崩溃丢任务；enqueue_unique 同 content 键
+        # 不重复入队（双 process_content 并发只投一次情绪任务，防双推理双副作用）。
+        emotion_job_status = None
+        if emotion_pending:
+            try:
+                from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
+
+                enqueue_unique(
+                    enrich_content_emotion,
+                    content_id,
+                    content_id,  # R9-B6：函数参数（key 只是去重键，缺 args = 零参秒死）
+                    queue_name=QUEUE_LOW,
+                    job_timeout=DEFAULT_JOB_TIMEOUT,
+                )
+                emotion_job_status = "queued"
+                processed.append("emotion_queued")
+            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主转写
+                logger.warning(
+                    "本地情绪任务入队失败 content=%s: %s",
+                    content_id,
+                    type(exc).__name__,
+                )
+                # 失败不丢任务：回写 enqueue_failed 审计标记（requeue_job 超龄
+                # 重扫兜底，见 workers/requeue_job.py），主转写仍落 done
+                _set_emotion_enrichment(
+                    content,
+                    "enqueue_failed",
+                    error={"code": "EMOTION_ENQUEUE_FAILED", "retryable": True},
+                )
+                emotion_job_status = "enqueue_failed"
+
+        # BA3（AI 链批）挂钩：文本/语音类 chips 标签投低优先级 RQ 任务（tag_content）。
+        # 先入队后提交（同情绪任务 F4/R5-5 语义，消除 commit→enqueue 间隙崩溃丢任务；
+        # enqueue_unique 同 content 键去重，双投安全）。空白语音（no_speech）无文本不打标。
+        # 失败语义：入队失败仅 log + processed 标记，不否定主内容 done（打标是增强项）。
+        tags_job_status = None
+        if content.content_type in ("text", "voice") and processing_outcome != "no_speech":
+            try:
+                from app.core.queue import DEFAULT_JOB_TIMEOUT, QUEUE_LOW, enqueue_unique
+
+                enqueue_unique(
+                    tag_content,
+                    content_id,
+                    content_id,  # 函数参数（key 只是去重键，缺 args = 零参秒死）
+                    queue_name=QUEUE_LOW,
+                    job_timeout=DEFAULT_JOB_TIMEOUT,
+                )
+                tags_job_status = "queued"
+                processed.append("tags_queued")
+            except Exception as exc:  # noqa: BLE001 -- 入队失败不否定主结果
+                logger.warning(
+                    "AI 打标任务入队失败 content=%s: %s",
+                    content_id,
+                    type(exc).__name__,
+                )
+                tags_job_status = "enqueue_failed"
+                processed.append("tags_enqueue_failed")
+
         content.status = "done"
+        # 阶段 3：主提交（status=done 与全部 DB 状态变更一次落库）
         db.commit()
+
+        # F3/R5-3：聚合独立任务入队（主提交后——聚合任务独立会话须见已提交内容）。
+        # enqueue_unique 按 user 级 key 去重：同用户并发/连续多内容只投一个聚合任务
+        # （聚合扫描该用户全部未成候选内容，一次覆盖并发批次）；入队失败仅记日志
+        # 与返回标记，不影响主转写结果（聚合失败静默语义，requeue_job 兜底扫描）。
+        agg_job_status = None
+        if agg_pending:
+            agg_job_status = _enqueue_user_aggregation(str(content.user_id))
+            if agg_job_status == "queued":
+                processed.append("events_queued")
+            else:
+                processed.append("events_enqueue_failed")
+
+        # 阶段 4：Qdrant 后置索引（失败只影响可搜索性，不否定已提交的处理）
+        try:
+            _index_after_commit(db, content)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("后置索引失败 content=%s: %s", content.id, exc)
+
         return {
             "content_id": content_id,
             "status": "done",
             "processed": processed,
+            "outcome": processing_outcome,
+            "emotion_job": emotion_job_status,
+            "tags_job": tags_job_status,
+            "agg_job": agg_job_status,
             "error": errors,
         }
+    except AsrError as exc:
+        db.rollback()
+        target = db.get(Content, content_id)
+        if target is not None:
+            detail = exc.to_dict()
+            patch_extra(target, audio_processing=detail, error=detail)
+            # 客户端在入库前已拿到本地转写时，后台 ASR 只是二次增强。增强失败
+            # 不应把已有文字和音频整条标成 failed（用户会看到卡片消失）。
+            if target.content_type == "voice" and (target.text or "").strip():
+                target.status = "done"
+                db.commit()
+                try:
+                    _index_after_commit(db, target)
+                except Exception as index_exc:  # noqa: BLE001
+                    logger.warning("降级语音索引失败 content=%s: %s", content_id, index_exc)
+                logger.warning(
+                    "process_content %s 后台 ASR 失败，保留客户端转写",
+                    content_id,
+                )
+                return {
+                    "content_id": content_id,
+                    "status": "done",
+                    "outcome": "degraded_existing_text",
+                    "retryable": exc.retryable,
+                    "error": exc.code,
+                }
+            target.status = "failed"
+            db.commit()
+        logger.warning("process_content %s ASR 失败: %s", content_id, exc.code)
+        if exc.retryable:
+            # A2（P0-2）：retryable 错误先落审计（failed + 明细）再 re-raise，
+            # 由 RQ Retry(3) 真正重投（10s→30s→90s 指数退避）。此前吞掉正常
+            # 返回 → RQ 视为成功不重试，网络抖动后内容永久 failed，语音静默
+            # 丢失。RQ 重投耗尽仍失败 → requeue_job 超龄重扫兜底。
+            raise
+        return {
+            "content_id": content_id,
+            "status": "failed",
+            "outcome": exc.outcome,
+            "retryable": exc.retryable,
+            "error": exc.code,
+        }
     except Exception as exc:  # noqa: BLE001 —— 边界兜底：不伪造 done
+        db.rollback()
+        target = db.get(Content, content_id)
+        # P0-4（审查 H-4）：text/photo 同样回写 failed + extra.error——此前仅 voice
+        # 回写，其余类型意外异常后永久卡 processing（RQ 视为成功不重试，静默坏死）。
+        # A2（P0-2）：回写审计后 re-raise → RQ Retry(3) 真正重投（10s→30s→90s）；
+        # RQ 重投耗尽仍失败 → workers/requeue_job.py 超龄重扫兜底（P0-4 遗留闭环：
+        # 修复上线前产生的历史 failed/processing 卡死记录由该 job 统一重投/置终态）。
+        if target is not None:
+            is_voice = target.content_type == "voice"
+            detail = {
+                "outcome": "failed_retryable",
+                "code": "ASR_PIPELINE_ERROR" if is_voice else "PIPELINE_ERROR",
+                "message": (
+                    "语音处理发生未分类异常" if is_voice
+                    else f"{target.content_type} 处理发生未分类异常"
+                ),
+                "retryable": True,
+                "errors": [type(exc).__name__],
+            }
+            if is_voice:
+                patch_extra(target, audio_processing=detail, error=detail)
+            else:
+                patch_extra(target, error=detail)
+            target.status = "failed"
+            db.commit()
         logger.error("process_content %s 失败: %s", content_id, exc)
-        return {"content_id": content_id, "status": "failed", "error": str(exc)}
+        # A2（P0-2）：审计已落库，re-raise 交 RQ Retry(3) 重投——此前吞掉
+        # 正常返回导致 RQ 视为成功，未分类异常内容静默卡 failed/processing。
+        raise
     finally:
         db.close()

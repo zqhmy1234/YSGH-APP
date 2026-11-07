@@ -1,0 +1,194 @@
+/**
+ * 关键词命中高亮切分（2026-10-30 · P2 C-8）——**纯函数，零 UI 依赖，可脱离 UI 单测**。
+ *
+ * 为什么不用 `rich-text` / `v-html`：两者都把**字符串当标记解析**，搜索命中词来自用户输入且会随
+ * 结果一起回显 ⇒ 只要命中词里带 `<` / `&`，就变成一条注入路径（XSS 面）。这里改成「把文本切成
+ * 若干段 → 模板用 `text` 子节点逐段渲染」，颜色/字重只是样式属性、不参与解析，**不存在标记语义**。
+ *
+ * 为什么必须能脱离 UI 单测：切分是最容易写错又最难在真机上看出来的一环（大小写、多次命中、
+ * 关键词越界、空文本、**大小写折叠导致的长度变化**）。做成无副作用纯函数后可用输入/期望输出钉住。
+ *
+ * ── 用例表（改本文件必须逐条复跑；当前本地冒烟 19/19，见下方"验证"注） ──
+ *  `|0` = 普通段，`|1` = 命中段，段间用 ` · ` 连接（下表是 splitHighlight(text, kw) 的输出形态）
+ *   1. ('今天在湖边散步','湖边') → 今天在|0 · 湖边|1 · 散步|0
+ *   2. ('Lake lake LAKE','lake') → Lake|1 · ␠|0 · lake|1 · ␠|0 · LAKE|1   （大小写不敏感、保留原文大小写）
+ *   3. ('abc','')               → abc|0                                  （空关键词：原样单段）
+ *   4. ('abc','   ')            → abc|0                                  （纯空白关键词同理）
+ *   5. ('abc','zzz')            → abc|0                                  （未命中）
+ *   6. ('','x')                 → |0                                     （空文本仍返回"一段"，契约恒成立）
+ *   7. ('aaaa','aa')            → aa|1 · aa|1                            （多次命中不重叠）
+ *   8. ('湖边','湖边散步')       → 湖边|0                                  （关键词比原文长，不崩）
+ *   9. ('测试湖边湖边结束','湖边') → 测试|0 · 湖边|1 · 湖边|1 · 结束|0        （相邻命中不产出空段）
+ *  10. ('İstanbul','stan')      → İ|0 · stan|1 · bul|0                    （长度变化字符：定位不偏移）
+ *  11. ('İX','İ')               → İ|1 · X|0                              （关键词自身长度变化：不多吞字符）
+ *  12. ('ΟΣ','ΟΣ')              → ΟΣ|1                                   （终位 sigma：两侧同归一化后才命中；修前整串漏亮）
+ *  13. ('ς','Σ')                → ς|1                                    （ς→σ 双向收敛：用户输入终位 sigma 也命中 Σ）
+ *  14. ('İstanbul','i')         → İ|1 · stanbul|0                       （单命中不误吞整词）
+ *  15. ('ΑΣ','ς')               → Α|0 · Σ|1                             （Σ/σ/ς 三形态收敛的推广，命中落在原文 Σ 上）
+ *  16. ('İİ','i')               → İ|1 · İ|1                             （相邻命中在 expansion 上仍不重叠、不重复出字符）
+ *  17. ('İstanbul','istanbul')  → İstanbul|1                            （剥离组合附加符后纯拉丁关键词整串命中，不再"先亮后灭"）
+ *  18. ('İ ','i')               → İ|1 · ␠|0                             （剥离只影响匹配，不改变回显文本与切分位置）
+ *  19. ('ȧb','̇')                 → ȧb|0                                   （关键词全为组合附加符：剥离后为空 ⇒ 走"关键词为空"分支）
+ *  说明：本文件的用例是**本地冒烟**（直跑源码、只剥类型注解），验的是**切分逻辑**，
+ *  不构成 UTS 类型/端上渲染证据——那两项归编译门与真机。用例脚本未能落盘到 scripts/（不在本卡文件域）。
+ */
+export class HighlightPart {
+	text: string
+	hit: boolean
+
+	constructor(text: string, hit: boolean) {
+		this.text = text
+		this.hit = hit
+	}
+}
+
+/**
+ * 把 `text` 按 `keyword` 的**全部出现位置**切成交替的「正文 / 命中」片段。
+ *
+ * 口径：
+ *  ① 大小写不敏感；输出片段保留**原文大小写**（只做匹配时降级比较）；
+ *  ② 多次命中**全部**切出，命中段互不重叠；
+ *  ③ 关键词为空/纯空白 ⇒ 原样单段；未命中 ⇒ 原样单段；相邻正文段不产出空串片段；
+ *  ④ 空文本返回 `[('', false)]`（保证「至少一段」，调用方无需判空）；
+ *  ⑤ **大小写折叠长度可变时仍按原文坐标切分**（见下）。
+ *
+ * 为什么不能「lowercase 后直接拿小写坐标切原文」（这是本函数唯一的坑，实测算错过）：
+ * `String.toLowerCase()` 不是等长映射 —— 例如 `'İ'`(U+0130) 会变成 `'i'` + `U+0307`（2 个 code unit）。
+ * 一旦正文或关键词含这类字符，小写串里的下标就不再等于原文下标，用 `lowerKw.length` 去切原文
+ * 会**多吞/少吞字符**（表现为"高亮框套错位置"）。所以这里**不假设等长**：
+ * 逐字符降级并记录 `lower 下标 → 原文下标` 的映射表，命中边界一律用映射表换算回原文坐标。
+ * 对纯 ASCII / 中文（绝大多数情况）该映射是恒等映射，行为与"直接切片"完全一致。
+ *
+ * ⑥ **两侧必须用同一个归一化**（第二个坑，与 ⑤ 是同族但方向相反）：正文侧是"逐 code unit 降级"，
+ * 关键词侧若用整串 `kw.toLowerCase()`，两者就不是同一个归一化 —— Unicode SpecialCasing 里
+ * **上下文相关**的映射只在整串降级时生效，最典型是希腊语终位 sigma：
+ * `'ΟΣ'.toLowerCase()` = `'ος'`（终位 ς），而逐 code unit 得 `'οσ'`（'Σ'→'σ'）。
+ * 于是 `'οσ'.indexOf('ος')` = -1 ⇒ 用户搜「ΟΣ」时**整串都不高亮**（该亮的不亮）。
+ * 故关键词侧也走 `foldUnit`（同一个函数、同一口径），并把 `ς` 收敛到 `σ`（双向收敛，
+ * 用户自己输入终位 ς 也能命中 Σ）。
+ *
+ * 为什么不改成"统一降成大写"来收敛 sigma（曾考虑并否决，理由要写准）：
+ * 大写归一**并不会**让 `İstanbul` / `İX` 这类用例失效（`'İ'.toUpperCase()` 仍是 `'İ'`，位置 1:1；
+ * `'stan'→'STAN'` 照样找得到）。它只丢**一个方向**：`kw='i'` 对 `src='İ'`
+ * —— `'İ'.toUpperCase()` 是 `'İ'`（不是 `'I'`），两者不收敛，于是"输入小写 i 能命中大写 İ"这条没了。
+ * 选小写折叠是因为**它保留的方向更多**（还能借 `map` 吸收 İ 这类 expansion），
+ * **不是**因为大写会让"土耳其 i 一族整族失效"——那句话是过度概括，已被实测否掉，勿再沿用。
+ *
+ * ⑦ **尾部组合附加符已剥离，"先亮后灭"已消除（勿当回归提单）**：
+ * `'İ'.toLowerCase()` 会产出 `'i'` + U+0307。若保留那个组合点，用户输入 `i` 能命中 `İstanbul`、
+ * 继续逐字输入成 `istanbul` 时却整串不命中 —— 用户看得见的抖动。`foldUnit` 剥掉尾部组合附加符后
+ * `'İ'` 收敛成 `'i'`，故 `('İstanbul','istanbul')` 整串命中（用例 17）。
+ * 诚实边界（**别当成"已实现 Unicode 归一化"**，也别引用成"改不动 map"的论据——那个论据是错的）：
+ *  · 只解决"小写折叠**自身**产出组合点"这一类，当前 Unicode 小写折叠里已知的仅 İ；实现代价极小
+ *    （`foldUnit` 内一步剥离，`map` 的 `for (k < one.length)` 本来就按"实际产出长度"push，
+ *    长度 0/1/2 都正确，无需改坐标换算）；
+ *  · **不**做任意 NFD/NFC 等价：如越南语 `'ế'` 与 `'e'`+◌̂+◌́ 仍不互相命中，那才需要真正的归一化重写；
+ *  · 关键词若**全部**是组合附加符（无基字符），剥离后为空 ⇒ 走"关键词为空"分支不做切分（极边角，已登记）。
+ */
+/**
+ * 去掉**尾部**组合附加符（U+0300–U+036F，combining diacritical marks 区段）。
+ * 目的：`'İ'.toLowerCase()` 产出 `'i'` + U+0307，那个组合点是"小写折叠自身的副产物"，
+ * 保留它会让用户输入纯拉丁 `istanbul` 永远命中不到 `İstanbul`（先亮后灭的抖动）。
+ * 不写成 `replace(/[\u0300-\u036f]+$/,'')`：UTS 下"charCodeAt 判区间 + substring"比正则 replace
+ * 的跨端一致性更可控，且这里只需处理尾部一段，循环足够。
+ */
+function stripTrailingMarks(s: string): string {
+	let end = s.length
+	while (end > 0) {
+		const code = s.charCodeAt(end - 1) ?? 0
+		if (code >= 0x0300 && code <= 0x036F) {
+			end = end - 1
+		} else {
+			break
+		}
+	}
+	if (end == s.length) {
+		return s
+	}
+	return s.substring(0, end)
+}
+
+/**
+ * 单个 code unit 的归一化（**正文侧与关键词侧必须共用**，见头注 ⑥）。
+ *  - 逐 code unit 降级后剥掉尾部组合附加符：`'İ'` → `'i̇'` → `'i'`（收敛为 1:1）；
+ *    即便某字符降级后仍长于 1，调用方按返回值实际长度处理，不会错位（见头注 ⑤）；
+ *  - `ς`(U+03C2, 希腊终位 sigma) 收敛到 `σ`(U+03C3)：抵消 SpecialCasing 的上下文相关映射，
+ *    使「Σ / σ / ς」三种写法在匹配时等价（1:1 替换，不改变长度）。
+ *  - 返回值可能为空串（原文单元就是一个孤立组合附加符时）——调用方 `map` 会为它 push 0 项，
+ *    该位置不参与匹配，但切片坐标仍然正确。
+ */
+function foldUnit(ch: string): string {
+	const low = stripTrailingMarks(ch.toLowerCase())
+	if (low == 'ς') {
+		return 'σ'
+	}
+	return low
+}
+
+export function splitHighlight(text: string, keyword: string): Array<HighlightPart> {
+	const out: Array<HighlightPart> = []
+	const src = text ?? ''
+	const kw = keyword == null ? '' : keyword.trim()
+	if (src == '') {
+		out.push(new HighlightPart('', false))
+		return out
+	}
+	if (kw == '') {
+		out.push(new HighlightPart(src, false))
+		return out
+	}
+	// 关键词侧与正文侧**同一个 foldUnit**（头注 ⑥）——整串 toLowerCase 会引入终位 sigma 不对称
+	let lowerKw = ''
+	for (let i = 0; i < kw.length; i++) {
+		lowerKw += foldUnit(kw.substring(i, i + 1))
+	}
+	if (lowerKw.length == 0) {
+		out.push(new HighlightPart(src, false))
+		return out
+	}
+	// ① 逐字符降级 + 建映射：map[li] = 产出 lower[li] 的那个原文下标
+	let lower = ''
+	const map: Array<number> = []
+	for (let i = 0; i < src.length; i++) {
+		// 按 code unit 取单字符：合法代理对会被拆成两半，但孤立代理的 foldUnit 恒等
+		// ⇒ 按 foldUnit 的**实际产出长度**逐个 push 回指同一个原文下标（长度 0/1/2 都成立）：
+		//    0（该单元是孤立组合附加符，已被剥离）⇒ 不占 lower 位，但仍不破坏坐标换算；
+		//    1 ⇒ 常规 1:1；2（未被剥离的 expansion）⇒ 两位回指同一原文下标，切不偏。
+		const one = foldUnit(src.substring(i, i + 1))
+		lower += one
+		for (let k = 0; k < one.length; k++) {
+			map.push(i)
+		}
+	}
+	// ② 在 lower 上找全部命中，边界换算回原文坐标后切片
+	let srcCursor = 0 // 已输出到的原文位置
+	let lowerFrom = 0
+	while (lowerFrom < lower.length) {
+		// 单参 indexOf + substring 定位（两参 indexOf 跨端一致性不如这个组合）
+		const rel = lower.substring(lowerFrom).indexOf(lowerKw)
+		if (rel < 0) {
+			break
+		}
+		const startLower = lowerFrom + rel
+		const endLower = startLower + lowerKw.length // 开区间
+		if (endLower > map.length) {
+			break // 理论不可达：lowerKw 由 kw 降级而来，长度超出即已越界
+		}
+		const srcStart = map[startLower]
+		const srcEnd = map[endLower - 1] + 1
+		if (srcStart > srcCursor) {
+			out.push(new HighlightPart(src.substring(srcCursor, srcStart), false))
+		}
+		out.push(new HighlightPart(src.substring(srcStart, srcEnd), true))
+		srcCursor = srcEnd
+		lowerFrom = endLower
+	}
+	if (srcCursor == 0) {
+		out.push(new HighlightPart(src, false))
+		return out
+	}
+	if (srcCursor < src.length) {
+		out.push(new HighlightPart(src.substring(srcCursor), false))
+	}
+	return out
+}

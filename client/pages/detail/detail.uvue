@@ -1,0 +1,695 @@
+<template>
+	<!-- ardot 直转 v2：记忆详情页（帧 4:404）· 审计化生成 -->
+	<view class="page-root tk-root">
+		<!-- W9 流式重构：一页一个滚动根 —— page-root 锁视口，内容区进 scroll-view，
+		     玻璃操作条在滚动区外 absolute bottom 钉死视口底部（峰宝拍板：操作条固定不滑动） -->
+		<!-- §O P5（峰宝拍板）：玻璃顶栏移出滚动区钉死视口顶——page-root 锁视口，absolute 相对其定位
+		     不随内容滚动；原先写在 scroll-view 内随下滑移动。同层绘制顺序在 scroll-view 之前，
+		     故补 z-index 保险浮于 hero 之上 -->
+		<view class="n4_409"> <!-- 玻璃顶栏 -->
+			<view class="n4_410" @tap="goBack"> <!-- 返回钮 -->
+				<image class="n4_411" src="/static/icons/i4_411.svg" /> <!-- icon: 返回图标 -->
+			</view>
+			<view class="n4_413"> <!-- 右侧钮组 -->
+				<view class="n4_414" @tap="toggleFav"> <!-- 收藏钮（§O P3：星标绑定收藏态，收藏→琥珀亮星） -->
+					<image class="n4_415" :src="fav ? '/static/icons/i4_415-active.svg' : '/static/icons/i4_415.svg'" />
+				</view>
+				<view class="n4_417" @tap="onMore"> <!-- 更多钮 -->
+					<image class="n4_418" src="/static/icons/i4_418.svg" /> <!-- icon: 更多图标 -->
+				</view>
+			</view>
+		</view>
+		<!-- 2026-10-30（P1-19）：**明确的错误态**。原实现 contentId 缺失时 `return`、加载失败只 toast，
+		     页面照样渲染「记忆详情」+ 静态头图 + 空正文，且收藏/分享/胶囊全都可点 ⇒ 用户以为
+		     这是一条空记忆，还能对它做操作（并往 favorite_ids 里写空串）。 -->
+		<view v-if="detailMissing" class="detail-missing">
+			<text class="detail-missing-title">这条记忆不存在或已删除</text>
+			<text class="detail-missing-sub">它可能已被删除，或在另一台设备上修改过</text>
+			<view class="detail-missing-btn" @tap="goBack">
+				<text class="detail-missing-btn-text">返回</text>
+			</view>
+		</view>
+		<scroll-view v-else class="detail-scroll" direction="vertical" :show-scrollbar="false">
+		<view class="detail-body">
+		<!-- 全幅媒体：照片记忆 → 服务端票据 URL 真图；其余类型 → 画布静态合成图占位 -->
+		<!-- 2026-10-30（P2 E-5）：票据 URL 是短时效的（缩略图 24h/原图 15m），过期即静默裂图。
+		     `@error` 兜底回落静态占位图，不让用户面对一块空白。 -->
+		<image class="n4_406" :src="heroSrc" mode="aspectFill" @error="onHeroError" />
+		<!-- 画布 4:407 顶部暗化（#1A140F 0.45→0.15→0 三停靠）+ 4:408 底部溶解（#F8F7F4 0→0.6→1）：
+		     此前被转换器整层删除（审查报告点名）。uvue 渐变仅 2 色标，按中点拆两段精确还原（非降级） -->
+		<view class="n4_407a"></view>
+		<view class="n4_407b"></view>
+		<view class="n4_408a"></view>
+		<view class="n4_408b"></view>
+		<text class="n4_422">{{ memTitle }}</text> <!-- 详情标题（动态） -->
+		<text class="n4_423">{{ memMeta }}</text> <!-- 详情元信息（动态） -->
+		<!-- D4 流式重构（2026-09-09 峰宝拍板「改流式布局」）：元信息以下全部进普通流容器。
+		     病根=全页绝对定位硬编码 top：画布卡片 top-to-top 间距（273.1/292.3）含 mock 文案撑出的
+		     卡高，真实文案变短/区块 v-if 隐藏 → 空洞（峰宝实证：AI 描述离元信息太远）。
+		     画布真值换算：卡间距统一 23.1rpx(12pt)（vcard→AI=211.6-188.5✓ AI→正文=273.1-250✓），
+		     节标签前 46.2rpx(24pt) 大节距。附带根治：语音播放态进度行 v-if 出现时不再与下方钉死元素重叠 -->
+		<view class="n4_flow">
+			<view v-if="isVoice" class="n4_vcard" @tap="onPlayVoice">
+			<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': !voicePlayable }">
+				<view v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
+					<view class="n4_vbtn-pause-bar"></view>
+					<view class="n4_vbtn-pause-bar"></view>
+				</view>
+				<view v-else class="n4_vbtn-play"></view>
+			</view>
+			<view class="n4_vcol">
+				<text v-if="voiceNote != ''" class="n4_vnote">{{ voiceNote }}</text>
+				<view class="n4_vwave">
+					<VoiceWave :heights="detailWave" :waveform="wf.waveformOf(contentId)" :active="voiceIsActive(contentId)" :progress="voiceProgressOfCard(contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+				</view>
+				<view v-if="voiceIsActive(contentId)" class="n4_vprog">
+					<text class="n4_vprog-cur">{{ voiceCurSecText() }}</text>
+					<view class="n4_vtrack">
+						<view class="n4_vtrack-fill" :style="{ width: (voiceProgressOfCard(contentId) * 100) + '%' }"></view>
+					</view>
+					<text class="n4_vprog-total">{{ voiceTotalSecText() }}</text>
+				</view>
+				<text v-if="voiceIsActive(contentId) && voiceIsPlaying()" class="n4_vtitle-playing">正在播放 · {{ memTitle }}</text>
+				<text v-else class="n4_vtitle">{{ memTitle }}</text>
+			</view>
+		</view>
+		<view v-if="aiNote != '' || tagList.length > 0" class="n4_424"> <!-- AI注释卡（描述或标签任一存在才显示；FE1 数据源 tags_json/ai_description，null=不显示区块）；D4 流式：语音态被 vcard 自然推下（画布同位 1073.1=vcard 底，margin 0 即还原） -->
+			<view class="n4_425"> <!-- 注释头 -->
+				<image class="n4_426" src="/static/icons/i4_426.svg" /> <!-- icon: 星芒 -->
+				<text class="n4_428">AI 的观察</text> <!-- AI观察 -->
+			</view>
+			<text v-if="aiNote != ''" class="n4_429">{{ aiNote }}</text> <!-- 注释文字（动态；照片 AI 描述，null 不显示） -->
+			<!-- FE1：AI 打标 chips（tags_json，异步打标可能 null → 空数组整行隐藏） -->
+			<view v-if="tagList.length > 0" class="n4-tag-row">
+				<view v-for="(tg, ti) in tagList" :key="ti" class="n4-tag">
+					<text class="n4-tag-text">{{ tg }}</text>
+				</view>
+			</view>
+		</view>
+		<view class="n4_430"> <!-- 正文卡（D4 流式：margin 23.1 接力 AI 卡，语音态被上方区块自然推下） -->
+			<text class="n4_431">{{ memBody }}</text> <!-- 正文（动态） -->
+			<!-- 卡19 接线：来源行「你也可以补充一句」可点 → 弹输入补一句（本地暂存，见 onEditSup） -->
+			<text v-if="bodySup != ''" class="n4_431-sup">{{ bodySup }}</text>
+			<text class="n4_432" @tap="onEditSup">{{ bodySource }}</text> <!-- 正文来源：可点补充（W0-2：语音=转写描述，照片=AI 描述） -->
+		</view>
+		<!-- 相关记忆（HEAD 版交互接回：无归属事件整区隐藏；画布静态2卡→数据驱动横滑，画布4:434本即横滑容器） -->
+		<template v-if="relatedList.length > 0">
+			<text class="n4_433">相关记忆</text> <!-- 相关记忆节标（D4 流式：margin 46.2 大节距） -->
+			<scroll-view class="n4_434" direction="horizontal" :show-scrollbar="false">
+				<view class="n4_434-row">
+					<view v-for="(ev, idx) in relatedList" :key="idx" class="n4_435" @tap="onRelatedEvent(ev)">
+						<!-- 缩略占位：画布两卡分别苔琥珀/青蓝渐变，按 idx 交替 -->
+						<view class="n4_442" :class="{ 'n4_442-b': idx % 2 === 1 }"></view>
+						<text class="n4_436">{{ ev.title }}</text>
+						<text class="n4_437">{{ ev.photoCount }} 条记忆</text>
+					</view>
+				</view>
+			</scroll-view>
+		</template>
+		<!-- R9 批次4（Q3 拍板）：事件级语音卡「这条记忆里的声音」——当前内容所属第一个事件内的
+		     其他 voice 成员（排除自身）。播放复用全局引擎；processing/failed 禁播+小字（Q2 拍板）。
+		     生日歌案例：photo 详情无语音大卡，但 ST-DBSCAN 把跑步语音聚进了同事件 → 在此回放 -->
+		<template v-if="eventVoices.length > 0">
+			<text class="n4_evt-title">这条记忆里的声音</text>
+			<view v-for="(v, vi) in eventVoices" :key="vi" class="n4_evt-card"
+				@tap="onPlayEventVoice(v)">
+				<view class="n4_vbtn" :class="{ 'n4_vbtn-disabled': v.status != 'done' }">
+					<view v-if="voiceIsActive(v.contentId) && voiceIsPlaying()" class="n4_vbtn-pause">
+						<view class="n4_vbtn-pause-bar"></view>
+						<view class="n4_vbtn-pause-bar"></view>
+					</view>
+					<view v-else class="n4_vbtn-play"></view>
+				</view>
+				<view class="n4_evt-col">
+					<text v-if="v.status != 'done'" class="n4_vnote">{{ v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放' }}</text>
+					<view class="n4_evt-wave">
+						<VoiceWave :heights="evtWaveOf(v.contentId)" :waveform="wf.waveformOf(v.contentId)" :active="voiceIsActive(v.contentId)" :progress="voiceProgressOfCard(v.contentId)" idle-color="#E5DCC8" played-color="#C4913C" />
+					</view>
+					<text class="n4_evt-name">{{ evtTitleOf(v) }}</text>
+				</view>
+			</view>
+		</template>
+		</view> <!-- /n4_flow（D4 流式容器闭合） -->
+		</view>
+		</scroll-view>
+		<view class="n4_441"> <!-- 玻璃操作条（滚动区外，钉死视口底部） -->
+			<view class="n4_444" @tap="askAI"> <!-- 操作-问AI -->
+				<image class="n4_445" src="/static/icons/i4_445.svg" /> <!-- icon: 图标 -->
+				<text class="n4_447">问 AI</text> <!-- 文字 -->
+			</view>
+			<view class="n4_448" @tap="addCapsule"> <!-- 操作-胶囊 -->
+				<image class="n4_449" src="/static/icons/i4_449.svg" /> <!-- icon: 图标 -->
+				<text class="n4_452">加入胶囊</text> <!-- 文字 -->
+			</view>
+			<view class="n4_453" @tap="share"> <!-- 操作-分享 -->
+				<image class="n4_454" src="/static/icons/i4_454.svg" /> <!-- icon: 图标 -->
+				<text class="n4_457">分享</text> <!-- 文字 -->
+			</view>
+		</view>
+		<!-- 画布 4:458/4:459（假状态栏时间+电池）已移除：navigationStyle:custom 沉浸式，
+		     系统状态栏渲染真实时间与电量；该文本为白色，叠在 4:406 全幅媒体上会形成双时钟 -->
+		<!-- 卡21/卡22 F7 弹层（浮层铁律 1 同族：唤起不跳页，v-if 卸载复位） -->
+		<ShareSheet v-if="shareOpen" :title="memTitle" :hero="heroSrc" @close="shareOpen = false" />
+		<CapsuleSheet v-if="capsuleOpen" :summary="memTitle" :contentId="contentId" @close="capsuleOpen = false" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref } from 'vue'
+
+	import { WaveformCache } from '@/composables/useWaveform'
+	import { onLoad, onUnload, onHide, onBackPress } from '@dcloudio/uni-app'
+	import { fetchContentDetail, fetchContentEvents, fetchEventItems, ContentEventRef, SplitItem } from '@/utils/event_ops'
+	import { favoriteGet, favoriteAdd, favoriteRemove } from '@/utils/play_favorite'
+import { deleteContent } from '@/utils/play_trash'
+import { fetchContentAiMeta, ContentAiMeta, updateContentRemark } from '@/utils/play_content'
+	// B12：离线判定（play_* 侧离线失败已入队，此处据同一判据改口，避免报"失败"而其实已排队）
+	// 🚨 2026-10-11 静态审查修复：原用 `getNetKind()`（回调式、返回 void）做同步判断 ⇒
+	// `void == 'none'` 恒假，改口分支永不进入（用户仍看到"失败"而操作其实已排队）。
+	// 改用同步缓存读 `currentNetKind()`（见 uploader_net 注释）。
+	import { currentNetKind } from '@/utils/uploader_net'
+	import { formatIsoShortTime } from '@/utils/time'
+	import { backToShell, recordSavedSeq } from '@/utils/shell_state'
+	import { invalidateTimelineCache } from '@/utils/timeline'
+	import { submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
+	import {
+		toggleVoice,
+		stopVoice,
+		isVoiceActive,
+		isVoicePlaying,
+		voiceProgressOf,
+		voiceCurSecValue,
+		voiceTotalSecValue,
+		fmtVoiceTime,
+		genWaveHeights
+	} from '@/utils/audio_player'
+
+	// ═══════════ 响应式状态 ═══════════
+	let fav = ref(false) // 收藏状态
+	// 2026-10-30（P1-18）：用户是否已手动点过星标 —— 一旦为 true，迟到的初始化回填不再覆盖
+	let favTouched: boolean = false
+	// 2026-10-30（P1-19）：详情是否真的加载成功（false 时页面进入明确错误态，禁用全部动作）
+	let detailLoaded = ref(false)
+	let detailMissing = ref(false)
+	// 卡21/卡22 F7 弹层开关（浮层铁律：唤起不跳页）
+	let shareOpen = ref(false)
+	let capsuleOpen = ref(false)
+	let contentId = ref('')
+	let memTitle = ref('记忆详情')
+	let memMeta = ref('')
+	let memBody = ref('')
+	let aiNote = ref('') // AI 的观察（照片记忆 = 后端 ai_description；空→整卡隐藏）
+	// 全幅媒体源：默认画布静态合成图；photo 记忆详情加载成功后换成服务端票据 URL（缩略图优先，无则原图）
+	let heroSrc = ref('/static/images/img4_406.png')
+	let relatedList = ref<Array<ContentEventRef>>([])
+	// R9 批次4（Q3 拍板）：事件级语音成员——「这条记忆里的声音」区块数据源
+	// （当前内容所属第一个事件内的 voice 成员，排除自身）；空数组=区块隐藏
+	let eventVoices = ref<Array<SplitItem>>([])
+	// W0-2 · F5b：语音记忆才显示语音卡；波形由 contentId 确定性生成（与 index/search 同源 genWaveHeights）
+	let isVoice = ref(false)
+	let detailWave = ref<Array<number>>([])
+
+	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
+	const wf = new WaveformCache()
+	// 语音可播性状态（修 R9 崩溃单：模板/脚本曾引用未定义的 voicePlayable/voiceNote → 详情页开语音记忆即 C++ abort）
+	// 语义对齐事件级语音卡文案：done=可播；failed=转写失败；其余=处理中。默认 false，详情加载成功后按 status 置位
+	let voicePlayable = ref(false)
+	let voiceNote = ref('')
+	// 正文来源行：画布静态「来自照片的 AI 描述」对语音记忆失真，按类型切换（照片默认保持画布原文）
+	let bodySource = ref('来自照片的 AI 描述 · 你也可以补充一句')
+	// 卡19：来源行「你也可以补充一句」的用户补句（本地暂存，后端无 PATCH 补充端点 → 冷启动即失）
+	let bodySup = ref('')
+	// FE1：AI 打标 chips（tags_json，打标异步可能 null → 空数组=不显示区块）
+	let tagList = ref<Array<string>>([])
+	// 2026-10-30（P2 E-3）：纠错需要 contentType（后端按类型登记规则）
+	let contentTypeRef = ref('text')
+
+	/** 取正文首句/前 14 字作标题 */
+	function makeTitle(text: string): string {
+		const t = text.trim()
+		if (t == '') {
+			return '记忆详情'
+		}
+		let end = t.length
+		const marks = ['。', '！', '？', '，', '.', '!', '?', ',']
+		for (let i = 0; i < marks.length; i++) {
+			const k = t.indexOf(marks[i])
+			if (k >= 0 && k < end) {
+				end = k
+			}
+		}
+		let head = end > 0 ? t.substring(0, end) : t
+		if (head.length > 14) {
+			head = head.substring(0, 14) + '…'
+		}
+		return head == '' ? '记忆详情' : head
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		const id = options['contentId'] as string
+		if (id == null || id == '') {
+			// 2026-10-30（P1-19）：参数缺失 = 明确的错误态，不再静默渲染空壳页
+			console.error('[yishu] detail 缺 contentId 入参')
+			detailMissing.value = true
+			return
+		}
+		contentId.value = id
+		// FE1 真端点（W2-2）：GET /contents/{id}/favorite 查单条收藏态初始化星标；
+		// 失败 false（api 层已全局 toast），不再读本地 favorite_ids（列表页回落契约不受影响）
+		favoriteGet(id).then((favd: boolean) => {
+			// 2026-10-30（P1-18）：初始化是异步的，用户可能已经点过星标 —— 一旦点过，
+			// 迟到的初始化结果**不得反噬**用户操作（否则看到"点了又自己弹回去"）。
+			if (!favTouched) {
+				fav.value = favd
+			}
+		})
+		fetchContentDetail(id).then((d) => {
+			if (d == null) {
+				// 静默失败显式化（峰宝拍板 2026-09-06：任何结果不允许静默）
+				// fetchContentDetail 失败可能=网络断/404 已删除/服务不可达
+				// 2026-10-30（P1-19）：除了 toast，还要进入错误态（否则页面停在默认空壳上，
+				// 用户可以对一条不存在的内容做收藏/分享）
+				detailMissing.value = true
+				uni.showToast({ title: '详情加载失败，请稍后重试', icon: 'none' })
+				return
+			}
+			detailLoaded.value = true
+			contentTypeRef.value = d.contentType != '' ? d.contentType : 'text'
+			memBody.value = d.text
+			memTitle.value = makeTitle(d.text)
+			// 2026-10-30（P1-20）：回显服务端备注。原实现从不读 remark（ContentDetail 也没解析）
+			// ⇒ 备注只能"保存后写内存"，退出重进即丢，页面注释还据此误判"后端无端点"。
+			bodySup.value = d.remark
+			// W0-2：语音记忆 → F5b 语音卡显示 + 播放引擎按 contentId 接线（audio 端点，W0-1）
+			if (d.contentType == 'voice') {
+				isVoice.value = true
+				detailWave.value = genWaveHeights(id, 28)
+				// BB3：进页即拉真实波形（详情页单条语音，非列表懒加载场景）
+				wf.loadWaveform(id)
+				bodySource.value = '来自语音转写的 AI 描述 · 你也可以补充一句'
+				// 可播性按转写状态显式判定（禁止静默）：与事件级语音卡（v.status）同词表
+				if (d.status == 'done') {
+					voicePlayable.value = true
+					voiceNote.value = ''
+				} else if (d.status == 'failed') {
+					voicePlayable.value = false
+					voiceNote.value = '这段语音转写失败，暂不可播放'
+				} else {
+					voicePlayable.value = false
+					voiceNote.value = '转写处理中，稍后可播放'
+				}
+			}
+			// 照片记忆 → 头图换真图（缩略图 24h 时效，够详情页展示；原图 15m 太短不用于头图）
+			if (d.contentType == 'photo' && d.thumbnailUrl != '') {
+				heroSrc.value = d.thumbnailUrl
+			}
+			let meta = ''
+			if (d.takenAt != '') {
+				meta = formatIsoShortTime(d.takenAt)
+			}
+			if (d.place != '') {
+				meta = meta + (meta != '' ? ' · ' : '') + d.place
+			}
+			memMeta.value = meta
+			// FE1：AI 增量字段（tags_json/ai_description 打标异步，可能 null → 空=不显示对应区块，不造假占位）
+			fetchContentAiMeta(id).then((ai: ContentAiMeta | null) => {
+				if (ai == null) {
+					return
+				}
+				tagList.value = ai.tags
+				if (d.contentType == 'photo' && ai.aiDescription != '') {
+					aiNote.value = ai.aiDescription
+				}
+			})
+		})
+		fetchContentEvents(id).then((evs: Array<ContentEventRef>) => {
+			relatedList.value = evs
+			// R9 批次4（Q3 拍板）：拉第一个所属事件成员，过滤 voice（排除自身）→「这条记忆里的声音」
+			// 生日前歌案例：photo 详情无语音卡，但事件里聚了跑步语音——事件级声音在这里补齐
+			if (evs.length > 0 && evs[0].id != '') {
+				fetchEventItems(evs[0].id).then((items: Array<SplitItem>) => {
+					const voices: Array<SplitItem> = []
+					for (let i = 0; i < items.length; i++) {
+						if (items[i].contentType == 'voice' && items[i].contentId != id) {
+							voices.push(items[i])
+						}
+					}
+					eventVoices.value = voices
+					// BB3：事件卡区块渲染即拉各成员真实波形（区块 ≤3 卡，非列表预拉场景）
+					for (let i = 0; i < voices.length; i++) {
+						wf.loadWaveform(voices[i].contentId)
+					}
+				})
+			}
+		})
+	})
+
+	// ═══════════ 交互 ═══════════
+	onUnload(() => {
+		// W0-2：离页停播，防止语音跨页残留出声（与 index/search 同规）
+		stopVoice()
+	})
+	// 2026-10-30（P2 E-2）：原实现只挂 onUnload，**退到后台不停播**（用户按 Home 后
+	// 记忆里的语音还在响，且没有通知栏控制入口）。补 onHide 停播。
+	onHide(() => {
+		stopVoice()
+	})
+	// 2026-10-31（P2 J-6）：本页浮层（分享 / 时间胶囊）此前**不拦返回键** —— 浮层开着按返回会直接
+	// 退出本页（用户以为只是关弹层，结果回列表、滚动位置与已加载数据全丢）。口径同 empty/manage：
+	// 有浮层先关浮层并 return true，无浮层 return false 走默认返回。
+	// 注：本页「更多」「修改分类」是 native showActionSheet/showModal（不是 v-if 浮层），由系统自己收起。
+	onBackPress((): boolean => {
+		if (shareOpen.value) {
+			shareOpen.value = false
+			return true
+		}
+		if (capsuleOpen.value) {
+			capsuleOpen.value = false
+			return true
+		}
+		return false
+	})
+
+	// 语音播放（W0-2 · F5b：详情页语音卡复用全局播放引擎，播放态三处一致）
+	function onPlayVoice(): void {
+		if (!isVoice.value || contentId.value == '') {
+			return
+		}
+		// 禁播守卫：显式 toast，绝不静默（峰宝拍板 2026-09-06）
+		if (!voicePlayable.value) {
+			uni.showToast({ title: voiceNote.value != '' ? voiceNote.value : '音频暂不可播放', icon: 'none' })
+			return
+		}
+		toggleVoice(contentId.value)
+	}
+	// 模板取值封装（uvue 模板不直接绑跨模块 ref，对齐 index/search wrapper 先例）
+	function voiceIsActive(cid: string): boolean {
+		return isVoiceActive(cid)
+	}
+	function voiceIsPlaying(): boolean {
+		return isVoicePlaying()
+	}
+	function voiceProgressOfCard(cid: string): number {
+		return voiceProgressOf(cid)
+	}
+	function voiceCurSecText(): string {
+		return fmtVoiceTime(voiceCurSecValue())
+	}
+	function voiceTotalSecText(): string {
+		return fmtVoiceTime(voiceTotalSecValue())
+	}
+
+	// ═══ R9 批次4：事件级语音卡（「这条记忆里的声音」）═══
+	// D4 流式重构（2026-09-09）：区块随 n4_flow 普通流排布，evtSectionTop/evtCardTop 绝对定位函数已删
+	/** 成员卡播放：processing/failed 显式 toast（Q2 拍板），绝不静默；done → 全局引擎 */
+	function onPlayEventVoice(v: SplitItem): void {
+		if (v.status != 'done') {
+			uni.showToast({
+				title: v.status == 'failed' ? '这段语音转写失败，暂不可播放' : '转写处理中，稍后可播放',
+				icon: 'none'
+			})
+			return
+		}
+		toggleVoice(v.contentId)
+	}
+	/** 成员卡波形：contentId 确定性生成（与 index/search/detail 大卡同源） */
+	function evtWaveOf(cid: string): Array<number> {
+		return genWaveHeights(cid, 20)
+	}
+	/** 成员标题：转写文本截断；空文本（未转写）给中性占位 */
+	function evtTitleOf(v: SplitItem): string {
+		const t = (v.title ?? '').trim()
+		return t == '' ? '一段声音' : (t.length > 18 ? t.substring(0, 18) + '…' : t)
+	}
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+
+	// 2026-10-30（P2 E-5）：头图加载失败（票据过期/签票失败）→ 回落静态占位，只回落一次防死循环
+	let heroFallbackUsed: boolean = false
+	function onHeroError(): void {
+		if (heroFallbackUsed) {
+			return
+		}
+		heroFallbackUsed = true
+		heroSrc.value = '/static/images/img4_406.png'
+	}
+
+	// 2026-10-30（P1-18）：本地 favorite_ids 写入收敛成一个函数（按**目标态**幂等重写），
+	// 供乐观更新与回滚两处共用 —— 原实现内联展开，回滚时无法复用。
+	function writeFavoriteLocal(on: boolean): void {
+		const raw = uni.getStorageSync('favorite_ids') as string
+		const ids: Array<string> = []
+		if (raw != null && raw != '' && raw != '[]') {
+			const parts = raw.split(',')
+			for (let i = 0; i < parts.length; i++) {
+				if (parts[i] != '' && parts[i] != contentId.value) {
+					ids.push(parts[i])
+				}
+			}
+		}
+		if (on && contentId.value != '') {
+			ids.push(contentId.value)
+		}
+		uni.setStorageSync('favorite_ids', ids.join(','))
+	}
+
+	function toggleFav(): void {
+		// 2026-10-30（P1-19）：contentId 为空时**禁止写脏 id**（原实现会把 '' 塞进 favorite_ids，
+		// 后续收藏页按逗号切分会得到空串，形成脏数据）。
+		if (contentId.value == '') {
+			uni.showToast({ title: '记忆未加载完成，请稍后', icon: 'none' })
+			return
+		}
+		favTouched = true
+		const target = !fav.value
+		// 乐观更新（离线也有即时反馈）
+		fav.value = target
+		writeFavoriteLocal(target)
+		const p = target ? favoriteAdd(contentId.value) : favoriteRemove(contentId.value)
+		p.then((ok: boolean) => {
+			if (ok) {
+				uni.showToast({ title: target ? '已收藏' : '已取消收藏', icon: 'none', duration: 1500 })
+				return
+			}
+			// 2026-10-30（P1-18）：**失败必须回滚**，且本地存储与云端保持一致。
+			// 原实现「失败不回滚本地态」⇒ 界面显示已收藏、云端没有、收藏页又读另一源，
+			// 三处口径可以互相矛盾，用户无法判断到底收没收藏。
+			fav.value = !target
+			writeFavoriteLocal(!target)
+			uni.showToast({ title: '收藏未同步 · 已恢复原状态，请稍后重试', icon: 'none', duration: 2500 })
+		})
+	}
+
+	/**
+	 * 2026-10-30（P2 E-3）：详情页「修改分类」。
+	 * 纠错此前只在录制流（RecordSheet / 语音）可用 ⇒ 已存记忆的分类**无法修正**，
+	 * 而用户故事 F4 明确要求「在详情页也能改」。后端 `POST /corrections` 早已就绪，
+	 * 这里复用同一薄封装（source=active 会回写 content_class 并进入个人规则层）。
+	 */
+	function onFixCategory(): void {
+		if (contentId.value == '') {
+			return
+		}
+		// ⚠️ 2026-10-31（走查缺陷修复）：`LabelOption` 的字段是 **key/cn**，不是 value/label。
+		// 原来读 `ALL_LABELS[i].label` 全是 undefined ⇒ 设备上点「修改分类」弹出的是
+		// **四行空白** + Cancel（截图 t8_category.png），而且提交时 `picked` 也是 undefined。
+		const names: Array<string> = []
+		for (let i = 0; i < ALL_LABELS.length; i++) {
+			names.push(ALL_LABELS[i].cn)
+		}
+		uni.showActionSheet({
+			itemList: names,
+			success: (res) => {
+				if (res.tapIndex < 0 || res.tapIndex >= ALL_LABELS.length) {
+					return
+				}
+				const picked = ALL_LABELS[res.tapIndex].key
+				const pickedLabel = ALL_LABELS[res.tapIndex].cn
+				submitCorrection(contentId.value, memBody.value, picked, '', contentTypeRef.value).then((ok: boolean) => {
+					if (!ok) {
+						uni.showToast({ title: '分类修改失败 · 请稍后重试', icon: 'none' })
+						return
+					}
+					// 就地回显（不重拉整页）：把新分类放到标签行最前，去重
+					const next: Array<string> = [pickedLabel]
+					for (let i = 0; i < tagList.value.length; i++) {
+						if (tagList.value[i] != pickedLabel) {
+							next.push(tagList.value[i])
+						}
+					}
+					tagList.value = next
+					uni.showToast({ title: '分类已更新', icon: 'none' })
+				})
+			}
+		})
+	}
+
+	// 更多：编辑 / 删除 / 分享
+	function onMore(): void {
+		// 2026-10-30（P1-19）：未成功加载的内容不允许进入操作菜单
+		if (!detailLoaded.value) {
+			uni.showToast({ title: '记忆未加载完成，请稍后', icon: 'none' })
+			return
+		}
+		uni.showActionSheet({
+			// 2026-10-30（P2 E-6）：菜单文案与真实能力对齐 —— 后端只开放 remark 单字段，
+			// 写「编辑记忆」会让用户以为能改正文（点进去发现只能追加一句）。
+			// 2026-10-30（P2 E-3）：补「修改分类」——纠错此前只在录制流可用，
+			// 已存记忆无法改分类（后端 /corrections 早已就绪）。
+			itemList: ['补充一句备注', '修改分类', '删除记忆', '分享'],
+			success: (res) => {
+				const idx = res.tapIndex
+				if (idx === 0) {
+					// B12（BB1）：「编辑记忆」语义=改正文碎片文字，后端当前仅开放 remark 单字段
+					// （PATCH /contents/{id}）→ 编辑降级走备注编辑通道（与补充说明同款真保存）；
+					// 正文文字修改需专用端点，不造假编辑器
+					onEditSup()
+				} else if (idx === 1) {
+					onFixCategory()
+				} else if (idx === 2) {
+					uni.showModal({
+						title: '删除记忆',
+						content: '删除后将移入回收站，保留 30 天。确定删除吗？',
+						success: (r) => {
+							if (r.confirm) {
+								// FE1（W2-1）：DELETE /api/v1/contents/{id} 软删 → 回收站 30 天保留，可恢复
+								deleteContent(contentId.value).then((ok: boolean) => {
+									if (!ok) {
+										// B12：离线时**删除已入队**（play.ts 侧 enqueueDeleteOp），故不能报"失败"。
+										// 本地墓碑 = 立即按已删处理并返回上一页（避免用户以为没删掉又点一次）；
+										// 队列条数在「存储与同步」页的同步卡可见（pendingSyncCount 已上屏）。
+										if (currentNetKind() == 'none') {
+											// 2026-10-30（P1-10）：本地数据视图同样要作废，否则列表还显示这条
+											invalidateTimelineCache()
+											uni.showToast({ title: '已离线：删除将在联网后自动完成', icon: 'none', duration: 2500 })
+											setTimeout(() => {
+												goBack()
+											}, 900)
+											return
+										}
+										uni.showToast({ title: '删除失败 · 请稍后重试', icon: 'none' })
+										return
+									}
+									// 2026-10-30（P1-10）：删成功后让时间轴/收藏/搜索的缓存整体失效，
+									// 否则返回列表仍能看到已删除的记忆（原先 invalidateTimelineCache 零调用=死代码）
+									invalidateTimelineCache()
+									// 2026-11-01（走查 3.6 实测）：**只置脏不够**。
+									// 设备实测：删除 200、库里事件已删、用户事件数 5→4，但返回时间轴
+									// 卡片仍在（hero 条数也没变）——因为壳层 TabIndex 是常驻的，
+									// `navigateBack` 不必然触发它的 onShow 拉取，dirty 标记就一直躺着。
+									// 这里复用已有的共享信号（横幅补传同款），TabIndex watch 到会
+									// 「置脏 + 立即刷新」，删除后列表立刻少一张卡。
+									recordSavedSeq.value = recordSavedSeq.value + 1
+									// 2026-10-30（P2 E-6）：本地收藏残留 + 正在播放的语音继续响（600ms 内仍可点播）
+									writeFavoriteLocal(false)
+									stopVoice()
+									uni.showToast({ title: '已移入回收站', icon: 'none' })
+									// 软删成功 → 详情页内容已不存在，返回上一页
+									setTimeout(() => {
+										goBack()
+									}, 600)
+								})
+							}
+						}
+					})
+				} else {
+					share()
+				}
+			}
+		})
+	}
+
+	// 底部操作栏
+	function askAI(): void {
+		// B1（BB1）上下文预填：当前记忆标题/正文/内容 id 以 storage 暂存（跳转传参最稳形态，
+		// 对齐 favorite_ids 等字符串 storage 先例；标题可能含特殊字符不宜 url query）。
+		// 参数契约（供 TabAi 消费，**读后即清**，见 TabAi.prefillDraftFrom）：
+		//   yishu_ai_context_title     string  记忆标题（正文首句截断 ≤14 字，空=''）
+		//   yishu_ai_context_body      string  记忆正文全文（空=''）
+		//   yishu_ai_context_content_id string 内容 id（可回查详情，空=''）
+		uni.setStorageSync('yishu_ai_context_title', memTitle.value)
+		uni.setStorageSync('yishu_ai_context_body', memBody.value)
+		uni.setStorageSync('yishu_ai_context_content_id', contentId.value)
+		// 2026-10-14（台账 §4.20 批次 5 · RC-10）：原为 `uni.redirectTo('/pages/shell/shell?tab=ai')`
+		// —— 那会**销毁本页并重建整个壳**（白屏 1~2s + 四个 tab 全部重挂 + TabIndex 的 60s TTL 失效）。
+		// 壳本来就在栈里 ⇒ 改走**栈内回退**：先经桥请求切到 ai（壳 watch → 零销毁切 tab），再 navigateBack。
+		// 预填不丢：存储三键照写，由 TabAi 在"切到本 tab"广播（shell 的 aiShownSeq）时重读。
+		backToShell('ai', '')
+	}
+	function addCapsule(): void {
+		// 卡22 接线：拉起时间胶囊弹层（浮层不跳页）；FE1 起入口为真实面板（封存端点 POST /api/v1/capsules
+		// 由 CapsuleSheet 组件内部接线，非本页职责）
+		capsuleOpen.value = true
+	}
+	function share(): void {
+		// 卡21 接线：拉起分享弹层（浮层不跳页）；社交项灰显诚实化见 ShareSheet
+		shareOpen.value = true
+	}
+
+	// 相关记忆卡片：卡19 接线 —— 跳该事件封面内容的详情页（事件详情页未建，不假跳不存在的页）
+	function onRelatedEvent(ev: ContentEventRef): void {
+		if (ev.coverContentId == '') {
+			uni.showToast({ title: ev.title + ' · 暂无可打开的记忆', icon: 'none' })
+			return
+		}
+		// detail → detail 用 redirectTo 同页替换：避免层层压栈，返回仍回来源页
+		uni.redirectTo({ url: '/pages/detail/detail?contentId=' + ev.coverContentId })
+	}
+
+	// 正文来源行「你也可以补充一句」：弹输入补一句
+	// B12（BB1）：接真 PATCH /contents/{id} remark——成功后才本地同步显示（response-first），
+	// 失败显式 toast 不改本地态（不静默原则）
+	function onEditSup(): void {
+		uni.showModal({
+			title: '补充一句',
+			content: bodySup.value,
+			editable: true,
+			placeholderText: '这一刻，你还想记下什么…',
+			confirmText: '记下',
+			cancelText: '取消',
+			success: (res: any) => {
+				if (res.confirm != true) {
+					return
+				}
+				if (res.content == null) {
+					return
+				}
+				const v = res.content as string
+				if (v == '') {
+					return
+				}
+				if (contentId.value == '') {
+					uni.showToast({ title: '内容未加载，无法保存', icon: 'none' })
+					return
+				}
+				updateContentRemark(contentId.value, v).then((ok: boolean) => {
+					if (!ok) {
+						// B12：离线时**备注已入队**（play.ts 侧 enqueueFieldOp），故不报"保存失败"；
+						// 本地态保持旧值不变（本函数一贯 response-first：成功才改本地显示），
+						// 联网后由同步链补发，队列条数在同步卡可见。
+						if (currentNetKind() == 'none') {
+							uni.showToast({ title: '已离线：备注将在联网后同步', icon: 'none', duration: 2500 })
+							return
+						}
+						uni.showToast({ title: '云端保存失败 · 请稍后重试', icon: 'none' })
+						return
+					}
+					bodySup.value = v
+					uni.showToast({ title: '已记在这条记忆里', icon: 'success' })
+				})
+			}
+		})
+	}
+</script>
+
+<style>
+	@import '@/styles/detail.css';
+</style>

@@ -1,0 +1,103 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
+.phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
+.page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #F8F7F4; }
+.n4_258 { position: absolute; left: 20.0px; top: 56.0px; width: 128.0px; height: 39.0px; font-weight: bold; font-size: 32.0px; color: #3A2E25; }
+.n4_259 { position: absolute; left: 20.0px; top: 112.0px; width: 350.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.72); border: 1.0px solid rgba(255, 255, 255, 0.7); border-radius: 14.0px; overflow: hidden; }
+.n4_260 { width: 16.0px; height: 16.0px; }
+.n4_262 { flex: 1; font-size: 12.0px; color: #5A4C40; }
+.n4_263 { font-weight: 600; font-size: 12.0px; color: #B05A3A; }
+.n4_264 { position: absolute; left: 20.0px; top: 186.0px; width: 251.0px; height: 15.0px; font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_265 { position: absolute; left: 20.0px; top: 212.0px; width: 350.0px; display: flex; flex-direction: column; gap: 24.0px; overflow: hidden; }
+.n4_266 { width: 100%; display: flex; flex-direction: row; justify-content: flex-end; align-items: center; overflow: hidden; }
+.n4_267 { width: 290.0px; display: flex; flex-direction: column; gap: 8.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #B05A3A; border-radius: 20.0px; overflow: hidden; }
+.n4_268 { width: 100%; font-size: 13.0px; color: #FFFFFF; }
+.n4_269 { width: 100%; display: flex; flex-direction: row; gap: 6.0px; align-items: center; overflow: hidden; }
+.n4_270 { flex: 1; height: 100.0px; background-color: #EDE5D5; border-radius: 12.0px; overflow: hidden; }
+.n4_271 { flex: 1; height: 100.0px; background-color: #E0D6C4; border-radius: 12.0px; overflow: hidden; }
+.n4_272 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; border-radius: 12.0px; overflow: hidden; }
+.n4_273 { width: 16.0px; height: 16.0px; }
+.n4_275 { flex: 1; font-size: 12.0px; color: #FFFFFF; }
+.n4_276 { width: 100%; display: flex; flex-direction: row; justify-content: flex-end; align-items: flex-start; gap: 2.0px; overflow: hidden; }
+.n4_277 { display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: #B05A3A; border-radius: 20.0px; overflow: hidden; }
+.n4_278 { width: 24.0px; height: 24.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.25); border-radius: 12.0px; overflow: hidden; }
+.n4_279 { width: 10.0px; height: 10.0px; }
+.n4_281 { width: 90.0px; height: 16.0px; overflow: hidden; position: relative; }
+.n4_282 { position: absolute; left: 2.0px; top: 2.0px; width: 80.0px; height: 12.0px; }
+.n4_283 { font-size: 12.0px; color: #FFFFFF; }
+.n4_284 { width: 14.0px; height: 14.0px; }
+.n4_286 { width: 100%; display: flex; flex-direction: row; justify-content: flex-end; align-items: center; overflow: hidden; }
+.n4_287 { width: 260.0px; display: flex; flex-direction: column; gap: 8.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #B05A3A; border-radius: 20.0px; overflow: hidden; }
+.n4_288 { width: 100%; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; border-radius: 10.0px; overflow: hidden; }
+.n4_289 { width: 32.0px; height: 32.0px; background-color: #EDE5D5; border-radius: 6.0px; overflow: hidden; }
+.n4_290 { flex: 1; font-size: 11.0px; color: #FFFFFF; }
+.n4_291 { width: 100%; font-size: 13.0px; color: #FFFFFF; }
+.n4_292 { width: 100%; display: flex; flex-direction: row; justify-content: flex-end; align-items: center; overflow: hidden; }
+.n4_293 { width: 250.0px; display: flex; flex-direction: column; background-color: #FFFFFF; box-shadow: 0px 3px 10px rgba(59, 46, 38, 0.06); border-radius: 16.0px; overflow: hidden; }
+.n4_297 { width: 100%; height: 70.0px; background-image: linear-gradient(to bottom right, rgba(78, 125, 140, 0.25), rgba(122, 140, 90, 0.18)); overflow: hidden; }
+.n4_294 { width: 100%; display: flex; flex-direction: column; gap: 2.0px; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; overflow: hidden; }
+.n4_295 { width: 100%; font-weight: 600; font-size: 13.0px; color: #3A2E25; }
+.n4_296 { font-size: 10.0px; color: #8A7A6A; }
+</style></head><body><div class="phone">
+    <span class="n4_258">用户输入</span> <!-- 大标题 -->
+    <div class="n4_259"> <!-- 剪贴板检测条 -->
+      <img class="n4_260" src="icons/i4_260.svg" /> <!-- 链接图标 -->
+      <span class="n4_262">检测到剪贴板链接：tech-transfer 的文章</span> <!-- 检测文字 -->
+      <span class="n4_263">收进</span> <!-- 收进按钮 -->
+    </div>
+    <span class="n4_264">A · 复合消息（文字 + 多图 + 文件 一条发送）</span> <!-- 节A -->
+    <div class="n4_265"> <!-- 形态流 -->
+      <div class="n4_266"> <!-- 复合消息行 -->
+        <div class="n4_267"> <!-- 复合气泡 -->
+          <span class="n4_268">今天路过的云和一个很重要的文件，都收进去</span> <!-- 复合文字 -->
+          <div class="n4_269"> <!-- 图片网格 -->
+            <div class="n4_270"> <!-- 图1 -->
+            </div>
+            <div class="n4_271"> <!-- 图2 -->
+            </div>
+          </div>
+          <div class="n4_272"> <!-- 文件chip -->
+            <img class="n4_273" src="icons/i4_273.svg" /> <!-- 文件图标 -->
+            <span class="n4_275">实习周报.docx</span> <!-- 文件名 -->
+          </div>
+        </div>
+      </div>
+      <div class="n4_276"> <!-- 语音消息行 -->
+        <div class="n4_277"> <!-- 语音气泡 -->
+          <div class="n4_278"> <!-- 播放钮 -->
+            <img class="n4_279" src="icons/i4_279.svg" /> <!-- 播放 -->
+          </div>
+          <div class="n4_281"> <!-- 波形白 -->
+            <img class="n4_282" src="icons/i4_282.svg" /> <!-- Vector -->
+          </div>
+          <span class="n4_283">0:23</span> <!-- 时长 -->
+        </div>
+        <img class="n4_284" src="icons/i4_284.svg" /> <!-- 转写展开钮 -->
+      </div>
+      <div class="n4_286"> <!-- 引用消息行 -->
+        <div class="n4_287"> <!-- 引用气泡 -->
+          <div class="n4_288"> <!-- 引用块 -->
+            <div class="n4_289"> <!-- 引用缩略 -->
+            </div>
+            <span class="n4_290">清晨的湖边，风很轻</span> <!-- 引用标题 -->
+          </div>
+          <span class="n4_291">那天之后我又去了两次，每次感觉都不一样</span> <!-- 引用后文字 -->
+        </div>
+      </div>
+      <div class="n4_292"> <!-- 链接消息行 -->
+        <div class="n4_293"> <!-- 链接卡 -->
+          <div class="n4_297"> <!-- 封面 -->
+          </div>
+          <div class="n4_294"> <!-- 链接正文 -->
+            <span class="n4_295">Agent 开发入门指南</span> <!-- 标题 -->
+            <span class="n4_296">微信公众号 · tech-transfer</span> <!-- 来源 -->
+          </div>
+        </div>
+      </div>
+    </div>
+</div></body></html>

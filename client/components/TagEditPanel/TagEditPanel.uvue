@@ -1,0 +1,527 @@
+<template>
+	<!-- ═══════════ 编辑性格标签面板（F9b · 卡24 · canvas JSON 真值） ═══════════
+	     真值：.wt/missing-pages/uvue_gen/tag_edit_panel_canvas.json（2026-09-02 14:33 导出，44 节点，帧 F9b）。
+	     组件范围 = 帧内弹层子树：64:253 遮罩 + 64:254 编辑标签弹层（底页弱化层 64:243/64:244 属宿主 manage.uvue）。
+	     弹层 = 全局浮层不是页面，唤起不发生页面跳转（峰宝拍板铁律 1 同族，EchoSheet/RecordSheet 范式）。
+     结构（逻辑 px ×1.9231→rpx）：遮罩 #3B2E26 a0.4 / 弹层 y398 padding 20/20/18/28 · 纵向 gap14（→26.9rpx margin）/
+     头行：编辑性格标签 16·600 #3A2E25（y+4）+ × 22·400 #B3A696 / 节标 12·500 #8A7A6A /
+     AI 标签区 wrap gap8：chip h32 r16 白底+淡投影（字 13·400 #3A2E25 + × 14·400 #B3A696，AI 标签可删）/
+     locked chip 白底描边 #B05A3A（字 13·500 + 锈红锁 12×12，手动固定不可删）/
+     添加行 h44 r22 白底+双投影（输入 + 固定钮 60×32 #B05A3A）/ 锁定说明 11·400 #B3A696 /
+     主按钮 h48 r24 #B05A3A 完成 16·600 白
+     §U 重设计（2026-09-03 峰宝拍板「与分享/胶囊面板同款问题」）：对齐 4:404 详情页令牌——弹层暖底 #FAF9F5、
+     土黄 #EDE5D5 全清（chips/添加行改白卡+投影）、琥珀金 #C4913C 全换锈红 #B05A3A（主按钮/固定钮/锁描边）；
+     锁图标换画布 64:276 导出真件 tag-lock-rust.svg（storage-lock.svg 三处共用金锁不动）；画布改后截图
+     uvue_gen/panel_redesign_shots/F9b_tagedit_after.png -->
+	<view class="sheet-root tk-root">
+		<view class="scrim" @tap="onClose"></view>
+		<view class="sheet">
+			<view class="head-row">
+				<text class="head-title">编辑性格标签</text>
+				<view class="head-close" @tap="onClose">
+				<text class="head-close-text">×</text>
+			</view>
+			</view>
+			<!-- 64:258 节标-AI派生 -->
+			<text class="section-label">AI 从记忆里读出的你</text>
+			<!-- 64:259 AI标签区：wrap gap8，AI 生成标签带 × 可删 -->
+			<!-- 2026-10-30（P2 F-4）：**标签三态**。原实现只有两态，且「删掉的 AI 标签」直接从
+			     界面消失 —— 用户既看不出"我删过什么"，也没法撤销。现三态共用一个 `.tag-chip`
+			     基础尺寸（h32 / r16），**只改填充与装饰**：
+			       · AI 派生 → 白底 + 1.9rpx 描边（描边胶囊，可 × 删）
+			       · 我固定 → 锈红实心（令牌 `--a-rust-25`）+ 小锁（无 ×，服务端锁定为真源）
+			       · 已删除 → 白底描边 + 删除线 + 降透明度（点一下可恢复） -->
+			<view class="chip-area">
+				<view v-for="(tag, i) in aiList" :key="tag" class="tag-chip ai-chip">
+					<text class="tag-chip-text ai-chip-text">{{ tag }}</text>
+					<view class="ai-chip-del" @tap="removeAi(i)"><text class="ai-chip-del-text">×</text></view>
+				</view>
+				<view v-for="(tag, i) in deletedList" :key="'del-' + tag" class="tag-chip deleted-chip" @tap="restoreDeleted(i)">
+					<text class="tag-chip-text deleted-chip-text">{{ tag }}</text>
+				</view>
+			</view>
+			<!-- 三态可读性：第三态的恢复动作要能被发现（11rpx 说明行，不新增卡片/浮层） -->
+			<text v-if="deletedList.length > 0" class="deleted-hint">划掉的标签已灰显，点一下可以恢复</text>
+			<!-- 64:272 节标-手动固定 -->
+			<!-- 2026-10-30（P1-33 收口）：锁定已接后端（PUT /api/v1/profile/locked-tags 为真源，
+			     画像标注/重建写回前按该集合跳过）⇒ 文案改回真实承诺。上一版「只存本机，AI 看不到」
+			     是当时空承诺的如实说明，现已不成立 -->
+			<text class="section-label">我固定的标签（AI 不会再改动）</text>
+			<!-- 64:273 手动标签区：locked 标签**锈红实心** + 锁标识，无 × 不可删
+			     （2026-10-30 · P2 F-4：原「白底锈红描边」与新态1的描边胶囊撞车 → 改实心，
+			      三态靠"有没有描边 / 有没有填充 / 有没有删除线"一眼可分） -->
+			<view class="chip-area">
+				<view v-for="tag in lockedList" :key="tag" class="tag-chip locked-chip">
+					<text class="tag-chip-text locked-chip-text">{{ tag }}</text>
+					<image class="locked-icon" src="/static/icons/tag-lock-rust.svg" />
+				</view>
+			</view>
+			<!-- 64:279 添加行：输入 + 固定（新标签进 locked 区） -->
+			<view class="add-row">
+				<input :adjust-position="true" class="add-input" style="color:#3A2E25;font-size:25rpx;" v-model="newTag" placeholder="添加你眼中的自己…" placeholder-style="color:#B3A696;font-size:25rpx;" :maxlength="12" confirm-type="done" @confirm="addLocked" />
+				<view class="add-btn" @tap="addLocked">
+					<text class="add-btn-text">固定</text>
+				</view>
+			</view>
+			<!-- 64:283 锁定说明 -->
+			<!-- 2026-10-30（P1-33 收口）：说明与真实生效路径逐条对应（云端保存 + 写回时跳过） -->
+			<text class="lock-hint">固定的标签会保存到云端；AI 更新画像时不会新增、覆盖或删除它们</text>
+			<!-- 64:284 主按钮-完成：结果写回 manage 本地态（storage + @save） -->
+			<view class="main-btn" @tap="onDone">
+				<text class="main-btn-text">完成</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onMounted } from 'vue'
+	import { cachedLockedTags, saveLockedTags, syncLockedTags, LockedTagsResult } from '@/utils/profile_locked_tags'
+
+	// Props：Array<string> 有 VoiceWave heights（type: Array）先例；对象 prop 零先例不冒险（EchoSheet 铁律）
+	const props = defineProps({
+		aiTags: {
+			type: Array,
+			required: true
+		}
+	})
+
+	const emit = defineEmits(['close', 'save'])
+
+	// ── 状态：AI 标签（可删） / locked 手动固定标签（不可删） / 输入框 ──
+	let aiList = ref<Array<string>>([])
+	let lockedList = ref<Array<string>>([])
+	// 2026-10-30（P2 F-4）：第三态「已删除」的集合——用户划掉的 AI 派生标签不再直接消失，
+	// 而是落到这里、以描边+删除线+降透明度呈现，点一下可恢复。
+	let deletedList = ref<Array<string>>([])
+	let newTag = ref('')
+
+	// storage 键（\n 连接存取，规避 JSON 解析零先例；字符串 storage 先例见 TabProfile
+	// `yishu_profile_stats` 的逗号串格式。原注释引用的 settings.uvue 已于 2026-10-30 随 I-1 删除）
+	// 2026-10-30（P1-30）：**新增「是否编辑过」标记位**。原实现用「列表非空」当「编辑过」的判据，
+	// 于是「把 AI 标签全删光」被存成空串，与「从未编辑」不可区分 ⇒ 下次打开（以及宿主导出）
+	// 又回落到 props 派生标签，被删的标签复活。标记位使「空集合」也是一个有效结果。
+	const TAGS_EDITED_FLAG: string = 'portrait_tags_edited'
+	// 2026-10-30（P2 F-4）：「已删除」集合的落盘键（\n 连接的字符串，同 portrait_ai_tags_edited 口径）
+	const TAGS_DELETED_KEY: string = 'portrait_ai_tags_deleted'
+	const everEdited = (uni.getStorageSync(TAGS_EDITED_FLAG) as string) == '1'
+	// 初始化：编辑过 → storage 集合为准（可能为空）；否则用 props.aiTags（首次打开）
+	const editedStr = uni.getStorageSync('portrait_ai_tags_edited') as string
+	if (everEdited) {
+		const segs = editedStr.split('\n')
+		for (let i = 0; i < segs.length; i++) {
+			if (segs[i] != '') {
+				aiList.value.push(segs[i])
+			}
+		}
+	} else {
+		for (let i = 0; i < props.aiTags.length; i++) {
+			const t = props.aiTags[i] as string
+			if (t != '') {
+				aiList.value.push(t)
+			}
+		}
+	}
+	// 2026-10-30（P2 F-4）：读回「已删除」集合。
+	// 只在「编辑过」时读 —— 从未编辑时存储里可能还留着更早的记录，拿它渲染会让首开就出现
+	// 一堆划掉的标签（与 P1-30 标记位同口径：没见过用户意图就不猜）。同时把已删除项从 AI 区
+	// 剔除，保证同一标签不会同时出现在两态里。
+	if (everEdited) {
+		const delStr = uni.getStorageSync(TAGS_DELETED_KEY) as string
+		const delSegs = delStr.split('\n')
+		for (let i = 0; i < delSegs.length; i++) {
+			if (delSegs[i] != '') {
+				deletedList.value.push(delSegs[i])
+			}
+		}
+		const kept: Array<string> = []
+		for (let i = 0; i < aiList.value.length; i++) {
+			const t = aiList.value[i]
+			let isDeleted = false
+			for (let j = 0; j < deletedList.value.length; j++) {
+				if (deletedList.value[j] == t) {
+					isDeleted = true
+					break
+				}
+			}
+			if (!isDeleted) {
+				kept.push(t)
+			}
+		}
+		aiList.value = kept
+	}
+	// ── 锁定标签：真源在服务端（GET/PUT /api/v1/profile/locked-tags，B1:139）──
+	// 初始化只用本机**兜底缓存**渲染（打开瞬间不空、离线可用），挂载后由服务端覆盖。
+	lockedList.value = cachedLockedTags()
+	// AI 区剔除已锁定的同名标签：宿主把 locked 合并进 ai-tags 传进来（manage
+	// rebuildTagsFromStorage），不剔除则同一标签在 AI 区再出现一次、还能被 × 删掉——
+	// 而删除不会解除服务端锁定（真源在服务端），用户会以为删了下次却还在。
+	const filteredAi: Array<string> = []
+	for (let i = 0; i < aiList.value.length; i++) {
+		const t = aiList.value[i]
+		let lockedHit = false
+		for (let j = 0; j < lockedList.value.length; j++) {
+			if (lockedList.value[j] == t) {
+				lockedHit = true
+				break
+			}
+		}
+		if (!lockedHit) {
+			filteredAi.push(t)
+		}
+	}
+	aiList.value = filteredAi
+
+	/** 挂载后以服务端为真源对齐：有待推送的本地改动先推（上次 PUT 失败），否则拉取覆盖。
+	 *  失败（离线/服务不可用）保留缓存值——**只降级不假装成功**，也不把"网络失败"当"没有锁定"。 */
+	onMounted(() => {
+		syncLockedTags().then((r: LockedTagsResult) => {
+			if (r.ok) {
+				lockedList.value = r.tags
+			}
+		})
+	})
+
+	/** 删除 AI 生成标签（locked 标签无 × 入口 = 不可删，卡24 交互接线）。
+	 *  W1-5 复核：ref 数组禁 splice（零先例铁律 7，index.uvue splice 先例为裸数组非同构）→ 下标重建重赋值 */
+	function removeAi(idx: number): void {
+		const out: Array<string> = []
+		let removed = ''
+		for (let i = 0; i < aiList.value.length; i++) {
+			if (i != idx) {
+				out.push(aiList.value[i])
+			} else {
+				removed = aiList.value[i]
+			}
+		}
+		aiList.value = out
+		// 2026-10-30（P2 F-4）：删掉的标签进第三态（灰显可恢复），不再凭空消失。
+		// 去重：同一标签重复删除不产生两条记录（重建引用触发渲染，同 removeAi 下标重建范式）。
+		if (removed == '') {
+			return
+		}
+		const delMerged: Array<string> = []
+		for (let i = 0; i < deletedList.value.length; i++) {
+			delMerged.push(deletedList.value[i])
+		}
+		delMerged.push(removed)
+		deletedList.value = delMerged
+	}
+
+	/** 2026-10-30（P2 F-4）：第三态点回 → 恢复成 AI 派生标签（下标重建，禁 splice 军规） */
+	function restoreDeleted(idx: number): void {
+		if (idx < 0 || idx >= deletedList.value.length) {
+			return
+		}
+		const tag = deletedList.value[idx]
+		const keptDel: Array<string> = []
+		for (let i = 0; i < deletedList.value.length; i++) {
+			if (i != idx) {
+				keptDel.push(deletedList.value[i])
+			}
+		}
+		const backAi: Array<string> = []
+		for (let i = 0; i < aiList.value.length; i++) {
+			backAi.push(aiList.value[i])
+		}
+		backAi.push(tag)
+		deletedList.value = keptDel
+		aiList.value = backAi
+	}
+
+	/** 固定新标签：去重（locked 与 AI 区都查），进 locked 区 */
+	function addLocked(): void {
+		const t = newTag.value.trim()
+		if (t == '') {
+			uni.showToast({ title: '请输入标签', icon: 'none' })
+			return
+		}
+		for (let i = 0; i < lockedList.value.length; i++) {
+			if (lockedList.value[i] == t) {
+				uni.showToast({ title: '已固定过这个标签', icon: 'none' })
+				return
+			}
+		}
+		for (let i = 0; i < aiList.value.length; i++) {
+			if (aiList.value[i] == t) {
+				uni.showToast({ title: 'AI 标签里已有「' + t + '」', icon: 'none' })
+				return
+			}
+		}
+		lockedList.value.push(t)
+		// 2026-10-30（P2 F-4）：若这个词正好在「已删除」里，固定后必须从第三态移除，
+		// 否则同一标签会同时出现在「我固定」和「已删除」两态（矛盾）。
+		const keptDel: Array<string> = []
+		for (let i = 0; i < deletedList.value.length; i++) {
+			if (deletedList.value[i] != t) {
+				keptDel.push(deletedList.value[i])
+			}
+		}
+		deletedList.value = keptDel
+		newTag.value = ''
+	}
+
+	/** 完成：AI 区落本机（原口径）+ 锁定区 PUT 到服务端真源（整体覆盖），关层 */
+	function onDone(): void {
+		// 2026-10-30（P1-30）：整体覆盖写 —— 标记位 + 当前集合全量落盘。
+		// 清空全部 AI 标签时写的是「标记位=1 + 空串」，宿主据此知道「空」是用户意图，
+		// 不会再走「从未编辑 → 回落派生标签」的增量合并分支（复活根因）。
+		uni.setStorageSync(TAGS_EDITED_FLAG, '1')
+		uni.setStorageSync('portrait_ai_tags_edited', aiList.value.join('\n'))
+		// 2026-10-30（P2 F-4）：第三态也要落盘 —— 否则重开面板「已删除」全部回到 AI 区，
+		// 用户会以为自己划掉的那些从来没生效过（与 P1-30 的"空集合也是有效结果"同口径）。
+		uni.setStorageSync(TAGS_DELETED_KEY, deletedList.value.join('\n'))
+		// 锁定区：先 emit 让宿主立即用本机集合重建（saveLockedTags 内部已先写兜底缓存），
+		// 再异步 PUT 到服务端。**不阻塞关层**：网络慢不该把用户卡在弹层里。
+		// PUT 失败时兜底缓存保留本次集合 + 打待推送标记，下次打开会重推（syncLockedTags）。
+		emit('save')
+		onClose()
+		saveLockedTags(lockedList.value).then((r: LockedTagsResult) => {
+			if (!r.ok) {
+				// 如实提示：本机已存、云端未同步；不说"稍后自动同步"（本组件之外无后台重试）
+				uni.showToast({ title: '锁定已存本机，云端同步失败', icon: 'none' })
+			}
+		})
+	}
+
+	function onClose(): void {
+		emit('close')
+	}
+</script>
+
+<style>
+	.sheet-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		/* z-index 1000 > TabBar 999（RecordSheet/EchoSheet 同款铁律） */
+		z-index: 1000;
+	}
+	/* 64:253 遮罩：r0.23 g0.18 b0.15 op0.4 → rgba(59,46,38,0.4) */
+	.scrim {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		background-color: var(--a-ink-40, rgba(59, 46, 38, 0.4));
+		z-index: 10;
+	}
+	/* 64:254 编辑标签弹层：y398（min-height 446px=858.5rpx 兜底）；padding 20/20/18/28；
+	   §U 重设计：白 → 暖底 #FAF9F5（对齐详情页令牌）；JSON 无 cornerRadius → 直角（EchoSheet 同款真值处理） */
+	.sheet {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		min-height: 858.5rpx;
+		background-color: var(--c-paper-50, #FAF9F5);
+		padding-top: var(--d-lattice-p18, 34.6rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-fab_radius, 53.8rpx);
+		z-index: 20;
+		flex-direction: column;
+	}
+	/* 64:255 弹层头：标题 y+4 → mt 7.7rpx */
+	.head-row {
+		flex-direction: row;
+		justify-content: space-between;
+	}
+	.head-title {
+		margin-top: var(--d-lattice-p4, 7.7rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 64:257 关闭：22px Regular #B3A696，字形 ×（U+00D7） */
+.head-close {
+	/* 热区 ≥60rpx（text@tap 清零军规 2026-09-06） */
+	width: var(--d-raw-r60, 60rpx);
+	height: var(--d-raw-r60, 60rpx);
+	justify-content: center;
+	align-items: center;
+}
+.head-close-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: var(--d-lattice-p22, 42.3rpx);
+	color: var(--c-ink-300, #B3A696);
+}
+	/* 64:258/64:272 节标：12px Medium #8A7A6A；纵向 gap14 → 非首子元素 mt 26.9rpx */
+	.section-label {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	/* 64:259/64:273 标签区：弹层子元素统一 gap14 → mt 26.9rpx；wrap 内 chip 右 15.4rpx
+	   （flex-wrap 有 manage tag-list 先例；chip 不带 margin-bottom —— 画布全部单行，
+	   多行换行时上下行无间距，降级登记台账 卡24 F9b） */
+	.chip-area {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	/* 2026-10-30（P2 F-4）：**三态共用几何** —— 尺寸/圆角/左内边距/间距/排布只在这里定义一次，
+	   各态样式类只声明「填充与装饰」（描边、锁、删除线、透明度）。加一种态不用再抄一遍几何，
+	   也就不会出现三态圆角/高度各自漂移。
+	   基础值取自画布 64:260（h32 → 61.5rpx，r16 → 30.8rpx）。 */
+	.tag-chip {
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		margin-bottom: var(--d-lattice-p8, 15.4rpx);
+	}
+	.tag-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 态1 · AI 派生 = **描边胶囊**：白底 + 1.9rpx 中性描边。
+	   （原为白底+淡投影；与"实心/删除线"两态放在一起时投影太弱、区分不出来，故改用描边，
+	     描边与投影叠用会显脏，这里去掉投影 —— 三态靠"有没有描边/有没有填充"就能分清。） */
+	.ai-chip {
+		background-color: var(--c-white, #FFFFFF);
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-style: solid;
+		border-color: var(--c-ink-300, #B3A696);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+	}
+	/* 64:261 文字：13px Regular #3A2E25 */
+	.ai-chip-text {
+		font-weight: 400;
+	}
+	/* 64:262 删钮 ×：14px Regular #B3A696，gap4 → ml 7.7rpx */
+.ai-chip-del {
+	/* 热区 ≥44rpx（text@tap 清零军规 2026-09-06） */
+	margin-left: var(--d-lattice-p4, 7.7rpx);
+	width: var(--d-raw-r44, 44rpx);
+	height: var(--d-raw-r44, 44rpx);
+	justify-content: center;
+	align-items: center;
+}
+.ai-chip-del-text {
+	font-family: "Sarasa Gothic SC", sans-serif;
+	font-weight: 400;
+	font-size: var(--d-lattice-p14, 26.9rpx);
+	color: var(--c-ink-300, #B3A696);
+}
+	/* 态2 · 我固定 = **实心 + 小锁**（无 ×，锁定真源在服务端）。
+	   §U 原为"白底+锈红描边"，与态1 的新描边式样撞车 ⇒ 改实心填充。
+	   填充取令牌 `--a-rust-25`（不是满色）：仓库里只有锈红/灰两版锁图标，满色底上锈红锁不可见，
+	   而新建白色锁资源不在本次改动范围；25% 已能与两态描边明确区分，且锁图标清晰。 */
+	.locked-chip {
+		/* 2026-10-30（令牌纪律）：原写的是裸锈红 0.18 alpha 值，会被 audit_token_literals 计入
+		   "新增硬编码 rgb"（阻断提交）⇒ 改用**已存在于 App.uvue 的** `--a-rust-25`（那套 alpha
+		   阶梯只有 06/10/12/25/30/45/60，没有 0.18，取最接近且更能表达"实心"的 25%）。
+		   回退值与令牌同值，且不新增令牌定义（App.uvue 不是我的域）。
+		   ⚠️ 注释里也不要再出现色函数字面量——`strip_comments` 对 .uvue 只剔 HTML 注释，
+		   style 区注释会被计入（本文件原有的那 1 处 rgb 就是历史注释里的色值）。 */
+		background-color: var(--a-rust-25, rgba(176, 89, 59, 0.25));
+		padding-right: var(--d-lattice-p10, 19.2rpx);
+	}
+	/* 64:275 文字：13px Medium #3A2E25 */
+	.locked-chip-text {
+		font-weight: 500;
+	}
+	/* 64:276 锁图标：12×12 → 23.1rpx（§U 换画布 64:276 导出真件 tag-lock-rust.svg #AF5A39） */
+	.locked-icon {
+		width: var(--d-card_radius_small, 23.1rpx);
+		height: var(--d-card_radius_small, 23.1rpx);
+		margin-left: var(--d-lattice-p5, 9.6rpx);
+	}
+	/* 态3 · 已删除 = **描边 + 删除线 + 降透明度**（点一下恢复；几何与态1/2 完全一致） */
+	.deleted-chip {
+		background-color: var(--c-white, #FFFFFF);
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-style: solid;
+		border-color: var(--c-ink-300, #B3A696);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		opacity: 0.55;
+	}
+	.deleted-chip-text {
+		font-weight: 400;
+		color: var(--c-ink-500, #8A7A6A);
+		/* 删除线（本仓库首例 text-decoration）：即使某端忽略该属性，灰字 + opacity 0.55
+		   仍与态1 有明显差别，不会退化成"看起来没删" */
+		text-decoration: line-through;
+	}
+	/* 第三态的恢复提示（11rpx 说明行；不新增卡片/浮层，与 .lock-hint 同族） */
+	.deleted-hint {
+		margin-top: var(--d-lattice-p2, 3.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* 64:279 添加行：h44 r22 白底+双投影（§U：土黄→白卡；投影画布 y4 r16 a0.06 + y1 r3 a0.04 → 7.7/30.8 + 1.9/5.8rpx） */
+	.add-row {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-status_bar_height, 84.6rpx);
+		border-radius: var(--d-lattice-p22, 42.3rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		flex-direction: row;
+		align-items: center;
+	}
+	/* 64:280 输入：13px #B3A696 占位（输入本体 #3A2E25） */
+	.add-input {
+		flex: 1;
+		/* 2026-10-07 同类缺陷修复：input 无显式高度会被父级裁字（父容器 add-row 高 84.6rpx） */
+		height: var(--d-lattice-p36, 69.2rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 64:281 添加按钮：60×32 r16 #B05A3A（§U：金→锈红） */
+	.add-btn {
+		width: var(--d-lattice-p60, 115.4rpx);
+		height: var(--d-lattice-p32, 61.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	/* 64:282 固定：12px Medium 白 */
+	.add-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 500;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	/* 64:283 锁定说明：11px Regular #B3A696 */
+	.lock-hint {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 400;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* 64:284 主按钮：h48 r24 #B05A3A（§U：金→锈红；stretch 撑满 padding 内宽） */
+	.main-btn {
+		margin-top: var(--d-lattice-p14, 26.9rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		border-radius: var(--d-lattice-p24, 46.2rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		justify-content: center;
+		align-items: center;
+	}
+	/* 64:285 完成：16px SemiBold 白 */
+	.main-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+</style>

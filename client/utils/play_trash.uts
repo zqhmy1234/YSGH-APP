@@ -1,0 +1,127 @@
+/**
+ * 玩法层 · 垃圾箱（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
+ *
+ * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * 对外导出：deleteContent, trashList, trashRestore, trashClear
+ */
+import { get, post, request, dataArr, dataObj } from './api'
+import { enqueueDeleteOp } from './sync_queue'
+import { currentNetKind } from './uploader_net'
+
+export function deleteContent(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request('/api/v1/contents/' + contentId, 'DELETE', null).then((res: UTSJSONObject | null) => {
+			if (res != null) {
+				resolve(true)
+				return
+			}
+			// B12（2026-09-23）：**离线不再白丢用户操作** —— 入队 delete 墓碑，联网后由
+			// `pushPendingOps` 幂等补发（op_id 幂等 + 软删幂等，重发无副作用）。
+			// ⚠️ 仍返回 false（签名不变）⇒ **调用方必须据 `currentNetKind()=='none'` 改口**：
+			// 否则用户看到"删除失败"而操作其实已排队 = 状态与事实不符（detail.uvue 已同步改）。
+			// 🚨 2026-10-11 静态审查修复：原写 `getNetKind() == 'none'` —— getNetKind 是
+			// **回调式且返回 void**，`void == 'none'` 恒假 ⇒ 本分支永不进入（入队从未发生）。
+			// 改为同步缓存读 `currentNetKind()`（由 uploader_net 的网络监听维护）。
+			if (currentNetKind() == 'none') {
+				enqueueDeleteOp('content', contentId)
+				console.log('[yishu] 离线：删除已入队 content=' + contentId)
+			}
+			resolve(false)
+		})
+	})
+}
+
+// 2026-10-30（P2 H-1）：**失败信号**（与 `play_messages.uts::messagesFetchFailed()` 同一范式）。
+// 本模块 resolve-only：失败给空数组 ⇒ 页面**无法区分**「回收站是空的」与「这次没拉到」，
+// 两者都渲染成"暂无内容"空态（用户会以为 30 天保留的东西已经被清掉了——比报错更吓人）。
+// 模块作用域（`.uts`）而非页面 `<script setup>`：回收站页每次进入都是新实例，页内 ref 存不住。
+let _lastTrashFetchFailed: boolean = false
+
+/** 最近一次 `trashList` 是否失败（失败 ≠ 回收站为空：页面据此给重试入口而不是空态文案） */
+export function trashFetchFailed(): boolean {
+	return _lastTrashFetchFailed
+}
+
+/** GET /trash：回收站列表（TrashItemOut[]，days_left 后端算好）；失败/空 → 空数组（api 层已 toast） */
+export function trashList(): Promise<Array<UTSJSONObject>> {
+	return new Promise<Array<UTSJSONObject>>((resolve) => {
+		get('/api/v1/trash').then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				_lastTrashFetchFailed = true
+				resolve([])
+				return
+			}
+			_lastTrashFetchFailed = false
+			resolve(dataArr(res))
+		})
+	})
+}
+
+/** POST /trash/{id}/restore：恢复单条；返回是否成功 */
+export function trashRestore(contentId: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		post('/api/v1/trash/' + contentId + '/restore', {}).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** 清空回收站的结果（§7.25① 诚实回传）：`warnings` 非空 = 云端清尾未全成功 */
+export class TrashClearResult {
+	cleared: number
+	vectorsPurged: number
+	objectsPurged: number
+	warnings: Array<string>
+
+	constructor(
+		cleared: number,
+		vectorsPurged: number,
+		objectsPurged: number,
+		warnings: Array<string>
+	) {
+		this.cleared = cleared
+		this.vectorsPurged = vectorsPurged
+		this.objectsPurged = objectsPurged
+		this.warnings = warnings
+	}
+}
+
+/**
+ * DELETE /trash：清空回收站（彻底删除不可逆）；返回清空结果，失败 null。
+ *
+ * 2026-10-14（台账 §7.25① / §4.20 ⑳）：**返回值由 boolean 改为结果对象**。后端现在会
+ * **真清尾**（Qdrant 向量 + 对象存储原件），并在部分失败时回 `warnings`；原实现只回 boolean
+ * ⇒ 界面无论清尾成败都显示「回收站已清空」，与事实可能不符（诚实性缺陷）。
+ */
+export function trashClear(): Promise<TrashClearResult | null> {
+	return new Promise<TrashClearResult | null>((resolve) => {
+		request('/api/v1/trash', 'DELETE', null).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const data = dataObj(res)
+			if (data == null) {
+				// 200 但读不到 data：清空本身已成事实，**不谎报有告警**
+				resolve(new TrashClearResult(0, 0, 0, []))
+				return
+			}
+			const warns: Array<string> = []
+			const raw = data.getArray('warnings') as Array<string> | null
+			if (raw != null) {
+				for (let i = 0; i < raw.length; i++) {
+					warns.push(raw[i])
+				}
+			}
+			resolve(new TrashClearResult(
+				data.getNumber('cleared') ?? 0,
+				data.getNumber('vectors_purged') ?? 0,
+				data.getNumber('objects_purged') ?? 0,
+				warns
+			))
+		})
+	})
+}
+
+/** ContentOut AI 增量投影（FE1）：tags_json（string[]|null，打标异步可能 null）+ ai_description（string|null，照片 AI 描述）。
+ *  null 语义在调用方消化：tags 空=不显示 chips 区块、aiDescription 空=不显示描述行（不造假占位） */

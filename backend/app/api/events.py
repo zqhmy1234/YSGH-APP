@@ -1,42 +1,410 @@
 """事件路由：四层事件模型（B3）+ 时间轴（F8）+ 用户手动操作（B3-5）"""
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
-from app.core.errors import ApiError
+from app.api import make_router
+from app.api.deps import get_current_user, uuid4_str
+from app.core.errors import ERR_EVENT_004, ERR_EVENT_006, ERR_EVENT_007, ApiError
+from app.db.alive import alive
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.common import ApiResponse
+from app.schemas.common import ApiResponse, Page
 from app.schemas.event import (
     EventConfirmRequest,
+    EventCoverRequest,
+    EventItemOut,
     EventMergeRequest,
     EventOut,
+    EventPhotoOut,
     EventSplitRequest,
+    EventSyncRequest,
+    EventSyncResult,
+    VoiceInfo,
 )
+from app.services.errors import ConflictError, NotFoundError, ValidationError
 
-router = APIRouter(prefix="/api/v1/events", tags=["events"])
+router = make_router(prefix="/api/v1/events", tags=["events"])
+
+# 每个事件随 timeline 下发的成员照片上限（卡片照片条渲染所需；原图按需另取）。
+# 取 6：卡片横向照片条设计容量 3-6 张，再多是浪费带宽且拖慢首屏。
+PHOTOS_PER_EVENT = 6
+
+# 每个事件随 timeline 下发的语音成员上限（W0-2 就地播放：卡片语音卡单条，取首条足够）。
+VOICES_PER_EVENT = 1
+
+# 分页模式的默认页长（2026-10-30 · P2 B-7）：只在「传了 cursor 没传 limit」时生效。
+# 与 api/deps.pagination_params 的默认 20 保持一致——同一产品里两套默认页长没有好处。
+_TIMELINE_DEFAULT_LIMIT = 20
 
 
-@router.get("/timeline", response_model=ApiResponse[list[EventOut]])
+@router.get("/stats", response_model=ApiResponse[dict])
+def event_stats(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """派生统计（性能卡 PG：单聚合查询，替代前端 fetchTimeline(null) 全量拉取派生）
+
+    口径（事件域对齐 timeline：user_id + deleted_at IS NULL，services/events/timeline.py）：
+    - event_count：非软删事件总数（含各 level/status）
+    - day_count：非空 start_time 按天去重天数（对齐前端 dayKey(start_time)）
+    - photo_count：事件经 event_items 关联的 distinct 照片数（content_type=photo，不截断）
+    - unread_count：messages status=unread 条数（标量子查询并入本查询）
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, Event, EventItem, Message
+
+    unread_sq = (
+        select(func.count())
+        .select_from(Message)
+        .where(Message.user_id == user.id, Message.status == "unread")
+    ).scalar_subquery()
+    row = db.execute(
+        select(
+            func.count(func.distinct(Event.id)),
+            func.count(func.distinct(func.date(Event.start_time))),
+            func.count(func.distinct(Content.id)),
+            unread_sq,
+        )
+        .select_from(Event)
+        .outerjoin(EventItem, EventItem.event_id == Event.id)
+        .outerjoin(
+            Content,
+            (Content.id == EventItem.content_id) & (Content.content_type == "photo"),
+        )
+        .where(Event.user_id == user.id, alive(Event))
+    ).one()
+    return ApiResponse(
+        data={
+            "event_count": int(row[0]),
+            "day_count": int(row[1]),
+            "photo_count": int(row[2]),
+            "unread_count": int(row[3]),
+        }
+    )
+
+
+@router.get(
+    "/timeline",
+    response_model=ApiResponse[list[EventOut]] | ApiResponse[Page[EventOut]],
+)
 def timeline(
     level: int | None = None,
+    status: str | None = None,
+    pending: bool | None = None,
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=100,
+        description="每页条数（1-100）。**省略且不带 cursor = 全量**（向后兼容老客户端）",
+    ),
+    cursor: str | None = Query(
+        None,
+        description="分页游标（不透明字符串；取上次响应 data.cursor 原样回传，勿自行拼装）",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """时间轴（F8）：L1 日卡片 + L2 主题事件 + L3 主题流；按 start_time 排序
 
-    2026-08-20：事件聚合服务已接线（services/events.py），返回真实 events 数据；
-    手动操作（merge/split/confirm）仍 501（用户操作优先原则，后续实现）。
+    Wave2-AgentD：L2 待确认区筛选——
+      pending=true → level≥2 且 status=draft 且 confidence<0.7（B3-5 <0.7 进待确认）
+      status=draft / level=2 组合亦可（客户端自行组合）
+    L3 事件附加 lifecycle（活跃 30 天→静默→归档，读取时派生）。
     安全：需登录。
-    """
-    from app.services.events import get_timeline
 
-    events = get_timeline(db, str(user.id), level=level)
+    ## 2026-10-30（P2 B-7）分页：两种响应形态，按「有没有传分页参数」切换
+
+    改造前：无上限全量下发（`services/events/timeline.py:41-45` 无条件
+    `order_by(...).all()`）。事件数上千的用户首屏要等全部事件 + 全部成员照片/语音/封面
+    的批量查询跑完，客户端再全量重建列表——这是 B-7 的根因。
+
+    形态判定（**只有显式传 `limit` 或 `cursor` 才分页**）：
+      · 不带参数 → `data` 仍是**数组**（`EventOut[]`），与改造前逐字节一致；
+        老客户端 / 存量脚本 / `scripts/api_smoke_cases.py` 都按数组解析，无条件改成分页
+        对象会让它们拿到空时间轴（不崩、全空——比崩更难查）。
+      · 带 `limit` 和/或 `cursor` → `data` 是 `Page{items, cursor, has_more}`；只传 cursor
+        不传 limit 时按默认 20 条续页。
+    游标格式非法 → 422 EVENT_007（不静默退回第一页：那会让用户以为翻页生效了）。
+    """
+    from app.services.events import (
+        encode_timeline_cursor,
+        get_event_last_activity,
+        get_timeline,
+        get_timeline_page,
+        l3_lifecycle,
+    )
+
+    paged = limit is not None or cursor is not None
+    has_more = False
+    if paged:
+        try:
+            events, has_more = get_timeline_page(
+                db,
+                str(user.id),
+                level=level,
+                status=status,
+                pending=bool(pending),
+                limit=limit if limit is not None else _TIMELINE_DEFAULT_LIMIT,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            raise ApiError(ERR_EVENT_007, f"游标格式无效：{exc}", http=422) from exc
+    else:
+        events = get_timeline(db, str(user.id), level=level, status=status, pending=bool(pending))
+    event_ids = [e.id for e in events]
     # 审查修复(P1-11)：一次 GROUP BY 批量取计数，消除 N+1（原逐事件 count 查询）
-    counts = _batch_counts(db, [e.id for e in events])
-    return ApiResponse(data=[_to_out(e, counts) for e in events])
+    counts = _batch_counts(db, event_ids)
+    # photo_ids 保留兼容：客户端 photoPathOf 兜底通路（thumbnails/{cid} + downloadFile header）；
+    # 主通路为下方 photos[].thumbnail_url 票据直发（Valet Key）
+    photo_ids = _batch_photo_ids(db, event_ids, str(user.id))
+    # L3 生命周期：批量取最近活动 → 派生状态（读取时计算，MVP 不落库）
+    last_act = get_event_last_activity(db, str(user.id), event_ids)
+    lifecycles = {
+        str(e.id): l3_lifecycle(e.start_time, last_act.get(str(e.id)))
+        for e in events
+        if e.level >= 3
+    }
+    # 图片下发（2026-08-31）：成员照片 + 封面 URL 一次批量组装。
+    # 此前 EventOut 不带任何成员信息 → 客户端冷启动拿不到照片 → 卡片照片条永远空。
+    # 两个批量查询覆盖全部事件，不随事件数线性增长（防 N+1）。
+    uid = str(user.id)
+    photos_by_event = _batch_event_photos(db, event_ids, uid)
+    voices_by_event = _batch_event_voices(db, event_ids, uid)
+    cover_urls = _batch_cover_urls(db, [e.cover_content_id for e in events], uid)
+    open_ids = _batch_open_content_ids(db, event_ids, uid)
+    items = [
+        _to_out(
+            e,
+            counts,
+            lifecycles.get(str(e.id)),
+            photos=photos_by_event.get(str(e.id)),
+            voice=voices_by_event.get(str(e.id)),
+            cover_url=cover_urls.get(str(e.cover_content_id)) if e.cover_content_id else None,
+            photo_ids=photo_ids.get(str(e.id)),
+            open_content_id=open_ids.get(str(e.id)),
+        )
+        for e in events
+    ]
+    if not paged:
+        # 全量形态：`data` 直接是数组（与改造前一致）
+        return ApiResponse(data=items)
+    # 分页形态：游标取**本页最后一条**（下一请求据此续页）；has_more 由服务层多取一条判定
+    next_cursor = encode_timeline_cursor(events[-1]) if (has_more and events) else None
+    return ApiResponse(data=Page(items=items, cursor=next_cursor, has_more=has_more))
+
+
+def _attach_thumbnail_urls(db: Session, items: list[dict], user_id: str) -> None:
+    """就地给成员明细补 thumbnail_url（一次 IN 查询）
+
+    拆分选片 UI 要能看到缩略图才能勾选，此前该端点无任何图片字段。
+    只给照片成员生成（文字/语音无 thumbnail_key → content_urls 返回 None）。
+    """
+    from app.db.models import Content
+    from app.services.external.media_url import content_urls
+
+    ids = [i.get("content_id") for i in items if i.get("content_id")]
+    if not ids:
+        return
+    rows = db.execute(
+        select(Content.id, Content.thumbnail_key).where(
+            Content.id.in_(ids),
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+    ).all()
+    urls: dict[str, str] = {}
+    for r in rows:
+        _orig, thumb = content_urls(None, r.thumbnail_key, user_id)
+        if thumb:
+            urls[str(r.id)] = thumb
+    for item in items:
+        item["thumbnail_url"] = urls.get(item.get("content_id"))
+
+
+def _batch_open_content_ids(db: Session, event_ids: list, user_id: str) -> dict[str, str]:
+    """每个事件取**一条**可用于跳转详情的成员内容 id（防 N+1）。
+
+    2026-10-31 走查缺陷：L1 日卡是聚合事件，`cover_content_id` 常为 NULL
+    （封面只在照片事件或用户手动换封面时才有），客户端 `openDetail` 拿不到 id
+    就弹「这条记忆暂无可查看的内容」并 return ⇒ **时间轴卡片点了没反应**，
+    详情页 7 条走查项全被挡死。
+    这里给一个与封面无关的跳转锚点：取该事件最新的成员内容。
+
+    排序用 `Content.created_at`（内容入库时间，稳定且一定有值），
+    不依赖 EventItem 的时间列。
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rn = (
+        func.row_number()
+        .over(partition_by=EventItem.event_id, order_by=Content.created_at.desc())
+        .label("rn")
+    )
+    sub = (
+        select(EventItem.event_id, EventItem.content_id, rn)
+        .join(Content, Content.id == EventItem.content_id)
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+        .subquery()
+    )
+    rows = db.execute(
+        select(sub.c.event_id, sub.c.content_id).where(sub.c.rn == 1)
+    ).all()
+    return {str(r[0]): str(r[1]) for r in rows}
+
+
+def _batch_event_photos(db: Session, event_ids: list, user_id: str) -> dict[str, list]:
+    """批量取事件成员照片（一次窗口函数查询，防 N+1）
+
+    每事件最多 PHOTOS_PER_EVENT 张（ROW_NUMBER 分区截断，不把 500 张全捞出来）。
+    排序 taken_at 升序（PG 的 ASC 默认 NULLS LAST），与卡片照片条展示顺序一致。
+    归属：Content.user_id 限定当前用户（防跨用户读）。
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rn = func.row_number().over(
+        partition_by=EventItem.event_id,
+        order_by=[Content.taken_at.asc(), Content.created_at.asc()],
+    ).label("rn")
+    subq = (
+        select(
+            EventItem.event_id.label("event_id"),
+            Content.id.label("content_id"),
+            Content.cos_key,
+            Content.thumbnail_key,
+            Content.taken_at,
+            Content.place,
+            Content.text,
+            rn,
+        )
+        .join(Content, Content.id == EventItem.content_id)
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.content_type == "photo",
+            Content.deleted_at.is_(None),
+            Content.user_id == user_id,
+        )
+        .subquery()
+    )
+    rows = db.execute(select(subq).where(subq.c.rn <= PHOTOS_PER_EVENT)).all()
+    from app.services.external.media_url import content_urls
+
+    out: dict[str, list] = {}
+    for r in rows:
+        original_url, thumbnail_url = content_urls(r.cos_key, r.thumbnail_key, user_id)
+        out.setdefault(str(r.event_id), []).append(
+            EventPhotoOut(
+                content_id=str(r.content_id),
+                thumbnail_url=thumbnail_url,
+                original_url=original_url,
+                taken_at=r.taken_at,
+                place=r.place,
+                title=r.text,
+            )
+        )
+    return out
+
+
+def _fmt_voice_duration(seconds: int | None) -> str | None:
+    """A6：语音时长（秒）→ 客户端契约格式 "m:ss"（如 5→"0:05"、65→"1:05"）
+
+    None / 负值 / 非 int → None（客户端显示空；bool 排除：True 不是合法时长）。
+    """
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds < 0:
+        return None
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def _batch_event_voices(db: Session, event_ids: list, user_id: str) -> dict[str, VoiceInfo | None]:
+    """批量取事件成员语音（W0-2 · 2026-09-02：timeline 语音卡就地播放）
+
+    每事件最多 VOICES_PER_EVENT 条（ROW_NUMBER 分区截断）；归属同 _batch_event_photos。
+    只下发 content_id + title（语音转写首句），不带 url——播放走鉴权端点
+    GET /api/v1/media/audio/{content_id}（token 只能走 header，客户端先落临时文件）。
+    A6（2026-09-09 缺口收口）：duration 下发格式化字符串 "m:ss"（客户端契约已定，
+    卡片渲染直接可用）；内容 duration 列为空时下发 None（客户端显示空）。
+    """
+    from sqlalchemy import func
+
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rn = func.row_number().over(
+        partition_by=EventItem.event_id,
+        order_by=[Content.taken_at.asc(), Content.created_at.asc()],
+    ).label("rn")
+    subq = (
+        select(
+            EventItem.event_id.label("event_id"),
+            Content.id.label("content_id"),
+            Content.text,
+            Content.duration,
+            rn,
+        )
+        .join(Content, Content.id == EventItem.content_id)
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.content_type == "voice",
+            Content.deleted_at.is_(None),
+            Content.user_id == user_id,
+        )
+        .subquery()
+    )
+    rows = db.execute(select(subq).where(subq.c.rn <= VOICES_PER_EVENT)).all()
+    out: dict[str, VoiceInfo | None] = {}
+    for r in rows:
+        title = (r.text or "").strip()
+        if title == "":
+            title = "语音记忆"
+        out[str(r.event_id)] = VoiceInfo(
+            content_id=str(r.content_id),
+            title=title[:40],
+            duration=_fmt_voice_duration(r.duration),
+        )
+    return out
+
+
+def _batch_cover_urls(db: Session, cover_ids: list, user_id: str) -> dict[str, str]:
+    """批量取封面缩略图 URL（一次 IN 查询；封面可能不在成员照片的前 N 张内）
+
+    Returns:
+        {content_id: thumbnail_url}
+    """
+    from app.db.models import Content
+
+    ids = [c for c in cover_ids if c]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(Content.id, Content.cos_key, Content.thumbnail_key).where(
+            Content.id.in_(ids),
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+    ).all()
+    from app.services.external.media_url import content_urls
+
+    out: dict[str, str] = {}
+    for r in rows:
+        _orig, thumb = content_urls(r.cos_key, r.thumbnail_key, user_id)
+        if thumb:
+            out[str(r.id)] = thumb
+    return out
 
 
 def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
@@ -60,8 +428,55 @@ def _batch_counts(db: Session, event_ids: list[str]) -> dict[str, dict]:
     return {str(r.event_id): {"content_count": int(r.total), "photo_count": int(r.photos)} for r in rows}
 
 
-def _to_out(e, counts: dict | None = None) -> EventOut:
-    """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1）"""
+def _batch_photo_ids(
+    db: Session, event_ids: list[str], user_id: str, per_event: int = 4
+) -> dict[str, list[str]]:
+    """批量取每事件成员照片 content_id（taken_at 序，截前 per_event 张；一次查询防 N+1）
+
+    兼容通路：客户端凭 cid 走 /api/v1/thumbnails/{cid}（downloadFile+header）；
+    主通路为 photos[]/thumbnail_url 票据直发（Valet Key），两路并存互为兜底。
+    """
+    from app.db.models import Content, EventItem
+
+    if not event_ids:
+        return {}
+    rows = db.execute(
+        select(EventItem.event_id, Content.id)
+        .join(Content, Content.id == EventItem.content_id)
+        # P2-5（2026-09-10 深扫）：与 _batch_event_photos 正例对齐——不依赖
+        # 「event_items 只含本人内容」上游不变量，DB 回查层自带归属/软删过滤（纵深）
+        .where(
+            EventItem.event_id.in_(event_ids),
+            Content.content_type == "photo",
+            Content.user_id == user_id,
+            Content.deleted_at.is_(None),
+        )
+        .order_by(Content.taken_at)
+    ).all()
+    out: dict[str, list[str]] = {}
+    for eid, cid in rows:
+        lst = out.setdefault(str(eid), [])
+        if len(lst) < per_event:
+            lst.append(str(cid))
+    return out
+
+
+def _to_out(
+    e,
+    counts: dict | None = None,
+    lifecycle: dict | None = None,
+    photos: list | None = None,
+    voice: VoiceInfo | None = None,
+    cover_url: str | None = None,
+    photo_ids: list[str] | None = None,
+    open_content_id: str | None = None,
+) -> EventOut:
+    """Event ORM → EventOut（计数预取，审查 P1-11 修复 N+1；L3 附生命周期）
+
+    photos/voice/cover_url 由 timeline 批量传入；merge/split/confirm/cover 等单事件
+    操作不传（返回空），客户端需要照片时重新拉 timeline 即可。
+    photo_ids 保留兼容（客户端兜底通路）。
+    """
     counts = counts or {}
     c = counts.get(str(e.id), {"content_count": 0, "photo_count": 0})
     return EventOut(
@@ -80,7 +495,64 @@ def _to_out(e, counts: dict | None = None) -> EventOut:
         generated_by=e.generated_by,
         content_count=c["content_count"],
         photo_count=c["photo_count"],
+        photo_ids=photo_ids or [],
+        lifecycle=lifecycle,
+        cover_url=cover_url,
+        photos=photos or [],
+        voice=voice,
+        # 跳转用（2026-10-31）：无封面时回退首条成员内容，客户端才能进详情
+        open_content_id=open_content_id
+        or (str(e.cover_content_id) if e.cover_content_id else None),
     )
+
+
+@router.post("/sync", response_model=ApiResponse[EventSyncResult])
+def sync_events(
+    req: EventSyncRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """端侧 L1 事件批量提交（S-SY-1 · B3-6 端侧 L0/L1 真值）
+
+    client_event_id 幂等（网络重试只落一次）；照片归属校验（越权拒绝）；
+    落库后云侧只跑 L2/L3 候选（caption/CI 打标保留 _process_photo）。
+    变更写入 offline_queue → 其他端增量拉取可见（M4 端间同步一致）。
+    """
+    from app.services.events import sync_client_events_safe
+
+    result = sync_client_events_safe(
+        db,
+        str(user.id),
+        req.device_id,
+        [e.model_dump() for e in req.events],
+    )
+    return ApiResponse(data=EventSyncResult(**result))
+
+
+@router.get("/{event_id}/items", response_model=ApiResponse[list[EventItemOut]])
+def event_items(
+    event_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """事件成员明细（2026-08-25 · split UI 前置）
+
+    返回事件内内容列表（照片/文字/语音，title 可直接展示），
+    客户端据此做选片拆分；归属校验（他人事件 404）。
+    """
+    from app.services.events import get_event_items as _items
+
+    try:
+        event_id = uuid4_str(event_id)
+        items = _items(db, str(user.id), event_id)
+        _attach_thumbnail_urls(db, items, str(user.id))
+    except NotFoundError as exc:
+        raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
+    except ValidationError as exc:
+        raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
+    return ApiResponse(data=items)
 
 
 @router.post("/merge", response_model=ApiResponse[EventOut])
@@ -92,9 +564,15 @@ def merge_events(req: EventMergeRequest, db: Session = Depends(get_db), user: Us
     from app.services.events import merge_events as _merge
 
     try:
-        ev = _merge(db, str(user.id), req.target_event_id, req.source_event_ids)
-    except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        target_id = uuid4_str(req.target_event_id)
+        source_ids = [uuid4_str(s) for s in req.source_event_ids]
+        ev = _merge(db, str(user.id), target_id, source_ids)
+    except NotFoundError as exc:
+        raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
+    except ValidationError as exc:
+        raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
 
 
@@ -104,9 +582,14 @@ def split_event(req: EventSplitRequest, db: Session = Depends(get_db), user: Use
     from app.services.events import split_event as _split
 
     try:
-        ev = _split(db, str(user.id), req.event_id, req.content_ids)
-    except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        event_id = uuid4_str(req.event_id)
+        ev = _split(db, str(user.id), event_id, req.content_ids)
+    except NotFoundError as exc:
+        raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
+    except ValidationError as exc:
+        raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
 
 
@@ -116,7 +599,34 @@ def confirm_event(req: EventConfirmRequest, db: Session = Depends(get_db), user:
     from app.services.events import confirm_event as _confirm
 
     try:
-        ev = _confirm(db, str(user.id), req.event_id, title=req.title)
-    except ValueError as exc:
-        raise ApiError("EVENT_004", str(exc), http=404) from exc
+        event_id = uuid4_str(req.event_id)
+        ev = _confirm(db, str(user.id), event_id, title=req.title)
+    except NotFoundError as exc:
+        raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
+    except ValidationError as exc:
+        raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
+    return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))
+
+
+@router.put("/{event_id}/cover", response_model=ApiResponse[EventOut])
+def set_cover(
+    event_id: str,
+    req: EventCoverRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """用户手动换封面（B3-4：人脸优先+质量分自动选，用户可覆盖；cover 必须是事件成员）"""
+    from app.services.events import set_event_cover as _set_cover
+
+    try:
+        event_id = uuid4_str(event_id)
+        ev = _set_cover(db, str(user.id), event_id, req.cover_content_id)
+    except NotFoundError as exc:
+        raise ApiError(ERR_EVENT_004, exc.message, http=404) from exc
+    except ConflictError as exc:
+        raise ApiError(ERR_EVENT_006, exc.message, http=409) from exc
+    except ValidationError as exc:
+        raise ApiError(ERR_EVENT_007, exc.message, http=422) from exc
     return ApiResponse(data=_to_out(ev, _batch_counts(db, [ev.id])))

@@ -1,0 +1,670 @@
+{
+ "id": "60:1",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9647058844566345,
+    "g": 0.9450980424880981,
+    "b": 0.9058823585510254
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 844,
+ "name": "F1a 语音·待录音",
+ "x": 9580,
+ "y": 120,
+ "clipsContent": true,
+ "children": [
+  {
+   "id": "60:2",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.9647058844566345,
+      "g": 0.9450980424880981,
+      "b": 0.9058823585510254
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 390,
+   "height": 844,
+   "name": "表单Sheet",
+   "x": 0,
+   "y": 0,
+   "clipsContent": true,
+   "children": [
+    {
+     "id": "60:6",
+     "type": "TEXT",
+     "fontSize": 17,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Semi Bold"
+     },
+     "characters": "说一段",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 24,
+     "name": "标题",
+     "x": 0,
+     "y": 60,
+     "textAlignHorizontal": "CENTER",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:9",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 140,
+     "height": 5,
+     "name": "Home指示条",
+     "x": 125,
+     "y": 828,
+     "clipsContent": true,
+     "cornerRadius": 3,
+     "children": []
+    },
+    {
+     "id": "60:40",
+     "type": "TEXT",
+     "fontSize": 44,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Bold"
+     },
+     "characters": "00:00",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7019608020782471,
+        "g": 0.6509804129600525,
+        "b": 0.5882353186607361
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 52,
+     "name": "计时",
+     "x": 0,
+     "y": 610,
+     "textAlignHorizontal": "CENTER",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:41",
+     "type": "TEXT",
+     "fontSize": 13,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Regular"
+     },
+     "characters": "轻触中央圆点 · 开始录音",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7019608020782471,
+        "g": 0.6509804129600525,
+        "b": 0.5882353186607361
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 390,
+     "height": 18,
+     "name": "提示",
+     "x": 0,
+     "y": 686,
+     "textAlignHorizontal": "CENTER",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:67",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 24,
+     "height": 24,
+     "name": "返回",
+     "x": 20,
+     "y": 60,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:68",
+       "type": "VECTOR",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 16,
+       "height": 16,
+       "name": "Vector",
+       "x": 4,
+       "y": 4
+      }
+     ]
+    },
+    {
+     "id": "60:69",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 24,
+     "height": 24,
+     "name": "关闭",
+     "x": 346,
+     "y": 60,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:70",
+       "type": "VECTOR",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 14,
+       "height": 14,
+       "name": "Vector",
+       "x": 5,
+       "y": 5
+      }
+     ]
+    },
+    {
+     "id": "60:71",
+     "type": "TEXT",
+     "fontSize": 15,
+     "lineHeight": {
+      "unit": "AUTO"
+     },
+     "fontName": {
+      "family": "Sarasa Gothic SC",
+      "style": "Medium"
+     },
+     "characters": "9:41",
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 70,
+     "height": 20,
+     "name": "状态栏时间",
+     "x": 24,
+     "y": 16,
+     "textAlignHorizontal": "LEFT",
+     "textAlignVertical": "TOP"
+    },
+    {
+     "id": "60:72",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.22699999809265137,
+        "g": 0.18000000715255737,
+        "b": 0.14499999582767487
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 24,
+     "height": 12,
+     "name": "电池",
+     "x": 342,
+     "y": 20,
+     "clipsContent": true,
+     "cornerRadius": 4,
+     "children": []
+    },
+    {
+     "id": "60:117",
+     "type": "FRAME",
+     "layout": "none",
+     "gap": 0,
+     "width": 300,
+     "height": 300,
+     "name": "轮盘·静止",
+     "x": 45,
+     "y": 270,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "60:118",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.6000000238418579,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.18000000715255737
+         },
+         "offset": {
+          "x": 0,
+          "y": 4
+         },
+         "radius": 12,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 60,
+       "height": 60,
+       "name": "Ellipse",
+       "x": 120,
+       "y": 120
+      },
+      {
+       "id": "60:119",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 12,
+       "height": 12,
+       "name": "Ellipse",
+       "x": 273.70001220703125,
+       "y": 191.1999969482422
+      },
+      {
+       "id": "60:120",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.800000011920929,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 9,
+       "height": 9,
+       "name": "Ellipse",
+       "x": 170.3000030517578,
+       "y": 238.1999969482422
+      },
+      {
+       "id": "60:121",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.949999988079071,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 14,
+       "height": 14,
+       "name": "Ellipse",
+       "x": 62,
+       "y": 239.5
+      },
+      {
+       "id": "60:122",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.699999988079071,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 7,
+       "height": 7,
+       "name": "Ellipse",
+       "x": 64.80000305175781,
+       "y": 139.39999389648438
+      },
+      {
+       "id": "60:123",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.8999999761581421,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 11,
+       "height": 11,
+       "name": "Ellipse",
+       "x": 78.5,
+       "y": 30.200000762939453
+      },
+      {
+       "id": "60:124",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.75,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 8,
+       "height": 8,
+       "name": "Ellipse",
+       "x": 192.5,
+       "y": 46.29999923706055
+      },
+      {
+       "id": "60:125",
+       "type": "ELLIPSE",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.8500000238418579,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "DROP_SHADOW",
+         "color": {
+          "r": 0.22699999809265137,
+          "g": 0.18000000715255737,
+          "b": 0.14499999582767487,
+          "a": 0.1599999964237213
+         },
+         "offset": {
+          "x": 0,
+          "y": 2
+         },
+         "radius": 5,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "showShadowBehindNode": false,
+         "boundVariables": {}
+        }
+       ],
+       "width": 10,
+       "height": 10,
+       "name": "Ellipse",
+       "x": 229.60000610351562,
+       "y": 114.19999694824219
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

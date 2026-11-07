@@ -1,0 +1,1536 @@
+{
+ "id": "64:57",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9647058844566345,
+    "g": 0.9450980424880981,
+    "b": 0.9058823585510254
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 844,
+ "name": "F5a 语音播放态",
+ "x": 18980,
+ "y": 120,
+ "clipsContent": true,
+ "children": [
+  {
+   "id": "64:58",
+   "type": "FRAME",
+   "layout": "none",
+   "gap": 0,
+   "width": 31,
+   "height": 18,
+   "name": "状态栏时间占位",
+   "x": 24,
+   "y": 16,
+   "clipsContent": true,
+   "children": []
+  },
+  {
+   "id": "64:59",
+   "type": "TEXT",
+   "fontSize": 13,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Medium"
+   },
+   "characters": "语音卡 · 播放状态规范（index / search / detail 三处统一）",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.5411764979362488,
+      "g": 0.47843137383461,
+      "b": 0.4156862795352936
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 352,
+   "height": 16,
+   "name": "帧标题",
+   "x": 20,
+   "y": 70,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "64:60",
+   "type": "TEXT",
+   "fontSize": 11,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Regular"
+   },
+   "characters": "默认态",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.7019608020782471,
+      "g": 0.6509804129600525,
+      "b": 0.5882353186607361
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 33,
+   "height": 13,
+   "name": "标签-默认态",
+   "x": 20,
+   "y": 112,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "64:61",
+   "type": "FRAME",
+   "layout": "vertical",
+   "gap": 0,
+   "padding": {
+    "left": 8,
+    "right": 8,
+    "top": 8,
+    "bottom": 8
+   },
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "effects": [
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.05999999865889549
+     },
+     "offset": {
+      "x": 0,
+      "y": 4
+     },
+     "radius": 16,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    },
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.03999999910593033
+     },
+     "offset": {
+      "x": 0,
+      "y": 1
+     },
+     "radius": 3,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    }
+   ],
+   "width": 350,
+   "height": "hug_contents",
+   "name": "语音卡",
+   "x": 20,
+   "y": 136,
+   "clipsContent": true,
+   "cornerRadius": 20,
+   "children": [
+    {
+     "id": "64:62",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 12,
+     "padding": {
+      "left": 14,
+      "right": 14,
+      "top": 14,
+      "bottom": 14
+     },
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7689999938011169,
+        "g": 0.5690000057220459,
+        "b": 0.23499999940395355
+       },
+       "opacity": 0.14000000059604645,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": "fill_container",
+     "height": 64,
+     "name": "语音媒体",
+     "x": 8,
+     "y": 8,
+     "clipsContent": true,
+     "cornerRadius": 12,
+     "children": [
+      {
+       "id": "64:64",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 0,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.5,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "strokes": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.800000011920929,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "BACKGROUND_BLUR",
+         "radius": 8,
+         "visible": true,
+         "boundVariables": {}
+        },
+        {
+         "type": "INNER_SHADOW",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.4000000059604645
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 2,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "boundVariables": {}
+        }
+       ],
+       "width": 32,
+       "height": 32,
+       "name": "玻璃播放钮",
+       "x": 14,
+       "y": 16,
+       "clipsContent": true,
+       "cornerRadius": 16,
+       "children": [
+        {
+         "id": "64:68",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 12,
+         "height": 12,
+         "name": "播放图标",
+         "x": 10,
+         "y": 10,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "64:70",
+           "type": "VECTOR",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.6901960968971252,
+              "g": 0.3529411852359772,
+              "b": 0.22745098173618317
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 5.5,
+           "height": 6.5,
+           "name": "Vector",
+           "x": 4,
+           "y": 2.75
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "64:65",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "width": 200,
+       "height": 26,
+       "name": "波形",
+       "x": 58,
+       "y": 19,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "64:69",
+         "type": "VECTOR",
+         "strokes": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 192,
+         "height": 20,
+         "name": "Vector",
+         "x": 4,
+         "y": 3
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "64:63",
+     "type": "FRAME",
+     "layout": "vertical",
+     "gap": 3,
+     "padding": {
+      "left": 8,
+      "right": 8,
+      "top": 8,
+      "bottom": 8
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "语音文字区",
+     "x": 8,
+     "y": 72,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "64:66",
+       "type": "TEXT",
+       "fontSize": 17,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Semi Bold"
+       },
+       "characters": "湖边的晨雾，07:42",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "语音卡标题",
+       "x": 8,
+       "y": 8,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "64:67",
+       "type": "TEXT",
+       "fontSize": 11,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "8月28日 07:42 · 语音 2分05秒 · 已转写",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.5411764979362488,
+          "g": 0.47843137383461,
+          "b": 0.4156862795352936
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "语音卡元信息",
+       "x": 8,
+       "y": 32,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "64:71",
+   "type": "TEXT",
+   "fontSize": 11,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Regular"
+   },
+   "characters": "播放中",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.7019608020782471,
+      "g": 0.6509804129600525,
+      "b": 0.5882353186607361
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 33,
+   "height": 13,
+   "name": "标签-播放中",
+   "x": 20,
+   "y": 400,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "64:72",
+   "type": "FRAME",
+   "layout": "horizontal",
+   "gap": 12,
+   "padding": {
+    "left": 14,
+    "right": 14,
+    "top": 14,
+    "bottom": 14
+   },
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "effects": [
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.05999999865889549
+     },
+     "offset": {
+      "x": 0,
+      "y": 4
+     },
+     "radius": 16,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    },
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.03999999910593033
+     },
+     "offset": {
+      "x": 0,
+      "y": 1
+     },
+     "radius": 3,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    }
+   ],
+   "width": 350,
+   "height": "hug_contents",
+   "name": "语音卡-播放中",
+   "x": 20,
+   "y": 424,
+   "clipsContent": true,
+   "cornerRadius": 20,
+   "children": [
+    {
+     "id": "64:73",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 0,
+     "padding": {
+      "left": 0,
+      "right": 0,
+      "top": 0,
+      "bottom": 0
+     },
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7689999938011169,
+        "g": 0.5690000057220459,
+        "b": 0.23499999940395355
+       },
+       "opacity": 1,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": 40,
+     "height": 40,
+     "name": "暂停钮",
+     "x": 14,
+     "y": 14,
+     "clipsContent": true,
+     "cornerRadius": 20,
+     "children": [
+      {
+       "id": "64:74",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 4,
+       "height": 14,
+       "name": "暂停条-左",
+       "x": 16,
+       "y": 13,
+       "clipsContent": true,
+       "cornerRadius": 2,
+       "children": []
+      },
+      {
+       "id": "64:75",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": 4,
+       "height": 14,
+       "name": "暂停条-右",
+       "x": 20,
+       "y": 13,
+       "clipsContent": true,
+       "cornerRadius": 2,
+       "children": []
+      }
+     ]
+    },
+    {
+     "id": "64:76",
+     "type": "FRAME",
+     "layout": "vertical",
+     "gap": 8,
+     "padding": {
+      "left": 0,
+      "right": 0,
+      "top": 0,
+      "bottom": 0
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "播放信息列",
+     "x": 66,
+     "y": 14,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "64:77",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 3,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "width": "fill_container",
+       "height": 28,
+       "name": "波形-已播高亮",
+       "x": 0,
+       "y": 0,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "64:78",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 12,
+         "name": "w1",
+         "x": 0,
+         "y": 16,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:79",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 20,
+         "name": "w2",
+         "x": 7,
+         "y": 8,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:80",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 16,
+         "name": "w3",
+         "x": 14,
+         "y": 12,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:81",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 26,
+         "name": "w4",
+         "x": 21,
+         "y": 2,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:82",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 18,
+         "name": "w5",
+         "x": 28,
+         "y": 10,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:83",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 24,
+         "name": "w6",
+         "x": 35,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:84",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 12,
+         "name": "w7",
+         "x": 42,
+         "y": 16,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:85",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 22,
+         "name": "w8",
+         "x": 49,
+         "y": 6,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:86",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 28,
+         "name": "w9",
+         "x": 56,
+         "y": 0,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:87",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 16,
+         "name": "w10",
+         "x": 63,
+         "y": 12,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:88",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 20,
+         "name": "w11",
+         "x": 70,
+         "y": 8,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:89",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 14,
+         "name": "w12",
+         "x": 77,
+         "y": 14,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:90",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 24,
+         "name": "w13",
+         "x": 84,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:91",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 18,
+         "name": "w14",
+         "x": 91,
+         "y": 10,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:92",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 26,
+         "name": "w15",
+         "x": 98,
+         "y": 2,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:93",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 12,
+         "name": "w16",
+         "x": 105,
+         "y": 16,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:94",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 22,
+         "name": "w17",
+         "x": 112,
+         "y": 6,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:95",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 16,
+         "name": "w18",
+         "x": 119,
+         "y": 12,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:96",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 24,
+         "name": "w19",
+         "x": 126,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:97",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 14,
+         "name": "w20",
+         "x": 133,
+         "y": 14,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:98",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 20,
+         "name": "w21",
+         "x": 140,
+         "y": 8,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:99",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 26,
+         "name": "w22",
+         "x": 147,
+         "y": 2,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:100",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 16,
+         "name": "w23",
+         "x": 154,
+         "y": 12,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        },
+        {
+         "id": "64:101",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.8980392217636108,
+            "g": 0.8627451062202454,
+            "b": 0.7843137383460999
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 4,
+         "height": 18,
+         "name": "w24",
+         "x": 161,
+         "y": 10,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": []
+        }
+       ]
+      },
+      {
+       "id": "64:102",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 8,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "width": "fill_container",
+       "height": "hug_contents",
+       "name": "进度行",
+       "x": 0,
+       "y": 36,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "64:103",
+         "type": "TEXT",
+         "fontSize": 10,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Medium"
+         },
+         "characters": "0:12",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.22745098173618317,
+            "g": 0.18039216101169586,
+            "b": 0.14509804546833038
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "hug_contents",
+         "height": "hug_contents",
+         "name": "当前时间",
+         "x": 0,
+         "y": 0,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        },
+        {
+         "id": "64:104",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.929411768913269,
+            "g": 0.8980392217636108,
+            "b": 0.8352941274642944
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "fill_container",
+         "height": 4,
+         "name": "进度轨道",
+         "x": 28,
+         "y": 4,
+         "clipsContent": true,
+         "cornerRadius": 2,
+         "children": [
+          {
+           "id": "64:105",
+           "type": "FRAME",
+           "layout": "none",
+           "gap": 0,
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.7686274647712708,
+              "g": 0.5686274766921997,
+              "b": 0.23529411852359772
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 130,
+           "height": 4,
+           "name": "进度填充",
+           "x": 0,
+           "y": 0,
+           "clipsContent": true,
+           "cornerRadius": 2,
+           "children": []
+          }
+         ]
+        },
+        {
+         "id": "64:106",
+         "type": "TEXT",
+         "fontSize": 10,
+         "lineHeight": {
+          "unit": "AUTO"
+         },
+         "fontName": {
+          "family": "Sarasa Gothic SC",
+          "style": "Regular"
+         },
+         "characters": "0:32",
+         "fills": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7019608020782471,
+            "g": 0.6509804129600525,
+            "b": 0.5882353186607361
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": "hug_contents",
+         "height": "hug_contents",
+         "name": "总时长",
+         "x": 248,
+         "y": 0,
+         "textAlignHorizontal": "LEFT",
+         "textAlignVertical": "TOP"
+        }
+       ]
+      },
+      {
+       "id": "64:107",
+       "type": "TEXT",
+       "fontSize": 12,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Medium"
+       },
+       "characters": "正在播放 · 周五聚餐",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.5411764979362488,
+          "g": 0.47843137383461,
+          "b": 0.4156862795352936
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "正在播放标题",
+       "x": 0,
+       "y": 56,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "64:108",
+   "type": "TEXT",
+   "fontSize": 11,
+   "lineHeight": {
+    "value": 18,
+    "unit": "PIXELS"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Regular"
+   },
+   "characters": "点播放钮开始 → 钮变暂停、波形已播段转金色并跳动、显示进度行；再点暂停回到当前进度",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.5411764979362488,
+      "g": 0.47843137383461,
+      "b": 0.4156862795352936
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 350,
+   "height": 36,
+   "name": "交互注释",
+   "x": 20,
+   "y": 760,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  }
+ ]
+}

@@ -11,32 +11,16 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from app.db.models import Content, EchoHistory, User
-from app.db.session import SessionLocal
+from app.db.models import Content, EchoHistory, ProfileSensitive
 from app.services import echo as echo_svc
 from app.services.echo import dismiss_echo, get_today_echo
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"echo-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(EchoHistory).where(EchoHistory.user_id == user.id))
-    db.execute(sa_delete(Content).where(Content.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("profile_crypto_keys")]
 
 
 def _last_year_content(db, user_id: str, text: str = "去年的今天", sensitive: str = "正常") -> Content:
@@ -68,6 +52,45 @@ def test_echo_hits_last_year(db_user):
     assert result is not None
     assert result["content_id"] == c.id
     assert result["fingerprint"]
+
+
+def test_echo_message_created_with_payload(db_user):
+    """R9 批次3（R9-1）：回响首次展示同步建发 in_app echo 消息，payload=完整快照
+    （消息中心点击直接回放快照，不调 /echo/today、不占名额——拍板 A-1）"""
+    from app.db.models import Message
+
+    db, user = db_user
+    c = _last_year_content(db, user.id, "消息中心快照测试")
+    result = get_today_echo(db, user.id)
+    assert result is not None
+    msg = db.execute(
+        select(Message).where(
+            Message.user_id == user.id,
+            Message.msg_type == "echo",
+            Message.channel == "in_app",
+        )
+    ).scalars().all()
+    assert len(msg) == 1, "首次展示应建发恰好 1 条 echo 消息"
+    payload = msg[0].payload or {}
+    assert payload.get("content_id") == c.id
+    assert payload.get("text") == "消息中心快照测试"
+    assert payload.get("fingerprint") == result["fingerprint"], "payload 快照与回响返回一致"
+
+
+def test_echo_message_not_duplicated(db_user):
+    """R9 批次3：同日第二次调用返回 None（名额耗尽）→ 不重复建发消息"""
+    from app.db.models import Message
+
+    db, user = db_user
+    _last_year_content(db, user.id, "去重测试")
+    assert get_today_echo(db, user.id) is not None
+    assert get_today_echo(db, user.id) is None
+    n = db.execute(
+        select(func.count()).select_from(Message).where(
+            Message.user_id == user.id, Message.msg_type == "echo"
+        )
+    ).scalar()
+    assert n == 1, f"同日第二次不应新建消息（实际 {n} 条）"
 
 
 def test_echo_daily_limit(db_user):
@@ -141,7 +164,7 @@ def test_echo_local_day_limit_boundary(db_user, monkeypatch):
             user_id=user.id,
             event_id=None,
             action="respond",
-            shown_at=datetime(2026, 1, 1, 16, 10, tzinfo=timezone.utc),
+            shown_at=datetime(2026, 1, 1, 16, 10, tzinfo=UTC),
             shown_date="2026-01-02",
         )
     )
@@ -173,6 +196,153 @@ def test_echo_llm_check_blocks_unmarked_sensitive(db_user):
     _last_year_content(db, user.id, "支持法轮功的言论", sensitive="正常")
     result = get_today_echo(db, user.id)
     assert result is None
+
+
+def _profile_row(db, user_id: str, topic: str, disposition: str) -> ProfileSensitive:
+    row = ProfileSensitive(user_id=user_id, topic=topic, disposition=disposition)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_echo_skips_profile_forbid(db_user):
+    """画像 L1 校验（B5b FIX-4）：profile_sensitive forbid 命中 → 跳过不重提"""
+    db, user = db_user
+    _profile_row(db, user.id, "前女友", "forbid")
+    _last_year_content(db, user.id, "那天在前女友楼下等她")
+    assert get_today_echo(db, user.id) is None
+
+
+@pytest.mark.parametrize("disposition", ["caution", "review"])
+def test_echo_skips_profile_caution_review(db_user, disposition):
+    """画像 L1 校验：caution/review 同样跳过不重提（产品口径）"""
+    db, user = db_user
+    _profile_row(db, user.id, "爸爸", disposition)
+    _last_year_content(db, user.id, "爸爸带我去看海")
+    assert get_today_echo(db, user.id) is None
+
+
+def test_echo_profile_allow_passes(db_user):
+    """画像 L1 校验：allow/mention 放行（不阻断回响）"""
+    db, user = db_user
+    _profile_row(db, user.id, "前女友", "allow")
+    c = _last_year_content(db, user.id, "那天在前女友楼下等她")
+    result = get_today_echo(db, user.id)
+    assert result is not None and result["content_id"] == c.id
+
+
+def test_profile_sensitive_crud(db_user):
+    """画像敏感对话式增删查（B1-6）：upsert → 更新 → 查 → 删 → 幂等"""
+    from app.services.echo import (
+        delete_profile_sensitive,
+        list_profile_sensitive,
+        upsert_profile_sensitive,
+    )
+
+    db, user = db_user
+    row = upsert_profile_sensitive(db, user.id, "前女友", "forbid", ["用户原话"], locked=True)
+    assert row.disposition == "forbid" and row.locked is True
+    assert row.legacy_topic is None and row.topic_enc != "前女友" and row.topic_hash
+    row2 = upsert_profile_sensitive(db, user.id, "前女友", "caution")
+    assert row2.id == row.id and row2.disposition == "caution"  # 同话题更新
+    rows = list_profile_sensitive(db, user.id)
+    assert len(rows) == 1 and rows[0].topic == "前女友"
+    assert [r.topic for r in list_profile_sensitive(db, user.id, "forbid")] == []
+    assert [r.topic for r in list_profile_sensitive(db, user.id, "caution")] == ["前女友"]
+    assert delete_profile_sensitive(db, user.id, "前女友") is True
+    assert delete_profile_sensitive(db, user.id, "前女友") is False
+    assert list_profile_sensitive(db, user.id) == []
+
+
+def test_profile_sensitive_normalized_upsert_and_user_isolation(db_user, make_user):
+    from app.services.echo import delete_profile_sensitive, list_profile_sensitive, upsert_profile_sensitive
+
+    db, user = db_user
+    other = make_user(db, "profile-crypto")
+    try:
+        first = upsert_profile_sensitive(db, user.id, "前女友", "forbid")
+        again = upsert_profile_sensitive(db, user.id, " 前女友 ", "caution")
+        assert first.id == again.id
+        assert len(list_profile_sensitive(db, user.id)) == 1
+        separate = upsert_profile_sensitive(db, other.id, "前女友", "forbid")
+        assert separate.id != first.id
+        assert len(list_profile_sensitive(db, other.id)) == 1
+    finally:
+        delete_profile_sensitive(db, other.id, "前女友")
+        db.delete(other)
+        db.commit()
+
+
+def test_profile_sensitive_upsert_race_no_500(db_user):
+    """R2#13 竞态修复：并发 upsert 同 (user_id, topic) 不 500（ON CONFLICT 原子 upsert）"""
+    import threading
+
+    from app.db.session import SessionLocal
+    from app.services.echo import upsert_profile_sensitive
+
+    db, user = db_user
+    results: dict = {}
+
+    def worker(n: int):
+        s = SessionLocal()
+        try:
+            row = upsert_profile_sensitive(
+                s, user.id, "并发话题", "forbid" if n == 0 else "caution"
+            )
+            results[n] = row.disposition
+        except Exception as exc:  # noqa: BLE001 —— 记录逃逸异常（不应发生）
+            results[n] = exc
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(not isinstance(v, Exception) for v in results.values()), results
+    rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user.id)
+    ).scalars().all()
+    assert len(rows) == 1, "并发 upsert 应只剩一行（原子 upsert 合并）"
+
+
+def test_profile_sensitive_api_smoke(db_user):
+    """API 冒烟（B1-6）：POST/DELETE/GET /api/v1/profile/sensitive（隔离 app 挂载 router）"""
+    from app.api import deps
+    from app.api.contents import profile_sensitive_router
+    from app.core.errors import install_error_handlers
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(profile_sensitive_router)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    client = TestClient(app)
+    try:
+        r = client.post(
+            "/api/v1/profile/sensitive",
+            json={"topic": "前女友", "disposition": "forbid", "locked": True},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["topic"] == "前女友"
+        r = client.get("/api/v1/profile/sensitive")
+        assert r.status_code == 200 and len(r.json()["data"]) == 1
+        r = client.get("/api/v1/profile/sensitive", params={"disposition": "allow"})
+        assert r.json()["data"] == []
+        r = client.delete("/api/v1/profile/sensitive", params={"topic": "前女友"})
+        assert r.status_code == 200 and r.json()["data"]["deleted"] is True
+        r = client.delete("/api/v1/profile/sensitive", params={"topic": "前女友"})
+        assert r.status_code == 404
+        r = client.post(
+            "/api/v1/profile/sensitive",
+            json={"topic": "bad", "disposition": "ban"},
+        )
+        assert r.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_echo_api_smoke(db_user):

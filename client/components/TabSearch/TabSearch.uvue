@@ -1,0 +1,1188 @@
+<template>
+	<!-- B10 方案A 金丝雀：自 pages/search/search.uvue 整体搬迁（模板/样式零改动；TabBar/RecordSheet 挂载上收 shell，离页停播按拍板项 2 退役，处置记录见台账 §EE） -->
+<!-- ardot 直转 v2：搜索页（帧 2:386）· 审计化生成 -->
+	<view class="search-root tk-root">
+		<text class="n2_390">搜索</text> <!-- 大标题 -->
+		<view class="n2_391"> <!-- 搜索胶囊 -->
+			<image class="n2_392" src="/static/icons/i2_392.svg" /> <!-- icon: 搜索图标 -->
+			<view class="n2_395"> <!-- 输入区（HEAD 交互接回：静态"湖边|"→受控 input） -->
+				<!-- 2026-10-15（真机反馈「删掉关键词后页面动不了」）：补 `@input`，让「输入清空」
+				     有状态转移（原实现只有 v-model + @confirm，删字到空时 hasSearched/hits 全不动 ✗） -->
+				<!-- 2026-10-23 真机回归：原生 input 的文本色不解析 CSS 变量（连 fallback 也不生效），
+				     占位符因为 inline placeholder-style 使用字面值仍可见；输入值其实存在，但绘制成全白。
+				     这里必须使用 101 已验证的字面色；高度继续由 .n2_396 类负责。 -->
+				<!-- 2026-10-30（P2 C-4）：补 @focus / @blur —— 「输入框聚焦且关键词为空」是历史 chip 行
+				     的唯一显隐条件；没有这两个事件就无从判断聚焦态（原先全仓 input 都只用 v-model/@input）。 -->
+				<input :adjust-position="true" class="n2_396" style="color:#3A2E25;font-size:28.8rpx;" v-model="keyword" placeholder="输入关键词，搜索你的记忆" placeholder-style="color:#B3A696;font-size:28.8rpx" confirm-type="search" @focus="onInputFocus" @blur="onInputBlur" @input="onKeywordInput" @confirm="doSearch" />
+			</view>
+			<!-- 以图搜图入口（AG6 接线 · 2026-09-23）：此前 `searchByImage` 导出**零调用**
+			     （audit_harness 轴 4 首查 CRITICAL 第 1 项）⇒ 后端 `POST /api/v1/search/image`
+			     早已就绪，但用户完全触达不到——"多模态搜索"对用户等于不存在。
+			     复用既有 s-chip 样式类（不新增 CSS，避免样式回归面） -->
+			<view class="s-chip s-chip-ml" @tap="runImageSearch()">
+				<text class="s-chip-text">以图搜</text>
+			</view>
+			<!-- 语音搜入口（跨模态 B 方案 · 2026-11-01）：此前三模态互搜只有"文字/图片"两个入口，
+			     录音只能存成语音内容、**不能当查询**（`searchByAudio` 导出零调用 = 用户触达不到）。
+			     交互同「以图搜」：点一次开始录、再点一次停止并自动检索；录音能力复用
+			     `utils/voice.uts`（权限申请/中断/30min 分段都在既有插件里，不新造轮子）。 -->
+			<view class="s-chip s-chip-ml" @tap="runAudioSearch()">
+				<text class="s-chip-text">{{ recording ? '停止' : '语音搜' }}</text>
+			</view>
+		</view>
+		<view class="n2_397"> <!-- 筛选行（HEAD 交互接回：4 静态 chip→filters v-for + active 态） -->
+			<view v-for="(f, idx) in filters" :key="idx" class="s-chip" :class="{ 's-chip-active': idx === activeFilter, 's-chip-ml': idx > 0 }" @tap="setFilter(idx)">
+				<text class="s-chip-text" :class="{ 's-chip-text-active': idx === activeFilter }">{{ f }}</text>
+			</view>
+		</view>
+		<!-- 2026-10-30（P2 C-2）：降级提示并入结果提示行。
+		     本页是设计稿坐标绝对定位（新增独立黄条会与 .n2-results 的 top 重叠），
+		     故不插新节点，改为在提示行追加后缀 —— 用户可见、零布局风险。 -->
+		<text class="n2_406">{{ resultCountText() }}</text> <!-- 结果提示（动态） -->
+		<!-- 结果区（HEAD 交互接回：静态语音/文字卡→v-for 列表；绝对定位改滚动流） -->
+		<!-- 2026-09-23：显式声明滚动方向（uni-app x 只认 direction；原先依赖默认值，属隐式行为） -->
+		<scroll-view class="n2-results" direction="vertical" :show-scrollbar="false">
+			<!-- 2026-10-30（P2 C-4）搜索历史：本机最近 10 条关键词（仅本地、不上云）。
+			     放在结果区**滚动流的第一位**而不是 .n2_406 与 .n2-results 之间——
+			     本页是设计稿坐标绝对定位（结果区 top=496.2rpx 已钉死），在两者之间插节点会压住结果区；
+			     置于流首既满足「结果区顶部」，又随结果一起滚动、零布局风险。
+			     无历史时 showHistory 为 false ⇒ 整块不渲染、不占位。 -->
+			<view v-if="showHistory" class="s-hist-block">
+				<view class="s-hist-head">
+					<text class="s-hist-title">最近搜索</text>
+					<text class="s-hist-clear" @tap="onClearHistory()">清空</text>
+				</view>
+				<scroll-view class="s-hist-scroll" direction="horizontal" :show-scrollbar="false">
+					<view class="s-hist-row">
+						<view v-for="(k, hi) in historyKeywords" :key="'h' + hi" class="s-chip s-hist-chip" :class="{ 's-chip-ml': hi > 0 }" @tap="onPickHistory(k)">
+							<text class="s-chip-text">{{ k }}</text>
+						</view>
+					</view>
+				</scroll-view>
+			</view>
+			<view v-for="(item, idx) in voiceResults" :key="'v' + item.id" class="n2_588" @tap="openResult(item)">
+				<view class="n2_589"> <!-- 语音媒体 -->
+					<view class="n2_591" @tap.stop="playVoice(item)"> <!-- 玻璃播放钮 -->
+						<!-- W0-2 播放态：播放 SVG ↔ 暂停双竖条（tick 局部更新：读卡字段，非全局函数） -->
+						<view v-if="item.active && item.playing" class="search-pause-icon">
+							<view class="search-pause-bar"></view>
+							<view class="search-pause-bar"></view>
+						</view>
+						<image v-else class="n2_595" src="/static/icons/i2_595.svg" /> <!-- icon: 播放图标 -->
+					</view>
+					<!-- 波形：空闲=画布 SVG（对拍保真）；活动=VoiceWave 已播金/未播米 + 进度行（F5a 规范） -->
+					<VoiceWave v-if="item.active" class="n2_592" :heights="item.waveHeights" :waveform="wf.waveformOf(item.id)" :active="true" :progress="item.progress" />
+					<view v-else class="n2_592">
+						<image class="n2_596" src="/static/icons/i2_596.svg" />
+					</view>
+				</view>
+				<view v-if="item.active" class="svp-row">
+					<text class="svp-time">{{ item.curText }}</text>
+					<view class="svp-track">
+						<view class="svp-track-fill" :style="{ width: (item.progress * 100) + '%' }"></view>
+					</view>
+					<text class="svp-time">{{ item.totalText }}</text>
+				</view>
+				<view class="n2_590"> <!-- 语音文字区 -->
+					<text class="n2_593">{{ item.title }}</text>
+					<text class="n2_594">{{ item.meta }}</text>
+				</view>
+			</view>
+			<view v-for="(item, idx) in textResults" :key="'t' + item.id" class="n2_598" @tap="openResult(item)">
+				<!-- 照片命中：服务端票据 URL 直连回显（<image> 无法带 header，预签名/票据 URL 是唯一通路） -->
+				<image v-if="item.thumb != ''" class="n2-result-photo" :src="item.thumb" mode="aspectFill" />
+				<view class="n2_599"> <!-- 摘要块 -->
+					<view class="n2_601"></view> <!-- 引用竖线 -->
+					<!-- 2026-10-30（P2 C-8）：命中词高亮走「text 子节点切片」，**不用 rich-text / v-html**。
+					     关键词来自用户输入、又要随结果回显，任何"把字符串当标记解析"的方案都是 XSS 面；
+					     切段后颜色/字重只是样式属性，不参与解析 ⇒ 结构上无注入面。
+					     parts 由 utils/highlight.splitHighlight 纯函数在 textResults 里算好（已按**已提交查询词**切分，
+					     与输入框当前内容解耦：用户改了输入框但没重搜时，旧结果不会被错误地二次高亮）。 -->
+					<text class="n2_602"><text v-for="(p, pi) in item.parts" :key="'p' + pi" :class="p.hit ? 'n2-hl-hit' : 'n2-hl-plain'">{{ p.text }}</text></text>
+				</view>
+				<view class="n2_600"> <!-- 文字元信息区 -->
+					<text class="n2_603">{{ item.meta }}</text>
+				</view>
+			</view>
+			<!-- 2026-10-30（P2 C-1/C-3）：三态互斥渲染。原实现只看 hasSearched，
+			     导致「搜索中…」与上一轮的空结果文案同屏，且「加载失败」和「真空」不可区分。 -->
+			<view v-if="loading && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">搜索中…</text>
+			</view>
+			<view v-else-if="searchFailed" class="n2-empty">
+				<text class="n2-empty-text">搜索失败 · 请检查网络后重新搜索</text>
+			</view>
+			<view v-else-if="recentFailed && voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">最近记忆加载失败 · 请稍后重试</text>
+			</view>
+			<view v-else-if="voiceResults.length === 0 && textResults.length === 0" class="n2-empty">
+				<text class="n2-empty-text">{{ emptyText() }}</text>
+			</view>
+		</scroll-view>
+
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed, watch, onMounted } from 'vue'
+	import { WaveformCache } from '@/composables/useWaveform'
+	import { searchText, searchByImage, searchByAudio, fetchRecentContents, SearchHitItem, contentTypeCn } from '@/utils/search_api'
+	import { shortDate } from '@/utils/time'
+	// 2026-10-30（P2 C-4 / C-8）：搜索历史（仅本机存储）与关键词高亮切分（纯函数，可脱离 UI 单测）
+	import { readSearchHistory, pushSearchHistory, clearSearchHistory } from '@/utils/search_history'
+	import { splitHighlight, HighlightPart } from '@/utils/highlight'
+	import { shellActiveTab } from '@/utils/shell_state'
+	import { isTimelineDirty, markTimelineClean } from '@/utils/timeline'
+	// 语音搜（跨模态 B 方案 2026-11-01）：录音能力复用既有领域桥接，不新造
+	// （权限申请 D-25 / 中断状态机 J-7 / 30min 分段都在 `yishu-recorder` 插件里）
+	import { ensureRecordPermission, startRecord, stopRecord } from '@/utils/voice'
+	import {
+		toggleVoice,
+		fmtVoiceTime,
+		genWaveHeights,
+		voiceCurrentId,
+		voicePlaying,
+		voiceProgress,
+		voiceCurSec,
+		voiceTotalSec
+	} from '@/utils/audio_player'
+
+	// ── 响应式状态 ──
+	let keyword = ref('')
+	let activeFilter = ref(0)
+	let loading = ref(false)
+	let hasSearched = ref(false)
+	let degraded = ref(false)
+	let hits = ref<Array<SearchHitItem>>([])
+	let filters = ['全部', '照片', '语音', '文字']
+	// 2026-10-30（P1-16/P1-17）：**请求序号**与**失败态**。
+	// 原实现三条入口（文本搜索 / 图搜 / 最近内容）共用 hits+loading 三个 ref，且没有任何
+	// 序号或取消标记 ⇒ 旧响应可覆盖新结果；`null`（网络失败）与「零命中」又被合并处理
+	// ⇒ 用户看到「没有找到相关记忆」，而真实原因是请求失败了。
+	let reqSeq: number = 0
+	let searchFailed = ref(false)
+	let recentFailed = ref(false)
+
+	// 2026-10-30（P2 C-4）：搜索历史（仅本机，见 utils/search_history.uts 头注的口径）。
+	// keywordFocused 由 input 的 @focus/@blur 驱动；historyHideTimer 用于「延迟隐藏」（见 onInputBlur）。
+	let historyKeywords = ref<Array<string>>([])
+	let keywordFocused = ref(false)
+	let historyHideTimer = 0
+	// 2026-10-30（P2 C-8）：**已提交查询词**，与输入框内容解耦。
+	// 高亮必须按"产生这批结果的那个词"切分：若直接读 keyword，用户点进结果前改了输入框却没重搜，
+	// 旧结果会被按新词二次高亮 —— 命中的其实是新词的字面巧合，属错误归因。
+	let searchedKeyword = ref('')
+	// 录音中标志（语音搜）：驱动 chip 文案在「语音搜 ↔ 停止」间切换，也是重复点击的防抖闸门
+	let recording = ref(false)
+
+	// 本地 mock 数据注入路径已于 2026-08-31 移除（峰宝拍板：这是 MVP，不是 demo）：
+	// 此前 onLoad 无条件灌 6 条假数据（v-mock-*/t-mock-*/p-mock-*）压住真实结果；
+	// 现进入页面即拉「最近内容」兜底（见 onLoad），空结果走诚实空态文案。
+
+	// B10 方案A 组件契约（shell → 组件）：savedSeq 每次记录保存成功 ++（原 onRecordSaved 回调）。
+	// typeQuery 承接原 ?type= 预设筛选（shell onLoad 解析后注入）。数据常驻=拍板项 3 正式行为。
+	const props = defineProps({
+		typeQuery: { type: String, default: '' },
+		savedSeq: { type: Number, default: 0 }
+	})
+	// 2026-10-31（P2 J-4）：`typeQuery` 是宿主（shell）的**一次性意图**，本组件应用后必须回报
+	// 一次（`typeconsumed`），宿主随即清零。原实现"只写不清"：意图作为常驻状态留在壳里，
+	// 下一次深链/组件请求若不带 type，旧值仍被当成"当前意图"（且同值重复请求因 prop 未变而不生效）。
+	// ⚠️ 事件名不带连字符：emit 名与模板监听属性逐字一致，避免驼峰/短横线归一化差异。
+	const emit = defineEmits(['typeconsumed'])
+	onMounted((): void => {
+		applyTypeQuery(props.typeQuery)
+		loadRecent()
+		// 2026-10-30（P2 C-4）：进页即读本机历史（readSearchHistory 内含空值/超长兜底）
+		historyKeywords.value = readSearchHistory()
+	})
+	// 🚨 2026-10-11 静态审查修复：**必须 watch typeQuery**。
+	// 本组件在壳内**常驻不销毁**（shell 用 v-if 首次挂载 + v-show 切换），而原实现只在
+	// onMounted 读一次 prop ⇒ 「先进过搜索 tab → 回"我的"点类型入口 → 再进搜索」时
+	// `typeQuery` 变了但没人响应，筛选器**停留在上次的值**（用户以为点了没反应）。
+	// 注：本项既有缺口非本次重构引入，但同属 seq 桥"看似完整实则有洞"一类。
+	watch((): string => props.typeQuery, (t: string): void => {
+		applyTypeQuery(t)
+	})
+	watch((): number => props.savedSeq, (n: number): void => {
+		if (n > 0) {
+			onRecordSaved()
+		}
+	})
+
+	/** 承接 ?type= 预设筛选（photo/voice/text → 1/2/3；'' 或其他值不动，避免误清用户手选） */
+	function applyTypeQuery(t: string): void {
+		if (t == 'photo') {
+			activeFilter.value = 1
+		} else if (t == 'voice') {
+			activeFilter.value = 2
+		} else if (t == 'text') {
+			activeFilter.value = 3
+		} else {
+			return // 非 type 值：不清用户手选，也不回报（没有"消费"发生）
+		}
+		// 2026-10-31（P2 J-4）：已消费 ⇒ 请宿主清零。宿主清成 '' 后 watch 会再调一次本函数，
+		// 走上面 else 直接返回，不会形成循环。
+		emit('typeconsumed')
+	}
+
+	// ── 卡片视图模型（兼容模板：语音卡 / 文字卡） ──
+	class VoiceResult {
+		id: string
+		title: string
+		meta: string
+		waveHeights: Array<number>
+		// 播放态快照（tick 局部更新）：syncActiveCard 只写「正在播放那张卡」的这些属性，
+		// 其余卡零写入零重渲染；默认值在 constructor 内赋（UTS 无字段默认初始化）
+		active: boolean
+		playing: boolean
+		progress: number
+		curText: string
+		totalText: string
+		constructor(id: string, title: string, meta: string, waveHeights: Array<number>) {
+			this.id = id
+			this.title = title
+			this.meta = meta
+			this.waveHeights = waveHeights
+			this.active = false
+			this.playing = false
+			this.progress = 0
+			this.curText = ''
+			this.totalText = ''
+		}
+	}
+
+	class TextResult {
+		id: string
+		text: string
+		meta: string
+		/** 照片缩略图票据 URL（仅 content_type=photo 有值；文字/语音为空串） */
+		thumb: string
+		/** 2026-10-30（P2 C-8）：切好的高亮片段（前缀/命中/后缀…），模板按段渲染，零标记解析 */
+		parts: Array<HighlightPart>
+		constructor(id: string, text: string, meta: string, thumb: string, parts: Array<HighlightPart>) {
+			this.id = id
+			this.text = text
+			this.meta = meta
+			this.thumb = thumb
+			this.parts = parts
+		}
+	}
+
+	/** 由 contentId 确定性生成装饰波形 → 统一走 audio_player.genWaveHeights（W0-2 三处一致） */
+	function genWave(id: string): Array<number> {
+		return genWaveHeights(id, 28)
+	}
+
+	// B5.2f：波形缓存收敛为共享组合式函数（唯一实现 client/composables/useWaveform.uts）
+	const wf = new WaveformCache()
+
+	/** 组装卡底元信息：类型 · 日期 · 所属事件 */
+	function hitMeta(h: SearchHitItem): string {
+		let s = contentTypeCn(h.contentType)
+		if (h.takenAt != '') {
+			s += ' · ' + shortDate(h.takenAt)
+		}
+		if (h.eventTitle != '') {
+			s += ' · ' + h.eventTitle
+		}
+		if (h.trace != '') {
+			s += ' · ' + h.trace
+		}
+		return s
+	}
+
+	// 筛选标签 → 后端 content_types（全部=不过滤）
+	function filterContentTypes(): Array<string> {
+		if (activeFilter.value === 1) {
+			return ['photo']
+		}
+		if (activeFilter.value === 2) {
+			return ['voice']
+		}
+		if (activeFilter.value === 3) {
+			return ['text']
+		}
+		return []
+	}
+
+	// 本地筛选（与 filterContentTypes() 同源，两处阈值必须一致）
+	// D7 零冗余请求：切筛选不再重发搜索请求（setFilter 只改 activeFilter），
+	// 结果全部在这里本地过滤；filterContentTypes() 仅在首搜路径（runSearch/loadRecent）
+	// 作为 content_types 参数传服务端。诚实语义：首搜已按类型服务端过滤时，
+	// 池子里没有其他类型 → 切过去显示「暂无xx结果」空态，不回退补发请求。
+	function matchesFilter(ct: string): boolean {
+		if (activeFilter.value === 1) {
+			return ct == 'photo'
+		}
+		if (activeFilter.value === 2) {
+			return ct == 'voice'
+		}
+		if (activeFilter.value === 3) {
+			return ct == 'text'
+		}
+		return true
+	}
+
+	// 语音结果（content_type=voice → 语音卡）。
+	// 性能重构：computed → ref + 手动重建。33ms 播放 tick 不再走整列表重算，
+	// 只由 syncActiveCard 写单卡属性（见下）；列表仅在 hits / 筛选变化时重建。
+	let voiceResults = ref<Array<VoiceResult>>([])
+
+	/**
+	 * 播放 tick 局部更新：把全局播放态写进「正在播放那张卡」的属性。
+	 * 带相等性守卫——值没变不写 → 不触发响应式 → 其余卡零重渲染；
+	 * 状态迁移（切换/暂停/停止/播完）由 voiceCurrentId 清旧卡 active。
+	 */
+	function syncActiveCard(): void {
+		const cid = voiceCurrentId.value
+		const playing = voicePlaying.value
+		const prog = voiceProgress.value
+		const cur = fmtVoiceTime(voiceCurSec.value)
+		const total = fmtVoiceTime(voiceTotalSec.value)
+		for (let i = 0; i < voiceResults.value.length; i++) {
+			const c = voiceResults.value[i]
+			if (c.id == cid) {
+				if (c.active == false) {
+					c.active = true
+				}
+				if (c.playing != playing) {
+					c.playing = playing
+				}
+				if (c.progress != prog) {
+					c.progress = prog
+				}
+				if (c.curText != cur) {
+					c.curText = cur
+				}
+				if (c.totalText != total) {
+					c.totalText = total
+				}
+			} else if (c.active) {
+				c.active = false
+				c.playing = false
+				c.progress = 0
+			}
+		}
+	}
+
+	/** 重建语音卡列表（hits / 筛选变化时触发；tick 不走这里） */
+	function rebuildVoice(): void {
+		const out: Array<VoiceResult> = []
+		for (let i = 0; i < hits.value.length; i++) {
+			const h = hits.value[i]
+			if (h.contentType == 'voice' && matchesFilter(h.contentType)) {
+				const title = h.eventTitle != '' ? h.eventTitle : '语音记忆'
+				out.push(new VoiceResult(h.contentId, title, hitMeta(h), genWave(h.contentId)))
+			}
+		}
+		voiceResults.value = out
+		syncActiveCard()
+	}
+
+	// 播放态源 ref（audio_player 全局单例）→ 单源 watch 逐个挂，tick 驱动面收敛到 syncActiveCard
+	watch(hits, (): void => { rebuildVoice() })
+	watch(activeFilter, (): void => { rebuildVoice() })
+	// 🚨 2026-10-14（台账 §4.20 批次 5 · RC-2）：**可见性守卫**。本组件在壳内**常驻**
+	// （shell 用 `v-show` 切换，组件不销毁）⇒ 隐藏时这些 watch 仍被 audio_player 的全局 ref
+	// 驱动，而 `syncActiveCard()` 要遍历**全部**语音结果卡重算播放态——纯空转
+	// （配合 RC-1 的 1% 粒度后已由 30Hz 降到约 1.7Hz，但仍是"看不见却在算"）。
+	// 现改为：**只有壳的当前 tab 就是 search 时才重算**；切回本 tab 时补一次同步（见下方 watch）。
+	function syncActiveCardIfVisible(): void {
+		if (shellActiveTab.value != 'search') {
+			return
+		}
+		syncActiveCard()
+	}
+	watch(voiceCurrentId, (): void => { syncActiveCardIfVisible() })
+	watch(voicePlaying, (): void => { syncActiveCardIfVisible() })
+	watch(voiceProgress, (): void => { syncActiveCardIfVisible() })
+	watch(voiceCurSec, (): void => { syncActiveCardIfVisible() })
+	watch(voiceTotalSec, (): void => { syncActiveCardIfVisible() })
+	// 2026-10-30（P1-21）：搜到结果 → 进详情 → 删除/改备注 → 返回，**结果区仍是旧数据**。
+	// 本组件在壳内常驻，没有 onShow 可用；详情页删除已把时间轴缓存置脏（invalidateTimelineCache），
+	// 这里复用同一个脏标记：切回 search tab 且已置脏 ⇒ 重拉当前结果。
+	watch(shellActiveTab, (tab: string): void => {
+		if (tab != 'search') {
+			return
+		}
+		if (!isTimelineDirty()) {
+			return
+		}
+		markTimelineClean()
+		const q = keyword.value.trim()
+		if (q != '') {
+			runSearch()
+		} else {
+			loadRecent()
+		}
+	})
+	// 切回本 tab 时补同步一次（隐藏期间被守卫跳过的变更需在此对齐，否则进度条会等下一跳才出现）
+	watch(shellActiveTab, (t: string): void => {
+		if (t == 'search') {
+			syncActiveCard()
+		}
+	})
+
+	// 文字 / 照片结果（photo 的 caption 与 text 同走引用文字卡）
+	let textResults = computed((): Array<TextResult> => {
+		const out: Array<TextResult> = []
+		// 2026-10-30（P2 C-8）：读 searchedKeyword 使本 computed 依赖它 —— 新搜索完成后高亮自动重算；
+		// 只读 keyword 会漏掉"改了输入框但没重搜"时不该重算的语义（见 searchedKeyword 声明处）
+		const kw = searchedKeyword.value
+		for (let i = 0; i < hits.value.length; i++) {
+			const h = hits.value[i]
+			if (h.contentType == 'voice') {
+				continue
+			}
+			if (!matchesFilter(h.contentType)) {
+				continue
+			}
+			// 2026-10-30（P2 C-8）：占位串「（无文本描述）」是**界面文案、不是内容**，不给它套高亮——
+			// 否则用户搜「无文本」时占位符会被染色，等于把 UI 文案当成命中证据。
+			// 无原文 ⇒ 用空关键词走 splitHighlight 的"不切分"分支，得到单段普通片段。
+			const raw = h.text
+			const txt = raw != '' ? raw : '（无文本描述）'
+			const parts: Array<HighlightPart> = raw != '' ? splitHighlight(raw, kw) : splitHighlight(txt, '')
+			// 照片命中带服务端下发的缩略图票据 URL，其余类型为空串
+			out.push(new TextResult(h.contentId, txt, hitMeta(h), h.contentType == 'photo' ? h.thumbnailUrl : '', parts))
+		}
+		return out
+	})
+
+	function resultCountText(): string {
+		if (loading.value) {
+			return '搜索中…'
+		}
+		if (searchFailed.value) {
+			return '搜索失败'
+		}
+		let n = voiceResults.value.length + textResults.value.length
+		if (!hasSearched.value) {
+			return '输入关键词，搜索你的记忆'
+		}
+		// 2026-10-30（P2 C-2）：降级态必须让用户看见（原先只在 Sentry 里有）
+		const suffix = degraded.value ? ' · 部分结果可能不完整' : ''
+		return '共 ' + n.toString() + ' 条结果' + suffix
+	}
+
+	function emptyText(): string {
+		if (!hasSearched.value) {
+			return '输入关键词开始搜索'
+		}
+		if (activeFilter.value === 1) {
+			return '暂无照片结果'
+		}
+		if (activeFilter.value === 2) {
+			return '暂无语音结果'
+		}
+		if (activeFilter.value === 3) {
+			return '暂无文字结果'
+		}
+		return '没有找到相关记忆，换个关键词试试'
+	}
+
+	// 2026-10-30（P2 C-4）：历史行显隐的**唯一判据**（模板只用它，不写复合表达式）：
+	// 聚焦 且 输入框为空 且 有历史 ⇒ 显示；无历史时整块不渲染、不占位。
+	let showHistory = computed((): boolean => {
+		if (!keywordFocused.value) {
+			return false
+		}
+		if (keyword.value.trim() != '') {
+			return false
+		}
+		return historyKeywords.value.length > 0
+	})
+
+	/** 聚焦：立刻显示历史，并作废在飞的隐藏定时器（快速失焦→再聚焦时不会被旧定时器关掉） */
+	function onInputFocus(): void {
+		if (historyHideTimer != 0) {
+			clearTimeout(historyHideTimer)
+			historyHideTimer = 0
+		}
+		keywordFocused.value = true
+	}
+
+	/**
+	 * 失焦：**延迟 300ms 隐藏**。
+	 * 根因（原生事件顺序）：点历史 chip 时输入框会先派发 blur、再派发 tap；
+	 * 若 blur 里立刻置 false，`v-if` 会把 chip 整块摘掉 ⇒ tap 派发不出去 = 用户眼里"点了没反应"。
+	 * 取 300ms（而非 200ms）：软键盘场景下 blur 还要伴随 IME 收起动画，ACTION_UP 可能被推后；
+	 * 300ms 覆盖该抖动，而"点了别处 300ms 后消失"人眼不可察。再长会显得历史条赖着不走。
+	 * 注：这是**事件顺序**决定的必要处理，不是防御性定时器 —— 去掉它本功能在真机上就是坏的。
+	 */
+	function onInputBlur(): void {
+		if (historyHideTimer != 0) {
+			clearTimeout(historyHideTimer)
+		}
+		historyHideTimer = setTimeout((): void => {
+			keywordFocused.value = false
+			historyHideTimer = 0
+		}, 300)
+	}
+
+	/** 点历史 chip：回填输入框并**立即搜索**（复用 runSearch 唯一入口：序号/失败态/历史写入都在里面） */
+	function onPickHistory(kw: string): void {
+		keyword.value = kw
+		keywordFocused.value = false
+		runSearch()
+	}
+
+	/** 一键清空历史（只删本机键；已显示的结果不受影响） */
+	function onClearHistory(): void {
+		clearSearchHistory()
+		historyKeywords.value = []
+	}
+
+	function setFilter(idx: number): void {
+		// D7 零冗余请求：切筛选纯本地过滤（matchesFilter 链响应 activeFilter），
+		// 不再重发搜索请求；首搜时 filterContentTypes() 才传参服务端。
+		activeFilter.value = idx
+	}
+
+	function clearKeyword(): void {
+		keyword.value = ''
+		hits.value = []
+		hasSearched.value = false
+		// 2026-10-30（P1-16）：作废在途请求 —— 否则清空后旧搜索的回调仍会把结果写回来
+		reqSeq = reqSeq + 1
+		searchFailed.value = false
+		degraded.value = false
+		// 2026-10-30（P2 C-8）：结果已清空 ⇒ 高亮基准词一并清掉（否则后续"最近内容"会被旧词染色）
+		searchedKeyword.value = ''
+	}
+
+	/**
+	 * 输入清空 ⇒ **复位到默认列表**（2026-10-15 · 真机反馈「删掉买菜后页面动不了」）。
+	 *
+	 * 根因（代码实证）：本页只有 `v-model` + `@confirm`，删字到空**没有任何状态转移** ——
+	 * `hasSearched` 仍为 true、`hits` 仍是上次结果 ⇒ 结果区永久停在「共 N 条结果」，
+	 * 而本该负责复位的 `clearKeyword()` 是**死代码**（全仓零调用 ✗）。
+	 * 现接上 `@input`：输入变空且此前搜过 ⇒ 复位 + 用「最近内容」兜底（与 onMounted 同源）。
+	 */
+	function onKeywordInput(): void {
+		if (keyword.value.trim() != '') {
+			return
+		}
+		if (!hasSearched.value) {
+			return // 本就没搜过：保持默认列表，不做无谓请求
+		}
+		clearKeyword()
+		loadRecent()
+	}
+
+	/** 发起描述性搜索（resolve-only，失败由封装 toast） */
+	function runSearch(): void {
+		const q = keyword.value.trim()
+		if (q == '') {
+			// 2026-10-15：空串**不再只弹 toast 就 return**（那会把页面留在上次的结果态，
+			// 用户观感即"卡死"✗）。已搜过 ⇒ 复位回默认列表；从未搜过 ⇒ 保留提示。
+			if (hasSearched.value) {
+				clearKeyword()
+				loadRecent()
+				return
+			}
+			uni.showToast({ title: '请输入搜索关键词', icon: 'none' })
+			return
+		}
+		loading.value = true
+		searchFailed.value = false
+		// 2026-10-30（P2 C-4）：**发起即记历史**（不是成功才记）。
+		// 失败/超时同样是"用户真的搜过这个词"，成功后仍可从历史一键重试；成功才记会让弱网用户白搜。
+		historyKeywords.value = pushSearchHistory(q)
+		const my = ++reqSeq
+		searchText(q, 30, filterContentTypes()).then((out) => {
+			if (my != reqSeq) {
+				return // 已被更新的请求取代：丢弃本次结果（防串）
+			}
+			loading.value = false
+			if (out == null) {
+				// 失败 ≠ 零命中：**保留上一轮结果**并给可重试错误态，
+				// 不置 hasSearched（否则会渲染成「共 0 条结果」这种与事实不符的结论）
+				searchFailed.value = true
+				return
+			}
+			hasSearched.value = true
+			hits.value = out.hits
+			degraded.value = out.degraded
+			// 2026-10-30（P2 C-8）：结果落地时才切"高亮基准词"，与这批 hits 严格配对
+			searchedKeyword.value = q
+		})
+	}
+
+	/**
+	 * 以图搜图（AG6 接线）：选一张图 → POST /api/v1/search/image（multipart）→ **复用同一结果区**。
+	 *  · 取消选图静默（入口取消＝什么都不做，口径同 RecordSheet.pickPhotos）；
+	 *  · 失败由封装 toast、结果置空（**不伪造命中**）；
+	 *  · 图搜无关键词 ⇒ 清空 keyword 并置 hasSearched，避免结果区回落到"输入关键词开始搜索"
+	 *    这种与事实不符的空态文案。
+	 * 拆两个 filterContentTypes 不适用：图搜由后端按图片语义检索，不走 activeFilter 的本地过滤链。
+	 */
+	function runImageSearch(): void {
+		uni.chooseImage({
+			count: 1,
+			sourceType: ['album', 'camera'],
+			success: (res) => {
+				const paths = res.tempFilePaths
+				if (paths.length === 0) {
+					return
+				}
+				loading.value = true
+				searchFailed.value = false
+				// 2026-10-30（P2 C-7）：图搜与文本搜索共用筛选器，但图搜结果不做本地类型过滤
+				// ⇒ 必须复位筛选，否则上一次选的「语音」会把图搜结果全滤掉，只剩空态。
+				activeFilter.value = 0
+				const my = ++reqSeq
+				searchByImage(paths[0], 30).then((out) => {
+					if (my != reqSeq) {
+						return
+					}
+					loading.value = false
+					keyword.value = ''
+					// 2026-10-30（P2 C-8）：图搜没有关键词 ⇒ 清掉高亮基准词（结果按图片语义命中，无"命中词"可言）
+					searchedKeyword.value = ''
+					if (out == null) {
+						searchFailed.value = true
+						return
+					}
+					hasSearched.value = true
+					hits.value = out.hits
+					degraded.value = out.degraded
+				})
+			}
+		})
+	}
+
+	function doSearch(): void {
+		runSearch()
+	}
+
+	/**
+	 * B10 方案A 的 savedSeq 回调落点（记录保存成功 ⇒ 刷新当前视图）。
+	 *
+	 * 2026-10-30（P2 C-4/C-8 顺带修复）：**这个函数原先是缺失的** ——
+	 * 上方 `watch(props.savedSeq)` 里调用了 `onRecordSaved()`（TabSearch.uvue:152），
+	 * 但全文件没有任何定义（B10 搬迁时把回调换成 savedSeq prop，函数体被删、调用点没删），
+	 * 属"用了却没声明"的符号，与 audit_class_members 抓的那类假绿同源。
+	 * 语义对齐 TabIndex 的同名函数：已搜过 ⇒ 重跑当前搜索（结果反映新增/删除），否则刷新最近内容。
+	 */
+	function onRecordSaved(): void {
+		const q = keyword.value.trim()
+		if (q != '') {
+			runSearch()
+		} else {
+			loadRecent()
+		}
+	}
+
+	/**
+	 * 语音搜（跨模态 B 方案 · 2026-11-01）：录音 → POST /api/v1/search/audio → **复用同一结果区**。
+	 *
+	 * 为什么是"单跳"而不是客户端两步（先 transcribeWav 再 searchText）：两次往返之间
+	 * 用户会看到"先转写、再搜索"的割裂，失败点翻倍；后端单跳由服务端串起 ASR 与检索，
+	 * 返回结构与文本检索同构，因此这里与 runImageSearch 共用同一套结果渲染。
+	 * 为什么必须复用 `utils/voice.uts`：录音权限（D-25）、来电/闹钟中断（J-7）、
+	 * 30min 分段、录音器占用恢复都在既有插件状态机里，直接调 uni.getRecorderManager
+	 * 会绕过这些踩过坑的路径。
+	 *
+	 * 交互口径（与「以图搜」一致）：点一次开始录，再点一次停止并检索；
+	 * 停止后把**转写文本回填输入框**——用户要能看到"这句话被听成了什么"，
+	 * 听错了还能接着改词重搜（否则只能重录）。
+	 */
+	function runAudioSearch(): void {
+		if (recording.value) {
+			stopRecord()
+			return
+		}
+		ensureRecordPermission().then((ok: boolean) => {
+			if (!ok) {
+				uni.showToast({ title: '未获得麦克风权限，无法录音', icon: 'none' })
+				return
+			}
+			recording.value = true
+			startRecord(
+				() => {
+					console.log('[yishu] audio-search record started')
+				},
+				(path: string, durationMs: number) => {
+					recording.value = false
+					// 太短（<0.5s）几乎必然空转写，后端会老老实实返回空结果 ——
+					// 与其让用户看到"搜到 0 条"，不如直接提示重录
+					if (durationMs < 500) {
+						uni.showToast({ title: '说话时间太短，请重试', icon: 'none' })
+						return
+					}
+					searchRecordedAudio(path)
+				},
+				(msg: string) => {
+					recording.value = false
+					uni.showToast({ title: '录音失败：' + msg, icon: 'none', duration: 2500 })
+				},
+				(autoPaused: boolean) => {
+					// 系统中断（来电/闹钟/音频焦点被抢）：原生录音已自动暂停。
+					// 必须同步 UI，否则 chip 永远停在「停止」、用户再点只是 stop 一次空录音。
+					if (autoPaused) {
+						recording.value = false
+						uni.showToast({ title: '录音被中断，请重新开始', icon: 'none' })
+					}
+				},
+				(path: string, _ms: number) => {
+					// 30min 自动结束：与手动停止同一条落盘→检索路径（入口通常十几秒，防御性分支）
+					recording.value = false
+					searchRecordedAudio(path)
+				}
+			)
+		})
+	}
+
+	/** 录音落盘 → 上传检索（手动停止 / 30min 自动结束共用；拆一个函数避免两处漂移） */
+	function searchRecordedAudio(path: string): void {
+		loading.value = true
+		searchByAudio(path, 30).then((out) => {
+			loading.value = false
+			hasSearched.value = true
+			if (out == null) {
+				hits.value = []
+				return
+			}
+			// 转写文本回填（out.query 即后端转写结果）：让用户看见"被听成了什么"
+			keyword.value = out.query
+			hits.value = out.hits
+			degraded.value = out.degraded
+		})
+	}
+
+	/**
+	 * 进入页面的默认数据源：GET /contents 拉最近内容。
+	 * 后端 /search 的 q 要求非空（SearchRequest min_length=1），空词语义搜索发不出去，
+	 * 所以「刚进页面还什么都没搜」时用最近内容兜底，结果区不再空白。
+	 * score 恒为 0（按时间序非相关度）、无事件归属——搜索行为本身仍走 runSearch()。
+	 *
+	 * 2026-10-14（台账 §4.20 · 用户现场反馈「每次跳转都要等一会数据才出现」）：
+	 * **后台刷新不再清空已显示结果**。原实现无条件 `loading.value = true` ⇒ 即便列表里
+	 * 已有结果（刚保存记录触发的刷新、或切回本 tab），界面也会先退回「搜索中…」再重画，
+	 * 用户感知就是"每次都重新加载一遍"。现口径与 `TabIndex` 的 stale-while-revalidate
+	 * **一致**：只有当前**没有**结果时才显示加载态；有结果就静默替换（失败也不清空）。
+	 */
+	function loadRecent(): void {
+		const hasData = hits.value.length > 0
+		if (!hasData) {
+			loading.value = true
+		}
+		recentFailed.value = false
+		const my = ++reqSeq
+		fetchRecentContents(30, filterContentTypes()).then((out) => {
+			if (my != reqSeq) {
+				return // 已被搜索/更新的请求取代
+			}
+			loading.value = false
+			if (out == null) {
+				// 2026-10-30（P2 C-3）：原实现「失败」与「真空」都不打 hasSearched，
+				// 而空态的 v-if 又要求 hasSearched ⇒ 结果区**一句文案都没有**，页面像卡住。
+				recentFailed.value = true
+				return
+			}
+			recentFailed.value = false
+			if (out.hits.length == 0) {
+				return // 真空：由空态块按 hasSearched=false 显示引导文案
+			}
+			hits.value = out.hits
+		})
+	}
+
+	function openResult(item: any): void {
+		const id = (item as VoiceResult).id
+		uni.navigateTo({ url: '/pages/detail/detail?contentId=' + id })
+	}
+
+	// W0-2 就地播放：真音频流（downloadFile 带 header → InnerAudioContext），
+	// 播放态视觉与 index/detail 统一（F5a 规范：钮变暂停 + 已播金/未播米 + 进度行）。
+	// tick 局部更新后，播放态进卡由 syncActiveCard 负责（watch audio_player refs 驱动），
+	// 原模板包装函数 voiceIsActive/voiceIsPlaying/voiceProgressOfCard/voiceCurSecText/voiceTotalSecText 已删。
+	function playVoice(item: VoiceResult): void {
+		// BB3：播放入口懒拉真实波形（列表不为每卡预拉；组件内 waveform prop 真值优先）
+		wf.loadWaveform(item.id)
+		toggleVoice(item.id)
+	}
+
+	// （转换器遗留 setFilterAll/Photo/Voice/Text 字符串调用与 setFilter(idx:number) 签名冲突，
+	//   模板已改回 HEAD 的 v-for + setFilter(idx)，此处删除）
+</script>
+
+<style>
+
+	.search-root {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	.n2_390 {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-fab_size, 107.7rpx);
+		width: var(--d-lattice-p80, 153.8rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: bold;
+		font-size: var(--d-lattice-p40, 76.9rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_391 {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p120, 230.8rpx);
+		width: var(--d-card_width, 673.1rpx);
+		height: var(--d-lattice-p48, 92.3rpx);
+		flex-direction: row;
+		/* ⚠️ 无垂直 padding：画布 2:391 paddingTop/Bottom 均为 null，
+		   子元素靠 y 居中（搜索图标 y=15/h=18 → 上下各 15pt，容器 h=48pt）。
+		   此前误补 padding-top/bottom=30.8rpx → 内容区只剩 92.3-30.8×2=30.7rpx，
+		   装不下 34.6rpx 的搜索图标 → 被裁（全项目同类审计 2026-08-31 抓到）。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
+		align-items: center;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--c-white, #FFFFFF);
+		/* 画布 stroke 为居中描边；uvue 下 border-width 会内缩 content box 1px，
+		   改用 box-shadow 外环 0 0 0 1.9rpx 等价还原（不内缩子元素） */
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--a-rust-60, rgba(176, 89, 59, 0.6)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p6, 11.5rpx) var(--d-lattice-p18, 34.6rpx) var(--a-ink-08, rgba(59, 46, 38, 0.08));
+		border-radius: var(--d-raw-r9999, 9999rpx);
+		overflow: hidden;
+	}
+	.n2_392 {
+		width: var(--d-lattice-p18, 34.6rpx);
+		height: var(--d-lattice-p18, 34.6rpx);
+	}
+	.n2_395 {
+		flex: 1;
+		margin-left: var(--d-lattice-p8, 15.4rpx); /* 画布 2:391 gap=8pt：图标右缘 34 → 输入区 x42 */
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n2_396 {
+		width: 100%;
+		/* 2026-10-04真机修复「看不见自己输入的文字」：原生 <input> 未显式给高度时，
+		   在 .n2_391（定高 92.3rpx + overflow:hidden）里被竖向裁切，只剩半行 →
+		   用户能聚焦、能打字，却看不到字。
+		   高度取与 AI 页输入框同格（--d-lattice-p36 = 69.2rpx，见 styles/tab-ai.css），
+		   配合 line-height 让文字在框内垂直居中。 */
+		height: var(--d-lattice-p36, 69.2rpx);
+		line-height: var(--d-lattice-p36, 69.2rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_397 {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p184, 353.8rpx);
+		width: var(--d-card_width, 673.1rpx);
+		flex-direction: row;
+		align-items: center;
+		overflow: hidden;
+	}
+	/* chip 动态化（HEAD 交互接回）：默认白底灰字，active 态锈红 tint */
+	.s-chip {
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-lattice-p9, 17.3rpx);
+		padding-right: var(--d-lattice-p9, 17.3rpx);
+		padding-top: var(--d-lattice-p9, 17.3rpx);
+		padding-bottom: var(--d-lattice-p9, 17.3rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-raw-r9999, 9999rpx);
+		overflow: hidden;
+	}
+	.s-chip-active {
+		background-color: var(--a-rust-12, rgba(176, 89, 59, 0.12));
+	}
+	/* 画布 2:397 gap=8pt（chip 间距）；uvue 丢弃 gap → 非首 chip 加 margin-left */
+	.s-chip-ml {
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+	}
+	.s-chip-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.s-chip-text-active {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		font-weight: 600;
+		color: var(--c-rust-500, #B05A3A);
+	}
+	.n2_406 {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p234, 450rpx);
+		width: var(--d-lattice-p159, 305.8rpx);
+		height: var(--d-lattice-p15, 28.8rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.n2-results {
+		position: absolute;
+		left: var(--d-card_margin_x, 38.5rpx);
+		top: var(--d-lattice-p258, 496.2rpx);
+		bottom: var(--d-lattice-p88, 169.2rpx); /* TabBar 高度避让 */
+		width: var(--d-card_width, 673.1rpx);
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	.n2_588 {
+		width: var(--d-card_width, 673.1rpx);
+		flex-direction: column;
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.n2_589 {
+		width: 100%;
+		height: var(--d-lattice-p64, 123.1rpx);
+		flex-direction: row;
+		/* ⚠️ 无垂直 padding：画布 2:589 paddingTop/Bottom 均为 null，
+		   子元素靠 y 居中（玻璃播放钮 y=16/h=32 → 上下各 16pt，容器 h=64pt）。
+		   此前误补 padding-top/bottom=26.9rpx → 播放钮底部越出可视区被 overflow 裁掉。
+		   回归画布真值：删垂直 padding，由 align-items:center 居中。 */
+		align-items: center;
+		padding-left: var(--d-lattice-p14, 26.9rpx);
+		padding-right: var(--d-lattice-p14, 26.9rpx);
+		background-color: var(--a-amber-14, rgba(196, 145, 59, 0.14));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_591 {
+		width: var(--d-lattice-p32, 61.5rpx);
+		height: var(--d-lattice-p32, 61.5rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		/* 毛玻璃：画布 BLUR(8) + fill 白 a0.50（原被降级成 0.72） */
+		background-color: var(--a-white-50, rgba(255, 255, 255, 0.5));
+		/* 补画布 INNER_SHADOW 白a.4；两轴居中故保留 border */
+		box-shadow: inset var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p2, 3.8rpx) var(--a-white-40, rgba(255, 255, 255, 0.4));
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--a-white-80, rgba(255, 255, 255, 0.8));
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		overflow: hidden;
+	}
+	.n2_595 {
+		width: var(--d-card_radius_small, 23.1rpx);
+		height: var(--d-card_radius_small, 23.1rpx);
+	}
+	.n2_592 {
+		width: var(--d-lattice-p200, 384.6rpx);
+		height: var(--d-lattice-p26, 50rpx);
+		margin-left: var(--d-card_radius_small, 23.1rpx); /* 画布 2:589 gap=12pt：播放钮右缘 46 → 波形 x58 */
+		overflow: hidden;
+	}
+	.n2_596 {
+		position: absolute;
+		left: var(--d-lattice-p4, 7.7rpx);
+		top: var(--d-lattice-p3, 5.8rpx);
+		width: var(--d-lattice-p192, 369.2rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	/* W0-2 播放态（F5a 规范）：暂停形 + 进度行 */
+	.search-pause-icon {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.search-pause-bar {
+		width: var(--d-raw-r6, 6rpx);
+		height: var(--d-raw-r20, 20rpx);
+		background-color: var(--c-rust-500, #B05A3A);
+		border-radius: 2rpx;
+		margin-left: var(--d-raw-r4, 4rpx);
+		margin-right: var(--d-raw-r4, 4rpx);
+	}
+	.svp-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-left: var(--d-lattice-p8, 15.4rpx);
+		margin-right: var(--d-lattice-p8, 15.4rpx);
+		margin-top: var(--d-lattice-p6, 11.5rpx); /* 画布 3pt 节奏 */
+	}
+	.svp-time {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-raw-r20, 20rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.svp-track {
+		flex: 1;
+		height: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-paper-600, #E5DCC8);
+		border-radius: 2rpx;
+		margin-left: var(--d-raw-r12, 12rpx);
+		margin-right: var(--d-raw-r12, 12rpx);
+		overflow: hidden;
+	}
+	.svp-track-fill {
+		height: var(--d-raw-r4, 4rpx);
+		background-color: var(--c-amber-500, #C4913C);
+		border-radius: 2rpx;
+	}
+	.n2_590 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		overflow: hidden;
+	}
+	.n2_593 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p17, 32.7rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.n2_594 {
+		margin-top: var(--d-lattice-p3, 5.8rpx); /* 画布 2:590 gap=3pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.n2_598 {
+		width: var(--d-card_width, 673.1rpx);
+		flex-direction: column;
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		background-color: var(--c-white, #FFFFFF);
+		box-shadow: var(--d-lattice-p0, 0rpx) var(--d-lattice-p4, 7.7rpx) var(--d-lattice-p16, 30.8rpx) var(--a-ink-06, rgba(59, 46, 38, 0.06)), var(--d-lattice-p0, 0rpx) var(--d-lattice-p1, 1.9rpx) var(--d-lattice-p3, 5.8rpx) var(--a-ink-04, rgba(59, 46, 38, 0.04));
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	.n2-result-photo {
+		width: 100%;
+		height: 320rpx;
+		margin-bottom: var(--d-lattice-p8, 15.4rpx);
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-paper-300, #EFEAE2);
+	}
+	.n2_599 {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--a-amber-10, rgba(196, 145, 59, 0.1));
+		border-radius: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	.n2_601 {
+		width: var(--d-lattice-p3, 5.8rpx);
+		height: var(--d-lattice-p40, 76.9rpx);
+		background-color: var(--c-amber-500, #C4913C);
+		border-radius: var(--d-lattice-p2, 3.8rpx);
+		overflow: hidden;
+	}
+	.n2_602 {
+		flex: 1;
+		margin-left: var(--d-lattice-p10, 19.2rpx); /* 画布 2:599 gap=10pt：竖线右缘 15 → 文本 x25 */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-700, #5A4C40);
+	}
+	.n2_600 {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-lattice-p8, 15.4rpx);
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+		padding-top: var(--d-lattice-p8, 15.4rpx);
+		padding-bottom: var(--d-lattice-p8, 15.4rpx);
+		overflow: hidden;
+	}
+	.n2_603 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-500, #8A7A6A);
+	}
+	.n2-empty {
+		flex-direction: row;
+		justify-content: center;
+		padding-top: var(--d-lattice-p32, 61.5rpx);
+		padding-bottom: var(--d-lattice-p32, 61.5rpx);
+	}
+	.n2-empty-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* ── 2026-10-30（P2 C-4）搜索历史行 ──
+	   胶囊外壳/文字**直接复用 .s-chip / .s-chip-text**（同筛选行），此处只加两层修饰：
+	   ① 容器（横滑 + 标题行）；② 描边态。不引入新组件族，底色仍是米色画布。 */
+	.s-hist-block {
+		width: 100%;
+		flex-direction: column;
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+	}
+	.s-hist-head {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--d-lattice-p6, 11.5rpx);
+	}
+	.s-hist-title {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.s-hist-clear {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		color: var(--c-amber-500, #C4913C);
+	}
+	.s-hist-scroll {
+		width: 100%;
+		/* 横滑容器必须显式定高（scroll-view 无高度即塌陷）。76rpx = chip 内边距 34.6 + 文字行 ~32
+		   + 上下描边 3.8，留 5rpx 余量防裁边。 */
+		height: var(--d-raw-r76, 76rpx);
+	}
+	.s-hist-row {
+		flex-direction: row;
+		align-items: center;
+		height: 100%;
+		padding-right: var(--d-lattice-p8, 15.4rpx);
+	}
+	/* 描边胶囊：金边 + 白底（与 .s-chip 白底同族，靠 1.9rpx 金边与筛选行区分"这是历史"） */
+	.s-hist-chip {
+		border-width: var(--d-lattice-p1, 1.9rpx);
+		border-color: var(--c-amber-500, #C4913C);
+		background-color: var(--c-white, #FFFFFF);
+	}
+	/* ── 2026-10-30（P2 C-8）高亮片段 ──
+	   命中段 = 金色加粗（任务指定 B8860B）。写成「令牌 + 字面量回退」是本仓令牌波既定形态，
+	   回退值即该色 ⇒ 令牌缺失时表现完全一致。
+	   ⚠️ 注释里也不能出现带井号的色值字面量：audit_token_literals 对 .uvue **只剔 <script> 段**的
+	   注释（模板/style 段的注释照算），写进注释会直接把该文件的 hex 计数顶上去（实测 +1）。
+	   非命中段显式给色/字号而不是依赖嵌套继承：嵌套 text 在端上的继承行为与平台实现相关，
+	   显式声明才能保证"其余保持正文色"这条要求在任何端都成立。 */
+	.n2-hl-plain {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		color: var(--c-ink-700, #5A4C40);
+	}
+	.n2-hl-hit {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx);
+		font-weight: bold;
+		color: var(--c-gold-600, #B8860B);
+	}
+</style>

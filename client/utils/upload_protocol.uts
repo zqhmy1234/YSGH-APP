@@ -1,0 +1,197 @@
+/**
+ * 上传分片协议共享层（TD-P2B · S1-H3：uploader/voice 整段复制收口）
+ *
+ * uploader.ts 与 voice.ts 此前各写一份 urlEncode/formPost/fieldOf + init/chunk/complete
+ * 请求（仅类名 HttpResp vs VoiceHttpResp、个别日志不同）——上传协议两份漂移源，
+ * 改一处漏一处（如 URL 编码加字符需同步两处）。现统一本模块：
+ *  - urlEncode / formPost（返回 {status, raw}）/ fieldOf 底层工具
+ *  - initUpload / putChunk / completeUpload 三个协议请求
+ * 调用方各自保留业务编排（uploader 断点续传队列 / voice 录音状态机）。
+ * 错误语义：协议层只透传 status（0=网络失败），4xx 停条 / 5xx 重试由调用方按业务决定。
+ */
+import { getBaseUrl } from './config'
+import { getToken, ensureLogin } from './auth'
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析），
+// 本模块不再直接 uni.uploadFile；getBaseUrl 仍用于 formPost/init/complete。
+import { uploadFileHttp, HttpResult, buildHeader } from './api'
+// O15：上传端点路径 + 字段名统一走 contract.ts（与 OpenAPI 对齐，防漂移）
+import {
+	PATH_UPLOAD_INIT,
+	PATH_UPLOAD_CHUNK,
+	PATH_UPLOAD_COMPLETE,
+	FIELD_UPLOAD_ID,
+	FIELD_CLIENT_UPLOAD_ID,
+	FIELD_FILE_NAME,
+	FIELD_FILE_SIZE,
+	FIELD_UPLOAD_MODE
+} from './contract'
+
+/** 表单响应：status（0=网络失败） + raw（响应 JSON 字符串） */
+export class UploadResp {
+	status: number
+	raw: string
+
+	constructor(status: number, raw: string) {
+		this.status = status
+		this.raw = raw
+	}
+}
+
+/** 单字节 → `%XX`（大写十六进制，RFC 3986） */
+function pct(b: number): string {
+	const hex = b.toString(16).toUpperCase()
+	return hex.length < 2 ? '%0' + hex : '%' + hex
+}
+
+/**
+ * URL 编码（**含完整 UTF-8 百分号编码**）。
+ *
+ * ## 2026-11-01 修（走查 1.2 实测缺陷：中文入库乱码）
+ * 原实现只转义 `& = % + 空格`，其余字符（**包括全部中文**）原样透传，注释里也写着
+ * "中文文件名后续补全"。而语音链是把**转写文本**塞进 `meta` 再经本函数上送：
+ *   `meta` = `{"text":"你有病啊。", ...}` → 未转义的中文直接进 form body。
+ * 结果：数据库里存成 `'ä½\xa0æ\x9c\x89ç\x97\x85å\x95\x8aã\x80\x82'`
+ *   —— 正是「UTF-8 字节被按 Latin-1 解码」的形态，用户在详情页看到的就是乱码。
+ * 对照实验：用 Python 以标准 UTF-8 提交同一句话 → 入库正确 ⇒ 问题只在这条表单链。
+ *
+ * 修法：非 ASCII 一律先按 UTF-8 拆字节再 `%XX`（含代理对，emoji 不会截断），
+ * 这样 body 变成纯 ASCII，服务端无论用哪种 charset 解码都不会错。
+ */
+export function urlEncode(s: string): string {
+	let out = ''
+	for (let i = 0; i < s.length; i++) {
+		const c = s.charAt(i)
+		const code = s.charCodeAt(i)
+		if (c == '&') {
+			out += '%26'
+		} else if (c == '=') {
+			out += '%3D'
+		} else if (c == '%') {
+			out += '%25'
+		} else if (c == '+') {
+			out += '%2B'
+		} else if (c == ' ') {
+			out += '%20'
+		} else if (code < 0x80) {
+			out += c
+		} else if (code < 0x800) {
+			out += pct(0xc0 | (code >> 6)) + pct(0x80 | (code & 0x3f))
+		} else if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) {
+			// 代理对（BMP 外字符，如 emoji）→ 组合成 4 字节
+			const next = s.charCodeAt(i + 1)
+			const cp = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00)
+			out += pct(0xf0 | (cp >> 18)) + pct(0x80 | ((cp >> 12) & 0x3f)) +
+				pct(0x80 | ((cp >> 6) & 0x3f)) + pct(0x80 | (cp & 0x3f))
+			i++
+		} else {
+			out += pct(0xe0 | (code >> 12)) + pct(0x80 | ((code >> 6) & 0x3f)) +
+				pct(0x80 | (code & 0x3f))
+		}
+	}
+	return out
+}
+
+/** POST 表单（application/x-www-form-urlencoded；后端 Form 字段）→ UploadResp */
+export function formPost(path: string, body: string): Promise<UploadResp> {
+	return new Promise<UploadResp>((resolve) => {
+		// R7（2026-09-06）：401 重放补齐——本函数此前裸 uni.request 无 401 处理，token 过期后
+		// 上传链首次 init/complete 必 401（uvicorn 日志 4 次实锤），对齐 api.uts uploadFileHttp
+		// 的「401 → ensureLogin 刷新 → 重放一次」机制；仍 401 才透传给调用方（4xx 停条语义不变）
+		const sendOnce = (done: (resp: UploadResp) => void): void => {
+			const header: UTSJSONObject = buildHeader('application/x-www-form-urlencoded')
+			uni.request({
+				url: getBaseUrl() + path,
+				method: 'POST',
+				data: body,
+				header: header,
+				timeout: 30000,
+				success: (res) => {
+					done(new UploadResp(res.statusCode, JSON.stringify(res.data)))
+				},
+				fail: () => {
+					console.error('[yishu] upload form NETWORK ' + path)
+					done(new UploadResp(0, ''))
+				}
+			})
+		}
+		sendOnce((first: UploadResp) => {
+			if (first.status === 401) {
+				ensureLogin().then((ok: boolean) => {
+					if (!ok) {
+						resolve(first)
+						return
+					}
+					sendOnce((second: UploadResp) => {
+						resolve(second)
+					})
+				})
+				return
+			}
+			resolve(first)
+		})
+	})
+}
+
+/** 取响应 JSON 字符串里某字段值（"key":"value" 或 "key":value；value 不含引号时原样返回） */
+export function fieldOf(raw: string, key: string): string {
+	const needle = '"' + key + '":'
+	const idx = raw.indexOf(needle)
+	if (idx < 0) {
+		return ''
+	}
+	const rest = raw.substring(idx + needle.length)
+	if (rest.startsWith('"')) {
+		return rest.substring(1).split('"')[0]
+	}
+	const end = rest.indexOf(',')
+	return end >= 0 ? rest.substring(0, end) : rest
+}
+
+/** R7（2026-09-06 峰宝真机批次）：后端 client_upload_id 白名单 ^[A-Za-z0-9_-]{1,255}$
+ *  （backend/app/api/upload.py:54）。历史实现把原始路径当 id 上送——图片链传
+ *  /storage/...jpg、长录音链传 voice|/storage/...wav，含 / . | 全部不匹配 →
+ *  POST /upload/init 恒 422，照片同步与长录音持久化两条链从未成功过（uvicorn 日志
+ *  连串 422 实锤）。统一在此清洗：非法字符→'_'，同一路径映射确定性 id（幂等语义保留）。
+ *  中文等非 ASCII 文件名清洗后可能退化成连续 '_'——极小概率撞 id；后端 complete 的
+ *  cos_key 幂等去重兜底，且断点续传走前端持久化的 upload_id（findPending），不依赖此处。 */
+function sanitizeUploadId(raw: string): string {
+	let out = ''
+	for (let i = 0; i < raw.length && out.length < 200; i++) {
+		const code = raw.charCodeAt(i)
+		if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (code >= 48 && code <= 57) || code == 95 || code == 45) {
+			out += raw.charAt(i)
+		} else {
+			out += '_'
+		}
+	}
+	return out == '' ? 'up-' + Date.now() : out
+}
+
+/** init：建上传任务（client_upload_id 幂等；单块协议 chunk_size=file_size，upload_mode 透传）→ UploadResp */
+export function initUpload(clientUploadId: string, fileName: string, fileSize: number, uploadMode: string): Promise<UploadResp> {
+	const body = FIELD_CLIENT_UPLOAD_ID + '=' + urlEncode(sanitizeUploadId(clientUploadId)) +
+		'&' + FIELD_FILE_NAME + '=' + urlEncode(fileName) +
+		'&' + FIELD_FILE_SIZE + '=' + fileSize +
+		'&chunk_size=' + fileSize +
+		'&' + FIELD_UPLOAD_MODE + '=' + uploadMode
+	return formPost(PATH_UPLOAD_INIT, body)
+}
+
+/** chunk：传单片（POST multipart；后端幂等 + 大小校验）→ HTTP status（0=网络失败）
+ *  R1#17：裸 uni.uploadFile 收敛 api.ts uploadFileHttp（401 重放 + 5xx Sentry 上报） */
+export function putChunk(uploadId: string, filePath: string, timeout: number): Promise<number> {
+	// UTS 对象字面量键不支持计算属性 → 字面量键 + contract 字段名常量注释对齐（O15）
+	const form: UTSJSONObject = {
+		'upload_id': uploadId,
+		'chunk_index': '0'
+	}
+	return uploadFileHttp(PATH_UPLOAD_CHUNK, filePath, 'file', form, timeout).then((hr: HttpResult) => {
+		return hr.status
+	})
+}
+
+/** complete：完成 + 建内容记录（meta 与 /contents/upload 对齐）→ UploadResp（调用方取 content_id/file_key） */
+export function completeUpload(uploadId: string, meta: UTSJSONObject): Promise<UploadResp> {
+	const body = FIELD_UPLOAD_ID + '=' + urlEncode(uploadId) + '&meta=' + urlEncode(JSON.stringify(meta))
+	return formPost(PATH_UPLOAD_COMPLETE, body)
+}

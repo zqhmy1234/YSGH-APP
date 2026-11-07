@@ -1,0 +1,1025 @@
+<template>
+	<view class="page tk-root">
+		<!-- ═══════════ 模态遮罩（55% 暗色，压暗真实页面） ═══════════
+		     点遮罩 = 关闭浮层（原独立页无此交互，浮层化后必须补，否则只能靠系统返回键） -->
+		<view v-if="!directPick" class="scrim" @tap="onClose"></view>
+
+		<!-- ═══════════ 底部弹层：新的记忆（设计稿默认态） ═══════════ -->
+		<view v-if="!directPick" class="sheet">
+			<view class="grab"></view>
+			<text class="sheet-title">新的记忆</text>
+			<view class="sheet-options">
+				<view class="option" @tap="openMode('photo')">
+					<view class="option-circle c-photo">
+						<image class="option-icon icon-camera" src="/static/icons/record-camera.svg" />
+					</view>
+					<text class="option-label">拍照</text>
+				</view>
+				<view class="option" @tap="openMode('gallery')">
+					<view class="option-circle c-gallery">
+						<image class="option-icon icon-gallery" src="/static/icons/record-gallery.svg" />
+					</view>
+					<text class="option-label">选照片</text>
+				</view>
+				<view class="option" @tap="openMode('voice')">
+					<view class="option-circle c-voice">
+						<image class="option-icon icon-mic" src="/static/icons/record-mic.svg" />
+					</view>
+					<text class="option-label">说一段</text>
+				</view>
+				<view class="option" @tap="openMode('text')">
+					<view class="option-circle c-text">
+						<image class="option-icon icon-keyboard" src="/static/icons/record-keyboard.svg" />
+					</view>
+					<text class="option-label">写几句</text>
+				</view>
+			</view>
+			<view class="home-indicator"></view>
+			<text class="sheet-hint">长按 + 可直达完整记录表单</text>
+		</view>
+
+		<!-- ═══════════ 功能层：F1 全谱系还原（W0-3 · 2026-09-02）
+		     F1a 待录音 / F1b 录音中（轮盘+CSS 双层螺旋动效）/ F1c 预览 / F1d 语音标注
+		     F1e 写几句 / F1f 输入中（键盘为真机系统键盘）/ F1g-k 照片网格 302/146/96 档位
+		     视觉规范：底 #F6F1E7 · 深棕 #3A2E25 · 次棕 #8A7A6A · 弱棕 #B3A696 · 金 #C4913C · 锈红 #B05A3A -->
+		<view v-if="formMode != ''" class="form-layer">
+			<!-- 导航：返回 + 标题（语音录制/预览态另有右上关闭，F1a-c 帧真值） -->
+			<view class="fnav">
+				<view class="fnav-btn" @tap="closeForm">
+					<image class="fnav-back-icon" src="/static/icons/i4_135.svg" />
+				</view>
+				<text class="fnav-title">{{ formTitle }}</text>
+				<view v-if="formMode == 'voice' && voiceStage != 'annotate'" class="fnav-btn" @tap="onClose">
+					<text class="fnav-close">✕</text>
+				</view>
+				<view v-else class="fnav-btn"></view>
+			</view>
+
+			<!-- ═══ 语音 · 录制态（F1a/F1b：透明轮盘 7 白点 + 中央磨砂玻璃珠） ═══ -->
+			<view v-if="formMode == 'voice' && voiceStage == 'record'" class="stage-col">
+				<view class="wheel-zone">
+					<!-- 轮盘动画走 UniElement.animate()（§I A' 拍板：CSS @keyframes App 端不支持） -->
+					<view class="wheel" id="rs-wheel">
+						<!-- R3 性能刀（2026-09-04）：21 点 = 7 主 + 7 幽灵a/b 运行留痕采样，改 transform
+						     单函数 translate 驱动（GPU 合成，不触发 layout reflow；§O P1 实锤被丢弃的是
+						     rotate+translate 多函数组合，单函数规避）。尺寸/投影全部静态 CSS 类
+						     （.wds*/.wgs* 尺寸 + .wd 白点阴影），:style 字符串绑定（manage badgeStyle 先例）
+						     只留逐帧 tf；预计算轨道表，tick 仅 index 推进。
+						     档位见 DOT_SPECS：dia20~56 / r154~262 / 角度打破均匀；幽灵=主点 75% 尺寸 -->
+						<view v-for="(p, i) in dotPts" :key="i" :class="dotCls(p, i)" :style="p.tf" :id="'rs-dot' + i"></view>
+					</view>
+					<view class="hub-hit" @tap="toggleRecord">
+						<view class="hub"></view>
+					</view>
+				</view>
+				<view class="rec-bottom">
+					<text class="rec-timer" :class="recording ? 'rec-timer-on' : ''">{{ fmtRecTime(recordSeconds) }}</text>
+					<text class="rec-hint">{{ recordHint }}</text>
+					<view v-if="recording && (recState === 'interrupted' || recState === 'paused')" class="interrupt-bar">
+						<text class="interrupt-text">{{ recState === 'interrupted' ? '录音被来电/系统中断，已暂停' : '已暂停' }}</text>
+						<view class="hold-btn" @tap="resumeRecordNow">
+							<text class="hold-text">继续</text>
+						</view>
+						<!-- 2026-11-01（走查 1.2 实测缺陷）：**暂停后没有任何"结束"入口**。
+						     原设计把结束藏在「连点两次中央圆点（400ms 内）」，但暂停态界面只写了
+						     「继续录音」，用户根本无从发现 —— 设备实测：录 5 秒轻触变成暂停，
+						     然后界面上再也找不到怎么保存，1.2/6.5/6.6 三条走查全被挡住。
+						     这里给一个显式按钮，走 `endFromTap()`（暂停态会先 resume 再 stop，
+						     与连点两次完全同一条路径，不新增状态机分支）。 -->
+						<view class="finish-btn" @tap="endRecordNow">
+							<text class="finish-text">结束并转写</text>
+						</view>
+					</view>
+					<view v-if="!recording && transcribeFailed" class="interrupt-bar">
+						<text class="interrupt-text">转写失败，录音已保留</text>
+						<view class="resume-btn" @tap="retryTranscribe">
+							<text class="resume-text">重新转写</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- ═══ 语音 · 预览态（F1c：转写白卡 + 重新录/确定） ═══ -->
+			<view v-else-if="formMode == 'voice' && voiceStage == 'preview'" class="stage-col">
+				<view class="prev-card">
+					<text class="prev-text">{{ transcript }}</text>
+					<text class="prev-meta">时长 {{ fmtRecTime(recSecFromMs(lastVoiceDuration)) }} · {{ infoTime }}</text>
+				</view>
+				<view class="flex-spacer"></view>
+				<view class="cta-row">
+					<view class="cta2" @tap="reRecord"><text class="cta2-text">重新录</text></view>
+					<view class="cta-main" @tap="toAnnotate"><text class="cta-main-text">确定</text></view>
+				</view>
+			</view>
+
+			<!-- ═══ 语音 · 补录信息态（F1d：转写内容 + 分类 chips + 信息卡 + 备注 + 保存） ═══
+			     帧真值 record_f1d_canvas.json（390x844 · 35 节点 · 2026-09-02 导出）
+			     分类 chips 用真实枚举 ALL_LABELS（待办/灵感/情绪/引用/混合/问询/事实），画布「日常生活/家人与朋友/旅行」为示例名；
+			     AI 预选 = 进入标注态对转写文本真实打标（submitClassify+pollClassify），非演示 -->
+			<view v-else-if="formMode == 'voice'" class="stage-col">
+				<scroll-view class="anno-scroll" direction="vertical" :show-scrollbar="false">
+					<view class="v-body">
+						<!-- 转写内容（节标 13pt #8A7A6A；白卡 654x250 radius 38rpx，可改字纠正） -->
+						<text class="v-sec v-sec-first">转写内容</text>
+						<textarea :adjust-position="true" class="v-trans" style="color:#3a2e25;" v-model="transcript" :maxlength="2000" />
+						<text v-if="voiceDiag != ''" class="v-diag">{{ voiceDiag }}</text>
+
+						<!-- 分类（AI 已预选 · 点标签可纠正；chips=ALL_LABELS 真实枚举） -->
+						<view class="v-row">
+							<text class="v-row-label">分类</text>
+							<text class="v-row-hint">AI 已预选 · 点标签可纠正</text>
+						</view>
+						<view class="v-chips">
+							<view v-for="t in allLabels" :key="t.key" class="v-chip" :class="vChipCls(t.key)" @tap="onVChipTap(t.key)">
+								<text class="v-chip-text" :class="vChipTextCls(t.key)">{{ t.cn }}</text>
+							</view>
+							<view v-for="c in customLabels" :key="'c_' + c" class="v-chip" :class="customVChipCls(c, manualLabel)" @tap="onVChipTap('custom:' + c)">
+								<text class="v-chip-text" :class="customVChipTextCls(c, manualLabel)">{{ c }}</text>
+							</view>
+							<view class="v-chip v-chip-plus" @tap="onPlusTap"><text class="v-chip-plus-text">＋</text></view>
+						</view>
+						<view v-if="plusOpen" class="plus-editor">
+							<input :adjust-position="true" class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
+							<view class="plus-ok" @tap="confirmCustom"><text class="plus-ok-text">添加</text></view>
+						</view>
+
+						<!-- 信息卡（时间行 + 分隔线 + 地点行；地点为演示值，定位服务接入后替换，台账 B6） -->
+						<view class="v-info">
+							<view class="v-info-row v-info-row1">
+								<view class="v-ico">
+									<view class="v-ico-clock"></view>
+									<view class="v-ico-hv"></view>
+									<view class="v-ico-hh"></view>
+								</view>
+								<text class="v-info-text">{{ infoTime }}</text>
+							</view>
+							<view class="v-divider"></view>
+							<view class="v-info-row v-info-row2">
+								<view class="v-ico">
+									<view class="v-ico-pin"></view>
+								</view>
+								<!-- 2026-10-04：定位状态诚实化。拿不到就不显示这一行，
+								     不用任何占位地名（原为写死的「上海 · 江边」）。 -->
+								<text v-if="locateState == 'locating'" class="v-info-text">定位中…</text>
+								<text v-else-if="locateState == 'ok'" class="v-info-text">已记录当前位置</text>
+							</view>
+							</view>
+
+							<!-- 备注（BA1 已接真：remark 随保存接口入库，ContentOut 回显） -->
+							<text class="v-sec">备注</text>
+						<textarea :adjust-position="true" class="v-remark" style="color:#3a2e25;" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+					</view>
+				</scroll-view>
+				<view class="v-save" @tap="onSave"><text class="v-save-text">保存</text></view>
+			</view>
+
+			<!-- ═══ 标注骨架（F1e 写几句 / F1g-k 照片；F1d 语音走上方专属分支） ═══ -->
+			<view v-else class="stage-col">
+				<scroll-view class="anno-scroll" direction="vertical" :show-scrollbar="false">
+					<view class="anno-body">
+						<!-- 照片区（F1g-k：网格自适应 302/146/96 档位） -->
+						<template v-if="formMode == 'photo'">
+							<text class="sec-label sec-label-first">照片 · {{ photos.length }}/9</text>
+							<view v-if="photos.length == 0" class="pempty" @tap="addPhotos">
+								<text class="pempty-icon">＋</text>
+								<text class="pempty-text">{{ sourceKind == 'camera' ? '点击拍照' : '点击从相册选择' }}</text>
+							</view>
+						<view v-else class="pcard">
+							<view class="pgrid">
+								<view v-for="(p, i) in photos" :key="i" class="pcell" :class="cellCls(i, photos.length)">
+									<image class="pimg" :class="imgCls(photos.length)" :src="p" mode="aspectFill" />
+									<view v-if="photos.length > 1" class="pdel" @tap="removePhoto(i)">
+										<text class="pdel-x">✕</text>
+									</view>
+								</view>
+							<!-- 加号格：<9 恒显示（峰宝 09-02 拍板：拍 1 张后必须能续拍/续选）；形态随「照片数+加号格」总数（P5） -->
+							<view v-if="photos.length < 9" class="pcell pplus" :class="cellCls(photos.length, photos.length)" @tap="addPhotos">
+								<text class="pplus-icon">＋</text>
+							</view>
+						</view>
+					</view>
+					</template>
+						<!-- 转写内容（F1d，可改字纠正）/ 正文（F1e） -->
+						<template v-else>
+							<text class="sec-label sec-label-first">{{ formMode == 'voice' ? '转写内容' : '正文' }}</text>
+							<textarea :adjust-position="true" v-if="formMode == 'voice'" class="a-input" style="color:#3a2e25;" v-model="transcript" :maxlength="2000" />
+							<textarea :adjust-position="true" v-else class="a-input" style="color:#3a2e25;" v-model="draft" placeholder="今天遇到了什么想记下来的？比如：陪妈逛了趟菜市场，她挑了茄子" :maxlength="1000" />
+							<view v-if="formMode == 'text' && draft != ''" class="counter-wrap">
+								<text class="counter-row">{{ draft.length }}/1000</text>
+							</view>
+							<!-- 语音诊断行（情绪/通道/安全审核：画布 F1d 无槽位，低调度呈现） -->
+							<text v-if="formMode == 'voice' && voiceDiag != ''" class="diag-line">{{ voiceDiag }}</text>
+						</template>
+
+						<!-- 分类 chips（照片态文案 2026-10-14 更正：「AI 已预选」是假状态，见台账 §7.17） -->
+						<view class="sec-row">
+							<text class="sec-row-label">分类</text>
+							<text class="sec-row-hint">{{ formMode == 'photo' ? '选一个分类（保存时按你的选择记录）' : '选一个合适的分类' }}</text>
+						</view>
+						<view class="chips">
+							<view v-for="t in allLabels" :key="t.key" class="chip" :class="manualLabel == t.key ? 'chip-on' : ''" @tap="onChipTap(t.key)">
+								<text class="chip-text" :class="manualLabel == t.key ? 'chip-on-text' : ''">{{ t.cn }}</text>
+							</view>
+							<view v-for="c in customLabels" :key="'c_' + c" class="chip" :class="customChipCls(c, manualLabel)" @tap="onCustChipTap(c)">
+								<text class="chip-text" :class="customChipTextCls(c, manualLabel)">{{ c }}</text>
+							</view>
+							<view class="chip chip-plus" @tap="onPlusTap"><text class="chip-plus-text">＋</text></view>
+						</view>
+						<!-- 自定义分类输入行（点＋展开；本地持久化 custom_labels，后端 corrections 白名单不支持自由标签——台账 A 类） -->
+						<view v-if="plusOpen" class="plus-editor">
+							<input :adjust-position="true" class="plus-input" v-model="newCat" placeholder="输入分类名（如：骑行）" :maxlength="8" />
+							<view class="plus-ok" @tap="confirmCustom"><text class="plus-ok-text">添加</text></view>
+						</view>
+
+						<!-- 信息卡（F1g-k/F1d 真值：时间行 + 分隔线 + 地点行；地点为演示值，定位服务接入后替换，台账 B6） -->
+						<view class="v-info">
+							<view class="v-info-row v-info-row1">
+								<view class="v-ico">
+									<view class="v-ico-clock"></view>
+									<view class="v-ico-hv"></view>
+									<view class="v-ico-hh"></view>
+								</view>
+								<text class="v-info-text">{{ infoTime }}</text>
+							</view>
+							<view class="v-divider"></view>
+							<view class="v-info-row v-info-row2">
+								<view class="v-ico">
+									<view class="v-ico-pin"></view>
+								</view>
+								<!-- 2026-10-04：同上，诚实化定位状态（无值即不显示）。 -->
+								<text v-if="locateState == 'locating'" class="v-info-text">定位中…</text>
+								<text v-else-if="locateState == 'ok'" class="v-info-text">已记录当前位置</text>
+							</view>
+							</view>
+
+							<!-- 备注（画布 F1g-k 照片帧无此节，仅写几句/语音补录保留；BA1 已接真随保存入库） -->
+							<template v-if="formMode != 'photo'">
+							<text class="sec-label sec-label-gap">备注</text>
+							<textarea :adjust-position="true" class="remark-input" style="color:#3a2e25;" v-model="remark" placeholder="补充几句…" :maxlength="200" />
+						</template>
+
+						<!-- 确定钮（画布真值：随内容流置于信息卡之后，非固定底栏） -->
+						<view class="cta-full" @tap="onSave">
+							<text class="cta-full-text">{{ ctaLabel }}</text>
+						</view>
+					</view>
+				</scroll-view>
+			</view>
+
+			<view class="home-bar"></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// ⚠️ 不要 import 生命周期：uni-app x 规定 ref/computed/onLoad/onMounted 等由框架自动引入，
+	// 手写 `import { onMounted } from '@dcloudio/uni-app'` 会编译失败
+	// （真机实锤 2026-08-31："onMounted" is not exported by "@dcloudio/uni-app/dist-x/uni-app.es.js"）。
+	import { ensureLogin } from '@/utils/auth'
+	import { fmtRecTime, recSecFromMs, cellCls, imgCls } from '@/utils/record_ui'
+	import { RecordAnimations, DotPt } from '@/composables/useRecordAnimations'
+	import {
+		readStoredCustomLabels, persistCustomLabels, customChipCls, customChipTextCls,
+		customVChipCls, customVChipTextCls
+	} from '@/utils/custom_labels'
+	import { submitClassify, pollClassify, submitCorrection, ALL_LABELS } from '@/utils/text_recorder'
+	import { createTextContentRemark } from '@/utils/capsule_api'
+	import { recorderState, stopRecord } from '@/utils/voice'
+	import { getCurrentFix, getLastFix, setLastFix, Fix, LocateState } from '@/utils/location'
+	import { showErrorToast } from '@/utils/api'
+	import { VoiceRecorder } from '@/composables/useVoiceRecord'
+	import { UploadProgress, UploadedPhoto } from '@/utils/uploader_types'
+	import { uploadBatch } from '@/utils/uploader_batch'
+	// 2026-10-30（P2 A-8）：需要读同步暂停态 —— 暂停时不能承诺「WiFi 后自动继续」
+	import { isSyncPaused } from '@/utils/pause_controller'
+	// NEW-01 修复（2026-10-11 开发 C）：端侧 L1 聚合 + 上云所需依赖（与 TabIndex.handleBatch 同源）
+	// 2026-10-16：上云逻辑抽成共口（utils/l1_submit.uts），供 记录面板 / 横幅手动上传 / WiFi 自动补传 三处复用
+	import { submitUploadsAsL1, submitContentAsL1 } from '@/utils/l1_submit.uts'
+	// PhotoItem 为纯数据类，声明家在 interface.uts（插件根代理不转发再导出符号，见 TabIndex.uvue 注）
+	import { PhotoItem } from '@/uni_modules/yishu-photo-watch/utssdk/interface.uts'
+	import { createPhotoWatch } from '@/uni_modules/yishu-photo-watch'
+	const photoWatch = createPhotoWatch()
+
+	// ===== 对外事件 =====
+	// 浮层化后（2026-08-31 峰宝拍板）：记录面板 = 全局浮层，不是页面。
+	// 关闭由宿主页决定（<RecordSheet v-if="sheetOpen" @close="sheetOpen=false" />）
+	// initialMode：宿主页带模式直达（P6：空状态「拍下第一张」→ 'photo' 直弹相机，不走 photoWatch 原生监听）
+	const props = defineProps({
+		initialMode: {
+			type: String,
+			default: ''
+		}
+	})
+	const emit = defineEmits(['close', 'saved'])
+
+	// 直达拍照态（P6 空状态「拍下第一张」）：直达期间面板 UI 整体隐藏（防「先闪面板再拉相机」），
+	// 相机拍成功才现身照片表单；取消/失败 = emit('close') 直接回宿主页（用户没打开过面板，不留悬空面板）。
+	// ⚠️ 本声明曾在 §T 批并行写竞争中丢失（模板引用未声明变量 → 渲染崩溃，+ / 拍下第一张全灭），§V 补回
+	// ⚠️ 初值必须声明时同步判（§W 峰宝真机复验）：uvue 原生渲染 mounted 钩子晚于首帧上屏，
+	// 若初值 false 靠 onMounted 置 true，首帧会把面板照常画出来 →「先闪面板再开相机」复发
+	// ⚠️ §X 升级为「直达会话全程标志」：成功后不再复位——scrim/sheet 整场不挂载，表单 z 序独占
+	//（09-03 真机实锤：二次进入时三者同帧挂载致 uvue 原生 z 序错乱，表单被面板盖住=「点了没反应」）
+	let directPick = ref(props.initialMode == 'photo')
+
+	// ===== 轮盘圆点（R3 性能刀 2026-09-04：transform 单函数 translate + 预计算轨道表） =====
+	// B5.2f-2：圆点动画收敛为共享组合式函数（唯一实现 client/composables/useRecordAnimations.uts）
+	const ra = new RecordAnimations()
+	const dotPts = ra.pts   // 顶层绑定：模板自动解包（ra.pts 不能直接在模板 v-for）
+	function dotCls(p: DotPt, i: number): string {
+		return ra.cls(p, i, recording.value)
+	}
+
+	// ===== 响应式数据 =====
+	// 弹层 / 表单状态
+	let formMode = ref('')
+	let formTitle = ref('写几句')
+	// 语音三段流（F1 录制 → 预览 → 标注）
+	let voiceStage = ref('record') // record | preview | annotate
+	let infoTime = ref('')
+	let manualLabel = ref('')
+	// F1d 语音补录信息态：AI 预选分类（进入标注态真实打标，hint「AI 已预选 · 点标签可纠正」）
+	let aiLabel = ref('')
+	// F1d信息卡地点行（2026-10-04 补真链路）：**删除写死的「上海 · 江边」演示值**。
+	// 此前是 `const USE_MOCK_LOCATION = true` + 字面量，全客户端零 uni.getLocation 调用，
+	// 于是「用户开着定位服务」与代码无关，界面那行字恒为「上海 · 江边」。
+	// 现在：打开面板时真取一次定位，拿到坐标就随内容提交（后端逆地理产出 place）；
+	// 拿不到就**留空**（见下模板 v-if）——定位是增强项，编造地名比没有地名更糟。
+	// 台账 B6（发版前 grep 清理演示值）由此闭环。
+	const locateState = ref<LocateState>('idle')
+	let currentFix: Fix | null = null
+	let remark = ref('')
+	// 照片（F1g-k 多图）
+	let photos = ref<Array<string>>([])
+	let photoSizes = ref<Array<number>>([])
+	let photoUploading = ref(false)
+	// 2026-10-30（P2 A-5）：组件存活标志。上传/入库是网络异步，用户完全可能「点了保存 →
+	// 立刻关面板/按返回」——此时组件已被 v-if 卸载，回调若照常 toast / emit('close') / 改表单 ref：
+	// ① 新页面被无关 toast 干扰；② emit 到已销毁实例（宿主已把 sheetOpen 置 false）；
+	// ③ 表单态在已卸载组件上再写一遍（无意义）。故卸载即置 true，回调只做服务端副作用 + 清理。
+	let disposed = false
+	// 2026-10-30（P2 A-7）：分类轮询世代号（与 utils/timeline.uts 缩略图池 `_thumbGen` 同范式）。
+	// 原实现 pollClassify 的回调无任何身份校验：用户「重录 / 关面板 / 卸载」后，上一轮的
+	// 20×3s 轮询仍会返回并把 label 写进 `aiLabel` ⇒ 新录的一段语音被贴上上一段的分类。
+	let classifyGen = 0
+	// 照片入口来源（峰宝 09-02 拍板：拍照/选照片同一表单页，sourceKind 只决定拉相机还是相册）
+	let sourceKind = ref('camera')
+	// 文字记录
+	let draft = ref('')
+	let submitting = ref(false)
+	let lastText = ref('')
+	let allLabels = ref(ALL_LABELS)
+	// 语音记录
+	// 单击/双击判定时间戳（峰宝 09-02 拍板：单击=暂停/继续，连点两下=结束；400ms 窗口）
+	// B5.2f-2e：saving 已随语音收尾迁入 composable（组件经 `const saving = vr.saving` 绑定）
+
+	const voiceDiag = computed((): string => {
+		const parts: Array<string> = []
+		if (emotion.value != '') {
+			parts.push('情绪：' + emotion.value)
+		}
+		if (voiceHints.value != '') {
+			parts.push(voiceHints.value)
+		}
+		if (guardMsg.value != '') {
+			parts.push(guardMsg.value)
+		}
+		return parts.join(' · ')
+	})
+	const ctaLabel = computed((): string => {
+		if (formMode.value == 'voice') {
+			return '保存'
+		}
+		return '确定'
+	})
+
+	// ===== 生命周期（组件化：onLoad/onUnload → onMounted/onUnmounted） =====
+	onMounted(() => {
+		ensureLogin().then((ok: boolean) => {
+			if (!ok) {
+				showErrorToast(new Error('登录失败，请重试'))
+			}
+		})
+		// 自定义分类：进面板即读本地持久化（custom_labels 逗号串）
+		customLabels.value = readStoredCustomLabels()
+		// P6：宿主页带模式直达（空状态「拍下第一张」→ 直弹相机）
+		if (props.initialMode == 'photo') {
+			directPick.value = true   // 直达期间隐藏面板 UI，防「先闪面板再拉相机」
+			openMode('photo')
+		}
+		// 2026-10-04：进面板即取一次定位（替换原写死的「上海 · 江边」）。
+		// 拿到就存进 utils/location 的模块单例，由文字/语音提交点读取；
+		// **拿不到就什么都不做**（不提示、不重试、不回落假值）——
+		// 定位是增强项，界面显示「定位中…」后自行收场为空行。
+		getCurrentFix((s: LocateState): void => {
+			locateState.value = s
+		}).then((fix: Fix | null): void => {
+			setLastFix(fix)
+		})
+	})
+	onUnmounted(() => {
+		// 2026-10-30（P2 A-5/A-7）：先立死亡标志，再停录音 —— 之后任何在途回调（上传批次、
+		// 分类轮询、转写）只允许做服务端副作用与本地清理，不许 toast / emit / 改表单。
+		disposed = true
+		classifyGen = classifyGen + 1
+		vr.markDisposed()
+		if (recordTimer.value > 0) {
+			clearInterval(recordTimer.value)
+			recordTimer.value = 0
+		}
+		// 🚨 2026-10-11 静态审查 #1（跳转维度）修复：录音中卸载必须**真正停止录音**。
+		// 原实现只清展示用计时器（recordTimer）——而 shell 的返回键分支只把 `sheetOpen=false`，
+		// 组件随即被 `v-if` 卸载（未走 onClose 路径）⇒ **录音中按返回键时原生录音可能仍在后台
+		// 继续**（表现为"面板关了还在录"；再打开面板状态错乱、时长与文件对不上）。
+		// ⚠️ 必须用 `abandonRecording`（只停不保存）而非 `stopRecordNow`：后者会走原生
+		// onStop → onRecordStopped 的**保存链**（转写/上传/emitSaved）⇒ 卸载时会变成
+		// "边退出边把这段录音存下来"，而用户按返回的意图是取消（2026-10-11 二轮修正）。
+		if (recording.value) {
+			vr.abandonRecording()
+		}
+	})
+
+	// B5.2f-2c：模板取值封装（fmtRecTime/recSecFromMs/cellCls/imgCls）外置到 utils/record_ui.uts
+	function setInfoTime(): void {
+		const d = new Date()
+		const h = d.getHours()
+		const m = d.getMinutes()
+		const hs = h < 10 ? '0' + h : '' + h
+		const ms = m < 10 ? '0' + m : '' + m
+		infoTime.value = '今天 ' + hs + ':' + ms
+	}
+
+	// ===== 浮层整体关闭（点遮罩 / 宿主页调用） =====
+	function onClose(): void {
+		// 2026-10-30（P2 A-6 已裁定：点遮罩关面板 = **不保存**）：
+		// 原实现调 `stopRecordNow()` → 原生 onStop → onRecordStopped 走**保存链**
+		// （转写→预览→入库），即「点一下遮罩/✕ 就把这段录音存下来了」，与用户意图相反；
+		// 也与本文件 onUnmounted 的 `abandonRecording()`（只停不存）语义不一致。
+		// 现改为 abandoned：只有显式「确定/保存」才落库。
+		// 铁律 11：closeForm 曾因 stopRecord 抛异常导致状态永不复位 → 此处同样无条件通知宿主页
+		try {
+			if (recording.value) {
+				vr.abandonRecording()
+			}
+		} catch (e) {
+			console.log('[yishu] onClose 放弃录音失败（忽略，仍强制关闭浮层）: ' + e)
+		}
+		// 2026-10-30（P2 A-7）：关面板即终结本轮分类轮询世代
+		classifyGen = classifyGen + 1
+		formMode.value = ''
+		voiceStage.value = 'record'
+		emit('close')
+	}
+
+	// ===== 弹层交互 =====
+	function openMode(m: string): void {
+		if (m == 'photo' || m == 'gallery') {
+			// 峰宝 09-02 拍板：点击**立即**拉 picker（不先进表单页再弹）；成功后才进表单页，
+			// 取消留在记录面板；拍照/选照片进**同一**照片表单（sourceKind 只决定拉相机还是相册）
+			sourceKind.value = m == 'photo' ? 'camera' : 'album'
+			if (m == 'photo') {
+				// 相机入口在拍照弹起前刷新一次位置；不能用面板首次挂载时
+				// 或上一次记录留下的位置冒充本次拍摄地点。
+				getCurrentFix((s: LocateState): void => {
+					locateState.value = s
+				}).then((fix: Fix | null): void => {
+					setLastFix(fix)
+				})
+			}
+			pickPhotos()
+			return
+		}
+		formMode.value = m
+		setInfoTime()
+		if (m == 'voice') {
+			formTitle.value = '说一段'
+			voiceStage.value = 'record'
+			recordHint.value = '轻触中央圆点 · 开始录音'
+			recordSeconds.value = 0
+			// R7（2026-09-06）：进入录音页先复位录音器——强退路径（onClose「忽略仍关闭」）
+			// 可能留下未释放的原生会话，下次 start 报 Android "other errors"（峰宝真机实锤）。
+			// recorderState() 非 idle 时强制 stop 释放；未录音时 stop 是无害调用（包 try 防御）。
+			try {
+				const st = recorderState()
+				if (st != 'idle' && st != '') {
+					stopRecord()
+					console.log('[yishu] openMode(voice) 防御性复位录音器: 上一状态=' + st)
+				}
+			} catch (e) {
+				console.log('[yishu] openMode(voice) 复位录音器异常（忽略）: ' + e)
+			}
+		} else {
+			formTitle.value = '写几句'
+		}
+	}
+	function closeForm(): void {
+		// 录音中返回弹层：停止录音，避免后台空转
+		// 铁律：formMode 必须**无条件**复位——原生插件抛异常曾导致「录音中关不掉表单、出不去」
+		try {
+			if (recording.value) {
+				stopRecordNow()
+			}
+		} catch (e) {
+			console.log('[yishu] closeForm 停止录音失败（忽略，仍强制关闭表单）: ' + e)
+		}
+		formMode.value = ''
+		// 2026-10-30（P2 A-1）：**取消路径必须复位本轮输入**。
+		// 原实现只有「保存成功」才清 photos/photoSizes/draft/remark/manualLabel，取消返回时全部留着
+		// ⇒ 再次进入「照片/写几句」看到上一轮的图与文字、件数显示旧值（如"4/9"），
+		// 甚至可能把上一轮的旧图当成本次提交（重复入库）。
+		photos.value = []
+		photoSizes.value = []
+		draft.value = ''
+		remark.value = ''
+		manualLabel.value = ''
+		aiLabel.value = ''
+		// 2026-10-30（P2 A-7）：取消返回 = 本轮作废，在途分类轮询的结果一律丢弃
+		classifyGen = classifyGen + 1
+		// §X：直达会话（拍下第一张）用户没打开过面板，表单返回=直接关浮层回宿主页
+		if (directPick.value) {
+			emit('close')
+			return
+		}
+		voiceStage.value = 'record'
+	}
+	function onSave(): void {
+		if (formMode.value == 'text') {
+			submitText()
+		} else if (formMode.value == 'voice') {
+			submitVoice()
+		} else {
+			savePhoto()
+		}
+	}
+	function onChipTap(key: string): void {
+		// F1 标注态：点标签选分类（重复点同一枚 = 取消手选）
+		manualLabel.value = manualLabel.value == key ? '' : key
+		// 2026-10-30（P2 A-7）：自定义分类**在选中时就说清楚**，而不是保存时静默丢弃。
+		// 后端 `VALID_CLASSES` 白名单不收自由标签（`api/corrections.py:36`），原实现在保存路径
+		// 直接 `if (picked.indexOf('custom:') == 0) return` —— chip 仍高亮，用户以为分类生效了。
+		if (manualLabel.value.indexOf('custom:') == 0) {
+			uni.showToast({ title: '自定义分类暂不支持同步到云端，仅本机标记', icon: 'none', duration: 2500 })
+		}
+	}
+	// F1d 语音标注态 chips：有效选中 = 手选优先，未手选则取 AI 预选
+	function vChipCls(key: string): string {
+		const eff = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		return eff == key ? 'v-chip-on' : ''
+	}
+	function vChipTextCls(key: string): string {
+		const eff = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		return eff == key ? 'v-chip-on-text' : ''
+	}
+	function onVChipTap(key: string): void {
+		// F1d：点其他标签 = 手选覆盖 AI 预选；点当前有效选中 = 无操作（不取消）
+		const eff = manualLabel.value != '' ? manualLabel.value : aiLabel.value
+		if (eff == key) {
+			return
+		}
+		manualLabel.value = key
+	}
+	// ===== 自定义分类（峰宝 09-03 拍板：点＋必须可用）=====
+	// 本地持久化 custom_labels（逗号串）；选中 key = 'custom:'+名称。
+	// 诚实边界：后端 corrections.py VALID_CLASSES 白名单不支持自由标签 → 自定义选中时保存跳过 submitCorrection（台账 A 类登记）
+	let customLabels = ref<Array<string>>([])
+	let plusOpen = ref(false)
+	let newCat = ref('')
+	function confirmCustom(): void {
+		const name = newCat.value.replace(' ', '').trim()
+		if (name == '') {
+			uni.showToast({ title: '请输入分类名', icon: 'none' })
+			return
+		}
+		let dup = false
+		for (let i = 0; i < allLabels.value.length; i++) {
+			if (allLabels.value[i].cn == name) {
+				dup = true
+				break
+			}
+		}
+		for (let i = 0; i < customLabels.value.length; i++) {
+			if (customLabels.value[i] == name) {
+				dup = true
+				break
+			}
+		}
+		if (dup) {
+			uni.showToast({ title: '该分类已存在', icon: 'none' })
+			return
+		}
+		customLabels.value.push(name)
+		persistCustomLabels(customLabels.value)
+		manualLabel.value = 'custom:' + name
+		newCat.value = ''
+		plusOpen.value = false
+	}
+	function onCustChipTap(c: string): void {
+		const key = 'custom:' + c
+		manualLabel.value = manualLabel.value == key ? '' : key
+	}
+	function onPlusTap(): void {
+		// 点＋展开内联输入行（原 toast「即将上线」已废弃——峰宝拍板必须可用）
+		plusOpen.value = !plusOpen.value
+		if (plusOpen.value) {
+			newCat.value = ''
+		}
+	}
+
+	// ===== 语音三段流（F1a/b → F1c → F1d） =====
+	function toAnnotate(): void {
+		formTitle.value = '补充信息'
+		setInfoTime()
+		voiceStage.value = 'annotate'
+		// F1d：进入标注态即对转写文本真实打标 → AI 预选分类（hint「AI 已预选 · 点标签可纠正」真实化）
+		aiLabel.value = ''
+		// 2026-10-30（P2 A-7）：本轮世代号 = 这一次「进标注态」的身份；重录/关面板/卸载都会 ++，
+		// 于是旧轮次的 submit/poll 回调回来时世代不符 → 直接丢弃（不再写 aiLabel）。
+		classifyGen = classifyGen + 1
+		const gen = classifyGen
+		const txt = transcript.value
+		if (txt.trim() != '') {
+			submitClassify(txt).then((jobId: string | null) => {
+				if (jobId == null || gen != classifyGen || disposed) {
+					return
+				}
+				pollClassify(jobId, 20, 3000).then((result) => {
+					if (gen != classifyGen || disposed) {
+						return
+					}
+					if (result != null && result.label != '') {
+						aiLabel.value = result.label
+					}
+				})
+			})
+		}
+	}
+	function reRecord(): void {
+		// 2026-10-30（P2 A-7）：重录 = 上一轮作废，作废在途分类轮询（否则旧 label 会贴到新录音上）
+		classifyGen = classifyGen + 1
+		transcript.value = ''
+		aiLabel.value = ''
+		emotion.value = ''
+		voiceHints.value = ''
+		guardMsg.value = ''
+		lastVoiceDuration.value = 0
+		lastVoiceFile.value = ''
+		recordSeconds.value = 0
+		recordHint.value = '轻触中央圆点 · 开始录音'
+		formTitle.value = '说一段'
+		voiceStage.value = 'record'
+	}
+
+	// ===== 照片 / 相册（F1g-k：多选 ≤9 张，删除角标 + 加号格续选） =====
+	// sourceKind 决定拉相机还是相册（峰宝 09-02 拍板：拍照/选照片同一表单页，只是入口不同）；
+	// 成功拿到照片才进表单页（不落空表单）；取消一律静默（入口取消=留面板，续选取消=留表单）
+	function pickPhotos(): void {
+		// 2026-10-30（P2 A-007/A-3）：先算剩余名额，0 张时直接不动（count=0 调 chooseImage 无意义）
+		const remain = 9 - photos.value.length
+		if (remain <= 0) {
+			uni.showToast({ title: '最多 9 张', icon: 'none' })
+			return
+		}
+		const srcs: Array<string> = sourceKind.value == 'camera' ? ['camera'] : ['album']
+		uni.chooseImage({
+			count: remain,
+			sourceType: srcs,
+			// GPS/拍摄时间只存在于原文件 EXIF；系统压缩会直接剥离。
+			sizeType: ['original'],
+			success: (res) => {
+				// §X：directPick 是直达会话全程标志，成功后不复位——scrim/sheet 整场不挂载，
+				// 表单独占屏幕（峰宝 09-03 真机实锤：与 scrim/sheet 同帧挂载时 uvue 原生 z 序
+				// 不稳定，二次进入 form-layer 被压到 scrim/sheet 之下=「表单在但看不见+点了没反应」）
+				//
+				// 🚨 2026-10-30（P2 A-007/A-3）：**两数组必须成对 push、共用同一上限**。
+				// 原实现是「paths 循环受 9 张上限约束、tempFiles 循环全量追加」——
+				// 已有 8 张时再选 4 张：photos 只进 1 张（截断到 9），photoSizes 却进 4 个 ⇒
+				// 从这一刻起 `photoSizes[i]` 与 `photos[i]` **下标永久错位**：
+				//   ① 提交时 `savePhoto` 用错位后的 size 组装 PhotoItem ⇒ 后端 init 的 size
+				//      与真实文件不符，complete 阶段 422（体积校验失败）；
+				//   ② 删除中间某张后（removePhoto 按下标同步删两数组）错位继续往后传染。
+				// 现改为单循环、按 `min(剩余名额, paths.length, tempFiles.length)` 成对追加。
+				const paths = res.tempFilePaths
+				const tfs = res.tempFiles
+				let n = paths.length
+				if (n > remain) {
+					n = remain
+				}
+				if (n > tfs.length) {
+					n = tfs.length
+				}
+				for (let i = 0; i < n; i++) {
+					const p = paths[i]
+					// 路径缺失时**立即停止**（不能跳过：跳过一个就会让两个数组再次错位）
+					if (p == null) {
+						break
+					}
+					photos.value.push(p)
+					// 尺寸拿不到记 0：savePhoto/uploadOne 会以「文件大小为 0」显式失败，
+					// 而不是用别张图的大小冒充（错位比失败更糟——它静默入库错误元数据）。
+					let sz = 0
+					const tf = tfs[i]
+					if (tf != null) {
+						sz = tf.size
+					}
+					photoSizes.value.push(sz)
+				}
+				// 拿到照片才进表单页
+				formMode.value = 'photo'
+				formTitle.value = '照片'
+				setInfoTime()
+				// 2026-10-14（台账 §7.17）：删除「默认选中首枚」演示预选——原来把「待办」
+				// 当照片默认分类，并配合「AI 已预选」文案构成假状态（此刻 AI 还没跑）。
+				manualLabel.value = ''
+			},
+			fail: () => {
+				// 取消选择：静默（入口场景留面板 / 续选场景留表单），不给误导 toast
+				// 直达模式（空状态拍下第一张）：用户没打开过面板，取消/失败=直接关浮层回宿主页
+				// §X：directPick 为会话标志不复位（组件随 close 即将销毁）
+				if (directPick.value) {
+					emit('close')
+				}
+			}
+		})
+	}
+	function addPhotos(): void {
+		pickPhotos()
+	}
+	function removePhoto(i: number): void {
+		if (i < 0 || i >= photos.value.length) {
+			return
+		}
+		// splice/filter 均零项目先例，按下标重建数组整体重赋值（reactivity 最稳）
+		const next: Array<string> = []
+		for (let j = 0; j < photos.value.length; j++) {
+			if (j != i) {
+				next.push(photos.value[j])
+			}
+		}
+		photos.value = next
+		if (i < photoSizes.value.length) {
+			const ns: Array<number> = []
+			for (let j = 0; j < photoSizes.value.length; j++) {
+				if (j != i) {
+					ns.push(photoSizes.value[j])
+				}
+			}
+			photoSizes.value = ns
+		}
+	}
+	function savePhoto(): void {
+		if (photos.value.length == 0) {
+			showErrorToast(new Error('请先拍照或选一张照片'))
+			return
+		}
+		if (photoUploading.value) {
+			return
+		}
+		photoUploading.value = true
+		uni.showLoading({ title: '上传中…', mask: true })
+		const now = Date.now()
+		// 手动选图无 MediaStore id，用负时间戳作临时 id（上传只用 path/size/takenAt）
+		// 2026-10-14（台账 §4.20）：带上本次定位（原硬编码 null ⇒ 照片恒定不带地点）。
+		// 当前位置只允许给相机新拍兜底。相册旧图必须使用照片 EXIF；
+		// 没有 EXIF GPS 就留空，不能显示“现在所在的地方”。
+		const cameraCapture = sourceKind.value == 'camera'
+		const fix = cameraCapture ? getLastFix() : null
+		const fixLat: number | null = fix != null ? fix.lat : null
+		const fixLng: number | null = fix != null ? fix.lng : null
+		const items: Array<PhotoItem> = []
+		for (let i = 0; i < photos.value.length; i++) {
+			const sz = i < photoSizes.value.length ? photoSizes.value[i] : 0
+			let captureAt = cameraCapture ? now : 0
+			let lat = fixLat
+			let lng = fixLng
+			if (!cameraCapture) {
+				// OPPO 等系统选择器即使返回“原图”，也可能在 temp 文件中等长清除
+				// GPS 标签。按文件名+大小回查 MediaStore 原始媒体，提交真实元数据。
+				const p = photos.value[i]
+				const slash = p.lastIndexOf('/')
+				let name = slash >= 0 ? p.substring(slash + 1) : p
+				try {
+					name = decodeURIComponent(name)
+				} catch (e) {
+					// temp 路径未编码时保持原值
+				}
+				const meta = photoWatch.lookupPickedPhotoMetadata(name, sz)
+				if (meta != null) {
+					if (meta.takenAt > 0) {
+						captureAt = meta.takenAt
+					}
+					// (0,0) 是 EXIF/MediaStore 常见空占位；不能拿来覆盖空地点。
+					if (meta.lat != null && meta.lng != null && !(meta.lat == 0 && meta.lng == 0)) {
+						lat = meta.lat
+						lng = meta.lng
+					}
+				}
+			}
+			items.push(new PhotoItem(-(now + i), photos.value[i], captureAt, 0, 0, lat, lng, sz))
+		}
+		// 2026-10-14（台账 §7.17）：提交前快照手选分类——原实现只清空、**从不提交**。
+		const picked = manualLabel.value
+		// uploadBatch 对「蜂窝/离线暂缓」与「真实上传失败」都返回空数组；
+		// 记录进度里的 failed 才能区分，不能把已安全入 held 队列的照片误报为失败。
+		let lastUploadFailed = 0
+		uploadBatch(items, (p: UploadProgress): void => {
+			lastUploadFailed = p.failed
+		}).then((uploaded: Array<UploadedPhoto>) => {
+			uni.hideLoading()
+			photoUploading.value = false
+			if (uploaded.length > 0) {
+				// A7 手选分类接线（2026-09-26 补）：照片态保存时若有手选分类（非 custom: 前缀），
+				// 对每张成功上传照片登记纠错（content_type='photo'）→ 后端回写 contents.content_class
+				const picked = manualLabel.value
+				if (picked != '' && picked.indexOf('custom:') != 0) {
+					for (let i = 0; i < uploaded.length; i++) {
+						// text 参数用于纠错向量化；照片此刻**没有文本** ⇒ 传空串。
+						// ⚠️ 2026-10-14（台账 §7.17）**不得以路径/假文本占位**——那会把噪声写进
+						// 层①个人规则向量库（O-2「纠错恒混合」教训）；后端已放宽 `text` 为可空，
+						// 空文本时跳过向量化、仍照常回写 `contents.content_class`。
+						submitCorrection(uploaded[i].contentId, '', picked, '', 'photo').then((ok: boolean) => {
+							console.log('[yishu] photo manual correction ok=' + ok)
+						})
+					}
+				}
+				// NEW-01 修复（2026-10-11 开发 C）：端侧 L1 聚合 + 上云。
+				// 此前该逻辑只写在 TabIndex.handleBatch 里；记录面板这条上传路径不聚合 →
+				// 「内容入库但无事件」（孤儿内容）→ 时间轴 events=0 → 客户端 redirectTo('/pages/empty/empty')
+				// 锁死在空态页（空态页唯一入口又是记录面板 → 新用户永远出不来）。
+				// 后端设计：云侧默认只跑 L2/L3（backend/app/services/events/aggregate.py:82-84），
+				// L1 日卡片必须由端侧 POST /api/v1/events/sync 提交，故此处必须补上。
+				const l1n = submitUploadsAsL1(uploaded)
+				console.log('[yishu] 记录面板 L1 提交条数=' + l1n)
+				// 2026-10-30（P2 A-5）：面板已卸载 ⇒ 到这里为止的服务端副作用（纠错 + L1）
+				// **已经做完且必须做完**（照片真的传上去了，跳过就留下"内容入库但无事件"的孤儿）；
+				// 之后的 toast / emit / 表单复位一律不做。
+				if (disposed) {
+					console.log('[yishu] 上传回调到达时面板已卸载：仅清理（不 toast / 不 emit / 不复位表单）')
+					return
+				}
+				// 2026-10-30（P1-7）：**部分失败不能报全成功**。
+				// 原判据是「有没有成功的」（`uploaded.length > 0`）而不是「有没有失败的」
+				// ⇒ 9 张里 3 张失败仍 toast「已记录」并关面板，失败项静默沉到 failed 队列，
+				// 用户以为九张都在，实际少三张且没有任何提示。
+				if (lastUploadFailed > 0) {
+					uni.showToast({
+						title: (uploaded.length).toString() + ' 张已记录 · ' + lastUploadFailed.toString() + ' 张待重试',
+						icon: 'none',
+						duration: 2500
+					})
+				} else {
+					uni.showToast({ title: '已记录', icon: 'success' })
+				}
+				emit('saved')
+				photos.value = []
+				photoSizes.value = []
+				remark.value = ''
+				manualLabel.value = ''
+				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+			} else if (lastUploadFailed == 0) {
+				// 2026-10-30（P2 A-5）：同上，卸载后只清理（照片已安全进 held 队列，不需要告知）
+				if (disposed) {
+					console.log('[yishu] 上传回调（暂缓入队）到达时面板已卸载：仅清理')
+					return
+				}
+				// 蜂窝/离线：照片已进持久 held 队列，不是失败。关闭表单避免重复入队；
+				// 首页横幅继续显示“待 WiFi 上传”，网络恢复后自动补传。
+				// 2026-10-30（P2 A-8）：同步处于**暂停**状态（连续失败自动暂停 / 用户手动暂停）时，
+				// 原文案「连接 WiFi 后自动继续」是假的 —— 暂停期间不会自动补传，用户会一直等到某个
+				// 永远不会发生的动作。改为指向横幅里的继续入口（真实可执行路径）。
+				const syncPaused = isSyncPaused()
+				uni.showToast({
+					title: syncPaused
+						? '已暂缓上传；同步已暂停，请在首页横幅点「继续」'
+						: '已暂缓上传，连接 WiFi 后自动继续',
+					icon: 'none',
+					duration: 2500
+				})
+				photos.value = []
+				photoSizes.value = []
+				remark.value = ''
+				manualLabel.value = ''
+				emit('close')
+			} else {
+				// 2026-10-30（P2 A-5）：卸载后不再弹失败 toast（失败项已在 failed 队列，横幅可见）
+				if (disposed) {
+					console.log('[yishu] 上传回调（全部失败）到达时面板已卸载：不再 toast')
+					return
+				}
+				uni.showToast({ title: '上传失败，请重试', icon: 'none' })
+			}
+		})
+	}
+
+	// ===== 文字记录（F1e：确定 → 整栈收起；云端分类继续跑，手选分类不一致时登记纠正） =====
+	function submitText(): void {
+		const text = draft.value.trim()
+		console.log('[yishu] submitText: ' + text)
+		if (text == '') {
+			showErrorToast(new Error('先写点什么吧'))
+			return
+		}
+		if (submitting.value) {
+			return
+		}
+		submitting.value = true
+		const picked = manualLabel.value
+		// BA1（FE2）：备注卡接真——remark 随 POST /api/v1/contents 入库（薄封装 capsule_api）；
+		// 提交前捕获快照（保存成功后 remark 会被清空，闭包内不能读 ref）
+		const remarkVal = remark.value.trim()
+		createTextContentRemark(text, remarkVal).then((contentId: string | null) => {
+			console.log('[yishu] createTextContent -> ' + contentId)
+			submitting.value = false
+			if (contentId == null) {
+				return
+			}
+			const cid = contentId
+			lastText.value = text
+			draft.value = ''
+			remark.value = ''
+			manualLabel.value = ''
+			// 2026-10-30（P0-1）：文字记录必须**同时提交当日 L1 事件**，否则时间轴（只读 events）
+			// 永远看不到这条 —— 云侧聚合默认 mode=l2l3 从不写 L1，L1 只能端侧提交。
+			// 失败不吞：内容已入库，但要让用户知道「还没出现在时间轴」。
+			// 2026-10-30（P2 A-5 同类）：L1 属服务端副作用，**提到 toast 之前**，面板卸载也要提交。
+			// 2026-10-31（走查 C：同日多张日卡标题完全相同）：把正文前 14 字带进标题，
+			// 同一天记两条文字时两张卡不再同名（卡片面仍是「日期 · 文字 · 摘要」）。
+			submitContentAsL1(cid, Date.now(), '文字', text).then((ok: boolean) => {
+				if (!ok && !disposed) {
+					uni.showToast({ title: '已保存，稍后同步到时间轴', icon: 'none' })
+				}
+			})
+			// 2026-10-30（P2 A-5）：内容入库回调可能晚于面板卸载（用户点确定后立刻返回）——
+			// 此时不再 toast、不向已销毁实例 emit。
+			if (disposed) {
+				console.log('[yishu] 文字入库回调到达时面板已卸载：跳过 toast/emit')
+			} else {
+				uni.showToast({ title: '已记录', icon: 'success' })
+				emit('saved')
+				emit('close') // 拍板（2026-09-01）：保存去向 = 整栈收起回宿主页 + 轻 toast
+			}
+			// 云端分类继续执行（服务端打标）；组件可能已随浮层销毁，仅剩服务端副作用
+			submitClassify(text).then((jobId: string | null) => {
+				if (picked != '' && picked.indexOf('custom:') != 0) {
+					// 手选分类优先：直接登记纠正，不等 AI 结果（custom: 前缀 = 自定义分类，后端白名单不支持——台账 A 类）
+					submitCorrection(cid, text, picked, '', 'text').then((ok: boolean) => {
+						console.log('[yishu] manual correction ok=' + ok)
+					})
+					return
+				}
+				if (jobId == null) {
+					return
+				}
+				pollClassify(jobId, 20, 3000).then((result) => {
+					// AI 打标完成即服务端生效，无 UI 依赖
+					console.log('[yishu] pollClassify done, label=' + (result != null ? result.label : 'null'))
+				})
+			})
+		})
+	}
+
+	// ===== 语音录音方法 =====
+	// recording 复位统一出口（4 处 false 赋值收敛，防漏关动画）
+	// B5.2f-2d（方案 A）：语音录制状态机整块进 composable；组件退化为薄绑定层（同一 ref 对象）
+	const vr = new VoiceRecorder(
+		ra,
+		() => { emit('saved') },
+		() => { emit('close') },
+		(s: string) => { voiceStage.value = s },
+		// 2026-10-30（P1-6）：**只回传用户手选**的标签。原先回退到 `aiLabel`，导致「用户一个 chip
+		// 都没点」也会以 source=active 提交一次纠错（new_label = AI 自己的输出）⇒ 个人规则层
+		// 学习自己的预测，是 O-2 自我强化的复发路径。AI 预选只作 UI 显示。
+		() => manualLabel.value,
+		() => { aiLabel.value = '' },
+		() => remark.value.trim(),
+		() => { remark.value = ''; manualLabel.value = ''; aiLabel.value = '' }
+	)
+	const recording = vr.recording
+	const recordSeconds = vr.recordSeconds
+	const recordTimer = vr.recordTimer
+	const recState = vr.recState
+	const recordHint = vr.recordHint
+	const voiceHints = vr.voiceHints
+	const transcribing = vr.transcribing
+	const transcribeFailed = vr.transcribeFailed
+	const transcript = vr.transcript
+	const emotion = vr.emotion
+	const guardMsg = vr.guardMsg
+	const lastVoiceDuration = vr.lastVoiceDuration
+	const lastVoiceFile = vr.lastVoiceFile
+	const saving = vr.saving
+	function submitVoice(): void { vr.submitVoice() }
+	function retryTranscribe(): void { vr.retryTranscribe() }
+	function setRecordingOff(): void { vr.setRecordingOff() }
+	function toggleRecord(): void { vr.toggleRecord() }
+	// 2026-11-01（走查 1.2）：「结束并转写」显式入口。
+	// 复用 `endFromTap()`（暂停态先 resume 再 stop），与「连点两次圆点」同一条路径，
+	// 不新增状态机分支 ⇒ 不会与既有 400ms 双击逻辑冲突。
+	function endRecordNow(): void { vr.endFromTap() }
+	function pauseRecordNow(): void { vr.pauseRecordNow() }
+	function endFromTap(): void { vr.endFromTap() }
+	function resumeRecordNow(): void { vr.resumeRecordNow() }
+	function stopRecordNow(): void { vr.stopRecordNow() }
+</script>
+
+<style>
+	@import '@/styles/record-sheet.css';
+</style>

@@ -1,0 +1,76 @@
+[
+  {
+    "query_id": "q-0001",
+    "query": "去年生日那天的照片",
+    "layer": "time",
+    "expected": ["p-0001/003.jpg"],
+    "expected_label": null,
+    "expect_empty": false,
+    "user_id_hashed": "sha256:examplehash0001",
+    "source": "beta-user",
+    "collected_at": "2026-09-01T10:00:00+08:00",
+    "note": "命中类：expected 引用 B/C/D 语料采集 id（这里是 D 批照片 p-0001/003.jpg），禁止占位 uuid"
+  },
+  {
+    "query_id": "q-0002",
+    "query": "考研笔记",
+    "layer": "keyword",
+    "expected": ["f-0001", "f-0002", "f-0003"],
+    "expected_label": null,
+    "expect_empty": false,
+    "user_id_hashed": "sha256:examplehash0002",
+    "source": "annotation",
+    "collected_at": "2026-09-02T14:30:00+08:00",
+    "note": "命中类：expected 填 1-5 条语料 id（这里引用 B 批碎片 f-0001~0003）"
+  },
+  {
+    "query_id": "q-0003",
+    "query": "和妈妈去吃火锅那次",
+    "layer": "person",
+    "expected": ["f-0010", "v-0002"],
+    "expected_label": null,
+    "expect_empty": false,
+    "user_id_hashed": "sha256:examplehash0003",
+    "source": "beta-user",
+    "collected_at": "2026-09-03T09:15:00+08:00",
+    "note": "person 层走 NER 实体 filter；expected 引用 B 批 f-0010 与 C 批 v-0002"
+  },
+  {
+    "query_id": "q-0004",
+    "query": "去年夏天旅行拍的照片和当时录的一段话",
+    "layer": "route",
+    "expected": ["p-0001/003.jpg", "f-0012", "v-0003"],
+    "expected_label": null,
+    "expect_empty": false,
+    "user_id_hashed": "sha256:examplehash0004",
+    "source": "beta-user",
+    "collected_at": "2026-09-04T20:00:00+08:00",
+    "note": "route 跨模态：expected 同时含 D 批照片 id + B 批文字 id + C 批语音 id"
+  },
+  {
+    "query_id": "q-0042",
+    "query": "去年生日那天的照片",
+    "layer": "time",
+    "expected": [],
+    "expected_label": "__none__",
+    "expect_empty": true,
+    "negative_kind": "real",
+    "user_id_hashed": "sha256:examplehash0003",
+    "source": "beta-user",
+    "collected_at": "2026-09-10T14:30:00+08:00",
+    "note": "干扰类（负样本·真实）：用户真搜过但去年生日没拍照，期望 0 条"
+  },
+  {
+    "query_id": "q-0043",
+    "query": "我去南极的照片",
+    "layer": "keyword",
+    "expected": [],
+    "expected_label": "__none__",
+    "expect_empty": true,
+    "negative_kind": "synthetic",
+    "user_id_hashed": "sha256:examplehash0003",
+    "source": "annotation",
+    "collected_at": "2026-09-10T14:35:00+08:00",
+    "note": "干扰类（负样本·合成）：产品部补造'从没去过南极'，压力测试"
+  }
+]

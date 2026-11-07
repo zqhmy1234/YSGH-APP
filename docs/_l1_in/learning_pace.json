@@ -1,0 +1,19 @@
+{
+  "id": "learning_pace",
+  "label": "学习节奏",
+  "category": "学习与认知",
+  "current_values": [
+    "快",
+    "中",
+    "慢"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_learning_pace",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

@@ -1,0 +1,48 @@
+/**
+ * 记录面板「模板取值封装」（B5.2f-2c · 2026-09-24 重构波）
+ *
+ * 自 `components/RecordSheet/RecordSheet.uvue` **纯移动**而来——4 个**无状态纯函数**
+ * （`fmtRecTime` / `recSecFromMs` / `cellCls` / `imgCls`）；设计注释与拍板记录**逐字保留**。
+ * 原注释：uvue 模板不直接绑跨模块复杂表达式 ⇒ 这些封装被模板按名调用（故函数名保持不变）。
+ * `setInfoTime`（写组件 `infoTime` ref）属组件状态操作，**留在组件内**。
+ */
+
+export function fmtRecTime(sec: number): string {
+	const m = Math.floor(sec / 60)
+	const s = sec % 60
+	const sm = s < 10 ? '0' + s : '' + s
+	const fm = m < 10 ? '0' + m : '' + m
+	return fm + ':' + sm
+}
+
+export function recSecFromMs(ms: number): number {
+	return Math.round(ms / 1000)
+}
+
+// F1g-k 网格档位：1 图 302×226 / 2 图两列 146 / 3 图三列 96 / 4 图田字 146 / 5+ 三列 96（pt×1.9231 → rpx）
+// 列尾零右边距：uvue flex 换行把尾随 margin 计入行宽——2 列 (281+19)×2=600>581 曾致 4 张单列、
+// 3 列 (185+13)×3=594>581 曾致 5-9 张只剩两列（真机实锤 2026-09-02）
+// 峰宝 09-02 拍板：形态按「照片数+加号格」总数套，放弃 F1g 单图大图形态（差异台账 §N）——
+// 1 图+加号=两列(281) / 2+加号=三列(185) / 3+加号=田字(281) / 4+加号起=三列；9 张满无加号格
+export function cellCls(i: number, n: number): string {
+	const total = n + ((n < 9) ? 1 : 0)
+	let cls = ''
+	if (total == 2 || total == 4) {
+		cls = 'pc-b'
+	} else {
+		cls = 'pc-c'
+	}
+	const cols = (total == 2 || total == 4) ? 2 : 3
+	if ((i + 1) % cols == 0 || i == total - 1) {
+		cls = cls + ' pc-nor'
+	}
+	return cls
+}
+
+export function imgCls(n: number): string {
+	const total = n + ((n < 9) ? 1 : 0)
+	if (total == 2 || total == 4) {
+		return 'pimg-b'
+	}
+	return 'pimg-c'
+}

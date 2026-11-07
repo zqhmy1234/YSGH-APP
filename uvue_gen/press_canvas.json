@@ -1,0 +1,753 @@
+{
+ "id": "2:261",
+ "type": "FRAME",
+ "layout": "none",
+ "gap": 0,
+ "fills": [
+  {
+   "type": "SOLID",
+   "color": {
+    "r": 0.9725490212440491,
+    "g": 0.9686274528503418,
+    "b": 0.95686274766922
+   },
+   "opacity": 1,
+   "visible": true,
+   "blendMode": "NORMAL"
+  }
+ ],
+ "width": 390,
+ "height": 520,
+ "name": "补充态 · 按压反馈",
+ "x": 1410,
+ "y": 1040,
+ "clipsContent": true,
+ "cornerRadius": 24,
+ "children": [
+  {
+   "id": "2:262",
+   "type": "TEXT",
+   "fontSize": 11,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Semi Bold"
+   },
+   "characters": "默认态",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.5411764979362488,
+      "g": 0.47843137383461,
+      "b": 0.4156862795352936
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 33,
+   "height": 13,
+   "name": "态标签-默认",
+   "x": 20,
+   "y": 24,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "2:269",
+   "type": "TEXT",
+   "fontSize": 11,
+   "lineHeight": {
+    "unit": "AUTO"
+   },
+   "fontName": {
+    "family": "Sarasa Gothic SC",
+    "style": "Semi Bold"
+   },
+   "characters": "按压态 · scale 0.98 + 阴影收紧，$motion-quick 200ms",
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 0.6901960968971252,
+      "g": 0.3529411852359772,
+      "b": 0.22745098173618317
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "width": 292,
+   "height": 13,
+   "name": "态标签-按压",
+   "x": 27,
+   "y": 250,
+   "textAlignHorizontal": "LEFT",
+   "textAlignVertical": "TOP"
+  },
+  {
+   "id": "2:312",
+   "type": "FRAME",
+   "layout": "vertical",
+   "gap": 0,
+   "padding": {
+    "left": 8,
+    "right": 8,
+    "top": 8,
+    "bottom": 8
+   },
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "effects": [
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.05999999865889549
+     },
+     "offset": {
+      "x": 0,
+      "y": 4
+     },
+     "radius": 16,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    },
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.03999999910593033
+     },
+     "offset": {
+      "x": 0,
+      "y": 1
+     },
+     "radius": 3,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    }
+   ],
+   "width": 350,
+   "height": "hug_contents",
+   "name": "语音卡",
+   "x": 20,
+   "y": 48,
+   "clipsContent": true,
+   "cornerRadius": 20,
+   "children": [
+    {
+     "id": "2:313",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 12,
+     "padding": {
+      "left": 14,
+      "right": 14,
+      "top": 14,
+      "bottom": 14
+     },
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7689999938011169,
+        "g": 0.5690000057220459,
+        "b": 0.23499999940395355
+       },
+       "opacity": 0.14000000059604645,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": "fill_container",
+     "height": 64,
+     "name": "语音媒体",
+     "x": 8,
+     "y": 8,
+     "clipsContent": true,
+     "cornerRadius": 12,
+     "children": [
+      {
+       "id": "2:315",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 0,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.5,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "strokes": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.800000011920929,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "BACKGROUND_BLUR",
+         "radius": 8,
+         "visible": true,
+         "boundVariables": {}
+        },
+        {
+         "type": "INNER_SHADOW",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.4000000059604645
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 2,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "boundVariables": {}
+        }
+       ],
+       "width": 32,
+       "height": 32,
+       "name": "玻璃播放钮",
+       "x": 14,
+       "y": 16,
+       "clipsContent": true,
+       "cornerRadius": 16,
+       "children": [
+        {
+         "id": "2:319",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 12,
+         "height": 12,
+         "name": "播放图标",
+         "x": 10,
+         "y": 10,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "2:321",
+           "type": "VECTOR",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.6901960968971252,
+              "g": 0.3529411852359772,
+              "b": 0.22745098173618317
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 5.5,
+           "height": 6.5,
+           "name": "Vector",
+           "x": 4,
+           "y": 2.75
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "2:316",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "width": 200,
+       "height": 26,
+       "name": "波形",
+       "x": 58,
+       "y": 19,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "2:320",
+         "type": "VECTOR",
+         "strokes": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 192,
+         "height": 20,
+         "name": "Vector",
+         "x": 4,
+         "y": 3
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2:314",
+     "type": "FRAME",
+     "layout": "vertical",
+     "gap": 3,
+     "padding": {
+      "left": 8,
+      "right": 8,
+      "top": 8,
+      "bottom": 8
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "语音文字区",
+     "x": 8,
+     "y": 72,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "2:317",
+       "type": "TEXT",
+       "fontSize": 17,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Semi Bold"
+       },
+       "characters": "和妈妈的通话",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "语音卡标题",
+       "x": 8,
+       "y": 8,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "2:318",
+       "type": "TEXT",
+       "fontSize": 11,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "8月27日 12:36 · 语音 3分12秒 · 已转写",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.5411764979362488,
+          "g": 0.47843137383461,
+          "b": 0.4156862795352936
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "语音卡元信息",
+       "x": 8,
+       "y": 32,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "2:322",
+   "type": "FRAME",
+   "layout": "vertical",
+   "gap": 0,
+   "padding": {
+    "left": 8,
+    "right": 8,
+    "top": 8,
+    "bottom": 8
+   },
+   "fills": [
+    {
+     "type": "SOLID",
+     "color": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "opacity": 1,
+     "visible": true,
+     "blendMode": "NORMAL"
+    }
+   ],
+   "effects": [
+    {
+     "type": "DROP_SHADOW",
+     "color": {
+      "r": 0.23000000417232513,
+      "g": 0.18000000715255737,
+      "b": 0.15000000596046448,
+      "a": 0.10000000149011612
+     },
+     "offset": {
+      "x": 0,
+      "y": 1
+     },
+     "radius": 6,
+     "spread": 0,
+     "visible": true,
+     "blendMode": "NORMAL",
+     "showShadowBehindNode": true,
+     "boundVariables": {}
+    }
+   ],
+   "width": 336,
+   "height": "hug_contents",
+   "name": "语音卡",
+   "x": 27,
+   "y": 276,
+   "clipsContent": true,
+   "cornerRadius": 20,
+   "children": [
+    {
+     "id": "2:323",
+     "type": "FRAME",
+     "layout": "horizontal",
+     "gap": 12,
+     "padding": {
+      "left": 14,
+      "right": 14,
+      "top": 14,
+      "bottom": 14
+     },
+     "fills": [
+      {
+       "type": "SOLID",
+       "color": {
+        "r": 0.7689999938011169,
+        "g": 0.5690000057220459,
+        "b": 0.23499999940395355
+       },
+       "opacity": 0.14000000059604645,
+       "visible": true,
+       "blendMode": "NORMAL"
+      }
+     ],
+     "width": "fill_container",
+     "height": 64,
+     "name": "语音媒体",
+     "x": 8,
+     "y": 8,
+     "clipsContent": true,
+     "cornerRadius": 12,
+     "children": [
+      {
+       "id": "2:325",
+       "type": "FRAME",
+       "layout": "horizontal",
+       "gap": 0,
+       "padding": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+       },
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.5,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "strokes": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+         },
+         "opacity": 0.800000011920929,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "effects": [
+        {
+         "type": "BACKGROUND_BLUR",
+         "radius": 8,
+         "visible": true,
+         "boundVariables": {}
+        },
+        {
+         "type": "INNER_SHADOW",
+         "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.4000000059604645
+         },
+         "offset": {
+          "x": 0,
+          "y": 1
+         },
+         "radius": 2,
+         "spread": 0,
+         "visible": true,
+         "blendMode": "NORMAL",
+         "boundVariables": {}
+        }
+       ],
+       "width": 32,
+       "height": 32,
+       "name": "玻璃播放钮",
+       "x": 14,
+       "y": 16,
+       "clipsContent": true,
+       "cornerRadius": 16,
+       "children": [
+        {
+         "id": "2:329",
+         "type": "FRAME",
+         "layout": "none",
+         "gap": 0,
+         "width": 12,
+         "height": 12,
+         "name": "播放图标",
+         "x": 10,
+         "y": 10,
+         "clipsContent": true,
+         "children": [
+          {
+           "id": "2:331",
+           "type": "VECTOR",
+           "fills": [
+            {
+             "type": "SOLID",
+             "color": {
+              "r": 0.6901960968971252,
+              "g": 0.3529411852359772,
+              "b": 0.22745098173618317
+             },
+             "opacity": 1,
+             "visible": true,
+             "blendMode": "NORMAL"
+            }
+           ],
+           "width": 5.5,
+           "height": 6.5,
+           "name": "Vector",
+           "x": 4,
+           "y": 2.75
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "2:326",
+       "type": "FRAME",
+       "layout": "none",
+       "gap": 0,
+       "width": 200,
+       "height": 26,
+       "name": "波形",
+       "x": 58,
+       "y": 19,
+       "clipsContent": true,
+       "children": [
+        {
+         "id": "2:330",
+         "type": "VECTOR",
+         "strokes": [
+          {
+           "type": "SOLID",
+           "color": {
+            "r": 0.7686274647712708,
+            "g": 0.5686274766921997,
+            "b": 0.23529411852359772
+           },
+           "opacity": 1,
+           "visible": true,
+           "blendMode": "NORMAL"
+          }
+         ],
+         "width": 192,
+         "height": 20,
+         "name": "Vector",
+         "x": 4,
+         "y": 3
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2:324",
+     "type": "FRAME",
+     "layout": "vertical",
+     "gap": 3,
+     "padding": {
+      "left": 8,
+      "right": 8,
+      "top": 8,
+      "bottom": 8
+     },
+     "width": "fill_container",
+     "height": "hug_contents",
+     "name": "语音文字区",
+     "x": 8,
+     "y": 72,
+     "clipsContent": true,
+     "children": [
+      {
+       "id": "2:327",
+       "type": "TEXT",
+       "fontSize": 17,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Semi Bold"
+       },
+       "characters": "和妈妈的通话",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.22745098173618317,
+          "g": 0.18039216101169586,
+          "b": 0.14509804546833038
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "语音卡标题",
+       "x": 8,
+       "y": 8,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      },
+      {
+       "id": "2:328",
+       "type": "TEXT",
+       "fontSize": 11,
+       "lineHeight": {
+        "unit": "AUTO"
+       },
+       "fontName": {
+        "family": "Sarasa Gothic SC",
+        "style": "Regular"
+       },
+       "characters": "8月27日 12:36 · 语音 3分12秒 · 已转写",
+       "fills": [
+        {
+         "type": "SOLID",
+         "color": {
+          "r": 0.5411764979362488,
+          "g": 0.47843137383461,
+          "b": 0.4156862795352936
+         },
+         "opacity": 1,
+         "visible": true,
+         "blendMode": "NORMAL"
+        }
+       ],
+       "width": "hug_contents",
+       "height": "hug_contents",
+       "name": "语音卡元信息",
+       "x": 8,
+       "y": 32,
+       "textAlignHorizontal": "LEFT",
+       "textAlignVertical": "TOP"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

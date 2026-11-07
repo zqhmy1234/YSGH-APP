@@ -1,0 +1,33 @@
+{
+  "id": "skill_time_management",
+  "refine_mode": "template_level",
+  "values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "values_detail": [
+    {
+      "value": "精通",
+      "phrase": "日程排得明明白白，番茄钟、日历、GTD 全用上，deadline 前一周就收工",
+      "china_note": "主流高效人群典型：被 deadline 文化和加班倒逼出的系统化管理习惯"
+    },
+    {
+      "value": "熟练",
+      "phrase": "手机闹钟加待办清单基本够用，偶尔拖延但能赶在截止前交差",
+      "china_note": "中国职场多数人的真实状态：工具化使用，未成体系"
+    },
+    {
+      "value": "入门",
+      "phrase": "知道要规划但落不了地，三天打鱼两天晒网",
+      "china_note": "想学但被微信、短视频碎片化打断的典型边缘"
+    },
+    {
+      "value": "不会",
+      "phrase": "想到哪干到哪，大事小事都拖到最后一刻才爆发式赶工",
+      "china_note": "拖延到 deadline 才动的典型，非贬义，属技能缺口而非态度问题"
+    }
+  ],
+  "refine_note": "原4→现4；沿用 template_values 原样（skill_level 四档），仅补充中国语境行为锚点，保持地道互斥，未引红线值"
+}

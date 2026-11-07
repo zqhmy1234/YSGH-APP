@@ -1,0 +1,130 @@
+/**
+ * 忆述光华 · 相册监听与安全存储插件接口（B-UT-1）· Wave4 Agent K B5d 升级
+ *
+ * 系统能力层（UTS 插件，纯 UTS 实现——标准基座可运行，无需自定义基座）：
+ *  1. 相册监听：ContentObserver（UTS 继承原生类）+ MediaScanner 兼容（POC-01 已验证）
+ *     - 游标去重：SharedPreferences last_seen（照片 _id），已处理跳过（B-UT-3）
+ *     - 静默窗口攒批：3-5s 无新照片 → 回调 uvue 层（B-UT-4）
+ *  2. 权限：READ_MEDIA_IMAGES（Android 13+）运行时请求 + 状态查询
+ *
+ *  Wave4 B5d 升级（K-1a 前台服务短命化 + 类型互斥）：
+ *  3. 前台服务（dataSync）：监听期间以后台存活保活（短命化——不常驻 24h，超时自停；
+ *     录音结束 stopForeground 降级后转 WorkManager）；服务未注册（标准基座）自动回退
+ *     页面级监听，行为与第一波完全一致（优雅降级，无回归）。
+ *  4. microphone/dataSync 两前台服务类型互斥（B5d §3）：录音中不启 dataSync，
+ *     由 setRecordingActive(active) 与录音插件（Agent J 域）协调。
+ *
+ * 注（2026-08-24 决策调整）：原 Hybrid Mode（Kotlin PhotoObserver/SecurePrefs）需自定义基座，
+ * 且 EncryptedSharedPreferences 依赖 androidx.security 三方库；第一波改为纯 UTS 实现跑标准基座，
+ * 安全存储（EncryptedSharedPreferences）随自定义基座波次恢复。
+ */
+
+/** 单张新照片元数据（字段与 MediaStore 游标一一对应） */
+export class PhotoItem {
+	/** MediaStore _id */
+	id: number
+	/** 文件绝对路径（DATA） */
+	path: string
+	/** 拍摄时间 epoch 毫秒（EXIF → DATE_TAKEN → DATE_ADDED 优先级） */
+	takenAt: number
+	/** 宽（WIDTH，API 29+ 有值） */
+	width: number
+	/** 高（HEIGHT，API 29+ 有值） */
+	height: number
+	/** 纬度（LATITUDE，无 GPS = null；端侧 L0 聚类输入） */
+	lat: number | null
+	/** 经度（LONGITUDE，无 GPS = null） */
+	lng: number | null
+	/** 文件字节数（SIZE 列；2026-08-25 真机修复：uni.getFileSystemManager().getFileInfo 在 uni-app x 沙箱读不了 MediaStore 绝对路径） */
+	size: number
+
+	constructor(id: number, path: string, takenAt: number, width: number, height: number, lat: number | null, lng: number | null, size: number) {
+		this.id = id
+		this.path = path
+		this.takenAt = takenAt
+		this.width = width
+		this.height = height
+		this.lat = lat
+		this.lng = lng
+		this.size = size
+	}
+}
+
+/** 系统相册选择后，按文件名+大小回查到的原始媒体元数据。 */
+export class PickedPhotoMetadata {
+	takenAt: number
+	lat: number | null
+	lng: number | null
+
+	constructor(takenAt: number, lat: number | null, lng: number | null) {
+		this.takenAt = takenAt
+		this.lat = lat
+		this.lng = lng
+	}
+}
+
+/** 攒批回调：一批新照片（已按静默窗口去重） */
+export type PhotoBatchCallback = (items: Array<PhotoItem>) => void
+
+/**
+ * 权限申请结果回调（D-24 引入）。
+ * 契约：**恰好被调用一次** —— 五条路径全覆盖（已授予 / 授予 / 拒绝 / 永久拒绝 / 抛异常）。
+ * 采用具名别名而非内联函数类型：与 PhotoBatchCallback 同款（内联函数类型在本项目无先例）。
+ */
+export type PermissionResultCallback = (granted: boolean, doNotAskAgain: boolean) => void
+
+/** 前台服务当前激活类型（B5d §3 互斥状态查询） */
+export type ForegroundActiveType = 'microphone' | 'dataSync' | 'none' | 'unsupported'
+
+/** 相册监听器（实现位于 app-android，工厂函数创建） */
+export interface PhotoWatch {
+	/** 启动监听（幂等）；首次调用会在应用存活期间保持挂载；
+	 *  自定义基座：同时启动 dataSync 前台服务（短命化，超时自停）；标准基座：回退页面级监听 */
+	start(callback: PhotoBatchCallback): void
+	/** 停止监听（停止前台服务 + 注销 ContentObserver） */
+	stop(): void
+	/** 读取当前游标（last_seen photo _id，用于 UI 展示状态） */
+	getLastSeenId(): number
+	/**
+	 * 请求相册读取权限（弹系统框）。
+	 * 权限名按设备实际 SDK 选择：13+ → READ_MEDIA_IMAGES，以下 → READ_EXTERNAL_STORAGE。
+	 *
+	 * ⚠️ 2026-09-11 D-24：原签名 `requestReadPermission(): void`（无回调）在**全项目零调用点**，
+	 * 与宿主的 `if (isReadPermissionGranted())` 无 else 组合成死锁 —— 未授权时静默跳过且永不申请，
+	 * 且零日志。现改为**必传回调**：
+	 *   - callback **保证恰好被调用一次**（已授予 / 授予 / 拒绝 / 不弹窗 / 抛异常，五条路径均回调）；
+	 *   - 宿主据此决定是否启动监听，不允许静默。
+	 * @param callback (granted: 最终是否已授予读取权限, doNotAskAgain: 用户是否勾选"不再询问")
+	 */
+	requestReadPermission(callback: PermissionResultCallback): void
+	/** 相册读取权限是否已授予 */
+	isReadPermissionGranted(): boolean
+	/**
+	 * 当前设备应请求的相册读权限名（诊断用）。
+	 * ⚠️ 用途：区分「用户拒绝」与「本机 SDK 不存在该权限」——后者是代码缺陷，
+	 * 用户怎么授权都没用（D-23 实锤）。打点务必带上本值 + 实际 SDK 等级。
+	 */
+	getReadPermissionName(): string
+	/**
+	 * 录音状态互斥（B5d §3：microphone/dataSync 两前台服务类型不同时开）。
+	 * 录音插件（Agent J 域）在开始/结束录音时调用：
+	 *   - active=true  录音开始：立即停止 dataSync 前台服务（让位 microphone 前台服务）
+	 *   - active=false 录音结束：恢复 dataSync 前台服务（若监听仍挂载）
+	 */
+	setRecordingActive(active: boolean): void
+	/** dataSync 前台服务当前是否运行中（自定义基座下才有意义） */
+	isForegroundServiceActive(): boolean
+	/** 当前前台服务激活类型（互斥状态查询） */
+	getActiveType(): ForegroundActiveType
+	/**
+	 * 从 MediaStore 原始媒体回查 EXIF 时间/GPS。
+	 *
+	 * `uni.chooseImage` 的 temp file 在部分 OPPO 设备上即使勾选“原图”也会清除
+	 * GPS 标签（Byte 数不变但内容被隐私改写）。Temp 文件名与 SIZE 仍保留，
+	 * 因此由原生插件回查原始媒体，避免相册旧图只能显示保存时间/空地点。
+	 */
+	lookupPickedPhotoMetadata(displayName: string, size: number): PickedPhotoMetadata | null
+}
+
+/** 创建相册监听器实例（跨端工厂，平台目录实现） */
+export function createPhotoWatch(): PhotoWatch

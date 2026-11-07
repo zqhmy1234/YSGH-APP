@@ -1,0 +1,39 @@
+# 忆述光华 · API 进程（S1 卡）
+# ⚠️ 本文件是**模板**：`@DEPLOY_ROOT@` / `@RUN_USER@` 两个占位符由 `deploy/scripts/deploy_one.sh`
+#    渲染到 /etc/systemd/system/ 后再 daemon-reload。**不要把本文件直接软链到 systemd 目录**。
+#
+# 单进程铁律：--workers 1 不是"省资源"而是**硬约束**——模型是进程内单例（lru_cache）不跨进程共享，
+# 每多一个 uvicorn worker 就多一份 BGE-M3（~1.2G），16G 机器会 OOM。
+# 依据：docs/服务器规格核算_20260921.md §2；backend/app/services/embedding.py:33。
+
+[Unit]
+Description=忆述光华 API (uvicorn, workers=1)
+Documentation=file://@DEPLOY_ROOT@/deploy/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@RUN_USER@
+Group=@RUN_USER@
+WorkingDirectory=@DEPLOY_ROOT@/backend
+# 环境（含 DATABASE_URL/REDIS_URL/QDRANT_URL 与生产密钥）——生产密钥只经此文件注入，不入库
+EnvironmentFile=@DEPLOY_ROOT@/deploy/.env
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=@DEPLOY_ROOT@/backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8010 --workers 1
+
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+StandardOutput=append:@DEPLOY_ROOT@/deploy/logs/api.log
+StandardError=append:@DEPLOY_ROOT@/deploy/logs/api.log
+
+# 软内存上限（不设 MemoryMax：模型常驻需余量，硬限会被内核 OOM Killer 直接杀进程，
+# 而 OOM Killer 的现场比 systemd 记账更难定位）。触发 MemoryHigh 时内核优先回收页缓存。
+MemoryHigh=6G
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,222 @@
+/**
+ * 玩法层 · 冷启动访谈（T-PL-2）（B5a 2026-09-24 重构波：自 utils/play.uts 按域拆出）
+ *
+ * 约定（与原 play.uts 一致）：resolve-only（永不 reject），失败 resolve(null/[]/false) + toast。
+ * 对外导出：InterviewQuestion, InterviewResult, fetchInterviewQuestions, submitInterviewAnswers, fetchInterviewProfile
+ */
+import { get, post, request, dataObj } from './api'
+import {
+	PATH_INTERVIEW_QUESTIONS,
+	PATH_INTERVIEW_ANSWERS,
+	PATH_INTERVIEW_PROFILE,
+	PATH_PROFILE_REBUILD
+} from './contract'
+
+export class InterviewQuestion {
+	key: string
+	question: string
+
+	constructor(key: string, question: string) {
+		this.key = key
+		this.question = question
+	}
+}
+
+export class InterviewResult {
+	dimensions: string // 激活维度摘要
+	confirmation: string // 复述确认文本
+
+	constructor(dimensions: string, confirmation: string) {
+		this.dimensions = dimensions
+		this.confirmation = confirmation
+	}
+}
+
+export class ProfileRebuildStatus {
+	jobId: string
+	status: string
+	total: number
+	processed: number
+	applied: number
+	pooled: number
+	failed: number
+	skipped: number
+	degraded: boolean
+	error: string
+
+	constructor(
+		jobId: string, status: string, total: number, processed: number,
+		applied: number, pooled: number, failed: number, skipped: number,
+		degraded: boolean, error: string
+	) {
+		this.jobId = jobId
+		this.status = status
+		this.total = total
+		this.processed = processed
+		this.applied = applied
+		this.pooled = pooled
+		this.failed = failed
+		this.skipped = skipped
+		this.degraded = degraded
+		this.error = error
+	}
+}
+
+/** GET /interview/questions：三问；失败空数组 */
+export function fetchInterviewQuestions(): Promise<Array<InterviewQuestion>> {
+	return new Promise<Array<InterviewQuestion>>((resolve) => {
+		get(PATH_INTERVIEW_QUESTIONS).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve([])
+				return
+			}
+			// data 直接是数组（后端 QUESTIONS 裸返回）：res.getArray('data') 取数组
+			let arr: Array<UTSJSONObject> | null = null
+			const raw = res.getArray('data')
+			if (raw != null && raw.length > 0) {
+				arr = raw as Array<UTSJSONObject>
+			} else {
+				// 兼容 {questions: [...]} 形态
+				const d = dataObj(res)
+				if (d != null) {
+					const qArr = d.getArray('questions')
+					if (qArr != null) {
+						arr = qArr as Array<UTSJSONObject>
+					}
+				}
+			}
+			const result: Array<InterviewQuestion> = []
+			if (arr != null) {
+				for (let i = 0; i < arr.length; i++) {
+					const item = arr[i] as UTSJSONObject
+					result.push(new InterviewQuestion(item.getString('key') ?? '', item.getString('question') ?? ''))
+				}
+			}
+			resolve(result)
+		})
+	})
+}
+
+/**
+ * 展平 {dim: [当前值]} → "relation_role：家人、伴侣；..." 摘要（P1-A 对齐：dimensions 是 dict）
+ *
+ * ⚠️ D07-14（2026-09-24 重构波 · **登记未改**）：本函数是**跨语言的平行实现**——
+ *   云侧同一"展示口径"由 `backend/app/services/profile_annotator.display_dimensions`
+ *   提供（该处已单点化：`interview.py` ×2 + 测试均复用它）。两端**无法共享代码**，只能对齐口径。
+ *   已知缺口：本实现直接用**英文 dim id** 作标签（如 `relation_role`），而 D07-14 的目标是
+ *   「**客户端不再泄漏英文 dim id**」⇒ 需先建立 dim id→中文标签映射，**属 UI 文案变更**
+ *   （越出本波"行为等价"边界），故本波**只登记不改**（交功能波 / 拍板）。
+ */
+function flattenDimensions(dim: UTSJSONObject | null): string {
+	if (dim == null) {
+		return ''
+	}
+	const keys = UTSJSONObject.keys(dim)
+	let summary = ''
+	for (let i = 0; i < keys.length; i++) {
+		const k = keys[i] as string
+		const vals = dim.getArray(k) as Array<string> | null
+		if (vals != null && vals.length > 0) {
+			if (summary != '') {
+				summary += '；'
+			}
+			summary += k + '：' + vals.join('、')
+		}
+	}
+	return summary
+}
+
+/** POST /interview/answers：提交三问答案；返回复述确认或 null */
+export function submitInterviewAnswers(answers: UTSJSONObject): Promise<InterviewResult | null> {
+	const body: UTSJSONObject = {
+		answers: answers
+	}
+	return new Promise<InterviewResult | null>((resolve) => {
+		post(PATH_INTERVIEW_ANSWERS, body).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(res)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(
+				new InterviewResult(
+					flattenDimensions(d.getJSON('dimensions')),
+					d.getString('confirmation') ?? ''
+				)
+			)
+		})
+	})
+}
+
+/** DELETE /interview/profile：**清除云端画像**（D07-12 · 2026-09-25 功能修复波）。
+ *
+ * 契约（backend app/api/interview.py）：删除画像维度值 / 维度历史 / 未命中枚举原始回答 /
+ * 低置信候选池 / **证据锚点**；**保留**敏感话题（"别再提这些话题"的保护性数据），
+ * 保留条数在响应 `data.sensitive_topics_kept` 里如实回报；幂等（无数据也 200）。
+ *
+ * 返回 Promise<boolean>：true=云端已清除；false=失败（api 层已 toast，调用方**不得**
+ * 声称"已清除"——此前该面板只能清本地、弹窗文案却承诺删云端，属失实宣称）。
+ */
+export function clearInterviewProfile(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		request(PATH_INTERVIEW_PROFILE, 'DELETE', null).then((res: UTSJSONObject | null) => {
+			resolve(res != null)
+		})
+	})
+}
+
+/** GET /interview/profile：画像（冷启动状态）；返回 JSON 或 null */
+export function fetchInterviewProfile(): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		get(PATH_INTERVIEW_PROFILE).then((res: UTSJSONObject | null) => {
+			if (res == null) {
+				resolve(null)
+				return
+			}
+			resolve(dataObj(res))
+		})
+	})
+}
+
+/** POST /profile/rebuild：创建“从已有记忆重建画像”异步任务；失败 null */
+export function startProfileRebuild(): Promise<string | null> {
+	return new Promise<string | null>((resolve) => {
+		post(PATH_PROFILE_REBUILD, {}).then((res: UTSJSONObject | null) => {
+			const d = res != null ? dataObj(res) : null
+			const jobId = d != null ? (d.getString('job_id') ?? '') : ''
+			resolve(jobId != '' ? jobId : null)
+		})
+	})
+}
+
+/** GET /profile/rebuild/jobs/{id}：画像重建任务进度；失败 null */
+export function fetchProfileRebuildStatus(jobId: string): Promise<ProfileRebuildStatus | null> {
+	return new Promise<ProfileRebuildStatus | null>((resolve) => {
+		get(PATH_PROFILE_REBUILD + '/jobs/' + jobId).then((res: UTSJSONObject | null) => {
+			const d = res != null ? dataObj(res) : null
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			resolve(new ProfileRebuildStatus(
+				d.getString('job_id') ?? jobId,
+				d.getString('status') ?? 'queued',
+				d.getNumber('total') as number,
+				d.getNumber('processed') as number,
+				d.getNumber('applied') as number,
+				d.getNumber('pooled') as number,
+				d.getNumber('failed') as number,
+				d.getNumber('skipped') as number,
+				d.getBoolean('degraded') ?? false,
+				d.getString('error') ?? ''
+			))
+		})
+	})
+}
+
+// ═══════════ 消息中心（T-PL-3）═══════════
+

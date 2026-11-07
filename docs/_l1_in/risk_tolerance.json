@@ -1,0 +1,20 @@
+{
+  "id": "risk_tolerance",
+  "label": "风险偏好",
+  "category": "决策与偏好",
+  "current_values": [
+    "保守",
+    "谨慎",
+    "平衡",
+    "激进"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "risk_tolerance",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

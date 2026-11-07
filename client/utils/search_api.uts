@@ -1,0 +1,371 @@
+/**
+ * 搜索入口（T-SR-1/2/3/4）：描述性搜索 + 以图搜图 + 音频搜 + 降级态
+ *
+ * 链路（后端契约）：
+ *  POST /api/v1/search            → {q, intent, content_types?, time_from?, time_to?, place?, tag?, limit}
+ *    → SearchResult {query, rewritten_query, intent, hits[], total, latency_ms, degraded}
+ *  POST /api/v1/search/image      → multipart file（jpg/png ≤10MB）+ limit → SearchResult
+ *  POST /api/v1/search/audio      → multipart file（m4a/wav/mp3 ≤8MB）+ limit → SearchResult
+ *    （B 方案 2026-11-01：后端 ASR 转写后复用文本检索；三模态互搜的音频入口）
+ *  SearchHit {content_id, content_type, text, taken_at, place, event_id, event_title, score, trace{}}
+ *
+ * 降级态（T-SR-4）：degraded=true（Qdrant 降级纯 PG 检索）→ 页面黄条提示；
+ * 网络失败/后端 5xx → 错误态（resolve(null) + toast）。
+ *
+ * 约定：resolve-only（永不 reject），失败 resolve(null) + toast。
+ */
+// O9 收口：错误信封解析统一走 api.ts 的 parseErrorString（原本地 parseSearchError 副本已删）
+// R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析）
+// O15：搜索端点路径统一走 contract.ts（与 OpenAPI 对齐）
+import { post, get, dataObj, showErrorToast, uploadFileHttp, HttpResult } from './api'
+import { addBreadcrumb, captureMessage } from './sentry'
+import { resolveMediaUrl } from './config'
+import { PATH_SEARCH, PATH_SEARCH_IMAGE, PATH_SEARCH_AUDIO, PATH_CONTENTS } from './contract'
+
+export class SearchHitItem {
+	contentId: string
+	contentType: string
+	text: string
+	takenAt: string
+	place: string
+	eventId: string
+	eventTitle: string
+	score: number
+	trace: string // 溯源摘要（trace dict → 可读文本）
+	/** 缩略图 URL（已 resolve；照片类结果卡显示用；空串=无图） */
+	thumbnailUrl: string
+
+	constructor(
+		contentId: string,
+		contentType: string,
+		text: string,
+		takenAt: string,
+		place: string,
+		eventId: string,
+		eventTitle: string,
+		score: number,
+		trace: string,
+		thumbnailUrl: string
+	) {
+		this.contentId = contentId
+		this.contentType = contentType
+		this.text = text
+		this.takenAt = takenAt
+		this.place = place
+		this.eventId = eventId
+		this.eventTitle = eventTitle
+		this.score = score
+		this.trace = trace
+		this.thumbnailUrl = thumbnailUrl
+	}
+}
+
+export class SearchOutcome {
+	query: string
+	rewrittenQuery: string
+	intent: string
+	hits: Array<SearchHitItem>
+	total: number
+	latencyMs: number
+	degraded: boolean
+
+	constructor(
+		query: string,
+		rewrittenQuery: string,
+		intent: string,
+		hits: Array<SearchHitItem>,
+		total: number,
+		latencyMs: number,
+		degraded: boolean
+	) {
+		this.query = query
+		this.rewrittenQuery = rewrittenQuery
+		this.intent = intent
+		this.hits = hits
+		this.total = total
+		this.latencyMs = latencyMs
+		this.degraded = degraded
+	}
+}
+
+/** 内容类型中文名（结果卡片徽标） */
+export function contentTypeCn(t: string): string {
+	if (t == 'photo') {
+		return '照片'
+	}
+	if (t == 'voice') {
+		return '语音'
+	}
+	if (t == 'article') {
+		return '文章'
+	}
+	return '文字'
+}
+
+/** 溯源 dict → 可读摘要（后端 trace 结构：{matched, dense_score, sparse_score, rrf}） */
+function traceToText(trace: UTSJSONObject | null): string {
+	if (trace == null) {
+		return ''
+	}
+	const parts: Array<string> = []
+	// matched 召回通道
+	const matched = trace.getArray('matched')
+	if (matched != null && matched.length > 0) {
+		const names: Array<string> = []
+		for (let i = 0; i < matched.length; i++) {
+			const m = matched[i] as string
+			let label = m
+			if (m == 'dense') {
+				label = '语义'
+			} else if (m == 'sparse') {
+				label = '关键词'
+			} else if (m == 'pg') {
+				label = '精确'
+			} else if (m == 'text_phrase' || m == 'text') {
+				label = '原文'
+			} else if (m == 'tag') {
+				label = '标签'
+			} else if (m == 'event_title') {
+				label = '卡片标题'
+			}
+			if (names.indexOf(label) < 0) {
+				names.push(label)
+			}
+		}
+		parts.push('召回：' + names.join('+'))
+	}
+	// 分数
+	const dense = trace.getNumber('dense_score')
+	const sparse = trace.getNumber('sparse_score')
+	if (dense != null && dense > 0) {
+		parts.push('语义分 ' + Math.round(dense * 1000) / 10)
+	}
+	if (sparse != null && sparse > 0) {
+		parts.push('关键词分 ' + Math.round(sparse * 1000) / 10)
+	}
+	return parts.join(' · ')
+}
+
+/** 解析 SearchResult 信封 → SearchOutcome；失败 resolve(null) */
+function parseSearch(body: UTSJSONObject | null): SearchOutcome | null {
+	if (body == null) {
+		return null
+	}
+	const d = dataObj(body)
+	if (d == null) {
+		return null
+	}
+	const hits: Array<SearchHitItem> = []
+	const arr = d.getArray('hits')
+	if (arr != null) {
+		for (let i = 0; i < arr.length; i++) {
+			const h = arr[i] as UTSJSONObject
+			hits.push(
+				new SearchHitItem(
+					h.getString('content_id') ?? '',
+					h.getString('content_type') ?? 'text',
+					h.getString('text') ?? '',
+					h.getString('taken_at') ?? '',
+					h.getString('place') ?? '',
+					h.getString('event_id') ?? '',
+					h.getString('event_title') ?? '',
+					h.getNumber('score') as number,
+					traceToText(h.getJSON('trace')),
+					// 2026-09-04 后端 SearchHit 补 thumbnail_url（Valet Key 票据，
+					// 仅 photo 命中有值）→ resolveMediaUrl 拼直连地址，结果卡带图
+					resolveMediaUrl(h.getString('thumbnail_url'))
+				)
+			)
+		}
+	}
+	return new SearchOutcome(
+		d.getString('query') ?? '',
+		d.getString('rewritten_query') ?? '',
+		d.getString('intent') ?? '',
+		hits,
+		d.getNumber('total') as number,
+		d.getNumber('latency_ms') as number,
+		d.getBoolean('degraded') ?? false
+	)
+}
+
+/**
+ * 「最近内容」样本（2026-10-30 · P1-31）：分页信封的 `items` + `has_more`。
+ *
+ * 为什么需要：`/contents` 是**游标分页**（backend/app/api/contents/__init__.py list_contents），
+ * `limit=100` 拿到的最多只是最新一页。原调用方把 `items.length` 当「总数」显示 ⇒ 内容超过
+ * 100 条的用户永远看到 100（"我的"统计被截断且不自知）。本结构把 `has_more` 一并带出，
+ * 调用方据此区分「这是全量真值」还是「只是下限」，从而不再显示一个会被截断的数字。
+ */
+export class RecentSample {
+	items: Array<SearchHitItem>
+	/** true = 服务端还有更早的内容 ⇒ items 只是最新一页，计数是**下限**而非总数 */
+	truncated: boolean
+
+	constructor(items: Array<SearchHitItem>, truncated: boolean) {
+		this.items = items
+		this.truncated = truncated
+	}
+}
+
+/** GET /contents?limit=N 的原始样本（含 has_more），内容类型在端上筛；失败 resolve(null) + toast。 */
+export function fetchRecentSample(limit: number, contentTypes: Array<string>): Promise<RecentSample | null> {
+	return new Promise<RecentSample | null>((resolve) => {
+		get(PATH_CONTENTS + '?limit=' + limit).then((body: UTSJSONObject | null) => {
+			if (body == null) {
+				resolve(null)
+				return
+			}
+			const d = dataObj(body)
+			if (d == null) {
+				resolve(null)
+				return
+			}
+			const raw = d.getArray('items')
+			const hits: Array<SearchHitItem> = []
+			if (raw != null) {
+				const arr = raw as Array<UTSJSONObject>
+				for (let i = 0; i < arr.length; i++) {
+					const c = arr[i]
+					const ct = c.getString('content_type') ?? 'text'
+					if (contentTypes.length > 0 && contentTypes.indexOf(ct) < 0) {
+						continue // 与 filterContentTypes() 同源，服务端不筛则在端上筛
+					}
+					hits.push(new SearchHitItem(
+						c.getString('id') ?? '',
+						ct,
+						c.getString('text') ?? '',
+						c.getString('taken_at') ?? c.getString('created_at') ?? '',
+						c.getString('place') ?? '',
+						'',
+						'',
+						0,
+						'',
+						resolveMediaUrl(c.getString('thumbnail_url'))
+					))
+				}
+			}
+			resolve(new RecentSample(hits, d.getBoolean('has_more') ?? false))
+		})
+	})
+}
+
+/**
+ * 最近内容（搜索页进入时的默认列表）——2026-08-31 新增
+ *
+ * 为什么需要：后端 `SearchQuery.q` 要求 min_length=1，**不支持空词查询**；
+ * 而搜索页进入时关键词为空 → 结果区一片空白，页面看着像坏了。
+ * 改用 GET /api/v1/contents 拉最近内容兜底，用户一进页面就能看到自己的记忆。
+ *
+ * 与真实搜索的语义差异（调用方需知）：
+ *  - score 恒为 0：表示"按时间倒序"，不是"按相关度"
+ *  - intent='recent'：区别于搜索的 text/image/mixed
+ *  - eventId/eventTitle 为空：contents 列表端点不返回事件归属
+ *  - 命中缩略图 URL（contents 端点有 thumbnail_url，搜索端点暂无）
+ *  - 2026-10-30（P1-31）：`total` = 本页条数，**不是**内容总数（游标分页）；
+ *    需要判断"是否还有更多"的调用方改用 `fetchRecentSample`（带 truncated）
+ */
+export function fetchRecentContents(limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
+	return new Promise<SearchOutcome | null>((resolve) => {
+		fetchRecentSample(limit, contentTypes).then((s: RecentSample | null) => {
+			if (s == null) {
+				resolve(null)
+				return
+			}
+			resolve(new SearchOutcome('', '', 'recent', s.items, s.items.length, 0, false))
+		})
+	})
+}
+
+/** POST /search：描述性搜索；contentTypes 非空时按 photo/voice/text/article 过滤；返回 SearchOutcome 或 null */
+export function searchText(query: string, limit: number, contentTypes: Array<string>): Promise<SearchOutcome | null> {
+	const body: UTSJSONObject = {
+		q: query,
+		limit: limit
+	}
+	// 仅在指定类型时下发 content_types（空数组=全部，不下发避免后端误判）
+	if (contentTypes.length > 0) {
+		body.set('content_types', contentTypes)
+	}
+	// B13 面包屑（2026-09-23）：addBreadcrumb 此前**零调用**⇒ 上报事件到达时没有任何
+	// "之前发生了什么"的轨迹。**隐私纪律：只记长度/标签，绝不记用户原文**——面包屑随事件
+	// 发往 Sentry（外部服务），用户搜索词属于个人内容。
+	addBreadcrumb('search', 'text q_len=' + query.length + (contentTypes.length > 0 ? ' filtered' : ''))
+	return new Promise<SearchOutcome | null>((resolve) => {
+		// 2026-10-30（P2 C-6）：本端点含 LLM 改写 + 双层精排，实测 8~9s 属正常。
+		// 原走 api.uts 默认 15s 看门狗 ⇒ 偶发超时被 resolve(null) 当成"没有找到"，
+		// 用户看到的是错误结论而不是"慢"。显式放宽到 30s（与图搜一致）。
+		post(PATH_SEARCH, body, 30000).then((res: UTSJSONObject | null) => {
+			const out = parseSearch(res)
+			if (out != null && out.degraded) {
+				// 降级＝关键词检索退回兜底结果：用户会看到"有结果但不是想要的"，
+				// 而**没有任何异常抛出** ⇒ 只能靠消息事件上报，否则线上完全无迹可循
+				// （captureMessage 此前零调用，正是这类"非异常但用户可感"状态的唯一载体）
+				captureMessage('search degraded fallback', 'warning')
+			}
+			resolve(out)
+		})
+	})
+}
+
+/** POST /search/image：以图搜图（multipart）；返回 SearchOutcome 或 null
+ *  R1#17：multipart 上传统一走 api.ts uploadFileHttp（401 重放 + 5xx Sentry + 信封解析） */
+export function searchByImage(filePath: string, limit: number): Promise<SearchOutcome | null> {
+	// B13 面包屑：只记动作与上限，不记文件路径（路径含用户隐私且对排障无增量信息）
+	addBreadcrumb('search', 'image upload limit=' + limit)
+	return new Promise<SearchOutcome | null>((resolve) => {
+		uploadFileHttp(PATH_SEARCH_IMAGE + '?limit=' + limit, filePath, 'file', null, 30000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				// uploadFile res.data 是 string（lessons.md #3）；uploadFileHttp 已按信封解析
+				resolve(parseSearch(hr.body))
+				return
+			}
+			// 2026-10-30（P2 C-7）：status===0 是网络层失败，原实现会打印「搜索失败（HTTP 0）」
+			// —— 把传输层错误码当业务文案，用户完全看不懂。
+			if (hr.status === 0) {
+				showErrorToast(new Error('网络异常 · 图片上传失败，请重试'))
+				resolve(null)
+				return
+			}
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '搜索失败（HTTP ' + hr.status + '）') : '搜索失败（HTTP ' + hr.status + '）'
+			showErrorToast(new Error(msg))
+			resolve(null)
+		})
+	})
+}
+
+/**
+ * POST /search/audio：用**录音**搜全模态（跨模态 B 方案 · 2026-11-01）
+ *
+ * 链路：本地录音（`utils/voice.uts` 的 startRecord 落盘 wav）→ 本函数 multipart 直传
+ * → 后端 ASR 转写 → 复用文本检索 → 返回与 `searchText` **同构**的 SearchOutcome。
+ * 因此调用方（TabSearch）可以复用同一套结果区，无需为新模态写解析分支。
+ *
+ * 与"先 transcribeWav 再 searchText"两步走的关系：两步走也能用（且是零后端改动
+ * 的兜底路径），但两次往返之间用户会看到"先转写、再搜索"的割裂，失败点翻倍；
+ * 单跳由后端串起来，`out.query` 直接就是"这句话被听成了什么"（可见、可纠错）。
+ *
+ * 超时 90s：与 `voice.transcribeWav` 同口径——云端 ASR 偶发慢于 30s，客户端先判
+ * 失败会让用户重录（which 更贵）；失败仍然 resolve(null) + toast（resolve-only 约定）。
+ * 面包屑只记动作与上限，不记文件路径（路径含用户隐私）。
+ */
+export function searchByAudio(filePath: string, limit: number): Promise<SearchOutcome | null> {
+	addBreadcrumb('search', 'audio upload limit=' + limit)
+	return new Promise<SearchOutcome | null>((resolve) => {
+		uploadFileHttp(PATH_SEARCH_AUDIO + '?limit=' + limit, filePath, 'file', null, 90000).then((hr: HttpResult) => {
+			if (hr.status === 200) {
+				const out = parseSearch(hr.body)
+				if (out != null && out.degraded) {
+					// 与文本搜索同口径：降级（转写失败/检索兜底）要让可观测侧知道
+					captureMessage('audio search degraded', 'warning')
+				}
+				resolve(out)
+				return
+			}
+			// 422 = 音频不合规（格式/大小），503 = 转写服务不可用；后端 message 已是中文可读文案
+			const msg = hr.body != null ? (hr.body.getString('message') ?? '语音搜索失败（HTTP ' + hr.status + '）') : '语音搜索失败（HTTP ' + hr.status + '）'
+			showErrorToast(new Error(msg))
+			resolve(null)
+		})
+	})
+}

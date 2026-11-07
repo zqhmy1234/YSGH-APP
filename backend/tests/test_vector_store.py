@@ -6,6 +6,8 @@
 """
 
 
+from datetime import UTC
+
 import pytest
 from app.services.vector_store import COLLECTION, VectorStore
 from qdrant_client.http import models
@@ -117,3 +119,84 @@ def test_upsert_merged_keeps_existing_vectors(monkeypatch):
     assert upserted["payload"]["content_type"] == "image"  # 新 payload 覆盖存量字段
     # 存量 payload 其他字段保留
     assert upserted["payload"]["old_field"] == "keep"
+
+
+def test_to_filter_user_id_isolation():
+    """用户隔离（2026-08-26 修复）：_to_filter 必须处理 user_id（召回阶段隔离）
+
+    回归：此前 _to_filter 忽略 user_id → 检索全库，跨用户内容挤占召回窗口，
+    api_smoke text-journey 门禁暴露（新用户内容被挤出 top-k）。
+    R8#6（2026-08-27）：_to_filter 是 @staticmethod 纯函数，直接调用不构造
+    QdrantClient（省 ~5.5s，去隐式依赖）。
+    """
+    f = VectorStore._to_filter({"user_id": "u-123", "content_types": ["image"]})
+    assert f is not None
+    conds = {c.key: c for c in f.must}
+    assert "user_id" in conds
+    assert conds["user_id"].match.value == "u-123"
+    assert "content_type" in conds
+
+
+def test_to_filter_content_type_photo_expands_legacy():
+    """FIX-1（2026-08-26）：content_type 过滤归一——"photo" 展开为 MatchAny([photo, image])
+
+    回归：生产 photo 点 payload="photo"，旧基准点 payload="image"。过滤端
+    请求规范值 "photo" 时必须同时匹配遗留 "image" 点，两端数据都不丢。
+    """
+    f = VectorStore._to_filter({"content_types": ["photo"]})
+    conds = {c.key: c for c in f.must}
+    assert conds["content_type"].match.any == ["photo", "image"]
+
+
+def test_to_filter_content_type_image_alias_maps_to_photo():
+    """FIX-1：遗留 "image" 请求值归一为规范 "photo"（旧调用方兼容）"""
+    f = VectorStore._to_filter({"content_types": ["image"]})
+    conds = {c.key: c for c in f.must}
+    assert conds["content_type"].match.any == ["photo", "image"]
+
+
+def test_to_filter_content_type_text_untouched():
+    """非 photo 类型不受归一影响"""
+    f = VectorStore._to_filter({"content_types": ["text", "voice"]})
+    conds = {c.key: c for c in f.must}
+    assert conds["content_type"].match.any == ["text", "voice"]
+
+
+def test_to_filter_time_range_epoch_seconds():
+    """时间窗过滤：datetime → epoch 秒（float），与 payload taken_at 数值一致
+
+    回归（审查 CRITICAL）：payload 侧 taken_at 存 epoch 秒，过滤端 Range
+    必须转 .timestamp() 数值——此前时间过滤静默不命中。
+    time_from/time_to 各生成一条 taken_at FieldCondition（gte/lte 分置）。
+    """
+    from datetime import datetime
+
+    lo = datetime(2026, 1, 1, tzinfo=UTC)
+    hi = datetime(2026, 12, 31, tzinfo=UTC)
+    f = VectorStore._to_filter({"time_from": lo, "time_to": hi})
+    taken_conds = [c for c in f.must if c.key == "taken_at"]
+    assert len(taken_conds) == 2
+    assert {c.range.gte for c in taken_conds if c.range.gte is not None} == {lo.timestamp()}
+    assert {c.range.lte for c in taken_conds if c.range.lte is not None} == {hi.timestamp()}
+
+
+def test_to_filter_unknown_key_raises():
+    """未知过滤键 **抛错**（D05-3 · 2026-09-25 起）。
+
+    ⚠️ 原用例名 `test_to_filter_unknown_key_ignored` 断言"静默忽略"——正是把 D05-3
+    的分歧**固化成预期行为**（与簇② 那条教训同族：门禁把 bug 写成规格）。
+    静默丢弃的后果：任何**隔离类键**（如 `user_id` 拼错/新增未同步）都会不生效
+    ⇒ 跨用户召回且无任何信号。现口径＝未知键 fail-closed（`UnknownFilterKey`），
+    由 `tests/test_search_filters.py` 做完整契约覆盖。
+    """
+    from app.services.search_filters import UnknownFilterKey
+
+    with pytest.raises(UnknownFilterKey):
+        VectorStore._to_filter({"unknown_key": "x"})
+
+
+def test_to_filter_empty_filters_none():
+    """空/None filters → None（不构造 Filter，避免空 must 误过滤）"""
+    assert VectorStore._to_filter(None) is None
+    assert VectorStore._to_filter({}) is None
+    assert VectorStore._to_filter({"content_types": []}) is None

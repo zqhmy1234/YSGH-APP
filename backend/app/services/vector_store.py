@@ -4,24 +4,108 @@
 - named vectors：text_vec（BGE-M3 dense 1024）+ image_vec（Qwen3-VL，M1 后接）
 - sparse：BGE-M3 lexical（关键词路）
 - 检索：dense+sparse 走 RRF 融合（WeKnora 参数：0.7/0.3, k=60）
+- 测试隔离（TD-P1C 2026-08-26）：默认 collection 经 default_collection() 解析——
+  测试环境设 QDRANT_COLLECTION=test_* 即写隔离库，cleanup_test_collections()
+  每跑结束清理 test_ 前缀 collection（尽力而为）。
 """
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import uuid
 from functools import lru_cache
+from urllib.parse import urlsplit, urlunsplit
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
 from app.core.config import settings
+from app.services.search_filters import (
+    HANDLED_BY_QDRANT,
+    assert_full_coverage,
+    normalize_filters,
+)
 
 logger = logging.getLogger("yishu.rag")
 
 COLLECTION = "yishu_contents"
+# 测试专用 collection 前缀（TD-P1C 2026-08-26）：测试环境默认写 test_* 隔离库，
+# 不污染生产 yishu_contents；每跑结束由 cleanup_test_collections 尽力清理。
+TEST_COLLECTION_PREFIX = "test_"
 DENSE_VEC_NAME = "text_vec"
 IMAGE_VEC_NAME = "image_vec"
 VECTOR_SIZE = 1024  # BGE-M3 dense 维度
+
+# FIX-1 content_type 归一（2026-08-26）：生产 photo 点 payload 统一为 "photo"
+# （pipeline.py:184/upload.py:211/contents.py:160 均写 "photo"）；历史/基准数据
+# 曾用 "image"（build_image_index.py 旧版）。规范值 = "photo"，"image" 视为
+# 旧别名——过滤端展开为 MatchAny(["photo", "image"])，两端兼容不丢点。
+CONTENT_TYPE_PHOTO = "photo"
+CONTENT_TYPE_IMAGE_LEGACY = "image"
+CONTENT_TYPE_ALIASES: dict[str, str] = {
+    CONTENT_TYPE_IMAGE_LEGACY: CONTENT_TYPE_PHOTO,
+}
+
+
+def default_collection() -> str:
+    """生效的默认 collection（TD-P1C 2026-08-26：测试 collection 隔离）
+
+    生产/未设置环境变量 → 生产 yishu_contents；测试环境（CI / api_smoke /
+    conftest fixture）通过 `QDRANT_COLLECTION` 环境变量指到 test_* 隔离库，
+    使 pipeline 索引与搜索默认不再写生产空间。
+
+    每次调用实时读环境变量（而非模块常量），保证并发进程/测试间切换生效；
+    VectorStore 单例仍复用（collection 名只是路由参数，客户端连接不重建）。
+    """
+    return os.environ.get("QDRANT_COLLECTION") or COLLECTION
+
+
+def test_collection_name(base: str | None = None) -> str:
+    """按前缀生成测试 collection 名（默认基名 = 生产 collection）"""
+    return f"{TEST_COLLECTION_PREFIX}{base or COLLECTION}"
+
+
+def is_test_collection(name: str) -> bool:
+    """是否为测试专用 collection（test_ 前缀）"""
+    return bool(name) and name.startswith(TEST_COLLECTION_PREFIX)
+
+
+def _client_url(url: str) -> str:
+    """Avoid the slow IPv6 localhost fallback on Windows loopback clients."""
+    if sys.platform != "win32":
+        return url
+    parts = urlsplit(url)
+    if parts.hostname != "localhost":
+        return url
+    host_start = parts.netloc.rfind("@") + 1
+    netloc = parts.netloc[:host_start] + "127.0.0.1" + parts.netloc[host_start + len("localhost"):]
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
+def cleanup_test_collections(client: QdrantClient | None = None) -> list[str]:
+    """清理全部 test_ 前缀的测试 collection（尽力而为，失败不阻断）
+
+    供测试门禁/api_smoke 每跑结束调用；Qdrant 不可达或删除失败仅告警，
+    不抛异常——避免清理失败阻断提交（TD-P1C 验收）。
+    """
+    try:
+        c = client or QdrantClient(url=_client_url(settings.qdrant_url))
+        names = [col.name for col in c.get_collections().collections]
+        removed: list[str] = []
+        for name in names:
+            if not is_test_collection(name):
+                continue
+            try:
+                c.delete_collection(collection_name=name)
+                removed.append(name)
+                logger.info("已清理测试 collection: %s", name)
+            except Exception as exc:  # noqa: BLE001 —— 单库删除失败不阻断其余
+                logger.warning("清理测试 collection %s 失败: %s", name, exc)
+        return removed
+    except Exception as exc:  # noqa: BLE001 —— Qdrant 不可达不阻断门禁
+        logger.warning("测试 collection 清理跳过（Qdrant 不可达?）: %s", exc)
+        return []
 
 
 def point_id_for(content_id: str) -> str:
@@ -38,12 +122,16 @@ class VectorStore:
 
     def __init__(self, url: str | None = None):
         # 修复：Qdrant 地址从配置读取（原硬编码 localhost:6333）
-        self.client = QdrantClient(url=url or settings.qdrant_url)
+        self.client = QdrantClient(url=_client_url(url or settings.qdrant_url))
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
-        """建生产 collection（幂等）：named vectors text_vec + 预留 image_vec"""
-        self.ensure_collection(COLLECTION)
+        """建生效的默认 collection（幂等）：named vectors text_vec + 预留 image_vec
+
+        TD-P1C（2026-08-26）：默认库经 default_collection() 解析——
+        测试环境（QDRANT_COLLECTION=test_*）不建/不写生产 yishu_contents。
+        """
+        self.ensure_collection(default_collection())
 
     def ensure_collection(self, name: str) -> None:
         """按需建 collection（幂等；基准评测用独立 collection 隔离生产检索空间）"""
@@ -91,6 +179,49 @@ class VectorStore:
             points=[models.PointStruct(id=pid, vector=merged_vectors, payload=merged_payload)],
         )
 
+    def update_payload(
+        self,
+        content_id: str,
+        payload: dict,
+        collection: str | None = None,
+    ) -> None:
+        """轻量更新 payload（不触碰向量；2026-08-26 集成）
+
+        用途：photo 首入库时 place/ci_tags 在索引后补全（pipeline.py 逆地理/CI
+        打标之后刷新一次），避免重新编码 embedding。点不存在时 Qdrant 静默忽略。
+        """
+        col = collection or default_collection()
+        self.ensure_collection(col)
+        self.client.set_payload(
+            collection_name=col,
+            payload=payload,
+            points=[point_id_for(content_id)],
+        )
+
+    def delete_content_vectors(
+        self,
+        content_ids: list[str],
+        collection: str | None = None,
+    ) -> int:
+        """按 content_id 删点位（回收站彻底清除用；2026-10-14 · 台账 §7.25①）。
+
+        为什么必须有：`api/contents/trash.py` 的"清空回收站"原实现**只删 DB 行**，
+        Qdrant 向量与 COS 原件原样残留 ⇒ 用户以为"回收站已清空"，实际数据仍在向量库与
+        对象存储里（**隐私承诺相关**）。
+
+        幂等：点位不存在时 Qdrant 静默忽略（重跑安全）；返回**请求删除的条数**
+        （Qdrant 的 delete 不回逐点结果，故不谎报"实际删了几个点"）。
+        """
+        if not content_ids:
+            return 0
+        col = collection or default_collection()
+        self.ensure_collection(col)
+        self.client.delete(
+            collection_name=col,
+            points_selector=[point_id_for(cid) for cid in content_ids],
+        )
+        return len(content_ids)
+
     def upsert_content(
         self,
         content_id: str,
@@ -104,7 +235,7 @@ class VectorStore:
 
         collection：指定目标 collection（基准评测 → yishu_benchmark，不污染生产）。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         self.ensure_collection(col)
         self._upsert_merged(
             col,
@@ -116,7 +247,14 @@ class VectorStore:
                     values=list(sparse.values()),
                 ),
             },
-            {"content_id": content_id, **payload},
+            # 2026-10-15（台账 §7.33）：**`text` 必须进 payload**。它本是本函数的形参、却
+            # 从未落进 payload ⇒ `_rrf_fuse` 填的 `text` 恒为 None ⇒
+            # `recall._boost_exact_matches` 读 `hit["text"]` 永远拿不到词元 ⇒
+            # **"精确命中提升"（×1.8/×1.3）对文字/语音内容永不触发**（只有走
+            # `upsert_image_vec` 的照片点自带 text 才不受影响）——注释与实现不一致的典型。
+            # 截断到 400 字符：payload 要进 Qdrant，全文回灌会让点体积膨胀；词元包含判断
+            # 用前 400 字足够，且远小于 Qdrant payload 上限。
+            {"content_id": content_id, "text": (text or "")[:400], **payload},
         )
 
     def search(
@@ -131,7 +269,7 @@ class VectorStore:
 
         collection：检索目标 collection（默认生产；基准评测传 yishu_benchmark）。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         # dense 路（query_points + using 指定 named vector；qdrant-client 1.19）
         dense_hits = self.client.query_points(
             collection_name=col,
@@ -174,7 +312,7 @@ class VectorStore:
         一次写入；payload 强制写 content_id，供 search_image 回填真实内容 id
         （否则检索结果退化为 point_id 哈希，无法溯源）。
         """
-        col = collection or COLLECTION
+        col = collection or default_collection()
         self.ensure_collection(col)
         self._upsert_merged(
             col,
@@ -190,13 +328,17 @@ class VectorStore:
         limit: int = 50,
         collection: str | None = None,
     ) -> list[dict]:
-        """以图搜图：image_vec 相似检索（图片查询向量 → 最相似图片）"""
-        col = collection or COLLECTION
+        """以图搜图：image_vec 相似检索（图片查询向量 → 最相似图片）
+
+        R-4（2026-10-14）：追加**图片向量空间隔离**条件（见 `_with_image_space`）——
+        caption 空间与 vision 空间的向量余弦分不可比，混检会静默返回垃圾。
+        """
+        col = collection or default_collection()
         hits = self.client.query_points(
             collection_name=col,
             query=vec,
             using=IMAGE_VEC_NAME,
-            query_filter=self._to_filter(filters),
+            query_filter=self._with_image_space(self._to_filter(filters)),
             limit=limit,
         ).points
         result = []
@@ -208,12 +350,49 @@ class VectorStore:
                 "dense_score": round(float(hit.score), 4),
                 "sparse_score": 0.0,
                 "text": payload.get("text"),
+                # 2026-11-01 跨模态：命中类型回传（溯源兜底用，理由见 `_rrf_fuse`）
+                "content_type": payload.get("content_type"),
             })
         return result
 
     @staticmethod
+    def _with_image_space(user_filter: models.Filter | None) -> models.Filter:
+        """给以图搜图查询追加「图片向量空间」隔离条件（R-4 · 2026-10-14）
+
+        为什么需要：`image_vec` 同一槽位里可能同时存在两种**互不相通**的向量空间
+        （`bge_caption` = BGE-M3(caption)，`vision` = tongyi-embedding-vision-plus）。
+        它们的余弦分不可比，混在一起检索会**静默返回垃圾**（不报错、不崩溃，只是排序全错）。
+
+        取值语义（沿用仓库对旧数据的 fail-open 传统，同 `CONTENT_TYPE_ALIASES`）：
+          - `image_space == 当前空间`  → 命中
+          - `image_space` 字段**缺失**  → 命中（旧点没有这个键，按兼容处理，**不丢数据**）
+          - `image_space == 其它空间`  → 排除
+
+        ⚠️ 因此**切换顺序不可颠倒**：必须先跑 `scripts/rebuild_image_index.py` 把点全部
+        重灌进新空间，**再**改 `image_tower_backend` —— 这样稳态下「缺失集」为空，隔离干净。
+        若先切配置，过渡窗口内旧点仍会被检到，排序质量暂时下降（非崩溃）。
+
+        本条件在 `search_image` 内部构造、**不进用户 filters dict**，因此无需登记
+        `search_filters.HANDLED_BY_QDRANT` 的 fail-closed 白名单，用户过滤契约零变化。
+        """
+        from app.services.image_tower import IMAGE_SPACE_KEY, current_image_space  # 延迟 import 破环
+
+        space_cond = models.Filter(should=[
+            models.FieldCondition(key=IMAGE_SPACE_KEY, match=models.MatchValue(value=current_image_space())),
+            models.IsEmptyCondition(is_empty=models.PayloadField(key=IMAGE_SPACE_KEY)),
+        ])
+        if user_filter is None:
+            return models.Filter(must=[space_cond])
+        # 把用户过滤器整体嵌进 must —— 保留其 should/must_not 语义，无需逐字段搬运
+        return models.Filter(must=[user_filter, space_cond])
+
+    @staticmethod
     def _rrf_fuse(dense_hits, sparse_hits, limit: int = 50, k: int = 60) -> list[dict]:
-        """RRF 融合（Reciprocal Rank Fusion）"""
+        """RRF 融合（Reciprocal Rank Fusion）
+
+        `content_type` 一并回传（2026-11-01 跨模态）：DB 回查落空时（基准/单测/降级）
+        `_assemble_hits` 用它兜底；此前一律回落 "text"，照片/语音命中被标成文字。
+        """
         scores: dict[str, float] = {}
         details: dict[str, dict] = {}
 
@@ -224,6 +403,7 @@ class VectorStore:
             details[pid]["dense_score"] = hit.score
             if hit.payload:
                 details[pid]["text"] = hit.payload.get("text")
+                details[pid]["content_type"] = hit.payload.get("content_type")
 
         for rank, hit in enumerate(sparse_hits, 1):
             pid = str(hit.payload.get("content_id", hit.id)) if hit.payload else str(hit.id)
@@ -232,6 +412,7 @@ class VectorStore:
             d["sparse_score"] = hit.score
             if hit.payload:
                 d["text"] = hit.payload.get("text")
+                d["content_type"] = d.get("content_type") or hit.payload.get("content_type")
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
         result = []
@@ -243,6 +424,7 @@ class VectorStore:
                 "dense_score": round(d["dense_score"], 4),
                 "sparse_score": round(d["sparse_score"], 4),
                 "text": d.get("text"),
+                "content_type": d.get("content_type"),
             })
         return result
 
@@ -252,15 +434,33 @@ class VectorStore:
 
         Qdrant Range 只接受数值——datetime 统一转 epoch 秒（int），
         payload 侧 taken_at 也应以 epoch 秒存储（与 ISO 字符串互斥）。
+
+        D05-3（2026-09-25 功能修复波 · P0）：键集与未知键处置收敛到
+        `services/search_filters.py`——未知键**抛 `UnknownFilterKey`**，不再
+        静默丢弃（隔离类键被丢弃 = 跨用户召回且无任何信号）。
         """
+        filters = normalize_filters(filters)
+        assert_full_coverage("vector_store._to_filter", HANDLED_BY_QDRANT)
         if not filters:
             return None
         must: list = []
+        handled: set[str] = set()
         for key, value in filters.items():
+            handled.add(key)
             if key == "content_types" and value:
+                # FIX-1（2026-08-26）：过滤值归一——"image" 别名映射为规范值 "photo"，
+                # 且请求 "photo" 时同时匹配遗留 "image" 点（旧数据不丢），
+                # 生产 photo 点（payload "photo"）与基准旧点（payload "image"）均可命中。
+                any_vals: list[str] = []
+                for v in value:
+                    norm = CONTENT_TYPE_ALIASES.get(v, v)
+                    if norm not in any_vals:
+                        any_vals.append(norm)
+                    if norm == CONTENT_TYPE_PHOTO and CONTENT_TYPE_IMAGE_LEGACY not in any_vals:
+                        any_vals.append(CONTENT_TYPE_IMAGE_LEGACY)
                 must.append(models.FieldCondition(
                     key="content_type",
-                    match=models.MatchAny(any=value),
+                    match=models.MatchAny(any=any_vals),
                 ))
             elif key == "time_from" and value:
                 must.append(models.FieldCondition(
@@ -282,6 +482,25 @@ class VectorStore:
                     key="tags",
                     match=models.MatchValue(value=value),
                 ))
+            elif key == "content_class" and value:
+                # P1-A 类目路由（2026-08-25）：按类别过滤（生产 payload 字段
+                # content_class；基准 collection 的 _index 同步写入同名字段）。
+                must.append(models.FieldCondition(
+                    key="content_class",
+                    match=models.MatchValue(value=value),
+                ))
+            elif key == "user_id" and value:
+                # 用户隔离（2026-08-26 修复）：检索阶段即按 user_id 过滤，
+                # 防跨用户内容挤占召回窗口（此前仅溯源回填隔离，
+                # 数据多时新用户内容被挤出 top-k，api_smoke 门禁暴露）。
+                must.append(models.FieldCondition(
+                    key="user_id",
+                    match=models.MatchValue(value=str(value)),
+                ))
+        # D05-3：链尾不再静默——任何"键认识但分支没接"的情况立即报错
+        unhandled = sorted(set(filters) - handled)
+        if unhandled:  # pragma: no cover —— 由 test_search_filters 覆盖
+            raise AssertionError(f"_to_filter 未处理过滤键 {unhandled}")
         return models.Filter(must=must) if must else None
 
 
@@ -295,4 +514,4 @@ def get_store() -> VectorStore:
 def get_qdrant_client() -> QdrantClient:
     """Qdrant 客户端统一单例（P2-04 收敛：correction/vector_store 共用同一连接，
     消除 correction._correction_store 手写 global 的第二套单例）"""
-    return QdrantClient(url=settings.qdrant_url)
+    return QdrantClient(url=_client_url(settings.qdrant_url))

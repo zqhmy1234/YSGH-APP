@@ -1,0 +1,94 @@
+/**
+ * AI 对话页的**流式预览绑定**（2026-10-31 · 走查区块 5 / D-9）。
+ *
+ * ## 问题形态（原实现）
+ * `chat_api` 的预览是**模块级共享 ref**（`chatStreamText` / `chatStreamTool`，全 App 一份，
+ * 这是跨端接口不得已的形态）。页面若直接读它渲染，**列表里任何一条 typing 气泡都会显示同一段
+ * 文本**：上一轮被中断/失败留下的占位气泡会与本轮新气泡同文，看起来像"两条回复在一起打字"。
+ *
+ * ## 现口径
+ * 每个 `ChatStreamBinding` 记一个 `msgId`（本轮请求**所属的那条气泡** id，0 = 无在途）+ 两个
+ * 本轮副本。只有 id 匹配的气泡能读到副本；`sync()` 把模块级共享状态拷进副本（由页面 watch 调）。
+ * 请求开始 `begin(id)`、结束 `release(id)` —— 解除绑定后任何迟到帧都不再写进气泡。
+ *
+ * 为什么是 class 而不是"模块级变量"：TabAi 在壳内是 **v-show 常驻**、重挂时机不确定，
+ * 模块级状态会跨实例存活并串台（正是本 composable 要消灭的那类 bug）。
+ */
+import { ref } from 'vue'
+
+import { AiMsg } from '@/utils/ai_messages'
+import { chatStreamText, chatStreamTool } from '@/utils/chat_api'
+
+/** 工具名 → 用户可读短句（工具名是英文标识符，直接展示等于把实现细节推给用户） */
+export function toolLabel(name: string): string {
+	if (name == 'search_memories' || name == 'get_recent_memories') {
+		return '翻你的记忆'
+	}
+	if (name == 'save_memory' || name == 'save_knowledge_collection') {
+		return '记下这条'
+	}
+	if (name == 'get_memory_stats' || name == 'get_knowledge_summary') {
+		return '整理数据'
+	}
+	if (name == 'fetch_url_content') {
+		return '读取这个链接'
+	}
+	return '处理'
+}
+
+export class ChatStreamBinding {
+	/** 本轮预览所属的气泡 id（0 = 无在途请求） */
+	msgId = ref(0)
+	/** 本轮累计全文副本（只在本轮气泡上渲染） */
+	text = ref('')
+	/** 本轮工具阶段名副本（命中的话显示"正在翻你的记忆…"） */
+	tool = ref('')
+
+	/** 请求开始：绑定到这条气泡并清空上一轮的副本（防尾句闪现） */
+	begin(msgId: number): void {
+		this.msgId.value = msgId
+		this.text.value = ''
+		this.tool.value = ''
+	}
+
+	/** 请求结束：仅当仍是本轮时才解绑（迟到帧不得把别人的气泡重新绑上） */
+	release(msgId: number): void {
+		if (this.msgId.value == msgId) {
+			this.msgId.value = 0
+		}
+		this.text.value = ''
+		this.tool.value = ''
+	}
+
+	/** 无条件复位（页面卸载） */
+	reset(): void {
+		this.msgId.value = 0
+		this.text.value = ''
+		this.tool.value = ''
+	}
+
+	/** 把模块级共享预览拷进本轮副本；无在途则不动（避免给"没有请求的气泡"喂文本） */
+	sync(): void {
+		if (this.msgId.value != 0) {
+			this.text.value = chatStreamText.value
+			this.tool.value = chatStreamTool.value
+		}
+	}
+
+	/**
+	 * typing 气泡文案：预览累计全文 > 工具阶段提示 > 气泡自带占位文案。
+	 * 优先级理由：有正文就该看正文（逐字效果），正文还没出但工具在跑时给一句人话，
+	 * 两者都没有才退回占位 —— **任何情况都不编造内容**。
+	 */
+	displayFor(m: AiMsg): string {
+		if (this.msgId.value == m.id) {
+			if (this.text.value != '') {
+				return this.text.value
+			}
+			if (this.tool.value != '') {
+				return '正在' + toolLabel(this.tool.value) + '…'
+			}
+		}
+		return m.text
+	}
+}

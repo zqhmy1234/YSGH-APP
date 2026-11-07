@@ -1,0 +1,18 @@
+{
+  "id": "pref_routine_vs_variety",
+  "label": "规律vs多变",
+  "category": "决策与偏好",
+  "current_values": [
+    "规律",
+    "多变"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_routine_vs_variety",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

@@ -3,7 +3,8 @@
 
 职责（Commit Gate 的 tests 环节 + 独立运行）：
   1. pytest 全量测试（backend + research），失败即阻断
-  2. 覆盖率统计（--cov，阈值可配）
+  2. 覆盖率统计（--cov，阈值可配；2026-08-27 起 rag 分组在环境就绪时计入覆盖率，
+     产出 .cowork-temp/coverage.xml；环境缺失时显式警告而非静默漏跑）
   3. API 冒烟测试（FastAPI TestClient：healthz / auth mock 链路 / contents / search）
   4. 原型验证脚本（事件聚合 run_validation）
 
@@ -11,21 +12,33 @@
   python scripts/test_agent.py [--cov-threshold 70] [--only api|research]
 
 退出码：0 = 全部通过；1 = 有失败（禁止 commit）。
+（口径交叉引用 · D14-18：仓库内门禁工具的统一约定为 0=通过 / 1=违规 / 2=环境错误；
+ 本工具产出 0/1/2（2026-10-11 更正：0=通过，1=违规，2=环境错误；判定见 scripts/gate_exit.py；
+ 历史 docstring 曾写「只产出 0/1」）；环境问题（如 pytest 缺失）表现为 1 —— 统一为 2 属待办，
+ 详见 .trae/specs/refactor-extensibility-maintainability-wave/refactor-ledger.md §8.3。）
 报告：.cowork-temp/test-report.json
 """
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+import gate_exit  # noqa: E402
+
+# D14-11（B10-n）：UTF-8 兜底唯一实现（scripts/gate_io.py）
+# D14-18 / B10-o：退出码口径单一来源（scripts/gate_exit.py）
+from gate_io import force_utf8  # noqa: E402
+
+# D14-12（B10-i）：子进程包装**单一实现**（scripts/gate_proc.py，与 review_agent 共用）
+from gate_proc import run as _gate_run  # noqa: E402
+
+# D14-22（B10-i）：机读报告统一 schema + 带兜底写入（scripts/gate_report.py，三工具共用）
+from gate_report import write_report  # noqa: E402
+
+force_utf8()
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_DIR = ROOT / ".cowork-temp"
@@ -38,67 +51,389 @@ SUB_ENV = {
 }
 
 
-def run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+def run(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
+    """本工具的 `run` 仅**绑定自有差异**（超时 600 + 含 PYTHONPATH 的基础 env）；
+    子进程包装逻辑（UTF-8/错误分支/OOM 提示）已收敛到 scripts/gate_proc.py（D14-12 / B10-i）。"""
+    return _gate_run(cmd, cwd=cwd, timeout=600, env=env, base_env=SUB_ENV)
+
+
+def _free_memory_gb() -> float:
+    """可用物理内存 GB（Windows GlobalMemoryStatusEx）；探测失败返回 -1"""
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd or ROOT,
-            timeout=600, encoding="utf-8", errors="replace", env=SUB_ENV, check=False,
-        )
-        return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except FileNotFoundError:
-        return 127, f"command not found: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
+        import ctypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            return stat.ullAvailPhys / (1024**3)
+    except Exception:  # noqa: BLE001 —— 探测失败不阻断（无可用内存信息）
+        return -1.0
+    return -1.0
+
+
+def _port_open(port: int, host: str = "127.0.0.1") -> bool:
+    """环境自检：端口是否可达（docker 容器 yishu-redis:6379 / yishu-qdrant:6333）"""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+COV_XML = ".cowork-temp/coverage.xml"
+
+# 2026-10-31（走查 门禁稳定性）：重测试阶段的**内存下限**（GB）。
+# 依据（实测，非估算）：本机 pytest 会真加载 BGE-M3（backend/models/bge-m3 存在时优先本地目录，
+# fp16 权重 ~2.2GB）＋ torch 上下文，api_smoke 峰值 ~2.5GB。低于此线开跑不是"可能慢"，
+# 而是**必然**在 transformers 加载权重处访问违例（实测可用 0.52GB → 0xC0000005，
+# 崩在 `_load_state_dict_into_meta_model`），而崩溃的表现是"没有失败用例"。
+HEAVY_MIN_FREE_GB = 3.0
+
+
+def _rag_env_ready() -> tuple[bool, str]:
+    """RAG 用例运行环境探测（2026-08-27 批次 H2：rag 纳入覆盖率前先确认可跑）
+
+    探测两点：Qdrant 6333 端口可达 + BGE-M3 已入 HF 缓存。
+    rag 用例重（19 个，加载 BGE-M3 ~1.2GB / 现场下载 2.2GB），环境缺失时
+    显式警告跳过（不现场下载、不挂起），保持本地门禁秒级可预测。
+    """
+    import os
+
+    reasons: list[str] = []
+    if not _port_open(6333):
+        reasons.append("Qdrant 6333 端口不可达（需 docker 起 yishu-qdrant）")
+    hub = os.environ.get("HF_HUB_CACHE")
+    if not hub:
+        hf_home = os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+        hub = str(Path(hf_home) / "hub")
+    if not (Path(hub) / "models--BAAI--bge-m3").is_dir():
+        reasons.append(f"BGE-M3 未入 HF 缓存（先跑 python scripts/warm_hf_models.py；缓存目录 {hub}）")
+    if reasons:
+        return False, "；".join(reasons)
+    return True, ""
+
+
+def _emit_warnings(warnings: list[str]) -> None:
+    """deselect 显式警告（2026-08-27 批次 H2：防静默漏跑）——stdout + workflow annotation
+
+    `::warning::` 在本地仅是普通行；在 CI 会被 GitHub 识别为 warning annotation
+    （匿名 API 可读），避免测试被静默 deselect 却不留痕迹。
+    """
+    for w in warnings:
+        esc = w.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::warning::{esc}")
+        print(f"[deselect 警告] {w}")
+
+
+# pytest 失败摘要行（`-q` 模式）：`FAILED path::nodeid` / `ERROR path::nodeid`。
+# 末尾可带 ` - 简短原因`（--tb=short 时 pytest 会附一行摘要）。
+_FAILED_LINE_RE = re.compile(r"^(?P<kind>FAILED|ERROR)\s+(?P<node>\S+)(?P<rest>.*)$", re.MULTILINE)
+
+
+def extract_failed_tests(output: str) -> list[str]:
+    """从 pytest 输出里抽出失败/错误用例（**去重保序**，返回 `FAILED path::nodeid`）。
+
+    为什么单列一个函数（2026-09-25 教训 · 实付代价：**4 轮才定位到失败用例名**）：
+      ① `-q --tb=short --cov ... --cov-report=term-missing` 的输出里，
+         **失败摘要在前、覆盖率表在后（百来行）**；
+      ② 原实现只回传 `combined[-3500:]`（**尾部切片**）⇒ 失败用例名被覆盖率表**挤出**，
+         门禁展示的恰好是"与失败原因无关的覆盖率噪音"；
+      ③ 于是使用者只能：读 JSON（同样只有尾部）→ 翻 `sections` 键（键名是 `details`，白跑一轮）
+         → 全量重跑 pytest（107s）才看到名字。
+    ⇒ 现在把摘要**提到返回串最前面**（见 `run_pytest`），并写进报告 `failed_tests` 字段。
+    """
+    seen: list[str] = []
+    for line in output.splitlines():
+        m = _FAILED_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        item = f"{m.group('kind')} {m.group('node')}"
+        if item not in seen:
+            seen.append(item)
+    return seen
+
+
+# ─── 原生崩溃识别（2026-10-31 · 走查 门禁稳定性）────────────────────────────────
+#
+# 实付代价（整轮排查才定位）：`review_agent --full` 报 `[❌] tests` 而 `failed_tests: []`，
+# details 里只有一段 pytest 内部栈尾 ⇒ 看起来像"门禁调用路径有问题"，实际是 **pytest 进程
+# 被 Windows 访问违例(0xC0000005)终止**：pytest 默认启用 faulthandler，致命信号时它把各线程栈
+# 直接写进输出，然后进程死掉 —— 既没有 `FAILED` 行，也没有汇总行，于是"没有失败用例"。
+#
+# 转储的两个可识别指纹（与普通 traceback 区分）：
+#   ① 帧格式 `File "...", line N in func`（**无逗号**；普通 traceback 是 `line N, in func`）；
+#   ② 帧序**内→外**（第一个是最深的调用点，最后一个才是 `<frozen runpy>`）。
+# 因此必须显式解析，否则每次都要人工重跑 pytest 才能知道死在哪个用例（本轮已实测）。
+_CRASH_NTSTATUS = {
+    0xC0000005: "访问违例 access violation",
+    0xC00000FD: "栈溢出 stack overflow",
+    0xC0000409: "fail-fast（栈缓冲越界）",
+    0xC0000374: "堆损坏 heap corruption",
+}
+
+_NODEID_RE = re.compile(r"^(?P<node>\S*?\.py::\S+)$")
+_NODEID_STATUS_RE = re.compile(r"\b(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS|RERUN)\b")
+_FRAME_RE = re.compile(r'File "(?P<path>[^"]+)", line (?P<line>\d+) in (?P<func>\S+)')
+
+
+def extract_native_crash(exit_code: int, output: str) -> dict | None:
+    """识别「进程被原生信号终止」→ 返回 {signature, exit_code, nodeid, project_frames}。
+
+    `nodeid` = 崩溃时**正在跑**的用例（`-vv` 下那一行还没打状态就得出了结论）；
+    `project_frames` 只留 **本仓库内的帧**（pytest/pluggy/transformers 的帧对定位无用，
+    原实现把它们一起塞进 1200 字符尾部切片，恰好把项目帧挤掉）。
+    识别不出返回 None（**不吞**，交给原有 FAILED 解析路径）。
+    """
+    text = output or ""
+    sig = ""
+    m = re.search(r"Windows fatal exception:\s*([^\r\n]+)", text)
+    if m:
+        sig = "Windows fatal exception: " + m.group(1).strip()
+    else:
+        m = re.search(r"Fatal Python error:\s*([^\r\n]+)", text)
+        if m:
+            sig = "Fatal Python error: " + m.group(1).strip()
+    ntstatus = None
+    code_u = exit_code & 0xFFFFFFFF  # Windows 的 returncode 可能是负数(POSIX 风格)也可能是 NTSTATUS 原值
+    if code_u in _CRASH_NTSTATUS:
+        ntstatus = code_u
+        if not sig:
+            sig = f"0x{code_u:08X} {_CRASH_NTSTATUS[code_u]}"
+    if not sig and ntstatus is None:
+        return None
+
+    # 崩溃时正在运行的用例：最后一个「有 nodeid、但没有任何状态词」的行
+    nodeid = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        m2 = _NODEID_RE.match(line)
+        if m2 and not _NODEID_STATUS_RE.search(line):
+            nodeid = m2.group("node")
+    # 只保留本仓库帧（按转储顺序＝从崩溃点往外，正好是可读的调用链）
+    project_frames: list[str] = []
+    root = str(ROOT).replace("\\", "/")
+    for f in _FRAME_RE.finditer(text):
+        path = f.group("path").replace("\\", "/")
+        if not path.startswith(root):
+            continue
+        rel = path[len(root):].lstrip("/")
+        frame = f"{rel}:{f.group('line')} in {f.group('func')}"
+        if frame not in project_frames:
+            project_frames.append(frame)
+    return {
+        "signature": sig,
+        "exit_code": exit_code,
+        "ntstatus": f"0x{ntstatus:08X}" if ntstatus else "",
+        "nodeid": nodeid,
+        "project_frames": project_frames[:8],
+    }
+
+
+def _format_crash(crash: dict) -> str:
+    """把崩溃渲染成「第一行可被 extract_failed_tests 抓到」的块。
+
+    首行故意写成 `ERROR <nodeid>`：与 pytest 原生失败行同形 ⇒ 报告 `failed_tests` 自动带上它，
+    `review_agent` 的「失败用例（单一来源）」也就直接显示，无需改任何消费方。
+    """
+    node = crash["nodeid"] or "（未解析到用例名：见下方原始输出）"
+    lines = [
+        "[pytest 原生崩溃：进程被终止 —— 不是断言失败，所以此前 failed_tests 为空]",
+        f"ERROR {node}",
+        f"  信号/退出码: {crash['exit_code']}  {crash['signature']}"
+        + (f"  NTSTATUS={crash['ntstatus']}" if crash["ntstatus"] else ""),
+    ]
+    if crash["project_frames"]:
+        lines.append("  调用链（只列本仓库帧，从崩溃点往外）:")
+        lines.extend(f"    {f}" for f in crash["project_frames"])
+    lines.append(
+        "  判读：进程级崩溃（C 扩展/内存），**不能**当作「用例断言失败」处理；"
+        "先看上面第一帧是不是在做重活（加载模型/大分配），再查当时可用内存。"
+    )
+    return "\n".join(lines)
 
 
 def run_pytest(cov_threshold: int) -> tuple[bool, str]:
-    """pytest 全量 + 覆盖率"""
-    cmd = [
+    """pytest 全量 + 覆盖率（2026-08-25：测试环境封闭——覆盖 MOCK/STORAGE_BACKEND
+
+    .env 可能配真实服务（MOCK_EXTERNAL_AI=false / STORAGE_BACKEND=fs），
+    测试套件按 mock+fake 断言；不覆盖会因 .env 状态导致 test_amap/test_asr
+    等 mock 断言失败（review_agent 全量门禁暴露）。
+    2026-08-26：环境自检——docker 容器（yishu-redis/yishu-qdrant）未启动时
+    deselect 已知依赖项，避免环境缺失卡住 commit（CI 仍全量验证）。
+    2026-08-27（批次 H2 R7）：
+      - T3 覆盖率统一 60：主套件 + rag 分组（环境就绪时 --cov-append）合并判定阈值；
+      - T6 deselect 显式警告：环境缺失 deselect / rag 未计入覆盖率时输出显式警告；
+      - T8 coverage.xml 产物：写 .cowork-temp/coverage.xml（CI 上传 artifact）。
+    """
+    import os
+
+    env = {
+        **dict(os.environ),
+        "MOCK_EXTERNAL_AI": "true",
+        "STORAGE_BACKEND": "fake",
+    }
+    # 注意：主套件不全局设 QDRANT_COLLECTION——conftest 的 vector_collection fixture
+    # 已按需把默认 collection 指到 test_* 隔离库（TD-P1C）；rag 子进程单独设
+    # test_yishu_contents 与 CI `pytest -m rag` 步骤的隔离形态保持一致。
+    warnings: list[str] = []
+    outputs: list[str] = []
+    run_codes: list[int] = []  # 2026-10-31：每段 pytest 的退出码（原生崩溃判定要用它）
+    failed = False
+
+    main_cmd = [
         sys.executable, "-m", "pytest", "backend/tests",
-        "-q", "--tb=short",
+        "-vv", "--tb=short",
         "--cov=backend/app",
         "--cov-report=term-missing",
-        f"--cov-fail-under={cov_threshold}",
     ]
-    code, out = run(cmd)
-    if "No module named pytest" in out or "No module named pytest-cov" in out:
-        return True, f"[skip] 缺依赖：{out.strip().splitlines()[-1] if out.strip() else 'pytest'}"
-    return (code == 0), out.strip()[-2500:]
+    if not _port_open(6379):
+        main_cmd += ["--deselect", "tests/test_queue.py::test_redis_connection"]
+        main_cmd += ["--deselect", "tests/test_queue.py::test_enqueue_and_worker_consume"]
+        main_cmd += ["--deselect", "tests/test_queue.py::test_queue_failure_goes_to_dead"]
+        warnings.append("Redis 6379 不可达 → deselect 3 个 test_queue 依赖用例（CI 仍全量验证）")
+    if not _port_open(6333):
+        main_cmd += ["--deselect", "tests/test_pipeline.py::TestPhotoPipeline::test_photo_caption_and_done"]
+        main_cmd += ["--deselect", "tests/test_pipeline.py::TestPhotoPipeline::test_photo_writes_image_vec"]
+        warnings.append("Qdrant 6333 不可达 → deselect 2 个 test_pipeline 向量用例（CI 仍全量验证）")
+
+    rag_ready, rag_reason = _rag_env_ready()
+    if rag_ready:
+        # 主套件先跑（不 gate 阈值），rag 追加覆盖后统一判定（合并覆盖 ≥ 主套件覆盖）
+        code, main_out = run(main_cmd, env=env)
+        run_codes.append(code)
+        outputs.append("[pytest·主套件]\n" + main_out.strip())
+        if code != 0:
+            failed = True
+        rag_cmd = [
+            sys.executable, "-m", "pytest", "backend/tests", "-m", "rag",
+            "-q", "--tb=short",
+            "--cov=backend/app",
+            "--cov-append",
+            "--cov-report=term-missing",
+            f"--cov-report=xml:{COV_XML}",
+            f"--cov-fail-under={cov_threshold}",
+        ]
+        code2, rag_out = run(rag_cmd, env={**env, "QDRANT_COLLECTION": "test_yishu_contents"})
+        run_codes.append(code2)
+        outputs.append("[pytest·rag 分组（计入覆盖率）]\n" + rag_out.strip())
+        if code2 != 0:
+            failed = True
+    else:
+        warnings.append(f"RAG 用例未纳入覆盖率统计（{rag_reason}）；覆盖率阈值仅按主套件判定")
+        main_cmd += [f"--cov-fail-under={cov_threshold}", f"--cov-report=xml:{COV_XML}"]
+        code, out = run(main_cmd, env=env)
+        run_codes.append(code)
+        outputs.append("[pytest·主套件]\n" + out.strip())
+        if code != 0:
+            failed = True
+
+    if any("No module named pytest" in o or "No module named pytest-cov" in o for o in outputs):
+        last = outputs[-1].strip().splitlines()[-1] if outputs[-1].strip() else "pytest"
+        # D14-19 姊妹缺陷（B10-o）：此处此前**静默返回 True + [skip]** ⇒ 报告全绿，而全量测试
+        # **从未执行**（与 review_agent 缺 ruff/pytest 的假绿同族）。
+        # 现改为**环境错误**（统一前缀 ⇒ main() 映射为退出码 2），默认阻断、不再静默。
+        return False, (
+            f"{gate_exit.ENV_ERR_PREFIX} 缺测试依赖 ⇒ 全量测试**未执行**（环境不齐不得静默放行）\n"
+            f"  {last}\n"
+            "  安装：pip install pytest pytest-cov httpx"
+        )
+
+    _emit_warnings(warnings)
+    combined = "\n\n".join(outputs)
+    if not failed:
+        return True, combined.strip()[-3500:]
+    # 2026-10-31（走查 门禁稳定性）：**先判原生崩溃**。崩溃时 pytest 来不及输出任何
+    # `FAILED` 行，直接走下面的解析只会得到"未匹配到 FAILED/ERROR"——那正是本轮
+    # 「reports failed_tests: [] + 只有一段栈尾」的成因（看起来像用例全过，其实进程死了）。
+    for crash_code in run_codes:
+        crash = extract_native_crash(crash_code, combined)
+        if crash is not None:
+            return False, (
+                f"{gate_exit.ENV_ERR_PREFIX} pytest 进程被原生信号终止 ⇒ 测试**未被判定**"
+                "（既不是通过，也不是用例断言失败）\n\n"
+                + _format_crash(crash)
+                + "\n\n[原始输出·尾部]\n"
+                + combined.strip()[-2500:]
+            )
+    # 失败时**摘要置顶**（见 extract_failed_tests 的教训注释）：门禁第一眼就该看到用例名，
+    # 而不是被覆盖率表淹没。原始输出仍保留尾部（含最后一个 traceback 片段）供下钻。
+    failures = extract_failed_tests(combined)
+    head = "[失败用例（先看这里；原始输出见下方「原始输出·尾部」）]\n" + (
+        "\n".join(f"  {x}" for x in failures)
+        if failures
+        else "  （未在输出中匹配到 FAILED/ERROR 行——请直接看下方原始输出或报告 JSON）"
+    )
+    return False, head + "\n\n[原始输出·尾部]\n" + combined.strip()[-2500:]
 
 
 def run_api_smoke() -> tuple[bool, str]:
-    """FastAPI TestClient 冒烟（不依赖外部服务，mock 模式）"""
-    script = (
-        "import sys; "
-        "sys.path.insert(0, r'" + str(ROOT) + "'); "
-        "sys.path.insert(0, r'" + str(ROOT / "backend") + "'); "
-        "from fastapi.testclient import TestClient; "
-        "from app.main import app; "
-        "c = TestClient(app); "
-        "checks = []; "
-        "r = c.get('/healthz'); checks.append(('healthz', r.status_code == 200)); "
-        "r = c.post('/api/v1/auth/wechat', json={'code':'t1','device_id':'d1'}); "
-        "checks.append(('auth-wechat', r.status_code == 200 and 'access_token' in r.json().get('data', {}))); "
-        "token = r.json().get('data', {}).get('access_token', ''); "
-        "h = {'Authorization': 'Bearer ' + token} if token else {}; "
-        "r = c.post('/api/v1/contents', json={'content_type':'text','text':'hello','source':'app'}, headers=h); "
-        "checks.append(('content-create', r.status_code == 200)); "
-        "r = c.post('/api/v1/search', json={'q':'杭州'}, headers=h); "
-        "checks.append(('search', r.status_code == 200 and len(r.json().get('data', {}).get('hits', [])) > 0)); "
-        "failed = [n for n, ok in checks if not ok]; "
-        "print('SMOKE:', {n: ('PASS' if ok else 'FAIL') for n, ok in checks}); "
-        "sys.exit(1 if failed else 0)"
+    """API 真实用例冒烟（2026-08-24 用户拍板：替代原最小冒烟）
+
+    真实用户旅程：认证安全 / 文字全链路（创建→管线→分类→搜索命中）/
+    照片 multipart 上传链路 / 时间轴结构 / 去重 409。详见 scripts/api_smoke_cases.py。
+    2026-08-25 内存优化：smoke 进程跳过 reranker 加载（RERANKER_MODEL=__disabled__，
+    命中存在性检查即降级原序）——rerank 覆盖在 pytest -m rag；smoke 峰值降 ~0.5-1GB。
+    TD-P1C（2026-08-26）：smoke 写 test_ 前缀测试 collection（QDRANT_COLLECTION），
+    不再写生产 yishu_contents；与 pytest 隔离 → 执行顺序不再影响门禁结果。
+    """
+    code, out = run(
+        [sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")],
+        env={
+            "RERANKER_MODEL": "__disabled__",
+            "QDRANT_COLLECTION": "test_yishu_contents",
+        },
     )
-    code, out = run([sys.executable, "-c", script])
+    if code != 0:
+        # 存量 flaky（2026-08-24 起：Qdrant 累积数据后新内容可能被挤出 top-k）——
+        # TD-P1C 后 smoke 已隔离于独立 collection，重试作为兜底保留。
+        print("[retry] api_smoke 首次失败，自动重试一次")
+        code, out = run(
+            [sys.executable, str(ROOT / "scripts" / "api_smoke_cases.py")],
+            env={
+                "RERANKER_MODEL": "__disabled__",
+                "QDRANT_COLLECTION": "test_yishu_contents",
+            },
+        )
     return (code == 0), out.strip()[-1500:]
+
+
+def run_cleanup_test_collections() -> tuple[bool, str]:
+    """每跑结束清理 test_ 前缀 Qdrant collection（尽力而为，失败不阻断门禁）
+
+    TD-P1C（2026-08-26）：测试环境累计数据清理，防 test_ 库无界增长
+    挤占/污染后续跑（api_smoke 起始也会清理，这里作为每跑收尾兜底）。
+    """
+    cmd = (
+        "import sys; "
+        "sys.path.insert(0, r'" + str(ROOT / "backend") + "'); "
+        "from app.services.vector_store import cleanup_test_collections; "
+        "print('removed:', cleanup_test_collections())"
+    )
+    code, out = run([sys.executable, "-c", cmd])
+    return (code == 0), out.strip()[-500:]
 
 
 def run_research_validation() -> tuple[bool, str]:
     """事件聚合原型验证（POC-05）"""
     cmd = (
         "import sys; "
-        "sys.path.insert(0, r'" + str(ROOT) + "'); "
-        "from research.event_aggregation.run_validation import main; main()"
+        "sys.path.insert(0, r'" + str(ROOT / "backend") + "'); "
+        "from app.services.event_aggregation.run_validation import main; main()"
     )
     code, out = run([sys.executable, "-c", cmd])
     return (code == 0), out.strip()[-1500:]
@@ -110,22 +445,66 @@ def main() -> int:
     parser.add_argument("--only", choices=["api", "research"], help="只跑部分")
     args = parser.parse_args()
 
-    sections = {
-        "pytest": run_pytest(args.cov_threshold) if args.only is None or args.only == "api" else (True, "[skip]"),
-        "api_smoke": run_api_smoke() if args.only is None or args.only == "api" else (True, "[skip]"),
-        "research": run_research_validation() if args.only is None or args.only == "research" else (True, "[skip]"),
-    }
+    free = _free_memory_gb()
+    if free >= 0:
+        print(f"可用物理内存: {free:.1f}GB")
+        if args.only is None and free < 4.0:
+            print(
+                "⚠ 可用内存 <4GB：重模型阶段（api_smoke 峰值 ~2.5GB）有 OOM 风险——"
+                "建议先关闭 HBuilderX 编译残留/TRAE/WorkBuddy 等大进程"
+            )
+
+    # 2026-10-31（走查 门禁稳定性）：内存不足时**拒绝开跑**，而不是让它崩成"没有失败用例"。
+    # 语义是「环境不成立、本工具无法判定」= 退出码 2（仍阻断提交，但归因正确），
+    # 报告照常落盘（含原因），避免 review_agent 去读上一次的陈旧 failed_tests。
+    low_mem = args.only is None and 0 <= free < HEAVY_MIN_FREE_GB
+    low_mem_note = (
+        f"{gate_exit.ENV_ERR_PREFIX} 可用物理内存 {free:.2f}GB < {HEAVY_MIN_FREE_GB:.1f}GB ⇒ "
+        "**拒绝开跑**：本套 pytest 会真加载 BGE-M3（fp16 ~2.2GB）、api_smoke 峰值 ~2.5GB，"
+        "内存不够时进程会在加载权重处访问违例（0xC0000005），表现成「没有任何失败用例」。\n"
+        "  处理：先释放内存（关模拟器 qemu / HBuilderX 编译残留 / 其他 agent 的重任务），"
+        "确认可用内存 ≥ 3GB 后重跑。"
+    )
+
+    # 执行顺序（TD-P1C 2026-08-26）：api_smoke 与 pytest 均已隔离——
+    # api_smoke 写 test_ 前缀测试 collection（不再写生产 yishu_contents），
+    # 不再需要"api_smoke 先于 pytest"顺序 hack；pytest 常规先行，
+    # 每跑结束统一清理 test_ collection（尽力而为）。
+    sections = (
+        {
+            "pytest": (False, low_mem_note),
+            "api_smoke": (False, low_mem_note),
+            "research": (True, "[skip] 内存不足（--only research 可单跑，它不加载模型）"),
+        }
+        if low_mem
+        else {
+            "pytest": run_pytest(args.cov_threshold) if args.only is None or args.only == "api" else (True, "[skip]"),
+            "api_smoke": run_api_smoke() if args.only is None or args.only == "api" else (True, "[skip]"),
+            "research": run_research_validation() if args.only is None or args.only == "research" else (True, "[skip]"),
+        }
+    )
     blocking = {k: v for k, v in sections.items() if not v[0]}
     passed = not blocking
+
+    # 每跑结束清理测试 collection（尽力而为，失败不阻断门禁）
+    cleanup_ok, cleanup_out = run_cleanup_test_collections()
+
+    # D14-18（B10-o）：统一退出码口径——违规（代码问题）= 1，环境错误（无法判定）= 2。
+    env_blocked, real_fail = gate_exit.classify_failure(blocking)
 
     report = {
         "passed": passed,
         "blocking_sections": list(blocking.keys()),
+        "env_blocked_sections": env_blocked,
+        # 机读面也直给失败用例（2026-09-25）：使用方读 JSON 时不必再"字符串里找 FAILED"
+        "failed_tests": extract_failed_tests(sections["pytest"][1]) if not sections["pytest"][0] else [],
         "details": {k: {"ok": v[0], "output": v[1]} for k, v in sections.items()},
+        "cleanup_test_collections": {"ok": cleanup_ok, "output": cleanup_out},
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    # D14-22（B10-i）：统一信封（schema_version/generated_at/passed）+ 带兜底写入；
+    # 自有键（blocking_sections/env_blocked_sections/details/cleanup_test_collections）保留。
+    write_report(REPORT_PATH, report)
 
     print("=" * 60)
     print("代码测试 Agent")
@@ -135,12 +514,20 @@ def main() -> int:
         print(f"\n[{mark}] {name}")
         for line in out.splitlines()[:10]:
             print(f"    {line}")
+    print(f"\n[{'✅' if cleanup_ok else '⚠'}] cleanup_test_collections")
+    for line in cleanup_out.splitlines()[:3]:
+        print(f"    {line}")
     print("\n" + "=" * 60)
     if passed:
         print("✅ 测试全部通过")
         return 0
-    print(f"❌ 测试未通过：{', '.join(blocking)} — 修复后重跑")
-    return 1
+    if env_blocked:
+        print(f"⚠️ 环境错误（非代码问题，本工具无法判定）：{', '.join(env_blocked)}")
+    if real_fail:
+        print(f"❌ 测试未通过：{', '.join(real_fail)} — 修复后重跑")
+        return 1
+    print("❌ 无法完成测试（环境不齐，本工具未真正判定）— 修好环境后重跑")
+    return 2
 
 
 if __name__ == "__main__":

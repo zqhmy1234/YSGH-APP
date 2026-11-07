@@ -1,0 +1,19 @@
+{
+  "id": "habit_schedule",
+  "label": "作息类型",
+  "category": "行为习惯",
+  "current_values": [
+    "早起型",
+    "晚睡型",
+    "不规律"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "lstyle_sleep_schedule",
+  "confidence_threshold": 0.7,
+  "note": "从 Behavior: Time 救回",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

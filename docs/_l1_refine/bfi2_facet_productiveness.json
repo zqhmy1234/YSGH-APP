@@ -1,0 +1,39 @@
+{
+  "id": "bfi2_facet_productiveness",
+  "refine_mode": "template_level",
+  "values": [
+    "很高",
+    "高",
+    "平均",
+    "低",
+    "很低"
+  ],
+  "values_detail": [
+    {
+      "value": "很高",
+      "phrase": "多线程不宕机，番茄钟达人，日程精确到分钟还留缓冲",
+      "china_note": "北上广职场卷王典型，工具驱动型高效"
+    },
+    {
+      "value": "高",
+      "phrase": "列清单能落地，工作日高效收尾，善用飞书/Notion",
+      "china_note": "主流自律白领，效率工具重度用户"
+    },
+    {
+      "value": "平均",
+      "phrase": "有节奏但易被微信群打断，偶尔拖延能补上",
+      "china_note": "中国职场常态，IM消息文化是主要干扰源"
+    },
+    {
+      "value": "低",
+      "phrase": "常陷琐事、会议黑洞，刷手机停不下来",
+      "china_note": "低效边缘，被碎片化社交与无效会议消耗"
+    },
+    {
+      "value": "很低",
+      "phrase": "启动困难，deadline前才爆发，躺平式摆烂",
+      "china_note": "低动力边缘，需区分倦怠型与拖延型"
+    }
+  ],
+  "refine_note": "原5→现5；保留level5有序完备枚举，按template_level补充中国语境行为锚点，无新增值、无红线"
+}

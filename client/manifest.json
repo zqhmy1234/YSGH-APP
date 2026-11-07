@@ -1,0 +1,77 @@
+{
+  "name": "忆述光华",
+  "appid": "__UNI__2650A2A",
+  "description": "个人记忆整理与回顾 App（客户端第一波：F1 数据链路 + F8 时间轴）",
+  "versionName": "0.1.0",
+  "versionCode" : "108",
+  "locale": "zh-Hans",
+  "uni-app-x": {
+    "vapor": true
+  },
+  "vueVersion": "3",
+  "app": {
+    "distribute": {
+      "android": {
+        "minSdkVersion": 24,
+        "targetSdkVersion": 34,
+        "abiFilters": [
+          "arm64-v8a"
+        ],
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>",
+          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>"
+        ]
+      }
+    }
+  },
+  "app-android": {
+    "distribute": {
+      "minSdkVersion": 24,
+      "targetSdkVersion": 34,
+      "abiFilters": [
+        "arm64-v8a"
+      ],
+      "permissions": [
+        "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+        "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+        "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>",
+        "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+        "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+        "<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
+        "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>"
+      ],
+      "modules": {},
+      "icons": {
+        "hdpi": "static/app-icon/icon-72.png",
+        "xhdpi": "static/app-icon/icon-96.png",
+        "xxhdpi": "static/app-icon/icon-144.png",
+        "xxxhdpi": "static/app-icon/icon-192.png"
+      },
+      "splashScreens": {
+        "default": {
+          "xhdpi": "static/app-icon/splash-720x1280.png",
+          "xxhdpi": "static/app-icon/splash-1080x1920.png",
+          "xxxhdpi": "static/app-icon/splash-2160x3840.png"
+        },
+        "background": "#F8F7F4",
+        "icon": {
+          "xhdpi": "static/app-icon/splash-icon-480.png",
+          "xxhdpi": "static/app-icon/splash-icon-720.png",
+          "xxxhdpi": "static/app-icon/splash-icon-960.png"
+        }
+      }
+    }
+  },
+  "app-ios": {
+    "distribute": {
+      "modules": {},
+      "icons": {},
+      "splashScreens": {}
+    }
+  }
+}

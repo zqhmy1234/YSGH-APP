@@ -1,0 +1,33 @@
+{
+  "id": "skill_note_taking",
+  "refine_mode": "template_level",
+  "values": [
+    "精通",
+    "熟练",
+    "入门",
+    "不会"
+  ],
+  "values_detail": [
+    {
+      "value": "精通",
+      "phrase": "有自己一套知识管理体系，用思维导图/康奈尔/flomo卡片或Obsidian双链串联",
+      "china_note": "国内知识管理圈以XMind、幕布、flomo、Obsidian为标杆，'建体系、能复搜'才算真精通"
+    },
+    {
+      "value": "熟练",
+      "phrase": "上课开会用有道云笔记、Typora随手整理，会复盘但不成体系",
+      "china_note": "典型中国学生/职场人用国产云笔记工具，能记能用但方法未内化"
+    },
+    {
+      "value": "入门",
+      "phrase": "用手机备忘录、微信文件传输助手随手记，上课拍照截PPT",
+      "china_note": "最普遍的大众档，'记了'即满足，缺乏后续整理，国内课堂拍照截屏成风"
+    },
+    {
+      "value": "不会",
+      "phrase": "上课只拍照、收藏夹吃灰，觉得记了也不看",
+      "china_note": "边缘但真实，多见于'截图即收藏'式和抵触记录型用户，微信收藏夹堆积是典型中国现象"
+    }
+  ],
+  "refine_note": "原4→现4；template_level按skill_level原样保留四档，仅补全中国语境笔记行为锚点（思维导图/康奈尔/flomo/双链、截图传输助手、收藏夹吃灰），互斥统一。"
+}

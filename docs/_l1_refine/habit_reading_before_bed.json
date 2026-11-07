@@ -1,0 +1,28 @@
+{
+  "id": "habit_reading_before_bed",
+  "refine_mode": "template_level",
+  "values": ["经常", "偶尔", "很少", "不"],
+  "values_detail": [
+    {
+      "value": "经常",
+      "phrase": "每晚睡前雷打不动看会儿书、听书或刷读书类内容",
+      "china_note": "典型中国城市中青年，纸书/微信读书/得到听书皆属此类"
+    },
+    {
+      "value": "偶尔",
+      "phrase": "心情好或失眠时才翻两页，没规律",
+      "china_note": "通勤累、加班多导致阅读被挤压，属主流摇摆态"
+    },
+    {
+      "value": "很少",
+      "phrase": "一个月难得翻一次，基本不碰书",
+      "china_note": "手机占据睡前黄金时间，纸质阅读边缘化"
+    },
+    {
+      "value": "不",
+      "phrase": "倒头就睡，睡前从不读书",
+      "china_note": "纯手机刷短视频/社交后即睡，无阅读习惯人群"
+    }
+  ],
+  "refine_note": "原N(null)→现4档频率种子；template_level 模式按模板原样保留频率档，仅补充中国语境行为锚点"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "comm_reading_vs_watching",
+  "label": "读vs看",
+  "category": "沟通风格与语言指纹",
+  "current_values": [
+    "爱读文字",
+    "爱看视频",
+    "都行"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "cog_reading_vs_watching",
+  "confidence_threshold": 0.7,
+  "note": "",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

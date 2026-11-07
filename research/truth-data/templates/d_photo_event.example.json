@@ -1,0 +1,28 @@
+[
+  {
+    "set_id": "p-0001",
+    "user_id_hashed": "sha256:examplehash0001",
+    "time_span": {
+      "from": "2026-08-22T00:00:00+08:00",
+      "to": "2026-08-25T23:59:59+08:00"
+    },
+    "photo_refs": ["research/truth-data/d/photos/p-0001/001.jpg"],
+    "expected_l1": [
+      {
+        "date": "2026-08-22",
+        "photo_ids": ["001.jpg", "002.jpg"],
+        "title": "周末出游"
+      }
+    ],
+    "expected_l2": [
+      {
+        "theme": "西湖一日游",
+        "l1_dates": ["2026-08-22"],
+        "photo_ids": ["001.jpg"]
+      }
+    ],
+    "annotator_count": 3,
+    "consensus": "3/3",
+    "collected_at": "2026-09-05T10:00:00+08:00"
+  }
+]

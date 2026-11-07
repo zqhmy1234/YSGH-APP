@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "version": 1,
+    "note": "filter 元数据语料（place/taken_at/photo）—— 服务 truth_queries_50 里原本是空期望占位的 place/person/time/image 四层（R-3/R-5）",
+    "count": 14,
+    "anchor_now": "2026-10-16T12:00:00+08:00",
+    "anchor_why": "时间查询是相对的（去年夏天/上个月），_TIME_PATTERNS 按运行时 now 现算窗口；冻结锚点让语料可 diff、评测可复现。评测端读本字段设 RAG_NOW_OVERRIDE（见 rag/rewrite._now）",
+    "reserved_empty_window": "2026-10-02 ~ 2026-10-09",
+    "reserved_why": "两条负样本靠这段空窗落空，任何条目都不许在此写 taken_at"
+  },
+  "items": [
+    {
+      "id": "d-photo-00",
+      "text": "苏州园林里的旅行合照",
+      "content_type": "photo",
+      "label": "photo",
+      "place": "苏州",
+      "taken_at": "2026-09-10T10:00:00+08:00"
+    },
+    {
+      "id": "d-photo-01",
+      "text": "一只橘猫趴在窗台上晒太阳",
+      "content_type": "photo",
+      "label": "photo",
+      "taken_at": "2026-08-02T09:00:00+08:00"
+    },
+    {
+      "id": "d-photo-02",
+      "text": "海边日落时分的风景照",
+      "content_type": "photo",
+      "label": "photo",
+      "taken_at": "2026-07-18T18:30:00+08:00"
+    },
+    {
+      "id": "d-photo-03",
+      "text": "手机截图的课程表",
+      "content_type": "photo",
+      "label": "photo",
+      "taken_at": "2026-06-05T08:00:00+08:00"
+    },
+    {
+      "id": "d-photo-04",
+      "text": "旅行时和朋友拍的合照",
+      "content_type": "photo",
+      "label": "photo",
+      "taken_at": "2026-05-20T15:00:00+08:00"
+    },
+    {
+      "id": "d-photo-05",
+      "text": "去年生日在杭州拍的纪念照",
+      "content_type": "photo",
+      "label": "photo",
+      "place": "杭州",
+      "taken_at": "2025-08-20T12:00:00+08:00"
+    },
+    {
+      "id": "d-place-00",
+      "text": "上海外滩的夜景值得再看一次",
+      "content_type": "text",
+      "label": "mixed",
+      "place": "外滩"
+    },
+    {
+      "id": "d-place-01",
+      "text": "在西湖边散步了一整个下午",
+      "content_type": "text",
+      "label": "mixed",
+      "place": "西湖"
+    },
+    {
+      "id": "d-place-02",
+      "text": "北京出差的行程安排",
+      "content_type": "text",
+      "label": "todo",
+      "place": "北京"
+    },
+    {
+      "id": "d-place-03",
+      "text": "云南旅游的攻略整理",
+      "content_type": "text",
+      "label": "idea",
+      "place": "云南"
+    },
+    {
+      "id": "d-time-00",
+      "text": "昨天和朋友去吃了川菜",
+      "content_type": "text",
+      "label": "mixed",
+      "taken_at": "2026-10-15T19:00:00+08:00"
+    },
+    {
+      "id": "d-time-01",
+      "text": "前年去过的地方是厦门",
+      "content_type": "text",
+      "label": "mixed",
+      "taken_at": "2024-05-20T10:00:00+08:00"
+    },
+    {
+      "id": "d-time-02",
+      "text": "上周的会议纪要",
+      "content_type": "text",
+      "label": "todo",
+      "taken_at": "2026-10-11T14:00:00+08:00"
+    },
+    {
+      "id": "d-time-03",
+      "text": "三年前的今天在准备考研",
+      "content_type": "text",
+      "label": "mixed",
+      "taken_at": "2023-08-01T20:00:00+08:00"
+    }
+  ]
+}

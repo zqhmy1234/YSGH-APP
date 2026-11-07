@@ -1,0 +1,12 @@
+{
+  "id": "skill_public_speaking",
+  "refine_mode": "template_level",
+  "values": ["精通", "熟练", "入门", "不会"],
+  "values_detail": [
+    {"value": "精通", "phrase": "主持、辩论、脱稿演讲都如鱼得水，控场与临场应变自如", "china_note": "典型于学生会主席、培训师、销售冠军等高频表达场景，是职场与社交中的稀缺型能力"},
+    {"value": "熟练", "phrase": "能稳稳上台做工作汇报、答辩、分享，不怯场也不卡壳", "china_note": "多数职场骨干的水平，中国式开会、述职、面试中最被看重的实用档位"},
+    {"value": "入门", "phrase": "能讲几句但容易紧张、逻辑有点散，需要稿子撑着", "china_note": "大量理工科与内向型用户的真实状态，非贬义，是成长型画像的常态边缘"},
+    {"value": "不会", "phrase": "一开口就手抖心慌，能躲就躲，最怕被点名发言", "china_note": "中国教育语境下'怕当众说话'是普遍心理，非能力缺陷，需中性不打压地标注"}
+  ],
+  "refine_note": "原N=0（current_values为null）→现M=4；按template_level原样取skill_level四档，未扩值，仅补充中国语境行为锚点，互斥清晰且不引红线"
+}

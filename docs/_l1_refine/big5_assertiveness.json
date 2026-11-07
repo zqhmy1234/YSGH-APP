@@ -1,0 +1,13 @@
+{
+  "id": "big5_assertiveness",
+  "refine_mode": "template_level",
+  "values": ["很高", "高", "平均", "低", "很低"],
+  "values_detail": [
+    {"value": "很高", "phrase": "做事很有主见，该说就说", "china_note": "饭局上敢直接拒酒、对不合理要求当场说不，职场主动争取资源不怯场"},
+    {"value": "高", "phrase": "比较敢表达，主动提想法", "china_note": "会议里愿意发言，对长辈领导也能直说意见但会留面子"},
+    {"value": "平均", "phrase": "看情况，有分寸地表达", "china_note": "熟人面前直率、正式场合收敛，讲究看人下菜碟"},
+    {"value": "低", "phrase": "不太敢争，多忍让", "china_note": "怕伤和气、习惯随大流，遇冲突倾向回避，重以和为贵"},
+    {"value": "很低", "phrase": "几乎不表达自己", "china_note": "极度回避冲突、连点菜都不敢做主，易被当老好人而忽视"}
+  ],
+  "refine_note": "原5→现5；template_level沿用level5档位，补全中国式行为锚点（拒酒/留面子/看人下菜碟/以和为贵），未弱化防护不引红线"
+}

@@ -1,0 +1,707 @@
+<template>
+	<!-- W10 新页：账号与安全（画布板 41:161）· 手工还原
+	     无 TabBar（画布真值）；W10.4：emoji 图标全部换同风格线性 SVG（icon-phone/chat/shield）；
+	     「数据导出」「存储空间」两行移出（与「我的」页「存储与备份」功能冲突，峰宝拍板
+	     2026-09-01：统一归未来「存储与备份」页，画布同步删） -->
+	<view class="page-root tk-root">
+		<!-- 铁律 11.5：同层 absolute 兄弟按 DOM 顺序绘制，返回图标必须排在标题容器**之后**，
+		     否则被全宽 750rpx 的标题容器盖住 → @tap 收不到事件（settings 页真机实锤先例） -->
+		<view class="n41_166"> <!-- 画布 41:166 标题容器 -->
+			<text class="n41_167">账号与安全</text> <!-- 画布 41:167 页标题 -->
+		</view>
+		<image class="n41_164" src="/static/icons/i4_135.svg" @tap="goBack" /> <!-- 画布 41:164 返回（复用 settings 同款箭头 SVG） -->
+		<view class="list-flow"> <!-- 列表流式容器（组间 margin 自动下移） -->
+			<view class="sec-group"> <!-- 画布 41:169 组·账号信息 -->
+				<view class="sec-row" @tap="onPhone"> <!-- 画布 41:170 行·手机号 -->
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/icon-phone.svg" />
+					</view>
+					<text class="sec-label">手机号</text>
+					<!-- B4（BB1）：GET /users/me 真值（服务端掩码 138****XXXX）；失败/未绑定保持「未绑定」不显假号 -->
+					<text class="sec-value">{{ phoneText }}</text>
+					<text class="sec-arrow">›</text>
+				</view>
+				<view class="sec-row" @tap="onWechat"> <!-- 画布 41:176 行·微信 -->
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/icon-chat.svg" />
+					</view>
+					<text class="sec-label">微信</text>
+					<!-- 2026-10-15（台账 §7.29）：**接真实绑定态**。原为硬编码「未绑定」+ 点击 toast
+					     "微信绑定暂未开放"——而绑定管理**已落地**（设置页：微信授权优先、绑定码兜底），
+					     两页口径矛盾。现本行改为 `GET /wechat/bindings` 真值渲染，点击跳设置页去绑定/解绑。
+					     徽章样式（画布 41:180）按 2026-09-21 的决定**暂不恢复**：纯文本与手机号行一致。 -->
+					<text class="sec-value">{{ wechatText }}</text>
+					<text class="sec-arrow">›</text>
+				</view>
+			</view>
+			<view class="sec-group group-gap"> <!-- 画布 41:183 组·数据与隐私（组间距 38pt=73.1rpx；导出/存储两行已移出 → 存储与备份页） -->
+				<view class="sec-row" @tap="onPrivacy"> <!-- 画布 41:189 行·隐私权限 -->
+					<view class="sec-icon">
+						<image class="sec-icon-img" src="/static/icons/icon-shield.svg" />
+					</view>
+					<text class="sec-label">隐私权限</text>
+					<text class="sec-arrow">›</text>
+				</view>
+			</view>
+			<view class="sec-group group-gap" @tap="onLogout"> <!-- 画布 41:200 组·退出登录 -->
+				<view class="sec-row-center">
+					<text class="sec-logout-text">退出登录</text>
+				</view>
+			</view>
+			<text class="sec-danger-label">危险区</text> <!-- 画布 41:203 危险区标签（组3底 486 → y538，间距 52pt） -->
+			<view class="sec-group group-delete" @tap="onDeleteAccount"> <!-- 画布 41:204 组·注销账号 -->
+				<view class="sec-row-center">
+					<text class="sec-delete-text">注销账号</text>
+				</view>
+			</view>
+			<text class="sec-danger-note">注销后所有记忆数据将被永久删除，且无法恢复</text> <!-- 画布 41:207 危险说明 -->
+		</view>
+
+		<!-- ═══════════ 2026-10-30（P2 I-2）手机号验证码登录面板 ═══════════
+		     全屏浮层就地拉起（不跳页，PortraitPrivacyPanel 范式）；无画布真值，沿用本页配色与行距。
+		     为什么要账号切换确认：后端 `_get_or_create_user` 按 unionid **或** phone 查用户
+		     （services/auth/auth.py:250-262），设备码账号 unionid=device:<id> 与手机号账号是
+		     **两个用户** ⇒ 手机号登录 = 换账号，不是"给当前账号绑手机号"。不先讲清楚，
+		     用户看到的就是"我的记忆全没了"（P0-7 同族事故）。 -->
+		<view v-if="phoneOpen" class="pn-root">
+			<image class="pn-back" src="/static/icons/i4_135.svg" @tap="closePhonePanel" />
+			<view class="pn-title">
+				<text class="pn-title-text">手机号登录</text>
+			</view>
+			<scroll-view class="pn-body" direction="vertical" :show-scrollbar="false">
+				<text class="pn-hint">手机号验证码是微信授权之外的备用登录通道（开发决策清单 #8）。登录会切到该手机号对应的账号——与本机设备账号是两套数据，记忆不互通。</text>
+				<view class="pn-field">
+					<text class="pn-label">手机号</text>
+					<input class="pn-input" type="number" :maxlength="11" :adjust-position="true" v-model="phoneInput" placeholder="11 位手机号" placeholder-style="color:#B3A696;font-size:28.8rpx;" />
+				</view>
+				<view class="pn-field">
+					<text class="pn-label">验证码</text>
+					<input class="pn-input" type="number" :maxlength="6" :adjust-position="true" v-model="codeInput" placeholder="6 位数字" placeholder-style="color:#B3A696;font-size:28.8rpx;" />
+					<view class="pn-code-btn" :class="countdown > 0 ? 'pn-code-btn-off' : ''" @tap="onSendCode">
+						<text class="pn-code-btn-text">{{ codeBtnText }}</text>
+					</view>
+				</view>
+				<view class="pn-primary" :class="loginSubmitting ? 'pn-primary-off' : ''" @tap="onSubmitLogin">
+					<text class="pn-primary-text">登录</text>
+				</view>
+				<text class="pn-note">验证码 5 分钟内有效；同一手机号 60 秒内只能发一次，每日上限 10 条。真实短信网关接通前，验证码由服务端直返（仅内测环境）。</text>
+			</scroll-view>
+		</view>
+
+	</view>
+</template>
+
+<script setup lang="uts">
+// W10 新页：账号与安全（画布板 41:161）
+// 接线：退出登录 = utils/auth.logout()（G1/R6#7 封装此前「有封装无触发」，本单修复）；
+// 注销账号 = 后端暂无端点（W10 台账登记），诚实降级不假删；
+// W0-4 状态化（2026-09-02 峰宝拍板「真实状态化」）：手机号显「未绑定」不显假号 138****5678
+// ——B4 后已接 `GET /users/me` 真值（服务端掩码下发）；失败/未绑定仍显「未绑定」，不显假号 ✓；
+// 微信行（2026-10-15 · 台账 §7.29）：**接真实绑定态**（`GET /wechat/bindings`）并**就地绑定/解绑** ——
+// 未绑定 ⇒ 绑定码通道（2026-10-30 修：原走 `wechatLogin()`，那是登录端点，会覆盖当前会话
+// ⇒ 用户被换成 unionid 账号；详见 onWechat 注释）；已绑定 ⇒ 二次确认解绑；
+// ⚠️ 本注释取代两处已过期表述：① 「微信行不再显示『已绑定』」（2026-09-21 当时正确，但 10-15 起绑定
+// 能力已落地、改为真值渲染 ✓）；② 「绑定管理 toast 措辞『即将上线』」（现已有真入口 ✓）。
+// 另修一处回环：原先点本行跳 settings 中间页，与 settings 的「账号与安全」行互跳成死循环（用户实测 ✗）⇒ 已改为就地处理。
+// W10.4：onExport/onStorage 已随两行移出（归未来「存储与备份」页）
+	import { ref } from 'vue'
+	import { onLoad, onUnload } from '@dcloudio/uni-app'
+	// 2026-10-30（P2 I-2）：手机号验证码备用通道（决策 #8）——两个封装 resolve-only，失败文案由 auth.uts toast
+	import { logout, sendSmsCode, loginWithPhone } from '@/utils/auth'
+	import { fetchUsersMe } from '@/utils/play_content'
+	import { listWechatBindings, issueBindCode, unbindWechat } from '@/utils/wechat_api'
+	import { clearUserScopedStorage } from '@/utils/session_reset'
+
+	// B4（BB1）：手机号接真 GET /users/me（服务端掩码下发）；默认降级「未绑定」
+	let phoneText = ref('未绑定')
+	// 2026-10-15（台账 §7.29）：微信**绑定态**接真值（`GET /wechat/bindings`）；默认「未绑定」，
+	// 拉取失败保持默认（不显假状态 —— 同手机号行口径）。
+	let wechatText = ref('未绑定')
+	// 2026-10-15（真机反馈后复修）：本页**就地绑定/解绑**。原先点这一行会跳 settings 中间页，
+	// 与 settings 的「账号与安全」行互跳 ⇒ 我的→设置→账号与安全→设置 死循环 ✗（用户实测）。
+	let wechatBound = ref(false)
+	let wechatOpenid = ref('')
+
+	// ═══ 2026-10-30（P2 I-2）手机号验证码登录态 ═══
+	let phoneOpen = ref(false)
+	let phoneInput = ref('')
+	let codeInput = ref('')
+	// 60s 倒计时防连点（后端限流同口径：同一手机号 60s 内有未用验证码即拒绝重发，429 AUTH_004）
+	let countdown = ref(0)
+	let codeBtnText = ref('发送验证码')
+	let codeSending = ref(false)
+	let loginSubmitting = ref(false)
+	let cdTimer: number = -1
+
+	// ═══ 2026-10-30（P2 I-3）隐私权限 ═══
+	// 四项开关**不放在本页**：本页叠两个全屏浮层会顶到结构棘轮 800 行阈值（实测叠加后 888 行 ✗），
+	// 且 隐私政策页（pages/privacy/privacy）本就是"隐私中心"，开关与政策全文同页更符合用户心智
+	// ⇒ 本行改为**跳隐私页并带 `?panel=perms`**，开关落 privacy.uvue（键前缀统一 yishu.privacy.*）。
+
+	/** 拉真绑定态（进页调用；绑定动作由服务端回调侧完成，客户端只做"领码/授权/解绑"） */
+	function refreshWechat(): void {
+		listWechatBindings().then((rows: Array<UTSJSONObject>) => {
+			if (rows.length == 0) {
+				wechatBound.value = false
+				wechatText.value = '未绑定'
+				wechatOpenid.value = ''
+				return
+			}
+			wechatBound.value = true
+			wechatText.value = '已绑定'
+			wechatOpenid.value = rows[0].getString('openid') ?? ''
+		})
+	}
+
+	/**
+	 * 绑定码通道（资质未到位时的兜底）：领 6 位码 → 系统弹窗展示（不新增视觉元素；
+	 * 数字手打到微信即可）→ 用户发完点「我已发送」复查一次。
+	 */
+	function showBindCodeFlow(): void {
+		issueBindCode().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				return // 失败原因已由 api 层全局 toast 显式给出
+			}
+			const code = d.getString('code') ?? ''
+			const mins = Math.round((d.getNumber('expires_in') ?? 600) / 60)
+			uni.showModal({
+				title: '微信绑定',
+				content: '请在微信里给「忆述」发送：绑定 ' + code + '（' + mins + ' 分钟内有效）。发完点「我已发送」。',
+				confirmText: '我已发送',
+				showCancel: false,
+				success: (): void => {
+					refreshWechat()
+				}
+			})
+		})
+	}
+
+	/** 拉手机号真值（`GET /users/me`，服务端掩码下发）；2026-10-30（P2 I-2）从 onLoad 抽出——
+	 *  手机号登录成功后要**就地刷新本页显示**（复用同一段逻辑，避免两处口径漂移）。 */
+	function refreshPhone(): void {
+		fetchUsersMe().then((d: UTSJSONObject | null) => {
+			if (d == null) {
+				// 不静默：失败显式 toast，保持「未绑定」降级显示
+				uni.showToast({ title: '账号信息加载失败', icon: 'none' })
+				return
+			}
+			const masked = d.getString('phone')
+			// 2026-10-30（P2 I-2）：换账号后必须能**回到**「未绑定」——
+			// 原实现只在非空时赋值，切换账号（手机号账号 → 无手机号账号）会残留上一账号的掩码号，
+			// 属于"显示别人的手机号"，与 §7.15 同族（假状态）。空值即回默认。
+			phoneText.value = (masked != null && masked != '') ? masked : '未绑定'
+		})
+	}
+
+	onLoad(() => {
+		// 2026-10-15（台账 §7.29）：微信绑定态真值（失败保持「未绑定」，不 toast 打扰）
+		refreshWechat()
+		refreshPhone()
+	})
+
+	// 2026-10-30（P2 I-2）：倒计时定时器必须随页面销毁清掉，否则离开页面后仍在跑（泄漏 + 后台耗电）
+	onUnload(() => {
+		stopCountdown()
+	})
+
+	function goBack(): void {
+		// 铁律：reLaunch/redirectTo 直入时页面栈仅 1 页，navigateBack 静默失败 → 回落首页
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/shell/shell' })
+		}
+	}
+
+	/**
+	 * 手机号行（2026-10-30 · P2 I-2）：**真流程入口**。
+	 *
+	 * 原实现只弹「手机号绑定即将上线」——而决策 #8 早已拍板「微信授权为主 + **手机号验证码备用**
+	 * + JWT 自建」，后端 `POST /auth/sms/send` 与 `POST /auth/phone` 也早已实现（auth.py:60/75）。
+	 * 假入口把已交付的能力藏了整轮，用户以为功能不存在。
+	 */
+	function onPhone(): void {
+		openPhonePanel()
+	}
+
+	// ── 手机号登录面板 ──────────────────────────────────────────────
+
+	function openPhonePanel(): void {
+		phoneInput.value = ''
+		codeInput.value = ''
+		countdown.value = 0
+		codeBtnText.value = '发送验证码'
+		phoneOpen.value = true
+	}
+
+	function closePhonePanel(): void {
+		phoneOpen.value = false
+		stopCountdown()
+		countdown.value = 0
+		codeBtnText.value = '发送验证码'
+	}
+
+	function stopCountdown(): void {
+		if (cdTimer >= 0) {
+			clearInterval(cdTimer)
+			cdTimer = -1
+		}
+	}
+
+	/** 60s 倒计时（防连点 + 与后端 60s 重发限制对齐，避免用户点了得到一个 429 才知道） */
+	function startCountdown(): void {
+		stopCountdown()
+		countdown.value = 60
+		codeBtnText.value = '60s 后重发'
+		cdTimer = setInterval(() => {
+			const left = countdown.value - 1
+			if (left <= 0) {
+				countdown.value = 0
+				codeBtnText.value = '发送验证码'
+				stopCountdown()
+				return
+			}
+			countdown.value = left
+			codeBtnText.value = left.toString() + 's 后重发'
+		}, 1000)
+	}
+
+	/** 纯数字校验（不用正则：UTS 各编译目标的 RegExp 行为不一致；逐字符范围比较是
+	 *  `utils/log.uts:19-33` 已验证可编译的写法） */
+	function isDigits(s: string, len: number): boolean {
+		if (s.length != len) {
+			return false
+		}
+		for (let i = 0; i < s.length; i++) {
+			const c = s.charAt(i)
+			if (!(c >= '0' && c <= '9')) {
+				return false
+			}
+		}
+		return true
+	}
+
+	/** 中国大陆手机号（后端 `PhoneLoginRequest.phone` 的 pattern 是 `^1\d{10}$`，此处同口径前置校验） */
+	function isPhone(s: string): boolean {
+		if (!isDigits(s, 11)) {
+			return false
+		}
+		return s.charAt(0) == '1'
+	}
+
+	/** 发码：本地先校验格式（省一次必定 422 的往返），失败文案在 auth.uts toast */
+	function onSendCode(): void {
+		if (countdown.value > 0 || codeSending.value) {
+			return
+		}
+		if (!isPhone(phoneInput.value)) {
+			uni.showToast({ title: '请输入 11 位手机号（1 开头）', icon: 'none' })
+			return
+		}
+		codeSending.value = true
+		sendSmsCode(phoneInput.value).then((ok: boolean) => {
+			codeSending.value = false
+			if (!ok) {
+				return // 失败原因（429 频繁/上限、501 通道未接入、422 格式、网络）已由 auth.uts 显式 toast
+			}
+			startCountdown()
+			uni.showToast({ title: '验证码已发送', icon: 'none' })
+		})
+	}
+
+	function onSubmitLogin(): void {
+		if (loginSubmitting.value) {
+			return
+		}
+		if (!isPhone(phoneInput.value)) {
+			uni.showToast({ title: '请输入 11 位手机号（1 开头）', icon: 'none' })
+			return
+		}
+		if (!isDigits(codeInput.value, 6)) {
+			uni.showToast({ title: '请输入 6 位数字验证码', icon: 'none' })
+			return
+		}
+		// 换账号必须先讲清楚（P0-7 同族：不解释就换会话，用户观感是"记忆全没了"）
+		uni.showModal({
+			title: '切换账号',
+			content: '手机号登录会切到该手机号对应的账号；本机设备账号下的记忆不会跟随（两套数据，需团队人工迁移）。确定继续吗？',
+			confirmText: '继续登录',
+			success: (res) => {
+				if (res.confirm) {
+					doPhoneLogin()
+				}
+			}
+		})
+	}
+
+	function doPhoneLogin(): void {
+		loginSubmitting.value = true
+		loginWithPhone(phoneInput.value, codeInput.value).then((ok: boolean) => {
+			loginSubmitting.value = false
+			if (!ok) {
+				return // 码错/过期/次数超限/网络：auth.uts 已 toast 可执行文案（不静默）
+			}
+			// 2026-10-30（P2 I-2）：换账号 ⇒ 上一账号的**本地业务缓存必须清**
+			// （P1-34 同口径：否则时间轴/画像/收藏先渲染上一账号数据，既错又是隐私问题）
+			// 全清同样带走了 yishu.privacy.*（属用户级偏好，不跨账号保留）⇒ 隐私页下次进入读空值
+			// 回默认「开」，与 storage 真值一致（开关的读取方只有 privacy.uvue 一处，口径不会漂）
+			clearUserScopedStorage()
+			closePhonePanel()
+			uni.showToast({ title: '已切换为手机号账号', icon: 'none' })
+			refreshPhone()
+			refreshWechat()
+		})
+	}
+
+	/**
+	 * 微信行：**就地**完成绑定/解绑（2026-10-15 · 真机反馈「又跳到那个中间页」后复修）。
+	 *
+	 * - 已绑定 ⇒ 二次确认后解绑（只断开关联，已入库记忆零侵入 ✓）；
+	 * - 未绑定 ⇒ **授权优先**：`wechatLogin()` 拉起微信授权（`uni.login` → `/auth/wechat`，
+	 *   服务端 code2session 换 unionid+openid 并**同时建立渠道绑定**）⇒ 授权即完成；
+	 *   授权不可用（未配开放平台 AppID / manifest 未开微信模块，**属外部资质前置**）⇒
+	 *   **自动回落绑定码通道**，不把用户卡在死路上（与设置页同一口径）。
+	 * ⚠️ 不再跳 settings 中间页（那会形成 我的→设置→本页→设置 的回环 ✗）。
+	 */
+	function onWechat(): void {
+		if (wechatBound.value) {
+			uni.showModal({
+				title: '微信绑定',
+				content: '解绑后，微信里再发的照片/语音不再进入你的忆述（已入库的记忆不受影响）。',
+				confirmText: '解绑',
+				confirmColor: '#B05A3A',
+				success: (res) => {
+					if (!res.confirm || wechatOpenid.value == '') {
+						return
+					}
+					unbindWechat(wechatOpenid.value).then((ok: boolean) => {
+						if (ok) {
+							uni.showToast({ title: '已解绑', icon: 'success' })
+							refreshWechat()
+						}
+					})
+				}
+			})
+			return
+		}
+		// 2026-10-30（P0-7 修复）：**禁止在「绑定」语境下调用 wechatLogin()**。
+		// `/auth/wechat` 是**登录**端点（后端按 unionid `_get_or_create_user` 后签发 TokenPair），
+		// 客户端一旦调它就会用返回的 token **覆盖当前会话** ⇒ 内测身份 `device:<device_id>`
+		// 被换成 unionid 那个账号，用户看到的是"记忆全没了/变成别人账号"，且原会话无法恢复。
+		// 而 `POST /wechat/bind` 需要 openid，`uni.login` 只给 code、App 拿不到 openid，
+		// 所以真正可行的绑定路径就是**绑定码**（服务端回调侧消费，见 wechat_api.uts 文件头）。
+		// ⇒ 此处直接走绑定码通道。
+		console.log('[yishu] 绑定入口走绑定码通道（不调用 /auth/wechat，避免覆盖当前会话）')
+		showBindCodeFlow()
+	}
+
+	/**
+	 * 隐私权限行（2026-10-30 · P2 I-3）：原实现只弹「隐私权限设置即将上线」（台账 §7.15 假开关族）。
+	 * 现跳隐私页并带 `?panel=perms` ⇒ 隐私页**就地拉起四项开关**（照片原件上云 / 语音云端处理 /
+	 * 画像生成 / 每日回响），边界如实标注（本机记录 / 云端以服务端配置为准）。
+	 */
+	function onPrivacy(): void {
+		phoneOpen.value = false
+		stopCountdown()
+		uni.navigateTo({ url: '/pages/privacy/privacy?panel=perms' })
+	}
+
+	function onLogout(): void {
+		uni.showModal({
+			title: '退出登录',
+			content: '退出后需重新登录才能查看你的记忆',
+			success: (res) => {
+				if (res.confirm) {
+					// logout() 幂等：后端吊销失败也清本地凭据并 resolve(true)（auth.uts G1/R6#7）
+					logout().then((_ok: boolean) => {
+						// 2026-10-30（P1-34）：**清掉本地业务数据**再回壳。
+						// 原实现只清 token ⇒ 换账号后先渲染上一账号的时间轴/统计/画像标签，
+						// 既是数据错误也是隐私问题（同设备第二个人能直接读到）。
+						clearUserScopedStorage()
+						uni.reLaunch({ url: '/pages/shell/shell' })
+					})
+				}
+			}
+		})
+	}
+
+	function onDeleteAccount(): void {
+		// 2026-10-30（P2 I-4）：原弹窗写着「注销后所有记忆数据将被永久删除且无法恢复，确定继续？」
+		// 并给「确定/取消」—— 点确定其实**什么都不删**（后端无注销端点，只弹一句 toast）。
+		// 这是把"不可逆承诺"当确认文案用：用户带着"数据马上清空"的预期点确定，得到的却是一句说明。
+		// 现改为**纯说明弹窗**（没有取消歧义、不暗示已执行），文案与真实能力一致。
+		uni.showModal({
+			title: '注销账号',
+			content: '内测期暂不支持自助注销：需联系团队人工处理。本次操作不会删除任何数据。',
+			showCancel: false,
+			confirmText: '知道了',
+			success: (res) => {
+				if (res.confirm) {
+					uni.showToast({ title: '请联系团队处理注销', icon: 'none', duration: 2500 })
+				}
+			}
+		})
+	}
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	.n41_164 {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序约束，settings 同款位置） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	.n41_166 {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中，画布 41:166 y60pt） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.n41_167 {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 列表流式容器：画布组1 y110pt=211.5rpx；左右页边距 20pt=38.5rpx（组宽 350pt ✓） */
+	.list-flow {
+		margin-top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		flex-direction: column;
+	}
+	/* 组卡同构：白底圆角 20pt=38.5rpx，内衬 6pt=11.5rpx（画布 41:169/183/200/204） */
+	.sec-group {
+		width: 100%;
+		flex-direction: column;
+		padding-left: var(--d-lattice-p6, 11.5rpx);
+		padding-right: var(--d-lattice-p6, 11.5rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		overflow: hidden;
+	}
+	/* 画布组间距 38pt=73.1rpx（组1底 210 → 组2 y248；组2底 392 → 组3 y430，两处一致） */
+	.group-gap {
+		margin-top: var(--d-lattice-p38, 73.1rpx);
+	}
+	/* 行基类：图标 x12pt（相对行）→ 左右衬 23.1rpx，行高 44pt 节奏 = 23.1×2 + 内容 38.5 */
+	.sec-row {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_radius_small, 23.1rpx);
+		padding-bottom: var(--d-card_radius_small, 23.1rpx);
+		overflow: hidden;
+	}
+	/* 画布 41:171 图标圈 20×20 无底色 → 纯定位容器 */
+	.sec-icon {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	/* W10.4：emoji → 同风格线性 SVG（画布 icon 容器 20×20pt=38.5rpx，SVG 20×20 内含留白） */
+	.sec-icon-img {
+		width: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+	.sec-label {
+		flex: 1;
+		margin-left: var(--d-card_radius_small, 23.1rpx); /* 画布文字 x44 - 图标底 32 = 12pt */
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx); /* 画布 fs15pt */
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.sec-value {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx); /* 画布 fs13pt */
+		color: var(--c-ink-300, #B3A696);
+	}
+	.sec-arrow {
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p14, 26.9rpx); /* 画布 fs14pt */
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* 画布 41:180 绑定徽章样式（.sec-badge / .sec-badge-text）已随「已绑定」失实表述一并移除
+	   （2026-09-21，理由见模板内注释）。B5 微信绑定管理落地后按真实绑定态恢复：
+	   规格为锈金 a0.10 底 + 琥珀字（c-amber-500）+ 圆角 15.4rpx（画布真值 41:180）。 */
+	/* 退出/注销行：画布 h44pt=84.6rpx 文字居中 */
+	.sec-row-center {
+		width: 100%;
+		height: var(--d-status_bar_height, 84.6rpx);
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.sec-logout-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.sec-delete-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-rust-500, #B05A3A);
+	}
+	/* 画布 41:203 危险区标签：x26pt（页边距 20 + 组衬 6）→ 组卡左缘内 11.5rpx */
+	.sec-danger-label {
+		margin-top: var(--d-lattice-p52, 100rpx); /* 组3底 486 → y538，间距 52pt=100rpx */
+		margin-left: var(--d-lattice-p6, 11.5rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx); /* 画布 fs12pt */
+		color: var(--c-ink-300, #B3A696);
+	}
+	/* 画布标签底 553 → 组4 y560，间距 7pt=13.5rpx */
+	.group-delete {
+		margin-top: var(--d-lattice-p7, 13.5rpx);
+	}
+	/* 画布 41:207 危险说明：组4底 616 → y628，间距 12pt=23.1rpx，全宽居中 */
+	.sec-danger-note {
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx); /* 画布 fs11pt */
+		color: var(--c-ink-300, #B3A696);
+		text-align: center;
+	}
+
+	/* ═══ 2026-10-30（P2 I-2/I-3）浮层面板：手机号登录 + 隐私权限 ═══
+	   全屏 fixed 不透明底（盖住宿主页与 TabBar，z-index 1000），PortraitPrivacyPanel 同款范式。
+	   无画布真值 → 沿用本页既有 token（白卡 r20 / 6pt 内衬 / 锈金强调 / ink 三档字色）。 */
+	.pn-root {
+		position: fixed;
+		/* absolute-ok: 全屏浮层（就地拉起不跳页；geometries 与 PortraitPrivacyPanel.panel-root 一致） */
+		top: 0;
+		left: 0;
+		width: var(--d-lattice-p390, 750rpx);
+		height: 100%;
+		background-color: var(--c-paper-100, #F8F7F4);
+		z-index: 1000;
+		flex-direction: column;
+	}
+	.pn-back {
+		position: absolute;
+		/* absolute-ok: 固定页头·返回钮（铁律 11.5 DOM 顺序：与标题的绘制顺序同 settings 先例） */
+		left: var(--d-lattice-p16, 30.8rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p22, 42.3rpx);
+		height: var(--d-lattice-p22, 42.3rpx);
+		z-index: 1;
+	}
+	.pn-title {
+		position: absolute;
+		/* absolute-ok: 固定页头·标题容器（全宽居中） */
+		left: var(--d-lattice-p0, 0rpx);
+		top: var(--d-lattice-p60, 115.4rpx);
+		width: var(--d-lattice-p390, 750rpx);
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+	}
+	.pn-title-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.pn-body {
+		flex: 1;
+		margin-top: var(--d-lattice-p110, 211.5rpx);
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-raw-r60, 60rpx);
+	}
+	.pn-hint {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-card_radius_small, 23.1rpx);
+		line-height: var(--d-lattice-p19, 36.5rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.pn-field {
+		flex-direction: row;
+		align-items: center;
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-card_margin_x, 38.5rpx);
+		padding-bottom: var(--d-card_margin_x, 38.5rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+	}
+	.pn-label {
+		width: var(--d-search_height, 88.5rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p13, 25rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+	.pn-input {
+		flex: 1;
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	/* 发码按钮：锈金浅底胶囊（与 chips 同族视觉）；倒计时中降透明度并拒绝点击 */
+	.pn-code-btn {
+		margin-left: var(--d-card_radius_small, 23.1rpx);
+		padding-left: var(--d-card_radius_small, 23.1rpx);
+		padding-right: var(--d-card_radius_small, 23.1rpx);
+		padding-top: var(--d-lattice-p6, 11.5rpx);
+		padding-bottom: var(--d-lattice-p6, 11.5rpx);
+		border-radius: var(--d-lattice-p16, 30.8rpx);
+		background-color: var(--a-amber-10, rgba(196, 145, 60, 0.12));
+	}
+	.pn-code-btn-off {
+		opacity: 0.45;
+	}
+	.pn-code-btn-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p12, 23.1rpx);
+		color: var(--c-amber-500, #C4913C);
+	}
+	.pn-primary {
+		margin-top: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-status_bar_height, 84.6rpx);
+		border-radius: var(--d-lattice-p22, 42.3rpx);
+		background-color: var(--c-ink-900, #3A2E25);
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+	.pn-primary-off {
+		opacity: 0.5;
+	}
+	.pn-primary-text {
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-weight: 600;
+		font-size: var(--d-lattice-p16, 30.8rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	.pn-note {
+		margin-top: var(--d-card_radius_small, 23.1rpx);
+		font-family: "Sarasa Gothic SC", sans-serif;
+		font-size: var(--d-lattice-p11, 21.2rpx);
+		line-height: var(--d-lattice-p17, 32.7rpx);
+		color: var(--c-ink-300, #B3A696);
+	}
+</style>

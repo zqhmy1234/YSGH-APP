@@ -1,0 +1,105 @@
+// B10 方案A 壳层共享状态桥（2026-09-09）
+// 先例=audio_player.uts 模块级 export ref（全项目零 defineExpose/$refs 先例——
+// EchoSheet.uvue:110 拍板「不用 defineExpose，编译器风险不冒险」），
+// shell 与 tab 组件通过本模块的响应式 ref 双向协同，无需父子句柄传递。
+import { ref } from 'vue'
+
+/** shell 当前激活 tab（组件读取用于跨 tab 切换判定；shell 写） */
+export let shellActiveTab = ref('index')
+
+/** 组件请求切 tab（index goSearch / profile goType 等跨 tab 导航 → 组件 ++seq 并带目标；shell watch） */
+export let shellNavSeq = ref(0)
+export let shellNavTab = ref('')
+export let shellNavQuery = ref('')
+
+/** 发起跨 tab 切换（组件侧调用；等价原 redirectTo/navigateTo tab 页语义，但壳内零销毁） */
+export function requestShellTab(tab: string, query: string): void {
+	shellNavTab.value = tab
+	shellNavQuery.value = query
+	shellNavSeq.value = shellNavSeq.value + 1
+}
+
+/** ai 附件面板开关（原页级 onBackPress 第二优先级拦截——上收 shell 后组件写、shell 读） */
+export let aiAttachOpen = ref(false)
+
+/**
+ * 回壳并切到目标 tab（2026-10-14 · 台账 §4.20 批次 5 · RC-10「回壳白屏」根治）。
+ *
+ * ## 为什么需要它
+ *
+ * 子页（`detail` / `messages` / 老世界 TabBar）此前一律
+ * `uni.redirectTo('/pages/shell/shell?tab=X')`。而 redirectTo 会**销毁当前页并重建整个壳**：
+ *   ① 白屏 1~2s（壳要重新 ensureLogin + 挂载四个 tab）；
+ *   ② 四个 tab 组件**全部重挂**（AI 对话态、时间轴已加载数据、搜索态全丢）；
+ *   ③ `TabIndex` 的 60s TTL 随组件销毁而失效（等于每次回壳都全量重拉）。
+ *
+ * 而壳**本来就在栈里**（子页都是从壳 `navigateTo` 推上来的）⇒ 正确做法是**栈内回退**：
+ * 先经本桥请求目标 tab（壳 watch 到 → 零销毁切 tab），再 `navigateBack`。
+ *
+ * ## 兜底
+ *
+ * 深链直入（栈内只有当前页、没有壳）时 `navigateBack` 会**静默失败** ⇒ 用 `reLaunch`
+ * 走一次完整启动（与各页 `goBack()` 的既有口径一致，见 `settings.uvue` 注释"铁律"）。
+ *
+ * ⚠️ 配套：栈内回退意味着 TabAi **不会重挂**，故 `detail` 的上下文预填改由
+ *      shell 的 `aiShownSeq` 广播触发重读（见 `TabAi.uvue` 的 `shownSeq` watch）。
+ */
+export function backToShell(tab: string, query: string): void {
+	requestShellTab(tab, query)
+	const pages = getCurrentPages()
+	if (pages.length > 1) {
+		// 2026-10-30（P1-40）：**退到壳为止，而不是退一层**。
+		// 原实现固定 `delta: 1` 假设壳就在上一页；而「壳 → 详情 → 消息(再 push)」这类
+		// 栈深 ≥3 的场景里，只退一层会停在中间页 —— 而此时 tab 已经被 requestShellTab
+		// 切走了 ⇒ 用户看到的是"回不去、还停在一个不相干的页面"。
+		let delta = 1
+		for (let i = pages.length - 2; i >= 0; i--) {
+			const route = pages[i].route != null ? pages[i].route : ''
+			if (route == 'pages/shell/shell') {
+				delta = pages.length - 1 - i
+				break
+			}
+			// 栈里没有壳（深链场景）：把 delta 打到栈顶，交给下面的 reLaunch 兜底
+			if (i == 0) {
+				delta = 0
+			}
+		}
+		if (delta > 0) {
+			uni.navigateBack({ delta: delta })
+			return
+		}
+	}
+	uni.reLaunch({ url: '/pages/shell/shell?tab=' + tab })
+}
+
+/** 组件请求拉起全局 RecordSheet（2026-10-09：TabIndex 空态 CTA「拍下第一张/录一段语音」——
+ * 全壳唯一 RecordSheet 挂在 shell（铁律：中央 + 只拉 RecordSheet 浮层），组件侧 ++
+ * shellSheetSeq 并带 mode（'photo'=直达拍照流 / ''=默认）；shell watch 后就地拉起。
+ * 与 requestShellTab 同款 seq+watch 模式，壳内零跳页。 */
+export let shellSheetSeq = ref(0)
+export let shellSheetMode = ref('')
+
+// 2026-10-31（走查实测缺陷）：**横幅补传完成后要能通知时间轴刷新**。
+// 现场：点「立即上传原图」→ 上传成功 → `L1 上云 accepted=1`、库里已落 `ev-d-…`，
+// 但时间轴一直停在旧的 4 张卡，只有切 tab（onShow）才刷出来。
+// 原因是这条链自包含在 `UploadStatusBanner` 里（J-14 把 emit 全删了），
+// 而 `savedSeq` 是 shell 页内的 ref，横幅根本拿不到 ⇒ 上传完成没有任何刷新信号。
+// 这里放一个**模块级**广播（先例同 `audio_player.uts` 的 export ref），
+// 横幅 +1、TabIndex watch 到就按「有记录已保存」处理（置脏 + 立即刷新，绕过 60s TTL）。
+export let recordSavedSeq = ref(0)
+
+/**
+ * 2026-10-30（P1-37）：**回响「划掉」的跨页广播**。
+ *
+ * 回响状态原先在「消息页」与「时间轴 TabIndex」各持一份独立 ref，划掉时只清自己那份
+ * ⇒ 在消息页划掉后，回时间轴大卡还在、还能点开；反之亦然（用户：划了又回来）。
+ * 这里给一条与 `shellSheetSeq` 同款的 seq 广播：谁划掉谁 bump，两边 watch 后各自清卡。
+ */
+export let echoDismissSeq = ref(0)
+/** 被划掉的那条回响的 contentId（'' = 不区分，全部清） */
+export let echoDismissContentId = ref('')
+
+export function notifyEchoDismissed(contentId: string): void {
+	echoDismissContentId.value = contentId
+	echoDismissSeq.value = echoDismissSeq.value + 1
+}

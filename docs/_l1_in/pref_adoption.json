@@ -1,0 +1,19 @@
+{
+  "id": "pref_adoption",
+  "label": "新事物采纳",
+  "category": "决策与偏好",
+  "current_values": [
+    "早鸟",
+    "观望",
+    "晚期"
+  ],
+  "value_template": null,
+  "template_values": null,
+  "structure": null,
+  "source": "M",
+  "matraix_id": "pref_early_vs_late",
+  "confidence_threshold": 0.7,
+  "note": "⚠️ 修正：MatrAIx 此维度=新事物采纳（非作息）；作息见 habit_schedule",
+  "open_enum": true,
+  "refine_mode": "explicit_values"
+}

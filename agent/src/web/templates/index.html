@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>忆光 · 个人AI记忆助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+        .page { display: none; }
+        .page.active { display: block; }
+        .nav-item.active { color: #6366f1; border-bottom: 2px solid #6366f1; }
+        .chat-messages::-webkit-scrollbar { width: 6px; }
+        .chat-messages::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        .card-hover:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .typing-dot { animation: blink 1.4s infinite both; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- 导航栏 -->
+<nav class="bg-white shadow-sm sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-4 flex items-center h-14">
+        <span class="text-xl">🌟</span>
+        <span class="ml-2 text-lg font-bold text-gray-800">忆光</span>
+        <span class="ml-1 text-xs text-gray-400">个人AI记忆助手</span>
+        <div class="ml-auto flex gap-6">
+            <button class="nav-item active text-sm font-medium pb-2" data-page="home" onclick="switchPage('home')">首页</button>
+            <button class="nav-item text-sm font-medium pb-2 text-gray-500" data-page="memories" onclick="switchPage('memories')">记忆库</button>
+            <button class="nav-item text-sm font-medium pb-2 text-gray-500" data-page="collections" onclick="switchPage('collections')">知识库</button>
+        </div>
+    </div>
+</nav>
+
+<!-- ==================== 首页 ==================== -->
+<div id="page-home" class="page active max-w-5xl mx-auto px-4 py-6">
+
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="dashboard-stats">
+        <div class="bg-white rounded-xl p-4 shadow-sm card-hover transition">
+            <div class="text-3xl mb-1">📝</div>
+            <div class="text-2xl font-bold text-gray-800" id="stat-memories">--</div>
+            <div class="text-xs text-gray-400">总记忆</div>
+        </div>
+        <div class="bg-white rounded-xl p-4 shadow-sm card-hover transition">
+            <div class="text-3xl mb-1">📚</div>
+            <div class="text-2xl font-bold text-gray-800" id="stat-collections">--</div>
+            <div class="text-xs text-gray-400">总收藏</div>
+        </div>
+        <div class="bg-white rounded-xl p-4 shadow-sm card-hover transition">
+            <div class="text-3xl mb-1">📊</div>
+            <div class="text-sm font-bold text-gray-700" id="stat-mood">--</div>
+            <div class="text-xs text-gray-400">情绪分布</div>
+        </div>
+        <div class="bg-white rounded-xl p-4 shadow-sm card-hover transition">
+            <div class="text-3xl mb-1">🔥</div>
+            <div class="text-2xl font-bold text-gray-800" id="stat-week">--</div>
+            <div class="text-xs text-gray-400">本周新增</div>
+        </div>
+    </div>
+
+    <!-- 对话区域 -->
+    <div class="bg-white rounded-xl shadow-sm flex flex-col" style="height: calc(100vh - 280px); min-height: 360px;">
+        <!-- 对话标题 -->
+        <div class="px-4 py-3 border-b flex items-center">
+            <span class="text-sm font-medium text-gray-600">对话 · 记录或搜索你的记忆</span>
+            <span class="ml-auto text-xs text-gray-400" id="chat-status"></span>
+        </div>
+        <!-- 消息列表 -->
+        <div class="chat-messages flex-1 overflow-y-auto px-4 py-4 space-y-4" id="chat-messages">
+            <div class="flex items-start gap-2">
+                <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm">🌟</div>
+                <div class="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-2 max-w-md">
+                    <p class="text-sm text-gray-700">你好！我是忆光，你的个人AI记忆助手。随时跟我分享你的想法、经历或收藏，我会帮你整理珍藏每一个珍贵瞬间 💫</p>
+                </div>
+            </div>
+        </div>
+        <!-- 输入框 -->
+        <div class="border-t px-4 py-3 flex gap-2">
+            <input type="text" id="chat-input" class="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-indigo-400" placeholder="输入消息，或搜索记忆..." onkeydown="if(event.key==='Enter')sendMessage()">
+            <button onclick="sendMessage()" class="bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-indigo-600 transition">发送</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 记忆库 ==================== -->
+<div id="page-memories" class="page max-w-5xl mx-auto px-4 py-6">
+    <div class="flex gap-6">
+        <!-- 侧边栏分类 -->
+        <div class="w-40 flex-shrink-0">
+            <h3 class="text-xs font-bold text-gray-400 uppercase mb-3">记忆分类</h3>
+            <div class="space-y-1" id="mem-category-list"></div>
+        </div>
+        <!-- 记忆卡片列表 -->
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center mb-4">
+                <h2 class="text-lg font-bold text-gray-800" id="mem-title">全部记忆</h2>
+                <span class="ml-auto text-xs text-gray-400" id="mem-count"></span>
+            </div>
+            <div class="space-y-3" id="mem-list">
+                <div class="text-center text-gray-400 py-12 text-sm">加载中...</div>
+            </div>
+            <!-- 分页 -->
+            <div class="flex items-center justify-center gap-2 mt-6" id="mem-pagination"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 知识库 ==================== -->
+<div id="page-collections" class="page max-w-5xl mx-auto px-4 py-6">
+    <div class="flex gap-6">
+        <!-- 侧边栏分类 -->
+        <div class="w-40 flex-shrink-0">
+            <h3 class="text-xs font-bold text-gray-400 uppercase mb-3">收藏分类</h3>
+            <div class="space-y-1" id="col-category-list"></div>
+        </div>
+        <!-- 收藏卡片列表 -->
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center mb-4">
+                <h2 class="text-lg font-bold text-gray-800" id="col-title">全部收藏</h2>
+                <span class="ml-auto text-xs text-gray-400" id="col-count"></span>
+            </div>
+            <div class="space-y-3" id="col-list">
+                <div class="text-center text-gray-400 py-12 text-sm">加载中...</div>
+            </div>
+            <!-- 分页 -->
+            <div class="flex items-center justify-center gap-2 mt-6" id="col-pagination"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==================== 全局配置 ====================
+const USER_ID = new URLSearchParams(window.location.search).get("user_id") || "default";
+const PROJECT_ID = "{{PROJECT_ID}}";
+const MEM_CATEGORIES = ["全部", "情绪", "事件", "想法", "灵感", "人物", "地点", "待分类"];
+const COL_CATEGORIES = ["全部", "文章", "帖子", "观点", "数据", "图片", "其他"];
+
+// ==================== 页面切换 ====================
+function switchPage(pageName) {
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    document.getElementById("page-" + pageName).classList.add("active");
+    document.querySelectorAll(".nav-item").forEach(n => {
+        n.classList.remove("active");
+        n.classList.add("text-gray-500");
+    });
+    const navBtn = document.querySelector(`[data-page="${pageName}"]`);
+    navBtn.classList.add("active");
+    navBtn.classList.remove("text-gray-500");
+
+    if (pageName === "memories") loadMemories(1);
+    if (pageName === "collections") loadCollections(1);
+    if (pageName === "home") loadDashboard();
+}
+
+// ==================== 首页：统计卡片 ====================
+async function loadDashboard() {
+    try {
+        const resp = await fetch(`/api/dashboard?user_id=${USER_ID}`);
+        const data = await resp.json();
+        if (data.success) {
+            const d = data.data;
+            document.getElementById("stat-memories").textContent = d.total_memories;
+            document.getElementById("stat-collections").textContent = d.total_collections;
+            document.getElementById("stat-week").textContent = d.week_new;
+
+            // 情绪分布（取前3个）
+            const moods = Object.entries(d.mood_distribution || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+            const moodStr = moods.map(m => `${m[0]} ${m[1]}`).join(" · ") || "暂无";
+            document.getElementById("stat-mood").textContent = moodStr;
+        }
+    } catch (e) { console.error("加载统计失败:", e); }
+}
+
+// ==================== 首页：对话功能 ====================
+const chatMessages = document.getElementById("chat-messages");
+const chatInput = document.getElementById("chat-input");
+
+function appendMessage(role, text) {
+    const div = document.createElement("div");
+    if (role === "user") {
+        div.className = "flex items-start gap-2 justify-end";
+        div.innerHTML = `<div class="bg-indigo-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-md"><p class="text-sm">${escapeHtml(text)}</p></div>`;
+    } else {
+        div.className = "flex items-start gap-2";
+        div.innerHTML = `<div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm flex-shrink-0">🌟</div><div class="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-2 max-w-md"><p class="text-sm text-gray-700 whitespace-pre-wrap">${escapeHtml(text)}</p></div>`;
+    }
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function showTyping() {
+    const div = document.createElement("div");
+    div.id = "typing-indicator";
+    div.className = "flex items-start gap-2";
+    div.innerHTML = `<div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm">🌟</div><div class="bg-gray-100 rounded-2xl px-4 py-3 flex gap-1"><span class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></span><span class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></span><span class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></span></div>`;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function removeTyping() {
+    const el = document.getElementById("typing-indicator");
+    if (el) el.remove();
+}
+
+async function sendMessage() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = "";
+    appendMessage("user", text);
+    showTyping();
+
+    try {
+        const resp = await fetch("/stream_run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                content: {
+                    query: {
+                        prompt: [{ type: "text", content: { text: text } }]
+                    }
+                },
+                type: "query",
+                session_id: USER_ID,
+                project_id: Number(PROJECT_ID) || 0
+            })
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let aiText = "";
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (line.startsWith("data:")) {
+                    try {
+                        const evt = JSON.parse(line.slice(5).trim());
+                        if (evt.type === "ai_message" && evt.content) {
+                            aiText += evt.content;
+                        } else if (evt.type === "tool_result" && evt.content) {
+                            // 工具结果暂存，不直接显示
+                        } else if (evt.type === "message" && evt.content) {
+                            aiText += evt.content;
+                        } else if (evt.type === "answer" && evt.content) {
+                            aiText += evt.content;
+                        } else if (evt.type === "done" || evt.type === "end") {
+                            // 流结束
+                        }
+                    } catch (e) { /* 忽略解析错误 */ }
+                }
+            }
+            // 实时更新AI回复
+            if (aiText) {
+                removeTyping();
+                let aiDiv = document.getElementById("ai-typing-msg");
+                if (!aiDiv) {
+                    aiDiv = document.createElement("div");
+                    aiDiv.id = "ai-typing-msg";
+                    aiDiv.className = "flex items-start gap-2";
+                    aiDiv.innerHTML = `<div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm flex-shrink-0">🌟</div><div class="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-2 max-w-md"><p class="text-sm text-gray-700 whitespace-pre-wrap" id="ai-text"></p></div>`;
+                    chatMessages.appendChild(aiDiv);
+                }
+                document.getElementById("ai-text").textContent = aiText;
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        }
+
+        removeTyping();
+        const existing = document.getElementById("ai-typing-msg");
+        if (existing) existing.id = "";
+        if (!aiText) {
+            appendMessage("ai", "已收到你的消息 💫");
+        }
+        // 刷新统计
+        loadDashboard();
+    } catch (e) {
+        removeTyping();
+        const existing = document.getElementById("ai-typing-msg");
+        if (existing) existing.remove();
+        appendMessage("ai", "抱歉，处理消息时遇到了一些问题，请稍后再试 😊");
+        console.error("发送消息失败:", e);
+    }
+}
+
+// ==================== 记忆库 ====================
+let memCurrentPage = 1;
+let memCurrentCategory = "全部";
+
+function renderMemCategories() {
+    const list = document.getElementById("mem-category-list");
+    list.innerHTML = MEM_CATEGORIES.map(cat => `
+        <button class="w-full text-left px-3 py-1.5 rounded-lg text-sm transition ${cat === memCurrentCategory ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-600 hover:bg-gray-100'}" onclick="selectMemCategory('${cat}')">${cat}</button>
+    `).join("");
+}
+
+function selectMemCategory(cat) {
+    memCurrentCategory = cat;
+    document.getElementById("mem-title").textContent = cat === "全部" ? "全部记忆" : cat + "记忆";
+    renderMemCategories();
+    loadMemories(1);
+}
+
+async function loadMemories(page) {
+    memCurrentPage = page;
+    document.getElementById("mem-list").innerHTML = '<div class="text-center text-gray-400 py-12 text-sm">加载中...</div>';
+    try {
+        const params = new URLSearchParams({ user_id: USER_ID, page: page, page_size: 20 });
+        if (memCurrentCategory !== "全部") params.set("category", memCurrentCategory);
+        const resp = await fetch(`/api/memories?${params}`);
+        const data = await resp.json();
+        if (data.success && data.data.length > 0) {
+            renderMemList(data.data);
+            renderPagination("mem-pagination", data.pagination, loadMemories);
+            document.getElementById("mem-count").textContent = `共 ${data.pagination.total} 条`;
+        } else {
+            document.getElementById("mem-list").innerHTML = '<div class="text-center text-gray-400 py-12 text-sm">暂无记忆记录</div>';
+            document.getElementById("mem-pagination").innerHTML = "";
+            document.getElementById("mem-count").textContent = "共 0 条";
+        }
+    } catch (e) {
+        document.getElementById("mem-list").innerHTML = '<div class="text-center text-red-400 py-12 text-sm">加载失败</div>';
+    }
+}
+
+function renderMemList(items) {
+    const list = document.getElementById("mem-list");
+    list.innerHTML = items.map(mem => {
+        const mood = mem.mood ? `<span class="text-xs px-2 py-0.5 bg-amber-50 text-amber-500 rounded">💭${mem.mood}</span>` : "";
+        const topics = (mem.topics || []).map(t => `<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-500 rounded">📌${t}</span>`).join(" ");
+        const people = mem.people && mem.people.length > 0 ? `<span class="text-xs text-gray-400">👫 ${mem.people.join("、")}</span>` : "";
+        const location = mem.location ? `<span class="text-xs text-gray-400">📍 ${mem.location}</span>` : "";
+        const date = mem.created_at ? new Date(mem.created_at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+        const catBadge = mem.category ? `<span class="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded">${mem.category}</span>` : "";
+        return `<div class="bg-white rounded-xl p-4 shadow-sm card-hover transition border border-gray-100">
+            <div class="flex items-center gap-2 mb-2">${catBadge} ${mood} <span class="text-xs text-gray-300">${date}</span></div>
+            <p class="text-sm text-gray-700 mb-2">${escapeHtml(truncate(mem.content, 200))}</p>
+            <div class="flex flex-wrap gap-2 items-center">${topics} ${people} ${location}</div>
+        </div>`;
+    }).join("");
+}
+
+// ==================== 知识库 ====================
+let colCurrentPage = 1;
+let colCurrentType = "全部";
+
+function renderColCategories() {
+    const list = document.getElementById("col-category-list");
+    list.innerHTML = COL_CATEGORIES.map(cat => `
+        <button class="w-full text-left px-3 py-1.5 rounded-lg text-sm transition ${cat === colCurrentType ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-600 hover:bg-gray-100'}" onclick="selectColCategory('${cat}')">${cat}</button>
+    `).join("");
+}
+
+function selectColCategory(cat) {
+    colCurrentType = cat;
+    document.getElementById("col-title").textContent = cat === "全部" ? "全部收藏" : cat + "收藏";
+    renderColCategories();
+    loadCollections(1);
+}
+
+async function loadCollections(page) {
+    colCurrentPage = page;
+    document.getElementById("col-list").innerHTML = '<div class="text-center text-gray-400 py-12 text-sm">加载中...</div>';
+    try {
+        const params = new URLSearchParams({ user_id: USER_ID, page: page, page_size: 20 });
+        if (colCurrentType !== "全部") params.set("content_type", colCurrentType);
+        const resp = await fetch(`/api/collections?${params}`);
+        const data = await resp.json();
+        if (data.success && data.data.length > 0) {
+            renderColList(data.data);
+            renderPagination("col-pagination", data.pagination, loadCollections);
+            document.getElementById("col-count").textContent = `共 ${data.pagination.total} 条`;
+        } else {
+            document.getElementById("col-list").innerHTML = '<div class="text-center text-gray-400 py-12 text-sm">暂无收藏内容</div>';
+            document.getElementById("col-pagination").innerHTML = "";
+            document.getElementById("col-count").textContent = "共 0 条";
+        }
+    } catch (e) {
+        document.getElementById("col-list").innerHTML = '<div class="text-center text-red-400 py-12 text-sm">加载失败</div>';
+    }
+}
+
+function renderColList(items) {
+    const list = document.getElementById("col-list");
+    list.innerHTML = items.map(col => {
+        const topics = (col.topics || []).map(t => `<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-500 rounded">${t}</span>`).join(" ");
+        const author = col.author ? `<span class="text-xs text-gray-400">✍ ${col.author}</span>` : "";
+        const source = col.source ? `<span class="text-xs text-gray-400">🔗 ${truncate(col.source, 30)}</span>` : "";
+        const date = col.created_at ? new Date(col.created_at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+        const typeBadge = `<span class="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded">${col.content_type || "其他"}</span>`;
+        return `<div class="bg-white rounded-xl p-4 shadow-sm card-hover transition border border-gray-100">
+            <div class="flex items-center gap-2 mb-2">${typeBadge}<span class="text-xs text-gray-300">${date}</span></div>
+            <h3 class="text-sm font-medium text-gray-800 mb-1">${escapeHtml(col.title)}</h3>
+            ${col.summary ? `<p class="text-xs text-gray-500 mb-2">${escapeHtml(truncate(col.summary, 150))}</p>` : ""}
+            <div class="flex flex-wrap gap-2 items-center">${topics} ${author} ${source}</div>
+        </div>`;
+    }).join("");
+}
+
+// ==================== 分页组件 ====================
+function renderPagination(containerId, pagination, loadFunc) {
+    const el = document.getElementById(containerId);
+    const { page, total_pages } = pagination;
+    if (total_pages <= 1) { el.innerHTML = ""; return; }
+
+    let html = "";
+    if (page > 1) html += `<button class="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded" onclick="${loadFunc.name}(${page - 1})">上一页</button>`;
+    for (let i = 1; i <= total_pages; i++) {
+        if (i === page) {
+            html += `<span class="px-3 py-1 text-sm bg-indigo-500 text-white rounded">${i}</span>`;
+        } else if (Math.abs(i - page) <= 2 || i === 1 || i === total_pages) {
+            html += `<button class="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded" onclick="${loadFunc.name}(${i})">${i}</button>`;
+        } else if (Math.abs(i - page) === 3) {
+            html += `<span class="px-2 text-gray-400">···</span>`;
+        }
+    }
+    if (page < total_pages) html += `<button class="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded" onclick="${loadFunc.name}(${page + 1})">下一页</button>`;
+    el.innerHTML = html;
+}
+
+// ==================== 工具函数 ====================
+function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function truncate(text, maxLen) {
+    if (!text) return "";
+    return text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
+}
+
+// ==================== 初始化 ====================
+renderMemCategories();
+renderColCategories();
+loadDashboard();
+</script>
+</body>
+</html>

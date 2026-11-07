@@ -1,0 +1,59 @@
+/**
+ * 登出 / 换账号时的**本地业务数据清理**（2026-10-30 · P1-34）。
+ *
+ * ## 为什么需要它
+ *
+ * `logout()` 只做了两件事：调后端吊销 refresh + `clearToken()`。**业务缓存一律没清**：
+ * 时间轴内存缓存与 7 天快照、收藏 id、画像标签、统计缓存、上传队列、AI 会话 id、
+ * L1 待发队列……全部原样留在磁盘上。后果有两条，都是硬伤：
+ *   1. **数据错**：换账号后先渲染上一账号的时间轴/统计/画像（用户以为"记忆串了"）；
+ *   2. **隐私**：上一账号的记忆内容对新账号可见（同一台设备的第二个人能直接读到）。
+ *
+ * ## 为什么用「全清 + 白名单回填」而不是逐键删除
+ *
+ * 逐键删除要维护一张键清单，新增功能时必然漏（本仓已有大量"清单漏一项就静默失效"的先例）。
+ * 这里改为：先读出**必须跨账号保留**的设备级标识，`clearStorageSync()` 全清，再写回。
+ * 白名单只有两类，且都是「设备/安装」级而非「用户」级：
+ *   · `yishu.device_id*` —— 设备标识（重新生成会让设备绑定与 consent 记录失去连续性）
+ *
+ * ⚠️ 新增**用户级**存储时：不用改本文件（全清天然覆盖）；
+ *    新增**设备级**存储时：必须加进下面的白名单，否则会被清掉。
+ */
+import { clearAllTimelineCache } from '@/utils/timeline'
+
+/** 设备级键（跨账号保留）。前缀匹配，值为原样字符串。 */
+const PRESERVE_KEYS: Array<string> = [
+	'yishu.device_id',
+	'yishu.device_id_dev_fallback'
+]
+
+/**
+ * 清理全部用户级本地数据。**幂等**：无数据时同样是安全操作。
+ * 调用时机：`logout()` 成功之后、`reLaunch` 回壳之前。
+ */
+export function clearUserScopedStorage(): void {
+	// 1) 先做**内存层**清理（有些模块的缓存在内存里，光清磁盘不够）
+	clearAllTimelineCache()
+
+	// 2) 保存设备级白名单
+	const kept: Array<string> = []
+	for (let i = 0; i < PRESERVE_KEYS.length; i++) {
+		const v = uni.getStorageSync(PRESERVE_KEYS[i]) as string
+		if (v != null && v != '') {
+			kept.push(v)
+		} else {
+			kept.push('')
+		}
+	}
+
+	// 3) 全清
+	uni.clearStorageSync()
+
+	// 4) 回填白名单（空值不写，避免造出空键）
+	for (let i = 0; i < PRESERVE_KEYS.length; i++) {
+		if (kept[i] != '') {
+			uni.setStorageSync(PRESERVE_KEYS[i], kept[i])
+		}
+	}
+	console.log('[yishu] 已清理用户级本地数据（设备标识保留 ' + kept.length.toString() + ' 项）')
+}

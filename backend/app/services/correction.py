@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import CorrectionLog
@@ -70,30 +70,43 @@ def record_correction(
 
     生命周期（B5-c-1）：同内容多次纠错以最后一次为准（Qdrant 同点覆盖；
     DB 查询取最新）；保留最近 MAX_PER_USER 条/用户。
-    """
-    store = _get_store()
-    dense = encode_dense([text])[0]
-    pid = _point_id(user_id, content_id)
 
-    store.upsert(
-        collection_name=CORRECTION_COLLECTION,
-        points=[
-            models.PointStruct(
-                id=pid,
-                vector={"text_vec": dense},
-                payload={
-                    "user_id": user_id,
-                    "content_id": content_id,
-                    "content_type": content_type,
-                    "old_label": old_label,
-                    "new_label": new_label,
-                    "source": source,
-                    "text": text,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-        ],
-    )
+    **空文本（2026-10-14 · 台账 §7.17）**：照片在保存时点没有文本（caption 由上传后
+    的管线产出），故允许 `text` 为空 ⇒ **跳过向量化**、仍写 correction_log。
+    层①的"相似纠错命中"本就依赖文本相似度，没有文本时该信号**不存在**（不是降级）；
+    调用方对 `contents.content_class` 的回写照旧，故用户可见的分类纠正不受影响。
+    ⚠️ 不得用假文本占位——那会把噪声写进个人规则向量库（O-2「纠错恒混合」教训）。
+    """
+    pid: str | None = None
+    if text.strip():
+        store = _get_store()
+        dense = encode_dense([text])[0]
+        pid = _point_id(user_id, content_id)
+        store.upsert(
+            collection_name=CORRECTION_COLLECTION,
+            points=[
+                models.PointStruct(
+                    id=pid,
+                    vector={"text_vec": dense},
+                    payload={
+                        "user_id": user_id,
+                        "content_id": content_id,
+                        "content_type": content_type,
+                        "old_label": old_label,
+                        "new_label": new_label,
+                        "source": source,
+                        "text": text,
+                        "created_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+            ],
+        )
+    else:
+        logger.info(
+            "纠错无文本 ⇒ 跳过向量化（仍写日志并回写分类）content_id=%s type=%s",
+            content_id,
+            content_type,
+        )
 
     # DB 落库（同 content 旧记录逻辑上被新记录取代）
     row = CorrectionLog(
@@ -177,7 +190,7 @@ def _recent_revert(
     db: Session, user_id: str, old_label: str, new_label: str, content_type: str
 ) -> bool:
     """回改检测：3 天内是否存在反向纠错 (new→old)——若存在说明用户在来回改，当前方向不生效"""
-    window_start = datetime.now(timezone.utc) - timedelta(days=REVERT_WINDOW_DAYS)
+    window_start = datetime.now(UTC) - timedelta(days=REVERT_WINDOW_DAYS)
     cnt = db.scalar(
         select(func.count())
         .select_from(CorrectionLog)
@@ -274,15 +287,18 @@ def arbitrate(
             "layer": "personal",
             "similarity": personal["similarity"],
             "source": personal["source"],
+            "degraded": False,
         }
     from app.services.classifier import classify
 
     result = classify(text)
+    # D-22（08-29）：degraded 透传——降级 mixed 不再伪装模型结论（含 conf=0.0 指纹）
     return {
         "label": result["label"],
         "label_cn": result["label_cn"],
         "confidence": result["confidence"],
         "layer": "global",
+        "degraded": bool(result.get("degraded", False)),
     }
 
 
@@ -300,28 +316,26 @@ def arbitrate_job(user_id: str, text: str, content_type: str = "text") -> dict:
 def mark_global_candidates(db: Session) -> int:
     """第③层共性纠错扫描：同一 (old→new) 纠错对出现 ≥2 个不同用户 → 全局候选
 
+    S6-8 性能修复：原全表载入内存按对聚合（O(全表) 内存）→ 单条 SQL 聚合 + 批量
+    UPDATE（不载全表；计数含已标记行，语义与 Python 版一致）。
     返回新标记数量（B5-c-4：累计 ≥50 触发全局微调，脚本侧决策）。
     """
-    rows = db.execute(select(CorrectionLog)).scalars()
-    pairs: dict[tuple, set[str]] = {}
-    for row in rows:
-        key = (row.old_label, row.new_label, row.content_type)
-        pairs.setdefault(key, set()).add(row.user_id)
-
-    marked = 0
-    for (old_label, new_label, content_type), users in pairs.items():
-        if len(users) >= 2:
-            updated = db.execute(
-                CorrectionLog.__table__.update()
-                .where(
-                    CorrectionLog.old_label == old_label,
-                    CorrectionLog.new_label == new_label,
-                    CorrectionLog.content_type == content_type,
-                    CorrectionLog.is_global_candidate.is_(False),
-                )
-                .values(is_global_candidate=True)
-            )
-            marked += updated.rowcount or 0
+    result = db.execute(
+        text(
+            """
+            UPDATE correction_log
+            SET is_global_candidate = true
+            WHERE is_global_candidate = false
+              AND (old_label, new_label, content_type) IN (
+                  SELECT old_label, new_label, content_type
+                  FROM correction_log
+                  GROUP BY old_label, new_label, content_type
+                  HAVING COUNT(DISTINCT user_id) >= 2
+              )
+            """
+        )
+    )
+    marked = result.rowcount or 0
     db.commit()
     return marked
 

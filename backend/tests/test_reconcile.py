@@ -9,32 +9,13 @@
 前置：PG yishu 库
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.db.models import DeletedLog, OfflineQueue, SyncFieldVersion, User
-from app.db.session import SessionLocal
 from app.services.reconcile import reconcile_snapshot
 from app.services.sync import push_ops
-from sqlalchemy import delete as sa_delete
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def db_user():
-    db = SessionLocal()
-    user = User(phone=f"recon-test-{uuid.uuid4().hex[:8]}", status=1)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    yield db, user
-    db.execute(sa_delete(OfflineQueue).where(OfflineQueue.user_id == user.id))
-    db.execute(sa_delete(DeletedLog).where(DeletedLog.deleted_by == user.id))
-    db.execute(sa_delete(SyncFieldVersion).where(SyncFieldVersion.user_id == user.id))
-    db.delete(user)
-    db.commit()
-    db.close()
 
 
 def _eid() -> str:
@@ -43,7 +24,7 @@ def _eid() -> str:
 
 
 def _ts(days: int) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 def test_empty_reconcile(db_user):

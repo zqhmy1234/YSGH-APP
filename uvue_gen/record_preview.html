@@ -1,0 +1,189 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Regular.ttf") format("truetype");font-weight:400;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-SemiBold.ttf") format("truetype");font-weight:600;}
+@font-face{font-family:"Sarasa Gothic SC";src:url("../client/static/fonts/SarasaGothicSC-Bold.ttf") format("truetype");font-weight:700;}
+*{font-family:"Sarasa Gothic SC",sans-serif;}
+*{box-sizing:border-box;}
+.phone{width:390px;height:844px;overflow:hidden;position:relative;background:#fff;}
+.page-root { width: 390px; height: 844px; position: relative; overflow: hidden; background-color: #3A2E25; }
+.n4_27 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 844.0px; background-color: #F8F7F4; overflow: hidden; }
+.n4_28 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 300.0px; }
+.n4_39 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 140.0px; background-image: linear-gradient(to bottom, rgba(26, 20, 15, 0.5), rgba(26, 20, 15, 0.28) 50%, rgba(26, 20, 15, 0)); }
+.n4_40 { position: absolute; left: 0.0px; top: 180.0px; width: 390.0px; height: 140.0px; background-image: linear-gradient(to bottom, rgba(248, 247, 244, 0), rgba(248, 247, 244, 0.38) 45%, rgba(248, 247, 244, 0.78) 75%, rgba(248, 247, 244, 1)); }
+.n4_41 { position: absolute; left: 20.0px; top: 124.0px; width: 226.0px; height: 16.0px; font-size: 13.0px; color: #FFFFFF; text-shadow: 0px 1px 12px rgba(26, 20, 15, 0.55); }
+.n4_31 { position: absolute; left: 20.0px; top: 56.0px; width: 80.0px; height: 48.0px; font-weight: bold; font-size: 40.0px; color: #FFFFFF; }
+.n4_32 { position: absolute; left: 20.0px; top: 110.0px; width: 118.0px; height: 16.0px; font-size: 13.0px; color: rgba(255, 255, 255, 0.85); text-shadow: 0px 1px 8px rgba(26, 20, 15, 0.5); }
+.n4_33 { position: absolute; left: 330.0px; top: 58.0px; width: 40.0px; height: 40.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #C4913C; border: 1.0px solid rgba(255, 255, 255, 0.7); border-radius: 20.0px; overflow: hidden; }
+.n4_42 { font-weight: 600; font-size: 16.0px; color: #FFFFFF; }
+.n4_34 { position: absolute; left: 20.0px; top: 246.0px; width: 350.0px; height: 46.0px; display: flex; flex-direction: row; gap: 8.0px; align-items: center; padding-left: 16.0px; padding-right: 16.0px; background-color: rgba(255, 255, 255, 0.25); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.5), inset 0px 1px 2px rgba(255, 255, 255, 0.35), 0px 8px 24px rgba(59, 46, 38, 0.08); border-radius: 999px; overflow: hidden; }
+.n4_43 { width: 18.0px; height: 18.0px; }
+.n4_44 { font-size: 14.0px; color: #FFFFFF; }
+.n4_35 { position: absolute; left: 20.0px; top: 316.0px; width: 350.0px; display: flex; flex-direction: column; gap: 12.0px; overflow: hidden; }
+.n4_45 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_56 { font-weight: 600; font-size: 12.0px; color: #8A7A6A; }
+.n4_57 { flex: 1; height: 1.0px; background-color: #3A2E25; overflow: hidden; }
+.n4_46 { width: 100%; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06), 0px 1px 3px rgba(59, 46, 38, 0.04); border-radius: 20.0px; overflow: hidden; }
+.n4_58 { width: 100%; height: 64.0px; display: flex; flex-direction: row; gap: 12.0px; align-items: center; padding-left: 14.0px; padding-right: 14.0px; background-color: rgba(196, 145, 60, 0.14); border-radius: 12.0px; overflow: hidden; }
+.n4_71 { width: 32.0px; height: 32.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.5); border: 1.0px solid rgba(255, 255, 255, 0.8); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.4); border-radius: 16.0px; overflow: hidden; }
+.n4_85 { width: 12.0px; height: 12.0px; }
+.n4_72 { width: 200.0px; height: 26.0px; overflow: hidden; position: relative; }
+.n4_86 { position: absolute; left: 4.0px; top: 3.0px; width: 192.0px; height: 20.0px; }
+.n4_59 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
+.n4_73 { font-weight: 600; font-size: 17.0px; color: #3A2E25; }
+.n4_74 { font-size: 11.0px; color: #8A7A6A; }
+.n4_47 { width: 100%; display: flex; flex-direction: column; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; background-color: #FFFFFF; box-shadow: 0px 4px 16px rgba(59, 46, 38, 0.06), 0px 1px 3px rgba(59, 46, 38, 0.04); border-radius: 20.0px; overflow: hidden; }
+.n4_60 { width: 100%; display: flex; flex-direction: row; gap: 10.0px; align-items: center; padding-left: 12.0px; padding-right: 12.0px; padding-top: 12.0px; padding-bottom: 12.0px; background-color: rgba(196, 145, 60, 0.1); border-radius: 12.0px; overflow: hidden; }
+.n4_75 { width: 3.0px; height: 40.0px; background-color: #C4913C; border-radius: 2.0px; overflow: hidden; }
+.n4_76 { flex: 1; font-size: 14.0px; color: #5A4C40; }
+.n4_61 { width: 100%; display: flex; flex-direction: column; gap: 3.0px; padding-left: 8.0px; padding-right: 8.0px; padding-top: 8.0px; padding-bottom: 8.0px; overflow: hidden; }
+.n4_77 { font-size: 11.0px; color: #8A7A6A; }
+.n4_36 { position: absolute; left: 20.0px; top: 752.0px; width: 350.0px; height: 62.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 10.0px; padding-right: 10.0px; padding-top: 10.0px; padding-bottom: 10.0px; background-color: rgba(255, 255, 255, 0.55); box-shadow: 0px 0px 0px 1.0px rgba(255, 255, 255, 0.65), inset 0px 1px 2px rgba(255, 255, 255, 0.45), 0px 10px 28px rgba(59, 46, 38, 0.1); border-radius: 36.0px; overflow: hidden; }
+.n4_48 { display: flex; flex-direction: column; gap: 3.0px; align-items: center; overflow: hidden; }
+.n4_62 { width: 20.0px; height: 20.0px; }
+.n4_63 { font-weight: 600; font-size: 10.0px; color: #B05A3A; }
+.n4_49 { display: flex; flex-direction: column; gap: 3.0px; align-items: center; overflow: hidden; }
+.n4_64 { width: 20.0px; height: 20.0px; }
+.n4_65 { font-size: 10.0px; color: #B3A696; }
+.n4_50 { width: 48.0px; height: 10.0px; overflow: hidden; }
+.n4_51 { display: flex; flex-direction: column; gap: 3.0px; align-items: center; overflow: hidden; }
+.n4_66 { width: 20.0px; height: 20.0px; }
+.n4_67 { font-size: 10.0px; color: #B3A696; }
+.n4_52 { display: flex; flex-direction: column; gap: 3.0px; align-items: center; overflow: hidden; }
+.n4_68 { width: 20.0px; height: 20.0px; }
+.n4_69 { font-size: 10.0px; color: #B3A696; }
+.n4_37 { position: absolute; left: 167.0px; top: 740.0px; width: 56.0px; height: 56.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: #B05A3A; box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.35), 0px 6px 16px rgba(176, 89, 59, 0.35); border-radius: 28.0px; overflow: hidden; }
+.n4_53 { width: 22.0px; height: 22.0px; }
+.n2_554 { position: absolute; left: 0.0px; top: 0.0px; width: 390.0px; height: 844.0px; background-color: #1A140F; overflow: hidden; }
+.n2_555 { position: absolute; left: 0.0px; top: 508.0px; width: 390.0px; height: 340.0px; background-color: #FAF9F5; border-radius: 40.0px; overflow: hidden; }
+.n2_556 { position: absolute; left: 171.0px; top: 14.0px; width: 48.0px; height: 5.0px; background-color: #B3A696; border-radius: 3.0px; overflow: hidden; }
+.n2_584 { position: absolute; left: 0.0px; top: 36.0px; width: 390.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; overflow: hidden; }
+.n2_585 { font-weight: 600; font-size: 18.0px; color: #3A2E25; }
+.n2_586 { position: absolute; left: 0.0px; top: 280.0px; width: 390.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; overflow: hidden; }
+.n2_587 { font-size: 12.0px; color: #B3A696; }
+.n4_4 { position: absolute; left: 20.0px; top: 100.0px; width: 350.0px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; overflow: hidden; }
+.n4_5 { display: flex; flex-direction: column; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_6 { width: 64.0px; height: 64.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(176, 89, 59, 0.12); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.7), 0px 3px 8px rgba(59, 46, 38, 0.07); border-radius: 32.0px; overflow: hidden; }
+.n4_7 { width: 26.0px; height: 26.0px; }
+.n4_9 { font-size: 13.0px; color: #3A2E25; }
+.n4_10 { display: flex; flex-direction: column; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_11 { width: 64.0px; height: 64.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(196, 145, 60, 0.12); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.7), 0px 3px 8px rgba(59, 46, 38, 0.07); border-radius: 32.0px; overflow: hidden; }
+.n4_12 { width: 26.0px; height: 26.0px; }
+.n4_14 { font-size: 13.0px; color: #3A2E25; }
+.n4_15 { display: flex; flex-direction: column; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_16 { width: 64.0px; height: 64.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(122, 140, 90, 0.14); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.7), 0px 3px 8px rgba(59, 46, 38, 0.07); border-radius: 32.0px; overflow: hidden; }
+.n4_17 { width: 26.0px; height: 26.0px; }
+.n4_19 { font-size: 13.0px; color: #3A2E25; }
+.n4_20 { display: flex; flex-direction: column; gap: 10.0px; align-items: center; overflow: hidden; }
+.n4_21 { width: 64.0px; height: 64.0px; display: flex; flex-direction: row; justify-content: center; align-items: center; background-color: rgba(78, 125, 140, 0.13); box-shadow: inset 0px 1px 2px rgba(255, 255, 255, 0.7), 0px 3px 8px rgba(59, 46, 38, 0.07); border-radius: 32.0px; overflow: hidden; }
+.n4_22 { width: 26.0px; height: 26.0px; }
+.n4_24 { font-size: 13.0px; color: #3A2E25; }
+</style></head><body><div class="phone">
+    <div class="n4_27"> <!-- 定稿 · 精修高保真 -->
+      <img class="n4_28" src="images/img4_28.png" /> <!-- 照片出血氛围层 -->
+      <div class="n4_39"></div> <!-- 顶部暗化 -->
+      <div class="n4_40"></div> <!-- 底部白色溶解 -->
+      <span class="n4_41">清晨的湖边，风很轻 · 8月28日 07:42</span> <!-- 照片说明 -->
+      <span class="n4_31">回忆</span> <!-- 大标题 -->
+      <span class="n4_32">八月 · 28 条新记忆</span> <!-- 副标题 -->
+      <div class="n4_33"> <!-- 头像 -->
+        <span class="n4_42">峰</span> <!-- 头像字 -->
+      </div>
+      <div class="n4_34"> <!-- 玻璃搜索胶囊 -->
+        <img class="n4_43" src="icons/i4_43.svg" /> <!-- 搜索图标 -->
+        <span class="n4_44">描述一段回忆，帮你找</span> <!-- 搜索占位 -->
+      </div>
+      <div class="n4_35"> <!-- 内容区 -->
+        <div class="n4_45"> <!-- 日期分组 -->
+          <span class="n4_56">8月28日 · 星期五</span> <!-- 日期文字 -->
+          <div class="n4_57"> <!-- 日期线 -->
+          </div>
+        </div>
+        <div class="n4_46"> <!-- 语音卡 -->
+          <div class="n4_58"> <!-- 语音媒体 -->
+            <div class="n4_71"> <!-- 玻璃播放钮 -->
+              <img class="n4_85" src="icons/i4_85.svg" /> <!-- 播放图标 -->
+            </div>
+            <div class="n4_72"> <!-- 波形 -->
+              <img class="n4_86" src="icons/i4_86.svg" /> <!-- Vector -->
+            </div>
+          </div>
+          <div class="n4_59"> <!-- 语音文字区 -->
+            <span class="n4_73">和妈妈的通话</span> <!-- 语音卡标题 -->
+            <span class="n4_74">8月27日 12:36 · 语音 3分12秒 · 已转写</span> <!-- 语音卡元信息 -->
+          </div>
+        </div>
+        <div class="n4_47"> <!-- 文字卡 -->
+          <div class="n4_60"> <!-- 摘要块 -->
+            <div class="n4_75"> <!-- 引用竖线 -->
+            </div>
+            <span class="n4_76">今天把实验室的仪器终于调通了，导师说这个数据比预期干净很多，晚上请全组喝了奶茶。</span> <!-- 摘要文本 -->
+          </div>
+          <div class="n4_61"> <!-- 文字元信息区 -->
+            <span class="n4_77">8月26日 21:15 · 文字记录</span> <!-- 文字卡元信息 -->
+          </div>
+        </div>
+      </div>
+      <div class="n4_36"> <!-- 玻璃TabBar -->
+        <div class="n4_48"> <!-- Tab-时间轴 -->
+          <img class="n4_62" src="icons/i4_62.svg" /> <!-- 图标-指南针 -->
+          <span class="n4_63">时间轴</span> <!-- 标签-时间轴 -->
+        </div>
+        <div class="n4_49"> <!-- Tab-AI -->
+          <img class="n4_64" src="icons/i4_64.svg" /> <!-- 图标-对话 -->
+          <span class="n4_65">AI</span> <!-- 标签-AI -->
+        </div>
+        <div class="n4_50"> <!-- 中央留位 -->
+        </div>
+        <div class="n4_51"> <!-- Tab-搜索 -->
+          <img class="n4_66" src="icons/i4_66.svg" /> <!-- 图标-搜索 -->
+          <span class="n4_67">搜索</span> <!-- 标签-搜索 -->
+        </div>
+        <div class="n4_52"> <!-- Tab-我的 -->
+          <img class="n4_68" src="icons/i4_68.svg" /> <!-- 图标-我的 -->
+          <span class="n4_69">我的</span> <!-- 标签-我的 -->
+        </div>
+      </div>
+      <div class="n4_37"> <!-- 中央＋按钮 -->
+        <img class="n4_53" src="icons/i4_53.svg" /> <!-- 加号 -->
+      </div>
+    </div>
+    <div class="n2_554"> <!-- 暗化遮罩 -->
+    </div>
+    <div class="n2_555"> <!-- 录入Sheet -->
+      <div class="n2_556"> <!-- 把手 -->
+      </div>
+      <div class="n2_584"> <!-- 标题容器 -->
+        <span class="n2_585">新的记忆</span> <!-- 面板标题 -->
+      </div>
+      <div class="n2_586"> <!-- 提示容器 -->
+        <span class="n2_587">长按 ＋ 可直达完整记录表单</span> <!-- 面板提示 -->
+      </div>
+      <div class="n4_4"> <!-- 入口单行 -->
+        <div class="n4_5"> <!-- 入口-拍照 -->
+          <div class="n4_6"> <!-- 图标底 -->
+            <img class="n4_7" src="icons/i4_7.svg" /> <!-- 相机 -->
+          </div>
+          <span class="n4_9">拍照</span> <!-- 拍照 -->
+        </div>
+        <div class="n4_10"> <!-- 入口-选照片 -->
+          <div class="n4_11"> <!-- 图标底 -->
+            <img class="n4_12" src="icons/i4_12.svg" /> <!-- 图片 -->
+          </div>
+          <span class="n4_14">选照片</span> <!-- 选照片 -->
+        </div>
+        <div class="n4_15"> <!-- 入口-语音 -->
+          <div class="n4_16"> <!-- 图标底 -->
+            <img class="n4_17" src="icons/i4_17.svg" /> <!-- 麦克风 -->
+          </div>
+          <span class="n4_19">说一段</span> <!-- 语音 -->
+        </div>
+        <div class="n4_20"> <!-- 入口-文字 -->
+          <div class="n4_21"> <!-- 图标底 -->
+            <img class="n4_22" src="icons/i4_22.svg" /> <!-- 笔 -->
+          </div>
+          <span class="n4_24">写几句</span> <!-- 文字 -->
+        </div>
+      </div>
+    </div>
+</div></body></html>
