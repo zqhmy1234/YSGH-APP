@@ -41,6 +41,7 @@ def _classify_issues(issues: str) -> tuple[bool, str]:
             return False, "duplicate_tool_call"
     return True, "output_shape"
 
+
 # 禁展示字段正则模式（情绪和主题现在允许展示，仅禁止内容形式和ID）
 FORBIDDEN_PATTERNS = [
     (r"content_format|内容形式[：:]", "内容形式(content_format)"),
@@ -49,8 +50,19 @@ FORBIDDEN_PATTERNS = [
 
 # 合法分类枚举（L1-A 记忆分类 + L1-B 收藏分类）
 VALID_CATEGORIES = {
-    "情绪", "事件", "想法", "灵感", "人物", "地点", "待分类",
-    "文章", "帖子", "观点", "数据", "图片", "其他",
+    "情绪",
+    "事件",
+    "想法",
+    "灵感",
+    "人物",
+    "地点",
+    "待分类",
+    "文章",
+    "帖子",
+    "观点",
+    "数据",
+    "图片",
+    "其他",
 }
 
 # 能力边界：检测代码块和SQL语句
@@ -64,9 +76,23 @@ SQL_PATTERN = re.compile(
 ENGLISH_WORD_PATTERN = re.compile(r"[a-zA-Z]{3,}")
 # 允许的英文白名单（工具枚举值、常见缩写等）
 ENGLISH_WHITELIST = {
-    "text", "image", "voice", "link",
-    "app", "bot", "api", "url", "pdf", "doc", "csv",
-    "http", "https", "www", "com", "org", "net",
+    "text",
+    "image",
+    "voice",
+    "link",
+    "app",
+    "bot",
+    "api",
+    "url",
+    "pdf",
+    "doc",
+    "csv",
+    "http",
+    "https",
+    "www",
+    "com",
+    "org",
+    "net",
 }
 
 
@@ -188,11 +214,7 @@ class OutputValidator:
         words = ENGLISH_WORD_PATTERN.findall(text_without_urls.lower())
         non_whitelisted = [w for w in words if w not in ENGLISH_WHITELIST]
         if non_whitelisted:
-            return (
-                "回复中包含英文内容，违反语言限制。"
-                "必须使用中文回复，禁止使用英文。"
-                "请用中文重新组织回复。"
-            )
+            return "回复中包含英文内容，违反语言限制。必须使用中文回复，禁止使用英文。请用中文重新组织回复。"
         return ""
 
 
@@ -242,6 +264,7 @@ def run_agent_with_validation(
 
     from langchain_core.messages import HumanMessage
     from langgraph.errors import GraphRecursionError
+
     from yishu.observability import log_event, timed
 
     if max_rounds is None:
@@ -413,9 +436,7 @@ def run_agent_with_validation(
         # 分级：只有「纯输出形态问题」才值得重试；**重复工具调用不可重试**
         # （记忆已写入，重跑只会再写一次并再次失败——实测这正是 30~60s 的来源）。
         retryable, reason = _classify_issues(issues)
-        will_retry = (
-            round_num < max_rounds and retryable and budget_left > _MIN_RETRY_BUDGET_S
-        )
+        will_retry = round_num < max_rounds and retryable and budget_left > _MIN_RETRY_BUDGET_S
         log_event(
             "validator_fail",
             level=logging.WARNING,
@@ -440,11 +461,10 @@ def run_agent_with_validation(
             break
 
     # 达到上限/预算/不可重试，返回最后一次结果
-    log_event("validator_exhausted", level=logging.WARNING, max_rounds=max_rounds,
-              reason=exhausted_reason or "max_rounds")
-    logger.warning(
-        "校验未通过但停止重试（%s），输出最后一次结果", exhausted_reason or "max_rounds"
+    log_event(
+        "validator_exhausted", level=logging.WARNING, max_rounds=max_rounds, reason=exhausted_reason or "max_rounds"
     )
+    logger.warning("校验未通过但停止重试（%s），输出最后一次结果", exhausted_reason or "max_rounds")
     return _finish(result, "rounds_exhausted" if not exhausted_reason else exhausted_reason)
 
 
@@ -471,7 +491,7 @@ def _messages_since_last_human(messages: list) -> list:
     for idx, m in enumerate(messages):
         if getattr(m, "type", "") == "human":
             last_human = idx
-    return messages[last_human + 1:] if last_human >= 0 else list(messages)
+    return messages[last_human + 1 :] if last_human >= 0 else list(messages)
 
 
 def _count_tool_messages(messages: list) -> int:
@@ -722,6 +742,7 @@ def stream_agent_with_validation(
 
     from langchain_core.messages import HumanMessage
     from langgraph.errors import GraphRecursionError
+
     from yishu.observability import log_event
 
     max_rounds = _resolve_max_rounds(max_rounds)
@@ -862,9 +883,7 @@ def stream_agent_with_validation(
 
     rounds_used = 2
     input_content = (
-        f"{query}\n\n"
-        f"[校验反馈] 上一次回复存在以下问题：{issues}。"
-        f"请修正这些问题后重新回复用户，不要提及校验过程。"
+        f"{query}\n\n[校验反馈] 上一次回复存在以下问题：{issues}。请修正这些问题后重新回复用户，不要提及校验过程。"
     )
     log_event("stream_retry_round_start", round=2, has_feedback=True)
     result2 = retry_agent.invoke({"messages": [HumanMessage(content=input_content)]}, config)

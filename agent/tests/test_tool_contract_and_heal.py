@@ -8,6 +8,7 @@
 2. `_find_existing_memory` 的三级判重 —— 逐字去重不足以终止「同一条记忆反复保存」。
 3. `_salvage_partial_reply` —— 撞递归上限时捞回已有回复，而不是整轮报废。
 """
+
 from __future__ import annotations
 
 import json
@@ -28,13 +29,13 @@ from utils.output_validator import _salvage_partial_reply
         ("", None),
         ("   ", None),
         (["旅行", "兴趣"], ["旅行", "兴趣"]),
-        (["旅行", "  "], ["旅行"]),          # 丢弃空项
-        ('["旅行", "兴趣"]', ["旅行", "兴趣"]),          # JSON 数组字符串（LLM 实测写法）
+        (["旅行", "  "], ["旅行"]),  # 丢弃空项
+        ('["旅行", "兴趣"]', ["旅行", "兴趣"]),  # JSON 数组字符串（LLM 实测写法）
         ('["旅行","兴趣"]', ["旅行", "兴趣"]),
-        ("旅行,兴趣", ["旅行", "兴趣"]),               # 裸字符串 + 英文逗号
-        ("旅行，兴趣", ["旅行", "兴趣"]),               # 中文逗号
-        ("旅行、兴趣", ["旅行", "兴趣"]),               # 顿号
-        ("旅行", ["旅行"]),                             # 单值
+        ("旅行,兴趣", ["旅行", "兴趣"]),  # 裸字符串 + 英文逗号
+        ("旅行，兴趣", ["旅行", "兴趣"]),  # 中文逗号
+        ("旅行、兴趣", ["旅行", "兴趣"]),  # 顿号
+        ("旅行", ["旅行"]),  # 单值
     ],
 )
 def test_coerce_str_list_handles_malformed_shapes(raw, expected):
@@ -75,9 +76,10 @@ def test_common_prefix_len_is_capped():
 @pytest.fixture()
 def mem_client():
     """真实连库（判重是 SQL + Python 双层逻辑，mock 掉就测不到真东西）。"""
+    import uuid
+
     from storage.database.local_client import create_local_client
     from yishu.context import new_context, request_context
-    import uuid
 
     uid = f"test-dedup-{uuid.uuid4().hex[:8]}"
     request_context.set(new_context(method="test", user_id=uid))
@@ -230,10 +232,11 @@ def test_heal_noop_when_all_tool_calls_answered():
 # ── 5. 工具参数契约：save_memory 真的能落库（不带 LLM）───────────────
 def test_save_memory_persists_and_dedups_end_to_end():
     """端到端（无 LLM）：首次写入 → 尾部追加被判重 → 库中仍只有一条。"""
-    from tools.memory_tools import save_memory
-    from storage.database.local_client import create_local_client
-    from yishu.context import new_context, request_context
     import uuid
+
+    from storage.database.local_client import create_local_client
+    from tools.memory_tools import save_memory
+    from yishu.context import new_context, request_context
 
     uid = f"test-e2e-{uuid.uuid4().hex[:8]}"
     request_context.set(new_context(method="test", user_id=uid))

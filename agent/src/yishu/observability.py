@@ -32,6 +32,7 @@ finally:
     reset_request_id(token)
 ```
 """
+
 from __future__ import annotations
 
 import contextvars
@@ -124,17 +125,14 @@ def _reject_sensitive(key: str) -> None:
     for part in _FORBIDDEN_KEY_PARTS:
         if part in low:
             raise SensitiveFieldError(
-                f"日志字段 {key!r} 命中敏感词 {part!r}，禁止入日志"
-                f"（长度请用 *_len 字段代替，如 msg_len）"
+                f"日志字段 {key!r} 命中敏感词 {part!r}，禁止入日志（长度请用 *_len 字段代替，如 msg_len）"
             )
 
 
 # ---------------------------------------------------------------------------
 # request_id
 # ---------------------------------------------------------------------------
-_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "yishu_request_id", default="-"
-)
+_request_id: contextvars.ContextVar[str] = contextvars.ContextVar("yishu_request_id", default="-")
 
 
 def new_request_id() -> str:
@@ -153,6 +151,8 @@ def reset_request_id(token: contextvars.Token[str]) -> None:
 
 def current_request_id() -> str:
     return _request_id.get()
+
+
 # ---------------------------------------------------------------------------
 # 结构化事件
 # ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ def timed(stage: str, *, log_ok: bool = True, **fields: Any) -> Iterator[TimedRe
     t0 = time.perf_counter()
     try:
         yield result
-    except BaseException as exc:  # noqa: BLE001 —— 记录后必须重抛
+    except BaseException as exc:
         result.fields = {
             **fields,
             "latency_ms": int((time.perf_counter() - t0) * 1000),

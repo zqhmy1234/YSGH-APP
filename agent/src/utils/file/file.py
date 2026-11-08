@@ -1,25 +1,25 @@
 import os
-import requests
-import uuid
-import chardet
+import tempfile
 from io import BytesIO
-from typing import Literal,Callable, Any, Optional,Union
-from pydantic import BaseModel, Field, field_validator,PrivateAttr,ConfigDict
+from typing import Literal
 from urllib.parse import urlparse
-from pptx import Presentation
+
+import requests
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 MAX_FILE_SIZE = 100 * 1024 * 1024
+
 
 class File(BaseModel):
     """
     通用文件对象，支持自动类型推断和路径管理
     """
+
     url: str = Field(..., description="文件URL(http/https)或本地路径")
-    file_type: Literal['image', 'video', 'audio', 'document', 'default'] = Field(
-        default="default",
-        description="文件类型"
+    file_type: Literal["image", "video", "audio", "document", "default"] = Field(
+        default="default", description="文件类型"
     )
-    _local_path: Optional[str] = PrivateAttr(default=None)
+    _local_path: str | None = PrivateAttr(default=None)
     model_config = ConfigDict(
         json_schema_extra={
             "x-component": "file-upload",  # 前端用文件上传组件
@@ -30,14 +30,15 @@ class File(BaseModel):
         """设置缓存路径"""
         self._local_path = path
 
-    def get_cache_path(self) -> Optional[str]:
+    def get_cache_path(self) -> str | None:
         """获取缓存路径（如果文件实际存在）"""
         return self._local_path
 
     @property
     def is_remote(self) -> bool:
         """判断是网络URL还是本地文件"""
-        return self.url.startswith(('http://', 'https://'))
+        return self.url.startswith(("http://", "https://"))
+
 
 def infer_file_category(path_or_url: str) -> tuple[str, str]:
     """
@@ -66,26 +67,32 @@ def infer_file_category(path_or_url: str) -> tuple[str, str]:
 
     # 如果没有后缀，直接兜底
     if not ext_with_dot:
-        return 'default', ""
+        return "default", ""
 
     # 去除点并转小写 (例如 .JPG -> jpg)
-    ext = ext_with_dot.lstrip('.').lower()
+    ext = ext_with_dot.lstrip(".").lower()
 
     # === 步骤 3: 查表匹配 ===
     # 定义常见映射表
     TYPE_MAPPING = {
-        'image': {
-            'apng', 'avif', 'bmp', 'gif', 'heic', 'ico', 'jpg', 'jpeg', 'png', 'svg', 'tiff', 'webp'
-        },
-        'video': {
-            'mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'webm', 'm4v', '3gp'
-        },
-        'audio': {
-            'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a'
-        },
-        'document': {
-            'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-            'txt', 'md', 'csv', 'json', 'xml', 'html', 'htm'
+        "image": {"apng", "avif", "bmp", "gif", "heic", "ico", "jpg", "jpeg", "png", "svg", "tiff", "webp"},
+        "video": {"mp4", "avi", "mov", "mkv", "flv", "wmv", "webm", "m4v", "3gp"},
+        "audio": {"mp3", "wav", "flac", "aac", "ogg", "wma", "m4a"},
+        "document": {
+            "pdf",
+            "doc",
+            "docx",
+            "xls",
+            "xlsx",
+            "ppt",
+            "pptx",
+            "txt",
+            "md",
+            "csv",
+            "json",
+            "xml",
+            "html",
+            "htm",
         },
     }
 
@@ -93,13 +100,14 @@ def infer_file_category(path_or_url: str) -> tuple[str, str]:
         if ext in extensions:
             return category, ext_with_dot
 
-    return 'default', ext_with_dot
+    return "default", ext_with_dot
+
 
 class FileOps:
-    DOWNLOAD_DIR = "/tmp"
+    DOWNLOAD_DIR = tempfile.gettempdir()
 
     @staticmethod
-    def _get_bytes_stream(file_obj:File) -> tuple[bytes, str]:
+    def _get_bytes_stream(file_obj: File) -> tuple[bytes, str]:
         """
         获取文件内容和后缀, 大小限制检查, 超出抛异常
         """
@@ -111,11 +119,9 @@ class FileOps:
                 with requests.get(file_obj.url, stream=True, timeout=60) as resp:
                     resp.raise_for_status()
 
-                    content_length = resp.headers.get('Content-Length')
+                    content_length = resp.headers.get("Content-Length")
                     if content_length and int(content_length) > MAX_FILE_SIZE:
-                        raise Exception(
-                            f"文件大小 ({int(content_length)} bytes) 超过限制 100MB，已终止下载。"
-                        )
+                        raise Exception(f"文件大小 ({int(content_length)} bytes) 超过限制 100MB，已终止下载。")
 
                     # 场景：Header 缺失 Content-Length 或服务器 Header 欺骗
                     downloaded_content = BytesIO()
@@ -126,26 +132,26 @@ class FileOps:
                         if chunk:
                             current_size += len(chunk)
                             if current_size > MAX_FILE_SIZE:
-                                raise Exception(f"检测到文件超过 100MB，已中断。")
+                                raise Exception("检测到文件超过 100MB，已中断。")
                             downloaded_content.write(chunk)
 
                     # 获取完整 bytes
                     return downloaded_content.getvalue(), ext
 
             except requests.RequestException as e:
-                raise RuntimeError(f"网络请求失败: {e}")
+                raise RuntimeError(f"网络请求失败: {e}") from e
 
         else:
             if not os.path.exists(file_obj.url):
                 raise FileNotFoundError(f"本地文件不存在: {file_obj.url}")
 
-            '''
+            """
             file_size = os.path.getsize(file_obj.url)
             if file_size > MAX_FILE_SIZE:
                  raise Exception(f"本地文件大小 ({file_size} bytes) 超过限制 100MB")
-            '''
+            """
 
-            with open(file_obj.url, 'rb') as f:
+            with open(file_obj.url, "rb") as f:
                 return f.read(), ext
 
     @staticmethod
@@ -168,19 +174,24 @@ class FileOps:
             # filename = f"{uuid.uuid4().hex}{ext}"
             local_path = os.path.join(FileOps.DOWNLOAD_DIR, filename)
 
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/58.0.3029.110 Safari/537.3"
+                )
+            }
             with requests.get(file_obj.url, headers=headers, stream=True, timeout=120) as r:
                 r.raise_for_status()
-                with open(local_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                with open(local_path, "wb") as f:
+                    f.writelines(r.iter_content(chunk_size=8192))
 
             return local_path
         except Exception as e:
-            raise RuntimeError(f"Download failed for {file_obj.url}: {str(e)}")
+            raise RuntimeError(f"Download failed for {file_obj.url}: {e!s}") from e
 
     @staticmethod
-    def read_bytes(file_obj:File) -> bytes:
+    def read_bytes(file_obj: File) -> bytes:
         """
         获取文件的原始二进制数据
         场景：上传到OSS、保存到本地、传给图像处理库
@@ -197,40 +208,44 @@ class FileOps:
         try:
             content, ext = FileOps._get_bytes_stream(file_obj)
 
-            if ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']:
+            if ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]:
                 return FileOps._parse_document_bytes(file_obj, content, ext)
 
             # 默认直接读
+            import chardet
+
             charset = chardet.detect(content)
-            if 'encoding' in charset:
-                return content.decode(charset['encoding'])
+            if "encoding" in charset:
+                return content.decode(charset["encoding"])
             else:
-                return content.decode('utf-8')
+                return content.decode("utf-8")
 
         except Exception as e:
-            return f"[FileOps Error] Failed to read content: {str(e)}"
+            return f"[FileOps Error] Failed to read content: {e!s}"
 
     @staticmethod
-    def _parse_document_bytes(file_obj: File, content: bytes, ext:str) -> str:
+    def _parse_document_bytes(file_obj: File, content: bytes, ext: str) -> str:
         stream = BytesIO(content)
         text_result = ""
 
         try:
-            if ext == '.pdf':
+            if ext == ".pdf":
                 import pypdf
+
                 reader = pypdf.PdfReader(stream)
                 for page in reader.pages:
                     text_result += page.extract_text() + "\n"
-            elif ext in ['.docx', '.doc']:
+            elif ext in [".docx", ".doc"]:
                 text_result = read_docx(stream)
-            elif ext in ['.xlsx', '.xls', '.csv']:
+            elif ext in [".xlsx", ".xls", ".csv"]:
                 import pandas as pd
-                if ext == '.csv':
+
+                if ext == ".csv":
                     df = pd.read_csv(stream)
                 else:
                     df = pd.read_excel(stream)
                 text_result = df.to_string()
-            elif ext in ['.ppt', '.pptx']:
+            elif ext in [".ppt", ".pptx"]:
                 text_result = read_ppt(stream)
             else:
                 text_result = f"[暂不支持解析该文档格式: {ext}]"
@@ -241,11 +256,13 @@ class FileOps:
 
         return text_result
 
+
 def read_docx(cont_stream) -> str:
     """
     使用docx2python按顺序读取内容
     """
     from docx2python import docx2python
+
     doc_result = docx2python(cont_stream)
 
     # 获取文档结构
@@ -274,13 +291,16 @@ def read_docx(cont_stream) -> str:
 
     return "\n\n".join(all_parts)
 
-def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
-    if not Presentation:
+
+def read_ppt(file_input: str | bytes | BytesIO) -> str:
+    try:
+        from pptx import Presentation
+    except ImportError:
         return "[Error] 未安装 python-pptx 库，无法解析 PPT 文件"
 
     # 1. 统一转换为文件流对象 (BytesIO)
     if isinstance(file_input, str):
-        with open(file_input, 'rb') as f:
+        with open(file_input, "rb") as f:
             ppt_stream = BytesIO(f.read())
     elif isinstance(file_input, bytes):
         ppt_stream = BytesIO(file_input)
@@ -293,7 +313,7 @@ def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
 
         for i, slide in enumerate(prs.slides):
             page_content = []
-            page_content.append(f"=== 第 {i+1} 页 ===")
+            page_content.append(f"=== 第 {i + 1} 页 ===")
 
             # shape.text_frame 包含了形状内的文本段落
             for shape in slide.shapes:
@@ -322,4 +342,4 @@ def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
         return "\n\n".join(full_text)
 
     except Exception as e:
-        return f"[PPT解析失败] {str(e)}"
+        return f"[PPT解析失败] {e!s}"

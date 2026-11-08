@@ -27,6 +27,7 @@
     `X-DashScope-WorkSpace: <workspace-id>`（官方文档原文：「通过 HTTP 调用时，请指定
     Header 中的 X-DashScope-WorkSpace」）。
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,8 +47,8 @@ PUBLIC_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 #     **必须配合各自的专属 Base URL 使用**，不可与通用 API Key/Base URL 混用（混用会返回本鉴权错误）」
 #   Token Plan 的 OpenAI 兼容端点：https://token-plan.<region>.maas.aliyuncs.com/compatible-mode/v1
 # 实测印证：用 sk-sp- key 打公共端点 → 401 invalid_api_key（正是"混用"这条）。
-TOKEN_PLAN_KEY_PREFIX = "sk-sp-"  # noqa: S105 —— 这是 key **前缀**（公开约定），不是密钥本身
-TOKEN_PLAN_BASE_URL = "https://token-plan.{region}.maas.aliyuncs.com/compatible-mode/v1"  # noqa: S105 —— URL 模板，非凭据
+TOKEN_PLAN_KEY_PREFIX = "sk-sp-"
+TOKEN_PLAN_BASE_URL = "https://token-plan.{region}.maas.aliyuncs.com/compatible-mode/v1"
 
 
 class LlmConfigError(RuntimeError):
@@ -66,7 +67,7 @@ class LlmSettings:
     extra_headers: dict[str, str] = field(default_factory=dict)
     # W适配（2026-10-08）：False = 通用 OpenAI 兼容供应商（DeepSeek 等）——
     # 不发 X-DashScope-WorkSpace header、不发 enable_thinking extra_body
-    #（那是百炼专有参数，发给别的供应商轻则被忽略、重则 400）。
+    # （那是百炼专有参数，发给别的供应商轻则被忽略、重则 400）。
     is_dashscope: bool = True
 
     def __hash__(self) -> int:
@@ -75,11 +76,19 @@ class LlmSettings:
         # __hash__ 被置 None ⇒ 一旦有人传 settings 实例就 TypeError: unhashable。
         # 生产一直用默认 settings=None 调用所以从未踩到——首个按 settings 调用的
         # 单元测试把它暴露了。dict 字段（extra_headers）转为排序元组参与哈希。
-        return hash((
-            self.api_key, self.base_url, self.model, self.enable_thinking,
-            self.temperature, self.max_tokens, self.timeout, self.is_dashscope,
-            tuple(sorted(self.extra_headers.items())),
-        ))
+        return hash(
+            (
+                self.api_key,
+                self.base_url,
+                self.model,
+                self.enable_thinking,
+                self.temperature,
+                self.max_tokens,
+                self.timeout,
+                self.is_dashscope,
+                tuple(sorted(self.extra_headers.items())),
+            )
+        )
 
     def describe(self) -> str:
         """可安全打印的摘要（**不含 api_key**）。"""
@@ -241,9 +250,7 @@ def build_chat_model(settings: LlmSettings | None = None, streaming: bool = True
     try:
         from langchain_openai import ChatOpenAI
     except ImportError as exc:  # pragma: no cover - 环境缺依赖时的显式提示
-        raise ImportError(
-            "缺少 langchain-openai —— 请先安装 agent 服务依赖（见 agent/pyproject.toml）"
-        ) from exc
+        raise ImportError("缺少 langchain-openai —— 请先安装 agent 服务依赖（见 agent/pyproject.toml）") from exc
 
     logger.info("模型接入：%s", settings.describe())
     # enable_thinking 是百炼专有参数（extra_body），只对 DashScope 发；
@@ -257,8 +264,6 @@ def build_chat_model(settings: LlmSettings | None = None, streaming: bool = True
         timeout=settings.timeout,
         streaming=streaming,
         # 官方示例写法：推理开关放在 extra_body.enable_thinking
-        extra_body=(
-            {"enable_thinking": settings.enable_thinking} if settings.is_dashscope else None
-        ),
+        extra_body=({"enable_thinking": settings.enable_thinking} if settings.is_dashscope else None),
         default_headers=settings.extra_headers or None,
     )

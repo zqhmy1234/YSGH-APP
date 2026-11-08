@@ -25,6 +25,7 @@
 本机该值已配置 ⇒ 请求必须带 `X-Agent-Token`，否则 401。测试从环境取，
 不硬编码、不打印。
 """
+
 from __future__ import annotations
 
 import os
@@ -58,8 +59,7 @@ def test_memories_with_unknown_category_returns_empty_not_500(client, auth_heade
     · 返回全部记忆 —— 退化成不过滤，把别的分类的记忆当成该分类返回（假数据）
     · 返回空集 —— 分类不存在 ⇒ 该分类下必然无数据
     """
-    r = client.get("/api/memories", params={"category": "绝对不存在的分类zz"},
-                   headers=auth_headers)
+    r = client.get("/api/memories", params={"category": "绝对不存在的分类zz"}, headers=auth_headers)
     assert r.status_code == 200, f"修复前这里是 500：{r.text[:200]}"
     body = r.json()
     assert body["success"] is True
@@ -78,23 +78,30 @@ def test_memories_with_real_category_filters(client, auth_headers):
     assert cat_id is not None, "memory_categories 里应有「事件」（SOP 初始枚举）"
 
     marker = "api_routes_probe_marker_20261006"
-    inserted = client_db.table("memories").insert({
-        "user_id": uid, "content": marker, "content_format": "text",
-        "mood": "开心", "category_id": cat_id,
-    }).execute()
+    inserted = (
+        client_db.table("memories")
+        .insert(
+            {
+                "user_id": uid,
+                "content": marker,
+                "content_format": "text",
+                "mood": "开心",
+                "category_id": cat_id,
+            }
+        )
+        .execute()
+    )
     try:
         r = client.get("/api/memories", params={"category": "事件"}, headers=auth_headers)
         assert r.status_code == 200
         items = r.json()["data"]
-        assert any(item["content"] == marker for item in items), (
-            "插入该分类的记忆却没被过滤出来 ⇒ 过滤方向/键名有误"
-        )
+        assert any(item["content"] == marker for item in items), "插入该分类的记忆却没被过滤出来 ⇒ 过滤方向/键名有误"
         # 反向：换个分类查不到这条
         r2 = client.get("/api/memories", params={"category": "地点"}, headers=auth_headers)
         assert r2.status_code == 200
         assert not any(item["content"] == marker for item in r2.json()["data"])
     finally:
-        for row in (inserted.data or []):
+        for row in inserted.data or []:
             client_db.table("memories").delete().eq("id", row["id"]).execute()
 
 

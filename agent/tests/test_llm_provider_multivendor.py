@@ -8,7 +8,9 @@
 3. 两个 key 都缺 ⇒ LlmConfigError（宁可启动即失败）
 4. build_chat_model：enable_thinking extra_body 仅百炼路径携带
 """
+
 import pytest
+
 from llm_provider import (
     PUBLIC_BASE_URL,
     LlmConfigError,
@@ -26,9 +28,14 @@ def _clean_llm_env(monkeypatch):
     ChatOpenAI 实例，用例自造的 settings 会留在缓存里污染后续用例。
     """
     for var in (
-        "DASHSCOPE_API_KEY", "DASHSCOPE_WORKSPACE_ID", "DASHSCOPE_REGION",
-        "DASHSCOPE_BASE_URL", "AGENT_LLM_API_KEY", "AGENT_LLM_BASE_URL",
-        "AGENT_LLM_MODEL", "AGENT_ENABLE_THINKING",
+        "DASHSCOPE_API_KEY",
+        "DASHSCOPE_WORKSPACE_ID",
+        "DASHSCOPE_REGION",
+        "DASHSCOPE_BASE_URL",
+        "AGENT_LLM_API_KEY",
+        "AGENT_LLM_BASE_URL",
+        "AGENT_LLM_MODEL",
+        "AGENT_ENABLE_THINKING",
     ):
         monkeypatch.delenv(var, raising=False)
     reset_llm_cache()
@@ -87,12 +94,22 @@ def test_chat_model_extra_body_only_for_dashscope(monkeypatch, caplog):
     from llm_provider import LlmSettings
 
     dash = LlmSettings(
-        api_key="sk-x", base_url=PUBLIC_BASE_URL, model="qwen3.8-flash",
-        enable_thinking=True, temperature=0.7, max_tokens=2048, timeout=30,
+        api_key="sk-x",
+        base_url=PUBLIC_BASE_URL,
+        model="qwen3.8-flash",
+        enable_thinking=True,
+        temperature=0.7,
+        max_tokens=2048,
+        timeout=30,
     )
     generic = LlmSettings(
-        api_key="sk-x", base_url="https://api.deepseek.com/v1", model="deepseek-chat",
-        enable_thinking=True, temperature=0.7, max_tokens=2048, timeout=30,
+        api_key="sk-x",
+        base_url="https://api.deepseek.com/v1",
+        model="deepseek-chat",
+        enable_thinking=True,
+        temperature=0.7,
+        max_tokens=2048,
+        timeout=30,
         is_dashscope=False,
     )
     m1 = build_chat_model(dash)

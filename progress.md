@@ -842,3 +842,47 @@ ShareSheet（须真机验"保存到相册"）。
 - **发现**：缩略图/hero URL 按需签发（每次请求新签 24h）⇒「隔天裂图」场景在正常流中难自然出现。
 - **6.7** 🟡：@error 回落占位图代码在位（P2 E-5），场景构造移交真机/单测。
 - 进度：**55/76**（6.7 判代码级通过，不计数）。
+## 2026-11-01 · Agent 服务线 G0/G1 基线加固
+
+- 新建 `codex/agent-baseline-hardening` 分支，起点 `develop@f010d7f`；保留用户已有的
+  client manifest/config 与 release 目录改动，不混入本次 Agent 范围。
+- Agent 依赖修复：补 HTML 抽取真实需要的 `beautifulsoup4`/`lxml`，锁文件同步；补 Ruff
+  开发依赖并建立 Python 3.12 独立规则集。历史 142 项 Ruff 问题已清零，格式检查通过。
+- 新增隔离测试库初始化脚本 `agent/scripts/init_test_db.py`：拒绝非 test 库名，只建
+  Agent 三表，幂等写入七个分类种子。本地创建 `yishu_agent_test` 后初始化结果为
+  `tables=3/3 categories=7`。
+- `agent/tests` 当日基线：**194 passed / 1 warning**；警告是 LangGraph 1.x 的
+  `AgentStatePydantic` 弃用提示，不影响当前行为。`uv lock --check`、生产依赖导出、
+  `compileall` 均通过。
+- 新增 CI `agent-gate`：Python 3.12、uv 0.13.6、完整 Ruff、隔离 PostgreSQL、pytest
+  和 Dockerfile 真实构建；Dockerfile 同步钉住 uv 版本。
+- 启动收口：重写 `agent/README.md`，删除旧的 flow/5000 用法；PowerShell/POSIX 本地
+  脚本固定调用 `agent/.venv`。以专用测试库和显式占位模型配置启动成功，`/health`
+  返回 `status=ok / db_configured=true / auth_enabled=true / degradation.total=0`。
+- 静态检查同时修复真实问题：导出与“本周新增”改 aware UTC、异常链补 `from`、临时目录
+  去掉硬编码 `/tmp`、可选文档解析依赖改惰性加载。
+- 未完成：真实 Agent 模型 key 缺失，故 T1 未验；本机访问 Docker Hub 拉取
+  `python:3.12-slim` 超时，容器构建待 GitHub Actions 实跑；真机三项仍待设备证据。
+  详情见 `docs/Agent服务线基线加固_20261101.md`。
+- 仓库快速门禁 `scripts/review_agent.py` 退出码 0。
+- 用户提供独立 DeepSeek Key 后写入本机忽略的 `agent/.env`（未回显、未入库），
+  backend 与 Agent 同步生成随机共享 token。`probe_model.py` 真实调用成功。
+- 定位并修复 `scripts/dev/start_all.ps1` 混用 backend 虚拟环境启动 Agent 的缺陷：
+  原启动因 `langchain_core` 缺失直接失败；现分别选择 backend 与 `agent/.venv` Python，
+  并前置检查各自依赖。修正后全栈健康检查通过。
+- T1 真实验收：非流式 HTTP 200 / **5625ms**；流式 5 preview + done / **1483ms**；
+  DSML/tool_calls 标记未泄漏；真实工具调用 `get_recent_memories` 完整 started/done /
+  **3468ms**，无资料时正确拒编；会话历史回读 user+assistant 共 2 条。
+
+## 2026-11-01 · 冷启动旧 token 上传修复
+
+- 用标准基座可控复现过期 access token 冷启动：页面请求收到 401，单飞 refresh 成功；
+  相册上传同时开始，原实现因上传 init 再撞 401 产生 8 张失败。
+- 根因不止认证：`formPost` 错用 `ensureLogin`；上传状态查询绕过 `rawRequest`；
+  Android 标准基座对 MediaStore 绝对路径要求 `file://` 包装，否则 `uni.uploadFile`
+  可能永不回调。multipart 另补 JS 看门狗与非阻塞超时落定。
+- 修复后再次只置无效 access token、保留 refresh token 并回退相册游标：19 张照片
+  自动上传完成，数据库 `upload_tasks=19 completed / upload_chunks=19 / contents=19`；
+  端侧聚合 1 个 L1 事件并成功上云 `accepted=1`，真机失败横幅消失。
+- 完整证据见 `docs/parallel-dev-收尾/39_C端冷启动上传修复记录_20261101.md`。
+  104 发行包冷启动仍待打包验证；测试照片内容未擅自删除。

@@ -37,6 +37,7 @@
 需要真实 Postgres（连不上则 skip，不产生假红——本机 Docker 容器经常没起）。
 不检查数据，只检查结构。
 """
+
 from __future__ import annotations
 
 import re
@@ -101,9 +102,7 @@ def test_idempotency_index_exists_in_db(inspector):
     （实测 12 线程并发写同内容只落 1 行）。它若消失，并发重复会**无声回归**。
     """
     idx = {i["name"]: i for i in inspector.get_indexes("memories")}
-    assert "uq_memories_user_hash_bucket" in idx, (
-        "memories 上缺幂等唯一索引 ⇒ 判重 TOCTOU 回归（并发下同内容会写多条）"
-    )
+    assert "uq_memories_user_hash_bucket" in idx, "memories 上缺幂等唯一索引 ⇒ 判重 TOCTOU 回归（并发下同内容会写多条）"
     cols = list(idx["uq_memories_user_hash_bucket"]["column_names"])
     assert cols == ["user_id", "content_hash", "dedup_bucket"], f"索引列序漂移：{cols}"
 
@@ -115,9 +114,7 @@ def test_idempotency_index_declared_in_agent_orm():
     `--autogenerate` 会生成 `DROP INDEX`。
     """
     idx = {i.name for i in AgentBase.metadata.tables["memories"].indexes}
-    assert "uq_memories_user_hash_bucket" in idx, (
-        "agent ORM 未声明幂等索引 ⇒ autogenerate 会生成 DROP INDEX"
-    )
+    assert "uq_memories_user_hash_bucket" in idx, "agent ORM 未声明幂等索引 ⇒ autogenerate 会生成 DROP INDEX"
 
 
 def test_backend_mirror_model_stays_in_sync():
@@ -137,7 +134,7 @@ def test_backend_mirror_model_stays_in_sync():
     if not backend_file.exists():
         if (repo_root / "backend").is_dir():
             pytest.fail(f"仓库有 backend/ 但找不到镜像模型 {BACKEND_MODEL_FILE} —— 守卫失效，请核对路径")
-        pytest.skip(f"本仓没有 backend/（部署形态不同），跳过后端镜像对拍")
+        pytest.skip("本仓没有 backend/（部署形态不同），跳过后端镜像对拍")
     text = backend_file.read_text(encoding="utf-8")
 
     def _declared_cols(cls_name: str) -> set[str]:
@@ -148,7 +145,7 @@ def test_backend_mirror_model_stays_in_sync():
         assert m, f"backend 模型里找不到 class {cls_name}"
         start = m.start()
         end = text.find("\nclass ", start + 1)
-        body = text[start:end if end > 0 else len(text)]
+        body = text[start : end if end > 0 else len(text)]
         cols: set[str] = set()
         for line in body.splitlines():
             stripped = line.strip()

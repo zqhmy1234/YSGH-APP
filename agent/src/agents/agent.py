@@ -2,6 +2,7 @@
 忆光 - 个人AI记忆助手
 帮助用户记录、整理、搜索和管理个人生活碎片
 """
+
 import json
 import logging
 import os
@@ -106,11 +107,8 @@ def handle_tool_errors(request, handler):
             # "异常原文只进日志不进响应"。两处口径必须一致。
             # 只给**异常类型名**：足够让模型区分「参数非法 / 无权限 / DB 故障」
             # 并给出不同反应，又不带任何内部信息；细节已由上面 tool_error 落盘。
-            content=(
-                f"操作遇到问题（{type(e).__name__}）。"
-                "请检查入参是否合法后重试；若反复出现，请告知用户稍后再试。"
-            ),
-            tool_call_id=request.tool_call["id"]
+            content=(f"操作遇到问题（{type(e).__name__}）。请检查入参是否合法后重试；若反复出现，请告知用户稍后再试。"),
+            tool_call_id=request.tool_call["id"],
         )
 
     from yishu.observability import log_event
@@ -200,7 +198,7 @@ def build_agent(ctx=None):
     作为缓存键——改了 prompt 会自动失效重建，改了采样参数则需显式
     `reset_agent_cache()`（因为 `load_llm_settings` 自己带 lru_cache）。
     """
-    global _AGENT_CACHE  # noqa: PLW0603 —— 单例缓存的标准写法
+    global _AGENT_CACHE
     config_path = Path(__file__).resolve().parents[2] / LLM_CONFIG
     mtime = config_path.stat().st_mtime if config_path.exists() else 0.0
 
@@ -242,7 +240,7 @@ def reset_agent_cache() -> None:
 
     `build_chat_model` 自身带 lru_cache，只清 agent 不够——模型客户端也要重建。
     """
-    global _AGENT_CACHE  # noqa: PLW0603 —— 单例缓存的标准写法
+    global _AGENT_CACHE
     _AGENT_CACHE = None
     try:
         from llm_provider import reset_llm_cache
@@ -260,7 +258,7 @@ def build_agent_no_tools(ctx=None):
     16~28 次工具（写库副作用 + 数十秒）。无工具重试把成本从「一次完整
     agent 循环」降到「一次纯文本生成」，且**副作用归零**。
     """
-    global _AGENT_NO_TOOLS  # noqa: PLW0603 —— 单例缓存的标准写法
+    global _AGENT_NO_TOOLS
     if _AGENT_NO_TOOLS is not None:
         return _AGENT_NO_TOOLS
 
@@ -446,5 +444,9 @@ def heal_dangling_tool_calls(agent, config) -> int:
             dangling=len(patch),
         )
         return 0
-    log_event("checkpoint_healed", dangling=len(patch), thread_id=str(config.get("configurable", {}).get("thread_id", ""))[:40])
+    log_event(
+        "checkpoint_healed",
+        dangling=len(patch),
+        thread_id=str(config.get("configurable", {}).get("thread_id", ""))[:40],
+    )
     return len(patch)

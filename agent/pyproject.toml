@@ -21,6 +21,10 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.0,<4",
     "psycopg[binary]>=3.3,<4",
     "psycopg-pool>=3.3,<4",
+    # yishu.fetch 的 HTML 正文抽取是运行时能力，不是可选测试依赖。
+    # 缺失时链接抓取会在运行期返回 500（tests/test_fetch_ssrf.py 实测）。
+    "beautifulsoup4>=4.13,<5",
+    "lxml>=6,<7",
 ]
 
 # ── 依赖瘦身记录（2026-10-06，删前逐个核实过全仓 0 使用点）──
@@ -57,7 +61,36 @@ explicit = true
 dev = [
     "pytest",
     "pytest-asyncio>=0.23,<1",
+    "ruff==0.16.8",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "DTZ", "BLE", "PLW"]
+ignore = [
+    "B008",
+    "BLE001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"scripts/probe_model.py" = ["E402"]  # must load the target env before importing provider settings
+"src/main.py" = ["E402"]  # intentionally loads agent/.env before importing modules that snapshot it
+"src/agents/agent.py" = ["PLW0603"]  # process-wide immutable-ish graph singletons
+"src/storage/database/db.py" = ["PLW0603"]  # process-wide engine/session singletons
+"src/storage/memory/memory_saver.py" = ["PLW0602", "PLW0603"]  # process-wide checkpointer singleton
+"src/yishu/errors.py" = ["PLW0603"]  # error-code registry singleton
+"src/llm_provider.py" = ["S105"]  # URL/key-prefix constants are not credentials
+"tests/test_api_routes_category_and_leak.py" = ["S608"]  # deliberately supplies malformed SQL text
+"tests/test_fetch_ssrf.py" = ["S104"]  # local listener fixture for SSRF tests
+"tests/test_local_client.py" = ["E402"]  # sys.path bootstrap precedes imports
+"tests/test_memory_resilience.py" = ["S608"]  # deliberately supplies malformed SQL text
+"tests/test_perf_isolation.py" = ["DTZ001"]  # naive timestamp exercises legacy-data handling
+"tests/test_security_hardening.py" = ["PLW0108"]  # explicit lambda asserts callable handling

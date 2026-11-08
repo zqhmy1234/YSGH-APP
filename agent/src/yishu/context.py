@@ -8,6 +8,7 @@
 为什么用 contextvar：与上游同为**协程/线程安全的隐式传递**；但本服务**不把 user_id 当可信输入**——
 它由我们后端反代时注入（JWT → 可信 user_id），见 AG5。
 """
+
 from __future__ import annotations
 
 import contextvars
@@ -28,9 +29,7 @@ class Context:
         return self.extra.get(key, default)
 
 
-request_context: contextvars.ContextVar[Context | None] = contextvars.ContextVar(
-    "yishu_request_context", default=None
-)
+request_context: contextvars.ContextVar[Context | None] = contextvars.ContextVar("yishu_request_context", default=None)
 
 
 def new_context(**kwargs: Any) -> Context:

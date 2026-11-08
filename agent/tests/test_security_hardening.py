@@ -15,6 +15,7 @@
 真正的出网面是 `yishu/fetch.py`，其SSRF 防护由
 `test_memory_resilience.py` 与 fetch 自身的重定向逐跳复校验覆盖。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -54,9 +55,15 @@ def test_sensitive_guard_not_bypassed_by_id_suffix(key: str):
 
 @pytest.mark.parametrize(
     "key",
-    ["user_id", "thread_id", "memory_id", "msg_len", "latency_ms",
-     # W1 镜像链路要对账 contents 行的 UUID，content_id 必须可记
-     "content_id"],
+    [
+        "user_id",
+        "thread_id",
+        "memory_id",
+        "msg_len",
+        "latency_ms",
+        # W1 镜像链路要对账 contents 行的 UUID，content_id 必须可记
+        "content_id",
+    ],
 )
 def test_safe_identifier_and_quantifier_fields_allowed(key: str):
     """正常的标识符/量词字段不能被误伤（误伤会逼调用方吞掉异常→埋点静默失效）。
@@ -69,9 +76,7 @@ def test_safe_identifier_and_quantifier_fields_allowed(key: str):
     log_event("probe", **{key: "x" if key.endswith(("id", "ids")) else 1})
 
 
-@pytest.mark.parametrize(
-    "key", ["secret_at", "api_key_at", "password_count", "secret_ms", "authorization_len"]
-)
+@pytest.mark.parametrize("key", ["secret_at", "api_key_at", "password_count", "secret_ms", "authorization_len"])
 def test_quantifier_suffix_fields_are_exempt_by_construction(key: str):
     """量词后缀豁免是**语义正确**的，不是绕过。
 
@@ -93,8 +98,9 @@ def test_content_len_must_not_be_rejected():
     log_event("save_memory_dedup_miss", content_len=42, window_min=10, rows_in_window=3)
 
 
-@pytest.mark.parametrize("key", ["secret", "secret_value", "password", "api_key",
-                                 "token_value", "prompt", "raw", "authorization"])
+@pytest.mark.parametrize(
+    "key", ["secret", "secret_value", "password", "api_key", "token_value", "prompt", "raw", "authorization"]
+)
 def test_sensitive_words_are_still_rejected(key: str):
     """量词豁免不得扩大到整个敏感词表。"""
     with pytest.raises(SensitiveFieldError):
@@ -192,6 +198,7 @@ def test_collection_search_uses_postgrest_wildcard(monkeypatch):
         def execute(self):
             class _R:
                 data = []
+
             return _R()
 
     class _T:

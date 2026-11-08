@@ -21,11 +21,13 @@
 4. 依赖与配置齐备时预检放行（不能把正常路径一并打死）
 5. 内部异常不再以 `str(e)` 形式进入 LLM 上下文
 """
+
 from __future__ import annotations
 
 import json
 
 import pytest
+
 from tools import url_fetch_tools as uft
 
 
@@ -53,6 +55,7 @@ def test_export_fails_fast_at_entry_without_touching_db(no_coze_sdk, monkeypatch
     （更糟）在用户没有任何收藏时返回"没有可导出的内容"——那是个**假成功**，
     用户会以为导出只是内容为空，而真实原因是功能压根没接上。
     """
+
     def must_not_be_called():
         raise AssertionError("预检未生效：仍然初始化了 DB 客户端")
 
@@ -167,9 +170,7 @@ def test_internal_exception_does_not_leak_str_exc(monkeypatch):
 
     class _Boom:
         def __init__(self, **_kw):
-            raise RuntimeError(
-                "postgresql+psycopg://user:hunter2@10.0.0.5:5432/yishu 连接失败"
-            )
+            raise RuntimeError("postgresql+psycopg://user:hunter2@10.0.0.5:5432/yishu 连接失败")
 
     sub.S3SyncStorage = _Boom
     pkg.s3 = sub

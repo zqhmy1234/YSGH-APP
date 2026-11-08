@@ -18,6 +18,7 @@
 
 降噪策略不变：`httpx`/`httpcore`/`urllib3` 默认降到 WARNING。
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -64,7 +65,7 @@ def _build_formatter() -> logging.Formatter:
                 record.asctime = self.formatTime(record, self.datefmt)
             return s if (s := super().format(record)) else ""
 
-    return _RidFormatter(base._style._fmt, datefmt=base.datefmt)  # noqa: SLF001
+    return _RidFormatter(base._style._fmt, datefmt=base.datefmt)
 
 
 def setup_logging(level: str | None = None) -> None:

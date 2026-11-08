@@ -7,6 +7,7 @@ HTTP 状态映射）。本服务不需要平台错误码，但**需要同一件�
 刻意保留 "retryable" 概念：上游用它区分"该退避重试"与"该立刻失败"，
 本服务在调用百炼/抓取时同样需要（见 `yishu/fetch.py`）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,8 +15,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ClassifiedError:
-    kind: str          # config | auth | rate_limit | timeout | upstream | bad_input | internal
-    http_status: int   # 建议的响应码
+    kind: str  # config | auth | rate_limit | timeout | upstream | bad_input | internal
+    http_status: int  # 建议的响应码
     retryable: bool
 
 

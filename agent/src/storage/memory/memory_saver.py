@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from typing import Optional, Union
+from typing import Optional
 
 import psycopg
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -76,12 +76,12 @@ def _configure_pool_conn(conn: psycopg.Connection) -> None:
 class MemoryManager:
     """Memory Manager 单例类"""
 
-    _instance: Optional['MemoryManager'] = None
-    _checkpointer: Optional[Union[PostgresSaver, MemorySaver]] = None
+    _instance: Optional["MemoryManager"] = None
+    _checkpointer: PostgresSaver | MemorySaver | None = None
     # 2026-10-05：由「单条长驻连接」改为「同步连接池」。
     # 原先只有 `_conn`（单连接）且永不重建 —— DB 重启或网络抖动一次后，
     # 进程生命周期内再也不重连，对话记忆静默持续失败（见 get_checkpointer）。
-    _pool: Optional[ConnectionPool] = None
+    _pool: ConnectionPool | None = None
     _setup_done: bool = False
 
     def __new__(cls):
@@ -165,7 +165,7 @@ class MemoryManager:
             logger.warning(f"Failed to setup schema/tables: {e}")
             return False
 
-    def _get_db_url_safe(self) -> Optional[str]:
+    def _get_db_url_safe(self) -> str | None:
         """安全获取 db_url，失败时返回 None
 
         规范化在此收口：`get_db_url()` 返回的是 **SQLAlchemy 形态**（给 `db.py` 的
@@ -173,6 +173,7 @@ class MemoryManager:
         """
         try:
             from storage.database.db import get_db_url
+
             db_url = get_db_url()
             if db_url and db_url.strip():
                 return as_native_psycopg_url(db_url)
@@ -190,8 +191,7 @@ class MemoryManager:
         永久失忆且不可恢复」）。返回的实例由调用方使用，不进缓存。
         """
         logger.warning(
-            "Using MemorySaver as fallback checkpointer "
-            "(对话上下文本次可用，但重启后不保留——多轮上下文实际未持久化)"
+            "Using MemorySaver as fallback checkpointer (对话上下文本次可用，但重启后不保留——多轮上下文实际未持久化)"
         )
         return MemorySaver()
 
@@ -292,10 +292,11 @@ class MemoryManager:
                 f"pool={stats.get('pool_size', '?')}/{stats.get('pool_max', '?')}"
                 f" lost={stats.get('connections_lost', 0)}"
             )
-        except Exception:  # noqa: BLE001,S110 —— 统计取不到不该让/health 500
+        except Exception:  # noqa: BLE001 —— 统计取不到不该让/health 500
             return "pool=?"
 
-_memory_manager: Optional[MemoryManager] = None
+
+_memory_manager: MemoryManager | None = None
 
 
 def get_memory_saver() -> BaseCheckpointSaver:

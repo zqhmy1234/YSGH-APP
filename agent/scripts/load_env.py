@@ -10,6 +10,7 @@
   eval $(python scripts/load_env.py)     # bash/Linux
   python scripts/load_env.py             # 仅打印（调试用）
 """
+
 from __future__ import annotations
 
 import os
@@ -30,8 +31,7 @@ def _mask(key: str) -> str:
 def main() -> int:
     if not ENV_FILE.exists():
         print(
-            f"# 缺少 {ENV_FILE} —— 请先 `cp {ENV_EXAMPLE.name} .env` 并填值"
-            f"（模板：{ENV_EXAMPLE}）",
+            f"# 缺少 {ENV_FILE} —— 请先 `cp {ENV_EXAMPLE.name} .env` 并填值（模板：{ENV_EXAMPLE}）",
             file=sys.stderr,
         )
         return 1

@@ -17,7 +17,7 @@ try:
 
     load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
 except Exception:
-    pass
+    logger.debug("无法预加载 agent/.env，将继续使用进程环境变量", exc_info=True)
 
 
 def get_db_url() -> str:
@@ -30,12 +30,13 @@ def get_db_url() -> str:
     """
     url = (os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL") or "").strip()
     if not url:
-        raise RuntimeError(
-            "未配置 DATABASE_URL（agent/.env）—— 记忆三表在我们自己的 Postgres，连接串必填"
-        )
+        raise RuntimeError("未配置 DATABASE_URL（agent/.env）—— 记忆三表在我们自己的 Postgres，连接串必填")
     return url
+
+
 _engine = None
 _SessionLocal = None
+
 
 def _create_engine_with_retry():
     url = get_db_url()
@@ -70,11 +71,13 @@ def _create_engine_with_retry():
     logger.error(f"Database connection failed after {MAX_RETRY_TIME}s: {last_error}")
     raise last_error  # pyright: ignore [reportGeneralTypeIssues]
 
+
 def get_engine():
     global _engine
     if _engine is None:
         _engine = _create_engine_with_retry()
     return _engine
+
 
 def get_sessionmaker():
     global _SessionLocal
@@ -82,12 +85,14 @@ def get_sessionmaker():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
     return _SessionLocal
 
+
 def get_session():
     return get_sessionmaker()()
+
 
 __all__ = [
     "get_db_url",
     "get_engine",
-    "get_sessionmaker",
     "get_session",
+    "get_sessionmaker",
 ]

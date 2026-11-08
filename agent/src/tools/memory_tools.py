@@ -2,17 +2,19 @@
 忆光 - 记忆管理工具
 提供记忆的存储、搜索、分类等功能
 """
+
 import hashlib
 import json
 import logging
 import os
 import re
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from langchain.tools import tool
+
 from storage.database.supabase_client import get_supabase_client
 from tools.tag_rules import coerce_str_list, validate_collection_tags, validate_memory_tags
 from yishu import degradation
@@ -180,7 +182,7 @@ def _find_existing_memory(client, user_id: str, content: str) -> tuple[Any, str]
     if window <= 0 or len(new_norm) < DEDUP_MIN_PREFIX:
         return None, ""
 
-    since = (datetime.now(timezone.utc) - timedelta(minutes=window)).isoformat()
+    since = (datetime.now(UTC) - timedelta(minutes=window)).isoformat()
     recent = getattr(
         client.table("memories")
         .select("id, content")
@@ -218,8 +220,7 @@ def _find_existing_memory(client, user_id: str, content: str) -> tuple[Any, str]
     return None, ""
 
 
-def _find_by_idempotency_key(client, user_id: str, content_hash: str | None,
-                             dedup_bucket: int | None) -> Any:
+def _find_by_idempotency_key(client, user_id: str, content_hash: str | None, dedup_bucket: int | None) -> Any:
     """按幂等键回查既有行 id（`ON CONFLICT DO NOTHING` 命中后用它拿 id）。
 
     为什么必须回查而不是直接说"重复了"：调用方（LLM）需要 `memory_id` 才能
@@ -264,15 +265,21 @@ def _parse_content(content: Any) -> str:
         if content and isinstance(content[0], str):
             return " ".join(content)
         else:
-            return " ".join(item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text")
+            return " ".join(
+                item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text"
+            )
     return str(content)
 
 
-def _find_related_memories(client, user_id: str, exclude_id: int,
-                           category: str | None = None,
-                           mood: str | None = None,
-                           topics: list[str] | None = None,
-                           limit: int = 3) -> list[dict[str, Any]]:
+def _find_related_memories(
+    client,
+    user_id: str,
+    exclude_id: int,
+    category: str | None = None,
+    mood: str | None = None,
+    topics: list[str] | None = None,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
     """搜索与当前记忆相关的历史记忆（按分类、情绪、主题匹配）
 
     2026-10-04 修复（性能 P0，根因）：
@@ -290,19 +297,16 @@ def _find_related_memories(client, user_id: str, exclude_id: int,
     """
     related: list[dict[str, Any]] = []
     try:
-        query = client.table("memories").select(
-            "id, content, mood, location, topics, created_at, category_id"
-        ).eq("user_id", user_id).neq("id", exclude_id)
+        query = (
+            client.table("memories")
+            .select("id, content, mood, location, topics, created_at, category_id")
+            .eq("user_id", user_id)
+            .neq("id", exclude_id)
+        )
 
         if category:
             # 分类名 → id（一次极小的查询），再按 category_id 过滤
-            cat_resp = (
-                client.table("memory_categories")
-                .select("id")
-                .eq("name", category)
-                .limit(1)
-                .execute()
-            )
+            cat_resp = client.table("memory_categories").select("id").eq("name", category).limit(1).execute()
             cat_rows = getattr(cat_resp, "data", None)
             cat_id = cat_rows[0].get("id") if cat_rows else None
             if cat_id is not None:
@@ -345,15 +349,17 @@ def _find_related_memories(client, user_id: str, exclude_id: int,
         for item in related[:limit]:
             cat_data = item.get("memory_categories")
             cat_name = cat_data.get("name") if isinstance(cat_data, dict) else None
-            result.append({
-                "id": item.get("id"),
-                "content": item.get("content"),
-                "mood": item.get("mood"),
-                "topics": item.get("topics") or [],
-                "category": cat_name,
-                "location": item.get("location"),
-                "created_at": item.get("created_at"),
-            })
+            result.append(
+                {
+                    "id": item.get("id"),
+                    "content": item.get("content"),
+                    "mood": item.get("mood"),
+                    "topics": item.get("topics") or [],
+                    "category": cat_name,
+                    "location": item.get("location"),
+                    "created_at": item.get("created_at"),
+                }
+            )
         return _jsonable(result)
     except Exception as e:
         # 2026-10-04：这个 except 曾经让「PostgREST 嵌入语法不被支持」这个硬错误
@@ -379,9 +385,7 @@ def _category_id(client, name: str) -> Any:
     迁移前用 PostgREST 关联语法跨表过滤，迁移后失效 ⇒ 按 id 过滤才可靠。
     """
     try:
-        resp = (
-            client.table("memory_categories").select("id").eq("name", name).limit(1).execute()
-        )
+        resp = client.table("memory_categories").select("id").eq("name", name).limit(1).execute()
         rows = getattr(resp, "data", None)
         return rows[0].get("id") if rows else None
     except Exception as exc:  # noqa: BLE001 —— 取 id 失败不该阻断查询
@@ -478,14 +482,16 @@ def _backend_rag_search(query: str, limit: int) -> list[dict[str, Any]]:
             # SearchHit 字段：content_id/content_type/text/taken_at/place/score
             # （backend/app/schemas/search.py:19-31）。**没有**情绪/标签——agent
             # 需要时拿 content_id 二次补查，本函数不为此扩 backend 契约。
-            out.append({
-                "source": "app_contents",
-                "id": hit.get("content_id"),
-                "content": hit.get("text"),
-                "taken_at": hit.get("taken_at"),
-                "location": hit.get("place"),
-                "score": hit.get("score"),
-            })
+            out.append(
+                {
+                    "source": "app_contents",
+                    "id": hit.get("content_id"),
+                    "content": hit.get("text"),
+                    "taken_at": hit.get("taken_at"),
+                    "location": hit.get("place"),
+                    "score": hit.get("score"),
+                }
+            )
         from yishu.observability import log_event
 
         log_event("backend_search_ok", hits=len(out), latency_ms=payload.get("latency_ms"))
@@ -524,9 +530,16 @@ def _backend_base_and_token() -> tuple[str, str]:
     return base, token
 
 
-def _mirror_memory_to_app(memory_id: Any, content: str, *, mood: str | None,
-                          topics: list[str] | None, people: list[str] | None,
-                          location: str | None, category: str | None) -> None:
+def _mirror_memory_to_app(
+    memory_id: Any,
+    content: str,
+    *,
+    mood: str | None,
+    topics: list[str] | None,
+    people: list[str] | None,
+    location: str | None,
+    category: str | None,
+) -> None:
     """把 agent 记忆**镜像**成 App 的正式 contents（W1 记忆域打通）。
 
     ## 为什么必须镜像（否则 Agent 的记忆是假的）
@@ -702,16 +715,23 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _find_related_collections(client, user_id: str, exclude_id: int,
-                               topics: list[str] | None = None,
-                               content_type: str | None = None,
-                               limit: int = 3) -> list[dict[str, Any]]:
+def _find_related_collections(
+    client,
+    user_id: str,
+    exclude_id: int,
+    topics: list[str] | None = None,
+    content_type: str | None = None,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
     """搜索与当前收藏相关的历史收藏（按主题、类型匹配）"""
     related: list[dict[str, Any]] = []
     try:
-        query = client.table("knowledge_collections").select(
-            "id, title, content_type, topics, created_at"
-        ).eq("user_id", user_id).neq("id", exclude_id)
+        query = (
+            client.table("knowledge_collections")
+            .select("id, title, content_type, topics, created_at")
+            .eq("user_id", user_id)
+            .neq("id", exclude_id)
+        )
 
         if content_type:
             query = query.eq("content_type", content_type)
@@ -742,13 +762,15 @@ def _find_related_collections(client, user_id: str, exclude_id: int,
         # 格式化输出
         result = []
         for item in related[:limit]:
-            result.append({
-                "id": item.get("id"),
-                "title": item.get("title") or "无标题",
-                "content_type": item.get("content_type"),
-                "topics": item.get("topics") or [],
-                "created_at": item.get("created_at"),
-            })
+            result.append(
+                {
+                    "id": item.get("id"),
+                    "title": item.get("title") or "无标题",
+                    "content_type": item.get("content_type"),
+                    "topics": item.get("topics") or [],
+                    "created_at": item.get("created_at"),
+                }
+            )
         return result
     except Exception as e:
         logger.warning(f"联想相关收藏失败: {e}")
@@ -763,7 +785,7 @@ def save_memory(
     topics: str | list[str] | None = None,
     location: str | None = None,
     people: str | list[str] | None = None,
-    content_format: str | None = None
+    content_format: str | None = None,
 ) -> str:
     """
     保存一条新的记忆到数据库中。
@@ -772,7 +794,8 @@ def save_memory(
         content: 记忆的原始内容（必填）
         category: 记忆分类（七选一）：情绪、事件、想法、灵感、人物、地点、待分类
         mood: 情绪状态（八选一）：开心、平静、感恩、期待、悲伤、焦虑、愤怒、疲惫
-        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、社交、兴趣、目标、生活、认知、其他
+        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、
+            社交、兴趣、目标、生活、认知、其他
         location: 相关地点（可选）
         people: 相关人物列表（可选）
         content_format: 内容形式：text、image、voice、link，默认text
@@ -826,13 +849,11 @@ def save_memory(
                     "success": True,
                     "duplicate": True,
                     "memory_id": existing_id,
-                    "message": (
-                        f"这条内容已经保存过了（ID: {existing_id}），无需重复保存。请直接回复用户。"
-                    ),
+                    "message": (f"这条内容已经保存过了（ID: {existing_id}），无需重复保存。请直接回复用户。"),
                 },
                 ensure_ascii=False,
             )
-    except Exception as exc:  # noqa: BLE001 —— 去重是优化，不该因它阻断正常保存
+    except Exception as exc:
         from yishu.observability import log_event
 
         # 隔离失败（缺 user_id）**必须重抛**：吞掉它会让审计日志显示成
@@ -848,7 +869,9 @@ def save_memory(
 
     # V3标签校验与归一化
     validated = validate_memory_tags(
-        category=category, mood=mood, content_format=content_format,
+        category=category,
+        mood=mood,
+        content_format=content_format,
     )
 
     # 构建记忆数据
@@ -898,14 +921,15 @@ def save_memory(
             # 这不是错误：回查那把幂等键对应的既有行并如实返回，语义与
             # 上面 Python 判重命中时完全一致（都是 success/duplicate）。
             existing = _find_by_idempotency_key(client, memory_data.get("user_id"), idem_hash, idem_bucket)
-            return json.dumps({
-                "success": True,
-                "duplicate": True,
-                "memory_id": existing,
-                "message": (
-                    f"这条内容已经保存过了（ID: {existing}），无需重复保存。请直接回复用户。"
-                ),
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "success": True,
+                    "duplicate": True,
+                    "memory_id": existing,
+                    "message": (f"这条内容已经保存过了（ID: {existing}），无需重复保存。请直接回复用户。"),
+                },
+                ensure_ascii=False,
+            )
         if response.data:
             response_list: list[dict[str, Any]] = response.data
             memory_id = response_list[0]["id"]
@@ -913,11 +937,13 @@ def save_memory(
 
             # 自动联想相关历史记忆
             related = _find_related_memories(
-                client, user_id, memory_id,
+                client,
+                user_id,
+                memory_id,
                 category=validated["category"],
                 mood=validated["mood"],
                 topics=topics,
-                limit=3
+                limit=3,
             )
 
             # ── W1 记忆域打通：镜像成 App 正式 contents ──
@@ -925,30 +951,42 @@ def save_memory(
             # （上面那行已 commit 到本地表；镜像属于增强）。
             try:
                 _mirror_memory_to_app(
-                    memory_id, content,
-                    mood=validated["mood"], topics=topics, people=people,
-                    location=location, category=validated["category"],
+                    memory_id,
+                    content,
+                    mood=validated["mood"],
+                    topics=topics,
+                    people=people,
+                    location=location,
+                    category=validated["category"],
                 )
             except Exception as exc:  # noqa: BLE001 —— 双保险
                 logger.warning("记忆镜像失败(不影响保存): %s", exc)
 
-            return json.dumps({
-                "success": True,
-                "memory_id": memory_id,
-                "message": f"记忆已成功保存，ID: {memory_id}",
-                "category": validated["category"],
-                "mood": validated["mood"],
-                "topics": topics or [],
-                "people": people,
-                "location": location,
-                "related_memories": related,
-                "_hint": "回复用户时展示：✅已保存、📝内容、🏷️分类、💭情绪、📌主题、👫同行(如有)、📍地点(如有)。如果有related_memories，自然地提及相关历史记忆，如「这让我想起你X月X日也记录过类似的事情～」。严禁展示内容形式(content_format)、memory_id。",
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "success": True,
+                    "memory_id": memory_id,
+                    "message": f"记忆已成功保存，ID: {memory_id}",
+                    "category": validated["category"],
+                    "mood": validated["mood"],
+                    "topics": topics or [],
+                    "people": people,
+                    "location": location,
+                    "related_memories": related,
+                    "_hint": (
+                        "回复用户时展示：✅已保存、📝内容、🏷️分类、💭情绪、📌主题、"
+                        "👫同行(如有)、📍地点(如有)。如果有related_memories，自然地提及"
+                        "相关历史记忆，如「这让我想起你X月X日也记录过类似的事情～」。"
+                        "严禁展示内容形式(content_format)、memory_id。"
+                    ),
+                },
+                ensure_ascii=False,
+            )
         else:
             return json.dumps({"success": False, "message": "保存失败，未返回数据"}, ensure_ascii=False)
     except APIError as e:
         logger.error(f"保存记忆失败: {e.message}")
-        raise Exception(f"保存记忆失败: {e.message}")
+        raise Exception(f"保存记忆失败: {e.message}") from e
 
 
 @tool
@@ -957,7 +995,7 @@ def search_memories(
     category: str | None = None,
     mood: str | None = None,
     topics: list[str] | None = None,
-    limit: int = 10
+    limit: int = 10,
 ) -> str:
     """
     搜索历史记忆。支持按关键词、分类、情绪、主题等条件筛选。
@@ -978,7 +1016,11 @@ def search_memories(
 
     try:
         # 构建查询（按 user_id 隔离）
-        db_query = client.table("memories").select("id, content, summary, mood, topics, location, people, created_at, memory_categories(name)").eq("user_id", _get_user_id())
+        db_query = (
+            client.table("memories")
+            .select("id, content, summary, mood, topics, location, people, created_at, memory_categories(name)")
+            .eq("user_id", _get_user_id())
+        )
 
         # 应用过滤条件
         if category:
@@ -1009,17 +1051,19 @@ def search_memories(
             if cat_data and isinstance(cat_data, dict):
                 category_name = cat_data.get("name")
 
-            memories.append({
-                "id": mem.get("id"),
-                "content": mem.get("content"),
-                "summary": mem.get("summary"),
-                "mood": mem.get("mood"),
-                "topics": mem.get("topics") or [],
-                "location": mem.get("location"),
-                "people": mem.get("people") or [],
-                "category": category_name,
-                "created_at": mem.get("created_at")
-            })
+            memories.append(
+                {
+                    "id": mem.get("id"),
+                    "content": mem.get("content"),
+                    "summary": mem.get("summary"),
+                    "mood": mem.get("mood"),
+                    "topics": mem.get("topics") or [],
+                    "location": mem.get("location"),
+                    "people": mem.get("people") or [],
+                    "category": category_name,
+                    "created_at": mem.get("created_at"),
+                }
+            )
 
         # 如果指定了主题，在Python层过滤（JSON数组包含匹配）
         if topics:
@@ -1056,20 +1100,24 @@ def search_memories(
             if merged_note:
                 memories = memories[: min(int(limit), 50)]
 
-        return json.dumps({
-            "success": True,
-            "count": len(memories),
-            "memories": memories,
-            "_hint": (
-                "若某条记忆的 source 是 app_contents，表示它在用户 App 里（图文/语音等），"
-                "提及来源时说「你在 App 里记录过」，不要说成是 AI 对话记录。"
-                if any(m.get("source") == "app_contents" for m in memories) else ""
-            ),
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": True,
+                "count": len(memories),
+                "memories": memories,
+                "_hint": (
+                    "若某条记忆的 source 是 app_contents，表示它在用户 App 里（图文/语音等），"
+                    "提及来源时说「你在 App 里记录过」，不要说成是 AI 对话记录。"
+                    if any(m.get("source") == "app_contents" for m in memories)
+                    else ""
+                ),
+            },
+            ensure_ascii=False,
+        )
 
     except APIError as e:
         logger.error(f"搜索记忆失败: {e.message}")
-        raise Exception(f"搜索记忆失败: {e.message}")
+        raise Exception(f"搜索记忆失败: {e.message}") from e
 
 
 @tool
@@ -1088,45 +1136,47 @@ def get_recent_memories(days: int = 7, limit: int = 20) -> str:
 
     try:
         from datetime import timedelta
+
         # 2026-10-06：改用 aware UTC。旧 `utcnow()` 已弃用，且它给的是 **naive**
         # datetime——而 `created_at` 列是 timestamptz（DateTime(True)），naive 值
         # 会被 PG 按会话时区解释，与 `_find_existing_memory` 里用的
         # `now(timezone.utc)` 两套口径并存，跨机器部署时是隐患。
-        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        response = client.table("memories") \
-            .select("id, content, summary, mood, topics, category_id, created_at, memory_categories(name)") \
-            .eq("user_id", _get_user_id()) \
-            .gte("created_at", cutoff_date) \
-            .order("created_at", desc=True) \
-            .limit(min(limit, 100)) \
+        response = (
+            client.table("memories")
+            .select("id, content, summary, mood, topics, category_id, created_at, memory_categories(name)")
+            .eq("user_id", _get_user_id())
+            .gte("created_at", cutoff_date)
+            .order("created_at", desc=True)
+            .limit(min(limit, 100))
             .execute()
+        )
 
         memories: list[dict[str, Any]] = []
         response_data: list[dict[str, Any]] = response.data if response.data else []
         for mem in response_data:
             cat_data = mem.get("memory_categories")
             cat_name = cat_data.get("name") if isinstance(cat_data, dict) else None
-            memories.append({
-                "id": mem.get("id"),
-                "content": mem.get("content"),
-                "summary": mem.get("summary"),
-                "mood": mem.get("mood"),
-                "topics": mem.get("topics") or [],
-                "category": cat_name,
-                "created_at": mem.get("created_at")
-            })
+            memories.append(
+                {
+                    "id": mem.get("id"),
+                    "content": mem.get("content"),
+                    "summary": mem.get("summary"),
+                    "mood": mem.get("mood"),
+                    "topics": mem.get("topics") or [],
+                    "category": cat_name,
+                    "created_at": mem.get("created_at"),
+                }
+            )
 
-        return json.dumps({
-            "success": True,
-            "period_days": days,
-            "count": len(memories),
-            "memories": memories
-        }, ensure_ascii=False)
+        return json.dumps(
+            {"success": True, "period_days": days, "count": len(memories), "memories": memories}, ensure_ascii=False
+        )
 
     except APIError as e:
         logger.error(f"获取最近记忆失败: {e.message}")
-        raise Exception(f"获取最近记忆失败: {e.message}")
+        raise Exception(f"获取最近记忆失败: {e.message}") from e
 
 
 @tool
@@ -1150,11 +1200,14 @@ def get_memory_stats() -> str:
         category_stats: list[dict[str, Any]] = []
         categories_data: list[dict[str, Any]] = categories_response.data if categories_response.data else []
         for cat in categories_data:
-            cat_memories = client.table("memories").select("id", count="exact").eq("user_id", user_id).eq("category_id", cat.get("id")).execute()
-            category_stats.append({
-                "name": cat.get("name"),
-                "count": cat_memories.count if cat_memories.count else 0
-            })
+            cat_memories = (
+                client.table("memories")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .eq("category_id", cat.get("id"))
+                .execute()
+            )
+            category_stats.append({"name": cat.get("name"), "count": cat_memories.count if cat_memories.count else 0})
 
         # 获取情绪分布（按用户隔离）
         mood_response = client.table("memories").select("mood").eq("user_id", user_id).execute()
@@ -1174,17 +1227,20 @@ def get_memory_stats() -> str:
                 for t in mem_topics:
                     topic_counts[t] = topic_counts.get(t, 0) + 1
 
-        return json.dumps({
-            "success": True,
-            "total_memories": total_count,
-            "categories": category_stats,
-            "mood_distribution": mood_counts,
-            "topic_distribution": topic_counts
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": True,
+                "total_memories": total_count,
+                "categories": category_stats,
+                "mood_distribution": mood_counts,
+                "topic_distribution": topic_counts,
+            },
+            ensure_ascii=False,
+        )
 
     except APIError as e:
         logger.error(f"获取统计信息失败: {e.message}")
-        raise Exception(f"获取统计信息失败: {e.message}")
+        raise Exception(f"获取统计信息失败: {e.message}") from e
 
 
 @tool
@@ -1202,26 +1258,22 @@ def update_memory_summary(memory_id: int, summary: str) -> str:
     client = _get_client()
 
     try:
-        response = client.table("memories") \
-            .update({"summary": summary}) \
-            .eq("id", memory_id) \
-            .eq("user_id", _get_user_id()) \
+        response = (
+            client.table("memories")
+            .update({"summary": summary})
+            .eq("id", memory_id)
+            .eq("user_id", _get_user_id())
             .execute()
+        )
 
         if response.data:
-            return json.dumps({
-                "success": True,
-                "message": f"记忆 {memory_id} 的摘要已更新"
-            }, ensure_ascii=False)
+            return json.dumps({"success": True, "message": f"记忆 {memory_id} 的摘要已更新"}, ensure_ascii=False)
         else:
-            return json.dumps({
-                "success": False,
-                "message": f"未找到ID为 {memory_id} 的记忆"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": f"未找到ID为 {memory_id} 的记忆"}, ensure_ascii=False)
 
     except APIError as e:
         logger.error(f"更新记忆摘要失败: {e.message}")
-        raise Exception(f"更新记忆摘要失败: {e.message}")
+        raise Exception(f"更新记忆摘要失败: {e.message}") from e
 
 
 @tool
@@ -1246,19 +1298,13 @@ def delete_memory(memory_id: int) -> str:
                 _unmirror_memory_from_app(memory_id)
             except Exception as exc:  # noqa: BLE001 —— 双保险
                 logger.warning("记忆镜像删除失败(不影响删除): %s", exc)
-            return json.dumps({
-                "success": True,
-                "message": f"记忆 {memory_id} 已删除"
-            }, ensure_ascii=False)
+            return json.dumps({"success": True, "message": f"记忆 {memory_id} 已删除"}, ensure_ascii=False)
         else:
-            return json.dumps({
-                "success": False,
-                "message": f"未找到ID为 {memory_id} 的记忆"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": f"未找到ID为 {memory_id} 的记忆"}, ensure_ascii=False)
 
     except APIError as e:
         logger.error(f"删除记忆失败: {e.message}")
-        raise Exception(f"删除记忆失败: {e.message}")
+        raise Exception(f"删除记忆失败: {e.message}") from e
 
 
 @tool
@@ -1271,7 +1317,7 @@ def save_knowledge_collection(
     topics: str | list[str] | None = None,
     image_url: str | None = None,
     mood: str | None = None,
-    content_format: str | None = None
+    content_format: str | None = None,
 ) -> str:
     """
     收藏一条外部信息到知识库。
@@ -1284,7 +1330,8 @@ def save_knowledge_collection(
         title: 标题（可选）
         author: 作者（可选）
         source: 来源，如URL、平台名、出处（可选）
-        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、社交、兴趣、目标、生活、认知、其他
+        topics: 主题领域（1~2个，十三选一）：学习、工作、健康、美食、情感、旅行、家庭、
+            社交、兴趣、目标、生活、认知、其他
         image_url: 图片URL（可选）
         mood: 情绪状态（可选，八选一）：开心、平静、感恩、期待、悲伤、焦虑、愤怒、疲惫
         content_format: 内容形式：text、image、voice、link，默认text
@@ -1299,8 +1346,10 @@ def save_knowledge_collection(
 
     # V3标签校验与归一化
     validated = validate_collection_tags(
-        content_type=content_type, topics=topics,
-        mood=mood, content_format=content_format,
+        content_type=content_type,
+        topics=topics,
+        mood=mood,
+        content_format=content_format,
     )
 
     try:
@@ -1333,19 +1382,21 @@ def save_knowledge_collection(
 
             # 自动联想相关历史收藏
             related_cols = _find_related_collections(
-                client, user_id, item_id,
-                topics=validated["topics"],
-                content_type=validated["content_type"],
-                limit=3
+                client, user_id, item_id, topics=validated["topics"], content_type=validated["content_type"], limit=3
             )
 
             # 同时联想相关个人记忆（按主题匹配）
             related_mems: list[dict[str, Any]] = []
             if validated["topics"]:
                 try:
-                    mem_resp = client.table("memories").select(
-                        "id, content, mood, topics, created_at, memory_categories(name)"
-                    ).eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
+                    mem_resp = (
+                        client.table("memories")
+                        .select("id, content, mood, topics, created_at, memory_categories(name)")
+                        .eq("user_id", user_id)
+                        .order("created_at", desc=True)
+                        .limit(20)
+                        .execute()
+                    )
                     raw_data = mem_resp.data if isinstance(mem_resp.data, list) else []
                     topic_set = set(validated["topics"])
                     related_mems: list[dict[str, Any]] = []
@@ -1359,48 +1410,51 @@ def save_knowledge_collection(
                             continue
                         cat_data = m.get("memory_categories")
                         cat_name = cat_data.get("name") if isinstance(cat_data, dict) else None
-                        related_mems.append({
-                            "id": m.get("id"),
-                            "content": m.get("content"),
-                            "mood": m.get("mood"),
-                            "topics": m_topics,
-                            "category": cat_name,
-                            "created_at": m.get("created_at"),
-                        })
+                        related_mems.append(
+                            {
+                                "id": m.get("id"),
+                                "content": m.get("content"),
+                                "mood": m.get("mood"),
+                                "topics": m_topics,
+                                "category": cat_name,
+                                "created_at": m.get("created_at"),
+                            }
+                        )
                         if len(related_mems) >= 3:
                             break
                 except Exception as e:
                     logger.warning(f"联想相关记忆失败: {e}")
 
-            return json.dumps({
-                "success": True,
-                "collection_id": item_id,
-                "message": f"知识收藏已成功保存，ID: {item_id}",
-                "content_type": validated["content_type"],
-                "title": title,
-                "topics": validated["topics"],
-                "mood": validated["mood"],
-                "related_collections": related_cols,
-                "related_memories": related_mems,
-                "_hint": "回复用户时展示：✅已收藏、📝标题、🏷️类型、📌主题、💭情绪(如有)。如果有related_memories或related_collections，自然地提及相关历史内容。严禁展示content_format、collection_id。",
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "success": True,
+                    "collection_id": item_id,
+                    "message": f"知识收藏已成功保存，ID: {item_id}",
+                    "content_type": validated["content_type"],
+                    "title": title,
+                    "topics": validated["topics"],
+                    "mood": validated["mood"],
+                    "related_collections": related_cols,
+                    "related_memories": related_mems,
+                    "_hint": (
+                        "回复用户时展示：✅已收藏、📝标题、🏷️类型、📌主题、💭情绪(如有)。"
+                        "如果有related_memories或related_collections，自然地提及相关历史"
+                        "内容。严禁展示content_format、collection_id。"
+                    ),
+                },
+                ensure_ascii=False,
+            )
         else:
-            return json.dumps({
-                "success": False,
-                "message": "保存失败，未返回数据"
-            }, ensure_ascii=False)
+            return json.dumps({"success": False, "message": "保存失败，未返回数据"}, ensure_ascii=False)
 
     except APIError as e:
         logger.error(f"保存知识收藏失败: {e.message}")
-        raise Exception(f"保存知识收藏失败: {e.message}")
+        raise Exception(f"保存知识收藏失败: {e.message}") from e
 
 
 @tool
 def search_knowledge_collections(
-    query: str | None = None,
-    content_type: str | None = None,
-    topics: list[str] | None = None,
-    limit: int = 10
+    query: str | None = None, content_type: str | None = None, topics: list[str] | None = None, limit: int = 10
 ) -> str:
     """
     搜索知识库中的收藏内容。
@@ -1436,19 +1490,18 @@ def search_knowledge_collections(
         filtered_data = data
         if topics:
             filtered_data = [
-                item for item in filtered_data
+                item
+                for item in filtered_data
                 if isinstance(item.get("topics"), list) and any(t in item.get("topics", []) for t in topics)
             ]
 
-        return json.dumps({
-            "success": True,
-            "count": len(filtered_data),
-            "collections": filtered_data
-        }, ensure_ascii=False)
+        return json.dumps(
+            {"success": True, "count": len(filtered_data), "collections": filtered_data}, ensure_ascii=False
+        )
 
     except APIError as e:
         logger.error(f"搜索知识收藏失败: {e.message}")
-        raise Exception(f"搜索知识收藏失败: {e.message}")
+        raise Exception(f"搜索知识收藏失败: {e.message}") from e
 
 
 @tool
@@ -1467,15 +1520,22 @@ def get_knowledge_summary(topics: list[str] | None = None, days: int = 7) -> str
 
     try:
         from datetime import timedelta
-        cutoff_date = datetime.now() - timedelta(days=days)
 
-        query_builder = client.table("knowledge_collections").select("*").eq("user_id", _get_user_id()).gte("created_at", cutoff_date.isoformat())
+        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+
+        query_builder = (
+            client.table("knowledge_collections")
+            .select("*")
+            .eq("user_id", _get_user_id())
+            .gte("created_at", cutoff_date.isoformat())
+        )
 
         if topics:
             response = query_builder.execute()
             data: list[dict[str, Any]] = response.data if response.data else []
             data = [
-                item for item in data
+                item
+                for item in data
                 if isinstance(item.get("topics"), list) and any(t in item.get("topics", []) for t in topics)
             ]
         else:
@@ -1498,14 +1558,17 @@ def get_knowledge_summary(topics: list[str] | None = None, days: int = 7) -> str
                 for t in item_topics:
                     topic_counts[t] = topic_counts.get(t, 0) + 1
 
-        return json.dumps({
-            "success": True,
-            "period_days": days,
-            "total_collections": total_count,
-            "type_distribution": type_counts,
-            "topic_distribution": topic_counts
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": True,
+                "period_days": days,
+                "total_collections": total_count,
+                "type_distribution": type_counts,
+                "topic_distribution": topic_counts,
+            },
+            ensure_ascii=False,
+        )
 
     except APIError as e:
         logger.error(f"获取知识总结失败: {e.message}")
-        raise Exception(f"获取知识总结失败: {e.message}")
+        raise Exception(f"获取知识总结失败: {e.message}") from e

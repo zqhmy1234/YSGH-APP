@@ -28,6 +28,7 @@ conftest.py 在 pytest **collection 阶段**执行，早于各测试模块的 im
 ⚠️ 刻意**只清 DASHSCOPE_***，不清其他变量（如 DATABASE_URL）：前者是本机陈旧残留的
 高发区且清掉无副作用，后者清掉反而会让集成测试失去真实数据库连接。
 """
+
 from __future__ import annotations
 
 import os

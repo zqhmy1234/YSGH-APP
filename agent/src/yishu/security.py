@@ -19,6 +19,7 @@
    （`fail-fast` 好过运行期放行）。
 3. **校验失败只说「不通过」，不回显用户输入**，避免把探测载荷带进日志。
 """
+
 from __future__ import annotations
 
 import hashlib

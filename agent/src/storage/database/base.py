@@ -7,6 +7,7 @@ agent/UPSTREAM.md 四-2）；本文件提供等价的自有 Base，使 ORM 声�
 memory_categories）由 **backend 的 alembic 迁移**创建，共用同一个 Postgres 库与 user_id 口径。
 本 Base 只用于 ORM 读写声明。
 """
+
 from __future__ import annotations
 
 from sqlalchemy.orm import DeclarativeBase

@@ -13,9 +13,9 @@
     并要求共享密钥头 `X-Agent-Token`（环境变量 `AGENT_SERVICE_TOKEN`；未配置时启动即告警，
     生产必须配置——本服务**不得直接暴露公网**）。
 """
+
 from __future__ import annotations
 
-# ruff: noqa: E402 —— 本文件**刻意**先 `load_dotenv(agent/.env)` 再导入依赖模块：
 # `yishu.logging_setup` 在导入期读 `AGENT_LOG_LEVEL`、服务常量读 `AGENT_SERVICE_TOKEN`，
 # 若先导入后加载 .env，这些值会取到默认值（静默走错）。故此豁免是有理由的、非疏漏。
 import json
@@ -34,10 +34,11 @@ from langchain_core.messages import AIMessage
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
-from agents.agent import run_agent, run_agent_stream
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
+from agents.agent import run_agent, run_agent_stream
 from storage.memory.memory_saver import close_memory_pool, current_checkpointer_kind
 from yishu import degradation
 from yishu.context import new_context, request_context
@@ -100,9 +101,7 @@ def _agent_summary_fields(summary: dict) -> dict:
     只取计数/开关类（工具数、是否单例等），**不取任何 prompt 或工具入参**
     —— 隐私纪律见 yishu/observability 模块 docstring。
     """
-    return {
-        f"agent_{k}": v for k, v in (summary or {}).items() if isinstance(v, (int, float, bool))
-    }
+    return {f"agent_{k}": v for k, v in (summary or {}).items() if isinstance(v, (int, float, bool))}
 
 
 class ChatRequest(BaseModel):
@@ -141,9 +140,9 @@ class HealthResponse(BaseModel):
     # 与 checkpointer 同因：W1 记忆镜像 / W2 检索合并失败时**照常 200、对话照常
     # 往返**，只是记忆不进 App 时间轴、App 里的图文 AI 也搜不到——探活接口不报
     # 出来，就没有任何人能发现。`degradation.total` 非 0 即代表有路径正在降级。
-    inbound_token_fp: str = ""           # 本服务校验用的 AGENT_SERVICE_TOKEN 指纹
+    inbound_token_fp: str = ""  # 本服务校验用的 AGENT_SERVICE_TOKEN 指纹
     backend_token_configured: bool = False
-    backend_token_fp: str = ""           # agent→backend 令牌指纹（与 backend 启动日志对账）
+    backend_token_fp: str = ""  # agent→backend 令牌指纹（与 backend 启动日志对账）
     backend_base_url: str = ""
     degradation: dict[str, Any] = Field(default_factory=dict)
 
@@ -267,9 +266,7 @@ async def lifespan(app: FastAPI):
         inbound_token_fp=token_fingerprint(),
         backend_token_configured=bool(backend_channel_token()),
         backend_token_fp=token_fingerprint(backend_channel_token()),
-        backend_base_url=(
-            os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010"
-        ).strip().rstrip("/"),
+        backend_base_url=(os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/"),
         **_agent_summary_fields(agent_runtime_summary()),
     )
     # backend 可达性自检（W2/W1 依赖，2026-10-06）：
@@ -328,7 +325,7 @@ except Exception as exc:  # noqa: BLE001 —— 该面非核心链路，缺失�
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    #只读单例既有状态：**探活不得触发建连/建表**（否则 /health 变成会改状态的接口）
+    # 只读单例既有状态：**探活不得触发建连/建表**（否则 /health 变成会改状态的接口）
     outbound_token = backend_channel_token()
     return HealthResponse(
         status="ok",
@@ -340,9 +337,7 @@ def health() -> HealthResponse:
         inbound_token_fp=token_fingerprint(),
         backend_token_configured=bool(outbound_token),
         backend_token_fp=token_fingerprint(outbound_token),
-        backend_base_url=(
-            os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010"
-        ).strip().rstrip("/"),
+        backend_base_url=(os.getenv("AGENT_BACKEND_BASE_URL") or "http://127.0.0.1:8010").strip().rstrip("/"),
         degradation=degradation.snapshot(),
     )
 
@@ -388,7 +383,7 @@ def chat(req: ChatRequest, x_agent_token: str | None = Header(default=None)) -> 
         )
         try:
             result = run_agent(req.message, user_id=user_id, ctx=ctx)
-        except Exception as exc:  # noqa: BLE001 —— 统一经分类器映射状态码
+        except Exception as exc:
             classified = classify_error(exc)
             latency_ms = int((time.monotonic() - started) * 1000)
             log_event(
@@ -566,9 +561,7 @@ def chat_stream(req: ChatRequest, x_agent_token: str | None = Header(default=Non
                         latency_ms=int((time.monotonic() - started) * 1000),
                         exc_type=type(payload).__name__,
                     )
-                    logger.exception(
-                        "流式对话失败 kind=%s retryable=%s", classified.kind, classified.retryable
-                    )
+                    logger.exception("流式对话失败 kind=%s retryable=%s", classified.kind, classified.retryable)
                     yield _sse(
                         "error",
                         {

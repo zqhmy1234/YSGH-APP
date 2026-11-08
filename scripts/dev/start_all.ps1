@@ -65,10 +65,24 @@ if ([string]::IsNullOrWhiteSpace($Python) -or -not (Test-Path $Python)) {
     Write-Host "         -> 用 -Python <python.exe> 指定，或创建 backend/.venv" -ForegroundColor Yellow
     exit 1
 }
+
+$AgentPython = Join-Path $RepoRoot 'agent\.venv\Scripts\python.exe'
+if (-not (Test-Path $AgentPython)) {
+    Write-Host "  [WARN] 找不到 agent/.venv，Agent 将尝试使用 $Python" -ForegroundColor Yellow
+    $AgentPython = $Python
+}
+
 & $Python -c "import uvicorn, redis" *> $null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [FAIL] 指定 Python 缺少 uvicorn/redis：$Python" -ForegroundColor Red
     Write-Host "         -> 先安装 backend/requirements.txt（不要在系统 Python 3.14 上直接跑）" -ForegroundColor Yellow
+    exit 1
+}
+
+& $AgentPython -c "import uvicorn, langchain_core, langgraph" *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  [FAIL] Agent Python 缺少 uvicorn/langchain_core/langgraph：$AgentPython" -ForegroundColor Red
+    Write-Host "         -> 在 agent 目录运行：uv sync --frozen --dev --python 3.12" -ForegroundColor Yellow
     exit 1
 }
 
@@ -114,6 +128,7 @@ Write-Host ''
 Write-Host '忆述光华 · 本机服务栈' -ForegroundColor White
 Info "仓库根 = $RepoRoot ｜ backend ${BackendHost}:$BackendPort ｜ agent :$AgentPort"
 Info "Python = $Python"
+Info "Agent Python = $AgentPython"
 if (-not [string]::IsNullOrWhiteSpace($LocalKeysFile) -and (Test-Path $LocalKeysFile)) {
     Info "本地密钥文件已注入进程环境（不回显值）：$LocalKeysFile"
 }
@@ -232,7 +247,7 @@ else {
             Info "系统变量 $LlmApiKeyEnvName 不存在 ⇒ 用 agent/.env 里的 LLM 配置"
         }
         $out = Join-Path $logDir 'run_agent.log'
-        Start-Process $Python -WorkingDirectory $src `
+        Start-Process $AgentPython -WorkingDirectory $src `
             -ArgumentList @('-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', "$AgentPort", '--log-level', 'info') `
             -RedirectStandardOutput $out -RedirectStandardError "$out.err" -WindowStyle Hidden | Out-Null
         Info "已启动（日志 $out）"

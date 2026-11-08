@@ -24,6 +24,7 @@
 池自愈 / 单连接永久失效）已单独跑过并留结论，测试只锁住"配置与代码路径
 不会退回单连接"这一层，避免为了跑测试而依赖开发机 Postgres。
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -55,9 +56,7 @@ def test_configure_sets_search_path_on_every_new_connection():
         cursor=lambda: _RecordingCursor(executed),
     )
     _configure_pool_conn(fake_conn)
-    assert any("search_path" in stmt for stmt in executed), (
-        f"未对连接设置 search_path，实际执行={executed}"
-    )
+    assert any("search_path" in stmt for stmt in executed), f"未对连接设置 search_path，实际执行={executed}"
 
 
 class _RecordingCursor:
@@ -158,8 +157,7 @@ def test_checkpointer_is_not_cached_when_setup_fails(monkeypatch):
     mgr._setup_done = False
     closed: list[bool] = []
     monkeypatch.setattr(mgr, "_get_db_url_safe", lambda: "postgresql://h/db")
-    monkeypatch.setattr(mgr, "_build_pool", lambda _url: SimpleNamespace(
-        close=lambda: closed.append(True)))
+    monkeypatch.setattr(mgr, "_build_pool", lambda _url: SimpleNamespace(close=lambda: closed.append(True)))
     monkeypatch.setattr(mgr, "_setup_schema_and_tables", lambda _pool: False)
 
     result = mgr.get_checkpointer()
@@ -272,12 +270,22 @@ def test_checkpointer_kind_reports_degradation():
     # 之前这里是自己编的键名（`connections_size`），桩测试照样绿，
     # 而真机 /health 一直显示 `pool=?/4` —— 键名对不上时只有 `?`，
     # 不报错、不告警，运维据此以为池有问题。**键名必须用真实返回值钉住。**
-    mgr._pool = SimpleNamespace(get_stats=lambda: {
-        "connections_num": 4, "connections_ms": 181, "requests_num": 4,
-        "requests_queued": 1, "requests_wait_ms": 38, "usage_ms": 48,
-        "connections_lost": 2, "pool_min": 1, "pool_max": 4,
-        "pool_size": 2, "pool_available": 2, "requests_waiting": 0,
-    })
+    mgr._pool = SimpleNamespace(
+        get_stats=lambda: {
+            "connections_num": 4,
+            "connections_ms": 181,
+            "requests_num": 4,
+            "requests_queued": 1,
+            "requests_wait_ms": 38,
+            "usage_ms": 48,
+            "connections_lost": 2,
+            "pool_min": 1,
+            "pool_max": 4,
+            "pool_size": 2,
+            "pool_available": 2,
+            "requests_waiting": 0,
+        }
+    )
     kind = mgr.checkpointer_kind()
     assert "持久化" in kind
     assert "pool=2/4" in kind, f"池统计未正确解析：{kind}"
@@ -343,9 +351,7 @@ def test_max_rounds_clamp_is_logged(monkeypatch):
     import yishu.observability as obs
 
     events: list[tuple] = []
-    monkeypatch.setattr(
-        obs, "log_event", lambda ev, **kw: events.append((ev, kw)), raising=True
-    )
+    monkeypatch.setattr(obs, "log_event", lambda ev, **kw: events.append((ev, kw)), raising=True)
     monkeypatch.setenv("AGENT_MAX_ROUNDS", "0")
 
     class _Agent:

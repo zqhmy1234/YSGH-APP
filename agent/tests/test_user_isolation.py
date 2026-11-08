@@ -27,6 +27,7 @@
 工具层直调与 HTTP 链路用的是同一个 request_context 通道（/v1/chat 也是
 new_context(...) + request_context.set(ctx)），所以这里验证的就是生产路径。
 """
+
 from __future__ import annotations
 
 import json
@@ -106,9 +107,7 @@ def test_isolation_between_two_users(as_user, user_a, user_b):
         # A 搜 B 的 marker → 同样必须为空
         as_user(user_a)
         leak_a = _invoke(search_memories, query=marker_b[:20])
-        assert not any(marker_b in (m["content"] or "") for m in leak_a["memories"]), (
-            "反向也泄漏：A 搜到了 B 的记忆"
-        )
+        assert not any(marker_b in (m["content"] or "") for m in leak_a["memories"]), "反向也泄漏：A 搜到了 B 的记忆"
     finally:
         _cleanup([user_a, user_b])
 
@@ -126,15 +125,11 @@ def test_recent_memories_is_isolated_too(as_user, user_a, user_b):
 
         as_user(user_b)
         recent_b = _invoke(get_recent_memories, days=7, limit=50)
-        assert not any(marker_a in (m["content"] or "") for m in recent_b["memories"]), (
-            "get_recent_memories 跨用户泄漏"
-        )
+        assert not any(marker_a in (m["content"] or "") for m in recent_b["memories"]), "get_recent_memories 跨用户泄漏"
 
         as_user(user_a)
         recent_a = _invoke(get_recent_memories, days=7, limit=50)
-        assert any(marker_a in (m["content"] or "") for m in recent_a["memories"]), (
-            "A 自己的近期记忆，A 自己也拿不到"
-        )
+        assert any(marker_a in (m["content"] or "") for m in recent_a["memories"]), "A 自己的近期记忆，A 自己也拿不到"
     finally:
         _cleanup([user_a, user_b])
 
