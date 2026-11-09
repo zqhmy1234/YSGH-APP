@@ -44,7 +44,7 @@ const DEV_BASE_URL: string = 'http://10.0.2.2:8010'
 // 原因：模拟器到宿主 LAN IP（192.168.31.165）的 NAT 通路被切断，设备侧 `nc` 直连超时，
 // 所有请求 FAIL、/contents 表现为「挂起 20s 后 watchdog timeout」。走 reverse 可绕开 NAT。
 // 2026-11-08：**已改为云服务器公网地址**（8.159.145.112:8010），正式包不再依赖局域网。
-const PROD_BASE_URL: string = 'https://clouds-andrews-filtering-huntington.trycloudflare.com'
+const PROD_BASE_URL: string = 'http://8.159.145.112:8010'
 
 /**
  * 生产基址的"看起来没配好"标记词（2026-09-21 泛化）
