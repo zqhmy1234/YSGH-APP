@@ -147,7 +147,7 @@
    "description": "profile_sensitive.topic AES-256-GCM 密文、独立 HMAC-SHA256 盲索引、旧行回填与明文列分期退出",
    "dependencies": ["BACKEND-B1-SCHEMA"],
    "status": "in-progress",
-   "evidence": "2026-10-19：第一阶段已实现加密读写、回响匹配、API 明文契约与导出隐去 hash；本机开发库 21 行迁移至 b3a1c2d3e4f5，密文/hash 缺失 0，alembic check 无漂移；相关 42 项定向测试通过，review_agent.py --full 最终退出码 0、覆盖率 85.53%、failed_tests/blocking_sections 均空。旧 topic 列依手册保留一个发布周期供回滚，故数据库明文彻底移除与服务器验收尚未完成。细节见 docs/B2-B5_后端执行顺序_20261019.md 与 STATE.md。",
+   "evidence": "2026-10-19：第一阶段已实现加密读写、回响匹配、API 明文契约与导出隐去 hash；本机开发库 21 行迁移至 b3a1c2d3e4f5，密文/hash 缺失 0，alembic check 无漂移；相关 42 项定向测试通过，review_agent.py --full 最终退出码 0、覆盖率 85.53%、failed_tests/blocking_sections 均空。旧 topic 列依手册保留一个发布周期供回滚，故数据库明文彻底移除与服务器验收尚未完成。细节见 docs/B2-B5_后端执行顺序_20261019.md 与 STATE.md。 2026-11-10：已接入部长 v6，并同步 develop@12c44c7；执行步骤见 docs/后端分步完成计划书_20261110.md，来源差异见任务梳理；本轮未执行迁移或生产验收，能力状态保持原样。",
    "gate": "生产副本演练与密钥备份；旧明文列独立删除迁移；API/导出/回响回归；全量门禁"
   },
   {
@@ -172,6 +172,7 @@
    "done",
    "deprecated"
   ],
-  "updated_at": "2026-10-19"
+  "updated_at": "2026-11-10",
+  "step0_evidence": "2026-11-10 步骤0环境核对、原D盘环境补模型与最终门禁、PR核查分别见 docs/后端步骤0_环境核对单_20261110.md 和 docs/后端步骤0_本机修复与PR核查_20261110.md；当前状态与下一步授权边界见 STATE.md。仅记录核查及验证证据，不提升任何MVP能力状态。"
  }
 }
