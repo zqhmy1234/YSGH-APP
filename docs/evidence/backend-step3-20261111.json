@@ -1,0 +1,207 @@
+{
+  "production_readonly": {
+    "observed_at": "2026-11-11T06:04:59.569545+00:00",
+    "read_only": true,
+    "key_format_and_independence": true,
+    "worker_api_keys_match": true,
+    "durable_env_keys_match_runtime": true,
+    "env_file_mode": "0o600",
+    "env_file_uid": 0,
+    "runtime_crypto_roundtrip": true,
+    "normalization": true,
+    "profile_sensitive": {
+      "rows": 0,
+      "missing_cipher": 0,
+      "missing_hash": 0,
+      "decrypt_failed": 0,
+      "hash_mismatch": 0,
+      "normalized_duplicates": 0,
+      "legacy_plaintext_rows": 0,
+      "evidence_nonempty": 0
+    },
+    "migration": [
+      "c1d2e3f4a5b6"
+    ],
+    "columns": [
+      {
+        "column_name": "id",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "user_id",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "topic",
+        "is_nullable": "YES"
+      },
+      {
+        "column_name": "topic_enc",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "topic_hash",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "disposition",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "evidence",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "locked",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "added_at",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "updated_at",
+        "is_nullable": "NO"
+      }
+    ],
+    "source_sha256": {
+      "backend/app/services/profile_sensitive_crypto.py": "515d18c4158d3bcb94ad9be0dd1410aff3a482c2b7a4e4f32cf567e145f73a21",
+      "backend/app/db/models/profile.py": "a2e2637b7372cb9d5188618c50f733b56b1937b1a75d9676e3a192bb81c93170",
+      "backend/app/services/echo.py": "730151c91bbdaf81dec3eb6c12388ebe14efd86900f3f543c786118746f725ca",
+      "backend/app/services/export.py": "78f3f3e1ee946545ad1064c2909446b4dbda9159ec0a4a8f71eb0043a5c74ac0",
+      "backend/app/api/contents/profile_sensitive.py": "c12b3792109cd8b0c6be97f60427b4f59af5c8469d46d5c2e2b899debd44fe58",
+      "backend/migrations/versions/b3a1c2d3e4f5_encrypt_profile_sensitive_topic.py": "90f28f07272d150a9330c76d2af6d58e387ba4b62c7138ca575215dce085b71e",
+      "backend/scripts/backfill_profile_sensitive.py": "c8ebff3548ffc65dd231d12e803c1646f09b517d3fcd5ae75a7a9c371e99e904"
+    }
+  },
+  "local_rehearsal": {
+    "finished_at": "2026-11-11T06:04:16.717107+00:00",
+    "source_dump_sha256": "8140d77a37e11a4a7b46a08a234a40cebcf664da9da0064e10dc547381f766d0",
+    "replica_database": "step3_replica_20261111_daac3a43",
+    "recovery_database": "step3_recovery_20261111_daac3a43",
+    "data_mount": "D:\\yishuguanghua\\infra\\data\\database\\postgres",
+    "production_rows": 73,
+    "production_tables": 33,
+    "production_schema_and_counts_match": true,
+    "production_sensitive_rows": 0,
+    "production_keys_copied_to_local": false,
+    "synthetic_encrypted_dump_restored": true,
+    "same_runtime_synthetic_key_decrypts_restored_data": true,
+    "wrong_synthetic_key_rejected": true,
+    "normalized_upsert_delete_and_export": true,
+    "production_model_class_matches_local": true,
+    "targeted_pytest_exit": 0,
+    "original_local_database_unchanged": true,
+    "migration_downgrade_upgrade_rows": 2,
+    "new_cipher_only_row_recovered_on_downgrade": true,
+    "migration_exercise_transaction_rolled_back": true
+  },
+  "step2_observation": {
+    "observed_at": "2026-11-11T05:57:58.143286+00:00",
+    "code_commit": "d4530eaa1a6d58144f6de34f5d3bfab2d8e9569a",
+    "full_24h_observation_not_before": "2026-11-12T03:26:33.332502+00:00",
+    "elapsed_24h": false,
+    "jobs": {
+      "requeue": {
+        "natural_invocations": 2,
+        "confirmed_log_results": 2,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": {
+          "job": "requeue",
+          "dry_run": false,
+          "started_at": "2026-11-11T05:07:01.314685+00:00",
+          "duration_ms": 1182,
+          "status": "ok",
+          "stats": {
+            "scanned": 0,
+            "requeued": 0,
+            "finalized": 0,
+            "skipped_final": 0,
+            "failed": 0
+          },
+          "error_type": null,
+          "exit_code": 0
+        }
+      },
+      "cleanup": {
+        "natural_invocations": 0,
+        "confirmed_log_results": 0,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": null
+      },
+      "capsules": {
+        "natural_invocations": 0,
+        "confirmed_log_results": 0,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": null
+      },
+      "daily-review": {
+        "natural_invocations": 0,
+        "confirmed_log_results": 0,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": null
+      }
+    },
+    "deployed_source_tree_unchanged": true,
+    "cron_unchanged": true,
+    "health": {
+      "8010": 200,
+      "8011": 200
+    },
+    "services": {
+      "yishu-api": {
+        "active": true,
+        "same_pid": true
+      },
+      "yishu-worker": {
+        "active": true,
+        "same_pid": true
+      },
+      "yishu-agent": {
+        "active": true,
+        "same_pid": true
+      },
+      "cron": {
+        "active": true,
+        "same_pid": true
+      }
+    },
+    "backup_artifacts_since_deployment": [],
+    "full_daily_cycle_passed": false
+  },
+  "acceptance": {
+    "production_key_escrow_verified": false,
+    "release_cycle_agreed": false,
+    "formal_observation_started": false,
+    "step3_complete": false
+  },
+  "local_full_gate": {
+    "exit": 0,
+    "passed": true,
+    "failed_tests": [],
+    "blocking_sections": [],
+    "pytest": {
+      "passed": 1225,
+      "skipped": 4,
+      "deselected": 22,
+      "coverage_percent": 83.67
+    },
+    "client_compile": "degraded_missing_HBuilderX",
+    "report_sha256": {
+      "review-report-full.json": "c2c4dd403d74a80f2fcc5b57a09414d5072e9ab42a990f68f698026ed7341488",
+      "test-report-full.json": "429a07d6f7ad255d9cc2c255dee76136d31568d3c95a3bc86e3babd3bf02f346"
+    }
+  }
+}
