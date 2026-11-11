@@ -16,16 +16,18 @@
 22:00 复盘调度登记（2026-08-26，集成 Agent 部署侧挂定时）：
   RQ 无内置 cron —— 用 rq-scheduler / APScheduler / 系统 cron / Windows 计划任务
   每天本地 22:00 调一次：python backend/scripts/daily_review.py
-  （脚本幂等：重复跑生成新消息不覆盖；无内容用户自动跳过防打扰）
+  （按用户/本地自然日幂等；无内容用户自动跳过防打扰）
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import func, or_, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.db.models import Content, Message
@@ -244,16 +246,30 @@ def _today_stats(db: Session, user_id: str, day: date) -> dict[str, int]:
 
 
 def generate_daily_review(db: Session, user_id: str, day: date | None = None) -> Message | None:
-    """每日复盘（22:00 push）：汇总今日内容；无内容返回 None（防打扰）
+    """每日复盘（22:00 push）：同一用户/自然日最多生成一次；跳过时返回 None。
 
     R2#2（事务边界）：本函数是每日复盘独立流程的最外层编排者（daily_review.py
     每用户调用一次，不再依赖 create_message 内部 commit）——生成消息后统一
     commit 落库。只在独立脚本流程调用，不会被嵌入其它事务。
     """
     day = day or datetime.now(REVIEW_TZ).date()
+    # 跨进程并发也必须先串行检查；事务结束自动释放，无需新增数据库迁移。
+    lock_key = int.from_bytes(hashlib.blake2b(
+        f"daily_review:{uuid.UUID(str(user_id)).hex}:{day.isoformat()}".encode(), digest_size=8,
+    ).digest(), "big", signed=True)
+    db.execute(sa_text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+    existing = db.scalar(select(Message.id).where(
+        Message.user_id == user_id,
+        Message.msg_type == "daily_review",
+        Message.payload["day"].astext == day.isoformat(),
+    ).limit(1))
+    if existing is not None:
+        db.rollback()
+        return None
     stats = _today_stats(db, user_id, day)
     if not stats:
         logger.info("user=%s 今日无内容，跳过复盘", user_id)
+        db.rollback()
         return None
 
     total = sum(stats.values())

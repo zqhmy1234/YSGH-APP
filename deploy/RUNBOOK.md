@@ -163,7 +163,7 @@ du -sh backend/models ~/.cache/huggingface                   # 5 磁盘分账
 > ⚠️ **完整清单是 4 条 job**（复盘 / 清理 / **重投** / **胶囊补扫**）—— 本表原先漏了后两条，
 > 2026-09-29 补。容器拓扑（A）下的对应写法见下方范本。
 
-**拓扑 A（当前生产选型）的 crontab 范本**（项目目录按服务器实际路径核对；以下使用 `/srv/guangh`）：
+**拓扑 A（Docker Compose 应用部署）的 crontab 范本**（项目目录按服务器实际路径核对；以下使用 `/srv/guangh`）：
 
 ```cron
 SHELL=/bin/bash
@@ -178,6 +178,26 @@ PATH=/usr/local/bin:/usr/bin:/bin
 安装前确认 `date` 显示的时区符合业务时间（每日复盘应为北京时间 22:00）、`docker compose --profile app -f deploy/docker-compose.yml ps backend` 显示后端容器运行，且执行 cron 的系统用户有 Docker 权限。此范本的清理任务**先保留 `--dry-run`**；核对首次扫描范围后，再单独移除该参数。拓扑 A 的应用依赖在容器内，不能直接用宿主机 `python` 跑四项业务 job。
 
 验证：`crontab -l`；`tail -20 deploy/logs/backup.log` 出现「备份完成」+「归档结构完整」。
+
+**实机 systemd 应用部署（2026-11-11 只读核查）**：`/opt/yishu/backend/.venv` 承载 API/worker，
+两项服务的 EnvironmentFile 都是 `/opt/yishu/deploy/.env`；PG/Redis/Qdrant 单独运行在 Docker。
+此拓扑的四项业务范本见 [business-maintenance.cron.example](cron/business-maintenance.cron.example)。
+已有每日 03:10 备份 / 03:20 保留期清理，应原样保留，不追加上面 03:30 的重复备份。
+
+代码经本机验证、推送且对应提交 CI 通过，得到独立部署确认后，才可安装新入口和 cron。
+安装前确认服务器时区 `Asia/Shanghai`、日志目录 `/opt/yishu/logs` 存在并限制权限，
+保留原 crontab 副本，再追加四条业务项及 SHELL/PATH。不要覆盖现有备份条目。
+入口用 `--env-file /opt/yishu/deploy/.env` 在导入应用前加载配置；不要依赖交互 shell 的环境。
+所有日志只有 UTC 时间、任务名、计数和异常类型，退出 1 表示异常或单行处理失败，必须检查。
+保留期固定为内容软删 30 天 / 上传残留 7 天；默认 limit 100，清理范本 limit 500。
+`cleanup` 默认预览，显式 `--dry-run` 也只统计；正式删除须先核准范围，另行确认后传
+`--execute-cleanup`（同时去掉 `--dry-run`），不能只删除预览参数就默认执行。
+四任务都支持 `--dry-run`；复盘可用 `--day YYYY-MM-DD --user UUID` 限定受控验收用户。
+每日复盘按用户/北京时间自然日去重，归档消息也不重复生成；数据库事务锁覆盖并发进程。
+
+验收须核对四份独立日志的 `status/exit_code/stats`、真实队列消费和幂等结果，
+再观察至少一个完整每日周期并核对备份新增产物。仅 dry-run/手动成功或 cron 已安装，
+均不足以宣称步骤 2 完成；证据与部署边界见 [步骤2记录](../docs/后端步骤2_业务定时任务_20261111.md)。
 
 > ⚠️ **cron 的两个必写项**（漏了表现为「手动跑通、cron 里不跑」）：
 > `SHELL=/bin/bash` 与 `PATH=/usr/local/bin:/usr/bin:/bin`（cron 的 PATH 极简，找不到 `docker`/`python`）。
