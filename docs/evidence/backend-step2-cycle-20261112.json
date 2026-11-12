@@ -1,0 +1,302 @@
+{
+  "observation": {
+    "observed_at": "2026-11-12T03:37:06.150846+00:00",
+    "code_commit": "d4530eaa1a6d58144f6de34f5d3bfab2d8e9569a",
+    "full_24h_observation_not_before": "2026-11-12T03:26:33.332502+00:00",
+    "elapsed_24h": true,
+    "jobs": {
+      "requeue": {
+        "natural_invocations": 24,
+        "confirmed_log_results": 24,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": {
+          "job": "requeue",
+          "dry_run": false,
+          "started_at": "2026-11-12T03:07:01.792860+00:00",
+          "duration_ms": 1008,
+          "status": "ok",
+          "stats": {
+            "scanned": 0,
+            "requeued": 0,
+            "finalized": 0,
+            "skipped_final": 0,
+            "failed": 0
+          },
+          "error_type": null,
+          "exit_code": 0
+        },
+        "expected_invocations": 24,
+        "missing_scheduled_invocations": 0,
+        "unexpected_invocations": 0
+      },
+      "cleanup": {
+        "natural_invocations": 1,
+        "confirmed_log_results": 1,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": {
+          "job": "cleanup",
+          "dry_run": true,
+          "started_at": "2026-11-11T20:10:01.343493+00:00",
+          "duration_ms": 904,
+          "status": "ok",
+          "stats": {
+            "cleanup": {
+              "scanned": 0,
+              "cleaned": 0,
+              "failed": 0,
+              "skipped_not_due": 10
+            },
+            "upload_reaper": {
+              "reaped": 0,
+              "failed": 0,
+              "chunks_removed": 0,
+              "orphan_dirs": 0,
+              "leftover_dirs": 0,
+              "skipped_backend": false
+            }
+          },
+          "error_type": null,
+          "exit_code": 0
+        },
+        "expected_invocations": 1,
+        "missing_scheduled_invocations": 0,
+        "unexpected_invocations": 0
+      },
+      "capsules": {
+        "natural_invocations": 1,
+        "confirmed_log_results": 1,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": {
+          "job": "capsules",
+          "dry_run": false,
+          "started_at": "2026-11-12T00:05:01.716114+00:00",
+          "duration_ms": 788,
+          "status": "ok",
+          "stats": {
+            "due": 0,
+            "failed": 0
+          },
+          "error_type": null,
+          "exit_code": 0
+        },
+        "expected_invocations": 1,
+        "missing_scheduled_invocations": 0,
+        "unexpected_invocations": 0
+      },
+      "daily-review": {
+        "natural_invocations": 1,
+        "confirmed_log_results": 1,
+        "failed_results": 0,
+        "unmatched_invocations": 0,
+        "invalid_log_lines": 0,
+        "log_mode": "0o600",
+        "latest_result": {
+          "job": "daily-review",
+          "dry_run": false,
+          "started_at": "2026-11-11T14:00:01.691406+00:00",
+          "duration_ms": 911,
+          "status": "ok",
+          "stats": {
+            "candidates": 1,
+            "generated": 1,
+            "skipped": 0,
+            "failed": 0
+          },
+          "error_type": null,
+          "exit_code": 0
+        },
+        "expected_invocations": 1,
+        "missing_scheduled_invocations": 0,
+        "unexpected_invocations": 0
+      }
+    },
+    "deployed_source_tree_unchanged": true,
+    "cron_unchanged": true,
+    "health": {
+      "8010": 200,
+      "8011": 200
+    },
+    "services": {
+      "yishu-api": {
+        "active": true,
+        "same_pid": true
+      },
+      "yishu-worker": {
+        "active": true,
+        "same_pid": true
+      },
+      "yishu-agent": {
+        "active": true,
+        "same_pid": true
+      },
+      "cron": {
+        "active": true,
+        "same_pid": true
+      }
+    },
+    "backup_artifacts_since_deployment": [
+      {
+        "name": "yishu-2026-11-12.dump",
+        "bytes": 110991,
+        "mtime": "2026-11-11T19:10:01.908747+00:00"
+      }
+    ],
+    "full_daily_cycle_passed": true,
+    "scheduler_timezone": "Asia/Shanghai",
+    "scheduled_backup": {
+      "path": "/opt/yishu/backups/yishu-2026-11-12.dump",
+      "bytes": 110991,
+      "sha256": "78717b5e9f8d2e3dfac4442b77bebfb2a3675e1e5ff8681f9a976358018f7802",
+      "mtime": "2026-11-11T19:10:01.908747+00:00",
+      "file_mode": "0o644",
+      "directory_mode": "0o700",
+      "format": "PGDMP"
+    },
+    "natural_backup_scheduler_events": [
+      {
+        "at": "2026-11-11T19:10:01.671349+00:00",
+        "local_time": "2026-11-12T03:10:01.671349+08:00"
+      }
+    ],
+    "current_production_snapshot": {
+      "rows": {
+        "alembic_version": 1,
+        "capsules": 0,
+        "chat_messages": 2,
+        "contents": 6,
+        "correction_log": 1,
+        "deleted_logs": 10,
+        "devices": 1,
+        "echo_history": 0,
+        "event_edit_log": 0,
+        "event_items": 5,
+        "events": 1,
+        "finetune_jobs": 0,
+        "geo_cache": 0,
+        "knowledge_collections": 0,
+        "memories": 0,
+        "memory_categories": 0,
+        "messages": 1,
+        "offline_queue": 27,
+        "profile_annotation_pool": 6,
+        "profile_dimension_history": 27,
+        "profile_dimension_pending": 0,
+        "profile_l2_evidence": 5,
+        "profile_sensitive": 0,
+        "sensitive_words": 0,
+        "sms_codes": 0,
+        "sync_field_versions": 10,
+        "sync_state": 1,
+        "upload_chunks": 5,
+        "upload_tasks": 5,
+        "user_profile": 5,
+        "user_wechat_bindings": 0,
+        "users": 1,
+        "wechat_messages": 0
+      },
+      "schema_sha256": "96173063511a031433a3cbb59aef590e44ba094ff60999818973976edbb70911",
+      "migration": [
+        "c1d2e3f4a5b6"
+      ],
+      "server_version": "16.15 (Debian 16.15-1.pgdg12+2)"
+    },
+    "natural_cycle_and_health_passed": true
+  },
+  "scheduled_backup_restore": {
+    "verified_at": "2026-11-12T03:40:29.955625+00:00",
+    "scheduled_backup": {
+      "path": "/opt/yishu/backups/yishu-2026-11-12.dump",
+      "bytes": 110991,
+      "sha256": "78717b5e9f8d2e3dfac4442b77bebfb2a3675e1e5ff8681f9a976358018f7802",
+      "mtime": "2026-11-11T19:10:01.908747+00:00",
+      "file_mode": "0o644",
+      "directory_mode": "0o700",
+      "format": "PGDMP"
+    },
+    "local_backup_path": "D:\\yishuguanghua\\.cowork-temp\\step2-20261112\\private-backups\\yishu-2026-11-12.dump",
+    "restored_database": "step2_daily_restore_20261112_8a8e30f6",
+    "data_mount": "D:\\yishuguanghua\\infra\\data\\database\\postgres",
+    "pg_restore_list_exit": 0,
+    "pg_restore_exit": 0,
+    "table_data_entries": 37,
+    "restored": {
+      "rows": {
+        "alembic_version": 1,
+        "capsules": 0,
+        "chat_messages": 2,
+        "contents": 6,
+        "correction_log": 1,
+        "deleted_logs": 10,
+        "devices": 1,
+        "echo_history": 0,
+        "event_edit_log": 0,
+        "event_items": 5,
+        "events": 1,
+        "finetune_jobs": 0,
+        "geo_cache": 0,
+        "knowledge_collections": 0,
+        "memories": 0,
+        "memory_categories": 0,
+        "messages": 1,
+        "offline_queue": 27,
+        "profile_annotation_pool": 6,
+        "profile_dimension_history": 27,
+        "profile_dimension_pending": 0,
+        "profile_l2_evidence": 5,
+        "profile_sensitive": 0,
+        "sensitive_words": 0,
+        "sms_codes": 0,
+        "sync_field_versions": 10,
+        "sync_state": 1,
+        "upload_chunks": 5,
+        "upload_tasks": 5,
+        "user_profile": 5,
+        "user_wechat_bindings": 0,
+        "users": 1,
+        "wechat_messages": 0
+      },
+      "schema_sha256": "96173063511a031433a3cbb59aef590e44ba094ff60999818973976edbb70911",
+      "migration": [
+        "c1d2e3f4a5b6"
+      ],
+      "server_version": "17.11 (Debian 17.11-1.pgdg12+2)",
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    "schema_matches_current_production": true,
+    "row_counts_match_current_production": true,
+    "row_count_differences": {},
+    "original_local_application_database_unchanged": true,
+    "production_mutated": false,
+    "production_keys_copied_to_local": false,
+    "restore_verified": true
+  },
+  "acceptance": {
+    "step2_natural_cycle_and_restore_passed": true,
+    "cleanup_execute_authorized": false,
+    "production_changed_this_session": false,
+    "step3_closed_by_this_acceptance": false
+  },
+  "local_full_gate": {
+    "exit": 0,
+    "passed": true,
+    "failed_tests": [],
+    "blocking_sections": [],
+    "pytest_summary": "=== 1225 passed, 4 skipped, 22 deselected, 58 warnings in 414.22s (0:06:54) ===",
+    "coverage_percent": 83.68,
+    "report_sha256": {
+      "review-report": "cd3df55889b4defc5d83042fa96e5d754ffc975614fb0908abd9b9a5733ded55",
+      "test-report": "9801e2c393ed5c84f6b4c034a9a2f68c2b7a277a3af5d51cb4c0adecad896b70"
+    },
+    "completed_at": "2026-11-12T03:52:49.465280+00:00"
+  }
+}
