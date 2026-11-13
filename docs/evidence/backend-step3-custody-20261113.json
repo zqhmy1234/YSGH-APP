@@ -1,0 +1,202 @@
+{
+  "production": {
+    "observed_at": "2026-11-13T13:32:01.495943+00:00",
+    "read_only": true,
+    "key_format_and_independence": true,
+    "worker_api_keys_match": true,
+    "durable_env_keys_match_runtime": true,
+    "env_file_mode": "0o600",
+    "env_file_uid": 0,
+    "runtime_crypto_roundtrip": true,
+    "normalization": true,
+    "profile_sensitive": {
+      "rows": 0,
+      "missing_cipher": 0,
+      "missing_hash": 0,
+      "decrypt_failed": 0,
+      "hash_mismatch": 0,
+      "normalized_duplicates": 0,
+      "legacy_plaintext_rows": 0,
+      "evidence_nonempty": 0
+    },
+    "migration": [
+      "c1d2e3f4a5b6"
+    ],
+    "columns": [
+      {
+        "column_name": "id",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "user_id",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "topic",
+        "is_nullable": "YES"
+      },
+      {
+        "column_name": "topic_enc",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "topic_hash",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "disposition",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "evidence",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "locked",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "added_at",
+        "is_nullable": "NO"
+      },
+      {
+        "column_name": "updated_at",
+        "is_nullable": "NO"
+      }
+    ],
+    "source_sha256": {
+      "backend/app/services/profile_sensitive_crypto.py": "515d18c4158d3bcb94ad9be0dd1410aff3a482c2b7a4e4f32cf567e145f73a21",
+      "backend/app/db/models/profile.py": "a2e2637b7372cb9d5188618c50f733b56b1937b1a75d9676e3a192bb81c93170",
+      "backend/app/services/echo.py": "730151c91bbdaf81dec3eb6c12388ebe14efd86900f3f543c786118746f725ca",
+      "backend/app/services/export.py": "78f3f3e1ee946545ad1064c2909446b4dbda9159ec0a4a8f71eb0043a5c74ac0",
+      "backend/app/api/contents/profile_sensitive.py": "c12b3792109cd8b0c6be97f60427b4f59af5c8469d46d5c2e2b899debd44fe58",
+      "backend/migrations/versions/b3a1c2d3e4f5_encrypt_profile_sensitive_topic.py": "90f28f07272d150a9330c76d2af6d58e387ba4b62c7138ca575215dce085b71e",
+      "backend/scripts/backfill_profile_sensitive.py": "c8ebff3548ffc65dd231d12e803c1646f09b517d3fcd5ae75a7a9c371e99e904"
+    },
+    "profile_sensitive_model_ast_sha256": "690bcc519fdf16679c9e345d95cfc9a32db1249aafc6313f956bbe724b9d08fd"
+  },
+  "custody": {
+    "verified_at": "2026-11-13T13:40:52.246939+00:00",
+    "key_names": [
+      "PROFILE_FIELD_ENCRYPTION_KEY",
+      "PROFILE_FIELD_HMAC_KEY"
+    ],
+    "source": "/opt/yishu/deploy/.env",
+    "backup_matches_runtime": true,
+    "api_worker_match": true,
+    "recovered_aes_and_hmac_roundtrip": true,
+    "production_modified": false,
+    "plaintext_key_files_created": false,
+    "production_keys_decrypted_on_local_machine": false,
+    "backup_path": "D:\\yishuguanghua\\.cowork-temp\\step3-20261113\\private-key-custody\\profile-field-keys-20261113.ysgkeys",
+    "backup_sha256": "a7b392e74b8907c6412ff88038739b850e5b21fb64d096727d669d5d942d7c0a",
+    "custodian": "user",
+    "verified_from_saved_encrypted_file": true
+  },
+  "package": {
+    "package_path": "D:\\yishuguanghua\\.cowork-temp\\step3-20261113\\private-key-custody\\忆述光华_生产密钥保管包_20261113.zip",
+    "package_sha256": "be905035b1b223e8aedce342e5a5842a71f4e45897843a4e39ef54141a936cfa",
+    "members": [
+      "profile-field-keys-20261113.ysgkeys",
+      "profile_key_custody.py",
+      "查看原密钥.cmd",
+      "保管说明.txt"
+    ],
+    "encrypted_keys_only": true
+  },
+  "scheduled_backup_restore": {
+    "verified_at": "2026-11-13T13:48:42.817452+00:00",
+    "scheduled_backup": {
+      "path": "/opt/yishu/backups/yishu-2026-11-13.dump",
+      "bytes": 114813,
+      "sha256": "a7be5b1c33c4c9abd74e35270c9a88fec893743f38a0739042fe44e9b5bc4e40",
+      "mtime": "2026-11-12T19:10:02.080151+00:00",
+      "file_mode": "0o644",
+      "directory_mode": "0o700",
+      "format": "PGDMP"
+    },
+    "local_backup_path": "D:\\yishuguanghua\\.cowork-temp\\step3-20261113\\private-backups\\yishu-2026-11-13.dump",
+    "restored_database": "step3_backup_restore_20261113_68d5f356",
+    "data_mount": "D:\\yishuguanghua\\infra\\data\\database\\postgres",
+    "pg_restore_list_exit": 0,
+    "pg_restore_exit": 0,
+    "table_data_entries": 37,
+    "restored": {
+      "rows": {
+        "alembic_version": 1,
+        "capsules": 0,
+        "chat_messages": 2,
+        "contents": 8,
+        "correction_log": 1,
+        "deleted_logs": 10,
+        "devices": 1,
+        "echo_history": 0,
+        "event_edit_log": 0,
+        "event_items": 7,
+        "events": 2,
+        "finetune_jobs": 0,
+        "geo_cache": 0,
+        "knowledge_collections": 0,
+        "memories": 0,
+        "memory_categories": 0,
+        "messages": 2,
+        "offline_queue": 30,
+        "profile_annotation_pool": 7,
+        "profile_dimension_history": 35,
+        "profile_dimension_pending": 0,
+        "profile_l2_evidence": 13,
+        "profile_sensitive": 0,
+        "sensitive_words": 0,
+        "sms_codes": 0,
+        "sync_field_versions": 10,
+        "sync_state": 1,
+        "upload_chunks": 7,
+        "upload_tasks": 7,
+        "user_profile": 5,
+        "user_wechat_bindings": 0,
+        "users": 1,
+        "wechat_messages": 0
+      },
+      "schema_sha256": "96173063511a031433a3cbb59aef590e44ba094ff60999818973976edbb70911",
+      "migration": [
+        "c1d2e3f4a5b6"
+      ],
+      "server_version": "17.11 (Debian 17.11-1.pgdg12+2)",
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    "schema_matches_current_production": true,
+    "row_counts_match_current_production": true,
+    "row_count_differences": {},
+    "original_local_application_database_unchanged": true,
+    "production_mutated": false,
+    "production_keys_copied_to_local": false,
+    "restore_verified": true
+  },
+  "period_decision": {
+    "decided_by": "user",
+    "provisional": true,
+    "duration_days": 7,
+    "start": "2026-11-13T14:24:22.820259+00:00",
+    "old_topic_drop_authorized": false,
+    "not_before_end": "2026-11-20T14:24:22.820259+00:00",
+    "basis": "user-approved seven-day observation of existing deployed B3 after acceptance; not a new deployment"
+  },
+  "targeted_tests": {
+    "passed": 6,
+    "production_keys_used_in_tests": false
+  },
+  "local_full_gate": {
+    "exit": 0,
+    "passed": true,
+    "failed_tests": [],
+    "blocking_sections": [],
+    "pytest_summary": "=== 1231 passed, 4 skipped, 22 deselected, 58 warnings in 350.20s (0:05:50) ===",
+    "coverage_percent": 83.67,
+    "report_sha256": {
+      "review-report": "2921acdd86edb9cc9f859273d1f2c61d85e75749eda021e046e5fd07a3d3b2c0",
+      "test-report": "3a7ceb643de48c22f00d6ce0145058a3c0b247bdd71b7d063f8d6e814c1aed9f"
+    },
+    "registered_at": "2026-11-13T14:24:22.820259+00:00"
+  }
+}
