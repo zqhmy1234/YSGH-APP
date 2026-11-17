@@ -9,6 +9,7 @@
 
 ---
 
+<<<<<<< HEAD
 ### 2026-11-13 22:15 · commit 60ad432 · ts=1794579342
 - **错误**：本轮1231项pytest通过，但API冒烟因本机Docker引擎退出出现数据库连接超时
 - **根因**：命名管道和数据服务在测试过程中不可用；引擎为何退出未坐实，不能归因生产或保管工具
@@ -133,6 +134,17 @@
 - **相关文件**：scripts/review_agent.py
 - **教训**：门禁报告必须核对生成时间；限时诊断停在业务测试时，只能报告已返回的检查，不能把旧报告或静态通过当作全量通过
 
+=======
+### 2026-11-17 09:32 · commit 8fd9442 · ts=1794879121
+- **错误**：review_agent --full 的 tests 轴失败：本机开发库停在 6a12e10c4868，缺 profile_sensitive.topic_enc；缺 PROFILE_FIELD_* 密钥导致 alembic upgrade head 拒绝执行
+- **根因**：本机 DB 落后 B-3 加密迁移，且未配置两把密钥；属环境债，不是本次代码回归
+- **修复**：不擅自生成密钥；在有正确 .env/密钥的机器补迁移后复跑全量；本次以快速门禁 + 定向测试为准
+- **相关文件**：backend/app/services/embedding.py, backend/tests/test_rerank_prompt_device.py
+- **教训**：全量门禁失败先区分环境债与代码回归；DB 落后迁移时不要用本地passed冒充全量通过
+
+---
+
+>>>>>>> 70cc688 (feat(rag): BGE-M3 可选 GPU + 精排元数据 + A 批基线产物)
 ### 2026-11-02 02:32 · commit 640bfb3 · ts=1793557938
 - **错误**：全量门禁第三次被内存预检拒绝（2.35GB<3.0GB），即使关了模拟器(3.94GB)并停掉 embedding 服务(3.29GB)仍在 api_smoke 阶段回落不足
 - **根因**：本机 15.7GB 内存被常驻大件占 ~13GB（Harness x2、Tabbit 浏览器多实例、WorkBuddy、WSL 400MB）；门禁每个分区各自预检，前序分区跑完释放不及时。结论：本机不适合跑 --full，除非临时关闭常驻大件或改用更大内存机器
@@ -3482,3 +3494,15 @@
 - 处置：`scripts/dev/start_all.ps1` 单独选择 `agent/.venv/Scripts/python.exe`，并在
   backend/Agent 启动前分别检查各自关键依赖。
 - 铁律：多进程服务栈必须按进程选择运行时，不能假设共享 venv。
+
+## 2026-11-17：跨多提交重做本地批之前，先核「页面入口」而不是只信旧提交说明
+
+- 现象：11-08 本地批把 `client/pages/settings/settings.uvue` 删了（基于 `233b7f3`，当时「我的→设置」已直连账号与安全）；但远端 `22014fa`（10-30）又把「设置」恢复为**总入口**。若直接 rebase 后删除，App 会跳到不存在的页面。
+- 处置：11-08 批**只保留 A 线 `EMBED_DEVICE` 与台账销项**；settings 页退役**作废**，文件、`pages.json`、audit 基线均不动。`docs/决策台账.md` §7.30 已记录该口径变化。
+- 教训：rebase 一个跨多日的本地批，**先核当前基线的入口与调用方**，再信旧提交说明；删/改名页面前必须 `grep -rn "pages/xxx" client` 验证零 `navigateTo`，并同步检查 `pages.json` 与 audit 基线。
+
+## 2026-11-17：sentence-transformers 不会自动上 GPU；CUDA 轮子按驱动版本选
+
+- 现象：本机 RTX 4060 可用，但 BGE-M3 仍跑 CPU；`CrossEncoder` 也一样——`torch.cuda.is_available()` 为真**不代表**模型已在 GPU。
+- 处置：`backend/app/services/embedding.py` 加 `EMBED_DEVICE`（默认 `cpu`，生产行为不变）；`backend/app/services/rerank.py` 的 `CrossEncoder` 显式传 `device=`。CUDA 轮子按驱动版本选（576.52 → cu128），不能直接装最新 cu13。
+- 教训：GPU 可用性 ≠ 模型已上 GPU；每个 `SentenceTransformer` / `CrossEncoder` 都要显式 `device`，并检查 `tokenize()` 后的张量是否也搬到了同一设备。

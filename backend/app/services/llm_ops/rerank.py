@@ -42,12 +42,56 @@ _RERANK_SYSTEM = (
 _MAX_CANDIDATE_CHARS = 300
 
 
+def _candidate_meta_lines(c: dict) -> list[str]:
+    """候选的结构化元数据行（2026-11-17 P0/P1）。
+
+    精排 prompt 原来只有「问题 + 正文」，时间/地点/事件全丢，导致
+    「上个月在外滩拍的照片」这类时间/地点型查询只能靠正文猜。
+    SearchHit 已有这些字段（`rag.recall._assemble_hits` 回填），这里只做展示，
+    不改变候选集，也不参与分数计算。字段缺失时返回空列表，保持旧 prompt 格式。
+    """
+    hit = c.get("hit")
+    if hit is None:
+        return []
+
+    def _value(name: str):
+        if isinstance(hit, dict):
+            return hit.get(name)
+        return getattr(hit, name, None)
+
+    lines: list[str] = []
+    content_type = _value("content_type")
+    if content_type:
+        lines.append(f"类型：{content_type}")
+    taken_at = _value("taken_at")
+    if taken_at is not None:
+        try:
+            taken_at = taken_at.strftime("%Y-%m-%d")
+        except (AttributeError, ValueError):
+            taken_at = str(taken_at)
+        lines.append(f"时间：{taken_at}")
+    place = _value("place")
+    if place:
+        lines.append(f"地点：{place}")
+    event_title = _value("event_title")
+    if event_title:
+        lines.append(f"事件：{event_title}")
+    return lines
+
+
 def _build_prompt(query: str, candidates: list[dict]) -> str:
-    """组装精排 prompt：编号候选 + 查询（截断防超长）"""
+    """组装精排 prompt：查询 + 编号候选（正文 + 可选元数据，截断防超长）"""
     lines = [f"问题：{query[:200]}", ""]
     for i, c in enumerate(candidates):
         text = (c.get("text") or "").strip().replace("\n", " ")[:_MAX_CANDIDATE_CHARS]
-        lines.append(f"[{i}] {text}")
+        meta = _candidate_meta_lines(c)
+        if meta:
+            lines.append(f"[{i}]")
+            lines.extend(meta)
+            lines.append(f"正文：{text}")
+        else:
+            # 无 SearchHit / 元数据缺失（单测、mock、旧调用方）→ 保持原格式
+            lines.append(f"[{i}] {text}")
     lines.append("")
     lines.append('输出格式：[{"i": 0, "ans": true, "reason": "..."}]')
     return "\n".join(lines)
