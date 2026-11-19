@@ -126,6 +126,13 @@ def main() -> int:
             return 2
         report = json.loads(tmp.read_text(encoding="utf-8"))
 
+    truth_block = report.get("truth")
+    if isinstance(truth_block, dict):
+        # run_eval 的 sys.argv 含本机绝对临时路径；落盘前统一成可复现命令
+        truth_block["command"] = (
+            "python -m research.rag_benchmark.run_eval "
+            "--truth-a --truth-corpus --details --out <tmp>"
+        )
     payload = {
         "meta": {
             "name": "A 批检索基线（首个可复跑产物）",

@@ -1,0 +1,274 @@
+{
+  "_meta": {
+    "name": "BM25 离线四组实验（E2）",
+    "generated_at": "2026-11-19T09:43:09+0800",
+    "command": "python -m research.rag_benchmark.bm25_experiment",
+    "git": {
+      "branch": "develop",
+      "commit": "c8cc528c38560fb44d59da3fdde5267ff429255b",
+      "dirty": true
+    },
+    "env": {
+      "EMBED_DEVICE": "cuda"
+    },
+    "corpus": {
+      "items": 131,
+      "queries": 50,
+      "collection": "yishu_benchmark_bm25"
+    },
+    "index_ms": 12093,
+    "retrieval_p95_ms": {
+      "dense_encode": 22.9,
+      "sparse_encode": 22.68,
+      "bm25_search": 0.28
+    },
+    "note": "BM25 只做离线对照；未改生产主链。D 组用三路等权 RRF（诊断基线）。",
+    "caveat": "本实验直连 Qdrant dense/sparse（不含 rag.search 的改写/类目/路由/PG 兜底），绝对 hit@3 与 truth-50 基线 0.9302 不可直接比较；四组之间同口径可比。负样本 1.0 是因为没有地板/过滤，不是模型结论。"
+  },
+  "groups": {
+    "A": {
+      "retrieval": {
+        "recall@1": 0.3352,
+        "recall@3": 0.4256,
+        "recall@5": 0.5073,
+        "recall@10": 0.5492,
+        "hit_rate@1": 0.7442,
+        "hit_rate@3": 0.8605,
+        "hit_rate@5": 0.907,
+        "hit_rate@10": 0.9302,
+        "precision@1": 0.7442,
+        "precision@3": 0.4109,
+        "precision@5": 0.3535,
+        "precision@10": 0.2581,
+        "mrr": 0.8136,
+        "ndcg@3": 0.6582,
+        "n_queries": 43
+      },
+      "negative_error_rate": 1.0,
+      "negative_n": 7,
+      "placeholder_n": 0,
+      "unmatched_n": 0,
+      "cross_modal": {
+        "n": 7,
+        "multi_modal_hit": 7,
+        "acc": 1.0
+      }
+    },
+    "B": {
+      "retrieval": {
+        "recall@1": 0.3553,
+        "recall@3": 0.4461,
+        "recall@5": 0.4962,
+        "recall@10": 0.5895,
+        "hit_rate@1": 0.7209,
+        "hit_rate@3": 0.8605,
+        "hit_rate@5": 0.9302,
+        "hit_rate@10": 0.9767,
+        "precision@1": 0.7209,
+        "precision@3": 0.4031,
+        "precision@5": 0.3116,
+        "precision@10": 0.2512,
+        "mrr": 0.8038,
+        "ndcg@3": 0.6599,
+        "n_queries": 43
+      },
+      "negative_error_rate": 1.0,
+      "negative_n": 7,
+      "placeholder_n": 0,
+      "unmatched_n": 0,
+      "cross_modal": {
+        "n": 7,
+        "multi_modal_hit": 6,
+        "acc": 0.8571
+      }
+    },
+    "C": {
+      "retrieval": {
+        "recall@1": 0.3221,
+        "recall@3": 0.4087,
+        "recall@5": 0.4639,
+        "recall@10": 0.5322,
+        "hit_rate@1": 0.7209,
+        "hit_rate@3": 0.8372,
+        "hit_rate@5": 0.8837,
+        "hit_rate@10": 0.9302,
+        "precision@1": 0.7209,
+        "precision@3": 0.3798,
+        "precision@5": 0.2744,
+        "precision@10": 0.2279,
+        "mrr": 0.7876,
+        "ndcg@3": 0.6179,
+        "n_queries": 43
+      },
+      "negative_error_rate": 1.0,
+      "negative_n": 7,
+      "placeholder_n": 0,
+      "unmatched_n": 0,
+      "cross_modal": {
+        "n": 7,
+        "multi_modal_hit": 6,
+        "acc": 0.8571
+      }
+    },
+    "D": {
+      "retrieval": {
+        "recall@1": 0.3004,
+        "recall@3": 0.4061,
+        "recall@5": 0.4647,
+        "recall@10": 0.5534,
+        "hit_rate@1": 0.7209,
+        "hit_rate@3": 0.814,
+        "hit_rate@5": 0.907,
+        "hit_rate@10": 0.9535,
+        "precision@1": 0.7209,
+        "precision@3": 0.3643,
+        "precision@5": 0.2791,
+        "precision@10": 0.2279,
+        "mrr": 0.7824,
+        "ndcg@3": 0.5994,
+        "n_queries": 43
+      },
+      "negative_error_rate": 1.0,
+      "negative_n": 7,
+      "placeholder_n": 0,
+      "unmatched_n": 0,
+      "cross_modal": {
+        "n": 7,
+        "multi_modal_hit": 6,
+        "acc": 0.8571
+      }
+    }
+  },
+  "weight_sweep": {
+    "D_eq_1_1_1": {
+      "weights": {
+        "dense": 0.3333333333333333,
+        "sparse": 0.3333333333333333,
+        "bm25": 0.3333333333333333
+      },
+      "hit_rate@3": 0.814,
+      "recall@10": 0.5534,
+      "mrr": 0.7824
+    },
+    "D_6_2_2": {
+      "weights": {
+        "dense": 0.6,
+        "sparse": 0.2,
+        "bm25": 0.2
+      },
+      "hit_rate@3": 0.8372,
+      "recall@10": 0.583,
+      "mrr": 0.7828
+    },
+    "D_7_15_15": {
+      "weights": {
+        "dense": 0.7,
+        "sparse": 0.15,
+        "bm25": 0.15
+      },
+      "hit_rate@3": 0.8605,
+      "recall@10": 0.5857,
+      "mrr": 0.7934
+    },
+    "D_5_25_25": {
+      "weights": {
+        "dense": 0.5,
+        "sparse": 0.25,
+        "bm25": 0.25
+      },
+      "hit_rate@3": 0.8372,
+      "recall@10": 0.5864,
+      "mrr": 0.7898
+    },
+    "D_8_1_1": {
+      "weights": {
+        "dense": 0.8,
+        "sparse": 0.1,
+        "bm25": 0.1
+      },
+      "hit_rate@3": 0.8605,
+      "recall@10": 0.6113,
+      "mrr": 0.7996
+    }
+  },
+  "new_recall": {
+    "relevant_total": 438,
+    "bm25_only_vs_b": 18,
+    "bm25_only_vs_a": 22,
+    "queries_with_new_vs_b": [
+      {
+        "query_id": "tq-0001",
+        "only_by_bm25_vs_b": [
+          "b-emotion-04"
+        ]
+      },
+      {
+        "query_id": "tq-0002",
+        "only_by_bm25_vs_b": [
+          "b-idea-00",
+          "b-idea-05",
+          "d-place-03"
+        ]
+      },
+      {
+        "query_id": "tq-0006",
+        "only_by_bm25_vs_b": [
+          "b-idea-05",
+          "b-idea-09",
+          "d-place-03"
+        ]
+      },
+      {
+        "query_id": "tq-0007",
+        "only_by_bm25_vs_b": [
+          "b-emotion-15"
+        ]
+      },
+      {
+        "query_id": "tq-0009",
+        "only_by_bm25_vs_b": [
+          "b-quote-06"
+        ]
+      },
+      {
+        "query_id": "tq-0015",
+        "only_by_bm25_vs_b": [
+          "b-mixed-14"
+        ]
+      },
+      {
+        "query_id": "tq-0017",
+        "only_by_bm25_vs_b": [
+          "b-mixed-14"
+        ]
+      },
+      {
+        "query_id": "tq-0045",
+        "only_by_bm25_vs_b": [
+          "b-mixed-08"
+        ]
+      },
+      {
+        "query_id": "tq-0046",
+        "only_by_bm25_vs_b": [
+          "b-todo-13",
+          "b-todo-19",
+          "d-time-02"
+        ]
+      },
+      {
+        "query_id": "tq-0048",
+        "only_by_bm25_vs_b": [
+          "b-mixed-01"
+        ]
+      },
+      {
+        "query_id": "tq-0049",
+        "only_by_bm25_vs_b": [
+          "b-todo-16",
+          "b-todo-19"
+        ]
+      }
+    ]
+  }
+}

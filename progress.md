@@ -995,3 +995,10 @@ ShareSheet（须真机验"保存到相册"）。
 - 用户一周观察口径登记台账§26补记，具体起止与状态仅见STATE；旧topic列继续保留，不自动进入下一步。详细证据见docs/后端步骤3_密钥交接与一周观察_20261113.md。
 
 - 本轮最终全量门禁退出0，审核/测试passed=true，失败/阻断清单空；=== 1231 passed, 4 skipped, 22 deselected, 58 warnings in 350.20s (0:05:50) ===，覆盖率83.67%，API冒烟/聚合验证通过；缺HBuilderX降级。初轮Docker退出的API超时及修复单独留档，没有修改断言。步骤3第一阶段验收及用户一周观察已登记，具体起止仅见STATE与脱敏证据；不自动进入下一步。
+
+## 2026-11-19 A 线：RRF 参数化 + BM25 离线实验 + SetFit 7 类重训
+
+- `vector_store.search/_rrf_fuse` 增加 `dense_weight/sparse_weight/rrf_k` 参数，默认 `0.7/0.3/60` 与改动前逐字等价；新增 4 个参数化单测，`test_rag.py` **34 passed**。
+- 新增 `research/rag_benchmark/bm25_experiment.py` 与 `bm25_experiment_report.json`：truth-50 同口径四组，A/B `hit@3=0.8605`、C `0.8372`、D `0.814`；BM25 top10 新增 18 条相关命中，但三路融合未提升 hit@3，**暂不加入生产主链**（报告含直连 Qdrant 的口径 caveat）。
+- 重跑 A 批基线 JSON：`hit@3=0.6667` / 负样本 `1.0` / route `0/1`；8 个失败 query id 已落盘。
+- SetFit 7 类模型本地重训完成：70 训练 / 14 评估、**14/14（100%）**、门禁 ≥75% 通过；模型 2.2G 在 `backend/models/setfit-classifier`（gitignored），需随部署包/对象存储交付。

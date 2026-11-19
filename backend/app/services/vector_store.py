@@ -264,8 +264,16 @@ class VectorStore:
         filters: dict | None = None,
         limit: int = 50,
         collection: str | None = None,
+        *,
+        dense_weight: float = 0.7,
+        sparse_weight: float = 0.3,
+        rrf_k: int = 60,
     ) -> list[dict]:
-        """混合检索：dense + sparse 并行召回 → RRF 融合（WeKnora 0.7/0.3, k=60）
+        """混合检索：dense + sparse 并行召回 → RRF 融合
+
+        RRF 参数（2026-11-19 参数化，默认值与改动前逐字等价）：
+        `dense_weight=0.7`、`sparse_weight=0.3`、`rrf_k=60`、`limit=50`。
+        评测/消融时可显式传入，生产调用方不传即保持原行为。
 
         collection：检索目标 collection（默认生产；基准评测传 yishu_benchmark）。
         """
@@ -293,7 +301,14 @@ class VectorStore:
                 limit=limit,
             ).points
 
-        return self._rrf_fuse(dense_hits, sparse_hits, limit=limit)
+        return self._rrf_fuse(
+            dense_hits,
+            sparse_hits,
+            limit=limit,
+            k=rrf_k,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight,
+        )
 
     def upsert_image_vec(
         self,
@@ -387,8 +402,18 @@ class VectorStore:
         return models.Filter(must=[user_filter, space_cond])
 
     @staticmethod
-    def _rrf_fuse(dense_hits, sparse_hits, limit: int = 50, k: int = 60) -> list[dict]:
+    def _rrf_fuse(
+        dense_hits,
+        sparse_hits,
+        limit: int = 50,
+        k: int = 60,
+        dense_weight: float = 0.7,
+        sparse_weight: float = 0.3,
+    ) -> list[dict]:
         """RRF 融合（Reciprocal Rank Fusion）
+
+        权重与 k 参数化（2026-11-19）：默认 `0.7 / 0.3 / 60` 与改动前逐字等价；
+        评测/消融可显式传参，第一版只参数化、不改默认行为。
 
         `content_type` 一并回传（2026-11-01 跨模态）：DB 回查落空时（基准/单测/降级）
         `_assemble_hits` 用它兜底；此前一律回落 "text"，照片/语音命中被标成文字。
@@ -398,7 +423,7 @@ class VectorStore:
 
         for rank, hit in enumerate(dense_hits, 1):
             pid = str(hit.payload.get("content_id", hit.id)) if hit.payload else str(hit.id)
-            scores[pid] = scores.get(pid, 0.0) + 0.7 / (k + rank)
+            scores[pid] = scores.get(pid, 0.0) + dense_weight / (k + rank)
             details.setdefault(pid, {"dense_score": hit.score, "sparse_score": 0.0, "text": None})
             details[pid]["dense_score"] = hit.score
             if hit.payload:
@@ -407,7 +432,7 @@ class VectorStore:
 
         for rank, hit in enumerate(sparse_hits, 1):
             pid = str(hit.payload.get("content_id", hit.id)) if hit.payload else str(hit.id)
-            scores[pid] = scores.get(pid, 0.0) + 0.3 / (k + rank)
+            scores[pid] = scores.get(pid, 0.0) + sparse_weight / (k + rank)
             d = details.setdefault(pid, {"dense_score": 0.0, "sparse_score": 0.0, "text": None})
             d["sparse_score"] = hit.score
             if hit.payload:

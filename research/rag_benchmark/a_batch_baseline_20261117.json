@@ -1,12 +1,12 @@
 {
   "meta": {
     "name": "A 批检索基线（首个可复跑产物）",
-    "generated_at": "2026-11-17T09:27:14.834316+08:00",
+    "generated_at": "2026-11-19T09:44:34.271629+08:00",
     "command": "python -m research.rag_benchmark.run_a_batch_baseline --out research\\rag_benchmark\\a_batch_baseline_20261117.json",
     "eval_command": "python -m research.rag_benchmark.run_eval --truth-a --truth-corpus --details --out <tmp>",
     "git": {
       "branch": "develop",
-      "commit": "8fd944242611e466decc3d508b60a0bf221997b4",
+      "commit": "c8cc528c38560fb44d59da3fdde5267ff429255b",
       "dirty": true
     },
     "env": {
@@ -165,8 +165,8 @@
       "threshold_hit_rate@3": 0.7,
       "threshold_negative": 0.05
     },
-    "command": "D:\\YishuGuanghua\\YSGH-APP\\research\\rag_benchmark\\run_eval.py --truth-a --truth-corpus --details --out C:\\Users\\82026\\AppData\\Local\\Temp\\a_batch_7v5w2zfb\\run_eval_report.json",
-    "generated_at": "2026-11-17T09:27:13.691381+08:00",
+    "command": "python -m research.rag_benchmark.run_eval --truth-a --truth-corpus --details --out <tmp>",
+    "generated_at": "2026-11-19T09:44:33.033154+08:00",
     "settings": {
       "mock_external_ai": true,
       "llm_provider": "dashscope",
