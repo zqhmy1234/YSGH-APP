@@ -1,0 +1,409 @@
+{
+  "meta": {
+    "name": "A 批检索基线（首个可复跑产物）",
+    "generated_at": "2026-11-19T09:44:34.271629+08:00",
+    "command": "python -m research.rag_benchmark.run_a_batch_baseline --out research\\rag_benchmark\\a_batch_baseline_20261117.json",
+    "eval_command": "python -m research.rag_benchmark.run_eval --truth-a --truth-corpus --details --out <tmp>",
+    "git": {
+      "branch": "develop",
+      "commit": "c8cc528c38560fb44d59da3fdde5267ff429255b",
+      "dirty": true
+    },
+    "env": {
+      "EMBED_DEVICE": "cuda",
+      "python": "3.11.16"
+    },
+    "data": {
+      "a_remapped": {
+        "path": "research\\truth-data\\a\\a_remapped.json",
+        "sha256": "70622c397f6f3d40dd3a16bc9fa27533d85dab71a04330779514856b030a334e"
+      },
+      "corpus": {
+        "research\\rag_benchmark\\truth_corpus\\corpus_b_truth.json": "bb5ac6a0592d0f9cbf011996214a5b8edf4ab88c4311315556c7c5448b696772",
+        "research\\rag_benchmark\\truth_corpus\\corpus_c_truth.json": "54a85cdb1011a8c48f870c7f003405aea5c8846603c6830e46edbace1e21a0f0",
+        "research\\rag_benchmark\\truth_corpus\\corpus_manifest.json": "cf11ac78cc921fcc0ed185065cf5bccce2a5325fa5308f69703352ed9a66e2b6"
+      }
+    },
+    "note": "A 批只有 10 条查询 / 5 条有 expected / 4 条负样本；不是回归基线，门禁 FAIL 是预期。"
+  },
+  "overall_pass": false,
+  "truth": {
+    "queries": 10,
+    "sources": [
+      "truth-data/a/a_remapped.json"
+    ],
+    "corpus_size": 130,
+    "layers": {
+      "time": {
+        "n": 3,
+        "placeholder": false,
+        "negative_n": 2,
+        "negative_fp": 2,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.5,
+          "recall@3": 0.5,
+          "recall@5": 1.0,
+          "recall@10": 1.0,
+          "hit_rate@1": 1.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 1.0,
+          "precision@3": 0.3333,
+          "precision@5": 0.4,
+          "precision@10": 0.2,
+          "mrr": 1.0,
+          "ndcg@3": 0.6131,
+          "n_queries": 1
+        }
+      },
+      "person": {
+        "n": 1,
+        "placeholder": false,
+        "negative_n": 0,
+        "negative_fp": 0,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.0,
+          "recall@3": 0.0,
+          "recall@5": 1.0,
+          "recall@10": 1.0,
+          "hit_rate@1": 0.0,
+          "hit_rate@3": 0.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 0.0,
+          "precision@3": 0.0,
+          "precision@5": 0.2,
+          "precision@10": 0.1,
+          "mrr": 0.25,
+          "ndcg@3": 0.0,
+          "n_queries": 1
+        }
+      },
+      "descriptive": {
+        "n": 1,
+        "placeholder": false,
+        "negative_n": 0,
+        "negative_fp": 0,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": {
+          "recall@1": 0.0,
+          "recall@3": 0.5,
+          "recall@5": 0.5,
+          "recall@10": 0.5,
+          "hit_rate@1": 0.0,
+          "hit_rate@3": 1.0,
+          "hit_rate@5": 1.0,
+          "hit_rate@10": 1.0,
+          "precision@1": 0.0,
+          "precision@3": 0.3333,
+          "precision@5": 0.2,
+          "precision@10": 0.1,
+          "mrr": 0.5,
+          "ndcg@3": 0.3869,
+          "n_queries": 1
+        }
+      },
+      "route": {
+        "n": 1,
+        "placeholder": false,
+        "negative_n": 0,
+        "negative_fp": 0,
+        "unmatched_n": 1,
+        "behavior_acc": null,
+        "retrieval": null
+      },
+      "keyword": {
+        "n": 4,
+        "placeholder": false,
+        "negative_n": 4,
+        "negative_fp": 4,
+        "unmatched_n": 0,
+        "behavior_acc": null,
+        "retrieval": null
+      }
+    },
+    "overall": {
+      "retrieval": {
+        "recall@1": 0.1667,
+        "recall@3": 0.3333,
+        "recall@5": 0.8333,
+        "recall@10": 0.8333,
+        "hit_rate@1": 0.3333,
+        "hit_rate@3": 0.6667,
+        "hit_rate@5": 1.0,
+        "hit_rate@10": 1.0,
+        "precision@1": 0.3333,
+        "precision@3": 0.2222,
+        "precision@5": 0.2667,
+        "precision@10": 0.1333,
+        "mrr": 0.5833,
+        "ndcg@3": 0.3333,
+        "n_queries": 3
+      },
+      "negative_n": 6,
+      "negative_error_rate": 1.0,
+      "placeholder_n": 0,
+      "unmatched_n": 1,
+      "cross_modal": {
+        "n": 1,
+        "multi_modal_hit": 0,
+        "acc": 0.0
+      }
+    },
+    "gates": {
+      "hit_rate@3": 0.6667,
+      "gate_hit_rate@3": false,
+      "n_queries": 3,
+      "negative_error_rate": 1.0,
+      "gate_negative_error_rate": false,
+      "threshold_hit_rate@3": 0.7,
+      "threshold_negative": 0.05
+    },
+    "command": "python -m research.rag_benchmark.run_eval --truth-a --truth-corpus --details --out <tmp>",
+    "generated_at": "2026-11-19T09:44:33.033154+08:00",
+    "settings": {
+      "mock_external_ai": true,
+      "llm_provider": "dashscope",
+      "rerank_enabled": false,
+      "rerank_llm_enabled": true,
+      "retrieval_min_dense_score": 0.0,
+      "answerability_reject_enabled": false
+    },
+    "env": {
+      "embed_device": "cuda",
+      "python": "3.11.16",
+      "torch": "2.9.1+cu128",
+      "cuda_available": true
+    },
+    "details": [
+      {
+        "id": "q-0001",
+        "query": "帮我找上周关于自媒体选题的那个视频",
+        "layer": "time",
+        "expected": [
+          "4709d42a-5f4f-5900-9129-d992de4903ff",
+          "715560fe-50c8-5ce3-b768-371194abc52f"
+        ],
+        "ranked": [
+          "4709d42a-5f4f-5900-9129-d992de4903ff",
+          "cd4cfb6e-5c9c-5849-ab8a-3ffeb0462b8d",
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "715560fe-50c8-5ce3-b768-371194abc52f",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "f1a686f5-f810-5de5-baa1-590a33395f4e",
+          "3664ef8f-1d75-59e8-af30-846ed4001c19",
+          "a3c24d3a-5fce-5819-aa50-412ff4624f96",
+          "6ea3680a-142a-5d96-89b9-87035119336b"
+        ],
+        "kind": "retrieval",
+        "resolved": [
+          "4709d42a-5f4f-5900-9129-d992de4903ff",
+          "715560fe-50c8-5ce3-b768-371194abc52f"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true
+      },
+      {
+        "id": "q-0003",
+        "query": "我有没有记过什么关于和妈妈的事情",
+        "layer": "person",
+        "expected": [
+          "6cfe7569-ca57-54c0-b5b5-4be6b72bcdd4"
+        ],
+        "ranked": [
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "231d7ff4-ff73-58f6-875d-98d8c3f600aa",
+          "6cfe7569-ca57-54c0-b5b5-4be6b72bcdd4",
+          "3664ef8f-1d75-59e8-af30-846ed4001c19",
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "71d32519-1750-53f0-a40a-7b194a895730",
+          "57ef9681-ea70-59c3-a0ac-29a8d5a91c18",
+          "ffcf874a-365c-50d1-bd99-d91077d747e4",
+          "e1a8115e-623e-5952-918b-0f03decd542f"
+        ],
+        "kind": "retrieval",
+        "resolved": [
+          "6cfe7569-ca57-54c0-b5b5-4be6b72bcdd4"
+        ],
+        "hit@1": false,
+        "hit@3": false,
+        "hit@5": true,
+        "hit@10": true
+      },
+      {
+        "id": "q-0004",
+        "query": "帮我找我心情不好的时候发的东西",
+        "layer": "descriptive",
+        "expected": [
+          "7379c57f-1e0c-53f5-adb4-9a8d8bc43fe3",
+          "1dfb9871-b080-5b0d-80a5-c4ee4040cd4e"
+        ],
+        "ranked": [
+          "c1280854-5b25-5da9-82b8-fe6009fd5077",
+          "7379c57f-1e0c-53f5-adb4-9a8d8bc43fe3",
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "da072c33-ed99-5ec1-baa2-207661cada67",
+          "ec32752a-9118-5fdd-9920-7602d03eb6f3",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "e1a8115e-623e-5952-918b-0f03decd542f",
+          "9a17e2cc-7f69-5a2a-a568-c0cbc3f6b06f",
+          "956f225a-464e-5c0e-b8a3-bb91465b5aee"
+        ],
+        "kind": "retrieval",
+        "resolved": [
+          "1dfb9871-b080-5b0d-80a5-c4ee4040cd4e",
+          "7379c57f-1e0c-53f5-adb4-9a8d8bc43fe3"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true
+      },
+      {
+        "id": "q-0005",
+        "query": "上个月在外滩拍的照片在哪",
+        "layer": "route",
+        "expected": [
+          "IMG_0005_masked"
+        ],
+        "ranked": [],
+        "kind": "unmatched"
+      },
+      {
+        "id": "q-n001",
+        "query": "我在南极拍的照片在哪",
+        "layer": "keyword",
+        "expected": [],
+        "ranked": [
+          "a2abf7b0-e9c7-50b1-a2a2-e9ba121e4666",
+          "3664ef8f-1d75-59e8-af30-846ed4001c19",
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "10ee556e-762c-5260-8859-86a969f3e1fd",
+          "5faec9cc-a139-5632-95c9-7152ec6cc357",
+          "f285a2bc-9dcb-52a2-9a8a-1bbd851ac8de",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "d4bdac80-12a9-5910-9d21-19c4061481b7",
+          "57ef9681-ea70-59c3-a0ac-29a8d5a91c18"
+        ],
+        "kind": "negative",
+        "false_positive": true
+      },
+      {
+        "id": "q-n002",
+        "query": "帮我找三年前和外婆的合影",
+        "layer": "time",
+        "expected": [],
+        "ranked": [
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "715560fe-50c8-5ce3-b768-371194abc52f",
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "2d32ffd6-2641-58eb-bc5e-ecba3715c9a0",
+          "f1a686f5-f810-5de5-baa1-590a33395f4e",
+          "7b63d727-380f-5d04-8558-07c305fc14de",
+          "3664ef8f-1d75-59e8-af30-846ed4001c19",
+          "ffcf874a-365c-50d1-bd99-d91077d747e4",
+          "ec32752a-9118-5fdd-9920-7602d03eb6f3"
+        ],
+        "kind": "negative",
+        "false_positive": true
+      },
+      {
+        "id": "q-n003",
+        "query": "我上个月存过一篇关于量子物理的文章",
+        "layer": "keyword",
+        "expected": [],
+        "ranked": [
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "f1a686f5-f810-5de5-baa1-590a33395f4e",
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "f8632986-8cd5-5ff9-a123-209351a511c6",
+          "cd4cfb6e-5c9c-5849-ab8a-3ffeb0462b8d",
+          "ec32752a-9118-5fdd-9920-7602d03eb6f3",
+          "d37653aa-0b78-5ba9-b42f-1e4d809f08bf",
+          "231d7ff4-ff73-58f6-875d-98d8c3f600aa",
+          "a3c24d3a-5fce-5819-aa50-412ff4624f96",
+          "ffcf874a-365c-50d1-bd99-d91077d747e4"
+        ],
+        "kind": "negative",
+        "false_positive": true
+      },
+      {
+        "id": "q-n004",
+        "query": "帮我找昨天下午四点发的那条",
+        "layer": "time",
+        "expected": [],
+        "ranked": [
+          "ffcf874a-365c-50d1-bd99-d91077d747e4",
+          "cd4cfb6e-5c9c-5849-ab8a-3ffeb0462b8d",
+          "836ff90c-f3ea-58cd-b7c3-33ac0c639198",
+          "10ee556e-762c-5260-8859-86a969f3e1fd"
+        ],
+        "kind": "negative",
+        "false_positive": true
+      },
+      {
+        "id": "q-n005",
+        "query": "我有没有记过什么关于炒股的",
+        "layer": "keyword",
+        "expected": [],
+        "ranked": [
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "798cd12e-624b-549c-a48f-409579f7b1a9",
+          "231d7ff4-ff73-58f6-875d-98d8c3f600aa",
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "956f225a-464e-5c0e-b8a3-bb91465b5aee",
+          "57ef9681-ea70-59c3-a0ac-29a8d5a91c18",
+          "e013b5d3-5584-54f2-a24c-838636d31446",
+          "a3c24d3a-5fce-5819-aa50-412ff4624f96",
+          "ec32752a-9118-5fdd-9920-7602d03eb6f3"
+        ],
+        "kind": "negative",
+        "false_positive": true
+      },
+      {
+        "id": "q-0002",
+        "query": "我之前录过一段关于苏州的语音，帮我找出来",
+        "layer": "keyword",
+        "expected": [],
+        "ranked": [
+          "2b3792e6-8d17-52af-82d6-a2cc50176d47",
+          "6ea3680a-142a-5d96-89b9-87035119336b",
+          "a3c24d3a-5fce-5819-aa50-412ff4624f96",
+          "3664ef8f-1d75-59e8-af30-846ed4001c19",
+          "cd4cfb6e-5c9c-5849-ab8a-3ffeb0462b8d",
+          "e4968487-7c87-58f0-b04e-9fe62c9d69d5",
+          "f1a686f5-f810-5de5-baa1-590a33395f4e",
+          "baed8865-dbc3-5318-be25-3c2f53f94e6b",
+          "715560fe-50c8-5ce3-b768-371194abc52f",
+          "231d7ff4-ff73-58f6-875d-98d8c3f600aa"
+        ],
+        "kind": "negative",
+        "false_positive": true
+      }
+    ],
+    "failed_query_ids": [
+      "q-0003",
+      "q-0005",
+      "q-n001",
+      "q-n002",
+      "q-n003",
+      "q-n004",
+      "q-n005",
+      "q-0002"
+    ]
+  }
+}

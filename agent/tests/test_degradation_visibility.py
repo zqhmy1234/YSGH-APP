@@ -51,6 +51,9 @@ def test_note_degrade_logs_warning_once_then_info(caplog):
 
 
 def test_mirror_records_degradation_when_token_missing(monkeypatch):
+    # CI 的 agent-gate 在 job 级设了 AGENT_MIRROR_TO_APP="0"（避免其它用例真发网络请求），
+    # 不加这一行会在"检查令牌"之前就被 api_disabled 短路，测不到目标降级路径。
+    monkeypatch.setenv("AGENT_MIRROR_TO_APP", "1")
     monkeypatch.setattr(mt, "_backend_base_and_token", lambda: ("http://test", ""))
     mt._mirror_memory_to_app("m-1", "内容", mood=None, topics=None, people=None, location=None, category=None)
     assert degradation.snapshot().get("mirror_skipped_no_token") == 1
@@ -63,6 +66,8 @@ def test_mirror_records_degradation_when_module_disabled(monkeypatch):
 
 
 def test_unmirror_records_degradation_when_token_missing(monkeypatch):
+    # 同上：显式开启镜像，否则 CI 的 AGENT_MIRROR_TO_APP="0" 会让它走 api_disabled 分支。
+    monkeypatch.setenv("AGENT_MIRROR_TO_APP", "1")
     monkeypatch.setattr(mt, "_backend_base_and_token", lambda: ("http://test", ""))
     mt._unmirror_memory_from_app("m-3")
     assert degradation.snapshot().get("unmirror_skipped_no_token") == 1

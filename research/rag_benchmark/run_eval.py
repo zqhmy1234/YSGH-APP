@@ -296,6 +296,7 @@ def _eval_truth_queries(
     ranker,
     corpus_labels: dict[str, set[str]],
     modality_map: dict[str, str],
+    collect_details: bool = False,
 ) -> dict:
     """真值查询评估（§6.1/§6.3/§6.5 落地）：
 
@@ -309,30 +310,53 @@ def _eval_truth_queries(
     retrieval_qs: list[dict] = []
     neg_total = neg_fp = placeholder_n = unmatched_n = 0
     cross_n = cross_multi = 0
+    details: list[dict] = []
 
     for q in queries:
         layer = q.get("layer", "other")
         ranked = [rid for rid, _ in ranker(q["query"])]
+        detail: dict = {
+            "id": q.get("query_id") or q.get("id") or q.get("qid"),
+            "query": q.get("query"),
+            "layer": layer,
+            "expected": q.get("expected") or [],
+            "ranked": ranked[:10],
+        }
         entry: dict
         if q.get("expect_empty"):
             neg_total += 1
             fp = 1 if ranked else 0
             neg_fp += fp
             entry = {"behavior_acc": 0.0 if fp else 1.0, "negative": True}
+            detail.update({"kind": "negative", "false_positive": bool(ranked)})
         else:
             ids = [i for i in (q.get("expected") or []) if i in corpus_labels.get("__all__", set())]
             if ids:
                 resolved = sorted(_resolve_truth_relevant(q, corpus_labels))
                 retrieval_qs.append({**q, "expected": resolved})
                 entry = {"retrieval": True, "resolved": resolved}
+                resolved_set = set(resolved)
+                detail.update({
+                    "kind": "retrieval",
+                    "resolved": resolved,
+                    **{
+                        f"hit@{k}": bool(resolved_set & set(ranked[:k]))
+                        for k in (1, 3, 5, 10)
+                    },
+                })
             elif q.get("expected"):
                 unmatched_n += 1
                 entry = {"unmatched": True}
+                detail.update({"kind": "unmatched"})
             elif layer in _BEHAVIOR_EMPTY_OK_LAYERS:
                 entry = {"behavior_acc": 1.0 if not ranked else 0.0, "placeholder": True}
+                detail.update({"kind": "placeholder", "behavior_acc": entry["behavior_acc"]})
             else:
                 placeholder_n += 1
                 entry = {"neutral": True, "placeholder": True}
+                detail.update({"kind": "neutral"})
+        if collect_details:
+            details.append(detail)
         # 跨模态 route 聚合（§6.5）：expected 多 id 的 route 查询，看 top-3 是否命中 ≥2 模态
         if layer == "route" and (q.get("expected") or []):
             cross_n += 1
@@ -381,7 +405,10 @@ def _eval_truth_queries(
     if cross_n:
         overall["cross_modal"] = {"n": cross_n, "multi_modal_hit": cross_multi,
                                   "acc": round(cross_multi / cross_n, 4)}
-    return {"layers": layer_report, "overall": overall}
+    result = {"layers": layer_report, "overall": overall}
+    if collect_details:
+        result["details"] = details
+    return result
 
 
 def _check_rewrite_case(case: dict, now=None) -> bool:
@@ -533,7 +560,10 @@ def _run_truth_eval(args, report: dict) -> dict:
 
     # 3. 跑真值评估
     ranker = _make_ranker(collection=TRUTH_COLLECTION)
-    res = _eval_truth_queries(queries, ranker, corpus_labels, modality_map)
+    res = _eval_truth_queries(
+        queries, ranker, corpus_labels, modality_map,
+        collect_details=getattr(args, "details", False),
+    )
     overall = res["overall"]
     hr3 = overall["retrieval"].get("hit_rate@3", 0.0) if overall.get("retrieval") else 0.0
     neg_rate = overall["negative_error_rate"]
@@ -557,17 +587,43 @@ def _run_truth_eval(args, report: dict) -> dict:
     # 否则「同一语料两次跑出不同数字」无法归因。2026-10-23 补 answerability 开关。
     from app.core.config import settings
 
-    report["truth"] = {"queries": len(queries), "sources": sources,
-                       "corpus_size": len(items), "layers": res["layers"],
-                       "overall": overall, "gates": truth_gates,
-                       "settings": {
-                           "mock_external_ai": settings.mock_external_ai,
-                           "llm_provider": settings.llm_provider,
-                           "rerank_enabled": settings.rerank_enabled,
-                           "rerank_llm_enabled": settings.rerank_llm_enabled,
-                           "retrieval_min_dense_score": settings.retrieval_min_dense_score,
-                           "answerability_reject_enabled": settings.answerability_reject_enabled,
-                       }}
+    truth_block = {
+        "queries": len(queries), "sources": sources,
+        "corpus_size": len(items), "layers": res["layers"],
+        "overall": overall, "gates": truth_gates,
+        "command": " ".join(sys.argv),
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "settings": {
+            "mock_external_ai": settings.mock_external_ai,
+            "llm_provider": settings.llm_provider,
+            "rerank_enabled": settings.rerank_enabled,
+            "rerank_llm_enabled": settings.rerank_llm_enabled,
+            "retrieval_min_dense_score": settings.retrieval_min_dense_score,
+            "answerability_reject_enabled": settings.answerability_reject_enabled,
+        },
+        "env": {
+            "embed_device": os.environ.get("EMBED_DEVICE", "cpu"),
+            "python": sys.version.split()[0],
+        },
+    }
+    try:
+        import torch
+
+        truth_block["env"]["torch"] = torch.__version__
+        truth_block["env"]["cuda_available"] = bool(torch.cuda.is_available())
+    except Exception as exc:  # noqa: BLE001 —— 环境指纹尽力而为，不影响评测
+        truth_block["env"]["torch_error"] = str(exc)
+    if getattr(args, "details", False):
+        details = res.get("details", [])
+        truth_block["details"] = details
+        # 失败 query id：负样本误召回 / 引用悬空 / 检索未命中 top3 / 行为占位未过
+        truth_block["failed_query_ids"] = [
+            d.get("id") for d in details
+            if d.get("kind") in ("negative", "unmatched")
+            or (d.get("kind") == "retrieval" and not d.get("hit@3"))
+            or (d.get("kind") == "placeholder" and d.get("behavior_acc") == 0.0)
+        ]
+    report["truth"] = truth_block
     hr_txt = (f"hit_rate@3={hr3}（门禁 ≥{GATE['hit_rate@3']}）" if n_q
               else "hit_rate@3 无法判定（n_queries=0，没有可测查询）")
     print(f"[truth] 检索 {hr_txt}"
@@ -592,8 +648,9 @@ def _run_truth_eval(args, report: dict) -> dict:
     return overall_ok
 
 
-def _write_report(report: dict) -> None:
-    out = BENCH_DIR / "evaluation_report.json"
+def _write_report(report: dict, path: Path | None = None) -> None:
+    out = path or (BENCH_DIR / "evaluation_report.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"报告已输出: {out}")
 
@@ -613,6 +670,10 @@ def main() -> None:
                         help="A 批真值（research/truth-data/a/a_v*.json；expected 经 manifest 重映射）")
     parser.add_argument("--truth-corpus", action="store_true",
                         help="用 build_truth_corpus.py 生成的采集语料（缺省回退合成 B+C）")
+    parser.add_argument("--details", action="store_true",
+                        help="真值报告附带逐条结果（query/ranked/命中与失败原因；A 批基线用）")
+    parser.add_argument("--out", default="",
+                        help="报告输出路径（默认 research/rag_benchmark/evaluation_report.json）")
     parser.add_argument("--rewrite-check", action="store_true",
                         help="Query 改写层正确率（相对时间→filter 解析 + NER + 显式参数优先）")
     args = parser.parse_args()
@@ -630,14 +691,14 @@ def main() -> None:
     if args.truth_50 or args.truth_a:
         overall_ok = _run_truth_eval(args, report)
         report["overall_pass"] = overall_ok
-        _write_report(report)
+        _write_report(report, Path(args.out) if args.out else None)
         sys.exit(0 if overall_ok else 1)
 
     # 仅 --rewrite-check（不跑合成全量）→ 直接收尾
     # 注意 `--scale-sizes` 也要算进「有别的评测要跑」，否则 --rewrite-check --scale-sizes 会被提前收尾
     if args.rewrite_check and not args.scale_eval and not args.scale_sizes and not args.external:
         report["overall_pass"] = True
-        _write_report(report)
+        _write_report(report, Path(args.out) if args.out else None)
         return
 
     scale_sizes = [int(s) for s in args.scale_sizes.split(",") if s.strip()] if args.scale_sizes else []

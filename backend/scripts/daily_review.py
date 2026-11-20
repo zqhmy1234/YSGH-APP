@@ -1,7 +1,7 @@
 """每日复盘入队（S4-07 · 22:00 push，mock 通道）
 
 遍历活跃用户 → notify.generate_daily_review 生成复盘消息（mock 推送日志占位）。
-供 RQ 定时任务 / Windows 计划任务 / cron 调用；幂等：可重复跑（生成新消息不重复覆盖）。
+供 RQ 定时任务 / Windows 计划任务 / cron 调用；同一用户/自然日重复执行不新增消息。
 
 用法：
     python scripts/daily_review.py [--day YYYY-MM-DD] [--user <uuid>] [--dry-run]
@@ -56,7 +56,7 @@ def main() -> None:
                 sent += 1
             else:
                 skipped += 1
-                print(f"  -  user={u.id} 今日无内容，跳过")
+                print(f"  -  user={u.id} 无内容或已生成，跳过")
         print(f"完成: 生成 {sent} 条 | 跳过 {skipped} 条")
     finally:
         db.close()

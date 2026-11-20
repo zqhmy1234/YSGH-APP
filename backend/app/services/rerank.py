@@ -67,6 +67,11 @@ def _load_model():
     try:
         import torch
 
+        # 2026-11-17 R-6：显式传 device。sentence-transformers 不会因为
+        # torch.cuda.is_available() 就自动把 CrossEncoder 搬上 GPU；不传 device
+        # 时即使 rerank_auto_enable 判定 GPU 就绪，模型仍加载到 CPU。
+        device = "cuda" if _gpu_available() else "cpu"
+        logger.info("reranker 加载: %s（device=%s）", model_path, device)
         # 2026-08-25 内存优化：fp16（bge-reranker fp32 ~1GB → fp16 ~0.5GB）
         # 修复（2026-08-25 RAG 审查）：sentence-transformers 3.4.1 的 CrossEncoder
         # 不接受 model_kwargs（旧版 API）→ 加载必抛 TypeError → 被 except 吞掉静默降级，
@@ -74,6 +79,7 @@ def _load_model():
         return CrossEncoder(
             str(model_path),
             max_length=512,
+            device=device,
             automodel_args={"torch_dtype": torch.float16},
         )
     except Exception as exc:  # noqa: BLE001 —— 模型加载失败降级为不重排

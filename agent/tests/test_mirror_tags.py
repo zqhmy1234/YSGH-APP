@@ -41,6 +41,9 @@ class _CaptureClient:
 
 @pytest.fixture()
 def capture_mirror(monkeypatch):
+    # CI 的 agent-gate 在 job 级设了 AGENT_MIRROR_TO_APP="0"；不显式打开的话
+    # `_mirror_memory_to_app` 会在发请求前 return，捕获到的 body 恒为 {}。
+    monkeypatch.setenv("AGENT_MIRROR_TO_APP", "1")
     monkeypatch.setattr(mt, "_backend_base_and_token", lambda: ("http://test", "tok"))
     monkeypatch.setattr(mt, "_get_user_id", lambda: "mirror-user")
     # `import httpx` 在 _mirror_memory_to_app 函数体内执行 ⇒ 必须打在 httpx 模块

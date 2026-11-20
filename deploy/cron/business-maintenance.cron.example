@@ -1,0 +1,8 @@
+# 仅供 /opt/yishu systemd 部署；审核并确认部署后追加，保留已有备份条目。
+# 服务器时区须为 Asia/Shanghai；root cron，四项独立日志。cleanup 始终先预览。
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+7 * * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance requeue --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/requeue.log 2>&1
+10 4 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance cleanup --dry-run --limit 500 --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/cleanup.log 2>&1
+5 8 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance capsules --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/capsules.log 2>&1
+0 22 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance daily-review --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/daily-review.log 2>&1

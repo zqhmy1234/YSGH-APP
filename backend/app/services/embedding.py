@@ -34,6 +34,13 @@ MODEL_REPO = "BAAI/bge-m3"
 _LOCAL_DIR = Path(__file__).resolve().parents[2] / "models" / "bge-m3"
 MODEL_NAME = str(_LOCAL_DIR) if (_LOCAL_DIR / "config.json").is_file() else MODEL_REPO
 
+# 推理设备（2026-11-08）：**默认 CPU，行为与既有口径完全一致**。
+# 背景：CPU 上索引 130 条真值语料 + 10 条查询要 20 分钟以上（BGE-M3 本地推理），
+# 本机有 GPU 时可用 `EMBED_DEVICE=cuda` 切到显卡。sentence-transformers 6.x **不会**
+# 自动搬到 GPU（`encode()` 无 device 参数时取模型当前设备，仍是 CPU），必须显式指定。
+# 生产容器无 GPU ⇒ 不设该变量即维持原状；显式写 `cpu` 亦等价。
+EMBED_DEVICE = os.environ.get("EMBED_DEVICE", "cpu") or "cpu"
+
 torch.set_num_threads(4)
 
 
@@ -45,8 +52,10 @@ def get_model() -> SentenceTransformer:
       · 本地目录 `backend/models/bge-m3/config.json` 存在 → 用它（离线，推荐）
       · 否则回退 HF repo id `BAAI/bge-m3`（需HF_HUB_OFFLINE=0 且网络可达）
     """
-    logger.info("加载 BGE-M3 模型: %s", MODEL_NAME)
-    return SentenceTransformer(MODEL_NAME, model_kwargs={"torch_dtype": torch.float16})
+    logger.info("加载 BGE-M3 模型: %s（device=%s）", MODEL_NAME, EMBED_DEVICE)
+    return SentenceTransformer(
+        MODEL_NAME, device=EMBED_DEVICE, model_kwargs={"torch_dtype": torch.float16}
+    )
 
 
 def _remote_base() -> str:
@@ -127,7 +136,8 @@ def _get_sparse_linear() -> torch.nn.Linear:
     lin = torch.nn.Linear(1024, 1)
     lin.load_state_dict(state)
     lin.eval()
-    return lin
+    # 与主模型同设备：token_embeddings 在 GPU 上时，投影层留在 CPU 会报设备不匹配
+    return lin.to(EMBED_DEVICE)
 
 
 def encode_sparse(texts: list[str]) -> list[dict[str, float]]:
@@ -148,6 +158,10 @@ def encode_sparse(texts: list[str]) -> list[dict[str, float]]:
     model = get_model()
     sparse_linear = _get_sparse_linear()
     features = model.tokenize(texts)
+    # tokenize() 只做分词、张量留在 CPU；模型在 GPU 时须显式搬运，
+    # 否则 forward 里 embedding 查表会报 "index is on cpu, different from ... cuda"。
+    device = getattr(model, "device", EMBED_DEVICE)
+    features = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in features.items()}
     with torch.no_grad():
         out = model[0](features)
     token_emb = out["token_embeddings"]  # [B, L, 1024]
