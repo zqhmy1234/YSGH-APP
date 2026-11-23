@@ -37,7 +37,7 @@ def _mock_stream(monkeypatch, events, error: Exception | None = None):
     """把 `stream_agent_chat` 换成确定性桩（可注入异常），并记录调用参数。"""
     calls: list[tuple[str, str, str]] = []
 
-    def _fake(user_id: str, message: str, conversation_id: str):
+    def _fake(user_id: str, message: str, conversation_id: str, **_kw):
         calls.append((user_id, message, conversation_id))
         yield from events
         if error is not None:

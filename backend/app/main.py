@@ -17,10 +17,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (  # noqa: E501
+    agent_profile,  # 服务间 Agent L3 端点（digest/persons/echo）
     asr,
     auth,
     capsules,
     chat,
+    chat_history,
     classify,
     contents,
     corrections,
@@ -28,7 +30,9 @@ from app.api import (  # noqa: E501
     events,
     export,
     interview,
+    memory,
     messages,
+    persona,
     profile,
     search,
     stats,
@@ -158,6 +162,10 @@ def create_app() -> FastAPI:
     app.include_router(stats.router)  # R9-7 hero 副标题 API 化（Q5 拍板）
     app.include_router(users.router)  # BB1 GET /api/v1/users/me（当前用户信息·手机号服务端掩码）
     app.include_router(chat.router)  # AG5 AI 对话域（反代 Agent 服务；客户端 TabAi 契约）
+    app.include_router(chat_history.router)  # 会话历史分页（与 chat 同前缀，独立模块控体积）
+    app.include_router(memory.router)  # B5-02 Agent L3 记忆快照（include_in_schema=False）
+    app.include_router(persona.router)  # B7 陪伴关系（三组完整句子 + 人物卡选择）
+    app.include_router(agent_profile.router)  # Agent L3：profile digest/persons/echo（include_in_schema=False）
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

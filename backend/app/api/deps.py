@@ -6,6 +6,7 @@ import logging
 import secrets
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import jwt
 from fastapi import Depends, Query, Request
@@ -14,10 +15,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.errors import ERR_AUTH_001, ERR_AUTH_005, ERR_CONTENT_010, ApiError
+from app.core.errors import (
+    ERR_AUTH_001,
+    ERR_AUTH_005,
+    ERR_CONTENT_010,
+    ERR_USER_002,
+    ApiError,
+)
 from app.core.security import decode_token
 from app.db.models import Content, User
 from app.db.session import get_db
+from app.domain.memory.purge import account_undo_until
 from app.services.errors import NotFoundError
 
 _bearer = HTTPBearer(auto_error=False)
@@ -57,12 +65,11 @@ def uuid4_str(value: str) -> str:
         raise NotFoundError(f"无效的 ID: {value}") from exc
 
 
-def get_current_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
+def _load_access_user(
+    credentials: HTTPAuthorizationCredentials | None,
+    db: Session,
 ) -> User:
-    """解析 access token → 返回当前用户（无效/过期 → 401）"""
+    """Bearer access token → User（**只验 token**，账号状态由调用方判定）。"""
     if credentials is None:
         raise ApiError(ERR_AUTH_005, "未提供认证凭据", http=401)
 
@@ -76,9 +83,42 @@ def get_current_user(
         raise ApiError(ERR_AUTH_005, "token 类型错误", http=401)
 
     user = db.get(User, payload.get("sub"))
-    if user is None or user.status != 1:
+    if user is None:
+        raise ApiError(ERR_AUTH_001, "用户不存在", http=401)
+    return user
+
+
+def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User:
+    """解析 access token → 返回当前用户（无效/过期/冻结/已申请注销 → 401）"""
+    user = _load_access_user(credentials, db)
+    if user.status != 1 or user.deleted_at is not None:
         raise ApiError(ERR_AUTH_001, "用户不存在或已冻结", http=401)
     return user
+
+
+def get_current_user_or_pending_deletion(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User:
+    """正常账号 **或** 30 天撤销窗口内的待注销账号。
+
+    只给 `/users/me`、`DELETE /users/me`、`POST /users/me/restore` 使用；
+    普通业务端点必须继续走 `get_current_user`，否则待注销账号还能继续写入。
+    窗口过期 → 410，而不是静默当成正常用户。
+    """
+    user = _load_access_user(credentials, db)
+    if user.status == 1 and user.deleted_at is None:
+        return user
+    if user.status == 0 and user.deleted_at is not None:
+        if datetime.now(UTC) <= account_undo_until(user.deleted_at):
+            return user
+        raise ApiError(ERR_USER_002, "账号注销恢复窗口已过", http=410)
+    raise ApiError(ERR_AUTH_001, "用户不存在或已冻结", http=401)
 
 
 # ---------------------------------------------------------------------------

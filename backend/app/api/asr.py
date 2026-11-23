@@ -100,7 +100,7 @@ def transcribe_audio(
                 outcome=result.outcome,  # type: ignore[arg-type]
                 channel=result.channel,  # type: ignore[arg-type]
                 emotion=result.emotion,
-                emotion_confidence=result.emotion_confidence,
+                # emotion_confidence 故意不下发（B7-03 / 决策 29.10）
                 emotion_source=result.emotion_source,
                 emotion_model=result.emotion_model,
                 confidence=result.confidence,

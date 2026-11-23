@@ -47,6 +47,10 @@ _ERROR_SPECS: list[ErrorSpec] = [
     # 内测期设备码通道门控（2026-09-21）：与 AUTH_010/AUTH_011 同族——「未开启即拒绝」，
     # 不静默降级。关闭态是**默认且上架后必须保持**的状态（docs/决策台账.md §1.13）。
     ErrorSpec("AUTH_014", "设备登录未开启（内测通道）", 501),
+    # 账号注销域（2026-11-24）：30 天撤销窗口内的账号只允许读 /me、恢复、重复注销
+    ErrorSpec("USER_001", "账号注销处理失败", 500, retryable=True),
+    ErrorSpec("USER_002", "账号注销恢复窗口已过", 410),
+    ErrorSpec("USER_003", "账号未处于可恢复的注销状态", 409),
     ErrorSpec("AUTH_099", "认证服务未接入或上游不可用（微信/短信）", 501),
     # ASR 域
     ErrorSpec("ASR_001", "音频参数校验失败", 422),
@@ -155,6 +159,9 @@ ERR_AUTH_011 = "AUTH_011"
 ERR_AUTH_012 = "AUTH_012"
 ERR_AUTH_013 = "AUTH_013"
 ERR_AUTH_014 = "AUTH_014"
+ERR_USER_001 = "USER_001"
+ERR_USER_002 = "USER_002"
+ERR_USER_003 = "USER_003"
 ERR_AUTH_099 = "AUTH_099"
 ERR_ASR_001 = "ASR_001"
 ERR_ASR_002 = "ASR_002"

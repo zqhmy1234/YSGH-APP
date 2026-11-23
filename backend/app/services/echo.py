@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.timeutil import local_now
 from app.db.models import Content, EchoHistory, ProfileSensitive
+from app.services.query_helpers import alive_clause
 
 logger = logging.getLogger("yishu.echo")
 
@@ -191,6 +192,63 @@ def _is_sensitive(db: Session, content: Content, profile_rows=None) -> bool:
     return False
 
 
+def peek_today_echo(db: Session, user_id: str) -> dict | None:
+    """Read-only 候选：复用 ``get_today_echo`` 的筛选口径，但不写 EchoHistory/消息。
+
+    Agent 的 ECHO 意图只能读候选（是否真正展示由用户端决定），所以不能直接
+    调 ``get_today_echo``——那会写展示记录并消耗当天的 1 条名额。
+    """
+    now_local = _local_now()
+    today = now_local.date()
+    try:
+        last_year = today.replace(year=today.year - 1)
+    except ValueError:
+        last_year = today.replace(year=today.year - 1, day=28)
+    day_start_local = datetime.combine(last_year, time.min, tzinfo=now_local.tzinfo)
+    day_end_local = day_start_local + timedelta(days=1)
+    row = db.execute(
+        select(Content)
+        .where(
+            Content.user_id == user_id,
+            alive_clause(Content),
+            Content.taken_at >= day_start_local,
+            Content.taken_at < day_end_local,
+        )
+        .order_by(Content.taken_at.desc())
+        .limit(20)
+    ).scalars().all()
+    dismissed = set(
+        db.execute(
+            select(EchoHistory.fingerprint).where(
+                EchoHistory.user_id == user_id,
+                EchoHistory.action == "dismiss",
+            )
+        ).scalars().all()
+    )
+    profile_rows = db.execute(
+        select(ProfileSensitive).where(ProfileSensitive.user_id == user_id)
+    ).scalars().all()
+    for content in row:
+        text = content.text or ""
+        if _profile_hit(text, profile_rows):
+            continue
+        if content.sensitive_status and content.sensitive_status != "正常":
+            continue
+        fp = _fingerprint(content.id)
+        if fp in dismissed:
+            continue
+        return {
+            "content_id": content.id,
+            "content_type": content.content_type,
+            "text": text,
+            "taken_at": content.taken_at.isoformat() if content.taken_at else None,
+            "place": content.place,
+            "echo_date": today.isoformat(),
+            "fingerprint": fp,
+        }
+    return None
+
+
 def get_today_echo(db: Session, user_id: str) -> dict | None:
     """去年今日回响（每天 ≤1 条；无内容/已展示/敏感 → None）"""
     now_local = _local_now()
@@ -223,7 +281,7 @@ def get_today_echo(db: Session, user_id: str) -> dict | None:
         select(Content)
         .where(
             Content.user_id == user_id,
-            Content.deleted_at.is_(None),
+            alive_clause(Content),
             Content.taken_at >= day_start_local,
             Content.taken_at < day_end_local,
         )

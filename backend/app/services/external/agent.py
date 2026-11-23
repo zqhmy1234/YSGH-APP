@@ -55,7 +55,14 @@ def _headers() -> dict[str, str]:
     return headers
 
 
-def call_agent_chat(user_id: str, message: str, conversation_id: str) -> AgentChatResult:
+def call_agent_chat(
+    user_id: str,
+    message: str,
+    conversation_id: str,
+    *,
+    persona: dict | None = None,
+    response_brief: dict | None = None,
+) -> AgentChatResult:
     """调 agent 服务跑一轮对话，返回其回复文本。
 
     `conversation_id` 用作 agent 侧的会话键素材——一个用户可有多个会话，
@@ -72,7 +79,15 @@ def call_agent_chat(user_id: str, message: str, conversation_id: str) -> AgentCh
     """
     thread_id = f"{user_id}:{conversation_id}"
     url = f"{settings.agent_service_base_url.rstrip('/')}/v1/chat"
-    payload = {"user_id": user_id, "message": message, "thread_id": thread_id}
+    payload = {
+        "user_id": user_id,
+        "message": message,
+        "thread_id": thread_id,
+    }
+    if persona:
+        payload["persona"] = persona
+    if response_brief:
+        payload["response_brief"] = response_brief
     started = time.monotonic()
     try:
         with httpx.Client(timeout=settings.agent_service_timeout_s) as client:
@@ -145,7 +160,14 @@ def _iter_sse(resp: httpx.Response) -> Iterator[tuple[str, dict]]:
         yield _decode_sse_data(event or "message", "".join(buffer))
 
 
-def stream_agent_chat(user_id: str, message: str, conversation_id: str) -> Iterator[tuple[str, object]]:
+def stream_agent_chat(
+    user_id: str,
+    message: str,
+    conversation_id: str,
+    *,
+    persona: dict | None = None,
+    response_brief: dict | None = None,
+) -> Iterator[tuple[str, object]]:
     """调 agent 服务的**流式**接口，逐条产出 `(kind, payload)`。
 
     产出与 agent 侧 SSE 帧同构（见 `agent/src/main.py::chat_stream`）：
@@ -161,7 +183,15 @@ def stream_agent_chat(user_id: str, message: str, conversation_id: str) -> Itera
     """
     thread_id = f"{user_id}:{conversation_id}"
     url = f"{settings.agent_service_base_url.rstrip('/')}/v1/chat/stream"
-    payload = {"user_id": user_id, "message": message, "thread_id": thread_id}
+    payload = {
+        "user_id": user_id,
+        "message": message,
+        "thread_id": thread_id,
+    }
+    if persona:
+        payload["persona"] = persona
+    if response_brief:
+        payload["response_brief"] = response_brief
     # 读超时用既有 agent 超时（单轮 LLM 上限）；连接/写入用更短的固定值
     # ——连不上或写不出去没必要等 180 秒。
     timeout = httpx.Timeout(
