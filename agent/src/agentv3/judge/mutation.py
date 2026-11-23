@@ -35,7 +35,7 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant("crisis-short-circuit", "agentv3/orchestrator.py", "if guard.action is GuardAction.HANDOFF:", "if False:", "test_orchestrator.py"),
     Mutant("sculptor-refuses-bad-batch", "agentv3/agents/sculptor.py", "if issues:", "if False:", "test_sculptor.py"),
     Mutant("sqlite-write-through", "agentv3/adapters/sqlite_memory.py", "doc = json.dumps(self.dump_state(), ensure_ascii=False)", "doc = json.dumps({}, ensure_ascii=False)", "test_ledger.py"),
-    Mutant("default-profile-must-be-deepseek", "../config/lingqu-catalog.json", '"default_profile": "deepseek/deepseek-v4-flash"', '"default_profile": "qwen/qwen4-max"', "lingqu/test_catalog.py"),
+    Mutant("default-profile-must-be-deepseek", "../config/lingqu-catalog.json", '"default_profile": "deepseek/deepseek-v4.1-flash"', '"default_profile": "qwen/qwen4-max"', "lingqu/test_catalog.py"),
     Mutant("admin-never-returns-key", "agentv3/lingqu/admin.py", '"fingerprint": fingerprint,', '"fingerprint": fingerprint,\\n        "api_key": credential.api_key,', "lingqu/test_gateway.py"),
     Mutant("bad-request-does-not-fallback", "agentv3/lingqu/gateway.py", "if should_fallback(error) and index < len(route.candidates) - 1:", "if index < len(route.candidates) - 1:", "lingqu/test_gateway.py"),
     Mutant("card-cannot-move-platform-guard", "agentv3/prompts/bundle.py", 'SEGMENT_ORDER = (\n    "platform_guard",\n    "crisis_protocol",', 'SEGMENT_ORDER = (\n    "character_card",\n    "platform_guard",\n    "crisis_protocol",', "test_prompt_bundle.py"),

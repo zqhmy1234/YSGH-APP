@@ -75,7 +75,12 @@ class LingquGateway:
                 system=request.system,
                 user=request.user,
                 tools=request.tool_schemas,
-                max_tokens=min(request.max_chars, 4096),
+                # ``LLMRequest.max_chars`` caps reply characters (Muse asks for
+                # 400..1200), but DeepSeek V4.1 spends most of that budget on
+                # hidden reasoning first. The observed empty-content cases all
+                # had max_tokens <= 128; 256 still produced content. Keep a
+                # floor so a Chinese reply is not silently truncated to "".
+                max_tokens=min(max(request.max_chars, 256), 4096),
                 temperature=request.temperature,
             )
             started = time.monotonic()
@@ -121,7 +126,7 @@ class LingquGateway:
             purpose="muse",
             system="你是模型连通性探针，只回复 OK。",
             user="回复 OK",
-            max_tokens=64,
+            max_tokens=256,
             temperature=0.0,
         )
         try:

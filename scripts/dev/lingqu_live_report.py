@@ -36,13 +36,14 @@ def _one_per_provider(gateway: LingquGateway) -> list[dict[str, object]]:
             continue
         profile = profiles[0]
         health = gateway.probe(profile.id)
+        detail = health.detail.lower()
         if health.state is HealthState.OK:
             status = "ok"
-        elif "credential" in health.detail.lower() or "key" in health.detail.lower():
+        elif "credential" in detail:
             status = "skipped_no_credential"
-        elif "auth" in health.detail.lower() or "401" in health.detail:
+        elif "401" in detail or "403" in detail or "auth" in detail:
             status = "auth_failed"
-        elif "404" in health.detail or "model" in health.detail.lower():
+        elif "404" in detail or "invalid model" in detail or "model name" in detail:
             status = "model_or_endpoint_error"
         else:
             status = health.state.value

@@ -1,57 +1,57 @@
 {
-  "generated_at": "2026-11-23T12:55:09+08:00",
-  "catalog_version": "2026-11-23.1",
-  "default_profile": "deepseek/deepseek-v4-flash",
+  "generated_at": "2026-11-23T16:30:05+08:00",
+  "catalog_version": "2026-11-23.2",
+  "default_profile": "deepseek/deepseek-v4.1-flash",
   "providers_total": 5,
-  "ok": 0,
-  "skipped": 5,
+  "ok": 1,
+  "skipped": 0,
   "rows": [
     {
       "provider": "deepseek",
-      "profile": "deepseek/deepseek-v4-flash",
-      "model": "deepseek-v4-flash",
-      "status": "skipped_no_credential",
-      "state": "unavailable",
-      "latency_ms": null,
-      "detail": "no credential for deepseek/deepseek-v4-flash; set COMPANY_LLM_API_KEY or LINGQU_DEEPSEEK_API_KEY"
+      "profile": "deepseek/deepseek-v4.1-flash",
+      "model": "deepseek-v4.1-flash",
+      "status": "ok",
+      "state": "ok",
+      "latency_ms": 21733,
+      "detail": "OK"
     },
     {
       "provider": "qwen",
       "profile": "qwen/qwen4-max",
       "model": "qwen4-max",
-      "status": "skipped_no_credential",
-      "state": "unavailable",
-      "latency_ms": null,
-      "detail": "no credential for qwen/qwen4-max; set COMPANY_LLM_API_KEY or LINGQU_QWEN_API_KEY"
+      "status": "auth_failed",
+      "state": "degraded",
+      "latency_ms": 249,
+      "detail": "auth: litellm.AuthenticationError: AuthenticationError: OpenAIException - litellm.AuthenticationError: AuthenticationErr"
     },
     {
       "provider": "kimi",
       "profile": "kimi/kimi-k3.1-pro",
       "model": "kimi-k3.1-pro",
-      "status": "skipped_no_credential",
-      "state": "unavailable",
-      "latency_ms": null,
-      "detail": "no credential for kimi/kimi-k3.1-pro; set COMPANY_LLM_API_KEY or LINGQU_KIMI_API_KEY"
+      "status": "model_or_endpoint_error",
+      "state": "degraded",
+      "latency_ms": 24,
+      "detail": "bad_request: litellm.BadRequestError: OpenAIException - /chat/completions: Invalid model name passed in model=kimi-k3.1-"
     },
     {
       "provider": "minimax",
       "profile": "minimax/MiniMax-M3.1-Flash",
       "model": "MiniMax-M3.1-Flash",
-      "status": "skipped_no_credential",
-      "state": "unavailable",
-      "latency_ms": null,
-      "detail": "no credential for minimax/MiniMax-M3.1-Flash; set COMPANY_LLM_API_KEY or LINGQU_MINIMAX_API_KEY"
+      "status": "model_or_endpoint_error",
+      "state": "degraded",
+      "latency_ms": 22,
+      "detail": "bad_request: litellm.BadRequestError: OpenAIException - /chat/completions: Invalid model name passed in model=MiniMax-M3"
     },
     {
       "provider": "glm",
       "profile": "glm/glm-5.3",
       "model": "glm-5.3",
-      "status": "skipped_no_credential",
-      "state": "unavailable",
-      "latency_ms": null,
-      "detail": "no credential for glm/glm-5.3; set COMPANY_LLM_API_KEY or LINGQU_GLM_API_KEY"
+      "status": "model_or_endpoint_error",
+      "state": "degraded",
+      "latency_ms": 21,
+      "detail": "bad_request: litellm.BadRequestError: OpenAIException - /chat/completions: Invalid model name passed in model=glm-5.3. C"
     }
   ],
-  "status": "not_run_no_credential",
+  "status": "partial",
   "note": "只有真实回复才记 ok；缺 Key 记 skipped，鉴权失败记 auth_failed。不含 prompt/key。"
 }

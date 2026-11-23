@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-11-23T05:13:09.611702+00:00",
+  "generated_at": "2026-11-23T08:32:17.523063+00:00",
   "verdict": "pass",
   "static": [],
   "suite": {
     "exit": 0,
-    "tail": ".................ss..................................................... [ 28%]\n........................................................................ [ 56%]\n........................................................................ [ 84%]\n.......................................                                  [100%]\n253 passed, 2 skipped in 17.28s\n/Users/silver/GHapp/agent/.venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
+    "tail": ".....................ss................................................. [ 27%]\n........................................................................ [ 55%]\n........................................................................ [ 83%]\n............................................                             [100%]\n258 passed, 2 skipped in 24.78s\n/Users/silver/GHapp/agent/.venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
     "per_file": {
       "test_catalog": {
         "passed": 5,
         "failed": 0
       },
       "test_credentials": {
-        "passed": 6,
+        "passed": 8,
         "failed": 0
       },
       "test_gateway": {
-        "passed": 6,
+        "passed": 8,
         "failed": 0
       },
       "test_live": {
@@ -115,7 +115,7 @@
         "failed": 0
       },
       "test_orchestrator": {
-        "passed": 8,
+        "passed": 9,
         "failed": 0
       },
       "test_performance": {
@@ -548,7 +548,7 @@
       "output": "TurnResult（reply/cites/verdict/receipts/status/cost/plan/trace）",
       "output_validity": "危机短路不调用 LLM；LLM 故障返回降级话术且 status=partial；记忆只 propose 不确认；引用标签映射后才计数",
       "tests": "test_orchestrator.py",
-      "passed": 8,
+      "passed": 9,
       "failed": 0,
       "verdict": "ok"
     },

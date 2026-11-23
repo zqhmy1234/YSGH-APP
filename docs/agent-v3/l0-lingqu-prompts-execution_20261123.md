@@ -39,7 +39,7 @@ PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q
 
 ```bash
 PYTHONPATH=src .venv312/bin/python -m agentv3.lingqu.cli catalog-check
-# {"catalog_version":"2026-11-23.1","profiles":13,"default_profile":"deepseek/deepseek-v4-flash"}
+# {"catalog_version":"2026-11-23.2","profiles":13,"default_profile":"deepseek/deepseek-v4.1-flash"}
 ```
 
 审判：`agent/src/agentv3/judge` 现有 **18 个变异 + 11 个探针**；新增 8 个变异（默认档、日志泄 key、400 回退、卡移动 guard、probability=0、预算失效、知识标签落 FACT、删除跨人）与 3 个探针。实测：**18/18 killed、11/11 probes ok、static P0=0、suite exit=0，verdict=pass**（`docs/agent-v3/judge-report.json`）。

@@ -1,19 +1,19 @@
 {
-  "generated_at": "2026-11-23T13:05:00+08:00",
+  "generated_at": "2026-11-23T16:40:00+08:00",
   "scope": "L0 wiring + Lingqu gateway + prompt/card + judge",
   "commands": [
     {
       "name": "agent_full_suite",
       "command": "cd agent && PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q",
       "exit_code": 0,
-      "result": "253 passed, 2 skipped in 17.27s",
+      "result": "258 passed, 2 skipped in 24.46s",
       "note": "2 skipped = live provider tests, require LINGQU_LIVE=1 + key"
     },
     {
       "name": "judge",
       "command": "cd agent && PYTHONPATH=src .venv312/bin/python -m agentv3.judge.run",
       "exit_code": 0,
-      "result": "static P0=0; suite_exit=0; mutants 18/18 killed; probes 11/11 ok; verdict=pass",
+      "result": "static P0=0; suite_exit=0; mutants 18/18 killed; probes 11/11 ok; verdict=pass; judge suite counts 260 passed (includes 2 live tests)",
       "evidence": "docs/agent-v3/judge-report.json"
     },
     {
@@ -42,14 +42,14 @@
       "name": "lingqu_live_report",
       "command": "PYTHONPATH=agent/src agent/.venv312/bin/python scripts/dev/lingqu_live_report.py",
       "exit_code": 2,
-      "result": "not_run_no_credential: 5/5 providers skipped",
+      "result": "partial: DeepSeek ok=1; qwen auth_failed; kimi/minimax/glm model_or_endpoint_error; skipped=0",
       "evidence": "docs/agent-v3/lingqu-live-report.json"
     },
     {
       "name": "roleplay20_live",
       "command": "PYTHONPATH=src agent/.venv312/bin/python tests/agentv3/roleplay/run_live_cases.py",
-      "exit_code": 2,
-      "result": "not_run_no_credential: 20/20 skipped",
+      "exit_code": 0,
+      "result": "20/20 pass via real DeepSeek through local LiteLLM gateway on 127.0.0.1:4001",
       "evidence": "docs/agent-v3/roleplay-20-live-report.json"
     },
     {
@@ -61,14 +61,13 @@
     }
   ],
   "external_blockers": [
-    "Docker/Compose 未安装：本机与云主机都没有可用的容器运行时，L0 compose 无法 up。",
-    "COMPANY_LLM_API_KEY 未提供：五家厂商与 20 场真实对话无法发起，报告按 skipped 记录。",
+    "Docker/Compose 未安装：L0 compose 无法 up。",
+    "LiteLLM 网关当前只配置通 DeepSeek；Qwen 的 DASHSCOPE key 为占位值，Kimi/MiniMax/GLM 模型未加入网关，五家全绿仍缺 Key/配置。",
     "backend 重依赖未安装：review_agent --full 的 backend pytest 层属环境错误；agent 套件与审判已独立全绿。"
   ],
   "not_claimed": [
     "L0 真实启动",
-    "五家厂商 live pass",
-    "20 场 DeepSeek 真实对话",
+    "五家厂商 live 全绿",
     "review_agent --full 测试层通过"
   ]
 }

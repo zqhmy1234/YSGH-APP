@@ -17,13 +17,13 @@
 
 `agent/config/lingqu-catalog.json`
 
-- 5 家 provider、13 个 profile，默认 `deepseek/deepseek-v4-flash`。
+- 5 家 provider、13 个 profile，默认 `deepseek/deepseek-v4.1-flash`。
 - 每条 profile 必须带 `source`（官方文档 URL）与 `verified_at`；`default_profile` 必须是 DeepSeek，否则加载失败。
 - 模型名、上下文窗口、最大输出、能力（chat/tools/json/reasoning/search/vision）都在目录里，不在代码里。
 
 | Provider | Profiles | 官方文档 |
 |---|---|---|
-| DeepSeek | `deepseek-v4-flash`、`deepseek-v4-pro` | https://api-docs.deepseek.com/zh-cn |
+| DeepSeek | `deepseek-v4.1-flash`、`deepseek-v4-pro` | https://api-docs.deepseek.com/zh-cn |
 | Qwen | `qwen4-max`、`qwen3.8-plus` | https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions |
 | Kimi | `kimi-k3.1-pro`、`kimi-k2.6` | https://platform.kimi.ai/docs/guide/kimi-k2-quickstart |
 | MiniMax | `MiniMax-M3.1-Flash`、`M3`、`M2.5` | https://platform.minimaxi.com/docs/guides/text-generation |
@@ -35,7 +35,7 @@
 # 公司统一 Key：默认给所有 profile 用
 COMPANY_LLM_API_KEY=...
 # 可选：公司聚合网关地址（留空则用各官方 base）
-COMPANY_LLM_BASE_URL=
+COMPANY_LLM_BASE_URL=http://127.0.0.1:4000/v1   # 公司 LiteLLM 网关时必填
 # 可选：单家覆盖（公司 key 不覆盖某家时使用）
 LINGQU_DEEPSEEK_API_KEY=
 LINGQU_QWEN_API_KEY=
@@ -43,6 +43,8 @@ LINGQU_KIMI_API_KEY=
 LINGQU_MINIMAX_API_KEY=
 LINGQU_GLM_API_KEY=
 ```
+
+走公司 LiteLLM 网关时，Lingqu 会自动把 `litellm_model` 前缀换成 `openai/`（OpenAI 兼容协议）；直连厂商时仍按目录里的 `deepseek/`、`dashscope/` 等前缀调用。
 
 Qwen 的 workspace 专属域名：
 
@@ -62,6 +64,7 @@ LINGQU_QWEN_WORKSPACE_ID=...   # 或 COMPANY_LLM_WORKSPACE_ID / QWEN_WORKSPACE_I
 - **只有** 429 / 5xx / timeout / connection 可回退；400 / 401 / 403 / context overflow / content filter **不**回退。400 是调用方 bug，回退只会掩盖。
 - 某家凭据缺失时跳过该候选，继续下一个；全部不可用才抛 `PortUnavailable`。
 - `LINGQU_TIMEOUT_S` 默认 30 秒。
+- 模型预算下限：`LLMRequest.max_chars` 会映射到 `max_tokens`，但 DeepSeek V4.1 默认先输出 reasoning；网关对所有请求设 **256 tokens 下限**，避免只拿到推理、正文为空。实测 64/128 可能空，256 有正文。
 
 ## HTTP / CLI
 
@@ -84,9 +87,9 @@ PYTHONPATH=src .venv312/bin/python -m agentv3.lingqu.cli use qwen/qwen4-max
 
 ## 测试与验证边界
 
-- 17 个 Lingqu 单测：目录完整性/默认 DeepSeek/重复 id、统一 key/单家覆盖/ Qwen workspace、429 回退、400 不回退、缺 key 跳过、probe、admin 不泄 key。
-- **真实厂商调用尚未验证**：本机没有 `COMPANY_LLM_API_KEY`。`FakeEngine` 通过只证明目录/凭据/路由/协议，不证明网络。
-- 有 key 后跑：`LINGQU_LIVE=1 COMPANY_LLM_API_KEY=... bash scripts/dev/agent_v3_smoke.sh`。L0 smoke 会显式标注 `SKIP live model probe`，不会伪造 live pass。
+- 28 个 Lingqu 单测：目录完整性/默认 DeepSeek/重复 id、统一 key/单家覆盖/ Qwen workspace、公司网关 `openai/` 前缀、429 回退、400 不回退、缺 key 跳过、probe、token 下限、admin 不泄 key。
+- **已通过真实网关验证**：2026-11-23 经服务器 `127.0.0.1:4000` 的 LiteLLM 网关（本地隧道等价 4001）调用 `deepseek-v4.1-flash` 得到真实 `content`；五家直连仍未逐一验证。
+- 复跑：`COMPANY_LLM_BASE_URL=http://127.0.0.1:4000/v1 LINGQU_LIVE=1 ... bash scripts/dev/agent_v3_smoke.sh`。L0 smoke 在缺 Key/Docker 时明确 `SKIP`/`blocked`，不伪造 live pass。
 
 ## 参考
 

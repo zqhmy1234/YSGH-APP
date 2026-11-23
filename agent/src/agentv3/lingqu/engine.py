@@ -33,8 +33,9 @@ class LiteLLMEngine:
         except ImportError as exc:  # pragma: no cover - environment guard
             raise ProviderDown("litellm is not installed") from exc
 
+        model = f"openai/{profile.model}" if credential.gateway else profile.litellm_model
         kwargs: dict = {
-            "model": profile.litellm_model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": request.system},
                 {"role": "user", "content": request.user},

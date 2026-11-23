@@ -14,7 +14,7 @@ def test_catalog_has_five_providers_and_deepseek_default():
     catalog = load_catalog(CATALOG)
     assert {p.provider for p in catalog.profiles()} == set(ProviderId)
     assert len(catalog.profiles()) == 13
-    assert catalog.default_profile == "deepseek/deepseek-v4-flash"
+    assert catalog.default_profile == "deepseek/deepseek-v4.1-flash"
     assert catalog.default().provider is ProviderId.DEEPSEEK
 
 
@@ -35,7 +35,7 @@ def test_duplicate_id_rejected():
 
 def test_default_must_be_deepseek(tmp_path):
     payload = CATALOG.read_text(encoding="utf-8").replace(
-        '"default_profile": "deepseek/deepseek-v4-flash"',
+        '"default_profile": "deepseek/deepseek-v4.1-flash"',
         '"default_profile": "qwen/qwen4-max"',
     )
     path = tmp_path / "catalog.json"

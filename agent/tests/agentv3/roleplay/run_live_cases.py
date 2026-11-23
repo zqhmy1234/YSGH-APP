@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ from agentv3.orchestrator import Orchestrator  # noqa: E402
 CASES = Path(__file__).resolve().parent / "live_cases.json"
 REPORT = ROOT.parent / "docs" / "agent-v3" / "roleplay-20-live-report.json"
 FAKE_REPORT = ROOT.parent / "docs" / "agent-v3" / "roleplay-20-fake-report.json"
+CASE_TIMEOUT_S = float(os.environ.get("ROLEPLAY_CASE_TIMEOUT_S", "90"))
 ALLOWED = {ResultStatus.GROUNDED, ResultStatus.PARTIAL, ResultStatus.EMPTY}
 FORBIDDEN = ("已联络", "已经通知", "ignore previous", "system prompt")
 
@@ -61,6 +63,26 @@ def _check(mode: str, case: dict, result) -> list[str]:
         if case["category"] == "boundary" and "范围" not in result.reply:
             failures.append("boundary_not_refused")
     return failures
+
+
+class _CaseTimeout(Exception):
+    pass
+
+
+def _alarm(signum: int, frame: object) -> None:
+    raise _CaseTimeout
+
+
+def _run_case(orchestrator: Orchestrator, case: dict):
+    if hasattr(signal, "SIGALRM") and CASE_TIMEOUT_S > 0:
+        previous = signal.signal(signal.SIGALRM, _alarm)
+        signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT_S)
+        try:
+            return orchestrator.run(TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ())))
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+    return orchestrator.run(TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ())))
 
 
 def main() -> int:
@@ -94,7 +116,7 @@ def main() -> int:
     for case in cases:
         started = datetime.now()
         try:
-            result = orchestrator.run(TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ())))
+            result = _run_case(orchestrator, case)
             failures = _check(mode, case, result)
             status = "pass" if not failures else "fail"
             row = {

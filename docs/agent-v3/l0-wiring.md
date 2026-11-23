@@ -33,7 +33,7 @@ docker compose -f deploy/compose.agent-v3.yml down
 `scripts/dev/agent_v3_smoke.sh` 逐项 PASS/FAIL：
 
 1. agent `/health`
-2. `/v1/v3/models`：5 providers、默认 `deepseek/deepseek-v4-flash`
+2. `/v1/v3/models`：5 providers、默认 `deepseek/deepseek-v4.1-flash`
 3. postgres `pg_isready`
 4. redis `PING/PONG`
 5. qdrant `/readyz`
@@ -42,10 +42,10 @@ docker compose -f deploy/compose.agent-v3.yml down
 
 ## 本机验证状态（诚实记录）
 
-- 本机 macOS **没有安装 Docker**（`docker: command not found`），所以 compose **未实际 up**。
-- 已做：`bash -n` 语法检查 + PyYAML 解析 + `npx` 不适用；Docker 镜像构建/服务连通性均未运行。
-- 没有 `COMPANY_LLM_API_KEY`，真实 DeepSeek/Qwen/Kimi/MiniMax/GLM 请求均未发出。
-- 因此「L0 真接线」当前状态是**代码与脚本落地、未在本机运行验证**；有 Docker 的机器上跑上面的三条命令即可得到 PASS/FAIL 证据。
+- 本机 macOS **没有安装 Docker**（`docker: command not found`），所以 compose **未实际 up**；只做了 `bash -n` 和 YAML 解析。
+- 2026-11-23 16:29 用本机 `127.0.0.1:4001` 的等价 LiteLLM 网关验证了 **DeepSeek** 真实回复（`deepseek-v4.1-flash` → `OK`）。服务器 4000 网关此前已用同一配置跑通 DeepSeek。
+- Qwen/Kimi/MiniMax/GLM 仍未逐一通过：本机网关未配置这些上游模型，报告将 Qwen 记 `auth_failed`、其余三家记 `model_or_endpoint_error`，不伪报 pass。
+- 因此「L0 compose 真启动」仍 **blocked: docker_missing**；模型网关这条支线已不再是无 Key 的未验证状态。
 
 ## 已知边界
 

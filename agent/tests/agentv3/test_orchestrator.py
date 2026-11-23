@@ -69,3 +69,12 @@ def test_out_of_scope_never_writes():
     store = MemoryStore()
     _orch(store=store).run(TurnRequest(person_id="p1", text="帮我记一下 sql 怎么写"))
     assert store.entries("p1") == []
+
+
+def test_declared_llm_outage_skips_model_call():
+    llm = FakeLLM(["不应被调用"])
+    result = _orch(llm=llm).run(TurnRequest(person_id="p1", text="今天有点累"), degraded=("llm",))
+    assert not llm.calls
+    assert result.reply == DEGRADED_REPLY
+    assert result.status is ResultStatus.PARTIAL
+    assert result.cost.llm_calls == 0

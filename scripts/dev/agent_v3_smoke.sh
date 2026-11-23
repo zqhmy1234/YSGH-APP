@@ -51,7 +51,7 @@ models="$(curl -fsS "http://127.0.0.1:${V3_AGENT_PORT:-8300}/v1/v3/models" 2>/de
 if [[ -n "${models}" ]]; then
   provider_count="$(printf '%s' "${models}" | python3 -c 'import json,sys;print(len({p["provider"] for p in json.load(sys.stdin)["profiles"]}))' 2>/dev/null || echo 0)"
   default_profile="$(printf '%s' "${models}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["default_profile"])' 2>/dev/null || echo "")"
-  if [[ "${provider_count}" == "5" && "${default_profile}" == "deepseek/deepseek-v4-flash" ]]; then
+  if [[ "${provider_count}" == "5" && "${default_profile}" == "deepseek/deepseek-v4.1-flash" ]]; then
     report "Lingqu catalog" 0 "5 providers, default ${default_profile}"
   else
     report "Lingqu catalog" 1 "providers=${provider_count} default=${default_profile}"
@@ -76,7 +76,7 @@ if [[ "${LINGQU_LIVE:-0}" == "1" ]]; then
   if [[ -z "${COMPANY_LLM_API_KEY:-}" ]]; then
     report "live model probe" 1 "LINGQU_LIVE=1 但 COMPANY_LLM_API_KEY 未设置"
   else
-    probe="$(curl -fsS -X POST "http://127.0.0.1:${V3_AGENT_PORT:-8300}/v1/v3/models/probe" -H 'content-type: application/json' -d '{"profile_id":"deepseek/deepseek-v4-flash"}' 2>/dev/null || true)"
+    probe="$(curl -fsS -X POST "http://127.0.0.1:${V3_AGENT_PORT:-8300}/v1/v3/models/probe" -H 'content-type: application/json' -d '{"profile_id":"deepseek/deepseek-v4.1-flash"}' 2>/dev/null || true)"
     echo "${probe}" | grep -q '"state":"ok"'
     report "live model probe" $? "DeepSeek"
   fi

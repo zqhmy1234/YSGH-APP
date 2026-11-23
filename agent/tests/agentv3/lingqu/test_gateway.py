@@ -26,8 +26,8 @@ def test_default_route_is_deepseek_and_returns_text():
     gateway = _gateway()
     reply = gateway.complete(LLMRequest(system="你是忆光。", user="在吗", max_chars=100))
     assert reply.text == "我在听。"
-    assert gateway.active().id == "deepseek/deepseek-v4-flash"
-    assert gateway.telemetry.snapshot()[0]["profile_id"] == "deepseek/deepseek-v4-flash"
+    assert gateway.active().id == "deepseek/deepseek-v4.1-flash"
+    assert gateway.telemetry.snapshot()[0]["profile_id"] == "deepseek/deepseek-v4.1-flash"
     assert "system" not in gateway.telemetry.snapshot()[0]
     assert "user" not in gateway.telemetry.snapshot()[0]
 
@@ -47,7 +47,7 @@ def test_rate_limit_falls_back_to_next_profile():
     gateway = _gateway(engine)
     reply = gateway.complete(LLMRequest(system="s", user="u", max_chars=100))
     assert reply.text == "回退成功"
-    assert engine.calls == ["deepseek/deepseek-v4-flash", "qwen/qwen4-max"]
+    assert engine.calls == ["deepseek/deepseek-v4.1-flash", "qwen/qwen4-max"]
     assert [row["status"] for row in gateway.telemetry.snapshot()] == ["error", "ok"]
 
 
@@ -65,7 +65,7 @@ def test_bad_request_does_not_fall_back():
     with pytest.raises(Exception) as exc:
         gateway.complete(LLMRequest(system="s", user="u", max_chars=100))
     assert "bad_request" in str(exc.value)
-    assert engine.calls == ["deepseek/deepseek-v4-flash"]
+    assert engine.calls == ["deepseek/deepseek-v4.1-flash"]
 
 
 def test_missing_company_key_skips_to_provider_key():
@@ -77,11 +77,20 @@ def test_missing_company_key_skips_to_provider_key():
     assert calls[1]["profile_id"] == "qwen/qwen4-max"
 
 
-def test_probe_uses_64_tokens_and_health():
-    gateway = _gateway()
-    health = gateway.probe("deepseek/deepseek-v4-flash")
+def test_probe_uses_token_floor_and_health():
+    engine = FakeEngine()
+    gateway = _gateway(engine)
+    health = gateway.probe("deepseek/deepseek-v4.1-flash")
     assert health.state.value == "ok"
-    assert health.profile_id == "deepseek/deepseek-v4-flash"
+    assert health.profile_id == "deepseek/deepseek-v4.1-flash"
+    assert engine.calls[0][1].max_tokens == 256
+
+
+def test_muse_budget_is_floored_for_reasoning_models():
+    engine = FakeEngine()
+    gateway = _gateway(engine)
+    gateway.complete(LLMRequest(system="s", user="u", max_chars=100))
+    assert engine.calls[0][1].max_tokens == 256
 
 
 def test_list_models_never_serializes_key():
@@ -89,8 +98,50 @@ def test_list_models_never_serializes_key():
     data = list_models(gateway)
     text = str(data)
     assert "company-key-placeholder-0001" not in text
-    assert data["active_profile"] == "deepseek/deepseek-v4-flash"
+    assert data["active_profile"] == "deepseek/deepseek-v4.1-flash"
     assert len(data["profiles"]) == 13
     active = next(p for p in data["profiles"] if p["is_active"])
-    assert active["id"] == "deepseek/deepseek-v4-flash"
+    assert active["id"] == "deepseek/deepseek-v4.1-flash"
     assert active["credential"] == "company_llm"
+
+
+def test_engine_uses_openai_prefix_for_company_gateway(monkeypatch):
+    from agentv3.lingqu.engine import LiteLLMEngine
+
+    captured = {}
+
+    class FakeLiteLLM:
+        @staticmethod
+        def completion(**kwargs):
+            captured.update(kwargs)
+
+            class Message:
+                content = "OK"
+                tool_calls = None
+
+            class Choice:
+                message = Message()
+                finish_reason = "stop"
+
+            class Response:
+                choices = [Choice()]
+                usage = None
+                model = "gateway"
+
+            return Response()
+
+    import litellm  # noqa: PLC0415
+
+    monkeypatch.setattr(litellm, "completion", FakeLiteLLM.completion)
+    profile = load_catalog(CATALOG).default()
+    resolver = __import__("agentv3.lingqu.credentials", fromlist=["SecretResolver"]).SecretResolver(
+        {
+            "COMPANY_LLM_API_KEY": "gateway-key-placeholder-0005",
+            "COMPANY_LLM_BASE_URL": "http://127.0.0.1:4000/v1",
+        }
+    )
+    credential = resolver.resolve(profile)
+    engine = LiteLLMEngine(timeout_s=1)
+    engine.complete(profile, __import__("agentv3.lingqu.contracts", fromlist=["ModelRequest"]).ModelRequest(system="s", user="u"), credential)
+    assert captured["model"] == f"openai/{profile.model}"
+    assert captured["api_base"] == "http://127.0.0.1:4000/v1"

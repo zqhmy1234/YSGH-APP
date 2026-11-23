@@ -37,10 +37,10 @@ def _client():
 def test_models_list_and_active():
     client, _, _ = _client()
     data = client.get("/v1/v3/models").json()
-    assert data["active_profile"] == "deepseek/deepseek-v4-flash"
+    assert data["active_profile"] == "deepseek/deepseek-v4.1-flash"
     assert len(data["profiles"]) == 13
     active = client.get("/v1/v3/models/active").json()
-    assert active["id"] == "deepseek/deepseek-v4-flash"
+    assert active["id"] == "deepseek/deepseek-v4.1-flash"
     assert active["is_active"] is True
 
 

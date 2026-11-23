@@ -139,6 +139,8 @@ def _fit(segments: list[PromptSegment], budget: int) -> PromptBundle:
         if sum(len(t) for t in texts.values()) <= budget:
             break
         if texts.get(name):
+            # Drop the largest units first: a whole paragraph/line goes away
+            # instead of the trailing half-sentence a naive truncation leaves.
             texts[name] = ""
             dropped.append(name)
     # If even optional removal leaves an over-budget bundle, trim the largest

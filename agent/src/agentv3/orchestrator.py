@@ -121,6 +121,9 @@ class Orchestrator:
 
         degradation = Degradation()
         meter = CostMeter()
+        # A caller-declared LLM outage means we must not even try the network;
+        # the smoke/roleplay harness uses this to prove the fallback path.
+        llm_down = "llm" in ctx.degraded
 
         try:
             entries = self._store.entries(request.person_id)
@@ -155,11 +158,15 @@ class Orchestrator:
 
         reply = ""
         misses: list[str] = []
-        try:
-            reply, _ = self._muse.speak(frame, user_text=request.text, locale=request.locale, meter=meter)
-        except Exception:
+        if llm_down:
             misses.append("llm")
             degradation.note("llm")
+        else:
+            try:
+                reply, _ = self._muse.speak(frame, user_text=request.text, locale=request.locale, meter=meter)
+            except Exception:
+                misses.append("llm")
+                degradation.note("llm")
         if not reply:
             reply = DEGRADED_REPLY
 

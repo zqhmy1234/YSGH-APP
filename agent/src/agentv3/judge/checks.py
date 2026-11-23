@@ -137,7 +137,7 @@ def check_lingqu_catalog() -> list[Finding]:
         return [Finding("lingqu_catalog", "P2", f"cannot import catalog: {type(exc).__name__}")]
     catalog = load_catalog()
     findings: list[Finding] = []
-    if catalog.default_profile != "deepseek/deepseek-v4-flash":
+    if catalog.default_profile != "deepseek/deepseek-v4.1-flash":
         findings.append(Finding("lingqu_catalog", "P0", f"default is {catalog.default_profile}, expected DeepSeek"))
     if {p.provider for p in catalog.profiles()} != set(ProviderId):
         findings.append(Finding("lingqu_catalog", "P0", "catalog does not cover all five providers"))

@@ -68,3 +68,28 @@ def test_qwen_workspace_id_is_expanded():
 def test_redact_removes_key_shapes():
     assert "sk-live" not in redact("Authorization: Bearer sk-live-abcdef")
     assert "secret" not in redact("api_key=secret")
+
+
+def test_company_gateway_sets_openai_compatible_mode():
+    catalog = _catalog()
+    resolver = SecretResolver(
+        {
+            "COMPANY_LLM_API_KEY": "gateway-key-placeholder-0003",
+            "COMPANY_LLM_BASE_URL": "http://127.0.0.1:4000/v1",
+        }
+    )
+    cred = resolver.resolve(catalog.default())
+    assert cred.gateway is True
+    assert cred.base_url == "http://127.0.0.1:4000/v1"
+
+
+def test_direct_provider_does_not_set_gateway_mode():
+    catalog = _catalog()
+    resolver = SecretResolver(
+        {
+            "LINGQU_DEEPSEEK_API_KEY": "deepseek-key-placeholder-0004",
+            "LINGQU_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+        }
+    )
+    cred = resolver.resolve(catalog.default())
+    assert cred.gateway is False

@@ -124,7 +124,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-yishu}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-v3-only-change-me}
       # 默认 DeepSeek；公司统一 Key 由宿主导出后注入，绝不写在此处。
-      LINGQU_DEFAULT_PROFILE: ${LINGQU_DEFAULT_PROFILE:-deepseek/deepseek-v4-flash}
+      LINGQU_DEFAULT_PROFILE: ${LINGQU_DEFAULT_PROFILE:-deepseek/deepseek-v4.1-flash}
       COMPANY_LLM_API_KEY: ${COMPANY_LLM_API_KEY:-}
       COMPANY_LLM_BASE_URL: ${COMPANY_LLM_BASE_URL:-}
       LINGQU_SELECTION_PATH: /data/lingqu-selection.json

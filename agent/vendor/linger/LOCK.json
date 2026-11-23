@@ -1,0 +1,61 @@
+{
+ "repo": "https://github.com/simplexai-labs/linger",
+ "commit": "6663e21a4f07004def7591b1e07e4725c5c73e60",
+ "license": "Apache-2.0",
+ "mode": "vendored-upstream+python-port",
+ "note": "上游 TS 源码未入仓（raw 拉取超时）。本目录只放规则摘要与许可说明；以 scripts/upstream_diff.py --online 复核。",
+ "files": [
+  {
+   "path": "apps/node-services/src/memory/README.md",
+   "local": "vendor/linger/RULES.md",
+   "status": "digest"
+  },
+  {
+   "path": "apps/node-services/src/memory/apply.ts",
+   "local": "src/agentv3/memory/ledger.py",
+   "status": "translated"
+  },
+  {
+   "path": "apps/node-services/src/llm-wiki/wiki-candidate-validation.ts",
+   "local": "src/agentv3/agents/sculptor.py",
+   "status": "translated"
+  },
+  {
+   "path": "apps/node-services/src/memory-agent.ts",
+   "local": "src/agentv3/agents/sculptor.py",
+   "status": "partial"
+  },
+  {
+   "path": "prompts/memory-agent/principles.md",
+   "local": "src/agentv3/prompts/sculptor.md",
+   "status": "digest"
+  },
+  {
+   "path": "apps/web",
+   "local": "-",
+   "status": "not-reused"
+  }
+ ],
+ "upstream_files": {
+  "apply.ts": {
+   "sha256": "c4d14e02a1206d2b2da17bbbb89631332ff4c1f1fa67f185a7393eff4cf6e2d5",
+   "bytes": 10873
+  },
+  "principles.md": {
+   "sha256": "72eeaf895d2c025d16d88383547ceb42af829aa2544a2dca8f064b4d22607ba6",
+   "bytes": 2127
+  },
+  "README.md": {
+   "sha256": "73c5cda01611bec5d9fab5b4157bb5a8409ca8eab3ece2dacd04e9998421b0e0",
+   "bytes": 80029
+  },
+  "memory-agent.ts": {
+   "sha256": "2ab93d0b69a43ee529264becf12e81ef1cfe4720da328b70a2cfdf7602efafd5",
+   "bytes": 21077
+  },
+  "wiki-candidate-validation.ts": {
+   "sha256": "9efa8937a646155a6f7aa5406443b2bb84e3fee65ca78fca7650c46f4165d987",
+   "bytes": 36267
+  }
+ }
+}

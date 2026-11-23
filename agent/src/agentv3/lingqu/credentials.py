@@ -28,6 +28,7 @@ class Credential:
     api_key: str = field(repr=False)
     base_url: str = ""
     source: str = ""
+    gateway: bool = False
 
     @property
     def fingerprint(self) -> str:
@@ -84,7 +85,13 @@ class SecretResolver:
                 f"LINGQU_{profile.provider.value.upper()}_API_KEY"
             )
         source = f"provider:{profile.provider.value}" if provider_key else "company_llm"
-        return Credential(api_key=key, base_url=self._base_url(profile), source=source)
+        company_base = self._get("COMPANY_LLM_BASE_URL")
+        provider_base = self._get(f"LINGQU_{profile.provider.value.upper()}_BASE_URL")
+        # A company gateway is a generic OpenAI-compatible endpoint. The engine
+        # must use the ``openai/`` prefix for it; a provider prefix would bypass
+        # the gateway and call the provider directly with the gateway key.
+        gateway = bool(company_base and not provider_base and not provider_key)
+        return Credential(api_key=key, base_url=self._base_url(profile), source=source, gateway=gateway)
 
     def describe(self, profile: ModelProfile) -> dict[str, str]:
         try:
