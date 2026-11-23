@@ -60,9 +60,13 @@ sudo systemctl stop yishu-agent-v3 && sudo systemctl disable yishu-agent-v3
 
 ## 未完成 / 仍需注意
 
-1. **worker 仍在旧代码**：release 的 worker venv 还没有 torch/rq/SenseVoice；
-   现在跑的是旧 `/opt/yishu/backend` 的 worker，管线能跑，但**不含** `run_account_purges`
-   等新逻辑。切 worker 前需要给 release venv 装齐 backend 依赖（6.8G，建议直接用
-   旧 `.venv` 作为基础复制而不是重装）。
+1. **worker 进程仍是旧代码**：`yishu-worker.service` 的 `ExecStart` 仍指
+   `/opt/yishu/backend`（venv 有 torch/rq/SenseVoice）。新代码需要这些重依赖，
+   直接在 release venv 里重装会多占约 6.8G。
+   **但 cron 任务已切到新代码**：`crontab` 的四条 `app.workers.maintenance`
+   现在 `cd /opt/yishu/releases/ys-7de26ec/backend` 并通过旧 venv（`/opt/yishu/backend/.venv`）
+   运行——venv 与代码目录解耦，`cleanup --dry-run` 与 `requeue` 均已实测 `status=ok`
+   且 `account_purges` 字段存在（说明 `run_account_purges` 已生效）。
+   因此 30 天到期硬删的**定时入口已经通了**，只是常驻 worker 的实时管线仍跑旧代码。
 2. **旧 agent 8300 仍在跑**：内存占用约 100MB，保留观察一两天再停。
 3. **回滚备份里没有 `deploy/.env`**：该文件未改，无需回滚。
