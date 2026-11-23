@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-23 13:00 · commit ade63a5 · ts=1795410056
+- **错误**：review_agent --full 在 agent venv 下 116+ backend 测试 ERROR：缺 pydantic_settings/jwt/torch 等后端依赖
+- **根因**：agent/.venv312 只装了 Agent V3 依赖，不能承载 backend 重依赖测试层；门禁将 tests 层报为失败而非环境错误
+- **修复**：把 agent 套件与审判独立跑；full 静态层用 venv ruff 通过；backend 测试层待装 requirements 后重跑，证据文件显式记录 environment blocker
+- **相关文件**：docs/agent-v3/verification-evidence.md;docs/agent-v3/verification-evidence.json
+- **教训**：不同子系统依赖隔离：Agent venv 不能替代 backend 测试环境；门禁分层证据要写明环境阻塞，不能伪报
+
+---
+
 ### 2026-11-23 12:20 · commit 0ed99d4 · ts=1795407615
 - **错误**：审判 Agent 相对路径写错：从 src 出发的 ../../config 指向仓库根而非 agent/config；且 pseudo-mutant 与实现冗余分支等价导致存活
 - **根因**：judge 的 ROOT 只到 src，新增配置在 agent/config；变异未检查被改分支是否可达，前面的早退分支已覆盖

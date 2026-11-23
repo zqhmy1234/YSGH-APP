@@ -159,6 +159,12 @@ def check_required_artifacts() -> list[Finding]:
         "prompt/card doc": REPO / "docs" / "agent-v3" / "prompt-and-cards.md",
         "L0 compose": REPO / "deploy" / "compose.agent-v3.yml",
         "L0 smoke": REPO / "scripts" / "dev" / "agent_v3_smoke.sh",
+        "L0 smoke report": REPO / "docs" / "agent-v3" / "l0-smoke.json",
+        "live provider tests": REPO / "agent" / "tests" / "agentv3" / "lingqu" / "test_live.py",
+        "live provider report": REPO / "docs" / "agent-v3" / "lingqu-live-report.json",
+        "20 roleplay cases": REPO / "agent" / "tests" / "agentv3" / "roleplay" / "live_cases.json",
+        "20 roleplay runner": REPO / "agent" / "tests" / "agentv3" / "roleplay" / "run_live_cases.py",
+        "20 roleplay live report": REPO / "docs" / "agent-v3" / "roleplay-20-live-report.json",
     }
     findings = [
         Finding("required_artifact", "P0", f"missing {label}: {path}", f"ls {path}")
@@ -175,6 +181,32 @@ def check_required_artifacts() -> list[Finding]:
     return findings
 
 
+def check_live_reports_honest() -> list[Finding]:
+    """A live report may say skipped, never pass, when no provider answered."""
+    import json
+
+    findings: list[Finding] = []
+    path = REPO / "docs" / "agent-v3" / "lingqu-live-report.json"
+    if not path.exists():
+        return [Finding("live_report", "P0", "missing lingqu-live-report.json")]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return [Finding("live_report", "P0", f"unreadable live report: {type(exc).__name__}")]
+    rows = data.get("rows", [])
+    if data.get("status") == "pass" and rows and all(row.get("status") == "skipped_no_credential" for row in rows):
+        findings.append(Finding("live_report", "P0", "live report claims pass while every provider was skipped"))
+    for row in rows:
+        if row.get("status") == "ok" and not row.get("latency_ms"):
+            findings.append(Finding("live_report", "P0", f"ok without latency: {row.get('provider')}"))
+    path = REPO / "docs" / "agent-v3" / "roleplay-20-live-report.json"
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("status") == "pass" and data.get("mode") != "live":
+            findings.append(Finding("live_report", "P0", "roleplay report claims live pass in non-live mode"))
+    return findings
+
+
 def run_all() -> list[Finding]:
     return [
         *check_imports(),
@@ -185,4 +217,5 @@ def run_all() -> list[Finding]:
         *check_required_artifacts(),
         *check_prompt_bundle(),
         *check_lingqu_catalog(),
+        *check_live_reports_honest(),
     ]

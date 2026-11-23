@@ -1,0 +1,11 @@
+{
+  "status": "blocked",
+  "note": "docker_missing",
+  "checks": [
+    {
+      "name": "docker",
+      "ok": false,
+      "detail": "docker not installed / not in PATH"
+    }
+  ]
+}

@@ -6,17 +6,37 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}" || exit 1
 COMPOSE=(docker compose -f deploy/compose.agent-v3.yml)
+REPORT="${ROOT}/docs/agent-v3/l0-smoke.json"
 FAIL=0
-report() { local name="$1" code="$2" detail="${3:-}"; if [[ "${code}" == "0" ]]; then echo "PASS  ${name}  ${detail}"; else echo "FAIL  ${name}  ${detail}"; FAIL=$((FAIL+1)); fi; }
+RESULTS=()
+report() { local name="$1" code="$2" detail="${3:-}"; RESULTS+=("${code}|${name}|${detail}"); if [[ "${code}" == "0" ]]; then echo "PASS  ${name}  ${detail}"; else echo "FAIL  ${name}  ${detail}"; FAIL=$((FAIL+1)); fi; }
+write_report() {
+  local status="$1" note="${2:-}"
+  mkdir -p "$(dirname "${REPORT}")"
+  python3 - "${REPORT}" "${status}" "${note}" "${RESULTS[@]:-}" <<'PY'
+import json, sys
+path, status, note, *rows = sys.argv[1:]
+checks = []
+for row in rows:
+    if not row:
+        continue
+    code, name, detail = row.split("|", 2)
+    checks.append({"name": name, "ok": code == "0", "detail": detail})
+payload = {"status": status, "note": note, "checks": checks}
+open(path, "w", encoding="utf-8").write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+PY
+}
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "FAIL  docker 未安装或不在 PATH（跳过 L0 运行，先装 Docker Desktop/Engine）" >&2
+  report "docker" 1 "docker not installed / not in PATH"
+  write_report "blocked" "docker_missing"
   exit 2
 fi
 
 if [[ "${SKIP_UP:-0}" != "1" ]]; then
   echo "==> docker compose up -d --build"
-  "${COMPOSE[@]}" up -d --build || { echo "FAIL  compose up"; exit 1; }
+  "${COMPOSE[@]}" up -d --build || { echo "FAIL  compose up"; report "compose" 1 "up failed"; write_report "fail" "compose_up_failed"; exit 1; }
 fi
 
 echo "==> 等待 agent-v3 /health（最多 90s）"
@@ -65,5 +85,5 @@ else
 fi
 
 echo
-if [[ "${FAIL}" -eq 0 ]]; then echo "L0 smoke: ALL PASS"; exit 0; fi
-echo "L0 smoke: ${FAIL} FAIL"; exit 1
+if [[ "${FAIL}" -eq 0 ]]; then echo "L0 smoke: ALL PASS"; write_report "pass"; exit 0; fi
+echo "L0 smoke: ${FAIL} FAIL"; write_report "fail" "${FAIL} checks failed"; exit 1

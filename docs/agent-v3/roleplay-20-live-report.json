@@ -1,0 +1,129 @@
+{
+  "generated_at": "2026-11-23T12:54:56+08:00",
+  "mode": "live",
+  "cases_total": 20,
+  "note": "需要 COMPANY_LLM_API_KEY；缺失时逐条记 skipped_no_credential",
+  "cases": [
+    {
+      "id": "c01",
+      "category": "greeting",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c02",
+      "category": "capture",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c03",
+      "category": "recall",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c04",
+      "category": "correction",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c05",
+      "category": "crisis",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c06",
+      "category": "boundary",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c07",
+      "category": "private_claim",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c08",
+      "category": "empty_search",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c09",
+      "category": "degraded_search",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c10",
+      "category": "degraded_llm",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c11",
+      "category": "family",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c12",
+      "category": "child",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c13",
+      "category": "elder",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c14",
+      "category": "export",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c15",
+      "category": "knowledge_save",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c16",
+      "category": "knowledge_search",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c17",
+      "category": "tool_abuse",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c18",
+      "category": "english",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c19",
+      "category": "jailbreak",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    },
+    {
+      "id": "c20",
+      "category": "long_text",
+      "status": "skipped_no_credential",
+      "latency_ms": 0
+    }
+  ],
+  "status": "not_run_no_credential"
+}

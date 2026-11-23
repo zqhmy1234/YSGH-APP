@@ -23,6 +23,9 @@
 | 迁移 | `backend/migrations/versions/b8c4d2f0a1e5_add_agent_v3_tags_and_links.py` |
 | L0 | `deploy/compose.agent-v3.yml`、`deploy/Dockerfile.agentv3`、`scripts/dev/agent_v3_smoke.sh` |
 | 审判 | `agent/src/agentv3/judge/{checks,mutation,probes}.py` 扩展 |
+| live 测试 | `agent/tests/agentv3/lingqu/test_live.py`、`scripts/dev/lingqu_live_report.py` |
+| 20 场对话 | `agent/tests/agentv3/roleplay/live_cases.json`、`run_live_cases.py` |
+| 验收证据 | `docs/agent-v3/verification-evidence.md`、`verification-evidence.json` |
 | 文档 | 本目录 4 篇 |
 
 ## 测试证据
@@ -32,7 +35,7 @@ cd agent
 PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q
 ```
 
-结果：**249 passed**（基线 195 + 54 新增/改动；新增覆盖 Lingqu 17、标签 5、Sculptor 标签 4、工具 10、提示词 4、卡片 5、Lorebook 4、模型/卡 API 5，以及 PG 投影回归 3）。
+结果：**249 passed, 2 skipped**（基线 195 + 54 新增/改动；2 条 live 测试因缺 `LINGQU_LIVE=1` 与 Key 按设计跳过）。新增覆盖 Lingqu 17、标签 5、Sculptor 标签 4、工具 10、提示词 4、卡片 5、Lorebook 4、模型/卡 API 5，以及 PG 投影回归 3。
 
 ```bash
 PYTHONPATH=src .venv312/bin/python -m agentv3.lingqu.cli catalog-check
@@ -40,6 +43,13 @@ PYTHONPATH=src .venv312/bin/python -m agentv3.lingqu.cli catalog-check
 ```
 
 审判：`agent/src/agentv3/judge` 现有 **18 个变异 + 11 个探针**；新增 8 个变异（默认档、日志泄 key、400 回退、卡移动 guard、probability=0、预算失效、知识标签落 FACT、删除跨人）与 3 个探针。实测：**18/18 killed、11/11 probes ok、static P0=0、suite exit=0，verdict=pass**（`docs/agent-v3/judge-report.json`）。
+
+## Live 与 20 场对话证据（诚实边界）
+
+- `agent/tests/agentv3/lingqu/test_live.py`：`LINGQU_LIVE=1` + Key 才跑，否则 2 条 skip。
+- `scripts/dev/lingqu_live_report.py`：逐家 probe，无 Key 时 5/5 `skipped_no_credential`，报告 `lingqu-live-report.json`。
+- `agent/tests/agentv3/roleplay/`：20 个 case + runner；无 Key 时 20/20 skipped（`roleplay-20-live-report.json`）；`ROLEPLAY_ENGINE=fake` 时 20/20 pass（`roleplay-20-fake-report.json`），仅证明编排与护栏分支，**不冒充真实模型结果**。
+- 总表见 `verification-evidence.md`。
 
 ## 未完成 / 风险（不伪称）
 

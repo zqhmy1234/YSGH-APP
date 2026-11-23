@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-11-23T13:05:00+08:00",
+  "scope": "L0 wiring + Lingqu gateway + prompt/card + judge",
+  "commands": [
+    {
+      "name": "agent_full_suite",
+      "command": "cd agent && PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q",
+      "exit_code": 0,
+      "result": "249 passed, 2 skipped in 23.82s",
+      "note": "2 skipped = live provider tests, require LINGQU_LIVE=1 + key"
+    },
+    {
+      "name": "judge",
+      "command": "cd agent && PYTHONPATH=src .venv312/bin/python -m agentv3.judge.run",
+      "exit_code": 0,
+      "result": "static P0=0; suite_exit=0; mutants 18/18 killed; probes 11/11 ok; verdict=pass",
+      "evidence": "docs/agent-v3/judge-report.json"
+    },
+    {
+      "name": "review_static_full",
+      "command": "PATH=agent/.venv312/bin:$PATH python scripts/review_agent.py --full --skip-tests --skip-client-compile",
+      "exit_code": 0,
+      "result": "syntax 602 files / lint / secrets / structure / audit_axes / port_consistency / audit_security pass",
+      "note": "env_template 与 openapi_snapshot 因后端依赖缺失显式降级，未伪报通过"
+    },
+    {
+      "name": "review_full_with_backend_tests",
+      "command": "PATH=agent/.venv312/bin:$PATH python scripts/review_agent.py --full --skip-client-compile",
+      "exit_code": 1,
+      "result": "静态层全绿；tests 层 116+ 个 backend 用例 ERROR，原因是本机 venv 缺后端重依赖",
+      "blocker": "environment: backend test dependencies not installed; not a code failure",
+      "evidence": ".cowork-temp/test-report.json"
+    },
+    {
+      "name": "l0_smoke",
+      "command": "bash scripts/dev/agent_v3_smoke.sh",
+      "exit_code": 2,
+      "result": "blocked: docker not installed / not in PATH",
+      "evidence": "docs/agent-v3/l0-smoke.json"
+    },
+    {
+      "name": "lingqu_live_report",
+      "command": "PYTHONPATH=agent/src agent/.venv312/bin/python scripts/dev/lingqu_live_report.py",
+      "exit_code": 2,
+      "result": "not_run_no_credential: 5/5 providers skipped",
+      "evidence": "docs/agent-v3/lingqu-live-report.json"
+    },
+    {
+      "name": "roleplay20_live",
+      "command": "PYTHONPATH=src agent/.venv312/bin/python tests/agentv3/roleplay/run_live_cases.py",
+      "exit_code": 2,
+      "result": "not_run_no_credential: 20/20 skipped",
+      "evidence": "docs/agent-v3/roleplay-20-live-report.json"
+    },
+    {
+      "name": "roleplay20_fake",
+      "command": "ROLEPLAY_ENGINE=fake PYTHONPATH=src agent/.venv312/bin/python tests/agentv3/roleplay/run_live_cases.py",
+      "exit_code": 0,
+      "result": "20/20 pass in mode=fake; not a live model result",
+      "evidence": "docs/agent-v3/roleplay-20-fake-report.json"
+    }
+  ],
+  "external_blockers": [
+    "Docker/Compose 未安装：本机与云主机都没有可用的容器运行时，L0 compose 无法 up。",
+    "COMPANY_LLM_API_KEY 未提供：五家厂商与 20 场真实对话无法发起，报告按 skipped 记录。",
+    "backend 重依赖未安装：review_agent --full 的 backend pytest 层属环境错误；agent 套件与审判已独立全绿。"
+  ],
+  "not_claimed": [
+    "L0 真实启动",
+    "五家厂商 live pass",
+    "20 场 DeepSeek 真实对话",
+    "review_agent --full 测试层通过"
+  ]
+}

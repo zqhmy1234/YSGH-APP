@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-11-23T12:55:09+08:00",
+  "catalog_version": "2026-11-23.1",
+  "default_profile": "deepseek/deepseek-v4-flash",
+  "providers_total": 5,
+  "ok": 0,
+  "skipped": 5,
+  "rows": [
+    {
+      "provider": "deepseek",
+      "profile": "deepseek/deepseek-v4-flash",
+      "model": "deepseek-v4-flash",
+      "status": "skipped_no_credential",
+      "state": "unavailable",
+      "latency_ms": null,
+      "detail": "no credential for deepseek/deepseek-v4-flash; set COMPANY_LLM_API_KEY or LINGQU_DEEPSEEK_API_KEY"
+    },
+    {
+      "provider": "qwen",
+      "profile": "qwen/qwen4-max",
+      "model": "qwen4-max",
+      "status": "skipped_no_credential",
+      "state": "unavailable",
+      "latency_ms": null,
+      "detail": "no credential for qwen/qwen4-max; set COMPANY_LLM_API_KEY or LINGQU_QWEN_API_KEY"
+    },
+    {
+      "provider": "kimi",
+      "profile": "kimi/kimi-k3.1-pro",
+      "model": "kimi-k3.1-pro",
+      "status": "skipped_no_credential",
+      "state": "unavailable",
+      "latency_ms": null,
+      "detail": "no credential for kimi/kimi-k3.1-pro; set COMPANY_LLM_API_KEY or LINGQU_KIMI_API_KEY"
+    },
+    {
+      "provider": "minimax",
+      "profile": "minimax/MiniMax-M3.1-Flash",
+      "model": "MiniMax-M3.1-Flash",
+      "status": "skipped_no_credential",
+      "state": "unavailable",
+      "latency_ms": null,
+      "detail": "no credential for minimax/MiniMax-M3.1-Flash; set COMPANY_LLM_API_KEY or LINGQU_MINIMAX_API_KEY"
+    },
+    {
+      "provider": "glm",
+      "profile": "glm/glm-5.3",
+      "model": "glm-5.3",
+      "status": "skipped_no_credential",
+      "state": "unavailable",
+      "latency_ms": null,
+      "detail": "no credential for glm/glm-5.3; set COMPANY_LLM_API_KEY or LINGQU_GLM_API_KEY"
+    }
+  ],
+  "status": "not_run_no_credential",
+  "note": "只有真实回复才记 ok；缺 Key 记 skipped，鉴权失败记 auth_failed。不含 prompt/key。"
+}
