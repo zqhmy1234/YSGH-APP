@@ -115,3 +115,15 @@ def test_v2_export_has_no_internal_trace_fields():
 def test_card_hash_is_stable():
     repo = RoleCardRepository()
     assert repo.load("gentle-friend").card_hash == repo.load("gentle-friend").card_hash
+
+def test_judge_role_card_check_accepts_the_six_baseline_decision():
+    """Decision 29.2/29.6: six cards is the shipped baseline, not a regression.
+
+    The judge used to demand exactly 12, so a passing suite plus a correct
+    product decision still produced verdict=block. Pin the check's semantics so
+    the two can never drift apart again.
+    """
+    from judge import checks
+
+    findings = checks.check_role_cards()
+    assert findings == [], findings
