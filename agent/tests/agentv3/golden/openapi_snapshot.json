@@ -1,0 +1,361 @@
+{
+  "paths": {
+    "/health": [
+      "get"
+    ],
+    "/v1/chat": [
+      "post"
+    ],
+    "/v1/v3/cards": [
+      "get"
+    ],
+    "/v1/v3/cards/active": [
+      "post"
+    ],
+    "/v1/v3/cards/import": [
+      "post"
+    ],
+    "/v1/v3/digest/{person_id}": [
+      "get"
+    ],
+    "/v1/v3/echo/{person_id}": [
+      "get"
+    ],
+    "/v1/v3/family/{role}": [
+      "get"
+    ],
+    "/v1/v3/ingest": [
+      "post"
+    ],
+    "/v1/v3/memory/{person_id}": [
+      "get"
+    ],
+    "/v1/v3/models": [
+      "get"
+    ],
+    "/v1/v3/models/active": [
+      "get",
+      "put"
+    ],
+    "/v1/v3/models/probe": [
+      "post"
+    ],
+    "/v1/v3/purge": [
+      "post"
+    ],
+    "/v1/v3/turn": [
+      "post"
+    ]
+  },
+  "required": {
+    "AgentInvocation": [
+      "budget_chars",
+      "budget_ms",
+      "name",
+      "reason"
+    ],
+    "AgentName": [],
+    "Budget": [],
+    "CardActivateRequest": [
+      "name"
+    ],
+    "ClaimVerdict": [
+      "grounded",
+      "text"
+    ],
+    "Cost": [],
+    "Digest": [
+      "person_id"
+    ],
+    "DigestSection": [
+      "name",
+      "text"
+    ],
+    "EchoCandidate": [
+      "echo_id",
+      "person_id",
+      "reason",
+      "score",
+      "sensitivity",
+      "title",
+      "why_now"
+    ],
+    "FamilyRole": [],
+    "HTTPValidationError": [],
+    "Health": [
+      "profile_id"
+    ],
+    "HealthState": [],
+    "IngestReceipt": [],
+    "IngestRequest": [
+      "person_id"
+    ],
+    "Intent": [],
+    "MemoryEntry": [
+      "entry_id",
+      "layer",
+      "person_id",
+      "recorded_at",
+      "text",
+      "valid_from"
+    ],
+    "MemoryLayer": [],
+    "ModelProbeRequest": [],
+    "ModelSwitchRequest": [
+      "profile_id"
+    ],
+    "PurgeReceipt": [
+      "purged"
+    ],
+    "PurgeScope": [
+      "person_id"
+    ],
+    "ResultStatus": [],
+    "Sensitivity": [],
+    "TagSet": [],
+    "TraceItem": [
+      "channel",
+      "claim",
+      "evidence_id"
+    ],
+    "TurnPlan": [
+      "budget",
+      "fallback",
+      "guards",
+      "intent",
+      "invocations",
+      "write_policy"
+    ],
+    "TurnRequest": [
+      "person_id",
+      "text"
+    ],
+    "TurnResult": [
+      "reply"
+    ],
+    "ValidationError": [
+      "loc",
+      "msg",
+      "type"
+    ],
+    "Verdict": [
+      "status"
+    ],
+    "VerdictStatus": [],
+    "WriteReceipt": [
+      "state"
+    ],
+    "WriteState": []
+  },
+  "schemas": {
+    "AgentInvocation": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "AgentName": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "Budget": [
+      "additionalProperties",
+      "properties",
+      "title",
+      "type"
+    ],
+    "CardActivateRequest": [
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "ClaimVerdict": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "Cost": [
+      "additionalProperties",
+      "properties",
+      "title",
+      "type"
+    ],
+    "Digest": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "DigestSection": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "EchoCandidate": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "FamilyRole": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "HTTPValidationError": [
+      "properties",
+      "title",
+      "type"
+    ],
+    "Health": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "HealthState": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "IngestReceipt": [
+      "additionalProperties",
+      "properties",
+      "title",
+      "type"
+    ],
+    "IngestRequest": [
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "Intent": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "MemoryEntry": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "MemoryLayer": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "ModelProbeRequest": [
+      "properties",
+      "title",
+      "type"
+    ],
+    "ModelSwitchRequest": [
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "PurgeReceipt": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "PurgeScope": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "ResultStatus": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "Sensitivity": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "TagSet": [
+      "additionalProperties",
+      "description",
+      "properties",
+      "title",
+      "type"
+    ],
+    "TraceItem": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "TurnPlan": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "TurnRequest": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "TurnResult": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "ValidationError": [
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "Verdict": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "VerdictStatus": [
+      "enum",
+      "title",
+      "type"
+    ],
+    "WriteReceipt": [
+      "additionalProperties",
+      "properties",
+      "required",
+      "title",
+      "type"
+    ],
+    "WriteState": [
+      "enum",
+      "title",
+      "type"
+    ]
+  }
+}

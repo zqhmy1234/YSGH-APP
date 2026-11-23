@@ -25,6 +25,9 @@ dependencies = [
     # 缺失时链接抓取会在运行期返回 500（tests/test_fetch_ssrf.py 实测）。
     "beautifulsoup4>=4.13,<5",
     "lxml>=6,<7",
+    # Lingqu model gateway: the only provider SDK shim; all five providers
+    # (DeepSeek/Qwen/Kimi/MiniMax/GLM) go through it.
+    "litellm>=1.80,<2",
 ]
 
 # ── 依赖瘦身记录（2026-10-06，删前逐个核实过全仓 0 使用点）──

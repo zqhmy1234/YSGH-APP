@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-11-23 12:20 · commit 0ed99d4 · ts=1795407615
+- **错误**：审判 Agent 相对路径写错：从 src 出发的 ../../config 指向仓库根而非 agent/config；且 pseudo-mutant 与实现冗余分支等价导致存活
+- **根因**：judge 的 ROOT 只到 src，新增配置在 agent/config；变异未检查被改分支是否可达，前面的早退分支已覆盖
+- **修复**：mutant 路径改为 ../config/lingqu-catalog.json；删掉 cards.py 冗余的 probability<=0 早退，让 roll 分支成为唯一判定，并以 if roll>=probability 为变异锚点；探针增加硬编码前两段断言
+- **相关文件**：agent/src/agentv3/judge/mutation.py;agent/src/agentv3/prompts/cards.py;agent/tests/agentv3/test_prompt_bundle.py
+- **教训**：变异测试必须验证变异分支真的可达；等价变异不算杀死，先删冗余分支再选锚点
+
+---
+
+### 2026-11-23 04:22 · commit 0ed99d4 · ts=1795378954
+- **错误**：agentv3 交付缺口：回放只有20条、无LoCoMo、PG无适配器、vendor无源码
+- **根因**：按最小切口交付，未把计划里的评测/持久化/上游钉版当同批产物；后期补时才发现网络与依赖约束
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：计划里的每一条P0产物都要在收口前逐条对照，不能只做核心链路；评测集与适配器属于证据，不是可选项
+
+---
+
 <<<<<<< HEAD
 ### 2026-11-13 22:15 · commit 60ad432 · ts=1794579342
 - **错误**：本轮1231项pytest通过，但API冒烟因本机Docker引擎退出出现数据库连接超时

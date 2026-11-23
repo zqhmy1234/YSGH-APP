@@ -1,0 +1,1402 @@
+[
+ {
+  "text": "今天有点累（第1次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第1次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第1次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第1次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第1次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第1次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第1次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第1次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第1次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第1次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第1次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第1次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第1次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第1次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第1次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第1次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第1次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第1次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第1次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第1次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第2次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第2次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第2次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第2次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第2次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第2次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第2次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第2次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第2次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第2次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第2次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第2次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第2次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第2次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第2次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第2次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第2次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第2次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第2次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第2次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第3次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第3次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第3次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第3次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第3次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第3次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第3次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第3次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第3次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第3次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第3次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第3次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第3次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第3次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第3次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第3次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第3次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第3次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第3次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第3次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第4次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第4次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第4次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第4次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第4次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第4次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第4次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第4次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第4次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第4次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第4次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第4次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第4次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第4次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第4次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第4次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第4次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第4次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第4次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第4次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第5次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第5次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第5次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第5次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第5次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第5次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第5次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第5次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第5次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第5次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第5次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第5次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第5次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第5次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第5次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第5次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第5次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第5次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第5次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第5次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第6次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第6次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第6次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第6次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第6次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第6次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第6次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第6次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第6次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第6次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第6次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第6次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第6次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第6次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第6次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第6次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第6次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第6次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第6次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第6次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第7次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第7次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第7次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第7次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第7次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第7次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第7次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第7次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第7次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第7次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第7次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第7次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第7次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第7次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第7次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第7次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第7次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第7次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第7次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第7次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第8次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第8次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第8次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第8次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第8次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第8次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第8次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第8次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第8次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第8次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第8次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第8次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第8次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第8次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第8次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第8次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第8次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第8次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第8次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第8次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第9次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第9次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第9次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第9次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第9次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第9次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第9次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第9次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第9次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第9次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第9次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第9次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第9次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第9次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第9次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第9次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第9次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第9次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第9次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第9次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天有点累（第10次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天（第10次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了（第10次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了（第10次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本（第10次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀（第10次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗（第10次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡（第10次）",
+  "intent": "chitchat",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭（第10次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话（第10次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词（第10次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段（第10次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了（第10次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片（第10次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错（第10次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着（第10次）",
+  "intent": "emotion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我（第10次）",
+  "intent": "remember",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上（第10次）",
+  "intent": "setting",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少（第10次）",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边（第10次）",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ }
+]
