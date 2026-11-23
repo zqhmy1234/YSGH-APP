@@ -1,90 +1,89 @@
 {
-  "generated_at": "2026-11-23T17:55:00+08:00",
-  "scope": "L0 wiring + Lingqu gateway + prompt/card + judge",
+  "generated_at": "2026-11-24T04:43:53+08:00",
+  "scope": "2026-11-24 P0/P1/P2 close-out (local L0 stack + real backend->agent chain)",
   "commands": [
     {
-      "name": "agent_full_suite",
-      "command": "cd agent && PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q",
-      "exit_code": 0,
-      "result": "258 passed, 2 skipped in 24.46s",
-      "note": "2 skipped = live provider tests, require LINGQU_LIVE=1 + key"
+      "cmd": "cd agent && PYTHONPATH=src .venv312/bin/python -m pytest -q",
+      "result": "338 passed, 2 skipped"
     },
     {
-      "name": "judge",
-      "command": "cd agent && PYTHONPATH=src .venv312/bin/python -m agentv3.judge.run",
-      "exit_code": 0,
-      "result": "static P0=0; suite_exit=0; mutants 18/18 killed; probes 11/11 ok; verdict=pass; judge suite counts 260 passed (includes 2 live tests)",
-      "evidence": "docs/agent-v3/judge-report.json"
+      "cmd": "PYTHONPATH=src .venv312/bin/python -m judge.run",
+      "result": "static P0=0 / 18/18 mutants / 11/11 probes / verdict=pass"
     },
     {
-      "name": "review_static_full",
-      "command": "PATH=agent/.venv312/bin:$PATH python scripts/review_agent.py --full --skip-tests --skip-client-compile",
-      "exit_code": 0,
-      "result": "syntax 602 files / lint / secrets / structure / audit_axes / port_consistency / audit_security pass",
-      "note": "env_template 与 openapi_snapshot 因后端依赖缺失显式降级，未伪报通过"
+      "cmd": "bash scripts/dev/arch_guard.sh",
+      "result": "PASS"
     },
     {
-      "name": "review_full_with_backend_tests",
-      "command": "PATH=agent/.venv312/bin:$PATH python scripts/review_agent.py --full --skip-client-compile",
-      "exit_code": 1,
-      "result": "静态层全绿；tests 层 116+ 个 backend 用例 ERROR，原因是本机 venv 缺后端重依赖",
-      "blocker": "environment: backend test dependencies not installed; not a code failure",
-      "evidence": ".cowork-temp/test-report.json"
+      "cmd": "cd backend && pytest tests -q --ignore=tests/test_setfit.py",
+      "result": "1332 passed, 22 deselected"
     },
     {
-      "name": "l0_smoke",
-      "command": "bash scripts/dev/agent_v3_smoke.sh",
-      "exit_code": 2,
-      "result": "blocked: docker not installed / not in PATH",
-      "evidence": "docs/agent-v3/l0-smoke.json"
+      "cmd": "alembic upgrade head && alembic check",
+      "result": "e7b8c9d0e1f2; No new upgrade operations detected"
     },
     {
-      "name": "lingqu_live_report",
-      "command": "PYTHONPATH=agent/src agent/.venv312/bin/python scripts/dev/lingqu_live_report.py",
-      "exit_code": 2,
-      "result": "partial: DeepSeek ok=1; qwen auth_failed; kimi/minimax/glm model_or_endpoint_error; skipped=0",
-      "evidence": "docs/agent-v3/lingqu-live-report.json"
+      "cmd": "python scripts/gen_openapi.py --check",
+      "result": "consistent; 79 paths"
     },
     {
-      "name": "roleplay20_live",
-      "command": "PYTHONPATH=src agent/.venv312/bin/python tests/agentv3/roleplay/run_live_cases.py",
-      "exit_code": 0,
-      "result": "20/20 pass via real DeepSeek through local LiteLLM gateway on 127.0.0.1:4001",
-      "evidence": "docs/agent-v3/roleplay-20-live-report.json"
+      "cmd": "bash scripts/dev/agent_v3_compose_smoke.sh",
+      "result": "6/6 PASS"
     },
     {
-      "name": "roleplay20_fake",
-      "command": "ROLEPLAY_ENGINE=fake PYTHONPATH=src agent/.venv312/bin/python tests/agentv3/roleplay/run_live_cases.py",
-      "exit_code": 0,
-      "result": "20/20 pass in mode=fake; not a live model result",
-      "evidence": "docs/agent-v3/roleplay-20-fake-report.json"
+      "cmd": "POST /api/v1/chat/messages (JWT) x2",
+      "result": "200; real model reply, no degraded fallback, messages persisted (22 rows)"
     },
     {
-      "name": "lingqu_gateway_e2e",
-      "command": "PYTHONPATH=src .venv312/bin/python /tmp/verify_litellm_e2e.py",
-      "exit_code": 0,
-      "result": "ok: active profile deepseek/deepseek-v4.1-flash, probe ok, non-empty Chinese reply (17 chars) through 127.0.0.1:4001 LiteLLM gateway",
-      "note": "Key injected from the already-running local process; never written to repo or printed."
-    },
-    {
-      "name": "litellm_db_mode_server",
-      "command": "bash /opt/yishu/litellm-gateway/litellm_db_enable.sh + /key/generate + real chat",
-      "exit_code": 0,
-      "result": "enabled: 233 migrations applied; virtual key agent-v3 (max_budget=20, budget_duration=30d); real DeepSeek content; tiny-budget probe 2nd call 422 budget_exceeded; spend logs written",
-      "evidence": "docs/agent-v3/litellm-db-mode_20261123.md"
+      "cmd": "POST /api/v1/search/agent",
+      "result": "200; 1 hit, 714ms, degraded=false; reply cites [S1]"
     }
   ],
+  "environment": {
+    "docker": "Colima 0.10.3 / Docker 29.5.2 / Compose v5.8.0 / buildx v0.30.0",
+    "postgres": "127.0.0.1:55432 pgvector/pgvector:pg16",
+    "redis": "127.0.0.1:56379 redis:7-alpine",
+    "qdrant": "127.0.0.1:56333 qdrant/qdrant:v1.19.0",
+    "minio": "127.0.0.1:59000 docker.1panel.live/bitnami/minio:latest",
+    "agent": "127.0.0.1:8300 yishu-agent-v3:local",
+    "backend": "127.0.0.1:8010 yishu-backend:local",
+    "bge_m3": "/app/models/bge-m3/pytorch_model.bin 2271145830 bytes"
+  },
+  "resolved_blockers": [
+    "no local Docker/Compose -> Colima stack",
+    "no local PostgreSQL -> PG16 container, migration to head",
+    "server docker compose plugin was HTML -> replaced with real v5.8.0 binary",
+    "BGE-M3 weights missing -> downloaded 2.27GB, mounted read-only, HF_HUB_OFFLINE=1",
+    "backend image stale -> rebuilt, 79 OpenAPI paths",
+    "worker never started -> running with scheduler, real job consumed",
+    "agent tool calls got max_tokens=256 -> all budget consumed by hidden reasoning -> empty reply -> every real turn degraded. Floor is now tool-aware (1024 when tools attached)."
+  ],
   "external_blockers": [
-    "L0 compose 不可用：本机 macOS 无 Docker；服务器 Docker 29.1.3 的 compose 插件文件是 HTML，不是二进制。",
-    "LiteLLM 网关当前只配置通 DeepSeek；Qwen 的 DASHSCOPE key 为占位值，Kimi/MiniMax/GLM 模型未加入网关，五家全绿仍缺 Key/配置。",
-    "backend 重依赖未安装：review_agent --full 的 backend pytest 层属环境错误；agent 套件与审判已独立全绿。",
-    "LiteLLM DB 模式的 /ui 登录与预算页未做浏览器人工走查；LiteLLM_ProxyModelTable 仍为 0（模型仍从 YAML 读取）。"
+    {
+      "item": "five-provider live",
+      "state": "partial",
+      "detail": "DeepSeek ok; Qwen auth_failed; Kimi/MiniMax/GLM model_or_endpoint_error"
+    },
+    {
+      "item": "server staging cutover :8300",
+      "state": "not_done",
+      "detail": "production still runs the old agent (main:app, 7 paths)"
+    },
+    {
+      "item": "server backend upgrade",
+      "state": "not_done",
+      "detail": "/opt/yishu/backend lacks agent_profile/memory/persona modules; migration at f2c3d4e5a6b7"
+    },
+    {
+      "item": "client compile",
+      "state": "degraded",
+      "detail": "HBuilderX not installed on this machine"
+    }
   ],
   "not_claimed": [
-    "L0 真实启动",
-    "LiteLLM /ui 浏览器人工走查",
-    "LiteLLM 模型目录入库",
-    "五家厂商 live 全绿",
-    "review_agent --full 测试层通过"
+    "five-provider live all green",
+    "production deployment / cutover",
+    "client compile / device acceptance",
+    "30-day account purge timer on production cron"
   ]
 }

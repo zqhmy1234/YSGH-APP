@@ -4,10 +4,9 @@
 # Build context = repository root:
 #   docker build -f deploy/Dockerfile.agentv3 -t yishu-agent-v3:local .
 #
-# Why a separate image from Dockerfile.agent: the legacy agent serves main:app
-# (LangGraph + Coze-era code); V3 serves agentv3.api.routes:app_from_env and
-# needs the Lingqu catalog plus LiteLLM. Keeping them separate prevents the
-# legacy image from silently shipping the wrong entrypoint.
+# The new service entrypoint is ``api.routes:app_from_env`` (harness/agents/
+# memory/adapters). The legacy LangGraph entrypoint is archived and must never
+# be shipped in this image.
 # ============================================================================
 FROM python:3.12-slim
 
@@ -34,6 +33,10 @@ COPY agent/pyproject.toml agent/uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY agent/src/ ./src/
 COPY agent/config/ ./config/
+COPY agent/assets/ ./assets/
+# shared/contracts is imported by adapters/backend_http (single source of truth
+# for agent-facing DTOs); the image must ship it and PYTHONPATH must include /app.
+COPY shared/ ./shared/
 
 RUN useradd -r -u 10002 -m appuser && chown -R appuser:appuser /app
 USER appuser
@@ -42,5 +45,6 @@ EXPOSE 8300
 HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=5 \
     CMD curl -fsS http://127.0.0.1:8300/health >/dev/null || exit 1
 
+ENV PYTHONPATH=/app
 # --factory is required: app_from_env() builds the container from environment.
-CMD ["/app/.venv/bin/uvicorn", "agentv3.api.routes:app_from_env", "--factory", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8300"]
+CMD ["/app/.venv/bin/uvicorn", "api.routes:app_from_env", "--factory", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8300"]

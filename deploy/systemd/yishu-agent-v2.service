@@ -1,0 +1,23 @@
+[Unit]
+Description=Yishu Agent v2 (harness, :8400 local / :8300 staging)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yishu
+WorkingDirectory=@DEPLOY_ROOT@/agent
+EnvironmentFile=@DEPLOY_ROOT@/agent/.env
+Environment=PYTHONPATH=@DEPLOY_ROOT@/agent/src:@DEPLOY_ROOT@
+Environment=AGENT_PORT=8400
+ExecStart=@DEPLOY_ROOT@/agent/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8400 --workers 1
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=@DEPLOY_ROOT@/agent/data
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

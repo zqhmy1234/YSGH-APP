@@ -21,9 +21,6 @@
 			<text class="n4_182">访谈 · 第 {{ step + 1 }} 问</text> <!-- 问题编号 -->
 			<text class="n4_183">{{ currentQuestion }}</text> <!-- 问题 -->
 			<text class="n4_184">随便聊聊，一两句话就够</text> <!-- 问题引导 -->
-			<view v-if="lastEmotion != ''" class="emo-chip"> <!-- 上一答情绪标签（D-16：空串=未测得不渲染） -->
-				<text class="emo-chip-text">情绪 · {{ lastEmotion }}</text>
-			</view>
 			<!-- 2026-10-30（P1-27）：提交失败**不写完成态**（原实现无条件 done=true ⇒ 答案全丢、
 			     无法重试）。失败时停留在当前问，答案仍在 answers 里，这里给可重试出口 -->
 			<view v-if="submitFailed" class="retry-hint">
@@ -122,7 +119,6 @@
 	let recording = ref(false)
 	let recSeconds = ref(0)
 	let transcribing = ref(false)
-	let lastEmotion = ref('')
 	let showTextModal = ref(false)
 	let textAnswer = ref('')
 	let confirmation = ref('')
@@ -266,7 +262,6 @@
 			if (k != '') {
 				answers[k] = res.text
 			}
-			lastEmotion.value = res.emotion  // D-16：未测得为空串，chip 不渲染
 			uni.showToast({ title: '已记录语音回答', icon: 'none' })
 			nextStep()
 		})
@@ -504,24 +499,7 @@
 		font-size: var(--d-lattice-p13, 25rpx);
 		color: var(--c-ink-500, #8A7A6A);
 	}
-	/* 上一答情绪 chip（对齐 RecordSheet v-chip 胶囊形；画布未画此态） */
-	.emo-chip {
-		margin-top: var(--d-lattice-p10, 19.2rpx); /* 与卡内 gap 一致（画布 4:181 gap=10pt） */
-		align-self: flex-start;
-		padding-left: 23rpx;
-		padding-right: 23rpx;
-		height: var(--d-lattice-p24, 46.2rpx);
-		flex-direction: row;
-		align-items: center;
-		background-color: var(--a-rust-10, rgba(176, 89, 59, 0.1));
-		border-radius: var(--d-card_radius_small, 23.1rpx);
-		overflow: hidden;
-	}
-	.emo-chip-text {
-		font-family: "Sarasa Gothic SC", sans-serif;
-		font-size: var(--d-lattice-p11, 21.2rpx);
-		color: var(--c-rust-500, #B05A3A);
-	}
+	/* 2026-11-24（B7）：情绪 chip 已移除。ASR 的 emotion 仍可进后端信号，但不再贴给用户看。 */
 	.n4_185 {
 		position: absolute;
 		left: var(--d-lattice-p141, 271.2rpx);
@@ -640,7 +618,7 @@
 		font-weight: 600;
 	}
 	/* 2026-10-30（P1-28）：AI 复述确认气泡（画布未画此态，沿用卡内既有 chip 视觉：
-	   淡锈红底 + 锈红字，与 .emo-chip 同族；uvue 样式不继承，text 单独带 font-family） */
+	   淡锈红底 + 锈红字，与已移除的情绪 chip 同族；uvue 样式不继承，text 单独带 font-family） */
 	.confirm-bubble {
 		margin-top: var(--d-lattice-p10, 19.2rpx);
 		width: 100%;

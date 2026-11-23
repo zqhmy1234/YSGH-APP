@@ -109,7 +109,7 @@
  "dup_patterns": {
   "soft_delete_filter": {
    "regex": "deleted_at\\.is_\\(None\\)",
-   "total": 43,
+   "total": 42,
    "per_file": {
     "backend/app/api/contents/__init__.py": 5,
     "backend/app/api/contents/favorites.py": 1,
@@ -119,7 +119,6 @@
     "backend/app/api/event_items.py": 2,
     "backend/app/api/media.py": 2,
     "backend/app/api/stats.py": 3,
-    "backend/app/services/echo.py": 1,
     "backend/app/services/notify.py": 1,
     "backend/app/services/photo_content.py": 2,
     "backend/app/workers/requeue_job.py": 1,

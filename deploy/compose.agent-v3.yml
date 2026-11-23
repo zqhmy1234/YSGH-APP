@@ -128,7 +128,22 @@ services:
       COMPANY_LLM_API_KEY: ${COMPANY_LLM_API_KEY:-}
       COMPANY_LLM_BASE_URL: ${COMPANY_LLM_BASE_URL:-}
       LINGQU_SELECTION_PATH: /data/lingqu-selection.json
-      AGENT_V3_TOKEN: ${AGENT_V3_TOKEN:-}
+      # Agent → backend L3 endpoints (search/events). Inside the compose network
+      # the backend service name is stable; ``INTERNAL_TOKEN`` must equal the
+      # backend's ``AGENT_SERVICE_TOKEN`` for agent_service_user() to accept it.
+      BACKEND_BASE_URL: ${BACKEND_URL:-http://backend:8010}
+      SEARCH_BASE_URL: ${AGENT_SEARCH_BASE_URL:-http://backend:8010}
+      EVENT_BASE_URL: ${AGENT_EVENT_BASE_URL:-http://backend:8010}
+      # One secret, both directions: the backend sends it as X-Agent-Token and
+      # the agent validates it against AGENT_V3_TOKEN. Deriving both from the
+      # same variable makes drift impossible (a mismatch is a silent 401).
+      INTERNAL_TOKEN: ${AGENT_SERVICE_TOKEN:-local-agent-service-token}
+      AGENT_V3_TOKEN: ${AGENT_SERVICE_TOKEN:-local-agent-service-token}
+    # The local LiteLLM gateway on the host listens on 127.0.0.1 only; this maps
+    # `host.docker.internal` to the Docker host gateway so the container can
+    # reach it without exposing the gateway on a public interface.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${V3_AGENT_PORT:-8300}:8300"
     volumes:
@@ -148,6 +163,18 @@ services:
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       AGENT_SERVICE_BASE_URL: http://agent-v3:8300
+      # Same shared secret the agent sends as X-Agent-Token; without it every
+      # agent-facing L3 endpoint fails closed with 503.
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-local-agent-service-token}
+      APP_ENV: development
+      # Models are mounted, never baked into the image (BGE-M3 is ~2.2GB).
+      # Offline mode makes a missing mount fail loudly instead of silently
+      # trying to reach huggingface.co (which is unreachable from this network).
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      EMBEDDING_FALLBACK_LOCAL: "true"
+    volumes:
+      - ../backend/models:/app/models:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -169,6 +196,11 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-local-v3-only}@postgres:5432/${POSTGRES_DB:-yishu}
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      EMBEDDING_FALLBACK_LOCAL: "true"
+    volumes:
+      - ../backend/models:/app/models:ro
     depends_on:
       - backend
     command: ["python", "-m", "app.workers.worker"]

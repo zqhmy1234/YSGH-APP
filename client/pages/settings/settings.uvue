@@ -14,6 +14,11 @@
 				<text class="n4_144">账号与安全</text> <!-- 文字 -->
 				<image class="n4_145" src="/static/icons/i4_145.svg" /> <!-- icon: 箭头 -->
 			</view>
+			<view class="n4_140" @tap="goPersona"> <!-- 行-她怎么陪你（B7） -->
+				<image class="n4_141" src="/static/icons/i4_141.svg" /> <!-- icon: 图标 -->
+				<text class="n4_144">她怎么陪你</text> <!-- 文字 -->
+				<image class="n4_145" src="/static/icons/i4_145.svg" /> <!-- icon: 箭头 -->
+			</view>
 			<!-- 2026-10-15（台账 §4.20 ㉖ · 用户拍板"做绑定码流程"）：微信绑定行。
 			     F6「微信入口」要先把用户微信 openid 与账号关联，而 openid 只存在企微侧 ——
 			     故流程为「App 领码 → 用户在微信里发码 → 服务端回调建绑定」。本行复用
@@ -59,6 +64,10 @@
 	function goAccount(): void {
 		// W10：账号与安全页落地，toast 占位改真跳转（navigateTo 入栈，security 返回键可达）
 		uni.navigateTo({ url: '/pages/account/security' })
+	}
+
+	function goPersona(): void {
+		uni.navigateTo({ url: '/pages/persona/persona' })
 	}
 
 	// ── 微信绑定（2026-10-15 · 台账 §4.20 ㉖）──────────────────────────────────

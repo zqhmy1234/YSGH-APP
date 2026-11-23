@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-11-23T08:32:17.523063+00:00",
+  "generated_at": "2026-11-23T20:41:51.018383+00:00",
   "verdict": "pass",
   "static": [],
   "suite": {
     "exit": 0,
-    "tail": ".....................ss................................................. [ 27%]\n........................................................................ [ 55%]\n........................................................................ [ 83%]\n............................................                             [100%]\n258 passed, 2 skipped in 24.78s\n/Users/silver/GHapp/agent/.venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
+    "tail": "......................ss................................................ [ 21%]\n........................................................................ [ 42%]\n........................................................................ [ 63%]\n........................................................................ [ 84%]\n....................................................                     [100%]\n338 passed, 2 skipped in 24.51s\n/Users/silver/GHapp/agent/.venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
     "per_file": {
       "test_catalog": {
         "passed": 5,
@@ -15,7 +15,7 @@
         "failed": 0
       },
       "test_gateway": {
-        "passed": 8,
+        "passed": 9,
         "failed": 0
       },
       "test_live": {
@@ -23,15 +23,19 @@
         "failed": 0
       },
       "test_api": {
-        "passed": 11,
+        "passed": 17,
         "failed": 0
       },
       "test_backend_http": {
         "passed": 3,
         "failed": 0
       },
-      "test_boundary": {
+      "test_backend_http_contract": {
         "passed": 8,
+        "failed": 0
+      },
+      "test_boundary": {
+        "passed": 9,
         "failed": 0
       },
       "test_capture_services": {
@@ -63,7 +67,7 @@
         "failed": 0
       },
       "test_frame": {
-        "passed": 6,
+        "passed": 8,
         "failed": 0
       },
       "test_integration": {
@@ -95,7 +99,7 @@
         "failed": 0
       },
       "test_muse": {
-        "passed": 8,
+        "passed": 11,
         "failed": 0
       },
       "test_negative_probes": {
@@ -183,11 +187,43 @@
         "failed": 0
       },
       "test_import_boundary": {
-        "passed": 3,
+        "passed": 5,
         "failed": 0
       },
       "test_upstream_parity_contract": {
         "passed": 1,
+        "failed": 0
+      },
+      "test_context": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_crisis": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_emotion": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_empathy": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_memory_read_model": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_persona": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_plan_matrix": {
+        "passed": 22,
+        "failed": 0
+      },
+      "test_role_card": {
+        "passed": 9,
         "failed": 0
       }
     }
@@ -199,70 +235,70 @@
     "items": [
       {
         "label": "correction-precedence",
-        "file": "agentv3/memory/ledger.py",
+        "file": "memory/ledger.py",
         "test": "test_ledger.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "batch-idempotency",
-        "file": "agentv3/memory/ledger.py",
+        "file": "memory/ledger.py",
         "test": "test_ledger.py",
         "status": "killed",
         "detail": ""
       },
       {
-        "label": "evidence-pruned-first",
-        "file": "agentv3/frame.py",
+        "label": "history-pruned-first",
+        "file": "harness/context.py",
         "test": "test_frame.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "degrade-not-empty",
-        "file": "agentv3/agents/librarian.py",
+        "file": "agents/librarian.py",
         "test": "test_librarian.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "llm-down-zero-calls",
-        "file": "agentv3/plan.py",
+        "file": "harness/plan.py",
         "test": "test_plan.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "private-claim-needs-citation",
-        "file": "agentv3/agents/provenance.py",
+        "file": "agents/provenance.py",
         "test": "test_provenance.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "digest-unavailable",
-        "file": "agentv3/memory/projection.py",
+        "file": "memory/projection.py",
         "test": "test_projection.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "crisis-short-circuit",
-        "file": "agentv3/orchestrator.py",
+        "file": "harness/orchestrator.py",
         "test": "test_orchestrator.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "sculptor-refuses-bad-batch",
-        "file": "agentv3/agents/sculptor.py",
+        "file": "agents/sculptor.py",
         "test": "test_sculptor.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "sqlite-write-through",
-        "file": "agentv3/adapters/sqlite_memory.py",
+        "file": "adapters/sqlite_memory.py",
         "test": "test_ledger.py",
         "status": "killed",
         "detail": ""
@@ -276,49 +312,49 @@
       },
       {
         "label": "admin-never-returns-key",
-        "file": "agentv3/lingqu/admin.py",
+        "file": "adapters/lingqu/admin.py",
         "test": "lingqu/test_gateway.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "bad-request-does-not-fallback",
-        "file": "agentv3/lingqu/gateway.py",
+        "file": "adapters/lingqu/gateway.py",
         "test": "lingqu/test_gateway.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "card-cannot-move-platform-guard",
-        "file": "agentv3/prompts/bundle.py",
+        "file": "prompts/bundle.py",
         "test": "test_prompt_bundle.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "lorebook-probability-zero-never-injects",
-        "file": "agentv3/prompts/cards.py",
+        "file": "prompts/cards.py",
         "test": "test_lorebook.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "prompt-budget-must-be-enforced",
-        "file": "agentv3/prompts/bundle.py",
+        "file": "prompts/bundle.py",
         "test": "test_prompt_bundle.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "knowledge-tags-need-asset-layer",
-        "file": "agentv3/agents/sculptor.py",
+        "file": "agents/sculptor.py",
         "test": "test_sculptor_tags.py",
         "status": "killed",
         "detail": ""
       },
       {
         "label": "delete-scope-is-per-person",
-        "file": "agentv3/services/tools.py",
+        "file": "tools/runtime.py",
         "test": "test_capture_services.py",
         "status": "killed",
         "detail": ""
@@ -405,7 +441,7 @@
       "output": "契约对象或 PortError 三态（Timeout/Unavailable/Conflict）",
       "output_validity": "适配失败必须抛错，禁止伪造空结果；由 librarian/ledger 的降级测试反向验证",
       "tests": "test_boundary.py",
-      "passed": 8,
+      "passed": 9,
       "failed": 0,
       "verdict": "ok"
     },
@@ -449,7 +485,7 @@
       "output": "Frame（九段 + dropped 列表 + total_chars）",
       "output_validity": "段名顺序固定；总量不超预算；边界与修正永不被裁；persona 不低于 220",
       "tests": "test_frame.py",
-      "passed": 6,
+      "passed": 8,
       "failed": 0,
       "verdict": "ok"
     },
@@ -504,7 +540,7 @@
       "output": "回复文本 + 引用标签；非法回复抛 PortError",
       "output_validity": "空/超长/语言不符/工具越界均被拒；最多 2 步 3 工具",
       "tests": "test_muse.py",
-      "passed": 8,
+      "passed": 11,
       "failed": 0,
       "verdict": "ok"
     },
@@ -735,7 +771,7 @@
       "output": "TurnResult JSON + /health",
       "output_validity": "response_model 校验输出形状；路由不承载业务逻辑",
       "tests": "test_api.py",
-      "passed": 11,
+      "passed": 17,
       "failed": 0,
       "verdict": "ok"
     },

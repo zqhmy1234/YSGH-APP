@@ -1,11 +1,18 @@
 {
-  "status": "blocked",
-  "note": "docker_missing",
-  "checks": [
-    {
-      "name": "docker",
-      "ok": false,
-      "detail": "docker not installed / not in PATH"
-    }
+  "generated_at": "2026-11-23T18:30:00+08:00",
+  "status": "partial",
+  "compose": "deploy/compose.agent-v3.yml",
+  "compose_state": "blocked",
+  "compose_blocker": "本机 macOS 无 Docker；服务器 docker compose 插件为 HTML 文件而非二进制",
+  "process_smoke": {
+    "script": "scripts/dev/agent_v3_smoke.sh",
+    "status": "pass",
+    "result": "health=ok chat=ok",
+    "note": "仅证明 Agent 进程可启动且 /v1/health、/v1/chat 可用；不代表 PG/Redis/Qdrant/MinIO 容器已启动"
+  },
+  "not_verified": [
+    "docker compose up 全栈",
+    "PostgreSQL(pgvector)/Redis/Qdrant/MinIO 容器健康",
+    "staging 8300 切流"
   ]
 }
