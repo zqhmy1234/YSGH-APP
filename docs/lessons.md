@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-23 16:34 · commit 164f891 · ts=1795422875
+- **错误**：Lingqu 默认模型 deepseek/deepseek-v4-flash 在官方 API 不存在；公司网关下仍用 deepseek/ 前缀会绕过网关；DeepSeek V4.1 在 max_tokens<=128 时可能只返回 reasoning 正文为空
+- **根因**：目录按计划名而非官方 /models 实测名配置；LiteLLMEngine 没有区分公司 OpenAI 兼容网关与直连厂商；max_chars 被直接当 max_tokens 且未考虑 reasoning 预算
+- **修复**：目录迁移到 deepseek/deepseek-v4.1-flash（上游 deepseek/deepseek-flash）；公司网关自动用 openai/<model>；max_tokens 加 256 下限；补 7 条回归并跑 20 场真实对话
+- **相关文件**：agent/config/lingqu-catalog.json;agent/src/agentv3/lingqu/engine.py;agent/src/agentv3/lingqu/gateway.py;agent/src/agentv3/orchestrator.py
+- **教训**：供应商目录名必须来自官方 /models 实测；网关与直连是两套前缀语义；reasoning 模型的 token 下限不能按可见回复字符数估
+
+---
+
 ### 2026-11-23 13:15 · commit 78581ec · ts=1795410932
 - **错误**：新增 scripts/dev/lingqu_live_report.py 触发 E501 两处（124>120），review_agent 静态门禁被 lint 阻断
 - **根因**：agent/ 整体 lint 豁免，但 scripts/dev/ 不豁免；新脚本沿用了长行三元表达式

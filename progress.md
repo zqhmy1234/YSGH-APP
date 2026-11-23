@@ -1002,3 +1002,15 @@ ShareSheet（须真机验"保存到相册"）。
 - 新增 `research/rag_benchmark/bm25_experiment.py` 与 `bm25_experiment_report.json`：truth-50 同口径四组，A/B `hit@3=0.8605`、C `0.8372`、D `0.814`；BM25 top10 新增 18 条相关命中，但三路融合未提升 hit@3，**暂不加入生产主链**（报告含直连 Qdrant 的口径 caveat）。
 - 重跑 A 批基线 JSON：`hit@3=0.6667` / 负样本 `1.0` / route `0/1`；8 个失败 query id 已落盘。
 - SetFit 7 类模型本地重训完成：70 训练 / 14 评估、**14/14（100%）**、门禁 ≥75% 通过；模型 2.2G 在 `backend/models/setfit-classifier`（gitignored），需随部署包/对象存储交付。
+
+## 2026-11-23 LiteLLM 网关接入：Lingqu 默认模型迁移 + 20 场真实对话
+
+- 接手 `docs/handoff-20261123-litellm-gateway.md`，不重做已完成的服务器部署；本机服务端/网关均无可用 SSH 凭据，未修改服务器 .env、未轮换 Key、未重启服务。
+- Lingqu 目录迁移到 `2026-11-23.2`：默认 `deepseek/deepseek-v4.1-flash`（上游 `deepseek/deepseek-flash`），修正 context window 为官方 `/models` 返回值 1,048,576；保留 `deepseek-v4-flash` 网关别名仅兼容旧调用方。
+- 修复公司网关接线：设置 `COMPANY_LLM_BASE_URL` 时 LiteLLM 使用 `openai/<model>`，直连厂商仍使用 `deepseek/`、`dashscope/` 等目录前缀；新增回归断言。
+- DeepSeek V4.1 会先输出隐藏 reasoning：`max_tokens≤128` 可只拿到 reasoning、正文为空。Lingqu 统一加 **256 tokens 下限**，probe 从 64 提到 256；实测 256 有正文。
+- 修复 roleplay 的 `degraded=("llm",)` 未真正跳过模型调用：现在短路到 DEGRADED_REPLY，`llm_calls=0`，并补回归。
+- 真实验证：本地 `127.0.0.1:4001` LiteLLM 等价网关（真实 DeepSeek Key 在进程环境中，未写仓库）通过 `deepseek-v4.1-flash` 返回真实 `content`；20 场 live 对话 **20/20 pass**，c05/c06 为确定性护栏短路，其余为真实模型调用。五家 probe：DeepSeek ok；Qwen auth_failed（DASHSCOPE 为占位 key）；Kimi/MiniMax/GLM 网关未配置对应模型（model_or_endpoint_error），报告 `partial`。
+- 测试/门禁：`agent/tests/agentv3 + tests/contract` **258 passed / 2 skipped**；judge **18/18 mutants killed、11/11 probes ok、verdict=pass**；`review_agent.py --full --skip-tests --skip-client-compile` 退出 0；`init.sh` 通过。全量测试层仍因本机缺 backend 重依赖为环境错误，未伪报通过。
+- `agent/vendor/linger` 从忽略改为入库：`LOCK.json` 的 hash 校验测试需要这些上游快照；`agent/.gitignore` 仅保留缓存忽略。
+- 提交：`164f891`，47 files / +4220 / -150。未处理（用户/运维动作）：服务器上 DeepSeek 临时 Key 轮换、公网 TLS/白名单、LiteLLM DB 模式（Prisma/预算）、L0 compose 真启动（本机无 Docker）。
