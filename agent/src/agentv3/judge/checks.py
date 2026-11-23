@@ -157,6 +157,11 @@ def check_required_artifacts() -> list[Finding]:
         "nightly job": ROOT / "jobs" / "nightly.py",
         "model gateway doc": REPO / "docs" / "agent-v3" / "model-gateway.md",
         "prompt/card doc": REPO / "docs" / "agent-v3" / "prompt-and-cards.md",
+        "prompt manifest": ROOT / "prompts" / "manifest.json",
+        "prompt golden": ROOT / "prompts" / "golden" / "prompt_bundle.json",
+        "example card 1": ROOT / "prompts" / "example_cards" / "gentle-friend.json",
+        "example card 2": ROOT / "prompts" / "example_cards" / "mentor.json",
+        "example card 3": ROOT / "prompts" / "example_cards" / "family-elder.json",
         "L0 compose": REPO / "deploy" / "compose.agent-v3.yml",
         "L0 smoke": REPO / "scripts" / "dev" / "agent_v3_smoke.sh",
         "L0 smoke report": REPO / "docs" / "agent-v3" / "l0-smoke.json",
@@ -178,6 +183,41 @@ def check_required_artifacts() -> list[Finding]:
     for endpoint in ("/v1/v3/turn", "/v1/v3/digest", "/v1/v3/memory", "/v1/v3/purge", "/v1/v3/ingest", "/v1/v3/echo", "/v1/v3/family", "/v1/v3/models", "/v1/v3/cards", "/v1/chat"):
         if endpoint not in routes:
             findings.append(Finding("required_artifact", "P0", f"missing endpoint {endpoint}"))
+    return findings
+
+
+def check_prompt_assets() -> list[Finding]:
+    import hashlib
+    import json
+
+    from ..prompts.bundle import SEGMENT_ORDER, build_bundle, joined
+    from ..prompts.cards import CardSafetyPolicy, parse_card
+
+    assets = ROOT / "prompts"
+    findings: list[Finding] = []
+    manifest = assets / "manifest.json"
+    golden = assets / "golden" / "prompt_bundle.json"
+    cards = sorted((assets / "example_cards").glob("*.json"))
+    if not manifest.exists():
+        findings.append(Finding("prompt_assets", "P0", "missing manifest.json"))
+    else:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if [row["name"] for row in data.get("segments", [])] != list(SEGMENT_ORDER):
+            findings.append(Finding("prompt_assets", "P0", "manifest segment order drifted"))
+    if not golden.exists():
+        findings.append(Finding("prompt_assets", "P0", "missing golden/prompt_bundle.json"))
+    else:
+        data = json.loads(golden.read_text(encoding="utf-8"))
+        text = joined(build_bundle())
+        if data.get("render_sha256") != hashlib.sha256(text.encode("utf-8")).hexdigest():
+            findings.append(Finding("prompt_assets", "P0", "prompt golden hash drifted"))
+    if len(cards) != 3:
+        findings.append(Finding("prompt_assets", "P0", f"expected 3 example cards, found {len(cards)}"))
+    for path in cards:
+        card = parse_card(path.read_text(encoding="utf-8"))
+        issues = CardSafetyPolicy().check(card)
+        if issues:
+            findings.append(Finding("prompt_assets", "P0", f"{path.name}: {issues}"))
     return findings
 
 
@@ -216,6 +256,7 @@ def run_all() -> list[Finding]:
         *check_agent_tests_exist(),
         *check_required_artifacts(),
         *check_prompt_bundle(),
+        *check_prompt_assets(),
         *check_lingqu_catalog(),
         *check_live_reports_honest(),
     ]

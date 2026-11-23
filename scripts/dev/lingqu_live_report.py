@@ -65,6 +65,9 @@ def main() -> int:
     rows = _one_per_provider(gateway)
     ok = sum(1 for row in rows if row["status"] == "ok")
     skipped = sum(1 for row in rows if row["status"] == "skipped_no_credential")
+    status = "pass" if ok == len(PROVIDERS) else "partial"
+    if skipped == len(PROVIDERS):
+        status = "not_run_no_credential"
     report = {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "catalog_version": gateway.catalog.catalog_version,
@@ -73,12 +76,13 @@ def main() -> int:
         "ok": ok,
         "skipped": skipped,
         "rows": rows,
-        "status": "pass" if ok == len(PROVIDERS) else ("not_run_no_credential" if skipped == len(PROVIDERS) else "partial"),
+        "status": status,
         "note": "只有真实回复才记 ok；缺 Key 记 skipped，鉴权失败记 auth_failed。不含 prompt/key。",
     }
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"status": report["status"], "ok": ok, "skipped": skipped, "report": str(REPORT)}, ensure_ascii=False))
+    summary = {"status": status, "ok": ok, "skipped": skipped, "report": str(REPORT)}
+    print(json.dumps(summary, ensure_ascii=False))
     return 0 if report["status"] == "pass" else 2
 
 

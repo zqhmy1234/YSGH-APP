@@ -6,7 +6,7 @@
       "name": "agent_full_suite",
       "command": "cd agent && PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q",
       "exit_code": 0,
-      "result": "249 passed, 2 skipped in 23.82s",
+      "result": "253 passed, 2 skipped in 17.27s",
       "note": "2 skipped = live provider tests, require LINGQU_LIVE=1 + key"
     },
     {

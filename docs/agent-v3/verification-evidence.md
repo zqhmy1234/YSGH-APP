@@ -6,7 +6,7 @@
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| Agent 全量套件 | `cd agent && PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q` | **249 passed, 2 skipped**（2 条 live 测试按设计跳过） |
+| Agent 全量套件 | `cd agent && PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q` | **253 passed, 2 skipped**（2 条 live 测试按设计跳过） |
 | 审判 Agent | `PYTHONPATH=src .venv312/bin/python -m agentv3.judge.run` | **static P0=0 / suite exit 0 / 18/18 mutants killed / 11/11 probes ok / verdict=pass** |
 | 全量静态门禁 | `PATH=agent/.venv312/bin:$PATH python scripts/review_agent.py --full --skip-tests --skip-client-compile` | 退出码 0；语法 602 文件、lint、密钥、结构、契约轴、端口、安全全绿 |
 | 20 场脚本对话（确定性） | `ROLEPLAY_ENGINE=fake ... run_live_cases.py` | **20/20 pass**，报告明确 `mode=fake`，不冒充 live |

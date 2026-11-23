@@ -32,6 +32,13 @@
 
 `audit_prompt()` 在发送前检查：平台护栏存在、未超 8 000、未出现 `ignore previous` 等覆盖标记。
 
+资产与快照：
+
+- `prompts/manifest.json`：10 段的顺序、是否受保护、来源文件、单段上限与用途，是代码 `SEGMENT_ORDER` 的可读镜像。
+- `prompts/golden/prompt_bundle.json`：默认 bundle 的总字符数、render sha256、每段字符数与 sha256；改任何一段文案都会让 golden 红。
+- `prompts/example_cards/`：3 张可直接导入的 V2 示例卡（小忆 / 老周 / 阿嬷），均不带 `system_prompt`、`post_history_instructions`，且通过 `CardSafetyPolicy`。
+- `test_prompt_assets.py`：校验 manifest 与代码顺序、golden 字节稳定、3 张卡可解析且安全。
+
 ## Character Card V2
 
 `agent/src/agentv3/prompts/cards.py`，遵循 Character Card V2 规范：
@@ -69,6 +76,7 @@
 - `test_prompt_bundle.py`：10 段顺序、guard 第一、预算裁剪、卡不能覆盖 guard。
 - `test_card_import.py`：扁平/包装 v2、坏 spec、控制字符、safety policy。
 - `test_lorebook.py`：constant、secondary keys、probability=0、确定性、inclusion group。
+- `test_prompt_assets.py`：manifest/golden/3 张示例卡一致性。
 - `test_lingqu_api.py`：卡导入/激活、坏卡 system_prompt 被忽略。
 
 ## 参考实现

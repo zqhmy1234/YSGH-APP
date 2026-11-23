@@ -35,7 +35,7 @@ cd agent
 PYTHONPATH=src .venv312/bin/pytest tests/agentv3 tests/contract -q
 ```
 
-结果：**249 passed, 2 skipped**（基线 195 + 54 新增/改动；2 条 live 测试因缺 `LINGQU_LIVE=1` 与 Key 按设计跳过）。新增覆盖 Lingqu 17、标签 5、Sculptor 标签 4、工具 10、提示词 4、卡片 5、Lorebook 4、模型/卡 API 5，以及 PG 投影回归 3。
+结果：**253 passed, 2 skipped**（基线 195 + 58 新增/改动；2 条 live 测试因缺 `LINGQU_LIVE=1` 与 Key 按设计跳过）。新增覆盖 Lingqu 17、标签 5、Sculptor 标签 4、工具 10、提示词 4、卡片 5、Lorebook 4、模型/卡 API 5，以及 PG 投影回归 3。
 
 ```bash
 PYTHONPATH=src .venv312/bin/python -m agentv3.lingqu.cli catalog-check

@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-23 13:15 · commit 78581ec · ts=1795410932
+- **错误**：新增 scripts/dev/lingqu_live_report.py 触发 E501 两处（124>120），review_agent 静态门禁被 lint 阻断
+- **根因**：agent/ 整体 lint 豁免，但 scripts/dev/ 不豁免；新脚本沿用了长行三元表达式
+- **修复**：把 status 判定拆成独立变量，print 改用 summary dict，ruff 与静态门禁复跑通过
+- **相关文件**：scripts/dev/lingqu_live_report.py
+- **教训**：写 scripts/ 下新脚本前先按 120 列约束；不要假设 agent/ 的 lint 豁免会覆盖 scripts/
+
+---
+
 ### 2026-11-23 13:00 · commit ade63a5 · ts=1795410056
 - **错误**：review_agent --full 在 agent venv 下 116+ backend 测试 ERROR：缺 pydantic_settings/jwt/torch 等后端依赖
 - **根因**：agent/.venv312 只装了 Agent V3 依赖，不能承载 backend 重依赖测试层；门禁将 tests 层报为失败而非环境错误
