@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-23 17:53 · commit efdaff6 · ts=1795427599
+- **错误**：LiteLLM 启用 Prisma/DB 模式时，setup.sh 首次启动现场 npm install prisma@5.17.0 超过 600s 超时，之后 nodeenv 缓存目录存在但缺少 bin/node，LiteLLM 每次启动都跳过安装并失败
+- **根因**：Prisma Client Python 的 ensure_cached() 只按 binary_cache_dir/node_modules/prisma/build/index.js 是否存在判断是否安装；nodeenv 安装被超时杀掉后目录仍在，形成半安装缓存。setup.sh 又把这次一次性安装放进 LiteLLM 服务启动路径，把慢安装伪装成启动失败
+- **修复**：先在 venv 内独立执行 prisma generate 预热（安装 nodeenv + Prisma CLI + engines），确认 prisma --version 与 prisma migrate status 正常，再切 config.with-db.yaml 重启；或删除 /root/.cache/prisma-python/nodeenv 后重试。仓库新增 litellm_db_enable.sh 固化此顺序
+- **相关文件**：deploy/litellm-gateway/setup.sh, deploy/litellm-gateway/litellm_db_enable.sh, docs/agent-v3/litellm-db-mode_20261123.md
+- **教训**：任何'首次运行才安装依赖'的启动路径，都要先检查半安装缓存；慢安装不能和健康检查共用超时窗口
+
+---
+
 ### 2026-11-23 16:41 · commit 8d33a4c · ts=1795423264
 - **错误**：在 macOS 上用系统 Python 3.9 跑 review_agent --full 的 audit_security，因 scripts/audit_security.py 使用 Python 3.11 的 datetime.UTC 而 ImportError
 - **根因**：门禁子脚本未声明/校验最低 Python 版本，系统 Python 3.9 会在导入期失败；此前只在装有新 Python 的环境跑过

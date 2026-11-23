@@ -1014,3 +1014,16 @@ ShareSheet（须真机验"保存到相册"）。
 - 测试/门禁：`agent/tests/agentv3 + tests/contract` **258 passed / 2 skipped**；judge **18/18 mutants killed、11/11 probes ok、verdict=pass**；`review_agent.py --full --skip-tests --skip-client-compile` 退出 0；`init.sh` 通过。全量测试层仍因本机缺 backend 重依赖为环境错误，未伪报通过。
 - `agent/vendor/linger` 从忽略改为入库：`LOCK.json` 的 hash 校验测试需要这些上游快照；`agent/.gitignore` 仅保留缓存忽略。
 - 提交：`164f891`，47 files / +4220 / -150。未处理（用户/运维动作）：服务器上 DeepSeek 临时 Key 轮换、公网 TLS/白名单、LiteLLM DB 模式（Prisma/预算）、L0 compose 真启动（本机无 Docker）。
+
+## 2026-11-23 服务器 LiteLLM 切 Prisma/DB 模式（虚拟 Key / 预算 / 消费统计）
+
+- 用户拍板启用 Prisma/DB 模式，并明确 DeepSeek 临时 Key 不轮换、继续放在服务器 `.env`；同时询问 L0 compose 是什么。
+- SSH 免密本次实际可用（`ssh yishu` → `Yishuguanghua`），未再重复上一会话"无 SSH 凭据"的边界。
+- 定位到上一轮卡住的真实原因：`setup.sh LITELLM_ENABLE_DB=1` 把 Prisma CLI 首次 `npm install prisma@5.17.0` 放进 LiteLLM 启动路径，600s 超时后 nodeenv 目录存在但没有 node，Prisma 只按目录存在跳过安装 ⇒ 后续启动永久失败。
+- 处置：先在 venv 内单独 `prisma generate` 预热 toolchain（Node v26.13.1 / Prisma 5.17.0），确认 `prisma migrate status` 233 个迁移全部应用；再切 `config.with-db.yaml`、写 `DATABASE_URL` 到 `.env`（600）、重启 `yishu-litellm`；最终 `/health/liveliness` 200。
+- 生成虚拟 Key `agent-v3`（`max_budget=20`、`budget_duration=30d`）写入 `/opt/yishu/litellm/agent.key`（600，sha256 前缀 `9c48ff11`），master key 只留 `.env`；`agent.key` 已不再等于管理员 Key。
+- 验收：用 `agent.key` 调 `deepseek-v4.1-flash` 返回真实 `content`；`/v1/models` 返回 5 个模型；临时 Key `max_budget=0.000001` 第 1 次 200、第 2 次 422 `budget_exceeded`；`LiteLLM_SpendLogs` 7 行、Key `spend` 累加；`.env`/`agent.key`/`.database_url.saved` 均 600。
+- DB 密码已在本轮重新生成并同步 `.env` 与 `.database_url.saved`，未回显；回滚备份 `.env.pre-db-20261123172733`、`config.no-db.backup.yaml`、`config.db-working.yaml`。
+- 产物：`deploy/litellm-gateway/litellm_db_enable.sh`（一键启用，预热 Prisma + 写 DB URL + 切配置）、`deploy/litellm-gateway/README.db-mode.md`（操作/验收/回滚）、`docs/agent-v3/litellm-db-mode_20261123.md`（证据）；`deploy/litellm-gateway/README.md` 改为"两种模式"并指向 DB 模式文档。
+- L0 compose 说明：`deploy/compose.agent-v3.yml` 是 V3 的本地全栈冒烟（PG/Redis/Qdrant/MinIO/agent-v3），不是生产部署。服务器虽有 Docker 29.1.3，但 `/usr/local/lib/docker/cli-plugins/docker-compose` 是阿里云镜像站 HTML 文件而非二进制，`docker compose` 仍不可用；本机 macOS 无 Docker。`l0-smoke.json` 继续为 blocked，未伪报。
+- 未完成边界：`/ui` 只验证返回 200，未做浏览器登录/预算页人工走查；`LiteLLM_ProxyModelTable` 仍 0 行（模型继续从 YAML 读取）；未配 Redis 共享 cache（单实例）；启动日志有 `'Prisma' object has no attribute '_Prisma__engine'` warning，但 Key/预算/消费/真实调用均实测正常。
