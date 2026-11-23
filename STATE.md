@@ -6,7 +6,7 @@
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
 **最后更新**：2026-11-23
-**分支**：`feature/agent-v3-harness` ｜ **最近提交**：`c0b49e1`（以 `git log -1 --oneline` 为准）
+**分支**：`feature/agent-v3-harness` ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
 
