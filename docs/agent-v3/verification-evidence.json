@@ -58,6 +58,13 @@
       "exit_code": 0,
       "result": "20/20 pass in mode=fake; not a live model result",
       "evidence": "docs/agent-v3/roleplay-20-fake-report.json"
+    },
+    {
+      "name": "lingqu_gateway_e2e",
+      "command": "PYTHONPATH=src .venv312/bin/python /tmp/verify_litellm_e2e.py",
+      "exit_code": 0,
+      "result": "ok: active profile deepseek/deepseek-v4.1-flash, probe ok, non-empty Chinese reply (17 chars) through 127.0.0.1:4001 LiteLLM gateway",
+      "note": "Key injected from the already-running local process; never written to repo or printed."
     }
   ],
   "external_blockers": [
