@@ -149,10 +149,11 @@ curl -s http://127.0.0.1:4000/v1/chat/completions \
   -d '{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"只回复四个字：网关成功"}],"max_tokens":256,"temperature":0}'
 ```
 
-## 下一步优先级
+## 下一步优先级（2026-11-23 接手后更新）
 
-1. 轮换聊天里暴露的 DeepSeek Key，写回 `.env`，重启 `yishu-litellm`
-2. 把 Lingqu 默认 profile 改到 `deepseek-v4.1-flash`，跑 `probe`
-3. 用网关跑 20 场真实对话，产出 `roleplay-20-live-report.json`
-4. 再决定是否投入 Prisma/DB 模式（虚拟 Key、预算）；不投入也能内部用
-5. L0 真启动仍需要 Docker/Compose 或能跑 rootless 的机器，和网关是两件事
+- [x] 把 Lingqu 默认 profile 改到 `deepseek/deepseek-v4.1-flash`，并打通公司网关 `openai/` 前缀 —— 提交 `164f891`
+- [x] 用网关跑 20 场真实对话，产出 `roleplay-20-live-report.json` —— **20/20 pass**
+- [x] 补 256-token 下限，避免 reasoning 吃掉全部预算、正文为空
+- [ ] 轮换聊天里暴露的 DeepSeek Key，写回 `.env`，重启 `yishu-litellm` —— **仍需服务器 SSH 权限，本次未执行**
+- [ ] 再决定是否投入 Prisma/DB 模式（虚拟 Key、预算）；不投入也能内部用
+- [ ] L0 真启动仍需要 Docker/Compose 或能跑 rootless 的机器，和网关是两件事
