@@ -6,7 +6,13 @@
 #     全量门禁（含全量测试）：python scripts/review_agent.py --full（CI 与集成验收用）
 
 echo "=== [pre-commit] 代码质量审核（快速门禁） ==="
-if ! python scripts/review_agent.py; then
+# Use python3: macOS has no bare `python`; Windows usually has python launcher.
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+else
+    PYTHON=python
+fi
+if ! "$PYTHON" scripts/review_agent.py; then
     echo ""
     echo "!!! [pre-commit] 审核未通过 — 禁止提交"
     echo "    修复后重跑：python scripts/review_agent.py"
