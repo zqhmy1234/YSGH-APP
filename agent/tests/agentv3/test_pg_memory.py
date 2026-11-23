@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from agentv3.adapters.pg_memory import PgMemoryStore
-from agentv3.contracts import MemoryLayer, OpKind, MemoryProposal, ProposalBatch
+from adapters.pg_memory import PgMemoryStore
+from harness.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch
 
 
 class _Cur:

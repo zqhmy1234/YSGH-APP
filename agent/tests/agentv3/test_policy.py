@@ -1,11 +1,11 @@
 """Policy: crisis handoff, forbidden phrasing, boundary detection, sentence split."""
 
-from agentv3.contracts import GuardAction, GuardRequest, Intent
-from agentv3.memory.policy import Policy
+from harness.contracts import GuardAction, GuardRequest, Intent
+from memory.policy import Policy
 
 
 def _req(text: str) -> GuardRequest:
-    return GuardRequest(person_id="p1", text=text, intent=Intent.EMOTION)
+    return GuardRequest(person_id="p1", text=text, intent=Intent.COMPANION)
 
 
 def test_crisis_hands_off_without_claiming_contact():

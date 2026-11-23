@@ -2,12 +2,12 @@
 
 from datetime import date, timedelta
 
-from agentv3.domain.echo import EchoPolicy
-from agentv3.domain.event import EventAggregator
-from agentv3.domain.family import FamilyPolicy
-from agentv3.domain.ingest import Ingestor
-from agentv3.domain.trust import TrustGate, classify
-from agentv3.contracts import Episode, FamilyAction, FamilyRole, Sensitivity, SourceKind
+from harness.contracts import Episode, FamilyAction, FamilyRole, Sensitivity, SourceKind
+from harness.domain.echo import EchoPolicy
+from harness.domain.event import EventAggregator
+from harness.domain.family import FamilyPolicy
+from harness.domain.ingest import Ingestor
+from harness.domain.trust import TrustGate, classify
 
 
 def _episode(i: int, text: str, day=date(2025, 11, 23), place="西湖", people=("小林",)) -> Episode:
@@ -113,7 +113,11 @@ def test_echo_anniversary_needs_two_episodes_and_opt_in():
         _episode(2, "去年今天又去了", day=date(2025, 11, 23)),
     ]
     policy = EchoPolicy()
-    assert policy.candidates("p1", eps, today) == [] or policy.candidates("p1", eps, today)[0].reason in {"anniversary", "place", "person"}
+    assert policy.candidates("p1", eps, today) == [] or policy.candidates("p1", eps, today)[0].reason in {
+        "anniversary",
+        "place",
+        "person",
+    }
     assert policy.candidates("p1", eps, today, opted_in=False) == []
     assert policy.candidates("p1", eps, today, quiet_hours=True) == []
     assert policy.candidates("p1", [_episode(1, "单条")], today) == []

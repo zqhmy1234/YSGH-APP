@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from agentv3.agents.serendipity import Serendipity
-from agentv3.contracts import ResultStatus, SearchResult
+from agents.serendipity import Serendipity
+from harness.contracts import ResultStatus, SearchResult
 
 
 def _retrieve(result: SearchResult):

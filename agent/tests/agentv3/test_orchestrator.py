@@ -2,10 +2,10 @@
 
 from datetime import datetime
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.contracts import ResultStatus, TurnRequest
-from agentv3.memory.ledger import MemoryStore
-from agentv3.orchestrator import DEGRADED_REPLY, Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from harness.contracts import ResultStatus, TurnRequest
+from harness.orchestrator import DEGRADED_REPLY, Orchestrator
+from memory.ledger import MemoryStore
 
 
 def _orch(llm=None, search=None, events=None, store=None):

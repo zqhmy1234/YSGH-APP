@@ -2,8 +2,8 @@
 
 from datetime import date, datetime
 
-from agentv3.contracts import MemoryEntry, MemoryLayer
-from agentv3.memory import projection
+from harness.contracts import MemoryEntry, MemoryLayer
+from memory import projection
 
 
 def _entry(i: int, text: str, layer: MemoryLayer = MemoryLayer.FACT) -> MemoryEntry:

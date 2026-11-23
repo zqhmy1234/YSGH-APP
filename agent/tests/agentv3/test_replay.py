@@ -4,10 +4,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.contracts import TurnRequest
-from agentv3.memory.ledger import MemoryStore
-from agentv3.orchestrator import Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from harness.contracts import TurnRequest
+from harness.orchestrator import Orchestrator
+from memory.ledger import MemoryStore
 
 GOLDEN = Path(__file__).with_name("golden") / "replay_200.json"
 
@@ -51,7 +51,7 @@ def test_replay_matches_golden():
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     assert len(golden) == 200
     cases = [(row["text"], row["intent"], row["status"], row["write_policy"]) for row in golden]
-    for text, intent, status, write_policy in cases:
+    for text, intent, _status, write_policy in cases:
         result = orchestrator.run(TurnRequest(person_id="p1", text=text))
         observed.append(
             {

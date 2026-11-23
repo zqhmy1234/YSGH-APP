@@ -4,10 +4,10 @@ from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.api.routes import Container, create_app
-from agentv3.memory.ledger import MemoryStore
-from agentv3.orchestrator import Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from api.routes import Container, create_app
+from harness.orchestrator import Orchestrator
+from memory.ledger import MemoryStore
 
 
 def _client(token: str = "") -> TestClient:
@@ -100,3 +100,62 @@ def test_family_matrix_endpoint():
 
 def test_ingest_requires_person_id():
     assert _client().post("/v1/v3/ingest", json={"items": []}).status_code == 422
+
+def test_backend_wire_shape_is_accepted_on_chat_stream():
+    """The live backend sends {user_id,message,thread_id}; that must not 422."""
+    client = _client(token="secret")
+    headers = {"X-Agent-Token": "secret"}
+    payload = {"user_id": "u1", "message": "今天有点累", "thread_id": "u1:conv-1"}
+    response = client.post("/v1/chat/stream", json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    text = response.text
+    assert "event: done" in text
+    assert '"reply"' in text
+
+
+def test_backend_wire_shape_non_stream_returns_reply():
+    client = _client(token="secret")
+    payload = {"user_id": "u1", "message": "在吗", "thread_id": "u1:conv-2"}
+    body = client.post("/v1/backend/chat", json=payload, headers={"X-Agent-Token": "secret"}).json()
+    assert body["reply"]
+    assert body["status"] in {"grounded", "partial", "empty"}
+
+
+def test_brief_prompt_drops_internal_id_and_keeps_full_sentences():
+    from api.routes import _brief_prompt
+
+    text = _brief_prompt(
+        {
+            "brief_id": "b1",
+            "what_she_sees": "对方只说了一句累。",
+            "what_she_avoids": "她不会马上劝他早睡。",
+        }
+    )
+    assert "b1" not in text
+    assert "【这一轮她看见什么】对方只说了一句累。" in text
+    assert "【她这一轮尤其不能做什么】她不会马上劝他早睡。" in text
+
+
+def test_thread_id_split_keeps_conversation_key():
+    """person_id comes from thread_id before the first colon; trailing key is preserved."""
+    from api.routes import _split_thread_id
+
+    assert _split_thread_id("u1:conv-9", "fallback") == ("u1", "conv-9")
+    assert _split_thread_id("u1", "fallback") == ("u1", "u1")
+    assert _split_thread_id(":conv", "u2") == ("u2", "conv")
+
+def test_v1_chat_accepts_backend_shape_too():
+    """One path, two live clients: backend shape must not 422 on /v1/chat."""
+    client = _client(token="secret")
+    body = client.post(
+        "/v1/chat",
+        json={"user_id": "u1", "message": "在吗", "thread_id": "u1:c1"},
+        headers={"X-Agent-Token": "secret"},
+    ).json()
+    assert body["reply"]
+
+
+def test_v1_chat_rejects_body_with_neither_shape():
+    client = _client(token="secret")
+    response = client.post("/v1/chat", json={"text": "只有文本"}, headers={"X-Agent-Token": "secret"})
+    assert response.status_code == 422

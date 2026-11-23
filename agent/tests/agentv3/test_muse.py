@@ -2,11 +2,11 @@
 
 import pytest
 
-from agentv3.adapters.fakes import FakeLLM, FakeTool
-from agentv3.agents.muse import MAX_REPLY_CHARS, MAX_STEPS, Muse
-from agentv3.contracts import Frame, FrameSegment, ToolCall
-from agentv3.obs import CostMeter
-from agentv3.ports import PortError
+from adapters.fakes import FakeLLM, FakeTool
+from agents.muse import MAX_REPLY_CHARS, MAX_STEPS, Muse, strip_state_block
+from harness.contracts import Frame, FrameSegment, ToolCall
+from harness.obs import CostMeter
+from ports import PortError
 
 
 def _frame() -> Frame:
@@ -20,6 +20,24 @@ def test_validator_flags_empty_and_too_long():
 
 def test_validator_flags_wrong_language_for_zh():
     assert "wrong_language" in Muse.validate_reply("hello there", "zh")
+
+
+def test_state_block_is_stripped_before_validation():
+    raw = '我在听。\n\n{"tone":"gentle","familiarity_delta":0,"arc":"讲述中","flags":[]}'
+    cleaned = strip_state_block(raw)
+    assert cleaned == "我在听。"
+    assert Muse.validate_reply(cleaned, "zh") == []
+
+
+def test_state_block_strip_leaves_non_protocol_json_alone():
+    raw = '我在听。{"note":"keep me"}'
+    assert strip_state_block(raw) == raw
+
+
+def test_live_style_reply_with_state_block_passes_speak():
+    raw = '我在听你说。\n\n{"tone":"gentle","familiarity_delta":0,"arc":"讲述中","flags":[]}'
+    reply, cites = Muse(FakeLLM([raw])).speak(_frame(), user_text="今天有点累")
+    assert reply == "我在听你说。" and cites == ()
 
 
 def test_cites_are_deduplicated():

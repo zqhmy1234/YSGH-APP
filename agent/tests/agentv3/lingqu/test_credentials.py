@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from agentv3.lingqu.catalog import load_catalog
 import pytest
 
-from agentv3.lingqu.credentials import MissingCredential, SecretResolver, redact
+from adapters.lingqu.catalog import load_catalog
+from adapters.lingqu.credentials import MissingCredential, SecretResolver, redact
 
 from .test_catalog import CATALOG
 

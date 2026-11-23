@@ -8,12 +8,13 @@ from datetime import datetime
 
 import pytest
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.agents.librarian import Librarian
-from agentv3.agents.muse import Muse
-from agentv3.agents.provenance import Provenance
-from agentv3.agents.sculptor import Sculptor
-from agentv3.contracts import (
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from agents.librarian import Librarian
+from agents.muse import Muse
+from agents.provenance import Provenance
+from agents.sculptor import Sculptor
+from harness.context import build_frame
+from harness.contracts import (
     AgentName,
     Claim,
     ClaimBundle,
@@ -29,12 +30,11 @@ from agentv3.contracts import (
     TurnRequest,
     VerdictStatus,
 )
-from agentv3.frame import build_frame
-from agentv3.memory.ledger import MemoryStore
-from agentv3.memory.policy import Policy
-from agentv3.orchestrator import Orchestrator
-from agentv3.plan import plan
-from agentv3.registry import assert_can_write
+from harness.orchestrator import Orchestrator
+from harness.plan import plan
+from harness.registry import assert_can_write
+from memory.ledger import MemoryStore
+from memory.policy import Policy
 
 
 def _orch(llm=None, search=None, store=None):
@@ -79,7 +79,9 @@ def test_probe_3_boundary_is_never_pruned():
         crisis_note="危" * 200,
     )
     kept = {s.name: s.text for s in frame.segments}
-    assert kept["boundaries"] and kept["corrections"]
+    state = kept["state"]
+    assert "逝者" in state and "葬礼" in state
+    assert "她叫小林" in state and "她住城西" in state
 
 
 def test_probe_4_empty_does_not_carry_three_meanings():

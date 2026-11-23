@@ -1,8 +1,8 @@
 """Provenance: rules decide first, and a mask can never be silently lifted."""
 
-from agentv3.agents.provenance import Provenance
-from agentv3.contracts import Claim, ClaimBundle, VerdictStatus
-from agentv3.memory.policy import Policy
+from agents.provenance import Provenance
+from harness.contracts import Claim, ClaimBundle, VerdictStatus
+from memory.policy import Policy
 
 
 def _verify(claims, evidence=(), corrections=(), crisis=False):

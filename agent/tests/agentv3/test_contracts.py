@@ -5,20 +5,20 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from agentv3.contracts import (
+from agents.provenance import Provenance
+from harness.contracts import (
     MAX_ALTERNATES,
     Claim,
     ClaimBundle,
     Digest,
     DigestSection,
-    MemoryProposal,
     MemoryLayer,
+    MemoryProposal,
     OpKind,
     SearchQuery,
     TurnRequest,
     VerdictStatus,
 )
-from agentv3.agents.provenance import Provenance
 
 
 def test_unknown_field_is_rejected():

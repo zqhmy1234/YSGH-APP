@@ -9,16 +9,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.contracts import Intent, ResultStatus, TurnRequest
-from agentv3.memory.ledger import MemoryStore
-from agentv3.orchestrator import Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from harness.contracts import Intent, ResultStatus, TurnRequest
+from harness.orchestrator import Orchestrator
+from memory.ledger import MemoryStore
 
 TURNS = [
-    ("你好呀", Intent.CHITCHAT, "none"),
-    ("帮我记一下她喜欢桂花", Intent.REMEMBER, "propose"),
+    ("你好呀", Intent.COMPANION, "none"),
+    ("帮我记一下她喜欢桂花", Intent.INGEST, "propose"),
     ("上次去杭州是哪天", Intent.RECALL, "none"),
-    ("以后别推送了", Intent.SETTING, "propose"),
+    ("以后别推送了", Intent.TRUST, "none"),
     ("帮我写个 python 脚本", Intent.OUT_OF_SCOPE, "none"),
 ]
 

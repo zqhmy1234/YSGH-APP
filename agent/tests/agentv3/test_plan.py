@@ -4,19 +4,19 @@ from datetime import datetime
 
 import pytest
 
-from agentv3.contracts import AgentName, Intent, TurnContext, TurnRequest
-from agentv3.plan import classify_intent, plan
+from harness.contracts import AgentName, Intent, TurnContext, TurnRequest
+from harness.plan import classify_intent, plan
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("帮我记一下今天和她吃饭", Intent.REMEMBER),
+        ("帮我记一下今天和她吃饭", Intent.INGEST),
         ("上次去杭州是哪天", Intent.RECALL),
-        ("我今天有点累", Intent.EMOTION),
-        ("以后别推送了", Intent.SETTING),
+        ("我今天有点累", Intent.COMPANION),
+        ("以后别推送了", Intent.TRUST),
         ("帮我写个 python 脚本", Intent.OUT_OF_SCOPE),
-        ("你好呀", Intent.CHITCHAT),
+        ("你好呀", Intent.COMPANION),
     ],
 )
 def test_intent_table(text, expected):
@@ -24,7 +24,9 @@ def test_intent_table(text, expected):
 
 
 def _ctx(text: str, degraded: tuple[str, ...] = ()) -> TurnContext:
-    return TurnContext(request=TurnRequest(person_id="p1", text=text), now=datetime(2026, 11, 23, 10, 0), degraded=degraded)
+    return TurnContext(
+        request=TurnRequest(person_id="p1", text=text), now=datetime(2026, 11, 23, 10, 0), degraded=degraded
+    )
 
 
 def test_recall_invokes_librarian_and_provenance():
@@ -47,7 +49,7 @@ def test_out_of_scope_refuses():
     assert plan(_ctx("帮我写个 python 脚本")).fallback == "refuse"
 
 
-def test_write_policy_only_for_remember_and_setting():
+def test_write_policy_only_for_ingest_and_trust():
     assert plan(_ctx("帮我记一下")).write_policy == "propose"
     assert plan(_ctx("上次去杭州")).write_policy == "none"
 

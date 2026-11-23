@@ -12,9 +12,9 @@ import os
 
 import pytest
 
-from agentv3.contracts import LLMRequest
-from agentv3.lingqu.contracts import HealthState
-from agentv3.lingqu.gateway import LingquGateway
+from adapters.lingqu.contracts import HealthState
+from adapters.lingqu.gateway import LingquGateway
+from harness.contracts import LLMRequest
 
 pytestmark = [
     pytest.mark.live,

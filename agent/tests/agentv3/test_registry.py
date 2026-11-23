@@ -2,8 +2,8 @@
 
 import pytest
 
-from agentv3.contracts import AgentName
-from agentv3.registry import SPECS, assert_can_write, spec
+from harness.contracts import AgentName
+from harness.registry import SPECS, assert_can_write, spec
 
 
 def test_five_agents_are_registered():

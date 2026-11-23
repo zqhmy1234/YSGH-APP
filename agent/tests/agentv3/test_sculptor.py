@@ -1,8 +1,8 @@
 """Sculptor: propose, validate all 19 codes, apply atomically."""
 
-from agentv3.agents.sculptor import ISSUE_CODES, Sculptor
-from agentv3.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch
-from agentv3.memory.ledger import MemoryStore
+from agents.sculptor import ISSUE_CODES, Sculptor
+from harness.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch
+from memory.ledger import MemoryStore
 
 
 def _sculptor():
@@ -16,7 +16,13 @@ def test_nineteen_issue_codes_are_declared():
 def test_duplicate_text_becomes_came_from_not_a_second_row():
     store = MemoryStore()
     sculptor = Sculptor(store)
-    store.commit(ProposalBatch(person_id="p1", batch_hash="hash-0001", proposals=(MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.FACT, text="她喜欢桂花", evidence=("e1",)),)))
+    store.commit(
+        ProposalBatch(
+            person_id="p1",
+            batch_hash="hash-0001",
+            proposals=(MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.FACT, text="她喜欢桂花", evidence=("e1",)),),
+        )
+    )
     proposals = sculptor.propose_from_episodes("p1", [{"text": "她喜欢桂花", "layer": "fact", "evidence": ["e2"]}])
     assert proposals[0].op is OpKind.CAME_FROM
     assert proposals[0].entry_id is not None
@@ -54,8 +60,10 @@ def test_apply_refuses_batch_on_any_issue():
     batch = ProposalBatch(
         person_id="p1",
         batch_hash="hash-0002",
-        proposals=(MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.FACT, text="好的", evidence=("e1",)),
-                   MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.FACT, text="坏的", evidence=())),
+        proposals=(
+            MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.FACT, text="好的", evidence=("e1",)),
+            MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.FACT, text="坏的", evidence=()),
+        ),
     )
     receipt = sculptor.apply(batch)
     assert receipt.rolled_back and receipt.committed == ()

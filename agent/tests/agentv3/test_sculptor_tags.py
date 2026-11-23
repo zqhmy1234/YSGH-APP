@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from agentv3.agents.sculptor import Sculptor
-from agentv3.contracts import Episode, MemoryLayer, MemoryProposal, OpKind, SourceKind, TagSet
-from agentv3.domain.ingest import Ingestor
-from agentv3.memory.ledger import MemoryStore
+from agents.sculptor import Sculptor
+from harness.contracts import Episode, MemoryLayer, MemoryProposal, OpKind, SourceKind, TagSet
+from harness.domain.ingest import Ingestor
+from memory.ledger import MemoryStore
 
 
 def test_ingestor_attaches_tags():
@@ -65,8 +65,15 @@ def test_tags_survive_commit():
         evidence_id="raw1",
         tags=TagSet(library="personal", category="事件", mood="开心"),
     )
-    proposal = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE, text=episode.text, evidence=("raw1",), tags=episode.tags)
-    receipt = sculpt.apply(__import__("agentv3.contracts", fromlist=["ProposalBatch"]).ProposalBatch(person_id="p1", batch_hash="hash-0001", proposals=(proposal,)), allowed_evidence={"raw1"})
+    proposal = MemoryProposal(
+        op=OpKind.ADD, layer=MemoryLayer.NARRATIVE, text=episode.text, evidence=("raw1",), tags=episode.tags
+    )
+    receipt = sculpt.apply(
+        __import__("harness.contracts", fromlist=["ProposalBatch"]).ProposalBatch(
+            person_id="p1", batch_hash="hash-0001", proposals=(proposal,)
+        ),
+        allowed_evidence={"raw1"},
+    )
     assert receipt.committed
     entry = store.entries("p1")[0]
     assert entry.tags.mood == "开心"

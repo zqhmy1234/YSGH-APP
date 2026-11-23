@@ -8,10 +8,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.api.routes import Container, create_app
-from agentv3.memory.ledger import MemoryStore
-from agentv3.orchestrator import Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from api.routes import Container, create_app
+from harness.orchestrator import Orchestrator
+from memory.ledger import MemoryStore
 
 GOLDEN = Path(__file__).with_name("golden") / "openapi_snapshot.json"
 

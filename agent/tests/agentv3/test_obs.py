@@ -1,6 +1,6 @@
 """Observability: credentials and phone numbers never reach a log line."""
 
-from agentv3.obs import CostMeter, Degradation, Tracer, redact
+from harness.obs import CostMeter, Degradation, Tracer, redact
 
 
 def test_sensitive_keys_are_masked():

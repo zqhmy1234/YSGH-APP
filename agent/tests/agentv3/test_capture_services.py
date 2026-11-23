@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
-from agentv3.agents.sculptor import Sculptor
-from agentv3.contracts import MemoryLayer
-from agentv3.memory.ledger import MemoryStore
-from agentv3.services.tools import ACTION_TOOLS, READ_TOOLS, TOOL_NAMES, MemoryToolService
+from agents.sculptor import Sculptor
+from harness.contracts import MemoryLayer
+from memory.ledger import MemoryStore
+from tools.runtime import ACTION_TOOLS, READ_TOOLS, TOOL_NAMES, MemoryToolService
 
 P = "p1"
 
@@ -38,7 +38,9 @@ def test_save_memory_writes_ledger_with_tags():
 
 def test_save_knowledge_collection_goes_to_asset_layer():
     store, svc = _service()
-    result = svc.save_knowledge_collection({"person_id": P, "title": "RAG 入门", "url": "https://example.com/rag", "summary": "检索增强"})
+    result = svc.save_knowledge_collection(
+        {"person_id": P, "title": "RAG 入门", "url": "https://example.com/rag", "summary": "检索增强"}
+    )
     assert result.ok, result.reason
     entry = store.entries(P, ["asset"])[0]
     assert entry.tags.library == "knowledge"
@@ -69,8 +71,12 @@ def test_update_summary_never_writes_ledger():
 def test_link_and_delete_collection():
     store, svc = _service()
     saved = json.loads(svc.save_memory({"person_id": P, "text": "今天去西湖"}).content)
-    coll = json.loads(svc.save_knowledge_collection({"person_id": P, "title": "西湖", "url": "https://example.com/x"}).content)
-    linked = svc.link_memory_to_collection({"person_id": P, "memory_id": saved["entry_id"], "collection_id": coll["entry_id"]})
+    coll = json.loads(
+        svc.save_knowledge_collection({"person_id": P, "title": "西湖", "url": "https://example.com/x"}).content
+    )
+    linked = svc.link_memory_to_collection(
+        {"person_id": P, "memory_id": saved["entry_id"], "collection_id": coll["entry_id"]}
+    )
     assert linked.ok
     assert len(store.links(P)) == 1
     deleted = svc.delete_knowledge_collection({"person_id": P, "content_id": coll["content_id"]})

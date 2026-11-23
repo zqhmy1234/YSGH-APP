@@ -8,7 +8,7 @@ if str(SRC) not in sys.path:
 
 import pytest  # noqa: E402
 
-from agentv3.adapters.fakes import FakeClock  # noqa: E402
+from adapters.fakes import FakeClock  # noqa: E402
 
 
 @pytest.fixture()

@@ -2,11 +2,9 @@
 
 from datetime import date
 
-import pytest
-
-from agentv3.adapters.fakes import FakeEvents, FakeSearch, _hit
-from agentv3.agents.librarian import RRF_K, Librarian
-from agentv3.contracts import EventHit, Hit, ResultStatus
+from adapters.fakes import FakeEvents, FakeSearch, _hit
+from agents.librarian import RRF_K, Librarian
+from harness.contracts import EventHit, ResultStatus
 
 
 def _lib(corpus=None, down=(), events=None):
@@ -16,7 +14,9 @@ def _lib(corpus=None, down=(), events=None):
 
 def test_resolve_query_trims_alternates_to_six_and_dedupes():
     lib, _ = _lib()
-    query = lib.resolve_query("那次旅行那天", "p1", alternates=("x" * 199, "x" * 199, *[f"a{i}" for i in range(8)], "那次旅行那天"))
+    query = lib.resolve_query(
+        "那次旅行那天", "p1", alternates=("x" * 199, "x" * 199, *[f"a{i}" for i in range(8)], "那次旅行那天")
+    )
     assert len(query.alternates) <= 6
     assert "那次旅行那天" not in query.alternates
 
@@ -35,7 +35,6 @@ def test_originals_and_summaries_are_separate_lists():
 def test_rrf_prefers_hits_voted_by_more_channels():
     corpus = [_hit("e1", "多通道"), _hit("e2", "单通道")]
     search = FakeSearch(corpus)
-    original = search.keyword
     search.keyword = lambda q, alternates=(): [corpus[0]]  # only e1 in keyword
     lib = Librarian(search, None)
     result = lib.retrieve(lib.resolve_query("x", "p1"))

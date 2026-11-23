@@ -4,17 +4,17 @@ The point is not to re-test units, but to prove the seams: ingest → nightly �
 → digest → turn; a dead search port degrades honestly; crisis never reaches the LLM.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.adapters.sqlite_memory import SqliteMemoryStore
-from agentv3.contracts import FamilyAction, FamilyRole, ResultStatus, Sensitivity, TurnRequest
-from agentv3.domain.echo import EchoPolicy
-from agentv3.domain.family import FamilyPolicy
-from agentv3.domain.ingest import Ingestor
-from agentv3.jobs.nightly import NightlyJob
-from agentv3.memory.projection import build as build_digest
-from agentv3.orchestrator import Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from adapters.sqlite_memory import SqliteMemoryStore
+from harness.contracts import FamilyAction, FamilyRole, ResultStatus, Sensitivity, TurnRequest
+from harness.domain.echo import EchoPolicy
+from harness.domain.family import FamilyPolicy
+from harness.domain.ingest import Ingestor
+from harness.orchestrator import Orchestrator
+from jobs.nightly import NightlyJob
+from memory.projection import build as build_digest
 
 
 def _wired(tmp_path, *, search_down=(), llm_fail=False):
@@ -68,7 +68,7 @@ def test_crisis_never_reaches_llm_or_store(tmp_path):
 
 def test_family_lens_over_the_same_rows(tmp_path):
     store, _ = _wired(tmp_path)
-    from agentv3.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch
+    from harness.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch
 
     store.commit(
         ProposalBatch(

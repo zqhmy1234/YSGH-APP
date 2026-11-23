@@ -4,9 +4,9 @@ from datetime import date, timedelta
 
 import pytest
 
-from agentv3.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch, PurgeScope, WriteState
-from agentv3.adapters.sqlite_memory import SqliteMemoryStore
-from agentv3.memory.ledger import MemoryStore
+from adapters.sqlite_memory import SqliteMemoryStore
+from harness.contracts import MemoryLayer, MemoryProposal, OpKind, ProposalBatch, PurgeScope, WriteState
+from memory.ledger import MemoryStore
 
 
 @pytest.fixture()
@@ -54,7 +54,11 @@ def test_update_closes_old_row_and_links_chain(store):
     _batch(
         store,
         h="hash-0002",
-        proposals=[MemoryProposal(op=OpKind.UPDATE, layer=MemoryLayer.FACT, text="她喜欢白茶", entry_id=entry, evidence=("e2",))],
+        proposals=[
+            MemoryProposal(
+                op=OpKind.UPDATE, layer=MemoryLayer.FACT, text="她喜欢白茶", entry_id=entry, evidence=("e2",)
+            )
+        ],
     )
     history = store.history(entry)
     assert len(history) == 2
@@ -64,14 +68,30 @@ def test_update_closes_old_row_and_links_chain(store):
 
 def test_retract_removes_from_active_view(store):
     entry = _batch(store, proposals=[_add()]).committed[0]
-    _batch(store, h="hash-0003", proposals=[MemoryProposal(op=OpKind.RETRACT, layer=MemoryLayer.FACT, text="她喜欢桂花", entry_id=entry, evidence=("e3",))])
+    _batch(
+        store,
+        h="hash-0003",
+        proposals=[
+            MemoryProposal(
+                op=OpKind.RETRACT, layer=MemoryLayer.FACT, text="她喜欢桂花", entry_id=entry, evidence=("e3",)
+            )
+        ],
+    )
     assert store.entries("p1") == []
     assert len(store.history(entry)) == 1
 
 
 def test_came_from_only_adds_evidence(store):
     entry = _batch(store, proposals=[_add()]).committed[0]
-    _batch(store, h="hash-0004", proposals=[MemoryProposal(op=OpKind.CAME_FROM, layer=MemoryLayer.FACT, text="她喜欢桂花", entry_id=entry, evidence=("e2",))])
+    _batch(
+        store,
+        h="hash-0004",
+        proposals=[
+            MemoryProposal(
+                op=OpKind.CAME_FROM, layer=MemoryLayer.FACT, text="她喜欢桂花", entry_id=entry, evidence=("e2",)
+            )
+        ],
+    )
     assert store.entries("p1")[0].evidence == ("e1", "e2")
 
 

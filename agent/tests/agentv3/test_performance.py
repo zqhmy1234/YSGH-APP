@@ -8,11 +8,11 @@ import statistics
 import time
 from datetime import datetime
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
-from agentv3.agents.muse import Muse
-from agentv3.contracts import Frame, FrameSegment, TurnRequest
-from agentv3.memory.ledger import MemoryStore
-from agentv3.orchestrator import Orchestrator
+from adapters.fakes import FakeClock, FakeEvents, FakeLLM, FakeSearch, _hit
+from agents.muse import Muse
+from harness.contracts import Frame, FrameSegment, TurnRequest
+from harness.orchestrator import Orchestrator
+from memory.ledger import MemoryStore
 
 
 def _orch() -> Orchestrator:

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agentv3.prompts.cards import CardError, CardSafetyPolicy, parse_card, sanitize_card
+from prompts.cards import CardError, CardSafetyPolicy, parse_card, sanitize_card
 
 
 def test_flat_v2_card_imports():
@@ -15,7 +15,9 @@ def test_flat_v2_card_imports():
 
 
 def test_wrapped_v2_card_imports():
-    payload = json.dumps({"spec": "chara_card_v2", "spec_version": "2.0", "data": {"name": "阿光", "first_mes": "你来啦"}})
+    payload = json.dumps(
+        {"spec": "chara_card_v2", "spec_version": "2.0", "data": {"name": "阿光", "first_mes": "你来啦"}}
+    )
     card = parse_card(payload)
     assert card.first_mes == "你来啦"
 

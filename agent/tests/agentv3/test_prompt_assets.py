@@ -6,10 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from agentv3.prompts.bundle import BUNDLE_BUDGET, PROTECTED, SEGMENT_ORDER, build_bundle, joined
-from agentv3.prompts.cards import CardSafetyPolicy, parse_card
+from prompts.bundle import BUNDLE_BUDGET, PROTECTED, SEGMENT_ORDER, build_bundle, joined
+from prompts.cards import CardSafetyPolicy, parse_card
 
-ASSETS = Path(__file__).resolve().parents[2] / "src" / "agentv3" / "prompts"
+ASSETS = Path(__file__).resolve().parents[2] / "src" / "prompts"
 MANIFEST = ASSETS / "manifest.json"
 GOLDEN = ASSETS / "golden" / "prompt_bundle.json"
 EXAMPLES = ASSETS / "example_cards"

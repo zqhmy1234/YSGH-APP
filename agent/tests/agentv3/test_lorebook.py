@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from agentv3.prompts.cards import CharacterBook, LorebookEntry, activate_lorebook, render_lorebook
+from prompts.cards import CharacterBook, LorebookEntry, activate_lorebook, render_lorebook
 
 
 def _book():
     return CharacterBook(
         entries=(
             LorebookEntry(keys=("西湖",), content="西湖在杭州", order=1, uid="a"),
-            LorebookEntry(keys=("西湖", "断桥"), secondary_keys=("断桥",), selective=True, content="断桥残雪", order=2, uid="b"),
+            LorebookEntry(
+                keys=("西湖", "断桥"), secondary_keys=("断桥",), selective=True, content="断桥残雪", order=2, uid="b"
+            ),
             LorebookEntry(constant=True, content="你叫阿光", order=0, uid="c"),
             LorebookEntry(keys=("西湖",), probability=0, content="永远不该出现", order=3, uid="d"),
             LorebookEntry(keys=("工作",), content="工作话题", order=4, uid="e"),

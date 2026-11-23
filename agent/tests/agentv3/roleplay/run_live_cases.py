@@ -23,13 +23,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from agentv3.adapters.fakes import FakeClock, FakeEvents, FakeSearch  # noqa: E402
-from agentv3.contracts import ResultStatus, TurnRequest  # noqa: E402
-from agentv3.lingqu.catalog import load_catalog  # noqa: E402
-from agentv3.lingqu.engine import FakeEngine  # noqa: E402
-from agentv3.lingqu.gateway import LingquGateway  # noqa: E402
-from agentv3.memory.ledger import MemoryStore  # noqa: E402
-from agentv3.orchestrator import Orchestrator  # noqa: E402
+from adapters.fakes import FakeClock, FakeEvents, FakeSearch  # noqa: E402
+from adapters.lingqu.catalog import load_catalog  # noqa: E402
+from adapters.lingqu.engine import FakeEngine  # noqa: E402
+from adapters.lingqu.gateway import LingquGateway  # noqa: E402
+from harness.contracts import ResultStatus, TurnRequest  # noqa: E402
+from harness.orchestrator import Orchestrator  # noqa: E402
+from memory.ledger import MemoryStore  # noqa: E402
 
 CASES = Path(__file__).resolve().parent / "live_cases.json"
 REPORT = ROOT.parent / "docs" / "agent-v3" / "roleplay-20-live-report.json"
@@ -78,11 +78,15 @@ def _run_case(orchestrator: Orchestrator, case: dict):
         previous = signal.signal(signal.SIGALRM, _alarm)
         signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT_S)
         try:
-            return orchestrator.run(TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ())))
+            return orchestrator.run(
+                TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ()))
+            )
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
-    return orchestrator.run(TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ())))
+    return orchestrator.run(
+        TurnRequest(person_id=case["person_id"], text=case["text"]), degraded=tuple(case.get("degraded", ()))
+    )
 
 
 def main() -> int:
@@ -100,7 +104,9 @@ def main() -> int:
     }
     if mode == "live" and not key:
         for case in cases:
-            report["cases"].append({"id": case["id"], "category": case["category"], "status": "skipped_no_credential", "latency_ms": 0})
+            report["cases"].append(
+                {"id": case["id"], "category": case["category"], "status": "skipped_no_credential", "latency_ms": 0}
+            )
         report["status"] = "not_run_no_credential"
         out = FAKE_REPORT if mode == "fake" else REPORT
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -130,7 +136,12 @@ def main() -> int:
                 "latency_ms": int((datetime.now() - started).total_seconds() * 1000),
             }
         except Exception as exc:  # noqa: BLE001 - report the failure, don't abort the batch
-            row = {"id": case["id"], "category": case["category"], "status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            row = {
+                "id": case["id"],
+                "category": case["category"],
+                "status": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
         if row["status"] == "pass":
             passed += 1
         else:
@@ -142,7 +153,12 @@ def main() -> int:
     out = FAKE_REPORT if mode == "fake" else REPORT
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"mode": mode, "status": report["status"], "passed": passed, "failed": failed, "report": str(out)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"mode": mode, "status": report["status"], "passed": passed, "failed": failed, "report": str(out)},
+            ensure_ascii=False,
+        )
+    )
     return 0 if failed == 0 else 1
 
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentv3.prompts import load
+from prompts import load
 
 NAMES = ("persona", "muse", "sculptor", "provenance", "guard")
 

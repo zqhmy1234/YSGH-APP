@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from agentv3.contracts import LLMRequest
-from agentv3.lingqu.admin import list_models
-from agentv3.lingqu.catalog import load_catalog
-from agentv3.lingqu.contracts import ModelReply
-from agentv3.lingqu.engine import FakeEngine
-from agentv3.lingqu.errors import BadRequestError, RateLimitError
-from agentv3.lingqu.gateway import LingquGateway
+from adapters.lingqu.admin import list_models
+from adapters.lingqu.catalog import load_catalog
+from adapters.lingqu.contracts import ModelReply
+from adapters.lingqu.engine import FakeEngine
+from adapters.lingqu.errors import BadRequestError, RateLimitError
+from adapters.lingqu.gateway import LingquGateway
+from harness.contracts import LLMRequest
 
 from .test_catalog import CATALOG
 
@@ -106,7 +106,7 @@ def test_list_models_never_serializes_key():
 
 
 def test_engine_uses_openai_prefix_for_company_gateway(monkeypatch):
-    from agentv3.lingqu.engine import LiteLLMEngine
+    from adapters.lingqu.engine import LiteLLMEngine
 
     captured = {}
 
@@ -134,7 +134,7 @@ def test_engine_uses_openai_prefix_for_company_gateway(monkeypatch):
 
     monkeypatch.setattr(litellm, "completion", FakeLiteLLM.completion)
     profile = load_catalog(CATALOG).default()
-    resolver = __import__("agentv3.lingqu.credentials", fromlist=["SecretResolver"]).SecretResolver(
+    resolver = __import__("adapters.lingqu.credentials", fromlist=["SecretResolver"]).SecretResolver(
         {
             "COMPANY_LLM_API_KEY": "gateway-key-placeholder-0005",
             "COMPANY_LLM_BASE_URL": "http://127.0.0.1:4000/v1",
@@ -142,6 +142,27 @@ def test_engine_uses_openai_prefix_for_company_gateway(monkeypatch):
     )
     credential = resolver.resolve(profile)
     engine = LiteLLMEngine(timeout_s=1)
-    engine.complete(profile, __import__("agentv3.lingqu.contracts", fromlist=["ModelRequest"]).ModelRequest(system="s", user="u"), credential)
+    engine.complete(
+        profile,
+        __import__("adapters.lingqu.contracts", fromlist=["ModelRequest"]).ModelRequest(system="s", user="u"),
+        credential,
+    )
     assert captured["model"] == f"openai/{profile.model}"
     assert captured["api_base"] == "http://127.0.0.1:4000/v1"
+
+def test_tool_calls_get_room_for_hidden_reasoning():
+    """Reasoning models spend max_tokens on reasoning before emitting content.
+
+    Measured on DeepSeek V4.1: 256 tokens with 5 read tools attached returned an
+    empty reply, 400 was truncated (finish=length), 800 was clean. Without a
+    tool-aware floor every tool-enabled turn degrades to the fallback script.
+    """
+    engine = FakeEngine()
+    gateway = _gateway(engine=engine)
+    gateway.complete(LLMRequest(system="s", user="u", tools=("search_memories",)))
+    _, request, _ = engine.calls[-1]
+    assert request.max_tokens >= 1024
+
+    gateway.complete(LLMRequest(system="s", user="u"))
+    _, request, _ = engine.calls[-1]
+    assert request.max_tokens >= 256

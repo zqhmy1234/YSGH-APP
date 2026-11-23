@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentv3.domain.locomo_eval import dialogue_turns, evaluate
+from harness.domain.locomo_eval import dialogue_turns, evaluate
 
 DATA = Path(__file__).with_name("fixtures") / "locomo10.json"
 

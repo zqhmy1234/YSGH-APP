@@ -1,7 +1,7 @@
 [
  {
   "text": "今天有点累（第1次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -15,16 +15,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第1次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第1次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -36,7 +36,7 @@
  },
  {
   "text": "你好呀（第1次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -50,30 +50,30 @@
  },
  {
   "text": "那家店的咖啡（第1次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第1次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第1次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第1次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -106,23 +106,23 @@
  },
  {
   "text": "我睡不着（第1次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第1次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第1次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -141,7 +141,7 @@
  },
  {
   "text": "今天有点累（第2次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -155,16 +155,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第2次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第2次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -176,7 +176,7 @@
  },
  {
   "text": "你好呀（第2次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -190,30 +190,30 @@
  },
  {
   "text": "那家店的咖啡（第2次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第2次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第2次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第2次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -246,23 +246,23 @@
  },
  {
   "text": "我睡不着（第2次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第2次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第2次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -281,7 +281,7 @@
  },
  {
   "text": "今天有点累（第3次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -295,16 +295,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第3次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第3次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -316,7 +316,7 @@
  },
  {
   "text": "你好呀（第3次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -330,30 +330,30 @@
  },
  {
   "text": "那家店的咖啡（第3次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第3次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第3次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第3次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -386,23 +386,23 @@
  },
  {
   "text": "我睡不着（第3次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第3次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第3次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -421,7 +421,7 @@
  },
  {
   "text": "今天有点累（第4次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -435,16 +435,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第4次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第4次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -456,7 +456,7 @@
  },
  {
   "text": "你好呀（第4次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -470,30 +470,30 @@
  },
  {
   "text": "那家店的咖啡（第4次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第4次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第4次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第4次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -526,23 +526,23 @@
  },
  {
   "text": "我睡不着（第4次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第4次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第4次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -561,7 +561,7 @@
  },
  {
   "text": "今天有点累（第5次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -575,16 +575,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第5次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第5次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -596,7 +596,7 @@
  },
  {
   "text": "你好呀（第5次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -610,30 +610,30 @@
  },
  {
   "text": "那家店的咖啡（第5次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第5次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第5次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第5次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -666,23 +666,23 @@
  },
  {
   "text": "我睡不着（第5次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第5次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第5次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -701,7 +701,7 @@
  },
  {
   "text": "今天有点累（第6次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -715,16 +715,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第6次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第6次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -736,7 +736,7 @@
  },
  {
   "text": "你好呀（第6次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -750,30 +750,30 @@
  },
  {
   "text": "那家店的咖啡（第6次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第6次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第6次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第6次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -806,23 +806,23 @@
  },
  {
   "text": "我睡不着（第6次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第6次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第6次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -841,7 +841,7 @@
  },
  {
   "text": "今天有点累（第7次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -855,16 +855,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第7次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第7次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -876,7 +876,7 @@
  },
  {
   "text": "你好呀（第7次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -890,30 +890,30 @@
  },
  {
   "text": "那家店的咖啡（第7次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第7次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第7次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第7次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -946,23 +946,23 @@
  },
  {
   "text": "我睡不着（第7次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第7次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第7次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -981,7 +981,7 @@
  },
  {
   "text": "今天有点累（第8次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -995,16 +995,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第8次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第8次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1016,7 +1016,7 @@
  },
  {
   "text": "你好呀（第8次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -1030,30 +1030,30 @@
  },
  {
   "text": "那家店的咖啡（第8次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第8次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第8次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第8次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1086,23 +1086,23 @@
  },
  {
   "text": "我睡不着（第8次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第8次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第8次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1121,7 +1121,7 @@
  },
  {
   "text": "今天有点累（第9次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -1135,16 +1135,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第9次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第9次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1156,7 +1156,7 @@
  },
  {
   "text": "你好呀（第9次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -1170,30 +1170,30 @@
  },
  {
   "text": "那家店的咖啡（第9次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第9次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第9次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第9次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1226,23 +1226,23 @@
  },
  {
   "text": "我睡不着（第9次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第9次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第9次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1261,7 +1261,7 @@
  },
  {
   "text": "今天有点累（第10次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -1275,16 +1275,16 @@
  },
  {
   "text": "帮我记一下今天她来了（第10次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了（第10次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1296,7 +1296,7 @@
  },
  {
   "text": "你好呀（第10次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -1310,30 +1310,30 @@
  },
  {
   "text": "那家店的咖啡（第10次）",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭（第10次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话（第10次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词（第10次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {
@@ -1366,23 +1366,23 @@
  },
  {
   "text": "我睡不着（第10次）",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我（第10次）",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上（第10次）",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
-  "write_policy": "propose",
+  "write_policy": "none",
   "degraded": false
  },
  {

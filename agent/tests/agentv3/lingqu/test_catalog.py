@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from agentv3.lingqu.catalog import Catalog, CatalogError, load_catalog
-from agentv3.lingqu.contracts import ProviderId
+from adapters.lingqu.catalog import Catalog, CatalogError, load_catalog
+from adapters.lingqu.contracts import ProviderId
 
 CATALOG = Path(__file__).resolve().parents[3] / "config" / "lingqu-catalog.json"
 

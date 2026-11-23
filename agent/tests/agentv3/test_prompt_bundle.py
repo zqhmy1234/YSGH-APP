@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agentv3.prompts.bundle import BUNDLE_BUDGET, SEGMENT_ORDER, audit_prompt, build_bundle, segment_names
-from agentv3.prompts.cards import parse_card
+from prompts.bundle import SEGMENT_ORDER, audit_prompt, build_bundle, segment_names
+from prompts.cards import parse_card
 
 
 def test_bundle_has_ten_ordered_segments_and_guard_first():

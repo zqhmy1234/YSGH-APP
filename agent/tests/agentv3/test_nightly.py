@@ -2,9 +2,9 @@
 
 from datetime import date
 
-from agentv3.contracts import MemoryLayer
-from agentv3.jobs.nightly import NightlyJob
-from agentv3.memory.ledger import MemoryStore
+from harness.contracts import MemoryLayer
+from jobs.nightly import NightlyJob
+from memory.ledger import MemoryStore
 
 
 def _episode(text="她喜欢桂花"):
@@ -39,7 +39,9 @@ def test_unknown_evidence_is_rejected_by_scope():
 
 def test_fact_episode_without_evidence_is_rejected():
     store = MemoryStore()
-    receipt = NightlyJob(store).run("p1", [{"text": "她喜欢桂花", "layer": "fact", "evidence": []}], day=date(2026, 11, 23))
+    receipt = NightlyJob(store).run(
+        "p1", [{"text": "她喜欢桂花", "layer": "fact", "evidence": []}], day=date(2026, 11, 23)
+    )
     assert receipt.rolled_back
 
 

@@ -6,11 +6,11 @@ diffed rule-by-rule instead of trusting a README.
 
 from datetime import date
 
-from agentv3.adapters.fakes import FakeSearch, _hit
-from agentv3.agents.librarian import RRF_K, Librarian
-from agentv3.agents.sculptor import ISSUE_CODES, Sculptor
-from agentv3.contracts import MAX_ALTERNATES, MemoryLayer, MemoryProposal, OpKind, ProposalBatch, ResultStatus
-from agentv3.memory.ledger import MemoryStore
+from adapters.fakes import FakeSearch, _hit
+from agents.librarian import RRF_K, Librarian
+from agents.sculptor import ISSUE_CODES, Sculptor
+from harness.contracts import MAX_ALTERNATES, MemoryLayer, MemoryProposal, OpKind, ProposalBatch, ResultStatus
+from memory.ledger import MemoryStore
 
 
 def test_rule_rrf_k_is_60():
@@ -99,7 +99,11 @@ def test_rule_same_text_merges_evidence_instead_of_duplicating():
         ProposalBatch(
             person_id="p1",
             batch_hash="parity-0005",
-            proposals=(MemoryProposal(op=OpKind.CAME_FROM, layer=MemoryLayer.FACT, text="她喜欢桂花", entry_id=entry, evidence=("e2",)),),
+            proposals=(
+                MemoryProposal(
+                    op=OpKind.CAME_FROM, layer=MemoryLayer.FACT, text="她喜欢桂花", entry_id=entry, evidence=("e2",)
+                ),
+            ),
         )
     )
     assert len(store.entries("p1")) == 1

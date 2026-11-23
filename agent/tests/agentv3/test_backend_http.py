@@ -13,9 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from agentv3.adapters.backend import BackendEvents, BackendLLM, BackendSearch
-from agentv3.contracts import LLMRequest, SearchQuery
-from agentv3.ports import PortUnavailable
+from adapters.backend import BackendEvents, BackendLLM, BackendSearch
+from harness.contracts import LLMRequest, SearchQuery
+from ports import PortUnavailable
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -25,9 +25,17 @@ class _Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
         type(self).seen.append((self.path, body))
         if self.path == "/internal/rag/search":
-            payload = {"items": [{"evidence_id": "ev-1", "title": "桂花", "content": "她喜欢桂花", "score": 0.9, "kind": "content"}]}
+            payload = {
+                "items": [
+                    {"evidence_id": "ev-1", "title": "桂花", "content": "她喜欢桂花", "score": 0.9, "kind": "content"}
+                ]
+            }
         elif self.path == "/internal/events/hits":
-            payload = {"items": [{"event_id": "e-1", "title": "秋天", "day": "2025-10-01", "summary": "桂花开了", "score": 0.8}]}
+            payload = {
+                "items": [
+                    {"event_id": "e-1", "title": "秋天", "day": "2025-10-01", "summary": "桂花开了", "score": 0.8}
+                ]
+            }
         elif self.path == "/chat/completions":
             payload = {"choices": [{"message": {"content": "我在", "tool_calls": []}}]}
         elif self.path == "/slow":

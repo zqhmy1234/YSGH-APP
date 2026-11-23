@@ -1,7 +1,7 @@
 [
  {
   "text": "今天有点累",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -15,14 +15,14 @@
  },
  {
   "text": "帮我记一下今天她来了",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "以后别推送了",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
@@ -36,7 +36,7 @@
  },
  {
   "text": "你好呀",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
@@ -50,28 +50,28 @@
  },
  {
   "text": "那家店的咖啡",
-  "intent": "chitchat",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "我想哭",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "存一下这句话",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "屏蔽这个词",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
@@ -106,21 +106,21 @@
  },
  {
   "text": "我睡不着",
-  "intent": "emotion",
+  "intent": "companion",
   "status": "grounded",
   "write_policy": "none",
   "degraded": false
  },
  {
   "text": "记着下周三提醒我",
-  "intent": "remember",
+  "intent": "ingest",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false
  },
  {
   "text": "把提醒时间改到晚上",
-  "intent": "setting",
+  "intent": "trust",
   "status": "grounded",
   "write_policy": "propose",
   "degraded": false

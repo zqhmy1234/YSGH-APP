@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentv3.domain.tagging import (
+from harness.domain.tagging import (
     TaggingInput,
     classify_tags,
     normalize_category,

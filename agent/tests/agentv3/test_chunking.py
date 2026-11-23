@@ -1,6 +1,6 @@
 """Chunking: sentence-aware, overlapping, offset-stable."""
 
-from agentv3.memory.chunking import chunk_text
+from memory.chunking import chunk_text
 
 
 def _long(unit: str = "这一句话稍微长一点点。", n: int = 20) -> str:
