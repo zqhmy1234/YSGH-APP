@@ -2179,12 +2179,31 @@
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^json$",
-              "description": "导出格式（当前仅支持 json）",
+              "pattern": "^(json|zip)$",
+              "description": "导出格式：json 元数据 / zip 归档",
               "default": "json",
               "title": "Format"
             },
-            "description": "导出格式（当前仅支持 json）"
+            "description": "导出格式：json 元数据 / zip 归档"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "上一页返回的 next_cursor",
+              "title": "Cursor"
+            },
+            "description": "上一页返回的 next_cursor"
           }
         ],
         "responses": {
@@ -3923,7 +3942,7 @@
           "users"
         ],
         "summary": "Users Me",
-        "description": "当前用户信息（BB1-B4）：id/nickname/avatar + 掩码手机号（未绑定 → null）",
+        "description": "当前用户信息：正常账号与待注销账号都可读，客户端据此展示恢复入口。",
         "operationId": "users_me_api_v1_users_me_get",
         "responses": {
           "200": {
@@ -3932,6 +3951,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_UserMeOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Users Request Deletion",
+        "description": "申请注销（幂等）：必须显式 `{\"confirm\":\"delete\"}`；30 天内不物理删除。",
+        "operationId": "users_request_deletion_api_v1_users_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserDeletionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AccountStateOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/me/restore": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Users Restore Account",
+        "description": "撤销注销：恢复软删内容与账号；窗口过期由依赖返回 410 USER_002。",
+        "operationId": "users_restore_account_api_v1_users_me_restore_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AccountStateOut_"
                 }
               }
             }
@@ -4090,7 +4181,7 @@
           "chat"
         ],
         "summary": "Get History",
-        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供\"问 AI 带上下文\"。\n\n## 2026-10-30（P2 D-11）分页：为什么\"从最近往回翻\"\n\n改造前无条件取全会话（`order_by(created_at.asc())` 无 limit）。会话越长，进入对话页\n的等待越久；而用户进入时真正要看的是**最后几轮**，几十轮前的历史在首屏之外。\n故分页语义定为「先给最近 limit 条，再按 cursor 往前翻」：\n  · SQL 侧 `created_at DESC, id DESC` 取 limit+1（多取一条判 has_more）；\n  · **出参仍按时间正序**（客户端渲染顺序不变，改造前的逐条顺序不被打乱）；\n  · cursor = 本页**最早**那条，语义是\"比它更早\"。\n不传 limit/cursor 时全量（老客户端与既有测试的行为原样保留）。\n游标非法 → 422 CHAT_005（不静默退化成第一页：那会让用户以为翻到了更早的消息）。",
+        "description": "取本会话历史（时间正序）——客户端进入会话时回填，供“问 AI 带上下文”。\n\n## 2026-10-30（P2 D-11）分页：为什么“从最近往回翻”\n\n改造前无条件取全会话（`order_by(created_at.asc())` 无 limit）。会话越长，进入对话页\n的等待越久；而用户进入时真正要看的是**最后几轮**，几十轮前的历史在首屏之外。\n故分页语义定为「先给最近 limit 条，再按 cursor 往前翻」：\n  · SQL 侧 `created_at DESC, id DESC` 取 limit+1（多取一条判 has_more）；\n  · **出参仍按时间正序**（客户端渲染顺序不变，改造前的逐条顺序不被打乱）；\n  · cursor = 本页**最早**那条，语义是“比它更早”。\n不传 limit/cursor 时全量（老客户端与既有测试的行为原样保留）。\n游标非法 → 422 CHAT_005（不静默退化成第一页：那会让用户以为翻到了更早的消息）。",
         "operationId": "get_history_api_v1_chat_conversations__conversation_id__messages_get",
         "security": [
           {
@@ -4170,6 +4261,100 @@
         }
       }
     },
+    "/api/v1/persona/options": {
+      "get": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Get Persona Options",
+        "description": "Full sentences, not internal labels: the client renders them verbatim.",
+        "operationId": "get_persona_options_api_v1_persona_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PersonaOptionsOut_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/persona": {
+      "get": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Get Persona",
+        "description": "Missing row is a default snapshot with ``source=default``, never 404.",
+        "operationId": "get_persona_api_v1_persona_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PersonaOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Put Persona",
+        "description": "Validate three choices and the selected person; one version bump.",
+        "operationId": "put_persona_api_v1_persona_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PersonaOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -4193,6 +4378,93 @@
   },
   "components": {
     "schemas": {
+      "AccountStateOut": {
+        "properties": {
+          "account_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending_deletion"
+            ],
+            "title": "Account Status"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "undo_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Until",
+            "description": "30 天撤销窗口结束时间（UTC）"
+          },
+          "days_left": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Left",
+            "description": "撤销窗口剩余天数；active 时 null"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_status"
+        ],
+        "title": "AccountStateOut",
+        "description": "账号状态（/me 与注销/恢复端点共用）。"
+      },
+      "ApiResponse_AccountStateOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountStateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AccountStateOut]"
+      },
       "ApiResponse_ArbitrateJobOut_": {
         "properties": {
           "code": {
@@ -5029,6 +5301,68 @@
         },
         "type": "object",
         "title": "ApiResponse[Page[MessageOut]]"
+      },
+      "ApiResponse_PersonaOptionsOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonaOptionsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[PersonaOptionsOut]"
+      },
+      "ApiResponse_PersonaOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonaOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[PersonaOut]"
       },
       "ApiResponse_ProfileClearOut_": {
         "properties": {
@@ -6216,14 +6550,6 @@
             ],
             "title": "Emotion",
             "description": "声学情绪标签（SenseVoice 通道产出）；None=未测得（D-16）"
-          },
-          "emotion_confidence": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Emotion Confidence",
-            "description": "声学情绪置信度",
-            "default": 0.0
           },
           "emotion_source": {
             "type": "string",
@@ -8943,6 +9269,121 @@
         ],
         "title": "Page[MessageOut]"
       },
+      "PersonaChoiceQuestionOut": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question",
+          "options"
+        ],
+        "title": "PersonaChoiceQuestionOut"
+      },
+      "PersonaOptionsOut": {
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/PersonaChoiceQuestionOut"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "role_cards": {
+            "items": {
+              "$ref": "#/components/schemas/RoleCardOptionOut"
+            },
+            "type": "array",
+            "title": "Role Cards"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "questions",
+          "role_cards"
+        ],
+        "title": "PersonaOptionsOut"
+      },
+      "PersonaOut": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "choices": {
+            "$ref": "#/components/schemas/RelationshipChoices"
+          },
+          "role_id": {
+            "type": "string",
+            "title": "Role Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "relationship_note": {
+            "type": "string",
+            "title": "Relationship Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user_id",
+          "choices",
+          "role_id",
+          "version",
+          "source",
+          "relationship_note"
+        ],
+        "title": "PersonaOut"
+      },
+      "PersonaUpdateIn": {
+        "properties": {
+          "choices": {
+            "$ref": "#/components/schemas/RelationshipChoices"
+          },
+          "role_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Role Id",
+            "default": "gentle-friend"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PersonaUpdateIn",
+        "description": "Request body for PUT: three choices plus the selected person."
+      },
       "PhoneLoginRequest": {
         "properties": {
           "phone": {
@@ -9239,6 +9680,58 @@
         "title": "RefreshRequest",
         "description": "refresh token 换新 access（轮换，旧 refresh 失效，AUTH-005）"
       },
+      "RelationshipChoices": {
+        "properties": {
+          "initiative": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Initiative",
+            "default": 1
+          },
+          "density": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Density",
+            "default": 1
+          },
+          "advice_bias": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Advice Bias",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RelationshipChoices"
+      },
+      "RoleCardOptionOut": {
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "title": "Role Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "intro": {
+            "type": "string",
+            "title": "Intro"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role_id",
+          "display_name",
+          "intro"
+        ],
+        "title": "RoleCardOptionOut"
+      },
       "SearchHit": {
         "properties": {
           "content_id": {
@@ -9419,6 +9912,18 @@
               }
             ],
             "title": "Tag"
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Id"
           },
           "limit": {
             "type": "integer",
@@ -10173,8 +10678,69 @@
         ],
         "title": "UserBrief"
       },
+      "UserDeletionIn": {
+        "properties": {
+          "confirm": {
+            "type": "string",
+            "const": "delete",
+            "title": "Confirm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirm"
+        ],
+        "title": "UserDeletionIn",
+        "description": "注销确认体：必须显式传 \"delete\"，防止客户端误触。"
+      },
       "UserMeOut": {
         "properties": {
+          "account_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending_deletion"
+            ],
+            "title": "Account Status"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "undo_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Until",
+            "description": "30 天撤销窗口结束时间（UTC）"
+          },
+          "days_left": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Left",
+            "description": "撤销窗口剩余天数；active 时 null"
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -10216,10 +10782,11 @@
         },
         "type": "object",
         "required": [
+          "account_status",
           "id"
         ],
         "title": "UserMeOut",
-        "description": "GET /api/v1/users/me 出参（BB1-B4）\n\n安全约束：phone 仅服务端掩码形态（138****XXXX）下发，完整手机号绝不出网；\n未绑定 / 非 11 位 → null。"
+        "description": "GET /api/v1/users/me 出参（BB1-B4）\n\n安全约束：phone 仅服务端掩码形态（138****XXXX）下发，完整手机号绝不出网；\n未绑定 / 非 11 位 → null。pending_deletion 时客户端只应展示恢复入口。"
       },
       "ValidationError": {
         "properties": {

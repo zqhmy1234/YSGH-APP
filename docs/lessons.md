@@ -9,6 +9,33 @@
 
 ---
 
+### 2026-11-24 03:19 · commit 58ff44f · ts=1795461579
+- **错误**：B7改造后 chat.py 触及 600 行结构阈值
+- **根因**：把 persona 快照读取和历史分页都塞回路由文件；新增能力时没有先做模块拆分
+- **修复**：persona 快照读移到 chat_helpers，会话历史拆到 chat_history.py；重跑结构棘轮
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-11-23 22:50 · commit 58ff44f · ts=1795445401
+- **错误**：全量门禁 lint 在 docs/架构图/_gen.py 报 E902 No such file，安全审计把 backend/.venv312 的 site-packages 当源码命中 98 处密钥
+- **根因**：git ls-files 默认 core.quotepath=true 把中文路径转义成八进制串，ruff 收到带引号路径无法打开；audit_security 的 _ALLOW_PATHS 未排除仓内虚拟环境目录
+- **修复**：review_agent 的 git 调用统一加 -c core.quotepath=false；_ALLOW_PATHS 增加 .venv312/.venv；文档生成脚本 docs/架构图/ 加入 lint 排除
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁扫文件清单必须用可解码的真实路径，且必须排除仓内 venv
+
+---
+
+### 2026-11-23 22:24 · commit 58ff44f · ts=1795443883
+- **错误**：review_agent 快速门禁 lint 在 archive/ 与第三方研究仓上逐条报错，真实提交被历史 lint 债遮蔽
+- **根因**：lint 文件列表层只跳过 agent/，2026-11-23 归档 legacy-agent 与 vendor research 后未同步排除
+- **修复**：scripts/review_agent.py::_lint_skip 与 ruff.toml exclude 同时加入 archive/ 和 research/character-cards/foreverse-character-card-skills/；语法与密钥仍覆盖
+- **相关文件**：scripts/review_agent.py
+- **教训**：原样封存的归档/第三方代码不进 lint，只保留语法与密钥扫描
+
+---
+
 ### 2026-11-23 17:53 · commit efdaff6 · ts=1795427599
 - **错误**：LiteLLM 启用 Prisma/DB 模式时，setup.sh 首次启动现场 npm install prisma@5.17.0 超过 600s 超时，之后 nodeenv 缓存目录存在但缺少 bin/node，LiteLLM 每次启动都跳过安装并失败
 - **根因**：Prisma Client Python 的 ensure_cached() 只按 binary_cache_dir/node_modules/prisma/build/index.js 是否存在判断是否安装；nodeenv 安装被超时杀掉后目录仍在，形成半安装缓存。setup.sh 又把这次一次性安装放进 LiteLLM 服务启动路径，把慢安装伪装成启动失败
