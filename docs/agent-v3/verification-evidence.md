@@ -37,13 +37,27 @@
 | 后端镜像缺新代码 | 容器内 `users.py` 是旧版、无 chat_helpers | 重新构建；容器内 OpenAPI 79 paths，含注销/恢复/export zip/persona |
 | worker 未启动 | `yishu-v3-worker` 从未创建 | 已起，`high,low` + scheduler 锁正常，真实 job 消费成功 |
 
+## 服务器已切换（2026-11-24）
+
+`feature/agent-v3-harness@7de26ec` 已部署到 `/opt/yishu/releases/ys-7de26ec`，迁移执行到 `e7b8c9d0e1f2`，旧服务全部保留可回滚。详见 `server-cutover-20261124.md`。
+
+| 项 | 实测 |
+|---|---|
+| 服务矩阵 | `yishu-api` / `yishu-agent-v3` / `yishu-litellm` / `yishu-worker` / `yishu-agent` 全部 active |
+| 公网入口 `:8010`（nginx → 8011） | `healthz` 200；真实对话 200，**无降级兜底** |
+| 流式 | `status → preview → done`，终稿落库 |
+| 内容管线 | 新建文本 `processing → done`（15.9s） |
+| 检索 | `hits=3`、`degraded=false`、Top1 = 刚写入内容 |
+| RECALL 对话 | 引用"西湖边走了很久，桂花很香"，不编日期 |
+| persona | `/api/v1/persona/options` 200，返回三组关系约定原文 |
+
 ## 被外部条件阻塞（未宣称通过）
 
 | 项 | 现状 | 证据 |
 |---|---|---|
 | 五家厂商 live 全绿 | **partial**：DeepSeek 通过；Qwen `auth_failed`；Kimi/MiniMax/GLM 网关未配置对应模型，记 `model_or_endpoint_error` | `lingqu-live-report.json` |
-| 服务器 staging 切流（8300） | 服务器 8300 仍是旧 agent（`main:app`，7 paths）；未替换生产容器 | 本轮未动，属发布动作 |
-| 服务器 backend 升级 | `/opt/yishu/backend` 无 `agent_profile.py` / `memory.py` / `persona.py`，迁移只到 `f2c3d4e5a6b7` | 本轮未动，属发布动作 |
+| 服务器 worker 新代码 | `yishu-worker` 仍跑 `/opt/yishu/backend` 旧代码（release venv 缺 torch/rq），不含 `run_account_purges` | 需给 release venv 装齐依赖 |
+| 旧 agent :8300 | 仍 active，保留观察期，可随时停 | 回滚座位 |
 | 客户端编译 | 缺 HBuilderX | 明确降级，不宣称 |
 | `tests/test_setfit.py` | 22 条按设计 deselected（需额外模型资产） | 与本轮无关 |
 

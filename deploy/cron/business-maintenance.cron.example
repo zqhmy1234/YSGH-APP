@@ -4,5 +4,7 @@ SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 7 * * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance requeue --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/requeue.log 2>&1
 10 4 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance cleanup --dry-run --limit 500 --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/cleanup.log 2>&1
+# 30 天撤销窗口到期硬删（B5-04；执行而非预览。先跑 7 天 dry-run 观察再启用）
+# 20 4 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance cleanup --execute-cleanup --limit 500 --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/cleanup-execute.log 2>&1
 5 8 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance capsules --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/capsules.log 2>&1
 0 22 * * * cd /opt/yishu/backend && /opt/yishu/backend/.venv/bin/python -m app.workers.maintenance daily-review --env-file /opt/yishu/deploy/.env >> /opt/yishu/logs/daily-review.log 2>&1
