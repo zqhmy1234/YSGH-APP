@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-23 16:41 · commit 8d33a4c · ts=1795423264
+- **错误**：在 macOS 上用系统 Python 3.9 跑 review_agent --full 的 audit_security，因 scripts/audit_security.py 使用 Python 3.11 的 datetime.UTC 而 ImportError
+- **根因**：门禁子脚本未声明/校验最低 Python 版本，系统 Python 3.9 会在导入期失败；此前只在装有新 Python 的环境跑过
+- **修复**：改用仓库/agent venv 的 Python 3.12 运行门禁（PATH 前置 agent/.venv312/bin），并在证据中区分环境错误与代码失败
+- **相关文件**：scripts/audit_security.py;scripts/review_agent.py
+- **教训**：跑门禁前先确认执行解释器版本；工具脚本用新语法时，系统 python3 可能不是项目运行时
+
+---
+
 ### 2026-11-23 16:34 · commit 164f891 · ts=1795422875
 - **错误**：Lingqu 默认模型 deepseek/deepseek-v4-flash 在官方 API 不存在；公司网关下仍用 deepseek/ 前缀会绕过网关；DeepSeek V4.1 在 max_tokens<=128 时可能只返回 reasoning 正文为空
 - **根因**：目录按计划名而非官方 /models 实测名配置；LiteLLMEngine 没有区分公司 OpenAI 兼容网关与直连厂商；max_chars 被直接当 max_tokens 且未考虑 reasoning 预算
