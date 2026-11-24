@@ -1,0 +1,50 @@
+model_list:
+  # DeepSeek V4.1 Flash: upstream id is deepseek-flash.
+  # Both aliases are intentional: v4.1-flash is the product-facing/default name;
+  # v4-flash remains for old callers that still send the pre-migration id.
+  - model_name: deepseek-v4.1-flash
+    litellm_params:
+      model: deepseek/deepseek-flash
+      api_key: os.environ/DEEPSEEK_API_KEY
+      api_base: https://api.deepseek.com
+
+  - model_name: deepseek-v4-flash
+    litellm_params:
+      model: deepseek/deepseek-flash
+      api_key: os.environ/DEEPSEEK_API_KEY
+      api_base: https://api.deepseek.com
+
+  - model_name: deepseek-v4-pro
+    litellm_params:
+      model: deepseek/deepseek-v4-pro
+      api_key: os.environ/DEEPSEEK_API_KEY
+      api_base: https://api.deepseek.com
+
+  - model_name: qwen3.8-flash
+    litellm_params:
+      model: dashscope/qwen3.8-flash
+      api_key: os.environ/DASHSCOPE_API_KEY
+      api_base: os.environ/DASHSCOPE_BASE_URL
+
+  - model_name: qwen4-max
+    litellm_params:
+      model: dashscope/qwen4-max
+      api_key: os.environ/DASHSCOPE_API_KEY
+      api_base: os.environ/DASHSCOPE_BASE_URL
+
+litellm_settings:
+  drop_params: true
+  enable_redis_auth_cache: true
+  request_timeout: 60
+  num_retries: 1
+  fallbacks:
+    - deepseek-v4.1-flash: ["qwen3.8-flash"]
+    - deepseek-v4-flash: ["qwen3.8-flash"]
+    - deepseek-v4-pro: ["qwen4-max"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  coordination_redis:
+    url: os.environ/REDIS_URL

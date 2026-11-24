@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1480" viewBox="0 0 1480 1480">
+<defs><marker id="ah-ink" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#16324F"/></marker><marker id="ah-teal" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2F6F7E"/></marker><marker id="ah-warm" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#C7763F"/></marker><marker id="ah-gray" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A9B7C5"/></marker><marker id="ah-red" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A8452F"/></marker></defs>
+<rect width="1480" height="1480" fill="#FFFFFF"/>
+<g transform="translate(0.0,360.0)">
+<text x="40" y="46" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="26" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">信任域｜删除生命周期（从“请求”到“真删”的四层清理）</text>
+<text x="40" y="72" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">用户看到的是回执与状态；我们内部必须能证明四层都清了</text>
+<rect x="1356.2" y="26" width="83.8" height="30" rx="15" fill="#EAF2F4" stroke="#2F6F7E" stroke-width="1" opacity="1"/>
+<text x="1398.1" y="46" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#2F6F7E" text-anchor="middle" letter-spacing="0">需求 30</text>
+<text x="50" y="132" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">状态机</text>
+<rect x="50" y="150" width="250" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="50" y="150" width="4" height="120" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="64" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">请求删除</text>
+<text x="64" y="196" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">DELETE /users/me</text>
+<text x="64" y="214" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">鉴权 + 二次确认</text>
+<line x1="300" y1="210" x2="331" y2="210" stroke="#3C5A78" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="335" y="150" width="250" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="335" y="150" width="4" height="120" rx="2" fill="#2F6F7E" stroke="#2F6F7E" stroke-width="0" opacity="1"/>
+<text x="349" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">202 回执</text>
+<text x="349" y="196" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">“30 天后物理删除”</text>
+<text x="349" y="214" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">登录态立即失效</text>
+<line x1="585" y1="210" x2="616" y2="210" stroke="#2F6F7E" stroke-width="1.6" marker-end="url(#ah-teal)"/>
+<rect x="620" y="150" width="250" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="620" y="150" width="4" height="120" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="634" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">deleting</text>
+<text x="634" y="196" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">users.status='deleting'</text>
+<text x="634" y="214" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">30 天内可撤销</text>
+<line x1="870" y1="210" x2="901" y2="210" stroke="#C7763F" stroke-width="1.6" marker-end="url(#ah-warm)"/>
+<rect x="905" y="150" width="250" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="905" y="150" width="4" height="120" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="919" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">purge 执行</text>
+<text x="919" y="196" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">定时任务，非 dry-run</text>
+<text x="919" y="214" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">四层依次清</text>
+<line x1="1155" y1="210" x2="1186" y2="210" stroke="#A8452F" stroke-width="1.6" marker-end="url(#ah-red)"/>
+<rect x="1190" y="150" width="250" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="1190" y="150" width="4" height="120" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="1204" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">done / failed</text>
+<text x="1204" y="196" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">purge_status 真值</text>
+<text x="1204" y="214" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">失败进 /health 红灯</text>
+<rect x="50" y="330" width="1380" height="210" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="66" y="358" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">清理四层（顺序不可乱：先提交 DB 硬删，再清外部索引与对象）</text>
+<rect x="66.0" y="378" width="325.0" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="66.0" y="378" width="4" height="120" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="80.0" y="402" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">① PostgreSQL</text>
+<text x="80.0" y="424" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">业务表硬删</text>
+<text x="80.0" y="442" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">提交后才算数</text>
+<rect x="407.0" y="378" width="325.0" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="407.0" y="378" width="4" height="120" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="421.0" y="402" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">② Qdrant</text>
+<text x="421.0" y="424" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">按 user_id 删点</text>
+<text x="421.0" y="442" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">含所有 named vectors</text>
+<rect x="748.0" y="378" width="325.0" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="748.0" y="378" width="4" height="120" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="762.0" y="402" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">③ COS</text>
+<text x="762.0" y="424" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">原图 / 缩略图 / 语音</text>
+<text x="762.0" y="442" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">直链一并失效</text>
+<rect x="1089.0" y="378" width="325.0" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="1089.0" y="378" width="4" height="120" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="1103.0" y="402" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">④ memory schema</text>
+<text x="1103.0" y="424" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">对话与执行态</text>
+<text x="1103.0" y="442" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">否则“删了但模型还记得”</text>
+<text x="66" y="526" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">导出必须排除 status='deleting' 的用户；purge 失败必须可重跑且可计数</text>
+<rect x="50" y="570" width="1380" height="150" rx="10" fill="#F8EEE7" stroke="#C7763F" stroke-width="1" opacity="1"/>
+<text x="66" y="600" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#A8452F" text-anchor="start" letter-spacing="0">四条禁止出现的假状态</text>
+<text x="70" y="632" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">① cleanup_job --dry-run 挂在生产：等于“说删了但没删”</text>
+<text x="770" y="632" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">② purge_status 出现 pending：永远不知道到底删没删</text>
+<text x="70" y="666" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">③ 回执说“已删除”但 Qdrant/COS 仍有残留（必须四层验）</text>
+<text x="770" y="666" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">④ 删除后仍能被检索到（缓存与向量必须先失效）</text>
+</g>
+</svg>

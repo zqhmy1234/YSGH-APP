@@ -15,12 +15,24 @@ from app.db.models.auth import Device, SmsCode, User
 from app.db.models.capsule import Capsule
 from app.db.models.chat import ChatMessage
 from app.db.models.content import Content, CorrectionLog
+from app.db.models.crisis import CrisisEvent
 from app.db.models.echo import EchoHistory
+from app.db.models.echo_pref import EchoExclusion, EchoPreference
 from app.db.models.event import Event, EventEditLog, EventItem
 from app.db.models.finetune import FinetuneJob
 from app.db.models.geo import GeoCache
+from app.db.models.memory import (
+    MemoryBatch,
+    MemoryChangeLog,
+    MemoryCorrection,
+    MemoryDraft,
+    MemoryEntry,
+    MemoryFactClaim,
+)
 from app.db.models.memory_agent import KnowledgeCollection, Memory, MemoryCategory
 from app.db.models.message import Message
+from app.db.models.person import ContentPerson, Person
+from app.db.models.persona import UserAIPersona
 from app.db.models.profile import (
     ProfileAnnotationPool,
     ProfileDimensionHistory,
@@ -31,6 +43,7 @@ from app.db.models.profile import (
     UserProfile,
 )
 from app.db.models.sync import DeletedLog, OfflineQueue, SyncFieldVersion, SyncState
+from app.db.models.trust import AuditLog, ConsentGrant, VaultEntry
 from app.db.models.upload import UploadChunk, UploadTask
 from app.db.models.wechat import UserWechatBinding, WechatMessage
 
@@ -38,10 +51,14 @@ __all__ = [
     "Capsule",
     "ChatMessage",
     "Content",
+    "ContentPerson",
+    "CrisisEvent",
     "CorrectionLog",
     "DeletedLog",
     "Device",
+    "EchoExclusion",
     "EchoHistory",
+    "EchoPreference",
     "Event",
     "EventEditLog",
     "EventItem",
@@ -49,9 +66,17 @@ __all__ = [
     "GeoCache",
     "KnowledgeCollection",
     "Memory",
+    "MemoryBatch",
     "MemoryCategory",
+    "MemoryChangeLog",
+    "MemoryCorrection",
+    "MemoryDraft",
+    "MemoryEntry",
+    "MemoryFactClaim",
     "Message",
     "OfflineQueue",
+    "Person",
+    "UserAIPersona",
     "ProfileAnnotationPool",
     "ProfileDimensionHistory",
     "ProfileDimensionPending",
@@ -61,6 +86,9 @@ __all__ = [
     "SmsCode",
     "SyncFieldVersion",
     "SyncState",
+    "AuditLog",
+    "ConsentGrant",
+    "VaultEntry",
     "UploadChunk",
     "UploadTask",
     "User",

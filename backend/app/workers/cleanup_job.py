@@ -38,7 +38,7 @@ from pathlib import Path
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.db.models import Content, DeletedLog, SyncFieldVersion, UploadTask
+from app.db.models import Content, DeletedLog, SyncFieldVersion, UploadTask, User
 from app.db.session import SessionLocal
 from app.services.external.storage import get_storage_backend
 
@@ -78,6 +78,57 @@ def _clear_tombstone(db: Session, content_id: str) -> None:
             SyncFieldVersion.entity_id == content_id
         )
     )
+
+
+def run_account_purges(older_than_days: int = 30, limit: int = 200, dry_run: bool = False) -> dict:
+    """硬删已过 30 天撤销窗口的待注销账号资产（B5-04 收尾）。
+
+    与内容墓碑清理共用同一调度入口：账号注销先把 contents 软删，30 天后由本函数
+    一次清掉 contents / 向量 / COS 对象 / memory 域 / persons / echo 偏好；
+    `profile_sensitive` 按设计保留，由 domain receipt 统计。
+    幂等：已处理过的账号在 batch receipt 里带 `purged_at`，下一轮直接跳过。
+    """
+    db: Session = SessionLocal()
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=older_than_days)
+    purged = failed = already = 0
+    try:
+        due = db.scalars(
+            select(User)
+            .where(
+                User.status == 0,
+                User.deleted_at.is_not(None),
+                User.deleted_at <= cutoff,
+            )
+            .order_by(User.deleted_at)
+            .limit(limit)
+        ).all()
+        if not dry_run:
+            from app.domain.memory.purge import purge_due_account
+
+            for user in due:
+                receipt = purge_due_account(db, str(user.id), now=now)
+                if receipt.status != "done":
+                    failed += 1
+                    logger.warning("账号物理清理失败 user=%s warnings=%s", user.id, receipt.warnings)
+                elif "already_purged" in receipt.warnings:
+                    already += 1
+                else:
+                    purged += 1
+                    logger.info(
+                        "账号物理清理完成 user=%s counts=%s retained_sensitive=%s",
+                        user.id,
+                        receipt.counts,
+                        receipt.retained_profile_sensitive,
+                    )
+        return {
+            "scanned": len(due),
+            "purged": purged,
+            "already_purged": already,
+            "failed": failed,
+        }
+    finally:
+        db.close()
 
 
 def run_cleanup(older_than_days: int = 30, limit: int = 500, dry_run: bool = False) -> dict:
@@ -125,11 +176,15 @@ def run_cleanup(older_than_days: int = 30, limit: int = 500, dry_run: bool = Fal
                 db.rollback()
                 failed += 1
                 logger.warning("物理清理失败 content=%s: %s", log.content_id, exc)
+        account_report = run_account_purges(
+            older_than_days=older_than_days, limit=limit, dry_run=dry_run
+        )
         return {
             "scanned": len(due),
             "cleaned": cleaned,
             "failed": failed,
             "skipped_not_due": not_due,
+            "account_purges": account_report,
         }
     finally:
         db.close()

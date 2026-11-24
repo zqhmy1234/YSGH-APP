@@ -382,6 +382,31 @@ def create_content(
     # —— 原状创建不写 ⇒ 他端 pull 无源（reconcile 报 missing_on_client 却无 op 可重放）
     sync_writes.log_content_created(db, user.id, str(record.id))
 
+    # B5-01 写路径接入（2026-11-24 收口）：
+    # 内容创建成功后走 MemoryWritePort 双写入口。开关 MEMORY_DUAL_WRITE 默认 false
+    # ⇒ 只写旧层（no-op shadow），新表不写；开关打开 ⇒ 同事务 savepoint 写 memory_entries。
+    # 异常绝不影响内容主产物（与 shadow 写失败降级语义一致）。
+    if (record.text or "").strip():
+        try:
+            from app.domain.memory.ledger import MemoryWritePort
+            result = MemoryWritePort.from_env().write(
+                db,
+                user_id=str(user.id),
+                text=record.text,
+                evidence=[{"type": "content", "id": str(record.id)}],
+                idempotency_key=f"content:{record.id}",
+                summary=(record.text or "")[:120],
+                kind="episode",
+            )
+            # write() 内部只 flush 不 commit；不提交会随 get_db 关闭回滚 ⇒ 新表永远空。
+            db.commit()
+            if result.shadow_failed:
+                logger.warning("B5 shadow write degraded for content=%s: %s",
+                               record.id, result.receipt.reason)
+        except Exception:  # noqa: BLE001 —— 记忆写入是附加层，失败不得回滚内容
+            db.rollback()
+            logger.warning("B5 memory dual-write failed for content=%s", record.id, exc_info=True)
+
     # 入队异步 AI 管线（API-016；API 立即返回不阻塞）
     # F4/R5-4#5：enqueue_unique 同 content 键不重复入队（job 级去重）
     #

@@ -1002,3 +1002,28 @@ ShareSheet（须真机验"保存到相册"）。
 - 新增 `research/rag_benchmark/bm25_experiment.py` 与 `bm25_experiment_report.json`：truth-50 同口径四组，A/B `hit@3=0.8605`、C `0.8372`、D `0.814`；BM25 top10 新增 18 条相关命中，但三路融合未提升 hit@3，**暂不加入生产主链**（报告含直连 Qdrant 的口径 caveat）。
 - 重跑 A 批基线 JSON：`hit@3=0.6667` / 负样本 `1.0` / route `0/1`；8 个失败 query id 已落盘。
 - SetFit 7 类模型本地重训完成：70 训练 / 14 评估、**14/14（100%）**、门禁 ≥75% 通过；模型 2.2G 在 `backend/models/setfit-classifier`（gitignored），需随部署包/对象存储交付。
+
+## 2026-11-23 LiteLLM 网关接入：Lingqu 默认模型迁移 + 20 场真实对话
+
+- 接手 `docs/handoff-20261123-litellm-gateway.md`，不重做已完成的服务器部署；本机服务端/网关均无可用 SSH 凭据，未修改服务器 .env、未轮换 Key、未重启服务。
+- Lingqu 目录迁移到 `2026-11-23.2`：默认 `deepseek/deepseek-v4.1-flash`（上游 `deepseek/deepseek-flash`），修正 context window 为官方 `/models` 返回值 1,048,576；保留 `deepseek-v4-flash` 网关别名仅兼容旧调用方。
+- 修复公司网关接线：设置 `COMPANY_LLM_BASE_URL` 时 LiteLLM 使用 `openai/<model>`，直连厂商仍使用 `deepseek/`、`dashscope/` 等目录前缀；新增回归断言。
+- DeepSeek V4.1 会先输出隐藏 reasoning：`max_tokens≤128` 可只拿到 reasoning、正文为空。Lingqu 统一加 **256 tokens 下限**，probe 从 64 提到 256；实测 256 有正文。
+- 修复 roleplay 的 `degraded=("llm",)` 未真正跳过模型调用：现在短路到 DEGRADED_REPLY，`llm_calls=0`，并补回归。
+- 真实验证：本地 `127.0.0.1:4001` LiteLLM 等价网关（真实 DeepSeek Key 在进程环境中，未写仓库）通过 `deepseek-v4.1-flash` 返回真实 `content`；20 场 live 对话 **20/20 pass**，c05/c06 为确定性护栏短路，其余为真实模型调用。五家 probe：DeepSeek ok；Qwen auth_failed（DASHSCOPE 为占位 key）；Kimi/MiniMax/GLM 网关未配置对应模型（model_or_endpoint_error），报告 `partial`。
+- 测试/门禁：`agent/tests/agentv3 + tests/contract` **258 passed / 2 skipped**；judge **18/18 mutants killed、11/11 probes ok、verdict=pass**；`review_agent.py --full --skip-tests --skip-client-compile` 退出 0；`init.sh` 通过。全量测试层仍因本机缺 backend 重依赖为环境错误，未伪报通过。
+- `agent/vendor/linger` 从忽略改为入库：`LOCK.json` 的 hash 校验测试需要这些上游快照；`agent/.gitignore` 仅保留缓存忽略。
+- 提交：`164f891`，47 files / +4220 / -150。未处理（用户/运维动作）：服务器上 DeepSeek 临时 Key 轮换、公网 TLS/白名单、LiteLLM DB 模式（Prisma/预算）、L0 compose 真启动（本机无 Docker）。
+
+## 2026-11-23 服务器 LiteLLM 切 Prisma/DB 模式（虚拟 Key / 预算 / 消费统计）
+
+- 用户拍板启用 Prisma/DB 模式，并明确 DeepSeek 临时 Key 不轮换、继续放在服务器 `.env`；同时询问 L0 compose 是什么。
+- SSH 免密本次实际可用（`ssh yishu` → `Yishuguanghua`），未再重复上一会话"无 SSH 凭据"的边界。
+- 定位到上一轮卡住的真实原因：`setup.sh LITELLM_ENABLE_DB=1` 把 Prisma CLI 首次 `npm install prisma@5.17.0` 放进 LiteLLM 启动路径，600s 超时后 nodeenv 目录存在但没有 node，Prisma 只按目录存在跳过安装 ⇒ 后续启动永久失败。
+- 处置：先在 venv 内单独 `prisma generate` 预热 toolchain（Node v26.13.1 / Prisma 5.17.0），确认 `prisma migrate status` 233 个迁移全部应用；再切 `config.with-db.yaml`、写 `DATABASE_URL` 到 `.env`（600）、重启 `yishu-litellm`；最终 `/health/liveliness` 200。
+- 生成虚拟 Key `agent-v3`（`max_budget=20`、`budget_duration=30d`）写入 `/opt/yishu/litellm/agent.key`（600，sha256 前缀 `9c48ff11`），master key 只留 `.env`；`agent.key` 已不再等于管理员 Key。
+- 验收：用 `agent.key` 调 `deepseek-v4.1-flash` 返回真实 `content`；`/v1/models` 返回 5 个模型；临时 Key `max_budget=0.000001` 第 1 次 200、第 2 次 422 `budget_exceeded`；`LiteLLM_SpendLogs` 7 行、Key `spend` 累加；`.env`/`agent.key`/`.database_url.saved` 均 600。
+- DB 密码已在本轮重新生成并同步 `.env` 与 `.database_url.saved`，未回显；回滚备份 `.env.pre-db-20261123172733`、`config.no-db.backup.yaml`、`config.db-working.yaml`。
+- 产物：`deploy/litellm-gateway/litellm_db_enable.sh`（一键启用，预热 Prisma + 写 DB URL + 切配置）、`deploy/litellm-gateway/README.db-mode.md`（操作/验收/回滚）、`docs/agent-v3/litellm-db-mode_20261123.md`（证据）；`deploy/litellm-gateway/README.md` 改为"两种模式"并指向 DB 模式文档。
+- L0 compose 说明：`deploy/compose.agent-v3.yml` 是 V3 的本地全栈冒烟（PG/Redis/Qdrant/MinIO/agent-v3），不是生产部署。服务器虽有 Docker 29.1.3，但 `/usr/local/lib/docker/cli-plugins/docker-compose` 是阿里云镜像站 HTML 文件而非二进制，`docker compose` 仍不可用；本机 macOS 无 Docker。`l0-smoke.json` 继续为 blocked，未伪报。
+- 未完成边界：`/ui` 只验证返回 200，未做浏览器登录/预算页人工走查；`LiteLLM_ProxyModelTable` 仍 0 行（模型继续从 YAML 读取）；未配 Redis 共享 cache（单实例）；启动日志有 `'Prisma' object has no attribute '_Prisma__engine'` warning，但 Key/预算/消费/真实调用均实测正常。

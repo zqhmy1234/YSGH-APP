@@ -1,0 +1,56 @@
+{
+  "repo": "https://github.com/simplexai-labs/linger",
+  "commit": "6663e21a4f07004def7591b1e07e4725c5c73e60",
+  "license": "Apache-2.0",
+  "captured_at": "2026-11-23",
+  "policy": "L1 等价移植 / L2 行为移植 / L3 只搬常量 / L4 不复用；见 docs/agent-v3/LINGER复用登记.md",
+  "files": [
+    {
+      "upstream": "apps/node-services/src/memory/apply.ts",
+      "local": "agent/src/agentv3/memory/ledger.py",
+      "status": "ported",
+      "notes": "validate→snapshot→apply→rollback；change log 由应用写；双时间字段"
+    },
+    {
+      "upstream": "apps/node-services/src/memory/README.md",
+      "local": "agent/src/agentv3/agents/librarian.py",
+      "status": "ported",
+      "notes": "RRF k=60；≤6 alternates 各投一票；时间只投票；摘要/原文两列；empty 前先查原文"
+    },
+    {
+      "upstream": "apps/node-services/src/memory-agent.ts",
+      "local": "agent/src/agentv3/agents/sculptor.py",
+      "status": "adapted",
+      "notes": "限步 propose/validate/finish 改为确定性 propose→validate→apply；LLM 外壳未搬"
+    },
+    {
+      "upstream": "apps/node-services/src/llm-wiki/wiki-candidate-validation.ts",
+      "local": "agent/src/agentv3/agents/sculptor.py",
+      "status": "ported",
+      "notes": "19 个 issue code；整批校验通过才落盘"
+    },
+    {
+      "upstream": "apps/node-services/docs/wiki-and-memory.md",
+      "local": "agent/src/agentv3/memory/projection.py",
+      "status": "adapted",
+      "notes": "只读视图边界；摘要不进 system prompt；段名改为本项目八段"
+    },
+    {
+      "upstream": "apps/node-services/prompts/memory-agent/principles.md",
+      "local": "agent/src/agentv3/prompts/sculptor.md",
+      "status": "adapted",
+      "notes": "证据先行/不存什么/沉默即不变/整批原子；中文化"
+    }
+  ],
+  "not_reused": [
+    "apps/teamhub（组织与 Room 模型）",
+    "apps/web（前端与品牌资产，许可 1.b 限制）",
+    "FTS 内核",
+    "本地模型栈（Pi / llama.cpp）"
+  ],
+  "verification": {
+    "parity_test": "agent/tests/agentv3/test_linger_parity.py",
+    "contract_entry": "agent/tests/contract/test_upstream_parity_contract.py",
+    "diff_tool": "scripts/upstream_diff.py"
+  }
+}

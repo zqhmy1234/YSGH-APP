@@ -9,6 +9,96 @@
 
 ---
 
+### 2026-11-24 03:19 · commit 58ff44f · ts=1795461579
+- **错误**：B7改造后 chat.py 触及 600 行结构阈值
+- **根因**：把 persona 快照读取和历史分页都塞回路由文件；新增能力时没有先做模块拆分
+- **修复**：persona 快照读移到 chat_helpers，会话历史拆到 chat_history.py；重跑结构棘轮
+- **相关文件**：-
+- **教训**：（无）
+
+---
+
+### 2026-11-23 22:50 · commit 58ff44f · ts=1795445401
+- **错误**：全量门禁 lint 在 docs/架构图/_gen.py 报 E902 No such file，安全审计把 backend/.venv312 的 site-packages 当源码命中 98 处密钥
+- **根因**：git ls-files 默认 core.quotepath=true 把中文路径转义成八进制串，ruff 收到带引号路径无法打开；audit_security 的 _ALLOW_PATHS 未排除仓内虚拟环境目录
+- **修复**：review_agent 的 git 调用统一加 -c core.quotepath=false；_ALLOW_PATHS 增加 .venv312/.venv；文档生成脚本 docs/架构图/ 加入 lint 排除
+- **相关文件**：scripts/review_agent.py
+- **教训**：门禁扫文件清单必须用可解码的真实路径，且必须排除仓内 venv
+
+---
+
+### 2026-11-23 22:24 · commit 58ff44f · ts=1795443883
+- **错误**：review_agent 快速门禁 lint 在 archive/ 与第三方研究仓上逐条报错，真实提交被历史 lint 债遮蔽
+- **根因**：lint 文件列表层只跳过 agent/，2026-11-23 归档 legacy-agent 与 vendor research 后未同步排除
+- **修复**：scripts/review_agent.py::_lint_skip 与 ruff.toml exclude 同时加入 archive/ 和 research/character-cards/foreverse-character-card-skills/；语法与密钥仍覆盖
+- **相关文件**：scripts/review_agent.py
+- **教训**：原样封存的归档/第三方代码不进 lint，只保留语法与密钥扫描
+
+---
+
+### 2026-11-23 17:53 · commit efdaff6 · ts=1795427599
+- **错误**：LiteLLM 启用 Prisma/DB 模式时，setup.sh 首次启动现场 npm install prisma@5.17.0 超过 600s 超时，之后 nodeenv 缓存目录存在但缺少 bin/node，LiteLLM 每次启动都跳过安装并失败
+- **根因**：Prisma Client Python 的 ensure_cached() 只按 binary_cache_dir/node_modules/prisma/build/index.js 是否存在判断是否安装；nodeenv 安装被超时杀掉后目录仍在，形成半安装缓存。setup.sh 又把这次一次性安装放进 LiteLLM 服务启动路径，把慢安装伪装成启动失败
+- **修复**：先在 venv 内独立执行 prisma generate 预热（安装 nodeenv + Prisma CLI + engines），确认 prisma --version 与 prisma migrate status 正常，再切 config.with-db.yaml 重启；或删除 /root/.cache/prisma-python/nodeenv 后重试。仓库新增 litellm_db_enable.sh 固化此顺序
+- **相关文件**：deploy/litellm-gateway/setup.sh, deploy/litellm-gateway/litellm_db_enable.sh, docs/agent-v3/litellm-db-mode_20261123.md
+- **教训**：任何'首次运行才安装依赖'的启动路径，都要先检查半安装缓存；慢安装不能和健康检查共用超时窗口
+
+---
+
+### 2026-11-23 16:41 · commit 8d33a4c · ts=1795423264
+- **错误**：在 macOS 上用系统 Python 3.9 跑 review_agent --full 的 audit_security，因 scripts/audit_security.py 使用 Python 3.11 的 datetime.UTC 而 ImportError
+- **根因**：门禁子脚本未声明/校验最低 Python 版本，系统 Python 3.9 会在导入期失败；此前只在装有新 Python 的环境跑过
+- **修复**：改用仓库/agent venv 的 Python 3.12 运行门禁（PATH 前置 agent/.venv312/bin），并在证据中区分环境错误与代码失败
+- **相关文件**：scripts/audit_security.py;scripts/review_agent.py
+- **教训**：跑门禁前先确认执行解释器版本；工具脚本用新语法时，系统 python3 可能不是项目运行时
+
+---
+
+### 2026-11-23 16:34 · commit 164f891 · ts=1795422875
+- **错误**：Lingqu 默认模型 deepseek/deepseek-v4-flash 在官方 API 不存在；公司网关下仍用 deepseek/ 前缀会绕过网关；DeepSeek V4.1 在 max_tokens<=128 时可能只返回 reasoning 正文为空
+- **根因**：目录按计划名而非官方 /models 实测名配置；LiteLLMEngine 没有区分公司 OpenAI 兼容网关与直连厂商；max_chars 被直接当 max_tokens 且未考虑 reasoning 预算
+- **修复**：目录迁移到 deepseek/deepseek-v4.1-flash（上游 deepseek/deepseek-flash）；公司网关自动用 openai/<model>；max_tokens 加 256 下限；补 7 条回归并跑 20 场真实对话
+- **相关文件**：agent/config/lingqu-catalog.json;agent/src/agentv3/lingqu/engine.py;agent/src/agentv3/lingqu/gateway.py;agent/src/agentv3/orchestrator.py
+- **教训**：供应商目录名必须来自官方 /models 实测；网关与直连是两套前缀语义；reasoning 模型的 token 下限不能按可见回复字符数估
+
+---
+
+### 2026-11-23 13:15 · commit 78581ec · ts=1795410932
+- **错误**：新增 scripts/dev/lingqu_live_report.py 触发 E501 两处（124>120），review_agent 静态门禁被 lint 阻断
+- **根因**：agent/ 整体 lint 豁免，但 scripts/dev/ 不豁免；新脚本沿用了长行三元表达式
+- **修复**：把 status 判定拆成独立变量，print 改用 summary dict，ruff 与静态门禁复跑通过
+- **相关文件**：scripts/dev/lingqu_live_report.py
+- **教训**：写 scripts/ 下新脚本前先按 120 列约束；不要假设 agent/ 的 lint 豁免会覆盖 scripts/
+
+---
+
+### 2026-11-23 13:00 · commit ade63a5 · ts=1795410056
+- **错误**：review_agent --full 在 agent venv 下 116+ backend 测试 ERROR：缺 pydantic_settings/jwt/torch 等后端依赖
+- **根因**：agent/.venv312 只装了 Agent V3 依赖，不能承载 backend 重依赖测试层；门禁将 tests 层报为失败而非环境错误
+- **修复**：把 agent 套件与审判独立跑；full 静态层用 venv ruff 通过；backend 测试层待装 requirements 后重跑，证据文件显式记录 environment blocker
+- **相关文件**：docs/agent-v3/verification-evidence.md;docs/agent-v3/verification-evidence.json
+- **教训**：不同子系统依赖隔离：Agent venv 不能替代 backend 测试环境；门禁分层证据要写明环境阻塞，不能伪报
+
+---
+
+### 2026-11-23 12:20 · commit 0ed99d4 · ts=1795407615
+- **错误**：审判 Agent 相对路径写错：从 src 出发的 ../../config 指向仓库根而非 agent/config；且 pseudo-mutant 与实现冗余分支等价导致存活
+- **根因**：judge 的 ROOT 只到 src，新增配置在 agent/config；变异未检查被改分支是否可达，前面的早退分支已覆盖
+- **修复**：mutant 路径改为 ../config/lingqu-catalog.json；删掉 cards.py 冗余的 probability<=0 早退，让 roll 分支成为唯一判定，并以 if roll>=probability 为变异锚点；探针增加硬编码前两段断言
+- **相关文件**：agent/src/agentv3/judge/mutation.py;agent/src/agentv3/prompts/cards.py;agent/tests/agentv3/test_prompt_bundle.py
+- **教训**：变异测试必须验证变异分支真的可达；等价变异不算杀死，先删冗余分支再选锚点
+
+---
+
+### 2026-11-23 04:22 · commit 0ed99d4 · ts=1795378954
+- **错误**：agentv3 交付缺口：回放只有20条、无LoCoMo、PG无适配器、vendor无源码
+- **根因**：按最小切口交付，未把计划里的评测/持久化/上游钉版当同批产物；后期补时才发现网络与依赖约束
+- **修复**：见代码
+- **相关文件**：-
+- **教训**：计划里的每一条P0产物都要在收口前逐条对照，不能只做核心链路；评测集与适配器属于证据，不是可选项
+
+---
+
 <<<<<<< HEAD
 ### 2026-11-13 22:15 · commit 60ad432 · ts=1794579342
 - **错误**：本轮1231项pytest通过，但API冒烟因本机Docker引擎退出出现数据库连接超时

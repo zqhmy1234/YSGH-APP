@@ -1,0 +1,45 @@
+/**
+ * B7 陪伴关系薄封装。
+ *
+ * 后端只接受三组关系约定 + 一张角色卡；返回的是**整段人话**，不是五维数字。
+ * 约定对齐 utils/api.uts：resolve-only，永不 reject；失败原因由 api 层全局 toast 给出。
+ */
+import { get, request, dataObj } from './api'
+import { PATH_PERSONA, PATH_PERSONA_OPTIONS } from './contract'
+
+/** 选项：三道关系问题 + 六张人物卡（完整介绍，不是标签）。 */
+export function fetchPersonaOptions(): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		get(PATH_PERSONA_OPTIONS).then((res: UTSJSONObject | null) => {
+			resolve(res == null ? null : dataObj(res))
+		})
+	})
+}
+
+/** 当前选择；没有行时后端返回默认快照（source=default），不是 404。 */
+export function fetchPersona(): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		get(PATH_PERSONA).then((res: UTSJSONObject | null) => {
+			resolve(res == null ? null : dataObj(res))
+		})
+	})
+}
+
+/**
+ * 保存：PUT /api/v1/persona，body = `{choices:{initiative,density,advice_bias}, role_id}`。
+ * 只改“她怎么和你相处”，不改人物卡的身份、禁忌和安全边界。
+ */
+export function savePersona(initiative: number, density: number, adviceBias: number, roleId: string): Promise<UTSJSONObject | null> {
+	return new Promise<UTSJSONObject | null>((resolve) => {
+		const choices: UTSJSONObject = {}
+		choices.set('initiative', initiative)
+		choices.set('density', density)
+		choices.set('advice_bias', adviceBias)
+		const body: UTSJSONObject = {}
+		body.set('choices', choices)
+		body.set('role_id', roleId)
+		request(PATH_PERSONA, 'PUT', body, 15000).then((res: UTSJSONObject | null) => {
+			resolve(res == null ? null : dataObj(res))
+		})
+	})
+}

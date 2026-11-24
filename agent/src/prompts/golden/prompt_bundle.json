@@ -1,0 +1,69 @@
+{
+  "version": "2026-11-23.1",
+  "bundle_budget": 4200,
+  "total_chars": 1360,
+  "render_sha256": "5a0807e05c1053eb9366797a4156514b84ac919ed3286c5d0ed4f018c2155149",
+  "segments": [
+    {
+      "name": "platform_guard",
+      "protected": true,
+      "chars": 193,
+      "sha256": "dc687a24533a2d384145eec82a6a30e50f439335e2639c20037a39fad4d19ccf"
+    },
+    {
+      "name": "crisis_protocol",
+      "protected": true,
+      "chars": 189,
+      "sha256": "c36d0d82cd75ae3920386cc780ef113d11ba38c846285e47d57c28f10a470a33"
+    },
+    {
+      "name": "character_card",
+      "protected": false,
+      "chars": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "relationship",
+      "protected": false,
+      "chars": 137,
+      "sha256": "f2bf31b77402c3aac8500b2a4ea4ca1db0fc061edd4f4e0eb5a8f1d319ebb3c8"
+    },
+    {
+      "name": "boundaries",
+      "protected": false,
+      "chars": 133,
+      "sha256": "90056479c739fedaebed1159fb15414f0855b10a8eaafd6e58bf4af3e805adc2"
+    },
+    {
+      "name": "memory_policy",
+      "protected": false,
+      "chars": 162,
+      "sha256": "0fb4ab614a094fed24974fcc2f98fc543aa09c7541113b2213d3ecfdf2896de9"
+    },
+    {
+      "name": "tool_policy",
+      "protected": false,
+      "chars": 185,
+      "sha256": "b60435b73551090ce3922a19b9b199d84f01a2b4ed30fe5aec0ff95f3cfbe94d"
+    },
+    {
+      "name": "style",
+      "protected": false,
+      "chars": 152,
+      "sha256": "08efac7835e105f5dc72489f54aab89906794fffca562243d144ccea7870e1c6"
+    },
+    {
+      "name": "evidence",
+      "protected": false,
+      "chars": 108,
+      "sha256": "fe4c00e7430d81df29b7519c3bd1715d5799b8002b10cab7744b4562ad87973b"
+    },
+    {
+      "name": "post_history",
+      "protected": false,
+      "chars": 101,
+      "sha256": "eff27dc6480724684aa932339330d26c707eb7614b2ea76a6b8dffd1761b9e8e"
+    }
+  ],
+  "dropped": []
+}

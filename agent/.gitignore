@@ -8,7 +8,10 @@ __pycache__/
 .venv
 *.o
 *.a
-/vendor
+# vendor was ignored while the upstream port was being assembled. The lock and
+# the downloaded upstream snapshots are part of the compliance evidence and are
+# verified by tests, so they must be committable. Rebuild caches stay ignored.
+/vendor/**/__pycache__/
 *.egg-info/
 /.env
 .env

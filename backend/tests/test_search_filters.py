@@ -94,8 +94,14 @@ def test_to_filter_handles_every_declared_key(key):
         "tag": "小张",
         "content_class": "travel",
         "user_id": "u-1",
+        "person_id": "p-1",
     }
     f = VectorStore._to_filter({key: values[key]})
+    if key == "person_id":
+        # B5-03: relation lives in PG content_persons; Qdrant cannot filter it.
+        # The RAG entry applies a mandatory post-filter after assembly.
+        assert f is None
+        return
     assert f is not None and f.must, f"键 {key} 未生成任何条件（静默丢弃）"
 
 

@@ -20,7 +20,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import queue
 import threading
@@ -28,12 +27,24 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import Depends, Query
+from fastapi import Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api import make_router
+from app.api.chat_helpers import (
+    _KEEPALIVE_INTERVAL_S,
+    _SSE_INTERNAL_CODE,
+    _SSE_INTERNAL_MESSAGE,
+    _crisis_reply,
+    _kind_for,
+    _persona_payload,
+    _reply_payload,
+    _resolve_conversation_id,
+    _sse,
+    _to_reply,
+)
 from app.api.deps import get_current_user
 from app.core.errors import (
     ERR_CHAT_001,
@@ -45,115 +56,17 @@ from app.core.errors import (
 )
 from app.db.models import ChatMessage, User
 from app.db.session import SessionLocal, get_db
-from app.schemas.chat import (
-    ChatHistoryItemOut,
-    ChatHistoryOut,
-    ChatMessageIn,
-    ChatMessageOut,
-    ChatReplyOut,
-)
+from app.domain.crisis.scan import scan
+from app.domain.guard.empathy import check_empathy
+from app.domain.human import build_response_brief
+from app.schemas.chat import ChatMessageIn, ChatMessageOut, ChatReplyOut
 from app.schemas.common import ApiResponse
 from app.services.external.agent import AgentServiceError, call_agent_chat, stream_agent_chat
 from app.services.llm_ops.output_guard import rule_screen, screen_generated
-from app.services.pagination import decode_ts_cursor, encode_ts_cursor
 
 logger = logging.getLogger("yishu.api.chat")
 
 router = make_router(prefix="/api/v1/chat", tags=["chat"])
-
-# 历史分页默认页长（2026-10-30 · P2 D-11）：只在「传了 cursor 没传 limit」时生效。
-# 20 条 ≈ 10 轮问答，覆盖"进入会话后往回翻一两屏"的常态；与 timeline 同值。
-_HISTORY_DEFAULT_LIMIT = 20
-
-
-def _to_reply(row: ChatMessage) -> ChatReplyOut:
-    """ORM → 契约回复对象（chips/cards 从 `payload` 取；2026-10-09 起 agent 会产结构化附加）。"""
-    return ChatReplyOut(
-        id=str(row.id),
-        kind=row.kind,  # type: ignore[arg-type]
-        text=row.content,
-        chips=list((row.payload or {}).get("chips") or []),
-        cards=list((row.payload or {}).get("cards") or []),
-        created_at=row.created_at.isoformat(),
-    )
-
-
-def _kind_for(text: str, cards: list | None = None, chips: list | None = None) -> str:
-    """回复形态判定（客户端 TabAi 的渲染分支依据）。
-
-    判定顺序（**每一步都有理由，别改顺序**）：
-      1. 有 cards ⇒ `cards`：记忆卡横滑组；正文仍落库（卡片是正文的结构化投影，
-         正文里可能有"想起你 X 月也记过类似的事"这类卡片装不下的信息）。
-      2. 有 chips ⇒ `plain`：客户端**只有 plain / cards 两个分支**渲染 chips
-         （见 TabAi 模板），单行文本判成 bubble 会让 chips 直接消失。
-      3. 多行 ⇒ `plain`（直铺长答，V3 SOP 的确认块即多行）；单行 ⇒ `bubble`。
-
-    `confirm`/`typing` 仍不由本端点产生（需确认交互/流式占位，客户端各自处理）。
-    """
-    if cards:
-        return "cards"
-    if chips:
-        return "plain"
-    return "plain" if "\n" in text.strip() else "bubble"
-
-
-def _reply_payload(meta: dict | None) -> dict | None:
-    """把 agent 的 `_meta`（cards/chips）规整成落库的 `chat_messages.payload`。
-
-    只认字段名、不认结构细节——agent 侧的卡片形状由它自己的测试守（agent/tests）。
-    空 ⇒ None（`payload` 为空的对象会污染既有"payload 非空即有结构化附加"的读法）。
-    """
-    if not isinstance(meta, dict):
-        return None
-    cards = meta.get("cards")
-    chips = meta.get("chips")
-    payload: dict = {}
-    if isinstance(cards, list) and cards:
-        payload["cards"] = [c for c in cards if isinstance(c, dict)]
-    if isinstance(chips, list) and chips:
-        payload["chips"] = [str(c) for c in chips if str(c).strip()]
-    return payload or None
-
-
-def _sse(event: str, data: dict) -> str:
-    """SSE 帧编码（`event:` + **单行** JSON `data:`）。
-
-    与 agent 侧同名函数同构（agent/src/main.py::_sse）：两端都靠 `json.dumps` 保证
-    data 不换行——多行 data 得拆成多条 `data:` 行，手写拼接极易把换行漏出去，
-    客户端按行解析就会拿到半截 JSON（"偶尔解析失败"这种最难复现的故障）。
-    """
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-# SSE 错误帧里的通用文案（与 errors.py 未处理异常处理器**逐字一致**；
-# 那里是 500 JSON，这里是 200 SSE 帧，客户端不该因为传输形态不同就拿到两套措辞）
-_SSE_INTERNAL_CODE = "INTERNAL_ERROR"
-_SSE_INTERNAL_MESSAGE = "服务器内部错误，请稍后重试"
-
-# SSE 保活间隔（秒）：队列静默超过该时长就补一条注释帧（见 `_frames` 内注释）。
-# 取值依据：客户端 idle 看门狗为 90s —— 5s 一次心跳留足 18 倍余量，
-# 同时足够低频（长回复 3 分钟也只多 36 帧，每帧 15 字节）。
-_KEEPALIVE_INTERVAL_S = 5.0
-
-
-def _resolve_conversation_id(db: Session, user_id: str, requested: str | None) -> str:
-    """缺省新建会话；显式传入时必须是**本人已有**的会话，否则 404（IDOR 防护）。"""
-    if not requested:
-        return str(uuid.uuid4())
-    try:
-        normalized = str(uuid.UUID(requested))
-    except (ValueError, AttributeError, TypeError) as exc:
-        # 与 deps.uuid4_str 同语义：畸形 ID 视同不存在（不暴露内部错误路径）
-        raise ApiError(ERR_CHAT_003, "会话不存在", http=404) from exc
-    exists = db.execute(
-        select(ChatMessage.id).where(
-            ChatMessage.user_id == user_id,
-            ChatMessage.conversation_id == normalized,
-        ).limit(1)
-    ).scalar_one_or_none()
-    if exists is None:
-        raise ApiError(ERR_CHAT_003, "会话不存在", http=404)
-    return normalized
 
 
 @router.post("/messages", response_model=ApiResponse[ChatMessageOut])
@@ -178,9 +91,32 @@ def post_message(
     db.add(user_row)
     db.commit()
 
+    # 1.5) B7-04: T2/T3 在 L3 短路 —— 固定话术、0 次 LLM、不拼角色卡。
+    # 先落用户消息再短路，保证"问了但没进模型"也可复盘；危机事件单独留痕。
+    signal = scan(req.content)
+    if signal.level in ("t2", "t3"):
+        reply_row = _crisis_reply(
+            db, user_id=str(user.id), conversation_id=conversation_id, signal=signal
+        )
+        return ApiResponse(
+            data=ChatMessageOut(
+                conversation_id=conversation_id,
+                reply=_to_reply(reply_row),
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+        )
+
     # 2) 调 agent（**单次尝试**：见 services/external/agent.py 的幂等性说明，不套重试）
+    persona = _persona_payload(db, str(user.id))
+    response_brief = build_response_brief(req.content).model_dump()
     try:
-        result = call_agent_chat(user_id=str(user.id), message=req.content, conversation_id=conversation_id)
+        result = call_agent_chat(
+            user_id=str(user.id),
+            message=req.content,
+            conversation_id=conversation_id,
+            persona=persona,
+            response_brief=response_brief,
+        )
     except AgentServiceError as exc:
         code = ERR_CHAT_002 if exc.http_status == 504 else ERR_CHAT_001
         logger.warning("agent 调用失败 user=%s conv=%s kind=%s", user.id, conversation_id, exc.kind)
@@ -206,6 +142,18 @@ def post_message(
             verdict["detector"],
         )
         raise ApiError(ERR_CHAT_004, "AI 回复未通过安全审核，已拦截", http=422)
+
+    # 2.6) B7-02 共情检查（纯规则；普通对话只拦"评判/诊断"，不做事后改写）
+    empathy = check_empathy(req.content, result.text, crisis=signal.level != "none")
+    if empathy.status != "pass":
+        logger.warning(
+            "agent 回复未通过共情检查 user=%s conv=%s status=%s codes=%s",
+            user.id,
+            conversation_id,
+            empathy.status,
+            [v.code for v in empathy.violations][:5],
+        )
+        raise ApiError(ERR_CHAT_004, "AI 回复未通过温度检查，已拦截", http=422)
 
     # 3) 落回复（含结构化附加：cards/chips —— 形态由 `_kind_for` 统一判定）
     reply_payload = _reply_payload(result.meta)
@@ -303,6 +251,36 @@ def post_message_stream(
         def _consume_and_persist() -> None:
             started = time.monotonic()
             preview = ""
+            # B7-04: T2/T3 在 L3 短路 —— 不建立 agent 连接、不跑模型。
+            signal = scan(req.content)
+            if signal.level in ("t2", "t3"):
+                session = SessionLocal()
+                try:
+                    _offer(("status", {"stage": "accepted"}))
+                    reply_row = _crisis_reply(
+                        session,
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        signal=signal,
+                    )
+                    _offer(
+                        (
+                            "done",
+                            {
+                                "conversation_id": conversation_id,
+                                "reply": _to_reply(reply_row).model_dump(),
+                                "latency_ms": int((time.monotonic() - started) * 1000),
+                            },
+                        )
+                    )
+                except Exception:  # noqa: BLE001 —— 安全回复失败如实报错，不伪造
+                    logger.exception("危机短话术落库失败 user=%s conv=%s", user_id, conversation_id)
+                    session.rollback()
+                    _offer(("error", {"code": _SSE_INTERNAL_CODE, "message": _SSE_INTERNAL_MESSAGE}))
+                finally:
+                    session.close()
+                    _offer(None)
+                return
             # 2026-10-15（真机反馈「AI 对话冒出 JSON 中间消息」· 台账 §7.31）：
             # **原始累积与可见文本分离**。DeepSeek 会往 `delta.content` 写原生 DSML 工具
             # 调用标记、且标记**可能跨帧**（半截在本帧、后半截在下帧）⇒ 若直接对累计串做
@@ -319,8 +297,14 @@ def post_message_stream(
             session = SessionLocal()
             try:
                 _offer(("status", {"stage": "accepted"}))
+                persona = _persona_payload(session, user_id)
+                response_brief = build_response_brief(req.content).model_dump()
                 for kind, payload in stream_agent_chat(
-                    user_id=user_id, message=req.content, conversation_id=conversation_id
+                    user_id=user_id,
+                    message=req.content,
+                    conversation_id=conversation_id,
+                    persona=persona,
+                    response_brief=response_brief,
                 ):
                     if kind == "delta":
                         raw_preview += str(payload)
@@ -401,6 +385,24 @@ def post_message_stream(
                         (
                             "error",
                             {"code": ERR_CHAT_004, "message": "AI 回复未通过安全审核，已拦截"},
+                        )
+                    )
+                    return
+
+                # 2.5) B7-02 共情检查（终稿；与规则/LLM 护栏串联，不因护栏通过而跳过）
+                empathy = check_empathy(req.content, final_text, crisis=signal.level != "none")
+                if empathy.status != "pass":
+                    logger.warning(
+                        "流式回复未通过共情检查 user=%s conv=%s status=%s codes=%s",
+                        user_id,
+                        conversation_id,
+                        empathy.status,
+                        [v.code for v in empathy.violations][:5],
+                    )
+                    _offer(
+                        (
+                            "error",
+                            {"code": ERR_CHAT_004, "message": "AI 回复未通过温度检查，已拦截"},
                         )
                     )
                     return
@@ -505,92 +507,3 @@ def get_reply(
     if row is None:
         raise ApiError(ERR_CHAT_003, "回复不存在", http=404)
     return ApiResponse(data=_to_reply(row))
-
-
-@router.get("/conversations/{conversation_id}/messages", response_model=ApiResponse[ChatHistoryOut])
-def get_history(
-    conversation_id: str,
-    limit: int | None = Query(
-        None,
-        ge=1,
-        le=200,
-        description="每页条数（1-200，返回**最近** N 条）。省略且不带 cursor = 全量（向后兼容）",
-    ),
-    cursor: str | None = Query(
-        None,
-        description="取更早一页的游标（取上次响应 data.cursor 原样回传，勿自行拼装）",
-    ),
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """取本会话历史（时间正序）——客户端进入会话时回填，供"问 AI 带上下文"。
-
-    ## 2026-10-30（P2 D-11）分页：为什么"从最近往回翻"
-
-    改造前无条件取全会话（`order_by(created_at.asc())` 无 limit）。会话越长，进入对话页
-    的等待越久；而用户进入时真正要看的是**最后几轮**，几十轮前的历史在首屏之外。
-    故分页语义定为「先给最近 limit 条，再按 cursor 往前翻」：
-      · SQL 侧 `created_at DESC, id DESC` 取 limit+1（多取一条判 has_more）；
-      · **出参仍按时间正序**（客户端渲染顺序不变，改造前的逐条顺序不被打乱）；
-      · cursor = 本页**最早**那条，语义是"比它更早"。
-    不传 limit/cursor 时全量（老客户端与既有测试的行为原样保留）。
-    游标非法 → 422 CHAT_005（不静默退化成第一页：那会让用户以为翻到了更早的消息）。
-    """
-    normalized = _resolve_conversation_id(db, str(user.id), conversation_id)
-    paged = limit is not None or cursor is not None
-    stmt = select(ChatMessage).where(
-        ChatMessage.user_id == str(user.id), ChatMessage.conversation_id == normalized
-    )
-    if cursor:
-        try:
-            cursor_ts, cursor_id = decode_ts_cursor(cursor)
-        except ValueError as exc:
-            raise ApiError(ERR_CHAT_005, f"游标格式无效：{exc}", http=422) from exc
-        if cursor_ts is None:
-            # 会话历史的时间列非空 ⇒ NULL 时间位的游标必是伪造/串用别的端点
-            raise ApiError(ERR_CHAT_005, "游标格式无效：时间位不可为空", http=422)
-        stmt = stmt.where(
-            or_(
-                ChatMessage.created_at < cursor_ts,
-                and_(ChatMessage.created_at == cursor_ts, ChatMessage.id < cursor_id),
-            )
-        )
-
-    if paged:
-        effective_limit = limit if limit is not None else _HISTORY_DEFAULT_LIMIT
-        rows_desc = db.execute(
-            stmt.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(
-                effective_limit + 1
-            )
-        ).scalars().all()
-        has_more = len(rows_desc) > effective_limit
-        rows = list(reversed(rows_desc[:effective_limit]))  # 出参恒时间正序
-        next_cursor = (
-            encode_ts_cursor(rows[0].created_at, str(rows[0].id)) if (has_more and rows) else None
-        )
-    else:
-        effective_limit = None
-        rows = db.execute(stmt.order_by(ChatMessage.created_at.asc())).scalars().all()
-        has_more = False
-        next_cursor = None
-
-    return ApiResponse(
-        data=ChatHistoryOut(
-            conversation_id=normalized,
-            messages=[
-                ChatHistoryItemOut(
-                    id=str(r.id),
-                    role=r.role,
-                    kind=r.kind,
-                    text=r.content,
-                    created_at=r.created_at.isoformat(),
-                    chips=list((r.payload or {}).get("chips") or []),
-                    cards=list((r.payload or {}).get("cards") or []),
-                )
-                for r in rows
-            ],
-            cursor=next_cursor,
-            limit=effective_limit,
-            has_more=has_more,
-        )
-    )

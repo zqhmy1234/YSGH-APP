@@ -5,8 +5,8 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-11-13
-**分支**：`develop` ｜ **最近提交**：以 `git log -1 --oneline` 为准
+**最后更新**：2026-11-24
+**分支**：`feature/agent-v3-harness` ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
 
@@ -14,7 +14,17 @@
 
 ## 正在做什么
 
-**2026-11-13 步骤3原密钥交接（最新）**：用户明确要求找到服务器现有两把key并交本人保管，发布观察周期暂定一星期。已只读确认 `/opt/yishu/deploy/.env` 原值与API/worker一致，独立32字节且加密相关源码与前轮生产基线一致；用户在本机密码窗口完成输入，加密保管包已生成，21:40:52通过保存后密文的服务器内恢复比对及AES/HMAC合成值核验。未生成替代生产key、未写明文key文件或把值发聊天。今日03:10自然备份也在D盘新库实际恢复，public域33表150行、结构/计数/迁移一致，原本机应用库未变。保管工具6项回归及本轮全量门禁均通过，=== 1231 passed, 4 skipped, 22 deselected, 58 warnings in 350.20s (0:05:50) ===，覆盖率83.67%；API冒烟/聚合验证通过，缺HBuilderX明确降级。步骤3第一阶段验收通过，进入用户暂定的一周观察。证据见 `docs/后端步骤3_密钥交接与一周观察_20261113.md`。
+**2026-11-24 B7“有人味”改造已落到代码（最新）**：六张角色卡改成六个人（小忆/忆生/阿静/阿言/小树/阿册），每张有人物叙述、2–3 段示例对话、生活条目、作者手记、完整禁语和记忆边界；`render()` 不再渲染 `traits` 数字、`creator_notes`、`source_profile`。后端 `user_ai_persona` 改为 `initiative/density/advice_bias` 三组关系约定，新增迁移 `e7b8c9d0e1f2`，`GET/PUT /api/v1/persona` 与 `/options` 返回完整段落。新增 `ResponseBrief` 七段完整回应说明，替代情绪标签/置信度。非流式与流式聊天都已把 `persona{role_id,relationship_note,version}` 和 `response_brief` 传给 Agent；Agent 按请求加载角色卡，上下文升为十段（关系约定 + 人物卡 + 回应说明）。设置页新增“她怎么陪你”，六张卡 + 三组完整句子 + 保存；访谈页/RecordSheet 的情绪 chip 已移除。验证：Agent 全量 **337 passed / 2 skipped**；`review_agent.py --full --skip-tests` **passed**（openapi 已重导、结构棘轮通过；HBuilderX 缺失降级放行；backup 域 WARN 不阻断）。**2026-11-24 02:30–03:45 追加收口**：本机已起完整 L0（Colima + PG16/pgvector + Redis + Qdrant + MinIO + agent + backend + worker），`alembic upgrade head` 在真库执行到 **`e7b8c9d0e1f2`** 且 `alembic check` 无漂移；后端全量 **1332 passed / 22 deselected**；BGE-M3 权重（2,271,145,830 字节）落盘并只读挂载，检索不再降级；后端→Agent 真实对话打通（回复引用 `[S1]`），Agent→后端 `/api/v1/search/agent` 200；服务器 `docker compose` 插件已修（原 HTML → v5.8.0 ELF），5 个探针测试 Key 已清理。**仍未做**：服务器 staging :8300 切流、服务器 backend 升级、客户端 HBuilderX 编译；五家 provider 仍只有 DeepSeek 真通。证据见 `docs/agent-v3/verification-evidence.md` / `local-l0-docker.md`。下一步：按 A 方案拆 4 个 commit → 推送 → 再做发布切换。
+
+**2026-11-23 LiteLLM 网关 + Lingqu 默认模型迁移（历史快照，非最新）**：已接手 `docs/handoff-20261123-litellm-gateway.md`，完成三件事：① 将 Lingqu 默认 profile 从官方不存在的 `deepseek/deepseek-v4-flash` 迁移到 `deepseek/deepseek-v4.1-flash`（上游 `deepseek/deepseek-flash`，目录版本 `2026-11-23.2`）；② 修复公司网关调用（设置 `COMPANY_LLM_BASE_URL` 时 `LiteLLMEngine` 自动使用 `openai/<model>` 前缀，直连厂商仍用目录前缀）；③ 给 `max_tokens` 加 256 下限并让 `degraded=("llm",)` 真正跳过网络调用。已用本地 4001 等价网关实测 DeepSeek 真实回复；20 场真实对话 **20/20 pass**；`agent/tests/agentv3 + tests/contract` **258 passed / 2 skipped**。五家厂商仍只有 DeepSeek 真实通过，其余家缺 Key/网关未配置对应模型，证据见 `docs/agent-v3/roleplay-20-live-report.json` 与 `lingqu-live-report.json`。
+
+**2026-11-13 步骤3原密钥交接（历史快照）**：用户明确要求找到服务器现有两把key并交本人保管，发布观察周期暂定一星期。已只读确认 `/opt/yishu/deploy/.env` 原值与API/worker一致，独立32字节且加密相关源码与前轮生产基线一致；用户在本机密码窗口完成输入，加密保管包已生成，21:40:52通过保存后密文的服务器内恢复比对及AES/HMAC合成值核验。未生成替代生产key、未写明文key文件或把值发聊天。今日03:10自然备份也在D盘新库实际恢复，public域33表150行、结构/计数/迁移一致，原本机应用库未变。保管工具6项回归及本轮全量门禁均通过，=== 1231 passed, 4 skipped, 22 deselected, 58 warnings in 350.20s (0:05:50) ===，覆盖率83.67%；API冒烟/聚合验证通过，缺HBuilderX明确降级。步骤3第一阶段验收通过，进入用户暂定的一周观察。证据见 `docs/后端步骤3_密钥交接与一周观察_20261113.md`。
+
+**2026-11-23 服务器 LiteLLM 已切 DB 模式（本会话新增）**：用户拍板「启用 Prisma/DB 模式（虚拟 Key、预算、消费统计）；DeepSeek 临时 Key 不用换，就放着」。SSH 免密现已可用（`ssh yishu`），已在服务器完成：① 修好 Prisma toolchain（先 `prisma generate` 预热，避开 setup.sh 首次启动 `npm install` 600s 超时）；② `config.yaml` 切到 `config.with-db.yaml`，`DATABASE_URL` 写入 `/opt/yishu/litellm/.env`（600）；③ `yishu-litellm.service` 重启后 `/health/liveliness` 200；④ `prisma migrate status` 显示 233 个迁移全部应用；⑤ 生成虚拟 Key `agent-v3`（`max_budget=20`、`budget_duration=30d`）写入 `/opt/yishu/litellm/agent.key`（600，sha256 前缀 `9c48ff11`，**不是** master key）；⑥ 真实对话经虚拟 Key 返回 `content`；⑦ 用 `max_budget=0.000001` 临时 Key 验证第 2 次调用返回 422 `budget_exceeded`；⑧ `LiteLLM_SpendLogs` 已写入 model/tokens/spend，Key 行 `spend` 同步累加。DB 密码已轮换并同步 `.env` 与 `.database_url.saved`（均 600）。回滚备份：`.env.pre-db-20261123172733`、`config.no-db.backup.yaml`、`config.db-working.yaml`。
+
+**DB 模式已知边界**：`/ui` 返回 200 但未完成浏览器登录/预算页人工走查；`LiteLLM_ProxyModelTable` 仍为 0（模型仍从 YAML 读取，`store_model_in_db` 仅启用后续 DB 写入能力）；未配 Redis 共享缓存，暂只支持单实例；启动日志有 `Prisma object has no attribute _Prisma__engine` warning，但 Key/预算/消费/真实调用均已实测正常。公网 4000 仍未开放，远程走 SSH 隧道。DeepSeek 临时 Key 按用户指示不轮换，继续留在 `.env`。本机 `127.0.0.1:4001` 等价网关仍是本机测试路径，未写仓库、未回显。
+
+**L0 compose 是什么 / 当前状态**：`deploy/compose.agent-v3.yml` 是 Agent V3 的本地全栈冒烟环境，一条命令拉起 PostgreSQL(pgvector)、Redis、Qdrant、MinIO 和 agent-v3 自己（端口 55432/56379/56333/59000/8300，均只绑 127.0.0.1），用于验证 V3 真正依赖的 L0 而不是只看单测。**它不是生产部署**：生产现有的 5432/6379/6333 容器与 systemd 服务不动。服务器 8.159.145.112 上有 Docker 29.1.3，但 `docker compose` 插件损坏（`/usr/local/lib/docker/cli-plugins/docker-compose` 是一个阿里云镜像站 HTML 文件，不是二进制），因此 compose 仍未能启动；本机 macOS 也没有 Docker。L0 smoke 仍 `blocked: docker_missing`/compose 不可用，不能写成已启动。
 
 **观察期与后续边界**：按用户最新决定暂定连续7天，以本轮步骤3独立密钥/数据库恢复与本机全量验收全部通过后登记的时刻为观察基线；观察登记起点 **2026-11-13 22:24:22**，最早届满 **2026-11-20 22:24:22**（北京时间，连续7×24小时）。不追溯开发日/首次上线日，也不把本轮称为新部署。旧topic列保留，观察届满后仍须复核并单独确认步骤8；不自动推进步骤4。当前生产敏感话题0行，不据此扩大为真实存量全量解密验收。密钥离线保管由用户掌握，不等同Infisical接入或自动异机备份；生产配置、数据、服务、cron本轮均未修改。以下11月12日及更早段落为历史快照。
 

@@ -18,7 +18,7 @@ def _mock_reply(monkeypatch, text: str = "收到啦，已经帮你记下了～",
     """把 agent 调用替换为确定性桩，并记录调用参数（用于断言可信注入与会话键）。"""
     calls: list[tuple[str, str, str]] = []
 
-    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:
+    def _fake(user_id: str, message: str, conversation_id: str, **_kw) -> AgentChatResult:
         calls.append((user_id, message, conversation_id))
         return AgentChatResult(text=text, latency_ms=latency_ms, raw={"reply": text})
 
@@ -27,7 +27,7 @@ def _mock_reply(monkeypatch, text: str = "收到啦，已经帮你记下了～",
 
 
 def _mock_failure(monkeypatch, kind: str, status: int):
-    def _fake(user_id: str, message: str, conversation_id: str):
+    def _fake(user_id: str, message: str, conversation_id: str, **_kw):
         raise AgentServiceError("stub failure", kind, status)
 
     monkeypatch.setattr("app.api.chat.call_agent_chat", _fake)
@@ -214,7 +214,7 @@ def test_cards_kind_from_agent_meta(client, auth_headers, cleanup_user, monkeypa
 
     user_id, headers = auth_headers("chat7")
 
-    def _fake(user_id: str, message: str, conversation_id: str) -> AgentChatResult:  # noqa: ARG001
+    def _fake(user_id: str, message: str, conversation_id: str, **_kw) -> AgentChatResult:  # noqa: ARG001
         return AgentChatResult(
             text="已经帮你记下了",
             latency_ms=11,

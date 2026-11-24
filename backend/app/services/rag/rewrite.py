@@ -150,6 +150,8 @@ def _rewrite_query(q: SearchQuery) -> tuple[str, dict, dict]:
         filters["place"] = q.place
     if q.tag:
         filters["tag"] = q.tag
+    if getattr(q, "person_id", None):
+        filters["person_id"] = q.person_id
 
     # B2-2 NER 实体抽取（2026-08-19）：查询"苏州"/"小张" → place/tag 过滤
     # 规则词表起步（零延迟零成本，P95<3s 门禁不增 LLM 往返）；LLM 兜底默认关，
