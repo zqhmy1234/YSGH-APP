@@ -57,7 +57,10 @@ def evidence_ok(evidence: tuple[dict, ...] | list[dict]) -> bool:
     """At least one evidence item with a non-empty ``type`` and ``id``."""
     if not evidence:
         return False
-    return all(bool(str(item.get("type", "")).strip()) and bool(str(item.get("id", "")).strip()) for item in evidence)
+    # 文档契约：至少一条有效证据即放行（与 DB CHECK jsonb_array_length>0 一致）。
+    # 原实现用 all() 要求全部有效，一条合法+一条畸形会被整体拒绝——口径分裂。
+    return any(bool(str(item.get("type", "")).strip()) and bool(str(item.get("id", "")).strip())
+               for item in evidence)
 
 
 def entry_id_for(user_id: str, idempotency_key: str) -> str:

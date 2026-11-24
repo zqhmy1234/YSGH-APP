@@ -43,6 +43,13 @@ def _payload(snapshot) -> dict:
 @router.get("/agent", response_model=ApiResponse[dict], include_in_schema=False)
 def get_memory_for_agent(db: Session = Depends(get_db), user: User = Depends(agent_service_user)):
     """One snapshot per turn, three honest states; no user id in the query."""
+    # B6 用途授权：叙事记忆属 personalization 用途。默认不勾 ⇒ 未授权时只回
+    # unavailable 快照，不泄露画像/叙事原文（与 profile/agent/digest 同口径）。
+    from app.services.consent import is_granted
+    if not is_granted(db, str(user.id), "personalization"):
+        return ApiResponse(data=_payload(unavailable_snapshot(
+            user.id, note="consent_not_granted:personalization"
+        )))
     try:
         snapshot = read_snapshot(db, user.id)
     except Exception as exc:  # noqa: BLE001 —— storage failure must be visible, not an empty list

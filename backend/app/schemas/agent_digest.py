@@ -73,3 +73,26 @@ class AgentDigestStatusOut(_Strict):
     status: Literal["ok", "insufficient_data", "unavailable"]
     chars: int = 0
     sections: int = 0
+
+
+# ---------------------------------------------------------------- B5 memory write
+class MemoryWriteIn(_Strict):
+    """Agent-side canonical memory write (B5 merge). entry_id is agent-generated m_<hex>."""
+    entry_id: str = Field(min_length=1, max_length=64, pattern=r"^m_[0-9a-f]{12}$")
+    person_id: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=4000)
+    kind: Literal["episode", "impression", "story_segment", "emotion_trace"] = "episode"
+    layer: Literal["narrative", "fact_claim"] = "narrative"
+    evidence: list[dict] = Field(default_factory=list, min_length=1)
+    valid_from: date | None = None
+    summary: str = Field(default="", max_length=120)
+    story_arc: str = Field(default="", max_length=200)
+    confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    sensitivity: Literal["normal", "sensitive", "forbidden"] = "normal"
+
+
+class MemoryWriteOut(_Strict):
+    entry_id: str
+    idempotent: bool = False
+    status: Literal["ok", "rejected"] = "ok"
+    reason: str = ""

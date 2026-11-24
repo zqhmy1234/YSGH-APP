@@ -399,7 +399,6 @@ def app_from_env() -> FastAPI:  # pragma: no cover - wiring only
     from adapters.sqlite_memory import SqliteMemoryStore
     from tools.runtime import READ_TOOLS, MemoryToolService
 
-    store = SqliteMemoryStore(os.environ.get("AGENTV3_MEMORY_PATH", ":memory:"))
     gateway = LingquGateway()
     selection = SelectionStore()
     selected = selection.load(gateway.catalog.default_profile)
@@ -409,6 +408,15 @@ def app_from_env() -> FastAPI:  # pragma: no cover - wiring only
     backend_url = os.environ.get("BACKEND_BASE_URL") or os.environ.get("SEARCH_BASE_URL", "")
     backend_token = os.environ.get("INTERNAL_TOKEN") or os.environ.get("AGENT_SERVICE_TOKEN", "")
     backend_http = BackendHTTP(backend_url, backend_token, timeout_s=8.0)
+
+    # B5 合并：配了 backend 就走 canonical 账本（后端写入端点 + B6 授权闸），
+    # 不再自写本地 JSON/SQLite。无 backend 的本地调试/角色扮演仍用 Sqlite 降级。
+    if backend_url:
+        from adapters.backend_memory import BackendMemoryStore
+
+        store = BackendMemoryStore(backend_http)
+    else:
+        store = SqliteMemoryStore(os.environ.get("AGENTV3_MEMORY_PATH", ":memory:"))
     search_port = BackendSearchHTTP(backend_http)
     events_port = BackendEventsHTTP(backend_http)
     tool_service = MemoryToolService.default(store)

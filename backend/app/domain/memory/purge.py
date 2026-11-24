@@ -20,13 +20,17 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AuditLog,
+    ConsentGrant,
     Content,
     ContentPerson,
     EchoExclusion,
+    EchoHistory,
     EchoPreference,
     Person,
     ProfileSensitive,
     User,
+    VaultEntry,
 )
 from app.db.models.memory import (
     MemoryBatch,
@@ -108,7 +112,14 @@ def purge_memory_layers(db: Session, user_id: str) -> dict[str, int]:
     counts["content_persons"] = int(result.rowcount or 0)
     result = db.execute(delete(Person).where(Person.user_id == user_id))
     counts["persons"] = int(result.rowcount or 0)
-    for name, model in (("echo_exclusions", EchoExclusion), ("echo_preference", EchoPreference)):
+    for name, model in (
+        ("echo_exclusions", EchoExclusion),
+        ("echo_preference", EchoPreference),
+        ("echo_history", EchoHistory),  # 2026-11-24 四路审判：划掉/展示历史是可关联个人的行为数据
+        ("consent_grant", ConsentGrant),
+        ("vault_entry", VaultEntry),
+        ("audit_log", AuditLog),
+    ):
         result = db.execute(delete(model).where(model.user_id == user_id))
         counts[name] = int(result.rowcount or 0)
     return counts

@@ -21,7 +21,11 @@ class _DB:
 
 
 def test_cursor_roundtrip_and_invalid_input():
-    values = {"contents": "c-1", "memory": "m-1"}
+    # B5-04：游标值按真实主键格式构造（contents 是 UUID 列，memory.entry_id 是 m_<12hex>）
+    values = {
+        "contents": "00000000-0000-0000-0000-000000000001",
+        "memory": "m_000000000001",
+    }
     assert module.decode_cursor(module.encode_cursor(values)) == values
     with pytest.raises(ValueError):
         module.decode_cursor("not-base64")
@@ -31,9 +35,11 @@ def test_truncated_payload_has_next_cursor(monkeypatch):
     class Row:
         def __init__(self, id): self.id = id
 
+    cid = "00000000-0000-0000-0000-000000000001"
+
     def fake_collect(_db, model, _user_id, cap=None, after=None, **_kw):
         if model is module.Content:
-            return [Row("c1")], True, "c1"
+            return [Row(cid)], True, cid
         return [], False, None
 
     monkeypatch.setattr(module, "_collect_capped", fake_collect)
@@ -42,7 +48,7 @@ def test_truncated_payload_has_next_cursor(monkeypatch):
     payload = module.build_export_payload(_DB(), "u-1")
     assert payload["truncated"] is True
     assert payload["next_cursor"]
-    assert module.decode_cursor(payload["next_cursor"])["contents"] == "c1"
+    assert module.decode_cursor(payload["next_cursor"])["contents"] == cid
 
 
 def test_untruncated_payload_has_no_cursor(monkeypatch):

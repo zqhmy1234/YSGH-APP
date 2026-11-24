@@ -20,6 +20,8 @@ from harness.contracts import (
     Claim,
     ClaimBundle,
     Cost,
+    Digest,
+    DigestSection,
     GuardAction,
     GuardRequest,
     Intent,
@@ -158,16 +160,94 @@ class Orchestrator:
         # the smoke/roleplay harness uses this to prove the fallback path.
         llm_down = "llm" in ctx.degraded
 
-        try:
-            entries = self._store.entries(request.person_id)
-            corrections = tuple(
-                row["value"] for row in self._store.corrections(request.person_id) if row["field"] == "text"
-            )
-        except Exception:
-            entries, corrections = None, ()
-            degradation.note("memory")
+        # B5-02 读路径接入（2026-11-24 收口）：
+        # 真实请求优先走 backend 的 B5 read_snapshot（/api/v1/memory/agent），
+        # 解析成 agent 契约后喂给上下文；backend 不可用/未授权时降级 V3 MemoryStore，
+        # 本地无 backend 的测试/角色扮演流程保持可用。
+        entries = None
+        corrections: tuple[str, ...] = ()
+        digest = None
+        b5_narrative = ""
+        used_b5 = False
+        consent_denied = False  # 后端明确拒绝 ⇒ 禁止任何本地降级读取（B6 授权不可绕过）
+        if self._backend is not None and getattr(self._backend, "configured", True):
+            try:
+                from memory.read_model import parse_snapshot
 
-        digest = build_digest(entries, request.person_id)
+                payload = self._backend.memory(request.person_id)
+                # B5 合并：hydrate 复用同一份 payload，避免每轮两次 GET（审判 P1）。
+                # 失败不阻断对话（去重窗口拿不到 ≠ 对话失败）。
+                hydrate = getattr(self._store, "hydrate", None)
+                if callable(hydrate):
+                    try:
+                        hydrate(request.person_id, payload)
+                    except Exception:  # noqa: BLE001
+                        degradation.note("memory_hydrate")
+                snap = parse_snapshot(payload, expected_user=request.person_id)
+                if snap.status == "unavailable":
+                    consent_denied = "consent_not_granted" in (snap.note or "")
+                    degradation.note("memory_consent" if consent_denied else "memory_backend_unavailable")
+                else:
+                    used_b5 = True
+                    digest = Digest(
+                        person_id=request.person_id,
+                        sections=tuple(
+                            DigestSection(name=str(s.get("name") or ""), text=str(s.get("text") or ""))
+                            for s in (snap.digest or {}).get("sections") or ()
+                        ),
+                        # 状态以 B5 snapshot 为权威；digest 子状态只作参考，避免
+                        # snapshot=ok 但 digest 缺失时被误标 unavailable（审判 P1）。
+                        state=snap.status,
+                    )
+                    corrections = tuple(c.value for c in snap.corrections if c.field == "text")
+                    if snap.narrative:
+                        b5_narrative = "【B5 记忆事实】" + "；".join(
+                            e.text for e in snap.narrative[:3]
+                        ) + "。"
+            except Exception:  # noqa: BLE001 —— B5 是可选升级路径，失败必须降级不崩
+                degradation.note("b5_memory_fallback")
+
+        if consent_denied:
+            # 明确拒绝：记忆内容全部置空，只保留 unavailable 状态；绝不读 V3 本地存储，
+            # 否则 backend 的 B6 授权闸被本地未受控副本绕过（审判 P0）。
+            entries, corrections, b5_narrative = None, (), ""
+            digest = Digest(person_id=request.person_id, state="unavailable")
+        elif not used_b5:
+            try:
+                entries = self._store.entries(request.person_id)
+                corrections = tuple(
+                    row["value"] for row in self._store.corrections(request.person_id) if row["field"] == "text"
+                )
+                digest = build_digest(entries, request.person_id)
+            except Exception:
+                entries, corrections = None, ()
+                digest = Digest(person_id=request.person_id, state="unavailable")
+                degradation.note("memory")
+
+        # B4 Agent-side wiring: ECHO intent reads read-only candidates from backend.
+        # No EchoHistory row / no in-app message is written here — only the user-side
+        # /echo/today consumes the daily slot. Backend is optional (local-only runs
+        # stay functional); on failure we degrade to no narrative, never invent one.
+        echo_narrative = ""
+        if turn_plan.intent is Intent.ECHO and self._backend is not None:
+            try:
+                candidates, suppressed = self._backend.echo(
+                    request.person_id,
+                    local_date=self._now().date().isoformat(),
+                    limit=1,
+                )
+                if candidates:
+                    c = candidates[0]
+                    echo_narrative = (
+                        "【回响候选·仅供复述，不得新增事实】"
+                        f"{c.title}（{c.why_now}）。"
+                        "只在这个候选上说话；候选之外的事一律不要提。"
+                    )
+                elif suppressed:
+                    echo_narrative = "【回响候选】今天没有可回响的内容；不要编造回忆，简短回应即可。"
+            except Exception:  # noqa: BLE001 — optional backend must never break the turn
+                degradation.note("echo")
+                echo_narrative = "【回响候选】回响服务暂不可用；不要编造回忆。"
 
         evidence: SearchResult | None = None
         if any(inv.name.value == "librarian" for inv in turn_plan.invocations):
@@ -195,7 +275,7 @@ class Orchestrator:
             history=(),
             input_text=request.text,
             digest=digest,
-            narrative="",
+            narrative=" ".join(x for x in (b5_narrative, echo_narrative) if x),
             evidence=evidence,
             plan=turn_plan,
         )

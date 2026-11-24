@@ -104,11 +104,22 @@ def export_user_data(
         return Response(
             status_code=422,
             content=json.dumps(
-                {"code": "VALIDATION_ERROR", "message": "无效的分页游标", "request_id": ""},
+                {"code": "VALIDATION_ERROR", "message": "无效的分页游标", "request_id": "",
+                 "details": {"errors": [{"loc": ["query", "cursor"], "msg": "invalid cursor"}]}},
                 ensure_ascii=False,
             ),
             media_type="application/json",
         )
+
+    # B6 审计：只在真实导出成功后留痕；必须显式 commit——get_db 依赖不会自动提交，
+    # 只 flush 的审计行会随会话关闭回滚（四路审判 P0-1：导出审计从未落库）。
+    from app.services.audit import record_audit
+    record_audit(db, str(user.id), action="export_requested", target=format)
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001 —— 审计写失败不得让已生成的导出失败
+        db.rollback()
+
     stamp = time.strftime("%Y%m%d")
     if format == "zip":
         archive, zip_truncated = build_export_zip(payload)

@@ -18,6 +18,7 @@ from typing import Any
 from harness.contracts import (
     Digest,
     DigestSection,
+    EchoCandidate,
     EventHit,
     Hit,
     ResultStatus,
@@ -39,6 +40,11 @@ class BackendHTTP:
         self._token = token
         self._user = user_id
         self._timeout = timeout_s
+
+    @property
+    def configured(self) -> bool:
+        """False in local-only runs — callers should skip HTTP entirely."""
+        return bool(self._base)
 
     def _headers(self, user_id: str | None = None) -> dict[str, str]:
         """``X-On-Behalf-Of`` must be per-turn, not per-process.
@@ -194,6 +200,54 @@ class BackendHTTP:
             sections=sections,
             state=state if state in {"ok", "insufficient_data", "unavailable"} else "unavailable",
         )
+
+    # ---------------------------------------------------------------- echo (B4)
+    def echo(
+        self, person_id: str, *, local_date: str, limit: int = 1
+    ) -> tuple[tuple[EchoCandidate, ...], str]:
+        """Read-only echo candidates for the ECHO intent (B4 agent-side wiring).
+
+        Backend ``POST /api/v1/echo/agent`` reuses ``peek_today_echo``: no EchoHistory
+        row and no in-app message is written here — only the user端 ``/echo/today``
+        consumes the daily slot. Returns ``(candidates, suppressed_reason)``.
+        ``suppressed`` is passed through so Muse can stay silent when there is no
+        candidate instead of inventing an anniversary.
+        """
+        data = self._post(
+            "/api/v1/echo/agent",
+            {"person_id": person_id, "local_date": local_date, "limit": limit},
+            user_id=person_id,
+        )
+        candidates: list[EchoCandidate] = []
+        for item in data.get("items") or ():
+            reason = str(item.get("reason") or "anniversary")
+            if reason not in {"anniversary", "season", "place", "person", "topic"}:
+                reason = "anniversary"
+            sensitivity = str(item.get("sensitivity") or "personal")
+            if sensitivity not in {"public", "personal", "sensitive", "critical"}:
+                sensitivity = "personal"
+            candidates.append(
+                EchoCandidate(
+                    echo_id=str(item.get("echo_id") or "echo"),
+                    person_id=str(item.get("person_id") or person_id),
+                    title=str(item.get("title") or ""),
+                    reason=reason,  # type: ignore[arg-type]
+                    sensitivity=sensitivity,  # type: ignore[arg-type]
+                    # clamp: backend 脏 score（越界/NaN）不得让整轮 ECHO 崩在契约校验上
+                    score=min(1.0, max(0.0, float(item.get("score") or 0.8))),
+                    why_now=str(item.get("why_now") or ""),
+                )
+            )
+        return tuple(candidates), str(data.get("suppressed") or "")
+
+    # ---------------------------------------------------------------- memory write (B5 merge)
+    def write_memory(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist one canonical memory row via backend (B5 merge, replaces V3 JSON)."""
+        return self._post("/api/v1/memory/agent", payload, user_id=user_id)
+
+    def delete_memory(self, user_id: str, entry_id: str) -> dict[str, Any]:
+        """Remove a canonical memory row so hydrate cannot resurrect it (B5 merge)."""
+        return self._delete(f"/api/v1/memory/agent/{entry_id}", user_id=user_id)
 
     # ---------------------------------------------------------------- memory
     def memory(self, user_id: str) -> dict[str, Any]:

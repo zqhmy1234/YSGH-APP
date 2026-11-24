@@ -74,6 +74,7 @@ def unavailable_snapshot(user_id: str, note: str = "store_unavailable") -> Memor
 def read_snapshot(db: Session, user_id: str) -> MemorySnapshot:
     profile = db.execute(select(UserProfile).where(UserProfile.user_id == user_id)).scalar_one_or_none()
     digest = build_agent_digest(profile.dimensions if profile else None)
+    digest_ok = digest.status == "ok"  # 供下方 note 判定：digest 本身即一层真实记忆
     digest_payload = {
         "status": digest.status,
         "text": digest.text,
@@ -102,14 +103,24 @@ def read_snapshot(db: Session, user_id: str) -> MemorySnapshot:
             .limit(CORRECTION_LIMIT)
         ).scalars()
     )
-    assets = list(
-        db.execute(
-            select(Content)
-            .where(Content.user_id == user_id, alive_clause(Content), Content.text.is_not(None))
-            .order_by(Content.created_at.desc())
-            .limit(ASSET_LIMIT)
-        ).scalars()
+    # B6 保险箱：锁住的内容不进记忆快照 assets（/memory/agent 与本地读模型共用）。
+    # 必须先过滤再 LIMIT——否则最新 8 条全锁会让第 9/10 条可见内容永远拿不到
+    # （审判 nail：明明有可见记忆却对 agent 谎称 insufficient_data）。
+    try:
+        from app.services.vault import locked_content_ids
+        vaulted = locked_content_ids(db, user_id)
+    except Exception:  # noqa: BLE001 —— 保险箱读失败 fail-closed，不泄露任何原文
+        vaulted = None
+    assets_q = (
+        select(Content)
+        .where(Content.user_id == user_id, alive_clause(Content), Content.text.is_not(None))
+        .order_by(Content.created_at.desc())
     )
+    if vaulted:
+        assets_q = assets_q.where(Content.id.notin_(vaulted))
+    elif vaulted is None:
+        assets_q = assets_q.where(False)  # 读保险箱失败 ⇒ 零 assets，fail-closed
+    assets = list(db.execute(assets_q.limit(ASSET_LIMIT)).scalars())
 
     raw = RawMemory(
         narrative=tuple(_episode(row) for row in entries),
@@ -127,7 +138,9 @@ def read_snapshot(db: Session, user_id: str) -> MemorySnapshot:
             for row in assets
             if row.text
         ),
-        note="empty_account" if not entries and not corrections and not assets else "",
+        # digest 本身就是一层真实记忆：digest=ok 时不能同时声称 empty_account
+        # （审判 nail：口径自相矛盾会让 agent 误判用户没有任何记忆）
+        note="empty_account" if not entries and not corrections and not assets and not digest_ok else "",
     )
     return build_snapshot(user_id, raw)
 

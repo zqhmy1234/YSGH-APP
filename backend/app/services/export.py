@@ -189,7 +189,27 @@ def decode_cursor(cursor: str | None) -> dict[str, str]:
         raise ValueError("invalid cursor") from exc
     if not isinstance(raw, dict) or not all(isinstance(v, str) for v in raw.values()):
         raise ValueError("invalid cursor")
-    return raw
+    # 游标里的 after id 是客户端可控的：按**列类型**分别校验——
+    # contents/events/persons/corrections 主键是 UUID；memory_entries.entry_id
+    # 是 ledger 生成 m_<12hex> 字符串（ledger.py entry_id_for）。一律按 UUID 校验
+    # 会让含 memory 的第二页必然 422（审判 nail）。
+    import re as _re
+    import uuid as _uuid
+
+    cleaned: dict[str, str] = {}
+    for key, value in raw.items():
+        if not value:
+            continue  # 空值视为「无游标」，不传给 _collect_capped 触发 UUID > '' 的 DataError
+        if key == "memory":
+            if not _re.fullmatch(r"m_[0-9a-f]{12}", value):
+                raise ValueError("invalid cursor id for memory")
+        else:
+            try:
+                _uuid.UUID(value)
+            except (ValueError, AttributeError, TypeError) as exc:
+                raise ValueError(f"invalid cursor id for {key}") from exc
+        cleaned[key] = value
+    return cleaned
 
 
 def build_export_payload(
@@ -205,6 +225,9 @@ def build_export_payload(
     `truncated=true` 时 **必须** 带 `next_cursor`，否则客户端无法续拉。
     """
     after = decode_cursor(cursor)
+    # B6 保险箱：锁住的内容不进导出（访问入口过滤；解锁后自动恢复）
+    from app.services.vault import locked_content_ids
+    vaulted = locked_content_ids(db, user_id)
     storage = None
     if include_media_links:
         try:
@@ -256,13 +279,19 @@ def build_export_payload(
             )
         ).all()
         for ev_id, cid in rows:
+            if str(cid) in vaulted:
+                continue
             member_map.setdefault(str(ev_id), []).append(str(cid))
+    # B6 保险箱：锁住内容的存在性与关联关系不得从 events/corrections 泄露。
+    # 封面指向锁定内容的事件整条排除；纠错记录中引用锁定内容的也排除。
+    events = [e for e in events if str(getattr(e, "cover_content_id", "")) not in vaulted]
+    corrections = [r for r in corrections if str(getattr(r, "content_id", "")) not in vaulted]
 
     return {
         "schema_version": "1.0",
         "exported_at": datetime.now(UTC),
         "user_id_hashed": _hash_user_id(user_id),
-        "contents": [_content_out(c, storage, user_id) for c in contents],
+        "contents": [_content_out(c, storage, user_id) for c in contents if str(c.id) not in vaulted],
         "events": [_event_out(e, member_map) for e in events],
         "profile": _profile_out(db, user_id),
         "corrections": [_correction_out(r) for r in corrections],
@@ -274,7 +303,11 @@ def build_export_payload(
                 "summary": m.summary,
                 "valid_from": m.valid_from,
                 "valid_to": m.valid_to,
-                "evidence": m.evidence,
+                # B6 保险箱：剔除指向锁定内容的 evidence（连「存在一条锁定内容」都不泄露）
+                "evidence": [
+                    e for e in (m.evidence or [])
+                    if not (isinstance(e, dict) and str(e.get("id") or "") in vaulted)
+                ],
                 "confidence": float(m.confidence),
                 "sensitivity": m.sensitivity,
             }
