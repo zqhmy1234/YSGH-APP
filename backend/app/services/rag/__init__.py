@@ -287,6 +287,14 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 4. 溯源组装（RET-016：每条结果可解释命中字段）
     #    2026-10-30（P2 C-5）：按窗口取（offset>0 时要连前面几页的候选一起组装才能切片）
     hits = _assemble_hits(raw_hits, window, db, user_id)
+    # B6 保险箱（四路审判 P0）：锁住的内容不得出现在任何检索结果——用户端与
+    # Agent 端共用 rag_search，这一处即覆盖两条入口；放在 total 计算之前，
+    # 保证分页总数也不泄露被锁内容的存在。
+    if db is not None and user_id:
+        from app.services.vault import locked_content_ids
+        vaulted = locked_content_ids(db, user_id)
+        if vaulted:
+            hits = [h for h in hits if str(getattr(h, "content_id", "")) not in vaulted]
     if filters.get("person_id"):
         hits = _filter_hits_by_person(hits, db, user_id, str(filters["person_id"]))
 

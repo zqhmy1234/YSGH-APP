@@ -43,6 +43,7 @@ from app.db.models.profile import (
     UserProfile,
 )
 from app.db.models.sync import DeletedLog, OfflineQueue, SyncFieldVersion, SyncState
+from app.db.models.trust import AuditLog, ConsentGrant, VaultEntry
 from app.db.models.upload import UploadChunk, UploadTask
 from app.db.models.wechat import UserWechatBinding, WechatMessage
 
@@ -85,6 +86,9 @@ __all__ = [
     "SmsCode",
     "SyncFieldVersion",
     "SyncState",
+    "AuditLog",
+    "ConsentGrant",
+    "VaultEntry",
     "UploadChunk",
     "UploadTask",
     "User",
