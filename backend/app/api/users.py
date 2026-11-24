@@ -82,6 +82,9 @@ def users_request_deletion(
 ):
     """申请注销（幂等）：必须显式 `{"confirm":"delete"}`；30 天内不物理删除。"""
     del payload  # 只用于强制客户端显式确认，值由 Literal 校验
+    from app.services.audit import record_audit
+    record_audit(db, str(user.id), action="account_purge_requested", target="account")
+
     receipt = request_account_purge(db, str(user.id), actor_id=str(user.id))
     if receipt.status == "failed":
         raise ApiError(ERR_USER_001, "账号注销处理失败，请稍后重试", http=500)
@@ -95,6 +98,9 @@ def users_restore_account(
     db: Session = Depends(get_db),
 ):
     """撤销注销：恢复软删内容与账号；窗口过期由依赖返回 410 USER_002。"""
+    from app.services.audit import record_audit
+    record_audit(db, str(user.id), action="account_restored", target="account")
+
     receipt = restore_account_purge(db, str(user.id))
     if receipt.status == "failed":
         if "undo_window_expired" in receipt.warnings:

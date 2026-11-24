@@ -37,6 +37,7 @@ from app.api import (  # noqa: E501
     search,
     stats,
     sync,
+    trust,
     upload,
     users,
     wechat,
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
     app.include_router(asr.guard_router)
     app.include_router(sync.router)
     app.include_router(echo.router)
+    app.include_router(trust.router)  # B6 信任域：用途授权 / 保险箱 / 数据活动
     app.include_router(interview.router)
     app.include_router(profile.router)
     app.include_router(wechat.router)
