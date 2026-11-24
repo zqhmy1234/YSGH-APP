@@ -1,4 +1,4 @@
-"""回响测试（P2-ECHO · 去年今日）
+"""回响测试（P2-ECHO · 去年今日 + B4 合并八闸）
 
 覆盖：
   - 去年今日内容命中 + 返回指纹
@@ -7,6 +7,7 @@
   - 本地日界（修复：原 UTC 日界，本地 0:00-8:00 算前一天）
   - dismiss 划掉后不再出现
   - 敏感内容排除（sensitive_status ≠ 正常）
+  - B4 合并八闸：授权 / 静默 / 每日上限 / 单条有效性 / 30天冷却 / 精确年份 / 设置API
   - API 冒烟
 前置：PG yishu 库
 """
@@ -14,9 +15,9 @@ import uuid
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from app.db.models import Content, EchoHistory, ProfileSensitive
+from app.db.models import Content, EchoHistory, EchoPreference, ProfileSensitive
 from app.services import echo as echo_svc
-from app.services.echo import dismiss_echo, get_today_echo
+from app.services.echo import dismiss_echo, get_today_echo, peek_today_echo
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -47,6 +48,8 @@ def _last_year_content(db, user_id: str, text: str = "去年的今天", sensitiv
 
 def test_echo_hits_last_year(db_user):
     db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
+    db, user = db_user
     c = _last_year_content(db, user.id)
     result = get_today_echo(db, user.id)
     assert result is not None
@@ -55,6 +58,8 @@ def test_echo_hits_last_year(db_user):
 
 
 def test_echo_message_created_with_payload(db_user):
+    db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
     """R9 批次3（R9-1）：回响首次展示同步建发 in_app echo 消息，payload=完整快照
     （消息中心点击直接回放快照，不调 /echo/today、不占名额——拍板 A-1）"""
     from app.db.models import Message
@@ -78,6 +83,8 @@ def test_echo_message_created_with_payload(db_user):
 
 
 def test_echo_message_not_duplicated(db_user):
+    db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
     """R9 批次3：同日第二次调用返回 None（名额耗尽）→ 不重复建发消息"""
     from app.db.models import Message
 
@@ -94,6 +101,8 @@ def test_echo_message_not_duplicated(db_user):
 
 
 def test_echo_daily_limit(db_user):
+    db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
     """每天 ≤1 条：第一条命中后，同日第二次 → None"""
     db, user = db_user
     _last_year_content(db, user.id, "第一条")
@@ -131,6 +140,8 @@ def test_echo_local_day_boundary(db_user, monkeypatch):
         echo_svc, "_local_now", lambda: datetime(2026, 1, 2, 0, 30, tzinfo=local_tz)
     )
     db, user = db_user
+    # 本测试固定 00:30 属默认静默窗口；此处显式关静默，只测日界本身
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")
     # 去年今日 = 2025-01-02（本地日界）
     c = Content(
         id=str(uuid.uuid4()),
@@ -157,6 +168,7 @@ def test_echo_local_day_limit_boundary(db_user, monkeypatch):
         echo_svc, "_local_now", lambda: datetime(2026, 1, 2, 0, 30, tzinfo=local_tz)
     )
     db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 只测日界，关静默
     _last_year_content(db, user.id, "日界限制")
     # 本地 2026-01-02 00:10（UTC 2026-01-01 16:10）已展示 → 旧 UTC 逻辑把它算昨天
     db.add(
@@ -173,6 +185,8 @@ def test_echo_local_day_limit_boundary(db_user, monkeypatch):
 
 
 def test_echo_dismiss(db_user):
+    db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
     """划掉后不再出现"""
     db, user = db_user
     c = _last_year_content(db, user.id)
@@ -223,6 +237,8 @@ def test_echo_skips_profile_caution_review(db_user, disposition):
 
 
 def test_echo_profile_allow_passes(db_user):
+    db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
     """画像 L1 校验：allow/mention 放行（不阻断回响）"""
     db, user = db_user
     _profile_row(db, user.id, "前女友", "allow")
@@ -346,6 +362,8 @@ def test_profile_sensitive_api_smoke(db_user):
 
 
 def test_echo_api_smoke(db_user):
+    db, user = db_user
+    _put_preference(db, user.id, quiet_start="00:00", quiet_end="00:00")  # 正向用例：关静默，避免夜间跑必红
     """API 冒烟：GET /today"""
     from app.api import deps
     from app.main import app
@@ -366,3 +384,127 @@ def test_echo_api_smoke(db_user):
         assert data is not None and data["content_id"]
     finally:
         app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------- B4 合并八闸
+def _put_preference(db, user_id: str, **fields) -> EchoPreference:
+    row = db.get(EchoPreference, user_id)
+    if row is None:
+        row = EchoPreference(user_id=user_id)
+        db.add(row)
+    for k, v in fields.items():
+        setattr(row, k, v)
+    db.commit()
+    return row
+
+
+def test_gate_enabled_off(db_user):
+    """闸1：enabled=False → 不返回回响（写路径与只读 peek 一致）。"""
+    db, user = db_user
+    _last_year_content(db, user.id, "关闭授权")
+    _put_preference(db, user.id, enabled=False)
+    assert get_today_echo(db, user.id) is None
+    assert peek_today_echo(db, user.id) is None
+
+
+def test_gate_quiet_hours(db_user, monkeypatch):
+    """闸2：静默时段内不返回；跨午夜 22:00-08:00 在 23:00 命中。"""
+    local_tz = echo_svc._local_now().tzinfo
+    monkeypatch.setattr(echo_svc, "_local_now",
+                        lambda: datetime(2026, 1, 2, 23, 0, tzinfo=local_tz))
+    db, user = db_user
+    _last_year_content(db, user.id, "静默测试")
+    _put_preference(db, user.id, quiet_start="22:00", quiet_end="08:00")
+    assert get_today_echo(db, user.id) is None
+
+
+def test_gate_max_per_day(db_user):
+    """闸3：读 max_per_day（替掉写死 1）；DB 唯一索引限制只能 0/1，故测 0 禁用。"""
+    db, user = db_user
+    _put_preference(db, user.id, max_per_day=0)
+    _last_year_content(db, user.id, "上限0测试")
+    assert get_today_echo(db, user.id) is None, "max_per_day=0 应禁用回响"
+    assert peek_today_echo(db, user.id) is None
+
+
+def test_gate_single_content_validity(db_user):
+    """闸5：空文本且无媒体的内容不算有效候选。"""
+    db, user = db_user
+    c = _last_year_content(db, user.id, "")
+    c.text, c.cos_key, c.thumbnail_key = "", None, None
+    db.commit()
+    assert get_today_echo(db, user.id) is None
+
+
+def test_gate_exact_year(db_user, monkeypatch):
+    """闸7：只看月日不看年份的内容必须被排除（原 Agent 六闸 bug）。"""
+    local_tz = echo_svc._local_now().tzinfo
+    monkeypatch.setattr(echo_svc, "_local_now",
+                        lambda: datetime(2026, 6, 15, 10, 0, tzinfo=local_tz))
+    db, user = db_user
+    c = Content(
+        id=str(uuid.uuid4()), user_id=user.id, content_type="text",
+        text="三年前的今天", taken_at=datetime(2023, 6, 15, 10, 0, tzinfo=local_tz),
+        sensitive_status="正常", status="done",
+    )
+    db.add(c)
+    db.commit()
+    assert get_today_echo(db, user.id) is None, "2023-06-15 不能当 2025-06-15 的去年今日"
+
+
+def test_gate_cooldown(db_user):
+    """闸6：30 天内展示过的 fingerprint 不再展示（per-content 冷却）。"""
+    db, user = db_user
+    c = _last_year_content(db, user.id, "冷却测试")
+    fp = echo_svc._fingerprint(c.id)
+    db.add(EchoHistory(user_id=user.id, action="respond",
+                       shown_date=echo_svc._local_now().date() - timedelta(days=3),
+                       fingerprint=fp))
+    db.commit()
+    assert get_today_echo(db, user.id) is None
+
+
+def test_preference_api_put_get(db_user):
+    """设置 API：PUT 写字段白名单 → GET 读回；max_per_day 越界 422。"""
+    from app.api import deps
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    db, user = db_user
+    client = TestClient(app)
+    app.dependency_overrides[deps.get_current_user] = lambda: user
+    try:
+        r = client.put("/api/v1/echo/preference",
+                       json={"enabled": False, "quiet_start": "21:30", "max_per_day": 1})
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["enabled"] is False and data["quiet_start"] == "21:30"
+        assert data["max_per_day"] == 1 and data["channels"] == "in_app"
+        assert data["role_visibility"] == "owner_only"
+        r = client.get("/api/v1/echo/preference")
+        assert r.status_code == 200 and r.json()["data"]["max_per_day"] == 1
+        r = client.put("/api/v1/echo/preference", json={"max_per_day": 2})
+        assert r.status_code == 422, "DB 唯一索引限制每天≤1，max_per_day>1 必须 422"
+        # 输入契约：非法时间值（格式对但时分越界）必须被拒，不能静默让静默闸失效
+        for bad in ["99:99", "25:00", "12:60"]:
+            r = client.put("/api/v1/echo/preference", json={"quiet_start": bad})
+            assert r.status_code == 422, f"{bad} 必须 422，实际 {r.status_code}"
+        # 显式 null 不能静默忽略
+        r = client.put("/api/v1/echo/preference", json={"enabled": None})
+        assert r.status_code == 422, "显式 null 必须 422，不能静默忽略"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("now_hour,start,end,expected", [
+    (23, "22:00", "08:00", True),   # 跨午夜：夜间命中
+    (7, "22:00", "08:00", True),    # 跨午夜：清晨命中
+    (8, "22:00", "08:00", False),   # 边界：结束时刻不命中
+    (22, "22:00", "08:00", True),   # 边界：开始时刻命中
+    (12, "22:00", "08:00", False),  # 白天不命中
+    (12, "00:00", "00:00", False),  # start==end 关闭静默
+])
+def test_quiet_window_boundaries(now_hour, start, end, expected):
+    """闸2 边界：跨午夜与开始/结束时刻的判定（纯函数，不依赖 DB）。"""
+    now = datetime(2026, 1, 2, now_hour, 30, tzinfo=echo_svc._local_now().tzinfo)
+    assert echo_svc._in_quiet_window(now, start, end) is expected

@@ -27,6 +27,20 @@ class EchoResult:
 
 @runtime_checkable
 class EchoPort(Protocol):
-    def today(self, user_id: str) -> EchoResult: ...
+    """B4 回响端口（合并八闸，2026-11-24）。
+
+    闸4「角色可见」在此留占位参数 ``role``：**本期不实现**。
+    依赖 B8 家庭域（家庭组/成员/角色矩阵）落地后才生效；当前实现须忽略该参数
+    并在文档标注，不得假装做了权限判定。默认 "owner"（本人端唯一形态）。
+
+    preference get/set 对应闸1/2/3 的状态源（echo_preference 表），本期已实现
+    于 services/echo.py 与 api/echo.py，端口签名在此登记。
+    """
+
+    def today(self, user_id: str, *, role: str = "owner") -> EchoResult: ...
 
     def dismiss(self, user_id: str, echo_id: str) -> bool: ...
+
+    def get_preference(self, user_id: str) -> dict: ...
+
+    def set_preference(self, user_id: str, patch: dict) -> dict: ...

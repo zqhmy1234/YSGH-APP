@@ -51,6 +51,7 @@ _ERROR_SPECS: list[ErrorSpec] = [
     ErrorSpec("USER_001", "账号注销处理失败", 500, retryable=True),
     ErrorSpec("USER_002", "账号注销恢复窗口已过", 410),
     ErrorSpec("USER_003", "账号未处于可恢复的注销状态", 409),
+    ErrorSpec("ECHO_001", "回响设置入参非法或划掉的内容无权访问", 422),
     ErrorSpec("AUTH_099", "认证服务未接入或上游不可用（微信/短信）", 501),
     # ASR 域
     ErrorSpec("ASR_001", "音频参数校验失败", 422),
@@ -162,6 +163,8 @@ ERR_AUTH_014 = "AUTH_014"
 ERR_USER_001 = "USER_001"
 ERR_USER_002 = "USER_002"
 ERR_USER_003 = "USER_003"
+# B4 回响域（2026-11-24）：设置入参非法 / 划掉的内容无权访问
+ERR_ECHO_001 = "ECHO_001"
 ERR_AUTH_099 = "AUTH_099"
 ERR_ASR_001 = "ASR_001"
 ERR_ASR_002 = "ASR_002"
