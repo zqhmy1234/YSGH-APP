@@ -59,5 +59,5 @@
 <text x="1074" y="509.0" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">可中断；夜间优先</text>
 <text x="1074" y="530.0" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">单用户每日预算上限</text>
 <rect x="40" y="618" width="1360" height="54" rx="10" fill="#F3F6FA" stroke="#DDE4EB" stroke-width="1" opacity="1"/>
-<text x="56" y="642" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">与 Linger 的差异：Linger 的 Serendipity 偏向「记忆召回」；我们把它收窄成「预取候选」，因为本产品的召回已由 Librarian 承担。</text>
+<text x="56" y="642" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">来源说明：Serendipity 为本项目原创，Linger 上游无此角色；事件窗口预取的思路参考 Linger 的 as_of 时间加权机制，只读不写与缓存语义为本项目设计。</text>
 </svg>

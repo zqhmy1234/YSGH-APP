@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成忆述光华 V2 架构图（纯手写 SVG，无外部依赖）。"""
+"""生成忆述光华 V4 架构图（纯手写 SVG，无外部依赖）。"""
 
 import os
 
@@ -137,9 +137,10 @@ def card(s, x, y, w, h, title, body, accent=TEAL, fill=WHITE, tag=None, title_si
 def d1():
     W, H = 1780, 1400
     s = SVG(W, H, "总图")
-    s.header("忆述光华 · 三合一陪伴智能体 V2｜总图",
+    s.header("忆述光华 · 三合一陪伴智能体 V4｜总图",
              "六域一核 · 七层 · 依赖单向（L6 → L5 → L4 → 核心 → L2 → L1 → L0）",
-             "V2 · 2026-11-20")
+             "V4 · 2026-11-24 现状标注")
+    s.text(60, 92, "本图为施工图而非竣工图；V4 更新：B5 读写源合并至 canonical 账本（B4/B6 已通），L2 端口部分落地；角标区分 已通 / 半通 / 目标态", 10.5, "normal", RED)
 
     # L6
     y0 = 96
@@ -276,6 +277,44 @@ def d1():
     s.text(ax + aw / 2 + 8, y3 + ah + 20, "只经端口读", 10.5, "normal", WARM)
     s.arrow(mx, y4 + 116, mx, y5, INK)
     s.arrow(mx, y5 + 90, mx, y6, INK)
+    # ---------- 现状角标（2026-11-24：施工图 ≠ 竣工图）
+    def badge(x, y, label, fill, stroke, textfill, w=64):
+        s.rect(x, y, w, 22, fill, stroke, 1, 11)
+        s.text(x + w / 2, y + 15, label, 10.5, "600", textfill, "middle")
+
+    G = ("#E8F5EE", "#2F8A5B", "#1E6B42")
+    A = ("#FDF3E3", "#C7763F", "#9A5527")
+    R = ("#FCEDEA", "#A8452F", "#8A3322")
+    # L6 四端：目标态
+    for x in (395, 814, 1233, 1652):
+        badge(x, y0 + 104, "目标态", *R)
+    badge(W - 130, y1 + 26, "目标态", *R)          # L5 APISIX
+    badge(W - 130, y2 + 24, "半通", *A)            # L4 五 Agent 未全进链路
+    badge(ax + 8, y3 + 6, "半通", *A)              # 核心 A
+    # 核心 B 九域：按行三列
+    bx0 = bx + 20
+    cw3 = (bw - 60) / 3
+    for r, tags in enumerate([
+        [("B1", A), ("B2", G), ("B3", A)],
+        [("B4", G), ("B5", G), ("B6", G)],  # V4：B5 读写源合并 canonical；B4/B6 已通
+        [("B7", G), ("B8", R), ("B9", R)],
+    ]):
+        for c, (name, pal) in enumerate(tags):
+            badge(bx0 + c * cw3 + cw3 - 76, y3 + 70 + r * 128, name + ("半通" if pal is A else "已通" if pal is G else "目标态"), *pal)
+    badge(W - 130, y4 + 20, "半通", *A)           # V3：L2 四端口落地，其余仍空
+    badge(W - 130, y5 + 20, "目标态", *R)          # L1 域内核
+    badge(W - 130, y6 + 20, "已通", *G)            # L0 基础设施
+    # 图例
+    ly = y6 + 132
+    s.rect(40, ly, W - 80, 30, PANEL, GRAY, 1, 8)
+    badge(60, ly + 4, "已通", *G)
+    s.text(132, ly + 19, "真实请求链路在用", 11, "normal", INK2)
+    badge(300, ly + 4, "半通", *A)
+    s.text(372, ly + 19, "模块在但接线不全 / 设置未生效", 11, "normal", INK2)
+    badge(660, ly + 4, "目标态", *R)
+    s.text(732, ly + 19, "接口或图纸已定义，产品实体未落地", 11, "normal", INK2)
+    s.text(1180, ly + 19, "角标仅表达工程状态，不否定架构设计", 11, "600", RED)
+
     return s.save("01-总图")
 
 
@@ -683,82 +722,108 @@ def d6():
 
 
 
-# ---------------------------------------------------------------- 图 7 Linger 对比
+# ---------------------------------------------------------------- 图 7 机制来源对照（原「Linger 范式对比」已勘误，2026-11-24）
 def d7():
-    W, H = 1600, 880
-    s = SVG(W, H, "Linger对比")
-    s.header("五 Agent 的 Harness：Linger 的范式与我们落地后的偏离",
-             "左：公开描述的 Linger 结构｜中：我们完全照搬的部分｜右：我们刻意改掉的五处", "图 07")
+    W, H = 1600, 1000
+    s = SVG(W, H, "机制来源对照")
+    s.header("机制来源对照：借了什么，自己造了什么",
+             "依据 Linger commit 6663e21 上游 README 与 LOCK.json｜上游是 memory service，不是五 Agent 框架｜原「Linger 范式对比」六条断言已作废", "图 07")
 
-    # 左：Linger
-    lx, lw = 40, 520
-    s.rect(lx, 108, lw, 660, PANEL, LINE, 1)
-    s.text(lx + 16, 136, "Linger（LoCoMo 95% 公开描述的范式）", 12.5, "600", INK)
-    s.text(lx + 16, 158, "复述性质，细节以其仓库/论文为准", 10.5, "normal", MUTED)
+    # 左：借自 Linger
+    lx, lw = 40, 500
+    s.rect(lx, 100, lw, 800, "#EAF6F1", TEAL, 1, 10)
+    s.text(lx + 20, 130, "一、真正借自 Linger 的机制", 16, "600", INK)
+    s.text(lx + 20, 152, "代码已落地，语义与上游一致；见 agent-v3/LINGER复用登记.md", 11, "normal", TEAL)
 
-    s.rect(lx + 16, 176, lw - 32, 52, WHITE, LINE, 1, 6)
-    s.text(lx + 30, 208, "用户输入（文本）", 11.5, "500", INK2)
-    s.arrow(lx + lw / 2, 228, lx + lw / 2, 252, INK)
+    left = [
+        ("① 检索协议", ["RRF k=60 · alternates ≤6 各投各的票", "原文 / 摘要两列分开排序，署名 S / W", "时间参数只加权、不过滤任何来源"], "上游 memory/README.md:265-308 · RULES.md:5-9", 118, 112),
+        ("② 写入账本", ["校验全批 → 快照 → 应用 → 失败整批回滚", "change log 由应用写；valid / record 双时间", "用户修正永久优先"], "上游 apply.ts · RULES.md:11-17 → memory/ledger.py", 298, 108),
+        ("③ 候选校验", ["19 个 issue code，整批通过才落盘；事实条目须带证据 ID"], "上游 wiki-candidate-validation.ts → sculptor.py", 420, 92),
+        ("④ 证据原则", ["证据先行 · 沉默即不变 · 整批原子 · 不存凭据"], "上游 principles.md → prompts/sculptor.md", 522, 92),
+    ]
+    for title, lines, src, y, h in left:
+        s.rect(lx + 20, y, lw - 40, h, WHITE, TEAL, 1, 8)
+        s.text(lx + 36, y + 24, title, 14, "600", INK)
+        for j, ln in enumerate(lines):
+            s.text(lx + 36, y + 48 + j * 20, ln, 11.5, "normal", INK2)
+        s.text(lx + 36, y + h - 14, src, 10.5, "normal", MUTED)
 
-    s.rect(lx + 16, 252, lw - 32, 86, TEAL_SOFT, TEAL, 1, 6)
-    s.text(lx + 30, 278, "应用层（Application Layer）", 12, "600", INK)
-    s.text(lx + 30, 300, "仲裁 · 权限 · 上下文预算 · 转发", 10.5, "normal", TEAL)
-    s.text(lx + 30, 320, "Agent 之间不直连", 10.5, "normal", MUTED)
-    s.arrow(lx + lw / 2, 338, lx + lw / 2, 360, TEAL)
+    s.rect(lx + 20, 624, lw - 40, 240, PANEL, LINE, 1, 8)
+    s.text(lx + 36, 650, "上游原文明确没有的东西", 13, "600", INK)
+    s.text(lx + 36, 676, "README.md:25-28：", 11.5, "normal", MUTED)
+    s.text(lx + 36, 698, "no vector or rerank model is called", 11.5, "normal", RED)
+    s.text(lx + 36, 718, "and there is no vector column", 11.5, "normal", RED)
+    s.text(lx + 36, 746, "→ 本项目的 dense / sparse 向量通道是自加的产品增强", 11.5, "normal", INK2)
+    s.text(lx + 36, 774, "→ 上游角色名 Muse / Librarian / Sculptor /", 11.5, "normal", INK2)
+    s.text(lx + 36, 794, "　 Serendipity 与 LoCoMo 全文各 0 次命中", 11.5, "normal", INK2)
+    s.text(lx + 36, 830, "上游是 memory service，不是五 Agent 框架", 11.5, "600", INK)
+    s.text(lx + 36, 856, "LOCK.json：上游仅 6 文件，无 librarian.ts / serendipity.ts", 10.5, "normal", MUTED)
 
-    agents5 = ["Muse｜对话主生成", "Librarian｜检索", "Serendipity｜记忆召回",
-               "Provenance｜溯源校验", "Sculptor｜离线整理"]
-    for i, a in enumerate(agents5):
-        y = 360 + i * 44
-        s.rect(lx + 16, y, lw - 32, 36, WHITE, WARM if i == 0 else LINE, 1, 6)
-        s.text(lx + 30, y + 23, a, 11, "500", INK2)
-    s.arrow(lx + lw / 2, 580, lx + lw / 2, 606, INK)
+    # 中：本项目原创
+    mx, mw = 560, 500
+    s.rect(mx, 100, mw, 800, WARM_SOFT, WARM, 1, 10)
+    s.text(mx + 20, 130, "二、本项目原创的编排", 16, "600", INK)
+    s.text(mx + 20, 152, "成立理由是陪伴产品需要，不是 Linger 也这么做", 11, "normal", WARM)
 
-    s.rect(lx + 16, 606, lw - 32, 150, WHITE, LINE, 1, 6)
-    s.text(lx + 30, 632, "记忆两阶段写入", 12, "600", INK)
-    s.text(lx + 30, 656, "Muse 提名 → Provenance 审核 →", 10.5, "normal", MUTED)
-    s.text(lx + 30, 676, "应用层统一落库（模型无写权）", 10.5, "normal", MUTED)
-    s.text(lx + 30, 704, "原始记录不可覆盖；整理只加新层", 10.5, "normal", TEAL)
-    s.text(lx + 30, 728, "（Sculptor 负责摘要 / 分组 / 链接）", 10.5, "normal", MUTED)
+    mid = [
+        ("① 五 Agent 编排", ["Muse 主生成 · Librarian 检索 · Provenance 校验", "Serendipity 预取 · Sculptor 离线整理", "Orchestrator 唯一仲裁 · Agent 不直连 · 三道红线"], "现状：真实链路只跑 Muse / Librarian / Provenance", 168, 130),
+        ("② 七层与九域", ["L6 端 → L5 接入 → L4 编排 → 核心 A/B → L2 → L1 → L0", "B1–B6 摄入/事件/检索/回响/记忆/信任", "B7 有人味 / B8 家庭 / B9 评测"], "这是目标态骨架，不是竣工清单", 310, 118),
+        ("③ 端口与域内核", ["15 个 L2 Protocol · L1 纯策略", "依赖方向 L4 → L2 → L1 → L0 是设计目标"], "现状：多数端口仍是签名，L3 直调 services", 440, 110),
+        ("④ 产品机制", ["四层事件 · 双时序记忆 · 共情 T2/T3 · 危机三级", "落库三态（上游无）· 人设卡版本化 · 上下文帧九段"], "与 Linger 对不对无关，别拿上游当背书", 562, 110),
+    ]
+    for title, lines, note, y, h in mid:
+        s.rect(mx + 20, y, mw - 40, h, WHITE, WARM, 1, 8)
+        s.text(mx + 36, y + 24, title, 14, "600", INK)
+        for j, ln in enumerate(lines):
+            s.text(mx + 36, y + 48 + j * 20, ln, 11.5, "normal", INK2)
+        s.text(mx + 36, y + h - 12, note, 10.5, "normal", MUTED)
 
-    # 中：相同
-    mx, mw = 596, 400
-    s.rect(mx, 108, mw, 660, WHITE, LINE, 1)
-    s.text(mx + 16, 136, "我们完全照搬的四点", 12.5, "600", TEAL)
-    same = [("五角色分工不变", ["谁取料、谁出话、谁预取、", "谁审、谁整理，职责不混"]),
-            ("应用层仲裁", ["Agent 不直连；越权与成本", "都在这一层被挡"]),
-            ("提案 → 审核 → 落库", ["模型只提案，写权在 App", "超时落 draft 不落 failed"]),
-            ("原始不可覆盖", ["整理只加可回滚的新层", "人设与原文永不被改写"])]
-    for i, (t, b) in enumerate(same):
-        y = 172 + i * 150
-        s.rect(mx + 16, y, mw - 32, 116, PANEL, LINE, 1, 6)
-        s.text(mx + 30, y + 28, t, 12, "600", INK)
-        for j, ln in enumerate(b):
-            s.text(mx + 30, y + 56 + j * 22, ln, 10.5, "normal", MUTED)
+    s.rect(mx + 20, 684, mw - 40, 196, PANEL, LINE, 1, 8)
+    s.text(mx + 36, 710, "怎么评判这些原创设计", 13, "600", INK)
+    s.text(mx + 36, 738, "看产品需求：陪伴场景需要主生成 + 检索 + 校验", 11.5, "normal", INK2)
+    s.text(mx + 36, 758, "+ 预取 + 离线整理的分工，才拆成五只", 11.5, "normal", INK2)
+    s.text(mx + 36, 786, "看实现：图纸画了五只，链路只跑三只", 11.5, "normal", INK2)
+    s.text(mx + 36, 810, "与 Linger 对不对无关，别拿上游当背书", 11.5, "600", INK)
+    s.text(mx + 36, 850, "原图 07 的「五角色照搬」等 6 条断言已勘误", 10.5, "normal", MUTED)
 
-    # 右：不同
-    rx, rw = 1032, 528
-    s.rect(rx, 108, rw, 660, WHITE, WARM, 1)
-    s.text(rx + 16, 136, "我们刻意改掉的五处（以及为什么）", 12.5, "600", INK)
-    diff = [("① Provenance 改触发式", ["Linger 每轮都审；我们只在引用私料 / 敏感 /",
-                                        "纠错 / 危机词时才审，省 3 次调用。"]),
-            ("② 检索不再只有一路", ["Linger 一条 Library 检索；我们要三条通道同 filters、",
-                                     "三级降级、事件级返回，否则产品层搜不到。"]),
-            ("③ 幻觉边界更硬", ["私料无溯源直接 block（fail-closed），",
-                                "普通对话才 fail-open —— 这是产品红线不是折中。"]),
-            ("④ 多出两个域", ["事件聚合（时间轴按事串）与回响调度（去年今日），",
-                              "Linger 是对话型，没有这两个结构。"]),
-            ("⑤ 记忆落地不引外部服务", ["抽象 MemoryPort，落地 PG + Qdrant；",
-                                      "借 Graphiti 的双时序列，不引 Neo4j。"]),]
-    for i, (t, b) in enumerate(diff):
-        y = 166 + i * 120
-        s.rect(rx + 16, y, rw - 32, 100, WARM_SOFT, LINE, 1, 6)
-        s.text(rx + 30, y + 26, t, 11.5, "600", INK)
-        for j, ln in enumerate(b):
-            s.text(rx + 30, y + 50 + j * 21, ln, 10, "normal", MUTED)
+    # 右：真实差异
+    rx, rw = 1080, 480
+    s.rect(rx, 100, rw, 800, PANEL, LINE, 1, 10)
+    s.text(rx + 20, 130, "三、确实不同的两处", 16, "600", INK)
+    s.text(rx + 20, 152, "这两条才是真差异，可以拿来做对比", 11, "normal", MUTED)
 
-    s.text(40, 800, "一句话：我们抄的是 Linger 的「权限结构」，改的是它的「每轮成本」与「检索深度」——前者关乎安全，后者关乎产品能不能被用。",
-           11.5, "600", INK2)
+    s.rect(rx + 20, 168, rw - 40, 220, WHITE, TEAL, 1, 8)
+    s.text(rx + 36, 194, "① 检索深度", 14, "600", INK)
+    s.text(rx + 36, 222, "Linger：关键词单路", 11.5, "600", TEAL)
+    s.text(rx + 36, 244, "PG simple tsvector + CJK bigrams", 11.5, "normal", INK2)
+    s.text(rx + 36, 264, "ts_rank_cd + 词覆盖重排", 11.5, "normal", INK2)
+    s.text(rx + 36, 292, "本项目：向量 + 多通道", 11.5, "600", WARM)
+    s.text(rx + 36, 314, "Qdrant dense / sparse · PG 回退", 11.5, "normal", INK2)
+    s.text(rx + 36, 334, "事件级返回 · 三级降级链", 11.5, "normal", INK2)
+    s.text(rx + 36, 362, "产品层搜得到的必要条件", 10.5, "normal", MUTED)
+
+    s.rect(rx + 20, 400, rw - 40, 180, WHITE, TEAL, 1, 8)
+    s.text(rx + 36, 426, "② 幻觉边界", 14, "600", INK)
+    s.text(rx + 36, 454, "Linger：无此产品红线", 11.5, "600", TEAL)
+    s.text(rx + 36, 476, "证据不足即 partial / empty", 11.5, "normal", INK2)
+    s.text(rx + 36, 502, "本项目：私料 fail-closed", 11.5, "600", WARM)
+    s.text(rx + 36, 524, "私料无溯源直接 block", 11.5, "normal", INK2)
+    s.text(rx + 36, 546, "普通对话才 fail-open", 11.5, "normal", INK2)
+
+    s.rect(rx + 20, 592, rw - 40, 288, "#FCEDEA", RED, 1, 8)
+    s.text(rx + 36, 618, "原图 07 的错误断言（已作废）", 13, "600", INK)
+    s.text(rx + 36, 644, "✗ 五角色是 Linger 范式　✗ LoCoMo 95%", 11, "normal", RED)
+    s.text(rx + 36, 666, "✗ Linger 的 Serendipity / Sculptor", 11, "normal", RED)
+    s.text(rx + 36, 688, "✗ Linger 每轮都审　✗ Linger 一路检索", 11, "normal", RED)
+    s.text(rx + 36, 718, "逐条勘误见：", 11.5, "600", INK)
+    s.text(rx + 36, 740, "45需求映射.md §4.6（已原地改写）", 11, "normal", INK2)
+    s.text(rx + 36, 768, "10 条断言：6 错 / 2 半对 / 2 对", 11.5, "600", INK)
+    s.text(rx + 36, 794, "图 09「只给证据」与图 12「原始不可覆盖」", 11, "normal", INK2)
+    s.text(rx + 36, 814, "两条描述正确，可保留", 11, "normal", INK2)
+    s.text(rx + 36, 846, "证据：vendor/linger/LOCK.json 与 upstream/README.md", 10.5, "normal", MUTED)
+
+    s.text(40, 940, "一句话：借了 Linger 的记忆机制，套了自创的陪伴编排外壳；骨架不用推倒，改的是溯源措辞与目标态标注", 14, "600", INK2)
+    s.text(40, 968, "配套：架构图 01（目标态）· png/01-总图.png（现状角标）· 45需求映射.md §4.6", 11, "normal", MUTED)
     return s.save("07-Linger范式对比")
 
 
@@ -857,7 +922,7 @@ def d8():
         ["超时 → 模板化安全回复（不假装思考）", "state 解析失败 → 落 draft，不重试整轮",
          "OOC / 禁语命中 → 重试一次 → 仍命中则短回应"],
         ["主力模型：1–4 s（唯一不可省）", "与召回并行：首字可在召回后立即吐出", "单轮只调一次"],
-        "与 Linger 的差异：Linger 的 Muse 负责对话并提名记忆；我们保留提名，但把「写」彻底剥到 MemoryWritePort，模型连重试都无权发起。")
+        "来源说明：五 Agent 编排为本项目原创（Linger 上游无 Muse 角色）；「模型只提案、应用统一落库」的思路参考 Linger 写入协议，写权剥离与 MemoryWritePort 为本项目设计。")
 
 
 def d9():
@@ -886,7 +951,7 @@ def d9():
         ["超时 → degraded=true，且禁止给 clarify", "零命中 → 关键词 → clarify / 翻时间轴",
          "通道 filters 不一致 → 门禁直接拦"],
         ["轻量模型 + 检索：100–300 ms", "与 Person / Digest 并行发", "队列：P0（前台）"],
-        "与 Linger 的差异：Linger 一路检索；我们有 Qdrant / PG 回退 / PG 精确三通道，且必须吃同一份 filters——否则新分面会静默失效。")
+        "来源说明：RRF k=60 / alternates≤6 / 时间只投票不过滤 / 两列分离借自 Linger；多路检索、Qdrant 向量通道与 filters 门禁为本项目自加（上游明确无向量列）。")
 
 
 def d10():
@@ -911,7 +976,7 @@ def d10():
         ["候选事件 id[] + 关联度分数", "给 Muse：可选上下文（可不用）", "不产出用户可见文本"],
         ["静默放弃（用户无感）", "候选为空不算失败", "超时直接丢，不重试"],
         ["轻量模型；P2 队列", "可中断；夜间优先", "单用户每日预算上限"],
-        "与 Linger 的差异：Linger 的 Serendipity 偏向「记忆召回」；我们把它收窄成「预取候选」，因为本产品的召回已由 Librarian 承担。")
+        "来源说明：Serendipity 为本项目原创，Linger 上游无此角色；事件窗口预取的思路参考 Linger 的 as_of 时间加权机制，只读不写与缓存语义为本项目设计。")
 
 
 def d11():
@@ -934,7 +999,7 @@ def d11():
         ["私料无证据 → block（fail-closed）", "普通共情不足 → fail-open，不阻断回复",
          "自身不可用 → 仅私料场景阻断"],
         ["轻量；≈50 ms", "只对触发轮计费，非每轮", "与生成并行不可行：必须在生成后"],
-        "与 Linger 的差异：Linger 每轮都审；我们改触发式省成本，但把「私料无证据」从 warn 升为 block——这是产品红线。")
+        "来源说明：Provenance 为本项目原创角色，Linger 上游无每轮审核 Agent；证据先行与引用规范参考 Linger 原则，触发式校验与私料 fail-closed 为本项目产品红线。")
 
 
 def d12():
@@ -958,7 +1023,7 @@ def d12():
         ["摘要层（供下一轮上下文使用）", "主题分组 / 人物线索", "画像更新提案（App 审核后落库）"],
         ["失败 → 保留原始，次日重试", "重复执行 → 幂等，不重复产出", "画像提案被拒 → 不影响对话"],
         ["中档模型；批量", "仅夜间闲时（插电 + 非计量 + 空闲）", "单夜预算上限，超限顺延"],
-        "与 Linger 的差异：Linger 的 Sculptor 做记忆合并与分组；我们额外要求「可回滚 + 幂等 + 不改原文」，因为用户资产不可逆。")
+        "来源说明：Sculptor 角色名为本项目原创，Linger 上游无此 Agent；写入的校验→快照→整批回滚与 19 个 issue code 借自 Linger apply.ts / wiki-candidate-validation.ts；可回滚不改为本项目加的约束。")
 
 
 

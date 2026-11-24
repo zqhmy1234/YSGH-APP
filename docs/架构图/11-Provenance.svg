@@ -59,5 +59,5 @@
 <text x="1074" y="522.3333333333333" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">只对触发轮计费，非每轮</text>
 <text x="1074" y="543.3333333333333" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">与生成并行不可行：必须在生成后</text>
 <rect x="40" y="638" width="1360" height="54" rx="10" fill="#F3F6FA" stroke="#DDE4EB" stroke-width="1" opacity="1"/>
-<text x="56" y="662" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">与 Linger 的差异：Linger 每轮都审；我们改触发式省成本，但把「私料无证据」从 warn 升为 block——这是产品红线。</text>
+<text x="56" y="662" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">来源说明：Provenance 为本项目原创角色，Linger 上游无每轮审核 Agent；证据先行与引用规范参考 Linger 原则，触发式校验与私料 fail-closed 为本项目产品红线。</text>
 </svg>

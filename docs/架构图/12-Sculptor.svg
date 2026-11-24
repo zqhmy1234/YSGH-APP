@@ -59,5 +59,5 @@
 <text x="1074" y="509.0" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">仅夜间闲时（插电 + 非计量 + 空闲）</text>
 <text x="1074" y="530.0" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">单夜预算上限，超限顺延</text>
 <rect x="40" y="618" width="1360" height="54" rx="10" fill="#F3F6FA" stroke="#DDE4EB" stroke-width="1" opacity="1"/>
-<text x="56" y="642" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">与 Linger 的差异：Linger 的 Sculptor 做记忆合并与分组；我们额外要求「可回滚 + 幂等 + 不改原文」，因为用户资产不可逆。</text>
+<text x="56" y="642" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">来源说明：Sculptor 角色名为本项目原创，Linger 上游无此 Agent；写入的校验→快照→整批回滚与 19 个 issue code 借自 Linger apply.ts / wiki-candidate-validation.ts；可回滚不改为本项目加的约束。</text>
 </svg>

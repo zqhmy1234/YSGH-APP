@@ -61,5 +61,5 @@
 <text x="1074" y="516.0" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">与 Person / Digest 并行发</text>
 <text x="1074" y="537.0" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">队列：P0（前台）</text>
 <rect x="40" y="618" width="1360" height="54" rx="10" fill="#F3F6FA" stroke="#DDE4EB" stroke-width="1" opacity="1"/>
-<text x="56" y="642" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">与 Linger 的差异：Linger 一路检索；我们有 Qdrant / PG 回退 / PG 精确三通道，且必须吃同一份 filters——否则新分面会静默失效。</text>
+<text x="56" y="642" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">来源说明：RRF k=60 / alternates≤6 / 时间只投票不过滤 / 两列分离借自 Linger；多路检索、Qdrant 向量通道与 filters 门禁为本项目自加（上游明确无向量列）。</text>
 </svg>

@@ -61,5 +61,5 @@
 <text x="1074" y="529.3333333333333" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">与召回并行：首字可在召回后立即吐出</text>
 <text x="1074" y="550.3333333333333" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">单轮只调一次</text>
 <rect x="40" y="638" width="1360" height="54" rx="10" fill="#F3F6FA" stroke="#DDE4EB" stroke-width="1" opacity="1"/>
-<text x="56" y="662" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">与 Linger 的差异：Linger 的 Muse 负责对话并提名记忆；我们保留提名，但把「写」彻底剥到 MemoryWritePort，模型连重试都无权发起。</text>
+<text x="56" y="662" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="normal" fill="#3C5A78" text-anchor="start" letter-spacing="0">来源说明：五 Agent 编排为本项目原创（Linger 上游无 Muse 角色）；「模型只提案、应用统一落库」的思路参考 Linger 写入协议，写权剥离与 MemoryWritePort 为本项目设计。</text>
 </svg>
